@@ -22,6 +22,12 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
+
+/* Modified by Matthew Hawn. I don't know what to say here so follow what it 
+   says above. Not that I can really do anything about it
+*/
+
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -74,6 +80,15 @@ Picture		blackPicture;
 Picture		rootTile;
 XserverRegion	allDamage;
 int		root_height, root_width;
+
+
+/* find these once and be done with it */
+Atom            transPropAtom;
+Atom            intAtom;
+
+/* translucency property name */
+#define TRANS_PROP "CM_TRANSLUCENCY"
+
 conv            *gaussianMap;
 
 #define WINDOW_SOLID	0
@@ -598,6 +613,10 @@ map_win (Display *dpy, Window id, unsigned long sequence)
     if (!w)
 	return;
     w->a.map_state = IsViewable;
+
+    /* make sure we know if property was changed */
+    XSelectInput(dpy, id, PropertyChangeMask);
+
     w->damaged = 0;
 }
 
@@ -615,6 +634,96 @@ unmap_win (Display *dpy, Window id)
 	add_damage (dpy, w->extents);    /* destroys region */
 	w->extents = None;
     }
+
+    /* don't care about properties anymore */
+    XSelectInput(dpy, id, 0);
+}
+
+
+
+/* Get the translucency prop from window
+   not found: -1
+   otherwise the value
+
+ */
+static int
+get_trans_prop(Display *dpy, win *w)
+{
+   Atom actual;
+    int format;
+    unsigned long n, left;
+    
+    char *data;
+    XGetWindowProperty(dpy, w->id, transPropAtom, 0L, 1L, False, intAtom, &actual, &format, 
+		       &n, &left, (unsigned char **) &data);
+    if (data != None)
+    {
+      int i = (int) *data;
+      XFree( (void *) data);
+      return i;
+    }
+    return -1;
+
+}
+
+/* determine mode for window all in one place.
+   Future might check for menu flag and other cool things
+*/
+
+
+static int 
+determine_mode(Display *dpy, win *w)
+{
+    int mode;
+
+    /* if trans prop == -1 fall back on  previous tests*/
+
+    int p = get_trans_prop(dpy, w);
+    if  (  p  != -1 )
+    {
+      if (p > 0)
+	{
+        /* don't really care about the value as long as > 0 */
+	  mode = WINDOW_TRANS;
+	}
+      else
+	{
+	  mode = WINDOW_SOLID;
+	}
+    }
+
+    
+
+    else 
+    {
+      XRenderPictFormat *format;
+      if (w->a.class == InputOnly)
+      {
+	format = 0;
+      }
+      else
+      {
+	format = XRenderFindVisualFormat (dpy, w->a.visual);
+      }
+
+
+
+      if (format && format->type == PictTypeDirect && format->direct.alphaMask)
+      {
+	mode = WINDOW_ARGB;
+      }
+      else if (w->a.override_redirect)
+      {
+	/* changed this as a lot of window managers set this for all top
+           level windows */
+	mode = WINDOW_SOLID;
+      }
+      else
+      {
+	mode = WINDOW_SOLID;
+      }
+    }
+    return mode;
 }
 
 static void
@@ -669,12 +778,11 @@ add_win (Display *dpy, Window id, Window prev)
     new->shadow_height = 0;
     new->borderSize = None;
     new->extents = None;
-    if (format && format->type == PictTypeDirect && format->direct.alphaMask)
-	new->mode = WINDOW_ARGB;
-    else if (new->a.override_redirect)
-	new->mode = WINDOW_TRANS;
-    else
-	new->mode = WINDOW_SOLID;
+
+
+    /* moved mode setting to one place */
+    new->mode = determine_mode(dpy, new);
+
     new->next = *p;
     *p = new;
     if (new->a.map_state == IsViewable)
@@ -940,6 +1048,11 @@ main (int argc, char **argv)
     XSetErrorHandler (error);
     scr = DefaultScreen (dpy);
     root = RootWindow (dpy, scr);
+
+    /* get atoms */
+    transPropAtom = XInternAtom(dpy, TRANS_PROP, False);
+    intAtom = XInternAtom(dpy, "INTEGER", True);
+
     pa.subwindow_mode = IncludeInferiors;
 
     gaussianMap = make_gaussian_map(dpy, SHADOW_RADIUS);
@@ -953,10 +1066,10 @@ main (int argc, char **argv)
     c.red = c.green = c.blue = 0;
     c.alpha = 0xc0c0;
     XRenderFillRectangle (dpy, PictOpSrc, transPicture, &c, 0, 0, 1, 1);
-    
+
     root_width = DisplayWidth (dpy, scr);
     root_height = DisplayHeight (dpy, scr);
-    
+
     rootPicture = XRenderCreatePicture (dpy, root, 
 					XRenderFindVisualFormat (dpy,
 								 DefaultVisual (dpy, scr)),
@@ -1008,7 +1121,7 @@ main (int argc, char **argv)
 #if INTERVAL
 	int busy_start = 0;
 #endif
-/*	dump_wins (); */
+	/*	dump_wins (); */
 	do {
 	    XNextEvent (dpy, &ev);
 #if INTERVAL
@@ -1086,6 +1199,23 @@ main (int argc, char **argv)
 			    XRenderFreePicture (dpy, rootTile);
 			    rootTile = None;
 			    break;
+			}
+		    }
+		}
+		/* check if Trans property was changed */
+		if (ev.xproperty.atom == transPropAtom)
+		{
+		    /* reset mode and redraw window */
+		    win * w = find_win(dpy, ev.xproperty.window);
+		    if (w)
+		    {
+			w->mode = determine_mode(dpy, w);
+			if (w->extents)
+			{
+			    XserverRegion damage;
+			    damage = XFixesCreateRegion (dpy, 0, 0);
+			    XFixesCopyRegion (dpy, damage, w->extents);
+			    add_damage (dpy, damage);
 			}
 		    }
 		}

@@ -1,3 +1,11 @@
+2003-11-24  Matthew Hawn <hawnpawn@yahoo.com>
+
+	reviewed by: Keith Packard  <keithp@keithp.com>
+
+	* xcompmgr.c: (map_win), (unmap_win), (get_trans_prop),
+	(determine_mode), (add_win), (main):
+	Add support for CM_TRANSLUCENT property.
+
 2003-11-23  Keith Packard  <keithp@keithp.com>
 
 	* xcompmgr.c: (make_shadow), (root_tile), (win_extents),
