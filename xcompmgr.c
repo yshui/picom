@@ -43,6 +43,10 @@
 #include <X11/extensions/Xdamage.h>
 #include <X11/extensions/Xrender.h>
 
+#if COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2
+#define HAS_NAME_WINDOW_PIXMAP 1
+#endif
+
 typedef struct _ignore {
     struct _ignore	*next;
     unsigned long	sequence;
@@ -91,7 +95,9 @@ Picture		transBlackPicture;
 Picture		rootTile;
 XserverRegion	allDamage;
 Bool		clipChanged;
+#if HAS_NAME_WINDOW_PIXMAP
 Bool		hasNamePixmap;
+#endif
 int		root_height, root_width;
 ignore		*ignore_head, **ignore_tail = &ignore_head;
 int		xfixes_event, xfixes_error;
@@ -809,12 +815,14 @@ map_win (Display *dpy, Window id, unsigned long sequence)
 	return;
     w->a.map_state = IsViewable;
 
+#if HAS_NAME_WINDOW_PIXMAP
     if (hasNamePixmap)
     {
 	w->pixmap = XCompositeNameWindowPixmap (dpy, id);
 	back = w->pixmap;
     }
     else
+#endif
     {
 	w->pixmap = 0;
 	back = id;
@@ -853,11 +861,13 @@ unmap_win (Display *dpy, Window id)
 	add_damage (dpy, w->extents);    /* destroys region */
 	w->extents = None;
     }
+#if HAS_NAME_WINDOW_PIXMAP
     if (hasNamePixmap)
     {
 	XFreePixmap (dpy, w->pixmap);
 	w->pixmap = 0;
     }
+#endif
     if (w->picture)
     {
 	set_ignore (dpy, NextRequest (dpy));
@@ -1352,12 +1362,14 @@ main (int argc, char **argv)
 	exit (1);
     }
     XCompositeQueryVersion (dpy, &composite_major, &composite_minor);
+#if HAS_NAME_WINDOW_PIXMAP
 #if 0
     /*
      * Don't use this yet; we don't have set semantics for new pixmaps
      */
     if (composite_major > 0 || composite_minor >= 2)
 	hasNamePixmap = True;
+#endif
 #endif
 
     if (!XDamageQueryExtension (dpy, &damage_event, &damage_error))

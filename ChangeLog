@@ -1,3 +1,8 @@
+2004-06-27  Keith Packard  <keithp@keithp.com>
+
+	* xcompmgr.c: (map_win), (unmap_win), (main):
+	Only use XCompositeNameWindowPixmap when the library provides it
+
 2004-06-26  Keith Packard  <keithp@keithp.com>
 
 	* xcompmgr.c: (win_extents), (paint_all), (repair_win),
