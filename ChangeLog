@@ -1,0 +1,7 @@
+2003-11-09  Keith Packard  <keithp@keithp.com>
+
+	* Makefile:
+	* xcompmgr.c: (gaussian), (make_gaussian_map), (sum_gaussian),
+	(make_shadow), (shadow_picture), (win_extents), (paint_all),
+	(map_win), (unmap_win), (add_win), (configure_win), (main):
+	Add drop shadows.

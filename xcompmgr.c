@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/Xdamage.h>
 #include <X11/extensions/Xrender.h>
@@ -14,6 +16,12 @@ typedef struct _win {
     Damage		damage;
     Picture		picture;
     XserverRegion	borderSize;
+    XserverRegion	extents;
+    Picture		shadow;
+    int			shadow_dx;
+    int			shadow_dy;
+    int			shadow_width;
+    int			shadow_height;
 
     /* for drawing translucent windows */
     XserverRegion	borderClip;
@@ -32,6 +40,239 @@ XserverRegion	allDamage;
 #define WINDOW_PLAIN	0
 #define WINDOW_DROP	1
 #define WINDOW_TRANS	2
+#define TRANS_OPACITY	0.75
+#define SHADOW_RADIUS	15
+#define SHADOW_OPACITY	0.75
+#define SHADOW_OFFSET_X	(-SHADOW_RADIUS)
+#define SHADOW_OFFSET_Y	(-SHADOW_RADIUS)
+
+
+double
+gaussian (double r, double x, double y)
+{
+    return ((1 / (sqrt (2 * M_PI * r))) *
+	    exp ((- (x * x + y * y)) / (2 * r * r)));
+}
+
+typedef struct _conv {
+    int	    size;
+    double  *data;
+} conv;
+
+conv *
+make_gaussian_map (Display *dpy, double r)
+{
+    conv	    *c;
+    int		    size = ((int) ceil ((r * 3)) + 1) & ~1;
+    int		    center = size / 2;
+    int		    x, y;
+    double	    t;
+    double	    g;
+    
+    c = malloc (sizeof (conv) + size * size * sizeof (double));
+    c->size = size;
+    c->data = (double *) (c + 1);
+    for (y = 0; y < size; y++)
+	for (x = 0; x < size; x++)
+	{
+	    g = gaussian (r, (double) (x - center), (double) (y - center));
+	    t += g;
+	    c->data[y * size + x] = g;
+	}
+    printf ("gaussian total %f\n", t);
+    for (y = 0; y < size; y++)
+	for (x = 0; x < size; x++)
+	{
+	    c->data[y*size + x] /= t;
+	}
+    return c;
+}
+
+/*
+ * A picture will help
+ *
+ *	-center   0                width  width+center
+ *  -center +-----+-------------------+-----+
+ *	    |     |                   |     |
+ *	    |     |                   |     |
+ *        0 +-----+-------------------+-----+
+ *	    |     |                   |     |
+ *	    |     |                   |     |
+ *	    |     |                   |     |
+ *   height +-----+-------------------+-----+
+ *	    |     |                   |     |
+ * height+  |     |                   |     |
+ *  center  +-----+-------------------+-----+
+ */
+ 
+unsigned int
+sum_gaussian (conv *map, double opacity, int x, int y, int width, int height)
+{
+    int	    fx, fy;
+    int	    sx, sy;
+    double  *g_data;
+    double  *g_line = map->data;
+    int	    g_size = map->size;
+    int	    center = g_size / 2;
+    int	    fx_start, fx_end;
+    int	    fy_start, fy_end;
+    double  v;
+    
+    /*
+     * Compute set of filter values which are "in range",
+     * that's the set with:
+     *	0 <= x + (fx-center) && x + (fx-center) < width &&
+     *  0 <= y + (fy-center) && y + (fy-center) < height
+     *
+     *  0 <= x + (fx - center)	x + fx - center < width
+     *  center - x <= fx	fx < width + center - x
+     */
+
+    fx_start = center - x;
+    if (fx_start < 0)
+	fx_start = 0;
+    fx_end = width + center - x;
+    if (fx_end > g_size)
+	fx_end = g_size;
+
+    fy_start = center - y;
+    if (fy_start < 0)
+	fy_start = 0;
+    fy_end = height + center - y;
+    if (fy_end > g_size)
+	fy_end = g_size;
+
+    g_line = g_line + fy_start * g_size + fx_start;
+    
+    v = 0;
+    for (fy = fy_start; fy < fy_end; fy++)
+    {
+	g_data = g_line;
+	g_line += g_size;
+	
+	for (fx = fx_start; fx < fx_end; fx++)
+	    v += *g_data++;
+    }
+    if (v > 1)
+	v = 1;
+    
+    return ((unsigned int) (v * opacity * 255.0)) << 24;
+}
+
+XImage *
+make_shadow (Display *dpy, double opacity, double r, int width, int height)
+{
+    conv	    *map = make_gaussian_map (dpy, r);
+    XImage	    *ximage;
+    double	    *gdata = map->data;
+    unsigned int    *data;
+    int		    gsize = map->size;
+    int		    ylimit, xlimit;
+    int		    swidth = width + gsize;
+    int		    sheight = height + gsize;
+    int		    center = gsize / 2;
+    int		    x, y;
+    int		    fx, fy;
+    int		    sx, sy;
+    unsigned int    d;
+    double	    v;
+    unsigned char   c;
+    
+    data = malloc (swidth * sheight * sizeof (int));
+    ximage = XCreateImage (dpy,
+			   DefaultVisual(dpy, DefaultScreen(dpy)),
+			   32,
+			   ZPixmap,
+			   0,
+			   (char *) data,
+			   swidth, sheight, 32, swidth * sizeof (int));
+    /*
+     * Build the gaussian in sections
+     */
+
+    /*
+     * corners
+     */
+    ylimit = gsize;
+    if (ylimit > sheight / 2)
+	ylimit = (sheight + 1) / 2;
+    xlimit = gsize;
+    if (xlimit > swidth / 2)
+	xlimit = (swidth + 1) / 2;
+
+    for (y = 0; y < ylimit; y++)
+	for (x = 0; x < xlimit; x++)
+	{
+	    d = sum_gaussian (map, opacity, x - center, y - center, width, height);
+	    data[y * swidth + x] = d;
+	    data[(sheight - y - 1) * swidth + x] = d;
+	    data[(sheight - y - 1) * swidth + (swidth - x - 1)] = d;
+	    data[y * swidth + (swidth - x - 1)] = d;
+	}
+
+    /*
+     * top/bottom
+     */
+    for (y = 0; y < ylimit; y++)
+    {
+	d = sum_gaussian (map, opacity, center, y - center, width, height);
+	for (x = gsize; x < swidth - gsize; x++)
+	{
+	    data[y * swidth + x] = d;
+	    data[(sheight - y - 1) * swidth + x] = d;
+	}
+    }
+
+    /*
+     * sides
+     */
+    
+    for (x = 0; x < xlimit; x++)
+    {
+	d = sum_gaussian (map, opacity, x - center, center, width, height);
+	for (y = gsize; y < sheight - gsize; y++)
+	{
+	    data[y * swidth + x] = d;
+	    data[y * swidth + (swidth - x - 1)] = d;
+	}
+    }
+
+    /*
+     * center
+     */
+
+    d = sum_gaussian (map, opacity, center, center, width, height);
+    for (y = ylimit; y < sheight - ylimit; y++)
+	for (x = xlimit; x < swidth - xlimit; x++)
+	    data[y * swidth + x] = d;
+
+    free (map);
+    return ximage;
+}
+
+Picture
+shadow_picture (Display *dpy, double opacity, double r, int width, int height, int *wp, int *hp)
+{
+    XImage  *shadowImage = make_shadow (dpy, opacity, r, width, height);
+    Pixmap  shadowPixmap = XCreatePixmap (dpy, root, 
+					  shadowImage->width,
+					  shadowImage->height,
+					  32);
+    Picture shadowPicture = XRenderCreatePicture (dpy, shadowPixmap,
+						  XRenderFindStandardFormat (dpy, PictStandardARGB32),
+						  0, 0);
+    GC	    gc = XCreateGC (dpy, shadowPixmap, 0, 0);
+    
+    XPutImage (dpy, shadowPixmap, gc, shadowImage, 0, 0, 0, 0, 
+	       shadowImage->width,
+	       shadowImage->height);
+    *wp = shadowImage->width;
+    *hp = shadowImage->height;
+    XFreeGC (dpy, gc);
+    XDestroyImage (shadowImage);
+    XFreePixmap (dpy, shadowPixmap);
+    return shadowPicture;
+}
 
 win *
 find_win (Display *dpy, Window id)
@@ -56,6 +297,29 @@ paint_root (Display *dpy)
 }
 
 XserverRegion
+win_extents (Display *dpy, win *w)
+{
+    XRectangle	    r;
+    
+    if (!w->shadow)
+    {
+	double	opacity = SHADOW_OPACITY;
+	if (w->mode == WINDOW_TRANS)
+	    opacity = opacity * TRANS_OPACITY;
+	w->shadow = shadow_picture (dpy, opacity, SHADOW_RADIUS, 
+				    w->a.width, w->a.height,
+				    &w->shadow_width, &w->shadow_height);
+	w->shadow_dx = SHADOW_OFFSET_X;
+	w->shadow_dy = SHADOW_OFFSET_Y;
+    }
+    r.x = w->a.x + w->a.border_width + w->shadow_dx;
+    r.y = w->a.y + w->a.border_width + w->shadow_dy;
+    r.width = w->shadow_width;
+    r.height = w->shadow_height;
+    return XFixesCreateRegion (dpy, &r, 1);
+}
+
+XserverRegion
 border_size (Display *dpy, win *w)
 {
     XserverRegion   border;
@@ -77,19 +341,15 @@ paint_all (Display *dpy, XserverRegion region)
 	
 	if (w->a.map_state != IsViewable)
 	    continue;
-	if (w->mode == WINDOW_TRANS)
-	{
-	    w->borderClip = XFixesCreateRegion (dpy, 0, 0);
-	    XFixesUnionRegion (dpy, w->borderClip, region, 0, 0, None, 0, 0);
-	    w->prev_trans = t;
-	    t = w;
-	}
-	else
+	if (w->borderSize)
+	    XFixesDestroyRegion (dpy, w->borderSize);
+	w->borderSize = border_size (dpy, w);
+	if (w->extents)
+	    XFixesDestroyRegion (dpy, w->extents);
+	w->extents = win_extents (dpy, w);
+	if (w->mode != WINDOW_TRANS)
 	{
 	    XFixesSetPictureClipRegion (dpy, rootPicture, 0, 0, region);
-	    if (w->borderSize)
-		XFixesDestroyRegion (dpy, w->borderSize);
-	    w->borderSize = border_size (dpy, w);
 	    XFixesSubtractRegion (dpy, region, region, 0, 0, w->borderSize, 0, 0);
 	    XRenderComposite (dpy, PictOpSrc, w->picture, None, rootPicture,
 			      0, 0, 0, 0, 
@@ -98,13 +358,26 @@ paint_all (Display *dpy, XserverRegion region)
 			      w->a.width,
 			      w->a.height);
 	}
+	w->borderClip = XFixesCreateRegion (dpy, 0, 0);
+	XFixesUnionRegion (dpy, w->borderClip, region, 0, 0, None, 0, 0);
+	w->prev_trans = t;
+	t = w;
     }
     XFixesSetPictureClipRegion (dpy, rootPicture, 0, 0, region);
     paint_root (dpy);
     for (w = t; w; w = w->prev_trans)
     {
 	XFixesSetPictureClipRegion (dpy, rootPicture, 0, 0, w->borderClip);
-	XRenderComposite (dpy, PictOpOver, w->picture, transPicture, rootPicture,
+	if (w->shadow)
+	{
+	    XRenderComposite (dpy, PictOpOver, w->shadow, None, rootPicture,
+			      0, 0, 0, 0,
+			      w->a.x + w->a.border_width + w->shadow_dx,
+			      w->a.y + w->a.border_width + w->shadow_dy,
+			      w->shadow_width, w->shadow_height);
+	}
+	if (w->mode == WINDOW_TRANS)
+	    XRenderComposite (dpy, PictOpOver, w->picture, transPicture, rootPicture,
 			      0, 0, 0, 0, 
 			      w->a.x + w->a.border_width,
 			      w->a.y + w->a.border_width,
@@ -154,7 +427,7 @@ map_win (Display *dpy, Window id)
 	return;
     w->a.map_state = IsViewable;
     w->damage = XDamageCreate (dpy, id, XDamageReportNonEmpty);
-    region = border_size (dpy, w);
+    region = win_extents (dpy, w);
     add_damage (dpy, region);
 }
 
@@ -171,10 +444,10 @@ unmap_win (Display *dpy, Window id)
 	XDamageDestroy (dpy, w->damage);
 	w->damage = None;
     }
-    if (w->borderSize != None)
+    if (w->extents != None)
     {
-	add_damage (dpy, w->borderSize);    /* destroys region */
-	w->borderSize = None;
+	add_damage (dpy, w->extents);    /* destroys region */
+	w->extents = None;
     }
 }
 
@@ -211,7 +484,9 @@ add_win (Display *dpy, Window id, Window prev)
 					 CPSubwindowMode,
 					 &pa);
 					 
+    new->shadow = None;
     new->borderSize = None;
+    new->extents = None;
     if (new->a.override_redirect)
 	new->mode = WINDOW_TRANS;
     else
@@ -234,11 +509,17 @@ configure_win (Display *dpy, XConfigureEvent *ce)
     if (w->a.map_state == IsViewable)
     {
 	damage = XFixesCreateRegion (dpy, 0, 0);
-	if (w->borderSize != None)	
-	    XFixesUnionRegion (dpy, damage, w->borderSize, 0, 0, None, 0, 0);
+	if (w->extents != None)	
+	    XFixesUnionRegion (dpy, damage, w->extents, 0, 0, None, 0, 0);
     }
     w->a.x = ce->x;
     w->a.y = ce->y;
+    if (w->a.width != ce->width || w->a.height != ce->height)
+	if (w->shadow)
+	{
+	    XRenderFreePicture (dpy, w->shadow);
+	    w->shadow = None;
+	}
     w->a.width = ce->width;
     w->a.height = ce->height;
     w->a.border_width = ce->border_width;
@@ -345,6 +626,7 @@ main ()
     XRenderPictureAttributes	pa;
     XRenderColor		c;
     XRectangle	    *expose_rects = 0;
+    GC		    gc;
     int		    size_expose = 0;
     int		    n_expose = 0;
 
