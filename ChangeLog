@@ -1,3 +1,10 @@
+2004-07-08  Ely Levy  <elylevy-xserver@cs.huji.ac.il>
+
+	reviewed by: Keith Packard
+
+	* xcompmgr.c: (get_time_in_milliseconds):
+	Eliminate 'struct timezone tz' as it isn't used.
+
 2004-07-08  Keith Packard  <keithp@keithp.com>
 
 	* xcompmgr.c: (get_time_in_milliseconds), (find_fade),
