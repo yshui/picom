@@ -66,9 +66,11 @@ XserverRegion	allDamage;
 int		root_height, root_width;
 
 #define BACKGROUND_PROP	"_XROOTPMAP_ID"
-#define WINDOW_PLAIN	0
-#define WINDOW_DROP	1
-#define WINDOW_TRANS	2
+
+#define WINDOW_SOLID	0
+#define WINDOW_TRANS	1
+#define WINDOW_ARGB	2
+
 #define TRANS_OPACITY	0.75
 #define SHADOW_RADIUS	15
 #define SHADOW_OPACITY	0.75
@@ -374,21 +376,31 @@ win_extents (Display *dpy, win *w)
 {
     XRectangle	    r;
     
-    if (!w->shadow)
+    if (w->mode == WINDOW_ARGB)
     {
-	double	opacity = SHADOW_OPACITY;
-	if (w->mode == WINDOW_TRANS)
-	    opacity = opacity * TRANS_OPACITY;
-	w->shadow = shadow_picture (dpy, opacity, SHADOW_RADIUS, 
-				    w->a.width, w->a.height,
-				    &w->shadow_width, &w->shadow_height);
-	w->shadow_dx = SHADOW_OFFSET_X;
-	w->shadow_dy = SHADOW_OFFSET_Y;
+	r.x = w->a.x;
+	r.y = w->a.y;
+	r.width = w->a.width + w->a.border_width * 2;
+	r.height = w->a.height + w->a.border_width * 2;
     }
-    r.x = w->a.x + w->a.border_width + w->shadow_dx;
-    r.y = w->a.y + w->a.border_width + w->shadow_dy;
-    r.width = w->shadow_width;
-    r.height = w->shadow_height;
+    else
+    {
+	if (!w->shadow)
+	{
+	    double	opacity = SHADOW_OPACITY;
+	    if (w->mode == WINDOW_TRANS)
+		opacity = opacity * TRANS_OPACITY;
+	    w->shadow = shadow_picture (dpy, opacity, SHADOW_RADIUS, 
+					w->a.width, w->a.height,
+					&w->shadow_width, &w->shadow_height);
+	    w->shadow_dx = SHADOW_OFFSET_X;
+	    w->shadow_dy = SHADOW_OFFSET_Y;
+	}
+	r.x = w->a.x + w->a.border_width + w->shadow_dx;
+	r.y = w->a.y + w->a.border_width + w->shadow_dy;
+	r.width = w->shadow_width;
+	r.height = w->shadow_height;
+    }
     return XFixesCreateRegion (dpy, &r, 1);
 }
 
@@ -443,7 +455,7 @@ paint_all (Display *dpy, XserverRegion region)
 	if (w->extents)
 	    XFixesDestroyRegion (dpy, w->extents);
 	w->extents = win_extents (dpy, w);
-	if (w->mode != WINDOW_TRANS)
+	if (w->mode == WINDOW_SOLID)
 	{
 	    XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, region);
 	    XFixesSubtractRegion (dpy, region, region, 0, 0, w->borderSize, 0, 0);
@@ -474,6 +486,13 @@ paint_all (Display *dpy, XserverRegion region)
 	}
 	if (w->mode == WINDOW_TRANS)
 	    XRenderComposite (dpy, PictOpOver, w->picture, transPicture, rootBuffer,
+			      0, 0, 0, 0, 
+			      w->a.x + w->a.border_width,
+			      w->a.y + w->a.border_width,
+			      w->a.width,
+			      w->a.height);
+	else if (w->mode == WINDOW_ARGB)
+	    XRenderComposite (dpy, PictOpOver, w->picture, None, rootBuffer,
 			      0, 0, 0, 0, 
 			      w->a.x + w->a.border_width,
 			      w->a.y + w->a.border_width,
@@ -556,10 +575,11 @@ unmap_win (Display *dpy, Window id)
 void
 add_win (Display *dpy, Window id, Window prev)
 {
-    win	*new = malloc (sizeof (win));
-    win	**p;
-    XWindowAttributes a;
-    XRenderPictureAttributes pa;
+    win				*new = malloc (sizeof (win));
+    win				**p;
+    XWindowAttributes		a;
+    XRenderPictureAttributes	pa;
+    XRenderPictFormat		*format;
     
     if (!new)
 	return;
@@ -581,12 +601,15 @@ add_win (Display *dpy, Window id, Window prev)
     new->damage = None;
     pa.subwindow_mode = IncludeInferiors;
     if (new->a.class == InputOnly)
+    {
 	new->picture = 0;
+	format = 0;
+    }
     else
     {
+	format = XRenderFindVisualFormat (dpy, new->a.visual);
 	new->picture = XRenderCreatePicture (dpy, id,
-					     XRenderFindVisualFormat (dpy, 
-								      new->a.visual),
+					     format,
 					     CPSubwindowMode,
 					     &pa);
     }
@@ -594,10 +617,12 @@ add_win (Display *dpy, Window id, Window prev)
     new->shadow = None;
     new->borderSize = None;
     new->extents = None;
-    if (new->a.override_redirect)
+    if (format && format->type == PictTypeDirect && format->direct.alphaMask)
+	new->mode = WINDOW_ARGB;
+    else if (new->a.override_redirect)
 	new->mode = WINDOW_TRANS;
     else
-	new->mode = WINDOW_DROP;
+	new->mode = WINDOW_SOLID;
     new->next = *p;
     *p = new;
     if (new->a.map_state == IsViewable)
@@ -816,7 +841,6 @@ main ()
     allDamage = None;
     XGrabServer (dpy);
     XCompositeRedirectSubwindows (dpy, root, CompositeRedirectManual);
-    paint_all (dpy, None);
     XSelectInput (dpy, root, 
 		  SubstructureNotifyMask|
 		  ExposureMask|
@@ -827,6 +851,7 @@ main ()
 	add_win (dpy, children[i], i ? children[i-1] : None);
     XFree (children);
     XUngrabServer (dpy);
+    paint_all (dpy, None);
     last_update = time_in_millis ();
     for (;;)
     {

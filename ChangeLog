@@ -1,3 +1,9 @@
+2003-11-11  Keith Packard  <keithp@keithp.com>
+
+	* xcompmgr.c: (win_extents), (paint_all), (add_win), (main):
+	Detect ARGB windows, don't give them shadows, compose them
+	correctly.
+
 2003-11-10  Keith Packard  <keithp@keithp.com>
 
 	* Makefile:
