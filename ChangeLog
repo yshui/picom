@@ -1,3 +1,10 @@
+2004-09-29  Dan Doel  <dolio@case.edu>
+
+	* xcompmgr.c: (paint_all):
+	Added some small optimizations by Thomas Luebking. paint_all
+	now avoids drawing windows that don't appear on the screen,
+	and doesn't bother drawing shadows on desktop windows.
+
 2004-09-23  Dan Doel  <dolio@case.edu>
 
 	* xcompmgr.1:

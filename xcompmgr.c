@@ -942,6 +942,10 @@ paint_all (Display *dpy, XserverRegion region)
 	/* never painted, ignore it */
 	if (!w->damaged)
 	    continue;
+	/* if invisible, ignore it */
+	if (w->a.x + w->a.width < 1 || w->a.y + w->a.height < 1
+	    || w->a.x >= root_width || w->a.y >= root_height)
+	    continue;
 	if (!w->picture)
 	{
 	    XRenderPictureAttributes	pa;
@@ -1030,6 +1034,9 @@ paint_all (Display *dpy, XserverRegion region)
 	case CompSimple:
 	    break;
 	case CompServerShadows:
+	    /* dont' bother drawing shadows on desktop windows */
+	    if (w->windowType == winDesktopAtom)
+		break;
 	    set_ignore (dpy, NextRequest (dpy));
 	    if (w->opacity != OPAQUE && !w->shadowPict)
 		w->shadowPict = solid_picture (dpy, True,
@@ -1044,7 +1051,8 @@ paint_all (Display *dpy, XserverRegion region)
 			      w->shadow_width, w->shadow_height);
 	    break;
 	case CompClientShadows:
-	    if (w->shadow)
+	    /* don't bother drawing shadows on desktop windows */
+	    if (w->shadow && w->windowType != winDesktopAtom)
 	    {
 		XRenderComposite (dpy, PictOpOver, blackPicture, w->shadow, rootBuffer,
 				  0, 0, 0, 0,
