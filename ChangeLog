@@ -1,5 +1,12 @@
 2003-11-09  Keith Packard  <keithp@keithp.com>
 
+	* xcompmgr.c: (time_in_millis), (main):
+	Add a bit of scheduling to updates; update every 30 ms
+	instead of waiting for more events.  Smooths out window moving.
+	Interval needs to be configurable probably.
+
+2003-11-09  Keith Packard  <keithp@keithp.com>
+
 	* xcompmgr.c: (root_tile):
 	Make sure _XROOTPMAP_ID property is right type, format and length
 	before attempting to use the resulting value.

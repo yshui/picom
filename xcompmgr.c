@@ -732,6 +732,17 @@ expose_root (Display *dpy, Window root, XRectangle *rects, int nrects)
     add_damage (dpy, region);
 }
 
+int
+time_in_millis ()
+{
+    struct timeval  tp;
+
+    gettimeofday (&tp, 0);
+    return(tp.tv_sec * 1000) + (tp.tv_usec / 1000);
+}
+
+#define INTERVAL    30
+
 main ()
 {
     XEvent	    ev;
@@ -751,6 +762,9 @@ main ()
     int		    n_expose = 0;
     struct pollfd   ufd;
     int		    n;
+    int		    last_update;
+    int		    now;
+    int		    timeout;
 
     dpy = XOpenDisplay (0);
     if (!dpy)
@@ -808,6 +822,7 @@ main ()
 	add_win (dpy, children[i], i ? children[i-1] : None);
     XFree (children);
     XUngrabServer (dpy);
+    last_update = time_in_millis ();
     for (;;)
     {
 /*	dump_wins (); */
@@ -873,11 +888,17 @@ main ()
 		break;
 	    }
 	} while (XEventsQueued (dpy, QueuedAfterReading));
-	ufd.fd = ConnectionNumber (dpy);
-	ufd.events = POLLIN;
-	n = poll (&ufd, 1, 30);
-	if (n > 0 && (ufd.revents & POLLIN) && XEventsQueued (dpy, QueuedAfterReading))
-	    continue;
+	now = time_in_millis ();
+	timeout = INTERVAL - (now - last_update);
+	if (timeout > 0)
+	{
+	    ufd.fd = ConnectionNumber (dpy);
+	    ufd.events = POLLIN;
+	    n = poll (&ufd, 1, timeout);
+	    if (n > 0 && (ufd.revents & POLLIN) && XEventsQueued (dpy, QueuedAfterReading))
+		continue;
+	}
+	last_update = time_in_millis();
 	if (allDamage)
 	{
 	    paint_all (dpy, allDamage);
