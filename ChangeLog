@@ -1,3 +1,15 @@
+2004-07-08  Keith Packard  <keithp@keithp.com>
+
+	* xcompmgr.c: (get_time_in_milliseconds), (find_fade),
+	(dequeue_fade), (cleanup_fade), (enqueue_fade), (set_fade),
+	(fade_timeout), (run_fades), (paint_all), (map_win),
+	(finish_unmap_win), (unmap_callback), (unmap_win),
+	(determine_mode), (add_win), (configure_win), (finish_destroy_win),
+	(destroy_callback), (destroy_win), (error), (main):
+	Add fade-in/fade-out support (-f option).
+	Clean up leak of solid alpha picture per redraw of constant-alpha
+	windows.
+
 2004-06-27  Keith Packard  <keithp@keithp.com>
 
 	* xcompmgr.c: (map_win), (unmap_win), (main):

@@ -55,7 +55,9 @@ typedef struct _ignore {
 typedef struct _win {
     struct _win		*next;
     Window		id;
+#if HAS_NAME_WINDOW_PIXMAP
     Pixmap		pixmap;
+#endif
     XWindowAttributes	a;
     int			mode;
     int			damaged;
@@ -84,7 +86,18 @@ typedef struct _conv {
     double  *data;
 } conv;
 
+typedef struct _fade {
+    struct _fade	*next;
+    win			*w;
+    double		cur;
+    double		step;
+    void		(*callback) (Display *dpy, win *w, Bool gone);
+    Display		*dpy;
+    Bool		gone;
+} fade;
+
 win             *list;
+fade		*fades;
 Display		*dpy;
 int		scr;
 Window		root;
@@ -135,9 +148,161 @@ typedef enum _compMode {
     CompClientShadows,	/* use window extents for shadow, blurred */
 } CompMode;
 
+static void
+determine_mode(Display *dpy, win *w);
+    
 CompMode    compMode = CompSimple;
 
 int	    shadowRadius = 12;
+
+double	fade_step =	0.05;
+int	fade_delta =	10;
+int	fade_time =	0;
+Bool	fadeWindows;
+
+int
+get_time_in_milliseconds ()
+{
+    struct timeval  tv;
+    struct timezone tz;
+
+    gettimeofday (&tv, &tz);
+    return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
+
+fade *
+find_fade (win *w)
+{
+    fade    *f;
+    
+    for (f = fades; f; f = f->next)
+    {
+	if (f->w == w)
+	    return f;
+    }
+    return 0;
+}
+
+void
+dequeue_fade (Display *dpy, fade *f)
+{
+    fade    **prev;
+
+    for (prev = &fades; *prev; prev = &(*prev)->next)
+	if (*prev == f)
+	{
+	    *prev = f->next;
+	    if (f->callback)
+		(*f->callback) (dpy, f->w, f->gone);
+	    free (f);
+	    break;
+	}
+}
+
+void
+cleanup_fade (Display *dpy, win *w)
+{
+    fade *f = find_fade (w);
+    if (f)
+	dequeue_fade (dpy, f);
+}
+
+void
+enqueue_fade (Display *dpy, fade *f)
+{
+    if (!fades)
+	fade_time = get_time_in_milliseconds () + fade_delta;
+    f->next = fades;
+    fades = f;
+}
+
+static void
+set_fade (Display *dpy, win *w, Bool in, 
+	  void (*callback) (Display *dpy, win *w, Bool gone),
+	  Bool gone)
+{
+    fade    *f;
+
+    f = find_fade (w);
+    if (!f)
+    {
+	f = malloc (sizeof (fade));
+	f->next = 0;
+	f->w = w;
+	if (in)
+	    f->cur = 0;
+	else
+	    f->cur = 1;
+	enqueue_fade (dpy, f);
+    }
+    if (in)
+        f->step = fade_step;
+    else
+	f->step = -fade_step;
+    f->callback = callback;
+    f->gone = gone;
+    w->opacity = f->cur * OPAQUE;
+#if 0
+    printf ("set_fade start %g step %g\n", f->cur, f->step);
+#endif
+    determine_mode (dpy, w);
+}
+
+int
+fade_timeout (void)
+{
+    int now;
+    int	delta;
+    if (!fades)
+	return -1;
+    now = get_time_in_milliseconds();
+    delta = fade_time - now;
+    if (delta < 0)
+	delta = 0;
+/*    printf ("timeout %d\n", delta); */
+    return delta;
+}
+
+void
+run_fades (Display *dpy)
+{
+    int	    now = get_time_in_milliseconds();
+    fade    *f, *next;
+    int	    steps;
+
+#if 0
+    printf ("run fades\n");
+#endif
+    if (fade_time - now > 0)
+	return;
+    steps = 1 + (now - fade_time) / fade_delta;
+    for (next = fades; f = next; )
+    {
+	win *w = f->w;
+	next = f->next;
+	f->cur += f->step * steps;
+        if (f->cur >= 1)
+	    f->cur = 1;
+	else if (f->cur < 0)
+	    f->cur = 0;
+#if 0
+	printf ("opacity now %g\n", f->cur);
+#endif
+	w->opacity = f->cur * OPAQUE;
+	if (f->step > 0)
+	{
+	    if (f->cur >= 1)
+		dequeue_fade (dpy, f);
+	}
+	else
+	{
+	    if (f->cur <= 0)
+		dequeue_fade (dpy, f);
+	}
+	determine_mode (dpy, w);
+    }
+    fade_time = now + fade_delta;
+}
 
 #define SHADOW_OPACITY	0.75
 #define SHADOW_OFFSET_X	(-shadowRadius * 5 / 4)
@@ -637,7 +802,24 @@ paint_all (Display *dpy, XserverRegion region)
 	if (!w->damaged)
 	    continue;
 	if (!w->picture)
-	    continue;
+	{
+	    XRenderPictureAttributes	pa;
+	    XRenderPictFormat		*format;
+	    Drawable			draw = w->id;
+	    
+#if HAS_NAME_WINDOW_PIXMAP
+	    if (hasNamePixmap && !w->pixmap)
+		w->pixmap = XCompositeNameWindowPixmap (dpy, w->id);
+	    if (w->pixmap)
+		draw = w->pixmap;
+#endif
+	    format = XRenderFindVisualFormat (dpy, w->a.visual);
+	    pa.subwindow_mode = IncludeInferiors;
+	    w->picture = XRenderCreatePicture (dpy, draw,
+					       format,
+					       CPSubwindowMode,
+					       &pa);
+	}
 #if DEBUG_REPAINT
 	printf (" 0x%x", w->id);
 #endif
@@ -722,7 +904,7 @@ paint_all (Display *dpy, XserverRegion region)
 	    }
 	    break;
 	}
-	if (w->opacity != OPAQUE)
+	if (w->opacity != OPAQUE && !w->alphaPict)
 	    w->alphaPict = solid_picture (dpy, False, 
 					  (double) w->opacity / OPAQUE, 0, 0, 0);
 	if (w->mode == WINDOW_TRANS)
@@ -806,7 +988,7 @@ repair_win (Display *dpy, Window id)
 }
 
 static void
-map_win (Display *dpy, Window id, unsigned long sequence)
+map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
 {
     win		*w = find_win (dpy, id);
     Drawable	back;
@@ -815,45 +997,18 @@ map_win (Display *dpy, Window id, unsigned long sequence)
 	return;
     w->a.map_state = IsViewable;
 
-#if HAS_NAME_WINDOW_PIXMAP
-    if (hasNamePixmap)
-    {
-	w->pixmap = XCompositeNameWindowPixmap (dpy, id);
-	back = w->pixmap;
-    }
-    else
-#endif
-    {
-	w->pixmap = 0;
-	back = id;
-    }
-
-    if (w->a.class != InputOnly)
-    {
-	XRenderPictureAttributes	pa;
-	XRenderPictFormat		*format;
-	format = XRenderFindVisualFormat (dpy, w->a.visual);
-	pa.subwindow_mode = IncludeInferiors;
-	w->picture = XRenderCreatePicture (dpy, back,
-					   format,
-					   CPSubwindowMode,
-					   &pa);
-    }
-    
     /* make sure we know if property was changed */
     XSelectInput(dpy, id, PropertyChangeMask);
 
     w->damaged = 0;
     clipChanged = True;
+    if (fade && fadeWindows)
+	set_fade (dpy, w, True, 0, False);
 }
 
 static void
-unmap_win (Display *dpy, Window id)
+finish_unmap_win (Display *dpy, win *w)
 {
-    win *w = find_win (dpy, id);
-
-    if (!w)
-	return;
     w->a.map_state = IsUnmapped;
     w->damaged = 0;
     if (w->extents != None)
@@ -861,13 +1016,15 @@ unmap_win (Display *dpy, Window id)
 	add_damage (dpy, w->extents);    /* destroys region */
 	w->extents = None;
     }
+    
 #if HAS_NAME_WINDOW_PIXMAP
-    if (hasNamePixmap)
+    if (w->pixmap)
     {
 	XFreePixmap (dpy, w->pixmap);
-	w->pixmap = 0;
+	w->pixmap = None;
     }
 #endif
+
     if (w->picture)
     {
 	set_ignore (dpy, NextRequest (dpy));
@@ -877,7 +1034,7 @@ unmap_win (Display *dpy, Window id)
 
     /* don't care about properties anymore */
     set_ignore (dpy, NextRequest (dpy));
-    XSelectInput(dpy, id, 0);
+    XSelectInput(dpy, w->id, 0);
 
     if (w->borderSize)
     {
@@ -899,7 +1056,27 @@ unmap_win (Display *dpy, Window id)
     clipChanged = True;
 }
 
+#if HAS_NAME_WINDOW_PIXMAP
+static void
+unmap_callback (Display *dpy, win *w, Bool gone)
+{
+    finish_unmap_win (dpy, w);
+}
+#endif
 
+static void
+unmap_win (Display *dpy, Window id, Bool fade)
+{
+    win *w = find_win (dpy, id);
+    if (!w)
+	return;
+#if HAS_NAME_WINDOW_PIXMAP
+    if (w->pixmap && fade && fadeWindows)
+	set_fade (dpy, w, False, unmap_callback, False);
+    else
+#endif
+	finish_unmap_win (dpy, w);
+}
 
 /* Get the opacity prop from window
    not found: default
@@ -930,8 +1107,7 @@ get_opacity_prop(Display *dpy, win *w, unsigned int def)
    Future might check for menu flag and other cool things
 */
 
-
-static int 
+static void
 determine_mode(Display *dpy, win *w)
 {
     int mode;
@@ -940,12 +1116,6 @@ determine_mode(Display *dpy, win *w)
 
     /* if trans prop == -1 fall back on  previous tests*/
 
-    if (w->a.override_redirect)
-	default_opacity = TRANSLUCENT;
-    else
-	default_opacity = OPAQUE;
-    
-    w->opacity = get_opacity_prop(dpy, w, default_opacity);
     if (w->alphaPict)
     {
 	XRenderFreePicture (dpy, w->alphaPict);
@@ -978,7 +1148,14 @@ determine_mode(Display *dpy, win *w)
     {
 	mode = WINDOW_SOLID;
     }
-    return mode;
+    w->mode = mode;
+    if (w->extents)
+    {
+	XserverRegion damage;
+	damage = XFixesCreateRegion (dpy, 0, 0);
+	XFixesCopyRegion (dpy, damage, w->extents);
+	add_damage (dpy, damage);
+    }
 }
 
 static void
@@ -1005,6 +1182,9 @@ add_win (Display *dpy, Window id, Window prev)
 	return;
     }
     new->damaged = 0;
+#if HAS_NAME_WINDOW_PIXMAP
+    new->pixmap = None;
+#endif
     new->picture = None;
     if (new->a.class == InputOnly)
     {
@@ -1027,15 +1207,17 @@ add_win (Display *dpy, Window id, Window prev)
     new->shadow_height = 0;
     new->opacity = OPAQUE;
 
-    /* moved mode setting to one place */
-    new->mode = determine_mode(dpy, new);
     new->borderClip = None;
     new->prev_trans = 0;
 
+    /* moved mode setting to one place */
+    new->opacity = get_opacity_prop(dpy, new, OPAQUE);
+    determine_mode (dpy, new);
+    
     new->next = *p;
     *p = new;
     if (new->a.map_state == IsViewable)
-	map_win (dpy, id, new->damage_sequence - 1);
+	map_win (dpy, id, new->damage_sequence - 1, False);
 }
 
 void
@@ -1098,11 +1280,25 @@ configure_win (Display *dpy, XConfigureEvent *ce)
     w->a.x = ce->x;
     w->a.y = ce->y;
     if (w->a.width != ce->width || w->a.height != ce->height)
+    {
+#if HAS_NAME_WINDOW_PIXMAP
+	if (w->pixmap)
+	{
+	    XFreePixmap (dpy, w->pixmap);
+	    w->pixmap = None;
+	    if (w->picture)
+	    {
+		XRenderFreePicture (dpy, w->picture);
+		w->picture = None;
+	    }
+	}
+#endif
 	if (w->shadow)
 	{
 	    XRenderFreePicture (dpy, w->shadow);
 	    w->shadow = None;
 	}
+    }
     w->a.width = ce->width;
     w->a.height = ce->height;
     w->a.border_width = ce->border_width;
@@ -1133,7 +1329,7 @@ circulate_win (Display *dpy, XCirculateEvent *ce)
 }
 
 static void
-destroy_win (Display *dpy, Window id, Bool gone)
+finish_destroy_win (Display *dpy, Window id, Bool gone)
 {
     win	**prev, *w;
 
@@ -1141,7 +1337,7 @@ destroy_win (Display *dpy, Window id, Bool gone)
 	if (w->id == id)
 	{
 	    if (!gone)
-		unmap_win (dpy, id);
+		finish_unmap_win (dpy, w);
 	    *prev = w->next;
 	    if (w->picture)
 	    {
@@ -1149,17 +1345,46 @@ destroy_win (Display *dpy, Window id, Bool gone)
 		XRenderFreePicture (dpy, w->picture);
 	    }
 	    if (w->alphaPict)
+	    {
 		XRenderFreePicture (dpy, w->alphaPict);
+		w->alphaPict = None;
+	    }
 	    if (w->shadowPict)
+	    {
 		XRenderFreePicture (dpy, w->shadowPict);
+		w->shadowPict = None;
+	    }
 	    if (w->damage != None)
 	    {
 		set_ignore (dpy, NextRequest (dpy));
 		XDamageDestroy (dpy, w->damage);
 	    }
+	    cleanup_fade (dpy, w);
 	    free (w);
 	    break;
 	}
+}
+
+#if HAS_NAME_WINDOW_PIXMAP
+static void
+destroy_callback (Display *dpy, win *w, Bool gone)
+{
+    finish_destroy_win (dpy, w->id, gone);
+}
+#endif
+
+static void
+destroy_win (Display *dpy, Window id, Bool gone, Bool fade)
+{
+    win *w = find_win (dpy, id);
+#if HAS_NAME_WINDOW_PIXMAP
+    if (w && w->pixmap && fade && fadeWindows)
+	set_fade (dpy, w, False, destroy_callback, gone);
+    else
+#endif
+    {
+	finish_destroy_win (dpy, id, gone);
+    }
 }
 
 /*
@@ -1221,6 +1446,7 @@ error (Display *dpy, XErrorEvent *ev)
     printf ("error %d request %d minor %d serial %d\n",
 	    ev->error_code, ev->request_code, ev->minor_code, ev->serial);
 
+    abort ();
     return 0;
 }
 
@@ -1317,7 +1543,7 @@ main (int argc, char **argv)
     char	    *display = 0;
     int		    o;
 
-    while ((o = getopt (argc, argv, "d:scn")) != -1)
+    while ((o = getopt (argc, argv, "d:scnf")) != -1)
     {
 	switch (o) {
 	case 'd':
@@ -1331,6 +1557,9 @@ main (int argc, char **argv)
 	    break;
 	case 'n':
 	    compMode = CompSimple;
+	    break;
+	case 'f':
+	    fadeWindows = True;
 	    break;
 	default:
 	    usage (argv[0]);
@@ -1363,13 +1592,8 @@ main (int argc, char **argv)
     }
     XCompositeQueryVersion (dpy, &composite_major, &composite_minor);
 #if HAS_NAME_WINDOW_PIXMAP
-#if 0
-    /*
-     * Don't use this yet; we don't have set semantics for new pixmaps
-     */
     if (composite_major > 0 || composite_minor >= 2)
 	hasNamePixmap = True;
-#endif
 #endif
 
     if (!XDamageQueryExtension (dpy, &damage_event, &damage_error))
@@ -1415,11 +1639,22 @@ main (int argc, char **argv)
 	add_win (dpy, children[i], i ? children[i-1] : None);
     XFree (children);
     XUngrabServer (dpy);
+    ufd.fd = ConnectionNumber (dpy);
+    ufd.events = POLLIN;
     paint_all (dpy, None);
     for (;;)
     {
 	/*	dump_wins (); */
 	do {
+            if (!QLength (dpy))
+            {
+        	 if (poll (&ufd, 1, fade_timeout()) == 0)
+		 {
+		    run_fades (dpy);
+		    break;
+		 }
+	    }
+
 	    XNextEvent (dpy, &ev);
 	    if (ev.type & 0x7f != KeymapNotify)
 		discard_ignore (dpy, ev.xany.serial);
@@ -1435,19 +1670,19 @@ main (int argc, char **argv)
 		configure_win (dpy, &ev.xconfigure);
 		break;
 	    case DestroyNotify:
-		destroy_win (dpy, ev.xdestroywindow.window, True);
+		destroy_win (dpy, ev.xdestroywindow.window, True, True);
 		break;
 	    case MapNotify:
-		map_win (dpy, ev.xmap.window, ev.xmap.serial);
+		map_win (dpy, ev.xmap.window, ev.xmap.serial, True);
 		break;
 	    case UnmapNotify:
-		unmap_win (dpy, ev.xunmap.window);
+		unmap_win (dpy, ev.xunmap.window, True);
 		break;
 	    case ReparentNotify:
 		if (ev.xreparent.parent == root)
 		    add_win (dpy, ev.xreparent.window, 0);
 		else
-		    destroy_win (dpy, ev.xreparent.window, False);
+		    destroy_win (dpy, ev.xreparent.window, False, True);
 		break;
 	    case CirculateNotify:
 		circulate_win (dpy, &ev.xcirculate);
@@ -1504,14 +1739,8 @@ main (int argc, char **argv)
 		    win * w = find_win(dpy, ev.xproperty.window);
 		    if (w)
 		    {
-			w->mode = determine_mode(dpy, w);
-			if (w->extents)
-			{
-			    XserverRegion damage;
-			    damage = XFixesCreateRegion (dpy, 0, 0);
-			    XFixesCopyRegion (dpy, damage, w->extents);
-			    add_damage (dpy, damage);
-			}
+			w->opacity = get_opacity_prop(dpy, w, OPAQUE);
+			determine_mode(dpy, w);
 		    }
 		}
 		break;
