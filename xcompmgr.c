@@ -348,7 +348,7 @@ run_fades (Display *dpy)
 	    {
 		w->opacity = f->finish*OPAQUE;
 		dequeue_fade (dpy, f);
-	}
+	    }
 	}
 	else
 	{
@@ -356,7 +356,7 @@ run_fades (Display *dpy)
 	    {
 		w->opacity = f->finish*OPAQUE;
 		dequeue_fade (dpy, f);
-	}
+	    }
 	}
 	determine_mode (dpy, w);
 	if (w->shadow)
@@ -677,11 +677,20 @@ solid_picture (Display *dpy, Bool argb, double a, double r, double g, double b)
     XRenderColor		c;
 
     pixmap = XCreatePixmap (dpy, root, 1, 1, argb ? 32 : 8);
+    if (!pixmap)
+	return None;
+
     pa.repeat = True;
     picture = XRenderCreatePicture (dpy, pixmap,
 				    XRenderFindStandardFormat (dpy, argb ? PictStandardARGB32 : PictStandardA8),
 				    CPRepeat,
 				    &pa);
+    if (!picture)
+    {
+	XFreePixmap (dpy, pixmap);
+	return None;
+    }
+
     c.alpha = a * 0xffff;
     c.red = r * 0xffff;
     c.green = g * 0xffff;
@@ -1257,7 +1266,7 @@ get_opacity_prop(Display *dpy, win *w, unsigned int def)
     int result = XGetWindowProperty(dpy, w->id, opacityAtom, 0L, 1L, False, 
 		       XA_CARDINAL, &actual, &format, 
 				    &n, &left, &data);
-    if (result == Success && data != None)
+    if (result == Success && data != NULL)
     {
 	unsigned int i;
 	memcpy (&i, data, sizeof (unsigned int));
@@ -1360,7 +1369,7 @@ static Atom
 determine_wintype (Display *dpy, Window w)
 {
     Window       root_return, parent_return;
-    Window      *children;
+    Window      *children = NULL;
     unsigned int nchildren, i;
     Atom         type;
 
@@ -1372,6 +1381,8 @@ determine_wintype (Display *dpy, Window w)
 			    &nchildren))
     {
 	/* XQueryTree failed. */
+	if (children)
+	    XFree ((void *)children);
 	return winNormalAtom;
     }
 
@@ -1381,6 +1392,9 @@ determine_wintype (Display *dpy, Window w)
 	if (type != winNormalAtom)
 	    return type;
     }
+
+    if (children)
+	XFree ((void *)children);
 
     return winNormalAtom;
 }
@@ -1552,6 +1566,9 @@ circulate_win (Display *dpy, XCirculateEvent *ce)
 {
     win	    *w = find_win (dpy, ce->window);
     Window  new_above;
+
+    if (!w)
+	return;
 
     if (ce->place == PlaceOnTop)
 	new_above = list->id;

@@ -1,3 +1,9 @@
+2004-09-22  Dan Doel  <dolio@case.edu>
+
+	* xcompmgr.c: (run_fades), (solid_picture), (get_opacity_prop),
+	(determine_wintype), (circulate_win):
+	Miscellaneous code cleanup and checks for failed allocations.
+
 2004-09-21  Dan Doel  <dolio@case.edu>
 
 	* xcompmgr.c: (presum_gaussian), (make_shadow), (main):
