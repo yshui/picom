@@ -35,6 +35,7 @@ int		scr;
 Window		root;
 Picture		rootPicture;
 Picture		transPicture;
+Picture		rootTile;
 XserverRegion	allDamage;
 
 #define WINDOW_PLAIN	0
@@ -285,15 +286,58 @@ find_win (Display *dpy, Window id)
     return 0;
 }
 
+Picture
+root_tile (Display *dpy)
+{
+    Picture	    picture;
+    Atom	    actual_type;
+    Pixmap	    pixmap;
+    int		    actual_format;
+    unsigned long   nitems;
+    unsigned long   bytes_after;
+    unsigned char   *prop;
+    Bool	    fill;
+    XRenderPictureAttributes	pa;
+
+    if (XGetWindowProperty (dpy, root, XInternAtom (dpy, "_XROOTPMAP_ID", False),
+			    0, 4, False, AnyPropertyType,
+			    &actual_type, &actual_format, &nitems, &bytes_after, &prop) == Success)
+    {
+	memcpy (&pixmap, prop, 4);
+	XFree (prop);
+	fill = False;
+    }
+    else
+    {
+	pixmap = XCreatePixmap (dpy, root, 1, 1, DefaultDepth (dpy, scr));
+	fill = True;
+    }
+    pa.repeat = True;
+    picture = XRenderCreatePicture (dpy, pixmap,
+				    XRenderFindVisualFormat (dpy,
+							     DefaultVisual (dpy, scr)),
+				    CPRepeat, &pa);
+    if (fill)
+    {
+	XRenderColor    c;
+	
+	c.red = c.green = c.blue = 0x8080;
+	c.alpha = 0xffff;
+	XRenderFillRectangle (dpy, PictOpSrc, picture, &c, 
+			      0, 0, 1, 1);
+    }
+    return picture;
+}
+
 void
 paint_root (Display *dpy)
 {
-    XRenderColor    c;
+    if (!rootTile)
+	rootTile = root_tile (dpy);
     
-    c.red = c.green = c.blue = 0x8080;
-    c.alpha = 0xffff;
-    XRenderFillRectangle (dpy, PictOpSrc, rootPicture, &c, 
-			  0, 0, 32767, 32767);
+    XRenderComposite (dpy, PictOpSrc,
+		      rootTile, None, rootPicture,
+		      0, 0, 0, 0, 0, 0, 32767, 32767);
 }
 
 XserverRegion
