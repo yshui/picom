@@ -37,18 +37,27 @@
 #include <time.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xatom.h>
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/Xdamage.h>
 #include <X11/extensions/Xrender.h>
 
+typedef struct _ignore {
+    struct _ignore	*next;
+    unsigned long	sequence;
+} ignore;
+
 typedef struct _win {
     struct _win		*next;
     Window		id;
+    Pixmap		pixmap;
     XWindowAttributes	a;
     int			mode;
     int			damaged;
     Damage		damage;
     Picture		picture;
+    Picture		alphaPict;
+    Picture		shadowPict;
     XserverRegion	borderSize;
     XserverRegion	extents;
     Picture		shadow;
@@ -56,6 +65,7 @@ typedef struct _win {
     int			shadow_dy;
     int			shadow_width;
     int			shadow_height;
+    unsigned int	opacity;
 
     unsigned long	damage_sequence;    /* sequence when damage was created */
 
@@ -75,20 +85,27 @@ int		scr;
 Window		root;
 Picture		rootPicture;
 Picture		rootBuffer;
-Picture		transPicture;
 Picture		blackPicture;
+Picture		transBlackPicture;
 Picture		rootTile;
 XserverRegion	allDamage;
 Bool		clipChanged;
+Bool		hasNamePixmap;
 int		root_height, root_width;
-
+ignore		*ignore_head, **ignore_tail = &ignore_head;
+int		xfixes_event, xfixes_error;
+int		damage_event, damage_error;
+int		composite_event, composite_error;
+int		render_event, render_error;
 
 /* find these once and be done with it */
-Atom            transPropAtom;
-Atom            intAtom;
+Atom		opacityAtom;
 
-/* translucency property name */
-#define TRANS_PROP "CM_TRANSLUCENCY"
+/* opacity property name; sometime soon I'll write up an EWMH spec for it */
+#define OPACITY_PROP	"_NET_WM_WINDOW_OPACITY"
+
+#define TRANSLUCENT	0xe0000000
+#define OPAQUE		0xffffffff
 
 conv            *gaussianMap;
 
@@ -97,14 +114,19 @@ conv            *gaussianMap;
 #define WINDOW_ARGB	2
 
 #define TRANS_OPACITY	0.75
-#define SHADOW_RADIUS	8
-#define SHADOW_OPACITY	0.75
-#define SHADOW_OFFSET_X	(-SHADOW_RADIUS * 3 / 2)
-#define SHADOW_OFFSET_Y	(-SHADOW_RADIUS * 2 / 2)
 
 #define DEBUG_REPAINT 0
 #define DEBUG_EVENTS 0
 #define MONITOR_REPAINT 0
+
+#define SHADOWS		1
+#define SHARP_SHADOW	0
+
+#if SHADOWS
+#define SHADOW_RADIUS	12
+#define SHADOW_OPACITY	0.75
+#define SHADOW_OFFSET_X	(-SHADOW_RADIUS * 5 / 4)
+#define SHADOW_OFFSET_Y	(-SHADOW_RADIUS * 5 / 4)
 
 static double
 gaussian (double r, double x, double y)
@@ -127,6 +149,7 @@ make_gaussian_map (Display *dpy, double r)
     c = malloc (sizeof (conv) + size * size * sizeof (double));
     c->size = size;
     c->data = (double *) (c + 1);
+    t = 0.0;
     for (y = 0; y < size; y++)
 	for (x = 0; x < size; x++)
 	{
@@ -228,6 +251,8 @@ make_shadow (Display *dpy, double opacity, int width, int height)
     int		    x_diff;
     
     data = malloc (swidth * sheight * sizeof (unsigned char));
+    if (!data)
+	return 0;
     ximage = XCreateImage (dpy,
 			   DefaultVisual(dpy, DefaultScreen(dpy)),
 			   8,
@@ -235,6 +260,11 @@ make_shadow (Display *dpy, double opacity, int width, int height)
 			   0,
 			   (char *) data,
 			   swidth, sheight, 8, swidth * sizeof (unsigned char));
+    if (!ximage)
+    {
+	free (data);
+	return 0;
+    }
     /*
      * Build the gaussian in sections
      */
@@ -277,13 +307,6 @@ make_shadow (Display *dpy, double opacity, int width, int height)
 	    d = sum_gaussian (gaussianMap, opacity, center, y - center, width, height);
 	    memset (&data[y * swidth + gsize], d, x_diff);
 	    memset (&data[(sheight - y - 1) * swidth + gsize], d, x_diff);
-#if 0
-	    for (x = gsize; x < swidth - gsize; x++)
-	    {
-		data[y * swidth + x] = d;
-		data[(sheight - y - 1) * swidth + x] = d;
-	    }
-#endif
 	}
     }
 
@@ -301,30 +324,28 @@ make_shadow (Display *dpy, double opacity, int width, int height)
 	}
     }
 
-    /*
-     * center
-     */
-
-    d = sum_gaussian (gaussianMap, opacity, center, center, width, height);
-    for (y = ylimit; y < sheight - ylimit; y++)
-	for (x = xlimit; x < swidth - xlimit; x++)
-	    data[y * swidth + x] = d;
-
     return ximage;
 }
 
 static Picture
 shadow_picture (Display *dpy, double opacity, int width, int height, int *wp, int *hp)
 {
-    XImage  *shadowImage = make_shadow (dpy, opacity, width, height);
-    Pixmap  shadowPixmap = XCreatePixmap (dpy, root, 
-					  shadowImage->width,
-					  shadowImage->height,
-					  8);
-    Picture shadowPicture = XRenderCreatePicture (dpy, shadowPixmap,
-						  XRenderFindStandardFormat (dpy, PictStandardA8),
-						  0, 0);
-    GC	    gc = XCreateGC (dpy, shadowPixmap, 0, 0);
+    XImage  *shadowImage;
+    Pixmap  shadowPixmap;
+    Picture shadowPicture;
+    GC	    gc;
+    
+    shadowImage = make_shadow (dpy, opacity, width, height);
+    if (!shadowImage)
+	return None;
+    shadowPixmap = XCreatePixmap (dpy, root, 
+				  shadowImage->width,
+				  shadowImage->height,
+				  8);
+    shadowPicture = XRenderCreatePicture (dpy, shadowPixmap,
+					  XRenderFindStandardFormat (dpy, PictStandardA8),
+					  0, 0);
+    gc = XCreateGC (dpy, shadowPixmap, 0, 0);
     
     XPutImage (dpy, shadowPixmap, gc, shadowImage, 0, 0, 0, 0, 
 	       shadowImage->width,
@@ -335,6 +356,68 @@ shadow_picture (Display *dpy, double opacity, int width, int height, int *wp, in
     XDestroyImage (shadowImage);
     XFreePixmap (dpy, shadowPixmap);
     return shadowPicture;
+}
+
+#endif /* SHADOWS */
+
+Picture
+solid_picture (Display *dpy, Bool argb, double a, double r, double g, double b)
+{
+    Pixmap			pixmap;
+    Picture			picture;
+    XRenderPictureAttributes	pa;
+    XRenderColor		c;
+
+    pixmap = XCreatePixmap (dpy, root, 1, 1, argb ? 32 : 8);
+    pa.repeat = True;
+    picture = XRenderCreatePicture (dpy, pixmap,
+				    XRenderFindStandardFormat (dpy, argb ? PictStandardARGB32 : PictStandardA8),
+				    CPRepeat,
+				    &pa);
+    c.alpha = a * 0xffff;
+    c.red = r * 0xffff;
+    c.green = g * 0xffff;
+    c.blue = b * 0xffff;
+    XRenderFillRectangle (dpy, PictOpSrc, picture, &c, 0, 0, 1, 1);
+    XFreePixmap (dpy, pixmap);
+    return picture;
+}
+
+void
+discard_ignore (Display *dpy, unsigned long sequence)
+{
+    while (ignore_head)
+    {
+	if ((long) (sequence - ignore_head->sequence) > 0)
+	{
+	    ignore  *next = ignore_head->next;
+	    free (ignore_head);
+	    ignore_head = next;
+	    if (!ignore_head)
+		ignore_tail = &ignore_head;
+	}
+	else
+	    break;
+    }
+}
+
+void
+set_ignore (Display *dpy, unsigned long sequence)
+{
+    ignore  *i = malloc (sizeof (ignore));
+    if (!i)
+	return;
+    i->sequence = sequence;
+    i->next = 0;
+    *ignore_tail = i;
+    ignore_tail = &i->next;
+}
+
+int
+should_ignore (Display *dpy, unsigned long sequence)
+{
+    discard_ignore (dpy, sequence);
+    return ignore_head && ignore_head->sequence == sequence;
 }
 
 static win *
@@ -424,10 +507,21 @@ win_extents (Display *dpy, win *w)
     r.y = w->a.y;
     r.width = w->a.width + w->a.border_width * 2;
     r.height = w->a.height + w->a.border_width * 2;
+#if SHADOWS
+#if !SHARP_SHADOW
     if (w->mode != WINDOW_ARGB)
+#endif
     {
 	XRectangle  sr;
 	
+#if SHARP_SHADOW
+	w->shadow_dx = 2;
+	w->shadow_dy = 7;
+	w->shadow_width = w->a.width;
+	w->shadow_height = w->a.height;
+#else
+	w->shadow_dx = SHADOW_OFFSET_X;
+	w->shadow_dy = SHADOW_OFFSET_Y;
 	if (!w->shadow)
 	{
 	    double	opacity = SHADOW_OPACITY;
@@ -437,9 +531,8 @@ win_extents (Display *dpy, win *w)
 					w->a.width + w->a.border_width * 2,
 					w->a.height + w->a.border_width * 2,
 					&w->shadow_width, &w->shadow_height);
-	    w->shadow_dx = SHADOW_OFFSET_X;
-	    w->shadow_dy = SHADOW_OFFSET_Y;
 	}
+#endif
 	sr.x = w->a.x + w->shadow_dx;
 	sr.y = w->a.y + w->shadow_dy;
 	sr.width = w->shadow_width;
@@ -454,11 +547,12 @@ win_extents (Display *dpy, win *w)
 	    r.height = (r.y + r.height) - sr.y;
 	    r.y = sr.y;
 	}
-	if (sr.width > r.width)
-	    r.width = sr.width;
-	if (sr.height > r.height)
-	    r.height = sr.height;
+	if (sr.x + sr.width > r.x + r.width)
+	    r.width = sr.x + sr.width - r.x;
+	if (sr.y + sr.height > r.y + r.height)
+	    r.height = sr.y + sr.height - r.y;
     }
+#endif
     return XFixesCreateRegion (dpy, &r, 1);
 }
 
@@ -466,8 +560,17 @@ static XserverRegion
 border_size (Display *dpy, win *w)
 {
     XserverRegion   border;
+    /*
+     * if window doesn't exist anymore,  this will generate an error
+     * as well as not generate a region.  Perhaps a better XFixes
+     * architecture would be to have a request that copies instead
+     * of creates, that way you'd just end up with an empty region
+     * instead of an invalid XID.
+     */
+    set_ignore (dpy, NextRequest (dpy));
     border = XFixesCreateRegionFromWindow (dpy, w->id, WindowRegionBounding);
     /* translate this */
+    set_ignore (dpy, NextRequest (dpy));
     XFixesTranslateRegion (dpy, border,
 			   w->a.x + w->a.border_width,
 			   w->a.y + w->a.border_width);
@@ -527,6 +630,7 @@ paint_all (Display *dpy, XserverRegion region)
 	{
 	    if (w->borderSize)
 	    {
+		set_ignore (dpy, NextRequest (dpy));
 		XFixesDestroyRegion (dpy, w->borderSize);
 		w->borderSize = None;
 	    }
@@ -548,7 +652,9 @@ paint_all (Display *dpy, XserverRegion region)
 	if (w->mode == WINDOW_SOLID)
 	{
 	    XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, region);
+	    set_ignore (dpy, NextRequest (dpy));
 	    XFixesSubtractRegion (dpy, region, region, w->borderSize);
+	    set_ignore (dpy, NextRequest (dpy));
 	    XRenderComposite (dpy, PictOpSrc, w->picture, None, rootBuffer,
 			      0, 0, 0, 0, 
 			      w->a.x + w->a.border_width,
@@ -573,6 +679,21 @@ paint_all (Display *dpy, XserverRegion region)
     for (w = t; w; w = w->prev_trans)
     {
 	XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, w->borderClip);
+#if SHADOWS
+#if SHARP_SHADOW
+	set_ignore (dpy, NextRequest (dpy));
+	if (w->opacity != OPAQUE && !w->shadowPict)
+	    w->shadowPict = solid_picture (dpy, True,
+					   (double) w->opacity / OPAQUE * 0.3,
+					   0, 0, 0);
+	XRenderComposite (dpy, PictOpOver, 
+			  w->shadowPict ? w->shadowPict : transBlackPicture,
+			  w->picture, rootBuffer,
+			  0, 0, 0, 0,
+			  w->a.x + w->shadow_dx,
+			  w->a.y + w->shadow_dy,
+			  w->shadow_width, w->shadow_height);
+#else
 	if (w->shadow)
 	{
 	    XRenderComposite (dpy, PictOpOver, blackPicture, w->shadow, rootBuffer,
@@ -581,20 +702,31 @@ paint_all (Display *dpy, XserverRegion region)
 			      w->a.y + w->shadow_dy,
 			      w->shadow_width, w->shadow_height);
 	}
+#endif
+#endif /* SHADOWS */
+	if (w->opacity != OPAQUE)
+	    w->alphaPict = solid_picture (dpy, False, 
+					  (double) w->opacity / OPAQUE, 0, 0, 0);
 	if (w->mode == WINDOW_TRANS)
-	    XRenderComposite (dpy, PictOpOver, w->picture, transPicture, rootBuffer,
+	{
+	    set_ignore (dpy, NextRequest (dpy));
+	    XRenderComposite (dpy, PictOpOver, w->picture, w->alphaPict, rootBuffer,
 			      0, 0, 0, 0, 
 			      w->a.x + w->a.border_width,
 			      w->a.y + w->a.border_width,
 			      w->a.width,
 			      w->a.height);
+	}
 	else if (w->mode == WINDOW_ARGB)
-	    XRenderComposite (dpy, PictOpOver, w->picture, None, rootBuffer,
+	{
+	    set_ignore (dpy, NextRequest (dpy));
+	    XRenderComposite (dpy, PictOpOver, w->picture, w->alphaPict, rootBuffer,
 			      0, 0, 0, 0, 
 			      w->a.x + w->a.border_width,
 			      w->a.y + w->a.border_width,
 			      w->a.width,
 			      w->a.height);
+	}
 	XFixesDestroyRegion (dpy, w->borderClip);
 	w->borderClip = None;
     }
@@ -630,15 +762,27 @@ repair_win (Display *dpy, Window id)
     if (!w->damaged)
     {
 	parts = win_extents (dpy, w);
+	set_ignore (dpy, NextRequest (dpy));
 	XDamageSubtract (dpy, w->damage, None, None);
     }
     else
     {
+	XserverRegion	o;
 	parts = XFixesCreateRegion (dpy, 0, 0);
+	set_ignore (dpy, NextRequest (dpy));
 	XDamageSubtract (dpy, w->damage, None, parts);
 	XFixesTranslateRegion (dpy, parts,
 			       w->a.x + w->a.border_width,
 			       w->a.y + w->a.border_width);
+#if SHADOWS
+#if SHARP_SHADOW
+	o = XFixesCreateRegion (dpy, 0, 0);
+	XFixesCopyRegion (dpy, o, parts);
+	XFixesTranslateRegion (dpy, o, w->shadow_dx, w->shadow_dy);
+	XFixesUnionRegion (dpy, parts, parts, o);
+	XFixesDestroyRegion (dpy, o);
+#endif
+#endif
     }
     add_damage (dpy, parts);
     w->damaged = 1;
@@ -647,12 +791,36 @@ repair_win (Display *dpy, Window id)
 static void
 map_win (Display *dpy, Window id, unsigned long sequence)
 {
-    win		    *w = find_win (dpy, id);
+    win		*w = find_win (dpy, id);
+    Drawable	back;
 
     if (!w)
 	return;
     w->a.map_state = IsViewable;
 
+    if (hasNamePixmap)
+    {
+	w->pixmap = XCompositeNameWindowPixmap (dpy, id);
+	back = w->pixmap;
+    }
+    else
+    {
+	w->pixmap = 0;
+	back = id;
+    }
+
+    if (w->a.class != InputOnly)
+    {
+	XRenderPictureAttributes	pa;
+	XRenderPictFormat		*format;
+	format = XRenderFindVisualFormat (dpy, w->a.visual);
+	pa.subwindow_mode = IncludeInferiors;
+	w->picture = XRenderCreatePicture (dpy, back,
+					   format,
+					   CPSubwindowMode,
+					   &pa);
+    }
+    
     /* make sure we know if property was changed */
     XSelectInput(dpy, id, PropertyChangeMask);
 
@@ -674,37 +842,63 @@ unmap_win (Display *dpy, Window id)
 	add_damage (dpy, w->extents);    /* destroys region */
 	w->extents = None;
     }
+    if (hasNamePixmap)
+    {
+	XFreePixmap (dpy, w->pixmap);
+	w->pixmap = 0;
+    }
+    if (w->picture)
+	XRenderFreePicture (dpy, w->picture);
 
     /* don't care about properties anymore */
+    set_ignore (dpy, NextRequest (dpy));
     XSelectInput(dpy, id, 0);
+
+    if (w->borderSize)
+    {
+	set_ignore (dpy, NextRequest (dpy));
+    	XFixesDestroyRegion (dpy, w->borderSize);
+    	w->borderSize = None;
+    }
+    if (w->shadow)
+    {
+	XRenderFreePicture (dpy, w->shadow);
+	w->shadow = None;
+    }
+    if (w->borderClip)
+    {
+	XFixesDestroyRegion (dpy, w->borderClip);
+	w->borderClip = None;
+    }
+
     clipChanged = True;
 }
 
 
 
-/* Get the translucency prop from window
-   not found: -1
+/* Get the opacity prop from window
+   not found: default
    otherwise the value
-
  */
-static int
-get_trans_prop(Display *dpy, win *w)
+static unsigned int
+get_opacity_prop(Display *dpy, win *w, unsigned int def)
 {
-   Atom actual;
+    Atom actual;
     int format;
     unsigned long n, left;
-    
+
     char *data;
-    XGetWindowProperty(dpy, w->id, transPropAtom, 0L, 1L, False, intAtom, &actual, &format, 
+    XGetWindowProperty(dpy, w->id, opacityAtom, 0L, 1L, False, 
+		       XA_CARDINAL, &actual, &format, 
 		       &n, &left, (unsigned char **) &data);
     if (data != None)
     {
-      int i = (int) *data;
-      XFree( (void *) data);
-      return i;
+	unsigned int i;
+	memcpy (&i, data, sizeof (unsigned int));
+	XFree( (void *) data);
+	return i;
     }
-    return -1;
-
+    return def;
 }
 
 /* determine mode for window all in one place.
@@ -716,53 +910,48 @@ static int
 determine_mode(Display *dpy, win *w)
 {
     int mode;
+    XRenderPictFormat *format;
+    unsigned int default_opacity;
 
     /* if trans prop == -1 fall back on  previous tests*/
 
-    int p = get_trans_prop(dpy, w);
-    if  (  p  != -1 )
+    if (w->a.override_redirect)
+	default_opacity = TRANSLUCENT;
+    else
+	default_opacity = OPAQUE;
+    
+    w->opacity = get_opacity_prop(dpy, w, default_opacity);
+    if (w->alphaPict)
     {
-      if (p > 0)
-	{
-        /* don't really care about the value as long as > 0 */
-	  mode = WINDOW_TRANS;
-	}
-      else
-	{
-	  mode = WINDOW_SOLID;
-	}
+	XRenderFreePicture (dpy, w->alphaPict);
+	w->alphaPict = None;
+    }
+    if (w->shadowPict)
+    {
+	XRenderFreePicture (dpy, w->shadowPict);
+	w->shadowPict = None;
     }
 
-    
-
-    else 
+    if (w->a.class == InputOnly)
     {
-      XRenderPictFormat *format;
-      if (w->a.class == InputOnly)
-      {
 	format = 0;
-      }
-      else
-      {
+    }
+    else
+    {
 	format = XRenderFindVisualFormat (dpy, w->a.visual);
-      }
+    }
 
-
-
-      if (format && format->type == PictTypeDirect && format->direct.alphaMask)
-      {
+    if (format && format->type == PictTypeDirect && format->direct.alphaMask)
+    {
 	mode = WINDOW_ARGB;
-      }
-      else if (w->a.override_redirect)
-      {
-	/* changed this as a lot of window managers set this for all top
-           level windows */
+    }
+    else if (w->opacity != OPAQUE)
+    {
 	mode = WINDOW_TRANS;
-      }
-      else
-      {
+    }
+    else
+    {
 	mode = WINDOW_SOLID;
-      }
     }
     return mode;
 }
@@ -772,8 +961,6 @@ add_win (Display *dpy, Window id, Window prev)
 {
     win				*new = malloc (sizeof (win));
     win				**p;
-    XRenderPictureAttributes	pa;
-    XRenderPictFormat		*format;
     
     if (!new)
 	return;
@@ -786,43 +973,39 @@ add_win (Display *dpy, Window id, Window prev)
     else
 	p = &list;
     new->id = id;
+    set_ignore (dpy, NextRequest (dpy));
     if (!XGetWindowAttributes (dpy, id, &new->a))
     {
 	free (new);
 	return;
     }
-    new->damage = None;
     new->damaged = 0;
-    new->damage = None;
-    pa.subwindow_mode = IncludeInferiors;
+    new->picture = None;
     if (new->a.class == InputOnly)
     {
-	new->picture = 0;
-	format = 0;
 	new->damage_sequence = 0;
+	new->damage = None;
     }
     else
     {
-	format = XRenderFindVisualFormat (dpy, new->a.visual);
-	new->picture = XRenderCreatePicture (dpy, id,
-					     format,
-					     CPSubwindowMode,
-					     &pa);
 	new->damage_sequence = NextRequest (dpy);
 	new->damage = XDamageCreate (dpy, id, XDamageReportNonEmpty);
     }
-					 
+    new->alphaPict = None;
+    new->shadowPict = None;
+    new->borderSize = None;
+    new->extents = None;
     new->shadow = None;
     new->shadow_dx = 0;
     new->shadow_dy = 0;
     new->shadow_width = 0;
     new->shadow_height = 0;
-    new->borderSize = None;
-    new->extents = None;
-
+    new->opacity = OPAQUE;
 
     /* moved mode setting to one place */
     new->mode = determine_mode(dpy, new);
+    new->borderClip = None;
+    new->prev_trans = 0;
 
     new->next = *p;
     *p = new;
@@ -936,9 +1119,19 @@ destroy_win (Display *dpy, Window id, Bool gone)
 		unmap_win (dpy, id);
 	    *prev = w->next;
 	    if (w->picture)
+	    {
+		set_ignore (dpy, NextRequest (dpy));
 		XRenderFreePicture (dpy, w->picture);
+	    }
+	    if (w->alphaPict)
+		XRenderFreePicture (dpy, w->alphaPict);
+	    if (w->shadowPict)
+		XRenderFreePicture (dpy, w->shadowPict);
 	    if (w->damage != None)
+	    {
+		set_ignore (dpy, NextRequest (dpy));
 		XDamageDestroy (dpy, w->damage);
+	    }
 	    free (w);
 	    break;
 	}
@@ -973,8 +1166,35 @@ damage_win (Display *dpy, XDamageNotifyEvent *de)
 static int
 error (Display *dpy, XErrorEvent *ev)
 {
-    printf ("error %d request %d minor %d\n",
-	    ev->error_code, ev->request_code, ev->minor_code);
+    int	    o;
+    char    *name = 0;
+    
+    if (should_ignore (dpy, ev->serial))
+	return 0;
+    
+    
+    o = ev->error_code - xfixes_error;
+    switch (o) {
+    case BadRegion: name = "BadRegion";	break;
+    default: break;
+    }
+    o = ev->error_code - damage_error;
+    switch (o) {
+    case BadDamage: name = "BadDamage";	break;
+    default: break;
+    }
+    o = ev->error_code - render_error;
+    switch (o) {
+    case BadPictFormat: name ="BadPictFormat"; break;
+    case BadPicture: name ="BadPicture"; break;
+    case BadPictOp: name ="BadPictOp"; break;
+    case BadGlyphSet: name ="BadGlyphSet"; break;
+    case BadGlyph: name ="BadGlyph"; break;
+    default: break;
+    }
+	
+    printf ("error %d request %d minor %d serial %d\n",
+	    ev->error_code, ev->request_code, ev->minor_code, ev->serial);
 
     return 0;
 }
@@ -996,7 +1216,6 @@ ev_serial (XEvent *ev)
     return NextRequest (ev->xany.display);
 }
 
-int		    damage_event, damage_error;
 
 static char *
 ev_name (XEvent *ev)
@@ -1046,14 +1265,12 @@ int
 main (int argc, char **argv)
 {
     XEvent	    ev;
-    int		    event_base, error_base;
     Window	    root_return, parent_return;
     Window	    *children;
     Pixmap	    transPixmap;
     Pixmap	    blackPixmap;
     unsigned int    nchildren;
     int		    i;
-    int		    xfixes_event, xfixes_error;
     XRenderPictureAttributes	pa;
     XRenderColor		c;
     XRectangle	    *expose_rects = 0;
@@ -1064,6 +1281,7 @@ main (int argc, char **argv)
     int		    last_update;
     int		    now;
     int		    p;
+    int		    composite_major, composite_minor;
 
     dpy = XOpenDisplay (0);
     if (!dpy)
@@ -1078,46 +1296,22 @@ main (int argc, char **argv)
     scr = DefaultScreen (dpy);
     root = RootWindow (dpy, scr);
 
-    /* get atoms */
-    transPropAtom = XInternAtom(dpy, TRANS_PROP, False);
-    intAtom = XInternAtom(dpy, "INTEGER", True);
-
-    pa.subwindow_mode = IncludeInferiors;
-
-    gaussianMap = make_gaussian_map(dpy, SHADOW_RADIUS);
-
-    transPixmap = XCreatePixmap (dpy, root, 1, 1, 8);
-    pa.repeat = True;
-    transPicture = XRenderCreatePicture (dpy, transPixmap,
-					 XRenderFindStandardFormat (dpy, PictStandardA8),
-					 CPRepeat,
-					 &pa);
-    c.red = c.green = c.blue = 0;
-    c.alpha = 0xc0c0;
-    XRenderFillRectangle (dpy, PictOpSrc, transPicture, &c, 0, 0, 1, 1);
-
-    root_width = DisplayWidth (dpy, scr);
-    root_height = DisplayHeight (dpy, scr);
-
-    rootPicture = XRenderCreatePicture (dpy, root, 
-					XRenderFindVisualFormat (dpy,
-								 DefaultVisual (dpy, scr)),
-					CPSubwindowMode,
-					&pa);
-    blackPixmap = XCreatePixmap (dpy, root, 1, 1, 32);
-    pa.repeat = True;
-    blackPicture = XRenderCreatePicture (dpy, blackPixmap,
-					 XRenderFindStandardFormat (dpy, PictStandardARGB32),
-					 CPRepeat,
-					 &pa);
-    c.red = c.green = c.blue = 0;
-    c.alpha = 0xffff;
-    XRenderFillRectangle (dpy, PictOpSrc, blackPicture, &c, 0, 0, 1, 1);
-    if (!XCompositeQueryExtension (dpy, &event_base, &error_base))
+    if (!XRenderQueryExtension (dpy, &render_event, &render_error))
+    {
+	fprintf (stderr, "No render extension\n");
+	exit (1);
+    }
+    if (!XCompositeQueryExtension (dpy, &composite_event, &composite_error))
     {
 	fprintf (stderr, "No composite extension\n");
 	exit (1);
     }
+    XCompositeQueryVersion (dpy, &composite_major, &composite_minor);
+#if 0
+    if (composite_major > 0 || composite_minor >= 2)
+	hasNamePixmap = True;
+#endif
+
     if (!XDamageQueryExtension (dpy, &damage_event, &damage_error))
     {
 	fprintf (stderr, "No damage extension\n");
@@ -1128,6 +1322,27 @@ main (int argc, char **argv)
 	fprintf (stderr, "No XFixes extension\n");
 	exit (1);
     }
+    /* get atoms */
+    opacityAtom = XInternAtom (dpy, OPACITY_PROP, False);
+
+    pa.subwindow_mode = IncludeInferiors;
+
+#if SHADOWS && !SHARP_SHADOW
+    gaussianMap = make_gaussian_map(dpy, SHADOW_RADIUS);
+#endif
+
+    root_width = DisplayWidth (dpy, scr);
+    root_height = DisplayHeight (dpy, scr);
+
+    rootPicture = XRenderCreatePicture (dpy, root, 
+					XRenderFindVisualFormat (dpy,
+								 DefaultVisual (dpy, scr)),
+					CPSubwindowMode,
+					&pa);
+    blackPicture = solid_picture (dpy, True, 1, 0, 0, 0);
+#if SHADOWS && SHARP_SHADOW
+    transBlackPicture = solid_picture (dpy, True, 0.3, 0, 0, 0);
+#endif
     allDamage = None;
     clipChanged = True;
     XGrabServer (dpy);
@@ -1148,6 +1363,8 @@ main (int argc, char **argv)
 	/*	dump_wins (); */
 	do {
 	    XNextEvent (dpy, &ev);
+	    if (ev.type & 0x7f != KeymapNotify)
+		discard_ignore (dpy, ev.xany.serial);
 #if DEBUG_EVENTS
 	    printf ("event %10.10s serial 0x%08x window 0x%08x\n",
 		    ev_name(&ev), ev_serial (&ev), ev_window (&ev));
@@ -1223,7 +1440,7 @@ main (int argc, char **argv)
 		    }
 		}
 		/* check if Trans property was changed */
-		if (ev.xproperty.atom == transPropAtom)
+		if (ev.xproperty.atom == opacityAtom)
 		{
 		    /* reset mode and redraw window */
 		    win * w = find_win(dpy, ev.xproperty.window);

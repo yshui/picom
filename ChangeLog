@@ -1,3 +1,16 @@
+2004-06-26  Keith Packard  <keithp@keithp.com>
+
+	* xcompmgr.c: (make_gaussian_map), (make_shadow), (shadow_picture),
+	(solid_picture), (discard_ignore), (set_ignore), (should_ignore),
+	(win_extents), (border_size), (paint_all), (repair_win), (map_win),
+	(unmap_win), (get_opacity_prop), (determine_mode), (add_win),
+	(destroy_win), (error), (main):
+	Ok, this synchronizes all of my changes for the last many months.
+	Has code to do server-based shadows (SHARP_SHADOW).
+	Has code to try and ignore appropriate errors (helps somewhat).
+	Has code to handle global window translucency.
+	Lots of other minor changes.
+
 2004-05-17  Eric Anholt  <anholt@FreeBSD.org>
 
 	* configure.ac:
