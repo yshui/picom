@@ -53,8 +53,12 @@ typedef struct _win {
     struct _win		*prev_trans;
 } win;
 
-win *list;
+typedef struct _conv {
+    int	    size;
+    double  *data;
+} conv;
 
+win             *list;
 Display		*dpy;
 int		scr;
 Window		root;
@@ -65,6 +69,7 @@ Picture		blackPicture;
 Picture		rootTile;
 XserverRegion	allDamage;
 int		root_height, root_width;
+conv            *gussianMap;
 
 #define BACKGROUND_PROP	"_XROOTPMAP_ID"
 
@@ -86,10 +91,6 @@ gaussian (double r, double x, double y)
 	    exp ((- (x * x + y * y)) / (2 * r * r)));
 }
 
-typedef struct _conv {
-    int	    size;
-    double  *data;
-} conv;
 
 conv *
 make_gaussian_map (Display *dpy, double r)
@@ -192,13 +193,12 @@ sum_gaussian (conv *map, double opacity, int x, int y, int width, int height)
 }
 
 XImage *
-make_shadow (Display *dpy, double opacity, double r, int width, int height)
+make_shadow (Display *dpy, double opacity, int width, int height)
 {
-    conv	    *map = make_gaussian_map (dpy, r);
     XImage	    *ximage;
-    double	    *gdata = map->data;
+    double	    *gdata = gussianMap->data;
     unsigned char   *data;
-    int		    gsize = map->size;
+    int		    gsize = gussianMap->size;
     int		    ylimit, xlimit;
     int		    swidth = width + gsize;
     int		    sheight = height + gsize;
@@ -235,7 +235,7 @@ make_shadow (Display *dpy, double opacity, double r, int width, int height)
     for (y = 0; y < ylimit; y++)
 	for (x = 0; x < xlimit; x++)
 	{
-	    d = sum_gaussian (map, opacity, x - center, y - center, width, height);
+	    d = sum_gaussian (gussianMap, opacity, x - center, y - center, width, height);
 	    data[y * swidth + x] = d;
 	    data[(sheight - y - 1) * swidth + x] = d;
 	    data[(sheight - y - 1) * swidth + (swidth - x - 1)] = d;
@@ -247,7 +247,7 @@ make_shadow (Display *dpy, double opacity, double r, int width, int height)
      */
     for (y = 0; y < ylimit; y++)
     {
-	d = sum_gaussian (map, opacity, center, y - center, width, height);
+	d = sum_gaussian (gussianMap, opacity, center, y - center, width, height);
 	for (x = gsize; x < swidth - gsize; x++)
 	{
 	    data[y * swidth + x] = d;
@@ -261,7 +261,7 @@ make_shadow (Display *dpy, double opacity, double r, int width, int height)
     
     for (x = 0; x < xlimit; x++)
     {
-	d = sum_gaussian (map, opacity, x - center, center, width, height);
+	d = sum_gaussian (gussianMap, opacity, x - center, center, width, height);
 	for (y = gsize; y < sheight - gsize; y++)
 	{
 	    data[y * swidth + x] = d;
@@ -273,19 +273,18 @@ make_shadow (Display *dpy, double opacity, double r, int width, int height)
      * center
      */
 
-    d = sum_gaussian (map, opacity, center, center, width, height);
+    d = sum_gaussian (gussianMap, opacity, center, center, width, height);
     for (y = ylimit; y < sheight - ylimit; y++)
 	for (x = xlimit; x < swidth - xlimit; x++)
 	    data[y * swidth + x] = d;
 
-    free (map);
     return ximage;
 }
 
 Picture
-shadow_picture (Display *dpy, double opacity, double r, int width, int height, int *wp, int *hp)
+shadow_picture (Display *dpy, double opacity, int width, int height, int *wp, int *hp)
 {
-    XImage  *shadowImage = make_shadow (dpy, opacity, r, width, height);
+    XImage  *shadowImage = make_shadow (dpy, opacity, width, height);
     Pixmap  shadowPixmap = XCreatePixmap (dpy, root, 
 					  shadowImage->width,
 					  shadowImage->height,
@@ -391,7 +390,7 @@ win_extents (Display *dpy, win *w)
 	    double	opacity = SHADOW_OPACITY;
 	    if (w->mode == WINDOW_TRANS)
 		opacity = opacity * TRANS_OPACITY;
-	    w->shadow = shadow_picture (dpy, opacity, SHADOW_RADIUS, 
+	    w->shadow = shadow_picture (dpy, opacity, 
 					w->a.width, w->a.height,
 					&w->shadow_width, &w->shadow_height);
 	    w->shadow_dx = SHADOW_OFFSET_X;
@@ -806,6 +805,9 @@ main ()
     scr = DefaultScreen (dpy);
     root = RootWindow (dpy, scr);
     pa.subwindow_mode = IncludeInferiors;
+
+    gussianMap = make_gaussian_map(dpy, SHADOW_RADIUS);
+
     transPixmap = XCreatePixmap (dpy, root, 1, 1, 8);
     pa.repeat = True;
     transPicture = XRenderCreatePicture (dpy, transPixmap,
