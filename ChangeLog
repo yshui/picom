@@ -1,3 +1,7 @@
+2004-03-31  Philip Blundell  <philb@gnu.org>
+
+	* Makefile.am: Set INCLUDES, not xcompmgr_INCLUDES.
+
 2004-03-28  Philip Blundell  <philb@gnu.org>
 
 	* autogen.sh: New.
