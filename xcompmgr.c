@@ -24,8 +24,11 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 #include <sys/poll.h>
+#include <sys/time.h>
+#include <time.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/Xcomposite.h>
@@ -84,7 +87,7 @@ conv            *gussianMap;
 #define SHADOW_OFFSET_Y	(-SHADOW_RADIUS)
 
 
-double
+static double
 gaussian (double r, double x, double y)
 {
     return ((1 / (sqrt (2 * M_PI * r))) *
@@ -92,7 +95,7 @@ gaussian (double r, double x, double y)
 }
 
 
-conv *
+static conv *
 make_gaussian_map (Display *dpy, double r)
 {
     conv	    *c;
@@ -138,11 +141,10 @@ make_gaussian_map (Display *dpy, double r)
  *  center  +-----+-------------------+-----+
  */
  
-unsigned char
+static unsigned char
 sum_gaussian (conv *map, double opacity, int x, int y, int width, int height)
 {
     int	    fx, fy;
-    int	    sx, sy;
     double  *g_data;
     double  *g_line = map->data;
     int	    g_size = map->size;
@@ -192,11 +194,10 @@ sum_gaussian (conv *map, double opacity, int x, int y, int width, int height)
     return ((unsigned int) (v * opacity * 255.0));
 }
 
-XImage *
+static XImage *
 make_shadow (Display *dpy, double opacity, int width, int height)
 {
     XImage	    *ximage;
-    double	    *gdata = gussianMap->data;
     unsigned char   *data;
     int		    gsize = gussianMap->size;
     int		    ylimit, xlimit;
@@ -204,11 +205,7 @@ make_shadow (Display *dpy, double opacity, int width, int height)
     int		    sheight = height + gsize;
     int		    center = gsize / 2;
     int		    x, y;
-    int		    fx, fy;
-    int		    sx, sy;
     unsigned char   d;
-    double	    v;
-    unsigned char   c;
     
     data = malloc (swidth * sheight * sizeof (unsigned char));
     ximage = XCreateImage (dpy,
@@ -281,7 +278,7 @@ make_shadow (Display *dpy, double opacity, int width, int height)
     return ximage;
 }
 
-Picture
+static Picture
 shadow_picture (Display *dpy, double opacity, int width, int height, int *wp, int *hp)
 {
     XImage  *shadowImage = make_shadow (dpy, opacity, width, height);
@@ -305,7 +302,7 @@ shadow_picture (Display *dpy, double opacity, int width, int height, int *wp, in
     return shadowPicture;
 }
 
-win *
+static win *
 find_win (Display *dpy, Window id)
 {
     win	*w;
@@ -316,7 +313,7 @@ find_win (Display *dpy, Window id)
     return 0;
 }
 
-Picture
+static Picture
 root_tile (Display *dpy)
 {
     Picture	    picture;
@@ -360,7 +357,7 @@ root_tile (Display *dpy)
     return picture;
 }
 
-void
+static void
 paint_root (Display *dpy)
 {
     if (!rootTile)
@@ -371,7 +368,7 @@ paint_root (Display *dpy)
 		      0, 0, 0, 0, 0, 0, root_width, root_height);
 }
 
-XserverRegion
+static XserverRegion
 win_extents (Display *dpy, win *w)
 {
     XRectangle	    r;
@@ -404,7 +401,7 @@ win_extents (Display *dpy, win *w)
     return XFixesCreateRegion (dpy, &r, 1);
 }
 
-XserverRegion
+static XserverRegion
 border_size (Display *dpy, win *w)
 {
     XserverRegion   border;
@@ -414,7 +411,7 @@ border_size (Display *dpy, win *w)
     return border;
 }
 
-void
+static void
 paint_all (Display *dpy, XserverRegion region)
 {
     win	*w;
@@ -442,8 +439,6 @@ paint_all (Display *dpy, XserverRegion region)
     XFixesSetPictureClipRegion (dpy, rootPicture, 0, 0, region);
     for (w = list; w; w = w->next)
     {
-	Picture	mask;
-	
 	if (w->a.map_state != IsViewable)
 	    continue;
 	if (!w->picture)
@@ -507,7 +502,7 @@ paint_all (Display *dpy, XserverRegion region)
 		      0, 0, 0, 0, 0, 0, root_width, root_height);
 }
 
-void
+static void
 add_damage (Display *dpy, XserverRegion damage)
 {
     if (allDamage)
@@ -519,7 +514,7 @@ add_damage (Display *dpy, XserverRegion damage)
 	allDamage = damage;
 }
 
-void
+static void
 repair_win (Display *dpy, Window id)
 {
     win		    *w = find_win (dpy, id);
@@ -535,7 +530,7 @@ repair_win (Display *dpy, Window id)
     add_damage (dpy, parts);
 }
 
-void
+static void
 map_win (Display *dpy, Window id)
 {
     win		    *w = find_win (dpy, id);
@@ -552,7 +547,7 @@ map_win (Display *dpy, Window id)
     }
 }
 
-void
+static void
 unmap_win (Display *dpy, Window id)
 {
     win *w = find_win (dpy, id);
@@ -572,12 +567,11 @@ unmap_win (Display *dpy, Window id)
     }
 }
 
-void
+static void
 add_win (Display *dpy, Window id, Window prev)
 {
     win				*new = malloc (sizeof (win));
     win				**p;
-    XWindowAttributes		a;
     XRenderPictureAttributes	pa;
     XRenderPictFormat		*format;
     
@@ -629,7 +623,7 @@ add_win (Display *dpy, Window id, Window prev)
 	map_win (dpy, id);
 }
 
-void
+static void
 configure_win (Display *dpy, XConfigureEvent *ce)
 {
     win		    *w = find_win (dpy, ce->window);
@@ -700,12 +694,12 @@ configure_win (Display *dpy, XConfigureEvent *ce)
     }
 }
 
-void
+static void
 destroy_win (Display *dpy, Window id, Bool gone)
 {
     win	**prev, *w;
 
-    for (prev = &list; w = *prev; prev = &w->next)
+    for (prev = &list; (w = *prev); prev = &w->next)
 	if (w->id == id)
 	{
 	    if (!gone)
@@ -720,14 +714,16 @@ destroy_win (Display *dpy, Window id, Bool gone)
 	}
 }
 
-void
+/*
+static void
 dump_win (win *w)
 {
-    printf ("\t%08x: %d x %d + %d + %d (%d)\n", w->id,
+    printf ("\t%08lx: %d x %d + %d + %d (%d)\n", w->id,
 	    w->a.width, w->a.height, w->a.x, w->a.y, w->a.border_width);
 }
 
-void
+
+static void
 dump_wins (void)
 {
     win	*w;
@@ -736,21 +732,24 @@ dump_wins (void)
     for (w = list; w; w = w->next)
 	dump_win (w);
 }
+*/
 
-void
+static void
 damage_win (Display *dpy, XDamageNotifyEvent *de)
 {
     repair_win (dpy, de->drawable);
 }
 
-int
+static int
 error (Display *dpy, XErrorEvent *ev)
 {
     printf ("error %d request %d minor %d\n",
 	    ev->error_code, ev->request_code, ev->minor_code);
+
+    return 0;
 }
 
-void
+static void
 expose_root (Display *dpy, Window root, XRectangle *rects, int nrects)
 {
     XserverRegion  region = XFixesCreateRegion (dpy, rects, nrects);
@@ -758,18 +757,21 @@ expose_root (Display *dpy, Window root, XRectangle *rects, int nrects)
     add_damage (dpy, region);
 }
 
-int
-time_in_millis ()
+#define INTERVAL    0
+
+#if INTERVAL
+static int
+time_in_millis (void)
 {
     struct timeval  tp;
 
     gettimeofday (&tp, 0);
     return(tp.tv_sec * 1000) + (tp.tv_usec / 1000);
 }
+#endif
 
-#define INTERVAL    0
-
-main ()
+int
+main (void)
 {
     XEvent	    ev;
     int		    event_base, error_base;
@@ -784,13 +786,8 @@ main ()
     XRenderPictureAttributes	pa;
     XRenderColor		c;
     XRectangle	    *expose_rects = 0;
-    GC		    gc;
     int		    size_expose = 0;
     int		    n_expose = 0;
-    struct pollfd   ufd;
-    int		    n;
-    int		    last_update;
-    int		    now;
 #if INTERVAL
     int		    timeout;
 #endif
@@ -840,19 +837,16 @@ main ()
 	fprintf (stderr, "No composite extension\n");
 	exit (1);
     }
-    printf ("Composite error %d\n", error_base);
     if (!XDamageQueryExtension (dpy, &damage_event, &damage_error))
     {
 	fprintf (stderr, "No damage extension\n");
 	exit (1);
     }
-    printf ("Damage error %d\n", damage_error);
     if (!XFixesQueryExtension (dpy, &xfixes_event, &xfixes_error))
     {
 	fprintf (stderr, "No XFixes extension\n");
 	exit (1);
     }
-    printf ("XFixes error %d\n", xfixes_error);
     allDamage = None;
     XGrabServer (dpy);
     XCompositeRedirectSubwindows (dpy, root, CompositeRedirectManual);
