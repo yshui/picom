@@ -406,8 +406,7 @@ border_size (Display *dpy, win *w)
 {
     XserverRegion   border;
     border = XFixesCreateRegionFromWindow (dpy, w->id, WindowRegionBounding);
-    /* translate this */
-    XFixesUnionRegion (dpy, border, border, w->a.x, w->a.y, None, 0, 0);
+    XFixesTranslateRegion (dpy, border, w->a.x, w->a.y);
     return border;
 }
 
@@ -453,7 +452,7 @@ paint_all (Display *dpy, XserverRegion region)
 	if (w->mode == WINDOW_SOLID)
 	{
 	    XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, region);
-	    XFixesSubtractRegion (dpy, region, region, 0, 0, w->borderSize, 0, 0);
+	    XFixesSubtractRegion (dpy, region, region, w->borderSize);
 	    XRenderComposite (dpy, PictOpSrc, w->picture, None, rootBuffer,
 			      0, 0, 0, 0, 
 			      w->a.x + w->a.border_width,
@@ -462,7 +461,7 @@ paint_all (Display *dpy, XserverRegion region)
 			      w->a.height);
 	}
 	w->borderClip = XFixesCreateRegion (dpy, 0, 0);
-	XFixesUnionRegion (dpy, w->borderClip, region, 0, 0, None, 0, 0);
+	XFixesCopyRegion (dpy, w->borderClip, region);
 	w->prev_trans = t;
 	t = w;
     }
@@ -507,7 +506,7 @@ add_damage (Display *dpy, XserverRegion damage)
 {
     if (allDamage)
     {
-	XFixesUnionRegion (dpy, allDamage, allDamage, 0, 0, damage, 0, 0);
+	XFixesUnionRegion (dpy, allDamage, allDamage, damage);
 	XFixesDestroyRegion (dpy, damage);
     }
     else
@@ -524,9 +523,8 @@ repair_win (Display *dpy, Window id)
 	return;
 /*    printf ("repair 0x%x\n", w->id); */
     parts = XFixesCreateRegion (dpy, 0, 0);
-    /* translate region */
     XDamageSubtract (dpy, w->damage, None, parts);
-    XFixesUnionRegion (dpy, parts, parts, w->a.x, w->a.y, None, 0, 0);
+    XFixesTranslateRegion (dpy, parts, w->a.x, w->a.y);
     add_damage (dpy, parts);
 }
 
@@ -648,7 +646,7 @@ configure_win (Display *dpy, XConfigureEvent *ce)
     {
 	damage = XFixesCreateRegion (dpy, 0, 0);
 	if (w->extents != None)	
-	    XFixesUnionRegion (dpy, damage, w->extents, 0, 0, None, 0, 0);
+	    XFixesCopyRegion (dpy, damage, w->extents);
     }
     w->a.x = ce->x;
     w->a.y = ce->y;
@@ -688,7 +686,7 @@ configure_win (Display *dpy, XConfigureEvent *ce)
     if (damage)
     {
 	XserverRegion	extents = win_extents (dpy, w);
-	XFixesUnionRegion (dpy, damage, damage, 0, 0, extents, 0, 0);
+	XFixesUnionRegion (dpy, damage, damage, extents);
 	XFixesDestroyRegion (dpy, extents);
 	add_damage (dpy, damage);
     }

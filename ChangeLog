@@ -1,3 +1,11 @@
+2003-11-23  Eric Anholt  <anholt@FreeBSD.org>
+
+	* xcompmgr.c: (border_size), (paint_all), (add_damage),
+	(repair_win), (configure_win):
+	Fix for latest Xfixes changes.
+
+	Submitted by: <stephan@wilkogazu.nl>
+
 2003-11-19  Carl Worth  <cworth@isi.edu>
 
 	* xcompmgr.c: Eliminate several compiler warnings: missing
