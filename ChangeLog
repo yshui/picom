@@ -1,5 +1,10 @@
 2003-11-09  Keith Packard  <keithp@keithp.com>
 
+	* xcompmgr.c: (main):
+	oops.  Left in an XSynchronize call.
+
+2003-11-09  Keith Packard  <keithp@keithp.com>
+
 	* xcompmgr.c: (paint_root), (paint_all), (map_win), (add_win),
 	(configure_win), (destroy_win), (main):
 

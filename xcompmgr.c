@@ -756,7 +756,6 @@ main ()
 	fprintf (stderr, "Can't open display\n");
 	exit (1);
     }
-    XSynchronize (dpy, True);
     XSetErrorHandler (error);
     scr = DefaultScreen (dpy);
     root = RootWindow (dpy, scr);
