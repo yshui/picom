@@ -1833,7 +1833,7 @@ ev_window (XEvent *ev)
 void
 usage (char *program)
 {
-    fprintf (stderr, "%s v1.1\n", program);
+    fprintf (stderr, "%s v1.1.1\n", program);
     fprintf (stderr, "usage: %s [options]\n", program);
     fprintf (stderr, "Options\n");
     fprintf (stderr, "   -d display\n      Specifies which display should be managed.\n");

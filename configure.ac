@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.57)
-AC_INIT(FULL-PACKAGE-NAME, VERSION, BUG-REPORT-ADDRESS)
+AC_INIT([xcompmgr], [1.1.1], [xorg@freedesktop.org])
 AC_CONFIG_SRCDIR([xcompmgr.c])
 AM_INIT_AUTOMAKE([dist-bzip2])
 AM_MAINTAINER_MODE
