@@ -1833,6 +1833,9 @@ usage (char *program)
     fprintf (stderr, "   -o opacity\n      Specifies the translucency for client-side shadows. (default .75)\n");
     fprintf (stderr, "   -l left-offset\n      Specifies the left offset for client-side shadows. (default -15)\n");
     fprintf (stderr, "   -t top-offset\n      Specifies the top offset for clinet-side shadows. (default -15)\n");
+    fprintf (stderr, "   -I fade-in-step\n      Specifies the opacity change between steps while fading in. (default 0.028)\n");
+    fprintf (stderr, "   -O fade-out-step\n      Specifies the opacity change between steps while fading out. (default 0.03)\n");
+    fprintf (stderr, "   -D fade-delta-time\n      Specifies the time between steps in a fade in milliseconds. (default 10)\n");
     fprintf (stderr, "   -a\n      Use automatic server-side compositing. Faster, but no special effects.\n");
     fprintf (stderr, "   -c\n      Draw client-side shadows with fuzzy edges.\n");
     fprintf (stderr, "   -C\n      Avoid drawing shadows on dock/panel windows.\n");
@@ -1868,11 +1871,26 @@ main (int argc, char **argv)
     char	    *display = 0;
     int		    o;
 
-    while ((o = getopt (argc, argv, "d:r:o:l:t:scnfFCaS")) != -1)
+    while ((o = getopt (argc, argv, "D:I:O:d:r:o:l:t:scnfFCaS")) != -1)
     {
 	switch (o) {
 	case 'd':
 	    display = optarg;
+	    break;
+	case 'D':
+	    fade_delta = atoi (optarg);
+	    if (fade_delta < 1)
+		fade_delta = 10;
+	    break;
+	case 'I':
+	    fade_in_step = atof (optarg);
+	    if (fade_in_step <= 0)
+		fade_in_step = 0.01;
+	    break;
+	case 'O':
+	    fade_out_step = atof (optarg);
+	    if (fade_out_step <= 0)
+		fade_out_step = 0.01;
 	    break;
 	case 's':
 	    compMode = CompServerShadows;

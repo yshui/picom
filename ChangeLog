@@ -1,3 +1,10 @@
+2004-09-23  Dan Doel  <dolio@case.edu>
+
+	* xcompmgr.1:
+	* xcompmgr.c: (usage), (main):
+	Added options -O -I and -D for controlling fading effects and
+	appropriate man entries, based on the patch by Johan Kiviniemi.
+
 2004-09-22  Dan Doel  <dolio@case.edu>
 
 	* xcompmgr.c: (run_fades), (solid_picture), (get_opacity_prop),
