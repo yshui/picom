@@ -1,3 +1,10 @@
+2005-01-27  Adam Jackson  <ajax@freedesktop.org>
+
+	* xcompmgr.c:
+	Bug #2391: Fix a use-after-free in run_fades.  (Jonathan Briggs)
+	* configure.ac:
+	Bump to 1.1.2.
+
 2005-01-26  Eric Anholt  <anholt@FreeBSD.org>
 
 	* Makefile.am:

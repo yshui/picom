@@ -322,6 +322,7 @@ run_fades (Display *dpy)
     int	    now = get_time_in_milliseconds();
     fade    *f, *next;
     int	    steps;
+    Bool    need_dequeue;
 
 #if 0
     printf ("run fades\n");
@@ -342,12 +343,13 @@ run_fades (Display *dpy)
 	printf ("opacity now %g\n", f->cur);
 #endif
 	w->opacity = f->cur * OPAQUE;
+	need_dequeue = False;
 	if (f->step > 0)
 	{
 	    if (f->cur >= f->finish)
 	    {
 		w->opacity = f->finish*OPAQUE;
-		dequeue_fade (dpy, f);
+		need_dequeue = True;
 	    }
 	}
 	else
@@ -355,7 +357,7 @@ run_fades (Display *dpy)
 	    if (f->cur <= f->finish)
 	    {
 		w->opacity = f->finish*OPAQUE;
-		dequeue_fade (dpy, f);
+		need_dequeue = True;
 	    }
 	}
 	determine_mode (dpy, w);
@@ -365,6 +367,9 @@ run_fades (Display *dpy)
 	    w->shadow = None;
 	    w->extents = win_extents(dpy, w);
 	}
+	/* Must do this last as it might destroy f->w in callbacks */
+	if (need_dequeue)
+		dequeue_fade (dpy, f);
     }
     fade_time = now + fade_delta;
 }
@@ -1833,7 +1838,7 @@ ev_window (XEvent *ev)
 void
 usage (char *program)
 {
-    fprintf (stderr, "%s v1.1.1\n", program);
+    fprintf (stderr, "%s v1.1.2\n", program);
     fprintf (stderr, "usage: %s [options]\n", program);
     fprintf (stderr, "Options\n");
     fprintf (stderr, "   -d display\n      Specifies which display should be managed.\n");
