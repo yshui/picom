@@ -47,6 +47,8 @@
 #define HAS_NAME_WINDOW_PIXMAP 1
 #endif
 
+#define CAN_DO_USABLE 0
+
 typedef struct _ignore {
     struct _ignore	*next;
     unsigned long	sequence;
@@ -59,6 +61,10 @@ typedef struct _win {
     Pixmap		pixmap;
 #endif
     XWindowAttributes	a;
+#if CAN_DO_USABLE
+    Bool		usable;		    /* mapped and all damaged at one point */
+    XRectangle		damage_bounds;	    /* bounds of damage */
+#endif
     int			mode;
     int			damaged;
     Damage		damage;
@@ -117,6 +123,8 @@ int		xfixes_event, xfixes_error;
 int		damage_event, damage_error;
 int		composite_event, composite_error;
 int		render_event, render_error;
+Bool		synchronize;
+int		composite_opcode;
 
 /* find these once and be done with it */
 Atom		opacityAtom;
@@ -795,8 +803,10 @@ paint_all (Display *dpy, XserverRegion region)
 #endif
     for (w = list; w; w = w->next)
     {
-	if (w->a.map_state != IsViewable)
+#if CAN_DO_USABLE
+	if (!w->usable)
 	    continue;
+#endif
 	/* never painted, ignore it */
 	if (!w->damaged)
 	    continue;
@@ -847,16 +857,25 @@ paint_all (Display *dpy, XserverRegion region)
 	    w->extents = win_extents (dpy, w);
 	if (w->mode == WINDOW_SOLID)
 	{
+	    int	x, y, wid, hei;
+#if HAS_NAME_WINDOW_PIXMAP
+	    x = w->a.x;
+	    y = w->a.y;
+	    wid = w->a.width + w->a.border_width * 2;
+	    hei = w->a.height + w->a.border_width * 2;
+#else
+	    x = w->a.x + w->a.border_width;
+	    y = w->a.y + w->a.border_width;
+	    wid = w->a.width;
+	    hei = w->a.height;
+#endif
 	    XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, region);
 	    set_ignore (dpy, NextRequest (dpy));
 	    XFixesSubtractRegion (dpy, region, region, w->borderSize);
 	    set_ignore (dpy, NextRequest (dpy));
 	    XRenderComposite (dpy, PictOpSrc, w->picture, None, rootBuffer,
 			      0, 0, 0, 0, 
-			      w->a.x + w->a.border_width,
-			      w->a.y + w->a.border_width,
-			      w->a.width,
-			      w->a.height);
+			      x, y, wid, hei);
 	}
 	if (!w->borderClip)
 	{
@@ -908,23 +927,41 @@ paint_all (Display *dpy, XserverRegion region)
 					  (double) w->opacity / OPAQUE, 0, 0, 0);
 	if (w->mode == WINDOW_TRANS)
 	{
+	    int	x, y, wid, hei;
+#if HAS_NAME_WINDOW_PIXMAP
+	    x = w->a.x;
+	    y = w->a.y;
+	    wid = w->a.width + w->a.border_width * 2;
+	    hei = w->a.height + w->a.border_width * 2;
+#else
+	    x = w->a.x + w->a.border_width;
+	    y = w->a.y + w->a.border_width;
+	    wid = w->a.width;
+	    hei = w->a.height;
+#endif
 	    set_ignore (dpy, NextRequest (dpy));
 	    XRenderComposite (dpy, PictOpOver, w->picture, w->alphaPict, rootBuffer,
 			      0, 0, 0, 0, 
-			      w->a.x + w->a.border_width,
-			      w->a.y + w->a.border_width,
-			      w->a.width,
-			      w->a.height);
+			      x, y, wid, hei);
 	}
 	else if (w->mode == WINDOW_ARGB)
 	{
+	    int	x, y, wid, hei;
+#if HAS_NAME_WINDOW_PIXMAP
+	    x = w->a.x;
+	    y = w->a.y;
+	    wid = w->a.width + w->a.border_width * 2;
+	    hei = w->a.height + w->a.border_width * 2;
+#else
+	    x = w->a.x + w->a.border_width;
+	    y = w->a.y + w->a.border_width;
+	    wid = w->a.width;
+	    hei = w->a.height;
+#endif
 	    set_ignore (dpy, NextRequest (dpy));
 	    XRenderComposite (dpy, PictOpOver, w->picture, w->alphaPict, rootBuffer,
 			      0, 0, 0, 0, 
-			      w->a.x + w->a.border_width,
-			      w->a.y + w->a.border_width,
-			      w->a.width,
-			      w->a.height);
+			      x, y, wid, hei);
 	}
 	XFixesDestroyRegion (dpy, w->borderClip);
 	w->borderClip = None;
@@ -951,13 +988,10 @@ add_damage (Display *dpy, XserverRegion damage)
 }
 
 static void
-repair_win (Display *dpy, Window id)
+repair_win (Display *dpy, win *w)
 {
-    win		    *w = find_win (dpy, id);
     XserverRegion   parts;
 
-    if (!w)
-	return;
     if (!w->damaged)
     {
 	parts = win_extents (dpy, w);
@@ -995,21 +1029,21 @@ map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
     if (!w)
 	return;
     w->a.map_state = IsViewable;
-
-    /* make sure we know if property was changed */
-    XSelectInput(dpy, id, PropertyChangeMask);
-
+    
+#if CAN_DO_USABLE
+    w->damage_bounds.x = w->damage_bounds.y = 0;
+    w->damage_bounds.width = w->damage_bounds.height = 0;
+#endif
     w->damaged = 0;
-    clipChanged = True;
-    if (fade && fadeWindows)
-	set_fade (dpy, w, True, 0, False);
 }
 
 static void
 finish_unmap_win (Display *dpy, win *w)
 {
-    w->a.map_state = IsUnmapped;
     w->damaged = 0;
+#if CAN_DO_USABLE
+    w->usable = False;
+#endif
     if (w->extents != None)
     {
 	add_damage (dpy, w->extents);    /* destroys region */
@@ -1181,6 +1215,9 @@ add_win (Display *dpy, Window id, Window prev)
 	return;
     }
     new->damaged = 0;
+#if CAN_DO_USABLE
+    new->usable = False;
+#endif
 #if HAS_NAME_WINDOW_PIXMAP
     new->pixmap = None;
 #endif
@@ -1210,6 +1247,7 @@ add_win (Display *dpy, Window id, Window prev)
     new->prev_trans = 0;
 
     /* moved mode setting to one place */
+    XSelectInput(dpy, id, PropertyChangeMask);
     new->opacity = get_opacity_prop(dpy, new, OPAQUE);
     determine_mode (dpy, new);
     
@@ -1270,7 +1308,9 @@ configure_win (Display *dpy, XConfigureEvent *ce)
 	}
 	return;
     }
-    if (w->a.map_state == IsViewable)
+#if CAN_DO_USABLE
+    if (w->usable)
+#endif
     {
 	damage = XFixesCreateRegion (dpy, 0, 0);
 	if (w->extents != None)	
@@ -1409,7 +1449,59 @@ dump_wins (void)
 static void
 damage_win (Display *dpy, XDamageNotifyEvent *de)
 {
-    repair_win (dpy, de->drawable);
+    win	*w = find_win (dpy, de->drawable);
+
+    if (!w)
+	return;
+#if CAN_DO_USABLE
+    if (!w->usable)
+    {
+	if (w->damage_bounds.width == 0 || w->damage_bounds.height == 0)
+	{
+	    w->damage_bounds = de->area;
+	}
+	else
+	{
+	    if (de->area.x < w->damage_bounds.x)
+	    {
+		w->damage_bounds.width += (w->damage_bounds.x - de->area.x);
+		w->damage_bounds.x = de->area.x;
+	    }
+	    if (de->area.y < w->damage_bounds.y)
+	    {
+		w->damage_bounds.height += (w->damage_bounds.y - de->area.y);
+		w->damage_bounds.y = de->area.y;
+	    }
+	    if (de->area.x + de->area.width > w->damage_bounds.x + w->damage_bounds.width)
+		w->damage_bounds.width = de->area.x + de->area.width - w->damage_bounds.x;
+	    if (de->area.y + de->area.height > w->damage_bounds.y + w->damage_bounds.height)
+		w->damage_bounds.height = de->area.y + de->area.height - w->damage_bounds.y;
+	}
+#if 0
+	printf ("unusable damage %d, %d: %d x %d bounds %d, %d: %d x %d\n",
+		de->area.x,
+		de->area.y,
+		de->area.width,
+		de->area.height,
+		w->damage_bounds.x,
+		w->damage_bounds.y,
+		w->damage_bounds.width,
+		w->damage_bounds.height);
+#endif
+	if (w->damage_bounds.x <= 0 && 
+	    w->damage_bounds.y <= 0 &&
+	    w->a.width <= w->damage_bounds.x + w->damage_bounds.width &&
+	    w->a.height <= w->damage_bounds.y + w->damage_bounds.height)
+	{
+	    clipChanged = True;
+	    if (fadeWindows)
+		set_fade (dpy, w, True, 0, False);
+	    w->usable = True;
+	}
+    }
+    if (w->usable)
+#endif
+	repair_win (dpy, w);
 }
 
 static int
@@ -1421,6 +1513,12 @@ error (Display *dpy, XErrorEvent *ev)
     if (should_ignore (dpy, ev->serial))
 	return 0;
     
+    if (ev->request_code == composite_opcode &&
+	ev->minor_code == X_CompositeRedirectSubwindows)
+    {
+	fprintf (stderr, "Another composite manager is already running\n");
+	exit (1);
+    }
     
     o = ev->error_code - xfixes_error;
     switch (o) {
@@ -1542,7 +1640,7 @@ main (int argc, char **argv)
     char	    *display = 0;
     int		    o;
 
-    while ((o = getopt (argc, argv, "d:scnf")) != -1)
+    while ((o = getopt (argc, argv, "d:scnfS")) != -1)
     {
 	switch (o) {
 	case 'd':
@@ -1560,6 +1658,9 @@ main (int argc, char **argv)
 	case 'f':
 	    fadeWindows = True;
 	    break;
+	case 'S':
+	    synchronize = True;
+	    break;
 	default:
 	    usage (argv[0]);
 	    break;
@@ -1573,9 +1674,8 @@ main (int argc, char **argv)
 	exit (1);
     }
     XSetErrorHandler (error);
-#if 0
-    XSynchronize (dpy, 1);
-#endif
+    if (synchronize)
+	XSynchronize (dpy, 1);
     scr = DefaultScreen (dpy);
     root = RootWindow (dpy, scr);
 
@@ -1584,7 +1684,8 @@ main (int argc, char **argv)
 	fprintf (stderr, "No render extension\n");
 	exit (1);
     }
-    if (!XCompositeQueryExtension (dpy, &composite_event, &composite_error))
+    if (!XQueryExtension (dpy, COMPOSITE_NAME, &composite_opcode,
+			  &composite_event, &composite_error))
     {
 	fprintf (stderr, "No composite extension\n");
 	exit (1);

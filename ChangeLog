@@ -1,3 +1,10 @@
+2004-08-13  Keith Packard  <keithp@keithp.com>
+
+	* xcompmgr.c: (paint_all), (repair_win), (map_win),
+	(finish_unmap_win), (add_win), (configure_win), (damage_win),
+	(error), (main):
+	Add name window pixmap support
+
 2004-07-08  Ely Levy  <elylevy-xserver@cs.huji.ac.il>
 
 	reviewed by: Keith Packard
