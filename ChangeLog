@@ -1,3 +1,10 @@
+2004-09-21  Dan Doel  <dolio@case.edu>
+
+	* xcompmgr.c: (presum_gaussian), (make_shadow), (main):
+	Added precomputation of shadows to make them a little more
+	friendly to slower computers (and make ridiculously huge
+	shadows usable on faster computers).
+
 2004-09-20  Adam Jackson  <ajax@freedesktop.org>
 
 	* xcompmgr.c:

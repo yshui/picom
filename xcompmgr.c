@@ -192,6 +192,11 @@ Bool	fadeTrans = False;
 
 Bool	autoRedirect = False;
 
+/* For shadow precomputation */
+int            Gsize = -1;
+unsigned char *shadowCorner = NULL;
+unsigned char *shadowTop = NULL;
+
 int
 get_time_in_milliseconds ()
 {
@@ -472,6 +477,42 @@ sum_gaussian (conv *map, double opacity, int x, int y, int width, int height)
     return ((unsigned char) (v * opacity * 255.0));
 }
 
+/* precompute shadow corners and sides to save time for large windows */
+static void
+presum_gaussian (conv *map)
+{
+    int center = map->size/2;
+    int opacity, x, y;
+
+    Gsize = map->size;
+
+    if (shadowCorner)
+	free ((void *)shadowCorner);
+    if (shadowTop)
+	free ((void *)shadowTop);
+
+    shadowCorner = (unsigned char *)(malloc ((Gsize + 1) * (Gsize + 1) * 26));
+    shadowTop = (unsigned char *)(malloc ((Gsize + 1) * 26));
+    
+    for (x = 0; x <= Gsize; x++)
+    {
+	shadowTop[25 * (Gsize + 1) + x] = sum_gaussian (map, 1, x - center, center, Gsize * 2, Gsize * 2);
+	for(opacity = 0; opacity < 25; opacity++)
+	    shadowTop[opacity * (Gsize + 1) + x] = shadowTop[25 * (Gsize + 1) + x] * opacity / 25;
+	for(y = 0; y <= x; y++)
+	{
+	    shadowCorner[25 * (Gsize + 1) * (Gsize + 1) + y * (Gsize + 1) + x]
+		= sum_gaussian (map, 1, x - center, y - center, Gsize * 2, Gsize * 2);
+	    shadowCorner[25 * (Gsize + 1) * (Gsize + 1) + x * (Gsize + 1) + y]
+		= shadowCorner[25 * (Gsize + 1) * (Gsize + 1) + y * (Gsize + 1) + x];
+	    for(opacity = 0; opacity < 25; opacity++)
+		shadowCorner[opacity * (Gsize + 1) * (Gsize + 1) + y * (Gsize + 1) + x]
+		    = shadowCorner[opacity * (Gsize + 1) * (Gsize + 1) + x * (Gsize + 1) + y]
+		    = shadowCorner[25 * (Gsize + 1) * (Gsize + 1) + y * (Gsize + 1) + x] * opacity / 25;
+	}
+    }
+}
+
 static XImage *
 make_shadow (Display *dpy, double opacity, int width, int height)
 {
@@ -485,7 +526,7 @@ make_shadow (Display *dpy, double opacity, int width, int height)
     int		    x, y;
     unsigned char   d;
     int		    x_diff;
-    
+    int             opacity_int = (int)(opacity * 25);
     data = malloc (swidth * sheight * sizeof (unsigned char));
     if (!data)
 	return 0;
@@ -508,8 +549,10 @@ make_shadow (Display *dpy, double opacity, int width, int height)
     /*
      * center (fill the complete data array)
      */
-
-    d = sum_gaussian (gaussianMap, opacity, center, center, width, height);
+    if (Gsize > 0)
+	d = shadowTop[opacity_int * (Gsize + 1) + Gsize];
+    else
+	d = sum_gaussian (gaussianMap, opacity, center, center, width, height);
     memset(data, d, sheight * swidth);
     
     /*
@@ -525,7 +568,10 @@ make_shadow (Display *dpy, double opacity, int width, int height)
     for (y = 0; y < ylimit; y++)
 	for (x = 0; x < xlimit; x++)
 	{
-	    d = sum_gaussian (gaussianMap, opacity, x - center, y - center, width, height);
+	    if (xlimit == Gsize && ylimit == Gsize)
+		d = shadowCorner[opacity_int * (Gsize + 1) * (Gsize + 1) + y * (Gsize + 1) + x];
+	    else
+		d = sum_gaussian (gaussianMap, opacity, x - center, y - center, width, height);
 	    data[y * swidth + x] = d;
 	    data[(sheight - y - 1) * swidth + x] = d;
 	    data[(sheight - y - 1) * swidth + (swidth - x - 1)] = d;
@@ -540,7 +586,10 @@ make_shadow (Display *dpy, double opacity, int width, int height)
     {
 	for (y = 0; y < ylimit; y++)
 	{
-	    d = sum_gaussian (gaussianMap, opacity, center, y - center, width, height);
+	    if (ylimit == Gsize)
+		d = shadowTop[opacity_int * (Gsize + 1) + y];
+	    else
+		d = sum_gaussian (gaussianMap, opacity, center, y - center, width, height);
 	    memset (&data[y * swidth + gsize], d, x_diff);
 	    memset (&data[(sheight - y - 1) * swidth + gsize], d, x_diff);
 	}
@@ -552,7 +601,10 @@ make_shadow (Display *dpy, double opacity, int width, int height)
     
     for (x = 0; x < xlimit; x++)
     {
-	d = sum_gaussian (gaussianMap, opacity, x - center, center, width, height);
+	if (xlimit == Gsize)
+	    d = shadowTop[opacity_int * (Gsize + 1) + x];
+	else
+	    d = sum_gaussian (gaussianMap, opacity, x - center, center, width, height);
 	for (y = gsize; y < sheight - gsize; y++)
 	{
 	    data[y * swidth + x] = d;
@@ -1901,7 +1953,10 @@ main (int argc, char **argv)
     pa.subwindow_mode = IncludeInferiors;
 
     if (compMode == CompClientShadows)
+    {
 	gaussianMap = make_gaussian_map(dpy, shadowRadius);
+	presum_gaussian (gaussianMap);
+    }
 
     root_width = DisplayWidth (dpy, scr);
     root_height = DisplayHeight (dpy, scr);
