@@ -1,3 +1,9 @@
+2003-11-10  Keith Packard  <keithp@keithp.com>
+
+	* Makefile:
+	* xcompmgr.c: (root_tile), (main):
+	Track changes to _XROOTPMAP_ID property
+
 2003-11-09  Keith Packard  <keithp@keithp.com>
 
 	* xcompmgr.c: (time_in_millis), (main):

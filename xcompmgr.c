@@ -65,6 +65,7 @@ Picture		rootTile;
 XserverRegion	allDamage;
 int		root_height, root_width;
 
+#define BACKGROUND_PROP	"_XROOTPMAP_ID"
 #define WINDOW_PLAIN	0
 #define WINDOW_DROP	1
 #define WINDOW_TRANS	2
@@ -326,7 +327,7 @@ root_tile (Display *dpy)
     Bool	    fill;
     XRenderPictureAttributes	pa;
 
-    if (XGetWindowProperty (dpy, root, XInternAtom (dpy, "_XROOTPMAP_ID", False),
+    if (XGetWindowProperty (dpy, root, XInternAtom (dpy, BACKGROUND_PROP, False),
 			    0, 4, False, AnyPropertyType,
 			    &actual_type, &actual_format, &nitems, &bytes_after, &prop) == Success &&
 	actual_type == XInternAtom (dpy, "PIXMAP", False) && actual_format == 32 && nitems == 1)
@@ -816,7 +817,11 @@ main ()
     XGrabServer (dpy);
     XCompositeRedirectSubwindows (dpy, root, CompositeRedirectManual);
     paint_all (dpy, None);
-    XSelectInput (dpy, root, SubstructureNotifyMask|ExposureMask|StructureNotifyMask);
+    XSelectInput (dpy, root, 
+		  SubstructureNotifyMask|
+		  ExposureMask|
+		  StructureNotifyMask|
+		  PropertyChangeMask);
     XQueryTree (dpy, root, &root_return, &parent_return, &children, &nchildren);
     for (i = 0; i < nchildren; i++)
 	add_win (dpy, children[i], i ? children[i-1] : None);
@@ -879,6 +884,17 @@ main ()
 		    {
 			expose_root (dpy, root, expose_rects, n_expose);
 			n_expose = 0;
+		    }
+		}
+		break;
+	    case PropertyNotify:
+		if (ev.xproperty.atom == XInternAtom (dpy, BACKGROUND_PROP, False))
+		{
+		    if (rootTile)
+		    {
+			XClearArea (dpy, root, 0, 0, 0, 0, True);
+			XRenderFreePicture (dpy, rootTile);
+			rootTile = None;
 		    }
 		}
 		break;
