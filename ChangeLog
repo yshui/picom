@@ -1,3 +1,10 @@
+2003-11-13  Keith Packard  <keithp@keithp.com>
+
+	* xcompmgr.c: (make_gaussian_map), (sum_gaussian), (make_shadow),
+	(shadow_picture), (paint_all), (main):
+	Use an alpha map instead of an ARGB picture for shadows.
+	Update last_update only when actually updating windows.
+
 2003-11-11  Keith Packard  <keithp@keithp.com>
 
 	* xcompmgr.c: (win_extents), (paint_all), (add_win), (main):

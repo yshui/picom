@@ -61,6 +61,7 @@ Window		root;
 Picture		rootPicture;
 Picture		rootBuffer;
 Picture		transPicture;
+Picture		blackPicture;
 Picture		rootTile;
 XserverRegion	allDamage;
 int		root_height, root_width;
@@ -110,7 +111,7 @@ make_gaussian_map (Display *dpy, double r)
 	    t += g;
 	    c->data[y * size + x] = g;
 	}
-    printf ("gaussian total %f\n", t);
+/*    printf ("gaussian total %f\n", t); */
     for (y = 0; y < size; y++)
 	for (x = 0; x < size; x++)
 	{
@@ -136,7 +137,7 @@ make_gaussian_map (Display *dpy, double r)
  *  center  +-----+-------------------+-----+
  */
  
-unsigned int
+unsigned char
 sum_gaussian (conv *map, double opacity, int x, int y, int width, int height)
 {
     int	    fx, fy;
@@ -187,7 +188,7 @@ sum_gaussian (conv *map, double opacity, int x, int y, int width, int height)
     if (v > 1)
 	v = 1;
     
-    return ((unsigned int) (v * opacity * 255.0)) << 24;
+    return ((unsigned int) (v * opacity * 255.0));
 }
 
 XImage *
@@ -196,7 +197,7 @@ make_shadow (Display *dpy, double opacity, double r, int width, int height)
     conv	    *map = make_gaussian_map (dpy, r);
     XImage	    *ximage;
     double	    *gdata = map->data;
-    unsigned int    *data;
+    unsigned char   *data;
     int		    gsize = map->size;
     int		    ylimit, xlimit;
     int		    swidth = width + gsize;
@@ -205,18 +206,18 @@ make_shadow (Display *dpy, double opacity, double r, int width, int height)
     int		    x, y;
     int		    fx, fy;
     int		    sx, sy;
-    unsigned int    d;
+    unsigned char   d;
     double	    v;
     unsigned char   c;
     
-    data = malloc (swidth * sheight * sizeof (int));
+    data = malloc (swidth * sheight * sizeof (unsigned char));
     ximage = XCreateImage (dpy,
 			   DefaultVisual(dpy, DefaultScreen(dpy)),
-			   32,
+			   8,
 			   ZPixmap,
 			   0,
 			   (char *) data,
-			   swidth, sheight, 32, swidth * sizeof (int));
+			   swidth, sheight, 8, swidth * sizeof (unsigned char));
     /*
      * Build the gaussian in sections
      */
@@ -288,9 +289,9 @@ shadow_picture (Display *dpy, double opacity, double r, int width, int height, i
     Pixmap  shadowPixmap = XCreatePixmap (dpy, root, 
 					  shadowImage->width,
 					  shadowImage->height,
-					  32);
+					  8);
     Picture shadowPicture = XRenderCreatePicture (dpy, shadowPixmap,
-						  XRenderFindStandardFormat (dpy, PictStandardARGB32),
+						  XRenderFindStandardFormat (dpy, PictStandardA8),
 						  0, 0);
     GC	    gc = XCreateGC (dpy, shadowPixmap, 0, 0);
     
@@ -478,7 +479,7 @@ paint_all (Display *dpy, XserverRegion region)
 	XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, w->borderClip);
 	if (w->shadow)
 	{
-	    XRenderComposite (dpy, PictOpOver, w->shadow, None, rootBuffer,
+	    XRenderComposite (dpy, PictOpOver, blackPicture, w->shadow, rootBuffer,
 			      0, 0, 0, 0,
 			      w->a.x + w->a.border_width + w->shadow_dx,
 			      w->a.y + w->a.border_width + w->shadow_dy,
@@ -776,6 +777,7 @@ main ()
     Window	    root_return, parent_return;
     Window	    *children;
     Pixmap	    transPixmap;
+    Pixmap	    blackPixmap;
     unsigned int    nchildren;
     int		    i;
     int		    damage_event, damage_error;
@@ -820,6 +822,15 @@ main ()
 								 DefaultVisual (dpy, scr)),
 					CPSubwindowMode,
 					&pa);
+    blackPixmap = XCreatePixmap (dpy, root, 1, 1, 32);
+    pa.repeat = True;
+    blackPicture = XRenderCreatePicture (dpy, blackPixmap,
+					 XRenderFindStandardFormat (dpy, PictStandardARGB32),
+					 CPRepeat,
+					 &pa);
+    c.red = c.green = c.blue = 0;
+    c.alpha = 0xffff;
+    XRenderFillRectangle (dpy, PictOpSrc, blackPicture, &c, 0, 0, 1, 1);
     if (!XCompositeQueryExtension (dpy, &event_base, &error_base))
     {
 	fprintf (stderr, "No composite extension\n");
@@ -855,9 +866,12 @@ main ()
     last_update = time_in_millis ();
     for (;;)
     {
+	int busy_start = 0;
 /*	dump_wins (); */
 	do {
 	    XNextEvent (dpy, &ev);
+	    if (!busy_start)
+		busy_start = time_in_millis();
 /*	    printf ("event %d\n", ev.type); */
 	    switch (ev.type) {
 	    case CreateNotify:
@@ -930,6 +944,7 @@ main ()
 	    }
 	} while (XEventsQueued (dpy, QueuedAfterReading));
 	now = time_in_millis ();
+/*	printf ("\t\tbusy %d\n", now - busy_start); */
 	timeout = INTERVAL - (now - last_update);
 	if (timeout > 0)
 	{
@@ -939,9 +954,11 @@ main ()
 	    if (n > 0 && (ufd.revents & POLLIN) && XEventsQueued (dpy, QueuedAfterReading))
 		continue;
 	}
-	last_update = time_in_millis();
 	if (allDamage)
 	{
+	    int	old_update = last_update;
+	    last_update = time_in_millis();
+/*	    printf ("delta %d\n", last_update - old_update); */
 	    paint_all (dpy, allDamage);
 	    allDamage = None;
 	}
