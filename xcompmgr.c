@@ -768,7 +768,7 @@ time_in_millis ()
     return(tp.tv_sec * 1000) + (tp.tv_usec / 1000);
 }
 
-#define INTERVAL    10
+#define INTERVAL    0
 
 main ()
 {
@@ -792,7 +792,9 @@ main ()
     int		    n;
     int		    last_update;
     int		    now;
+#if INTERVAL
     int		    timeout;
+#endif
 
     dpy = XOpenDisplay (0);
     if (!dpy)
@@ -863,15 +865,21 @@ main ()
     XFree (children);
     XUngrabServer (dpy);
     paint_all (dpy, None);
+#if INTERVAL
     last_update = time_in_millis ();
+#endif
     for (;;)
     {
+#if INTERVAL
 	int busy_start = 0;
+#endif
 /*	dump_wins (); */
 	do {
 	    XNextEvent (dpy, &ev);
+#if INTERVAL
 	    if (!busy_start)
 		busy_start = time_in_millis();
+#endif
 /*	    printf ("event %d\n", ev.type); */
 	    switch (ev.type) {
 	    case CreateNotify:
@@ -943,6 +951,7 @@ main ()
 		break;
 	    }
 	} while (XEventsQueued (dpy, QueuedAfterReading));
+#if INTERVAL
 	now = time_in_millis ();
 /*	printf ("\t\tbusy %d\n", now - busy_start); */
 	timeout = INTERVAL - (now - last_update);
@@ -954,11 +963,14 @@ main ()
 	    if (n > 0 && (ufd.revents & POLLIN) && XEventsQueued (dpy, QueuedAfterReading))
 		continue;
 	}
+#endif
 	if (allDamage)
 	{
+#if INTERVAL
 	    int	old_update = last_update;
 	    last_update = time_in_millis();
 /*	    printf ("delta %d\n", last_update - old_update); */
+#endif
 	    paint_all (dpy, allDamage);
 	    allDamage = None;
 	}

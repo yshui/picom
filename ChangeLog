@@ -1,3 +1,9 @@
+2003-11-14  Keith Packard  <keithp@keithp.com>
+
+	* xcompmgr.c: (main):
+	Eliminate all delays in updates; let the X server scheduling
+	handle things.
+
 2003-11-13  Keith Packard  <keithp@keithp.com>
 
 	* xcompmgr.c:
