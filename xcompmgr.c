@@ -666,8 +666,9 @@ configure_win (Display *dpy, XConfigureEvent *ce)
     }
     if (damage)
     {
-	XserverRegion	border = border_size (dpy, w);
-	XFixesUnionRegion (dpy, damage, damage, 0, 0, border, 0, 0);
+	XserverRegion	extents = win_extents (dpy, w);
+	XFixesUnionRegion (dpy, damage, damage, 0, 0, extents, 0, 0);
+	XFixesDestroyRegion (dpy, extents);
 	add_damage (dpy, damage);
     }
 }
