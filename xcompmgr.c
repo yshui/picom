@@ -1757,7 +1757,17 @@ ev_window (XEvent *ev)
 void
 usage (char *program)
 {
-    fprintf (stderr, "usage: %s [-d display] [-n] [-s] [-c] [-a] [-f] [-F] [-C]\n", program);
+    fprintf (stderr, "usage: %s [-d display] [-acCfFnsS]\n", program);
+    fprintf (stderr, "Options\n");
+    fprintf (stderr, "   -d display\n      Specifies which display should be managed.\n");
+    fprintf (stderr, "   -a\n      Use automatic server-side compositing. Faster, but no special effects.\n");
+    fprintf (stderr, "   -c\n      Draw client-side shadows with fuzzy edges.\n");
+    fprintf (stderr, "   -C\n      Avoid drawing shadows on dock/panel windows.\n");
+    fprintf (stderr, "   -f\n      Fade windows in/out when opening/closing.\n");
+    fprintf (stderr, "   -F\n      Fade windows during opacity changes.\n");
+    fprintf (stderr, "   -n\n      Normal client-side compositing with transparency support\n");
+    fprintf (stderr, "   -s\n      Draw server-side shadows with sharp edges.\n");
+    fprintf (stderr, "   -S\n      Enable synchronous operation (for debugging).\n");
     exit (1);
 }
 
