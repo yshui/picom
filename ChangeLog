@@ -1,5 +1,13 @@
 2003-11-09  Keith Packard  <keithp@keithp.com>
 
+	* xcompmgr.c: (paint_root), (paint_all), (map_win), (add_win),
+	(configure_win), (destroy_win), (main):
+
+	Double buffer updates.
+	Check for InputOnly windows and ignore them
+
+2003-11-09  Keith Packard  <keithp@keithp.com>
+
 	* xcompmgr.c: (root_tile), (paint_root):
 	Detect root pattern with undocumented _XROOTPMAP_ID property
 

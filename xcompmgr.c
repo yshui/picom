@@ -1,6 +1,31 @@
+/*
+ * $Id$
+ *
+ * Copyright © 2003 Keith Packard
+ *
+ * Permission to use, copy, modify, distribute, and sell this software and its
+ * documentation for any purpose is hereby granted without fee, provided that
+ * the above copyright notice appear in all copies and that both that
+ * copyright notice and this permission notice appear in supporting
+ * documentation, and that the name of Keith Packard not be used in
+ * advertising or publicity pertaining to distribution of the software without
+ * specific, written prior permission.  Keith Packard makes no
+ * representations about the suitability of this software for any purpose.  It
+ * is provided "as is" without express or implied warranty.
+ *
+ * KEITH PACKARD DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+ * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO
+ * EVENT SHALL KEITH PACKARD BE LIABLE FOR ANY SPECIAL, INDIRECT OR
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+ * DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+ * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+ * PERFORMANCE OF THIS SOFTWARE.
+ */
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <sys/poll.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/Xcomposite.h>
@@ -34,9 +59,11 @@ Display		*dpy;
 int		scr;
 Window		root;
 Picture		rootPicture;
+Picture		rootBuffer;
 Picture		transPicture;
 Picture		rootTile;
 XserverRegion	allDamage;
+int		root_height, root_width;
 
 #define WINDOW_PLAIN	0
 #define WINDOW_DROP	1
@@ -336,8 +363,8 @@ paint_root (Display *dpy)
 	rootTile = root_tile (dpy);
     
     XRenderComposite (dpy, PictOpSrc,
-		      rootTile, None, rootPicture,
-		      0, 0, 0, 0, 0, 0, 32767, 32767);
+		      rootTile, None, rootBuffer,
+		      0, 0, 0, 0, 0, 0, root_width, root_height);
 }
 
 XserverRegion
@@ -379,12 +406,35 @@ paint_all (Display *dpy, XserverRegion region)
     win	*w;
     win	*t = 0;
     
+    if (!region)
+    {
+	XRectangle  r;
+	r.x = 0;
+	r.y = 0;
+	r.width = root_width;
+	r.height = root_height;
+	region = XFixesCreateRegion (dpy, &r, 1);
+    }
+    if (!rootBuffer)
+    {
+	Pixmap	rootPixmap = XCreatePixmap (dpy, root, root_width, root_height,
+					    DefaultDepth (dpy, scr));
+	rootBuffer = XRenderCreatePicture (dpy, rootPixmap,
+					   XRenderFindVisualFormat (dpy,
+								    DefaultVisual (dpy, scr)),
+					   0, 0);
+	XFreePixmap (dpy, rootPixmap);
+    }
+    XFixesSetPictureClipRegion (dpy, rootPicture, 0, 0, region);
     for (w = list; w; w = w->next)
     {
 	Picture	mask;
 	
 	if (w->a.map_state != IsViewable)
 	    continue;
+	if (!w->picture)
+	    continue;
+	
 	if (w->borderSize)
 	    XFixesDestroyRegion (dpy, w->borderSize);
 	w->borderSize = border_size (dpy, w);
@@ -393,9 +443,9 @@ paint_all (Display *dpy, XserverRegion region)
 	w->extents = win_extents (dpy, w);
 	if (w->mode != WINDOW_TRANS)
 	{
-	    XFixesSetPictureClipRegion (dpy, rootPicture, 0, 0, region);
+	    XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, region);
 	    XFixesSubtractRegion (dpy, region, region, 0, 0, w->borderSize, 0, 0);
-	    XRenderComposite (dpy, PictOpSrc, w->picture, None, rootPicture,
+	    XRenderComposite (dpy, PictOpSrc, w->picture, None, rootBuffer,
 			      0, 0, 0, 0, 
 			      w->a.x + w->a.border_width,
 			      w->a.y + w->a.border_width,
@@ -407,21 +457,21 @@ paint_all (Display *dpy, XserverRegion region)
 	w->prev_trans = t;
 	t = w;
     }
-    XFixesSetPictureClipRegion (dpy, rootPicture, 0, 0, region);
+    XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, region);
     paint_root (dpy);
     for (w = t; w; w = w->prev_trans)
     {
-	XFixesSetPictureClipRegion (dpy, rootPicture, 0, 0, w->borderClip);
+	XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, w->borderClip);
 	if (w->shadow)
 	{
-	    XRenderComposite (dpy, PictOpOver, w->shadow, None, rootPicture,
+	    XRenderComposite (dpy, PictOpOver, w->shadow, None, rootBuffer,
 			      0, 0, 0, 0,
 			      w->a.x + w->a.border_width + w->shadow_dx,
 			      w->a.y + w->a.border_width + w->shadow_dy,
 			      w->shadow_width, w->shadow_height);
 	}
 	if (w->mode == WINDOW_TRANS)
-	    XRenderComposite (dpy, PictOpOver, w->picture, transPicture, rootPicture,
+	    XRenderComposite (dpy, PictOpOver, w->picture, transPicture, rootBuffer,
 			      0, 0, 0, 0, 
 			      w->a.x + w->a.border_width,
 			      w->a.y + w->a.border_width,
@@ -431,6 +481,9 @@ paint_all (Display *dpy, XserverRegion region)
 	w->borderClip = None;
     }
     XFixesDestroyRegion (dpy, region);
+    XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, None);
+    XRenderComposite (dpy, PictOpSrc, rootBuffer, None, rootPicture,
+		      0, 0, 0, 0, 0, 0, root_width, root_height);
 }
 
 void
@@ -470,9 +523,12 @@ map_win (Display *dpy, Window id)
     if (!w)
 	return;
     w->a.map_state = IsViewable;
-    w->damage = XDamageCreate (dpy, id, XDamageReportNonEmpty);
-    region = win_extents (dpy, w);
-    add_damage (dpy, region);
+    if (w->picture)
+    {
+	w->damage = XDamageCreate (dpy, id, XDamageReportNonEmpty);
+	region = win_extents (dpy, w);
+	add_damage (dpy, region);
+    }
 }
 
 void
@@ -522,11 +578,16 @@ add_win (Display *dpy, Window id, Window prev)
     new->damaged = 0;
     new->damage = None;
     pa.subwindow_mode = IncludeInferiors;
-    new->picture = XRenderCreatePicture (dpy, id,
-					 XRenderFindVisualFormat (dpy, 
-								  new->a.visual),
-					 CPSubwindowMode,
-					 &pa);
+    if (new->a.class == InputOnly)
+	new->picture = 0;
+    else
+    {
+	new->picture = XRenderCreatePicture (dpy, id,
+					     XRenderFindVisualFormat (dpy, 
+								      new->a.visual),
+					     CPSubwindowMode,
+					     &pa);
+    }
 					 
     new->shadow = None;
     new->borderSize = None;
@@ -549,7 +610,19 @@ configure_win (Display *dpy, XConfigureEvent *ce)
     XserverRegion   damage = None;
     
     if (!w)
+    {
+	if (ce->window == root)
+	{
+	    if (rootBuffer)
+	    {
+		XRenderFreePicture (dpy, rootBuffer);
+		rootBuffer = None;
+	    }
+	    root_width = ce->width;
+	    root_height = ce->height;
+	}
 	return;
+    }
     if (w->a.map_state == IsViewable)
     {
 	damage = XFixesCreateRegion (dpy, 0, 0);
@@ -610,7 +683,8 @@ destroy_win (Display *dpy, Window id, Bool gone)
 	    if (!gone)
 	    {
 		unmap_win (dpy, id);
-		XRenderFreePicture (dpy, w->picture);
+		if (w->picture)
+		    XRenderFreePicture (dpy, w->picture);
 	    }
 	    *prev = w->next;
 	    free (w);
@@ -673,6 +747,8 @@ main ()
     GC		    gc;
     int		    size_expose = 0;
     int		    n_expose = 0;
+    struct pollfd   ufd;
+    int		    n;
 
     dpy = XOpenDisplay (0);
     if (!dpy)
@@ -680,6 +756,7 @@ main ()
 	fprintf (stderr, "Can't open display\n");
 	exit (1);
     }
+    XSynchronize (dpy, True);
     XSetErrorHandler (error);
     scr = DefaultScreen (dpy);
     root = RootWindow (dpy, scr);
@@ -694,6 +771,9 @@ main ()
     c.alpha = 0xc0c0;
     XRenderFillRectangle (dpy, PictOpSrc, transPicture, &c, 0, 0, 1, 1);
     
+    root_width = DisplayWidth (dpy, scr);
+    root_height = DisplayHeight (dpy, scr);
+    
     rootPicture = XRenderCreatePicture (dpy, root, 
 					XRenderFindVisualFormat (dpy,
 								 DefaultVisual (dpy, scr)),
@@ -704,21 +784,24 @@ main ()
 	fprintf (stderr, "No composite extension\n");
 	exit (1);
     }
+    printf ("Composite error %d\n", error_base);
     if (!XDamageQueryExtension (dpy, &damage_event, &damage_error))
     {
 	fprintf (stderr, "No damage extension\n");
 	exit (1);
     }
+    printf ("Damage error %d\n", damage_error);
     if (!XFixesQueryExtension (dpy, &xfixes_event, &xfixes_error))
     {
 	fprintf (stderr, "No XFixes extension\n");
 	exit (1);
     }
+    printf ("XFixes error %d\n", xfixes_error);
     allDamage = None;
     XGrabServer (dpy);
     XCompositeRedirectSubwindows (dpy, root, CompositeRedirectManual);
-    paint_root (dpy);
-    XSelectInput (dpy, root, SubstructureNotifyMask|ExposureMask);
+    paint_all (dpy, None);
+    XSelectInput (dpy, root, SubstructureNotifyMask|ExposureMask|StructureNotifyMask);
     XQueryTree (dpy, root, &root_return, &parent_return, &children, &nchildren);
     for (i = 0; i < nchildren; i++)
 	add_win (dpy, children[i], i ? children[i-1] : None);
@@ -789,6 +872,11 @@ main ()
 		break;
 	    }
 	} while (XEventsQueued (dpy, QueuedAfterReading));
+	ufd.fd = ConnectionNumber (dpy);
+	ufd.events = POLLIN;
+	n = poll (&ufd, 1, 30);
+	if (n > 0 && (ufd.revents & POLLIN) && XEventsQueued (dpy, QueuedAfterReading))
+	    continue;
 	if (allDamage)
 	{
 	    paint_all (dpy, allDamage);
