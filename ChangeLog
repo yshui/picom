@@ -1,3 +1,19 @@
+2003-11-23  Keith Packard  <keithp@keithp.com>
+
+	* xcompmgr.c: (make_shadow), (root_tile), (win_extents),
+	(border_size), (paint_all), (repair_win), (map_win), (unmap_win),
+	(add_win), (restack_win), (configure_win), (circulate_win),
+	(destroy_win), (ev_serial), (ev_name), (ev_window), (main):
+	
+	Rename gussianMap to gaussianMap (who the heck is gus?)
+	Allow for other names for the root pixmap
+	Handle non-zero border widths better (need Composite change
+	to display them though).
+	Add MONITOR_UPDATE mode that eliminates double buffering and
+	blanks the screen to make sequence of update operations visible.
+	Leave damage object around to catch map damage right.
+	Add CirculateNotify support.
+
 2003-11-23  Eric Anholt  <anholt@FreeBSD.org>
 
 	* xcompmgr.c: (border_size), (paint_all), (add_damage),
