@@ -1,5 +1,10 @@
 2003-11-13  Keith Packard  <keithp@keithp.com>
 
+	* xcompmgr.c:
+	Reduce scheduling latency to 10ms
+
+2003-11-13  Keith Packard  <keithp@keithp.com>
+
 	* xcompmgr.c: (make_gaussian_map), (sum_gaussian), (make_shadow),
 	(shadow_picture), (paint_all), (main):
 	Use an alpha map instead of an ARGB picture for shadows.

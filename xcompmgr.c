@@ -768,7 +768,7 @@ time_in_millis ()
     return(tp.tv_sec * 1000) + (tp.tv_usec / 1000);
 }
 
-#define INTERVAL    30
+#define INTERVAL    10
 
 main ()
 {
