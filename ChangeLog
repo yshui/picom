@@ -1,3 +1,8 @@
+2004-05-17  Eric Anholt  <anholt@FreeBSD.org>
+
+	* configure.ac:
+	Autoconf 2.57 appears to work fine, as well.
+
 2004-03-31  Philip Blundell  <philb@gnu.org>
 
 	* Makefile.am: Set INCLUDES, not xcompmgr_INCLUDES.
