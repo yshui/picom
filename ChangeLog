@@ -1,3 +1,9 @@
+2004-09-14  Adam Jackson  <ajax@freedesktop.org>
+
+	* xcompmgr.c:
+	Bug #1360: Fix a segfault by checking the return value of XQueryTree.
+	(Johan Kiviniemi)
+
 2004-09-10  Adam Jackson  <ajax@freedesktop.org>
 
 	* xcompmgr.c:

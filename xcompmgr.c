@@ -1297,7 +1297,13 @@ determine_wintype (Display *dpy, Window w)
     if (type != winNormalAtom)
 	return type;
 
-    XQueryTree (dpy, w, &root_return, &parent_return, &children, &nchildren);
+    if (!XQueryTree (dpy, w, &root_return, &parent_return, &children,
+			    &nchildren))
+    {
+	/* XQueryTree failed. */
+	return winNormalAtom;
+    }
+
     for (i = 0;i < nchildren;i++)
     {
 	type = determine_wintype (dpy, children[i]);
