@@ -35,6 +35,7 @@
 #include <sys/poll.h>
 #include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
@@ -122,11 +123,19 @@ conv            *gaussianMap;
 #define SHADOWS		1
 #define SHARP_SHADOW	0
 
-#if SHADOWS
-#define SHADOW_RADIUS	12
+typedef enum _compMode {
+    CompSimple,		/* looks like a regular X server */
+    CompServerShadows,	/* use window alpha for shadow; sharp, but precise */
+    CompClientShadows,	/* use window extents for shadow, blurred */
+} CompMode;
+
+CompMode    compMode = CompSimple;
+
+int	    shadowRadius = 12;
+
 #define SHADOW_OPACITY	0.75
-#define SHADOW_OFFSET_X	(-SHADOW_RADIUS * 5 / 4)
-#define SHADOW_OFFSET_Y	(-SHADOW_RADIUS * 5 / 4)
+#define SHADOW_OFFSET_X	(-shadowRadius * 5 / 4)
+#define SHADOW_OFFSET_Y	(-shadowRadius * 5 / 4)
 
 static double
 gaussian (double r, double x, double y)
@@ -358,8 +367,6 @@ shadow_picture (Display *dpy, double opacity, int width, int height, int *wp, in
     return shadowPicture;
 }
 
-#endif /* SHADOWS */
-
 Picture
 solid_picture (Display *dpy, Bool argb, double a, double r, double g, double b)
 {
@@ -507,52 +514,54 @@ win_extents (Display *dpy, win *w)
     r.y = w->a.y;
     r.width = w->a.width + w->a.border_width * 2;
     r.height = w->a.height + w->a.border_width * 2;
-#if SHADOWS
-#if !SHARP_SHADOW
-    if (w->mode != WINDOW_ARGB)
-#endif
+    if (compMode != CompSimple)
     {
-	XRectangle  sr;
-	
-#if SHARP_SHADOW
-	w->shadow_dx = 2;
-	w->shadow_dy = 7;
-	w->shadow_width = w->a.width;
-	w->shadow_height = w->a.height;
-#else
-	w->shadow_dx = SHADOW_OFFSET_X;
-	w->shadow_dy = SHADOW_OFFSET_Y;
-	if (!w->shadow)
+	if (compMode == CompServerShadows || w->mode != WINDOW_ARGB)
 	{
-	    double	opacity = SHADOW_OPACITY;
-	    if (w->mode == WINDOW_TRANS)
-		opacity = opacity * TRANS_OPACITY;
-	    w->shadow = shadow_picture (dpy, opacity,
-					w->a.width + w->a.border_width * 2,
-					w->a.height + w->a.border_width * 2,
-					&w->shadow_width, &w->shadow_height);
+	    XRectangle  sr;
+
+	    if (compMode == CompServerShadows)
+	    {
+		w->shadow_dx = 2;
+		w->shadow_dy = 7;
+		w->shadow_width = w->a.width;
+		w->shadow_height = w->a.height;
+	    }
+	    else
+	    {
+		w->shadow_dx = SHADOW_OFFSET_X;
+		w->shadow_dy = SHADOW_OFFSET_Y;
+		if (!w->shadow)
+		{
+		    double	opacity = SHADOW_OPACITY;
+		    if (w->mode == WINDOW_TRANS)
+			opacity = opacity * TRANS_OPACITY;
+		    w->shadow = shadow_picture (dpy, opacity,
+						w->a.width + w->a.border_width * 2,
+						w->a.height + w->a.border_width * 2,
+						&w->shadow_width, &w->shadow_height);
+		}
+	    }
+	    sr.x = w->a.x + w->shadow_dx;
+	    sr.y = w->a.y + w->shadow_dy;
+	    sr.width = w->shadow_width;
+	    sr.height = w->shadow_height;
+	    if (sr.x < r.x)
+	    {
+		r.width = (r.x + r.width) - sr.x;
+		r.x = sr.x;
+	    }
+	    if (sr.y < r.y)
+	    {
+		r.height = (r.y + r.height) - sr.y;
+		r.y = sr.y;
+	    }
+	    if (sr.x + sr.width > r.x + r.width)
+		r.width = sr.x + sr.width - r.x;
+	    if (sr.y + sr.height > r.y + r.height)
+		r.height = sr.y + sr.height - r.y;
 	}
-#endif
-	sr.x = w->a.x + w->shadow_dx;
-	sr.y = w->a.y + w->shadow_dy;
-	sr.width = w->shadow_width;
-	sr.height = w->shadow_height;
-	if (sr.x < r.x)
-	{
-	    r.width = (r.x + r.width) - sr.x;
-	    r.x = sr.x;
-	}
-	if (sr.y < r.y)
-	{
-	    r.height = (r.y + r.height) - sr.y;
-	    r.y = sr.y;
-	}
-	if (sr.x + sr.width > r.x + r.width)
-	    r.width = sr.x + sr.width - r.x;
-	if (sr.y + sr.height > r.y + r.height)
-	    r.height = sr.y + sr.height - r.y;
     }
-#endif
     return XFixesCreateRegion (dpy, &r, 1);
 }
 
@@ -679,31 +688,34 @@ paint_all (Display *dpy, XserverRegion region)
     for (w = t; w; w = w->prev_trans)
     {
 	XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, w->borderClip);
-#if SHADOWS
-#if SHARP_SHADOW
-	set_ignore (dpy, NextRequest (dpy));
-	if (w->opacity != OPAQUE && !w->shadowPict)
-	    w->shadowPict = solid_picture (dpy, True,
-					   (double) w->opacity / OPAQUE * 0.3,
-					   0, 0, 0);
-	XRenderComposite (dpy, PictOpOver, 
-			  w->shadowPict ? w->shadowPict : transBlackPicture,
-			  w->picture, rootBuffer,
-			  0, 0, 0, 0,
-			  w->a.x + w->shadow_dx,
-			  w->a.y + w->shadow_dy,
-			  w->shadow_width, w->shadow_height);
-#else
-	if (w->shadow)
-	{
-	    XRenderComposite (dpy, PictOpOver, blackPicture, w->shadow, rootBuffer,
+	switch (compMode) {
+	case CompSimple:
+	    break;
+	case CompServerShadows:
+	    set_ignore (dpy, NextRequest (dpy));
+	    if (w->opacity != OPAQUE && !w->shadowPict)
+		w->shadowPict = solid_picture (dpy, True,
+					       (double) w->opacity / OPAQUE * 0.3,
+					       0, 0, 0);
+	    XRenderComposite (dpy, PictOpOver, 
+			      w->shadowPict ? w->shadowPict : transBlackPicture,
+			      w->picture, rootBuffer,
 			      0, 0, 0, 0,
 			      w->a.x + w->shadow_dx,
 			      w->a.y + w->shadow_dy,
 			      w->shadow_width, w->shadow_height);
+	    break;
+	case CompClientShadows:
+	    if (w->shadow)
+	    {
+		XRenderComposite (dpy, PictOpOver, blackPicture, w->shadow, rootBuffer,
+				  0, 0, 0, 0,
+				  w->a.x + w->shadow_dx,
+				  w->a.y + w->shadow_dy,
+				  w->shadow_width, w->shadow_height);
+	    }
+	    break;
 	}
-#endif
-#endif /* SHADOWS */
 	if (w->opacity != OPAQUE)
 	    w->alphaPict = solid_picture (dpy, False, 
 					  (double) w->opacity / OPAQUE, 0, 0, 0);
@@ -774,15 +786,14 @@ repair_win (Display *dpy, Window id)
 	XFixesTranslateRegion (dpy, parts,
 			       w->a.x + w->a.border_width,
 			       w->a.y + w->a.border_width);
-#if SHADOWS
-#if SHARP_SHADOW
-	o = XFixesCreateRegion (dpy, 0, 0);
-	XFixesCopyRegion (dpy, o, parts);
-	XFixesTranslateRegion (dpy, o, w->shadow_dx, w->shadow_dy);
-	XFixesUnionRegion (dpy, parts, parts, o);
-	XFixesDestroyRegion (dpy, o);
-#endif
-#endif
+	if (compMode == CompServerShadows)
+	{
+	    o = XFixesCreateRegion (dpy, 0, 0);
+	    XFixesCopyRegion (dpy, o, parts);
+	    XFixesTranslateRegion (dpy, o, w->shadow_dx, w->shadow_dy);
+	    XFixesUnionRegion (dpy, parts, parts, o);
+	    XFixesDestroyRegion (dpy, o);
+	}
     }
     add_damage (dpy, parts);
     w->damaged = 1;
@@ -848,7 +859,11 @@ unmap_win (Display *dpy, Window id)
 	w->pixmap = 0;
     }
     if (w->picture)
+    {
+	set_ignore (dpy, NextRequest (dpy));
 	XRenderFreePicture (dpy, w->picture);
+	w->picture = None;
+    }
 
     /* don't care about properties anymore */
     set_ignore (dpy, NextRequest (dpy));
@@ -1261,6 +1276,13 @@ ev_window (XEvent *ev)
     }
 }
 
+void
+usage (char *program)
+{
+    fprintf (stderr, "usage: %s [-d display] [-n] [-s] [-c]\n", program);
+    exit (1);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -1282,8 +1304,31 @@ main (int argc, char **argv)
     int		    now;
     int		    p;
     int		    composite_major, composite_minor;
+    char	    *display = 0;
+    int		    o;
 
-    dpy = XOpenDisplay (0);
+    while ((o = getopt (argc, argv, "d:scn")) != -1)
+    {
+	switch (o) {
+	case 'd':
+	    display = optarg;
+	    break;
+	case 's':
+	    compMode = CompServerShadows;
+	    break;
+	case 'c':
+	    compMode = CompClientShadows;
+	    break;
+	case 'n':
+	    compMode = CompSimple;
+	    break;
+	default:
+	    usage (argv[0]);
+	    break;
+	}
+    }
+    
+    dpy = XOpenDisplay (display);
     if (!dpy)
     {
 	fprintf (stderr, "Can't open display\n");
@@ -1308,6 +1353,9 @@ main (int argc, char **argv)
     }
     XCompositeQueryVersion (dpy, &composite_major, &composite_minor);
 #if 0
+    /*
+     * Don't use this yet; we don't have set semantics for new pixmaps
+     */
     if (composite_major > 0 || composite_minor >= 2)
 	hasNamePixmap = True;
 #endif
@@ -1327,9 +1375,8 @@ main (int argc, char **argv)
 
     pa.subwindow_mode = IncludeInferiors;
 
-#if SHADOWS && !SHARP_SHADOW
-    gaussianMap = make_gaussian_map(dpy, SHADOW_RADIUS);
-#endif
+    if (compMode == CompClientShadows)
+	gaussianMap = make_gaussian_map(dpy, shadowRadius);
 
     root_width = DisplayWidth (dpy, scr);
     root_height = DisplayHeight (dpy, scr);
@@ -1340,9 +1387,8 @@ main (int argc, char **argv)
 					CPSubwindowMode,
 					&pa);
     blackPicture = solid_picture (dpy, True, 1, 0, 0, 0);
-#if SHADOWS && SHARP_SHADOW
-    transBlackPicture = solid_picture (dpy, True, 0.3, 0, 0, 0);
-#endif
+    if (compMode == CompServerShadows)
+	transBlackPicture = solid_picture (dpy, True, 0.3, 0, 0, 0);
     allDamage = None;
     clipChanged = True;
     XGrabServer (dpy);

@@ -1,5 +1,15 @@
 2004-06-26  Keith Packard  <keithp@keithp.com>
 
+	* xcompmgr.c: (win_extents), (paint_all), (repair_win),
+	(unmap_win), (usage), (main):
+	Make composite manager mode run-time selectable with
+	command line option:
+	 -s:	server-side shadows (sharp, but follows window alpha)
+	 -c:	client-side shadows (blurred, but uses window extents only)
+	 -n:	no shadows (this is the default mode)
+
+2004-06-26  Keith Packard  <keithp@keithp.com>
+
 	* xcompmgr.c: (make_gaussian_map), (make_shadow), (shadow_picture),
 	(solid_picture), (discard_ignore), (set_ignore), (should_ignore),
 	(win_extents), (border_size), (paint_all), (repair_win), (map_win),
