@@ -1,5 +1,13 @@
 2004-09-17  Dan Doel  <dolio@case.edu>
 
+	* xcompmgr.c: (win_extents), (usage), (main):
+	Added various client-side shadow options (opacity, offset, radius)
+	based on the work of Thomas Luebking.
+	* xcompmgr.1:
+	Added descriptions of the options in the man page.
+
+2004-09-17  Dan Doel  <dolio@case.edu>
+
 	* xcompmgr.c: (usage):
 	Changed the usage function to describe the available options.
 

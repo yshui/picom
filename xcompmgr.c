@@ -178,6 +178,9 @@ win_extents (Display *dpy, win *w);
 CompMode    compMode = CompSimple;
 
 int	    shadowRadius = 12;
+int         shadowOffsetX = -15;
+int         shadowOffsetY = -15;
+double      shadowOpacity = .75;
 
 double  fade_in_step =  0.028;
 double  fade_out_step = 0.03;
@@ -360,10 +363,6 @@ run_fades (Display *dpy)
     }
     fade_time = now + fade_delta;
 }
-
-#define SHADOW_OPACITY	0.75
-#define SHADOW_OFFSET_X	(-shadowRadius * 5 / 4)
-#define SHADOW_OFFSET_Y	(-shadowRadius * 5 / 4)
 
 static double
 gaussian (double r, double x, double y)
@@ -779,11 +778,11 @@ win_extents (Display *dpy, win *w)
 	    }
 	    else
 	    {
-		w->shadow_dx = SHADOW_OFFSET_X;
-		w->shadow_dy = SHADOW_OFFSET_Y;
+		w->shadow_dx = shadowOffsetX;
+		w->shadow_dy = shadowOffsetY;
 		if (!w->shadow)
 		{
-		    double	opacity = SHADOW_OPACITY;
+		    double	opacity = shadowOpacity;
 		    if (w->mode == WINDOW_TRANS)
 			opacity = opacity * ((double)w->opacity)/((double)OPAQUE);
 		    w->shadow = shadow_picture (dpy, opacity, w->alphaPict,
@@ -1757,9 +1756,13 @@ ev_window (XEvent *ev)
 void
 usage (char *program)
 {
-    fprintf (stderr, "usage: %s [-d display] [-acCfFnsS]\n", program);
+    fprintf (stderr, "usage: %s [options]\n", program);
     fprintf (stderr, "Options\n");
     fprintf (stderr, "   -d display\n      Specifies which display should be managed.\n");
+    fprintf (stderr, "   -r radius\n      Specifies the blur radius for client-side shadows. (default 12)\n");
+    fprintf (stderr, "   -o opacity\n      Specifies the translucency for client-side shadows. (default .75)\n");
+    fprintf (stderr, "   -l left-offset\n      Specifies the left offset for client-side shadows. (default -15)\n");
+    fprintf (stderr, "   -t top-offset\n      Specifies the top offset for clinet-side shadows. (default -15)\n");
     fprintf (stderr, "   -a\n      Use automatic server-side compositing. Faster, but no special effects.\n");
     fprintf (stderr, "   -c\n      Draw client-side shadows with fuzzy edges.\n");
     fprintf (stderr, "   -C\n      Avoid drawing shadows on dock/panel windows.\n");
@@ -1795,7 +1798,7 @@ main (int argc, char **argv)
     char	    *display = 0;
     int		    o;
 
-    while ((o = getopt (argc, argv, "d:scnfFCaS")) != -1)
+    while ((o = getopt (argc, argv, "d:r:o:l:t:scnfFCaS")) != -1)
     {
 	switch (o) {
 	case 'd':
@@ -1824,6 +1827,18 @@ main (int argc, char **argv)
 	    break;
 	case 'S':
 	    synchronize = True;
+	    break;
+	case 'r':
+	    shadowRadius = atoi (optarg);
+	    break;
+	case 'o':
+	    shadowOpacity = atof (optarg);
+	    break;
+	case 'l':
+	    shadowOffsetX = atoi (optarg);
+	    break;
+	case 't':
+	    shadowOffsetY = atoi (optarg);
 	    break;
 	default:
 	    usage (argv[0]);

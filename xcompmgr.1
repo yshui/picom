@@ -4,7 +4,7 @@
 xcompmgr \- sample X compositing manager
 .SH SYNOPSIS
 .nf
-.B xcompmgr [\-d display] [\-acfnsCFS]
+.B xcompmgr [\-d display] [\-r radius] [\-o opacity] [\-l left-offset] [\-t top-offset] [\-acCfFnsS]
 .fi
 .SH DESCRIPTION
 .B xcompmgr
@@ -14,6 +14,18 @@ and COMPOSITE extensions.  It enables basic eye-candy effects.
 .TP
 .BI \-d\ display
 Specifies the display to manage.
+.TP
+.BI \-r\ radius
+Specifies the blur radius for client-side shadows.
+.TP
+.BI \-o\ opacity
+Specifies the opacity for client-side shadows.
+.TP
+.BI \-l\ left-offset
+Specifies the left offset for client-side shadows.
+.TP
+.BI \-t\ top-offset
+Specifies the top offset for client-side shadows. 
 .TP
 .BI \-a
 Automatic server-side compositing.  This instructs the server to use the
@@ -45,4 +57,4 @@ Enables synchronous operation.  Useful for debugging.
 Probably.  Please report any you find to http://bugs.freedesktop.org/.
 .SH AUTHORS
 Keith Packard, with contributions from Matthew Allum, Eric Anholt, Dan Doel,
-Matthew Hawn, Ely Levy, Phil Blundell, and Carl Worth.
+Thomas Luebking, Matthew Hawn, Ely Levy, Phil Blundell, and Carl Worth.
