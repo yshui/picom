@@ -1,0 +1,35 @@
+.ds q \N'34'
+.TH xcompmgr 1
+.SH NAME
+xcompmgr \- sample X compositing manager
+.SH SYNOPSIS
+.nf
+.B xcompmgr [\-acfns]
+.fi
+.SH DESCRIPTION
+.B xcompmgr
+is a sample compositing manager for X servers supporting the XFIXES, DAMAGE,
+and COMPOSITE extensions.  It enables basic eye-candy effects.
+.SH OPTIONS
+.TP
+.BI \-a
+Automatic server-side compositing.  This instructs the server to use the
+standard composition rules.  Useful for debugging.
+.TP
+.BI \-c
+Client-side compositing with soft shadows and translucency support.
+.TP
+.BI \-f
+When \-c is specified, enables a smooth fade effect for transient windows like
+menus.
+.TP
+.BI \-n
+Simple client-side compositing.
+.TP
+.BI \-s
+Server-side compositing with hard-edged shadows.
+.SH BUGS
+Several.
+.SH AUTHORS
+Keith Packard, with contributions from Matthew Allum, Eric Anholt,
+Matthew Hawn, Ely Levy, Phil Blundell, and Carl Worth.

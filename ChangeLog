@@ -1,3 +1,8 @@
+2004-09-08  Adam Jackson  <ajax@freedesktop.org>
+
+	* xcompmgr.man, Makefile.am:
+	Add a man page.
+
 2004-08-14  Keith Packard  <keithp@keithp.com>
 
 	* xcompmgr.c: (error), (usage), (main):
