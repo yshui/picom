@@ -5,4 +5,6 @@ xcompmgr_LDADD = @XCOMPMGR_LIBS@ -lm
 
 INCLUDES = @XCOMPMGR_CFLAGS@
 
-EXTRA_DIST = ${man_MANS}
+EXTRA_DIST = \
+	autogen.sh \
+	${man_MANS}

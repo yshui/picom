@@ -1,3 +1,8 @@
+2005-01-26  Eric Anholt  <anholt@FreeBSD.org>
+
+	* Makefile.am:
+	Include the autogen.sh in the distfile.
+
 2004-09-29  Dan Doel  <dolio@case.edu>
 
 	* xcompmgr.c: (paint_all):
