@@ -1,5 +1,11 @@
 2003-11-09  Keith Packard  <keithp@keithp.com>
 
+	* xcompmgr.c: (root_tile):
+	Make sure _XROOTPMAP_ID property is right type, format and length
+	before attempting to use the resulting value.
+
+2003-11-09  Keith Packard  <keithp@keithp.com>
+
 	* xcompmgr.c: (configure_win):
 	Configure damage must include shadow region, not just window.
 	Also, leaking region on each configure.

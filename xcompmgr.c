@@ -328,7 +328,8 @@ root_tile (Display *dpy)
 
     if (XGetWindowProperty (dpy, root, XInternAtom (dpy, "_XROOTPMAP_ID", False),
 			    0, 4, False, AnyPropertyType,
-			    &actual_type, &actual_format, &nitems, &bytes_after, &prop) == Success)
+			    &actual_type, &actual_format, &nitems, &bytes_after, &prop) == Success &&
+	actual_type == XInternAtom (dpy, "PIXMAP", False) && actual_format == 32 && nitems == 1)
     {
 	memcpy (&pixmap, prop, 4);
 	XFree (prop);
