@@ -1,3 +1,8 @@
+2004-09-20  Adam Jackson  <ajax@freedesktop.org>
+
+	* xcompmgr.c:
+	Print the version number in the usage summary.
+
 2004-09-17  Dan Doel  <dolio@case.edu>
 
 	* xcompmgr.c: (win_extents), (usage), (main):
