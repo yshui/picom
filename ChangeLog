@@ -1,3 +1,14 @@
+2003-12-02  Keith Packard  <keithp@keithp.com>
+
+	* xcompmgr.c: (sum_gaussian), (make_shadow), (root_tile),
+	(paint_all), (map_win), (unmap_win), (determine_mode),
+	(configure_win), (circulate_win), (main):
+	Track whether cliplists have changed and avoid computation when not.
+	Shrink shadows.
+	Speed up shadow construction a bit by using memset.
+	Eliminate useless INTERVAL code.
+	Use XSync after paint_all to gather more events per update.
+
 2003-11-24  Matthew Hawn <hawnpawn@yahoo.com>
 
 	reviewed by: Keith Packard  <keithp@keithp.com>

@@ -79,6 +79,7 @@ Picture		transPicture;
 Picture		blackPicture;
 Picture		rootTile;
 XserverRegion	allDamage;
+Bool		clipChanged;
 int		root_height, root_width;
 
 
@@ -96,12 +97,13 @@ conv            *gaussianMap;
 #define WINDOW_ARGB	2
 
 #define TRANS_OPACITY	0.75
-#define SHADOW_RADIUS	15
+#define SHADOW_RADIUS	8
 #define SHADOW_OPACITY	0.75
-#define SHADOW_OFFSET_X	(-SHADOW_RADIUS)
-#define SHADOW_OFFSET_Y	(-SHADOW_RADIUS)
+#define SHADOW_OFFSET_X	(-SHADOW_RADIUS * 3 / 2)
+#define SHADOW_OFFSET_Y	(-SHADOW_RADIUS * 2 / 2)
 
-#define DEBUG 0
+#define DEBUG_REPAINT 0
+#define DEBUG_EVENTS 0
 #define MONITOR_REPAINT 0
 
 static double
@@ -208,7 +210,7 @@ sum_gaussian (conv *map, double opacity, int x, int y, int width, int height)
     if (v > 1)
 	v = 1;
     
-    return ((unsigned int) (v * opacity * 255.0));
+    return ((unsigned char) (v * opacity * 255.0));
 }
 
 static XImage *
@@ -223,6 +225,7 @@ make_shadow (Display *dpy, double opacity, int width, int height)
     int		    center = gsize / 2;
     int		    x, y;
     unsigned char   d;
+    int		    x_diff;
     
     data = malloc (swidth * sheight * sizeof (unsigned char));
     ximage = XCreateImage (dpy,
@@ -236,6 +239,13 @@ make_shadow (Display *dpy, double opacity, int width, int height)
      * Build the gaussian in sections
      */
 
+    /*
+     * center (fill the complete data array)
+     */
+
+    d = sum_gaussian (gaussianMap, opacity, center, center, width, height);
+    memset(data, d, sheight * swidth);
+    
     /*
      * corners
      */
@@ -259,13 +269,21 @@ make_shadow (Display *dpy, double opacity, int width, int height)
     /*
      * top/bottom
      */
-    for (y = 0; y < ylimit; y++)
+    x_diff = swidth - (gsize * 2);
+    if (x_diff > 0 && ylimit > 0)
     {
-	d = sum_gaussian (gaussianMap, opacity, center, y - center, width, height);
-	for (x = gsize; x < swidth - gsize; x++)
+	for (y = 0; y < ylimit; y++)
 	{
-	    data[y * swidth + x] = d;
-	    data[(sheight - y - 1) * swidth + x] = d;
+	    d = sum_gaussian (gaussianMap, opacity, center, y - center, width, height);
+	    memset (&data[y * swidth + gsize], d, x_diff);
+	    memset (&data[(sheight - y - 1) * swidth + gsize], d, x_diff);
+#if 0
+	    for (x = gsize; x < swidth - gsize; x++)
+	    {
+		data[y * swidth + x] = d;
+		data[(sheight - y - 1) * swidth + x] = d;
+	    }
+#endif
 	}
     }
 
@@ -350,6 +368,7 @@ root_tile (Display *dpy)
     XRenderPictureAttributes	pa;
     int		    p;
 
+    pixmap = None;
     for (p = 0; backgroundProps[p]; p++)
     {
 	if (XGetWindowProperty (dpy, root, XInternAtom (dpy, backgroundProps[p], False),
@@ -363,7 +382,7 @@ root_tile (Display *dpy)
 	    break;
 	}
     }
-    if (!backgroundProps[p])
+    if (!pixmap)
     {
 	pixmap = XCreatePixmap (dpy, root, 1, 1, DefaultDepth (dpy, scr));
 	fill = True;
@@ -489,7 +508,7 @@ paint_all (Display *dpy, XserverRegion region)
     XRenderComposite (dpy, PictOpSrc, blackPicture, None, rootPicture,
 		      0, 0, 0, 0, 0, 0, root_width, root_height);
 #endif
-#if DEBUG
+#if DEBUG_REPAINT
     printf ("paint:");
 #endif
     for (w = list; w; w = w->next)
@@ -501,15 +520,31 @@ paint_all (Display *dpy, XserverRegion region)
 	    continue;
 	if (!w->picture)
 	    continue;
-#if DEBUG
+#if DEBUG_REPAINT
 	printf (" 0x%x", w->id);
 #endif
-	if (w->borderSize)
-	    XFixesDestroyRegion (dpy, w->borderSize);
-	w->borderSize = border_size (dpy, w);
-	if (w->extents)
-	    XFixesDestroyRegion (dpy, w->extents);
-	w->extents = win_extents (dpy, w);
+	if (clipChanged)
+	{
+	    if (w->borderSize)
+	    {
+		XFixesDestroyRegion (dpy, w->borderSize);
+		w->borderSize = None;
+	    }
+	    if (w->extents)
+	    {
+		XFixesDestroyRegion (dpy, w->extents);
+		w->extents = None;
+	    }
+	    if (w->borderClip)
+	    {
+		XFixesDestroyRegion (dpy, w->borderClip);
+		w->borderClip = None;
+	    }
+	}
+	if (!w->borderSize)
+	    w->borderSize = border_size (dpy, w);
+	if (!w->extents)
+	    w->extents = win_extents (dpy, w);
 	if (w->mode == WINDOW_SOLID)
 	{
 	    XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, region);
@@ -521,13 +556,17 @@ paint_all (Display *dpy, XserverRegion region)
 			      w->a.width,
 			      w->a.height);
 	}
-	w->borderClip = XFixesCreateRegion (dpy, 0, 0);
-	XFixesCopyRegion (dpy, w->borderClip, region);
+	if (!w->borderClip)
+	{
+	    w->borderClip = XFixesCreateRegion (dpy, 0, 0);
+	    XFixesCopyRegion (dpy, w->borderClip, region);
+	}
 	w->prev_trans = t;
 	t = w;
     }
-#if DEBUG
+#if DEBUG_REPAINT
     printf ("\n");
+    fflush (stdout);
 #endif
     XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, region);
     paint_root (dpy);
@@ -618,6 +657,7 @@ map_win (Display *dpy, Window id, unsigned long sequence)
     XSelectInput(dpy, id, PropertyChangeMask);
 
     w->damaged = 0;
+    clipChanged = True;
 }
 
 static void
@@ -637,6 +677,7 @@ unmap_win (Display *dpy, Window id)
 
     /* don't care about properties anymore */
     XSelectInput(dpy, id, 0);
+    clipChanged = True;
 }
 
 
@@ -716,7 +757,7 @@ determine_mode(Display *dpy, win *w)
       {
 	/* changed this as a lot of window managers set this for all top
            level windows */
-	mode = WINDOW_SOLID;
+	mode = WINDOW_TRANS;
       }
       else
       {
@@ -866,6 +907,7 @@ configure_win (Display *dpy, XConfigureEvent *ce)
 	XFixesDestroyRegion (dpy, extents);
 	add_damage (dpy, damage);
     }
+    clipChanged = True;
 }
 
 static void
@@ -879,6 +921,7 @@ circulate_win (Display *dpy, XCirculateEvent *ce)
     else
 	new_above = None;
     restack_win (dpy, w, new_above);
+    clipChanged = True;
 }
 
 static void
@@ -944,20 +987,6 @@ expose_root (Display *dpy, Window root, XRectangle *rects, int nrects)
     add_damage (dpy, region);
 }
 
-#define INTERVAL    0
-
-#if INTERVAL
-static int
-time_in_millis (void)
-{
-    struct timeval  tp;
-
-    gettimeofday (&tp, 0);
-    return(tp.tv_sec * 1000) + (tp.tv_usec / 1000);
-}
-#endif
-
-#define INTERVAL    0
 
 static int
 ev_serial (XEvent *ev)
@@ -1035,9 +1064,6 @@ main (int argc, char **argv)
     int		    last_update;
     int		    now;
     int		    p;
-#if INTERVAL
-    int		    timeout;
-#endif
 
     dpy = XOpenDisplay (0);
     if (!dpy)
@@ -1046,6 +1072,9 @@ main (int argc, char **argv)
 	exit (1);
     }
     XSetErrorHandler (error);
+#if 0
+    XSynchronize (dpy, 1);
+#endif
     scr = DefaultScreen (dpy);
     root = RootWindow (dpy, scr);
 
@@ -1100,6 +1129,7 @@ main (int argc, char **argv)
 	exit (1);
     }
     allDamage = None;
+    clipChanged = True;
     XGrabServer (dpy);
     XCompositeRedirectSubwindows (dpy, root, CompositeRedirectManual);
     XSelectInput (dpy, root, 
@@ -1113,22 +1143,12 @@ main (int argc, char **argv)
     XFree (children);
     XUngrabServer (dpy);
     paint_all (dpy, None);
-#if INTERVAL
-    last_update = time_in_millis ();
-#endif
     for (;;)
     {
-#if INTERVAL
-	int busy_start = 0;
-#endif
 	/*	dump_wins (); */
 	do {
 	    XNextEvent (dpy, &ev);
-#if INTERVAL
-	    if (!busy_start)
-		busy_start = time_in_millis();
-#endif
-#if DEBUG
+#if DEBUG_EVENTS
 	    printf ("event %10.10s serial 0x%08x window 0x%08x\n",
 		    ev_name(&ev), ev_serial (&ev), ev_window (&ev));
 #endif
@@ -1226,28 +1246,14 @@ main (int argc, char **argv)
 		break;
 	    }
 	} while (QLength (dpy));
-#if INTERVAL
-	now = time_in_millis ();
-/*	printf ("\t\tbusy %d\n", now - busy_start); */
-	timeout = INTERVAL - (now - last_update);
-	if (timeout > 0)
-	{
-	    ufd.fd = ConnectionNumber (dpy);
-	    ufd.events = POLLIN;
-	    n = poll (&ufd, 1, timeout);
-	    if (n > 0 && (ufd.revents & POLLIN) && XEventsQueued (dpy, QueuedAfterReading))
-		continue;
-	}
-#endif
 	if (allDamage)
 	{
-#if INTERVAL
-	    int	old_update = last_update;
-	    last_update = time_in_millis();
-/*	    printf ("delta %d\n", last_update - old_update); */
-#endif
+	    static int	paint;
 	    paint_all (dpy, allDamage);
+	    paint++;
+	    XSync (dpy, False);
 	    allDamage = None;
+	    clipChanged = False;
 	}
     }
 }
