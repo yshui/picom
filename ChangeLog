@@ -1,3 +1,10 @@
+2004-09-10  Adam Jackson  <ajax@freedesktop.org>
+
+	* xcompmgr.c:
+	Bug fixes and more pretty effects from Dan Doel.
+	* xcompmgr.1, Makefile.am:
+	More doc, fix the suffix so the man page installs in a sane place.
+
 2004-09-08  Adam Jackson  <ajax@freedesktop.org>
 
 	* xcompmgr.man, Makefile.am:

@@ -79,7 +79,7 @@ typedef struct _win {
     int			shadow_width;
     int			shadow_height;
     unsigned int	opacity;
-
+    Atom                windowType;
     unsigned long	damage_sequence;    /* sequence when damage was created */
 
     /* for drawing translucent windows */
@@ -96,6 +96,7 @@ typedef struct _fade {
     struct _fade	*next;
     win			*w;
     double		cur;
+    double		finish;
     double		step;
     void		(*callback) (Display *dpy, win *w, Bool gone);
     Display		*dpy;
@@ -128,6 +129,15 @@ int		composite_opcode;
 
 /* find these once and be done with it */
 Atom		opacityAtom;
+Atom            winTypeAtom;
+Atom            winDesktopAtom;
+Atom            winDockAtom;
+Atom            winToolbarAtom;
+Atom            winMenuAtom;
+Atom            winUtilAtom;
+Atom            winSplashAtom;
+Atom            winDialogAtom;
+Atom            winNormalAtom;
 
 /* opacity property name; sometime soon I'll write up an EWMH spec for it */
 #define OPACITY_PROP	"_NET_WM_WINDOW_OPACITY"
@@ -159,14 +169,23 @@ typedef enum _compMode {
 static void
 determine_mode(Display *dpy, win *w);
     
+static double
+get_opacity_percent(Display *dpy, win *w, double def);
+
+static XserverRegion
+win_extents (Display *dpy, win *w);
+
 CompMode    compMode = CompSimple;
 
 int	    shadowRadius = 12;
 
-double	fade_step =	0.05;
+double  fade_in_step =  0.028;
+double  fade_out_step = 0.03;
 int	fade_delta =	10;
 int	fade_time =	0;
-Bool	fadeWindows;
+Bool	fadeWindows = False;
+Bool    excludeDockShadows = False;
+Bool	fadeTrans = False;
 
 Bool	autoRedirect = False;
 
@@ -226,9 +245,9 @@ enqueue_fade (Display *dpy, fade *f)
 }
 
 static void
-set_fade (Display *dpy, win *w, Bool in, 
+set_fade (Display *dpy, win *w, double start, double finish, double step,
 	  void (*callback) (Display *dpy, win *w, Bool gone),
-	  Bool gone)
+	  Bool gone, Bool exec_callback, Bool override)
 {
     fade    *f;
 
@@ -238,16 +257,27 @@ set_fade (Display *dpy, win *w, Bool in,
 	f = malloc (sizeof (fade));
 	f->next = 0;
 	f->w = w;
-	if (in)
-	    f->cur = 0;
-	else
-	    f->cur = 1;
+	f->cur = start;
 	enqueue_fade (dpy, f);
     }
-    if (in)
-        f->step = fade_step;
+    else if(!override)
+	return;
     else
-	f->step = -fade_step;
+    {
+ 	if (exec_callback)
+ 	    if (f->callback)
+ 		(*f->callback)(dpy, f->w, f->gone);
+    }
+
+    if (finish < 0)
+	finish = 0;
+    if (finish > 1)
+	finish = 1;
+    f->finish = finish;
+    if (f->cur < finish)
+        f->step = step;
+    else if (f->cur > finish)
+	f->step = -step;
     f->callback = callback;
     f->gone = gone;
     w->opacity = f->cur * OPAQUE;
@@ -255,6 +285,12 @@ set_fade (Display *dpy, win *w, Bool in,
     printf ("set_fade start %g step %g\n", f->cur, f->step);
 #endif
     determine_mode (dpy, w);
+    if (w->shadow)
+    {
+	XRenderFreePicture (dpy, w->shadow);
+	w->shadow = None;
+	w->extents = win_extents (dpy, w);
+    }
 }
 
 int
@@ -300,15 +336,27 @@ run_fades (Display *dpy)
 	w->opacity = f->cur * OPAQUE;
 	if (f->step > 0)
 	{
-	    if (f->cur >= 1)
+	    if (f->cur >= f->finish)
+	    {
+		w->opacity = f->finish*OPAQUE;
 		dequeue_fade (dpy, f);
+	}
 	}
 	else
 	{
-	    if (f->cur <= 0)
+	    if (f->cur <= f->finish)
+	    {
+		w->opacity = f->finish*OPAQUE;
 		dequeue_fade (dpy, f);
 	}
+	}
 	determine_mode (dpy, w);
+	if (w->shadow)
+	{
+	    XRenderFreePicture (dpy, w->shadow);
+	    w->shadow = None;
+	    w->extents = win_extents(dpy, w);
+	}
     }
     fade_time = now + fade_delta;
 }
@@ -517,11 +565,13 @@ make_shadow (Display *dpy, double opacity, int width, int height)
 }
 
 static Picture
-shadow_picture (Display *dpy, double opacity, int width, int height, int *wp, int *hp)
+shadow_picture (Display *dpy, double opacity, Picture alpha_pict, int width, int height, int *wp, int *hp)
 {
     XImage  *shadowImage;
     Pixmap  shadowPixmap;
+    Pixmap  finalPixmap;
     Picture shadowPicture;
+    Picture finalPicture;
     GC	    gc;
     
     shadowImage = make_shadow (dpy, opacity, width, height);
@@ -694,7 +744,7 @@ win_extents (Display *dpy, win *w)
     r.y = w->a.y;
     r.width = w->a.width + w->a.border_width * 2;
     r.height = w->a.height + w->a.border_width * 2;
-    if (compMode != CompSimple)
+    if (compMode != CompSimple && !(w->windowType == winDockAtom && excludeDockShadows))
     {
 	if (compMode == CompServerShadows || w->mode != WINDOW_ARGB)
 	{
@@ -715,8 +765,8 @@ win_extents (Display *dpy, win *w)
 		{
 		    double	opacity = SHADOW_OPACITY;
 		    if (w->mode == WINDOW_TRANS)
-			opacity = opacity * TRANS_OPACITY;
-		    w->shadow = shadow_picture (dpy, opacity,
+			opacity = opacity * ((double)w->opacity)/((double)OPAQUE);
+		    w->shadow = shadow_picture (dpy, opacity, w->alphaPict,
 						w->a.width + w->a.border_width * 2,
 						w->a.height + w->a.border_width * 2,
 						&w->shadow_width, &w->shadow_height);
@@ -1030,13 +1080,20 @@ map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
 
     if (!w)
 	return;
+
     w->a.map_state = IsViewable;
     
+    /* This needs to be here or else we lose transparency messages */
+    XSelectInput (dpy, id, PropertyChangeMask);
+
 #if CAN_DO_USABLE
     w->damage_bounds.x = w->damage_bounds.y = 0;
     w->damage_bounds.width = w->damage_bounds.height = 0;
 #endif
     w->damaged = 0;
+
+    if (fade && fadeWindows)
+	set_fade (dpy, w, 0, get_opacity_percent (dpy, w, 1.0), fade_in_step, 0, False, True, True);
 }
 
 static void
@@ -1105,9 +1162,10 @@ unmap_win (Display *dpy, Window id, Bool fade)
     win *w = find_win (dpy, id);
     if (!w)
 	return;
+    w->a.map_state = IsUnmapped;
 #if HAS_NAME_WINDOW_PIXMAP
     if (w->pixmap && fade && fadeWindows)
-	set_fade (dpy, w, False, unmap_callback, False);
+	set_fade (dpy, w, w->opacity*1.0/OPAQUE, 0.0, fade_out_step, unmap_callback, False, False, True);
     else
 #endif
 	finish_unmap_win (dpy, w);
@@ -1124,11 +1182,11 @@ get_opacity_prop(Display *dpy, win *w, unsigned int def)
     int format;
     unsigned long n, left;
 
-    char *data;
-    XGetWindowProperty(dpy, w->id, opacityAtom, 0L, 1L, False, 
+    unsigned char *data;
+    int result = XGetWindowProperty(dpy, w->id, opacityAtom, 0L, 1L, False, 
 		       XA_CARDINAL, &actual, &format, 
-		       &n, &left, (unsigned char **) &data);
-    if (data != None)
+				    &n, &left, &data);
+    if (result == Success && data != None)
     {
 	unsigned int i;
 	memcpy (&i, data, sizeof (unsigned int));
@@ -1138,9 +1196,43 @@ get_opacity_prop(Display *dpy, win *w, unsigned int def)
     return def;
 }
 
+/* Get the opacity property from the window in a percent format
+   not found: default
+   otherwise: the value
+*/
+static double
+get_opacity_percent(Display *dpy, win *w, double def)
+{
+    unsigned int opacity = get_opacity_prop (dpy, w, (unsigned int)(OPAQUE*def));
+
+    return opacity*1.0/OPAQUE;
+}
+
 /* determine mode for window all in one place.
    Future might check for menu flag and other cool things
 */
+
+static Atom
+get_wintype_prop(Display * dpy, Window w)
+{
+    Atom actual;
+    int format;
+    unsigned long n, left;
+
+    unsigned char *data;
+    int result = XGetWindowProperty (dpy, w, winTypeAtom, 0L, 1L, False,
+				     XA_ATOM, &actual, &format,
+				     &n, &left, &data);
+
+    if (result == Success && data != None)
+    {
+	Atom a;
+	memcpy (&a, data, sizeof (Atom));
+	XFree ( (void *) data);
+	return a;
+    }
+    return winNormalAtom;
+}
 
 static void
 determine_mode(Display *dpy, win *w)
@@ -1191,6 +1283,29 @@ determine_mode(Display *dpy, win *w)
 	XFixesCopyRegion (dpy, damage, w->extents);
 	add_damage (dpy, damage);
     }
+}
+
+static Atom
+determine_wintype (Display *dpy, Window w)
+{
+    Window       root_return, parent_return;
+    Window      *children;
+    unsigned int nchildren, i;
+    Atom         type;
+
+    type = get_wintype_prop (dpy, w);
+    if (type != winNormalAtom)
+	return type;
+
+    XQueryTree (dpy, w, &root_return, &parent_return, &children, &nchildren);
+    for (i = 0;i < nchildren;i++)
+    {
+	type = determine_wintype (dpy, children[i]);
+	if (type != winNormalAtom)
+	    return type;
+    }
+
+    return winNormalAtom;
 }
 
 static void
@@ -1249,14 +1364,14 @@ add_win (Display *dpy, Window id, Window prev)
     new->prev_trans = 0;
 
     /* moved mode setting to one place */
-    XSelectInput(dpy, id, PropertyChangeMask);
-    new->opacity = get_opacity_prop(dpy, new, OPAQUE);
+    new->opacity = get_opacity_prop (dpy, new, OPAQUE);
+    new->windowType = determine_wintype (dpy, new->id);
     determine_mode (dpy, new);
     
     new->next = *p;
     *p = new;
     if (new->a.map_state == IsViewable)
-	map_win (dpy, id, new->damage_sequence - 1, False);
+	map_win (dpy, id, new->damage_sequence - 1, True);
 }
 
 void
@@ -1384,6 +1499,7 @@ finish_destroy_win (Display *dpy, Window id, Bool gone)
 	    {
 		set_ignore (dpy, NextRequest (dpy));
 		XRenderFreePicture (dpy, w->picture);
+		w->picture = None;
 	    }
 	    if (w->alphaPict)
 	    {
@@ -1399,6 +1515,7 @@ finish_destroy_win (Display *dpy, Window id, Bool gone)
 	    {
 		set_ignore (dpy, NextRequest (dpy));
 		XDamageDestroy (dpy, w->damage);
+		w->damage = None;
 	    }
 	    cleanup_fade (dpy, w);
 	    free (w);
@@ -1420,7 +1537,7 @@ destroy_win (Display *dpy, Window id, Bool gone, Bool fade)
     win *w = find_win (dpy, id);
 #if HAS_NAME_WINDOW_PIXMAP
     if (w && w->pixmap && fade && fadeWindows)
-	set_fade (dpy, w, False, destroy_callback, gone);
+	set_fade (dpy, w, w->opacity*1.0/OPAQUE, 0.0, fade_out_step, destroy_callback, gone, False, True);
     else
 #endif
     {
@@ -1497,7 +1614,7 @@ damage_win (Display *dpy, XDamageNotifyEvent *de)
 	{
 	    clipChanged = True;
 	    if (fadeWindows)
-		set_fade (dpy, w, True, 0, False);
+		set_fade (dpy, w, 0, get_opacity_percent (dpy, w, 1.0), fade_in_step, 0, False, True, True);
 	    w->usable = True;
 	}
     }
@@ -1614,7 +1731,7 @@ ev_window (XEvent *ev)
 void
 usage (char *program)
 {
-    fprintf (stderr, "usage: %s [-d display] [-n] [-s] [-c] [-a]\n", program);
+    fprintf (stderr, "usage: %s [-d display] [-n] [-s] [-c] [-a] [-f] [-F] [-C]\n", program);
     exit (1);
 }
 
@@ -1642,7 +1759,7 @@ main (int argc, char **argv)
     char	    *display = 0;
     int		    o;
 
-    while ((o = getopt (argc, argv, "d:scnfaS")) != -1)
+    while ((o = getopt (argc, argv, "d:scnfFCaS")) != -1)
     {
 	switch (o) {
 	case 'd':
@@ -1654,11 +1771,17 @@ main (int argc, char **argv)
 	case 'c':
 	    compMode = CompClientShadows;
 	    break;
+	case 'C':
+	    excludeDockShadows = True;
+	    break;
 	case 'n':
 	    compMode = CompSimple;
 	    break;
 	case 'f':
 	    fadeWindows = True;
+	    break;
+	case 'F':
+	    fadeTrans = True;
 	    break;
 	case 'a':
 	    autoRedirect = True;
@@ -1713,6 +1836,15 @@ main (int argc, char **argv)
     }
     /* get atoms */
     opacityAtom = XInternAtom (dpy, OPACITY_PROP, False);
+    winTypeAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE", False);
+    winDesktopAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
+    winDockAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE_DOCK", False);
+    winToolbarAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
+    winMenuAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE_MENU", False);
+    winUtilAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE_UTILITY", False);
+    winSplashAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE_SPLASH", False);
+    winDialogAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE_DIALOG", False);
+    winNormalAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE_NORMAL", False);
 
     pa.subwindow_mode = IncludeInferiors;
 
@@ -1852,8 +1984,20 @@ main (int argc, char **argv)
 		    win * w = find_win(dpy, ev.xproperty.window);
 		    if (w)
 		    {
+			if (fadeTrans)
+			    set_fade (dpy, w, w->opacity*1.0/OPAQUE, get_opacity_percent (dpy, w, 1.0),
+				      fade_out_step, 0, False, True, False);
+			else
+			{
 			w->opacity = get_opacity_prop(dpy, w, OPAQUE);
 			determine_mode(dpy, w);
+			    if (w->shadow)
+			    {
+				XRenderFreePicture (dpy, w->shadow);
+				w->shadow = None;
+				w->extents = win_extents (dpy, w);
+			    }
+			}
 		    }
 		}
 		break;
