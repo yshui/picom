@@ -581,10 +581,30 @@ shadow_picture (Display *dpy, double opacity, Picture alpha_pict, int width, int
 				  shadowImage->width,
 				  shadowImage->height,
 				  8);
+    if (!shadowPixmap)
+    {
+	XDestroyImage (shadowImage);
+	return None;
+    }
+
     shadowPicture = XRenderCreatePicture (dpy, shadowPixmap,
 					  XRenderFindStandardFormat (dpy, PictStandardA8),
 					  0, 0);
+    if (!shadowPicture)
+    {
+	XDestroyImage (shadowImage);
+	XFreePixmap (dpy, shadowPixmap);
+	return None;
+    }
+
     gc = XCreateGC (dpy, shadowPixmap, 0, 0);
+    if (!gc)
+    {
+	XDestroyImage (shadowImage);
+	XFreePixmap (dpy, shadowPixmap);
+	XRenderFreePicture (dpy, shadowPicture);
+	return None;
+    }
     
     XPutImage (dpy, shadowPixmap, gc, shadowImage, 0, 0, 0, 0, 
 	       shadowImage->width,

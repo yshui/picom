@@ -1,3 +1,9 @@
+2004-09-17  Dan Doel  <dolio@case.edu>
+
+	* xcompmgr.c: (shadow_picture):
+	Added some tests to check for failed pixmap/picture/gc allocations and
+	exit appropriately.
+
 2004-09-14  Adam Jackson  <ajax@freedesktop.org>
 
 	* xcompmgr.c:
