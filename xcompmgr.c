@@ -168,6 +168,8 @@ int	fade_delta =	10;
 int	fade_time =	0;
 Bool	fadeWindows;
 
+Bool	autoRedirect = False;
+
 int
 get_time_in_milliseconds ()
 {
@@ -1543,7 +1545,7 @@ error (Display *dpy, XErrorEvent *ev)
     printf ("error %d request %d minor %d serial %d\n",
 	    ev->error_code, ev->request_code, ev->minor_code, ev->serial);
 
-    abort ();
+/*    abort ();	    this is just annoying to most people */
     return 0;
 }
 
@@ -1612,7 +1614,7 @@ ev_window (XEvent *ev)
 void
 usage (char *program)
 {
-    fprintf (stderr, "usage: %s [-d display] [-n] [-s] [-c]\n", program);
+    fprintf (stderr, "usage: %s [-d display] [-n] [-s] [-c] [-a]\n", program);
     exit (1);
 }
 
@@ -1640,7 +1642,7 @@ main (int argc, char **argv)
     char	    *display = 0;
     int		    o;
 
-    while ((o = getopt (argc, argv, "d:scnfS")) != -1)
+    while ((o = getopt (argc, argv, "d:scnfaS")) != -1)
     {
 	switch (o) {
 	case 'd':
@@ -1657,6 +1659,9 @@ main (int argc, char **argv)
 	    break;
 	case 'f':
 	    fadeWindows = True;
+	    break;
+	case 'a':
+	    autoRedirect = True;
 	    break;
 	case 'S':
 	    synchronize = True;
@@ -1728,24 +1733,32 @@ main (int argc, char **argv)
     allDamage = None;
     clipChanged = True;
     XGrabServer (dpy);
-    XCompositeRedirectSubwindows (dpy, root, CompositeRedirectManual);
-    XSelectInput (dpy, root, 
-		  SubstructureNotifyMask|
-		  ExposureMask|
-		  StructureNotifyMask|
-		  PropertyChangeMask);
-    XQueryTree (dpy, root, &root_return, &parent_return, &children, &nchildren);
-    for (i = 0; i < nchildren; i++)
-	add_win (dpy, children[i], i ? children[i-1] : None);
-    XFree (children);
+    if (autoRedirect)
+	XCompositeRedirectSubwindows (dpy, root, CompositeRedirectAutomatic);
+    else
+    {
+	XCompositeRedirectSubwindows (dpy, root, CompositeRedirectManual);
+	XSelectInput (dpy, root, 
+		      SubstructureNotifyMask|
+		      ExposureMask|
+		      StructureNotifyMask|
+		      PropertyChangeMask);
+	XQueryTree (dpy, root, &root_return, &parent_return, &children, &nchildren);
+	for (i = 0; i < nchildren; i++)
+	    add_win (dpy, children[i], i ? children[i-1] : None);
+	XFree (children);
+    }
     XUngrabServer (dpy);
     ufd.fd = ConnectionNumber (dpy);
     ufd.events = POLLIN;
-    paint_all (dpy, None);
+    if (!autoRedirect)
+	paint_all (dpy, None);
     for (;;)
     {
 	/*	dump_wins (); */
 	do {
+	    if (autoRedirect)
+		XFlush (dpy);
             if (!QLength (dpy))
             {
         	 if (poll (&ufd, 1, fade_timeout()) == 0)
@@ -1762,7 +1775,7 @@ main (int argc, char **argv)
 	    printf ("event %10.10s serial 0x%08x window 0x%08x\n",
 		    ev_name(&ev), ev_serial (&ev), ev_window (&ev));
 #endif
-	    switch (ev.type) {
+	    if (!autoRedirect) switch (ev.type) {
 	    case CreateNotify:
 		add_win (dpy, ev.xcreatewindow.window, 0);
 		break;
@@ -1850,7 +1863,7 @@ main (int argc, char **argv)
 		break;
 	    }
 	} while (QLength (dpy));
-	if (allDamage)
+	if (allDamage && !autoRedirect)
 	{
 	    static int	paint;
 	    paint_all (dpy, allDamage);

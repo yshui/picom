@@ -1,3 +1,10 @@
+2004-08-14  Keith Packard  <keithp@keithp.com>
+
+	* xcompmgr.c: (error), (usage), (main):
+	Remove abort call as it's just annoying.
+	Add -a flag to just use Automatic compositing.  No glitz, but no
+	screen mangling either.
+
 2004-08-13  Keith Packard  <keithp@keithp.com>
 
 	* xcompmgr.c: (paint_all), (repair_win), (map_win),
