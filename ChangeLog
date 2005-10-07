@@ -1,3 +1,9 @@
+2005-10-06  Eric Anholt  <anholt@FreeBSD.org>
+
+	* xcompmgr.c: (give_me_a_name), (main):
+	Make a dummy window with a name, so xrestop can point its finger at
+	xcompmgr for being such a pig.
+
 2005-01-27  Adam Jackson  <ajax@freedesktop.org>
 
 	* xcompmgr.c:

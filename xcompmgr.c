@@ -1860,6 +1860,18 @@ usage (char *program)
     exit (1);
 }
 
+static void
+give_me_a_name (void)
+{
+    Window w;
+
+    w = XCreateSimpleWindow (dpy, RootWindow (dpy, 0), 0, 0, 1, 1, 0, None,
+			     None);
+
+    Xutf8SetWMProperties (dpy, w, "xcompmgr", "xcompmgr", NULL, 0, NULL, NULL,
+			  NULL);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -1986,6 +1998,9 @@ main (int argc, char **argv)
 	fprintf (stderr, "No XFixes extension\n");
 	exit (1);
     }
+
+    give_me_a_name();
+
     /* get atoms */
     opacityAtom = XInternAtom (dpy, OPACITY_PROP, False);
     winTypeAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE", False);
