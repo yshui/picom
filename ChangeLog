@@ -1,5 +1,12 @@
 2005-10-06  Eric Anholt  <anholt@FreeBSD.org>
 
+	* .cvsignore:
+	* configure.ac:
+	Add the foreign flag so autotools doesn't incorrectly slap a GPL on
+	this, and add a .cvsignore for cvs up clarity.
+
+2005-10-06  Eric Anholt  <anholt@FreeBSD.org>
+
 	* xcompmgr.c: (give_me_a_name), (main):
 	Make a dummy window with a name, so xrestop can point its finger at
 	xcompmgr for being such a pig.

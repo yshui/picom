@@ -4,7 +4,7 @@
 AC_PREREQ(2.57)
 AC_INIT([xcompmgr], [1.1.2], [xorg@freedesktop.org])
 AC_CONFIG_SRCDIR([xcompmgr.c])
-AM_INIT_AUTOMAKE([dist-bzip2])
+AM_INIT_AUTOMAKE([dist-bzip2 foreign])
 AM_MAINTAINER_MODE
 AC_CONFIG_HEADER([config.h])
 
