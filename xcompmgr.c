@@ -1861,15 +1861,21 @@ usage (char *program)
 }
 
 static void
-give_me_a_name (void)
+register_cm (void)
 {
     Window w;
+    Atom a;
 
     w = XCreateSimpleWindow (dpy, RootWindow (dpy, 0), 0, 0, 1, 1, 0, None,
 			     None);
 
     Xutf8SetWMProperties (dpy, w, "xcompmgr", "xcompmgr", NULL, 0, NULL, NULL,
 			  NULL);
+
+    /* FIXME: Don't hard code the screen number */
+    a = XInternAtom (dpy, "_NET_WM_CM_S0", False);
+
+    XSetSelectionOwner (dpy, a, w, 0);
 }
 
 int
@@ -1999,7 +2005,7 @@ main (int argc, char **argv)
 	exit (1);
     }
 
-    give_me_a_name();
+    register_cm();
 
     /* get atoms */
     opacityAtom = XInternAtom (dpy, OPACITY_PROP, False);
