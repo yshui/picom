@@ -1599,7 +1599,7 @@ finish_destroy_win (Display *dpy, Window id, Bool gone)
     for (prev = &list; (w = *prev); prev = &w->next)
 	if (w->id == id)
 	{
-	    if (!gone)
+	    if (gone)
 		finish_unmap_win (dpy, w);
 	    *prev = w->next;
 	    if (w->picture)
