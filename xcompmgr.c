@@ -1165,6 +1165,9 @@ repair_win (Display *dpy, win *w)
     w->damaged = 1;
 }
 
+static unsigned int
+get_opacity_prop (Display *dpy, win *w, unsigned int def);
+
 static void
 map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
 {
@@ -1178,6 +1181,10 @@ map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
     
     /* This needs to be here or else we lose transparency messages */
     XSelectInput (dpy, id, PropertyChangeMask);
+
+    /* This needs to be here since we don't get PropertyNotify when unmapped */
+    w->opacity = get_opacity_prop (dpy, w, OPAQUE);
+    determine_mode (dpy, w);
 
 #if CAN_DO_USABLE
     w->damage_bounds.x = w->damage_bounds.y = 0;
@@ -1467,10 +1474,7 @@ add_win (Display *dpy, Window id, Window prev)
     new->borderClip = None;
     new->prev_trans = 0;
 
-    /* moved mode setting to one place */
-    new->opacity = get_opacity_prop (dpy, new, OPAQUE);
     new->windowType = determine_wintype (dpy, new->id);
-    determine_mode (dpy, new);
     
     new->next = *p;
     *p = new;
