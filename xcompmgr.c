@@ -321,7 +321,7 @@ void
 run_fades (Display *dpy)
 {
     int	    now = get_time_in_milliseconds();
-    fade    *f, *next;
+    fade    *next = fades;
     int	    steps;
     Bool    need_dequeue;
 
@@ -331,8 +331,10 @@ run_fades (Display *dpy)
     if (fade_time - now > 0)
 	return;
     steps = 1 + (now - fade_time) / fade_delta;
-    for (next = fades; f = next; )
+
+    while (next)
     {
+	fade *f = next;
 	win *w = f->w;
 	next = f->next;
 	f->cur += f->step * steps;
