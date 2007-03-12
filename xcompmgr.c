@@ -752,7 +752,7 @@ find_win (Display *dpy, Window id)
     return 0;
 }
 
-static char *backgroundProps[] = {
+static const char *backgroundProps[] = {
     "_XROOTPMAP_ID",
     "_XSETROOT_ID",
     0,
@@ -1734,7 +1734,7 @@ static int
 error (Display *dpy, XErrorEvent *ev)
 {
     int	    o;
-    char    *name = 0;
+    const char    *name = 0;
     
     if (should_ignore (dpy, ev->serial))
 	return 0;
