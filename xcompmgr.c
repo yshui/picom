@@ -625,9 +625,7 @@ shadow_picture (Display *dpy, double opacity, Picture alpha_pict, int width, int
 {
     XImage  *shadowImage;
     Pixmap  shadowPixmap;
-    Pixmap  finalPixmap;
     Picture shadowPicture;
-    Picture finalPicture;
     GC	    gc;
     
     shadowImage = make_shadow (dpy, opacity, width, height);
@@ -1172,7 +1170,6 @@ static void
 map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
 {
     win		*w = find_win (dpy, id);
-    Drawable	back;
 
     if (!w)
 	return;
@@ -1339,7 +1336,6 @@ determine_mode(Display *dpy, win *w)
 {
     int mode;
     XRenderPictFormat *format;
-    unsigned int default_opacity;
 
     /* if trans prop == -1 fall back on  previous tests*/
 
@@ -1516,7 +1512,6 @@ static void
 configure_win (Display *dpy, XConfigureEvent *ce)
 {
     win		    *w = find_win (dpy, ce->window);
-    Window	    above;
     XserverRegion   damage = None;
     
     if (!w)
@@ -1770,7 +1765,7 @@ error (Display *dpy, XErrorEvent *ev)
     default: break;
     }
 	
-    printf ("error %d request %d minor %d serial %d\n",
+    printf ("error %d request %d minor %d serial %lu\n",
 	    ev->error_code, ev->request_code, ev->minor_code, ev->serial);
 
 /*    abort ();	    this is just annoying to most people */
@@ -1785,7 +1780,7 @@ expose_root (Display *dpy, Window root, XRectangle *rects, int nrects)
     add_damage (dpy, region);
 }
 
-
+#if DEBUG_EVENTS
 static int
 ev_serial (XEvent *ev)
 {
@@ -1793,7 +1788,6 @@ ev_serial (XEvent *ev)
 	return ev->xany.serial;
     return NextRequest (ev->xany.display);
 }
-
 
 static char *
 ev_name (XEvent *ev)
@@ -1838,6 +1832,7 @@ ev_window (XEvent *ev)
 	return 0;
     }
 }
+#endif
 
 void
 usage (char *program)
@@ -1888,19 +1883,13 @@ main (int argc, char **argv)
     XEvent	    ev;
     Window	    root_return, parent_return;
     Window	    *children;
-    Pixmap	    transPixmap;
-    Pixmap	    blackPixmap;
     unsigned int    nchildren;
     int		    i;
     XRenderPictureAttributes	pa;
-    XRenderColor		c;
     XRectangle	    *expose_rects = 0;
     int		    size_expose = 0;
     int		    n_expose = 0;
     struct pollfd   ufd;
-    int		    n;
-    int		    last_update;
-    int		    now;
     int		    p;
     int		    composite_major, composite_minor;
     char	    *display = 0;
@@ -2081,7 +2070,7 @@ main (int argc, char **argv)
 	    }
 
 	    XNextEvent (dpy, &ev);
-	    if (ev.type & 0x7f != KeymapNotify)
+	    if ((ev.type & 0x7f) != KeymapNotify)
 		discard_ignore (dpy, ev.xany.serial);
 #if DEBUG_EVENTS
 	    printf ("event %10.10s serial 0x%08x window 0x%08x\n",
