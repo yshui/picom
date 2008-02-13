@@ -1620,6 +1620,11 @@ finish_destroy_win (Display *dpy, Window id, Bool gone)
 		XRenderFreePicture (dpy, w->shadowPict);
 		w->shadowPict = None;
 	    }
+	    if (w->shadow)
+	    {
+		XRenderFreePicture (dpy, w->shadow);
+		w->shadow = None;
+	    }
 	    if (w->damage != None)
 	    {
 		set_ignore (dpy, NextRequest (dpy));
