@@ -99,9 +99,8 @@ typedef struct _fade {
     double		cur;
     double		finish;
     double		step;
-    void		(*callback) (Display *dpy, win *w, Bool gone);
+    void		(*callback) (Display *dpy, win *w);
     Display		*dpy;
-    Bool		gone;
 } fade;
 
 win             *list;
@@ -230,7 +229,7 @@ dequeue_fade (Display *dpy, fade *f)
 	{
 	    *prev = f->next;
 	    if (f->callback)
-		(*f->callback) (dpy, f->w, f->gone);
+		(*f->callback) (dpy, f->w);
 	    free (f);
 	    break;
 	}
@@ -255,8 +254,8 @@ enqueue_fade (Display *dpy, fade *f)
 
 static void
 set_fade (Display *dpy, win *w, double start, double finish, double step,
-	  void (*callback) (Display *dpy, win *w, Bool gone),
-	  Bool gone, Bool exec_callback, Bool override)
+	  void (*callback) (Display *dpy, win *w),
+	  Bool exec_callback, Bool override)
 {
     fade    *f;
 
@@ -275,7 +274,7 @@ set_fade (Display *dpy, win *w, double start, double finish, double step,
     {
  	if (exec_callback)
  	    if (f->callback)
- 		(*f->callback)(dpy, f->w, f->gone);
+		(*f->callback)(dpy, f->w);
     }
 
     if (finish < 0)
@@ -288,7 +287,6 @@ set_fade (Display *dpy, win *w, double start, double finish, double step,
     else if (f->cur > finish)
 	f->step = -step;
     f->callback = callback;
-    f->gone = gone;
     w->opacity = f->cur * OPAQUE;
 #if 0
     printf ("set_fade start %g step %g\n", f->cur, f->step);
@@ -1204,7 +1202,7 @@ map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
 #endif
 
     if (fade && fadeWindows)
-	set_fade (dpy, w, 0, get_opacity_percent (dpy, w, 1.0), fade_in_step, 0, False, True, True);
+	set_fade (dpy, w, 0, get_opacity_percent (dpy, w, 1.0), fade_in_step, 0, True, True);
 }
 
 static void
@@ -1261,7 +1259,7 @@ finish_unmap_win (Display *dpy, win *w)
 
 #if HAS_NAME_WINDOW_PIXMAP
 static void
-unmap_callback (Display *dpy, win *w, Bool gone)
+unmap_callback (Display *dpy, win *w)
 {
     finish_unmap_win (dpy, w);
 }
@@ -1276,7 +1274,7 @@ unmap_win (Display *dpy, Window id, Bool fade)
     w->a.map_state = IsUnmapped;
 #if HAS_NAME_WINDOW_PIXMAP
     if (w->pixmap && fade && fadeWindows)
-	set_fade (dpy, w, w->opacity*1.0/OPAQUE, 0.0, fade_out_step, unmap_callback, False, False, True);
+	set_fade (dpy, w, w->opacity*1.0/OPAQUE, 0.0, fade_out_step, unmap_callback, False, True);
     else
 #endif
 	finish_unmap_win (dpy, w);
@@ -1607,22 +1605,15 @@ circulate_win (Display *dpy, XCirculateEvent *ce)
 }
 
 static void
-finish_destroy_win (Display *dpy, Window id, Bool gone)
+finish_destroy_win (Display *dpy, Window id)
 {
     win	**prev, *w;
 
     for (prev = &list; (w = *prev); prev = &w->next)
 	if (w->id == id)
 	{
-	    if (gone)
-		finish_unmap_win (dpy, w);
+            finish_unmap_win (dpy, w);
 	    *prev = w->next;
-	    if (w->picture)
-	    {
-		set_ignore (dpy, NextRequest (dpy));
-		XRenderFreePicture (dpy, w->picture);
-		w->picture = None;
-	    }
 	    if (w->alphaPict)
 	    {
 		XRenderFreePicture (dpy, w->alphaPict);
@@ -1632,11 +1623,6 @@ finish_destroy_win (Display *dpy, Window id, Bool gone)
 	    {
 		XRenderFreePicture (dpy, w->shadowPict);
 		w->shadowPict = None;
-	    }
-	    if (w->shadow)
-	    {
-		XRenderFreePicture (dpy, w->shadow);
-		w->shadow = None;
 	    }
 	    if (w->damage != None)
 	    {
@@ -1652,25 +1638,24 @@ finish_destroy_win (Display *dpy, Window id, Bool gone)
 
 #if HAS_NAME_WINDOW_PIXMAP
 static void
-destroy_callback (Display *dpy, win *w, Bool gone)
+destroy_callback (Display *dpy, win *w)
 {
-    finish_destroy_win (dpy, w->id, gone);
+    finish_destroy_win (dpy, w->id);
 }
 #endif
 
 static void
-destroy_win (Display *dpy, Window id, Bool gone, Bool fade)
+destroy_win (Display *dpy, Window id, Bool fade)
 {
     win *w = find_win (dpy, id);
 #if HAS_NAME_WINDOW_PIXMAP
     if (w && w->pixmap && fade && fadeWindows)
 	set_fade (dpy, w, w->opacity*1.0/OPAQUE, 0.0, fade_out_step,
-                  destroy_callback, gone, False,
-                  (w->a.map_state != IsUnmapped));
+                  destroy_callback, False, (w->a.map_state != IsUnmapped));
     else
 #endif
     {
-	finish_destroy_win (dpy, id, gone);
+	finish_destroy_win (dpy, id);
     }
 }
 
@@ -1743,7 +1728,7 @@ damage_win (Display *dpy, XDamageNotifyEvent *de)
 	{
 	    clipChanged = True;
 	    if (fadeWindows)
-		set_fade (dpy, w, 0, get_opacity_percent (dpy, w, 1.0), fade_in_step, 0, False, True, True);
+		set_fade (dpy, w, 0, get_opacity_percent (dpy, w, 1.0), fade_in_step, 0, True, True);
 	    w->usable = True;
 	}
     }
@@ -2107,7 +2092,7 @@ main (int argc, char **argv)
 		configure_win (dpy, &ev.xconfigure);
 		break;
 	    case DestroyNotify:
-		destroy_win (dpy, ev.xdestroywindow.window, True, True);
+		destroy_win (dpy, ev.xdestroywindow.window, True);
 		break;
 	    case MapNotify:
 		map_win (dpy, ev.xmap.window, ev.xmap.serial, True);
@@ -2119,7 +2104,7 @@ main (int argc, char **argv)
 		if (ev.xreparent.parent == root)
 		    add_win (dpy, ev.xreparent.window, 0);
 		else
-		    destroy_win (dpy, ev.xreparent.window, False, True);
+		    destroy_win (dpy, ev.xreparent.window, True);
 		break;
 	    case CirculateNotify:
 		circulate_win (dpy, &ev.xcirculate);
@@ -2178,7 +2163,7 @@ main (int argc, char **argv)
 		    {
 			if (fadeTrans)
 			    set_fade (dpy, w, w->opacity*1.0/OPAQUE, get_opacity_percent (dpy, w, 1.0),
-				      fade_out_step, 0, False, True, False);
+				      fade_out_step, 0, True, False);
 			else
 			{
 			w->opacity = get_opacity_prop(dpy, w, OPAQUE);
