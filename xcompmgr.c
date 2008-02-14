@@ -1192,6 +1192,17 @@ map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
 #endif
     w->damaged = 0;
 
+#if HAS_NAME_WINDOW_PIXMAP
+    /* If the window was previously mapped and its pixmap still exists, it
+       is out of date now, so force us to reacquire it.  (If the window
+       re-maps before the unmap fade-out finished) */
+    if (w->pixmap)
+    {
+        XFreePixmap (dpy, w->pixmap);
+        w->pixmap = None;
+    }
+#endif
+
     if (fade && fadeWindows)
 	set_fade (dpy, w, 0, get_opacity_percent (dpy, w, 1.0), fade_in_step, 0, False, True, True);
 }
@@ -1541,7 +1552,9 @@ configure_win (Display *dpy, XConfigureEvent *ce)
     }
     w->a.x = ce->x;
     w->a.y = ce->y;
-    if (w->a.width != ce->width || w->a.height != ce->height)
+    /* Only destroy the pixmap if the window is mapped */
+    if (w->a.map_state != IsUnmapped &&
+        (w->a.width != ce->width || w->a.height != ce->height))
     {
 #if HAS_NAME_WINDOW_PIXMAP
 	if (w->pixmap)
@@ -1566,7 +1579,7 @@ configure_win (Display *dpy, XConfigureEvent *ce)
     w->a.border_width = ce->border_width;
     w->a.override_redirect = ce->override_redirect;
     restack_win (dpy, w, ce->above);
-    if (damage)
+    if (w->a.map_state != IsUnmapped && damage)
     {
 	XserverRegion	extents = win_extents (dpy, w);
 	XFixesUnionRegion (dpy, damage, damage, extents);
@@ -1651,7 +1664,9 @@ destroy_win (Display *dpy, Window id, Bool gone, Bool fade)
     win *w = find_win (dpy, id);
 #if HAS_NAME_WINDOW_PIXMAP
     if (w && w->pixmap && fade && fadeWindows)
-	set_fade (dpy, w, w->opacity*1.0/OPAQUE, 0.0, fade_out_step, destroy_callback, gone, False, True);
+	set_fade (dpy, w, w->opacity*1.0/OPAQUE, 0.0, fade_out_step,
+                  destroy_callback, gone, False,
+                  (w->a.map_state != IsUnmapped));
     else
 #endif
     {
