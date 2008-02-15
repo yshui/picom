@@ -1307,17 +1307,6 @@ map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
 #endif
     w->damaged = 0;
 
-#if HAS_NAME_WINDOW_PIXMAP
-    /* If the window was previously mapped and its pixmap still exists, it
-       is out of date now, so force us to reacquire it.  (If the window
-       re-maps before the unmap fade-out finished) */
-    if (w->pixmap)
-    {
-        XFreePixmap (dpy, w->pixmap);
-        w->pixmap = None;
-    }
-#endif
-
     if (fade && winTypeFade[w->windowType])
 	set_fade (dpy, w, 0, get_opacity_percent (dpy, w), fade_in_step, 0, True, True);
 }
