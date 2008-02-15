@@ -101,6 +101,9 @@ typedef struct _win {
     wintype             windowType;
     unsigned long	damage_sequence;    /* sequence when damage was created */
 
+    Bool                need_configure;
+    XConfigureEvent     queue_configure;
+
     /* for drawing translucent windows */
     XserverRegion	borderClip;
     struct _win		*prev_trans;
@@ -1281,6 +1284,9 @@ static unsigned int
 get_opacity_prop (Display *dpy, win *w, unsigned int def);
 
 static void
+configure_win (Display *dpy, XConfigureEvent *ce);
+
+static void
 map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
 {
     win		*w = find_win (dpy, id);
@@ -1289,18 +1295,17 @@ map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
 	return;
 
     w->a.map_state = IsViewable;
-    
-    /* This needs to be here or else we lose transparency messages */
-    XSelectInput (dpy, id, PropertyChangeMask);
-
-    /* This needs to be here since we don't get PropertyNotify when unmapped */
-    w->opacity = get_opacity_prop (dpy, w, OPAQUE);
-    determine_mode (dpy, w);
 
     w->windowType = determine_wintype (dpy, w->id, w->id);
 #if 0
     printf("window 0x%x type %s\n", w->id, wintype_name(w->windowType));
 #endif
+
+    /* select before reading the property so that no property changes are lost */
+    XSelectInput (dpy, id, PropertyChangeMask);
+    w->opacity = get_opacity_prop (dpy, w, OPAQUE);
+
+    determine_mode (dpy, w);
 
 #if CAN_DO_USABLE
     w->damage_bounds.x = w->damage_bounds.y = 0;
@@ -1310,6 +1315,11 @@ map_win (Display *dpy, Window id, unsigned long sequence, Bool fade)
 
     if (fade && winTypeFade[w->windowType])
 	set_fade (dpy, w, 0, get_opacity_percent (dpy, w), fade_in_step, 0, True, True);
+
+    /* if any configure events happened while the window was unmapped, then
+       configure the window to its correct place */
+    if (w->need_configure)
+        configure_win (dpy, &w->queue_configure);
 }
 
 static void
@@ -1339,10 +1349,6 @@ finish_unmap_win (Display *dpy, win *w)
 	XRenderFreePicture (dpy, w->picture);
 	w->picture = None;
     }
-
-    /* don't care about properties anymore */
-    set_ignore (dpy, NextRequest (dpy));
-    XSelectInput(dpy, w->id, 0);
 
     if (w->borderSize)
     {
@@ -1379,6 +1385,11 @@ unmap_win (Display *dpy, Window id, Bool fade)
     if (!w)
 	return;
     w->a.map_state = IsUnmapped;
+
+    /* don't care about properties anymore */
+    set_ignore (dpy, NextRequest (dpy));
+    XSelectInput(dpy, w->id, 0);
+
 #if HAS_NAME_WINDOW_PIXMAP
     if (w->pixmap && fade && winTypeFade[w->windowType])
 	set_fade (dpy, w, w->opacity*1.0/OPAQUE, 0.0, fade_out_step, unmap_callback, False, True);
@@ -1526,6 +1537,7 @@ add_win (Display *dpy, Window id, Window prev)
     new->shadow_width = 0;
     new->shadow_height = 0;
     new->opacity = OPAQUE;
+    new->need_configure = False;
 
     new->borderClip = None;
     new->prev_trans = 0;
@@ -1586,50 +1598,59 @@ configure_win (Display *dpy, XConfigureEvent *ce)
 	}
 	return;
     }
+
+    if (w->a.map_state == IsUnmapped) {
+        /* save the configure event for when the window maps */
+        w->need_configure = True;
+        w->queue_configure = *ce;
+    }
+    else {
+        w->need_configure = False;
+
 #if CAN_DO_USABLE
-    if (w->usable)
+        if (w->usable)
 #endif
-    {
-	damage = XFixesCreateRegion (dpy, 0, 0);
-	if (w->extents != None)	
-	    XFixesCopyRegion (dpy, damage, w->extents);
-    }
-    w->a.x = ce->x;
-    w->a.y = ce->y;
-    /* Only destroy the pixmap if the window is mapped */
-    if (w->a.map_state != IsUnmapped &&
-        (w->a.width != ce->width || w->a.height != ce->height))
-    {
+        {
+            damage = XFixesCreateRegion (dpy, 0, 0);
+            if (w->extents != None)
+                XFixesCopyRegion (dpy, damage, w->extents);
+        }
+
+        w->a.x = ce->x;
+        w->a.y = ce->y;
+        if (w->a.width != ce->width || w->a.height != ce->height)
+        {
 #if HAS_NAME_WINDOW_PIXMAP
-	if (w->pixmap)
-	{
-	    XFreePixmap (dpy, w->pixmap);
-	    w->pixmap = None;
-	    if (w->picture)
-	    {
-		XRenderFreePicture (dpy, w->picture);
-		w->picture = None;
-	    }
-	}
+            if (w->pixmap)
+            {
+                XFreePixmap (dpy, w->pixmap);
+                w->pixmap = None;
+                if (w->picture)
+                {
+                    XRenderFreePicture (dpy, w->picture);
+                    w->picture = None;
+                }
+            }
 #endif
-	if (w->shadow)
-	{
-	    XRenderFreePicture (dpy, w->shadow);
-	    w->shadow = None;
-	}
+            if (w->shadow)
+            {
+                XRenderFreePicture (dpy, w->shadow);
+                w->shadow = None;
+            }
+        }
+        w->a.width = ce->width;
+        w->a.height = ce->height;
+        w->a.border_width = ce->border_width;
+        if (w->a.map_state != IsUnmapped && damage)
+        {
+            XserverRegion	extents = win_extents (dpy, w);
+            XFixesUnionRegion (dpy, damage, damage, extents);
+            XFixesDestroyRegion (dpy, extents);
+            add_damage (dpy, damage);
+        }
     }
-    w->a.width = ce->width;
-    w->a.height = ce->height;
-    w->a.border_width = ce->border_width;
     w->a.override_redirect = ce->override_redirect;
     restack_win (dpy, w, ce->above);
-    if (w->a.map_state != IsUnmapped && damage)
-    {
-	XserverRegion	extents = win_extents (dpy, w);
-	XFixesUnionRegion (dpy, damage, damage, extents);
-	XFixesDestroyRegion (dpy, extents);
-	add_damage (dpy, damage);
-    }
     clipChanged = True;
 }
 
@@ -1676,6 +1697,7 @@ finish_destroy_win (Display *dpy, Window id)
 		XDamageDestroy (dpy, w->damage);
 		w->damage = None;
 	    }
+
 	    cleanup_fade (dpy, w);
 	    free (w);
 	    break;
@@ -1694,6 +1716,7 @@ static void
 destroy_win (Display *dpy, Window id, Bool fade)
 {
     win *w = find_win (dpy, id);
+
 #if HAS_NAME_WINDOW_PIXMAP
     if (w && w->pixmap && fade && winTypeFade[w->windowType])
 	set_fade (dpy, w, w->opacity*1.0/OPAQUE, 0.0, fade_out_step,
