@@ -155,6 +155,7 @@ Bool            winTypeFade[NUM_WINTYPES];
 
 /* opacity property name; sometime soon I'll write up an EWMH spec for it */
 #define OPACITY_PROP	"_NET_WM_WINDOW_OPACITY"
+#define REGISTER_PROP   "_NET_WM_CM_S"
 
 #define TRANSLUCENT	0xe0000000
 #define OPAQUE		0xffffffff
@@ -1914,10 +1915,14 @@ usage (char *program)
 }
 
 static void
-register_cm (void)
+register_cm (int scr)
 {
     Window w;
     Atom a;
+    char *buf;
+    int len, s;
+
+    if (scr < 0) return;
 
     w = XCreateSimpleWindow (dpy, RootWindow (dpy, 0), 0, 0, 1, 1, 0, None,
 			     None);
@@ -1925,8 +1930,17 @@ register_cm (void)
     Xutf8SetWMProperties (dpy, w, "xcompmgr", "xcompmgr", NULL, 0, NULL, NULL,
 			  NULL);
 
-    /* FIXME: Don't hard code the screen number */
-    a = XInternAtom (dpy, "_NET_WM_CM_S0", False);
+    len = strlen(REGISTER_PROP) + 2;
+    s = scr;
+    while (s >= 10) {
+        ++len;
+        s /= 10;
+    }
+    buf = malloc(len);
+    snprintf(buf, len, REGISTER_PROP"%d", scr);
+
+    a = XInternAtom (dpy, buf, False);
+    free(buf);
 
     XSetSelectionOwner (dpy, a, w, 0);
 }
@@ -2076,7 +2090,7 @@ main (int argc, char **argv)
 	exit (1);
     }
 
-    register_cm();
+    register_cm(scr);
 
     /* get atoms */
     opacityAtom = XInternAtom (dpy, OPACITY_PROP, False);
