@@ -312,8 +312,19 @@ set_fade (Display *dpy, win *w, double start, double finish, double step,
     {
 	XRenderFreePicture (dpy, w->shadow);
 	w->shadow = None;
-	w->extents = win_extents (dpy, w);
+
+        if (w->extents != None)
+            XFixesDestroyRegion (dpy, w->extents);
+
+        /* rebuild the shadow */
+        w->extents = win_extents (dpy, w);
     }
+
+    /* fading windows need to be drawn, mark them as damaged.
+       when a window maps, if it tries to fade in but it already at the right
+       opacity (map/unmap/map fast) then it will never get drawn without this
+       until it repaints */
+    w->damaged = 1;
 }
 
 int
@@ -382,6 +393,11 @@ run_fades (Display *dpy)
 	{
 	    XRenderFreePicture (dpy, w->shadow);
 	    w->shadow = None;
+
+            if (w->extents != None)
+                XFixesDestroyRegion (dpy, w->extents);
+
+            /* rebuild the shadow */
 	    w->extents = win_extents(dpy, w);
 	}
 	/* Must do this last as it might destroy f->w in callbacks */
@@ -2279,12 +2295,17 @@ main (int argc, char **argv)
 				      fade_out_step, 0, True, False);
 			else
 			{
-			w->opacity = get_opacity_prop(dpy, w, OPAQUE);
-			determine_mode(dpy, w);
+                            w->opacity = get_opacity_prop(dpy, w, OPAQUE);
+                            determine_mode(dpy, w);
 			    if (w->shadow)
 			    {
 				XRenderFreePicture (dpy, w->shadow);
 				w->shadow = None;
+
+                                if (w->extents != None)
+                                    XFixesDestroyRegion (dpy, w->extents);
+
+                                /* rebuild the shadow */
 				w->extents = win_extents (dpy, w);
 			    }
 			}
