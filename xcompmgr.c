@@ -869,8 +869,8 @@ win_extents (Display *dpy, win *w)
 
 	    if (compMode == CompServerShadows)
 	    {
-		w->shadow_dx = 2;
-		w->shadow_dy = 7;
+		w->shadow_dx = shadowOffsetX;
+		w->shadow_dy = shadowOffsetY;
 		w->shadow_width = w->a.width;
 		w->shadow_height = w->a.height;
 	    }
@@ -1945,8 +1945,8 @@ usage (char *program)
     fprintf (stderr, "   -d display\n      Specifies which display should be managed.\n");
     fprintf (stderr, "   -r radius\n      Specifies the blur radius for client-side shadows. (default 12)\n");
     fprintf (stderr, "   -o opacity\n      Specifies the translucency for client-side shadows. (default .75)\n");
-    fprintf (stderr, "   -l left-offset\n      Specifies the left offset for client-side shadows. (default -15)\n");
-    fprintf (stderr, "   -t top-offset\n      Specifies the top offset for clinet-side shadows. (default -15)\n");
+    fprintf (stderr, "   -l left-offset\n      Specifies the left offset for shadows. (default -15)\n");
+    fprintf (stderr, "   -t top-offset\n      Specifies the top offset for shadows. (default -15)\n");
     fprintf (stderr, "   -I fade-in-step\n      Specifies the opacity change between steps while fading in. (default 0.028)\n");
     fprintf (stderr, "   -O fade-out-step\n      Specifies the opacity change between steps while fading out. (default 0.03)\n");
     fprintf (stderr, "   -D fade-delta-time\n      Specifies the time between steps in a fade in milliseconds. (default 10)\n");
