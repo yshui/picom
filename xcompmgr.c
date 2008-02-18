@@ -100,6 +100,7 @@ typedef struct _win {
     unsigned int	opacity;
     wintype             windowType;
     unsigned long	damage_sequence;    /* sequence when damage was created */
+    Bool                destroyed;
 
     Bool                need_configure;
     XConfigureEvent     queue_configure;
@@ -779,7 +780,7 @@ find_win (Display *dpy, Window id)
     win	*w;
 
     for (w = list; w; w = w->next)
-	if (w->id == id)
+	if (w->id == id && !w->destroyed)
 	    return w;
     return 0;
 }
@@ -1513,7 +1514,7 @@ add_win (Display *dpy, Window id, Window prev)
     if (prev)
     {
 	for (p = &list; *p; p = &(*p)->next)
-	    if ((*p)->id == prev)
+	    if ((*p)->id == prev && !(*p)->destroyed)
 		break;
     }
     else
@@ -1553,6 +1554,7 @@ add_win (Display *dpy, Window id, Window prev)
     new->shadow_width = 0;
     new->shadow_height = 0;
     new->opacity = OPAQUE;
+    new->destroyed = False;
     new->need_configure = False;
 
     new->borderClip = None;
@@ -1586,7 +1588,7 @@ restack_win (Display *dpy, win *w, Window new_above)
 	/* rehook */
 	for (prev = &list; *prev; prev = &(*prev)->next)
 	{
-	    if ((*prev)->id == new_above)
+	    if ((*prev)->id == new_above && !(*prev)->destroyed)
 		break;
 	}
 	w->next = *prev;
@@ -1693,7 +1695,7 @@ finish_destroy_win (Display *dpy, Window id)
     win	**prev, *w;
 
     for (prev = &list; (w = *prev); prev = &w->next)
-	if (w->id == id)
+	if (w->id == id && w->destroyed)
 	{
             finish_unmap_win (dpy, w);
 	    *prev = w->next;
@@ -1732,6 +1734,8 @@ static void
 destroy_win (Display *dpy, Window id, Bool fade)
 {
     win *w = find_win (dpy, id);
+
+    if (w) w->destroyed = True;
 
 #if HAS_NAME_WINDOW_PIXMAP
     if (w && w->pixmap && fade && winTypeFade[w->windowType])
