@@ -990,8 +990,10 @@ paint_all (Display *dpy, XserverRegion region)
 	    Drawable			draw = w->id;
 	    
 #if HAS_NAME_WINDOW_PIXMAP
-	    if (hasNamePixmap && !w->pixmap)
-		w->pixmap = XCompositeNameWindowPixmap (dpy, w->id);
+	    if (hasNamePixmap && !w->pixmap) {
+                set_ignore (dpy, NextRequest (dpy));
+                w->pixmap = XCompositeNameWindowPixmap (dpy, w->id);
+            }
 	    if (w->pixmap)
 		draw = w->pixmap;
 #endif
@@ -1542,6 +1544,7 @@ add_win (Display *dpy, Window id, Window prev)
     else
     {
 	new->damage_sequence = NextRequest (dpy);
+        set_ignore (dpy, NextRequest (dpy));
 	new->damage = XDamageCreate (dpy, id, XDamageReportNonEmpty);
     }
     new->alphaPict = None;
