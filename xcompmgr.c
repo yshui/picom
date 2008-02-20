@@ -1669,10 +1669,12 @@ configure_win (Display *dpy, XConfigureEvent *ce)
             XFixesDestroyRegion (dpy, extents);
             add_damage (dpy, damage);
         }
+
+        clipChanged = True;
     }
+
     w->a.override_redirect = ce->override_redirect;
     restack_win (dpy, w, ce->above);
-    clipChanged = True;
 }
 
 static void
@@ -1743,7 +1745,7 @@ destroy_win (Display *dpy, Window id, Bool fade)
 #if HAS_NAME_WINDOW_PIXMAP
     if (w && w->pixmap && fade && winTypeFade[w->windowType])
 	set_fade (dpy, w, w->opacity*1.0/OPAQUE, 0.0, fade_out_step,
-                  destroy_callback, False, (w->a.map_state != IsUnmapped));
+                  destroy_callback, False, True);
     else
 #endif
     {
