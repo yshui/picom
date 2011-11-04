@@ -2307,7 +2307,7 @@ main(int argc, char **argv) {
         case FocusIn: {
           if (!inactive_transparency) break;
           win *fw = find_win(dpy, ev.xfocus.window);
-          if (fw->window_type == WINTYPE_NORMAL) {
+          if (fw && fw->window_type == WINTYPE_NORMAL) {
             fw->opacity = OPAQUE;
             determine_mode(dpy, fw);
           }
@@ -2316,7 +2316,7 @@ main(int argc, char **argv) {
         case FocusOut: {
           if (!inactive_transparency) break;
           win *fw = find_win(dpy, ev.xfocus.window);
-          if (fw->window_type == WINTYPE_NORMAL) {
+          if (fw && fw->window_type == WINTYPE_NORMAL) {
             fw->opacity = (unsigned long)((double)0.5 * OPAQUE);
             determine_mode(dpy, fw);
           }
