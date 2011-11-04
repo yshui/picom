@@ -1,0 +1,22 @@
+PACKAGES=x11 xcomposite xfixes xdamage xrender
+LIBS=`pkg-config --libs ${PACKAGES}` -lm
+INCS=`pkg-config --cflags ${PACKAGES}`
+CFLAGS = -Wall
+
+.c.o:
+	$(CC) $(CFLAGS) $(INCS) -c $*.c
+
+OBJS=xcompmgr.o
+
+xcompmgr: $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
+
+$(OBJS): xcompmgr.h
+
+install:
+	cp -t /usr/bin/local xcompmgr
+
+clean:
+	rm -f $(OBJS) xcompmgr
+
+.PHONY: install clean
