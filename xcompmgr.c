@@ -834,7 +834,7 @@ win_extents(Display *dpy, win *w) {
   r.height = w->a.height + w->a.border_width * 2;
 
   if (win_type_shadow[w->window_type]) {
-    if (w->mode != WINDOW_ARGB) {
+    //if (w->mode != WINDOW_ARGB) {
       XRectangle sr;
 
       w->shadow_dx = shadow_offset_x;
@@ -872,7 +872,7 @@ win_extents(Display *dpy, win *w) {
       if (sr.y + sr.height > r.y + r.height) {
         r.height = sr.y + sr.height - r.y;
       }
-    }
+    //}
   }
 
   return XFixesCreateRegion(dpy, &r, 1);
