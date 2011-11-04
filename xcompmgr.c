@@ -1176,7 +1176,6 @@ repair_win(Display *dpy, win *w) {
     set_ignore(dpy, NextRequest(dpy));
     XDamageSubtract(dpy, w->damage, None, None);
   } else {
-    XserverRegion    o;
     parts = XFixesCreateRegion(dpy, 0, 0);
     set_ignore(dpy, NextRequest(dpy));
     XDamageSubtract(dpy, w->damage, None, parts);
@@ -1189,6 +1188,7 @@ repair_win(Display *dpy, win *w) {
   w->damaged = 1;
 }
 
+#if 0
 static const char*
 wintype_name(wintype type) {
   const char *t;
@@ -1243,6 +1243,7 @@ wintype_name(wintype type) {
 
   return t;
 }
+#endif
 
 static wintype
 get_wintype_prop(Display * dpy, Window w) {
@@ -1905,11 +1906,12 @@ error(Display *dpy, XErrorEvent *ev) {
     case BadGlyph:
       name ="BadGlyph";
       break;
-    default: break;
+    default:
+      break;
   }
 
-  printf("error %d request %d minor %d serial %lu\n",
-      ev->error_code, ev->request_code,
+  printf("error %d (%s) request %d minor %d serial %lu\n",
+      ev->error_code, name, ev->request_code,
       ev->minor_code, ev->serial);
 
 /*  abort();      this is just annoying to most people */
