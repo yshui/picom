@@ -189,6 +189,8 @@ int fade_delta = 10;
 int fade_time = 0;
 Bool fade_trans = False;
 
+Bool inactive_transparency = False;
+
 /* For shadow precomputation */
 int Gsize = -1;
 unsigned char *shadow_corner = NULL;
@@ -853,7 +855,10 @@ win_extents(Display *dpy, win *w) {
   r.width = w->a.width + w->a.border_width * 2;
   r.height = w->a.height + w->a.border_width * 2;
 
-  if (win_type_shadow[w->window_type]) {
+  // check NUM_WINTYPES to prevent segfault
+  if (w->window_type
+      && w->window_type < NUM_WINTYPES
+      && win_type_shadow[w->window_type]) {
     //if (w->mode != WINDOW_ARGB) {
     XRectangle sr;
 
@@ -1299,7 +1304,7 @@ determine_wintype(Display *dpy, Window w, Window top) {
     return (wintype) - 1;
   }
 
-  for (i = 0;i < nchildren;i++) {
+  for (i = 0; i < nchildren; i++) {
     type = determine_wintype(dpy, children[i], top);
     if (type != (wintype) - 1) return type;
   }
@@ -1338,8 +1343,10 @@ map_win(Display *dpy, Window id,
 
   /* select before reading the property
      so that no property changes are lost */
-  XSelectInput(dpy, id, PropertyChangeMask);
-  w->opacity = get_opacity_prop(dpy, w, OPAQUE);
+  XSelectInput(dpy, id, PropertyChangeMask | FocusChangeMask);
+
+  // this causes problems for inactive transparency
+  //w->opacity = get_opacity_prop(dpy, w, OPAQUE);
 
   determine_mode(dpy, w);
 
@@ -1579,6 +1586,10 @@ add_win(Display *dpy, Window id, Window prev) {
   *p = new;
 
   if (new->a.map_state == IsViewable) {
+    new->window_type = determine_wintype(dpy, id, id);
+    if (inactive_transparency && new->window_type == WINTYPE_NORMAL) {
+      new->opacity = (unsigned long)((double)0.5 * OPAQUE);
+    }
     map_win(dpy, id, new->damage_sequence - 1, True);
   }
 }
@@ -2076,7 +2087,7 @@ main(int argc, char **argv) {
   /* don't bother to draw a shadow for the desktop */
   win_type_shadow[WINTYPE_DESKTOP] = False;
 
-  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:scnfFCaS")) != -1) {
+  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:iscnfFCaS")) != -1) {
     switch (o) {
       case 'd':
         display = optarg;
@@ -2128,6 +2139,9 @@ main(int argc, char **argv) {
         break;
       case 't':
         shadow_offset_y = atoi(optarg);
+        break;
+      case 'i':
+        inactive_transparency = True;
         break;
       case 'c':
       case 'n':
@@ -2288,6 +2302,24 @@ main(int argc, char **argv) {
 #endif
 
       switch (ev.type) {
+        case FocusIn: {
+          if (!inactive_transparency) break;
+          win *fw = find_win(dpy, ev.xfocus.window);
+          if (fw->window_type == WINTYPE_NORMAL) {
+            fw->opacity = OPAQUE;
+            determine_mode(dpy, fw);
+          }
+          break;
+        }
+        case FocusOut: {
+          if (!inactive_transparency) break;
+          win *fw = find_win(dpy, ev.xfocus.window);
+          if (fw->window_type == WINTYPE_NORMAL) {
+            fw->opacity = (unsigned long)((double)0.5 * OPAQUE);
+            determine_mode(dpy, fw);
+          }
+          break;
+        }
         case CreateNotify:
           add_win(dpy, ev.xcreatewindow.window, 0);
           break;
