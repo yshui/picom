@@ -726,6 +726,7 @@ solid_picture(Display *dpy, Bool argb, double a,
   c.red = r * 0xffff;
   c.green = g * 0xffff;
   c.blue = b * 0xffff;
+
   XRenderFillRectangle(dpy, PictOpSrc, picture, &c, 0, 0, 1, 1);
   XFreePixmap(dpy, pixmap);
 
@@ -799,9 +800,10 @@ root_tile_f(Display *dpy) {
   pixmap = None;
 
   for (p = 0; background_props[p]; p++) {
-    if (XGetWindowProperty(dpy, root, XInternAtom(
-          dpy, background_props[p], False), 0, 4, False, AnyPropertyType,
-          &actual_type, &actual_format, &nitems, &bytes_after, &prop
+    if (XGetWindowProperty(dpy, root,
+          XInternAtom(dpy, background_props[p], False),
+          0, 4, False, AnyPropertyType, &actual_type,
+          &actual_format, &nitems, &bytes_after, &prop
         ) == Success
         && actual_type == XInternAtom(dpy, "PIXMAP", False)
         && actual_format == 32 && nitems == 1) {
@@ -1717,7 +1719,7 @@ static void
 finish_destroy_win(Display *dpy, Window id) {
   win **prev, *w;
 
-  for (prev = &list; (w = *prev); prev = &w->next)
+  for (prev = &list; (w = *prev); prev = &w->next) {
     if (w->id == id && w->destroyed) {
       finish_unmap_win(dpy, w);
       *prev = w->next;
@@ -1748,6 +1750,7 @@ finish_destroy_win(Display *dpy, Window id) {
       free(w);
       break;
     }
+  }
 }
 
 #if HAS_NAME_WINDOW_PIXMAP
@@ -1838,10 +1841,10 @@ damage_win(Display *dpy, XDamageNotifyEvent *de) {
       w->damage_bounds.height);
 #endif
 
-    if (w->damage_bounds.x <= 0 &&
-      w->damage_bounds.y <= 0 &&
-      w->a.width <= w->damage_bounds.x + w->damage_bounds.width &&
-      w->a.height <= w->damage_bounds.y + w->damage_bounds.height) {
+    if (w->damage_bounds.x <= 0
+        && w->damage_bounds.y <= 0
+        && w->a.width <= w->damage_bounds.x + w->damage_bounds.width
+        && w->a.height <= w->damage_bounds.y + w->damage_bounds.height) {
       clip_changed = True;
       if (win_type_fade[w->window_type]) {
         set_fade(dpy, w, 0, get_opacity_percent(dpy, w),
@@ -1859,7 +1862,7 @@ damage_win(Display *dpy, XDamageNotifyEvent *de) {
 static int
 error(Display *dpy, XErrorEvent *ev) {
   int o;
-  const char *name = 0;
+  const char *name = "Unknown";
 
   if (should_ignore(dpy, ev->serial)) {
     return 0;
@@ -2286,10 +2289,10 @@ main(int argc, char **argv) {
     /*    dump_wins(); */
     do {
       if (!QLength(dpy)) {
-         if (poll(&ufd, 1, fade_timeout()) == 0) {
+        if (poll(&ufd, 1, fade_timeout()) == 0) {
           run_fades(dpy);
           break;
-         }
+        }
       }
 
       XNextEvent(dpy, &ev);
