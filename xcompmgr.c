@@ -431,17 +431,17 @@ make_gaussian_map(Display *dpy, double r) {
 /*
  * A picture will help
  *
- *    -center   0        width  width+center
+ *      -center   0                width  width+center
  *  -center +-----+-------------------+-----+
- *      |   |           |   |
- *      |   |           |   |
- *    0 +-----+-------------------+-----+
- *      |   |           |   |
- *      |   |           |   |
- *      |   |           |   |
+ *          |     |                   |     |
+ *          |     |                   |     |
+ *        0 +-----+-------------------+-----+
+ *          |     |                   |     |
+ *          |     |                   |     |
+ *          |     |                   |     |
  *   height +-----+-------------------+-----+
- *      |   |           |   |
- * height+  |   |           |   |
+ *          |     |                   |     |
+ * height+  |     |                   |     |
  *  center  +-----+-------------------+-----+
  */
 
@@ -1633,6 +1633,12 @@ finish_destroy_win(Display *dpy, Window id) {
       if (w->shadow_pict) {
         XRenderFreePicture(dpy, w->shadow_pict);
         w->shadow_pict = None;
+      }
+
+      /* fix leak, from freedesktop repo */
+      if (w->shadow) {
+        XRenderFreePicture (dpy, w->shadow);
+        w->shadow = None;
       }
 
       if (w->damage != None) {
