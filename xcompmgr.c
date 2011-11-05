@@ -189,7 +189,10 @@ int fade_delta = 10;
 int fade_time = 0;
 Bool fade_trans = False;
 
-Bool inactive_transparency = False;
+double inactive_opacity = 0;
+
+#define INACTIVE_OPACITY \
+(unsigned long)((double)inactive_opacity * OPAQUE)
 
 /* For shadow precomputation */
 int Gsize = -1;
@@ -1590,8 +1593,8 @@ add_win(Display *dpy, Window id, Window prev) {
 
   if (new->a.map_state == IsViewable) {
     new->window_type = determine_wintype(dpy, id, id);
-    if (inactive_transparency && new->window_type == WINTYPE_NORMAL) {
-      new->opacity = (unsigned long)((double)0.5 * OPAQUE);
+    if (inactive_opacity && new->window_type == WINTYPE_NORMAL) {
+      new->opacity = INACTIVE_OPACITY;
     }
     map_win(dpy, id, new->damage_sequence - 1, True);
   }
@@ -1614,6 +1617,7 @@ restack_win(Display *dpy, win *w, Window new_above) {
     for (prev = &list; *prev; prev = &(*prev)->next) {
       if ((*prev) == w) break;
     }
+
     *prev = w->next;
 
     /* rehook */
@@ -1662,6 +1666,7 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
 
     w->a.x = ce->x;
     w->a.y = ce->y;
+
     if (w->a.width != ce->width || w->a.height != ce->height) {
 #if HAS_NAME_WINDOW_PIXMAP
       if (w->pixmap) {
@@ -1923,7 +1928,7 @@ error(Display *dpy, XErrorEvent *ev) {
 
 static void
 expose_root(Display *dpy, Window root, XRectangle *rects, int nrects) {
-  XserverRegion  region = XFixesCreateRegion(dpy, rects, nrects);
+  XserverRegion region = XFixesCreateRegion(dpy, rects, nrects);
 
   add_damage(dpy, region);
 }
@@ -2025,6 +2030,9 @@ usage(char *program) {
     "   -F\n    "
     "Fade windows during opacity changes.\n");
   fprintf(stderr,
+    "   -i opacity\n    "
+    "Opacity of inactive windows. (0.1 - 1.0)\n");
+  fprintf(stderr,
     "   -S\n    "
     "Enable synchronous operation (for debugging).\n");
 
@@ -2070,7 +2078,7 @@ main(int argc, char **argv) {
   XEvent ev;
   Window root_return, parent_return;
   Window *children;
-  unsigned int  nchildren;
+  unsigned int nchildren;
   int i;
   XRenderPictureAttributes pa;
   XRectangle *expose_rects = 0;
@@ -2092,7 +2100,7 @@ main(int argc, char **argv) {
   /* don't bother to draw a shadow for the desktop */
   win_type_shadow[WINTYPE_DESKTOP] = False;
 
-  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:iscnfFCaS")) != -1) {
+  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:scnfFCaS")) != -1) {
     switch (o) {
       case 'd':
         display = optarg;
@@ -2146,7 +2154,12 @@ main(int argc, char **argv) {
         shadow_offset_y = atoi(optarg);
         break;
       case 'i':
-        inactive_transparency = True;
+        inactive_opacity = (double)atof(optarg);
+        if (inactive_opacity < 0.1
+            || inactive_opacity > 1.0) {
+          fprintf(stderr, "Opacity must be 0.1 - 1.0.\n");
+          exit(1);
+        }
         break;
       case 'c':
       case 'n':
@@ -2308,7 +2321,7 @@ main(int argc, char **argv) {
 
       switch (ev.type) {
         case FocusIn: {
-          if (!inactive_transparency) break;
+          if (!inactive_opacity) break;
           win *fw = find_win(dpy, ev.xfocus.window);
           if (fw && fw->window_type == WINTYPE_NORMAL) {
             fw->opacity = OPAQUE;
@@ -2317,10 +2330,10 @@ main(int argc, char **argv) {
           break;
         }
         case FocusOut: {
-          if (!inactive_transparency) break;
+          if (!inactive_opacity) break;
           win *fw = find_win(dpy, ev.xfocus.window);
           if (fw && fw->window_type == WINTYPE_NORMAL) {
-            fw->opacity = (unsigned long)((double)0.5 * OPAQUE);
+            fw->opacity = INACTIVE_OPACITY;
             determine_mode(dpy, fw);
           }
           break;
