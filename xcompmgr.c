@@ -101,7 +101,10 @@ typedef struct _win {
   wintype window_type;
   unsigned long damage_sequence; /* sequence when damage was created */
   Bool destroyed;
+  unsigned int left_width;
+  unsigned int right_width;
   unsigned int top_width;
+  unsigned int bottom_width;
 
   Bool need_configure;
   XConfigureEvent queue_configure;
@@ -977,7 +980,8 @@ find_client_win(Display *dpy, Window win) {
 }
 
 static void
-get_frame_extents(Display *dpy, Window w, int *top) {
+get_frame_extents(Display *dpy, Window w,
+                  int *left, int *right, int *top, int *bottom) {
   long *extents;
   Atom type;
   int format;
@@ -985,7 +989,10 @@ get_frame_extents(Display *dpy, Window w, int *top) {
   unsigned char *data = NULL;
   int result;
 
+  *left = 0;
+  *right = 0;
   *top = 0;
+  *bottom = 0;
 
   w = find_client_win(dpy, w);
   if (!w) return;
@@ -999,7 +1006,10 @@ get_frame_extents(Display *dpy, Window w, int *top) {
   if (result == Success) {
     if (nitems == 4 && after == 0) {
       extents = (long *)data;
+      *left = (int) *extents;
+      *right = (int) *(extents + 1);
       *top = (int) *(extents + 2);
+      *bottom = (int) *(extents + 3);
     }
     XFree(data);
   }
@@ -1202,15 +1212,36 @@ paint_all(Display *dpy, XserverRegion region) {
           dpy, PictOpOver, w->picture, w->alpha_pict,
           root_buffer, 0, 0, 0, 0, x, y, wid, hei);
       } else {
+        /* TODO - clean me */
         unsigned int t = w->top_width;
-        /* transparent title bar */
+        unsigned int l = w->left_width;
+        unsigned int b = w->bottom_width;
+        unsigned int r = w->right_width;
+
+        /* top */
         XRenderComposite(
-          dpy, PictOpOver, w->picture, w->alpha_border_pict,
-          root_buffer, 0, 0, 0, 0, x, y, wid, t);
-        /* rest of the window */
+          dpy, PictOpOver, w->picture, w->alpha_border_pict, root_buffer,
+          0, 0, 0, 0, x, y, wid, t);
+
+        /* left */
         XRenderComposite(
-          dpy, PictOpOver, w->picture, w->alpha_pict,
-          root_buffer, 0, t, 0, t, x, y + t, wid, hei - t);
+          dpy, PictOpOver, w->picture, w->alpha_border_pict, root_buffer,
+          0, t, 0, t, x, y + t, l, hei - t);
+
+        /* bottom */
+        XRenderComposite(
+          dpy, PictOpOver, w->picture, w->alpha_border_pict, root_buffer,
+          l, hei - b, l, hei - b, x + l, y + hei - b, wid - l - r, b);
+
+        /* right */
+        XRenderComposite(
+          dpy, PictOpOver, w->picture, w->alpha_border_pict, root_buffer,
+          wid - r, t, wid - r, t, x + wid - r, y + t, r, hei - t);
+
+        /* body */
+        XRenderComposite(
+          dpy, PictOpOver, w->picture, w->alpha_pict, root_buffer,
+          l, t, l, t, x + l, y + t, wid - l - r, hei - t - b);
       }
     }
 
@@ -1664,8 +1695,12 @@ add_win(Display *dpy, Window id, Window prev) {
   new->next = *p;
   *p = new;
 
+  new->left_width = 0;
+  new->right_width = 0;
   new->top_width = 0;
-  get_frame_extents(dpy, id, &new->top_width);
+  new->bottom_width = 0;
+  get_frame_extents(dpy, id,
+    &new->left_width, &new->right_width, &new->top_width, &new->bottom_width);
 
   if (new->a.map_state == IsViewable) {
     new->window_type = determine_wintype(dpy, id, id);
@@ -2114,6 +2149,9 @@ usage(char *program) {
     "   -i opacity\n    "
     "Opacity of inactive windows. (0.1 - 1.0)\n");
   fprintf(stderr,
+    "   -e opacity\n    "
+    "Opacity of window titlebars and borders. (0.1 - 1.0)\n");
+  fprintf(stderr,
     "   -S\n    "
     "Enable synchronous operation (for debugging).\n");
 
@@ -2181,7 +2219,7 @@ main(int argc, char **argv) {
   /* don't bother to draw a shadow for the desktop */
   win_type_shadow[WINTYPE_DESKTOP] = False;
 
-  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:z:scnfFCaS")) != -1) {
+  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:e:scnfFCaS")) != -1) {
     switch (o) {
       case 'd':
         display = optarg;
@@ -2236,13 +2274,8 @@ main(int argc, char **argv) {
         break;
       case 'i':
         inactive_opacity = (double)atof(optarg);
-        if (inactive_opacity < 0.1
-            || inactive_opacity > 1.0) {
-          fprintf(stderr, "Opacity must be 0.1 - 1.0.\n");
-          exit(1);
-        }
         break;
-      case 'z':
+      case 'e':
         frame_opacity = (double)atof(optarg);
         break;
       case 'c':
@@ -2423,6 +2456,7 @@ main(int argc, char **argv) {
           break;
         }
         case CreateNotify:
+          //if (ev.xcreatewindow.override_redirect) break;
           add_win(dpy, ev.xcreatewindow.window, 0);
           break;
         case ConfigureNotify:
