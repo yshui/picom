@@ -88,6 +88,7 @@ typedef struct _win {
   Damage damage;
   Picture picture;
   Picture alpha_pict;
+  Picture alpha_border_pict;
   Picture shadow_pict;
   XserverRegion border_size;
   XserverRegion extents;
@@ -100,6 +101,7 @@ typedef struct _win {
   wintype window_type;
   unsigned long damage_sequence; /* sequence when damage was created */
   Bool destroyed;
+  unsigned int top_width;
 
   Bool need_configure;
   XConfigureEvent queue_configure;
@@ -190,6 +192,7 @@ int fade_time = 0;
 Bool fade_trans = False;
 
 double inactive_opacity = 0;
+double frame_opacity = 0;
 
 #define INACTIVE_OPACITY \
 (unsigned long)((double)inactive_opacity * OPAQUE)
@@ -937,6 +940,71 @@ border_size(Display *dpy, win *w) {
   return border;
 }
 
+static Window
+find_client_win(Display *dpy, Window win) {
+  Atom WM_STATE = XInternAtom(dpy, "WM_STATE", False);
+
+  Window root, parent;
+  Window *children;
+  unsigned int nchildren;
+  unsigned int i;
+  Atom type = None;
+  int format;
+  unsigned long nitems, after;
+  unsigned char *data;
+  Window client = 0;
+
+  XGetWindowProperty(
+    dpy, win, WM_STATE, 0, 0, False,
+    AnyPropertyType, &type, &format, &nitems,
+    &after, &data);
+
+  if (type) return win;
+
+  if (!XQueryTree(dpy, win, &root,
+      &parent, &children, &nchildren)) {
+    return 0;
+  }
+
+  for (i = 0; i < nchildren; i++) {
+    client = find_client_win(dpy, children[i]);
+    if (client) break;
+  }
+
+  if (children) XFree((char *)children);
+
+  return client;
+}
+
+static void
+get_frame_extents(Display *dpy, Window w, int *top) {
+  long *extents;
+  Atom type;
+  int format;
+  unsigned long nitems, after;
+  unsigned char *data = NULL;
+  int result;
+
+  *top = 0;
+
+  w = find_client_win(dpy, w);
+  if (!w) return;
+
+  result = XGetWindowProperty(
+    dpy, w, XInternAtom(dpy, "_NET_FRAME_EXTENTS", False),
+    0L, 4L, False, AnyPropertyType,
+    &type, &format, &nitems, &after,
+    (unsigned char **)&data);
+
+  if (result == Success) {
+    if (nitems == 4 && after == 0) {
+      extents = (long *)data;
+      *top = (int) *(extents + 2);
+    }
+    XFree(data);
+  }
+}
+
 static void
 paint_all(Display *dpy, XserverRegion region) {
   win *w;
@@ -1042,7 +1110,8 @@ paint_all(Display *dpy, XserverRegion region) {
       w->extents = win_extents(dpy, w);
     }
 
-    if (w->mode == WINDOW_SOLID) {
+    if (!(frame_opacity && w->top_width)
+        && w->mode == WINDOW_SOLID) {
       int x, y, wid, hei;
 
 #if HAS_NAME_WINDOW_PIXMAP
@@ -1099,12 +1168,19 @@ paint_all(Display *dpy, XserverRegion region) {
         w->shadow_width, w->shadow_height);
     }
 
-    if (w->opacity != OPAQUE && !w->alpha_pict) {
+    if (((frame_opacity && w->top_width) || w->opacity != OPAQUE)
+        && !w->alpha_pict) {
       w->alpha_pict = solid_picture(
         dpy, False, (double)w->opacity / OPAQUE, 0, 0, 0);
     }
 
-    if (w->mode == WINDOW_TRANS) {
+    if (((frame_opacity && w->top_width) || w->opacity != OPAQUE)
+        && !w->alpha_border_pict) {
+      w->alpha_border_pict = solid_picture(
+        dpy, False, frame_opacity, 0, 0, 0);
+    }
+
+    if ((frame_opacity && w->top_width) || w->mode != WINDOW_SOLID) {
       int x, y, wid, hei;
 
 #if HAS_NAME_WINDOW_PIXMAP
@@ -1121,30 +1197,21 @@ paint_all(Display *dpy, XserverRegion region) {
 
       set_ignore(dpy, NextRequest(dpy));
 
-      XRenderComposite(
-        dpy, PictOpOver, w->picture, w->alpha_pict,
-        root_buffer, 0, 0, 0, 0, x, y, wid, hei);
-    } else if (w->mode == WINDOW_ARGB) {
-      int x, y, wid, hei;
-
-#if HAS_NAME_WINDOW_PIXMAP
-      x = w->a.x;
-      y = w->a.y;
-      wid = w->a.width + w->a.border_width * 2;
-      hei = w->a.height + w->a.border_width * 2;
-#else
-      x = w->a.x + w->a.border_width;
-      y = w->a.y + w->a.border_width;
-      wid = w->a.width;
-      hei = w->a.height;
-#endif
-
-      set_ignore(dpy, NextRequest(dpy));
-
-      XRenderComposite(
-        dpy, PictOpOver, w->picture, w->alpha_pict,
-        root_buffer, 0, 0, 0, 0,
-        x, y, wid, hei);
+      if (!frame_opacity || !w->top_width) {
+        XRenderComposite(
+          dpy, PictOpOver, w->picture, w->alpha_pict,
+          root_buffer, 0, 0, 0, 0, x, y, wid, hei);
+      } else {
+        unsigned int t = w->top_width;
+        /* transparent title bar */
+        XRenderComposite(
+          dpy, PictOpOver, w->picture, w->alpha_border_pict,
+          root_buffer, 0, 0, 0, 0, x, y, wid, t);
+        /* rest of the window */
+        XRenderComposite(
+          dpy, PictOpOver, w->picture, w->alpha_pict,
+          root_buffer, 0, t, 0, t, x, y + t, wid, hei - t);
+      }
     }
 
     XFixesDestroyRegion(dpy, w->border_clip);
@@ -1500,6 +1567,11 @@ determine_mode(Display *dpy, win *w) {
     w->alpha_pict = None;
   }
 
+  if (w->alpha_border_pict) {
+    XRenderFreePicture(dpy, w->alpha_border_pict);
+    w->alpha_border_pict = None;
+  }
+
   if (w->shadow_pict) {
     XRenderFreePicture(dpy, w->shadow_pict);
     w->shadow_pict = None;
@@ -1573,6 +1645,7 @@ add_win(Display *dpy, Window id, Window prev) {
   }
 
   new->alpha_pict = None;
+  new->alpha_border_pict = None;
   new->shadow_pict = None;
   new->border_size = None;
   new->extents = None;
@@ -1590,6 +1663,9 @@ add_win(Display *dpy, Window id, Window prev) {
 
   new->next = *p;
   *p = new;
+
+  new->top_width = 0;
+  get_frame_extents(dpy, id, &new->top_width);
 
   if (new->a.map_state == IsViewable) {
     new->window_type = determine_wintype(dpy, id, id);
@@ -1732,6 +1808,11 @@ finish_destroy_win(Display *dpy, Window id) {
       if (w->alpha_pict) {
         XRenderFreePicture(dpy, w->alpha_pict);
         w->alpha_pict = None;
+      }
+
+      if (w->alpha_border_pict) {
+        XRenderFreePicture(dpy, w->alpha_border_pict);
+        w->alpha_border_pict = None;
       }
 
       if (w->shadow_pict) {
@@ -2100,7 +2181,7 @@ main(int argc, char **argv) {
   /* don't bother to draw a shadow for the desktop */
   win_type_shadow[WINTYPE_DESKTOP] = False;
 
-  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:scnfFCaS")) != -1) {
+  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:z:scnfFCaS")) != -1) {
     switch (o) {
       case 'd':
         display = optarg;
@@ -2160,6 +2241,9 @@ main(int argc, char **argv) {
           fprintf(stderr, "Opacity must be 0.1 - 1.0.\n");
           exit(1);
         }
+        break;
+      case 'z':
+        frame_opacity = (double)atof(optarg);
         break;
       case 'c':
       case 'n':
