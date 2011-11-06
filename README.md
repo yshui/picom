@@ -12,11 +12,16 @@ partially doing this out of a desire to learn Xlib.
 ## Changes from xcompmgr:
 
 * __inactive window transparency__ (specified with `-i`)
+* __titlebar/frame transparency__ (specified with `-e`)
 * shadows are now enabled for argb windows, e.g. terminals with transparency
 * removed serverside shadows (and simple compositing) to clean the code,
   the only option that remains is clientside shadows
-* titlebar transparency (and possibly border transparency) is on the way
 * menu transparency (thanks to Dana)
+
+The above features give compton a feature set similar to the xfce compositor.
+
+Compton has only been tested with openbox so far, but frame transparency
+should work with any window manager that properly sets `_NET_FRAME_EXTENTS`.
 
 ## Fixes from the original xcompmgr:
 
@@ -64,7 +69,8 @@ The above will produce a single binary.
 ## Usage
 
 ``` bash
-$ xcompmgr -cC -t -5 -l -5 -r 5 -o 0.5 -fF -I 0.065 -O 0.065 -D 6 -m 0.8 -i &
+$ xcompmgr -cC -t -5 -l -5 -r 5 -o 0.4 \
+  -fF -I 0.065 -O 0.065 -D 6 -m 0.8 -i 0.6 -e 0.6 &
 
-$ xcompmgr -cC -t -5 -l -5 -r 5 -o 0.5 -i &
+$ xcompmgr -cC -t -5 -l -5 -r 5 -o 0.4 -i 0.6 -e 0.6 &
 ```
