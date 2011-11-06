@@ -200,6 +200,12 @@ double frame_opacity = 0;
 #define INACTIVE_OPACITY \
 (unsigned long)((double)inactive_opacity * OPAQUE)
 
+#define IS_NORMAL_WIN(w) \
+((w) && ((w)->window_type == WINTYPE_NORMAL \
+         || (w)->window_type == WINTYPE_UTILITY))
+
+#define HAS_FRAME_OPACITY(w) (frame_opacity && (w)->top_width)
+
 /* For shadow precomputation */
 int Gsize = -1;
 unsigned char *shadow_corner = NULL;
@@ -435,7 +441,7 @@ make_gaussian_map(Display *dpy, double r) {
 
   for (y = 0; y < size; y++) {
     for (x = 0; x < size; x++) {
-      c->data[y*size + x] /= t;
+      c->data[y * size + x] /= t;
     }
   }
 
@@ -1120,8 +1126,7 @@ paint_all(Display *dpy, XserverRegion region) {
       w->extents = win_extents(dpy, w);
     }
 
-    if (!(frame_opacity && w->top_width)
-        && w->mode == WINDOW_SOLID) {
+    if (w->mode == WINDOW_SOLID && !HAS_FRAME_OPACITY(w)) {
       int x, y, wid, hei;
 
 #if HAS_NAME_WINDOW_PIXMAP
@@ -1178,19 +1183,16 @@ paint_all(Display *dpy, XserverRegion region) {
         w->shadow_width, w->shadow_height);
     }
 
-    if (((frame_opacity && w->top_width) || w->opacity != OPAQUE)
-        && !w->alpha_pict) {
+    if (w->opacity != OPAQUE && !w->alpha_pict) {
       w->alpha_pict = solid_picture(
         dpy, False, (double)w->opacity / OPAQUE, 0, 0, 0);
     }
-
-    if (((frame_opacity && w->top_width) || w->opacity != OPAQUE)
-        && !w->alpha_border_pict) {
+    if (HAS_FRAME_OPACITY(w) && !w->alpha_border_pict) {
       w->alpha_border_pict = solid_picture(
         dpy, False, frame_opacity, 0, 0, 0);
     }
 
-    if ((frame_opacity && w->top_width) || w->mode != WINDOW_SOLID) {
+    if (w->mode != WINDOW_SOLID || HAS_FRAME_OPACITY(w)) {
       int x, y, wid, hei;
 
 #if HAS_NAME_WINDOW_PIXMAP
@@ -1207,7 +1209,7 @@ paint_all(Display *dpy, XserverRegion region) {
 
       set_ignore(dpy, NextRequest(dpy));
 
-      if (!frame_opacity || !w->top_width) {
+      if (!HAS_FRAME_OPACITY(w)) {
         XRenderComposite(
           dpy, PictOpOver, w->picture, w->alpha_pict,
           root_buffer, 0, 0, 0, 0, x, y, wid, hei);
@@ -1692,19 +1694,21 @@ add_win(Display *dpy, Window id, Window prev) {
   new->border_clip = None;
   new->prev_trans = 0;
 
-  new->next = *p;
-  *p = new;
-
   new->left_width = 0;
   new->right_width = 0;
   new->top_width = 0;
   new->bottom_width = 0;
+
   get_frame_extents(dpy, id,
-    &new->left_width, &new->right_width, &new->top_width, &new->bottom_width);
+    &new->left_width, &new->right_width,
+    &new->top_width, &new->bottom_width);
+
+  new->next = *p;
+  *p = new;
 
   if (new->a.map_state == IsViewable) {
     new->window_type = determine_wintype(dpy, id, id);
-    if (inactive_opacity && new->window_type == WINTYPE_NORMAL) {
+    if (inactive_opacity && IS_NORMAL_WIN(new)) {
       new->opacity = INACTIVE_OPACITY;
     }
     map_win(dpy, id, new->damage_sequence - 1, True);
@@ -2440,7 +2444,7 @@ main(int argc, char **argv) {
         case FocusIn: {
           if (!inactive_opacity) break;
           win *fw = find_win(dpy, ev.xfocus.window);
-          if (fw && fw->window_type == WINTYPE_NORMAL) {
+          if (IS_NORMAL_WIN(fw)) {
             fw->opacity = OPAQUE;
             determine_mode(dpy, fw);
           }
@@ -2449,7 +2453,7 @@ main(int argc, char **argv) {
         case FocusOut: {
           if (!inactive_opacity) break;
           win *fw = find_win(dpy, ev.xfocus.window);
-          if (fw && fw->window_type == WINTYPE_NORMAL) {
+          if (IS_NORMAL_WIN(fw)) {
             fw->opacity = INACTIVE_OPACITY;
             determine_mode(dpy, fw);
           }
