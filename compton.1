@@ -1,15 +1,17 @@
 .ds q \N'34'
-.TH xcompmgr 1
+.TH compton 1
 .SH NAME
-xcompmgr \- sample X compositing manager
+compton \- a compositor for X11
 .SH SYNOPSIS
 .nf
-.B xcompmgr [\-d display] [\-r radius] [\-o opacity] [\-l left-offset] [\-t top-offset] [\-acCfFnsS]
+.B compton [\-d display] [\-r radius] [\-o opacity] [\-l left-offset] [\-t top-offset] [\-i opacity] [\-e opacity] [\-cCfFS]
 .fi
 .SH DESCRIPTION
-.B xcompmgr
-is a sample compositing manager for X servers supporting the XFIXES, DAMAGE,
-and COMPOSITE extensions.  It enables basic eye-candy effects.
+.B compton
+is a compositor based on Dana Jansens' version of xcompmgr (which itself was
+written by Keith Packard). It includes many improvements over the original
+xcompmgr, including window frame opacity, inactive window transparency,
+and shadows on argb windows.
 .SH OPTIONS
 .TP
 .BI \-d\ display
@@ -25,7 +27,7 @@ Specifies the opacity for client-side shadows.
 Specifies the left offset for client-side shadows.
 .TP
 .BI \-t\ top-offset
-Specifies the top offset for client-side shadows. 
+Specifies the top offset for client-side shadows.
 .TP
 .BI \-I\ fade-in-step
 Specifies the opacity change between steps while fading in.
@@ -36,22 +38,12 @@ Specifies the opacity change between steps while fading out.
 .BI \-D\ fade-delta
 Specifies the time (in milliseconds) between steps in a fade.
 .TP
-.BI \-a
-Automatic server-side compositing.  This instructs the server to use the
-standard composition rules.  Useful for debugging.
-.TP
 .BI \-c
 Client-side compositing with soft shadows and translucency support.
 .TP
 .BI \-f
 When \-c is specified, enables a smooth fade effect for transient windows like
 menus, and for all windows on hide and restore events.
-.TP
-.BI \-n
-Simple client-side compositing.
-.TP
-.BI \-s
-Server-side compositing with hard-edged shadows.
 .TP
 .BI \-C
 When \-c is specified, attempts to avoid painting shadows on panels and docks.
@@ -60,10 +52,18 @@ When \-c is specified, attempts to avoid painting shadows on panels and docks.
 When \-f is specified, also enables the fade effect when windows change their
 opacity, as with transset(1).
 .TP
+.BI \-i\ opacity
+Specifies inactive window transparency. (0.1 - 1.0)
+.TP
+.BI \-e\ opacity
+Specifies window frame transparency. (0.1 - 1.0)
+.TP
 .BI \-S
 Enables synchronous operation.  Useful for debugging.
 .SH BUGS
-Probably.  Please report any you find to http://bugs.freedesktop.org/.
+Probably.  Please report any you find to https://github.com/chjj/compton.
 .SH AUTHORS
-Keith Packard, with contributions from Matthew Allum, Eric Anholt, Dan Doel,
-Thomas Luebking, Matthew Hawn, Ely Levy, Phil Blundell, and Carl Worth.
+xcompmgr, Originally written by Keith Packard, with contributions from
+Matthew Allum, Eric Anholt, Dan Doel, Thomas Luebking, Matthew Hawn,
+Ely Levy, Phil Blundell, and Carl Worth.
+Compton by Christopher Jeffrey, based on Dana Jansens' original work.

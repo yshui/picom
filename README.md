@@ -60,17 +60,15 @@ The same dependencies and build as xcompmgr.
 To build, make sure you have the above dependencies:
 
 ``` bash
-$ ./autogen.sh
 $ make
+$ make install
 ```
-
-The above will produce a single binary.
 
 ## Usage
 
 ``` bash
-$ xcompmgr -cC -t -5 -l -5 -r 5 -o 0.4 \
+$ compton -cC -t -5 -l -5 -r 5 -o 0.4 \
   -fF -I 0.065 -O 0.065 -D 6 -m 0.8 -i 0.6 -e 0.6 &
 
-$ xcompmgr -cC -t -5 -l -5 -r 5 -o 0.4 -i 0.6 -e 0.6 &
+$ compton -cC -t -5 -l -5 -r 5 -o 0.4 -i 0.6 -e 0.6 &
 ```
