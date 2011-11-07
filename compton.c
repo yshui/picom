@@ -987,7 +987,10 @@ find_client_win(Display *dpy, Window win) {
 
 static void
 get_frame_extents(Display *dpy, Window w,
-                  int *left, int *right, int *top, int *bottom) {
+                  unsigned int *left,
+                  unsigned int *right,
+                  unsigned int *top,
+                  unsigned int *bottom) {
   long *extents;
   Atom type;
   int format;
@@ -1012,10 +1015,14 @@ get_frame_extents(Display *dpy, Window w,
   if (result == Success) {
     if (nitems == 4 && after == 0) {
       extents = (long *)data;
-      *left = (int) *extents;
-      *right = (int) *(extents + 1);
-      *top = (int) *(extents + 2);
-      *bottom = (int) *(extents + 3);
+      *left =
+        (unsigned int)extents[0];
+      *right =
+        (unsigned int)extents[1];
+      *top =
+        (unsigned int)extents[2];
+      *bottom =
+        (unsigned int)extents[3];
     }
     XFree(data);
   }
@@ -2216,7 +2223,7 @@ main(int argc, char **argv) {
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
     win_type_fade[i] = False;
-    win_type_shadow[i] = True;
+    win_type_shadow[i] = False;
     win_type_opacity[i] = 1.0;
   }
 
@@ -2244,6 +2251,11 @@ main(int argc, char **argv) {
         fade_out_step = atof(optarg);
         if (fade_out_step <= 0) {
           fade_out_step = 0.01;
+        }
+        break;
+      case 'c':
+        for (i = 0; i < NUM_WINTYPES; ++i) {
+          win_type_shadow[i] = True;
         }
         break;
       case 'C':
@@ -2282,11 +2294,11 @@ main(int argc, char **argv) {
       case 'e':
         frame_opacity = (double)atof(optarg);
         break;
-      case 'c':
       case 'n':
       case 'a':
       case 's':
-        /* legacy */
+        fprintf(stderr, "Warning: "
+          "-n, -a, and -s have been removed.\n");
         break;
       default:
         usage(argv[0]);

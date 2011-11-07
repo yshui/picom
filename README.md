@@ -13,10 +13,10 @@ partially doing this out of a desire to learn Xlib.
 
 * __inactive window transparency__ (specified with `-i`)
 * __titlebar/frame transparency__ (specified with `-e`)
+* menu transparency (thanks to Dana)
 * shadows are now enabled for argb windows, e.g. terminals with transparency
 * removed serverside shadows (and simple compositing) to clean the code,
   the only option that remains is clientside shadows
-* menu transparency (thanks to Dana)
 
 The above features give compton a feature set similar to the xfce compositor.
 
@@ -55,7 +55,6 @@ The same dependencies and build as xcompmgr.
 * libxdamage
 * libxfixes
 * libxrender
-* autoconf
 
 To build, make sure you have the above dependencies:
 
