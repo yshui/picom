@@ -2098,7 +2098,7 @@ ev_window(XEvent *ev) {
 
 void
 usage(char *program) {
-  fprintf(stderr, "%s v1.1.3\n", program);
+  fprintf(stderr, "%s v0.0.1\n", program);
   fprintf(stderr, "usage: %s [options]\n", program);
 
   fprintf(stderr, "Options\n");
@@ -2129,6 +2129,9 @@ usage(char *program) {
   fprintf(stderr,
     "   -m opacity\n    "
     "The opacity for menus. (default 1.0)\n");
+  fprintf(stderr,
+    "   -c\n    "
+    "Enabled client-side shadows on windows.\n");
   fprintf(stderr,
     "   -C\n    "
     "Avoid drawing shadows on dock/panel windows.\n");

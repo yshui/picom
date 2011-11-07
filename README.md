@@ -29,24 +29,9 @@ should work with any window manager that properly sets `_NET_FRAME_EXTENTS`.
 * fixed a memory leak caused by not freeing up shadows (from the freedesktop
   repo)
 
-## License
-
-xcompmgr has gotten around. As far as I can tell, the lineage for this
-particular tree is something like:
-
-* Keith Packard (original author)
-* Matthew Hawn
-* ...
-* Dana Jansens
-* Myself
-
-Not counting the tens of people who forked it in between.
-
-Keith Packard's original license remains in the source.
-
 ## Building
 
-The same dependencies and build as xcompmgr.
+The same dependencies as xcompmgr.
 
 ### Dependencies:
 
@@ -55,6 +40,8 @@ The same dependencies and build as xcompmgr.
 * libxdamage
 * libxfixes
 * libxrender
+* pkg-config
+* make
 
 To build, make sure you have the above dependencies:
 
@@ -71,3 +58,18 @@ $ compton -cC -t -5 -l -5 -r 5 -o 0.4 \
 
 $ compton -cC -t -5 -l -5 -r 5 -o 0.4 -i 0.6 -e 0.6 &
 ```
+
+## License
+
+xcompmgr has gotten around. As far as I can tell, the lineage for this
+particular tree is something like:
+
+* Keith Packard (original author)
+* Matthew Hawn
+* ...
+* Dana Jansens
+* Myself
+
+Not counting the tens of people who forked it in between.
+
+See LICENSE for more info.
