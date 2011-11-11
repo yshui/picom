@@ -1625,6 +1625,31 @@ determine_mode(Display *dpy, win *w) {
 }
 
 static void
+set_opacity(Display *dpy, win *w, unsigned long opacity) {
+  if (fade_trans) {
+    double old_opacity = (double)w->opacity / OPAQUE;
+    w->opacity = opacity;
+    set_fade(dpy, w, old_opacity,
+      (double)w->opacity / OPAQUE,
+      fade_out_step, 0, True, False);
+  } else {
+    w->opacity = opacity;
+    determine_mode(dpy, w);
+    if (w->shadow) {
+      XRenderFreePicture(dpy, w->shadow);
+      w->shadow = None;
+
+      if (w->extents != None) {
+        XFixesDestroyRegion(dpy, w->extents);
+      }
+
+      /* rebuild the shadow */
+      w->extents = win_extents(dpy, w);
+    }
+  }
+}
+
+static void
 add_win(Display *dpy, Window id, Window prev) {
   win *new = malloc(sizeof(win));
   win **p;
@@ -2440,19 +2465,31 @@ main(int argc, char **argv) {
       switch (ev.type) {
         case FocusIn: {
           if (!inactive_opacity) break;
+
+          // stop focusing windows the cursor is over.
+          // with this, windows dont focus right after being
+          // deiconified, this needs to be fixed by blocking
+          // the right kind of FocusOut event
+          if (ev.xfocus.detail == NotifyPointer) break;
+
           win *fw = find_win(dpy, ev.xfocus.window);
           if (IS_NORMAL_WIN(fw)) {
-            fw->opacity = OPAQUE;
-            determine_mode(dpy, fw);
+            set_opacity(dpy, fw, OPAQUE);
           }
           break;
         }
         case FocusOut: {
           if (!inactive_opacity) break;
+
+          // this fixes deiconify refocus
+          // need != notifygrab here otherwise windows wont
+          // lower opacity when grabbed for dragging
+          if (ev.xfocus.mode != NotifyGrab
+              && ev.xfocus.detail == NotifyVirtual) break;
+
           win *fw = find_win(dpy, ev.xfocus.window);
           if (IS_NORMAL_WIN(fw)) {
-            fw->opacity = INACTIVE_OPACITY;
-            determine_mode(dpy, fw);
+            set_opacity(dpy, fw, INACTIVE_OPACITY);
           }
           break;
         }
@@ -2521,27 +2558,11 @@ main(int argc, char **argv) {
           /* check if Trans property was changed */
           if (ev.xproperty.atom == opacity_atom) {
             /* reset mode and redraw window */
-            win * w = find_win(dpy, ev.xproperty.window);
+            win *w = find_win(dpy, ev.xproperty.window);
             if (w) {
-              if (fade_trans) {
-                set_fade(dpy, w,
-                  w->opacity * 1.0 / OPAQUE,
-                  get_opacity_percent(dpy, w),
-                  fade_out_step, 0, True, False);
-              } else {
-                w->opacity = get_opacity_prop(dpy, w, OPAQUE);
-                determine_mode(dpy, w);
-                if (w->shadow) {
-                  XRenderFreePicture(dpy, w->shadow);
-                  w->shadow = None;
-
-                  if (w->extents != None)
-                    XFixesDestroyRegion(dpy, w->extents);
-
-                  /* rebuild the shadow */
-                  w->extents = win_extents(dpy, w);
-                }
-              }
+              double def = win_type_opacity[w->window_type];
+              set_opacity(dpy, w,
+                get_opacity_prop(dpy, w, (unsigned long)(OPAQUE * def)));
             }
           }
           break;
