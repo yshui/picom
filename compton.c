@@ -858,7 +858,6 @@ win_extents(Display *dpy, win *w) {
   if (w->window_type
       && w->window_type < NUM_WINTYPES
       && win_type_shadow[w->window_type]) {
-    //if (w->mode != WINDOW_ARGB) {
     XRectangle sr;
 
     w->shadow_dx = shadow_offset_x;
@@ -867,8 +866,12 @@ win_extents(Display *dpy, win *w) {
     if (!w->shadow) {
       double opacity = shadow_opacity;
 
-      if (w->mode == WINDOW_TRANS) {
+      if (w->mode != WINDOW_SOLID) {
         opacity = opacity * ((double)w->opacity) / ((double)OPAQUE);
+      }
+
+      if (HAS_FRAME_OPACITY(w)) {
+        opacity = opacity * frame_opacity;
       }
 
       w->shadow = shadow_picture(
@@ -900,7 +903,6 @@ win_extents(Display *dpy, win *w) {
     if (sr.y + sr.height > r.y + r.height) {
       r.height = sr.y + sr.height - r.y;
     }
-    //}
   }
 
   return XFixesCreateRegion(dpy, &r, 1);
