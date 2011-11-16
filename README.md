@@ -53,11 +53,48 @@ $ make install
 ## Usage
 
 ``` bash
-$ compton -cC -t -5 -l -5 -r 5 -o 0.4 \
-  -fF -I 0.065 -O 0.065 -D 6 -m 0.8 -i 0.6 -e 0.6 &
-
-$ compton -cC -t -5 -l -5 -r 5 -o 0.4 -i 0.6 -e 0.6 &
+$ compton -cC -i 0.6 -e 0.6
+$ compton -cC -fF -I 0.065 -O 0.065 -D 6 -m 0.8
 ```
+
+### Options
+
+    compton [-d display] [-r radius] [-o opacity]
+            [-l left-offset] [-t top-offset]
+            [-i opacity] [-e opacity] [-cCfFS]
+
+* -d display
+  Specifies the display to manage.
+* -r radius
+  Specifies the blur radius for client-side shadows.
+* -o opacity
+  Specifies the opacity for client-side shadows.
+* -l left-offset
+  Specifies the left offset for client-side shadows.
+* -t top-offset
+  Specifies the top offset for client-side shadows.
+* -I fade-in-step
+  Specifies the opacity change between steps while fading in.
+* -O fade-out-step
+  Specifies the opacity change between steps while fading out.
+* -D fade-delta
+  Specifies the time (in milliseconds) between steps in a fade.
+* -c
+  Enable client-side shadows on windows.
+* -f
+  When -c is specified, enables a smooth fade effect for transient windows like
+  menus, and for all windows on hide and restore events.
+* -C
+  When -c is specified, attempts to avoid painting shadows on panels and docks.
+* -F
+  When -f is specified, also enables the fade effect when windows change their
+  opacity, as with transset(1).
+* -i opacity
+  Specifies inactive window transparency. (0.1 - 1.0)
+* -e opacity
+  Specifies window frame transparency. (0.1 - 1.0)
+* -S
+  Enables synchronous operation.  Useful for debugging.
 
 ## License
 
