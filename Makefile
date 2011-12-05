@@ -21,7 +21,7 @@ install: compton
 	  && cp -t "${MANDIR}" compton.1
 
 uninstall:
-	@rm -f ${PREFIX}/compton
+	@rm -f ${PREFIX}/bin/compton
 	@rm -f ${MANDIR}/compton.1
 
 clean:
