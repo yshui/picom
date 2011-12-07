@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# transset in a bash script
+# copyright (c) 2011, christopher jeffrey
+
+# usage:
+# by window id
+#trans -w "$WINDOWID" -o 75
+# by name
+#trans -n "urxvt" -o 75
+# by current window
+#trans -c -o 75
+# by selection
+#trans -s -o 75
+
+[ -z "$(which xprop)" ] && \
+  echo "Please install x11-utils/xorg-xprop."
+
+window=
+opacity=
+cur=
+root=
+parent=
+active=
+
+while getopts "scn:w:o:" OPTION; do
+  case "$OPTION" in
+    s) window="" ;;
+    c)
+      active=$(xprop -root -notype \
+        | grep "_NET_ACTIVE_WINDOW:" \
+        | sed 's/^.*\(0x\S*\).*$/\1/')
+      window="-id $active"
+    ;;
+    n) window="-name $OPTARG" ;;
+    w) window="-id $OPTARG" ;;
+    o) opacity="$OPTARG" ;;
+  esac
+done
+
+# should probably use a while loop
+# to get the toplevel window
+
+parent=$(xwininfo -all $window \
+  | grep Parent \
+  | sed 's/^.*\(0x\S*\).*$/\1/')
+
+root=$(xwininfo -all -root \
+  | grep "Root window id" \
+  | sed 's/^.*\(0x\S*\).*$/\1/')
+
+if [ "$parent" != "$root" ]; then
+  window="-id $parent"
+fi
+
+inc=$(echo "$opacity" | sed 's/^\(+\|-\).*$\|^.*$/\1/')
+if [ -n "$inc" ]; then
+  cur=$(xprop $window -notype "_NET_WM_WINDOW_OPACITY" \
+    | sed 's/^.*\([0-9]\+\).*$\|^.*$/\1/')
+  [ -z "$cur" ] && cur=$((0xffffffff))
+  cur=$((cur*100/0xffffffff))
+  opacity=$(echo "$opacity" | sed 's/\(\+\|\-\)//')
+  if [ "$inc" = "+" ]; then
+    opacity=$((cur+opacity))
+  else
+    opacity=$((cur-opacity))
+  fi
+fi
+
+if [ -n "$opacity" ] && [ -n "$window" ]; then
+  [ $opacity -le 0 ] && opacity=0
+  [ $opacity -ge 100 ] && opacity=100
+  opacity=$((opacity*0xffffffff/100))
+  xprop $window -f _NET_WM_WINDOW_OPACITY 32c \
+    -set _NET_WM_WINDOW_OPACITY "$opacity"
+fi
