@@ -24,6 +24,6 @@ uninstall:
 	@rm -f $(MANDIR)/compton.1
 
 clean:
-	rm -f $(OBJS) compton
+	@rm -f $(OBJS) compton
 
 .PHONY: uninstall clean

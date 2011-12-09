@@ -54,6 +54,7 @@ $ make install
 
 ``` bash
 $ compton -cC -i 0.6 -e 0.6
+$ compton -cC -i 0.6 -e 0.6 -fF
 $ compton -cC -fF -I 0.065 -O 0.065 -D 6 -m 0.8 -i 0.6 -e 0.6
 ```
 

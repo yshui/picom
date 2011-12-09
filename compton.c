@@ -1628,26 +1628,28 @@ determine_mode(Display *dpy, win *w) {
 
 static void
 set_opacity(Display *dpy, win *w, unsigned long opacity) {
+#if 0
   if (fade_trans) {
     double old_opacity = (double)w->opacity / OPAQUE;
     w->opacity = opacity;
     set_fade(dpy, w, old_opacity,
       (double)w->opacity / OPAQUE,
       fade_out_step, 0, True, False);
-  } else {
-    w->opacity = opacity;
-    determine_mode(dpy, w);
-    if (w->shadow) {
-      XRenderFreePicture(dpy, w->shadow);
-      w->shadow = None;
+    return;
+  }
+#endif
+  w->opacity = opacity;
+  determine_mode(dpy, w);
+  if (w->shadow) {
+    XRenderFreePicture(dpy, w->shadow);
+    w->shadow = None;
 
-      if (w->extents != None) {
-        XFixesDestroyRegion(dpy, w->extents);
-      }
-
-      /* rebuild the shadow */
-      w->extents = win_extents(dpy, w);
+    if (w->extents != None) {
+      XFixesDestroyRegion(dpy, w->extents);
     }
+
+    /* rebuild the shadow */
+    w->extents = win_extents(dpy, w);
   }
 }
 
