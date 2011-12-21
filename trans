@@ -12,9 +12,13 @@
 #trans -c -o 75
 # by selection
 #trans -s -o 75
+# increment current window 5%
+#trans -c -o +5
 
-[ -z "$(which xprop)" ] && \
-  echo "Please install x11-utils/xorg-xprop."
+if [ -z "$(which xprop)" -o -z "$(which xwininfo)" ]; then
+  echo "Please install x11-utils/xorg-xprop/xorg-xwininfo." >&2
+  exit 1
+fi
 
 window=
 opacity=
@@ -27,8 +31,7 @@ while getopts "scn:w:o:" OPTION; do
   case "$OPTION" in
     s) window="" ;;
     c)
-      active=$(xprop -root -notype \
-        | grep "_NET_ACTIVE_WINDOW:" \
+      active=$(xprop -root -notype "_NET_ACTIVE_WINDOW" \
         | sed 's/^.*\(0x\S*\).*$/\1/')
       window="-id $active"
     ;;
@@ -38,25 +41,26 @@ while getopts "scn:w:o:" OPTION; do
   esac
 done
 
-# should probably use a while loop
-# to get the toplevel window
-
-parent=$(xwininfo -all $window \
-  | grep Parent \
-  | sed 's/^.*\(0x\S*\).*$/\1/')
-
 root=$(xwininfo -all -root \
   | grep "Root window id" \
   | sed 's/^.*\(0x\S*\).*$/\1/')
 
-if [ "$parent" != "$root" ]; then
-  window="-id $parent"
-fi
+parent=$window
+while [ true ]; do
+  parent=$(xwininfo -all $parent \
+    | grep Parent \
+    | sed 's/^.*\(0x\S*\).*$/\1/')
+  if [ "$parent" = "$root" ]; then
+    break
+  fi
+  parent="-id $parent"
+  window=$parent
+done
 
 inc=$(echo "$opacity" | sed 's/^\(+\|-\).*$\|^.*$/\1/')
 if [ -n "$inc" ]; then
   cur=$(xprop $window -notype "_NET_WM_WINDOW_OPACITY" \
-    | sed 's/^.*\([0-9]\+\).*$\|^.*$/\1/')
+    | sed 's/^.*\b\([0-9]\+\).*$\|^.*$/\1/')
   [ -z "$cur" ] && cur=$((0xffffffff))
   cur=$((cur*100/0xffffffff))
   opacity=$(echo "$opacity" | sed 's/\(\+\|\-\)//')
