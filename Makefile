@@ -18,10 +18,12 @@ install: compton
 	@cp -t $(PREFIX)/bin compton
 	@[ -d "$(MANDIR)" ] \
 	  && cp -t "$(MANDIR)" compton.1
+	@cp -t $(PREFIX)/bin settrans
 
 uninstall:
 	@rm -f $(PREFIX)/bin/compton
 	@rm -f $(MANDIR)/compton.1
+	@rm -f $(PREFIX)/bin/settrans
 
 clean:
 	@rm -f $(OBJS) compton
