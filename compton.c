@@ -1425,7 +1425,8 @@ configure_win(Display *dpy, XConfigureEvent *ce);
 
 static void
 map_win(Display *dpy, Window id,
-        unsigned long sequence, Bool fade) {
+        unsigned long sequence, Bool fade,
+        Bool override_redirect) {
   win *w = find_win(dpy, id);
 
   if (!w) return;
@@ -1440,6 +1441,7 @@ map_win(Display *dpy, Window id,
 
   /* select before reading the property
      so that no property changes are lost */
+  if (!override_redirect)
   XSelectInput(dpy, id, PropertyChangeMask | FocusChangeMask);
 
   // this causes problems for inactive transparency
@@ -1654,7 +1656,7 @@ set_opacity(Display *dpy, win *w, unsigned long opacity) {
 }
 
 static void
-add_win(Display *dpy, Window id, Window prev) {
+add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   win *new = malloc(sizeof(win));
   win **p;
 
@@ -1717,6 +1719,7 @@ add_win(Display *dpy, Window id, Window prev) {
   new->top_width = 0;
   new->bottom_width = 0;
 
+  if (!override_redirect)
   get_frame_extents(dpy, id,
     &new->left_width, &new->right_width,
     &new->top_width, &new->bottom_width);
@@ -1729,7 +1732,7 @@ add_win(Display *dpy, Window id, Window prev) {
     if (inactive_opacity && IS_NORMAL_WIN(new)) {
       new->opacity = INACTIVE_OPACITY;
     }
-    map_win(dpy, id, new->damage_sequence - 1, True);
+    map_win(dpy, id, new->damage_sequence - 1, True, override_redirect);
   }
 }
 
@@ -2433,7 +2436,7 @@ main(int argc, char **argv) {
     &parent_return, &children, &nchildren);
 
   for (i = 0; i < nchildren; i++) {
-    add_win(dpy, children[i], i ? children[i-1] : None);
+    add_win(dpy, children[i], i ? children[i-1] : None, False);
   }
 
   XFree(children);
@@ -2462,8 +2465,10 @@ main(int argc, char **argv) {
       }
 
 #if DEBUG_EVENTS
-      printf("event %10.10s serial 0x%08x window 0x%08x\n",
-          ev_name(&ev), ev_serial(&ev), ev_window(&ev));
+      if (ev.type != damage_event + XDamageNotify) {
+        printf("event %10.10s serial 0x%08x window 0x%08x\n",
+            ev_name(&ev), ev_serial(&ev), ev_window(&ev));
+      }
 #endif
 
       switch (ev.type) {
@@ -2498,8 +2503,8 @@ main(int argc, char **argv) {
           break;
         }
         case CreateNotify:
-          //if (ev.xcreatewindow.override_redirect) break;
-          add_win(dpy, ev.xcreatewindow.window, 0);
+          add_win(dpy, ev.xcreatewindow.window, 0,
+            ev.xcreatewindow.override_redirect);
           break;
         case ConfigureNotify:
           configure_win(dpy, &ev.xconfigure);
@@ -2508,14 +2513,16 @@ main(int argc, char **argv) {
           destroy_win(dpy, ev.xdestroywindow.window, True);
           break;
         case MapNotify:
-          map_win(dpy, ev.xmap.window, ev.xmap.serial, True);
+          map_win(dpy, ev.xmap.window, ev.xmap.serial, True,
+            ev.xmap.override_redirect);
           break;
         case UnmapNotify:
           unmap_win(dpy, ev.xunmap.window, True);
           break;
         case ReparentNotify:
           if (ev.xreparent.parent == root) {
-            add_win(dpy, ev.xreparent.window, 0);
+            add_win(dpy, ev.xreparent.window, 0,
+              ev.xreparent.override_redirect);
           } else {
             destroy_win(dpy, ev.xreparent.window, True);
           }
