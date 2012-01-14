@@ -1455,7 +1455,9 @@ map_win(Display *dpy, Window id,
 #endif
   w->damaged = 0;
 
-  if (fade && win_type_fade[w->window_type]) {
+  if (fade && w->window_type >= 0
+      && w->window_type < NUM_WINTYPES
+      && win_type_fade[w->window_type]) {
     set_fade(
       dpy, w, 0, get_opacity_percent(dpy, w),
       fade_in_step, 0, True, True);
