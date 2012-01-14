@@ -855,7 +855,7 @@ win_extents(Display *dpy, win *w) {
   r.height = w->a.height + w->a.border_width * 2;
 
   // check NUM_WINTYPES to prevent segfault
-  if (w->window_type
+  if (w->window_type >= 0
       && w->window_type < NUM_WINTYPES
       && win_type_shadow[w->window_type]) {
     XRectangle sr;
