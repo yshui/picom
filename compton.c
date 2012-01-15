@@ -32,6 +32,7 @@
 #define CAN_DO_USABLE 0
 
 typedef enum {
+  WINTYPE_UNKNOWN,
   WINTYPE_DESKTOP,
   WINTYPE_DOCK,
   WINTYPE_TOOLBAR,
@@ -854,10 +855,7 @@ win_extents(Display *dpy, win *w) {
   r.width = w->a.width + w->a.border_width * 2;
   r.height = w->a.height + w->a.border_width * 2;
 
-  // check NUM_WINTYPES to prevent segfault
-  if (w->window_type >= 0
-      && w->window_type < NUM_WINTYPES
-      && win_type_shadow[w->window_type]) {
+  if (win_type_shadow[w->window_type]) {
     XRectangle sr;
 
     w->shadow_dx = shadow_offset_x;
@@ -1349,7 +1347,7 @@ get_wintype_prop(Display * dpy, Window w) {
   unsigned long n, left, off;
   unsigned char *data;
 
-  ret = (wintype) - 1;
+  ret = WINTYPE_UNKNOWN;
   off = 0;
 
   do {
@@ -1378,7 +1376,7 @@ get_wintype_prop(Display * dpy, Window w) {
     }
 
     ++off;
-  } while (left >= 4 && ret == (wintype) - 1);
+  } while (left >= 4 && ret == WINTYPE_UNKNOWN);
 
   return ret;
 }
@@ -1391,19 +1389,19 @@ determine_wintype(Display *dpy, Window w, Window top) {
   wintype type;
 
   type = get_wintype_prop(dpy, w);
-  if (type != (wintype) - 1) return type;
+  if (type != WINTYPE_UNKNOWN) return type;
 
   set_ignore(dpy, NextRequest(dpy));
   if (!XQueryTree(dpy, w, &root_return, &parent_return,
                   &children, &nchildren)) {
     /* XQueryTree failed. */
     if (children) XFree((void *)children);
-    return (wintype) - 1;
+    return WINTYPE_UNKNOWN;
   }
 
   for (i = 0; i < nchildren; i++) {
     type = determine_wintype(dpy, children[i], top);
-    if (type != (wintype) - 1) return type;
+    if (type != WINTYPE_UNKNOWN) return type;
   }
 
   if (children) {
@@ -1411,7 +1409,7 @@ determine_wintype(Display *dpy, Window w, Window top) {
   }
 
   if (w != top) {
-    return (wintype) - 1;
+    return WINTYPE_UNKNOWN;
   } else {
     return WINTYPE_NORMAL;
   }
@@ -1455,9 +1453,7 @@ map_win(Display *dpy, Window id,
 #endif
   w->damaged = 0;
 
-  if (fade && w->window_type >= 0
-      && w->window_type < NUM_WINTYPES
-      && win_type_fade[w->window_type]) {
+  if (fade && win_type_fade[w->window_type]) {
     set_fade(
       dpy, w, 0, get_opacity_percent(dpy, w),
       fade_in_step, 0, True, True);
@@ -1712,6 +1708,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->opacity = OPAQUE;
   new->destroyed = False;
   new->need_configure = False;
+  new->window_type = WINTYPE_UNKNOWN;
 
   new->border_clip = None;
   new->prev_trans = 0;
