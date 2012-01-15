@@ -1362,7 +1362,7 @@ get_wintype_prop(Display * dpy, Window w) {
     if (data != None) {
       int i;
 
-      for (i = 0; i < NUM_WINTYPES; ++i) {
+      for (i = 1; i < NUM_WINTYPES; ++i) {
         Atom a;
         memcpy(&a, data, sizeof(Atom));
         if (a == win_type[i]) {
@@ -2376,6 +2376,7 @@ main(int argc, char **argv) {
     "_NET_WM_WINDOW_OPACITY", False);
   win_type_atom = XInternAtom(dpy,
     "_NET_WM_WINDOW_TYPE", False);
+  win_type[WINTYPE_UNKNOWN] = 0;
   win_type[WINTYPE_DESKTOP] = XInternAtom(dpy,
     "_NET_WM_WINDOW_TYPE_DESKTOP", False);
   win_type[WINTYPE_DOCK] = XInternAtom(dpy,
