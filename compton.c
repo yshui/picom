@@ -58,6 +58,7 @@ typedef struct _ignore {
 typedef struct _win {
   struct _win *next;
   Window id;
+  Window client_win;
 #if HAS_NAME_WINDOW_PIXMAP
   Pixmap pixmap;
 #endif
@@ -136,6 +137,7 @@ Bool synchronize;
 int composite_opcode;
 
 /* find these once and be done with it */
+Atom extents_atom;
 Atom opacity_atom;
 Atom win_type_atom;
 Atom win_type[NUM_WINTYPES];
@@ -776,6 +778,18 @@ find_win(Display *dpy, Window id) {
   return 0;
 }
 
+static win *
+find_toplevel(Display *dpy, Window id) {
+  win *w;
+
+  for (w = list; w; w = w->next) {
+    if (w->client_win == id && !w->destroyed)
+      return w;
+  }
+
+  return 0;
+}
+
 static const char *background_props[] = {
   "_XROOTPMAP_ID",
   "_XSETROOT_ID",
@@ -985,7 +999,7 @@ get_frame_extents(Display *dpy, Window w,
   *top = 0;
   *bottom = 0;
 
-  w = find_client_win(dpy, w);
+  //w = find_client_win(dpy, w);
   if (!w) return;
 
   result = XGetWindowProperty(
@@ -1718,10 +1732,17 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->top_width = 0;
   new->bottom_width = 0;
 
-  if (!override_redirect)
-  get_frame_extents(dpy, id,
-    &new->left_width, &new->right_width,
-    &new->top_width, &new->bottom_width);
+  new->client_win = 0;
+  if (!override_redirect) {
+    Window cw = find_client_win(dpy, new->id);
+    if (cw) {
+      get_frame_extents(dpy, cw,
+        &new->left_width, &new->right_width,
+        &new->top_width, &new->bottom_width);
+      new->client_win = cw;
+      XSelectInput(dpy, cw, PropertyChangeMask);
+    }
+  }
 
   new->next = *p;
   *p = new;
@@ -2372,8 +2393,11 @@ main(int argc, char **argv) {
   register_cm(scr);
 
   /* get atoms */
+  extents_atom = XInternAtom(dpy,
+    "_NET_FRAME_EXTENTS", False);
   opacity_atom = XInternAtom(dpy,
     "_NET_WM_WINDOW_OPACITY", False);
+
   win_type_atom = XInternAtom(dpy,
     "_NET_WM_WINDOW_TYPE", False);
   win_type[WINTYPE_UNKNOWN] = 0;
@@ -2574,6 +2598,14 @@ main(int argc, char **argv) {
               double def = win_type_opacity[w->window_type];
               set_opacity(dpy, w,
                 get_opacity_prop(dpy, w, (unsigned long)(OPAQUE * def)));
+            }
+          }
+          if (frame_opacity && ev.xproperty.atom == extents_atom) {
+            win *w = find_toplevel(dpy, ev.xproperty.window);
+            if (w) {
+              get_frame_extents(dpy, w->client_win,
+                &w->left_width, &w->right_width,
+                &w->top_width, &w->bottom_width);
             }
           }
           break;
