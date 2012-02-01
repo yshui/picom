@@ -578,6 +578,7 @@ make_shadow(Display *dpy, double opacity,
    * center (fill the complete data array)
    */
 
+#if 0
   if (Gsize > 0) {
     d = shadow_top[opacity_int * (Gsize + 1) + Gsize];
   } else {
@@ -586,6 +587,10 @@ make_shadow(Display *dpy, double opacity,
   }
 
   memset(data, d, sheight * swidth);
+#endif
+
+  // zero the pixmap
+  memset(data, 0, sheight * swidth);
 
   /*
    * corners
@@ -616,6 +621,10 @@ make_shadow(Display *dpy, double opacity,
    * top/bottom
    */
 
+  // shadow_radius is 12 by default
+  // this makes gsize 36 by default
+  //ylimit -= (shadow_radius + 4);
+
   x_diff = swidth - (gsize * 2);
   if (x_diff > 0 && ylimit > 0) {
     for (y = 0; y < ylimit; y++) {
@@ -630,9 +639,14 @@ make_shadow(Display *dpy, double opacity,
     }
   }
 
+  //ylimit = gsize;
+
   /*
    * sides
    */
+
+  //xlimit -= (shadow_radius + 4);
+  //gsize = 16;
 
   for (x = 0; x < xlimit; x++) {
     if (xlimit == Gsize) {
@@ -644,6 +658,19 @@ make_shadow(Display *dpy, double opacity,
     for (y = gsize; y < sheight - gsize; y++) {
       data[y * swidth + x] = d;
       data[y * swidth + (swidth - x - 1)] = d;
+    }
+  }
+
+  // zero extra pixels
+  //int r = shadow_radius;
+  //int sr = r + 4;
+  //int er = r + 8;
+  int r = gsize / 2;
+  int sr = r - 2;
+  int er = r + 2;
+  for (y = sr; y < (sheight - er); y++) {
+    for (x = sr; x < (swidth - er); x++) {
+      data[y * swidth + x] = 0;
     }
   }
 
@@ -878,6 +905,7 @@ win_extents(Display *dpy, win *w) {
     if (!w->shadow) {
       double opacity = shadow_opacity;
 
+#if 0
       if (w->mode != WINDOW_SOLID) {
         opacity = opacity * ((double)w->opacity) / ((double)OPAQUE);
       }
@@ -885,6 +913,7 @@ win_extents(Display *dpy, win *w) {
       if (HAS_FRAME_OPACITY(w)) {
         opacity = opacity * frame_opacity;
       }
+#endif
 
       w->shadow = shadow_picture(
         dpy, opacity, w->alpha_pict,
