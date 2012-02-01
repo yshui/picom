@@ -662,11 +662,12 @@ make_shadow(Display *dpy, double opacity,
   }
 
   // zero extra pixels
+  //if (width > gsize && height > gsize) {
   //int r = shadow_radius;
   //int sr = r + 4;
   //int er = r + 8;
   int r = gsize / 2;
-  int sr = r - 4;
+  int sr = r - 2;
   int er = r + 4;
   for (y = sr; y < (sheight - er); y++) {
     for (x = sr; x < (swidth - er); x++) {
