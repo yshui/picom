@@ -179,6 +179,8 @@ int fade_delta = 10;
 int fade_time = 0;
 Bool fade_trans = False;
 
+Bool clear_shadow = False;
+
 double inactive_opacity = 0;
 double frame_opacity = 0;
 
@@ -188,6 +190,7 @@ double frame_opacity = 0;
 #define IS_NORMAL_WIN(w) \
 ((w) && ((w)->window_type == WINTYPE_NORMAL \
          || (w)->window_type == WINTYPE_UTILITY))
+//       || (w)->window_type == WINTYPE_UNKNOWN))
 
 #define HAS_FRAME_OPACITY(w) (frame_opacity && (w)->top_width)
 
@@ -578,6 +581,7 @@ make_shadow(Display *dpy, double opacity,
    * center (fill the complete data array)
    */
 
+if (!clear_shadow) {
   if (Gsize > 0) {
     d = shadow_top[opacity_int * (Gsize + 1) + Gsize];
   } else {
@@ -586,6 +590,10 @@ make_shadow(Display *dpy, double opacity,
   }
 
   memset(data, d, sheight * swidth);
+} else {
+  // zero the pixmap
+  memset(data, 0, sheight * swidth);
+}
 
   /*
    * corners
@@ -644,6 +652,19 @@ make_shadow(Display *dpy, double opacity,
     for (y = gsize; y < sheight - gsize; y++) {
       data[y * swidth + x] = d;
       data[y * swidth + (swidth - x - 1)] = d;
+    }
+  }
+
+  // zero extra pixels
+  if (clear_shadow)
+  if (width > gsize && height > gsize) {
+    int r = gsize / 2;
+    int sr = r - 2;
+    int er = r + 4;
+    for (y = sr; y < (sheight - er); y++) {
+      for (x = sr; x < (swidth - er); x++) {
+        data[y * swidth + x] = 0;
+      }
     }
   }
 
@@ -878,6 +899,7 @@ win_extents(Display *dpy, win *w) {
     if (!w->shadow) {
       double opacity = shadow_opacity;
 
+if (!clear_shadow) {
       if (w->mode != WINDOW_SOLID) {
         opacity = opacity * ((double)w->opacity) / ((double)OPAQUE);
       }
@@ -885,6 +907,7 @@ win_extents(Display *dpy, win *w) {
       if (HAS_FRAME_OPACITY(w)) {
         opacity = opacity * frame_opacity;
       }
+}
 
       w->shadow = shadow_picture(
         dpy, opacity, w->alpha_pict,
@@ -2188,6 +2211,9 @@ usage(char *program) {
     "   -C\n    "
     "Avoid drawing shadows on dock/panel windows.\n");
   fprintf(stderr,
+    "   -z\n    "
+    "Zero the part of the shadow's mask behind the window (experimental).");
+  fprintf(stderr,
     "   -f\n    "
     "Fade windows in/out when opening/closing.\n");
   fprintf(stderr,
@@ -2267,7 +2293,7 @@ main(int argc, char **argv) {
   /* don't bother to draw a shadow for the desktop */
   win_type_shadow[WINTYPE_DESKTOP] = False;
 
-  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:e:scnfFCaS")) != -1) {
+  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:e:scnfFCaSz")) != -1) {
     switch (o) {
       case 'd':
         display = optarg;
@@ -2330,6 +2356,9 @@ main(int argc, char **argv) {
         break;
       case 'e':
         frame_opacity = (double)atof(optarg);
+        break;
+      case 'z':
+        clear_shadow = True;
         break;
       case 'n':
       case 'a':
@@ -2499,12 +2528,6 @@ main(int argc, char **argv) {
         case FocusIn: {
           if (!inactive_opacity) break;
 
-          // stop focusing windows the cursor is over.
-          // with this, windows dont focus right after being
-          // deiconified, this needs to be fixed by blocking
-          // the right kind of FocusOut event
-          if (ev.xfocus.detail == NotifyPointer) break;
-
           win *fw = find_win(dpy, ev.xfocus.window);
           if (IS_NORMAL_WIN(fw)) {
             set_opacity(dpy, fw, OPAQUE);
@@ -2514,11 +2537,14 @@ main(int argc, char **argv) {
         case FocusOut: {
           if (!inactive_opacity) break;
 
-          // this fixes deiconify refocus
-          // need != notifygrab here otherwise windows wont
-          // lower opacity when grabbed for dragging
-          if (ev.xfocus.mode != NotifyGrab
-              && ev.xfocus.detail == NotifyVirtual) break;
+          if (ev.xfocus.mode == NotifyGrab
+              || (ev.xfocus.mode == NotifyNormal
+              && (ev.xfocus.detail == NotifyNonlinear
+              || ev.xfocus.detail == NotifyNonlinearVirtual))) {
+            ;
+          } else {
+            break;
+          }
 
           win *fw = find_win(dpy, ev.xfocus.window);
           if (IS_NORMAL_WIN(fw)) {
