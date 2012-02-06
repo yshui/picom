@@ -2320,6 +2320,7 @@ main(int argc, char **argv) {
         for (i = 0; i < NUM_WINTYPES; ++i) {
           win_type_shadow[i] = True;
         }
+        win_type_shadow[WINTYPE_DESKTOP] = False;
         break;
       case 'C':
         no_dock_shadow = True;
