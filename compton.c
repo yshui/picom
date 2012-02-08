@@ -14,6 +14,7 @@ win *list;
 fade *fades;
 Display *dpy;
 int scr;
+
 Window root;
 Picture root_picture;
 Picture root_buffer;
@@ -25,15 +26,36 @@ Bool clip_changed;
 Bool has_name_pixmap;
 #endif
 int root_height, root_width;
+
+/* errors */
 ignore *ignore_head, **ignore_tail = &ignore_head;
 int xfixes_event, xfixes_error;
 int damage_event, damage_error;
 int composite_event, composite_error;
 int render_event, render_error;
-Bool synchronize;
 int composite_opcode;
 
-/* find these once and be done with it */
+/* shadows */
+conv *gaussian_map;
+
+/* for shadow precomputation */
+int Gsize = -1;
+unsigned char *shadow_corner = NULL;
+unsigned char *shadow_top = NULL;
+
+/* for root tile */
+static const char *background_props[] = {
+  "_XROOTPMAP_ID",
+  "_XSETROOT_ID",
+  0,
+};
+
+/* for expose events */
+XRectangle *expose_rects = 0;
+int size_expose = 0;
+int n_expose = 0;
+
+/* atoms */
 Atom extents_atom;
 Atom opacity_atom;
 Atom win_type_atom;
@@ -42,13 +64,23 @@ double win_type_opacity[NUM_WINTYPES];
 Bool win_type_shadow[NUM_WINTYPES];
 Bool win_type_fade[NUM_WINTYPES];
 
-#define REGISTER_PROP "_NET_WM_CM_S"
+/**
+ * Macros
+ */
 
-conv *gaussian_map;
+#define INACTIVE_OPACITY \
+(unsigned long)((double)inactive_opacity * OPAQUE)
 
-#define WINDOW_SOLID 0
-#define WINDOW_TRANS 1
-#define WINDOW_ARGB 2
+#define IS_NORMAL_WIN(w) \
+((w) && ((w)->window_type == WINTYPE_NORMAL \
+         || (w)->window_type == WINTYPE_UTILITY))
+//       || (w)->window_type == WINTYPE_UNKNOWN))
+
+#define HAS_FRAME_OPACITY(w) (frame_opacity && (w)->top_width)
+
+/**
+ * Options
+ */
 
 int shadow_radius = 12;
 int shadow_offset_x = -15;
@@ -66,20 +98,11 @@ Bool clear_shadow = False;
 double inactive_opacity = 0;
 double frame_opacity = 0;
 
-#define INACTIVE_OPACITY \
-(unsigned long)((double)inactive_opacity * OPAQUE)
+Bool synchronize = False;
 
-#define IS_NORMAL_WIN(w) \
-((w) && ((w)->window_type == WINTYPE_NORMAL \
-         || (w)->window_type == WINTYPE_UTILITY))
-//       || (w)->window_type == WINTYPE_UNKNOWN))
-
-#define HAS_FRAME_OPACITY(w) (frame_opacity && (w)->top_width)
-
-/* For shadow precomputation */
-int Gsize = -1;
-unsigned char *shadow_corner = NULL;
-unsigned char *shadow_top = NULL;
+/**
+ * Fades
+ */
 
 int
 get_time_in_milliseconds() {
@@ -278,12 +301,15 @@ run_fades(Display *dpy) {
   fade_time = now + fade_delta;
 }
 
+/**
+ * Shadows
+ */
+
 static double
 gaussian(double r, double x, double y) {
   return ((1 / (sqrt(2 * M_PI * r))) *
       exp((- (x * x + y * y)) / (2 * r * r)));
 }
-
 
 static conv *
 make_gaussian_map(Display *dpy, double r) {
@@ -636,6 +662,10 @@ solid_picture(Display *dpy, Bool argb, double a,
   return picture;
 }
 
+/**
+ * Errors
+ */
+
 void
 discard_ignore(Display *dpy, unsigned long sequence) {
   while (ignore_head) {
@@ -669,6 +699,10 @@ should_ignore(Display *dpy, unsigned long sequence) {
   return ignore_head && ignore_head->sequence == sequence;
 }
 
+/**
+ * Windows
+ */
+
 static win *
 find_win(Display *dpy, Window id) {
   win *w;
@@ -692,12 +726,6 @@ find_toplevel(Display *dpy, Window id) {
 
   return 0;
 }
-
-static const char *background_props[] = {
-  "_XROOTPMAP_ID",
-  "_XSETROOT_ID",
-  0,
-};
 
 static Picture
 root_tile_f(Display *dpy) {
@@ -2401,6 +2429,10 @@ get_atoms() {
     "_NET_WM_WINDOW_TYPE_DND", False);
 }
 
+/**
+ * Events
+ */
+
 inline static void
 ev_focus_in(XFocusChangeEvent *ev) {
   if (!inactive_opacity) return;
@@ -2468,10 +2500,6 @@ inline static void
 ev_circulate_notify(XCirculateEvent *ev) {
   circulate_win(dpy, ev);
 }
-
-XRectangle *expose_rects = 0;
-int size_expose = 0;
-int n_expose = 0;
 
 inline static void
 ev_expose(XExposeEvent *ev) {

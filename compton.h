@@ -25,6 +25,11 @@
 #define MONITOR_REPAINT 0
 
 #define OPAQUE 0xffffffff
+#define REGISTER_PROP "_NET_WM_CM_S"
+
+#define WINDOW_SOLID 0
+#define WINDOW_TRANS 1
+#define WINDOW_ARGB 2
 
 typedef enum {
   WINTYPE_UNKNOWN,
@@ -340,5 +345,3 @@ handle_event(XEvent *ev);
 
 static void
 get_atoms();
-
-
