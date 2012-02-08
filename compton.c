@@ -113,6 +113,8 @@ typedef struct _fade {
   Display *dpy;
 } fade;
 
+#include "compton.h"
+
 win *list;
 fade *fades;
 Display *dpy;
@@ -158,15 +160,6 @@ conv *gaussian_map;
 #define DEBUG_REPAINT 0
 #define DEBUG_EVENTS 0
 #define MONITOR_REPAINT 0
-
-static void
-determine_mode(Display *dpy, win *w);
-
-static double
-get_opacity_percent(Display *dpy, win *w);
-
-static XserverRegion
-win_extents(Display *dpy, win *w);
 
 int shadow_radius = 12;
 int shadow_offset_x = -15;
@@ -1452,12 +1445,6 @@ determine_wintype(Display *dpy, Window w, Window top) {
   }
 }
 
-static unsigned int
-get_opacity_prop(Display *dpy, win *w, unsigned int def);
-
-static void
-configure_win(Display *dpy, XConfigureEvent *ce);
-
 static void
 map_win(Display *dpy, Window id,
         unsigned long sequence, Bool fade,
@@ -2592,6 +2579,10 @@ inline static void
 ev_circulate_notify(XCirculateEvent *ev) {
   circulate_win(dpy, ev);
 }
+
+XRectangle *expose_rects = 0;
+int size_expose = 0;
+int n_expose = 0;
 
 inline static void
 ev_expose(XExposeEvent *ev) {
