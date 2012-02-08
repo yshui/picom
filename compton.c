@@ -8,111 +8,6 @@
  *
  */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
-#include <sys/poll.h>
-#include <sys/time.h>
-#include <time.h>
-#include <unistd.h>
-#include <getopt.h>
-
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/Xatom.h>
-#include <X11/extensions/Xcomposite.h>
-#include <X11/extensions/Xdamage.h>
-#include <X11/extensions/Xrender.h>
-
-#if COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2
-#define HAS_NAME_WINDOW_PIXMAP 1
-#endif
-
-#define CAN_DO_USABLE 0
-
-typedef enum {
-  WINTYPE_UNKNOWN,
-  WINTYPE_DESKTOP,
-  WINTYPE_DOCK,
-  WINTYPE_TOOLBAR,
-  WINTYPE_MENU,
-  WINTYPE_UTILITY,
-  WINTYPE_SPLASH,
-  WINTYPE_DIALOG,
-  WINTYPE_NORMAL,
-  WINTYPE_DROPDOWN_MENU,
-  WINTYPE_POPUP_MENU,
-  WINTYPE_TOOLTIP,
-  WINTYPE_NOTIFY,
-  WINTYPE_COMBO,
-  WINTYPE_DND,
-  NUM_WINTYPES
-} wintype;
-
-typedef struct _ignore {
-  struct _ignore *next;
-  unsigned long sequence;
-} ignore;
-
-typedef struct _win {
-  struct _win *next;
-  Window id;
-  Window client_win;
-#if HAS_NAME_WINDOW_PIXMAP
-  Pixmap pixmap;
-#endif
-  XWindowAttributes a;
-#if CAN_DO_USABLE
-  Bool usable; /* mapped and all damaged at one point */
-  XRectangle damage_bounds; /* bounds of damage */
-#endif
-  int mode;
-  int damaged;
-  Damage damage;
-  Picture picture;
-  Picture alpha_pict;
-  Picture alpha_border_pict;
-  Picture shadow_pict;
-  XserverRegion border_size;
-  XserverRegion extents;
-  Picture shadow;
-  int shadow_dx;
-  int shadow_dy;
-  int shadow_width;
-  int shadow_height;
-  unsigned int opacity;
-  wintype window_type;
-  unsigned long damage_sequence; /* sequence when damage was created */
-  Bool destroyed;
-  unsigned int left_width;
-  unsigned int right_width;
-  unsigned int top_width;
-  unsigned int bottom_width;
-
-  Bool need_configure;
-  XConfigureEvent queue_configure;
-
-  /* for drawing translucent windows */
-  XserverRegion border_clip;
-  struct _win *prev_trans;
-} win;
-
-typedef struct _conv {
-  int size;
-  double *data;
-} conv;
-
-typedef struct _fade {
-  struct _fade *next;
-  win *w;
-  double cur;
-  double finish;
-  double step;
-  void (*callback) (Display *dpy, win *w);
-  Display *dpy;
-} fade;
-
 #include "compton.h"
 
 win *list;
@@ -149,17 +44,11 @@ Bool win_type_fade[NUM_WINTYPES];
 
 #define REGISTER_PROP "_NET_WM_CM_S"
 
-#define OPAQUE 0xffffffff
-
 conv *gaussian_map;
 
 #define WINDOW_SOLID 0
 #define WINDOW_TRANS 1
 #define WINDOW_ARGB 2
-
-#define DEBUG_REPAINT 0
-#define DEBUG_EVENTS 0
-#define MONITOR_REPAINT 0
 
 int shadow_radius = 12;
 int shadow_offset_x = -15;

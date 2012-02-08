@@ -1,4 +1,3 @@
-#if 0
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -108,7 +107,6 @@ typedef struct _fade {
   void (*callback) (Display *dpy, win *w);
   Display *dpy;
 } fade;
-#endif
 
 int
 get_time_in_milliseconds();
