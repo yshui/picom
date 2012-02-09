@@ -2075,6 +2075,205 @@ ev_window(XEvent *ev) {
 }
 #endif
 
+/**
+ * Events
+ */
+
+inline static void
+ev_focus_in(XFocusChangeEvent *ev) {
+  if (!inactive_opacity) return;
+
+  win *fw = find_win(dpy, ev->window);
+  if (IS_NORMAL_WIN(fw)) {
+    set_opacity(dpy, fw, OPAQUE);
+  }
+}
+
+inline static void
+ev_focus_out(XFocusChangeEvent *ev) {
+  if (!inactive_opacity) return;
+
+  if (ev->mode == NotifyGrab
+      || (ev->mode == NotifyNormal
+      && (ev->detail == NotifyNonlinear
+      || ev->detail == NotifyNonlinearVirtual))) {
+    ;
+  } else {
+    return;
+  }
+
+  win *fw = find_win(dpy, ev->window);
+  if (IS_NORMAL_WIN(fw)) {
+    set_opacity(dpy, fw, INACTIVE_OPACITY);
+  }
+}
+
+inline static void
+ev_create_notify(XCreateWindowEvent *ev) {
+  add_win(dpy, ev->window, 0, ev->override_redirect);
+}
+
+inline static void
+ev_configure_notify(XConfigureEvent *ev) {
+  configure_win(dpy, ev);
+}
+
+inline static void
+ev_destroy_notify(XDestroyWindowEvent *ev) {
+  destroy_win(dpy, ev->window, True);
+}
+
+inline static void
+ev_map_notify(XMapEvent *ev) {
+  map_win(dpy, ev->window, ev->serial, True, ev->override_redirect);
+}
+
+inline static void
+ev_unmap_notify(XUnmapEvent *ev) {
+  unmap_win(dpy, ev->window, True);
+}
+
+inline static void
+ev_reparent_notify(XReparentEvent *ev) {
+  if (ev->parent == root) {
+    add_win(dpy, ev->window, 0, ev->override_redirect);
+  } else {
+    destroy_win(dpy, ev->window, True);
+  }
+}
+
+inline static void
+ev_circulate_notify(XCirculateEvent *ev) {
+  circulate_win(dpy, ev);
+}
+
+inline static void
+ev_expose(XExposeEvent *ev) {
+  if (ev->window == root) {
+    int more = ev->count + 1;
+    if (n_expose == size_expose) {
+      if (expose_rects) {
+        expose_rects = realloc(expose_rects,
+          (size_expose + more) * sizeof(XRectangle));
+        size_expose += more;
+      } else {
+        expose_rects = malloc(more * sizeof(XRectangle));
+        size_expose = more;
+      }
+    }
+
+    expose_rects[n_expose].x = ev->x;
+    expose_rects[n_expose].y = ev->y;
+    expose_rects[n_expose].width = ev->width;
+    expose_rects[n_expose].height = ev->height;
+    n_expose++;
+
+    if (ev->count == 0) {
+      expose_root(dpy, root, expose_rects, n_expose);
+      n_expose = 0;
+    }
+  }
+}
+
+inline static void
+ev_property_notify(XPropertyEvent *ev) {
+  int p;
+  for (p = 0; background_props[p]; p++) {
+    if (ev->atom == XInternAtom(dpy, background_props[p], False)) {
+      if (root_tile) {
+        XClearArea(dpy, root, 0, 0, 0, 0, True);
+        XRenderFreePicture(dpy, root_tile);
+        root_tile = None;
+        break;
+      }
+    }
+  }
+
+  /* check if Trans property was changed */
+  if (ev->atom == opacity_atom) {
+    /* reset mode and redraw window */
+    win *w = find_win(dpy, ev->window);
+    if (w) {
+      double def = win_type_opacity[w->window_type];
+      set_opacity(dpy, w,
+        get_opacity_prop(dpy, w, (unsigned long)(OPAQUE * def)));
+    }
+  }
+
+  if (frame_opacity && ev->atom == extents_atom) {
+    win *w = find_toplevel(dpy, ev->window);
+    if (w) {
+      get_frame_extents(dpy, w->client_win,
+        &w->left_width, &w->right_width,
+        &w->top_width, &w->bottom_width);
+    }
+  }
+}
+
+inline static void
+ev_damage_notify(XDamageNotifyEvent *ev) {
+  damage_win(dpy, ev);
+}
+
+inline static void
+handle_event(XEvent *ev) {
+  if ((ev->type & 0x7f) != KeymapNotify) {
+    discard_ignore(dpy, ev->xany.serial);
+  }
+
+#if DEBUG_EVENTS
+  if (ev->type != damage_event + XDamageNotify) {
+    printf("event %10.10s serial 0x%08x window 0x%08x\n",
+        ev_name(ev), ev_serial(ev), ev_window(ev));
+  }
+#endif
+
+  switch (ev->type) {
+    case FocusIn:
+      ev_focus_in((XFocusChangeEvent *)ev);
+      break;
+    case FocusOut:
+      ev_focus_out((XFocusChangeEvent *)ev);
+      break;
+    case CreateNotify:
+      ev_create_notify((XCreateWindowEvent *)ev);
+      break;
+    case ConfigureNotify:
+      ev_configure_notify((XConfigureEvent *)ev);
+      break;
+    case DestroyNotify:
+      ev_destroy_notify((XDestroyWindowEvent *)ev);
+      break;
+    case MapNotify:
+      ev_map_notify((XMapEvent *)ev);
+      break;
+    case UnmapNotify:
+      ev_unmap_notify((XUnmapEvent *)ev);
+      break;
+    case ReparentNotify:
+      ev_reparent_notify((XReparentEvent *)ev);
+      break;
+    case CirculateNotify:
+      ev_circulate_notify((XCirculateEvent *)ev);
+      break;
+    case Expose:
+      ev_expose((XExposeEvent *)ev);
+      break;
+    case PropertyNotify:
+      ev_property_notify((XPropertyEvent *)ev);
+      break;
+    default:
+      if (ev->type == damage_event + XDamageNotify) {
+        ev_damage_notify((XDamageNotifyEvent *)ev);
+      }
+      break;
+  }
+}
+
+/**
+ * Main
+ */
+
 void
 usage(char *program) {
   fprintf(stderr, "%s v0.0.1\n", program);
@@ -2168,6 +2367,46 @@ register_cm(int scr) {
   free(buf);
 
   XSetSelectionOwner(dpy, a, w, 0);
+}
+
+static void
+get_atoms() {
+  extents_atom = XInternAtom(dpy,
+    "_NET_FRAME_EXTENTS", False);
+  opacity_atom = XInternAtom(dpy,
+    "_NET_WM_WINDOW_OPACITY", False);
+
+  win_type_atom = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE", False);
+  win_type[WINTYPE_UNKNOWN] = 0;
+  win_type[WINTYPE_DESKTOP] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_DESKTOP", False);
+  win_type[WINTYPE_DOCK] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_DOCK", False);
+  win_type[WINTYPE_TOOLBAR] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
+  win_type[WINTYPE_MENU] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_MENU", False);
+  win_type[WINTYPE_UTILITY] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_UTILITY", False);
+  win_type[WINTYPE_SPLASH] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_SPLASH", False);
+  win_type[WINTYPE_DIALOG] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_DIALOG", False);
+  win_type[WINTYPE_NORMAL] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_NORMAL", False);
+  win_type[WINTYPE_DROPDOWN_MENU] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU", False);
+  win_type[WINTYPE_POPUP_MENU] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
+  win_type[WINTYPE_TOOLTIP] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_TOOLTIP", False);
+  win_type[WINTYPE_NOTIFY] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
+  win_type[WINTYPE_COMBO] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_COMBO", False);
+  win_type[WINTYPE_DND] = XInternAtom(dpy,
+    "_NET_WM_WINDOW_TYPE_DND", False);
 }
 
 int
@@ -2386,241 +2625,6 @@ main(int argc, char **argv) {
       all_damage = None;
       clip_changed = False;
     }
-  }
-}
-
-static void
-get_atoms() {
-  extents_atom = XInternAtom(dpy,
-    "_NET_FRAME_EXTENTS", False);
-  opacity_atom = XInternAtom(dpy,
-    "_NET_WM_WINDOW_OPACITY", False);
-
-  win_type_atom = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE", False);
-  win_type[WINTYPE_UNKNOWN] = 0;
-  win_type[WINTYPE_DESKTOP] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_DESKTOP", False);
-  win_type[WINTYPE_DOCK] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_DOCK", False);
-  win_type[WINTYPE_TOOLBAR] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
-  win_type[WINTYPE_MENU] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_MENU", False);
-  win_type[WINTYPE_UTILITY] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_UTILITY", False);
-  win_type[WINTYPE_SPLASH] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_SPLASH", False);
-  win_type[WINTYPE_DIALOG] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_DIALOG", False);
-  win_type[WINTYPE_NORMAL] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_NORMAL", False);
-  win_type[WINTYPE_DROPDOWN_MENU] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU", False);
-  win_type[WINTYPE_POPUP_MENU] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
-  win_type[WINTYPE_TOOLTIP] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_TOOLTIP", False);
-  win_type[WINTYPE_NOTIFY] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
-  win_type[WINTYPE_COMBO] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_COMBO", False);
-  win_type[WINTYPE_DND] = XInternAtom(dpy,
-    "_NET_WM_WINDOW_TYPE_DND", False);
-}
-
-/**
- * Events
- */
-
-inline static void
-ev_focus_in(XFocusChangeEvent *ev) {
-  if (!inactive_opacity) return;
-
-  win *fw = find_win(dpy, ev->window);
-  if (IS_NORMAL_WIN(fw)) {
-    set_opacity(dpy, fw, OPAQUE);
-  }
-}
-
-inline static void
-ev_focus_out(XFocusChangeEvent *ev) {
-  if (!inactive_opacity) return;
-
-  if (ev->mode == NotifyGrab
-      || (ev->mode == NotifyNormal
-      && (ev->detail == NotifyNonlinear
-      || ev->detail == NotifyNonlinearVirtual))) {
-    ;
-  } else {
-    return;
-  }
-
-  win *fw = find_win(dpy, ev->window);
-  if (IS_NORMAL_WIN(fw)) {
-    set_opacity(dpy, fw, INACTIVE_OPACITY);
-  }
-}
-
-inline static void
-ev_create_notify(XCreateWindowEvent *ev) {
-  add_win(dpy, ev->window, 0, ev->override_redirect);
-}
-
-inline static void
-ev_configure_notify(XConfigureEvent *ev) {
-  configure_win(dpy, ev);
-}
-
-inline static void
-ev_destroy_notify(XDestroyWindowEvent *ev) {
-  destroy_win(dpy, ev->window, True);
-}
-
-inline static void
-ev_map_notify(XMapEvent *ev) {
-  map_win(dpy, ev->window, ev->serial, True, ev->override_redirect);
-}
-
-inline static void
-ev_unmap_notify(XUnmapEvent *ev) {
-  unmap_win(dpy, ev->window, True);
-}
-
-inline static void
-ev_reparent_notify(XReparentEvent *ev) {
-  if (ev->parent == root) {
-    add_win(dpy, ev->window, 0, ev->override_redirect);
-  } else {
-    destroy_win(dpy, ev->window, True);
-  }
-}
-
-inline static void
-ev_circulate_notify(XCirculateEvent *ev) {
-  circulate_win(dpy, ev);
-}
-
-inline static void
-ev_expose(XExposeEvent *ev) {
-  if (ev->window == root) {
-    int more = ev->count + 1;
-    if (n_expose == size_expose) {
-      if (expose_rects) {
-        expose_rects = realloc(expose_rects,
-          (size_expose + more) * sizeof(XRectangle));
-        size_expose += more;
-      } else {
-        expose_rects = malloc(more * sizeof(XRectangle));
-        size_expose = more;
-      }
-    }
-
-    expose_rects[n_expose].x = ev->x;
-    expose_rects[n_expose].y = ev->y;
-    expose_rects[n_expose].width = ev->width;
-    expose_rects[n_expose].height = ev->height;
-    n_expose++;
-
-    if (ev->count == 0) {
-      expose_root(dpy, root, expose_rects, n_expose);
-      n_expose = 0;
-    }
-  }
-}
-
-inline static void
-ev_property_notify(XPropertyEvent *ev) {
-  int p;
-  for (p = 0; background_props[p]; p++) {
-    if (ev->atom == XInternAtom(dpy, background_props[p], False)) {
-      if (root_tile) {
-        XClearArea(dpy, root, 0, 0, 0, 0, True);
-        XRenderFreePicture(dpy, root_tile);
-        root_tile = None;
-        break;
-      }
-    }
-  }
-
-  /* check if Trans property was changed */
-  if (ev->atom == opacity_atom) {
-    /* reset mode and redraw window */
-    win *w = find_win(dpy, ev->window);
-    if (w) {
-      double def = win_type_opacity[w->window_type];
-      set_opacity(dpy, w,
-        get_opacity_prop(dpy, w, (unsigned long)(OPAQUE * def)));
-    }
-  }
-
-  if (frame_opacity && ev->atom == extents_atom) {
-    win *w = find_toplevel(dpy, ev->window);
-    if (w) {
-      get_frame_extents(dpy, w->client_win,
-        &w->left_width, &w->right_width,
-        &w->top_width, &w->bottom_width);
-    }
-  }
-}
-
-inline static void
-ev_damage_notify(XDamageNotifyEvent *ev) {
-  damage_win(dpy, ev);
-}
-
-inline static void
-handle_event(XEvent *ev) {
-  if ((ev->type & 0x7f) != KeymapNotify) {
-    discard_ignore(dpy, ev->xany.serial);
-  }
-
-#if DEBUG_EVENTS
-  if (ev->type != damage_event + XDamageNotify) {
-    printf("event %10.10s serial 0x%08x window 0x%08x\n",
-        ev_name(ev), ev_serial(ev), ev_window(ev));
-  }
-#endif
-
-  switch (ev->type) {
-    case FocusIn:
-      ev_focus_in((XFocusChangeEvent *)ev);
-      break;
-    case FocusOut:
-      ev_focus_out((XFocusChangeEvent *)ev);
-      break;
-    case CreateNotify:
-      ev_create_notify((XCreateWindowEvent *)ev);
-      break;
-    case ConfigureNotify:
-      ev_configure_notify((XConfigureEvent *)ev);
-      break;
-    case DestroyNotify:
-      ev_destroy_notify((XDestroyWindowEvent *)ev);
-      break;
-    case MapNotify:
-      ev_map_notify((XMapEvent *)ev);
-      break;
-    case UnmapNotify:
-      ev_unmap_notify((XUnmapEvent *)ev);
-      break;
-    case ReparentNotify:
-      ev_reparent_notify((XReparentEvent *)ev);
-      break;
-    case CirculateNotify:
-      ev_circulate_notify((XCirculateEvent *)ev);
-      break;
-    case Expose:
-      ev_expose((XExposeEvent *)ev);
-      break;
-    case PropertyNotify:
-      ev_property_notify((XPropertyEvent *)ev);
-      break;
-    default:
-      if (ev->type == damage_event + XDamageNotify) {
-        ev_damage_notify((XDamageNotifyEvent *)ev);
-      }
-      break;
   }
 }
 
