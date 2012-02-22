@@ -927,12 +927,12 @@ get_frame_extents(Display *dpy, Window w,
   unsigned char *data = NULL;
   int result;
 
-  *left = 0;
-  *right = 0;
-  *top = 0;
-  *bottom = 0;
+  // *left = 0;
+  // *right = 0;
+  // *top = 0;
+  // *bottom = 0;
 
-  //w = find_client_win(dpy, w);
+  // w = find_client_win(dpy, w);
   if (!w) return;
 
   result = XGetWindowProperty(
