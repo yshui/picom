@@ -2422,6 +2422,7 @@ main(int argc, char **argv) {
   char *display = 0;
   int o;
   Bool no_dock_shadow = False;
+  Bool no_dnd_shadow  = False;
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
     win_type_fade[i] = False;
@@ -2429,7 +2430,7 @@ main(int argc, char **argv) {
     win_type_opacity[i] = 1.0;
   }
 
-  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:e:scnfFCaSz")) != -1) {
+  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:e:scnfFCaSzG")) != -1) {
     switch (o) {
       case 'd':
         display = optarg;
@@ -2503,6 +2504,9 @@ main(int argc, char **argv) {
         fprintf(stderr, "Warning: "
           "-n, -a, and -s have been removed.\n");
         break;
+      case 'G':
+        no_dnd_shadow = True;
+        break;
       default:
         usage(argv[0]);
         break;
@@ -2512,6 +2516,9 @@ main(int argc, char **argv) {
   if (no_dock_shadow) {
     win_type_shadow[WINTYPE_DOCK] = False;
   }
+
+  if (no_dnd_shadow)
+    win_type_shadow[WINTYPE_DND] = False;
 
   dpy = XOpenDisplay(display);
   if (!dpy) {
