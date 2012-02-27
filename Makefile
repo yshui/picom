@@ -14,10 +14,10 @@ compton: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 
 install: compton
-	@cp -t $(PREFIX)/bin compton
+	@cp compton $(PREFIX)/bin
 	@[ -d "$(MANDIR)" ] \
-	  && cp -t "$(MANDIR)" man/compton.1
-	@cp -t $(PREFIX)/bin bin/settrans
+	  && cp man/compton.1 "$(MANDIR)"
+	@cp bin/settrans $(PREFIX)/bin
 
 uninstall:
 	@rm -f $(PREFIX)/bin/compton
