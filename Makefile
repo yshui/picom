@@ -6,19 +6,17 @@ PREFIX = /usr
 MANDIR = $(PREFIX)/share/man/man1
 OBJS = compton.o
 
-.c.o:
-	$(CC) $(CFLAGS) $(INCS) -c $*.c
+%.o: src/%.c src/%.h
+	$(CC) $(CFLAGS) $(INCS) -c src/$*.c
 
 compton: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 
-$(OBJS): compton.h
-
 install: compton
 	@cp -t $(PREFIX)/bin compton
 	@[ -d "$(MANDIR)" ] \
-	  && cp -t "$(MANDIR)" compton.1
-	@cp -t $(PREFIX)/bin settrans
+	  && cp -t "$(MANDIR)" man/compton.1
+	@cp -t $(PREFIX)/bin bin/settrans
 
 uninstall:
 	@rm -f $(PREFIX)/bin/compton
