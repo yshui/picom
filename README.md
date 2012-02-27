@@ -62,23 +62,23 @@ $ compton -cC -fF -I 0.065 -O 0.065 -D 6 -m 0.8 -i 0.6 -e 0.6
 
     compton [-d display] [-r radius] [-o opacity]
             [-l left-offset] [-t top-offset]
-            [-i opacity] [-e opacity] [-cCfFS]
+            [-i opacity] [-e opacity] [-cCfFSdG]
 
-* `-d` display
+* `-d` __display__
   Specifies the display to manage.
-* `-r` radius
+* `-r` __radius__
   Specifies the blur radius for client-side shadows.
-* `-o` opacity
+* `-o` __opacity__
   Specifies the opacity for client-side shadows.
-* `-l` left-offset
+* `-l` __left-offset__
   Specifies the left offset for client-side shadows.
-* `-t` top-offset
+* `-t` __top-offset__
   Specifies the top offset for client-side shadows.
-* `-I` fade-in-step
+* `-I` __fade-in-step__
   Specifies the opacity change between steps while fading in.
-* `-O` fade-out-step
+* `-O` __fade-out-step__
   Specifies the opacity change between steps while fading out.
-* `-D` fade-delta
+* `-D` __fade-delta__
   Specifies the time (in milliseconds) between steps in a fade.
 * `-c`
   Enable client-side shadows on windows.
@@ -90,10 +90,14 @@ $ compton -cC -fF -I 0.065 -O 0.065 -D 6 -m 0.8 -i 0.6 -e 0.6
 * `-F`
   When -f is specified, also enables the fade effect when windows change their
   opacity, as with transset(1).
-* `-i` opacity
+* `-i` __opacity__
   Specifies inactive window transparency. (0.1 - 1.0)
-* `-e` opacity
+* `-e` __opacity__
   Specifies window frame transparency. (0.1 - 1.0)
+* `-G`
+  Avoid painting shadows on DND windows.
+* `-b` __daemonize__
+  Attempt to daemonize process.
 * `-S`
   Enables synchronous operation.  Useful for debugging.
 

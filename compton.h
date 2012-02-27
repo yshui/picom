@@ -1,3 +1,9 @@
+/**
+ * compton.h
+ */
+
+// Throw everything in here.
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,6 +28,7 @@
 #define CAN_DO_USABLE 0
 #define DEBUG_REPAINT 0
 #define DEBUG_EVENTS 0
+#define DEBUG_WINTYPE 0
 #define MONITOR_REPAINT 0
 
 #define OPAQUE 0xffffffff
@@ -30,6 +37,10 @@
 #define WINDOW_SOLID 0
 #define WINDOW_TRANS 1
 #define WINDOW_ARGB 2
+
+/**
+ * Types
+ */
 
 typedef enum {
   WINTYPE_UNKNOWN,
@@ -113,19 +124,23 @@ typedef struct _fade {
   Display *dpy;
 } fade;
 
-int
+/**
+ * Functions
+ */
+
+static int
 get_time_in_milliseconds();
 
-fade *
+static fade *
 find_fade(win *w);
 
-void
+static void
 dequeue_fade(Display *dpy, fade *f);
 
-void
+static void
 cleanup_fade(Display *dpy, win *w);
 
-void
+static void
 enqueue_fade(Display *dpy, fade *f);
 
 static void
@@ -134,10 +149,10 @@ set_fade(Display *dpy, win *w, double start,
          void(*callback) (Display *dpy, win *w),
          Bool exec_callback, Bool override);
 
-int
+static int
 fade_timeout(void);
 
-void
+static void
 run_fades(Display *dpy);
 
 static double
@@ -161,17 +176,17 @@ static Picture
 shadow_picture(Display *dpy, double opacity, Picture alpha_pict,
                int width, int height, int *wp, int *hp);
 
-Picture
+static Picture
 solid_picture(Display *dpy, Bool argb, double a,
               double r, double g, double b);
 
-void
+static void
 discard_ignore(Display *dpy, unsigned long sequence);
 
-void
+static void
 set_ignore(Display *dpy, unsigned long sequence);
 
-int
+static int
 should_ignore(Display *dpy, unsigned long sequence);
 
 static win *
@@ -211,11 +226,6 @@ add_damage(Display *dpy, XserverRegion damage);
 static void
 repair_win(Display *dpy, win *w);
 
-#if 0
-static const char*
-wintype_name(wintype type);
-#endif
-
 static wintype
 get_wintype_prop(Display * dpy, Window w);
 
@@ -253,7 +263,7 @@ set_opacity(Display *dpy, win *w, unsigned long opacity);
 static void
 add_win(Display *dpy, Window id, Window prev, Bool override_redirect);
 
-void
+static void
 restack_win(Display *dpy, win *w, Window new_above);
 
 static void
@@ -272,11 +282,6 @@ destroy_callback(Display *dpy, win *w);
 
 static void
 destroy_win(Display *dpy, Window id, Bool fade);
-
-#if 0
-static void
-dump_win(win *w);
-#endif
 
 static void
 damage_win(Display *dpy, XDamageNotifyEvent *de);
@@ -298,8 +303,8 @@ static Window
 ev_window(XEvent *ev);
 #endif
 
-void
-usage(char *program);
+static void
+usage();
 
 static void
 register_cm(int scr);
@@ -341,7 +346,10 @@ inline static void
 ev_damage_notify(XDamageNotifyEvent *ev);
 
 inline static void
-handle_event(XEvent *ev);
+ev_handle(XEvent *ev);
+
+static void
+fork_after();
 
 static void
 get_atoms();

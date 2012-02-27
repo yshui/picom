@@ -1,14 +1,18 @@
 /*
- * compton - a compositor for X11
+ * Compton - a compositor for X11
  *
- * based on xcompmgr - copyright (c) 2003, keith packard
+ * Based on `xcompmgr` - Copyright (c) 2003, Keith Packard
  *
- * copyright (c) 2011, christopher jeffrey
+ * Copyright (c) 2011, Christopher Jeffrey
  * See LICENSE for more information.
  *
  */
 
 #include "compton.h"
+
+/**
+ * Shared
+ */
 
 win *list;
 fade *fades;
@@ -74,7 +78,6 @@ Bool win_type_fade[NUM_WINTYPES];
 #define IS_NORMAL_WIN(w) \
 ((w) && ((w)->window_type == WINTYPE_NORMAL \
          || (w)->window_type == WINTYPE_UTILITY))
-//       || (w)->window_type == WINTYPE_UNKNOWN))
 
 #define HAS_FRAME_OPACITY(w) (frame_opacity && (w)->top_width)
 
@@ -104,7 +107,7 @@ Bool synchronize = False;
  * Fades
  */
 
-int
+static int
 get_time_in_milliseconds() {
   struct timeval tv;
 
@@ -113,7 +116,7 @@ get_time_in_milliseconds() {
   return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
-fade *
+static fade *
 find_fade(win *w) {
   fade *f;
 
@@ -124,7 +127,7 @@ find_fade(win *w) {
   return 0;
 }
 
-void
+static void
 dequeue_fade(Display *dpy, fade *f) {
   fade **prev;
 
@@ -140,7 +143,7 @@ dequeue_fade(Display *dpy, fade *f) {
   }
 }
 
-void
+static void
 cleanup_fade(Display *dpy, win *w) {
   fade *f = find_fade (w);
   if (f) {
@@ -148,7 +151,7 @@ cleanup_fade(Display *dpy, win *w) {
   }
 }
 
-void
+static void
 enqueue_fade(Display *dpy, fade *f) {
   if (!fades) {
     fade_time = get_time_in_milliseconds() + fade_delta;
@@ -192,10 +195,6 @@ set_fade(Display *dpy, win *w, double start,
   f->callback = callback;
   w->opacity = f->cur * OPAQUE;
 
-#if 0
-  printf("set_fade start %g step %g\n", f->cur, f->step);
-#endif
-
   determine_mode(dpy, w);
 
   if (w->shadow) {
@@ -219,7 +218,7 @@ set_fade(Display *dpy, win *w, double start,
   w->damaged = 1;
 }
 
-int
+static int
 fade_timeout(void) {
   int now;
   int delta;
@@ -230,21 +229,16 @@ fade_timeout(void) {
   delta = fade_time - now;
 
   if (delta < 0) delta = 0;
-/* printf("timeout %d\n", delta); */
 
   return delta;
 }
 
-void
+static void
 run_fades(Display *dpy) {
   int now = get_time_in_milliseconds();
   fade *next = fades;
   int steps;
   Bool need_dequeue;
-
-#if 0
-  printf("run fades\n");
-#endif
 
   if (fade_time - now > 0) return;
   steps = 1 + (now - fade_time) / fade_delta;
@@ -260,10 +254,6 @@ run_fades(Display *dpy) {
     } else if (f->cur < 0) {
       f->cur = 0;
     }
-
-#if 0
-    printf("opacity now %g\n", f->cur);
-#endif
 
     w->opacity = f->cur * OPAQUE;
     need_dequeue = False;
@@ -332,8 +322,6 @@ make_gaussian_map(Display *dpy, double r) {
       c->data[y * size + x] = g;
     }
   }
-
-/*  printf("gaussian total %f\n", t); */
 
   for (y = 0; y < size; y++) {
     for (x = 0; x < size; x++) {
@@ -489,19 +477,19 @@ make_shadow(Display *dpy, double opacity,
    * center (fill the complete data array)
    */
 
-if (!clear_shadow) {
-  if (Gsize > 0) {
-    d = shadow_top[opacity_int * (Gsize + 1) + Gsize];
-  } else {
-    d = sum_gaussian(gaussian_map,
-      opacity, center, center, width, height);
-  }
+  if (!clear_shadow) {
+    if (Gsize > 0) {
+      d = shadow_top[opacity_int * (Gsize + 1) + Gsize];
+    } else {
+      d = sum_gaussian(gaussian_map,
+        opacity, center, center, width, height);
+    }
 
-  memset(data, d, sheight * swidth);
-} else {
-  // zero the pixmap
-  memset(data, 0, sheight * swidth);
-}
+    memset(data, d, sheight * swidth);
+  } else {
+    // zero the pixmap
+    memset(data, 0, sheight * swidth);
+  }
 
   /*
    * corners
@@ -513,7 +501,7 @@ if (!clear_shadow) {
   xlimit = gsize;
   if (xlimit > swidth / 2) xlimit = (swidth + 1) / 2;
 
-  for (y = 0; y < ylimit; y++)
+  for (y = 0; y < ylimit; y++) {
     for (x = 0; x < xlimit; x++) {
       if (xlimit == Gsize && ylimit == Gsize) {
         d = shadow_corner[opacity_int * (Gsize + 1) * (Gsize + 1)
@@ -527,6 +515,7 @@ if (!clear_shadow) {
       data[(sheight - y - 1) * swidth + (swidth - x - 1)] = d;
       data[y * swidth + (swidth - x - 1)] = d;
     }
+  }
 
   /*
    * top/bottom
@@ -564,8 +553,7 @@ if (!clear_shadow) {
   }
 
   // zero extra pixels
-  if (clear_shadow)
-  if (width > gsize && height > gsize) {
+  if (clear_shadow && width > gsize && height > gsize) {
     int r = gsize / 2;
     int sr = r - 2;
     int er = r + 4;
@@ -600,6 +588,7 @@ shadow_picture(Display *dpy, double opacity, Picture alpha_pict,
 
   shadow_picture = XRenderCreatePicture(dpy, shadowPixmap,
     XRenderFindStandardFormat(dpy, PictStandardA8), 0, 0);
+
   if (!shadow_picture) {
     XDestroyImage(shadowImage);
     XFreePixmap(dpy, shadowPixmap);
@@ -627,7 +616,7 @@ shadow_picture(Display *dpy, double opacity, Picture alpha_pict,
   return shadow_picture;
 }
 
-Picture
+static Picture
 solid_picture(Display *dpy, Bool argb, double a,
               double r, double g, double b) {
   Pixmap pixmap;
@@ -666,7 +655,7 @@ solid_picture(Display *dpy, Bool argb, double a,
  * Errors
  */
 
-void
+static void
 discard_ignore(Display *dpy, unsigned long sequence) {
   while (ignore_head) {
     if ((long) (sequence - ignore_head->sequence) > 0) {
@@ -682,7 +671,7 @@ discard_ignore(Display *dpy, unsigned long sequence) {
   }
 }
 
-void
+static void
 set_ignore(Display *dpy, unsigned long sequence) {
   ignore *i = malloc(sizeof(ignore));
   if (!i) return;
@@ -693,7 +682,7 @@ set_ignore(Display *dpy, unsigned long sequence) {
   ignore_tail = &i->next;
 }
 
-int
+static int
 should_ignore(Display *dpy, unsigned long sequence) {
   discard_ignore(dpy, sequence);
   return ignore_head && ignore_head->sequence == sequence;
@@ -809,15 +798,15 @@ win_extents(Display *dpy, win *w) {
     if (!w->shadow) {
       double opacity = shadow_opacity;
 
-if (!clear_shadow) {
-      if (w->mode != WINDOW_SOLID) {
-        opacity = opacity * ((double)w->opacity) / ((double)OPAQUE);
-      }
+      if (!clear_shadow) {
+        if (w->mode != WINDOW_SOLID) {
+          opacity = opacity * ((double)w->opacity) / ((double)OPAQUE);
+        }
 
-      if (HAS_FRAME_OPACITY(w)) {
-        opacity = opacity * frame_opacity;
+        if (HAS_FRAME_OPACITY(w)) {
+          opacity = opacity * frame_opacity;
+        }
       }
-}
 
       w->shadow = shadow_picture(
         dpy, opacity, w->alpha_pict,
@@ -927,10 +916,10 @@ get_frame_extents(Display *dpy, Window w,
   unsigned char *data = NULL;
   int result;
 
-  // *left = 0;
-  // *right = 0;
-  // *top = 0;
-  // *bottom = 0;
+  *left = 0;
+  *right = 0;
+  *top = 0;
+  *bottom = 0;
 
   // w = find_client_win(dpy, w);
   if (!w) return;
@@ -1150,7 +1139,6 @@ paint_all(Display *dpy, XserverRegion region) {
           dpy, PictOpOver, w->picture, w->alpha_pict,
           root_buffer, 0, 0, 0, 0, x, y, wid, hei);
       } else {
-        /* TODO - clean me */
         unsigned int t = w->top_width;
         unsigned int l = w->left_width;
         unsigned int b = w->bottom_width;
@@ -1229,7 +1217,7 @@ repair_win(Display *dpy, win *w) {
   w->damaged = 1;
 }
 
-#if 0
+#if DEBUG_WINTYPE
 static const char*
 wintype_name(wintype type) {
   const char *t;
@@ -1373,15 +1361,16 @@ map_win(Display *dpy, Window id,
   w->a.map_state = IsViewable;
   w->window_type = determine_wintype(dpy, w->id, w->id);
 
-#if 0
+#if DEBUG_WINTYPE
   printf("window 0x%x type %s\n",
     w->id, wintype_name(w->window_type));
 #endif
 
   /* select before reading the property
      so that no property changes are lost */
-  if (!override_redirect)
-  XSelectInput(dpy, id, PropertyChangeMask | FocusChangeMask);
+  if (!override_redirect) {
+    XSelectInput(dpy, id, PropertyChangeMask | FocusChangeMask);
+  }
 
   // this causes problems for inactive transparency
   //w->opacity = get_opacity_prop(dpy, w, OPAQUE);
@@ -1416,7 +1405,8 @@ finish_unmap_win(Display *dpy, win *w) {
 #endif
 
   if (w->extents != None) {
-    add_damage(dpy, w->extents);  /* destroys region */
+    /* destroys region */
+    add_damage(dpy, w->extents);
     w->extents = None;
   }
 
@@ -1480,10 +1470,6 @@ unmap_win(Display *dpy, Window id, Bool fade) {
     finish_unmap_win(dpy, w);
 }
 
-/* Get the opacity prop from window
-   not found: default
-   otherwise the value
- */
 static unsigned int
 get_opacity_prop(Display *dpy, win *w, unsigned int def) {
   Atom actual;
@@ -1504,12 +1490,6 @@ get_opacity_prop(Display *dpy, win *w, unsigned int def) {
 
   return def;
 }
-
-/*
- * Get the opacity property from the window in a percent format
- * not found: default
- * otherwise: the value
-*/
 
 static double
 get_opacity_percent(Display *dpy, win *w) {
@@ -1569,16 +1549,6 @@ determine_mode(Display *dpy, win *w) {
 
 static void
 set_opacity(Display *dpy, win *w, unsigned long opacity) {
-#if 0
-  if (fade_trans) {
-    double old_opacity = (double)w->opacity / OPAQUE;
-    w->opacity = opacity;
-    set_fade(dpy, w, old_opacity,
-      (double)w->opacity / OPAQUE,
-      fade_out_step, 0, True, False);
-    return;
-  }
-#endif
   w->opacity = opacity;
   determine_mode(dpy, w);
   if (w->shadow) {
@@ -1683,7 +1653,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   }
 }
 
-void
+static void
 restack_win(Display *dpy, win *w, Window new_above) {
   Window old_above;
 
@@ -1871,26 +1841,6 @@ destroy_win(Display *dpy, Window id, Bool fade) {
   }
 }
 
-#if 0
-static void
-dump_win(win *w) {
-  printf("\t%08lx: %d x %d + %d + %d(%d)\n", w->id,
-    w->a.width, w->a.height,
-    w->a.x, w->a.y, w->a.border_width);
-}
-
-
-static void
-dump_wins(void) {
-  win *w;
-
-  printf("windows:\n");
-  for (w = list; w; w = w->next) {
-    dump_win(w);
-  }
-}
-#endif
-
 static void
 damage_win(Display *dpy, XDamageNotifyEvent *de) {
   win *w = find_win(dpy, de->drawable);
@@ -1921,18 +1871,6 @@ damage_win(Display *dpy, XDamageNotifyEvent *de) {
           de->area.y + de->area.height - w->damage_bounds.y;
       }
     }
-
-#if 0
-    printf("unusable damage %d, %d: %d x %d bounds %d, %d: %d x %d\n",
-      de->area.x,
-      de->area.y,
-      de->area.width,
-      de->area.height,
-      w->damage_bounds.x,
-      w->damage_bounds.y,
-      w->damage_bounds.width,
-      w->damage_bounds.height);
-#endif
 
     if (w->damage_bounds.x <= 0
         && w->damage_bounds.y <= 0
@@ -1988,36 +1926,34 @@ error(Display *dpy, XErrorEvent *ev) {
   o = ev->error_code - render_error;
   switch (o) {
     case BadPictFormat:
-      name ="BadPictFormat";
+      name = "BadPictFormat";
       break;
     case BadPicture:
-      name ="BadPicture";
+      name = "BadPicture";
       break;
     case BadPictOp:
-      name ="BadPictOp";
+      name = "BadPictOp";
       break;
     case BadGlyphSet:
-      name ="BadGlyphSet";
+      name = "BadGlyphSet";
       break;
     case BadGlyph:
-      name ="BadGlyph";
+      name = "BadGlyph";
       break;
     default:
       break;
   }
 
   printf("error %d (%s) request %d minor %d serial %lu\n",
-      ev->error_code, name, ev->request_code,
-      ev->minor_code, ev->serial);
+    ev->error_code, name, ev->request_code,
+    ev->minor_code, ev->serial);
 
-/*  abort();      this is just annoying to most people */
   return 0;
 }
 
 static void
 expose_root(Display *dpy, Window root, XRectangle *rects, int nrects) {
   XserverRegion region = XFixesCreateRegion(dpy, rects, nrects);
-
   add_damage(dpy, region);
 }
 
@@ -2083,9 +2019,9 @@ inline static void
 ev_focus_in(XFocusChangeEvent *ev) {
   if (!inactive_opacity) return;
 
-  win *fw = find_win(dpy, ev->window);
-  if (IS_NORMAL_WIN(fw)) {
-    set_opacity(dpy, fw, OPAQUE);
+  win *w = find_win(dpy, ev->window);
+  if (IS_NORMAL_WIN(w)) {
+    set_opacity(dpy, w, OPAQUE);
   }
 }
 
@@ -2102,9 +2038,9 @@ ev_focus_out(XFocusChangeEvent *ev) {
     return;
   }
 
-  win *fw = find_win(dpy, ev->window);
-  if (IS_NORMAL_WIN(fw)) {
-    set_opacity(dpy, fw, INACTIVE_OPACITY);
+  win *w = find_win(dpy, ev->window);
+  if (IS_NORMAL_WIN(w)) {
+    set_opacity(dpy, w, INACTIVE_OPACITY);
   }
 }
 
@@ -2216,7 +2152,7 @@ ev_damage_notify(XDamageNotifyEvent *ev) {
 }
 
 inline static void
-handle_event(XEvent *ev) {
+ev_handle(XEvent *ev) {
   if ((ev->type & 0x7f) != KeymapNotify) {
     discard_ignore(dpy, ev->xany.serial);
   }
@@ -2224,7 +2160,7 @@ handle_event(XEvent *ev) {
 #if DEBUG_EVENTS
   if (ev->type != damage_event + XDamageNotify) {
     printf("event %10.10s serial 0x%08x window 0x%08x\n",
-        ev_name(ev), ev_serial(ev), ev_window(ev));
+      ev_name(ev), ev_serial(ev), ev_window(ev));
   }
 #endif
 
@@ -2274,10 +2210,10 @@ handle_event(XEvent *ev) {
  * Main
  */
 
-void
-usage(char *program) {
-  fprintf(stderr, "%s v0.0.1\n", program);
-  fprintf(stderr, "usage: %s [options]\n", program);
+static void
+usage() {
+  fprintf(stderr, "compton v0.0.1\n");
+  fprintf(stderr, "usage: compton [options]\n");
 
   fprintf(stderr, "Options\n");
   fprintf(stderr,
@@ -2329,6 +2265,12 @@ usage(char *program) {
     "   -e opacity\n    "
     "Opacity of window titlebars and borders. (0.1 - 1.0)\n");
   fprintf(stderr,
+    "   -G\n    "
+    "Don't draw shadows on DND windows\n");
+  fprintf(stderr,
+    "   -b daemonize\n    "
+    "Daemonize process.\n");
+  fprintf(stderr,
     "   -S\n    "
     "Enable synchronous operation (for debugging).\n");
 
@@ -2367,6 +2309,26 @@ register_cm(int scr) {
   free(buf);
 
   XSetSelectionOwner(dpy, a, w, 0);
+}
+
+static void
+fork_after() {
+  if (getppid() == 1) return;
+
+  int pid = fork();
+
+  if (pid == -1) {
+    fprintf(stderr, "Fork failed\n");
+    return;
+  }
+
+  if (pid > 0) _exit(0);
+
+  setsid();
+
+  freopen("/dev/null", "r", stdin);
+  freopen("/dev/null", "w", stdout);
+  freopen("/dev/null", "w", stderr);
 }
 
 static void
@@ -2512,7 +2474,7 @@ main(int argc, char **argv) {
         fork_after_register = True;
         break;
       default:
-        usage(argv[0]);
+        usage();
         break;
     }
   }
@@ -2521,8 +2483,9 @@ main(int argc, char **argv) {
     win_type_shadow[WINTYPE_DOCK] = False;
   }
 
-  if (no_dnd_shadow)
+  if (no_dnd_shadow) {
     win_type_shadow[WINTYPE_DND] = False;
+  }
 
   dpy = XOpenDisplay(display);
   if (!dpy) {
@@ -2568,13 +2531,9 @@ main(int argc, char **argv) {
   }
 
   register_cm(scr);
-  if (fork_after_register) {
-    int pid = fork();
-    if (pid < 0)
-      fprintf(stderr, "Fork failed\n");
-    else if (pid > 0)
-      exit(0);
-  }
+
+  if (fork_after_register) fork_after();
+
   get_atoms();
 
   pa.subwindow_mode = IncludeInferiors;
@@ -2588,6 +2547,7 @@ main(int argc, char **argv) {
   root_picture = XRenderCreatePicture(dpy, root,
     XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
     CPSubwindowMode, &pa);
+
   black_picture = solid_picture(dpy, True, 1, 0, 0, 0);
 
   all_damage = None;
@@ -2620,7 +2580,6 @@ main(int argc, char **argv) {
   paint_all(dpy, None);
 
   for (;;) {
-    /*    dump_wins(); */
     do {
       if (!QLength(dpy)) {
         if (poll(&ufd, 1, fade_timeout()) == 0) {
@@ -2630,9 +2589,7 @@ main(int argc, char **argv) {
       }
 
       XNextEvent(dpy, &ev);
-
-      handle_event((XEvent *)&ev);
-
+      ev_handle((XEvent *)&ev);
     } while (QLength(dpy));
 
     if (all_damage) {
@@ -2645,4 +2602,3 @@ main(int argc, char **argv) {
     }
   }
 }
-
