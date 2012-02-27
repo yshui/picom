@@ -2422,6 +2422,8 @@ main(int argc, char **argv) {
   char *display = 0;
   int o;
   Bool no_dock_shadow = False;
+  Bool no_dnd_shadow  = False;
+  Bool fork_after_register = False;
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
     win_type_fade[i] = False;
@@ -2429,7 +2431,7 @@ main(int argc, char **argv) {
     win_type_opacity[i] = 1.0;
   }
 
-  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:e:scnfFCaSz")) != -1) {
+  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:e:scnfFCaSzGb")) != -1) {
     switch (o) {
       case 'd':
         display = optarg;
@@ -2503,6 +2505,12 @@ main(int argc, char **argv) {
         fprintf(stderr, "Warning: "
           "-n, -a, and -s have been removed.\n");
         break;
+      case 'G':
+        no_dnd_shadow = True;
+        break;
+      case 'b':
+        fork_after_register = True;
+        break;
       default:
         usage(argv[0]);
         break;
@@ -2512,6 +2520,9 @@ main(int argc, char **argv) {
   if (no_dock_shadow) {
     win_type_shadow[WINTYPE_DOCK] = False;
   }
+
+  if (no_dnd_shadow)
+    win_type_shadow[WINTYPE_DND] = False;
 
   dpy = XOpenDisplay(display);
   if (!dpy) {
@@ -2557,6 +2568,13 @@ main(int argc, char **argv) {
   }
 
   register_cm(scr);
+  if (fork_after_register) {
+    int pid = fork();
+    if (pid < 0)
+      fprintf(stderr, "Fork failed\n");
+    else if (pid > 0)
+      exit(0);
+  }
   get_atoms();
 
   pa.subwindow_mode = IncludeInferiors;

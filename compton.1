@@ -48,9 +48,20 @@ menus, and for all windows on hide and restore events.
 .BI \-C
 When \-c is specified, attempts to avoid painting shadows on panels and docks.
 .TP
+.BI \-G
+When \-c is specified, attempts to avoid painting shadows on
+drag-and-drop windows.
+.TP
 .BI \-F
 When \-f is specified, also enables the fade effect when windows change their
 opacity, as with transset(1).
+.TP
+.BI \-b
+Attempts to fork to background after registered composition
+manager.  Still sits in foreground if fork failed.  Maybe useful
+if you computer is too fast, in which case some programs
+requiring a composite manager may have started before composite
+manager is ready.
 .TP
 .BI \-i\ opacity
 Specifies inactive window transparency. (0.1 - 1.0)
