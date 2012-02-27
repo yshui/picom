@@ -1,9 +1,10 @@
+PREFIX ?= /usr
+MANDIR ?= $(PREFIX)/share/man/man1
+
 PACKAGES = x11 xcomposite xfixes xdamage xrender
 LIBS = `pkg-config --libs $(PACKAGES)` -lm
 INCS = `pkg-config --cflags $(PACKAGES)`
 CFLAGS = -Wall
-PREFIX = /usr
-MANDIR = $(PREFIX)/share/man/man1
 OBJS = compton.o
 
 %.o: src/%.c src/%.h

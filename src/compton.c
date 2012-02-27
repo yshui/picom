@@ -79,7 +79,8 @@ Bool win_type_fade[NUM_WINTYPES];
 ((w) && ((w)->window_type == WINTYPE_NORMAL \
          || (w)->window_type == WINTYPE_UTILITY))
 
-#define HAS_FRAME_OPACITY(w) (frame_opacity && (w)->top_width)
+#define HAS_FRAME_OPACITY(w) \
+  (frame_opacity && (w)->top_width)
 
 /**
  * Options
@@ -298,7 +299,7 @@ run_fades(Display *dpy) {
 static double
 gaussian(double r, double x, double y) {
   return ((1 / (sqrt(2 * M_PI * r))) *
-      exp((- (x * x + y * y)) / (2 * r * r)));
+    exp((- (x * x + y * y)) / (2 * r * r)));
 }
 
 static conv *
@@ -401,9 +402,10 @@ sum_gaussian(conv *map, double opacity,
 
 /* precompute shadow corners and sides
    to save time for large windows */
+
 static void
 presum_gaussian(conv *map) {
-  int center = map->size/2;
+  int center = map->size / 2;
   int opacity, x, y;
 
   Gsize = map->size;
@@ -990,7 +992,6 @@ paint_all(Display *dpy, XserverRegion region) {
 #endif
 
   for (w = list; w; w = w->next) {
-
 #if CAN_DO_USABLE
     if (!w->usable) continue;
 #endif
@@ -2214,65 +2215,46 @@ static void
 usage() {
   fprintf(stderr, "compton v0.0.1\n");
   fprintf(stderr, "usage: compton [options]\n");
-
-  fprintf(stderr, "Options\n");
   fprintf(stderr,
-    "   -d display\n    "
-    "Which display should be managed.\n");
-  fprintf(stderr,
-    "   -r radius\n    "
-    "The blur radius for shadows. (default 12)\n");
-  fprintf(stderr,
-    "   -o opacity\n    "
-    "The translucency for shadows. (default .75)\n");
-  fprintf(stderr,
-    "   -l left-offset\n    "
-    "The left offset for shadows. (default -15)\n");
-  fprintf(stderr,
-   "   -t top-offset\n    "
-   "The top offset for shadows. (default -15)\n");
-  fprintf(stderr,
-    "   -I fade-in-step\n    "
-    "Opacity change between steps while fading in. (default 0.028)\n");
-  fprintf(stderr,
-    "   -O fade-out-step\n    "
-    "Opacity change between steps while fading out. (default 0.03)\n");
-  fprintf(stderr,
-    "   -D fade-delta-time\n    "
-    "The time between steps in a fade in milliseconds. (default 10)\n");
-  fprintf(stderr,
-    "   -m opacity\n    "
-    "The opacity for menus. (default 1.0)\n");
-  fprintf(stderr,
-    "   -c\n    "
-    "Enabled client-side shadows on windows.\n");
-  fprintf(stderr,
-    "   -C\n    "
-    "Avoid drawing shadows on dock/panel windows.\n");
-  fprintf(stderr,
-    "   -z\n    "
-    "Zero the part of the shadow's mask behind the window (experimental).");
-  fprintf(stderr,
-    "   -f\n    "
-    "Fade windows in/out when opening/closing.\n");
-  fprintf(stderr,
-    "   -F\n    "
-    "Fade windows during opacity changes.\n");
-  fprintf(stderr,
-    "   -i opacity\n    "
-    "Opacity of inactive windows. (0.1 - 1.0)\n");
-  fprintf(stderr,
-    "   -e opacity\n    "
-    "Opacity of window titlebars and borders. (0.1 - 1.0)\n");
-  fprintf(stderr,
-    "   -G\n    "
-    "Don't draw shadows on DND windows\n");
-  fprintf(stderr,
-    "   -b daemonize\n    "
-    "Daemonize process.\n");
-  fprintf(stderr,
-    "   -S\n    "
-    "Enable synchronous operation (for debugging).\n");
+    "Options\n"
+    "-d display\n"
+    "  Which display should be managed.\n"
+    "-r radius\n"
+    "  The blur radius for shadows. (default 12)\n"
+    "-o opacity\n"
+    "  The translucency for shadows. (default .75)\n"
+    "-l left-offset\n"
+    "  The left offset for shadows. (default -15)\n"
+    "-t top-offset\n"
+    "  The top offset for shadows. (default -15)\n"
+    "-I fade-in-step\n"
+    "  Opacity change between steps while fading in. (default 0.028)\n"
+    "-O fade-out-step\n"
+    "  Opacity change between steps while fading out. (default 0.03)\n"
+    "-D fade-delta-time\n"
+    "  The time between steps in a fade in milliseconds. (default 10)\n"
+    "-m opacity\n"
+    "  The opacity for menus. (default 1.0)\n"
+    "-c\n"
+    "  Enabled client-side shadows on windows.\n"
+    "-C\n"
+    "  Avoid drawing shadows on dock/panel windows.\n"
+    "-z\n"
+    "  Zero the part of the shadow's mask behind the window (experimental)."
+    "-f\n"
+    "  Fade windows in/out when opening/closing.\n"
+    "-F\n"
+    "  Fade windows during opacity changes.\n"
+    "-i opacity\n"
+    "  Opacity of inactive windows. (0.1 - 1.0)\n"
+    "-e opacity\n"
+    "  Opacity of window titlebars and borders. (0.1 - 1.0)\n"
+    "-G\n"
+    "  Don't draw shadows on DND windows\n"
+    "-b daemonize\n"
+    "  Daemonize process.\n"
+    "-S\n"
+    "  Enable synchronous operation (for debugging).\n");
 
   exit(1);
 }
