@@ -1462,6 +1462,11 @@ unmap_win(Display *dpy, Window id, Bool fade) {
   set_ignore(dpy, NextRequest(dpy));
   XSelectInput(dpy, w->id, 0);
 
+  if (w->client_win) {
+    set_ignore(dpy, NextRequest(dpy));
+    XSelectInput(dpy, w->client_win, 0);
+  }
+
 #if HAS_NAME_WINDOW_PIXMAP
   if (w->pixmap && fade && win_type_fade[w->window_type]) {
     set_fade(dpy, w, w->opacity * 1.0 / OPAQUE, 0.0,
