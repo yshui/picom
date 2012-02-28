@@ -1,4 +1,5 @@
 PREFIX ?= /usr
+BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
 
 PACKAGES = x11 xcomposite xfixes xdamage xrender
@@ -14,15 +15,17 @@ compton: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 
 install: compton
-	@cp compton $(PREFIX)/bin
-	@[ -d "$(MANDIR)" ] \
-	  && cp man/compton.1 "$(MANDIR)"
-	@cp bin/settrans $(PREFIX)/bin
+	@[ -e "$(PREFIX)" ] || mkdir -p "$(PREFIX)"
+	@[ -e "$(BINDIR)" ] || mkdir -p "$(BINDIR)"
+	@[ -e "$(MANDIR)" ] || mkdir -p "$(MANDIR)"
+	@cp compton "$(BINDIR)"
+	@cp bin/settrans "$(BINDIR)"
+	@cp man/compton.1 "$(MANDIR)"
 
 uninstall:
-	@rm -f $(PREFIX)/bin/compton
-	@rm -f $(MANDIR)/compton.1
-	@rm -f $(PREFIX)/bin/settrans
+	@rm -f "$(BINDIR)/compton"
+	@rm -f "$(BINDIR)/settrans"
+	@rm -f "$(MANDIR)/compton.1"
 
 clean:
 	@rm -f $(OBJS) compton
