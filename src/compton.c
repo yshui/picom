@@ -2245,7 +2245,7 @@ usage() {
     "-C\n"
     "  Avoid drawing shadows on dock/panel windows.\n"
     "-z\n"
-    "  Zero the part of the shadow's mask behind the window (experimental)."
+    "  Zero the part of the shadow's mask behind the window (experimental).\n"
     "-f\n"
     "  Fade windows in/out when opening/closing.\n"
     "-F\n"
