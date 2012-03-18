@@ -35,13 +35,20 @@ The same dependencies as xcompmgr.
 
 ### Dependencies:
 
-* libx11
-* libxcomposite
-* libxdamage
-* libxfixes
-* libxrender
-* pkg-config
-* make
+__B__ for build-time
+
+__R__ for runtime
+
+* libx11 (B,R)
+* libxcomposite (B,R)
+* libxdamage (B,R)
+* libxfixes (B,R)
+* libxrender (B,R)
+* pkg-config (B)
+* make (B)
+* xproto / x11proto (B)
+* bash (R)
+* xprop,xwininfo / x11-utils (R)
 
 To build, make sure you have the above dependencies:
 
