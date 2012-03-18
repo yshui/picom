@@ -1,26 +1,25 @@
+CC ?= gcc
+
 PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
 
 PACKAGES = x11 xcomposite xfixes xdamage xrender
-LIBS = `pkg-config --libs $(PACKAGES)` -lm
-INCS = `pkg-config --cflags $(PACKAGES)`
-CFLAGS = -Wall
+LIBS = $(shell pkg-config --libs $(PACKAGES)) -lm
+INCS = $(shell pkg-config --cflags $(PACKAGES))
+CFLAGS += -Wall
 OBJS = compton.o
 
 %.o: src/%.c src/%.h
 	$(CC) $(CFLAGS) $(INCS) -c src/$*.c
 
 compton: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
+	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 
 install: compton
-	@[ -e "$(PREFIX)" ] || mkdir -p "$(PREFIX)"
-	@[ -e "$(BINDIR)" ] || mkdir -p "$(BINDIR)"
-	@[ -e "$(MANDIR)" ] || mkdir -p "$(MANDIR)"
-	@cp compton "$(BINDIR)"
-	@cp bin/settrans "$(BINDIR)"
-	@cp man/compton.1 "$(MANDIR)"
+	@install -Dm755 compton "$(BINDIR)"/compton
+	@install -Dm755 bin/settrans "$(BINDIR)"/settrans
+	@install -Dm644 man/compton.1 "$(MANDIR)"/compton.1
 
 uninstall:
 	@rm -f "$(BINDIR)/compton"
