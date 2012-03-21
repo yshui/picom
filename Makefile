@@ -1,8 +1,8 @@
 CC ?= gcc
 
 PREFIX ?= /usr
-BINDIR ?= $(PREFIX)/bin
-MANDIR ?= $(PREFIX)/share/man/man1
+BINDIR ?= $(DESTDIR)$(PREFIX)/bin
+MANDIR ?= $(DESTDIR)$(PREFIX)/share/man/man1
 
 PACKAGES = x11 xcomposite xfixes xdamage xrender
 LIBS = $(shell pkg-config --libs $(PACKAGES)) -lm
