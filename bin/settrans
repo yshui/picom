@@ -16,7 +16,7 @@
 #   settrans -c -o +5
 
 if test -z "$(which xprop)" -o -z "$(which xwininfo)"; then
-  echo "Please install x11-utils/xorg-xprop/xorg-xwininfo." >&2
+  echo "Please install x11-utils/xorg-xprop/xorg-xwininfo." >& 2
   exit 1
 fi
 
@@ -26,6 +26,7 @@ cur=
 root=
 parent=
 active=
+i=
 
 while getopts "scn:w:o:" option; do
   case "$option" in
@@ -52,7 +53,7 @@ while true; do
     | grep Parent \
     | sed 's/^.*\(0x\S*\).*$/\1/')
 
-  if [ "$parent" = "$root" ]; then
+  if test "$parent" = "$root"; then
     break
   fi
 
@@ -61,9 +62,9 @@ while true; do
 
   i=$((i+1))
   if test $i -ge 1000; then
-    echo "An error occurred while traversing up the window tree." >&2
-    echo "Please report this to https://github.com/chjj/compton/issues." >&2
-    echo "Please mention your WM and versions of xwininfo/xprop." >&2
+    echo "An error occurred while traversing up the window tree." >& 2
+    echo "Please report this to https://github.com/chjj/compton/issues." >& 2
+    echo "Please mention your WM and versions of xwininfo/xprop." >& 2
     exit 1
   fi
 done
