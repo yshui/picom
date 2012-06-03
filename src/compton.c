@@ -966,15 +966,15 @@ paint_all(Display *dpy, XserverRegion region) {
   root_buffer = root_picture;
 #else
   if (!root_buffer) {
-    Pixmap rootPixmap = XCreatePixmap(
+    Pixmap root_pixmap = XCreatePixmap(
       dpy, root, root_width, root_height,
       DefaultDepth(dpy, scr));
 
-    root_buffer = XRenderCreatePicture(dpy, rootPixmap,
+    root_buffer = XRenderCreatePicture(dpy, root_pixmap,
       XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
       0, 0);
 
-    XFreePixmap(dpy, rootPixmap);
+    XFreePixmap(dpy, root_pixmap);
   }
 #endif
 
@@ -1045,7 +1045,7 @@ paint_all(Display *dpy, XserverRegion region) {
     }
 
     if (!w->border_size) {
-      w->border_size = border_size (dpy, w);
+      w->border_size = border_size(dpy, w);
     }
 
     if (!w->extents) {
@@ -1220,7 +1220,7 @@ repair_win(Display *dpy, win *w) {
 }
 
 #if DEBUG_WINTYPE
-static const char*
+static const char *
 wintype_name(wintype type) {
   const char *t;
 
@@ -1427,8 +1427,8 @@ finish_unmap_win(Display *dpy, win *w) {
 
   if (w->border_size) {
     set_ignore(dpy, NextRequest(dpy));
-      XFixesDestroyRegion(dpy, w->border_size);
-      w->border_size = None;
+    XFixesDestroyRegion(dpy, w->border_size);
+    w->border_size = None;
   }
 
   if (w->shadow) {
@@ -1512,7 +1512,7 @@ determine_mode(Display *dpy, win *w) {
   int mode;
   XRenderPictFormat *format;
 
-  /* if trans prop == -1 fall back on  previous tests*/
+  /* if trans prop == -1 fall back on previous tests */
 
   if (w->alpha_pict) {
     XRenderFreePicture(dpy, w->alpha_pict);
@@ -1806,7 +1806,7 @@ finish_destroy_win(Display *dpy, Window id) {
 
       /* fix leak, from freedesktop repo */
       if (w->shadow) {
-        XRenderFreePicture (dpy, w->shadow);
+        XRenderFreePicture(dpy, w->shadow);
         w->shadow = None;
       }
 
