@@ -43,7 +43,7 @@ int composite_opcode;
 conv *gaussian_map;
 
 /* for shadow precomputation */
-int Gsize = -1;
+int cgsize = -1;
 unsigned char *shadow_corner = NULL;
 unsigned char *shadow_top = NULL;
 
@@ -408,36 +408,36 @@ presum_gaussian(conv *map) {
   int center = map->size / 2;
   int opacity, x, y;
 
-  Gsize = map->size;
+  cgsize = map->size;
 
   if (shadow_corner) free((void *)shadow_corner);
   if (shadow_top) free((void *)shadow_top);
 
-  shadow_corner = (unsigned char *)(malloc((Gsize + 1) * (Gsize + 1) * 26));
-  shadow_top = (unsigned char *)(malloc((Gsize + 1) * 26));
+  shadow_corner = (unsigned char *)(malloc((cgsize + 1) * (cgsize + 1) * 26));
+  shadow_top = (unsigned char *)(malloc((cgsize + 1) * 26));
 
-  for (x = 0; x <= Gsize; x++) {
-    shadow_top[25 * (Gsize + 1) + x] =
-      sum_gaussian(map, 1, x - center, center, Gsize * 2, Gsize * 2);
+  for (x = 0; x <= cgsize; x++) {
+    shadow_top[25 * (cgsize + 1) + x] =
+      sum_gaussian(map, 1, x - center, center, cgsize * 2, cgsize * 2);
 
     for (opacity = 0; opacity < 25; opacity++) {
-      shadow_top[opacity * (Gsize + 1) + x] =
-        shadow_top[25 * (Gsize + 1) + x] * opacity / 25;
+      shadow_top[opacity * (cgsize + 1) + x] =
+        shadow_top[25 * (cgsize + 1) + x] * opacity / 25;
     }
 
     for (y = 0; y <= x; y++) {
-      shadow_corner[25 * (Gsize + 1) * (Gsize + 1) + y * (Gsize + 1) + x]
-        = sum_gaussian(map, 1, x - center, y - center, Gsize * 2, Gsize * 2);
-      shadow_corner[25 * (Gsize + 1) * (Gsize + 1) + x * (Gsize + 1) + y]
-        = shadow_corner[25 * (Gsize + 1) * (Gsize + 1) + y * (Gsize + 1) + x];
+      shadow_corner[25 * (cgsize + 1) * (cgsize + 1) + y * (cgsize + 1) + x]
+        = sum_gaussian(map, 1, x - center, y - center, cgsize * 2, cgsize * 2);
+      shadow_corner[25 * (cgsize + 1) * (cgsize + 1) + x * (cgsize + 1) + y]
+        = shadow_corner[25 * (cgsize + 1) * (cgsize + 1) + y * (cgsize + 1) + x];
 
       for (opacity = 0; opacity < 25; opacity++) {
-        shadow_corner[opacity * (Gsize + 1) * (Gsize + 1)
-                      + y * (Gsize + 1) + x]
-          = shadow_corner[opacity * (Gsize + 1) * (Gsize + 1)
-                          + x * (Gsize + 1) + y]
-          = shadow_corner[25 * (Gsize + 1) * (Gsize + 1)
-                          + y * (Gsize + 1) + x] * opacity / 25;
+        shadow_corner[opacity * (cgsize + 1) * (cgsize + 1)
+                      + y * (cgsize + 1) + x]
+          = shadow_corner[opacity * (cgsize + 1) * (cgsize + 1)
+                          + x * (cgsize + 1) + y]
+          = shadow_corner[25 * (cgsize + 1) * (cgsize + 1)
+                          + y * (cgsize + 1) + x] * opacity / 25;
       }
     }
   }
@@ -480,8 +480,8 @@ make_shadow(Display *dpy, double opacity,
    */
 
   if (!clear_shadow) {
-    if (Gsize > 0) {
-      d = shadow_top[opacity_int * (Gsize + 1) + Gsize];
+    if (cgsize > 0) {
+      d = shadow_top[opacity_int * (cgsize + 1) + cgsize];
     } else {
       d = sum_gaussian(gaussian_map,
         opacity, center, center, width, height);
@@ -505,9 +505,9 @@ make_shadow(Display *dpy, double opacity,
 
   for (y = 0; y < ylimit; y++) {
     for (x = 0; x < xlimit; x++) {
-      if (xlimit == Gsize && ylimit == Gsize) {
-        d = shadow_corner[opacity_int * (Gsize + 1) * (Gsize + 1)
-                          + y * (Gsize + 1) + x];
+      if (xlimit == cgsize && ylimit == cgsize) {
+        d = shadow_corner[opacity_int * (cgsize + 1) * (cgsize + 1)
+                          + y * (cgsize + 1) + x];
       } else {
         d = sum_gaussian(gaussian_map,
           opacity, x - center, y - center, width, height);
@@ -526,8 +526,8 @@ make_shadow(Display *dpy, double opacity,
   x_diff = swidth - (gsize * 2);
   if (x_diff > 0 && ylimit > 0) {
     for (y = 0; y < ylimit; y++) {
-      if (ylimit == Gsize) {
-        d = shadow_top[opacity_int * (Gsize + 1) + y];
+      if (ylimit == cgsize) {
+        d = shadow_top[opacity_int * (cgsize + 1) + y];
       } else {
         d = sum_gaussian(gaussian_map,
           opacity, center, y - center, width, height);
@@ -542,8 +542,8 @@ make_shadow(Display *dpy, double opacity,
    */
 
   for (x = 0; x < xlimit; x++) {
-    if (xlimit == Gsize) {
-      d = shadow_top[opacity_int * (Gsize + 1) + x];
+    if (xlimit == cgsize) {
+      d = shadow_top[opacity_int * (cgsize + 1) + x];
     } else {
       d = sum_gaussian(gaussian_map,
         opacity, x - center, center, width, height);
@@ -572,48 +572,48 @@ make_shadow(Display *dpy, double opacity,
 static Picture
 shadow_picture(Display *dpy, double opacity, Picture alpha_pict,
                int width, int height, int *wp, int *hp) {
-  XImage *shadowImage;
-  Pixmap shadowPixmap;
+  XImage *shadow_image;
+  Pixmap shadow_pixmap;
   Picture shadow_picture;
   GC gc;
 
-  shadowImage = make_shadow(dpy, opacity, width, height);
-  if (!shadowImage) return None;
+  shadow_image = make_shadow(dpy, opacity, width, height);
+  if (!shadow_image) return None;
 
-  shadowPixmap = XCreatePixmap(dpy, root,
-    shadowImage->width, shadowImage->height, 8);
+  shadow_pixmap = XCreatePixmap(dpy, root,
+    shadow_image->width, shadow_image->height, 8);
 
-  if (!shadowPixmap) {
-    XDestroyImage(shadowImage);
+  if (!shadow_pixmap) {
+    XDestroyImage(shadow_image);
     return None;
   }
 
-  shadow_picture = XRenderCreatePicture(dpy, shadowPixmap,
+  shadow_picture = XRenderCreatePicture(dpy, shadow_pixmap,
     XRenderFindStandardFormat(dpy, PictStandardA8), 0, 0);
 
   if (!shadow_picture) {
-    XDestroyImage(shadowImage);
-    XFreePixmap(dpy, shadowPixmap);
+    XDestroyImage(shadow_image);
+    XFreePixmap(dpy, shadow_pixmap);
     return None;
   }
 
-  gc = XCreateGC(dpy, shadowPixmap, 0, 0);
+  gc = XCreateGC(dpy, shadow_pixmap, 0, 0);
   if (!gc) {
-    XDestroyImage(shadowImage);
-    XFreePixmap(dpy, shadowPixmap);
+    XDestroyImage(shadow_image);
+    XFreePixmap(dpy, shadow_pixmap);
     XRenderFreePicture(dpy, shadow_picture);
     return None;
   }
 
   XPutImage(
-    dpy, shadowPixmap, gc, shadowImage, 0, 0, 0, 0,
-    shadowImage->width, shadowImage->height);
+    dpy, shadow_pixmap, gc, shadow_image, 0, 0, 0, 0,
+    shadow_image->width, shadow_image->height);
 
-  *wp = shadowImage->width;
-  *hp = shadowImage->height;
+  *wp = shadow_image->width;
+  *hp = shadow_image->height;
   XFreeGC(dpy, gc);
-  XDestroyImage(shadowImage);
-  XFreePixmap(dpy, shadowPixmap);
+  XDestroyImage(shadow_image);
+  XFreePixmap(dpy, shadow_pixmap);
 
   return shadow_picture;
 }
@@ -1113,6 +1113,7 @@ paint_all(Display *dpy, XserverRegion region) {
       w->alpha_pict = solid_picture(
         dpy, False, (double)w->opacity / OPAQUE, 0, 0, 0);
     }
+
     if (HAS_FRAME_OPACITY(w) && !w->alpha_border_pict) {
       w->alpha_border_pict = solid_picture(
         dpy, False, frame_opacity, 0, 0, 0);
