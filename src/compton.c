@@ -1712,7 +1712,10 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
     /* save the configure event for when the window maps */
     w->need_configure = True;
     w->queue_configure = *ce;
+    restack_win(dpy, w, ce->above);
   } else {
+    if (!(w->need_configure))
+      restack_win(dpy, w, ce->above);
     w->need_configure = False;
 
 #if CAN_DO_USABLE
@@ -1760,7 +1763,6 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
   }
 
   w->a.override_redirect = ce->override_redirect;
-  restack_win(dpy, w, ce->above);
 }
 
 static void
