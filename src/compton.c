@@ -1578,6 +1578,11 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
 
   if (!new) return;
 
+  if (find_win(dpy, id)) {
+    free(new);
+    return;
+  }
+
   if (prev) {
     for (p = &list; *p; p = &(*p)->next) {
       if ((*p)->id == prev && !(*p)->destroyed)
