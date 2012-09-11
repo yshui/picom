@@ -15,3 +15,6 @@ stamp-h1
 compton
 *.o
 *~
+
+# Vim files
+.*.sw[a-z]
