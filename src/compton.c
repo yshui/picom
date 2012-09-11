@@ -81,9 +81,6 @@ Bool win_type_fade[NUM_WINTYPES];
  * Macros
  */
 
-#define INACTIVE_OPACITY \
-(unsigned long)((double)inactive_opacity * OPAQUE)
-
 #define IS_NORMAL_WIN(w) \
 ((w) && ((w)->window_type == WINTYPE_NORMAL \
          || (w)->window_type == WINTYPE_UTILITY))
@@ -108,8 +105,14 @@ Bool fade_trans = False;
 
 Bool clear_shadow = False;
 
-double inactive_opacity = 0;
-double frame_opacity = 0;
+/// Default opacity for inactive windows.
+/// 32-bit integer with the format of _NET_WM_OPACITY. 0 stands for
+/// not enabled, default.
+opacity_t inactive_opacity = 0;
+/// Whether inactive_opacity overrides the opacity set by window
+/// attributes.
+Bool inactive_opacity_override = False;
+double frame_opacity = 0.0;
 
 Bool synchronize = False;
 
@@ -203,21 +206,7 @@ set_fade(Display *dpy, win *w, double start,
   }
 
   f->callback = callback;
-  w->opacity = f->cur * OPAQUE;
-
-  determine_mode(dpy, w);
-
-  if (w->shadow) {
-    XRenderFreePicture(dpy, w->shadow);
-    w->shadow = None;
-
-    if (w->extents != None) {
-      XFixesDestroyRegion(dpy, w->extents);
-    }
-
-    /* rebuild the shadow */
-    w->extents = win_extents(dpy, w);
-  }
+  set_opacity(dpy, w, f->cur * OPAQUE);
 
   /* fading windows need to be drawn, mark
      them as damaged.  when a window maps,
@@ -1364,6 +1353,7 @@ map_win(Display *dpy, Window id,
 
   if (!w) return;
 
+  w->focused = False;
   w->a.map_state = IsViewable;
   w->window_type = determine_wintype(dpy, w->id, w->id);
 
@@ -1382,8 +1372,7 @@ map_win(Display *dpy, Window id,
     }
   }
 
-  // this causes problems for inactive transparency
-  //w->opacity = get_opacity_prop(dpy, w, OPAQUE);
+  calc_opacity(dpy, w, True);
 
   determine_mode(dpy, w);
 
@@ -1481,8 +1470,7 @@ unmap_win(Display *dpy, Window id, Bool fade) {
     finish_unmap_win(dpy, w);
 }
 
-static unsigned int
-get_opacity_prop(Display *dpy, win *w, unsigned int def) {
+opacity_t get_opacity_prop(Display *dpy, win *w, opacity_t def) {
   Atom actual;
   int format;
   unsigned long n, left;
@@ -1493,9 +1481,8 @@ get_opacity_prop(Display *dpy, win *w, unsigned int def) {
     XA_CARDINAL, &actual, &format, &n, &left, &data);
 
   if (result == Success && data != NULL) {
-    unsigned int i;
-    memcpy(&i, data, sizeof(unsigned int));
-    XFree((void *)data);
+    opacity_t i = *((opacity_t *) data);
+    XFree(data);
     return i;
   }
 
@@ -1504,11 +1491,7 @@ get_opacity_prop(Display *dpy, win *w, unsigned int def) {
 
 static double
 get_opacity_percent(Display *dpy, win *w) {
-  double def = win_type_opacity[w->window_type];
-  unsigned int opacity =
-    get_opacity_prop(dpy, w, (unsigned int)(OPAQUE * def));
-
-  return opacity * 1.0 / OPAQUE;
+  return w->opacity * 1.0 / OPAQUE;
 }
 
 static void
@@ -1558,8 +1541,11 @@ determine_mode(Display *dpy, win *w) {
   }
 }
 
-static void
-set_opacity(Display *dpy, win *w, unsigned long opacity) {
+void set_opacity(Display *dpy, win *w, opacity_t opacity) {
+  // Do nothing if the opacity does not change
+  if (w->opacity == opacity)
+    return;
+
   w->opacity = opacity;
   determine_mode(dpy, w);
   if (w->shadow) {
@@ -1573,6 +1559,53 @@ set_opacity(Display *dpy, win *w, unsigned long opacity) {
     /* rebuild the shadow */
     w->extents = win_extents(dpy, w);
   }
+}
+
+/**
+ * Calculate and set the opacity of a window.
+ *
+ * If window is inactive and inactive_opacity_override is set, the
+ * priority is: (Simulates the old behavior)
+ *
+ * inactive_opacity > _NET_WM_WINDOW_OPACITY (if not opaque)
+ * > window type default opacity
+ *
+ * Otherwise:
+ *
+ * _NET_WM_WINDOW_OPACITY (if not opaque)
+ * > window type default opacity (if not opaque)
+ * > inactive_opacity
+ *
+ * @param dpy X display to use
+ * @param w struct _win object representing the window
+ * @param refetch_prop whether _NET_WM_OPACITY of the window needs to be
+ *    refetched
+ */
+void calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
+  opacity_t opacity;
+
+  // Do nothing for unmapped window, calc_opacity() will be called
+  // when it's mapped
+  // I suppose I need not to check for IsUnviewable here?
+  if (IsViewable != w->a.map_state)
+    return;
+
+  // Do not refetch the opacity window attribute unless necessary, this
+  // is probably an expensive operation in some cases
+  if (refetch_prop)
+    w->opacity_prop = get_opacity_prop(dpy, w, OPAQUE);
+
+  if (OPAQUE == (opacity = w->opacity_prop)) {
+    if (OPAQUE != win_type_opacity[w->window_type])
+      opacity = win_type_opacity[w->window_type] * OPAQUE;
+  }
+  
+  // Respect inactive_opacity in some cases
+  if (IS_NORMAL_WIN(w) && False == w->focused && inactive_opacity
+      && (OPAQUE == opacity || inactive_opacity_override))
+    opacity = inactive_opacity;
+
+  set_opacity(dpy, w, opacity);
 }
 
 static void
@@ -1632,6 +1665,8 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->shadow_width = 0;
   new->shadow_height = 0;
   new->opacity = OPAQUE;
+  new->opacity_prop = OPAQUE;
+  new->focused = False;
   new->destroyed = False;
   new->need_configure = False;
   new->window_type = WINTYPE_UNKNOWN;
@@ -1661,9 +1696,6 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
 
   if (new->a.map_state == IsViewable) {
     new->window_type = determine_wintype(dpy, id, id);
-    if (inactive_opacity && IS_NORMAL_WIN(new)) {
-      new->opacity = INACTIVE_OPACITY;
-    }
     map_win(dpy, id, new->damage_sequence - 1, True, override_redirect);
   }
 }
@@ -1875,7 +1907,7 @@ destroy_win(Display *dpy, Window id, Bool fade) {
 
 #if HAS_NAME_WINDOW_PIXMAP
   if (w && w->pixmap && fade && win_type_fade[w->window_type]) {
-    set_fade(dpy, w, w->opacity * 1.0 / OPAQUE,
+    set_fade(dpy, w, get_opacity_percent(dpy, w),
       0.0, fade_out_step, destroy_callback,
       False, True);
   } else
@@ -2169,9 +2201,9 @@ ev_focus_in(XFocusChangeEvent *ev) {
   if (!inactive_opacity) return;
 
   win *w = find_win(dpy, ev->window);
-  if (IS_NORMAL_WIN(w)) {
-    set_opacity(dpy, w, OPAQUE);
-  }
+
+  w->focused = True;
+  calc_opacity(dpy, w, False);
 }
 
 inline static void
@@ -2188,9 +2220,9 @@ ev_focus_out(XFocusChangeEvent *ev) {
   }
 
   win *w = find_win(dpy, ev->window);
-  if (IS_NORMAL_WIN(w)) {
-    set_opacity(dpy, w, INACTIVE_OPACITY);
-  }
+
+  w->focused = False;
+  calc_opacity(dpy, w, False);
 }
 
 inline static void
@@ -2282,9 +2314,7 @@ ev_property_notify(XPropertyEvent *ev) {
     /* reset mode and redraw window */
     win *w = find_win(dpy, ev->window);
     if (w) {
-      double def = win_type_opacity[w->window_type];
-      set_opacity(dpy, w,
-        get_opacity_prop(dpy, w, (unsigned long)(OPAQUE * def)));
+      calc_opacity(dpy, w, True);
     }
   }
 
@@ -2456,6 +2486,8 @@ usage() {
     "  Green color value of shadow (0.0 - 1.0, defaults to 0).\n"
     "--shadow-blue value\n"
     "  Blue color value of shadow (0.0 - 1.0, defaults to 0).\n"
+    "--inactive-opacity-override\n"
+    "  Inactive opacity set by -i overrides value of _NET_WM_OPACITY.\n"
     );
 
   exit(1);
@@ -2561,6 +2593,7 @@ main(int argc, char **argv) {
     { "shadow-red", required_argument, NULL, 0 },
     { "shadow-green", required_argument, NULL, 0 },
     { "shadow-blue", required_argument, NULL, 0 },
+    { "inactive-opacity-override", no_argument, NULL, 0 },
   };
 
   XEvent ev;
@@ -2602,6 +2635,9 @@ main(int argc, char **argv) {
             break;
           case 2:
             shadow_blue = normalize_d(atof(optarg));
+            break;
+          case 3:
+            inactive_opacity_override = True;
             break;
         }
         break;
@@ -2664,10 +2700,12 @@ main(int argc, char **argv) {
         shadow_offset_y = atoi(optarg);
         break;
       case 'i':
-        inactive_opacity = (double)atof(optarg);
+        inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
+        if (OPAQUE == inactive_opacity)
+          inactive_opacity = 0;
         break;
       case 'e':
-        frame_opacity = (double)atof(optarg);
+        frame_opacity = normalize_d(atof(optarg));
         break;
       case 'z':
         clear_shadow = True;
@@ -2790,6 +2828,37 @@ main(int argc, char **argv) {
 
   for (i = 0; i < nchildren; i++) {
     add_win(dpy, children[i], i ? children[i-1] : None, False);
+  }
+
+  // Check the currently focused window so we can apply appropriate
+  // opacity on it
+  {
+    Window wid = 0;
+    int revert_to;
+    win *w = NULL;
+
+    XGetInputFocus(dpy, &wid, &revert_to);
+
+    // XGetInputFocus seemingly returns the application window focused
+    // instead of the WM window frame, so we traverse through its
+    // ancestors to find out the frame
+    while(wid && wid != root
+        && !array_wid_exists(children, nchildren, wid)) {
+      Window troot;
+      Window parent;
+      Window *tchildren;
+      unsigned tnchildren;
+
+      XQueryTree(dpy, wid, &troot, &parent, &tchildren, &tnchildren);
+      XFree(tchildren);
+      wid = parent;
+    }
+
+    // And we set the focus state and opacity here
+    if (wid && wid != root && (w = find_win(dpy, wid))) {
+      w->focused = True;
+      calc_opacity(dpy, w, False);
+    }
   }
 
   XFree(children);

@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include <math.h>
 #include <sys/poll.h>
 #include <sys/time.h>
@@ -43,6 +44,8 @@
 /**
  * Types
  */
+
+typedef uint32_t opacity_t;
 
 typedef enum {
   WINTYPE_UNKNOWN,
@@ -94,8 +97,12 @@ typedef struct _win {
   int shadow_dy;
   int shadow_width;
   int shadow_height;
-  unsigned int opacity;
+  opacity_t opacity;
+  /// Cached value of opacity window attribute.
+  opacity_t opacity_prop;
   wintype window_type;
+  /// Whether the window is focused.
+  Bool focused;
   unsigned long damage_sequence; /* sequence when damage was created */
   Bool destroyed;
   unsigned int left_width;
@@ -127,6 +134,7 @@ typedef struct _fade {
 } fade;
 
 extern int root_height, root_width;
+
 /**
  * Functions
  */
@@ -134,6 +142,11 @@ extern int root_height, root_width;
 // inline functions must be made static to compile correctly under clang:
 // http://clang.llvm.org/compatibility.html#inline
 
+/**
+ * Normalize a double value to 0.\ 0 - 1.\ 0.
+ *
+ * @param d double value to normalize
+ */
 static inline double normalize_d(double d) {
   if (d > 1.0)
     return 1.0;
@@ -141,6 +154,23 @@ static inline double normalize_d(double d) {
     return 0.0;
 
   return d;
+}
+
+/**
+ * Check if a window ID exists in an array of window IDs.
+ *
+ * @param arr the array of window IDs
+ * @param count amount of elements in the array
+ * @param wid window ID to search for
+ */
+static inline Bool array_wid_exists(const Window *arr,
+    int count, Window wid) {
+  while (count--) {
+    if (arr[count] == wid)
+      return True;
+  }
+  
+  return False;
 }
 
 static int
@@ -263,8 +293,8 @@ unmap_callback(Display *dpy, win *w);
 static void
 unmap_win(Display *dpy, Window id, Bool fade);
 
-static unsigned int
-get_opacity_prop(Display *dpy, win *w, unsigned int def);
+opacity_t
+get_opacity_prop(Display *dpy, win *w, opacity_t def);
 
 static double
 get_opacity_percent(Display *dpy, win *w);
@@ -272,8 +302,9 @@ get_opacity_percent(Display *dpy, win *w);
 static void
 determine_mode(Display *dpy, win *w);
 
-static void
-set_opacity(Display *dpy, win *w, unsigned long opacity);
+void set_opacity(Display *dpy, win *w, opacity_t opacity);
+
+void calc_opacity(Display *dpy, win *w, Bool refetch_prop);
 
 static void
 add_win(Display *dpy, Window id, Window prev, Bool override_redirect);
