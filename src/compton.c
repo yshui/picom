@@ -27,6 +27,7 @@ Window root;
 Picture root_picture;
 Picture root_buffer;
 Picture black_picture;
+Picture cshadow_picture;
 Picture root_tile;
 XserverRegion all_damage;
 Bool clip_changed;
@@ -1102,7 +1103,7 @@ paint_all(Display *dpy, XserverRegion region) {
 
     if (win_type_shadow[w->window_type]) {
       XRenderComposite(
-        dpy, PictOpOver, black_picture, w->shadow,
+        dpy, PictOpOver, cshadow_picture, w->shadow,
         root_buffer, 0, 0, 0, 0,
         w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
         w->shadow_width, w->shadow_height);
@@ -2448,7 +2449,14 @@ usage() {
     "-b daemonize\n"
     "  Daemonize process.\n"
     "-S\n"
-    "  Enable synchronous operation (for debugging).\n");
+    "  Enable synchronous operation (for debugging).\n"
+    "--shadow-red value\n"
+    "  Red color value of shadow (0.0 - 1.0, defaults to 0).\n"
+    "--shadow-green value\n"
+    "  Green color value of shadow (0.0 - 1.0, defaults to 0).\n"
+    "--shadow-blue value\n"
+    "  Blue color value of shadow (0.0 - 1.0, defaults to 0).\n"
+    );
 
   exit(1);
 }
@@ -2549,6 +2557,12 @@ get_atoms() {
 
 int
 main(int argc, char **argv) {
+  const static struct option longopt[] = {
+    { "shadow-red", required_argument, NULL, 0 },
+    { "shadow-green", required_argument, NULL, 0 },
+    { "shadow-blue", required_argument, NULL, 0 },
+  };
+
   XEvent ev;
   Window root_return, parent_return;
   Window *children;
@@ -2559,9 +2573,13 @@ main(int argc, char **argv) {
   int composite_major, composite_minor;
   char *display = 0;
   int o;
+  int longopt_idx;
   Bool no_dock_shadow = False;
   Bool no_dnd_shadow  = False;
   Bool fork_after_register = False;
+  double shadow_red = 0.0;
+  double shadow_green = 0.0;
+  double shadow_blue = 0.0;
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
     win_type_fade[i] = False;
@@ -2569,8 +2587,25 @@ main(int argc, char **argv) {
     win_type_opacity[i] = 1.0;
   }
 
-  while ((o = getopt(argc, argv, "D:I:O:d:r:o:m:l:t:i:e:scnfFCaSzGb")) != -1) {
+  while ((o = getopt_long(argc, argv,
+          "D:I:O:d:r:o:m:l:t:i:e:scnfFCaSzGb",
+          longopt, &longopt_idx)) != -1) {
     switch (o) {
+      // Long options
+      case 0:
+        switch (longopt_idx) {
+          case 0:
+            shadow_red = normalize_d(atof(optarg));
+            break;
+          case 1:
+            shadow_green = normalize_d(atof(optarg));
+            break;
+          case 2:
+            shadow_blue = normalize_d(atof(optarg));
+            break;
+        }
+        break;
+      // Short options
       case 'd':
         display = optarg;
         break;
@@ -2728,6 +2763,14 @@ main(int argc, char **argv) {
     CPSubwindowMode, &pa);
 
   black_picture = solid_picture(dpy, True, 1, 0, 0, 0);
+
+  // Generates another Picture for shadows if the color is modified by
+  // user
+  if (!shadow_red && !shadow_green && !shadow_blue)
+    cshadow_picture = black_picture;
+  else
+    cshadow_picture = solid_picture(dpy, True, 1,
+        shadow_red, shadow_green, shadow_blue);
 
   all_damage = None;
   clip_changed = True;

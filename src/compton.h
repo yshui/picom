@@ -131,6 +131,18 @@ extern int root_height, root_width;
  * Functions
  */
 
+// inline functions must be made static to compile correctly under clang:
+// http://clang.llvm.org/compatibility.html#inline
+
+static inline double normalize_d(double d) {
+  if (d > 1.0)
+    return 1.0;
+  if (d < 0.0)
+    return 0.0;
+
+  return d;
+}
+
 static int
 get_time_in_milliseconds();
 
