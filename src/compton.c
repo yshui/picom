@@ -1122,6 +1122,10 @@ paint_all(Display *dpy, XserverRegion region) {
     if (w->mode != WINDOW_SOLID || HAS_FRAME_OPACITY(w)) {
       int x, y, wid, hei;
 
+      // Necessary to make sure specially-shaped windows are
+      // painted correctly
+      XFixesIntersectRegion(dpy, w->border_clip, w->border_clip, w->border_size);
+      XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, w->border_clip);
 #if HAS_NAME_WINDOW_PIXMAP
       x = w->a.x;
       y = w->a.y;
