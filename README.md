@@ -43,6 +43,7 @@ __R__ for runtime
 * libxcomposite (B,R)
 * libxdamage (B,R)
 * libxfixes (B,R)
+* libXext (B,R)
 * libxrender (B,R)
 * pkg-config (B)
 * make (B)

@@ -20,6 +20,7 @@
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/Xdamage.h>
 #include <X11/extensions/Xrender.h>
+#include <X11/extensions/shape.h>
 
 #if COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2
 #define HAS_NAME_WINDOW_PIXMAP 1
@@ -28,6 +29,7 @@
 #define CAN_DO_USABLE 0
 #define DEBUG_REPAINT 0
 #define DEBUG_EVENTS 0
+#define DEBUG_RESTACK 0
 #define DEBUG_WINTYPE 0
 #define MONITOR_REPAINT 0
 
@@ -124,6 +126,7 @@ typedef struct _fade {
   Display *dpy;
 } fade;
 
+extern int root_height, root_width;
 /**
  * Functions
  */
@@ -344,6 +347,42 @@ ev_property_notify(XPropertyEvent *ev);
 
 inline static void
 ev_damage_notify(XDamageNotifyEvent *ev);
+
+/**
+ * Destory the cached border_size of a window.
+ */
+inline static void win_free_border_size(Display *dpy, win *w) {
+  if (w->border_size) {
+    set_ignore(dpy, NextRequest(dpy));
+    XFixesDestroyRegion(dpy, w->border_size);
+    w->border_size = None;
+  }
+}
+
+/**
+ * Get a region of the screen size.
+ */
+inline static XserverRegion get_screen_region(Display *dpy) {
+  XRectangle r;
+
+  r.x = 0;
+  r.y = 0;
+  r.width = root_width;
+  r.height = root_height;
+  return XFixesCreateRegion(dpy, &r, 1);
+}
+
+/**
+ * Copies a region
+ */
+inline static XserverRegion copy_region(Display *dpy,
+    XserverRegion oldregion) {
+  XserverRegion region = XFixesCreateRegion(dpy, NULL, 0);
+
+  XFixesCopyRegion(dpy, region, oldregion);
+
+  return region;
+}
 
 inline static void
 ev_handle(XEvent *ev);

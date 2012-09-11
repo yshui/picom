@@ -4,7 +4,7 @@ PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
 
-PACKAGES = x11 xcomposite xfixes xdamage xrender
+PACKAGES = x11 xcomposite xfixes xdamage xrender xext
 LIBS = $(shell pkg-config --libs $(PACKAGES)) -lm
 INCS = $(shell pkg-config --cflags $(PACKAGES))
 CFLAGS += -Wall

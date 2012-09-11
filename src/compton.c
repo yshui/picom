@@ -10,6 +10,10 @@
 
 #include "compton.h"
 
+#if DEBUG_EVENTS
+static int window_get_name(Window w, char **name);
+#endif
+
 /**
  * Shared
  */
@@ -36,6 +40,10 @@ ignore *ignore_head, **ignore_tail = &ignore_head;
 int xfixes_event, xfixes_error;
 int damage_event, damage_error;
 int composite_event, composite_error;
+/// Whether X Shape extension exists.
+Bool shape_exists = True;
+/// Event base number and error base number for X Shape extension.
+int shape_event, shape_error;
 int render_event, render_error;
 int composite_opcode;
 
@@ -954,12 +962,7 @@ paint_all(Display *dpy, XserverRegion region) {
   win *t = 0;
 
   if (!region) {
-    XRectangle r;
-    r.x = 0;
-    r.y = 0;
-    r.width = root_width;
-    r.height = root_height;
-    region = XFixesCreateRegion(dpy, &r, 1);
+    region = get_screen_region(dpy);
   }
 
 #if MONITOR_REPAINT
@@ -1029,11 +1032,7 @@ paint_all(Display *dpy, XserverRegion region) {
 #endif
 
     if (clip_changed) {
-      if (w->border_size) {
-        set_ignore(dpy, NextRequest(dpy));
-        XFixesDestroyRegion(dpy, w->border_size);
-        w->border_size = None;
-      }
+      win_free_border_size(dpy, w);
       if (w->extents) {
         XFixesDestroyRegion(dpy, w->extents);
         w->extents = None;
@@ -1376,6 +1375,10 @@ map_win(Display *dpy, Window id,
      so that no property changes are lost */
   if (!override_redirect) {
     XSelectInput(dpy, id, PropertyChangeMask | FocusChangeMask);
+    // Notify compton when the shape of a window changes
+    if (shape_exists) {
+      XShapeSelectInput(dpy, id, ShapeNotifyMask);
+    }
   }
 
   // this causes problems for inactive transparency
@@ -1429,11 +1432,7 @@ finish_unmap_win(Display *dpy, win *w) {
     w->picture = None;
   }
 
-  if (w->border_size) {
-    set_ignore(dpy, NextRequest(dpy));
-    XFixesDestroyRegion(dpy, w->border_size);
-    w->border_size = None;
-  }
+  win_free_border_size(dpy, w);
 
   if (w->shadow) {
     XRenderFreePicture(dpy, w->shadow);
@@ -1696,6 +1695,33 @@ restack_win(Display *dpy, win *w, Window new_above) {
 
     w->next = *prev;
     *prev = w;
+
+#if DEBUG_RESTACK
+    {
+      const char *desc;
+      char *window_name;
+      Bool to_free;
+      win* c = list;
+  
+      printf("restack_win(%#010lx, %#010lx): Window stack modified. Current stack:\n", w->id, new_above);
+      for (; c; c = c->next) {
+        window_name = "(Failed to get title)";
+        if (root == c->id)
+          window_name = "(Root window)";
+        else
+          to_free = window_get_name(c->id, &window_name);
+        desc = "";
+        if (c->destroyed)
+          desc = "(D) ";
+        printf("%#010lx \"%s\" %s-> ", c->id, window_name, desc);
+        if (to_free) {
+          XFree(window_name);
+          window_name = NULL;
+        }
+      }
+      fputs("\n", stdout);
+    }
+#endif
   }
 }
 
@@ -1961,6 +1987,60 @@ error(Display *dpy, XErrorEvent *ev) {
       break;
   }
 
+  switch (ev->error_code) {
+    case BadAccess:
+      name = "BadAccess";
+      break;
+    case BadAlloc:
+      name = "BadAlloc";
+      break;
+    case BadAtom:
+      name = "BadAtom";
+      break;
+    case BadColor:
+      name = "BadColor";
+      break;
+    case BadCursor:
+      name = "BadCursor";
+      break;
+    case BadDrawable:
+      name = "BadDrawable";
+      break;
+    case BadFont:
+      name = "BadFont";
+      break;
+    case BadGC:
+      name = "BadGC";
+      break;
+    case BadIDChoice:
+      name = "BadIDChoice";
+      break;
+    case BadImplementation:
+      name = "BadImplementation";
+      break;
+    case BadLength:
+      name = "BadLength";
+      break;
+    case BadMatch:
+      name = "BadMatch";
+      break;
+    case BadName:
+      name = "BadName";
+      break;
+    case BadPixmap:
+      name = "BadPixmap";
+      break;
+    case BadRequest:
+      name = "BadRequest";
+      break;
+    case BadValue:
+      name = "BadValue";
+      break;
+    case BadWindow:
+      name = "BadWindow";
+      break;
+  }
+
   printf("error %d (%s) request %d minor %d serial %lu\n",
     ev->error_code, name, ev->request_code,
     ev->minor_code, ev->serial);
@@ -1974,10 +2054,36 @@ expose_root(Display *dpy, Window root, XRectangle *rects, int nrects) {
   add_damage(dpy, region);
 }
 
-#if DEBUG_EVENTS
+#if DEBUG_EVENTS || DEBUG_RESTACK
+static int window_get_name(Window w, char **name) {
+  Atom prop = XInternAtom(dpy, "_NET_WM_NAME", False);
+  Atom utf8_type = XInternAtom(dpy, "UTF8_STRING", False);
+  Atom actual_type;
+  int actual_format;
+  unsigned long nitems;
+  unsigned long leftover;
+  char *data = NULL;
+  Status ret;
+
+  set_ignore(dpy, NextRequest(dpy));
+  if (Success != (ret = XGetWindowProperty(dpy, w, prop, 0L, (long) BUFSIZ,
+        False, utf8_type, &actual_type, &actual_format, &nitems,
+        &leftover, (unsigned char **) &data))) {
+    if (BadWindow == ret)
+      return 0;
+  	set_ignore(dpy, NextRequest(dpy));
+    printf("Window %#010lx: _NET_WM_NAME unset, falling back to WM_NAME.\n", w);
+    if (!XFetchName(dpy, w, &data))
+      return 0;
+  }
+  // if (actual_type == utf8_type && actual_format == 8)
+  *name = (char *) data;
+  return 1;
+}
+
 static int
 ev_serial(XEvent *ev) {
-  if (ev->type & 0x7f != KeymapNotify) {
+  if ((ev->type & 0x7f) != KeymapNotify) {
     return ev->xany.serial;
   }
   return NextRequest(ev->xany.display);
@@ -1987,8 +2093,16 @@ static char *
 ev_name(XEvent *ev) {
   static char buf[128];
   switch (ev->type & 0x7f) {
-    case Expose:
-      return "Expose";
+    case FocusIn:
+      return "FocusIn";
+    case FocusOut:
+      return "FocusOut";
+    case CreateNotify:
+      return "CreateNotify";
+    case ConfigureNotify:
+      return "ConfigureNotify";
+    case DestroyNotify:
+      return "DestroyNotify";
     case MapNotify:
       return "Map";
     case UnmapNotify:
@@ -1997,10 +2111,16 @@ ev_name(XEvent *ev) {
       return "Reparent";
     case CirculateNotify:
       return "Circulate";
+    case Expose:
+      return "Expose";
+    case PropertyNotify:
+      return "PropertyNotify";
     default:
       if (ev->type == damage_event + XDamageNotify) {
         return "Damage";
       }
+      if (shape_exists && ev->type == shape_event)
+        return "ShapeNotify";
       sprintf(buf, "Event %d", ev->type);
       return buf;
   }
@@ -2009,8 +2129,13 @@ ev_name(XEvent *ev) {
 static Window
 ev_window(XEvent *ev) {
   switch (ev->type) {
-    case Expose:
-      return ev->xexpose.window;
+    case FocusIn:
+    case FocusOut:
+      return ev->xfocus.window;
+    case CreateNotify:
+      return ev->xcreatewindow.window;
+    case ConfigureNotify:
+      return ev->xconfigure.window;
     case MapNotify:
       return ev->xmap.window;
     case UnmapNotify:
@@ -2019,10 +2144,16 @@ ev_window(XEvent *ev) {
       return ev->xreparent.window;
     case CirculateNotify:
       return ev->xcirculate.window;
+    case Expose:
+      return ev->xexpose.window;
+    case PropertyNotify:
+      return ev->xproperty.window;
     default:
       if (ev->type == damage_event + XDamageNotify) {
         return ((XDamageNotifyEvent *)ev)->drawable;
       }
+      if (shape_exists && ev->type == shape_event)
+        return ((XShapeEvent *) ev)->window;
       return 0;
   }
 }
@@ -2068,6 +2199,9 @@ ev_create_notify(XCreateWindowEvent *ev) {
 
 inline static void
 ev_configure_notify(XConfigureEvent *ev) {
+#if DEBUG_EVENTS
+  printf("{ send_event: %d, above: %#010lx, override_redirect: %d }\n", ev->send_event, ev->above, ev->override_redirect);
+#endif
   configure_win(dpy, ev);
 }
 
@@ -2168,16 +2302,56 @@ ev_damage_notify(XDamageNotifyEvent *ev) {
   damage_win(dpy, ev);
 }
 
+static void ev_shape_notify(XShapeEvent *ev) {
+  win *w = find_win(dpy, ev->window);
+
+  /*
+   * Empty border_size may indicated an
+   * unmapped/destroyed window, in which case
+   * seemingly BadRegion errors would be triggered
+   * if we attempt to rebuild border_size
+   */
+  if (w->border_size) {
+    // Mark the old border_size as damaged
+    add_damage(dpy, w->border_size);
+
+    w->border_size = border_size(dpy, w);
+
+    // Mark the new border_size as damaged
+    add_damage(dpy, copy_region(dpy, w->border_size));
+  }
+
+}
+
 inline static void
 ev_handle(XEvent *ev) {
+
+#if DEBUG_EVENTS
+  Window w;
+  char *window_name;
+  Bool to_free = False;
+#endif
+
   if ((ev->type & 0x7f) != KeymapNotify) {
     discard_ignore(dpy, ev->xany.serial);
   }
 
 #if DEBUG_EVENTS
+  w = ev_window(ev);
+  window_name = "(Failed to get title)";
+  if (w) {
+    if (root == w)
+      window_name = "(Root window)";
+    else
+      to_free = (Bool) window_get_name(w, &window_name);
+  }
   if (ev->type != damage_event + XDamageNotify) {
-    printf("event %10.10s serial 0x%08x window 0x%08x\n",
-      ev_name(ev), ev_serial(ev), ev_window(ev));
+    printf("event %10.10s serial %#010x window %#010lx \"%s\"\n",
+      ev_name(ev), ev_serial(ev), w, window_name);
+  }
+  if (to_free) {
+    XFree(window_name);
+    window_name = NULL;
   }
 #endif
 
@@ -2216,6 +2390,10 @@ ev_handle(XEvent *ev) {
       ev_property_notify((XPropertyEvent *)ev);
       break;
     default:
+      if (shape_exists && ev->type == shape_event) {
+        ev_shape_notify((XShapeEvent *) ev);
+        break;
+      }
       if (ev->type == damage_event + XDamageNotify) {
         ev_damage_notify((XDamageNotifyEvent *)ev);
       }
@@ -2527,6 +2705,9 @@ main(int argc, char **argv) {
     fprintf(stderr, "No XFixes extension\n");
     exit(1);
   }
+
+  if (!XShapeQueryExtension(dpy, &shape_event, &shape_error))
+    shape_exists = False;
 
   register_cm(scr);
 
