@@ -2594,6 +2594,8 @@ main(int argc, char **argv) {
     { "shadow-green", required_argument, NULL, 0 },
     { "shadow-blue", required_argument, NULL, 0 },
     { "inactive-opacity-override", no_argument, NULL, 0 },
+    // Must terminate with a NULL entry
+    { NULL, 0, NULL, 0 },
   };
 
   XEvent ev;
