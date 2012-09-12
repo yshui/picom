@@ -153,6 +153,23 @@ extern int root_height, root_width;
 // http://clang.llvm.org/compatibility.html#inline
 
 /**
+ * Normalize an int value to a specific range.
+ *
+ * @param i int value to normalize
+ * @param min minimal value
+ * @param max maximum value
+ * @return normalized value
+ */
+static inline double normalize_i_range(int i, int min, int max) {
+  if (i > max)
+    return max;
+  if (i < min)
+    return min;
+
+  return i;
+}
+
+/**
  * Normalize a double value to 0.\ 0 - 1.\ 0.
  *
  * @param d double value to normalize

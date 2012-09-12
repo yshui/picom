@@ -481,18 +481,19 @@ make_shadow(Display *dpy, double opacity,
    * center (fill the complete data array)
    */
 
-  if (!clear_shadow) {
+  // If clear_shadow is enabled and the border & corner shadow (which
+  // later will be filled) could entirely cover the area of the shadow
+  // that will be displayed, do not bother filling other pixels. If it
+  // can't, we must fill the other pixels here.
+  if (!(clear_shadow && shadow_offset_x <= 0 && shadow_offset_x >= -cgsize
+        && shadow_offset_y <= 0 && shadow_offset_y >= -cgsize)) {
     if (cgsize > 0) {
       d = shadow_top[opacity_int * (cgsize + 1) + cgsize];
     } else {
       d = sum_gaussian(gaussian_map,
         opacity, center, center, width, height);
     }
-
     memset(data, d, sheight * swidth);
-  } else {
-    // zero the pixmap
-    memset(data, 0, sheight * swidth);
   }
 
   /*
@@ -556,16 +557,19 @@ make_shadow(Display *dpy, double opacity,
     }
   }
 
-  // zero extra pixels
-  if (clear_shadow && width > gsize && height > gsize) {
-    int r = gsize / 2;
-    int sr = r - 2;
-    int er = r + 4;
-    for (y = sr; y < (sheight - er); y++) {
-      for (x = sr; x < (swidth - er); x++) {
-        data[y * swidth + x] = 0;
-      }
-    }
+  if (clear_shadow) {
+    // Clear the region in the shadow that the window would cover based
+    // on shadow_offset_{x,y} user provides
+    int xstart = normalize_i_range(- (int) shadow_offset_x, 0, swidth);
+    int xrange = normalize_i_range(width - (int) shadow_offset_x,
+        0, swidth) - xstart;
+    int ystart = normalize_i_range(- (int) shadow_offset_y, 0, sheight);
+    int yend = normalize_i_range(height - (int) shadow_offset_y,
+        0, sheight);
+    int y;
+
+    for (y = ystart; y < yend; y++)
+      memset(&data[y * swidth + xstart], 0, xrange);
   }
 
   return ximage;
@@ -802,14 +806,12 @@ win_extents(Display *dpy, win *w) {
     if (!w->shadow) {
       double opacity = shadow_opacity;
 
-      if (!clear_shadow) {
-        if (w->mode != WINDOW_SOLID) {
-          opacity = opacity * ((double)w->opacity) / ((double)OPAQUE);
-        }
+      if (w->mode != WINDOW_SOLID) {
+        opacity = opacity * ((double)w->opacity) / ((double)OPAQUE);
+      }
 
-        if (HAS_FRAME_OPACITY(w)) {
-          opacity = opacity * frame_opacity;
-        }
+      if (HAS_FRAME_OPACITY(w)) {
+        opacity = opacity * frame_opacity;
       }
 
       w->shadow = shadow_picture(
@@ -2784,7 +2786,7 @@ main(int argc, char **argv) {
         shadow_radius = atoi(optarg);
         break;
       case 'o':
-        shadow_opacity = atof(optarg);
+        shadow_opacity = normalize_d(atof(optarg));
         break;
       case 'l':
         shadow_offset_x = atoi(optarg);
