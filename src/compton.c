@@ -10,13 +10,13 @@
 
 #include "compton.h"
 
-#if DEBUG_EVENTS
-static int window_get_name(Window w, char **name);
-#endif
-
 /**
  * Shared
  */
+
+#ifdef DEBUG_EVENTS
+struct timeval time_start = { 0, 0 };
+#endif
 
 win *list;
 fade *fades;
@@ -955,7 +955,7 @@ paint_all(Display *dpy, XserverRegion region) {
     region = get_screen_region(dpy);
   }
 
-#if MONITOR_REPAINT
+#ifdef MONITOR_REPAINT
   root_buffer = root_picture;
 #else
   if (!root_buffer) {
@@ -973,14 +973,14 @@ paint_all(Display *dpy, XserverRegion region) {
 
   XFixesSetPictureClipRegion(dpy, root_picture, 0, 0, region);
 
-#if MONITOR_REPAINT
+#ifdef MONITOR_REPAINT
   XRenderComposite(
     dpy, PictOpSrc, black_picture, None,
     root_picture, 0, 0, 0, 0, 0, 0,
     root_width, root_height);
 #endif
 
-#if DEBUG_REPAINT
+#ifdef DEBUG_REPAINT
   printf("paint:");
 #endif
 
@@ -1017,7 +1017,7 @@ paint_all(Display *dpy, XserverRegion region) {
         dpy, draw, format, CPSubwindowMode, &pa);
     }
 
-#if DEBUG_REPAINT
+#ifdef DEBUG_REPAINT
     printf(" 0x%x", w->id);
 #endif
 
@@ -1077,7 +1077,7 @@ paint_all(Display *dpy, XserverRegion region) {
     t = w;
   }
 
-#if DEBUG_REPAINT
+#ifdef DEBUG_REPAINT
   printf("\n");
   fflush(stdout);
 #endif
@@ -1212,7 +1212,7 @@ repair_win(Display *dpy, win *w) {
   w->damaged = 1;
 }
 
-#if DEBUG_WINTYPE
+#ifdef DEBUG_WINTYPE
 static const char *
 wintype_name(wintype type) {
   const char *t;
@@ -1357,7 +1357,7 @@ map_win(Display *dpy, Window id,
   w->a.map_state = IsViewable;
   w->window_type = determine_wintype(dpy, w->id, w->id);
 
-#if DEBUG_WINTYPE
+#ifdef DEBUG_WINTYPE
   printf("window 0x%x type %s\n",
     w->id, wintype_name(w->window_type));
 #endif
@@ -1729,7 +1729,7 @@ restack_win(Display *dpy, win *w, Window new_above) {
     w->next = *prev;
     *prev = w;
 
-#if DEBUG_RESTACK
+#ifdef DEBUG_RESTACK
     {
       const char *desc;
       char *window_name;
@@ -2087,7 +2087,7 @@ expose_root(Display *dpy, Window root, XRectangle *rects, int nrects) {
   add_damage(dpy, region);
 }
 
-#if DEBUG_EVENTS || DEBUG_RESTACK
+#if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
 static int window_get_name(Window w, char **name) {
   Atom prop = XInternAtom(dpy, "_NET_WM_NAME", False);
   Atom utf8_type = XInternAtom(dpy, "UTF8_STRING", False);
@@ -2104,7 +2104,7 @@ static int window_get_name(Window w, char **name) {
         &leftover, (unsigned char **) &data))) {
     if (BadWindow == ret)
       return 0;
-  	set_ignore(dpy, NextRequest(dpy));
+    set_ignore(dpy, NextRequest(dpy));
     printf("Window %#010lx: _NET_WM_NAME unset, falling back to WM_NAME.\n", w);
     if (!XFetchName(dpy, w, &data))
       return 0;
@@ -2113,7 +2113,9 @@ static int window_get_name(Window w, char **name) {
   *name = (char *) data;
   return 1;
 }
+#endif
 
+#ifdef DEBUG_EVENTS
 static int
 ev_serial(XEvent *ev) {
   if ((ev->type & 0x7f) != KeymapNotify) {
@@ -2232,7 +2234,7 @@ ev_create_notify(XCreateWindowEvent *ev) {
 
 inline static void
 ev_configure_notify(XConfigureEvent *ev) {
-#if DEBUG_EVENTS
+#ifdef DEBUG_EVENTS
   printf("{ send_event: %d, above: %#010lx, override_redirect: %d }\n", ev->send_event, ev->above, ev->override_redirect);
 #endif
   configure_win(dpy, ev);
@@ -2357,7 +2359,7 @@ static void ev_shape_notify(XShapeEvent *ev) {
 inline static void
 ev_handle(XEvent *ev) {
 
-#if DEBUG_EVENTS
+#ifdef DEBUG_EVENTS
   Window w;
   char *window_name;
   Bool to_free = False;
@@ -2367,7 +2369,7 @@ ev_handle(XEvent *ev) {
     discard_ignore(dpy, ev->xany.serial);
   }
 
-#if DEBUG_EVENTS
+#ifdef DEBUG_EVENTS
   w = ev_window(ev);
   window_name = "(Failed to get title)";
   if (w) {
@@ -2377,6 +2379,7 @@ ev_handle(XEvent *ev) {
       to_free = (Bool) window_get_name(w, &window_name);
   }
   if (ev->type != damage_event + XDamageNotify) {
+    print_timestamp();
     printf("event %10.10s serial %#010x window %#010lx \"%s\"\n",
       ev_name(ev), ev_serial(ev), w, window_name);
   }
@@ -2615,6 +2618,10 @@ main(int argc, char **argv) {
   double shadow_red = 0.0;
   double shadow_green = 0.0;
   double shadow_blue = 0.0;
+
+#ifdef DEBUG_EVENTS
+  gettimeofday(&time_start, NULL);
+#endif
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
     win_type_fade[i] = False;

@@ -28,11 +28,19 @@
 #endif
 
 #define CAN_DO_USABLE 0
-#define DEBUG_REPAINT 0
-#define DEBUG_EVENTS 0
-#define DEBUG_RESTACK 0
-#define DEBUG_WINTYPE 0
-#define MONITOR_REPAINT 0
+
+// Debug options, enable them using -D in CFLAGS
+// #define DEBUG_REPAINT 1
+// #define DEBUG_EVENTS 1
+// #define DEBUG_RESTACK 1
+// #define DEBUG_WINTYPE 1
+// #define MONITOR_REPAINT 1
+
+#ifdef DEBUG_EVENTS
+// For printing timestamps
+#include <time.h>
+extern struct timeval time_start;
+#endif
 
 #define OPAQUE 0xffffffff
 #define REGISTER_PROP "_NET_WM_CM_S"
@@ -172,6 +180,55 @@ static inline Bool array_wid_exists(const Window *arr,
   
   return False;
 }
+
+#ifdef DEBUG_EVENTS
+/* 
+ * Subtracting two struct timeval values.
+ *
+ * Taken from glibc manual.
+ *
+ * Subtract the `struct timeval' values X and Y,
+ * storing the result in RESULT.
+ * Return 1 if the difference is negative, otherwise 0. */
+int timeval_subtract (result, x, y)
+     struct timeval *result, *x, *y;
+{
+  /* Perform the carry for the later subtraction by updating y. */
+  if (x->tv_usec < y->tv_usec) {
+    int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
+    y->tv_usec -= 1000000 * nsec;
+    y->tv_sec += nsec;
+  }
+  if (x->tv_usec - y->tv_usec > 1000000) {
+    int nsec = (x->tv_usec - y->tv_usec) / 1000000;
+    y->tv_usec += 1000000 * nsec;
+    y->tv_sec -= nsec;
+  }
+
+  /* Compute the time remaining to wait.
+     tv_usec is certainly positive. */
+  result->tv_sec = x->tv_sec - y->tv_sec;
+  result->tv_usec = x->tv_usec - y->tv_usec;
+
+  /* Return 1 if result is negative. */
+  return x->tv_sec < y->tv_sec;
+}
+
+/**
+ * Print time passed since program starts execution.
+ *
+ * Used for debugging.
+ */
+static inline void print_timestamp(void) {
+  struct timeval tm, diff;
+
+  if (gettimeofday(&tm, NULL))
+    return;
+
+  timeval_subtract(&diff, &tm, &time_start);
+  printf("[ %5ld.%02ld ] ", diff.tv_sec, diff.tv_usec / 10000);
+}
+#endif
 
 static int
 get_time_in_milliseconds();
@@ -338,7 +395,11 @@ error(Display *dpy, XErrorEvent *ev);
 static void
 expose_root(Display *dpy, Window root, XRectangle *rects, int nrects);
 
-#if DEBUG_EVENTS
+#if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
+static int window_get_name(Window w, char **name);
+#endif
+
+#ifdef DEBUG_EVENTS
 static int
 ev_serial(XEvent *ev);
 
