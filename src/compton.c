@@ -1022,7 +1022,7 @@ paint_all(Display *dpy, XserverRegion region) {
     }
 
 #ifdef DEBUG_REPAINT
-    printf(" 0x%x", w->id);
+    printf(" %#010lx", w->id);
 #endif
 
     if (clip_changed) {
@@ -1418,8 +1418,17 @@ map_win(Display *dpy, Window id,
       Window *tchildren;
       unsigned tnchildren;
 
-      XQueryTree(dpy, wid, &troot, &parent, &tchildren, &tnchildren);
-      XFree(tchildren);
+      // XQueryTree probably fails if you run compton when X is somehow
+      // initializing (like add it in .xinitrc). In this case
+      // just leave it alone.
+      if(!XQueryTree(dpy, wid, &troot, &parent, &tchildren,
+            &tnchildren)) {
+        wid = 0;
+        break;
+      }
+
+      if (tchildren)
+        XFree(tchildren);
       wid = parent;
     }
 
@@ -2934,11 +2943,20 @@ main(int argc, char **argv) {
         && !array_wid_exists(children, nchildren, wid)) {
       Window troot;
       Window parent;
-      Window *tchildren;
+      Window *tchildren = 0;
       unsigned tnchildren;
 
-      XQueryTree(dpy, wid, &troot, &parent, &tchildren, &tnchildren);
-      XFree(tchildren);
+      // XQueryTree probably fails if you run compton when X is somehow
+      // initializing (like add it in .xinitrc). In this case
+      // just leave it alone.
+      if(!XQueryTree(dpy, wid, &troot, &parent, &tchildren,
+            &tnchildren)) {
+        wid = 0;
+        break;
+      }
+
+      if (tchildren)
+        XFree(tchildren);
       wid = parent;
     }
 
