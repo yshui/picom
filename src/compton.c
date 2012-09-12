@@ -1384,6 +1384,50 @@ map_win(Display *dpy, Window id,
     }
   }
 
+  /*
+   * Occasionally compton does not seem able to get a FocusIn event from a
+   * window just mapped. I suspect it's a timing issue again when the
+   * XSelectInput() is called too late. If this is the case, I could think
+   * of two fixes: To monitor the focus events from the root window, and
+   * to determine if the current window is focused in map_win(). Looks
+   * like the XFocusChangeEvent sent to the root window contains no
+   * information about where the WM frame of the focused window is, and 
+   * XGetInputFocus() often returns an application window instead of the
+   * WM frame, which compton keeps track of, in either way I believe we
+   * have to travel through the ancestors of the focused window it
+   * returns. The latter choice looks cheaper, so I'm doing it here.
+   * But still, this could anyway be costly.
+   *
+   * An alternative route might be relying on _NET_ACTIVE_WINDOW.
+   * Unfortunately as it's set by WM I'm not completely sure if it's
+   * reliable and will be updated on the very moment a window is mapped.
+   */
+  {
+    Window wid = id;
+    int revert_to;
+    win *w = NULL;
+
+    XGetInputFocus(dpy, &wid, &revert_to);
+
+    // XGetInputFocus seemingly returns the application window focused
+    // instead of the WM window frame, so we traverse through its
+    // ancestors to find out the frame
+    while(wid && wid != root && !find_win(dpy, wid)) {
+      Window troot;
+      Window parent;
+      Window *tchildren;
+      unsigned tnchildren;
+
+      XQueryTree(dpy, wid, &troot, &parent, &tchildren, &tnchildren);
+      XFree(tchildren);
+      wid = parent;
+    }
+
+    // And we set the focus state
+    if (wid && wid != root && (w = find_win(dpy, wid)))
+      w->focused = True;
+  }
+
   calc_opacity(dpy, w, True);
   calc_dim(dpy, w);
 
