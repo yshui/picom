@@ -108,6 +108,8 @@ typedef struct _win {
   opacity_t opacity;
   /// Cached value of opacity window attribute.
   opacity_t opacity_prop;
+  /// Whether the window is to be dimmed.
+  Bool dim;
   wintype window_type;
   /// Whether the window is focused.
   Bool focused;
@@ -363,6 +365,8 @@ void set_opacity(Display *dpy, win *w, opacity_t opacity);
 
 void calc_opacity(Display *dpy, win *w, Bool refetch_prop);
 
+void calc_dim(Display *dpy, win *w);
+
 static void
 add_win(Display *dpy, Window id, Window prev, Bool override_redirect);
 
@@ -486,6 +490,17 @@ inline static XserverRegion copy_region(Display *dpy,
   XFixesCopyRegion(dpy, region, oldregion);
 
   return region;
+}
+
+/**
+ * Add a window to damaged area.
+ *
+ * @param dpy display in use
+ * @param w struct _win element representing the window
+ */
+static inline void add_damage_win(Display *dpy, win *w) {
+  if (w->extents)
+    add_damage(dpy, copy_region(dpy, w->extents));
 }
 
 inline static void

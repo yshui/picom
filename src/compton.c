@@ -28,6 +28,8 @@ Picture root_picture;
 Picture root_buffer;
 Picture black_picture;
 Picture cshadow_picture;
+/// Picture used for dimming inactive windows.
+Picture dim_picture = 0;
 Picture root_tile;
 XserverRegion all_damage;
 Bool clip_changed;
@@ -113,6 +115,8 @@ opacity_t inactive_opacity = 0;
 /// attributes.
 Bool inactive_opacity_override = False;
 double frame_opacity = 0.0;
+/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
+double inactive_dim = 0.0;
 
 Bool synchronize = False;
 
@@ -1066,6 +1070,10 @@ paint_all(Display *dpy, XserverRegion region) {
         dpy, PictOpSrc, w->picture,
         None, root_buffer, 0, 0, 0, 0,
         x, y, wid, hei);
+
+      if (w->dim)
+        XRenderComposite(dpy, PictOpOver, dim_picture, None,
+            root_buffer, 0, 0, 0, 0, x, y, wid, hei);
     }
 
     if (!w->border_clip) {
@@ -1164,6 +1172,10 @@ paint_all(Display *dpy, XserverRegion region) {
           dpy, PictOpOver, w->picture, w->alpha_pict, root_buffer,
           l, t, l, t, x + l, y + t, wid - l - r, hei - t - b);
       }
+
+      if (w->dim)
+        XRenderComposite(dpy, PictOpOver, dim_picture, None,
+            root_buffer, 0, 0, 0, 0, x, y, wid, hei);
     }
 
     XFixesDestroyRegion(dpy, w->border_clip);
@@ -1373,6 +1385,7 @@ map_win(Display *dpy, Window id,
   }
 
   calc_opacity(dpy, w, True);
+  calc_dim(dpy, w);
 
   determine_mode(dpy, w);
 
@@ -1533,12 +1546,7 @@ determine_mode(Display *dpy, win *w) {
 
   w->mode = mode;
 
-  if (w->extents) {
-    XserverRegion damage;
-    damage = XFixesCreateRegion(dpy, 0, 0);
-    XFixesCopyRegion(dpy, damage, w->extents);
-    add_damage(dpy, damage);
-  }
+  add_damage_win(dpy, w);
 }
 
 void set_opacity(Display *dpy, win *w, opacity_t opacity) {
@@ -1608,6 +1616,20 @@ void calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
   set_opacity(dpy, w, opacity);
 }
 
+void calc_dim(Display *dpy, win *w) {
+  Bool dim;
+
+  if (inactive_dim && IS_NORMAL_WIN(w) && !(w->focused))
+    dim = True;
+  else
+    dim = False;
+
+  if (dim != w->dim) {
+    w->dim = dim;
+    add_damage_win(dpy, w);
+  }
+}
+
 static void
 add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   if (find_win(dpy, id)) {
@@ -1666,6 +1688,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->shadow_height = 0;
   new->opacity = OPAQUE;
   new->opacity_prop = OPAQUE;
+  new->dim = False;
   new->focused = False;
   new->destroyed = False;
   new->need_configure = False;
@@ -2200,17 +2223,18 @@ ev_window(XEvent *ev) {
 
 inline static void
 ev_focus_in(XFocusChangeEvent *ev) {
-  if (!inactive_opacity) return;
+  if (!inactive_opacity && !inactive_dim) return;
 
   win *w = find_win(dpy, ev->window);
 
   w->focused = True;
   calc_opacity(dpy, w, False);
+  calc_dim(dpy, w);
 }
 
 inline static void
 ev_focus_out(XFocusChangeEvent *ev) {
-  if (!inactive_opacity) return;
+  if (!inactive_opacity && !inactive_dim) return;
 
   if (ev->mode == NotifyGrab
       || (ev->mode == NotifyNormal
@@ -2225,6 +2249,7 @@ ev_focus_out(XFocusChangeEvent *ev) {
 
   w->focused = False;
   calc_opacity(dpy, w, False);
+  calc_dim(dpy, w);
 }
 
 inline static void
@@ -2491,6 +2516,8 @@ usage() {
     "  Blue color value of shadow (0.0 - 1.0, defaults to 0).\n"
     "--inactive-opacity-override\n"
     "  Inactive opacity set by -i overrides value of _NET_WM_OPACITY.\n"
+    "--inactive-dim value\n"
+    "  Dim inactive windows. (0.0 - 1.0, defaults to 0)\n"
     );
 
   exit(1);
@@ -2597,6 +2624,7 @@ main(int argc, char **argv) {
     { "shadow-green", required_argument, NULL, 0 },
     { "shadow-blue", required_argument, NULL, 0 },
     { "inactive-opacity-override", no_argument, NULL, 0 },
+    { "inactive-dim", required_argument, NULL, 0 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -2647,6 +2675,9 @@ main(int argc, char **argv) {
             break;
           case 3:
             inactive_opacity_override = True;
+            break;
+          case 4:
+            inactive_dim = normalize_d(atof(optarg));
             break;
         }
         break;
@@ -2819,6 +2850,10 @@ main(int argc, char **argv) {
     cshadow_picture = solid_picture(dpy, True, 1,
         shadow_red, shadow_green, shadow_blue);
 
+  // Generates a picture for inactive_dim
+  if (inactive_dim)
+    dim_picture = solid_picture(dpy, True, inactive_dim, 0, 0, 0);
+
   all_damage = None;
   clip_changed = True;
   XGrabServer(dpy);
@@ -2867,6 +2902,7 @@ main(int argc, char **argv) {
     if (wid && wid != root && (w = find_win(dpy, wid))) {
       w->focused = True;
       calc_opacity(dpy, w, False);
+      calc_dim(dpy, w);
     }
   }
 
