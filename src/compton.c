@@ -710,9 +710,9 @@ long determine_evmask(Display *dpy, Window wid, enum win_evmode_t mode) {
 
   if (WIN_EVMODE_FRAME == mode || find_win(dpy, wid)) {
     evmask |= PropertyChangeMask;
-    if (track_focus)
-      evmask |= FocusChangeMask;
+    if (track_focus) evmask |= FocusChangeMask;
   }
+
   if (WIN_EVMODE_CLIENT == mode || find_client_win(dpy, wid)) {
     evmask |= PropertyChangeMask;
   }
@@ -739,7 +739,8 @@ find_win(Display *dpy, Window id) {
  * @param w window ID
  * @return struct _win object of the found window, NULL if not found
  */
-win *find_toplevel(Display *dpy, Window id) {
+static win *
+find_toplevel(Display *dpy, Window id) {
   win *w;
 
   for (w = list; w; w = w->next) {
@@ -757,11 +758,12 @@ win *find_toplevel(Display *dpy, Window id) {
  * @param w window ID
  * @return struct _win object of the found window, NULL if not found
  */
-win *find_toplevel2(Display *dpy, Window wid) {
+static win *
+find_toplevel2(Display *dpy, Window wid) {
   win *w = NULL;
 
   // We traverse through its ancestors to find out the frame
-  while(wid && wid != root && !(w = find_win(dpy, wid))) {
+  while (wid && wid != root && !(w = find_win(dpy, wid))) {
     Window troot;
     Window parent;
     Window *tchildren;
@@ -770,14 +772,14 @@ win *find_toplevel2(Display *dpy, Window wid) {
     // XQueryTree probably fails if you run compton when X is somehow
     // initializing (like add it in .xinitrc). In this case
     // just leave it alone.
-    if(!XQueryTree(dpy, wid, &troot, &parent, &tchildren,
+    if (!XQueryTree(dpy, wid, &troot, &parent, &tchildren,
           &tnchildren)) {
       wid = 0;
       break;
     }
 
-    if (tchildren)
-      XFree(tchildren);
+    if (tchildren) XFree(tchildren);
+
     wid = parent;
   }
 
@@ -791,7 +793,8 @@ win *find_toplevel2(Display *dpy, Window wid) {
  * @param dpy display to use
  * @return struct _win of currently focused window, NULL if not found
  */
-win *recheck_focus(Display *dpy) {
+static win *
+recheck_focus(Display *dpy) {
   // Determine the currently focused window so we can apply appropriate
   // opacity on it
   Window wid = 0;
@@ -801,8 +804,9 @@ win *recheck_focus(Display *dpy) {
   XGetInputFocus(dpy, &wid, &revert_to);
 
   // Fallback to the old method if find_toplevel() fails
-  if (!(w = find_toplevel(dpy, wid)))
+  if (!(w = find_toplevel(dpy, wid))) {
     w = find_toplevel2(dpy, wid);
+  }
 
   // And we set the focus state and opacity here
   if (w) {
@@ -964,21 +968,25 @@ border_size(Display *dpy, win *w) {
   return border;
 }
 
-Window find_client_win(Display *dpy, Window w) {
-  if (win_has_attr(dpy, w, atom_client_attr))
+static Window
+find_client_win(Display *dpy, Window w) {
+  if (win_has_attr(dpy, w, atom_client_attr)) {
     return w;
+  }
 
   Window *children;
   unsigned int nchildren;
   unsigned int i;
   Window ret = 0;
 
-  if(!win_get_children(dpy, w, &children, &nchildren))
+  if (!win_get_children(dpy, w, &children, &nchildren)) {
     return 0;
+  }
 
-  for (i = 0; i < nchildren; ++i)
+  for (i = 0; i < nchildren; ++i) {
     if ((ret = find_client_win(dpy, children[i])))
       break;
+  }
 
   XFree(children);
 
@@ -1471,8 +1479,9 @@ map_win(Display *dpy, Window id,
    * XSelectInput() is called too late. We have to recheck the focused
    * window here.
    */
-  if (track_focus)
+  if (track_focus) {
     recheck_focus(dpy);
+  }
 
   calc_opacity(dpy, w, True);
   calc_dim(dpy, w);
@@ -1804,10 +1813,11 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
     Window cw = find_client_win(dpy, new->id);
     if (cw) {
       new->client_win = cw;
-      if (frame_opacity)
+      if (frame_opacity) {
         get_frame_extents(dpy, cw,
           &new->left_width, &new->right_width,
           &new->top_width, &new->bottom_width);
+      }
       XSelectInput(dpy, cw, determine_evmask(dpy, id, WIN_EVMODE_CLIENT));
     }
   }
@@ -3019,8 +3029,9 @@ main(int argc, char **argv) {
 
   XFree(children);
 
-  if (track_focus)
+  if (track_focus) {
     recheck_focus(dpy);
+  }
 
   XUngrabServer(dpy);
 

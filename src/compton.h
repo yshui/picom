@@ -257,7 +257,8 @@ print_timestamp(void) {
  * @param atom atom of attribute to check
  * @return 1 if it has the attribute, 0 otherwise
  */
-static inline Bool win_has_attr(Display *dpy, Window w, Atom atom) {
+static inline Bool
+win_has_attr(Display *dpy, Window w, Atom atom) {
   Atom type = None;
   int format;
   unsigned long nitems, after;
@@ -266,8 +267,7 @@ static inline Bool win_has_attr(Display *dpy, Window w, Atom atom) {
   if (Success == XGetWindowProperty(dpy, w, atom, 0, 0, False,
         AnyPropertyType, &type, &format, &nitems, &after, &data)) {
     XFree(data);
-    if (type)
-      return True;
+    if (type) return True;
   }
 
   return False;
@@ -282,7 +282,8 @@ static inline Bool win_has_attr(Display *dpy, Window w, Atom atom) {
  * @param nchildren [out] number of children
  * @return 1 if successful, 0 otherwise
  */
-static inline Bool win_get_children(Display *dpy, Window w,
+static inline Bool
+win_get_children(Display *dpy, Window w,
     Window **children, unsigned *nchildren) {
   Window troot, tparent;
 
@@ -361,6 +362,12 @@ find_win(Display *dpy, Window id);
 static win *
 find_toplevel(Display *dpy, Window id);
 
+static win *
+find_toplevel2(Display *dpy, Window wid);
+
+static win *
+recheck_focus(Display *dpy);
+
 static Picture
 root_tile_f(Display *dpy);
 
@@ -373,9 +380,11 @@ win_extents(Display *dpy, win *w);
 static XserverRegion
 border_size(Display *dpy, win *w);
 
-Window find_client_win(Display *dpy, Window w);
+static Window
+find_client_win(Display *dpy, Window w);
 
-Window find_client_win2(Display *dpy, Window w);
+static Window
+find_client_win2(Display *dpy, Window w);
 
 static void
 get_frame_extents(Display *dpy, Window w,
