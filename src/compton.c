@@ -2353,11 +2353,9 @@ ev_window(XEvent *ev) {
 inline static void
 ev_focus_in(XFocusChangeEvent *ev) {
   win *w = find_win(dpy, ev->window);
-  if (!w) return;
 
   // To deal with events sent from windows just destroyed
-  if (!w)
-    return;
+  if (!w) return;
 
   w->focused = True;
   calc_opacity(dpy, w, False);
@@ -2376,11 +2374,10 @@ ev_focus_out(XFocusChangeEvent *ev) {
   }
 
   win *w = find_win(dpy, ev->window);
-  if (!w) return;
 
   // To deal with events sent from windows just destroyed
-  if (!w)
-    return;
+  if (!w) return;
+
   w->focused = False;
 
   calc_opacity(dpy, w, False);
