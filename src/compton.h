@@ -197,12 +197,12 @@ static inline Bool array_wid_exists(const Window *arr,
     if (arr[count] == wid)
       return True;
   }
-  
+
   return False;
 }
 
 #ifdef DEBUG_EVENTS
-/* 
+/*
  * Subtracting two struct timeval values.
  *
  * Taken from glibc manual.

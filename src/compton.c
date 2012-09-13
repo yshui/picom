@@ -1693,7 +1693,7 @@ void calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
     if (OPAQUE != win_type_opacity[w->window_type])
       opacity = win_type_opacity[w->window_type] * OPAQUE;
   }
-  
+
   // Respect inactive_opacity in some cases
   if (inactive_opacity && IS_NORMAL_WIN(w) && False == w->focused
       && (OPAQUE == opacity || inactive_opacity_override))
@@ -1845,7 +1845,7 @@ restack_win(Display *dpy, win *w, Window new_above) {
       char *window_name;
       Bool to_free;
       win* c = list;
-  
+
       printf("restack_win(%#010lx, %#010lx): Window stack modified. Current stack:\n", w->id, new_above);
       for (; c; c = c->next) {
         window_name = "(Failed to get title)";
