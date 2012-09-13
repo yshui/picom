@@ -144,6 +144,7 @@ typedef struct _fade {
 } fade;
 
 extern int root_height, root_width;
+extern Atom atom_client_attr;
 
 /**
  * Functions
@@ -249,6 +250,51 @@ static inline void print_timestamp(void) {
 }
 #endif
 
+/**
+ * Determine if a window has a specific attribute.
+ *
+ * @param dpy Display to use
+ * @param w window to check
+ * @param atom atom of attribute to check
+ * @return 1 if it has the attribute, 0 otherwise
+ */
+static inline Bool win_has_attr(Display *dpy, Window w, Atom atom) {
+  Atom type = None;
+  int format;
+  unsigned long nitems, after;
+  unsigned char *data;
+
+  if (Success == XGetWindowProperty(dpy, w, atom, 0, 0, False,
+        AnyPropertyType, &type, &format, &nitems, &after, &data)) {
+    XFree(data);
+    if (type)
+      return True;
+  }
+
+  return False;
+}
+
+/**
+ * Get the children of a window.
+ *
+ * @param dpy Display to use
+ * @param w window to check
+ * @param children [out] an array of child window IDs
+ * @param nchildren [out] number of children
+ * @return 1 if successful, 0 otherwise
+ */
+static inline Bool win_get_children(Display *dpy, Window w,
+    Window **children, unsigned *nchildren) {
+  Window troot, tparent;
+
+  if (!XQueryTree(dpy, w, &troot, &tparent, children, nchildren)) {
+    *nchildren = 0;
+    return False;
+  }
+
+  return True;
+}
+
 static int
 get_time_in_milliseconds();
 
@@ -328,8 +374,9 @@ win_extents(Display *dpy, win *w);
 static XserverRegion
 border_size(Display *dpy, win *w);
 
-static Window
-find_client_win(Display *dpy, Window win);
+Window find_client_win(Display *dpy, Window w);
+
+Window find_client_win2(Display *dpy, Window w);
 
 static void
 get_frame_extents(Display *dpy, Window w,

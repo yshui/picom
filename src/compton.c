@@ -71,6 +71,7 @@ int size_expose = 0;
 int n_expose = 0;
 
 /* atoms */
+Atom atom_client_attr;
 Atom extents_atom;
 Atom opacity_atom;
 Atom win_type_atom;
@@ -715,8 +716,14 @@ find_win(Display *dpy, Window id) {
   return 0;
 }
 
-static win *
-find_toplevel(Display *dpy, Window id) {
+/**
+ * Find out the WM frame of a client window using existing data.
+ *
+ * @param dpy display to use
+ * @param w window ID
+ * @return struct _win object of the found window, NULL if not found
+ */
+win *find_toplevel(Display *dpy, Window id) {
   win *w;
 
   for (w = list; w; w = w->next) {
@@ -724,7 +731,72 @@ find_toplevel(Display *dpy, Window id) {
       return w;
   }
 
-  return 0;
+  return NULL;
+}
+
+/**
+ * Find out the WM frame of a client window by querying X.
+ *
+ * @param dpy display to use
+ * @param w window ID
+ * @return struct _win object of the found window, NULL if not found
+ */
+win *find_toplevel2(Display *dpy, Window wid) {
+  win *w = NULL;
+
+  // We traverse through its ancestors to find out the frame
+  while(wid && wid != root && !(w = find_win(dpy, wid))) {
+    Window troot;
+    Window parent;
+    Window *tchildren;
+    unsigned tnchildren;
+
+    // XQueryTree probably fails if you run compton when X is somehow
+    // initializing (like add it in .xinitrc). In this case
+    // just leave it alone.
+    if(!XQueryTree(dpy, wid, &troot, &parent, &tchildren,
+          &tnchildren)) {
+      wid = 0;
+      break;
+    }
+
+    if (tchildren)
+      XFree(tchildren);
+    wid = parent;
+  }
+
+  return w;
+}
+
+/**
+ * Recheck currently focused window and set its <code>w->focused</code>
+ * to True.
+ *
+ * @param dpy display to use
+ * @return struct _win of currently focused window, NULL if not found
+ */
+win *recheck_focus(Display *dpy) {
+  // Determine the currently focused window so we can apply appropriate
+  // opacity on it
+  Window wid = 0;
+  int revert_to;
+  win *w = NULL;
+
+  XGetInputFocus(dpy, &wid, &revert_to);
+
+  // Fallback to the old method if find_toplevel() fails
+  if (!(w = find_toplevel(dpy, wid)))
+    w = find_toplevel2(dpy, wid);
+
+  // And we set the focus state and opacity here
+  if (w) {
+    w->focused = True;
+    calc_opacity(dpy, w, False);
+    calc_dim(dpy, w);
+    return w;
+  }
+
+  return NULL;
 }
 
 static Picture
@@ -876,40 +948,25 @@ border_size(Display *dpy, win *w) {
   return border;
 }
 
-static Window
-find_client_win(Display *dpy, Window win) {
-  Atom WM_STATE = XInternAtom(dpy, "WM_STATE", False);
+Window find_client_win(Display *dpy, Window w) {
+  if (win_has_attr(dpy, w, atom_client_attr))
+    return w;
 
-  Window root, parent;
   Window *children;
   unsigned int nchildren;
   unsigned int i;
-  Atom type = None;
-  int format;
-  unsigned long nitems, after;
-  unsigned char *data;
-  Window client = 0;
+  Window ret = 0;
 
-  XGetWindowProperty(
-    dpy, win, WM_STATE, 0, 0, False,
-    AnyPropertyType, &type, &format, &nitems,
-    &after, &data);
-
-  if (type) return win;
-
-  if (!XQueryTree(dpy, win, &root,
-      &parent, &children, &nchildren)) {
+  if(!win_get_children(dpy, w, &children, &nchildren))
     return 0;
-  }
 
-  for (i = 0; i < nchildren; i++) {
-    client = find_client_win(dpy, children[i]);
-    if (client) break;
-  }
+  for (i = 0; i < nchildren; ++i)
+    if ((ret = find_client_win(dpy, children[i])))
+      break;
 
-  if (children) XFree((char *)children);
+  XFree(children);
 
-  return client;
+  return ret;
 }
 
 static void
@@ -1395,56 +1452,11 @@ map_win(Display *dpy, Window id,
   /*
    * Occasionally compton does not seem able to get a FocusIn event from a
    * window just mapped. I suspect it's a timing issue again when the
-   * XSelectInput() is called too late. If this is the case, I could think
-   * of two fixes: To monitor the focus events from the root window, and
-   * to determine if the current window is focused in map_win(). Looks
-   * like the XFocusChangeEvent sent to the root window contains no
-   * information about where the WM frame of the focused window is, and 
-   * XGetInputFocus() often returns an application window instead of the
-   * WM frame, which compton keeps track of, in either way I believe we
-   * have to travel through the ancestors of the focused window it
-   * returns. The latter choice looks cheaper, so I'm doing it here.
-   * But still, this could anyway be costly.
-   *
-   * An alternative route might be relying on _NET_ACTIVE_WINDOW.
-   * Unfortunately as it's set by WM I'm not completely sure if it's
-   * reliable and will be updated on the very moment a window is mapped.
+   * XSelectInput() is called too late. We have to recheck the focused
+   * window here.
    */
   if (track_focus)
-  {
-    Window wid = id;
-    int revert_to;
-    win *w = NULL;
-
-    XGetInputFocus(dpy, &wid, &revert_to);
-
-    // XGetInputFocus seemingly returns the application window focused
-    // instead of the WM window frame, so we traverse through its
-    // ancestors to find out the frame
-    while(wid && wid != root && !find_win(dpy, wid)) {
-      Window troot;
-      Window parent;
-      Window *tchildren;
-      unsigned tnchildren;
-
-      // XQueryTree probably fails if you run compton when X is somehow
-      // initializing (like add it in .xinitrc). In this case
-      // just leave it alone.
-      if(!XQueryTree(dpy, wid, &troot, &parent, &tchildren,
-            &tnchildren)) {
-        wid = 0;
-        break;
-      }
-
-      if (tchildren)
-        XFree(tchildren);
-      wid = parent;
-    }
-
-    // And we set the focus state
-    if (wid && wid != root && (w = find_win(dpy, wid)))
-      w->focused = True;
-  }
+    recheck_focus(dpy);
 
   calc_opacity(dpy, w, True);
   calc_dim(dpy, w);
@@ -1768,11 +1780,13 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   if (!override_redirect) {
     Window cw = find_client_win(dpy, new->id);
     if (cw) {
-      get_frame_extents(dpy, cw,
-        &new->left_width, &new->right_width,
-        &new->top_width, &new->bottom_width);
       new->client_win = cw;
-      XSelectInput(dpy, cw, PropertyChangeMask);
+      if (frame_opacity)
+        get_frame_extents(dpy, cw,
+          &new->left_width, &new->right_width,
+          &new->top_width, &new->bottom_width);
+      if (id != cw)
+        XSelectInput(dpy, cw, PropertyChangeMask);
     }
   }
 
@@ -2851,6 +2865,7 @@ main(int argc, char **argv) {
 
   scr = DefaultScreen(dpy);
   root = RootWindow(dpy, scr);
+  atom_client_attr = XInternAtom(dpy, "WM_STATE", False);
 
   if (!XRenderQueryExtension(dpy, &render_event, &render_error)) {
     fprintf(stderr, "No render extension\n");
@@ -2936,49 +2951,10 @@ main(int argc, char **argv) {
     add_win(dpy, children[i], i ? children[i-1] : None, False);
   }
 
-  if (track_focus)
-  {
-    // Determine the currently focused window so we can apply appropriate
-    // opacity on it
-    Window wid = 0;
-    int revert_to;
-    win *w = NULL;
-
-    XGetInputFocus(dpy, &wid, &revert_to);
-
-    // XGetInputFocus seemingly returns the application window focused
-    // instead of the WM window frame, so we traverse through its
-    // ancestors to find out the frame
-    while(wid && wid != root
-        && !array_wid_exists(children, nchildren, wid)) {
-      Window troot;
-      Window parent;
-      Window *tchildren = 0;
-      unsigned tnchildren;
-
-      // XQueryTree probably fails if you run compton when X is somehow
-      // initializing (like add it in .xinitrc). In this case
-      // just leave it alone.
-      if(!XQueryTree(dpy, wid, &troot, &parent, &tchildren,
-            &tnchildren)) {
-        wid = 0;
-        break;
-      }
-
-      if (tchildren)
-        XFree(tchildren);
-      wid = parent;
-    }
-
-    // And we set the focus state and opacity here
-    if (wid && wid != root && (w = find_win(dpy, wid))) {
-      w->focused = True;
-      calc_opacity(dpy, w, False);
-      calc_dim(dpy, w);
-    }
-  }
-
   XFree(children);
+
+  if (track_focus)
+    recheck_focus(dpy);
 
   XUngrabServer(dpy);
 
