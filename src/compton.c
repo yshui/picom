@@ -705,7 +705,8 @@ should_ignore(Display *dpy, unsigned long sequence) {
  * Windows
  */
 
-long determine_evmask(Display *dpy, Window wid, enum win_evmode_t mode) {
+static long
+determine_evmask(Display *dpy, Window wid, win_evmode_t mode) {
   long evmask = NoEventMask;
 
   if (WIN_EVMODE_FRAME == mode || find_win(dpy, wid)) {

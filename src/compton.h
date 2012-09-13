@@ -143,6 +143,12 @@ typedef struct _fade {
   Display *dpy;
 } fade;
 
+typedef enum {
+  WIN_EVMODE_UNKNOWN,
+  WIN_EVMODE_FRAME,
+  WIN_EVMODE_CLIENT
+} win_evmode_t;
+
 extern int root_height, root_width;
 extern Atom atom_client_attr;
 
@@ -355,6 +361,9 @@ set_ignore(Display *dpy, unsigned long sequence);
 
 static int
 should_ignore(Display *dpy, unsigned long sequence);
+
+static long
+determine_evmask(Display *dpy, Window wid, win_evmode_t mode);
 
 static win *
 find_win(Display *dpy, Window id);
