@@ -704,6 +704,21 @@ should_ignore(Display *dpy, unsigned long sequence) {
  * Windows
  */
 
+long determine_evmask(Display *dpy, Window wid, enum win_evmode_t mode) {
+  long evmask = NoEventMask;
+
+  if (WIN_EVMODE_FRAME == mode || find_win(dpy, wid)) {
+    evmask |= PropertyChangeMask;
+    if (track_focus)
+      evmask |= FocusChangeMask;
+  }
+  if (WIN_EVMODE_CLIENT == mode || find_client_win(dpy, wid)) {
+    evmask |= PropertyChangeMask;
+  }
+
+  return evmask;
+}
+
 static win *
 find_win(Display *dpy, Window id) {
   win *w;
@@ -1439,10 +1454,7 @@ map_win(Display *dpy, Window id,
   /* select before reading the property
      so that no property changes are lost */
   if (!override_redirect) {
-    long evmask = PropertyChangeMask;
-    if (track_focus)
-      evmask |= FocusChangeMask;
-    XSelectInput(dpy, id, evmask);
+    XSelectInput(dpy, id, determine_evmask(dpy, id, WIN_EVMODE_FRAME));
     // Notify compton when the shape of a window changes
     if (shape_exists) {
       XShapeSelectInput(dpy, id, ShapeNotifyMask);
@@ -1785,8 +1797,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
         get_frame_extents(dpy, cw,
           &new->left_width, &new->right_width,
           &new->top_width, &new->bottom_width);
-      if (id != cw)
-        XSelectInput(dpy, cw, PropertyChangeMask);
+      XSelectInput(dpy, cw, determine_evmask(dpy, id, WIN_EVMODE_CLIENT));
     }
   }
 
@@ -2301,6 +2312,10 @@ inline static void
 ev_focus_in(XFocusChangeEvent *ev) {
   win *w = find_win(dpy, ev->window);
 
+  // To deal with events sent from windows just destroyed
+  if (!w)
+    return;
+
   w->focused = True;
   calc_opacity(dpy, w, False);
   calc_dim(dpy, w);
@@ -2319,7 +2334,11 @@ ev_focus_out(XFocusChangeEvent *ev) {
 
   win *w = find_win(dpy, ev->window);
 
+  // To deal with events sent from windows just destroyed
+  if (!w)
+    return;
   w->focused = False;
+
   calc_opacity(dpy, w, False);
   calc_dim(dpy, w);
 }
@@ -2358,6 +2377,9 @@ ev_reparent_notify(XReparentEvent *ev) {
     add_win(dpy, ev->window, 0, ev->override_redirect);
   } else {
     destroy_win(dpy, ev->window, True);
+    // Reset event mask in case something wrong happens
+    XSelectInput(dpy, ev->window,
+        determine_evmask(dpy, ev->window, WIN_EVMODE_UNKNOWN));
   }
 }
 
