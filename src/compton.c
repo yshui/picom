@@ -572,8 +572,9 @@ make_shadow(Display *dpy, double opacity,
         0, sheight);
     int y;
 
-    for (y = ystart; y < yend; y++)
+    for (y = ystart; y < yend; y++) {
       memset(&data[y * swidth + xstart], 0, xrange);
+    }
   }
 
   return ximage;
@@ -1148,9 +1149,10 @@ paint_all(Display *dpy, XserverRegion region) {
         None, root_buffer, 0, 0, 0, 0,
         x, y, wid, hei);
 
-      if (w->dim)
+      if (w->dim) {
         XRenderComposite(dpy, PictOpOver, dim_picture, None,
             root_buffer, 0, 0, 0, 0, x, y, wid, hei);
+      }
     }
 
     if (!w->border_clip) {
@@ -1169,6 +1171,7 @@ paint_all(Display *dpy, XserverRegion region) {
 
   XFixesSetPictureClipRegion(dpy,
     root_buffer, 0, 0, region);
+
   paint_root(dpy);
 
   for (w = t; w; w = w->prev_trans) {
@@ -1250,9 +1253,10 @@ paint_all(Display *dpy, XserverRegion region) {
           l, t, l, t, x + l, y + t, wid - l - r, hei - t - b);
       }
 
-      if (w->dim)
+      if (w->dim) {
         XRenderComposite(dpy, PictOpOver, dim_picture, None,
             root_buffer, 0, 0, 0, 0, x, y, wid, hei);
+      }
     }
 
     XFixesDestroyRegion(dpy, w->border_clip);
@@ -1569,7 +1573,8 @@ unmap_win(Display *dpy, Window id, Bool fade) {
     finish_unmap_win(dpy, w);
 }
 
-opacity_t get_opacity_prop(Display *dpy, win *w, opacity_t def) {
+static opacity_t
+get_opacity_prop(Display *dpy, win *w, opacity_t def) {
   Atom actual;
   int format;
   unsigned long n, left;
@@ -1635,13 +1640,14 @@ determine_mode(Display *dpy, win *w) {
   add_damage_win(dpy, w);
 }
 
-void set_opacity(Display *dpy, win *w, opacity_t opacity) {
+static void
+set_opacity(Display *dpy, win *w, opacity_t opacity) {
   // Do nothing if the opacity does not change
-  if (w->opacity == opacity)
-    return;
+  if (w->opacity == opacity) return;
 
   w->opacity = opacity;
   determine_mode(dpy, w);
+
   if (w->shadow) {
     XRenderFreePicture(dpy, w->shadow);
     w->shadow = None;
@@ -1675,40 +1681,45 @@ void set_opacity(Display *dpy, win *w, opacity_t opacity) {
  * @param refetch_prop whether _NET_WM_OPACITY of the window needs to be
  *    refetched
  */
-void calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
+static void
+calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
   opacity_t opacity;
 
   // Do nothing for unmapped window, calc_opacity() will be called
   // when it's mapped
   // I suppose I need not to check for IsUnviewable here?
-  if (IsViewable != w->a.map_state)
-    return;
+  if (IsViewable != w->a.map_state) return;
 
   // Do not refetch the opacity window attribute unless necessary, this
   // is probably an expensive operation in some cases
-  if (refetch_prop)
+  if (refetch_prop) {
     w->opacity_prop = get_opacity_prop(dpy, w, OPAQUE);
+  }
 
   if (OPAQUE == (opacity = w->opacity_prop)) {
-    if (OPAQUE != win_type_opacity[w->window_type])
+    if (OPAQUE != win_type_opacity[w->window_type]) {
       opacity = win_type_opacity[w->window_type] * OPAQUE;
+    }
   }
 
   // Respect inactive_opacity in some cases
   if (inactive_opacity && IS_NORMAL_WIN(w) && False == w->focused
-      && (OPAQUE == opacity || inactive_opacity_override))
+      && (OPAQUE == opacity || inactive_opacity_override)) {
     opacity = inactive_opacity;
+  }
 
   set_opacity(dpy, w, opacity);
 }
 
-void calc_dim(Display *dpy, win *w) {
+static void
+calc_dim(Display *dpy, win *w) {
   Bool dim;
 
-  if (inactive_dim && IS_NORMAL_WIN(w) && !(w->focused))
+  if (inactive_dim && IS_NORMAL_WIN(w) && !(w->focused)) {
     dim = True;
-  else
+  } else {
     dim = False;
+  }
 
   if (dim != w->dim) {
     w->dim = dim;
@@ -1846,17 +1857,22 @@ restack_win(Display *dpy, win *w, Window new_above) {
       Bool to_free;
       win* c = list;
 
-      printf("restack_win(%#010lx, %#010lx): Window stack modified. Current stack:\n", w->id, new_above);
+      printf("restack_win(%#010lx, %#010lx): "
+             "Window stack modified. Current stack:\n", w->id, new_above);
+
       for (; c; c = c->next) {
         window_name = "(Failed to get title)";
-        if (root == c->id)
+
+        if (root == c->id) {
           window_name = "(Root window)";
-        else
+        } else {
           to_free = window_get_name(c->id, &window_name);
+        }
+
         desc = "";
-        if (c->destroyed)
-          desc = "(D) ";
+        if (c->destroyed) desc = "(D) ";
         printf("%#010lx \"%s\" %s-> ", c->id, window_name, desc);
+
         if (to_free) {
           XFree(window_name);
           window_name = NULL;
@@ -1891,8 +1907,10 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
     w->queue_configure = *ce;
     restack_win(dpy, w, ce->above);
   } else {
-    if (!(w->need_configure))
+    if (!(w->need_configure)) {
       restack_win(dpy, w, ce->above);
+    }
+
     w->need_configure = False;
 
 #if CAN_DO_USABLE
@@ -1900,8 +1918,9 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
 #endif
     {
       damage = XFixesCreateRegion(dpy, 0, 0);
-      if (w->extents != None)
+      if (w->extents != None) {
         XFixesCopyRegion(dpy, damage, w->extents);
+      }
     }
 
     w->a.x = ce->x;
@@ -2198,7 +2217,8 @@ expose_root(Display *dpy, Window root, XRectangle *rects, int nrects) {
 }
 
 #if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
-static int window_get_name(Window w, char **name) {
+static int
+window_get_name(Window w, char **name) {
   Atom prop = XInternAtom(dpy, "_NET_WM_NAME", False);
   Atom utf8_type = XInternAtom(dpy, "UTF8_STRING", False);
   Atom actual_type;
@@ -2209,16 +2229,20 @@ static int window_get_name(Window w, char **name) {
   Status ret;
 
   set_ignore(dpy, NextRequest(dpy));
+
   if (Success != (ret = XGetWindowProperty(dpy, w, prop, 0L, (long) BUFSIZ,
         False, utf8_type, &actual_type, &actual_format, &nitems,
         &leftover, (unsigned char **) &data))) {
-    if (BadWindow == ret)
-      return 0;
+    if (BadWindow == ret) return 0;
+
     set_ignore(dpy, NextRequest(dpy));
     printf("Window %#010lx: _NET_WM_NAME unset, falling back to WM_NAME.\n", w);
-    if (!XFetchName(dpy, w, &data))
+
+    if (!XFetchName(dpy, w, &data)) {
       return 0;
+    }
   }
+
   // if (actual_type == utf8_type && actual_format == 8)
   *name = (char *) data;
   return 1;
@@ -2264,9 +2288,13 @@ ev_name(XEvent *ev) {
       if (ev->type == damage_event + XDamageNotify) {
         return "Damage";
       }
-      if (shape_exists && ev->type == shape_event)
+
+      if (shape_exists && ev->type == shape_event) {
         return "ShapeNotify";
+      }
+
       sprintf(buf, "Event %d", ev->type);
+
       return buf;
   }
 }
@@ -2297,8 +2325,11 @@ ev_window(XEvent *ev) {
       if (ev->type == damage_event + XDamageNotify) {
         return ((XDamageNotifyEvent *)ev)->drawable;
       }
-      if (shape_exists && ev->type == shape_event)
+
+      if (shape_exists && ev->type == shape_event) {
         return ((XShapeEvent *) ev)->window;
+      }
+
       return 0;
   }
 }
@@ -2311,6 +2342,7 @@ ev_window(XEvent *ev) {
 inline static void
 ev_focus_in(XFocusChangeEvent *ev) {
   win *w = find_win(dpy, ev->window);
+  if (!w) return;
 
   // To deal with events sent from windows just destroyed
   if (!w)
@@ -2333,6 +2365,7 @@ ev_focus_out(XFocusChangeEvent *ev) {
   }
 
   win *w = find_win(dpy, ev->window);
+  if (!w) return;
 
   // To deal with events sent from windows just destroyed
   if (!w)
@@ -2351,7 +2384,10 @@ ev_create_notify(XCreateWindowEvent *ev) {
 inline static void
 ev_configure_notify(XConfigureEvent *ev) {
 #ifdef DEBUG_EVENTS
-  printf("{ send_event: %d, above: %#010lx, override_redirect: %d }\n", ev->send_event, ev->above, ev->override_redirect);
+  printf("{ send_event: %d, "
+         " above: %#010lx, "
+         " override_redirect: %d }\n",
+         ev->send_event, ev->above, ev->override_redirect);
 #endif
   configure_win(dpy, ev);
 }
@@ -2454,8 +2490,10 @@ ev_damage_notify(XDamageNotifyEvent *ev) {
   damage_win(dpy, ev);
 }
 
-static void ev_shape_notify(XShapeEvent *ev) {
+inline static void
+ev_shape_notify(XShapeEvent *ev) {
   win *w = find_win(dpy, ev->window);
+  if (!w) return;
 
   /*
    * Empty border_size may indicated an
@@ -2472,12 +2510,10 @@ static void ev_shape_notify(XShapeEvent *ev) {
     // Mark the new border_size as damaged
     add_damage(dpy, copy_region(dpy, w->border_size));
   }
-
 }
 
 inline static void
 ev_handle(XEvent *ev) {
-
 #ifdef DEBUG_EVENTS
   Window w;
   char *window_name;
@@ -2491,17 +2527,21 @@ ev_handle(XEvent *ev) {
 #ifdef DEBUG_EVENTS
   w = ev_window(ev);
   window_name = "(Failed to get title)";
+
   if (w) {
-    if (root == w)
+    if (root == w) {
       window_name = "(Root window)";
-    else
+    } else {
       to_free = (Bool) window_get_name(w, &window_name);
+    }
   }
+
   if (ev->type != damage_event + XDamageNotify) {
     print_timestamp();
     printf("event %10.10s serial %#010x window %#010lx \"%s\"\n",
       ev_name(ev), ev_serial(ev), w, window_name);
   }
+
   if (to_free) {
     XFree(window_name);
     window_name = NULL;
@@ -2611,8 +2651,7 @@ usage() {
     "--inactive-opacity-override\n"
     "  Inactive opacity set by -i overrides value of _NET_WM_OPACITY.\n"
     "--inactive-dim value\n"
-    "  Dim inactive windows. (0.0 - 1.0, defaults to 0)\n"
-    );
+    "  Dim inactive windows. (0.0 - 1.0, defaults to 0)\n");
 
   exit(1);
 }
@@ -2835,8 +2874,9 @@ main(int argc, char **argv) {
         break;
       case 'i':
         inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
-        if (OPAQUE == inactive_opacity)
+        if (OPAQUE == inactive_opacity) {
           inactive_opacity = 0;
+        }
         break;
       case 'e':
         frame_opacity = normalize_d(atof(optarg));
@@ -2871,8 +2911,9 @@ main(int argc, char **argv) {
   }
 
   // Determine whether we need to track focus changes
-  if (inactive_opacity || inactive_dim)
+  if (inactive_opacity || inactive_dim) {
     track_focus = True;
+  }
 
   dpy = XOpenDisplay(display);
   if (!dpy) {
@@ -2918,8 +2959,9 @@ main(int argc, char **argv) {
     exit(1);
   }
 
-  if (!XShapeQueryExtension(dpy, &shape_event, &shape_error))
+  if (!XShapeQueryExtension(dpy, &shape_event, &shape_error)) {
     shape_exists = False;
+  }
 
   register_cm(scr);
 
@@ -2943,15 +2985,17 @@ main(int argc, char **argv) {
 
   // Generates another Picture for shadows if the color is modified by
   // user
-  if (!shadow_red && !shadow_green && !shadow_blue)
+  if (!shadow_red && !shadow_green && !shadow_blue) {
     cshadow_picture = black_picture;
-  else
+  } else {
     cshadow_picture = solid_picture(dpy, True, 1,
         shadow_red, shadow_green, shadow_blue);
+  }
 
   // Generates a picture for inactive_dim
-  if (inactive_dim)
+  if (inactive_dim) {
     dim_picture = solid_picture(dpy, True, inactive_dim, 0, 0, 0);
+  }
 
   all_damage = None;
   clip_changed = True;

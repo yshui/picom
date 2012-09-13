@@ -161,12 +161,10 @@ extern Atom atom_client_attr;
  * @param max maximum value
  * @return normalized value
  */
-static inline double normalize_i_range(int i, int min, int max) {
-  if (i > max)
-    return max;
-  if (i < min)
-    return min;
-
+static inline double
+normalize_i_range(int i, int min, int max) {
+  if (i > max) return max;
+  if (i < min) return min;
   return i;
 }
 
@@ -175,12 +173,10 @@ static inline double normalize_i_range(int i, int min, int max) {
  *
  * @param d double value to normalize
  */
-static inline double normalize_d(double d) {
-  if (d > 1.0)
-    return 1.0;
-  if (d < 0.0)
-    return 0.0;
-
+static inline double
+normalize_d(double d) {
+  if (d > 1.0) return 1.0;
+  if (d < 0.0) return 0.0;
   return d;
 }
 
@@ -191,11 +187,12 @@ static inline double normalize_d(double d) {
  * @param count amount of elements in the array
  * @param wid window ID to search for
  */
-static inline Bool array_wid_exists(const Window *arr,
-    int count, Window wid) {
+static inline Bool
+array_wid_exists(const Window *arr, int count, Window wid) {
   while (count--) {
-    if (arr[count] == wid)
+    if (arr[count] == wid) {
       return True;
+    }
   }
 
   return False;
@@ -210,15 +207,17 @@ static inline Bool array_wid_exists(const Window *arr,
  * Subtract the `struct timeval' values X and Y,
  * storing the result in RESULT.
  * Return 1 if the difference is negative, otherwise 0. */
-int timeval_subtract (result, x, y)
-     struct timeval *result, *x, *y;
-{
+static int
+timeval_subtract(struct timeval *result,
+                 struct timeval *x,
+                 struct timeval *y) {
   /* Perform the carry for the later subtraction by updating y. */
   if (x->tv_usec < y->tv_usec) {
     int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
     y->tv_usec -= 1000000 * nsec;
     y->tv_sec += nsec;
   }
+
   if (x->tv_usec - y->tv_usec > 1000000) {
     int nsec = (x->tv_usec - y->tv_usec) / 1000000;
     y->tv_usec += 1000000 * nsec;
@@ -239,11 +238,11 @@ int timeval_subtract (result, x, y)
  *
  * Used for debugging.
  */
-static inline void print_timestamp(void) {
+static inline void
+print_timestamp(void) {
   struct timeval tm, diff;
 
-  if (gettimeofday(&tm, NULL))
-    return;
+  if (gettimeofday(&tm, NULL)) return;
 
   timeval_subtract(&diff, &tm, &time_start);
   printf("[ %5ld.%02ld ] ", diff.tv_sec, diff.tv_usec / 10000);
@@ -416,7 +415,7 @@ unmap_callback(Display *dpy, win *w);
 static void
 unmap_win(Display *dpy, Window id, Bool fade);
 
-opacity_t
+static opacity_t
 get_opacity_prop(Display *dpy, win *w, opacity_t def);
 
 static double
@@ -425,11 +424,14 @@ get_opacity_percent(Display *dpy, win *w);
 static void
 determine_mode(Display *dpy, win *w);
 
-void set_opacity(Display *dpy, win *w, opacity_t opacity);
+static void
+set_opacity(Display *dpy, win *w, opacity_t opacity);
 
-void calc_opacity(Display *dpy, win *w, Bool refetch_prop);
+static void
+calc_opacity(Display *dpy, win *w, Bool refetch_prop);
 
-void calc_dim(Display *dpy, win *w);
+static void
+calc_dim(Display *dpy, win *w);
 
 static void
 add_win(Display *dpy, Window id, Window prev, Bool override_redirect);
@@ -464,7 +466,8 @@ static void
 expose_root(Display *dpy, Window root, XRectangle *rects, int nrects);
 
 #if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
-static int window_get_name(Window w, char **name);
+static int
+window_get_name(Window w, char **name);
 #endif
 
 #ifdef DEBUG_EVENTS
@@ -520,10 +523,14 @@ ev_property_notify(XPropertyEvent *ev);
 inline static void
 ev_damage_notify(XDamageNotifyEvent *ev);
 
+inline static void
+ev_shape_notify(XShapeEvent *ev);
+
 /**
  * Destory the cached border_size of a window.
  */
-inline static void win_free_border_size(Display *dpy, win *w) {
+inline static void
+win_free_border_size(Display *dpy, win *w) {
   if (w->border_size) {
     set_ignore(dpy, NextRequest(dpy));
     XFixesDestroyRegion(dpy, w->border_size);
@@ -534,7 +541,8 @@ inline static void win_free_border_size(Display *dpy, win *w) {
 /**
  * Get a region of the screen size.
  */
-inline static XserverRegion get_screen_region(Display *dpy) {
+inline static XserverRegion
+get_screen_region(Display *dpy) {
   XRectangle r;
 
   r.x = 0;
@@ -547,8 +555,8 @@ inline static XserverRegion get_screen_region(Display *dpy) {
 /**
  * Copies a region
  */
-inline static XserverRegion copy_region(Display *dpy,
-    XserverRegion oldregion) {
+inline static XserverRegion
+copy_region(Display *dpy, XserverRegion oldregion) {
   XserverRegion region = XFixesCreateRegion(dpy, NULL, 0);
 
   XFixesCopyRegion(dpy, region, oldregion);
@@ -562,9 +570,11 @@ inline static XserverRegion copy_region(Display *dpy,
  * @param dpy display in use
  * @param w struct _win element representing the window
  */
-static inline void add_damage_win(Display *dpy, win *w) {
-  if (w->extents)
+static inline void
+add_damage_win(Display *dpy, win *w) {
+  if (w->extents) {
     add_damage(dpy, copy_region(dpy, w->extents));
+  }
 }
 
 inline static void
