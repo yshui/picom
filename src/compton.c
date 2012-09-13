@@ -118,6 +118,9 @@ double frame_opacity = 0.0;
 /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
 double inactive_dim = 0.0;
 
+/// Whether compton needs to track focus changes.
+Bool track_focus = False;
+
 Bool synchronize = False;
 
 /**
@@ -1379,7 +1382,10 @@ map_win(Display *dpy, Window id,
   /* select before reading the property
      so that no property changes are lost */
   if (!override_redirect) {
-    XSelectInput(dpy, id, PropertyChangeMask | FocusChangeMask);
+    long evmask = PropertyChangeMask;
+    if (track_focus)
+      evmask |= FocusChangeMask;
+    XSelectInput(dpy, id, evmask);
     // Notify compton when the shape of a window changes
     if (shape_exists) {
       XShapeSelectInput(dpy, id, ShapeNotifyMask);
@@ -1404,6 +1410,7 @@ map_win(Display *dpy, Window id,
    * Unfortunately as it's set by WM I'm not completely sure if it's
    * reliable and will be updated on the very moment a window is mapped.
    */
+  if (track_focus)
   {
     Window wid = id;
     int revert_to;
@@ -1664,7 +1671,7 @@ void calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
   }
   
   // Respect inactive_opacity in some cases
-  if (IS_NORMAL_WIN(w) && False == w->focused && inactive_opacity
+  if (inactive_opacity && IS_NORMAL_WIN(w) && False == w->focused
       && (OPAQUE == opacity || inactive_opacity_override))
     opacity = inactive_opacity;
 
@@ -2278,8 +2285,6 @@ ev_window(XEvent *ev) {
 
 inline static void
 ev_focus_in(XFocusChangeEvent *ev) {
-  if (!inactive_opacity && !inactive_dim) return;
-
   win *w = find_win(dpy, ev->window);
 
   w->focused = True;
@@ -2289,8 +2294,6 @@ ev_focus_in(XFocusChangeEvent *ev) {
 
 inline static void
 ev_focus_out(XFocusChangeEvent *ev) {
-  if (!inactive_opacity && !inactive_dim) return;
-
   if (ev->mode == NotifyGrab
       || (ev->mode == NotifyNormal
       && (ev->detail == NotifyNonlinear
@@ -2831,6 +2834,10 @@ main(int argc, char **argv) {
     win_type_shadow[WINTYPE_DND] = False;
   }
 
+  // Determine whether we need to track focus changes
+  if (inactive_opacity || inactive_dim)
+    track_focus = True;
+
   dpy = XOpenDisplay(display);
   if (!dpy) {
     fprintf(stderr, "Can't open display\n");
@@ -2929,9 +2936,10 @@ main(int argc, char **argv) {
     add_win(dpy, children[i], i ? children[i-1] : None, False);
   }
 
-  // Check the currently focused window so we can apply appropriate
-  // opacity on it
+  if (track_focus)
   {
+    // Determine the currently focused window so we can apply appropriate
+    // opacity on it
     Window wid = 0;
     int revert_to;
     win *w = NULL;
