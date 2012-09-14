@@ -715,7 +715,8 @@ determine_evmask(Display *dpy, Window wid, win_evmode_t mode) {
   }
 
   if (WIN_EVMODE_CLIENT == mode || find_client_win(dpy, wid)) {
-    evmask |= PropertyChangeMask;
+    if (frame_opacity)
+      evmask |= PropertyChangeMask;
   }
 
   return evmask;
@@ -1460,13 +1461,22 @@ map_win(Display *dpy, Window id,
   w->window_type = determine_wintype(dpy, w->id, w->id);
 
 #ifdef DEBUG_WINTYPE
-  printf("window 0x%x type %s\n",
+  printf("map_win(): window %#010lx type %s\n",
     w->id, wintype_name(w->window_type));
 #endif
 
   /* select before reading the property
      so that no property changes are lost */
   if (!override_redirect) {
+    // Detect client window here instead of in add_win() as the client
+    // window should have been prepared at this point
+    if (!(w->client_win)) {
+      Window cw = find_client_win(dpy, w->id);
+      if (cw) {
+        mark_client_win(dpy, w, cw);
+      }
+    }
+
     XSelectInput(dpy, id, determine_evmask(dpy, id, WIN_EVMODE_FRAME));
     // Notify compton when the shape of a window changes
     if (shape_exists) {
@@ -1737,6 +1747,26 @@ calc_dim(Display *dpy, win *w) {
   }
 }
 
+/**
+ * Mark a window as the client window of another.
+ *
+ * @param dpy display to use
+ * @param w struct _win of the parent window
+ * @param client window ID of the client window
+ */
+static void
+mark_client_win(Display *dpy, win *w, Window client) {
+  w->client_win = client;
+  
+  // Get the frame width and monitor further frame width changes on client
+  // window if necessary
+  if (frame_opacity) {
+    get_frame_extents(dpy, client,
+        &w->left_width, &w->right_width, &w->top_width, &w->bottom_width);
+  }
+  XSelectInput(dpy, client, determine_evmask(dpy, client, WIN_EVMODE_CLIENT));
+}
+
 static void
 add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   if (find_win(dpy, id)) {
@@ -1810,18 +1840,6 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->bottom_width = 0;
 
   new->client_win = 0;
-  if (!override_redirect) {
-    Window cw = find_client_win(dpy, new->id);
-    if (cw) {
-      new->client_win = cw;
-      if (frame_opacity) {
-        get_frame_extents(dpy, cw,
-          &new->left_width, &new->right_width,
-          &new->top_width, &new->bottom_width);
-      }
-      XSelectInput(dpy, cw, determine_evmask(dpy, id, WIN_EVMODE_CLIENT));
-    }
-  }
 
   new->next = *p;
   *p = new;
@@ -2424,6 +2442,12 @@ ev_reparent_notify(XReparentEvent *ev) {
     // Reset event mask in case something wrong happens
     XSelectInput(dpy, ev->window,
         determine_evmask(dpy, ev->window, WIN_EVMODE_UNKNOWN));
+    /*
+    // Check if the window is a client window of another
+    win *w_top = find_toplevel2(dpy, ev->window);
+    if (w_top && !(w_top->client_win)) {
+      mark_client_win(dpy, w_top, ev->window);
+    } */
   }
 }
 

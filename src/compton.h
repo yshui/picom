@@ -392,9 +392,6 @@ border_size(Display *dpy, win *w);
 static Window
 find_client_win(Display *dpy, Window w);
 
-static Window
-find_client_win2(Display *dpy, Window w);
-
 static void
 get_frame_extents(Display *dpy, Window w,
                   unsigned int *left,
@@ -450,6 +447,9 @@ calc_opacity(Display *dpy, win *w, Bool refetch_prop);
 
 static void
 calc_dim(Display *dpy, win *w);
+
+static void
+mark_client_win(Display *dpy, win *w, Window client);
 
 static void
 add_win(Display *dpy, Window id, Window prev, Bool override_redirect);
