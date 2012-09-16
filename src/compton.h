@@ -97,10 +97,10 @@ typedef struct _win {
   Picture picture;
   Picture alpha_pict;
   Picture alpha_border_pict;
-  Picture shadow_pict;
   XserverRegion border_size;
   XserverRegion extents;
-  Picture shadow;
+  Bool shadow;
+  Picture shadow_pict;
   int shadow_dx;
   int shadow_dy;
   int shadow_width;
@@ -158,6 +158,8 @@ extern Atom atom_client_attr;
 
 // inline functions must be made static to compile correctly under clang:
 // http://clang.llvm.org/compatibility.html#inline
+
+// Helper functions
 
 /**
  * Normalize an int value to a specific range.
@@ -254,6 +256,50 @@ print_timestamp(void) {
   printf("[ %5ld.%02ld ] ", diff.tv_sec, diff.tv_usec / 10000);
 }
 #endif
+
+/**
+ * Destroy a <code>XserverRegion</code>.
+ */
+inline static void
+free_region(Display *dpy, XserverRegion *p) {
+  if (*p) {
+    XFixesDestroyRegion(dpy, *p);
+    *p = None;
+  }
+}
+
+/**
+ * Destroy a <code>Picture</code>.
+ */
+inline static void
+free_picture(Display *dpy, Picture *p) {
+  if (*p) {
+    XRenderFreePicture(dpy, *p);
+    *p = None;
+  }
+}
+
+/**
+ * Destroy a <code>Pixmap</code>.
+ */
+inline static void
+free_pixmap(Display *dpy, Pixmap *p) {
+  if (*p) {
+    XFreePixmap(dpy, *p);
+    *p = None;
+  }
+}
+
+/**
+ * Destroy a <code>Damage</code>.
+ */
+inline static void
+free_damage(Display *dpy, Damage *p) {
+  if (*p) {
+    XDamageDestroy(dpy, *p);
+    *p = None;
+  }
+}
 
 /**
  * Determine if a window has a specific attribute.
@@ -543,18 +589,6 @@ ev_damage_notify(XDamageNotifyEvent *ev);
 
 inline static void
 ev_shape_notify(XShapeEvent *ev);
-
-/**
- * Destory the cached border_size of a window.
- */
-inline static void
-win_free_border_size(Display *dpy, win *w) {
-  if (w->border_size) {
-    set_ignore(dpy, NextRequest(dpy));
-    XFixesDestroyRegion(dpy, w->border_size);
-    w->border_size = None;
-  }
-}
 
 /**
  * Get a region of the screen size.

@@ -278,13 +278,11 @@ run_fades(Display *dpy) {
 
     determine_mode(dpy, w);
 
-    if (w->shadow) {
-      XRenderFreePicture(dpy, w->shadow);
-      w->shadow = None;
+    if (w->shadow_pict) {
+      XRenderFreePicture(dpy, w->shadow_pict);
+      w->shadow_pict = None;
 
-      if (w->extents != None) {
-        XFixesDestroyRegion(dpy, w->extents);
-      }
+      free_region(dpy, &w->extents);
 
       /* rebuild the shadow */
       w->extents = win_extents(dpy, w);
@@ -900,18 +898,18 @@ win_extents(Display *dpy, win *w) {
     w->shadow_dx = shadow_offset_x;
     w->shadow_dy = shadow_offset_y;
 
-    if (!w->shadow) {
+    if (!w->shadow_pict) {
       double opacity = shadow_opacity;
 
       if (w->mode != WINDOW_SOLID) {
-        opacity = opacity * ((double)w->opacity) / ((double)OPAQUE);
+        opacity = opacity * get_opacity_percent(dpy, w);
       }
 
       if (HAS_FRAME_OPACITY(w)) {
         opacity = opacity * frame_opacity;
       }
 
-      w->shadow = shadow_picture(
+      w->shadow_pict = shadow_picture(
         dpy, opacity, w->alpha_pict,
         w->a.width + w->a.border_width * 2,
         w->a.height + w->a.border_width * 2,
@@ -1114,15 +1112,9 @@ paint_all(Display *dpy, XserverRegion region) {
 #endif
 
     if (clip_changed) {
-      win_free_border_size(dpy, w);
-      if (w->extents) {
-        XFixesDestroyRegion(dpy, w->extents);
-        w->extents = None;
-      }
-      if (w->border_clip) {
-        XFixesDestroyRegion(dpy, w->border_clip);
-        w->border_clip = None;
-      }
+      free_region(dpy, &w->border_size);
+      free_region(dpy, &w->extents);
+      free_region(dpy, &w->border_clip);
     }
 
     if (!w->border_size) {
@@ -1190,7 +1182,7 @@ paint_all(Display *dpy, XserverRegion region) {
 
     if (win_type_shadow[w->window_type]) {
       XRenderComposite(
-        dpy, PictOpOver, cshadow_picture, w->shadow,
+        dpy, PictOpOver, cshadow_picture, w->shadow_pict,
         root_buffer, 0, 0, 0, 0,
         w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
         w->shadow_width, w->shadow_height);
@@ -1198,7 +1190,7 @@ paint_all(Display *dpy, XserverRegion region) {
 
     if (w->opacity != OPAQUE && !w->alpha_pict) {
       w->alpha_pict = solid_picture(
-        dpy, False, (double)w->opacity / OPAQUE, 0, 0, 0);
+        dpy, False, get_opacity_percent(dpy, w), 0, 0, 0);
     }
 
     if (HAS_FRAME_OPACITY(w) && !w->alpha_border_pict) {
@@ -1269,8 +1261,7 @@ paint_all(Display *dpy, XserverRegion region) {
       }
     }
 
-    XFixesDestroyRegion(dpy, w->border_clip);
-    w->border_clip = None;
+    free_region(dpy, &w->border_clip);
   }
 
   XFixesDestroyRegion(dpy, region);
@@ -1533,29 +1524,13 @@ finish_unmap_win(Display *dpy, win *w) {
   }
 
 #if HAS_NAME_WINDOW_PIXMAP
-  if (w->pixmap) {
-    XFreePixmap(dpy, w->pixmap);
-    w->pixmap = None;
-  }
+  free_pixmap(dpy, &w->pixmap);
 #endif
 
-  if (w->picture) {
-    set_ignore(dpy, NextRequest(dpy));
-    XRenderFreePicture(dpy, w->picture);
-    w->picture = None;
-  }
-
-  win_free_border_size(dpy, w);
-
-  if (w->shadow) {
-    XRenderFreePicture(dpy, w->shadow);
-    w->shadow = None;
-  }
-
-  if (w->border_clip) {
-    XFixesDestroyRegion(dpy, w->border_clip);
-    w->border_clip = None;
-  }
+  free_picture(dpy, &w->picture);
+  free_region(dpy, &w->border_size);
+  free_picture(dpy, &w->shadow_pict);
+  free_region(dpy, &w->border_clip);
 
   clip_changed = True;
 }
@@ -1586,7 +1561,7 @@ unmap_win(Display *dpy, Window id, Bool fade) {
 
 #if HAS_NAME_WINDOW_PIXMAP
   if (w->pixmap && fade && win_type_fade[w->window_type]) {
-    set_fade(dpy, w, w->opacity * 1.0 / OPAQUE, 0.0,
+    set_fade(dpy, w, get_opacity_percent(dpy, w), 0.0,
              fade_out_step, unmap_callback, False, True);
   } else
 #endif
@@ -1615,7 +1590,7 @@ get_opacity_prop(Display *dpy, win *w, opacity_t def) {
 
 static double
 get_opacity_percent(Display *dpy, win *w) {
-  return w->opacity * 1.0 / OPAQUE;
+  return ((double) w->opacity) / OPAQUE;
 }
 
 static void
@@ -1625,20 +1600,8 @@ determine_mode(Display *dpy, win *w) {
 
   /* if trans prop == -1 fall back on previous tests */
 
-  if (w->alpha_pict) {
-    XRenderFreePicture(dpy, w->alpha_pict);
-    w->alpha_pict = None;
-  }
-
-  if (w->alpha_border_pict) {
-    XRenderFreePicture(dpy, w->alpha_border_pict);
-    w->alpha_border_pict = None;
-  }
-
-  if (w->shadow_pict) {
-    XRenderFreePicture(dpy, w->shadow_pict);
-    w->shadow_pict = None;
-  }
+  free_picture(dpy, &w->alpha_pict);
+  free_picture(dpy, &w->alpha_border_pict);
 
   if (w->a.class == InputOnly) {
     format = 0;
@@ -1668,13 +1631,11 @@ set_opacity(Display *dpy, win *w, opacity_t opacity) {
   w->opacity = opacity;
   determine_mode(dpy, w);
 
-  if (w->shadow) {
-    XRenderFreePicture(dpy, w->shadow);
-    w->shadow = None;
+  if (w->shadow_pict) {
+    XRenderFreePicture(dpy, w->shadow_pict);
+    w->shadow_pict = None;
 
-    if (w->extents != None) {
-      XFixesDestroyRegion(dpy, w->extents);
-    }
+    free_region(dpy, &w->extents);
 
     /* rebuild the shadow */
     w->extents = win_extents(dpy, w);
@@ -1815,10 +1776,10 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
 
   new->alpha_pict = None;
   new->alpha_border_pict = None;
+  new->shadow = False;
   new->shadow_pict = None;
   new->border_size = None;
   new->extents = None;
-  new->shadow = None;
   new->shadow_dx = 0;
   new->shadow_dy = 0;
   new->shadow_width = 0;
@@ -1957,20 +1918,10 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
 
     if (w->a.width != ce->width || w->a.height != ce->height) {
 #if HAS_NAME_WINDOW_PIXMAP
-      if (w->pixmap) {
-        XFreePixmap(dpy, w->pixmap);
-        w->pixmap = None;
-        if (w->picture) {
-          XRenderFreePicture(dpy, w->picture);
-          w->picture = None;
-        }
-      }
+      free_pixmap(dpy, &w->pixmap);
+      free_picture(dpy, &w->picture);
 #endif
-
-      if (w->shadow) {
-        XRenderFreePicture(dpy, w->shadow);
-        w->shadow = None;
-      }
+      free_picture(dpy, &w->shadow_pict);
     }
 
     w->a.width = ce->width;
@@ -2016,32 +1967,10 @@ finish_destroy_win(Display *dpy, Window id) {
       finish_unmap_win(dpy, w);
       *prev = w->next;
 
-      if (w->alpha_pict) {
-        XRenderFreePicture(dpy, w->alpha_pict);
-        w->alpha_pict = None;
-      }
-
-      if (w->alpha_border_pict) {
-        XRenderFreePicture(dpy, w->alpha_border_pict);
-        w->alpha_border_pict = None;
-      }
-
-      if (w->shadow_pict) {
-        XRenderFreePicture(dpy, w->shadow_pict);
-        w->shadow_pict = None;
-      }
-
-      /* fix leak, from freedesktop repo */
-      if (w->shadow) {
-        XRenderFreePicture(dpy, w->shadow);
-        w->shadow = None;
-      }
-
-      if (w->damage != None) {
-        set_ignore(dpy, NextRequest(dpy));
-        XDamageDestroy(dpy, w->damage);
-        w->damage = None;
-      }
+      free_picture(dpy, &w->alpha_pict);
+      free_picture(dpy, &w->alpha_border_pict);
+      free_picture(dpy, &w->shadow_pict);
+      free_damage(dpy, &w->damage);
 
       cleanup_fade(dpy, w);
       free(w);
