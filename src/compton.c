@@ -579,7 +579,7 @@ make_shadow(Display *dpy, double opacity,
 }
 
 static Picture
-shadow_picture(Display *dpy, double opacity, Picture alpha_pict,
+shadow_picture(Display *dpy, double opacity,
                int width, int height, int *wp, int *hp) {
   XImage *shadow_image;
   Pixmap shadow_pixmap;
@@ -910,7 +910,7 @@ win_extents(Display *dpy, win *w) {
       }
 
       w->shadow_pict = shadow_picture(
-        dpy, opacity, w->alpha_pict,
+        dpy, opacity,
         w->a.width + w->a.border_width * 2,
         w->a.height + w->a.border_width * 2,
         &w->shadow_width, &w->shadow_height);
@@ -1125,7 +1125,32 @@ paint_all(Display *dpy, XserverRegion region) {
       w->extents = win_extents(dpy, w);
     }
 
-    if (w->mode == WINDOW_SOLID && !HAS_FRAME_OPACITY(w)) {
+    // Rebuild alpha_pict only if necessary
+    if (OPAQUE != w->opacity
+        && (!w->alpha_pict || w->opacity != w->opacity_cur)) {
+      free_picture(dpy, &w->alpha_pict);
+      w->alpha_pict = solid_picture(
+        dpy, False, get_opacity_percent(dpy, w), 0, 0, 0);
+      w->opacity_cur = w->opacity;
+    }
+
+    // Calculate frame_opacity
+    if (frame_opacity && 1.0 != frame_opacity && w->top_width)
+      w->frame_opacity = get_opacity_percent(dpy, w) * frame_opacity;
+    else
+      w->frame_opacity = 0.0;
+
+    // Rebuild frame_alpha_pict only if necessary
+    if (w->frame_opacity
+        && (!w->frame_alpha_pict
+          || w->frame_opacity != w->frame_opacity_cur)) {
+      free_picture(dpy, &w->frame_alpha_pict);
+      w->frame_alpha_pict = solid_picture(
+        dpy, False, w->frame_opacity, 0, 0, 0);
+      w->frame_opacity_cur = w->frame_opacity;
+    }
+
+    if (w->mode == WINDOW_SOLID && !w->frame_opacity) {
       int x, y, wid, hei;
 
 #if HAS_NAME_WINDOW_PIXMAP
@@ -1188,17 +1213,7 @@ paint_all(Display *dpy, XserverRegion region) {
         w->shadow_width, w->shadow_height);
     }
 
-    if (w->opacity != OPAQUE && !w->alpha_pict) {
-      w->alpha_pict = solid_picture(
-        dpy, False, get_opacity_percent(dpy, w), 0, 0, 0);
-    }
-
-    if (HAS_FRAME_OPACITY(w) && !w->alpha_border_pict) {
-      w->alpha_border_pict = solid_picture(
-        dpy, False, frame_opacity, 0, 0, 0);
-    }
-
-    if (w->mode != WINDOW_SOLID || HAS_FRAME_OPACITY(w)) {
+    if (w->mode != WINDOW_SOLID || w->frame_opacity) {
       int x, y, wid, hei;
 
       // Necessary to make sure specially-shaped windows are
@@ -1219,9 +1234,11 @@ paint_all(Display *dpy, XserverRegion region) {
 
       set_ignore(dpy, NextRequest(dpy));
 
-      if (!HAS_FRAME_OPACITY(w)) {
+      Picture alpha_mask = (OPAQUE == w->opacity ? None: w->alpha_pict);
+
+      if (!w->frame_opacity) {
         XRenderComposite(
-          dpy, PictOpOver, w->picture, w->alpha_pict,
+          dpy, PictOpOver, w->picture, alpha_mask,
           root_buffer, 0, 0, 0, 0, x, y, wid, hei);
       } else {
         unsigned int t = w->top_width;
@@ -1231,27 +1248,27 @@ paint_all(Display *dpy, XserverRegion region) {
 
         /* top */
         XRenderComposite(
-          dpy, PictOpOver, w->picture, w->alpha_border_pict, root_buffer,
+          dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
           0, 0, 0, 0, x, y, wid, t);
 
         /* left */
         XRenderComposite(
-          dpy, PictOpOver, w->picture, w->alpha_border_pict, root_buffer,
+          dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
           0, t, 0, t, x, y + t, l, hei - t);
 
         /* bottom */
         XRenderComposite(
-          dpy, PictOpOver, w->picture, w->alpha_border_pict, root_buffer,
+          dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
           l, hei - b, l, hei - b, x + l, y + hei - b, wid - l - r, b);
 
         /* right */
         XRenderComposite(
-          dpy, PictOpOver, w->picture, w->alpha_border_pict, root_buffer,
+          dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
           wid - r, t, wid - r, t, x + wid - r, y + t, r, hei - t);
 
         /* body */
         XRenderComposite(
-          dpy, PictOpOver, w->picture, w->alpha_pict, root_buffer,
+          dpy, PictOpOver, w->picture, alpha_mask, root_buffer,
           l, t, l, t, x + l, y + t, wid - l - r, hei - t - b);
       }
 
@@ -1600,9 +1617,6 @@ determine_mode(Display *dpy, win *w) {
 
   /* if trans prop == -1 fall back on previous tests */
 
-  free_picture(dpy, &w->alpha_pict);
-  free_picture(dpy, &w->alpha_border_pict);
-
   if (w->a.class == InputOnly) {
     format = 0;
   } else {
@@ -1774,8 +1788,6 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
     new->damage = XDamageCreate(dpy, id, XDamageReportNonEmpty);
   }
 
-  new->alpha_pict = None;
-  new->alpha_border_pict = None;
   new->shadow = False;
   new->shadow_pict = None;
   new->border_size = None;
@@ -1785,7 +1797,12 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->shadow_width = 0;
   new->shadow_height = 0;
   new->opacity = OPAQUE;
+  new->opacity_cur = OPAQUE;
   new->opacity_prop = OPAQUE;
+  new->alpha_pict = None;
+  new->frame_opacity = 1.0;
+  new->frame_opacity_cur = 1.0;
+  new->frame_alpha_pict = None;
   new->dim = False;
   new->focused = False;
   new->destroyed = False;
@@ -1968,7 +1985,7 @@ finish_destroy_win(Display *dpy, Window id) {
       *prev = w->next;
 
       free_picture(dpy, &w->alpha_pict);
-      free_picture(dpy, &w->alpha_border_pict);
+      free_picture(dpy, &w->frame_alpha_pict);
       free_picture(dpy, &w->shadow_pict);
       free_damage(dpy, &w->damage);
 

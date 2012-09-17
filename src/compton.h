@@ -95,8 +95,6 @@ typedef struct _win {
   int damaged;
   Damage damage;
   Picture picture;
-  Picture alpha_pict;
-  Picture alpha_border_pict;
   XserverRegion border_size;
   XserverRegion extents;
   Bool shadow;
@@ -105,9 +103,23 @@ typedef struct _win {
   int shadow_dy;
   int shadow_width;
   int shadow_height;
+
+  /// Current window opacity.
   opacity_t opacity;
+  /// Opacity of current alpha_pict.
+  opacity_t opacity_cur;
   /// Cached value of opacity window attribute.
   opacity_t opacity_prop;
+  /// Alpha mask Picture to render window with opacity.
+  Picture alpha_pict;
+
+  /// Current window frame opacity.
+  double frame_opacity;
+  /// Opacity of current frame_alpha_pict.
+  opacity_t frame_opacity_cur;
+  /// Alpha mask Picture to render window frame with opacity.
+  Picture frame_alpha_pict;
+
   /// Whether the window is to be dimmed.
   Bool dim;
   wintype window_type;
@@ -392,7 +404,7 @@ make_shadow(Display *dpy, double opacity,
             int width, int height);
 
 static Picture
-shadow_picture(Display *dpy, double opacity, Picture alpha_pict,
+shadow_picture(Display *dpy, double opacity,
                int width, int height, int *wp, int *hp);
 
 static Picture
