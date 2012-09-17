@@ -14,9 +14,7 @@
  * Shared
  */
 
-#ifdef DEBUG_EVENTS
 struct timeval time_start = { 0, 0 };
-#endif
 
 win *list;
 fade *fades;
@@ -774,7 +772,7 @@ find_toplevel2(Display *dpy, Window wid) {
     // just leave it alone.
     if (!XQueryTree(dpy, wid, &troot, &parent, &tchildren,
           &tnchildren)) {
-      wid = 0;
+      parent = 0;
       break;
     }
 
@@ -1114,7 +1112,6 @@ paint_all(Display *dpy, XserverRegion region) {
     if (clip_changed) {
       free_region(dpy, &w->border_size);
       free_region(dpy, &w->extents);
-      free_region(dpy, &w->border_clip);
     }
 
     if (!w->border_size) {
@@ -1150,43 +1147,6 @@ paint_all(Display *dpy, XserverRegion region) {
       w->frame_opacity_cur = w->frame_opacity;
     }
 
-    if (w->mode == WINDOW_SOLID && !w->frame_opacity) {
-      int x, y, wid, hei;
-
-#if HAS_NAME_WINDOW_PIXMAP
-      x = w->a.x;
-      y = w->a.y;
-      wid = w->a.width + w->a.border_width * 2;
-      hei = w->a.height + w->a.border_width * 2;
-#else
-      x = w->a.x + w->a.border_width;
-      y = w->a.y + w->a.border_width;
-      wid = w->a.width;
-      hei = w->a.height;
-#endif
-
-      XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, region);
-      set_ignore(dpy, NextRequest(dpy));
-
-      XFixesSubtractRegion(dpy, region, region, w->border_size);
-      set_ignore(dpy, NextRequest(dpy));
-
-      XRenderComposite(
-        dpy, PictOpSrc, w->picture,
-        None, root_buffer, 0, 0, 0, 0,
-        x, y, wid, hei);
-
-      if (w->dim) {
-        XRenderComposite(dpy, PictOpOver, dim_picture, None,
-            root_buffer, 0, 0, 0, 0, x, y, wid, hei);
-      }
-    }
-
-    if (!w->border_clip) {
-      w->border_clip = XFixesCreateRegion(dpy, 0, 0);
-      XFixesCopyRegion(dpy, w->border_clip, region);
-    }
-
     w->prev_trans = t;
     t = w;
   }
@@ -1196,15 +1156,29 @@ paint_all(Display *dpy, XserverRegion region) {
   fflush(stdout);
 #endif
 
-  XFixesSetPictureClipRegion(dpy,
-    root_buffer, 0, 0, region);
+  XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, region);
 
   paint_root(dpy);
 
   for (w = t; w; w = w->prev_trans) {
-    XFixesSetPictureClipRegion(dpy,
-      root_buffer, 0, 0, w->border_clip);
+    int x, y, wid, hei;
 
+#if HAS_NAME_WINDOW_PIXMAP
+    x = w->a.x;
+    y = w->a.y;
+    wid = w->a.width + w->a.border_width * 2;
+    hei = w->a.height + w->a.border_width * 2;
+#else
+    x = w->a.x + w->a.border_width;
+    y = w->a.y + w->a.border_width;
+    wid = w->a.width;
+    hei = w->a.height;
+#endif
+
+    // Allow shadow to be painted anywhere in the damaged region
+    XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, region);
+
+    // Painting shadow
     if (win_type_shadow[w->window_type]) {
       XRenderComposite(
         dpy, PictOpOver, cshadow_picture, w->shadow_pict,
@@ -1213,72 +1187,59 @@ paint_all(Display *dpy, XserverRegion region) {
         w->shadow_width, w->shadow_height);
     }
 
-    if (w->mode != WINDOW_SOLID || w->frame_opacity) {
-      int x, y, wid, hei;
+    // The window only could be painted in its bounding region
+    XserverRegion paint_reg = XFixesCreateRegion(dpy, NULL, 0);
+    XFixesIntersectRegion(dpy, paint_reg, region, w->border_size);
+    XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, paint_reg);
 
-      // Necessary to make sure specially-shaped windows are
-      // painted correctly
-      XFixesIntersectRegion(dpy, w->border_clip, w->border_clip, w->border_size);
-      XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, w->border_clip);
-#if HAS_NAME_WINDOW_PIXMAP
-      x = w->a.x;
-      y = w->a.y;
-      wid = w->a.width + w->a.border_width * 2;
-      hei = w->a.height + w->a.border_width * 2;
-#else
-      x = w->a.x + w->a.border_width;
-      y = w->a.y + w->a.border_width;
-      wid = w->a.width;
-      hei = w->a.height;
-#endif
+    Picture alpha_mask = (OPAQUE == w->opacity ? None: w->alpha_pict);
+    int op = (w->mode == WINDOW_SOLID ? PictOpSrc: PictOpOver);
 
-      set_ignore(dpy, NextRequest(dpy));
-
-      Picture alpha_mask = (OPAQUE == w->opacity ? None: w->alpha_pict);
-
-      if (!w->frame_opacity) {
-        XRenderComposite(
-          dpy, PictOpOver, w->picture, alpha_mask,
+    // Painting the window
+    if (!w->frame_opacity) {
+      XRenderComposite(dpy, op, w->picture, alpha_mask,
           root_buffer, 0, 0, 0, 0, x, y, wid, hei);
-      } else {
-        unsigned int t = w->top_width;
-        unsigned int l = w->left_width;
-        unsigned int b = w->bottom_width;
-        unsigned int r = w->right_width;
+    }
+    else {
+      unsigned int t = w->top_width;
+      unsigned int l = w->left_width;
+      unsigned int b = w->bottom_width;
+      unsigned int r = w->right_width;
 
-        /* top */
-        XRenderComposite(
-          dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
-          0, 0, 0, 0, x, y, wid, t);
+      /* top */
+      XRenderComposite(
+        dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
+        0, 0, 0, 0, x, y, wid, t);
 
-        /* left */
-        XRenderComposite(
-          dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
-          0, t, 0, t, x, y + t, l, hei - t);
+      /* left */
+      XRenderComposite(
+        dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
+        0, t, 0, t, x, y + t, l, hei - t);
 
-        /* bottom */
-        XRenderComposite(
-          dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
-          l, hei - b, l, hei - b, x + l, y + hei - b, wid - l - r, b);
+      /* bottom */
+      XRenderComposite(
+        dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
+        l, hei - b, l, hei - b, x + l, y + hei - b, wid - l - r, b);
 
-        /* right */
-        XRenderComposite(
-          dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
-          wid - r, t, wid - r, t, x + wid - r, y + t, r, hei - t);
+      /* right */
+      XRenderComposite(
+        dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
+        wid - r, t, wid - r, t, x + wid - r, y + t, r, hei - t);
 
-        /* body */
-        XRenderComposite(
-          dpy, PictOpOver, w->picture, alpha_mask, root_buffer,
-          l, t, l, t, x + l, y + t, wid - l - r, hei - t - b);
-      }
+      /* body */
+      XRenderComposite(
+        dpy, op, w->picture, alpha_mask, root_buffer,
+        l, t, l, t, x + l, y + t, wid - l - r, hei - t - b);
 
-      if (w->dim) {
-        XRenderComposite(dpy, PictOpOver, dim_picture, None,
-            root_buffer, 0, 0, 0, 0, x, y, wid, hei);
-      }
     }
 
-    free_region(dpy, &w->border_clip);
+    // Dimming the window if needed
+    if (w->dim) {
+      XRenderComposite(dpy, PictOpOver, dim_picture, None,
+          root_buffer, 0, 0, 0, 0, x, y, wid, hei);
+    }
+
+    XFixesDestroyRegion(dpy, paint_reg);
   }
 
   XFixesDestroyRegion(dpy, region);
@@ -1547,7 +1508,6 @@ finish_unmap_win(Display *dpy, win *w) {
   free_picture(dpy, &w->picture);
   free_region(dpy, &w->border_size);
   free_picture(dpy, &w->shadow_pict);
-  free_region(dpy, &w->border_clip);
 
   clip_changed = True;
 }
@@ -1567,7 +1527,8 @@ unmap_win(Display *dpy, Window id, Bool fade) {
 
   w->a.map_state = IsUnmapped;
 
-  /* don't care about properties anymore */
+  // don't care about properties anymore
+  // Will get BadWindow if the window is destroyed
   set_ignore(dpy, NextRequest(dpy));
   XSelectInput(dpy, w->id, 0);
 
@@ -1809,7 +1770,6 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->need_configure = False;
   new->window_type = WINTYPE_UNKNOWN;
 
-  new->border_clip = None;
   new->prev_trans = 0;
 
   new->left_width = 0;
@@ -2178,6 +2138,7 @@ error(Display *dpy, XErrorEvent *ev) {
       break;
   }
 
+  print_timestamp();
   printf("error %d (%s) request %d minor %d serial %lu\n",
     ev->error_code, name, ev->request_code,
     ev->minor_code, ev->serial);
@@ -2577,7 +2538,7 @@ ev_handle(XEvent *ev) {
  */
 
 static void
-usage() {
+usage(void) {
   fprintf(stderr, "compton v0.0.1\n");
   fprintf(stderr, "usage: compton [options]\n");
   fprintf(stderr,
@@ -2669,7 +2630,7 @@ register_cm(int scr) {
 }
 
 static void
-fork_after() {
+fork_after(void) {
   if (getppid() == 1) return;
 
   int pid = fork();
@@ -2689,7 +2650,7 @@ fork_after() {
 }
 
 static void
-get_atoms() {
+get_atoms(void) {
   extents_atom = XInternAtom(dpy,
     "_NET_FRAME_EXTENTS", False);
   opacity_atom = XInternAtom(dpy,
@@ -2758,9 +2719,7 @@ main(int argc, char **argv) {
   double shadow_green = 0.0;
   double shadow_blue = 0.0;
 
-#ifdef DEBUG_EVENTS
   gettimeofday(&time_start, NULL);
-#endif
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
     win_type_fade[i] = False;

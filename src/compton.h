@@ -36,11 +36,9 @@
 // #define DEBUG_WINTYPE 1
 // #define MONITOR_REPAINT 1
 
-#ifdef DEBUG_EVENTS
 // For printing timestamps
 #include <time.h>
 extern struct timeval time_start;
-#endif
 
 #define OPAQUE 0xffffffff
 #define REGISTER_PROP "_NET_WM_CM_S"
@@ -135,8 +133,6 @@ typedef struct _win {
   Bool need_configure;
   XConfigureEvent queue_configure;
 
-  /* for drawing translucent windows */
-  XserverRegion border_clip;
   struct _win *prev_trans;
 } win;
 
@@ -172,6 +168,15 @@ extern Atom atom_client_attr;
 // http://clang.llvm.org/compatibility.html#inline
 
 // Helper functions
+
+static void
+discard_ignore(Display *dpy, unsigned long sequence);
+
+static void
+set_ignore(Display *dpy, unsigned long sequence);
+
+static int
+should_ignore(Display *dpy, unsigned long sequence);
 
 /**
  * Normalize an int value to a specific range.
@@ -218,7 +223,6 @@ array_wid_exists(const Window *arr, int count, Window wid) {
   return False;
 }
 
-#ifdef DEBUG_EVENTS
 /*
  * Subtracting two struct timeval values.
  *
@@ -267,7 +271,6 @@ print_timestamp(void) {
   timeval_subtract(&diff, &tm, &time_start);
   printf("[ %5ld.%02ld ] ", diff.tv_sec, diff.tv_usec / 10000);
 }
-#endif
 
 /**
  * Destroy a <code>XserverRegion</code>.
@@ -308,6 +311,8 @@ free_pixmap(Display *dpy, Pixmap *p) {
 inline static void
 free_damage(Display *dpy, Damage *p) {
   if (*p) {
+    // BadDamage will be thrown if the window is destroyed
+    set_ignore(dpy, NextRequest(dpy));
     XDamageDestroy(dpy, *p);
     *p = None;
   }
@@ -360,7 +365,7 @@ win_get_children(Display *dpy, Window w,
 }
 
 static int
-get_time_in_milliseconds();
+get_time_in_milliseconds(void);
 
 static fade *
 find_fade(win *w);
@@ -410,15 +415,6 @@ shadow_picture(Display *dpy, double opacity,
 static Picture
 solid_picture(Display *dpy, Bool argb, double a,
               double r, double g, double b);
-
-static void
-discard_ignore(Display *dpy, unsigned long sequence);
-
-static void
-set_ignore(Display *dpy, unsigned long sequence);
-
-static int
-should_ignore(Display *dpy, unsigned long sequence);
 
 static long
 determine_evmask(Display *dpy, Window wid, win_evmode_t mode);
@@ -558,7 +554,7 @@ ev_window(XEvent *ev);
 #endif
 
 static void
-usage();
+usage(void);
 
 static void
 register_cm(int scr);
@@ -645,7 +641,7 @@ inline static void
 ev_handle(XEvent *ev);
 
 static void
-fork_after();
+fork_after(void);
 
 static void
-get_atoms();
+get_atoms(void);
