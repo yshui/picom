@@ -47,6 +47,11 @@ extern struct timeval time_start;
 #define WINDOW_TRANS 1
 #define WINDOW_ARGB 2
 
+// Window flags
+
+// Window size is changed
+#define WFLAG_SIZE_CHANGE   0x0001
+
 /**
  * Types
  */
@@ -95,12 +100,17 @@ typedef struct _win {
   Picture picture;
   XserverRegion border_size;
   XserverRegion extents;
-  Bool shadow;
-  Picture shadow_pict;
-  int shadow_dx;
-  int shadow_dy;
-  int shadow_width;
-  int shadow_height;
+  // Type of the window.
+  wintype window_type;
+  /// Whether the window is focused.
+  Bool focused;
+  Bool destroyed;
+  /// Cached width/height of the window including border.
+  int widthb, heightb;
+  unsigned int left_width;
+  unsigned int right_width;
+  unsigned int top_width;
+  unsigned int bottom_width;
 
   /// Current window opacity.
   opacity_t opacity;
@@ -111,24 +121,38 @@ typedef struct _win {
   /// Alpha mask Picture to render window with opacity.
   Picture alpha_pict;
 
-  /// Current window frame opacity.
+  /// Current window frame opacity. Affected by window opacity.
   double frame_opacity;
   /// Opacity of current frame_alpha_pict.
   opacity_t frame_opacity_cur;
   /// Alpha mask Picture to render window frame with opacity.
   Picture frame_alpha_pict;
 
+  /// Whether a window has shadow. Affected by window type.
+  Bool shadow;
+  /// Opacity of the shadow. Affected by window opacity and frame opacity.
+  double shadow_opacity;
+  /// Opacity of current shadow_pict.
+  double shadow_opacity_cur;
+  /// X offset of shadow. Affected by commandline argument.
+  int shadow_dx;
+  /// Y offset of shadow. Affected by commandline argument.
+  int shadow_dy;
+  /// Width of shadow. Affected by window size and commandline argument.
+  int shadow_width;
+  /// Height of shadow. Affected by window size and commandline argument.
+  int shadow_height;
+  /// Alpha mask Picture to render shadow. Affected by window size and
+  /// shadow opacity.
+  Picture shadow_pict;
+
   /// Whether the window is to be dimmed.
   Bool dim;
-  wintype window_type;
-  /// Whether the window is focused.
-  Bool focused;
+
+  /// Window flags. Definitions above.
+  int_fast16_t flags;
+
   unsigned long damage_sequence; /* sequence when damage was created */
-  Bool destroyed;
-  unsigned int left_width;
-  unsigned int right_width;
-  unsigned int top_width;
-  unsigned int bottom_width;
 
   Bool need_configure;
   XConfigureEvent queue_configure;
@@ -409,8 +433,7 @@ make_shadow(Display *dpy, double opacity,
             int width, int height);
 
 static Picture
-shadow_picture(Display *dpy, double opacity,
-               int width, int height, int *wp, int *hp);
+shadow_picture(Display *dpy, double opacity, int width, int height);
 
 static Picture
 solid_picture(Display *dpy, Bool argb, double a,
@@ -501,6 +524,15 @@ calc_opacity(Display *dpy, win *w, Bool refetch_prop);
 
 static void
 calc_dim(Display *dpy, win *w);
+
+static void
+determine_shadow(Display *dpy, win *w);
+
+static void
+calc_win_size(Display *dpy, win *w);
+
+static void
+calc_shadow_geometry(Display *dpy, win *w);
 
 static void
 mark_client_win(Display *dpy, win *w, Window client);

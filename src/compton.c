@@ -30,7 +30,6 @@ Picture cshadow_picture;
 Picture dim_picture = 0;
 Picture root_tile;
 XserverRegion all_damage;
-Bool clip_changed;
 #if HAS_NAME_WINDOW_PIXMAP
 Bool has_name_pixmap;
 #endif
@@ -275,16 +274,6 @@ run_fades(Display *dpy) {
     }
 
     determine_mode(dpy, w);
-
-    if (w->shadow_pict) {
-      XRenderFreePicture(dpy, w->shadow_pict);
-      w->shadow_pict = None;
-
-      free_region(dpy, &w->extents);
-
-      /* rebuild the shadow */
-      w->extents = win_extents(dpy, w);
-    }
 
     /* Must do this last as it might
        destroy f->w in callbacks */
@@ -577,8 +566,7 @@ make_shadow(Display *dpy, double opacity,
 }
 
 static Picture
-shadow_picture(Display *dpy, double opacity,
-               int width, int height, int *wp, int *hp) {
+shadow_picture(Display *dpy, double opacity, int width, int height) {
   XImage *shadow_image;
   Pixmap shadow_pixmap;
   Picture shadow_picture;
@@ -616,8 +604,6 @@ shadow_picture(Display *dpy, double opacity,
     dpy, shadow_pixmap, gc, shadow_image, 0, 0, 0, 0,
     shadow_image->width, shadow_image->height);
 
-  *wp = shadow_image->width;
-  *hp = shadow_image->height;
   XFreeGC(dpy, gc);
   XDestroyImage(shadow_image);
   XFreePixmap(dpy, shadow_pixmap);
@@ -881,38 +867,23 @@ paint_root(Display *dpy) {
     root_width, root_height);
 }
 
+/**
+ * Get a rectangular region a window (and possibly its shadow) occupies.
+ *
+ * Note w->shadow and shadow geometry must be correct before calling this
+ * function.
+ */
 static XserverRegion
 win_extents(Display *dpy, win *w) {
   XRectangle r;
 
   r.x = w->a.x;
   r.y = w->a.y;
-  r.width = w->a.width + w->a.border_width * 2;
-  r.height = w->a.height + w->a.border_width * 2;
+  r.width = w->widthb;
+  r.height = w->heightb;
 
-  if (win_type_shadow[w->window_type]) {
+  if (w->shadow) {
     XRectangle sr;
-
-    w->shadow_dx = shadow_offset_x;
-    w->shadow_dy = shadow_offset_y;
-
-    if (!w->shadow_pict) {
-      double opacity = shadow_opacity;
-
-      if (w->mode != WINDOW_SOLID) {
-        opacity = opacity * get_opacity_percent(dpy, w);
-      }
-
-      if (HAS_FRAME_OPACITY(w)) {
-        opacity = opacity * frame_opacity;
-      }
-
-      w->shadow_pict = shadow_picture(
-        dpy, opacity,
-        w->a.width + w->a.border_width * 2,
-        w->a.height + w->a.border_width * 2,
-        &w->shadow_width, &w->shadow_height);
-    }
 
     sr.x = w->a.x + w->shadow_dx;
     sr.y = w->a.y + w->shadow_dy;
@@ -953,12 +924,10 @@ border_size(Display *dpy, win *w) {
    * instead of an invalid XID.
    */
 
-  set_ignore(dpy, NextRequest(dpy));
   border = XFixesCreateRegionFromWindow(
     dpy, w->id, WindowRegionBounding);
 
   /* translate this */
-  set_ignore(dpy, NextRequest(dpy));
   XFixesTranslateRegion(dpy, border,
     w->a.x + w->a.border_width,
     w->a.y + w->a.border_width);
@@ -1109,11 +1078,6 @@ paint_all(Display *dpy, XserverRegion region) {
     printf(" %#010lx", w->id);
 #endif
 
-    if (clip_changed) {
-      free_region(dpy, &w->border_size);
-      free_region(dpy, &w->extents);
-    }
-
     if (!w->border_size) {
       w->border_size = border_size(dpy, w);
     }
@@ -1147,6 +1111,28 @@ paint_all(Display *dpy, XserverRegion region) {
       w->frame_opacity_cur = w->frame_opacity;
     }
 
+    // Calculate shadow opacity
+    if (w->frame_opacity)
+      w->shadow_opacity = shadow_opacity * w->frame_opacity;
+    else
+      w->shadow_opacity = shadow_opacity * get_opacity_percent(dpy, w);
+
+    // Rebuild shadow_pict if necessary
+    if (w->flags & WFLAG_SIZE_CHANGE)
+      free_picture(dpy, &w->shadow_pict);
+
+    if (w->shadow
+        && (!w->shadow_pict
+          || w->shadow_opacity != w->shadow_opacity_cur)) {
+      free_picture(dpy, &w->shadow_pict);
+      w->shadow_pict = shadow_picture(dpy, w->shadow_opacity,
+          w->widthb, w->heightb);
+      w->shadow_opacity_cur = w->shadow_opacity;
+    }
+
+    // Reset flags
+    w->flags = 0;
+
     w->prev_trans = t;
     t = w;
   }
@@ -1166,8 +1152,8 @@ paint_all(Display *dpy, XserverRegion region) {
 #if HAS_NAME_WINDOW_PIXMAP
     x = w->a.x;
     y = w->a.y;
-    wid = w->a.width + w->a.border_width * 2;
-    hei = w->a.height + w->a.border_width * 2;
+    wid = w->widthb;
+    hei = w->heightb;
 #else
     x = w->a.x + w->a.border_width;
     y = w->a.y + w->a.border_width;
@@ -1429,6 +1415,19 @@ map_win(Display *dpy, Window id,
   w->a.map_state = IsViewable;
   w->window_type = determine_wintype(dpy, w->id, w->id);
 
+  // Window type change could affect shadow
+  {
+    Bool shadow_old = w->shadow;
+    determine_shadow(dpy, w);
+    if (w->shadow != shadow_old) {
+      calc_shadow_geometry(dpy, w);
+      if (w->extents) {
+        free_region(dpy, &w->extents);
+        w->extents = win_extents(dpy, w);
+      }
+    }
+  }
+
 #ifdef DEBUG_WINTYPE
   printf("map_win(): window %#010lx type %s\n",
     w->id, wintype_name(w->window_type));
@@ -1508,8 +1507,6 @@ finish_unmap_win(Display *dpy, win *w) {
   free_picture(dpy, &w->picture);
   free_region(dpy, &w->border_size);
   free_picture(dpy, &w->shadow_pict);
-
-  clip_changed = True;
 }
 
 #if HAS_NAME_WINDOW_PIXMAP
@@ -1605,16 +1602,6 @@ set_opacity(Display *dpy, win *w, opacity_t opacity) {
 
   w->opacity = opacity;
   determine_mode(dpy, w);
-
-  if (w->shadow_pict) {
-    XRenderFreePicture(dpy, w->shadow_pict);
-    w->shadow_pict = None;
-
-    free_region(dpy, &w->extents);
-
-    /* rebuild the shadow */
-    w->extents = win_extents(dpy, w);
-  }
 }
 
 /**
@@ -1684,6 +1671,37 @@ calc_dim(Display *dpy, win *w) {
 }
 
 /**
+ * Determine if a window should have shadow.
+ */
+static void
+determine_shadow(Display *dpy, win *w) {
+  w->shadow = win_type_shadow[w->window_type];
+}
+
+/**
+ * Update cache data in struct _win that depends on window size.
+ */
+
+static void
+calc_win_size(Display *dpy, win *w) {
+  w->widthb = w->a.width + w->a.border_width * 2;
+  w->heightb = w->a.height + w->a.border_width * 2;
+  calc_shadow_geometry(dpy, w);
+  w->flags |= WFLAG_SIZE_CHANGE;
+}
+
+/**
+ * Calculate and update geometry of the shadow of a window.
+ */
+static void
+calc_shadow_geometry(Display *dpy, win *w) {
+  w->shadow_dx = shadow_offset_x;
+  w->shadow_dy = shadow_offset_y;
+  w->shadow_width = w->widthb + gaussian_map->size;
+  w->shadow_height = w->heightb + gaussian_map->size;
+}
+
+/**
  * Mark a window as the client window of another.
  *
  * @param dpy display to use
@@ -1749,10 +1767,12 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
     new->damage = XDamageCreate(dpy, id, XDamageReportNonEmpty);
   }
 
-  new->shadow = False;
-  new->shadow_pict = None;
   new->border_size = None;
   new->extents = None;
+  new->shadow = False;
+  new->shadow_opacity = 0.0;
+  new->shadow_opacity_cur = 0.0;
+  new->shadow_pict = None;
   new->shadow_dx = 0;
   new->shadow_dy = 0;
   new->shadow_width = 0;
@@ -1778,6 +1798,10 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->bottom_width = 0;
 
   new->client_win = 0;
+
+  new->flags = 0;
+
+  calc_win_size(dpy, new);
 
   new->next = *p;
   *p = new;
@@ -1898,12 +1922,15 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
       free_pixmap(dpy, &w->pixmap);
       free_picture(dpy, &w->picture);
 #endif
-      free_picture(dpy, &w->shadow_pict);
     }
 
-    w->a.width = ce->width;
-    w->a.height = ce->height;
-    w->a.border_width = ce->border_width;
+    if (w->a.width != ce->width || w->a.height != ce->height
+        || w->a.border_width != ce->border_width) {
+      w->a.width = ce->width;
+      w->a.height = ce->height;
+      w->a.border_width = ce->border_width;
+      calc_win_size(dpy, w);
+    }
 
     if (w->a.map_state != IsUnmapped && damage) {
       XserverRegion extents = win_extents(dpy, w);
@@ -1912,7 +1939,9 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
       add_damage(dpy, damage);
     }
 
-    clip_changed = True;
+    // Window extents and border_size may have changed
+    free_region(dpy, &w->extents);
+    free_region(dpy, &w->border_size);
   }
 
   w->a.override_redirect = ce->override_redirect;
@@ -1932,7 +1961,6 @@ circulate_win(Display *dpy, XCirculateEvent *ce) {
   }
 
   restack_win(dpy, w, new_above);
-  clip_changed = True;
 }
 
 static void
@@ -2016,7 +2044,6 @@ damage_win(Display *dpy, XDamageNotifyEvent *de) {
         && w->damage_bounds.y <= 0
         && w->a.width <= w->damage_bounds.x + w->damage_bounds.width
         && w->a.height <= w->damage_bounds.y + w->damage_bounds.height) {
-      clip_changed = True;
       if (win_type_fade[w->window_type]) {
         set_fade(dpy, w, 0, get_opacity_percent(dpy, w),
                  fade_in_step, 0, True, True);
@@ -2935,7 +2962,6 @@ main(int argc, char **argv) {
   }
 
   all_damage = None;
-  clip_changed = True;
   XGrabServer(dpy);
 
   XCompositeRedirectSubwindows(
@@ -2986,7 +3012,6 @@ main(int argc, char **argv) {
       paint++;
       XSync(dpy, False);
       all_damage = None;
-      clip_changed = False;
     }
   }
 }
