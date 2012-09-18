@@ -1055,6 +1055,10 @@ paint_all(Display *dpy, XserverRegion region) {
       continue;
     }
 
+#ifdef DEBUG_REPAINT
+    printf(" %#010lx", w->id);
+#endif
+
     if (!w->picture) {
       XRenderPictureAttributes pa;
       XRenderPictFormat *format;
@@ -1073,10 +1077,6 @@ paint_all(Display *dpy, XserverRegion region) {
       w->picture = XRenderCreatePicture(
         dpy, draw, format, CPSubwindowMode, &pa);
     }
-
-#ifdef DEBUG_REPAINT
-    printf(" %#010lx", w->id);
-#endif
 
     if (!w->border_size) {
       w->border_size = border_size(dpy, w);
@@ -1433,22 +1433,21 @@ map_win(Display *dpy, Window id,
     w->id, wintype_name(w->window_type));
 #endif
 
-  /* select before reading the property
-     so that no property changes are lost */
-  if (!override_redirect) {
-    // Detect client window here instead of in add_win() as the client
-    // window should have been prepared at this point
-    if (!(w->client_win)) {
-      Window cw = find_client_win(dpy, w->id);
-      if (cw) {
-        mark_client_win(dpy, w, cw);
-      }
-    }
+  // Call XSelectInput() before reading properties so that no property
+  // changes are lost
+  XSelectInput(dpy, id, determine_evmask(dpy, id, WIN_EVMODE_FRAME));
 
-    XSelectInput(dpy, id, determine_evmask(dpy, id, WIN_EVMODE_FRAME));
-    // Notify compton when the shape of a window changes
-    if (shape_exists) {
-      XShapeSelectInput(dpy, id, ShapeNotifyMask);
+  // Notify compton when the shape of a window changes
+  if (shape_exists) {
+    XShapeSelectInput(dpy, id, ShapeNotifyMask);
+  }
+
+  // Detect client window here instead of in add_win() as the client
+  // window should have been prepared at this point
+  if (!(w->client_win)) {
+    Window cw = find_client_win(dpy, w->id);
+    if (cw) {
+      mark_client_win(dpy, w, cw);
     }
   }
 
@@ -2247,6 +2246,8 @@ ev_name(XEvent *ev) {
       return "Expose";
     case PropertyNotify:
       return "PropertyNotify";
+    case ClientMessage:
+      return "ClientMessage";
     default:
       if (ev->type == damage_event + XDamageNotify) {
         return "Damage";
@@ -2284,6 +2285,8 @@ ev_window(XEvent *ev) {
       return ev->xexpose.window;
     case PropertyNotify:
       return ev->xproperty.window;
+    case ClientMessage:
+      return ev->xclient.window;
     default:
       if (ev->type == damage_event + XDamageNotify) {
         return ((XDamageNotifyEvent *)ev)->drawable;
