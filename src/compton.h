@@ -107,13 +107,12 @@ typedef struct _win {
   Bool destroyed;
   /// Cached width/height of the window including border.
   int widthb, heightb;
-  unsigned int left_width;
-  unsigned int right_width;
-  unsigned int top_width;
-  unsigned int bottom_width;
 
+  // Opacity-related members
   /// Current window opacity.
   opacity_t opacity;
+  /// Target window opacity.
+  opacity_t opacity_tgt;
   /// Opacity of current alpha_pict.
   opacity_t opacity_cur;
   /// Cached value of opacity window attribute.
@@ -121,13 +120,26 @@ typedef struct _win {
   /// Alpha mask Picture to render window with opacity.
   Picture alpha_pict;
 
+  // Fading-related members
+  /// Do not fade if it's false. Change on window type change.
+  /// Used by fading blacklist in the future.
+  Bool fade;
+  /// Callback to be called after fading completed.
+  void (*fade_callback) (Display *dpy, struct _win *w);
+  /// Whether fading is finished.
+  Bool fade_fin;
+
+  // Frame-opacity-related members
   /// Current window frame opacity. Affected by window opacity.
   double frame_opacity;
   /// Opacity of current frame_alpha_pict.
   opacity_t frame_opacity_cur;
   /// Alpha mask Picture to render window frame with opacity.
   Picture frame_alpha_pict;
+  /// Frame widths. Determined by client window attributes.
+  unsigned int left_width, right_width, top_width, bottom_width;
 
+  // Shadow-related members
   /// Whether a window has shadow. Affected by window type.
   Bool shadow;
   /// Opacity of the shadow. Affected by window opacity and frame opacity.
@@ -146,6 +158,7 @@ typedef struct _win {
   /// shadow opacity.
   Picture shadow_pict;
 
+  // Dim-related members
   /// Whether the window is to be dimmed.
   Bool dim;
 
@@ -164,16 +177,6 @@ typedef struct _conv {
   int size;
   double *data;
 } conv;
-
-typedef struct _fade {
-  struct _fade *next;
-  win *w;
-  double cur;
-  double finish;
-  double step;
-  void (*callback) (Display *dpy, win *w);
-  Display *dpy;
-} fade;
 
 typedef enum {
   WIN_EVMODE_UNKNOWN,
@@ -218,15 +221,29 @@ normalize_i_range(int i, int min, int max) {
 }
 
 /**
+ * Normalize a double value to a specific range.
+ *
+ * @param d double value to normalize
+ * @param min minimal value
+ * @param max maximum value
+ * @return normalized value
+ */
+static inline double
+normalize_d_range(double d, double min, double max) {
+  if (d > max) return max;
+  if (d < min) return min;
+  return d;
+}
+
+/**
  * Normalize a double value to 0.\ 0 - 1.\ 0.
  *
  * @param d double value to normalize
+ * @return normalized value
  */
 static inline double
 normalize_d(double d) {
-  if (d > 1.0) return 1.0;
-  if (d < 0.0) return 0.0;
-  return d;
+  return normalize_d_range(d, 0.0, 1.0);
 }
 
 /**
@@ -388,32 +405,33 @@ win_get_children(Display *dpy, Window w,
   return True;
 }
 
-static int
+static unsigned long
 get_time_in_milliseconds(void);
-
-static fade *
-find_fade(win *w);
-
-static void
-dequeue_fade(Display *dpy, fade *f);
-
-static void
-cleanup_fade(Display *dpy, win *w);
-
-static void
-enqueue_fade(Display *dpy, fade *f);
-
-static void
-set_fade(Display *dpy, win *w, double start,
-         double finish, double step,
-         void(*callback) (Display *dpy, win *w),
-         Bool exec_callback, Bool override);
 
 static int
 fade_timeout(void);
 
 static void
-run_fades(Display *dpy);
+run_fade(Display *dpy, win *w, unsigned steps);
+
+static void
+set_fade_callback(Display *dpy, win *w,
+    void (*callback) (Display *dpy, win *w), Bool exec_callback);
+
+/**
+ * Execute fade callback of a window if fading finished.
+ */
+static inline void
+check_fade_fin(Display *dpy, win *w) {
+  if (w->fade_fin) {
+    set_fade_callback(dpy, w, NULL, True);
+    w->fade_fin = False;
+  }
+}
+
+static void
+set_fade_callback(Display *dpy, win *w,
+    void (*callback) (Display *dpy, win *w), Bool exec_callback);
 
 static double
 gaussian(double r, double x, double y);
@@ -476,8 +494,11 @@ get_frame_extents(Display *dpy, Window w,
                   unsigned int *top,
                   unsigned int *bottom);
 
+static win *
+paint_preprocess(Display *dpy, win *list);
+
 static void
-paint_all(Display *dpy, XserverRegion region);
+paint_all(Display *dpy, XserverRegion region, win *t);
 
 static void
 add_damage(Display *dpy, XserverRegion damage);
@@ -517,13 +538,13 @@ static void
 determine_mode(Display *dpy, win *w);
 
 static void
-set_opacity(Display *dpy, win *w, opacity_t opacity);
-
-static void
 calc_opacity(Display *dpy, win *w, Bool refetch_prop);
 
 static void
 calc_dim(Display *dpy, win *w);
+
+static void
+determine_fade(Display *dpy, win *w);
 
 static void
 determine_shadow(Display *dpy, win *w);

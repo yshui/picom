@@ -17,7 +17,6 @@
 struct timeval time_start = { 0, 0 };
 
 win *list;
-fade *fades;
 Display *dpy;
 int scr;
 
@@ -97,10 +96,12 @@ int shadow_offset_x = -15;
 int shadow_offset_y = -15;
 double shadow_opacity = .75;
 
-double fade_in_step = 0.028;
-double fade_out_step = 0.03;
-int fade_delta = 10;
-int fade_time = 0;
+/// How much to fade in in a single fading step.
+opacity_t fade_in_step = 0.028 * OPAQUE;
+/// How much to fade out in a single fading step.
+opacity_t fade_out_step = 0.03 * OPAQUE;
+unsigned long fade_delta = 10;
+unsigned long fade_time = 0;
 Bool fade_trans = False;
 
 Bool clear_shadow = False;
@@ -125,7 +126,13 @@ Bool synchronize = False;
  * Fades
  */
 
-static int
+/**
+ * Get current system clock in milliseconds.
+ *
+ * The return type must be unsigned long because so many milliseconds have
+ * passed since the epoch.
+ */
+static unsigned long
 get_time_in_milliseconds() {
   struct timeval tv;
 
@@ -134,153 +141,70 @@ get_time_in_milliseconds() {
   return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
-static fade *
-find_fade(win *w) {
-  fade *f;
-
-  for (f = fades; f; f = f->next) {
-    if (f->w == w) return f;
-  }
-
-  return 0;
-}
-
-static void
-dequeue_fade(Display *dpy, fade *f) {
-  fade **prev;
-
-  for (prev = &fades; *prev; prev = &(*prev)->next) {
-    if (*prev == f) {
-      *prev = f->next;
-      if (f->callback) {
-        (*f->callback)(dpy, f->w);
-      }
-      free(f);
-      break;
-    }
-  }
-}
-
-static void
-cleanup_fade(Display *dpy, win *w) {
-  fade *f = find_fade (w);
-  if (f) {
-    dequeue_fade(dpy, f);
-  }
-}
-
-static void
-enqueue_fade(Display *dpy, fade *f) {
-  if (!fades) {
-    fade_time = get_time_in_milliseconds() + fade_delta;
-  }
-  f->next = fades;
-  fades = f;
-}
-
-static void
-set_fade(Display *dpy, win *w, double start,
-         double finish, double step,
-         void(*callback) (Display *dpy, win *w),
-         Bool exec_callback, Bool override) {
-  fade *f;
-
-  f = find_fade(w);
-  if (!f) {
-    f = malloc(sizeof(fade));
-    f->next = 0;
-    f->w = w;
-    f->cur = start;
-    enqueue_fade(dpy, f);
-  } else if (!override) {
-    return;
-  } else {
-    if (exec_callback && f->callback) {
-      (*f->callback)(dpy, f->w);
-    }
-  }
-
-  if (finish < 0) finish = 0;
-  if (finish > 1) finish = 1;
-  f->finish = finish;
-
-  if (f->cur < finish) {
-    f->step = step;
-  } else if (f->cur > finish) {
-    f->step = -step;
-  }
-
-  f->callback = callback;
-  set_opacity(dpy, w, f->cur * OPAQUE);
-
-  /* fading windows need to be drawn, mark
-     them as damaged.  when a window maps,
-     if it tries to fade in but it already
-     at the right opacity (map/unmap/map fast)
-     then it will never get drawn without this
-     until it repaints */
-  w->damaged = 1;
-}
-
+/**
+ * Get the time left before next fading point.
+ *
+ * In milliseconds.
+ */
 static int
 fade_timeout(void) {
-  int now;
-  int delta;
+  int diff = fade_delta - get_time_in_milliseconds() + fade_time;
 
-  if (!fades) return -1;
+  if (diff < 0)
+    diff = 0;
 
-  now = get_time_in_milliseconds();
-  delta = fade_time - now;
-
-  if (delta < 0) delta = 0;
-
-  return delta;
+  return diff;
 }
 
+/**
+ * Run fading on a window.
+ *
+ * @param steps steps of fading
+ */
 static void
-run_fades(Display *dpy) {
-  int now = get_time_in_milliseconds();
-  fade *next = fades;
-  int steps;
-  Bool need_dequeue;
-
-  if (fade_time - now > 0) return;
-  steps = 1 + (now - fade_time) / fade_delta;
-
-  while (next) {
-    fade *f = next;
-    win *w = f->w;
-    next = f->next;
-
-    f->cur += f->step * steps;
-    if (f->cur >= 1) {
-      f->cur = 1;
-    } else if (f->cur < 0) {
-      f->cur = 0;
-    }
-
-    w->opacity = f->cur * OPAQUE;
-    need_dequeue = False;
-    if (f->step > 0) {
-      if (f->cur >= f->finish) {
-        w->opacity = f->finish * OPAQUE;
-        need_dequeue = True;
-      }
-    } else {
-      if (f->cur <= f->finish) {
-        w->opacity = f->finish * OPAQUE;
-        need_dequeue = True;
-      }
-    }
-
-    determine_mode(dpy, w);
-
-    /* Must do this last as it might
-       destroy f->w in callbacks */
-    if (need_dequeue) dequeue_fade(dpy, f);
+run_fade(Display *dpy, win *w, unsigned steps) {
+  // If we reach target opacity, set fade_fin so the callback gets
+  // executed
+  if (w->opacity == w->opacity_tgt) {
+    w->fade_fin = True;
+    return;
   }
 
-  fade_time = now + fade_delta;
+  if (!w->fade)
+    w->opacity = w->opacity_tgt;
+  else if (steps) {
+    // Use double below because opacity_t will probably overflow during
+    // calculations
+    if (w->opacity < w->opacity_tgt)
+      w->opacity = normalize_d_range(
+          (double) w->opacity + (double) fade_in_step * steps,
+          0.0, w->opacity_tgt);
+    else
+      w->opacity = normalize_d_range(
+          (double) w->opacity - (double) fade_out_step * steps,
+          w->opacity_tgt, OPAQUE);
+  }
+
+  if (w->opacity == w->opacity_tgt) {
+    w->fade_fin = True;
+    return;
+  }
+
+  w->fade_fin = False;
+}
+
+/**
+ * Set fade callback of a window, and possibly execute the previous
+ * callback.
+ *
+ * @param exec_callback whether the previous callback is to be executed
+ */
+static void
+set_fade_callback(Display *dpy, win *w,
+    void (*callback) (Display *dpy, win *w), Bool exec_callback) {
+  if (exec_callback && w->fade_callback)
+    (w->fade_callback)(dpy, w);
+  w->fade_callback = callback;
 }
 
 /**
@@ -1003,62 +927,39 @@ get_frame_extents(Display *dpy, Window w,
   }
 }
 
-static void
-paint_all(Display *dpy, XserverRegion region) {
+static win *
+paint_preprocess(Display *dpy, win *list) {
   win *w;
-  win *t = 0;
+  win *t = NULL, *next = NULL;
+  // Sounds like the timeout in poll() frequently does not work
+  // accurately, asking it to wait to 20ms, and often it would wait for
+  // 19ms, so the step value has to be rounded.
+  unsigned steps = roundl((double) (get_time_in_milliseconds() - fade_time) / fade_delta);
 
-  if (!region) {
-    region = get_screen_region(dpy);
-  }
+  // Reset fade_time
+  fade_time = get_time_in_milliseconds();
 
-#ifdef MONITOR_REPAINT
-  root_buffer = root_picture;
-#else
-  if (!root_buffer) {
-    Pixmap root_pixmap = XCreatePixmap(
-      dpy, root, root_width, root_height,
-      DefaultDepth(dpy, scr));
+  for (w = list; w; w = next) {
+    // In case calling the fade callback function destroys this window
+    next = w->next;
+    opacity_t opacity_old = w->opacity;
 
-    root_buffer = XRenderCreatePicture(dpy, root_pixmap,
-      XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
-      0, 0);
-
-    XFreePixmap(dpy, root_pixmap);
-  }
-#endif
-
-  XFixesSetPictureClipRegion(dpy, root_picture, 0, 0, region);
-
-#ifdef MONITOR_REPAINT
-  XRenderComposite(
-    dpy, PictOpSrc, black_picture, None,
-    root_picture, 0, 0, 0, 0, 0, 0,
-    root_width, root_height);
-#endif
-
-#ifdef DEBUG_REPAINT
-  printf("paint:");
-#endif
-
-  for (w = list; w; w = w->next) {
 #if CAN_DO_USABLE
     if (!w->usable) continue;
 #endif
 
-    /* never painted, ignore it */
-    if (!w->damaged) continue;
+    // Run fading
+    run_fade(dpy, w, steps);
 
-    /* if invisible, ignore it */
-    if (w->a.x + w->a.width < 1 || w->a.y + w->a.height < 1
+    // Give up if it's not damaged or invisible
+    if (!w->damaged
+        || w->a.x + w->a.width < 1 || w->a.y + w->a.height < 1
         || w->a.x >= root_width || w->a.y >= root_height) {
+      check_fade_fin(dpy, w);
       continue;
     }
 
-#ifdef DEBUG_REPAINT
-    printf(" %#010lx", w->id);
-#endif
-
+    // Fetch the picture and pixmap if needed
     if (!w->picture) {
       XRenderPictureAttributes pa;
       XRenderPictFormat *format;
@@ -1078,12 +979,24 @@ paint_all(Display *dpy, XserverRegion region) {
         dpy, draw, format, CPSubwindowMode, &pa);
     }
 
+    // Fetch bounding region and extents if needed
     if (!w->border_size) {
       w->border_size = border_size(dpy, w);
     }
 
     if (!w->extents) {
       w->extents = win_extents(dpy, w);
+    }
+
+    // If opacity changes
+    if (w->opacity != opacity_old) {
+      determine_mode(dpy, w);
+      add_damage_win(dpy, w);
+    }
+
+    if (!w->opacity) {
+      check_fade_fin(dpy, w);
+      continue;
     }
 
     // Rebuild alpha_pict only if necessary
@@ -1137,14 +1050,47 @@ paint_all(Display *dpy, XserverRegion region) {
     t = w;
   }
 
-#ifdef DEBUG_REPAINT
-  printf("\n");
-  fflush(stdout);
+  return t;
+}
+
+static void
+paint_all(Display *dpy, XserverRegion region, win *t) {
+  win *w;
+
+  if (!region) {
+    region = get_screen_region(dpy);
+  }
+
+#ifdef MONITOR_REPAINT
+  root_buffer = root_picture;
+#else
+  if (!root_buffer) {
+    Pixmap root_pixmap = XCreatePixmap(
+      dpy, root, root_width, root_height,
+      DefaultDepth(dpy, scr));
+
+    root_buffer = XRenderCreatePicture(dpy, root_pixmap,
+      XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
+      0, 0);
+
+    XFreePixmap(dpy, root_pixmap);
+  }
 #endif
 
-  XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, region);
+  XFixesSetPictureClipRegion(dpy, root_picture, 0, 0, region);
+
+#ifdef MONITOR_REPAINT
+  XRenderComposite(
+    dpy, PictOpSrc, black_picture, None,
+    root_picture, 0, 0, 0, 0, 0, 0,
+    root_width, root_height);
+#endif
 
   paint_root(dpy);
+
+#ifdef DEBUG_REPAINT
+  printf("paint:");
+#endif
 
   for (w = t; w; w = w->prev_trans) {
     int x, y, wid, hei;
@@ -1159,6 +1105,10 @@ paint_all(Display *dpy, XserverRegion region) {
     y = w->a.y + w->a.border_width;
     wid = w->a.width;
     hei = w->a.height;
+#endif
+
+#ifdef DEBUG_REPAINT
+    printf(" %#010lx", w->id);
 #endif
 
     // Allow shadow to be painted anywhere in the damaged region
@@ -1226,7 +1176,14 @@ paint_all(Display *dpy, XserverRegion region) {
     }
 
     XFixesDestroyRegion(dpy, paint_reg);
+
+    check_fade_fin(dpy, w);
   }
+
+#ifdef DEBUG_REPAINT
+  printf("\n");
+  fflush(stdout);
+#endif
 
   XFixesDestroyRegion(dpy, region);
 
@@ -1415,18 +1372,12 @@ map_win(Display *dpy, Window id,
   w->a.map_state = IsViewable;
   w->window_type = determine_wintype(dpy, w->id, w->id);
 
-  // Window type change could affect shadow
-  {
-    Bool shadow_old = w->shadow;
-    determine_shadow(dpy, w);
-    if (w->shadow != shadow_old) {
-      calc_shadow_geometry(dpy, w);
-      if (w->extents) {
-        free_region(dpy, &w->extents);
-        w->extents = win_extents(dpy, w);
-      }
-    }
-  }
+  // Window type change could affect shadow and fade
+  determine_shadow(dpy, w);
+  determine_fade(dpy, w);
+
+  // Determine mode here just in case the colormap changes
+  determine_mode(dpy, w);
 
 #ifdef DEBUG_WINTYPE
   printf("map_win(): window %#010lx type %s\n",
@@ -1461,22 +1412,18 @@ map_win(Display *dpy, Window id,
     recheck_focus(dpy);
   }
 
+  // Fading in
   calc_opacity(dpy, w, True);
-  calc_dim(dpy, w);
+  set_fade_callback(dpy, w, NULL, True);
 
-  determine_mode(dpy, w);
+  calc_dim(dpy, w);
 
 #if CAN_DO_USABLE
   w->damage_bounds.x = w->damage_bounds.y = 0;
   w->damage_bounds.width = w->damage_bounds.height = 0;
 #endif
-  w->damaged = 0;
+  w->damaged = 1;
 
-  if (fade && win_type_fade[w->window_type]) {
-    set_fade(
-      dpy, w, 0, get_opacity_percent(dpy, w),
-      fade_in_step, 0, True, True);
-  }
 
   /* if any configure events happened while
      the window was unmapped, then configure
@@ -1508,12 +1455,10 @@ finish_unmap_win(Display *dpy, win *w) {
   free_picture(dpy, &w->shadow_pict);
 }
 
-#if HAS_NAME_WINDOW_PIXMAP
 static void
 unmap_callback(Display *dpy, win *w) {
   finish_unmap_win(dpy, w);
 }
-#endif
 
 static void
 unmap_win(Display *dpy, Window id, Bool fade) {
@@ -1522,6 +1467,10 @@ unmap_win(Display *dpy, Window id, Bool fade) {
   if (!w) return;
 
   w->a.map_state = IsUnmapped;
+
+  // Fading out
+  w->opacity_tgt = 0;
+  set_fade_callback(dpy, w, unmap_callback, False);
 
   // don't care about properties anymore
   // Will get BadWindow if the window is destroyed
@@ -1532,14 +1481,6 @@ unmap_win(Display *dpy, Window id, Bool fade) {
     set_ignore(dpy, NextRequest(dpy));
     XSelectInput(dpy, w->client_win, 0);
   }
-
-#if HAS_NAME_WINDOW_PIXMAP
-  if (w->pixmap && fade && win_type_fade[w->window_type]) {
-    set_fade(dpy, w, get_opacity_percent(dpy, w), 0.0,
-             fade_out_step, unmap_callback, False, True);
-  } else
-#endif
-    finish_unmap_win(dpy, w);
 }
 
 static opacity_t
@@ -1594,15 +1535,6 @@ determine_mode(Display *dpy, win *w) {
   add_damage_win(dpy, w);
 }
 
-static void
-set_opacity(Display *dpy, win *w, opacity_t opacity) {
-  // Do nothing if the opacity does not change
-  if (w->opacity == opacity) return;
-
-  w->opacity = opacity;
-  determine_mode(dpy, w);
-}
-
 /**
  * Calculate and set the opacity of a window.
  *
@@ -1650,7 +1582,7 @@ calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
     opacity = inactive_opacity;
   }
 
-  set_opacity(dpy, w, opacity);
+  w->opacity_tgt = opacity;
 }
 
 static void
@@ -1670,11 +1602,32 @@ calc_dim(Display *dpy, win *w) {
 }
 
 /**
- * Determine if a window should have shadow.
+ * Determine if a window should fade on opacity change.
+ */
+static void
+determine_fade(Display *dpy, win *w) {
+  w->fade = win_type_fade[w->window_type];
+}
+
+/**
+ * Determine if a window should have shadow, and update things depending
+ * on shadow state.
  */
 static void
 determine_shadow(Display *dpy, win *w) {
+  Bool shadow_old = w->shadow;
+
   w->shadow = win_type_shadow[w->window_type];
+
+  // Window extents need update on shadow state change
+  if (w->shadow != shadow_old) {
+    // Shadow geometry currently doesn't change on shadow state change
+    // calc_shadow_geometry(dpy, w);
+    if (w->extents) {
+      free_region(dpy, &w->extents);
+      w->extents = win_extents(dpy, w);
+    }
+  }
 }
 
 /**
@@ -1776,9 +1729,13 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->shadow_dy = 0;
   new->shadow_width = 0;
   new->shadow_height = 0;
-  new->opacity = OPAQUE;
+  new->opacity = 0;
+  new->opacity_tgt = 0;
   new->opacity_cur = OPAQUE;
   new->opacity_prop = OPAQUE;
+  new->fade = False;
+  new->fade_callback = NULL;
+  new->fade_fin = False;
   new->alpha_pict = None;
   new->frame_opacity = 1.0;
   new->frame_opacity_cur = 1.0;
@@ -1976,7 +1933,6 @@ finish_destroy_win(Display *dpy, Window id) {
       free_picture(dpy, &w->shadow_pict);
       free_damage(dpy, &w->damage);
 
-      cleanup_fade(dpy, w);
       free(w);
       break;
     }
@@ -1994,17 +1950,12 @@ static void
 destroy_win(Display *dpy, Window id, Bool fade) {
   win *w = find_win(dpy, id);
 
-  if (w) w->destroyed = True;
+  if (w) {
+    w->destroyed = True;
 
-#if HAS_NAME_WINDOW_PIXMAP
-  if (w && w->pixmap && fade && win_type_fade[w->window_type]) {
-    set_fade(dpy, w, get_opacity_percent(dpy, w),
-      0.0, fade_out_step, destroy_callback,
-      False, True);
-  } else
-#endif
-  {
-    finish_destroy_win(dpy, id);
+    // Fading out the window
+    w->opacity_tgt = 0;
+    set_fade_callback(dpy, w, destroy_callback, False);
   }
 }
 
@@ -2273,6 +2224,8 @@ ev_window(XEvent *ev) {
       return ev->xcreatewindow.window;
     case ConfigureNotify:
       return ev->xconfigure.window;
+    case DestroyNotify:
+      return ev->xdestroywindow.window;
     case MapNotify:
       return ev->xmap.window;
     case UnmapNotify:
@@ -2748,6 +2701,7 @@ main(int argc, char **argv) {
   double shadow_red = 0.0;
   double shadow_green = 0.0;
   double shadow_blue = 0.0;
+  win *t;
 
   gettimeofday(&time_start, NULL);
 
@@ -2792,16 +2746,10 @@ main(int argc, char **argv) {
         }
         break;
       case 'I':
-        fade_in_step = atof(optarg);
-        if (fade_in_step <= 0) {
-          fade_in_step = 0.01;
-        }
+        fade_in_step = normalize_d(atof(optarg)) * OPAQUE;
         break;
       case 'O':
-        fade_out_step = atof(optarg);
-        if (fade_out_step <= 0) {
-          fade_out_step = 0.01;
-        }
+        fade_out_step = normalize_d(atof(optarg)) * OPAQUE;
         break;
       case 'c':
         for (i = 0; i < NUM_WINTYPES; ++i) {
@@ -2881,6 +2829,8 @@ main(int argc, char **argv) {
   if (inactive_opacity || inactive_dim) {
     track_focus = True;
   }
+
+  fade_time = get_time_in_milliseconds();
 
   dpy = XOpenDisplay(display);
   if (!dpy) {
@@ -2994,13 +2944,13 @@ main(int argc, char **argv) {
   ufd.fd = ConnectionNumber(dpy);
   ufd.events = POLLIN;
 
-  paint_all(dpy, None);
+  t = paint_preprocess(dpy, list);
+  paint_all(dpy, None, t);
 
   for (;;) {
     do {
       if (!QLength(dpy)) {
         if (poll(&ufd, 1, fade_timeout()) == 0) {
-          run_fades(dpy);
           break;
         }
       }
@@ -3009,9 +2959,10 @@ main(int argc, char **argv) {
       ev_handle((XEvent *)&ev);
     } while (QLength(dpy));
 
+    t = paint_preprocess(dpy, list);
     if (all_damage) {
       static int paint;
-      paint_all(dpy, all_damage);
+      paint_all(dpy, all_damage, t);
       paint++;
       XSync(dpy, False);
       all_damage = None;
