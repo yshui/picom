@@ -66,10 +66,11 @@ XRectangle *expose_rects = 0;
 int size_expose = 0;
 int n_expose = 0;
 
-/* atoms */
-Atom atom_client_attr;
+// atoms
 Atom extents_atom;
 Atom opacity_atom;
+Atom frame_extents_atom;
+Atom client_atom;
 Atom win_type_atom;
 Atom win_type[NUM_WINTYPES];
 double win_type_opacity[NUM_WINTYPES];
@@ -116,6 +117,9 @@ Bool inactive_opacity_override = False;
 double frame_opacity = 0.0;
 /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
 double inactive_dim = 0.0;
+
+/// Whether to try to detect WM windows and mark them as focused.
+double mark_wmwin_focused = False;
 
 /// Whether compton needs to track focus changes.
 Bool track_focus = False;
@@ -620,7 +624,7 @@ determine_evmask(Display *dpy, Window wid, win_evmode_t mode) {
     if (track_focus) evmask |= FocusChangeMask;
   }
 
-  if (WIN_EVMODE_CLIENT == mode || find_client_win(dpy, wid)) {
+  if (WIN_EVMODE_CLIENT == mode || find_toplevel(dpy, wid)) {
     if (frame_opacity)
       evmask |= PropertyChangeMask;
   }
@@ -718,9 +722,7 @@ recheck_focus(Display *dpy) {
 
   // And we set the focus state and opacity here
   if (w) {
-    w->focused = True;
-    calc_opacity(dpy, w, False);
-    calc_dim(dpy, w);
+    set_focused(dpy, w, True);
     return w;
   }
 
@@ -861,7 +863,7 @@ border_size(Display *dpy, win *w) {
 
 static Window
 find_client_win(Display *dpy, Window w) {
-  if (win_has_attr(dpy, w, atom_client_attr)) {
+  if (win_has_attr(dpy, w, client_atom)) {
     return w;
   }
 
@@ -885,11 +887,7 @@ find_client_win(Display *dpy, Window w) {
 }
 
 static void
-get_frame_extents(Display *dpy, Window w,
-                  unsigned int *left,
-                  unsigned int *right,
-                  unsigned int *top,
-                  unsigned int *bottom) {
+get_frame_extents(Display *dpy, win *w, Window client) {
   long *extents;
   Atom type;
   int format;
@@ -897,31 +895,24 @@ get_frame_extents(Display *dpy, Window w,
   unsigned char *data = NULL;
   int result;
 
-  *left = 0;
-  *right = 0;
-  *top = 0;
-  *bottom = 0;
-
-  // w = find_client_win(dpy, w);
-  if (!w) return;
+  w->left_width = 0;
+  w->right_width = 0;
+  w->top_width = 0;
+  w->bottom_width = 0;
 
   result = XGetWindowProperty(
-    dpy, w, XInternAtom(dpy, "_NET_FRAME_EXTENTS", False),
+    dpy, client, frame_extents_atom,
     0L, 4L, False, AnyPropertyType,
     &type, &format, &nitems, &after,
-    (unsigned char **)&data);
+    &data);
 
   if (result == Success) {
     if (nitems == 4 && after == 0) {
-      extents = (long *)data;
-      *left =
-        (unsigned int)extents[0];
-      *right =
-        (unsigned int)extents[1];
-      *top =
-        (unsigned int)extents[2];
-      *bottom =
-        (unsigned int)extents[3];
+      extents = (long *) data;
+      w->left_width = extents[0];
+      w->right_width = extents[1];
+      w->top_width = extents[2];
+      w->bottom_width = extents[3];
     }
     XFree(data);
   }
@@ -959,6 +950,17 @@ paint_preprocess(Display *dpy, win *list) {
       continue;
     }
 
+    // If opacity changes
+    if (w->opacity != opacity_old) {
+      determine_mode(dpy, w);
+      add_damage_win(dpy, w);
+    }
+
+    if (!w->opacity) {
+      check_fade_fin(dpy, w);
+      continue;
+    }
+
     // Fetch the picture and pixmap if needed
     if (!w->picture) {
       XRenderPictureAttributes pa;
@@ -986,17 +988,6 @@ paint_preprocess(Display *dpy, win *list) {
 
     if (!w->extents) {
       w->extents = win_extents(dpy, w);
-    }
-
-    // If opacity changes
-    if (w->opacity != opacity_old) {
-      determine_mode(dpy, w);
-      add_damage_win(dpy, w);
-    }
-
-    if (!w->opacity) {
-      check_fade_fin(dpy, w);
-      continue;
     }
 
     // Rebuild alpha_pict only if necessary
@@ -1395,11 +1386,19 @@ map_win(Display *dpy, Window id,
 
   // Detect client window here instead of in add_win() as the client
   // window should have been prepared at this point
-  if (!(w->client_win)) {
+  if (!w->client_win) {
     Window cw = find_client_win(dpy, w->id);
+#ifdef DEBUG_CLIENTWIN
+    printf("find_client_win(%#010lx): client %#010lx\n", w->id, cw);
+#endif
     if (cw) {
       mark_client_win(dpy, w, cw);
     }
+  }
+  else if (frame_opacity) {
+    // Refetch frame extents just in case it changes when the window is
+    // unmapped
+    get_frame_extents(dpy, w, w->client_win);
   }
 
   /*
@@ -1410,6 +1409,10 @@ map_win(Display *dpy, Window id,
    */
   if (track_focus) {
     recheck_focus(dpy);
+    // Consider a window without client window a WM window and mark it
+    // focused if mark_wmwin_focused is on
+    if (mark_wmwin_focused && !w->client_win)
+      w->focused = True;
   }
 
   // Fading in
@@ -1667,8 +1670,7 @@ mark_client_win(Display *dpy, win *w, Window client) {
   // Get the frame width and monitor further frame width changes on client
   // window if necessary
   if (frame_opacity) {
-    get_frame_extents(dpy, client,
-        &w->left_width, &w->right_width, &w->top_width, &w->bottom_width);
+    get_frame_extents(dpy, w, client);
   }
   XSelectInput(dpy, client, determine_evmask(dpy, client, WIN_EVMODE_CLIENT));
 }
@@ -2265,9 +2267,7 @@ ev_focus_in(XFocusChangeEvent *ev) {
   // To deal with events sent from windows just destroyed
   if (!w) return;
 
-  w->focused = True;
-  calc_opacity(dpy, w, False);
-  calc_dim(dpy, w);
+  set_focused(dpy, w, True);
 }
 
 inline static void
@@ -2286,10 +2286,7 @@ ev_focus_out(XFocusChangeEvent *ev) {
   // To deal with events sent from windows just destroyed
   if (!w) return;
 
-  w->focused = False;
-
-  calc_opacity(dpy, w, False);
-  calc_dim(dpy, w);
+  set_focused(dpy, w, False);
 }
 
 inline static void
@@ -2400,9 +2397,9 @@ ev_property_notify(XPropertyEvent *ev) {
   if (frame_opacity && ev->atom == extents_atom) {
     win *w = find_toplevel(dpy, ev->window);
     if (w) {
-      get_frame_extents(dpy, w->client_win,
-        &w->left_width, &w->right_width,
-        &w->top_width, &w->bottom_width);
+      get_frame_extents(dpy, w, ev->window);
+      // If frame extents change, the window needs repaint
+      add_damage_win(dpy, w);
     }
   }
 }
@@ -2634,10 +2631,10 @@ fork_after(void) {
 
 static void
 get_atoms(void) {
-  extents_atom = XInternAtom(dpy,
-    "_NET_FRAME_EXTENTS", False);
-  opacity_atom = XInternAtom(dpy,
-    "_NET_WM_WINDOW_OPACITY", False);
+  extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
+  opacity_atom = XInternAtom(dpy, "_NET_WM_WINDOW_OPACITY", False);
+  frame_extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
+  client_atom = XInternAtom(dpy, "WM_STATE", False);
 
   win_type_atom = XInternAtom(dpy,
     "_NET_WM_WINDOW_TYPE", False);
@@ -2680,6 +2677,7 @@ main(int argc, char **argv) {
     { "shadow-blue", required_argument, NULL, 0 },
     { "inactive-opacity-override", no_argument, NULL, 0 },
     { "inactive-dim", required_argument, NULL, 0 },
+    { "mark-wmwin-focused", no_argument, NULL, 0 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -2732,6 +2730,9 @@ main(int argc, char **argv) {
             break;
           case 4:
             inactive_dim = normalize_d(atof(optarg));
+            break;
+          case 5:
+            mark_wmwin_focused = True;
             break;
         }
         break;
@@ -2845,7 +2846,6 @@ main(int argc, char **argv) {
 
   scr = DefaultScreen(dpy);
   root = RootWindow(dpy, scr);
-  atom_client_attr = XInternAtom(dpy, "WM_STATE", False);
 
   if (!XRenderQueryExtension(dpy, &render_event, &render_error)) {
     fprintf(stderr, "No render extension\n");

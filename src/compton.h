@@ -34,6 +34,7 @@
 // #define DEBUG_EVENTS 1
 // #define DEBUG_RESTACK 1
 // #define DEBUG_WINTYPE 1
+// #define DEBUG_CLIENTWIN 1
 // #define MONITOR_REPAINT 1
 
 // For printing timestamps
@@ -488,11 +489,7 @@ static Window
 find_client_win(Display *dpy, Window w);
 
 static void
-get_frame_extents(Display *dpy, Window w,
-                  unsigned int *left,
-                  unsigned int *right,
-                  unsigned int *top,
-                  unsigned int *bottom);
+get_frame_extents(Display *dpy, win *w, Window client);
 
 static win *
 paint_preprocess(Display *dpy, win *list);
@@ -542,6 +539,13 @@ calc_opacity(Display *dpy, win *w, Bool refetch_prop);
 
 static void
 calc_dim(Display *dpy, win *w);
+
+static inline void
+set_focused(Display *dpy, win *w, Bool focused) {
+  w->focused = focused;
+  calc_opacity(dpy, w, False);
+  calc_dim(dpy, w);
+}
 
 static void
 determine_fade(Display *dpy, win *w);
