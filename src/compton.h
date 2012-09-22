@@ -588,7 +588,7 @@ static wintype
 get_wintype_prop(Display * dpy, Window w);
 
 static wintype
-determine_wintype(Display *dpy, Window w, Window top);
+determine_wintype(Display *dpy, Window w);
 
 static void
 map_win(Display *dpy, Window id,

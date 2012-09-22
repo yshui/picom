@@ -15,6 +15,13 @@ stamp-h1
 compton
 *.o
 *~
+core
 
 # Vim files
 .*.sw[a-z]
+
+# oprofile files
+oprofile_data
+
+# clang files
+compton.plist

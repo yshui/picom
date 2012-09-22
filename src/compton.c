@@ -1517,50 +1517,39 @@ wintype_name(wintype type) {
 #endif
 
 static wintype
-get_wintype_prop(Display * dpy, Window w) {
+get_wintype_prop(Display *dpy, Window wid) {
   Atom actual;
-  wintype ret;
   int format;
-  unsigned long n, left, off;
-  unsigned char *data;
+  unsigned long n = 0, left, i;
+  long *data = NULL;
+  int j;
 
-  ret = WINTYPE_UNKNOWN;
-  off = 0;
+  set_ignore(dpy, NextRequest(dpy));
+  if (Success != XGetWindowProperty(
+        dpy, wid, win_type_atom, 0L, 32L, False, XA_ATOM,
+        &actual, &format, &n, &left, (unsigned char **) &data)
+      || !data || !n) {
+    if (data)
+      XFree(data);
+    return WINTYPE_UNKNOWN;
+  }
 
-  do {
-    set_ignore(dpy, NextRequest(dpy));
-
-    int result = XGetWindowProperty(
-      dpy, w, win_type_atom, off, 1L, False, XA_ATOM,
-      &actual, &format, &n, &left, &data);
-
-    if (result != Success) break;
-
-    if (data != None) {
-      int i;
-
-      for (i = 1; i < NUM_WINTYPES; ++i) {
-        Atom a;
-        memcpy(&a, data, sizeof(Atom));
-        if (a == win_type[i]) {
-          /* known type */
-          ret = i;
-          break;
-        }
+  for (i = 0; i < n; ++i) {
+    for (j = 1; j < NUM_WINTYPES; ++j) {
+      if (win_type[j] == (Atom) data[i]) {
+        XFree(data);
+        return j;
       }
-
-      XFree((void *) data);
     }
+  }
 
-    ++off;
-  } while (left >= 4 && ret == WINTYPE_UNKNOWN);
+  XFree(data);
 
-  return ret;
+  return WINTYPE_UNKNOWN;
 }
 
 static wintype
-determine_wintype(Display *dpy, Window w, Window top) {
-  Window root_return, parent_return;
+determine_wintype(Display *dpy, Window w) {
   Window *children = NULL;
   unsigned int nchildren, i;
   wintype type;
@@ -1568,16 +1557,11 @@ determine_wintype(Display *dpy, Window w, Window top) {
   type = get_wintype_prop(dpy, w);
   if (type != WINTYPE_UNKNOWN) return type;
 
-  set_ignore(dpy, NextRequest(dpy));
-  if (!XQueryTree(dpy, w, &root_return, &parent_return,
-                  &children, &nchildren)) {
-    /* XQueryTree failed. */
-    if (children) XFree((void *)children);
+  if (!win_get_children(dpy, w, &children, &nchildren))
     return WINTYPE_UNKNOWN;
-  }
 
   for (i = 0; i < nchildren; i++) {
-    type = determine_wintype(dpy, children[i], top);
+    type = determine_wintype(dpy, children[i]);
     if (type != WINTYPE_UNKNOWN) return type;
   }
 
@@ -1585,11 +1569,7 @@ determine_wintype(Display *dpy, Window w, Window top) {
     XFree((void *)children);
   }
 
-  if (w != top) {
-    return WINTYPE_UNKNOWN;
-  } else {
-    return WINTYPE_NORMAL;
-  }
+  return WINTYPE_UNKNOWN;
 }
 
 static void
@@ -1602,12 +1582,6 @@ map_win(Display *dpy, Window id,
 
   w->focused = False;
   w->a.map_state = IsViewable;
-  w->window_type = determine_wintype(dpy, w->id, w->id);
-
-#ifdef DEBUG_WINTYPE
-  printf("map_win(): window %#010lx type %s\n",
-    w->id, wintype_name(w->window_type));
-#endif
 
   // Call XSelectInput() before reading properties so that no property
   // changes are lost
@@ -1634,6 +1608,14 @@ map_win(Display *dpy, Window id,
     // unmapped
     get_frame_extents(dpy, w, w->client_win);
   }
+
+  if (WINTYPE_UNKNOWN == w->window_type)
+    w->window_type = determine_wintype(dpy, w->id);
+
+#ifdef DEBUG_WINTYPE
+  printf("map_win(%#010lx): type %s\n",
+    w->id, wintype_name(w->window_type));
+#endif
 
   // Get window name and class if we are tracking them
   if (track_wdata) {
@@ -1821,7 +1803,7 @@ calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
   }
 
   if (OPAQUE == (opacity = w->opacity_prop)) {
-    if (OPAQUE != win_type_opacity[w->window_type]) {
+    if (1.0 != win_type_opacity[w->window_type]) {
       opacity = win_type_opacity[w->window_type] * OPAQUE;
     }
   }
@@ -1928,6 +1910,8 @@ mark_client_win(Display *dpy, win *w, Window client) {
     get_frame_extents(dpy, w, client);
   }
   XSelectInput(dpy, client, determine_evmask(dpy, client, WIN_EVMODE_CLIENT));
+  if (WINTYPE_UNKNOWN == w->window_type)
+    w->window_type = get_wintype_prop(dpy, w->client_win);
 }
 
 static void
@@ -2026,7 +2010,6 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   *p = new;
 
   if (new->a.map_state == IsViewable) {
-    new->window_type = determine_wintype(dpy, id, id);
     map_win(dpy, id, new->damage_sequence - 1, True, override_redirect);
   }
 }
@@ -2954,7 +2937,7 @@ usage(void) {
     "  \"s\" (match from start), \"w\" (wildcard), and \"p\" (PCRE\n"
     "  regular expressions, if compiled with the support).\n"
     "\n"
-    "  <flags> could a serious of flags. Currently the only defined\n"
+    "  <flags> could be a series of flags. Currently the only defined\n"
     "  flag is \"i\" (ignore case).\n"
     "\n"
     "  <pattern> is the actual pattern string.\n"
