@@ -35,7 +35,7 @@ Bool has_name_pixmap;
 int root_height, root_width;
 
 /* errors */
-ignore *ignore_head, **ignore_tail = &ignore_head;
+ignore *ignore_head = NULL, **ignore_tail = &ignore_head;
 int xfixes_event, xfixes_error;
 int damage_event, damage_error;
 int composite_event, composite_error;
@@ -71,8 +71,14 @@ Atom extents_atom;
 Atom opacity_atom;
 Atom frame_extents_atom;
 Atom client_atom;
+Atom name_atom;
+Atom name_ewmh_atom;
+Atom class_atom;
+
 Atom win_type_atom;
 Atom win_type[NUM_WINTYPES];
+
+// Window type settings
 double win_type_opacity[NUM_WINTYPES];
 Bool win_type_shadow[NUM_WINTYPES];
 Bool win_type_fade[NUM_WINTYPES];
@@ -123,6 +129,13 @@ double mark_wmwin_focused = False;
 
 /// Whether compton needs to track focus changes.
 Bool track_focus = False;
+/// Whether compton needs to track window name and class.
+Bool track_wdata = False;
+
+/// Shadow blacklist. A linked list of conditions.
+wincond *shadow_blacklist = NULL;
+/// Fading blacklist. A linked list of conditions.
+wincond *fade_blacklist = NULL;
 
 Bool synchronize = False;
 
@@ -206,9 +219,12 @@ run_fade(Display *dpy, win *w, unsigned steps) {
 static void
 set_fade_callback(Display *dpy, win *w,
     void (*callback) (Display *dpy, win *w), Bool exec_callback) {
-  if (exec_callback && w->fade_callback)
-    (w->fade_callback)(dpy, w);
+  void (*old_callback) (Display *dpy, win *w) = w->fade_callback;
+
   w->fade_callback = callback;
+  // Must be the last line as the callback could destroy w!
+  if (exec_callback && old_callback)
+    old_callback(dpy, w);
 }
 
 /**
@@ -615,6 +631,231 @@ should_ignore(Display *dpy, unsigned long sequence) {
  * Windows
  */
 
+/**
+ * Match a window against a single window condition.
+ *
+ * @return true if matched, false otherwise.
+ */
+static bool
+win_match_once(win *w, const wincond *cond) {
+  const char *target;
+  bool matched = false;
+
+#ifdef DEBUG_WINMATCH
+  printf("win_match_once(%#010lx \"%s\"): cond = %p", w->id, w->name,
+      cond);
+#endif
+
+  // Determine the target
+  target = NULL;
+  switch (cond->target) {
+    case CONDTGT_NAME:
+      target = w->name;
+      break;
+    case CONDTGT_CLASSI:
+      target = w->class_instance;
+      break;
+    case CONDTGT_CLASSG:
+      target = w->class_general;
+      break;
+  }
+
+  if (!target) {
+#ifdef DEBUG_WINMATCH
+  printf(": Target not found\n");
+#endif
+    return false;
+  }
+
+  // Determine pattern type and match
+  switch (cond->type) {
+    case CONDTP_EXACT:
+      if (cond->flags & CONDF_IGNORECASE)
+        matched = !strcasecmp(target, cond->pattern);
+      else
+        matched = !strcmp(target, cond->pattern);
+      break;
+    case CONDTP_ANYWHERE:
+      if (cond->flags & CONDF_IGNORECASE)
+        matched = strcasestr(target, cond->pattern);
+      else
+        matched = strstr(target, cond->pattern);
+      break;
+    case CONDTP_FROMSTART:
+      if (cond->flags & CONDF_IGNORECASE)
+        matched = !strncasecmp(target, cond->pattern,
+            strlen(cond->pattern));
+      else
+        matched = !strncmp(target, cond->pattern,
+            strlen(cond->pattern));
+      break;
+    case CONDTP_WILDCARD:
+      {
+        int flags = 0;
+        if (cond->flags & CONDF_IGNORECASE)
+          flags = FNM_CASEFOLD;
+        matched = !fnmatch(cond->pattern, target, flags);
+      }
+      break;
+    case CONDTP_REGEX_PCRE:
+#ifdef CONFIG_REGEX_PCRE
+      matched = (pcre_exec(cond->regex_pcre, cond->regex_pcre_extra,
+            target, strlen(target), 0, 0, NULL, 0) >= 0);
+#endif
+      break;
+  }
+
+#ifdef DEBUG_WINMATCH
+  printf(", matched = %d\n", matched);
+#endif
+
+  return matched;
+}
+
+/**
+ * Match a window against a condition linked list.
+ *
+ * @param cache a place to cache the last matched condition
+ * @return true if matched, false otherwise.
+ */
+static bool
+win_match(win *w, wincond *condlst, wincond **cache) {
+  // Check if the cached entry matches firstly
+  if (cache && *cache && win_match_once(w, *cache))
+    return true;
+
+  // Then go through the whole linked list
+  for (; condlst; condlst = condlst->next) {
+    if (win_match_once(w, condlst)) {
+      *cache = condlst;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Add a pattern to a condition linked list.
+ */
+static Bool
+condlst_add(wincond **pcondlst, const char *pattern) {
+  unsigned plen = strlen(pattern);
+  wincond *cond;
+  const char *pos;
+
+  if (plen < 4 || ':' != pattern[1] || !strchr(pattern + 2, ':')) {
+    printf("Pattern \"%s\": Format invalid.\n", pattern);
+    return False;
+  }
+
+  // Allocate memory for the new condition
+  cond = malloc(sizeof(wincond));
+
+  // Determine the pattern target
+  switch (pattern[0]) {
+    case 'n':
+      cond->target = CONDTGT_NAME;
+      break;
+    case 'i':
+      cond->target = CONDTGT_CLASSI;
+      break;
+    case 'g':
+      cond->target = CONDTGT_CLASSG;
+      break;
+    default:
+      printf("Pattern \"%s\": Target \"%c\" invalid.\n",
+          pattern, pattern[0]);
+      free(cond);
+      return False;
+  }
+
+  // Determine the pattern type
+  switch (pattern[2]) {
+    case 'e':
+      cond->type = CONDTP_EXACT;
+      break;
+    case 'a':
+      cond->type = CONDTP_ANYWHERE;
+      break;
+    case 's':
+      cond->type = CONDTP_FROMSTART;
+      break;
+    case 'w':
+      cond->type = CONDTP_WILDCARD;
+      break;
+#ifdef CONFIG_REGEX_PCRE
+    case 'p':
+      cond->type = CONDTP_REGEX_PCRE;
+      break;
+#endif
+    default:
+      printf("Pattern \"%s\": Type \"%c\" invalid.\n",
+          pattern, pattern[2]);
+      free(cond);
+      return False;
+  }
+
+  // Determine the pattern flags
+  pos = &pattern[3];
+  cond->flags = 0;
+  while (':' != *pos) {
+    switch (*pos) {
+      case 'i':
+        cond->flags |= CONDF_IGNORECASE;
+        break;
+      default:
+        printf("Pattern \"%s\": Flag \"%c\" invalid.\n",
+            pattern, *pos);
+        break;
+    }
+    ++pos;
+  }
+
+  // Copy the pattern
+  ++pos;
+  cond->pattern = NULL;
+#ifdef CONFIG_REGEX_PCRE
+  cond->regex_pcre = NULL;
+  cond->regex_pcre_extra = NULL;
+#endif
+  if (CONDTP_REGEX_PCRE == cond->type) {
+#ifdef CONFIG_REGEX_PCRE
+    const char *error = NULL;
+    int erroffset = 0;
+    int options = 0;
+
+    if (cond->flags & CONDF_IGNORECASE)
+      options |= PCRE_CASELESS;
+
+    cond->regex_pcre = pcre_compile(pos, options, &error, &erroffset,
+        NULL);
+    if (!cond->regex_pcre) {
+      printf("Pattern \"%s\": PCRE regular expression parsing failed on "
+          "offset %d: %s\n", pattern, erroffset, error);
+      free(cond);
+      return False;
+    }
+#ifdef CONFIG_REGEX_PCRE_JIT
+    cond->regex_pcre_extra = pcre_study(cond->regex_pcre, PCRE_STUDY_JIT_COMPILE, &error);
+    if (!cond->regex_pcre_extra) {
+      printf("Pattern \"%s\": PCRE regular expression study failed: %s",
+          pattern, error);
+    }
+#endif
+#endif
+  }
+  else {
+    cond->pattern = mstrcpy(pos);
+  }
+
+  // Insert it into the linked list
+  cond->next = *pcondlst;
+  *pcondlst = cond;
+
+  return True;
+}
+
 static long
 determine_evmask(Display *dpy, Window wid, win_evmode_t mode) {
   long evmask = NoEventMask;
@@ -625,7 +866,7 @@ determine_evmask(Display *dpy, Window wid, win_evmode_t mode) {
   }
 
   if (WIN_EVMODE_CLIENT == mode || find_toplevel(dpy, wid)) {
-    if (frame_opacity)
+    if (frame_opacity || track_wdata)
       evmask |= PropertyChangeMask;
   }
 
@@ -1106,7 +1347,7 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
     XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, region);
 
     // Painting shadow
-    if (win_type_shadow[w->window_type]) {
+    if (w->shadow) {
       XRenderComposite(
         dpy, PictOpOver, cshadow_picture, w->shadow_pict,
         root_buffer, 0, 0, 0, 0,
@@ -1363,13 +1604,6 @@ map_win(Display *dpy, Window id,
   w->a.map_state = IsViewable;
   w->window_type = determine_wintype(dpy, w->id, w->id);
 
-  // Window type change could affect shadow and fade
-  determine_shadow(dpy, w);
-  determine_fade(dpy, w);
-
-  // Determine mode here just in case the colormap changes
-  determine_mode(dpy, w);
-
 #ifdef DEBUG_WINTYPE
   printf("map_win(): window %#010lx type %s\n",
     w->id, wintype_name(w->window_type));
@@ -1401,6 +1635,12 @@ map_win(Display *dpy, Window id,
     get_frame_extents(dpy, w, w->client_win);
   }
 
+  // Get window name and class if we are tracking them
+  if (track_wdata) {
+    win_get_name(dpy, w);
+    win_get_class(dpy, w);
+  }
+
   /*
    * Occasionally compton does not seem able to get a FocusIn event from a
    * window just mapped. I suspect it's a timing issue again when the
@@ -1414,6 +1654,13 @@ map_win(Display *dpy, Window id,
     if (mark_wmwin_focused && !w->client_win)
       w->focused = True;
   }
+
+  // Window type change could affect shadow and fade
+  determine_shadow(dpy, w);
+  determine_fade(dpy, w);
+
+  // Determine mode here just in case the colormap changes
+  determine_mode(dpy, w);
 
   // Fading in
   calc_opacity(dpy, w, True);
@@ -1620,15 +1867,23 @@ static void
 determine_shadow(Display *dpy, win *w) {
   Bool shadow_old = w->shadow;
 
-  w->shadow = win_type_shadow[w->window_type];
+  w->shadow = (win_type_shadow[w->window_type]
+      && !win_match(w, shadow_blacklist, &w->cache_sblst));
 
   // Window extents need update on shadow state change
   if (w->shadow != shadow_old) {
     // Shadow geometry currently doesn't change on shadow state change
     // calc_shadow_geometry(dpy, w);
     if (w->extents) {
-      free_region(dpy, &w->extents);
+      // Mark the old extents as damaged if the shadow is removed
+      if (!w->shadow)
+        add_damage(dpy, w->extents);
+      else
+        free_region(dpy, &w->extents);
       w->extents = win_extents(dpy, w);
+      // Mark the new extents as damaged if the shadow is added
+      if (w->shadow)
+        add_damage_win(dpy, w);
     }
   }
 }
@@ -1666,7 +1921,7 @@ calc_shadow_geometry(Display *dpy, win *w) {
 static void
 mark_client_win(Display *dpy, win *w, Window client) {
   w->client_win = client;
-  
+
   // Get the frame width and monitor further frame width changes on client
   // window if necessary
   if (frame_opacity) {
@@ -1720,6 +1975,12 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
     set_ignore(dpy, NextRequest(dpy));
     new->damage = XDamageCreate(dpy, id, XDamageReportNonEmpty);
   }
+
+  new->name = NULL;
+  new->class_instance = NULL;
+  new->class_general = NULL;
+  new->cache_sblst = NULL;
+  new->cache_fblst = NULL;
 
   new->border_size = None;
   new->extents = None;
@@ -1815,7 +2076,7 @@ restack_win(Display *dpy, win *w, Window new_above) {
         if (root == c->id) {
           window_name = "(Root window)";
         } else {
-          to_free = window_get_name(c->id, &window_name);
+          to_free = wid_get_name(dpy, c->id, &window_name);
         }
 
         desc = "";
@@ -2131,38 +2392,126 @@ expose_root(Display *dpy, Window root, XRectangle *rects, int nrects) {
   add_damage(dpy, region);
 }
 
-#if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
-static int
-window_get_name(Window w, char **name) {
-  Atom prop = XInternAtom(dpy, "_NET_WM_NAME", False);
-  Atom utf8_type = XInternAtom(dpy, "UTF8_STRING", False);
-  Atom actual_type;
-  int actual_format;
-  unsigned long nitems;
-  unsigned long leftover;
-  char *data = NULL;
-  Status ret;
+static Bool
+wid_get_text_prop(Display *dpy, Window wid, Atom prop,
+    char ***pstrlst, int *pnstr) {
+  XTextProperty text_prop;
 
-  set_ignore(dpy, NextRequest(dpy));
+  if (!(XGetTextProperty(dpy, wid, &text_prop, prop) && text_prop.value))
+    return False;
 
-  if (Success != (ret = XGetWindowProperty(dpy, w, prop, 0L, (long) BUFSIZ,
-        False, utf8_type, &actual_type, &actual_format, &nitems,
-        &leftover, (unsigned char **) &data))) {
-    if (BadWindow == ret) return 0;
-
-    set_ignore(dpy, NextRequest(dpy));
-    printf("Window %#010lx: _NET_WM_NAME unset, falling back to WM_NAME.\n", w);
-
-    if (!XFetchName(dpy, w, &data)) {
-      return 0;
-    }
+  if (Success !=
+      XmbTextPropertyToTextList(dpy, &text_prop, pstrlst, pnstr)
+      || !*pnstr) {
+    *pnstr = 0;
+    if (*pstrlst)
+      XFreeStringList(*pstrlst);
+    return False;
   }
 
-  // if (actual_type == utf8_type && actual_format == 8)
-  *name = (char *) data;
-  return 1;
+  return True;
 }
+
+static Bool
+wid_get_name(Display *dpy, Window wid, char **name) {
+  XTextProperty text_prop;
+  char **strlst = NULL;
+  int nstr = 0;
+
+  // set_ignore(dpy, NextRequest(dpy));
+  if (!(XGetTextProperty(dpy, wid, &text_prop, name_ewmh_atom)
+      && text_prop.value)) {
+    // set_ignore(dpy, NextRequest(dpy));
+#ifdef DEBUG_WINDATA
+    printf("wid_get_name(%#010lx): _NET_WM_NAME unset, falling back to WM_NAME.\n", wid);
 #endif
+
+    if (!(XGetWMName(dpy, wid, &text_prop) && text_prop.value)) {
+      return False;
+    }
+  }
+  if (Success !=
+      XmbTextPropertyToTextList(dpy, &text_prop, &strlst, &nstr)
+      || !nstr || !strlst) {
+    if (strlst)
+      XFreeStringList(strlst);
+    return False;
+  }
+  *name = mstrcpy(strlst[0]);
+
+  XFreeStringList(strlst);
+
+  return True;
+}
+
+static int
+win_get_name(Display *dpy, win *w) {
+  Bool ret;
+  char *name_old = w->name;
+
+  // Can't do anything if there's no client window
+  if (!w->client_win)
+    return False;
+
+  // Get the name
+  ret = wid_get_name(dpy, w->client_win, &w->name);
+
+  // Return -1 if wid_get_name() failed, 0 if name didn't change, 1 if
+  // it changes
+  if (!ret)
+    ret = -1;
+  else if (name_old && !strcmp(w->name, name_old))
+    ret = 0;
+  else
+    ret = 1;
+
+  // Keep the old name if there's no new one
+  if (w->name != name_old)
+    free(name_old);
+
+#ifdef DEBUG_WINDATA
+  printf("win_get_name(%#010lx): client = %#010lx, name = \"%s\", "
+      "ret = %d\n", w->id, w->client_win, w->name, ret);
+#endif
+
+  return ret;
+}
+
+static Bool
+win_get_class(Display *dpy, win *w) {
+  char **strlst = NULL;
+  int nstr = 0;
+
+  // Can't do anything if there's no client window
+  if (!w->client_win)
+    return False;
+
+  // Free and reset old strings
+  free(w->class_instance);
+  free(w->class_general);
+  w->class_instance = NULL;
+  w->class_general = NULL;
+
+  // Retrieve the property string list
+  if (!wid_get_text_prop(dpy, w->client_win, class_atom, &strlst, &nstr))
+    return False;
+
+  // Copy the strings if successful
+  w->class_instance = mstrcpy(strlst[0]);
+
+  if (nstr > 1)
+    w->class_general = mstrcpy(strlst[1]);
+
+  XFreeStringList(strlst);
+
+#ifdef DEBUG_WINDATA
+  printf("win_get_class(%#010lx): client = %#010lx, "
+      "instance = \"%s\", general = \"%s\"\n",
+      w->id, w->client_win, w->class_instance, w->class_general);
+#endif
+
+  return True;
+}
 
 #ifdef DEBUG_EVENTS
 static int
@@ -2394,12 +2743,30 @@ ev_property_notify(XPropertyEvent *ev) {
     }
   }
 
+  // If frame extents property changes
   if (frame_opacity && ev->atom == extents_atom) {
     win *w = find_toplevel(dpy, ev->window);
     if (w) {
       get_frame_extents(dpy, w, ev->window);
       // If frame extents change, the window needs repaint
       add_damage_win(dpy, w);
+    }
+  }
+
+  // If name changes
+  if (track_wdata
+      && (name_atom == ev->atom || name_ewmh_atom == ev->atom)) {
+    win *w = find_toplevel(dpy, ev->window);
+    if (w && 1 == win_get_name(dpy, w))
+      determine_shadow(dpy, w);
+  }
+
+  // If class changes
+  if (track_wdata && class_atom == ev->atom) {
+    win *w = find_toplevel(dpy, ev->window);
+    if (w) {
+      win_get_class(dpy, w);
+      determine_shadow(dpy, w);
     }
   }
 }
@@ -2433,38 +2800,37 @@ ev_shape_notify(XShapeEvent *ev) {
 
 inline static void
 ev_handle(XEvent *ev) {
-#ifdef DEBUG_EVENTS
-  Window w;
-  char *window_name;
-  Bool to_free = False;
-#endif
-
   if ((ev->type & 0x7f) != KeymapNotify) {
     discard_ignore(dpy, ev->xany.serial);
   }
 
 #ifdef DEBUG_EVENTS
-  w = ev_window(ev);
-  window_name = "(Failed to get title)";
-
-  if (w) {
-    if (root == w) {
-      window_name = "(Root window)";
-    } else {
-      to_free = (Bool) window_get_name(w, &window_name);
-    }
-  }
-
   if (ev->type != damage_event + XDamageNotify) {
+    Window w;
+    char *window_name;
+    Bool to_free = False;
+
+    w = ev_window(ev);
+    window_name = "(Failed to get title)";
+
+    if (w) {
+      if (root == w) {
+        window_name = "(Root window)";
+      } else {
+        to_free = (Bool) wid_get_name(dpy, w, &window_name);
+      }
+    }
+
     print_timestamp();
     printf("event %10.10s serial %#010x window %#010lx \"%s\"\n",
       ev_name(ev), ev_serial(ev), w, window_name);
+
+    if (to_free) {
+      XFree(window_name);
+      window_name = NULL;
+    }
   }
 
-  if (to_free) {
-    XFree(window_name);
-    window_name = NULL;
-  }
 #endif
 
   switch (ev->type) {
@@ -2519,10 +2885,11 @@ ev_handle(XEvent *ev) {
 
 static void
 usage(void) {
-  fprintf(stderr, "compton v0.0.1\n");
+  fprintf(stderr, "compton (development version)\n");
   fprintf(stderr, "usage: compton [options]\n");
   fprintf(stderr,
-    "Options\n"
+    "Options:\n"
+    "\n"
     "-d display\n"
     "  Which display should be managed.\n"
     "-r radius\n"
@@ -2570,7 +2937,28 @@ usage(void) {
     "--inactive-opacity-override\n"
     "  Inactive opacity set by -i overrides value of _NET_WM_OPACITY.\n"
     "--inactive-dim value\n"
-    "  Dim inactive windows. (0.0 - 1.0, defaults to 0)\n");
+    "  Dim inactive windows. (0.0 - 1.0, defaults to 0)\n"
+    "--mark-wmwin-focused\n"
+    "  Try to detect WM windows and mark them as active.\n"
+    "--shadow-exclude condition\n"
+    "  Exclude conditions for shadows.\n"
+    "\n"
+    "Format of a condition:\n"
+    "\n"
+    "  condition = <target>:<type>[<flags>]:<pattern>\n"
+    "\n"
+    "  <target> is one of \"n\" (window name), \"i\" (window class\n"
+    "  instance), and \"g\" (window general class)\n"
+    "\n"
+    "  <type> is one of \"e\" (exact match), \"a\" (match anywhere),\n"
+    "  \"s\" (match from start), \"w\" (wildcard), and \"p\" (PCRE\n"
+    "  regular expressions, if compiled with the support).\n"
+    "\n"
+    "  <flags> could a serious of flags. Currently the only defined\n"
+    "  flag is \"i\" (ignore case).\n"
+    "\n"
+    "  <pattern> is the actual pattern string.\n"
+    );
 
   exit(1);
 }
@@ -2634,7 +3022,10 @@ get_atoms(void) {
   extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
   opacity_atom = XInternAtom(dpy, "_NET_WM_WINDOW_OPACITY", False);
   frame_extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
-  client_atom = XInternAtom(dpy, "WM_STATE", False);
+  client_atom = XInternAtom(dpy, "WM_CLASS", False);
+  name_atom = XInternAtom(dpy, "WM_NAME", False);
+  name_ewmh_atom = XInternAtom(dpy, "_NET_WM_NAME", False);
+  class_atom = XInternAtom(dpy, "WM_CLASS", False);
 
   win_type_atom = XInternAtom(dpy,
     "_NET_WM_WINDOW_TYPE", False);
@@ -2678,6 +3069,7 @@ main(int argc, char **argv) {
     { "inactive-opacity-override", no_argument, NULL, 0 },
     { "inactive-dim", required_argument, NULL, 0 },
     { "mark-wmwin-focused", no_argument, NULL, 0 },
+    { "shadow-exclude", required_argument, NULL, 0 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -2702,6 +3094,10 @@ main(int argc, char **argv) {
   win *t;
 
   gettimeofday(&time_start, NULL);
+
+  // Set locale so window names with special characters are interpreted
+  // correctly
+  setlocale (LC_ALL, "");
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
     win_type_fade[i] = False;
@@ -2733,6 +3129,9 @@ main(int argc, char **argv) {
             break;
           case 5:
             mark_wmwin_focused = True;
+            break;
+          case 6:
+            condlst_add(&shadow_blacklist, optarg);
             break;
         }
         break;
@@ -2830,6 +3229,10 @@ main(int argc, char **argv) {
   if (inactive_opacity || inactive_dim) {
     track_focus = True;
   }
+
+  // Determine whether we need to track window name and class
+  if (shadow_blacklist || fade_blacklist)
+    track_wdata = True;
 
   fade_time = get_time_in_milliseconds();
 

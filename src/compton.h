@@ -4,6 +4,32 @@
 
 // Throw everything in here.
 
+// === Options ===
+
+#define CAN_DO_USABLE 0
+
+// Debug options, enable them using -D in CFLAGS
+// #define DEBUG_REPAINT 1
+// #define DEBUG_EVENTS 1
+// #define DEBUG_RESTACK 1
+// #define DEBUG_WINTYPE 1
+// #define DEBUG_CLIENTWIN 1
+// #define DEBUG_WINDATA 1
+// #define DEBUG_WINMATCH 1
+// #define MONITOR_REPAINT 1
+
+// Whether to enable PCRE regular expression support in blacklists, enabled
+// by default
+#define CONFIG_REGEX_PCRE 1
+// Whether to enable JIT support of libpcre. This may cause problems on PaX
+// kernels.
+#define CONFIG_REGEX_PCRE_JIT 1
+
+// === Includes ===
+
+// For some special functions
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -14,6 +40,13 @@
 #include <time.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <stdbool.h>
+#include <locale.h>
+
+#include <fnmatch.h>
+#ifdef CONFIG_REGEX_PCRE
+#include <pcre.h>
+#endif
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -23,19 +56,10 @@
 #include <X11/extensions/Xrender.h>
 #include <X11/extensions/shape.h>
 
+// === Constants ===
 #if COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2
 #define HAS_NAME_WINDOW_PIXMAP 1
 #endif
-
-#define CAN_DO_USABLE 0
-
-// Debug options, enable them using -D in CFLAGS
-// #define DEBUG_REPAINT 1
-// #define DEBUG_EVENTS 1
-// #define DEBUG_RESTACK 1
-// #define DEBUG_WINTYPE 1
-// #define DEBUG_CLIENTWIN 1
-// #define MONITOR_REPAINT 1
 
 // For printing timestamps
 #include <time.h>
@@ -83,6 +107,34 @@ typedef struct _ignore {
   unsigned long sequence;
 } ignore;
 
+enum wincond_target {
+  CONDTGT_NAME,
+  CONDTGT_CLASSI,
+  CONDTGT_CLASSG,
+};
+
+enum wincond_type {
+  CONDTP_EXACT,
+  CONDTP_ANYWHERE,
+  CONDTP_FROMSTART,
+  CONDTP_WILDCARD,
+  CONDTP_REGEX_PCRE,
+};
+
+#define CONDF_IGNORECASE 0x0001
+
+typedef struct _wincond {
+  enum wincond_target target;
+  enum wincond_type type;
+  char *pattern;
+#ifdef CONFIG_REGEX_PCRE
+  pcre *regex_pcre;
+  pcre_extra *regex_pcre_extra;
+#endif
+  int16_t flags;
+  struct _wincond *next;
+} wincond;
+
 typedef struct _win {
   struct _win *next;
   Window id;
@@ -108,6 +160,13 @@ typedef struct _win {
   Bool destroyed;
   /// Cached width/height of the window including border.
   int widthb, heightb;
+
+  // Blacklist related members
+  char *name;
+  char *class_instance;
+  char *class_general;
+  wincond *cache_sblst;
+  wincond *cache_fblst;
 
   // Opacity-related members
   /// Current window opacity.
@@ -205,6 +264,18 @@ set_ignore(Display *dpy, unsigned long sequence);
 
 static int
 should_ignore(Display *dpy, unsigned long sequence);
+
+/**
+ * Allocate the space and copy a string.
+ */
+static inline char *
+mstrcpy(const char *src) {
+  char *str = malloc(sizeof(char) * (strlen(src) + 1));
+
+  strcpy(str, src);
+
+  return str;
+}
 
 /**
  * Normalize an int value to a specific range.
@@ -425,8 +496,9 @@ set_fade_callback(Display *dpy, win *w,
 static inline void
 check_fade_fin(Display *dpy, win *w) {
   if (w->fade_fin) {
-    set_fade_callback(dpy, w, NULL, True);
     w->fade_fin = False;
+    // Must be the last line as the callback could destroy w!
+    set_fade_callback(dpy, w, NULL, True);
   }
 }
 
@@ -457,6 +529,15 @@ shadow_picture(Display *dpy, double opacity, int width, int height);
 static Picture
 solid_picture(Display *dpy, Bool argb, double a,
               double r, double g, double b);
+
+static bool
+win_match_once(win *w, const wincond *cond);
+
+static bool
+win_match(win *w, wincond *condlst, wincond * *cache);
+
+static Bool
+condlst_add(wincond **pcondlst, const char *pattern);
 
 static long
 determine_evmask(Display *dpy, Window wid, win_evmode_t mode);
@@ -594,10 +675,18 @@ error(Display *dpy, XErrorEvent *ev);
 static void
 expose_root(Display *dpy, Window root, XRectangle *rects, int nrects);
 
-#if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
+static Bool
+wid_get_text_prop(Display *dpy, Window wid, Atom prop,
+    char ***pstrlst, int *pnstr);
+
+static Bool
+wid_get_name(Display *dpy, Window w, char **name);
+
 static int
-window_get_name(Window w, char **name);
-#endif
+win_get_name(Display *dpy, win *w);
+
+static Bool
+win_get_class(Display *dpy, win *w);
 
 #ifdef DEBUG_EVENTS
 static int

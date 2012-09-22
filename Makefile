@@ -6,8 +6,10 @@ MANDIR ?= $(PREFIX)/share/man/man1
 
 PACKAGES = x11 xcomposite xfixes xdamage xrender xext
 LIBS = $(shell pkg-config --libs $(PACKAGES)) -lm
+LIBS += $(shell pcre-config --libs)
 INCS = $(shell pkg-config --cflags $(PACKAGES))
-CFLAGS += -Wall
+INCS += $(shell pcre-config --cflags)
+CFLAGS += -Wall -std=c99
 OBJS = compton.o
 
 %.o: src/%.c src/%.h
