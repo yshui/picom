@@ -986,6 +986,7 @@ root_tile_f(Display *dpy) {
   pixmap = None;
 
   for (p = 0; background_props[p]; p++) {
+    prop = NULL;
     if (XGetWindowProperty(dpy, root,
           XInternAtom(dpy, background_props[p], False),
           0, 4, False, AnyPropertyType, &actual_type,
@@ -997,7 +998,8 @@ root_tile_f(Display *dpy) {
       XFree(prop);
       fill = False;
       break;
-    }
+    } else if (prop)
+      XFree(prop);
   }
 
   if (!pixmap) {
@@ -2178,6 +2180,9 @@ finish_destroy_win(Display *dpy, Window id) {
       free_picture(dpy, &w->frame_alpha_pict);
       free_picture(dpy, &w->shadow_pict);
       free_damage(dpy, &w->damage);
+      free(w->name);
+      free(w->class_instance);
+      free(w->class_general);
 
       free(w);
       break;
@@ -3005,10 +3010,10 @@ get_atoms(void) {
   extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
   opacity_atom = XInternAtom(dpy, "_NET_WM_WINDOW_OPACITY", False);
   frame_extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
-  client_atom = XInternAtom(dpy, "WM_CLASS", False);
-  name_atom = XInternAtom(dpy, "WM_NAME", False);
+  client_atom = XA_WM_CLASS;
+  name_atom = XA_WM_NAME;
   name_ewmh_atom = XInternAtom(dpy, "_NET_WM_NAME", False);
-  class_atom = XInternAtom(dpy, "WM_CLASS", False);
+  class_atom = XA_WM_CLASS;
 
   win_type_atom = XInternAtom(dpy,
     "_NET_WM_WINDOW_TYPE", False);
