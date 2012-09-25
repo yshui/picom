@@ -14,6 +14,24 @@
  * Shared
  */
 
+const char *WINTYPES[NUM_WINTYPES] = {
+  "unknown",
+  "desktop",
+  "dock",
+  "toolbar",
+  "menu",
+  "utility",
+  "splash",
+  "dialog",
+  "normal",
+  "dropdown_menu",
+  "popup_menu",
+  "tooltip",
+  "notify",
+  "combo",
+  "dnd",
+};
+
 struct timeval time_start = { 0, 0 };
 
 win *list;
@@ -142,8 +160,8 @@ double shadow_red = 0.0, shadow_green = 0.0, shadow_blue = 0.0;
 Bool synchronize = False;
 
 // Temporary options
-Bool shadow_enable = False;
-Bool fading_enable = False;
+int shadow_enable = 0;
+int fading_enable = 0;
 Bool no_dock_shadow = False;
 Bool no_dnd_shadow = False;
 double menu_opacity = 1.0;
@@ -1477,63 +1495,6 @@ repair_win(Display *dpy, win *w) {
   w->damaged = 1;
 }
 
-#ifdef DEBUG_WINTYPE
-static const char *
-wintype_name(wintype type) {
-  const char *t;
-
-  switch (type) {
-    case WINTYPE_DESKTOP:
-      t = "desktop";
-      break;
-    case WINTYPE_DOCK:
-      t = "dock";
-      break;
-    case WINTYPE_TOOLBAR:
-      t = "toolbar";
-      break;
-    case WINTYPE_MENU:
-      t = "menu";
-      break;
-    case WINTYPE_UTILITY:
-      t = "utility";
-      break;
-    case WINTYPE_SPLASH:
-      t = "slash";
-      break;
-    case WINTYPE_DIALOG:
-      t = "dialog";
-      break;
-    case WINTYPE_NORMAL:
-      t = "normal";
-      break;
-    case WINTYPE_DROPDOWN_MENU:
-      t = "dropdown";
-      break;
-    case WINTYPE_POPUP_MENU:
-      t = "popup";
-      break;
-    case WINTYPE_TOOLTIP:
-      t = "tooltip";
-      break;
-    case WINTYPE_NOTIFY:
-      t = "notification";
-      break;
-    case WINTYPE_COMBO:
-      t = "combo";
-      break;
-    case WINTYPE_DND:
-      t = "dnd";
-      break;
-    default:
-      t = "unknown";
-      break;
-  }
-
-  return t;
-}
-#endif
-
 static wintype
 get_wintype_prop(Display *dpy, Window wid) {
   Atom actual;
@@ -1632,7 +1593,7 @@ map_win(Display *dpy, Window id,
 
 #ifdef DEBUG_WINTYPE
   printf("map_win(%#010lx): type %s\n",
-    w->id, wintype_name(w->window_type));
+    w->id, WINTYPES[w->window_type]);
 #endif
 
   // Get window name and class if we are tracking them
@@ -3170,8 +3131,10 @@ parse_config(char *cpath) {
   if (config_lookup_bool(&cfg, "clear-shadow", &ival))
     clear_shadow = ival;
   // -c (shadow_enable)
-  if (config_lookup_bool(&cfg, "shadow", &ival))
-    shadow_enable = ival;
+  if (config_lookup_bool(&cfg, "shadow", &ival) && ival) {
+    shadow_enable = 2;
+    wintype_arr_enable(win_type_shadow);
+  }
   // -C (no_dock_shadow)
   if (config_lookup_bool(&cfg, "no-dock-shadow", &ival))
     no_dock_shadow = ival;
@@ -3181,8 +3144,10 @@ parse_config(char *cpath) {
   // -m (menu_opacity)
   config_lookup_float(&cfg, "menu-opacity", &menu_opacity);
   // -f (fading_enable)
-  if (config_lookup_bool(&cfg, "fading", &ival))
-    fading_enable = ival;
+  if (config_lookup_bool(&cfg, "fading", &ival) && ival) {
+    fading_enable = 2;
+    wintype_arr_enable(win_type_fade);
+  }
   // --shadow-red
   config_lookup_float(&cfg, "shadow-red", &shadow_red);
   // --shadow-green
@@ -3199,22 +3164,39 @@ parse_config(char *cpath) {
     mark_wmwin_focused = ival;
   // --shadow-exclude
   {
-    config_setting_t *shadow_blacklist_setting =
+    config_setting_t *setting =
       config_lookup(&cfg, "shadow-exclude");
-    if (shadow_blacklist_setting) {
+    if (setting) {
       // Parse an array of shadow-exclude
-      if (config_setting_is_array(shadow_blacklist_setting)) {
-        int i = config_setting_length(shadow_blacklist_setting);
+      if (config_setting_is_array(setting)) {
+        int i = config_setting_length(setting);
         while (i--) {
           condlst_add(&shadow_blacklist,
-              config_setting_get_string_elem(shadow_blacklist_setting, i));
+              config_setting_get_string_elem(setting, i));
         }
       }
       // Treat it as a single pattern if it's a string
-      else if (CONFIG_TYPE_STRING ==
-          config_setting_type(shadow_blacklist_setting)) {
+      else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
         condlst_add(&shadow_blacklist,
-            config_setting_get_string(shadow_blacklist_setting));
+            config_setting_get_string(setting));
+      }
+    }
+  }
+  // Wintype settings
+  {
+    wintype i;
+
+    for (i = 0; i < NUM_WINTYPES; ++i) {
+      char *str = mstrjoin("wintypes.", WINTYPES[i]);
+      config_setting_t *setting = config_lookup(&cfg, str);
+      free(str);
+      if (setting) {
+        if (config_setting_lookup_bool(setting, "shadow", &ival))
+          win_type_shadow[i] = (Bool) ival;
+        if (config_setting_lookup_bool(setting, "fade", &ival))
+          win_type_fade[i] = (Bool) ival;
+        config_setting_lookup_float(setting, "opacity",
+            &win_type_opacity[i]);
       }
     }
   }
@@ -3284,7 +3266,8 @@ get_cfg(int argc, char *const *argv) {
         fade_out_step = normalize_d(atof(optarg)) * OPAQUE;
         break;
       case 'c':
-        shadow_enable = True;
+        if (2 != shadow_enable)
+          shadow_enable = 1;
         break;
       case 'C':
         no_dock_shadow = True;
@@ -3293,7 +3276,8 @@ get_cfg(int argc, char *const *argv) {
         menu_opacity = atof(optarg);
         break;
       case 'f':
-        fading_enable = True;
+        if (2 != fading_enable)
+          fading_enable = 1;
         break;
       case 'F':
         fade_trans = True;
@@ -3385,20 +3369,15 @@ get_cfg(int argc, char *const *argv) {
   if (OPAQUE == inactive_opacity) {
     inactive_opacity = 0;
   }
-  if (shadow_enable) {
-    for (i = 0; i < NUM_WINTYPES; ++i) {
-      win_type_shadow[i] = True;
-    }
-    win_type_shadow[WINTYPE_DESKTOP] = False;
-    if (no_dock_shadow)
-      win_type_shadow[WINTYPE_DOCK] = False;
-    if (no_dnd_shadow)
-      win_type_shadow[WINTYPE_DND] = False;
-  }
-  if (fading_enable) {
-    for (i = 0; i < NUM_WINTYPES; ++i) {
-      win_type_fade[i] = True;
-    }
+  if (1 == shadow_enable)
+    wintype_arr_enable(win_type_shadow);
+  win_type_shadow[WINTYPE_DESKTOP] = False;
+  if (no_dock_shadow)
+    win_type_shadow[WINTYPE_DOCK] = False;
+  if (no_dnd_shadow)
+    win_type_shadow[WINTYPE_DND] = False;
+  if (1 == fading_enable) {
+    wintype_arr_enable(win_type_fade);
   }
   if (1.0 != menu_opacity) {
     win_type_opacity[WINTYPE_DROPDOWN_MENU] = menu_opacity;

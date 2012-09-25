@@ -274,6 +274,18 @@ static int
 should_ignore(Display *dpy, unsigned long sequence);
 
 /**
+ * Set a Bool array of all wintypes to true.
+ */
+static void
+wintype_arr_enable(Bool arr[]) {
+  wintype i;
+
+  for (i = 0; i < NUM_WINTYPES; ++i) {
+    arr[i] = True;
+  }
+}
+
+/**
  * Allocate the space and copy a string.
  */
 static inline char *
