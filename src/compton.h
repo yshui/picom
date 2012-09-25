@@ -24,6 +24,8 @@
 // Whether to enable JIT support of libpcre. This may cause problems on PaX
 // kernels.
 #define CONFIG_REGEX_PCRE_JIT 1
+// Whether to enable parsing of configuration files using libconfig
+#define CONFIG_LIBCONFIG 1
 
 // === Includes ===
 
@@ -44,8 +46,14 @@
 #include <locale.h>
 
 #include <fnmatch.h>
+
 #ifdef CONFIG_REGEX_PCRE
 #include <pcre.h>
+#endif
+
+#ifdef CONFIG_LIBCONFIG
+#include <libgen.h>
+#include <libconfig.h>
 #endif
 
 #include <X11/Xlib.h>
@@ -278,6 +286,34 @@ mstrcpy(const char *src) {
 }
 
 /**
+ * Allocate the space and join two strings.
+ */
+static inline char *
+mstrjoin(const char *src1, const char *src2) {
+  char *str = malloc(sizeof(char) * (strlen(src1) + strlen(src2) + 1));
+
+  strcpy(str, src1);
+  strcat(str, src2);
+
+  return str;
+}
+
+/**
+ * Allocate the space and join two strings;
+ */
+static inline char *
+mstrjoin3(const char *src1, const char *src2, const char *src3) {
+  char *str = malloc(sizeof(char) * (strlen(src1) + strlen(src2)
+        + strlen(src3) + 1));
+
+  strcpy(str, src1);
+  strcat(str, src2);
+  strcat(str, src3);
+
+  return str;
+}
+
+/**
  * Normalize an int value to a specific range.
  *
  * @param i int value to normalize
@@ -285,11 +321,27 @@ mstrcpy(const char *src) {
  * @param max maximum value
  * @return normalized value
  */
-static inline double
+static inline int
 normalize_i_range(int i, int min, int max) {
   if (i > max) return max;
   if (i < min) return min;
   return i;
+}
+
+/**
+ * Select the larger integer of two.
+ */
+static inline int
+max_i(int a, int b) {
+  return (a > b ? a : b);
+}
+
+/**
+ * Select the smaller integer of two.
+ */
+static inline int
+min_i(int a, int b) {
+  return (a > b ? b : a);
 }
 
 /**
@@ -529,6 +581,12 @@ shadow_picture(Display *dpy, double opacity, int width, int height);
 static Picture
 solid_picture(Display *dpy, Bool argb, double a,
               double r, double g, double b);
+
+static inline bool is_normal_win(const win *w) {
+  return (WINTYPE_NORMAL == w->window_type
+      || WINTYPE_UTILITY == w->window_type
+      || WINTYPE_UNKNOWN == w->window_type);
+}
 
 static bool
 win_match_once(win *w, const wincond *cond);
@@ -788,6 +846,17 @@ ev_handle(XEvent *ev);
 
 static void
 fork_after(void);
+
+#ifdef CONFIG_LIBCONFIG
+static FILE *
+open_config_file(char *cpath, char **path);
+
+static void
+parse_config(char *cpath);
+#endif
+
+static void
+get_cfg(int argc, char *const *argv);
 
 static void
 get_atoms(void);

@@ -4,7 +4,7 @@ PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
 
-PACKAGES = x11 xcomposite xfixes xdamage xrender xext
+PACKAGES = x11 xcomposite xfixes xdamage xrender xext libconfig
 LIBS = $(shell pkg-config --libs $(PACKAGES)) -lm
 LIBS += $(shell pcre-config --libs)
 INCS = $(shell pkg-config --cflags $(PACKAGES))

@@ -87,10 +87,6 @@ Bool win_type_fade[NUM_WINTYPES];
  * Macros
  */
 
-#define IS_NORMAL_WIN(w) \
-((w) && ((w)->window_type == WINTYPE_NORMAL \
-         || (w)->window_type == WINTYPE_UTILITY))
-
 #define HAS_FRAME_OPACITY(w) \
   (frame_opacity && (w)->top_width)
 
@@ -98,6 +94,7 @@ Bool win_type_fade[NUM_WINTYPES];
  * Options
  */
 
+char *display = NULL;
 int shadow_radius = 12;
 int shadow_offset_x = -15;
 int shadow_offset_y = -15;
@@ -137,7 +134,19 @@ wincond *shadow_blacklist = NULL;
 /// Fading blacklist. A linked list of conditions.
 wincond *fade_blacklist = NULL;
 
+/// Whether to fork to background.
+Bool fork_after_register = False;
+/// Red, green and blue tone of the shadow.
+double shadow_red = 0.0, shadow_green = 0.0, shadow_blue = 0.0;
+
 Bool synchronize = False;
+
+// Temporary options
+Bool shadow_enable = False;
+Bool fading_enable = False;
+Bool no_dock_shadow = False;
+Bool no_dnd_shadow = False;
+double menu_opacity = 1.0;
 
 /**
  * Fades
@@ -740,6 +749,9 @@ win_match(win *w, wincond *condlst, wincond **cache) {
  */
 static Bool
 condlst_add(wincond **pcondlst, const char *pattern) {
+  if (!pattern)
+    return False;
+
   unsigned plen = strlen(pattern);
   wincond *cond;
   const char *pos;
@@ -1231,6 +1243,10 @@ paint_preprocess(Display *dpy, win *list) {
 
     if (!w->extents) {
       w->extents = win_extents(dpy, w);
+      // If w->extents does not exist, the previous add_damage_win()
+      // call when opacity changes has no effect, so redo it here.
+      if (w->opacity != opacity_old)
+        add_damage_win(dpy, w);
     }
 
     // Rebuild alpha_pict only if necessary
@@ -1765,8 +1781,6 @@ determine_mode(Display *dpy, win *w) {
   }
 
   w->mode = mode;
-
-  add_damage_win(dpy, w);
 }
 
 /**
@@ -1811,7 +1825,7 @@ calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
   }
 
   // Respect inactive_opacity in some cases
-  if (inactive_opacity && IS_NORMAL_WIN(w) && False == w->focused
+  if (inactive_opacity && is_normal_win(w) && False == w->focused
       && (OPAQUE == opacity || inactive_opacity_override)) {
     opacity = inactive_opacity;
   }
@@ -1823,7 +1837,7 @@ static void
 calc_dim(Display *dpy, win *w) {
   Bool dim;
 
-  if (inactive_dim && IS_NORMAL_WIN(w) && !(w->focused)) {
+  if (inactive_dim && is_normal_win(w) && !(w->focused)) {
     dim = True;
   } else {
     dim = False;
@@ -2916,6 +2930,8 @@ usage(void) {
     "  Daemonize process.\n"
     "-S\n"
     "  Enable synchronous operation (for debugging).\n"
+    "--config path\n"
+    "  Look for configuration file at the path.\n"
     "--shadow-red value\n"
     "  Red color value of shadow (0.0 - 1.0, defaults to 0).\n"
     "--shadow-green value\n"
@@ -3005,6 +3021,402 @@ fork_after(void) {
   freopen("/dev/null", "w", stderr);
 }
 
+#ifdef CONFIG_LIBCONFIG
+/**
+ * Get a file stream of the configuration file to read.
+ *
+ * Follows the XDG specification to search for the configuration file.
+ */
+static FILE *
+open_config_file(char *cpath, char **ppath) {
+  const static char *config_filename = "/compton.conf";
+  const static char *config_filename_legacy = "/.compton.conf";
+  const static char *config_home_suffix = "/.config";
+  const static char *config_system_dir = "/etc/xdg";
+
+  char *dir = NULL, *home = NULL;
+  char *path = cpath;
+  FILE *f = NULL;
+
+  if (path) {
+    f = fopen(path, "r");
+    if (f && ppath)
+      *ppath = path;
+    else
+      free(path);
+    return f;
+  }
+
+  // Check user configuration file in $XDG_CONFIG_HOME firstly
+  if (!((dir = getenv("XDG_CONFIG_HOME")) && strlen(dir))) {
+    if (!((home = getenv("HOME")) && strlen(home)))
+      return NULL;
+
+    path = mstrjoin3(home, config_home_suffix, config_filename);
+  }
+  else
+    path = mstrjoin(dir, config_filename);
+
+  f = fopen(path, "r");
+
+  if (f && ppath)
+    *ppath = path;
+  else
+    free(path);
+  if (f)
+    return f;
+
+  // Then check user configuration file in $HOME
+  if ((home = getenv("HOME")) && strlen(home)) {
+    path = mstrjoin(home, config_filename_legacy);
+    f = fopen(path, "r");
+    if (f && ppath)
+      *ppath = path;
+    else
+      free(path);
+    if (f)
+      return f;
+  }
+
+  // Check system configuration file in $XDG_CONFIG_DIRS at last
+  if ((dir = getenv("XDG_CONFIG_DIRS")) && strlen(dir)) {
+    char *part = strtok(dir, ":");
+    while (part) {
+      path = mstrjoin(part, config_filename);
+      f = fopen(path, "r");
+      if (f && ppath)
+        *ppath = path;
+      else
+        free(path);
+      if (f)
+        return f;
+      part = strtok(NULL, ":");
+    }
+  }
+  else {
+    path = mstrjoin(config_system_dir, config_filename);
+    f = fopen(path, "r");
+    if (f && ppath)
+      *ppath = path;
+    else
+      free(path);
+    if (f)
+      return f;
+  }
+
+  return NULL;
+}
+
+/**
+ * Parse a configuration file from default location.
+ */
+static void
+parse_config(char *cpath) {
+  char *path = NULL, *parent = NULL;
+  FILE *f;
+  config_t cfg;
+  int ival = 0;
+  double dval = 0.0;
+
+  f = open_config_file(cpath, &path);
+  if (!f) {
+    if (cpath)
+      printf("Failed to read the specified configuration file.\n");
+    return;
+  }
+
+  config_init(&cfg);
+  parent = dirname(path);
+  if (parent)
+    config_set_include_dir(&cfg, parent);
+
+  if (CONFIG_FALSE == config_read(&cfg, f)) {
+    printf("Error when reading configuration file \"%s\", line %d: %s\n",
+        path, config_error_line(&cfg), config_error_text(&cfg));
+    config_destroy(&cfg);
+    free(path);
+    return;
+  }
+  config_set_auto_convert(&cfg, 1);
+
+  free(path);
+
+  // Get options from the configuration file. We don't do range checking
+  // right now. It will be done later
+
+  // -D (fade_delta)
+  if (config_lookup_int(&cfg, "fade-delta", &ival))
+    fade_delta = ival;
+  // -I (fade_in_step)
+  if (config_lookup_float(&cfg, "fade-in-step", &dval))
+    fade_in_step = normalize_d(dval) * OPAQUE;
+  // -O (fade_out_step)
+  if (config_lookup_float(&cfg, "fade-out-step", &dval))
+    fade_out_step = normalize_d(dval) * OPAQUE;
+  // -r (shadow_radius)
+  config_lookup_int(&cfg, "shadow-radius", &shadow_radius);
+  // -o (shadow_opacity)
+  config_lookup_float(&cfg, "shadow-opacity", &shadow_opacity);
+  // -l (shadow_offset_x)
+  config_lookup_int(&cfg, "shadow-offset-x", &shadow_offset_x);
+  // -t (shadow_offset_y)
+  config_lookup_int(&cfg, "shadow-offset-y", &shadow_offset_y);
+  // -i (inactive_opacity)
+  if (config_lookup_float(&cfg, "inactive-opacity", &dval))
+    inactive_opacity = normalize_d(dval) * OPAQUE;
+  // -e (frame_opacity)
+  config_lookup_float(&cfg, "frame-opacity", &frame_opacity);
+  // -z (clear_shadow)
+  if (config_lookup_bool(&cfg, "clear-shadow", &ival))
+    clear_shadow = ival;
+  // -c (shadow_enable)
+  if (config_lookup_bool(&cfg, "shadow", &ival))
+    shadow_enable = ival;
+  // -C (no_dock_shadow)
+  if (config_lookup_bool(&cfg, "no-dock-shadow", &ival))
+    no_dock_shadow = ival;
+  // -G (no_dnd_shadow)
+  if (config_lookup_bool(&cfg, "no-dnd-shadow", &ival))
+    no_dnd_shadow = ival;
+  // -m (menu_opacity)
+  config_lookup_float(&cfg, "menu-opacity", &menu_opacity);
+  // -f (fading_enable)
+  if (config_lookup_bool(&cfg, "fading", &ival))
+    fading_enable = ival;
+  // --shadow-red
+  config_lookup_float(&cfg, "shadow-red", &shadow_red);
+  // --shadow-green
+  config_lookup_float(&cfg, "shadow-green", &shadow_green);
+  // --shadow-blue
+  config_lookup_float(&cfg, "shadow-blue", &shadow_blue);
+  // --inactive-opacity-override
+  if (config_lookup_bool(&cfg, "inactive-opacity-override", &ival))
+    inactive_opacity_override = ival;
+  // --inactive-dim
+  config_lookup_float(&cfg, "inactive-dim", &inactive_dim);
+  // --mark-wmwin-focused
+  if (config_lookup_bool(&cfg, "mark-wmwin-focused", &ival))
+    mark_wmwin_focused = ival;
+  // --shadow-exclude
+  {
+    config_setting_t *shadow_blacklist_setting =
+      config_lookup(&cfg, "shadow-exclude");
+    if (shadow_blacklist_setting) {
+      // Parse an array of shadow-exclude
+      if (config_setting_is_array(shadow_blacklist_setting)) {
+        int i = config_setting_length(shadow_blacklist_setting);
+        while (i--) {
+          condlst_add(&shadow_blacklist,
+              config_setting_get_string_elem(shadow_blacklist_setting, i));
+        }
+      }
+      // Treat it as a single pattern if it's a string
+      else if (CONFIG_TYPE_STRING ==
+          config_setting_type(shadow_blacklist_setting)) {
+        condlst_add(&shadow_blacklist,
+            config_setting_get_string(shadow_blacklist_setting));
+      }
+    }
+  }
+
+  config_destroy(&cfg);
+}
+#endif
+
+/**
+ * Process arguments and configuration files.
+ */
+static void
+get_cfg(int argc, char *const *argv) {
+  const static char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:scnfFCaSzGb";
+  const static struct option longopts[] = {
+    { "config", required_argument, NULL, 256 },
+    { "shadow-red", required_argument, NULL, 257 },
+    { "shadow-green", required_argument, NULL, 258 },
+    { "shadow-blue", required_argument, NULL, 259 },
+    { "inactive-opacity-override", no_argument, NULL, 260 },
+    { "inactive-dim", required_argument, NULL, 261 },
+    { "mark-wmwin-focused", no_argument, NULL, 262 },
+    { "shadow-exclude", required_argument, NULL, 263 },
+    // Must terminate with a NULL entry
+    { NULL, 0, NULL, 0 },
+  };
+
+  int o, longopt_idx, i;
+  char *config_file = NULL;
+
+  for (i = 0; i < NUM_WINTYPES; ++i) {
+    win_type_fade[i] = False;
+    win_type_shadow[i] = False;
+    win_type_opacity[i] = 1.0;
+  }
+
+  // Pre-parse the commandline arguments to check for --config and invalid
+  // switches
+  while (-1 !=
+      (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
+    if (256 == o)
+      config_file = mstrcpy(optarg);
+    else if ('?' == o || ':' == o)
+      usage();
+  }
+
+#ifdef CONFIG_LIBCONFIG
+  parse_config(config_file);
+#endif
+
+  // Parse commandline arguments. Range checking will be done later.
+  optind = 1;
+  while (-1 !=
+      (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
+    switch (o) {
+      // Short options
+      case 'd':
+        display = optarg;
+        break;
+      case 'D':
+        fade_delta = atoi(optarg);
+        break;
+      case 'I':
+        fade_in_step = normalize_d(atof(optarg)) * OPAQUE;
+        break;
+      case 'O':
+        fade_out_step = normalize_d(atof(optarg)) * OPAQUE;
+        break;
+      case 'c':
+        shadow_enable = True;
+        break;
+      case 'C':
+        no_dock_shadow = True;
+        break;
+      case 'm':
+        menu_opacity = atof(optarg);
+        break;
+      case 'f':
+        fading_enable = True;
+        break;
+      case 'F':
+        fade_trans = True;
+        break;
+      case 'S':
+        synchronize = True;
+        break;
+      case 'r':
+        shadow_radius = atoi(optarg);
+        break;
+      case 'o':
+        shadow_opacity = atof(optarg);
+        break;
+      case 'l':
+        shadow_offset_x = atoi(optarg);
+        break;
+      case 't':
+        shadow_offset_y = atoi(optarg);
+        break;
+      case 'i':
+        inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
+        break;
+      case 'e':
+        frame_opacity = atof(optarg);
+        break;
+      case 'z':
+        clear_shadow = True;
+        break;
+      case 'n':
+      case 'a':
+      case 's':
+        fprintf(stderr, "Warning: "
+          "-n, -a, and -s have been removed.\n");
+        break;
+      case 'G':
+        no_dnd_shadow = True;
+        break;
+      case 'b':
+        fork_after_register = True;
+        break;
+      // Long options
+      case 256:
+        // --config
+        break;
+      case 257:
+        // --shadow-red
+        shadow_red = atof(optarg);
+        break;
+      case 258:
+        // --shadow-green
+        shadow_green = atof(optarg);
+        break;
+      case 259:
+        // --shadow-blue
+        shadow_blue = atof(optarg);
+        break;
+      case 260:
+        // --inactive-opacity-override
+        inactive_opacity_override = True;
+        break;
+      case 261:
+        // --inactive-dim
+        inactive_dim = atof(optarg);
+        break;
+      case 262:
+        // --mark-wmwin-focused
+        mark_wmwin_focused = True;
+        break;
+      case 263:
+        // --shadow-exclude
+        condlst_add(&shadow_blacklist, optarg);
+        break;
+      default:
+        usage();
+        break;
+    }
+  }
+
+  // Range checking and option assignments
+  fade_delta = max_i(fade_delta, 1);
+  shadow_radius = max_i(shadow_radius, 1);
+  shadow_red = normalize_d(shadow_red);
+  shadow_green = normalize_d(shadow_green);
+  shadow_blue = normalize_d(shadow_blue);
+  inactive_dim = normalize_d(inactive_dim);
+  frame_opacity = normalize_d(frame_opacity);
+  shadow_opacity = normalize_d(shadow_opacity);
+  menu_opacity = normalize_d(menu_opacity);
+  if (OPAQUE == inactive_opacity) {
+    inactive_opacity = 0;
+  }
+  if (shadow_enable) {
+    for (i = 0; i < NUM_WINTYPES; ++i) {
+      win_type_shadow[i] = True;
+    }
+    win_type_shadow[WINTYPE_DESKTOP] = False;
+    if (no_dock_shadow)
+      win_type_shadow[WINTYPE_DOCK] = False;
+    if (no_dnd_shadow)
+      win_type_shadow[WINTYPE_DND] = False;
+  }
+  if (fading_enable) {
+    for (i = 0; i < NUM_WINTYPES; ++i) {
+      win_type_fade[i] = True;
+    }
+  }
+  if (1.0 != menu_opacity) {
+    win_type_opacity[WINTYPE_DROPDOWN_MENU] = menu_opacity;
+    win_type_opacity[WINTYPE_POPUP_MENU] = menu_opacity;
+  }
+
+  // Other variables determined by options
+
+  // Determine whether we need to track focus changes
+  if (inactive_opacity || inactive_dim) {
+    track_focus = True;
+  }
+
+  // Determine whether we need to track window name and class
+  if (shadow_blacklist || fade_blacklist)
+    track_wdata = True;
+}
+
 static void
 get_atoms(void) {
   extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
@@ -3050,18 +3462,6 @@ get_atoms(void) {
 
 int
 main(int argc, char **argv) {
-  const static struct option longopt[] = {
-    { "shadow-red", required_argument, NULL, 0 },
-    { "shadow-green", required_argument, NULL, 0 },
-    { "shadow-blue", required_argument, NULL, 0 },
-    { "inactive-opacity-override", no_argument, NULL, 0 },
-    { "inactive-dim", required_argument, NULL, 0 },
-    { "mark-wmwin-focused", no_argument, NULL, 0 },
-    { "shadow-exclude", required_argument, NULL, 0 },
-    // Must terminate with a NULL entry
-    { NULL, 0, NULL, 0 },
-  };
-
   XEvent ev;
   Window root_return, parent_return;
   Window *children;
@@ -3070,15 +3470,6 @@ main(int argc, char **argv) {
   XRenderPictureAttributes pa;
   struct pollfd ufd;
   int composite_major, composite_minor;
-  char *display = 0;
-  int o;
-  int longopt_idx;
-  Bool no_dock_shadow = False;
-  Bool no_dnd_shadow  = False;
-  Bool fork_after_register = False;
-  double shadow_red = 0.0;
-  double shadow_green = 0.0;
-  double shadow_blue = 0.0;
   win *t;
 
   gettimeofday(&time_start, NULL);
@@ -3087,140 +3478,7 @@ main(int argc, char **argv) {
   // correctly
   setlocale (LC_ALL, "");
 
-  for (i = 0; i < NUM_WINTYPES; ++i) {
-    win_type_fade[i] = False;
-    win_type_shadow[i] = False;
-    win_type_opacity[i] = 1.0;
-  }
-
-  while ((o = getopt_long(argc, argv,
-          "D:I:O:d:r:o:m:l:t:i:e:scnfFCaSzGb",
-          longopt, &longopt_idx)) != -1) {
-    switch (o) {
-      // Long options
-      case 0:
-        switch (longopt_idx) {
-          case 0:
-            shadow_red = normalize_d(atof(optarg));
-            break;
-          case 1:
-            shadow_green = normalize_d(atof(optarg));
-            break;
-          case 2:
-            shadow_blue = normalize_d(atof(optarg));
-            break;
-          case 3:
-            inactive_opacity_override = True;
-            break;
-          case 4:
-            inactive_dim = normalize_d(atof(optarg));
-            break;
-          case 5:
-            mark_wmwin_focused = True;
-            break;
-          case 6:
-            condlst_add(&shadow_blacklist, optarg);
-            break;
-        }
-        break;
-      // Short options
-      case 'd':
-        display = optarg;
-        break;
-      case 'D':
-        fade_delta = atoi(optarg);
-        if (fade_delta < 1) {
-          fade_delta = 10;
-        }
-        break;
-      case 'I':
-        fade_in_step = normalize_d(atof(optarg)) * OPAQUE;
-        break;
-      case 'O':
-        fade_out_step = normalize_d(atof(optarg)) * OPAQUE;
-        break;
-      case 'c':
-        for (i = 0; i < NUM_WINTYPES; ++i) {
-          win_type_shadow[i] = True;
-        }
-        win_type_shadow[WINTYPE_DESKTOP] = False;
-        break;
-      case 'C':
-        no_dock_shadow = True;
-        break;
-      case 'm':
-        win_type_opacity[WINTYPE_DROPDOWN_MENU] = atof(optarg);
-        win_type_opacity[WINTYPE_POPUP_MENU] = atof(optarg);
-        break;
-      case 'f':
-        for (i = 0; i < NUM_WINTYPES; ++i) {
-          win_type_fade[i] = True;
-        }
-        break;
-      case 'F':
-        fade_trans = True;
-        break;
-      case 'S':
-        synchronize = True;
-        break;
-      case 'r':
-        shadow_radius = atoi(optarg);
-        break;
-      case 'o':
-        shadow_opacity = normalize_d(atof(optarg));
-        break;
-      case 'l':
-        shadow_offset_x = atoi(optarg);
-        break;
-      case 't':
-        shadow_offset_y = atoi(optarg);
-        break;
-      case 'i':
-        inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
-        if (OPAQUE == inactive_opacity) {
-          inactive_opacity = 0;
-        }
-        break;
-      case 'e':
-        frame_opacity = normalize_d(atof(optarg));
-        break;
-      case 'z':
-        clear_shadow = True;
-        break;
-      case 'n':
-      case 'a':
-      case 's':
-        fprintf(stderr, "Warning: "
-          "-n, -a, and -s have been removed.\n");
-        break;
-      case 'G':
-        no_dnd_shadow = True;
-        break;
-      case 'b':
-        fork_after_register = True;
-        break;
-      default:
-        usage();
-        break;
-    }
-  }
-
-  if (no_dock_shadow) {
-    win_type_shadow[WINTYPE_DOCK] = False;
-  }
-
-  if (no_dnd_shadow) {
-    win_type_shadow[WINTYPE_DND] = False;
-  }
-
-  // Determine whether we need to track focus changes
-  if (inactive_opacity || inactive_dim) {
-    track_focus = True;
-  }
-
-  // Determine whether we need to track window name and class
-  if (shadow_blacklist || fade_blacklist)
-    track_wdata = True;
+  get_cfg(argc, argv);
 
   fade_time = get_time_in_milliseconds();
 
