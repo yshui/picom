@@ -121,7 +121,6 @@ static options_t options = {
   .fade_in_step = 0.028 * OPAQUE,
   .fade_out_step = 0.03 * OPAQUE,
   .fade_delta = 10,
-  .fade_time = 0,
   .fade_trans = False,
   .clear_shadow = False,
   .inactive_opacity = 0,
@@ -149,6 +148,8 @@ static options_t options = {
  * Fades
  */
 
+unsigned long fade_time;
+
 /**
  * Get current system clock in milliseconds.
  *
@@ -171,7 +172,7 @@ get_time_in_milliseconds() {
  */
 static int
 fade_timeout(void) {
-  int diff = options.fade_delta - get_time_in_milliseconds() + options.fade_time;
+  int diff = options.fade_delta - get_time_in_milliseconds() + fade_time;
 
   if (diff < 0)
     diff = 0;
@@ -1177,10 +1178,10 @@ paint_preprocess(Display *dpy, win *list) {
   // Sounds like the timeout in poll() frequently does not work
   // accurately, asking it to wait to 20ms, and often it would wait for
   // 19ms, so the step value has to be rounded.
-  unsigned steps = roundl((double) (get_time_in_milliseconds() - options.fade_time) / options.fade_delta);
+  unsigned steps = roundl((double) (get_time_in_milliseconds() - fade_time) / options.fade_delta);
 
-  // Reset options.fade_time
-  options.fade_time = get_time_in_milliseconds();
+  // Reset fade_time
+  fade_time = get_time_in_milliseconds();
 
   for (w = list; w; w = next) {
     // In case calling the fade callback function destroys this window
@@ -3438,7 +3439,7 @@ main(int argc, char **argv) {
 
   get_cfg(argc, argv);
 
-  options.fade_time = get_time_in_milliseconds();
+  fade_time = get_time_in_milliseconds();
 
   dpy = XOpenDisplay(options.display);
   if (!dpy) {

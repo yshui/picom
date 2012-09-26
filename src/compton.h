@@ -253,7 +253,6 @@ typedef struct _options {
   /// How much to fade out in a single fading step.
   opacity_t fade_out_step;
   unsigned long fade_delta;
-  unsigned long fade_time;
   Bool fade_trans;
 
   Bool clear_shadow;
