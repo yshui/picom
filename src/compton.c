@@ -118,7 +118,7 @@ static options_t opts = {
   .fade_in_step = 0.028 * OPAQUE,
   .fade_out_step = 0.03 * OPAQUE,
   .fade_delta = 10,
-  .fade_trans = False,
+  .no_fading_openclose = False,
   .clear_shadow = False,
   .inactive_opacity = 0,
   .inactive_opacity_override = False,
@@ -1594,14 +1594,23 @@ map_win(Display *dpy, Window id,
 
   // Window type change could affect shadow and fade
   determine_shadow(dpy, w);
-  determine_fade(dpy, w);
 
   // Determine mode here just in case the colormap changes
   determine_mode(dpy, w);
 
   // Fading in
   calc_opacity(dpy, w, True);
-  set_fade_callback(dpy, w, NULL, True);
+
+  if (opts.no_fading_openclose) {
+    set_fade_callback(dpy, w, finish_map_win, True);
+    // Must be set after we execute the old fade callback, in case we
+    // receive two continuous MapNotify for the same window
+    w->fade = False;
+  }
+  else {
+    set_fade_callback(dpy, w, NULL, True);
+    determine_fade(dpy, w);
+  }
 
   calc_dim(dpy, w);
 
@@ -1618,6 +1627,12 @@ map_win(Display *dpy, Window id,
   if (w->need_configure) {
     configure_win(dpy, &w->queue_configure);
   }
+}
+
+static void
+finish_map_win(Display *dpy, win *w) {
+  if (opts.no_fading_openclose)
+    determine_fade(dpy, w);
 }
 
 static void
@@ -1658,6 +1673,8 @@ unmap_win(Display *dpy, Window id, Bool fade) {
   // Fading out
   w->opacity_tgt = 0;
   set_fade_callback(dpy, w, unmap_callback, False);
+  if (opts.no_fading_openclose)
+    w->fade = False;
 
   // don't care about properties anymore
   // Will get BadWindow if the window is destroyed
@@ -2854,9 +2871,10 @@ usage(void) {
     "-z\n"
     "  Zero the part of the shadow's mask behind the window (experimental).\n"
     "-f\n"
-    "  Fade windows in/out when opening/closing.\n"
+    "  Fade windows in/out when opening/closing and when opacity\n"
+    "  changes, unless --no-fading-openclose is used.\n"
     "-F\n"
-    "  Fade windows during opacity changes.\n"
+    "  Equals -f. Deprecated.\n"
     "-i opacity\n"
     "  Opacity of inactive windows. (0.1 - 1.0)\n"
     "-e opacity\n"
@@ -2885,6 +2903,8 @@ usage(void) {
     "  Exclude conditions for shadows.\n"
     "--mark-ovredir-focused\n"
     "  Mark over-redirect windows as active.\n"
+    "--no-fading-openclose\n"
+    "  Do not fade on window open/close.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3119,6 +3139,8 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   // -f (fading_enable)
   if (config_lookup_bool(&cfg, "fading", &ival) && ival)
     wintype_arr_enable(opts.wintype_fade);
+  // --no-fading-open-close
+  lcfg_lookup_bool(&cfg, "no-fading-openclose", &opts.no_fading_openclose);
   // --shadow-red
   config_lookup_float(&cfg, "shadow-red", &opts.shadow_red);
   // --shadow-green
@@ -3194,6 +3216,7 @@ get_cfg(int argc, char *const *argv) {
     { "mark-wmwin-focused", no_argument, NULL, 262 },
     { "shadow-exclude", required_argument, NULL, 263 },
     { "mark-ovredir-focused", no_argument, NULL, 264 },
+    { "no-fading-openclose", no_argument, NULL, 265 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3258,10 +3281,8 @@ get_cfg(int argc, char *const *argv) {
         cfgtmp.menu_opacity = atof(optarg);
         break;
       case 'f':
-        fading_enable = True;
-        break;
       case 'F':
-        opts.fade_trans = True;
+        fading_enable = True;
         break;
       case 'S':
         opts.synchronize = True;
@@ -3331,6 +3352,10 @@ get_cfg(int argc, char *const *argv) {
       case 264:
         // --mark-ovredir-focused
         opts.mark_ovredir_focused = True;
+        break;
+      case 265:
+        // --no-fading-openclose
+        opts.no_fading_openclose = True;
         break;
       default:
         usage();

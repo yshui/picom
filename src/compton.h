@@ -270,7 +270,7 @@ typedef struct _options {
   /// How much to fade out in a single fading step.
   opacity_t fade_out_step;
   unsigned long fade_delta;
-  Bool fade_trans;
+  Bool no_fading_openclose;
   /// Fading blacklist. A linked list of conditions.
   wincond *fade_blacklist;
 
@@ -724,6 +724,9 @@ static void
 map_win(Display *dpy, Window id,
         unsigned long sequence, Bool fade,
         Bool override_redirect);
+
+static void
+finish_map_win(Display *dpy, win *w);
 
 static void
 finish_unmap_win(Display *dpy, win *w);
