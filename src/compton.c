@@ -125,6 +125,7 @@ static options_t opts = {
   .frame_opacity = 0.0,
   .inactive_dim = 0.0,
   .mark_wmwin_focused = False,
+  .mark_ovredir_focused = False,
   .shadow_blacklist = NULL,
   .fade_blacklist = NULL,
   .fork_after_register = False,
@@ -1584,8 +1585,10 @@ map_win(Display *dpy, Window id,
   if (opts.track_focus) {
     recheck_focus(dpy);
     // Consider a window without client window a WM window and mark it
-    // focused if mark_wmwin_focused is on
-    if (opts.mark_wmwin_focused && !w->client_win)
+    // focused if mark_wmwin_focused is on, or it's over-redirected and
+    // mark_ovredir_focused is on
+    if ((opts.mark_wmwin_focused && !w->client_win)
+        || (opts.mark_ovredir_focused && w->a.override_redirect))
       w->focused = True;
   }
 
@@ -2880,6 +2883,8 @@ usage(void) {
     "  Try to detect WM windows and mark them as active.\n"
     "--shadow-exclude condition\n"
     "  Exclude conditions for shadows.\n"
+    "--mark-ovredir-focused\n"
+    "  Mark over-redirect windows as active.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3127,6 +3132,9 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   config_lookup_float(&cfg, "inactive-dim", &opts.inactive_dim);
   // --mark-wmwin-focused
   lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &opts.mark_wmwin_focused);
+  // --mark-ovredir-focused
+  lcfg_lookup_bool(&cfg, "mark-ovredir-focused",
+      &opts.mark_ovredir_focused);
   // --shadow-exclude
   {
     config_setting_t *setting =
@@ -3185,6 +3193,7 @@ get_cfg(int argc, char *const *argv) {
     { "inactive-dim", required_argument, NULL, 261 },
     { "mark-wmwin-focused", no_argument, NULL, 262 },
     { "shadow-exclude", required_argument, NULL, 263 },
+    { "mark-ovredir-focused", no_argument, NULL, 264 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3318,6 +3327,10 @@ get_cfg(int argc, char *const *argv) {
       case 263:
         // --shadow-exclude
         condlst_add(&opts.shadow_blacklist, optarg);
+        break;
+      case 264:
+        // --mark-ovredir-focused
+        opts.mark_ovredir_focused = True;
         break;
       default:
         usage();

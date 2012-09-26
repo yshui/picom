@@ -246,6 +246,8 @@ typedef struct _options {
   char *display;
   /// Whether to try to detect WM windows and mark them as focused.
   Bool mark_wmwin_focused;
+  /// Whether to mark override-redirect windows as focused.
+  Bool mark_ovredir_focused;
   /// Whether to fork to background.
   Bool fork_after_register;
   Bool synchronize;
