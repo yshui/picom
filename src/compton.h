@@ -241,6 +241,64 @@ typedef struct _win {
   struct _win *prev_trans;
 } win;
 
+typedef struct _options {
+  char *display;
+  int shadow_radius;
+  int shadow_offset_x;
+  int shadow_offset_y;
+  double shadow_opacity;
+
+  /// How much to fade in in a single fading step.
+  opacity_t fade_in_step;
+  /// How much to fade out in a single fading step.
+  opacity_t fade_out_step;
+  unsigned long fade_delta;
+  unsigned long fade_time;
+  Bool fade_trans;
+
+  Bool clear_shadow;
+
+  /// Default opacity for inactive windows.
+  /// 32-bit integer with the format of _NET_WM_OPACITY. 0 stands for
+  /// not enabled, default.
+  opacity_t inactive_opacity;
+  /// Whether inactive_opacity overrides the opacity set by window
+  /// attributes.
+  Bool inactive_opacity_override;
+  double frame_opacity;
+  /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
+  double inactive_dim;
+
+  /// Whether to try to detect WM windows and mark them as focused.
+  double mark_wmwin_focused;
+
+  /// Whether compton needs to track focus changes.
+  Bool track_focus;
+  /// Whether compton needs to track window name and class.
+  Bool track_wdata;
+
+  /// Shadow blacklist. A linked list of conditions.
+  wincond *shadow_blacklist;
+  /// Fading blacklist. A linked list of conditions.
+  wincond *fade_blacklist;
+
+  /// Whether to fork to background.
+  Bool fork_after_register;
+  /// Red, green and blue tone of the shadow.
+  double shadow_red;
+  double shadow_green;
+  double shadow_blue;
+
+  Bool synchronize;
+
+  // Temporary options
+  int shadow_enable;
+  int fading_enable;
+  Bool no_dock_shadow;
+  Bool no_dnd_shadow;
+  double menu_opacity;
+} options_t;
+
 typedef struct _conv {
   int size;
   double *data;
