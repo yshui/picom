@@ -148,7 +148,7 @@ static options_t options = {
  * Fades
  */
 
-unsigned long fade_time;
+unsigned long fade_time = 0;
 
 /**
  * Get current system clock in milliseconds.
