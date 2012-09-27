@@ -3229,6 +3229,7 @@ get_cfg(int argc, char *const *argv) {
   Bool shadow_enable = False, fading_enable = False;
   int o, longopt_idx, i;
   char *config_file = NULL;
+  char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
     opts.wintype_fade[i] = False;
@@ -3251,6 +3252,11 @@ get_cfg(int argc, char *const *argv) {
 #endif
 
   // Parse commandline arguments. Range checking will be done later.
+
+  // Enforce LC_NUMERIC locale "C" here to make sure dots are recognized
+  // instead of commas in atof().
+  setlocale(LC_NUMERIC, "C");
+
   optind = 1;
   while (-1 !=
       (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
@@ -3362,6 +3368,10 @@ get_cfg(int argc, char *const *argv) {
         break;
     }
   }
+
+  // Restore LC_NUMERIC
+  setlocale(LC_NUMERIC, lc_numeric_old);
+  free(lc_numeric_old);
 
   // Range checking and option assignments
   opts.fade_delta = max_i(opts.fade_delta, 1);
