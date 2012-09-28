@@ -12,6 +12,12 @@ INCS += $(shell pcre-config --cflags)
 CFLAGS += -Wall -std=c99
 OBJS = compton.o
 
+CFG ?= -DCONFIG_LIBCONFIG -DCONFIG_REGEX_PCRE -DCONFIG_REGEX_PCRE_JIT
+# libconfig-1.3* does not define LIBCONFIG_VER* macros, so we use pkg-config
+# to determine its version here
+CFG += $(shell pkg-config --atleast-version=1.4 libconfig || echo '-DCONFIG_LIBCONFIG_LEGACY')
+CFLAGS += $(CFG)
+
 %.o: src/%.c src/%.h
 	$(CC) $(CFLAGS) $(INCS) -c src/$*.c
 

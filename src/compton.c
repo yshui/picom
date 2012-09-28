@@ -3071,7 +3071,7 @@ open_config_file(char *cpath, char **ppath) {
  */
 static void
 parse_config(char *cpath, struct options_tmp *pcfgtmp) {
-  char *path = NULL, *parent = NULL;
+  char *path = NULL;
   FILE *f;
   config_t cfg;
   int ival = 0;
@@ -3085,9 +3085,11 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   }
 
   config_init(&cfg);
-  parent = dirname(path);
+#ifndef CONFIG_LIBCONFIG_LEGACY
+  char *parent = dirname(path);
   if (parent)
     config_set_include_dir(&cfg, parent);
+#endif
 
   if (CONFIG_FALSE == config_read(&cfg, f)) {
     printf("Error when reading configuration file \"%s\", line %d: %s\n",
@@ -3104,7 +3106,7 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   // right now. It will be done later
 
   // -D (fade_delta)
-  if (config_lookup_int(&cfg, "fade-delta", &ival))
+  if (lcfg_lookup_int(&cfg, "fade-delta", &ival))
     opts.fade_delta = ival;
   // -I (fade_in_step)
   if (config_lookup_float(&cfg, "fade-in-step", &dval))
@@ -3113,13 +3115,13 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   if (config_lookup_float(&cfg, "fade-out-step", &dval))
     opts.fade_out_step = normalize_d(dval) * OPAQUE;
   // -r (shadow_radius)
-  config_lookup_int(&cfg, "shadow-radius", &opts.shadow_radius);
+  lcfg_lookup_int(&cfg, "shadow-radius", &opts.shadow_radius);
   // -o (shadow_opacity)
   config_lookup_float(&cfg, "shadow-opacity", &opts.shadow_opacity);
   // -l (shadow_offset_x)
-  config_lookup_int(&cfg, "shadow-offset-x", &opts.shadow_offset_x);
+  lcfg_lookup_int(&cfg, "shadow-offset-x", &opts.shadow_offset_x);
   // -t (shadow_offset_y)
-  config_lookup_int(&cfg, "shadow-offset-y", &opts.shadow_offset_y);
+  lcfg_lookup_int(&cfg, "shadow-offset-y", &opts.shadow_offset_y);
   // -i (inactive_opacity)
   if (config_lookup_float(&cfg, "inactive-opacity", &dval))
     opts.inactive_opacity = normalize_d(dval) * OPAQUE;

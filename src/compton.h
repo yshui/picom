@@ -20,12 +20,12 @@
 
 // Whether to enable PCRE regular expression support in blacklists, enabled
 // by default
-#define CONFIG_REGEX_PCRE 1
+// #define CONFIG_REGEX_PCRE 1
 // Whether to enable JIT support of libpcre. This may cause problems on PaX
 // kernels.
-#define CONFIG_REGEX_PCRE_JIT 1
+// #define CONFIG_REGEX_PCRE_JIT 1
 // Whether to enable parsing of configuration files using libconfig
-#define CONFIG_LIBCONFIG 1
+// #define CONFIG_LIBCONFIG 1
 
 // === Includes ===
 
@@ -49,6 +49,12 @@
 
 #ifdef CONFIG_REGEX_PCRE
 #include <pcre.h>
+
+// For compatiblity with <libpcre-8.20
+#ifndef PCRE_STUDY_JIT_COMPILE
+#define PCRE_STUDY_JIT_COMPILE 0
+#endif
+
 #endif
 
 #ifdef CONFIG_LIBCONFIG
@@ -923,12 +929,27 @@ static void
 fork_after(void);
 
 #ifdef CONFIG_LIBCONFIG
-static void
+static inline void
 lcfg_lookup_bool(const config_t *config, const char *path, Bool *value) {
   int ival;
 
   if (config_lookup_bool(config, path, &ival))
     *value = ival;
+}
+
+static inline int
+lcfg_lookup_int(const config_t *config, const char *path, int *value) {
+#ifndef CONFIG_LIBCONFIG_LEGACY
+  return config_lookup_int(config, path, value);
+#else
+  long lval;
+  int ret;
+
+  if ((ret = config_lookup_int(config, path, &lval)))
+    *value = lval;
+
+  return ret;
+#endif
 }
 
 static FILE *
