@@ -242,21 +242,40 @@ typedef struct _win {
 } win;
 
 typedef struct _options {
+  // General
   char *display;
-  int shadow_radius;
-  int shadow_offset_x;
-  int shadow_offset_y;
-  double shadow_opacity;
+  /// Whether to try to detect WM windows and mark them as focused.
+  Bool mark_wmwin_focused;
+  /// Whether to mark override-redirect windows as focused.
+  Bool mark_ovredir_focused;
+  /// Whether to fork to background.
+  Bool fork_after_register;
+  Bool synchronize;
 
+  // Shadow
+  Bool wintype_shadow[NUM_WINTYPES];
+  /// Red, green and blue tone of the shadow.
+  double shadow_red, shadow_green, shadow_blue;
+  int shadow_radius;
+  int shadow_offset_x, shadow_offset_y;
+  double shadow_opacity;
+  Bool clear_shadow;
+  /// Shadow blacklist. A linked list of conditions.
+  wincond *shadow_blacklist;
+
+  // Fading
+  Bool wintype_fade[NUM_WINTYPES];
   /// How much to fade in in a single fading step.
   opacity_t fade_in_step;
   /// How much to fade out in a single fading step.
   opacity_t fade_out_step;
   unsigned long fade_delta;
-  Bool fade_trans;
+  Bool no_fading_openclose;
+  /// Fading blacklist. A linked list of conditions.
+  wincond *fade_blacklist;
 
-  Bool clear_shadow;
-
+  // Opacity
+  double wintype_opacity[NUM_WINTYPES];
   /// Default opacity for inactive windows.
   /// 32-bit integer with the format of _NET_WM_OPACITY. 0 stands for
   /// not enabled, default.
@@ -268,35 +287,19 @@ typedef struct _options {
   /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
   double inactive_dim;
 
-  /// Whether to try to detect WM windows and mark them as focused.
-  double mark_wmwin_focused;
-
+  // Calculated
   /// Whether compton needs to track focus changes.
   Bool track_focus;
   /// Whether compton needs to track window name and class.
   Bool track_wdata;
 
-  /// Shadow blacklist. A linked list of conditions.
-  wincond *shadow_blacklist;
-  /// Fading blacklist. A linked list of conditions.
-  wincond *fade_blacklist;
+} options_t;
 
-  /// Whether to fork to background.
-  Bool fork_after_register;
-  /// Red, green and blue tone of the shadow.
-  double shadow_red;
-  double shadow_green;
-  double shadow_blue;
-
-  Bool synchronize;
-
-  // Temporary options
-  int shadow_enable;
-  int fading_enable;
+struct options_tmp {
   Bool no_dock_shadow;
   Bool no_dnd_shadow;
   double menu_opacity;
-} options_t;
+};
 
 typedef struct _conv {
   int size;
@@ -723,6 +726,9 @@ map_win(Display *dpy, Window id,
         Bool override_redirect);
 
 static void
+finish_map_win(Display *dpy, win *w);
+
+static void
 finish_unmap_win(Display *dpy, win *w);
 
 #if HAS_NAME_WINDOW_PIXMAP
@@ -917,11 +923,19 @@ static void
 fork_after(void);
 
 #ifdef CONFIG_LIBCONFIG
+static void
+lcfg_lookup_bool(const config_t *config, const char *path, Bool *value) {
+  int ival;
+
+  if (config_lookup_bool(config, path, &ival))
+    *value = ival;
+}
+
 static FILE *
 open_config_file(char *cpath, char **path);
 
 static void
-parse_config(char *cpath);
+parse_config(char *cpath, struct options_tmp *pcfgtmp);
 #endif
 
 static void
