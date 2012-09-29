@@ -51,6 +51,9 @@ XserverRegion all_damage;
 Bool has_name_pixmap;
 #endif
 int root_height, root_width;
+/// Whether the program is idling. I.e. no fading, no potential window
+/// changes.
+Bool idling;
 
 /* errors */
 ignore *ignore_head = NULL, **ignore_tail = &ignore_head;
@@ -207,6 +210,9 @@ run_fade(Display *dpy, win *w, unsigned steps) {
     w->fade_fin = True;
     return;
   }
+  else {
+    idling = False;
+  }
 
   w->fade_fin = False;
 }
@@ -224,8 +230,12 @@ set_fade_callback(Display *dpy, win *w,
 
   w->fade_callback = callback;
   // Must be the last line as the callback could destroy w!
-  if (exec_callback && old_callback)
+  if (exec_callback && old_callback) {
     old_callback(dpy, w);
+    // Although currently no callback function affects window state on
+    // next paint, it could, in the future
+    idling = False;
+  }
 }
 
 /**
@@ -3613,10 +3623,13 @@ main(int argc, char **argv) {
   t = paint_preprocess(dpy, list);
   paint_all(dpy, None, t);
 
+  // Initialize idling
+  idling = False;
+
   for (;;) {
     do {
       if (!QLength(dpy)) {
-        if (poll(&ufd, 1, fade_timeout()) == 0) {
+        if (poll(&ufd, 1, (idling ? -1: fade_timeout())) == 0) {
           break;
         }
       }
@@ -3624,6 +3637,9 @@ main(int argc, char **argv) {
       XNextEvent(dpy, &ev);
       ev_handle((XEvent *)&ev);
     } while (QLength(dpy));
+
+    // idling will be turned off during paint_preprocess() if needed
+    idling = True;
 
     t = paint_preprocess(dpy, list);
     if (all_damage) {

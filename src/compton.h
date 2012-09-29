@@ -321,6 +321,7 @@ typedef enum {
 
 extern int root_height, root_width;
 extern Atom atom_client_attr;
+extern Bool idling;
 
 /**
  * Functions
