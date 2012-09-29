@@ -384,11 +384,10 @@ make_shadow(Display *dpy, double opacity,
             int width, int height) {
   XImage *ximage;
   unsigned char *data;
-  int gsize = gaussian_map->size;
   int ylimit, xlimit;
-  int swidth = width + gsize;
-  int sheight = height + gsize;
-  int center = gsize / 2;
+  int swidth = width + cgsize;
+  int sheight = height + cgsize;
+  int center = cgsize / 2;
   int x, y;
   unsigned char d;
   int x_diff;
@@ -434,10 +433,10 @@ make_shadow(Display *dpy, double opacity,
    * corners
    */
 
-  ylimit = gsize;
+  ylimit = cgsize;
   if (ylimit > sheight / 2) ylimit = (sheight + 1) / 2;
 
-  xlimit = gsize;
+  xlimit = cgsize;
   if (xlimit > swidth / 2) xlimit = (swidth + 1) / 2;
 
   for (y = 0; y < ylimit; y++) {
@@ -460,7 +459,7 @@ make_shadow(Display *dpy, double opacity,
    * top/bottom
    */
 
-  x_diff = swidth - (gsize * 2);
+  x_diff = swidth - (cgsize * 2);
   if (x_diff > 0 && ylimit > 0) {
     for (y = 0; y < ylimit; y++) {
       if (ylimit == cgsize) {
@@ -469,8 +468,8 @@ make_shadow(Display *dpy, double opacity,
         d = sum_gaussian(gaussian_map,
           opacity, center, y - center, width, height);
       }
-      memset(&data[y * swidth + gsize], d, x_diff);
-      memset(&data[(sheight - y - 1) * swidth + gsize], d, x_diff);
+      memset(&data[y * swidth + cgsize], d, x_diff);
+      memset(&data[(sheight - y - 1) * swidth + cgsize], d, x_diff);
     }
   }
 
@@ -485,7 +484,7 @@ make_shadow(Display *dpy, double opacity,
       d = sum_gaussian(gaussian_map,
         opacity, x - center, center, width, height);
     }
-    for (y = gsize; y < sheight - gsize; y++) {
+    for (y = cgsize; y < sheight - cgsize; y++) {
       data[y * swidth + x] = d;
       data[y * swidth + (swidth - x - 1)] = d;
     }
@@ -512,48 +511,62 @@ make_shadow(Display *dpy, double opacity,
 
 static Picture
 shadow_picture(Display *dpy, double opacity, int width, int height) {
-  XImage *shadow_image;
-  Pixmap shadow_pixmap;
-  Picture shadow_picture;
-  GC gc;
+  XImage *shadow_image = NULL;
+  Pixmap shadow_pixmap = None, shadow_pixmap_argb = None;
+  Picture shadow_picture = None, shadow_picture_argb = None;
+  GC gc = None;
 
   shadow_image = make_shadow(dpy, opacity, width, height);
-  if (!shadow_image) return None;
+  if (!shadow_image)
+    return None;
 
   shadow_pixmap = XCreatePixmap(dpy, root,
     shadow_image->width, shadow_image->height, 8);
+  shadow_pixmap_argb = XCreatePixmap(dpy, root,
+    shadow_image->width, shadow_image->height, 32);
 
-  if (!shadow_pixmap) {
-    XDestroyImage(shadow_image);
-    return None;
-  }
+  if (!shadow_pixmap || !shadow_pixmap_argb)
+    goto shadow_picture_err;
 
   shadow_picture = XRenderCreatePicture(dpy, shadow_pixmap,
     XRenderFindStandardFormat(dpy, PictStandardA8), 0, 0);
-
-  if (!shadow_picture) {
-    XDestroyImage(shadow_image);
-    XFreePixmap(dpy, shadow_pixmap);
-    return None;
-  }
+  shadow_picture_argb = XRenderCreatePicture(dpy, shadow_pixmap_argb,
+    XRenderFindStandardFormat(dpy, PictStandardARGB32), 0, 0);
+  if (!shadow_picture || !shadow_picture_argb)
+    goto shadow_picture_err;
 
   gc = XCreateGC(dpy, shadow_pixmap, 0, 0);
-  if (!gc) {
-    XDestroyImage(shadow_image);
-    XFreePixmap(dpy, shadow_pixmap);
-    XRenderFreePicture(dpy, shadow_picture);
-    return None;
-  }
+  if (!gc)
+    goto shadow_picture_err;
 
-  XPutImage(
-    dpy, shadow_pixmap, gc, shadow_image, 0, 0, 0, 0,
+  XPutImage(dpy, shadow_pixmap, gc, shadow_image, 0, 0, 0, 0,
     shadow_image->width, shadow_image->height);
+  XRenderComposite(dpy, PictOpSrc, cshadow_picture, shadow_picture,
+      shadow_picture_argb, 0, 0, 0, 0, 0, 0,
+      shadow_image->width, shadow_image->height);
 
   XFreeGC(dpy, gc);
   XDestroyImage(shadow_image);
   XFreePixmap(dpy, shadow_pixmap);
+  XFreePixmap(dpy, shadow_pixmap_argb);
+  XRenderFreePicture(dpy, shadow_picture);
 
-  return shadow_picture;
+  return shadow_picture_argb;
+
+shadow_picture_err:
+  if (shadow_image)
+    XDestroyImage(shadow_image);
+  if (shadow_pixmap)
+    XFreePixmap(dpy, shadow_pixmap);
+  if (shadow_pixmap_argb)
+    XFreePixmap(dpy, shadow_pixmap_argb);
+  if (shadow_picture)
+    XRenderFreePicture(dpy, shadow_picture);
+  if (shadow_picture_argb)
+    XRenderFreePicture(dpy, shadow_picture_argb);
+  if (gc)
+    XFreeGC(dpy, gc);
+  return None;
 }
 
 static Picture
@@ -1276,12 +1289,18 @@ paint_preprocess(Display *dpy, win *list) {
     if (w->flags & WFLAG_SIZE_CHANGE)
       free_picture(dpy, &w->shadow_pict);
 
-    if (w->shadow
-        && (!w->shadow_pict
-          || w->shadow_opacity != w->shadow_opacity_cur)) {
-      free_picture(dpy, &w->shadow_pict);
-      w->shadow_pict = shadow_picture(dpy, w->shadow_opacity,
+    if (w->shadow && !w->shadow_pict) {
+      w->shadow_pict = shadow_picture(dpy, 1,
           w->widthb, w->heightb);
+    }
+
+    // Rebuild shadow_alpha_pict if necessary
+    if (w->shadow
+        && (!w->shadow_alpha_pict
+          || w->shadow_opacity != w->shadow_opacity_cur)) {
+      free_picture(dpy, &w->shadow_alpha_pict);
+      w->shadow_alpha_pict = solid_picture(
+        dpy, False, w->shadow_opacity, 0, 0, 0);
       w->shadow_opacity_cur = w->shadow_opacity;
     }
 
@@ -1359,7 +1378,7 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
     // Painting shadow
     if (w->shadow) {
       XRenderComposite(
-        dpy, PictOpOver, cshadow_picture, w->shadow_pict,
+        dpy, PictOpOver, w->shadow_pict, w->shadow_alpha_pict,
         root_buffer, 0, 0, 0, 0,
         w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
         w->shadow_width, w->shadow_height);
@@ -1942,6 +1961,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->shadow_opacity = 0.0;
   new->shadow_opacity_cur = 0.0;
   new->shadow_pict = None;
+  new->shadow_alpha_pict = None;
   new->shadow_dx = 0;
   new->shadow_dy = 0;
   new->shadow_width = 0;

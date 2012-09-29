@@ -228,9 +228,10 @@ typedef struct _win {
   int shadow_width;
   /// Height of shadow. Affected by window size and commandline argument.
   int shadow_height;
-  /// Alpha mask Picture to render shadow. Affected by window size and
-  /// shadow opacity.
+  /// Picture to render shadow. Affected by window size.
   Picture shadow_pict;
+  /// Alpha mask Picture to render shadow. Affected by shadow opacity.
+  Picture shadow_alpha_pict;
 
   // Dim-related members
   /// Whether the window is to be dimmed.
