@@ -20,12 +20,12 @@
 
 // Whether to enable PCRE regular expression support in blacklists, enabled
 // by default
-#define CONFIG_REGEX_PCRE 1
+// #define CONFIG_REGEX_PCRE 1
 // Whether to enable JIT support of libpcre. This may cause problems on PaX
 // kernels.
-#define CONFIG_REGEX_PCRE_JIT 1
+// #define CONFIG_REGEX_PCRE_JIT 1
 // Whether to enable parsing of configuration files using libconfig
-#define CONFIG_LIBCONFIG 1
+// #define CONFIG_LIBCONFIG 1
 
 // === Includes ===
 
@@ -49,6 +49,12 @@
 
 #ifdef CONFIG_REGEX_PCRE
 #include <pcre.h>
+
+// For compatiblity with <libpcre-8.20
+#ifndef PCRE_STUDY_JIT_COMPILE
+#define PCRE_STUDY_JIT_COMPILE 0
+#endif
+
 #endif
 
 #ifdef CONFIG_LIBCONFIG
@@ -68,6 +74,9 @@
 #if COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2
 #define HAS_NAME_WINDOW_PIXMAP 1
 #endif
+
+#define ROUNDED_PERCENT 0.05
+#define ROUNDED_PIXELS  10
 
 // For printing timestamps
 #include <time.h>
@@ -168,6 +177,10 @@ typedef struct _win {
   Bool destroyed;
   /// Cached width/height of the window including border.
   int widthb, heightb;
+  /// Whether the window is bounding-shaped.
+  Bool bounding_shaped;
+  /// Whether the window just have rounded corners.
+  Bool rounded_corners;
 
   // Blacklist related members
   char *name;
@@ -222,9 +235,10 @@ typedef struct _win {
   int shadow_width;
   /// Height of shadow. Affected by window size and commandline argument.
   int shadow_height;
-  /// Alpha mask Picture to render shadow. Affected by window size and
-  /// shadow opacity.
+  /// Picture to render shadow. Affected by window size.
   Picture shadow_pict;
+  /// Alpha mask Picture to render shadow. Affected by shadow opacity.
+  Picture shadow_alpha_pict;
 
   // Dim-related members
   /// Whether the window is to be dimmed.
@@ -250,6 +264,9 @@ typedef struct _options {
   Bool mark_ovredir_focused;
   /// Whether to fork to background.
   Bool fork_after_register;
+  /// Whether to detect rounded corners.
+  Bool detect_rounded_corners;
+  /// Whether to work under synchronized mode for debugging.
   Bool synchronize;
 
   // Shadow
@@ -262,6 +279,8 @@ typedef struct _options {
   Bool clear_shadow;
   /// Shadow blacklist. A linked list of conditions.
   wincond *shadow_blacklist;
+  /// Whether bounding-shaped window should be ignored.
+  Bool shadow_ignore_shaped;
 
   // Fading
   Bool wintype_fade[NUM_WINTYPES];
@@ -314,6 +333,8 @@ typedef enum {
 
 extern int root_height, root_width;
 extern Atom atom_client_attr;
+extern Bool idling;
+extern Bool shape_exists;
 
 /**
  * Functions
@@ -555,52 +576,6 @@ free_damage(Display *dpy, Damage *p) {
   }
 }
 
-/**
- * Determine if a window has a specific attribute.
- *
- * @param dpy Display to use
- * @param w window to check
- * @param atom atom of attribute to check
- * @return 1 if it has the attribute, 0 otherwise
- */
-static inline Bool
-win_has_attr(Display *dpy, Window w, Atom atom) {
-  Atom type = None;
-  int format;
-  unsigned long nitems, after;
-  unsigned char *data;
-
-  if (Success == XGetWindowProperty(dpy, w, atom, 0, 0, False,
-        AnyPropertyType, &type, &format, &nitems, &after, &data)) {
-    XFree(data);
-    if (type) return True;
-  }
-
-  return False;
-}
-
-/**
- * Get the children of a window.
- *
- * @param dpy Display to use
- * @param w window to check
- * @param children [out] an array of child window IDs
- * @param nchildren [out] number of children
- * @return 1 if successful, 0 otherwise
- */
-static inline Bool
-win_get_children(Display *dpy, Window w,
-    Window **children, unsigned *nchildren) {
-  Window troot, tparent;
-
-  if (!XQueryTree(dpy, w, &troot, &tparent, children, nchildren)) {
-    *nchildren = 0;
-    return False;
-  }
-
-  return True;
-}
-
 static unsigned long
 get_time_in_milliseconds(void);
 
@@ -659,6 +634,75 @@ static inline bool is_normal_win(const win *w) {
       || WINTYPE_UTILITY == w->window_type
       || WINTYPE_UNKNOWN == w->window_type);
 }
+
+/**
+ * Determine if a window has a specific attribute.
+ *
+ * @param dpy Display to use
+ * @param w window to check
+ * @param atom atom of attribute to check
+ * @return 1 if it has the attribute, 0 otherwise
+ */
+static inline Bool
+wid_has_attr(Display *dpy, Window w, Atom atom) {
+  Atom type = None;
+  int format;
+  unsigned long nitems, after;
+  unsigned char *data;
+
+  if (Success == XGetWindowProperty(dpy, w, atom, 0, 0, False,
+        AnyPropertyType, &type, &format, &nitems, &after, &data)) {
+    XFree(data);
+    if (type) return True;
+  }
+
+  return False;
+}
+
+/**
+ * Get the children of a window.
+ *
+ * @param dpy Display to use
+ * @param w window to check
+ * @param children [out] an array of child window IDs
+ * @param nchildren [out] number of children
+ * @return 1 if successful, 0 otherwise
+ */
+static inline Bool
+wid_get_children(Display *dpy, Window w,
+    Window **children, unsigned *nchildren) {
+  Window troot, tparent;
+
+  if (!XQueryTree(dpy, w, &troot, &tparent, children, nchildren)) {
+    *nchildren = 0;
+    return False;
+  }
+
+  return True;
+}
+
+/**
+ * Check if a window is bounding-shaped.
+ */
+static inline Bool
+wid_bounding_shaped(Display *dpy, Window wid) {
+  if (shape_exists) {
+    Bool bounding_shaped = False;
+    Bool clip_shaped;
+    int x_bounding, y_bounding, x_clip, y_clip;
+    unsigned int w_bounding, h_bounding, w_clip, h_clip;
+
+    XShapeQueryExtents(dpy, wid, &bounding_shaped,
+        &x_bounding, &y_bounding, &w_bounding, &h_bounding,
+        &clip_shaped, &x_clip, &y_clip, &w_clip, &h_clip);
+    return bounding_shaped;
+  }
+  
+  return False;
+}
+
+static void
+win_rounded_corners(Display *dpy, win *w);
 
 static bool
 win_match_once(win *w, const wincond *cond);
@@ -923,12 +967,27 @@ static void
 fork_after(void);
 
 #ifdef CONFIG_LIBCONFIG
-static void
+static inline void
 lcfg_lookup_bool(const config_t *config, const char *path, Bool *value) {
   int ival;
 
   if (config_lookup_bool(config, path, &ival))
     *value = ival;
+}
+
+static inline int
+lcfg_lookup_int(const config_t *config, const char *path, int *value) {
+#ifndef CONFIG_LIBCONFIG_LEGACY
+  return config_lookup_int(config, path, value);
+#else
+  long lval;
+  int ret;
+
+  if ((ret = config_lookup_int(config, path, &lval)))
+    *value = lval;
+
+  return ret;
+#endif
 }
 
 static FILE *

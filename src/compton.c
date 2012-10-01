@@ -51,6 +51,9 @@ XserverRegion all_damage;
 Bool has_name_pixmap;
 #endif
 int root_height, root_width;
+/// Whether the program is idling. I.e. no fading, no potential window
+/// changes.
+Bool idling;
 
 /* errors */
 ignore *ignore_head = NULL, **ignore_tail = &ignore_head;
@@ -109,31 +112,37 @@ Atom win_type[NUM_WINTYPES];
 
 static options_t opts = {
   .display = NULL,
+  .mark_wmwin_focused = False,
+  .mark_ovredir_focused = False,
+  .fork_after_register = False,
+  .synchronize = False,
+  .detect_rounded_corners = False,
+
+  .wintype_shadow = { False },
+  .shadow_red = 0.0,
+  .shadow_green = 0.0,
+  .shadow_blue = 0.0,
   .shadow_radius = 12,
   .shadow_offset_x = -15,
   .shadow_offset_y = -15,
   .shadow_opacity = .75,
+  .clear_shadow = False,
+  .shadow_blacklist = NULL,
+  .shadow_ignore_shaped = False,
+
+  .wintype_fade = { False },
   .fade_in_step = 0.028 * OPAQUE,
   .fade_out_step = 0.03 * OPAQUE,
   .fade_delta = 10,
   .no_fading_openclose = False,
-  .clear_shadow = False,
+  .fade_blacklist = NULL,
+
+  .wintype_opacity = { 0.0 },
   .inactive_opacity = 0,
   .inactive_opacity_override = False,
   .frame_opacity = 0.0,
   .inactive_dim = 0.0,
-  .mark_wmwin_focused = False,
-  .mark_ovredir_focused = False,
-  .shadow_blacklist = NULL,
-  .fade_blacklist = NULL,
-  .fork_after_register = False,
-  .shadow_red = 0.0,
-  .shadow_green = 0.0,
-  .shadow_blue = 0.0,
-  .wintype_opacity = { 0.0 },
-  .wintype_shadow = { False },
-  .wintype_fade = { False },
-  .synchronize = False,
+
   .track_focus = False,
   .track_wdata = False,
 };
@@ -207,6 +216,9 @@ run_fade(Display *dpy, win *w, unsigned steps) {
     w->fade_fin = True;
     return;
   }
+  else {
+    idling = False;
+  }
 
   w->fade_fin = False;
 }
@@ -224,8 +236,12 @@ set_fade_callback(Display *dpy, win *w,
 
   w->fade_callback = callback;
   // Must be the last line as the callback could destroy w!
-  if (exec_callback && old_callback)
+  if (exec_callback && old_callback) {
     old_callback(dpy, w);
+    // Although currently no callback function affects window state on
+    // next paint, it could, in the future
+    idling = False;
+  }
 }
 
 /**
@@ -384,11 +400,10 @@ make_shadow(Display *dpy, double opacity,
             int width, int height) {
   XImage *ximage;
   unsigned char *data;
-  int gsize = gaussian_map->size;
   int ylimit, xlimit;
-  int swidth = width + gsize;
-  int sheight = height + gsize;
-  int center = gsize / 2;
+  int swidth = width + cgsize;
+  int sheight = height + cgsize;
+  int center = cgsize / 2;
   int x, y;
   unsigned char d;
   int x_diff;
@@ -434,10 +449,10 @@ make_shadow(Display *dpy, double opacity,
    * corners
    */
 
-  ylimit = gsize;
+  ylimit = cgsize;
   if (ylimit > sheight / 2) ylimit = (sheight + 1) / 2;
 
-  xlimit = gsize;
+  xlimit = cgsize;
   if (xlimit > swidth / 2) xlimit = (swidth + 1) / 2;
 
   for (y = 0; y < ylimit; y++) {
@@ -460,7 +475,7 @@ make_shadow(Display *dpy, double opacity,
    * top/bottom
    */
 
-  x_diff = swidth - (gsize * 2);
+  x_diff = swidth - (cgsize * 2);
   if (x_diff > 0 && ylimit > 0) {
     for (y = 0; y < ylimit; y++) {
       if (ylimit == cgsize) {
@@ -469,8 +484,8 @@ make_shadow(Display *dpy, double opacity,
         d = sum_gaussian(gaussian_map,
           opacity, center, y - center, width, height);
       }
-      memset(&data[y * swidth + gsize], d, x_diff);
-      memset(&data[(sheight - y - 1) * swidth + gsize], d, x_diff);
+      memset(&data[y * swidth + cgsize], d, x_diff);
+      memset(&data[(sheight - y - 1) * swidth + cgsize], d, x_diff);
     }
   }
 
@@ -485,7 +500,7 @@ make_shadow(Display *dpy, double opacity,
       d = sum_gaussian(gaussian_map,
         opacity, x - center, center, width, height);
     }
-    for (y = gsize; y < sheight - gsize; y++) {
+    for (y = cgsize; y < sheight - cgsize; y++) {
       data[y * swidth + x] = d;
       data[y * swidth + (swidth - x - 1)] = d;
     }
@@ -512,48 +527,62 @@ make_shadow(Display *dpy, double opacity,
 
 static Picture
 shadow_picture(Display *dpy, double opacity, int width, int height) {
-  XImage *shadow_image;
-  Pixmap shadow_pixmap;
-  Picture shadow_picture;
-  GC gc;
+  XImage *shadow_image = NULL;
+  Pixmap shadow_pixmap = None, shadow_pixmap_argb = None;
+  Picture shadow_picture = None, shadow_picture_argb = None;
+  GC gc = None;
 
   shadow_image = make_shadow(dpy, opacity, width, height);
-  if (!shadow_image) return None;
+  if (!shadow_image)
+    return None;
 
   shadow_pixmap = XCreatePixmap(dpy, root,
     shadow_image->width, shadow_image->height, 8);
+  shadow_pixmap_argb = XCreatePixmap(dpy, root,
+    shadow_image->width, shadow_image->height, 32);
 
-  if (!shadow_pixmap) {
-    XDestroyImage(shadow_image);
-    return None;
-  }
+  if (!shadow_pixmap || !shadow_pixmap_argb)
+    goto shadow_picture_err;
 
   shadow_picture = XRenderCreatePicture(dpy, shadow_pixmap,
     XRenderFindStandardFormat(dpy, PictStandardA8), 0, 0);
-
-  if (!shadow_picture) {
-    XDestroyImage(shadow_image);
-    XFreePixmap(dpy, shadow_pixmap);
-    return None;
-  }
+  shadow_picture_argb = XRenderCreatePicture(dpy, shadow_pixmap_argb,
+    XRenderFindStandardFormat(dpy, PictStandardARGB32), 0, 0);
+  if (!shadow_picture || !shadow_picture_argb)
+    goto shadow_picture_err;
 
   gc = XCreateGC(dpy, shadow_pixmap, 0, 0);
-  if (!gc) {
-    XDestroyImage(shadow_image);
-    XFreePixmap(dpy, shadow_pixmap);
-    XRenderFreePicture(dpy, shadow_picture);
-    return None;
-  }
+  if (!gc)
+    goto shadow_picture_err;
 
-  XPutImage(
-    dpy, shadow_pixmap, gc, shadow_image, 0, 0, 0, 0,
+  XPutImage(dpy, shadow_pixmap, gc, shadow_image, 0, 0, 0, 0,
     shadow_image->width, shadow_image->height);
+  XRenderComposite(dpy, PictOpSrc, cshadow_picture, shadow_picture,
+      shadow_picture_argb, 0, 0, 0, 0, 0, 0,
+      shadow_image->width, shadow_image->height);
 
   XFreeGC(dpy, gc);
   XDestroyImage(shadow_image);
   XFreePixmap(dpy, shadow_pixmap);
+  XFreePixmap(dpy, shadow_pixmap_argb);
+  XRenderFreePicture(dpy, shadow_picture);
 
-  return shadow_picture;
+  return shadow_picture_argb;
+
+shadow_picture_err:
+  if (shadow_image)
+    XDestroyImage(shadow_image);
+  if (shadow_pixmap)
+    XFreePixmap(dpy, shadow_pixmap);
+  if (shadow_pixmap_argb)
+    XFreePixmap(dpy, shadow_pixmap_argb);
+  if (shadow_picture)
+    XRenderFreePicture(dpy, shadow_picture);
+  if (shadow_picture_argb)
+    XRenderFreePicture(dpy, shadow_picture_argb);
+  if (gc)
+    XFreeGC(dpy, gc);
+  return None;
 }
 
 static Picture
@@ -631,6 +660,48 @@ should_ignore(Display *dpy, unsigned long sequence) {
 /**
  * Windows
  */
+
+/**
+ * Check if a window has rounded corners.
+ */
+static void
+win_rounded_corners(Display *dpy, win *w) {
+  if (!w->bounding_shaped)
+    return;
+
+  // Fetch its bounding region
+  if (!w->border_size)
+    w->border_size = border_size(dpy, w);
+
+  // Quit if border_size() returns None
+  if (!w->border_size)
+    return;
+
+  // Determine the minimum width/height of a rectangle that could mark
+  // a window as having rounded corners
+  unsigned short minwidth = max_i(w->widthb * (1 - ROUNDED_PERCENT),
+      w->widthb - ROUNDED_PIXELS);
+  unsigned short minheight = max_i(w->heightb * (1 - ROUNDED_PERCENT),
+      w->heightb - ROUNDED_PIXELS);
+
+  // Get the rectangles in the bounding region
+  int nrects = 0, i;
+  XRectangle *rects = XFixesFetchRegion(dpy, w->border_size, &nrects);
+  if (!rects)
+    return;
+
+  // Look for a rectangle large enough for this window be considered
+  // having rounded corners
+  for (i = 0; i < nrects; ++i)
+    if (rects[i].width >= minwidth && rects[i].height >= minheight) {
+      w->rounded_corners = True;
+      XFree(rects);
+      return;
+    }
+
+  w->rounded_corners = False;
+  XFree(rects);
+}
 
 /**
  * Match a window against a single window condition.
@@ -1110,7 +1181,7 @@ border_size(Display *dpy, win *w) {
 
 static Window
 find_client_win(Display *dpy, Window w) {
-  if (win_has_attr(dpy, w, client_atom)) {
+  if (wid_has_attr(dpy, w, client_atom)) {
     return w;
   }
 
@@ -1119,7 +1190,7 @@ find_client_win(Display *dpy, Window w) {
   unsigned int i;
   Window ret = 0;
 
-  if (!win_get_children(dpy, w, &children, &nchildren)) {
+  if (!wid_get_children(dpy, w, &children, &nchildren)) {
     return 0;
   }
 
@@ -1276,12 +1347,18 @@ paint_preprocess(Display *dpy, win *list) {
     if (w->flags & WFLAG_SIZE_CHANGE)
       free_picture(dpy, &w->shadow_pict);
 
-    if (w->shadow
-        && (!w->shadow_pict
-          || w->shadow_opacity != w->shadow_opacity_cur)) {
-      free_picture(dpy, &w->shadow_pict);
-      w->shadow_pict = shadow_picture(dpy, w->shadow_opacity,
+    if (w->shadow && !w->shadow_pict) {
+      w->shadow_pict = shadow_picture(dpy, 1,
           w->widthb, w->heightb);
+    }
+
+    // Rebuild shadow_alpha_pict if necessary
+    if (w->shadow
+        && (!w->shadow_alpha_pict
+          || w->shadow_opacity != w->shadow_opacity_cur)) {
+      free_picture(dpy, &w->shadow_alpha_pict);
+      w->shadow_alpha_pict = solid_picture(
+        dpy, False, w->shadow_opacity, 0, 0, 0);
       w->shadow_opacity_cur = w->shadow_opacity;
     }
 
@@ -1359,7 +1436,7 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
     // Painting shadow
     if (w->shadow) {
       XRenderComposite(
-        dpy, PictOpOver, cshadow_picture, w->shadow_pict,
+        dpy, PictOpOver, w->shadow_pict, w->shadow_alpha_pict,
         root_buffer, 0, 0, 0, 0,
         w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
         w->shadow_width, w->shadow_height);
@@ -1510,7 +1587,7 @@ determine_wintype(Display *dpy, Window w) {
   type = get_wintype_prop(dpy, w);
   if (type != WINTYPE_UNKNOWN) return type;
 
-  if (!win_get_children(dpy, w, &children, &nchildren))
+  if (!wid_get_children(dpy, w, &children, &nchildren))
     return WINTYPE_UNKNOWN;
 
   for (i = 0; i < nchildren; i++) {
@@ -1570,6 +1647,13 @@ map_win(Display *dpy, Window id,
     w->id, WINTYPES[w->window_type]);
 #endif
 
+  // Detect if the window is shaped or has rounded corners
+  if (opts.shadow_ignore_shaped) {
+    w->bounding_shaped = wid_bounding_shaped(dpy, w->id);
+    if (w->bounding_shaped && opts.detect_rounded_corners)
+      win_rounded_corners(dpy, w);
+  }
+
   // Get window name and class if we are tracking them
   if (opts.track_wdata) {
     win_get_name(dpy, w);
@@ -1592,7 +1676,8 @@ map_win(Display *dpy, Window id,
       w->focused = True;
   }
 
-  // Window type change could affect shadow and fade
+  // Window type change and bounding shape state change could affect
+  // shadow
   determine_shadow(dpy, w);
 
   // Determine mode here just in case the colormap changes
@@ -1601,6 +1686,7 @@ map_win(Display *dpy, Window id,
   // Fading in
   calc_opacity(dpy, w, True);
 
+  // Set fading state
   if (opts.no_fading_openclose) {
     set_fade_callback(dpy, w, finish_map_win, True);
     // Must be set after we execute the old fade callback, in case we
@@ -1820,7 +1906,9 @@ determine_shadow(Display *dpy, win *w) {
   Bool shadow_old = w->shadow;
 
   w->shadow = (opts.wintype_shadow[w->window_type]
-      && !win_match(w, opts.shadow_blacklist, &w->cache_sblst));
+      && !win_match(w, opts.shadow_blacklist, &w->cache_sblst)
+      && !(opts.shadow_ignore_shaped && w->bounding_shaped
+        && !w->rounded_corners));
 
   // Window extents need update on shadow state change
   if (w->shadow != shadow_old) {
@@ -1935,6 +2023,8 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->class_general = NULL;
   new->cache_sblst = NULL;
   new->cache_fblst = NULL;
+  new->bounding_shaped = False;
+  new->rounded_corners = False;
 
   new->border_size = None;
   new->extents = None;
@@ -1942,6 +2032,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->shadow_opacity = 0.0;
   new->shadow_opacity_cur = 0.0;
   new->shadow_pict = None;
+  new->shadow_alpha_pict = None;
   new->shadow_dx = 0;
   new->shadow_dy = 0;
   new->shadow_width = 0;
@@ -2752,6 +2843,16 @@ ev_shape_notify(XShapeEvent *ev) {
     // Mark the new border_size as damaged
     add_damage(dpy, copy_region(dpy, w->border_size));
   }
+
+  // Redo bounding shape detection and rounded corner detection
+  if (opts.shadow_ignore_shaped) {
+    w->bounding_shaped = wid_bounding_shaped(dpy, w->id);
+    if (w->bounding_shaped && opts.detect_rounded_corners)
+      win_rounded_corners(dpy, w);
+
+    // Shadow state could be changed
+    determine_shadow(dpy, w);
+  }
 }
 
 inline static void
@@ -2905,6 +3006,11 @@ usage(void) {
     "  Mark over-redirect windows as active.\n"
     "--no-fading-openclose\n"
     "  Do not fade on window open/close.\n"
+    "--shadow-ignore-shaped\n"
+    "  Do not paint shadows on shaped windows.\n"
+    "--detect-rounded-corners\n"
+    "  Try to detect windows with rounded corners and don't consider\n"
+    "  them shaped windows.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3071,7 +3177,7 @@ open_config_file(char *cpath, char **ppath) {
  */
 static void
 parse_config(char *cpath, struct options_tmp *pcfgtmp) {
-  char *path = NULL, *parent = NULL;
+  char *path = NULL;
   FILE *f;
   config_t cfg;
   int ival = 0;
@@ -3085,9 +3191,11 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   }
 
   config_init(&cfg);
-  parent = dirname(path);
+#ifndef CONFIG_LIBCONFIG_LEGACY
+  char *parent = dirname(path);
   if (parent)
     config_set_include_dir(&cfg, parent);
+#endif
 
   if (CONFIG_FALSE == config_read(&cfg, f)) {
     printf("Error when reading configuration file \"%s\", line %d: %s\n",
@@ -3104,7 +3212,7 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   // right now. It will be done later
 
   // -D (fade_delta)
-  if (config_lookup_int(&cfg, "fade-delta", &ival))
+  if (lcfg_lookup_int(&cfg, "fade-delta", &ival))
     opts.fade_delta = ival;
   // -I (fade_in_step)
   if (config_lookup_float(&cfg, "fade-in-step", &dval))
@@ -3113,13 +3221,13 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   if (config_lookup_float(&cfg, "fade-out-step", &dval))
     opts.fade_out_step = normalize_d(dval) * OPAQUE;
   // -r (shadow_radius)
-  config_lookup_int(&cfg, "shadow-radius", &opts.shadow_radius);
+  lcfg_lookup_int(&cfg, "shadow-radius", &opts.shadow_radius);
   // -o (shadow_opacity)
   config_lookup_float(&cfg, "shadow-opacity", &opts.shadow_opacity);
   // -l (shadow_offset_x)
-  config_lookup_int(&cfg, "shadow-offset-x", &opts.shadow_offset_x);
+  lcfg_lookup_int(&cfg, "shadow-offset-x", &opts.shadow_offset_x);
   // -t (shadow_offset_y)
-  config_lookup_int(&cfg, "shadow-offset-y", &opts.shadow_offset_y);
+  lcfg_lookup_int(&cfg, "shadow-offset-y", &opts.shadow_offset_y);
   // -i (inactive_opacity)
   if (config_lookup_float(&cfg, "inactive-opacity", &dval))
     opts.inactive_opacity = normalize_d(dval) * OPAQUE;
@@ -3157,6 +3265,12 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   // --mark-ovredir-focused
   lcfg_lookup_bool(&cfg, "mark-ovredir-focused",
       &opts.mark_ovredir_focused);
+  // --shadow-ignore-shaped
+  lcfg_lookup_bool(&cfg, "shadow-ignore-shaped",
+      &opts.shadow_ignore_shaped);
+  // --detect-rounded-corners
+  lcfg_lookup_bool(&cfg, "detect-rounded-corners",
+      &opts.detect_rounded_corners);
   // --shadow-exclude
   {
     config_setting_t *setting =
@@ -3217,6 +3331,8 @@ get_cfg(int argc, char *const *argv) {
     { "shadow-exclude", required_argument, NULL, 263 },
     { "mark-ovredir-focused", no_argument, NULL, 264 },
     { "no-fading-openclose", no_argument, NULL, 265 },
+    { "shadow-ignore-shaped", no_argument, NULL, 266 },
+    { "detect-rounded-corners", no_argument, NULL, 267 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3362,6 +3478,14 @@ get_cfg(int argc, char *const *argv) {
       case 265:
         // --no-fading-openclose
         opts.no_fading_openclose = True;
+        break;
+      case 266:
+        // --shadow-ignore-shaped
+        opts.shadow_ignore_shaped = True;
+        break;
+      case 267:
+        // --detect-rounded-corners
+        opts.detect_rounded_corners = True;
         break;
       default:
         usage();
@@ -3591,10 +3715,13 @@ main(int argc, char **argv) {
   t = paint_preprocess(dpy, list);
   paint_all(dpy, None, t);
 
+  // Initialize idling
+  idling = False;
+
   for (;;) {
     do {
       if (!QLength(dpy)) {
-        if (poll(&ufd, 1, fade_timeout()) == 0) {
+        if (poll(&ufd, 1, (idling ? -1: fade_timeout())) == 0) {
           break;
         }
       }
@@ -3602,6 +3729,9 @@ main(int argc, char **argv) {
       XNextEvent(dpy, &ev);
       ev_handle((XEvent *)&ev);
     } while (QLength(dpy));
+
+    // idling will be turned off during paint_preprocess() if needed
+    idling = True;
 
     t = paint_preprocess(dpy, list);
     if (all_damage) {
