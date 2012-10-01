@@ -114,31 +114,37 @@ unsigned long fade_time;
 
 static options_t opts = {
   .display = NULL,
+  .mark_wmwin_focused = False,
+  .mark_ovredir_focused = False,
+  .fork_after_register = False,
+  .synchronize = False,
+  .detect_rounded_corners = False,
+
+  .wintype_shadow = { False },
+  .shadow_red = 0.0,
+  .shadow_green = 0.0,
+  .shadow_blue = 0.0,
   .shadow_radius = 12,
   .shadow_offset_x = -15,
   .shadow_offset_y = -15,
   .shadow_opacity = .75,
+  .clear_shadow = False,
+  .shadow_blacklist = NULL,
+  .shadow_ignore_shaped = False,
+
+  .wintype_fade = { False },
   .fade_in_step = 0.028 * OPAQUE,
   .fade_out_step = 0.03 * OPAQUE,
   .fade_delta = 10,
   .no_fading_openclose = False,
-  .clear_shadow = False,
+  .fade_blacklist = NULL,
+
+  .wintype_opacity = { 0.0 },
   .inactive_opacity = 0,
   .inactive_opacity_override = False,
   .frame_opacity = 0.0,
   .inactive_dim = 0.0,
-  .mark_wmwin_focused = False,
-  .mark_ovredir_focused = False,
-  .shadow_blacklist = NULL,
-  .fade_blacklist = NULL,
-  .fork_after_register = False,
-  .shadow_red = 0.0,
-  .shadow_green = 0.0,
-  .shadow_blue = 0.0,
-  .wintype_opacity = { 0.0 },
-  .wintype_shadow = { False },
-  .wintype_fade = { False },
-  .synchronize = False,
+
   .track_focus = False,
   .track_wdata = False,
 };
@@ -656,6 +662,48 @@ should_ignore(Display *dpy, unsigned long sequence) {
  */
 
 /**
+ * Check if a window has rounded corners.
+ */
+static void
+win_rounded_corners(Display *dpy, win *w) {
+  if (!w->bounding_shaped)
+    return;
+
+  // Fetch its bounding region
+  if (!w->border_size)
+    w->border_size = border_size(dpy, w);
+
+  // Quit if border_size() returns None
+  if (!w->border_size)
+    return;
+
+  // Determine the minimum width/height of a rectangle that could mark
+  // a window as having rounded corners
+  unsigned short minwidth = max_i(w->widthb * (1 - ROUNDED_PERCENT),
+      w->widthb - ROUNDED_PIXELS);
+  unsigned short minheight = max_i(w->heightb * (1 - ROUNDED_PERCENT),
+      w->heightb - ROUNDED_PIXELS);
+
+  // Get the rectangles in the bounding region
+  int nrects = 0, i;
+  XRectangle *rects = XFixesFetchRegion(dpy, w->border_size, &nrects);
+  if (!rects)
+    return;
+
+  // Look for a rectangle large enough for this window be considered
+  // having rounded corners
+  for (i = 0; i < nrects; ++i)
+    if (rects[i].width >= minwidth && rects[i].height >= minheight) {
+      w->rounded_corners = True;
+      XFree(rects);
+      return;
+    }
+
+  w->rounded_corners = False;
+  XFree(rects);
+}
+
+/**
  * Match a window against a single window condition.
  *
  * @return true if matched, false otherwise.
@@ -1133,7 +1181,7 @@ border_size(Display *dpy, win *w) {
 
 static Window
 find_client_win(Display *dpy, Window w) {
-  if (win_has_attr(dpy, w, client_atom)) {
+  if (wid_has_attr(dpy, w, client_atom)) {
     return w;
   }
 
@@ -1142,7 +1190,7 @@ find_client_win(Display *dpy, Window w) {
   unsigned int i;
   Window ret = 0;
 
-  if (!win_get_children(dpy, w, &children, &nchildren)) {
+  if (!wid_get_children(dpy, w, &children, &nchildren)) {
     return 0;
   }
 
@@ -1539,7 +1587,7 @@ determine_wintype(Display *dpy, Window w) {
   type = get_wintype_prop(dpy, w);
   if (type != WINTYPE_UNKNOWN) return type;
 
-  if (!win_get_children(dpy, w, &children, &nchildren))
+  if (!wid_get_children(dpy, w, &children, &nchildren))
     return WINTYPE_UNKNOWN;
 
   for (i = 0; i < nchildren; i++) {
@@ -1599,6 +1647,13 @@ map_win(Display *dpy, Window id,
     w->id, WINTYPES[w->window_type]);
 #endif
 
+  // Detect if the window is shaped or has rounded corners
+  if (opts.shadow_ignore_shaped) {
+    w->bounding_shaped = wid_bounding_shaped(dpy, w->id);
+    if (w->bounding_shaped && opts.detect_rounded_corners)
+      win_rounded_corners(dpy, w);
+  }
+
   // Get window name and class if we are tracking them
   if (opts.track_wdata) {
     win_get_name(dpy, w);
@@ -1621,7 +1676,8 @@ map_win(Display *dpy, Window id,
       w->focused = True;
   }
 
-  // Window type change could affect shadow and fade
+  // Window type change and bounding shape state change could affect
+  // shadow
   determine_shadow(dpy, w);
 
   // Determine mode here just in case the colormap changes
@@ -1630,6 +1686,7 @@ map_win(Display *dpy, Window id,
   // Fading in
   calc_opacity(dpy, w, True);
 
+  // Set fading state
   if (opts.no_fading_openclose) {
     set_fade_callback(dpy, w, finish_map_win, True);
     // Must be set after we execute the old fade callback, in case we
@@ -1849,7 +1906,9 @@ determine_shadow(Display *dpy, win *w) {
   Bool shadow_old = w->shadow;
 
   w->shadow = (opts.wintype_shadow[w->window_type]
-      && !win_match(w, opts.shadow_blacklist, &w->cache_sblst));
+      && !win_match(w, opts.shadow_blacklist, &w->cache_sblst)
+      && !(opts.shadow_ignore_shaped && w->bounding_shaped
+        && !w->rounded_corners));
 
   // Window extents need update on shadow state change
   if (w->shadow != shadow_old) {
@@ -1964,6 +2023,8 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->class_general = NULL;
   new->cache_sblst = NULL;
   new->cache_fblst = NULL;
+  new->bounding_shaped = False;
+  new->rounded_corners = False;
 
   new->border_size = None;
   new->extents = None;
@@ -2782,6 +2843,16 @@ ev_shape_notify(XShapeEvent *ev) {
     // Mark the new border_size as damaged
     add_damage(dpy, copy_region(dpy, w->border_size));
   }
+
+  // Redo bounding shape detection and rounded corner detection
+  if (opts.shadow_ignore_shaped) {
+    w->bounding_shaped = wid_bounding_shaped(dpy, w->id);
+    if (w->bounding_shaped && opts.detect_rounded_corners)
+      win_rounded_corners(dpy, w);
+
+    // Shadow state could be changed
+    determine_shadow(dpy, w);
+  }
 }
 
 inline static void
@@ -2935,6 +3006,11 @@ usage(void) {
     "  Mark over-redirect windows as active.\n"
     "--no-fading-openclose\n"
     "  Do not fade on window open/close.\n"
+    "--shadow-ignore-shaped\n"
+    "  Do not paint shadows on shaped windows.\n"
+    "--detect-rounded-corners\n"
+    "  Try to detect windows with rounded corners and don't consider\n"
+    "  them shaped windows.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3189,6 +3265,12 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   // --mark-ovredir-focused
   lcfg_lookup_bool(&cfg, "mark-ovredir-focused",
       &opts.mark_ovredir_focused);
+  // --shadow-ignore-shaped
+  lcfg_lookup_bool(&cfg, "shadow-ignore-shaped",
+      &opts.shadow_ignore_shaped);
+  // --detect-rounded-corners
+  lcfg_lookup_bool(&cfg, "detect-rounded-corners",
+      &opts.detect_rounded_corners);
   // --shadow-exclude
   {
     config_setting_t *setting =
@@ -3249,6 +3331,8 @@ get_cfg(int argc, char *const *argv) {
     { "shadow-exclude", required_argument, NULL, 263 },
     { "mark-ovredir-focused", no_argument, NULL, 264 },
     { "no-fading-openclose", no_argument, NULL, 265 },
+    { "shadow-ignore-shaped", no_argument, NULL, 266 },
+    { "detect-rounded-corners", no_argument, NULL, 267 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3394,6 +3478,14 @@ get_cfg(int argc, char *const *argv) {
       case 265:
         // --no-fading-openclose
         opts.no_fading_openclose = True;
+        break;
+      case 266:
+        // --shadow-ignore-shaped
+        opts.shadow_ignore_shaped = True;
+        break;
+      case 267:
+        // --detect-rounded-corners
+        opts.detect_rounded_corners = True;
         break;
       default:
         usage();
