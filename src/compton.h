@@ -631,8 +631,7 @@ solid_picture(Display *dpy, Bool argb, double a,
 
 static inline bool is_normal_win(const win *w) {
   return (WINTYPE_NORMAL == w->window_type
-      || WINTYPE_UTILITY == w->window_type
-      || WINTYPE_UNKNOWN == w->window_type);
+      || WINTYPE_UTILITY == w->window_type);
 }
 
 /**
@@ -760,9 +759,6 @@ repair_win(Display *dpy, win *w);
 
 static wintype
 get_wintype_prop(Display * dpy, Window w);
-
-static wintype
-determine_wintype(Display *dpy, Window w);
 
 static void
 map_win(Display *dpy, Window id,

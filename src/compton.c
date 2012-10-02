@@ -95,6 +95,7 @@ Atom client_atom;
 Atom name_atom;
 Atom name_ewmh_atom;
 Atom class_atom;
+Atom transient_atom;
 
 Atom win_type_atom;
 Atom win_type[NUM_WINTYPES];
@@ -1578,30 +1579,6 @@ get_wintype_prop(Display *dpy, Window wid) {
   return WINTYPE_UNKNOWN;
 }
 
-static wintype
-determine_wintype(Display *dpy, Window w) {
-  Window *children = NULL;
-  unsigned int nchildren, i;
-  wintype type;
-
-  type = get_wintype_prop(dpy, w);
-  if (type != WINTYPE_UNKNOWN) return type;
-
-  if (!wid_get_children(dpy, w, &children, &nchildren))
-    return WINTYPE_UNKNOWN;
-
-  for (i = 0; i < nchildren; i++) {
-    type = determine_wintype(dpy, children[i]);
-    if (type != WINTYPE_UNKNOWN) return type;
-  }
-
-  if (children) {
-    XFree((void *)children);
-  }
-
-  return WINTYPE_UNKNOWN;
-}
-
 static void
 map_win(Display *dpy, Window id,
         unsigned long sequence, Bool fade,
@@ -1625,10 +1602,19 @@ map_win(Display *dpy, Window id,
   // Detect client window here instead of in add_win() as the client
   // window should have been prepared at this point
   if (!w->client_win) {
-    Window cw = find_client_win(dpy, w->id);
+    Window cw = 0;
+    if (!w->a.override_redirect) {
+      cw = find_client_win(dpy, w->id);
 #ifdef DEBUG_CLIENTWIN
-    printf("find_client_win(%#010lx): client %#010lx\n", w->id, cw);
+      printf("find_client_win(%#010lx): client %#010lx\n", w->id, cw);
 #endif
+    }
+    else {
+      cw = w->id;
+#ifdef DEBUG_CLIENTWIN
+      printf("find_client_win(%#010lx): client self (override-redirected)\n", w->id);
+#endif
+    }
     if (cw) {
       mark_client_win(dpy, w, cw);
     }
@@ -1638,9 +1624,6 @@ map_win(Display *dpy, Window id,
     // unmapped
     get_frame_extents(dpy, w, w->client_win);
   }
-
-  if (WINTYPE_UNKNOWN == w->window_type)
-    w->window_type = determine_wintype(dpy, w->id);
 
 #ifdef DEBUG_WINTYPE
   printf("map_win(%#010lx): type %s\n",
@@ -1968,8 +1951,21 @@ mark_client_win(Display *dpy, win *w, Window client) {
     get_frame_extents(dpy, w, client);
   }
   XSelectInput(dpy, client, determine_evmask(dpy, client, WIN_EVMODE_CLIENT));
+
+  // Detect window type here
   if (WINTYPE_UNKNOWN == w->window_type)
     w->window_type = get_wintype_prop(dpy, w->client_win);
+
+  // Conform to EWMH standard, if _NET_WM_WINDOW_TYPE is not present, take
+  // override-redirect windows or windows without WM_TRANSIENT_FOR as
+  // _NET_WM_WINDOW_TYPE_NORMAL, otherwise as _NET_WM_WINDOW_TYPE_DIALOG.
+  if (WINTYPE_UNKNOWN == w->window_type) {
+    if (w->a.override_redirect
+        || !wid_has_attr(dpy, client, transient_atom))
+      w->window_type = WINTYPE_NORMAL;
+    else
+      w->window_type = WINTYPE_DIALOG;
+  }
 }
 
 static void
@@ -3541,10 +3537,11 @@ get_atoms(void) {
   extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
   opacity_atom = XInternAtom(dpy, "_NET_WM_WINDOW_OPACITY", False);
   frame_extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
-  client_atom = XA_WM_CLASS;
+  client_atom = XInternAtom(dpy, "WM_STATE", False);
   name_atom = XA_WM_NAME;
   name_ewmh_atom = XInternAtom(dpy, "_NET_WM_NAME", False);
   class_atom = XA_WM_CLASS;
+  transient_atom = XA_WM_TRANSIENT_FOR;
 
   win_type_atom = XInternAtom(dpy,
     "_NET_WM_WINDOW_TYPE", False);
