@@ -198,6 +198,10 @@ typedef struct _win {
   opacity_t opacity_cur;
   /// Cached value of opacity window attribute.
   opacity_t opacity_prop;
+  /// Cached value of opacity window attribute on client window. For
+  /// broken window managers not transferring client window's
+  /// _NET_WM_OPACITY value
+  opacity_t opacity_prop_client;
   /// Alpha mask Picture to render window with opacity.
   Picture alpha_pict;
 
@@ -302,7 +306,12 @@ typedef struct _options {
   /// Whether inactive_opacity overrides the opacity set by window
   /// attributes.
   Bool inactive_opacity_override;
+  /// Frame opacity. Relative to window opacity, also affects shadow
+  /// opacity.
   double frame_opacity;
+  /// Whether to detect _NET_WM_OPACITY on client windows. Used on window
+  /// managers that don't pass _NET_WM_OPACITY to frame windows.
+  Bool detect_client_opacity;
   /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
   double inactive_dim;
 
@@ -780,7 +789,7 @@ static void
 unmap_win(Display *dpy, Window id, Bool fade);
 
 static opacity_t
-get_opacity_prop(Display *dpy, win *w, opacity_t def);
+wid_get_opacity_prop(Display *dpy, Window wid, opacity_t def);
 
 static double
 get_opacity_percent(Display *dpy, win *w);

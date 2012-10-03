@@ -142,6 +142,7 @@ static options_t opts = {
   .inactive_opacity = 0,
   .inactive_opacity_override = False,
   .frame_opacity = 0.0,
+  .detect_client_opacity = False,
   .inactive_dim = 0.0,
 
   .track_focus = False,
@@ -942,7 +943,8 @@ determine_evmask(Display *dpy, Window wid, win_evmode_t mode) {
   }
 
   if (WIN_EVMODE_CLIENT == mode || find_toplevel(dpy, wid)) {
-    if (opts.frame_opacity || opts.track_wdata)
+    if (opts.frame_opacity || opts.track_wdata
+        || opts.detect_client_opacity)
       evmask |= PropertyChangeMask;
   }
 
@@ -1757,14 +1759,14 @@ unmap_win(Display *dpy, Window id, Bool fade) {
 }
 
 static opacity_t
-get_opacity_prop(Display *dpy, win *w, opacity_t def) {
+wid_get_opacity_prop(Display *dpy, Window wid, opacity_t def) {
   Atom actual;
   int format;
   unsigned long n, left;
 
   unsigned char *data;
   int result = XGetWindowProperty(
-    dpy, w->id, opacity_atom, 0L, 1L, False,
+    dpy, wid, opacity_atom, 0L, 1L, False,
     XA_CARDINAL, &actual, &format, &n, &left, &data);
 
   if (result == Success && data != NULL) {
@@ -1838,13 +1840,18 @@ calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
   // Do not refetch the opacity window attribute unless necessary, this
   // is probably an expensive operation in some cases
   if (refetch_prop) {
-    w->opacity_prop = get_opacity_prop(dpy, w, OPAQUE);
+    w->opacity_prop = wid_get_opacity_prop(dpy, w->id, OPAQUE);
+    if (!opts.detect_client_opacity || !w->client_win
+        || w->id == w->client_win)
+      w->opacity_prop_client = OPAQUE;
+    else
+      w->opacity_prop_client = wid_get_opacity_prop(dpy, w->client_win,
+            OPAQUE);
   }
 
-  if (OPAQUE == (opacity = w->opacity_prop)) {
-    if (1.0 != opts.wintype_opacity[w->window_type]) {
-      opacity = opts.wintype_opacity[w->window_type] * OPAQUE;
-    }
+  if (OPAQUE == (opacity = w->opacity_prop)
+      && OPAQUE == (opacity = w->opacity_prop_client)) {
+    opacity = opts.wintype_opacity[w->window_type] * OPAQUE;
   }
 
   // Respect inactive_opacity in some cases
@@ -1945,12 +1952,13 @@ static void
 mark_client_win(Display *dpy, win *w, Window client) {
   w->client_win = client;
 
+  XSelectInput(dpy, client, determine_evmask(dpy, client, WIN_EVMODE_CLIENT));
+
   // Get the frame width and monitor further frame width changes on client
   // window if necessary
   if (opts.frame_opacity) {
     get_frame_extents(dpy, w, client);
   }
-  XSelectInput(dpy, client, determine_evmask(dpy, client, WIN_EVMODE_CLIENT));
 
   // Detect window type here
   if (WINTYPE_UNKNOWN == w->window_type)
@@ -2037,6 +2045,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->opacity_tgt = 0;
   new->opacity_cur = OPAQUE;
   new->opacity_prop = OPAQUE;
+  new->opacity_prop_client = OPAQUE;
   new->fade = False;
   new->fade_callback = NULL;
   new->fade_fin = False;
@@ -2777,12 +2786,17 @@ ev_property_notify(XPropertyEvent *ev) {
     }
   }
 
-  /* check if Trans property was changed */
+  // If _NET_WM_OPACITY changes
   if (ev->atom == opacity_atom) {
-    /* reset mode and redraw window */
-    win *w = find_win(dpy, ev->window);
+    win *w = NULL;
+    if ((w = find_win(dpy, ev->window)))
+      w->opacity_prop = wid_get_opacity_prop(dpy, w->id, OPAQUE);
+    else if (opts.detect_client_opacity
+			&& (w = find_toplevel(dpy, ev->window)))
+      w->opacity_prop_client = wid_get_opacity_prop(dpy, w->client_win,
+            OPAQUE);
     if (w) {
-      calc_opacity(dpy, w, True);
+      calc_opacity(dpy, w, False);
     }
   }
 
@@ -3007,6 +3021,10 @@ usage(void) {
     "--detect-rounded-corners\n"
     "  Try to detect windows with rounded corners and don't consider\n"
     "  them shaped windows.\n"
+    "--detect-client-opacity\n"
+    "  Detect _NET_WM_OPACITY on client windows, useful for window\n"
+    "  managers not passing _NET_WM_OPACITY of client windows to frame\n"
+    "  windows.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3267,6 +3285,9 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   // --detect-rounded-corners
   lcfg_lookup_bool(&cfg, "detect-rounded-corners",
       &opts.detect_rounded_corners);
+  // --detect-client-opacity
+  lcfg_lookup_bool(&cfg, "detect-client-opacity",
+      &opts.detect_client_opacity);
   // --shadow-exclude
   {
     config_setting_t *setting =
@@ -3329,6 +3350,7 @@ get_cfg(int argc, char *const *argv) {
     { "no-fading-openclose", no_argument, NULL, 265 },
     { "shadow-ignore-shaped", no_argument, NULL, 266 },
     { "detect-rounded-corners", no_argument, NULL, 267 },
+    { "detect-client-opacity", no_argument, NULL, 268 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3482,6 +3504,10 @@ get_cfg(int argc, char *const *argv) {
       case 267:
         // --detect-rounded-corners
         opts.detect_rounded_corners = True;
+        break;
+      case 268:
+        // --detect-client-opacity
+        opts.detect_client_opacity = True;
         break;
       default:
         usage();
