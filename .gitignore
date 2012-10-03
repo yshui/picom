@@ -13,11 +13,19 @@ missing
 stamp-h1
 compton
 *.o
-_CPack_Packages
-build
+build/
+
+# CMake files
 compton-*.deb
 compton-*.rpm
 compton-*.tar.bz2
+release/
+_CPack_Packages/
+CMakeCache.txt
+CMakeFiles/
+*.cmake
+install_manifest.txt
+
 
 # Vim files
 .*.sw[a-z]
