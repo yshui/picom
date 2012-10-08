@@ -26,7 +26,12 @@
 // #define CONFIG_REGEX_PCRE_JIT 1
 // Whether to enable parsing of configuration files using libconfig
 // #define CONFIG_LIBCONFIG 1
+// Whether to enable DRM VSync support
+// #define CONFIG_VSYNC_DRM 1
+// Whether to enable OpenGL VSync support
+// #define CONFIG_VSYNC_OPENGL 1
 
+#define NDEBUG 1
 // === Includes ===
 
 // For some special functions
@@ -44,6 +49,7 @@
 #include <getopt.h>
 #include <stdbool.h>
 #include <locale.h>
+#include <assert.h>
 
 #include <fnmatch.h>
 
@@ -69,6 +75,21 @@
 #include <X11/extensions/Xdamage.h>
 #include <X11/extensions/Xrender.h>
 #include <X11/extensions/shape.h>
+#include <X11/extensions/Xrandr.h>
+
+#ifdef CONFIG_VSYNC_DRM
+#include <fcntl.h>
+// We references some definitions in drm.h, which could also be found in
+// /usr/src/linux/include/drm/drm.h, but that path is probably even less
+// reliable than libdrm
+#include <libdrm/drm.h>
+#include <sys/ioctl.h>
+#include <errno.h>
+#endif
+
+#ifdef CONFIG_VSYNC_OPENGL
+#include <GL/glx.h>
+#endif
 
 // === Constants ===
 #if COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2
@@ -88,6 +109,13 @@ extern struct timeval time_start;
 #define WINDOW_SOLID 0
 #define WINDOW_TRANS 1
 #define WINDOW_ARGB 2
+
+#define FADE_DELTA_TOLERANCE 0.2
+#define VSYNC_SW_TOLERANCE 1000
+
+#define NS_PER_SEC 1000000000L
+#define US_PER_SEC 1000000L
+#define MS_PER_SEC 1000
 
 // Window flags
 
@@ -259,6 +287,18 @@ typedef struct _win {
   struct _win *prev_trans;
 } win;
 
+typedef enum _vsync_t {
+  VSYNC_NONE,
+  VSYNC_SW,
+  VSYNC_DRM,
+  VSYNC_OPENGL,
+} vsync_t;
+
+#ifdef CONFIG_VSYNC_OPENGL
+typedef int (*f_WaitVideoSync) (int, int, unsigned *);
+typedef int (*f_GetVideoSync) (unsigned *);
+#endif
+
 typedef struct _options {
   // General
   char *display;
@@ -272,6 +312,12 @@ typedef struct _options {
   Bool detect_rounded_corners;
   /// Whether to work under synchronized mode for debugging.
   Bool synchronize;
+
+  // VSync
+  /// User-specified refresh rate.
+  int refresh_rate;
+  /// VSync method to use;
+  vsync_t vsync;
 
   // Shadow
   Bool wintype_shadow[NUM_WINTYPES];
@@ -362,6 +408,16 @@ set_ignore(Display *dpy, unsigned long sequence);
 
 static int
 should_ignore(Display *dpy, unsigned long sequence);
+
+/**
+ * Subtract two unsigned long values.
+ *
+ * Truncate to 0 if the result is negative.
+ */
+static inline unsigned long
+sub_unslong(unsigned long a, unsigned long b) {
+  return (a > b) ? a - b : 0;
+}
 
 /**
  * Set a Bool array of all wintypes to true.
@@ -524,6 +580,41 @@ timeval_subtract(struct timeval *result,
   return x->tv_sec < y->tv_sec;
 }
 
+/*
+ * Subtracting two struct timespec values.
+ *
+ * Taken from glibc manual.
+ *
+ * Subtract the `struct timespec' values X and Y,
+ * storing the result in RESULT.
+ * Return 1 if the difference is negative, otherwise 0.
+ */
+static inline int
+timespec_subtract(struct timespec *result,
+                 struct timespec *x,
+                 struct timespec *y) {
+  /* Perform the carry for the later subtraction by updating y. */
+  if (x->tv_nsec < y->tv_nsec) {
+    int nsec = (y->tv_nsec - x->tv_nsec) / NS_PER_SEC + 1;
+    y->tv_nsec -= NS_PER_SEC * nsec;
+    y->tv_sec += nsec;
+  }
+
+  if (x->tv_nsec - y->tv_nsec > NS_PER_SEC) {
+    int nsec = (x->tv_nsec - y->tv_nsec) / NS_PER_SEC;
+    y->tv_nsec += NS_PER_SEC * nsec;
+    y->tv_sec -= nsec;
+  }
+
+  /* Compute the time remaining to wait.
+     tv_nsec is certainly positive. */
+  result->tv_sec = x->tv_sec - y->tv_sec;
+  result->tv_nsec = x->tv_nsec - y->tv_nsec;
+
+  /* Return 1 if result is negative. */
+  return x->tv_sec < y->tv_sec;
+}
+
 /**
  * Print time passed since program starts execution.
  *
@@ -586,7 +677,7 @@ free_damage(Display *dpy, Damage *p) {
 }
 
 static unsigned long
-get_time_in_milliseconds(void);
+get_time_ms(void);
 
 static int
 fade_timeout(void);
@@ -885,7 +976,7 @@ static void
 usage(void);
 
 static void
-register_cm(int scr);
+register_cm(Bool want_glxct);
 
 inline static void
 ev_focus_in(XFocusChangeEvent *ev);
@@ -1007,3 +1098,31 @@ get_cfg(int argc, char *const *argv);
 
 static void
 get_atoms(void);
+
+static void
+update_refresh_rate(Display *dpy);
+
+static Bool
+vsync_sw_init(void);
+
+static struct timespec
+vsync_sw_ntimeout(int timeout);
+
+static Bool
+vsync_drm_init(void);
+
+#ifdef CONFIG_VSYNC_DRM
+static int
+vsync_drm_wait(void);
+#endif
+
+static Bool
+vsync_opengl_init(void);
+
+#ifdef CONFIG_VSYNC_OPENGL
+static void
+vsync_opengl_wait(void);
+#endif
+
+static Bool
+vsync_wait(Display *dpy, struct pollfd *fd, int timeout);

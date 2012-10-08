@@ -4,8 +4,8 @@ PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
 
-PACKAGES = x11 xcomposite xfixes xdamage xrender xext
-LIBS = -lm
+PACKAGES = x11 xcomposite xfixes xdamage xrender xext xrandr
+LIBS = -lm -lrt
 INCS =
 
 # Parse configuration flags
@@ -27,6 +27,15 @@ ifeq "$(NO_REGEX_PCRE)" ""
 	ifeq "$(NO_REGEX_PCRE_JIT)" ""
 		CFG += -DCONFIG_REGEX_PCRE_JIT
 	endif
+endif
+
+ifeq "$(NO_VSYNC_DRM)" ""
+	CFG += -DCONFIG_VSYNC_DRM
+endif
+
+ifeq "$(NO_VSYNC_OPENGL)" ""
+	CFG += -DCONFIG_VSYNC_OPENGL
+	LIBS += -lGL
 endif
 
 CFLAGS += $(CFG)

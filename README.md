@@ -45,6 +45,7 @@ __R__ for runtime
 * libxfixes (B,R)
 * libXext (B,R)
 * libxrender (B,R)
+* libXrandr (B,R)
 * pkg-config (B)
 * make (B)
 * xproto / x11proto (B)
@@ -52,6 +53,8 @@ __R__ for runtime
 * xprop,xwininfo / x11-utils (R)
 * libpcre (B,R) (Will probably be made optional soon)
 * libconfig (B,R) (Will probably be made optional soon)
+* libdrm (B) (Will probably be made optional soon)
+* libGL (B,R) (Will probably be made optional soon)
 
 To build, make sure you have the above dependencies:
 

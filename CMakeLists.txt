@@ -12,7 +12,7 @@ set(CMAKE_C_FLAGS_DEBUG "-ggdb")
 set(CMAKE_C_FLAGS_RELEASE "-O2 -march=native")
 set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -march=native -ggdb")
 
-add_definitions("-Wall")
+add_definitions("-Wall" "-std=c99")
 
 # == Options ==
 
@@ -31,9 +31,23 @@ if (CONFIG_LIBCONFIG)
 	add_definitions("-DCONFIG_LIBCONFIG")
 endif ()
 
+option(CONFIG_VSYNC_DRM "Enable DRM VSync support" ON)
+if (CONFIG_VSYNC_DRM)
+	add_definitions("-DCONFIG_VSYNC_DRM")
+endif ()
+
+option(CONFIG_VSYNC_OPENGL "Enable OpenGL VSync support" ON)
+if (CONFIG_VSYNC_OPENGL)
+	add_definitions("-DCONFIG_VSYNC_OPENGL")
+endif ()
+
 # == Find libraries ==
 
-target_link_libraries(compton "-lm")
+target_link_libraries(compton "-lm" "-lrt")
+
+if (CONFIG_VSYNC_OPENGL)
+  target_link_libraries(compton "-lGL")
+endif ()
 
 include(FindPkgConfig)
 
@@ -53,6 +67,7 @@ X11LIB_CHK(Xdamage)
 X11LIB_CHK(Xext)
 X11LIB_CHK(Xfixes)
 X11LIB_CHK(Xrender)
+X11LIB_CHK(Xrandr)
 
 # --- Find libpcre ---
 if (CONFIG_REGEX_PCRE)

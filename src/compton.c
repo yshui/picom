@@ -51,21 +51,61 @@ XserverRegion all_damage;
 Bool has_name_pixmap;
 #endif
 int root_height, root_width;
+
 /// Whether the program is idling. I.e. no fading, no potential window
 /// changes.
 Bool idling;
+/// Window ID of the window we register as a symbol.
+Window reg_win = 0;
+
+/// Currently used refresh rate. Used for Software VSync.
+short refresh_rate = 0;
+/// Interval between refresh in nanoseconds. Used for Software VSync.
+unsigned long refresh_intv = 0;
+/// Nanosecond-level offset of the first painting.
+/// Used for Software VSync.
+long paint_tm_offset = 0;
+
+#ifdef CONFIG_VSYNC_DRM
+/// File descriptor of DRI device file. Used for DRM VSync.
+int drm_fd = 0;
+#endif
+
+#ifdef CONFIG_VSYNC_OPENGL
+/// GLX context.
+GLXContext glx_context;
+
+/// Pointer to glXGetVideoSyncSGI function. Used by OpenGL VSync.
+f_GetVideoSync glx_get_video_sync = NULL;
+
+/// Pointer to glXWaitVideoSyncSGI function. Used by OpenGL VSync.
+f_WaitVideoSync glx_wait_video_sync = NULL;
+#endif
 
 /* errors */
 ignore *ignore_head = NULL, **ignore_tail = &ignore_head;
 int xfixes_event, xfixes_error;
 int damage_event, damage_error;
 int composite_event, composite_error;
-/// Whether X Shape extension exists.
-Bool shape_exists = True;
-/// Event base number and error base number for X Shape extension.
-int shape_event, shape_error;
 int render_event, render_error;
 int composite_opcode;
+
+/// Whether X Shape extension exists.
+Bool shape_exists = False;
+/// Event base number and error base number for X Shape extension.
+int shape_event, shape_error;
+
+/// Whether X RandR extension exists.
+Bool randr_exists = False;
+/// Event base number and error base number for X RandR extension.
+int randr_event, randr_error;
+
+#ifdef CONFIG_VSYNC_OPENGL
+/// Whether X GLX extension exists.
+Bool glx_exists = False;
+/// Event base number and error base number for X GLX extension.
+int glx_event, glx_error;
+#endif
 
 /* shadows */
 conv *gaussian_map;
@@ -119,6 +159,9 @@ static options_t opts = {
   .synchronize = False,
   .detect_rounded_corners = False,
 
+  .refresh_rate = 0,
+  .vsync = VSYNC_NONE,
+
   .wintype_shadow = { False },
   .shadow_red = 0.0,
   .shadow_green = 0.0,
@@ -162,7 +205,7 @@ unsigned long fade_time = 0;
  * passed since the epoch.
  */
 static unsigned long
-get_time_in_milliseconds() {
+get_time_ms() {
   struct timeval tv;
 
   gettimeofday(&tv, NULL);
@@ -177,7 +220,7 @@ get_time_in_milliseconds() {
  */
 static int
 fade_timeout(void) {
-  int diff = opts.fade_delta - get_time_in_milliseconds() + fade_time;
+  int diff = opts.fade_delta - get_time_ms() + fade_time;
 
   if (diff < 0)
     diff = 0;
@@ -1243,13 +1286,11 @@ static win *
 paint_preprocess(Display *dpy, win *list) {
   win *w;
   win *t = NULL, *next = NULL;
-  // Sounds like the timeout in poll() frequently does not work
-  // accurately, asking it to wait to 20ms, and often it would wait for
-  // 19ms, so the step value has to be rounded.
-  unsigned steps = roundl((double) (get_time_in_milliseconds() - fade_time) / opts.fade_delta);
 
-  // Reset fade_time
-  fade_time = get_time_in_milliseconds();
+  // Fading step calculation
+  unsigned steps = (sub_unslong(get_time_ms(), fade_time)
+      + FADE_DELTA_TOLERANCE * opts.fade_delta) / opts.fade_delta;
+  fade_time += steps * opts.fade_delta;
 
   for (w = list; w; w = next) {
     // In case calling the fade callback function destroys this window
@@ -1411,6 +1452,7 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   paint_root(dpy);
 
 #ifdef DEBUG_REPAINT
+  print_timestamp();
   printf("paint:");
 #endif
 
@@ -1605,13 +1647,15 @@ map_win(Display *dpy, Window id,
   // window should have been prepared at this point
   if (!w->client_win) {
     Window cw = 0;
-    if (!w->a.override_redirect) {
-      cw = find_client_win(dpy, w->id);
+    // Always recursively look for a window with WM_STATE, as Fluxbox
+    // sets override-redirect flags on all frame windows.
+    cw = find_client_win(dpy, w->id);
 #ifdef DEBUG_CLIENTWIN
-      printf("find_client_win(%#010lx): client %#010lx\n", w->id, cw);
+    printf("find_client_win(%#010lx): client %#010lx\n", w->id, cw);
 #endif
-    }
-    else {
+    // Set a window's client window to itself only if we didn't find a
+    // client window and the window has override-redirect flag
+    if (!cw && w->a.override_redirect) {
       cw = w->id;
 #ifdef DEBUG_CLIENTWIN
       printf("find_client_win(%#010lx): client self (override-redirected)\n", w->id);
@@ -2792,7 +2836,7 @@ ev_property_notify(XPropertyEvent *ev) {
     if ((w = find_win(dpy, ev->window)))
       w->opacity_prop = wid_get_opacity_prop(dpy, w->id, OPAQUE);
     else if (opts.detect_client_opacity
-			&& (w = find_toplevel(dpy, ev->window)))
+        && (w = find_toplevel(dpy, ev->window)))
       w->opacity_prop_client = wid_get_opacity_prop(dpy, w->client_win,
             OPAQUE);
     if (w) {
@@ -2865,7 +2909,22 @@ ev_shape_notify(XShapeEvent *ev) {
   }
 }
 
-inline static void
+/**
+ * Handle ScreenChangeNotify events from X RandR extension.
+ */
+static void
+ev_screen_change_notify(XRRScreenChangeNotifyEvent *ev) {
+  if (!opts.refresh_rate) {
+    update_refresh_rate(dpy);
+    if (!refresh_rate) {
+      fprintf(stderr, "ev_screen_change_notify(): Refresh rate detection "
+          "failed, software VSync disabled.");
+      opts.vsync = VSYNC_NONE;
+    }
+  }
+}
+
+static void
 ev_handle(XEvent *ev) {
   if ((ev->type & 0x7f) != KeymapNotify) {
     discard_ignore(dpy, ev->xany.serial);
@@ -2939,6 +2998,10 @@ ev_handle(XEvent *ev) {
         ev_shape_notify((XShapeEvent *) ev);
         break;
       }
+      if (randr_exists && ev->type == (randr_event + RRScreenChangeNotify)) {
+        ev_screen_change_notify((XRRScreenChangeNotifyEvent *) ev);
+        break;
+      }
       if (ev->type == damage_event + XDamageNotify) {
         ev_damage_notify((XDamageNotifyEvent *)ev);
       }
@@ -2950,11 +3013,14 @@ ev_handle(XEvent *ev) {
  * Main
  */
 
+/**
+ * Print usage text and exit.
+ */
 static void
 usage(void) {
-  fprintf(stderr, "compton (development version)\n");
-  fprintf(stderr, "usage: compton [options]\n");
-  fprintf(stderr,
+  fputs(
+    "compton (development version)\n"
+    "usage: compton [options]\n"
     "Options:\n"
     "\n"
     "-d display\n"
@@ -3026,6 +3092,20 @@ usage(void) {
     "  managers not passing _NET_WM_OPACITY of client windows to frame\n"
     "  windows.\n"
     "\n"
+    "--refresh-rate val\n"
+    "  Specify refresh rate of the screen. If not specified or 0, compton\n"
+    "  will try detecting this with X RandR extension.\n"
+    "--vsync vsync-method\n"
+    "  Set VSync method. There are 4 VSync methods currently available:\n"
+    "    none = No VSync\n"
+    "    sw = software VSync, basically limits compton to send a request\n"
+    "      every 1 / refresh_rate second. Experimental.\n"
+    "    drm = VSync with DRM_IOCTL_WAIT_VBLANK. May only work on some\n"
+    "      drivers. Experimental.\n"
+    "    opengl = Try to VSync with SGI_swap_control OpenGL extension. Only\n"
+    "      work on some drivers. Experimental.\n"
+    "  (Note some VSync methods may not be enabled at compile time.)\n"
+    "\n"
     "Format of a condition:\n"
     "\n"
     "  condition = <target>:<type>[<flags>]:<pattern>\n"
@@ -3041,26 +3121,71 @@ usage(void) {
     "  flag is \"i\" (ignore case).\n"
     "\n"
     "  <pattern> is the actual pattern string.\n"
-    );
+    , stderr);
 
   exit(1);
 }
 
+/**
+ * Register a window as symbol, and initialize GLX context if wanted.
+ */
 static void
-register_cm(int scr) {
-  Window w;
+register_cm(Bool want_glxct) {
   Atom a;
   char *buf;
   int len, s;
 
-  if (scr < 0) return;
+#ifdef CONFIG_VSYNC_OPENGL
+  // Create a window with the wanted GLX visual
+  if (want_glxct) {
+    Bool ret = False;
+    // Get visual for the window
+    int attribs[] = { GLX_RGBA, GLX_RED_SIZE, 1, GLX_GREEN_SIZE, 1, GLX_BLUE_SIZE, 1, None };
+    XVisualInfo *pvi = glXChooseVisual(dpy, scr, attribs);
+    if (!pvi) {
+      fprintf(stderr, "register_cm(): Failed to choose visual required "
+          "by fake OpenGL VSync window. OpenGL VSync turned off.\n");
+    }
+    else {
+      // Create the window
+      XSetWindowAttributes swa = {
+        .colormap = XCreateColormap(dpy, root, pvi->visual, AllocNone),
+        .border_pixel = 0,
+      };
 
-  w = XCreateSimpleWindow(
-    dpy, RootWindow(dpy, 0),
-    0, 0, 1, 1, 0, None, None);
+      pvi->screen = scr;
+      reg_win = XCreateWindow(dpy, root, 0, 0, 1, 1, 0, pvi->depth,
+          InputOutput, pvi->visual, CWBorderPixel | CWColormap, &swa);
+      if (!reg_win)
+        fprintf(stderr, "register_cm(): Failed to create window required "
+            "by fake OpenGL VSync. OpenGL VSync turned off.\n");
+      else {
+        // Get GLX context
+        glx_context = glXCreateContext(dpy, pvi, None, GL_TRUE);
+        if (!glx_context) {
+          fprintf(stderr, "register_cm(): Failed to get GLX context. "
+              "OpenGL VSync turned off.\n");
+          opts.vsync = VSYNC_NONE;
+        }
+        else {
+          // Attach GLX context
+          if (!(ret = glXMakeCurrent(dpy, reg_win, glx_context)))
+            fprintf(stderr, "register_cm(): Failed to attach GLX context."
+              " OpenGL VSync turned off.\n");
+        }
+      }
+    }
+    if (!ret)
+      opts.vsync = VSYNC_NONE;
+  }
+#endif
+  
+  if (!reg_win)
+    reg_win = XCreateSimpleWindow(dpy, root, 0, 0, 1, 1, 0,
+        None, None);
 
   Xutf8SetWMProperties(
-    dpy, w, "xcompmgr", "xcompmgr",
+    dpy, reg_win, "xcompmgr", "xcompmgr",
     NULL, 0, NULL, NULL, NULL);
 
   len = strlen(REGISTER_PROP) + 2;
@@ -3077,7 +3202,7 @@ register_cm(int scr) {
   a = XInternAtom(dpy, buf, False);
   free(buf);
 
-  XSetSelectionOwner(dpy, a, w, 0);
+  XSetSelectionOwner(dpy, a, reg_win, 0);
 }
 
 static void
@@ -3288,6 +3413,8 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   // --detect-client-opacity
   lcfg_lookup_bool(&cfg, "detect-client-opacity",
       &opts.detect_client_opacity);
+  // --refresh-rate
+  lcfg_lookup_int(&cfg, "refresh-rate", &opts.refresh_rate);
   // --shadow-exclude
   {
     config_setting_t *setting =
@@ -3351,8 +3478,16 @@ get_cfg(int argc, char *const *argv) {
     { "shadow-ignore-shaped", no_argument, NULL, 266 },
     { "detect-rounded-corners", no_argument, NULL, 267 },
     { "detect-client-opacity", no_argument, NULL, 268 },
+    { "refresh-rate", required_argument, NULL, 269 },
+    { "vsync", required_argument, NULL, 270 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
+  };
+  const static char * const vsync_str[] = {
+    "none",   // VSYNC_NONE
+    "sw",     // VSYNC_SW
+    "drm",    // VSYNC_DRM
+    "opengl", // VSYNC_OPENGL
   };
 
   struct options_tmp cfgtmp = {
@@ -3509,6 +3644,18 @@ get_cfg(int argc, char *const *argv) {
         // --detect-client-opacity
         opts.detect_client_opacity = True;
         break;
+      case 269:
+        // --refresh-rate
+        opts.refresh_rate = atoi(optarg);
+        break;
+      case 270:
+        // --vsync
+        for (vsync_t i = 0; i < sizeof(vsync_str) / sizeof(vsync_str[0]); ++i)
+          if (!strcasecmp(optarg, vsync_str[i])) {
+            opts.vsync = i;
+            break;
+          }
+        break;
       default:
         usage();
         break;
@@ -3529,6 +3676,7 @@ get_cfg(int argc, char *const *argv) {
   opts.frame_opacity = normalize_d(opts.frame_opacity);
   opts.shadow_opacity = normalize_d(opts.shadow_opacity);
   cfgtmp.menu_opacity = normalize_d(cfgtmp.menu_opacity);
+  opts.refresh_rate = normalize_i_range(opts.refresh_rate, 0, 300);
   if (OPAQUE == opts.inactive_opacity) {
     opts.inactive_opacity = 0;
   }
@@ -3602,6 +3750,270 @@ get_atoms(void) {
     "_NET_WM_WINDOW_TYPE_DND", False);
 }
 
+/**
+ * Update refresh rate info with X Randr extension.
+ */
+static void
+update_refresh_rate(Display *dpy) {
+  XRRScreenConfiguration* randr_info;
+
+  if (!(randr_info = XRRGetScreenInfo(dpy, root)))
+    return;
+  refresh_rate = XRRConfigCurrentRate(randr_info);
+
+  XRRFreeScreenConfigInfo(randr_info);
+
+  if (refresh_rate)
+    refresh_intv = NS_PER_SEC / refresh_rate;
+  else
+    refresh_intv = 0;
+}
+
+/**
+ * Initialize software VSync.
+ *
+ * @return True for success, False otherwise
+ */
+static Bool
+vsync_sw_init(void) {
+  // Prepare refresh rate
+  // Check if user provides one
+  refresh_rate = opts.refresh_rate;
+  if (refresh_rate)
+    refresh_intv = NS_PER_SEC / refresh_rate;
+
+  // Auto-detect refresh rate otherwise
+  if (!refresh_rate && randr_exists) {
+    update_refresh_rate(dpy);
+  }
+
+  // Turn off vsync_sw if we can't get the refresh rate
+  if (!refresh_rate)
+    return False;
+
+  // Monitor screen changes only if vsync_sw is enabled and we are using
+  // an auto-detected refresh rate
+  if (randr_exists && !opts.refresh_rate)
+    XRRSelectInput(dpy, root, RRScreenChangeNotify);
+
+  return True;
+}
+
+/**
+ * Get current time in struct timespec.
+ *
+ * Note its starting time is unspecified.
+ */
+static inline struct timespec
+get_time_timespec(void) {
+  struct timespec tm = { 0 };
+
+  clock_gettime(CLOCK_MONOTONIC, &tm);
+
+  // Return a time of all 0 if the call fails
+  return tm;
+}
+
+/**
+ * Get the smaller number that is bigger than <code>dividend</code> and is
+ * N times of <code>divisor</code>.
+ */
+static inline long
+lceil_ntimes(long dividend, long divisor) {
+  // It's possible to use the more beautiful expression here:
+  // ret = ((dividend - 1) / divisor + 1) * divisor;
+  // But it does not work well for negative values.
+  long ret = dividend / divisor * divisor;
+  if (ret < dividend)
+    ret += divisor;
+
+  return ret;
+}
+
+/**
+ * Calculate time for which the program should wait for events if vsync_sw is
+ * enabled.
+ *
+ * @param timeout old timeout value, never negative!
+ * @return time to wait, in struct timespec
+ */
+static struct timespec
+vsync_sw_ntimeout(int timeout) {
+  // Convert the old timeout to struct timespec
+  struct timespec next_paint_tmout = {
+    .tv_sec = timeout / MS_PER_SEC,
+    .tv_nsec = timeout % MS_PER_SEC * (NS_PER_SEC / MS_PER_SEC)
+  };
+  // Get the nanosecond offset of the time when the we reach the timeout
+  // I don't think a 32-bit long could overflow here.
+  long target_relative_offset = (next_paint_tmout.tv_nsec + get_time_timespec().tv_nsec - paint_tm_offset) % NS_PER_SEC;
+  if (target_relative_offset < 0)
+    target_relative_offset += NS_PER_SEC;
+
+  assert(target_relative_offset >= 0);
+
+  // If the target time is sufficiently close to a VSync time, don't add
+  // an offset, to avoid certain blocking conditions.
+  if ((target_relative_offset % NS_PER_SEC) < VSYNC_SW_TOLERANCE)
+    return next_paint_tmout;
+
+  // Add an offset so we wait until the next VSync after timeout
+  next_paint_tmout.tv_nsec += lceil_ntimes(target_relative_offset, refresh_intv) - target_relative_offset;
+  if (next_paint_tmout.tv_nsec > NS_PER_SEC) {
+    next_paint_tmout.tv_nsec -= NS_PER_SEC;
+    ++next_paint_tmout.tv_sec;
+  }
+
+  return next_paint_tmout;
+}
+
+/**
+ * Initialize DRM VSync.
+ *
+ * @return True for success, False otherwise
+ */
+static Bool
+vsync_drm_init(void) {
+#ifdef CONFIG_VSYNC_DRM
+  // Should we always open card0?
+  if ((drm_fd = open("/dev/dri/card0", O_RDWR)) < 0) {
+    fprintf(stderr, "vsync_drm_init(): Failed to open device.\n");
+    return False;
+  }
+
+  if (vsync_drm_wait())
+    return False;
+
+  return True;
+#else
+  fprintf(stderr, "Program not compiled with DRM VSync support.\n");
+  return False;
+#endif
+}
+
+#ifdef CONFIG_VSYNC_DRM
+/**
+ * Wait for next VSync, DRM method.
+ *
+ * Stolen from: https://github.com/MythTV/mythtv/blob/master/mythtv/libs/libmythtv/vsync.cpp
+ */
+static int
+vsync_drm_wait(void) {
+  int ret = -1;
+  drm_wait_vblank_t vbl;
+
+  vbl.request.type = _DRM_VBLANK_RELATIVE,
+  vbl.request.sequence = 1;
+
+  do {
+     ret = ioctl(drm_fd, DRM_IOCTL_WAIT_VBLANK, &vbl);
+     vbl.request.type &= ~_DRM_VBLANK_RELATIVE;
+  } while (ret && errno == EINTR);
+
+  if (ret)
+    fprintf(stderr, "vsync_drm_wait(): VBlank ioctl did not work, "
+        "unimplemented in this drmver?\n");
+
+  return ret;
+  
+}
+#endif
+
+/**
+ * Initialize OpenGL VSync.
+ *
+ * Stolen from: http://git.tuxfamily.org/?p=ccm/cairocompmgr.git;a=commitdiff;h=efa4ceb97da501e8630ca7f12c99b1dce853c73e
+ * Possible original source: http://www.inb.uni-luebeck.de/~boehme/xvideo_sync.html
+ *
+ * @return True for success, False otherwise
+ */
+static Bool
+vsync_opengl_init(void) {
+#ifdef CONFIG_VSYNC_OPENGL
+  // Get video sync functions
+  glx_get_video_sync = (f_GetVideoSync)
+    glXGetProcAddress ((const GLubyte *) "glXGetVideoSyncSGI");
+  glx_wait_video_sync = (f_WaitVideoSync)
+    glXGetProcAddress ((const GLubyte *) "glXWaitVideoSyncSGI");
+  if (!glx_wait_video_sync || !glx_get_video_sync) {
+    fprintf(stderr, "vsync_opengl_init(): "
+        "Failed to get glXWait/GetVideoSyncSGI function.\n");
+    return False;
+  }
+  
+  return True;
+#else
+  fprintf(stderr, "Program not compiled with OpenGL VSync support.\n");
+  return False;
+#endif
+}
+
+#ifdef CONFIG_VSYNC_OPENGL
+/**
+ * Wait for next VSync, OpenGL method.
+ */
+static void
+vsync_opengl_wait(void) {
+  unsigned vblank_count;
+
+  glx_get_video_sync(&vblank_count);
+  glx_wait_video_sync(2, (vblank_count + 1) % 2, &vblank_count);
+  // I see some code calling glXSwapIntervalSGI(1) afterwards, is it required?
+}
+#endif
+
+/**
+ * Wait for next vsync and timeout unless new events appear.
+ *
+ * @param fd struct pollfd used for poll()
+ * @param timeout second timeout (fading timeout)
+ * @return > 0 if we get some events, 0 if timeout is reached, < 0 on
+ *     problems
+ */
+static Bool
+vsync_wait(Display *dpy, struct pollfd *fd, int timeout) {
+  // Always wait infinitely if asked so, to minimize CPU usage
+  if (timeout < 0) {
+    int ret = poll(fd, 1, timeout);
+    // Reset fade_time so the fading steps during idling are not counted
+    fade_time = get_time_ms();
+    return ret;
+  }
+
+  if (VSYNC_NONE == opts.vsync)
+    return poll(fd, 1, timeout);
+
+  // vsync_sw: Wait until the next sync right after next fading timeout
+  if (VSYNC_SW == opts.vsync) {
+    struct timespec new_tmout = vsync_sw_ntimeout(timeout);
+    // printf("ppoll(): %3ld:%09ld\n", new_tmout.tv_sec, new_tmout.tv_nsec);
+    return ppoll(fd, 1, &new_tmout, NULL);
+  }
+
+#ifdef CONFIG_VSYNC_DRM
+  // vsync_drm: We are not accepting events when waiting for next sync,
+  // so I guess this would generate a latency of at most one frame. I'm
+  // not sure if it's possible to add some smart logic in vsync_drm_wait()
+  // to avoid this problem, unless I could find more documentation...
+  if (VSYNC_DRM == opts.vsync) {
+    vsync_drm_wait();
+    return 0;
+  }
+#endif
+
+#ifdef CONFIG_VSYNC_OPENGL
+  // vsync_opengl: Same one-frame-latency issue, well, not sure how to deal it
+  // here.
+  if (VSYNC_OPENGL == opts.vsync) {
+    vsync_opengl_wait();
+    return 0;
+  }
+#endif
+
+  // This place should not reached!
+  return 0;
+}
+
 int
 main(int argc, char **argv) {
   XEvent ev;
@@ -3622,7 +4034,7 @@ main(int argc, char **argv) {
 
   get_cfg(argc, argv);
 
-  fade_time = get_time_in_milliseconds();
+  fade_time = get_time_ms();
 
   dpy = XOpenDisplay(opts.display);
   if (!dpy) {
@@ -3667,11 +4079,39 @@ main(int argc, char **argv) {
     exit(1);
   }
 
-  if (!XShapeQueryExtension(dpy, &shape_event, &shape_error)) {
-    shape_exists = False;
+  // Query X Shape
+  if (XShapeQueryExtension(dpy, &shape_event, &shape_error)) {
+    shape_exists = True;
   }
 
-  register_cm(scr);
+  // Query X RandR
+  if (VSYNC_SW == opts.vsync && !opts.refresh_rate) {
+    if (XRRQueryExtension(dpy, &randr_event, &randr_error))
+      randr_exists = True;
+    else
+      fprintf(stderr, "No XRandR extension, automatic refresh rate "
+          "detection impossible.\n");
+  }
+
+#ifdef CONFIG_VSYNC_OPENGL
+  // Query X GLX extension
+  if (VSYNC_OPENGL == opts.vsync) {
+    if (glXQueryExtension(dpy, &glx_event, &glx_error))
+      glx_exists = True;
+    else {
+      fprintf(stderr, "No GLX extension, OpenGL VSync impossible.\n");
+      opts.vsync = VSYNC_NONE;
+    }
+  }
+#endif
+
+  register_cm((VSYNC_OPENGL == opts.vsync));
+
+  // Initialize software/DRM/OpenGL VSync
+  if ((VSYNC_SW == opts.vsync && !vsync_sw_init())
+      || (VSYNC_DRM == opts.vsync && !vsync_drm_init())
+      || (VSYNC_OPENGL == opts.vsync && !vsync_opengl_init()))
+    opts.vsync = VSYNC_NONE;
 
   if (opts.fork_after_register) fork_after();
 
@@ -3735,29 +4175,46 @@ main(int argc, char **argv) {
   ufd.fd = ConnectionNumber(dpy);
   ufd.events = POLLIN;
 
+#ifdef DEBUG_REPAINT
+  struct timespec last_paint = get_time_timespec();
+#endif
+
+  if (VSYNC_SW == opts.vsync)
+    paint_tm_offset = get_time_timespec().tv_nsec;
+
   t = paint_preprocess(dpy, list);
+
   paint_all(dpy, None, t);
 
   // Initialize idling
   idling = False;
 
-  for (;;) {
-    do {
-      if (!QLength(dpy)) {
-        if (poll(&ufd, 1, (idling ? -1: fade_timeout())) == 0) {
-          break;
-        }
-      }
+  // Main loop
+  while (1) {
+    Bool ev_received = False;
 
+    while (QLength(dpy)
+        || (vsync_wait(dpy, &ufd,
+            (ev_received ? 0: (idling ? -1: fade_timeout()))) > 0)) {
       XNextEvent(dpy, &ev);
-      ev_handle((XEvent *)&ev);
-    } while (QLength(dpy));
+      ev_handle((XEvent *) &ev);
+      ev_received = True;
+    }
 
     // idling will be turned off during paint_preprocess() if needed
     idling = True;
 
     t = paint_preprocess(dpy, list);
+
     if (all_damage) {
+#ifdef DEBUG_REPAINT
+      struct timespec now = get_time_timespec();
+      struct timespec diff = { 0 };
+      timespec_subtract(&diff, &now, &last_paint);
+      printf("[ %5ld:%09ld ] ", diff.tv_sec, diff.tv_nsec);
+      last_paint = now;
+#endif
+
       static int paint;
       paint_all(dpy, all_damage, t);
       paint++;
