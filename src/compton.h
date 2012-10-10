@@ -31,7 +31,6 @@
 // Whether to enable OpenGL VSync support
 // #define CONFIG_VSYNC_OPENGL 1
 
-#define NDEBUG 1
 // === Includes ===
 
 // For some special functions

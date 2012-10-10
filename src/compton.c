@@ -35,7 +35,7 @@ const char *WINTYPES[NUM_WINTYPES] = {
 struct timeval time_start = { 0, 0 };
 
 win *list;
-Display *dpy;
+Display *dpy = NULL;
 int scr;
 
 Window root;
@@ -3138,10 +3138,12 @@ register_cm(Bool want_glxct) {
 #ifdef CONFIG_VSYNC_OPENGL
   // Create a window with the wanted GLX visual
   if (want_glxct) {
+    XVisualInfo *pvi = NULL;
     Bool ret = False;
     // Get visual for the window
     int attribs[] = { GLX_RGBA, GLX_RED_SIZE, 1, GLX_GREEN_SIZE, 1, GLX_BLUE_SIZE, 1, None };
-    XVisualInfo *pvi = glXChooseVisual(dpy, scr, attribs);
+    pvi = glXChooseVisual(dpy, scr, attribs);
+
     if (!pvi) {
       fprintf(stderr, "register_cm(): Failed to choose visual required "
           "by fake OpenGL VSync window. OpenGL VSync turned off.\n");
@@ -3156,6 +3158,7 @@ register_cm(Bool want_glxct) {
       pvi->screen = scr;
       reg_win = XCreateWindow(dpy, root, 0, 0, 1, 1, 0, pvi->depth,
           InputOutput, pvi->visual, CWBorderPixel | CWColormap, &swa);
+
       if (!reg_win)
         fprintf(stderr, "register_cm(): Failed to create window required "
             "by fake OpenGL VSync. OpenGL VSync turned off.\n");
@@ -3175,6 +3178,9 @@ register_cm(Bool want_glxct) {
         }
       }
     }
+    if (pvi)
+      XFree(pvi);
+
     if (!ret)
       opts.vsync = VSYNC_NONE;
   }
@@ -3650,11 +3656,17 @@ get_cfg(int argc, char *const *argv) {
         break;
       case 270:
         // --vsync
-        for (vsync_t i = 0; i < sizeof(vsync_str) / sizeof(vsync_str[0]); ++i)
-          if (!strcasecmp(optarg, vsync_str[i])) {
-            opts.vsync = i;
-            break;
+        {
+          vsync_t i;
+          for (i = 0; i < (sizeof(vsync_str) / sizeof(vsync_str[0])); ++i)
+            if (!strcasecmp(optarg, vsync_str[i])) {
+              opts.vsync = i;
+              break;
+            }
+          if ((sizeof(vsync_str) / sizeof(vsync_str[0])) == i) {
+            fputs("Invalid --vsync argument. Ignored.\n", stderr);
           }
+        }
         break;
       default:
         usage();
@@ -4011,6 +4023,8 @@ vsync_wait(Display *dpy, struct pollfd *fd, int timeout) {
 #endif
 
   // This place should not reached!
+  assert(0);
+
   return 0;
 }
 

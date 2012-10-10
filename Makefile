@@ -38,6 +38,7 @@ ifeq "$(NO_VSYNC_OPENGL)" ""
 	LIBS += -lGL
 endif
 
+CFLAGS ?= -DNDEBUG
 CFLAGS += $(CFG)
 
 LIBS += $(shell pkg-config --libs $(PACKAGES))
