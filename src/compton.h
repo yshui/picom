@@ -221,8 +221,6 @@ typedef struct _win {
   opacity_t opacity;
   /// Target window opacity.
   opacity_t opacity_tgt;
-  /// Opacity of current alpha_pict.
-  opacity_t opacity_cur;
   /// Cached value of opacity window attribute.
   opacity_t opacity_prop;
   /// Cached value of opacity window attribute on client window. For
@@ -244,8 +242,6 @@ typedef struct _win {
   // Frame-opacity-related members
   /// Current window frame opacity. Affected by window opacity.
   double frame_opacity;
-  /// Opacity of current frame_alpha_pict.
-  opacity_t frame_opacity_cur;
   /// Alpha mask Picture to render window frame with opacity.
   Picture frame_alpha_pict;
   /// Frame widths. Determined by client window attributes.
@@ -256,8 +252,6 @@ typedef struct _win {
   Bool shadow;
   /// Opacity of the shadow. Affected by window opacity and frame opacity.
   double shadow_opacity;
-  /// Opacity of current shadow_pict.
-  double shadow_opacity_cur;
   /// X offset of shadow. Affected by commandline argument.
   int shadow_dx;
   /// Y offset of shadow. Affected by commandline argument.
@@ -359,6 +353,8 @@ typedef struct _options {
   Bool detect_client_opacity;
   /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
   double inactive_dim;
+  /// Step for pregenerating alpha pictures. 0.01 - 1.0.
+  double alpha_step;
 
   // Calculated
   /// Whether compton needs to track focus changes.
@@ -1125,3 +1121,6 @@ vsync_opengl_wait(void);
 
 static Bool
 vsync_wait(Display *dpy, struct pollfd *fd, int timeout);
+
+static void
+init_alpha_picts(Display *dpy);

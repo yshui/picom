@@ -52,6 +52,8 @@ Bool has_name_pixmap;
 #endif
 int root_height, root_width;
 
+/// Pregenerated alpha pictures.
+Picture *alpha_picts = NULL;
 /// Whether the program is idling. I.e. no fading, no potential window
 /// changes.
 Bool idling;
@@ -187,6 +189,7 @@ static options_t opts = {
   .frame_opacity = 0.0,
   .detect_client_opacity = False,
   .inactive_dim = 0.0,
+  .alpha_step = 0.03,
 
   .track_focus = False,
   .track_wdata = False,
@@ -1282,6 +1285,17 @@ get_frame_extents(Display *dpy, win *w, Window client) {
   }
 }
 
+static inline Picture
+get_alpha_pict_d(double o) {
+  assert((lround(normalize_d(o) / opts.alpha_step)) <= lround(1.0 / opts.alpha_step));
+  return alpha_picts[lround(normalize_d(o) / opts.alpha_step)];
+}
+
+static inline Picture
+get_alpha_pict_o(opacity_t o) {
+  return get_alpha_pict_d((double) o / OPAQUE);
+}
+
 static win *
 paint_preprocess(Display *dpy, win *list) {
   win *w;
@@ -1356,14 +1370,7 @@ paint_preprocess(Display *dpy, win *list) {
         add_damage_win(dpy, w);
     }
 
-    // Rebuild alpha_pict only if necessary
-    if (OPAQUE != w->opacity
-        && (!w->alpha_pict || w->opacity != w->opacity_cur)) {
-      free_picture(dpy, &w->alpha_pict);
-      w->alpha_pict = solid_picture(
-        dpy, False, get_opacity_percent(dpy, w), 0, 0, 0);
-      w->opacity_cur = w->opacity;
-    }
+    w->alpha_pict = get_alpha_pict_o(w->opacity);
 
     // Calculate frame_opacity
     if (opts.frame_opacity && 1.0 != opts.frame_opacity && w->top_width)
@@ -1371,15 +1378,7 @@ paint_preprocess(Display *dpy, win *list) {
     else
       w->frame_opacity = 0.0;
 
-    // Rebuild frame_alpha_pict only if necessary
-    if (w->frame_opacity
-        && (!w->frame_alpha_pict
-          || w->frame_opacity != w->frame_opacity_cur)) {
-      free_picture(dpy, &w->frame_alpha_pict);
-      w->frame_alpha_pict = solid_picture(
-        dpy, False, w->frame_opacity, 0, 0, 0);
-      w->frame_opacity_cur = w->frame_opacity;
-    }
+    w->frame_alpha_pict = get_alpha_pict_d(w->frame_opacity);
 
     // Calculate shadow opacity
     if (w->frame_opacity)
@@ -1396,15 +1395,7 @@ paint_preprocess(Display *dpy, win *list) {
           w->widthb, w->heightb);
     }
 
-    // Rebuild shadow_alpha_pict if necessary
-    if (w->shadow
-        && (!w->shadow_alpha_pict
-          || w->shadow_opacity != w->shadow_opacity_cur)) {
-      free_picture(dpy, &w->shadow_alpha_pict);
-      w->shadow_alpha_pict = solid_picture(
-        dpy, False, w->shadow_opacity, 0, 0, 0);
-      w->shadow_opacity_cur = w->shadow_opacity;
-    }
+    w->shadow_alpha_pict = get_alpha_pict_d(w->shadow_opacity);
 
     // Reset flags
     w->flags = 0;
@@ -2078,7 +2069,6 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->extents = None;
   new->shadow = False;
   new->shadow_opacity = 0.0;
-  new->shadow_opacity_cur = 0.0;
   new->shadow_pict = None;
   new->shadow_alpha_pict = None;
   new->shadow_dx = 0;
@@ -2087,7 +2077,6 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->shadow_height = 0;
   new->opacity = 0;
   new->opacity_tgt = 0;
-  new->opacity_cur = OPAQUE;
   new->opacity_prop = OPAQUE;
   new->opacity_prop_client = OPAQUE;
   new->fade = False;
@@ -2095,7 +2084,6 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->fade_fin = False;
   new->alpha_pict = None;
   new->frame_opacity = 1.0;
-  new->frame_opacity_cur = 1.0;
   new->frame_alpha_pict = None;
   new->dim = False;
   new->focused = False;
@@ -2284,8 +2272,6 @@ finish_destroy_win(Display *dpy, Window id) {
       finish_unmap_win(dpy, w);
       *prev = w->next;
 
-      free_picture(dpy, &w->alpha_pict);
-      free_picture(dpy, &w->frame_alpha_pict);
       free_picture(dpy, &w->shadow_pict);
       free_damage(dpy, &w->damage);
       free(w->name);
@@ -3105,6 +3091,9 @@ usage(void) {
     "    opengl = Try to VSync with SGI_swap_control OpenGL extension. Only\n"
     "      work on some drivers. Experimental.\n"
     "  (Note some VSync methods may not be enabled at compile time.)\n"
+    "--alpha-step val\n"
+    "  Step for pregenerating alpha pictures. 0.01 - 1.0. Defaults to\n"
+    "  0.03.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3421,6 +3410,8 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
       &opts.detect_client_opacity);
   // --refresh-rate
   lcfg_lookup_int(&cfg, "refresh-rate", &opts.refresh_rate);
+  // --alpha-step
+  config_lookup_float(&cfg, "alpha-step", &opts.alpha_step);
   // --shadow-exclude
   {
     config_setting_t *setting =
@@ -3486,6 +3477,7 @@ get_cfg(int argc, char *const *argv) {
     { "detect-client-opacity", no_argument, NULL, 268 },
     { "refresh-rate", required_argument, NULL, 269 },
     { "vsync", required_argument, NULL, 270 },
+    { "alpha-step", required_argument, NULL, 271 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3668,6 +3660,10 @@ get_cfg(int argc, char *const *argv) {
           }
         }
         break;
+      case 271:
+        // --alpha-step
+        opts.alpha_step = atof(optarg);
+        break;
       default:
         usage();
         break;
@@ -3689,6 +3685,7 @@ get_cfg(int argc, char *const *argv) {
   opts.shadow_opacity = normalize_d(opts.shadow_opacity);
   cfgtmp.menu_opacity = normalize_d(cfgtmp.menu_opacity);
   opts.refresh_rate = normalize_i_range(opts.refresh_rate, 0, 300);
+  opts.alpha_step = normalize_d_range(opts.alpha_step, 0.01, 1.0);
   if (OPAQUE == opts.inactive_opacity) {
     opts.inactive_opacity = 0;
   }
@@ -4028,6 +4025,25 @@ vsync_wait(Display *dpy, struct pollfd *fd, int timeout) {
   return 0;
 }
 
+/**
+ * Pregenerate alpha pictures.
+ */
+static void
+init_alpha_picts(Display *dpy) {
+  int i;
+  int num = lround(1.0 / opts.alpha_step) + 1;
+
+  alpha_picts = malloc(sizeof(Picture) * num);
+
+  for (i = 0; i < num; ++i) {
+    double o = i * opts.alpha_step;
+    if ((1.0 - o) > opts.alpha_step)
+      alpha_picts[i] = solid_picture(dpy, False, o, 0, 0, 0);
+    else
+      alpha_picts[i] = None;
+  }
+}
+
 int
 main(int argc, char **argv) {
   XEvent ev;
@@ -4130,6 +4146,7 @@ main(int argc, char **argv) {
   if (opts.fork_after_register) fork_after();
 
   get_atoms();
+  init_alpha_picts(dpy);
 
   pa.subwindow_mode = IncludeInferiors;
 
