@@ -57,6 +57,8 @@ Picture *alpha_picts = NULL;
 /// Whether the program is idling. I.e. no fading, no potential window
 /// changes.
 Bool idling;
+/// Whether all reg_ignore of windows should expire in this paint.
+Bool reg_ignore_expire = False;
 /// Window ID of the window we register as a symbol.
 Window reg_win = 0;
 
@@ -1161,6 +1163,36 @@ paint_root(Display *dpy) {
 }
 
 /**
+ * Get a rectangular region a window occupies, excluding shadow.
+ */
+static XserverRegion
+win_get_region(Display *dpy, win *w) {
+  XRectangle r;
+
+  r.x = w->a.x;
+  r.y = w->a.y;
+  r.width = w->widthb;
+  r.height = w->heightb;
+
+  return XFixesCreateRegion(dpy, &r, 1);
+}
+
+/**
+ * Get a rectangular region a window occupies, excluding frame and shadow.
+ */
+static XserverRegion
+win_get_region_noframe(Display *dpy, win *w) {
+  XRectangle r;
+
+  r.x = w->a.x + w->left_width;
+  r.y = w->a.y + w->top_width;
+  r.width = w->a.width;
+  r.height = w->a.height;
+
+  return XFixesCreateRegion(dpy, &r, 1);
+}
+
+/**
  * Get a rectangular region a window (and possibly its shadow) occupies.
  *
  * Note w->shadow and shadow geometry must be correct before calling this
@@ -1306,10 +1338,16 @@ paint_preprocess(Display *dpy, win *list) {
       + FADE_DELTA_TOLERANCE * opts.fade_delta) / opts.fade_delta;
   fade_time += steps * opts.fade_delta;
 
+  XserverRegion last_reg_ignore = None;
+
   for (w = list; w; w = next) {
     // In case calling the fade callback function destroys this window
     next = w->next;
     opacity_t opacity_old = w->opacity;
+
+    // Destroy reg_ignore on all windows if they should expire
+    if (reg_ignore_expire)
+      free_region(dpy, &w->reg_ignore);
 
 #if CAN_DO_USABLE
     if (!w->usable) continue;
@@ -1332,7 +1370,10 @@ paint_preprocess(Display *dpy, win *list) {
       add_damage_win(dpy, w);
     }
 
-    if (!w->opacity) {
+    w->alpha_pict = get_alpha_pict_o(w->opacity);
+
+    // End the game if we are using the 0 opacity alpha_pict
+    if (w->alpha_pict == alpha_picts[0]) {
       check_fade_fin(dpy, w);
       continue;
     }
@@ -1370,13 +1411,20 @@ paint_preprocess(Display *dpy, win *list) {
         add_damage_win(dpy, w);
     }
 
-    w->alpha_pict = get_alpha_pict_o(w->opacity);
-
     // Calculate frame_opacity
-    if (opts.frame_opacity && 1.0 != opts.frame_opacity && w->top_width)
-      w->frame_opacity = get_opacity_percent(dpy, w) * opts.frame_opacity;
-    else
-      w->frame_opacity = 0.0;
+    {
+      double frame_opacity_old = w->frame_opacity;
+
+      if (opts.frame_opacity && 1.0 != opts.frame_opacity
+          && w->top_width)
+        w->frame_opacity = get_opacity_percent(dpy, w) *
+          opts.frame_opacity;
+      else
+        w->frame_opacity = 0.0;
+
+      if ((0.0 == frame_opacity_old) != (0.0 == w->frame_opacity))
+        reg_ignore_expire = True;
+    }
 
     w->frame_alpha_pict = get_alpha_pict_d(w->frame_opacity);
 
@@ -1397,6 +1445,34 @@ paint_preprocess(Display *dpy, win *list) {
 
     w->shadow_alpha_pict = get_alpha_pict_d(w->shadow_opacity);
 
+    // Generate ignore region for painting to reduce GPU load
+    if (reg_ignore_expire) {
+      free_region(dpy, &w->reg_ignore);
+
+      // If the window is solid, we add the window region to the
+      // ignored region
+      if (WINDOW_SOLID == w->mode) {
+        if (!w->frame_opacity)
+          w->reg_ignore = win_get_region(dpy, w);
+        else
+          w->reg_ignore = win_get_region_noframe(dpy, w);
+
+        XFixesIntersectRegion(dpy, w->reg_ignore, w->reg_ignore,
+            w->border_size);
+
+        if (last_reg_ignore)
+          XFixesUnionRegion(dpy, w->reg_ignore, w->reg_ignore,
+              last_reg_ignore);
+      }
+      // Otherwise we copy the last region over
+      else if (last_reg_ignore)
+        w->reg_ignore = copy_region(dpy, last_reg_ignore);
+      else
+        w->reg_ignore = None;
+    }
+
+    last_reg_ignore = w->reg_ignore;
+
     // Reset flags
     w->flags = 0;
 
@@ -1407,12 +1483,88 @@ paint_preprocess(Display *dpy, win *list) {
   return t;
 }
 
+/**
+ * Paint the shadow of a window.
+ */
+static inline void
+win_paint_shadow(Display *dpy, win *w, Picture root_buffer) {
+  XRenderComposite(
+    dpy, PictOpOver, w->shadow_pict, w->shadow_alpha_pict,
+    root_buffer, 0, 0, 0, 0,
+    w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
+    w->shadow_width, w->shadow_height);
+}
+
+/**
+ * Paint a window itself and dim it if asked.
+ */
+static inline void
+win_paint_win(Display *dpy, win *w, Picture root_buffer) {
+#if HAS_NAME_WINDOW_PIXMAP
+  int x = w->a.x;
+  int y = w->a.y;
+  int wid = w->widthb;
+  int hei = w->heightb;
+#else
+  int x = w->a.x + w->a.border_width;
+  int y = w->a.y + w->a.border_width;
+  int wid = w->a.width;
+  int hei = w->a.height;
+#endif
+
+  Picture alpha_mask = (OPAQUE == w->opacity ? None: w->alpha_pict);
+  int op = (w->mode == WINDOW_SOLID ? PictOpSrc: PictOpOver);
+
+  if (!w->frame_opacity) {
+    XRenderComposite(dpy, op, w->picture, alpha_mask,
+        root_buffer, 0, 0, 0, 0, x, y, wid, hei);
+  }
+  else {
+    unsigned int t = w->top_width;
+    unsigned int l = w->left_width;
+    unsigned int b = w->bottom_width;
+    unsigned int r = w->right_width;
+
+    // top
+    XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
+        root_buffer, 0, 0, 0, 0, x, y, wid, t);
+
+    // left
+    XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
+        root_buffer, 0, t, 0, t, x, y + t, l, hei - t);
+
+    // bottom
+    XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
+        root_buffer, l, hei - b, l, hei - b, x + l, y + hei - b, wid - l - r, b);
+
+    // right
+    XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
+        root_buffer, wid - r, t, wid - r, t, x + wid - r, y + t, r, hei - t);
+
+    // body
+    XRenderComposite(dpy, op, w->picture, alpha_mask, root_buffer,
+      l, t, l, t, x + l, y + t, wid - l - r, hei - t - b);
+
+  }
+
+  // Dimming the window if needed
+  if (w->dim) {
+    XRenderComposite(dpy, PictOpOver, dim_picture, None,
+        root_buffer, 0, 0, 0, 0, x, y, wid, hei);
+  }
+}
+
 static void
 paint_all(Display *dpy, XserverRegion region, win *t) {
   win *w;
+  XserverRegion reg_paint = None, reg_tmp = None, reg_tmp2 = None;
 
   if (!region) {
     region = get_screen_region(dpy);
+  }
+  else {
+    // Remove the damaged area out of screen
+    XFixesIntersectRegion(dpy, region, region, get_screen_region(dpy));
   }
 
 #ifdef MONITOR_REPAINT
@@ -1440,97 +1592,85 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
     root_width, root_height);
 #endif
 
-  paint_root(dpy);
-
 #ifdef DEBUG_REPAINT
   print_timestamp();
   printf("paint:");
 #endif
 
+  if (t && t->reg_ignore) {
+    // Calculate the region upon which the root window is to be painted
+    // based on the ignore region of the lowest window, if available
+    reg_paint = reg_tmp = XFixesCreateRegion(dpy, NULL, 0);
+    XFixesSubtractRegion(dpy, reg_paint, region, t->reg_ignore);
+  }
+  else {
+    reg_paint = region;
+  }
+
+  XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, reg_paint);
+
+  paint_root(dpy);
+
+  // Create temporary regions for use during painting
+  if (!reg_tmp)
+    reg_tmp = XFixesCreateRegion(dpy, NULL, 0);
+  reg_tmp2 = XFixesCreateRegion(dpy, NULL, 0);
+
   for (w = t; w; w = w->prev_trans) {
-    int x, y, wid, hei;
-
-#if HAS_NAME_WINDOW_PIXMAP
-    x = w->a.x;
-    y = w->a.y;
-    wid = w->widthb;
-    hei = w->heightb;
-#else
-    x = w->a.x + w->a.border_width;
-    y = w->a.y + w->a.border_width;
-    wid = w->a.width;
-    hei = w->a.height;
-#endif
-
 #ifdef DEBUG_REPAINT
     printf(" %#010lx", w->id);
 #endif
 
-    // Allow shadow to be painted anywhere in the damaged region
-    XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, region);
-
     // Painting shadow
     if (w->shadow) {
-      XRenderComposite(
-        dpy, PictOpOver, w->shadow_pict, w->shadow_alpha_pict,
-        root_buffer, 0, 0, 0, 0,
-        w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
-        w->shadow_width, w->shadow_height);
+      // Shadow is to be painted based on the ignore region of current
+      // window
+      if (w->reg_ignore) {
+        if (w == t) {
+          // If it's the first cycle and reg_tmp2 is not ready, calculate
+          // the paint region here
+          reg_paint = reg_tmp;
+          XFixesSubtractRegion(dpy, reg_paint, region, w->reg_ignore);
+        }
+        else {
+          // Otherwise, used the cached region during last cycle
+          reg_paint = reg_tmp2;
+        }
+        XFixesIntersectRegion(dpy, reg_paint, reg_paint, w->extents);
+      }
+      else {
+        reg_paint = region;
+      }
+
+      // Detect if the region is empty before painting
+      if (region == reg_paint || !is_region_empty(dpy, reg_paint)) {
+        XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, reg_paint);
+
+        win_paint_shadow(dpy, w, root_buffer);
+      }
     }
 
-    // The window only could be painted in its bounding region
-    XserverRegion paint_reg = XFixesCreateRegion(dpy, NULL, 0);
-    XFixesIntersectRegion(dpy, paint_reg, region, w->border_size);
-    XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, paint_reg);
-
-    Picture alpha_mask = (OPAQUE == w->opacity ? None: w->alpha_pict);
-    int op = (w->mode == WINDOW_SOLID ? PictOpSrc: PictOpOver);
-
-    // Painting the window
-    if (!w->frame_opacity) {
-      XRenderComposite(dpy, op, w->picture, alpha_mask,
-          root_buffer, 0, 0, 0, 0, x, y, wid, hei);
+    // Calculate the region based on the reg_ignore of the next (higher)
+    // window and the bounding region
+    reg_paint = reg_tmp;
+    if (w->prev_trans && w->prev_trans->reg_ignore) {
+      XFixesSubtractRegion(dpy, reg_paint, region,
+          w->prev_trans->reg_ignore);
+      // Copy the subtracted region to be used for shadow painting in next
+      // cycle
+      XFixesCopyRegion(dpy, reg_tmp2, reg_paint);
+      XFixesIntersectRegion(dpy, reg_paint, reg_paint, w->border_size);
     }
     else {
-      unsigned int t = w->top_width;
-      unsigned int l = w->left_width;
-      unsigned int b = w->bottom_width;
-      unsigned int r = w->right_width;
-
-      /* top */
-      XRenderComposite(
-        dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
-        0, 0, 0, 0, x, y, wid, t);
-
-      /* left */
-      XRenderComposite(
-        dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
-        0, t, 0, t, x, y + t, l, hei - t);
-
-      /* bottom */
-      XRenderComposite(
-        dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
-        l, hei - b, l, hei - b, x + l, y + hei - b, wid - l - r, b);
-
-      /* right */
-      XRenderComposite(
-        dpy, PictOpOver, w->picture, w->frame_alpha_pict, root_buffer,
-        wid - r, t, wid - r, t, x + wid - r, y + t, r, hei - t);
-
-      /* body */
-      XRenderComposite(
-        dpy, op, w->picture, alpha_mask, root_buffer,
-        l, t, l, t, x + l, y + t, wid - l - r, hei - t - b);
-
+      XFixesIntersectRegion(dpy, reg_paint, region, w->border_size);
     }
 
-    // Dimming the window if needed
-    if (w->dim) {
-      XRenderComposite(dpy, PictOpOver, dim_picture, None,
-          root_buffer, 0, 0, 0, 0, x, y, wid, hei);
-    }
+    if (!is_region_empty(dpy, reg_paint)) {
+      XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, reg_paint);
 
-    XFixesDestroyRegion(dpy, paint_reg);
+      // Painting the window
+      win_paint_win(dpy, w, root_buffer);
+    }
 
     check_fade_fin(dpy, w);
   }
@@ -1540,7 +1680,10 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   fflush(stdout);
 #endif
 
+  // Free up all temporary regions
   XFixesDestroyRegion(dpy, region);
+  XFixesDestroyRegion(dpy, reg_tmp);
+  XFixesDestroyRegion(dpy, reg_tmp2);
 
   if (root_buffer != root_picture) {
     XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, None);
@@ -1577,6 +1720,10 @@ repair_win(Display *dpy, win *w) {
       w->a.x + w->a.border_width,
       w->a.y + w->a.border_width);
   }
+
+  // Remove the part in the damage area that could be ignored
+  if (!reg_ignore_expire && w->prev_trans && w->prev_trans->reg_ignore)
+    XFixesSubtractRegion(dpy, parts, parts, w->prev_trans->reg_ignore);
 
   add_damage(dpy, parts);
   w->damaged = 1;
@@ -1621,6 +1768,8 @@ map_win(Display *dpy, Window id,
   win *w = find_win(dpy, id);
 
   if (!w) return;
+
+  reg_ignore_expire = True;
 
   w->focused = False;
   w->a.map_state = IsViewable;
@@ -1774,6 +1923,8 @@ unmap_win(Display *dpy, Window id, Bool fade) {
 
   if (!w) return;
 
+  reg_ignore_expire = True;
+
   w->a.map_state = IsUnmapped;
 
   // Fading out
@@ -1839,6 +1990,11 @@ determine_mode(Display *dpy, win *w) {
   } else {
     mode = WINDOW_SOLID;
   }
+
+  // Expire reg_ignore if the window mode changes from solid to not, or
+  // vice versa
+  if ((WINDOW_SOLID == mode) != (WINDOW_SOLID == w->mode))
+    reg_ignore_expire = True;
 
   w->mode = mode;
 }
@@ -2066,6 +2222,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->rounded_corners = False;
 
   new->border_size = None;
+  new->reg_ignore = None;
   new->extents = None;
   new->shadow = False;
   new->shadow_opacity = 0.0;
@@ -2091,7 +2248,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->need_configure = False;
   new->window_type = WINTYPE_UNKNOWN;
 
-  new->prev_trans = 0;
+  new->prev_trans = NULL;
 
   new->left_width = 0;
   new->right_width = 0;
@@ -2202,6 +2359,8 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
       restack_win(dpy, w, ce->above);
     }
 
+    reg_ignore_expire = True;
+
     w->need_configure = False;
 
 #if CAN_DO_USABLE
@@ -2274,6 +2433,7 @@ finish_destroy_win(Display *dpy, Window id) {
 
       free_picture(dpy, &w->shadow_pict);
       free_damage(dpy, &w->damage);
+      free_region(dpy, &w->reg_ignore);
       free(w->name);
       free(w->class_instance);
       free(w->class_general);
@@ -4213,6 +4373,8 @@ main(int argc, char **argv) {
   if (VSYNC_SW == opts.vsync)
     paint_tm_offset = get_time_timespec().tv_nsec;
 
+  reg_ignore_expire = True;
+
   t = paint_preprocess(dpy, list);
 
   paint_all(dpy, None, t);
@@ -4237,7 +4399,7 @@ main(int argc, char **argv) {
 
     t = paint_preprocess(dpy, list);
 
-    if (all_damage) {
+    if (all_damage && !is_region_empty(dpy, all_damage)) {
 #ifdef DEBUG_REPAINT
       struct timespec now = get_time_timespec();
       struct timespec diff = { 0 };
@@ -4248,6 +4410,7 @@ main(int argc, char **argv) {
 
       static int paint;
       paint_all(dpy, all_damage, t);
+      reg_ignore_expire = False;
       paint++;
       XSync(dpy, False);
       all_damage = None;

@@ -276,6 +276,11 @@ typedef struct _win {
 
   Bool need_configure;
   XConfigureEvent queue_configure;
+  /// Region to be ignored when painting. Basically the region where
+  /// higher opaque windows will paint upon. Depends on window frame
+  /// opacity state, window geometry, window mapped/unmapped state,
+  /// window mode, of this and all higher windows.
+  XserverRegion reg_ignore;
 
   struct _win *prev_trans;
 } win;
@@ -1036,6 +1041,39 @@ copy_region(Display *dpy, XserverRegion oldregion) {
   XFixesCopyRegion(dpy, region, oldregion);
 
   return region;
+}
+
+/**
+ * Dump a region.
+ */
+static inline void
+dump_region(Display *dpy, XserverRegion region) {
+  int nrects = 0, i;
+  XRectangle *rects = XFixesFetchRegion(dpy, region, &nrects);
+  if (!rects)
+    return;
+
+  for (i = 0; i < nrects; ++i)
+    printf("Rect #%d: %8d, %8d, %8d, %8d\n", i, rects[i].x, rects[i].y,
+        rects[i].width, rects[i].height);
+
+  XFree(rects);
+}
+
+/**
+ * Check if a region is empty.
+ *
+ * Keith Packard said this is slow:
+ * http://lists.freedesktop.org/archives/xorg/2007-November/030467.html
+ */
+static inline Bool
+is_region_empty(Display *dpy, XserverRegion region) {
+  int nrects = 0;
+  XRectangle *rects = XFixesFetchRegion(dpy, region, &nrects);
+
+  XFree(rects);
+
+  return !nrects;
 }
 
 /**
