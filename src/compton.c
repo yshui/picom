@@ -1811,6 +1811,11 @@ map_win(Display *dpy, Window id,
     get_frame_extents(dpy, w, w->client_win);
   }
 
+  // Workaround for _NET_WM_WINDOW_TYPE for Openbox menus, which is
+  // set on a non-override-redirect window with no WM_STATE either
+  if (!w->client_win && WINTYPE_UNKNOWN == w->window_type)
+    w->window_type = get_wintype_prop(dpy, w->id);
+
 #ifdef DEBUG_WINTYPE
   printf("map_win(%#010lx): type %s\n",
     w->id, WINTYPES[w->window_type]);
