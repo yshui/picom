@@ -47,9 +47,7 @@ Picture cshadow_picture;
 Picture dim_picture = 0;
 Picture root_tile;
 XserverRegion all_damage;
-#if HAS_NAME_WINDOW_PIXMAP
 Bool has_name_pixmap;
-#endif
 int root_height, root_width;
 
 /// Pregenerated alpha pictures.
@@ -1384,13 +1382,11 @@ paint_preprocess(Display *dpy, win *list) {
       XRenderPictFormat *format;
       Drawable draw = w->id;
 
-#if HAS_NAME_WINDOW_PIXMAP
       if (has_name_pixmap && !w->pixmap) {
         set_ignore(dpy, NextRequest(dpy));
         w->pixmap = XCompositeNameWindowPixmap(dpy, w->id);
       }
       if (w->pixmap) draw = w->pixmap;
-#endif
 
       format = XRenderFindVisualFormat(dpy, w->a.visual);
       pa.subwindow_mode = IncludeInferiors;
@@ -1500,17 +1496,10 @@ win_paint_shadow(Display *dpy, win *w, Picture root_buffer) {
  */
 static inline void
 win_paint_win(Display *dpy, win *w, Picture root_buffer) {
-#if HAS_NAME_WINDOW_PIXMAP
   int x = w->a.x;
   int y = w->a.y;
   int wid = w->widthb;
   int hei = w->heightb;
-#else
-  int x = w->a.x + w->a.border_width;
-  int y = w->a.y + w->a.border_width;
-  int wid = w->a.width;
-  int hei = w->a.height;
-#endif
 
   Picture alpha_mask = (OPAQUE == w->opacity ? None: w->alpha_pict);
   int op = (w->mode == WINDOW_SOLID ? PictOpSrc: PictOpOver);
@@ -1908,9 +1897,7 @@ finish_unmap_win(Display *dpy, win *w) {
     w->extents = None;
   }
 
-#if HAS_NAME_WINDOW_PIXMAP
   free_pixmap(dpy, &w->pixmap);
-#endif
 
   free_picture(dpy, &w->picture);
   free_region(dpy, &w->border_size);
@@ -2204,9 +2191,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
 #if CAN_DO_USABLE
   new->usable = False;
 #endif
-#if HAS_NAME_WINDOW_PIXMAP
   new->pixmap = None;
-#endif
   new->picture = None;
 
   if (new->a.class == InputOnly) {
@@ -2382,10 +2367,8 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
     w->a.y = ce->y;
 
     if (w->a.width != ce->width || w->a.height != ce->height) {
-#if HAS_NAME_WINDOW_PIXMAP
       free_pixmap(dpy, &w->pixmap);
       free_picture(dpy, &w->picture);
-#endif
     }
 
     if (w->a.width != ce->width || w->a.height != ce->height
@@ -2449,12 +2432,10 @@ finish_destroy_win(Display *dpy, Window id) {
   }
 }
 
-#if HAS_NAME_WINDOW_PIXMAP
 static void
 destroy_callback(Display *dpy, win *w) {
   finish_destroy_win(dpy, w->id);
 }
-#endif
 
 static void
 destroy_win(Display *dpy, Window id, Bool fade) {
@@ -4258,11 +4239,9 @@ main(int argc, char **argv) {
 
   XCompositeQueryVersion(dpy, &composite_major, &composite_minor);
 
-#if HAS_NAME_WINDOW_PIXMAP
   if (composite_major > 0 || composite_minor >= 2) {
     has_name_pixmap = True;
   }
-#endif
 
   if (!XDamageQueryExtension(dpy, &damage_event, &damage_error)) {
     fprintf(stderr, "No damage extension\n");

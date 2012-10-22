@@ -91,8 +91,8 @@
 #endif
 
 // === Constants ===
-#if COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2
-#define HAS_NAME_WINDOW_PIXMAP 1
+#if !(COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2)
+#error libXcomposite version unsupported
 #endif
 
 #define ROUNDED_PERCENT 0.05
@@ -183,9 +183,7 @@ typedef struct _win {
   struct _win *next;
   Window id;
   Window client_win;
-#if HAS_NAME_WINDOW_PIXMAP
   Pixmap pixmap;
-#endif
   XWindowAttributes a;
 #if CAN_DO_USABLE
   Bool usable; /* mapped and all damaged at one point */
@@ -871,10 +869,8 @@ finish_map_win(Display *dpy, win *w);
 static void
 finish_unmap_win(Display *dpy, win *w);
 
-#if HAS_NAME_WINDOW_PIXMAP
 static void
 unmap_callback(Display *dpy, win *w);
-#endif
 
 static void
 unmap_win(Display *dpy, Window id, Bool fade);
@@ -931,10 +927,8 @@ circulate_win(Display *dpy, XCirculateEvent *ce);
 static void
 finish_destroy_win(Display *dpy, Window id);
 
-#if HAS_NAME_WINDOW_PIXMAP
 static void
 destroy_callback(Display *dpy, win *w);
-#endif
 
 static void
 destroy_win(Display *dpy, Window id, Bool fade);
