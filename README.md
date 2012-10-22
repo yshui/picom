@@ -63,7 +63,7 @@ $ make install
 ## Example Usage
 
 ``` bash
-$ compton -cC -i 0.6 -e 0.6 -fF
+$ compton -cC -i 0.6 -e 0.6 -f
 $ compton --config ~/compton.conf
 ```
 
@@ -74,7 +74,7 @@ compton [-d display] [-r radius] [-o opacity]
         [-l left-offset] [-t top-offset]
         [-i opacity] [-e opacity] [-cCfFSdG]
         [--config path] [--shadow-red value]
-        [--shadow-gren value] [--shadow-blue value]
+        [--shadow-green value] [--shadow-blue value]
         [--inactive-opacity-override] [--inactive-dim value]
         [--mark-wmwin-focused] [--shadow-exclude condition]
         [--mark-ovredir-focused] [--no-fading-openclose]
@@ -116,8 +116,8 @@ compton [-d display] [-r radius] [-o opacity]
   Opacity of window titlebars and borders. (0.1 - 1.0)
 * `-G`:
   Don't draw shadows on DND windows
-* `-b` __daemonize__:
-  Daemonize process.
+* `-b`:
+  Daemonize/background process.
 * `-S`:
   Enable synchronous operation (for debugging).
 * `--config` __path__:

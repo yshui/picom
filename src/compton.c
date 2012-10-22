@@ -2982,7 +2982,7 @@ usage(void) {
     "  Opacity of window titlebars and borders. (0.1 - 1.0)\n"
     "-G\n"
     "  Don't draw shadows on DND windows\n"
-    "-b daemonize\n"
+    "-b\n"
     "  Daemonize process.\n"
     "-S\n"
     "  Enable synchronous operation (for debugging).\n"
