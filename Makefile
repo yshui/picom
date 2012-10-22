@@ -4,47 +4,19 @@ PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
 
-PACKAGES = x11 xcomposite xfixes xdamage xrender xext xrandr
-LIBS = -lm -lrt
-INCS =
-
-# Parse configuration flags
-CFG =
-
-ifeq "$(NO_LIBCONFIG)" ""
-	CFG += -DCONFIG_LIBCONFIG
-	PACKAGES += libconfig
-
-	# libconfig-1.3* does not define LIBCONFIG_VER* macros, so we use
-	# pkg-config to determine its version here
-	CFG += $(shell pkg-config --atleast-version=1.4 libconfig || echo '-DCONFIG_LIBCONFIG_LEGACY')
-endif
-
-ifeq "$(NO_REGEX_PCRE)" ""
-	CFG += -DCONFIG_REGEX_PCRE
-	LIBS += $(shell pcre-config --libs)
-	INCS += $(shell pcre-config --cflags)
-	ifeq "$(NO_REGEX_PCRE_JIT)" ""
-		CFG += -DCONFIG_REGEX_PCRE_JIT
-	endif
-endif
-
-ifeq "$(NO_VSYNC_DRM)" ""
-	CFG += -DCONFIG_VSYNC_DRM
-endif
-
-ifeq "$(NO_VSYNC_OPENGL)" ""
-	CFG += -DCONFIG_VSYNC_OPENGL
-	LIBS += -lGL
-endif
-
-CFLAGS ?= -DNDEBUG
-CFLAGS += $(CFG)
-
-LIBS += $(shell pkg-config --libs $(PACKAGES))
-INCS += $(shell pkg-config --cflags $(PACKAGES))
+PACKAGES = x11 xcomposite xfixes xdamage xrender xext libconfig
+LIBS = $(shell pkg-config --libs $(PACKAGES)) -lm
+LIBS += $(shell pcre-config --libs)
+INCS = $(shell pkg-config --cflags $(PACKAGES))
+INCS += $(shell pcre-config --cflags)
 CFLAGS += -Wall -std=c99
 OBJS = compton.o
+
+CFG ?= -DCONFIG_LIBCONFIG -DCONFIG_REGEX_PCRE -DCONFIG_REGEX_PCRE_JIT
+# libconfig-1.3* does not define LIBCONFIG_VER* macros, so we use pkg-config
+# to determine its version here
+CFG += $(shell pkg-config --atleast-version=1.4 libconfig || echo '-DCONFIG_LIBCONFIG_LEGACY')
+CFLAGS += $(CFG)
 
 %.o: src/%.c src/%.h
 	$(CC) $(CFLAGS) $(INCS) -c src/$*.c

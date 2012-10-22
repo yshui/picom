@@ -1,5 +1,6 @@
-# Build files
 .deps
+Makefile
+Makefile.in
 aclocal.m4
 autom4te.cache
 config.h
@@ -13,26 +14,14 @@ missing
 stamp-h1
 compton
 *.o
-build/
-
-# CMake files
-compton-*.deb
-compton-*.rpm
-compton-*.tar.bz2
-release/
-_CPack_Packages/
-CMakeCache.txt
-CMakeFiles/
-*.cmake
-install_manifest.txt
-
+*~
+core
 
 # Vim files
 .*.sw[a-z]
-*~
 
-# Misc files
-core
+# oprofile files
 oprofile_data
+
+# clang files
 compton.plist
-callgrind.out.*
