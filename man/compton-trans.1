@@ -1,16 +1,20 @@
 .ds q \N'34'
 .TH compton\-trans 1
+
 .SH NAME
 compton\-trans \- an opacity setter tool
+
 .SH SYNOPSIS
 .nf
 .B compton-trans [-wncs] [window] -o [opacity]
 .fi
+
 .SH DESCRIPTION
 .B compton-trans
 is a bash script that sets _NET_WM_WINDOW_OPACITY only using standard
 command-line utilities for X11, including xprop(1) and xwininfo(1).
 It is similar to other utilities like transset(1) or transset-df(1).
+
 .SH OPTIONS
 .TP
 .BI \-w\ window\-id
@@ -31,6 +35,7 @@ Specify the new opacity value for the window. This value
 can be anywhere from 1-100. If it is prefixed with a plus
 or minus (+/-), this will increment or decrement from the
 target window's current opacity instead.
+
 .SH EXAMPLES
 .TP
 Set window id to opacity of 75%.
@@ -47,7 +52,14 @@ compton-trans -s -o 75
 .TP
 Increment current window 5% opacity.
 compton-trans -c -o +5
+
 .SH BUGS
 Please report any you find to https://github.com/chjj/compton.
+
 .SH AUTHORS
 Christopher Jeffrey (https://github.com/chjj)
+
+.SH SEE ALSO
+.BR compton(1),
+.BR xprop(1),
+.BR xwininfo(1)

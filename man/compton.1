@@ -22,6 +22,11 @@ written by Keith Packard). It includes many improvements over the original
 xcompmgr, including window frame opacity, inactive window transparency,
 and shadows on argb windows.
 
+.SH EXAMPLE
+
+$ compton -cC -i 0.6 -e 0.6 -f
+$ compton --config ~/compton.conf
+
 .SH OPTIONS
 .TP
 .BI \-d\ display
@@ -33,19 +38,19 @@ The blur radius for shadows. (default 12)
 .BI \-o\ opacity
 The translucency for shadows. (default .75)
 .TP
-.BI \-l\ left-offset
+.BI \-l\ left\-offset
 The left offset for shadows. (default -15)
 .TP
-.BI \-t\ top-offset
+.BI \-t\ top\-offset
 The top offset for shadows. (default -15)
 .TP
-.BI \-I\ fade-in-step
+.BI \-I\ fade\-in\-step
 Opacity change between steps while fading in. (default 0.028)
 .TP
-.BI \-O\ fade-out-step
+.BI \-O\ fade\-out\-step
 Opacity change between steps while fading out. (default 0.03)
 .TP
-.BI \-D\ fade-delta-time
+.BI \-D\ fade\-delta\-time
 The time between steps in a fade in milliseconds. (default 10)
 .TP
 .BI \-m\ opacity
@@ -77,45 +82,45 @@ Opacity of window titlebars and borders. (0.1 - 1.0)
 Don't draw shadows on DND windows
 .TP
 .BI \-b
-Daemonize process.
+Daemonize/background process.
 .TP
 .BI \-S
 Enable synchronous operation (for debugging).
 .TP
-.BI \--config\ path
+.BI \-\-config\ path
 Look for configuration file at the path.
 .TP
-.BI \--shadow-red\ value
+.BI \-\-shadow\-red\ value
 Red color value of shadow (0.0 - 1.0, defaults to 0).
 .TP
-.BI \--shadow-green\ value
+.BI \-\-shadow\-green\ value
 Green color value of shadow (0.0 - 1.0, defaults to 0).
 .TP
-.BI \--shadow-blue\ value
+.BI \-\-shadow\-blue\ value
 Blue color value of shadow (0.0 - 1.0, defaults to 0).
 .TP
-.BI \--inactive-opacity-override
+.BI \-\-inactive\-opacity\-override
 Inactive opacity set by -i overrides value of _NET_WM_OPACITY.
 .TP
-.BI \--inactive-dim\ value
+.BI \-\-inactive\-dim\ value
 Dim inactive windows. (0.0 - 1.0, defaults to 0)
 .TP
-.BI \--mark-wmwin-focused
+.BI \-\-mark\-wmwin\-focused
 Try to detect WM windows and mark them as active.
 .TP
-.BI \--shadow-exclude\ condition
+.BI \-\-shadow\-exclude\ condition
 Exclude conditions for shadows.
 .TP
-.BI \--mark-ovredir-focused
+.BI \--mark\-ovredir\-focused
 Mark over-redirect windows as active.
 .TP
-.BI \--no-fading-openclose
+.BI \-\-no\-fading\-openclose
 Do not fade on window open/close.
 .TP
-.BI \--shadow-ignore-shaped
+.BI \-\-shadow\-ignore\-shaped
 Do not paint shadows on shaped windows.
 .TP
-.BI \--detect-rounded-corners
+.BI \-\-detect\-rounded\-corners
 Try to detect windows with rounded corners and don't consider
 them shaped windows.
 .TP
@@ -135,6 +140,28 @@ flag is "i" (ignore case).
 
 <pattern> is the actual pattern string.
 
+.SH CONFIGURATION
+(A more robust sample configuration file exists in the compton
+repository.)
+
+.B Example
+
+.B ~/compton.conf:
+
+    # Shadows
+    shadow = true;
+
+    # Opacity
+    inactive-opacity = 0.8;
+    frame-opacity = 0.7;
+
+    # Fades
+    fading = true;
+
+.B Run with:
+
+    $ compton --config ~/compton.conf
+
 .SH BUGS
 Please report any you find to https://github.com/chjj/compton.
 
@@ -146,4 +173,4 @@ Compton by Christopher Jeffrey, based on Dana Jansens' original work,
 with numerous contributions from Richard Grenville.
 
 .SH SEE ALSO
-.BR compton-trans (1)
+.BR compton-trans(1)

@@ -2983,7 +2983,7 @@ usage(void) {
     "-G\n"
     "  Don't draw shadows on DND windows\n"
     "-b\n"
-    "  Daemonize process.\n"
+    "  Daemonize/background process.\n"
     "-S\n"
     "  Enable synchronous operation (for debugging).\n"
     "--config path\n"
