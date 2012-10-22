@@ -3151,7 +3151,7 @@ ev_handle(XEvent *ev) {
 static void
 usage(void) {
   fputs(
-    "compton (development version)\n"
+    "compton (v0.0.1)\n"
     "usage: compton [options]\n"
     "Options:\n"
     "\n"
@@ -3320,7 +3320,7 @@ register_cm(Bool want_glxct) {
       opts.vsync = VSYNC_NONE;
   }
 #endif
-  
+
   if (!reg_win)
     reg_win = XCreateSimpleWindow(dpy, root, 0, 0, 1, 1, 0,
         None, None);
@@ -4070,7 +4070,7 @@ vsync_drm_wait(void) {
         "unimplemented in this drmver?\n");
 
   return ret;
-  
+
 }
 #endif
 
@@ -4095,7 +4095,7 @@ vsync_opengl_init(void) {
         "Failed to get glXWait/GetVideoSyncSGI function.\n");
     return False;
   }
-  
+
   return True;
 #else
   fprintf(stderr, "Program not compiled with OpenGL VSync support.\n");
