@@ -39,8 +39,14 @@ Display *dpy = NULL;
 int scr;
 
 Window root;
-Picture root_picture;
-Picture root_buffer;
+/// Picture of root window. Destination of painting in no-DBE painting
+/// mode.
+Picture root_picture = None;
+/// Temporary buffer to paint to before sending to display.
+Picture root_buffer = None;
+/// DBE back buffer for root window. Used in DBE painting mode.
+XdbeBackBuffer root_dbe = None;
+
 Picture black_picture;
 Picture cshadow_picture;
 /// Picture used for dimming inactive windows.
@@ -109,6 +115,8 @@ Bool glx_exists = False;
 int glx_event, glx_error;
 #endif
 
+Bool dbe_exists = False;
+
 /* shadows */
 conv *gaussian_map;
 
@@ -163,6 +171,7 @@ static options_t opts = {
 
   .refresh_rate = 0,
   .vsync = VSYNC_NONE,
+  .dbe = False,
 
   .wintype_shadow = { False },
   .shadow_red = 0.0,
@@ -1557,18 +1566,29 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   }
 
 #ifdef MONITOR_REPAINT
+  // Note: MONITOR_REPAINT cannot work with DBE right now.
   root_buffer = root_picture;
 #else
   if (!root_buffer) {
-    Pixmap root_pixmap = XCreatePixmap(
-      dpy, root, root_width, root_height,
-      DefaultDepth(dpy, scr));
+    // DBE painting mode: Directly paint to a Picture of the back buffer
+    if (opts.dbe) {
+      root_buffer = XRenderCreatePicture(dpy, root_dbe,
+          XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
+          0, 0);
+    }
+    // No-DBE painting mode: Paint to an intermediate Picture then paint
+    // the Picture to root window
+    else {
+      Pixmap root_pixmap = XCreatePixmap(
+        dpy, root, root_width, root_height,
+        DefaultDepth(dpy, scr));
 
-    root_buffer = XRenderCreatePicture(dpy, root_pixmap,
-      XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
-      0, 0);
+      root_buffer = XRenderCreatePicture(dpy, root_pixmap,
+        XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
+        0, 0);
 
-    XFreePixmap(dpy, root_pixmap);
+      XFreePixmap(dpy, root_pixmap);
+    }
   }
 #endif
 
@@ -1674,7 +1694,16 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   XFixesDestroyRegion(dpy, reg_tmp);
   XFixesDestroyRegion(dpy, reg_tmp2);
 
-  if (root_buffer != root_picture) {
+  // DBE painting mode, only need to swap the buffer
+  if (opts.dbe) {
+    XdbeSwapInfo swap_info = {
+      .swap_window = root,
+      // Is it safe to use XdbeUndefined?
+      .swap_action = XdbeCopied
+    };
+    XdbeSwapBuffers(dpy, &swap_info, 1);
+  }
+  else if (root_buffer != root_picture) {
     XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, None);
     XRenderComposite(
       dpy, PictOpSrc, root_buffer, None,
@@ -3240,6 +3269,9 @@ usage(void) {
     "--alpha-step val\n"
     "  Step for pregenerating alpha pictures. 0.01 - 1.0. Defaults to\n"
     "  0.03.\n"
+    "--dbe\n"
+    "  Enable DBE painting mode, intended to use with VSync to\n"
+    "  (hopefully) eliminate tearing.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3624,6 +3656,7 @@ get_cfg(int argc, char *const *argv) {
     { "refresh-rate", required_argument, NULL, 269 },
     { "vsync", required_argument, NULL, 270 },
     { "alpha-step", required_argument, NULL, 271 },
+    { "dbe", no_argument, NULL, 272 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3809,6 +3842,10 @@ get_cfg(int argc, char *const *argv) {
       case 271:
         // --alpha-step
         opts.alpha_step = atof(optarg);
+        break;
+      case 272:
+        // --dbe
+        opts.dbe = True;
         break;
       default:
         usage();
@@ -4190,6 +4227,19 @@ init_alpha_picts(Display *dpy) {
   }
 }
 
+/**
+ * Initialize double buffer.
+ */
+static void
+init_dbe(void) {
+  if (!(root_dbe = XdbeAllocateBackBufferName(dpy, root, XdbeCopied))) {
+    fprintf(stderr, "Failed to create double buffer. Double buffering "
+        "turned off.\n");
+    opts.dbe = False;
+    return;
+  }
+}
+
 int
 main(int argc, char **argv) {
   XEvent ev;
@@ -4279,6 +4329,22 @@ main(int argc, char **argv) {
   }
 #endif
 
+  // Query X DBE extension
+  if (opts.dbe) {
+    int dbe_ver_major = 0, dbe_ver_minor = 0;
+    if (XdbeQueryExtension(dpy, &dbe_ver_major, &dbe_ver_minor))
+      if (dbe_ver_major >= 1)
+        dbe_exists = True;
+      else
+        fprintf(stderr, "DBE extension version too low. Double buffering "
+            "impossible.\n");
+    else {
+      fprintf(stderr, "No DBE extension. Double buffering impossible.\n");
+    }
+    if (!dbe_exists)
+      opts.dbe = False;
+  }
+
   register_cm((VSYNC_OPENGL == opts.vsync));
 
   // Initialize software/DRM/OpenGL VSync
@@ -4286,6 +4352,9 @@ main(int argc, char **argv) {
       || (VSYNC_DRM == opts.vsync && !vsync_drm_init())
       || (VSYNC_OPENGL == opts.vsync && !vsync_opengl_init()))
     opts.vsync = VSYNC_NONE;
+
+  if (opts.dbe)
+    init_dbe();
 
   if (opts.fork_after_register) fork_after();
 

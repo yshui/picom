@@ -75,6 +75,7 @@
 #include <X11/extensions/Xrender.h>
 #include <X11/extensions/shape.h>
 #include <X11/extensions/Xrandr.h>
+#include <X11/extensions/Xdbe.h>
 
 #ifdef CONFIG_VSYNC_DRM
 #include <fcntl.h>
@@ -314,6 +315,8 @@ typedef struct _options {
   int refresh_rate;
   /// VSync method to use;
   vsync_t vsync;
+  /// Whether to enable double buffer.
+  Bool dbe;
 
   // Shadow
   Bool wintype_shadow[NUM_WINTYPES];
