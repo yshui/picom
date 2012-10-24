@@ -38,12 +38,20 @@ win *list;
 Display *dpy = NULL;
 int scr;
 
-Window root;
+/// Root window.
+Window root = None;
+/// Damage of root window.
+Damage root_damage = None;
+/// X Composite overlay window. Used if --paint-on-overlay.
+Window overlay = None;
+
 /// Picture of root window. Destination of painting in no-DBE painting
 /// mode.
 Picture root_picture = None;
+/// A Picture acting as the painting target.
+Picture tgt_picture = None;
 /// Temporary buffer to paint to before sending to display.
-Picture root_buffer = None;
+Picture tgt_buffer = None;
 /// DBE back buffer for root window. Used in DBE painting mode.
 XdbeBackBuffer root_dbe = None;
 
@@ -168,6 +176,7 @@ static options_t opts = {
   .fork_after_register = False,
   .synchronize = False,
   .detect_rounded_corners = False,
+  .paint_on_overlay = False,
 
   .refresh_rate = 0,
   .vsync = VSYNC_NONE,
@@ -1105,6 +1114,11 @@ recheck_focus(Display *dpy) {
 
 static Picture
 root_tile_f(Display *dpy) {
+  /*
+  if (opts.paint_on_overlay) {
+    return root_picture;
+  } */
+
   Picture picture;
   Atom actual_type;
   Pixmap pixmap;
@@ -1165,7 +1179,7 @@ paint_root(Display *dpy) {
 
   XRenderComposite(
     dpy, PictOpSrc, root_tile, None,
-    root_buffer, 0, 0, 0, 0, 0, 0,
+    tgt_buffer, 0, 0, 0, 0, 0, 0,
     root_width, root_height);
 }
 
@@ -1492,10 +1506,10 @@ paint_preprocess(Display *dpy, win *list) {
  * Paint the shadow of a window.
  */
 static inline void
-win_paint_shadow(Display *dpy, win *w, Picture root_buffer) {
+win_paint_shadow(Display *dpy, win *w, Picture tgt_buffer) {
   XRenderComposite(
     dpy, PictOpOver, w->shadow_pict, w->shadow_alpha_pict,
-    root_buffer, 0, 0, 0, 0,
+    tgt_buffer, 0, 0, 0, 0,
     w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
     w->shadow_width, w->shadow_height);
 }
@@ -1504,7 +1518,7 @@ win_paint_shadow(Display *dpy, win *w, Picture root_buffer) {
  * Paint a window itself and dim it if asked.
  */
 static inline void
-win_paint_win(Display *dpy, win *w, Picture root_buffer) {
+win_paint_win(Display *dpy, win *w, Picture tgt_buffer) {
   int x = w->a.x;
   int y = w->a.y;
   int wid = w->widthb;
@@ -1515,7 +1529,7 @@ win_paint_win(Display *dpy, win *w, Picture root_buffer) {
 
   if (!w->frame_opacity) {
     XRenderComposite(dpy, op, w->picture, alpha_mask,
-        root_buffer, 0, 0, 0, 0, x, y, wid, hei);
+        tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
   }
   else {
     unsigned int t = w->top_width;
@@ -1525,22 +1539,22 @@ win_paint_win(Display *dpy, win *w, Picture root_buffer) {
 
     // top
     XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
-        root_buffer, 0, 0, 0, 0, x, y, wid, t);
+        tgt_buffer, 0, 0, 0, 0, x, y, wid, t);
 
     // left
     XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
-        root_buffer, 0, t, 0, t, x, y + t, l, hei - t);
+        tgt_buffer, 0, t, 0, t, x, y + t, l, hei - t);
 
     // bottom
     XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
-        root_buffer, l, hei - b, l, hei - b, x + l, y + hei - b, wid - l - r, b);
+        tgt_buffer, l, hei - b, l, hei - b, x + l, y + hei - b, wid - l - r, b);
 
     // right
     XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
-        root_buffer, wid - r, t, wid - r, t, x + wid - r, y + t, r, hei - t);
+        tgt_buffer, wid - r, t, wid - r, t, x + wid - r, y + t, r, hei - t);
 
     // body
-    XRenderComposite(dpy, op, w->picture, alpha_mask, root_buffer,
+    XRenderComposite(dpy, op, w->picture, alpha_mask, tgt_buffer,
       l, t, l, t, x + l, y + t, wid - l - r, hei - t - b);
 
   }
@@ -1548,7 +1562,7 @@ win_paint_win(Display *dpy, win *w, Picture root_buffer) {
   // Dimming the window if needed
   if (w->dim) {
     XRenderComposite(dpy, PictOpOver, dim_picture, None,
-        root_buffer, 0, 0, 0, 0, x, y, wid, hei);
+        tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
   }
 }
 
@@ -1567,12 +1581,12 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
 
 #ifdef MONITOR_REPAINT
   // Note: MONITOR_REPAINT cannot work with DBE right now.
-  root_buffer = root_picture;
+  tgt_buffer = tgt_picture;
 #else
-  if (!root_buffer) {
+  if (!tgt_buffer) {
     // DBE painting mode: Directly paint to a Picture of the back buffer
     if (opts.dbe) {
-      root_buffer = XRenderCreatePicture(dpy, root_dbe,
+      tgt_buffer = XRenderCreatePicture(dpy, root_dbe,
           XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
           0, 0);
     }
@@ -1583,7 +1597,7 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
         dpy, root, root_width, root_height,
         DefaultDepth(dpy, scr));
 
-      root_buffer = XRenderCreatePicture(dpy, root_pixmap,
+      tgt_buffer = XRenderCreatePicture(dpy, root_pixmap,
         XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
         0, 0);
 
@@ -1592,12 +1606,12 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   }
 #endif
 
-  XFixesSetPictureClipRegion(dpy, root_picture, 0, 0, region);
+  XFixesSetPictureClipRegion(dpy, tgt_picture, 0, 0, region);
 
 #ifdef MONITOR_REPAINT
   XRenderComposite(
     dpy, PictOpSrc, black_picture, None,
-    root_picture, 0, 0, 0, 0, 0, 0,
+    tgt_picture, 0, 0, 0, 0, 0, 0,
     root_width, root_height);
 #endif
 
@@ -1616,7 +1630,7 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
     reg_paint = region;
   }
 
-  XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, reg_paint);
+  XFixesSetPictureClipRegion(dpy, tgt_buffer, 0, 0, reg_paint);
 
   paint_root(dpy);
 
@@ -1653,9 +1667,9 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
 
       // Detect if the region is empty before painting
       if (region == reg_paint || !is_region_empty(dpy, reg_paint)) {
-        XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, reg_paint);
+        XFixesSetPictureClipRegion(dpy, tgt_buffer, 0, 0, reg_paint);
 
-        win_paint_shadow(dpy, w, root_buffer);
+        win_paint_shadow(dpy, w, tgt_buffer);
       }
     }
 
@@ -1675,10 +1689,10 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
     }
 
     if (!is_region_empty(dpy, reg_paint)) {
-      XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, reg_paint);
+      XFixesSetPictureClipRegion(dpy, tgt_buffer, 0, 0, reg_paint);
 
       // Painting the window
-      win_paint_win(dpy, w, root_buffer);
+      win_paint_win(dpy, w, tgt_buffer);
     }
 
     check_fade_fin(dpy, w);
@@ -1697,17 +1711,18 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   // DBE painting mode, only need to swap the buffer
   if (opts.dbe) {
     XdbeSwapInfo swap_info = {
-      .swap_window = root,
+      .swap_window = (opts.paint_on_overlay ? overlay: root),
       // Is it safe to use XdbeUndefined?
       .swap_action = XdbeCopied
     };
     XdbeSwapBuffers(dpy, &swap_info, 1);
   }
-  else if (root_buffer != root_picture) {
-    XFixesSetPictureClipRegion(dpy, root_buffer, 0, 0, None);
+  // No-DBE painting mode
+  else if (tgt_buffer != tgt_picture) {
+    XFixesSetPictureClipRegion(dpy, tgt_buffer, 0, 0, None);
     XRenderComposite(
-      dpy, PictOpSrc, root_buffer, None,
-      root_picture, 0, 0, 0, 0,
+      dpy, PictOpSrc, tgt_buffer, None,
+      tgt_picture, 0, 0, 0, 0,
       0, 0, root_width, root_height);
   }
 }
@@ -2358,9 +2373,9 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
 
   if (!w) {
     if (ce->window == root) {
-      if (root_buffer) {
-        XRenderFreePicture(dpy, root_buffer);
-        root_buffer = None;
+      if (tgt_buffer) {
+        XRenderFreePicture(dpy, tgt_buffer);
+        tgt_buffer = None;
       }
       root_width = ce->width;
       root_height = ce->height;
@@ -2479,8 +2494,33 @@ destroy_win(Display *dpy, Window id, Bool fade) {
   }
 }
 
+static inline void
+root_damaged(void) {
+  if (root_tile) {
+    XClearArea(dpy, root, 0, 0, 0, 0, True);
+    // if (root_picture != root_tile) {
+      XRenderFreePicture(dpy, root_tile);
+      root_tile = None;
+    /* }
+    if (root_damage) {
+      XserverRegion parts = XFixesCreateRegion(dpy, 0, 0);
+      XDamageSubtract(dpy, root_damage, None, parts);
+      add_damage(dpy, parts);
+    } */
+  }
+  // Mark screen damaged if we are painting on overlay
+  if (opts.paint_on_overlay)
+    add_damage(dpy, get_screen_region(dpy));
+}
+
 static void
 damage_win(Display *dpy, XDamageNotifyEvent *de) {
+  /*
+  if (root == de->drawable) {
+    root_damaged();
+    return;
+  } */
+
   win *w = find_win(dpy, de->drawable);
 
   if (!w) return;
@@ -2979,16 +3019,16 @@ ev_expose(XExposeEvent *ev) {
 
 inline static void
 ev_property_notify(XPropertyEvent *ev) {
-  int p;
-  for (p = 0; background_props[p]; p++) {
-    if (ev->atom == XInternAtom(dpy, background_props[p], False)) {
-      if (root_tile) {
-        XClearArea(dpy, root, 0, 0, 0, 0, True);
-        XRenderFreePicture(dpy, root_tile);
-        root_tile = None;
+  // Destroy the root "image" if the wallpaper probably changed
+  if (root == ev->window) {
+    for (int p = 0; background_props[p]; p++) {
+      if (ev->atom == XInternAtom(dpy, background_props[p], False)) {
+        root_damaged();
         break;
       }
     }
+    // Unconcerned about any other proprties on root window
+    return;
   }
 
   // If _NET_WM_OPACITY changes
@@ -3093,24 +3133,31 @@ ev_handle(XEvent *ev) {
 
 #ifdef DEBUG_EVENTS
   if (ev->type != damage_event + XDamageNotify) {
-    Window w;
+    Window wid;
     char *window_name;
     Bool to_free = False;
 
-    w = ev_window(ev);
+    wid = ev_window(ev);
     window_name = "(Failed to get title)";
 
-    if (w) {
-      if (root == w) {
+    if (wid) {
+      if (root == wid)
         window_name = "(Root window)";
-      } else {
-        to_free = (Bool) wid_get_name(dpy, w, &window_name);
+      else {
+        win *w = find_win(dpy, wid);
+        if (!w)
+          w = find_toplevel(dpy, wid);
+
+        if (w->name)
+          window_name = w->name;
+        else
+          to_free = (Bool) wid_get_name(dpy, wid, &window_name);
       }
     }
 
     print_timestamp();
     printf("event %10.10s serial %#010x window %#010lx \"%s\"\n",
-      ev_name(ev), ev_serial(ev), w, window_name);
+      ev_name(ev), ev_serial(ev), wid, window_name);
 
     if (to_free) {
       XFree(window_name);
@@ -3272,6 +3319,8 @@ usage(void) {
     "--dbe\n"
     "  Enable DBE painting mode, intended to use with VSync to\n"
     "  (hopefully) eliminate tearing.\n"
+    "--paint-on-overlay\n"
+    "  Painting on X Composite overlay window.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3590,6 +3639,8 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   lcfg_lookup_int(&cfg, "refresh-rate", &opts.refresh_rate);
   // --alpha-step
   config_lookup_float(&cfg, "alpha-step", &opts.alpha_step);
+  // --paint-on-overlay
+  lcfg_lookup_bool(&cfg, "paint-on-overlay", &opts.paint_on_overlay);
   // --shadow-exclude
   {
     config_setting_t *setting =
@@ -3657,6 +3708,7 @@ get_cfg(int argc, char *const *argv) {
     { "vsync", required_argument, NULL, 270 },
     { "alpha-step", required_argument, NULL, 271 },
     { "dbe", no_argument, NULL, 272 },
+    { "paint-on-overlay", no_argument, NULL, 273 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3846,6 +3898,10 @@ get_cfg(int argc, char *const *argv) {
       case 272:
         // --dbe
         opts.dbe = True;
+        break;
+      case 273:
+        // --paint-on-overlay
+        opts.paint_on_overlay = True;
         break;
       default:
         usage();
@@ -4232,11 +4288,37 @@ init_alpha_picts(Display *dpy) {
  */
 static void
 init_dbe(void) {
-  if (!(root_dbe = XdbeAllocateBackBufferName(dpy, root, XdbeCopied))) {
+  if (!(root_dbe = XdbeAllocateBackBufferName(dpy,
+          (opts.paint_on_overlay ? overlay: root), XdbeCopied))) {
     fprintf(stderr, "Failed to create double buffer. Double buffering "
         "turned off.\n");
     opts.dbe = False;
     return;
+  }
+}
+
+/**
+ * Initialize X composite overlay window.
+ */
+static void
+init_overlay(void) {
+  overlay = XCompositeGetOverlayWindow(dpy, root);
+  if (overlay) {
+    // Set window region of the overlay window, code stolen from
+    // compiz-0.8.8
+    XserverRegion region = XFixesCreateRegion (dpy, NULL, 0);
+    XFixesSetWindowShapeRegion(dpy, overlay, ShapeBounding, 0, 0, 0);
+    XFixesSetWindowShapeRegion(dpy, overlay, ShapeInput, 0, 0, region);
+    XFixesDestroyRegion (dpy, region);
+
+    // Retrieve DamageNotify on root window if we are painting on an
+    // overlay
+    // root_damage = XDamageCreate(dpy, root, XDamageReportNonEmpty);
+  }
+  else {
+    fprintf(stderr, "Cannot get X Composite overlay window. Falling "
+        "back to painting on root window.\n");
+    opts.paint_on_overlay = False;
   }
 }
 
@@ -4353,6 +4435,10 @@ main(int argc, char **argv) {
       || (VSYNC_OPENGL == opts.vsync && !vsync_opengl_init()))
     opts.vsync = VSYNC_NONE;
 
+  // Overlay must be initialized before double buffer
+  if (opts.paint_on_overlay)
+    init_overlay();
+
   if (opts.dbe)
     init_dbe();
 
@@ -4370,8 +4456,16 @@ main(int argc, char **argv) {
   root_height = DisplayHeight(dpy, scr);
 
   root_picture = XRenderCreatePicture(dpy, root,
-    XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
-    CPSubwindowMode, &pa);
+      XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
+      CPSubwindowMode, &pa);
+  if (opts.paint_on_overlay) {
+    tgt_picture = XRenderCreatePicture(dpy, overlay,
+        XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
+        CPSubwindowMode, &pa);
+  }
+  else {
+    tgt_picture = root_picture;
+  }
 
   black_picture = solid_picture(dpy, True, 1, 0, 0, 0);
 

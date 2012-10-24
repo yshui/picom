@@ -307,6 +307,9 @@ typedef struct _options {
   Bool fork_after_register;
   /// Whether to detect rounded corners.
   Bool detect_rounded_corners;
+  /// Whether to paint on X Composite overlay window instead of root
+  /// window.
+  Bool paint_on_overlay;
   /// Whether to work under synchronized mode for debugging.
   Bool synchronize;
 
@@ -1159,3 +1162,9 @@ vsync_wait(Display *dpy, struct pollfd *fd, int timeout);
 
 static void
 init_alpha_picts(Display *dpy);
+
+static void
+init_dbe(void);
+
+static void
+init_overlay(void);
