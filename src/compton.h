@@ -111,7 +111,7 @@ extern struct timeval time_start;
 #define WINDOW_ARGB 2
 
 #define FADE_DELTA_TOLERANCE 0.2
-#define VSYNC_SW_TOLERANCE 1000
+#define SW_OPTI_TOLERANCE 1000
 
 #define NS_PER_SEC 1000000000L
 #define US_PER_SEC 1000000L
@@ -286,7 +286,6 @@ typedef struct _win {
 
 typedef enum _vsync_t {
   VSYNC_NONE,
-  VSYNC_SW,
   VSYNC_DRM,
   VSYNC_OPENGL,
 } vsync_t;
@@ -313,9 +312,11 @@ typedef struct _options {
   /// Whether to work under synchronized mode for debugging.
   Bool synchronize;
 
-  // VSync
+  // VSync and software optimization
   /// User-specified refresh rate.
   int refresh_rate;
+  /// Whether to enable refresh-rate-based software optimization.
+  Bool sw_opti;
   /// VSync method to use;
   vsync_t vsync;
   /// Whether to enable double buffer.
@@ -617,6 +618,21 @@ timespec_subtract(struct timespec *result,
 
   /* Return 1 if result is negative. */
   return x->tv_sec < y->tv_sec;
+}
+
+/**
+ * Get current time in struct timespec.
+ *
+ * Note its starting time is unspecified.
+ */
+static inline struct timespec
+get_time_timespec(void) {
+  struct timespec tm = { 0 };
+
+  clock_gettime(CLOCK_MONOTONIC, &tm);
+
+  // Return a time of all 0 if the call fails
+  return tm;
 }
 
 /**
@@ -1136,10 +1152,10 @@ static void
 update_refresh_rate(Display *dpy);
 
 static Bool
-vsync_sw_init(void);
+sw_opti_init(void);
 
-static struct timespec
-vsync_sw_ntimeout(int timeout);
+static int
+evpoll(struct pollfd *fd, int timeout);
 
 static Bool
 vsync_drm_init(void);
@@ -1157,8 +1173,8 @@ static void
 vsync_opengl_wait(void);
 #endif
 
-static Bool
-vsync_wait(Display *dpy, struct pollfd *fd, int timeout);
+static void
+vsync_wait(void);
 
 static void
 init_alpha_picts(Display *dpy);

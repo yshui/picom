@@ -74,12 +74,11 @@ Bool reg_ignore_expire = False;
 /// Window ID of the window we register as a symbol.
 Window reg_win = 0;
 
-/// Currently used refresh rate. Used for Software VSync.
+/// Currently used refresh rate. Used for sw_opti.
 short refresh_rate = 0;
-/// Interval between refresh in nanoseconds. Used for Software VSync.
+/// Interval between refresh in nanoseconds. Used for sw_opti.
 unsigned long refresh_intv = 0;
-/// Nanosecond-level offset of the first painting.
-/// Used for Software VSync.
+/// Nanosecond-level offset of the first painting. Used for sw_opti.
 long paint_tm_offset = 0;
 
 #ifdef CONFIG_VSYNC_DRM
@@ -179,6 +178,7 @@ static options_t opts = {
   .paint_on_overlay = False,
 
   .refresh_rate = 0,
+  .sw_opti = False,
   .vsync = VSYNC_NONE,
   .dbe = False,
 
@@ -1568,6 +1568,10 @@ win_paint_win(Display *dpy, win *w, Picture tgt_buffer) {
 
 static void
 paint_all(Display *dpy, XserverRegion region, win *t) {
+#ifdef DEBUG_REPAINT
+  static struct timespec last_paint = { 0 };
+#endif
+
   win *w;
   XserverRegion reg_paint = None, reg_tmp = None, reg_tmp2 = None;
 
@@ -1616,7 +1620,6 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
 #endif
 
 #ifdef DEBUG_REPAINT
-  print_timestamp();
   printf("paint:");
 #endif
 
@@ -1700,13 +1703,15 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
 
 #ifdef DEBUG_REPAINT
   printf("\n");
-  fflush(stdout);
 #endif
 
   // Free up all temporary regions
   XFixesDestroyRegion(dpy, region);
   XFixesDestroyRegion(dpy, reg_tmp);
   XFixesDestroyRegion(dpy, reg_tmp2);
+
+  // Wait for VBlank
+  vsync_wait();
 
   // DBE painting mode, only need to swap the buffer
   if (opts.dbe) {
@@ -1725,6 +1730,20 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
       tgt_picture, 0, 0, 0, 0,
       0, 0, root_width, root_height);
   }
+
+  XFlush(dpy);
+
+#ifdef DEBUG_REPAINT
+  // It prints the timestamp in the wrong line, but...
+  print_timestamp();
+  struct timespec now = get_time_timespec();
+  struct timespec diff = { 0 };
+  timespec_subtract(&diff, &now, &last_paint);
+  printf("[ %5ld:%09ld ] ", diff.tv_sec, diff.tv_nsec);
+  last_paint = now;
+  fflush(stdout);
+#endif
+
 }
 
 static void
@@ -3304,10 +3323,8 @@ usage(void) {
     "  Specify refresh rate of the screen. If not specified or 0, compton\n"
     "  will try detecting this with X RandR extension.\n"
     "--vsync vsync-method\n"
-    "  Set VSync method. There are 4 VSync methods currently available:\n"
+    "  Set VSync method. There are 2 VSync methods currently available:\n"
     "    none = No VSync\n"
-    "    sw = software VSync, basically limits compton to send a request\n"
-    "      every 1 / refresh_rate second. Experimental.\n"
     "    drm = VSync with DRM_IOCTL_WAIT_VBLANK. May only work on some\n"
     "      drivers. Experimental.\n"
     "    opengl = Try to VSync with SGI_swap_control OpenGL extension. Only\n"
@@ -3321,6 +3338,9 @@ usage(void) {
     "  (hopefully) eliminate tearing.\n"
     "--paint-on-overlay\n"
     "  Painting on X Composite overlay window.\n"
+    "--sw-opti\n"
+    "  Limit compton to repaint at most once every 1 / refresh_rate\n"
+    "  second to boost performance. Experimental.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3534,6 +3554,29 @@ open_config_file(char *cpath, char **ppath) {
 }
 
 /**
+ * Parse a VSync option argument.
+ */
+static inline void
+parse_vsync(const char *optarg) {
+  const static char * const vsync_str[] = {
+    "none",   // VSYNC_NONE
+    "drm",    // VSYNC_DRM
+    "opengl", // VSYNC_OPENGL
+  };
+
+  vsync_t i;
+
+  for (i = 0; i < (sizeof(vsync_str) / sizeof(vsync_str[0])); ++i)
+    if (!strcasecmp(optarg, vsync_str[i])) {
+      opts.vsync = i;
+      break;
+    }
+  if ((sizeof(vsync_str) / sizeof(vsync_str[0])) == i) {
+    fputs("Invalid --vsync argument. Ignored.\n", stderr);
+  }
+}
+
+/**
  * Parse a configuration file from default location.
  */
 static void
@@ -3543,6 +3586,7 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   config_t cfg;
   int ival = 0;
   double dval = 0.0;
+  const char *sval = NULL;
 
   f = open_config_file(cpath, &path);
   if (!f) {
@@ -3637,10 +3681,15 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
       &opts.detect_client_opacity);
   // --refresh-rate
   lcfg_lookup_int(&cfg, "refresh-rate", &opts.refresh_rate);
+  // --vsync
+  if (config_lookup_string(&cfg, "vsync", &sval))
+    parse_vsync(sval);
   // --alpha-step
   config_lookup_float(&cfg, "alpha-step", &opts.alpha_step);
   // --paint-on-overlay
   lcfg_lookup_bool(&cfg, "paint-on-overlay", &opts.paint_on_overlay);
+  // --sw-opti
+  lcfg_lookup_bool(&cfg, "sw-opti", &opts.sw_opti);
   // --shadow-exclude
   {
     config_setting_t *setting =
@@ -3709,14 +3758,9 @@ get_cfg(int argc, char *const *argv) {
     { "alpha-step", required_argument, NULL, 271 },
     { "dbe", no_argument, NULL, 272 },
     { "paint-on-overlay", no_argument, NULL, 273 },
+    { "sw-opti", no_argument, NULL, 274 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
-  };
-  const static char * const vsync_str[] = {
-    "none",   // VSYNC_NONE
-    "sw",     // VSYNC_SW
-    "drm",    // VSYNC_DRM
-    "opengl", // VSYNC_OPENGL
   };
 
   struct options_tmp cfgtmp = {
@@ -3879,17 +3923,7 @@ get_cfg(int argc, char *const *argv) {
         break;
       case 270:
         // --vsync
-        {
-          vsync_t i;
-          for (i = 0; i < (sizeof(vsync_str) / sizeof(vsync_str[0])); ++i)
-            if (!strcasecmp(optarg, vsync_str[i])) {
-              opts.vsync = i;
-              break;
-            }
-          if ((sizeof(vsync_str) / sizeof(vsync_str[0])) == i) {
-            fputs("Invalid --vsync argument. Ignored.\n", stderr);
-          }
-        }
+        parse_vsync(optarg);
         break;
       case 271:
         // --alpha-step
@@ -3902,6 +3936,10 @@ get_cfg(int argc, char *const *argv) {
       case 273:
         // --paint-on-overlay
         opts.paint_on_overlay = True;
+        break;
+      case 274:
+        // --sw-opti
+        opts.sw_opti = True;
         break;
       default:
         usage();
@@ -4018,12 +4056,12 @@ update_refresh_rate(Display *dpy) {
 }
 
 /**
- * Initialize software VSync.
+ * Initialize refresh-rated based software optimization.
  *
  * @return True for success, False otherwise
  */
 static Bool
-vsync_sw_init(void) {
+sw_opti_init(void) {
   // Prepare refresh rate
   // Check if user provides one
   refresh_rate = opts.refresh_rate;
@@ -4048,21 +4086,6 @@ vsync_sw_init(void) {
 }
 
 /**
- * Get current time in struct timespec.
- *
- * Note its starting time is unspecified.
- */
-static inline struct timespec
-get_time_timespec(void) {
-  struct timespec tm = { 0 };
-
-  clock_gettime(CLOCK_MONOTONIC, &tm);
-
-  // Return a time of all 0 if the call fails
-  return tm;
-}
-
-/**
  * Get the smaller number that is bigger than <code>dividend</code> and is
  * N times of <code>divisor</code>.
  */
@@ -4079,19 +4102,35 @@ lceil_ntimes(long dividend, long divisor) {
 }
 
 /**
- * Calculate time for which the program should wait for events if vsync_sw is
- * enabled.
+ * Wait for events until next paint.
  *
- * @param timeout old timeout value, never negative!
- * @return time to wait, in struct timespec
+ * Optionally use refresh-rate based optimization to reduce painting.
+ *
+ * @param fd struct pollfd used for poll()
+ * @param timeout second timeout (fading timeout)
+ * @return > 0 if we get some events, 0 if timeout is reached, < 0 on
+ *     problems
  */
-static struct timespec
-vsync_sw_ntimeout(int timeout) {
+static int
+evpoll(struct pollfd *fd, int timeout) {
+  // Always wait infinitely if asked so, to minimize CPU usage
+  if (timeout < 0) {
+    int ret = poll(fd, 1, timeout);
+    // Reset fade_time so the fading steps during idling are not counted
+    fade_time = get_time_ms();
+    return ret;
+  }
+
+  // Just do a poll() if we are not using optimization
+  if (!opts.sw_opti)
+    return poll(fd, 1, timeout);
+
   // Convert the old timeout to struct timespec
   struct timespec next_paint_tmout = {
     .tv_sec = timeout / MS_PER_SEC,
     .tv_nsec = timeout % MS_PER_SEC * (NS_PER_SEC / MS_PER_SEC)
   };
+
   // Get the nanosecond offset of the time when the we reach the timeout
   // I don't think a 32-bit long could overflow here.
   long target_relative_offset = (next_paint_tmout.tv_nsec + get_time_timespec().tv_nsec - paint_tm_offset) % NS_PER_SEC;
@@ -4100,19 +4139,19 @@ vsync_sw_ntimeout(int timeout) {
 
   assert(target_relative_offset >= 0);
 
-  // If the target time is sufficiently close to a VSync time, don't add
+  // If the target time is sufficiently close to a refresh time, don't add
   // an offset, to avoid certain blocking conditions.
-  if ((target_relative_offset % NS_PER_SEC) < VSYNC_SW_TOLERANCE)
-    return next_paint_tmout;
+  if ((target_relative_offset % NS_PER_SEC) < SW_OPTI_TOLERANCE)
+    return poll(fd, 1, timeout);
 
-  // Add an offset so we wait until the next VSync after timeout
+  // Add an offset so we wait until the next refresh after timeout
   next_paint_tmout.tv_nsec += lceil_ntimes(target_relative_offset, refresh_intv) - target_relative_offset;
   if (next_paint_tmout.tv_nsec > NS_PER_SEC) {
     next_paint_tmout.tv_nsec -= NS_PER_SEC;
     ++next_paint_tmout.tv_sec;
   }
 
-  return next_paint_tmout;
+  return ppoll(fd, 1, &next_paint_tmout, NULL);
 }
 
 /**
@@ -4211,57 +4250,31 @@ vsync_opengl_wait(void) {
 #endif
 
 /**
- * Wait for next vsync and timeout unless new events appear.
- *
- * @param fd struct pollfd used for poll()
- * @param timeout second timeout (fading timeout)
- * @return > 0 if we get some events, 0 if timeout is reached, < 0 on
- *     problems
+ * Wait for next VSync.
  */
-static Bool
-vsync_wait(Display *dpy, struct pollfd *fd, int timeout) {
-  // Always wait infinitely if asked so, to minimize CPU usage
-  if (timeout < 0) {
-    int ret = poll(fd, 1, timeout);
-    // Reset fade_time so the fading steps during idling are not counted
-    fade_time = get_time_ms();
-    return ret;
-  }
-
+static void
+vsync_wait(void) {
   if (VSYNC_NONE == opts.vsync)
-    return poll(fd, 1, timeout);
-
-  // vsync_sw: Wait until the next sync right after next fading timeout
-  if (VSYNC_SW == opts.vsync) {
-    struct timespec new_tmout = vsync_sw_ntimeout(timeout);
-    // printf("ppoll(): %3ld:%09ld\n", new_tmout.tv_sec, new_tmout.tv_nsec);
-    return ppoll(fd, 1, &new_tmout, NULL);
-  }
+    return;
 
 #ifdef CONFIG_VSYNC_DRM
-  // vsync_drm: We are not accepting events when waiting for next sync,
-  // so I guess this would generate a latency of at most one frame. I'm
-  // not sure if it's possible to add some smart logic in vsync_drm_wait()
-  // to avoid this problem, unless I could find more documentation...
   if (VSYNC_DRM == opts.vsync) {
     vsync_drm_wait();
-    return 0;
+    return;
   }
 #endif
 
 #ifdef CONFIG_VSYNC_OPENGL
-  // vsync_opengl: Same one-frame-latency issue, well, not sure how to deal it
-  // here.
   if (VSYNC_OPENGL == opts.vsync) {
     vsync_opengl_wait();
-    return 0;
+    return;
   }
 #endif
 
   // This place should not reached!
   assert(0);
 
-  return 0;
+  return;
 }
 
 /**
@@ -4391,7 +4404,7 @@ main(int argc, char **argv) {
   }
 
   // Query X RandR
-  if (VSYNC_SW == opts.vsync && !opts.refresh_rate) {
+  if (opts.sw_opti && !opts.refresh_rate) {
     if (XRRQueryExtension(dpy, &randr_event, &randr_error))
       randr_exists = True;
     else
@@ -4429,9 +4442,12 @@ main(int argc, char **argv) {
 
   register_cm((VSYNC_OPENGL == opts.vsync));
 
-  // Initialize software/DRM/OpenGL VSync
-  if ((VSYNC_SW == opts.vsync && !vsync_sw_init())
-      || (VSYNC_DRM == opts.vsync && !vsync_drm_init())
+  // Initialize software optimization
+  if (opts.sw_opti)
+    opts.sw_opti = sw_opti_init();
+
+  // Initialize DRM/OpenGL VSync
+  if ((VSYNC_DRM == opts.vsync && !vsync_drm_init())
       || (VSYNC_OPENGL == opts.vsync && !vsync_opengl_init()))
     opts.vsync = VSYNC_NONE;
 
@@ -4513,11 +4529,7 @@ main(int argc, char **argv) {
   ufd.fd = ConnectionNumber(dpy);
   ufd.events = POLLIN;
 
-#ifdef DEBUG_REPAINT
-  struct timespec last_paint = get_time_timespec();
-#endif
-
-  if (VSYNC_SW == opts.vsync)
+  if (opts.sw_opti)
     paint_tm_offset = get_time_timespec().tv_nsec;
 
   reg_ignore_expire = True;
@@ -4534,7 +4546,7 @@ main(int argc, char **argv) {
     Bool ev_received = False;
 
     while (QLength(dpy)
-        || (vsync_wait(dpy, &ufd,
+        || (evpoll(&ufd,
             (ev_received ? 0: (idling ? -1: fade_timeout()))) > 0)) {
       XNextEvent(dpy, &ev);
       ev_handle((XEvent *) &ev);
@@ -4547,14 +4559,6 @@ main(int argc, char **argv) {
     t = paint_preprocess(dpy, list);
 
     if (all_damage && !is_region_empty(dpy, all_damage)) {
-#ifdef DEBUG_REPAINT
-      struct timespec now = get_time_timespec();
-      struct timespec diff = { 0 };
-      timespec_subtract(&diff, &now, &last_paint);
-      printf("[ %5ld:%09ld ] ", diff.tv_sec, diff.tv_nsec);
-      last_paint = now;
-#endif
-
       static int paint;
       paint_all(dpy, all_damage, t);
       reg_ignore_expire = False;
