@@ -784,6 +784,13 @@ win_match_once(win *w, const wincond *cond) {
       cond);
 #endif
 
+  if (InputOnly == w->a.class) {
+#ifdef DEBUG_WINMATCH
+  printf(": InputOnly\n");
+#endif
+    return false;
+  }
+
   // Determine the target
   target = NULL;
   switch (cond->target) {
@@ -1710,6 +1717,10 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   XFixesDestroyRegion(dpy, reg_tmp);
   XFixesDestroyRegion(dpy, reg_tmp2);
 
+  // Do this as early as possible
+  if (!opts.dbe)
+    XFixesSetPictureClipRegion(dpy, tgt_buffer, 0, 0, None);
+
   // Wait for VBlank
   vsync_wait();
 
@@ -1724,7 +1735,6 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   }
   // No-DBE painting mode
   else if (tgt_buffer != tgt_picture) {
-    XFixesSetPictureClipRegion(dpy, tgt_buffer, 0, 0, None);
     XRenderComposite(
       dpy, PictOpSrc, tgt_buffer, None,
       tgt_picture, 0, 0, 0, 0,
@@ -1819,7 +1829,8 @@ map_win(Display *dpy, Window id,
         Bool override_redirect) {
   win *w = find_win(dpy, id);
 
-  if (!w) return;
+  // Don't care about window mapping if it's an InputOnly window
+  if (!w || InputOnly == w->a.class) return;
 
   reg_ignore_expire = True;
 
@@ -3167,7 +3178,7 @@ ev_handle(XEvent *ev) {
         if (!w)
           w = find_toplevel(dpy, wid);
 
-        if (w->name)
+        if (w && w->name)
           window_name = w->name;
         else
           to_free = (Bool) wid_get_name(dpy, wid, &window_name);
@@ -3686,6 +3697,8 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
     parse_vsync(sval);
   // --alpha-step
   config_lookup_float(&cfg, "alpha-step", &opts.alpha_step);
+  // --dbe
+  lcfg_lookup_bool(&cfg, "dbe", &opts.dbe);
   // --paint-on-overlay
   lcfg_lookup_bool(&cfg, "paint-on-overlay", &opts.paint_on_overlay);
   // --sw-opti
