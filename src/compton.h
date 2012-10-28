@@ -740,10 +740,11 @@ presum_gaussian(conv *map);
 
 static XImage *
 make_shadow(Display *dpy, double opacity,
-            int width, int height);
+            int width, int height, Bool clear_shadow);
 
 static Picture
-shadow_picture(Display *dpy, double opacity, int width, int height);
+shadow_picture(Display *dpy, double opacity, int width, int height,
+    Bool clear_shadow);
 
 static Picture
 solid_picture(Display *dpy, Bool argb, double a,
@@ -921,6 +922,9 @@ set_focused(Display *dpy, win *w, Bool focused) {
 
 static void
 determine_fade(Display *dpy, win *w);
+
+static void
+win_update_shape(Display *dpy, win *w);
 
 static void
 determine_shadow(Display *dpy, win *w);

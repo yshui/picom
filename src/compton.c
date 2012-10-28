@@ -463,7 +463,7 @@ presum_gaussian(conv *map) {
 
 static XImage *
 make_shadow(Display *dpy, double opacity,
-            int width, int height) {
+            int width, int height, Bool clear_shadow) {
   XImage *ximage;
   unsigned char *data;
   int ylimit, xlimit;
@@ -500,8 +500,8 @@ make_shadow(Display *dpy, double opacity,
   // later will be filled) could entirely cover the area of the shadow
   // that will be displayed, do not bother filling other pixels. If it
   // can't, we must fill the other pixels here.
-  if (!(opts.clear_shadow && opts.shadow_offset_x <= 0 && opts.shadow_offset_x >= -cgsize
-        && opts.shadow_offset_y <= 0 && opts.shadow_offset_y >= -cgsize)) {
+  /* if (!(clear_shadow && opts.shadow_offset_x <= 0 && opts.shadow_offset_x >= -cgsize
+        && opts.shadow_offset_y <= 0 && opts.shadow_offset_y >= -cgsize)) { */
     if (cgsize > 0) {
       d = shadow_top[opacity_int * (cgsize + 1) + cgsize];
     } else {
@@ -509,7 +509,7 @@ make_shadow(Display *dpy, double opacity,
         opacity, center, center, width, height);
     }
     memset(data, d, sheight * swidth);
-  }
+  // }
 
   /*
    * corners
@@ -572,7 +572,9 @@ make_shadow(Display *dpy, double opacity,
     }
   }
 
-  if (opts.clear_shadow) {
+  assert(!clear_shadow);
+  /*
+  if (clear_shadow) {
     // Clear the region in the shadow that the window would cover based
     // on shadow_offset_{x,y} user provides
     int xstart = normalize_i_range(- (int) opts.shadow_offset_x, 0, swidth);
@@ -587,18 +589,20 @@ make_shadow(Display *dpy, double opacity,
       memset(&data[y * swidth + xstart], 0, xrange);
     }
   }
+  */
 
   return ximage;
 }
 
 static Picture
-shadow_picture(Display *dpy, double opacity, int width, int height) {
+shadow_picture(Display *dpy, double opacity, int width, int height,
+    Bool clear_shadow) {
   XImage *shadow_image = NULL;
   Pixmap shadow_pixmap = None, shadow_pixmap_argb = None;
   Picture shadow_picture = None, shadow_picture_argb = None;
   GC gc = None;
 
-  shadow_image = make_shadow(dpy, opacity, width, height);
+  shadow_image = make_shadow(dpy, opacity, width, height, clear_shadow);
   if (!shadow_image)
     return None;
 
@@ -1466,7 +1470,7 @@ paint_preprocess(Display *dpy, win *list) {
 
     if (w->shadow && !w->shadow_pict) {
       w->shadow_pict = shadow_picture(dpy, 1,
-          w->widthb, w->heightb);
+          w->widthb, w->heightb, False);
     }
 
     w->shadow_alpha_pict = get_alpha_pict_d(w->shadow_opacity);
@@ -1672,8 +1676,13 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
         XFixesIntersectRegion(dpy, reg_paint, reg_paint, w->extents);
       }
       else {
-        reg_paint = region;
+        reg_paint = reg_tmp;
+        XFixesIntersectRegion(dpy, reg_paint, region, w->extents);
       }
+      // Clear the shadow here instead of in make_shadow() for saving GPU
+      // power and handling shaped windows
+      if (opts.clear_shadow)
+        XFixesSubtractRegion(dpy, reg_paint, reg_paint, w->border_size);
 
       // Detect if the region is empty before painting
       if (region == reg_paint || !is_region_empty(dpy, reg_paint)) {
@@ -1885,11 +1894,7 @@ map_win(Display *dpy, Window id,
 #endif
 
   // Detect if the window is shaped or has rounded corners
-  if (opts.shadow_ignore_shaped) {
-    w->bounding_shaped = wid_bounding_shaped(dpy, w->id);
-    if (w->bounding_shaped && opts.detect_rounded_corners)
-      win_rounded_corners(dpy, w);
-  }
+  win_update_shape(dpy, w);
 
   // Get window name and class if we are tracking them
   if (opts.track_wdata) {
@@ -2142,6 +2147,30 @@ calc_dim(Display *dpy, win *w) {
 static void
 determine_fade(Display *dpy, win *w) {
   w->fade = opts.wintype_fade[w->window_type];
+}
+
+/**
+ * Update window-shape related information.
+ */
+static void
+win_update_shape(Display *dpy, win *w) {
+  if (shape_exists && (opts.shadow_ignore_shaped /* || opts.clear_shadow */)) {
+    // Bool bounding_shaped_old = w->bounding_shaped;
+
+    w->bounding_shaped = wid_bounding_shaped(dpy, w->id);
+    if (w->bounding_shaped && opts.detect_rounded_corners)
+      win_rounded_corners(dpy, w);
+
+    // Shadow state could be changed
+    determine_shadow(dpy, w);
+
+    /*
+    // If clear_shadow state on the window possibly changed, destroy the old
+    // shadow_pict
+    if (opts.clear_shadow && w->bounding_shaped != bounding_shaped_old)
+      free_picture(dpy, &w->shadow_pict);
+    */
+  }
 }
 
 /**
@@ -3130,14 +3159,7 @@ ev_shape_notify(XShapeEvent *ev) {
   }
 
   // Redo bounding shape detection and rounded corner detection
-  if (opts.shadow_ignore_shaped) {
-    w->bounding_shaped = wid_bounding_shaped(dpy, w->id);
-    if (w->bounding_shaped && opts.detect_rounded_corners)
-      win_rounded_corners(dpy, w);
-
-    // Shadow state could be changed
-    determine_shadow(dpy, w);
-  }
+  win_update_shape(dpy, w);
 }
 
 /**
