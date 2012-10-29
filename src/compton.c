@@ -220,21 +220,6 @@ static options_t opts = {
 unsigned long fade_time = 0;
 
 /**
- * Get current system clock in milliseconds.
- *
- * The return type must be unsigned long because so many milliseconds have
- * passed since the epoch.
- */
-static unsigned long
-get_time_ms() {
-  struct timeval tv;
-
-  gettimeofday(&tv, NULL);
-
-  return tv.tv_sec * 1000 + tv.tv_usec / 1000;
-}
-
-/**
  * Get the time left before next fading point.
  *
  * In milliseconds.
@@ -256,10 +241,8 @@ fade_timeout(void) {
  */
 static void
 run_fade(Display *dpy, win *w, unsigned steps) {
-  // If we reach target opacity, set fade_fin so the callback gets
-  // executed
+  // If we have reached target opacity, return
   if (w->opacity == w->opacity_tgt) {
-    w->fade_fin = True;
     return;
   }
 
@@ -278,15 +261,9 @@ run_fade(Display *dpy, win *w, unsigned steps) {
           w->opacity_tgt, OPAQUE);
   }
 
-  if (w->opacity == w->opacity_tgt) {
-    w->fade_fin = True;
-    return;
-  }
-  else {
+  if (w->opacity != w->opacity_tgt) {
     idling = False;
   }
-
-  w->fade_fin = False;
 }
 
 /**
@@ -2331,7 +2308,6 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->opacity_prop_client = OPAQUE;
   new->fade = False;
   new->fade_callback = NULL;
-  new->fade_fin = False;
   new->alpha_pict = None;
   new->frame_opacity = 1.0;
   new->frame_alpha_pict = None;
@@ -2743,7 +2719,7 @@ error(Display *dpy, XErrorEvent *ev) {
 }
 
 static void
-expose_root(Display *dpy, Window root, XRectangle *rects, int nrects) {
+expose_root(Display *dpy, XRectangle *rects, int nrects) {
   XserverRegion region = XFixesCreateRegion(dpy, rects, nrects);
   add_damage(dpy, region);
 }
@@ -3050,7 +3026,7 @@ ev_circulate_notify(XCirculateEvent *ev) {
 
 inline static void
 ev_expose(XExposeEvent *ev) {
-  if (ev->window == root) {
+  if (ev->window == root || (overlay && ev->window == overlay)) {
     int more = ev->count + 1;
     if (n_expose == size_expose) {
       if (expose_rects) {
@@ -3070,7 +3046,7 @@ ev_expose(XExposeEvent *ev) {
     n_expose++;
 
     if (ev->count == 0) {
-      expose_root(dpy, root, expose_rects, n_expose);
+      expose_root(dpy, expose_rects, n_expose);
       n_expose = 0;
     }
   }
@@ -3195,6 +3171,8 @@ ev_handle(XEvent *ev) {
     if (wid) {
       if (root == wid)
         window_name = "(Root window)";
+      else if (overlay == wid)
+        window_name = "(Overlay)";
       else {
         win *w = find_win(dpy, wid);
         if (!w)
@@ -4359,6 +4337,9 @@ init_overlay(void) {
     XFixesSetWindowShapeRegion(dpy, overlay, ShapeInput, 0, 0, region);
     XFixesDestroyRegion (dpy, region);
 
+    // Listen to Expose events on the overlay
+    XSelectInput(dpy, overlay, ExposureMask);
+
     // Retrieve DamageNotify on root window if we are painting on an
     // overlay
     // root_damage = XDamageCreate(dpy, root, XDamageReportNonEmpty);
@@ -4580,12 +4561,17 @@ main(int argc, char **argv) {
   while (1) {
     Bool ev_received = False;
 
-    while (QLength(dpy)
+    while (XEventsQueued(dpy, QueuedAfterReading)
         || (evpoll(&ufd,
             (ev_received ? 0: (idling ? -1: fade_timeout()))) > 0)) {
-      XNextEvent(dpy, &ev);
-      ev_handle((XEvent *) &ev);
-      ev_received = True;
+      // Sometimes poll() returns 1 but no events are actually read, causing
+      // XNextEvent() to block, I have no idea what's wrong, so we check for the
+      // number of events here
+      if (XEventsQueued(dpy, QueuedAfterReading)) {
+        XNextEvent(dpy, &ev);
+        ev_handle((XEvent *) &ev);
+        ev_received = True;
+      }
     }
 
     // idling will be turned off during paint_preprocess() if needed

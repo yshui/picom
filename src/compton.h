@@ -235,8 +235,6 @@ typedef struct _win {
   Bool fade;
   /// Callback to be called after fading completed.
   void (*fade_callback) (Display *dpy, struct _win *w);
-  /// Whether fading is finished.
-  Bool fade_fin;
 
   // Frame-opacity-related members
   /// Current window frame opacity. Affected by window opacity.
@@ -696,8 +694,20 @@ free_damage(Display *dpy, Damage *p) {
   }
 }
 
+/**
+ * Get current system clock in milliseconds.
+ *
+ * The return type must be unsigned long because so many milliseconds have
+ * passed since the epoch.
+ */
 static unsigned long
-get_time_ms(void);
+get_time_ms(void) {
+  struct timeval tv;
+
+  gettimeofday(&tv, NULL);
+
+  return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
 
 static int
 fade_timeout(void);
@@ -714,8 +724,7 @@ set_fade_callback(Display *dpy, win *w,
  */
 static inline void
 check_fade_fin(Display *dpy, win *w) {
-  if (w->fade_fin) {
-    w->fade_fin = False;
+  if (w->fade_callback && w->opacity == w->opacity_tgt) {
     // Must be the last line as the callback could destroy w!
     set_fade_callback(dpy, w, NULL, True);
   }
@@ -966,7 +975,7 @@ static int
 error(Display *dpy, XErrorEvent *ev);
 
 static void
-expose_root(Display *dpy, Window root, XRectangle *rects, int nrects);
+expose_root(Display *dpy, XRectangle *rects, int nrects);
 
 static Bool
 wid_get_text_prop(Display *dpy, Window wid, Atom prop,
