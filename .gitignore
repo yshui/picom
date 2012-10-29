@@ -23,7 +23,8 @@ release/
 _CPack_Packages/
 CMakeCache.txt
 CMakeFiles/
-*.cmake
+cmake_install.cmake
+CPackSourceConfig.cmake
 install_manifest.txt
 
 

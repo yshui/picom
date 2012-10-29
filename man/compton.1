@@ -1,76 +1,177 @@
 .ds q \N'34'
 .TH compton 1
+
 .SH NAME
 compton \- a compositor for X11
+
 .SH SYNOPSIS
-.nf
-.B compton [\-d display] [\-r radius] [\-o opacity] [\-l left-offset] [\-t top-offset] [\-i opacity] [\-e opacity] [\-cCfFSdG]
-.fi
+.B compton
+[\-d display] [\-r radius] [\-o opacity] [\-l left\-offset]
+[\-t top\-offset] [\-i opacity] [\-e opacity] [\-cCfFSdG]
+[\-\-config path] [\-\-shadow\-red value]
+[\-\-shadow\-green value] [\-\-shadow\-blue value]
+[\-\-inactive\-opacity\-override] [\-\-inactive\-dim value]
+[\-\-mark\-wmwin\-focused] [\-\-shadow\-exclude condition]
+[\-\-mark\-ovredir\-focused] [\-\-no\-fading\-openclose]
+[\-\-shadow\-ignore\-shaped] [\-\-detect\-round\-corners]
+
 .SH DESCRIPTION
 .B compton
 is a compositor based on Dana Jansens' version of xcompmgr (which itself was
 written by Keith Packard). It includes many improvements over the original
 xcompmgr, including window frame opacity, inactive window transparency,
 and shadows on argb windows.
+
+.SH EXAMPLE
+
+$ compton -cC -i 0.6 -e 0.6 -f
+
+$ compton --config ~/compton.conf
+
 .SH OPTIONS
 .TP
 .BI \-d\ display
-Specifies the display to manage.
+Which display should be managed.
 .TP
 .BI \-r\ radius
-Specifies the blur radius for client-side shadows.
+The blur radius for shadows. (default 12)
 .TP
 .BI \-o\ opacity
-Specifies the opacity for client-side shadows.
+The translucency for shadows. (default .75)
 .TP
-.BI \-l\ left-offset
-Specifies the left offset for client-side shadows.
+.BI \-l\ left\-offset
+The left offset for shadows. (default -15)
 .TP
-.BI \-t\ top-offset
-Specifies the top offset for client-side shadows.
+.BI \-t\ top\-offset
+The top offset for shadows. (default -15)
 .TP
-.BI \-I\ fade-in-step
-Specifies the opacity change between steps while fading in.
+.BI \-I\ fade\-in\-step
+Opacity change between steps while fading in. (default 0.028)
 .TP
-.BI \-O\ fade-out-step
-Specifies the opacity change between steps while fading out.
+.BI \-O\ fade\-out\-step
+Opacity change between steps while fading out. (default 0.03)
 .TP
-.BI \-D\ fade-delta
-Specifies the time (in milliseconds) between steps in a fade.
+.BI \-D\ fade\-delta\-time
+The time between steps in a fade in milliseconds. (default 10)
+.TP
+.BI \-m\ opacity
+The opacity for menus. (default 1.0)
 .TP
 .BI \-c
-Enable client-side shadows on windows.
-.TP
-.BI \-f
-When \-c is specified, enables a smooth fade effect for transient windows like
-menus, and for all windows on hide and restore events.
+Enabled client-side shadows on windows.
 .TP
 .BI \-C
-When \-c is specified, attempts to avoid painting shadows on panels and docks.
+Avoid drawing shadows on dock/panel windows.
 .TP
-.BI \-G
-When \-c is specified, attempts to avoid painting shadows on
-drag-and-drop windows.
+.BI \-z
+Zero the part of the shadow's mask behind the window (experimental).
+.TP
+.BI \-f
+Fade windows in/out when opening/closing and when opacity
+changes, unless --no-fading-openclose is used.
 .TP
 .BI \-F
-When \-f is specified, also enables the fade effect when windows change their
-opacity, as with transset(1).
-.TP
-.BI \-b
-Attempt to fork to background after registering compositor.
+Equals -f. Deprecated.
 .TP
 .BI \-i\ opacity
-Specifies inactive window transparency. (0.1 - 1.0)
+Opacity of inactive windows. (0.1 - 1.0)
 .TP
 .BI \-e\ opacity
-Specifies window frame transparency. (0.1 - 1.0)
+Opacity of window titlebars and borders. (0.1 - 1.0)
+.TP
+.BI \-G
+Don't draw shadows on DND windows
+.TP
+.BI \-b
+Daemonize/background process.
 .TP
 .BI \-S
-Enables synchronous operation.  Useful for debugging.
+Enable synchronous operation (for debugging).
+.TP
+.BI \-\-config\ path
+Look for configuration file at the path.
+.TP
+.BI \-\-shadow\-red\ value
+Red color value of shadow (0.0 - 1.0, defaults to 0).
+.TP
+.BI \-\-shadow\-green\ value
+Green color value of shadow (0.0 - 1.0, defaults to 0).
+.TP
+.BI \-\-shadow\-blue\ value
+Blue color value of shadow (0.0 - 1.0, defaults to 0).
+.TP
+.BI \-\-inactive\-opacity\-override
+Inactive opacity set by -i overrides value of _NET_WM_OPACITY.
+.TP
+.BI \-\-inactive\-dim\ value
+Dim inactive windows. (0.0 - 1.0, defaults to 0)
+.TP
+.BI \-\-mark\-wmwin\-focused
+Try to detect WM windows and mark them as active.
+.TP
+.BI \-\-shadow\-exclude\ condition
+Exclude conditions for shadows.
+.TP
+.BI \--mark\-ovredir\-focused
+Mark over-redirect windows as active.
+.TP
+.BI \-\-no\-fading\-openclose
+Do not fade on window open/close.
+.TP
+.BI \-\-shadow\-ignore\-shaped
+Do not paint shadows on shaped windows.
+.TP
+.BI \-\-detect\-rounded\-corners
+Try to detect windows with rounded corners and don't consider
+them shaped windows.
+.TP
+.BI Format\ of\ a\ condition:
+
+condition = <target>:<type>[<flags>]:<pattern>
+
+<target> is one of "n" (window name), "i" (window class
+instance), and "g" (window general class)
+
+<type> is one of "e" (exact match), "a" (match anywhere),
+"s" (match from start), "w" (wildcard), and "p" (PCRE
+regular expressions, if compiled with the support).
+
+<flags> could be a series of flags. Currently the only defined
+flag is "i" (ignore case).
+
+<pattern> is the actual pattern string.
+
+.SH CONFIGURATION
+(A more robust sample configuration file exists in the compton
+repository.)
+
+.B Example
+
+.B ~/compton.conf:
+
+    # Shadows
+    shadow = true;
+
+    # Opacity
+    inactive-opacity = 0.8;
+    frame-opacity = 0.7;
+
+    # Fades
+    fading = true;
+
+.B Run with:
+
+    $ compton --config ~/compton.conf
+
 .SH BUGS
 Please report any you find to https://github.com/chjj/compton.
+
 .SH AUTHORS
 xcompmgr, originally written by Keith Packard, with contributions from
 Matthew Allum, Eric Anholt, Dan Doel, Thomas Luebking, Matthew Hawn,
 Ely Levy, Phil Blundell, and Carl Worth.
-Compton by Christopher Jeffrey, based on Dana Jansens' original work.
+Compton by Christopher Jeffrey, based on Dana Jansens' original work,
+with numerous contributions from Richard Grenville.
+
+.SH SEE ALSO
+.BR compton-trans(1)
