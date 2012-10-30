@@ -1261,6 +1261,9 @@ border_size(Display *dpy, win *w) {
   border = XFixesCreateRegionFromWindow(
     dpy, w->id, WindowRegionBounding);
 
+  if (!border)
+    return None;
+
   /* translate this */
   XFixesTranslateRegion(dpy, border,
     w->a.x + w->a.border_width,
@@ -1607,10 +1610,6 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
     root_width, root_height);
 #endif
 
-#ifdef DEBUG_REPAINT
-  printf("paint:");
-#endif
-
   if (t && t->reg_ignore) {
     // Calculate the region upon which the root window is to be painted
     // based on the ignore region of the lowest window, if available
@@ -1631,10 +1630,6 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   reg_tmp2 = XFixesCreateRegion(dpy, NULL, 0);
 
   for (w = t; w; w = w->prev_trans) {
-#ifdef DEBUG_REPAINT
-    printf(" %#010lx", w->id);
-#endif
-
     // Painting shadow
     if (w->shadow) {
       // Shadow is to be painted based on the ignore region of current
@@ -1694,10 +1689,6 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
     check_fade_fin(dpy, w);
   }
 
-#ifdef DEBUG_REPAINT
-  printf("\n");
-#endif
-
   // Free up all temporary regions
   XFixesDestroyRegion(dpy, region);
   XFixesDestroyRegion(dpy, reg_tmp);
@@ -1730,16 +1721,18 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   XFlush(dpy);
 
 #ifdef DEBUG_REPAINT
-  // It prints the timestamp in the wrong line, but...
   print_timestamp();
   struct timespec now = get_time_timespec();
   struct timespec diff = { 0 };
   timespec_subtract(&diff, &now, &last_paint);
   printf("[ %5ld:%09ld ] ", diff.tv_sec, diff.tv_nsec);
   last_paint = now;
+  printf("paint:");
+  for (w = t; w; w = w->prev_trans)
+    printf(" %#010lx", w->id);
+  putchar('\n');
   fflush(stdout);
 #endif
-
 }
 
 static void
@@ -2403,20 +2396,22 @@ restack_win(Display *dpy, win *w, Window new_above) {
 
 static void
 configure_win(Display *dpy, XConfigureEvent *ce) {
+  if (ce->window == root) {
+    if (tgt_buffer) {
+      XRenderFreePicture(dpy, tgt_buffer);
+      tgt_buffer = None;
+    }
+    root_width = ce->width;
+    root_height = ce->height;
+
+    return;
+  }
+
   win *w = find_win(dpy, ce->window);
   XserverRegion damage = None;
 
-  if (!w) {
-    if (ce->window == root) {
-      if (tgt_buffer) {
-        XRenderFreePicture(dpy, tgt_buffer);
-        tgt_buffer = None;
-      }
-      root_width = ce->width;
-      root_height = ce->height;
-    }
+  if (!w)
     return;
-  }
 
   if (w->a.map_state == IsUnmapped) {
     /* save the configure event for when the window maps */
