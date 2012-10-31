@@ -1324,6 +1324,9 @@ get_frame_extents(Display *dpy, win *w, Window client) {
       w->right_width = extents[1];
       w->top_width = extents[2];
       w->bottom_width = extents[3];
+
+      if (opts.frame_opacity)
+        update_reg_ignore_expire(w);
     }
     XFree(data);
   }
@@ -1353,6 +1356,9 @@ paint_preprocess(Display *dpy, win *list) {
   XserverRegion last_reg_ignore = None;
 
   for (w = list; w; w = next) {
+    Bool to_paint = True;
+    const winmode mode_old = w->mode;
+
     // In case calling the fade callback function destroys this window
     next = w->next;
     opacity_t opacity_old = w->opacity;
@@ -1361,133 +1367,148 @@ paint_preprocess(Display *dpy, win *list) {
     if (reg_ignore_expire)
       free_region(dpy, &w->reg_ignore);
 
-#if CAN_DO_USABLE
-    if (!w->usable) continue;
-#endif
-
     // Run fading
     run_fade(dpy, w, steps);
 
-    // Give up if it's not damaged or invisible
+    // Give up if it's not damaged or invisible, or it's unmapped and its
+    // picture is gone (for example due to a ConfigureNotify)
     if (!w->damaged
         || w->a.x + w->a.width < 1 || w->a.y + w->a.height < 1
-        || w->a.x >= root_width || w->a.y >= root_height) {
-      check_fade_fin(dpy, w);
-      continue;
+        || w->a.x >= root_width || w->a.y >= root_height
+        || (IsUnmapped == w->a.map_state && !w->picture)) {
+      to_paint = False;
     }
 
-    // If opacity changes
-    if (w->opacity != opacity_old) {
-      determine_mode(dpy, w);
-      add_damage_win(dpy, w);
-    }
-
-    w->alpha_pict = get_alpha_pict_o(w->opacity);
-
-    // End the game if we are using the 0 opacity alpha_pict
-    if (w->alpha_pict == alpha_picts[0]) {
-      check_fade_fin(dpy, w);
-      continue;
-    }
-
-    // Fetch the picture and pixmap if needed
-    if (!w->picture) {
-      XRenderPictureAttributes pa;
-      XRenderPictFormat *format;
-      Drawable draw = w->id;
-
-      if (has_name_pixmap && !w->pixmap) {
-        set_ignore(dpy, NextRequest(dpy));
-        w->pixmap = XCompositeNameWindowPixmap(dpy, w->id);
-      }
-      if (w->pixmap) draw = w->pixmap;
-
-      format = XRenderFindVisualFormat(dpy, w->a.visual);
-      pa.subwindow_mode = IncludeInferiors;
-      w->picture = XRenderCreatePicture(
-        dpy, draw, format, CPSubwindowMode, &pa);
-    }
-
-    // Fetch bounding region and extents if needed
-    if (!w->border_size) {
-      w->border_size = border_size(dpy, w);
-    }
-
-    if (!w->extents) {
-      w->extents = win_extents(dpy, w);
-      // If w->extents does not exist, the previous add_damage_win()
-      // call when opacity changes has no effect, so redo it here.
-      if (w->opacity != opacity_old)
+    if (to_paint) {
+      // If opacity changes
+      if (w->opacity != opacity_old) {
+        determine_mode(dpy, w);
         add_damage_win(dpy, w);
-    }
-
-    // Calculate frame_opacity
-    {
-      double frame_opacity_old = w->frame_opacity;
-
-      if (opts.frame_opacity && 1.0 != opts.frame_opacity
-          && w->top_width)
-        w->frame_opacity = get_opacity_percent(dpy, w) *
-          opts.frame_opacity;
-      else
-        w->frame_opacity = 0.0;
-
-      if ((0.0 == frame_opacity_old) != (0.0 == w->frame_opacity))
-        reg_ignore_expire = True;
-    }
-
-    w->frame_alpha_pict = get_alpha_pict_d(w->frame_opacity);
-
-    // Calculate shadow opacity
-    if (w->frame_opacity)
-      w->shadow_opacity = opts.shadow_opacity * w->frame_opacity;
-    else
-      w->shadow_opacity = opts.shadow_opacity * get_opacity_percent(dpy, w);
-
-    // Rebuild shadow_pict if necessary
-    if (w->flags & WFLAG_SIZE_CHANGE)
-      free_picture(dpy, &w->shadow_pict);
-
-    if (w->shadow && !w->shadow_pict) {
-      w->shadow_pict = shadow_picture(dpy, 1,
-          w->widthb, w->heightb, False);
-    }
-
-    w->shadow_alpha_pict = get_alpha_pict_d(w->shadow_opacity);
-
-    // Generate ignore region for painting to reduce GPU load
-    if (reg_ignore_expire) {
-      free_region(dpy, &w->reg_ignore);
-
-      // If the window is solid, we add the window region to the
-      // ignored region
-      if (WINDOW_SOLID == w->mode) {
-        if (!w->frame_opacity)
-          w->reg_ignore = win_get_region(dpy, w);
-        else
-          w->reg_ignore = win_get_region_noframe(dpy, w);
-
-        XFixesIntersectRegion(dpy, w->reg_ignore, w->reg_ignore,
-            w->border_size);
-
-        if (last_reg_ignore)
-          XFixesUnionRegion(dpy, w->reg_ignore, w->reg_ignore,
-              last_reg_ignore);
       }
-      // Otherwise we copy the last region over
-      else if (last_reg_ignore)
-        w->reg_ignore = copy_region(dpy, last_reg_ignore);
-      else
-        w->reg_ignore = None;
+
+      w->alpha_pict = get_alpha_pict_o(w->opacity);
+
+      // End the game if we are using the 0 opacity alpha_pict
+      if (w->alpha_pict == alpha_picts[0]) {
+        to_paint = False;
+      }
     }
 
-    last_reg_ignore = w->reg_ignore;
+    if (to_paint) {
+      // Fetch the picture and pixmap if needed
+      if (!w->picture) {
+        XRenderPictureAttributes pa;
+        XRenderPictFormat *format;
+        Drawable draw = w->id;
 
-    // Reset flags
-    w->flags = 0;
+        if (has_name_pixmap && !w->pixmap) {
+          set_ignore(dpy, NextRequest(dpy));
+          w->pixmap = XCompositeNameWindowPixmap(dpy, w->id);
+        }
+        if (w->pixmap) draw = w->pixmap;
 
-    w->prev_trans = t;
-    t = w;
+        format = XRenderFindVisualFormat(dpy, w->a.visual);
+        pa.subwindow_mode = IncludeInferiors;
+        w->picture = XRenderCreatePicture(
+          dpy, draw, format, CPSubwindowMode, &pa);
+      }
+
+      // Fetch bounding region and extents if needed
+      if (!w->border_size) {
+        w->border_size = border_size(dpy, w);
+      }
+
+      if (!w->extents) {
+        w->extents = win_extents(dpy, w);
+        // If w->extents does not exist, the previous add_damage_win()
+        // call when opacity changes has no effect, so redo it here.
+        if (w->opacity != opacity_old)
+          add_damage_win(dpy, w);
+      }
+
+      // Calculate frame_opacity
+      {
+        double frame_opacity_old = w->frame_opacity;
+
+        if (opts.frame_opacity && 1.0 != opts.frame_opacity
+            && win_has_frame(w))
+          w->frame_opacity = get_opacity_percent(dpy, w) *
+            opts.frame_opacity;
+        else
+          w->frame_opacity = 0.0;
+
+        if (w->to_paint && WINDOW_SOLID == mode_old
+            && (0.0 == frame_opacity_old) != (0.0 == w->frame_opacity))
+          reg_ignore_expire = True;
+      }
+
+      w->frame_alpha_pict = get_alpha_pict_d(w->frame_opacity);
+
+      // Calculate shadow opacity
+      if (w->frame_opacity)
+        w->shadow_opacity = opts.shadow_opacity * w->frame_opacity;
+      else
+        w->shadow_opacity = opts.shadow_opacity * get_opacity_percent(dpy, w);
+
+      // Rebuild shadow_pict if necessary
+      if (w->flags & WFLAG_SIZE_CHANGE)
+        free_picture(dpy, &w->shadow_pict);
+
+      if (w->shadow && !w->shadow_pict) {
+        w->shadow_pict = shadow_picture(dpy, 1,
+            w->widthb, w->heightb, False);
+      }
+
+      w->shadow_alpha_pict = get_alpha_pict_d(w->shadow_opacity);
+    }
+
+    if ((to_paint && WINDOW_SOLID == w->mode)
+        != (w->to_paint && WINDOW_SOLID == mode_old))
+      reg_ignore_expire = True;
+
+    if (to_paint) {
+      // Generate ignore region for painting to reduce GPU load
+      if (reg_ignore_expire || !w->to_paint) {
+        free_region(dpy, &w->reg_ignore);
+
+        // If the window is solid, we add the window region to the
+        // ignored region
+        if (WINDOW_SOLID == w->mode) {
+          if (!w->frame_opacity)
+            w->reg_ignore = win_get_region(dpy, w);
+          else
+            w->reg_ignore = win_get_region_noframe(dpy, w);
+
+          XFixesIntersectRegion(dpy, w->reg_ignore, w->reg_ignore,
+              w->border_size);
+
+          if (last_reg_ignore)
+            XFixesUnionRegion(dpy, w->reg_ignore, w->reg_ignore,
+                last_reg_ignore);
+        }
+        // Otherwise we copy the last region over
+        else if (last_reg_ignore)
+          w->reg_ignore = copy_region(dpy, last_reg_ignore);
+        else
+          w->reg_ignore = None;
+      }
+
+      last_reg_ignore = w->reg_ignore;
+
+      // Reset flags
+      w->flags = 0;
+    }
+
+
+    if (to_paint) {
+      w->prev_trans = t;
+      t = w;
+    }
+    else {
+      check_fade_fin(dpy, w);
+    }
+
+    w->to_paint = to_paint;
   }
 
   return t;
@@ -1811,8 +1832,6 @@ map_win(Display *dpy, Window id,
   // Don't care about window mapping if it's an InputOnly window
   if (!w || InputOnly == w->a.class) return;
 
-  reg_ignore_expire = True;
-
   w->focused = False;
   w->a.map_state = IsViewable;
 
@@ -1892,9 +1911,6 @@ map_win(Display *dpy, Window id,
   // shadow
   determine_shadow(dpy, w);
 
-  // Determine mode here just in case the colormap changes
-  determine_mode(dpy, w);
-
   // Fading in
   calc_opacity(dpy, w, True);
 
@@ -1912,10 +1928,6 @@ map_win(Display *dpy, Window id,
 
   calc_dim(dpy, w);
 
-#if CAN_DO_USABLE
-  w->damage_bounds.x = w->damage_bounds.y = 0;
-  w->damage_bounds.width = w->damage_bounds.height = 0;
-#endif
   w->damaged = 1;
 
 
@@ -1936,9 +1948,8 @@ finish_map_win(Display *dpy, win *w) {
 static void
 finish_unmap_win(Display *dpy, win *w) {
   w->damaged = 0;
-#if CAN_DO_USABLE
-  w->usable = False;
-#endif
+
+  update_reg_ignore_expire(w);
 
   if (w->extents != None) {
     /* destroys region */
@@ -1947,7 +1958,6 @@ finish_unmap_win(Display *dpy, win *w) {
   }
 
   free_pixmap(dpy, &w->pixmap);
-
   free_picture(dpy, &w->picture);
   free_region(dpy, &w->border_size);
   free_picture(dpy, &w->shadow_pict);
@@ -1963,8 +1973,6 @@ unmap_win(Display *dpy, Window id, Bool fade) {
   win *w = find_win(dpy, id);
 
   if (!w) return;
-
-  reg_ignore_expire = True;
 
   w->a.map_state = IsUnmapped;
 
@@ -2012,7 +2020,7 @@ get_opacity_percent(Display *dpy, win *w) {
 
 static void
 determine_mode(Display *dpy, win *w) {
-  int mode;
+  winmode mode;
   XRenderPictFormat *format;
 
   /* if trans prop == -1 fall back on previous tests */
@@ -2031,11 +2039,6 @@ determine_mode(Display *dpy, win *w) {
   } else {
     mode = WINDOW_SOLID;
   }
-
-  // Expire reg_ignore if the window mode changes from solid to not, or
-  // vice versa
-  if ((WINDOW_SOLID == mode) != (WINDOW_SOLID == w->mode))
-    reg_ignore_expire = True;
 
   w->mode = mode;
 }
@@ -2261,9 +2264,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   }
 
   new->damaged = 0;
-#if CAN_DO_USABLE
-  new->usable = False;
-#endif
+  new->to_paint = False;
   new->pixmap = None;
   new->picture = None;
 
@@ -2309,6 +2310,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->destroyed = False;
   new->need_configure = False;
   new->window_type = WINTYPE_UNKNOWN;
+  new->mode = WINDOW_TRANS;
 
   new->prev_trans = NULL;
 
@@ -2423,18 +2425,15 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
       restack_win(dpy, w, ce->above);
     }
 
+    // Windows restack (including window restacks happened when this
+    // window is not mapped) could mess up all reg_ignore
     reg_ignore_expire = True;
 
     w->need_configure = False;
 
-#if CAN_DO_USABLE
-    if (w->usable)
-#endif
-    {
-      damage = XFixesCreateRegion(dpy, 0, 0);
-      if (w->extents != None) {
-        XFixesCopyRegion(dpy, damage, w->extents);
-      }
+    damage = XFixesCreateRegion(dpy, 0, 0);
+    if (w->extents != None) {
+      XFixesCopyRegion(dpy, damage, w->extents);
     }
 
     w->a.x = ce->x;
@@ -2555,46 +2554,7 @@ damage_win(Display *dpy, XDamageNotifyEvent *de) {
 
   if (!w) return;
 
-#if CAN_DO_USABLE
-  if (!w->usable) {
-    if (w->damage_bounds.width == 0 || w->damage_bounds.height == 0) {
-      w->damage_bounds = de->area;
-    } else {
-      if (de->area.x < w->damage_bounds.x) {
-        w->damage_bounds.width += (w->damage_bounds.x - de->area.x);
-        w->damage_bounds.x = de->area.x;
-      }
-      if (de->area.y < w->damage_bounds.y) {
-        w->damage_bounds.height += (w->damage_bounds.y - de->area.y);
-        w->damage_bounds.y = de->area.y;
-      }
-      if (de->area.x + de->area.width
-          > w->damage_bounds.x + w->damage_bounds.width) {
-        w->damage_bounds.width =
-          de->area.x + de->area.width - w->damage_bounds.x;
-      }
-      if (de->area.y + de->area.height
-          > w->damage_bounds.y + w->damage_bounds.height) {
-        w->damage_bounds.height =
-          de->area.y + de->area.height - w->damage_bounds.y;
-      }
-    }
-
-    if (w->damage_bounds.x <= 0
-        && w->damage_bounds.y <= 0
-        && w->a.width <= w->damage_bounds.x + w->damage_bounds.width
-        && w->a.height <= w->damage_bounds.y + w->damage_bounds.height) {
-      if (opts.wintype_fade[w->window_type]) {
-        set_fade(dpy, w, 0, get_opacity_percent(dpy, w),
-                 opts.fade_in_step, 0, True, True);
-      }
-      w->usable = True;
-    }
-  }
-
-  if (w->usable)
-#endif
-    repair_win(dpy, w);
+  repair_win(dpy, w);
 }
 
 static int
@@ -3111,7 +3071,7 @@ ev_damage_notify(XDamageNotifyEvent *ev) {
 inline static void
 ev_shape_notify(XShapeEvent *ev) {
   win *w = find_win(dpy, ev->window);
-  if (!w) return;
+  if (!w || IsUnmapped == w->a.map_state) return;
 
   /*
    * Empty border_size may indicated an

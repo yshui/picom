@@ -6,8 +6,6 @@
 
 // === Options ===
 
-#define CAN_DO_USABLE 0
-
 // Debug options, enable them using -D in CFLAGS
 // #define DEBUG_REPAINT 1
 // #define DEBUG_EVENTS 1
@@ -106,10 +104,6 @@ extern struct timeval time_start;
 #define OPAQUE 0xffffffff
 #define REGISTER_PROP "_NET_WM_CM_S"
 
-#define WINDOW_SOLID 0
-#define WINDOW_TRANS 1
-#define WINDOW_ARGB 2
-
 #define FADE_DELTA_TOLERANCE 0.2
 #define SW_OPTI_TOLERANCE 1000
 
@@ -146,6 +140,12 @@ typedef enum {
   WINTYPE_DND,
   NUM_WINTYPES
 } wintype;
+
+typedef enum {
+  WINDOW_SOLID,
+  WINDOW_TRANS,
+  WINDOW_ARGB
+} winmode;
 
 typedef struct _ignore {
   struct _ignore *next;
@@ -186,11 +186,7 @@ typedef struct _win {
   Window client_win;
   Pixmap pixmap;
   XWindowAttributes a;
-#if CAN_DO_USABLE
-  Bool usable; /* mapped and all damaged at one point */
-  XRectangle damage_bounds; /* bounds of damage */
-#endif
-  int mode;
+  winmode mode;
   int damaged;
   Damage damage;
   Picture picture;
@@ -207,6 +203,8 @@ typedef struct _win {
   Bool bounding_shaped;
   /// Whether the window just have rounded corners.
   Bool rounded_corners;
+  /// Whether this window is to be painted
+  Bool to_paint;
 
   // Blacklist related members
   char *name;
@@ -393,6 +391,7 @@ extern int root_height, root_width;
 extern Atom atom_client_attr;
 extern Bool idling;
 extern Bool shape_exists;
+extern Bool reg_ignore_expire;
 
 /**
  * Functions
@@ -828,6 +827,18 @@ wid_bounding_shaped(Display *dpy, Window wid) {
   }
   
   return False;
+}
+
+static inline void
+update_reg_ignore_expire(const win *w) {
+  if (w->to_paint && WINDOW_SOLID == w->mode)
+    reg_ignore_expire = True;
+}
+
+static inline bool
+win_has_frame(const win *w) {
+  return w->top_width || w->left_width || w->right_width
+    || w->bottom_width;
 }
 
 static void
