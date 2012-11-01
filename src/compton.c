@@ -1194,12 +1194,15 @@ static XserverRegion
 win_get_region_noframe(Display *dpy, win *w) {
   XRectangle r;
 
-  r.x = w->a.x + w->left_width;
-  r.y = w->a.y + w->top_width;
-  r.width = w->a.width;
-  r.height = w->a.height;
+  r.x = w->a.x + w->a.border_width + w->left_width;
+  r.y = w->a.y + w->a.border_width + w->top_width;
+  r.width = max_i(w->a.width - w->left_width - w->right_width, 0);
+  r.height = max_i(w->a.height - w->top_width - w->bottom_width, 0);
 
-  return XFixesCreateRegion(dpy, &r, 1);
+  if (r.width > 0 && r.height > 0)
+    return XFixesCreateRegion(dpy, &r, 1);
+  else
+    return XFixesCreateRegion(dpy, NULL, 0);
 }
 
 /**
@@ -1249,28 +1252,38 @@ win_extents(Display *dpy, win *w) {
 
 static XserverRegion
 border_size(Display *dpy, win *w) {
-  XserverRegion border;
+  // Start with the window rectangular region
+  XserverRegion fin = win_get_region(dpy, w);
 
-  /*
-   * if window doesn't exist anymore,  this will generate an error
-   * as well as not generate a region.  Perhaps a better XFixes
-   * architecture would be to have a request that copies instead
-   * of creates, that way you'd just end up with an empty region
-   * instead of an invalid XID.
-   */
+  // Only request for a bounding region if the window is shaped
+  if (w->bounding_shaped) {
+    /*
+     * if window doesn't exist anymore,  this will generate an error
+     * as well as not generate a region.  Perhaps a better XFixes
+     * architecture would be to have a request that copies instead
+     * of creates, that way you'd just end up with an empty region
+     * instead of an invalid XID.
+     */
 
-  border = XFixesCreateRegionFromWindow(
-    dpy, w->id, WindowRegionBounding);
+    XserverRegion border = XFixesCreateRegionFromWindow(
+      dpy, w->id, WindowRegionBounding);
 
-  if (!border)
-    return None;
+    if (!border)
+      return fin;
 
-  /* translate this */
-  XFixesTranslateRegion(dpy, border,
-    w->a.x + w->a.border_width,
-    w->a.y + w->a.border_width);
+    // Translate the region to the correct place
+    XFixesTranslateRegion(dpy, border,
+      w->a.x + w->a.border_width,
+      w->a.y + w->a.border_width);
 
-  return border;
+    // Intersect the bounding region we got with the window rectangle, to
+    // make sure the bounding region is not bigger than the window
+    // rectangle
+    XFixesIntersectRegion(dpy, fin, fin, border);
+    XFixesDestroyRegion(dpy, border);
+  }
+
+  return fin;
 }
 
 static Window
@@ -1484,14 +1497,18 @@ paint_preprocess(Display *dpy, win *list) {
         // If the window is solid, we add the window region to the
         // ignored region
         if (WINDOW_SOLID == w->mode) {
-          if (!w->frame_opacity)
-            w->reg_ignore = win_get_region(dpy, w);
-          else
+          if (!w->frame_opacity) {
+            if (w->border_size)
+              w->reg_ignore = copy_region(dpy, w->border_size);
+            else
+              w->reg_ignore = win_get_region(dpy, w);
+          }
+          else {
             w->reg_ignore = win_get_region_noframe(dpy, w);
-
-          if (w->border_size)
-            XFixesIntersectRegion(dpy, w->reg_ignore, w->reg_ignore,
-                w->border_size);
+            if (w->border_size)
+              XFixesIntersectRegion(dpy, w->reg_ignore, w->reg_ignore,
+                  w->border_size);
+          }
 
           if (last_reg_ignore)
             XFixesUnionRegion(dpy, w->reg_ignore, w->reg_ignore,
@@ -1555,32 +1572,58 @@ win_paint_win(Display *dpy, win *w, Picture tgt_buffer) {
         tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
   }
   else {
-    unsigned int t = w->top_width;
-    unsigned int l = w->left_width;
-    unsigned int b = w->bottom_width;
-    unsigned int r = w->right_width;
+    int t = w->top_width;
+    int l = w->left_width;
+    int b = w->bottom_width;
+    int r = w->right_width;
+
+#define COMP_BDR(cx, cy, cwid, chei) \
+    XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict, \
+        tgt_buffer, (cx), (cy), 0, 0, x + (cx), y + (cy), (cwid), (chei))
+
+    // The following complicated logic is requried because some broken
+    // window managers (I'm talking about you, Openbox!) that makes
+    // top_width + bottom_width > height in some cases.
 
     // top
-    XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
-        tgt_buffer, 0, 0, 0, 0, x, y, wid, t);
+    COMP_BDR(0, 0, wid, min_i(t, hei));
 
-    // left
-    XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
-        tgt_buffer, 0, t, 0, t, x, y + t, l, hei - t);
+    if (hei > t) {
+      int phei = min_i(hei - t, b);
 
-    // bottom
-    XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
-        tgt_buffer, l, hei - b, l, hei - b, x + l, y + hei - b, wid - l - r, b);
+      // bottom
+      if (phei) {
+        assert(phei > 0);
+        COMP_BDR(0, hei - phei, wid, phei);
 
-    // right
-    XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict,
-        tgt_buffer, wid - r, t, wid - r, t, x + wid - r, y + t, r, hei - t);
+        phei = hei - t - phei;
+        if (phei) {
+          assert(phei > 0);
+          // left
+          COMP_BDR(0, t, min_i(l, wid), phei);
 
-    // body
-    XRenderComposite(dpy, op, w->picture, alpha_mask, tgt_buffer,
-      l, t, l, t, x + l, y + t, wid - l - r, hei - t - b);
+          if (wid > l) {
+            int pwid = min_i(wid - l, r);
 
+            if (pwid) {
+              assert(pwid > 0);
+              // right
+              COMP_BDR(wid - pwid, t, pwid, phei);
+
+              pwid = wid - l - pwid;
+              if (pwid)
+                assert(pwid > 0);
+                // body
+                XRenderComposite(dpy, op, w->picture, alpha_mask,
+                    tgt_buffer, l, t, 0, 0, x + l, y + t, pwid, phei);
+            }
+          }
+        }
+      }
+    }
   }
+
+#undef COMP_BDR
 
   // Dimming the window if needed
   if (w->dim) {
