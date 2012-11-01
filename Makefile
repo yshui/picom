@@ -52,6 +52,12 @@ OBJS = compton.o
 compton: $(OBJS)
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 
+docs:
+	# HTML documentation
+	asciidoc man/compton.1.asciidoc
+	# man page
+	a2x --format manpage man/compton.1.asciidoc
+
 install: compton
 	@install -Dm755 compton "$(DESTDIR)$(BINDIR)"/compton
 	@install -Dm755 bin/compton-trans "$(DESTDIR)$(BINDIR)"/compton-trans

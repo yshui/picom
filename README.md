@@ -55,6 +55,7 @@ __R__ for runtime
 * libconfig (B,R) (Will probably be made optional soon)
 * libdrm (B) (Will probably be made optional soon)
 * libGL (B,R) (Will probably be made optional soon)
+* asciidoc (B) (if you wish to run `make docs`)
 
 To build, make sure you have the above dependencies:
 

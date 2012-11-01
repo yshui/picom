@@ -37,3 +37,4 @@ core
 oprofile_data
 compton.plist
 callgrind.out.*
+man/*.html

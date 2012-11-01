@@ -1,0 +1,215 @@
+compton(1)
+==========
+:doctype:		manpage
+:man source:	compton
+:man version:	nightly-20121101
+:man manual:	LOCAL USER COMMANDS
+
+NAME
+----
+compton - a compositor for X11
+
+SYNOPSIS
+--------
+*compton* ['OPTIONS']
+
+WARNING
+-------
+This man page may be less up-to-date than the usage text in compton.
+
+DESCRIPTION
+-----------
+compton is a compositor based on Dana Jansens' version of xcompmgr (which itself was written by Keith Packard). It includes some improvements over the original xcompmgr, like window frame opacity and inactive window transparency.
+
+OPTIONS
+-------
+*-d* 'DISPLAY'::
+	Display to be managed.
+
+*-r* 'RADIUS'::
+	The blur radius for shadows, in pixels. (defaults to 12)
+
+*-o* 'OPACITY'::
+	The opacity of shadows. (0.0 - 1.0, defaults to 0.75)
+
+*-l* 'OFFSET'::
+	The left offset for shadows, in pixels. (defaults to -15)
+
+*-t* 'OFFSET'::
+	The top offset for shadows, in pixels. (defaults to -15)
+
+*-I* 'OPACITY_STEP'::
+	Opacity change between steps while fading in. (0.01 - 1.0, defaults to 0.028)
+
+*-O* 'OPACITY_STEP'::
+	Opacity change between steps while fading out. (0.01 - 1.0, defaults to 0.03)
+
+*-D* 'MILLISECONDS'::
+	The time between steps in fade step, in milliseconds. (> 0, defaults to 10)
+
+*-m* 'OPACITY'::
+	Default opacity for dropdown menus and popup menus. (0.0 - 1.0, defaults to 1.0)
+
+*-c*::
+	Enabled client-side shadows on windows. Note desktop windows (windows with '_NET_WM_WINDOW_TYPE_DESKTOP') never get shadow.
+
+*-C*::
+	Avoid drawing shadows on dock/panel windows.
+
+*-z*::
+	Zero the part of the shadow's mask behind the window. Note this may not work properly on ARGB windows with fully transparent areas.
+
+*-f*::
+	Fade windows in/out when opening/closing and when opacity changes, unless *--no-fading-openclose* is used.
+
+*-F*::
+	Equals *-f*. Deprecated.
+
+*-i* 'OPACITY'::
+	Opacity of inactive windows. (0.1 - 1.0, disabled by default)
+
+*-e* 'OPACITY'::
+	Opacity of window titlebars and borders. (0.1 - 1.0, disabled by default)
+
+*-G*::
+	Don't draw shadows on drag-and-drop windows.
+
+*-b*::
+	Daemonize process. Fork to background after initialization.
+
+*-S*::
+	Enable synchronous X operation (for debugging).
+
+*--config* 'PATH'::
+	Look for configuration file at the path. See *CONFIGURATION FILES* section below for where compton looks for a configuration file by default.
+
+*--shadow-red* 'VALUE'::
+	Red color value of shadow (0.0 - 1.0, defaults to 0).
+
+*--shadow-green* 'VALUE'::
+	Green color value of shadow (0.0 - 1.0, defaults to 0).
+
+*--shadow-blue* 'VALUE'::
+	Blue color value of shadow (0.0 - 1.0, defaults to 0).
+
+*--inactive-opacity-override*::
+	Let inactive opacity set by *-i* overrides the windows' '_NET_WM_OPACITY' values.
+
+*--inactive-dim* value::
+	Dim inactive windows. (0.0 - 1.0, defaults to 0.0)
+
+*--mark-wmwin-focused*::
+	Try to detect WM windows and mark them as active.
+
+*--no-fading-openclose*::
+	Do not fade on window open/close.
+
+*--shadow-ignore-shaped*::
+	Do not paint shadows on shaped windows. Note shaped windows here means windows setting its shape through X Shape extension. Those using ARGB background is beyond our control.
+
+*--detect-rounded-corners*::
+	Try to detect windows with rounded corners and don't consider them shaped windows. The accuracy is not very high, unfortunately.
+
+*--detect-client-opacity*::
+	Detect '_NET_WM_OPACITY' on client windows, useful for window managers not passing '_NET_WM_OPACITY' of client windows to frame windows.
+
+*--refresh-rate* 'REFRESH_RATE'::
+	Specify refresh rate of the screen. If not specified or 0, compton will try detecting this with X RandR extension.
+
+*--vsync* 'VSYNC_METHOD'::
+	Set VSync method. There are 2 VSync methods currently available:
++
+--
+* 'none': No VSync
+* 'drm': VSync with 'DRM_IOCTL_WAIT_VBLANK'. May only work on some drivers. Experimental.
+* 'opengl': Try to VSync with 'SGI_swap_control' OpenGL extension. Only work on some drivers. Experimental.
+
+(Note some VSync methods may not be enabled at compile time.)
+--
+
+*--alpha-step* 'VALUE'::
+	Step for pregenerating alpha pictures. (0.01 - 1.0, defaults to 0.03)
+
+*--dbe*::
+	Enable DBE painting mode, intended to use with VSync to (hopefully) eliminate tearing. Reported to have no effect, though.
+
+*--paint-on-overlay*::
+	Painting on X Composite overlay window instead of on root window.
+
+*--sw-opti*::
+	Limit compton to repaint at most once every 1 / 'refresh_rate'
+	second to boost performance. Experimental.
+
+FORMAT OF CONDITIONS
+--------------------
+
+*--shadow-exclude* uses a condition string to blacklist certain windows. The format of the condition string is:
+
+	condition = TARGET:TYPE[FLAGS]:PATTERN
+
+'TARGET' is one of "n" (window name), "i" (window class instance), and "g" (window general class)
+
+'TYPE' is one of "e" (exact match), "a" (match anywhere), "s" (match from start), "w" (wildcard), and "p" (PCRE regular expressions, if compiled with the support).
+
+'FLAGS' could be a series of flags. Currently the only defined flag is "i" (ignore case).
+
+'PATTERN' is the actual pattern string.
+
+CONFIGURATION FILES
+-------------------
+compton could read from a configuration file if libconfig support is compiled in. If *--config* is not used, compton will seek for a configuration file in `$XDG_CONFIG_HOME/compton.conf` (`~/.config/compton.conf`, usually), then `~/.compton.conf`, then `compton.conf` under `$XDG_DATA_DIRS` (often `/etc/xdg/compton.conf`). Most commandline switches could be replaced with an option in configuration file, and some options are exposed only in configuration files (presently, some window-type-specific settings). compton uses general libconfig configurtion file format. A sample configuration file is available as `compton.sample.conf` in the source tree.
+
+EXAMPLES
+--------
+
+* Disable configuration file parsing:
++
+------------
+$ compton --config /dev/null
+------------
+
+* Run compton with client-side shadow and fading, disable shadow on dock windows and drag-and-drop windows:
++
+------------
+$ compton -cCGf
+------------
+
+* Same thing as above, plus making inactive windows 80% transparent, making frame 80% transparent, don't fade on window open/close, enable software optimization, and fork to background:
++
+------------
+$ compton -bcCGf -i 0.8 -e 0.8 --no-fading-openclose --sw-opti
+------------
+
+* Draw white shadows:
++
+------------
+$ compton -c --shadow-red 1 --shadow-green 1 --shadow-blue 1
+------------
+
+* Avoid drawing shadows on wbar window:
++
+------------
+$ compton -c --shadow-exclude 'g:e:wbar'
+------------
+
+* Enable OpenGL vsync:
++
+------------
+$ compton --vsync opengl
+------------
+
+BUGS
+----
+Please report any you find to <https://github.com/chjj/compton> .
+
+AUTHORS
+-------
+xcompmgr, originally written by Keith Packard, with contributions from Matthew Allum, Eric Anholt, Dan Doel, Thomas Luebking, Matthew Hawn, Ely Levy, Phil Blundell, and Carl Worth. Compton by Christopher Jeffrey, based on Dana Jansens' original work, with contributions from Richard Grenville.
+
+RESOURCES
+---------
+Homepage: <https://github.com/chjj/compton>
+
+SEE ALSO
+--------
+*xcompmgr*(1), link:compton-trans.html[*compton-trans*(1)]
