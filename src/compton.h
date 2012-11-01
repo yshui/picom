@@ -115,6 +115,8 @@ extern struct timeval time_start;
 
 // Window size is changed
 #define WFLAG_SIZE_CHANGE   0x0001
+// Window size/position is changed
+#define WFLAG_POS_CHANGE    0x0002
 
 /**
  * Types
@@ -280,7 +282,7 @@ typedef struct _win {
   struct _win *prev_trans;
 } win;
 
-typedef enum _vsync_t {
+typedef enum {
   VSYNC_NONE,
   VSYNC_DRM,
   VSYNC_OPENGL,
@@ -317,6 +319,8 @@ typedef struct _options {
   vsync_t vsync;
   /// Whether to enable double buffer.
   Bool dbe;
+  /// Whether to do VSync aggressively.
+  Bool vsync_aggressive;
 
   // Shadow
   Bool wintype_shadow[NUM_WINTYPES];

@@ -181,6 +181,7 @@ static options_t opts = {
   .sw_opti = False,
   .vsync = VSYNC_NONE,
   .dbe = False,
+  .vsync_aggressive = False,
 
   .wintype_shadow = { False },
   .shadow_red = 0.0,
@@ -1413,11 +1414,20 @@ paint_preprocess(Display *dpy, win *list) {
           dpy, draw, format, CPSubwindowMode, &pa);
       }
 
-      // Fetch bounding region and extents if needed
+      // Fetch bounding region
       if (!w->border_size) {
-        w->border_size = border_size(dpy, w);
+        // Build a border_size ourselves if window is not shaped, to avoid
+        // getting an invalid border_size region from X if the window is
+        // unmapped/destroyed
+        if (!w->bounding_shaped) {
+          w->border_size = win_get_region(dpy, w);
+        }
+        else if (IsUnmapped != w->a.map_state) {
+          w->border_size = border_size(dpy, w);
+        }
       }
 
+      // Fetch window extents
       if (!w->extents) {
         w->extents = win_extents(dpy, w);
         // If w->extents does not exist, the previous add_damage_win()
@@ -1479,8 +1489,9 @@ paint_preprocess(Display *dpy, win *list) {
           else
             w->reg_ignore = win_get_region_noframe(dpy, w);
 
-          XFixesIntersectRegion(dpy, w->reg_ignore, w->reg_ignore,
-              w->border_size);
+          if (w->border_size)
+            XFixesIntersectRegion(dpy, w->reg_ignore, w->reg_ignore,
+                w->border_size);
 
           if (last_reg_ignore)
             XFixesUnionRegion(dpy, w->reg_ignore, w->reg_ignore,
@@ -1674,7 +1685,7 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
       }
       // Clear the shadow here instead of in make_shadow() for saving GPU
       // power and handling shaped windows
-      if (opts.clear_shadow)
+      if (opts.clear_shadow && w->border_size)
         XFixesSubtractRegion(dpy, reg_paint, reg_paint, w->border_size);
 
       // Detect if the region is empty before painting
@@ -1694,10 +1705,15 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
       // Copy the subtracted region to be used for shadow painting in next
       // cycle
       XFixesCopyRegion(dpy, reg_tmp2, reg_paint);
-      XFixesIntersectRegion(dpy, reg_paint, reg_paint, w->border_size);
+
+      if (w->border_size)
+        XFixesIntersectRegion(dpy, reg_paint, reg_paint, w->border_size);
     }
     else {
-      XFixesIntersectRegion(dpy, reg_paint, region, w->border_size);
+      if (w->border_size)
+        XFixesIntersectRegion(dpy, reg_paint, region, w->border_size);
+      else
+        reg_paint = region;
     }
 
     if (!is_region_empty(dpy, reg_paint)) {
@@ -1719,8 +1735,17 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   if (!opts.dbe)
     XFixesSetPictureClipRegion(dpy, tgt_buffer, 0, 0, None);
 
-  // Wait for VBlank
-  vsync_wait();
+  if (VSYNC_NONE != opts.vsync) {
+    // Make sure all previous requests are processed to achieve best
+    // effect
+    XSync(dpy, False);
+  }
+
+  // Wait for VBlank. We could do it aggressively (send the painting
+  // request and XFlush() on VBlank) or conservatively (send the request
+  // only on VBlank).
+  if (!opts.vsync_aggressive)
+    vsync_wait();
 
   // DBE painting mode, only need to swap the buffer
   if (opts.dbe) {
@@ -1738,6 +1763,9 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
       tgt_picture, 0, 0, 0, 0,
       0, 0, root_width, root_height);
   }
+
+  if (opts.vsync_aggressive)
+    vsync_wait();
 
   XFlush(dpy);
 
@@ -2127,7 +2155,7 @@ determine_fade(Display *dpy, win *w) {
  */
 static void
 win_update_shape(Display *dpy, win *w) {
-  if (shape_exists && (opts.shadow_ignore_shaped /* || opts.clear_shadow */)) {
+  if (shape_exists) {
     // Bool bounding_shaped_old = w->bounding_shaped;
 
     w->bounding_shaped = wid_bounding_shaped(dpy, w->id);
@@ -2436,6 +2464,13 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
       XFixesCopyRegion(dpy, damage, w->extents);
     }
 
+    // If window geometry did not change, don't free extents here
+    if (w->a.x != ce->x || w->a.y != ce->y
+        || w->a.width != ce->width || w->a.height != ce->height) {
+      free_region(dpy, &w->extents);
+      free_region(dpy, &w->border_size);
+    }
+
     w->a.x = ce->x;
     w->a.y = ce->y;
 
@@ -2450,6 +2485,11 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
       w->a.height = ce->height;
       w->a.border_width = ce->border_width;
       calc_win_size(dpy, w);
+
+      // Rounded corner detection is affected by window size
+      if (shape_exists && opts.shadow_ignore_shaped
+          && opts.detect_rounded_corners && w->bounding_shaped)
+        win_update_shape(dpy, w);
     }
 
     if (w->a.map_state != IsUnmapped && damage) {
@@ -2458,10 +2498,6 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
       XFixesDestroyRegion(dpy, extents);
       add_damage(dpy, damage);
     }
-
-    // Window extents and border_size may have changed
-    free_region(dpy, &w->extents);
-    free_region(dpy, &w->border_size);
   }
 
   w->a.override_redirect = ce->override_redirect;
@@ -3307,6 +3343,9 @@ usage(void) {
     "--sw-opti\n"
     "  Limit compton to repaint at most once every 1 / refresh_rate\n"
     "  second to boost performance. Experimental.\n"
+    "--vsync-aggressive\n"
+    "  Attempt to send painting request before VBlank and do XFlush()\n"
+    "  during VBlank. This switch may be lifted out at any moment.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3727,6 +3766,7 @@ get_cfg(int argc, char *const *argv) {
     { "dbe", no_argument, NULL, 272 },
     { "paint-on-overlay", no_argument, NULL, 273 },
     { "sw-opti", no_argument, NULL, 274 },
+    { "vsync-aggressive", no_argument, NULL, 275 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3908,6 +3948,10 @@ get_cfg(int argc, char *const *argv) {
       case 274:
         // --sw-opti
         opts.sw_opti = True;
+        break;
+      case 275:
+        // --vsync-aggressive
+        opts.vsync_aggressive = True;
         break;
       default:
         usage();
