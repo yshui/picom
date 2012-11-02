@@ -10,6 +10,12 @@
 
 #include "compton.h"
 
+#define MSTR_(s)        #s
+#define MSTR(s)         MSTR_(s)
+
+// Use #s here to prevent macro expansion
+#define CASESTRRET(s)   case s: return #s
+
 /**
  * Shared
  */
@@ -2651,98 +2657,48 @@ error(Display *dpy, XErrorEvent *ev) {
     exit(1);
   }
 
+#define CASESTRRET2(s)   case s: name = #s; break
+
   o = ev->error_code - xfixes_error;
   switch (o) {
-    case BadRegion:
-      name = "BadRegion";
-      break;
-    default:
-      break;
+    CASESTRRET2(BadRegion);
   }
 
   o = ev->error_code - damage_error;
   switch (o) {
-    case BadDamage:
-      name = "BadDamage";
-      break;
-    default:
-      break;
+    CASESTRRET2(BadDamage);
   }
 
   o = ev->error_code - render_error;
   switch (o) {
-    case BadPictFormat:
-      name = "BadPictFormat";
-      break;
-    case BadPicture:
-      name = "BadPicture";
-      break;
-    case BadPictOp:
-      name = "BadPictOp";
-      break;
-    case BadGlyphSet:
-      name = "BadGlyphSet";
-      break;
-    case BadGlyph:
-      name = "BadGlyph";
-      break;
-    default:
-      break;
+    CASESTRRET2(BadPictFormat);
+    CASESTRRET2(BadPicture);
+    CASESTRRET2(BadPictOp);
+    CASESTRRET2(BadGlyphSet);
+    CASESTRRET2(BadGlyph);
   }
 
   switch (ev->error_code) {
-    case BadAccess:
-      name = "BadAccess";
-      break;
-    case BadAlloc:
-      name = "BadAlloc";
-      break;
-    case BadAtom:
-      name = "BadAtom";
-      break;
-    case BadColor:
-      name = "BadColor";
-      break;
-    case BadCursor:
-      name = "BadCursor";
-      break;
-    case BadDrawable:
-      name = "BadDrawable";
-      break;
-    case BadFont:
-      name = "BadFont";
-      break;
-    case BadGC:
-      name = "BadGC";
-      break;
-    case BadIDChoice:
-      name = "BadIDChoice";
-      break;
-    case BadImplementation:
-      name = "BadImplementation";
-      break;
-    case BadLength:
-      name = "BadLength";
-      break;
-    case BadMatch:
-      name = "BadMatch";
-      break;
-    case BadName:
-      name = "BadName";
-      break;
-    case BadPixmap:
-      name = "BadPixmap";
-      break;
-    case BadRequest:
-      name = "BadRequest";
-      break;
-    case BadValue:
-      name = "BadValue";
-      break;
-    case BadWindow:
-      name = "BadWindow";
-      break;
+    CASESTRRET2(BadAccess);
+    CASESTRRET2(BadAlloc);
+    CASESTRRET2(BadAtom);
+    CASESTRRET2(BadColor);
+    CASESTRRET2(BadCursor);
+    CASESTRRET2(BadDrawable);
+    CASESTRRET2(BadFont);
+    CASESTRRET2(BadGC);
+    CASESTRRET2(BadIDChoice);
+    CASESTRRET2(BadImplementation);
+    CASESTRRET2(BadLength);
+    CASESTRRET2(BadMatch);
+    CASESTRRET2(BadName);
+    CASESTRRET2(BadPixmap);
+    CASESTRRET2(BadRequest);
+    CASESTRRET2(BadValue);
+    CASESTRRET2(BadWindow);
   }
+
+#undef CASESTRRET2
 
   print_timestamp();
   printf("error %d (%s) request %d minor %d serial %lu\n",
@@ -2888,34 +2844,22 @@ ev_serial(XEvent *ev) {
   return NextRequest(ev->xany.display);
 }
 
-static char *
+static const char *
 ev_name(XEvent *ev) {
   static char buf[128];
   switch (ev->type & 0x7f) {
-    case FocusIn:
-      return "FocusIn";
-    case FocusOut:
-      return "FocusOut";
-    case CreateNotify:
-      return "CreateNotify";
-    case ConfigureNotify:
-      return "ConfigureNotify";
-    case DestroyNotify:
-      return "DestroyNotify";
-    case MapNotify:
-      return "Map";
-    case UnmapNotify:
-      return "Unmap";
-    case ReparentNotify:
-      return "Reparent";
-    case CirculateNotify:
-      return "Circulate";
-    case Expose:
-      return "Expose";
-    case PropertyNotify:
-      return "PropertyNotify";
-    case ClientMessage:
-      return "ClientMessage";
+    CASESTRRET(FocusIn);
+    CASESTRRET(FocusOut);
+    CASESTRRET(CreateNotify);
+    CASESTRRET(ConfigureNotify);
+    CASESTRRET(DestroyNotify);
+    CASESTRRET(MapNotify);
+    CASESTRRET(UnmapNotify);
+    CASESTRRET(ReparentNotify);
+    CASESTRRET(CirculateNotify);
+    CASESTRRET(Expose);
+    CASESTRRET(PropertyNotify);
+    CASESTRRET(ClientMessage);
     default:
       if (ev->type == damage_event + XDamageNotify) {
         return "Damage";
@@ -2969,14 +2913,61 @@ ev_window(XEvent *ev) {
       return 0;
   }
 }
+
+static inline const char *
+ev_focus_mode_name(XFocusChangeEvent* ev) {
+  switch (ev->mode) {
+    CASESTRRET(NotifyNormal);
+    CASESTRRET(NotifyWhileGrabbed);
+    CASESTRRET(NotifyGrab);
+    CASESTRRET(NotifyUngrab);
+  }
+
+  return "Unknown";
+}
+
+static inline const char *
+ev_focus_detail_name(XFocusChangeEvent* ev) {
+  switch (ev->detail) {
+    CASESTRRET(NotifyAncestor);
+    CASESTRRET(NotifyVirtual);
+    CASESTRRET(NotifyInferior);
+    CASESTRRET(NotifyNonlinear);
+    CASESTRRET(NotifyNonlinearVirtual);
+    CASESTRRET(NotifyPointer);
+    CASESTRRET(NotifyPointerRoot);
+    CASESTRRET(NotifyDetailNone);
+  }
+
+  return "Unknown";
+}
+
+static inline void
+ev_focus_report(XFocusChangeEvent* ev) {
+  printf("  { mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
+      ev_focus_detail_name(ev));
+}
+
 #endif
 
 /**
  * Events
  */
 
+inline static bool
+ev_focus_accept(XFocusChangeEvent *ev) {
+  return ev->mode == NotifyGrab
+    || (ev->mode == NotifyNormal
+        && (ev->detail == NotifyNonlinear
+          || ev->detail == NotifyNonlinearVirtual));
+}
+
 inline static void
 ev_focus_in(XFocusChangeEvent *ev) {
+#ifdef DEBUG_EVENTS
+  ev_focus_report(ev);
+#endif
+
   win *w = find_win(dpy, ev->window);
 
   // To deal with events sent from windows just destroyed
@@ -2987,14 +2978,12 @@ ev_focus_in(XFocusChangeEvent *ev) {
 
 inline static void
 ev_focus_out(XFocusChangeEvent *ev) {
-  if (ev->mode == NotifyGrab
-      || (ev->mode == NotifyNormal
-      && (ev->detail == NotifyNonlinear
-      || ev->detail == NotifyNonlinearVirtual))) {
-    ;
-  } else {
+#ifdef DEBUG_EVENTS
+  ev_focus_report(ev);
+#endif
+
+  if (!ev_focus_accept(ev))
     return;
-  }
 
   win *w = find_win(dpy, ev->window);
 
@@ -3012,7 +3001,7 @@ ev_create_notify(XCreateWindowEvent *ev) {
 inline static void
 ev_configure_notify(XConfigureEvent *ev) {
 #ifdef DEBUG_EVENTS
-  printf("{ send_event: %d, "
+  printf("  { send_event: %d, "
          " above: %#010lx, "
          " override_redirect: %d }\n",
          ev->send_event, ev->above, ev->override_redirect);
@@ -3214,8 +3203,10 @@ ev_handle(XEvent *ev) {
 
         if (w && w->name)
           window_name = w->name;
-        else
-          to_free = (Bool) wid_get_name(dpy, wid, &window_name);
+        else if (!(w && w->client_win
+              && (to_free = (Bool) wid_get_name(dpy, w->client_win,
+                  &window_name))))
+            to_free = (Bool) wid_get_name(dpy, wid, &window_name);
       }
     }
 

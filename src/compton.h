@@ -1009,7 +1009,7 @@ win_get_class(Display *dpy, win *w);
 static int
 ev_serial(XEvent *ev);
 
-static char *
+static const char *
 ev_name(XEvent *ev);
 
 static Window
