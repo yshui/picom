@@ -69,6 +69,8 @@ Picture root_tile;
 XserverRegion all_damage;
 Bool has_name_pixmap;
 int root_height, root_width;
+/// A region of the size of the screen.
+XserverRegion screen_reg = None;
 
 /// Pregenerated alpha pictures.
 Picture *alpha_picts = NULL;
@@ -1638,6 +1640,16 @@ win_paint_win(Display *dpy, win *w, Picture tgt_buffer) {
   }
 }
 
+/**
+ * Rebuild cached <code>screen_reg</code>.
+ */
+static void
+rebuild_screen_reg(Display *dpy) {
+  if (screen_reg)
+    XFixesDestroyRegion(dpy, screen_reg);
+  screen_reg = get_screen_region(dpy);
+}
+
 static void
 paint_all(Display *dpy, XserverRegion region, win *t) {
 #ifdef DEBUG_REPAINT
@@ -1652,7 +1664,7 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   }
   else {
     // Remove the damaged area out of screen
-    XFixesIntersectRegion(dpy, region, region, get_screen_region(dpy));
+    XFixesIntersectRegion(dpy, region, region, screen_reg);
   }
 
 #ifdef MONITOR_REPAINT
@@ -2483,6 +2495,8 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
     root_width = ce->width;
     root_height = ce->height;
 
+    rebuild_screen_reg(dpy);
+
     return;
   }
 
@@ -2995,6 +3009,7 @@ ev_focus_out(XFocusChangeEvent *ev) {
 
 inline static void
 ev_create_notify(XCreateWindowEvent *ev) {
+  assert(ev->parent == root);
   add_win(dpy, ev->window, 0, ev->override_redirect);
 }
 
@@ -4519,6 +4534,8 @@ main(int argc, char **argv) {
 
   root_width = DisplayWidth(dpy, scr);
   root_height = DisplayHeight(dpy, scr);
+
+  rebuild_screen_reg(dpy);
 
   root_picture = XRenderCreatePicture(dpy, root,
       XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),

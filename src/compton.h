@@ -89,6 +89,26 @@
 #include <GL/glx.h>
 #endif
 
+#ifdef DEBUG_ALLOC_REG
+static inline XserverRegion
+XFixesCreateRegion_(Display *dpy, XRectangle *p, int n,
+    const char *func, int line) {
+  XserverRegion reg = XFixesCreateRegion(dpy, p, n);
+  printf("%#010lx: XFixesCreateRegion() in %s():%d\n", reg, func, line);
+  return reg;
+}
+
+static inline void
+XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
+    const char *func, int line) {
+  XFixesDestroyRegion(dpy, reg);
+  printf("%#010lx: XFixesDestroyRegion() in %s():%d\n", reg, func, line);
+}
+
+#define XFixesCreateRegion(dpy, p, n) XFixesCreateRegion_(dpy, p, n, __func__, __LINE__)
+#define XFixesDestroyRegion(dpy, reg) XFixesDestroyRegion_(dpy, reg, __func__, __LINE__)
+#endif
+
 // === Constants ===
 #if !(COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2)
 #error libXcomposite version unsupported
