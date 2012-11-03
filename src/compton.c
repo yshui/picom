@@ -1992,7 +1992,7 @@ map_win(Display *dpy, Window id,
     // focused if mark_wmwin_focused is on, or it's over-redirected and
     // mark_ovredir_focused is on
     if ((opts.mark_wmwin_focused && !w->client_win)
-        || (opts.mark_ovredir_focused && w->a.override_redirect))
+        || (opts.mark_ovredir_focused && w->id == w->client_win))
       w->focused = True;
   }
 
@@ -2968,12 +2968,14 @@ ev_focus_report(XFocusChangeEvent* ev) {
  * Events
  */
 
+/**
+ * Determine whether we should respond to a <code>FocusIn/Out</code>
+ * event.
+ */
 inline static bool
 ev_focus_accept(XFocusChangeEvent *ev) {
-  return ev->mode == NotifyGrab
-    || (ev->mode == NotifyNormal
-        && (ev->detail == NotifyNonlinear
-          || ev->detail == NotifyNonlinearVirtual));
+  return ev->detail == NotifyNonlinear
+    || ev->detail == NotifyNonlinearVirtual;
 }
 
 inline static void
@@ -2981,6 +2983,9 @@ ev_focus_in(XFocusChangeEvent *ev) {
 #ifdef DEBUG_EVENTS
   ev_focus_report(ev);
 #endif
+
+  if (!ev_focus_accept(ev))
+    return;
 
   win *w = find_win(dpy, ev->window);
 
@@ -3357,7 +3362,7 @@ usage(void) {
     "--shadow-exclude condition\n"
     "  Exclude conditions for shadows.\n"
     "--mark-ovredir-focused\n"
-    "  Mark over-redirect windows as active.\n"
+    "  Mark windows that have no WM frame as active.\n"
     "--no-fading-openclose\n"
     "  Do not fade on window open/close.\n"
     "--shadow-ignore-shaped\n"
