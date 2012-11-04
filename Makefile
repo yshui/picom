@@ -38,7 +38,7 @@ ifeq "$(NO_VSYNC_OPENGL)" ""
 	LIBS += -lGL
 endif
 
-CFLAGS ?= -DNDEBUG
+CFLAGS ?= -DNDEBUG -O2 -D_FORTIFY_SOURCE=2
 CFLAGS += $(CFG)
 
 LIBS += $(shell pkg-config --libs $(PACKAGES))

@@ -1526,21 +1526,19 @@ paint_preprocess(Display *dpy, win *list) {
     }
 
 
+    // Avoid setting w->to_paint if w is to be freed
+    bool destroyed = (w->opacity_tgt == w->opacity && w->destroyed);
+
     if (to_paint) {
       w->prev_trans = t;
       t = w;
-      w->to_paint = to_paint;
     }
     else {
-      // Avoid setting w->to_paint if w is to be freed
-      if (!(w->opacity_tgt == w->opacity && w->destroyed)) {
-        check_fade_fin(dpy, w);
-        w->to_paint = to_paint;
-      }
-      else {
-        check_fade_fin(dpy, w);
-      }
+      check_fade_fin(dpy, w);
     }
+
+    if (!destroyed)
+      w->to_paint = to_paint;
   }
 
   return t;
@@ -3567,9 +3565,11 @@ fork_after(void) {
 
   setsid();
 
-  freopen("/dev/null", "r", stdin);
-  freopen("/dev/null", "w", stdout);
-  freopen("/dev/null", "w", stderr);
+  // Mainly to suppress the _FORTIFY_SOURCE warning
+  if (!freopen("/dev/null", "r", stdin)
+      || !freopen("/dev/null", "w", stdout)
+      || !freopen("/dev/null", "w", stderr))
+    fprintf(stderr, "fork_after(): freopen() failed.");
 }
 
 #ifdef CONFIG_LIBCONFIG
