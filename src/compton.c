@@ -71,6 +71,9 @@ Bool has_name_pixmap;
 int root_height, root_width;
 /// A region of the size of the screen.
 XserverRegion screen_reg = None;
+/// Current active window. Used by EWMH _NET_ACTIVE_WINDOW focus
+/// detection.
+win *active_win = NULL;
 
 /// Pregenerated alpha pictures.
 Picture *alpha_picts = NULL;
@@ -153,14 +156,14 @@ int size_expose = 0;
 int n_expose = 0;
 
 // atoms
-Atom extents_atom;
-Atom opacity_atom;
-Atom frame_extents_atom;
-Atom client_atom;
-Atom name_atom;
-Atom name_ewmh_atom;
-Atom class_atom;
-Atom transient_atom;
+Atom opacity_atom = None;
+Atom frame_extents_atom = None;
+Atom client_atom = None;
+Atom name_atom = None;
+Atom name_ewmh_atom = None;
+Atom class_atom = None;
+Atom transient_atom = None;
+Atom ewmh_active_win_atom = None;;
 
 Atom win_type_atom;
 Atom win_type[NUM_WINTYPES];
@@ -217,6 +220,7 @@ static options_t opts = {
   .detect_client_opacity = False,
   .inactive_dim = 0.0,
   .alpha_step = 0.03,
+  .use_ewmh_active_win = False,
 
   .track_focus = False,
   .track_wdata = False,
@@ -998,12 +1002,13 @@ static long
 determine_evmask(Display *dpy, Window wid, win_evmode_t mode) {
   long evmask = NoEventMask;
 
-  if (WIN_EVMODE_FRAME == mode || find_win(dpy, wid)) {
+  if (WIN_EVMODE_FRAME == mode || find_win(wid)) {
     evmask |= PropertyChangeMask;
-    if (opts.track_focus) evmask |= FocusChangeMask;
+    if (opts.track_focus && !opts.use_ewmh_active_win)
+      evmask |= FocusChangeMask;
   }
 
-  if (WIN_EVMODE_CLIENT == mode || find_toplevel(dpy, wid)) {
+  if (WIN_EVMODE_CLIENT == mode || find_toplevel(wid)) {
     if (opts.frame_opacity || opts.track_wdata
         || opts.detect_client_opacity)
       evmask |= PropertyChangeMask;
@@ -1013,7 +1018,7 @@ determine_evmask(Display *dpy, Window wid, win_evmode_t mode) {
 }
 
 static win *
-find_win(Display *dpy, Window id) {
+find_win(Window id) {
   win *w;
 
   for (w = list; w; w = w->next) {
@@ -1027,12 +1032,11 @@ find_win(Display *dpy, Window id) {
 /**
  * Find out the WM frame of a client window using existing data.
  *
- * @param dpy display to use
  * @param w window ID
  * @return struct _win object of the found window, NULL if not found
  */
 static win *
-find_toplevel(Display *dpy, Window id) {
+find_toplevel(Window id) {
   win *w;
 
   for (w = list; w; w = w->next) {
@@ -1055,7 +1059,7 @@ find_toplevel2(Display *dpy, Window wid) {
   win *w = NULL;
 
   // We traverse through its ancestors to find out the frame
-  while (wid && wid != root && !(w = find_win(dpy, wid))) {
+  while (wid && wid != root && !(w = find_win(wid))) {
     Window troot;
     Window parent;
     Window *tchildren;
@@ -1087,6 +1091,12 @@ find_toplevel2(Display *dpy, Window wid) {
  */
 static win *
 recheck_focus(Display *dpy) {
+  // Use EWMH _NET_ACTIVE_WINDOW if enabled
+  if (opts.use_ewmh_active_win) {
+    update_ewmh_active_win(dpy);
+    return active_win;
+  }
+
   // Determine the currently focused window so we can apply appropriate
   // opacity on it
   Window wid = 0;
@@ -1096,7 +1106,7 @@ recheck_focus(Display *dpy) {
   XGetInputFocus(dpy, &wid, &revert_to);
 
   // Fallback to the old method if find_toplevel() fails
-  if (!(w = find_toplevel(dpy, wid))) {
+  if (!(w = find_toplevel(wid))) {
     w = find_toplevel2(dpy, wid);
   }
 
@@ -1117,33 +1127,24 @@ root_tile_f(Display *dpy) {
   } */
 
   Picture picture;
-  Atom actual_type;
   Pixmap pixmap;
-  int actual_format;
-  unsigned long nitems;
-  unsigned long bytes_after;
-  unsigned char *prop;
   Bool fill;
   XRenderPictureAttributes pa;
   int p;
 
   pixmap = None;
 
+  // Get the values of background attributes
   for (p = 0; background_props[p]; p++) {
-    prop = NULL;
-    if (XGetWindowProperty(dpy, root,
-          XInternAtom(dpy, background_props[p], False),
-          0, 4, False, AnyPropertyType, &actual_type,
-          &actual_format, &nitems, &bytes_after, &prop
-        ) == Success
-        && actual_type == XInternAtom(dpy, "PIXMAP", False)
-        && actual_format == 32 && nitems == 1) {
-      memcpy(&pixmap, prop, 4);
-      XFree(prop);
+    winattr_t attr = wid_get_attr(dpy, root,
+        XInternAtom(dpy, background_props[p], False), 1L, XA_PIXMAP, 32);
+    if (attr.nitems) {
+      pixmap = *((long *) attr.data);
       fill = False;
+      free_winattr(&attr);
       break;
-    } else if (prop)
-      XFree(prop);
+    }
+    free_winattr(&attr);
   }
 
   if (!pixmap) {
@@ -1321,37 +1322,26 @@ find_client_win(Display *dpy, Window w) {
 
 static void
 get_frame_extents(Display *dpy, win *w, Window client) {
-  long *extents;
-  Atom type;
-  int format;
-  unsigned long nitems, after;
-  unsigned char *data = NULL;
-  int result;
-
   w->left_width = 0;
   w->right_width = 0;
   w->top_width = 0;
   w->bottom_width = 0;
 
-  result = XGetWindowProperty(
-    dpy, client, frame_extents_atom,
-    0L, 4L, False, AnyPropertyType,
-    &type, &format, &nitems, &after,
-    &data);
+  winattr_t attr = wid_get_attr(dpy, client, frame_extents_atom,
+    4L, XA_CARDINAL, 32);
 
-  if (result == Success) {
-    if (nitems == 4 && after == 0) {
-      extents = (long *) data;
-      w->left_width = extents[0];
-      w->right_width = extents[1];
-      w->top_width = extents[2];
-      w->bottom_width = extents[3];
+  if (4 == attr.nitems) {
+    long *extents = (long *) attr.data;
+    w->left_width = extents[0];
+    w->right_width = extents[1];
+    w->top_width = extents[2];
+    w->bottom_width = extents[3];
 
-      if (opts.frame_opacity)
-        update_reg_ignore_expire(w);
-    }
-    XFree(data);
+    if (opts.frame_opacity)
+      update_reg_ignore_expire(w);
   }
+
+  free_winattr(&attr);
 }
 
 static inline Picture
@@ -1539,12 +1529,18 @@ paint_preprocess(Display *dpy, win *list) {
     if (to_paint) {
       w->prev_trans = t;
       t = w;
+      w->to_paint = to_paint;
     }
     else {
-      check_fade_fin(dpy, w);
+      // Avoid setting w->to_paint if w is to be freed
+      if (!(w->opacity_tgt == w->opacity && w->destroyed)) {
+        check_fade_fin(dpy, w);
+        w->to_paint = to_paint;
+      }
+      else {
+        check_fade_fin(dpy, w);
+      }
     }
-
-    w->to_paint = to_paint;
   }
 
   return t;
@@ -1916,7 +1912,7 @@ static void
 map_win(Display *dpy, Window id,
         unsigned long sequence, Bool fade,
         Bool override_redirect) {
-  win *w = find_win(dpy, id);
+  win *w = find_win(id);
 
   // Don't care about window mapping if it's an InputOnly window
   if (!w || InputOnly == w->a.class) return;
@@ -1980,14 +1976,15 @@ map_win(Display *dpy, Window id,
     win_get_class(dpy, w);
   }
 
-  /*
-   * Occasionally compton does not seem able to get a FocusIn event from a
-   * window just mapped. I suspect it's a timing issue again when the
-   * XSelectInput() is called too late. We have to recheck the focused
-   * window here.
-   */
   if (opts.track_focus) {
-    recheck_focus(dpy);
+    // Occasionally compton does not seem able to get a FocusIn event from
+    // a window just mapped. I suspect it's a timing issue again when the
+    // XSelectInput() is called too late. We have to recheck the focused
+    // window here. It makes no sense if we are using EWMH
+    // _NET_ACTIVE_WINDOW.
+    if (!opts.use_ewmh_active_win)
+      recheck_focus(dpy);
+
     // Consider a window without client window a WM window and mark it
     // focused if mark_wmwin_focused is on, or it's over-redirected and
     // mark_ovredir_focused is on
@@ -2059,7 +2056,7 @@ unmap_callback(Display *dpy, win *w) {
 
 static void
 unmap_win(Display *dpy, Window id, Bool fade) {
-  win *w = find_win(dpy, id);
+  win *w = find_win(id);
 
   if (!w) return;
 
@@ -2326,7 +2323,7 @@ mark_client_win(Display *dpy, win *w, Window client) {
 
 static void
 add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
-  if (find_win(dpy, id)) {
+  if (find_win(id)) {
     return;
   }
 
@@ -2500,7 +2497,7 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
     return;
   }
 
-  win *w = find_win(dpy, ce->window);
+  win *w = find_win(ce->window);
   XserverRegion damage = None;
 
   if (!w)
@@ -2568,7 +2565,7 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
 
 static void
 circulate_win(Display *dpy, XCirculateEvent *ce) {
-  win *w = find_win(dpy, ce->window);
+  win *w = find_win(ce->window);
   Window new_above;
 
   if (!w) return;
@@ -2591,6 +2588,10 @@ finish_destroy_win(Display *dpy, Window id) {
       finish_unmap_win(dpy, w);
       *prev = w->next;
 
+      // Clear active_win if it's pointing to the destroyed window
+      if (active_win)
+        active_win = NULL;
+
       free_picture(dpy, &w->shadow_pict);
       free_damage(dpy, &w->damage);
       free_region(dpy, &w->reg_ignore);
@@ -2611,7 +2612,7 @@ destroy_callback(Display *dpy, win *w) {
 
 static void
 destroy_win(Display *dpy, Window id, Bool fade) {
-  win *w = find_win(dpy, id);
+  win *w = find_win(id);
 
   if (w) {
     w->destroyed = True;
@@ -2649,7 +2650,7 @@ damage_win(Display *dpy, XDamageNotifyEvent *de) {
     return;
   } */
 
-  win *w = find_win(dpy, de->drawable);
+  win *w = find_win(de->drawable);
 
   if (!w) return;
 
@@ -2987,7 +2988,7 @@ ev_focus_in(XFocusChangeEvent *ev) {
   if (!ev_focus_accept(ev))
     return;
 
-  win *w = find_win(dpy, ev->window);
+  win *w = find_win(ev->window);
 
   // To deal with events sent from windows just destroyed
   if (!w) return;
@@ -3004,7 +3005,7 @@ ev_focus_out(XFocusChangeEvent *ev) {
   if (!ev_focus_accept(ev))
     return;
 
-  win *w = find_win(dpy, ev->window);
+  win *w = find_win(ev->window);
 
   // To deal with events sent from windows just destroyed
   if (!w) return;
@@ -3095,16 +3096,58 @@ ev_expose(XExposeEvent *ev) {
   }
 }
 
+/**
+ * Update current active window based on EWMH _NET_ACTIVE_WIN.
+ *
+ * Does not change anything if we fail to get the attribute or the window
+ * returned could not be found.
+ */
+static void
+update_ewmh_active_win(Display *dpy) {
+  // Get the attribute firstly
+  winattr_t attr = wid_get_attr(dpy, root, ewmh_active_win_atom,
+      1L, XA_WINDOW, 32);
+  if (!attr.nitems) {
+    free_winattr(&attr);
+    return;
+  }
+  
+  // Search for the window
+  Window wid = *((long *) attr.data);
+  win *w = NULL;
+  free_winattr(&attr);
+
+  if (!(w = find_toplevel(wid)))
+    if (!(w = find_win(wid)))
+      w = find_toplevel2(dpy, wid);
+
+  // Mark the window focused
+  if (w) {
+    if (!w->focused)
+      set_focused(dpy, w, True);
+    if (active_win && w != active_win)
+      set_focused(dpy, active_win, False);
+    active_win = w;
+  }
+}
+
 inline static void
 ev_property_notify(XPropertyEvent *ev) {
-  // Destroy the root "image" if the wallpaper probably changed
   if (root == ev->window) {
-    for (int p = 0; background_props[p]; p++) {
-      if (ev->atom == XInternAtom(dpy, background_props[p], False)) {
-        root_damaged();
-        break;
+    if (opts.track_focus && opts.use_ewmh_active_win
+        && ewmh_active_win_atom == ev->atom) {
+      update_ewmh_active_win(dpy);
+    }
+    else {
+      // Destroy the root "image" if the wallpaper probably changed
+      for (int p = 0; background_props[p]; p++) {
+        if (ev->atom == XInternAtom(dpy, background_props[p], False)) {
+          root_damaged();
+          break;
+        }
       }
     }
+
     // Unconcerned about any other proprties on root window
     return;
   }
@@ -3112,10 +3155,10 @@ ev_property_notify(XPropertyEvent *ev) {
   // If _NET_WM_OPACITY changes
   if (ev->atom == opacity_atom) {
     win *w = NULL;
-    if ((w = find_win(dpy, ev->window)))
+    if ((w = find_win(ev->window)))
       w->opacity_prop = wid_get_opacity_prop(dpy, w->id, OPAQUE);
     else if (opts.detect_client_opacity
-        && (w = find_toplevel(dpy, ev->window)))
+        && (w = find_toplevel(ev->window)))
       w->opacity_prop_client = wid_get_opacity_prop(dpy, w->client_win,
             OPAQUE);
     if (w) {
@@ -3124,8 +3167,8 @@ ev_property_notify(XPropertyEvent *ev) {
   }
 
   // If frame extents property changes
-  if (opts.frame_opacity && ev->atom == extents_atom) {
-    win *w = find_toplevel(dpy, ev->window);
+  if (opts.frame_opacity && ev->atom == frame_extents_atom) {
+    win *w = find_toplevel(ev->window);
     if (w) {
       get_frame_extents(dpy, w, ev->window);
       // If frame extents change, the window needs repaint
@@ -3136,14 +3179,14 @@ ev_property_notify(XPropertyEvent *ev) {
   // If name changes
   if (opts.track_wdata
       && (name_atom == ev->atom || name_ewmh_atom == ev->atom)) {
-    win *w = find_toplevel(dpy, ev->window);
+    win *w = find_toplevel(ev->window);
     if (w && 1 == win_get_name(dpy, w))
       determine_shadow(dpy, w);
   }
 
   // If class changes
   if (opts.track_wdata && class_atom == ev->atom) {
-    win *w = find_toplevel(dpy, ev->window);
+    win *w = find_toplevel(ev->window);
     if (w) {
       win_get_class(dpy, w);
       determine_shadow(dpy, w);
@@ -3158,7 +3201,7 @@ ev_damage_notify(XDamageNotifyEvent *ev) {
 
 inline static void
 ev_shape_notify(XShapeEvent *ev) {
-  win *w = find_win(dpy, ev->window);
+  win *w = find_win(ev->window);
   if (!w || IsUnmapped == w->a.map_state) return;
 
   /*
@@ -3217,9 +3260,9 @@ ev_handle(XEvent *ev) {
       else if (overlay == wid)
         window_name = "(Overlay)";
       else {
-        win *w = find_win(dpy, wid);
+        win *w = find_win(wid);
         if (!w)
-          w = find_toplevel(dpy, wid);
+          w = find_toplevel(wid);
 
         if (w && w->name)
           window_name = w->name;
@@ -3400,6 +3443,9 @@ usage(void) {
     "--vsync-aggressive\n"
     "  Attempt to send painting request before VBlank and do XFlush()\n"
     "  during VBlank. This switch may be lifted out at any moment.\n"
+    "--use-ewmh-active-win\n"
+    "  Use _NET_WM_ACTIVE_WINDOW on the root window to determine which\n"
+    "  window is focused instead of using FocusIn/Out events.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3751,6 +3797,9 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   lcfg_lookup_bool(&cfg, "paint-on-overlay", &opts.paint_on_overlay);
   // --sw-opti
   lcfg_lookup_bool(&cfg, "sw-opti", &opts.sw_opti);
+  // --use-ewmh-active-win
+  lcfg_lookup_bool(&cfg, "use-ewmh-active-win",
+      &opts.use_ewmh_active_win);
   // --shadow-exclude
   {
     config_setting_t *setting =
@@ -3821,6 +3870,7 @@ get_cfg(int argc, char *const *argv) {
     { "paint-on-overlay", no_argument, NULL, 273 },
     { "sw-opti", no_argument, NULL, 274 },
     { "vsync-aggressive", no_argument, NULL, 275 },
+    { "use-ewmh-active-win", no_argument, NULL, 276 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4007,6 +4057,10 @@ get_cfg(int argc, char *const *argv) {
         // --vsync-aggressive
         opts.vsync_aggressive = True;
         break;
+      case 276:
+        // --use-ewmh-active-win
+        opts.use_ewmh_active_win = True;
+        break;
       default:
         usage();
         break;
@@ -4060,7 +4114,6 @@ get_cfg(int argc, char *const *argv) {
 
 static void
 get_atoms(void) {
-  extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
   opacity_atom = XInternAtom(dpy, "_NET_WM_WINDOW_OPACITY", False);
   frame_extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
   client_atom = XInternAtom(dpy, "WM_STATE", False);
@@ -4068,6 +4121,7 @@ get_atoms(void) {
   name_ewmh_atom = XInternAtom(dpy, "_NET_WM_NAME", False);
   class_atom = XA_WM_CLASS;
   transient_atom = XA_WM_TRANSIENT_FOR;
+  ewmh_active_win_atom = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
 
   win_type_atom = XInternAtom(dpy,
     "_NET_WM_WINDOW_TYPE", False);

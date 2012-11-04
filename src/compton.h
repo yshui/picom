@@ -169,6 +169,11 @@ typedef enum {
   WINDOW_ARGB
 } winmode;
 
+typedef struct {
+  unsigned char *data;
+  int nitems;
+} winattr_t;
+
 typedef struct _ignore {
   struct _ignore *next;
   unsigned long sequence;
@@ -385,6 +390,8 @@ typedef struct _options {
   double inactive_dim;
   /// Step for pregenerating alpha pictures. 0.01 - 1.0.
   double alpha_step;
+  /// Whether to use EWMH _NET_ACTIVE_WINDOW to find active window.
+  Bool use_ewmh_active_win;
 
   // Calculated
   /// Whether compton needs to track focus changes.
@@ -812,6 +819,63 @@ wid_has_attr(Display *dpy, Window w, Atom atom) {
 }
 
 /**
+ * Get a specific attribute of a window.
+ *
+ * Returns a blank structure if the returned type and format does not
+ * match the requested type and format.
+ *
+ * @param dpy Display to use
+ * @param w window
+ * @param atom atom of attribute to fetch
+ * @param length length to read
+ * @param rtype atom of the requested type
+ * @param rformat requested format
+ * @return a <code>winattr_t</code> structure containing the attribute
+ *    and number of items. A blank one on failure.
+ */
+static winattr_t
+wid_get_attr(Display *dpy, Window w, Atom atom, long length,
+    Atom rtype, int rformat) {
+  Atom type = None;
+  int format = 0;
+  unsigned long nitems = 0, after = 0;
+  unsigned char *data = NULL;
+
+  // Use two if statements to deal with the sequence point issue.
+  if (Success == XGetWindowProperty(dpy, w, atom, 0L, length, False,
+        rtype, &type, &format, &nitems, &after, &data)) {
+    if (type == rtype && format == rformat) {
+      return (winattr_t) {
+        .data = data,
+        .nitems = nitems
+      };
+    }
+  }
+
+  XFree(data);
+
+  return (winattr_t) {
+    .data = NULL,
+    .nitems = 0
+  };
+}
+
+/**
+ * Free a <code>winattr_t</code>.
+ *
+ * @param pattr pointer to the <code>winattr_t</code> to free.
+ */
+static inline void
+free_winattr(winattr_t *pattr) {
+  // Empty the whole structure to avoid possible issues
+  if (pattr->data) {
+    XFree(pattr->data);
+    pattr->data = NULL;
+  }
+  pattr->nitems = 0;
+}
+
+/**
  * Get the children of a window.
  *
  * @param dpy Display to use
@@ -881,10 +945,10 @@ static long
 determine_evmask(Display *dpy, Window wid, win_evmode_t mode);
 
 static win *
-find_win(Display *dpy, Window id);
+find_win(Window id);
 
 static win *
-find_toplevel(Display *dpy, Window id);
+find_toplevel(Window id);
 
 static win *
 find_toplevel2(Display *dpy, Window wid);
@@ -1071,6 +1135,9 @@ ev_circulate_notify(XCirculateEvent *ev);
 
 inline static void
 ev_expose(XExposeEvent *ev);
+
+static void
+update_ewmh_active_win(Display *dpy);
 
 inline static void
 ev_property_notify(XPropertyEvent *ev);
