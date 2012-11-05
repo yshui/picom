@@ -1,0 +1,82 @@
+compton-trans(1)
+================
+:doctype:		manpage
+:man source:	compton
+:man version:	nightly-20121105
+:man manual:	LOCAL USER COMMANDS
+
+NAME
+----
+compton-trans - an opacity setter tool
+
+SYNOPSIS
+--------
+
+*compton-trans* [-w 'WINDOW_ID'] [-n 'WINDOW_NAME'] [-c] [-s] [-o 'OPACITY']
+
+DESCRIPTION
+-----------
+
+*compton-trans* is a bash script that sets '_NET_WM_WINDOW_OPACITY' attribute of a window using standard X11 command-line utilities, including *xprop*(1) and *xwininfo*(1). It is similar to *transset*(1) or *transset-df*(1).
+
+OPTIONS
+-------
+*-w* 'WINDOW_ID'::
+Specify the window id of the target window.
+
+*-n* 'WINDOW_NAME'::
+Specify and try to match a window name.
+
+*-c*::
+Specify the currently active window as target. Only works if EWMH '_NET_ACTIVE_WINDOW' property exists on root window.
+
+*-s*::
+Select target window with mouse cursor. This is the default if no window has been specified.
+
+*-o* 'OPACITY'::
+Specify the new opacity value for the window. This value can be anywhere from 1-100. If it is prefixed with a plus or minus (+/-), this will increment or decrement from the target window's current opacity instead. 
+
+EXAMPLES
+--------
+
+* Set the opacity of the window with specific window ID to 75%:
++
+------------
+compton-trans -w "$WINDOWID" -o 75
+------------
+
+* Set the opacity of the window with the name "urxvt" to 75%:
++
+------------
+compton-trans -n "urxvt" -o 75
+------------
+
+* Set current window to opacity of 75%:
++
+------------
+compton-trans -c -o 75
+------------
+
+* Select target window and set opacity to 75%:
++
+------------
+compton-trans -s -o 75
+------------
+
+* Increment opacity of current active window for 5%:
++
+------------
+compton-trans -c -o +5
+------------
+
+BUGS
+----
+Please report any bugs you find to <https://github.com/chjj/compton> .
+
+AUTHORS
+-------
+Christopher Jeffrey (<https://github.com/chjj>).
+
+SEE ALSO
+--------
+link:compton.1.html[*compton*(1)], *xprop*(1), *xwininfo*(1)

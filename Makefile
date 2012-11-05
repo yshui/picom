@@ -55,8 +55,10 @@ compton: $(OBJS)
 docs:
 	# HTML documentation
 	asciidoc man/compton.1.asciidoc
+	asciidoc man/compton-trans.1.asciidoc
 	# man page
 	a2x --format manpage man/compton.1.asciidoc
+	a2x --format manpage man/compton-trans.1.asciidoc
 
 install: compton
 	@install -Dm755 compton "$(DESTDIR)$(BINDIR)"/compton

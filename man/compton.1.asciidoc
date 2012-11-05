@@ -2,7 +2,7 @@ compton(1)
 ==========
 :doctype:		manpage
 :man source:	compton
-:man version:	nightly-20121101
+:man version:	nightly-20121105
 :man manual:	LOCAL USER COMMANDS
 
 NAME
@@ -137,8 +137,10 @@ OPTIONS
 	Painting on X Composite overlay window instead of on root window.
 
 *--sw-opti*::
-	Limit compton to repaint at most once every 1 / 'refresh_rate'
-	second to boost performance. Experimental.
+	Limit compton to repaint at most once every 1 / 'refresh_rate' second to boost performance. Experimental.
+
+*--use-ewmh-active-win*::
+	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it. Experimental.
 
 FORMAT OF CONDITIONS
 --------------------
