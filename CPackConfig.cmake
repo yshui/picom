@@ -30,11 +30,11 @@ set(CPACK_STRIP_FILES 1)
 set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${CPACK_SYSTEM_NAME}")
 set(CPACK_DEBIAN_PACKAGE_SECTION "x11")
 # The dependencies are unreliable, just an example here
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libx11-6, libxext6, libxcomposite1, libxrender1, libxdamage1, libxfixes3, libpcre3, libconfig8")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libx11-6, libxext6, libxcomposite1, libxrender1, libxdamage1, libxfixes3, libpcre3, libconfig8, libdrm2")
 
 # == RPM package config ==
 # The dependencies are unreliable, just an example here
-set(CPACK_RPM_PACKAGE_REQUIRES "libx11, libxext, libxcomposite, libxrender, libxdamage, libxfixes, libpcre, libconfig")
+set(CPACK_RPM_PACKAGE_REQUIRES "libx11, libxext, libxcomposite, libxrender, libxdamage, libxfixes, libpcre, libconfig, libdrm")
 
 # == Source package config ==
 set(CPACK_SOURCE_GENERATOR "TBZ2 DEB RPM")

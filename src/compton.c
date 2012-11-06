@@ -866,7 +866,8 @@ win_match(win *w, wincond *condlst, wincond **cache) {
   // Then go through the whole linked list
   for (; condlst; condlst = condlst->next) {
     if (win_match_once(w, condlst)) {
-      *cache = condlst;
+      if (cache)
+        *cache = condlst;
       return true;
     }
   }
@@ -1583,42 +1584,41 @@ win_paint_win(Display *dpy, win *w, Picture tgt_buffer) {
     XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict, \
         tgt_buffer, (cx), (cy), 0, 0, x + (cx), y + (cy), (cwid), (chei))
 
-    // The following complicated logic is requried because some broken
+    // The following complicated logic is required because some broken
     // window managers (I'm talking about you, Openbox!) that makes
     // top_width + bottom_width > height in some cases.
 
     // top
-    COMP_BDR(0, 0, wid, min_i(t, hei));
+    int phei = min_i(t, hei);
+    if (phei > 0)
+      COMP_BDR(0, 0, wid, phei);
 
     if (hei > t) {
-      int phei = min_i(hei - t, b);
+      phei = min_i(hei - t, b);
 
       // bottom
-      if (phei) {
-        assert(phei > 0);
+      if (phei > 0)
         COMP_BDR(0, hei - phei, wid, phei);
 
-        phei = hei - t - phei;
-        if (phei) {
-          assert(phei > 0);
-          // left
-          COMP_BDR(0, t, min_i(l, wid), phei);
+      phei = hei - t - phei;
+      if (phei > 0) {
+        int pwid = min_i(l, wid);
+        // left
+        if (pwid > 0)
+          COMP_BDR(0, t, pwid, phei);
 
-          if (wid > l) {
-            int pwid = min_i(wid - l, r);
+        if (wid > l) {
+          pwid = min_i(wid - l, r);
 
-            if (pwid) {
-              assert(pwid > 0);
-              // right
-              COMP_BDR(wid - pwid, t, pwid, phei);
+          // right
+          if (pwid > 0)
+            COMP_BDR(wid - pwid, t, pwid, phei);
 
-              pwid = wid - l - pwid;
-              if (pwid)
-                assert(pwid > 0);
-                // body
-                XRenderComposite(dpy, op, w->picture, alpha_mask,
-                    tgt_buffer, l, t, 0, 0, x + l, y + t, pwid, phei);
-            }
+          pwid = wid - l - pwid;
+          if (pwid > 0) {
+            // body
+            XRenderComposite(dpy, op, w->picture, alpha_mask,
+                tgt_buffer, l, t, 0, 0, x + l, y + t, pwid, phei);
           }
         }
       }
