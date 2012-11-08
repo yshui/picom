@@ -1428,15 +1428,7 @@ paint_preprocess(Display *dpy, win *list) {
 
       // Fetch bounding region
       if (!w->border_size) {
-        // Build a border_size ourselves if window is not shaped, to avoid
-        // getting an invalid border_size region from X if the window is
-        // unmapped/destroyed
-        if (!w->bounding_shaped) {
-          w->border_size = win_get_region(dpy, w);
-        }
-        else if (IsUnmapped != w->a.map_state) {
-          w->border_size = border_size(dpy, w);
-        }
+        w->border_size = border_size(dpy, w);
       }
 
       // Fetch window extents
@@ -3220,6 +3212,8 @@ ev_shape_notify(XShapeEvent *ev) {
 
   // Redo bounding shape detection and rounded corner detection
   win_update_shape(dpy, w);
+
+  update_reg_ignore_expire(w);
 }
 
 /**
@@ -4478,8 +4472,6 @@ main(int argc, char **argv) {
 
   get_cfg(argc, argv);
 
-  fade_time = get_time_ms();
-
   dpy = XOpenDisplay(opts.display);
   if (!dpy) {
     fprintf(stderr, "Can't open display\n");
@@ -4658,6 +4650,8 @@ main(int argc, char **argv) {
     paint_tm_offset = get_time_timespec().tv_nsec;
 
   reg_ignore_expire = True;
+
+  fade_time = get_time_ms();
 
   t = paint_preprocess(dpy, list);
 

@@ -89,12 +89,42 @@
 #include <GL/glx.h>
 #endif
 
+static void
+print_timestamp(void);
+
 #ifdef DEBUG_ALLOC_REG
+
+#include <execinfo.h>
+#define BACKTRACE_SIZE  5
+
+/**
+ * Print current backtrace, excluding the first two items.
+ *
+ * Stolen from glibc manual.
+ */
+static inline void
+print_backtrace(void) {
+  void *array[BACKTRACE_SIZE];
+  size_t size;
+  char **strings;
+
+  size = backtrace(array, BACKTRACE_SIZE);
+  strings = backtrace_symbols(array, size);
+
+  for (size_t i = 2; i < size; i++)
+     printf ("%s\n", strings[i]);
+
+  free(strings);
+}
+
 static inline XserverRegion
 XFixesCreateRegion_(Display *dpy, XRectangle *p, int n,
     const char *func, int line) {
   XserverRegion reg = XFixesCreateRegion(dpy, p, n);
+  print_timestamp();
   printf("%#010lx: XFixesCreateRegion() in %s():%d\n", reg, func, line);
+  print_backtrace();
+  fflush(stdout);
   return reg;
 }
 
@@ -102,7 +132,9 @@ static inline void
 XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
     const char *func, int line) {
   XFixesDestroyRegion(dpy, reg);
+  print_timestamp();
   printf("%#010lx: XFixesDestroyRegion() in %s():%d\n", reg, func, line);
+  fflush(stdout);
 }
 
 #define XFixesCreateRegion(dpy, p, n) XFixesCreateRegion_(dpy, p, n, __func__, __LINE__)
@@ -668,7 +700,7 @@ get_time_timespec(void) {
  *
  * Used for debugging.
  */
-static inline void
+static void
 print_timestamp(void) {
   struct timeval tm, diff;
 
