@@ -56,7 +56,11 @@ if [ -z "$opacity" ]; then
 fi
 
 # Get ID of the target window
-wid=$(xwininfo $wprefix"$window" | sed -n 's/^xwininfo:.*: \(0x[[:xdigit:]]*\).*$/\1/p')
+if [ -z "$wprefix" ]; then
+	wid=$(xwininfo | sed -n 's/^xwininfo:.*: \(0x[[:xdigit:]]*\).*$/\1/p')
+else
+	wid=$(xwininfo $wprefix"$window" | sed -n 's/^xwininfo:.*: \(0x[[:xdigit:]]*\).*$/\1/p')
+fi
 
 if [ -z "$wid" ]; then
 	echo "Failed to find window."
