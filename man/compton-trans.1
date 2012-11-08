@@ -6,7 +6,7 @@ compton\-trans \- an opacity setter tool
 
 .SH SYNOPSIS
 .nf
-.B compton-trans [-wncs] [window] -o [opacity]
+.B compton-trans [-wncs] [window] opacity
 .fi
 
 .SH DESCRIPTION
@@ -17,20 +17,20 @@ It is similar to other utilities like transset(1) or transset-df(1).
 
 .SH OPTIONS
 .TP
-.BI \-w\ window\-id
+.BI \-w,\ \-window,\ \-\-window\ \fIwindow\-id\fP
 Specify the window id to target.
 .TP
-.BI \-n\ window\-name
+.BI \-n,\ \-name,\ \-\-name\ \fIwindow\-name\fP
 Specify and try to match a window name.
 .TP
-.BI \-c
+.BI \-c,\ \-current,\ \-\-current
 Specify the current window as a target.
 .TP
-.BI \-s
+.BI \-s,\ \-select,\ \-\-select
 Select target window with mouse cursor.
 This is the default if no window has been specified.
 .TP
-.BI \-o\ opacity
+.BI \-o,\ \-opacity,\ \-\-opacity\ \fIopacity\fP
 Specify the new opacity value for the window. This value
 can be anywhere from 1-100. If it is prefixed with a plus
 or minus (+/-), this will increment or decrement from the
@@ -39,19 +39,22 @@ target window's current opacity instead.
 .SH EXAMPLES
 .TP
 Set window id to opacity of 75%.
-compton-trans -w "$WINDOWID" -o 75
+compton-trans -w "$WINDOWID" 75
 .TP
 Set window name, "urxvt", to opacity of 75%.
-compton-trans -n "urxvt" -o 75
+compton-trans -n "urxvt" 75
 .TP
 Set current window to opacity of 75%.
-compton-trans -c -o 75
+compton-trans -c 75
 .TP
 Select target window and set opacity to 75%.
-compton-trans -s -o 75
+compton-trans 75
 .TP
 Increment current window 5% opacity.
-compton-trans -c -o +5
+compton-trans -c +5
+.TP
+Remove opacity property of current window.
+compton-trans -c none
 
 .SH BUGS
 Please report any you find to https://github.com/chjj/compton.
