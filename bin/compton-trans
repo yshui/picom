@@ -15,7 +15,8 @@
 # increment current window 5%
 #   settrans -c -o +5
 
-if test -z "$(which xprop)" -o -z "$(which xwininfo)"; then
+# "command" is a shell built-in, faster than "which"
+if test -z "$(command -v xprop)" -o -z "$(command -v xwininfo)"; then
   echo "Please install x11-utils/xorg-xprop/xorg-xwininfo." >& 2
   exit 1
 fi
@@ -23,8 +24,6 @@ fi
 window=
 opacity=
 cur=
-root=
-parent=
 active=
 i=
 
@@ -34,59 +33,84 @@ while getopts "scn:w:o:" option; do
     c)
       active=$(xprop -root -notype "_NET_ACTIVE_WINDOW" \
         | sed 's/^.*\(0x\S*\).*$/\1/')
-      window="-id $active"
+      wprefix='-id '; window="$active"
     ;;
-    n) window="-name $OPTARG" ;;
-    w) window="-id $OPTARG" ;;
+    n) wprefix='-name '; window="$OPTARG" ;;
+    w) wprefix='-id '; window="$OPTARG" ;;
     o) opacity="$OPTARG" ;;
   esac
 done
 
-root=$(xwininfo -all -root \
-  | grep "Root window id" \
-  | sed 's/^.*\(0x\S*\).*$/\1/')
-
-parent=$window
-i=0
-while true; do
-  parent=$(xwininfo -all $parent \
-    | grep Parent \
-    | sed 's/^.*\(0x\S*\).*$/\1/')
-
-  if test "$parent" = "$root"; then
-    break
-  fi
-
-  parent="-id $parent"
-  window=$parent
-
-  i=$((i+1))
-  if test $i -ge 1000; then
-    echo "An error occurred while traversing up the window tree." >& 2
-    echo "Please report this to https://github.com/chjj/compton/issues." >& 2
-    echo "Please mention your WM and versions of xwininfo/xprop." >& 2
-    exit 1
-  fi
-done
-
-inc=$(echo "$opacity" | sed 's/^\(+\|-\).*$\|^.*$/\1/')
-if test -n "$inc"; then
-  cur=$(xprop $window -notype "_NET_WM_WINDOW_OPACITY" \
-    | sed 's/^.*\b\([0-9]\+\).*$\|^.*$/\1/')
-  test -z "$cur" && cur=$((0xffffffff))
-  cur=$((cur*100/0xffffffff))
-  opacity=$(echo "$opacity" | sed 's/\(\+\|\-\)//')
-  if test "$inc" = "+"; then
-    opacity=$((cur+opacity))
-  else
-    opacity=$((cur-opacity))
-  fi
+# Validate opacity value
+if [ -z "$opacity" ]; then
+	echo "No opacity specified."
+	exit 1
 fi
 
-if test -n "$opacity" -a -n "$window"; then
-  test $opacity -lt 0 && opacity=0
-  test $opacity -gt 100 && opacity=100
-  opacity=$((opacity*0xffffffff/100))
-  xprop $window -f _NET_WM_WINDOW_OPACITY 32c \
-    -set _NET_WM_WINDOW_OPACITY "$opacity"
+opacity="$(echo "$opacity" \
+	| sed -rn 's/^[[:space:]]*([+-]?[[:digit:]]+)[[:space:]]*$/\1/p')"
+
+if [ -z "$opacity" ]; then
+	echo "Invalid opacity value."
+	exit 1
 fi
+
+# Get ID of the target window
+wid=$(xwininfo $wprefix"$window" | sed -n 's/^xwininfo:.*: \(0x[[:xdigit:]]*\).*$/\1/p')
+
+if [ -z "$wid" ]; then
+	echo "Failed to find window."
+	exit 1
+fi
+
+treeout="$(xwininfo -id "$wid" -children)"
+
+# Make sure it's not root window
+if echo "$treeout" | fgrep "Parent window id: 0x0" > /dev/null; then
+	echo "Cannot set opacity on root window."
+	exit 1
+fi
+
+# Get the whole window tree
+treeout="$(xwininfo -root -tree)"
+
+if [ -z "$treeout" ]; then
+	echo "Failed to get root window tree."
+	exit 1
+fi
+
+# Find the line number of the target window in the window tree
+lineno="$(echo -n "$treeout" | grep -nw "$wid" | head -n1 | cut -d ':' -f 1)"
+
+if [ -z "$lineno" ]; then
+	echo "Failed to find window in window tree."
+	exit 1
+fi
+
+# Find the highest ancestor of the target window below
+topmost=$(echo -n "$treeout" | head -n $(($lineno + 1)) | sed -n 's/^     \(0x[[:xdigit:]]*\).*/\1/p' | tail -n1)
+
+if [ -z "$topmost" ]; then
+	echo "Failed to find the highest parent window below root of the" \
+		"selected window."
+	exit 1
+fi
+
+# Calculate the desired opacity
+if echo "$opacity" | grep '^[+-]' > /dev/null; then
+	sign=$(echo "$opacity" | cut -b1)
+	cur=$(xprop -id "$topmost" -notype "_NET_WM_WINDOW_OPACITY" \
+		| sed 's/^.*\b\([0-9]\+\).*$\|^.*$/\1/')
+	[ -z "$cur" ] && cur=0xffffffff
+	cur=$((cur * 100 / 0xffffffff))
+	opacity="$(echo "$opacity" | sed 's/^[+-]//')"
+  	opacity=$(($cur $sign $opacity))
+fi
+
+[ $opacity -lt 0 ] && opacity=0
+[ $opacity -gt 100 ] && opacity=100
+
+# Set opacity
+opacity=$(($opacity * 0xffffffff / 100))
+xprop -id "$topmost" -f _NET_WM_WINDOW_OPACITY 32c \
+	-set _NET_WM_WINDOW_OPACITY "$opacity"
