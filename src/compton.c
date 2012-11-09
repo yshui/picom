@@ -164,6 +164,7 @@ Atom name_ewmh_atom = None;
 Atom class_atom = None;
 Atom transient_atom = None;
 Atom ewmh_active_win_atom = None;;
+Atom compton_shadow_atom = None;
 
 Atom win_type_atom;
 Atom win_type[NUM_WINTYPES];
@@ -205,6 +206,7 @@ static options_t opts = {
   .clear_shadow = False,
   .shadow_blacklist = NULL,
   .shadow_ignore_shaped = False,
+  .respect_attr_shadow = False,
 
   .wintype_fade = { False },
   .fade_in_step = 0.028 * OPAQUE,
@@ -1958,7 +1960,7 @@ map_win(Display *dpy, Window id,
 #endif
 
   // Detect if the window is shaped or has rounded corners
-  win_update_shape(dpy, w);
+  win_update_shape_raw(dpy, w);
 
   // Get window name and class if we are tracking them
   if (opts.track_wdata) {
@@ -1983,8 +1985,11 @@ map_win(Display *dpy, Window id,
       w->focused = True;
   }
 
-  // Window type change and bounding shape state change could affect
-  // shadow
+  // Check for _COMPTON_SHADOW
+  if (opts.respect_attr_shadow)
+    win_update_attr_shadow_raw(dpy, w);
+
+  // Many things above could affect shadow
   determine_shadow(dpy, w);
 
   // Fading in
@@ -2199,6 +2204,18 @@ determine_fade(Display *dpy, win *w) {
 }
 
 /**
+ * Update window-shape.
+ */
+static void
+win_update_shape_raw(Display *dpy, win *w) {
+  if (shape_exists) {
+    w->bounding_shaped = wid_bounding_shaped(dpy, w->id);
+    if (w->bounding_shaped && opts.detect_rounded_corners)
+      win_rounded_corners(dpy, w);
+  }
+}
+
+/**
  * Update window-shape related information.
  */
 static void
@@ -2206,9 +2223,7 @@ win_update_shape(Display *dpy, win *w) {
   if (shape_exists) {
     // Bool bounding_shaped_old = w->bounding_shaped;
 
-    w->bounding_shaped = wid_bounding_shaped(dpy, w->id);
-    if (w->bounding_shaped && opts.detect_rounded_corners)
-      win_rounded_corners(dpy, w);
+    win_update_shape_raw(dpy, w);
 
     // Shadow state could be changed
     determine_shadow(dpy, w);
@@ -2223,6 +2238,40 @@ win_update_shape(Display *dpy, win *w) {
 }
 
 /**
+ * Reread _COMPTON_SHADOW property from a window.
+ *
+ * The property must be set on the outermost window, usually the WM frame.
+ */
+static void
+win_update_attr_shadow_raw(Display *dpy, win *w) {
+  winattr_t attr = wid_get_attr(dpy, w->id, compton_shadow_atom, 1,
+      XA_CARDINAL, 32);
+  
+  if (!attr.nitems) {
+    free_winattr(&attr);
+    w->attr_shadow = -1;
+
+    return;
+  }
+
+  w->attr_shadow = *((long *) attr.data);
+}
+
+/**
+ * Reread _COMPTON_SHADOW property from a window and update related
+ * things.
+ */
+static void
+win_update_attr_shadow(Display *dpy, win *w) {
+  long attr_shadow_old = w->attr_shadow;
+
+  win_update_attr_shadow_raw(dpy, w);
+
+  if (w->attr_shadow != attr_shadow_old)
+    determine_shadow(dpy, w);
+}
+
+/**
  * Determine if a window should have shadow, and update things depending
  * on shadow state.
  */
@@ -2233,7 +2282,8 @@ determine_shadow(Display *dpy, win *w) {
   w->shadow = (opts.wintype_shadow[w->window_type]
       && !win_match(w, opts.shadow_blacklist, &w->cache_sblst)
       && !(opts.shadow_ignore_shaped && w->bounding_shaped
-        && !w->rounded_corners));
+        && !w->rounded_corners)
+      && !(opts.respect_attr_shadow && 0 == w->attr_shadow));
 
   // Window extents need update on shadow state change
   if (w->shadow != shadow_old) {
@@ -2387,6 +2437,7 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->need_configure = False;
   new->window_type = WINTYPE_UNKNOWN;
   new->mode = WINDOW_TRANS;
+  new->attr_shadow = -1;
 
   new->prev_trans = NULL;
 
@@ -3182,6 +3233,13 @@ ev_property_notify(XPropertyEvent *ev) {
       determine_shadow(dpy, w);
     }
   }
+
+  // If _COMPTON_SHADOW changes
+  if (opts.respect_attr_shadow && compton_shadow_atom == ev->atom) {
+    win *w = find_win(ev->window);
+    if (w)
+      win_update_attr_shadow(dpy, w);
+  }
 }
 
 inline static void
@@ -3438,6 +3496,9 @@ usage(void) {
     "--use-ewmh-active-win\n"
     "  Use _NET_WM_ACTIVE_WINDOW on the root window to determine which\n"
     "  window is focused instead of using FocusIn/Out events.\n"
+    "--respect-attr-shadow\n"
+    "  Respect _COMPTON_SHADOW. This a prototype-level feature, which\n"
+    "  you must not rely on.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3560,9 +3621,12 @@ fork_after(void) {
   setsid();
 
   // Mainly to suppress the _FORTIFY_SOURCE warning
-  if (!freopen("/dev/null", "r", stdin)
-      || !freopen("/dev/null", "w", stdout)
-      || !freopen("/dev/null", "w", stderr))
+  bool success = freopen("/dev/null", "r", stdin);
+  success = freopen("/dev/null", "w", stdout) && success;
+  if (!success)
+    fprintf(stderr, "fork_after(): freopen() failed.");
+  success = freopen("/dev/null", "w", stderr);
+  if (!success)
     fprintf(stderr, "fork_after(): freopen() failed.");
 }
 
@@ -3865,6 +3929,7 @@ get_cfg(int argc, char *const *argv) {
     { "sw-opti", no_argument, NULL, 274 },
     { "vsync-aggressive", no_argument, NULL, 275 },
     { "use-ewmh-active-win", no_argument, NULL, 276 },
+    { "respect-attr-shadow", no_argument, NULL, 277 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4055,6 +4120,10 @@ get_cfg(int argc, char *const *argv) {
         // --use-ewmh-active-win
         opts.use_ewmh_active_win = True;
         break;
+      case 277:
+        // --respect-attr-shadow
+        opts.respect_attr_shadow = True;
+        break;
       default:
         usage();
         break;
@@ -4116,6 +4185,7 @@ get_atoms(void) {
   class_atom = XA_WM_CLASS;
   transient_atom = XA_WM_TRANSIENT_FOR;
   ewmh_active_win_atom = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
+  compton_shadow_atom = XInternAtom(dpy, "_COMPTON_SHADOW", False);
 
   win_type_atom = XInternAtom(dpy,
     "_NET_WM_WINDOW_TYPE", False);

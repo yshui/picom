@@ -318,6 +318,9 @@ typedef struct _win {
   Picture shadow_pict;
   /// Alpha mask Picture to render shadow. Affected by shadow opacity.
   Picture shadow_alpha_pict;
+  /// The value of _COMPTON_SHADOW attribute of the window. Below 0 for
+  /// none.
+  long attr_shadow;
 
   // Dim-related members
   /// Whether the window is to be dimmed.
@@ -391,6 +394,8 @@ typedef struct _options {
   wincond *shadow_blacklist;
   /// Whether bounding-shaped window should be ignored.
   Bool shadow_ignore_shaped;
+  /// Whether to respect _COMPTON_SHADOW.
+  Bool respect_attr_shadow;
 
   // Fading
   Bool wintype_fade[NUM_WINTYPES];
@@ -1064,7 +1069,16 @@ static void
 determine_fade(Display *dpy, win *w);
 
 static void
+win_update_shape_raw(Display *dpy, win *w);
+
+static void
 win_update_shape(Display *dpy, win *w);
+
+static void
+win_update_attr_shadow_raw(Display *dpy, win *w);
+
+static void
+win_update_attr_shadow(Display *dpy, win *w);
 
 static void
 determine_shadow(Display *dpy, win *w);
