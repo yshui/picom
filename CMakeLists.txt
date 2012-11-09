@@ -5,7 +5,9 @@ set(CPACK_PACKAGE_VERSION_MAJOR "0")
 set(CPACK_PACKAGE_VERSION_MINOR "0")
 set(CPACK_PACKAGE_VERSION_PATCH "0")
 
-set(compton_SRCS src/compton.c) 
+add_subdirectory(man)
+
+set(compton_SRCS src/compton.c)
 add_executable(compton ${compton_SRCS})
 
 set(CMAKE_C_FLAGS_DEBUG "-ggdb")
@@ -46,7 +48,7 @@ endif ()
 target_link_libraries(compton "-lm" "-lrt")
 
 if (CONFIG_VSYNC_OPENGL)
-  target_link_libraries(compton "-lGL")
+	target_link_libraries(compton "-lGL")
 endif ()
 
 include(FindPkgConfig)
@@ -85,6 +87,12 @@ if (CONFIG_LIBCONFIG)
 	endif ()
 endif ()
 
+# --- Find libdrm ---
+if (CONFIG_VSYNC_DRM)
+	pkg_check_modules(LIBDRM REQUIRED libdrm)
+	# We only use its header file
+endif ()
+
 # == Install ==
 include(GNUInstallDirs)
 
@@ -92,10 +100,6 @@ install(TARGETS compton
 	DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT prog)
 install(FILES "${PROJECT_SOURCE_DIR}/bin/compton-trans"
 	DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT prog)
-install(FILES
-	"${PROJECT_SOURCE_DIR}/man/compton.1"
-	"${PROJECT_SOURCE_DIR}/man/compton-trans.1"
-	DESTINATION "${CMAKE_INSTALL_MANDIR}" COMPONENT doc)
 install(FILES
 	"${PROJECT_SOURCE_DIR}/README.md"
 	"${PROJECT_SOURCE_DIR}/LICENSE"
@@ -150,11 +154,11 @@ set(CPACK_SOURCE_IGNORE_FILES
 # --- DEB package config ---
 set(CPACK_DEBIAN_PACKAGE_SECTION "x11")
 # The dependencies are unreliable, just an example here
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libx11-6, libxext6, libxcomposite1, libxrender1, libxdamage1, libxfixes3, libpcre3, libconfig8")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libx11-6, libxext6, libxcomposite1, libxrender1, libxdamage1, libxfixes3, libpcre3, libconfig8, libdrm2")
 
 # --- RPM package config ---
 set(CPACK_RPM_PACKAGE_LICENSE "unknown")
 # The dependencies are unreliable, just an example here
-set(CPACK_RPM_PACKAGE_REQUIRES "libx11, libxext, libxcomposite, libxrender, libxdamage, libxfixes, libpcre, libconfig")
+set(CPACK_RPM_PACKAGE_REQUIRES "libx11, libxext, libxcomposite, libxrender, libxdamage, libxfixes, libpcre, libconfig, libdrm")
 
 include(CPack)
