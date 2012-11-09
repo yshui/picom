@@ -74,6 +74,11 @@ XserverRegion screen_reg = None;
 /// Current active window. Used by EWMH _NET_ACTIVE_WINDOW focus
 /// detection.
 win *active_win = NULL;
+/// Whether all windows are currently redirected.
+Bool redirected = False;
+/// Whether there's a highest fullscreen window, and all windows could
+/// be unredirected.
+Bool unredir_possible = False;
 
 /// Pregenerated alpha pictures.
 Picture *alpha_picts = NULL;
@@ -188,6 +193,7 @@ static options_t opts = {
   .synchronize = False,
   .detect_rounded_corners = False,
   .paint_on_overlay = False,
+  .unredir_if_possible = False,
 
   .refresh_rate = 0,
   .sw_opti = False,
@@ -1360,8 +1366,13 @@ get_alpha_pict_o(opacity_t o) {
 
 static win *
 paint_preprocess(Display *dpy, win *list) {
+  // Initialize unredir_possible
+  unredir_possible = False;
+
   win *w;
   win *t = NULL, *next = NULL;
+  // Trace whether it's the highest window to paint
+  Bool is_highest = True;
 
   // Fading step calculation
   unsigned steps = (sub_unslong(get_time_ms(), fade_time)
@@ -1410,24 +1421,6 @@ paint_preprocess(Display *dpy, win *list) {
     }
 
     if (to_paint) {
-      // Fetch the picture and pixmap if needed
-      if (!w->picture) {
-        XRenderPictureAttributes pa;
-        XRenderPictFormat *format;
-        Drawable draw = w->id;
-
-        if (has_name_pixmap && !w->pixmap) {
-          set_ignore(dpy, NextRequest(dpy));
-          w->pixmap = XCompositeNameWindowPixmap(dpy, w->id);
-        }
-        if (w->pixmap) draw = w->pixmap;
-
-        format = XRenderFindVisualFormat(dpy, w->a.visual);
-        pa.subwindow_mode = IncludeInferiors;
-        w->picture = XRenderCreatePicture(
-          dpy, draw, format, CPSubwindowMode, &pa);
-      }
-
       // Fetch bounding region
       if (!w->border_size) {
         w->border_size = border_size(dpy, w);
@@ -1482,6 +1475,10 @@ paint_preprocess(Display *dpy, win *list) {
         != (w->to_paint && WINDOW_SOLID == mode_old))
       reg_ignore_expire = True;
 
+    // Add window to damaged area if its painting status changes
+    if (to_paint != w->to_paint)
+      add_damage_win(dpy, w);
+
     if (to_paint) {
       // Generate ignore region for painting to reduce GPU load
       if (reg_ignore_expire || !w->to_paint) {
@@ -1516,6 +1513,14 @@ paint_preprocess(Display *dpy, win *list) {
 
       last_reg_ignore = w->reg_ignore;
 
+      if (is_highest && to_paint) {
+        is_highest = False;
+        if (WINDOW_SOLID == w->mode
+            && (!w->frame_opacity || !win_has_frame(w))
+            && win_is_fullscreen(w))
+          unredir_possible = True;
+      }
+
       // Reset flags
       w->flags = 0;
     }
@@ -1534,6 +1539,37 @@ paint_preprocess(Display *dpy, win *list) {
 
     if (!destroyed)
       w->to_paint = to_paint;
+  }
+
+  // If possible, unredirect all windows and stop painting
+  if (opts.unredir_if_possible && unredir_possible) {
+    redir_stop(dpy);
+  }
+  else {
+    redir_start(dpy);
+  }
+
+  // Fetch pictures only if windows are redirected
+  if (redirected) {
+    for (w = t; w; w = w->prev_trans) {
+      // Fetch the picture and pixmap if needed
+      if (!w->picture) {
+        XRenderPictureAttributes pa;
+        XRenderPictFormat *format;
+        Drawable draw = w->id;
+
+        if (has_name_pixmap && !w->pixmap) {
+          set_ignore(dpy, NextRequest(dpy));
+          w->pixmap = XCompositeNameWindowPixmap(dpy, w->id);
+        }
+        if (w->pixmap) draw = w->pixmap;
+
+        format = XRenderFindVisualFormat(dpy, w->a.visual);
+        pa.subwindow_mode = IncludeInferiors;
+        w->picture = XRenderCreatePicture(
+          dpy, draw, format, CPSubwindowMode, &pa);
+      }
+    }
   }
 
   return t;
@@ -2053,7 +2089,7 @@ static void
 unmap_win(Display *dpy, Window id, Bool fade) {
   win *w = find_win(id);
 
-  if (!w) return;
+  if (!w || IsUnmapped == w->a.map_state) return;
 
   w->a.map_state = IsUnmapped;
 
@@ -2464,6 +2500,8 @@ static void
 restack_win(Display *dpy, win *w, Window new_above) {
   Window old_above;
 
+  update_reg_ignore_expire(w);
+
   if (w->next) {
     old_above = w->next->id;
   } else {
@@ -2593,7 +2631,7 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
         win_update_shape(dpy, w);
     }
 
-    if (w->a.map_state != IsUnmapped && damage) {
+    if (damage) {
       XserverRegion extents = win_extents(dpy, w);
       XFixesUnionRegion(dpy, damage, damage, extents);
       XFixesDestroyRegion(dpy, extents);
@@ -3499,6 +3537,10 @@ usage(void) {
     "--respect-attr-shadow\n"
     "  Respect _COMPTON_SHADOW. This a prototype-level feature, which\n"
     "  you must not rely on.\n"
+    "--unredir-if-possible\n"
+    "  Unredirect all windows if a full-screen opaque window is\n"
+    "  detected, to maximize performance for full-screen windows.\n"
+    "  Experimental.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3930,6 +3972,7 @@ get_cfg(int argc, char *const *argv) {
     { "vsync-aggressive", no_argument, NULL, 275 },
     { "use-ewmh-active-win", no_argument, NULL, 276 },
     { "respect-attr-shadow", no_argument, NULL, 277 },
+    { "unredir-if-possible", no_argument, NULL, 278 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4123,6 +4166,10 @@ get_cfg(int argc, char *const *argv) {
       case 277:
         // --respect-attr-shadow
         opts.respect_attr_shadow = True;
+        break;
+      case 278:
+        // --unredir-if-possible
+        opts.unredir_if_possible = True;
         break;
       default:
         usage();
@@ -4522,6 +4569,61 @@ init_overlay(void) {
   }
 }
 
+/**
+ * Redirect all windows.
+ */
+static void
+redir_start(Display *dpy) {
+  if (!redirected) {
+#ifdef DEBUG_REDIR
+    printf("redir_start(): Screen redirected.\n");
+#endif
+
+    // Map overlay window. Done firstly according to this:
+    // https://bugzilla.gnome.org/show_bug.cgi?id=597014
+    if (overlay)
+      XMapWindow(dpy, overlay);
+
+    XCompositeRedirectSubwindows(dpy, root, CompositeRedirectManual);
+
+    // Must call XSync() here
+    XSync(dpy, False);
+
+    redirected = True;
+  }
+}
+
+/**
+ * Unredirect all windows.
+ */
+static void
+redir_stop(Display *dpy) {
+  if (redirected) {
+#ifdef DEBUG_REDIR
+    printf("redir_stop(): Screen unredirected.\n");
+#endif
+    // Destroy all Pictures as they expire once windows are unredirected
+    // If we don't destroy them here, looks like the resources are just
+    // kept inaccessible somehow
+    for (win *w = list; w; w = w->next) {
+      free_pixmap(dpy, &w->pixmap);
+      free_picture(dpy, &w->picture);
+    }
+
+    XCompositeUnredirectSubwindows(dpy, root, CompositeRedirectManual);
+
+    // Unmap overlay window
+    if (overlay)
+      XUnmapWindow(dpy, overlay);
+
+    // Must call XSync() here
+    XSync(dpy, False);
+
+    redirected = False;
+
+  }
+}
+
 int
 main(int argc, char **argv) {
   XEvent ev;
@@ -4689,8 +4791,7 @@ main(int argc, char **argv) {
   all_damage = None;
   XGrabServer(dpy);
 
-  XCompositeRedirectSubwindows(
-    dpy, root, CompositeRedirectManual);
+  redir_start(dpy);
 
   XSelectInput(dpy, root,
     SubstructureNotifyMask
@@ -4725,7 +4826,8 @@ main(int argc, char **argv) {
 
   t = paint_preprocess(dpy, list);
 
-  paint_all(dpy, None, t);
+  if (redirected)
+    paint_all(dpy, None, t);
 
   // Initialize idling
   idling = False;
@@ -4737,9 +4839,9 @@ main(int argc, char **argv) {
     while (XEventsQueued(dpy, QueuedAfterReading)
         || (evpoll(&ufd,
             (ev_received ? 0: (idling ? -1: fade_timeout()))) > 0)) {
-      // Sometimes poll() returns 1 but no events are actually read, causing
-      // XNextEvent() to block, I have no idea what's wrong, so we check for the
-      // number of events here
+      // Sometimes poll() returns 1 but no events are actually read,
+      // causing XNextEvent() to block, I have no idea what's wrong, so we
+      // check for the number of events here
       if (XEventsQueued(dpy, QueuedAfterReading)) {
         XNextEvent(dpy, &ev);
         ev_handle((XEvent *) &ev);
@@ -4751,6 +4853,10 @@ main(int argc, char **argv) {
     idling = True;
 
     t = paint_preprocess(dpy, list);
+
+    // If the screen is unredirected, free all_damage to stop painting
+    if (!redirected)
+      free_region(dpy, &all_damage);
 
     if (all_damage && !is_region_empty(dpy, all_damage)) {
       static int paint;

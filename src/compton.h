@@ -14,6 +14,7 @@
 // #define DEBUG_CLIENTWIN 1
 // #define DEBUG_WINDATA 1
 // #define DEBUG_WINMATCH 1
+// #define DEBUG_REDIR 1
 // #define MONITOR_REPAINT 1
 
 // Whether to enable PCRE regular expression support in blacklists, enabled
@@ -367,6 +368,9 @@ typedef struct _options {
   /// Whether to paint on X Composite overlay window instead of root
   /// window.
   Bool paint_on_overlay;
+  /// Whether to unredirect all windows if a full-screen opaque window
+  /// is detected.
+  Bool unredir_if_possible;
   /// Whether to work under synchronized mode for debugging.
   Bool synchronize;
 
@@ -960,10 +964,24 @@ update_reg_ignore_expire(const win *w) {
     reg_ignore_expire = True;
 }
 
+/**
+ * Check whether a window has WM frames.
+ */
 static inline bool
 win_has_frame(const win *w) {
   return w->top_width || w->left_width || w->right_width
     || w->bottom_width;
+}
+
+/**
+ * Check if a window is a fullscreen window.
+ *
+ * It's not using w->border_size for performance measures.
+ */
+static inline bool
+win_is_fullscreen(const win *w) {
+  return (w->a.x <= 0 && w->a.y <= 0 && (w->a.x + w->widthb) >= root_width
+    && (w->a.y + w->heightb) >= root_height && !w->bounding_shaped);
 }
 
 static void
@@ -1345,3 +1363,9 @@ init_dbe(void);
 
 static void
 init_overlay(void);
+
+static void
+redir_start(Display *dpy);
+
+static void
+redir_stop(Display *dpy);
