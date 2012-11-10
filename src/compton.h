@@ -343,6 +343,7 @@ typedef struct _win {
   struct _win *prev_trans;
 } win;
 
+/// VSync modes.
 typedef enum {
   VSYNC_NONE,
   VSYNC_DRM,
@@ -354,7 +355,7 @@ typedef int (*f_WaitVideoSync) (int, int, unsigned *);
 typedef int (*f_GetVideoSync) (unsigned *);
 #endif
 
-typedef struct _options {
+typedef struct {
   // General
   char *display;
   /// Whether to try to detect WM windows and mark them as focused.
@@ -958,6 +959,10 @@ wid_bounding_shaped(Display *dpy, Window wid) {
   return False;
 }
 
+/**
+ * Determine if a window change affects reg_ignore and set
+ * reg_ignore_expire accordingly.
+ */
 static inline void
 update_reg_ignore_expire(const win *w) {
   if (w->to_paint && WINDOW_SOLID == w->mode)

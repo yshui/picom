@@ -1979,10 +1979,9 @@ map_win(Display *dpy, Window id,
       mark_client_win(dpy, w, cw);
     }
   }
-  else if (opts.frame_opacity) {
-    // Refetch frame extents just in case it changes when the window is
-    // unmapped
-    get_frame_extents(dpy, w, w->client_win);
+  else {
+    // Re-mark client window here
+    mark_client_win(dpy, w, w->client_win);
   }
 
   // Workaround for _NET_WM_WINDOW_TYPE for Openbox menus, which is
