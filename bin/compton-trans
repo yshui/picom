@@ -24,12 +24,11 @@ fi
 window=
 opacity=
 cur=
-active=
 i=
 
 while getopts "scn:w:o:" option; do
   case "$option" in
-    s) window="" ;;
+    s) wprefix=''; window='' ;;
     c)
       active=$(xprop -root -notype "_NET_ACTIVE_WINDOW" \
         | sed 's/^.*\(0x\S*\).*$/\1/')
@@ -57,17 +56,17 @@ fi
 
 # Get ID of the target window
 if [ -z "$wprefix" ]; then
-	wid=$(xwininfo | sed -n 's/^xwininfo:.*: \(0x[[:xdigit:]]*\).*$/\1/p')
+	treeout=$(xwininfo -children -frame)
 else
-	wid=$(xwininfo $wprefix"$window" | sed -n 's/^xwininfo:.*: \(0x[[:xdigit:]]*\).*$/\1/p')
+	treeout=$(xwininfo -children $wprefix"$window")
 fi
+
+wid=$(echo "$treeout" | sed -n 's/^xwininfo:.*: \(0x[[:xdigit:]]*\).*$/\1/p')
 
 if [ -z "$wid" ]; then
 	echo "Failed to find window."
 	exit 1
 fi
-
-treeout="$(xwininfo -id "$wid" -children)"
 
 # Make sure it's not root window
 if echo "$treeout" | fgrep "Parent window id: 0x0" > /dev/null; then
@@ -75,24 +74,29 @@ if echo "$treeout" | fgrep "Parent window id: 0x0" > /dev/null; then
 	exit 1
 fi
 
-# Get the whole window tree
-treeout="$(xwininfo -root -tree)"
+# If it's already the topmost window
+if echo "$treeout" | grep "Parent window id: 0x[[:xdigit:]]* (the root window)" > /dev/null; then
+	topmost="$wid"
+else
+	# Get the whole window tree
+	treeout="$(xwininfo -root -tree)"
 
-if [ -z "$treeout" ]; then
-	echo "Failed to get root window tree."
-	exit 1
+	if [ -z "$treeout" ]; then
+		echo "Failed to get root window tree."
+		exit 1
+	fi
+
+	# Find the line number of the target window in the window tree
+	lineno="$(echo -n "$treeout" | grep -nw "$wid" | head -n1 | cut -d ':' -f 1)"
+
+	if [ -z "$lineno" ]; then
+		echo "Failed to find window in window tree."
+		exit 1
+	fi
+
+	# Find the highest ancestor of the target window below
+	topmost=$(echo -n "$treeout" | head -n $(($lineno + 1)) | sed -n 's/^     \(0x[[:xdigit:]]*\).*/\1/p' | tail -n1)
 fi
-
-# Find the line number of the target window in the window tree
-lineno="$(echo -n "$treeout" | grep -nw "$wid" | head -n1 | cut -d ':' -f 1)"
-
-if [ -z "$lineno" ]; then
-	echo "Failed to find window in window tree."
-	exit 1
-fi
-
-# Find the highest ancestor of the target window below
-topmost=$(echo -n "$treeout" | head -n $(($lineno + 1)) | sed -n 's/^     \(0x[[:xdigit:]]*\).*/\1/p' | tail -n1)
 
 if [ -z "$topmost" ]; then
 	echo "Failed to find the highest parent window below root of the" \
