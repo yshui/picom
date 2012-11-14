@@ -39,19 +39,22 @@ target window's current opacity instead.
 .SH EXAMPLES
 .TP
 Set window id to opacity of 75%.
-compton-trans -w "$WINDOWID" -o 75
+compton-trans -w "$WINDOWID" 75
 .TP
 Set window name, "urxvt", to opacity of 75%.
-compton-trans -n "urxvt" -o 75
+compton-trans -n "urxvt" 75
 .TP
 Set current window to opacity of 75%.
-compton-trans -c -o 75
+compton-trans -c 75
 .TP
 Select target window and set opacity to 75%.
-compton-trans -s -o 75
+compton-trans -s 75
 .TP
-Increment current window 5% opacity.
-compton-trans -c -o +5
+Increment current window opacity by 5%.
+compton-trans -c +5
+.TP
+Decrement current window opacity by 5%.
+compton-trans -c -- -5
 
 .SH BUGS
 Please report any you find to https://github.com/chjj/compton.

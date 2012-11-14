@@ -57,12 +57,20 @@ __R__ for runtime
 * libGL (B,R) (Will probably be made optional soon)
 * asciidoc (B) (if you wish to run `make docs`)
 
-To build, make sure you have the above dependencies:
+### How to build
+
+To build, make sure you have the dependencies above:
 
 ``` bash
+# Make the main program
 $ make
+# Make the newer man pages
+$ make docs
+# Install
 $ make install
 ```
+
+(Compton does include a `_CMakeLists.txt` in the tree, but we haven't decided whether we should switch to CMake yet. The `Makefile` is fully usable right now.)
 
 ## Example Usage
 
