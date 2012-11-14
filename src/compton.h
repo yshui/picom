@@ -1289,6 +1289,11 @@ add_damage_win(Display *dpy, win *w) {
   }
 }
 
+#if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
+static bool
+ev_window_name(Display *dpy, Window wid, char **name);
+#endif
+
 inline static void
 ev_handle(XEvent *ev);
 

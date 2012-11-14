@@ -2529,8 +2529,8 @@ restack_win(Display *dpy, win *w, Window new_above) {
 #ifdef DEBUG_RESTACK
     {
       const char *desc;
-      char *window_name;
-      Bool to_free;
+      char *window_name = NULL;
+      bool to_free;
       win* c = list;
 
       printf("restack_win(%#010lx, %#010lx): "
@@ -2539,11 +2539,7 @@ restack_win(Display *dpy, win *w, Window new_above) {
       for (; c; c = c->next) {
         window_name = "(Failed to get title)";
 
-        if (root == c->id) {
-          window_name = "(Root window)";
-        } else {
-          to_free = wid_get_name(dpy, c->id, &window_name);
-        }
+        to_free = ev_window_name(dpy, c->id, &window_name);
 
         desc = "";
         if (c->destroyed) desc = "(D) ";
@@ -3326,6 +3322,38 @@ ev_screen_change_notify(XRRScreenChangeNotifyEvent *ev) {
   }
 }
 
+#if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
+/**
+ * Get a window's name from window ID.
+ */
+static bool
+ev_window_name(Display *dpy, Window wid, char **name) {
+  bool to_free = false;
+
+  *name = "";
+  if (wid) {
+    *name = "(Failed to get title)";
+    if (root == wid)
+      *name = "(Root window)";
+    else if (overlay == wid)
+      *name = "(Overlay)";
+    else {
+      win *w = find_win(wid);
+      if (!w)
+        w = find_toplevel(wid);
+
+      if (w && w->name)
+        *name = w->name;
+      else if (!(w && w->client_win
+            && (to_free = wid_get_name(dpy, w->client_win, name))))
+          to_free = wid_get_name(dpy, wid, name);
+    }
+  }
+
+  return to_free;
+}
+#endif
+
 static void
 ev_handle(XEvent *ev) {
   if ((ev->type & 0x7f) != KeymapNotify) {
@@ -3334,31 +3362,11 @@ ev_handle(XEvent *ev) {
 
 #ifdef DEBUG_EVENTS
   if (ev->type != damage_event + XDamageNotify) {
-    Window wid;
-    char *window_name;
-    Bool to_free = False;
+    Window wid = ev_window(ev);
+    char *window_name = NULL;
+    Bool to_free = false;
 
-    wid = ev_window(ev);
-    window_name = "(Failed to get title)";
-
-    if (wid) {
-      if (root == wid)
-        window_name = "(Root window)";
-      else if (overlay == wid)
-        window_name = "(Overlay)";
-      else {
-        win *w = find_win(wid);
-        if (!w)
-          w = find_toplevel(wid);
-
-        if (w && w->name)
-          window_name = w->name;
-        else if (!(w && w->client_win
-              && (to_free = (Bool) wid_get_name(dpy, w->client_win,
-                  &window_name))))
-            to_free = (Bool) wid_get_name(dpy, wid, &window_name);
-      }
-    }
+    to_free = ev_window_name(dpy, wid, &window_name);
 
     print_timestamp();
     printf("event %10.10s serial %#010x window %#010lx \"%s\"\n",
@@ -3899,6 +3907,9 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   // --use-ewmh-active-win
   lcfg_lookup_bool(&cfg, "use-ewmh-active-win",
       &opts.use_ewmh_active_win);
+  // --unredir-if-possible
+  lcfg_lookup_bool(&cfg, "unredir-if-possible",
+      &opts.unredir_if_possible);
   // --shadow-exclude
   {
     config_setting_t *setting =
