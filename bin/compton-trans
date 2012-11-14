@@ -26,6 +26,7 @@ opacity=
 cur=
 i=
 
+# Read options
 while getopts "scn:w:o:" option; do
   case "$option" in
     s) wprefix=''; window='' ;;
@@ -37,8 +38,13 @@ while getopts "scn:w:o:" option; do
     n) wprefix='-name '; window="$OPTARG" ;;
     w) wprefix='-id '; window="$OPTARG" ;;
     o) opacity="$OPTARG" ;;
+    \?) exit 1;;
   esac
 done
+
+# Read positional arguments
+shift $(($OPTIND - 1))
+[ -n "$1" ] && opacity="$1"
 
 # Validate opacity value
 if [ -z "$opacity" ]; then
