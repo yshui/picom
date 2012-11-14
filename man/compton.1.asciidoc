@@ -1,9 +1,9 @@
 compton(1)
 ==========
-:doctype:		manpage
-:man source:	compton
-:man version:	nightly-20121105
-:man manual:	LOCAL USER COMMANDS
+:doctype:     manpage
+:man source:  compton
+:man version: nightly-20121105
+:man manual:  LOCAL USER COMMANDS
 
 NAME
 ----
@@ -141,6 +141,9 @@ OPTIONS
 
 *--use-ewmh-active-win*::
 	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it. Experimental.
+
+*--unredir-if-possible*::
+	Unredirect all windows if a full-screen opaque window is detected, to maximize performance for full-screen windows. Known to cause flickering when redirecting/unredirecting windows. *--paint-on-overlay* may make the flickering less obvious. Experimental.
 
 FORMAT OF CONDITIONS
 --------------------

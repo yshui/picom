@@ -72,135 +72,31 @@ $ make install
 
 (Compton does include a `_CMakeLists.txt` in the tree, but we haven't decided whether we should switch to CMake yet. The `Makefile` is fully usable right now.)
 
-## Example Usage
+## Known issues
 
-``` bash
-$ compton -cC -i 0.6 -e 0.6 -f
-$ compton --config ~/compton.conf
-```
+* VSync does not work too well. It's widely reported that tearing still happens on the top of the screen. I do not know how to fix the issue.
 
-### Options and Configuration
+* If `--unredir-if-possible` is enabled, when compton redirects/unredirects windows, the screen may flicker. Using `--paint-on-overlay` minimizes the problem from my observation, yet I do not know if there's a cure.
 
-```
-compton [-d display] [-r radius] [-o opacity]
-        [-l left-offset] [-t top-offset]
-        [-i opacity] [-e opacity] [-cCfFSdG]
-        [--config path] [--shadow-red value]
-        [--shadow-green value] [--shadow-blue value]
-        [--inactive-opacity-override] [--inactive-dim value]
-        [--mark-wmwin-focused] [--shadow-exclude condition]
-        [--mark-ovredir-focused] [--no-fading-openclose]
-        [--shadow-ignore-shaped] [--detect-round-corners]
-```
+* compton may not track focus correctly in all situations. The focus tracking code is experimental. `--use-ewmh-active-win` might be helpful.
 
-* `-d` __display__:
-  Which display should be managed.
-* `-r` __radius__:
-  The blur radius for shadows. (default 12)
-* `-o` __opacity__:
-  The translucency for shadows. (default .75)
-* `-l` __left-offset__:
-  The left offset for shadows. (default -15)
-* `-t` __top-offset__:
-  The top offset for shadows. (default -15)
-* `-I` __fade-in-step__:
-  Opacity change between steps while fading in. (default 0.028)
-* `-O` __fade-out-step__:
-  Opacity change between steps while fading out. (default 0.03)
-* `-D` __fade-delta-time__:
-  The time between steps in a fade in milliseconds. (default 10)
-* `-m` __opacity__:
-  The opacity for menus. (default 1.0)
-* `-c`:
-  Enabled client-side shadows on windows.
-* `-C`:
-  Avoid drawing shadows on dock/panel windows.
-* `-z`:
-  Zero the part of the shadow's mask behind the window (experimental).
-* `-f`:
-  Fade windows in/out when opening/closing and when opacity
-  changes, unless --no-fading-openclose is used.
-* `-F`:
-  Equals -f. Deprecated.
-* `-i` __opacity__:
-  Opacity of inactive windows. (0.1 - 1.0)
-* `-e` __opacity__:
-  Opacity of window titlebars and borders. (0.1 - 1.0)
-* `-G`:
-  Don't draw shadows on DND windows
-* `-b`:
-  Daemonize/background process.
-* `-S`:
-  Enable synchronous operation (for debugging).
-* `--config` __path__:
-  Look for configuration file at the path.
-* `--shadow-red` __value__:
-  Red color value of shadow (0.0 - 1.0, defaults to 0).
-* `--shadow-green` __value__:
-  Green color value of shadow (0.0 - 1.0, defaults to 0).
-* `--shadow-blue` __value__:
-  Blue color value of shadow (0.0 - 1.0, defaults to 0).
-* `--inactive-opacity-override`:
-  Inactive opacity set by -i overrides value of _NET_WM_OPACITY.
-* `--inactive-dim` __value__:
-  Dim inactive windows. (0.0 - 1.0, defaults to 0)
-* `--mark-wmwin-focused`:
-  Try to detect WM windows and mark them as active.
-* `--shadow-exclude` __condition__:
-  Exclude conditions for shadows.
-* `--mark-ovredir-focused`:
-  Mark over-redirect windows as active.
-* `--no-fading-openclose`:
-  Do not fade on window open/close.
-* `--shadow-ignore-shaped`:
-  Do not paint shadows on shaped windows.
-* `--detect-rounded-corners`:
-  Try to detect windows with rounded corners and don't consider
-  them shaped windows.
+* Compton may give ugly shadow to windows with ARGB background if `-z` is enabled, because compton cannot determine their real shapes. One may have to disable shadows on those windows with window-type-specific settings in configuration file or `--shadow-exclude`.
 
-### Format of a condition:
+* There are two sets of man pages in the repository: the man pages in groff format (`man/compton.1` & `man/compton-trans.1`) and the man pages in Asciidoc format (`man/compton.1.asciidoc` & `man/compton-trans.1.asciidoc`). The Asciidoc man pages are much more up-to-date than the groff ones, and it is viewable online. As chjj has not yet expressed his attitude towards switching to Asciidoc man pages, I kept both versions. By default the groff version is installed, unless you run `make docs`.
 
-`condition = <target>:<type>[<flags>]:<pattern>`
+## Usage
 
-`<target>` is one of `"n"` (window name), `"i"` (window class
-instance), and `"g"` (window general class)
+Please refer to the Asciidoc man pages (`man/compton.1.asciidoc` & `man/compton-trans.1.asciidoc`) for more details and examples.
 
-`<type>` is one of `"e"` (exact match), `"a"` (match anywhere),
-`"s"` (match from start), `"w"` (wildcard), and `"p"` (PCRE
-regular expressions, if compiled with the support).
+Note a sample configuration file `compton.sample.conf` is included in the repository.
 
-`<flags>` could be a series of flags. Currently the only defined
-flag is `"i"` (ignore case).
+## Support
 
-`<pattern>` is the actual pattern string.
+* Bug reports and feature requests should go to the "Issues" section above.
 
-### Configuration
+* Our (semi?) official IRC channel is #compton on FreeNode.
 
-A more robust
-[sample configuration file](https://raw.github.com/chjj/compton/master/compton.sample.conf)
-is available in the repository.
-
-#### Example
-
-~/compton.conf:
-
-```
-# Shadows
-shadow = true;
-
-# Opacity
-inactive-opacity = 0.8;
-frame-opacity = 0.7;
-
-# Fades
-fading = true;
-```
-
-Run with:
-
-``` bash
-$ compton --config ~/compton.conf
-```
+* Some information is available on the wiki, including (and presently, only includes) a FAQ.
 
 ## License
 
@@ -216,4 +112,4 @@ for this particular tree is something like:
 
 Not counting the tens of people who forked it in between.
 
-See LICENSE for more info.
+Compton is distributed under MIT license, as far as I (richardgv) know. See LICENSE for more info.

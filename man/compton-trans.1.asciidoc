@@ -1,9 +1,9 @@
 compton-trans(1)
 ================
-:doctype:		manpage
-:man source:	compton
-:man version:	nightly-20121105
-:man manual:	LOCAL USER COMMANDS
+:doctype:     manpage
+:man source:  compton
+:man version: nightly-20121114
+:man manual:  LOCAL USER COMMANDS
 
 NAME
 ----
@@ -12,7 +12,7 @@ compton-trans - an opacity setter tool
 SYNOPSIS
 --------
 
-*compton-trans* [-w 'WINDOW_ID'] [-n 'WINDOW_NAME'] [-c] [-s] [-o 'OPACITY']
+*compton-trans* [-w 'WINDOW_ID'] [-n 'WINDOW_NAME'] [-c] [-s] 'OPACITY'
 
 DESCRIPTION
 -----------
@@ -42,31 +42,37 @@ EXAMPLES
 * Set the opacity of the window with specific window ID to 75%:
 +
 ------------
-compton-trans -w "$WINDOWID" -o 75
+compton-trans -w "$WINDOWID" 75
 ------------
 
 * Set the opacity of the window with the name "urxvt" to 75%:
 +
 ------------
-compton-trans -n "urxvt" -o 75
+compton-trans -n "urxvt" 75
 ------------
 
 * Set current window to opacity of 75%:
 +
 ------------
-compton-trans -c -o 75
+compton-trans -c 75
 ------------
 
 * Select target window and set opacity to 75%:
 +
 ------------
-compton-trans -s -o 75
+compton-trans -s 75
 ------------
 
-* Increment opacity of current active window for 5%:
+* Increment opacity of current active window by 5%:
 +
 ------------
-compton-trans -c -o +5
+compton-trans -c +5
+------------
+
+* Decrement opacity of current active window by 5%:
++
+------------
+compton-trans -c -- -5
 ------------
 
 BUGS
