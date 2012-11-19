@@ -15,6 +15,7 @@
 // #define DEBUG_WINDATA 1
 // #define DEBUG_WINMATCH 1
 // #define DEBUG_REDIR 1
+// #define DEBUG_ALLOC_REG 1
 // #define MONITOR_REPAINT 1
 
 // Whether to enable PCRE regular expression support in blacklists, enabled
@@ -48,8 +49,8 @@
 #include <stdbool.h>
 #include <locale.h>
 #include <assert.h>
-
 #include <fnmatch.h>
+#include <signal.h>
 
 #ifdef CONFIG_REGEX_PCRE
 #include <pcre.h>
@@ -75,6 +76,7 @@
 #include <X11/extensions/shape.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/extensions/Xdbe.h>
+#include <time.h>
 
 #ifdef CONFIG_VSYNC_DRM
 #include <fcntl.h>
@@ -90,58 +92,6 @@
 #include <GL/glx.h>
 #endif
 
-static void
-print_timestamp(void);
-
-#ifdef DEBUG_ALLOC_REG
-
-#include <execinfo.h>
-#define BACKTRACE_SIZE  5
-
-/**
- * Print current backtrace, excluding the first two items.
- *
- * Stolen from glibc manual.
- */
-static inline void
-print_backtrace(void) {
-  void *array[BACKTRACE_SIZE];
-  size_t size;
-  char **strings;
-
-  size = backtrace(array, BACKTRACE_SIZE);
-  strings = backtrace_symbols(array, size);
-
-  for (size_t i = 2; i < size; i++)
-     printf ("%s\n", strings[i]);
-
-  free(strings);
-}
-
-static inline XserverRegion
-XFixesCreateRegion_(Display *dpy, XRectangle *p, int n,
-    const char *func, int line) {
-  XserverRegion reg = XFixesCreateRegion(dpy, p, n);
-  print_timestamp();
-  printf("%#010lx: XFixesCreateRegion() in %s():%d\n", reg, func, line);
-  print_backtrace();
-  fflush(stdout);
-  return reg;
-}
-
-static inline void
-XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
-    const char *func, int line) {
-  XFixesDestroyRegion(dpy, reg);
-  print_timestamp();
-  printf("%#010lx: XFixesDestroyRegion() in %s():%d\n", reg, func, line);
-  fflush(stdout);
-}
-
-#define XFixesCreateRegion(dpy, p, n) XFixesCreateRegion_(dpy, p, n, __func__, __LINE__)
-#define XFixesDestroyRegion(dpy, reg) XFixesDestroyRegion_(dpy, reg, __func__, __LINE__)
-#endif
-
 // === Constants ===
 #if !(COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2)
 #error libXcomposite version unsupported
@@ -149,10 +99,6 @@ XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
 
 #define ROUNDED_PERCENT 0.05
 #define ROUNDED_PIXELS  10
-
-// For printing timestamps
-#include <time.h>
-extern struct timeval time_start;
 
 #define OPAQUE 0xffffffff
 #define REGISTER_PROP "_NET_WM_CM_S"
@@ -194,7 +140,7 @@ typedef enum {
   WINTYPE_COMBO,
   WINTYPE_DND,
   NUM_WINTYPES
-} wintype;
+} wintype_t;
 
 typedef enum {
   WINDOW_SOLID,
@@ -204,13 +150,13 @@ typedef enum {
 
 typedef struct {
   unsigned char *data;
-  int nitems;
-} winattr_t;
+  unsigned long nitems;
+} winprop_t;
 
 typedef struct _ignore {
   struct _ignore *next;
   unsigned long sequence;
-} ignore;
+} ignore_t;
 
 enum wincond_target {
   CONDTGT_NAME,
@@ -238,8 +184,311 @@ typedef struct _wincond {
 #endif
   int16_t flags;
   struct _wincond *next;
-} wincond;
+} wincond_t;
 
+/// VSync modes.
+typedef enum {
+  VSYNC_NONE,
+  VSYNC_DRM,
+  VSYNC_OPENGL,
+} vsync_t;
+
+#ifdef CONFIG_VSYNC_OPENGL
+typedef int (*f_WaitVideoSync) (int, int, unsigned *);
+typedef int (*f_GetVideoSync) (unsigned *);
+#endif
+
+typedef struct {
+  int size;
+  double *data;
+} conv;
+
+struct _win;
+
+/// Structure representing all options.
+typedef struct {
+  // === General ===
+  char *display;
+  /// Whether to try to detect WM windows and mark them as focused.
+  bool mark_wmwin_focused;
+  /// Whether to mark override-redirect windows as focused.
+  bool mark_ovredir_focused;
+  /// Whether to fork to background.
+  bool fork_after_register;
+  /// Whether to detect rounded corners.
+  bool detect_rounded_corners;
+  /// Whether to paint on X Composite overlay window instead of root
+  /// window.
+  bool paint_on_overlay;
+  /// Whether to unredirect all windows if a full-screen opaque window
+  /// is detected.
+  bool unredir_if_possible;
+  /// Whether to work under synchronized mode for debugging.
+  bool synchronize;
+
+  // === VSync & software optimization ===
+  /// User-specified refresh rate.
+  int refresh_rate;
+  /// Whether to enable refresh-rate-based software optimization.
+  bool sw_opti;
+  /// VSync method to use;
+  vsync_t vsync;
+  /// Whether to enable double buffer.
+  bool dbe;
+  /// Whether to do VSync aggressively.
+  bool vsync_aggressive;
+
+  // === Shadow ===
+  bool wintype_shadow[NUM_WINTYPES];
+  /// Red, green and blue tone of the shadow.
+  double shadow_red, shadow_green, shadow_blue;
+  int shadow_radius;
+  int shadow_offset_x, shadow_offset_y;
+  double shadow_opacity;
+  bool clear_shadow;
+  /// Shadow blacklist. A linked list of conditions.
+  wincond_t *shadow_blacklist;
+  /// Whether bounding-shaped window should be ignored.
+  bool shadow_ignore_shaped;
+  /// Whether to respect _COMPTON_SHADOW.
+  bool respect_prop_shadow;
+
+  // === Fading ===
+  bool wintype_fade[NUM_WINTYPES];
+  /// How much to fade in in a single fading step.
+  opacity_t fade_in_step;
+  /// How much to fade out in a single fading step.
+  opacity_t fade_out_step;
+  unsigned long fade_delta;
+  /// Whether to disable fading on window open/close.
+  bool no_fading_openclose;
+  /// Fading blacklist. A linked list of conditions.
+  wincond_t *fade_blacklist;
+
+  // === Opacity ===
+  double wintype_opacity[NUM_WINTYPES];
+  /// Default opacity for inactive windows.
+  /// 32-bit integer with the format of _NET_WM_OPACITY. 0 stands for
+  /// not enabled, default.
+  opacity_t inactive_opacity;
+  /// Whether inactive_opacity overrides the opacity set by window
+  /// attributes.
+  bool inactive_opacity_override;
+  /// Frame opacity. Relative to window opacity, also affects shadow
+  /// opacity.
+  double frame_opacity;
+  /// Whether to detect _NET_WM_OPACITY on client windows. Used on window
+  /// managers that don't pass _NET_WM_OPACITY to frame windows.
+  bool detect_client_opacity;
+  /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
+  double inactive_dim;
+  /// Step for pregenerating alpha pictures. 0.01 - 1.0.
+  double alpha_step;
+  /// Whether to use EWMH _NET_ACTIVE_WINDOW to find active window.
+  bool use_ewmh_active_win;
+
+  // === Calculated ===
+  /// Whether compton needs to track focus changes.
+  bool track_focus;
+  /// Whether compton needs to track window name and class.
+  bool track_wdata;
+
+} options_t;
+
+/// Structure containing all necessary data for a compton session.
+typedef struct {
+  // === Display related ===
+  /// Display in use.
+  Display *dpy;
+  /// Default screen.
+  int scr;
+  /// Default visual.
+  Visual *vis;
+  /// Default depth.
+  int depth;
+  /// Root window.
+  Window root;
+  /// Height of root window.
+  int root_height;
+  /// Width of root window.
+  int root_width;
+  // Damage of root window.
+  // Damage root_damage;
+  /// X Composite overlay window. Used if <code>--paint-on-overlay</code>.
+  Window overlay;
+  /// Picture of the root window background.
+  Picture root_tile;
+  /// A region of the size of the screen.
+  XserverRegion screen_reg;
+  /// Picture of root window. Destination of painting in no-DBE painting
+  /// mode.
+  Picture root_picture;
+  /// A Picture acting as the painting target.
+  Picture tgt_picture;
+  /// Temporary buffer to paint to before sending to display.
+  Picture tgt_buffer;
+  /// DBE back buffer for root window. Used in DBE painting mode.
+  XdbeBackBuffer root_dbe;
+  /// Window ID of the window we register as a symbol.
+  Window reg_win;
+
+  // === Operation related ===
+  /// Program options.
+  options_t o;
+  /// Program start time.
+  struct timeval time_start;
+  /// The region needs to painted on next paint.
+  XserverRegion all_damage;
+  /// Whether all windows are currently redirected.
+  bool redirected;
+  /// Whether there's a highest full-screen window, and all windows could
+  /// be unredirected.
+  bool unredir_possible;
+  /// Pre-generated alpha pictures.
+  Picture *alpha_picts;
+  /// Whether all reg_ignore of windows should expire in this paint.
+  bool reg_ignore_expire;
+  /// Whether the program is idling. I.e. no fading, no potential window
+  /// changes.
+  bool idling;
+  /// Time of last fading. In milliseconds.
+  unsigned long fade_time;
+  /// Head pointer of the error ignore linked list.
+  ignore_t *ignore_head;
+  /// Pointer to the <code>next</code> member of tail element of the error
+  /// ignore linked list.
+  ignore_t **ignore_tail;
+  /// Reset program after next paint.
+  bool reset;
+
+  // === Expose event related ===
+  /// Pointer to an array of <code>XRectangle</code>-s of exposed region.
+  XRectangle *expose_rects;
+  /// Number of <code>XRectangle</code>-s in <code>expose_rects</code>.
+  int size_expose;
+  /// Index of the next free slot in <code>expose_rects</code>.
+  int n_expose;
+
+  // === Window related ===
+  /// Linked list of all windows.
+  struct _win *list;
+  /// Current active window. Used by EWMH _NET_ACTIVE_WINDOW focus
+  /// detection.
+  struct _win *active_win;
+
+  // === Shadow/dimming related ===
+  /// 1x1 black Picture.
+  Picture black_picture;
+  /// Picture used for dimming inactive windows.
+  Picture dim_picture;
+  /// 1x1 Picture of the shadow color.
+  Picture cshadow_picture;
+  /// Gaussian map of shadow.
+  conv *gaussian_map;
+  // for shadow precomputation
+  /// Shadow depth on one side.
+  int cgsize;
+  /// Pre-computed color table for corners of shadow.
+  unsigned char *shadow_corner;
+  /// Pre-computed color table for a side of shadow.
+  unsigned char *shadow_top;
+
+  // === Software-optimization-related ===
+  /// Currently used refresh rate.
+  short refresh_rate;
+  /// Interval between refresh in nanoseconds.
+  unsigned long refresh_intv;
+  /// Nanosecond offset of the first painting.
+  long paint_tm_offset;
+
+  #ifdef CONFIG_VSYNC_DRM
+  // === DRM VSync related ===
+  /// File descriptor of DRI device file. Used for DRM VSync.
+  int drm_fd;
+  #endif
+
+  #ifdef CONFIG_VSYNC_OPENGL
+  // === OpenGL VSync related ===
+  /// GLX context.
+  GLXContext glx_context;
+  /// Pointer to glXGetVideoSyncSGI function.
+  f_GetVideoSync glx_get_video_sync;
+  /// Pointer to glXWaitVideoSyncSGI function.
+  f_WaitVideoSync glx_wait_video_sync;
+  #endif
+
+  // === X extension related ===
+  /// Event base number for X Fixes extension.
+  int xfixes_event;
+  /// Error base number for X Fixes extension.
+  int xfixes_error;
+  /// Event base number for X Damage extension.
+  int damage_event;
+  /// Error base number for X Damage extension.
+  int damage_error;
+  /// Event base number for X Render extension.
+  int render_event;
+  /// Error base number for X Render extension.
+  int render_error;
+  /// Event base number for X Composite extension.
+  int composite_event;
+  /// Error base number for X Composite extension.
+  int composite_error;
+  /// Major opcode for X Composite extension.
+  int composite_opcode;
+  /// Whether X Composite NameWindowPixmap is available. Aka if X
+  /// Composite version >= 0.2.
+  bool has_name_pixmap;
+  /// Whether X Shape extension exists.
+  bool shape_exists;
+  /// Event base number for X Shape extension.
+  int shape_event;
+  /// Error base number for X Shape extension.
+  int shape_error;
+  /// Whether X RandR extension exists.
+  bool randr_exists;
+  /// Event base number for X RandR extension.
+  int randr_event;
+  /// Error base number for X RandR extension.
+  int randr_error;
+  #ifdef CONFIG_VSYNC_OPENGL
+  /// Whether X GLX extension exists.
+  bool glx_exists;
+  /// Event base number for X GLX extension.
+  int glx_event;
+  /// Error base number for X GLX extension.
+  int glx_error;
+  #endif
+  /// Whether X DBE extension exists.
+  bool dbe_exists;
+
+  // === Atoms ===
+  /// Atom of property <code>_NET_WM_OPACITY</code>.
+  Atom atom_opacity;
+  /// Atom of <code>_NET_FRAME_EXTENTS</code>.
+  Atom atom_frame_extents;
+  /// Property atom to identify top-level frame window. Currently
+  /// <code>WM_STATE</code>.
+  Atom atom_client;
+  /// Atom of property <code>WM_NAME</code>.
+  Atom atom_name;
+  /// Atom of property <code>_NET_WM_NAME</code>.
+  Atom atom_name_ewmh;
+  /// Atom of property <code>WM_CLASS</code>.
+  Atom atom_class;
+  /// Atom of property <code>WM_TRANSIENT_FOR</code>.
+  Atom atom_transient;
+  /// Atom of property <code>_NET_ACTIVE_WINDOW</code>.
+  Atom atom_ewmh_active_win;
+  /// Atom of property <code>_COMPTON_SHADOW</code>.
+  Atom atom_compton_shadow;
+  /// Atom of property <code>_NET_WM_WINDOW_TYPE</code>.
+  Atom atom_win_type;
+  /// Array of atoms of all possible window types.
+  Atom atoms_wintypes[NUM_WINTYPES];
+} session_t;
+
+/// Structure representing a top-level window compton manages.
 typedef struct _win {
   struct _win *next;
   Window id;
@@ -253,25 +502,26 @@ typedef struct _win {
   XserverRegion border_size;
   XserverRegion extents;
   // Type of the window.
-  wintype window_type;
+  wintype_t window_type;
   /// Whether the window is focused.
-  Bool focused;
-  Bool destroyed;
+  bool focused;
+  /// Whether the window has been destroyed.
+  bool destroyed;
   /// Cached width/height of the window including border.
   int widthb, heightb;
   /// Whether the window is bounding-shaped.
-  Bool bounding_shaped;
+  bool bounding_shaped;
   /// Whether the window just have rounded corners.
-  Bool rounded_corners;
-  /// Whether this window is to be painted
-  Bool to_paint;
+  bool rounded_corners;
+  /// Whether this window is to be painted.
+  bool to_paint;
 
   // Blacklist related members
   char *name;
   char *class_instance;
   char *class_general;
-  wincond *cache_sblst;
-  wincond *cache_fblst;
+  wincond_t *cache_sblst;
+  wincond_t *cache_fblst;
 
   // Opacity-related members
   /// Current window opacity.
@@ -290,9 +540,9 @@ typedef struct _win {
   // Fading-related members
   /// Do not fade if it's false. Change on window type change.
   /// Used by fading blacklist in the future.
-  Bool fade;
+  bool fade;
   /// Callback to be called after fading completed.
-  void (*fade_callback) (Display *dpy, struct _win *w);
+  void (*fade_callback) (session_t *ps, struct _win *w);
 
   // Frame-opacity-related members
   /// Current window frame opacity. Affected by window opacity.
@@ -304,7 +554,7 @@ typedef struct _win {
 
   // Shadow-related members
   /// Whether a window has shadow. Affected by window type.
-  Bool shadow;
+  bool shadow;
   /// Opacity of the shadow. Affected by window opacity and frame opacity.
   double shadow_opacity;
   /// X offset of shadow. Affected by commandline argument.
@@ -325,14 +575,17 @@ typedef struct _win {
 
   // Dim-related members
   /// Whether the window is to be dimmed.
-  Bool dim;
+  bool dim;
 
   /// Window flags. Definitions above.
   int_fast16_t flags;
 
   unsigned long damage_sequence; /* sequence when damage was created */
 
-  Bool need_configure;
+  /// Whether there's a pending <code>ConfigureNotify</code> happening
+  /// when the window is unmapped.
+  bool need_configure;
+  /// Queued <code>ConfigureNotify</code> when the window is unmapped.
   XConfigureEvent queue_configure;
   /// Region to be ignored when painting. Basically the region where
   /// higher opaque windows will paint upon. Depends on window frame
@@ -343,116 +596,13 @@ typedef struct _win {
   struct _win *prev_trans;
 } win;
 
-/// VSync modes.
-typedef enum {
-  VSYNC_NONE,
-  VSYNC_DRM,
-  VSYNC_OPENGL,
-} vsync_t;
-
-#ifdef CONFIG_VSYNC_OPENGL
-typedef int (*f_WaitVideoSync) (int, int, unsigned *);
-typedef int (*f_GetVideoSync) (unsigned *);
-#endif
-
-typedef struct {
-  // General
-  char *display;
-  /// Whether to try to detect WM windows and mark them as focused.
-  Bool mark_wmwin_focused;
-  /// Whether to mark override-redirect windows as focused.
-  Bool mark_ovredir_focused;
-  /// Whether to fork to background.
-  Bool fork_after_register;
-  /// Whether to detect rounded corners.
-  Bool detect_rounded_corners;
-  /// Whether to paint on X Composite overlay window instead of root
-  /// window.
-  Bool paint_on_overlay;
-  /// Whether to unredirect all windows if a full-screen opaque window
-  /// is detected.
-  Bool unredir_if_possible;
-  /// Whether to work under synchronized mode for debugging.
-  Bool synchronize;
-
-  // VSync and software optimization
-  /// User-specified refresh rate.
-  int refresh_rate;
-  /// Whether to enable refresh-rate-based software optimization.
-  Bool sw_opti;
-  /// VSync method to use;
-  vsync_t vsync;
-  /// Whether to enable double buffer.
-  Bool dbe;
-  /// Whether to do VSync aggressively.
-  Bool vsync_aggressive;
-
-  // Shadow
-  Bool wintype_shadow[NUM_WINTYPES];
-  /// Red, green and blue tone of the shadow.
-  double shadow_red, shadow_green, shadow_blue;
-  int shadow_radius;
-  int shadow_offset_x, shadow_offset_y;
-  double shadow_opacity;
-  Bool clear_shadow;
-  /// Shadow blacklist. A linked list of conditions.
-  wincond *shadow_blacklist;
-  /// Whether bounding-shaped window should be ignored.
-  Bool shadow_ignore_shaped;
-  /// Whether to respect _COMPTON_SHADOW.
-  Bool respect_attr_shadow;
-
-  // Fading
-  Bool wintype_fade[NUM_WINTYPES];
-  /// How much to fade in in a single fading step.
-  opacity_t fade_in_step;
-  /// How much to fade out in a single fading step.
-  opacity_t fade_out_step;
-  unsigned long fade_delta;
-  Bool no_fading_openclose;
-  /// Fading blacklist. A linked list of conditions.
-  wincond *fade_blacklist;
-
-  // Opacity
-  double wintype_opacity[NUM_WINTYPES];
-  /// Default opacity for inactive windows.
-  /// 32-bit integer with the format of _NET_WM_OPACITY. 0 stands for
-  /// not enabled, default.
-  opacity_t inactive_opacity;
-  /// Whether inactive_opacity overrides the opacity set by window
-  /// attributes.
-  Bool inactive_opacity_override;
-  /// Frame opacity. Relative to window opacity, also affects shadow
-  /// opacity.
-  double frame_opacity;
-  /// Whether to detect _NET_WM_OPACITY on client windows. Used on window
-  /// managers that don't pass _NET_WM_OPACITY to frame windows.
-  Bool detect_client_opacity;
-  /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
-  double inactive_dim;
-  /// Step for pregenerating alpha pictures. 0.01 - 1.0.
-  double alpha_step;
-  /// Whether to use EWMH _NET_ACTIVE_WINDOW to find active window.
-  Bool use_ewmh_active_win;
-
-  // Calculated
-  /// Whether compton needs to track focus changes.
-  Bool track_focus;
-  /// Whether compton needs to track window name and class.
-  Bool track_wdata;
-
-} options_t;
-
+/// Temporary structure used for communication between
+/// <code>get_cfg()</code> and <code>parse_config()</code>.
 struct options_tmp {
-  Bool no_dock_shadow;
-  Bool no_dnd_shadow;
+  bool no_dock_shadow;
+  bool no_dnd_shadow;
   double menu_opacity;
 };
-
-typedef struct _conv {
-  int size;
-  double *data;
-} conv;
 
 typedef enum {
   WIN_EVMODE_UNKNOWN,
@@ -460,15 +610,69 @@ typedef enum {
   WIN_EVMODE_CLIENT
 } win_evmode_t;
 
-extern int root_height, root_width;
-extern Atom atom_client_attr;
-extern Bool idling;
-extern Bool shape_exists;
-extern Bool reg_ignore_expire;
+extern const char *WINTYPES[NUM_WINTYPES];
+extern session_t *ps_g;
+
+// == Debugging code ==
+static void
+print_timestamp(session_t *ps);
+
+#ifdef DEBUG_ALLOC_REG
+
+#include <execinfo.h>
+#define BACKTRACE_SIZE  5
 
 /**
- * Functions
+ * Print current backtrace, excluding the first two items.
+ *
+ * Stolen from glibc manual.
  */
+static inline void
+print_backtrace(void) {
+  void *array[BACKTRACE_SIZE];
+  size_t size;
+  char **strings;
+
+  size = backtrace(array, BACKTRACE_SIZE);
+  strings = backtrace_symbols(array, size);
+
+  for (size_t i = 2; i < size; i++)
+     printf ("%s\n", strings[i]);
+
+  free(strings);
+}
+
+/**
+ * Wrapper of <code>XFixesCreateRegion</code>, for debugging.
+ */
+static inline XserverRegion
+XFixesCreateRegion_(Display *dpy, XRectangle *p, int n,
+    const char *func, int line) {
+  XserverRegion reg = XFixesCreateRegion(dpy, p, n);
+  print_timestamp(ps_g);
+  printf("%#010lx: XFixesCreateRegion() in %s():%d\n", reg, func, line);
+  print_backtrace();
+  fflush(stdout);
+  return reg;
+}
+
+/**
+ * Wrapper of <code>XFixesDestroyRegion</code>, for debugging.
+ */
+static inline void
+XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
+    const char *func, int line) {
+  XFixesDestroyRegion(dpy, reg);
+  print_timestamp(ps_g);
+  printf("%#010lx: XFixesDestroyRegion() in %s():%d\n", reg, func, line);
+  fflush(stdout);
+}
+
+#define XFixesCreateRegion(dpy, p, n) XFixesCreateRegion_(dpy, p, n, __func__, __LINE__)
+#define XFixesDestroyRegion(dpy, reg) XFixesDestroyRegion_(dpy, reg, __func__, __LINE__)
+#endif
+
+// == Functions ==
 
 // inline functions must be made static to compile correctly under clang:
 // http://clang.llvm.org/compatibility.html#inline
@@ -476,40 +680,45 @@ extern Bool reg_ignore_expire;
 // Helper functions
 
 static void
-discard_ignore(Display *dpy, unsigned long sequence);
+discard_ignore(session_t *ps, unsigned long sequence);
 
 static void
-set_ignore(Display *dpy, unsigned long sequence);
+set_ignore(session_t *ps, unsigned long sequence);
+
+static inline void
+set_ignore_next(session_t *ps) {
+  set_ignore(ps, NextRequest(ps->dpy));
+}
 
 static int
-should_ignore(Display *dpy, unsigned long sequence);
+should_ignore(session_t *ps, unsigned long sequence);
 
 /**
  * Subtract two unsigned long values.
  *
  * Truncate to 0 if the result is negative.
  */
-static inline unsigned long
+static inline unsigned long __attribute__((const))
 sub_unslong(unsigned long a, unsigned long b) {
   return (a > b) ? a - b : 0;
 }
 
 /**
- * Set a Bool array of all wintypes to true.
+ * Set a <code>bool</code> array of all wintypes to true.
  */
 static void
-wintype_arr_enable(Bool arr[]) {
-  wintype i;
+wintype_arr_enable(bool arr[]) {
+  wintype_t i;
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
-    arr[i] = True;
+    arr[i] = true;
   }
 }
 
 /**
  * Allocate the space and copy a string.
  */
-static inline char *
+static inline char * __attribute__((const))
 mstrcpy(const char *src) {
   char *str = malloc(sizeof(char) * (strlen(src) + 1));
 
@@ -521,7 +730,7 @@ mstrcpy(const char *src) {
 /**
  * Allocate the space and join two strings.
  */
-static inline char *
+static inline char * __attribute__((const))
 mstrjoin(const char *src1, const char *src2) {
   char *str = malloc(sizeof(char) * (strlen(src1) + strlen(src2) + 1));
 
@@ -534,7 +743,7 @@ mstrjoin(const char *src1, const char *src2) {
 /**
  * Allocate the space and join two strings;
  */
-static inline char *
+static inline char * __attribute__((const))
 mstrjoin3(const char *src1, const char *src2, const char *src3) {
   char *str = malloc(sizeof(char) * (strlen(src1) + strlen(src2)
         + strlen(src3) + 1));
@@ -554,7 +763,7 @@ mstrjoin3(const char *src1, const char *src2, const char *src3) {
  * @param max maximum value
  * @return normalized value
  */
-static inline int
+static inline int __attribute__((const))
 normalize_i_range(int i, int min, int max) {
   if (i > max) return max;
   if (i < min) return min;
@@ -564,7 +773,7 @@ normalize_i_range(int i, int min, int max) {
 /**
  * Select the larger integer of two.
  */
-static inline int
+static inline int __attribute__((const))
 max_i(int a, int b) {
   return (a > b ? a : b);
 }
@@ -572,7 +781,7 @@ max_i(int a, int b) {
 /**
  * Select the smaller integer of two.
  */
-static inline int
+static inline int __attribute__((const))
 min_i(int a, int b) {
   return (a > b ? b : a);
 }
@@ -585,7 +794,7 @@ min_i(int a, int b) {
  * @param max maximum value
  * @return normalized value
  */
-static inline double
+static inline double __attribute__((const))
 normalize_d_range(double d, double min, double max) {
   if (d > max) return max;
   if (d < min) return min;
@@ -598,7 +807,7 @@ normalize_d_range(double d, double min, double max) {
  * @param d double value to normalize
  * @return normalized value
  */
-static inline double
+static inline double __attribute__((const))
 normalize_d(double d) {
   return normalize_d_range(d, 0.0, 1.0);
 }
@@ -610,15 +819,15 @@ normalize_d(double d) {
  * @param count amount of elements in the array
  * @param wid window ID to search for
  */
-static inline Bool
+static inline bool
 array_wid_exists(const Window *arr, int count, Window wid) {
   while (count--) {
     if (arr[count] == wid) {
-      return True;
+      return true;
     }
   }
 
-  return False;
+  return false;
 }
 
 /*
@@ -695,9 +904,9 @@ timespec_subtract(struct timespec *result,
  *
  * Note its starting time is unspecified.
  */
-static inline struct timespec
+static inline struct timespec __attribute__((const))
 get_time_timespec(void) {
-  struct timespec tm = { 0 };
+  struct timespec tm = { 0, 0 };
 
   clock_gettime(CLOCK_MONOTONIC, &tm);
 
@@ -711,12 +920,12 @@ get_time_timespec(void) {
  * Used for debugging.
  */
 static void
-print_timestamp(void) {
+print_timestamp(session_t *ps) {
   struct timeval tm, diff;
 
   if (gettimeofday(&tm, NULL)) return;
 
-  timeval_subtract(&diff, &tm, &time_start);
+  timeval_subtract(&diff, &tm, &ps->time_start);
   printf("[ %5ld.%02ld ] ", diff.tv_sec, diff.tv_usec / 10000);
 }
 
@@ -724,9 +933,9 @@ print_timestamp(void) {
  * Destroy a <code>XserverRegion</code>.
  */
 inline static void
-free_region(Display *dpy, XserverRegion *p) {
+free_region(session_t *ps, XserverRegion *p) {
   if (*p) {
-    XFixesDestroyRegion(dpy, *p);
+    XFixesDestroyRegion(ps->dpy, *p);
     *p = None;
   }
 }
@@ -735,9 +944,9 @@ free_region(Display *dpy, XserverRegion *p) {
  * Destroy a <code>Picture</code>.
  */
 inline static void
-free_picture(Display *dpy, Picture *p) {
+free_picture(session_t *ps, Picture *p) {
   if (*p) {
-    XRenderFreePicture(dpy, *p);
+    XRenderFreePicture(ps->dpy, *p);
     *p = None;
   }
 }
@@ -746,9 +955,9 @@ free_picture(Display *dpy, Picture *p) {
  * Destroy a <code>Pixmap</code>.
  */
 inline static void
-free_pixmap(Display *dpy, Pixmap *p) {
+free_pixmap(session_t *ps, Pixmap *p) {
   if (*p) {
-    XFreePixmap(dpy, *p);
+    XFreePixmap(ps->dpy, *p);
     *p = None;
   }
 }
@@ -757,13 +966,62 @@ free_pixmap(Display *dpy, Pixmap *p) {
  * Destroy a <code>Damage</code>.
  */
 inline static void
-free_damage(Display *dpy, Damage *p) {
+free_damage(session_t *ps, Damage *p) {
   if (*p) {
     // BadDamage will be thrown if the window is destroyed
-    set_ignore(dpy, NextRequest(dpy));
-    XDamageDestroy(dpy, *p);
+    set_ignore_next(ps);
+    XDamageDestroy(ps->dpy, *p);
     *p = None;
   }
+}
+
+/**
+ * Destroy a <code>wincond_t</code>.
+ */
+inline static void
+free_wincond(wincond_t *cond) {
+  if (cond->pattern)
+    free(cond->pattern);
+#ifdef CONFIG_REGEX_PCRE
+  if (cond->regex_pcre_extra)
+    pcre_free_study(cond->regex_pcre_extra);
+  if (cond->regex_pcre)
+    pcre_free(cond->regex_pcre);
+#endif
+  free(cond);
+}
+
+/**
+ * Destroy a linked list of <code>wincond_t</code>.
+ */
+inline static void
+free_wincondlst(wincond_t **cond_lst) {
+  wincond_t *next = NULL;
+
+  for (wincond_t *cond = *cond_lst; cond; cond = next) {
+    next = cond->next;
+
+    free_wincond(cond);
+  }
+
+  *cond_lst = NULL;
+}
+
+/**
+ * Destroy all resources in a <code>struct _win</code>.
+ */
+inline static void
+free_win_res(session_t *ps, win *w) {
+  free_region(ps, &w->extents);
+  free_pixmap(ps, &w->pixmap);
+  free_picture(ps, &w->picture);
+  free_region(ps, &w->border_size);
+  free_picture(ps, &w->shadow_pict);
+  free_damage(ps, &w->damage);
+  free_region(ps, &w->reg_ignore);
+  free(w->name);
+  free(w->class_instance);
+  free(w->class_general);
 }
 
 /**
@@ -782,53 +1040,51 @@ get_time_ms(void) {
 }
 
 static int
-fade_timeout(void);
+fade_timeout(session_t *ps);
 
 static void
-run_fade(Display *dpy, win *w, unsigned steps);
+run_fade(session_t *ps, win *w, unsigned steps);
 
 static void
-set_fade_callback(Display *dpy, win *w,
-    void (*callback) (Display *dpy, win *w), Bool exec_callback);
+set_fade_callback(session_t *ps, win *w,
+    void (*callback) (session_t *ps, win *w), bool exec_callback);
 
 /**
  * Execute fade callback of a window if fading finished.
  */
 static inline void
-check_fade_fin(Display *dpy, win *w) {
+check_fade_fin(session_t *ps, win *w) {
   if (w->fade_callback && w->opacity == w->opacity_tgt) {
     // Must be the last line as the callback could destroy w!
-    set_fade_callback(dpy, w, NULL, True);
+    set_fade_callback(ps, w, NULL, true);
   }
 }
 
 static void
-set_fade_callback(Display *dpy, win *w,
-    void (*callback) (Display *dpy, win *w), Bool exec_callback);
+set_fade_callback(session_t *ps, win *w,
+    void (*callback) (session_t *ps, win *w), bool exec_callback);
 
 static double
 gaussian(double r, double x, double y);
 
 static conv *
-make_gaussian_map(Display *dpy, double r);
+make_gaussian_map(double r);
 
 static unsigned char
 sum_gaussian(conv *map, double opacity,
              int x, int y, int width, int height);
 
 static void
-presum_gaussian(conv *map);
+presum_gaussian(session_t *ps, conv *map);
 
 static XImage *
-make_shadow(Display *dpy, double opacity,
-            int width, int height, Bool clear_shadow);
+make_shadow(session_t *ps, double opacity, int width, int height);
 
 static Picture
-shadow_picture(Display *dpy, double opacity, int width, int height,
-    Bool clear_shadow);
+shadow_picture(session_t *ps, double opacity, int width, int height);
 
 static Picture
-solid_picture(Display *dpy, Bool argb, double a,
+solid_picture(session_t *ps, bool argb, double a,
               double r, double g, double b);
 
 static inline bool is_normal_win(const win *w) {
@@ -839,25 +1095,25 @@ static inline bool is_normal_win(const win *w) {
 /**
  * Determine if a window has a specific attribute.
  *
- * @param dpy Display to use
+ * @param session_t current session
  * @param w window to check
  * @param atom atom of attribute to check
  * @return 1 if it has the attribute, 0 otherwise
  */
-static inline Bool
-wid_has_attr(Display *dpy, Window w, Atom atom) {
+static inline bool
+wid_has_attr(const session_t *ps, Window w, Atom atom) {
   Atom type = None;
   int format;
   unsigned long nitems, after;
   unsigned char *data;
 
-  if (Success == XGetWindowProperty(dpy, w, atom, 0, 0, False,
+  if (Success == XGetWindowProperty(ps->dpy, w, atom, 0, 0, False,
         AnyPropertyType, &type, &format, &nitems, &after, &data)) {
     XFree(data);
-    if (type) return True;
+    if (type) return true;
   }
 
-  return False;
+  return false;
 }
 
 /**
@@ -866,17 +1122,17 @@ wid_has_attr(Display *dpy, Window w, Atom atom) {
  * Returns a blank structure if the returned type and format does not
  * match the requested type and format.
  *
- * @param dpy Display to use
+ * @param session_t current session
  * @param w window
  * @param atom atom of attribute to fetch
  * @param length length to read
  * @param rtype atom of the requested type
  * @param rformat requested format
- * @return a <code>winattr_t</code> structure containing the attribute
+ * @return a <code>winprop_t</code> structure containing the attribute
  *    and number of items. A blank one on failure.
  */
-static winattr_t
-wid_get_attr(Display *dpy, Window w, Atom atom, long length,
+static winprop_t
+wid_get_prop(const session_t *ps, Window w, Atom atom, long length,
     Atom rtype, int rformat) {
   Atom type = None;
   int format = 0;
@@ -884,10 +1140,10 @@ wid_get_attr(Display *dpy, Window w, Atom atom, long length,
   unsigned char *data = NULL;
 
   // Use two if statements to deal with the sequence point issue.
-  if (Success == XGetWindowProperty(dpy, w, atom, 0L, length, False,
+  if (Success == XGetWindowProperty(ps->dpy, w, atom, 0L, length, False,
         rtype, &type, &format, &nitems, &after, &data)) {
     if (type == rtype && format == rformat) {
-      return (winattr_t) {
+      return (winprop_t) {
         .data = data,
         .nitems = nitems
       };
@@ -896,83 +1152,102 @@ wid_get_attr(Display *dpy, Window w, Atom atom, long length,
 
   XFree(data);
 
-  return (winattr_t) {
+  return (winprop_t) {
     .data = NULL,
     .nitems = 0
   };
 }
 
 /**
- * Free a <code>winattr_t</code>.
+ * Free a <code>winprop_t</code>.
  *
- * @param pattr pointer to the <code>winattr_t</code> to free.
+ * @param pprop pointer to the <code>winprop_t</code> to free.
  */
 static inline void
-free_winattr(winattr_t *pattr) {
+free_winprop(winprop_t *pprop) {
   // Empty the whole structure to avoid possible issues
-  if (pattr->data) {
-    XFree(pattr->data);
-    pattr->data = NULL;
+  if (pprop->data) {
+    XFree(pprop->data);
+    pprop->data = NULL;
   }
-  pattr->nitems = 0;
+  pprop->nitems = 0;
+}
+
+/**
+ * Stop listening for events on a particular window.
+ */
+static inline void
+win_ev_stop(session_t *ps, win *w) {
+  // Will get BadWindow if the window is destroyed
+  set_ignore_next(ps);
+  XSelectInput(ps->dpy, w->id, 0);
+
+  if (w->client_win) {
+    set_ignore_next(ps);
+    XSelectInput(ps->dpy, w->client_win, 0);
+  }
+
+  if (ps->shape_exists) {
+    set_ignore_next(ps);
+    XShapeSelectInput(ps->dpy, w->id, 0);
+  }
 }
 
 /**
  * Get the children of a window.
  *
- * @param dpy Display to use
+ * @param session_t current session
  * @param w window to check
  * @param children [out] an array of child window IDs
  * @param nchildren [out] number of children
  * @return 1 if successful, 0 otherwise
  */
-static inline Bool
-wid_get_children(Display *dpy, Window w,
+static inline bool
+wid_get_children(session_t *ps, Window w,
     Window **children, unsigned *nchildren) {
   Window troot, tparent;
 
-  if (!XQueryTree(dpy, w, &troot, &tparent, children, nchildren)) {
+  if (!XQueryTree(ps->dpy, w, &troot, &tparent, children, nchildren)) {
     *nchildren = 0;
-    return False;
+    return false;
   }
 
-  return True;
+  return true;
 }
 
 /**
  * Check if a window is bounding-shaped.
  */
-static inline Bool
-wid_bounding_shaped(Display *dpy, Window wid) {
-  if (shape_exists) {
-    Bool bounding_shaped = False;
-    Bool clip_shaped;
+static inline bool
+wid_bounding_shaped(const session_t *ps, Window wid) {
+  if (ps->shape_exists) {
+    Bool bounding_shaped = False, clip_shaped = False;
     int x_bounding, y_bounding, x_clip, y_clip;
     unsigned int w_bounding, h_bounding, w_clip, h_clip;
 
-    XShapeQueryExtents(dpy, wid, &bounding_shaped,
+    XShapeQueryExtents(ps->dpy, wid, &bounding_shaped,
         &x_bounding, &y_bounding, &w_bounding, &h_bounding,
         &clip_shaped, &x_clip, &y_clip, &w_clip, &h_clip);
     return bounding_shaped;
   }
-  
-  return False;
+
+  return false;
 }
 
 /**
- * Determine if a window change affects reg_ignore and set
- * reg_ignore_expire accordingly.
+ * Determine if a window change affects <code>reg_ignore</code> and set
+ * <code>reg_ignore_expire</code> accordingly.
  */
 static inline void
-update_reg_ignore_expire(const win *w) {
+update_reg_ignore_expire(session_t *ps, const win *w) {
   if (w->to_paint && WINDOW_SOLID == w->mode)
-    reg_ignore_expire = True;
+    ps->reg_ignore_expire = true;
 }
 
 /**
  * Check whether a window has WM frames.
  */
-static inline bool
+static inline bool __attribute__((const))
 win_has_frame(const win *w) {
   return w->top_width || w->left_width || w->right_width
     || w->bottom_width;
@@ -984,261 +1259,261 @@ win_has_frame(const win *w) {
  * It's not using w->border_size for performance measures.
  */
 static inline bool
-win_is_fullscreen(const win *w) {
-  return (w->a.x <= 0 && w->a.y <= 0 && (w->a.x + w->widthb) >= root_width
-    && (w->a.y + w->heightb) >= root_height && !w->bounding_shaped);
+win_is_fullscreen(session_t *ps, const win *w) {
+  return (w->a.x <= 0 && w->a.y <= 0
+      && (w->a.x + w->widthb) >= ps->root_width
+      && (w->a.y + w->heightb) >= ps->root_height
+      && !w->bounding_shaped);
 }
 
 static void
-win_rounded_corners(Display *dpy, win *w);
+win_rounded_corners(session_t *ps, win *w);
 
 static bool
-win_match_once(win *w, const wincond *cond);
+win_match_once(win *w, const wincond_t *cond);
 
 static bool
-win_match(win *w, wincond *condlst, wincond * *cache);
+win_match(win *w, wincond_t *condlst, wincond_t * *cache);
 
-static Bool
-condlst_add(wincond **pcondlst, const char *pattern);
+static bool
+condlst_add(wincond_t **pcondlst, const char *pattern);
 
 static long
-determine_evmask(Display *dpy, Window wid, win_evmode_t mode);
+determine_evmask(session_t *ps, Window wid, win_evmode_t mode);
 
 static win *
-find_win(Window id);
+find_win(session_t *ps, Window id);
 
 static win *
-find_toplevel(Window id);
+find_toplevel(session_t *ps, Window id);
 
 static win *
-find_toplevel2(Display *dpy, Window wid);
+find_toplevel2(session_t *ps, Window wid);
 
 static win *
-recheck_focus(Display *dpy);
+recheck_focus(session_t *ps);
 
 static Picture
-root_tile_f(Display *dpy);
+root_tile_f(session_t *ps);
 
 static void
-paint_root(Display *dpy);
+paint_root(session_t *ps, Picture tgt_buffer);
 
 static XserverRegion
-win_extents(Display *dpy, win *w);
+win_extents(session_t *ps, win *w);
 
 static XserverRegion
-border_size(Display *dpy, win *w);
+border_size(session_t *ps, win *w);
 
 static Window
-find_client_win(Display *dpy, Window w);
+find_client_win(session_t *ps, Window w);
 
 static void
-get_frame_extents(Display *dpy, win *w, Window client);
+get_frame_extents(session_t *ps, win *w, Window client);
 
 static win *
-paint_preprocess(Display *dpy, win *list);
+paint_preprocess(session_t *ps, win *list);
 
 static void
-paint_all(Display *dpy, XserverRegion region, win *t);
+paint_all(session_t *ps, XserverRegion region, win *t);
 
 static void
-add_damage(Display *dpy, XserverRegion damage);
+add_damage(session_t *ps, XserverRegion damage);
 
 static void
-repair_win(Display *dpy, win *w);
+repair_win(session_t *ps, win *w);
 
-static wintype
-get_wintype_prop(Display * dpy, Window w);
-
-static void
-map_win(Display *dpy, Window id,
-        unsigned long sequence, Bool fade,
-        Bool override_redirect);
+static wintype_t
+wid_get_prop_wintype(session_t *ps, Window w);
 
 static void
-finish_map_win(Display *dpy, win *w);
+map_win(session_t *ps, Window id, bool override_redirect);
 
 static void
-finish_unmap_win(Display *dpy, win *w);
+finish_map_win(session_t *ps, win *w);
 
 static void
-unmap_callback(Display *dpy, win *w);
+finish_unmap_win(session_t *ps, win *w);
 
 static void
-unmap_win(Display *dpy, Window id, Bool fade);
+unmap_callback(session_t *ps, win *w);
+
+static void
+unmap_win(session_t *ps, Window id);
 
 static opacity_t
-wid_get_opacity_prop(Display *dpy, Window wid, opacity_t def);
+wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def);
 
 static double
-get_opacity_percent(Display *dpy, win *w);
+get_opacity_percent(win *w);
 
 static void
-determine_mode(Display *dpy, win *w);
+determine_mode(session_t *ps, win *w);
 
 static void
-calc_opacity(Display *dpy, win *w, Bool refetch_prop);
+calc_opacity(session_t *ps, win *w, bool refetch_prop);
 
 static void
-calc_dim(Display *dpy, win *w);
+calc_dim(session_t *ps, win *w);
 
 static inline void
-set_focused(Display *dpy, win *w, Bool focused) {
+set_focused(session_t *ps, win *w, bool focused) {
   w->focused = focused;
-  calc_opacity(dpy, w, False);
-  calc_dim(dpy, w);
+  calc_opacity(ps, w, false);
+  calc_dim(ps, w);
 }
 
 static void
-determine_fade(Display *dpy, win *w);
+determine_fade(session_t *ps, win *w);
 
 static void
-win_update_shape_raw(Display *dpy, win *w);
+win_update_shape_raw(session_t *ps, win *w);
 
 static void
-win_update_shape(Display *dpy, win *w);
+win_update_shape(session_t *ps, win *w);
 
 static void
-win_update_attr_shadow_raw(Display *dpy, win *w);
+win_update_attr_shadow_raw(session_t *ps, win *w);
 
 static void
-win_update_attr_shadow(Display *dpy, win *w);
+win_update_attr_shadow(session_t *ps, win *w);
 
 static void
-determine_shadow(Display *dpy, win *w);
+determine_shadow(session_t *ps, win *w);
 
 static void
-calc_win_size(Display *dpy, win *w);
+calc_win_size(session_t *ps, win *w);
 
 static void
-calc_shadow_geometry(Display *dpy, win *w);
+calc_shadow_geometry(session_t *ps, win *w);
 
 static void
-mark_client_win(Display *dpy, win *w, Window client);
+mark_client_win(session_t *ps, win *w, Window client);
 
 static void
-add_win(Display *dpy, Window id, Window prev, Bool override_redirect);
+add_win(session_t *ps, Window id, Window prev, bool override_redirect);
 
 static void
-restack_win(Display *dpy, win *w, Window new_above);
+restack_win(session_t *ps, win *w, Window new_above);
 
 static void
-configure_win(Display *dpy, XConfigureEvent *ce);
+configure_win(session_t *ps, XConfigureEvent *ce);
 
 static void
-circulate_win(Display *dpy, XCirculateEvent *ce);
+circulate_win(session_t *ps, XCirculateEvent *ce);
 
 static void
-finish_destroy_win(Display *dpy, Window id);
+finish_destroy_win(session_t *ps, Window id);
 
 static void
-destroy_callback(Display *dpy, win *w);
+destroy_callback(session_t *ps, win *w);
 
 static void
-destroy_win(Display *dpy, Window id, Bool fade);
+destroy_win(session_t *ps, Window id);
 
 static void
-damage_win(Display *dpy, XDamageNotifyEvent *de);
+damage_win(session_t *ps, XDamageNotifyEvent *de);
 
 static int
 error(Display *dpy, XErrorEvent *ev);
 
 static void
-expose_root(Display *dpy, XRectangle *rects, int nrects);
+expose_root(session_t *ps, XRectangle *rects, int nrects);
 
-static Bool
-wid_get_text_prop(Display *dpy, Window wid, Atom prop,
+static bool
+wid_get_text_prop(session_t *ps, Window wid, Atom prop,
     char ***pstrlst, int *pnstr);
 
-static Bool
-wid_get_name(Display *dpy, Window w, char **name);
+static bool
+wid_get_name(session_t *ps, Window w, char **name);
 
 static int
-win_get_name(Display *dpy, win *w);
+win_get_name(session_t *ps, win *w);
 
-static Bool
-win_get_class(Display *dpy, win *w);
+static bool
+win_get_class(session_t *ps, win *w);
 
 #ifdef DEBUG_EVENTS
 static int
 ev_serial(XEvent *ev);
 
 static const char *
-ev_name(XEvent *ev);
+ev_name(session_t *ps, XEvent *ev);
 
 static Window
-ev_window(XEvent *ev);
+ev_window(session_t *ps, XEvent *ev);
 #endif
 
-static void
+static void __attribute__ ((noreturn))
 usage(void);
 
 static void
-register_cm(Bool want_glxct);
+register_cm(session_t *ps, bool want_glxct);
 
 inline static void
-ev_focus_in(XFocusChangeEvent *ev);
+ev_focus_in(session_t *ps, XFocusChangeEvent *ev);
 
 inline static void
-ev_focus_out(XFocusChangeEvent *ev);
+ev_focus_out(session_t *ps, XFocusChangeEvent *ev);
 
 inline static void
-ev_create_notify(XCreateWindowEvent *ev);
+ev_create_notify(session_t *ps, XCreateWindowEvent *ev);
 
 inline static void
-ev_configure_notify(XConfigureEvent *ev);
+ev_configure_notify(session_t *ps, XConfigureEvent *ev);
 
 inline static void
-ev_destroy_notify(XDestroyWindowEvent *ev);
+ev_destroy_notify(session_t *ps, XDestroyWindowEvent *ev);
 
 inline static void
-ev_map_notify(XMapEvent *ev);
+ev_map_notify(session_t *ps, XMapEvent *ev);
 
 inline static void
-ev_unmap_notify(XUnmapEvent *ev);
+ev_unmap_notify(session_t *ps, XUnmapEvent *ev);
 
 inline static void
-ev_reparent_notify(XReparentEvent *ev);
+ev_reparent_notify(session_t *ps, XReparentEvent *ev);
 
 inline static void
-ev_circulate_notify(XCirculateEvent *ev);
+ev_circulate_notify(session_t *ps, XCirculateEvent *ev);
 
 inline static void
-ev_expose(XExposeEvent *ev);
+ev_expose(session_t *ps, XExposeEvent *ev);
 
 static void
-update_ewmh_active_win(Display *dpy);
+update_ewmh_active_win(session_t *ps);
 
 inline static void
-ev_property_notify(XPropertyEvent *ev);
+ev_property_notify(session_t *ps, XPropertyEvent *ev);
 
 inline static void
-ev_damage_notify(XDamageNotifyEvent *ev);
+ev_damage_notify(session_t *ps, XDamageNotifyEvent *ev);
 
 inline static void
-ev_shape_notify(XShapeEvent *ev);
+ev_shape_notify(session_t *ps, XShapeEvent *ev);
 
 /**
  * Get a region of the screen size.
  */
 inline static XserverRegion
-get_screen_region(Display *dpy) {
+get_screen_region(session_t *ps) {
   XRectangle r;
 
   r.x = 0;
   r.y = 0;
-  r.width = root_width;
-  r.height = root_height;
-  return XFixesCreateRegion(dpy, &r, 1);
+  r.width = ps->root_width;
+  r.height = ps->root_height;
+  return XFixesCreateRegion(ps->dpy, &r, 1);
 }
 
 /**
  * Copies a region
  */
 inline static XserverRegion
-copy_region(Display *dpy, XserverRegion oldregion) {
-  XserverRegion region = XFixesCreateRegion(dpy, NULL, 0);
+copy_region(const session_t *ps, XserverRegion oldregion) {
+  XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
 
-  XFixesCopyRegion(dpy, region, oldregion);
+  XFixesCopyRegion(ps->dpy, region, oldregion);
 
   return region;
 }
@@ -1247,9 +1522,9 @@ copy_region(Display *dpy, XserverRegion oldregion) {
  * Dump a region.
  */
 static inline void
-dump_region(Display *dpy, XserverRegion region) {
+dump_region(const session_t *ps, XserverRegion region) {
   int nrects = 0, i;
-  XRectangle *rects = XFixesFetchRegion(dpy, region, &nrects);
+  XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
   if (!rects)
     return;
 
@@ -1265,11 +1540,14 @@ dump_region(Display *dpy, XserverRegion region) {
  *
  * Keith Packard said this is slow:
  * http://lists.freedesktop.org/archives/xorg/2007-November/030467.html
+ *
+ * @param ps current session
+ * @param region region to check for
  */
-static inline Bool
-is_region_empty(Display *dpy, XserverRegion region) {
+static inline bool
+is_region_empty(const session_t *ps, XserverRegion region) {
   int nrects = 0;
-  XRectangle *rects = XFixesFetchRegion(dpy, region, &nrects);
+  XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
 
   XFree(rects);
 
@@ -1279,36 +1557,49 @@ is_region_empty(Display *dpy, XserverRegion region) {
 /**
  * Add a window to damaged area.
  *
- * @param dpy display in use
+ * @param ps current session
  * @param w struct _win element representing the window
  */
 static inline void
-add_damage_win(Display *dpy, win *w) {
+add_damage_win(session_t *ps, win *w) {
   if (w->extents) {
-    add_damage(dpy, copy_region(dpy, w->extents));
+    add_damage(ps, copy_region(ps, w->extents));
   }
 }
 
 #if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
 static bool
-ev_window_name(Display *dpy, Window wid, char **name);
+ev_window_name(session_t *ps, Window wid, char **name);
 #endif
 
 inline static void
-ev_handle(XEvent *ev);
+ev_handle(session_t *ps, XEvent *ev);
 
 static void
 fork_after(void);
 
 #ifdef CONFIG_LIBCONFIG
+/**
+ * Wrapper of libconfig's <code>config_lookup_int</code>.
+ *
+ * To convert <code>int</code> value <code>config_lookup_bool</code>
+ * returns to <code>bool</code>.
+ */
 static inline void
-lcfg_lookup_bool(const config_t *config, const char *path, Bool *value) {
+lcfg_lookup_bool(const config_t *config, const char *path,
+    bool *value) {
   int ival;
 
   if (config_lookup_bool(config, path, &ival))
     *value = ival;
 }
 
+/**
+ * Wrapper of libconfig's <code>config_lookup_int</code>.
+ *
+ * To deal with the different value types <code>config_lookup_int</code>
+ * returns in libconfig-1.3 and libconfig-1.4.
+ */
 static inline int
 lcfg_lookup_int(const config_t *config, const char *path, int *value) {
 #ifndef CONFIG_LIBCONFIG_LEGACY
@@ -1328,54 +1619,66 @@ static FILE *
 open_config_file(char *cpath, char **path);
 
 static void
-parse_config(char *cpath, struct options_tmp *pcfgtmp);
+parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp);
 #endif
 
 static void
-get_cfg(int argc, char *const *argv);
+get_cfg(session_t *ps, int argc, char *const *argv);
 
 static void
-get_atoms(void);
+init_atoms(session_t *ps);
 
 static void
-update_refresh_rate(Display *dpy);
+update_refresh_rate(session_t *ps);
 
-static Bool
-sw_opti_init(void);
+static bool
+sw_opti_init(session_t *ps);
 
 static int
-evpoll(struct pollfd *fd, int timeout);
+evpoll(session_t *ps, int timeout);
 
-static Bool
-vsync_drm_init(void);
+static bool
+vsync_drm_init(session_t *ps);
 
 #ifdef CONFIG_VSYNC_DRM
 static int
-vsync_drm_wait(void);
+vsync_drm_wait(session_t *ps);
 #endif
 
-static Bool
-vsync_opengl_init(void);
+static bool
+vsync_opengl_init(session_t *ps);
 
 #ifdef CONFIG_VSYNC_OPENGL
 static void
-vsync_opengl_wait(void);
+vsync_opengl_wait(session_t *ps);
 #endif
 
 static void
-vsync_wait(void);
+vsync_wait(session_t *ps);
 
 static void
-init_alpha_picts(Display *dpy);
+init_alpha_picts(session_t *ps);
 
 static void
-init_dbe(void);
+init_dbe(session_t *ps);
 
 static void
-init_overlay(void);
+init_overlay(session_t *ps);
 
 static void
-redir_start(Display *dpy);
+redir_start(session_t *ps);
 
 static void
-redir_stop(Display *dpy);
+redir_stop(session_t *ps);
+
+static session_t *
+session_init(session_t *ps_old, int argc, char **argv);
+
+static void
+session_destroy(session_t *ps);
+
+static void
+session_run(session_t *ps);
+
+static void
+reset_enable(int __attribute__((unused)) signum);

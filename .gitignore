@@ -34,7 +34,8 @@ install_manifest.txt
 
 # Misc files
 core
-oprofile_data
+oprofile_data/
 compton.plist
 callgrind.out.*
 man/*.html
+doxygen/

@@ -10,16 +10,18 @@
 
 #include "compton.h"
 
-#define MSTR_(s)        #s
-#define MSTR(s)         MSTR_(s)
+// === Macros ===
+
+// #define MSTR_(s)        #s
+// #define MSTR(s)         MSTR_(s)
 
 // Use #s here to prevent macro expansion
+/// Macro used for shortening some debugging code.
 #define CASESTRRET(s)   case s: return #s
 
-/**
- * Shared
- */
+// === Global constants ===
 
+/// Name strings for window types.
 const char *WINTYPES[NUM_WINTYPES] = {
   "unknown",
   "desktop",
@@ -38,207 +40,22 @@ const char *WINTYPES[NUM_WINTYPES] = {
   "dnd",
 };
 
-struct timeval time_start = { 0, 0 };
-
-win *list;
-Display *dpy = NULL;
-int scr;
-
-/// Root window.
-Window root = None;
-/// Damage of root window.
-Damage root_damage = None;
-/// X Composite overlay window. Used if --paint-on-overlay.
-Window overlay = None;
-
-/// Picture of root window. Destination of painting in no-DBE painting
-/// mode.
-Picture root_picture = None;
-/// A Picture acting as the painting target.
-Picture tgt_picture = None;
-/// Temporary buffer to paint to before sending to display.
-Picture tgt_buffer = None;
-/// DBE back buffer for root window. Used in DBE painting mode.
-XdbeBackBuffer root_dbe = None;
-
-Picture black_picture;
-Picture cshadow_picture;
-/// Picture used for dimming inactive windows.
-Picture dim_picture = 0;
-Picture root_tile;
-XserverRegion all_damage;
-Bool has_name_pixmap;
-int root_height, root_width;
-/// A region of the size of the screen.
-XserverRegion screen_reg = None;
-/// Current active window. Used by EWMH _NET_ACTIVE_WINDOW focus
-/// detection.
-win *active_win = NULL;
-/// Whether all windows are currently redirected.
-Bool redirected = False;
-/// Whether there's a highest fullscreen window, and all windows could
-/// be unredirected.
-Bool unredir_possible = False;
-
-/// Pregenerated alpha pictures.
-Picture *alpha_picts = NULL;
-/// Whether the program is idling. I.e. no fading, no potential window
-/// changes.
-Bool idling;
-/// Whether all reg_ignore of windows should expire in this paint.
-Bool reg_ignore_expire = False;
-/// Window ID of the window we register as a symbol.
-Window reg_win = 0;
-
-/// Currently used refresh rate. Used for sw_opti.
-short refresh_rate = 0;
-/// Interval between refresh in nanoseconds. Used for sw_opti.
-unsigned long refresh_intv = 0;
-/// Nanosecond-level offset of the first painting. Used for sw_opti.
-long paint_tm_offset = 0;
-
-#ifdef CONFIG_VSYNC_DRM
-/// File descriptor of DRI device file. Used for DRM VSync.
-int drm_fd = 0;
-#endif
-
-#ifdef CONFIG_VSYNC_OPENGL
-/// GLX context.
-GLXContext glx_context;
-
-/// Pointer to glXGetVideoSyncSGI function. Used by OpenGL VSync.
-f_GetVideoSync glx_get_video_sync = NULL;
-
-/// Pointer to glXWaitVideoSyncSGI function. Used by OpenGL VSync.
-f_WaitVideoSync glx_wait_video_sync = NULL;
-#endif
-
-/* errors */
-ignore *ignore_head = NULL, **ignore_tail = &ignore_head;
-int xfixes_event, xfixes_error;
-int damage_event, damage_error;
-int composite_event, composite_error;
-int render_event, render_error;
-int composite_opcode;
-
-/// Whether X Shape extension exists.
-Bool shape_exists = False;
-/// Event base number and error base number for X Shape extension.
-int shape_event, shape_error;
-
-/// Whether X RandR extension exists.
-Bool randr_exists = False;
-/// Event base number and error base number for X RandR extension.
-int randr_event, randr_error;
-
-#ifdef CONFIG_VSYNC_OPENGL
-/// Whether X GLX extension exists.
-Bool glx_exists = False;
-/// Event base number and error base number for X GLX extension.
-int glx_event, glx_error;
-#endif
-
-Bool dbe_exists = False;
-
-/* shadows */
-conv *gaussian_map;
-
-/* for shadow precomputation */
-int cgsize = -1;
-unsigned char *shadow_corner = NULL;
-unsigned char *shadow_top = NULL;
-
-/* for root tile */
-static const char *background_props[] = {
+/// Names of root window properties that could point to a pixmap of
+/// background.
+const char *background_props_str[] = {
   "_XROOTPMAP_ID",
   "_XSETROOT_ID",
   0,
 };
 
-/* for expose events */
-XRectangle *expose_rects = 0;
-int size_expose = 0;
-int n_expose = 0;
+// === Global variables ===
 
-// atoms
-Atom opacity_atom = None;
-Atom frame_extents_atom = None;
-Atom client_atom = None;
-Atom name_atom = None;
-Atom name_ewmh_atom = None;
-Atom class_atom = None;
-Atom transient_atom = None;
-Atom ewmh_active_win_atom = None;;
-Atom compton_shadow_atom = None;
+/// Pointer to current session, as a global variable. Only used by
+/// <code>error()</code> and <code>reset_enable()</code>, which could not
+/// have a pointer to current session passed in.
+session_t *ps_g = NULL;
 
-Atom win_type_atom;
-Atom win_type[NUM_WINTYPES];
-
-/**
- * Macros
- */
-
-#define HAS_FRAME_OPACITY(w) \
-  (frame_opacity && (w)->top_width)
-
-/**
- * Options
- */
-
-static options_t opts = {
-  .display = NULL,
-  .mark_wmwin_focused = False,
-  .mark_ovredir_focused = False,
-  .fork_after_register = False,
-  .synchronize = False,
-  .detect_rounded_corners = False,
-  .paint_on_overlay = False,
-  .unredir_if_possible = False,
-
-  .refresh_rate = 0,
-  .sw_opti = False,
-  .vsync = VSYNC_NONE,
-  .dbe = False,
-  .vsync_aggressive = False,
-
-  .wintype_shadow = { False },
-  .shadow_red = 0.0,
-  .shadow_green = 0.0,
-  .shadow_blue = 0.0,
-  .shadow_radius = 12,
-  .shadow_offset_x = -15,
-  .shadow_offset_y = -15,
-  .shadow_opacity = .75,
-  .clear_shadow = False,
-  .shadow_blacklist = NULL,
-  .shadow_ignore_shaped = False,
-  .respect_attr_shadow = False,
-
-  .wintype_fade = { False },
-  .fade_in_step = 0.028 * OPAQUE,
-  .fade_out_step = 0.03 * OPAQUE,
-  .fade_delta = 10,
-  .no_fading_openclose = False,
-  .fade_blacklist = NULL,
-
-  .wintype_opacity = { 0.0 },
-  .inactive_opacity = 0,
-  .inactive_opacity_override = False,
-  .frame_opacity = 0.0,
-  .detect_client_opacity = False,
-  .inactive_dim = 0.0,
-  .alpha_step = 0.03,
-  .use_ewmh_active_win = False,
-
-  .track_focus = False,
-  .track_wdata = False,
-};
-
-/**
- * Fades
- */
-
-unsigned long fade_time = 0;
+// === Fading ===
 
 /**
  * Get the time left before next fading point.
@@ -246,8 +63,8 @@ unsigned long fade_time = 0;
  * In milliseconds.
  */
 static int
-fade_timeout(void) {
-  int diff = opts.fade_delta - get_time_ms() + fade_time;
+fade_timeout(session_t *ps) {
+  int diff = ps->o.fade_delta - get_time_ms() + ps->fade_time;
 
   if (diff < 0)
     diff = 0;
@@ -261,7 +78,7 @@ fade_timeout(void) {
  * @param steps steps of fading
  */
 static void
-run_fade(Display *dpy, win *w, unsigned steps) {
+run_fade(session_t *ps, win *w, unsigned steps) {
   // If we have reached target opacity, return
   if (w->opacity == w->opacity_tgt) {
     return;
@@ -274,16 +91,16 @@ run_fade(Display *dpy, win *w, unsigned steps) {
     // calculations
     if (w->opacity < w->opacity_tgt)
       w->opacity = normalize_d_range(
-          (double) w->opacity + (double) opts.fade_in_step * steps,
+          (double) w->opacity + (double) ps->o.fade_in_step * steps,
           0.0, w->opacity_tgt);
     else
       w->opacity = normalize_d_range(
-          (double) w->opacity - (double) opts.fade_out_step * steps,
+          (double) w->opacity - (double) ps->o.fade_out_step * steps,
           w->opacity_tgt, OPAQUE);
   }
 
   if (w->opacity != w->opacity_tgt) {
-    idling = False;
+    ps->idling = false;
   }
 }
 
@@ -294,32 +111,30 @@ run_fade(Display *dpy, win *w, unsigned steps) {
  * @param exec_callback whether the previous callback is to be executed
  */
 static void
-set_fade_callback(Display *dpy, win *w,
-    void (*callback) (Display *dpy, win *w), Bool exec_callback) {
-  void (*old_callback) (Display *dpy, win *w) = w->fade_callback;
+set_fade_callback(session_t *ps, win *w,
+    void (*callback) (session_t *ps, win *w), bool exec_callback) {
+  void (*old_callback) (session_t *ps, win *w) = w->fade_callback;
 
   w->fade_callback = callback;
   // Must be the last line as the callback could destroy w!
   if (exec_callback && old_callback) {
-    old_callback(dpy, w);
+    old_callback(ps, w);
     // Although currently no callback function affects window state on
     // next paint, it could, in the future
-    idling = False;
+    ps->idling = false;
   }
 }
 
-/**
- * Shadows
- */
+// === Shadows ===
 
-static double
+static double __attribute__((const))
 gaussian(double r, double x, double y) {
   return ((1 / (sqrt(2 * M_PI * r))) *
     exp((- (x * x + y * y)) / (2 * r * r)));
 }
 
 static conv *
-make_gaussian_map(Display *dpy, double r) {
+make_gaussian_map(double r) {
   conv *c;
   int size = ((int) ceil((r * 3)) + 1) & ~1;
   int center = size / 2;
@@ -334,7 +149,7 @@ make_gaussian_map(Display *dpy, double r) {
 
   for (y = 0; y < size; y++) {
     for (x = 0; x < size; x++) {
-      g = gaussian(r, (double) (x - center), (double) (y - center));
+      g = gaussian(r, x - center, y - center);
       t += g;
       c->data[y * size + x] = g;
     }
@@ -420,54 +235,56 @@ sum_gaussian(conv *map, double opacity,
    to save time for large windows */
 
 static void
-presum_gaussian(conv *map) {
+presum_gaussian(session_t *ps, conv *map) {
   int center = map->size / 2;
   int opacity, x, y;
 
-  cgsize = map->size;
+  ps->cgsize = map->size;
 
-  if (shadow_corner) free((void *)shadow_corner);
-  if (shadow_top) free((void *)shadow_top);
+  if (ps->shadow_corner)
+    free(ps->shadow_corner);
+  if (ps->shadow_top)
+    free(ps->shadow_top);
 
-  shadow_corner = (unsigned char *)(malloc((cgsize + 1) * (cgsize + 1) * 26));
-  shadow_top = (unsigned char *)(malloc((cgsize + 1) * 26));
+  ps->shadow_corner = malloc((ps->cgsize + 1) * (ps->cgsize + 1) * 26);
+  ps->shadow_top = malloc((ps->cgsize + 1) * 26);
 
-  for (x = 0; x <= cgsize; x++) {
-    shadow_top[25 * (cgsize + 1) + x] =
-      sum_gaussian(map, 1, x - center, center, cgsize * 2, cgsize * 2);
+  for (x = 0; x <= ps->cgsize; x++) {
+    ps->shadow_top[25 * (ps->cgsize + 1) + x] =
+      sum_gaussian(map, 1, x - center, center, ps->cgsize * 2, ps->cgsize * 2);
 
     for (opacity = 0; opacity < 25; opacity++) {
-      shadow_top[opacity * (cgsize + 1) + x] =
-        shadow_top[25 * (cgsize + 1) + x] * opacity / 25;
+      ps->shadow_top[opacity * (ps->cgsize + 1) + x] =
+        ps->shadow_top[25 * (ps->cgsize + 1) + x] * opacity / 25;
     }
 
     for (y = 0; y <= x; y++) {
-      shadow_corner[25 * (cgsize + 1) * (cgsize + 1) + y * (cgsize + 1) + x]
-        = sum_gaussian(map, 1, x - center, y - center, cgsize * 2, cgsize * 2);
-      shadow_corner[25 * (cgsize + 1) * (cgsize + 1) + x * (cgsize + 1) + y]
-        = shadow_corner[25 * (cgsize + 1) * (cgsize + 1) + y * (cgsize + 1) + x];
+      ps->shadow_corner[25 * (ps->cgsize + 1) * (ps->cgsize + 1) + y * (ps->cgsize + 1) + x]
+        = sum_gaussian(map, 1, x - center, y - center, ps->cgsize * 2, ps->cgsize * 2);
+      ps->shadow_corner[25 * (ps->cgsize + 1) * (ps->cgsize + 1) + x * (ps->cgsize + 1) + y]
+        = ps->shadow_corner[25 * (ps->cgsize + 1) * (ps->cgsize + 1) + y * (ps->cgsize + 1) + x];
 
       for (opacity = 0; opacity < 25; opacity++) {
-        shadow_corner[opacity * (cgsize + 1) * (cgsize + 1)
-                      + y * (cgsize + 1) + x]
-          = shadow_corner[opacity * (cgsize + 1) * (cgsize + 1)
-                          + x * (cgsize + 1) + y]
-          = shadow_corner[25 * (cgsize + 1) * (cgsize + 1)
-                          + y * (cgsize + 1) + x] * opacity / 25;
+        ps->shadow_corner[opacity * (ps->cgsize + 1) * (ps->cgsize + 1)
+                      + y * (ps->cgsize + 1) + x]
+          = ps->shadow_corner[opacity * (ps->cgsize + 1) * (ps->cgsize + 1)
+                          + x * (ps->cgsize + 1) + y]
+          = ps->shadow_corner[25 * (ps->cgsize + 1) * (ps->cgsize + 1)
+                          + y * (ps->cgsize + 1) + x] * opacity / 25;
       }
     }
   }
 }
 
 static XImage *
-make_shadow(Display *dpy, double opacity,
-            int width, int height, Bool clear_shadow) {
+make_shadow(session_t *ps, double opacity,
+            int width, int height) {
   XImage *ximage;
   unsigned char *data;
   int ylimit, xlimit;
-  int swidth = width + cgsize;
-  int sheight = height + cgsize;
-  int center = cgsize / 2;
+  int swidth = width + ps->cgsize;
+  int sheight = height + ps->cgsize;
+  int center = ps->cgsize / 2;
   int x, y;
   unsigned char d;
   int x_diff;
@@ -476,10 +293,8 @@ make_shadow(Display *dpy, double opacity,
   data = malloc(swidth * sheight * sizeof(unsigned char));
   if (!data) return 0;
 
-  ximage = XCreateImage(
-    dpy, DefaultVisual(dpy, DefaultScreen(dpy)), 8,
-    ZPixmap, 0, (char *) data, swidth, sheight, 8,
-    swidth * sizeof(unsigned char));
+  ximage = XCreateImage(ps->dpy, ps->vis, 8,
+    ZPixmap, 0, (char *) data, swidth, sheight, 8, swidth * sizeof(char));
 
   if (!ximage) {
     free(data);
@@ -498,12 +313,12 @@ make_shadow(Display *dpy, double opacity,
   // later will be filled) could entirely cover the area of the shadow
   // that will be displayed, do not bother filling other pixels. If it
   // can't, we must fill the other pixels here.
-  /* if (!(clear_shadow && opts.shadow_offset_x <= 0 && opts.shadow_offset_x >= -cgsize
-        && opts.shadow_offset_y <= 0 && opts.shadow_offset_y >= -cgsize)) { */
-    if (cgsize > 0) {
-      d = shadow_top[opacity_int * (cgsize + 1) + cgsize];
+  /* if (!(clear_shadow && ps->o.shadow_offset_x <= 0 && ps->o.shadow_offset_x >= -ps->cgsize
+        && ps->o.shadow_offset_y <= 0 && ps->o.shadow_offset_y >= -ps->cgsize)) { */
+    if (ps->cgsize > 0) {
+      d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + ps->cgsize];
     } else {
-      d = sum_gaussian(gaussian_map,
+      d = sum_gaussian(ps->gaussian_map,
         opacity, center, center, width, height);
     }
     memset(data, d, sheight * swidth);
@@ -513,19 +328,19 @@ make_shadow(Display *dpy, double opacity,
    * corners
    */
 
-  ylimit = cgsize;
+  ylimit = ps->cgsize;
   if (ylimit > sheight / 2) ylimit = (sheight + 1) / 2;
 
-  xlimit = cgsize;
+  xlimit = ps->cgsize;
   if (xlimit > swidth / 2) xlimit = (swidth + 1) / 2;
 
   for (y = 0; y < ylimit; y++) {
     for (x = 0; x < xlimit; x++) {
-      if (xlimit == cgsize && ylimit == cgsize) {
-        d = shadow_corner[opacity_int * (cgsize + 1) * (cgsize + 1)
-                          + y * (cgsize + 1) + x];
+      if (xlimit == ps->cgsize && ylimit == ps->cgsize) {
+        d = ps->shadow_corner[opacity_int * (ps->cgsize + 1) * (ps->cgsize + 1)
+                          + y * (ps->cgsize + 1) + x];
       } else {
-        d = sum_gaussian(gaussian_map,
+        d = sum_gaussian(ps->gaussian_map,
           opacity, x - center, y - center, width, height);
       }
       data[y * swidth + x] = d;
@@ -539,17 +354,17 @@ make_shadow(Display *dpy, double opacity,
    * top/bottom
    */
 
-  x_diff = swidth - (cgsize * 2);
+  x_diff = swidth - (ps->cgsize * 2);
   if (x_diff > 0 && ylimit > 0) {
     for (y = 0; y < ylimit; y++) {
-      if (ylimit == cgsize) {
-        d = shadow_top[opacity_int * (cgsize + 1) + y];
+      if (ylimit == ps->cgsize) {
+        d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + y];
       } else {
-        d = sum_gaussian(gaussian_map,
+        d = sum_gaussian(ps->gaussian_map,
           opacity, center, y - center, width, height);
       }
-      memset(&data[y * swidth + cgsize], d, x_diff);
-      memset(&data[(sheight - y - 1) * swidth + cgsize], d, x_diff);
+      memset(&data[y * swidth + ps->cgsize], d, x_diff);
+      memset(&data[(sheight - y - 1) * swidth + ps->cgsize], d, x_diff);
     }
   }
 
@@ -558,28 +373,27 @@ make_shadow(Display *dpy, double opacity,
    */
 
   for (x = 0; x < xlimit; x++) {
-    if (xlimit == cgsize) {
-      d = shadow_top[opacity_int * (cgsize + 1) + x];
+    if (xlimit == ps->cgsize) {
+      d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + x];
     } else {
-      d = sum_gaussian(gaussian_map,
+      d = sum_gaussian(ps->gaussian_map,
         opacity, x - center, center, width, height);
     }
-    for (y = cgsize; y < sheight - cgsize; y++) {
+    for (y = ps->cgsize; y < sheight - ps->cgsize; y++) {
       data[y * swidth + x] = d;
       data[y * swidth + (swidth - x - 1)] = d;
     }
   }
 
-  assert(!clear_shadow);
   /*
   if (clear_shadow) {
     // Clear the region in the shadow that the window would cover based
     // on shadow_offset_{x,y} user provides
-    int xstart = normalize_i_range(- (int) opts.shadow_offset_x, 0, swidth);
-    int xrange = normalize_i_range(width - (int) opts.shadow_offset_x,
+    int xstart = normalize_i_range(- (int) ps->o.shadow_offset_x, 0, swidth);
+    int xrange = normalize_i_range(width - (int) ps->o.shadow_offset_x,
         0, swidth) - xstart;
-    int ystart = normalize_i_range(- (int) opts.shadow_offset_y, 0, sheight);
-    int yend = normalize_i_range(height - (int) opts.shadow_offset_y,
+    int ystart = normalize_i_range(- (int) ps->o.shadow_offset_y, 0, sheight);
+    int yend = normalize_i_range(height - (int) ps->o.shadow_offset_y,
         0, sheight);
     int y;
 
@@ -592,48 +406,50 @@ make_shadow(Display *dpy, double opacity,
   return ximage;
 }
 
+/**
+ * Generate shadow <code>Picture</code> for a window.
+ */
 static Picture
-shadow_picture(Display *dpy, double opacity, int width, int height,
-    Bool clear_shadow) {
+shadow_picture(session_t *ps, double opacity, int width, int height) {
   XImage *shadow_image = NULL;
   Pixmap shadow_pixmap = None, shadow_pixmap_argb = None;
   Picture shadow_picture = None, shadow_picture_argb = None;
   GC gc = None;
 
-  shadow_image = make_shadow(dpy, opacity, width, height, clear_shadow);
+  shadow_image = make_shadow(ps, opacity, width, height);
   if (!shadow_image)
     return None;
 
-  shadow_pixmap = XCreatePixmap(dpy, root,
+  shadow_pixmap = XCreatePixmap(ps->dpy, ps->root,
     shadow_image->width, shadow_image->height, 8);
-  shadow_pixmap_argb = XCreatePixmap(dpy, root,
+  shadow_pixmap_argb = XCreatePixmap(ps->dpy, ps->root,
     shadow_image->width, shadow_image->height, 32);
 
   if (!shadow_pixmap || !shadow_pixmap_argb)
     goto shadow_picture_err;
 
-  shadow_picture = XRenderCreatePicture(dpy, shadow_pixmap,
-    XRenderFindStandardFormat(dpy, PictStandardA8), 0, 0);
-  shadow_picture_argb = XRenderCreatePicture(dpy, shadow_pixmap_argb,
-    XRenderFindStandardFormat(dpy, PictStandardARGB32), 0, 0);
+  shadow_picture = XRenderCreatePicture(ps->dpy, shadow_pixmap,
+    XRenderFindStandardFormat(ps->dpy, PictStandardA8), 0, 0);
+  shadow_picture_argb = XRenderCreatePicture(ps->dpy, shadow_pixmap_argb,
+    XRenderFindStandardFormat(ps->dpy, PictStandardARGB32), 0, 0);
   if (!shadow_picture || !shadow_picture_argb)
     goto shadow_picture_err;
 
-  gc = XCreateGC(dpy, shadow_pixmap, 0, 0);
+  gc = XCreateGC(ps->dpy, shadow_pixmap, 0, 0);
   if (!gc)
     goto shadow_picture_err;
 
-  XPutImage(dpy, shadow_pixmap, gc, shadow_image, 0, 0, 0, 0,
+  XPutImage(ps->dpy, shadow_pixmap, gc, shadow_image, 0, 0, 0, 0,
     shadow_image->width, shadow_image->height);
-  XRenderComposite(dpy, PictOpSrc, cshadow_picture, shadow_picture,
+  XRenderComposite(ps->dpy, PictOpSrc, ps->cshadow_picture, shadow_picture,
       shadow_picture_argb, 0, 0, 0, 0, 0, 0,
       shadow_image->width, shadow_image->height);
 
-  XFreeGC(dpy, gc);
+  XFreeGC(ps->dpy, gc);
   XDestroyImage(shadow_image);
-  XFreePixmap(dpy, shadow_pixmap);
-  XFreePixmap(dpy, shadow_pixmap_argb);
-  XRenderFreePicture(dpy, shadow_picture);
+  XFreePixmap(ps->dpy, shadow_pixmap);
+  XFreePixmap(ps->dpy, shadow_pixmap_argb);
+  XRenderFreePicture(ps->dpy, shadow_picture);
 
   return shadow_picture_argb;
 
@@ -641,39 +457,42 @@ shadow_picture_err:
   if (shadow_image)
     XDestroyImage(shadow_image);
   if (shadow_pixmap)
-    XFreePixmap(dpy, shadow_pixmap);
+    XFreePixmap(ps->dpy, shadow_pixmap);
   if (shadow_pixmap_argb)
-    XFreePixmap(dpy, shadow_pixmap_argb);
+    XFreePixmap(ps->dpy, shadow_pixmap_argb);
   if (shadow_picture)
-    XRenderFreePicture(dpy, shadow_picture);
+    XRenderFreePicture(ps->dpy, shadow_picture);
   if (shadow_picture_argb)
-    XRenderFreePicture(dpy, shadow_picture_argb);
+    XRenderFreePicture(ps->dpy, shadow_picture_argb);
   if (gc)
-    XFreeGC(dpy, gc);
+    XFreeGC(ps->dpy, gc);
   return None;
 }
 
+/**
+ * Generate a 1x1 <code>Picture</code> of a particular color.
+ */
 static Picture
-solid_picture(Display *dpy, Bool argb, double a,
+solid_picture(session_t *ps, bool argb, double a,
               double r, double g, double b) {
   Pixmap pixmap;
   Picture picture;
   XRenderPictureAttributes pa;
   XRenderColor c;
 
-  pixmap = XCreatePixmap(dpy, root, 1, 1, argb ? 32 : 8);
+  pixmap = XCreatePixmap(ps->dpy, ps->root, 1, 1, argb ? 32 : 8);
 
   if (!pixmap) return None;
 
   pa.repeat = True;
-  picture = XRenderCreatePicture(dpy, pixmap,
-    XRenderFindStandardFormat(dpy, argb
+  picture = XRenderCreatePicture(ps->dpy, pixmap,
+    XRenderFindStandardFormat(ps->dpy, argb
       ? PictStandardARGB32 : PictStandardA8),
     CPRepeat,
     &pa);
 
   if (!picture) {
-    XFreePixmap(dpy, pixmap);
+    XFreePixmap(ps->dpy, pixmap);
     return None;
   }
 
@@ -682,25 +501,23 @@ solid_picture(Display *dpy, Bool argb, double a,
   c.green = g * 0xffff;
   c.blue = b * 0xffff;
 
-  XRenderFillRectangle(dpy, PictOpSrc, picture, &c, 0, 0, 1, 1);
-  XFreePixmap(dpy, pixmap);
+  XRenderFillRectangle(ps->dpy, PictOpSrc, picture, &c, 0, 0, 1, 1);
+  XFreePixmap(ps->dpy, pixmap);
 
   return picture;
 }
 
-/**
- * Errors
- */
+// === Error handling ===
 
 static void
-discard_ignore(Display *dpy, unsigned long sequence) {
-  while (ignore_head) {
-    if ((long) (sequence - ignore_head->sequence) > 0) {
-      ignore  *next = ignore_head->next;
-      free(ignore_head);
-      ignore_head = next;
-      if (!ignore_head) {
-        ignore_tail = &ignore_head;
+discard_ignore(session_t *ps, unsigned long sequence) {
+  while (ps->ignore_head) {
+    if ((long) (sequence - ps->ignore_head->sequence) > 0) {
+      ignore_t *next = ps->ignore_head->next;
+      free(ps->ignore_head);
+      ps->ignore_head = next;
+      if (!ps->ignore_head) {
+        ps->ignore_tail = &ps->ignore_head;
       }
     } else {
       break;
@@ -709,37 +526,35 @@ discard_ignore(Display *dpy, unsigned long sequence) {
 }
 
 static void
-set_ignore(Display *dpy, unsigned long sequence) {
-  ignore *i = malloc(sizeof(ignore));
+set_ignore(session_t *ps, unsigned long sequence) {
+  ignore_t *i = malloc(sizeof(ignore_t));
   if (!i) return;
 
   i->sequence = sequence;
   i->next = 0;
-  *ignore_tail = i;
-  ignore_tail = &i->next;
+  *ps->ignore_tail = i;
+  ps->ignore_tail = &i->next;
 }
 
 static int
-should_ignore(Display *dpy, unsigned long sequence) {
-  discard_ignore(dpy, sequence);
-  return ignore_head && ignore_head->sequence == sequence;
+should_ignore(session_t *ps, unsigned long sequence) {
+  discard_ignore(ps, sequence);
+  return ps->ignore_head && ps->ignore_head->sequence == sequence;
 }
 
-/**
- * Windows
- */
+// === Windows ===
 
 /**
  * Check if a window has rounded corners.
  */
 static void
-win_rounded_corners(Display *dpy, win *w) {
+win_rounded_corners(session_t *ps, win *w) {
   if (!w->bounding_shaped)
     return;
 
   // Fetch its bounding region
   if (!w->border_size)
-    w->border_size = border_size(dpy, w);
+    w->border_size = border_size(ps, w);
 
   // Quit if border_size() returns None
   if (!w->border_size)
@@ -754,7 +569,7 @@ win_rounded_corners(Display *dpy, win *w) {
 
   // Get the rectangles in the bounding region
   int nrects = 0, i;
-  XRectangle *rects = XFixesFetchRegion(dpy, w->border_size, &nrects);
+  XRectangle *rects = XFixesFetchRegion(ps->dpy, w->border_size, &nrects);
   if (!rects)
     return;
 
@@ -762,12 +577,12 @@ win_rounded_corners(Display *dpy, win *w) {
   // having rounded corners
   for (i = 0; i < nrects; ++i)
     if (rects[i].width >= minwidth && rects[i].height >= minheight) {
-      w->rounded_corners = True;
+      w->rounded_corners = true;
       XFree(rects);
       return;
     }
 
-  w->rounded_corners = False;
+  w->rounded_corners = false;
   XFree(rects);
 }
 
@@ -777,7 +592,7 @@ win_rounded_corners(Display *dpy, win *w) {
  * @return true if matched, false otherwise.
  */
 static bool
-win_match_once(win *w, const wincond *cond) {
+win_match_once(win *w, const wincond_t *cond) {
   const char *target;
   bool matched = false;
 
@@ -866,7 +681,7 @@ win_match_once(win *w, const wincond *cond) {
  * @return true if matched, false otherwise.
  */
 static bool
-win_match(win *w, wincond *condlst, wincond **cache) {
+win_match(win *w, wincond_t *condlst, wincond_t **cache) {
   // Check if the cached entry matches firstly
   if (cache && *cache && win_match_once(w, *cache))
     return true;
@@ -886,22 +701,22 @@ win_match(win *w, wincond *condlst, wincond **cache) {
 /**
  * Add a pattern to a condition linked list.
  */
-static Bool
-condlst_add(wincond **pcondlst, const char *pattern) {
+static bool
+condlst_add(wincond_t **pcondlst, const char *pattern) {
   if (!pattern)
-    return False;
+    return false;
 
   unsigned plen = strlen(pattern);
-  wincond *cond;
+  wincond_t *cond;
   const char *pos;
 
   if (plen < 4 || ':' != pattern[1] || !strchr(pattern + 2, ':')) {
     printf("Pattern \"%s\": Format invalid.\n", pattern);
-    return False;
+    return false;
   }
 
   // Allocate memory for the new condition
-  cond = malloc(sizeof(wincond));
+  cond = malloc(sizeof(wincond_t));
 
   // Determine the pattern target
   switch (pattern[0]) {
@@ -918,7 +733,7 @@ condlst_add(wincond **pcondlst, const char *pattern) {
       printf("Pattern \"%s\": Target \"%c\" invalid.\n",
           pattern, pattern[0]);
       free(cond);
-      return False;
+      return false;
   }
 
   // Determine the pattern type
@@ -944,7 +759,7 @@ condlst_add(wincond **pcondlst, const char *pattern) {
       printf("Pattern \"%s\": Type \"%c\" invalid.\n",
           pattern, pattern[2]);
       free(cond);
-      return False;
+      return false;
   }
 
   // Determine the pattern flags
@@ -985,7 +800,7 @@ condlst_add(wincond **pcondlst, const char *pattern) {
       printf("Pattern \"%s\": PCRE regular expression parsing failed on "
           "offset %d: %s\n", pattern, erroffset, error);
       free(cond);
-      return False;
+      return false;
     }
 #ifdef CONFIG_REGEX_PCRE_JIT
     cond->regex_pcre_extra = pcre_study(cond->regex_pcre, PCRE_STUDY_JIT_COMPILE, &error);
@@ -1004,33 +819,39 @@ condlst_add(wincond **pcondlst, const char *pattern) {
   cond->next = *pcondlst;
   *pcondlst = cond;
 
-  return True;
+  return true;
 }
 
+/**
+ * Determine the event mask for a window.
+ */
 static long
-determine_evmask(Display *dpy, Window wid, win_evmode_t mode) {
+determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
   long evmask = NoEventMask;
 
-  if (WIN_EVMODE_FRAME == mode || find_win(wid)) {
+  if (WIN_EVMODE_FRAME == mode || find_win(ps, wid)) {
     evmask |= PropertyChangeMask;
-    if (opts.track_focus && !opts.use_ewmh_active_win)
+    if (ps->o.track_focus && !ps->o.use_ewmh_active_win)
       evmask |= FocusChangeMask;
   }
 
-  if (WIN_EVMODE_CLIENT == mode || find_toplevel(wid)) {
-    if (opts.frame_opacity || opts.track_wdata
-        || opts.detect_client_opacity)
+  if (WIN_EVMODE_CLIENT == mode || find_toplevel(ps, wid)) {
+    if (ps->o.frame_opacity || ps->o.track_wdata
+        || ps->o.detect_client_opacity)
       evmask |= PropertyChangeMask;
   }
 
   return evmask;
 }
 
+/**
+ * Find a window from window id in window linked list of the session.
+ */
 static win *
-find_win(Window id) {
+find_win(session_t *ps, Window id) {
   win *w;
 
-  for (w = list; w; w = w->next) {
+  for (w = ps->list; w; w = w->next) {
     if (w->id == id && !w->destroyed)
       return w;
   }
@@ -1045,10 +866,10 @@ find_win(Window id) {
  * @return struct _win object of the found window, NULL if not found
  */
 static win *
-find_toplevel(Window id) {
+find_toplevel(session_t *ps, Window id) {
   win *w;
 
-  for (w = list; w; w = w->next) {
+  for (w = ps->list; w; w = w->next) {
     if (w->client_win == id && !w->destroyed)
       return w;
   }
@@ -1059,16 +880,16 @@ find_toplevel(Window id) {
 /**
  * Find out the WM frame of a client window by querying X.
  *
- * @param dpy display to use
+ * @param ps current session
  * @param w window ID
  * @return struct _win object of the found window, NULL if not found
  */
 static win *
-find_toplevel2(Display *dpy, Window wid) {
+find_toplevel2(session_t *ps, Window wid) {
   win *w = NULL;
 
   // We traverse through its ancestors to find out the frame
-  while (wid && wid != root && !(w = find_win(wid))) {
+  while (wid && wid != ps->root && !(w = find_win(ps, wid))) {
     Window troot;
     Window parent;
     Window *tchildren;
@@ -1077,7 +898,7 @@ find_toplevel2(Display *dpy, Window wid) {
     // XQueryTree probably fails if you run compton when X is somehow
     // initializing (like add it in .xinitrc). In this case
     // just leave it alone.
-    if (!XQueryTree(dpy, wid, &troot, &parent, &tchildren,
+    if (!XQueryTree(ps->dpy, wid, &troot, &parent, &tchildren,
           &tnchildren)) {
       parent = 0;
       break;
@@ -1093,17 +914,17 @@ find_toplevel2(Display *dpy, Window wid) {
 
 /**
  * Recheck currently focused window and set its <code>w->focused</code>
- * to True.
+ * to true.
  *
- * @param dpy display to use
+ * @param ps current session
  * @return struct _win of currently focused window, NULL if not found
  */
 static win *
-recheck_focus(Display *dpy) {
+recheck_focus(session_t *ps) {
   // Use EWMH _NET_ACTIVE_WINDOW if enabled
-  if (opts.use_ewmh_active_win) {
-    update_ewmh_active_win(dpy);
-    return active_win;
+  if (ps->o.use_ewmh_active_win) {
+    update_ewmh_active_win(ps);
+    return ps->active_win;
   }
 
   // Determine the currently focused window so we can apply appropriate
@@ -1112,16 +933,16 @@ recheck_focus(Display *dpy) {
   int revert_to;
   win *w = NULL;
 
-  XGetInputFocus(dpy, &wid, &revert_to);
+  XGetInputFocus(ps->dpy, &wid, &revert_to);
 
   // Fallback to the old method if find_toplevel() fails
-  if (!(w = find_toplevel(wid))) {
-    w = find_toplevel2(dpy, wid);
+  if (!(w = find_toplevel(ps, wid))) {
+    w = find_toplevel2(ps, wid);
   }
 
   // And we set the focus state and opacity here
   if (w) {
-    set_focused(dpy, w, True);
+    set_focused(ps, w, true);
     return w;
   }
 
@@ -1129,41 +950,42 @@ recheck_focus(Display *dpy) {
 }
 
 static Picture
-root_tile_f(Display *dpy) {
+root_tile_f(session_t *ps) {
   /*
-  if (opts.paint_on_overlay) {
-    return root_picture;
+  if (ps->o.paint_on_overlay) {
+    return ps->root_picture;
   } */
 
   Picture picture;
   Pixmap pixmap;
-  Bool fill;
+  bool fill = false;
   XRenderPictureAttributes pa;
   int p;
 
   pixmap = None;
 
   // Get the values of background attributes
-  for (p = 0; background_props[p]; p++) {
-    winattr_t attr = wid_get_attr(dpy, root,
-        XInternAtom(dpy, background_props[p], False), 1L, XA_PIXMAP, 32);
-    if (attr.nitems) {
-      pixmap = *((long *) attr.data);
-      fill = False;
-      free_winattr(&attr);
+  for (p = 0; background_props_str[p]; p++) {
+    winprop_t prop = wid_get_prop(ps, ps->root,
+        XInternAtom(ps->dpy, background_props_str[p], false),
+        1L, XA_PIXMAP, 32);
+    if (prop.nitems) {
+      pixmap = *((long *) prop.data);
+      fill = false;
+      free_winprop(&prop);
       break;
     }
-    free_winattr(&attr);
+    free_winprop(&prop);
   }
 
   if (!pixmap) {
-    pixmap = XCreatePixmap(dpy, root, 1, 1, DefaultDepth(dpy, scr));
-    fill = True;
+    pixmap = XCreatePixmap(ps->dpy, ps->root, 1, 1, ps->depth);
+    fill = true;
   }
 
-  pa.repeat = True;
+  pa.repeat = true;
   picture = XRenderCreatePicture(
-    dpy, pixmap, XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
+    ps->dpy, pixmap, XRenderFindVisualFormat(ps->dpy, ps->vis),
     CPRepeat, &pa);
 
   if (fill) {
@@ -1172,29 +994,32 @@ root_tile_f(Display *dpy) {
     c.red = c.green = c.blue = 0x8080;
     c.alpha = 0xffff;
     XRenderFillRectangle(
-      dpy, PictOpSrc, picture, &c, 0, 0, 1, 1);
+      ps->dpy, PictOpSrc, picture, &c, 0, 0, 1, 1);
   }
 
   return picture;
 }
 
+/**
+ * Paint root window content.
+ */
 static void
-paint_root(Display *dpy) {
-  if (!root_tile) {
-    root_tile = root_tile_f(dpy);
+paint_root(session_t *ps, Picture tgt_buffer) {
+  if (!ps->root_tile) {
+    ps->root_tile = root_tile_f(ps);
   }
 
   XRenderComposite(
-    dpy, PictOpSrc, root_tile, None,
+    ps->dpy, PictOpSrc, ps->root_tile, None,
     tgt_buffer, 0, 0, 0, 0, 0, 0,
-    root_width, root_height);
+    ps->root_width, ps->root_height);
 }
 
 /**
  * Get a rectangular region a window occupies, excluding shadow.
  */
 static XserverRegion
-win_get_region(Display *dpy, win *w) {
+win_get_region(session_t *ps, win *w) {
   XRectangle r;
 
   r.x = w->a.x;
@@ -1202,14 +1027,14 @@ win_get_region(Display *dpy, win *w) {
   r.width = w->widthb;
   r.height = w->heightb;
 
-  return XFixesCreateRegion(dpy, &r, 1);
+  return XFixesCreateRegion(ps->dpy, &r, 1);
 }
 
 /**
  * Get a rectangular region a window occupies, excluding frame and shadow.
  */
 static XserverRegion
-win_get_region_noframe(Display *dpy, win *w) {
+win_get_region_noframe(session_t *ps, win *w) {
   XRectangle r;
 
   r.x = w->a.x + w->a.border_width + w->left_width;
@@ -1218,9 +1043,9 @@ win_get_region_noframe(Display *dpy, win *w) {
   r.height = max_i(w->a.height - w->top_width - w->bottom_width, 0);
 
   if (r.width > 0 && r.height > 0)
-    return XFixesCreateRegion(dpy, &r, 1);
+    return XFixesCreateRegion(ps->dpy, &r, 1);
   else
-    return XFixesCreateRegion(dpy, NULL, 0);
+    return XFixesCreateRegion(ps->dpy, NULL, 0);
 }
 
 /**
@@ -1230,7 +1055,7 @@ win_get_region_noframe(Display *dpy, win *w) {
  * function.
  */
 static XserverRegion
-win_extents(Display *dpy, win *w) {
+win_extents(session_t *ps, win *w) {
   XRectangle r;
 
   r.x = w->a.x;
@@ -1265,13 +1090,16 @@ win_extents(Display *dpy, win *w) {
     }
   }
 
-  return XFixesCreateRegion(dpy, &r, 1);
+  return XFixesCreateRegion(ps->dpy, &r, 1);
 }
 
+/**
+ * Retrieve the bounding shape of a window.
+ */
 static XserverRegion
-border_size(Display *dpy, win *w) {
+border_size(session_t *ps, win *w) {
   // Start with the window rectangular region
-  XserverRegion fin = win_get_region(dpy, w);
+  XserverRegion fin = win_get_region(ps, w);
 
   // Only request for a bounding region if the window is shaped
   if (w->bounding_shaped) {
@@ -1284,29 +1112,32 @@ border_size(Display *dpy, win *w) {
      */
 
     XserverRegion border = XFixesCreateRegionFromWindow(
-      dpy, w->id, WindowRegionBounding);
+      ps->dpy, w->id, WindowRegionBounding);
 
     if (!border)
       return fin;
 
     // Translate the region to the correct place
-    XFixesTranslateRegion(dpy, border,
+    XFixesTranslateRegion(ps->dpy, border,
       w->a.x + w->a.border_width,
       w->a.y + w->a.border_width);
 
     // Intersect the bounding region we got with the window rectangle, to
     // make sure the bounding region is not bigger than the window
     // rectangle
-    XFixesIntersectRegion(dpy, fin, fin, border);
-    XFixesDestroyRegion(dpy, border);
+    XFixesIntersectRegion(ps->dpy, fin, fin, border);
+    XFixesDestroyRegion(ps->dpy, border);
   }
 
   return fin;
 }
 
+/**
+ * Look for the client window of a particular window.
+ */
 static Window
-find_client_win(Display *dpy, Window w) {
-  if (wid_has_attr(dpy, w, client_atom)) {
+find_client_win(session_t *ps, Window w) {
+  if (wid_has_attr(ps, w, ps->atom_client)) {
     return w;
   }
 
@@ -1315,12 +1146,12 @@ find_client_win(Display *dpy, Window w) {
   unsigned int i;
   Window ret = 0;
 
-  if (!wid_get_children(dpy, w, &children, &nchildren)) {
+  if (!wid_get_children(ps, w, &children, &nchildren)) {
     return 0;
   }
 
   for (i = 0; i < nchildren; ++i) {
-    if ((ret = find_client_win(dpy, children[i])))
+    if ((ret = find_client_win(ps, children[i])))
       break;
   }
 
@@ -1329,60 +1160,70 @@ find_client_win(Display *dpy, Window w) {
   return ret;
 }
 
+/**
+ * Retrieve frame extents from a window.
+ */
 static void
-get_frame_extents(Display *dpy, win *w, Window client) {
+get_frame_extents(session_t *ps, win *w, Window client) {
   w->left_width = 0;
   w->right_width = 0;
   w->top_width = 0;
   w->bottom_width = 0;
 
-  winattr_t attr = wid_get_attr(dpy, client, frame_extents_atom,
+  winprop_t prop = wid_get_prop(ps, client, ps->atom_frame_extents,
     4L, XA_CARDINAL, 32);
 
-  if (4 == attr.nitems) {
-    long *extents = (long *) attr.data;
+  if (4 == prop.nitems) {
+    long *extents = (long *) prop.data;
     w->left_width = extents[0];
     w->right_width = extents[1];
     w->top_width = extents[2];
     w->bottom_width = extents[3];
 
-    if (opts.frame_opacity)
-      update_reg_ignore_expire(w);
+    if (ps->o.frame_opacity)
+      update_reg_ignore_expire(ps, w);
   }
 
-  free_winattr(&attr);
+  free_winprop(&prop);
 }
 
+/**
+ * Get alpha <code>Picture</code> for an opacity in <code>double</code>.
+ */
 static inline Picture
-get_alpha_pict_d(double o) {
-  assert((lround(normalize_d(o) / opts.alpha_step)) <= lround(1.0 / opts.alpha_step));
-  return alpha_picts[lround(normalize_d(o) / opts.alpha_step)];
+get_alpha_pict_d(session_t *ps, double o) {
+  assert((lround(normalize_d(o) / ps->o.alpha_step)) <= lround(1.0 / ps->o.alpha_step));
+  return ps->alpha_picts[lround(normalize_d(o) / ps->o.alpha_step)];
 }
 
+/**
+ * Get alpha <code>Picture</code> for an opacity in
+ * <code>opacity_t</code>.
+ */
 static inline Picture
-get_alpha_pict_o(opacity_t o) {
-  return get_alpha_pict_d((double) o / OPAQUE);
+get_alpha_pict_o(session_t *ps, opacity_t o) {
+  return get_alpha_pict_d(ps, (double) o / OPAQUE);
 }
 
 static win *
-paint_preprocess(Display *dpy, win *list) {
+paint_preprocess(session_t *ps, win *list) {
   // Initialize unredir_possible
-  unredir_possible = False;
+  ps->unredir_possible = false;
 
   win *w;
   win *t = NULL, *next = NULL;
   // Trace whether it's the highest window to paint
-  Bool is_highest = True;
+  bool is_highest = true;
 
   // Fading step calculation
-  unsigned steps = (sub_unslong(get_time_ms(), fade_time)
-      + FADE_DELTA_TOLERANCE * opts.fade_delta) / opts.fade_delta;
-  fade_time += steps * opts.fade_delta;
+  unsigned steps = (sub_unslong(get_time_ms(), ps->fade_time)
+      + FADE_DELTA_TOLERANCE * ps->o.fade_delta) / ps->o.fade_delta;
+  ps->fade_time += steps * ps->o.fade_delta;
 
   XserverRegion last_reg_ignore = None;
 
   for (w = list; w; w = next) {
-    Bool to_paint = True;
+    bool to_paint = true;
     const winmode mode_old = w->mode;
 
     // In case calling the fade callback function destroys this window
@@ -1390,123 +1231,123 @@ paint_preprocess(Display *dpy, win *list) {
     opacity_t opacity_old = w->opacity;
 
     // Destroy reg_ignore on all windows if they should expire
-    if (reg_ignore_expire)
-      free_region(dpy, &w->reg_ignore);
+    if (ps->reg_ignore_expire)
+      free_region(ps, &w->reg_ignore);
 
     // Run fading
-    run_fade(dpy, w, steps);
+    run_fade(ps, w, steps);
 
     // Give up if it's not damaged or invisible, or it's unmapped and its
     // picture is gone (for example due to a ConfigureNotify)
     if (!w->damaged
         || w->a.x + w->a.width < 1 || w->a.y + w->a.height < 1
-        || w->a.x >= root_width || w->a.y >= root_height
-        || (IsUnmapped == w->a.map_state && !w->picture)) {
-      to_paint = False;
+        || w->a.x >= ps->root_width || w->a.y >= ps->root_height
+        || ((IsUnmapped == w->a.map_state || w->destroyed)
+          && !w->picture)) {
+      to_paint = false;
     }
 
     if (to_paint) {
       // If opacity changes
       if (w->opacity != opacity_old) {
-        determine_mode(dpy, w);
-        add_damage_win(dpy, w);
+        determine_mode(ps, w);
+        add_damage_win(ps, w);
       }
 
-      w->alpha_pict = get_alpha_pict_o(w->opacity);
+      w->alpha_pict = get_alpha_pict_o(ps, w->opacity);
 
       // End the game if we are using the 0 opacity alpha_pict
-      if (w->alpha_pict == alpha_picts[0]) {
-        to_paint = False;
+      if (w->alpha_pict == ps->alpha_picts[0]) {
+        to_paint = false;
       }
     }
 
     if (to_paint) {
       // Fetch bounding region
       if (!w->border_size) {
-        w->border_size = border_size(dpy, w);
+        w->border_size = border_size(ps, w);
       }
 
       // Fetch window extents
       if (!w->extents) {
-        w->extents = win_extents(dpy, w);
+        w->extents = win_extents(ps, w);
         // If w->extents does not exist, the previous add_damage_win()
         // call when opacity changes has no effect, so redo it here.
         if (w->opacity != opacity_old)
-          add_damage_win(dpy, w);
+          add_damage_win(ps, w);
       }
 
       // Calculate frame_opacity
       {
         double frame_opacity_old = w->frame_opacity;
 
-        if (opts.frame_opacity && 1.0 != opts.frame_opacity
+        if (ps->o.frame_opacity && 1.0 != ps->o.frame_opacity
             && win_has_frame(w))
-          w->frame_opacity = get_opacity_percent(dpy, w) *
-            opts.frame_opacity;
+          w->frame_opacity = get_opacity_percent(w) *
+            ps->o.frame_opacity;
         else
           w->frame_opacity = 0.0;
 
         if (w->to_paint && WINDOW_SOLID == mode_old
             && (0.0 == frame_opacity_old) != (0.0 == w->frame_opacity))
-          reg_ignore_expire = True;
+          ps->reg_ignore_expire = true;
       }
 
-      w->frame_alpha_pict = get_alpha_pict_d(w->frame_opacity);
+      w->frame_alpha_pict = get_alpha_pict_d(ps, w->frame_opacity);
 
       // Calculate shadow opacity
       if (w->frame_opacity)
-        w->shadow_opacity = opts.shadow_opacity * w->frame_opacity;
+        w->shadow_opacity = ps->o.shadow_opacity * w->frame_opacity;
       else
-        w->shadow_opacity = opts.shadow_opacity * get_opacity_percent(dpy, w);
+        w->shadow_opacity = ps->o.shadow_opacity * get_opacity_percent(w);
 
       // Rebuild shadow_pict if necessary
       if (w->flags & WFLAG_SIZE_CHANGE)
-        free_picture(dpy, &w->shadow_pict);
+        free_picture(ps, &w->shadow_pict);
 
       if (w->shadow && !w->shadow_pict) {
-        w->shadow_pict = shadow_picture(dpy, 1,
-            w->widthb, w->heightb, False);
+        w->shadow_pict = shadow_picture(ps, 1, w->widthb, w->heightb);
       }
 
-      w->shadow_alpha_pict = get_alpha_pict_d(w->shadow_opacity);
+      w->shadow_alpha_pict = get_alpha_pict_d(ps, w->shadow_opacity);
     }
 
     if ((to_paint && WINDOW_SOLID == w->mode)
         != (w->to_paint && WINDOW_SOLID == mode_old))
-      reg_ignore_expire = True;
+      ps->reg_ignore_expire = true;
 
     // Add window to damaged area if its painting status changes
     if (to_paint != w->to_paint)
-      add_damage_win(dpy, w);
+      add_damage_win(ps, w);
 
     if (to_paint) {
       // Generate ignore region for painting to reduce GPU load
-      if (reg_ignore_expire || !w->to_paint) {
-        free_region(dpy, &w->reg_ignore);
+      if (ps->reg_ignore_expire || !w->to_paint) {
+        free_region(ps, &w->reg_ignore);
 
         // If the window is solid, we add the window region to the
         // ignored region
         if (WINDOW_SOLID == w->mode) {
           if (!w->frame_opacity) {
             if (w->border_size)
-              w->reg_ignore = copy_region(dpy, w->border_size);
+              w->reg_ignore = copy_region(ps, w->border_size);
             else
-              w->reg_ignore = win_get_region(dpy, w);
+              w->reg_ignore = win_get_region(ps, w);
           }
           else {
-            w->reg_ignore = win_get_region_noframe(dpy, w);
+            w->reg_ignore = win_get_region_noframe(ps, w);
             if (w->border_size)
-              XFixesIntersectRegion(dpy, w->reg_ignore, w->reg_ignore,
+              XFixesIntersectRegion(ps->dpy, w->reg_ignore, w->reg_ignore,
                   w->border_size);
           }
 
           if (last_reg_ignore)
-            XFixesUnionRegion(dpy, w->reg_ignore, w->reg_ignore,
+            XFixesUnionRegion(ps->dpy, w->reg_ignore, w->reg_ignore,
                 last_reg_ignore);
         }
         // Otherwise we copy the last region over
         else if (last_reg_ignore)
-          w->reg_ignore = copy_region(dpy, last_reg_ignore);
+          w->reg_ignore = copy_region(ps, last_reg_ignore);
         else
           w->reg_ignore = None;
       }
@@ -1514,11 +1355,11 @@ paint_preprocess(Display *dpy, win *list) {
       last_reg_ignore = w->reg_ignore;
 
       if (is_highest && to_paint) {
-        is_highest = False;
+        is_highest = false;
         if (WINDOW_SOLID == w->mode
             && (!w->frame_opacity || !win_has_frame(w))
-            && win_is_fullscreen(w))
-          unredir_possible = True;
+            && win_is_fullscreen(ps, w))
+          ps->unredir_possible = true;
       }
 
       // Reset flags
@@ -1534,7 +1375,7 @@ paint_preprocess(Display *dpy, win *list) {
       t = w;
     }
     else {
-      check_fade_fin(dpy, w);
+      check_fade_fin(ps, w);
     }
 
     if (!destroyed)
@@ -1542,15 +1383,15 @@ paint_preprocess(Display *dpy, win *list) {
   }
 
   // If possible, unredirect all windows and stop painting
-  if (opts.unredir_if_possible && unredir_possible) {
-    redir_stop(dpy);
+  if (ps->o.unredir_if_possible && ps->unredir_possible) {
+    redir_stop(ps);
   }
   else {
-    redir_start(dpy);
+    redir_start(ps);
   }
 
   // Fetch pictures only if windows are redirected
-  if (redirected) {
+  if (ps->redirected) {
     for (w = t; w; w = w->prev_trans) {
       // Fetch the picture and pixmap if needed
       if (!w->picture) {
@@ -1558,16 +1399,16 @@ paint_preprocess(Display *dpy, win *list) {
         XRenderPictFormat *format;
         Drawable draw = w->id;
 
-        if (has_name_pixmap && !w->pixmap) {
-          set_ignore(dpy, NextRequest(dpy));
-          w->pixmap = XCompositeNameWindowPixmap(dpy, w->id);
+        if (ps->has_name_pixmap && !w->pixmap) {
+          set_ignore_next(ps);
+          w->pixmap = XCompositeNameWindowPixmap(ps->dpy, w->id);
         }
         if (w->pixmap) draw = w->pixmap;
 
-        format = XRenderFindVisualFormat(dpy, w->a.visual);
+        format = XRenderFindVisualFormat(ps->dpy, w->a.visual);
         pa.subwindow_mode = IncludeInferiors;
         w->picture = XRenderCreatePicture(
-          dpy, draw, format, CPSubwindowMode, &pa);
+          ps->dpy, draw, format, CPSubwindowMode, &pa);
       }
     }
   }
@@ -1579,9 +1420,9 @@ paint_preprocess(Display *dpy, win *list) {
  * Paint the shadow of a window.
  */
 static inline void
-win_paint_shadow(Display *dpy, win *w, Picture tgt_buffer) {
+win_paint_shadow(session_t *ps, win *w, Picture tgt_buffer) {
   XRenderComposite(
-    dpy, PictOpOver, w->shadow_pict, w->shadow_alpha_pict,
+    ps->dpy, PictOpOver, w->shadow_pict, w->shadow_alpha_pict,
     tgt_buffer, 0, 0, 0, 0,
     w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
     w->shadow_width, w->shadow_height);
@@ -1591,7 +1432,7 @@ win_paint_shadow(Display *dpy, win *w, Picture tgt_buffer) {
  * Paint a window itself and dim it if asked.
  */
 static inline void
-win_paint_win(Display *dpy, win *w, Picture tgt_buffer) {
+win_paint_win(session_t *ps, win *w, Picture tgt_buffer) {
   int x = w->a.x;
   int y = w->a.y;
   int wid = w->widthb;
@@ -1601,7 +1442,7 @@ win_paint_win(Display *dpy, win *w, Picture tgt_buffer) {
   int op = (w->mode == WINDOW_SOLID ? PictOpSrc: PictOpOver);
 
   if (!w->frame_opacity) {
-    XRenderComposite(dpy, op, w->picture, alpha_mask,
+    XRenderComposite(ps->dpy, op, w->picture, alpha_mask,
         tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
   }
   else {
@@ -1611,7 +1452,7 @@ win_paint_win(Display *dpy, win *w, Picture tgt_buffer) {
     int r = w->right_width;
 
 #define COMP_BDR(cx, cy, cwid, chei) \
-    XRenderComposite(dpy, PictOpOver, w->picture, w->frame_alpha_pict, \
+    XRenderComposite(ps->dpy, PictOpOver, w->picture, w->frame_alpha_pict, \
         tgt_buffer, (cx), (cy), 0, 0, x + (cx), y + (cy), (cwid), (chei))
 
     // The following complicated logic is required because some broken
@@ -1647,7 +1488,7 @@ win_paint_win(Display *dpy, win *w, Picture tgt_buffer) {
           pwid = wid - l - pwid;
           if (pwid > 0) {
             // body
-            XRenderComposite(dpy, op, w->picture, alpha_mask,
+            XRenderComposite(ps->dpy, op, w->picture, alpha_mask,
                 tgt_buffer, l, t, 0, 0, x + l, y + t, pwid, phei);
           }
         }
@@ -1659,7 +1500,7 @@ win_paint_win(Display *dpy, win *w, Picture tgt_buffer) {
 
   // Dimming the window if needed
   if (w->dim) {
-    XRenderComposite(dpy, PictOpOver, dim_picture, None,
+    XRenderComposite(ps->dpy, PictOpOver, ps->dim_picture, None,
         tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
   }
 }
@@ -1668,14 +1509,14 @@ win_paint_win(Display *dpy, win *w, Picture tgt_buffer) {
  * Rebuild cached <code>screen_reg</code>.
  */
 static void
-rebuild_screen_reg(Display *dpy) {
-  if (screen_reg)
-    XFixesDestroyRegion(dpy, screen_reg);
-  screen_reg = get_screen_region(dpy);
+rebuild_screen_reg(session_t *ps) {
+  if (ps->screen_reg)
+    XFixesDestroyRegion(ps->dpy, ps->screen_reg);
+  ps->screen_reg = get_screen_region(ps);
 }
 
 static void
-paint_all(Display *dpy, XserverRegion region, win *t) {
+paint_all(session_t *ps, XserverRegion region, win *t) {
 #ifdef DEBUG_REPAINT
   static struct timespec last_paint = { 0 };
 #endif
@@ -1684,67 +1525,67 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
   XserverRegion reg_paint = None, reg_tmp = None, reg_tmp2 = None;
 
   if (!region) {
-    region = get_screen_region(dpy);
+    region = get_screen_region(ps);
   }
   else {
     // Remove the damaged area out of screen
-    XFixesIntersectRegion(dpy, region, region, screen_reg);
+    XFixesIntersectRegion(ps->dpy, region, region, ps->screen_reg);
   }
 
 #ifdef MONITOR_REPAINT
   // Note: MONITOR_REPAINT cannot work with DBE right now.
-  tgt_buffer = tgt_picture;
+  ps->tgt_buffer = ps->tgt_picture;
 #else
-  if (!tgt_buffer) {
+  if (!ps->tgt_buffer) {
     // DBE painting mode: Directly paint to a Picture of the back buffer
-    if (opts.dbe) {
-      tgt_buffer = XRenderCreatePicture(dpy, root_dbe,
-          XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
+    if (ps->o.dbe) {
+      ps->tgt_buffer = XRenderCreatePicture(ps->dpy, ps->root_dbe,
+          XRenderFindVisualFormat(ps->dpy, ps->vis),
           0, 0);
     }
     // No-DBE painting mode: Paint to an intermediate Picture then paint
     // the Picture to root window
     else {
       Pixmap root_pixmap = XCreatePixmap(
-        dpy, root, root_width, root_height,
-        DefaultDepth(dpy, scr));
+        ps->dpy, ps->root, ps->root_width, ps->root_height,
+        ps->depth);
 
-      tgt_buffer = XRenderCreatePicture(dpy, root_pixmap,
-        XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
+      ps->tgt_buffer = XRenderCreatePicture(ps->dpy, root_pixmap,
+        XRenderFindVisualFormat(ps->dpy, ps->vis),
         0, 0);
 
-      XFreePixmap(dpy, root_pixmap);
+      XFreePixmap(ps->dpy, root_pixmap);
     }
   }
 #endif
 
-  XFixesSetPictureClipRegion(dpy, tgt_picture, 0, 0, region);
+  XFixesSetPictureClipRegion(ps->dpy, ps->tgt_picture, 0, 0, region);
 
 #ifdef MONITOR_REPAINT
   XRenderComposite(
-    dpy, PictOpSrc, black_picture, None,
-    tgt_picture, 0, 0, 0, 0, 0, 0,
-    root_width, root_height);
+    ps->dpy, PictOpSrc, ps->black_picture, None,
+    ps->tgt_picture, 0, 0, 0, 0, 0, 0,
+    ps->root_width, ps->root_height);
 #endif
 
   if (t && t->reg_ignore) {
     // Calculate the region upon which the root window is to be painted
     // based on the ignore region of the lowest window, if available
-    reg_paint = reg_tmp = XFixesCreateRegion(dpy, NULL, 0);
-    XFixesSubtractRegion(dpy, reg_paint, region, t->reg_ignore);
+    reg_paint = reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
+    XFixesSubtractRegion(ps->dpy, reg_paint, region, t->reg_ignore);
   }
   else {
     reg_paint = region;
   }
 
-  XFixesSetPictureClipRegion(dpy, tgt_buffer, 0, 0, reg_paint);
+  XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg_paint);
 
-  paint_root(dpy);
+  paint_root(ps, ps->tgt_buffer);
 
   // Create temporary regions for use during painting
   if (!reg_tmp)
-    reg_tmp = XFixesCreateRegion(dpy, NULL, 0);
-  reg_tmp2 = XFixesCreateRegion(dpy, NULL, 0);
+    reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
+  reg_tmp2 = XFixesCreateRegion(ps->dpy, NULL, 0);
 
   for (w = t; w; w = w->prev_trans) {
     // Painting shadow
@@ -1756,28 +1597,28 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
           // If it's the first cycle and reg_tmp2 is not ready, calculate
           // the paint region here
           reg_paint = reg_tmp;
-          XFixesSubtractRegion(dpy, reg_paint, region, w->reg_ignore);
+          XFixesSubtractRegion(ps->dpy, reg_paint, region, w->reg_ignore);
         }
         else {
           // Otherwise, used the cached region during last cycle
           reg_paint = reg_tmp2;
         }
-        XFixesIntersectRegion(dpy, reg_paint, reg_paint, w->extents);
+        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, w->extents);
       }
       else {
         reg_paint = reg_tmp;
-        XFixesIntersectRegion(dpy, reg_paint, region, w->extents);
+        XFixesIntersectRegion(ps->dpy, reg_paint, region, w->extents);
       }
       // Clear the shadow here instead of in make_shadow() for saving GPU
       // power and handling shaped windows
-      if (opts.clear_shadow && w->border_size)
-        XFixesSubtractRegion(dpy, reg_paint, reg_paint, w->border_size);
+      if (ps->o.clear_shadow && w->border_size)
+        XFixesSubtractRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
 
       // Detect if the region is empty before painting
-      if (region == reg_paint || !is_region_empty(dpy, reg_paint)) {
-        XFixesSetPictureClipRegion(dpy, tgt_buffer, 0, 0, reg_paint);
+      if (region == reg_paint || !is_region_empty(ps, reg_paint)) {
+        XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg_paint);
 
-        win_paint_shadow(dpy, w, tgt_buffer);
+        win_paint_shadow(ps, w, ps->tgt_buffer);
       }
     }
 
@@ -1785,77 +1626,77 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
     // window and the bounding region
     reg_paint = reg_tmp;
     if (w->prev_trans && w->prev_trans->reg_ignore) {
-      XFixesSubtractRegion(dpy, reg_paint, region,
+      XFixesSubtractRegion(ps->dpy, reg_paint, region,
           w->prev_trans->reg_ignore);
       // Copy the subtracted region to be used for shadow painting in next
       // cycle
-      XFixesCopyRegion(dpy, reg_tmp2, reg_paint);
+      XFixesCopyRegion(ps->dpy, reg_tmp2, reg_paint);
 
       if (w->border_size)
-        XFixesIntersectRegion(dpy, reg_paint, reg_paint, w->border_size);
+        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
     }
     else {
       if (w->border_size)
-        XFixesIntersectRegion(dpy, reg_paint, region, w->border_size);
+        XFixesIntersectRegion(ps->dpy, reg_paint, region, w->border_size);
       else
         reg_paint = region;
     }
 
-    if (!is_region_empty(dpy, reg_paint)) {
-      XFixesSetPictureClipRegion(dpy, tgt_buffer, 0, 0, reg_paint);
+    if (!is_region_empty(ps, reg_paint)) {
+      XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg_paint);
 
       // Painting the window
-      win_paint_win(dpy, w, tgt_buffer);
+      win_paint_win(ps, w, ps->tgt_buffer);
     }
 
-    check_fade_fin(dpy, w);
+    check_fade_fin(ps, w);
   }
 
   // Free up all temporary regions
-  XFixesDestroyRegion(dpy, region);
-  XFixesDestroyRegion(dpy, reg_tmp);
-  XFixesDestroyRegion(dpy, reg_tmp2);
+  XFixesDestroyRegion(ps->dpy, region);
+  XFixesDestroyRegion(ps->dpy, reg_tmp);
+  XFixesDestroyRegion(ps->dpy, reg_tmp2);
 
   // Do this as early as possible
-  if (!opts.dbe)
-    XFixesSetPictureClipRegion(dpy, tgt_buffer, 0, 0, None);
+  if (!ps->o.dbe)
+    XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, None);
 
-  if (VSYNC_NONE != opts.vsync) {
+  if (VSYNC_NONE != ps->o.vsync) {
     // Make sure all previous requests are processed to achieve best
     // effect
-    XSync(dpy, False);
+    XSync(ps->dpy, False);
   }
 
   // Wait for VBlank. We could do it aggressively (send the painting
   // request and XFlush() on VBlank) or conservatively (send the request
   // only on VBlank).
-  if (!opts.vsync_aggressive)
-    vsync_wait();
+  if (!ps->o.vsync_aggressive)
+    vsync_wait(ps);
 
   // DBE painting mode, only need to swap the buffer
-  if (opts.dbe) {
+  if (ps->o.dbe) {
     XdbeSwapInfo swap_info = {
-      .swap_window = (opts.paint_on_overlay ? overlay: root),
+      .swap_window = (ps->o.paint_on_overlay ? ps->overlay: ps->root),
       // Is it safe to use XdbeUndefined?
       .swap_action = XdbeCopied
     };
-    XdbeSwapBuffers(dpy, &swap_info, 1);
+    XdbeSwapBuffers(ps->dpy, &swap_info, 1);
   }
   // No-DBE painting mode
-  else if (tgt_buffer != tgt_picture) {
+  else if (ps->tgt_buffer != ps->tgt_picture) {
     XRenderComposite(
-      dpy, PictOpSrc, tgt_buffer, None,
-      tgt_picture, 0, 0, 0, 0,
-      0, 0, root_width, root_height);
+      ps->dpy, PictOpSrc, ps->tgt_buffer, None,
+      ps->tgt_picture, 0, 0, 0, 0,
+      0, 0, ps->root_width, ps->root_height);
   }
 
-  if (opts.vsync_aggressive)
-    vsync_wait();
+  if (ps->o.vsync_aggressive)
+    vsync_wait(ps);
 
-  XFlush(dpy);
+  XFlush(ps->dpy);
 
 #ifdef DEBUG_REPAINT
-  print_timestamp();
+  print_timestamp(ps);
   struct timespec now = get_time_timespec();
   struct timespec diff = { 0 };
   timespec_subtract(&diff, &now, &last_paint);
@@ -1870,91 +1711,78 @@ paint_all(Display *dpy, XserverRegion region, win *t) {
 }
 
 static void
-add_damage(Display *dpy, XserverRegion damage) {
-  if (all_damage) {
-    XFixesUnionRegion(dpy, all_damage, all_damage, damage);
-    XFixesDestroyRegion(dpy, damage);
+add_damage(session_t *ps, XserverRegion damage) {
+  if (ps->all_damage) {
+    XFixesUnionRegion(ps->dpy, ps->all_damage, ps->all_damage, damage);
+    XFixesDestroyRegion(ps->dpy, damage);
   } else {
-    all_damage = damage;
+    ps->all_damage = damage;
   }
 }
 
 static void
-repair_win(Display *dpy, win *w) {
+repair_win(session_t *ps, win *w) {
   XserverRegion parts;
 
   if (!w->damaged) {
-    parts = win_extents(dpy, w);
-    set_ignore(dpy, NextRequest(dpy));
-    XDamageSubtract(dpy, w->damage, None, None);
+    parts = win_extents(ps, w);
+    set_ignore_next(ps);
+    XDamageSubtract(ps->dpy, w->damage, None, None);
   } else {
-    parts = XFixesCreateRegion(dpy, 0, 0);
-    set_ignore(dpy, NextRequest(dpy));
-    XDamageSubtract(dpy, w->damage, None, parts);
-    XFixesTranslateRegion(dpy, parts,
+    parts = XFixesCreateRegion(ps->dpy, 0, 0);
+    set_ignore_next(ps);
+    XDamageSubtract(ps->dpy, w->damage, None, parts);
+    XFixesTranslateRegion(ps->dpy, parts,
       w->a.x + w->a.border_width,
       w->a.y + w->a.border_width);
   }
 
   // Remove the part in the damage area that could be ignored
-  if (!reg_ignore_expire && w->prev_trans && w->prev_trans->reg_ignore)
-    XFixesSubtractRegion(dpy, parts, parts, w->prev_trans->reg_ignore);
+  if (!ps->reg_ignore_expire && w->prev_trans && w->prev_trans->reg_ignore)
+    XFixesSubtractRegion(ps->dpy, parts, parts, w->prev_trans->reg_ignore);
 
-  add_damage(dpy, parts);
+  add_damage(ps, parts);
   w->damaged = 1;
 }
 
-static wintype
-get_wintype_prop(Display *dpy, Window wid) {
-  Atom actual;
-  int format;
-  unsigned long n = 0, left, i;
-  long *data = NULL;
-  int j;
+static wintype_t
+wid_get_prop_wintype(session_t *ps, Window wid) {
+  int i, j;
 
-  set_ignore(dpy, NextRequest(dpy));
-  if (Success != XGetWindowProperty(
-        dpy, wid, win_type_atom, 0L, 32L, False, XA_ATOM,
-        &actual, &format, &n, &left, (unsigned char **) &data)
-      || !data || !n) {
-    if (data)
-      XFree(data);
-    return WINTYPE_UNKNOWN;
-  }
+  set_ignore_next(ps);
+  winprop_t prop = wid_get_prop(ps, wid, ps->atom_win_type, 32L, XA_ATOM, 32);
 
-  for (i = 0; i < n; ++i) {
+  for (i = 0; i < prop.nitems; ++i) {
     for (j = 1; j < NUM_WINTYPES; ++j) {
-      if (win_type[j] == (Atom) data[i]) {
-        XFree(data);
+      if (ps->atoms_wintypes[j] == (Atom) ((long *) prop.data)[i]) {
+        free_winprop(&prop);
         return j;
       }
     }
   }
 
-  XFree(data);
+  free_winprop(&prop);
 
   return WINTYPE_UNKNOWN;
 }
 
 static void
-map_win(Display *dpy, Window id,
-        unsigned long sequence, Bool fade,
-        Bool override_redirect) {
-  win *w = find_win(id);
+map_win(session_t *ps, Window id, bool override_redirect) {
+  win *w = find_win(ps, id);
 
   // Don't care about window mapping if it's an InputOnly window
   if (!w || InputOnly == w->a.class) return;
 
-  w->focused = False;
+  w->focused = false;
   w->a.map_state = IsViewable;
 
   // Call XSelectInput() before reading properties so that no property
   // changes are lost
-  XSelectInput(dpy, id, determine_evmask(dpy, id, WIN_EVMODE_FRAME));
+  XSelectInput(ps->dpy, id, determine_evmask(ps, id, WIN_EVMODE_FRAME));
 
   // Notify compton when the shape of a window changes
-  if (shape_exists) {
-    XShapeSelectInput(dpy, id, ShapeNotifyMask);
+  if (ps->shape_exists) {
+    XShapeSelectInput(ps->dpy, id, ShapeNotifyMask);
   }
 
   // Detect client window here instead of in add_win() as the client
@@ -1963,7 +1791,7 @@ map_win(Display *dpy, Window id,
     Window cw = 0;
     // Always recursively look for a window with WM_STATE, as Fluxbox
     // sets override-redirect flags on all frame windows.
-    cw = find_client_win(dpy, w->id);
+    cw = find_client_win(ps, w->id);
 #ifdef DEBUG_CLIENTWIN
     printf("find_client_win(%#010lx): client %#010lx\n", w->id, cw);
 #endif
@@ -1976,18 +1804,18 @@ map_win(Display *dpy, Window id,
 #endif
     }
     if (cw) {
-      mark_client_win(dpy, w, cw);
+      mark_client_win(ps, w, cw);
     }
   }
   else {
     // Re-mark client window here
-    mark_client_win(dpy, w, w->client_win);
+    mark_client_win(ps, w, w->client_win);
   }
 
   // Workaround for _NET_WM_WINDOW_TYPE for Openbox menus, which is
   // set on a non-override-redirect window with no WM_STATE either
   if (!w->client_win && WINTYPE_UNKNOWN == w->window_type)
-    w->window_type = get_wintype_prop(dpy, w->id);
+    w->window_type = wid_get_prop_wintype(ps, w->id);
 
 #ifdef DEBUG_WINTYPE
   printf("map_win(%#010lx): type %s\n",
@@ -1995,54 +1823,54 @@ map_win(Display *dpy, Window id,
 #endif
 
   // Detect if the window is shaped or has rounded corners
-  win_update_shape_raw(dpy, w);
+  win_update_shape_raw(ps, w);
 
   // Get window name and class if we are tracking them
-  if (opts.track_wdata) {
-    win_get_name(dpy, w);
-    win_get_class(dpy, w);
+  if (ps->o.track_wdata) {
+    win_get_name(ps, w);
+    win_get_class(ps, w);
   }
 
-  if (opts.track_focus) {
+  if (ps->o.track_focus) {
     // Occasionally compton does not seem able to get a FocusIn event from
     // a window just mapped. I suspect it's a timing issue again when the
     // XSelectInput() is called too late. We have to recheck the focused
     // window here. It makes no sense if we are using EWMH
     // _NET_ACTIVE_WINDOW.
-    if (!opts.use_ewmh_active_win)
-      recheck_focus(dpy);
+    if (!ps->o.use_ewmh_active_win)
+      recheck_focus(ps);
 
     // Consider a window without client window a WM window and mark it
     // focused if mark_wmwin_focused is on, or it's over-redirected and
     // mark_ovredir_focused is on
-    if ((opts.mark_wmwin_focused && !w->client_win)
-        || (opts.mark_ovredir_focused && w->id == w->client_win))
-      w->focused = True;
+    if ((ps->o.mark_wmwin_focused && !w->client_win)
+        || (ps->o.mark_ovredir_focused && w->id == w->client_win))
+      w->focused = true;
   }
 
   // Check for _COMPTON_SHADOW
-  if (opts.respect_attr_shadow)
-    win_update_attr_shadow_raw(dpy, w);
+  if (ps->o.respect_prop_shadow)
+    win_update_attr_shadow_raw(ps, w);
 
   // Many things above could affect shadow
-  determine_shadow(dpy, w);
+  determine_shadow(ps, w);
 
   // Fading in
-  calc_opacity(dpy, w, True);
+  calc_opacity(ps, w, true);
 
   // Set fading state
-  if (opts.no_fading_openclose) {
-    set_fade_callback(dpy, w, finish_map_win, True);
+  if (ps->o.no_fading_openclose) {
+    set_fade_callback(ps, w, finish_map_win, true);
     // Must be set after we execute the old fade callback, in case we
     // receive two continuous MapNotify for the same window
-    w->fade = False;
+    w->fade = false;
   }
   else {
-    set_fade_callback(dpy, w, NULL, True);
-    determine_fade(dpy, w);
+    set_fade_callback(ps, w, NULL, true);
+    determine_fade(ps, w);
   }
 
-  calc_dim(dpy, w);
+  calc_dim(ps, w);
 
   w->damaged = 1;
 
@@ -2051,42 +1879,42 @@ map_win(Display *dpy, Window id,
      the window was unmapped, then configure
      the window to its correct place */
   if (w->need_configure) {
-    configure_win(dpy, &w->queue_configure);
+    configure_win(ps, &w->queue_configure);
   }
 }
 
 static void
-finish_map_win(Display *dpy, win *w) {
-  if (opts.no_fading_openclose)
-    determine_fade(dpy, w);
+finish_map_win(session_t *ps, win *w) {
+  if (ps->o.no_fading_openclose)
+    determine_fade(ps, w);
 }
 
 static void
-finish_unmap_win(Display *dpy, win *w) {
+finish_unmap_win(session_t *ps, win *w) {
   w->damaged = 0;
 
-  update_reg_ignore_expire(w);
+  update_reg_ignore_expire(ps, w);
 
   if (w->extents != None) {
     /* destroys region */
-    add_damage(dpy, w->extents);
+    add_damage(ps, w->extents);
     w->extents = None;
   }
 
-  free_pixmap(dpy, &w->pixmap);
-  free_picture(dpy, &w->picture);
-  free_region(dpy, &w->border_size);
-  free_picture(dpy, &w->shadow_pict);
+  free_pixmap(ps, &w->pixmap);
+  free_picture(ps, &w->picture);
+  free_region(ps, &w->border_size);
+  free_picture(ps, &w->shadow_pict);
 }
 
 static void
-unmap_callback(Display *dpy, win *w) {
-  finish_unmap_win(dpy, w);
+unmap_callback(session_t *ps, win *w) {
+  finish_unmap_win(ps, w);
 }
 
 static void
-unmap_win(Display *dpy, Window id, Bool fade) {
-  win *w = find_win(id);
+unmap_win(session_t *ps, Window id) {
+  win *w = find_win(ps, id);
 
   if (!w || IsUnmapped == w->a.map_state) return;
 
@@ -2094,48 +1922,36 @@ unmap_win(Display *dpy, Window id, Bool fade) {
 
   // Fading out
   w->opacity_tgt = 0;
-  set_fade_callback(dpy, w, unmap_callback, False);
-  if (opts.no_fading_openclose)
-    w->fade = False;
+  set_fade_callback(ps, w, unmap_callback, false);
+  if (ps->o.no_fading_openclose)
+    w->fade = false;
 
   // don't care about properties anymore
-  // Will get BadWindow if the window is destroyed
-  set_ignore(dpy, NextRequest(dpy));
-  XSelectInput(dpy, w->id, 0);
-
-  if (w->client_win) {
-    set_ignore(dpy, NextRequest(dpy));
-    XSelectInput(dpy, w->client_win, 0);
-  }
+  win_ev_stop(ps, w);
 }
 
 static opacity_t
-wid_get_opacity_prop(Display *dpy, Window wid, opacity_t def) {
-  Atom actual;
-  int format;
-  unsigned long n, left;
+wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def) {
+  opacity_t val = def;
 
-  unsigned char *data;
-  int result = XGetWindowProperty(
-    dpy, wid, opacity_atom, 0L, 1L, False,
-    XA_CARDINAL, &actual, &format, &n, &left, &data);
+  winprop_t prop = wid_get_prop(ps, wid, ps->atom_opacity, 1L,
+      XA_CARDINAL, 32);
 
-  if (result == Success && data != NULL) {
-    opacity_t i = *((opacity_t *) data);
-    XFree(data);
-    return i;
-  }
+  if (prop.nitems)
+    val = *((long *) prop.data);
 
-  return def;
+  free_winprop(&prop);
+
+  return val;
 }
 
 static double
-get_opacity_percent(Display *dpy, win *w) {
+get_opacity_percent(win *w) {
   return ((double) w->opacity) / OPAQUE;
 }
 
 static void
-determine_mode(Display *dpy, win *w) {
+determine_mode(session_t *ps, win *w) {
   winmode mode;
   XRenderPictFormat *format;
 
@@ -2144,7 +1960,7 @@ determine_mode(Display *dpy, win *w) {
   if (w->a.class == InputOnly) {
     format = 0;
   } else {
-    format = XRenderFindVisualFormat(dpy, w->a.visual);
+    format = XRenderFindVisualFormat(ps->dpy, w->a.visual);
   }
 
   if (format && format->type == PictTypeDirect
@@ -2180,7 +1996,7 @@ determine_mode(Display *dpy, win *w) {
  *    refetched
  */
 static void
-calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
+calc_opacity(session_t *ps, win *w, bool refetch_prop) {
   opacity_t opacity;
 
   // Do nothing for unmapped window, calc_opacity() will be called
@@ -2191,42 +2007,45 @@ calc_opacity(Display *dpy, win *w, Bool refetch_prop) {
   // Do not refetch the opacity window attribute unless necessary, this
   // is probably an expensive operation in some cases
   if (refetch_prop) {
-    w->opacity_prop = wid_get_opacity_prop(dpy, w->id, OPAQUE);
-    if (!opts.detect_client_opacity || !w->client_win
+    w->opacity_prop = wid_get_opacity_prop(ps, w->id, OPAQUE);
+    if (!ps->o.detect_client_opacity || !w->client_win
         || w->id == w->client_win)
       w->opacity_prop_client = OPAQUE;
     else
-      w->opacity_prop_client = wid_get_opacity_prop(dpy, w->client_win,
+      w->opacity_prop_client = wid_get_opacity_prop(ps, w->client_win,
             OPAQUE);
   }
 
   if (OPAQUE == (opacity = w->opacity_prop)
       && OPAQUE == (opacity = w->opacity_prop_client)) {
-    opacity = opts.wintype_opacity[w->window_type] * OPAQUE;
+    opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
   }
 
   // Respect inactive_opacity in some cases
-  if (opts.inactive_opacity && is_normal_win(w) && False == w->focused
-      && (OPAQUE == opacity || opts.inactive_opacity_override)) {
-    opacity = opts.inactive_opacity;
+  if (ps->o.inactive_opacity && is_normal_win(w) && false == w->focused
+      && (OPAQUE == opacity || ps->o.inactive_opacity_override)) {
+    opacity = ps->o.inactive_opacity;
   }
 
   w->opacity_tgt = opacity;
 }
 
+/**
+ * Determine whether a window is to be dimmed.
+ */
 static void
-calc_dim(Display *dpy, win *w) {
-  Bool dim;
+calc_dim(session_t *ps, win *w) {
+  bool dim;
 
-  if (opts.inactive_dim && is_normal_win(w) && !(w->focused)) {
-    dim = True;
+  if (ps->o.inactive_dim && is_normal_win(w) && !(w->focused)) {
+    dim = true;
   } else {
-    dim = False;
+    dim = false;
   }
 
   if (dim != w->dim) {
     w->dim = dim;
-    add_damage_win(dpy, w);
+    add_damage_win(ps, w);
   }
 }
 
@@ -2234,19 +2053,19 @@ calc_dim(Display *dpy, win *w) {
  * Determine if a window should fade on opacity change.
  */
 static void
-determine_fade(Display *dpy, win *w) {
-  w->fade = opts.wintype_fade[w->window_type];
+determine_fade(session_t *ps, win *w) {
+  w->fade = ps->o.wintype_fade[w->window_type];
 }
 
 /**
  * Update window-shape.
  */
 static void
-win_update_shape_raw(Display *dpy, win *w) {
-  if (shape_exists) {
-    w->bounding_shaped = wid_bounding_shaped(dpy, w->id);
-    if (w->bounding_shaped && opts.detect_rounded_corners)
-      win_rounded_corners(dpy, w);
+win_update_shape_raw(session_t *ps, win *w) {
+  if (ps->shape_exists) {
+    w->bounding_shaped = wid_bounding_shaped(ps, w->id);
+    if (w->bounding_shaped && ps->o.detect_rounded_corners)
+      win_rounded_corners(ps, w);
   }
 }
 
@@ -2254,20 +2073,20 @@ win_update_shape_raw(Display *dpy, win *w) {
  * Update window-shape related information.
  */
 static void
-win_update_shape(Display *dpy, win *w) {
-  if (shape_exists) {
-    // Bool bounding_shaped_old = w->bounding_shaped;
+win_update_shape(session_t *ps, win *w) {
+  if (ps->shape_exists) {
+    // bool bounding_shaped_old = w->bounding_shaped;
 
-    win_update_shape_raw(dpy, w);
+    win_update_shape_raw(ps, w);
 
     // Shadow state could be changed
-    determine_shadow(dpy, w);
+    determine_shadow(ps, w);
 
     /*
     // If clear_shadow state on the window possibly changed, destroy the old
     // shadow_pict
-    if (opts.clear_shadow && w->bounding_shaped != bounding_shaped_old)
-      free_picture(dpy, &w->shadow_pict);
+    if (ps->o.clear_shadow && w->bounding_shaped != bounding_shaped_old)
+      free_picture(ps, &w->shadow_pict);
     */
   }
 }
@@ -2278,18 +2097,18 @@ win_update_shape(Display *dpy, win *w) {
  * The property must be set on the outermost window, usually the WM frame.
  */
 static void
-win_update_attr_shadow_raw(Display *dpy, win *w) {
-  winattr_t attr = wid_get_attr(dpy, w->id, compton_shadow_atom, 1,
+win_update_attr_shadow_raw(session_t *ps, win *w) {
+  winprop_t prop = wid_get_prop(ps, w->id, ps->atom_compton_shadow, 1,
       XA_CARDINAL, 32);
-  
-  if (!attr.nitems) {
-    free_winattr(&attr);
-    w->attr_shadow = -1;
 
-    return;
+  if (!prop.nitems) {
+    w->attr_shadow = -1;
+  }
+  else {
+    w->attr_shadow = *((long *) prop.data);
   }
 
-  w->attr_shadow = *((long *) attr.data);
+  free_winprop(&prop);
 }
 
 /**
@@ -2297,13 +2116,13 @@ win_update_attr_shadow_raw(Display *dpy, win *w) {
  * things.
  */
 static void
-win_update_attr_shadow(Display *dpy, win *w) {
+win_update_attr_shadow(session_t *ps, win *w) {
   long attr_shadow_old = w->attr_shadow;
 
-  win_update_attr_shadow_raw(dpy, w);
+  win_update_attr_shadow_raw(ps, w);
 
   if (w->attr_shadow != attr_shadow_old)
-    determine_shadow(dpy, w);
+    determine_shadow(ps, w);
 }
 
 /**
@@ -2311,29 +2130,29 @@ win_update_attr_shadow(Display *dpy, win *w) {
  * on shadow state.
  */
 static void
-determine_shadow(Display *dpy, win *w) {
-  Bool shadow_old = w->shadow;
+determine_shadow(session_t *ps, win *w) {
+  bool shadow_old = w->shadow;
 
-  w->shadow = (opts.wintype_shadow[w->window_type]
-      && !win_match(w, opts.shadow_blacklist, &w->cache_sblst)
-      && !(opts.shadow_ignore_shaped && w->bounding_shaped
+  w->shadow = (ps->o.wintype_shadow[w->window_type]
+      && !win_match(w, ps->o.shadow_blacklist, &w->cache_sblst)
+      && !(ps->o.shadow_ignore_shaped && w->bounding_shaped
         && !w->rounded_corners)
-      && !(opts.respect_attr_shadow && 0 == w->attr_shadow));
+      && !(ps->o.respect_prop_shadow && 0 == w->attr_shadow));
 
   // Window extents need update on shadow state change
   if (w->shadow != shadow_old) {
     // Shadow geometry currently doesn't change on shadow state change
-    // calc_shadow_geometry(dpy, w);
+    // calc_shadow_geometry(ps, w);
     if (w->extents) {
       // Mark the old extents as damaged if the shadow is removed
       if (!w->shadow)
-        add_damage(dpy, w->extents);
+        add_damage(ps, w->extents);
       else
-        free_region(dpy, &w->extents);
-      w->extents = win_extents(dpy, w);
+        free_region(ps, &w->extents);
+      w->extents = win_extents(ps, w);
       // Mark the new extents as damaged if the shadow is added
       if (w->shadow)
-        add_damage_win(dpy, w);
+        add_damage_win(ps, w);
     }
   }
 }
@@ -2343,10 +2162,10 @@ determine_shadow(Display *dpy, win *w) {
  */
 
 static void
-calc_win_size(Display *dpy, win *w) {
+calc_win_size(session_t *ps, win *w) {
   w->widthb = w->a.width + w->a.border_width * 2;
   w->heightb = w->a.height + w->a.border_width * 2;
-  calc_shadow_geometry(dpy, w);
+  calc_shadow_geometry(ps, w);
   w->flags |= WFLAG_SIZE_CHANGE;
 }
 
@@ -2354,11 +2173,11 @@ calc_win_size(Display *dpy, win *w) {
  * Calculate and update geometry of the shadow of a window.
  */
 static void
-calc_shadow_geometry(Display *dpy, win *w) {
-  w->shadow_dx = opts.shadow_offset_x;
-  w->shadow_dy = opts.shadow_offset_y;
-  w->shadow_width = w->widthb + gaussian_map->size;
-  w->shadow_height = w->heightb + gaussian_map->size;
+calc_shadow_geometry(session_t *ps, win *w) {
+  w->shadow_dx = ps->o.shadow_offset_x;
+  w->shadow_dy = ps->o.shadow_offset_y;
+  w->shadow_width = w->widthb + ps->gaussian_map->size;
+  w->shadow_height = w->heightb + ps->gaussian_map->size;
 }
 
 /**
@@ -2369,27 +2188,27 @@ calc_shadow_geometry(Display *dpy, win *w) {
  * @param client window ID of the client window
  */
 static void
-mark_client_win(Display *dpy, win *w, Window client) {
+mark_client_win(session_t *ps, win *w, Window client) {
   w->client_win = client;
 
-  XSelectInput(dpy, client, determine_evmask(dpy, client, WIN_EVMODE_CLIENT));
+  XSelectInput(ps->dpy, client, determine_evmask(ps, client, WIN_EVMODE_CLIENT));
 
   // Get the frame width and monitor further frame width changes on client
   // window if necessary
-  if (opts.frame_opacity) {
-    get_frame_extents(dpy, w, client);
+  if (ps->o.frame_opacity) {
+    get_frame_extents(ps, w, client);
   }
 
   // Detect window type here
   if (WINTYPE_UNKNOWN == w->window_type)
-    w->window_type = get_wintype_prop(dpy, w->client_win);
+    w->window_type = wid_get_prop_wintype(ps, w->client_win);
 
   // Conform to EWMH standard, if _NET_WM_WINDOW_TYPE is not present, take
   // override-redirect windows or windows without WM_TRANSIENT_FOR as
   // _NET_WM_WINDOW_TYPE_NORMAL, otherwise as _NET_WM_WINDOW_TYPE_DIALOG.
   if (WINTYPE_UNKNOWN == w->window_type) {
     if (w->a.override_redirect
-        || !wid_has_attr(dpy, client, transient_atom))
+        || !wid_has_attr(ps, client, ps->atom_transient))
       w->window_type = WINTYPE_NORMAL;
     else
       w->window_type = WINTYPE_DIALOG;
@@ -2397,8 +2216,9 @@ mark_client_win(Display *dpy, win *w, Window client) {
 }
 
 static void
-add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
-  if (find_win(id)) {
+add_win(session_t *ps, Window id, Window prev, bool override_redirect) {
+  // Reject overlay window and already added windows
+  if (id == ps->overlay || find_win(ps, id)) {
     return;
   }
 
@@ -2408,24 +2228,24 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   if (!new) return;
 
   if (prev) {
-    for (p = &list; *p; p = &(*p)->next) {
+    for (p = &ps->list; *p; p = &(*p)->next) {
       if ((*p)->id == prev && !(*p)->destroyed)
         break;
     }
   } else {
-    p = &list;
+    p = &ps->list;
   }
 
   new->id = id;
-  set_ignore(dpy, NextRequest(dpy));
+  set_ignore_next(ps);
 
-  if (!XGetWindowAttributes(dpy, id, &new->a)) {
+  if (!XGetWindowAttributes(ps->dpy, id, &new->a)) {
     free(new);
     return;
   }
 
   new->damaged = 0;
-  new->to_paint = False;
+  new->to_paint = false;
   new->pixmap = None;
   new->picture = None;
 
@@ -2433,9 +2253,9 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
     new->damage_sequence = 0;
     new->damage = None;
   } else {
-    new->damage_sequence = NextRequest(dpy);
-    set_ignore(dpy, NextRequest(dpy));
-    new->damage = XDamageCreate(dpy, id, XDamageReportNonEmpty);
+    new->damage_sequence = NextRequest(ps->dpy);
+    set_ignore_next(ps);
+    new->damage = XDamageCreate(ps->dpy, id, XDamageReportNonEmpty);
   }
 
   new->name = NULL;
@@ -2443,13 +2263,13 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->class_general = NULL;
   new->cache_sblst = NULL;
   new->cache_fblst = NULL;
-  new->bounding_shaped = False;
-  new->rounded_corners = False;
+  new->bounding_shaped = false;
+  new->rounded_corners = false;
 
   new->border_size = None;
   new->reg_ignore = None;
   new->extents = None;
-  new->shadow = False;
+  new->shadow = false;
   new->shadow_opacity = 0.0;
   new->shadow_pict = None;
   new->shadow_alpha_pict = None;
@@ -2461,15 +2281,15 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
   new->opacity_tgt = 0;
   new->opacity_prop = OPAQUE;
   new->opacity_prop_client = OPAQUE;
-  new->fade = False;
+  new->fade = false;
   new->fade_callback = NULL;
   new->alpha_pict = None;
   new->frame_opacity = 1.0;
   new->frame_alpha_pict = None;
-  new->dim = False;
-  new->focused = False;
-  new->destroyed = False;
-  new->need_configure = False;
+  new->dim = false;
+  new->focused = false;
+  new->destroyed = false;
+  new->need_configure = false;
   new->window_type = WINTYPE_UNKNOWN;
   new->mode = WINDOW_TRANS;
   new->attr_shadow = -1;
@@ -2485,21 +2305,21 @@ add_win(Display *dpy, Window id, Window prev, Bool override_redirect) {
 
   new->flags = 0;
 
-  calc_win_size(dpy, new);
+  calc_win_size(ps, new);
 
   new->next = *p;
   *p = new;
 
   if (new->a.map_state == IsViewable) {
-    map_win(dpy, id, new->damage_sequence - 1, True, override_redirect);
+    map_win(ps, id, override_redirect);
   }
 }
 
 static void
-restack_win(Display *dpy, win *w, Window new_above) {
+restack_win(session_t *ps, win *w, Window new_above) {
   Window old_above;
 
-  update_reg_ignore_expire(w);
+  update_reg_ignore_expire(ps, w);
 
   if (w->next) {
     old_above = w->next->id;
@@ -2511,14 +2331,14 @@ restack_win(Display *dpy, win *w, Window new_above) {
     win **prev;
 
     /* unhook */
-    for (prev = &list; *prev; prev = &(*prev)->next) {
+    for (prev = &ps->list; *prev; prev = &(*prev)->next) {
       if ((*prev) == w) break;
     }
 
     *prev = w->next;
 
     /* rehook */
-    for (prev = &list; *prev; prev = &(*prev)->next) {
+    for (prev = &ps->list; *prev; prev = &(*prev)->next) {
       if ((*prev)->id == new_above && !(*prev)->destroyed)
         break;
     }
@@ -2531,7 +2351,7 @@ restack_win(Display *dpy, win *w, Window new_above) {
       const char *desc;
       char *window_name = NULL;
       bool to_free;
-      win* c = list;
+      win* c = ps->list;
 
       printf("restack_win(%#010lx, %#010lx): "
              "Window stack modified. Current stack:\n", w->id, new_above);
@@ -2539,7 +2359,7 @@ restack_win(Display *dpy, win *w, Window new_above) {
       for (; c; c = c->next) {
         window_name = "(Failed to get title)";
 
-        to_free = ev_window_name(dpy, c->id, &window_name);
+        to_free = ev_window_name(ps, c->id, &window_name);
 
         desc = "";
         if (c->destroyed) desc = "(D) ";
@@ -2557,21 +2377,21 @@ restack_win(Display *dpy, win *w, Window new_above) {
 }
 
 static void
-configure_win(Display *dpy, XConfigureEvent *ce) {
-  if (ce->window == root) {
-    if (tgt_buffer) {
-      XRenderFreePicture(dpy, tgt_buffer);
-      tgt_buffer = None;
+configure_win(session_t *ps, XConfigureEvent *ce) {
+  if (ce->window == ps->root) {
+    if (ps->tgt_buffer) {
+      XRenderFreePicture(ps->dpy, ps->tgt_buffer);
+      ps->tgt_buffer = None;
     }
-    root_width = ce->width;
-    root_height = ce->height;
+    ps->root_width = ce->width;
+    ps->root_height = ce->height;
 
-    rebuild_screen_reg(dpy);
+    rebuild_screen_reg(ps);
 
     return;
   }
 
-  win *w = find_win(ce->window);
+  win *w = find_win(ps, ce->window);
   XserverRegion damage = None;
 
   if (!w)
@@ -2579,38 +2399,38 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
 
   if (w->a.map_state == IsUnmapped) {
     /* save the configure event for when the window maps */
-    w->need_configure = True;
+    w->need_configure = true;
     w->queue_configure = *ce;
-    restack_win(dpy, w, ce->above);
+    restack_win(ps, w, ce->above);
   } else {
     if (!(w->need_configure)) {
-      restack_win(dpy, w, ce->above);
+      restack_win(ps, w, ce->above);
     }
 
     // Windows restack (including window restacks happened when this
     // window is not mapped) could mess up all reg_ignore
-    reg_ignore_expire = True;
+    ps->reg_ignore_expire = true;
 
-    w->need_configure = False;
+    w->need_configure = false;
 
-    damage = XFixesCreateRegion(dpy, 0, 0);
+    damage = XFixesCreateRegion(ps->dpy, 0, 0);
     if (w->extents != None) {
-      XFixesCopyRegion(dpy, damage, w->extents);
+      XFixesCopyRegion(ps->dpy, damage, w->extents);
     }
 
     // If window geometry did not change, don't free extents here
     if (w->a.x != ce->x || w->a.y != ce->y
         || w->a.width != ce->width || w->a.height != ce->height) {
-      free_region(dpy, &w->extents);
-      free_region(dpy, &w->border_size);
+      free_region(ps, &w->extents);
+      free_region(ps, &w->border_size);
     }
 
     w->a.x = ce->x;
     w->a.y = ce->y;
 
     if (w->a.width != ce->width || w->a.height != ce->height) {
-      free_pixmap(dpy, &w->pixmap);
-      free_picture(dpy, &w->picture);
+      free_pixmap(ps, &w->pixmap);
+      free_picture(ps, &w->picture);
     }
 
     if (w->a.width != ce->width || w->a.height != ce->height
@@ -2618,19 +2438,19 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
       w->a.width = ce->width;
       w->a.height = ce->height;
       w->a.border_width = ce->border_width;
-      calc_win_size(dpy, w);
+      calc_win_size(ps, w);
 
       // Rounded corner detection is affected by window size
-      if (shape_exists && opts.shadow_ignore_shaped
-          && opts.detect_rounded_corners && w->bounding_shaped)
-        win_update_shape(dpy, w);
+      if (ps->shape_exists && ps->o.shadow_ignore_shaped
+          && ps->o.detect_rounded_corners && w->bounding_shaped)
+        win_update_shape(ps, w);
     }
 
     if (damage) {
-      XserverRegion extents = win_extents(dpy, w);
-      XFixesUnionRegion(dpy, damage, damage, extents);
-      XFixesDestroyRegion(dpy, extents);
-      add_damage(dpy, damage);
+      XserverRegion extents = win_extents(ps, w);
+      XFixesUnionRegion(ps->dpy, damage, damage, extents);
+      XFixesDestroyRegion(ps->dpy, extents);
+      add_damage(ps, damage);
     }
   }
 
@@ -2638,40 +2458,35 @@ configure_win(Display *dpy, XConfigureEvent *ce) {
 }
 
 static void
-circulate_win(Display *dpy, XCirculateEvent *ce) {
-  win *w = find_win(ce->window);
+circulate_win(session_t *ps, XCirculateEvent *ce) {
+  win *w = find_win(ps, ce->window);
   Window new_above;
 
   if (!w) return;
 
   if (ce->place == PlaceOnTop) {
-    new_above = list->id;
+    new_above = ps->list->id;
   } else {
     new_above = None;
   }
 
-  restack_win(dpy, w, new_above);
+  restack_win(ps, w, new_above);
 }
 
 static void
-finish_destroy_win(Display *dpy, Window id) {
+finish_destroy_win(session_t *ps, Window id) {
   win **prev, *w;
 
-  for (prev = &list; (w = *prev); prev = &w->next) {
+  for (prev = &ps->list; (w = *prev); prev = &w->next) {
     if (w->id == id && w->destroyed) {
-      finish_unmap_win(dpy, w);
+      finish_unmap_win(ps, w);
       *prev = w->next;
 
       // Clear active_win if it's pointing to the destroyed window
-      if (active_win)
-        active_win = NULL;
+      if (ps->active_win)
+        ps->active_win = NULL;
 
-      free_picture(dpy, &w->shadow_pict);
-      free_damage(dpy, &w->damage);
-      free_region(dpy, &w->reg_ignore);
-      free(w->name);
-      free(w->class_instance);
-      free(w->class_general);
+      free_win_res(ps, w);
 
       free(w);
       break;
@@ -2680,67 +2495,72 @@ finish_destroy_win(Display *dpy, Window id) {
 }
 
 static void
-destroy_callback(Display *dpy, win *w) {
-  finish_destroy_win(dpy, w->id);
+destroy_callback(session_t *ps, win *w) {
+  finish_destroy_win(ps, w->id);
 }
 
 static void
-destroy_win(Display *dpy, Window id, Bool fade) {
-  win *w = find_win(id);
+destroy_win(session_t *ps, Window id) {
+  win *w = find_win(ps, id);
 
   if (w) {
-    w->destroyed = True;
+    w->destroyed = true;
 
     // Fading out the window
     w->opacity_tgt = 0;
-    set_fade_callback(dpy, w, destroy_callback, False);
+    set_fade_callback(ps, w, destroy_callback, false);
   }
 }
 
 static inline void
-root_damaged(void) {
-  if (root_tile) {
-    XClearArea(dpy, root, 0, 0, 0, 0, True);
-    // if (root_picture != root_tile) {
-      XRenderFreePicture(dpy, root_tile);
-      root_tile = None;
+root_damaged(session_t *ps) {
+  if (ps->root_tile) {
+    XClearArea(ps->dpy, ps->root, 0, 0, 0, 0, true);
+    // if (ps->root_picture != ps->root_tile) {
+      XRenderFreePicture(ps->dpy, ps->root_tile);
+      ps->root_tile = None;
     /* }
     if (root_damage) {
-      XserverRegion parts = XFixesCreateRegion(dpy, 0, 0);
-      XDamageSubtract(dpy, root_damage, None, parts);
-      add_damage(dpy, parts);
+      XserverRegion parts = XFixesCreateRegion(ps->dpy, 0, 0);
+      XDamageSubtract(ps->dpy, root_damage, None, parts);
+      add_damage(ps, parts);
     } */
   }
   // Mark screen damaged if we are painting on overlay
-  if (opts.paint_on_overlay)
-    add_damage(dpy, get_screen_region(dpy));
+  if (ps->o.paint_on_overlay)
+    add_damage(ps, get_screen_region(ps));
 }
 
 static void
-damage_win(Display *dpy, XDamageNotifyEvent *de) {
+damage_win(session_t *ps, XDamageNotifyEvent *de) {
   /*
-  if (root == de->drawable) {
+  if (ps->root == de->drawable) {
     root_damaged();
     return;
   } */
 
-  win *w = find_win(de->drawable);
+  win *w = find_win(ps, de->drawable);
 
   if (!w) return;
 
-  repair_win(dpy, w);
+  repair_win(ps, w);
 }
 
+/**
+ * Xlib error handler function.
+ */
 static int
 error(Display *dpy, XErrorEvent *ev) {
+  session_t * const ps = ps_g;
+
   int o;
   const char *name = "Unknown";
 
-  if (should_ignore(dpy, ev->serial)) {
+  if (should_ignore(ps, ev->serial)) {
     return 0;
   }
 
-  if (ev->request_code == composite_opcode
+  if (ev->request_code == ps->composite_opcode
       && ev->minor_code == X_CompositeRedirectSubwindows) {
     fprintf(stderr, "Another composite manager is already running\n");
     exit(1);
@@ -2748,17 +2568,17 @@ error(Display *dpy, XErrorEvent *ev) {
 
 #define CASESTRRET2(s)   case s: name = #s; break
 
-  o = ev->error_code - xfixes_error;
+  o = ev->error_code - ps->xfixes_error;
   switch (o) {
     CASESTRRET2(BadRegion);
   }
 
-  o = ev->error_code - damage_error;
+  o = ev->error_code - ps->damage_error;
   switch (o) {
     CASESTRRET2(BadDamage);
   }
 
-  o = ev->error_code - render_error;
+  o = ev->error_code - ps->render_error;
   switch (o) {
     CASESTRRET2(BadPictFormat);
     CASESTRRET2(BadPicture);
@@ -2789,7 +2609,7 @@ error(Display *dpy, XErrorEvent *ev) {
 
 #undef CASESTRRET2
 
-  print_timestamp();
+  print_timestamp(ps);
   printf("error %d (%s) request %d minor %d serial %lu\n",
     ev->error_code, name, ev->request_code,
     ev->minor_code, ev->serial);
@@ -2798,74 +2618,84 @@ error(Display *dpy, XErrorEvent *ev) {
 }
 
 static void
-expose_root(Display *dpy, XRectangle *rects, int nrects) {
-  XserverRegion region = XFixesCreateRegion(dpy, rects, nrects);
-  add_damage(dpy, region);
+expose_root(session_t *ps, XRectangle *rects, int nrects) {
+  XserverRegion region = XFixesCreateRegion(ps->dpy, rects, nrects);
+  add_damage(ps, region);
 }
 
-static Bool
-wid_get_text_prop(Display *dpy, Window wid, Atom prop,
+/**
+ * Get the value of a text property of a window.
+ */
+static bool
+wid_get_text_prop(session_t *ps, Window wid, Atom prop,
     char ***pstrlst, int *pnstr) {
   XTextProperty text_prop;
 
-  if (!(XGetTextProperty(dpy, wid, &text_prop, prop) && text_prop.value))
-    return False;
+  if (!(XGetTextProperty(ps->dpy, wid, &text_prop, prop) && text_prop.value))
+    return false;
 
   if (Success !=
-      XmbTextPropertyToTextList(dpy, &text_prop, pstrlst, pnstr)
+      XmbTextPropertyToTextList(ps->dpy, &text_prop, pstrlst, pnstr)
       || !*pnstr) {
     *pnstr = 0;
     if (*pstrlst)
       XFreeStringList(*pstrlst);
-    return False;
+    return false;
   }
 
-  return True;
+  return true;
 }
 
-static Bool
-wid_get_name(Display *dpy, Window wid, char **name) {
+/**
+ * Get the name of a window from window ID.
+ */
+static bool
+wid_get_name(session_t *ps, Window wid, char **name) {
   XTextProperty text_prop;
   char **strlst = NULL;
   int nstr = 0;
 
-  // set_ignore(dpy, NextRequest(dpy));
-  if (!(XGetTextProperty(dpy, wid, &text_prop, name_ewmh_atom)
+  // set_ignore_next(ps);
+  if (!(XGetTextProperty(ps->dpy, wid, &text_prop, ps->atom_name_ewmh)
       && text_prop.value)) {
-    // set_ignore(dpy, NextRequest(dpy));
+    // set_ignore_next(ps);
 #ifdef DEBUG_WINDATA
     printf("wid_get_name(%#010lx): _NET_WM_NAME unset, falling back to WM_NAME.\n", wid);
 #endif
 
-    if (!(XGetWMName(dpy, wid, &text_prop) && text_prop.value)) {
-      return False;
+    if (!(XGetWMName(ps->dpy, wid, &text_prop) && text_prop.value)) {
+      return false;
     }
   }
   if (Success !=
-      XmbTextPropertyToTextList(dpy, &text_prop, &strlst, &nstr)
+      XmbTextPropertyToTextList(ps->dpy, &text_prop, &strlst, &nstr)
       || !nstr || !strlst) {
     if (strlst)
       XFreeStringList(strlst);
-    return False;
+    return false;
   }
   *name = mstrcpy(strlst[0]);
 
   XFreeStringList(strlst);
 
-  return True;
+  return true;
 }
 
+/**
+ * Retrieve the name of a window and update its <code>win</code>
+ * structure.
+ */
 static int
-win_get_name(Display *dpy, win *w) {
-  Bool ret;
+win_get_name(session_t *ps, win *w) {
+  bool ret;
   char *name_old = w->name;
 
   // Can't do anything if there's no client window
   if (!w->client_win)
-    return False;
+    return false;
 
   // Get the name
-  ret = wid_get_name(dpy, w->client_win, &w->name);
+  ret = wid_get_name(ps, w->client_win, &w->name);
 
   // Return -1 if wid_get_name() failed, 0 if name didn't change, 1 if
   // it changes
@@ -2888,14 +2718,18 @@ win_get_name(Display *dpy, win *w) {
   return ret;
 }
 
-static Bool
-win_get_class(Display *dpy, win *w) {
+/**
+ * Retrieve the <code>WM_CLASS</code> of a window and update its
+ * <code>win</code> structure.
+ */
+static bool
+win_get_class(session_t *ps, win *w) {
   char **strlst = NULL;
   int nstr = 0;
 
   // Can't do anything if there's no client window
   if (!w->client_win)
-    return False;
+    return false;
 
   // Free and reset old strings
   free(w->class_instance);
@@ -2904,8 +2738,8 @@ win_get_class(Display *dpy, win *w) {
   w->class_general = NULL;
 
   // Retrieve the property string list
-  if (!wid_get_text_prop(dpy, w->client_win, class_atom, &strlst, &nstr))
-    return False;
+  if (!wid_get_text_prop(ps, w->client_win, ps->atom_class, &strlst, &nstr))
+    return false;
 
   // Copy the strings if successful
   w->class_instance = mstrcpy(strlst[0]);
@@ -2921,7 +2755,7 @@ win_get_class(Display *dpy, win *w) {
       w->id, w->client_win, w->class_instance, w->class_general);
 #endif
 
-  return True;
+  return true;
 }
 
 #ifdef DEBUG_EVENTS
@@ -2934,7 +2768,7 @@ ev_serial(XEvent *ev) {
 }
 
 static const char *
-ev_name(XEvent *ev) {
+ev_name(session_t *ps, XEvent *ev) {
   static char buf[128];
   switch (ev->type & 0x7f) {
     CASESTRRET(FocusIn);
@@ -2950,11 +2784,11 @@ ev_name(XEvent *ev) {
     CASESTRRET(PropertyNotify);
     CASESTRRET(ClientMessage);
     default:
-      if (ev->type == damage_event + XDamageNotify) {
+      if (ev->type == ps->damage_event + XDamageNotify) {
         return "Damage";
       }
 
-      if (shape_exists && ev->type == shape_event) {
+      if (ps->shape_exists && ev->type == ps->shape_event) {
         return "ShapeNotify";
       }
 
@@ -2965,7 +2799,7 @@ ev_name(XEvent *ev) {
 }
 
 static Window
-ev_window(XEvent *ev) {
+ev_window(session_t *ps, XEvent *ev) {
   switch (ev->type) {
     case FocusIn:
     case FocusOut:
@@ -2991,11 +2825,11 @@ ev_window(XEvent *ev) {
     case ClientMessage:
       return ev->xclient.window;
     default:
-      if (ev->type == damage_event + XDamageNotify) {
+      if (ev->type == ps->damage_event + XDamageNotify) {
         return ((XDamageNotifyEvent *)ev)->drawable;
       }
 
-      if (shape_exists && ev->type == shape_event) {
+      if (ps->shape_exists && ev->type == ps->shape_event) {
         return ((XShapeEvent *) ev)->window;
       }
 
@@ -3039,9 +2873,7 @@ ev_focus_report(XFocusChangeEvent* ev) {
 
 #endif
 
-/**
- * Events
- */
+// === Events ===
 
 /**
  * Determine whether we should respond to a <code>FocusIn/Out</code>
@@ -3054,7 +2886,7 @@ ev_focus_accept(XFocusChangeEvent *ev) {
 }
 
 inline static void
-ev_focus_in(XFocusChangeEvent *ev) {
+ev_focus_in(session_t *ps, XFocusChangeEvent *ev) {
 #ifdef DEBUG_EVENTS
   ev_focus_report(ev);
 #endif
@@ -3062,16 +2894,16 @@ ev_focus_in(XFocusChangeEvent *ev) {
   if (!ev_focus_accept(ev))
     return;
 
-  win *w = find_win(ev->window);
+  win *w = find_win(ps, ev->window);
 
   // To deal with events sent from windows just destroyed
   if (!w) return;
 
-  set_focused(dpy, w, True);
+  set_focused(ps, w, true);
 }
 
 inline static void
-ev_focus_out(XFocusChangeEvent *ev) {
+ev_focus_out(session_t *ps, XFocusChangeEvent *ev) {
 #ifdef DEBUG_EVENTS
   ev_focus_report(ev);
 #endif
@@ -3079,93 +2911,93 @@ ev_focus_out(XFocusChangeEvent *ev) {
   if (!ev_focus_accept(ev))
     return;
 
-  win *w = find_win(ev->window);
+  win *w = find_win(ps, ev->window);
 
   // To deal with events sent from windows just destroyed
   if (!w) return;
 
-  set_focused(dpy, w, False);
+  set_focused(ps, w, false);
 }
 
 inline static void
-ev_create_notify(XCreateWindowEvent *ev) {
-  assert(ev->parent == root);
-  add_win(dpy, ev->window, 0, ev->override_redirect);
+ev_create_notify(session_t *ps, XCreateWindowEvent *ev) {
+  assert(ev->parent == ps->root);
+  add_win(ps, ev->window, 0, ev->override_redirect);
 }
 
 inline static void
-ev_configure_notify(XConfigureEvent *ev) {
+ev_configure_notify(session_t *ps, XConfigureEvent *ev) {
 #ifdef DEBUG_EVENTS
   printf("  { send_event: %d, "
          " above: %#010lx, "
          " override_redirect: %d }\n",
          ev->send_event, ev->above, ev->override_redirect);
 #endif
-  configure_win(dpy, ev);
+  configure_win(ps, ev);
 }
 
 inline static void
-ev_destroy_notify(XDestroyWindowEvent *ev) {
-  destroy_win(dpy, ev->window, True);
+ev_destroy_notify(session_t *ps, XDestroyWindowEvent *ev) {
+  destroy_win(ps, ev->window);
 }
 
 inline static void
-ev_map_notify(XMapEvent *ev) {
-  map_win(dpy, ev->window, ev->serial, True, ev->override_redirect);
+ev_map_notify(session_t *ps, XMapEvent *ev) {
+  map_win(ps, ev->window, ev->override_redirect);
 }
 
 inline static void
-ev_unmap_notify(XUnmapEvent *ev) {
-  unmap_win(dpy, ev->window, True);
+ev_unmap_notify(session_t *ps, XUnmapEvent *ev) {
+  unmap_win(ps, ev->window);
 }
 
 inline static void
-ev_reparent_notify(XReparentEvent *ev) {
-  if (ev->parent == root) {
-    add_win(dpy, ev->window, 0, ev->override_redirect);
+ev_reparent_notify(session_t *ps, XReparentEvent *ev) {
+  if (ev->parent == ps->root) {
+    add_win(ps, ev->window, 0, ev->override_redirect);
   } else {
-    destroy_win(dpy, ev->window, True);
+    destroy_win(ps, ev->window);
     // Reset event mask in case something wrong happens
-    XSelectInput(dpy, ev->window,
-        determine_evmask(dpy, ev->window, WIN_EVMODE_UNKNOWN));
+    XSelectInput(ps->dpy, ev->window,
+        determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN));
     /*
     // Check if the window is a client window of another
-    win *w_top = find_toplevel2(dpy, ev->window);
+    win *w_top = find_toplevel2(ps, ev->window);
     if (w_top && !(w_top->client_win)) {
-      mark_client_win(dpy, w_top, ev->window);
+      mark_client_win(ps, w_top, ev->window);
     } */
   }
 }
 
 inline static void
-ev_circulate_notify(XCirculateEvent *ev) {
-  circulate_win(dpy, ev);
+ev_circulate_notify(session_t *ps, XCirculateEvent *ev) {
+  circulate_win(ps, ev);
 }
 
 inline static void
-ev_expose(XExposeEvent *ev) {
-  if (ev->window == root || (overlay && ev->window == overlay)) {
+ev_expose(session_t *ps, XExposeEvent *ev) {
+  if (ev->window == ps->root || (ps->overlay && ev->window == ps->overlay)) {
     int more = ev->count + 1;
-    if (n_expose == size_expose) {
-      if (expose_rects) {
-        expose_rects = realloc(expose_rects,
-          (size_expose + more) * sizeof(XRectangle));
-        size_expose += more;
+    if (ps->n_expose == ps->size_expose) {
+      if (ps->expose_rects) {
+        ps->expose_rects = realloc(ps->expose_rects,
+          (ps->size_expose + more) * sizeof(XRectangle));
+        ps->size_expose += more;
       } else {
-        expose_rects = malloc(more * sizeof(XRectangle));
-        size_expose = more;
+        ps->expose_rects = malloc(more * sizeof(XRectangle));
+        ps->size_expose = more;
       }
     }
 
-    expose_rects[n_expose].x = ev->x;
-    expose_rects[n_expose].y = ev->y;
-    expose_rects[n_expose].width = ev->width;
-    expose_rects[n_expose].height = ev->height;
-    n_expose++;
+    ps->expose_rects[ps->n_expose].x = ev->x;
+    ps->expose_rects[ps->n_expose].y = ev->y;
+    ps->expose_rects[ps->n_expose].width = ev->width;
+    ps->expose_rects[ps->n_expose].height = ev->height;
+    ps->n_expose++;
 
     if (ev->count == 0) {
-      expose_root(dpy, expose_rects, n_expose);
-      n_expose = 0;
+      expose_root(ps, ps->expose_rects, ps->n_expose);
+      ps->n_expose = 0;
     }
   }
 }
@@ -3177,46 +3009,47 @@ ev_expose(XExposeEvent *ev) {
  * returned could not be found.
  */
 static void
-update_ewmh_active_win(Display *dpy) {
+update_ewmh_active_win(session_t *ps) {
   // Get the attribute firstly
-  winattr_t attr = wid_get_attr(dpy, root, ewmh_active_win_atom,
+  winprop_t prop = wid_get_prop(ps, ps->root, ps->atom_ewmh_active_win,
       1L, XA_WINDOW, 32);
-  if (!attr.nitems) {
-    free_winattr(&attr);
+  if (!prop.nitems) {
+    free_winprop(&prop);
     return;
   }
-  
-  // Search for the window
-  Window wid = *((long *) attr.data);
-  win *w = NULL;
-  free_winattr(&attr);
 
-  if (!(w = find_toplevel(wid)))
-    if (!(w = find_win(wid)))
-      w = find_toplevel2(dpy, wid);
+  // Search for the window
+  Window wid = *((long *) prop.data);
+  win *w = NULL;
+  free_winprop(&prop);
+
+  if (!(w = find_toplevel(ps, wid)))
+    if (!(w = find_win(ps, wid)))
+      w = find_toplevel2(ps, wid);
 
   // Mark the window focused
   if (w) {
     if (!w->focused)
-      set_focused(dpy, w, True);
-    if (active_win && w != active_win)
-      set_focused(dpy, active_win, False);
-    active_win = w;
+      set_focused(ps, w, true);
+    if (ps->active_win && w != ps->active_win)
+      set_focused(ps, ps->active_win, false);
+    ps->active_win = w;
   }
 }
 
 inline static void
-ev_property_notify(XPropertyEvent *ev) {
-  if (root == ev->window) {
-    if (opts.track_focus && opts.use_ewmh_active_win
-        && ewmh_active_win_atom == ev->atom) {
-      update_ewmh_active_win(dpy);
+ev_property_notify(session_t *ps, XPropertyEvent *ev) {
+  if (ps->root == ev->window) {
+    if (ps->o.track_focus && ps->o.use_ewmh_active_win
+        && ps->atom_ewmh_active_win == ev->atom) {
+      update_ewmh_active_win(ps);
     }
     else {
       // Destroy the root "image" if the wallpaper probably changed
-      for (int p = 0; background_props[p]; p++) {
-        if (ev->atom == XInternAtom(dpy, background_props[p], False)) {
-          root_damaged();
+      for (int p = 0; background_props_str[p]; p++) {
+        if (ev->atom ==
+            XInternAtom(ps->dpy, background_props_str[p], false)) {
+          root_damaged(ps);
           break;
         }
       }
@@ -3227,62 +3060,62 @@ ev_property_notify(XPropertyEvent *ev) {
   }
 
   // If _NET_WM_OPACITY changes
-  if (ev->atom == opacity_atom) {
+  if (ev->atom == ps->atom_opacity) {
     win *w = NULL;
-    if ((w = find_win(ev->window)))
-      w->opacity_prop = wid_get_opacity_prop(dpy, w->id, OPAQUE);
-    else if (opts.detect_client_opacity
-        && (w = find_toplevel(ev->window)))
-      w->opacity_prop_client = wid_get_opacity_prop(dpy, w->client_win,
+    if ((w = find_win(ps, ev->window)))
+      w->opacity_prop = wid_get_opacity_prop(ps, w->id, OPAQUE);
+    else if (ps->o.detect_client_opacity
+        && (w = find_toplevel(ps, ev->window)))
+      w->opacity_prop_client = wid_get_opacity_prop(ps, w->client_win,
             OPAQUE);
     if (w) {
-      calc_opacity(dpy, w, False);
+      calc_opacity(ps, w, false);
     }
   }
 
   // If frame extents property changes
-  if (opts.frame_opacity && ev->atom == frame_extents_atom) {
-    win *w = find_toplevel(ev->window);
+  if (ps->o.frame_opacity && ev->atom == ps->atom_frame_extents) {
+    win *w = find_toplevel(ps, ev->window);
     if (w) {
-      get_frame_extents(dpy, w, ev->window);
+      get_frame_extents(ps, w, ev->window);
       // If frame extents change, the window needs repaint
-      add_damage_win(dpy, w);
+      add_damage_win(ps, w);
     }
   }
 
   // If name changes
-  if (opts.track_wdata
-      && (name_atom == ev->atom || name_ewmh_atom == ev->atom)) {
-    win *w = find_toplevel(ev->window);
-    if (w && 1 == win_get_name(dpy, w))
-      determine_shadow(dpy, w);
+  if (ps->o.track_wdata
+      && (ps->atom_name == ev->atom || ps->atom_name_ewmh == ev->atom)) {
+    win *w = find_toplevel(ps, ev->window);
+    if (w && 1 == win_get_name(ps, w))
+      determine_shadow(ps, w);
   }
 
   // If class changes
-  if (opts.track_wdata && class_atom == ev->atom) {
-    win *w = find_toplevel(ev->window);
+  if (ps->o.track_wdata && ps->atom_class == ev->atom) {
+    win *w = find_toplevel(ps, ev->window);
     if (w) {
-      win_get_class(dpy, w);
-      determine_shadow(dpy, w);
+      win_get_class(ps, w);
+      determine_shadow(ps, w);
     }
   }
 
   // If _COMPTON_SHADOW changes
-  if (opts.respect_attr_shadow && compton_shadow_atom == ev->atom) {
-    win *w = find_win(ev->window);
+  if (ps->o.respect_prop_shadow && ps->atom_compton_shadow == ev->atom) {
+    win *w = find_win(ps, ev->window);
     if (w)
-      win_update_attr_shadow(dpy, w);
+      win_update_attr_shadow(ps, w);
   }
 }
 
 inline static void
-ev_damage_notify(XDamageNotifyEvent *ev) {
-  damage_win(dpy, ev);
+ev_damage_notify(session_t *ps, XDamageNotifyEvent *ev) {
+  damage_win(ps, ev);
 }
 
 inline static void
-ev_shape_notify(XShapeEvent *ev) {
-  win *w = find_win(ev->window);
+ev_shape_notify(session_t *ps, XShapeEvent *ev) {
+  win *w = find_win(ps, ev->window);
   if (!w || IsUnmapped == w->a.map_state) return;
 
   /*
@@ -3293,31 +3126,31 @@ ev_shape_notify(XShapeEvent *ev) {
    */
   if (w->border_size) {
     // Mark the old border_size as damaged
-    add_damage(dpy, w->border_size);
+    add_damage(ps, w->border_size);
 
-    w->border_size = border_size(dpy, w);
+    w->border_size = border_size(ps, w);
 
     // Mark the new border_size as damaged
-    add_damage(dpy, copy_region(dpy, w->border_size));
+    add_damage(ps, copy_region(ps, w->border_size));
   }
 
   // Redo bounding shape detection and rounded corner detection
-  win_update_shape(dpy, w);
+  win_update_shape(ps, w);
 
-  update_reg_ignore_expire(w);
+  update_reg_ignore_expire(ps, w);
 }
 
 /**
  * Handle ScreenChangeNotify events from X RandR extension.
  */
 static void
-ev_screen_change_notify(XRRScreenChangeNotifyEvent *ev) {
-  if (!opts.refresh_rate) {
-    update_refresh_rate(dpy);
-    if (!refresh_rate) {
+ev_screen_change_notify(session_t *ps, XRRScreenChangeNotifyEvent *ev) {
+  if (!ps->o.refresh_rate) {
+    update_refresh_rate(ps);
+    if (!ps->refresh_rate) {
       fprintf(stderr, "ev_screen_change_notify(): Refresh rate detection "
           "failed, software VSync disabled.");
-      opts.vsync = VSYNC_NONE;
+      ps->o.vsync = VSYNC_NONE;
     }
   }
 }
@@ -3327,26 +3160,26 @@ ev_screen_change_notify(XRRScreenChangeNotifyEvent *ev) {
  * Get a window's name from window ID.
  */
 static bool
-ev_window_name(Display *dpy, Window wid, char **name) {
+ev_window_name(session_t *ps, Window wid, char **name) {
   bool to_free = false;
 
   *name = "";
   if (wid) {
     *name = "(Failed to get title)";
-    if (root == wid)
+    if (ps->root == wid)
       *name = "(Root window)";
-    else if (overlay == wid)
+    else if (ps->overlay == wid)
       *name = "(Overlay)";
     else {
-      win *w = find_win(wid);
+      win *w = find_win(ps, wid);
       if (!w)
-        w = find_toplevel(wid);
+        w = find_toplevel(ps, wid);
 
       if (w && w->name)
         *name = w->name;
       else if (!(w && w->client_win
-            && (to_free = wid_get_name(dpy, w->client_win, name))))
-          to_free = wid_get_name(dpy, wid, name);
+            && (to_free = wid_get_name(ps, w->client_win, name))))
+          to_free = wid_get_name(ps, wid, name);
     }
   }
 
@@ -3355,22 +3188,22 @@ ev_window_name(Display *dpy, Window wid, char **name) {
 #endif
 
 static void
-ev_handle(XEvent *ev) {
+ev_handle(session_t *ps, XEvent *ev) {
   if ((ev->type & 0x7f) != KeymapNotify) {
-    discard_ignore(dpy, ev->xany.serial);
+    discard_ignore(ps, ev->xany.serial);
   }
 
 #ifdef DEBUG_EVENTS
-  if (ev->type != damage_event + XDamageNotify) {
-    Window wid = ev_window(ev);
+  if (ev->type != ps->damage_event + XDamageNotify) {
+    Window wid = ev_window(ps, ev);
     char *window_name = NULL;
-    Bool to_free = false;
+    bool to_free = false;
 
-    to_free = ev_window_name(dpy, wid, &window_name);
+    to_free = ev_window_name(ps, wid, &window_name);
 
-    print_timestamp();
+    print_timestamp(ps);
     printf("event %10.10s serial %#010x window %#010lx \"%s\"\n",
-      ev_name(ev), ev_serial(ev), wid, window_name);
+      ev_name(ps, ev), ev_serial(ev), wid, window_name);
 
     if (to_free) {
       XFree(window_name);
@@ -3382,57 +3215,55 @@ ev_handle(XEvent *ev) {
 
   switch (ev->type) {
     case FocusIn:
-      ev_focus_in((XFocusChangeEvent *)ev);
+      ev_focus_in(ps, (XFocusChangeEvent *)ev);
       break;
     case FocusOut:
-      ev_focus_out((XFocusChangeEvent *)ev);
+      ev_focus_out(ps, (XFocusChangeEvent *)ev);
       break;
     case CreateNotify:
-      ev_create_notify((XCreateWindowEvent *)ev);
+      ev_create_notify(ps, (XCreateWindowEvent *)ev);
       break;
     case ConfigureNotify:
-      ev_configure_notify((XConfigureEvent *)ev);
+      ev_configure_notify(ps, (XConfigureEvent *)ev);
       break;
     case DestroyNotify:
-      ev_destroy_notify((XDestroyWindowEvent *)ev);
+      ev_destroy_notify(ps, (XDestroyWindowEvent *)ev);
       break;
     case MapNotify:
-      ev_map_notify((XMapEvent *)ev);
+      ev_map_notify(ps, (XMapEvent *)ev);
       break;
     case UnmapNotify:
-      ev_unmap_notify((XUnmapEvent *)ev);
+      ev_unmap_notify(ps, (XUnmapEvent *)ev);
       break;
     case ReparentNotify:
-      ev_reparent_notify((XReparentEvent *)ev);
+      ev_reparent_notify(ps, (XReparentEvent *)ev);
       break;
     case CirculateNotify:
-      ev_circulate_notify((XCirculateEvent *)ev);
+      ev_circulate_notify(ps, (XCirculateEvent *)ev);
       break;
     case Expose:
-      ev_expose((XExposeEvent *)ev);
+      ev_expose(ps, (XExposeEvent *)ev);
       break;
     case PropertyNotify:
-      ev_property_notify((XPropertyEvent *)ev);
+      ev_property_notify(ps, (XPropertyEvent *)ev);
       break;
     default:
-      if (shape_exists && ev->type == shape_event) {
-        ev_shape_notify((XShapeEvent *) ev);
+      if (ps->shape_exists && ev->type == ps->shape_event) {
+        ev_shape_notify(ps, (XShapeEvent *) ev);
         break;
       }
-      if (randr_exists && ev->type == (randr_event + RRScreenChangeNotify)) {
-        ev_screen_change_notify((XRRScreenChangeNotifyEvent *) ev);
+      if (ps->randr_exists && ev->type == (ps->randr_event + RRScreenChangeNotify)) {
+        ev_screen_change_notify(ps, (XRRScreenChangeNotifyEvent *) ev);
         break;
       }
-      if (ev->type == damage_event + XDamageNotify) {
-        ev_damage_notify((XDamageNotifyEvent *)ev);
+      if (ev->type == ps->damage_event + XDamageNotify) {
+        ev_damage_notify(ps, (XDamageNotifyEvent *)ev);
       }
       break;
   }
 }
 
-/**
- * Main
- */
+// === Main ===
 
 /**
  * Print usage text and exit.
@@ -3541,7 +3372,7 @@ usage(void) {
     "--use-ewmh-active-win\n"
     "  Use _NET_WM_ACTIVE_WINDOW on the root window to determine which\n"
     "  window is focused instead of using FocusIn/Out events.\n"
-    "--respect-attr-shadow\n"
+    "--respect-prop-shadow\n"
     "  Respect _COMPTON_SHADOW. This a prototype-level feature, which\n"
     "  you must not rely on.\n"
     "--unredir-if-possible\n"
@@ -3573,7 +3404,7 @@ usage(void) {
  * Register a window as symbol, and initialize GLX context if wanted.
  */
 static void
-register_cm(Bool want_glxct) {
+register_cm(session_t *ps, bool want_glxct) {
   Atom a;
   char *buf;
   int len, s;
@@ -3582,10 +3413,10 @@ register_cm(Bool want_glxct) {
   // Create a window with the wanted GLX visual
   if (want_glxct) {
     XVisualInfo *pvi = NULL;
-    Bool ret = False;
+    bool ret = false;
     // Get visual for the window
     int attribs[] = { GLX_RGBA, GLX_RED_SIZE, 1, GLX_GREEN_SIZE, 1, GLX_BLUE_SIZE, 1, None };
-    pvi = glXChooseVisual(dpy, scr, attribs);
+    pvi = glXChooseVisual(ps->dpy, ps->scr, attribs);
 
     if (!pvi) {
       fprintf(stderr, "register_cm(): Failed to choose visual required "
@@ -3594,28 +3425,28 @@ register_cm(Bool want_glxct) {
     else {
       // Create the window
       XSetWindowAttributes swa = {
-        .colormap = XCreateColormap(dpy, root, pvi->visual, AllocNone),
+        .colormap = XCreateColormap(ps->dpy, ps->root, pvi->visual, AllocNone),
         .border_pixel = 0,
       };
 
-      pvi->screen = scr;
-      reg_win = XCreateWindow(dpy, root, 0, 0, 1, 1, 0, pvi->depth,
+      pvi->screen = ps->scr;
+      ps->reg_win = XCreateWindow(ps->dpy, ps->root, 0, 0, 1, 1, 0, pvi->depth,
           InputOutput, pvi->visual, CWBorderPixel | CWColormap, &swa);
 
-      if (!reg_win)
+      if (!ps->reg_win)
         fprintf(stderr, "register_cm(): Failed to create window required "
             "by fake OpenGL VSync. OpenGL VSync turned off.\n");
       else {
         // Get GLX context
-        glx_context = glXCreateContext(dpy, pvi, None, GL_TRUE);
-        if (!glx_context) {
+        ps->glx_context = glXCreateContext(ps->dpy, pvi, None, GL_TRUE);
+        if (!ps->glx_context) {
           fprintf(stderr, "register_cm(): Failed to get GLX context. "
               "OpenGL VSync turned off.\n");
-          opts.vsync = VSYNC_NONE;
+          ps->o.vsync = VSYNC_NONE;
         }
         else {
           // Attach GLX context
-          if (!(ret = glXMakeCurrent(dpy, reg_win, glx_context)))
+          if (!(ret = glXMakeCurrent(ps->dpy, ps->reg_win, ps->glx_context)))
             fprintf(stderr, "register_cm(): Failed to attach GLX context."
               " OpenGL VSync turned off.\n");
         }
@@ -3625,20 +3456,19 @@ register_cm(Bool want_glxct) {
       XFree(pvi);
 
     if (!ret)
-      opts.vsync = VSYNC_NONE;
+      ps->o.vsync = VSYNC_NONE;
   }
 #endif
-  
-  if (!reg_win)
-    reg_win = XCreateSimpleWindow(dpy, root, 0, 0, 1, 1, 0,
+
+  if (!ps->reg_win)
+    ps->reg_win = XCreateSimpleWindow(ps->dpy, ps->root, 0, 0, 1, 1, 0,
         None, None);
 
-  Xutf8SetWMProperties(
-    dpy, reg_win, "xcompmgr", "xcompmgr",
+  Xutf8SetWMProperties(ps->dpy, ps->reg_win, "xcompmgr", "xcompmgr",
     NULL, 0, NULL, NULL, NULL);
 
   len = strlen(REGISTER_PROP) + 2;
-  s = scr;
+  s = ps->scr;
 
   while (s >= 10) {
     ++len;
@@ -3646,14 +3476,17 @@ register_cm(Bool want_glxct) {
   }
 
   buf = malloc(len);
-  snprintf(buf, len, REGISTER_PROP"%d", scr);
+  snprintf(buf, len, REGISTER_PROP"%d", ps->scr);
 
-  a = XInternAtom(dpy, buf, False);
+  a = XInternAtom(ps->dpy, buf, false);
   free(buf);
 
-  XSetSelectionOwner(dpy, a, reg_win, 0);
+  XSetSelectionOwner(ps->dpy, a, ps->reg_win, 0);
 }
 
+/**
+ * Fork program to background and disable all I/O streams.
+ */
 static void
 fork_after(void) {
   if (getppid() == 1) return;
@@ -3769,7 +3602,7 @@ open_config_file(char *cpath, char **ppath) {
  * Parse a VSync option argument.
  */
 static inline void
-parse_vsync(const char *optarg) {
+parse_vsync(session_t *ps, const char *optarg) {
   const static char * const vsync_str[] = {
     "none",   // VSYNC_NONE
     "drm",    // VSYNC_DRM
@@ -3780,7 +3613,7 @@ parse_vsync(const char *optarg) {
 
   for (i = 0; i < (sizeof(vsync_str) / sizeof(vsync_str[0])); ++i)
     if (!strcasecmp(optarg, vsync_str[i])) {
-      opts.vsync = i;
+      ps->o.vsync = i;
       break;
     }
   if ((sizeof(vsync_str) / sizeof(vsync_str[0])) == i) {
@@ -3792,7 +3625,7 @@ parse_vsync(const char *optarg) {
  * Parse a configuration file from default location.
  */
 static void
-parse_config(char *cpath, struct options_tmp *pcfgtmp) {
+parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
   char *path = NULL;
   FILE *f;
   config_t cfg;
@@ -3830,31 +3663,31 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
 
   // -D (fade_delta)
   if (lcfg_lookup_int(&cfg, "fade-delta", &ival))
-    opts.fade_delta = ival;
+    ps->o.fade_delta = ival;
   // -I (fade_in_step)
   if (config_lookup_float(&cfg, "fade-in-step", &dval))
-    opts.fade_in_step = normalize_d(dval) * OPAQUE;
+    ps->o.fade_in_step = normalize_d(dval) * OPAQUE;
   // -O (fade_out_step)
   if (config_lookup_float(&cfg, "fade-out-step", &dval))
-    opts.fade_out_step = normalize_d(dval) * OPAQUE;
+    ps->o.fade_out_step = normalize_d(dval) * OPAQUE;
   // -r (shadow_radius)
-  lcfg_lookup_int(&cfg, "shadow-radius", &opts.shadow_radius);
+  lcfg_lookup_int(&cfg, "shadow-radius", &ps->o.shadow_radius);
   // -o (shadow_opacity)
-  config_lookup_float(&cfg, "shadow-opacity", &opts.shadow_opacity);
+  config_lookup_float(&cfg, "shadow-opacity", &ps->o.shadow_opacity);
   // -l (shadow_offset_x)
-  lcfg_lookup_int(&cfg, "shadow-offset-x", &opts.shadow_offset_x);
+  lcfg_lookup_int(&cfg, "shadow-offset-x", &ps->o.shadow_offset_x);
   // -t (shadow_offset_y)
-  lcfg_lookup_int(&cfg, "shadow-offset-y", &opts.shadow_offset_y);
+  lcfg_lookup_int(&cfg, "shadow-offset-y", &ps->o.shadow_offset_y);
   // -i (inactive_opacity)
   if (config_lookup_float(&cfg, "inactive-opacity", &dval))
-    opts.inactive_opacity = normalize_d(dval) * OPAQUE;
+    ps->o.inactive_opacity = normalize_d(dval) * OPAQUE;
   // -e (frame_opacity)
-  config_lookup_float(&cfg, "frame-opacity", &opts.frame_opacity);
+  config_lookup_float(&cfg, "frame-opacity", &ps->o.frame_opacity);
   // -z (clear_shadow)
-  lcfg_lookup_bool(&cfg, "clear-shadow", &opts.clear_shadow);
+  lcfg_lookup_bool(&cfg, "clear-shadow", &ps->o.clear_shadow);
   // -c (shadow_enable)
   if (config_lookup_bool(&cfg, "shadow", &ival) && ival)
-    wintype_arr_enable(opts.wintype_shadow);
+    wintype_arr_enable(ps->o.wintype_shadow);
   // -C (no_dock_shadow)
   lcfg_lookup_bool(&cfg, "no-dock-shadow", &pcfgtmp->no_dock_shadow);
   // -G (no_dnd_shadow)
@@ -3863,53 +3696,53 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
   config_lookup_float(&cfg, "menu-opacity", &pcfgtmp->menu_opacity);
   // -f (fading_enable)
   if (config_lookup_bool(&cfg, "fading", &ival) && ival)
-    wintype_arr_enable(opts.wintype_fade);
+    wintype_arr_enable(ps->o.wintype_fade);
   // --no-fading-open-close
-  lcfg_lookup_bool(&cfg, "no-fading-openclose", &opts.no_fading_openclose);
+  lcfg_lookup_bool(&cfg, "no-fading-openclose", &ps->o.no_fading_openclose);
   // --shadow-red
-  config_lookup_float(&cfg, "shadow-red", &opts.shadow_red);
+  config_lookup_float(&cfg, "shadow-red", &ps->o.shadow_red);
   // --shadow-green
-  config_lookup_float(&cfg, "shadow-green", &opts.shadow_green);
+  config_lookup_float(&cfg, "shadow-green", &ps->o.shadow_green);
   // --shadow-blue
-  config_lookup_float(&cfg, "shadow-blue", &opts.shadow_blue);
+  config_lookup_float(&cfg, "shadow-blue", &ps->o.shadow_blue);
   // --inactive-opacity-override
   lcfg_lookup_bool(&cfg, "inactive-opacity-override",
-      &opts.inactive_opacity_override);
+      &ps->o.inactive_opacity_override);
   // --inactive-dim
-  config_lookup_float(&cfg, "inactive-dim", &opts.inactive_dim);
+  config_lookup_float(&cfg, "inactive-dim", &ps->o.inactive_dim);
   // --mark-wmwin-focused
-  lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &opts.mark_wmwin_focused);
+  lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &ps->o.mark_wmwin_focused);
   // --mark-ovredir-focused
   lcfg_lookup_bool(&cfg, "mark-ovredir-focused",
-      &opts.mark_ovredir_focused);
+      &ps->o.mark_ovredir_focused);
   // --shadow-ignore-shaped
   lcfg_lookup_bool(&cfg, "shadow-ignore-shaped",
-      &opts.shadow_ignore_shaped);
+      &ps->o.shadow_ignore_shaped);
   // --detect-rounded-corners
   lcfg_lookup_bool(&cfg, "detect-rounded-corners",
-      &opts.detect_rounded_corners);
+      &ps->o.detect_rounded_corners);
   // --detect-client-opacity
   lcfg_lookup_bool(&cfg, "detect-client-opacity",
-      &opts.detect_client_opacity);
+      &ps->o.detect_client_opacity);
   // --refresh-rate
-  lcfg_lookup_int(&cfg, "refresh-rate", &opts.refresh_rate);
+  lcfg_lookup_int(&cfg, "refresh-rate", &ps->o.refresh_rate);
   // --vsync
   if (config_lookup_string(&cfg, "vsync", &sval))
-    parse_vsync(sval);
+    parse_vsync(ps, sval);
   // --alpha-step
-  config_lookup_float(&cfg, "alpha-step", &opts.alpha_step);
+  config_lookup_float(&cfg, "alpha-step", &ps->o.alpha_step);
   // --dbe
-  lcfg_lookup_bool(&cfg, "dbe", &opts.dbe);
+  lcfg_lookup_bool(&cfg, "dbe", &ps->o.dbe);
   // --paint-on-overlay
-  lcfg_lookup_bool(&cfg, "paint-on-overlay", &opts.paint_on_overlay);
+  lcfg_lookup_bool(&cfg, "paint-on-overlay", &ps->o.paint_on_overlay);
   // --sw-opti
-  lcfg_lookup_bool(&cfg, "sw-opti", &opts.sw_opti);
+  lcfg_lookup_bool(&cfg, "sw-opti", &ps->o.sw_opti);
   // --use-ewmh-active-win
   lcfg_lookup_bool(&cfg, "use-ewmh-active-win",
-      &opts.use_ewmh_active_win);
+      &ps->o.use_ewmh_active_win);
   // --unredir-if-possible
   lcfg_lookup_bool(&cfg, "unredir-if-possible",
-      &opts.unredir_if_possible);
+      &ps->o.unredir_if_possible);
   // --shadow-exclude
   {
     config_setting_t *setting =
@@ -3919,20 +3752,20 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
       if (config_setting_is_array(setting)) {
         int i = config_setting_length(setting);
         while (i--) {
-          condlst_add(&opts.shadow_blacklist,
+          condlst_add(&ps->o.shadow_blacklist,
               config_setting_get_string_elem(setting, i));
         }
       }
       // Treat it as a single pattern if it's a string
       else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
-        condlst_add(&opts.shadow_blacklist,
+        condlst_add(&ps->o.shadow_blacklist,
             config_setting_get_string(setting));
       }
     }
   }
   // Wintype settings
   {
-    wintype i;
+    wintype_t i;
 
     for (i = 0; i < NUM_WINTYPES; ++i) {
       char *str = mstrjoin("wintypes.", WINTYPES[i]);
@@ -3940,11 +3773,11 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
       free(str);
       if (setting) {
         if (config_setting_lookup_bool(setting, "shadow", &ival))
-          opts.wintype_shadow[i] = (Bool) ival;
+          ps->o.wintype_shadow[i] = (bool) ival;
         if (config_setting_lookup_bool(setting, "fade", &ival))
-          opts.wintype_fade[i] = (Bool) ival;
+          ps->o.wintype_fade[i] = (bool) ival;
         config_setting_lookup_float(setting, "opacity",
-            &opts.wintype_opacity[i]);
+            &ps->o.wintype_opacity[i]);
       }
     }
   }
@@ -3957,7 +3790,7 @@ parse_config(char *cpath, struct options_tmp *pcfgtmp) {
  * Process arguments and configuration files.
  */
 static void
-get_cfg(int argc, char *const *argv) {
+get_cfg(session_t *ps, int argc, char *const *argv) {
   const static char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:scnfFCaSzGb";
   const static struct option longopts[] = {
     { "config", required_argument, NULL, 256 },
@@ -3981,30 +3814,33 @@ get_cfg(int argc, char *const *argv) {
     { "sw-opti", no_argument, NULL, 274 },
     { "vsync-aggressive", no_argument, NULL, 275 },
     { "use-ewmh-active-win", no_argument, NULL, 276 },
-    { "respect-attr-shadow", no_argument, NULL, 277 },
+    { "respect-prop-shadow", no_argument, NULL, 277 },
     { "unredir-if-possible", no_argument, NULL, 278 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
 
   struct options_tmp cfgtmp = {
-    .no_dock_shadow = False,
-    .no_dnd_shadow = False,
+    .no_dock_shadow = false,
+    .no_dnd_shadow = false,
     .menu_opacity = 1.0,
   };
-  Bool shadow_enable = False, fading_enable = False;
+  bool shadow_enable = false, fading_enable = false;
   int o, longopt_idx, i;
   char *config_file = NULL;
   char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
-    opts.wintype_fade[i] = False;
-    opts.wintype_shadow[i] = False;
-    opts.wintype_opacity[i] = 1.0;
+    ps->o.wintype_fade[i] = false;
+    ps->o.wintype_shadow[i] = false;
+    ps->o.wintype_opacity[i] = 1.0;
   }
 
   // Pre-parse the commandline arguments to check for --config and invalid
   // switches
+  // Must reset optind to 0 here in case we reread the commandline
+  // arguments
+  optind = 1;
   while (-1 !=
       (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
     if (256 == o)
@@ -4014,7 +3850,7 @@ get_cfg(int argc, char *const *argv) {
   }
 
 #ifdef CONFIG_LIBCONFIG
-  parse_config(config_file, &cfgtmp);
+  parse_config(ps, config_file, &cfgtmp);
 #endif
 
   // Parse commandline arguments. Range checking will be done later.
@@ -4029,56 +3865,56 @@ get_cfg(int argc, char *const *argv) {
     switch (o) {
       // Short options
       case 'd':
-        opts.display = optarg;
+        ps->o.display = mstrcpy(optarg);
         break;
       case 'D':
-        opts.fade_delta = atoi(optarg);
+        ps->o.fade_delta = atoi(optarg);
         break;
       case 'I':
-        opts.fade_in_step = normalize_d(atof(optarg)) * OPAQUE;
+        ps->o.fade_in_step = normalize_d(atof(optarg)) * OPAQUE;
         break;
       case 'O':
-        opts.fade_out_step = normalize_d(atof(optarg)) * OPAQUE;
+        ps->o.fade_out_step = normalize_d(atof(optarg)) * OPAQUE;
         break;
       case 'c':
-        shadow_enable = True;
+        shadow_enable = true;
         break;
       case 'C':
-        cfgtmp.no_dock_shadow = True;
+        cfgtmp.no_dock_shadow = true;
         break;
       case 'G':
-        cfgtmp.no_dnd_shadow = True;
+        cfgtmp.no_dnd_shadow = true;
         break;
       case 'm':
         cfgtmp.menu_opacity = atof(optarg);
         break;
       case 'f':
       case 'F':
-        fading_enable = True;
+        fading_enable = true;
         break;
       case 'S':
-        opts.synchronize = True;
+        ps->o.synchronize = true;
         break;
       case 'r':
-        opts.shadow_radius = atoi(optarg);
+        ps->o.shadow_radius = atoi(optarg);
         break;
       case 'o':
-        opts.shadow_opacity = atof(optarg);
+        ps->o.shadow_opacity = atof(optarg);
         break;
       case 'l':
-        opts.shadow_offset_x = atoi(optarg);
+        ps->o.shadow_offset_x = atoi(optarg);
         break;
       case 't':
-        opts.shadow_offset_y = atoi(optarg);
+        ps->o.shadow_offset_y = atoi(optarg);
         break;
       case 'i':
-        opts.inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
+        ps->o.inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
         break;
       case 'e':
-        opts.frame_opacity = atof(optarg);
+        ps->o.frame_opacity = atof(optarg);
         break;
       case 'z':
-        opts.clear_shadow = True;
+        ps->o.clear_shadow = true;
         break;
       case 'n':
       case 'a':
@@ -4087,7 +3923,7 @@ get_cfg(int argc, char *const *argv) {
           "-n, -a, and -s have been removed.\n");
         break;
       case 'b':
-        opts.fork_after_register = True;
+        ps->o.fork_after_register = true;
         break;
       // Long options
       case 256:
@@ -4095,95 +3931,94 @@ get_cfg(int argc, char *const *argv) {
         break;
       case 257:
         // --shadow-red
-        opts.shadow_red = atof(optarg);
+        ps->o.shadow_red = atof(optarg);
         break;
       case 258:
         // --shadow-green
-        opts.shadow_green = atof(optarg);
+        ps->o.shadow_green = atof(optarg);
         break;
       case 259:
         // --shadow-blue
-        opts.shadow_blue = atof(optarg);
+        ps->o.shadow_blue = atof(optarg);
         break;
       case 260:
         // --inactive-opacity-override
-        opts.inactive_opacity_override = True;
+        ps->o.inactive_opacity_override = true;
         break;
       case 261:
         // --inactive-dim
-        opts.inactive_dim = atof(optarg);
+        ps->o.inactive_dim = atof(optarg);
         break;
       case 262:
         // --mark-wmwin-focused
-        opts.mark_wmwin_focused = True;
+        ps->o.mark_wmwin_focused = true;
         break;
       case 263:
         // --shadow-exclude
-        condlst_add(&opts.shadow_blacklist, optarg);
+        condlst_add(&ps->o.shadow_blacklist, optarg);
         break;
       case 264:
         // --mark-ovredir-focused
-        opts.mark_ovredir_focused = True;
+        ps->o.mark_ovredir_focused = true;
         break;
       case 265:
         // --no-fading-openclose
-        opts.no_fading_openclose = True;
+        ps->o.no_fading_openclose = true;
         break;
       case 266:
         // --shadow-ignore-shaped
-        opts.shadow_ignore_shaped = True;
+        ps->o.shadow_ignore_shaped = true;
         break;
       case 267:
         // --detect-rounded-corners
-        opts.detect_rounded_corners = True;
+        ps->o.detect_rounded_corners = true;
         break;
       case 268:
         // --detect-client-opacity
-        opts.detect_client_opacity = True;
+        ps->o.detect_client_opacity = true;
         break;
       case 269:
         // --refresh-rate
-        opts.refresh_rate = atoi(optarg);
+        ps->o.refresh_rate = atoi(optarg);
         break;
       case 270:
         // --vsync
-        parse_vsync(optarg);
+        parse_vsync(ps, optarg);
         break;
       case 271:
         // --alpha-step
-        opts.alpha_step = atof(optarg);
+        ps->o.alpha_step = atof(optarg);
         break;
       case 272:
         // --dbe
-        opts.dbe = True;
+        ps->o.dbe = true;
         break;
       case 273:
         // --paint-on-overlay
-        opts.paint_on_overlay = True;
+        ps->o.paint_on_overlay = true;
         break;
       case 274:
         // --sw-opti
-        opts.sw_opti = True;
+        ps->o.sw_opti = true;
         break;
       case 275:
         // --vsync-aggressive
-        opts.vsync_aggressive = True;
+        ps->o.vsync_aggressive = true;
         break;
       case 276:
         // --use-ewmh-active-win
-        opts.use_ewmh_active_win = True;
+        ps->o.use_ewmh_active_win = true;
         break;
       case 277:
-        // --respect-attr-shadow
-        opts.respect_attr_shadow = True;
+        // --respect-prop-shadow
+        ps->o.respect_prop_shadow = true;
         break;
       case 278:
         // --unredir-if-possible
-        opts.unredir_if_possible = True;
+        ps->o.unredir_if_possible = true;
         break;
       default:
         usage();
-        break;
     }
   }
 
@@ -4192,88 +4027,91 @@ get_cfg(int argc, char *const *argv) {
   free(lc_numeric_old);
 
   // Range checking and option assignments
-  opts.fade_delta = max_i(opts.fade_delta, 1);
-  opts.shadow_radius = max_i(opts.shadow_radius, 1);
-  opts.shadow_red = normalize_d(opts.shadow_red);
-  opts.shadow_green = normalize_d(opts.shadow_green);
-  opts.shadow_blue = normalize_d(opts.shadow_blue);
-  opts.inactive_dim = normalize_d(opts.inactive_dim);
-  opts.frame_opacity = normalize_d(opts.frame_opacity);
-  opts.shadow_opacity = normalize_d(opts.shadow_opacity);
+  ps->o.fade_delta = max_i(ps->o.fade_delta, 1);
+  ps->o.shadow_radius = max_i(ps->o.shadow_radius, 1);
+  ps->o.shadow_red = normalize_d(ps->o.shadow_red);
+  ps->o.shadow_green = normalize_d(ps->o.shadow_green);
+  ps->o.shadow_blue = normalize_d(ps->o.shadow_blue);
+  ps->o.inactive_dim = normalize_d(ps->o.inactive_dim);
+  ps->o.frame_opacity = normalize_d(ps->o.frame_opacity);
+  ps->o.shadow_opacity = normalize_d(ps->o.shadow_opacity);
   cfgtmp.menu_opacity = normalize_d(cfgtmp.menu_opacity);
-  opts.refresh_rate = normalize_i_range(opts.refresh_rate, 0, 300);
-  opts.alpha_step = normalize_d_range(opts.alpha_step, 0.01, 1.0);
-  if (OPAQUE == opts.inactive_opacity) {
-    opts.inactive_opacity = 0;
+  ps->o.refresh_rate = normalize_i_range(ps->o.refresh_rate, 0, 300);
+  ps->o.alpha_step = normalize_d_range(ps->o.alpha_step, 0.01, 1.0);
+  if (OPAQUE == ps->o.inactive_opacity) {
+    ps->o.inactive_opacity = 0;
   }
   if (shadow_enable)
-    wintype_arr_enable(opts.wintype_shadow);
-  opts.wintype_shadow[WINTYPE_DESKTOP] = False;
+    wintype_arr_enable(ps->o.wintype_shadow);
+  ps->o.wintype_shadow[WINTYPE_DESKTOP] = false;
   if (cfgtmp.no_dock_shadow)
-    opts.wintype_shadow[WINTYPE_DOCK] = False;
+    ps->o.wintype_shadow[WINTYPE_DOCK] = false;
   if (cfgtmp.no_dnd_shadow)
-    opts.wintype_shadow[WINTYPE_DND] = False;
+    ps->o.wintype_shadow[WINTYPE_DND] = false;
   if (fading_enable)
-    wintype_arr_enable(opts.wintype_fade);
+    wintype_arr_enable(ps->o.wintype_fade);
   if (1.0 != cfgtmp.menu_opacity) {
-    opts.wintype_opacity[WINTYPE_DROPDOWN_MENU] = cfgtmp.menu_opacity;
-    opts.wintype_opacity[WINTYPE_POPUP_MENU] = cfgtmp.menu_opacity;
+    ps->o.wintype_opacity[WINTYPE_DROPDOWN_MENU] = cfgtmp.menu_opacity;
+    ps->o.wintype_opacity[WINTYPE_POPUP_MENU] = cfgtmp.menu_opacity;
   }
 
   // Other variables determined by options
 
   // Determine whether we need to track focus changes
-  if (opts.inactive_opacity || opts.inactive_dim) {
-    opts.track_focus = True;
+  if (ps->o.inactive_opacity || ps->o.inactive_dim) {
+    ps->o.track_focus = true;
   }
 
   // Determine whether we need to track window name and class
-  if (opts.shadow_blacklist || opts.fade_blacklist)
-    opts.track_wdata = True;
+  if (ps->o.shadow_blacklist || ps->o.fade_blacklist)
+    ps->o.track_wdata = true;
 }
 
+/**
+ * Fetch all required atoms and save them to a session.
+ */
 static void
-get_atoms(void) {
-  opacity_atom = XInternAtom(dpy, "_NET_WM_WINDOW_OPACITY", False);
-  frame_extents_atom = XInternAtom(dpy, "_NET_FRAME_EXTENTS", False);
-  client_atom = XInternAtom(dpy, "WM_STATE", False);
-  name_atom = XA_WM_NAME;
-  name_ewmh_atom = XInternAtom(dpy, "_NET_WM_NAME", False);
-  class_atom = XA_WM_CLASS;
-  transient_atom = XA_WM_TRANSIENT_FOR;
-  ewmh_active_win_atom = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
-  compton_shadow_atom = XInternAtom(dpy, "_COMPTON_SHADOW", False);
+init_atoms(session_t *ps) {
+  ps->atom_opacity = XInternAtom(ps->dpy, "_NET_WM_WINDOW_OPACITY", False);
+  ps->atom_frame_extents = XInternAtom(ps->dpy, "_NET_FRAME_EXTENTS", False);
+  ps->atom_client = XInternAtom(ps->dpy, "WM_STATE", False);
+  ps->atom_name = XA_WM_NAME;
+  ps->atom_name_ewmh = XInternAtom(ps->dpy, "_NET_WM_NAME", False);
+  ps->atom_class = XA_WM_CLASS;
+  ps->atom_transient = XA_WM_TRANSIENT_FOR;
+  ps->atom_ewmh_active_win = XInternAtom(ps->dpy, "_NET_ACTIVE_WINDOW", False);
+  ps->atom_compton_shadow = XInternAtom(ps->dpy, "_COMPTON_SHADOW", False);
 
-  win_type_atom = XInternAtom(dpy,
+  ps->atom_win_type = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE", False);
-  win_type[WINTYPE_UNKNOWN] = 0;
-  win_type[WINTYPE_DESKTOP] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_UNKNOWN] = 0;
+  ps->atoms_wintypes[WINTYPE_DESKTOP] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_DESKTOP", False);
-  win_type[WINTYPE_DOCK] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_DOCK] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_DOCK", False);
-  win_type[WINTYPE_TOOLBAR] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_TOOLBAR] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
-  win_type[WINTYPE_MENU] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_MENU] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_MENU", False);
-  win_type[WINTYPE_UTILITY] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_UTILITY] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_UTILITY", False);
-  win_type[WINTYPE_SPLASH] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_SPLASH] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_SPLASH", False);
-  win_type[WINTYPE_DIALOG] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_DIALOG] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_DIALOG", False);
-  win_type[WINTYPE_NORMAL] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_NORMAL] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_NORMAL", False);
-  win_type[WINTYPE_DROPDOWN_MENU] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_DROPDOWN_MENU] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU", False);
-  win_type[WINTYPE_POPUP_MENU] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_POPUP_MENU] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
-  win_type[WINTYPE_TOOLTIP] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_TOOLTIP] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_TOOLTIP", False);
-  win_type[WINTYPE_NOTIFY] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_NOTIFY] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
-  win_type[WINTYPE_COMBO] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_COMBO] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_COMBO", False);
-  win_type[WINTYPE_DND] = XInternAtom(dpy,
+  ps->atoms_wintypes[WINTYPE_DND] = XInternAtom(ps->dpy,
     "_NET_WM_WINDOW_TYPE_DND", False);
 }
 
@@ -4281,49 +4119,49 @@ get_atoms(void) {
  * Update refresh rate info with X Randr extension.
  */
 static void
-update_refresh_rate(Display *dpy) {
+update_refresh_rate(session_t *ps) {
   XRRScreenConfiguration* randr_info;
 
-  if (!(randr_info = XRRGetScreenInfo(dpy, root)))
+  if (!(randr_info = XRRGetScreenInfo(ps->dpy, ps->root)))
     return;
-  refresh_rate = XRRConfigCurrentRate(randr_info);
+  ps->refresh_rate = XRRConfigCurrentRate(randr_info);
 
   XRRFreeScreenConfigInfo(randr_info);
 
-  if (refresh_rate)
-    refresh_intv = NS_PER_SEC / refresh_rate;
+  if (ps->refresh_rate)
+    ps->refresh_intv = NS_PER_SEC / ps->refresh_rate;
   else
-    refresh_intv = 0;
+    ps->refresh_intv = 0;
 }
 
 /**
  * Initialize refresh-rated based software optimization.
  *
- * @return True for success, False otherwise
+ * @return true for success, false otherwise
  */
-static Bool
-sw_opti_init(void) {
+static bool
+sw_opti_init(session_t *ps) {
   // Prepare refresh rate
   // Check if user provides one
-  refresh_rate = opts.refresh_rate;
-  if (refresh_rate)
-    refresh_intv = NS_PER_SEC / refresh_rate;
+  ps->refresh_rate = ps->o.refresh_rate;
+  if (ps->refresh_rate)
+    ps->refresh_intv = NS_PER_SEC / ps->refresh_rate;
 
   // Auto-detect refresh rate otherwise
-  if (!refresh_rate && randr_exists) {
-    update_refresh_rate(dpy);
+  if (!ps->refresh_rate && ps->randr_exists) {
+    update_refresh_rate(ps);
   }
 
   // Turn off vsync_sw if we can't get the refresh rate
-  if (!refresh_rate)
-    return False;
+  if (!ps->refresh_rate)
+    return false;
 
   // Monitor screen changes only if vsync_sw is enabled and we are using
   // an auto-detected refresh rate
-  if (randr_exists && !opts.refresh_rate)
-    XRRSelectInput(dpy, root, RRScreenChangeNotify);
+  if (ps->randr_exists && !ps->o.refresh_rate)
+    XRRSelectInput(ps->dpy, ps->root, RRScreenChangeNotify);
 
-  return True;
+  return true;
 }
 
 /**
@@ -4353,18 +4191,23 @@ lceil_ntimes(long dividend, long divisor) {
  *     problems
  */
 static int
-evpoll(struct pollfd *fd, int timeout) {
+evpoll(session_t *ps, int timeout) {
+  struct pollfd ufd = {
+    .fd = ConnectionNumber(ps->dpy),
+    .events = POLLIN
+  };
+
   // Always wait infinitely if asked so, to minimize CPU usage
   if (timeout < 0) {
-    int ret = poll(fd, 1, timeout);
-    // Reset fade_time so the fading steps during idling are not counted
-    fade_time = get_time_ms();
+    int ret = poll(&ufd, 1, timeout);
+    // Reset ps->fade_time so the fading steps during idling are not counted
+    ps->fade_time = get_time_ms();
     return ret;
   }
 
   // Just do a poll() if we are not using optimization
-  if (!opts.sw_opti)
-    return poll(fd, 1, timeout);
+  if (!ps->o.sw_opti)
+    return poll(&ufd, 1, timeout);
 
   // Convert the old timeout to struct timespec
   struct timespec next_paint_tmout = {
@@ -4374,7 +4217,7 @@ evpoll(struct pollfd *fd, int timeout) {
 
   // Get the nanosecond offset of the time when the we reach the timeout
   // I don't think a 32-bit long could overflow here.
-  long target_relative_offset = (next_paint_tmout.tv_nsec + get_time_timespec().tv_nsec - paint_tm_offset) % NS_PER_SEC;
+  long target_relative_offset = (next_paint_tmout.tv_nsec + get_time_timespec().tv_nsec - ps->paint_tm_offset) % NS_PER_SEC;
   if (target_relative_offset < 0)
     target_relative_offset += NS_PER_SEC;
 
@@ -4383,39 +4226,39 @@ evpoll(struct pollfd *fd, int timeout) {
   // If the target time is sufficiently close to a refresh time, don't add
   // an offset, to avoid certain blocking conditions.
   if ((target_relative_offset % NS_PER_SEC) < SW_OPTI_TOLERANCE)
-    return poll(fd, 1, timeout);
+    return poll(&ufd, 1, timeout);
 
   // Add an offset so we wait until the next refresh after timeout
-  next_paint_tmout.tv_nsec += lceil_ntimes(target_relative_offset, refresh_intv) - target_relative_offset;
+  next_paint_tmout.tv_nsec += lceil_ntimes(target_relative_offset, ps->refresh_intv) - target_relative_offset;
   if (next_paint_tmout.tv_nsec > NS_PER_SEC) {
     next_paint_tmout.tv_nsec -= NS_PER_SEC;
     ++next_paint_tmout.tv_sec;
   }
 
-  return ppoll(fd, 1, &next_paint_tmout, NULL);
+  return ppoll(&ufd, 1, &next_paint_tmout, NULL);
 }
 
 /**
  * Initialize DRM VSync.
  *
- * @return True for success, False otherwise
+ * @return true for success, false otherwise
  */
-static Bool
-vsync_drm_init(void) {
+static bool
+vsync_drm_init(session_t *ps) {
 #ifdef CONFIG_VSYNC_DRM
   // Should we always open card0?
-  if ((drm_fd = open("/dev/dri/card0", O_RDWR)) < 0) {
+  if ((ps->drm_fd = open("/dev/dri/card0", O_RDWR)) < 0) {
     fprintf(stderr, "vsync_drm_init(): Failed to open device.\n");
-    return False;
+    return false;
   }
 
-  if (vsync_drm_wait())
-    return False;
+  if (vsync_drm_wait(ps))
+    return false;
 
-  return True;
+  return true;
 #else
   fprintf(stderr, "Program not compiled with DRM VSync support.\n");
-  return False;
+  return false;
 #endif
 }
 
@@ -4426,7 +4269,7 @@ vsync_drm_init(void) {
  * Stolen from: https://github.com/MythTV/mythtv/blob/master/mythtv/libs/libmythtv/vsync.cpp
  */
 static int
-vsync_drm_wait(void) {
+vsync_drm_wait(session_t *ps) {
   int ret = -1;
   drm_wait_vblank_t vbl;
 
@@ -4434,7 +4277,7 @@ vsync_drm_wait(void) {
   vbl.request.sequence = 1;
 
   do {
-     ret = ioctl(drm_fd, DRM_IOCTL_WAIT_VBLANK, &vbl);
+     ret = ioctl(ps->drm_fd, DRM_IOCTL_WAIT_VBLANK, &vbl);
      vbl.request.type &= ~_DRM_VBLANK_RELATIVE;
   } while (ret && errno == EINTR);
 
@@ -4443,7 +4286,7 @@ vsync_drm_wait(void) {
         "unimplemented in this drmver?\n");
 
   return ret;
-  
+
 }
 #endif
 
@@ -4453,26 +4296,26 @@ vsync_drm_wait(void) {
  * Stolen from: http://git.tuxfamily.org/?p=ccm/cairocompmgr.git;a=commitdiff;h=efa4ceb97da501e8630ca7f12c99b1dce853c73e
  * Possible original source: http://www.inb.uni-luebeck.de/~boehme/xvideo_sync.html
  *
- * @return True for success, False otherwise
+ * @return true for success, false otherwise
  */
-static Bool
-vsync_opengl_init(void) {
+static bool
+vsync_opengl_init(session_t *ps) {
 #ifdef CONFIG_VSYNC_OPENGL
   // Get video sync functions
-  glx_get_video_sync = (f_GetVideoSync)
+  ps->glx_get_video_sync = (f_GetVideoSync)
     glXGetProcAddress ((const GLubyte *) "glXGetVideoSyncSGI");
-  glx_wait_video_sync = (f_WaitVideoSync)
+  ps->glx_wait_video_sync = (f_WaitVideoSync)
     glXGetProcAddress ((const GLubyte *) "glXWaitVideoSyncSGI");
-  if (!glx_wait_video_sync || !glx_get_video_sync) {
+  if (!ps->glx_wait_video_sync || !ps->glx_get_video_sync) {
     fprintf(stderr, "vsync_opengl_init(): "
         "Failed to get glXWait/GetVideoSyncSGI function.\n");
-    return False;
+    return false;
   }
-  
-  return True;
+
+  return true;
 #else
   fprintf(stderr, "Program not compiled with OpenGL VSync support.\n");
-  return False;
+  return false;
 #endif
 }
 
@@ -4481,11 +4324,11 @@ vsync_opengl_init(void) {
  * Wait for next VSync, OpenGL method.
  */
 static void
-vsync_opengl_wait(void) {
+vsync_opengl_wait(session_t *ps) {
   unsigned vblank_count;
 
-  glx_get_video_sync(&vblank_count);
-  glx_wait_video_sync(2, (vblank_count + 1) % 2, &vblank_count);
+  ps->glx_get_video_sync(&vblank_count);
+  ps->glx_wait_video_sync(2, (vblank_count + 1) % 2, &vblank_count);
   // I see some code calling glXSwapIntervalSGI(1) afterwards, is it required?
 }
 #endif
@@ -4494,20 +4337,20 @@ vsync_opengl_wait(void) {
  * Wait for next VSync.
  */
 static void
-vsync_wait(void) {
-  if (VSYNC_NONE == opts.vsync)
+vsync_wait(session_t *ps) {
+  if (VSYNC_NONE == ps->o.vsync)
     return;
 
 #ifdef CONFIG_VSYNC_DRM
-  if (VSYNC_DRM == opts.vsync) {
-    vsync_drm_wait();
+  if (VSYNC_DRM == ps->o.vsync) {
+    vsync_drm_wait(ps);
     return;
   }
 #endif
 
 #ifdef CONFIG_VSYNC_OPENGL
-  if (VSYNC_OPENGL == opts.vsync) {
-    vsync_opengl_wait();
+  if (VSYNC_OPENGL == ps->o.vsync) {
+    vsync_opengl_wait(ps);
     return;
   }
 #endif
@@ -4522,18 +4365,18 @@ vsync_wait(void) {
  * Pregenerate alpha pictures.
  */
 static void
-init_alpha_picts(Display *dpy) {
+init_alpha_picts(session_t *ps) {
   int i;
-  int num = lround(1.0 / opts.alpha_step) + 1;
+  int num = lround(1.0 / ps->o.alpha_step) + 1;
 
-  alpha_picts = malloc(sizeof(Picture) * num);
+  ps->alpha_picts = malloc(sizeof(Picture) * num);
 
   for (i = 0; i < num; ++i) {
-    double o = i * opts.alpha_step;
-    if ((1.0 - o) > opts.alpha_step)
-      alpha_picts[i] = solid_picture(dpy, False, o, 0, 0, 0);
+    double o = i * ps->o.alpha_step;
+    if ((1.0 - o) > ps->o.alpha_step)
+      ps->alpha_picts[i] = solid_picture(ps, false, o, 0, 0, 0);
     else
-      alpha_picts[i] = None;
+      ps->alpha_picts[i] = None;
   }
 }
 
@@ -4541,12 +4384,12 @@ init_alpha_picts(Display *dpy) {
  * Initialize double buffer.
  */
 static void
-init_dbe(void) {
-  if (!(root_dbe = XdbeAllocateBackBufferName(dpy,
-          (opts.paint_on_overlay ? overlay: root), XdbeCopied))) {
+init_dbe(session_t *ps) {
+  if (!(ps->root_dbe = XdbeAllocateBackBufferName(ps->dpy,
+          (ps->o.paint_on_overlay ? ps->overlay: ps->root), XdbeCopied))) {
     fprintf(stderr, "Failed to create double buffer. Double buffering "
         "turned off.\n");
-    opts.dbe = False;
+    ps->o.dbe = false;
     return;
   }
 }
@@ -4555,27 +4398,27 @@ init_dbe(void) {
  * Initialize X composite overlay window.
  */
 static void
-init_overlay(void) {
-  overlay = XCompositeGetOverlayWindow(dpy, root);
-  if (overlay) {
+init_overlay(session_t *ps) {
+  ps->overlay = XCompositeGetOverlayWindow(ps->dpy, ps->root);
+  if (ps->overlay) {
     // Set window region of the overlay window, code stolen from
     // compiz-0.8.8
-    XserverRegion region = XFixesCreateRegion (dpy, NULL, 0);
-    XFixesSetWindowShapeRegion(dpy, overlay, ShapeBounding, 0, 0, 0);
-    XFixesSetWindowShapeRegion(dpy, overlay, ShapeInput, 0, 0, region);
-    XFixesDestroyRegion (dpy, region);
+    XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
+    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeBounding, 0, 0, 0);
+    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeInput, 0, 0, region);
+    XFixesDestroyRegion(ps->dpy, region);
 
     // Listen to Expose events on the overlay
-    XSelectInput(dpy, overlay, ExposureMask);
+    XSelectInput(ps->dpy, ps->overlay, ExposureMask);
 
     // Retrieve DamageNotify on root window if we are painting on an
     // overlay
-    // root_damage = XDamageCreate(dpy, root, XDamageReportNonEmpty);
+    // root_damage = XDamageCreate(ps->dpy, root, XDamageReportNonEmpty);
   }
   else {
     fprintf(stderr, "Cannot get X Composite overlay window. Falling "
         "back to painting on root window.\n");
-    opts.paint_on_overlay = False;
+    ps->o.paint_on_overlay = false;
   }
 }
 
@@ -4583,23 +4426,23 @@ init_overlay(void) {
  * Redirect all windows.
  */
 static void
-redir_start(Display *dpy) {
-  if (!redirected) {
+redir_start(session_t *ps) {
+  if (!ps->redirected) {
 #ifdef DEBUG_REDIR
     printf("redir_start(): Screen redirected.\n");
 #endif
 
     // Map overlay window. Done firstly according to this:
     // https://bugzilla.gnome.org/show_bug.cgi?id=597014
-    if (overlay)
-      XMapWindow(dpy, overlay);
+    if (ps->overlay)
+      XMapWindow(ps->dpy, ps->overlay);
 
-    XCompositeRedirectSubwindows(dpy, root, CompositeRedirectManual);
+    XCompositeRedirectSubwindows(ps->dpy, ps->root, CompositeRedirectManual);
 
     // Must call XSync() here
-    XSync(dpy, False);
+    XSync(ps->dpy, False);
 
-    redirected = True;
+    ps->redirected = true;
   }
 }
 
@@ -4607,103 +4450,252 @@ redir_start(Display *dpy) {
  * Unredirect all windows.
  */
 static void
-redir_stop(Display *dpy) {
-  if (redirected) {
+redir_stop(session_t *ps) {
+  if (ps->redirected) {
 #ifdef DEBUG_REDIR
     printf("redir_stop(): Screen unredirected.\n");
 #endif
     // Destroy all Pictures as they expire once windows are unredirected
     // If we don't destroy them here, looks like the resources are just
     // kept inaccessible somehow
-    for (win *w = list; w; w = w->next) {
-      free_pixmap(dpy, &w->pixmap);
-      free_picture(dpy, &w->picture);
+    for (win *w = ps->list; w; w = w->next) {
+      free_pixmap(ps, &w->pixmap);
+      free_picture(ps, &w->picture);
     }
 
-    XCompositeUnredirectSubwindows(dpy, root, CompositeRedirectManual);
-
+    XCompositeUnredirectSubwindows(ps->dpy, ps->root, CompositeRedirectManual);
     // Unmap overlay window
-    if (overlay)
-      XUnmapWindow(dpy, overlay);
+    if (ps->overlay)
+      XUnmapWindow(ps->dpy, ps->overlay);
 
     // Must call XSync() here
-    XSync(dpy, False);
+    XSync(ps->dpy, False);
 
-    redirected = False;
-
+    ps->redirected = false;
   }
 }
 
-int
-main(int argc, char **argv) {
-  XEvent ev;
-  Window root_return, parent_return;
-  Window *children;
-  unsigned int nchildren;
+/**
+ * Initialize a session.
+ *
+ * @param ps_old old session, from which the function will take the X
+ *    connection, then free it
+ * @param argc number of commandline arguments
+ * @param argv commandline arguments
+ */
+static session_t *
+session_init(session_t *ps_old, int argc, char **argv) {
+  const static session_t s_def = {
+    .dpy = NULL,
+    .scr = 0,
+    .vis = NULL,
+    .depth = 0,
+    .root = None,
+    .root_height = 0,
+    .root_width = 0,
+    // .root_damage = None,
+    .overlay = None,
+    .root_tile = None,
+    .screen_reg = None,
+    .tgt_picture = None,
+    .tgt_buffer = None,
+    .root_dbe = None,
+    .reg_win = None,
+    .o = {
+      .display = NULL,
+      .mark_wmwin_focused = false,
+      .mark_ovredir_focused = false,
+      .fork_after_register = false,
+      .synchronize = false,
+      .detect_rounded_corners = false,
+      .paint_on_overlay = false,
+      .unredir_if_possible = false,
+
+      .refresh_rate = 0,
+      .sw_opti = false,
+      .vsync = VSYNC_NONE,
+      .dbe = false,
+      .vsync_aggressive = false,
+
+      .wintype_shadow = { false },
+      .shadow_red = 0.0,
+      .shadow_green = 0.0,
+      .shadow_blue = 0.0,
+      .shadow_radius = 12,
+      .shadow_offset_x = -15,
+      .shadow_offset_y = -15,
+      .shadow_opacity = .75,
+      .clear_shadow = false,
+      .shadow_blacklist = NULL,
+      .shadow_ignore_shaped = false,
+      .respect_prop_shadow = false,
+
+      .wintype_fade = { false },
+      .fade_in_step = 0.028 * OPAQUE,
+      .fade_out_step = 0.03 * OPAQUE,
+      .fade_delta = 10,
+      .no_fading_openclose = false,
+      .fade_blacklist = NULL,
+
+      .wintype_opacity = { 0.0 },
+      .inactive_opacity = 0,
+      .inactive_opacity_override = false,
+      .frame_opacity = 0.0,
+      .detect_client_opacity = false,
+      .inactive_dim = 0.0,
+      .alpha_step = 0.03,
+      .use_ewmh_active_win = false,
+
+      .track_focus = false,
+      .track_wdata = false,
+    },
+
+    .all_damage = None,
+    .time_start = { 0, 0 },
+    .redirected = false,
+    .unredir_possible = false,
+    .alpha_picts = NULL,
+    .reg_ignore_expire = false,
+    .idling = false,
+    .fade_time = 0,
+    .ignore_head = NULL,
+    .ignore_tail = NULL,
+    .reset = false,
+
+    .expose_rects = NULL,
+    .size_expose = 0,
+    .n_expose = 0,
+
+    .list = NULL,
+    .active_win = NULL,
+    .black_picture = None,
+    .dim_picture = None,
+    .cshadow_picture = None,
+    .gaussian_map = NULL,
+    .cgsize = 0,
+    .shadow_corner = NULL,
+    .shadow_top = NULL,
+
+    .refresh_rate = 0,
+    .refresh_intv = 0UL,
+    .paint_tm_offset = 0L,
+
+    .drm_fd = 0,
+
+    .glx_context = None,
+    .glx_get_video_sync = NULL,
+    .glx_wait_video_sync = NULL,
+
+    .xfixes_event = 0,
+    .xfixes_error = 0,
+    .damage_event = 0,
+    .damage_error = 0,
+    .render_event = 0,
+    .render_error = 0,
+    .composite_event = 0,
+    .composite_error = 0,
+    .composite_opcode = 0,
+    .has_name_pixmap = false,
+    .shape_exists = false,
+    .shape_event = 0,
+    .shape_error = 0,
+    .randr_exists = 0,
+    .randr_event = 0,
+    .randr_error = 0,
+    .glx_exists = false,
+    .glx_event = 0,
+    .glx_error = 0,
+    .dbe_exists = false,
+
+    .atom_opacity = None,
+    .atom_frame_extents = None,
+    .atom_client = None,
+    .atom_name = None,
+    .atom_name_ewmh = None,
+    .atom_class = None,
+    .atom_transient = None,
+    .atom_ewmh_active_win = None,
+    .atom_compton_shadow = None,
+    .atom_win_type = None,
+    .atoms_wintypes = { 0 }
+  };
+
   int i;
-  XRenderPictureAttributes pa;
-  struct pollfd ufd;
-  int composite_major, composite_minor;
-  win *t;
 
-  gettimeofday(&time_start, NULL);
+  // Allocate a session and copy default values into it
+  session_t *ps = malloc(sizeof(session_t));
+  memcpy(ps, &s_def, sizeof(session_t));
+  ps_g = ps;
+  ps->ignore_tail = &ps->ignore_head;
+  gettimeofday(&ps->time_start, NULL);
 
-  // Set locale so window names with special characters are interpreted
-  // correctly
-  setlocale (LC_ALL, "");
+  get_cfg(ps, argc, argv);
 
-  get_cfg(argc, argv);
+  // Inherit old Display if possible, primarily for resource leak checking
+  if (ps_old && ps_old->dpy)
+    ps->dpy = ps_old->dpy;
 
-  dpy = XOpenDisplay(opts.display);
-  if (!dpy) {
-    fprintf(stderr, "Can't open display\n");
-    exit(1);
+  // Open Display
+  if (!ps->dpy) {
+    ps->dpy = XOpenDisplay(ps->o.display);
+    if (!ps->dpy) {
+      fprintf(stderr, "Can't open display\n");
+      exit(1);
+    }
   }
 
   XSetErrorHandler(error);
-  if (opts.synchronize) {
-    XSynchronize(dpy, 1);
+  if (ps->o.synchronize) {
+    XSynchronize(ps->dpy, 1);
   }
 
-  scr = DefaultScreen(dpy);
-  root = RootWindow(dpy, scr);
+  ps->scr = DefaultScreen(ps->dpy);
+  ps->root = RootWindow(ps->dpy, ps->scr);
 
-  if (!XRenderQueryExtension(dpy, &render_event, &render_error)) {
+  ps->vis = DefaultVisual(ps->dpy, ps->scr);
+  ps->depth = DefaultDepth(ps->dpy, ps->scr);
+
+  if (!XRenderQueryExtension(ps->dpy,
+        &ps->render_event, &ps->render_error)) {
     fprintf(stderr, "No render extension\n");
     exit(1);
   }
 
-  if (!XQueryExtension(dpy, COMPOSITE_NAME, &composite_opcode,
-                       &composite_event, &composite_error)) {
+  if (!XQueryExtension(ps->dpy, COMPOSITE_NAME, &ps->composite_opcode,
+        &ps->composite_event, &ps->composite_error)) {
     fprintf(stderr, "No composite extension\n");
     exit(1);
   }
 
-  XCompositeQueryVersion(dpy, &composite_major, &composite_minor);
+  {
+    int composite_major = 0, composite_minor = 0;
 
-  if (composite_major > 0 || composite_minor >= 2) {
-    has_name_pixmap = True;
+    XCompositeQueryVersion(ps->dpy, &composite_major, &composite_minor);
+
+    if (composite_major > 0 || composite_minor >= 2) {
+      ps->has_name_pixmap = true;
+    }
   }
 
-  if (!XDamageQueryExtension(dpy, &damage_event, &damage_error)) {
+  if (!XDamageQueryExtension(ps->dpy, &ps->damage_event, &ps->damage_error)) {
     fprintf(stderr, "No damage extension\n");
     exit(1);
   }
 
-  if (!XFixesQueryExtension(dpy, &xfixes_event, &xfixes_error)) {
+  if (!XFixesQueryExtension(ps->dpy, &ps->xfixes_event, &ps->xfixes_error)) {
     fprintf(stderr, "No XFixes extension\n");
     exit(1);
   }
 
   // Query X Shape
-  if (XShapeQueryExtension(dpy, &shape_event, &shape_error)) {
-    shape_exists = True;
+  if (XShapeQueryExtension(ps->dpy, &ps->shape_event, &ps->shape_error)) {
+    ps->shape_exists = true;
   }
 
   // Query X RandR
-  if (opts.sw_opti && !opts.refresh_rate) {
-    if (XRRQueryExtension(dpy, &randr_event, &randr_error))
-      randr_exists = True;
+  if (ps->o.sw_opti && !ps->o.refresh_rate) {
+    if (XRRQueryExtension(ps->dpy, &ps->randr_event, &ps->randr_error))
+      ps->randr_exists = true;
     else
       fprintf(stderr, "No XRandR extension, automatic refresh rate "
           "detection impossible.\n");
@@ -4711,170 +4703,368 @@ main(int argc, char **argv) {
 
 #ifdef CONFIG_VSYNC_OPENGL
   // Query X GLX extension
-  if (VSYNC_OPENGL == opts.vsync) {
-    if (glXQueryExtension(dpy, &glx_event, &glx_error))
-      glx_exists = True;
+  if (VSYNC_OPENGL == ps->o.vsync) {
+    if (glXQueryExtension(ps->dpy, &ps->glx_event, &ps->glx_error))
+      ps->glx_exists = true;
     else {
       fprintf(stderr, "No GLX extension, OpenGL VSync impossible.\n");
-      opts.vsync = VSYNC_NONE;
+      ps->o.vsync = VSYNC_NONE;
     }
   }
 #endif
 
   // Query X DBE extension
-  if (opts.dbe) {
+  if (ps->o.dbe) {
     int dbe_ver_major = 0, dbe_ver_minor = 0;
-    if (XdbeQueryExtension(dpy, &dbe_ver_major, &dbe_ver_minor))
+    if (XdbeQueryExtension(ps->dpy, &dbe_ver_major, &dbe_ver_minor))
       if (dbe_ver_major >= 1)
-        dbe_exists = True;
+        ps->dbe_exists = true;
       else
         fprintf(stderr, "DBE extension version too low. Double buffering "
             "impossible.\n");
     else {
       fprintf(stderr, "No DBE extension. Double buffering impossible.\n");
     }
-    if (!dbe_exists)
-      opts.dbe = False;
+    if (!ps->dbe_exists)
+      ps->o.dbe = false;
   }
 
-  register_cm((VSYNC_OPENGL == opts.vsync));
+  register_cm(ps, (VSYNC_OPENGL == ps->o.vsync));
 
   // Initialize software optimization
-  if (opts.sw_opti)
-    opts.sw_opti = sw_opti_init();
+  if (ps->o.sw_opti)
+    ps->o.sw_opti = sw_opti_init(ps);
 
   // Initialize DRM/OpenGL VSync
-  if ((VSYNC_DRM == opts.vsync && !vsync_drm_init())
-      || (VSYNC_OPENGL == opts.vsync && !vsync_opengl_init()))
-    opts.vsync = VSYNC_NONE;
+  if ((VSYNC_DRM == ps->o.vsync && !vsync_drm_init(ps))
+      || (VSYNC_OPENGL == ps->o.vsync && !vsync_opengl_init(ps)))
+    ps->o.vsync = VSYNC_NONE;
 
   // Overlay must be initialized before double buffer
-  if (opts.paint_on_overlay)
-    init_overlay();
+  if (ps->o.paint_on_overlay)
+    init_overlay(ps);
 
-  if (opts.dbe)
-    init_dbe();
+  if (ps->o.dbe)
+    init_dbe(ps);
 
-  if (opts.fork_after_register) fork_after();
+  if (ps->o.fork_after_register) fork_after();
 
-  get_atoms();
-  init_alpha_picts(dpy);
+  init_atoms(ps);
+  init_alpha_picts(ps);
 
-  pa.subwindow_mode = IncludeInferiors;
+  ps->gaussian_map = make_gaussian_map(ps->o.shadow_radius);
+  presum_gaussian(ps, ps->gaussian_map);
 
-  gaussian_map = make_gaussian_map(dpy, opts.shadow_radius);
-  presum_gaussian(gaussian_map);
+  ps->root_width = DisplayWidth(ps->dpy, ps->scr);
+  ps->root_height = DisplayHeight(ps->dpy, ps->scr);
 
-  root_width = DisplayWidth(dpy, scr);
-  root_height = DisplayHeight(dpy, scr);
+  rebuild_screen_reg(ps);
 
-  rebuild_screen_reg(dpy);
+  {
+    XRenderPictureAttributes pa;
+    pa.subwindow_mode = IncludeInferiors;
 
-  root_picture = XRenderCreatePicture(dpy, root,
-      XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
-      CPSubwindowMode, &pa);
-  if (opts.paint_on_overlay) {
-    tgt_picture = XRenderCreatePicture(dpy, overlay,
-        XRenderFindVisualFormat(dpy, DefaultVisual(dpy, scr)),
+    ps->root_picture = XRenderCreatePicture(ps->dpy, ps->root,
+        XRenderFindVisualFormat(ps->dpy, ps->vis),
         CPSubwindowMode, &pa);
-  }
-  else {
-    tgt_picture = root_picture;
+    if (ps->o.paint_on_overlay) {
+      ps->tgt_picture = XRenderCreatePicture(ps->dpy, ps->overlay,
+          XRenderFindVisualFormat(ps->dpy, ps->vis),
+          CPSubwindowMode, &pa);
+    }
+    else {
+      ps->tgt_picture = ps->root_picture;
+    }
   }
 
-  black_picture = solid_picture(dpy, True, 1, 0, 0, 0);
+  ps->black_picture = solid_picture(ps, true, 1, 0, 0, 0);
 
   // Generates another Picture for shadows if the color is modified by
   // user
-  if (!opts.shadow_red && !opts.shadow_green && !opts.shadow_blue) {
-    cshadow_picture = black_picture;
+  if (!ps->o.shadow_red && !ps->o.shadow_green && !ps->o.shadow_blue) {
+    ps->cshadow_picture = ps->black_picture;
   } else {
-    cshadow_picture = solid_picture(dpy, True, 1,
-        opts.shadow_red, opts.shadow_green, opts.shadow_blue);
+    ps->cshadow_picture = solid_picture(ps, true, 1,
+        ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue);
   }
 
   // Generates a picture for inactive_dim
-  if (opts.inactive_dim) {
-    dim_picture = solid_picture(dpy, True, opts.inactive_dim, 0, 0, 0);
+  if (ps->o.inactive_dim) {
+    ps->dim_picture = solid_picture(ps, true, ps->o.inactive_dim, 0, 0, 0);
   }
 
-  all_damage = None;
-  XGrabServer(dpy);
+  ps->all_damage = None;
+  XGrabServer(ps->dpy);
 
-  redir_start(dpy);
+  redir_start(ps);
 
-  XSelectInput(dpy, root,
+  XSelectInput(ps->dpy, ps->root,
     SubstructureNotifyMask
     | ExposureMask
     | StructureNotifyMask
     | PropertyChangeMask);
 
-  XQueryTree(dpy, root, &root_return,
-    &parent_return, &children, &nchildren);
+  {
+    Window root_return, parent_return;
+    Window *children;
+    unsigned int nchildren;
 
-  for (i = 0; i < nchildren; i++) {
-    add_win(dpy, children[i], i ? children[i-1] : None, False);
+    XQueryTree(ps->dpy, ps->root, &root_return,
+      &parent_return, &children, &nchildren);
+
+    for (i = 0; i < nchildren; i++) {
+      add_win(ps, children[i], i ? children[i-1] : None, false);
+    }
+
+    XFree(children);
   }
 
-  XFree(children);
 
-  if (opts.track_focus) {
-    recheck_focus(dpy);
+  if (ps->o.track_focus) {
+    recheck_focus(ps);
   }
 
-  XUngrabServer(dpy);
+  XUngrabServer(ps->dpy);
 
-  ufd.fd = ConnectionNumber(dpy);
-  ufd.events = POLLIN;
+  // Free the old session
+  if (ps_old)
+    free(ps_old);
 
-  if (opts.sw_opti)
-    paint_tm_offset = get_time_timespec().tv_nsec;
+  return ps;
+}
 
-  reg_ignore_expire = True;
+/**
+ * Destroy a session.
+ *
+ * Does not close the X connection or free the <code>session_t</code>
+ * structure, though.
+ *
+ * @param ps session to destroy
+ */
+static void
+session_destroy(session_t *ps) {
+  redir_stop(ps);
 
-  fade_time = get_time_ms();
+  // Stop listening to events on root window
+  XSelectInput(ps->dpy, ps->root, 0);
 
-  t = paint_preprocess(dpy, list);
+  // Free window linked list
+  {
+    win *next = NULL;
+    for (win *w = ps->list; w; w = next) {
+      // Must be put here to avoid segfault
+      next = w->next;
 
-  if (redirected)
-    paint_all(dpy, None, t);
+      if (IsViewable == w->a.map_state && !w->destroyed)
+        win_ev_stop(ps, w);
+
+      free_win_res(ps, w);
+      free(w);
+    }
+
+    ps->list = NULL;
+  }
+
+  // Free alpha_picts
+  {
+    const int max = lround(1.0 / ps->o.alpha_step) + 1;
+    for (int i = 0; i < max; ++i)
+      free_picture(ps, &ps->alpha_picts[i]);
+    free(ps->alpha_picts);
+    ps->alpha_picts = NULL;
+  }
+
+  // Free blacklists
+  free_wincondlst(&ps->o.shadow_blacklist);
+  free_wincondlst(&ps->o.fade_blacklist);
+
+  // Free ignore linked list
+  {
+    ignore_t *next = NULL;
+    for (ignore_t *ign = ps->ignore_head; ign; ign = next) {
+      next = ign->next;
+
+      free(ign);
+    }
+
+    // Reset head and tail
+    ps->ignore_head = NULL;
+    ps->ignore_tail = &ps->ignore_head;
+  }
+
+  // Free cshadow_picture and black_picture
+  if (ps->cshadow_picture == ps->black_picture)
+    ps->cshadow_picture = None;
+  else
+    free_picture(ps, &ps->cshadow_picture);
+
+  free_picture(ps, &ps->black_picture);
+
+  // Free tgt_{buffer,picture} and root_picture
+  if (ps->tgt_buffer == ps->tgt_picture)
+    ps->tgt_buffer = None;
+  else
+    free_picture(ps, &ps->tgt_buffer);
+
+  if (ps->tgt_picture == ps->root_picture)
+    ps->tgt_picture = None;
+  else
+    free_picture(ps, &ps->tgt_picture);
+
+  free_picture(ps, &ps->root_picture);
+
+  // Free other X resources
+  free_picture(ps, &ps->dim_picture);
+  free_picture(ps, &ps->root_tile);
+  free_region(ps, &ps->screen_reg);
+  free_region(ps, &ps->all_damage);
+  free(ps->expose_rects);
+  free(ps->shadow_corner);
+  free(ps->shadow_top);
+  free(ps->gaussian_map);
+  free(ps->o.display);
+
+  // Free reg_win and glx_context
+  if (ps->reg_win) {
+    XDestroyWindow(ps->dpy, ps->reg_win);
+    ps->reg_win = None;
+  }
+  if (ps->glx_context) {
+    glXDestroyContext(ps->dpy, ps->glx_context);
+    ps->glx_context = None;
+  }
+
+  // Free double buffer
+  if (ps->root_dbe) {
+    XdbeDeallocateBackBufferName(ps->dpy, ps->root_dbe);
+    ps->root_dbe = None;
+  }
+
+  // Close file opened for DRM VSync
+  if (ps->drm_fd) {
+    close(ps->drm_fd);
+    ps->drm_fd = 0;
+  }
+
+  // Release overlay window
+  if (ps->overlay) {
+    XCompositeReleaseOverlayWindow(ps->dpy, ps->overlay);
+    ps->overlay = None;
+  }
+
+  // Flush all events
+  XSync(ps->dpy, True);
+
+  if (ps == ps_g)
+    ps_g = NULL;
+}
+
+/**
+ * Do the actual work.
+ *
+ * @param ps current session
+ */
+static void
+session_run(session_t *ps) {
+  win *t;
+
+  if (ps->o.sw_opti)
+    ps->paint_tm_offset = get_time_timespec().tv_nsec;
+
+  ps->reg_ignore_expire = true;
+
+  ps->fade_time = get_time_ms();
+
+  t = paint_preprocess(ps, ps->list);
+
+  if (ps->redirected)
+    paint_all(ps, None, t);
 
   // Initialize idling
-  idling = False;
+  ps->idling = false;
 
   // Main loop
-  while (1) {
-    Bool ev_received = False;
+  while (!ps->reset) {
+    bool ev_received = false;
 
-    while (XEventsQueued(dpy, QueuedAfterReading)
-        || (evpoll(&ufd,
-            (ev_received ? 0: (idling ? -1: fade_timeout()))) > 0)) {
+    while (XEventsQueued(ps->dpy, QueuedAfterReading)
+        || (evpoll(ps,
+            (ev_received ? 0: (ps->idling ? -1: fade_timeout(ps)))) > 0)) {
       // Sometimes poll() returns 1 but no events are actually read,
       // causing XNextEvent() to block, I have no idea what's wrong, so we
       // check for the number of events here
-      if (XEventsQueued(dpy, QueuedAfterReading)) {
-        XNextEvent(dpy, &ev);
-        ev_handle((XEvent *) &ev);
-        ev_received = True;
+      if (XEventsQueued(ps->dpy, QueuedAfterReading)) {
+        XEvent ev;
+
+        XNextEvent(ps->dpy, &ev);
+        ev_handle(ps, &ev);
+        ev_received = true;
       }
     }
 
     // idling will be turned off during paint_preprocess() if needed
-    idling = True;
+    ps->idling = true;
 
-    t = paint_preprocess(dpy, list);
+    t = paint_preprocess(ps, ps->list);
 
     // If the screen is unredirected, free all_damage to stop painting
-    if (!redirected)
-      free_region(dpy, &all_damage);
+    if (!ps->redirected)
+      free_region(ps, &ps->all_damage);
 
-    if (all_damage && !is_region_empty(dpy, all_damage)) {
+    if (ps->all_damage && !is_region_empty(ps, ps->all_damage)) {
       static int paint;
-      paint_all(dpy, all_damage, t);
-      reg_ignore_expire = False;
+      paint_all(ps, ps->all_damage, t);
+      ps->reg_ignore_expire = false;
       paint++;
-      XSync(dpy, False);
-      all_damage = None;
+      XSync(ps->dpy, False);
+      ps->all_damage = None;
     }
   }
+}
+
+/**
+ * Turn on the program reset flag.
+ *
+ * This will result in compton resetting itself after next paint.
+ */
+static void
+reset_enable(int __attribute__((unused)) signum) {
+  session_t * const ps = ps_g;
+
+  ps->reset = true;
+}
+
+/**
+ * The function that everybody knows.
+ */
+int
+main(int argc, char **argv) {
+  // Set locale so window names with special characters are interpreted
+  // correctly
+  setlocale(LC_ALL, "");
+
+  // Set up SIGUSR1 signal handler to reset program
+  {
+    sigset_t block_mask;
+    sigemptyset(&block_mask);
+    const struct sigaction action= {
+      .sa_handler = reset_enable,
+      .sa_mask = block_mask,
+      .sa_flags = 0
+    };
+    sigaction(SIGUSR1, &action, NULL);
+  }
+
+  // Main loop
+  session_t *ps_old = ps_g;
+  while (1) {
+    ps_g = session_init(ps_old, argc, argv);
+    session_run(ps_g);
+    ps_old = ps_g;
+    session_destroy(ps_g);
+  }
+
+  free(ps_g);
+
+  return 0;
 }
