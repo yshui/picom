@@ -149,7 +149,13 @@ typedef enum {
 } winmode;
 
 typedef struct {
-  unsigned char *data;
+  // All pointers have the same length, right?
+  // I wanted to use anonymous union but it's a GNU extension...
+  union {
+    unsigned char *p8;
+    short *p16;
+    long *p32;
+  } data;
   unsigned long nitems;
 } winprop_t;
 
@@ -397,7 +403,7 @@ typedef struct {
   /// Currently used refresh rate.
   short refresh_rate;
   /// Interval between refresh in nanoseconds.
-  unsigned long refresh_intv;
+  long refresh_intv;
   /// Nanosecond offset of the first painting.
   long paint_tm_offset;
 
@@ -844,13 +850,13 @@ timeval_subtract(struct timeval *result,
                  struct timeval *y) {
   /* Perform the carry for the later subtraction by updating y. */
   if (x->tv_usec < y->tv_usec) {
-    int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
+    long nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
     y->tv_usec -= 1000000 * nsec;
     y->tv_sec += nsec;
   }
 
   if (x->tv_usec - y->tv_usec > 1000000) {
-    int nsec = (x->tv_usec - y->tv_usec) / 1000000;
+    long nsec = (x->tv_usec - y->tv_usec) / 1000000;
     y->tv_usec += 1000000 * nsec;
     y->tv_sec -= nsec;
   }
@@ -879,13 +885,13 @@ timespec_subtract(struct timespec *result,
                  struct timespec *y) {
   /* Perform the carry for the later subtraction by updating y. */
   if (x->tv_nsec < y->tv_nsec) {
-    int nsec = (y->tv_nsec - x->tv_nsec) / NS_PER_SEC + 1;
+    long nsec = (y->tv_nsec - x->tv_nsec) / NS_PER_SEC + 1;
     y->tv_nsec -= NS_PER_SEC * nsec;
     y->tv_sec += nsec;
   }
 
   if (x->tv_nsec - y->tv_nsec > NS_PER_SEC) {
-    int nsec = (x->tv_nsec - y->tv_nsec) / NS_PER_SEC;
+    long nsec = (x->tv_nsec - y->tv_nsec) / NS_PER_SEC;
     y->tv_nsec += NS_PER_SEC * nsec;
     y->tv_sec -= nsec;
   }
@@ -1036,7 +1042,8 @@ get_time_ms(void) {
 
   gettimeofday(&tv, NULL);
 
-  return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+  return (unsigned long) tv.tv_sec * 1000
+    + (unsigned long) tv.tv_usec / 1000;
 }
 
 static int
@@ -1144,7 +1151,7 @@ wid_get_prop(const session_t *ps, Window w, Atom atom, long length,
         rtype, &type, &format, &nitems, &after, &data)) {
     if (type == rtype && format == rformat) {
       return (winprop_t) {
-        .data = data,
+        .data.p8 = data,
         .nitems = nitems
       };
     }
@@ -1153,7 +1160,7 @@ wid_get_prop(const session_t *ps, Window w, Atom atom, long length,
   XFree(data);
 
   return (winprop_t) {
-    .data = NULL,
+    .data.p8 = NULL,
     .nitems = 0
   };
 }
@@ -1166,9 +1173,9 @@ wid_get_prop(const session_t *ps, Window w, Atom atom, long length,
 static inline void
 free_winprop(winprop_t *pprop) {
   // Empty the whole structure to avoid possible issues
-  if (pprop->data) {
-    XFree(pprop->data);
-    pprop->data = NULL;
+  if (pprop->data.p8) {
+    XFree(pprop->data.p8);
+    pprop->data.p8 = NULL;
   }
   pprop->nitems = 0;
 }
@@ -1327,7 +1334,7 @@ static wintype_t
 wid_get_prop_wintype(session_t *ps, Window w);
 
 static void
-map_win(session_t *ps, Window id, bool override_redirect);
+map_win(session_t *ps, Window id);
 
 static void
 finish_map_win(session_t *ps, win *w);
@@ -1391,7 +1398,7 @@ static void
 mark_client_win(session_t *ps, win *w, Window client);
 
 static void
-add_win(session_t *ps, Window id, Window prev, bool override_redirect);
+add_win(session_t *ps, Window id, Window prev);
 
 static void
 restack_win(session_t *ps, win *w, Window new_above);

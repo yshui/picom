@@ -970,7 +970,7 @@ root_tile_f(session_t *ps) {
         XInternAtom(ps->dpy, background_props_str[p], false),
         1L, XA_PIXMAP, 32);
     if (prop.nitems) {
-      pixmap = *((long *) prop.data);
+      pixmap = *prop.data.p32;
       fill = false;
       free_winprop(&prop);
       break;
@@ -1174,7 +1174,7 @@ get_frame_extents(session_t *ps, win *w, Window client) {
     4L, XA_CARDINAL, 32);
 
   if (4 == prop.nitems) {
-    long *extents = (long *) prop.data;
+    const long * const extents = prop.data.p32;
     w->left_width = extents[0];
     w->right_width = extents[1];
     w->top_width = extents[2];
@@ -1192,8 +1192,9 @@ get_frame_extents(session_t *ps, win *w, Window client) {
  */
 static inline Picture
 get_alpha_pict_d(session_t *ps, double o) {
-  assert((lround(normalize_d(o) / ps->o.alpha_step)) <= lround(1.0 / ps->o.alpha_step));
-  return ps->alpha_picts[lround(normalize_d(o) / ps->o.alpha_step)];
+  assert((round(normalize_d(o) / ps->o.alpha_step)) <= round(1.0 / ps->o.alpha_step));
+  return ps->alpha_picts[(int) (round(normalize_d(o)
+        / ps->o.alpha_step))];
 }
 
 /**
@@ -1754,7 +1755,7 @@ wid_get_prop_wintype(session_t *ps, Window wid) {
 
   for (i = 0; i < prop.nitems; ++i) {
     for (j = 1; j < NUM_WINTYPES; ++j) {
-      if (ps->atoms_wintypes[j] == (Atom) ((long *) prop.data)[i]) {
+      if (ps->atoms_wintypes[j] == (Atom) prop.data.p32[i]) {
         free_winprop(&prop);
         return j;
       }
@@ -1767,7 +1768,7 @@ wid_get_prop_wintype(session_t *ps, Window wid) {
 }
 
 static void
-map_win(session_t *ps, Window id, bool override_redirect) {
+map_win(session_t *ps, Window id) {
   win *w = find_win(ps, id);
 
   // Don't care about window mapping if it's an InputOnly window
@@ -1938,7 +1939,7 @@ wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def) {
       XA_CARDINAL, 32);
 
   if (prop.nitems)
-    val = *((long *) prop.data);
+    val = *prop.data.p32;
 
   free_winprop(&prop);
 
@@ -2105,7 +2106,7 @@ win_update_attr_shadow_raw(session_t *ps, win *w) {
     w->attr_shadow = -1;
   }
   else {
-    w->attr_shadow = *((long *) prop.data);
+    w->attr_shadow = *prop.data.p32;
   }
 
   free_winprop(&prop);
@@ -2216,7 +2217,7 @@ mark_client_win(session_t *ps, win *w, Window client) {
 }
 
 static void
-add_win(session_t *ps, Window id, Window prev, bool override_redirect) {
+add_win(session_t *ps, Window id, Window prev) {
   // Reject overlay window and already added windows
   if (id == ps->overlay || find_win(ps, id)) {
     return;
@@ -2311,7 +2312,7 @@ add_win(session_t *ps, Window id, Window prev, bool override_redirect) {
   *p = new;
 
   if (new->a.map_state == IsViewable) {
-    map_win(ps, id, override_redirect);
+    map_win(ps, id);
   }
 }
 
@@ -2550,7 +2551,7 @@ damage_win(session_t *ps, XDamageNotifyEvent *de) {
  * Xlib error handler function.
  */
 static int
-error(Display *dpy, XErrorEvent *ev) {
+error(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
   session_t * const ps = ps_g;
 
   int o;
@@ -2922,7 +2923,7 @@ ev_focus_out(session_t *ps, XFocusChangeEvent *ev) {
 inline static void
 ev_create_notify(session_t *ps, XCreateWindowEvent *ev) {
   assert(ev->parent == ps->root);
-  add_win(ps, ev->window, 0, ev->override_redirect);
+  add_win(ps, ev->window, 0);
 }
 
 inline static void
@@ -2943,7 +2944,7 @@ ev_destroy_notify(session_t *ps, XDestroyWindowEvent *ev) {
 
 inline static void
 ev_map_notify(session_t *ps, XMapEvent *ev) {
-  map_win(ps, ev->window, ev->override_redirect);
+  map_win(ps, ev->window);
 }
 
 inline static void
@@ -2954,7 +2955,7 @@ ev_unmap_notify(session_t *ps, XUnmapEvent *ev) {
 inline static void
 ev_reparent_notify(session_t *ps, XReparentEvent *ev) {
   if (ev->parent == ps->root) {
-    add_win(ps, ev->window, 0, ev->override_redirect);
+    add_win(ps, ev->window, 0);
   } else {
     destroy_win(ps, ev->window);
     // Reset event mask in case something wrong happens
@@ -3019,7 +3020,7 @@ update_ewmh_active_win(session_t *ps) {
   }
 
   // Search for the window
-  Window wid = *((long *) prop.data);
+  Window wid = *prop.data.p32;
   win *w = NULL;
   free_winprop(&prop);
 
@@ -3144,7 +3145,8 @@ ev_shape_notify(session_t *ps, XShapeEvent *ev) {
  * Handle ScreenChangeNotify events from X RandR extension.
  */
 static void
-ev_screen_change_notify(session_t *ps, XRRScreenChangeNotifyEvent *ev) {
+ev_screen_change_notify(session_t *ps,
+    XRRScreenChangeNotifyEvent __attribute__((unused)) *ev) {
   if (!ps->o.refresh_rate) {
     update_refresh_rate(ps);
     if (!ps->refresh_rate) {
@@ -3270,7 +3272,7 @@ ev_handle(session_t *ps, XEvent *ev) {
  */
 static void
 usage(void) {
-  fputs(
+  const static char *usage_text =
     "compton (development version)\n"
     "usage: compton [options]\n"
     "Options:\n"
@@ -3394,8 +3396,8 @@ usage(void) {
     "  <flags> could be a series of flags. Currently the only defined\n"
     "  flag is \"i\" (ignore case).\n"
     "\n"
-    "  <pattern> is the actual pattern string.\n"
-    , stderr);
+    "  <pattern> is the actual pattern string.\n";
+  fputs(usage_text , stderr);
 
   exit(1);
 }
@@ -3642,9 +3644,17 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
 
   config_init(&cfg);
 #ifndef CONFIG_LIBCONFIG_LEGACY
-  char *parent = dirname(path);
-  if (parent)
-    config_set_include_dir(&cfg, parent);
+  {
+    // dirname() could modify the original string, thus we must pass a
+    // copy
+    char *path2 = mstrcpy(path);
+    char *parent = dirname(path2);
+
+    if (parent)
+      config_set_include_dir(&cfg, parent);
+
+    free(path2);
+  }
 #endif
 
   if (CONFIG_FALSE == config_read(&cfg, f)) {
@@ -4367,7 +4377,7 @@ vsync_wait(session_t *ps) {
 static void
 init_alpha_picts(session_t *ps) {
   int i;
-  int num = lround(1.0 / ps->o.alpha_step) + 1;
+  int num = round(1.0 / ps->o.alpha_step) + 1;
 
   ps->alpha_picts = malloc(sizeof(Picture) * num);
 
@@ -4620,8 +4630,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .atoms_wintypes = { 0 }
   };
 
-  int i;
-
   // Allocate a session and copy default values into it
   session_t *ps = malloc(sizeof(session_t));
   memcpy(ps, &s_def, sizeof(session_t));
@@ -4812,8 +4820,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
     XQueryTree(ps->dpy, ps->root, &root_return,
       &parent_return, &children, &nchildren);
 
-    for (i = 0; i < nchildren; i++) {
-      add_win(ps, children[i], i ? children[i-1] : None, false);
+    for (unsigned i = 0; i < nchildren; i++) {
+      add_win(ps, children[i], i ? children[i-1] : None);
     }
 
     XFree(children);
@@ -4867,7 +4875,7 @@ session_destroy(session_t *ps) {
 
   // Free alpha_picts
   {
-    const int max = lround(1.0 / ps->o.alpha_step) + 1;
+    const int max = round(1.0 / ps->o.alpha_step) + 1;
     for (int i = 0; i < max; ++i)
       free_picture(ps, &ps->alpha_picts[i]);
     free(ps->alpha_picts);
