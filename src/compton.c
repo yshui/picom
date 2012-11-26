@@ -849,6 +849,9 @@ determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
  */
 static win *
 find_win(session_t *ps, Window id) {
+  if (!id)
+    return NULL;
+
   win *w;
 
   for (w = ps->list; w; w = w->next) {
@@ -867,6 +870,9 @@ find_win(session_t *ps, Window id) {
  */
 static win *
 find_toplevel(session_t *ps, Window id) {
+  if (!id)
+    return NULL;
+
   win *w;
 
   for (w = ps->list; w; w = w->next) {
@@ -1775,6 +1781,9 @@ map_win(session_t *ps, Window id) {
   if (!w || InputOnly == w->a.class) return;
 
   w->focused = false;
+  if (ps->o.use_ewmh_active_win && w == ps->active_win)
+    w->focused = true;
+
   w->a.map_state = IsViewable;
 
   // Call XSelectInput() before reading properties so that no property
@@ -2484,7 +2493,7 @@ finish_destroy_win(session_t *ps, Window id) {
       *prev = w->next;
 
       // Clear active_win if it's pointing to the destroyed window
-      if (ps->active_win)
+      if (w == ps->active_win)
         ps->active_win = NULL;
 
       free_win_res(ps, w);
@@ -3024,7 +3033,7 @@ update_ewmh_active_win(session_t *ps) {
   win *w = NULL;
   free_winprop(&prop);
 
-  if (!(w = find_toplevel(ps, wid)))
+  if (wid && !(w = find_toplevel(ps, wid)))
     if (!(w = find_win(ps, wid)))
       w = find_toplevel2(ps, wid);
 

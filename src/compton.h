@@ -378,8 +378,11 @@ typedef struct {
   // === Window related ===
   /// Linked list of all windows.
   struct _win *list;
-  /// Current active window. Used by EWMH _NET_ACTIVE_WINDOW focus
-  /// detection.
+  /// Pointer to <code>win</code> of current active window. Used by
+  /// EWMH <code>_NET_ACTIVE_WINDOW</code> focus detection. In theory,
+  /// it's more reliable to store the window ID directly here, just in
+  /// case the WM does something extraordinary, but caching the pointer
+  /// means another layer of complexity.
   struct _win *active_win;
 
   // === Shadow/dimming related ===
