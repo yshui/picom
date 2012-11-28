@@ -948,7 +948,7 @@ recheck_focus(session_t *ps) {
 
   // And we set the focus state and opacity here
   if (w) {
-    set_focused(ps, w, true);
+    win_set_focused(ps, w, true);
     return w;
   }
 
@@ -1240,6 +1240,12 @@ paint_preprocess(session_t *ps, win *list) {
     // Destroy reg_ignore on all windows if they should expire
     if (ps->reg_ignore_expire)
       free_region(ps, &w->reg_ignore);
+
+    // Update window opacity target and dim state if asked
+    if (WFLAG_OPCT_CHANGE & w->flags) {
+      calc_opacity(ps, w);
+      calc_dim(ps, w);
+    }
 
     // Run fading
     run_fade(ps, w, steps);
@@ -1754,13 +1760,13 @@ repair_win(session_t *ps, win *w) {
 
 static wintype_t
 wid_get_prop_wintype(session_t *ps, Window wid) {
-  int i, j;
+  int i;
 
   set_ignore_next(ps);
   winprop_t prop = wid_get_prop(ps, wid, ps->atom_win_type, 32L, XA_ATOM, 32);
 
   for (i = 0; i < prop.nitems; ++i) {
-    for (j = 1; j < NUM_WINTYPES; ++j) {
+    for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
       if (ps->atoms_wintypes[j] == (Atom) prop.data.p32[i]) {
         free_winprop(&prop);
         return j;
@@ -1780,9 +1786,10 @@ map_win(session_t *ps, Window id) {
   // Don't care about window mapping if it's an InputOnly window
   if (!w || InputOnly == w->a.class) return;
 
-  w->focused = false;
-  if (ps->o.use_ewmh_active_win && w == ps->active_win)
-    w->focused = true;
+  w->focused_real = false;
+  if (ps->o.track_focus && ps->o.use_ewmh_active_win
+      && w == ps->active_win)
+    w->focused_real = true;
 
   w->a.map_state = IsViewable;
 
@@ -1841,22 +1848,21 @@ map_win(session_t *ps, Window id) {
     win_get_class(ps, w);
   }
 
-  if (ps->o.track_focus) {
-    // Occasionally compton does not seem able to get a FocusIn event from
-    // a window just mapped. I suspect it's a timing issue again when the
-    // XSelectInput() is called too late. We have to recheck the focused
-    // window here. It makes no sense if we are using EWMH
-    // _NET_ACTIVE_WINDOW.
-    if (!ps->o.use_ewmh_active_win)
-      recheck_focus(ps);
-
-    // Consider a window without client window a WM window and mark it
-    // focused if mark_wmwin_focused is on, or it's over-redirected and
-    // mark_ovredir_focused is on
-    if ((ps->o.mark_wmwin_focused && !w->client_win)
-        || (ps->o.mark_ovredir_focused && w->id == w->client_win))
-      w->focused = true;
+  // Occasionally compton does not seem able to get a FocusIn event from
+  // a window just mapped. I suspect it's a timing issue again when the
+  // XSelectInput() is called too late. We have to recheck the focused
+  // window here. It makes no sense if we are using EWMH
+  // _NET_ACTIVE_WINDOW.
+  if (ps->o.track_focus && !ps->o.use_ewmh_active_win) {
+    recheck_focus(ps);
   }
+
+  // Update window focus state
+  win_update_focused(ps, w);
+
+  // Update opacity and dim state
+  win_update_opacity_prop(ps, w);
+  w->flags |= WFLAG_OPCT_CHANGE;
 
   // Check for _COMPTON_SHADOW
   if (ps->o.respect_prop_shadow)
@@ -1864,9 +1870,6 @@ map_win(session_t *ps, Window id) {
 
   // Many things above could affect shadow
   determine_shadow(ps, w);
-
-  // Fading in
-  calc_opacity(ps, w, true);
 
   // Set fading state
   if (ps->o.no_fading_openclose) {
@@ -1879,8 +1882,6 @@ map_win(session_t *ps, Window id) {
     set_fade_callback(ps, w, NULL, true);
     determine_fade(ps, w);
   }
-
-  calc_dim(ps, w);
 
   w->damaged = 1;
 
@@ -1931,7 +1932,7 @@ unmap_win(session_t *ps, Window id) {
   w->a.map_state = IsUnmapped;
 
   // Fading out
-  w->opacity_tgt = 0;
+  w->flags |= WFLAG_OPCT_CHANGE;
   set_fade_callback(ps, w, unmap_callback, false);
   if (ps->o.no_fading_openclose)
     w->fade = false;
@@ -2006,35 +2007,23 @@ determine_mode(session_t *ps, win *w) {
  *    refetched
  */
 static void
-calc_opacity(session_t *ps, win *w, bool refetch_prop) {
-  opacity_t opacity;
+calc_opacity(session_t *ps, win *w) {
+  opacity_t opacity = OPAQUE;
 
-  // Do nothing for unmapped window, calc_opacity() will be called
-  // when it's mapped
-  // I suppose I need not to check for IsUnviewable here?
-  if (IsViewable != w->a.map_state) return;
+  if (w->destroyed || IsViewable != w->a.map_state)
+    opacity = 0;
+  else {
+    // Try obeying opacity property and window type opacity firstly
+    if (OPAQUE == (opacity = w->opacity_prop)
+        && OPAQUE == (opacity = w->opacity_prop_client)) {
+      opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
+    }
 
-  // Do not refetch the opacity window attribute unless necessary, this
-  // is probably an expensive operation in some cases
-  if (refetch_prop) {
-    w->opacity_prop = wid_get_opacity_prop(ps, w->id, OPAQUE);
-    if (!ps->o.detect_client_opacity || !w->client_win
-        || w->id == w->client_win)
-      w->opacity_prop_client = OPAQUE;
-    else
-      w->opacity_prop_client = wid_get_opacity_prop(ps, w->client_win,
-            OPAQUE);
-  }
-
-  if (OPAQUE == (opacity = w->opacity_prop)
-      && OPAQUE == (opacity = w->opacity_prop_client)) {
-    opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
-  }
-
-  // Respect inactive_opacity in some cases
-  if (ps->o.inactive_opacity && is_normal_win(w) && false == w->focused
-      && (OPAQUE == opacity || ps->o.inactive_opacity_override)) {
-    opacity = ps->o.inactive_opacity;
+    // Respect inactive_opacity in some cases
+    if (ps->o.inactive_opacity && is_normal_win(w) && false == w->focused
+        && (OPAQUE == opacity || ps->o.inactive_opacity_override)) {
+      opacity = ps->o.inactive_opacity;
+    }
   }
 
   w->opacity_tgt = opacity;
@@ -2046,6 +2035,10 @@ calc_opacity(session_t *ps, win *w, bool refetch_prop) {
 static void
 calc_dim(session_t *ps, win *w) {
   bool dim;
+
+  // Make sure we do nothing if the window is unmapped / destroyed
+  if (w->destroyed || IsViewable != w->a.map_state)
+    return;
 
   if (ps->o.inactive_dim && is_normal_win(w) && !(w->focused)) {
     dim = true;
@@ -2273,6 +2266,7 @@ add_win(session_t *ps, Window id, Window prev) {
   new->class_general = NULL;
   new->cache_sblst = NULL;
   new->cache_fblst = NULL;
+  new->cache_fcblst = NULL;
   new->bounding_shaped = false;
   new->rounded_corners = false;
 
@@ -2298,6 +2292,7 @@ add_win(session_t *ps, Window id, Window prev) {
   new->frame_alpha_pict = None;
   new->dim = false;
   new->focused = false;
+  new->focused_real = false;
   new->destroyed = false;
   new->need_configure = false;
   new->window_type = WINTYPE_UNKNOWN;
@@ -2517,7 +2512,7 @@ destroy_win(session_t *ps, Window id) {
     w->destroyed = true;
 
     // Fading out the window
-    w->opacity_tgt = 0;
+    w->flags |= WFLAG_OPCT_CHANGE;
     set_fade_callback(ps, w, destroy_callback, false);
   }
 }
@@ -2909,7 +2904,7 @@ ev_focus_in(session_t *ps, XFocusChangeEvent *ev) {
   // To deal with events sent from windows just destroyed
   if (!w) return;
 
-  set_focused(ps, w, true);
+  win_set_focused(ps, w, true);
 }
 
 inline static void
@@ -2926,7 +2921,7 @@ ev_focus_out(session_t *ps, XFocusChangeEvent *ev) {
   // To deal with events sent from windows just destroyed
   if (!w) return;
 
-  set_focused(ps, w, false);
+  win_set_focused(ps, w, false);
 }
 
 inline static void
@@ -3039,10 +3034,9 @@ update_ewmh_active_win(session_t *ps) {
 
   // Mark the window focused
   if (w) {
-    if (!w->focused)
-      set_focused(ps, w, true);
+    win_set_focused(ps, w, true);
     if (ps->active_win && w != ps->active_win)
-      set_focused(ps, ps->active_win, false);
+      win_set_focused(ps, ps->active_win, false);
     ps->active_win = w;
   }
 }
@@ -3079,7 +3073,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
       w->opacity_prop_client = wid_get_opacity_prop(ps, w->client_win,
             OPAQUE);
     if (w) {
-      calc_opacity(ps, w, false);
+      w->flags |= WFLAG_OPCT_CHANGE;
     }
   }
 
@@ -3097,8 +3091,10 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
   if (ps->o.track_wdata
       && (ps->atom_name == ev->atom || ps->atom_name_ewmh == ev->atom)) {
     win *w = find_toplevel(ps, ev->window);
-    if (w && 1 == win_get_name(ps, w))
+    if (w && 1 == win_get_name(ps, w)) {
       determine_shadow(ps, w);
+      win_update_focused(ps, w);
+    }
   }
 
   // If class changes
@@ -3107,6 +3103,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
     if (w) {
       win_get_class(ps, w);
       determine_shadow(ps, w);
+      win_update_focused(ps, w);
     }
   }
 
@@ -3354,7 +3351,6 @@ usage(void) {
     "  Detect _NET_WM_OPACITY on client windows, useful for window\n"
     "  managers not passing _NET_WM_OPACITY of client windows to frame\n"
     "  windows.\n"
-    "\n"
     "--refresh-rate val\n"
     "  Specify refresh rate of the screen. If not specified or 0, compton\n"
     "  will try detecting this with X RandR extension.\n"
@@ -3390,6 +3386,9 @@ usage(void) {
     "  Unredirect all windows if a full-screen opaque window is\n"
     "  detected, to maximize performance for full-screen windows.\n"
     "  Experimental.\n"
+    "--focus-exclude condition\n"
+    "  Specify a list of conditions of windows that should always be\n"
+    "  considered focused.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3633,6 +3632,28 @@ parse_vsync(session_t *ps, const char *optarg) {
 }
 
 /**
+ * Parse a condition list in configuration file.
+ */
+static void
+parse_cfg_condlst(const config_t *pcfg, wincond_t **pcondlst,
+    const char *name) {
+  config_setting_t *setting = config_lookup(pcfg, name);
+  if (setting) {
+    // Parse an array of options
+    if (config_setting_is_array(setting)) {
+      int i = config_setting_length(setting);
+      while (i--) {
+        condlst_add(pcondlst, config_setting_get_string_elem(setting, i));
+      }
+    }
+    // Treat it as a single pattern if it's a string
+    else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
+      condlst_add(pcondlst, config_setting_get_string(setting));
+    }
+  }
+}
+
+/**
  * Parse a configuration file from default location.
  */
 static void
@@ -3763,25 +3784,9 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
   lcfg_lookup_bool(&cfg, "unredir-if-possible",
       &ps->o.unredir_if_possible);
   // --shadow-exclude
-  {
-    config_setting_t *setting =
-      config_lookup(&cfg, "shadow-exclude");
-    if (setting) {
-      // Parse an array of shadow-exclude
-      if (config_setting_is_array(setting)) {
-        int i = config_setting_length(setting);
-        while (i--) {
-          condlst_add(&ps->o.shadow_blacklist,
-              config_setting_get_string_elem(setting, i));
-        }
-      }
-      // Treat it as a single pattern if it's a string
-      else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
-        condlst_add(&ps->o.shadow_blacklist,
-            config_setting_get_string(setting));
-      }
-    }
-  }
+  parse_cfg_condlst(&cfg, &ps->o.shadow_blacklist, "shadow-exclude");
+  // --focus-exclude
+  parse_cfg_condlst(&cfg, &ps->o.focus_blacklist, "focus-exclude");
   // Wintype settings
   {
     wintype_t i;
@@ -3835,6 +3840,7 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
     { "use-ewmh-active-win", no_argument, NULL, 276 },
     { "respect-prop-shadow", no_argument, NULL, 277 },
     { "unredir-if-possible", no_argument, NULL, 278 },
+    { "focus-exclude", required_argument, NULL, 279 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4036,6 +4042,10 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
         // --unredir-if-possible
         ps->o.unredir_if_possible = true;
         break;
+      case 279:
+        // --focus-exclude
+        condlst_add(&ps->o.focus_blacklist, optarg);
+        break;
       default:
         usage();
     }
@@ -4082,7 +4092,8 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
   }
 
   // Determine whether we need to track window name and class
-  if (ps->o.shadow_blacklist || ps->o.fade_blacklist)
+  if (ps->o.shadow_blacklist || ps->o.fade_blacklist
+      || ps->o.focus_blacklist)
     ps->o.track_wdata = true;
 }
 
@@ -4564,6 +4575,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .inactive_dim = 0.0,
       .alpha_step = 0.03,
       .use_ewmh_active_win = false,
+      .focus_blacklist = NULL,
 
       .track_focus = false,
       .track_wdata = false,

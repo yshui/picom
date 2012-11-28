@@ -116,6 +116,8 @@
 #define WFLAG_SIZE_CHANGE   0x0001
 // Window size/position is changed
 #define WFLAG_POS_CHANGE    0x0002
+// Window opacity / dim state changed
+#define WFLAG_OPCT_CHANGE   0x0004
 
 /**
  * Types
@@ -290,8 +292,12 @@ typedef struct {
   double inactive_dim;
   /// Step for pregenerating alpha pictures. 0.01 - 1.0.
   double alpha_step;
+
+  // === Focus related ===
   /// Whether to use EWMH _NET_ACTIVE_WINDOW to find active window.
   bool use_ewmh_active_win;
+  /// A list of windows always to be considered focused.
+  wincond_t *focus_blacklist;
 
   // === Calculated ===
   /// Whether compton needs to track focus changes.
@@ -512,8 +518,10 @@ typedef struct _win {
   XserverRegion extents;
   // Type of the window.
   wintype_t window_type;
-  /// Whether the window is focused.
+  /// Whether the window is to be considered focused.
   bool focused;
+  /// Whether the window is actually focused.
+  bool focused_real;
   /// Whether the window has been destroyed.
   bool destroyed;
   /// Cached width/height of the window including border.
@@ -531,6 +539,7 @@ typedef struct _win {
   char *class_general;
   wincond_t *cache_sblst;
   wincond_t *cache_fblst;
+  wincond_t *cache_fcblst;
 
   // Opacity-related members
   /// Current window opacity.
@@ -1354,6 +1363,20 @@ unmap_win(session_t *ps, Window id);
 static opacity_t
 wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def);
 
+/**
+ * Reread opacity property of a window.
+ */
+static inline void
+win_update_opacity_prop(session_t *ps, win *w) {
+  w->opacity_prop = wid_get_opacity_prop(ps, w->id, OPAQUE);
+  if (!ps->o.detect_client_opacity || !w->client_win
+      || w->id == w->client_win)
+    w->opacity_prop_client = OPAQUE;
+  else
+    w->opacity_prop_client = wid_get_opacity_prop(ps, w->client_win,
+          OPAQUE);
+}
+
 static double
 get_opacity_percent(win *w);
 
@@ -1361,16 +1384,39 @@ static void
 determine_mode(session_t *ps, win *w);
 
 static void
-calc_opacity(session_t *ps, win *w, bool refetch_prop);
+calc_opacity(session_t *ps, win *w);
 
 static void
 calc_dim(session_t *ps, win *w);
 
+/**
+ * Update focused state of a window.
+ */
 static inline void
-set_focused(session_t *ps, win *w, bool focused) {
-  w->focused = focused;
-  calc_opacity(ps, w, false);
-  calc_dim(ps, w);
+win_update_focused(session_t *ps, win *w) {
+  bool focused_old = w->focused;
+
+  w->focused = w->focused_real;
+
+  // Consider a window without client window a WM window and mark it
+  // focused if mark_wmwin_focused is on, or it's over-redirected and
+  // mark_ovredir_focused is on
+  if ((ps->o.mark_wmwin_focused && !w->client_win)
+      || (ps->o.mark_ovredir_focused && w->id == w->client_win)
+      || win_match(w, ps->o.focus_blacklist, &w->cache_fcblst))
+    w->focused = true;
+
+  if (w->focused != focused_old)
+    w->flags |= WFLAG_OPCT_CHANGE;
+}
+
+/**
+ * Set real focused state of a window.
+ */
+static inline void
+win_set_focused(session_t *ps, win *w, bool focused) {
+  w->focused_real = focused;
+  win_update_focused(ps, w);
 }
 
 static void
@@ -1627,6 +1673,10 @@ lcfg_lookup_int(const config_t *config, const char *path, int *value) {
 
 static FILE *
 open_config_file(char *cpath, char **path);
+
+static void
+parse_cfg_condlst(const config_t *pcfg, wincond_t **pcondlst,
+    const char *name);
 
 static void
 parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp);
