@@ -145,10 +145,17 @@ OPTIONS
 *--unredir-if-possible*::
 	Unredirect all windows if a full-screen opaque window is detected, to maximize performance for full-screen windows. Known to cause flickering when redirecting/unredirecting windows. *--paint-on-overlay* may make the flickering less obvious. Experimental.
 
+*--shadow-exclude* 'CONDITION'::
+	Specify a list of conditions of windows that should have no shadow.
+
+*--focus-exclude* 'CONDITION'::
+	Specify a list of conditions of windows that should always be considered focused.
+
+
 FORMAT OF CONDITIONS
 --------------------
 
-*--shadow-exclude* uses a condition string to blacklist certain windows. The format of the condition string is:
+*--shadow-exclude* and *--focus-exclude* uses a condition string to blacklist certain windows. The format of the condition string is:
 
 	condition = TARGET:TYPE[FLAGS]:PATTERN
 
@@ -163,6 +170,12 @@ FORMAT OF CONDITIONS
 CONFIGURATION FILES
 -------------------
 compton could read from a configuration file if libconfig support is compiled in. If *--config* is not used, compton will seek for a configuration file in `$XDG_CONFIG_HOME/compton.conf` (`~/.config/compton.conf`, usually), then `~/.compton.conf`, then `compton.conf` under `$XDG_DATA_DIRS` (often `/etc/xdg/compton.conf`). Most commandline switches could be replaced with an option in configuration file, and some options are exposed only in configuration files (presently, some window-type-specific settings). compton uses general libconfig configurtion file format. A sample configuration file is available as `compton.sample.conf` in the source tree.
+
+SIGNALS
+-------
+
+* compton reinitializes itself upon receiving `SIGUSR1`.
+
 
 EXAMPLES
 --------
