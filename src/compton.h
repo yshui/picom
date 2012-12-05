@@ -120,6 +120,22 @@
 // Window opacity / dim state changed
 #define WFLAG_OPCT_CHANGE   0x0004
 
+// === Macros ===
+
+// #define MSTR_(s)        #s
+// #define MSTR(s)         MSTR_(s)
+
+#define printf_dbg(format, ...) \
+  printf(format, ## __VA_ARGS__); \
+  fflush(stdout)
+
+#define printf_dbgf(format, ...) \
+  printf_dbg("%s" format, __func__, ## __VA_ARGS__)
+
+// Use #s here to prevent macro expansion
+/// Macro used for shortening some debugging code.
+#define CASESTRRET(s)   case s: return #s
+
 // === Types ===
 
 typedef uint32_t opacity_t;
@@ -169,6 +185,7 @@ enum wincond_target {
   CONDTGT_NAME,
   CONDTGT_CLASSI,
   CONDTGT_CLASSG,
+  CONDTGT_ROLE,
 };
 
 enum wincond_type {
@@ -491,6 +508,8 @@ typedef struct {
   Atom atom_name_ewmh;
   /// Atom of property <code>WM_CLASS</code>.
   Atom atom_class;
+  /// Atom of property <code>WM_WINDOW_ROLE</code>.
+  Atom atom_role;
   /// Atom of property <code>WM_TRANSIENT_FOR</code>.
   Atom atom_transient;
   /// Atom of property <code>_NET_ACTIVE_WINDOW</code>.
@@ -505,7 +524,10 @@ typedef struct {
 
 /// Structure representing a top-level window compton manages.
 typedef struct _win {
+  // Next structure in the linked list.
   struct _win *next;
+
+  // ID of the top-level frame window.
   Window id;
   /// ID of the top-level client window of the window.
   Window client_win;
@@ -527,6 +549,8 @@ typedef struct _win {
   bool focused;
   /// Whether the window is actually focused.
   bool focused_real;
+  /// Leader window ID of the window.
+  Window leader;
   /// Whether the window has been destroyed.
   bool destroyed;
   /// Cached width/height of the window including border.
@@ -539,9 +563,14 @@ typedef struct _win {
   bool to_paint;
 
   // Blacklist related members
+  /// Name of the window.
   char *name;
+  /// Window instance class of the window.
   char *class_instance;
+  /// Window general class of the window.
   char *class_general;
+  /// <code>WM_WINDOW_ROLE</code> value of the window.
+  char *role;
   wincond_t *cache_sblst;
   wincond_t *cache_fblst;
   wincond_t *cache_fcblst;
@@ -1490,8 +1519,36 @@ wid_get_text_prop(session_t *ps, Window wid, Atom prop,
 static bool
 wid_get_name(session_t *ps, Window w, char **name);
 
+static bool
+wid_get_role(session_t *ps, Window w, char **role);
+
 static int
-win_get_name(session_t *ps, win *w);
+win_get_prop_str(session_t *ps, win *w, char **tgt,
+    bool (*func_wid_get_prop_str)(session_t *ps, Window wid, char **tgt));
+
+static inline int
+win_get_name(session_t *ps, win *w) {
+  int ret = win_get_prop_str(ps, w, &w->name, wid_get_name);
+
+#ifdef DEBUG_WINDATA
+  printf_dbgf("(%#010lx): client = %#010lx, name = \"%s\", "
+      "ret = %d\n", w->id, w->client_win, w->name, ret);
+#endif
+
+  return ret;
+}
+
+static inline int
+win_get_role(session_t *ps, win *w) {
+  int ret = win_get_prop_str(ps, w, &w->role, wid_get_role);
+
+#ifdef DEBUG_WINDATA
+  printf_dbgf("(%#010lx): client = %#010lx, role = \"%s\", "
+      "ret = %d\n", w->id, w->client_win, w->role, ret);
+#endif
+
+  return ret;
+}
 
 static bool
 win_get_class(session_t *ps, win *w);

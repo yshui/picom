@@ -10,22 +10,6 @@
 
 #include "compton.h"
 
-// === Macros ===
-
-// #define MSTR_(s)        #s
-// #define MSTR(s)         MSTR_(s)
-
-#define printf_dbg(format, ...) \
-  printf(format, ## __VA_ARGS__); \
-  fflush(stdout)
-
-#define printf_dbgf(format, ...) \
-  printf_dbg("%s" format, __func__, ## __VA_ARGS__)
-
-// Use #s here to prevent macro expansion
-/// Macro used for shortening some debugging code.
-#define CASESTRRET(s)   case s: return #s
-
 // === Global constants ===
 
 /// Name strings for window types.
@@ -627,6 +611,9 @@ win_match_once(win *w, const wincond_t *cond) {
     case CONDTGT_CLASSG:
       target = w->class_general;
       break;
+    case CONDTGT_ROLE:
+      target = w->role;
+      break;
   }
 
   if (!target) {
@@ -735,6 +722,9 @@ condlst_add(wincond_t **pcondlst, const char *pattern) {
       break;
     case 'g':
       cond->target = CONDTGT_CLASSG;
+      break;
+    case 'r':
+      cond->target = CONDTGT_ROLE;
       break;
     default:
       printf("Pattern \"%s\": Target \"%c\" invalid.\n",
@@ -1849,7 +1839,7 @@ map_win(session_t *ps, Window id) {
       cw = w->id;
       w->wmwin = !w->a.override_redirect;
 #ifdef DEBUG_CLIENTWIN
-      printf("find_client_win(%#010lx): client self (%s)\n", w->id, 
+      printf("find_client_win(%#010lx): client self (%s)\n", w->id,
           (w->wmwin ? "wmwin": "override-redirected"));
 #endif
     }
@@ -1873,6 +1863,7 @@ map_win(session_t *ps, Window id) {
   if (ps->o.track_wdata) {
     win_get_name(ps, w);
     win_get_class(ps, w);
+    win_get_role(ps, w);
   }
 
   // Occasionally compton does not seem able to get a FocusIn event from
@@ -1957,6 +1948,9 @@ unmap_win(session_t *ps, Window id) {
   if (!w || IsUnmapped == w->a.map_state) return;
 
   w->a.map_state = IsUnmapped;
+
+  // Set focus out
+  win_set_focused(ps, w, false);
 
   // Fading out
   w->flags |= WFLAG_OPCT_CHANGE;
@@ -2291,6 +2285,7 @@ add_win(session_t *ps, Window id, Window prev) {
   new->name = NULL;
   new->class_instance = NULL;
   new->class_general = NULL;
+  new->role = NULL;
   new->cache_sblst = NULL;
   new->cache_fblst = NULL;
   new->cache_fcblst = NULL;
@@ -2323,6 +2318,7 @@ add_win(session_t *ps, Window id, Window prev) {
 
   new->focused = false;
   new->focused_real = false;
+  new->leader = None;
   new->destroyed = false;
   new->need_configure = false;
   new->window_type = WINTYPE_UNKNOWN;
@@ -2665,7 +2661,7 @@ expose_root(session_t *ps, XRectangle *rects, int nrects) {
 static bool
 wid_get_text_prop(session_t *ps, Window wid, Atom prop,
     char ***pstrlst, int *pnstr) {
-  XTextProperty text_prop;
+  XTextProperty text_prop = { NULL, None, 0, 0 };
 
   if (!(XGetTextProperty(ps->dpy, wid, &text_prop, prop) && text_prop.value))
     return false;
@@ -2676,9 +2672,11 @@ wid_get_text_prop(session_t *ps, Window wid, Atom prop,
     *pnstr = 0;
     if (*pstrlst)
       XFreeStringList(*pstrlst);
+    XFree(text_prop.value);
     return false;
   }
 
+  XFree(text_prop.value);
   return true;
 }
 
@@ -2687,14 +2685,11 @@ wid_get_text_prop(session_t *ps, Window wid, Atom prop,
  */
 static bool
 wid_get_name(session_t *ps, Window wid, char **name) {
-  XTextProperty text_prop;
+  XTextProperty text_prop = { NULL, None, 0, 0 };
   char **strlst = NULL;
   int nstr = 0;
 
-  // set_ignore_next(ps);
-  if (!(XGetTextProperty(ps->dpy, wid, &text_prop, ps->atom_name_ewmh)
-      && text_prop.value)) {
-    // set_ignore_next(ps);
+  if (!(wid_get_text_prop(ps, wid, ps->atom_name_ewmh, &strlst, &nstr))) {
 #ifdef DEBUG_WINDATA
     printf_dbgf("(%#010lx): _NET_WM_NAME unset, falling back to WM_NAME.\n", wid);
 #endif
@@ -2702,14 +2697,17 @@ wid_get_name(session_t *ps, Window wid, char **name) {
     if (!(XGetWMName(ps->dpy, wid, &text_prop) && text_prop.value)) {
       return false;
     }
+    if (Success !=
+        XmbTextPropertyToTextList(ps->dpy, &text_prop, &strlst, &nstr)
+        || !nstr || !strlst) {
+      if (strlst)
+        XFreeStringList(strlst);
+      XFree(text_prop.value);
+      return false;
+    }
+    XFree(text_prop.value);
   }
-  if (Success !=
-      XmbTextPropertyToTextList(ps->dpy, &text_prop, &strlst, &nstr)
-      || !nstr || !strlst) {
-    if (strlst)
-      XFreeStringList(strlst);
-    return false;
-  }
+
   *name = mstrcpy(strlst[0]);
 
   XFreeStringList(strlst);
@@ -2718,38 +2716,53 @@ wid_get_name(session_t *ps, Window wid, char **name) {
 }
 
 /**
- * Retrieve the name of a window and update its <code>win</code>
+ * Get the role of a window from window ID.
+ */
+static bool
+wid_get_role(session_t *ps, Window wid, char **role) {
+  char **strlst = NULL;
+  int nstr = 0;
+
+  if (!wid_get_text_prop(ps, wid, ps->atom_role, &strlst, &nstr)) {
+    return false;
+  }
+
+  *role = mstrcpy(strlst[0]);
+
+  XFreeStringList(strlst);
+
+  return true;
+}
+
+/**
+ * Retrieve a string property of a window and update its <code>win</code>
  * structure.
  */
 static int
-win_get_name(session_t *ps, win *w) {
-  bool ret;
-  char *name_old = w->name;
+win_get_prop_str(session_t *ps, win *w, char **tgt,
+    bool (*func_wid_get_prop_str)(session_t *ps, Window wid, char **tgt)) {
+  int ret = -1;
+  char *prop_old = *tgt;
 
   // Can't do anything if there's no client window
   if (!w->client_win)
     return false;
 
-  // Get the name
-  ret = wid_get_name(ps, w->client_win, &w->name);
+  // Get the property
+  ret = func_wid_get_prop_str(ps, w->client_win, tgt);
 
-  // Return -1 if wid_get_name() failed, 0 if name didn't change, 1 if
-  // it changes
+  // Return -1 if func_wid_get_prop_str() failed, 0 if the property
+  // doesn't change, 1 if it changes
   if (!ret)
     ret = -1;
-  else if (name_old && !strcmp(w->name, name_old))
+  else if (prop_old && !strcmp(*tgt, prop_old))
     ret = 0;
   else
     ret = 1;
 
-  // Keep the old name if there's no new one
-  if (w->name != name_old)
-    free(name_old);
-
-#ifdef DEBUG_WINDATA
-  printf_dbgf("(%#010lx): client = %#010lx, name = \"%s\", "
-      "ret = %d\n", w->id, w->client_win, w->name, ret);
-#endif
+  // Keep the old property if there's no new one
+  if (*tgt != prop_old)
+    free(prop_old);
 
   return ret;
 }
@@ -3138,6 +3151,15 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
     }
   }
 
+  // If role changes
+  if (ps->o.track_wdata && ps->atom_role == ev->atom) {
+    win *w = find_toplevel(ps, ev->window);
+    if (w && 1 == win_get_role(ps, w)) {
+      determine_shadow(ps, w);
+      win_update_focused(ps, w);
+    }
+  }
+
   // If _COMPTON_SHADOW changes
   if (ps->o.respect_prop_shadow && ps->atom_compton_shadow == ev->atom) {
     win *w = find_win(ps, ev->window);
@@ -3428,7 +3450,8 @@ usage(void) {
     "  condition = <target>:<type>[<flags>]:<pattern>\n"
     "\n"
     "  <target> is one of \"n\" (window name), \"i\" (window class\n"
-    "  instance), and \"g\" (window general class)\n"
+    "  instance), \"g\" (window general class), and \"r\"\n"
+    "  (window role).\n"
     "\n"
     "  <type> is one of \"e\" (exact match), \"a\" (match anywhere),\n"
     "  \"s\" (match from start), \"w\" (wildcard), and \"p\" (PCRE\n"
@@ -4148,6 +4171,7 @@ init_atoms(session_t *ps) {
   ps->atom_name = XA_WM_NAME;
   ps->atom_name_ewmh = XInternAtom(ps->dpy, "_NET_WM_NAME", False);
   ps->atom_class = XA_WM_CLASS;
+  ps->atom_role = XInternAtom(ps->dpy, "WM_WINDOW_ROLE", False);
   ps->atom_transient = XA_WM_TRANSIENT_FOR;
   ps->atom_ewmh_active_win = XInternAtom(ps->dpy, "_NET_ACTIVE_WINDOW", False);
   ps->atom_compton_shadow = XInternAtom(ps->dpy, "_COMPTON_SHADOW", False);
@@ -4684,6 +4708,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .atom_name = None,
     .atom_name_ewmh = None,
     .atom_class = None,
+    .atom_role = None,
     .atom_transient = None,
     .atom_ewmh_active_win = None,
     .atom_compton_shadow = None,
