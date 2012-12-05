@@ -15,6 +15,13 @@
 // #define MSTR_(s)        #s
 // #define MSTR(s)         MSTR_(s)
 
+#define printf_dbg(format, ...) \
+  printf(format, ## __VA_ARGS__); \
+  fflush(stdout)
+
+#define printf_dbgf(format, ...) \
+  printf_dbg("%s" format, __func__, ## __VA_ARGS__)
+
 // Use #s here to prevent macro expansion
 /// Macro used for shortening some debugging code.
 #define CASESTRRET(s)   case s: return #s
@@ -497,9 +504,9 @@ solid_picture(session_t *ps, bool argb, double a,
   }
 
   c.alpha = a * 0xffff;
-  c.red = r * 0xffff;
+  c.red =   r * 0xffff;
   c.green = g * 0xffff;
-  c.blue = b * 0xffff;
+  c.blue =  b * 0xffff;
 
   XRenderFillRectangle(ps->dpy, PictOpSrc, picture, &c, 0, 0, 1, 1);
   XFreePixmap(ps->dpy, pixmap);
@@ -941,6 +948,9 @@ recheck_focus(session_t *ps) {
 
   XGetInputFocus(ps->dpy, &wid, &revert_to);
 
+  if (!wid || PointerRoot == wid)
+    return NULL;
+
   // Fallback to the old method if find_toplevel() fails
   if (!(w = find_toplevel(ps, wid))) {
     w = find_toplevel2(ps, wid);
@@ -989,7 +999,7 @@ root_tile_f(session_t *ps) {
     fill = true;
   }
 
-  pa.repeat = true;
+  pa.repeat = True;
   picture = XRenderCreatePicture(
     ps->dpy, pixmap, XRenderFindVisualFormat(ps->dpy, ps->vis),
     CPRepeat, &pa);
@@ -1190,6 +1200,11 @@ get_frame_extents(session_t *ps, win *w, Window client) {
       update_reg_ignore_expire(ps, w);
   }
 
+#ifdef DEBUG_FRAME
+  printf_dbgf("(%#010lx): %d, %d, %d, %d\n", w->id,
+      w->left_width, w->right_width, w->top_width, w->bottom_width);
+#endif
+
   free_winprop(&prop);
 }
 
@@ -1323,6 +1338,16 @@ paint_preprocess(session_t *ps, win *list) {
       }
 
       w->shadow_alpha_pict = get_alpha_pict_d(ps, w->shadow_opacity);
+
+      // Dimming preprocessing
+      if (w->dim) {
+        double dim_opacity = ps->o.inactive_dim;
+        if (!ps->o.inactive_dim_fixed)
+          dim_opacity *= get_opacity_percent(w);
+
+        w->dim_alpha_pict = get_alpha_pict_d(ps, dim_opacity);
+      }
+
     }
 
     if ((to_paint && WINDOW_SOLID == w->mode)
@@ -1512,9 +1537,9 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer) {
 #undef COMP_BDR
 
   // Dimming the window if needed
-  if (w->dim) {
-    XRenderComposite(ps->dpy, PictOpOver, ps->dim_picture, None,
-        tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
+  if (w->dim && w->dim_alpha_pict != ps->alpha_picts[0]) {
+    XRenderComposite(ps->dpy, PictOpOver, ps->black_picture,
+        w->dim_alpha_pict, tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
   }
 }
 
@@ -1802,41 +1827,43 @@ map_win(session_t *ps, Window id) {
     XShapeSelectInput(ps->dpy, id, ShapeNotifyMask);
   }
 
+  // Make sure the XSelectInput() requests are sent
+  XSync(ps->dpy, False);
+
   // Detect client window here instead of in add_win() as the client
   // window should have been prepared at this point
   if (!w->client_win) {
-    Window cw = 0;
+    w->wmwin = false;
+
+    Window cw = None;
     // Always recursively look for a window with WM_STATE, as Fluxbox
     // sets override-redirect flags on all frame windows.
     cw = find_client_win(ps, w->id);
 #ifdef DEBUG_CLIENTWIN
-    printf("find_client_win(%#010lx): client %#010lx\n", w->id, cw);
+    if (cw)
+      printf("find_client_win(%#010lx): client %#010lx\n", w->id, cw);
 #endif
-    // Set a window's client window to itself only if we didn't find a
-    // client window and the window has override-redirect flag
-    if (!cw && w->a.override_redirect) {
+    // Set a window's client window to itself if we couldn't find a
+    // client window
+    if (!cw) {
       cw = w->id;
+      w->wmwin = !w->a.override_redirect;
 #ifdef DEBUG_CLIENTWIN
-      printf("find_client_win(%#010lx): client self (override-redirected)\n", w->id);
+      printf("find_client_win(%#010lx): client self (%s)\n", w->id, 
+          (w->wmwin ? "wmwin": "override-redirected"));
 #endif
     }
-    if (cw) {
-      mark_client_win(ps, w, cw);
-    }
+    mark_client_win(ps, w, cw);
   }
   else {
     // Re-mark client window here
     mark_client_win(ps, w, w->client_win);
   }
 
-  // Workaround for _NET_WM_WINDOW_TYPE for Openbox menus, which is
-  // set on a non-override-redirect window with no WM_STATE either
-  if (!w->client_win && WINTYPE_UNKNOWN == w->window_type)
-    w->window_type = wid_get_prop_wintype(ps, w->id);
+  assert(w->client_win);
 
 #ifdef DEBUG_WINTYPE
-  printf("map_win(%#010lx): type %s\n",
-    w->id, WINTYPES[w->window_type]);
+  printf_dbgf("(%#010lx): type %s\n", w->id, WINTYPES[w->window_type]);
 #endif
 
   // Detect if the window is shaped or has rounded corners
@@ -2290,7 +2317,10 @@ add_win(session_t *ps, Window id, Window prev) {
   new->alpha_pict = None;
   new->frame_opacity = 1.0;
   new->frame_alpha_pict = None;
+
   new->dim = false;
+  new->dim_alpha_pict = None;
+
   new->focused = false;
   new->focused_real = false;
   new->destroyed = false;
@@ -2307,6 +2337,7 @@ add_win(session_t *ps, Window id, Window prev) {
   new->bottom_width = 0;
 
   new->client_win = 0;
+  new->wmwin = false;
 
   new->flags = 0;
 
@@ -2358,7 +2389,7 @@ restack_win(session_t *ps, win *w, Window new_above) {
       bool to_free;
       win* c = ps->list;
 
-      printf("restack_win(%#010lx, %#010lx): "
+      printf_dbgf("(%#010lx, %#010lx): "
              "Window stack modified. Current stack:\n", w->id, new_above);
 
       for (; c; c = c->next) {
@@ -2665,7 +2696,7 @@ wid_get_name(session_t *ps, Window wid, char **name) {
       && text_prop.value)) {
     // set_ignore_next(ps);
 #ifdef DEBUG_WINDATA
-    printf("wid_get_name(%#010lx): _NET_WM_NAME unset, falling back to WM_NAME.\n", wid);
+    printf_dbgf("(%#010lx): _NET_WM_NAME unset, falling back to WM_NAME.\n", wid);
 #endif
 
     if (!(XGetWMName(ps->dpy, wid, &text_prop) && text_prop.value)) {
@@ -2716,7 +2747,7 @@ win_get_name(session_t *ps, win *w) {
     free(name_old);
 
 #ifdef DEBUG_WINDATA
-  printf("win_get_name(%#010lx): client = %#010lx, name = \"%s\", "
+  printf_dbgf("(%#010lx): client = %#010lx, name = \"%s\", "
       "ret = %d\n", w->id, w->client_win, w->name, ret);
 #endif
 
@@ -2755,7 +2786,7 @@ win_get_class(session_t *ps, win *w) {
   XFreeStringList(strlst);
 
 #ifdef DEBUG_WINDATA
-  printf("win_get_class(%#010lx): client = %#010lx, "
+  printf_dbgf("(%#010lx): client = %#010lx, "
       "instance = \"%s\", general = \"%s\"\n",
       w->id, w->client_win, w->class_instance, w->class_general);
 #endif
@@ -3389,6 +3420,8 @@ usage(void) {
     "--focus-exclude condition\n"
     "  Specify a list of conditions of windows that should always be\n"
     "  considered focused.\n"
+    "--inactive-dim-fixed\n"
+    "  Use fixed inactive dim value.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3783,6 +3816,8 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
   // --unredir-if-possible
   lcfg_lookup_bool(&cfg, "unredir-if-possible",
       &ps->o.unredir_if_possible);
+  // --inactive-dim-fixed
+  lcfg_lookup_bool(&cfg, "inactive-dim-fixed", &ps->o.inactive_dim_fixed);
   // --shadow-exclude
   parse_cfg_condlst(&cfg, &ps->o.shadow_blacklist, "shadow-exclude");
   // --focus-exclude
@@ -3841,6 +3876,7 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
     { "respect-prop-shadow", no_argument, NULL, 277 },
     { "unredir-if-possible", no_argument, NULL, 278 },
     { "focus-exclude", required_argument, NULL, 279 },
+    { "inactive-dim-fixed", no_argument, NULL, 280 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4045,6 +4081,10 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
       case 279:
         // --focus-exclude
         condlst_add(&ps->o.focus_blacklist, optarg);
+        break;
+      case 280:
+        // --inactive-dim-fixed
+        ps->o.inactive_dim_fixed = true;
         break;
       default:
         usage();
@@ -4573,6 +4613,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .frame_opacity = 0.0,
       .detect_client_opacity = false,
       .inactive_dim = 0.0,
+      .inactive_dim_fixed = false,
       .alpha_step = 0.03,
       .use_ewmh_active_win = false,
       .focus_blacklist = NULL,
@@ -4600,7 +4641,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .list = NULL,
     .active_win = NULL,
     .black_picture = None,
-    .dim_picture = None,
     .cshadow_picture = None,
     .gaussian_map = NULL,
     .cgsize = 0,
@@ -4817,11 +4857,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
         ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue);
   }
 
-  // Generates a picture for inactive_dim
-  if (ps->o.inactive_dim) {
-    ps->dim_picture = solid_picture(ps, true, ps->o.inactive_dim, 0, 0, 0);
-  }
-
   ps->all_damage = None;
   XGrabServer(ps->dpy);
 
@@ -4943,7 +4978,6 @@ session_destroy(session_t *ps) {
   free_picture(ps, &ps->root_picture);
 
   // Free other X resources
-  free_picture(ps, &ps->dim_picture);
   free_picture(ps, &ps->root_tile);
   free_region(ps, &ps->screen_reg);
   free_region(ps, &ps->all_damage);

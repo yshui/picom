@@ -7,16 +7,17 @@
 // === Options ===
 
 // Debug options, enable them using -D in CFLAGS
-// #define DEBUG_REPAINT 1
-// #define DEBUG_EVENTS 1
-// #define DEBUG_RESTACK 1
-// #define DEBUG_WINTYPE 1
-// #define DEBUG_CLIENTWIN 1
-// #define DEBUG_WINDATA 1
-// #define DEBUG_WINMATCH 1
-// #define DEBUG_REDIR 1
-// #define DEBUG_ALLOC_REG 1
-// #define MONITOR_REPAINT 1
+// #define DEBUG_REPAINT    1
+// #define DEBUG_EVENTS     1
+// #define DEBUG_RESTACK    1
+// #define DEBUG_WINTYPE    1
+// #define DEBUG_CLIENTWIN  1
+// #define DEBUG_WINDATA    1
+// #define DEBUG_WINMATCH   1
+// #define DEBUG_REDIR      1
+// #define DEBUG_ALLOC_REG  1
+// #define DEBUG_FRAME      1
+// #define MONITOR_REPAINT  1
 
 // Whether to enable PCRE regular expression support in blacklists, enabled
 // by default
@@ -119,9 +120,7 @@
 // Window opacity / dim state changed
 #define WFLAG_OPCT_CHANGE   0x0004
 
-/**
- * Types
- */
+// === Types ===
 
 typedef uint32_t opacity_t;
 
@@ -290,6 +289,9 @@ typedef struct {
   bool detect_client_opacity;
   /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
   double inactive_dim;
+  /// Whether to use fixed inactive dim opacity, instead of deciding
+  /// based on window opacity.
+  bool inactive_dim_fixed;
   /// Step for pregenerating alpha pictures. 0.01 - 1.0.
   double alpha_step;
 
@@ -394,8 +396,6 @@ typedef struct {
   // === Shadow/dimming related ===
   /// 1x1 black Picture.
   Picture black_picture;
-  /// Picture used for dimming inactive windows.
-  Picture dim_picture;
   /// 1x1 Picture of the shadow color.
   Picture cshadow_picture;
   /// Gaussian map of shadow.
@@ -507,7 +507,12 @@ typedef struct {
 typedef struct _win {
   struct _win *next;
   Window id;
+  /// ID of the top-level client window of the window.
   Window client_win;
+  /// Whether it looks like a WM window. We consider a window WM window if
+  /// it does not have a decedent with WM_STATE and it is not override-
+  /// redirected itself.
+  bool wmwin;
   Pixmap pixmap;
   XWindowAttributes a;
   winmode mode;
@@ -594,6 +599,9 @@ typedef struct _win {
   // Dim-related members
   /// Whether the window is to be dimmed.
   bool dim;
+  /// Picture for dimming. Affected by user-specified inactive dim
+  /// opacity and window opacity.
+  Picture dim_alpha_pict;
 
   /// Window flags. Definitions above.
   int_fast16_t flags;
@@ -1398,11 +1406,10 @@ win_update_focused(session_t *ps, win *w) {
 
   w->focused = w->focused_real;
 
-  // Consider a window without client window a WM window and mark it
-  // focused if mark_wmwin_focused is on, or it's over-redirected and
-  // mark_ovredir_focused is on
-  if ((ps->o.mark_wmwin_focused && !w->client_win)
-      || (ps->o.mark_ovredir_focused && w->id == w->client_win)
+  // Treat WM windows and override-redirected windows specially
+  if ((ps->o.mark_wmwin_focused && w->wmwin)
+      || (ps->o.mark_ovredir_focused
+        && w->id == w->client_win && !w->wmwin)
       || win_match(w, ps->o.focus_blacklist, &w->cache_fcblst))
     w->focused = true;
 
