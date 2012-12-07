@@ -58,7 +58,10 @@
 
 // For compatiblity with <libpcre-8.20
 #ifndef PCRE_STUDY_JIT_COMPILE
-#define PCRE_STUDY_JIT_COMPILE 0
+#define PCRE_STUDY_JIT_COMPILE    0
+#define LPCRE_FREE_STUDY(extra)   pcre_free(extra)
+#else
+#define LPCRE_FREE_STUDY(extra)   pcre_free_study(extra)
 #endif
 
 #endif
@@ -1039,7 +1042,7 @@ free_wincond(wincond_t *cond) {
     free(cond->pattern);
 #ifdef CONFIG_REGEX_PCRE
   if (cond->regex_pcre_extra)
-    pcre_free_study(cond->regex_pcre_extra);
+    LPCRE_FREE_STUDY(cond->regex_pcre_extra);
   if (cond->regex_pcre)
     pcre_free(cond->regex_pcre);
 #endif
@@ -1077,6 +1080,7 @@ free_win_res(session_t *ps, win *w) {
   free(w->name);
   free(w->class_instance);
   free(w->class_general);
+  free(w->role);
 }
 
 /**
@@ -1149,15 +1153,15 @@ static inline bool is_normal_win(const win *w) {
 }
 
 /**
- * Determine if a window has a specific attribute.
+ * Determine if a window has a specific property.
  *
  * @param session_t current session
  * @param w window to check
- * @param atom atom of attribute to check
+ * @param atom atom of property to check
  * @return 1 if it has the attribute, 0 otherwise
  */
 static inline bool
-wid_has_attr(const session_t *ps, Window w, Atom atom) {
+wid_has_prop(const session_t *ps, Window w, Atom atom) {
   Atom type = None;
   int format;
   unsigned long nitems, after;
@@ -1451,6 +1455,10 @@ win_update_focused(session_t *ps, win *w) {
  */
 static inline void
 win_set_focused(session_t *ps, win *w, bool focused) {
+  // Unmapped windows will have their focused state reset on map
+  if (IsUnmapped == w->a.map_state)
+    return;
+
   w->focused_real = focused;
   win_update_focused(ps, w);
 }
@@ -1480,7 +1488,13 @@ static void
 calc_shadow_geometry(session_t *ps, win *w);
 
 static void
-mark_client_win(session_t *ps, win *w, Window client);
+win_mark_client(session_t *ps, win *w, Window client);
+
+static void
+win_unmark_client(session_t *ps, win *w);
+
+static void
+win_recheck_client(session_t *ps, win *w);
 
 static void
 add_win(session_t *ps, Window id, Window prev);
@@ -1515,6 +1529,9 @@ expose_root(session_t *ps, XRectangle *rects, int nrects);
 static bool
 wid_get_text_prop(session_t *ps, Window wid, Atom prop,
     char ***pstrlst, int *pnstr);
+
+static Window
+wid_get_prop_window(session_t *ps, Window wid, Atom aprop);
 
 static bool
 wid_get_name(session_t *ps, Window w, char **name);

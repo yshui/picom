@@ -1143,7 +1143,7 @@ border_size(session_t *ps, win *w) {
  */
 static Window
 find_client_win(session_t *ps, Window w) {
-  if (wid_has_attr(ps, w, ps->atom_client)) {
+  if (wid_has_prop(ps, w, ps->atom_client)) {
     return w;
   }
 
@@ -1799,14 +1799,22 @@ map_win(session_t *ps, Window id) {
   win *w = find_win(ps, id);
 
   // Don't care about window mapping if it's an InputOnly window
-  if (!w || InputOnly == w->a.class) return;
+  // Try avoiding mapping a window twice
+  if (!w || InputOnly == w->a.class
+      || IsViewable == w->a.map_state)
+    return;
 
-  w->focused_real = false;
-  if (ps->o.track_focus && ps->o.use_ewmh_active_win
-      && w == ps->active_win)
-    w->focused_real = true;
+  assert(!w->focused_real);
 
   w->a.map_state = IsViewable;
+
+  // Set focused to false
+  bool focused_real = false;
+  if (ps->o.track_focus && ps->o.use_ewmh_active_win
+      && w == ps->active_win)
+    focused_real = true;
+  win_set_focused(ps, w, focused_real);
+
 
   // Call XSelectInput() before reading properties so that no property
   // changes are lost
@@ -1823,31 +1831,11 @@ map_win(session_t *ps, Window id) {
   // Detect client window here instead of in add_win() as the client
   // window should have been prepared at this point
   if (!w->client_win) {
-    w->wmwin = false;
-
-    Window cw = None;
-    // Always recursively look for a window with WM_STATE, as Fluxbox
-    // sets override-redirect flags on all frame windows.
-    cw = find_client_win(ps, w->id);
-#ifdef DEBUG_CLIENTWIN
-    if (cw)
-      printf("find_client_win(%#010lx): client %#010lx\n", w->id, cw);
-#endif
-    // Set a window's client window to itself if we couldn't find a
-    // client window
-    if (!cw) {
-      cw = w->id;
-      w->wmwin = !w->a.override_redirect;
-#ifdef DEBUG_CLIENTWIN
-      printf("find_client_win(%#010lx): client self (%s)\n", w->id,
-          (w->wmwin ? "wmwin": "override-redirected"));
-#endif
-    }
-    mark_client_win(ps, w, cw);
+    win_recheck_client(ps, w);
   }
   else {
     // Re-mark client window here
-    mark_client_win(ps, w, w->client_win);
+    win_mark_client(ps, w, w->client_win);
   }
 
   assert(w->client_win);
@@ -1947,10 +1935,10 @@ unmap_win(session_t *ps, Window id) {
 
   if (!w || IsUnmapped == w->a.map_state) return;
 
-  w->a.map_state = IsUnmapped;
-
   // Set focus out
   win_set_focused(ps, w, false);
+
+  w->a.map_state = IsUnmapped;
 
   // Fading out
   w->flags |= WFLAG_OPCT_CHANGE;
@@ -2207,18 +2195,20 @@ calc_shadow_geometry(session_t *ps, win *w) {
 /**
  * Mark a window as the client window of another.
  *
- * @param dpy display to use
+ * @param ps current session
  * @param w struct _win of the parent window
  * @param client window ID of the client window
  */
 static void
-mark_client_win(session_t *ps, win *w, Window client) {
+win_mark_client(session_t *ps, win *w, Window client) {
   w->client_win = client;
 
   XSelectInput(ps->dpy, client, determine_evmask(ps, client, WIN_EVMODE_CLIENT));
 
-  // Get the frame width and monitor further frame width changes on client
-  // window if necessary
+  // Make sure the XSelectInput() requests are sent
+  XSync(ps->dpy, False);
+
+  // Get frame widths if needed
   if (ps->o.frame_opacity) {
     get_frame_extents(ps, w, client);
   }
@@ -2232,11 +2222,69 @@ mark_client_win(session_t *ps, win *w, Window client) {
   // _NET_WM_WINDOW_TYPE_NORMAL, otherwise as _NET_WM_WINDOW_TYPE_DIALOG.
   if (WINTYPE_UNKNOWN == w->window_type) {
     if (w->a.override_redirect
-        || !wid_has_attr(ps, client, ps->atom_transient))
+        || !wid_has_prop(ps, client, ps->atom_transient))
       w->window_type = WINTYPE_NORMAL;
     else
       w->window_type = WINTYPE_DIALOG;
   }
+
+  win_update_focused(ps, w);
+}
+
+/**
+ * Unmark current client window of a window.
+ *
+ * @param ps current session
+ * @param w struct _win of the parent window
+ */
+static void
+win_unmark_client(session_t *ps, win *w) {
+  Window client = w->client_win;
+
+  w->client_win = None;
+
+  // Recheck event mask
+  XSelectInput(ps->dpy, client,
+      determine_evmask(ps, client, WIN_EVMODE_UNKNOWN));
+}
+
+/**
+ * Recheck client window of a window.
+ *
+ * @param ps current session
+ * @param w struct _win of the parent window
+ */
+static void
+win_recheck_client(session_t *ps, win *w) {
+  // Initialize wmwin to false
+  w->wmwin = false;
+
+  // Look for the client window
+
+  // Always recursively look for a window with WM_STATE, as Fluxbox
+  // sets override-redirect flags on all frame windows.
+  Window cw = find_client_win(ps, w->id);
+#ifdef DEBUG_CLIENTWIN
+  if (cw)
+    printf_dbgf("(%#010lx): client %#010lx\n", w->id, cw);
+#endif
+  // Set a window's client window to itself if we couldn't find a
+  // client window
+  if (!cw) {
+    cw = w->id;
+    w->wmwin = !w->a.override_redirect;
+#ifdef DEBUG_CLIENTWIN
+    printf_dbgf("(%#010lx): client self (%s)\n", w->id,
+        (w->wmwin ? "wmwin": "override-redirected"));
+#endif
+  }
+
+  // Unmark the old one
+  if (w->client_win && w->client_win != cw)
+    win_unmark_client(ps, w);
+
+  // Mark the new one
+  win_mark_client(ps, w, cw);
 }
 
 static void
@@ -2267,6 +2315,11 @@ add_win(session_t *ps, Window id, Window prev) {
     free(new);
     return;
   }
+
+  // Delay window mapping
+  int map_state = new->a.map_state;
+  assert(IsViewable == map_state || IsUnmapped == map_state);
+  new->a.map_state = IsUnmapped;
 
   new->damaged = 0;
   new->to_paint = false;
@@ -2342,7 +2395,7 @@ add_win(session_t *ps, Window id, Window prev) {
   new->next = *p;
   *p = new;
 
-  if (new->a.map_state == IsViewable) {
+  if (map_state == IsViewable) {
     map_win(ps, id);
   }
 }
@@ -2653,6 +2706,27 @@ static void
 expose_root(session_t *ps, XRectangle *rects, int nrects) {
   XserverRegion region = XFixesCreateRegion(ps->dpy, rects, nrects);
   add_damage(ps, region);
+}
+
+/**
+ * Get the value of a type-<code>Window</code> property of a window.
+ *
+ * @return the value if successful, 0 otherwise
+ */
+static Window
+wid_get_prop_window(session_t *ps, Window wid, Atom aprop) {
+  // Get the attribute
+  Window p = None;
+  winprop_t prop = wid_get_prop(ps, wid, aprop, 1L, XA_WINDOW, 32);
+
+  // Return it
+  if (prop.nitems) {
+    p = *prop.data.p32;
+  }
+
+  free_winprop(&prop);
+
+  return p;
 }
 
 /**
@@ -3006,15 +3080,32 @@ ev_reparent_notify(session_t *ps, XReparentEvent *ev) {
     add_win(ps, ev->window, 0);
   } else {
     destroy_win(ps, ev->window);
+
     // Reset event mask in case something wrong happens
     XSelectInput(ps->dpy, ev->window,
         determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN));
-    /*
-    // Check if the window is a client window of another
-    win *w_top = find_toplevel2(ps, ev->window);
-    if (w_top && !(w_top->client_win)) {
-      mark_client_win(ps, w_top, ev->window);
-    } */
+
+    // Check if the window is an undetected client window
+    // Firstly, check if it's a known client window
+    if (!find_toplevel(ps, ev->window)) {
+      // If not, look for its frame window
+      win *w_top = find_toplevel2(ps, ev->parent);
+      // If found, and its frame may not have a correct client, continue
+      if (w_top && w_top->client_win == w_top->id) {
+        // If it has WM_STATE, mark it the client window
+        if (wid_has_prop(ps, ev->window, ps->atom_client)) {
+          w_top->wmwin = false;
+          win_unmark_client(ps, w_top);
+          win_mark_client(ps, w_top, ev->window);
+        }
+        // Otherwise, watch for WM_STATE on it
+        else {
+          XSelectInput(ps->dpy, ev->window,
+              determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN)
+              | PropertyChangeMask);
+        }
+      }
+    }
   }
 }
 
@@ -3059,18 +3150,10 @@ ev_expose(session_t *ps, XExposeEvent *ev) {
  */
 static void
 update_ewmh_active_win(session_t *ps) {
-  // Get the attribute firstly
-  winprop_t prop = wid_get_prop(ps, ps->root, ps->atom_ewmh_active_win,
-      1L, XA_WINDOW, 32);
-  if (!prop.nitems) {
-    free_winprop(&prop);
-    return;
-  }
-
   // Search for the window
-  Window wid = *prop.data.p32;
+  Window wid =
+    wid_get_prop_window(ps, ps->root, ps->atom_ewmh_active_win);
   win *w = NULL;
-  free_winprop(&prop);
 
   if (wid && !(w = find_toplevel(ps, wid)))
     if (!(w = find_win(ps, wid)))
@@ -3105,6 +3188,24 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
 
     // Unconcerned about any other proprties on root window
     return;
+  }
+
+  // If WM_STATE changes
+  if (ev->atom == ps->atom_client) {
+    // Check whether it could be a client window
+    if (!find_toplevel(ps, ev->window)) {
+      // Reset event mask anyway
+      XSelectInput(ps->dpy, ev->window,
+          determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN));
+
+      win *w_top = find_toplevel2(ps, ev->window);
+      if (w_top && w_top->client_win == w_top->id
+          && wid_has_prop(ps, ev->window, ps->atom_client)) {
+        w_top->wmwin = false;
+        win_unmark_client(ps, w_top);
+        win_mark_client(ps, w_top, ev->window);
+      }
+    }
   }
 
   // If _NET_WM_OPACITY changes
