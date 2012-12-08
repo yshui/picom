@@ -825,14 +825,19 @@ condlst_add(wincond_t **pcondlst, const char *pattern) {
 static long
 determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
   long evmask = NoEventMask;
+  win *w = NULL;
 
-  if (WIN_EVMODE_FRAME == mode || find_win(ps, wid)) {
+  // Check if it's a mapped frame window
+  if (WIN_EVMODE_FRAME == mode
+      || ((w = find_win(ps, wid)) && IsViewable == w->a.map_state)) {
     evmask |= PropertyChangeMask;
     if (ps->o.track_focus && !ps->o.use_ewmh_active_win)
       evmask |= FocusChangeMask;
   }
 
-  if (WIN_EVMODE_CLIENT == mode || find_toplevel(ps, wid)) {
+  // Check if it's a mapped client window
+  if (WIN_EVMODE_CLIENT == mode
+      || ((w = find_toplevel(ps, wid)) && IsViewable == w->a.map_state)) {
     if (ps->o.frame_opacity || ps->o.track_wdata
         || ps->o.detect_client_opacity)
       evmask |= PropertyChangeMask;
@@ -2203,6 +2208,11 @@ static void
 win_mark_client(session_t *ps, win *w, Window client) {
   w->client_win = client;
 
+  // If the window isn't mapped yet, stop here, as the function will be
+  // called in map_win()
+  if (IsViewable != w->a.map_state)
+    return;
+
   XSelectInput(ps->dpy, client, determine_evmask(ps, client, WIN_EVMODE_CLIENT));
 
   // Make sure the XSelectInput() requests are sent
@@ -3090,8 +3100,10 @@ ev_reparent_notify(session_t *ps, XReparentEvent *ev) {
     if (!find_toplevel(ps, ev->window)) {
       // If not, look for its frame window
       win *w_top = find_toplevel2(ps, ev->parent);
-      // If found, and its frame may not have a correct client, continue
-      if (w_top && w_top->client_win == w_top->id) {
+      // If found, and the client window has not been determined, or its
+      // frame may not have a correct client, continue
+      if (w_top && (!w_top->client_win
+            || w_top->client_win == w_top->id)) {
         // If it has WM_STATE, mark it the client window
         if (wid_has_prop(ps, ev->window, ps->atom_client)) {
           w_top->wmwin = false;
