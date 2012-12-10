@@ -2034,7 +2034,7 @@ calc_opacity(session_t *ps, win *w) {
     }
 
     // Respect inactive_opacity in some cases
-    if (ps->o.inactive_opacity && is_normal_win(w) && false == w->focused
+    if (ps->o.inactive_opacity && false == w->focused
         && (OPAQUE == opacity || ps->o.inactive_opacity_override)) {
       opacity = ps->o.inactive_opacity;
     }
@@ -2054,7 +2054,7 @@ calc_dim(session_t *ps, win *w) {
   if (w->destroyed || IsViewable != w->a.map_state)
     return;
 
-  if (ps->o.inactive_dim && is_normal_win(w) && !(w->focused)) {
+  if (ps->o.inactive_dim && !(w->focused)) {
     dim = true;
   } else {
     dim = false;
@@ -3211,7 +3211,8 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
           determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN));
 
       win *w_top = find_toplevel2(ps, ev->window);
-      if (w_top && w_top->client_win == w_top->id
+      // Initialize client_win as early as possible
+      if (w_top && (!w_top->client_win || w_top->client_win == w_top->id)
           && wid_has_prop(ps, ev->window, ps->atom_client)) {
         w_top->wmwin = false;
         win_unmark_client(ps, w_top);
@@ -3971,6 +3972,8 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
           ps->o.wintype_shadow[i] = (bool) ival;
         if (config_setting_lookup_bool(setting, "fade", &ival))
           ps->o.wintype_fade[i] = (bool) ival;
+        if (config_setting_lookup_bool(setting, "focus", &ival))
+          ps->o.wintype_focus[i] = (bool) ival;
         config_setting_lookup_float(setting, "opacity",
             &ps->o.wintype_opacity[i]);
       }
@@ -4752,6 +4755,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .inactive_dim = 0.0,
       .inactive_dim_fixed = false,
       .alpha_step = 0.03,
+
+      .wintype_focus = { false },
       .use_ewmh_active_win = false,
       .focus_blacklist = NULL,
 
@@ -4835,6 +4840,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps_g = ps;
   ps->ignore_tail = &ps->ignore_head;
   gettimeofday(&ps->time_start, NULL);
+
+  wintype_arr_enable(ps->o.wintype_focus);
+  ps->o.wintype_focus[WINTYPE_UNKNOWN] = false;
+  ps->o.wintype_focus[WINTYPE_NORMAL] = false;
+  ps->o.wintype_focus[WINTYPE_UTILITY] = false;
 
   get_cfg(ps, argc, argv);
 

@@ -162,6 +162,13 @@ typedef enum {
   NUM_WINTYPES
 } wintype_t;
 
+/// Enumeration type to represent switches.
+typedef enum {
+  OFF,    // false
+  ON,     // true
+  UNSET
+} switch_t;
+
 typedef enum {
   WINDOW_SOLID,
   WINDOW_TRANS,
@@ -266,6 +273,7 @@ typedef struct {
   bool vsync_aggressive;
 
   // === Shadow ===
+  /// Enable/disable shadow for specific window types.
   bool wintype_shadow[NUM_WINTYPES];
   /// Red, green and blue tone of the shadow.
   double shadow_red, shadow_green, shadow_blue;
@@ -281,6 +289,7 @@ typedef struct {
   bool respect_prop_shadow;
 
   // === Fading ===
+  /// Enable/disable fading for specific window types.
   bool wintype_fade[NUM_WINTYPES];
   /// How much to fade in in a single fading step.
   opacity_t fade_in_step;
@@ -293,6 +302,7 @@ typedef struct {
   wincond_t *fade_blacklist;
 
   // === Opacity ===
+  /// Default opacity for specific window types
   double wintype_opacity[NUM_WINTYPES];
   /// Default opacity for inactive windows.
   /// 32-bit integer with the format of _NET_WM_OPACITY. 0 stands for
@@ -316,6 +326,8 @@ typedef struct {
   double alpha_step;
 
   // === Focus related ===
+  /// Consider windows of specific types to be always focused.
+  bool wintype_focus[NUM_WINTYPES];
   /// Whether to use EWMH _NET_ACTIVE_WINDOW to find active window.
   bool use_ewmh_active_win;
   /// A list of windows always to be considered focused.
@@ -764,13 +776,25 @@ sub_unslong(unsigned long a, unsigned long b) {
 /**
  * Set a <code>bool</code> array of all wintypes to true.
  */
-static void
+static inline void
 wintype_arr_enable(bool arr[]) {
   wintype_t i;
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
     arr[i] = true;
   }
+}
+
+/**
+ * Set a <code>switch_t</code> array of all unset wintypes to true.
+ */
+static inline void
+wintype_arr_enable_unset(switch_t arr[]) {
+  wintype_t i;
+
+  for (i = 0; i < NUM_WINTYPES; ++i)
+    if (UNSET == arr[i])
+      arr[i] = ON;
 }
 
 /**
@@ -1147,11 +1171,6 @@ static Picture
 solid_picture(session_t *ps, bool argb, double a,
               double r, double g, double b);
 
-static inline bool is_normal_win(const win *w) {
-  return (WINTYPE_NORMAL == w->window_type
-      || WINTYPE_UTILITY == w->window_type);
-}
-
 /**
  * Determine if a window has a specific property.
  *
@@ -1439,8 +1458,10 @@ win_update_focused(session_t *ps, win *w) {
 
   w->focused = w->focused_real;
 
-  // Treat WM windows and override-redirected windows specially
-  if ((ps->o.mark_wmwin_focused && w->wmwin)
+  // Use wintype_focus, and treat WM windows and override-redirected
+  // windows specially
+  if (ps->o.wintype_focus[w->window_type]
+      || (ps->o.mark_wmwin_focused && w->wmwin)
       || (ps->o.mark_ovredir_focused
         && w->id == w->client_win && !w->wmwin)
       || win_match(w, ps->o.focus_blacklist, &w->cache_fcblst))
