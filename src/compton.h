@@ -17,6 +17,7 @@
 // #define DEBUG_REDIR      1
 // #define DEBUG_ALLOC_REG  1
 // #define DEBUG_FRAME      1
+// #define DEBUG_LEADER     1
 // #define MONITOR_REPAINT  1
 
 // Whether to enable PCRE regular expression support in blacklists, enabled
@@ -1424,10 +1425,17 @@ static win *
 find_toplevel2(session_t *ps, Window wid);
 
 static Window
-win_get_leader(session_t *ps, win *w);
-
-static Window
 win_get_leader_raw(session_t *ps, win *w, int recursions);
+
+/**
+ * Get the leader of a window.
+ *
+ * This function updates w->cache_leader if necessary.
+ */
+static inline Window
+win_get_leader(session_t *ps, win *w) {
+  return win_get_leader_raw(ps, w, 0);
+}
 
 /**
  * Return whether a window group is really focused.
@@ -1538,34 +1546,8 @@ win_update_leader(session_t *ps, win *w);
 static void
 win_set_leader(session_t *ps, win *w, Window leader);
 
-/**
- * Update focused state of a window.
- */
-static inline void
-win_update_focused(session_t *ps, win *w) {
-  bool focused_old = w->focused;
-
-  w->focused = w->focused_real;
-
-  // Use wintype_focus, and treat WM windows and override-redirected
-  // windows specially
-  if (ps->o.wintype_focus[w->window_type]
-      || (ps->o.mark_wmwin_focused && w->wmwin)
-      || (ps->o.mark_ovredir_focused
-        && w->id == w->client_win && !w->wmwin)
-      || win_match(w, ps->o.focus_blacklist, &w->cache_fcblst))
-    w->focused = true;
-
-  // If window grouping detection is enabled, mark the window active if
-  // its group is
-  if (ps->o.track_leader && ps->active_leader
-      && win_get_leader(ps, w) == ps->active_leader) {
-    w->focused = true;
-  }
-
-  if (w->focused != focused_old)
-    w->flags |= WFLAG_OPCT_CHANGE;
-}
+static void
+win_update_focused(session_t *ps, win *w);
 
 /**
  * Run win_update_focused() on all windows with the same leader window.
@@ -1585,48 +1567,8 @@ group_update_focused(session_t *ps, Window leader) {
   return;
 }
 
-/**
- * Set real focused state of a window.
- */
 static inline void
-win_set_focused(session_t *ps, win *w, bool focused) {
-  // Unmapped windows will have their focused state reset on map
-  if (IsUnmapped == w->a.map_state)
-    return;
-
-  if (w->focused_real != focused) {
-    w->focused_real = focused;
-
-    // If window grouping detection is enabled
-    if (ps->o.track_leader && win_get_leader(ps, w)) {
-      Window leader = win_get_leader(ps, w);
-
-      // If the window gets focused, replace the old active_leader
-      if (w->focused_real && leader != ps->active_leader) {
-        Window active_leader_old = ps->active_leader;
-
-        ps->active_leader = leader;
-
-        group_update_focused(ps, active_leader_old);
-        group_update_focused(ps, leader);
-      }
-      // If the group get unfocused, remove it from active_leader
-      else if (!w->focused_real && leader == ps->active_leader
-          && !group_is_focused(ps, leader)) {
-        ps->active_leader = None;
-        group_update_focused(ps, leader);
-      }
-      else {
-        // The window itself must be updated anyway
-        win_update_focused(ps, w);
-      }
-    }
-    // Otherwise, only update the window itself
-    else {
-      win_update_focused(ps, w);
-    }
-  }
-}
+win_set_focused(session_t *ps, win *w, bool focused);
 
 static void
 determine_fade(session_t *ps, win *w);
