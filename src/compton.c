@@ -847,45 +847,6 @@ determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
 }
 
 /**
- * Find a window from window id in window linked list of the session.
- */
-static win *
-find_win(session_t *ps, Window id) {
-  if (!id)
-    return NULL;
-
-  win *w;
-
-  for (w = ps->list; w; w = w->next) {
-    if (w->id == id && !w->destroyed)
-      return w;
-  }
-
-  return 0;
-}
-
-/**
- * Find out the WM frame of a client window using existing data.
- *
- * @param w window ID
- * @return struct _win object of the found window, NULL if not found
- */
-static win *
-find_toplevel(session_t *ps, Window id) {
-  if (!id)
-    return NULL;
-
-  win *w;
-
-  for (w = ps->list; w; w = w->next) {
-    if (w->client_win == id && !w->destroyed)
-      return w;
-  }
-
-  return NULL;
-}
-
-/**
  * Find out the WM frame of a client window by querying X.
  *
  * @param ps current session
@@ -1820,7 +1781,6 @@ map_win(session_t *ps, Window id) {
     focused_real = true;
   win_set_focused(ps, w, focused_real);
 
-
   // Call XSelectInput() before reading properties so that no property
   // changes are lost
   XSelectInput(ps->dpy, id, determine_evmask(ps, id, WIN_EVMODE_FRAME));
@@ -2238,6 +2198,10 @@ win_mark_client(session_t *ps, win *w, Window client) {
       w->window_type = WINTYPE_DIALOG;
   }
 
+  // Get window group
+  if (ps->o.track_leader)
+    win_update_leader(ps, w);
+
   win_update_focused(ps, w);
 }
 
@@ -2382,6 +2346,7 @@ add_win(session_t *ps, Window id, Window prev) {
   new->focused = false;
   new->focused_real = false;
   new->leader = None;
+  new->cache_leader = None;
   new->destroyed = false;
   new->need_configure = false;
   new->window_type = WINTYPE_UNKNOWN;
@@ -2737,6 +2702,91 @@ wid_get_prop_window(session_t *ps, Window wid, Atom aprop) {
   free_winprop(&prop);
 
   return p;
+}
+
+/**
+ * Update leader of a window.
+ */
+static void
+win_update_leader(session_t *ps, win *w) {
+  Window leader = None;
+
+  // Read the leader properties
+  if (ps->o.detect_transient && !leader)
+    leader = wid_get_prop_window(ps, w->client_win, ps->atom_transient);
+
+  if (ps->o.detect_client_leader && !leader)
+    leader = wid_get_prop_window(ps, w->client_win, ps->atom_client_leader);
+
+  win_set_leader(ps, w, leader);
+}
+
+/**
+ * Set leader of a window.
+ */
+static void
+win_set_leader(session_t *ps, win *w, Window nleader) {
+  // If the leader changes
+  if (w->leader != nleader) {
+    Window cache_leader_old = win_get_leader(ps, w);
+
+    w->leader = nleader;
+
+    // Forcefully do this to deal with the case when a child window
+    // gets mapped before parent, or when the window is a waypoint
+    clear_cache_win_leaders(ps);
+
+    // Update the old and new window group and active_leader if the window
+    // could affect their state.
+    Window cache_leader = win_get_leader(ps, w);
+    if (w->focused_real && cache_leader_old != cache_leader) {
+      ps->active_leader = cache_leader;
+
+      group_update_focused(ps, cache_leader_old);
+      group_update_focused(ps, cache_leader);
+    }
+    // Otherwise, at most the window itself is affected
+    else {
+      win_update_focused(ps, w);
+    }
+  }
+}
+
+/**
+ * Get the leader of a window.
+ *
+ * This function updates w->cache_leader if necessary.
+ */
+static Window
+win_get_leader(session_t *ps, win *w) {
+  return win_get_leader_raw(ps, w, 0);
+}
+
+/**
+ * Internal function of win_get_leader().
+ */
+static Window
+win_get_leader_raw(session_t *ps, win *w, int recursions) {
+  // Rebuild the cache if needed
+  if (!w->cache_leader && (w->client_win || w->leader)) {
+    // Leader defaults to client window
+    if (!(w->cache_leader = w->leader))
+      w->cache_leader = w->client_win;
+
+    // If the leader of this window isn't itself, look for its ancestors
+    if (w->cache_leader && w->cache_leader != w->client_win) {
+      win *wp = find_toplevel(ps, w->cache_leader);
+      if (wp) {
+        // Dead loop?
+        if (recursions > WIN_GET_LEADER_MAX_RECURSION)
+          return None;
+
+        w->cache_leader = win_get_leader_raw(ps, wp, recursions + 1);
+      }
+    }
+  }
+
+  return w->cache_leader;
 }
 
 /**
@@ -3173,10 +3223,10 @@ update_ewmh_active_win(session_t *ps) {
 
   // Mark the window focused
   if (w) {
-    win_set_focused(ps, w, true);
     if (ps->active_win && w != ps->active_win)
       win_set_focused(ps, ps->active_win, false);
     ps->active_win = w;
+    win_set_focused(ps, w, true);
   }
 }
 
@@ -3280,6 +3330,16 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
     if (w)
       win_update_attr_shadow(ps, w);
   }
+
+  // If a leader property changes
+  if ((ps->o.detect_transient && ps->atom_transient == ev->atom)
+      || (ps->o.detect_client_leader && ps->atom_client_leader == ev->atom)) {
+    win *w = find_toplevel(ps, ev->window);
+    if (w) {
+      win_update_leader(ps, w);
+    }
+  }
+
 }
 
 inline static void
@@ -3558,6 +3618,13 @@ usage(void) {
     "  considered focused.\n"
     "--inactive-dim-fixed\n"
     "  Use fixed inactive dim value.\n"
+    "--detect-transient\n"
+    "  Use WM_TRANSIENT_FOR to group windows, and consider windows in\n"
+    "  the same group focused at the same time.\n"
+    "--detect-client-leader\n"
+    "  Use WM_CLIENT_LEADER to group windows, and consider windows in\n"
+    "  the same group focused at the same time. WM_TRANSIENT_FOR has\n"
+    "  higher priority if --detect-transient is enabled, too.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -3955,6 +4022,11 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
       &ps->o.unredir_if_possible);
   // --inactive-dim-fixed
   lcfg_lookup_bool(&cfg, "inactive-dim-fixed", &ps->o.inactive_dim_fixed);
+  // --detect-transient
+  lcfg_lookup_bool(&cfg, "detect-transient", &ps->o.detect_transient);
+  // --detect-client-leader
+  lcfg_lookup_bool(&cfg, "detect-client-leader",
+      &ps->o.detect_client_leader);
   // --shadow-exclude
   parse_cfg_condlst(&cfg, &ps->o.shadow_blacklist, "shadow-exclude");
   // --focus-exclude
@@ -4016,6 +4088,8 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
     { "unredir-if-possible", no_argument, NULL, 278 },
     { "focus-exclude", required_argument, NULL, 279 },
     { "inactive-dim-fixed", no_argument, NULL, 280 },
+    { "detect-transient", no_argument, NULL, 281 },
+    { "detect-client-leader", no_argument, NULL, 282 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4225,6 +4299,14 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
         // --inactive-dim-fixed
         ps->o.inactive_dim_fixed = true;
         break;
+      case 281:
+        // --detect-transient
+        ps->o.detect_transient = true;
+        break;
+      case 282:
+        // --detect-client-leader
+        ps->o.detect_client_leader = true;
+        break;
       default:
         usage();
     }
@@ -4274,6 +4356,12 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
   if (ps->o.shadow_blacklist || ps->o.fade_blacklist
       || ps->o.focus_blacklist)
     ps->o.track_wdata = true;
+
+  // Determine whether we track window grouping
+  if (ps->o.detect_transient || ps->o.detect_client_leader) {
+    ps->o.track_leader = true;
+  }
+
 }
 
 /**
@@ -4289,6 +4377,7 @@ init_atoms(session_t *ps) {
   ps->atom_class = XA_WM_CLASS;
   ps->atom_role = XInternAtom(ps->dpy, "WM_WINDOW_ROLE", False);
   ps->atom_transient = XA_WM_TRANSIENT_FOR;
+  ps->atom_client_leader = XInternAtom(ps->dpy, "WM_CLIENT_LEADER", False);
   ps->atom_ewmh_active_win = XInternAtom(ps->dpy, "_NET_ACTIVE_WINDOW", False);
   ps->atom_compton_shadow = XInternAtom(ps->dpy, "_COMPTON_SHADOW", False);
 
@@ -4759,9 +4848,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .wintype_focus = { false },
       .use_ewmh_active_win = false,
       .focus_blacklist = NULL,
+      .detect_transient = false,
+      .detect_client_leader = false,
 
       .track_focus = false,
       .track_wdata = false,
+      .track_leader = false,
     },
 
     .all_damage = None,
@@ -4782,6 +4874,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
     .list = NULL,
     .active_win = NULL,
+    .active_leader = None,
+
     .black_picture = None,
     .cshadow_picture = None,
     .gaussian_map = NULL,

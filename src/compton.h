@@ -109,6 +109,7 @@
 
 #define FADE_DELTA_TOLERANCE 0.2
 #define SW_OPTI_TOLERANCE 1000
+#define WIN_GET_LEADER_MAX_RECURSION 20
 
 #define NS_PER_SEC 1000000000L
 #define US_PER_SEC 1000000L
@@ -332,12 +333,18 @@ typedef struct {
   bool use_ewmh_active_win;
   /// A list of windows always to be considered focused.
   wincond_t *focus_blacklist;
+  /// Whether to do window grouping with <code>WM_TRANSIENT_FOR</code>.
+  bool detect_transient;
+  /// Whether to do window grouping with <code>WM_CLIENT_LEADER</code>.
+  bool detect_client_leader;
 
   // === Calculated ===
   /// Whether compton needs to track focus changes.
   bool track_focus;
   /// Whether compton needs to track window name and class.
   bool track_wdata;
+  /// Whether compton needs to track window leaders.
+  bool track_leader;
 
 } options_t;
 
@@ -424,6 +431,9 @@ typedef struct {
   /// case the WM does something extraordinary, but caching the pointer
   /// means another layer of complexity.
   struct _win *active_win;
+  /// Window ID of leader window of currently active window. Used for
+  /// subsidiary window detection.
+  Window active_leader;
 
   // === Shadow/dimming related ===
   /// 1x1 black Picture.
@@ -527,6 +537,8 @@ typedef struct {
   Atom atom_role;
   /// Atom of property <code>WM_TRANSIENT_FOR</code>.
   Atom atom_transient;
+  /// Atom of property <code>WM_CLIENT_LEADER</code>.
+  Atom atom_client_leader;
   /// Atom of property <code>_NET_ACTIVE_WINDOW</code>.
   Atom atom_ewmh_active_win;
   /// Atom of property <code>_COMPTON_SHADOW</code>.
@@ -566,6 +578,8 @@ typedef struct _win {
   bool focused_real;
   /// Leader window ID of the window.
   Window leader;
+  /// Cached topmost window ID of the window.
+  Window cache_leader;
   /// Whether the window has been destroyed.
   bool destroyed;
   /// Cached width/height of the window including border.
@@ -1360,14 +1374,80 @@ condlst_add(wincond_t **pcondlst, const char *pattern);
 static long
 determine_evmask(session_t *ps, Window wid, win_evmode_t mode);
 
-static win *
-find_win(session_t *ps, Window id);
+/**
+ * Find a window from window id in window linked list of the session.
+ */
+static inline win *
+find_win(session_t *ps, Window id) {
+  if (!id)
+    return NULL;
 
-static win *
-find_toplevel(session_t *ps, Window id);
+  win *w;
+
+  for (w = ps->list; w; w = w->next) {
+    if (w->id == id && !w->destroyed)
+      return w;
+  }
+
+  return 0;
+}
+
+/**
+ * Find out the WM frame of a client window using existing data.
+ *
+ * @param w window ID
+ * @return struct _win object of the found window, NULL if not found
+ */
+static inline win *
+find_toplevel(session_t *ps, Window id) {
+  if (!id)
+    return NULL;
+
+  for (win *w = ps->list; w; w = w->next) {
+    if (w->client_win == id && !w->destroyed)
+      return w;
+  }
+
+  return NULL;
+}
+
+/**
+ * Clear leader cache of all windows.
+ */
+static void
+clear_cache_win_leaders(session_t *ps) {
+  for (win *w = ps->list; w; w = w->next)
+    w->cache_leader = None;
+}
 
 static win *
 find_toplevel2(session_t *ps, Window wid);
+
+static Window
+win_get_leader(session_t *ps, win *w);
+
+static Window
+win_get_leader_raw(session_t *ps, win *w, int recursions);
+
+/**
+ * Return whether a window group is really focused.
+ *
+ * @param leader leader window ID
+ * @return true if the window group is focused, false otherwise
+ */
+static inline bool
+group_is_focused(session_t *ps, Window leader) {
+  if (!leader)
+    return false;
+
+  for (win *w = ps->list; w; w = w->next) {
+    if (win_get_leader(ps, w) == leader && !w->destroyed
+        && w->focused_real)
+      return true;
+  }
+
+  return false;
+}
 
 static win *
 recheck_focus(session_t *ps);
@@ -1449,6 +1529,15 @@ calc_opacity(session_t *ps, win *w);
 static void
 calc_dim(session_t *ps, win *w);
 
+static Window
+wid_get_prop_window(session_t *ps, Window wid, Atom aprop);
+
+static void
+win_update_leader(session_t *ps, win *w);
+
+static void
+win_set_leader(session_t *ps, win *w, Window leader);
+
 /**
  * Update focused state of a window.
  */
@@ -1467,8 +1556,33 @@ win_update_focused(session_t *ps, win *w) {
       || win_match(w, ps->o.focus_blacklist, &w->cache_fcblst))
     w->focused = true;
 
+  // If window grouping detection is enabled, mark the window active if
+  // its group is
+  if (ps->o.track_leader && ps->active_leader
+      && win_get_leader(ps, w) == ps->active_leader) {
+    w->focused = true;
+  }
+
   if (w->focused != focused_old)
     w->flags |= WFLAG_OPCT_CHANGE;
+}
+
+/**
+ * Run win_update_focused() on all windows with the same leader window.
+ *
+ * @param leader leader window ID
+ */
+static inline void
+group_update_focused(session_t *ps, Window leader) {
+  if (!leader)
+    return;
+
+  for (win *w = ps->list; w; w = w->next) {
+    if (win_get_leader(ps, w) == leader && !w->destroyed)
+      win_update_focused(ps, w);
+  }
+
+  return;
 }
 
 /**
@@ -1480,8 +1594,38 @@ win_set_focused(session_t *ps, win *w, bool focused) {
   if (IsUnmapped == w->a.map_state)
     return;
 
-  w->focused_real = focused;
-  win_update_focused(ps, w);
+  if (w->focused_real != focused) {
+    w->focused_real = focused;
+
+    // If window grouping detection is enabled
+    if (ps->o.track_leader && win_get_leader(ps, w)) {
+      Window leader = win_get_leader(ps, w);
+
+      // If the window gets focused, replace the old active_leader
+      if (w->focused_real && leader != ps->active_leader) {
+        Window active_leader_old = ps->active_leader;
+
+        ps->active_leader = leader;
+
+        group_update_focused(ps, active_leader_old);
+        group_update_focused(ps, leader);
+      }
+      // If the group get unfocused, remove it from active_leader
+      else if (!w->focused_real && leader == ps->active_leader
+          && !group_is_focused(ps, leader)) {
+        ps->active_leader = None;
+        group_update_focused(ps, leader);
+      }
+      else {
+        // The window itself must be updated anyway
+        win_update_focused(ps, w);
+      }
+    }
+    // Otherwise, only update the window itself
+    else {
+      win_update_focused(ps, w);
+    }
+  }
 }
 
 static void
