@@ -1423,6 +1423,66 @@ win_paint_shadow(session_t *ps, win *w, Picture tgt_buffer) {
 }
 
 /**
+ * Blur the background of a window.
+ */
+static inline void
+win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
+    XserverRegion reg_paint) {
+  // Convolution filter parameter (box blur)
+  // gaussian or binomial filters are definitely superior, yet looks
+  // like they aren't supported as of xorg-server-1.13.0
+  const static XFixed convolution_blur[] = {
+    // Must convert to XFixed with XDoubleToFixed()
+    // Matrix size
+    XDoubleToFixed(3), XDoubleToFixed(3),
+    // Matrix
+    XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
+    XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
+    XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
+  };
+  // Extra pixels we have to get for the blur to work correctly.
+  const static int expand = 1;
+
+  Pixmap tmp_pixmap = None;
+  Picture tmp_picture = None;
+
+  int x = w->a.x;
+  int y = w->a.y;
+  int wid = w->widthb;
+  int hei = w->heightb;
+
+  int xe = x - expand;
+  int ye = y - expand;
+  int wide = wid + expand * 2;
+  int heie = hei + expand * 2;
+
+  // Directly copying from tgt_buffer does not work, so we create a
+  // Picture in the middle. We expand the region slightly, to make sure
+  // the blur on border pixels work correctly.
+  tmp_pixmap = XCreatePixmap(ps->dpy, ps->root, wide, heie, ps->depth);
+  if (!tmp_pixmap)
+    goto win_blur_background_err;
+
+  tmp_picture = XRenderCreatePicture(ps->dpy, tmp_pixmap,
+    XRenderFindVisualFormat(ps->dpy, ps->vis), 0, 0);
+  if (!tmp_picture)
+    goto win_blur_background_err;
+
+  // Copy the content to tmp_picture, then copy back.
+  // We lift the PictureClipRegion here, to get the expanded pixels.
+  XFixesSetPictureClipRegion(ps->dpy, tgt_buffer, 0, 0, None);
+  XRenderComposite(ps->dpy, PictOpSrc, tgt_buffer, None, tmp_picture, xe, ye, 0, 0, 0, 0, wide, heie);
+  XFixesSetPictureClipRegion(ps->dpy, tgt_buffer, 0, 0, reg_paint);
+  XRenderSetPictureFilter(ps->dpy, tmp_picture, XRFILTER_CONVOLUTION, (XFixed *) convolution_blur, sizeof(convolution_blur) / sizeof(XFixed));
+  XRenderComposite(ps->dpy, PictOpSrc, tmp_picture, None, tgt_buffer, expand, expand, 0, 0, x, y, wid, hei);
+  xrfilter_reset(ps, tmp_picture);
+
+win_blur_background_err:
+  free_pixmap(ps, &tmp_pixmap);
+  free_picture(ps, &tmp_picture);
+}
+
+/**
  * Paint a window itself and dim it if asked.
  */
 static inline void
@@ -1610,7 +1670,8 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
 
       // Detect if the region is empty before painting
       if (region == reg_paint || !is_region_empty(ps, reg_paint)) {
-        XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg_paint);
+        XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0,
+            reg_paint);
 
         win_paint_shadow(ps, w, ps->tgt_buffer);
       }
@@ -1638,6 +1699,11 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
 
     if (!is_region_empty(ps, reg_paint)) {
       XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg_paint);
+      // Blur window background
+      if ((ps->o.blur_background && WINDOW_SOLID != w->mode)
+          || (ps->o.blur_background_frame && w->frame_opacity)) {
+        win_blur_background(ps, w, ps->tgt_buffer, reg_paint);
+      }
 
       // Painting the window
       win_paint_win(ps, w, ps->tgt_buffer);
@@ -1670,7 +1736,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
   // DBE painting mode, only need to swap the buffer
   if (ps->o.dbe) {
     XdbeSwapInfo swap_info = {
-      .swap_window = (ps->o.paint_on_overlay ? ps->overlay: ps->root),
+      .swap_window = get_tgt_window(ps),
       // Is it safe to use XdbeUndefined?
       .swap_action = XdbeCopied
     };
@@ -3689,6 +3755,14 @@ usage(void) {
     "  Use WM_CLIENT_LEADER to group windows, and consider windows in\n"
     "  the same group focused at the same time. WM_TRANSIENT_FOR has\n"
     "  higher priority if --detect-transient is enabled, too.\n"
+    "--blur-background\n"
+    "  Blur background of semi-transparent / ARGB windows. Bad in\n"
+    "  performance. The switch name may change without prior\n"
+    "  notifications.\n"
+    "--blur-background-frame\n"
+    "  Blur background of windows when the window frame is not opaque.\n"
+    "  Implies --blur-background. Bad in performance. The switch name\n"
+    "  may change.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -4095,6 +4169,11 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
   parse_cfg_condlst(&cfg, &ps->o.shadow_blacklist, "shadow-exclude");
   // --focus-exclude
   parse_cfg_condlst(&cfg, &ps->o.focus_blacklist, "focus-exclude");
+  // --blur-background
+  lcfg_lookup_bool(&cfg, "blur-background", &ps->o.blur_background);
+  // --blur-background-frame
+  lcfg_lookup_bool(&cfg, "blur-background-frame",
+      &ps->o.blur_background_frame);
   // Wintype settings
   {
     wintype_t i;
@@ -4154,6 +4233,8 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
     { "inactive-dim-fixed", no_argument, NULL, 280 },
     { "detect-transient", no_argument, NULL, 281 },
     { "detect-client-leader", no_argument, NULL, 282 },
+    { "blur-background", no_argument, NULL, 283 },
+    { "blur-background-frame", no_argument, NULL, 284 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4371,6 +4452,14 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
         // --detect-client-leader
         ps->o.detect_client_leader = true;
         break;
+      case 283:
+        // --blur-background
+        ps->o.blur_background = true;
+        break;
+      case 284:
+        // --blur-background-frame
+        ps->o.blur_background_frame = true;
+        break;
       default:
         usage();
     }
@@ -4408,6 +4497,10 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
     ps->o.wintype_opacity[WINTYPE_DROPDOWN_MENU] = cfgtmp.menu_opacity;
     ps->o.wintype_opacity[WINTYPE_POPUP_MENU] = cfgtmp.menu_opacity;
   }
+
+  // --blur-background-frame implies --blur-background
+  if (ps->o.blur_background_frame)
+    ps->o.blur_background = true;
 
   // Other variables determined by options
 
@@ -4786,6 +4879,32 @@ init_overlay(session_t *ps) {
 }
 
 /**
+ * Query needed X Render filters to check for their existence.
+ */
+static void
+init_filters(session_t *ps) {
+  if (ps->o.blur_background || ps->o.blur_background_frame) {
+    // Query filters
+    XFilters *pf = XRenderQueryFilters(ps->dpy, get_tgt_window(ps));
+    if (pf) {
+      for (int i = 0; i < pf->nfilter; ++i) {
+        // Convolution filter
+        if (!strcmp(pf->filter[i], XRFILTER_CONVOLUTION))
+          ps->xrfilter_convolution_exists = true;
+      }
+    }
+    XFree(pf);
+
+    // Turn features off if any required filter is not present
+    if (!ps->xrfilter_convolution_exists) {
+      fprintf(stderr, "X Render convolution filter unsupported by your X server. Background blur disabled.\n");
+      ps->o.blur_background = false;
+      ps->o.blur_background_frame = false;
+    }
+  }
+}
+
+/**
  * Redirect all windows.
  */
 static void
@@ -4908,6 +5027,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .inactive_dim = 0.0,
       .inactive_dim_fixed = false,
       .alpha_step = 0.03,
+      .blur_background = false,
+      .blur_background_frame = false,
 
       .wintype_focus = { false },
       .use_ewmh_active_win = false,
@@ -4977,6 +5098,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .glx_event = 0,
     .glx_error = 0,
     .dbe_exists = false,
+    .xrfilter_convolution_exists = false,
 
     .atom_opacity = None,
     .atom_frame_extents = None,
@@ -5151,6 +5273,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
       ps->tgt_picture = ps->root_picture;
     }
   }
+
+  init_filters(ps);
 
   ps->black_picture = solid_picture(ps, true, 1, 0, 0, 0);
 

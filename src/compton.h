@@ -116,6 +116,10 @@
 #define US_PER_SEC 1000000L
 #define MS_PER_SEC 1000
 
+#define XRFILTER_CONVOLUTION  "convolution"
+#define XRFILTER_GUASSIAN     "gaussian"
+#define XRFILTER_BINOMIAL     "binomial"
+
 // Window flags
 
 // Window size is changed
@@ -326,6 +330,11 @@ typedef struct {
   bool inactive_dim_fixed;
   /// Step for pregenerating alpha pictures. 0.01 - 1.0.
   double alpha_step;
+  /// Whether to blur background of semi-transparent / ARGB windows.
+  bool blur_background;
+  /// Whether to blur background when the window frame is not opaque.
+  /// Implies blur_background.
+  bool blur_background_frame;
 
   // === Focus related ===
   /// Consider windows of specific types to be always focused.
@@ -519,6 +528,8 @@ typedef struct {
   #endif
   /// Whether X DBE extension exists.
   bool dbe_exists;
+  /// Whether X Render convolution filter exists.
+  bool xrfilter_convolution_exists;
 
   // === Atoms ===
   /// Atom of property <code>_NET_WM_OPACITY</code>.
@@ -777,6 +788,22 @@ set_ignore_next(session_t *ps) {
 
 static int
 should_ignore(session_t *ps, unsigned long sequence);
+
+/**
+ * Return the painting target window.
+ */
+static inline Window
+get_tgt_window(session_t *ps) {
+  return ps->o.paint_on_overlay ? ps->overlay: ps->root;
+}
+
+/**
+ * Reset filter on a <code>Picture</code>.
+ */
+static inline void
+xrfilter_reset(session_t *ps, Picture p) {
+  XRenderSetPictureFilter(ps->dpy, p, "Nearest", NULL, 0);
+}
 
 /**
  * Subtract two unsigned long values.
