@@ -335,6 +335,9 @@ typedef struct {
   /// Whether to blur background when the window frame is not opaque.
   /// Implies blur_background.
   bool blur_background_frame;
+  /// Whether to use fixed blur strength instead of adjusting according
+  /// to window opacity.
+  bool blur_background_fixed;
 
   // === Focus related ===
   /// Consider windows of specific types to be always focused.
@@ -1494,10 +1497,16 @@ static void
 paint_root(session_t *ps, Picture tgt_buffer);
 
 static XserverRegion
+win_get_region(session_t *ps, win *w, bool use_offset);
+
+static XserverRegion
+win_get_region_noframe(session_t *ps, win *w, bool use_offset);
+
+static XserverRegion
 win_extents(session_t *ps, win *w);
 
 static XserverRegion
-border_size(session_t *ps, win *w);
+border_size(session_t *ps, win *w, bool use_offset);
 
 static Window
 find_client_win(session_t *ps, Window w);

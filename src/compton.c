@@ -545,7 +545,7 @@ win_rounded_corners(session_t *ps, win *w) {
 
   // Fetch its bounding region
   if (!w->border_size)
-    w->border_size = border_size(ps, w);
+    w->border_size = border_size(ps, w, true);
 
   // Quit if border_size() returns None
   if (!w->border_size)
@@ -991,11 +991,11 @@ paint_root(session_t *ps, Picture tgt_buffer) {
  * Get a rectangular region a window occupies, excluding shadow.
  */
 static XserverRegion
-win_get_region(session_t *ps, win *w) {
+win_get_region(session_t *ps, win *w, bool use_offset) {
   XRectangle r;
 
-  r.x = w->a.x;
-  r.y = w->a.y;
+  r.x = (use_offset ? w->a.x: 0);
+  r.y = (use_offset ? w->a.y: 0);
   r.width = w->widthb;
   r.height = w->heightb;
 
@@ -1006,11 +1006,11 @@ win_get_region(session_t *ps, win *w) {
  * Get a rectangular region a window occupies, excluding frame and shadow.
  */
 static XserverRegion
-win_get_region_noframe(session_t *ps, win *w) {
+win_get_region_noframe(session_t *ps, win *w, bool use_offset) {
   XRectangle r;
 
-  r.x = w->a.x + w->a.border_width + w->left_width;
-  r.y = w->a.y + w->a.border_width + w->top_width;
+  r.x = (use_offset ? w->a.x: 0) + w->a.border_width + w->left_width;
+  r.y = (use_offset ? w->a.y: 0) + w->a.border_width + w->top_width;
   r.width = max_i(w->a.width - w->left_width - w->right_width, 0);
   r.height = max_i(w->a.height - w->top_width - w->bottom_width, 0);
 
@@ -1069,9 +1069,9 @@ win_extents(session_t *ps, win *w) {
  * Retrieve the bounding shape of a window.
  */
 static XserverRegion
-border_size(session_t *ps, win *w) {
+border_size(session_t *ps, win *w, bool use_offset) {
   // Start with the window rectangular region
-  XserverRegion fin = win_get_region(ps, w);
+  XserverRegion fin = win_get_region(ps, w, use_offset);
 
   // Only request for a bounding region if the window is shaped
   if (w->bounding_shaped) {
@@ -1089,10 +1089,12 @@ border_size(session_t *ps, win *w) {
     if (!border)
       return fin;
 
-    // Translate the region to the correct place
-    XFixesTranslateRegion(ps->dpy, border,
-      w->a.x + w->a.border_width,
-      w->a.y + w->a.border_width);
+    if (use_offset) {
+      // Translate the region to the correct place
+      XFixesTranslateRegion(ps->dpy, border,
+        w->a.x + w->a.border_width,
+        w->a.y + w->a.border_width);
+    }
 
     // Intersect the bounding region we got with the window rectangle, to
     // make sure the bounding region is not bigger than the window
@@ -1249,7 +1251,7 @@ paint_preprocess(session_t *ps, win *list) {
     if (to_paint) {
       // Fetch bounding region
       if (!w->border_size) {
-        w->border_size = border_size(ps, w);
+        w->border_size = border_size(ps, w, true);
       }
 
       // Fetch window extents
@@ -1326,10 +1328,10 @@ paint_preprocess(session_t *ps, win *list) {
             if (w->border_size)
               w->reg_ignore = copy_region(ps, w->border_size);
             else
-              w->reg_ignore = win_get_region(ps, w);
+              w->reg_ignore = win_get_region(ps, w, true);
           }
           else {
-            w->reg_ignore = win_get_region_noframe(ps, w);
+            w->reg_ignore = win_get_region_noframe(ps, w, true);
             if (w->border_size)
               XFixesIntersectRegion(ps->dpy, w->reg_ignore, w->reg_ignore,
                   w->border_size);
@@ -1428,20 +1430,20 @@ win_paint_shadow(session_t *ps, win *w, Picture tgt_buffer) {
 static inline void
 win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
     XserverRegion reg_paint) {
+  const static int convolution_blur_size = 3;
   // Convolution filter parameter (box blur)
   // gaussian or binomial filters are definitely superior, yet looks
   // like they aren't supported as of xorg-server-1.13.0
-  const static XFixed convolution_blur[] = {
+  XFixed convolution_blur[] = {
     // Must convert to XFixed with XDoubleToFixed()
     // Matrix size
-    XDoubleToFixed(3), XDoubleToFixed(3),
+    XDoubleToFixed(convolution_blur_size),
+    XDoubleToFixed(convolution_blur_size),
     // Matrix
     XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
     XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
     XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
   };
-  // Extra pixels we have to get for the blur to work correctly.
-  const static int expand = 1;
 
   Pixmap tmp_pixmap = None;
   Picture tmp_picture = None;
@@ -1451,15 +1453,9 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
   int wid = w->widthb;
   int hei = w->heightb;
 
-  int xe = x - expand;
-  int ye = y - expand;
-  int wide = wid + expand * 2;
-  int heie = hei + expand * 2;
-
   // Directly copying from tgt_buffer does not work, so we create a
-  // Picture in the middle. We expand the region slightly, to make sure
-  // the blur on border pixels work correctly.
-  tmp_pixmap = XCreatePixmap(ps->dpy, ps->root, wide, heie, ps->depth);
+  // Picture in the middle.
+  tmp_pixmap = XCreatePixmap(ps->dpy, ps->root, wid, hei, ps->depth);
   if (!tmp_pixmap)
     goto win_blur_background_err;
 
@@ -1468,14 +1464,31 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
   if (!tmp_picture)
     goto win_blur_background_err;
 
-  // Copy the content to tmp_picture, then copy back.
-  // We lift the PictureClipRegion here, to get the expanded pixels.
-  XFixesSetPictureClipRegion(ps->dpy, tgt_buffer, 0, 0, None);
-  XRenderComposite(ps->dpy, PictOpSrc, tgt_buffer, None, tmp_picture, xe, ye, 0, 0, 0, 0, wide, heie);
-  XFixesSetPictureClipRegion(ps->dpy, tgt_buffer, 0, 0, reg_paint);
-  XRenderSetPictureFilter(ps->dpy, tmp_picture, XRFILTER_CONVOLUTION, (XFixed *) convolution_blur, sizeof(convolution_blur) / sizeof(XFixed));
-  XRenderComposite(ps->dpy, PictOpSrc, tmp_picture, None, tgt_buffer, expand, expand, 0, 0, x, y, wid, hei);
-  xrfilter_reset(ps, tmp_picture);
+  // Adjust blur strength according to window opacity, to make it appear
+  // better during fading
+  if (!ps->o.blur_background_fixed) {
+    double pct = 1.0 - get_opacity_percent(w) * (1.0 - 1.0 / 9.0);
+    convolution_blur[2 + convolution_blur_size + ((convolution_blur_size - 1) / 2)] = XDoubleToFixed(pct * 8.0 / (1.1 - pct));
+  }
+
+  // Minimize the region we try to blur, if the window itself is not
+  // opaque, only the frame is.
+  if (WINDOW_SOLID == w->mode && w->frame_opacity) {
+    XserverRegion reg_all = border_size(ps, w, false);
+    XserverRegion reg_noframe = win_get_region_noframe(ps, w, false);
+    XFixesSubtractRegion(ps->dpy, reg_noframe, reg_all, reg_noframe);
+    XFixesSetPictureClipRegion(ps->dpy, tmp_picture, reg_noframe, 0, 0);
+    free_region(ps, &reg_all);
+    free_region(ps, &reg_noframe);
+  }
+
+  // Copy the content to tmp_picture, then copy back. The filter must
+  // be applied on tgt_buffer, to get the nearby pixels outside the
+  // window.
+  XRenderSetPictureFilter(ps->dpy, tgt_buffer, XRFILTER_CONVOLUTION, (XFixed *) convolution_blur, sizeof(convolution_blur) / sizeof(XFixed));
+  XRenderComposite(ps->dpy, PictOpSrc, tgt_buffer, None, tmp_picture, x, y, 0, 0, 0, 0, wid, hei);
+  xrfilter_reset(ps, tgt_buffer);
+  XRenderComposite(ps->dpy, PictOpSrc, tmp_picture, None, tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
 
 win_blur_background_err:
   free_pixmap(ps, &tmp_pixmap);
@@ -3492,7 +3505,7 @@ ev_shape_notify(session_t *ps, XShapeEvent *ev) {
     // Mark the old border_size as damaged
     add_damage(ps, w->border_size);
 
-    w->border_size = border_size(ps, w);
+    w->border_size = border_size(ps, w, true);
 
     // Mark the new border_size as damaged
     add_damage(ps, copy_region(ps, w->border_size));
@@ -3763,6 +3776,9 @@ usage(void) {
     "  Blur background of windows when the window frame is not opaque.\n"
     "  Implies --blur-background. Bad in performance. The switch name\n"
     "  may change.\n"
+    "--blur-background-fixed\n"
+    "  Use fixed blur strength instead of adjusting according to window\n"
+    "  opacity.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -4174,6 +4190,9 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
   // --blur-background-frame
   lcfg_lookup_bool(&cfg, "blur-background-frame",
       &ps->o.blur_background_frame);
+  // --blur-background-fixed
+  lcfg_lookup_bool(&cfg, "blur-background-fixed",
+      &ps->o.blur_background_fixed);
   // Wintype settings
   {
     wintype_t i;
@@ -4235,6 +4254,7 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
     { "detect-client-leader", no_argument, NULL, 282 },
     { "blur-background", no_argument, NULL, 283 },
     { "blur-background-frame", no_argument, NULL, 284 },
+    { "blur-background-fixed", no_argument, NULL, 285 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4459,6 +4479,10 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
       case 284:
         // --blur-background-frame
         ps->o.blur_background_frame = true;
+        break;
+      case 285:
+        // --blur-background-fixed
+        ps->o.blur_background_fixed = true;
         break;
       default:
         usage();
@@ -5029,6 +5053,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .alpha_step = 0.03,
       .blur_background = false,
       .blur_background_frame = false,
+      .blur_background_fixed = false,
 
       .wintype_focus = { false },
       .use_ewmh_active_win = false,
