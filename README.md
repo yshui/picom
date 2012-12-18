@@ -84,6 +84,8 @@ $ make install
 
 * There are two sets of man pages in the repository: the man pages in groff format (`man/compton.1` & `man/compton-trans.1`) and the man pages in Asciidoc format (`man/compton.1.asciidoc` & `man/compton-trans.1.asciidoc`). The Asciidoc man pages are much more up-to-date than the groff ones, and it is viewable online. As chjj has not yet expressed his attitude towards switching to Asciidoc man pages, I kept both versions. By default the groff version is installed, unless you run `make docs`.
 
+* The performance of blurring is terrible, probably because of a problem in the X Render implementation. Its behavior is driver-dependent: With nvidia-drivers it works but there are strange 1px lines remaining when you operate on windows (not sure if it's a bug in compton or in the driver); with nouveau it's utterly broken.
+
 ## Usage
 
 Please refer to the Asciidoc man pages (`man/compton.1.asciidoc` & `man/compton-trans.1.asciidoc`) for more details and examples.

@@ -137,7 +137,7 @@ OPTIONS
 	Painting on X Composite overlay window instead of on root window.
 
 *--sw-opti*::
-	Limit compton to repaint at most once every 1 / 'refresh_rate' second to boost performance. Experimental.
+	Limit compton to repaint at most once every 1 / 'refresh_rate' second to boost performance. Experimental. This should not be used with *--vsync* as *--vsync* essentially does *--sw-opti*'s job already, unless you wish to specify a lower refresh rate than the actual value.
 
 *--use-ewmh-active-win*::
 	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it. Experimental.
@@ -151,6 +151,23 @@ OPTIONS
 *--focus-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should always be considered focused.
 
+*--inactive-dim-fixed*::
+	Use fixed inactive dim value, instead of adjusting according to window opacity.
+
+*--detect-transient*::
+	Use 'WM_TRANSIENT_FOR' to group windows, and consider windows in the same group focused at the same time.
+
+*--detect-client-leader*::
+	Use 'WM_CLIENT_LEADER' to group windows, and consider windows in the same group focused at the same time. 'WM_TRANSIENT_FOR' has higher priority if *--detect-transient* is enabled, too.
+
+*--blur-background*::
+	Blur background of semi-transparent / ARGB windows. Bad in performance, with driver-dependent behavior. The name of the switch may change without prior notifications.
+
+*--blur-background-frame*::
+	Blur background of windows when the window frame is not opaque.  Implies *--blur-background*. Bad in performance, with driver-dependent behavior. The name may change.
+
+*--blur-background-fixed*::
+	Use fixed blur strength rather than adjusting according to window opacity.
 
 FORMAT OF CONDITIONS
 --------------------
@@ -159,7 +176,7 @@ FORMAT OF CONDITIONS
 
 	condition = TARGET:TYPE[FLAGS]:PATTERN
 
-'TARGET' is one of "n" (window name), "i" (window class instance), and "g" (window general class)
+'TARGET' is one of "n" (window name), "i" (window class instance), "g" (window general class), and "r" (window role).
 
 'TYPE' is one of "e" (exact match), "a" (match anywhere), "s" (match from start), "w" (wildcard), and "p" (PCRE regular expressions, if compiled with the support).
 
