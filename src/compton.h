@@ -54,6 +54,21 @@
 #include <fnmatch.h>
 #include <signal.h>
 
+// libevent
+#ifndef CONFIG_LIBEVENT_LEGACY
+#include <event2/event.h>
+#else
+#include <event.h>
+typedef int evutil_socket_t;
+typedef void(* event_callback_fn)(evutil_socket_t, short, void *);
+#define event_free(ev) (event_del((ev)), free((ev)))
+#endif
+
+#ifndef evtimer_new
+#define evtimer_new(b, cb, arg)   EVENT_NEW((b), -1, 0, (cb), (arg))
+#endif
+
+// libpcre
 #ifdef CONFIG_REGEX_PCRE
 #include <pcre.h>
 
@@ -70,6 +85,10 @@
 #ifdef CONFIG_LIBCONFIG
 #include <libgen.h>
 #include <libconfig.h>
+#endif
+
+#ifdef CONFIG_DBUS
+#include <dbus/dbus.h>
 #endif
 
 #include <X11/Xlib.h>
@@ -109,8 +128,10 @@
 #define REGISTER_PROP "_NET_WM_CM_S"
 
 #define FADE_DELTA_TOLERANCE 0.2
-#define SW_OPTI_TOLERANCE 1000
+#define SWOPTI_TOLERANCE 1000
 #define WIN_GET_LEADER_MAX_RECURSION 20
+
+#define SEC_WRAP (15L * 24L * 60L * 60L)
 
 #define NS_PER_SEC 1000000000L
 #define US_PER_SEC 1000000L
@@ -134,10 +155,27 @@
 // #define MSTR_(s)        #s
 // #define MSTR(s)         MSTR_(s)
 
+/// Print out an error message.
+#define printf_err(format, ...) \
+  fprintf(stderr, format "\n", ## __VA_ARGS__)
+
+/// Print out an error message with function name.
+#define printf_errf(format, ...) \
+  printf_err("%s" format,  __func__, ## __VA_ARGS__)
+
+/// Print out an error message with function name, and quit with a
+/// specific exit code.
+#define printf_errfq(code, format, ...) { \
+  printf_err("%s" format,  __func__, ## __VA_ARGS__); \
+  exit(code); \
+}
+
+/// Print out a debug message.
 #define printf_dbg(format, ...) \
   printf(format, ## __VA_ARGS__); \
   fflush(stdout)
 
+/// Print out a debug message with function name.
 #define printf_dbgf(format, ...) \
   printf_dbg("%s" format, __func__, ## __VA_ARGS__)
 
@@ -148,6 +186,7 @@
 // === Types ===
 
 typedef uint32_t opacity_t;
+typedef long time_ms_t;
 
 typedef enum {
   WINTYPE_UNKNOWN,
@@ -175,12 +214,14 @@ typedef enum {
   UNSET
 } switch_t;
 
+/// Enumeration type of window painting mode.
 typedef enum {
-  WINDOW_SOLID,
-  WINDOW_TRANS,
-  WINDOW_ARGB
-} winmode;
+  WMODE_TRANS,
+  WMODE_SOLID,
+  WMODE_ARGB
+} winmode_t;
 
+/// Structure representing Window property value.
 typedef struct {
   // All pointers have the same length, right?
   // I wanted to use anonymous union but it's a GNU extension...
@@ -190,6 +231,8 @@ typedef struct {
     long *p32;
   } data;
   unsigned long nitems;
+  Atom type;
+  int format;
 } winprop_t;
 
 typedef struct _ignore {
@@ -263,6 +306,8 @@ typedef struct {
   /// Whether to unredirect all windows if a full-screen opaque window
   /// is detected.
   bool unredir_if_possible;
+  /// Whether to enable D-Bus support.
+  bool dbus;
   /// Whether to work under synchronized mode for debugging.
   bool synchronize;
 
@@ -301,7 +346,8 @@ typedef struct {
   opacity_t fade_in_step;
   /// How much to fade out in a single fading step.
   opacity_t fade_out_step;
-  unsigned long fade_delta;
+  /// Fading time delta. In milliseconds.
+  time_ms_t fade_delta;
   /// Whether to disable fading on window open/close.
   bool no_fading_openclose;
   /// Fading blacklist. A linked list of conditions.
@@ -401,6 +447,17 @@ typedef struct {
   // === Operation related ===
   /// Program options.
   options_t o;
+  /// Libevent event base.
+  struct event_base *ev_base;
+  /// Libevent event for X connection.
+  struct event *ev_x;
+  /// Libevent event for timeout.
+  struct event *ev_tmout;
+  /// Whether we have received an event in this cycle.
+  bool ev_received;
+  /// Whether the program is idling. I.e. no fading, no potential window
+  /// changes.
+  bool idling;
   /// Program start time.
   struct timeval time_start;
   /// The region needs to painted on next paint.
@@ -414,11 +471,8 @@ typedef struct {
   Picture *alpha_picts;
   /// Whether all reg_ignore of windows should expire in this paint.
   bool reg_ignore_expire;
-  /// Whether the program is idling. I.e. no fading, no potential window
-  /// changes.
-  bool idling;
   /// Time of last fading. In milliseconds.
-  unsigned long fade_time;
+  time_ms_t fade_time;
   /// Head pointer of the error ignore linked list.
   ignore_t *ignore_head;
   /// Pointer to the <code>next</code> member of tail element of the error
@@ -566,35 +620,42 @@ typedef struct {
 
 /// Structure representing a top-level window compton manages.
 typedef struct _win {
-  // Next structure in the linked list.
+  /// Pointer to the next structure in the linked list.
   struct _win *next;
+  /// Pointer to the next higher window to paint.
+  struct _win *prev_trans;
 
-  // ID of the top-level frame window.
+  // Core members
+  /// ID of the top-level frame window.
   Window id;
-  /// ID of the top-level client window of the window.
-  Window client_win;
-  /// Whether it looks like a WM window. We consider a window WM window if
-  /// it does not have a decedent with WM_STATE and it is not override-
-  /// redirected itself.
-  bool wmwin;
-  Pixmap pixmap;
+  /// Window attributes.
   XWindowAttributes a;
-  winmode mode;
-  int damaged;
+  /// Window painting mode.
+  winmode_t mode;
+  /// Whether the window has been damaged at least once.
+  bool damaged;
+  /// Damage of the window.
   Damage damage;
+  /// NameWindowPixmap of the window.
+  Pixmap pixmap;
+  /// Picture of the window.
   Picture picture;
+  /// Bounding shape of the window.
   XserverRegion border_size;
+  /// Region of the whole window, shadow region included.
   XserverRegion extents;
-  // Type of the window.
-  wintype_t window_type;
-  /// Whether the window is to be considered focused.
-  bool focused;
-  /// Whether the window is actually focused.
-  bool focused_real;
-  /// Leader window ID of the window.
-  Window leader;
-  /// Cached topmost window ID of the window.
-  Window cache_leader;
+  /// Window flags. Definitions above.
+  int_fast16_t flags;
+  /// Whether there's a pending <code>ConfigureNotify</code> happening
+  /// when the window is unmapped.
+  bool need_configure;
+  /// Queued <code>ConfigureNotify</code> when the window is unmapped.
+  XConfigureEvent queue_configure;
+  /// Region to be ignored when painting. Basically the region where
+  /// higher opaque windows will paint upon. Depends on window frame
+  /// opacity state, window geometry, window mapped/unmapped state,
+  /// window mode, of this and all higher windows.
+  XserverRegion reg_ignore;
   /// Whether the window has been destroyed.
   bool destroyed;
   /// Cached width/height of the window including border.
@@ -605,6 +666,28 @@ typedef struct _win {
   bool rounded_corners;
   /// Whether this window is to be painted.
   bool to_paint;
+
+  // Client window related members
+  /// ID of the top-level client window of the window.
+  Window client_win;
+  /// Type of the window.
+  wintype_t window_type;
+  /// Whether it looks like a WM window. We consider a window WM window if
+  /// it does not have a decedent with WM_STATE and it is not override-
+  /// redirected itself.
+  bool wmwin;
+  /// Leader window ID of the window.
+  Window leader;
+  /// Cached topmost window ID of the window.
+  Window cache_leader;
+
+  // Focus-related members
+  /// Whether the window is to be considered focused.
+  bool focused;
+  /// Override value of window focus state. Set by D-Bus method calls.
+  switch_t focused_force;
+  /// Whether the window is actually focused.
+  bool focused_real;
 
   // Blacklist related members
   /// Name of the window.
@@ -649,8 +732,10 @@ typedef struct _win {
   unsigned int left_width, right_width, top_width, bottom_width;
 
   // Shadow-related members
-  /// Whether a window has shadow. Affected by window type.
+  /// Whether a window has shadow. Calculated.
   bool shadow;
+  /// Override value of window shadow state. Set by D-Bus method calls.
+  switch_t shadow_force;
   /// Opacity of the shadow. Affected by window opacity and frame opacity.
   double shadow_opacity;
   /// X offset of shadow. Affected by commandline argument.
@@ -667,7 +752,7 @@ typedef struct _win {
   Picture shadow_alpha_pict;
   /// The value of _COMPTON_SHADOW attribute of the window. Below 0 for
   /// none.
-  long attr_shadow;
+  long prop_shadow;
 
   // Dim-related members
   /// Whether the window is to be dimmed.
@@ -675,24 +760,6 @@ typedef struct _win {
   /// Picture for dimming. Affected by user-specified inactive dim
   /// opacity and window opacity.
   Picture dim_alpha_pict;
-
-  /// Window flags. Definitions above.
-  int_fast16_t flags;
-
-  unsigned long damage_sequence; /* sequence when damage was created */
-
-  /// Whether there's a pending <code>ConfigureNotify</code> happening
-  /// when the window is unmapped.
-  bool need_configure;
-  /// Queued <code>ConfigureNotify</code> when the window is unmapped.
-  XConfigureEvent queue_configure;
-  /// Region to be ignored when painting. Basically the region where
-  /// higher opaque windows will paint upon. Depends on window frame
-  /// opacity state, window geometry, window mapped/unmapped state,
-  /// window mode, of this and all higher windows.
-  XserverRegion reg_ignore;
-
-  struct _win *prev_trans;
 } win;
 
 /// Temporary structure used for communication between
@@ -773,6 +840,22 @@ XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
 
 // == Functions ==
 
+/**
+ * Wrapper of libevent event_new(), for compatibility with libevent-1\.x.
+ */
+static inline struct event *
+EVENT_NEW(struct event_base *base, evutil_socket_t fd,
+    short what, event_callback_fn cb, void *arg) {
+#ifndef CONFIG_LIBEVENT_LEGACY
+  return event_new(base, fd, what, cb, arg);
+#else
+  struct event *pev = malloc(sizeof(struct event));
+  if (pev)
+    event_set(pev, fd, what, cb, arg);
+  return pev;
+#endif
+}
+
 // inline functions must be made static to compile correctly under clang:
 // http://clang.llvm.org/compatibility.html#inline
 
@@ -784,6 +867,9 @@ discard_ignore(session_t *ps, unsigned long sequence);
 static void
 set_ignore(session_t *ps, unsigned long sequence);
 
+/**
+ * Ignore X errors caused by next X request.
+ */
 static inline void
 set_ignore_next(session_t *ps) {
   set_ignore(ps, NextRequest(ps->dpy));
@@ -791,6 +877,14 @@ set_ignore_next(session_t *ps) {
 
 static int
 should_ignore(session_t *ps, unsigned long sequence);
+
+/**
+ * Wrapper of XInternAtom() for convience.
+ */
+static inline Atom
+get_atom(session_t *ps, char *atom_name) {
+  return XInternAtom(ps->dpy, atom_name, False);
+}
 
 /**
  * Return the painting target window.
@@ -957,6 +1051,14 @@ array_wid_exists(const Window *arr, int count, Window wid) {
   return false;
 }
 
+/**
+ * Return whether a struct timeval value is empty.
+ */
+static inline bool
+timeval_isempty(struct timeval tv) {
+  return tv.tv_sec <= 0 && tv.tv_usec <= 0;
+}
+
 /*
  * Subtracting two struct timeval values.
  *
@@ -1024,6 +1126,19 @@ timespec_subtract(struct timespec *result,
 
   /* Return 1 if result is negative. */
   return x->tv_sec < y->tv_sec;
+}
+
+/**
+ * Get current time in struct timeval.
+ */
+static inline struct timeval __attribute__((const))
+get_time_timeval(void) {
+  struct timeval tv = { 0, 0 };
+
+  gettimeofday(&tv, NULL);
+
+  // Return a time of all 0 if the call fails
+  return tv;
 }
 
 /**
@@ -1154,18 +1269,25 @@ free_win_res(session_t *ps, win *w) {
 
 /**
  * Get current system clock in milliseconds.
- *
- * The return type must be unsigned long because so many milliseconds have
- * passed since the epoch.
  */
-static unsigned long
+static inline time_ms_t
 get_time_ms(void) {
   struct timeval tv;
 
   gettimeofday(&tv, NULL);
 
-  return (unsigned long) tv.tv_sec * 1000
-    + (unsigned long) tv.tv_usec / 1000;
+  return tv.tv_sec % SEC_WRAP * 1000 + tv.tv_usec / 1000;
+}
+
+/**
+ * Convert time from milliseconds to struct timeval.
+ */
+static inline struct timeval
+ms_to_tv(int timeout) {
+  return (struct timeval) {
+    .tv_sec = timeout / MS_PER_SEC,
+    .tv_usec = timeout % MS_PER_SEC * (US_PER_SEC / MS_PER_SEC)
+  };
 }
 
 static int
@@ -1255,31 +1377,66 @@ wid_has_prop(const session_t *ps, Window w, Atom atom) {
  * @return a <code>winprop_t</code> structure containing the attribute
  *    and number of items. A blank one on failure.
  */
+// TODO: Move to compton.c
 static winprop_t
-wid_get_prop(const session_t *ps, Window w, Atom atom, long length,
-    Atom rtype, int rformat) {
+wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
+    long length, Atom rtype, int rformat) {
   Atom type = None;
   int format = 0;
   unsigned long nitems = 0, after = 0;
   unsigned char *data = NULL;
 
-  // Use two if statements to deal with the sequence point issue.
-  if (Success == XGetWindowProperty(ps->dpy, w, atom, 0L, length, False,
-        rtype, &type, &format, &nitems, &after, &data)) {
-    if (type == rtype && format == rformat) {
+  if (Success == XGetWindowProperty(ps->dpy, w, atom, offset, length,
+        False, rtype, &type, &format, &nitems, &after, &data)
+      && nitems && (AnyPropertyType == type || type == rtype)
+      && (!format || format == rformat)
+      && (8 == format || 16 == format || 32 == format)) {
       return (winprop_t) {
         .data.p8 = data,
-        .nitems = nitems
+        .nitems = nitems,
+        .type = type,
+        .format = format,
       };
-    }
   }
 
   XFree(data);
 
   return (winprop_t) {
     .data.p8 = NULL,
-    .nitems = 0
+    .nitems = 0,
+    .type = AnyPropertyType,
+    .format = 0
   };
+}
+
+/**
+ * Wrapper of wid_get_prop_adv().
+ */
+static inline winprop_t
+wid_get_prop(const session_t *ps, Window wid, Atom atom, long length,
+    Atom rtype, int rformat) {
+  return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
+}
+
+/**
+ * Get the numeric property value from a win_prop_t.
+ */
+static inline long
+winprop_get_int(winprop_t prop) {
+  long tgt = 0;
+
+  if (!prop.nitems)
+    return 0;
+
+  switch (prop.format) {
+    case 8:   tgt = *(prop.data.p8);    break;
+    case 16:  tgt = *(prop.data.p16);   break;
+    case 32:  tgt = *(prop.data.p32);   break;
+    default:  assert(0);
+              break;
+  }
+
+  return tgt;
 }
 
 /**
@@ -1364,7 +1521,7 @@ wid_bounding_shaped(const session_t *ps, Window wid) {
  */
 static inline void
 update_reg_ignore_expire(session_t *ps, const win *w) {
-  if (w->to_paint && WINDOW_SOLID == w->mode)
+  if (w->to_paint && WMODE_SOLID == w->mode)
     ps->reg_ignore_expire = true;
 }
 
@@ -1616,10 +1773,10 @@ static void
 win_update_shape(session_t *ps, win *w);
 
 static void
-win_update_attr_shadow_raw(session_t *ps, win *w);
+win_update_prop_shadow_raw(session_t *ps, win *w);
 
 static void
-win_update_attr_shadow(session_t *ps, win *w);
+win_update_prop_shadow(session_t *ps, win *w);
 
 static void
 determine_shadow(session_t *ps, win *w);
@@ -1639,7 +1796,7 @@ win_unmark_client(session_t *ps, win *w);
 static void
 win_recheck_client(session_t *ps, win *w);
 
-static void
+static bool
 add_win(session_t *ps, Window id, Window prev);
 
 static void
@@ -1855,7 +2012,7 @@ ev_window_name(session_t *ps, Window wid, char **name);
 inline static void
 ev_handle(session_t *ps, XEvent *ev);
 
-static void
+static bool
 fork_after(void);
 
 #ifdef CONFIG_LIBCONFIG
@@ -1916,10 +2073,16 @@ static void
 update_refresh_rate(session_t *ps);
 
 static bool
-sw_opti_init(session_t *ps);
+swopti_init(session_t *ps);
 
-static int
-evpoll(session_t *ps, int timeout);
+static void
+swopti_handle_timeout(session_t *ps, struct timeval *ptv);
+
+static void
+evcallback_x(evutil_socket_t fd, short what, void *arg);
+
+static void
+evcallback_null(evutil_socket_t fd, short what, void *arg);
 
 static bool
 vsync_drm_init(session_t *ps);
@@ -1954,6 +2117,9 @@ redir_start(session_t *ps);
 
 static void
 redir_stop(session_t *ps);
+
+static bool
+mainloop(session_t *ps);
 
 static session_t *
 session_init(session_t *ps_old, int argc, char **argv);

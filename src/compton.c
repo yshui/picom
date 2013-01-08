@@ -1196,15 +1196,19 @@ paint_preprocess(session_t *ps, win *list) {
   bool is_highest = true;
 
   // Fading step calculation
-  unsigned steps = (sub_unslong(get_time_ms(), ps->fade_time)
-      + FADE_DELTA_TOLERANCE * ps->o.fade_delta) / ps->o.fade_delta;
+  time_ms_t steps = ((get_time_ms() - ps->fade_time) + FADE_DELTA_TOLERANCE * ps->o.fade_delta) / ps->o.fade_delta;
+  if (steps < 0L) {
+    // Time disorder
+    ps->fade_time = get_time_ms();
+    steps = 0;
+  }
   ps->fade_time += steps * ps->o.fade_delta;
 
   XserverRegion last_reg_ignore = None;
 
   for (w = list; w; w = next) {
     bool to_paint = true;
-    const winmode mode_old = w->mode;
+    const winmode_t mode_old = w->mode;
 
     // In case calling the fade callback function destroys this window
     next = w->next;
@@ -1274,7 +1278,7 @@ paint_preprocess(session_t *ps, win *list) {
         else
           w->frame_opacity = 0.0;
 
-        if (w->to_paint && WINDOW_SOLID == mode_old
+        if (w->to_paint && WMODE_SOLID == mode_old
             && (0.0 == frame_opacity_old) != (0.0 == w->frame_opacity))
           ps->reg_ignore_expire = true;
       }
@@ -1308,8 +1312,8 @@ paint_preprocess(session_t *ps, win *list) {
 
     }
 
-    if ((to_paint && WINDOW_SOLID == w->mode)
-        != (w->to_paint && WINDOW_SOLID == mode_old))
+    if ((to_paint && WMODE_SOLID == w->mode)
+        != (w->to_paint && WMODE_SOLID == mode_old))
       ps->reg_ignore_expire = true;
 
     // Add window to damaged area if its painting status changes
@@ -1323,7 +1327,7 @@ paint_preprocess(session_t *ps, win *list) {
 
         // If the window is solid, we add the window region to the
         // ignored region
-        if (WINDOW_SOLID == w->mode) {
+        if (WMODE_SOLID == w->mode) {
           if (!w->frame_opacity) {
             if (w->border_size)
               w->reg_ignore = copy_region(ps, w->border_size);
@@ -1352,7 +1356,7 @@ paint_preprocess(session_t *ps, win *list) {
 
       if (is_highest && to_paint) {
         is_highest = false;
-        if (WINDOW_SOLID == w->mode
+        if (WMODE_SOLID == w->mode
             && (!w->frame_opacity || !win_has_frame(w))
             && win_is_fullscreen(ps, w))
           ps->unredir_possible = true;
@@ -1473,7 +1477,7 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
 
   // Minimize the region we try to blur, if the window itself is not
   // opaque, only the frame is.
-  if (WINDOW_SOLID == w->mode && w->frame_opacity) {
+  if (WMODE_SOLID == w->mode && w->frame_opacity) {
     XserverRegion reg_all = border_size(ps, w, false);
     XserverRegion reg_noframe = win_get_region_noframe(ps, w, false);
     XFixesSubtractRegion(ps->dpy, reg_noframe, reg_all, reg_noframe);
@@ -1506,7 +1510,7 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer) {
   int hei = w->heightb;
 
   Picture alpha_mask = (OPAQUE == w->opacity ? None: w->alpha_pict);
-  int op = (w->mode == WINDOW_SOLID ? PictOpSrc: PictOpOver);
+  int op = (w->mode == WMODE_SOLID ? PictOpSrc: PictOpOver);
 
   if (!w->frame_opacity) {
     XRenderComposite(ps->dpy, op, w->picture, alpha_mask,
@@ -1713,7 +1717,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
     if (!is_region_empty(ps, reg_paint)) {
       XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg_paint);
       // Blur window background
-      if ((ps->o.blur_background && WINDOW_SOLID != w->mode)
+      if ((ps->o.blur_background && WMODE_SOLID != w->mode)
           || (ps->o.blur_background_frame && w->frame_opacity)) {
         win_blur_background(ps, w, ps->tgt_buffer, reg_paint);
       }
@@ -1815,7 +1819,7 @@ repair_win(session_t *ps, win *w) {
     XFixesSubtractRegion(ps->dpy, parts, parts, w->prev_trans->reg_ignore);
 
   add_damage(ps, parts);
-  w->damaged = 1;
+  w->damaged = true;
 }
 
 static wintype_t
@@ -1916,7 +1920,7 @@ map_win(session_t *ps, Window id) {
 
   // Check for _COMPTON_SHADOW
   if (ps->o.respect_prop_shadow)
-    win_update_attr_shadow_raw(ps, w);
+    win_update_prop_shadow_raw(ps, w);
 
   // Many things above could affect shadow
   determine_shadow(ps, w);
@@ -1933,7 +1937,7 @@ map_win(session_t *ps, Window id) {
     determine_fade(ps, w);
   }
 
-  w->damaged = 1;
+  w->damaged = true;
 
 
   /* if any configure events happened while
@@ -1952,7 +1956,7 @@ finish_map_win(session_t *ps, win *w) {
 
 static void
 finish_unmap_win(session_t *ps, win *w) {
-  w->damaged = 0;
+  w->damaged = false;
 
   update_reg_ignore_expire(ps, w);
 
@@ -2016,7 +2020,7 @@ get_opacity_percent(win *w) {
 
 static void
 determine_mode(session_t *ps, win *w) {
-  winmode mode;
+  winmode_t mode = WMODE_SOLID;
   XRenderPictFormat *format;
 
   /* if trans prop == -1 fall back on previous tests */
@@ -2029,11 +2033,11 @@ determine_mode(session_t *ps, win *w) {
 
   if (format && format->type == PictTypeDirect
       && format->direct.alphaMask) {
-    mode = WINDOW_ARGB;
+    mode = WMODE_ARGB;
   } else if (w->opacity != OPAQUE) {
-    mode = WINDOW_TRANS;
+    mode = WMODE_TRANS;
   } else {
-    mode = WINDOW_SOLID;
+    mode = WMODE_SOLID;
   }
 
   w->mode = mode;
@@ -2153,15 +2157,15 @@ win_update_shape(session_t *ps, win *w) {
  * The property must be set on the outermost window, usually the WM frame.
  */
 static void
-win_update_attr_shadow_raw(session_t *ps, win *w) {
+win_update_prop_shadow_raw(session_t *ps, win *w) {
   winprop_t prop = wid_get_prop(ps, w->id, ps->atom_compton_shadow, 1,
       XA_CARDINAL, 32);
 
   if (!prop.nitems) {
-    w->attr_shadow = -1;
+    w->prop_shadow = -1;
   }
   else {
-    w->attr_shadow = *prop.data.p32;
+    w->prop_shadow = *prop.data.p32;
   }
 
   free_winprop(&prop);
@@ -2172,12 +2176,12 @@ win_update_attr_shadow_raw(session_t *ps, win *w) {
  * things.
  */
 static void
-win_update_attr_shadow(session_t *ps, win *w) {
-  long attr_shadow_old = w->attr_shadow;
+win_update_prop_shadow(session_t *ps, win *w) {
+  long attr_shadow_old = w->prop_shadow;
 
-  win_update_attr_shadow_raw(ps, w);
+  win_update_prop_shadow_raw(ps, w);
 
-  if (w->attr_shadow != attr_shadow_old)
+  if (w->prop_shadow != attr_shadow_old)
     determine_shadow(ps, w);
 }
 
@@ -2189,11 +2193,13 @@ static void
 determine_shadow(session_t *ps, win *w) {
   bool shadow_old = w->shadow;
 
-  w->shadow = (ps->o.wintype_shadow[w->window_type]
-      && !win_match(w, ps->o.shadow_blacklist, &w->cache_sblst)
-      && !(ps->o.shadow_ignore_shaped && w->bounding_shaped
-        && !w->rounded_corners)
-      && !(ps->o.respect_prop_shadow && 0 == w->attr_shadow));
+  w->shadow = (UNSET == w->shadow_force ?
+      (ps->o.wintype_shadow[w->window_type]
+       && !win_match(w, ps->o.shadow_blacklist, &w->cache_sblst)
+       && !(ps->o.shadow_ignore_shaped && w->bounding_shaped
+         && !w->rounded_corners)
+       && !(ps->o.respect_prop_shadow && 0 == w->prop_shadow))
+       : w->shadow_force);
 
   // Window extents need update on shadow state change
   if (w->shadow != shadow_old) {
@@ -2340,18 +2346,98 @@ win_recheck_client(session_t *ps, win *w) {
   win_mark_client(ps, w, cw);
 }
 
-static void
+static bool
 add_win(session_t *ps, Window id, Window prev) {
+  const static win win_def = {
+    .next = NULL,
+    .prev_trans = NULL,
+
+    .id = None,
+    .a = { },
+    .mode = WMODE_TRANS,
+    .damaged = false,
+    .damage = None,
+    .pixmap = None,
+    .picture = None,
+    .border_size = None,
+    .extents = None,
+    .flags = 0,
+    .need_configure = false,
+    .queue_configure = { },
+    .reg_ignore = None,
+    .destroyed = false,
+    .widthb = 0,
+    .heightb = 0,
+    .bounding_shaped = false,
+    .rounded_corners = false,
+    .to_paint = false,
+
+    .client_win = None,
+    .window_type = WINTYPE_UNKNOWN,
+    .wmwin = false,
+    .leader = None,
+    .cache_leader = None,
+
+    .focused = false,
+    .focused_force = UNSET,
+    .focused_real = false,
+
+    .name = NULL,
+    .class_instance = NULL,
+    .class_general = NULL,
+    .role = NULL,
+    .cache_sblst = NULL,
+    .cache_fblst = NULL,
+    .cache_fcblst = NULL,
+
+    .opacity = 0,
+    .opacity_tgt = 0,
+    .opacity_prop = OPAQUE,
+    .opacity_prop_client = OPAQUE,
+    .alpha_pict = None,
+
+    .fade = false,
+    .fade_callback = NULL,
+
+    .frame_opacity = 0.0,
+    .frame_alpha_pict = None,
+    .left_width = 0,
+    .right_width = 0,
+    .top_width = 0,
+    .bottom_width = 0,
+
+    .shadow = false,
+    .shadow_force = UNSET,
+    .shadow_opacity = 0.0,
+    .shadow_dx = 0,
+    .shadow_dy = 0,
+    .shadow_width = 0,
+    .shadow_height = 0,
+    .shadow_pict = None,
+    .shadow_alpha_pict = None,
+    .prop_shadow = -1,
+
+    .dim = false,
+    .dim_alpha_pict = None,
+  };
+
   // Reject overlay window and already added windows
   if (id == ps->overlay || find_win(ps, id)) {
-    return;
+    return false;
   }
 
+  // Allocate and initialize the new win structure
   win *new = malloc(sizeof(win));
-  win **p;
 
-  if (!new) return;
+  if (!new) {
+    printf_errf("(%#010lx): Failed to allocate memory for the new window.", id);
+    return false;
+  }
 
+  memcpy(new, &win_def, sizeof(win));
+
+  // Find window insertion point
+  win **p = NULL;
   if (prev) {
     for (p = &ps->list; *p; p = &(*p)->next) {
       if ((*p)->id == prev && !(*p)->destroyed)
@@ -2361,12 +2447,15 @@ add_win(session_t *ps, Window id, Window prev) {
     p = &ps->list;
   }
 
+  // Fill structure
   new->id = id;
   set_ignore_next(ps);
 
   if (!XGetWindowAttributes(ps->dpy, id, &new->a)) {
+    // Failed to get window attributes. Which probably means, the window
+    // is gone already.
     free(new);
-    return;
+    return false;
   }
 
   // Delay window mapping
@@ -2374,75 +2463,11 @@ add_win(session_t *ps, Window id, Window prev) {
   assert(IsViewable == map_state || IsUnmapped == map_state);
   new->a.map_state = IsUnmapped;
 
-  new->damaged = 0;
-  new->to_paint = false;
-  new->pixmap = None;
-  new->picture = None;
-
-  if (new->a.class == InputOnly) {
-    new->damage_sequence = 0;
-    new->damage = None;
-  } else {
-    new->damage_sequence = NextRequest(ps->dpy);
+  // Create Damage for window
+  if (InputOutput == new->a.class) {
     set_ignore_next(ps);
     new->damage = XDamageCreate(ps->dpy, id, XDamageReportNonEmpty);
   }
-
-  new->name = NULL;
-  new->class_instance = NULL;
-  new->class_general = NULL;
-  new->role = NULL;
-  new->cache_sblst = NULL;
-  new->cache_fblst = NULL;
-  new->cache_fcblst = NULL;
-  new->bounding_shaped = false;
-  new->rounded_corners = false;
-
-  new->border_size = None;
-  new->reg_ignore = None;
-  new->extents = None;
-  new->shadow = false;
-  new->shadow_opacity = 0.0;
-  new->shadow_pict = None;
-  new->shadow_alpha_pict = None;
-  new->shadow_dx = 0;
-  new->shadow_dy = 0;
-  new->shadow_width = 0;
-  new->shadow_height = 0;
-  new->opacity = 0;
-  new->opacity_tgt = 0;
-  new->opacity_prop = OPAQUE;
-  new->opacity_prop_client = OPAQUE;
-  new->fade = false;
-  new->fade_callback = NULL;
-  new->alpha_pict = None;
-  new->frame_opacity = 1.0;
-  new->frame_alpha_pict = None;
-
-  new->dim = false;
-  new->dim_alpha_pict = None;
-
-  new->focused = false;
-  new->focused_real = false;
-  new->leader = None;
-  new->cache_leader = None;
-  new->destroyed = false;
-  new->need_configure = false;
-  new->window_type = WINTYPE_UNKNOWN;
-  new->mode = WINDOW_TRANS;
-  new->attr_shadow = -1;
-
-  new->prev_trans = NULL;
-
-  new->left_width = 0;
-  new->right_width = 0;
-  new->top_width = 0;
-  new->bottom_width = 0;
-
-  new->client_win = 0;
-  new->wmwin = false;
-
-  new->flags = 0;
 
   calc_win_size(ps, new);
 
@@ -2452,6 +2477,8 @@ add_win(session_t *ps, Window id, Window prev) {
   if (map_state == IsViewable) {
     map_win(ps, id);
   }
+
+  return true;
 }
 
 static void
@@ -2790,22 +2817,27 @@ static void
 win_update_focused(session_t *ps, win *w) {
   bool focused_old = w->focused;
 
-  w->focused = w->focused_real;
+  if (UNSET != w->focused_force) {
+    w->focused = w->focused_force;
+  }
+  else {
+    w->focused = w->focused_real;
 
-  // Use wintype_focus, and treat WM windows and override-redirected
-  // windows specially
-  if (ps->o.wintype_focus[w->window_type]
-      || (ps->o.mark_wmwin_focused && w->wmwin)
-      || (ps->o.mark_ovredir_focused
-        && w->id == w->client_win && !w->wmwin)
-      || win_match(w, ps->o.focus_blacklist, &w->cache_fcblst))
-    w->focused = true;
+    // Use wintype_focus, and treat WM windows and override-redirected
+    // windows specially
+    if (ps->o.wintype_focus[w->window_type]
+        || (ps->o.mark_wmwin_focused && w->wmwin)
+        || (ps->o.mark_ovredir_focused
+          && w->id == w->client_win && !w->wmwin)
+        || win_match(w, ps->o.focus_blacklist, &w->cache_fcblst))
+      w->focused = true;
 
-  // If window grouping detection is enabled, mark the window active if
-  // its group is
-  if (ps->o.track_leader && ps->active_leader
-      && win_get_leader(ps, w) == ps->active_leader) {
-    w->focused = true;
+    // If window grouping detection is enabled, mark the window active if
+    // its group is
+    if (ps->o.track_leader && ps->active_leader
+        && win_get_leader(ps, w) == ps->active_leader) {
+      w->focused = true;
+    }
   }
 
   if (w->focused != focused_old)
@@ -3471,7 +3503,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
   if (ps->o.respect_prop_shadow && ps->atom_compton_shadow == ev->atom) {
     win *w = find_win(ps, ev->window);
     if (w)
-      win_update_attr_shadow(ps, w);
+      win_update_prop_shadow(ps, w);
   }
 
   // If a leader property changes
@@ -3649,7 +3681,7 @@ ev_handle(session_t *ps, XEvent *ev) {
 static void
 usage(void) {
   const static char *usage_text =
-    "compton (development version)\n"
+    "compton (" COMPTON_VERSION ")\n"
     "usage: compton [options]\n"
     "Options:\n"
     "\n"
@@ -3888,15 +3920,16 @@ register_cm(session_t *ps, bool want_glxct) {
 /**
  * Fork program to background and disable all I/O streams.
  */
-static void
+static bool
 fork_after(void) {
-  if (getppid() == 1) return;
+  if (getppid() == 1)
+    return true;
 
   int pid = fork();
 
-  if (pid == -1) {
-    fprintf(stderr, "Fork failed\n");
-    return;
+  if (-1 == pid) {
+    printf_errf("(): fork() failed.");
+    return false;
   }
 
   if (pid > 0) _exit(0);
@@ -3906,11 +3939,17 @@ fork_after(void) {
   // Mainly to suppress the _FORTIFY_SOURCE warning
   bool success = freopen("/dev/null", "r", stdin);
   success = freopen("/dev/null", "w", stdout) && success;
-  if (!success)
-    fprintf(stderr, "fork_after(): freopen() failed.");
+  if (!success) {
+    printf_errf("(): freopen() failed.");
+    return false;
+  }
   success = freopen("/dev/null", "w", stderr);
-  if (!success)
-    fprintf(stderr, "fork_after(): freopen() failed.");
+  if (!success) {
+    printf_errf("(): freopen() failed.");
+    return false;
+  }
+
+  return true;
 }
 
 #ifdef CONFIG_LIBCONFIG
@@ -4059,7 +4098,7 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
   f = open_config_file(cpath, &path);
   if (!f) {
     if (cpath)
-      printf("Failed to read the specified configuration file.\n");
+      printf_errfq(1, "(): Failed to read the specified configuration file.");
     return;
   }
 
@@ -4223,8 +4262,9 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
  */
 static void
 get_cfg(session_t *ps, int argc, char *const *argv) {
-  const static char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:scnfFCaSzGb";
+  const static char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:hscnfFCaSzGb";
   const static struct option longopts[] = {
+    { "help", no_argument, NULL, 'h' },
     { "config", required_argument, NULL, 256 },
     { "shadow-red", required_argument, NULL, 257 },
     { "shadow-green", required_argument, NULL, 258 },
@@ -4255,6 +4295,7 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
     { "blur-background", no_argument, NULL, 283 },
     { "blur-background-frame", no_argument, NULL, 284 },
     { "blur-background-fixed", no_argument, NULL, 285 },
+    { "dbus", no_argument, NULL, 286 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4303,6 +4344,9 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
       (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
     switch (o) {
       // Short options
+      case 'h':
+        usage();
+        break;
       case 'd':
         ps->o.display = mstrcpy(optarg);
         break;
@@ -4484,6 +4528,10 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
         // --blur-background-fixed
         ps->o.blur_background_fixed = true;
         break;
+      case 286:
+        // --dbus
+        ps->o.dbus = true;
+        break;
       default:
         usage();
     }
@@ -4609,7 +4657,7 @@ update_refresh_rate(session_t *ps) {
   XRRFreeScreenConfigInfo(randr_info);
 
   if (ps->refresh_rate)
-    ps->refresh_intv = NS_PER_SEC / ps->refresh_rate;
+    ps->refresh_intv = US_PER_SEC / ps->refresh_rate;
   else
     ps->refresh_intv = 0;
 }
@@ -4620,12 +4668,12 @@ update_refresh_rate(session_t *ps) {
  * @return true for success, false otherwise
  */
 static bool
-sw_opti_init(session_t *ps) {
+swopti_init(session_t *ps) {
   // Prepare refresh rate
   // Check if user provides one
   ps->refresh_rate = ps->o.refresh_rate;
   if (ps->refresh_rate)
-    ps->refresh_intv = NS_PER_SEC / ps->refresh_rate;
+    ps->refresh_intv = US_PER_SEC / ps->refresh_rate;
 
   // Auto-detect refresh rate otherwise
   if (!ps->refresh_rate && ps->randr_exists) {
@@ -4661,61 +4709,62 @@ lceil_ntimes(long dividend, long divisor) {
 }
 
 /**
- * Wait for events until next paint.
+ * Modify a struct timeval timeout value to render at a fixed pace.
  *
- * Optionally use refresh-rate based optimization to reduce painting.
- *
- * @param fd struct pollfd used for poll()
- * @param timeout second timeout (fading timeout)
- * @return > 0 if we get some events, 0 if timeout is reached, < 0 on
- *     problems
+ * @param ps current session
+ * @param[in,out] ptv pointer to the timeout
  */
-static int
-evpoll(session_t *ps, int timeout) {
-  struct pollfd ufd = {
-    .fd = ConnectionNumber(ps->dpy),
-    .events = POLLIN
-  };
+static void
+swopti_handle_timeout(session_t *ps, struct timeval *ptv) {
+  if (!ptv)
+    return;
 
-  // Always wait infinitely if asked so, to minimize CPU usage
-  if (timeout < 0) {
-    int ret = poll(&ufd, 1, timeout);
-    // Reset ps->fade_time so the fading steps during idling are not counted
-    ps->fade_time = get_time_ms();
-    return ret;
-  }
-
-  // Just do a poll() if we are not using optimization
-  if (!ps->o.sw_opti)
-    return poll(&ufd, 1, timeout);
-
-  // Convert the old timeout to struct timespec
-  struct timespec next_paint_tmout = {
-    .tv_sec = timeout / MS_PER_SEC,
-    .tv_nsec = timeout % MS_PER_SEC * (NS_PER_SEC / MS_PER_SEC)
-  };
-
-  // Get the nanosecond offset of the time when the we reach the timeout
+  // Get the microsecond offset of the time when the we reach the timeout
   // I don't think a 32-bit long could overflow here.
-  long target_relative_offset = (next_paint_tmout.tv_nsec + get_time_timespec().tv_nsec - ps->paint_tm_offset) % NS_PER_SEC;
-  if (target_relative_offset < 0)
-    target_relative_offset += NS_PER_SEC;
+  long offset = (ptv->tv_usec + get_time_timeval().tv_usec - ps->paint_tm_offset) % ps->refresh_intv;
+  if (offset < 0)
+    offset += ps->refresh_intv;
 
-  assert(target_relative_offset >= 0);
+  assert(offset >= 0 && offset < ps->refresh_intv);
 
   // If the target time is sufficiently close to a refresh time, don't add
   // an offset, to avoid certain blocking conditions.
-  if ((target_relative_offset % NS_PER_SEC) < SW_OPTI_TOLERANCE)
-    return poll(&ufd, 1, timeout);
+  if (offset < SWOPTI_TOLERANCE
+      || offset > ps->refresh_intv - SWOPTI_TOLERANCE)
+    return;
 
   // Add an offset so we wait until the next refresh after timeout
-  next_paint_tmout.tv_nsec += lceil_ntimes(target_relative_offset, ps->refresh_intv) - target_relative_offset;
-  if (next_paint_tmout.tv_nsec > NS_PER_SEC) {
-    next_paint_tmout.tv_nsec -= NS_PER_SEC;
-    ++next_paint_tmout.tv_sec;
+  ptv->tv_usec += ps->refresh_intv - offset;
+  if (ptv->tv_usec > US_PER_SEC) {
+    ptv->tv_usec -= US_PER_SEC;
+    ++ptv->tv_sec;
   }
+}
 
-  return ppoll(&ufd, 1, &next_paint_tmout, NULL);
+/**
+ * Libevent callback function to handle X events.
+ */
+static void
+evcallback_x(evutil_socket_t fd, short what, void *arg) {
+  session_t *ps = ps_g;
+
+  // Sometimes poll() returns 1 but no events are actually read,
+  // causing XNextEvent() to block, I have no idea what's wrong, so we
+  // check for the number of events here
+  if (XEventsQueued(ps->dpy, QueuedAfterReading)) {
+    XEvent ev = { };
+
+    XNextEvent(ps->dpy, &ev);
+    ev_handle(ps, &ev);
+    ps->ev_received = true;
+  }
+}
+
+/**
+ * NULL libevent callback function.
+ */
+static void
+evcallback_null(evutil_socket_t fd, short what, void *arg) {
 }
 
 /**
@@ -4982,6 +5031,45 @@ redir_stop(session_t *ps) {
 }
 
 /**
+ * Main loop.
+ */
+static bool
+mainloop(session_t *ps) {
+  bool infinite_wait = false;
+
+  // Process existing events
+  if (XEventsQueued(ps->dpy, QueuedAfterReading)) {
+    evcallback_x(ConnectionNumber(ps->dpy), 0, NULL);
+    return true;
+  }
+
+  // Add timeout
+  if (ps->ev_received || !ps->idling) {
+    struct timeval tv = ms_to_tv(ps->ev_received ? 0: fade_timeout(ps));
+    if (ps->o.sw_opti)
+      swopti_handle_timeout(ps, &tv);
+    assert(tv.tv_sec >= 0 && tv.tv_usec >= 0);
+    if (timeval_isempty(tv))
+      return false;
+    evtimer_add(ps->ev_tmout, &tv);
+  }
+  else {
+    infinite_wait = true;
+  }
+
+  // Run libevent main loop
+  if (event_base_loop(ps->ev_base, EVLOOP_ONCE))
+    printf_errfq(1, "(): Unexpected error when running event loop.");
+
+  evtimer_del(ps->ev_tmout);
+
+  if (infinite_wait)
+    ps->fade_time = get_time_ms();
+
+  return true;
+}
+
+/**
  * Initialize a session.
  *
  * @param ps_old old session, from which the function will take the X
@@ -5097,11 +5185,15 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .refresh_intv = 0UL,
     .paint_tm_offset = 0L,
 
+#ifdef CONFIG_VSYNC_DRM
     .drm_fd = 0,
+#endif
 
+#ifdef CONFIG_VSYNC_OPENGL
     .glx_context = None,
     .glx_get_video_sync = NULL,
     .glx_wait_video_sync = NULL,
+#endif
 
     .xfixes_event = 0,
     .xfixes_error = 0,
@@ -5119,9 +5211,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .randr_exists = 0,
     .randr_event = 0,
     .randr_error = 0,
+#ifdef CONFIG_VSYNC_OPENGL
     .glx_exists = false,
     .glx_event = 0,
     .glx_error = 0,
+#endif
     .dbe_exists = false,
     .xrfilter_convolution_exists = false,
 
@@ -5255,7 +5349,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Initialize software optimization
   if (ps->o.sw_opti)
-    ps->o.sw_opti = sw_opti_init(ps);
+    ps->o.sw_opti = swopti_init(ps);
 
   // Initialize DRM/OpenGL VSync
   if ((VSYNC_DRM == ps->o.vsync && !vsync_drm_init(ps))
@@ -5268,8 +5362,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   if (ps->o.dbe)
     init_dbe(ps);
-
-  if (ps->o.fork_after_register) fork_after();
 
   init_atoms(ps);
   init_alpha_picts(ps);
@@ -5313,6 +5405,24 @@ session_init(session_t *ps_old, int argc, char **argv) {
   }
 
   ps->all_damage = None;
+
+  // Build event base
+  if (!(ps->ev_base =
+#ifndef CONFIG_LIBEVENT_LEGACY
+        event_base_new()
+#else
+        event_init()
+#endif
+        ))
+    printf_errfq(1, "(): Failed to build event base.");
+  if (!(ps->ev_x = EVENT_NEW(ps->ev_base, ConnectionNumber(ps->dpy),
+          EV_READ | EV_PERSIST, evcallback_x, NULL)))
+    printf_errfq(1, "(): Failed to build event.");
+  if (event_add(ps->ev_x, NULL))
+    printf_errfq(1, "(): Failed to add event.");
+  if (!(ps->ev_tmout = evtimer_new(ps->ev_base, evcallback_null, NULL)))
+    printf_errfq(1, "(): Failed to build event.");
+
   XGrabServer(ps->dpy);
 
   redir_start(ps);
@@ -5344,6 +5454,18 @@ session_init(session_t *ps_old, int argc, char **argv) {
   }
 
   XUngrabServer(ps->dpy);
+
+  // Fork to background, if asked
+  if (ps->o.fork_after_register) {
+    if (!fork_after()) {
+      session_destroy(ps);
+      return NULL;
+    }
+
+    // Reinitialize event base
+    if (event_reinit(ps->ev_base) < 0)
+      printf_errfq(1, "Failed to reinitialize event base.");
+  }
 
   // Free the old session
   if (ps_old)
@@ -5447,10 +5569,12 @@ session_destroy(session_t *ps) {
     XDestroyWindow(ps->dpy, ps->reg_win);
     ps->reg_win = None;
   }
+#ifdef CONFIG_VSYNC_OPENGL
   if (ps->glx_context) {
     glXDestroyContext(ps->dpy, ps->glx_context);
     ps->glx_context = None;
   }
+#endif
 
   // Free double buffer
   if (ps->root_dbe) {
@@ -5458,17 +5582,24 @@ session_destroy(session_t *ps) {
     ps->root_dbe = None;
   }
 
+#ifdef CONFIG_VSYNC_DRM
   // Close file opened for DRM VSync
   if (ps->drm_fd) {
     close(ps->drm_fd);
     ps->drm_fd = 0;
   }
+#endif
 
   // Release overlay window
   if (ps->overlay) {
     XCompositeReleaseOverlayWindow(ps->dpy, ps->overlay);
     ps->overlay = None;
   }
+
+  // Free libevent things
+  event_free(ps->ev_x);
+  event_free(ps->ev_tmout);
+  event_base_free(ps->ev_base);
 
   // Flush all events
   XSync(ps->dpy, True);
@@ -5487,7 +5618,7 @@ session_run(session_t *ps) {
   win *t;
 
   if (ps->o.sw_opti)
-    ps->paint_tm_offset = get_time_timespec().tv_nsec;
+    ps->paint_tm_offset = get_time_timeval().tv_usec;
 
   ps->reg_ignore_expire = true;
 
@@ -5503,22 +5634,10 @@ session_run(session_t *ps) {
 
   // Main loop
   while (!ps->reset) {
-    bool ev_received = false;
+    ps->ev_received = false;
 
-    while (XEventsQueued(ps->dpy, QueuedAfterReading)
-        || (evpoll(ps,
-            (ev_received ? 0: (ps->idling ? -1: fade_timeout(ps)))) > 0)) {
-      // Sometimes poll() returns 1 but no events are actually read,
-      // causing XNextEvent() to block, I have no idea what's wrong, so we
-      // check for the number of events here
-      if (XEventsQueued(ps->dpy, QueuedAfterReading)) {
-        XEvent ev;
-
-        XNextEvent(ps->dpy, &ev);
-        ev_handle(ps, &ev);
-        ev_received = true;
-      }
-    }
+    while (mainloop(ps))
+      continue;
 
     // idling will be turned off during paint_preprocess() if needed
     ps->idling = true;
@@ -5530,7 +5649,7 @@ session_run(session_t *ps) {
       free_region(ps, &ps->all_damage);
 
     if (ps->all_damage && !is_region_empty(ps, ps->all_damage)) {
-      static int paint;
+      static int paint = 0;
       paint_all(ps, ps->all_damage, t);
       ps->reg_ignore_expire = false;
       paint++;
@@ -5577,6 +5696,10 @@ main(int argc, char **argv) {
   session_t *ps_old = ps_g;
   while (1) {
     ps_g = session_init(ps_old, argc, argv);
+    if (!ps_g) {
+      printf_errf("Failed to create new session.");
+      return 1;
+    }
     session_run(ps_g);
     ps_old = ps_g;
     session_destroy(ps_g);
