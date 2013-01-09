@@ -939,7 +939,7 @@ root_tile_f(session_t *ps) {
   // Get the values of background attributes
   for (p = 0; background_props_str[p]; p++) {
     winprop_t prop = wid_get_prop(ps, ps->root,
-        XInternAtom(ps->dpy, background_props_str[p], false),
+        get_atom(ps, background_props_str[p]),
         1L, XA_PIXMAP, 32);
     if (prop.nitems) {
       pixmap = *prop.data.p32;
@@ -1517,10 +1517,11 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer) {
         tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
   }
   else {
-    int t = w->top_width;
-    int l = w->left_width;
-    int b = w->bottom_width;
-    int r = w->right_width;
+    // Painting parameters
+    const int t = w->a.border_width + w->top_width;
+    const int l = w->a.border_width + w->left_width;
+    const int b = w->a.border_width + w->bottom_width;
+    const int r = w->a.border_width + w->right_width;
 
 #define COMP_BDR(cx, cy, cwid, chei) \
     XRenderComposite(ps->dpy, PictOpOver, w->picture, w->frame_alpha_pict, \
@@ -1894,13 +1895,6 @@ map_win(session_t *ps, Window id) {
 
   // Detect if the window is shaped or has rounded corners
   win_update_shape_raw(ps, w);
-
-  // Get window name and class if we are tracking them
-  if (ps->o.track_wdata) {
-    win_get_name(ps, w);
-    win_get_class(ps, w);
-    win_get_role(ps, w);
-  }
 
   // Occasionally compton does not seem able to get a FocusIn event from
   // a window just mapped. I suspect it's a timing issue again when the
@@ -2287,6 +2281,14 @@ win_mark_client(session_t *ps, win *w, Window client) {
   if (ps->o.track_leader)
     win_update_leader(ps, w);
 
+  // Get window name and class if we are tracking them
+  if (ps->o.track_wdata) {
+    win_get_name(ps, w);
+    win_get_class(ps, w);
+    win_get_role(ps, w);
+  }
+
+  // Update window focus state
   win_update_focused(ps, w);
 }
 
@@ -2586,7 +2588,8 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
 
     // If window geometry did not change, don't free extents here
     if (w->a.x != ce->x || w->a.y != ce->y
-        || w->a.width != ce->width || w->a.height != ce->height) {
+        || w->a.width != ce->width || w->a.height != ce->height
+        || w->a.border_width != ce->border_width) {
       free_region(ps, &w->extents);
       free_region(ps, &w->border_size);
     }
@@ -2594,7 +2597,8 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
     w->a.x = ce->x;
     w->a.y = ce->y;
 
-    if (w->a.width != ce->width || w->a.height != ce->height) {
+    if (w->a.width != ce->width || w->a.height != ce->height
+        || w->a.border_width != ce->border_width) {
       free_pixmap(ps, &w->pixmap);
       free_picture(ps, &w->picture);
     }
@@ -3415,8 +3419,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
     else {
       // Destroy the root "image" if the wallpaper probably changed
       for (int p = 0; background_props_str[p]; p++) {
-        if (ev->atom ==
-            XInternAtom(ps->dpy, background_props_str[p], false)) {
+        if (ev->atom == get_atom(ps, background_props_str[p])) {
           root_damaged(ps);
           break;
         }
@@ -3911,7 +3914,7 @@ register_cm(session_t *ps, bool want_glxct) {
   buf = malloc(len);
   snprintf(buf, len, REGISTER_PROP"%d", ps->scr);
 
-  a = XInternAtom(ps->dpy, buf, false);
+  a = get_atom(ps, buf);
   free(buf);
 
   XSetSelectionOwner(ps->dpy, a, ps->reg_win, 0);
@@ -4598,49 +4601,48 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
  */
 static void
 init_atoms(session_t *ps) {
-  ps->atom_opacity = XInternAtom(ps->dpy, "_NET_WM_WINDOW_OPACITY", False);
-  ps->atom_frame_extents = XInternAtom(ps->dpy, "_NET_FRAME_EXTENTS", False);
-  ps->atom_client = XInternAtom(ps->dpy, "WM_STATE", False);
+  ps->atom_opacity = get_atom(ps, "_NET_WM_WINDOW_OPACITY");
+  ps->atom_frame_extents = get_atom(ps, "_NET_FRAME_EXTENTS");
+  ps->atom_client = get_atom(ps, "WM_STATE");
   ps->atom_name = XA_WM_NAME;
-  ps->atom_name_ewmh = XInternAtom(ps->dpy, "_NET_WM_NAME", False);
+  ps->atom_name_ewmh = get_atom(ps, "_NET_WM_NAME");
   ps->atom_class = XA_WM_CLASS;
-  ps->atom_role = XInternAtom(ps->dpy, "WM_WINDOW_ROLE", False);
+  ps->atom_role = get_atom(ps, "WM_WINDOW_ROLE");
   ps->atom_transient = XA_WM_TRANSIENT_FOR;
-  ps->atom_client_leader = XInternAtom(ps->dpy, "WM_CLIENT_LEADER", False);
-  ps->atom_ewmh_active_win = XInternAtom(ps->dpy, "_NET_ACTIVE_WINDOW", False);
-  ps->atom_compton_shadow = XInternAtom(ps->dpy, "_COMPTON_SHADOW", False);
+  ps->atom_client_leader = get_atom(ps, "WM_CLIENT_LEADER");
+  ps->atom_ewmh_active_win = get_atom(ps, "_NET_ACTIVE_WINDOW");
+  ps->atom_compton_shadow = get_atom(ps, "_COMPTON_SHADOW");
 
-  ps->atom_win_type = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE", False);
+  ps->atom_win_type = get_atom(ps, "_NET_WM_WINDOW_TYPE");
   ps->atoms_wintypes[WINTYPE_UNKNOWN] = 0;
-  ps->atoms_wintypes[WINTYPE_DESKTOP] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_DESKTOP", False);
-  ps->atoms_wintypes[WINTYPE_DOCK] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_DOCK", False);
-  ps->atoms_wintypes[WINTYPE_TOOLBAR] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
-  ps->atoms_wintypes[WINTYPE_MENU] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_MENU", False);
-  ps->atoms_wintypes[WINTYPE_UTILITY] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_UTILITY", False);
-  ps->atoms_wintypes[WINTYPE_SPLASH] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_SPLASH", False);
-  ps->atoms_wintypes[WINTYPE_DIALOG] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_DIALOG", False);
-  ps->atoms_wintypes[WINTYPE_NORMAL] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_NORMAL", False);
-  ps->atoms_wintypes[WINTYPE_DROPDOWN_MENU] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU", False);
-  ps->atoms_wintypes[WINTYPE_POPUP_MENU] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
-  ps->atoms_wintypes[WINTYPE_TOOLTIP] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_TOOLTIP", False);
-  ps->atoms_wintypes[WINTYPE_NOTIFY] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
-  ps->atoms_wintypes[WINTYPE_COMBO] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_COMBO", False);
-  ps->atoms_wintypes[WINTYPE_DND] = XInternAtom(ps->dpy,
-    "_NET_WM_WINDOW_TYPE_DND", False);
+  ps->atoms_wintypes[WINTYPE_DESKTOP] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_DESKTOP");
+  ps->atoms_wintypes[WINTYPE_DOCK] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_DOCK");
+  ps->atoms_wintypes[WINTYPE_TOOLBAR] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_TOOLBAR");
+  ps->atoms_wintypes[WINTYPE_MENU] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_MENU");
+  ps->atoms_wintypes[WINTYPE_UTILITY] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_UTILITY");
+  ps->atoms_wintypes[WINTYPE_SPLASH] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_SPLASH");
+  ps->atoms_wintypes[WINTYPE_DIALOG] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_DIALOG");
+  ps->atoms_wintypes[WINTYPE_NORMAL] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_NORMAL");
+  ps->atoms_wintypes[WINTYPE_DROPDOWN_MENU] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU");
+  ps->atoms_wintypes[WINTYPE_POPUP_MENU] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_POPUP_MENU");
+  ps->atoms_wintypes[WINTYPE_TOOLTIP] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_TOOLTIP");
+  ps->atoms_wintypes[WINTYPE_NOTIFY] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_NOTIFICATION");
+  ps->atoms_wintypes[WINTYPE_COMBO] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_COMBO");
+  ps->atoms_wintypes[WINTYPE_DND] = get_atom(ps,
+      "_NET_WM_WINDOW_TYPE_DND");
 }
 
 /**

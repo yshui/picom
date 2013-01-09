@@ -8,7 +8,7 @@ BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
 
 PACKAGES = x11 xcomposite xfixes xdamage xrender xext xrandr
-LIBS = -lm -lrt
+LIBS = -lm
 INCS =
 
 # === Configuration flags ===
@@ -22,11 +22,11 @@ ifeq "$(shell pkg-config --modversion --print-errors libevent)" ""
   CFG += -DCONFIG_LIBEVENT_LEGACY
   LIBS += -levent
 else
-  # Using pkg-config for linking with libevent will result in linking with
-  # libevent.so instead of the smaller libevent_core.so. But FreeBSD keeps
-  # libevent2 .so files at a separate place, and we must learn it from
-  # pkg-config.
-  LIBS += $(shell pkg-config --libs libevent)
+  # Using pkg-config --libs for linking with libevent will result in
+  # linking with libevent.so instead of the smaller libevent_core.so.
+  # FreeBSD keeps libevent2 .so files at a separate place, and we must
+  # learn it from pkg-config.
+  LIBS += $(shell pkg-config --libs-only-L libevent) -levent_core
   INCS += $(shell pkg-config --cflags libevent)
 endif
 
@@ -58,7 +58,7 @@ endif
 # ==== OpenGL VSync ====
 ifeq "$(NO_VSYNC_OPENGL)" ""
   CFG += -DCONFIG_VSYNC_OPENGL
-  LIBS += -lGL
+  LIBS := -lGL $(LIBS)
 endif
 
 # ==== D-Bus ====
@@ -68,7 +68,7 @@ endif
 # endif
 
 # === Version string ===
-COMPTON_VERSION ?= git-$(shell git describe --always)
+COMPTON_VERSION ?= git-$(shell git describe --always --dirty)-$(shell git log -1 --date=short --pretty=format:%cd)
 CFG += -DCOMPTON_VERSION="\"$(COMPTON_VERSION)\""
 
 LDFLAGS ?= -Wl,-O1 -Wl,--as-needed

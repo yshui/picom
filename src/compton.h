@@ -128,7 +128,7 @@ typedef void(* event_callback_fn)(evutil_socket_t, short, void *);
 #define REGISTER_PROP "_NET_WM_CM_S"
 
 #define FADE_DELTA_TOLERANCE 0.2
-#define SWOPTI_TOLERANCE 1000
+#define SWOPTI_TOLERANCE 3000
 #define WIN_GET_LEADER_MAX_RECURSION 20
 
 #define SEC_WRAP (15L * 24L * 60L * 60L)
@@ -879,10 +879,10 @@ static int
 should_ignore(session_t *ps, unsigned long sequence);
 
 /**
- * Wrapper of XInternAtom() for convience.
+ * Wrapper of XInternAtom() for convenience.
  */
 static inline Atom
-get_atom(session_t *ps, char *atom_name) {
+get_atom(session_t *ps, const char *atom_name) {
   return XInternAtom(ps->dpy, atom_name, False);
 }
 
@@ -1530,8 +1530,25 @@ update_reg_ignore_expire(session_t *ps, const win *w) {
  */
 static inline bool __attribute__((const))
 win_has_frame(const win *w) {
-  return w->top_width || w->left_width || w->right_width
-    || w->bottom_width;
+  return w->a.border_width
+    || w->top_width || w->left_width || w->right_width || w->bottom_width;
+}
+
+/**
+ * Dump an drawable's info.
+ */
+static inline void
+dump_drawable(session_t *ps, Drawable drawable) {
+  Window rroot = None;
+  int x = 0, y = 0;
+  unsigned width = 0, height = 0, border = 0, depth = 0;
+  if (XGetGeometry(ps->dpy, drawable, &rroot, &x, &y, &width, &height,
+        &border, &depth)) {
+    printf_dbgf("(%#010lx): x = %u, y = %u, wid = %u, hei = %d, b = %u, d = %u\n", drawable, x, y, width, height, border, depth);
+  }
+  else {
+    printf_dbgf("(%#010lx): Failed\n", drawable);
+  }
 }
 
 /**
