@@ -57,8 +57,7 @@ static int
 fade_timeout(session_t *ps) {
   int diff = ps->o.fade_delta - get_time_ms() + ps->fade_time;
 
-  if (diff < 0)
-    diff = 0;
+  diff = normalize_i_range(diff, 0, ps->o.fade_delta * 2);
 
   return diff;
 }
@@ -1196,11 +1195,14 @@ paint_preprocess(session_t *ps, win *list) {
   bool is_highest = true;
 
   // Fading step calculation
-  time_ms_t steps = ((get_time_ms() - ps->fade_time) + FADE_DELTA_TOLERANCE * ps->o.fade_delta) / ps->o.fade_delta;
-  if (steps < 0L) {
-    // Time disorder
+  time_ms_t steps = 0L;
+  if (ps->fade_time) {
+    steps = ((get_time_ms() - ps->fade_time) + FADE_DELTA_TOLERANCE * ps->o.fade_delta) / ps->o.fade_delta;
+  }
+  // Reset fade_time if unset, or there appears to be a time disorder
+  if (!ps->fade_time || steps < 0L) {
     ps->fade_time = get_time_ms();
-    steps = 0;
+    steps = 0L;
   }
   ps->fade_time += steps * ps->o.fade_delta;
 
@@ -3921,10 +3923,28 @@ register_cm(session_t *ps, bool want_glxct) {
 }
 
 /**
+ * Reopen streams for logging.
+ */
+static bool
+ostream_reopen(session_t *ps, const char *path) {
+  if (!path)
+    path = ps->o.logpath;
+  if (!path)
+    path = "/dev/null";
+
+  bool success = freopen(path, "a", stdout);
+  success = freopen(path, "a", stderr) && success;
+  if (!success)
+    printf_errfq(1, "(%s): freopen() failed.", path);
+
+  return success;
+}
+
+/**
  * Fork program to background and disable all I/O streams.
  */
 static bool
-fork_after(void) {
+fork_after(session_t *ps) {
   if (getppid() == 1)
     return true;
 
@@ -3941,18 +3961,13 @@ fork_after(void) {
 
   // Mainly to suppress the _FORTIFY_SOURCE warning
   bool success = freopen("/dev/null", "r", stdin);
-  success = freopen("/dev/null", "w", stdout) && success;
   if (!success) {
     printf_errf("(): freopen() failed.");
     return false;
   }
-  success = freopen("/dev/null", "w", stderr);
-  if (!success) {
-    printf_errf("(): freopen() failed.");
-    return false;
-  }
+  success = ostream_reopen(ps, NULL);
 
-  return true;
+  return success;
 }
 
 #ifdef CONFIG_LIBCONFIG
@@ -4299,6 +4314,7 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
     { "blur-background-frame", no_argument, NULL, 284 },
     { "blur-background-fixed", no_argument, NULL, 285 },
     { "dbus", no_argument, NULL, 286 },
+    { "logpath", required_argument, NULL, 287 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4405,8 +4421,7 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
       case 'n':
       case 'a':
       case 's':
-        fprintf(stderr, "Warning: "
-          "-n, -a, and -s have been removed.\n");
+        printf_errfq(1, "(): -n, -a, and -s have been removed.");
         break;
       case 'b':
         ps->o.fork_after_register = true;
@@ -4535,8 +4550,13 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
         // --dbus
         ps->o.dbus = true;
         break;
+      case 287:
+        // --logpath
+        ps->o.logpath = mstrcpy(optarg);
+        break;
       default:
         usage();
+        break;
     }
   }
 
@@ -4695,22 +4715,6 @@ swopti_init(session_t *ps) {
 }
 
 /**
- * Get the smaller number that is bigger than <code>dividend</code> and is
- * N times of <code>divisor</code>.
- */
-static inline long
-lceil_ntimes(long dividend, long divisor) {
-  // It's possible to use the more beautiful expression here:
-  // ret = ((dividend - 1) / divisor + 1) * divisor;
-  // But it does not work well for negative values.
-  long ret = dividend / divisor * divisor;
-  if (ret < dividend)
-    ret += divisor;
-
-  return ret;
-}
-
-/**
  * Modify a struct timeval timeout value to render at a fixed pace.
  *
  * @param ps current session
@@ -4741,32 +4745,6 @@ swopti_handle_timeout(session_t *ps, struct timeval *ptv) {
     ptv->tv_usec -= US_PER_SEC;
     ++ptv->tv_sec;
   }
-}
-
-/**
- * Libevent callback function to handle X events.
- */
-static void
-evcallback_x(evutil_socket_t fd, short what, void *arg) {
-  session_t *ps = ps_g;
-
-  // Sometimes poll() returns 1 but no events are actually read,
-  // causing XNextEvent() to block, I have no idea what's wrong, so we
-  // check for the number of events here
-  if (XEventsQueued(ps->dpy, QueuedAfterReading)) {
-    XEvent ev = { };
-
-    XNextEvent(ps->dpy, &ev);
-    ev_handle(ps, &ev);
-    ps->ev_received = true;
-  }
-}
-
-/**
- * NULL libevent callback function.
- */
-static void
-evcallback_null(evutil_socket_t fd, short what, void *arg) {
 }
 
 /**
@@ -5004,6 +4982,141 @@ redir_start(session_t *ps) {
 }
 
 /**
+ * Get the poll time.
+ */
+static time_ms_t
+timeout_get_poll_time(session_t *ps) {
+  const time_ms_t now = get_time_ms();
+  time_ms_t wait = TIME_MS_MAX;
+
+  // Traverse throught the timeout linked list
+  for (timeout_t *ptmout = ps->tmout_lst; ptmout; ptmout = ptmout->next) {
+    if (ptmout->enabled) {
+      // Truncate the last run time to the closest interval
+      time_ms_t newrun = ptmout->firstrun + ((ptmout->lastrun - ptmout->firstrun) / ptmout->interval + 1) * ptmout->interval;
+      if (newrun <= now) {
+        wait = 0;
+        break;
+      }
+      else {
+        time_ms_t newwait = newrun - now;
+        if (newwait < wait)
+          wait = newwait;
+      }
+    }
+  }
+
+  return wait;
+}
+
+/**
+ * Insert a new timeout.
+ */
+static timeout_t *
+timeout_insert(session_t *ps, time_ms_t interval,
+    bool (*callback)(session_t *ps, timeout_t *ptmout), void *data) {
+  const static timeout_t tmout_def = {
+    .enabled = true,
+    .data = NULL,
+    .callback = NULL,
+    .firstrun = 0L,
+    .lastrun = 0L,
+    .interval = 0L,
+  };
+
+  const time_ms_t now = get_time_ms();
+  timeout_t *ptmout = malloc(sizeof(timeout_t));
+  if (!ptmout)
+    printf_errfq(1, "(): Failed to allocate memory for timeout.");
+  memcpy(ptmout, &tmout_def, sizeof(timeout_t));
+
+  ptmout->interval = interval;
+  ptmout->firstrun = now;
+  ptmout->lastrun = now;
+  ptmout->data = data;
+  ptmout->callback = callback;
+  ptmout->next = ps->tmout_lst;
+  ps->tmout_lst = ptmout;
+
+  return ptmout;
+}
+
+/**
+ * Drop a timeout.
+ *
+ * @return true if we have found the timeout and removed it, false
+ *         otherwise
+ */
+static bool
+timeout_drop(session_t *ps, timeout_t *prm) {
+  timeout_t **pplast = &ps->tmout_lst;
+
+  for (timeout_t *ptmout = ps->tmout_lst; ptmout;
+      pplast = &ptmout->next, ptmout = ptmout->next) {
+    if (prm == ptmout) {
+      *pplast = ptmout->next;
+      free(ptmout);
+
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Clear all timeouts.
+ */
+static void
+timeout_clear(session_t *ps) {
+  timeout_t *ptmout = ps->tmout_lst;
+  timeout_t *next = NULL;
+  while (ptmout) {
+    next = ptmout->next;
+    free(ptmout);
+    ptmout = next;
+  }
+}
+
+/**
+ * Run timeouts.
+ *
+ * @return true if we have ran a timeout, false otherwise
+ */
+static bool
+timeout_run(session_t *ps) {
+  const time_ms_t now = get_time_ms();
+  bool ret = false;
+
+  for (timeout_t *ptmout = ps->tmout_lst; ptmout; ptmout = ptmout->next) {
+    if (ptmout->enabled) {
+      const time_ms_t max = now +
+        (time_ms_t) (ptmout->interval * TIMEOUT_RUN_TOLERANCE);
+      time_ms_t newrun = ptmout->firstrun + ((ptmout->lastrun - ptmout->firstrun) / ptmout->interval + 1) * ptmout->interval;
+      if (newrun <= max) {
+        ret = true;
+        timeout_invoke(ps, ptmout);
+      }
+    }
+  }
+
+  return ret;
+}
+
+/**
+ * Invoke a timeout.
+ */
+static void
+timeout_invoke(session_t *ps, timeout_t *ptmout) {
+  const time_ms_t now = get_time_ms();
+  ptmout->lastrun = now;
+  // Avoid modifying the timeout structure after running timeout, to
+  // make it possible to remove timeout in callback
+  if (ptmout->callback)
+    ptmout->callback(ps, ptmout);
+}
+
+/**
  * Unredirect all windows.
  */
 static void
@@ -5037,36 +5150,74 @@ redir_stop(session_t *ps) {
  */
 static bool
 mainloop(session_t *ps) {
-  bool infinite_wait = false;
-
   // Process existing events
+  // Sometimes poll() returns 1 but no events are actually read,
+  // causing XNextEvent() to block, I have no idea what's wrong, so we
+  // check for the number of events here.
   if (XEventsQueued(ps->dpy, QueuedAfterReading)) {
-    evcallback_x(ConnectionNumber(ps->dpy), 0, NULL);
+    XEvent ev = { };
+
+    XNextEvent(ps->dpy, &ev);
+    ev_handle(ps, &ev);
+    ps->ev_received = true;
+
     return true;
   }
 
-  // Add timeout
-  if (ps->ev_received || !ps->idling) {
-    struct timeval tv = ms_to_tv(ps->ev_received ? 0: fade_timeout(ps));
-    if (ps->o.sw_opti)
-      swopti_handle_timeout(ps, &tv);
-    assert(tv.tv_sec >= 0 && tv.tv_usec >= 0);
-    if (timeval_isempty(tv))
+  if (ps->reset)
+    return false;
+
+  // Calculate timeout
+  struct timeval *ptv = NULL;
+  {
+    // Consider ev_received firstly
+    if (ps->ev_received) {
+      ptv = malloc(sizeof(struct timeval));
+      ptv->tv_sec = 0L;
+      ptv->tv_usec = 0L;
+    }
+    // Then consider fading timeout
+    else if (!ps->idling) {
+      ptv = malloc(sizeof(struct timeval));
+      *ptv = ms_to_tv(fade_timeout(ps));
+    }
+
+    // Software optimization is to be applied on timeouts that require
+    // immediate painting only
+    if (ptv && ps->o.sw_opti)
+      swopti_handle_timeout(ps, ptv);
+
+    // Don't continue looping for 0 timeout
+    if (ptv && timeval_isempty(ptv)) {
+      free(ptv);
       return false;
-    evtimer_add(ps->ev_tmout, &tv);
+    }
+
+    // Now consider the waiting time of other timeouts
+    time_ms_t tmout_ms = timeout_get_poll_time(ps);
+    if (tmout_ms < TIME_MS_MAX) {
+      if (!ptv) {
+        ptv = malloc(sizeof(struct timeval));
+        *ptv = ms_to_tv(tmout_ms);
+      }
+      else if (timeval_ms_cmp(ptv, tmout_ms) > 0) {
+        *ptv = ms_to_tv(tmout_ms);
+      }
+    }
+
+    // Don't continue looping for 0 timeout
+    if (ptv && timeval_isempty(ptv)) {
+      free(ptv);
+      return false;
+    }
   }
-  else {
-    infinite_wait = true;
-  }
 
-  // Run libevent main loop
-  if (event_base_loop(ps->ev_base, EVLOOP_ONCE))
-    printf_errfq(1, "(): Unexpected error when running event loop.");
+  // Polling
+  fds_poll(ps, ptv);
+  free(ptv);
+  ptv = NULL;
 
-  evtimer_del(ps->ev_tmout);
-
-  if (infinite_wait)
-    ps->fade_time = get_time_ms();
+  timeout_run(ps);
 
   return true;
 }
@@ -5106,6 +5257,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .detect_rounded_corners = false,
       .paint_on_overlay = false,
       .unredir_if_possible = false,
+      .dbus = false,
+      .logpath = NULL,
 
       .refresh_rate = 0,
       .sw_opti = false,
@@ -5156,6 +5309,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .track_leader = false,
     },
 
+    .pfds_read = NULL,
+    .pfds_write = NULL,
+    .pfds_except = NULL,
+    .nfds_max = 0,
+    .tmout_lst = NULL,
+
     .all_damage = None,
     .time_start = { 0, 0 },
     .redirected = false,
@@ -5163,7 +5322,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .alpha_picts = NULL,
     .reg_ignore_expire = false,
     .idling = false,
-    .fade_time = 0,
+    .fade_time = 0L,
     .ignore_head = NULL,
     .ignore_tail = NULL,
     .reset = false,
@@ -5406,24 +5565,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
         ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue);
   }
 
-  ps->all_damage = None;
-
-  // Build event base
-  if (!(ps->ev_base =
-#ifndef CONFIG_LIBEVENT_LEGACY
-        event_base_new()
-#else
-        event_init()
-#endif
-        ))
-    printf_errfq(1, "(): Failed to build event base.");
-  if (!(ps->ev_x = EVENT_NEW(ps->ev_base, ConnectionNumber(ps->dpy),
-          EV_READ | EV_PERSIST, evcallback_x, NULL)))
-    printf_errfq(1, "(): Failed to build event.");
-  if (event_add(ps->ev_x, NULL))
-    printf_errfq(1, "(): Failed to add event.");
-  if (!(ps->ev_tmout = evtimer_new(ps->ev_base, evcallback_null, NULL)))
-    printf_errfq(1, "(): Failed to build event.");
+  fds_insert(ps, ConnectionNumber(ps->dpy), POLLIN);
 
   XGrabServer(ps->dpy);
 
@@ -5459,14 +5601,10 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Fork to background, if asked
   if (ps->o.fork_after_register) {
-    if (!fork_after()) {
+    if (!fork_after(ps)) {
       session_destroy(ps);
       return NULL;
     }
-
-    // Reinitialize event base
-    if (event_reinit(ps->ev_base) < 0)
-      printf_errfq(1, "Failed to reinitialize event base.");
   }
 
   // Free the old session
@@ -5565,6 +5703,10 @@ session_destroy(session_t *ps) {
   free(ps->shadow_top);
   free(ps->gaussian_map);
   free(ps->o.display);
+  free(ps->o.logpath);
+  free(ps->pfds_read);
+  free(ps->pfds_write);
+  free(ps->pfds_except);
 
   // Free reg_win and glx_context
   if (ps->reg_win) {
@@ -5598,13 +5740,11 @@ session_destroy(session_t *ps) {
     ps->overlay = None;
   }
 
-  // Free libevent things
-  event_free(ps->ev_x);
-  event_free(ps->ev_tmout);
-  event_base_free(ps->ev_base);
-
   // Flush all events
   XSync(ps->dpy, True);
+
+  // Free timeouts
+  timeout_clear(ps);
 
   if (ps == ps_g)
     ps_g = NULL;
@@ -5623,8 +5763,6 @@ session_run(session_t *ps) {
     ps->paint_tm_offset = get_time_timeval().tv_usec;
 
   ps->reg_ignore_expire = true;
-
-  ps->fade_time = get_time_ms();
 
   t = paint_preprocess(ps, ps->list);
 
@@ -5658,6 +5796,9 @@ session_run(session_t *ps) {
       XSync(ps->dpy, False);
       ps->all_damage = None;
     }
+
+    if (ps->idling)
+      ps->fade_time = 0L;
   }
 }
 

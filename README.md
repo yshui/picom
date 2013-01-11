@@ -55,8 +55,7 @@ __R__ for runtime
 * libconfig (B,R) (Will probably be made optional soon)
 * libdrm (B) (Will probably be made optional soon)
 * libGL (B,R) (Will probably be made optional soon)
-* asciidoc (B) (if you wish to run `make docs`)
-* libevent (B,R)
+* asciidoc (B)
 
 ### How to build
 
@@ -82,8 +81,6 @@ $ make install
 * compton may not track focus correctly in all situations. The focus tracking code is experimental. `--use-ewmh-active-win` might be helpful.
 
 * Compton may give ugly shadow to windows with ARGB background if `-z` is enabled, because compton cannot determine their real shapes. One may have to disable shadows on those windows with window-type-specific settings in configuration file or `--shadow-exclude`.
-
-* There are two sets of man pages in the repository: the man pages in groff format (`man/compton.1` & `man/compton-trans.1`) and the man pages in Asciidoc format (`man/compton.1.asciidoc` & `man/compton-trans.1.asciidoc`). The Asciidoc man pages are much more up-to-date than the groff ones, and it is viewable online. As chjj has not yet expressed his attitude towards switching to Asciidoc man pages, I kept both versions. By default the groff version is installed, unless you run `make docs`.
 
 * The performance of blurring is terrible, probably because of a problem in the X Render implementation. Its behavior is driver-dependent: With nvidia-drivers it works but there are strange 1px lines remaining when you operate on windows (not sure if it's a bug in compton or in the driver); with nouveau it's utterly broken.
 

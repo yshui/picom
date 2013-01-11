@@ -43,9 +43,11 @@
 #include <string.h>
 #include <inttypes.h>
 #include <math.h>
+#include <sys/select.h>
 #include <sys/poll.h>
 #include <sys/time.h>
 #include <time.h>
+#include <limits.h>
 #include <unistd.h>
 #include <getopt.h>
 #include <stdbool.h>
@@ -53,20 +55,6 @@
 #include <assert.h>
 #include <fnmatch.h>
 #include <signal.h>
-
-// libevent
-#ifndef CONFIG_LIBEVENT_LEGACY
-#include <event2/event.h>
-#else
-#include <event.h>
-typedef int evutil_socket_t;
-typedef void(* event_callback_fn)(evutil_socket_t, short, void *);
-#define event_free(ev) (event_del((ev)), free((ev)))
-#endif
-
-#ifndef evtimer_new
-#define evtimer_new(b, cb, arg)   EVENT_NEW((b), -1, 0, (cb), (arg))
-#endif
 
 // libpcre
 #ifdef CONFIG_REGEX_PCRE
@@ -127,8 +115,10 @@ typedef void(* event_callback_fn)(evutil_socket_t, short, void *);
 #define OPAQUE 0xffffffff
 #define REGISTER_PROP "_NET_WM_CM_S"
 
+#define TIME_MS_MAX LONG_MAX
 #define FADE_DELTA_TOLERANCE 0.2
 #define SWOPTI_TOLERANCE 3000
+#define TIMEOUT_RUN_TOLERANCE 0.2
 #define WIN_GET_LEADER_MAX_RECURSION 20
 
 #define SEC_WRAP (15L * 24L * 60L * 60L)
@@ -286,6 +276,8 @@ typedef struct {
   double *data;
 } conv;
 
+struct _timeout_t;
+
 struct _win;
 
 /// Structure representing all options.
@@ -308,6 +300,8 @@ typedef struct {
   bool unredir_if_possible;
   /// Whether to enable D-Bus support.
   bool dbus;
+  /// Path to log file.
+  char *logpath;
   /// Whether to work under synchronized mode for debugging.
   bool synchronize;
 
@@ -447,12 +441,16 @@ typedef struct {
   // === Operation related ===
   /// Program options.
   options_t o;
-  /// Libevent event base.
-  struct event_base *ev_base;
-  /// Libevent event for X connection.
-  struct event *ev_x;
-  /// Libevent event for timeout.
-  struct event *ev_tmout;
+  /// File descriptors to check for reading.
+  fd_set *pfds_read;
+  /// File descriptors to check for writing.
+  fd_set *pfds_write;
+  /// File descriptors to check for exceptions.
+  fd_set *pfds_except;
+  /// Largest file descriptor in fd_set-s above.
+  int nfds_max;
+  /// Linked list of all timeouts.
+  struct _timeout_t *tmout_lst;
   /// Whether we have received an event in this cycle.
   bool ev_received;
   /// Whether the program is idling. I.e. no fading, no potential window
@@ -770,6 +768,18 @@ struct options_tmp {
   double menu_opacity;
 };
 
+/// Structure for a recorded timeout.
+typedef struct _timeout_t {
+  bool enabled;
+  void *data;
+  bool (*callback)(session_t *ps, struct _timeout_t *ptmout);
+  time_ms_t interval;
+  time_ms_t firstrun;
+  time_ms_t lastrun;
+  struct _timeout_t *next;
+} timeout_t;
+
+/// Enumeration for window event hints.
 typedef enum {
   WIN_EVMODE_UNKNOWN,
   WIN_EVMODE_FRAME,
@@ -839,22 +849,6 @@ XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
 #endif
 
 // == Functions ==
-
-/**
- * Wrapper of libevent event_new(), for compatibility with libevent-1\.x.
- */
-static inline struct event *
-EVENT_NEW(struct event_base *base, evutil_socket_t fd,
-    short what, event_callback_fn cb, void *arg) {
-#ifndef CONFIG_LIBEVENT_LEGACY
-  return event_new(base, fd, what, cb, arg);
-#else
-  struct event *pev = malloc(sizeof(struct event));
-  if (pev)
-    event_set(pev, fd, what, cb, arg);
-  return pev;
-#endif
-}
 
 // inline functions must be made static to compile correctly under clang:
 // http://clang.llvm.org/compatibility.html#inline
@@ -1008,6 +1002,14 @@ min_i(int a, int b) {
 }
 
 /**
+ * Select the smaller long integer of two.
+ */
+static inline long __attribute__((const))
+min_l(long a, long b) {
+  return (a > b ? b : a);
+}
+
+/**
  * Normalize a double value to a specific range.
  *
  * @param d double value to normalize
@@ -1055,8 +1057,41 @@ array_wid_exists(const Window *arr, int count, Window wid) {
  * Return whether a struct timeval value is empty.
  */
 static inline bool
-timeval_isempty(struct timeval tv) {
-  return tv.tv_sec <= 0 && tv.tv_usec <= 0;
+timeval_isempty(struct timeval *ptv) {
+  if (!ptv)
+    return false;
+
+  return ptv->tv_sec <= 0 && ptv->tv_usec <= 0;
+}
+
+/**
+ * Compare a struct timeval with a time in milliseconds.
+ *
+ * @return > 0 if ptv > ms, 0 if ptv == 0, -1 if ptv < ms
+ */
+static inline int
+timeval_ms_cmp(struct timeval *ptv, time_ms_t ms) {
+  assert(ptv);
+
+  // We use those if statement instead of a - expression because of possible
+  // truncation problem from long to int.
+  {
+    long sec = ms / MS_PER_SEC;
+    if (ptv->tv_sec > sec)
+      return 1;
+    if (ptv->tv_sec < sec)
+      return -1;
+  }
+
+  {
+    long usec = ms % MS_PER_SEC * (US_PER_SEC / MS_PER_SEC);
+    if (ptv->tv_usec > usec)
+      return 1;
+    if (ptv->tv_usec < usec)
+      return -1;
+  }
+
+  return 0;
 }
 
 /*
@@ -1290,8 +1325,94 @@ ms_to_tv(int timeout) {
   };
 }
 
-static int
-fade_timeout(session_t *ps);
+/**
+ * Add a file descriptor to a select() fd_set.
+ */
+static inline bool
+fds_insert_select(fd_set **ppfds, int fd) {
+  assert(fd <= FD_SETSIZE);
+
+  if (!*ppfds) {
+    if ((*ppfds = malloc(sizeof(fd_set)))) {
+      FD_ZERO(*ppfds);
+    }
+    else {
+      fprintf(stderr, "Failed to allocate memory for select() fdset.\n");
+      exit(1);
+    }
+  }
+
+  FD_SET(fd, *ppfds);
+
+  return true;
+}
+
+/**
+ * Add a new file descriptor to wait for.
+ */
+static inline bool
+fds_insert(session_t *ps, int fd, short events) {
+  bool result = true;
+
+  ps->nfds_max = max_i(fd + 1, ps->nfds_max);
+
+  if (POLLIN & events)
+    result = fds_insert_select(&ps->pfds_read, fd) && result;
+  if (POLLOUT & events)
+    result = fds_insert_select(&ps->pfds_write, fd) && result;
+  if (POLLPRI & events)
+    result = fds_insert_select(&ps->pfds_except, fd) && result;
+
+  return result;
+}
+
+/**
+ * Delete a file descriptor to wait for.
+ */
+static inline void
+fds_drop(session_t *ps, int fd, short events) {
+  // Drop fd from respective fd_set-s
+  if (POLLIN & events)
+    FD_CLR(fd, ps->pfds_read);
+  if (POLLOUT & events)
+    FD_CLR(fd, ps->pfds_write);
+  if (POLLPRI & events)
+    FD_CLR(fd, ps->pfds_except);
+}
+
+#define CPY_FDS(key) \
+  fd_set * key = NULL; \
+  if (ps->key) { \
+    key = malloc(sizeof(fd_set)); \
+    memcpy(key, ps->key, sizeof(fd_set)); \
+    if (!key) { \
+      fprintf(stderr, "Failed to allocate memory for copying select() fdset.\n"); \
+      exit(1); \
+    } \
+  } \
+
+/**
+ * Poll for changes.
+ *
+ * poll() is much better than select(), but ppoll() does not exist on
+ * *BSD.
+ */
+static inline int
+fds_poll(session_t *ps, struct timeval *ptv) {
+  // Copy fds
+  CPY_FDS(pfds_read);
+  CPY_FDS(pfds_write);
+  CPY_FDS(pfds_except);
+
+  int ret = select(ps->nfds_max, pfds_read, pfds_write, pfds_except, ptv);
+
+  free(pfds_read);
+  free(pfds_write);
+  free(pfds_except);
+
+  return ret;
+}
+#undef CPY_FDS
 
 static void
 run_fade(session_t *ps, win *w, unsigned steps);
@@ -2030,7 +2151,7 @@ inline static void
 ev_handle(session_t *ps, XEvent *ev);
 
 static bool
-fork_after(void);
+fork_after(session_t *ps);
 
 #ifdef CONFIG_LIBCONFIG
 /**
@@ -2095,12 +2216,6 @@ swopti_init(session_t *ps);
 static void
 swopti_handle_timeout(session_t *ps, struct timeval *ptv);
 
-static void
-evcallback_x(evutil_socket_t fd, short what, void *arg);
-
-static void
-evcallback_null(evutil_socket_t fd, short what, void *arg);
-
 static bool
 vsync_drm_init(session_t *ps);
 
@@ -2134,6 +2249,22 @@ redir_start(session_t *ps);
 
 static void
 redir_stop(session_t *ps);
+
+static time_ms_t
+timeout_get_poll_time(session_t *ps);
+
+static timeout_t *
+timeout_insert(session_t *ps, time_ms_t interval,
+    bool (*callback)(session_t *ps, timeout_t *ptmout), void *data);
+
+static void
+timeout_invoke(session_t *ps, timeout_t *ptmout);
+
+static bool
+timeout_drop(session_t *ps, timeout_t *prm);
+
+static void
+timeout_clear(session_t *ps);
 
 static bool
 mainloop(session_t *ps);

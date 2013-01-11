@@ -8,27 +8,11 @@ BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
 
 PACKAGES = x11 xcomposite xfixes xdamage xrender xext xrandr
-LIBS = -lm
+LIBS = -lm -lrt
 INCS =
 
 # === Configuration flags ===
 CFG =
-
-# ==== libevent ====
-# Seemingly, libevent1 has no pkg-config file!
-# FreeBSD 9.1 probably has issues handling --atleast-version in pkg-config.
-ifeq "$(shell pkg-config --modversion --print-errors libevent)" ""
-  $(warning libevent-2.0 not found, assuming libevent-1.4.x.)
-  CFG += -DCONFIG_LIBEVENT_LEGACY
-  LIBS += -levent
-else
-  # Using pkg-config --libs for linking with libevent will result in
-  # linking with libevent.so instead of the smaller libevent_core.so.
-  # FreeBSD keeps libevent2 .so files at a separate place, and we must
-  # learn it from pkg-config.
-  LIBS += $(shell pkg-config --libs-only-L libevent) -levent_core
-  INCS += $(shell pkg-config --cflags libevent)
-endif
 
 # ==== libconfig ====
 ifeq "$(NO_LIBCONFIG)" ""
@@ -72,7 +56,7 @@ COMPTON_VERSION ?= git-$(shell git describe --always --dirty)-$(shell git log -1
 CFG += -DCOMPTON_VERSION="\"$(COMPTON_VERSION)\""
 
 LDFLAGS ?= -Wl,-O1 -Wl,--as-needed
-CFLAGS ?= -DNDEBUG -O2 -D_FORTIFY_SOURCE=2 $(LDFLAGS)
+CFLAGS ?= -DNDEBUG -O2 -D_FORTIFY_SOURCE=2
 CFLAGS += $(CFG)
 
 LIBS += $(shell pkg-config --libs $(PACKAGES))
@@ -80,6 +64,8 @@ INCS += $(shell pkg-config --cflags $(PACKAGES))
 
 CFLAGS += -Wall -std=c99
 OBJS = compton.o
+MANPAGES = man/compton.1 man/compton-trans.1
+MANPAGES_HTML = $(addsuffix .html,$(MANPAGES))
 
 # === Recipes ===
 .DEFAULT_GOAL := compton
@@ -90,15 +76,15 @@ OBJS = compton.o
 compton: $(OBJS)
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 
-docs:
-	# HTML documentation
-	asciidoc man/compton.1.asciidoc
-	asciidoc man/compton-trans.1.asciidoc
-	# man page
-	a2x --format manpage man/compton.1.asciidoc
-	a2x --format manpage man/compton-trans.1.asciidoc
+man/%.1: man/%.1.asciidoc
+	a2x --format manpage $<
 
-install: compton
+man/%.1.html: man/%.1.asciidoc
+	asciidoc $<
+
+docs: $(MANPAGES) $(MANPAGES_HTML)
+
+install: compton docs
 	@install -Dm755 compton "$(DESTDIR)$(BINDIR)"/compton
 	@install -Dm755 bin/compton-trans "$(DESTDIR)$(BINDIR)"/compton-trans
 	@install -Dm644 man/compton.1 "$(DESTDIR)$(MANDIR)"/compton.1
@@ -111,6 +97,6 @@ uninstall:
 	@rm -f "$(DESTDIR)$(MANDIR)/compton-trans.1"
 
 clean:
-	@rm -f $(OBJS) compton
+	@rm -f $(OBJS) compton $(MANPAGES) $(MANPAGES_HTML)
 
 .PHONY: uninstall clean docs
