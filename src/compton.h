@@ -211,6 +211,14 @@ typedef enum {
   WMODE_ARGB
 } winmode_t;
 
+/// Structure representing needed window updates.
+typedef struct {
+  bool shadow       : 1;
+  bool fade         : 1;
+  bool focus        : 1;
+  bool invert_color : 1;
+} win_upd_t;
+
 /// Structure representing Window property value.
 typedef struct {
   // All pointers have the same length, right?
@@ -363,13 +371,10 @@ typedef struct {
   /// Whether to detect _NET_WM_OPACITY on client windows. Used on window
   /// managers that don't pass _NET_WM_OPACITY to frame windows.
   bool detect_client_opacity;
-  /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
-  double inactive_dim;
-  /// Whether to use fixed inactive dim opacity, instead of deciding
-  /// based on window opacity.
-  bool inactive_dim_fixed;
   /// Step for pregenerating alpha pictures. 0.01 - 1.0.
   double alpha_step;
+
+  // === Other window processing ===
   /// Whether to blur background of semi-transparent / ARGB windows.
   bool blur_background;
   /// Whether to blur background when the window frame is not opaque.
@@ -378,6 +383,13 @@ typedef struct {
   /// Whether to use fixed blur strength instead of adjusting according
   /// to window opacity.
   bool blur_background_fixed;
+  /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
+  double inactive_dim;
+  /// Whether to use fixed inactive dim opacity, instead of deciding
+  /// based on window opacity.
+  bool inactive_dim_fixed;
+  /// Conditions of windows to have inverted colors.
+  wincond_t *invert_color_list;
 
   // === Focus related ===
   /// Consider windows of specific types to be always focused.
@@ -398,7 +410,6 @@ typedef struct {
   bool track_wdata;
   /// Whether compton needs to track window leaders.
   bool track_leader;
-
 } options_t;
 
 /// Structure containing all necessary data for a compton session.
@@ -505,6 +516,8 @@ typedef struct {
   Picture black_picture;
   /// 1x1 Picture of the shadow color.
   Picture cshadow_picture;
+  /// 1x1 white Picture.
+  Picture white_picture;
   /// Gaussian map of shadow.
   conv *gaussian_map;
   // for shadow precomputation
@@ -699,6 +712,7 @@ typedef struct _win {
   wincond_t *cache_sblst;
   wincond_t *cache_fblst;
   wincond_t *cache_fcblst;
+  wincond_t *cache_ivclst;
 
   // Opacity-related members
   /// Current window opacity.
@@ -758,6 +772,12 @@ typedef struct _win {
   /// Picture for dimming. Affected by user-specified inactive dim
   /// opacity and window opacity.
   Picture dim_alpha_pict;
+
+  /// Whether to invert window color.
+  bool invert_color;
+  /// Override value of window color inversion state. Set by D-Bus method
+  /// calls.
+  switch_t invert_color_force;
 } win;
 
 /// Temporary structure used for communication between
@@ -1860,7 +1880,7 @@ static double
 get_opacity_percent(win *w);
 
 static void
-determine_mode(session_t *ps, win *w);
+win_determine_mode(session_t *ps, win *w);
 
 static void
 calc_opacity(session_t *ps, win *w);
@@ -1902,7 +1922,7 @@ static inline void
 win_set_focused(session_t *ps, win *w, bool focused);
 
 static void
-determine_fade(session_t *ps, win *w);
+win_determine_fade(session_t *ps, win *w);
 
 static void
 win_update_shape_raw(session_t *ps, win *w);
@@ -1917,7 +1937,16 @@ static void
 win_update_prop_shadow(session_t *ps, win *w);
 
 static void
-determine_shadow(session_t *ps, win *w);
+win_determine_shadow(session_t *ps, win *w);
+
+static void
+win_on_wtype_change(session_t *ps, win *w);
+
+static void
+win_on_wdata_change(session_t *ps, win *w);
+
+static void
+win_upd_run(session_t *ps, win *w, win_upd_t *pupd);
 
 static void
 calc_win_size(session_t *ps, win *w);

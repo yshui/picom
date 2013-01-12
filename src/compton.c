@@ -1242,7 +1242,7 @@ paint_preprocess(session_t *ps, win *list) {
     if (to_paint) {
       // If opacity changes
       if (w->opacity != opacity_old) {
-        determine_mode(ps, w);
+        win_determine_mode(ps, w);
         add_damage_win(ps, w);
       }
 
@@ -1431,6 +1431,38 @@ win_paint_shadow(session_t *ps, win *w, Picture tgt_buffer) {
 }
 
 /**
+ * Create an alternative picture for a window.
+ */
+static inline Picture
+win_build_picture(session_t *ps, win *w, Visual *visual) {
+  const int wid = w->widthb;
+  const int hei = w->heightb;
+  int depth = 0;
+  XRenderPictFormat *pictformat = NULL;
+
+  if (visual && ps->vis != visual) {
+    pictformat = XRenderFindVisualFormat(ps->dpy, visual);
+    depth = pictformat->depth;
+  }
+  else {
+    pictformat = XRenderFindVisualFormat(ps->dpy, ps->vis);
+  }
+
+  if (!depth)
+    depth = ps->depth;
+
+  Pixmap tmp_pixmap = XCreatePixmap(ps->dpy, ps->root, wid, hei, depth);
+  if (!tmp_pixmap)
+    return None;
+
+  Picture tmp_picture = XRenderCreatePicture(ps->dpy, tmp_pixmap,
+    pictformat, 0, 0);
+  free_pixmap(ps, &tmp_pixmap);
+
+  return tmp_picture;
+}
+
+/**
  * Blur the background of a window.
  */
 static inline void
@@ -1451,24 +1483,17 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
     XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
   };
 
-  Pixmap tmp_pixmap = None;
-  Picture tmp_picture = None;
-
-  int x = w->a.x;
-  int y = w->a.y;
-  int wid = w->widthb;
-  int hei = w->heightb;
+  const int x = w->a.x;
+  const int y = w->a.y;
+  const int wid = w->widthb;
+  const int hei = w->heightb;
 
   // Directly copying from tgt_buffer does not work, so we create a
   // Picture in the middle.
-  tmp_pixmap = XCreatePixmap(ps->dpy, ps->root, wid, hei, ps->depth);
-  if (!tmp_pixmap)
-    goto win_blur_background_err;
+  Picture tmp_picture = win_build_picture(ps, w, NULL);
 
-  tmp_picture = XRenderCreatePicture(ps->dpy, tmp_pixmap,
-    XRenderFindVisualFormat(ps->dpy, ps->vis), 0, 0);
   if (!tmp_picture)
-    goto win_blur_background_err;
+    return;
 
   // Adjust blur strength according to window opacity, to make it appear
   // better during fading
@@ -1496,8 +1521,6 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
   xrfilter_reset(ps, tgt_buffer);
   XRenderComposite(ps->dpy, PictOpSrc, tmp_picture, None, tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
 
-win_blur_background_err:
-  free_pixmap(ps, &tmp_pixmap);
   free_picture(ps, &tmp_picture);
 }
 
@@ -1513,9 +1536,27 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer) {
 
   Picture alpha_mask = (OPAQUE == w->opacity ? None: w->alpha_pict);
   int op = (w->mode == WMODE_SOLID ? PictOpSrc: PictOpOver);
+  Picture pict = w->picture;
+
+  // Invert window color, if required
+  if (w->invert_color) {
+    Picture newpict = win_build_picture(ps, w, w->a.visual);
+    if (newpict) {
+      XRenderComposite(ps->dpy, PictOpSrc, pict, None,
+          newpict, 0, 0, 0, 0, 0, 0, wid, hei);
+      XRenderComposite(ps->dpy, PictOpDifference, ps->white_picture, None,
+          newpict, 0, 0, 0, 0, 0, 0, wid, hei);
+      // We use an extra PictOpInReverse operation to get correct pixel
+      // alpha. There could be a better solution.
+      if (WMODE_ARGB == w->mode)
+        XRenderComposite(ps->dpy, PictOpInReverse, pict, None,
+            newpict, 0, 0, 0, 0, 0, 0, wid, hei);
+      pict = newpict;
+    }
+  }
 
   if (!w->frame_opacity) {
-    XRenderComposite(ps->dpy, op, w->picture, alpha_mask,
+    XRenderComposite(ps->dpy, op, pict, alpha_mask,
         tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
   }
   else {
@@ -1526,7 +1567,7 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer) {
     const int r = w->a.border_width + w->right_width;
 
 #define COMP_BDR(cx, cy, cwid, chei) \
-    XRenderComposite(ps->dpy, PictOpOver, w->picture, w->frame_alpha_pict, \
+    XRenderComposite(ps->dpy, PictOpOver, pict, w->frame_alpha_pict, \
         tgt_buffer, (cx), (cy), 0, 0, x + (cx), y + (cy), (cwid), (chei))
 
     // The following complicated logic is required because some broken
@@ -1562,7 +1603,7 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer) {
           pwid = wid - l - pwid;
           if (pwid > 0) {
             // body
-            XRenderComposite(ps->dpy, op, w->picture, alpha_mask,
+            XRenderComposite(ps->dpy, op, pict, alpha_mask,
                 tgt_buffer, l, t, 0, 0, x + l, y + t, pwid, phei);
           }
         }
@@ -1571,6 +1612,9 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer) {
   }
 
 #undef COMP_BDR
+
+  if (pict != w->picture)
+    free_picture(ps, &pict);
 
   // Dimming the window if needed
   if (w->dim && w->dim_alpha_pict != ps->alpha_picts[0]) {
@@ -1919,7 +1963,7 @@ map_win(session_t *ps, Window id) {
     win_update_prop_shadow_raw(ps, w);
 
   // Many things above could affect shadow
-  determine_shadow(ps, w);
+  win_determine_shadow(ps, w);
 
   // Set fading state
   if (ps->o.no_fading_openclose) {
@@ -1930,7 +1974,7 @@ map_win(session_t *ps, Window id) {
   }
   else {
     set_fade_callback(ps, w, NULL, true);
-    determine_fade(ps, w);
+    win_determine_fade(ps, w);
   }
 
   w->damaged = true;
@@ -1947,7 +1991,7 @@ map_win(session_t *ps, Window id) {
 static void
 finish_map_win(session_t *ps, win *w) {
   if (ps->o.no_fading_openclose)
-    determine_fade(ps, w);
+    win_determine_fade(ps, w);
 }
 
 static void
@@ -2015,7 +2059,7 @@ get_opacity_percent(win *w) {
 }
 
 static void
-determine_mode(session_t *ps, win *w) {
+win_determine_mode(session_t *ps, win *w) {
   winmode_t mode = WMODE_SOLID;
   XRenderPictFormat *format;
 
@@ -2109,7 +2153,7 @@ calc_dim(session_t *ps, win *w) {
  * Determine if a window should fade on opacity change.
  */
 static void
-determine_fade(session_t *ps, win *w) {
+win_determine_fade(session_t *ps, win *w) {
   w->fade = ps->o.wintype_fade[w->window_type];
 }
 
@@ -2136,7 +2180,7 @@ win_update_shape(session_t *ps, win *w) {
     win_update_shape_raw(ps, w);
 
     // Shadow state could be changed
-    determine_shadow(ps, w);
+    win_determine_shadow(ps, w);
 
     /*
     // If clear_shadow state on the window possibly changed, destroy the old
@@ -2178,7 +2222,7 @@ win_update_prop_shadow(session_t *ps, win *w) {
   win_update_prop_shadow_raw(ps, w);
 
   if (w->prop_shadow != attr_shadow_old)
-    determine_shadow(ps, w);
+    win_determine_shadow(ps, w);
 }
 
 /**
@@ -2186,7 +2230,7 @@ win_update_prop_shadow(session_t *ps, win *w) {
  * on shadow state.
  */
 static void
-determine_shadow(session_t *ps, win *w) {
+win_determine_shadow(session_t *ps, win *w) {
   bool shadow_old = w->shadow;
 
   w->shadow = (UNSET == w->shadow_force ?
@@ -2216,9 +2260,72 @@ determine_shadow(session_t *ps, win *w) {
 }
 
 /**
+ * Determine if a window should have color inverted.
+ */
+static void
+win_determine_invert_color(session_t *ps, win *w) {
+  bool invert_color_old = w->invert_color;
+
+  if (UNSET != w->invert_color_force)
+    w->invert_color = w->invert_color_force;
+  else 
+    w->invert_color = win_match(w, ps->o.invert_color_list, &w->cache_ivclst);
+
+  if (w->invert_color != invert_color_old)
+    add_damage_win(ps, w);
+}
+
+/**
+ * Function to be called on window type changes.
+ */
+static void
+win_on_wtype_change(session_t *ps, win *w) {
+  win_determine_shadow(ps, w);
+  win_determine_fade(ps, w);
+  win_update_focused(ps, w);
+}
+
+/**
+ * Function to be called on window data changes.
+ */
+static void
+win_on_wdata_change(session_t *ps, win *w) {
+  if (ps->o.shadow_blacklist)
+    win_determine_shadow(ps, w);
+  if (ps->o.fade_blacklist)
+    win_determine_fade(ps, w);
+  if (ps->o.invert_color_list)
+    win_determine_invert_color(ps, w);
+  if (ps->o.focus_blacklist)
+    win_update_focused(ps, w);
+}
+
+/**
+ * Process needed window updates.
+ */
+static void
+win_upd_run(session_t *ps, win *w, win_upd_t *pupd) {
+  if (pupd->shadow) {
+    win_determine_shadow(ps, w);
+    pupd->shadow = false;
+  }
+  if (pupd->fade) {
+    win_determine_fade(ps, w);
+    pupd->fade = false;
+  }
+  if (pupd->invert_color) {
+    win_determine_invert_color(ps, w);
+    pupd->invert_color = false;
+  }
+  if (pupd->focus) {
+    win_update_focused(ps, w);
+    pupd->focus = false;
+  }
+}
+
+/**
  * Update cache data in struct _win that depends on window size.
  */
-
 static void
 calc_win_size(session_t *ps, win *w) {
   w->widthb = w->a.width + w->a.border_width * 2;
@@ -2254,7 +2361,8 @@ win_mark_client(session_t *ps, win *w, Window client) {
   if (IsViewable != w->a.map_state)
     return;
 
-  XSelectInput(ps->dpy, client, determine_evmask(ps, client, WIN_EVMODE_CLIENT));
+  XSelectInput(ps->dpy, client,
+      determine_evmask(ps, client, WIN_EVMODE_CLIENT));
 
   // Make sure the XSelectInput() requests are sent
   XSync(ps->dpy, False);
@@ -2264,19 +2372,26 @@ win_mark_client(session_t *ps, win *w, Window client) {
     get_frame_extents(ps, w, client);
   }
 
-  // Detect window type here
-  if (WINTYPE_UNKNOWN == w->window_type)
-    w->window_type = wid_get_prop_wintype(ps, w->client_win);
+  {
+    wintype_t wtype_old = w->window_type;
 
-  // Conform to EWMH standard, if _NET_WM_WINDOW_TYPE is not present, take
-  // override-redirect windows or windows without WM_TRANSIENT_FOR as
-  // _NET_WM_WINDOW_TYPE_NORMAL, otherwise as _NET_WM_WINDOW_TYPE_DIALOG.
-  if (WINTYPE_UNKNOWN == w->window_type) {
-    if (w->a.override_redirect
-        || !wid_has_prop(ps, client, ps->atom_transient))
-      w->window_type = WINTYPE_NORMAL;
-    else
-      w->window_type = WINTYPE_DIALOG;
+    // Detect window type here
+    if (WINTYPE_UNKNOWN == w->window_type)
+      w->window_type = wid_get_prop_wintype(ps, w->client_win);
+
+    // Conform to EWMH standard, if _NET_WM_WINDOW_TYPE is not present, take
+    // override-redirect windows or windows without WM_TRANSIENT_FOR as
+    // _NET_WM_WINDOW_TYPE_NORMAL, otherwise as _NET_WM_WINDOW_TYPE_DIALOG.
+    if (WINTYPE_UNKNOWN == w->window_type) {
+      if (w->a.override_redirect
+          || !wid_has_prop(ps, client, ps->atom_transient))
+        w->window_type = WINTYPE_NORMAL;
+      else
+        w->window_type = WINTYPE_DIALOG;
+    }
+
+    if (w->window_type != wtype_old)
+      win_on_wtype_change(ps, w);
   }
 
   // Get window group
@@ -2288,6 +2403,7 @@ win_mark_client(session_t *ps, win *w, Window client) {
     win_get_name(ps, w);
     win_get_class(ps, w);
     win_get_role(ps, w);
+    win_on_wdata_change(ps, w);
   }
 
   // Update window focus state
@@ -2393,6 +2509,7 @@ add_win(session_t *ps, Window id, Window prev) {
     .cache_sblst = NULL,
     .cache_fblst = NULL,
     .cache_fcblst = NULL,
+    .cache_ivclst = NULL,
 
     .opacity = 0,
     .opacity_tgt = 0,
@@ -2423,6 +2540,9 @@ add_win(session_t *ps, Window id, Window prev) {
 
     .dim = false,
     .dim_alpha_pict = None,
+
+    .invert_color = false,
+    .invert_color_force = UNSET,
   };
 
   // Reject overlay window and already added windows
@@ -3480,8 +3600,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
       && (ps->atom_name == ev->atom || ps->atom_name_ewmh == ev->atom)) {
     win *w = find_toplevel(ps, ev->window);
     if (w && 1 == win_get_name(ps, w)) {
-      determine_shadow(ps, w);
-      win_update_focused(ps, w);
+      win_on_wdata_change(ps, w);
     }
   }
 
@@ -3490,8 +3609,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
     win *w = find_toplevel(ps, ev->window);
     if (w) {
       win_get_class(ps, w);
-      determine_shadow(ps, w);
-      win_update_focused(ps, w);
+      win_on_wdata_change(ps, w);
     }
   }
 
@@ -3499,8 +3617,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
   if (ps->o.track_wdata && ps->atom_role == ev->atom) {
     win *w = find_toplevel(ps, ev->window);
     if (w && 1 == win_get_role(ps, w)) {
-      determine_shadow(ps, w);
-      win_update_focused(ps, w);
+      win_on_wdata_change(ps, w);
     }
   }
 
@@ -3816,6 +3933,9 @@ usage(void) {
     "--blur-background-fixed\n"
     "  Use fixed blur strength instead of adjusting according to window\n"
     "  opacity.\n"
+    "--invert-color-include condition\n"
+    "  Specify a list of conditions of windows that should be painted with\n"
+    "  inverted color. Resource-hogging, and is not well tested.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -4242,6 +4362,8 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
   parse_cfg_condlst(&cfg, &ps->o.shadow_blacklist, "shadow-exclude");
   // --focus-exclude
   parse_cfg_condlst(&cfg, &ps->o.focus_blacklist, "focus-exclude");
+  // --invert-color-include
+  parse_cfg_condlst(&cfg, &ps->o.invert_color_list, "invert-color-include");
   // --blur-background
   lcfg_lookup_bool(&cfg, "blur-background", &ps->o.blur_background);
   // --blur-background-frame
@@ -4315,6 +4437,7 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
     { "blur-background-fixed", no_argument, NULL, 285 },
     { "dbus", no_argument, NULL, 286 },
     { "logpath", required_argument, NULL, 287 },
+    { "invert-color-include", required_argument, NULL, 288 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4553,6 +4676,10 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
       case 287:
         // --logpath
         ps->o.logpath = mstrcpy(optarg);
+        break;
+      case 288:
+        // --invert-color-include
+        condlst_add(&ps->o.invert_color_list, optarg);
         break;
       default:
         usage();
@@ -5291,12 +5418,14 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .inactive_opacity_override = false,
       .frame_opacity = 0.0,
       .detect_client_opacity = false,
-      .inactive_dim = 0.0,
-      .inactive_dim_fixed = false,
       .alpha_step = 0.03,
+
       .blur_background = false,
       .blur_background_frame = false,
       .blur_background_fixed = false,
+      .inactive_dim = 0.0,
+      .inactive_dim_fixed = false,
+      .invert_color_list = NULL,
 
       .wintype_focus = { false },
       .use_ewmh_active_win = false,
@@ -5337,6 +5466,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
     .black_picture = None,
     .cshadow_picture = None,
+    .white_picture = None,
     .gaussian_map = NULL,
     .cgsize = 0,
     .shadow_corner = NULL,
@@ -5555,6 +5685,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   init_filters(ps);
 
   ps->black_picture = solid_picture(ps, true, 1, 0, 0, 0);
+  ps->white_picture = solid_picture(ps, true, 1, 1, 1, 1);
 
   // Generates another Picture for shadows if the color is modified by
   // user
@@ -5658,6 +5789,8 @@ session_destroy(session_t *ps) {
   // Free blacklists
   free_wincondlst(&ps->o.shadow_blacklist);
   free_wincondlst(&ps->o.fade_blacklist);
+  free_wincondlst(&ps->o.focus_blacklist);
+  free_wincondlst(&ps->o.invert_color_list);
 
   // Free ignore linked list
   {
@@ -5680,6 +5813,7 @@ session_destroy(session_t *ps) {
     free_picture(ps, &ps->cshadow_picture);
 
   free_picture(ps, &ps->black_picture);
+  free_picture(ps, &ps->white_picture);
 
   // Free tgt_{buffer,picture} and root_picture
   if (ps->tgt_buffer == ps->tgt_picture)
