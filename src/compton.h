@@ -667,16 +667,18 @@ typedef struct _win {
   /// opacity state, window geometry, window mapped/unmapped state,
   /// window mode, of this and all higher windows.
   XserverRegion reg_ignore;
-  /// Whether the window has been destroyed.
-  bool destroyed;
   /// Cached width/height of the window including border.
   int widthb, heightb;
+  /// Whether the window has been destroyed.
+  bool destroyed;
   /// Whether the window is bounding-shaped.
   bool bounding_shaped;
   /// Whether the window just have rounded corners.
   bool rounded_corners;
   /// Whether this window is to be painted.
   bool to_paint;
+  /// Whether this window is in open/close state.
+  bool in_openclose;
 
   // Client window related members
   /// ID of the top-level client window of the window.

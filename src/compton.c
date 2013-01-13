@@ -1358,9 +1358,11 @@ paint_preprocess(session_t *ps, win *list) {
 
       if (is_highest && to_paint) {
         is_highest = false;
+        // Disable unredirection for multi-screen setups
         if (WMODE_SOLID == w->mode
             && (!w->frame_opacity || !win_has_frame(w))
-            && win_is_fullscreen(ps, w))
+            && win_is_fullscreen(ps, w)
+            && ScreenCount(ps->dpy) <= 1)
           ps->unredir_possible = true;
       }
 
@@ -1966,19 +1968,17 @@ map_win(session_t *ps, Window id) {
   win_determine_shadow(ps, w);
 
   // Set fading state
+  w->in_openclose = false;
   if (ps->o.no_fading_openclose) {
     set_fade_callback(ps, w, finish_map_win, true);
-    // Must be set after we execute the old fade callback, in case we
-    // receive two continuous MapNotify for the same window
-    w->fade = false;
+    w->in_openclose = true;
   }
   else {
     set_fade_callback(ps, w, NULL, true);
-    win_determine_fade(ps, w);
   }
+  win_determine_fade(ps, w);
 
   w->damaged = true;
-
 
   /* if any configure events happened while
      the window was unmapped, then configure
@@ -1990,13 +1990,17 @@ map_win(session_t *ps, Window id) {
 
 static void
 finish_map_win(session_t *ps, win *w) {
-  if (ps->o.no_fading_openclose)
+  w->in_openclose = false;
+  if (ps->o.no_fading_openclose) {
     win_determine_fade(ps, w);
+  }
 }
 
 static void
 finish_unmap_win(session_t *ps, win *w) {
   w->damaged = false;
+
+  w->in_openclose = false;
 
   update_reg_ignore_expire(ps, w);
 
@@ -2031,8 +2035,10 @@ unmap_win(session_t *ps, Window id) {
   // Fading out
   w->flags |= WFLAG_OPCT_CHANGE;
   set_fade_callback(ps, w, unmap_callback, false);
-  if (ps->o.no_fading_openclose)
-    w->fade = false;
+  if (ps->o.no_fading_openclose) {
+    w->in_openclose = true;
+    win_determine_fade(ps, w);
+  }
 
   // don't care about properties anymore
   win_ev_stop(ps, w);
@@ -2154,7 +2160,10 @@ calc_dim(session_t *ps, win *w) {
  */
 static void
 win_determine_fade(session_t *ps, win *w) {
-  w->fade = ps->o.wintype_fade[w->window_type];
+  if (ps->o.no_fading_openclose && w->in_openclose)
+    w->fade = false;
+  else
+    w->fade = ps->o.wintype_fade[w->window_type];
 }
 
 /**
@@ -2485,12 +2494,13 @@ add_win(session_t *ps, Window id, Window prev) {
     .need_configure = false,
     .queue_configure = { },
     .reg_ignore = None,
-    .destroyed = false,
     .widthb = 0,
     .heightb = 0,
+    .destroyed = false,
     .bounding_shaped = false,
     .rounded_corners = false,
     .to_paint = false,
+    .in_openclose = false,
 
     .client_win = None,
     .window_type = WINTYPE_UNKNOWN,
@@ -4733,7 +4743,7 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
 
   // Determine whether we need to track window name and class
   if (ps->o.shadow_blacklist || ps->o.fade_blacklist
-      || ps->o.focus_blacklist)
+      || ps->o.focus_blacklist || ps->o.invert_color_list)
     ps->o.track_wdata = true;
 
   // Determine whether we track window grouping
