@@ -11,6 +11,8 @@ PACKAGES = x11 xcomposite xfixes xdamage xrender xext xrandr
 LIBS = -lm -lrt
 INCS =
 
+OBJS = compton.o
+
 # === Configuration flags ===
 CFG =
 
@@ -46,10 +48,11 @@ ifeq "$(NO_VSYNC_OPENGL)" ""
 endif
 
 # ==== D-Bus ====
-# ifeq "$(NO_DBUS)" ""
-#   CFG += -DCONFIG_DBUS
-#   PACKAGES += dbus-1
-# endif
+ifeq "$(NO_DBUS)" ""
+  CFG += -DCONFIG_DBUS
+  PACKAGES += dbus-1
+  OBJS += dbus.o
+endif
 
 # === Version string ===
 COMPTON_VERSION ?= git-$(shell git describe --always --dirty)-$(shell git log -1 --date=short --pretty=format:%cd)
@@ -63,14 +66,13 @@ LIBS += $(shell pkg-config --libs $(PACKAGES))
 INCS += $(shell pkg-config --cflags $(PACKAGES))
 
 CFLAGS += -Wall -std=c99
-OBJS = compton.o
 MANPAGES = man/compton.1 man/compton-trans.1
 MANPAGES_HTML = $(addsuffix .html,$(MANPAGES))
 
 # === Recipes ===
 .DEFAULT_GOAL := compton
 
-%.o: src/%.c src/%.h
+%.o: src/%.c src/%.h src/common.h
 	$(CC) $(CFLAGS) $(INCS) -c src/$*.c
 
 compton: $(OBJS)

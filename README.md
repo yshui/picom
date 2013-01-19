@@ -11,17 +11,18 @@ partially doing this out of a desire to learn Xlib.
 
 ## Changes from xcompmgr:
 
-* __inactive window transparency__ (specified with `-i`)
+* __inactive window transparency / dimming__
 * __titlebar/frame transparency__ (specified with `-e`)
 * menu transparency (thanks to Dana)
 * shadows are now enabled for argb windows, e.g. terminals with transparency
 * removed serverside shadows (and simple compositing) to clean the code,
   the only option that remains is clientside shadows
-* configuration files (specified with `--config`)
-* colored shadows (with `--shadow-[red/green/blue] value`)
+* configuration files (see the man page for more details)
+* colored shadows (`--shadow-[red/green/blue]`)
 * a new fade system
-* vsync (still under development)
-* several more options
+* VSync support (not always working)
+* Blur of background of transparent windows, window color inversion (bad in performance)
+* Some more options...
 
 ## Fixes from the original xcompmgr:
 
@@ -51,10 +52,11 @@ __R__ for runtime
 * xproto / x11proto (B)
 * bash (R)
 * xprop,xwininfo / x11-utils (R)
-* libpcre (B,R) (Will probably be made optional soon)
-* libconfig (B,R) (Will probably be made optional soon)
-* libdrm (B) (Will probably be made optional soon)
-* libGL (B,R) (Will probably be made optional soon)
+* libpcre (B,R) (Can be disabled with `NO_REGEX_PCRE` at compile time)
+* libconfig (B,R) (Can be disabled with `NO_LIBCONFIG` at compile time)
+* libdrm (B) (Can be disabled with `NO_VSYNC_DRM` at compile time)
+* libGL (B,R) (Can be disabled with `NO_VSYNC_OPENGL` at compile time)
+* libdbus (B,R) (Can be disabled with `NO_DBUS` at compile time)
 * asciidoc (B)
 
 ### How to build
@@ -64,7 +66,7 @@ To build, make sure you have the dependencies above:
 ``` bash
 # Make the main program
 $ make
-# Make the newer man pages
+# Make the man pages
 $ make docs
 # Install
 $ make install

@@ -3,7 +3,7 @@
  *
  * Based on `xcompmgr` - Copyright (c) 2003, Keith Packard
  *
- * Copyright (c) 2011, Christopher Jeffrey
+ * Copyright (c) 2011-2013, Christopher Jeffrey
  * See LICENSE for more information.
  *
  */
@@ -837,7 +837,7 @@ determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
   // Check if it's a mapped client window
   if (WIN_EVMODE_CLIENT == mode
       || ((w = find_toplevel(ps, wid)) && IsViewable == w->a.map_state)) {
-    if (ps->o.frame_opacity || ps->o.track_wdata
+    if (ps->o.frame_opacity || ps->o.track_wdata || ps->track_atom_lst
         || ps->o.detect_client_opacity)
       evmask |= PropertyChangeMask;
   }
@@ -1361,8 +1361,7 @@ paint_preprocess(session_t *ps, win *list) {
         // Disable unredirection for multi-screen setups
         if (WMODE_SOLID == w->mode
             && (!w->frame_opacity || !win_has_frame(w))
-            && win_is_fullscreen(ps, w)
-            && ScreenCount(ps->dpy) <= 1)
+            && win_is_fullscreen(ps, w))
           ps->unredir_possible = true;
       }
 
@@ -1848,6 +1847,9 @@ add_damage(session_t *ps, XserverRegion damage) {
 
 static void
 repair_win(session_t *ps, win *w) {
+  if (IsViewable != w->a.map_state)
+    return;
+
   XserverRegion parts;
 
   if (!w->damaged) {
@@ -1986,6 +1988,13 @@ map_win(session_t *ps, Window id) {
   if (w->need_configure) {
     configure_win(ps, &w->queue_configure);
   }
+
+#ifdef CONFIG_DBUS
+  // Send D-Bus signal
+  if (ps->o.dbus) {
+    cdbus_ev_win_mapped(ps, w);
+  }
+#endif
 }
 
 static void
@@ -2042,6 +2051,13 @@ unmap_win(session_t *ps, Window id) {
 
   // don't care about properties anymore
   win_ev_stop(ps, w);
+
+#ifdef CONFIG_DBUS
+  // Send D-Bus signal
+  if (ps->o.dbus) {
+    cdbus_ev_win_unmapped(ps, w);
+  }
+#endif
 }
 
 static opacity_t
@@ -2583,8 +2599,8 @@ add_win(session_t *ps, Window id, Window prev) {
 
   // Fill structure
   new->id = id;
-  set_ignore_next(ps);
 
+  set_ignore_next(ps);
   if (!XGetWindowAttributes(ps->dpy, id, &new->a)) {
     // Failed to get window attributes. Which probably means, the window
     // is gone already.
@@ -2608,7 +2624,14 @@ add_win(session_t *ps, Window id, Window prev) {
   new->next = *p;
   *p = new;
 
-  if (map_state == IsViewable) {
+#ifdef CONFIG_DBUS
+  // Send D-Bus signal
+  if (ps->o.dbus) {
+    cdbus_ev_win_added(ps, new);
+  }
+#endif
+
+  if (IsViewable == map_state) {
     map_win(ps, id);
   }
 
@@ -2811,6 +2834,13 @@ destroy_win(session_t *ps, Window id) {
     // Fading out the window
     w->flags |= WFLAG_OPCT_CHANGE;
     set_fade_callback(ps, w, destroy_callback, false);
+
+#ifdef CONFIG_DBUS
+    // Send D-Bus signal
+    if (ps->o.dbus) {
+      cdbus_ev_win_destroyed(ps, w);
+    }
+#endif
   }
 }
 
@@ -3252,6 +3282,58 @@ win_get_class(session_t *ps, win *w) {
   return true;
 }
 
+#ifdef CONFIG_DBUS
+/** @name DBus hooks
+ */
+///@{
+
+/**
+ * Set w->shadow_force of a window.
+ */
+void
+win_set_shadow_force(session_t *ps, win *w, switch_t val) {
+  if (val != w->shadow_force) {
+    w->shadow_force = val;
+    win_determine_shadow(ps, w);
+  }
+}
+
+/**
+ * Set w->focused_force of a window.
+ */
+void
+win_set_focused_force(session_t *ps, win *w, switch_t val) {
+  if (val != w->focused_force) {
+    w->focused_force = val;
+    win_update_focused(ps, w);
+  }
+}
+
+/**
+ * Set w->invert_color_force of a window.
+ */
+void
+win_set_invert_color_force(session_t *ps, win *w, switch_t val) {
+  if (val != w->invert_color_force) {
+    w->invert_color_force = val;
+    win_determine_invert_color(ps, w);
+  }
+}
+
+/**
+ * Force a full-screen repaint.
+ */
+void
+force_repaint(session_t *ps) {
+  XserverRegion reg = None;
+  if (ps->screen_reg && (reg = copy_region(ps, ps->screen_reg))) {
+    ps->ev_received = true;
+    add_damage(ps, reg);
+  }
+}
+//!@}
+#endif
+
 #ifdef DEBUG_EVENTS
 static int
 ev_serial(XEvent *ev) {
@@ -3647,6 +3729,17 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
     }
   }
 
+  // Check for other atoms we are tracking
+  for (latom_t *platom = ps->track_atom_lst; platom; platom = platom->next) {
+    if (platom->atom == ev->atom) {
+      win *w = find_win(ps, ev->window);
+      if (!w)
+        w = find_toplevel(ps, ev->window);
+      if (w)
+        win_on_wdata_change(ps, w);
+      break;
+    }
+  }
 }
 
 inline static void
@@ -5129,8 +5222,7 @@ timeout_get_poll_time(session_t *ps) {
   // Traverse throught the timeout linked list
   for (timeout_t *ptmout = ps->tmout_lst; ptmout; ptmout = ptmout->next) {
     if (ptmout->enabled) {
-      // Truncate the last run time to the closest interval
-      time_ms_t newrun = ptmout->firstrun + ((ptmout->lastrun - ptmout->firstrun) / ptmout->interval + 1) * ptmout->interval;
+      time_ms_t newrun = timeout_get_newrun(ptmout);
       if (newrun <= now) {
         wait = 0;
         break;
@@ -5149,7 +5241,7 @@ timeout_get_poll_time(session_t *ps) {
 /**
  * Insert a new timeout.
  */
-static timeout_t *
+timeout_t *
 timeout_insert(session_t *ps, time_ms_t interval,
     bool (*callback)(session_t *ps, timeout_t *ptmout), void *data) {
   const static timeout_t tmout_def = {
@@ -5184,7 +5276,7 @@ timeout_insert(session_t *ps, time_ms_t interval,
  * @return true if we have found the timeout and removed it, false
  *         otherwise
  */
-static bool
+bool
 timeout_drop(session_t *ps, timeout_t *prm) {
   timeout_t **pplast = &ps->tmout_lst;
 
@@ -5224,12 +5316,14 @@ static bool
 timeout_run(session_t *ps) {
   const time_ms_t now = get_time_ms();
   bool ret = false;
+  timeout_t *pnext = NULL;
 
-  for (timeout_t *ptmout = ps->tmout_lst; ptmout; ptmout = ptmout->next) {
+  for (timeout_t *ptmout = ps->tmout_lst; ptmout; ptmout = pnext) {
+    pnext = ptmout->next;
     if (ptmout->enabled) {
       const time_ms_t max = now +
         (time_ms_t) (ptmout->interval * TIMEOUT_RUN_TOLERANCE);
-      time_ms_t newrun = ptmout->firstrun + ((ptmout->lastrun - ptmout->firstrun) / ptmout->interval + 1) * ptmout->interval;
+      time_ms_t newrun = timeout_get_newrun(ptmout);
       if (newrun <= max) {
         ret = true;
         timeout_invoke(ps, ptmout);
@@ -5243,7 +5337,7 @@ timeout_run(session_t *ps) {
 /**
  * Invoke a timeout.
  */
-static void
+void
 timeout_invoke(session_t *ps, timeout_t *ptmout) {
   const time_ms_t now = get_time_ms();
   ptmout->lastrun = now;
@@ -5300,6 +5394,12 @@ mainloop(session_t *ps) {
 
     return true;
   }
+
+#ifdef CONFIG_DBUS
+  if (ps->o.dbus) {
+    cdbus_loop(ps);
+  }
+#endif
 
   if (ps->reset)
     return false;
@@ -5531,7 +5631,13 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .atom_ewmh_active_win = None,
     .atom_compton_shadow = None,
     .atom_win_type = None,
-    .atoms_wintypes = { 0 }
+    .atoms_wintypes = { 0 },
+    .track_atom_lst = NULL,
+
+#ifdef CONFIG_DBUS
+    .dbus_conn = NULL,
+    .dbus_service = NULL,
+#endif
   };
 
   // Allocate a session and copy default values into it
@@ -5740,6 +5846,19 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   XUngrabServer(ps->dpy);
 
+  // Initialize DBus
+  if (ps->o.dbus) {
+#ifdef CONFIG_DBUS
+    cdbus_init(ps);
+    if (!ps->dbus_conn) {
+      cdbus_destroy(ps);
+      ps->o.dbus = false;
+    }
+#else
+    printf_errfq(1, "(): DBus support not compiled in!");
+#endif
+  }
+
   // Fork to background, if asked
   if (ps->o.fork_after_register) {
     if (!fork_after(ps)) {
@@ -5769,6 +5888,14 @@ session_destroy(session_t *ps) {
 
   // Stop listening to events on root window
   XSelectInput(ps->dpy, ps->root, 0);
+
+#ifdef CONFIG_DBUS
+  // Kill DBus connection
+  if (ps->o.dbus)
+    cdbus_destroy(ps);
+
+  free(ps->dbus_service);
+#endif
 
   // Free window linked list
   {
