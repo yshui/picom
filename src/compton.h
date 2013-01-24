@@ -53,14 +53,6 @@ static int
 should_ignore(session_t *ps, unsigned long sequence);
 
 /**
- * Wrapper of XInternAtom() for convenience.
- */
-static inline Atom
-get_atom(session_t *ps, const char *atom_name) {
-  return XInternAtom(ps->dpy, atom_name, False);
-}
-
-/**
  * Return the painting target window.
  */
 static inline Window
@@ -290,122 +282,6 @@ shadow_picture(session_t *ps, double opacity, int width, int height);
 static Picture
 solid_picture(session_t *ps, bool argb, double a,
               double r, double g, double b);
-
-/**
- * Determine if a window has a specific property.
- *
- * @param session_t current session
- * @param w window to check
- * @param atom atom of property to check
- * @return 1 if it has the attribute, 0 otherwise
- */
-static inline bool
-wid_has_prop(const session_t *ps, Window w, Atom atom) {
-  Atom type = None;
-  int format;
-  unsigned long nitems, after;
-  unsigned char *data;
-
-  if (Success == XGetWindowProperty(ps->dpy, w, atom, 0, 0, False,
-        AnyPropertyType, &type, &format, &nitems, &after, &data)) {
-    XFree(data);
-    if (type) return true;
-  }
-
-  return false;
-}
-
-/**
- * Get a specific attribute of a window.
- *
- * Returns a blank structure if the returned type and format does not
- * match the requested type and format.
- *
- * @param session_t current session
- * @param w window
- * @param atom atom of attribute to fetch
- * @param length length to read
- * @param rtype atom of the requested type
- * @param rformat requested format
- * @return a <code>winprop_t</code> structure containing the attribute
- *    and number of items. A blank one on failure.
- */
-// TODO: Move to compton.c
-static winprop_t
-wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
-    long length, Atom rtype, int rformat) {
-  Atom type = None;
-  int format = 0;
-  unsigned long nitems = 0, after = 0;
-  unsigned char *data = NULL;
-
-  if (Success == XGetWindowProperty(ps->dpy, w, atom, offset, length,
-        False, rtype, &type, &format, &nitems, &after, &data)
-      && nitems && (AnyPropertyType == type || type == rtype)
-      && (!format || format == rformat)
-      && (8 == format || 16 == format || 32 == format)) {
-      return (winprop_t) {
-        .data.p8 = data,
-        .nitems = nitems,
-        .type = type,
-        .format = format,
-      };
-  }
-
-  XFree(data);
-
-  return (winprop_t) {
-    .data.p8 = NULL,
-    .nitems = 0,
-    .type = AnyPropertyType,
-    .format = 0
-  };
-}
-
-/**
- * Wrapper of wid_get_prop_adv().
- */
-static inline winprop_t
-wid_get_prop(const session_t *ps, Window wid, Atom atom, long length,
-    Atom rtype, int rformat) {
-  return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
-}
-
-/**
- * Get the numeric property value from a win_prop_t.
- */
-static inline long
-winprop_get_int(winprop_t prop) {
-  long tgt = 0;
-
-  if (!prop.nitems)
-    return 0;
-
-  switch (prop.format) {
-    case 8:   tgt = *(prop.data.p8);    break;
-    case 16:  tgt = *(prop.data.p16);   break;
-    case 32:  tgt = *(prop.data.p32);   break;
-    default:  assert(0);
-              break;
-  }
-
-  return tgt;
-}
-
-/**
- * Free a <code>winprop_t</code>.
- *
- * @param pprop pointer to the <code>winprop_t</code> to free.
- */
-static inline void
-free_winprop(winprop_t *pprop) {
-  // Empty the whole structure to avoid possible issues
-  if (pprop->data.p8) {
-    XFree(pprop->data.p8);
-    pprop->data.p8 = NULL;
-  }
-  pprop->nitems = 0;
-}
 
 /**
  * Stop listening for events on a particular window.
@@ -767,10 +643,6 @@ error(Display *dpy, XErrorEvent *ev);
 
 static void
 expose_root(session_t *ps, XRectangle *rects, int nrects);
-
-static bool
-wid_get_text_prop(session_t *ps, Window wid, Atom prop,
-    char ***pstrlst, int *pnstr);
 
 static Window
 wid_get_prop_window(session_t *ps, Window wid, Atom aprop);

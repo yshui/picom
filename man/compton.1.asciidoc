@@ -15,7 +15,7 @@ SYNOPSIS
 
 WARNING
 -------
-This man page may be less up-to-date than the usage text in compton.
+This man page may be less up-to-date than the usage text in compton (`compton -h`).
 
 DESCRIPTION
 -----------
@@ -23,6 +23,9 @@ compton is a compositor based on Dana Jansens' version of xcompmgr (which itself
 
 OPTIONS
 -------
+*-h*, *--help*::
+	Get the usage text embedded in program code, which may be more up-to-date than this man page.
+
 *-d* 'DISPLAY'::
 	Display to be managed.
 
@@ -169,6 +172,12 @@ OPTIONS
 *--blur-background-fixed*::
 	Use fixed blur strength rather than adjusting according to window opacity.
 
+*--invert-color-include* condition::
+	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested.
+
+*--dbus*::
+	Enable remote control via D-Bus. See the *D-BUS API* section below for more details.
+
 FORMAT OF CONDITIONS
 --------------------
 
@@ -193,6 +202,12 @@ SIGNALS
 
 * compton reinitializes itself upon receiving `SIGUSR1`.
 
+D-BUS API
+---------
+
+It's possible to control compton via D-Bus messages, by running compton with *--dbus* and send messages to `com.github.chjj.compton.<DISPLAY>`. `<DISPLAY>` is the display used by compton, with all non-alphanumeric characters transformed to underscores. For `DISPLAY=:0.0` you should use `com.github.chjj.compton._0_0`, for example.
+
+The D-Bus methods and signals are not yet stable, thus undocumented right now.
 
 EXAMPLES
 --------

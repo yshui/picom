@@ -24,6 +24,8 @@
 #define CDBUS_ERROR_BADARG_S    "Something wrong in arguments?"
 #define CDBUS_ERROR_BADWIN      CDBUS_ERROR_PREFIX ".bad_window"
 #define CDBUS_ERROR_BADWIN_S    "Requested window %#010lx not found."
+#define CDBUS_ERROR_BADTGT      CDBUS_ERROR_PREFIX ".bad_target"
+#define CDBUS_ERROR_BADTGT_S    "Target \"%s\" not found."
 #define CDBUS_ERROR_FORBIDDEN   CDBUS_ERROR_PREFIX ".forbidden"
 #define CDBUS_ERROR_FORBIDDEN_S "Incorrect password, access denied."
 
@@ -74,6 +76,15 @@ cdbus_callback_watch_toggled(DBusWatch *watch, void *data);
 
 static bool
 cdbus_apdarg_bool(session_t *ps, DBusMessage *msg, const void *data);
+
+static bool
+cdbus_apdarg_int32(session_t *ps, DBusMessage *msg, const void *data);
+
+static bool
+cdbus_apdarg_uint32(session_t *ps, DBusMessage *msg, const void *data);
+
+static bool
+cdbus_apdarg_double(session_t *ps, DBusMessage *msg, const void *data);
 
 static bool
 cdbus_apdarg_wid(session_t *ps, DBusMessage *msg, const void *data);
@@ -143,6 +154,30 @@ cdbus_reply_noarg(session_t *ps, DBusMessage *srcmsg) {
 static inline bool
 cdbus_reply_bool(session_t *ps, DBusMessage *srcmsg, bool bval) {
   return cdbus_reply(ps, srcmsg, cdbus_apdarg_bool, &bval);
+}
+
+/**
+ * Send a reply with an int32 argument.
+ */
+static inline bool
+cdbus_reply_int32(session_t *ps, DBusMessage *srcmsg, int32_t val) {
+  return cdbus_reply(ps, srcmsg, cdbus_apdarg_int32, &val);
+}
+
+/**
+ * Send a reply with an uint32 argument.
+ */
+static inline bool
+cdbus_reply_uint32(session_t *ps, DBusMessage *srcmsg, uint32_t val) {
+  return cdbus_reply(ps, srcmsg, cdbus_apdarg_uint32, &val);
+}
+
+/**
+ * Send a reply with a double argument.
+ */
+static inline bool
+cdbus_reply_double(session_t *ps, DBusMessage *srcmsg, double val) {
+  return cdbus_reply(ps, srcmsg, cdbus_apdarg_double, &val);
 }
 
 /**

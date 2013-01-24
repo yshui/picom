@@ -267,6 +267,48 @@ cdbus_apdarg_bool(session_t *ps, DBusMessage *msg, const void *data) {
 }
 
 /**
+ * Callback to append an int32 argument to a message.
+ */
+static bool
+cdbus_apdarg_int32(session_t *ps, DBusMessage *msg, const void *data) {
+  if (!dbus_message_append_args(msg, DBUS_TYPE_INT32, data,
+        DBUS_TYPE_INVALID)) {
+    printf_errf("(): Failed to append argument.");
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Callback to append an uint32 argument to a message.
+ */
+static bool
+cdbus_apdarg_uint32(session_t *ps, DBusMessage *msg, const void *data) {
+  if (!dbus_message_append_args(msg, DBUS_TYPE_UINT32, data,
+        DBUS_TYPE_INVALID)) {
+    printf_errf("(): Failed to append argument.");
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Callback to append a double argument to a message.
+ */
+static bool
+cdbus_apdarg_double(session_t *ps, DBusMessage *msg, const void *data) {
+  if (!dbus_message_append_args(msg, DBUS_TYPE_DOUBLE, data,
+        DBUS_TYPE_INVALID)) {
+    printf_errf("(): Failed to append argument.");
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Callback to append a Window argument to a message.
  */
 static bool
@@ -639,6 +681,21 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
     return true; \
   }
 
+  cdbus_m_win_get_do(id, cdbus_reply_wid);
+
+  // next
+  if (!strcmp("next", target)) {
+    cdbus_reply_wid(ps, msg, (w->next ? w->next->id: 0));
+    return true;
+  }
+
+  // map_state
+  if (!strcmp("map_state", target)) {
+    cdbus_reply_bool(ps, msg, w->a.map_state);
+    return true;
+  }
+
+  cdbus_m_win_get_do(mode, cdbus_reply_enum);
   cdbus_m_win_get_do(client_win, cdbus_reply_wid);
   cdbus_m_win_get_do(damaged, cdbus_reply_bool);
   cdbus_m_win_get_do(destroyed, cdbus_reply_bool);
@@ -649,15 +706,22 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_win_get_do(shadow_force, cdbus_reply_enum);
   cdbus_m_win_get_do(focused_force, cdbus_reply_enum);
   cdbus_m_win_get_do(invert_color_force, cdbus_reply_enum);
-  if (!strcmp("map_state", target)) {
-    cdbus_reply_bool(ps, msg, w->a.map_state);
-    return true;
-  }
+  cdbus_m_win_get_do(name, cdbus_reply_string);
+  cdbus_m_win_get_do(class_instance, cdbus_reply_string);
+  cdbus_m_win_get_do(class_general, cdbus_reply_string);
+  cdbus_m_win_get_do(role, cdbus_reply_string);
+  cdbus_m_win_get_do(opacity, cdbus_reply_uint32);
+  cdbus_m_win_get_do(frame_opacity, cdbus_reply_double);
+  cdbus_m_win_get_do(left_width, cdbus_reply_uint32);
+  cdbus_m_win_get_do(right_width, cdbus_reply_uint32);
+  cdbus_m_win_get_do(top_width, cdbus_reply_uint32);
+  cdbus_m_win_get_do(bottom_width, cdbus_reply_uint32);
 #undef cdbus_m_win_get_do
 
-  printf_errf("(): No matching target found.");
+  printf_errf("(): " CDBUS_ERROR_BADTGT_S, target);
+  cdbus_reply_err(ps, msg, CDBUS_ERROR_BADTGT, CDBUS_ERROR_BADTGT_S, target);
 
-  return false;
+  return true;
 }
 
 /**
@@ -723,9 +787,10 @@ cdbus_process_win_set(session_t *ps, DBusMessage *msg) {
   }
 #undef cdbus_m_win_set_do
 
-  printf_errf("(): No matching target found.");
+  printf_errf("(): " CDBUS_ERROR_BADTGT_S, target);
+  cdbus_reply_err(ps, msg, CDBUS_ERROR_BADTGT, CDBUS_ERROR_BADTGT_S, target);
 
-  return false;
+  return true;
 
 cdbus_process_win_set_success:
   if (!dbus_message_get_no_reply(msg))
@@ -761,9 +826,10 @@ cdbus_process_find_win(session_t *ps, DBusMessage *msg) {
       wid = w->id;
   }
   else {
-    printf_errf("(): No matching target found.");
+    printf_errf("(): " CDBUS_ERROR_BADTGT_S, target);
+    cdbus_reply_err(ps, msg, CDBUS_ERROR_BADTGT, CDBUS_ERROR_BADTGT_S, target);
 
-    return false;
+    return true;
   }
 
   cdbus_reply_wid(ps, msg, wid);
@@ -787,7 +853,12 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
     return true; \
   }
 
-  cdbus_m_opts_get_do(display, cdbus_reply_string);
+  // display
+  if (!strcmp("display", target)) {
+    cdbus_reply_string(ps, msg, DisplayString(ps->dpy));
+    return true;
+  }
+
   cdbus_m_opts_get_do(mark_wmwin_focused, cdbus_reply_bool);
   cdbus_m_opts_get_do(mark_ovredir_focused, cdbus_reply_bool);
   cdbus_m_opts_get_do(fork_after_register, cdbus_reply_bool);
@@ -797,12 +868,45 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_opts_get_do(logpath, cdbus_reply_string);
   cdbus_m_opts_get_do(synchronize, cdbus_reply_bool);
 
+  cdbus_m_opts_get_do(refresh_rate, cdbus_reply_int32);
+  cdbus_m_opts_get_do(sw_opti, cdbus_reply_bool);
+  if (!strcmp("vsync", target)) {
+    assert(ps->o.vsync < sizeof(VSYNC_STRS) / sizeof(VSYNC_STRS[0]));
+    cdbus_reply_string(ps, msg, VSYNC_STRS[ps->o.vsync]);
+    return true;
+  }
+  cdbus_m_opts_get_do(dbe, cdbus_reply_bool);
+  cdbus_m_opts_get_do(vsync_aggressive, cdbus_reply_bool);
+
+  cdbus_m_opts_get_do(shadow_red, cdbus_reply_double);
+  cdbus_m_opts_get_do(shadow_green, cdbus_reply_double);
+  cdbus_m_opts_get_do(shadow_blue, cdbus_reply_double);
+  cdbus_m_opts_get_do(shadow_radius, cdbus_reply_int32);
+  cdbus_m_opts_get_do(shadow_offset_x, cdbus_reply_int32);
+  cdbus_m_opts_get_do(shadow_offset_y, cdbus_reply_int32);
+  cdbus_m_opts_get_do(shadow_opacity, cdbus_reply_double);
   cdbus_m_opts_get_do(clear_shadow, cdbus_reply_bool);
+
+  cdbus_m_opts_get_do(blur_background, cdbus_reply_bool);
+  cdbus_m_opts_get_do(blur_background_frame, cdbus_reply_bool);
+  cdbus_m_opts_get_do(blur_background_fixed, cdbus_reply_bool);
+
+  cdbus_m_opts_get_do(inactive_dim, cdbus_reply_double);
+  cdbus_m_opts_get_do(inactive_dim_fixed, cdbus_reply_bool);
+
+  cdbus_m_opts_get_do(use_ewmh_active_win, cdbus_reply_bool);
+  cdbus_m_opts_get_do(detect_transient, cdbus_reply_bool);
+  cdbus_m_opts_get_do(detect_client_leader, cdbus_reply_bool);
+
+  cdbus_m_opts_get_do(track_focus, cdbus_reply_bool);
+  cdbus_m_opts_get_do(track_wdata, cdbus_reply_bool);
+  cdbus_m_opts_get_do(track_leader, cdbus_reply_bool);
 #undef cdbus_m_opts_get_do
 
-  printf_errf("(): No matching target found.");
+  printf_errf("(): " CDBUS_ERROR_BADTGT_S, target);
+  cdbus_reply_err(ps, msg, CDBUS_ERROR_BADTGT, CDBUS_ERROR_BADTGT_S, target);
 
-  return false;
+  return true;
 }
 
 /**
@@ -849,9 +953,10 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
   }
 #undef cdbus_m_opts_set_do
 
-  printf_errf("(): No matching target found.");
+  printf_errf("(): " CDBUS_ERROR_BADTGT_S, target);
+  cdbus_reply_err(ps, msg, CDBUS_ERROR_BADTGT, CDBUS_ERROR_BADTGT_S, target);
 
-  return false;
+  return true;
 
 cdbus_process_opts_set_success:
   if (!dbus_message_get_no_reply(msg))
@@ -868,6 +973,11 @@ cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
     "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\"\n"
     " \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n"
     "<node name='" CDBUS_OBJECT_NAME "'>\n"
+    "  <interface name='org.freedesktop.DBus.Introspectable'>\n"
+    "    <method name='Introspect'>\n"
+    "      <arg name='data' direction='out' type='s' />\n"
+    "    </method>\n"
+    "  </interface>\n"
     "  <interface name='" CDBUS_INTERFACE_NAME "'>\n"
     "    <signal name='win_added'>\n"
     "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"

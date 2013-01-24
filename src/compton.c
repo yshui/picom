@@ -13,7 +13,7 @@
 // === Global constants ===
 
 /// Name strings for window types.
-const char *WINTYPES[NUM_WINTYPES] = {
+const char * const WINTYPES[NUM_WINTYPES] = {
   "unknown",
   "desktop",
   "dock",
@@ -31,9 +31,16 @@ const char *WINTYPES[NUM_WINTYPES] = {
   "dnd",
 };
 
+/// Names of VSync modes
+const char * const VSYNC_STRS[NUM_VSYNC] = {
+  "none",   // VSYNC_NONE
+  "drm",    // VSYNC_DRM
+  "opengl", // VSYNC_OPENGL
+};
+
 /// Names of root window properties that could point to a pixmap of
 /// background.
-const char *background_props_str[] = {
+const static char *background_props_str[] = {
   "_XROOTPMAP_ID",
   "_XSETROOT_ID",
   0,
@@ -535,6 +542,52 @@ should_ignore(session_t *ps, unsigned long sequence) {
 // === Windows ===
 
 /**
+ * Get a specific attribute of a window.
+ *
+ * Returns a blank structure if the returned type and format does not
+ * match the requested type and format.
+ *
+ * @param ps current session
+ * @param w window
+ * @param atom atom of attribute to fetch
+ * @param length length to read
+ * @param rtype atom of the requested type
+ * @param rformat requested format
+ * @return a <code>winprop_t</code> structure containing the attribute
+ *    and number of items. A blank one on failure.
+ */
+winprop_t
+wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
+    long length, Atom rtype, int rformat) {
+  Atom type = None;
+  int format = 0;
+  unsigned long nitems = 0, after = 0;
+  unsigned char *data = NULL;
+
+  if (Success == XGetWindowProperty(ps->dpy, w, atom, offset, length,
+        False, rtype, &type, &format, &nitems, &after, &data)
+      && nitems && (AnyPropertyType == type || type == rtype)
+      && (!format || format == rformat)
+      && (8 == format || 16 == format || 32 == format)) {
+      return (winprop_t) {
+        .data.p8 = data,
+        .nitems = nitems,
+        .type = type,
+        .format = format,
+      };
+  }
+
+  XFree(data);
+
+  return (winprop_t) {
+    .data.p8 = NULL,
+    .nitems = 0,
+    .type = AnyPropertyType,
+    .format = 0
+  };
+}
+
+/**
  * Check if a window has rounded corners.
  */
 static void
@@ -966,6 +1019,8 @@ root_tile_f(session_t *ps) {
     c.alpha = 0xffff;
     XRenderFillRectangle(
       ps->dpy, PictOpSrc, picture, &c, 0, 0, 1, 1);
+
+    free_pixmap(ps, &pixmap);
   }
 
   return picture;
@@ -2120,10 +2175,8 @@ win_determine_mode(session_t *ps, win *w) {
  * > window type default opacity (if not opaque)
  * > inactive_opacity
  *
- * @param dpy X display to use
+ * @param ps current session
  * @param w struct _win object representing the window
- * @param refetch_prop whether _NET_WM_OPACITY of the window needs to be
- *    refetched
  */
 static void
 calc_opacity(session_t *ps, win *w) {
@@ -2858,9 +2911,9 @@ root_damaged(session_t *ps) {
       add_damage(ps, parts);
     } */
   }
-  // Mark screen damaged if we are painting on overlay
-  if (ps->o.paint_on_overlay)
-    add_damage(ps, get_screen_region(ps));
+
+  // Mark screen damaged
+  force_repaint(ps);
 }
 
 static void
@@ -3133,7 +3186,7 @@ win_get_leader_raw(session_t *ps, win *w, int recursions) {
 /**
  * Get the value of a text property of a window.
  */
-static bool
+bool
 wid_get_text_prop(session_t *ps, Window wid, Atom prop,
     char ***pstrlst, int *pnstr) {
   XTextProperty text_prop = { NULL, None, 0, 0 };
@@ -3282,6 +3335,19 @@ win_get_class(session_t *ps, win *w) {
   return true;
 }
 
+/**
+ * Force a full-screen repaint.
+ */
+void
+force_repaint(session_t *ps) {
+  assert(ps->screen_reg);
+  XserverRegion reg = None;
+  if (ps->screen_reg && (reg = copy_region(ps, ps->screen_reg))) {
+    ps->ev_received = true;
+    add_damage(ps, reg);
+  }
+}
+
 #ifdef CONFIG_DBUS
 /** @name DBus hooks
  */
@@ -3317,18 +3383,6 @@ win_set_invert_color_force(session_t *ps, win *w, switch_t val) {
   if (val != w->invert_color_force) {
     w->invert_color_force = val;
     win_determine_invert_color(ps, w);
-  }
-}
-
-/**
- * Force a full-screen repaint.
- */
-void
-force_repaint(session_t *ps) {
-  XserverRegion reg = None;
-  if (ps->screen_reg && (reg = copy_region(ps, ps->screen_reg))) {
-    ps->ev_received = true;
-    add_damage(ps, reg);
   }
 }
 //!@}
@@ -4039,6 +4093,9 @@ usage(void) {
     "--invert-color-include condition\n"
     "  Specify a list of conditions of windows that should be painted with\n"
     "  inverted color. Resource-hogging, and is not well tested.\n"
+    "--dbus\n"
+    "  Enable remote control via D-Bus. See the D-BUS API section in the\n"
+    "  man page for more details.\n"
     "\n"
     "Format of a condition:\n"
     "\n"
@@ -4068,7 +4125,6 @@ static void
 register_cm(session_t *ps, bool want_glxct) {
   Atom a;
   char *buf;
-  int len, s;
 
 #ifdef CONFIG_VSYNC_OPENGL
   // Create a window with the wanted GLX visual
@@ -4128,8 +4184,8 @@ register_cm(session_t *ps, bool want_glxct) {
   Xutf8SetWMProperties(ps->dpy, ps->reg_win, "xcompmgr", "xcompmgr",
     NULL, 0, NULL, NULL, NULL);
 
-  len = strlen(REGISTER_PROP) + 2;
-  s = ps->scr;
+  unsigned len = strlen(REGISTER_PROP) + 2;
+  int s = ps->scr;
 
   while (s >= 10) {
     ++len;
@@ -4284,21 +4340,15 @@ open_config_file(char *cpath, char **ppath) {
  */
 static inline void
 parse_vsync(session_t *ps, const char *optarg) {
-  const static char * const vsync_str[] = {
-    "none",   // VSYNC_NONE
-    "drm",    // VSYNC_DRM
-    "opengl", // VSYNC_OPENGL
-  };
-
   vsync_t i;
 
-  for (i = 0; i < (sizeof(vsync_str) / sizeof(vsync_str[0])); ++i)
-    if (!strcasecmp(optarg, vsync_str[i])) {
+  for (i = 0; i < (sizeof(VSYNC_STRS) / sizeof(VSYNC_STRS[0])); ++i)
+    if (!strcasecmp(optarg, VSYNC_STRS[i])) {
       ps->o.vsync = i;
       break;
     }
-  if ((sizeof(vsync_str) / sizeof(vsync_str[0])) == i) {
-    fputs("Invalid --vsync argument. Ignored.\n", stderr);
+  if ((sizeof(VSYNC_STRS) / sizeof(VSYNC_STRS[0])) == i) {
+    printf_errfq(1, "(\"%s\"): Invalid --vsync argument.", optarg);
   }
 }
 
@@ -6114,6 +6164,11 @@ main(int argc, char **argv) {
       printf_errf("Failed to create new session.");
       return 1;
     }
+#ifdef DEBUG_C2
+    // c2_parse(ps_g, NULL, "name ~= \"master\"");
+    // c2_parse(ps_g, NULL, "n:e:Notification");
+    c2_parse(ps_g, NULL, "(WM_NAME:16s = 'Notification' || class_g = 'fox') && class_g = 'fox'");
+#endif
     session_run(ps_g);
     ps_old = ps_g;
     session_destroy(ps_g);

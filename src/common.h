@@ -8,6 +8,9 @@
  *
  */
 
+#ifndef COMPTON_COMMON_H
+#define COMPTON_COMMON_H
+
 // === Options ===
 
 // Debug options, enable them using -D in CFLAGS
@@ -22,6 +25,7 @@
 // #define DEBUG_ALLOC_REG  1
 // #define DEBUG_FRAME      1
 // #define DEBUG_LEADER     1
+// #define DEBUG_C2         1
 // #define MONITOR_REPAINT  1
 
 // Whether to enable PCRE regular expression support in blacklists, enabled
@@ -40,6 +44,12 @@
 // #define CONFIG_VSYNC_OPENGL 1
 // Whether to enable DBus support with libdbus.
 // #define CONFIG_DBUS 1
+// Whether to enable condition support.
+// #define CONFIG_C2 1
+
+#if !defined(CONFIG_C2) && defined(DEBUG_C2)
+#error Cannot enable c2 debugging without c2 support.
+#endif
 
 // === Includes ===
 
@@ -264,6 +274,7 @@ typedef enum {
   VSYNC_NONE,
   VSYNC_DRM,
   VSYNC_OPENGL,
+  NUM_VSYNC,
 } vsync_t;
 
 #ifdef CONFIG_VSYNC_OPENGL
@@ -286,9 +297,15 @@ struct _timeout_t;
 
 struct _win;
 
+#ifdef CONFIG_C2
+typedef struct _c2_lptr c2_lptr_t;
+#endif
+
 /// Structure representing all options.
 typedef struct {
   // === General ===
+  /// The display name we used. NULL means we are using the value of the
+  /// <code>DISPLAY</code> environment variable.
   char *display;
   /// Whether to try to detect WM windows and mark them as focused.
   bool mark_wmwin_focused;
@@ -534,13 +551,13 @@ typedef struct {
   /// Nanosecond offset of the first painting.
   long paint_tm_offset;
 
-  #ifdef CONFIG_VSYNC_DRM
+#ifdef CONFIG_VSYNC_DRM
   // === DRM VSync related ===
   /// File descriptor of DRI device file. Used for DRM VSync.
   int drm_fd;
-  #endif
+#endif
 
-  #ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_VSYNC_OPENGL
   // === OpenGL VSync related ===
   /// GLX context.
   GLXContext glx_context;
@@ -548,7 +565,7 @@ typedef struct {
   f_GetVideoSync glx_get_video_sync;
   /// Pointer to glXWaitVideoSyncSGI function.
   f_WaitVideoSync glx_wait_video_sync;
-  #endif
+#endif
 
   // === X extension related ===
   /// Event base number for X Fixes extension.
@@ -584,14 +601,14 @@ typedef struct {
   int randr_event;
   /// Error base number for X RandR extension.
   int randr_error;
-  #ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_VSYNC_OPENGL
   /// Whether X GLX extension exists.
   bool glx_exists;
   /// Event base number for X GLX extension.
   int glx_event;
   /// Error base number for X GLX extension.
   int glx_error;
-  #endif
+#endif
   /// Whether X DBE extension exists.
   bool dbe_exists;
   /// Whether X Render convolution filter exists.
@@ -816,7 +833,8 @@ typedef enum {
   WIN_EVMODE_CLIENT
 } win_evmode_t;
 
-extern const char *WINTYPES[NUM_WINTYPES];
+extern const char * const WINTYPES[NUM_WINTYPES];
+extern const char * const VSYNC_STRS[NUM_VSYNC];
 extern session_t *ps_g;
 
 // == Debugging code ==
@@ -1055,6 +1073,7 @@ mstrncpy(const char *src, unsigned len) {
   char *str = malloc(sizeof(char) * (len + 1));
 
   strncpy(str, src, len);
+  str[len] = '\0';
 
   return str;
 }
@@ -1260,6 +1279,14 @@ fds_poll(session_t *ps, struct timeval *ptv) {
 #undef CPY_FDS
 
 /**
+ * Wrapper of XInternAtom() for convenience.
+ */
+static inline Atom
+get_atom(session_t *ps, const char *atom_name) {
+  return XInternAtom(ps->dpy, atom_name, False);
+}
+
+/**
  * Find a window from window id in window linked list of the session.
  */
 static inline win *
@@ -1326,6 +1353,86 @@ copy_region(const session_t *ps, XserverRegion oldregion) {
   return region;
 }
 
+/**
+ * Determine if a window has a specific property.
+ *
+ * @param ps current session
+ * @param w window to check
+ * @param atom atom of property to check
+ * @return 1 if it has the attribute, 0 otherwise
+ */
+static inline bool
+wid_has_prop(const session_t *ps, Window w, Atom atom) {
+  Atom type = None;
+  int format;
+  unsigned long nitems, after;
+  unsigned char *data;
+
+  if (Success == XGetWindowProperty(ps->dpy, w, atom, 0, 0, False,
+        AnyPropertyType, &type, &format, &nitems, &after, &data)) {
+    XFree(data);
+    if (type) return true;
+  }
+
+  return false;
+}
+
+winprop_t
+wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
+    long length, Atom rtype, int rformat);
+
+/**
+ * Wrapper of wid_get_prop_adv().
+ */
+static inline winprop_t
+wid_get_prop(const session_t *ps, Window wid, Atom atom, long length,
+    Atom rtype, int rformat) {
+  return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
+}
+
+/**
+ * Get the numeric property value from a win_prop_t.
+ */
+static inline long
+winprop_get_int(winprop_t prop) {
+  long tgt = 0;
+
+  if (!prop.nitems)
+    return 0;
+
+  switch (prop.format) {
+    case 8:   tgt = *(prop.data.p8);    break;
+    case 16:  tgt = *(prop.data.p16);   break;
+    case 32:  tgt = *(prop.data.p32);   break;
+    default:  assert(0);
+              break;
+  }
+
+  return tgt;
+}
+
+bool
+wid_get_text_prop(session_t *ps, Window wid, Atom prop,
+    char ***pstrlst, int *pnstr);
+
+/**
+ * Free a <code>winprop_t</code>.
+ *
+ * @param pprop pointer to the <code>winprop_t</code> to free.
+ */
+static inline void
+free_winprop(winprop_t *pprop) {
+  // Empty the whole structure to avoid possible issues
+  if (pprop->data.p8) {
+    XFree(pprop->data.p8);
+    pprop->data.p8 = NULL;
+  }
+  pprop->nitems = 0;
+}
+
+void
+force_repaint(session_t *ps);
+
 #ifdef CONFIG_DBUS
 /** @name DBus handling
  */
@@ -1363,8 +1470,25 @@ win_set_focused_force(session_t *ps, win *w, switch_t val);
 
 void
 win_set_invert_color_force(session_t *ps, win *w, switch_t val);
-
-void
-force_repaint(session_t *ps);
 //!@}
+#endif
+
+#ifdef CONFIG_C2
+/** @name c2
+ */
+///@{
+
+c2_lptr_t *
+c2_parse(session_t *ps, c2_lptr_t **pcondlst, char *pattern);
+
+c2_lptr_t *
+c2_free_lptr(c2_lptr_t *lp);
+
+bool
+c2_match(session_t *ps, win *w, const c2_lptr_t *condlst,
+    const c2_lptr_t **cache);
+#endif
+
+///@}
+
 #endif

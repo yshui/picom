@@ -54,6 +54,12 @@ ifeq "$(NO_DBUS)" ""
   OBJS += dbus.o
 endif
 
+# ==== C2 ====
+# ifeq "$(NO_C2)" ""
+#   CFG += -DCONFIG_C2
+#   OBJS += c2.o
+# endif
+
 # === Version string ===
 COMPTON_VERSION ?= git-$(shell git describe --always --dirty)-$(shell git log -1 --date=short --pretty=format:%cd)
 CFG += -DCOMPTON_VERSION="\"$(COMPTON_VERSION)\""
@@ -101,4 +107,7 @@ uninstall:
 clean:
 	@rm -f $(OBJS) compton $(MANPAGES) $(MANPAGES_HTML)
 
-.PHONY: uninstall clean docs
+version:
+	@echo "$(COMPTON_VERSION)"
+
+.PHONY: uninstall clean docs version
