@@ -15,7 +15,6 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <locale.h>
-#include <fnmatch.h>
 #include <signal.h>
 
 #ifdef CONFIG_VSYNC_DRM
@@ -165,37 +164,16 @@ free_damage(session_t *ps, Damage *p) {
   }
 }
 
+#ifdef CONFIG_C2
 /**
- * Destroy a <code>wincond_t</code>.
+ * Destroy a condition list.
  */
-inline static void
-free_wincond(wincond_t *cond) {
-  if (cond->pattern)
-    free(cond->pattern);
-#ifdef CONFIG_REGEX_PCRE
-  if (cond->regex_pcre_extra)
-    LPCRE_FREE_STUDY(cond->regex_pcre_extra);
-  if (cond->regex_pcre)
-    pcre_free(cond->regex_pcre);
+static inline void
+free_wincondlst(c2_lptr_t **pcondlst) {
+  while ((*pcondlst = c2_free_lptr(*pcondlst)))
+    continue;
+}
 #endif
-  free(cond);
-}
-
-/**
- * Destroy a linked list of <code>wincond_t</code>.
- */
-inline static void
-free_wincondlst(wincond_t **cond_lst) {
-  wincond_t *next = NULL;
-
-  for (wincond_t *cond = *cond_lst; cond; cond = next) {
-    next = cond->next;
-
-    free_wincond(cond);
-  }
-
-  *cond_lst = NULL;
-}
 
 /**
  * Destroy all resources in a <code>struct _win</code>.
@@ -396,14 +374,20 @@ win_is_fullscreen(session_t *ps, const win *w) {
 static void
 win_rounded_corners(session_t *ps, win *w);
 
-static bool
-win_match_once(win *w, const wincond_t *cond);
+/**
+ * Wrapper of c2_match().
+ */
+static inline bool
+win_match(session_t *ps, win *w, c2_lptr_t *condlst, const c2_lptr_t **cache) {
+#ifdef CONFIG_C2
+  return c2_match(ps, w, condlst, cache);
+#else
+  return false;
+#endif
+}
 
 static bool
-win_match(win *w, wincond_t *condlst, wincond_t * *cache);
-
-static bool
-condlst_add(wincond_t **pcondlst, const char *pattern);
+condlst_add(session_t *ps, c2_lptr_t **pcondlst, const char *pattern);
 
 static long
 determine_evmask(session_t *ps, Window wid, win_evmode_t mode);
@@ -594,7 +578,7 @@ static void
 win_on_wtype_change(session_t *ps, win *w);
 
 static void
-win_on_wdata_change(session_t *ps, win *w);
+win_on_factor_change(session_t *ps, win *w);
 
 static void
 win_upd_run(session_t *ps, win *w, win_upd_t *pupd);
@@ -858,15 +842,15 @@ static FILE *
 open_config_file(char *cpath, char **path);
 
 static void
-parse_cfg_condlst(const config_t *pcfg, wincond_t **pcondlst,
+parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
     const char *name);
 
 static void
-parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp);
+parse_config(session_t *ps, struct options_tmp *pcfgtmp);
 #endif
 
 static void
-get_cfg(session_t *ps, int argc, char *const *argv);
+get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass);
 
 static void
 init_atoms(session_t *ps);

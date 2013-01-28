@@ -26,7 +26,7 @@ type_enum='uint16'
 dbus-send --print-reply --dest="$service" "$object" "${interface}.list_win"
 
 # Get window ID of currently focused window
-focused=$(dbus-send --print-reply --dest="$service" "$object" "${interface}.find_win" string:focused | $SED -n 's/^[[:space:]]*'${type_win}'\s*\([[:digit:]]*\).*/\1/p')
+focused=$(dbus-send --print-reply --dest="$service" "$object" "${interface}.find_win" string:focused | $SED -n 's/^[[:space:]]*'${type_win}'[[:space:]]*\([[:digit:]]*\).*/\1/p')
 
 if [ -n "$focused" ]; then
   # Get invert_color_force property of the window

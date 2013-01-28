@@ -76,20 +76,6 @@
 #include <X11/extensions/Xrandr.h>
 #include <X11/extensions/Xdbe.h>
 
-// libpcre
-#ifdef CONFIG_REGEX_PCRE
-#include <pcre.h>
-
-// For compatiblity with <libpcre-8.20
-#ifndef PCRE_STUDY_JIT_COMPILE
-#define PCRE_STUDY_JIT_COMPILE    0
-#define LPCRE_FREE_STUDY(extra)   pcre_free(extra)
-#else
-#define LPCRE_FREE_STUDY(extra)   pcre_free_study(extra)
-#endif
-
-#endif
-
 // libconfig
 #ifdef CONFIG_LIBCONFIG
 #include <libgen.h>
@@ -257,18 +243,6 @@ enum wincond_type {
 
 #define CONDF_IGNORECASE 0x0001
 
-typedef struct _wincond {
-  enum wincond_target target;
-  enum wincond_type type;
-  char *pattern;
-#ifdef CONFIG_REGEX_PCRE
-  pcre *regex_pcre;
-  pcre_extra *regex_pcre_extra;
-#endif
-  int16_t flags;
-  struct _wincond *next;
-} wincond_t;
-
 /// VSync modes.
 typedef enum {
   VSYNC_NONE,
@@ -297,13 +271,13 @@ struct _timeout_t;
 
 struct _win;
 
-#ifdef CONFIG_C2
 typedef struct _c2_lptr c2_lptr_t;
-#endif
 
 /// Structure representing all options.
 typedef struct {
   // === General ===
+  /// The configuration file we used.
+  char *config_file;
   /// The display name we used. NULL means we are using the value of the
   /// <code>DISPLAY</code> environment variable.
   char *display;
@@ -350,7 +324,7 @@ typedef struct {
   double shadow_opacity;
   bool clear_shadow;
   /// Shadow blacklist. A linked list of conditions.
-  wincond_t *shadow_blacklist;
+  c2_lptr_t *shadow_blacklist;
   /// Whether bounding-shaped window should be ignored.
   bool shadow_ignore_shaped;
   /// Whether to respect _COMPTON_SHADOW.
@@ -368,7 +342,7 @@ typedef struct {
   /// Whether to disable fading on window open/close.
   bool no_fading_openclose;
   /// Fading blacklist. A linked list of conditions.
-  wincond_t *fade_blacklist;
+  c2_lptr_t *fade_blacklist;
 
   // === Opacity ===
   /// Default opacity for specific window types
@@ -404,7 +378,7 @@ typedef struct {
   /// based on window opacity.
   bool inactive_dim_fixed;
   /// Conditions of windows to have inverted colors.
-  wincond_t *invert_color_list;
+  c2_lptr_t *invert_color_list;
 
   // === Focus related ===
   /// Consider windows of specific types to be always focused.
@@ -412,7 +386,7 @@ typedef struct {
   /// Whether to use EWMH _NET_ACTIVE_WINDOW to find active window.
   bool use_ewmh_active_win;
   /// A list of windows always to be considered focused.
-  wincond_t *focus_blacklist;
+  c2_lptr_t *focus_blacklist;
   /// Whether to do window grouping with <code>WM_TRANSIENT_FOR</code>.
   bool detect_transient;
   /// Whether to do window grouping with <code>WM_CLIENT_LEADER</code>.
@@ -736,10 +710,10 @@ typedef struct _win {
   char *class_general;
   /// <code>WM_WINDOW_ROLE</code> value of the window.
   char *role;
-  wincond_t *cache_sblst;
-  wincond_t *cache_fblst;
-  wincond_t *cache_fcblst;
-  wincond_t *cache_ivclst;
+  const c2_lptr_t *cache_sblst;
+  const c2_lptr_t *cache_fblst;
+  const c2_lptr_t *cache_fcblst;
+  const c2_lptr_t *cache_ivclst;
 
   // Opacity-related members
   /// Current window opacity.
@@ -1056,9 +1030,12 @@ print_timestamp(session_t *ps) {
 /**
  * Allocate the space and copy a string.
  */
-static inline char * __attribute__((const))
+static inline char *
 mstrcpy(const char *src) {
   char *str = malloc(sizeof(char) * (strlen(src) + 1));
+
+  if (!str)
+    printf_errfq(1, "(): Failed to allocate memory.");
 
   strcpy(str, src);
 
@@ -1068,9 +1045,12 @@ mstrcpy(const char *src) {
 /**
  * Allocate the space and copy a string.
  */
-static inline char * __attribute__((const))
+static inline char *
 mstrncpy(const char *src, unsigned len) {
   char *str = malloc(sizeof(char) * (len + 1));
+
+  if (!str)
+    printf_errfq(1, "(): Failed to allocate memory.");
 
   strncpy(str, src, len);
   str[len] = '\0';
@@ -1479,7 +1459,7 @@ win_set_invert_color_force(session_t *ps, win *w, switch_t val);
 ///@{
 
 c2_lptr_t *
-c2_parse(session_t *ps, c2_lptr_t **pcondlst, char *pattern);
+c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern);
 
 c2_lptr_t *
 c2_free_lptr(c2_lptr_t *lp);

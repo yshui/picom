@@ -567,7 +567,7 @@ wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
   if (Success == XGetWindowProperty(ps->dpy, w, atom, offset, length,
         False, rtype, &type, &format, &nitems, &after, &data)
       && nitems && (AnyPropertyType == type || type == rtype)
-      && (!format || format == rformat)
+      && (!rformat || format == rformat)
       && (8 == format || 16 == format || 32 == format)) {
       return (winprop_t) {
         .data.p8 = data,
@@ -630,243 +630,19 @@ win_rounded_corners(session_t *ps, win *w) {
 }
 
 /**
- * Match a window against a single window condition.
- *
- * @return true if matched, false otherwise.
- */
-static bool
-win_match_once(win *w, const wincond_t *cond) {
-  const char *target;
-  bool matched = false;
-
-#ifdef DEBUG_WINMATCH
-  printf("win_match_once(%#010lx \"%s\"): cond = %p", w->id, w->name,
-      cond);
-#endif
-
-  if (InputOnly == w->a.class) {
-#ifdef DEBUG_WINMATCH
-  printf(": InputOnly\n");
-#endif
-    return false;
-  }
-
-  // Determine the target
-  target = NULL;
-  switch (cond->target) {
-    case CONDTGT_NAME:
-      target = w->name;
-      break;
-    case CONDTGT_CLASSI:
-      target = w->class_instance;
-      break;
-    case CONDTGT_CLASSG:
-      target = w->class_general;
-      break;
-    case CONDTGT_ROLE:
-      target = w->role;
-      break;
-  }
-
-  if (!target) {
-#ifdef DEBUG_WINMATCH
-  printf(": Target not found\n");
-#endif
-    return false;
-  }
-
-  // Determine pattern type and match
-  switch (cond->type) {
-    case CONDTP_EXACT:
-      if (cond->flags & CONDF_IGNORECASE)
-        matched = !strcasecmp(target, cond->pattern);
-      else
-        matched = !strcmp(target, cond->pattern);
-      break;
-    case CONDTP_ANYWHERE:
-      if (cond->flags & CONDF_IGNORECASE)
-        matched = strcasestr(target, cond->pattern);
-      else
-        matched = strstr(target, cond->pattern);
-      break;
-    case CONDTP_FROMSTART:
-      if (cond->flags & CONDF_IGNORECASE)
-        matched = !strncasecmp(target, cond->pattern,
-            strlen(cond->pattern));
-      else
-        matched = !strncmp(target, cond->pattern,
-            strlen(cond->pattern));
-      break;
-    case CONDTP_WILDCARD:
-      {
-        int flags = 0;
-        if (cond->flags & CONDF_IGNORECASE)
-          flags = FNM_CASEFOLD;
-        matched = !fnmatch(cond->pattern, target, flags);
-      }
-      break;
-    case CONDTP_REGEX_PCRE:
-#ifdef CONFIG_REGEX_PCRE
-      matched = (pcre_exec(cond->regex_pcre, cond->regex_pcre_extra,
-            target, strlen(target), 0, 0, NULL, 0) >= 0);
-#endif
-      break;
-  }
-
-#ifdef DEBUG_WINMATCH
-  printf(", matched = %d\n", matched);
-#endif
-
-  return matched;
-}
-
-/**
- * Match a window against a condition linked list.
- *
- * @param cache a place to cache the last matched condition
- * @return true if matched, false otherwise.
- */
-static bool
-win_match(win *w, wincond_t *condlst, wincond_t **cache) {
-  // Check if the cached entry matches firstly
-  if (cache && *cache && win_match_once(w, *cache))
-    return true;
-
-  // Then go through the whole linked list
-  for (; condlst; condlst = condlst->next) {
-    if (win_match_once(w, condlst)) {
-      if (cache)
-        *cache = condlst;
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/**
  * Add a pattern to a condition linked list.
  */
 static bool
-condlst_add(wincond_t **pcondlst, const char *pattern) {
+condlst_add(session_t *ps, c2_lptr_t **pcondlst, const char *pattern) {
   if (!pattern)
     return false;
 
-  unsigned plen = strlen(pattern);
-  wincond_t *cond;
-  const char *pos;
-
-  if (plen < 4 || ':' != pattern[1] || !strchr(pattern + 2, ':')) {
-    printf("Pattern \"%s\": Format invalid.\n", pattern);
-    return false;
-  }
-
-  // Allocate memory for the new condition
-  cond = malloc(sizeof(wincond_t));
-
-  // Determine the pattern target
-  switch (pattern[0]) {
-    case 'n':
-      cond->target = CONDTGT_NAME;
-      break;
-    case 'i':
-      cond->target = CONDTGT_CLASSI;
-      break;
-    case 'g':
-      cond->target = CONDTGT_CLASSG;
-      break;
-    case 'r':
-      cond->target = CONDTGT_ROLE;
-      break;
-    default:
-      printf("Pattern \"%s\": Target \"%c\" invalid.\n",
-          pattern, pattern[0]);
-      free(cond);
-      return false;
-  }
-
-  // Determine the pattern type
-  switch (pattern[2]) {
-    case 'e':
-      cond->type = CONDTP_EXACT;
-      break;
-    case 'a':
-      cond->type = CONDTP_ANYWHERE;
-      break;
-    case 's':
-      cond->type = CONDTP_FROMSTART;
-      break;
-    case 'w':
-      cond->type = CONDTP_WILDCARD;
-      break;
-#ifdef CONFIG_REGEX_PCRE
-    case 'p':
-      cond->type = CONDTP_REGEX_PCRE;
-      break;
+#ifdef CONFIG_C2
+  if (!c2_parse(ps, pcondlst, pattern))
+    exit(1);
+#else
+  printf_errfq(1, "(): Condition support not compiled in.");
 #endif
-    default:
-      printf("Pattern \"%s\": Type \"%c\" invalid.\n",
-          pattern, pattern[2]);
-      free(cond);
-      return false;
-  }
-
-  // Determine the pattern flags
-  pos = &pattern[3];
-  cond->flags = 0;
-  while (':' != *pos) {
-    switch (*pos) {
-      case 'i':
-        cond->flags |= CONDF_IGNORECASE;
-        break;
-      default:
-        printf("Pattern \"%s\": Flag \"%c\" invalid.\n",
-            pattern, *pos);
-        break;
-    }
-    ++pos;
-  }
-
-  // Copy the pattern
-  ++pos;
-  cond->pattern = NULL;
-#ifdef CONFIG_REGEX_PCRE
-  cond->regex_pcre = NULL;
-  cond->regex_pcre_extra = NULL;
-#endif
-  if (CONDTP_REGEX_PCRE == cond->type) {
-#ifdef CONFIG_REGEX_PCRE
-    const char *error = NULL;
-    int erroffset = 0;
-    int options = 0;
-
-    if (cond->flags & CONDF_IGNORECASE)
-      options |= PCRE_CASELESS;
-
-    cond->regex_pcre = pcre_compile(pos, options, &error, &erroffset,
-        NULL);
-    if (!cond->regex_pcre) {
-      printf("Pattern \"%s\": PCRE regular expression parsing failed on "
-          "offset %d: %s\n", pattern, erroffset, error);
-      free(cond);
-      return false;
-    }
-#ifdef CONFIG_REGEX_PCRE_JIT
-    cond->regex_pcre_extra = pcre_study(cond->regex_pcre, PCRE_STUDY_JIT_COMPILE, &error);
-    if (!cond->regex_pcre_extra) {
-      printf("Pattern \"%s\": PCRE regular expression study failed: %s",
-          pattern, error);
-    }
-#endif
-#endif
-  }
-  else {
-    cond->pattern = mstrcpy(pos);
-  }
-
-  // Insert it into the linked list
-  cond->next = *pcondlst;
-  *pcondlst = cond;
 
   return true;
 }
@@ -2313,7 +2089,7 @@ win_determine_shadow(session_t *ps, win *w) {
 
   w->shadow = (UNSET == w->shadow_force ?
       (ps->o.wintype_shadow[w->window_type]
-       && !win_match(w, ps->o.shadow_blacklist, &w->cache_sblst)
+       && !win_match(ps, w, ps->o.shadow_blacklist, &w->cache_sblst)
        && !(ps->o.shadow_ignore_shaped && w->bounding_shaped
          && !w->rounded_corners)
        && !(ps->o.respect_prop_shadow && 0 == w->prop_shadow))
@@ -2347,7 +2123,7 @@ win_determine_invert_color(session_t *ps, win *w) {
   if (UNSET != w->invert_color_force)
     w->invert_color = w->invert_color_force;
   else 
-    w->invert_color = win_match(w, ps->o.invert_color_list, &w->cache_ivclst);
+    w->invert_color = win_match(ps, w, ps->o.invert_color_list, &w->cache_ivclst);
 
   if (w->invert_color != invert_color_old)
     add_damage_win(ps, w);
@@ -2361,13 +2137,15 @@ win_on_wtype_change(session_t *ps, win *w) {
   win_determine_shadow(ps, w);
   win_determine_fade(ps, w);
   win_update_focused(ps, w);
+  if (ps->o.invert_color_list)
+    win_determine_invert_color(ps, w);
 }
 
 /**
  * Function to be called on window data changes.
  */
 static void
-win_on_wdata_change(session_t *ps, win *w) {
+win_on_factor_change(session_t *ps, win *w) {
   if (ps->o.shadow_blacklist)
     win_determine_shadow(ps, w);
   if (ps->o.fade_blacklist)
@@ -2481,8 +2259,10 @@ win_mark_client(session_t *ps, win *w, Window client) {
     win_get_name(ps, w);
     win_get_class(ps, w);
     win_get_role(ps, w);
-    win_on_wdata_change(ps, w);
   }
+
+  // Update everything related to conditions
+  win_on_factor_change(ps, w);
 
   // Update window focus state
   win_update_focused(ps, w);
@@ -3048,7 +2828,7 @@ win_update_focused(session_t *ps, win *w) {
         || (ps->o.mark_wmwin_focused && w->wmwin)
         || (ps->o.mark_ovredir_focused
           && w->id == w->client_win && !w->wmwin)
-        || win_match(w, ps->o.focus_blacklist, &w->cache_fcblst))
+        || win_match(ps, w, ps->o.focus_blacklist, &w->cache_fcblst))
       w->focused = true;
 
     // If window grouping detection is enabled, mark the window active if
@@ -3102,6 +2882,9 @@ win_set_focused(session_t *ps, win *w, bool focused) {
     else {
       win_update_focused(ps, w);
     }
+
+    // Update everything related to conditions
+    win_on_factor_change(ps, w);
   }
 }
 /**
@@ -3153,6 +2936,9 @@ win_set_leader(session_t *ps, win *w, Window nleader) {
     else {
       win_update_focused(ps, w);
     }
+
+    // Update everything related to conditions
+    win_on_factor_change(ps, w);
   }
 }
 
@@ -3746,7 +3532,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
       && (ps->atom_name == ev->atom || ps->atom_name_ewmh == ev->atom)) {
     win *w = find_toplevel(ps, ev->window);
     if (w && 1 == win_get_name(ps, w)) {
-      win_on_wdata_change(ps, w);
+      win_on_factor_change(ps, w);
     }
   }
 
@@ -3755,7 +3541,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
     win *w = find_toplevel(ps, ev->window);
     if (w) {
       win_get_class(ps, w);
-      win_on_wdata_change(ps, w);
+      win_on_factor_change(ps, w);
     }
   }
 
@@ -3763,7 +3549,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
   if (ps->o.track_wdata && ps->atom_role == ev->atom) {
     win *w = find_toplevel(ps, ev->window);
     if (w && 1 == win_get_role(ps, w)) {
-      win_on_wdata_change(ps, w);
+      win_on_factor_change(ps, w);
     }
   }
 
@@ -3790,7 +3576,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
       if (!w)
         w = find_toplevel(ps, ev->window);
       if (w)
-        win_on_wdata_change(ps, w);
+        win_on_factor_change(ps, w);
       break;
     }
   }
@@ -4095,24 +3881,7 @@ usage(void) {
     "  inverted color. Resource-hogging, and is not well tested.\n"
     "--dbus\n"
     "  Enable remote control via D-Bus. See the D-BUS API section in the\n"
-    "  man page for more details.\n"
-    "\n"
-    "Format of a condition:\n"
-    "\n"
-    "  condition = <target>:<type>[<flags>]:<pattern>\n"
-    "\n"
-    "  <target> is one of \"n\" (window name), \"i\" (window class\n"
-    "  instance), \"g\" (window general class), and \"r\"\n"
-    "  (window role).\n"
-    "\n"
-    "  <type> is one of \"e\" (exact match), \"a\" (match anywhere),\n"
-    "  \"s\" (match from start), \"w\" (wildcard), and \"p\" (PCRE\n"
-    "  regular expressions, if compiled with the support).\n"
-    "\n"
-    "  <flags> could be a series of flags. Currently the only defined\n"
-    "  flag is \"i\" (ignore case).\n"
-    "\n"
-    "  <pattern> is the actual pattern string.\n";
+    "  man page for more details.\n";
   fputs(usage_text , stderr);
 
   exit(1);
@@ -4270,8 +4039,6 @@ open_config_file(char *cpath, char **ppath) {
     f = fopen(path, "r");
     if (f && ppath)
       *ppath = path;
-    else
-      free(path);
     return f;
   }
 
@@ -4356,7 +4123,7 @@ parse_vsync(session_t *ps, const char *optarg) {
  * Parse a condition list in configuration file.
  */
 static void
-parse_cfg_condlst(const config_t *pcfg, wincond_t **pcondlst,
+parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
     const char *name) {
   config_setting_t *setting = config_lookup(pcfg, name);
   if (setting) {
@@ -4364,12 +4131,12 @@ parse_cfg_condlst(const config_t *pcfg, wincond_t **pcondlst,
     if (config_setting_is_array(setting)) {
       int i = config_setting_length(setting);
       while (i--) {
-        condlst_add(pcondlst, config_setting_get_string_elem(setting, i));
+        condlst_add(ps, pcondlst, config_setting_get_string_elem(setting, i));
       }
     }
     // Treat it as a single pattern if it's a string
     else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
-      condlst_add(pcondlst, config_setting_get_string(setting));
+      condlst_add(ps, pcondlst, config_setting_get_string(setting));
     }
   }
 }
@@ -4378,7 +4145,7 @@ parse_cfg_condlst(const config_t *pcfg, wincond_t **pcondlst,
  * Parse a configuration file from default location.
  */
 static void
-parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
+parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   char *path = NULL;
   FILE *f;
   config_t cfg;
@@ -4386,10 +4153,14 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
   double dval = 0.0;
   const char *sval = NULL;
 
-  f = open_config_file(cpath, &path);
+  f = open_config_file(ps->o.config_file, &path);
   if (!f) {
-    if (cpath)
-      printf_errfq(1, "(): Failed to read the specified configuration file.");
+    if (ps->o.config_file) {
+      printf_errfq(1, "(): Failed to read configuration file \"%s\".",
+          ps->o.config_file);
+      free(ps->o.config_file);
+      ps->o.config_file = NULL;
+    }
     return;
   }
 
@@ -4417,7 +4188,10 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
   }
   config_set_auto_convert(&cfg, 1);
 
-  free(path);
+  if (path != ps->o.config_file) {
+    free(ps->o.config_file);
+    ps->o.config_file = path;
+  }
 
   // Get options from the configuration file. We don't do range checking
   // right now. It will be done later
@@ -4512,11 +4286,11 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
   lcfg_lookup_bool(&cfg, "detect-client-leader",
       &ps->o.detect_client_leader);
   // --shadow-exclude
-  parse_cfg_condlst(&cfg, &ps->o.shadow_blacklist, "shadow-exclude");
+  parse_cfg_condlst(ps, &cfg, &ps->o.shadow_blacklist, "shadow-exclude");
   // --focus-exclude
-  parse_cfg_condlst(&cfg, &ps->o.focus_blacklist, "focus-exclude");
+  parse_cfg_condlst(ps, &cfg, &ps->o.focus_blacklist, "focus-exclude");
   // --invert-color-include
-  parse_cfg_condlst(&cfg, &ps->o.invert_color_list, "invert-color-include");
+  parse_cfg_condlst(ps, &cfg, &ps->o.invert_color_list, "invert-color-include");
   // --blur-background
   lcfg_lookup_bool(&cfg, "blur-background", &ps->o.blur_background);
   // --blur-background-frame
@@ -4554,7 +4328,7 @@ parse_config(session_t *ps, char *cpath, struct options_tmp *pcfgtmp) {
  * Process arguments and configuration files.
  */
 static void
-get_cfg(session_t *ps, int argc, char *const *argv) {
+get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   const static char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:hscnfFCaSzGb";
   const static struct option longopts[] = {
     { "help", no_argument, NULL, 'h' },
@@ -4595,14 +4369,33 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
     { NULL, 0, NULL, 0 },
   };
 
+  int o = 0, longopt_idx = -1, i = 0;
+
+  if (first_pass) {
+    // Pre-parse the commandline arguments to check for --config and invalid
+    // switches
+    // Must reset optind to 0 here in case we reread the commandline
+    // arguments
+    optind = 1;
+    while (-1 !=
+        (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
+      if (256 == o)
+        ps->o.config_file = mstrcpy(optarg);
+      else if ('d' == o)
+        ps->o.display = mstrcpy(optarg);
+      else if ('?' == o || ':' == o)
+        usage();
+    }
+
+    return;
+  }
+
   struct options_tmp cfgtmp = {
     .no_dock_shadow = false,
     .no_dnd_shadow = false,
     .menu_opacity = 1.0,
   };
   bool shadow_enable = false, fading_enable = false;
-  int o, longopt_idx, i;
-  char *config_file = NULL;
   char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
@@ -4611,21 +4404,8 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
     ps->o.wintype_opacity[i] = 1.0;
   }
 
-  // Pre-parse the commandline arguments to check for --config and invalid
-  // switches
-  // Must reset optind to 0 here in case we reread the commandline
-  // arguments
-  optind = 1;
-  while (-1 !=
-      (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
-    if (256 == o)
-      config_file = mstrcpy(optarg);
-    else if ('?' == o || ':' == o)
-      usage();
-  }
-
 #ifdef CONFIG_LIBCONFIG
-  parse_config(ps, config_file, &cfgtmp);
+  parse_config(ps, &cfgtmp);
 #endif
 
   // Parse commandline arguments. Range checking will be done later.
@@ -4643,7 +4423,6 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
         usage();
         break;
       case 'd':
-        ps->o.display = mstrcpy(optarg);
         break;
       case 'D':
         ps->o.fade_delta = atoi(optarg);
@@ -4732,7 +4511,7 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
         break;
       case 263:
         // --shadow-exclude
-        condlst_add(&ps->o.shadow_blacklist, optarg);
+        condlst_add(ps, &ps->o.shadow_blacklist, optarg);
         break;
       case 264:
         // --mark-ovredir-focused
@@ -4796,7 +4575,7 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
         break;
       case 279:
         // --focus-exclude
-        condlst_add(&ps->o.focus_blacklist, optarg);
+        condlst_add(ps, &ps->o.focus_blacklist, optarg);
         break;
       case 280:
         // --inactive-dim-fixed
@@ -4832,7 +4611,7 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
         break;
       case 288:
         // --invert-color-include
-        condlst_add(&ps->o.invert_color_list, optarg);
+        condlst_add(ps, &ps->o.invert_color_list, optarg);
         break;
       default:
         usage();
@@ -4883,11 +4662,6 @@ get_cfg(session_t *ps, int argc, char *const *argv) {
   if (ps->o.inactive_opacity || ps->o.inactive_dim) {
     ps->o.track_focus = true;
   }
-
-  // Determine whether we need to track window name and class
-  if (ps->o.shadow_blacklist || ps->o.fade_blacklist
-      || ps->o.focus_blacklist || ps->o.invert_color_list)
-    ps->o.track_wdata = true;
 
   // Determine whether we track window grouping
   if (ps->o.detect_transient || ps->o.detect_client_leader) {
@@ -5702,7 +5476,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->o.wintype_focus[WINTYPE_NORMAL] = false;
   ps->o.wintype_focus[WINTYPE_UTILITY] = false;
 
-  get_cfg(ps, argc, argv);
+  // First pass
+  get_cfg(ps, argc, argv, true);
 
   // Inherit old Display if possible, primarily for resource leak checking
   if (ps_old && ps_old->dpy)
@@ -5712,10 +5487,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
   if (!ps->dpy) {
     ps->dpy = XOpenDisplay(ps->o.display);
     if (!ps->dpy) {
-      fprintf(stderr, "Can't open display\n");
-      exit(1);
+      printf_errfq(1, "(): Can't open display.");
     }
   }
+
+  // Second pass
+  get_cfg(ps, argc, argv, false);
 
   XSetErrorHandler(error);
   if (ps->o.synchronize) {
@@ -5973,11 +5750,24 @@ session_destroy(session_t *ps) {
     ps->alpha_picts = NULL;
   }
 
+#ifdef CONFIG_C2
   // Free blacklists
   free_wincondlst(&ps->o.shadow_blacklist);
   free_wincondlst(&ps->o.fade_blacklist);
   free_wincondlst(&ps->o.focus_blacklist);
   free_wincondlst(&ps->o.invert_color_list);
+#endif
+
+  // Free tracked atom list
+  {
+    latom_t *next = NULL;
+    for (latom_t *this = ps->track_atom_lst; this; this = next) {
+      next = this->next;
+      free(this);
+    }
+
+    ps->track_atom_lst = NULL;
+  }
 
   // Free ignore linked list
   {
@@ -6025,6 +5815,7 @@ session_destroy(session_t *ps) {
   free(ps->gaussian_map);
   free(ps->o.display);
   free(ps->o.logpath);
+  free(ps->o.config_file);
   free(ps->pfds_read);
   free(ps->pfds_write);
   free(ps->pfds_except);
@@ -6164,11 +5955,6 @@ main(int argc, char **argv) {
       printf_errf("Failed to create new session.");
       return 1;
     }
-#ifdef DEBUG_C2
-    // c2_parse(ps_g, NULL, "name ~= \"master\"");
-    // c2_parse(ps_g, NULL, "n:e:Notification");
-    c2_parse(ps_g, NULL, "(WM_NAME:16s = 'Notification' || class_g = 'fox') && class_g = 'fox'");
-#endif
     session_run(ps_g);
     ps_old = ps_g;
     session_destroy(ps_g);

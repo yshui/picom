@@ -55,10 +55,10 @@ ifeq "$(NO_DBUS)" ""
 endif
 
 # ==== C2 ====
-# ifeq "$(NO_C2)" ""
-#   CFG += -DCONFIG_C2
-#   OBJS += c2.o
-# endif
+ifeq "$(NO_C2)" ""
+  CFG += -DCONFIG_C2
+  OBJS += c2.o
+endif
 
 # === Version string ===
 COMPTON_VERSION ?= git-$(shell git describe --always --dirty)-$(shell git log -1 --date=short --pretty=format:%cd)
@@ -77,6 +77,9 @@ MANPAGES_HTML = $(addsuffix .html,$(MANPAGES))
 
 # === Recipes ===
 .DEFAULT_GOAL := compton
+
+.clang_complete: Makefile
+	@(for i in $(filter-out -O% -DNDEBUG, $(CFLAGS) $(INCS)); do echo "$$i"; done) > $@
 
 %.o: src/%.c src/%.h src/common.h
 	$(CC) $(CFLAGS) $(INCS) -c src/$*.c
@@ -105,7 +108,7 @@ uninstall:
 	@rm -f "$(DESTDIR)$(MANDIR)/compton-trans.1"
 
 clean:
-	@rm -f $(OBJS) compton $(MANPAGES) $(MANPAGES_HTML)
+	@rm -f $(OBJS) compton $(MANPAGES) $(MANPAGES_HTML) .clang_complete
 
 version:
 	@echo "$(COMPTON_VERSION)"

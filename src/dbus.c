@@ -859,6 +859,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
     return true;
   }
 
+  cdbus_m_opts_get_do(config_file, cdbus_reply_string);
   cdbus_m_opts_get_do(mark_wmwin_focused, cdbus_reply_bool);
   cdbus_m_opts_get_do(mark_ovredir_focused, cdbus_reply_bool);
   cdbus_m_opts_get_do(fork_after_register, cdbus_reply_bool);

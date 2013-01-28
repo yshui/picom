@@ -180,8 +180,77 @@ OPTIONS
 
 FORMAT OF CONDITIONS
 --------------------
+Some options accept a condition string to match certain windows. A condition string is formed by one or more conditions, joined by logical operators.
 
-*--shadow-exclude* and *--focus-exclude* uses a condition string to blacklist certain windows. The format of the condition string is:
+A condition with "exists" operator looks like this:
+
+	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <FORMAT> <TYPE>
+
+With equals operator it looks like:
+
+	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <FORMAT> <TYPE> <NEGATION> <OP QUALIFIER> <MATCH TYPE> = <PATTERN>
+
+With greater-than/less-than operators it looks like:
+
+	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <FORMAT> <TYPE> <NEGATION> <OPERATOR> <PATTERN>
+
+'NEGATION' (optional) is one or more exclamation marks;
+
+'TARGET' is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `override_redirect`, `focused`, `wmwin`, `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
+
+'CLIENT/FRAME' is a single `@` if the window attribute should be be looked up on client window, nothing if on frame window;
+
+'INDEX' (optional) is the index number of the property to look up. For example, `[2]` means look at the third value in the property. Do not specify it for predefined targets.
+
+'FORMAT' (optional) specifies the format of the property, 8, 16, or 32. On absence we use format X reports. Do not specify it for predefined or string targets.
+
+'TYPE' is a single character representing the type of the property to match for: `c` for 'CARDINAL', `a` for 'ATOM', `w` for 'WINDOW', `d` for 'DRAWABLE', `s` for 'STRING' (and any other string types, such as 'UTF8_STRING'). Do not specify it for predefined targets.
+
+'OP QUALIFIER' (optional), applicable only for equals operator, could be `?` (ignore-case).
+
+'MATCH TYPE' (optional), applicable only for equals operator, could be nothing (exact match), `*` (match anywhere), `^` (match from start), `%` (wildcard), or `~` (PCRE regular expression).
+
+'OPERATOR' is one of `=` (equals), `<`, `>`, `<=`, `=>`, or nothing (exists). Exists operator checks whether a property exists on a window (but for predefined targets, exists means != 0 then).
+
+'PATTERN' is either an integer or a string enclosed by single or double quotes. Python-3-style escape sequences and raw string are supported in the string format.
+
+Supported logical operators are `&&` (and) and `||` (or). `&&` has higher precedence than `||`, left-to-right associativity. Use parentheses to change precedence.
+
+Examples:
+
+	# If the window is focused
+	focused
+	focused = 1
+	# If the window is not override-redirected
+	!override_redirect
+	override_redirect = false
+	override_redirect != true
+	override_redirect != 1
+	# If the window is a menu
+	window_type *= "menu"
+	_NET_WM_WINDOW_TYPE@:a *= "MENU"
+	# If the window name contains "Firefox", ignore case
+	name *?= "Firefox"
+	_NET_WM_NAME@:s *?= "Firefox"
+	# If the window name ends with "Firefox"
+	name %= "*Firefox"
+	name ~= "Firefox$"
+	# If the window has a property _COMPTON_SHADOW with value 0, type CARDINAL,
+	# format 32, value 0, on its frame window
+	_COMPTON_SHADOW:32c = 0
+	# If the third value of _NET_FRAME_EXTENTS is less than 20, or there's no
+	# _NET_FRAME_EXTENTS property on client window
+	_NET_FRAME_EXTENTS@[2]:32c < 20 || !_NET_FRAME_EXTENTS@:32c
+	# The pattern here will be parsed as "dd4"
+	name = "\x64\x64\o64"
+	# The pattern here will be parsed as "\x64\x64\x64"
+	name = r"\x64\x64\o64"
+
+
+LEGACY FORMAT OF CONDITIONS
+---------------------------
+
+This is the old condition format we once used. Support of this format might be removed in the future.
 
 	condition = TARGET:TYPE[FLAGS]:PATTERN
 
@@ -239,7 +308,7 @@ $ compton -c --shadow-red 1 --shadow-green 1 --shadow-blue 1
 * Avoid drawing shadows on wbar window:
 +
 ------------
-$ compton -c --shadow-exclude 'g:e:wbar'
+$ compton -c --shadow-exclude 'class_g = "wbar"'
 ------------
 
 * Enable OpenGL vsync:

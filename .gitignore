@@ -38,4 +38,6 @@ oprofile_data/
 compton.plist
 callgrind.out.*
 man/*.html
+man/*.1
 doxygen/
+.clang_complete
