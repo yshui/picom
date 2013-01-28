@@ -3822,13 +3822,17 @@ usage(void) {
     "  Specify refresh rate of the screen. If not specified or 0, compton\n"
     "  will try detecting this with X RandR extension.\n"
     "--vsync vsync-method\n"
-    "  Set VSync method. There are 2 VSync methods currently available:\n"
+    "  Set VSync method. There are up to 2 VSync methods currently available\n"
+    "  depending on your compile time settings:\n"
     "    none = No VSync\n"
+#ifdef CONFIG_VSYNC_DRM
     "    drm = VSync with DRM_IOCTL_WAIT_VBLANK. May only work on some\n"
     "      drivers. Experimental.\n"
+#endif
+#ifdef CONFIG_VSYNC_OPENGL
     "    opengl = Try to VSync with SGI_swap_control OpenGL extension. Only\n"
     "      work on some drivers. Experimental.\n"
-    "  (Note some VSync methods may not be enabled at compile time.)\n"
+#endif
     "--alpha-step val\n"
     "  Step for pregenerating alpha pictures. 0.01 - 1.0. Defaults to\n"
     "  0.03.\n"
@@ -3879,9 +3883,12 @@ usage(void) {
     "--invert-color-include condition\n"
     "  Specify a list of conditions of windows that should be painted with\n"
     "  inverted color. Resource-hogging, and is not well tested.\n"
+#ifdef CONFIG_DBUS
     "--dbus\n"
     "  Enable remote control via D-Bus. See the D-BUS API section in the\n"
-    "  man page for more details.\n";
+    "  man page for more details.\n"
+#endif
+    ;
   fputs(usage_text , stderr);
 
   exit(1);
