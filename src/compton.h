@@ -284,7 +284,7 @@ win_ev_stop(session_t *ps, win *w) {
 /**
  * Get the children of a window.
  *
- * @param session_t current session
+ * @param ps current session
  * @param w window to check
  * @param children [out] an array of child window IDs
  * @param nchildren [out] number of children
@@ -373,6 +373,9 @@ win_is_fullscreen(session_t *ps, const win *w) {
 
 static void
 win_rounded_corners(session_t *ps, win *w);
+
+static void
+win_validate_pixmap(session_t *ps, win *w);
 
 /**
  * Wrapper of c2_match().
@@ -492,7 +495,7 @@ static void
 unmap_callback(session_t *ps, win *w);
 
 static void
-unmap_win(session_t *ps, Window id);
+unmap_win(session_t *ps, win *w);
 
 static opacity_t
 wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def);
@@ -900,7 +903,7 @@ redir_stop(session_t *ps);
 
 static inline time_ms_t
 timeout_get_newrun(const timeout_t *ptmout) {
-  return ptmout->firstrun + (max_l((ptmout->lastrun + (long) (ptmout->interval * TIMEOUT_RUN_TOLERANCE) - ptmout->firstrun) / ptmout->interval, (ptmout->lastrun + ptmout->interval * (1 - TIMEOUT_RUN_TOLERANCE) - ptmout->firstrun) / ptmout->interval) + 1) * ptmout->interval;
+  return ptmout->firstrun + (max_l((ptmout->lastrun + (time_ms_t) (ptmout->interval * TIMEOUT_RUN_TOLERANCE) - ptmout->firstrun) / ptmout->interval, (ptmout->lastrun + (time_ms_t) (ptmout->interval * (1 - TIMEOUT_RUN_TOLERANCE)) - ptmout->firstrun) / ptmout->interval) + 1) * ptmout->interval;
 }
 
 static time_ms_t

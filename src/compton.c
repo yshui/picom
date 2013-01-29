@@ -630,6 +630,32 @@ win_rounded_corners(session_t *ps, win *w) {
 }
 
 /**
+ * Validate pixmap of a window, and destroy pixmap and picture if invalid.
+ */
+static void
+win_validate_pixmap(session_t *ps, win *w) {
+  if (!w->pixmap)
+    return;
+
+  // Detect whether the pixmap is valid with XGetGeometry. Well, maybe there
+  // are better ways.
+  bool invalid = false;
+  {
+    Window rroot = None;
+    int rx = 0, ry = 0;
+    unsigned rwid = 0, rhei = 0, rborder = 0, rdepth = 0;
+    invalid = (!XGetGeometry(ps->dpy, w->pixmap, &rroot, &rx, &ry,
+          &rwid, &rhei, &rborder, &rdepth) || !rwid || !rhei);
+  }
+
+  // Destroy pixmap and picture, if invalid
+  if (invalid) {
+    free_pixmap(ps, &w->pixmap);
+    free_picture(ps, &w->picture);
+  }
+}
+
+/**
  * Add a pattern to a condition linked list.
  */
 static bool
@@ -678,7 +704,7 @@ determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
  * Find out the WM frame of a client window by querying X.
  *
  * @param ps current session
- * @param w window ID
+ * @param wid window ID
  * @return struct _win object of the found window, NULL if not found
  */
 static win *
@@ -1360,7 +1386,7 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
  * Paint a window itself and dim it if asked.
  */
 static inline void
-win_paint_win(session_t *ps, win *w, Picture tgt_buffer) {
+win_paint_win(session_t *ps, win *w, Picture tgt_buffer, XserverRegion reg_paint) {
   int x = w->a.x;
   int y = w->a.y;
   int wid = w->widthb;
@@ -1374,6 +1400,14 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer) {
   if (w->invert_color) {
     Picture newpict = win_build_picture(ps, w, w->a.visual);
     if (newpict) {
+      // Apply clipping region to save some CPU
+      if (reg_paint) {
+        XserverRegion reg = copy_region(ps, reg_paint);
+        XFixesTranslateRegion(ps->dpy, reg, -x, -y);
+        XFixesSetPictureClipRegion(ps->dpy, newpict, 0, 0, reg);
+        free_region(ps, &reg);
+      }
+
       XRenderComposite(ps->dpy, PictOpSrc, pict, None,
           newpict, 0, 0, 0, 0, 0, 0, wid, hei);
       XRenderComposite(ps->dpy, PictOpDifference, ps->white_picture, None,
@@ -1602,7 +1636,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
       }
 
       // Painting the window
-      win_paint_win(ps, w, ps->tgt_buffer);
+      win_paint_win(ps, w, ps->tgt_buffer, reg_paint);
     }
 
     check_fade_fin(ps, w);
@@ -1706,12 +1740,10 @@ repair_win(session_t *ps, win *w) {
 
 static wintype_t
 wid_get_prop_wintype(session_t *ps, Window wid) {
-  int i;
-
   set_ignore_next(ps);
   winprop_t prop = wid_get_prop(ps, wid, ps->atom_win_type, 32L, XA_ATOM, 32);
 
-  for (i = 0; i < prop.nitems; ++i) {
+  for (unsigned i = 0; i < prop.nitems; ++i) {
     for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
       if (ps->atoms_wintypes[j] == (Atom) prop.data.p32[i]) {
         free_winprop(&prop);
@@ -1862,9 +1894,7 @@ unmap_callback(session_t *ps, win *w) {
 }
 
 static void
-unmap_win(session_t *ps, Window id) {
-  win *w = find_win(ps, id);
-
+unmap_win(session_t *ps, win *w) {
   if (!w || IsUnmapped == w->a.map_state) return;
 
   // Set focus out
@@ -1877,8 +1907,12 @@ unmap_win(session_t *ps, Window id) {
   set_fade_callback(ps, w, unmap_callback, false);
   if (ps->o.no_fading_openclose) {
     w->in_openclose = true;
-    win_determine_fade(ps, w);
   }
+  win_determine_fade(ps, w);
+
+  // Validate pixmap if we have to do fading
+  if (w->fade)
+    win_validate_pixmap(ps, w);
 
   // don't care about properties anymore
   win_ev_stop(ps, w);
@@ -2612,6 +2646,8 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
     }
   }
 
+  // override_redirect flag cannot be changed after window creation, as far
+  // as I know, so there's no point to re-match windows here.
   w->a.override_redirect = ce->override_redirect;
 }
 
@@ -2662,10 +2698,11 @@ destroy_win(session_t *ps, Window id) {
   win *w = find_win(ps, id);
 
   if (w) {
+    unmap_win(ps, w);
+
     w->destroyed = true;
 
-    // Fading out the window
-    w->flags |= WFLAG_OPCT_CHANGE;
+    // Set fading callback
     set_fade_callback(ps, w, destroy_callback, false);
 
 #ifdef CONFIG_DBUS
@@ -3364,7 +3401,10 @@ ev_map_notify(session_t *ps, XMapEvent *ev) {
 
 inline static void
 ev_unmap_notify(session_t *ps, XUnmapEvent *ev) {
-  unmap_win(ps, ev->window);
+  win *w = find_win(ps, ev->window);
+
+  if (w)
+    unmap_win(ps, w);
 }
 
 inline static void
@@ -3745,6 +3785,8 @@ ev_handle(session_t *ps, XEvent *ev) {
  */
 static void
 usage(void) {
+#define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
+#define WARNING
   const static char *usage_text =
     "compton (" COMPTON_VERSION ")\n"
     "usage: compton [options]\n"
@@ -3825,14 +3867,22 @@ usage(void) {
     "  Set VSync method. There are up to 2 VSync methods currently available\n"
     "  depending on your compile time settings:\n"
     "    none = No VSync\n"
-#ifdef CONFIG_VSYNC_DRM
+#undef WARNING
+#ifndef CONFIG_VSYNC_DRM
+#define WARNING WARNING_DISABLED
+#else
+#define WARNING
+#endif
     "    drm = VSync with DRM_IOCTL_WAIT_VBLANK. May only work on some\n"
-    "      drivers. Experimental.\n"
+    "      drivers. Experimental." WARNING "\n"
+#undef WARNING
+#ifndef CONFIG_VSYNC_OPENGL
+#define WARNING WARNING_DISABLED
+#else
+#define WARNING
 #endif
-#ifdef CONFIG_VSYNC_OPENGL
     "    opengl = Try to VSync with SGI_swap_control OpenGL extension. Only\n"
-    "      work on some drivers. Experimental.\n"
-#endif
+    "      work on some drivers. Experimental." WARNING"\n"
     "--alpha-step val\n"
     "  Step for pregenerating alpha pictures. 0.01 - 1.0. Defaults to\n"
     "  0.03.\n"
@@ -3883,13 +3933,18 @@ usage(void) {
     "--invert-color-include condition\n"
     "  Specify a list of conditions of windows that should be painted with\n"
     "  inverted color. Resource-hogging, and is not well tested.\n"
-#ifdef CONFIG_DBUS
+#undef WARNING
+#ifndef CONFIG_DBUS
+#define WARNING WARNING_DISABLED
+#else
+#define WARNING
+#endif
     "--dbus\n"
     "  Enable remote control via D-Bus. See the D-BUS API section in the\n"
-    "  man page for more details.\n"
-#endif
-    ;
+    "  man page for more details." WARNING "\n";
   fputs(usage_text , stderr);
+#undef WARNING
+#undef WARNING_DISABLED
 
   exit(1);
 }
