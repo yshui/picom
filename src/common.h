@@ -248,12 +248,16 @@ typedef enum {
   VSYNC_NONE,
   VSYNC_DRM,
   VSYNC_OPENGL,
+  VSYNC_OPENGL_OML,
   NUM_VSYNC,
 } vsync_t;
 
 #ifdef CONFIG_VSYNC_OPENGL
 typedef int (*f_WaitVideoSync) (int, int, unsigned *);
 typedef int (*f_GetVideoSync) (unsigned *);
+
+typedef Bool (*f_GetSyncValuesOML) (Display* dpy, GLXDrawable drawable, int64_t* ust, int64_t* msc, int64_t* sbc);
+typedef Bool (*f_WaitForMscOML) (Display* dpy, GLXDrawable drawable, int64_t target_msc, int64_t divisor, int64_t remainder, int64_t* ust, int64_t* msc, int64_t* sbc);
 #endif
 
 typedef struct {
@@ -536,9 +540,13 @@ typedef struct {
   /// GLX context.
   GLXContext glx_context;
   /// Pointer to glXGetVideoSyncSGI function.
-  f_GetVideoSync glx_get_video_sync;
+  f_GetVideoSync glXGetVideoSyncSGI;
   /// Pointer to glXWaitVideoSyncSGI function.
-  f_WaitVideoSync glx_wait_video_sync;
+  f_WaitVideoSync glXWaitVideoSyncSGI;
+  /// Pointer to glXGetSyncValuesOML function.
+  f_GetSyncValuesOML glXGetSyncValuesOML;
+  /// Pointer to glXWaitForMscOML function.
+  f_WaitForMscOML glXWaitForMscOML;
 #endif
 
   // === X extension related ===

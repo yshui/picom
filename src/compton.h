@@ -216,6 +216,25 @@ ms_to_tv(int timeout) {
   };
 }
 
+/**
+ * Create a XTextProperty of a single string.
+ */
+static inline XTextProperty *
+make_text_prop(session_t *ps, char *str) {
+  XTextProperty *pprop = malloc(sizeof(XTextProperty));
+  if (!pprop)
+    printf_errfq(1, "(): Failed to allocate memory.");
+
+  if (XmbTextListToTextProperty(ps->dpy, &str, 1,  XStringStyle, pprop)) {
+    if (pprop->value)
+      XFree(pprop->value);
+    free(pprop);
+    pprop = NULL;
+  }
+
+  return pprop;
+}
+
 static void
 run_fade(session_t *ps, win *w, unsigned steps);
 
@@ -685,8 +704,8 @@ ev_window(session_t *ps, XEvent *ev);
 static void __attribute__ ((noreturn))
 usage(void);
 
-static void
-register_cm(session_t *ps, bool want_glxct);
+static bool
+register_cm(session_t *ps, bool glx);
 
 inline static void
 ev_focus_in(session_t *ps, XFocusChangeEvent *ev);
@@ -878,9 +897,15 @@ vsync_drm_wait(session_t *ps);
 static bool
 vsync_opengl_init(session_t *ps);
 
+static bool
+vsync_opengl_oml_init(session_t *ps);
+
 #ifdef CONFIG_VSYNC_OPENGL
-static void
+static int
 vsync_opengl_wait(session_t *ps);
+
+static int
+vsync_opengl_oml_wait(session_t *ps);
 #endif
 
 static void
@@ -889,7 +914,7 @@ vsync_wait(session_t *ps);
 static void
 init_alpha_picts(session_t *ps);
 
-static void
+static bool
 init_dbe(session_t *ps);
 
 static void
