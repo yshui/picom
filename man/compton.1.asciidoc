@@ -120,12 +120,13 @@ OPTIONS
 	Specify refresh rate of the screen. If not specified or 0, compton will try detecting this with X RandR extension.
 
 *--vsync* 'VSYNC_METHOD'::
-	Set VSync method. There are 2 VSync methods currently available:
+	Set VSync method. There are 3 VSync methods currently available:
 +
 --
 * 'none': No VSync
 * 'drm': VSync with 'DRM_IOCTL_WAIT_VBLANK'. May only work on some drivers. Experimental.
 * 'opengl': Try to VSync with 'SGI_swap_control' OpenGL extension. Only work on some drivers. Experimental.
+* 'opengl-oml': Try to VSync with 'OML_sync_control' OpenGL extension. Only work on some drivers. Experimental.
 
 (Note some VSync methods may not be enabled at compile time.)
 --

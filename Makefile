@@ -73,6 +73,8 @@ LIBS += $(shell pkg-config --libs $(PACKAGES))
 INCS += $(shell pkg-config --cflags $(PACKAGES))
 
 CFLAGS += -Wall -std=c99
+
+BINS = compton bin/compton-trans
 MANPAGES = man/compton.1 man/compton-trans.1
 MANPAGES_HTML = $(addsuffix .html,$(MANPAGES))
 
@@ -96,17 +98,22 @@ man/%.1.html: man/%.1.asciidoc
 
 docs: $(MANPAGES) $(MANPAGES_HTML)
 
-install: compton docs
-	@install -Dm755 compton "$(DESTDIR)$(BINDIR)"/compton
-	@install -Dm755 bin/compton-trans "$(DESTDIR)$(BINDIR)"/compton-trans
-	@install -Dm644 man/compton.1 "$(DESTDIR)$(MANDIR)"/compton.1
-	@install -Dm644 man/compton-trans.1 "$(DESTDIR)$(MANDIR)"/compton-trans.1
+install: $(BINS) docs
+	@install -d "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(MANDIR)"
+	@install -D -m755 $(BINS) "$(DESTDIR)$(BINDIR)"/ 
+	@install -D -m644 $(MANPAGES) "$(DESTDIR)$(MANDIR)"/
+ifneq "$(DOCDIR)" ""
+	@install -d "$(DESTDIR)$(DOCDIR)"
+	@install -D -m644 README.md compton.sample.conf "$(DESTDIR)$(DOCDIR)"/
+	@install -D -m755 dbus-examples/cdbus-driver.sh "$(DESTDIR)$(DOCDIR)"/
+endif
 
 uninstall:
-	@rm -f "$(DESTDIR)$(BINDIR)/compton"
-	@rm -f "$(DESTDIR)$(BINDIR)/compton-trans"
-	@rm -f "$(DESTDIR)$(MANDIR)/compton.1"
-	@rm -f "$(DESTDIR)$(MANDIR)/compton-trans.1"
+	@rm -f "$(DESTDIR)$(BINDIR)/compton" "$(DESTDIR)$(BINDIR)/compton-trans"
+	@rm -f $(addprefix "$(DESTDIR)$(MANDIR)"/, compton.1 compton-trans.1)
+ifneq "$(DOCDIR)" ""
+	@rm -f $(addprefix "$(DESTDIR)$(DOCDIR)"/, README.md compton.sample.conf cdbus-driver.sh)
+endif
 
 clean:
 	@rm -f $(OBJS) compton $(MANPAGES) $(MANPAGES_HTML) .clang_complete

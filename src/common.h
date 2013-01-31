@@ -1167,6 +1167,20 @@ normalize_d(double d) {
   return normalize_d_range(d, 0.0, 1.0);
 }
 
+/**
+ * Parse a VSync option argument.
+ */
+static inline bool
+parse_vsync(session_t *ps, const char *str) {
+  for (vsync_t i = 0; i < (sizeof(VSYNC_STRS) / sizeof(VSYNC_STRS[0])); ++i)
+    if (!strcasecmp(str, VSYNC_STRS[i])) {
+      ps->o.vsync = i;
+      return true;
+    }
+  printf_errf("(\"%s\"): Invalid vsync argument.", str);
+  return false;
+}
+
 timeout_t *
 timeout_insert(session_t *ps, time_ms_t interval,
     bool (*callback)(session_t *ps, timeout_t *ptmout), void *data);
@@ -1420,6 +1434,9 @@ free_winprop(winprop_t *pprop) {
 
 void
 force_repaint(session_t *ps);
+
+bool
+vsync_init(session_t *ps);
 
 #ifdef CONFIG_DBUS
 /** @name DBus handling

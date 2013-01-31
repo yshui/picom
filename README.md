@@ -50,7 +50,7 @@ __R__ for runtime
 * pkg-config (B)
 * make (B)
 * xproto / x11proto (B)
-* bash (R)
+* sh (R)
 * xprop,xwininfo / x11-utils (R)
 * libpcre (B,R) (Can be disabled with `NO_REGEX_PCRE` at compile time)
 * libconfig (B,R) (Can be disabled with `NO_LIBCONFIG` at compile time)

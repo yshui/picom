@@ -1875,7 +1875,7 @@ map_win(session_t *ps, Window id) {
   }
   win_determine_fade(ps, w);
 
-  w->damaged = true;
+  w->damaged = false;
 
   /* if any configure events happened while
      the window was unmapped, then configure
@@ -2184,6 +2184,11 @@ win_determine_shadow(session_t *ps, win *w) {
  */
 static void
 win_determine_invert_color(session_t *ps, win *w) {
+  // Do not change window invert color state when the window is unmapped,
+  // unless it comes from w->invert_color_force.
+  if (UNSET == w->invert_color_force && IsViewable != w->a.map_state)
+    return;
+
   bool invert_color_old = w->invert_color;
 
   if (UNSET != w->invert_color_force)
@@ -3896,7 +3901,7 @@ usage(void) {
     "  Specify refresh rate of the screen. If not specified or 0, compton\n"
     "  will try detecting this with X RandR extension.\n"
     "--vsync vsync-method\n"
-    "  Set VSync method. There are up to 2 VSync methods currently available\n"
+    "  Set VSync method. There are up to 3 VSync methods currently available\n"
     "  depending on your compile time settings:\n"
     "    none = No VSync\n"
 #undef WARNING
@@ -3915,6 +3920,8 @@ usage(void) {
 #endif
     "    opengl = Try to VSync with SGI_swap_control OpenGL extension. Only\n"
     "      work on some drivers. Experimental." WARNING"\n"
+    "    opengl-oml = Try to VSync with OML_sync_control OpenGL extension.\n"
+    "      Only work on some drivers. Experimental." WARNING"\n"
     "--alpha-step val\n"
     "  Step for pregenerating alpha pictures. 0.01 - 1.0. Defaults to\n"
     "  0.03.\n"
@@ -3986,6 +3993,8 @@ usage(void) {
  */
 static bool
 register_cm(session_t *ps, bool glx) {
+  assert(!ps->reg_win);
+
   XVisualInfo *pvi = NULL;
 
 #ifdef CONFIG_VSYNC_OPENGL
@@ -4022,6 +4031,10 @@ register_cm(session_t *ps, bool glx) {
     printf_errf("(): Failed to create window.");
     return false;
   }
+
+  // Unredirect the window if it's redirected, just in case
+  if (ps->redirected)
+    XCompositeUnredirectWindow(ps->dpy, ps->reg_win, CompositeRedirectManual);
 
 #ifdef CONFIG_VSYNC_OPENGL
   if (glx) {
@@ -4198,23 +4211,6 @@ open_config_file(char *cpath, char **ppath) {
 }
 
 /**
- * Parse a VSync option argument.
- */
-static inline void
-parse_vsync(session_t *ps, const char *optarg) {
-  vsync_t i;
-
-  for (i = 0; i < (sizeof(VSYNC_STRS) / sizeof(VSYNC_STRS[0])); ++i)
-    if (!strcasecmp(optarg, VSYNC_STRS[i])) {
-      ps->o.vsync = i;
-      break;
-    }
-  if ((sizeof(VSYNC_STRS) / sizeof(VSYNC_STRS[0])) == i) {
-    printf_errfq(1, "(\"%s\"): Invalid --vsync argument.", optarg);
-  }
-}
-
-/**
  * Parse a condition list in configuration file.
  */
 static void
@@ -4357,8 +4353,8 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // --refresh-rate
   lcfg_lookup_int(&cfg, "refresh-rate", &ps->o.refresh_rate);
   // --vsync
-  if (config_lookup_string(&cfg, "vsync", &sval))
-    parse_vsync(ps, sval);
+  if (config_lookup_string(&cfg, "vsync", &sval) && !parse_vsync(ps, sval))
+    exit(1);
   // --alpha-step
   config_lookup_float(&cfg, "alpha-step", &ps->o.alpha_step);
   // --dbe
@@ -4634,7 +4630,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       case 270:
         // --vsync
-        parse_vsync(ps, optarg);
+        if (!parse_vsync(ps, optarg))
+          exit(1);
         break;
       case 271:
         // --alpha-step
@@ -4905,7 +4902,7 @@ static bool
 vsync_drm_init(session_t *ps) {
 #ifdef CONFIG_VSYNC_DRM
   // Should we always open card0?
-  if ((ps->drm_fd = open("/dev/dri/card0", O_RDWR)) < 0) {
+  if (ps->drm_fd < 0 && (ps->drm_fd = open("/dev/dri/card0", O_RDWR)) < 0) {
     printf_errf("(): Failed to open device.");
     return false;
   }
@@ -4959,11 +4956,16 @@ vsync_drm_wait(session_t *ps) {
 static bool
 vsync_opengl_init(session_t *ps) {
 #ifdef CONFIG_VSYNC_OPENGL
+  if (!ensure_glx_context(ps))
+    return false;
+
   // Get video sync functions
-  ps->glXGetVideoSyncSGI = (f_GetVideoSync)
-    glXGetProcAddress ((const GLubyte *) "glXGetVideoSyncSGI");
-  ps->glXWaitVideoSyncSGI = (f_WaitVideoSync)
-    glXGetProcAddress ((const GLubyte *) "glXWaitVideoSyncSGI");
+  if (!ps->glXWaitVideoSyncSGI)
+    ps->glXGetVideoSyncSGI = (f_GetVideoSync)
+      glXGetProcAddress ((const GLubyte *) "glXGetVideoSyncSGI");
+  if (!ps->glXWaitVideoSyncSGI)
+    ps->glXWaitVideoSyncSGI = (f_WaitVideoSync)
+      glXGetProcAddress ((const GLubyte *) "glXWaitVideoSyncSGI");
   if (!ps->glXWaitVideoSyncSGI || !ps->glXGetVideoSyncSGI) {
     printf_errf("(): Failed to get glXWait/GetVideoSyncSGI function.");
     return false;
@@ -4971,7 +4973,7 @@ vsync_opengl_init(session_t *ps) {
 
   return true;
 #else
-  printf_errfq(1, "Program not compiled with OpenGL VSync support.");
+  printf_errf("(): Program not compiled with OpenGL VSync support.");
   return false;
 #endif
 }
@@ -4979,11 +4981,16 @@ vsync_opengl_init(session_t *ps) {
 static bool
 vsync_opengl_oml_init(session_t *ps) {
 #ifdef CONFIG_VSYNC_OPENGL
+  if (!ensure_glx_context(ps))
+    return false;
+
   // Get video sync functions
-  ps->glXGetSyncValuesOML= (f_GetSyncValuesOML)
-    glXGetProcAddress ((const GLubyte *) "glXGetSyncValuesOML");
-  ps->glXWaitForMscOML = (f_WaitForMscOML)
-    glXGetProcAddress ((const GLubyte *) "glXWaitForMscOML");
+  if (!ps->glXGetSyncValuesOML)
+    ps->glXGetSyncValuesOML = (f_GetSyncValuesOML)
+      glXGetProcAddress ((const GLubyte *) "glXGetSyncValuesOML");
+  if (!ps->glXWaitForMscOML)
+    ps->glXWaitForMscOML = (f_WaitForMscOML)
+      glXGetProcAddress ((const GLubyte *) "glXWaitForMscOML");
   if (!ps->glXGetSyncValuesOML || !ps->glXWaitForMscOML) {
     printf_errf("(): Failed to get OML_sync_control functions.");
     return false;
@@ -4991,7 +4998,7 @@ vsync_opengl_oml_init(session_t *ps) {
 
   return true;
 #else
-  printf_errfq(1, "Program not compiled with OpenGL VSync support.");
+  printf_errf("(): Program not compiled with OpenGL VSync support.");
   return false;
 #endif
 }
@@ -5027,6 +5034,20 @@ vsync_opengl_oml_wait(session_t *ps) {
   return 0;
 }
 #endif
+
+/**
+ * Initialize current VSync method.
+ */
+bool
+vsync_init(session_t *ps) {
+  if (ps->o.vsync && VSYNC_FUNCS_INIT[ps->o.vsync]
+      && !VSYNC_FUNCS_INIT[ps->o.vsync](ps)) {
+    ps->o.vsync = VSYNC_NONE;
+    return false;
+  }
+  else
+    return true;
+}
 
 /**
  * Wait for next VSync.
@@ -5534,7 +5555,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .paint_tm_offset = 0L,
 
 #ifdef CONFIG_VSYNC_DRM
-    .drm_fd = 0,
+    .drm_fd = -1,
 #endif
 
 #ifdef CONFIG_VSYNC_OPENGL
@@ -5630,9 +5651,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->vis = DefaultVisual(ps->dpy, ps->scr);
   ps->depth = DefaultDepth(ps->dpy, ps->scr);
 
-  bool want_glx = (VSYNC_OPENGL == ps->o.vsync
-      || VSYNC_OPENGL_OML == ps->o.vsync);
-
   if (!XRenderQueryExtension(ps->dpy,
         &ps->render_event, &ps->render_error)) {
     fprintf(stderr, "No render extension\n");
@@ -5679,19 +5697,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
           "detection impossible.");
   }
 
-  // Query X GLX extension
-  if (want_glx) {
-#ifdef CONFIG_VSYNC_OPENGL
-    if (glXQueryExtension(ps->dpy, &ps->glx_event, &ps->glx_error))
-      ps->glx_exists = true;
-    else {
-      printf_errfq(1, "(): No GLX extension, OpenGL VSync impossible.");
-    }
-#else
-    printf_errfq(1, "(): OpenGL VSync support not compiled in.");
-#endif
-  }
-
   // Query X DBE extension
   if (ps->o.dbe) {
     int dbe_ver_major = 0, dbe_ver_minor = 0;
@@ -5708,16 +5713,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
       ps->o.dbe = false;
   }
 
-  if (!register_cm(ps, want_glx))
-    exit(1);
-
   // Initialize software optimization
   if (ps->o.sw_opti)
     ps->o.sw_opti = swopti_init(ps);
 
   // Initialize VSync
-  if (ps->o.vsync && VSYNC_FUNCS_INIT[ps->o.vsync]
-      && !VSYNC_FUNCS_INIT[ps->o.vsync](ps))
+  if (!vsync_init(ps))
     exit(1);
 
   // Overlay must be initialized before double buffer
@@ -5725,6 +5726,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
     init_overlay(ps);
 
   if (ps->o.dbe && !init_dbe(ps))
+    exit(1);
+
+  // Create registration window
+  // Must not precede VSync init functions because they may create the window
+  if (!ps->reg_win && !register_cm(ps, false))
     exit(1);
 
   init_atoms(ps);
@@ -5970,9 +5976,9 @@ session_destroy(session_t *ps) {
 
 #ifdef CONFIG_VSYNC_DRM
   // Close file opened for DRM VSync
-  if (ps->drm_fd) {
+  if (ps->drm_fd >= 0) {
     close(ps->drm_fd);
-    ps->drm_fd = 0;
+    ps->drm_fd = -1;
   }
 #endif
 

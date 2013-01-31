@@ -21,13 +21,15 @@
 #define CDBUS_ERROR_BADMSG_S    "Unrecognized command. Beware compton " \
                                 "cannot make you a sandwich."
 #define CDBUS_ERROR_BADARG      CDBUS_ERROR_PREFIX ".bad_argument"
-#define CDBUS_ERROR_BADARG_S    "Something wrong in arguments?"
+#define CDBUS_ERROR_BADARG_S    "Failed to parse argument %d: %s"
 #define CDBUS_ERROR_BADWIN      CDBUS_ERROR_PREFIX ".bad_window"
 #define CDBUS_ERROR_BADWIN_S    "Requested window %#010lx not found."
 #define CDBUS_ERROR_BADTGT      CDBUS_ERROR_PREFIX ".bad_target"
 #define CDBUS_ERROR_BADTGT_S    "Target \"%s\" not found."
 #define CDBUS_ERROR_FORBIDDEN   CDBUS_ERROR_PREFIX ".forbidden"
 #define CDBUS_ERROR_FORBIDDEN_S "Incorrect password, access denied."
+#define CDBUS_ERROR_CUSTOM      CDBUS_ERROR_PREFIX ".custom"
+#define CDBUS_ERROR_CUSTOM_S    "%s"
 
 // Window type
 typedef uint32_t cdbus_window_t;

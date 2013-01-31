@@ -952,6 +952,25 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
     }
     goto cdbus_process_opts_set_success;
   }
+
+  // vsync
+  if (!strcmp("vsync", target)) {
+    const char * val = NULL;
+    if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_STRING, &val))
+      return false;
+    if (!parse_vsync(ps, val)) {
+      printf_errf("(): " CDBUS_ERROR_BADARG_S, 1, "Value invalid.");
+      cdbus_reply_err(ps, msg, CDBUS_ERROR_BADARG, CDBUS_ERROR_BADARG_S, 1, "Value invalid.");
+    }
+    else if (!vsync_init(ps)) {
+      printf_errf("(): " CDBUS_ERROR_CUSTOM_S, "Failed to initialize specified VSync method.");
+      cdbus_reply_err(ps, msg, CDBUS_ERROR_CUSTOM, CDBUS_ERROR_CUSTOM_S, "Failed to initialize specified VSync method.");
+    }
+    else
+      goto cdbus_process_opts_set_success;
+    return true;
+  }
+
 #undef cdbus_m_opts_set_do
 
   printf_errf("(): " CDBUS_ERROR_BADTGT_S, target);

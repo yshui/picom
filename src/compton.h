@@ -707,6 +707,39 @@ usage(void);
 static bool
 register_cm(session_t *ps, bool glx);
 
+#ifdef CONFIG_VSYNC_OPENGL
+/**
+ * Ensure we have a GLX context.
+ */
+static inline bool
+ensure_glx_context(session_t *ps) {
+  if (ps->glx_context)
+    return true;
+
+  // Check for GLX extension
+  if (!ps->glx_exists) {
+    if (glXQueryExtension(ps->dpy, &ps->glx_event, &ps->glx_error))
+      ps->glx_exists = true;
+    else {
+      printf_errf("(): No GLX extension.");
+      return false;
+    }
+  }
+
+  // Create GLX context
+  if (ps->reg_win) {
+    XDestroyWindow(ps->dpy, ps->reg_win);
+    ps->reg_win = None;
+  }
+  if (!register_cm(ps, true) || !ps->glx_context) {
+    printf_errf("(): Failed to acquire GLX context.");
+    return false;
+  }
+
+  return true;
+}
+#endif
+
 inline static void
 ev_focus_in(session_t *ps, XFocusChangeEvent *ev);
 
