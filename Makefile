@@ -14,7 +14,7 @@ INCS =
 OBJS = compton.o
 
 # === Configuration flags ===
-CFG =
+CFG = -std=c99
 
 # ==== libconfig ====
 ifeq "$(NO_LIBCONFIG)" ""
@@ -67,12 +67,11 @@ CFG += -DCOMPTON_VERSION="\"$(COMPTON_VERSION)\""
 
 LDFLAGS ?= -Wl,-O1 -Wl,--as-needed
 CFLAGS ?= -DNDEBUG -O2 -D_FORTIFY_SOURCE=2
-CFLAGS += $(CFG)
 
 LIBS += $(shell pkg-config --libs $(PACKAGES))
 INCS += $(shell pkg-config --cflags $(PACKAGES))
 
-CFLAGS += -Wall -std=c99
+CFLAGS += -Wall
 
 BINS = compton bin/compton-trans
 MANPAGES = man/compton.1 man/compton-trans.1
@@ -81,14 +80,14 @@ MANPAGES_HTML = $(addsuffix .html,$(MANPAGES))
 # === Recipes ===
 .DEFAULT_GOAL := compton
 
-.clang_complete: Makefile
-	@(for i in $(filter-out -O% -DNDEBUG, $(CFLAGS) $(INCS)); do echo "$$i"; done) > $@
+src/.clang_complete: Makefile
+	@(for i in $(filter-out -O% -DNDEBUG, $(CFG) $(CFLAGS) $(INCS)); do echo "$$i"; done) > $@
 
 %.o: src/%.c src/%.h src/common.h
-	$(CC) $(CFLAGS) $(INCS) -c src/$*.c
+	$(CC) $(CFG) $(CFLAGS) $(INCS) -c src/$*.c
 
 compton: $(OBJS)
-	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
+	$(CC) $(CFG) $(LDFLAGS) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 
 man/%.1: man/%.1.asciidoc
 	a2x --format manpage $<
@@ -100,12 +99,12 @@ docs: $(MANPAGES) $(MANPAGES_HTML)
 
 install: $(BINS) docs
 	@install -d "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(MANDIR)"
-	@install -D -m755 $(BINS) "$(DESTDIR)$(BINDIR)"/ 
-	@install -D -m644 $(MANPAGES) "$(DESTDIR)$(MANDIR)"/
+	@install -m755 $(BINS) "$(DESTDIR)$(BINDIR)"/ 
+	@install -m644 $(MANPAGES) "$(DESTDIR)$(MANDIR)"/
 ifneq "$(DOCDIR)" ""
 	@install -d "$(DESTDIR)$(DOCDIR)"
-	@install -D -m644 README.md compton.sample.conf "$(DESTDIR)$(DOCDIR)"/
-	@install -D -m755 dbus-examples/cdbus-driver.sh "$(DESTDIR)$(DOCDIR)"/
+	@install -m644 README.md compton.sample.conf "$(DESTDIR)$(DOCDIR)"/
+	@install -m755 dbus-examples/cdbus-driver.sh "$(DESTDIR)$(DOCDIR)"/
 endif
 
 uninstall:

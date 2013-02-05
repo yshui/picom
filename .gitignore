@@ -34,6 +34,7 @@ install_manifest.txt
 
 # Misc files
 core
+*.core
 oprofile_data/
 compton.plist
 callgrind.out.*
