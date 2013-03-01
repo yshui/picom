@@ -258,6 +258,14 @@ typedef int (*f_GetVideoSync) (unsigned *);
 
 typedef Bool (*f_GetSyncValuesOML) (Display* dpy, GLXDrawable drawable, int64_t* ust, int64_t* msc, int64_t* sbc);
 typedef Bool (*f_WaitForMscOML) (Display* dpy, GLXDrawable drawable, int64_t target_msc, int64_t divisor, int64_t remainder, int64_t* ust, int64_t* msc, int64_t* sbc);
+
+typedef void (*f_BindTexImageEXT) (Display *display, GLXDrawable drawable, int buffer, const int *attrib_list);
+typedef void (*f_ReleaseTexImageEXT) (Display *display, GLXDrawable drawable, int buffer);
+
+struct glx_fbconfig {
+  GLXFBConfig cfg;
+  bool y_inverted;
+};
 #endif
 
 typedef struct {
@@ -536,7 +544,7 @@ typedef struct {
 #endif
 
 #ifdef CONFIG_VSYNC_OPENGL
-  // === OpenGL VSync related ===
+  // === OpenGL related ===
   /// GLX context.
   GLXContext glx_context;
   /// Pointer to glXGetVideoSyncSGI function.
@@ -547,6 +555,14 @@ typedef struct {
   f_GetSyncValuesOML glXGetSyncValuesOML;
   /// Pointer to glXWaitForMscOML function.
   f_WaitForMscOML glXWaitForMscOML;
+  /// Pointer to glXBindTexImageEXT function.
+  f_BindTexImageEXT glXBindTexImageEXT;
+  /// Pointer to glXReleaseTexImageEXT function.
+  f_ReleaseTexImageEXT glXReleaseTexImageEXT;
+  /// FBConfig for RGB GLX pixmap.
+  struct glx_fbconfig *glx_fbconfig_rgb;
+  /// FBConfig for RGBA GLX pixmap.
+  struct glx_fbconfig *glx_fbconfig_rgba;
 #endif
 
   // === X extension related ===

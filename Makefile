@@ -38,6 +38,7 @@ endif
 
 # ==== DRM VSync ====
 ifeq "$(NO_VSYNC_DRM)" ""
+  INCS += $(shell pkg-config --cflags libdrm)
   CFG += -DCONFIG_VSYNC_DRM
 endif
 

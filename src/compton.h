@@ -9,6 +9,7 @@
 
 #include "common.h"
 
+#include <ctype.h>
 #include <math.h>
 #include <sys/select.h>
 #include <limits.h>
@@ -22,7 +23,7 @@
 // We references some definitions in drm.h, which could also be found in
 // /usr/src/linux/include/drm/drm.h, but that path is probably even less
 // reliable than libdrm
-#include <libdrm/drm.h>
+#include <drm.h>
 #include <sys/ioctl.h>
 #include <errno.h>
 #endif
@@ -705,40 +706,7 @@ static void __attribute__ ((noreturn))
 usage(void);
 
 static bool
-register_cm(session_t *ps, bool glx);
-
-#ifdef CONFIG_VSYNC_OPENGL
-/**
- * Ensure we have a GLX context.
- */
-static inline bool
-ensure_glx_context(session_t *ps) {
-  if (ps->glx_context)
-    return true;
-
-  // Check for GLX extension
-  if (!ps->glx_exists) {
-    if (glXQueryExtension(ps->dpy, &ps->glx_event, &ps->glx_error))
-      ps->glx_exists = true;
-    else {
-      printf_errf("(): No GLX extension.");
-      return false;
-    }
-  }
-
-  // Create GLX context
-  if (ps->reg_win) {
-    XDestroyWindow(ps->dpy, ps->reg_win);
-    ps->reg_win = None;
-  }
-  if (!register_cm(ps, true) || !ps->glx_context) {
-    printf_errf("(): Failed to acquire GLX context.");
-    return false;
-  }
-
-  return true;
-}
-#endif
+register_cm(session_t *ps);
 
 inline static void
 ev_focus_in(session_t *ps, XFocusChangeEvent *ev);
@@ -918,6 +886,44 @@ swopti_init(session_t *ps);
 
 static void
 swopti_handle_timeout(session_t *ps, struct timeval *ptv);
+
+static bool
+opengl_init(session_t *ps, bool need_render);
+
+static void
+opengl_destroy(session_t *ps);
+
+#ifdef CONFIG_VSYNC_OPENGL
+/**
+ * Check if a GLX extension exists.
+ */
+static inline bool
+opengl_hasext(session_t *ps, const char *ext) {
+  const char *glx_exts = glXQueryExtensionsString(ps->dpy, ps->scr);
+  const char *pos = strstr(glx_exts, ext);
+  // Make sure the extension string is matched as a whole word
+  if (!pos
+      || ((pos - glx_exts) && !isspace(*(pos - 1)))
+      || (strlen(pos) > strlen(ext) && !isspace(pos[strlen(ext)]))) {
+    printf_errf("(): Missing OpenGL extension %s.", ext);
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Ensure we have a GLX context.
+ */
+static inline bool
+ensure_glx_context(session_t *ps) {
+  // Create GLX context
+  if (!ps->glx_context)
+    opengl_init(ps, false);
+
+  return ps->glx_context;
+}
+#endif
 
 static bool
 vsync_drm_init(session_t *ps);

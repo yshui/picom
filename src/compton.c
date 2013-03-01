@@ -3542,6 +3542,16 @@ update_ewmh_active_win(session_t *ps) {
 
 inline static void
 ev_property_notify(session_t *ps, XPropertyEvent *ev) {
+#ifdef DEBUG_EVENTS
+  {
+    // Print out changed atom
+    char *name = XGetAtomName(ps->dpy, ev->atom);
+    printf_dbg("  { atom = %s }\n", name);
+    if (name)
+      XFree(name);
+  }
+#endif
+
   if (ps->root == ev->window) {
     if (ps->o.track_focus && ps->o.use_ewmh_active_win
         && ps->atom_ewmh_active_win == ev->atom) {
@@ -3992,40 +4002,11 @@ usage(void) {
  * Register a window as symbol, and initialize GLX context if wanted.
  */
 static bool
-register_cm(session_t *ps, bool glx) {
+register_cm(session_t *ps) {
   assert(!ps->reg_win);
 
-  XVisualInfo *pvi = NULL;
-
-#ifdef CONFIG_VSYNC_OPENGL
-  // Create a window with the wanted GLX visual
-  if (glx) {
-    // Get visual for the window
-    int attribs[] = { GLX_RGBA, GLX_RED_SIZE, 1, GLX_GREEN_SIZE, 1, GLX_BLUE_SIZE, 1, None };
-    pvi = glXChooseVisual(ps->dpy, ps->scr, attribs);
-
-    if (!pvi) {
-      printf_errf("(): Failed to choose GLX visual.");
-      return false;
-    }
-
-    // Create the window
-    XSetWindowAttributes swa = {
-      .colormap = XCreateColormap(ps->dpy, ps->root, pvi->visual, AllocNone),
-      .border_pixel = 0,
-    };
-
-    pvi->screen = ps->scr;
-    ps->reg_win = XCreateWindow(ps->dpy, ps->root, 0, 0, 1, 1, 0, pvi->depth,
-        InputOutput, pvi->visual, CWBorderPixel | CWColormap, &swa);
-  }
-  // Otherwise, create a simple window
-  else
-#endif
-  {
-    ps->reg_win = XCreateSimpleWindow(ps->dpy, ps->root, 0, 0, 1, 1, 0,
+  ps->reg_win = XCreateSimpleWindow(ps->dpy, ps->root, 0, 0, 1, 1, 0,
         None, None);
-  }
 
   if (!ps->reg_win) {
     printf_errf("(): Failed to create window.");
@@ -4035,26 +4016,6 @@ register_cm(session_t *ps, bool glx) {
   // Unredirect the window if it's redirected, just in case
   if (ps->redirected)
     XCompositeUnredirectWindow(ps->dpy, ps->reg_win, CompositeRedirectManual);
-
-#ifdef CONFIG_VSYNC_OPENGL
-  if (glx) {
-    // Get GLX context
-    ps->glx_context = glXCreateContext(ps->dpy, pvi, None, GL_TRUE);
-    if (!ps->glx_context) {
-      printf_errf("(): Failed to get GLX context.");
-      return false;
-    }
-
-    // Attach GLX context
-    if (!glXMakeCurrent(ps->dpy, ps->reg_win, ps->glx_context)) {
-      printf_errf("(): Failed to attach GLX context.");
-      return false;
-    }
-  }
-#endif
-
-  if (pvi)
-    XFree(pvi);
 
   Xutf8SetWMProperties(ps->dpy, ps->reg_win, "xcompmgr", "xcompmgr",
       NULL, 0, NULL, NULL, NULL);
@@ -4478,6 +4439,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         usage();
     }
 
+    // Check for abundant positional arguments
+    if (optind < argc)
+      printf_errfq(1, "(): compton doesn't accept positional arguments.");
+
     return;
   }
 
@@ -4893,6 +4858,155 @@ swopti_handle_timeout(session_t *ps, struct timeval *ptv) {
   }
 }
 
+#ifdef CONFIG_VSYNC_OPENGL
+/**
+ * Get a GLX FBConfig.
+ */
+static inline bool
+opengl_update_fbconfig(session_t *ps, bool alpha, struct glx_fbconfig **ppcfg) {
+  const int FBCONFIG_ATTRS[] = {
+    (alpha ? GLX_BIND_TO_TEXTURE_RGBA_EXT: GLX_BIND_TO_TEXTURE_RGB_EXT), True,
+    GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
+    GLX_BIND_TO_TEXTURE_TARGETS_EXT, GLX_TEXTURE_2D_BIT_EXT,
+    GLX_DOUBLEBUFFER, True,
+    GLX_Y_INVERTED_EXT, GLX_DONT_CARE,
+    None
+  };
+
+  if (*ppcfg) {
+    free(*ppcfg);
+    *ppcfg = NULL;
+  }
+
+  int count = 0;
+  GLXFBConfig *cfgs = glXChooseFBConfig(ps->dpy, ps->scr, FBCONFIG_ATTRS, &count);
+  if (!count || !cfgs) {
+    if (cfgs)
+      XFree(cfgs);
+    return false;
+  };
+
+  *ppcfg = malloc(sizeof(struct glx_fbconfig));
+  (*ppcfg)->cfg = cfgs[0];
+
+  {
+    int inverted = 0;
+    glXGetFBConfigAttrib(ps->dpy, (*ppcfg)->cfg, GLX_Y_INVERTED_EXT, &inverted);
+    (*ppcfg)->y_inverted = inverted;
+  }
+
+  XFree(cfgs);
+
+  return true;
+}
+
+/**
+ * Initialize OpenGL.
+ */
+static bool
+opengl_init(session_t *ps, bool need_render) {
+  // Check for GLX extension
+  if (!ps->glx_exists) {
+    if (glXQueryExtension(ps->dpy, &ps->glx_event, &ps->glx_error))
+      ps->glx_exists = true;
+    else {
+      printf_errf("(): No GLX extension.");
+      goto opengl_init_err;
+    }
+  }
+
+  // Ensure GLX_EXT_texture_from_pixmap exists
+  if (need_render && !opengl_hasext(ps, "GLX_EXT_texture_from_pixmap")) {
+      goto opengl_init_err;
+  }
+
+  {
+    // Get XVisualInfo
+    XVisualInfo *pvis = NULL;
+    {
+      XVisualInfo vreq = { .visualid = XVisualIDFromVisual(ps->vis) };
+      int nitems = 0;
+      pvis = XGetVisualInfo(ps->dpy, VisualIDMask, &vreq, &nitems);
+    }
+
+    if (!pvis) {
+      printf_errf("(): Failed to acquire XVisualInfo for current visual.");
+      goto opengl_init_err;
+    }
+
+    // Ensure the visual is double-buffered
+    if (need_render) {
+      int value = 0;
+      glXGetConfig(ps->dpy, pvis, GLX_DOUBLEBUFFER, &value);
+      if (!value) {
+        XFree(pvis);
+        printf_errf("(): Default GLX visual is not double-buffered.");
+        goto opengl_init_err;
+      }
+    }
+
+    // Get GLX context
+    ps->glx_context = glXCreateContext(ps->dpy, pvis, None, GL_TRUE);
+    XFree(pvis);
+  }
+
+  if (!ps->glx_context) {
+    printf_errf("(): Failed to get GLX context.");
+    goto opengl_init_err;
+  }
+
+  // Attach GLX context
+  if (!glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->glx_context)) {
+    printf_errf("(): Failed to attach GLX context.");
+    goto opengl_init_err;
+  }
+
+  // Acquire function addresses
+  if (need_render) {
+    ps->glXBindTexImageEXT = (f_BindTexImageEXT)
+      glXGetProcAddress((const GLubyte *) "glXBindTexImageEXT");
+    ps->glXReleaseTexImageEXT = (f_ReleaseTexImageEXT)
+      glXGetProcAddress((const GLubyte *) "glXReleaseTexImageEXT");
+    if (!ps->glXBindTexImageEXT || !ps->glXReleaseTexImageEXT) {
+      printf_errf("(): Failed to acquire glXBindTexImageEXT() / glXReleaseTexImageEXT().");
+      goto opengl_init_err;
+    }
+  }
+
+  // Acquire FBConfigs
+  if (need_render
+      && (!(ps->glx_fbconfig_rgb || opengl_update_fbconfig(ps, false, &ps->glx_fbconfig_rgb))
+        || !(ps->glx_fbconfig_rgba || opengl_update_fbconfig(ps, true, &ps->glx_fbconfig_rgba)))) {
+    printf_errf("(): Failed to acquire GLX fbconfig.");
+    goto opengl_init_err;
+  }
+
+  if (need_render) {
+    glViewport(0, 0, ps->root_width, ps->root_height);
+  }
+
+  return true;
+
+opengl_init_err:
+  opengl_destroy(ps);
+
+  return false;
+}
+
+static void
+opengl_destroy(session_t *ps) {
+  if (ps->glx_context) {
+    glXDestroyContext(ps->dpy, ps->glx_context);
+    ps->glx_context = None;
+  }
+
+  free(ps->glx_fbconfig_rgb);
+  ps->glx_fbconfig_rgb = NULL;
+  free(ps->glx_fbconfig_rgba);
+  ps->glx_fbconfig_rgba = NULL;
+}
+#endif
+
 /**
  * Initialize DRM VSync.
  *
@@ -4962,10 +5076,10 @@ vsync_opengl_init(session_t *ps) {
   // Get video sync functions
   if (!ps->glXWaitVideoSyncSGI)
     ps->glXGetVideoSyncSGI = (f_GetVideoSync)
-      glXGetProcAddress ((const GLubyte *) "glXGetVideoSyncSGI");
+      glXGetProcAddress((const GLubyte *) "glXGetVideoSyncSGI");
   if (!ps->glXWaitVideoSyncSGI)
     ps->glXWaitVideoSyncSGI = (f_WaitVideoSync)
-      glXGetProcAddress ((const GLubyte *) "glXWaitVideoSyncSGI");
+      glXGetProcAddress((const GLubyte *) "glXWaitVideoSyncSGI");
   if (!ps->glXWaitVideoSyncSGI || !ps->glXGetVideoSyncSGI) {
     printf_errf("(): Failed to get glXWait/GetVideoSyncSGI function.");
     return false;
@@ -5168,9 +5282,14 @@ redir_start(session_t *ps) {
 
     XCompositeRedirectSubwindows(ps->dpy, ps->root, CompositeRedirectManual);
 
-    // Unredirect reg_win as this may have an effect on VSync:
+    /*
+    // Unredirect GL context window as this may have an effect on VSync:
     // < http://dri.freedesktop.org/wiki/CompositeSwap >
     XCompositeUnredirectWindow(ps->dpy, ps->reg_win, CompositeRedirectManual);
+    if (ps->o.paint_on_overlay && ps->overlay) {
+      XCompositeUnredirectWindow(ps->dpy, ps->overlay,
+          CompositeRedirectManual);
+    } */
 
     // Must call XSync() here
     XSync(ps->dpy, False);
@@ -5729,8 +5848,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     exit(1);
 
   // Create registration window
-  // Must not precede VSync init functions because they may create the window
-  if (!ps->reg_win && !register_cm(ps, false))
+  if (!ps->reg_win && !register_cm(ps))
     exit(1);
 
   init_atoms(ps);
@@ -5961,11 +6079,9 @@ session_destroy(session_t *ps) {
     XDestroyWindow(ps->dpy, ps->reg_win);
     ps->reg_win = None;
   }
+
 #ifdef CONFIG_VSYNC_OPENGL
-  if (ps->glx_context) {
-    glXDestroyContext(ps->dpy, ps->glx_context);
-    ps->glx_context = None;
-  }
+  opengl_destroy(ps);
 #endif
 
   // Free double buffer
