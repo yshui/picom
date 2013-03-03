@@ -2505,9 +2505,11 @@ add_win(session_t *ps, Window id, Window prev) {
   new->id = id;
 
   set_ignore_next(ps);
-  if (!XGetWindowAttributes(ps->dpy, id, &new->a)) {
-    // Failed to get window attributes. Which probably means, the window
-    // is gone already.
+  if (!XGetWindowAttributes(ps->dpy, id, &new->a)
+      || IsUnviewable == new->a.map_state) {
+    // Failed to get window attributes probably means the window is gone
+    // already. IsUnviewable means the window is already reparented
+    // elsewhere.
     free(new);
     return false;
   }
@@ -3446,6 +3448,11 @@ ev_unmap_notify(session_t *ps, XUnmapEvent *ev) {
 
 inline static void
 ev_reparent_notify(session_t *ps, XReparentEvent *ev) {
+#ifdef DEBUG_EVENTS
+  printf_dbg("  { new_parent: %#010lx, override_redirect: %d }\n",
+      ev->parent, ev->override_redirect);
+#endif
+
   if (ev->parent == ps->root) {
     add_win(ps, ev->window, 0);
   } else {
