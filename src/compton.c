@@ -1822,6 +1822,9 @@ map_win(session_t *ps, Window id) {
   // Make sure the XSelectInput() requests are sent
   XSync(ps->dpy, False);
 
+  // Update window mode here to do matching of ARGB
+  win_determine_mode(ps, w);
+
   // Detect client window here instead of in add_win() as the client
   // window should have been prepared at this point
   if (!w->client_win) {
@@ -1981,8 +1984,6 @@ static void
 win_determine_mode(session_t *ps, win *w) {
   winmode_t mode = WMODE_SOLID;
   XRenderPictFormat *format;
-
-  /* if trans prop == -1 fall back on previous tests */
 
   if (w->a.class == InputOnly) {
     format = 0;
@@ -3246,6 +3247,29 @@ win_set_invert_color_force(session_t *ps, win *w, switch_t val) {
     w->invert_color_force = val;
     win_determine_invert_color(ps, w);
   }
+}
+
+/**
+ * Enable focus tracking.
+ */
+void
+opts_init_track_focus(session_t *ps) {
+  // Already tracking focus
+  if (ps->o.track_focus)
+    return;
+
+  ps->o.track_focus = true;
+
+  if (!ps->o.use_ewmh_active_win) {
+    // Start listening to FocusChange events
+    for (win *w = ps->list; w; w = w->next)
+      if (IsViewable == w->a.map_state)
+        XSelectInput(ps->dpy, w->id,
+            determine_evmask(ps, w->id, WIN_EVMODE_FRAME));
+  }
+
+  // Recheck focus
+  recheck_focus(ps);
 }
 //!@}
 #endif

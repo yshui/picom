@@ -25,6 +25,9 @@ type_enum='uint16'
 # List all window ID compton manages (except destroyed ones)
 dbus-send --print-reply --dest="$service" "$object" "${interface}.list_win"
 
+# Ensure we are tracking focus
+dbus-send --print-reply --dest="$service" "$object" "${interface}.opts_set" string:track_focus boolean:true
+
 # Get window ID of currently focused window
 focused=$(dbus-send --print-reply --dest="$service" "$object" "${interface}.find_win" string:focused | $SED -n 's/^[[:space:]]*'${type_win}'[[:space:]]*\([[:digit:]]*\).*/\1/p')
 

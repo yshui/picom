@@ -100,6 +100,7 @@ struct _c2_l {
     C2_L_PUNDEFINED,
     C2_L_PID,
     C2_L_POVREDIR,
+    C2_L_PARGB,
     C2_L_PFOCUSED,
     C2_L_PWMWIN,
     C2_L_PCLIENT,
@@ -175,6 +176,7 @@ typedef struct {
 const static c2_predef_t C2_PREDEFS[] = {
   [C2_L_PID         ] = { "id"                , C2_L_TCARDINAL  , 0  },
   [C2_L_POVREDIR    ] = { "override_redirect" , C2_L_TCARDINAL  , 0  },
+  [C2_L_PARGB       ] = { "argb"              , C2_L_TCARDINAL  , 0  },
   [C2_L_PFOCUSED    ] = { "focused"           , C2_L_TCARDINAL  , 0  },
   [C2_L_PWMWIN      ] = { "wmwin"             , C2_L_TCARDINAL  , 0  },
   [C2_L_PCLIENT     ] = { "client"            , C2_L_TWINDOW    , 0  },

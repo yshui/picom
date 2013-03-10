@@ -1491,6 +1491,9 @@ win_set_focused_force(session_t *ps, win *w, switch_t val);
 
 void
 win_set_invert_color_force(session_t *ps, win *w, switch_t val);
+
+void
+opts_init_track_focus(session_t *ps);
 //!@}
 #endif
 

@@ -197,7 +197,7 @@ With greater-than/less-than operators it looks like:
 
 'NEGATION' (optional) is one or more exclamation marks;
 
-'TARGET' is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `override_redirect`, `focused`, `wmwin`, `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
+'TARGET' is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
 
 'CLIENT/FRAME' is a single `@` if the window attribute should be be looked up on client window, nothing if on frame window;
 

@@ -953,6 +953,18 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
     goto cdbus_process_opts_set_success;
   }
 
+  // track_focus
+  if (!strcmp("track_focus", target)) {
+    dbus_bool_t val = FALSE;
+    if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_BOOLEAN, &val))
+      return false;
+    // You could enable this option, but never turn if off
+    if (val) {
+      opts_init_track_focus(ps);
+    }
+    goto cdbus_process_opts_set_success;
+  }
+
   // vsync
   if (!strcmp("vsync", target)) {
     const char * val = NULL;
