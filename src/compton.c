@@ -5863,19 +5863,20 @@ session_init(session_t *ps_old, int argc, char **argv) {
       ps->o.dbe = false;
   }
 
+  // Overlay must be initialized before double buffer, and before creation
+  // of OpenGL context.
+  if (ps->o.paint_on_overlay)
+    init_overlay(ps);
+
+  if (ps->o.dbe && !init_dbe(ps))
+    exit(1);
+
   // Initialize software optimization
   if (ps->o.sw_opti)
     ps->o.sw_opti = swopti_init(ps);
 
   // Initialize VSync
   if (!vsync_init(ps))
-    exit(1);
-
-  // Overlay must be initialized before double buffer
-  if (ps->o.paint_on_overlay)
-    init_overlay(ps);
-
-  if (ps->o.dbe && !init_dbe(ps))
     exit(1);
 
   // Create registration window
