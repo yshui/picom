@@ -37,6 +37,7 @@ const char * const VSYNC_STRS[NUM_VSYNC] = {
   "drm",          // VSYNC_DRM
   "opengl",       // VSYNC_OPENGL
   "opengl-oml",   // VSYNC_OPENGL_OML
+  "opengl-swc",   // VSYNC_OPENGL_SWC
 };
 
 /// Function pointers to init VSync modes.
@@ -44,6 +45,7 @@ static bool (* const (VSYNC_FUNCS_INIT[NUM_VSYNC]))(session_t *ps) = {
   [VSYNC_DRM        ] = vsync_drm_init,
   [VSYNC_OPENGL     ] = vsync_opengl_init,
   [VSYNC_OPENGL_OML ] = vsync_opengl_oml_init,
+  [VSYNC_OPENGL_SWC ] = vsync_opengl_swc_init,
 };
 
 /// Function pointers to wait for VSync.
@@ -425,8 +427,11 @@ make_shadow(session_t *ps, double opacity,
 /**
  * Generate shadow <code>Picture</code> for a window.
  */
-static Picture
-shadow_picture(session_t *ps, double opacity, int width, int height) {
+static bool
+win_build_shadow(session_t *ps, win *w, double opacity) {
+  const int width = w->widthb;
+  const int height = w->heightb;
+
   XImage *shadow_image = NULL;
   Pixmap shadow_pixmap = None, shadow_pixmap_argb = None;
   Picture shadow_picture = None, shadow_picture_argb = None;
@@ -461,13 +466,16 @@ shadow_picture(session_t *ps, double opacity, int width, int height) {
       shadow_picture_argb, 0, 0, 0, 0, 0, 0,
       shadow_image->width, shadow_image->height);
 
+  w->shadow_paint.pixmap = shadow_pixmap_argb;
+  w->shadow_paint.pict = shadow_picture_argb;
+  bool success = paint_bind_tex(ps, &w->shadow_paint, shadow_image->width, shadow_image->height, 32);
+
   XFreeGC(ps->dpy, gc);
   XDestroyImage(shadow_image);
   XFreePixmap(ps->dpy, shadow_pixmap);
-  XFreePixmap(ps->dpy, shadow_pixmap_argb);
   XRenderFreePicture(ps->dpy, shadow_picture);
 
-  return shadow_picture_argb;
+  return success;
 
 shadow_picture_err:
   if (shadow_image)
@@ -482,7 +490,8 @@ shadow_picture_err:
     XRenderFreePicture(ps->dpy, shadow_picture_argb);
   if (gc)
     XFreeGC(ps->dpy, gc);
-  return None;
+
+  return false;
 }
 
 /**
@@ -653,7 +662,7 @@ win_rounded_corners(session_t *ps, win *w) {
  */
 static void
 win_validate_pixmap(session_t *ps, win *w) {
-  if (!w->pixmap)
+  if (!w->paint.pixmap)
     return;
 
   // Detect whether the pixmap is valid with XGetGeometry. Well, maybe there
@@ -663,15 +672,13 @@ win_validate_pixmap(session_t *ps, win *w) {
     Window rroot = None;
     int rx = 0, ry = 0;
     unsigned rwid = 0, rhei = 0, rborder = 0, rdepth = 0;
-    invalid = (!XGetGeometry(ps->dpy, w->pixmap, &rroot, &rx, &ry,
+    invalid = (!XGetGeometry(ps->dpy, w->paint.pixmap, &rroot, &rx, &ry,
           &rwid, &rhei, &rborder, &rdepth) || !rwid || !rhei);
   }
 
   // Destroy pixmap and picture, if invalid
-  if (invalid) {
-    free_pixmap(ps, &w->pixmap);
-    free_picture(ps, &w->picture);
-  }
+  if (invalid)
+    free_paint(ps, &w->paint);
 }
 
 /**
@@ -794,23 +801,21 @@ recheck_focus(session_t *ps) {
   return NULL;
 }
 
-static Picture
-root_tile_f(session_t *ps) {
+static bool
+get_root_tile(session_t *ps) {
   /*
   if (ps->o.paint_on_overlay) {
     return ps->root_picture;
   } */
 
-  Picture picture;
-  Pixmap pixmap;
-  bool fill = false;
-  XRenderPictureAttributes pa;
-  int p;
+  assert(!ps->root_tile_paint.pixmap);
+  ps->root_tile_fill = false;
 
-  pixmap = None;
+  bool fill = false;
+  Pixmap pixmap = None;
 
   // Get the values of background attributes
-  for (p = 0; background_props_str[p]; p++) {
+  for (int p = 0; background_props_str[p]; p++) {
     winprop_t prop = wid_get_prop(ps, ps->root,
         get_atom(ps, background_props_str[p]),
         1L, XA_PIXMAP, 32);
@@ -823,43 +828,52 @@ root_tile_f(session_t *ps) {
     free_winprop(&prop);
   }
 
+  // Create a pixmap if there isn't any
   if (!pixmap) {
     pixmap = XCreatePixmap(ps->dpy, ps->root, 1, 1, ps->depth);
     fill = true;
   }
 
-  pa.repeat = True;
-  picture = XRenderCreatePicture(
-    ps->dpy, pixmap, XRenderFindVisualFormat(ps->dpy, ps->vis),
-    CPRepeat, &pa);
+  // Create Picture
+  {
+    XRenderPictureAttributes pa = {
+      .repeat = True,
+    };
+    ps->root_tile_paint.pict = XRenderCreatePicture(
+        ps->dpy, pixmap, XRenderFindVisualFormat(ps->dpy, ps->vis),
+        CPRepeat, &pa);
+  }
 
+  // Fill pixmap if needed
   if (fill) {
     XRenderColor  c;
 
     c.red = c.green = c.blue = 0x8080;
     c.alpha = 0xffff;
-    XRenderFillRectangle(
-      ps->dpy, PictOpSrc, picture, &c, 0, 0, 1, 1);
-
-    free_pixmap(ps, &pixmap);
+    XRenderFillRectangle(ps->dpy, PictOpSrc, ps->root_tile_paint.pict, &c, 0, 0, 1, 1);
   }
 
-  return picture;
+  ps->root_tile_fill = fill;
+  ps->root_tile_paint.pixmap = pixmap;
+#ifdef CONFIG_VSYNC_OPENGL
+  if (BKEND_GLX == ps->o.backend)
+    return glx_bind_pixmap(ps, &ps->root_tile_paint.ptex, ps->root_tile_paint.pixmap,
+        ps->root_width, ps->root_height, ps->depth);
+#endif
+
+  return true;
 }
 
 /**
  * Paint root window content.
  */
 static void
-paint_root(session_t *ps, Picture tgt_buffer) {
-  if (!ps->root_tile) {
-    ps->root_tile = root_tile_f(ps);
-  }
+paint_root(session_t *ps, XserverRegion reg_paint) {
+  if (!ps->root_tile_paint.pixmap)
+    get_root_tile(ps);
 
-  XRenderComposite(
-    ps->dpy, PictOpSrc, ps->root_tile, None,
-    tgt_buffer, 0, 0, 0, 0, 0, 0,
-    ps->root_width, ps->root_height);
+  win_render(ps, NULL, 0, 0, ps->root_width, ps->root_height, 1.0, reg_paint,
+      ps->root_tile_paint.pict);
 }
 
 /**
@@ -1106,12 +1120,12 @@ paint_preprocess(session_t *ps, win *list) {
     run_fade(ps, w, steps);
 
     // Give up if it's not damaged or invisible, or it's unmapped and its
-    // picture is gone (for example due to a ConfigureNotify)
+    // pixmap is gone (for example due to a ConfigureNotify)
     if (!w->damaged
         || w->a.x + w->a.width < 1 || w->a.y + w->a.height < 1
         || w->a.x >= ps->root_width || w->a.y >= ps->root_height
         || ((IsUnmapped == w->a.map_state || w->destroyed)
-          && !w->picture)) {
+          && !w->paint.pixmap)) {
       to_paint = false;
     }
 
@@ -1122,12 +1136,8 @@ paint_preprocess(session_t *ps, win *list) {
         add_damage_win(ps, w);
       }
 
-      w->alpha_pict = get_alpha_pict_o(ps, w->opacity);
-
-      // End the game if we are using the 0 opacity alpha_pict
-      if (w->alpha_pict == ps->alpha_picts[0]) {
+      if (get_alpha_pict_o(ps, w->opacity) == ps->alpha_picts[0])
         to_paint = false;
-      }
     }
 
     if (to_paint) {
@@ -1161,23 +1171,19 @@ paint_preprocess(session_t *ps, win *list) {
           ps->reg_ignore_expire = true;
       }
 
-      w->frame_alpha_pict = get_alpha_pict_d(ps, w->frame_opacity);
-
       // Calculate shadow opacity
       if (w->frame_opacity)
         w->shadow_opacity = ps->o.shadow_opacity * w->frame_opacity;
       else
         w->shadow_opacity = ps->o.shadow_opacity * get_opacity_percent(w);
 
-      // Rebuild shadow_pict if necessary
-      if (w->flags & WFLAG_SIZE_CHANGE)
-        free_picture(ps, &w->shadow_pict);
-
-      if (w->shadow && !w->shadow_pict) {
-        w->shadow_pict = shadow_picture(ps, 1, w->widthb, w->heightb);
+      // Rebuild shadow if necessary
+      if (w->flags & WFLAG_SIZE_CHANGE) {
+        free_paint(ps, &w->shadow_paint);
       }
 
-      w->shadow_alpha_pict = get_alpha_pict_d(ps, w->shadow_opacity);
+      if (w->shadow && !paint_isvalid(ps, &w->shadow_paint))
+        win_build_shadow(ps, w, 1);
 
       // Dimming preprocessing
       if (w->dim) {
@@ -1272,22 +1278,29 @@ paint_preprocess(session_t *ps, win *list) {
   // Fetch pictures only if windows are redirected
   if (ps->redirected) {
     for (w = t; w; w = w->prev_trans) {
-      // Fetch the picture and pixmap if needed
-      if (!w->picture) {
-        XRenderPictureAttributes pa;
-        XRenderPictFormat *format;
-        Drawable draw = w->id;
-
-        if (ps->has_name_pixmap && !w->pixmap) {
+      // Fetch Pixmap
+      if (!w->paint.pixmap && ps->has_name_pixmap) {
           set_ignore_next(ps);
-          w->pixmap = XCompositeNameWindowPixmap(ps->dpy, w->id);
-        }
-        if (w->pixmap) draw = w->pixmap;
+          w->paint.pixmap = XCompositeNameWindowPixmap(ps->dpy, w->id);
+      }
+      // XRender: Build picture
+      if (BKEND_XRENDER == ps->o.backend && !w->paint.pict) {
+        Drawable draw = w->paint.pixmap;
+        if (!draw)
+          draw = w->id;
+        {
+          XRenderPictureAttributes pa = {
+            .subwindow_mode = IncludeInferiors,
+          };
 
-        format = XRenderFindVisualFormat(ps->dpy, w->a.visual);
-        pa.subwindow_mode = IncludeInferiors;
-        w->picture = XRenderCreatePicture(
-          ps->dpy, draw, format, CPSubwindowMode, &pa);
+          w->paint.pict = XRenderCreatePicture(ps->dpy, draw, w->pictfmt,
+              CPSubwindowMode, &pa);
+        }
+      }
+      // OpenGL: Build texture
+      if (!paint_bind_tex(ps, &w->paint, w->widthb, w->heightb,
+            w->pictfmt->depth)) {
+        printf_errf("(%#010lx): Failed to bind texture. Expect troubles.", w->id);
       }
     }
   }
@@ -1299,41 +1312,36 @@ paint_preprocess(session_t *ps, win *list) {
  * Paint the shadow of a window.
  */
 static inline void
-win_paint_shadow(session_t *ps, win *w, Picture tgt_buffer) {
-  XRenderComposite(
-    ps->dpy, PictOpOver, w->shadow_pict, w->shadow_alpha_pict,
-    tgt_buffer, 0, 0, 0, 0,
-    w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
-    w->shadow_width, w->shadow_height);
+win_paint_shadow(session_t *ps, win *w, XserverRegion reg_paint) {
+  if (!paint_isvalid(ps, &w->shadow_paint)) {
+    printf_errf("(%#010lx): Missing painting data. This is a bad sign.", w->id);
+    return;
+  }
+
+  render(ps, 0, 0, w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
+      w->shadow_width, w->shadow_height, w->shadow_opacity, true, false,
+      w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint);
 }
 
 /**
  * Create an alternative picture for a window.
  */
 static inline Picture
-win_build_picture(session_t *ps, win *w, Visual *visual) {
+win_build_picture(session_t *ps, win *w, XRenderPictFormat *pictfmt) {
   const int wid = w->widthb;
   const int hei = w->heightb;
-  int depth = 0;
-  XRenderPictFormat *pictformat = NULL;
 
-  if (visual && ps->vis != visual) {
-    pictformat = XRenderFindVisualFormat(ps->dpy, visual);
-    depth = pictformat->depth;
-  }
-  else {
-    pictformat = XRenderFindVisualFormat(ps->dpy, ps->vis);
-  }
+  if (!pictfmt)
+    pictfmt = XRenderFindVisualFormat(ps->dpy, ps->vis);
 
-  if (!depth)
-    depth = ps->depth;
+  int depth = pictfmt->depth;
 
   Pixmap tmp_pixmap = XCreatePixmap(ps->dpy, ps->root, wid, hei, depth);
   if (!tmp_pixmap)
     return None;
 
   Picture tmp_picture = XRenderCreatePicture(ps->dpy, tmp_pixmap,
-    pictformat, 0, 0);
+    pictfmt, 0, 0);
   free_pixmap(ps, &tmp_pixmap);
 
   return tmp_picture;
@@ -1401,23 +1409,53 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
   free_picture(ps, &tmp_picture);
 }
 
+static void
+render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
+    double opacity, bool argb, bool neg,
+    Picture pict, glx_texture_t *ptex, XserverRegion reg_paint) {
+  switch (ps->o.backend) {
+    case BKEND_XRENDER:
+      {
+        Picture alpha_pict = get_alpha_pict_d(ps, opacity);
+        if (alpha_pict != ps->alpha_picts[0]) {
+          int op = ((!argb && !alpha_pict) ? PictOpSrc: PictOpOver);
+          XRenderComposite(ps->dpy, op, pict, alpha_pict,
+              ps->tgt_buffer, x, y, 0, 0, dx, dy, wid, hei);
+        }
+        break;
+      }
+#ifdef CONFIG_VSYNC_OPENGL
+    case BKEND_GLX:
+      glx_render(ps, ptex, x, y, dx, dy, wid, hei,
+          ps->glx_z, opacity, neg, reg_paint);
+      ps->glx_z += 1;
+      break;
+#endif
+    default:
+      assert(0);
+  }
+}
+
 /**
  * Paint a window itself and dim it if asked.
  */
 static inline void
-win_paint_win(session_t *ps, win *w, Picture tgt_buffer, XserverRegion reg_paint) {
-  int x = w->a.x;
-  int y = w->a.y;
-  int wid = w->widthb;
-  int hei = w->heightb;
+win_paint_win(session_t *ps, win *w, XserverRegion reg_paint) {
+  if (!paint_isvalid(ps, &w->paint)) {
+    printf_errf("(%#010lx): Missing painting data. This is a bad sign.", w->id);
+    return;
+  }
 
-  Picture alpha_mask = (OPAQUE == w->opacity ? None: w->alpha_pict);
-  int op = (w->mode == WMODE_SOLID ? PictOpSrc: PictOpOver);
-  Picture pict = w->picture;
+  const int x = w->a.x;
+  const int y = w->a.y;
+  const int wid = w->widthb;
+  const int hei = w->heightb;
+
+  Picture pict = w->paint.pict;
 
   // Invert window color, if required
-  if (w->invert_color) {
-    Picture newpict = win_build_picture(ps, w, w->a.visual);
+  if (BKEND_XRENDER == ps->o.backend && w->invert_color) {
+    Picture newpict = win_build_picture(ps, w, w->pictfmt);
     if (newpict) {
       // Apply clipping region to save some CPU
       if (reg_paint) {
@@ -1440,9 +1478,10 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer, XserverRegion reg_paint
     }
   }
 
+  double dopacity = get_opacity_percent(w);;
+
   if (!w->frame_opacity) {
-    XRenderComposite(ps->dpy, op, pict, alpha_mask,
-        tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
+    win_render(ps, w, 0, 0, wid, hei, dopacity, reg_paint, pict);
   }
   else {
     // Painting parameters
@@ -1452,8 +1491,8 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer, XserverRegion reg_paint
     const int r = w->a.border_width + w->right_width;
 
 #define COMP_BDR(cx, cy, cwid, chei) \
-    XRenderComposite(ps->dpy, PictOpOver, pict, w->frame_alpha_pict, \
-        tgt_buffer, (cx), (cy), 0, 0, x + (cx), y + (cy), (cwid), (chei))
+    win_render(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity, \
+        reg_paint, pict)
 
     // The following complicated logic is required because some broken
     // window managers (I'm talking about you, Openbox!) that makes
@@ -1488,8 +1527,7 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer, XserverRegion reg_paint
           pwid = wid - l - pwid;
           if (pwid > 0) {
             // body
-            XRenderComposite(ps->dpy, op, pict, alpha_mask,
-                tgt_buffer, l, t, 0, 0, x + l, y + t, pwid, phei);
+            win_render(ps, w, l, t, pwid, phei, dopacity, reg_paint, pict);
           }
         }
       }
@@ -1498,13 +1536,13 @@ win_paint_win(session_t *ps, win *w, Picture tgt_buffer, XserverRegion reg_paint
 
 #undef COMP_BDR
 
-  if (pict != w->picture)
+  if (pict != w->paint.pict)
     free_picture(ps, &pict);
 
   // Dimming the window if needed
   if (w->dim && w->dim_alpha_pict != ps->alpha_picts[0]) {
     XRenderComposite(ps->dpy, PictOpOver, ps->black_picture,
-        w->dim_alpha_pict, tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
+        w->dim_alpha_pict, ps->tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
   }
 }
 
@@ -1523,9 +1561,18 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
 #ifdef DEBUG_REPAINT
   static struct timespec last_paint = { 0 };
 #endif
-
-  win *w;
+  win *w = NULL;
   XserverRegion reg_paint = None, reg_tmp = None, reg_tmp2 = None;
+
+#ifdef CONFIG_VSYNC_OPENGL
+  // GLX backend: OpenGL doesn't support partial repaint without
+  // GLX_MESA_copy_sub_buffer
+  if (BKEND_GLX == ps->o.backend) {
+    free_region(ps, &region);
+    // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    ps->glx_z = 0.0;
+  }
+#endif
 
   if (!region) {
     region = get_screen_region(ps);
@@ -1583,7 +1630,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
 
   XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg_paint);
 
-  paint_root(ps, ps->tgt_buffer);
+  paint_root(ps, reg_paint);
 
   // Create temporary regions for use during painting
   if (!reg_tmp)
@@ -1622,7 +1669,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
         XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0,
             reg_paint);
 
-        win_paint_shadow(ps, w, ps->tgt_buffer);
+        win_paint_shadow(ps, w, reg_paint);
       }
     }
 
@@ -1655,10 +1702,8 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
       }
 
       // Painting the window
-      win_paint_win(ps, w, ps->tgt_buffer, reg_paint);
+      win_paint_win(ps, w, reg_paint);
     }
-
-    check_fade_fin(ps, w);
   }
 
   // Free up all temporary regions
@@ -1688,21 +1733,32 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
   if (!ps->o.vsync_aggressive)
     vsync_wait(ps);
 
-  // DBE painting mode, only need to swap the buffer
-  if (ps->o.dbe) {
-    XdbeSwapInfo swap_info = {
-      .swap_window = get_tgt_window(ps),
-      // Is it safe to use XdbeUndefined?
-      .swap_action = XdbeCopied
-    };
-    XdbeSwapBuffers(ps->dpy, &swap_info, 1);
-  }
-  // No-DBE painting mode
-  else if (ps->tgt_buffer != ps->tgt_picture) {
-    XRenderComposite(
-      ps->dpy, PictOpSrc, ps->tgt_buffer, None,
-      ps->tgt_picture, 0, 0, 0, 0,
-      0, 0, ps->root_width, ps->root_height);
+  switch (ps->o.backend) {
+    case BKEND_XRENDER:
+      // DBE painting mode, only need to swap the buffer
+      if (ps->o.dbe) {
+        XdbeSwapInfo swap_info = {
+          .swap_window = get_tgt_window(ps),
+          // Is it safe to use XdbeUndefined?
+          .swap_action = XdbeCopied
+        };
+        XdbeSwapBuffers(ps->dpy, &swap_info, 1);
+      }
+      // No-DBE painting mode
+      else if (ps->tgt_buffer != ps->tgt_picture) {
+        XRenderComposite(
+          ps->dpy, PictOpSrc, ps->tgt_buffer, None,
+          ps->tgt_picture, 0, 0, 0, 0,
+          0, 0, ps->root_width, ps->root_height);
+      }
+      break;
+#ifdef CONFIG_VSYNC_OPENGL
+    case BKEND_GLX:
+      glXSwapBuffers(ps->dpy, get_tgt_window(ps));
+      break;
+#endif
+    default:
+      assert(0);
   }
 
   if (ps->o.vsync_aggressive)
@@ -1730,6 +1786,15 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
   putchar('\n');
   fflush(stdout);
 #endif
+
+  // Check if fading is finished on all painted windows
+  {
+    win *pprev = NULL;
+    for (w = t; w; w = pprev) {
+      pprev = w->prev_trans;
+      check_fade_fin(ps, w);
+    }
+  }
 }
 
 static void
@@ -1822,7 +1887,7 @@ map_win(session_t *ps, Window id) {
   // Make sure the XSelectInput() requests are sent
   XSync(ps->dpy, False);
 
-  // Update window mode here to do matching of ARGB
+  // Update window mode here to check for ARGB windows
   win_determine_mode(ps, w);
 
   // Detect client window here instead of in add_win() as the client
@@ -1917,10 +1982,9 @@ finish_unmap_win(session_t *ps, win *w) {
     w->extents = None;
   }
 
-  free_pixmap(ps, &w->pixmap);
-  free_picture(ps, &w->picture);
+  free_paint(ps, &w->paint);
   free_region(ps, &w->border_size);
-  free_picture(ps, &w->shadow_pict);
+  free_paint(ps, &w->shadow_paint);
 }
 
 static void
@@ -1983,16 +2047,9 @@ get_opacity_percent(win *w) {
 static void
 win_determine_mode(session_t *ps, win *w) {
   winmode_t mode = WMODE_SOLID;
-  XRenderPictFormat *format;
 
-  if (w->a.class == InputOnly) {
-    format = 0;
-  } else {
-    format = XRenderFindVisualFormat(ps->dpy, w->a.visual);
-  }
-
-  if (format && format->type == PictTypeDirect
-      && format->direct.alphaMask) {
+  if (w->pictfmt && w->pictfmt->type == PictTypeDirect
+      && w->pictfmt->direct.alphaMask) {
     mode = WMODE_ARGB;
   } else if (w->opacity != OPAQUE) {
     mode = WMODE_TRANS;
@@ -2107,7 +2164,7 @@ win_update_shape(session_t *ps, win *w) {
     // If clear_shadow state on the window possibly changed, destroy the old
     // shadow_pict
     if (ps->o.clear_shadow && w->bounding_shaped != bounding_shaped_old)
-      free_picture(ps, &w->shadow_pict);
+      free_paint(ps, &w->shadow_paint);
     */
   }
 }
@@ -2404,11 +2461,11 @@ add_win(session_t *ps, Window id, Window prev) {
 
     .id = None,
     .a = { },
+    .pictfmt = NULL,
     .mode = WMODE_TRANS,
     .damaged = false,
     .damage = None,
-    .pixmap = None,
-    .picture = None,
+    .paint = PAINT_INIT,
     .border_size = None,
     .extents = None,
     .flags = 0,
@@ -2446,13 +2503,11 @@ add_win(session_t *ps, Window id, Window prev) {
     .opacity_tgt = 0,
     .opacity_prop = OPAQUE,
     .opacity_prop_client = OPAQUE,
-    .alpha_pict = None,
 
     .fade = false,
     .fade_callback = NULL,
 
     .frame_opacity = 0.0,
-    .frame_alpha_pict = None,
     .left_width = 0,
     .right_width = 0,
     .top_width = 0,
@@ -2465,8 +2520,7 @@ add_win(session_t *ps, Window id, Window prev) {
     .shadow_dy = 0,
     .shadow_width = 0,
     .shadow_height = 0,
-    .shadow_pict = None,
-    .shadow_alpha_pict = None,
+    .shadow_paint = PAINT_INIT,
     .prop_shadow = -1,
 
     .dim = false,
@@ -2519,6 +2573,10 @@ add_win(session_t *ps, Window id, Window prev) {
   int map_state = new->a.map_state;
   assert(IsViewable == map_state || IsUnmapped == map_state);
   new->a.map_state = IsUnmapped;
+
+  // Get window picture format
+  if (InputOutput == new->a.class)
+    new->pictfmt = XRenderFindVisualFormat(ps->dpy, new->a.visual);
 
   // Create Damage for window
   if (InputOutput == new->a.class) {
@@ -2608,6 +2666,7 @@ restack_win(session_t *ps, win *w, Window new_above) {
 
 static void
 configure_win(session_t *ps, XConfigureEvent *ce) {
+  // On root window changes
   if (ce->window == ps->root) {
     if (ps->tgt_buffer) {
       XRenderFreePicture(ps->dpy, ps->tgt_buffer);
@@ -2618,9 +2677,15 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
 
     rebuild_screen_reg(ps);
 
+#ifdef CONFIG_VSYNC_OPENGL
+    if (BKEND_GLX == ps->o.backend)
+      glx_on_root_change(ps);
+#endif
+
     return;
   }
 
+  // Other window changes
   win *w = find_win(ps, ce->window);
   XserverRegion damage = None;
 
@@ -2660,10 +2725,8 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
     w->a.y = ce->y;
 
     if (w->a.width != ce->width || w->a.height != ce->height
-        || w->a.border_width != ce->border_width) {
-      free_pixmap(ps, &w->pixmap);
-      free_picture(ps, &w->picture);
-    }
+        || w->a.border_width != ce->border_width)
+      free_paint(ps, &w->paint);
 
     if (w->a.width != ce->width || w->a.height != ce->height
         || w->a.border_width != ce->border_width) {
@@ -2756,11 +2819,10 @@ destroy_win(session_t *ps, Window id) {
 
 static inline void
 root_damaged(session_t *ps) {
-  if (ps->root_tile) {
+  if (ps->root_tile_paint.pixmap) {
     XClearArea(ps->dpy, ps->root, 0, 0, 0, 0, true);
     // if (ps->root_picture != ps->root_tile) {
-      XRenderFreePicture(ps->dpy, ps->root_tile);
-      ps->root_tile = None;
+      free_root_tile(ps);
     /* }
     if (root_damage) {
       XserverRegion parts = XFixesCreateRegion(ps->dpy, 0, 0);
@@ -2829,6 +2891,21 @@ error(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
     CASESTRRET2(BadGlyph);
   }
 
+#ifdef CONFIG_VSYNC_OPENGL
+  if (ps->glx_exists) {
+    o = ev->error_code - ps->glx_error;
+    switch (o) {
+      CASESTRRET2(GLX_BAD_SCREEN);
+      CASESTRRET2(GLX_BAD_ATTRIBUTE);
+      CASESTRRET2(GLX_NO_EXTENSION);
+      CASESTRRET2(GLX_BAD_VISUAL);
+      CASESTRRET2(GLX_BAD_CONTEXT);
+      CASESTRRET2(GLX_BAD_VALUE);
+      CASESTRRET2(GLX_BAD_ENUM);
+    }
+  }
+#endif
+
   switch (ev->error_code) {
     CASESTRRET2(BadAccess);
     CASESTRRET2(BadAlloc);
@@ -2852,9 +2929,13 @@ error(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 #undef CASESTRRET2
 
   print_timestamp(ps);
-  printf("error %d (%s) request %d minor %d serial %lu\n",
-    ev->error_code, name, ev->request_code,
-    ev->minor_code, ev->serial);
+  {
+    char buf[BUF_LEN] = "";
+    XGetErrorText(ps->dpy, ev->error_code, buf, BUF_LEN);
+    printf("error %d (%s) request %d minor %d serial %lu (\"%s\")\n",
+        ev->error_code, name, ev->request_code,
+        ev->minor_code, ev->serial, buf);
+  }
 
   return 0;
 }
@@ -3942,8 +4023,7 @@ usage(void) {
     "  Specify refresh rate of the screen. If not specified or 0, compton\n"
     "  will try detecting this with X RandR extension.\n"
     "--vsync vsync-method\n"
-    "  Set VSync method. There are up to 3 VSync methods currently available\n"
-    "  depending on your compile time settings:\n"
+    "  Set VSync method. There are up to 4 VSync methods currently available.\n"
     "    none = No VSync\n"
 #undef WARNING
 #ifndef CONFIG_VSYNC_DRM
@@ -3952,7 +4032,7 @@ usage(void) {
 #define WARNING
 #endif
     "    drm = VSync with DRM_IOCTL_WAIT_VBLANK. May only work on some\n"
-    "      drivers. Experimental." WARNING "\n"
+    "      drivers." WARNING "\n"
 #undef WARNING
 #ifndef CONFIG_VSYNC_OPENGL
 #define WARNING WARNING_DISABLED
@@ -3960,9 +4040,14 @@ usage(void) {
 #define WARNING
 #endif
     "    opengl = Try to VSync with SGI_swap_control OpenGL extension. Only\n"
-    "      work on some drivers. Experimental." WARNING"\n"
+    "      work on some drivers." WARNING"\n"
     "    opengl-oml = Try to VSync with OML_sync_control OpenGL extension.\n"
     "      Only work on some drivers. Experimental." WARNING"\n"
+    "    opengl-swc = Try to VSync with SGI_swap_control OpenGL extension.\n"
+    "      Only work on some drivers. Works only with OpenGL backend.\n"
+    "      Does not actually control paint timing, only buffer swap is\n"
+    "      affected, so it doesn't have the effect of --sw-opti unlike\n"
+    "      other methods. Experimental." WARNING "\n"
     "--alpha-step val\n"
     "  Step for pregenerating alpha pictures. 0.01 - 1.0. Defaults to\n"
     "  0.03.\n"
@@ -4013,6 +4098,8 @@ usage(void) {
     "--invert-color-include condition\n"
     "  Specify a list of conditions of windows that should be painted with\n"
     "  inverted color. Resource-hogging, and is not well tested.\n"
+    "--opengl\n"
+    "  Enable the highly experimental OpenGL backend." WARNING "\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED
@@ -4096,6 +4183,14 @@ fork_after(session_t *ps) {
   if (getppid() == 1)
     return true;
 
+#ifdef CONFIG_VSYNC_OPENGL
+  // GLX context must be released and reattached on fork
+  if (ps->glx_context && !glXMakeCurrent(ps->dpy, None, NULL)) {
+    printf_errf("(): Failed to detach GLx context.");
+    return false;
+  }
+#endif
+
   int pid = fork();
 
   if (-1 == pid) {
@@ -4106,6 +4201,14 @@ fork_after(session_t *ps) {
   if (pid > 0) _exit(0);
 
   setsid();
+
+#ifdef CONFIG_VSYNC_OPENGL
+  if (ps->glx_context
+      && !glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->glx_context)) {
+    printf_errf("(): Failed to make GLX context current.");
+    return false;
+  }
+#endif
 
   // Mainly to suppress the _FORTIFY_SOURCE warning
   bool success = freopen("/dev/null", "r", stdin);
@@ -4448,6 +4551,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "dbus", no_argument, NULL, 286 },
     { "logpath", required_argument, NULL, 287 },
     { "invert-color-include", required_argument, NULL, 288 },
+    { "opengl", no_argument, NULL, 289 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4701,6 +4805,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --invert-color-include
         condlst_add(ps, &ps->o.invert_color_list, optarg);
         break;
+      case 289:
+        // --opengl
+        ps->o.backend = BKEND_GLX;
+        break;
       default:
         usage();
         break;
@@ -4889,155 +4997,6 @@ swopti_handle_timeout(session_t *ps, struct timeval *ptv) {
   }
 }
 
-#ifdef CONFIG_VSYNC_OPENGL
-/**
- * Get a GLX FBConfig.
- */
-static inline bool
-opengl_update_fbconfig(session_t *ps, bool alpha, struct glx_fbconfig **ppcfg) {
-  const int FBCONFIG_ATTRS[] = {
-    (alpha ? GLX_BIND_TO_TEXTURE_RGBA_EXT: GLX_BIND_TO_TEXTURE_RGB_EXT), True,
-    GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
-    GLX_BIND_TO_TEXTURE_TARGETS_EXT, GLX_TEXTURE_2D_BIT_EXT,
-    GLX_DOUBLEBUFFER, True,
-    GLX_Y_INVERTED_EXT, GLX_DONT_CARE,
-    None
-  };
-
-  if (*ppcfg) {
-    free(*ppcfg);
-    *ppcfg = NULL;
-  }
-
-  int count = 0;
-  GLXFBConfig *cfgs = glXChooseFBConfig(ps->dpy, ps->scr, FBCONFIG_ATTRS, &count);
-  if (!count || !cfgs) {
-    if (cfgs)
-      XFree(cfgs);
-    return false;
-  };
-
-  *ppcfg = malloc(sizeof(struct glx_fbconfig));
-  (*ppcfg)->cfg = cfgs[0];
-
-  {
-    int inverted = 0;
-    glXGetFBConfigAttrib(ps->dpy, (*ppcfg)->cfg, GLX_Y_INVERTED_EXT, &inverted);
-    (*ppcfg)->y_inverted = inverted;
-  }
-
-  XFree(cfgs);
-
-  return true;
-}
-
-/**
- * Initialize OpenGL.
- */
-static bool
-opengl_init(session_t *ps, bool need_render) {
-  // Check for GLX extension
-  if (!ps->glx_exists) {
-    if (glXQueryExtension(ps->dpy, &ps->glx_event, &ps->glx_error))
-      ps->glx_exists = true;
-    else {
-      printf_errf("(): No GLX extension.");
-      goto opengl_init_err;
-    }
-  }
-
-  // Ensure GLX_EXT_texture_from_pixmap exists
-  if (need_render && !opengl_hasext(ps, "GLX_EXT_texture_from_pixmap")) {
-      goto opengl_init_err;
-  }
-
-  {
-    // Get XVisualInfo
-    XVisualInfo *pvis = NULL;
-    {
-      XVisualInfo vreq = { .visualid = XVisualIDFromVisual(ps->vis) };
-      int nitems = 0;
-      pvis = XGetVisualInfo(ps->dpy, VisualIDMask, &vreq, &nitems);
-    }
-
-    if (!pvis) {
-      printf_errf("(): Failed to acquire XVisualInfo for current visual.");
-      goto opengl_init_err;
-    }
-
-    // Ensure the visual is double-buffered
-    if (need_render) {
-      int value = 0;
-      glXGetConfig(ps->dpy, pvis, GLX_DOUBLEBUFFER, &value);
-      if (!value) {
-        XFree(pvis);
-        printf_errf("(): Default GLX visual is not double-buffered.");
-        goto opengl_init_err;
-      }
-    }
-
-    // Get GLX context
-    ps->glx_context = glXCreateContext(ps->dpy, pvis, None, GL_TRUE);
-    XFree(pvis);
-  }
-
-  if (!ps->glx_context) {
-    printf_errf("(): Failed to get GLX context.");
-    goto opengl_init_err;
-  }
-
-  // Attach GLX context
-  if (!glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->glx_context)) {
-    printf_errf("(): Failed to attach GLX context.");
-    goto opengl_init_err;
-  }
-
-  // Acquire function addresses
-  if (need_render) {
-    ps->glXBindTexImageEXT = (f_BindTexImageEXT)
-      glXGetProcAddress((const GLubyte *) "glXBindTexImageEXT");
-    ps->glXReleaseTexImageEXT = (f_ReleaseTexImageEXT)
-      glXGetProcAddress((const GLubyte *) "glXReleaseTexImageEXT");
-    if (!ps->glXBindTexImageEXT || !ps->glXReleaseTexImageEXT) {
-      printf_errf("(): Failed to acquire glXBindTexImageEXT() / glXReleaseTexImageEXT().");
-      goto opengl_init_err;
-    }
-  }
-
-  // Acquire FBConfigs
-  if (need_render
-      && (!(ps->glx_fbconfig_rgb || opengl_update_fbconfig(ps, false, &ps->glx_fbconfig_rgb))
-        || !(ps->glx_fbconfig_rgba || opengl_update_fbconfig(ps, true, &ps->glx_fbconfig_rgba)))) {
-    printf_errf("(): Failed to acquire GLX fbconfig.");
-    goto opengl_init_err;
-  }
-
-  if (need_render) {
-    glViewport(0, 0, ps->root_width, ps->root_height);
-  }
-
-  return true;
-
-opengl_init_err:
-  opengl_destroy(ps);
-
-  return false;
-}
-
-static void
-opengl_destroy(session_t *ps) {
-  if (ps->glx_context) {
-    glXDestroyContext(ps->dpy, ps->glx_context);
-    ps->glx_context = None;
-  }
-
-  free(ps->glx_fbconfig_rgb);
-  ps->glx_fbconfig_rgb = NULL;
-  free(ps->glx_fbconfig_rgba);
-  ps->glx_fbconfig_rgba = NULL;
-}
-#endif
-
 /**
  * Initialize DRM VSync.
  *
@@ -5148,6 +5107,34 @@ vsync_opengl_oml_init(session_t *ps) {
 #endif
 }
 
+static bool
+vsync_opengl_swc_init(session_t *ps) {
+#ifdef CONFIG_VSYNC_OPENGL
+  if (!ensure_glx_context(ps))
+    return false;
+
+  if (BKEND_GLX != ps->o.backend) {
+    printf_errf("(): I'm afraid glXSwapIntervalSGI wouldn't help if you are "
+        "not using OpenGL backend. You could try, nonetheless.");
+  }
+
+  // Get video sync functions
+  if (!ps->glXSwapIntervalProc)
+    ps->glXSwapIntervalProc = (f_SwapIntervalSGI)
+      glXGetProcAddress ((const GLubyte *) "glXSwapIntervalSGI");
+  if (!ps->glXSwapIntervalProc) {
+    printf_errf("(): Failed to get SGI_swap_control function.");
+    return false;
+  }
+  ps->glXSwapIntervalProc(1);
+
+  return true;
+#else
+  printf_errf("(): Program not compiled with OpenGL VSync support.");
+  return false;
+#endif
+}
+
 #ifdef CONFIG_VSYNC_OPENGL
 /**
  * Wait for next VSync, OpenGL method.
@@ -5201,8 +5188,6 @@ static void
 vsync_wait(session_t *ps) {
   if (!ps->o.vsync)
     return;
-
-  assert(VSYNC_FUNCS_WAIT[ps->o.vsync]);
 
   if (VSYNC_FUNCS_WAIT[ps->o.vsync])
     VSYNC_FUNCS_WAIT[ps->o.vsync](ps);
@@ -5271,29 +5256,42 @@ init_overlay(session_t *ps) {
 }
 
 /**
- * Query needed X Render filters to check for their existence.
+ * Query needed X Render / OpenGL filters to check for their existence.
  */
-static void
+static bool
 init_filters(session_t *ps) {
+  // Blur filter
   if (ps->o.blur_background || ps->o.blur_background_frame) {
-    // Query filters
-    XFilters *pf = XRenderQueryFilters(ps->dpy, get_tgt_window(ps));
-    if (pf) {
-      for (int i = 0; i < pf->nfilter; ++i) {
-        // Convolution filter
-        if (!strcmp(pf->filter[i], XRFILTER_CONVOLUTION))
-          ps->xrfilter_convolution_exists = true;
-      }
-    }
-    XFree(pf);
+    switch (ps->o.backend) {
+      case BKEND_XRENDER:
+        {
+          // Query filters
+          XFilters *pf = XRenderQueryFilters(ps->dpy, get_tgt_window(ps));
+          if (pf) {
+            for (int i = 0; i < pf->nfilter; ++i) {
+              // Convolution filter
+              if (!strcmp(pf->filter[i], XRFILTER_CONVOLUTION))
+                ps->xrfilter_convolution_exists = true;
+            }
+          }
+          XFree(pf);
 
-    // Turn features off if any required filter is not present
-    if (!ps->xrfilter_convolution_exists) {
-      fprintf(stderr, "X Render convolution filter unsupported by your X server. Background blur disabled.\n");
-      ps->o.blur_background = false;
-      ps->o.blur_background_frame = false;
+          // Turn features off if any required filter is not present
+          if (!ps->xrfilter_convolution_exists) {
+            printf_errf("(): X Render convolution filter unsupported by your X server. Background blur is not possible.");
+            return false;
+          }
+          break;
+        }
+      case BKEND_GLX:
+        {
+          printf_errf("(): OpenGL blur is not implemented yet.");
+          return false;
+        }
     }
   }
+
+  return true;
 }
 
 /**
@@ -5477,10 +5475,8 @@ redir_stop(session_t *ps) {
     // Destroy all Pictures as they expire once windows are unredirected
     // If we don't destroy them here, looks like the resources are just
     // kept inaccessible somehow
-    for (win *w = ps->list; w; w = w->next) {
-      free_pixmap(ps, &w->pixmap);
-      free_picture(ps, &w->picture);
-    }
+    for (win *w = ps->list; w; w = w->next)
+      free_paint(ps, &w->paint);
 
     XCompositeUnredirectSubwindows(ps->dpy, ps->root, CompositeRedirectManual);
     // Unmap overlay window
@@ -5597,14 +5593,17 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .root_width = 0,
     // .root_damage = None,
     .overlay = None,
-    .root_tile = None,
+    .root_tile_fill = false,
+    .root_tile_paint = PAINT_INIT,
     .screen_reg = None,
     .tgt_picture = None,
     .tgt_buffer = None,
     .root_dbe = None,
     .reg_win = None,
     .o = {
+      .config_file = NULL,
       .display = NULL,
+      .backend = BKEND_XRENDER,
       .mark_wmwin_focused = false,
       .mark_ovredir_focused = false,
       .fork_after_register = false,
@@ -5863,13 +5862,34 @@ session_init(session_t *ps_old, int argc, char **argv) {
       ps->o.dbe = false;
   }
 
+  ps->root_width = DisplayWidth(ps->dpy, ps->scr);
+  ps->root_height = DisplayHeight(ps->dpy, ps->scr);
+
+  rebuild_screen_reg(ps);
+
   // Overlay must be initialized before double buffer, and before creation
   // of OpenGL context.
   if (ps->o.paint_on_overlay)
     init_overlay(ps);
 
+  // Initialize DBE
+  if (ps->o.dbe && BKEND_GLX == ps->o.backend) {
+    printf_errf("(): DBE couldn't be used on OpenGL backend.");
+    ps->o.dbe = false;
+  }
+
   if (ps->o.dbe && !init_dbe(ps))
     exit(1);
+
+  // Initialize OpenGL as early as possible
+  if (BKEND_GLX == ps->o.backend) {
+#ifdef CONFIG_VSYNC_OPENGL
+    if (!glx_init(ps, true))
+      exit(1);
+#else
+    printf_errfq(1, "(): OpenGL backend support not compiled in.");
+#endif
+  }
 
   // Initialize software optimization
   if (ps->o.sw_opti)
@@ -5889,11 +5909,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->gaussian_map = make_gaussian_map(ps->o.shadow_radius);
   presum_gaussian(ps, ps->gaussian_map);
 
-  ps->root_width = DisplayWidth(ps->dpy, ps->scr);
-  ps->root_height = DisplayHeight(ps->dpy, ps->scr);
-
-  rebuild_screen_reg(ps);
-
   {
     XRenderPictureAttributes pa;
     pa.subwindow_mode = IncludeInferiors;
@@ -5911,7 +5926,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
     }
   }
 
-  init_filters(ps);
+  if (!init_filters(ps))
+    exit(1);
 
   ps->black_picture = solid_picture(ps, true, 1, 0, 0, 0);
   ps->white_picture = solid_picture(ps, true, 1, 1, 1, 1);
@@ -6092,7 +6108,7 @@ session_destroy(session_t *ps) {
   free_picture(ps, &ps->root_picture);
 
   // Free other X resources
-  free_picture(ps, &ps->root_tile);
+  free_root_tile(ps);
   free_region(ps, &ps->screen_reg);
   free_region(ps, &ps->all_damage);
   free(ps->expose_rects);
@@ -6106,14 +6122,8 @@ session_destroy(session_t *ps) {
   free(ps->pfds_write);
   free(ps->pfds_except);
 
-  // Free reg_win and glx_context
-  if (ps->reg_win) {
-    XDestroyWindow(ps->dpy, ps->reg_win);
-    ps->reg_win = None;
-  }
-
 #ifdef CONFIG_VSYNC_OPENGL
-  opengl_destroy(ps);
+  glx_destroy(ps);
 #endif
 
   // Free double buffer
@@ -6134,6 +6144,12 @@ session_destroy(session_t *ps) {
   if (ps->overlay) {
     XCompositeReleaseOverlayWindow(ps->dpy, ps->overlay);
     ps->overlay = None;
+  }
+
+  // Free reg_win
+  if (ps->reg_win) {
+    XDestroyWindow(ps->dpy, ps->reg_win);
+    ps->reg_win = None;
   }
 
   // Flush all events
@@ -6236,7 +6252,7 @@ main(int argc, char **argv) {
   while (1) {
     ps_g = session_init(ps_old, argc, argv);
     if (!ps_g) {
-      printf_errf("Failed to create new session.");
+      printf_errf("(): Failed to create new session.");
       return 1;
     }
     session_run(ps_g);

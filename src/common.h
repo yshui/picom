@@ -130,6 +130,9 @@
 #error libXcomposite version unsupported
 #endif
 
+/// @brief Length of generic buffers.
+#define BUF_LEN 80
+
 #define ROUNDED_PERCENT 0.05
 #define ROUNDED_PIXELS  10
 
@@ -151,6 +154,9 @@
 #define XRFILTER_CONVOLUTION  "convolution"
 #define XRFILTER_GUASSIAN     "gaussian"
 #define XRFILTER_BINOMIAL     "binomial"
+
+/// @brief Maximum OpenGL FBConfig depth.
+#define OPENGL_MAX_DEPTH 32
 
 // Window flags
 
@@ -249,8 +255,17 @@ typedef enum {
   VSYNC_DRM,
   VSYNC_OPENGL,
   VSYNC_OPENGL_OML,
+  VSYNC_OPENGL_SWC,
   NUM_VSYNC,
 } vsync_t;
+
+/// @brief Possible backends of compton.
+enum backend {
+  BKEND_XRENDER,
+  BKEND_GLX,
+};
+
+typedef struct _glx_texture glx_texture_t;
 
 #ifdef CONFIG_VSYNC_OPENGL
 typedef int (*f_WaitVideoSync) (int, int, unsigned *);
@@ -259,14 +274,38 @@ typedef int (*f_GetVideoSync) (unsigned *);
 typedef Bool (*f_GetSyncValuesOML) (Display* dpy, GLXDrawable drawable, int64_t* ust, int64_t* msc, int64_t* sbc);
 typedef Bool (*f_WaitForMscOML) (Display* dpy, GLXDrawable drawable, int64_t target_msc, int64_t divisor, int64_t remainder, int64_t* ust, int64_t* msc, int64_t* sbc);
 
+typedef int (*f_SwapIntervalSGI) (int interval);
+
 typedef void (*f_BindTexImageEXT) (Display *display, GLXDrawable drawable, int buffer, const int *attrib_list);
 typedef void (*f_ReleaseTexImageEXT) (Display *display, GLXDrawable drawable, int buffer);
 
-struct glx_fbconfig {
+/// @brief Wrapper of a GLX FBConfig.
+typedef struct {
   GLXFBConfig cfg;
+  GLint texture_fmt;
+  GLint texture_tgts;
+  bool y_inverted;
+} glx_fbconfig_t;
+
+/// @brief Wrapper of a binded GLX texture.
+struct _glx_texture {
+  GLuint texture;
+  GLXPixmap glpixmap;
+  Pixmap pixmap;
+  int width;
+  int height;
+  int depth;
   bool y_inverted;
 };
 #endif
+
+typedef struct {
+  Pixmap pixmap;
+  Picture pict;
+  glx_texture_t *ptex;
+} paint_t;
+
+#define PAINT_INIT { .pixmap = None, .pict = None }
 
 typedef struct {
   int size;
@@ -293,6 +332,8 @@ typedef struct {
   /// The display name we used. NULL means we are using the value of the
   /// <code>DISPLAY</code> environment variable.
   char *display;
+  /// The backend in use.
+  enum backend backend;
   /// Whether to try to detect WM windows and mark them as focused.
   bool mark_wmwin_focused;
   /// Whether to mark override-redirect windows as focused.
@@ -434,8 +475,10 @@ typedef struct {
   // Damage root_damage;
   /// X Composite overlay window. Used if <code>--paint-on-overlay</code>.
   Window overlay;
+  /// Whether the root tile is filled by compton.
+  bool root_tile_fill;
   /// Picture of the root window background.
-  Picture root_tile;
+  paint_t root_tile_paint;
   /// A region of the size of the screen.
   XserverRegion screen_reg;
   /// Picture of root window. Destination of painting in no-DBE painting
@@ -488,6 +531,10 @@ typedef struct {
   /// Pointer to the <code>next</code> member of tail element of the error
   /// ignore linked list.
   ignore_t **ignore_tail;
+#ifdef CONFIG_VSYNC_OPENGL
+  /// Current GLX Z value.
+  int glx_z;
+#endif
   /// Reset program after next paint.
   bool reset;
 
@@ -551,18 +598,18 @@ typedef struct {
   f_GetVideoSync glXGetVideoSyncSGI;
   /// Pointer to glXWaitVideoSyncSGI function.
   f_WaitVideoSync glXWaitVideoSyncSGI;
-  /// Pointer to glXGetSyncValuesOML function.
+   /// Pointer to glXGetSyncValuesOML function.
   f_GetSyncValuesOML glXGetSyncValuesOML;
   /// Pointer to glXWaitForMscOML function.
   f_WaitForMscOML glXWaitForMscOML;
+  /// Pointer to glXSwapIntervalSGI function.
+  f_SwapIntervalSGI glXSwapIntervalProc;
   /// Pointer to glXBindTexImageEXT function.
-  f_BindTexImageEXT glXBindTexImageEXT;
+  f_BindTexImageEXT glXBindTexImageProc;
   /// Pointer to glXReleaseTexImageEXT function.
-  f_ReleaseTexImageEXT glXReleaseTexImageEXT;
-  /// FBConfig for RGB GLX pixmap.
-  struct glx_fbconfig *glx_fbconfig_rgb;
-  /// FBConfig for RGBA GLX pixmap.
-  struct glx_fbconfig *glx_fbconfig_rgba;
+  f_ReleaseTexImageEXT glXReleaseTexImageProc;
+  /// FBConfig-s for GLX pixmap of different depths.
+  glx_fbconfig_t *glx_fbconfigs[OPENGL_MAX_DEPTH + 1];
 #endif
 
   // === X extension related ===
@@ -664,16 +711,16 @@ typedef struct _win {
   Window id;
   /// Window attributes.
   XWindowAttributes a;
+  /// Window visual pict format;
+  XRenderPictFormat *pictfmt;
   /// Window painting mode.
   winmode_t mode;
   /// Whether the window has been damaged at least once.
   bool damaged;
   /// Damage of the window.
   Damage damage;
-  /// NameWindowPixmap of the window.
-  Pixmap pixmap;
-  /// Picture of the window.
-  Picture picture;
+  /// Paint info of the window.
+  paint_t paint;
   /// Bounding shape of the window.
   XserverRegion border_size;
   /// Region of the whole window, shadow region included.
@@ -750,8 +797,6 @@ typedef struct _win {
   /// broken window managers not transferring client window's
   /// _NET_WM_OPACITY value
   opacity_t opacity_prop_client;
-  /// Alpha mask Picture to render window with opacity.
-  Picture alpha_pict;
 
   // Fading-related members
   /// Do not fade if it's false. Change on window type change.
@@ -763,8 +808,6 @@ typedef struct _win {
   // Frame-opacity-related members
   /// Current window frame opacity. Affected by window opacity.
   double frame_opacity;
-  /// Alpha mask Picture to render window frame with opacity.
-  Picture frame_alpha_pict;
   /// Frame widths. Determined by client window attributes.
   unsigned int left_width, right_width, top_width, bottom_width;
 
@@ -784,9 +827,7 @@ typedef struct _win {
   /// Height of shadow. Affected by window size and commandline argument.
   int shadow_height;
   /// Picture to render shadow. Affected by window size.
-  Picture shadow_pict;
-  /// Alpha mask Picture to render shadow. Affected by shadow opacity.
-  Picture shadow_alpha_pict;
+  paint_t shadow_paint;
   /// The value of _COMPTON_SHADOW attribute of the window. Below 0 for
   /// none.
   long prop_shadow;
@@ -895,6 +936,20 @@ XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
 #endif
 
 // === Functions ===
+
+/**
+ * @brief Quit if the passed-in pointer is empty.
+ */
+static inline void
+allocchk_(const char *func_name, void *ptr) {
+  if (!ptr) {
+    printf_err("%s(): Failed to allocate memory.", func_name);
+    exit(1);
+  }
+}
+
+/// @brief Wrapper of allocchk_().
+#define allocchk(ptr) allocchk_(__func__, ptr)
 
 /**
  * Return whether a struct timeval value is empty.
@@ -1305,6 +1360,14 @@ get_atom(session_t *ps, const char *atom_name) {
 }
 
 /**
+ * Return the painting target window.
+ */
+static inline Window
+get_tgt_window(session_t *ps) {
+  return ps->o.paint_on_overlay ? ps->overlay: ps->root;
+}
+
+/**
  * Find a window from window id in window linked list of the session.
  */
 static inline win *
@@ -1369,6 +1432,17 @@ copy_region(const session_t *ps, XserverRegion oldregion) {
   XFixesCopyRegion(ps->dpy, region, oldregion);
 
   return region;
+}
+
+/**
+ * Destroy a <code>XserverRegion</code>.
+ */
+static inline void
+free_region(session_t *ps, XserverRegion *p) {
+  if (*p) {
+    XFixesDestroyRegion(ps->dpy, *p);
+    *p = None;
+  }
 }
 
 /**
@@ -1454,6 +1528,66 @@ force_repaint(session_t *ps);
 bool
 vsync_init(session_t *ps);
 
+#ifdef CONFIG_VSYNC_OPENGL
+/** @name GLX
+ */
+///@{
+
+bool
+glx_init(session_t *ps, bool need_render);
+
+void
+glx_destroy(session_t *ps);
+
+void
+glx_on_root_change(session_t *ps);
+
+bool
+glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
+    int width, int height, int depth);
+
+void
+glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
+
+static inline bool
+glx_tex_binded(const glx_texture_t *ptex) {
+  return ptex && ptex->glpixmap && ptex->texture;
+}
+
+bool
+glx_render(session_t *ps, const glx_texture_t *ptex,
+    int x, int y, int dx, int dy, int width, int height, int z,
+    double opacity, bool neg, XserverRegion reg_tgt);
+#endif
+
+static inline void
+free_texture(session_t *ps, glx_texture_t **pptex) {
+#ifdef CONFIG_VSYNC_OPENGL
+  glx_texture_t *ptex = *pptex;
+
+  // Quit if there's nothing
+  if (!ptex)
+    return;
+
+  glx_release_pixmap(ps, ptex);
+
+  // Free texture
+  if (ptex->texture) {
+    glDeleteTextures(1, &ptex->texture);
+    ptex->texture = 0;
+  }
+
+  // Free structure itself
+  free(ptex);
+  *pptex = NULL;
+#endif
+}
+
+///@}
+
+/** @name DBus handling
+ */
+///@{
 #ifdef CONFIG_DBUS
 /** @name DBus handling
  */

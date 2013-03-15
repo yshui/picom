@@ -33,8 +33,8 @@ install_manifest.txt
 *~
 
 # Misc files
-core
-*.core
+/core
+/*.core
 oprofile_data/
 compton.plist
 callgrind.out.*
@@ -42,3 +42,4 @@ man/*.html
 man/*.1
 doxygen/
 .clang_complete
+/src/backtrace-symbols.[ch]

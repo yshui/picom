@@ -1,0 +1,521 @@
+/*
+ * Compton - a compositor for X11
+ *
+ * Based on `xcompmgr` - Copyright (c) 2003, Keith Packard
+ *
+ * Copyright (c) 2011-2013, Christopher Jeffrey
+ * See LICENSE for more information.
+ *
+ */
+
+#include "opengl.h"
+
+/**
+ * Initialize OpenGL.
+ */
+bool
+glx_init(session_t *ps, bool need_render) {
+  bool success = false;
+  XVisualInfo *pvis = NULL;
+
+  // Check for GLX extension
+  if (!ps->glx_exists) {
+    if (glXQueryExtension(ps->dpy, &ps->glx_event, &ps->glx_error))
+      ps->glx_exists = true;
+    else {
+      printf_errf("(): No GLX extension.");
+      goto glx_init_end;
+    }
+  }
+
+  // Get XVisualInfo
+  pvis = get_visualinfo_from_visual(ps, ps->vis);
+  if (!pvis) {
+    printf_errf("(): Failed to acquire XVisualInfo for current visual.");
+    goto glx_init_end;
+  }
+
+  // Ensure the visual is double-buffered
+  if (need_render) {
+    int value = 0;
+    if (Success != glXGetConfig(ps->dpy, pvis, GLX_USE_GL, &value) || !value) {
+      printf_errf("(): Root visual is not a GL visual.");
+      goto glx_init_end;
+    }
+
+    if (Success != glXGetConfig(ps->dpy, pvis, GLX_DOUBLEBUFFER, &value)
+        || !value) {
+      printf_errf("(): Root visual is not a double buffered GL visual.");
+      goto glx_init_end;
+    }
+  }
+
+  // Ensure GLX_EXT_texture_from_pixmap exists
+  if (need_render && !glx_hasext(ps, "GLX_EXT_texture_from_pixmap"))
+    goto glx_init_end;
+
+  // Get GLX context
+  ps->glx_context = glXCreateContext(ps->dpy, pvis, None, GL_TRUE);
+
+  if (!ps->glx_context) {
+    printf_errf("(): Failed to get GLX context.");
+    goto glx_init_end;
+  }
+
+  // Attach GLX context
+  if (!glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->glx_context)) {
+    printf_errf("(): Failed to attach GLX context.");
+    goto glx_init_end;
+  }
+
+  // Acquire function addresses
+  if (need_render) {
+    ps->glXBindTexImageProc = (f_BindTexImageEXT)
+      glXGetProcAddress((const GLubyte *) "glXBindTexImageEXT");
+    ps->glXReleaseTexImageProc = (f_ReleaseTexImageEXT)
+      glXGetProcAddress((const GLubyte *) "glXReleaseTexImageEXT");
+    if (!ps->glXBindTexImageProc || !ps->glXReleaseTexImageProc) {
+      printf_errf("(): Failed to acquire glXBindTexImageEXT() / glXReleaseTexImageEXT().");
+      goto glx_init_end;
+    }
+  }
+
+  // Acquire FBConfigs
+  if (need_render && !glx_update_fbconfig(ps))
+    goto glx_init_end;
+
+  if (need_render) {
+    // Adjust viewport
+    glViewport(0, 0, ps->root_width, ps->root_height);
+
+    // Initialize settings, copied from dcompmgr
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, ps->root_width, ps->root_height, 0, -100.0, 100.0);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    // glEnable(GL_DEPTH_TEST);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_BLEND);
+
+    // Clear screen
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glXSwapBuffers(ps->dpy, get_tgt_window(ps));
+  }
+
+  success = true;
+
+glx_init_end:
+  if (pvis)
+    XFree(pvis);
+
+  if (!success)
+    glx_destroy(ps);
+
+  return success;
+}
+
+/**
+ * Destroy GLX related resources.
+ */
+void
+glx_destroy(session_t *ps) {
+  // Free FBConfigs
+  for (int i = 0; i <= OPENGL_MAX_DEPTH; ++i) {
+    free(ps->glx_fbconfigs[i]);
+    ps->glx_fbconfigs[i] = NULL;
+  }
+
+  // Destroy GLX context
+  if (ps->glx_context) {
+    glXDestroyContext(ps->dpy, ps->glx_context);
+    ps->glx_context = NULL;
+  }
+}
+
+/**
+ * Callback to run on root window size change.
+ */
+void
+glx_on_root_change(session_t *ps) {
+  glViewport(0, 0, ps->root_width, ps->root_height);
+}
+
+/**
+ * @brief Update the FBConfig of given depth.
+ */
+static inline void
+glx_update_fbconfig_bydepth(session_t *ps, int depth, glx_fbconfig_t *pfbcfg) {
+  // Make sure the depth is sane
+  if (depth < 0 || depth > OPENGL_MAX_DEPTH)
+    return;
+
+  // Compare new FBConfig with current one
+  if (glx_cmp_fbconfig(ps, ps->glx_fbconfigs[depth], pfbcfg) < 0) {
+#ifdef DEBUG_GLX
+    printf_dbgf("(%d): %#x overrides %#x, target %#x.\n", depth, (unsigned) pfbcfg->cfg, (ps->glx_fbconfigs[depth] ? (unsigned) ps->glx_fbconfigs[depth]->cfg: 0), pfbcfg->texture_tgts);
+#endif
+    if (!ps->glx_fbconfigs[depth]) {
+      ps->glx_fbconfigs[depth] = malloc(sizeof(glx_fbconfig_t));
+      allocchk(ps->glx_fbconfigs[depth]);
+    }
+    (*ps->glx_fbconfigs[depth]) = *pfbcfg;
+  }
+}
+
+/**
+ * Get GLX FBConfigs for all depths.
+ */
+static bool
+glx_update_fbconfig(session_t *ps) {
+  // Acquire all FBConfigs and loop through them
+  int nele = 0;
+  GLXFBConfig* pfbcfgs = glXGetFBConfigs(ps->dpy, ps->scr, &nele);
+
+  for (GLXFBConfig *pcur = pfbcfgs; pcur < pfbcfgs + nele; pcur++) {
+    glx_fbconfig_t fbinfo = {
+      .cfg = *pcur,
+      .texture_fmt = 0,
+      .texture_tgts = 0,
+      .y_inverted = false,
+    };
+    int depth = 0, depth_alpha = 0, val = 0;
+
+    if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BUFFER_SIZE, &depth)
+        || Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_ALPHA_SIZE, &depth_alpha)) {
+      printf_errf("(): Failed to retrieve buffer size and alpha size of FBConfig %d.", (int) (pcur - pfbcfgs));
+      continue;
+    }
+    if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BIND_TO_TEXTURE_TARGETS_EXT, &fbinfo.texture_tgts)) {
+      printf_errf("(): Failed to retrieve BIND_TO_TEXTURE_TARGETS_EXT of FBConfig %d.", (int) (pcur - pfbcfgs));
+      continue;
+    }
+
+    bool rgb = false;
+    bool rgba = false;
+
+    if (depth >= 32 && depth_alpha && Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BIND_TO_TEXTURE_RGBA_EXT, &val) && val)
+      rgba = true;
+
+    if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BIND_TO_TEXTURE_RGB_EXT, &val) && val)
+      rgb = true;
+
+    if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_Y_INVERTED_EXT, &val))
+      fbinfo.y_inverted = val;
+
+    if ((depth - depth_alpha) < 32 && rgb) {
+      fbinfo.texture_fmt = GLX_TEXTURE_FORMAT_RGB_EXT;
+      glx_update_fbconfig_bydepth(ps, depth - depth_alpha, &fbinfo);
+    }
+
+    if (rgba) {
+      fbinfo.texture_fmt = GLX_TEXTURE_FORMAT_RGBA_EXT;
+      glx_update_fbconfig_bydepth(ps, depth, &fbinfo);
+    }
+  }
+
+  if (pfbcfgs)
+    XFree(pfbcfgs);
+
+  // Sanity checks
+  if (!ps->glx_fbconfigs[ps->depth]) {
+    printf_errf("(): No FBConfig found for default depth %d.", ps->depth);
+    return false;
+  }
+
+  if (!ps->glx_fbconfigs[32]) {
+    printf_errf("(): No FBConfig found for depth 32. Expect crazy things.");
+  }
+
+  return true;
+}
+
+static inline int
+glx_cmp_fbconfig_cmpattr(session_t *ps,
+    const glx_fbconfig_t *pfbc_a, const glx_fbconfig_t *pfbc_b,
+    int attr) {
+  int attr_a = 0, attr_b = 0;
+
+  // TODO: Error checking
+  glXGetFBConfigAttrib(ps->dpy, pfbc_a->cfg, attr, &attr_a);
+  glXGetFBConfigAttrib(ps->dpy, pfbc_b->cfg, attr, &attr_b);
+
+  return attr_a - attr_b;
+}
+
+/**
+ * Compare two GLX FBConfig's to find the preferred one.
+ */
+static int
+glx_cmp_fbconfig(session_t *ps,
+    const glx_fbconfig_t *pfbc_a, const glx_fbconfig_t *pfbc_b) {
+  int result = 0;
+
+  if (!pfbc_a)
+    return -1;
+  if (!pfbc_b)
+    return 1;
+
+#define P_CMPATTR_LT(attr) { if ((result = glx_cmp_fbconfig_cmpattr(ps, pfbc_a, pfbc_b, (attr)))) return -result; }
+#define P_CMPATTR_GT(attr) { if ((result = glx_cmp_fbconfig_cmpattr(ps, pfbc_a, pfbc_b, (attr)))) return result; }
+
+  P_CMPATTR_LT(GLX_BIND_TO_TEXTURE_RGBA_EXT);
+  P_CMPATTR_LT(GLX_DOUBLEBUFFER);
+  P_CMPATTR_LT(GLX_STENCIL_SIZE);
+  P_CMPATTR_LT(GLX_DEPTH_SIZE);
+  P_CMPATTR_GT(GLX_BIND_TO_MIPMAP_TEXTURE_EXT);
+
+  return 0;
+}
+
+/**
+ * Bind a X pixmap to an OpenGL texture.
+ */
+bool
+glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
+    int width, int height, int depth) {
+  if (depth > OPENGL_MAX_DEPTH) {
+    printf_errf("(%d): Requested depth higher than %d.", depth,
+        OPENGL_MAX_DEPTH);
+    return false;
+  }
+  const glx_fbconfig_t *pcfg = ps->glx_fbconfigs[depth];
+  if (!pcfg) {
+    printf_errf("(%d): Couldn't find FBConfig with requested depth.", depth);
+    return false;
+  }
+
+  const GLenum target = GL_TEXTURE_2D;
+  glx_texture_t *ptex = *pptex;
+  bool need_release = true;
+
+  // Allocate structure
+  if (!ptex) {
+    static const glx_texture_t GLX_TEX_DEF = {
+      .texture = 0,
+      .glpixmap = 0,
+      .pixmap = 0,
+      .width = 0,
+      .height = 0,
+      .depth = 0,
+      .y_inverted = false,
+    };
+
+    ptex = malloc(sizeof(glx_texture_t));
+    allocchk(ptex);
+    memcpy(ptex, &GLX_TEX_DEF, sizeof(glx_texture_t));
+    *pptex = ptex;
+  }
+
+  glEnable(target);
+
+  // Release pixmap if parameters are inconsistent
+  if (ptex->texture && !(width == ptex->width && height == ptex->height
+        && ptex->pixmap == pixmap && depth == ptex->depth)) {
+    glx_release_pixmap(ps, ptex);
+  }
+
+  // Create texture
+  if (!ptex->texture) {
+    need_release = false;
+
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(target, texture);
+
+    glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glBindTexture(target, 0);
+
+    ptex->texture = texture;
+    ptex->y_inverted = pcfg->y_inverted;
+  }
+  if (!ptex->texture) {
+    printf_errf("(): Failed to allocate texture.");
+    return false;
+  }
+
+  glBindTexture(target, ptex->texture);
+
+  // Create GLX pixmap
+  if (!ptex->glpixmap) {
+    need_release = false;
+
+#ifdef DEBUG_GLX
+    printf_dbgf("(): depth %d rgba %d\n", depth, (GLX_TEXTURE_FORMAT_RGBA_EXT == pcfg->texture_fmt));
+#endif
+
+    int attrs[] = {
+        GLX_TEXTURE_FORMAT_EXT,
+        pcfg->texture_fmt,
+        // GLX_TEXTURE_TARGET_EXT,
+        // ,
+        0,
+    };
+
+    ptex->glpixmap = glXCreatePixmap(ps->dpy, pcfg->cfg, pixmap, attrs);
+  }
+  if (!ptex->glpixmap) {
+    printf_errf("(): Failed to allocate GLX pixmap.");
+    return false;
+  }
+
+  // The specification requires rebinding whenever the content changes...
+  // We can't follow this, too slow.
+  if (need_release)
+    ps->glXReleaseTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+
+  ps->glXBindTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
+
+  // Cleanup
+  glBindTexture(target, 0);
+  glDisable(target);
+
+  ptex->width = width;
+  ptex->height = height;
+  ptex->depth = depth;
+  ptex->pixmap = pixmap;
+
+  return true;
+}
+
+/**
+ * @brief Release binding of a texture.
+ */
+void
+glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
+  // Release binding
+  if (ptex->glpixmap && ptex->texture) {
+    glBindTexture(GL_TEXTURE_2D, ptex->texture);
+    ps->glXReleaseTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+  }
+
+  // Free GLX Pixmap
+  if (ptex->glpixmap) {
+    glXDestroyPixmap(ps->dpy, ptex->glpixmap);
+    ptex->glpixmap = 0;
+  }
+}
+
+/**
+ * @brief Render a region with texture data.
+ */
+bool
+glx_render(session_t *ps, const glx_texture_t *ptex,
+    int x, int y, int dx, int dy, int width, int height, int z,
+    double opacity, bool neg, XserverRegion reg_tgt) {
+  if (!ptex || !ptex->texture) {
+    printf_errf("(): Missing texture.");
+    return false;
+  }
+
+  // Enable blending if needed
+  if (opacity < 1.0 || GLX_TEXTURE_FORMAT_RGBA_EXT ==
+      ps->glx_fbconfigs[ptex->depth]->texture_fmt) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    // Needed for handling opacity of ARGB texture
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    glColor4f(1.0f, 1.0f, 1.0f, opacity);
+  }
+
+  // Color negation
+  if (neg) {
+    // Simple color negation
+    if (!glIsEnabled(GL_BLEND)) {
+      glEnable(GL_COLOR_LOGIC_OP);
+      glLogicOp(GL_COPY_INVERTED);
+    }
+    // Blending color negation
+    else {
+      glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+      glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
+      glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
+    }
+  }
+
+  glEnable(GL_TEXTURE_2D);
+  glBindTexture(GL_TEXTURE_2D, ptex->texture);
+
+  glBegin(GL_QUADS);
+
+  {
+    XserverRegion reg_new = None;
+
+    XRectangle rec_all = {
+      .x = dx,
+      .y = dy,
+      .width = width,
+      .height = height
+    };
+
+    XRectangle *rects = &rec_all;
+    int nrects = 1;
+
+#ifdef DEBUG_GLX
+    printf_dbgf("(): Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d \n", x, y, width, height, dx, dy, ptex->width, ptex->height, z);
+#endif
+
+    if (reg_tgt) {
+      reg_new = XFixesCreateRegion(ps->dpy, &rec_all, 1);
+      XFixesIntersectRegion(ps->dpy, reg_new, reg_new, reg_tgt);
+
+      nrects = 0;
+      rects = XFixesFetchRegion(ps->dpy, reg_new, &nrects);
+    }
+
+    for (int i = 0; i < nrects; ++i) {
+      GLfloat rx = (double) (rects[i].x - dx + x) / ptex->width;
+      GLfloat ry = (double) (rects[i].y - dy + y) / ptex->height;
+      GLfloat rxe = rx + (double) rects[i].width / ptex->width;
+      GLfloat rye = ry + (double) rects[i].height / ptex->height;
+      GLint rdx = rects[i].x;
+      GLint rdy = rects[i].y;
+      GLint rdxe = rdx + rects[i].width;
+      GLint rdye = rdy + rects[i].height;
+
+      // Invert Y if needed, this may not work as expected, though. I don't
+      // have such a FBConfig to test with.
+      if (!ptex->y_inverted) {
+        ry = 1.0 - ry;
+        rye = 1.0 - rye;
+      }
+
+#ifdef DEBUG_GLX
+      printf_dbgf("(): Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d\n", i, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
+#endif
+
+      glTexCoord2f(rx, ry);
+      glVertex3i(rdx, rdy, z);
+
+      glTexCoord2f(rxe, ry);
+      glVertex3i(rdxe, rdy, z);
+
+      glTexCoord2f(rxe, rye);
+      glVertex3i(rdxe, rdye, z);
+
+      glTexCoord2f(rx, rye);
+      glVertex3i(rdx, rdye, z);
+    }
+
+    if (rects && rects != &rec_all)
+      XFree(rects);
+    free_region(ps, &reg_new);
+  }
+  glEnd();
+
+  // Cleanup
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
+  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+  glDisable(GL_BLEND);
+  glDisable(GL_COLOR_LOGIC_OP);
+
+  return true;
+}

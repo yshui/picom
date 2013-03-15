@@ -47,6 +47,7 @@ ifeq "$(NO_VSYNC_OPENGL)" ""
   CFG += -DCONFIG_VSYNC_OPENGL
   # -lGL must precede some other libraries, or it segfaults on FreeBSD (#74)
   LIBS := -lGL $(LIBS)
+  OBJS += opengl.o
 endif
 
 # ==== D-Bus ====
@@ -67,7 +68,16 @@ COMPTON_VERSION ?= git-$(shell git describe --always --dirty)-$(shell git log -1
 CFG += -DCOMPTON_VERSION="\"$(COMPTON_VERSION)\""
 
 LDFLAGS ?= -Wl,-O1 -Wl,--as-needed
-CFLAGS ?= -DNDEBUG -O2 -D_FORTIFY_SOURCE=2
+
+ifeq "$(DEV)" ""
+  CFLAGS ?= -DNDEBUG -O2 -D_FORTIFY_SOURCE=2
+else
+  CC = clang
+  export LD_ALTEXEC = /usr/bin/ld.gold
+  OBJS += backtrace-symbols.o
+  LIBS += -lbfd
+  CFLAGS += -ggdb -Weverything -Wno-disabled-macro-expansion -Wno-padded -Wno-gnu
+endif
 
 LIBS += $(shell pkg-config --libs $(PACKAGES))
 INCS += $(shell pkg-config --cflags $(PACKAGES))
