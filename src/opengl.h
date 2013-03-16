@@ -13,21 +13,61 @@
 #include <ctype.h>
 
 /**
+ * Check if a word is in string.
+ */
+static inline bool
+wd_is_in_str(const char *haystick, const char *needle) {
+  if (!haystick)
+    return false;
+
+  assert(*needle);
+
+  const char *pos = haystick - 1;
+  while ((pos = strstr(pos + 1, needle))) {
+    // Continue if it isn't a word boundary
+    if (((pos - haystick) && !isspace(*(pos - 1)))
+        || (strlen(pos) > strlen(needle) && !isspace(pos[strlen(needle)])))
+      continue;
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Check if a GLX extension exists.
  */
 static inline bool
-glx_hasext(session_t *ps, const char *ext) {
+glx_hasglxext(session_t *ps, const char *ext) {
   const char *glx_exts = glXQueryExtensionsString(ps->dpy, ps->scr);
-  const char *pos = strstr(glx_exts, ext);
-  // Make sure the extension string is matched as a whole word
-  if (!pos
-      || ((pos - glx_exts) && !isspace(*(pos - 1)))
-      || (strlen(pos) > strlen(ext) && !isspace(pos[strlen(ext)]))) {
-    printf_errf("(): Missing OpenGL extension %s.", ext);
+  if (!glx_exts) {
+    printf_errf("(): Failed get GLX extension list.");
     return false;
   }
 
-  return true;
+  bool found = wd_is_in_str(glx_exts, ext);
+  if (!found)
+    printf_errf("(): Missing GLX extension %s.", ext);
+
+  return found;
+}
+
+/**
+ * Check if a GLX extension exists.
+ */
+static inline bool
+glx_hasglext(session_t *ps, const char *ext) {
+  const char *gl_exts = (const char *) glGetString(GL_EXTENSIONS);
+  if (!gl_exts) {
+    printf_errf("(): Failed get GL extension list.");
+    return false;
+  }
+
+  bool found = wd_is_in_str(gl_exts, ext);
+  if (!found)
+    printf_errf("(): Missing GL extension %s.", ext);
+
+  return found;
 }
 
 static inline XVisualInfo *

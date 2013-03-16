@@ -89,6 +89,10 @@
 
 // libGL
 #ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#define GL_GLEXT_PROTOTYPES
+#endif
+
 #include <GL/glx.h>
 #endif
 
@@ -263,6 +267,7 @@ typedef enum {
 enum backend {
   BKEND_XRENDER,
   BKEND_GLX,
+  NUM_BKEND,
 };
 
 typedef struct _glx_texture glx_texture_t;
@@ -594,6 +599,8 @@ typedef struct {
   // === OpenGL related ===
   /// GLX context.
   GLXContext glx_context;
+  /// Whether we have GL_ARB_texture_non_power_of_two.
+  bool glx_has_texture_non_power_of_two;
   /// Pointer to glXGetVideoSyncSGI function.
   f_GetVideoSync glXGetVideoSyncSGI;
   /// Pointer to glXWaitVideoSyncSGI function.
@@ -874,6 +881,7 @@ typedef enum {
 
 extern const char * const WINTYPES[NUM_WINTYPES];
 extern const char * const VSYNC_STRS[NUM_VSYNC];
+extern const char * const BACKEND_STRS[NUM_BKEND];
 extern session_t *ps_g;
 
 // == Debugging code ==
@@ -1252,6 +1260,20 @@ parse_vsync(session_t *ps, const char *str) {
   return false;
 }
 
+/**
+ * Parse a backend option argument.
+ */
+static inline bool
+parse_backend(session_t *ps, const char *str) {
+  for (enum backend i = 0; i < (sizeof(BACKEND_STRS) / sizeof(BACKEND_STRS[0])); ++i)
+    if (!strcasecmp(str, BACKEND_STRS[i])) {
+      ps->o.backend = i;
+      return true;
+    }
+  printf_errf("(\"%s\"): Invalid backend argument.", str);
+  return false;
+}
+
 timeout_t *
 timeout_insert(session_t *ps, time_ms_t interval,
     bool (*callback)(session_t *ps, timeout_t *ptmout), void *data);
@@ -1543,6 +1565,9 @@ void
 glx_on_root_change(session_t *ps);
 
 bool
+glx_init_blur(session_t *ps);
+
+bool
 glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
     int width, int height, int depth);
 
@@ -1553,6 +1578,9 @@ static inline bool
 glx_tex_binded(const glx_texture_t *ptex) {
   return ptex && ptex->glpixmap && ptex->texture;
 }
+
+void
+glx_set_clip(session_t *ps, XserverRegion reg);
 
 bool
 glx_render(session_t *ps, const glx_texture_t *ptex,

@@ -176,7 +176,7 @@ paint_isvalid(session_t *ps, const paint_t *ppaint) {
   return true;
 }
 /**
- * Bind texture in paint_t if we are using OpenGL backend.
+ * Bind texture in paint_t if we are using GLX backend.
  */
 static inline bool
 paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int hei, int depth) {
@@ -540,6 +540,20 @@ win_render(session_t *ps, win *w, int x, int y, int wid, int hei, double opacity
 
   render(ps, x, y, dx, dy, wid, hei, opacity, argb, neg,
       pict, (w ? w->paint.ptex: ps->root_tile_paint.ptex), reg_paint);
+}
+
+static inline void
+set_tgt_clip(session_t *ps, XserverRegion reg) {
+  switch (ps->o.backend) {
+    case BKEND_XRENDER:
+      XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg);
+      break;
+#ifdef CONFIG_VSYNC_OPENGL
+    case BKEND_GLX:
+      glx_set_clip(ps, reg);
+      break;
+#endif
+  }
 }
 
 static void

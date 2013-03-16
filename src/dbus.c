@@ -876,6 +876,11 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
     cdbus_reply_string(ps, msg, VSYNC_STRS[ps->o.vsync]);
     return true;
   }
+  if (!strcmp("backend", target)) {
+    assert(ps->o.backend < sizeof(BACKEND_STRS) / sizeof(BACKEND_STRS[0]));
+    cdbus_reply_string(ps, msg, BACKEND_STRS[ps->o.backend]);
+    return true;
+  }
   cdbus_m_opts_get_do(dbe, cdbus_reply_bool);
   cdbus_m_opts_get_do(vsync_aggressive, cdbus_reply_bool);
 

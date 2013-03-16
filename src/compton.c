@@ -40,6 +40,12 @@ const char * const VSYNC_STRS[NUM_VSYNC] = {
   "opengl-swc",   // VSYNC_OPENGL_SWC
 };
 
+/// Names of backends.
+const char * const BACKEND_STRS[NUM_BKEND] = {
+  "xrender",      // BKEND_XRENDER
+  "glx",          // BKEND_GLX
+};
+
 /// Function pointers to init VSync modes.
 static bool (* const (VSYNC_FUNCS_INIT[NUM_VSYNC]))(session_t *ps) = {
   [VSYNC_DRM        ] = vsync_drm_init,
@@ -1628,8 +1634,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
     reg_paint = region;
   }
 
-  XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg_paint);
-
+  set_tgt_clip(ps, reg_paint);
   paint_root(ps, reg_paint);
 
   // Create temporary regions for use during painting
@@ -1666,8 +1671,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
 
       // Detect if the region is empty before painting
       if (region == reg_paint || !is_region_empty(ps, reg_paint)) {
-        XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0,
-            reg_paint);
+        set_tgt_clip(ps, reg_paint);
 
         win_paint_shadow(ps, w, reg_paint);
       }
@@ -1694,7 +1698,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
     }
 
     if (!is_region_empty(ps, reg_paint)) {
-      XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg_paint);
+      set_tgt_clip(ps, reg_paint);
       // Blur window background
       if ((ps->o.blur_background && WMODE_SOLID != w->mode)
           || (ps->o.blur_background_frame && w->frame_opacity)) {
@@ -1713,7 +1717,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
 
   // Do this as early as possible
   if (!ps->o.dbe)
-    XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, None);
+    set_tgt_clip(ps, None);
 
   if (ps->o.vsync) {
     // Make sure all previous requests are processed to achieve best
@@ -4044,7 +4048,7 @@ usage(void) {
     "    opengl-oml = Try to VSync with OML_sync_control OpenGL extension.\n"
     "      Only work on some drivers. Experimental." WARNING"\n"
     "    opengl-swc = Try to VSync with SGI_swap_control OpenGL extension.\n"
-    "      Only work on some drivers. Works only with OpenGL backend.\n"
+    "      Only work on some drivers. Works only with GLX backend.\n"
     "      Does not actually control paint timing, only buffer swap is\n"
     "      affected, so it doesn't have the effect of --sw-opti unlike\n"
     "      other methods. Experimental." WARNING "\n"
@@ -4098,8 +4102,8 @@ usage(void) {
     "--invert-color-include condition\n"
     "  Specify a list of conditions of windows that should be painted with\n"
     "  inverted color. Resource-hogging, and is not well tested.\n"
-    "--opengl\n"
-    "  Enable the highly experimental OpenGL backend." WARNING "\n"
+    "--backend backend\n"
+    "  Choose backend. Possible choices are xrender and glx" WARNING ".\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED
@@ -4450,6 +4454,9 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // --vsync
   if (config_lookup_string(&cfg, "vsync", &sval) && !parse_vsync(ps, sval))
     exit(1);
+  // --backend
+  if (config_lookup_string(&cfg, "backend", &sval) && !parse_backend(ps, sval))
+    exit(1);
   // --alpha-step
   config_lookup_float(&cfg, "alpha-step", &ps->o.alpha_step);
   // --dbe
@@ -4552,6 +4559,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "logpath", required_argument, NULL, 287 },
     { "invert-color-include", required_argument, NULL, 288 },
     { "opengl", no_argument, NULL, 289 },
+    { "backend", required_argument, NULL, 290 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4808,6 +4816,11 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 289:
         // --opengl
         ps->o.backend = BKEND_GLX;
+        break;
+      case 290:
+        // --backend
+        if (!parse_backend(ps, optarg))
+          exit(1);
         break;
       default:
         usage();
@@ -5115,7 +5128,7 @@ vsync_opengl_swc_init(session_t *ps) {
 
   if (BKEND_GLX != ps->o.backend) {
     printf_errf("(): I'm afraid glXSwapIntervalSGI wouldn't help if you are "
-        "not using OpenGL backend. You could try, nonetheless.");
+        "not using GLX backend. You could try, nonetheless.");
   }
 
   // Get video sync functions
@@ -5283,11 +5296,13 @@ init_filters(session_t *ps) {
           }
           break;
         }
+#ifdef CONFIG_VSYNC_OPENGL
       case BKEND_GLX:
         {
-          printf_errf("(): OpenGL blur is not implemented yet.");
-          return false;
+          if (!glx_init_blur(ps))
+            return false;
         }
+#endif
     }
   }
 
@@ -5709,6 +5724,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
 #ifdef CONFIG_VSYNC_OPENGL
     .glx_context = None,
+    .glx_has_texture_non_power_of_two = false,
     .glXGetVideoSyncSGI = NULL,
     .glXWaitVideoSyncSGI = NULL,
     .glXGetSyncValuesOML = NULL,
@@ -5862,6 +5878,14 @@ session_init(session_t *ps_old, int argc, char **argv) {
       ps->o.dbe = false;
   }
 
+  // Start listening to events on root earlier to catch all possible
+  // root geometry changes
+  XSelectInput(ps->dpy, ps->root,
+    SubstructureNotifyMask
+    | ExposureMask
+    | StructureNotifyMask
+    | PropertyChangeMask);
+
   ps->root_width = DisplayWidth(ps->dpy, ps->scr);
   ps->root_height = DisplayHeight(ps->dpy, ps->scr);
 
@@ -5874,7 +5898,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Initialize DBE
   if (ps->o.dbe && BKEND_GLX == ps->o.backend) {
-    printf_errf("(): DBE couldn't be used on OpenGL backend.");
+    printf_errf("(): DBE couldn't be used on GLX backend.");
     ps->o.dbe = false;
   }
 
@@ -5887,7 +5911,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     if (!glx_init(ps, true))
       exit(1);
 #else
-    printf_errfq(1, "(): OpenGL backend support not compiled in.");
+    printf_errfq(1, "(): GLX backend support not compiled in.");
 #endif
   }
 
@@ -5926,6 +5950,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     }
   }
 
+  // Initialize filters, must be preceded by OpenGL context creation
   if (!init_filters(ps))
     exit(1);
 
@@ -5946,12 +5971,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
   XGrabServer(ps->dpy);
 
   redir_start(ps);
-
-  XSelectInput(ps->dpy, ps->root,
-    SubstructureNotifyMask
-    | ExposureMask
-    | StructureNotifyMask
-    | PropertyChangeMask);
 
   {
     Window root_return, parent_return;

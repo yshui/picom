@@ -51,7 +51,7 @@ glx_init(session_t *ps, bool need_render) {
   }
 
   // Ensure GLX_EXT_texture_from_pixmap exists
-  if (need_render && !glx_hasext(ps, "GLX_EXT_texture_from_pixmap"))
+  if (need_render && !glx_hasglxext(ps, "GLX_EXT_texture_from_pixmap"))
     goto glx_init_end;
 
   // Get GLX context
@@ -67,6 +67,24 @@ glx_init(session_t *ps, bool need_render) {
     printf_errf("(): Failed to attach GLX context.");
     goto glx_init_end;
   }
+
+  // Ensure we have a stencil buffer. X Fixes does not guarantee rectangles
+  // in regions don't overlap, so we must use stencil buffer to make sure
+  // we don't paint a region for more than one time, I think?
+  if (need_render) {
+    GLint val = 0;
+    glGetIntegerv(GL_STENCIL_BITS, &val);
+    if (!val) {
+      printf_errf("(): Target window doesn't have stencil buffer.");
+      goto glx_init_end;
+    }
+  }
+
+  // Check GL_ARB_texture_non_power_of_two, requires a GLX context and
+  // must precede FBConfig fetching
+  if (need_render)
+    ps->glx_has_texture_non_power_of_two = glx_hasglext(ps,
+        "GL_ARB_texture_non_power_of_two");
 
   // Acquire function addresses
   if (need_render) {
@@ -85,24 +103,23 @@ glx_init(session_t *ps, bool need_render) {
     goto glx_init_end;
 
   if (need_render) {
-    // Adjust viewport
-    glViewport(0, 0, ps->root_width, ps->root_height);
+    glx_on_root_change(ps);
 
-    // Initialize settings, copied from dcompmgr
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0, ps->root_width, ps->root_height, 0, -100.0, 100.0);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
     // glEnable(GL_DEPTH_TEST);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_BLEND);
 
+    // Initialize stencil buffer
+    glClear(GL_STENCIL_BUFFER_BIT);
+    glEnable(GL_STENCIL_TEST);
+    glStencilMask(0x1);
+    glStencilFunc(GL_EQUAL, 0x1, 0x1);
+
     // Clear screen
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glXSwapBuffers(ps->dpy, get_tgt_window(ps));
+    // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    // glXSwapBuffers(ps->dpy, get_tgt_window(ps));
   }
 
   success = true;
@@ -141,6 +158,34 @@ glx_destroy(session_t *ps) {
 void
 glx_on_root_change(session_t *ps) {
   glViewport(0, 0, ps->root_width, ps->root_height);
+
+  // Initialize matrix, copied from dcompmgr
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  glOrtho(0, ps->root_width, ps->root_height, 0, -100.0, 100.0);
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
+}
+
+/**
+ * Initialize GLX blur filter.
+ */
+bool
+glx_init_blur(session_t *ps) {
+  printf_errf("(): Blur on GLX backend isn't implemented yet, sorry.");
+  return false;
+
+// #ifdef CONFIG_VSYNC_OPENGL_GLSL
+//           static const char *FRAG_SHADER_BLUR = "";
+//           GLuint frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, FRAG_SHADER_BLUR);
+//           if (!frag_shader) {
+//             printf_errf("(): Failed to create fragment shader for blurring.");
+//             return false;
+//           }
+// #else
+//           printf_errf("(): GLSL support not compiled in. Cannot do blur with GLX backend.");
+//           return false;
+// #endif
 }
 
 /**
@@ -346,15 +391,28 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
   if (!ptex->glpixmap) {
     need_release = false;
 
+    // Determine texture target, copied from compiz
+    GLint tex_tgt = 0;
+    if (GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts
+        && ps->glx_has_texture_non_power_of_two)
+      tex_tgt = GLX_TEXTURE_2D_EXT;
+    else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & pcfg->texture_tgts)
+      tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
+    else if (!(GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts))
+      tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
+    else
+      tex_tgt = GLX_TEXTURE_2D_EXT;
+
 #ifdef DEBUG_GLX
-    printf_dbgf("(): depth %d rgba %d\n", depth, (GLX_TEXTURE_FORMAT_RGBA_EXT == pcfg->texture_fmt));
+    printf_dbgf("(): depth %d, tgt %#x, rgba %d\n", depth, tex_tgt,
+        (GLX_TEXTURE_FORMAT_RGBA_EXT == pcfg->texture_fmt));
 #endif
 
-    int attrs[] = {
+    GLint attrs[] = {
         GLX_TEXTURE_FORMAT_EXT,
         pcfg->texture_fmt,
-        // GLX_TEXTURE_TARGET_EXT,
-        // ,
+        GLX_TEXTURE_TARGET_EXT,
+        tex_tgt,
         0,
     };
 
@@ -404,6 +462,51 @@ glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
 }
 
 /**
+ * Set clipping region on the target window.
+ */
+void
+glx_set_clip(session_t *ps, XserverRegion reg) {
+  glClear(GL_STENCIL_BUFFER_BIT);
+
+  if (reg) {
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glDepthMask(GL_FALSE);
+    glStencilOp(GL_REPLACE, GL_KEEP, GL_KEEP);
+
+    int nrects = 0;
+    XRectangle *rects = XFixesFetchRegion(ps->dpy, reg, &nrects);
+
+    glBegin(GL_QUADS);
+
+    for (int i = 0; i < nrects; ++i) {
+      GLint rx = rects[i].x;
+      GLint ry = rects[i].y;
+      GLint rxe = rx + rects[i].width;
+      GLint rye = ry + rects[i].height;
+      GLint z = 0;
+
+#ifdef DEBUG_GLX
+      printf_dbgf("(): Rect %d: %f, %f, %f, %f\n", i, rx, ry, rxe, rye);
+#endif
+
+      glVertex3i(rx, ry, z);
+      glVertex3i(rxe, ry, z);
+      glVertex3i(rxe, rye, z);
+      glVertex3i(rx, rye, z);
+    }
+
+    glEnd();
+
+    if (rects)
+      XFree(rects);
+
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+  }
+}
+
+/**
  * @brief Render a region with texture data.
  */
 bool
@@ -440,11 +543,6 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     }
   }
 
-  glEnable(GL_TEXTURE_2D);
-  glBindTexture(GL_TEXTURE_2D, ptex->texture);
-
-  glBegin(GL_QUADS);
-
   {
     XserverRegion reg_new = None;
 
@@ -459,9 +557,10 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     int nrects = 1;
 
 #ifdef DEBUG_GLX
-    printf_dbgf("(): Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d \n", x, y, width, height, dx, dy, ptex->width, ptex->height, z);
+    printf_dbgf("(): Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n", x, y, width, height, dx, dy, ptex->width, ptex->height, z);
 #endif
 
+    /*
     if (reg_tgt) {
       reg_new = XFixesCreateRegion(ps->dpy, &rec_all, 1);
       XFixesIntersectRegion(ps->dpy, reg_new, reg_new, reg_tgt);
@@ -469,6 +568,12 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
       nrects = 0;
       rects = XFixesFetchRegion(ps->dpy, reg_new, &nrects);
     }
+    */
+
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, ptex->texture);
+
+    glBegin(GL_QUADS);
 
     for (int i = 0; i < nrects; ++i) {
       GLfloat rx = (double) (rects[i].x - dx + x) / ptex->width;
@@ -504,11 +609,12 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
       glVertex3i(rdx, rdye, z);
     }
 
+    glEnd();
+
     if (rects && rects != &rec_all)
       XFree(rects);
     free_region(ps, &reg_new);
   }
-  glEnd();
 
   // Cleanup
   glBindTexture(GL_TEXTURE_2D, 0);
@@ -519,3 +625,85 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
 
   return true;
 }
+
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+GLuint
+glx_create_shader(GLenum shader_type, const char *shader_str) {
+  bool success = false;
+  GLuint shader = glCreateShader(shader_type);
+  if (!shader) {
+    printf_errf("(): Failed to create shader with type %d.", shader_type);
+    goto glx_create_shader_end;
+  }
+  glShaderSource(shader, 1, &shader_str, NULL);
+  glCompileShader(shader);
+
+  // Get shader status
+  {
+    GLint status = GL_FALSE;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+    if (GL_FALSE == status) {
+      GLint log_len = 0;
+      glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_len);
+      if (log_len) {
+        char log[log_len + 1];
+        glGetShaderInfoLog(shader, log_len, NULL, log);
+        printf_errf("(): Failed to compile shader with type %d: %s",
+            shader_type, log);
+      }
+      goto glx_create_shader_end;
+    }
+  }
+
+  success = true;
+
+glx_create_shader_end:
+  if (shader && !success) {
+    glDeleteShader(shader);
+    shader = 0;
+  }
+
+  return shader;
+}
+
+GLuint
+glx_create_program(GLenum shader_type, const GLuint * const shaders,
+    int nshaders) {
+  bool success = false;
+  GLuint program = glCreateProgram();
+  if (!program) {
+    printf_errf("(): Failed to create program.");
+    goto glx_create_program_end;
+  }
+
+  for (int i = 0; i < nshaders; ++i)
+    glAttachShader(program, shaders[i]);
+  glLinkProgram(program);
+
+  // Get program status
+  {
+    GLint status = GL_FALSE;
+    glGetProgramiv(program, GL_LINK_STATUS, &status);
+    if (GL_FALSE == status) {
+      GLint log_len = 0;
+      glGetProgramiv(program, GL_INFO_LOG_LENGTH, &log_len);
+      if (log_len) {
+        char log[log_len + 1];
+        glGetProgramInfoLog(program, log_len, NULL, log);
+        printf_errf("(): Failed to link program: %s", log);
+      }
+      goto glx_create_program_end;
+    }
+  }
+  success = true;
+
+glx_create_program_end:
+  if (program && !success) {
+    glDeleteProgram(program);
+    program = 0;
+  }
+
+  return program;
+}
+#endif
+
