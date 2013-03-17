@@ -71,7 +71,7 @@ glx_init(session_t *ps, bool need_render) {
   // Ensure we have a stencil buffer. X Fixes does not guarantee rectangles
   // in regions don't overlap, so we must use stencil buffer to make sure
   // we don't paint a region for more than one time, I think?
-  if (need_render) {
+  if (need_render && !ps->o.glx_no_stencil) {
     GLint val = 0;
     glGetIntegerv(GL_STENCIL_BITS, &val);
     if (!val) {
@@ -110,11 +110,13 @@ glx_init(session_t *ps, bool need_render) {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_BLEND);
 
-    // Initialize stencil buffer
-    glClear(GL_STENCIL_BUFFER_BIT);
-    glEnable(GL_STENCIL_TEST);
-    glStencilMask(0x1);
-    glStencilFunc(GL_EQUAL, 0x1, 0x1);
+    if (!ps->o.glx_no_stencil) {
+      // Initialize stencil buffer
+      glClear(GL_STENCIL_BUFFER_BIT);
+      glDisable(GL_STENCIL_TEST);
+      glStencilMask(0x1);
+      glStencilFunc(GL_EQUAL, 0x1, 0x1);
+    }
 
     // Clear screen
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -466,9 +468,14 @@ glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
  */
 void
 glx_set_clip(session_t *ps, XserverRegion reg) {
-  glClear(GL_STENCIL_BUFFER_BIT);
+  // Quit if we aren't using stencils
+  if (ps->o.glx_no_stencil)
+    return;
 
   if (reg) {
+    glEnable(GL_STENCIL_TEST);
+    glClear(GL_STENCIL_BUFFER_BIT);
+
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
     glDepthMask(GL_FALSE);
     glStencilOp(GL_REPLACE, GL_KEEP, GL_KEEP);
@@ -503,6 +510,9 @@ glx_set_clip(session_t *ps, XserverRegion reg) {
     glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDepthMask(GL_TRUE);
+  }
+  else {
+    glDisable(GL_STENCIL_TEST);
   }
 }
 
@@ -560,15 +570,15 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     printf_dbgf("(): Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n", x, y, width, height, dx, dy, ptex->width, ptex->height, z);
 #endif
 
-    /*
-    if (reg_tgt) {
+    // On no-stencil mode, calculate painting region here instead of relying
+    // on stencil buffer
+    if (ps->o.glx_no_stencil && reg_tgt) {
       reg_new = XFixesCreateRegion(ps->dpy, &rec_all, 1);
       XFixesIntersectRegion(ps->dpy, reg_new, reg_new, reg_tgt);
 
       nrects = 0;
       rects = XFixesFetchRegion(ps->dpy, reg_new, &nrects);
     }
-    */
 
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, ptex->texture);

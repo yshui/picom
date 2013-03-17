@@ -169,7 +169,7 @@ paint_isvalid(session_t *ps, const paint_t *ppaint) {
     return false;
 
 #ifdef CONFIG_VSYNC_OPENGL
-  if (BKEND_GLX == ps->o.backend && !glx_tex_binded(ppaint->ptex))
+  if (BKEND_GLX == ps->o.backend && !glx_tex_binded(ppaint->ptex, None))
     return false;
 #endif
 
@@ -179,10 +179,12 @@ paint_isvalid(session_t *ps, const paint_t *ppaint) {
  * Bind texture in paint_t if we are using GLX backend.
  */
 static inline bool
-paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int hei, int depth) {
+paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int hei, int depth,
+    bool force) {
 #ifdef CONFIG_VSYNC_OPENGL
   // TODO: Make sure we have the same Pixmap binded?
-  if (BKEND_GLX == ps->o.backend && !glx_tex_binded(ppaint->ptex)) {
+  if (BKEND_GLX == ps->o.backend
+      && (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))) {
     return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, depth);
   }
 #endif

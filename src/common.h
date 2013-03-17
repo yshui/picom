@@ -339,6 +339,8 @@ typedef struct {
   char *display;
   /// The backend in use.
   enum backend backend;
+  /// Whether to avoid using stencil buffer under GLX backend. Might be unsafe.
+  bool glx_no_stencil;
   /// Whether to try to detect WM windows and mark them as focused.
   bool mark_wmwin_focused;
   /// Whether to mark override-redirect windows as focused.
@@ -724,6 +726,8 @@ typedef struct _win {
   winmode_t mode;
   /// Whether the window has been damaged at least once.
   bool damaged;
+  /// Whether the window was damaged after last paint.
+  bool pixmap_damaged;
   /// Damage of the window.
   Damage damage;
   /// Paint info of the window.
@@ -1574,9 +1578,13 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
 void
 glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
 
+/**
+ * Check if a texture is binded, or is binded to the given pixmap.
+ */
 static inline bool
-glx_tex_binded(const glx_texture_t *ptex) {
-  return ptex && ptex->glpixmap && ptex->texture;
+glx_tex_binded(const glx_texture_t *ptex, Pixmap pixmap) {
+  return ptex && ptex->glpixmap && ptex->texture
+    && (!pixmap || pixmap == ptex->pixmap);
 }
 
 void

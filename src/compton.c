@@ -474,7 +474,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
 
   w->shadow_paint.pixmap = shadow_pixmap_argb;
   w->shadow_paint.pict = shadow_picture_argb;
-  bool success = paint_bind_tex(ps, &w->shadow_paint, shadow_image->width, shadow_image->height, 32);
+  bool success = paint_bind_tex(ps, &w->shadow_paint, shadow_image->width, shadow_image->height, 32, true);
 
   XFreeGC(ps->dpy, gc);
   XDestroyImage(shadow_image);
@@ -1281,36 +1281,6 @@ paint_preprocess(session_t *ps, win *list) {
     redir_start(ps);
   }
 
-  // Fetch pictures only if windows are redirected
-  if (ps->redirected) {
-    for (w = t; w; w = w->prev_trans) {
-      // Fetch Pixmap
-      if (!w->paint.pixmap && ps->has_name_pixmap) {
-          set_ignore_next(ps);
-          w->paint.pixmap = XCompositeNameWindowPixmap(ps->dpy, w->id);
-      }
-      // XRender: Build picture
-      if (BKEND_XRENDER == ps->o.backend && !w->paint.pict) {
-        Drawable draw = w->paint.pixmap;
-        if (!draw)
-          draw = w->id;
-        {
-          XRenderPictureAttributes pa = {
-            .subwindow_mode = IncludeInferiors,
-          };
-
-          w->paint.pict = XRenderCreatePicture(ps->dpy, draw, w->pictfmt,
-              CPSubwindowMode, &pa);
-        }
-      }
-      // OpenGL: Build texture
-      if (!paint_bind_tex(ps, &w->paint, w->widthb, w->heightb,
-            w->pictfmt->depth)) {
-        printf_errf("(%#010lx): Failed to bind texture. Expect troubles.", w->id);
-      }
-    }
-  }
-
   return t;
 }
 
@@ -1447,6 +1417,32 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
  */
 static inline void
 win_paint_win(session_t *ps, win *w, XserverRegion reg_paint) {
+  // Fetch Pixmap
+  if (!w->paint.pixmap && ps->has_name_pixmap) {
+    set_ignore_next(ps);
+    w->paint.pixmap = XCompositeNameWindowPixmap(ps->dpy, w->id);
+  }
+  // XRender: Build picture
+  if (BKEND_XRENDER == ps->o.backend && !w->paint.pict) {
+    Drawable draw = w->paint.pixmap;
+    if (!draw)
+      draw = w->id;
+    {
+      XRenderPictureAttributes pa = {
+        .subwindow_mode = IncludeInferiors,
+      };
+
+      w->paint.pict = XRenderCreatePicture(ps->dpy, draw, w->pictfmt,
+          CPSubwindowMode, &pa);
+    }
+  }
+  // GLX: Build texture
+  if (!paint_bind_tex(ps, &w->paint, w->widthb, w->heightb,
+        w->pictfmt->depth, w->pixmap_damaged)) {
+    printf_errf("(%#010lx): Failed to bind texture. Expect troubles.", w->id);
+  }
+  w->pixmap_damaged = false;
+
   if (!paint_isvalid(ps, &w->paint)) {
     printf_errf("(%#010lx): Missing painting data. This is a bad sign.", w->id);
     return;
@@ -1664,6 +1660,21 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
         reg_paint = reg_tmp;
         XFixesIntersectRegion(ps->dpy, reg_paint, region, w->extents);
       }
+
+      // Might be worthwhile to crop the region to shadow border
+      {
+        XRectangle rec_shadow_border = {
+          .x = w->a.x + w->shadow_dx,
+          .y = w->a.y + w->shadow_dy,
+          .width = w->shadow_width,
+          .height = w->shadow_height
+        };
+        XserverRegion reg_shadow = XFixesCreateRegion(ps->dpy,
+            &rec_shadow_border, 1);
+        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, reg_shadow);
+        free_region(ps, &reg_shadow);
+      }
+
       // Clear the shadow here instead of in make_shadow() for saving GPU
       // power and handling shaped windows
       if (ps->o.clear_shadow && w->border_size)
@@ -1837,6 +1848,7 @@ repair_win(session_t *ps, win *w) {
 
   add_damage(ps, parts);
   w->damaged = true;
+  w->pixmap_damaged = true;
 }
 
 static wintype_t
@@ -2469,6 +2481,7 @@ add_win(session_t *ps, Window id, Window prev) {
     .mode = WMODE_TRANS,
     .damaged = false,
     .damage = None,
+    .pixmap_damaged = false,
     .paint = PAINT_INIT,
     .border_size = None,
     .extents = None,
@@ -4104,6 +4117,10 @@ usage(void) {
     "  inverted color. Resource-hogging, and is not well tested.\n"
     "--backend backend\n"
     "  Choose backend. Possible choices are xrender and glx" WARNING ".\n"
+    "--glx-no-stencil\n"
+    "  Avoid using stencil buffer under GLX backend. Might cause issues\n"
+    "  when rendering transparent content, may have a positive or\n"
+    "  negative effect on performance.\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED
@@ -4560,6 +4577,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "invert-color-include", required_argument, NULL, 288 },
     { "opengl", no_argument, NULL, 289 },
     { "backend", required_argument, NULL, 290 },
+    { "glx-no-stencil", no_argument, NULL, 291 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4821,6 +4839,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --backend
         if (!parse_backend(ps, optarg))
           exit(1);
+        break;
+      case 291:
+        // --glx-no-stencil
+        ps->o.glx_no_stencil = true;
         break;
       default:
         usage();
@@ -5619,6 +5641,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .config_file = NULL,
       .display = NULL,
       .backend = BKEND_XRENDER,
+      .glx_no_stencil = false,
       .mark_wmwin_focused = false,
       .mark_ovredir_focused = false,
       .fork_after_register = false,
