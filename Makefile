@@ -6,6 +6,7 @@ CC ?= gcc
 PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
+APPDIR ?= $(PREFIX)/share/applications
 
 PACKAGES = x11 xcomposite xfixes xdamage xrender xext xrandr
 LIBS = -lm -lrt
@@ -79,7 +80,8 @@ else
   export LD_ALTEXEC = /usr/bin/ld.gold
   OBJS += backtrace-symbols.o
   LIBS += -lbfd
-  CFLAGS += -ggdb -Weverything -Wno-disabled-macro-expansion -Wno-padded -Wno-gnu
+  CFLAGS += -ggdb
+  # CFLAGS += -Weverything -Wno-disabled-macro-expansion -Wno-padded -Wno-gnu
 endif
 
 LIBS += $(shell pkg-config --libs $(PACKAGES))
@@ -112,9 +114,10 @@ man/%.1.html: man/%.1.asciidoc
 docs: $(MANPAGES) $(MANPAGES_HTML)
 
 install: $(BINS) docs
-	@install -d "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(MANDIR)"
+	@install -d "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(MANDIR)" "$(DESTDIR)$(APPDIR)"
 	@install -m755 $(BINS) "$(DESTDIR)$(BINDIR)"/ 
 	@install -m644 $(MANPAGES) "$(DESTDIR)$(MANDIR)"/
+	@install -m644 compton.desktop "$(DESTDIR)$(APPDIR)"/
 ifneq "$(DOCDIR)" ""
 	@install -d "$(DESTDIR)$(DOCDIR)"
 	@install -m644 README.md compton.sample.conf "$(DESTDIR)$(DOCDIR)"/
@@ -124,6 +127,7 @@ endif
 uninstall:
 	@rm -f "$(DESTDIR)$(BINDIR)/compton" "$(DESTDIR)$(BINDIR)/compton-trans"
 	@rm -f $(addprefix "$(DESTDIR)$(MANDIR)"/, compton.1 compton-trans.1)
+	@rm -f "$(DESTDIR)$(APPDIR)/compton.desktop"
 ifneq "$(DOCDIR)" ""
 	@rm -f $(addprefix "$(DESTDIR)$(DOCDIR)"/, README.md compton.sample.conf cdbus-driver.sh)
 endif

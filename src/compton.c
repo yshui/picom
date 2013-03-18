@@ -4136,7 +4136,7 @@ usage(void) {
     "--glx-no-stencil\n"
     "  Avoid using stencil buffer under GLX backend. Might cause issues\n"
     "  when rendering transparent content, may have a positive or\n"
-    "  negative effect on performance.\n"
+    "  negative effect on performance. (My test shows a 10% slowdown.)\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED

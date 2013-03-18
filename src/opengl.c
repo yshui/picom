@@ -487,7 +487,31 @@ glx_set_clip(session_t *ps, XserverRegion reg) {
   if (ps->o.glx_no_stencil)
     return;
 
-  if (reg) {
+  static XRectangle rect_blank = {
+    .x = 0, .y = 0, .width = 0, .height = 0
+  };
+
+  glDisable(GL_STENCIL_TEST);
+  glDisable(GL_SCISSOR_TEST);
+
+  if (!reg)
+    return;
+
+  int nrects = 0;
+  XRectangle *rects = XFixesFetchRegion(ps->dpy, reg, &nrects);
+  if (!nrects) {
+    if (rects) XFree(rects);
+    nrects = 1;
+    rects = &rect_blank;
+  }
+
+  assert(nrects);
+  if (1 == nrects) {
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(rects[0].x, ps->root_height - rects[0].y - rects[0].height,
+        rects[0].width, rects[0].height);
+  }
+  else {
     glEnable(GL_STENCIL_TEST);
     glClear(GL_STENCIL_BUFFER_BIT);
 
@@ -495,8 +519,6 @@ glx_set_clip(session_t *ps, XserverRegion reg) {
     glDepthMask(GL_FALSE);
     glStencilOp(GL_REPLACE, GL_KEEP, GL_KEEP);
 
-    int nrects = 0;
-    XRectangle *rects = XFixesFetchRegion(ps->dpy, reg, &nrects);
 
     glBegin(GL_QUADS);
 
@@ -519,16 +541,13 @@ glx_set_clip(session_t *ps, XserverRegion reg) {
 
     glEnd();
 
-    if (rects)
-      XFree(rects);
-
     glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDepthMask(GL_TRUE);
   }
-  else {
-    glDisable(GL_STENCIL_TEST);
-  }
+
+  if (rects && &rect_blank != rects)
+    XFree(rects);
 }
 
 /**
