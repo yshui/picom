@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=compton
+Comment=A X compositor
+Categories=Utility;
+TryExec=compton
+Exec=compton
+Icon=xcompmgr
+# Thanks to quequotion for providing this file!

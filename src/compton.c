@@ -474,6 +474,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
 
   w->shadow_paint.pixmap = shadow_pixmap_argb;
   w->shadow_paint.pict = shadow_picture_argb;
+
   bool success = paint_bind_tex(ps, &w->shadow_paint, shadow_image->width, shadow_image->height, 32, true);
 
   XFreeGC(ps->dpy, gc);
@@ -863,8 +864,7 @@ get_root_tile(session_t *ps) {
   ps->root_tile_paint.pixmap = pixmap;
 #ifdef CONFIG_VSYNC_OPENGL
   if (BKEND_GLX == ps->o.backend)
-    return glx_bind_pixmap(ps, &ps->root_tile_paint.ptex, ps->root_tile_paint.pixmap,
-        ps->root_width, ps->root_height, ps->depth);
+    return glx_bind_pixmap(ps, &ps->root_tile_paint.ptex, ps->root_tile_paint.pixmap, 0, 0, 0);
 #endif
 
   return true;
@@ -1437,8 +1437,10 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint) {
     }
   }
   // GLX: Build texture
-  if (!paint_bind_tex(ps, &w->paint, w->widthb, w->heightb,
-        w->pictfmt->depth, w->pixmap_damaged)) {
+  // Let glx_bind_pixmap() determine pixmap size, because if the user
+  // is resizing windows, the width and height we get may not be up-to-date,
+  // causing the jittering issue M4he reported in #7.
+  if (!paint_bind_tex(ps, &w->paint, 0, 0, 0, w->pixmap_damaged)) {
     printf_errf("(%#010lx): Failed to bind texture. Expect troubles.", w->id);
   }
   w->pixmap_damaged = false;
@@ -2633,20 +2635,32 @@ restack_win(session_t *ps, win *w, Window new_above) {
   }
 
   if (old_above != new_above) {
-    win **prev;
+    win **prev = NULL, **prev_old = NULL;
 
-    /* unhook */
+    // unhook
     for (prev = &ps->list; *prev; prev = &(*prev)->next) {
       if ((*prev) == w) break;
     }
 
-    *prev = w->next;
+    prev_old = prev;
 
-    /* rehook */
+    bool found = false;
+
+    // rehook
     for (prev = &ps->list; *prev; prev = &(*prev)->next) {
-      if ((*prev)->id == new_above && !(*prev)->destroyed)
+      if ((*prev)->id == new_above && !(*prev)->destroyed) {
+        found = true;
         break;
+      }
     }
+
+    if (!found) {
+      printf_errf("(%#010lx, %#010lx): "
+          "Failed to found new above window.", w->id, new_above);
+      return;
+    }
+
+    *prev_old = w->next;
 
     w->next = *prev;
     *prev = w;
@@ -2668,7 +2682,9 @@ restack_win(session_t *ps, win *w, Window new_above) {
 
         desc = "";
         if (c->destroyed) desc = "(D) ";
-        printf("%#010lx \"%s\" %s-> ", c->id, window_name, desc);
+        printf("%#010lx \"%s\" %s", c->id, window_name, desc);
+        if (c->next)
+          printf("-> ");
 
         if (to_free) {
           XFree(window_name);

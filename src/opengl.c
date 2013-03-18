@@ -107,7 +107,6 @@ glx_init(session_t *ps, bool need_render) {
 
     // glEnable(GL_DEPTH_TEST);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_BLEND);
 
     if (!ps->o.glx_no_stencil) {
@@ -322,15 +321,10 @@ glx_cmp_fbconfig(session_t *ps,
  */
 bool
 glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
-    int width, int height, int depth) {
-  if (depth > OPENGL_MAX_DEPTH) {
-    printf_errf("(%d): Requested depth higher than %d.", depth,
-        OPENGL_MAX_DEPTH);
-    return false;
-  }
-  const glx_fbconfig_t *pcfg = ps->glx_fbconfigs[depth];
-  if (!pcfg) {
-    printf_errf("(%d): Couldn't find FBConfig with requested depth.", depth);
+    unsigned width, unsigned height, unsigned depth) {
+  if (!pixmap) {
+    printf_errf("(%#010lx): Binding to an empty pixmap. This can't work.",
+        pixmap);
     return false;
   }
 
@@ -359,8 +353,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
   glEnable(target);
 
   // Release pixmap if parameters are inconsistent
-  if (ptex->texture && !(width == ptex->width && height == ptex->height
-        && ptex->pixmap == pixmap && depth == ptex->depth)) {
+  if (ptex->texture && ptex->pixmap != pixmap) {
     glx_release_pixmap(ps, ptex);
   }
 
@@ -380,7 +373,6 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
     glBindTexture(target, 0);
 
     ptex->texture = texture;
-    ptex->y_inverted = pcfg->y_inverted;
   }
   if (!ptex->texture) {
     printf_errf("(): Failed to allocate texture.");
@@ -392,6 +384,29 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
   // Create GLX pixmap
   if (!ptex->glpixmap) {
     need_release = false;
+
+    // Retrieve pixmap parameters, if they aren't provided
+    if (!(width && height && depth)) {
+      Window rroot = None;
+      int rx = 0, ry = 0;
+      unsigned rbdwid = 0;
+      if (!XGetGeometry(ps->dpy, pixmap, &rroot, &rx, &ry,
+            &width, &height, &rbdwid, &depth)) {
+        printf_errf("(%#010lx): Failed to query Pixmap info.", pixmap);
+        return false;
+      }
+      if (depth > OPENGL_MAX_DEPTH) {
+        printf_errf("(%d): Requested depth higher than %d.", depth,
+            OPENGL_MAX_DEPTH);
+        return false;
+      }
+    }
+
+    const glx_fbconfig_t *pcfg = ps->glx_fbconfigs[depth];
+    if (!pcfg) {
+      printf_errf("(%d): Couldn't find FBConfig with requested depth.", depth);
+      return false;
+    }
 
     // Determine texture target, copied from compiz
     GLint tex_tgt = 0;
@@ -419,6 +434,11 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
     };
 
     ptex->glpixmap = glXCreatePixmap(ps->dpy, pcfg->cfg, pixmap, attrs);
+    ptex->pixmap = pixmap;
+    ptex->width = width;
+    ptex->height = height;
+    ptex->depth = depth;
+    ptex->y_inverted = pcfg->y_inverted;
   }
   if (!ptex->glpixmap) {
     printf_errf("(): Failed to allocate GLX pixmap.");
@@ -435,11 +455,6 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
   // Cleanup
   glBindTexture(target, 0);
   glDisable(target);
-
-  ptex->width = width;
-  ptex->height = height;
-  ptex->depth = depth;
-  ptex->pixmap = pixmap;
 
   return true;
 }
@@ -493,7 +508,7 @@ glx_set_clip(session_t *ps, XserverRegion reg) {
       GLint z = 0;
 
 #ifdef DEBUG_GLX
-      printf_dbgf("(): Rect %d: %f, %f, %f, %f\n", i, rx, ry, rxe, rye);
+      printf_dbgf("(): Rect %d: %d, %d, %d, %d\n", i, rx, ry, rxe, rye);
 #endif
 
       glVertex3i(rx, ry, z);
@@ -532,10 +547,14 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
   if (opacity < 1.0 || GLX_TEXTURE_FORMAT_RGBA_EXT ==
       ps->glx_fbconfigs[ptex->depth]->texture_fmt) {
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     // Needed for handling opacity of ARGB texture
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    glColor4f(1.0f, 1.0f, 1.0f, opacity);
+
+    // This is all weird, but X Render is using a strange ARGB format, and
+    // we need to use those things to correct it. Thanks to derhass for help.
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(opacity, opacity, opacity, opacity);
   }
 
   // Color negation

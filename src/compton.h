@@ -162,7 +162,9 @@ free_wincondlst(c2_lptr_t **pcondlst) {
  */
 static inline bool
 paint_isvalid(session_t *ps, const paint_t *ppaint) {
-  if (!ppaint || !ppaint->pixmap)
+  // Don't check for presence of Pixmap here, because older X Composite doesn't
+  // provide it
+  if (!ppaint)
     return false;
 
   if (BKEND_XRENDER == ps->o.backend && !ppaint->pict)
@@ -179,13 +181,15 @@ paint_isvalid(session_t *ps, const paint_t *ppaint) {
  * Bind texture in paint_t if we are using GLX backend.
  */
 static inline bool
-paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int hei, int depth,
-    bool force) {
+paint_bind_tex(session_t *ps, paint_t *ppaint,
+    unsigned wid, unsigned hei, unsigned depth, bool force) {
 #ifdef CONFIG_VSYNC_OPENGL
-  // TODO: Make sure we have the same Pixmap binded?
-  if (BKEND_GLX == ps->o.backend
-      && (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))) {
-    return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, depth);
+  if (BKEND_GLX == ps->o.backend) {
+    if (!ppaint->pixmap)
+      return false;
+
+    if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))
+      return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, depth);
   }
 #endif
 

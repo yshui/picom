@@ -43,3 +43,4 @@ man/*.1
 doxygen/
 .clang_complete
 /src/backtrace-symbols.[ch]
+/compton*.trace

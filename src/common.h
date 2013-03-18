@@ -297,9 +297,9 @@ struct _glx_texture {
   GLuint texture;
   GLXPixmap glpixmap;
   Pixmap pixmap;
-  int width;
-  int height;
-  int depth;
+  unsigned width;
+  unsigned height;
+  unsigned depth;
   bool y_inverted;
 };
 #endif
@@ -1573,7 +1573,7 @@ glx_init_blur(session_t *ps);
 
 bool
 glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
-    int width, int height, int depth);
+    unsigned width, unsigned height, unsigned depth);
 
 void
 glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
@@ -1686,3 +1686,39 @@ c2_match(session_t *ps, win *w, const c2_lptr_t *condlst,
 ///@}
 
 #endif
+
+/**
+ * @brief Dump raw bytes in HEX format.
+ *
+ * @param data pointer to raw data
+ * @param len length of data
+ */
+static inline void
+hexdump(const char *data, int len) {
+  static const int BYTE_PER_LN = 16;
+
+  if (len <= 0)
+    return;
+
+  // Print header
+  printf("%10s:", "Offset");
+  for (int i = 0; i < BYTE_PER_LN; ++i)
+    printf(" %2d", i);
+  putchar('\n');
+
+  // Dump content
+  for (int offset = 0; offset < len; ++offset) {
+    if (!(offset % BYTE_PER_LN))
+      printf("0x%08x:", offset);
+
+    printf(" %02hhx", data[offset]);
+
+    if ((BYTE_PER_LN - 1) == offset % BYTE_PER_LN)
+      putchar('\n');
+  }
+  if (len % BYTE_PER_LN)
+    putchar('\n');
+
+  fflush(stdout);
+}
+
