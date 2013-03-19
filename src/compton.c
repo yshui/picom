@@ -1569,12 +1569,8 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
   XserverRegion reg_paint = None, reg_tmp = None, reg_tmp2 = None;
 
 #ifdef CONFIG_VSYNC_OPENGL
-  // GLX backend: OpenGL doesn't support partial repaint without
-  // GLX_MESA_copy_sub_buffer
   if (BKEND_GLX == ps->o.backend) {
-    free_region(ps, &region);
-    // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    ps->glx_z = 0.0;
+    glx_paint_pre(ps, &region);
   }
 #endif
 
@@ -4134,9 +4130,14 @@ usage(void) {
     "--backend backend\n"
     "  Choose backend. Possible choices are xrender and glx" WARNING ".\n"
     "--glx-no-stencil\n"
-    "  Avoid using stencil buffer under GLX backend. Might cause issues\n"
-    "  when rendering transparent content, may have a positive or\n"
+    "  GLX backend: Avoid using stencil buffer. Might cause issues\n"
+    "  when rendering transparent content. May have a positive or\n"
     "  negative effect on performance. (My test shows a 10% slowdown.)\n"
+    "--glx-copy-from-front\n"
+    "  GLX backend: Copy unmodified regions from front buffer instead of\n"
+    "  redrawing them all. My tests show a 10% decrease in performance\n"
+    "  when the whole screen is modified, but a 20% increase when only 1/4\n"
+    "  is, so this optimization is not enabled by default.\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED
@@ -4145,7 +4146,13 @@ usage(void) {
 #endif
     "--dbus\n"
     "  Enable remote control via D-Bus. See the D-BUS API section in the\n"
-    "  man page for more details." WARNING "\n";
+    "  man page for more details." WARNING "\n"
+    "--benchmark cycles\n"
+    "  Benchmark mode. Repeatedly paint until reaching the specified cycles.\n"
+    "--benchmark-wid window-id\n"
+    "  Specify window ID to repaint in benchmark mode. If omitted or is 0,\n"
+    "  the whole screen is repainted.\n"
+    ;
   fputs(usage_text , stderr);
 #undef WARNING
 #undef WARNING_DISABLED
@@ -4594,6 +4601,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "opengl", no_argument, NULL, 289 },
     { "backend", required_argument, NULL, 290 },
     { "glx-no-stencil", no_argument, NULL, 291 },
+    { "glx-copy-from-front", no_argument, NULL, 292 },
+    { "benchmark", required_argument, NULL, 293 },
+    { "benchmark-wid", required_argument, NULL, 294 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4859,6 +4869,18 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 291:
         // --glx-no-stencil
         ps->o.glx_no_stencil = true;
+        break;
+      case 292:
+        // --glx-copy-from-front
+        ps->o.glx_copy_from_front = true;
+        break;
+      case 293:
+        // --benchmark
+        ps->o.benchmark = atoi(optarg);
+        break;
+      case 294:
+        // --benchmark-wid
+        ps->o.benchmark_wid = strtol(optarg, NULL, 0);
         break;
       default:
         usage();
@@ -5575,7 +5597,7 @@ mainloop(session_t *ps) {
   struct timeval *ptv = NULL;
   {
     // Consider ev_received firstly
-    if (ps->ev_received) {
+    if (ps->ev_received || ps->o.benchmark) {
       ptv = malloc(sizeof(struct timeval));
       ptv->tv_sec = 0L;
       ptv->tv_usec = 0L;
@@ -5658,6 +5680,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .display = NULL,
       .backend = BKEND_XRENDER,
       .glx_no_stencil = false,
+      .glx_copy_from_front = false,
       .mark_wmwin_focused = false,
       .mark_ovredir_focused = false,
       .fork_after_register = false,
@@ -5666,6 +5689,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .paint_on_overlay = false,
       .unredir_if_possible = false,
       .dbus = false,
+      .benchmark = 0,
+      .benchmark_wid = None,
       .logpath = NULL,
 
       .refresh_rate = 0,
@@ -6249,6 +6274,21 @@ session_run(session_t *ps) {
     while (mainloop(ps))
       continue;
 
+    if (ps->o.benchmark) {
+      if (ps->o.benchmark_wid) {
+        win *w = find_win(ps, ps->o.benchmark_wid);
+        if (!w) {
+          printf_errf("(): Couldn't find specified benchmark window.");
+          session_destroy(ps);
+          exit(1);
+        }
+        add_damage_win(ps, w);
+      }
+      else {
+        force_repaint(ps);
+      }
+    }
+
     // idling will be turned off during paint_preprocess() if needed
     ps->idling = true;
 
@@ -6263,6 +6303,8 @@ session_run(session_t *ps) {
       paint_all(ps, ps->all_damage, t);
       ps->reg_ignore_expire = false;
       paint++;
+      if (ps->o.benchmark && paint >= ps->o.benchmark)
+        exit(0);
       XSync(ps->dpy, False);
       ps->all_damage = None;
     }

@@ -297,6 +297,7 @@ struct _glx_texture {
   GLuint texture;
   GLXPixmap glpixmap;
   Pixmap pixmap;
+  GLenum target;
   unsigned width;
   unsigned height;
   unsigned depth;
@@ -341,6 +342,8 @@ typedef struct {
   enum backend backend;
   /// Whether to avoid using stencil buffer under GLX backend. Might be unsafe.
   bool glx_no_stencil;
+  /// Whether to copy unmodified regions from front buffer.
+  bool glx_copy_from_front;
   /// Whether to try to detect WM windows and mark them as focused.
   bool mark_wmwin_focused;
   /// Whether to mark override-redirect windows as focused.
@@ -359,6 +362,10 @@ typedef struct {
   bool dbus;
   /// Path to log file.
   char *logpath;
+  /// Number of cycles to paint in benchmark mode. 0 for disabled.
+  int benchmark;
+  /// Window to constantly repaint in benchmark mode. 0 for full-screen.
+  Window benchmark_wid;
   /// Whether to work under synchronized mode for debugging.
   bool synchronize;
 
@@ -1577,6 +1584,9 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
 
 void
 glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
+
+void
+glx_paint_pre(session_t *ps, XserverRegion *preg);
 
 /**
  * Check if a texture is binded, or is binded to the given pixmap.

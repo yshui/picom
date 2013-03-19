@@ -163,7 +163,7 @@ glx_on_root_change(session_t *ps) {
   // Initialize matrix, copied from dcompmgr
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
-  glOrtho(0, ps->root_width, ps->root_height, 0, -100.0, 100.0);
+  glOrtho(0, ps->root_width, 0, ps->root_height, -1000.0, 1000.0);
   glMatrixMode(GL_MODELVIEW);
   glLoadIdentity();
 }
@@ -328,7 +328,6 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
     return false;
   }
 
-  const GLenum target = GL_TEXTURE_2D;
   glx_texture_t *ptex = *pptex;
   bool need_release = true;
 
@@ -338,6 +337,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
       .texture = 0,
       .glpixmap = 0,
       .pixmap = 0,
+      .target = 0,
       .width = 0,
       .height = 0,
       .depth = 0,
@@ -350,36 +350,10 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
     *pptex = ptex;
   }
 
-  glEnable(target);
-
   // Release pixmap if parameters are inconsistent
   if (ptex->texture && ptex->pixmap != pixmap) {
     glx_release_pixmap(ps, ptex);
   }
-
-  // Create texture
-  if (!ptex->texture) {
-    need_release = false;
-
-    GLuint texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(target, texture);
-
-    glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glBindTexture(target, 0);
-
-    ptex->texture = texture;
-  }
-  if (!ptex->texture) {
-    printf_errf("(): Failed to allocate texture.");
-    return false;
-  }
-
-  glBindTexture(target, ptex->texture);
 
   // Create GLX pixmap
   if (!ptex->glpixmap) {
@@ -409,7 +383,9 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
     }
 
     // Determine texture target, copied from compiz
-    GLint tex_tgt = 0;
+    // The assumption we made here is the target never changes based on any
+    // pixmap-specific parameters, and this may change in the future
+    GLenum tex_tgt = 0;
     if (GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts
         && ps->glx_has_texture_non_power_of_two)
       tex_tgt = GLX_TEXTURE_2D_EXT;
@@ -435,6 +411,8 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
 
     ptex->glpixmap = glXCreatePixmap(ps->dpy, pcfg->cfg, pixmap, attrs);
     ptex->pixmap = pixmap;
+    ptex->target = (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D:
+        GL_TEXTURE_RECTANGLE);
     ptex->width = width;
     ptex->height = height;
     ptex->depth = depth;
@@ -445,6 +423,32 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
     return false;
   }
 
+  glEnable(ptex->target);
+
+  // Create texture
+  if (!ptex->texture) {
+    need_release = false;
+
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(ptex->target, texture);
+
+    glTexParameteri(ptex->target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(ptex->target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(ptex->target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(ptex->target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glBindTexture(ptex->target, 0);
+
+    ptex->texture = texture;
+  }
+  if (!ptex->texture) {
+    printf_errf("(): Failed to allocate texture.");
+    return false;
+  }
+
+  glBindTexture(ptex->target, ptex->texture);
+
   // The specification requires rebinding whenever the content changes...
   // We can't follow this, too slow.
   if (need_release)
@@ -453,8 +457,8 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
   ps->glXBindTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
 
   // Cleanup
-  glBindTexture(target, 0);
-  glDisable(target);
+  glBindTexture(ptex->target, 0);
+  glDisable(ptex->target);
 
   return true;
 }
@@ -466,9 +470,9 @@ void
 glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
   // Release binding
   if (ptex->glpixmap && ptex->texture) {
-    glBindTexture(GL_TEXTURE_2D, ptex->texture);
+    glBindTexture(ptex->target, ptex->texture);
     ps->glXReleaseTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(ptex->target, 0);
   }
 
   // Free GLX Pixmap
@@ -476,6 +480,41 @@ glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
     glXDestroyPixmap(ps->dpy, ptex->glpixmap);
     ptex->glpixmap = 0;
   }
+}
+
+/**
+ * Preprocess function before start painting.
+ */
+void
+glx_paint_pre(session_t *ps, XserverRegion *preg) {
+  ps->glx_z = 0.0;
+  // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  // OpenGL doesn't support partial repaint without GLX_MESA_copy_sub_buffer,
+  // we currently redraw the whole screen or copy unmodified pixels from
+  // front buffer with --glx-copy-from-front.
+  if (!ps->o.glx_copy_from_front || !*preg) {
+    free_region(ps, preg);
+  }
+  else {
+    {
+      XserverRegion reg_copy = XFixesCreateRegion(ps->dpy, NULL, 0);
+      XFixesSubtractRegion(ps->dpy, reg_copy, ps->screen_reg, *preg);
+      glx_set_clip(ps, reg_copy);
+      free_region(ps, &reg_copy);
+    }
+
+    {
+      GLfloat raster_pos[4];
+      glGetFloatv(GL_CURRENT_RASTER_POSITION, raster_pos);
+      glReadBuffer(GL_FRONT);
+      glRasterPos2f(0.0, 0.0);
+      glCopyPixels(0, 0, ps->root_width, ps->root_height, GL_COLOR);
+      glReadBuffer(GL_BACK);
+      glRasterPos4fv(raster_pos);
+    }
+  }
+
+  glx_set_clip(ps, *preg);
 }
 
 /**
@@ -524,9 +563,9 @@ glx_set_clip(session_t *ps, XserverRegion reg) {
 
     for (int i = 0; i < nrects; ++i) {
       GLint rx = rects[i].x;
-      GLint ry = rects[i].y;
+      GLint ry = ps->root_height - rects[i].y;
       GLint rxe = rx + rects[i].width;
-      GLint rye = ry + rects[i].height;
+      GLint rye = ry - rects[i].height;
       GLint z = 0;
 
 #ifdef DEBUG_GLX
@@ -550,6 +589,78 @@ glx_set_clip(session_t *ps, XserverRegion reg) {
     XFree(rects);
 }
 
+bool
+glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z) {
+  // Read destination pixels into a texture
+  GLuint tex_scr = 0;
+  glGenTextures(1, &tex_scr);
+  if (!tex_scr) {
+    printf_errf("(): Failed to allocate texture.");
+    return false;
+  }
+
+  GLenum tex_tgt = GL_TEXTURE_RECTANGLE;
+  if (ps->glx_has_texture_non_power_of_two)
+    tex_tgt = GL_TEXTURE_2D;
+
+  glEnable(tex_tgt);
+  glBindTexture(tex_tgt, tex_scr);
+  glTexParameteri(tex_tgt, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(tex_tgt, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(tex_tgt, 0, GL_RGB, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+  glCopyTexSubImage2D(tex_tgt, 0, 0, 0, dx, ps->root_height - dy - height, width, height);
+
+#ifdef DEBUG_GLX
+  printf_dbgf("(): %d, %d, %d, %d\n", dx, ps->root_height - dy - height, width, height);
+#endif
+
+  // Paint it back
+  // TODO: Blur function. We are using color negation for testing now.
+  glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+  glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
+  glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
+
+  glBegin(GL_QUADS);
+
+  {
+    const GLfloat rx = 0.0;
+    const GLfloat ry = 1.0;
+    const GLfloat rxe = 1.0;
+    const GLfloat rye = 0.0;
+    const GLint rdx = dx;
+    const GLint rdy = ps->root_height - dy;
+    const GLint rdxe = rdx + width;
+    const GLint rdye = rdy - height;
+
+#ifdef DEBUG_GLX
+    printf_dbgf("(): %f, %f, %f, %f -> %d, %d, %d, %d\n", rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
+#endif
+
+    glTexCoord2f(rx, ry);
+    glVertex3f(rdx, rdy, z);
+
+    glTexCoord2f(rxe, ry);
+    glVertex3f(rdxe, rdy, z);
+
+    glTexCoord2f(rxe, rye);
+    glVertex3f(rdxe, rdye, z);
+
+    glTexCoord2f(rx, rye);
+    glVertex3f(rdx, rdye, z);
+  }
+
+  glEnd();
+
+  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+  glBindTexture(tex_tgt, 0);
+  glDeleteTextures(1, &tex_scr);
+  glDisable(tex_tgt);
+
+  return true;
+}
+
 /**
  * @brief Render a region with texture data.
  */
@@ -557,6 +668,8 @@ bool
 glx_render(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
     double opacity, bool neg, XserverRegion reg_tgt) {
+  bool blur_background = false;
+
   if (!ptex || !ptex->texture) {
     printf_errf("(): Missing texture.");
     return false;
@@ -565,12 +678,15 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
   // Enable blending if needed
   if (opacity < 1.0 || GLX_TEXTURE_FORMAT_RGBA_EXT ==
       ps->glx_fbconfigs[ptex->depth]->texture_fmt) {
+    if (!ps->o.glx_no_stencil && blur_background)
+      glx_blur_dst(ps, dx, dy, width, height, z - 0.5);
+
     glEnable(GL_BLEND);
 
     // Needed for handling opacity of ARGB texture
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-    // This is all weird, but X Render is using a strange ARGB format, and
+    // This is all weird, but X Render is using premulitplied ARGB format, and
     // we need to use those things to correct it. Thanks to derhass for help.
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glColor4f(opacity, opacity, opacity, opacity);
@@ -618,8 +734,8 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
       rects = XFixesFetchRegion(ps->dpy, reg_new, &nrects);
     }
 
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, ptex->texture);
+    glEnable(ptex->target);
+    glBindTexture(ptex->target, ptex->texture);
 
     glBegin(GL_QUADS);
 
@@ -629,9 +745,9 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
       GLfloat rxe = rx + (double) rects[i].width / ptex->width;
       GLfloat rye = ry + (double) rects[i].height / ptex->height;
       GLint rdx = rects[i].x;
-      GLint rdy = rects[i].y;
+      GLint rdy = ps->root_height - rects[i].y;
       GLint rdxe = rdx + rects[i].width;
-      GLint rdye = rdy + rects[i].height;
+      GLint rdye = rdy - rects[i].height;
 
       // Invert Y if needed, this may not work as expected, though. I don't
       // have such a FBConfig to test with.
@@ -665,11 +781,12 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
   }
 
   // Cleanup
-  glBindTexture(GL_TEXTURE_2D, 0);
+  glBindTexture(ptex->target, 0);
   glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
   glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
   glDisable(GL_BLEND);
   glDisable(GL_COLOR_LOGIC_OP);
+  glDisable(ptex->target);
 
   return true;
 }
