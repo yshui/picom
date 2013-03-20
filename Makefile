@@ -49,9 +49,9 @@ ifeq "$(NO_VSYNC_OPENGL)" ""
   # -lGL must precede some other libraries, or it segfaults on FreeBSD (#74)
   LIBS := -lGL $(LIBS)
   OBJS += opengl.o
-  # ifeq "$(NO_VSYNC_OPENGL_GLSL)" ""
-  #   CFG += -DCONFIG_VSYNC_OPENGL_GLSL
-  # endif
+  ifeq "$(NO_VSYNC_OPENGL_GLSL)" ""
+    CFG += -DCONFIG_VSYNC_OPENGL_GLSL
+  endif
 endif
 
 # ==== D-Bus ====

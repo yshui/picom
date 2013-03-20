@@ -140,6 +140,14 @@ glx_init_end:
  */
 void
 glx_destroy(session_t *ps) {
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  // Free GLSL shaders/programs
+  if (ps->glx_frag_shader_blur)
+    glDeleteShader(ps->glx_frag_shader_blur);
+  if (ps->glx_prog_blur)
+    glDeleteProgram(ps->glx_prog_blur);
+#endif
+
   // Free FBConfigs
   for (int i = 0; i <= OPENGL_MAX_DEPTH; ++i) {
     free(ps->glx_fbconfigs[i]);
@@ -173,20 +181,66 @@ glx_on_root_change(session_t *ps) {
  */
 bool
 glx_init_blur(session_t *ps) {
-  printf_errf("(): Blur on GLX backend isn't implemented yet, sorry.");
-  return false;
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  if (ps->o.glx_no_stencil) {
+    printf_errf("(): I'm afraid blur background won't work so well without "
+        "stencil buffer support.");
+    return false;
+  }
 
-// #ifdef CONFIG_VSYNC_OPENGL_GLSL
-//           static const char *FRAG_SHADER_BLUR = "";
-//           GLuint frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, FRAG_SHADER_BLUR);
-//           if (!frag_shader) {
-//             printf_errf("(): Failed to create fragment shader for blurring.");
-//             return false;
-//           }
-// #else
-//           printf_errf("(): GLSL support not compiled in. Cannot do blur with GLX backend.");
-//           return false;
-// #endif
+  // Build shader
+  static const char *FRAG_SHADER_BLUR =
+    "#version 110\n"
+    "uniform float offset_x;\n"
+    "uniform float offset_y;\n"
+    "uniform float factor_center;\n"
+    "uniform sampler2D tex_scr;\n"
+    "\n"
+    "void main() {\n"
+    "  vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);\n"
+    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x - offset_x, gl_TexCoord[0].y - offset_y));\n"
+    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x - offset_x, gl_TexCoord[0].y));\n"
+    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x - offset_x, gl_TexCoord[0].y + offset_y));\n"
+    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y - offset_y));\n"
+    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * factor_center;\n"
+    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y + offset_y));\n"
+    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x + offset_x, gl_TexCoord[0].y - offset_y));\n"
+    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x + offset_x, gl_TexCoord[0].y));\n"
+    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x + offset_x, gl_TexCoord[0].y + offset_y));\n"
+    "  gl_FragColor = sum / (factor_center + 8.0);\n"
+    "}\n"
+    ;
+  ps->glx_frag_shader_blur = glx_create_shader(GL_FRAGMENT_SHADER, FRAG_SHADER_BLUR);
+  if (!ps->glx_frag_shader_blur) {
+    printf_errf("(): Failed to create fragment shader.");
+    return false;
+  }
+
+  ps->glx_prog_blur = glx_create_program(&ps->glx_frag_shader_blur, 1);
+  if (!ps->glx_prog_blur) {
+    printf_errf("(): Failed to create GLSL program.");
+    return false;
+  }
+
+#define P_GET_UNIFM_LOC(name, target) { \
+  ps->target = glGetUniformLocation(ps->glx_prog_blur, name); \
+  if (ps->target < 0) { \
+    printf_errf("(): Failed to get location of uniform '" name "'."); \
+    return false; \
+  } \
+}
+
+  P_GET_UNIFM_LOC("factor_center", glx_prog_blur_unifm_factor_center);
+  P_GET_UNIFM_LOC("offset_x", glx_prog_blur_unifm_offset_x);
+  P_GET_UNIFM_LOC("offset_y", glx_prog_blur_unifm_offset_y);
+
+#undef P_GET_UNIFM_LOC
+
+  return true;
+#else
+  printf_errf("(): GLSL support not compiled in. Cannot do blur with GLX backend.");
+  return false;
+#endif
 }
 
 /**
@@ -590,7 +644,8 @@ glx_set_clip(session_t *ps, XserverRegion reg) {
 }
 
 bool
-glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z) {
+glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+    GLfloat factor_center) {
   // Read destination pixels into a texture
   GLuint tex_scr = 0;
   glGenTextures(1, &tex_scr);
@@ -617,10 +672,18 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z) {
 #endif
 
   // Paint it back
-  // TODO: Blur function. We are using color negation for testing now.
-  glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-  glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
-  glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
+  // Color negation for testing...
+  // glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+  // glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
+  // glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
+
+  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  glUseProgram(ps->glx_prog_blur);
+  glUniform1f(ps->glx_prog_blur_unifm_offset_x, 1.0f / width);
+  glUniform1f(ps->glx_prog_blur_unifm_offset_y, 1.0f / height);
+  glUniform1f(ps->glx_prog_blur_unifm_factor_center, factor_center);
+#endif
 
   glBegin(GL_QUADS);
 
@@ -653,6 +716,9 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z) {
 
   glEnd();
 
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  glUseProgram(0);
+#endif
   glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
   glBindTexture(tex_tgt, 0);
   glDeleteTextures(1, &tex_scr);
@@ -668,8 +734,6 @@ bool
 glx_render(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
     double opacity, bool neg, XserverRegion reg_tgt) {
-  bool blur_background = false;
-
   if (!ptex || !ptex->texture) {
     printf_errf("(): Missing texture.");
     return false;
@@ -678,8 +742,6 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
   // Enable blending if needed
   if (opacity < 1.0 || GLX_TEXTURE_FORMAT_RGBA_EXT ==
       ps->glx_fbconfigs[ptex->depth]->texture_fmt) {
-    if (!ps->o.glx_no_stencil && blur_background)
-      glx_blur_dst(ps, dx, dy, width, height, z - 0.5);
 
     glEnable(GL_BLEND);
 
@@ -832,8 +894,7 @@ glx_create_shader_end:
 }
 
 GLuint
-glx_create_program(GLenum shader_type, const GLuint * const shaders,
-    int nshaders) {
+glx_create_program(const GLuint * const shaders, int nshaders) {
   bool success = false;
   GLuint program = glCreateProgram();
   if (!program) {
@@ -863,6 +924,10 @@ glx_create_program(GLenum shader_type, const GLuint * const shaders,
   success = true;
 
 glx_create_program_end:
+  if (program) {
+    for (int i = 0; i < nshaders; ++i)
+      glDetachShader(program, shaders[i]);
+  }
   if (program && !success) {
     glDeleteProgram(program);
     program = 0;

@@ -626,6 +626,18 @@ typedef struct {
   f_ReleaseTexImageEXT glXReleaseTexImageProc;
   /// FBConfig-s for GLX pixmap of different depths.
   glx_fbconfig_t *glx_fbconfigs[OPENGL_MAX_DEPTH + 1];
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  /// Fragment shader for blur.
+  GLuint glx_frag_shader_blur;
+  /// GLSL program for blur.
+  GLuint glx_prog_blur;
+  /// Location of uniform "offset_x" in blur GLSL program.
+  GLint glx_prog_blur_unifm_offset_x;
+  /// Location of uniform "offset_y" in blur GLSL program.
+  GLint glx_prog_blur_unifm_offset_y;
+  /// Location of uniform "factor_center" in blur GLSL program.
+  GLint glx_prog_blur_unifm_factor_center;
+#endif
 #endif
 
   // === X extension related ===
@@ -1601,9 +1613,21 @@ void
 glx_set_clip(session_t *ps, XserverRegion reg);
 
 bool
+glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+    GLfloat factor_center);
+
+bool
 glx_render(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
     double opacity, bool neg, XserverRegion reg_tgt);
+
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+GLuint
+glx_create_shader(GLenum shader_type, const char *shader_str);
+
+GLuint
+glx_create_program(const GLuint * const shaders, int nshaders);
+#endif
 #endif
 
 static inline void

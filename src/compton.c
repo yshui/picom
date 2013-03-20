@@ -1329,60 +1329,76 @@ win_build_picture(session_t *ps, win *w, XRenderPictFormat *pictfmt) {
 static inline void
 win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
     XserverRegion reg_paint) {
-  const static int convolution_blur_size = 3;
-  // Convolution filter parameter (box blur)
-  // gaussian or binomial filters are definitely superior, yet looks
-  // like they aren't supported as of xorg-server-1.13.0
-  XFixed convolution_blur[] = {
-    // Must convert to XFixed with XDoubleToFixed()
-    // Matrix size
-    XDoubleToFixed(convolution_blur_size),
-    XDoubleToFixed(convolution_blur_size),
-    // Matrix
-    XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
-    XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
-    XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
-  };
-
   const int x = w->a.x;
   const int y = w->a.y;
   const int wid = w->widthb;
   const int hei = w->heightb;
 
-  // Directly copying from tgt_buffer does not work, so we create a
-  // Picture in the middle.
-  Picture tmp_picture = win_build_picture(ps, w, NULL);
-
-  if (!tmp_picture)
-    return;
-
+  double factor_center = 1.0;
   // Adjust blur strength according to window opacity, to make it appear
   // better during fading
   if (!ps->o.blur_background_fixed) {
     double pct = 1.0 - get_opacity_percent(w) * (1.0 - 1.0 / 9.0);
-    convolution_blur[2 + convolution_blur_size + ((convolution_blur_size - 1) / 2)] = XDoubleToFixed(pct * 8.0 / (1.1 - pct));
+    factor_center = pct * 8.0 / (1.1 - pct);
   }
 
-  // Minimize the region we try to blur, if the window itself is not
-  // opaque, only the frame is.
-  if (WMODE_SOLID == w->mode && w->frame_opacity) {
-    XserverRegion reg_all = border_size(ps, w, false);
-    XserverRegion reg_noframe = win_get_region_noframe(ps, w, false);
-    XFixesSubtractRegion(ps->dpy, reg_noframe, reg_all, reg_noframe);
-    XFixesSetPictureClipRegion(ps->dpy, tmp_picture, reg_noframe, 0, 0);
-    free_region(ps, &reg_all);
-    free_region(ps, &reg_noframe);
+  switch (ps->o.backend) {
+    case BKEND_XRENDER:
+      {
+        const static int convolution_blur_size = 3;
+        // Convolution filter parameter (box blur)
+        // gaussian or binomial filters are definitely superior, yet looks
+        // like they aren't supported as of xorg-server-1.13.0
+        XFixed convolution_blur[] = {
+          // Must convert to XFixed with XDoubleToFixed()
+          // Matrix size
+          XDoubleToFixed(convolution_blur_size),
+          XDoubleToFixed(convolution_blur_size),
+          // Matrix
+          XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
+          XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
+          XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
+        };
+
+        // Directly copying from tgt_buffer does not work, so we create a
+        // Picture in the middle.
+        Picture tmp_picture = win_build_picture(ps, w, NULL);
+
+        if (!tmp_picture)
+          return;
+
+        convolution_blur[2 + convolution_blur_size + ((convolution_blur_size - 1) / 2)] = XDoubleToFixed(factor_center);
+
+        // Minimize the region we try to blur, if the window itself is not
+        // opaque, only the frame is.
+        if (WMODE_SOLID == w->mode && w->frame_opacity) {
+          XserverRegion reg_all = border_size(ps, w, false);
+          XserverRegion reg_noframe = win_get_region_noframe(ps, w, false);
+          XFixesSubtractRegion(ps->dpy, reg_noframe, reg_all, reg_noframe);
+          XFixesSetPictureClipRegion(ps->dpy, tmp_picture, reg_noframe, 0, 0);
+          free_region(ps, &reg_all);
+          free_region(ps, &reg_noframe);
+        }
+
+        // Copy the content to tmp_picture, then copy back. The filter must
+        // be applied on tgt_buffer, to get the nearby pixels outside the
+        // window.
+        XRenderSetPictureFilter(ps->dpy, tgt_buffer, XRFILTER_CONVOLUTION, (XFixed *) convolution_blur, sizeof(convolution_blur) / sizeof(XFixed));
+        XRenderComposite(ps->dpy, PictOpSrc, tgt_buffer, None, tmp_picture, x, y, 0, 0, 0, 0, wid, hei);
+        xrfilter_reset(ps, tgt_buffer);
+        XRenderComposite(ps->dpy, PictOpSrc, tmp_picture, None, tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
+
+        free_picture(ps, &tmp_picture);
+      }
+      break;
+#ifdef CONFIG_VSYNC_OPENGL
+    case BKEND_GLX:
+      glx_blur_dst(ps, x, y, wid, hei, ps->glx_z - 0.5, factor_center);
+      break;
+#endif
+    default:
+      assert(0);
   }
-
-  // Copy the content to tmp_picture, then copy back. The filter must
-  // be applied on tgt_buffer, to get the nearby pixels outside the
-  // window.
-  XRenderSetPictureFilter(ps->dpy, tgt_buffer, XRFILTER_CONVOLUTION, (XFixed *) convolution_blur, sizeof(convolution_blur) / sizeof(XFixed));
-  XRenderComposite(ps->dpy, PictOpSrc, tgt_buffer, None, tmp_picture, x, y, 0, 0, 0, 0, wid, hei);
-  xrfilter_reset(ps, tgt_buffer);
-  XRenderComposite(ps->dpy, PictOpSrc, tmp_picture, None, tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
-
-  free_picture(ps, &tmp_picture);
 }
 
 static void
