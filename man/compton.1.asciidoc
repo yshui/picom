@@ -127,6 +127,7 @@ OPTIONS
 * 'drm': VSync with 'DRM_IOCTL_WAIT_VBLANK'. May only work on some drivers. Experimental.
 * 'opengl': Try to VSync with 'SGI_swap_control' OpenGL extension. Only work on some drivers. Experimental.
 * 'opengl-oml': Try to VSync with 'OML_sync_control' OpenGL extension. Only work on some drivers. Experimental.
+* 'opengl-swc': Try to VSync with 'SGI_swap_control' OpenGL extension. Only work on some drivers. Works only with GLX backend. Known to be most effective on many drivers. Does not actually control paint timing, only buffer swap is affected, so it doesn't have the effect of *--sw-opti* unlike other methods. Experimental.
 
 (Note some VSync methods may not be enabled at compile time.)
 --
@@ -175,6 +176,18 @@ OPTIONS
 
 *--invert-color-include* condition::
 	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested.
+
+*--backend* backend::
+	Specify the backend to use: 'xrender` or 'glx'. GLX (OpenGL) backend generally has much superior performance as far as you have a graphic card/chip and driver.
+
+*--glx-no-stencil*::
+  GLX backend: Avoid using stencil buffer, useful if you don't have a stencil buffer. Might cause incorrect opacity when rendering transparent content and cannot work with *--blur-background*. May have a positive or negative effect on performance. (My test shows a 10% slowdown.)
+
+*--glx-copy-from-front*::
+	GLX backend: Copy unmodified regions from front buffer instead of redrawing them all. My tests with nvidia-drivers show a 10% decrease in performance when the whole screen is modified, but a 20% increase when only 1/4 is. My tests on nouveau show terrible slowdown.
+
+*--glx-use-copysubbuffermesa*::
+	GLX backend: Use MESA_copy_sub_buffer to do partial screen update. My tests on nouveau shows a 200% performance boost when only 1/4 of the screen is updated. May break VSync and is not available on some drivers. Overrides *--glx-copy-from-front*.
 
 *--dbus*::
 	Enable remote control via D-Bus. See the *D-BUS API* section below for more details.
@@ -312,10 +325,10 @@ $ compton -c --shadow-red 1 --shadow-green 1 --shadow-blue 1
 $ compton -c --shadow-exclude 'class_g = "wbar"'
 ------------
 
-* Enable OpenGL vsync:
+* Enable OpenGL SGI_swap_control VSync with GLX backend:
 +
 ------------
-$ compton --vsync opengl
+$ compton --backend glx --vsync opengl-swc
 ------------
 
 BUGS

@@ -96,6 +96,15 @@ glx_init(session_t *ps, bool need_render) {
       printf_errf("(): Failed to acquire glXBindTexImageEXT() / glXReleaseTexImageEXT().");
       goto glx_init_end;
     }
+
+    if (ps->o.glx_use_copysubbuffermesa) {
+      ps->glXCopySubBufferProc = (f_CopySubBuffer)
+        glXGetProcAddress((const GLubyte *) "glXCopySubBufferMESA");
+      if (!ps->glXCopySubBufferProc) {
+        printf_errf("(): Failed to acquire glXCopySubBufferMESA().");
+        goto glx_init_end;
+      }
+    }
   }
 
   // Acquire FBConfigs
@@ -543,10 +552,13 @@ void
 glx_paint_pre(session_t *ps, XserverRegion *preg) {
   ps->glx_z = 0.0;
   // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
   // OpenGL doesn't support partial repaint without GLX_MESA_copy_sub_buffer,
-  // we currently redraw the whole screen or copy unmodified pixels from
+  // we could redraw the whole screen or copy unmodified pixels from
   // front buffer with --glx-copy-from-front.
-  if (!ps->o.glx_copy_from_front || !*preg) {
+  if (ps->o.glx_use_copysubbuffermesa || !*preg) {
+  }
+  else if (!ps->o.glx_copy_from_front) {
     free_region(ps, preg);
   }
   else {
@@ -611,7 +623,6 @@ glx_set_clip(session_t *ps, XserverRegion reg) {
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
     glDepthMask(GL_FALSE);
     glStencilOp(GL_REPLACE, GL_KEEP, GL_KEEP);
-
 
     glBegin(GL_QUADS);
 
@@ -851,6 +862,37 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
   glDisable(ptex->target);
 
   return true;
+}
+
+/**
+ * Swap buffer with glXCopySubBufferMESA().
+ */
+void
+glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg) {
+  int nrects = 0;
+  XRectangle *rects = XFixesFetchRegion(ps->dpy, reg, &nrects);
+
+  if (1 == nrects && rect_is_fullscreen(ps, rects[0].x, rects[0].y,
+        rects[0].width, rects[0].height)) {
+    glXSwapBuffers(ps->dpy, get_tgt_window(ps));
+  }
+  else {
+    glx_set_clip(ps, None);
+    for (int i = 0; i < nrects; ++i) {
+      const int x = rects[i].x;
+      const int y = ps->root_height - rects[i].y - rects[i].height;
+      const int wid = rects[i].width;
+      const int hei = rects[i].height;
+
+#ifdef DEBUG_GLX
+      printf_dbgf("(): %d, %d, %d, %d\n", x, y, wid, hei);
+#endif
+      ps->glXCopySubBufferProc(ps->dpy, get_tgt_window(ps), x, y, wid, hei);
+    }
+  }
+
+  if (rects)
+    XFree(rects);
 }
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL

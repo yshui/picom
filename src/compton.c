@@ -1736,7 +1736,6 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
   }
 
   // Free up all temporary regions
-  XFixesDestroyRegion(ps->dpy, region);
   XFixesDestroyRegion(ps->dpy, reg_tmp);
   XFixesDestroyRegion(ps->dpy, reg_tmp2);
 
@@ -1783,7 +1782,10 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
       break;
 #ifdef CONFIG_VSYNC_OPENGL
     case BKEND_GLX:
-      glXSwapBuffers(ps->dpy, get_tgt_window(ps));
+      if (ps->o.glx_use_copysubbuffermesa)
+        glx_swap_copysubbuffermesa(ps, region);
+      else
+        glXSwapBuffers(ps->dpy, get_tgt_window(ps));
       break;
 #endif
     default:
@@ -1801,6 +1803,8 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
     glXWaitX();
   }
 #endif
+
+  XFixesDestroyRegion(ps->dpy, region);
 
 #ifdef DEBUG_REPAINT
   print_timestamp(ps);
@@ -4151,9 +4155,14 @@ usage(void) {
     "  negative effect on performance. (My test shows a 10% slowdown.)\n"
     "--glx-copy-from-front\n"
     "  GLX backend: Copy unmodified regions from front buffer instead of\n"
-    "  redrawing them all. My tests show a 10% decrease in performance\n"
-    "  when the whole screen is modified, but a 20% increase when only 1/4\n"
-    "  is, so this optimization is not enabled by default.\n"
+    "  redrawing them all. My tests with nvidia-drivers show a 10% decrease\n"
+    "  in performance when the whole screen is modified, but a 20% increase\n"
+    "  when only 1/4 is. My tests on nouveau show terrible slowdown.\n"
+    "--glx-use-copysubbuffermesa\n"
+    "  GLX backend: Use MESA_copy_sub_buffer to do partial screen update.\n"
+    "  My tests on nouveau shows a 200% performance boost when only 1/4 of\n"
+    "  the screen is updated. May break VSync and is not available on some\n"
+    "  drivers. Overrides --glx-copy-from-front.\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED
@@ -4620,6 +4629,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "glx-copy-from-front", no_argument, NULL, 292 },
     { "benchmark", required_argument, NULL, 293 },
     { "benchmark-wid", required_argument, NULL, 294 },
+    { "glx-use-copysubbuffermesa", no_argument, NULL, 295 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4897,6 +4907,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 294:
         // --benchmark-wid
         ps->o.benchmark_wid = strtol(optarg, NULL, 0);
+        break;
+      case 295:
+        // --glx-use-copysubbuffermesa
+        ps->o.glx_use_copysubbuffermesa = true;
         break;
       default:
         usage();

@@ -284,6 +284,8 @@ typedef int (*f_SwapIntervalSGI) (int interval);
 typedef void (*f_BindTexImageEXT) (Display *display, GLXDrawable drawable, int buffer, const int *attrib_list);
 typedef void (*f_ReleaseTexImageEXT) (Display *display, GLXDrawable drawable, int buffer);
 
+typedef void (*f_CopySubBuffer) (Display *dpy, GLXDrawable drawable, int x, int y, int width, int height);
+
 /// @brief Wrapper of a GLX FBConfig.
 typedef struct {
   GLXFBConfig cfg;
@@ -344,6 +346,8 @@ typedef struct {
   bool glx_no_stencil;
   /// Whether to copy unmodified regions from front buffer.
   bool glx_copy_from_front;
+  /// Whether to use glXCopySubBufferMESA() to update screen.
+  bool glx_use_copysubbuffermesa;
   /// Whether to try to detect WM windows and mark them as focused.
   bool mark_wmwin_focused;
   /// Whether to mark override-redirect windows as focused.
@@ -624,6 +628,8 @@ typedef struct {
   f_BindTexImageEXT glXBindTexImageProc;
   /// Pointer to glXReleaseTexImageEXT function.
   f_ReleaseTexImageEXT glXReleaseTexImageProc;
+  /// Pointer to glXCopySubBufferMESA function.
+  f_CopySubBuffer glXCopySubBufferProc;
   /// FBConfig-s for GLX pixmap of different depths.
   glx_fbconfig_t *glx_fbconfigs[OPENGL_MAX_DEPTH + 1];
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
@@ -1491,6 +1497,15 @@ free_region(session_t *ps, XserverRegion *p) {
 }
 
 /**
+ * Check if a rectangle includes the whole screen.
+ */
+static inline bool
+rect_is_fullscreen(session_t *ps, int x, int y, unsigned wid, unsigned hei) {
+  return (x <= 0 && y <= 0
+      && (x + wid) >= ps->root_width && (y + hei) >= ps->root_height);
+}
+
+/**
  * Determine if a window has a specific property.
  *
  * @param ps current session
@@ -1620,6 +1635,9 @@ bool
 glx_render(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
     double opacity, bool neg, XserverRegion reg_tgt);
+
+void
+glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg);
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
 GLuint

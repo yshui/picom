@@ -11,6 +11,7 @@ partially doing this out of a desire to learn Xlib.
 
 ## Changes from xcompmgr:
 
+* OpenGL backend (`--backend glx`), in addition to the old X Render backend.
 * __inactive window transparency / dimming__
 * __titlebar/frame transparency__ (specified with `-e`)
 * menu transparency (thanks to Dana)

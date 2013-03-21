@@ -427,10 +427,8 @@ dump_drawable(session_t *ps, Drawable drawable) {
  */
 static inline bool
 win_is_fullscreen(session_t *ps, const win *w) {
-  return (w->a.x <= 0 && w->a.y <= 0
-      && (w->a.x + w->widthb) >= ps->root_width
-      && (w->a.y + w->heightb) >= ps->root_height
-      && !w->bounding_shaped);
+  return rect_is_fullscreen(ps, w->a.x, w->a.y, w->widthb, w->heightb)
+      && !w->bounding_shaped;
 }
 
 static void
