@@ -2670,7 +2670,7 @@ restack_win(session_t *ps, win *w, Window new_above) {
       }
     }
 
-    if (!found) {
+    if (new_above && !found) {
       printf_errf("(%#010lx, %#010lx): "
           "Failed to found new above window.", w->id, new_above);
       return;
