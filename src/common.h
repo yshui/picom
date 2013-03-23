@@ -260,6 +260,7 @@ typedef enum {
   VSYNC_OPENGL,
   VSYNC_OPENGL_OML,
   VSYNC_OPENGL_SWC,
+  VSYNC_OPENGL_MSWC,
   NUM_VSYNC,
 } vsync_t;
 
@@ -280,6 +281,7 @@ typedef Bool (*f_GetSyncValuesOML) (Display* dpy, GLXDrawable drawable, int64_t*
 typedef Bool (*f_WaitForMscOML) (Display* dpy, GLXDrawable drawable, int64_t target_msc, int64_t divisor, int64_t remainder, int64_t* ust, int64_t* msc, int64_t* sbc);
 
 typedef int (*f_SwapIntervalSGI) (int interval);
+typedef int (*f_SwapIntervalMESA) (unsigned int interval);
 
 typedef void (*f_BindTexImageEXT) (Display *display, GLXDrawable drawable, int buffer, const int *attrib_list);
 typedef void (*f_ReleaseTexImageEXT) (Display *display, GLXDrawable drawable, int buffer);
@@ -443,6 +445,8 @@ typedef struct {
   /// Whether to use fixed blur strength instead of adjusting according
   /// to window opacity.
   bool blur_background_fixed;
+  /// Background blur blacklist. A linked list of conditions.
+  c2_lptr_t *blur_background_blacklist;
   /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
   double inactive_dim;
   /// Whether to use fixed inactive dim opacity, instead of deciding
@@ -624,6 +628,8 @@ typedef struct {
   f_WaitForMscOML glXWaitForMscOML;
   /// Pointer to glXSwapIntervalSGI function.
   f_SwapIntervalSGI glXSwapIntervalProc;
+  /// Pointer to glXSwapIntervalMESA function.
+  f_SwapIntervalMESA glXSwapIntervalMESAProc;
   /// Pointer to glXBindTexImageEXT function.
   f_BindTexImageEXT glXBindTexImageProc;
   /// Pointer to glXReleaseTexImageEXT function.
@@ -821,6 +827,7 @@ typedef struct _win {
   const c2_lptr_t *cache_fblst;
   const c2_lptr_t *cache_fcblst;
   const c2_lptr_t *cache_ivclst;
+  const c2_lptr_t *cache_bbblst;
 
   // Opacity-related members
   /// Current window opacity.
@@ -880,6 +887,9 @@ typedef struct _win {
   /// Override value of window color inversion state. Set by D-Bus method
   /// calls.
   switch_t invert_color_force;
+
+  /// Whether to blur window background.
+  bool blur_background;
 } win;
 
 /// Temporary structure used for communication between

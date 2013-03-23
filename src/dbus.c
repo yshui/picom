@@ -716,6 +716,11 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_win_get_do(right_width, cdbus_reply_uint32);
   cdbus_m_win_get_do(top_width, cdbus_reply_uint32);
   cdbus_m_win_get_do(bottom_width, cdbus_reply_uint32);
+
+  cdbus_m_win_get_do(shadow, cdbus_reply_bool);
+  cdbus_m_win_get_do(fade, cdbus_reply_bool);
+  cdbus_m_win_get_do(invert_color, cdbus_reply_bool);
+  cdbus_m_win_get_do(blur_background, cdbus_reply_bool);
 #undef cdbus_m_win_get_do
 
   printf_errf("(): " CDBUS_ERROR_BADTGT_S, target);

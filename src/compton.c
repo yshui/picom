@@ -33,11 +33,12 @@ const char * const WINTYPES[NUM_WINTYPES] = {
 
 /// Names of VSync modes.
 const char * const VSYNC_STRS[NUM_VSYNC] = {
-  "none",         // VSYNC_NONE
-  "drm",          // VSYNC_DRM
-  "opengl",       // VSYNC_OPENGL
-  "opengl-oml",   // VSYNC_OPENGL_OML
-  "opengl-swc",   // VSYNC_OPENGL_SWC
+  "none",             // VSYNC_NONE
+  "drm",              // VSYNC_DRM
+  "opengl",           // VSYNC_OPENGL
+  "opengl-oml",       // VSYNC_OPENGL_OML
+  "opengl-swc",       // VSYNC_OPENGL_SWC
+  "opengl-mswc",      // VSYNC_OPENGL_MSWC
 };
 
 /// Names of backends.
@@ -48,10 +49,11 @@ const char * const BACKEND_STRS[NUM_BKEND] = {
 
 /// Function pointers to init VSync modes.
 static bool (* const (VSYNC_FUNCS_INIT[NUM_VSYNC]))(session_t *ps) = {
-  [VSYNC_DRM        ] = vsync_drm_init,
-  [VSYNC_OPENGL     ] = vsync_opengl_init,
-  [VSYNC_OPENGL_OML ] = vsync_opengl_oml_init,
-  [VSYNC_OPENGL_SWC ] = vsync_opengl_swc_init,
+  [VSYNC_DRM          ] = vsync_drm_init,
+  [VSYNC_OPENGL       ] = vsync_opengl_init,
+  [VSYNC_OPENGL_OML   ] = vsync_opengl_oml_init,
+  [VSYNC_OPENGL_SWC   ] = vsync_opengl_swc_init,
+  [VSYNC_OPENGL_MSWC  ] = vsync_opengl_mswc_init,
 };
 
 /// Function pointers to wait for VSync.
@@ -1560,7 +1562,8 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint) {
     free_picture(ps, &pict);
 
   // Dimming the window if needed
-  if (w->dim && w->dim_alpha_pict != ps->alpha_picts[0]) {
+  if (BKEND_XRENDER == ps->o.backend
+      && w->dim && w->dim_alpha_pict != ps->alpha_picts[0]) {
     XRenderComposite(ps->dpy, PictOpOver, ps->black_picture,
         w->dim_alpha_pict, ps->tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
   }
@@ -1725,8 +1728,8 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
     if (!is_region_empty(ps, reg_paint)) {
       set_tgt_clip(ps, reg_paint);
       // Blur window background
-      if ((ps->o.blur_background && WMODE_SOLID != w->mode)
-          || (ps->o.blur_background_frame && w->frame_opacity)) {
+      if (w->blur_background && (WMODE_SOLID != w->mode
+            || (ps->o.blur_background_frame && w->frame_opacity))) {
         win_blur_background(ps, w, ps->tgt_buffer, reg_paint);
       }
 
@@ -1976,6 +1979,8 @@ map_win(session_t *ps, Window id) {
     set_fade_callback(ps, w, NULL, true);
   }
   win_determine_fade(ps, w);
+
+  win_determine_blur_background(ps, w);
 
   w->damaged = false;
 
@@ -2293,6 +2298,23 @@ win_determine_invert_color(session_t *ps, win *w) {
 }
 
 /**
+ * Determine if a window should have background blurred.
+ */
+static void
+win_determine_blur_background(session_t *ps, win *w) {
+  bool blur_background_old = w->blur_background;
+
+  w->blur_background = ps->o.blur_background
+    && !win_match(ps, w, ps->o.blur_background_blacklist, &w->cache_bbblst);
+
+  // Only consider window damaged if it's previously painted with background
+  // blurred
+  if (w->blur_background != blur_background_old && (WMODE_SOLID != w->mode
+        || (ps->o.blur_background_frame && w->frame_opacity)))
+    add_damage_win(ps, w);
+}
+
+/**
  * Function to be called on window type changes.
  */
 static void
@@ -2317,6 +2339,8 @@ win_on_factor_change(session_t *ps, win *w) {
     win_determine_invert_color(ps, w);
   if (ps->o.focus_blacklist)
     win_update_focused(ps, w);
+  if (ps->o.blur_background_blacklist)
+    win_determine_blur_background(ps, w);
 }
 
 /**
@@ -2533,6 +2557,7 @@ add_win(session_t *ps, Window id, Window prev) {
     .cache_fblst = NULL,
     .cache_fcblst = NULL,
     .cache_ivclst = NULL,
+    .cache_bbblst = NULL,
 
     .opacity = 0,
     .opacity_tgt = 0,
@@ -2563,6 +2588,8 @@ add_win(session_t *ps, Window id, Window prev) {
 
     .invert_color = false,
     .invert_color_force = UNSET,
+
+    .blur_background = false,
   };
 
   // Reject overlay window and already added windows
@@ -4097,6 +4124,9 @@ usage(void) {
     "      Does not actually control paint timing, only buffer swap is\n"
     "      affected, so it doesn't have the effect of --sw-opti unlike\n"
     "      other methods. Experimental." WARNING "\n"
+    "    opengl-mswc = Try to VSync with MESA_swap_control OpenGL\n"
+    "      extension. Basically the same as opengl-swc above, except the\n"
+    "      extension we use." WARNING "\n"
     "--alpha-step val\n"
     "  Step for pregenerating alpha pictures. 0.01 - 1.0. Defaults to\n"
     "  0.03.\n"
@@ -4549,6 +4579,8 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   parse_cfg_condlst(ps, &cfg, &ps->o.focus_blacklist, "focus-exclude");
   // --invert-color-include
   parse_cfg_condlst(ps, &cfg, &ps->o.invert_color_list, "invert-color-include");
+  // --blur-background-exclude
+  parse_cfg_condlst(ps, &cfg, &ps->o.blur_background_blacklist, "blur-background-exclude");
   // --blur-background
   lcfg_lookup_bool(&cfg, "blur-background", &ps->o.blur_background);
   // --blur-background-frame
@@ -4630,6 +4662,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "benchmark", required_argument, NULL, 293 },
     { "benchmark-wid", required_argument, NULL, 294 },
     { "glx-use-copysubbuffermesa", no_argument, NULL, 295 },
+    { "blur-background-exclude", required_argument, NULL, 296 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4912,6 +4945,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --glx-use-copysubbuffermesa
         ps->o.glx_use_copysubbuffermesa = true;
         break;
+      case 296:
+        // --blur-background-exclude
+        condlst_add(ps, &ps->o.blur_background_blacklist, optarg);
+        break;
       default:
         usage();
         break;
@@ -4954,6 +4991,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   // --blur-background-frame implies --blur-background
   if (ps->o.blur_background_frame)
     ps->o.blur_background = true;
+
+  // Free background blur blacklist if background blur is not actually enabled
+  if (!ps->o.blur_background)
+    free_wincondlst(&ps->o.blur_background_blacklist);
 
   // Other variables determined by options
 
@@ -5230,6 +5271,34 @@ vsync_opengl_swc_init(session_t *ps) {
     return false;
   }
   ps->glXSwapIntervalProc(1);
+
+  return true;
+#else
+  printf_errf("(): Program not compiled with OpenGL VSync support.");
+  return false;
+#endif
+}
+
+static bool
+vsync_opengl_mswc_init(session_t *ps) {
+#ifdef CONFIG_VSYNC_OPENGL
+  if (!ensure_glx_context(ps))
+    return false;
+
+  if (BKEND_GLX != ps->o.backend) {
+    printf_errf("(): I'm afraid glXSwapIntervalMESA wouldn't help if you are "
+        "not using GLX backend. You could try, nonetheless.");
+  }
+
+  // Get video sync functions
+  if (!ps->glXSwapIntervalMESAProc)
+    ps->glXSwapIntervalMESAProc = (f_SwapIntervalMESA)
+      glXGetProcAddress ((const GLubyte *) "glXSwapIntervalMESA");
+  if (!ps->glXSwapIntervalMESAProc) {
+    printf_errf("(): Failed to get MESA_swap_control function.");
+    return false;
+  }
+  ps->glXSwapIntervalMESAProc(1);
 
   return true;
 #else
@@ -5759,6 +5828,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .blur_background = false,
       .blur_background_frame = false,
       .blur_background_fixed = false,
+      .blur_background_blacklist = NULL,
       .inactive_dim = 0.0,
       .inactive_dim_fixed = false,
       .invert_color_list = NULL,

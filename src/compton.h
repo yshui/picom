@@ -668,6 +668,12 @@ static void
 win_determine_shadow(session_t *ps, win *w);
 
 static void
+win_determine_invert_color(session_t *ps, win *w);
+
+static void
+win_determine_blur_background(session_t *ps, win *w);
+
+static void
 win_on_wtype_change(session_t *ps, win *w);
 
 static void
@@ -987,6 +993,9 @@ vsync_opengl_oml_init(session_t *ps);
 
 static bool
 vsync_opengl_swc_init(session_t *ps);
+
+static bool
+vsync_opengl_mswc_init(session_t *ps);
 
 #ifdef CONFIG_VSYNC_OPENGL
 static int

@@ -8,13 +8,18 @@ set(CPACK_PACKAGE_VERSION_PATCH "0")
 add_subdirectory(man)
 
 set(compton_SRCS src/compton.c)
-add_executable(compton ${compton_SRCS})
 
 set(CMAKE_C_FLAGS_DEBUG "-ggdb")
 set(CMAKE_C_FLAGS_RELEASE "-O2 -march=native")
-set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -march=native -ggdb")
+set(CMAKE_C_FLAGS_RELWITHDBGINFO "-O2 -march=native -ggdb")
 
 add_definitions("-Wall" "-std=c99")
+
+# == Version ==
+execute_process(COMMAND sh -c "echo -n \\\"git-$(git describe --always --dirty)-$(git log -1 --date=short --pretty=format:%cd)\\\""
+	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+	OUTPUT_VARIABLE COMPTON_VERSION)
+add_definitions("-DCOMPTON_VERSION=${COMPTON_VERSION}")
 
 # == Options ==
 
@@ -38,10 +43,19 @@ if (CONFIG_VSYNC_DRM)
 	add_definitions("-DCONFIG_VSYNC_DRM")
 endif ()
 
-option(CONFIG_VSYNC_OPENGL "Enable OpenGL VSync support" ON)
+option(CONFIG_VSYNC_OPENGL "Enable OpenGL support" ON)
 if (CONFIG_VSYNC_OPENGL)
 	add_definitions("-DCONFIG_VSYNC_OPENGL")
+	list(APPEND compton_SRCS src/opengl.c)
 endif ()
+
+option(CONFIG_C2 "Enable matching system" ON)
+if (CONFIG_C2)
+	add_definitions("-DCONFIG_C2")
+	list(APPEND compton_SRCS src/c2.c)
+endif ()
+
+add_executable(compton ${compton_SRCS})
 
 # == Find libraries ==
 
@@ -74,12 +88,14 @@ X11LIB_CHK(Xrandr)
 # --- Find libpcre ---
 if (CONFIG_REGEX_PCRE)
 	pkg_check_modules(LIBPCRE REQUIRED libpcre>=8.12)
+	add_definitions("${LIBPCRE_CFLAGS}")
 	target_link_libraries(compton "${LIBPCRE_LDFLAGS}")
 endif ()
 
 # --- Find libconfig ---
 if (CONFIG_LIBCONFIG)
 	pkg_check_modules(LIBCONFIG REQUIRED libconfig>=1.3.2)
+	add_definitions("${LIBCONFIG_CFLAGS}")
 	target_link_libraries(compton "${LIBCONFIG_LDFLAGS}")
 	if (LIBCONFIG_VERSION VERSION_LESS 1.4)
 		add_definitions("-DCONFIG_LIBCONFIG_LEGACY")
@@ -91,6 +107,7 @@ endif ()
 if (CONFIG_VSYNC_DRM)
 	pkg_check_modules(LIBDRM REQUIRED libdrm)
 	# We only use its header file
+	add_definitions("${LIBDRM_CFLAGS}")
 endif ()
 
 # == Install ==
@@ -121,8 +138,8 @@ set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_SOURCE_DIR}/desc.txt")
 set(CPACK_GENERATOR "TBZ2" "DEB" "RPM")
 set(CPACK_MONOLITHIC_INSTALL 1)
 set(CPACK_STRIP_FILES 1)
-set(CPACK_RESOURCE_FILE_LICENSE "LICENSE")
-set(CPACK_RESOURCE_FILE_README "README.md")
+set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
+set(CPACK_RESOURCE_FILE_README "${PROJECT_SOURCE_DIR}/README.md")
 
 # --- Source package config ---
 set(CPACK_SOURCE_GENERATOR "TBZ2" "DEB" "RPM")
