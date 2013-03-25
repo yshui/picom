@@ -194,7 +194,6 @@ glx_init_blur(session_t *ps) {
   if (ps->o.glx_no_stencil) {
     printf_errf("(): I'm afraid blur background won't work so well without "
         "stencil buffer support.");
-    return false;
   }
 
   // Build shader
@@ -738,6 +737,37 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   return true;
 }
 
+bool
+glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+    GLfloat factor) {
+  // It's possible to dim in glx_render(), but it would be over-complicated
+  // considering all those mess in color negation and modulation
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+  glColor4f(0.0f, 0.0f, 0.0f, factor);
+
+  glBegin(GL_QUADS);
+
+  {
+    GLint rdx = dx;
+    GLint rdy = ps->root_height - dy;
+    GLint rdxe = rdx + width;
+    GLint rdye = rdy - height;
+
+    glVertex3i(rdx, rdy, z);
+    glVertex3i(rdxe, rdy, z);
+    glVertex3i(rdxe, rdye, z);
+    glVertex3i(rdx, rdye, z);
+  }
+
+  glEnd();
+
+  glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
+  glDisable(GL_BLEND);
+
+  return true;
+}
+
 /**
  * @brief Render a region with texture data.
  */
@@ -750,16 +780,23 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     return false;
   }
 
+  const bool argb = (GLX_TEXTURE_FORMAT_RGBA_EXT ==
+      ps->glx_fbconfigs[ptex->depth]->texture_fmt);
+  bool dual_texture = false;
+
+  // It's required by legacy versions of OpenGL to enable texture target
+  // before specifying environment. Thanks to madsy for telling me.
+  glEnable(ptex->target);
+
   // Enable blending if needed
-  if (opacity < 1.0 || GLX_TEXTURE_FORMAT_RGBA_EXT ==
-      ps->glx_fbconfigs[ptex->depth]->texture_fmt) {
+  if (opacity < 1.0 || argb) {
 
     glEnable(GL_BLEND);
 
     // Needed for handling opacity of ARGB texture
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-    // This is all weird, but X Render is using premulitplied ARGB format, and
+    // This is all weird, but X Render is using premultiplied ARGB format, and
     // we need to use those things to correct it. Thanks to derhass for help.
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glColor4f(opacity, opacity, opacity, opacity);
@@ -772,11 +809,68 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
       glEnable(GL_COLOR_LOGIC_OP);
       glLogicOp(GL_COPY_INVERTED);
     }
-    // Blending color negation
+    // ARGB texture color negation
+    else if (argb) {
+      dual_texture = true;
+
+      // Use two texture stages because the calculation is too complicated,
+      // thanks to madsy for providing code
+      // Texture stage 0
+      glActiveTexture(GL_TEXTURE0);
+
+      // Negation for premultiplied color: color = A - C
+      glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_SUBTRACT);
+      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
+      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_ALPHA);
+      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_TEXTURE);
+      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+
+      // Pass texture alpha through
+      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
+      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
+      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+   
+      // Texture stage 1
+      glActiveTexture(GL_TEXTURE1);
+      glEnable(ptex->target);
+      glBindTexture(ptex->target, ptex->texture);
+
+      glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+
+      // Modulation with constant factor
+      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
+      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PREVIOUS);
+      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
+      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_ALPHA);
+
+      // Modulation with constant factor
+      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
+      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
+      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+
+      glActiveTexture(GL_TEXTURE0);
+    }
+    // RGB blend color negation
     else {
       glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-      glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
-      glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
+
+      // Modulation with constant factor
+      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
+      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
+      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
+      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+
+      // Modulation with constant factor
+      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
+      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
+      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
     }
   }
 
@@ -807,8 +901,12 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
       rects = XFixesFetchRegion(ps->dpy, reg_new, &nrects);
     }
 
-    glEnable(ptex->target);
     glBindTexture(ptex->target, ptex->texture);
+    if (dual_texture) {
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(ptex->target, ptex->texture);
+      glActiveTexture(GL_TEXTURE0);
+    }
 
     glBegin(GL_QUADS);
 
@@ -833,16 +931,23 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
       printf_dbgf("(): Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d\n", i, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
 #endif
 
-      glTexCoord2f(rx, ry);
+#define P_TEXCOORD(cx, cy) { \
+  if (dual_texture) { \
+    glMultiTexCoord2f(GL_TEXTURE0, cx, cy); \
+    glMultiTexCoord2f(GL_TEXTURE1, cx, cy); \
+  } \
+  else glTexCoord2f(cx, cy); \
+}
+      P_TEXCOORD(rx, ry);
       glVertex3i(rdx, rdy, z);
 
-      glTexCoord2f(rxe, ry);
+      P_TEXCOORD(rxe, ry);
       glVertex3i(rdxe, rdy, z);
 
-      glTexCoord2f(rxe, rye);
+      P_TEXCOORD(rxe, rye);
       glVertex3i(rdxe, rdye, z);
 
-      glTexCoord2f(rx, rye);
+      P_TEXCOORD(rx, rye);
       glVertex3i(rdx, rdye, z);
     }
 
@@ -860,6 +965,13 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
   glDisable(GL_BLEND);
   glDisable(GL_COLOR_LOGIC_OP);
   glDisable(ptex->target);
+
+  if (dual_texture) {
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(ptex->target, 0);
+    glDisable(ptex->target);
+    glActiveTexture(GL_TEXTURE0);
+  }
 
   return true;
 }

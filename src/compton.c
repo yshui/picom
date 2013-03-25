@@ -1192,16 +1192,6 @@ paint_preprocess(session_t *ps, win *list) {
 
       if (w->shadow && !paint_isvalid(ps, &w->shadow_paint))
         win_build_shadow(ps, w, 1);
-
-      // Dimming preprocessing
-      if (w->dim) {
-        double dim_opacity = ps->o.inactive_dim;
-        if (!ps->o.inactive_dim_fixed)
-          dim_opacity *= get_opacity_percent(w);
-
-        w->dim_alpha_pict = get_alpha_pict_d(ps, dim_opacity);
-      }
-
     }
 
     if ((to_paint && WMODE_SOLID == w->mode)
@@ -1562,10 +1552,38 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint) {
     free_picture(ps, &pict);
 
   // Dimming the window if needed
-  if (BKEND_XRENDER == ps->o.backend
-      && w->dim && w->dim_alpha_pict != ps->alpha_picts[0]) {
-    XRenderComposite(ps->dpy, PictOpOver, ps->black_picture,
-        w->dim_alpha_pict, ps->tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
+  if (w->dim) {
+    double dim_opacity = ps->o.inactive_dim;
+    if (!ps->o.inactive_dim_fixed)
+      dim_opacity *= get_opacity_percent(w);
+
+    switch (ps->o.backend) {
+      case BKEND_XRENDER:
+        {
+          unsigned short cval = 0xffff * dim_opacity;
+
+          // Premultiply color
+          XRenderColor color = {
+            .red = 0, .green = 0, .blue = 0, .alpha = cval,
+          };
+
+          XRectangle rect = {
+            .x = x,
+            .y = y,
+            .width = wid,
+            .height = hei,
+          };
+
+          XRenderFillRectangles(ps->dpy, PictOpOver, ps->tgt_buffer, &color,
+              &rect, 1);
+        }
+        break;
+#ifdef CONFIG_VSYNC_OPENGL
+      case BKEND_GLX:
+        glx_dim_dst(ps, x, y, wid, hei, ps->glx_z - 0.7, dim_opacity);
+        break;
+#endif
+    }
   }
 }
 
@@ -2584,7 +2602,6 @@ add_win(session_t *ps, Window id, Window prev) {
     .prop_shadow = -1,
 
     .dim = false,
-    .dim_alpha_pict = None,
 
     .invert_color = false,
     .invert_color_force = UNSET,
@@ -4174,6 +4191,8 @@ usage(void) {
     "--blur-background-fixed\n"
     "  Use fixed blur strength instead of adjusting according to window\n"
     "  opacity.\n"
+    "--blur-background-exclude condition\n"
+    "  Exclude conditions for background blur.\n"
     "--invert-color-include condition\n"
     "  Specify a list of conditions of windows that should be painted with\n"
     "  inverted color. Resource-hogging, and is not well tested.\n"

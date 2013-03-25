@@ -878,9 +878,6 @@ typedef struct _win {
   // Dim-related members
   /// Whether the window is to be dimmed.
   bool dim;
-  /// Picture for dimming. Affected by user-specified inactive dim
-  /// opacity and window opacity.
-  Picture dim_alpha_pict;
 
   /// Whether to invert window color.
   bool invert_color;
@@ -1640,6 +1637,10 @@ glx_set_clip(session_t *ps, XserverRegion reg);
 bool
 glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     GLfloat factor_center);
+
+bool
+glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+    GLfloat factor);
 
 bool
 glx_render(session_t *ps, const glx_texture_t *ptex,
