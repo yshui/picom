@@ -1033,6 +1033,12 @@ cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
     "    <signal name='win_unmapped'>\n"
     "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
     "    </signal>\n"
+    "    <signal name='win_focusin'>\n"
+    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+    "    </signal>\n"
+    "    <signal name='win_focusout'>\n"
+    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+    "    </signal>\n"
     "    <method name='reset' />\n"
     "  </interface>\n"
     "</node>\n";
@@ -1068,5 +1074,17 @@ void
 cdbus_ev_win_unmapped(session_t *ps, win *w) {
   if (ps->dbus_conn)
     cdbus_signal_wid(ps, "win_unmapped", w->id);
+}
+
+void
+cdbus_ev_win_focusout(session_t *ps, win *w) {
+  if (ps->dbus_conn)
+    cdbus_signal_wid(ps, "win_focusout", w->id);
+}
+
+void
+cdbus_ev_win_focusin(session_t *ps, win *w) {
+  if (ps->dbus_conn)
+    cdbus_signal_wid(ps, "win_focusin", w->id);
 }
 //!@}

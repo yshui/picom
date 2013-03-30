@@ -2153,6 +2153,10 @@ calc_opacity(session_t *ps, win *w) {
         && (OPAQUE == opacity || ps->o.inactive_opacity_override)) {
       opacity = ps->o.inactive_opacity;
     }
+
+    // Respect active_opacity only when the window is physically focused
+    if (OPAQUE == opacity && ps->o.active_opacity && w->focused_real)
+      opacity = ps->o.active_opacity;
   }
 
   w->opacity_tgt = opacity;
@@ -3136,6 +3140,16 @@ win_set_focused(session_t *ps, win *w, bool focused) {
 
     // Update everything related to conditions
     win_on_factor_change(ps, w);
+
+#ifdef CONFIG_DBUS
+    // Send D-Bus signal
+    if (ps->o.dbus) {
+      if (w->focused_real)
+        cdbus_ev_win_focusin(ps, w);
+      else
+        cdbus_ev_win_focusout(ps, w);
+    }
+#endif
   }
 }
 /**
@@ -4095,6 +4109,8 @@ usage(void) {
     "  Inactive opacity set by -i overrides value of _NET_WM_OPACITY.\n"
     "--inactive-dim value\n"
     "  Dim inactive windows. (0.0 - 1.0, defaults to 0)\n"
+    "--active-opacity opacity\n"
+    "  Default opacity for active windows. (0.0 - 1.0)\n"
     "--mark-wmwin-focused\n"
     "  Try to detect WM windows and mark them as active.\n"
     "--shadow-exclude condition\n"
@@ -4520,6 +4536,9 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // -i (inactive_opacity)
   if (config_lookup_float(&cfg, "inactive-opacity", &dval))
     ps->o.inactive_opacity = normalize_d(dval) * OPAQUE;
+  // --active_opacity
+  if (config_lookup_float(&cfg, "active-opacity", &dval))
+    ps->o.active_opacity = normalize_d(dval) * OPAQUE;
   // -e (frame_opacity)
   config_lookup_float(&cfg, "frame-opacity", &ps->o.frame_opacity);
   // -z (clear_shadow)
@@ -4682,6 +4701,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "benchmark-wid", required_argument, NULL, 294 },
     { "glx-use-copysubbuffermesa", no_argument, NULL, 295 },
     { "blur-background-exclude", required_argument, NULL, 296 },
+    { "active-opacity", required_argument, NULL, 297 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4968,6 +4988,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --blur-background-exclude
         condlst_add(ps, &ps->o.blur_background_blacklist, optarg);
         break;
+      case 297:
+        // --active-opacity
+        ps->o.active_opacity = (normalize_d(atof(optarg)) * OPAQUE);
+        break;
       default:
         usage();
         break;
@@ -4992,6 +5016,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   ps->o.alpha_step = normalize_d_range(ps->o.alpha_step, 0.01, 1.0);
   if (OPAQUE == ps->o.inactive_opacity) {
     ps->o.inactive_opacity = 0;
+  }
+  if (OPAQUE == ps->o.active_opacity) {
+    ps->o.active_opacity = 0;
   }
   if (shadow_enable)
     wintype_arr_enable(ps->o.wintype_shadow);
@@ -5018,7 +5045,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   // Other variables determined by options
 
   // Determine whether we need to track focus changes
-  if (ps->o.inactive_opacity || ps->o.inactive_dim) {
+  if (ps->o.inactive_opacity || ps->o.active_opacity || ps->o.inactive_dim) {
     ps->o.track_focus = true;
   }
 
@@ -5840,6 +5867,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .wintype_opacity = { 0.0 },
       .inactive_opacity = 0,
       .inactive_opacity_override = false,
+      .active_opacity = 0,
       .frame_opacity = 0.0,
       .detect_client_opacity = false,
       .alpha_step = 0.03,
