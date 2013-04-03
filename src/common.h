@@ -76,6 +76,12 @@
 #include <X11/extensions/Xrandr.h>
 #include <X11/extensions/Xdbe.h>
 
+// Workarounds for missing definitions in very old versions of X headers,
+// thanks to consolers for reporting
+#ifndef PictOpDifference
+#define PictOpDifference 0x39
+#endif
+
 // libconfig
 #ifdef CONFIG_LIBCONFIG
 #include <libgen.h>
@@ -94,6 +100,13 @@
 #endif
 
 #include <GL/glx.h>
+
+// Workarounds for missing definitions in some broken GL drivers, thanks to
+// douglasp and consolers for reporting
+#ifndef GL_TEXTURE_RECTANGLE
+#define GL_TEXTURE_RECTANGLE 0x84F5
+#endif
+
 #endif
 
 // === Macros ===
