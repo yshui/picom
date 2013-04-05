@@ -1183,7 +1183,7 @@ c2_match_once_leaf(session_t *ps, win *w, const c2_l_t *pleaf,
         // Free the string after usage, if necessary
         if (tgt_free) {
           if (C2_L_TATOM == pleaf->type)
-            XFree(tgt_free);
+            cxfree(tgt_free);
           else
             free(tgt_free);
         }

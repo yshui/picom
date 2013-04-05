@@ -269,8 +269,7 @@ make_text_prop(session_t *ps, char *str) {
     printf_errfq(1, "(): Failed to allocate memory.");
 
   if (XmbTextListToTextProperty(ps->dpy, &str, 1,  XStringStyle, pprop)) {
-    if (pprop->value)
-      XFree(pprop->value);
+    cxfree(pprop->value);
     free(pprop);
     pprop = NULL;
   }
@@ -547,14 +546,15 @@ win_render(session_t *ps, win *w, int x, int y, int wid, int hei, double opacity
 }
 
 static inline void
-set_tgt_clip(session_t *ps, XserverRegion reg) {
+set_tgt_clip(session_t *ps, XserverRegion reg,
+    const XRectangle * const cache_rects, const int cache_nrects) {
   switch (ps->o.backend) {
     case BKEND_XRENDER:
       XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg);
       break;
 #ifdef CONFIG_VSYNC_OPENGL
     case BKEND_GLX:
-      glx_set_clip(ps, reg);
+      glx_set_clip(ps, reg, cache_rects, cache_nrects);
       break;
 #endif
   }
@@ -854,7 +854,7 @@ dump_region(const session_t *ps, XserverRegion region) {
     printf("Rect #%d: %8d, %8d, %8d, %8d\n", i, rects[i].x, rects[i].y,
         rects[i].width, rects[i].height);
 
-  XFree(rects);
+  cxfree(rects);
 }
 
 /**
@@ -865,13 +865,22 @@ dump_region(const session_t *ps, XserverRegion region) {
  *
  * @param ps current session
  * @param region region to check for
+ * @param pcache_rects a place to cache the dumped rectangles
+ * @param ncache_nrects a place to cache the number of dumped rectangles
  */
 static inline bool
-is_region_empty(const session_t *ps, XserverRegion region) {
+is_region_empty(const session_t *ps, XserverRegion region,
+    XRectangle **pcache_rects, int *pcache_nrects) {
   int nrects = 0;
   XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
 
-  XFree(rects);
+  if (pcache_rects)
+    *pcache_rects = rects;
+  else
+    cxfree(rects);
+
+  if (pcache_nrects)
+    *pcache_nrects = nrects;
 
   return !nrects;
 }

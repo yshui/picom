@@ -357,12 +357,15 @@ typedef struct {
   char *display;
   /// The backend in use.
   enum backend backend;
-  /// Whether to avoid using stencil buffer under GLX backend. Might be unsafe.
+  /// Whether to avoid using stencil buffer under GLX backend. Might be
+  /// unsafe.
   bool glx_no_stencil;
   /// Whether to copy unmodified regions from front buffer.
   bool glx_copy_from_front;
   /// Whether to use glXCopySubBufferMESA() to update screen.
   bool glx_use_copysubbuffermesa;
+  /// Whether to avoid rebinding pixmap on window damage.
+  bool glx_no_rebind_pixmap;
   /// Whether to try to detect WM windows and mark them as focused.
   bool mark_wmwin_focused;
   /// Whether to mark override-redirect windows as focused.
@@ -1425,6 +1428,17 @@ fds_poll(session_t *ps, struct timeval *ptv) {
 #undef CPY_FDS
 
 /**
+ * Wrapper of XFree() for convenience.
+ *
+ * Because a NULL pointer cannot be passed to XFree(), its man page says.
+ */
+static inline void
+cxfree(void *data) {
+  if (data)
+    XFree(data);
+}
+
+/**
  * Wrapper of XInternAtom() for convenience.
  */
 static inline Atom
@@ -1544,7 +1558,7 @@ wid_has_prop(const session_t *ps, Window w, Atom atom) {
 
   if (Success == XGetWindowProperty(ps->dpy, w, atom, 0, 0, False,
         AnyPropertyType, &type, &format, &nitems, &after, &data)) {
-    XFree(data);
+    cxfree(data);
     if (type) return true;
   }
 
@@ -1598,7 +1612,7 @@ static inline void
 free_winprop(winprop_t *pprop) {
   // Empty the whole structure to avoid possible issues
   if (pprop->data.p8) {
-    XFree(pprop->data.p8);
+    cxfree(pprop->data.p8);
     pprop->data.p8 = NULL;
   }
   pprop->nitems = 0;
@@ -1647,7 +1661,8 @@ glx_tex_binded(const glx_texture_t *ptex, Pixmap pixmap) {
 }
 
 void
-glx_set_clip(session_t *ps, XserverRegion reg);
+glx_set_clip(session_t *ps, XserverRegion reg,
+    const XRectangle * const cache_rects, const int cache_nrects);
 
 bool
 glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,

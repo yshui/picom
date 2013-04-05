@@ -135,8 +135,7 @@ glx_init(session_t *ps, bool need_render) {
   success = true;
 
 glx_init_end:
-  if (pvis)
-    XFree(pvis);
+  cxfree(pvis);
 
   if (!success)
     glx_destroy(ps);
@@ -324,8 +323,7 @@ glx_update_fbconfig(session_t *ps) {
     }
   }
 
-  if (pfbcfgs)
-    XFree(pfbcfgs);
+  cxfree(pfbcfgs);
 
   // Sanity checks
   if (!ps->glx_fbconfigs[ps->depth]) {
@@ -564,7 +562,7 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
     {
       XserverRegion reg_copy = XFixesCreateRegion(ps->dpy, NULL, 0);
       XFixesSubtractRegion(ps->dpy, reg_copy, ps->screen_reg, *preg);
-      glx_set_clip(ps, reg_copy);
+      glx_set_clip(ps, reg_copy, NULL, 0);
       free_region(ps, &reg_copy);
     }
 
@@ -579,14 +577,15 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
     }
   }
 
-  glx_set_clip(ps, *preg);
+  glx_set_clip(ps, *preg, NULL, 0);
 }
 
 /**
  * Set clipping region on the target window.
  */
 void
-glx_set_clip(session_t *ps, XserverRegion reg) {
+glx_set_clip(session_t *ps, XserverRegion reg,
+    const XRectangle * const cache_rects, const int cache_nrects) {
   // Quit if we aren't using stencils
   if (ps->o.glx_no_stencil)
     return;
@@ -601,10 +600,16 @@ glx_set_clip(session_t *ps, XserverRegion reg) {
   if (!reg)
     return;
 
-  int nrects = 0;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, reg, &nrects);
+  int nrects = cache_nrects;
+  XRectangle *rects_free = NULL;
+  const XRectangle *rects = cache_rects;
+  if (!rects) {
+    nrects = 0;
+    rects = rects_free = XFixesFetchRegion(ps->dpy, reg, &nrects);
+  }
   if (!nrects) {
-    if (rects) XFree(rects);
+    cxfree(rects_free);
+    rects_free = NULL;
     nrects = 1;
     rects = &rect_blank;
   }
@@ -649,8 +654,7 @@ glx_set_clip(session_t *ps, XserverRegion reg) {
     glDepthMask(GL_TRUE);
   }
 
-  if (rects && &rect_blank != rects)
-    XFree(rects);
+  cxfree(rects_free);
 }
 
 bool
@@ -954,7 +958,7 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     glEnd();
 
     if (rects && rects != &rec_all)
-      XFree(rects);
+      cxfree(rects);
     free_region(ps, &reg_new);
   }
 
@@ -989,7 +993,7 @@ glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg) {
     glXSwapBuffers(ps->dpy, get_tgt_window(ps));
   }
   else {
-    glx_set_clip(ps, None);
+    glx_set_clip(ps, None, NULL, 0);
     for (int i = 0; i < nrects; ++i) {
       const int x = rects[i].x;
       const int y = ps->root_height - rects[i].y - rects[i].height;
@@ -1003,8 +1007,7 @@ glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg) {
     }
   }
 
-  if (rects)
-    XFree(rects);
+  cxfree(rects);
 }
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL

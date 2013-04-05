@@ -614,7 +614,7 @@ wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
       };
   }
 
-  XFree(data);
+  cxfree(data);
 
   return (winprop_t) {
     .data.p8 = NULL,
@@ -658,12 +658,12 @@ win_rounded_corners(session_t *ps, win *w) {
   for (i = 0; i < nrects; ++i)
     if (rects[i].width >= minwidth && rects[i].height >= minheight) {
       w->rounded_corners = true;
-      XFree(rects);
+      cxfree(rects);
       return;
     }
 
   w->rounded_corners = false;
-  XFree(rects);
+  cxfree(rects);
 }
 
 /**
@@ -762,7 +762,7 @@ find_toplevel2(session_t *ps, Window wid) {
       break;
     }
 
-    if (tchildren) XFree(tchildren);
+    cxfree(tchildren);
 
     wid = parent;
   }
@@ -1026,7 +1026,7 @@ find_client_win(session_t *ps, Window w) {
       break;
   }
 
-  XFree(children);
+  cxfree(children);
 
   return ret;
 }
@@ -1448,7 +1448,8 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint) {
   // Let glx_bind_pixmap() determine pixmap size, because if the user
   // is resizing windows, the width and height we get may not be up-to-date,
   // causing the jittering issue M4he reported in #7.
-  if (!paint_bind_tex(ps, &w->paint, 0, 0, 0, w->pixmap_damaged)) {
+  if (!paint_bind_tex(ps, &w->paint, 0, 0, 0,
+        (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
     printf_errf("(%#010lx): Failed to bind texture. Expect troubles.", w->id);
   }
   w->pixmap_damaged = false;
@@ -1665,7 +1666,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
     reg_paint = region;
   }
 
-  set_tgt_clip(ps, reg_paint);
+  set_tgt_clip(ps, reg_paint, NULL, 0);
   paint_root(ps, reg_paint);
 
   // Create temporary regions for use during painting
@@ -1716,10 +1717,16 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
         XFixesSubtractRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
 
       // Detect if the region is empty before painting
-      if (region == reg_paint || !is_region_empty(ps, reg_paint)) {
-        set_tgt_clip(ps, reg_paint);
+      {
+        int nrects = 0;
+        XRectangle *rects = NULL;
+        if (region == reg_paint
+            || !is_region_empty(ps, reg_paint, &rects, &nrects)) {
+          set_tgt_clip(ps, reg_paint, rects, nrects);
 
-        win_paint_shadow(ps, w, reg_paint);
+          win_paint_shadow(ps, w, reg_paint);
+        }
+        cxfree(rects);
       }
     }
 
@@ -1743,16 +1750,21 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
         reg_paint = region;
     }
 
-    if (!is_region_empty(ps, reg_paint)) {
-      set_tgt_clip(ps, reg_paint);
-      // Blur window background
-      if (w->blur_background && (WMODE_SOLID != w->mode
-            || (ps->o.blur_background_frame && w->frame_opacity))) {
-        win_blur_background(ps, w, ps->tgt_buffer, reg_paint);
-      }
+    {
+      int nrects = 0;
+      XRectangle *rects = NULL;
+      if (!is_region_empty(ps, reg_paint, &rects, &nrects)) {
+        set_tgt_clip(ps, reg_paint, rects, nrects);
+        // Blur window background
+        if (w->blur_background && (WMODE_SOLID != w->mode
+              || (ps->o.blur_background_frame && w->frame_opacity))) {
+          win_blur_background(ps, w, ps->tgt_buffer, reg_paint);
+        }
 
-      // Painting the window
-      win_paint_win(ps, w, reg_paint);
+        // Painting the window
+        win_paint_win(ps, w, reg_paint);
+      }
+      cxfree(rects);
     }
   }
 
@@ -1762,7 +1774,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
 
   // Do this as early as possible
   if (!ps->o.dbe)
-    set_tgt_clip(ps, None);
+    set_tgt_clip(ps, None, NULL, 0);
 
   if (ps->o.vsync) {
     // Make sure all previous requests are processed to achieve best
@@ -2751,7 +2763,7 @@ restack_win(session_t *ps, win *w, Window new_above) {
           printf("-> ");
 
         if (to_free) {
-          XFree(window_name);
+          cxfree(window_name);
           window_name = NULL;
         }
       }
@@ -3251,11 +3263,11 @@ wid_get_text_prop(session_t *ps, Window wid, Atom prop,
     *pnstr = 0;
     if (*pstrlst)
       XFreeStringList(*pstrlst);
-    XFree(text_prop.value);
+    cxfree(text_prop.value);
     return false;
   }
 
-  XFree(text_prop.value);
+  cxfree(text_prop.value);
   return true;
 }
 
@@ -3281,10 +3293,10 @@ wid_get_name(session_t *ps, Window wid, char **name) {
         || !nstr || !strlst) {
       if (strlst)
         XFreeStringList(strlst);
-      XFree(text_prop.value);
+      cxfree(text_prop.value);
       return false;
     }
-    XFree(text_prop.value);
+    cxfree(text_prop.value);
   }
 
   *name = mstrcpy(strlst[0]);
@@ -3766,8 +3778,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
     // Print out changed atom
     char *name = XGetAtomName(ps->dpy, ev->atom);
     printf_dbg("  { atom = %s }\n", name);
-    if (name)
-      XFree(name);
+    cxfree(name);
   }
 #endif
 
@@ -3987,7 +3998,7 @@ ev_handle(session_t *ps, XEvent *ev) {
       ev_name(ps, ev), ev_serial(ev), wid, window_name);
 
     if (to_free) {
-      XFree(window_name);
+      cxfree(window_name);
       window_name = NULL;
     }
   }
@@ -4228,6 +4239,10 @@ usage(void) {
     "  My tests on nouveau shows a 200% performance boost when only 1/4 of\n"
     "  the screen is updated. May break VSync and is not available on some\n"
     "  drivers. Overrides --glx-copy-from-front.\n"
+    "--glx-no-rebind-pixmap\n"
+    "  GLX backend: Avoid rebinding pixmap on window damage. Probably\n"
+    "  could improve performance on rapid window content changes, but is\n"
+    "  known to break things on some drivers.\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED
@@ -4702,6 +4717,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "glx-use-copysubbuffermesa", no_argument, NULL, 295 },
     { "blur-background-exclude", required_argument, NULL, 296 },
     { "active-opacity", required_argument, NULL, 297 },
+    { "glx-no-rebind-pixmap", no_argument, NULL, 298 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4759,6 +4775,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   while (-1 !=
       (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
     switch (o) {
+#define P_CASEBOOL(idx, option) case idx: ps->o.option = true; break
       // Short options
       case 'h':
         usage();
@@ -4790,9 +4807,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 'F':
         fading_enable = true;
         break;
-      case 'S':
-        ps->o.synchronize = true;
-        break;
+      P_CASEBOOL('S', synchronize);
       case 'r':
         ps->o.shadow_radius = atoi(optarg);
         break;
@@ -4811,17 +4826,13 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 'e':
         ps->o.frame_opacity = atof(optarg);
         break;
-      case 'z':
-        ps->o.clear_shadow = true;
-        break;
+      P_CASEBOOL('z', clear_shadow);
       case 'n':
       case 'a':
       case 's':
         printf_errfq(1, "(): -n, -a, and -s have been removed.");
         break;
-      case 'b':
-        ps->o.fork_after_register = true;
-        break;
+      P_CASEBOOL('b', fork_after_register);
       // Long options
       case 256:
         // --config
@@ -4838,42 +4849,21 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --shadow-blue
         ps->o.shadow_blue = atof(optarg);
         break;
-      case 260:
-        // --inactive-opacity-override
-        ps->o.inactive_opacity_override = true;
-        break;
+      P_CASEBOOL(260, inactive_opacity_override);
       case 261:
         // --inactive-dim
         ps->o.inactive_dim = atof(optarg);
         break;
-      case 262:
-        // --mark-wmwin-focused
-        ps->o.mark_wmwin_focused = true;
-        break;
+      P_CASEBOOL(262, mark_wmwin_focused);
       case 263:
         // --shadow-exclude
         condlst_add(ps, &ps->o.shadow_blacklist, optarg);
         break;
-      case 264:
-        // --mark-ovredir-focused
-        ps->o.mark_ovredir_focused = true;
-        break;
-      case 265:
-        // --no-fading-openclose
-        ps->o.no_fading_openclose = true;
-        break;
-      case 266:
-        // --shadow-ignore-shaped
-        ps->o.shadow_ignore_shaped = true;
-        break;
-      case 267:
-        // --detect-rounded-corners
-        ps->o.detect_rounded_corners = true;
-        break;
-      case 268:
-        // --detect-client-opacity
-        ps->o.detect_client_opacity = true;
-        break;
+      P_CASEBOOL(264, mark_ovredir_focused);
+      P_CASEBOOL(265, no_fading_openclose);
+      P_CASEBOOL(266, shadow_ignore_shaped);
+      P_CASEBOOL(267, detect_rounded_corners);
+      P_CASEBOOL(268, detect_client_opacity);
       case 269:
         // --refresh-rate
         ps->o.refresh_rate = atoi(optarg);
@@ -4887,66 +4877,24 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --alpha-step
         ps->o.alpha_step = atof(optarg);
         break;
-      case 272:
-        // --dbe
-        ps->o.dbe = true;
-        break;
-      case 273:
-        // --paint-on-overlay
-        ps->o.paint_on_overlay = true;
-        break;
-      case 274:
-        // --sw-opti
-        ps->o.sw_opti = true;
-        break;
-      case 275:
-        // --vsync-aggressive
-        ps->o.vsync_aggressive = true;
-        break;
-      case 276:
-        // --use-ewmh-active-win
-        ps->o.use_ewmh_active_win = true;
-        break;
-      case 277:
-        // --respect-prop-shadow
-        ps->o.respect_prop_shadow = true;
-        break;
-      case 278:
-        // --unredir-if-possible
-        ps->o.unredir_if_possible = true;
-        break;
+      P_CASEBOOL(272, dbe);
+      P_CASEBOOL(273, paint_on_overlay);
+      P_CASEBOOL(274, sw_opti);
+      P_CASEBOOL(275, vsync_aggressive);
+      P_CASEBOOL(276, use_ewmh_active_win);
+      P_CASEBOOL(277, respect_prop_shadow);
+      P_CASEBOOL(278, unredir_if_possible);
       case 279:
         // --focus-exclude
         condlst_add(ps, &ps->o.focus_blacklist, optarg);
         break;
-      case 280:
-        // --inactive-dim-fixed
-        ps->o.inactive_dim_fixed = true;
-        break;
-      case 281:
-        // --detect-transient
-        ps->o.detect_transient = true;
-        break;
-      case 282:
-        // --detect-client-leader
-        ps->o.detect_client_leader = true;
-        break;
-      case 283:
-        // --blur-background
-        ps->o.blur_background = true;
-        break;
-      case 284:
-        // --blur-background-frame
-        ps->o.blur_background_frame = true;
-        break;
-      case 285:
-        // --blur-background-fixed
-        ps->o.blur_background_fixed = true;
-        break;
-      case 286:
-        // --dbus
-        ps->o.dbus = true;
-        break;
+      P_CASEBOOL(280, inactive_dim_fixed);
+      P_CASEBOOL(281, detect_transient);
+      P_CASEBOOL(282, detect_client_leader);
+      P_CASEBOOL(283, blur_background);
+      P_CASEBOOL(284, blur_background_frame);
+      P_CASEBOOL(285, blur_background_fixed);
+      P_CASEBOOL(286, dbus);
       case 287:
         // --logpath
         ps->o.logpath = mstrcpy(optarg);
@@ -4964,14 +4912,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         if (!parse_backend(ps, optarg))
           exit(1);
         break;
-      case 291:
-        // --glx-no-stencil
-        ps->o.glx_no_stencil = true;
-        break;
-      case 292:
-        // --glx-copy-from-front
-        ps->o.glx_copy_from_front = true;
-        break;
+      P_CASEBOOL(291, glx_no_stencil);
+      P_CASEBOOL(292, glx_copy_from_front);
       case 293:
         // --benchmark
         ps->o.benchmark = atoi(optarg);
@@ -4980,10 +4922,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --benchmark-wid
         ps->o.benchmark_wid = strtol(optarg, NULL, 0);
         break;
-      case 295:
-        // --glx-use-copysubbuffermesa
-        ps->o.glx_use_copysubbuffermesa = true;
-        break;
+      P_CASEBOOL(295, glx_use_copysubbuffermesa);
       case 296:
         // --blur-background-exclude
         condlst_add(ps, &ps->o.blur_background_blacklist, optarg);
@@ -4992,9 +4931,11 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --active-opacity
         ps->o.active_opacity = (normalize_d(atof(optarg)) * OPAQUE);
         break;
+      P_CASEBOOL(298, glx_no_rebind_pixmap);
       default:
         usage();
         break;
+#undef P_CASEBOOL
     }
   }
 
@@ -5492,7 +5433,7 @@ init_filters(session_t *ps) {
                 ps->xrfilter_convolution_exists = true;
             }
           }
-          XFree(pf);
+          cxfree(pf);
 
           // Turn features off if any required filter is not present
           if (!ps->xrfilter_convolution_exists) {
@@ -6195,7 +6136,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       add_win(ps, children[i], i ? children[i-1] : None);
     }
 
-    XFree(children);
+    cxfree(children);
   }
 
 
@@ -6445,7 +6386,7 @@ session_run(session_t *ps) {
     if (!ps->redirected)
       free_region(ps, &ps->all_damage);
 
-    if (ps->all_damage && !is_region_empty(ps, ps->all_damage)) {
+    if (ps->all_damage && !is_region_empty(ps, ps->all_damage, NULL, NULL)) {
       static int paint = 0;
       paint_all(ps, ps->all_damage, t);
       ps->reg_ignore_expire = false;
