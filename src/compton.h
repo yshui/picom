@@ -197,6 +197,16 @@ paint_bind_tex(session_t *ps, paint_t *ppaint,
 }
 
 /**
+ * Free data in a reg_data_t.
+ */
+static inline void
+free_reg_data(reg_data_t *pregd) {
+  cxfree(pregd->rects);
+  pregd->rects = NULL;
+  pregd->nrects = 0;
+}
+
+/**
  * Free paint_t.
  */
 static inline void
@@ -532,29 +542,29 @@ paint_preprocess(session_t *ps, win *list);
 static void
 render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     double opacity, bool argb, bool neg,
-    Picture pict, glx_texture_t *ptex, XserverRegion reg_paint);
+    Picture pict, glx_texture_t *ptex,
+    XserverRegion reg_paint, const reg_data_t *pcache_reg);
 
 static inline void
-win_render(session_t *ps, win *w, int x, int y, int wid, int hei, double opacity, XserverRegion reg_paint, Picture pict) {
+win_render(session_t *ps, win *w, int x, int y, int wid, int hei, double opacity, XserverRegion reg_paint, const reg_data_t *pcache_reg, Picture pict) {
   const int dx = (w ? w->a.x: 0) + x;
   const int dy = (w ? w->a.y: 0) + y;
   const bool argb = (w && w->mode == WMODE_ARGB);
   const bool neg = (w && w->invert_color);
 
   render(ps, x, y, dx, dy, wid, hei, opacity, argb, neg,
-      pict, (w ? w->paint.ptex: ps->root_tile_paint.ptex), reg_paint);
+      pict, (w ? w->paint.ptex: ps->root_tile_paint.ptex), reg_paint, pcache_reg);
 }
 
 static inline void
-set_tgt_clip(session_t *ps, XserverRegion reg,
-    const XRectangle * const cache_rects, const int cache_nrects) {
+set_tgt_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
   switch (ps->o.backend) {
     case BKEND_XRENDER:
       XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg);
       break;
 #ifdef CONFIG_VSYNC_OPENGL
     case BKEND_GLX:
-      glx_set_clip(ps, reg, cache_rects, cache_nrects);
+      glx_set_clip(ps, reg, pcache_reg);
       break;
 #endif
   }
@@ -870,17 +880,16 @@ dump_region(const session_t *ps, XserverRegion region) {
  */
 static inline bool
 is_region_empty(const session_t *ps, XserverRegion region,
-    XRectangle **pcache_rects, int *pcache_nrects) {
+    reg_data_t *pcache_reg) {
   int nrects = 0;
   XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
 
-  if (pcache_rects)
-    *pcache_rects = rects;
+  if (pcache_reg) {
+    pcache_reg->rects = rects;
+    pcache_reg->nrects = nrects;
+  }
   else
     cxfree(rects);
-
-  if (pcache_nrects)
-    *pcache_nrects = nrects;
 
   return !nrects;
 }

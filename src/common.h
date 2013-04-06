@@ -341,6 +341,14 @@ typedef struct _latom {
   struct _latom *next;
 } latom_t;
 
+/// A representation of raw region data
+typedef struct {
+  XRectangle *rects;
+  int nrects;
+} reg_data_t;
+
+#define REG_DATA_INIT { NULL, 0 }
+
 struct _timeout_t;
 
 struct _win;
@@ -1533,6 +1541,20 @@ free_region(session_t *ps, XserverRegion *p) {
 }
 
 /**
+ * Crop a rectangle by another rectangle.
+ *
+ * psrc and pdst cannot be the same.
+ */
+static inline void
+rect_crop(XRectangle *pdst, const XRectangle *psrc, const XRectangle *pbound) {
+  assert(psrc != pdst);
+  pdst->x = max_i(psrc->x, pbound->x);
+  pdst->y = max_i(psrc->y, pbound->y);
+  pdst->width = max_i(0, min_i(psrc->x + psrc->width, pbound->x + pbound->width) - pdst->x);
+  pdst->height = max_i(0, min_i(psrc->y + psrc->height, pbound->y + pbound->height) - pdst->y);
+}
+
+/**
  * Check if a rectangle includes the whole screen.
  */
 static inline bool
@@ -1661,21 +1683,21 @@ glx_tex_binded(const glx_texture_t *ptex, Pixmap pixmap) {
 }
 
 void
-glx_set_clip(session_t *ps, XserverRegion reg,
-    const XRectangle * const cache_rects, const int cache_nrects);
+glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg);
 
 bool
 glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
-    GLfloat factor_center);
+    GLfloat factor_center, XserverRegion reg_tgt, const reg_data_t *pcache_reg);
 
 bool
 glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
-    GLfloat factor);
+    GLfloat factor, XserverRegion reg_tgt, const reg_data_t *pcache_reg);
 
 bool
 glx_render(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
-    double opacity, bool neg, XserverRegion reg_tgt);
+    double opacity, bool neg,
+    XserverRegion reg_tgt, const reg_data_t *pcache_reg);
 
 void
 glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg);

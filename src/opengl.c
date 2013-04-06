@@ -190,11 +190,6 @@ glx_on_root_change(session_t *ps) {
 bool
 glx_init_blur(session_t *ps) {
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
-  if (ps->o.glx_no_stencil) {
-    printf_errf("(): I'm afraid blur background won't work so well without "
-        "stencil buffer support.");
-  }
-
   // Build shader
   static const char *FRAG_SHADER_BLUR =
     "#version 110\n"
@@ -562,7 +557,7 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
     {
       XserverRegion reg_copy = XFixesCreateRegion(ps->dpy, NULL, 0);
       XFixesSubtractRegion(ps->dpy, reg_copy, ps->screen_reg, *preg);
-      glx_set_clip(ps, reg_copy, NULL, 0);
+      glx_set_clip(ps, reg_copy, NULL);
       free_region(ps, &reg_copy);
     }
 
@@ -577,22 +572,19 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
     }
   }
 
-  glx_set_clip(ps, *preg, NULL, 0);
+  glx_set_clip(ps, *preg, NULL);
 }
 
 /**
  * Set clipping region on the target window.
  */
 void
-glx_set_clip(session_t *ps, XserverRegion reg,
-    const XRectangle * const cache_rects, const int cache_nrects) {
+glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
   // Quit if we aren't using stencils
   if (ps->o.glx_no_stencil)
     return;
 
-  static XRectangle rect_blank = {
-    .x = 0, .y = 0, .width = 0, .height = 0
-  };
+  static XRectangle rect_blank = { .x = 0, .y = 0, .width = 0, .height = 0 };
 
   glDisable(GL_STENCIL_TEST);
   glDisable(GL_SCISSOR_TEST);
@@ -600,13 +592,18 @@ glx_set_clip(session_t *ps, XserverRegion reg,
   if (!reg)
     return;
 
-  int nrects = cache_nrects;
+  int nrects = 0;
   XRectangle *rects_free = NULL;
-  const XRectangle *rects = cache_rects;
+  const XRectangle *rects = NULL;
+  if (pcache_reg) {
+    rects = pcache_reg->rects;
+    nrects = pcache_reg->nrects;
+  }
   if (!rects) {
     nrects = 0;
     rects = rects_free = XFixesFetchRegion(ps->dpy, reg, &nrects);
   }
+  // Use one empty rectangle if the region is empty
   if (!nrects) {
     cxfree(rects_free);
     rects_free = NULL;
@@ -657,9 +654,45 @@ glx_set_clip(session_t *ps, XserverRegion reg,
   cxfree(rects_free);
 }
 
+#define P_PAINTREG_START() \
+  XserverRegion reg_new = None; \
+  XRectangle rec_all = { .x = dx, .y = dy, .width = width, .height = height }; \
+  XRectangle *rects = &rec_all; \
+  int nrects = 1; \
+ \
+  if (ps->o.glx_no_stencil && reg_tgt) { \
+    if (pcache_reg) { \
+      rects = pcache_reg->rects; \
+      nrects = pcache_reg->nrects; \
+    } \
+    else { \
+      reg_new = XFixesCreateRegion(ps->dpy, &rec_all, 1); \
+      XFixesIntersectRegion(ps->dpy, reg_new, reg_new, reg_tgt); \
+ \
+      nrects = 0; \
+      rects = XFixesFetchRegion(ps->dpy, reg_new, &nrects); \
+    } \
+  } \
+  glBegin(GL_QUADS); \
+ \
+  for (int i = 0; i < nrects; ++i) { \
+    XRectangle crect; \
+    rect_crop(&crect, &rects[i], &rec_all); \
+ \
+    if (!crect.width || !crect.height) \
+      continue; \
+
+#define P_PAINTREG_END() \
+  } \
+  glEnd(); \
+ \
+  if (rects && rects != &rec_all && !(pcache_reg && pcache_reg->rects == rects)) \
+    cxfree(rects); \
+  free_region(ps, &reg_new); \
+
 bool
 glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
-    GLfloat factor_center) {
+    GLfloat factor_center, XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
   // Read destination pixels into a texture
   GLuint tex_scr = 0;
   glGenTextures(1, &tex_scr);
@@ -699,36 +732,36 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   glUniform1f(ps->glx_prog_blur_unifm_factor_center, factor_center);
 #endif
 
-  glBegin(GL_QUADS);
-
   {
-    const GLfloat rx = 0.0;
-    const GLfloat ry = 1.0;
-    const GLfloat rxe = 1.0;
-    const GLfloat rye = 0.0;
-    const GLint rdx = dx;
-    const GLint rdy = ps->root_height - dy;
-    const GLint rdxe = rdx + width;
-    const GLint rdye = rdy - height;
+    P_PAINTREG_START();
+    {
+      const GLfloat rx = (double) (crect.x - dx) / width;
+      const GLfloat ry = 1.0 - (double) (crect.y - dy) / height;
+      const GLfloat rxe = rx + (double) crect.width / width;
+      const GLfloat rye = ry - (double) crect.height / height;
+      const GLfloat rdx = crect.x;
+      const GLfloat rdy = ps->root_height - crect.y;
+      const GLfloat rdxe = rdx + crect.width;
+      const GLfloat rdye = rdy - crect.height;
 
 #ifdef DEBUG_GLX
-    printf_dbgf("(): %f, %f, %f, %f -> %d, %d, %d, %d\n", rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
+      printf_dbgf("(): %f, %f, %f, %f -> %d, %d, %d, %d\n", rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
 #endif
 
-    glTexCoord2f(rx, ry);
-    glVertex3f(rdx, rdy, z);
+      glTexCoord2f(rx, ry);
+      glVertex3f(rdx, rdy, z);
 
-    glTexCoord2f(rxe, ry);
-    glVertex3f(rdxe, rdy, z);
+      glTexCoord2f(rxe, ry);
+      glVertex3f(rdxe, rdy, z);
 
-    glTexCoord2f(rxe, rye);
-    glVertex3f(rdxe, rdye, z);
+      glTexCoord2f(rxe, rye);
+      glVertex3f(rdxe, rdye, z);
 
-    glTexCoord2f(rx, rye);
-    glVertex3f(rdx, rdye, z);
+      glTexCoord2f(rx, rye);
+      glVertex3f(rdx, rdye, z);
+    }
+    P_PAINTREG_END();
   }
-
-  glEnd();
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   glUseProgram(0);
@@ -743,25 +776,27 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 
 bool
 glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
-    GLfloat factor) {
+    GLfloat factor, XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
   // It's possible to dim in glx_render(), but it would be over-complicated
   // considering all those mess in color negation and modulation
   glEnable(GL_BLEND);
   glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
   glColor4f(0.0f, 0.0f, 0.0f, factor);
 
-  glBegin(GL_QUADS);
-
   {
-    GLint rdx = dx;
-    GLint rdy = ps->root_height - dy;
-    GLint rdxe = rdx + width;
-    GLint rdye = rdy - height;
+    P_PAINTREG_START();
+    {
+      GLint rdx = crect.x;
+      GLint rdy = ps->root_height - crect.y;
+      GLint rdxe = rdx + crect.width;
+      GLint rdye = rdy - crect.height;
 
-    glVertex3i(rdx, rdy, z);
-    glVertex3i(rdxe, rdy, z);
-    glVertex3i(rdxe, rdye, z);
-    glVertex3i(rdx, rdye, z);
+      glVertex3i(rdx, rdy, z);
+      glVertex3i(rdxe, rdy, z);
+      glVertex3i(rdxe, rdye, z);
+      glVertex3i(rdx, rdye, z);
+    }
+    P_PAINTREG_END();
   }
 
   glEnd();
@@ -778,7 +813,8 @@ glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 bool
 glx_render(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
-    double opacity, bool neg, XserverRegion reg_tgt) {
+    double opacity, bool neg,
+    XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
   if (!ptex || !ptex->texture) {
     printf_errf("(): Missing texture.");
     return false;
@@ -878,51 +914,30 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     }
   }
 
-  {
-    XserverRegion reg_new = None;
-
-    XRectangle rec_all = {
-      .x = dx,
-      .y = dy,
-      .width = width,
-      .height = height
-    };
-
-    XRectangle *rects = &rec_all;
-    int nrects = 1;
-
 #ifdef DEBUG_GLX
-    printf_dbgf("(): Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n", x, y, width, height, dx, dy, ptex->width, ptex->height, z);
+  printf_dbgf("(): Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n", x, y, width, height, dx, dy, ptex->width, ptex->height, z);
 #endif
 
-    // On no-stencil mode, calculate painting region here instead of relying
-    // on stencil buffer
-    if (ps->o.glx_no_stencil && reg_tgt) {
-      reg_new = XFixesCreateRegion(ps->dpy, &rec_all, 1);
-      XFixesIntersectRegion(ps->dpy, reg_new, reg_new, reg_tgt);
-
-      nrects = 0;
-      rects = XFixesFetchRegion(ps->dpy, reg_new, &nrects);
-    }
-
+  // Bind texture
+  glBindTexture(ptex->target, ptex->texture);
+  if (dual_texture) {
+    glActiveTexture(GL_TEXTURE1);
     glBindTexture(ptex->target, ptex->texture);
-    if (dual_texture) {
-      glActiveTexture(GL_TEXTURE1);
-      glBindTexture(ptex->target, ptex->texture);
-      glActiveTexture(GL_TEXTURE0);
-    }
+    glActiveTexture(GL_TEXTURE0);
+  }
 
-    glBegin(GL_QUADS);
-
-    for (int i = 0; i < nrects; ++i) {
-      GLfloat rx = (double) (rects[i].x - dx + x) / ptex->width;
-      GLfloat ry = (double) (rects[i].y - dy + y) / ptex->height;
-      GLfloat rxe = rx + (double) rects[i].width / ptex->width;
-      GLfloat rye = ry + (double) rects[i].height / ptex->height;
-      GLint rdx = rects[i].x;
-      GLint rdy = ps->root_height - rects[i].y;
-      GLint rdxe = rdx + rects[i].width;
-      GLint rdye = rdy - rects[i].height;
+  // Painting
+  {
+    P_PAINTREG_START();
+    {
+      GLfloat rx = (double) (crect.x - dx + x) / ptex->width;
+      GLfloat ry = (double) (crect.y - dy + y) / ptex->height;
+      GLfloat rxe = rx + (double) crect.width / ptex->width;
+      GLfloat rye = ry + (double) crect.height / ptex->height;
+      GLint rdx = crect.x;
+      GLint rdy = ps->root_height - crect.y;
+      GLint rdxe = rdx + crect.width;
+      GLint rdye = rdy - crect.height;
 
       // Invert Y if needed, this may not work as expected, though. I don't
       // have such a FBConfig to test with.
@@ -954,12 +969,7 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
       P_TEXCOORD(rx, rye);
       glVertex3i(rdx, rdye, z);
     }
-
-    glEnd();
-
-    if (rects && rects != &rec_all)
-      cxfree(rects);
-    free_region(ps, &reg_new);
+    P_PAINTREG_END();
   }
 
   // Cleanup
@@ -993,7 +1003,7 @@ glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg) {
     glXSwapBuffers(ps->dpy, get_tgt_window(ps));
   }
   else {
-    glx_set_clip(ps, None, NULL, 0);
+    glx_set_clip(ps, None, NULL);
     for (int i = 0; i < nrects; ++i) {
       const int x = rects[i].x;
       const int y = ps->root_height - rects[i].y - rects[i].height;

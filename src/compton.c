@@ -881,7 +881,7 @@ paint_root(session_t *ps, XserverRegion reg_paint) {
     get_root_tile(ps);
 
   win_render(ps, NULL, 0, 0, ps->root_width, ps->root_height, 1.0, reg_paint,
-      ps->root_tile_paint.pict);
+      NULL, ps->root_tile_paint.pict);
 }
 
 /**
@@ -1280,7 +1280,8 @@ paint_preprocess(session_t *ps, win *list) {
  * Paint the shadow of a window.
  */
 static inline void
-win_paint_shadow(session_t *ps, win *w, XserverRegion reg_paint) {
+win_paint_shadow(session_t *ps, win *w,
+    XserverRegion reg_paint, const reg_data_t *pcache_reg) {
   if (!paint_isvalid(ps, &w->shadow_paint)) {
     printf_errf("(%#010lx): Missing painting data. This is a bad sign.", w->id);
     return;
@@ -1288,7 +1289,7 @@ win_paint_shadow(session_t *ps, win *w, XserverRegion reg_paint) {
 
   render(ps, 0, 0, w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
       w->shadow_width, w->shadow_height, w->shadow_opacity, true, false,
-      w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint);
+      w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint, pcache_reg);
 }
 
 /**
@@ -1320,7 +1321,7 @@ win_build_picture(session_t *ps, win *w, XRenderPictFormat *pictfmt) {
  */
 static inline void
 win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
-    XserverRegion reg_paint) {
+    XserverRegion reg_paint, const reg_data_t *pcache_reg) {
   const int x = w->a.x;
   const int y = w->a.y;
   const int wid = w->widthb;
@@ -1385,7 +1386,8 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
       break;
 #ifdef CONFIG_VSYNC_OPENGL
     case BKEND_GLX:
-      glx_blur_dst(ps, x, y, wid, hei, ps->glx_z - 0.5, factor_center);
+      glx_blur_dst(ps, x, y, wid, hei, ps->glx_z - 0.5, factor_center,
+          reg_paint, pcache_reg);
       break;
 #endif
     default:
@@ -1396,7 +1398,8 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
 static void
 render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     double opacity, bool argb, bool neg,
-    Picture pict, glx_texture_t *ptex, XserverRegion reg_paint) {
+    Picture pict, glx_texture_t *ptex,
+    XserverRegion reg_paint, const reg_data_t *pcache_reg) {
   switch (ps->o.backend) {
     case BKEND_XRENDER:
       {
@@ -1411,7 +1414,7 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
 #ifdef CONFIG_VSYNC_OPENGL
     case BKEND_GLX:
       glx_render(ps, ptex, x, y, dx, dy, wid, hei,
-          ps->glx_z, opacity, neg, reg_paint);
+          ps->glx_z, opacity, neg, reg_paint, pcache_reg);
       ps->glx_z += 1;
       break;
 #endif
@@ -1424,7 +1427,8 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
  * Paint a window itself and dim it if asked.
  */
 static inline void
-win_paint_win(session_t *ps, win *w, XserverRegion reg_paint) {
+win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
+    const reg_data_t *pcache_reg) {
   // Fetch Pixmap
   if (!w->paint.pixmap && ps->has_name_pixmap) {
     set_ignore_next(ps);
@@ -1494,7 +1498,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint) {
   double dopacity = get_opacity_percent(w);;
 
   if (!w->frame_opacity) {
-    win_render(ps, w, 0, 0, wid, hei, dopacity, reg_paint, pict);
+    win_render(ps, w, 0, 0, wid, hei, dopacity, reg_paint, pcache_reg, pict);
   }
   else {
     // Painting parameters
@@ -1505,7 +1509,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint) {
 
 #define COMP_BDR(cx, cy, cwid, chei) \
     win_render(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity, \
-        reg_paint, pict)
+        reg_paint, pcache_reg, pict)
 
     // The following complicated logic is required because some broken
     // window managers (I'm talking about you, Openbox!) that makes
@@ -1540,7 +1544,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint) {
           pwid = wid - l - pwid;
           if (pwid > 0) {
             // body
-            win_render(ps, w, l, t, pwid, phei, dopacity, reg_paint, pict);
+            win_render(ps, w, l, t, pwid, phei, dopacity, reg_paint, pcache_reg, pict);
           }
         }
       }
@@ -1581,7 +1585,8 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint) {
         break;
 #ifdef CONFIG_VSYNC_OPENGL
       case BKEND_GLX:
-        glx_dim_dst(ps, x, y, wid, hei, ps->glx_z - 0.7, dim_opacity);
+        glx_dim_dst(ps, x, y, wid, hei, ps->glx_z - 0.7, dim_opacity,
+            reg_paint, pcache_reg);
         break;
 #endif
     }
@@ -1666,7 +1671,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
     reg_paint = region;
   }
 
-  set_tgt_clip(ps, reg_paint, NULL, 0);
+  set_tgt_clip(ps, reg_paint, NULL);
   paint_root(ps, reg_paint);
 
   // Create temporary regions for use during painting
@@ -1718,15 +1723,14 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
 
       // Detect if the region is empty before painting
       {
-        int nrects = 0;
-        XRectangle *rects = NULL;
+        reg_data_t cache_reg = REG_DATA_INIT;
         if (region == reg_paint
-            || !is_region_empty(ps, reg_paint, &rects, &nrects)) {
-          set_tgt_clip(ps, reg_paint, rects, nrects);
+            || !is_region_empty(ps, reg_paint, &cache_reg)) {
+          set_tgt_clip(ps, reg_paint, &cache_reg);
 
-          win_paint_shadow(ps, w, reg_paint);
+          win_paint_shadow(ps, w, reg_paint, &cache_reg);
         }
-        cxfree(rects);
+        free_reg_data(&cache_reg);
       }
     }
 
@@ -1751,20 +1755,19 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
     }
 
     {
-      int nrects = 0;
-      XRectangle *rects = NULL;
-      if (!is_region_empty(ps, reg_paint, &rects, &nrects)) {
-        set_tgt_clip(ps, reg_paint, rects, nrects);
+      reg_data_t cache_reg = REG_DATA_INIT;
+      if (!is_region_empty(ps, reg_paint, &cache_reg)) {
+        set_tgt_clip(ps, reg_paint, &cache_reg);
         // Blur window background
         if (w->blur_background && (WMODE_SOLID != w->mode
               || (ps->o.blur_background_frame && w->frame_opacity))) {
-          win_blur_background(ps, w, ps->tgt_buffer, reg_paint);
+          win_blur_background(ps, w, ps->tgt_buffer, reg_paint, &cache_reg);
         }
 
         // Painting the window
-        win_paint_win(ps, w, reg_paint);
+        win_paint_win(ps, w, reg_paint, &cache_reg);
       }
-      cxfree(rects);
+      free_reg_data(&cache_reg);
     }
   }
 
@@ -1774,7 +1777,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
 
   // Do this as early as possible
   if (!ps->o.dbe)
-    set_tgt_clip(ps, None, NULL, 0);
+    set_tgt_clip(ps, None, NULL);
 
   if (ps->o.vsync) {
     // Make sure all previous requests are processed to achieve best
@@ -4227,8 +4230,8 @@ usage(void) {
     "  Choose backend. Possible choices are xrender and glx" WARNING ".\n"
     "--glx-no-stencil\n"
     "  GLX backend: Avoid using stencil buffer. Might cause issues\n"
-    "  when rendering transparent content. May have a positive or\n"
-    "  negative effect on performance. (My test shows a 10% slowdown.)\n"
+    "  when rendering transparent content. My tests show a 15% performance\n"
+    "  boost.\n"
     "--glx-copy-from-front\n"
     "  GLX backend: Copy unmodified regions from front buffer instead of\n"
     "  redrawing them all. My tests with nvidia-drivers show a 10% decrease\n"
@@ -6386,7 +6389,7 @@ session_run(session_t *ps) {
     if (!ps->redirected)
       free_region(ps, &ps->all_damage);
 
-    if (ps->all_damage && !is_region_empty(ps, ps->all_damage, NULL, NULL)) {
+    if (ps->all_damage && !is_region_empty(ps, ps->all_damage, NULL)) {
       static int paint = 0;
       paint_all(ps, ps->all_damage, t);
       ps->reg_ignore_expire = false;
