@@ -545,10 +545,20 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
   ps->glx_z = 0.0;
   // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+  // Exchange swap is interested in the raw damaged region only
+  XserverRegion all_damage_last = ps->all_damage_last;
+  ps->all_damage_last = None;
+  if (SWAPM_EXCHANGE == ps->o.glx_swap_method && *preg)
+    ps->all_damage_last = copy_region(ps, *preg);
+
   // OpenGL doesn't support partial repaint without GLX_MESA_copy_sub_buffer,
   // we could redraw the whole screen or copy unmodified pixels from
   // front buffer with --glx-copy-from-front.
-  if (ps->o.glx_use_copysubbuffermesa || !*preg) {
+  if (ps->o.glx_use_copysubbuffermesa || SWAPM_COPY == ps->o.glx_swap_method
+      || !*preg) {
+  }
+  else if (SWAPM_EXCHANGE == ps->o.glx_swap_method && all_damage_last) {
+    XFixesUnionRegion(ps->dpy, *preg, *preg, all_damage_last);
   }
   else if (!ps->o.glx_copy_from_front) {
     free_region(ps, preg);
@@ -571,6 +581,8 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
       glRasterPos4fv(raster_pos);
     }
   }
+
+  free_region(ps, &all_damage_last);
 
   glx_set_clip(ps, *preg, NULL);
 }

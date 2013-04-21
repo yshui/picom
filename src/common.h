@@ -284,6 +284,14 @@ enum backend {
   NUM_BKEND,
 };
 
+/// @brief Possible swap methods.
+enum glx_swap_method {
+  SWAPM_UNDEFINED,
+  SWAPM_EXCHANGE,
+  SWAPM_COPY,
+  NUM_SWAPM,
+};
+
 typedef struct _glx_texture glx_texture_t;
 
 #ifdef CONFIG_VSYNC_OPENGL
@@ -374,6 +382,8 @@ typedef struct {
   bool glx_use_copysubbuffermesa;
   /// Whether to avoid rebinding pixmap on window damage.
   bool glx_no_rebind_pixmap;
+  /// GLX swap method we assume OpenGL uses.
+  enum glx_swap_method glx_swap_method;
   /// Whether to try to detect WM windows and mark them as focused.
   bool mark_wmwin_focused;
   /// Whether to mark override-redirect windows as focused.
@@ -563,6 +573,8 @@ typedef struct {
   struct timeval time_start;
   /// The region needs to painted on next paint.
   XserverRegion all_damage;
+  /// The region damaged on the last paint.
+  XserverRegion all_damage_last;
   /// Whether all windows are currently redirected.
   bool redirected;
   /// Whether there's a highest full-screen window, and all windows could
@@ -942,8 +954,9 @@ typedef enum {
 } win_evmode_t;
 
 extern const char * const WINTYPES[NUM_WINTYPES];
-extern const char * const VSYNC_STRS[NUM_VSYNC];
-extern const char * const BACKEND_STRS[NUM_BKEND];
+extern const char * const VSYNC_STRS[NUM_VSYNC + 1];
+extern const char * const BACKEND_STRS[NUM_BKEND + 1];
+extern const char * const GLX_SWAP_METHODS_STRS[NUM_SWAPM + 1];
 extern session_t *ps_g;
 
 // == Debugging code ==
@@ -1313,11 +1326,12 @@ normalize_d(double d) {
  */
 static inline bool
 parse_vsync(session_t *ps, const char *str) {
-  for (vsync_t i = 0; i < (sizeof(VSYNC_STRS) / sizeof(VSYNC_STRS[0])); ++i)
+  for (vsync_t i = 0; VSYNC_STRS[i]; ++i)
     if (!strcasecmp(str, VSYNC_STRS[i])) {
       ps->o.vsync = i;
       return true;
     }
+
   printf_errf("(\"%s\"): Invalid vsync argument.", str);
   return false;
 }
@@ -1327,12 +1341,26 @@ parse_vsync(session_t *ps, const char *str) {
  */
 static inline bool
 parse_backend(session_t *ps, const char *str) {
-  for (enum backend i = 0; i < (sizeof(BACKEND_STRS) / sizeof(BACKEND_STRS[0])); ++i)
+  for (enum backend i = 0; BACKEND_STRS[i]; ++i)
     if (!strcasecmp(str, BACKEND_STRS[i])) {
       ps->o.backend = i;
       return true;
     }
   printf_errf("(\"%s\"): Invalid backend argument.", str);
+  return false;
+}
+
+/**
+ * Parse a glx_swap_method option argument.
+ */
+static inline bool
+parse_glx_swap_method(session_t *ps, const char *str) {
+  for (enum glx_swap_method i = 0; GLX_SWAP_METHODS_STRS[i]; ++i)
+    if (!strcasecmp(str, GLX_SWAP_METHODS_STRS[i])) {
+      ps->o.glx_swap_method = i;
+      return true;
+    }
+  printf_errf("(\"%s\"): Invalid GLX swap method argument.", str);
   return false;
 }
 

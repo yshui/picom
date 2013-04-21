@@ -2,7 +2,7 @@ compton(1)
 ==========
 :doctype:     manpage
 :man source:  compton
-:man version: nightly-20121105
+:man version: nightly-20130421
 :man manual:  LOCAL USER COMMANDS
 
 NAME
@@ -154,6 +154,9 @@ OPTIONS
 *--shadow-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should have no shadow.
 
+*--fade-exclude* 'CONDITION'::
+	Specify a list of conditions of windows that should not be faded.
+
 *--focus-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should always be considered focused.
 
@@ -279,7 +282,18 @@ This is the old condition format we once used. Support of this format might be r
 
 CONFIGURATION FILES
 -------------------
-compton could read from a configuration file if libconfig support is compiled in. If *--config* is not used, compton will seek for a configuration file in `$XDG_CONFIG_HOME/compton.conf` (`~/.config/compton.conf`, usually), then `~/.compton.conf`, then `compton.conf` under `$XDG_DATA_DIRS` (often `/etc/xdg/compton.conf`). Most commandline switches could be replaced with an option in configuration file, and some options are exposed only in configuration files (presently, some window-type-specific settings). compton uses general libconfig configurtion file format. A sample configuration file is available as `compton.sample.conf` in the source tree.
+compton could read from a configuration file if libconfig support is compiled in. If *--config* is not used, compton will seek for a configuration file in `$XDG_CONFIG_HOME/compton.conf` (`~/.config/compton.conf`, usually), then `~/.compton.conf`, then `compton.conf` under `$XDG_DATA_DIRS` (often `/etc/xdg/compton.conf`).
+
+compton uses general libconfig configurtion file format. A sample configuration file is available as `compton.sample.conf` in the source tree. Most commandline switches each could be replaced with an option in configuration file, thus documented above. Window-type-specific settings are exposed only in configuration file and has the following format:
+
+------------
+wintypes:
+{
+  WINDOW_TYPE = { fade = BOOL; shadow = BOOL; opacity = FLOAT; focus = BOOL; };
+};
+------------
+
+'WINDOW_TYPE' is one of the 15 window types defined in EWMH standard: "unknown", "desktop", "dock", "toolbar", "menu", "utility", "splash", "dialog", "normal", "dropdown_menu", "popup_menu", "tooltip", "notify", "combo", and "dnd". "fade" and "shadow" controls window-type-specific shadow and fade settings. "opacity" controls default opacity of the window type. "focus" controls whether the window of this type is to be always considered focused. (By default, all window types except "normal" and "dialog" has this on.)
 
 SIGNALS
 -------

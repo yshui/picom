@@ -32,19 +32,29 @@ const char * const WINTYPES[NUM_WINTYPES] = {
 };
 
 /// Names of VSync modes.
-const char * const VSYNC_STRS[NUM_VSYNC] = {
+const char * const VSYNC_STRS[NUM_VSYNC + 1] = {
   "none",             // VSYNC_NONE
   "drm",              // VSYNC_DRM
   "opengl",           // VSYNC_OPENGL
   "opengl-oml",       // VSYNC_OPENGL_OML
   "opengl-swc",       // VSYNC_OPENGL_SWC
   "opengl-mswc",      // VSYNC_OPENGL_MSWC
+  NULL
 };
 
 /// Names of backends.
-const char * const BACKEND_STRS[NUM_BKEND] = {
+const char * const BACKEND_STRS[NUM_BKEND + 1] = {
   "xrender",      // BKEND_XRENDER
   "glx",          // BKEND_GLX
+  NULL
+};
+
+/// Names of GLX swap methods.
+const char * const GLX_SWAP_METHODS_STRS[NUM_SWAPM + 1] = {
+  "undefined",    // SWAPM_UNDEFINED
+  "exchange",     // SWAPM_EXCHANGE
+  "copy",         // SWAPM_COPY
+  NULL
 };
 
 /// Function pointers to init VSync modes.
@@ -2205,7 +2215,8 @@ calc_dim(session_t *ps, win *w) {
  */
 static void
 win_determine_fade(session_t *ps, win *w) {
-  if (ps->o.no_fading_openclose && w->in_openclose)
+  if ((ps->o.no_fading_openclose && w->in_openclose)
+      || win_match(ps, w, ps->o.fade_blacklist, &w->cache_fblst))
     w->fade = false;
   else
     w->fade = ps->o.wintype_fade[w->window_type];
@@ -4129,6 +4140,8 @@ usage(void) {
     "  Try to detect WM windows and mark them as active.\n"
     "--shadow-exclude condition\n"
     "  Exclude conditions for shadows.\n"
+    "--fade-exclude condition\n"
+    "  Exclude conditions for fading.\n"
     "--mark-ovredir-focused\n"
     "  Mark windows that have no WM frame as active.\n"
     "--no-fading-openclose\n"
@@ -4246,6 +4259,12 @@ usage(void) {
     "  GLX backend: Avoid rebinding pixmap on window damage. Probably\n"
     "  could improve performance on rapid window content changes, but is\n"
     "  known to break things on some drivers.\n"
+    "--glx-swap-method undefined/exchange/copy\n"
+    "  GLX backend: GLX buffer swap method we assume. Could be\n"
+    "  \"undefined\", \"exchange\", or \"copy\". \"undefined\" is the slowest\n"
+    "  and the safest; \"exchange\" and \"copy\" are faster but may fail on\n"
+    "  some drivers. Useless with --glx-use-copysubbuffermesa. Defaults to\n"
+    "  \"undefined\".\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED
@@ -4631,6 +4650,8 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
       &ps->o.detect_client_leader);
   // --shadow-exclude
   parse_cfg_condlst(ps, &cfg, &ps->o.shadow_blacklist, "shadow-exclude");
+  // --fade-exclude
+  parse_cfg_condlst(ps, &cfg, &ps->o.fade_blacklist, "fade-exclude");
   // --focus-exclude
   parse_cfg_condlst(ps, &cfg, &ps->o.focus_blacklist, "focus-exclude");
   // --invert-color-include
@@ -4645,6 +4666,18 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // --blur-background-fixed
   lcfg_lookup_bool(&cfg, "blur-background-fixed",
       &ps->o.blur_background_fixed);
+  // --glx-no-stencil
+  lcfg_lookup_bool(&cfg, "glx-no-stencil", &ps->o.glx_no_stencil);
+  // --glx-copy-from-front
+  lcfg_lookup_bool(&cfg, "glx-copy-from-front", &ps->o.glx_copy_from_front);
+  // --glx-use-copysubbuffermesa
+  lcfg_lookup_bool(&cfg, "glx-use-copysubbuffermesa", &ps->o.glx_use_copysubbuffermesa);
+  // --glx-no-rebind-pixmap
+  lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &ps->o.glx_no_rebind_pixmap);
+  // --glx-swap-method
+  if (config_lookup_string(&cfg, "glx-swap-method", &sval)
+      && !parse_glx_swap_method(ps, sval))
+    exit(1);
   // Wintype settings
   {
     wintype_t i;
@@ -4721,6 +4754,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "blur-background-exclude", required_argument, NULL, 296 },
     { "active-opacity", required_argument, NULL, 297 },
     { "glx-no-rebind-pixmap", no_argument, NULL, 298 },
+    { "glx-swap-method", required_argument, NULL, 299 },
+    { "fade-exclude", required_argument, NULL, 300 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4935,6 +4970,15 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.active_opacity = (normalize_d(atof(optarg)) * OPAQUE);
         break;
       P_CASEBOOL(298, glx_no_rebind_pixmap);
+      case 299:
+        // --glx-swap-method
+        if (!parse_glx_swap_method(ps, optarg))
+          exit(1);
+        break;
+      case 300:
+        // --fade-exclude
+        condlst_add(ps, &ps->o.fade_blacklist, optarg);
+        break;
       default:
         usage();
         break;
@@ -5842,6 +5886,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .tmout_lst = NULL,
 
     .all_damage = None,
+    .all_damage_last = None,
     .time_start = { 0, 0 },
     .redirected = false,
     .unredir_possible = false,
@@ -6285,6 +6330,7 @@ session_destroy(session_t *ps) {
   free_root_tile(ps);
   free_region(ps, &ps->screen_reg);
   free_region(ps, &ps->all_damage);
+  free_region(ps, &ps->all_damage_last);
   free(ps->expose_rects);
   free(ps->shadow_corner);
   free(ps->shadow_top);
