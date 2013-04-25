@@ -483,6 +483,8 @@ typedef struct {
   bool blur_background_fixed;
   /// Background blur blacklist. A linked list of conditions.
   c2_lptr_t *blur_background_blacklist;
+  /// Blur convolution kernel.
+  XFixed *blur_kern;
   /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
   double inactive_dim;
   /// Whether to use fixed inactive dim opacity, instead of deciding

@@ -191,28 +191,60 @@ bool
 glx_init_blur(session_t *ps) {
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   // Build shader
-  static const char *FRAG_SHADER_BLUR =
-    "#version 110\n"
-    "uniform float offset_x;\n"
-    "uniform float offset_y;\n"
-    "uniform float factor_center;\n"
-    "uniform sampler2D tex_scr;\n"
-    "\n"
-    "void main() {\n"
-    "  vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);\n"
-    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x - offset_x, gl_TexCoord[0].y - offset_y));\n"
-    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x - offset_x, gl_TexCoord[0].y));\n"
-    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x - offset_x, gl_TexCoord[0].y + offset_y));\n"
-    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y - offset_y));\n"
-    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * factor_center;\n"
-    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y + offset_y));\n"
-    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x + offset_x, gl_TexCoord[0].y - offset_y));\n"
-    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x + offset_x, gl_TexCoord[0].y));\n"
-    "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x + offset_x, gl_TexCoord[0].y + offset_y));\n"
-    "  gl_FragColor = sum / (factor_center + 8.0);\n"
-    "}\n"
-    ;
-  ps->glx_frag_shader_blur = glx_create_shader(GL_FRAGMENT_SHADER, FRAG_SHADER_BLUR);
+  {
+    static const char *FRAG_SHADER_BLUR_PREFIX =
+      "#version 110\n"
+      "uniform float offset_x;\n"
+      "uniform float offset_y;\n"
+      "uniform float factor_center;\n"
+      "uniform sampler2D tex_scr;\n"
+      "\n"
+      "void main() {\n"
+      "  vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);\n";
+    static const char *FRAG_SHADER_BLUR_ADD =
+      "  sum += float(%.7g) * texture2D(tex_scr, vec2(gl_TexCoord[0].x + offset_x * float(%d), gl_TexCoord[0].y + offset_y * float(%d)));\n";
+    static const char *FRAG_SHADER_BLUR_SUFFIX =
+      "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * factor_center;\n"
+      "  gl_FragColor = sum / (factor_center + float(%.7g));\n"
+      "}\n";
+    int wid = XFixedToDouble(ps->o.blur_kern[0]), hei = XFixedToDouble(ps->o.blur_kern[1]);
+    int nele = wid * hei - 1;
+    int len = strlen(FRAG_SHADER_BLUR_PREFIX) + (strlen(FRAG_SHADER_BLUR_ADD) + 42) * nele
+      + strlen(FRAG_SHADER_BLUR_SUFFIX) + 12 + 1;
+    char *shader_str = calloc(len, sizeof(char));
+    if (!shader_str) {
+      printf_errf("(): Failed to allocate %d bytes for shader string.", len);
+      return false;
+    }
+    {
+      char *pc = shader_str;
+      strcpy(pc, FRAG_SHADER_BLUR_PREFIX);
+      pc += strlen(FRAG_SHADER_BLUR_PREFIX);
+      assert(strlen(shader_str) < len);
+
+      double sum = 0.0;
+      for (int i = 0; i < hei; ++i) {
+        for (int j = 0; j < wid; ++j) {
+          if (hei / 2 == i && wid / 2 == j)
+            continue;
+          double val = XFixedToDouble(ps->o.blur_kern[2 + i * wid + j]);
+          sum += val;
+          sprintf(pc, FRAG_SHADER_BLUR_ADD, val, j - wid / 2, i - hei / 2);
+          pc += strlen(pc);
+          assert(strlen(shader_str) < len);
+        }
+      }
+
+      sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, sum);
+      assert(strlen(shader_str) < len);
+#ifdef DEBUG_GLX_GLSL
+      fputs(shader_str, stdout);
+      fflush(stdout);
+#endif
+    }
+    ps->glx_frag_shader_blur = glx_create_shader(GL_FRAGMENT_SHADER, shader_str);
+  }
+
   if (!ps->glx_frag_shader_blur) {
     printf_errf("(): Failed to create fragment shader.");
     return false;
@@ -227,8 +259,7 @@ glx_init_blur(session_t *ps) {
 #define P_GET_UNIFM_LOC(name, target) { \
   ps->target = glGetUniformLocation(ps->glx_prog_blur, name); \
   if (ps->target < 0) { \
-    printf_errf("(): Failed to get location of uniform '" name "'."); \
-    return false; \
+    printf_errf("(): Failed to get location of uniform '" name "'. Might be troublesome."); \
   } \
 }
 
@@ -759,9 +790,12 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   glUseProgram(ps->glx_prog_blur);
-  glUniform1f(ps->glx_prog_blur_unifm_offset_x, 1.0f / width);
-  glUniform1f(ps->glx_prog_blur_unifm_offset_y, 1.0f / height);
-  glUniform1f(ps->glx_prog_blur_unifm_factor_center, factor_center);
+  if (ps->glx_prog_blur_unifm_offset_x >= 0)
+    glUniform1f(ps->glx_prog_blur_unifm_offset_x, 1.0f / width);
+  if (ps->glx_prog_blur_unifm_offset_y >= 0)
+    glUniform1f(ps->glx_prog_blur_unifm_offset_y, 1.0f / height);
+  if (ps->glx_prog_blur_unifm_factor_center >= 0)
+    glUniform1f(ps->glx_prog_blur_unifm_factor_center, factor_center);
 #endif
 
   {

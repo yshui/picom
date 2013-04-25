@@ -9,6 +9,7 @@
  */
 
 #include "compton.h"
+#include <ctype.h>
 
 // === Global constants ===
 
@@ -1348,21 +1349,6 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
   switch (ps->o.backend) {
     case BKEND_XRENDER:
       {
-        const static int convolution_blur_size = 3;
-        // Convolution filter parameter (box blur)
-        // gaussian or binomial filters are definitely superior, yet looks
-        // like they aren't supported as of xorg-server-1.13.0
-        XFixed convolution_blur[] = {
-          // Must convert to XFixed with XDoubleToFixed()
-          // Matrix size
-          XDoubleToFixed(convolution_blur_size),
-          XDoubleToFixed(convolution_blur_size),
-          // Matrix
-          XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
-          XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
-          XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
-        };
-
         // Directly copying from tgt_buffer does not work, so we create a
         // Picture in the middle.
         Picture tmp_picture = win_build_picture(ps, w, NULL);
@@ -1370,7 +1356,12 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
         if (!tmp_picture)
           return;
 
-        convolution_blur[2 + convolution_blur_size + ((convolution_blur_size - 1) / 2)] = XDoubleToFixed(factor_center);
+        XFixed *convolution_blur = ps->o.blur_kern;
+        int kwid = XFixedToDouble((ps->o.blur_kern[0])),
+            khei = XFixedToDouble((ps->o.blur_kern[1]));
+
+        // Modify the factor of the center pixel
+        convolution_blur[2 + (khei / 2) * kwid + kwid / 2] = XDoubleToFixed(factor_center);
 
         // Minimize the region we try to blur, if the window itself is not
         // opaque, only the frame is.
@@ -1386,7 +1377,7 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
         // Copy the content to tmp_picture, then copy back. The filter must
         // be applied on tgt_buffer, to get the nearby pixels outside the
         // window.
-        XRenderSetPictureFilter(ps->dpy, tgt_buffer, XRFILTER_CONVOLUTION, (XFixed *) convolution_blur, sizeof(convolution_blur) / sizeof(XFixed));
+        XRenderSetPictureFilter(ps->dpy, tgt_buffer, XRFILTER_CONVOLUTION, convolution_blur, kwid * khei + 2);
         XRenderComposite(ps->dpy, PictOpSrc, tgt_buffer, None, tmp_picture, x, y, 0, 0, 0, 0, wid, hei);
         xrfilter_reset(ps, tgt_buffer);
         XRenderComposite(ps->dpy, PictOpSrc, tmp_picture, None, tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
@@ -1665,10 +1656,18 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
   XFixesSetPictureClipRegion(ps->dpy, ps->tgt_picture, 0, 0, region);
 
 #ifdef MONITOR_REPAINT
-  XRenderComposite(
-    ps->dpy, PictOpSrc, ps->black_picture, None,
-    ps->tgt_picture, 0, 0, 0, 0, 0, 0,
-    ps->root_width, ps->root_height);
+  switch (ps->o.backend) {
+    case BKEND_XRENDER:
+      XRenderComposite(ps->dpy, PictOpSrc, ps->black_picture, None,
+          ps->tgt_picture, 0, 0, 0, 0, 0, 0,
+          ps->root_width, ps->root_height);
+      break;
+    case BKEND_GLX:
+      glClearColor(0.0f, 0.0f, 1.0f, 1.0f);
+      glClear(GL_COLOR_BUFFER_BIT);
+      glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+      break;
+  }
 #endif
 
   if (t && t->reg_ignore) {
@@ -4234,6 +4233,14 @@ usage(void) {
     "--blur-background-fixed\n"
     "  Use fixed blur strength instead of adjusting according to window\n"
     "  opacity.\n"
+    "--blur-kern matrix\n"
+    "  Specify the blur convolution kernel, with the following format:\n"
+    "    WIDTH,HEIGHT,ELE1,ELE2,ELE3,ELE4,ELE5...\n"
+    "  The element in the center must not be included, it will be forever\n"
+    "  1.0 or changing based on opacity, depending on whether you have\n"
+    "  --blur-background-fixed.\n"
+    "  A 7x7 Guassian blur kernel looks like:\n"
+    "    --blur-kern '7,7,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.001723,0.059106,0.493069,0.493069,0.059106,0.001723,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003'\n"
     "--blur-background-exclude condition\n"
     "  Exclude conditions for background blur.\n"
     "--invert-color-include condition\n"
@@ -4477,9 +4484,112 @@ open_config_file(char *cpath, char **ppath) {
 }
 
 /**
+ * Parse a floating-point number in matrix.
+ */
+static inline const char *
+parse_matrix_readnum(const char *src, double *dest) {
+  char *pc = NULL;
+  double val = strtod(src, &pc);
+  if (!pc || pc == src) {
+    printf_errf("(\"%s\"): No number found.", src);
+    return src;
+  }
+
+  while (*pc && (isspace(*pc) || ',' == *pc))
+    ++pc;
+
+  *dest = val;
+
+  return pc;
+}
+
+/**
+ * Parse a matrix.
+ */
+static inline XFixed *
+parse_matrix(session_t *ps, const char *src) {
+  int wid = 0, hei = 0;
+  const char *pc = NULL;
+  XFixed *matrix = NULL;
+  
+  // Get matrix width and height
+  {
+    double val = 0.0;
+    if (src == (pc = parse_matrix_readnum(src, &val)))
+      goto parse_matrix_err;
+    src = pc;
+    wid = val;
+    if (src == (pc = parse_matrix_readnum(src, &val)))
+      goto parse_matrix_err;
+    src = pc;
+    hei = val;
+  }
+
+  // Validate matrix width and height
+  if (wid <= 0 || hei <= 0) {
+    printf_errf("(): Invalid matrix width/height.");
+    goto parse_matrix_err;
+  }
+  if (!(wid % 2 && hei % 2)) {
+    printf_errf("(): Width/height not odd.");
+    goto parse_matrix_err;
+  }
+  if (wid > 16 || hei > 16) {
+    printf_errf("(): Matrix width/height too large.");
+    goto parse_matrix_err;
+  }
+
+  // Allocate memory
+  matrix = calloc(wid * hei + 2, sizeof(XFixed));
+  if (!matrix) {
+    printf_errf("(): Failed to allocate memory for matrix.");
+    goto parse_matrix_err;
+  }
+
+  // Read elements
+  {
+    int skip = hei / 2 * wid + wid / 2;
+    bool hasneg = false;
+    for (int i = 0; i < wid * hei; ++i) {
+      // Ignore the center element
+      if (i == skip) {
+        matrix[2 + i] = XDoubleToFixed(0);
+        continue;
+      }
+      double val = 0;
+      if (src == (pc = parse_matrix_readnum(src, &val)))
+        goto parse_matrix_err;
+      src = pc;
+      if (val < 0) hasneg = true;
+      matrix[2 + i] = XDoubleToFixed(val);
+    }
+    if (BKEND_XRENDER == ps->o.backend && hasneg)
+      printf_errf("(): A convolution kernel with negative values "
+          "may not work properly under X Render backend.");
+  }
+
+  // Detect trailing characters
+  for ( ;*pc; ++pc)
+    if (!isspace(*pc) && ',' != *pc) {
+      printf_errf("(): Trailing characters in matrix string.");
+      goto parse_matrix_err;
+    }
+
+  // Fill in width and height
+  matrix[0] = XDoubleToFixed(wid);
+  matrix[1] = XDoubleToFixed(hei);
+
+  return matrix;
+
+parse_matrix_err:
+  free(matrix);
+  return NULL;
+}
+
+/**
  * Parse a condition list in configuration file.
  */
-static void
+static inline void
 parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
     const char *name) {
   config_setting_t *setting = config_lookup(pcfg, name);
@@ -4756,6 +4866,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "glx-no-rebind-pixmap", no_argument, NULL, 298 },
     { "glx-swap-method", required_argument, NULL, 299 },
     { "fade-exclude", required_argument, NULL, 300 },
+    { "blur-kern", required_argument, NULL, 301 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4979,6 +5090,12 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --fade-exclude
         condlst_add(ps, &ps->o.fade_blacklist, optarg);
         break;
+      case 301:
+        // --blur-kern
+        free(ps->o.blur_kern);
+        if (!(ps->o.blur_kern = parse_matrix(ps, optarg)))
+          exit(1);
+        break;
       default:
         usage();
         break;
@@ -5042,6 +5159,29 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     ps->o.track_leader = true;
   }
 
+  // Fill default blur kernel
+  if (ps->o.blur_background && !ps->o.blur_kern) {
+    const static int convolution_blur_size = 3;
+    // Convolution filter parameter (box blur)
+    // gaussian or binomial filters are definitely superior, yet looks
+    // like they aren't supported as of xorg-server-1.13.0
+    const static XFixed convolution_blur[] = {
+      // Must convert to XFixed with XDoubleToFixed()
+      // Matrix size
+      XDoubleToFixed(convolution_blur_size),
+      XDoubleToFixed(convolution_blur_size),
+      // Matrix
+      XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
+      XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
+      XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
+    };
+    ps->o.blur_kern = malloc(sizeof(convolution_blur));
+    if (!ps->o.blur_kern) {
+      printf_errf("(): Failed to allocate memory for convolution kernel.");
+      exit(1);
+    }
+    memcpy(ps->o.blur_kern, &convolution_blur, sizeof(convolution_blur));
+  }
 }
 
 /**
@@ -5864,6 +6004,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .blur_background_frame = false,
       .blur_background_fixed = false,
       .blur_background_blacklist = NULL,
+      .blur_kern = NULL,
       .inactive_dim = 0.0,
       .inactive_dim_fixed = false,
       .invert_color_list = NULL,
@@ -5929,6 +6070,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .glXWaitVideoSyncSGI = NULL,
     .glXGetSyncValuesOML = NULL,
     .glXWaitForMscOML = NULL,
+
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+    .glx_prog_blur_unifm_offset_x = -1,
+    .glx_prog_blur_unifm_offset_y = -1,
+    .glx_prog_blur_unifm_factor_center = -1,
+#endif
 #endif
 
     .xfixes_event = 0,
@@ -6277,6 +6424,7 @@ session_destroy(session_t *ps) {
   free_wincondlst(&ps->o.fade_blacklist);
   free_wincondlst(&ps->o.focus_blacklist);
   free_wincondlst(&ps->o.invert_color_list);
+  free_wincondlst(&ps->o.blur_background_blacklist);
 #endif
 
   // Free tracked atom list
@@ -6338,6 +6486,7 @@ session_destroy(session_t *ps) {
   free(ps->o.display);
   free(ps->o.logpath);
   free(ps->o.config_file);
+  free(ps->o.blur_kern);
   free(ps->pfds_read);
   free(ps->pfds_write);
   free(ps->pfds_except);
