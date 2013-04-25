@@ -238,6 +238,10 @@ glx_init_blur(session_t *ps) {
 
 #undef P_GET_UNIFM_LOC
 
+#ifdef DEBUG_GLX_ERR
+  glx_check_err(ps);
+#endif
+
   return true;
 #else
   printf_errf("(): GLSL support not compiled in. Cannot do blur with GLX backend.");
@@ -515,6 +519,10 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
   glBindTexture(ptex->target, 0);
   glDisable(ptex->target);
 
+#ifdef DEBUG_GLX_ERR
+  glx_check_err(ps);
+#endif
+
   return true;
 }
 
@@ -535,6 +543,10 @@ glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
     glXDestroyPixmap(ps->dpy, ptex->glpixmap);
     ptex->glpixmap = 0;
   }
+
+#ifdef DEBUG_GLX_ERR
+  glx_check_err(ps);
+#endif
 }
 
 /**
@@ -585,6 +597,10 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
   free_region(ps, &all_damage_last);
 
   glx_set_clip(ps, *preg, NULL);
+
+#ifdef DEBUG_GLX_ERR
+  glx_check_err(ps);
+#endif
 }
 
 /**
@@ -664,6 +680,10 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
   }
 
   cxfree(rects_free);
+
+#ifdef DEBUG_GLX_ERR
+  glx_check_err(ps);
+#endif
 }
 
 #define P_PAINTREG_START() \
@@ -783,6 +803,10 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   glDeleteTextures(1, &tex_scr);
   glDisable(tex_tgt);
 
+#ifdef DEBUG_GLX_ERR
+  glx_check_err(ps);
+#endif
+
   return true;
 }
 
@@ -815,6 +839,10 @@ glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 
   glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
   glDisable(GL_BLEND);
+
+#ifdef DEBUG_GLX_ERR
+  glx_check_err(ps);
+#endif
 
   return true;
 }
@@ -999,6 +1027,10 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     glActiveTexture(GL_TEXTURE0);
   }
 
+#ifdef DEBUG_GLX_ERR
+  glx_check_err(ps);
+#endif
+
   return true;
 }
 
@@ -1028,6 +1060,10 @@ glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg) {
       ps->glXCopySubBufferProc(ps->dpy, get_tgt_window(ps), x, y, wid, hei);
     }
   }
+
+#ifdef DEBUG_GLX_ERR
+  glx_check_err(ps);
+#endif
 
   cxfree(rects);
 }

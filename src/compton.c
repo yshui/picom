@@ -4175,7 +4175,7 @@ usage(void) {
 #else
 #define WARNING
 #endif
-    "    opengl = Try to VSync with SGI_swap_control OpenGL extension. Only\n"
+    "    opengl = Try to VSync with SGI_video_sync OpenGL extension. Only\n"
     "      work on some drivers." WARNING"\n"
     "    opengl-oml = Try to VSync with OML_sync_control OpenGL extension.\n"
     "      Only work on some drivers. Experimental." WARNING"\n"

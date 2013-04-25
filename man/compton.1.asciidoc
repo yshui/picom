@@ -125,7 +125,7 @@ OPTIONS
 --
 * 'none': No VSync
 * 'drm': VSync with 'DRM_IOCTL_WAIT_VBLANK'. May only work on some drivers. Experimental.
-* 'opengl': Try to VSync with 'SGI_swap_control' OpenGL extension. Only work on some drivers. Experimental.
+* 'opengl': Try to VSync with 'SGI_video_sync' OpenGL extension. Only work on some drivers. Experimental.
 * 'opengl-oml': Try to VSync with 'OML_sync_control' OpenGL extension. Only work on some drivers. Experimental.
 * 'opengl-swc': Try to VSync with 'SGI_swap_control' OpenGL extension. Only work on some drivers. Works only with GLX backend. Known to be most effective on many drivers. Does not actually control paint timing, only buffer swap is affected, so it doesn't have the effect of *--sw-opti* unlike other methods. Experimental.
 * 'opengl-mswc': Try to VSync with 'MESA_swap_control' OpenGL extension. Basically the same as 'opengl-swc' above, except the extension we use.
@@ -185,13 +185,19 @@ OPTIONS
 	Specify the backend to use: 'xrender` or 'glx'. GLX (OpenGL) backend generally has much superior performance as far as you have a graphic card/chip and driver.
 
 *--glx-no-stencil*::
-  GLX backend: Avoid using stencil buffer, useful if you don't have a stencil buffer. Might cause incorrect opacity when rendering transparent content and cannot work with *--blur-background*. May have a positive or negative effect on performance. (My test shows a 10% slowdown.)
+  GLX backend: Avoid using stencil buffer, useful if you don't have a stencil buffer. Might cause incorrect opacity when rendering transparent content and cannot work with *--blur-background*. My tests show a 15% performance boost.
 
 *--glx-copy-from-front*::
 	GLX backend: Copy unmodified regions from front buffer instead of redrawing them all. My tests with nvidia-drivers show a 10% decrease in performance when the whole screen is modified, but a 20% increase when only 1/4 is. My tests on nouveau show terrible slowdown.
 
 *--glx-use-copysubbuffermesa*::
 	GLX backend: Use MESA_copy_sub_buffer to do partial screen update. My tests on nouveau shows a 200% performance boost when only 1/4 of the screen is updated. May break VSync and is not available on some drivers. Overrides *--glx-copy-from-front*.
+
+*--glx-no-rebind-pixmap*::
+	GLX backend: Avoid rebinding pixmap on window damage. Probably could improve performance on rapid window content changes, but is known to break things on some drivers (LLVMpipe).
+
+*--glx-swap-method* undefined/exchange/copy::
+	GLX backend: GLX buffer swap method we assume. Could be "undefined", "exchange", or "copy". "undefined" is the slowest and the safest; "exchange" and "copy" are faster but may fail on some drivers. Useless with *--glx-use-copysubbuffermesa*. Defaults to "undefined".
 
 *--dbus*::
 	Enable remote control via D-Bus. See the *D-BUS API* section below for more details.
