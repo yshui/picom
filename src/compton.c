@@ -5155,15 +5155,13 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
 
   // Fill default blur kernel
   if (ps->o.blur_background && !ps->o.blur_kern) {
-    const static int convolution_blur_size = 3;
     // Convolution filter parameter (box blur)
     // gaussian or binomial filters are definitely superior, yet looks
     // like they aren't supported as of xorg-server-1.13.0
     const static XFixed convolution_blur[] = {
       // Must convert to XFixed with XDoubleToFixed()
       // Matrix size
-      XDoubleToFixed(convolution_blur_size),
-      XDoubleToFixed(convolution_blur_size),
+      XDoubleToFixed(3), XDoubleToFixed(3),
       // Matrix
       XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
       XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
