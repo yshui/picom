@@ -64,6 +64,7 @@
 #include <sys/poll.h>
 #include <assert.h>
 #include <time.h>
+#include <ctype.h>
 #include <sys/time.h>
 
 #include <X11/Xlib.h>
@@ -105,6 +106,10 @@
 // douglasp and consolers for reporting
 #ifndef GL_TEXTURE_RECTANGLE
 #define GL_TEXTURE_RECTANGLE 0x84F5
+#endif
+
+#ifndef GLX_BACK_BUFFER_AGE_EXT
+#define GLX_BACK_BUFFER_AGE_EXT 0x20F4
 #endif
 
 #endif
@@ -174,6 +179,9 @@
 
 /// @brief Maximum OpenGL FBConfig depth.
 #define OPENGL_MAX_DEPTH 32
+
+/// @brief Maximum OpenGL buffer age.
+#define CGLX_MAX_BUFFER_AGE 5
 
 // Window flags
 
@@ -285,11 +293,11 @@ enum backend {
 };
 
 /// @brief Possible swap methods.
-enum glx_swap_method {
-  SWAPM_UNDEFINED,
-  SWAPM_EXCHANGE,
-  SWAPM_COPY,
-  NUM_SWAPM,
+enum {
+  SWAPM_BUFFER_AGE = -1,
+  SWAPM_UNDEFINED = 0,
+  SWAPM_COPY = 1,
+  SWAPM_EXCHANGE = 2,
 };
 
 typedef struct _glx_texture glx_texture_t;
@@ -383,7 +391,7 @@ typedef struct {
   /// Whether to avoid rebinding pixmap on window damage.
   bool glx_no_rebind_pixmap;
   /// GLX swap method we assume OpenGL uses.
-  enum glx_swap_method glx_swap_method;
+  int glx_swap_method;
   /// Whether to try to detect WM windows and mark them as focused.
   bool mark_wmwin_focused;
   /// Whether to mark override-redirect windows as focused.
@@ -576,7 +584,7 @@ typedef struct {
   /// The region needs to painted on next paint.
   XserverRegion all_damage;
   /// The region damaged on the last paint.
-  XserverRegion all_damage_last;
+  XserverRegion all_damage_last[CGLX_MAX_BUFFER_AGE];
   /// Whether all windows are currently redirected.
   bool redirected;
   /// Whether there's a highest full-screen window, and all windows could
@@ -958,7 +966,6 @@ typedef enum {
 extern const char * const WINTYPES[NUM_WINTYPES];
 extern const char * const VSYNC_STRS[NUM_VSYNC + 1];
 extern const char * const BACKEND_STRS[NUM_BKEND + 1];
-extern const char * const GLX_SWAP_METHODS_STRS[NUM_SWAPM + 1];
 extern session_t *ps_g;
 
 // == Debugging code ==
@@ -1357,13 +1364,51 @@ parse_backend(session_t *ps, const char *str) {
  */
 static inline bool
 parse_glx_swap_method(session_t *ps, const char *str) {
-  for (enum glx_swap_method i = 0; GLX_SWAP_METHODS_STRS[i]; ++i)
-    if (!strcasecmp(str, GLX_SWAP_METHODS_STRS[i])) {
-      ps->o.glx_swap_method = i;
-      return true;
+  // Parse alias
+  if (!strcmp("undefined", str)) {
+    ps->o.glx_swap_method = 0;
+    return true;
+  }
+
+  if (!strcmp("copy", str)) {
+    ps->o.glx_swap_method = 1;
+    return true;
+  }
+
+  if (!strcmp("exchange", str)) {
+    ps->o.glx_swap_method = 2;
+    return true;
+  }
+
+  if (!strcmp("buffer-age", str)) {
+    ps->o.glx_swap_method = -1;
+    return true;
+  }
+
+  // Parse number
+  {
+    char *pc = NULL;
+    int age = strtol(str, &pc, 0);
+    if (!pc || str == pc) {
+      printf_errf("(\"%s\"): Invalid number.", str);
+      return false;
     }
-  printf_errf("(\"%s\"): Invalid GLX swap method argument.", str);
-  return false;
+
+    for (; *pc; ++pc)
+      if (!isspace(*pc)) {
+        printf_errf("(\"%s\"): Trailing characters.", str);
+        return false;
+      }
+
+    if (age > CGLX_MAX_BUFFER_AGE + 1 || age < -1) {
+      printf_errf("(\"%s\"): Number too large / too small.", str);
+      return false;
+    }
+
+    ps->o.glx_swap_method = age;
+  }
+
+  return true;
 }
 
 timeout_t *

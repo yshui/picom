@@ -54,18 +54,20 @@ glx_init(session_t *ps, bool need_render) {
   if (need_render && !glx_hasglxext(ps, "GLX_EXT_texture_from_pixmap"))
     goto glx_init_end;
 
-  // Get GLX context
-  ps->glx_context = glXCreateContext(ps->dpy, pvis, None, GL_TRUE);
-
   if (!ps->glx_context) {
-    printf_errf("(): Failed to get GLX context.");
-    goto glx_init_end;
-  }
+    // Get GLX context
+    ps->glx_context = glXCreateContext(ps->dpy, pvis, None, GL_TRUE);
 
-  // Attach GLX context
-  if (!glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->glx_context)) {
-    printf_errf("(): Failed to attach GLX context.");
-    goto glx_init_end;
+    if (!ps->glx_context) {
+      printf_errf("(): Failed to get GLX context.");
+      goto glx_init_end;
+    }
+
+    // Attach GLX context
+    if (!glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->glx_context)) {
+      printf_errf("(): Failed to attach GLX context.");
+      goto glx_init_end;
+    }
   }
 
   // Ensure we have a stencil buffer. X Fixes does not guarantee rectangles
@@ -111,6 +113,7 @@ glx_init(session_t *ps, bool need_render) {
   if (need_render && !glx_update_fbconfig(ps))
     goto glx_init_end;
 
+  // Render preparations
   if (need_render) {
     glx_on_root_change(ps);
 
@@ -588,20 +591,44 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
   ps->glx_z = 0.0;
   // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  // Exchange swap is interested in the raw damaged region only
-  XserverRegion all_damage_last = ps->all_damage_last;
-  ps->all_damage_last = None;
-  if (SWAPM_EXCHANGE == ps->o.glx_swap_method && *preg)
-    ps->all_damage_last = copy_region(ps, *preg);
+  // Get buffer age
+  int buffer_age = ps->o.glx_swap_method;
+  bool trace_damage = (ps->o.glx_swap_method < 0 || ps->o.glx_swap_method > 1);
+
+  // Query GLX_EXT_buffer_age for buffer age
+  if (SWAPM_BUFFER_AGE == buffer_age) {
+    unsigned val = 0;
+    glXQueryDrawable(ps->dpy, get_tgt_window(ps),
+        GLX_BACK_BUFFER_AGE_EXT, &val);
+    buffer_age = val;
+  }
+
+  // Buffer age too high
+  if (buffer_age > CGLX_MAX_BUFFER_AGE + 1)
+    buffer_age = 0;
+
+  // Make sure buffer age >= 0
+  buffer_age = max_i(buffer_age, 0);
+
+  // Trace raw damage regions
+  XserverRegion newdamage = None;
+  if (trace_damage && *preg)
+    newdamage = copy_region(ps, *preg);
 
   // OpenGL doesn't support partial repaint without GLX_MESA_copy_sub_buffer,
   // we could redraw the whole screen or copy unmodified pixels from
   // front buffer with --glx-copy-from-front.
-  if (ps->o.glx_use_copysubbuffermesa || SWAPM_COPY == ps->o.glx_swap_method
-      || !*preg) {
+  if (ps->o.glx_use_copysubbuffermesa || 1 == buffer_age || !*preg) {
   }
-  else if (SWAPM_EXCHANGE == ps->o.glx_swap_method && all_damage_last) {
-    XFixesUnionRegion(ps->dpy, *preg, *preg, all_damage_last);
+  else if (buffer_age > 1) {
+    for (int i = 0; i < buffer_age - 1; ++i) {
+      XserverRegion dmg = ps->all_damage_last[i];
+      if (!dmg) {
+        free_region(ps, preg);
+        break;
+      }
+      XFixesUnionRegion(ps->dpy, *preg, *preg, dmg);
+    }
   }
   else if (!ps->o.glx_copy_from_front) {
     free_region(ps, preg);
@@ -625,7 +652,12 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
     }
   }
 
-  free_region(ps, &all_damage_last);
+  if (trace_damage) {
+    free_region(ps, &ps->all_damage_last[CGLX_MAX_BUFFER_AGE - 1]);
+    memmove(ps->all_damage_last + 1, ps->all_damage_last,
+        (CGLX_MAX_BUFFER_AGE - 1) * sizeof(XserverRegion));
+    ps->all_damage_last[0] = newdamage;
+  }
 
   glx_set_clip(ps, *preg, NULL);
 

@@ -914,11 +914,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_opts_get_do(glx_copy_from_front, cdbus_reply_bool);
   cdbus_m_opts_get_do(glx_use_copysubbuffermesa, cdbus_reply_bool);
   cdbus_m_opts_get_do(glx_no_rebind_pixmap, cdbus_reply_bool);
-  if (!strcmp("glx_swap_method", target)) {
-    assert(ps->o.glx_swap_method < sizeof(GLX_SWAP_METHODS_STRS) / sizeof(GLX_SWAP_METHODS_STRS[0]));
-    cdbus_reply_string(ps, msg, GLX_SWAP_METHODS_STRS[ps->o.glx_swap_method]);
-    return true;
-  }
+  cdbus_m_opts_get_do(glx_swap_method, cdbus_reply_int32);
 #endif
 
   cdbus_m_opts_get_do(track_focus, cdbus_reply_bool);

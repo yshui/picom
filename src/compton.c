@@ -50,14 +50,6 @@ const char * const BACKEND_STRS[NUM_BKEND + 1] = {
   NULL
 };
 
-/// Names of GLX swap methods.
-const char * const GLX_SWAP_METHODS_STRS[NUM_SWAPM + 1] = {
-  "undefined",    // SWAPM_UNDEFINED
-  "exchange",     // SWAPM_EXCHANGE
-  "copy",         // SWAPM_COPY
-  NULL
-};
-
 /// Function pointers to init VSync modes.
 static bool (* const (VSYNC_FUNCS_INIT[NUM_VSYNC]))(session_t *ps) = {
   [VSYNC_DRM          ] = vsync_drm_init,
@@ -4266,12 +4258,14 @@ usage(void) {
     "  GLX backend: Avoid rebinding pixmap on window damage. Probably\n"
     "  could improve performance on rapid window content changes, but is\n"
     "  known to break things on some drivers.\n"
-    "--glx-swap-method undefined/exchange/copy\n"
+    "--glx-swap-method undefined/copy/exchange/3/4/5/6/buffer-age\n"
     "  GLX backend: GLX buffer swap method we assume. Could be\n"
-    "  \"undefined\", \"exchange\", or \"copy\". \"undefined\" is the slowest\n"
-    "  and the safest; \"exchange\" and \"copy\" are faster but may fail on\n"
-    "  some drivers. Useless with --glx-use-copysubbuffermesa. Defaults to\n"
-    "  \"undefined\".\n"
+    "  undefined (0), copy (1), exchange (2), 3-6, or buffer-age (-1).\n"
+    "  \"undefined\" is the slowest and the safest, and the default value.\n"
+    "  1 is fastest, but may fail on some drivers, 2-6 are gradually slower\n"
+    "  but safer (6 is still faster than 0). -1 means auto-detect using\n"
+    "  GLX_EXT_buffer_age, supported by some drivers. Useless with\n"
+    "  --glx-use-copysubbuffermesa.\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED
@@ -6027,7 +6021,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .tmout_lst = NULL,
 
     .all_damage = None,
-    .all_damage_last = None,
+    .all_damage_last = { None },
     .time_start = { 0, 0 },
     .redirected = false,
     .unredir_possible = false,
@@ -6478,7 +6472,8 @@ session_destroy(session_t *ps) {
   free_root_tile(ps);
   free_region(ps, &ps->screen_reg);
   free_region(ps, &ps->all_damage);
-  free_region(ps, &ps->all_damage_last);
+  for (int i = 0; i < CGLX_MAX_BUFFER_AGE; ++i)
+    free_region(ps, &ps->all_damage_last[i]);
   free(ps->expose_rects);
   free(ps->shadow_corner);
   free(ps->shadow_top);
