@@ -1597,7 +1597,10 @@ rebuild_screen_reg(session_t *ps) {
 }
 
 static void
-paint_all(session_t *ps, XserverRegion region, win *t) {
+paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t) {
+  if (!region_real)
+    region_real = region;
+
 #ifdef DEBUG_REPAINT
   static struct timespec last_paint = { 0 };
 #endif
@@ -1645,7 +1648,8 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
   }
 #endif
 
-  XFixesSetPictureClipRegion(ps->dpy, ps->tgt_picture, 0, 0, region);
+  if (BKEND_XRENDER == ps->o.backend)
+    XFixesSetPictureClipRegion(ps->dpy, ps->tgt_picture, 0, 0, region_real);
 
 #ifdef MONITOR_REPAINT
   switch (ps->o.backend) {
@@ -1820,7 +1824,7 @@ paint_all(session_t *ps, XserverRegion region, win *t) {
 #ifdef CONFIG_VSYNC_OPENGL
     case BKEND_GLX:
       if (ps->o.glx_use_copysubbuffermesa)
-        glx_swap_copysubbuffermesa(ps, region);
+        glx_swap_copysubbuffermesa(ps, region_real);
       else
         glXSwapBuffers(ps->dpy, get_tgt_window(ps));
       break;
@@ -6551,7 +6555,7 @@ session_run(session_t *ps) {
   t = paint_preprocess(ps, ps->list);
 
   if (ps->redirected)
-    paint_all(ps, None, t);
+    paint_all(ps, None, None, t);
 
   // Initialize idling
   ps->idling = false;
@@ -6587,10 +6591,13 @@ session_run(session_t *ps) {
     if (!ps->redirected)
       free_region(ps, &ps->all_damage);
 
+    XserverRegion all_damage_orig = None;
+    if (ps->o.resize_damage > 0)
+      all_damage_orig = copy_region(ps, ps->all_damage);
     resize_region(ps, ps->all_damage, ps->o.resize_damage);
     if (ps->all_damage && !is_region_empty(ps, ps->all_damage, NULL)) {
       static int paint = 0;
-      paint_all(ps, ps->all_damage, t);
+      paint_all(ps, ps->all_damage, all_damage_orig, t);
       ps->reg_ignore_expire = false;
       paint++;
       if (ps->o.benchmark && paint >= ps->o.benchmark)
@@ -6598,6 +6605,7 @@ session_run(session_t *ps) {
       XSync(ps->dpy, False);
       ps->all_damage = None;
     }
+    free_region(ps, &all_damage_orig);
 
     if (ps->idling)
       ps->fade_time = 0L;

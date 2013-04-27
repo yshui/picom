@@ -1599,6 +1599,9 @@ find_focused(session_t *ps) {
  */
 static inline XserverRegion
 copy_region(const session_t *ps, XserverRegion oldregion) {
+  if (!oldregion)
+    return None;
+
   XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
 
   XFixesCopyRegion(ps->dpy, region, oldregion);

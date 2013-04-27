@@ -571,7 +571,7 @@ set_tgt_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
 }
 
 static void
-paint_all(session_t *ps, XserverRegion region, win *t);
+paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t);
 
 static void
 add_damage(session_t *ps, XserverRegion damage);

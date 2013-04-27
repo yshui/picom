@@ -797,6 +797,18 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     return false;
   }
 
+  int mdx = dx, mdy = dy, mwidth = width, mheight = height;
+  if (ps->o.resize_damage > 0) {
+    int inc_x = min_i(ps->o.resize_damage, XFixedToDouble(ps->o.blur_kern[0]) / 2),
+        inc_y = min_i(ps->o.resize_damage, XFixedToDouble(ps->o.blur_kern[1]) / 2);
+    mdx = max_i(dx - inc_x, 0);
+    mdy = max_i(dy - inc_y, 0);
+    int mdx2 = min_i(dx + width + inc_x, ps->root_width),
+        mdy2 = min_i(dy + height + inc_y, ps->root_height);
+    mwidth = mdx2 - mdx;
+    mheight = mdy2 - mdy;
+  }
+
   GLenum tex_tgt = GL_TEXTURE_RECTANGLE;
   if (ps->glx_has_texture_non_power_of_two)
     tex_tgt = GL_TEXTURE_2D;
@@ -807,11 +819,11 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   glTexParameteri(tex_tgt, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(tex_tgt, 0, GL_RGB, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-  glCopyTexSubImage2D(tex_tgt, 0, 0, 0, dx, ps->root_height - dy - height, width, height);
+  glTexImage2D(tex_tgt, 0, GL_RGB, mwidth, mheight, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+  glCopyTexSubImage2D(tex_tgt, 0, 0, 0, mdx, ps->root_height - mdy - mheight, mwidth, mheight);
 
 #ifdef DEBUG_GLX
-  printf_dbgf("(): %d, %d, %d, %d\n", dx, ps->root_height - dy - height, width, height);
+  printf_dbgf("(): %d, %d, %d, %d\n", mdx, ps->root_height - mdy - mheight, mwidth, mheight);
 #endif
 
   // Paint it back
@@ -824,9 +836,9 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   glUseProgram(ps->glx_prog_blur);
   if (ps->glx_prog_blur_unifm_offset_x >= 0)
-    glUniform1f(ps->glx_prog_blur_unifm_offset_x, 1.0f / width);
+    glUniform1f(ps->glx_prog_blur_unifm_offset_x, 1.0f / mwidth);
   if (ps->glx_prog_blur_unifm_offset_y >= 0)
-    glUniform1f(ps->glx_prog_blur_unifm_offset_y, 1.0f / height);
+    glUniform1f(ps->glx_prog_blur_unifm_offset_y, 1.0f / mheight);
   if (ps->glx_prog_blur_unifm_factor_center >= 0)
     glUniform1f(ps->glx_prog_blur_unifm_factor_center, factor_center);
 #endif
@@ -834,10 +846,10 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   {
     P_PAINTREG_START();
     {
-      const GLfloat rx = (double) (crect.x - dx) / width;
-      const GLfloat ry = 1.0 - (double) (crect.y - dy) / height;
-      const GLfloat rxe = rx + (double) crect.width / width;
-      const GLfloat rye = ry - (double) crect.height / height;
+      const GLfloat rx = (double) (crect.x - mdx) / mwidth;
+      const GLfloat ry = 1.0 - (double) (crect.y - mdy) / mheight;
+      const GLfloat rxe = rx + (double) crect.width / mwidth;
+      const GLfloat rye = ry - (double) crect.height / mheight;
       const GLfloat rdx = crect.x;
       const GLfloat rdy = ps->root_height - crect.y;
       const GLfloat rdxe = rdx + crect.width;
