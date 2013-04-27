@@ -1614,7 +1614,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 #endif
 
   if (!region) {
-    region = get_screen_region(ps);
+    region_real = region = get_screen_region(ps);
   }
   else {
     // Remove the damaged area out of screen
