@@ -851,18 +851,68 @@ get_screen_region(session_t *ps) {
 }
 
 /**
+ * Resize a region.
+ */
+static inline void
+resize_region(session_t *ps, XserverRegion region, short mod) {
+  if (!mod || !region) return;
+
+  int nrects = 0, nnewrects = 0;
+  XRectangle *newrects = NULL;
+  XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
+  if (!rects || !nrects)
+    goto resize_region_end;
+
+  // Allocate memory for new rectangle list, because I don't know if it's
+  // safe to write in the memory Xlib allocates
+  newrects = calloc(nrects, sizeof(XRectangle));
+  if (!newrects) {
+    printf_errf("(): Failed to allocate memory.");
+    exit(1);
+  }
+
+  // Loop through all rectangles
+  for (int i = 0; i < nrects; ++i) {
+    int x1 = max_i(rects[i].x - mod, 0);
+    int y1 = max_i(rects[i].y - mod, 0);
+    int x2 = min_i(rects[i].x + rects[i].width + mod, ps->root_width);
+    int y2 = min_i(rects[i].y + rects[i].height + mod, ps->root_height);
+    int wid = x2 - x1;
+    int hei = y2 - y1;
+    if (wid <= 0 || hei <= 0)
+      continue;
+    newrects[nnewrects].x = x1;
+    newrects[nnewrects].y = y1;
+    newrects[nnewrects].width = wid;
+    newrects[nnewrects].height = hei;
+    ++nnewrects;
+  }
+
+  // Set region
+  XFixesSetRegion(ps->dpy, region, newrects, nnewrects);
+
+resize_region_end:
+  cxfree(rects);
+  free(newrects);
+}
+
+/**
  * Dump a region.
  */
 static inline void
 dump_region(const session_t *ps, XserverRegion region) {
-  int nrects = 0, i;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
-  if (!rects)
-    return;
+  int nrects = 0;
+  XRectangle *rects = NULL;
+  if (!rects && region)
+    rects = XFixesFetchRegion(ps->dpy, region, &nrects);
 
-  for (i = 0; i < nrects; ++i)
+  printf_dbgf("(%#010lx): %d rects\n", region, nrects);
+  if (!rects) return;
+  for (int i = 0; i < nrects; ++i)
     printf("Rect #%d: %8d, %8d, %8d, %8d\n", i, rects[i].x, rects[i].y,
         rects[i].width, rects[i].height);
+  putchar('\n');
+  fflush(stdout);
 
   cxfree(rects);
 }

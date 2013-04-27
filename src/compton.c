@@ -4235,6 +4235,11 @@ usage(void) {
     "    --blur-kern '7,7,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.001723,0.059106,0.493069,0.493069,0.059106,0.001723,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003'\n"
     "--blur-background-exclude condition\n"
     "  Exclude conditions for background blur.\n"
+    "--resize-damage integer\n"
+    "  Resize damaged region by a specific number of pixels. A positive\n"
+    "  value enlarges it while a negative one shrinks it. Useful for\n"
+    "  fixing the line corruption issues of blur. May or may not\n"
+    "  work with --glx-no-stencil. Shrinking doesn't function correctly.\n"
     "--invert-color-include condition\n"
     "  Specify a list of conditions of windows that should be painted with\n"
     "  inverted color. Resource-hogging, and is not well tested.\n"
@@ -4861,6 +4866,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "glx-swap-method", required_argument, NULL, 299 },
     { "fade-exclude", required_argument, NULL, 300 },
     { "blur-kern", required_argument, NULL, 301 },
+    { "resize-damage", required_argument, NULL, 302 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5089,6 +5095,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         free(ps->o.blur_kern);
         if (!(ps->o.blur_kern = parse_matrix(ps, optarg)))
           exit(1);
+      case 302:
+        // --resize-damage
+        ps->o.resize_damage = atoi(optarg);
         break;
       default:
         usage();
@@ -5952,6 +5961,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .synchronize = false,
       .detect_rounded_corners = false,
       .paint_on_overlay = false,
+      .resize_damage = 0,
       .unredir_if_possible = false,
       .dbus = false,
       .benchmark = 0,
@@ -6577,6 +6587,7 @@ session_run(session_t *ps) {
     if (!ps->redirected)
       free_region(ps, &ps->all_damage);
 
+    resize_region(ps, ps->all_damage, ps->o.resize_damage);
     if (ps->all_damage && !is_region_empty(ps, ps->all_damage, NULL)) {
       static int paint = 0;
       paint_all(ps, ps->all_damage, t);

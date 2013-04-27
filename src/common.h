@@ -403,6 +403,8 @@ typedef struct {
   /// Whether to paint on X Composite overlay window instead of root
   /// window.
   bool paint_on_overlay;
+  /// Resize damage for a specific number of pixels.
+  int resize_damage;
   /// Whether to unredirect all windows if a full-screen opaque window
   /// is detected.
   bool unredir_if_possible;

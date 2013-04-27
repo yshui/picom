@@ -246,6 +246,7 @@ glx_init_blur(session_t *ps) {
 #endif
     }
     ps->glx_frag_shader_blur = glx_create_shader(GL_FRAGMENT_SHADER, shader_str);
+    free(shader_str);
   }
 
   if (!ps->glx_frag_shader_blur) {
