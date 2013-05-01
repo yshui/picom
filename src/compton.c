@@ -670,30 +670,6 @@ win_rounded_corners(session_t *ps, win *w) {
 }
 
 /**
- * Validate pixmap of a window, and destroy pixmap and picture if invalid.
- */
-static void
-win_validate_pixmap(session_t *ps, win *w) {
-  if (!w->paint.pixmap)
-    return;
-
-  // Detect whether the pixmap is valid with XGetGeometry. Well, maybe there
-  // are better ways.
-  bool invalid = false;
-  {
-    Window rroot = None;
-    int rx = 0, ry = 0;
-    unsigned rwid = 0, rhei = 0, rborder = 0, rdepth = 0;
-    invalid = (!XGetGeometry(ps->dpy, w->paint.pixmap, &rroot, &rx, &ry,
-          &rwid, &rhei, &rborder, &rdepth) || !rwid || !rhei);
-  }
-
-  // Destroy pixmap and picture, if invalid
-  if (invalid)
-    free_paint(ps, &w->paint);
-}
-
-/**
  * Add a pattern to a condition linked list.
  */
 static bool
@@ -839,6 +815,10 @@ get_root_tile(session_t *ps) {
     }
     free_winprop(&prop);
   }
+
+  // Make sure the pixmap we got is valid
+  if (pixmap && !validate_pixmap(ps, pixmap))
+    pixmap = None;
 
   // Create a pixmap if there isn't any
   if (!pixmap) {

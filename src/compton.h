@@ -443,8 +443,32 @@ win_is_fullscreen(session_t *ps, const win *w) {
 static void
 win_rounded_corners(session_t *ps, win *w);
 
-static void
-win_validate_pixmap(session_t *ps, win *w);
+/**
+ * Validate a pixmap.
+ *
+ * Detect whether the pixmap is valid with XGetGeometry. Well, maybe there
+ * are better ways.
+ */
+static inline bool
+validate_pixmap(session_t *ps, Pixmap pxmap) {
+  if (!pxmap) return false;
+
+  Window rroot = None;
+  int rx = 0, ry = 0;
+  unsigned rwid = 0, rhei = 0, rborder = 0, rdepth = 0;
+  return XGetGeometry(ps->dpy, pxmap, &rroot, &rx, &ry,
+        &rwid, &rhei, &rborder, &rdepth) && rwid && rhei;
+}
+
+/**
+ * Validate pixmap of a window, and destroy pixmap and picture if invalid.
+ */
+static inline void
+win_validate_pixmap(session_t *ps, win *w) {
+  // Destroy pixmap and picture, if invalid
+  if (!validate_pixmap(ps, w->paint.pixmap))
+    free_paint(ps, &w->paint);
+}
 
 /**
  * Wrapper of c2_match().
