@@ -52,7 +52,27 @@ while test $# -gt 0; do
   OPTIND=1
 
   # Read options
-  while getopts 'scdgn:w:o:' option "$@"; do
+  while getopts 'scdgn:w:o:-:' option "$@"; do
+    if test "$option" = '-'; then
+      case "$OPTARG" in
+        select | current | delete | get)
+          v=''
+        ;;
+        name | window | opacity)
+          eval v=\$$OPTIND
+          OPTIND=$((OPTIND + 1))
+        ;;
+        name=* | window=* | opacity=*)
+          v=$(echo "$OPTARG" | sed 's/^[^=]\+=//')
+        ;;
+        *)
+          echo "$0: illegal option $OPTARG" >& 2
+          exit 1
+        ;;
+      esac
+      option=$(echo "$OPTARG" | cut -c 1)
+      OPTARG=$v
+    fi
     case "$option" in
       s) wprefix=''; window='' ;;
       c)
