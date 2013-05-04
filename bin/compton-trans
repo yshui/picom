@@ -129,7 +129,7 @@ else
 
   # Find the highest ancestor of the target window below
   topmost=$(echo -n "$treeout" \
-    | head -n $(($lineno + 1)) \
+    | head -n $((lineno + 1)) \
     | sed -n 's/^     \(0x[[:xdigit:]]*\).*/\1/p' \
     | tail -n 1)
 fi
