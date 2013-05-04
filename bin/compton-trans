@@ -25,13 +25,19 @@ if test -z "$(command -v xprop)" -o -z "$(command -v xwininfo)"; then
   exit 1
 fi
 
+# Variables
+wprefix=
 window=
 opacity=
 cur=
-i=
+delete=
+treeout=
+wid=
+topmost=
+lineno=
 
 # Read options
-while getopts 'scn:w:o:' option; do
+while getopts 'scdn:w:o:' option; do
   case "$option" in
     s) wprefix=''; window='' ;;
     c)
@@ -39,6 +45,7 @@ while getopts 'scn:w:o:' option; do
         | sed 's/^.*\(0x\S*\).*$/\1/')
       wprefix='-id'; window=$active
     ;;
+    d) delete=1 ;;
     n) wprefix='-name'; window=$OPTARG ;;
     w) wprefix='-id'; window=$OPTARG ;;
     o) opacity=$OPTARG ;;
@@ -50,18 +57,12 @@ done
 shift $(($OPTIND - 1))
 test -n "$1" && opacity=$1
 
-# Validate opacity value
-if test -z "$opacity"; then
-  echo 'No opacity specified.'
-  exit 1
-fi
-
 # clean up opacity. xargs == a poor man's trim.
 opacity=$(echo "$opacity" | sed 's/%//g' | xargs)
-#opacity=$(echo "$opacity" | sed 's/%//g' | sed 's/^ \+\| \+$//g')
 
-if test -z "$opacity"; then
-  echo 'Invalid opacity value.'
+# Validate opacity value
+if test -z "$opacity" -a -z "$delete"; then
+  echo 'No opacity specified.'
   exit 1
 fi
 
@@ -80,13 +81,13 @@ if test -z "$wid"; then
 fi
 
 # Make sure it's not root window
-if echo "$treeout" | fgrep 'Parent window id: 0x0' > /dev/null; then
+if echo "$treeout" | fgrep -q 'Parent window id: 0x0'; then
   echo 'Cannot set opacity on root window.'
   exit 1
 fi
 
 # If it's already the topmost window
-if echo "$treeout" | grep 'Parent window id: 0x[[:xdigit:]]* (the root window)' > /dev/null; then
+if echo "$treeout" | grep -q 'Parent window id: 0x[[:xdigit:]]* (the root window)'; then
   topmost=$wid
 else
   # Get the whole window tree
@@ -118,8 +119,14 @@ if test -z "$topmost"; then
   exit 1
 fi
 
+# Remove the opacity property.
+if test -n "$delete"; then
+  xprop -id "$topmost" -remove _NET_WM_WINDOW_OPACITY
+  exit 0
+fi
+
 # Calculate the desired opacity
-if echo "$opacity" | grep '^[+-]' > /dev/null; then
+if echo "$opacity" | grep -q '^[+-]'; then
   cur=$(xprop -id "$topmost" -notype _NET_WM_WINDOW_OPACITY \
     | sed 's/^.*\b\([0-9]\+\).*$\|^.*$/\1/')
   test -z "$cur" && cur=0xffffffff
