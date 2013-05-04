@@ -21,7 +21,7 @@
 
 # "command" is a shell built-in, faster than "which"
 if test -z "$(command -v xprop)" -o -z "$(command -v xwininfo)"; then
-  echo "Please install x11-utils/xorg-xprop/xorg-xwininfo." >& 2
+  echo 'Please install x11-utils/xorg-xprop/xorg-xwininfo.' >& 2
   exit 1
 fi
 
@@ -31,11 +31,11 @@ cur=
 i=
 
 # Read options
-while getopts "scn:w:o:" option; do
+while getopts 'scn:w:o:' option; do
   case "$option" in
     s) wprefix=''; window='' ;;
     c)
-      active=$(xprop -root -notype "_NET_ACTIVE_WINDOW" \
+      active=$(xprop -root -notype _NET_ACTIVE_WINDOW \
         | sed 's/^.*\(0x\S*\).*$/\1/')
       wprefix='-id'; window=$active
     ;;
@@ -52,16 +52,16 @@ test -n "$1" && opacity=$1
 
 # Validate opacity value
 if test -z "$opacity"; then
-  echo "No opacity specified."
+  echo 'No opacity specified.'
   exit 1
 fi
 
-opacity=$(echo "$opacity" \
-  | sed 's/%//g' \
-  | sed -rn 's/^[[:space:]]*([+-]?[[:digit:]]+)[[:space:]]*$/\1/p')
+# clean up opacity. xargs == a poor man's trim.
+opacity=$(echo "$opacity" | sed 's/%//g' | xargs)
+#opacity=$(echo "$opacity" | sed 's/%//g' | sed 's/^ \+\| \+$//g')
 
 if test -z "$opacity"; then
-  echo "Invalid opacity value."
+  echo 'Invalid opacity value.'
   exit 1
 fi
 
@@ -75,25 +75,25 @@ fi
 wid=$(echo "$treeout" | sed -n 's/^xwininfo:.*: \(0x[[:xdigit:]]*\).*$/\1/p')
 
 if test -z "$wid"; then
-  echo "Failed to find window."
+  echo 'Failed to find window.'
   exit 1
 fi
 
 # Make sure it's not root window
-if echo "$treeout" | fgrep "Parent window id: 0x0" > /dev/null; then
-  echo "Cannot set opacity on root window."
+if echo "$treeout" | fgrep 'Parent window id: 0x0' > /dev/null; then
+  echo 'Cannot set opacity on root window.'
   exit 1
 fi
 
 # If it's already the topmost window
-if echo "$treeout" | grep "Parent window id: 0x[[:xdigit:]]* (the root window)" > /dev/null; then
+if echo "$treeout" | grep 'Parent window id: 0x[[:xdigit:]]* (the root window)' > /dev/null; then
   topmost=$wid
 else
   # Get the whole window tree
   treeout=$(xwininfo -root -tree)
 
   if test -z "$treeout"; then
-    echo "Failed to get root window tree."
+    echo 'Failed to get root window tree.'
     exit 1
   fi
 
@@ -101,25 +101,26 @@ else
   lineno=$(echo -n "$treeout" | grep -nw "$wid" | head -n1 | cut -d ':' -f 1)
 
   if test -z "$lineno"; then
-    echo "Failed to find window in window tree."
+    echo 'Failed to find window in window tree.'
     exit 1
   fi
 
   # Find the highest ancestor of the target window below
   topmost=$(echo -n "$treeout" \
     | head -n $(($lineno + 1)) \
-    | sed -n 's/^     \(0x[[:xdigit:]]*\).*/\1/p' | tail -n1)
+    | sed -n 's/^     \(0x[[:xdigit:]]*\).*/\1/p' \
+    | tail -n 1)
 fi
 
 if test -z "$topmost"; then
-  echo "Failed to find the highest parent window below root of the" \
-    "selected window."
+  echo 'Failed to find the highest parent window below root of the' \
+    'selected window.'
   exit 1
 fi
 
 # Calculate the desired opacity
 if echo "$opacity" | grep '^[+-]' > /dev/null; then
-  cur=$(xprop -id "$topmost" -notype "_NET_WM_WINDOW_OPACITY" \
+  cur=$(xprop -id "$topmost" -notype _NET_WM_WINDOW_OPACITY \
     | sed 's/^.*\b\([0-9]\+\).*$\|^.*$/\1/')
   test -z "$cur" && cur=0xffffffff
   cur=$((cur * 100 / 0xffffffff))
