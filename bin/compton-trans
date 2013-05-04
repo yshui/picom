@@ -27,6 +27,8 @@ if test -z "$(command -v xprop)" -o -z "$(command -v xwininfo)"; then
 fi
 
 # Variables
+args=
+arg=
 active=
 wprefix=
 window=
@@ -43,36 +45,34 @@ for v in "$@"; do
   shift && set -- "$@" "$(echo "$v" | sed 's/^-\([0-9]\+%\?\)$/~\1/')"
 done
 
-# This takes into account the fact that getopts stops on
-# any argument it doesn't recongize or errors on. This
-# allows for things like `compton-trans -5` as well
-# as `compton-trans -c +5 -s` (contrived example).
+# Use getopt to parse arguments.
+args=$(getopt -o 'scdgn:w:o:' -l 'select,current,delete,get,name:,window:,opacity:' -- "$@")
+if test $? -ne 0; then
+  echo 'Bad arguments.'
+  exit 1
+fi
+
+eval set -- "$args"
+
 while test $# -gt 0; do
-  # Reset option index
-  OPTIND=1
-
-  # Read options
-  while getopts 'scdgn:w:o:' option "$@"; do
-    case "$option" in
-      s) wprefix=''; window='' ;;
-      c)
-        active=$(xprop -root -notype _NET_ACTIVE_WINDOW \
-          | sed 's/^.*\(0x\S*\).*$/\1/')
-        wprefix='-id'; window=$active
-      ;;
-      d) action='delete' ;;
-      g) action='get' ;;
-      n) wprefix='-name'; window=$OPTARG ;;
-      w) wprefix='-id'; window=$OPTARG ;;
-      o) opacity=$OPTARG ;;
-      \?) exit 1 ;;
-    esac
-  done
-
-  # Read positional arguments
-  shift $((OPTIND - 1))
-  test -n "$1" && opacity=$1 && shift
+  arg=$1
+  shift
+  case "$arg" in
+    --) break ;;
+    -s | --select) wprefix=''; window='' ;;
+    -c | --current)
+      active=$(xprop -root -notype _NET_ACTIVE_WINDOW \
+        | sed 's/^.*\(0x\S*\).*$/\1/')
+      wprefix='-id'; window=$active
+    ;;
+    -d | --delete) action='delete' ;;
+    -g | --get) action='get' ;;
+    -n | --name) wprefix='-name'; window=$1; shift ;;
+    -w | --window) wprefix='-id'; window=$1; shift ;;
+    -o | --opacity) opacity=$1; shift ;;
+  esac
 done
+test -n "$1" && opacity=$1
 
 # clean up opacity. xargs == a poor man's trim.
 opacity=$(echo "$opacity" | xargs | sed 's/%//g' | sed 's/^~\([0-9]\+\)$/-\1/')
