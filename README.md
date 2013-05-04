@@ -79,7 +79,7 @@ $ make install
 
 * Our [FAQ](wiki/faq) covers some known issues.
 
-* VSync does not work too well. You may check the [VSync Guide](wiki/vsync-guide) for how to get (possibly) better effects.
+* VSync does not work too well. You may check the [VSync Guide](https://github.com/chjj/compton/wiki/vsync-guide) for how to get (possibly) better effects.
 
 * If `--unredir-if-possible` is enabled, when compton redirects/unredirects windows, the screen may flicker. Using `--paint-on-overlay` minimizes the problem from my observation, yet I do not know if there's a cure.
 
@@ -87,7 +87,7 @@ $ make install
 
 * The performance of blur under X Render backend might be pretty bad. OpenGL backend could be faster.
 
-* With `--blur-background` you may sometimes see weird lines around damaged area. `--resize-damage YOUR_BLUR_RADISU` might be helpful in the case.
+* With `--blur-background` you may sometimes see weird lines around damaged area. `--resize-damage YOUR_BLUR_RADIUS` might be helpful in the case.
 
 ## Usage
 
@@ -101,7 +101,7 @@ Note a sample configuration file `compton.sample.conf` is included in the reposi
 
 * Our (semi?) official IRC channel is #compton on FreeNode.
 
-* Some information is available on the wiki, including [FAQ](wiki/faq), [VSync Guide](wiki/vsync-guide), and [Performance Guide](wiki/perf-guide).
+* Some information is available on the wiki, including [FAQ](https://github.com/chjj/compton/wiki/faq), [VSync Guide](https://github.com/chjj/compton/wiki/vsync-guide), and [Performance Guide](https://github.com/chjj/compton/wiki/perf-guide).
 
 ## License
 
