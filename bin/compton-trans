@@ -19,6 +19,10 @@
 #   $ compton-trans -s 75
 # Increment current window 5%
 #   $ compton-trans -c +5
+# Delete current window's opacity
+#   $ compton-trans -c --delete
+# Reset all windows
+#   $ compton-trans --reset
 
 # "command" is a shell built-in, faster than "which"
 if test -z "$(command -v xprop)" -o -z "$(command -v xwininfo)"; then
@@ -120,6 +124,9 @@ fi
 if test -z "$wprefix"; then
   treeout=$(xwininfo -children -frame)
 else
+  test "$wprefix" = '-id' \
+    && ! echo "$window" | grep -q '^\(0x\)\?[0-9a-fA-F]\+$' \
+    && echo 'Bad window ID.' && exit 1
   treeout=$(xwininfo -children $wprefix "$window")
 fi
 
@@ -189,7 +196,7 @@ fi
 
 # Calculate the desired opacity
 if echo "$opacity" | grep -q '^[+-]'; then
-  opacity=$(($cur + $opacity))
+  opacity=$((cur + opacity))
 fi
 
 test $opacity -lt 0 && opacity=0
