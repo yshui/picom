@@ -37,6 +37,8 @@ treeout=
 wid=
 topmost=
 lineno=
+option=
+v=
 
 # Workaround: replace '-5' with '~5' so as not to confuse getopts.
 for v in "$@"; do
@@ -52,10 +54,10 @@ while test $# -gt 0; do
   OPTIND=1
 
   # Read options
-  while getopts 'scdgn:w:o:-:' option "$@"; do
+  while getopts 'scrdgn:w:o:-:' option "$@"; do
     if test "$option" = '-'; then
       case "$OPTARG" in
-        select | current | delete | get)
+        select | current | reset | delete | get)
           v=''
         ;;
         name | window | opacity)
@@ -80,6 +82,7 @@ while test $# -gt 0; do
           | sed 's/^.*\(0x\S*\).*$/\1/')
         wprefix='-id'; window=$active
       ;;
+      r) action='reset' ;;
       d) action='delete' ;;
       g) action='get' ;;
       n) wprefix='-name'; window=$OPTARG ;;
@@ -101,6 +104,16 @@ opacity=$(echo "$opacity" | xargs | sed 's/%//g' | sed 's/^~\([0-9]\+\)$/-\1/')
 if test -z "$action" && ! echo "$opacity" | grep -q '^[+-]\?[0-9]\+$'; then
   echo "Invalid opacity specified: $opacity."
   exit 1
+fi
+
+# Reset opacity for all windows
+if test x"$action" = x'reset'; then
+  xwininfo -root -tree \
+  | sed -n 's/^     \(0x[[:xdigit:]]*\).*/\1/p' \
+  | while IFS=$'\n' read wid; do
+    xprop -id "$wid" -remove _NET_WM_WINDOW_OPACITY
+  done
+  exit 0
 fi
 
 # Get ID of the target window
