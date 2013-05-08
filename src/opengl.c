@@ -197,23 +197,41 @@ glx_init_blur(session_t *ps) {
   {
     static const char *FRAG_SHADER_BLUR_PREFIX =
       "#version 110\n"
+      "%s"
       "uniform float offset_x;\n"
       "uniform float offset_y;\n"
       "uniform float factor_center;\n"
-      "uniform sampler2D tex_scr;\n"
+      "uniform %s tex_scr;\n"
       "\n"
       "void main() {\n"
       "  vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);\n";
     static const char *FRAG_SHADER_BLUR_ADD =
-      "  sum += float(%.7g) * texture2D(tex_scr, vec2(gl_TexCoord[0].x + offset_x * float(%d), gl_TexCoord[0].y + offset_y * float(%d)));\n";
+      "  sum += float(%.7g) * %s(tex_scr, vec2(gl_TexCoord[0].x + offset_x * float(%d), gl_TexCoord[0].y + offset_y * float(%d)));\n";
+    static const char *FRAG_SHADER_BLUR_ADD_GPUSHADER4 =
+      "  sum += float(%.7g) * %sOffset(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y), ivec2(%d, %d));\n";
     static const char *FRAG_SHADER_BLUR_SUFFIX =
-      "  sum += texture2D(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * factor_center;\n"
+      "  sum += %s(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * factor_center;\n"
       "  gl_FragColor = sum / (factor_center + float(%.7g));\n"
       "}\n";
-    int wid = XFixedToDouble(ps->o.blur_kern[0]), hei = XFixedToDouble(ps->o.blur_kern[1]);
+
+    const bool use_texture_rect = !ps->glx_has_texture_non_power_of_two;
+    const char *sampler_type = (use_texture_rect ?
+        "sampler2DRect": "sampler2D");
+    const char *texture_func = (use_texture_rect ?
+        "texture2DRect": "texture2D");
+    const char *shader_add = FRAG_SHADER_BLUR_ADD;
+    char *extension = mstrcpy("");
+    if (use_texture_rect)
+      mstrextend(&extension, "#extension GL_ARB_texture_rectangle : require\n");
+    if (ps->o.glx_use_gpushader4) {
+      mstrextend(&extension, "#extension GL_EXT_gpu_shader4 : require\n");
+      shader_add = FRAG_SHADER_BLUR_ADD_GPUSHADER4;
+    }
+
+    int wid = XFixedToDouble(ps->o.blur_kern[0]),
+        hei = XFixedToDouble(ps->o.blur_kern[1]);
     int nele = wid * hei - 1;
-    int len = strlen(FRAG_SHADER_BLUR_PREFIX) + (strlen(FRAG_SHADER_BLUR_ADD) + 42) * nele
-      + strlen(FRAG_SHADER_BLUR_SUFFIX) + 12 + 1;
+    int len = strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) + strlen(extension) + (strlen(shader_add) + strlen(texture_func) + 42) * nele + strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
     char *shader_str = calloc(len, sizeof(char));
     if (!shader_str) {
       printf_errf("(): Failed to allocate %d bytes for shader string.", len);
@@ -221,8 +239,8 @@ glx_init_blur(session_t *ps) {
     }
     {
       char *pc = shader_str;
-      strcpy(pc, FRAG_SHADER_BLUR_PREFIX);
-      pc += strlen(FRAG_SHADER_BLUR_PREFIX);
+      sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
+      pc += strlen(pc);
       assert(strlen(shader_str) < len);
 
       double sum = 0.0;
@@ -232,13 +250,13 @@ glx_init_blur(session_t *ps) {
             continue;
           double val = XFixedToDouble(ps->o.blur_kern[2 + i * wid + j]);
           sum += val;
-          sprintf(pc, FRAG_SHADER_BLUR_ADD, val, j - wid / 2, i - hei / 2);
+          sprintf(pc, shader_add, val, texture_func, j - wid / 2, i - hei / 2);
           pc += strlen(pc);
           assert(strlen(shader_str) < len);
         }
       }
 
-      sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, sum);
+      sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
       assert(strlen(shader_str) < len);
 #ifdef DEBUG_GLX_GLSL
       fputs(shader_str, stdout);
@@ -246,6 +264,7 @@ glx_init_blur(session_t *ps) {
 #endif
     }
     ps->glx_frag_shader_blur = glx_create_shader(GL_FRAGMENT_SHADER, shader_str);
+    free(extension);
     free(shader_str);
   }
 
@@ -268,8 +287,10 @@ glx_init_blur(session_t *ps) {
 }
 
   P_GET_UNIFM_LOC("factor_center", glx_prog_blur_unifm_factor_center);
-  P_GET_UNIFM_LOC("offset_x", glx_prog_blur_unifm_offset_x);
-  P_GET_UNIFM_LOC("offset_y", glx_prog_blur_unifm_offset_y);
+  if (!ps->o.glx_use_gpushader4) {
+    P_GET_UNIFM_LOC("offset_x", glx_prog_blur_unifm_offset_x);
+    P_GET_UNIFM_LOC("offset_y", glx_prog_blur_unifm_offset_y);
+  }
 
 #undef P_GET_UNIFM_LOC
 
@@ -593,23 +614,7 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
   // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   // Get buffer age
-  int buffer_age = ps->o.glx_swap_method;
   bool trace_damage = (ps->o.glx_swap_method < 0 || ps->o.glx_swap_method > 1);
-
-  // Query GLX_EXT_buffer_age for buffer age
-  if (SWAPM_BUFFER_AGE == buffer_age) {
-    unsigned val = 0;
-    glXQueryDrawable(ps->dpy, get_tgt_window(ps),
-        GLX_BACK_BUFFER_AGE_EXT, &val);
-    buffer_age = val;
-  }
-
-  // Buffer age too high
-  if (buffer_age > CGLX_MAX_BUFFER_AGE + 1)
-    buffer_age = 0;
-
-  // Make sure buffer age >= 0
-  buffer_age = max_i(buffer_age, 0);
 
   // Trace raw damage regions
   XserverRegion newdamage = None;
@@ -619,37 +624,89 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
   // OpenGL doesn't support partial repaint without GLX_MESA_copy_sub_buffer,
   // we could redraw the whole screen or copy unmodified pixels from
   // front buffer with --glx-copy-from-front.
-  if (ps->o.glx_use_copysubbuffermesa || 1 == buffer_age || !*preg) {
-  }
-  else if (buffer_age > 1) {
-    for (int i = 0; i < buffer_age - 1; ++i) {
-      XserverRegion dmg = ps->all_damage_last[i];
-      if (!dmg) {
-        free_region(ps, preg);
-        break;
-      }
-      XFixesUnionRegion(ps->dpy, *preg, *preg, dmg);
-    }
-  }
-  else if (!ps->o.glx_copy_from_front) {
-    free_region(ps, preg);
+  if (ps->o.glx_use_copysubbuffermesa || !*preg) {
   }
   else {
+    int buffer_age = ps->o.glx_swap_method;
+
+    // Getting buffer age
     {
-      XserverRegion reg_copy = XFixesCreateRegion(ps->dpy, NULL, 0);
-      XFixesSubtractRegion(ps->dpy, reg_copy, ps->screen_reg, *preg);
-      glx_set_clip(ps, reg_copy, NULL);
-      free_region(ps, &reg_copy);
+      // Query GLX_EXT_buffer_age for buffer age
+      if (SWAPM_BUFFER_AGE == buffer_age) {
+        unsigned val = 0;
+        glXQueryDrawable(ps->dpy, get_tgt_window(ps),
+            GLX_BACK_BUFFER_AGE_EXT, &val);
+        buffer_age = val;
+      }
+
+      // Buffer age too high
+      if (buffer_age > CGLX_MAX_BUFFER_AGE + 1)
+        buffer_age = 0;
+
+      // Make sure buffer age >= 0
+      buffer_age = max_i(buffer_age, 0);
+
+      // Check if we have we have empty regions
+      if (buffer_age > 1) {
+        for (int i = 0; i < buffer_age - 1; ++i)
+          if (!ps->all_damage_last[i]) { buffer_age = 0; break; }
+      }
     }
 
-    {
-      GLfloat raster_pos[4];
-      glGetFloatv(GL_CURRENT_RASTER_POSITION, raster_pos);
-      glReadBuffer(GL_FRONT);
-      glRasterPos2f(0.0, 0.0);
-      glCopyPixels(0, 0, ps->root_width, ps->root_height, GL_COLOR);
-      glReadBuffer(GL_BACK);
-      glRasterPos4fv(raster_pos);
+    // Do nothing for buffer_age 1 (copy)
+    if (1 != buffer_age) {
+      // Copy pixels
+      if (ps->o.glx_copy_from_front) {
+        // Determine copy area
+        XserverRegion reg_copy = XFixesCreateRegion(ps->dpy, NULL, 0);
+        if (!buffer_age) {
+          XFixesSubtractRegion(ps->dpy, reg_copy, ps->screen_reg, *preg);
+        }
+        else {
+          for (int i = 0; i < buffer_age - 1; ++i)
+            XFixesUnionRegion(ps->dpy, reg_copy, reg_copy,
+                ps->all_damage_last[i]);
+          XFixesSubtractRegion(ps->dpy, reg_copy, reg_copy, *preg);
+        }
+
+        // Actually copy pixels
+        {
+          GLfloat raster_pos[4];
+          GLfloat curx = 0.0f, cury = 0.0f;
+          glGetFloatv(GL_CURRENT_RASTER_POSITION, raster_pos);
+          glReadBuffer(GL_FRONT);
+          glRasterPos2f(0.0, 0.0);
+          {
+            int nrects = 0;
+            XRectangle *rects = XFixesFetchRegion(ps->dpy, reg_copy, &nrects);
+            for (int i = 0; i < nrects; ++i) {
+              const int x = rects[i].x;
+              const int y = ps->root_height - rects[i].y - rects[i].height;
+              // Kwin patch says glRasterPos2f() causes artifacts on bottom
+              // screen edge with some drivers
+              glBitmap(0, 0, 0, 0, x - curx, y - cury, NULL);
+              curx = x;
+              cury = y;
+              glCopyPixels(x, y, rects[i].width, rects[i].height, GL_COLOR);
+            }
+            cxfree(rects);
+          }
+          glReadBuffer(GL_BACK);
+          glRasterPos4fv(raster_pos);
+        }
+
+        free_region(ps, &reg_copy);
+      }
+
+      // Determine paint area
+      if (ps->o.glx_copy_from_front) { }
+      else if (buffer_age) {
+        for (int i = 0; i < buffer_age - 1; ++i)
+          XFixesUnionRegion(ps->dpy, *preg, *preg, ps->all_damage_last[i]);
+      }
+      else {
+        free_region(ps, preg);
+      }
     }
   }
 
@@ -819,12 +876,19 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   glTexParameteri(tex_tgt, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(tex_tgt, 0, GL_RGB, mwidth, mheight, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+  glTexImage2D(tex_tgt, 0, GL_RGB, mwidth, mheight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
   glCopyTexSubImage2D(tex_tgt, 0, 0, 0, mdx, ps->root_height - mdy - mheight, mwidth, mheight);
 
 #ifdef DEBUG_GLX
   printf_dbgf("(): %d, %d, %d, %d\n", mdx, ps->root_height - mdy - mheight, mwidth, mheight);
 #endif
+
+  // Texture scaling factor
+  GLfloat texfac_x = 1.0f, texfac_y = 1.0f;
+  if (GL_TEXTURE_2D == tex_tgt) {
+    texfac_x /= mwidth;
+    texfac_y /= mheight;
+  }
 
   // Paint it back
   // Color negation for testing...
@@ -836,9 +900,9 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   glUseProgram(ps->glx_prog_blur);
   if (ps->glx_prog_blur_unifm_offset_x >= 0)
-    glUniform1f(ps->glx_prog_blur_unifm_offset_x, 1.0f / mwidth);
+    glUniform1f(ps->glx_prog_blur_unifm_offset_x, texfac_x);
   if (ps->glx_prog_blur_unifm_offset_y >= 0)
-    glUniform1f(ps->glx_prog_blur_unifm_offset_y, 1.0f / mheight);
+    glUniform1f(ps->glx_prog_blur_unifm_offset_y, texfac_y);
   if (ps->glx_prog_blur_unifm_factor_center >= 0)
     glUniform1f(ps->glx_prog_blur_unifm_factor_center, factor_center);
 #endif
@@ -846,10 +910,10 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   {
     P_PAINTREG_START();
     {
-      const GLfloat rx = (double) (crect.x - mdx) / mwidth;
-      const GLfloat ry = 1.0 - (double) (crect.y - mdy) / mheight;
-      const GLfloat rxe = rx + (double) crect.width / mwidth;
-      const GLfloat rye = ry - (double) crect.height / mheight;
+      const GLfloat rx = (crect.x - mdx) * texfac_x;
+      const GLfloat ry = (mheight - (crect.y - mdy)) * texfac_y;
+      const GLfloat rxe = rx + crect.width * texfac_x;
+      const GLfloat rye = ry - crect.height * texfac_y;
       const GLfloat rdx = crect.x;
       const GLfloat rdy = ps->root_height - crect.y;
       const GLfloat rdxe = rdx + crect.width;
@@ -1049,10 +1113,18 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
   {
     P_PAINTREG_START();
     {
-      GLfloat rx = (double) (crect.x - dx + x) / ptex->width;
-      GLfloat ry = (double) (crect.y - dy + y) / ptex->height;
-      GLfloat rxe = rx + (double) crect.width / ptex->width;
-      GLfloat rye = ry + (double) crect.height / ptex->height;
+      GLfloat rx = (double) (crect.x - dx + x);
+      GLfloat ry = (double) (crect.y - dy + y);
+      GLfloat rxe = rx + (double) crect.width;
+      GLfloat rye = ry + (double) crect.height;
+      // Rectangle textures have [0-w] [0-h] while 2D texture has [0-1] [0-1]
+      // Thanks to amonakov for pointing out!
+      if (GL_TEXTURE_2D == ptex->target) {
+        rx = rx / ptex->width;
+        ry = ry / ptex->height;
+        rxe = rxe / ptex->width;
+        rye = rye / ptex->height;
+      }
       GLint rdx = crect.x;
       GLint rdy = ps->root_height - crect.y;
       GLint rdxe = rdx + crect.width;

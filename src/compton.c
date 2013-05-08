@@ -4238,9 +4238,10 @@ usage(void) {
     "  boost.\n"
     "--glx-copy-from-front\n"
     "  GLX backend: Copy unmodified regions from front buffer instead of\n"
-    "  redrawing them all. My tests with nvidia-drivers show a 10% decrease\n"
-    "  in performance when the whole screen is modified, but a 20% increase\n"
-    "  when only 1/4 is. My tests on nouveau show terrible slowdown.\n"
+    "  redrawing them all. My tests with nvidia-drivers show a 5% decrease\n"
+    "  in performance when the whole screen is modified, but a 30% increase\n"
+    "  when only 1/4 is. My tests on nouveau show terrible slowdown. Could\n"
+    "  work with --glx-swap-method but not --glx-use-copysubbuffermesa.\n"
     "--glx-use-copysubbuffermesa\n"
     "  GLX backend: Use MESA_copy_sub_buffer to do partial screen update.\n"
     "  My tests on nouveau shows a 200% performance boost when only 1/4 of\n"
@@ -4258,6 +4259,9 @@ usage(void) {
     "  but safer (6 is still faster than 0). -1 means auto-detect using\n"
     "  GLX_EXT_buffer_age, supported by some drivers. Useless with\n"
     "  --glx-use-copysubbuffermesa.\n"
+    "--glx-use-gpushader4\n"
+    "  GLX backend: Use GL_EXT_gpu_shader4 for some optimization on blur\n"
+    "  GLSL code. My tests on GTX 670 show no noticeable effect.\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED
@@ -4879,6 +4883,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "fade-exclude", required_argument, NULL, 300 },
     { "blur-kern", required_argument, NULL, 301 },
     { "resize-damage", required_argument, NULL, 302 },
+    { "glx-use-gpushader4", no_argument, NULL, 303 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5111,6 +5116,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --resize-damage
         ps->o.resize_damage = atoi(optarg);
         break;
+      P_CASEBOOL(303, glx_use_gpushader4);
       default:
         usage();
         break;

@@ -392,6 +392,8 @@ typedef struct {
   bool glx_no_rebind_pixmap;
   /// GLX swap method we assume OpenGL uses.
   int glx_swap_method;
+  /// Whether to use GL_EXT_gpu_shader4 to (hopefully) accelerates blurring.
+  bool glx_use_gpushader4;
   /// Whether to try to detect WM windows and mark them as focused.
   bool mark_wmwin_focused;
   /// Whether to mark override-redirect windows as focused.
@@ -1234,7 +1236,7 @@ mstrncpy(const char *src, unsigned len) {
 /**
  * Allocate the space and join two strings.
  */
-static inline char * __attribute__((const))
+static inline char *
 mstrjoin(const char *src1, const char *src2) {
   char *str = malloc(sizeof(char) * (strlen(src1) + strlen(src2) + 1));
 
@@ -1247,7 +1249,7 @@ mstrjoin(const char *src1, const char *src2) {
 /**
  * Allocate the space and join two strings;
  */
-static inline char * __attribute__((const))
+static inline char *
 mstrjoin3(const char *src1, const char *src2, const char *src3) {
   char *str = malloc(sizeof(char) * (strlen(src1) + strlen(src2)
         + strlen(src3) + 1));
@@ -1257,6 +1259,16 @@ mstrjoin3(const char *src1, const char *src2, const char *src3) {
   strcat(str, src3);
 
   return str;
+}
+
+/**
+ * Concatenate a string on heap with another string.
+ */
+static inline void
+mstrextend(char **psrc1, const char *src2) {
+  *psrc1 = realloc(*psrc1, (*psrc1 ? strlen(*psrc1): 0) + strlen(src2) + 1);
+
+  strcat(*psrc1, src2);
 }
 
 /**
