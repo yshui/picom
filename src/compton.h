@@ -146,16 +146,16 @@ free_damage(session_t *ps, Damage *p) {
   }
 }
 
-#ifdef CONFIG_C2
 /**
  * Destroy a condition list.
  */
 static inline void
 free_wincondlst(c2_lptr_t **pcondlst) {
+#ifdef CONFIG_C2
   while ((*pcondlst = c2_free_lptr(*pcondlst)))
     continue;
-}
 #endif
+}
 
 /**
  * Check whether a paint_t contains enough data.

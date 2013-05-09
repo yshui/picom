@@ -4389,90 +4389,6 @@ fork_after(session_t *ps) {
   return success;
 }
 
-#ifdef CONFIG_LIBCONFIG
-/**
- * Get a file stream of the configuration file to read.
- *
- * Follows the XDG specification to search for the configuration file.
- */
-static FILE *
-open_config_file(char *cpath, char **ppath) {
-  const static char *config_filename = "/compton.conf";
-  const static char *config_filename_legacy = "/.compton.conf";
-  const static char *config_home_suffix = "/.config";
-  const static char *config_system_dir = "/etc/xdg";
-
-  char *dir = NULL, *home = NULL;
-  char *path = cpath;
-  FILE *f = NULL;
-
-  if (path) {
-    f = fopen(path, "r");
-    if (f && ppath)
-      *ppath = path;
-    return f;
-  }
-
-  // Check user configuration file in $XDG_CONFIG_HOME firstly
-  if (!((dir = getenv("XDG_CONFIG_HOME")) && strlen(dir))) {
-    if (!((home = getenv("HOME")) && strlen(home)))
-      return NULL;
-
-    path = mstrjoin3(home, config_home_suffix, config_filename);
-  }
-  else
-    path = mstrjoin(dir, config_filename);
-
-  f = fopen(path, "r");
-
-  if (f && ppath)
-    *ppath = path;
-  else
-    free(path);
-  if (f)
-    return f;
-
-  // Then check user configuration file in $HOME
-  if ((home = getenv("HOME")) && strlen(home)) {
-    path = mstrjoin(home, config_filename_legacy);
-    f = fopen(path, "r");
-    if (f && ppath)
-      *ppath = path;
-    else
-      free(path);
-    if (f)
-      return f;
-  }
-
-  // Check system configuration file in $XDG_CONFIG_DIRS at last
-  if ((dir = getenv("XDG_CONFIG_DIRS")) && strlen(dir)) {
-    char *part = strtok(dir, ":");
-    while (part) {
-      path = mstrjoin(part, config_filename);
-      f = fopen(path, "r");
-      if (f && ppath)
-        *ppath = path;
-      else
-        free(path);
-      if (f)
-        return f;
-      part = strtok(NULL, ":");
-    }
-  }
-  else {
-    path = mstrjoin(config_system_dir, config_filename);
-    f = fopen(path, "r");
-    if (f && ppath)
-      *ppath = path;
-    else
-      free(path);
-    if (f)
-      return f;
-  }
-
-  return NULL;
-}
-
 /**
  * Parse a floating-point number in matrix.
  */
@@ -4599,6 +4515,90 @@ parse_conv_kern(session_t *ps, const char *src) {
     if (!strcmp(CONV_KERN_PREDEF[i].name, src))
       return parse_matrix(ps, CONV_KERN_PREDEF[i].kern_str);
   return parse_matrix(ps, src);
+}
+
+#ifdef CONFIG_LIBCONFIG
+/**
+ * Get a file stream of the configuration file to read.
+ *
+ * Follows the XDG specification to search for the configuration file.
+ */
+static FILE *
+open_config_file(char *cpath, char **ppath) {
+  const static char *config_filename = "/compton.conf";
+  const static char *config_filename_legacy = "/.compton.conf";
+  const static char *config_home_suffix = "/.config";
+  const static char *config_system_dir = "/etc/xdg";
+
+  char *dir = NULL, *home = NULL;
+  char *path = cpath;
+  FILE *f = NULL;
+
+  if (path) {
+    f = fopen(path, "r");
+    if (f && ppath)
+      *ppath = path;
+    return f;
+  }
+
+  // Check user configuration file in $XDG_CONFIG_HOME firstly
+  if (!((dir = getenv("XDG_CONFIG_HOME")) && strlen(dir))) {
+    if (!((home = getenv("HOME")) && strlen(home)))
+      return NULL;
+
+    path = mstrjoin3(home, config_home_suffix, config_filename);
+  }
+  else
+    path = mstrjoin(dir, config_filename);
+
+  f = fopen(path, "r");
+
+  if (f && ppath)
+    *ppath = path;
+  else
+    free(path);
+  if (f)
+    return f;
+
+  // Then check user configuration file in $HOME
+  if ((home = getenv("HOME")) && strlen(home)) {
+    path = mstrjoin(home, config_filename_legacy);
+    f = fopen(path, "r");
+    if (f && ppath)
+      *ppath = path;
+    else
+      free(path);
+    if (f)
+      return f;
+  }
+
+  // Check system configuration file in $XDG_CONFIG_DIRS at last
+  if ((dir = getenv("XDG_CONFIG_DIRS")) && strlen(dir)) {
+    char *part = strtok(dir, ":");
+    while (part) {
+      path = mstrjoin(part, config_filename);
+      f = fopen(path, "r");
+      if (f && ppath)
+        *ppath = path;
+      else
+        free(path);
+      if (f)
+        return f;
+      part = strtok(NULL, ":");
+    }
+  }
+  else {
+    path = mstrjoin(config_system_dir, config_filename);
+    f = fopen(path, "r");
+    if (f && ppath)
+      *ppath = path;
+    else
+      free(path);
+    if (f)
+      return f;
+  }
+
+  return NULL;
 }
 
 /**
