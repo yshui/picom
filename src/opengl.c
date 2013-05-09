@@ -719,6 +719,10 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
 
   glx_set_clip(ps, *preg, NULL);
 
+#ifdef DEBUG_GLX_PAINTREG
+  glx_render_color(ps, 0, 0, ps->root_width, ps->root_height, 0, *preg, NULL);
+#endif
+
 #ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
 #endif
@@ -1003,6 +1007,11 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     return false;
   }
 
+#ifdef DEBUG_GLX_PAINTREG
+  glx_render_dots(ps, dx, dy, width, height, z, reg_tgt, pcache_reg);
+  return true;
+#endif
+
   const bool argb = (GLX_TEXTURE_FORMAT_RGBA_EXT ==
       ps->glx_fbconfigs[ptex->depth]->texture_fmt);
   bool dual_texture = false;
@@ -1183,6 +1192,84 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
 #endif
 
   return true;
+}
+
+/**
+ * Render a region with color.
+ */
+static void
+glx_render_color(session_t *ps, int dx, int dy, int width, int height, int z,
+    XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
+  static int color = 0;
+
+  color = color % (3 * 3 * 3 - 1) + 1;
+  glColor4f(1.0 / 3.0 * (color / (3 * 3)),
+      1.0 / 3.0 * (color % (3 * 3) / 3),
+      1.0 / 3.0 * (color % 3),
+      1.0f
+      );
+  z -= 0.2;
+
+  {
+    P_PAINTREG_START();
+    {
+      GLint rdx = crect.x;
+      GLint rdy = ps->root_height - crect.y;
+      GLint rdxe = rdx + crect.width;
+      GLint rdye = rdy - crect.height;
+
+      glVertex3i(rdx, rdy, z);
+      glVertex3i(rdxe, rdy, z);
+      glVertex3i(rdxe, rdye, z);
+      glVertex3i(rdx, rdye, z);
+    }
+    P_PAINTREG_END();
+  }
+  glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
+
+#ifdef DEBUG_GLX_ERR
+  glx_check_err(ps);
+#endif
+}
+
+/**
+ * Render a region with dots.
+ */
+static void
+glx_render_dots(session_t *ps, int dx, int dy, int width, int height, int z,
+    XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
+  glColor4f(0.0f, 0.0f, 0.0f, 1.0f);
+  z -= 0.1;
+
+  {
+    P_PAINTREG_START();
+    {
+      static const GLint BLK_WID = 5, BLK_HEI = 5;
+
+      glEnd();
+      glPointSize(1.0);
+      glBegin(GL_POINTS);
+
+      GLint rdx = crect.x;
+      GLint rdy = ps->root_height - crect.y;
+      GLint rdxe = rdx + crect.width;
+      GLint rdye = rdy - crect.height;
+      rdx = (rdx) / BLK_WID * BLK_WID;
+      rdy = (rdy) / BLK_HEI * BLK_HEI;
+      rdxe = (rdxe) / BLK_WID * BLK_WID;
+      rdye = (rdye) / BLK_HEI * BLK_HEI;
+
+      for (GLint cdx = rdx; cdx < rdxe; cdx += BLK_WID)
+        for (GLint cdy = rdy; cdy > rdye; cdy -= BLK_HEI)
+          glVertex3i(cdx + BLK_WID / 2, cdy - BLK_HEI / 2, z);
+    }
+    P_PAINTREG_END();
+  }
+  glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
+
+#ifdef DEBUG_GLX_ERR
+  glx_check_err(ps);
+#endif
 }
 
 /**
