@@ -125,7 +125,7 @@ if test -z "$wprefix"; then
   treeout=$(xwininfo -children -frame)
 else
   test "$wprefix" = '-id' \
-    && ! echo "$window" | grep -q '^\(0x\)\?[0-9a-fA-F]\+$' \
+    && ! echo "$window" | grep -Eiq '^[[:space:]]*(0x[[:xdigit:]]+|[[:digit:]]+)[[:space:]]*$' \
     && echo 'Bad window ID.' && exit 1
   treeout=$(xwininfo -children $wprefix "$window")
 fi
