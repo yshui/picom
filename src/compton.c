@@ -1402,6 +1402,8 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
 static inline void
 win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
     const reg_data_t *pcache_reg) {
+  glx_mark(ps, w->id, true);
+
   // Fetch Pixmap
   if (!w->paint.pixmap && ps->has_name_pixmap) {
     set_ignore_next(ps);
@@ -1564,6 +1566,8 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 #endif
     }
   }
+
+  glx_mark(ps, w->id, false);
 }
 
 /**
@@ -1812,6 +1816,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     default:
       assert(0);
   }
+  glx_mark_frame(ps);
 
   if (ps->o.vsync_aggressive)
     vsync_wait(ps);
@@ -4050,7 +4055,7 @@ ev_handle(session_t *ps, XEvent *ev) {
  * Print usage text and exit.
  */
 static void
-usage(void) {
+usage(int ret) {
 #define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
 #define WARNING
   const static char *usage_text =
@@ -4277,11 +4282,12 @@ usage(void) {
     "  Specify window ID to repaint in benchmark mode. If omitted or is 0,\n"
     "  the whole screen is repainted.\n"
     ;
-  fputs(usage_text , stderr);
+  FILE *f = (ret ? stderr: stdout);
+  fputs(usage_text, f);
 #undef WARNING
 #undef WARNING_DISABLED
 
-  exit(1);
+  exit(ret);
 }
 
 /**
@@ -4903,7 +4909,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       else if ('d' == o)
         ps->o.display = mstrcpy(optarg);
       else if ('?' == o || ':' == o)
-        usage();
+        usage(1);
     }
 
     // Check for abundant positional arguments
@@ -4944,7 +4950,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
 #define P_CASEBOOL(idx, option) case idx: ps->o.option = true; break
       // Short options
       case 'h':
-        usage();
+        usage(0);
         break;
       case 'd':
         break;
@@ -5118,7 +5124,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       P_CASEBOOL(303, glx_use_gpushader4);
       default:
-        usage();
+        usage(1);
         break;
 #undef P_CASEBOOL
     }

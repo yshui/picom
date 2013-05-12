@@ -317,6 +317,11 @@ typedef void (*f_ReleaseTexImageEXT) (Display *display, GLXDrawable drawable, in
 
 typedef void (*f_CopySubBuffer) (Display *dpy, GLXDrawable drawable, int x, int y, int width, int height);
 
+#ifdef DEBUG_GLX_MARK
+typedef void (*f_StringMarkerGREMEDY) (GLsizei len, const void *string);
+typedef void (*f_FrameTerminatorGREMEDY) (void);
+#endif
+
 /// @brief Wrapper of a GLX FBConfig.
 typedef struct {
   GLXFBConfig cfg;
@@ -688,6 +693,12 @@ typedef struct {
   f_ReleaseTexImageEXT glXReleaseTexImageProc;
   /// Pointer to glXCopySubBufferMESA function.
   f_CopySubBuffer glXCopySubBufferProc;
+#ifdef DEBUG_GLX_MARK
+  /// Pointer to StringMarkerGREMEDY function.
+  f_StringMarkerGREMEDY glStringMarkerGREMEDY;
+  /// Pointer to FrameTerminatorGREMEDY function.
+  f_FrameTerminatorGREMEDY glFrameTerminatorGREMEDY;
+#endif
   /// FBConfig-s for GLX pixmap of different depths.
   glx_fbconfig_t *glx_fbconfigs[OPENGL_MAX_DEPTH + 1];
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
@@ -1802,6 +1813,38 @@ GLuint
 glx_create_program(const GLuint * const shaders, int nshaders);
 #endif
 #endif
+
+/**
+ * Add a OpenGL debugging marker.
+ */
+static inline void
+glx_mark_(session_t *ps, const char *func, XID xid, bool start) {
+#ifdef DEBUG_GLX_MARK
+  if (BKEND_GLX == ps->o.backend && ps->glStringMarkerGREMEDY) {
+    if (!func) func = "(unknown)";
+    const char *postfix = (start ? " (start)": " (end)");
+    char *str = malloc((strlen(func) + 12 + 2
+          + strlen(postfix) + 5) * sizeof(char));
+    strcpy(str, func);
+    sprintf(str + strlen(str), "(%#010lx)%s", xid, postfix);
+    ps->glStringMarkerGREMEDY(strlen(str), str);
+    free(str);
+  }
+#endif
+}
+
+#define glx_mark(ps, xid, start) glx_mark_(ps, __func__, xid, start)
+
+/**
+ * Add a OpenGL debugging marker.
+ */
+static inline void
+glx_mark_frame(session_t *ps) {
+#ifdef DEBUG_GLX_MARK
+  if (BKEND_GLX == ps->o.backend && ps->glFrameTerminatorGREMEDY)
+    ps->glFrameTerminatorGREMEDY();
+#endif
+}
 
 static inline void
 free_texture(session_t *ps, glx_texture_t **pptex) {

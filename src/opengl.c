@@ -90,6 +90,13 @@ glx_init(session_t *ps, bool need_render) {
 
   // Acquire function addresses
   if (need_render) {
+#ifdef DEBUG_GLX_MARK
+    ps->glStringMarkerGREMEDY = (f_StringMarkerGREMEDY)
+      glXGetProcAddress((const GLubyte *) "glStringMarkerGREMEDY");
+    ps->glFrameTerminatorGREMEDY = (f_FrameTerminatorGREMEDY)
+      glXGetProcAddress((const GLubyte *) "glFrameTerminatorGREMEDY");
+#endif
+
     ps->glXBindTexImageProc = (f_BindTexImageEXT)
       glXGetProcAddress((const GLubyte *) "glXBindTexImageEXT");
     ps->glXReleaseTexImageProc = (f_ReleaseTexImageEXT)
@@ -249,6 +256,8 @@ glx_init_blur(session_t *ps) {
           if (hei / 2 == i && wid / 2 == j)
             continue;
           double val = XFixedToDouble(ps->o.blur_kern[2 + i * wid + j]);
+          if (0.0 == val)
+            continue;
           sum += val;
           sprintf(pc, shader_add, val, texture_func, j - wid / 2, i - hei / 2);
           pc += strlen(pc);

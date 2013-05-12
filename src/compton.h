@@ -813,7 +813,7 @@ ev_window(session_t *ps, XEvent *ev);
 #endif
 
 static void __attribute__ ((noreturn))
-usage(void);
+usage(int ret);
 
 static bool
 register_cm(session_t *ps);
