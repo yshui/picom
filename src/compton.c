@@ -1402,6 +1402,8 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
 static inline void
 win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
     const reg_data_t *pcache_reg) {
+  glx_mark(ps, w->id, true);
+
   // Fetch Pixmap
   if (!w->paint.pixmap && ps->has_name_pixmap) {
     set_ignore_next(ps);
@@ -1564,6 +1566,8 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 #endif
     }
   }
+
+  glx_mark(ps, w->id, false);
 }
 
 /**
@@ -1812,6 +1816,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     default:
       assert(0);
   }
+  glx_mark_frame(ps);
 
   if (ps->o.vsync_aggressive)
     vsync_wait(ps);
@@ -4050,7 +4055,7 @@ ev_handle(session_t *ps, XEvent *ev) {
  * Print usage text and exit.
  */
 static void
-usage(void) {
+usage(int ret) {
 #define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
 #define WARNING
   const static char *usage_text =
@@ -4238,9 +4243,10 @@ usage(void) {
     "  boost.\n"
     "--glx-copy-from-front\n"
     "  GLX backend: Copy unmodified regions from front buffer instead of\n"
-    "  redrawing them all. My tests with nvidia-drivers show a 10% decrease\n"
-    "  in performance when the whole screen is modified, but a 20% increase\n"
-    "  when only 1/4 is. My tests on nouveau show terrible slowdown.\n"
+    "  redrawing them all. My tests with nvidia-drivers show a 5% decrease\n"
+    "  in performance when the whole screen is modified, but a 30% increase\n"
+    "  when only 1/4 is. My tests on nouveau show terrible slowdown. Could\n"
+    "  work with --glx-swap-method but not --glx-use-copysubbuffermesa.\n"
     "--glx-use-copysubbuffermesa\n"
     "  GLX backend: Use MESA_copy_sub_buffer to do partial screen update.\n"
     "  My tests on nouveau shows a 200% performance boost when only 1/4 of\n"
@@ -4258,6 +4264,9 @@ usage(void) {
     "  but safer (6 is still faster than 0). -1 means auto-detect using\n"
     "  GLX_EXT_buffer_age, supported by some drivers. Useless with\n"
     "  --glx-use-copysubbuffermesa.\n"
+    "--glx-use-gpushader4\n"
+    "  GLX backend: Use GL_EXT_gpu_shader4 for some optimization on blur\n"
+    "  GLSL code. My tests on GTX 670 show no noticeable effect.\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED
@@ -4273,11 +4282,12 @@ usage(void) {
     "  Specify window ID to repaint in benchmark mode. If omitted or is 0,\n"
     "  the whole screen is repainted.\n"
     ;
-  fputs(usage_text , stderr);
+  FILE *f = (ret ? stderr: stdout);
+  fputs(usage_text, f);
 #undef WARNING
 #undef WARNING_DISABLED
 
-  exit(1);
+  exit(ret);
 }
 
 /**
@@ -4383,90 +4393,6 @@ fork_after(session_t *ps) {
   success = ostream_reopen(ps, NULL);
 
   return success;
-}
-
-#ifdef CONFIG_LIBCONFIG
-/**
- * Get a file stream of the configuration file to read.
- *
- * Follows the XDG specification to search for the configuration file.
- */
-static FILE *
-open_config_file(char *cpath, char **ppath) {
-  const static char *config_filename = "/compton.conf";
-  const static char *config_filename_legacy = "/.compton.conf";
-  const static char *config_home_suffix = "/.config";
-  const static char *config_system_dir = "/etc/xdg";
-
-  char *dir = NULL, *home = NULL;
-  char *path = cpath;
-  FILE *f = NULL;
-
-  if (path) {
-    f = fopen(path, "r");
-    if (f && ppath)
-      *ppath = path;
-    return f;
-  }
-
-  // Check user configuration file in $XDG_CONFIG_HOME firstly
-  if (!((dir = getenv("XDG_CONFIG_HOME")) && strlen(dir))) {
-    if (!((home = getenv("HOME")) && strlen(home)))
-      return NULL;
-
-    path = mstrjoin3(home, config_home_suffix, config_filename);
-  }
-  else
-    path = mstrjoin(dir, config_filename);
-
-  f = fopen(path, "r");
-
-  if (f && ppath)
-    *ppath = path;
-  else
-    free(path);
-  if (f)
-    return f;
-
-  // Then check user configuration file in $HOME
-  if ((home = getenv("HOME")) && strlen(home)) {
-    path = mstrjoin(home, config_filename_legacy);
-    f = fopen(path, "r");
-    if (f && ppath)
-      *ppath = path;
-    else
-      free(path);
-    if (f)
-      return f;
-  }
-
-  // Check system configuration file in $XDG_CONFIG_DIRS at last
-  if ((dir = getenv("XDG_CONFIG_DIRS")) && strlen(dir)) {
-    char *part = strtok(dir, ":");
-    while (part) {
-      path = mstrjoin(part, config_filename);
-      f = fopen(path, "r");
-      if (f && ppath)
-        *ppath = path;
-      else
-        free(path);
-      if (f)
-        return f;
-      part = strtok(NULL, ":");
-    }
-  }
-  else {
-    path = mstrjoin(config_system_dir, config_filename);
-    f = fopen(path, "r");
-    if (f && ppath)
-      *ppath = path;
-    else
-      free(path);
-    if (f)
-      return f;
-  }
-
-  return NULL;
 }
 
 /**
@@ -4595,6 +4521,90 @@ parse_conv_kern(session_t *ps, const char *src) {
     if (!strcmp(CONV_KERN_PREDEF[i].name, src))
       return parse_matrix(ps, CONV_KERN_PREDEF[i].kern_str);
   return parse_matrix(ps, src);
+}
+
+#ifdef CONFIG_LIBCONFIG
+/**
+ * Get a file stream of the configuration file to read.
+ *
+ * Follows the XDG specification to search for the configuration file.
+ */
+static FILE *
+open_config_file(char *cpath, char **ppath) {
+  const static char *config_filename = "/compton.conf";
+  const static char *config_filename_legacy = "/.compton.conf";
+  const static char *config_home_suffix = "/.config";
+  const static char *config_system_dir = "/etc/xdg";
+
+  char *dir = NULL, *home = NULL;
+  char *path = cpath;
+  FILE *f = NULL;
+
+  if (path) {
+    f = fopen(path, "r");
+    if (f && ppath)
+      *ppath = path;
+    return f;
+  }
+
+  // Check user configuration file in $XDG_CONFIG_HOME firstly
+  if (!((dir = getenv("XDG_CONFIG_HOME")) && strlen(dir))) {
+    if (!((home = getenv("HOME")) && strlen(home)))
+      return NULL;
+
+    path = mstrjoin3(home, config_home_suffix, config_filename);
+  }
+  else
+    path = mstrjoin(dir, config_filename);
+
+  f = fopen(path, "r");
+
+  if (f && ppath)
+    *ppath = path;
+  else
+    free(path);
+  if (f)
+    return f;
+
+  // Then check user configuration file in $HOME
+  if ((home = getenv("HOME")) && strlen(home)) {
+    path = mstrjoin(home, config_filename_legacy);
+    f = fopen(path, "r");
+    if (f && ppath)
+      *ppath = path;
+    else
+      free(path);
+    if (f)
+      return f;
+  }
+
+  // Check system configuration file in $XDG_CONFIG_DIRS at last
+  if ((dir = getenv("XDG_CONFIG_DIRS")) && strlen(dir)) {
+    char *part = strtok(dir, ":");
+    while (part) {
+      path = mstrjoin(part, config_filename);
+      f = fopen(path, "r");
+      if (f && ppath)
+        *ppath = path;
+      else
+        free(path);
+      if (f)
+        return f;
+      part = strtok(NULL, ":");
+    }
+  }
+  else {
+    path = mstrjoin(config_system_dir, config_filename);
+    f = fopen(path, "r");
+    if (f && ppath)
+      *ppath = path;
+    else
+      free(path);
+    if (f)
+      return f;
+  }
+
+  return NULL;
 }
 
 /**
@@ -4879,6 +4889,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "fade-exclude", required_argument, NULL, 300 },
     { "blur-kern", required_argument, NULL, 301 },
     { "resize-damage", required_argument, NULL, 302 },
+    { "glx-use-gpushader4", no_argument, NULL, 303 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -4898,7 +4909,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       else if ('d' == o)
         ps->o.display = mstrcpy(optarg);
       else if ('?' == o || ':' == o)
-        usage();
+        usage(1);
     }
 
     // Check for abundant positional arguments
@@ -4939,7 +4950,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
 #define P_CASEBOOL(idx, option) case idx: ps->o.option = true; break
       // Short options
       case 'h':
-        usage();
+        usage(0);
         break;
       case 'd':
         break;
@@ -5111,8 +5122,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --resize-damage
         ps->o.resize_damage = atoi(optarg);
         break;
+      P_CASEBOOL(303, glx_use_gpushader4);
       default:
-        usage();
+        usage(1);
         break;
 #undef P_CASEBOOL
     }

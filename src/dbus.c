@@ -605,6 +605,20 @@ cdbus_process(session_t *ps, DBusMessage *msg) {
         "org.freedesktop.DBus.Introspectable", "Introspect")) {
     success = cdbus_process_introspect(ps, msg);
   }
+  else if (dbus_message_is_method_call(msg,
+        "org.freedesktop.DBus.Peer", "Ping")) {
+    cdbus_reply(ps, msg, NULL, NULL);
+    success = true;
+  }
+  else if (dbus_message_is_method_call(msg,
+        "org.freedesktop.DBus.Peer", "GetMachineId")) {
+    char *uuid = dbus_get_local_machine_id();
+    if (uuid) {
+      cdbus_reply_string(ps, msg, uuid);
+      dbus_free(uuid);
+      success = true;
+    }
+  }
   else if (dbus_message_is_signal(msg, "org.freedesktop.DBus", "NameAcquired")
       || dbus_message_is_signal(msg, "org.freedesktop.DBus", "NameLost")) {
     success = true;
@@ -1026,6 +1040,12 @@ cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
     "  <interface name='org.freedesktop.DBus.Introspectable'>\n"
     "    <method name='Introspect'>\n"
     "      <arg name='data' direction='out' type='s' />\n"
+    "    </method>\n"
+    "  </interface>\n"
+    "  <interface name='org.freedesktop.DBus.Peer'>\n"
+    "    <method name='Ping' />\n"
+    "    <method name='GetMachineId'>\n"
+    "      <arg name='machine_uuid' direction='out' type='s' />\n"
     "    </method>\n"
     "  </interface>\n"
     "  <interface name='" CDBUS_INTERFACE_NAME "'>\n"
