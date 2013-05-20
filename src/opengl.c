@@ -160,10 +160,13 @@ void
 glx_destroy(session_t *ps) {
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   // Free GLSL shaders/programs
-  if (ps->glx_frag_shader_blur)
-    glDeleteShader(ps->glx_frag_shader_blur);
-  if (ps->glx_prog_blur)
-    glDeleteProgram(ps->glx_prog_blur);
+  for (int i = 0; i < MAX_BLUR_PASS; ++i) {
+    glx_blur_pass_t *ppass = &ps->glx_blur_passes[i];
+    if (ppass->frag_shader)
+      glDeleteShader(ppass->frag_shader);
+    if (ppass->prog)
+      glDeleteProgram(ppass->prog);
+  }
 #endif
 
   // Free FBConfigs
@@ -199,8 +202,28 @@ glx_on_root_change(session_t *ps) {
  */
 bool
 glx_init_blur(session_t *ps) {
+  assert(ps->o.blur_kerns[0]);
+
+  // Allocate PBO if more than one blur kernel is present
+  if (ps->o.blur_kerns[1]) {
+#ifdef CONFIG_VSYNC_OPENGL_FBO
+    // Try to generate a framebuffer
+    GLuint fbo = 0;
+    glGenFramebuffers(1, &fbo);
+    if (!fbo) {
+      printf_errf("(): Failed to generate Framebuffer. Cannot do "
+          "multi-pass blur with GLX backend.");
+      return false;
+    }
+    glDeleteFramebuffers(1, &fbo);
+#else
+    printf_errf("(): FBO support not compiled in. Cannot do multi-pass blur "
+        "with GLX backend.");
+    return false;
+#endif
+  }
+
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
-  // Build shader
   {
     static const char *FRAG_SHADER_BLUR_PREFIX =
       "#version 110\n"
@@ -235,73 +258,81 @@ glx_init_blur(session_t *ps) {
       shader_add = FRAG_SHADER_BLUR_ADD_GPUSHADER4;
     }
 
-    int wid = XFixedToDouble(ps->o.blur_kern[0]),
-        hei = XFixedToDouble(ps->o.blur_kern[1]);
-    int nele = wid * hei - 1;
-    int len = strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) + strlen(extension) + (strlen(shader_add) + strlen(texture_func) + 42) * nele + strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
-    char *shader_str = calloc(len, sizeof(char));
-    if (!shader_str) {
-      printf_errf("(): Failed to allocate %d bytes for shader string.", len);
-      return false;
-    }
-    {
-      char *pc = shader_str;
-      sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
-      pc += strlen(pc);
-      assert(strlen(shader_str) < len);
+    for (int i = 0; i < MAX_BLUR_PASS && ps->o.blur_kerns[i]; ++i) {
+      XFixed *kern = ps->o.blur_kerns[i];
+      if (!kern)
+        break;
 
-      double sum = 0.0;
-      for (int i = 0; i < hei; ++i) {
-        for (int j = 0; j < wid; ++j) {
-          if (hei / 2 == i && wid / 2 == j)
-            continue;
-          double val = XFixedToDouble(ps->o.blur_kern[2 + i * wid + j]);
-          if (0.0 == val)
-            continue;
-          sum += val;
-          sprintf(pc, shader_add, val, texture_func, j - wid / 2, i - hei / 2);
+      glx_blur_pass_t *ppass = &ps->glx_blur_passes[i];
+
+      // Build shader
+      {
+        int wid = XFixedToDouble(kern[0]), hei = XFixedToDouble(kern[1]);
+        int nele = wid * hei - 1;
+        int len = strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) + strlen(extension) + (strlen(shader_add) + strlen(texture_func) + 42) * nele + strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
+        char *shader_str = calloc(len, sizeof(char));
+        if (!shader_str) {
+          printf_errf("(): Failed to allocate %d bytes for shader string.", len);
+          return false;
+        }
+        {
+          char *pc = shader_str;
+          sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
           pc += strlen(pc);
           assert(strlen(shader_str) < len);
+
+          double sum = 0.0;
+          for (int j = 0; j < hei; ++j) {
+            for (int k = 0; k < wid; ++k) {
+              if (hei / 2 == j && wid / 2 == k)
+                continue;
+              double val = XFixedToDouble(kern[2 + j * wid + k]);
+              if (0.0 == val)
+                continue;
+              sum += val;
+              sprintf(pc, shader_add, val, texture_func, k - wid / 2, j - hei / 2);
+              pc += strlen(pc);
+              assert(strlen(shader_str) < len);
+            }
+          }
+
+          sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
+          assert(strlen(shader_str) < len);
         }
+        ppass->frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, shader_str);
+        free(shader_str);
       }
 
-      sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
-      assert(strlen(shader_str) < len);
-#ifdef DEBUG_GLX_GLSL
-      fputs(shader_str, stdout);
-      fflush(stdout);
-#endif
-    }
-    ps->glx_frag_shader_blur = glx_create_shader(GL_FRAGMENT_SHADER, shader_str);
-    free(extension);
-    free(shader_str);
-  }
+      if (!ppass->frag_shader) {
+        printf_errf("(): Failed to create fragment shader %d.", i);
+        return false;
+      }
 
-  if (!ps->glx_frag_shader_blur) {
-    printf_errf("(): Failed to create fragment shader.");
-    return false;
-  }
+      // Build program
+      ppass->prog = glx_create_program(&ppass->frag_shader, 1);
+      if (!ppass->prog) {
+        printf_errf("(): Failed to create GLSL program.");
+        return false;
+      }
 
-  ps->glx_prog_blur = glx_create_program(&ps->glx_frag_shader_blur, 1);
-  if (!ps->glx_prog_blur) {
-    printf_errf("(): Failed to create GLSL program.");
-    return false;
-  }
-
+      // Get uniform addresses
 #define P_GET_UNIFM_LOC(name, target) { \
-  ps->target = glGetUniformLocation(ps->glx_prog_blur, name); \
-  if (ps->target < 0) { \
-    printf_errf("(): Failed to get location of uniform '" name "'. Might be troublesome."); \
-  } \
-}
+      ppass->target = glGetUniformLocation(ppass->prog, name); \
+      if (ppass->target < 0) { \
+        printf_errf("(): Failed to get location of %d-th uniform '" name "'. Might be troublesome.", i); \
+      } \
+    }
 
-  P_GET_UNIFM_LOC("factor_center", glx_prog_blur_unifm_factor_center);
-  if (!ps->o.glx_use_gpushader4) {
-    P_GET_UNIFM_LOC("offset_x", glx_prog_blur_unifm_offset_x);
-    P_GET_UNIFM_LOC("offset_y", glx_prog_blur_unifm_offset_y);
+      P_GET_UNIFM_LOC("factor_center", unifm_factor_center);
+      if (!ps->o.glx_use_gpushader4) {
+        P_GET_UNIFM_LOC("offset_x", unifm_offset_x);
+        P_GET_UNIFM_LOC("offset_y", unifm_offset_y);
+      }
+#undef P_GET_UNIFM_LOC
+    }
+    free(extension);
   }
 
-#undef P_GET_UNIFM_LOC
 
 #ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
@@ -841,9 +872,9 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
   } \
   glBegin(GL_QUADS); \
  \
-  for (int i = 0; i < nrects; ++i) { \
+  for (int ri = 0; ri < nrects; ++ri) { \
     XRectangle crect; \
-    rect_crop(&crect, &rects[i], &rec_all); \
+    rect_crop(&crect, &rects[ri], &rec_all); \
  \
     if (!crect.width || !crect.height) \
       continue; \
@@ -856,21 +887,69 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
     cxfree(rects); \
   free_region(ps, &reg_new); \
 
+static inline GLuint
+glx_gen_texture(session_t *ps, GLenum tex_tgt, int width, int height) {
+  GLuint tex = 0;
+  glGenTextures(1, &tex);
+  if (!tex) return 0;
+  glEnable(tex_tgt);
+  glBindTexture(tex_tgt, tex);
+  glTexParameteri(tex_tgt, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(tex_tgt, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(tex_tgt, 0, GL_RGB, width, height, 0, GL_RGB,
+      GL_UNSIGNED_BYTE, NULL);
+  glBindTexture(tex_tgt, 0);
+
+  return tex;
+}
+
+static inline void
+glx_copy_region_to_tex(session_t *ps, GLenum tex_tgt, int basex, int basey,
+    int dx, int dy, int width, int height) {
+  if (width > 0 && height > 0)
+    glCopyTexSubImage2D(tex_tgt, 0, dx - basex, dy - basey,
+        dx, ps->root_height - dy - height, width, height);
+}
+
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+/**
+ * Blur contents in a particular region.
+ */
 bool
 glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
-    GLfloat factor_center, XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
-  // Read destination pixels into a texture
-  GLuint tex_scr = 0;
-  glGenTextures(1, &tex_scr);
-  if (!tex_scr) {
-    printf_errf("(): Failed to allocate texture.");
-    return false;
-  }
+    GLfloat factor_center,
+    XserverRegion reg_tgt, const reg_data_t *pcache_reg,
+    glx_blur_cache_t *pbc) {
+  assert(ps->glx_blur_passes[0].prog);
+  const bool more_passes = ps->glx_blur_passes[1].prog;
+  const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
+  const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
+  bool ret = false;
+
+  // Calculate copy region size
+  glx_blur_cache_t ibc = { .width = 0, .height = 0 };
+  if (!pbc)
+    pbc = &ibc;
 
   int mdx = dx, mdy = dy, mwidth = width, mheight = height;
+#ifdef DEBUG_GLX
+  printf_dbgf("(): %d, %d, %d, %d\n", mdx, mdy, mwidth, mheight);
+#endif
+
+  /*
   if (ps->o.resize_damage > 0) {
-    int inc_x = min_i(ps->o.resize_damage, XFixedToDouble(ps->o.blur_kern[0]) / 2),
-        inc_y = min_i(ps->o.resize_damage, XFixedToDouble(ps->o.blur_kern[1]) / 2);
+    int inc_x = 0, inc_y = 0;
+    for (int i = 0; i < MAX_BLUR_PASS; ++i) {
+      XFixed *kern = ps->o.blur_kerns[i];
+      if (!kern) break;
+      inc_x += XFixedToDouble(kern[0]) / 2;
+      inc_y += XFixedToDouble(kern[1]) / 2;
+    }
+    inc_x = min_i(ps->o.resize_damage, inc_x);
+    inc_y = min_i(ps->o.resize_damage, inc_y);
+
     mdx = max_i(dx - inc_x, 0);
     mdy = max_i(dy - inc_y, 0);
     int mdx2 = min_i(dx + width + inc_x, ps->root_width),
@@ -878,23 +957,56 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     mwidth = mdx2 - mdx;
     mheight = mdy2 - mdy;
   }
+  */
 
   GLenum tex_tgt = GL_TEXTURE_RECTANGLE;
   if (ps->glx_has_texture_non_power_of_two)
     tex_tgt = GL_TEXTURE_2D;
 
+  // Free textures if size inconsistency discovered
+  if (mwidth != pbc->width || mheight != pbc->height)
+    free_glx_bc_resize(ps, pbc);
+
+  // Generate FBO and textures if needed
+  if (!pbc->textures[0])
+    pbc->textures[0] = glx_gen_texture(ps, tex_tgt, mwidth, mheight);
+  GLuint tex_scr = pbc->textures[0];
+  if (more_passes && !pbc->textures[1])
+    pbc->textures[1] = glx_gen_texture(ps, tex_tgt, mwidth, mheight);
+  pbc->width = mwidth;
+  pbc->height = mheight;
+  GLuint tex_scr2 = pbc->textures[1];
+#ifdef CONFIG_VSYNC_OPENGL_FBO
+  if (more_passes && !pbc->fbo)
+    glGenFramebuffers(1, &pbc->fbo);
+  const GLuint fbo = pbc->fbo;
+#endif
+
+  if (!tex_scr || (more_passes && !tex_scr2)) {
+    printf_errf("(): Failed to allocate texture.");
+    goto glx_blur_dst_end;
+  }
+#ifdef CONFIG_VSYNC_OPENGL_FBO
+  if (more_passes && !fbo) {
+    printf_errf("(): Failed to allocate framebuffer.");
+    goto glx_blur_dst_end;
+  }
+#endif
+
+  // Read destination pixels into a texture
   glEnable(tex_tgt);
   glBindTexture(tex_tgt, tex_scr);
-  glTexParameteri(tex_tgt, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(tex_tgt, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(tex_tgt, 0, GL_RGB, mwidth, mheight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-  glCopyTexSubImage2D(tex_tgt, 0, 0, 0, mdx, ps->root_height - mdy - mheight, mwidth, mheight);
-
-#ifdef DEBUG_GLX
-  printf_dbgf("(): %d, %d, %d, %d\n", mdx, ps->root_height - mdy - mheight, mwidth, mheight);
-#endif
+  glx_copy_region_to_tex(ps, tex_tgt, mdx, mdy, mdx, mdy, mwidth, mheight);
+  /*
+  if (tex_scr2) {
+    glBindTexture(tex_tgt, tex_scr2);
+    glx_copy_region_to_tex(ps, tex_tgt, mdx, mdy, mdx, mdy, mwidth, dx - mdx);
+    glx_copy_region_to_tex(ps, tex_tgt, mdx, mdy, mdx, dy + height,
+        mwidth, mdy + mheight - dy - height);
+    glx_copy_region_to_tex(ps, tex_tgt, mdx, mdy, mdx, dy, dx - mdx, height);
+    glx_copy_region_to_tex(ps, tex_tgt, mdx, mdy, dx + width, dy,
+        mdx + mwidth - dx - width, height);
+  } */
 
   // Texture scaling factor
   GLfloat texfac_x = 1.0f, texfac_y = 1.0f;
@@ -904,67 +1016,130 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   }
 
   // Paint it back
-  // Color negation for testing...
-  // glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-  // glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
-  // glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
-
-  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
-  glUseProgram(ps->glx_prog_blur);
-  if (ps->glx_prog_blur_unifm_offset_x >= 0)
-    glUniform1f(ps->glx_prog_blur_unifm_offset_x, texfac_x);
-  if (ps->glx_prog_blur_unifm_offset_y >= 0)
-    glUniform1f(ps->glx_prog_blur_unifm_offset_y, texfac_y);
-  if (ps->glx_prog_blur_unifm_factor_center >= 0)
-    glUniform1f(ps->glx_prog_blur_unifm_factor_center, factor_center);
-#endif
-
-  {
-    P_PAINTREG_START();
-    {
-      const GLfloat rx = (crect.x - mdx) * texfac_x;
-      const GLfloat ry = (mheight - (crect.y - mdy)) * texfac_y;
-      const GLfloat rxe = rx + crect.width * texfac_x;
-      const GLfloat rye = ry - crect.height * texfac_y;
-      const GLfloat rdx = crect.x;
-      const GLfloat rdy = ps->root_height - crect.y;
-      const GLfloat rdxe = rdx + crect.width;
-      const GLfloat rdye = rdy - crect.height;
-
-#ifdef DEBUG_GLX
-      printf_dbgf("(): %f, %f, %f, %f -> %d, %d, %d, %d\n", rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
-#endif
-
-      glTexCoord2f(rx, ry);
-      glVertex3f(rdx, rdy, z);
-
-      glTexCoord2f(rxe, ry);
-      glVertex3f(rdxe, rdy, z);
-
-      glTexCoord2f(rxe, rye);
-      glVertex3f(rdxe, rdye, z);
-
-      glTexCoord2f(rx, rye);
-      glVertex3f(rdx, rdye, z);
-    }
-    P_PAINTREG_END();
+  if (more_passes) {
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_SCISSOR_TEST);
   }
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
-  glUseProgram(0);
+  bool last_pass = false;
+  for (int i = 0; !last_pass; ++i) {
+    last_pass = !ps->glx_blur_passes[i + 1].prog;
+    assert(i < MAX_BLUR_PASS - 1);
+    const glx_blur_pass_t *ppass = &ps->glx_blur_passes[i];
+    assert(ppass->prog);
+
+    assert(tex_scr);
+    glBindTexture(tex_tgt, tex_scr);
+
+#ifdef CONFIG_VSYNC_OPENGL_FBO
+    if (!last_pass) {
+      static const GLenum DRAWBUFS[2] = { GL_COLOR_ATTACHMENT0 };
+      glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+      glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex_scr2, 0);
+      glDrawBuffers(1, DRAWBUFS);
+      if (glCheckFramebufferStatus(GL_FRAMEBUFFER)
+          != GL_FRAMEBUFFER_COMPLETE) {
+        printf_errf("(): Framebuffer attachment failed.");
+        goto glx_blur_dst_end;
+      }
+    }
+    else {
+      static const GLenum DRAWBUFS[2] = { GL_BACK };
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      glDrawBuffers(1, DRAWBUFS);
+      if (have_scissors)
+        glEnable(GL_SCISSOR_TEST);
+      if (have_stencil)
+        glEnable(GL_STENCIL_TEST);
+    }
 #endif
-  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+
+    // Color negation for testing...
+    // glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+    // glTexEnvf(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
+    // glTexEnvf(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
+
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    glUseProgram(ppass->prog);
+    if (ppass->unifm_offset_x >= 0)
+      glUniform1f(ppass->unifm_offset_x, texfac_x);
+    if (ppass->unifm_offset_y >= 0)
+      glUniform1f(ppass->unifm_offset_y, texfac_y);
+    if (ppass->unifm_factor_center >= 0)
+      glUniform1f(ppass->unifm_factor_center, factor_center);
+
+    {
+      P_PAINTREG_START();
+      {
+        const GLfloat rx = (crect.x - mdx) * texfac_x;
+        const GLfloat ry = (mheight - (crect.y - mdy)) * texfac_y;
+        const GLfloat rxe = rx + crect.width * texfac_x;
+        const GLfloat rye = ry - crect.height * texfac_y;
+        GLfloat rdx = crect.x - mdx;
+        GLfloat rdy = mheight - crect.y + mdy;
+        GLfloat rdxe = rdx + crect.width;
+        GLfloat rdye = rdy - crect.height;
+
+        if (last_pass) {
+          rdx = crect.x;
+          rdy = ps->root_height - crect.y;
+          rdxe = rdx + crect.width;
+          rdye = rdy - crect.height;
+        }
+
+#ifdef DEBUG_GLX
+        printf_dbgf("(): %f, %f, %f, %f -> %f, %f, %f, %f\n", rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
+#endif
+
+        glTexCoord2f(rx, ry);
+        glVertex3f(rdx, rdy, z);
+
+        glTexCoord2f(rxe, ry);
+        glVertex3f(rdxe, rdy, z);
+
+        glTexCoord2f(rxe, rye);
+        glVertex3f(rdxe, rdye, z);
+
+        glTexCoord2f(rx, rye);
+        glVertex3f(rdx, rdye, z);
+      }
+      P_PAINTREG_END();
+    }
+
+    glUseProgram(0);
+
+    // Swap tex_scr and tex_scr2
+    {
+      GLuint tmp = tex_scr2;
+      tex_scr2 = tex_scr;
+      tex_scr = tmp;
+    }
+  }
+
+  ret = true;
+
+glx_blur_dst_end:
+#ifdef CONFIG_VSYNC_OPENGL_FBO
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+#endif
   glBindTexture(tex_tgt, 0);
-  glDeleteTextures(1, &tex_scr);
   glDisable(tex_tgt);
+  if (have_scissors)
+    glEnable(GL_SCISSOR_TEST);
+  if (have_stencil)
+    glEnable(GL_STENCIL_TEST);
+
+  if (&ibc == pbc) {
+    free_glx_bc(ps, pbc);
+  }
 
 #ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
 #endif
 
-  return true;
+  return ret;
 }
+#endif
 
 bool
 glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
@@ -1156,7 +1331,7 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
       }
 
 #ifdef DEBUG_GLX
-      printf_dbgf("(): Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d\n", i, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
+      printf_dbgf("(): Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d\n", ri, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
 #endif
 
 #define P_TEXCOORD(cx, cy) { \
@@ -1318,6 +1493,11 @@ glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg) {
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
 GLuint
 glx_create_shader(GLenum shader_type, const char *shader_str) {
+#ifdef DEBUG_GLX_GLSL
+  printf("glx_create_shader(): ===\n%s\n===\n", shader_str);
+  fflush(stdout);
+#endif
+
   bool success = false;
   GLuint shader = glCreateShader(shader_type);
   if (!shader) {

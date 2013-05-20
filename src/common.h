@@ -26,6 +26,10 @@
 // #define DEBUG_FRAME      1
 // #define DEBUG_LEADER     1
 // #define DEBUG_C2         1
+// #define DEBUG_GLX        1
+// #define DEBUG_GLX_GLSL   1
+// #define DEBUG_GLX_ERR    1
+// #define DEBUG_GLX_MARK   1
 // #define MONITOR_REPAINT  1
 
 // Whether to enable PCRE regular expression support in blacklists, enabled
@@ -40,8 +44,12 @@
 // #define CONFIG_LIBCONFIG_LEGACY 1
 // Whether to enable DRM VSync support
 // #define CONFIG_VSYNC_DRM 1
-// Whether to enable OpenGL VSync support
+// Whether to enable OpenGL support
 // #define CONFIG_VSYNC_OPENGL 1
+// Whether to enable GLX GLSL support
+// #define CONFIG_VSYNC_OPENGL_GLSL 1
+// Whether to enable GLX FBO support
+// #define CONFIG_VSYNC_OPENGL_FBO 1
 // Whether to enable DBus support with libdbus.
 // #define CONFIG_DBUS 1
 // Whether to enable condition support.
@@ -96,7 +104,7 @@
 
 // libGL
 #ifdef CONFIG_VSYNC_OPENGL
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#if defined(CONFIG_VSYNC_OPENGL_GLSL) || defined(CONFIG_VSYNC_OPENGL_FBO)
 #define GL_GLEXT_PROTOTYPES
 #endif
 
@@ -182,6 +190,9 @@
 
 /// @brief Maximum OpenGL buffer age.
 #define CGLX_MAX_BUFFER_AGE 5
+
+/// @brief Maximum passes for blur.
+#define MAX_BLUR_PASS 5
 
 // Window flags
 
@@ -343,6 +354,32 @@ struct _glx_texture {
 };
 #endif
 
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+typedef struct {
+  /// Fragment shader for blur.
+  GLuint frag_shader;
+  /// GLSL program for blur.
+  GLuint prog;
+  /// Location of uniform "offset_x" in blur GLSL program.
+  GLint unifm_offset_x;
+  /// Location of uniform "offset_y" in blur GLSL program.
+  GLint unifm_offset_y;
+  /// Location of uniform "factor_center" in blur GLSL program.
+  GLint unifm_factor_center;
+} glx_blur_pass_t;
+
+typedef struct {
+  /// Framebuffer used for blurring.
+  GLuint fbo;
+  /// Textures used for blurring.
+  GLuint textures[2];
+  /// Width of the textures.
+  int width;
+  /// Height of the textures.
+  int height;
+} glx_blur_cache_t;
+#endif
+
 typedef struct {
   Pixmap pixmap;
   Picture pict;
@@ -501,7 +538,7 @@ typedef struct {
   /// Background blur blacklist. A linked list of conditions.
   c2_lptr_t *blur_background_blacklist;
   /// Blur convolution kernel.
-  XFixed *blur_kern;
+  XFixed *blur_kerns[MAX_BLUR_PASS];
   /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
   double inactive_dim;
   /// Whether to use fixed inactive dim opacity, instead of deciding
@@ -614,6 +651,8 @@ typedef struct {
   /// Current GLX Z value.
   int glx_z;
 #endif
+  // Cached blur convolution kernels.
+  XFixed *blur_kerns_cache[MAX_BLUR_PASS];
   /// Reset program after next paint.
   bool reset;
 
@@ -702,16 +741,7 @@ typedef struct {
   /// FBConfig-s for GLX pixmap of different depths.
   glx_fbconfig_t *glx_fbconfigs[OPENGL_MAX_DEPTH + 1];
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
-  /// Fragment shader for blur.
-  GLuint glx_frag_shader_blur;
-  /// GLSL program for blur.
-  GLuint glx_prog_blur;
-  /// Location of uniform "offset_x" in blur GLSL program.
-  GLint glx_prog_blur_unifm_offset_x;
-  /// Location of uniform "offset_y" in blur GLSL program.
-  GLint glx_prog_blur_unifm_offset_y;
-  /// Location of uniform "factor_center" in blur GLSL program.
-  GLint glx_prog_blur_unifm_factor_center;
+  glx_blur_pass_t glx_blur_passes[MAX_BLUR_PASS];
 #endif
 #endif
 
@@ -908,6 +938,8 @@ typedef struct _win {
   /// Do not fade if it's false. Change on window type change.
   /// Used by fading blacklist in the future.
   bool fade;
+  /// Override value of window fade state. Set by D-Bus method calls.
+  switch_t fade_force;
   /// Callback to be called after fading completed.
   void (*fade_callback) (session_t *ps, struct _win *w);
 
@@ -950,6 +982,11 @@ typedef struct _win {
 
   /// Whether to blur window background.
   bool blur_background;
+
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  /// Textures and FBO background blur use.
+  glx_blur_cache_t glx_blur_cache;
+#endif
 } win;
 
 /// Temporary structure used for communication between
@@ -1749,6 +1786,9 @@ force_repaint(session_t *ps);
 bool
 vsync_init(session_t *ps);
 
+void
+vsync_deinit(session_t *ps);
+
 #ifdef CONFIG_VSYNC_OPENGL
 /** @name GLX
  */
@@ -1788,9 +1828,13 @@ glx_tex_binded(const glx_texture_t *ptex, Pixmap pixmap) {
 void
 glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg);
 
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
 bool
 glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
-    GLfloat factor_center, XserverRegion reg_tgt, const reg_data_t *pcache_reg);
+    GLfloat factor_center,
+    XserverRegion reg_tgt, const reg_data_t *pcache_reg,
+    glx_blur_cache_t *pbc);
+#endif
 
 bool
 glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
@@ -1812,7 +1856,78 @@ glx_create_shader(GLenum shader_type, const char *shader_str);
 GLuint
 glx_create_program(const GLuint * const shaders, int nshaders);
 #endif
+
+/**
+ * Free a GLX texture.
+ */
+static inline void
+free_texture_r(session_t *ps, GLuint *ptexture) {
+  if (*ptexture) {
+    assert(ps->glx_context);
+    glDeleteTextures(1, ptexture);
+    *ptexture = 0;
+  }
+}
+
+/**
+ * Free a GLX Framebuffer object.
+ */
+static inline void
+free_glx_fbo(session_t *ps, GLuint *pfbo) {
+#ifdef CONFIG_VSYNC_OPENGL_FBO
+  if (*pfbo) {
+    glDeleteFramebuffers(1, pfbo);
+    *pfbo = 0;
+  }
 #endif
+  assert(!*pfbo);
+}
+
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+/**
+ * Free data in glx_blur_cache_t on resize.
+ */
+static inline void
+free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
+  free_texture_r(ps, &pbc->textures[0]);
+  free_texture_r(ps, &pbc->textures[1]);
+  pbc->width = 0;
+  pbc->height = 0;
+}
+
+/**
+ * Free a glx_blur_cache_t
+ */
+static inline void
+free_glx_bc(session_t *ps, glx_blur_cache_t *pbc) {
+  free_glx_fbo(ps, &pbc->fbo);
+  free_glx_bc_resize(ps, pbc);
+}
+#endif
+#endif
+
+/**
+ * Free a glx_texture_t.
+ */
+static inline void
+free_texture(session_t *ps, glx_texture_t **pptex) {
+  glx_texture_t *ptex = *pptex;
+
+  // Quit if there's nothing
+  if (!ptex)
+    return;
+
+#ifdef CONFIG_VSYNC_OPENGL
+  glx_release_pixmap(ps, ptex);
+
+  free_texture_r(ps, &ptex->texture);
+
+  // Free structure itself
+  free(ptex);
+  *pptex = NULL;
+#endif
+  assert(!*pptex);
+}
 
 /**
  * Add a OpenGL debugging marker.
@@ -1843,29 +1958,6 @@ glx_mark_frame(session_t *ps) {
 #ifdef DEBUG_GLX_MARK
   if (BKEND_GLX == ps->o.backend && ps->glFrameTerminatorGREMEDY)
     ps->glFrameTerminatorGREMEDY();
-#endif
-}
-
-static inline void
-free_texture(session_t *ps, glx_texture_t **pptex) {
-#ifdef CONFIG_VSYNC_OPENGL
-  glx_texture_t *ptex = *pptex;
-
-  // Quit if there's nothing
-  if (!ptex)
-    return;
-
-  glx_release_pixmap(ps, ptex);
-
-  // Free texture
-  if (ptex->texture) {
-    glDeleteTextures(1, &ptex->texture);
-    ptex->texture = 0;
-  }
-
-  // Free structure itself
-  free(ptex);
-  *pptex = NULL;
 #endif
 }
 
@@ -1913,6 +2005,9 @@ void
 win_set_shadow_force(session_t *ps, win *w, switch_t val);
 
 void
+win_set_fade_force(session_t *ps, win *w, switch_t val);
+
+void
 win_set_focused_force(session_t *ps, win *w, switch_t val);
 
 void
@@ -1920,6 +2015,9 @@ win_set_invert_color_force(session_t *ps, win *w, switch_t val);
 
 void
 opts_init_track_focus(session_t *ps);
+
+void
+opts_set_no_fading_openclose(session_t *ps, bool newval);
 //!@}
 #endif
 

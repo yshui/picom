@@ -231,6 +231,9 @@ free_win_res(session_t *ps, win *w) {
   free(w->class_instance);
   free(w->class_general);
   free(w->role);
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  free_glx_bc(ps, &w->glx_blur_cache);
+#endif
 }
 
 /**
@@ -592,6 +595,24 @@ set_tgt_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
       break;
 #endif
   }
+}
+
+static bool
+xr_blur_dst(session_t *ps, Picture tgt_buffer,
+    int x, int y, int wid, int hei, XFixed **blur_kerns,
+    XserverRegion reg_clip);
+
+/**
+ * Normalize a convolution kernel.
+ */
+static inline void
+normalize_conv_kern(int wid, int hei, XFixed *kern) {
+  double sum = 0.0;
+  for (int i = 0; i < wid * hei; ++i)
+    sum += XFixedToDouble(kern[i]);
+  double factor = 1.0 / sum;
+  for (int i = 0; i < wid * hei; ++i)
+    kern[i] = XDoubleToFixed(XFixedToDouble(kern[i]) * factor);
 }
 
 static void
@@ -1095,6 +1116,12 @@ vsync_opengl_wait(session_t *ps);
 
 static int
 vsync_opengl_oml_wait(session_t *ps);
+
+static void
+vsync_opengl_swc_deinit(session_t *ps);
+
+static void
+vsync_opengl_mswc_deinit(session_t *ps);
 #endif
 
 static void

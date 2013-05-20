@@ -70,6 +70,14 @@ static int (* const (VSYNC_FUNCS_WAIT[NUM_VSYNC]))(session_t *ps) = {
 #endif
 };
 
+/// Function pointers to deinitialize VSync.
+static void (* const (VSYNC_FUNCS_DEINIT[NUM_VSYNC]))(session_t *ps) = {
+#ifdef CONFIG_VSYNC_OPENGL
+  [VSYNC_OPENGL_SWC   ] = vsync_opengl_swc_deinit,
+  [VSYNC_OPENGL_MSWC  ] = vsync_opengl_mswc_deinit,
+#endif
+};
+
 /// Names of root window properties that could point to a pixmap of
 /// background.
 const static char *background_props_str[] = {
@@ -1276,13 +1284,11 @@ win_paint_shadow(session_t *ps, win *w,
 }
 
 /**
- * Create an alternative picture for a window.
+ * Create an picture.
  */
 static inline Picture
-win_build_picture(session_t *ps, win *w, XRenderPictFormat *pictfmt) {
-  const int wid = w->widthb;
-  const int hei = w->heightb;
-
+xr_build_picture(session_t *ps, int wid, int hei,
+    XRenderPictFormat *pictfmt) {
   if (!pictfmt)
     pictfmt = XRenderFindVisualFormat(ps->dpy, ps->vis);
 
@@ -1297,6 +1303,73 @@ win_build_picture(session_t *ps, win *w, XRenderPictFormat *pictfmt) {
   free_pixmap(ps, &tmp_pixmap);
 
   return tmp_picture;
+}
+
+/**
+ * @brief Blur an area on a buffer.
+ *
+ * @param ps current session
+ * @param tgt_buffer a buffer as both source and destination
+ * @param x x pos
+ * @param y y pos
+ * @param wid width
+ * @param hei height
+ * @param blur_kerns blur kernels, ending with a NULL, guaranteed to have at
+ *                    least one kernel
+ * @param reg_clip a clipping region to be applied on intermediate buffers
+ *
+ * @return true if successful, false otherwise
+ */
+static bool
+xr_blur_dst(session_t *ps, Picture tgt_buffer,
+    int x, int y, int wid, int hei, XFixed **blur_kerns,
+    XserverRegion reg_clip) {
+  assert(blur_kerns[0]);
+
+  // Directly copying from tgt_buffer to it does not work, so we create a
+  // Picture in the middle.
+  Picture tmp_picture = xr_build_picture(ps, wid, hei, NULL);
+
+  if (!tmp_picture) {
+    printf_errf("(): Failed to build intermediate Picture.");
+    return false;
+  }
+
+  if (reg_clip && tmp_picture)
+    XFixesSetPictureClipRegion(ps->dpy, tmp_picture, reg_clip, 0, 0);
+
+  Picture src_pict = tgt_buffer, dst_pict = tmp_picture;
+  for (int i = 0; blur_kerns[i]; ++i) {
+    assert(i < MAX_BLUR_PASS - 1);
+    XFixed *convolution_blur = blur_kerns[i];
+    int kwid = XFixedToDouble(convolution_blur[0]),
+        khei = XFixedToDouble(convolution_blur[1]);
+    bool rd_from_tgt = (tgt_buffer == src_pict);
+
+    // Copy from source picture to destination. The filter must
+    // be applied on source picture, to get the nearby pixels outside the
+    // window.
+    XRenderSetPictureFilter(ps->dpy, src_pict, XRFILTER_CONVOLUTION,
+        convolution_blur, kwid * khei + 2);
+    XRenderComposite(ps->dpy, PictOpSrc, src_pict, None, dst_pict,
+        (rd_from_tgt ? x: 0), (rd_from_tgt ? y: 0), 0, 0,
+        (rd_from_tgt ? 0: x), (rd_from_tgt ? 0: y), wid, hei);
+    xrfilter_reset(ps, src_pict);
+
+    {
+      XserverRegion tmp = src_pict;
+      src_pict = dst_pict;
+      dst_pict = tmp;
+    }
+  }
+
+  if (src_pict != tgt_buffer)
+    XRenderComposite(ps->dpy, PictOpSrc, src_pict, None, tgt_buffer,
+        0, 0, 0, 0, x, y, wid, hei);
+
+  free_picture(ps, &tmp_picture);
+
+  return true;
 }
 
 /**
@@ -1321,46 +1394,63 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
   switch (ps->o.backend) {
     case BKEND_XRENDER:
       {
-        // Directly copying from tgt_buffer does not work, so we create a
-        // Picture in the middle.
-        Picture tmp_picture = win_build_picture(ps, w, NULL);
+        // Normalize blur kernels
+        for (int i = 0; i < MAX_BLUR_PASS; ++i) {
+          XFixed *kern_src = ps->o.blur_kerns[i];
+          XFixed *kern_dst = ps->blur_kerns_cache[i];
+          assert(i < MAX_BLUR_PASS);
+          if (!kern_src) {
+            assert(!kern_dst);
+            break;
+          }
 
-        if (!tmp_picture)
-          return;
+          assert(!kern_dst
+              || (kern_src[0] == kern_dst[0] && kern_src[1] == kern_dst[1]));
 
-        XFixed *convolution_blur = ps->o.blur_kern;
-        int kwid = XFixedToDouble((ps->o.blur_kern[0])),
-            khei = XFixedToDouble((ps->o.blur_kern[1]));
+          // Skip for fixed factor_center if the cache exists already
+          if (ps->o.blur_background_fixed && kern_dst) continue;
 
-        // Modify the factor of the center pixel
-        convolution_blur[2 + (khei / 2) * kwid + kwid / 2] = XDoubleToFixed(factor_center);
+          int kwid = XFixedToDouble(kern_src[0]),
+              khei = XFixedToDouble(kern_src[1]);
+
+          // Allocate cache space if needed
+          if (!kern_dst) {
+            kern_dst = malloc((kwid * khei + 2) * sizeof(XFixed));
+            if (!kern_dst) {
+              printf_errf("(): Failed to allocate memory for blur kernel.");
+              return;
+            }
+            ps->blur_kerns_cache[i] = kern_dst;
+          }
+
+          // Modify the factor of the center pixel
+          kern_src[2 + (khei / 2) * kwid + kwid / 2] =
+            XDoubleToFixed(factor_center);
+
+          // Copy over
+          memcpy(kern_dst, kern_src, (kwid * khei + 2) * sizeof(XFixed));
+          normalize_conv_kern(kwid, khei, kern_dst + 2);
+        }
 
         // Minimize the region we try to blur, if the window itself is not
         // opaque, only the frame is.
-        if (WMODE_SOLID == w->mode && w->frame_opacity) {
+        XserverRegion reg_noframe = None;
+        if (WMODE_SOLID == w->mode) {
           XserverRegion reg_all = border_size(ps, w, false);
-          XserverRegion reg_noframe = win_get_region_noframe(ps, w, false);
+          reg_noframe = win_get_region_noframe(ps, w, false);
           XFixesSubtractRegion(ps->dpy, reg_noframe, reg_all, reg_noframe);
-          XFixesSetPictureClipRegion(ps->dpy, tmp_picture, reg_noframe, 0, 0);
           free_region(ps, &reg_all);
-          free_region(ps, &reg_noframe);
         }
-
-        // Copy the content to tmp_picture, then copy back. The filter must
-        // be applied on tgt_buffer, to get the nearby pixels outside the
-        // window.
-        XRenderSetPictureFilter(ps->dpy, tgt_buffer, XRFILTER_CONVOLUTION, convolution_blur, kwid * khei + 2);
-        XRenderComposite(ps->dpy, PictOpSrc, tgt_buffer, None, tmp_picture, x, y, 0, 0, 0, 0, wid, hei);
-        xrfilter_reset(ps, tgt_buffer);
-        XRenderComposite(ps->dpy, PictOpSrc, tmp_picture, None, tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
-
-        free_picture(ps, &tmp_picture);
+        xr_blur_dst(ps, tgt_buffer, x, y, wid, hei, ps->blur_kerns_cache,
+            reg_noframe);
+        free_region(ps, &reg_noframe);
       }
       break;
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
     case BKEND_GLX:
+      // TODO: Handle frame opacity
       glx_blur_dst(ps, x, y, wid, hei, ps->glx_z - 0.5, factor_center,
-          reg_paint, pcache_reg);
+          reg_paint, pcache_reg, &w->glx_blur_cache);
       break;
 #endif
     default:
@@ -1447,7 +1537,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 
   // Invert window color, if required
   if (BKEND_XRENDER == ps->o.backend && w->invert_color) {
-    Picture newpict = win_build_picture(ps, w, w->pictfmt);
+    Picture newpict = xr_build_picture(ps, wid, hei, w->pictfmt);
     if (newpict) {
       // Apply clipping region to save some CPU
       if (reg_paint) {
@@ -1993,14 +2083,8 @@ map_win(session_t *ps, Window id) {
   win_determine_shadow(ps, w);
 
   // Set fading state
-  w->in_openclose = false;
-  if (ps->o.no_fading_openclose) {
-    set_fade_callback(ps, w, finish_map_win, true);
-    w->in_openclose = true;
-  }
-  else {
-    set_fade_callback(ps, w, NULL, true);
-  }
+  w->in_openclose = true;
+  set_fade_callback(ps, w, finish_map_win, true);
   win_determine_fade(ps, w);
 
   win_determine_blur_background(ps, w);
@@ -2066,9 +2150,7 @@ unmap_win(session_t *ps, win *w) {
   // Fading out
   w->flags |= WFLAG_OPCT_CHANGE;
   set_fade_callback(ps, w, unmap_callback, false);
-  if (ps->o.no_fading_openclose) {
-    w->in_openclose = true;
-  }
+  w->in_openclose = true;
   win_determine_fade(ps, w);
 
   // Validate pixmap if we have to do fading
@@ -2195,7 +2277,9 @@ calc_dim(session_t *ps, win *w) {
  */
 static void
 win_determine_fade(session_t *ps, win *w) {
-  if ((ps->o.no_fading_openclose && w->in_openclose)
+  if (UNSET != w->fade_force)
+    w->fade = w->fade_force;
+  else if ((ps->o.no_fading_openclose && w->in_openclose)
       || win_match(ps, w, ps->o.fade_blacklist, &w->cache_fblst))
     w->fade = false;
   else
@@ -2593,6 +2677,7 @@ add_win(session_t *ps, Window id, Window prev) {
     .opacity_prop_client = OPAQUE,
 
     .fade = false,
+    .fade_force = UNSET,
     .fade_callback = NULL,
 
     .frame_opacity = 0.0,
@@ -3418,6 +3503,19 @@ win_set_shadow_force(session_t *ps, win *w, switch_t val) {
   if (val != w->shadow_force) {
     w->shadow_force = val;
     win_determine_shadow(ps, w);
+    ps->ev_received = true;
+  }
+}
+
+/**
+ * Set w->fade_force of a window.
+ */
+void
+win_set_fade_force(session_t *ps, win *w, switch_t val) {
+  if (val != w->fade_force) {
+    w->fade_force = val;
+    win_determine_fade(ps, w);
+    ps->ev_received = true;
   }
 }
 
@@ -3429,6 +3527,7 @@ win_set_focused_force(session_t *ps, win *w, switch_t val) {
   if (val != w->focused_force) {
     w->focused_force = val;
     win_update_focused(ps, w);
+    ps->ev_received = true;
   }
 }
 
@@ -3440,6 +3539,7 @@ win_set_invert_color_force(session_t *ps, win *w, switch_t val) {
   if (val != w->invert_color_force) {
     w->invert_color_force = val;
     win_determine_invert_color(ps, w);
+    ps->ev_received = true;
   }
 }
 
@@ -3465,6 +3565,20 @@ opts_init_track_focus(session_t *ps) {
   // Recheck focus
   recheck_focus(ps);
 }
+
+/**
+ * Set no_fading_openclose option.
+ */
+void
+opts_set_no_fading_openclose(session_t *ps, bool newval) {
+  if (newval != ps->o.no_fading_openclose) {
+    ps->o.no_fading_openclose = newval;
+    for (win *w = ps->list; w; w = w->next)
+      win_determine_fade(ps, w);
+    ps->ev_received = true;
+  }
+}
+
 //!@}
 #endif
 
@@ -4222,6 +4336,8 @@ usage(int ret) {
     "  --blur-background-fixed.\n"
     "  A 7x7 Guassian blur kernel looks like:\n"
     "    --blur-kern '7,7,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.001723,0.059106,0.493069,0.493069,0.059106,0.001723,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003'\n"
+    "  Up to 4 blur kernels may be specified, separated with semicolon, for\n"
+    "  multi-pass blur.\n"
     "  May also be one the predefined kernels: 3x3box (default), 5x5box,\n"
     "  7x7box, 3x3gaussian, 5x5gaussian, 7x7gaussian, 9x9gaussian,\n"
     "  11x11gaussian.\n"
@@ -4419,7 +4535,7 @@ parse_matrix_readnum(const char *src, double *dest) {
  * Parse a matrix.
  */
 static inline XFixed *
-parse_matrix(session_t *ps, const char *src) {
+parse_matrix(session_t *ps, const char *src, const char **endptr) {
   int wid = 0, hei = 0;
   const char *pc = NULL;
   XFixed *matrix = NULL;
@@ -4481,11 +4597,27 @@ parse_matrix(session_t *ps, const char *src) {
   }
 
   // Detect trailing characters
-  for ( ;*pc; ++pc)
+  for ( ;*pc && ';' != *pc; ++pc)
     if (!isspace(*pc) && ',' != *pc) {
       printf_errf("(): Trailing characters in matrix string.");
       goto parse_matrix_err;
     }
+
+  // Jump over spaces after ';'
+  if (';' == *pc) {
+    ++pc;
+    while (*pc && isspace(*pc))
+      ++pc;
+  }
+
+  // Require an end of string if endptr is not provided, otherwise
+  // copy end pointer to endptr
+  if (endptr)
+    *endptr = pc;
+  else if (*pc) {
+    printf_errf("(): Only one matrix expected.");
+    goto parse_matrix_err;
+  }
 
   // Fill in width and height
   matrix[0] = XDoubleToFixed(wid);
@@ -4502,7 +4634,12 @@ parse_matrix_err:
  * Parse a convolution kernel.
  */
 static inline XFixed *
-parse_conv_kern(session_t *ps, const char *src) {
+parse_conv_kern(session_t *ps, const char *src, const char **endptr) {
+  return parse_matrix(ps, src, endptr);
+}
+
+static bool
+parse_conv_kern_lst(session_t *ps, const char *src, XFixed **dest, int max) {
   static const struct {
     const char *name;
     const char *kern_str;
@@ -4519,8 +4656,30 @@ parse_conv_kern(session_t *ps, const char *src) {
   for (int i = 0;
       i < sizeof(CONV_KERN_PREDEF) / sizeof(CONV_KERN_PREDEF[0]); ++i)
     if (!strcmp(CONV_KERN_PREDEF[i].name, src))
-      return parse_matrix(ps, CONV_KERN_PREDEF[i].kern_str);
-  return parse_matrix(ps, src);
+      return parse_conv_kern_lst(ps, CONV_KERN_PREDEF[i].kern_str, dest, max);
+
+  int i = 0;
+  const char *pc = src;
+
+  // Free old kernels
+  for (i = 0; i < max; ++i) {
+    free(dest[i]);
+    dest[i] = NULL;
+  }
+
+  // Continue parsing until the end of source string
+  i = 0;
+  while (pc && *pc && i < max - 1) {
+    if (!(dest[i++] = parse_conv_kern(ps, pc, &pc)))
+      return false;
+  }
+
+  if (*pc) {
+    printf_errf("(): Too many blur kernels!");
+    return false;
+  }
+
+  return true;
 }
 
 #ifdef CONFIG_LIBCONFIG
@@ -5115,9 +5274,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       case 301:
         // --blur-kern
-        free(ps->o.blur_kern);
-        if (!(ps->o.blur_kern = parse_conv_kern(ps, optarg)))
+        if (!parse_conv_kern_lst(ps, optarg, ps->o.blur_kerns, MAX_BLUR_PASS))
           exit(1);
+        break;
       case 302:
         // --resize-damage
         ps->o.resize_damage = atoi(optarg);
@@ -5187,7 +5346,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   }
 
   // Fill default blur kernel
-  if (ps->o.blur_background && !ps->o.blur_kern) {
+  if (ps->o.blur_background && !ps->o.blur_kerns[0]) {
     // Convolution filter parameter (box blur)
     // gaussian or binomial filters are definitely superior, yet looks
     // like they aren't supported as of xorg-server-1.13.0
@@ -5200,12 +5359,12 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
       XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
     };
-    ps->o.blur_kern = malloc(sizeof(convolution_blur));
-    if (!ps->o.blur_kern) {
+    ps->o.blur_kerns[0] = malloc(sizeof(convolution_blur));
+    if (!ps->o.blur_kerns[0]) {
       printf_errf("(): Failed to allocate memory for convolution kernel.");
       exit(1);
     }
-    memcpy(ps->o.blur_kern, &convolution_blur, sizeof(convolution_blur));
+    memcpy(ps->o.blur_kerns[0], &convolution_blur, sizeof(convolution_blur));
   }
 }
 
@@ -5536,6 +5695,19 @@ vsync_opengl_oml_wait(session_t *ps) {
 
   return 0;
 }
+
+static void
+vsync_opengl_swc_deinit(session_t *ps) {
+  // The standard says it doesn't accept 0, but in fact it probably does
+  if (ps->glx_context && ps->glXSwapIntervalProc)
+    ps->glXSwapIntervalProc(0);
+}
+
+static void
+vsync_opengl_mswc_deinit(session_t *ps) {
+  if (ps->glx_context && ps->glXSwapIntervalMESAProc)
+    ps->glXSwapIntervalMESAProc(0);
+}
 #endif
 
 /**
@@ -5562,6 +5734,16 @@ vsync_wait(session_t *ps) {
 
   if (VSYNC_FUNCS_WAIT[ps->o.vsync])
     VSYNC_FUNCS_WAIT[ps->o.vsync](ps);
+}
+
+/**
+ * Deinitialize current VSync method.
+ */
+void
+vsync_deinit(session_t *ps) {
+  if (ps->o.vsync && VSYNC_FUNCS_DEINIT[ps->o.vsync])
+    VSYNC_FUNCS_DEINIT[ps->o.vsync](ps);
+  ps->o.vsync = VSYNC_NONE;
 }
 
 /**
@@ -6030,7 +6212,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .blur_background_frame = false,
       .blur_background_fixed = false,
       .blur_background_blacklist = NULL,
-      .blur_kern = NULL,
+      .blur_kerns = { NULL },
       .inactive_dim = 0.0,
       .inactive_dim_fixed = false,
       .invert_color_list = NULL,
@@ -6096,12 +6278,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .glXWaitVideoSyncSGI = NULL,
     .glXGetSyncValuesOML = NULL,
     .glXWaitForMscOML = NULL,
-
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
-    .glx_prog_blur_unifm_offset_x = -1,
-    .glx_prog_blur_unifm_offset_y = -1,
-    .glx_prog_blur_unifm_factor_center = -1,
-#endif
 #endif
 
     .xfixes_event = 0,
@@ -6151,6 +6327,14 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // Allocate a session and copy default values into it
   session_t *ps = malloc(sizeof(session_t));
   memcpy(ps, &s_def, sizeof(session_t));
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  for (int i = 0; i < MAX_BLUR_PASS; ++i) {
+    glx_blur_pass_t *ppass = &ps->glx_blur_passes[i];
+    ppass->unifm_factor_center = -1;
+    ppass->unifm_offset_x = -1;
+    ppass->unifm_offset_y = -1;
+  }
+#endif
   ps_g = ps;
   ps->ignore_tail = &ps->ignore_head;
   gettimeofday(&ps->time_start, NULL);
@@ -6513,7 +6697,10 @@ session_destroy(session_t *ps) {
   free(ps->o.display);
   free(ps->o.logpath);
   free(ps->o.config_file);
-  free(ps->o.blur_kern);
+  for (int i = 0; i < MAX_BLUR_PASS; ++i) {
+    free(ps->o.blur_kerns[i]);
+    free(ps->blur_kerns_cache[i]);
+  }
   free(ps->pfds_read);
   free(ps->pfds_write);
   free(ps->pfds_except);

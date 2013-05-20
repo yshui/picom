@@ -717,6 +717,7 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_win_get_do(wmwin, cdbus_reply_bool);
   cdbus_m_win_get_do(leader, cdbus_reply_wid);
   cdbus_m_win_get_do(focused_real, cdbus_reply_bool);
+  cdbus_m_win_get_do(fade_force, cdbus_reply_enum);
   cdbus_m_win_get_do(shadow_force, cdbus_reply_enum);
   cdbus_m_win_get_do(focused_force, cdbus_reply_enum);
   cdbus_m_win_get_do(invert_color_force, cdbus_reply_enum);
@@ -770,8 +771,6 @@ cdbus_process_win_set(session_t *ps, DBusMessage *msg) {
     return true;
   }
 
-  ps->ev_received = true;
-
 #define cdbus_m_win_set_do(tgt, type, real_type) \
   if (!strcmp(MSTR(tgt), target)) { \
     real_type val; \
@@ -786,6 +785,14 @@ cdbus_process_win_set(session_t *ps, DBusMessage *msg) {
     if (!cdbus_msg_get_arg(msg, 2, CDBUS_TYPE_ENUM, &val))
       return false;
     win_set_shadow_force(ps, w, val);
+    goto cdbus_process_win_set_success;
+  }
+
+  if (!strcmp("fade_force", target)) {
+    cdbus_enum_t val = UNSET;
+    if (!cdbus_msg_get_arg(msg, 2, CDBUS_TYPE_ENUM, &val))
+      return false;
+    win_set_fade_force(ps, w, val);
     goto cdbus_process_win_set_success;
   }
 
@@ -912,6 +919,11 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_opts_get_do(shadow_opacity, cdbus_reply_double);
   cdbus_m_opts_get_do(clear_shadow, cdbus_reply_bool);
 
+  cdbus_m_opts_get_do(fade_delta, cdbus_reply_int32);
+  cdbus_m_opts_get_do(fade_in_step, cdbus_reply_int32);
+  cdbus_m_opts_get_do(fade_out_step, cdbus_reply_int32);
+  cdbus_m_opts_get_do(no_fading_openclose, cdbus_reply_bool);
+
   cdbus_m_opts_get_do(blur_background, cdbus_reply_bool);
   cdbus_m_opts_get_do(blur_background_frame, cdbus_reply_bool);
   cdbus_m_opts_get_do(blur_background_fixed, cdbus_reply_bool);
@@ -961,6 +973,42 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
     goto cdbus_process_opts_set_success; \
   }
 
+  // fade_delta
+  if (!strcmp("fade_delta", target)) {
+    int32_t val = 0.0;
+    if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_INT32, &val))
+      return false;
+    ps->o.fade_delta = max_i(val, 1);
+    goto cdbus_process_opts_set_success;
+  }
+
+  // fade_in_step
+  if (!strcmp("fade_in_step", target)) {
+    double val = 0.0;
+    if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_DOUBLE, &val))
+      return false;
+    ps->o.fade_in_step = normalize_d(val) * OPAQUE;
+    goto cdbus_process_opts_set_success;
+  }
+
+  // fade_out_step
+  if (!strcmp("fade_out_step", target)) {
+    double val = 0.0;
+    if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_DOUBLE, &val))
+      return false;
+    ps->o.fade_out_step = normalize_d(val) * OPAQUE;
+    goto cdbus_process_opts_set_success;
+  }
+
+  // no_fading_openclose
+  if (!strcmp("no_fading_openclose", target)) {
+    dbus_bool_t val = FALSE;
+    if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_BOOLEAN, &val))
+      return false;
+    opts_set_no_fading_openclose(ps, val);
+    goto cdbus_process_opts_set_success;
+  }
+
   // unredir_if_possible
   if (!strcmp("unredir_if_possible", target)) {
     dbus_bool_t val = FALSE;
@@ -1002,6 +1050,7 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
     const char * val = NULL;
     if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_STRING, &val))
       return false;
+    vsync_deinit(ps);
     if (!parse_vsync(ps, val)) {
       printf_errf("(): " CDBUS_ERROR_BADARG_S, 1, "Value invalid.");
       cdbus_reply_err(ps, msg, CDBUS_ERROR_BADARG, CDBUS_ERROR_BADARG_S, 1, "Value invalid.");
