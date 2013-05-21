@@ -14,7 +14,8 @@
  * Parse a condition string.
  */
 c2_lptr_t *
-c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern) {
+c2_parsed(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
+    void *data) {
   if (!pattern)
     return NULL;
 
@@ -41,6 +42,7 @@ c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern) {
           " list element.");
     memcpy(plptr, &lptr_def, sizeof(c2_lptr_t));
     plptr->ptr = result;
+    plptr->data = data;
     if (pcondlst) {
       plptr->next = *pcondlst;
       *pcondlst = plptr;
@@ -1274,20 +1276,26 @@ c2_match_once(session_t *ps, win *w, const c2_ptr_t cond) {
  * Match a window against a condition linked list.
  *
  * @param cache a place to cache the last matched condition
+ * @param pdata a place to return the data
  * @return true if matched, false otherwise.
  */
 bool
-c2_match(session_t *ps, win *w, const c2_lptr_t *condlst,
-    const c2_lptr_t **cache) {
+c2_matchd(session_t *ps, win *w, const c2_lptr_t *condlst,
+    const c2_lptr_t **cache, void **pdata) {
   // Check if the cached entry matches firstly
-  if (cache && *cache && c2_match_once(ps, w, (*cache)->ptr))
+  if (cache && *cache && c2_match_once(ps, w, (*cache)->ptr)) {
+    if (pdata)
+      *pdata = (*cache)->data;
     return true;
+  }
 
   // Then go through the whole linked list
   for (; condlst; condlst = condlst->next) {
     if (c2_match_once(ps, w, condlst->ptr)) {
       if (cache)
         *cache = condlst;
+      if (pdata)
+        *pdata = condlst->data;
       return true;
     }
   }

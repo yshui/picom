@@ -2427,6 +2427,28 @@ win_determine_blur_background(session_t *ps, win *w) {
 }
 
 /**
+ * Update window opacity according to opacity rules.
+ */
+static void
+win_update_opacity_rule(session_t *ps, win *w) {
+  // If long is 32-bit, unfortunately there's no way could we express "unset",
+  // so we just entirely don't distinguish "unset" and OPAQUE
+  long opacity = OPAQUE;
+  void *val = NULL;
+  if (c2_matchd(ps, w, ps->o.opacity_rules, &w->cache_oparule, &val))
+    opacity = ((double) (long) val) / 100.0 * OPAQUE;
+
+  if (opacity == w->opacity_set)
+    return;
+
+  if (OPAQUE != opacity)
+    wid_set_opacity_prop(ps, w->id, opacity);
+  else if (OPAQUE != w->opacity_set)
+    wid_rm_opacity_prop(ps, w->id);
+  w->opacity_set = opacity;
+}
+
+/**
  * Function to be called on window type changes.
  */
 static void
@@ -2436,6 +2458,8 @@ win_on_wtype_change(session_t *ps, win *w) {
   win_update_focused(ps, w);
   if (ps->o.invert_color_list)
     win_determine_invert_color(ps, w);
+  if (ps->o.opacity_rules)
+    win_update_opacity_rule(ps, w);
 }
 
 /**
@@ -2453,6 +2477,8 @@ win_on_factor_change(session_t *ps, win *w) {
     win_update_focused(ps, w);
   if (ps->o.blur_background_blacklist)
     win_determine_blur_background(ps, w);
+  if (ps->o.opacity_rules)
+    win_update_opacity_rule(ps, w);
 }
 
 /**
@@ -2670,11 +2696,13 @@ add_win(session_t *ps, Window id, Window prev) {
     .cache_fcblst = NULL,
     .cache_ivclst = NULL,
     .cache_bbblst = NULL,
+    .cache_oparule = NULL,
 
     .opacity = 0,
     .opacity_tgt = 0,
     .opacity_prop = OPAQUE,
     .opacity_prop_client = OPAQUE,
+    .opacity_set = OPAQUE,
 
     .fade = false,
     .fade_force = UNSET,
@@ -4351,6 +4379,12 @@ usage(int ret) {
     "--invert-color-include condition\n"
     "  Specify a list of conditions of windows that should be painted with\n"
     "  inverted color. Resource-hogging, and is not well tested.\n"
+    "--opacity-rule opacity:condition\n"
+    "  Specify a list of opacity rules, in the format \"PERCENT:PATTERN\",\n"
+    "  like \'50:name *= \"Firefox\"'. compton-trans is recommended over\n"
+    "  this. Note we do not distinguish 100% and unset, and we don't make\n"
+    "  any guarantee about possible conflicts with other programs that set\n"
+    "  _NET_WM_WINDOW_OPACITY on frame or client windows.\n"
     "--backend backend\n"
     "  Choose backend. Possible choices are xrender and glx" WARNING ".\n"
     "--glx-no-stencil\n"
@@ -4638,6 +4672,9 @@ parse_conv_kern(session_t *ps, const char *src, const char **endptr) {
   return parse_matrix(ps, src, endptr);
 }
 
+/**
+ * Parse a list of convolution kernels.
+ */
 static bool
 parse_conv_kern_lst(session_t *ps, const char *src, XFixed **dest, int max) {
   static const struct {
@@ -4680,6 +4717,37 @@ parse_conv_kern_lst(session_t *ps, const char *src, XFixed **dest, int max) {
   }
 
   return true;
+}
+
+/**
+ * Parse a list of opacity rules.
+ */
+static inline bool
+parse_rule_opacity(session_t *ps, const char *src) {
+  // Find opacity value
+  char *endptr = NULL;
+  long val = strtol(src, &endptr, 0);
+  if (!endptr || endptr == src) {
+    printf_errf("(\"%s\"): No opacity specified?", src);
+    return false;
+  }
+  if (val > 100 || val < 0) {
+    printf_errf("(\"%s\"): Opacity %ld invalid.", src, val);
+    return false;
+  }
+
+  // Skip over spaces
+  while (*endptr && isspace(*endptr))
+    ++endptr;
+  if (':' != *endptr) {
+    printf_errf("(\"%s\"): Opacity terminator not found.", src);
+    return false;
+  }
+  ++endptr;
+
+  // Parse pattern
+  // I hope 1-100 is acceptable for (void *)
+  return c2_parsed(ps, &ps->o.opacity_rules, endptr, (void *) val);
 }
 
 #ifdef CONFIG_LIBCONFIG
@@ -5049,6 +5117,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "blur-kern", required_argument, NULL, 301 },
     { "resize-damage", required_argument, NULL, 302 },
     { "glx-use-gpushader4", no_argument, NULL, 303 },
+    { "opacity-rule", required_argument, NULL, 304 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5282,6 +5351,11 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.resize_damage = atoi(optarg);
         break;
       P_CASEBOOL(303, glx_use_gpushader4);
+      case 304:
+        // --opacity-rule
+        if (!parse_rule_opacity(ps, optarg))
+          exit(1);
+        break;
       default:
         usage(1);
         break;
@@ -6216,6 +6290,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .inactive_dim = 0.0,
       .inactive_dim_fixed = false,
       .invert_color_list = NULL,
+      .opacity_rules = NULL,
 
       .wintype_focus = { false },
       .use_ewmh_active_win = false,
@@ -6635,6 +6710,7 @@ session_destroy(session_t *ps) {
   free_wincondlst(&ps->o.focus_blacklist);
   free_wincondlst(&ps->o.invert_color_list);
   free_wincondlst(&ps->o.blur_background_blacklist);
+  free_wincondlst(&ps->o.opacity_rules);
 #endif
 
   // Free tracked atom list

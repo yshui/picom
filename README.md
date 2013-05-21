@@ -77,7 +77,7 @@ $ make install
 
 ## Known issues
 
-* Our [FAQ](https://github.com/chjj/compton/wiki/vsync-guide) covers some known issues.
+* Our [FAQ](https://github.com/chjj/compton/wiki/faq) covers some known issues.
 
 * VSync does not work too well. You may check the [VSync Guide](https://github.com/chjj/compton/wiki/vsync-guide) for how to get (possibly) better effects.
 

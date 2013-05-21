@@ -546,6 +546,8 @@ typedef struct {
   bool inactive_dim_fixed;
   /// Conditions of windows to have inverted colors.
   c2_lptr_t *invert_color_list;
+  /// Rules to change window opacity.
+  c2_lptr_t *opacity_rules;
 
   // === Focus related ===
   /// Consider windows of specific types to be always focused.
@@ -921,6 +923,7 @@ typedef struct _win {
   const c2_lptr_t *cache_fcblst;
   const c2_lptr_t *cache_ivclst;
   const c2_lptr_t *cache_bbblst;
+  const c2_lptr_t *cache_oparule;
 
   // Opacity-related members
   /// Current window opacity.
@@ -933,6 +936,8 @@ typedef struct _win {
   /// broken window managers not transferring client window's
   /// _NET_WM_OPACITY value
   opacity_t opacity_prop_client;
+  /// Last window opacity value we set.
+  long opacity_set;
 
   // Fading-related members
   /// Do not fade if it's false. Change on window type change.
@@ -2027,14 +2032,20 @@ opts_set_no_fading_openclose(session_t *ps, bool newval);
 ///@{
 
 c2_lptr_t *
-c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern);
+c2_parsed(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
+    void *data);
+
+#define c2_parse(ps, pcondlst, pattern) c2_parsed((ps), (pcondlst), (pattern), NULL)
 
 c2_lptr_t *
 c2_free_lptr(c2_lptr_t *lp);
 
 bool
-c2_match(session_t *ps, win *w, const c2_lptr_t *condlst,
-    const c2_lptr_t **cache);
+c2_matchd(session_t *ps, win *w, const c2_lptr_t *condlst,
+    const c2_lptr_t **cache, void **pdata);
+
+#define c2_match(ps, w, condlst, cache) c2_matchd((ps), (w), (condlst), \
+    (cache), NULL)
 #endif
 
 ///@}

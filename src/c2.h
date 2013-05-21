@@ -156,12 +156,14 @@ const static c2_l_t leaf_def = C2_L_INIT;
 /// Linked list type of conditions.
 struct _c2_lptr {
   c2_ptr_t ptr;
+  void *data;
   struct _c2_lptr *next;
 };
 
 /// Initializer for c2_lptr_t.
 #define C2_LPTR_INIT { \
   .ptr = C2_PTR_INIT, \
+  .data = NULL, \
   .next = NULL, \
 }
 

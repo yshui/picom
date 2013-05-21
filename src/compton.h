@@ -415,6 +415,17 @@ win_has_frame(const win *w) {
     || w->top_width || w->left_width || w->right_width || w->bottom_width;
 }
 
+static inline void
+wid_set_opacity_prop(session_t *ps, Window wid, long val) {
+  XChangeProperty(ps->dpy, wid, ps->atom_opacity, XA_CARDINAL, 32,
+      PropModeReplace, (unsigned char *) &val, 1);
+}
+
+static inline void
+wid_rm_opacity_prop(session_t *ps, Window wid) {
+  XDeleteProperty(ps->dpy, wid, ps->atom_opacity);
+}
+
 /**
  * Dump an drawable's info.
  */
