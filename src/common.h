@@ -234,6 +234,14 @@ typedef enum {
   UNSET
 } switch_t;
 
+/// Structure representing a X geometry.
+typedef struct {
+  int wid;
+  int hei;
+  int x;
+  int y;
+} geometry_t;
+
 /// Enumeration type of window painting mode.
 typedef enum {
   WMODE_TRANS,
@@ -484,6 +492,8 @@ typedef struct {
   int shadow_offset_x, shadow_offset_y;
   double shadow_opacity;
   bool clear_shadow;
+  /// Geometry of a region in which shadow is not painted on.
+  geometry_t shadow_exclude_reg_geom;
   /// Shadow blacklist. A linked list of conditions.
   c2_lptr_t *shadow_blacklist;
   /// Whether bounding-shaped window should be ignored.
@@ -695,6 +705,8 @@ typedef struct {
   unsigned char *shadow_corner;
   /// Pre-computed color table for a side of shadow.
   unsigned char *shadow_top;
+  /// A region in which shadow is not painted on.
+  XserverRegion shadow_exclude_reg;
 
   // === Software-optimization-related ===
   /// Currently used refresh rate.

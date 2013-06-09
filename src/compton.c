@@ -1670,6 +1670,16 @@ rebuild_screen_reg(session_t *ps) {
   ps->screen_reg = get_screen_region(ps);
 }
 
+/**
+ * Rebuild <code>shadow_exclude_reg</code>.
+ */
+static void
+rebuild_shadow_exclude_reg(session_t *ps) {
+  free_region(ps, &ps->shadow_exclude_reg);
+  XRectangle rect = geom_to_rect(ps, &ps->o.shadow_exclude_reg_geom, NULL);
+  ps->shadow_exclude_reg = rect_to_reg(ps, &rect);
+}
+
 static void
 paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t) {
   if (!region_real)
@@ -1780,6 +1790,10 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
         reg_paint = reg_tmp;
         XFixesIntersectRegion(ps->dpy, reg_paint, region, w->extents);
       }
+
+      if (ps->shadow_exclude_reg)
+        XFixesSubtractRegion(ps->dpy, reg_paint, reg_paint,
+            ps->shadow_exclude_reg);
 
       // Might be worthwhile to crop the region to shadow border
       {
@@ -2888,10 +2902,12 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
       XRenderFreePicture(ps->dpy, ps->tgt_buffer);
       ps->tgt_buffer = None;
     }
+
     ps->root_width = ce->width;
     ps->root_height = ce->height;
 
     rebuild_screen_reg(ps);
+    rebuild_shadow_exclude_reg(ps);
 
 #ifdef CONFIG_VSYNC_OPENGL
     if (BKEND_GLX == ps->o.backend)
@@ -4385,6 +4401,11 @@ usage(int ret) {
     "  this. Note we do not distinguish 100% and unset, and we don't make\n"
     "  any guarantee about possible conflicts with other programs that set\n"
     "  _NET_WM_WINDOW_OPACITY on frame or client windows.\n"
+    "--shadow-exclude-reg geometry\n"
+    "  Specify a X geometry that describes the region in which shadow\n"
+    "  should not be painted in, such as a dock window region.\n"
+    "  Use --shadow-exclude-reg \'x10+0-0\', for example, if the 10 pixels\n"
+    "  on the bottom of the screen should not have shadows painted on.\n"
     "--backend backend\n"
     "  Choose backend. Possible choices are xrender and glx" WARNING ".\n"
     "--glx-no-stencil\n"
@@ -4716,6 +4737,83 @@ parse_conv_kern_lst(session_t *ps, const char *src, XFixed **dest, int max) {
     return false;
   }
 
+  return true;
+}
+
+/**
+ * Parse a X geometry.
+ */
+static inline bool
+parse_geometry(session_t *ps, const char *src, geometry_t *dest) {
+  geometry_t geom = { .wid = -1, .hei = -1, .x = -1, .y = -1 };
+  long val = 0L;
+  char *endptr = NULL;
+
+#define T_STRIPSPACE() do { \
+  while (*src && isspace(*src)) ++src; \
+  if (!*src) goto parse_geometry_end; \
+} while(0)
+
+  T_STRIPSPACE();
+
+  // Parse width
+  // Must be base 10, because "0x0..." may appear
+  if (!('+' == *src || '-' == *src)) {
+    val = strtol(src, &endptr, 10);
+    if (endptr && src != endptr) {
+      geom.wid = val;
+      assert(geom.wid >= 0);
+      src = endptr;
+    }
+    T_STRIPSPACE();
+  }
+
+  // Parse height
+  if ('x' == *src) {
+    ++src;
+    val = strtol(src, &endptr, 10);
+    if (endptr && src != endptr) {
+      geom.hei = val;
+      if (geom.hei < 0) {
+        printf_errf("(\"%s\"): Invalid height.", src);
+        return false;
+      }
+      src = endptr;
+    }
+    T_STRIPSPACE();
+  }
+
+  // Parse x
+  if ('+' == *src || '-' == *src) {
+    val = strtol(src, &endptr, 10);
+    if (endptr && src != endptr) {
+      geom.x = val;
+      if ('-' == *src && geom.x <= 0)
+        geom.x -= 2;
+      src = endptr;
+    }
+    T_STRIPSPACE();
+  }
+
+  // Parse y
+  if ('+' == *src || '-' == *src) {
+    val = strtol(src, &endptr, 10);
+    if (endptr && src != endptr) {
+      geom.y = val;
+      if ('-' == *src && geom.y <= 0)
+        geom.y -= 2;
+      src = endptr;
+    }
+    T_STRIPSPACE();
+  }
+
+  if (*src) {
+    printf_errf("(\"%s\"): Trailing characters.", src);
+    return false;
+  }
+
+parse_geometry_end:
+  *dest = geom;
   return true;
 }
 
@@ -5118,6 +5216,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "resize-damage", required_argument, NULL, 302 },
     { "glx-use-gpushader4", no_argument, NULL, 303 },
     { "opacity-rule", required_argument, NULL, 304 },
+    { "shadow-exclude-reg", required_argument, NULL, 305 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5356,6 +5455,11 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         if (!parse_rule_opacity(ps, optarg))
           exit(1);
         break;
+      case 305:
+        // --shadow-exclude-reg
+        if (!parse_geometry(ps, optarg, &ps->o.shadow_exclude_reg_geom))
+          exit(1);
+        break;
       default:
         usage(1);
         break;
@@ -5440,6 +5544,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     }
     memcpy(ps->o.blur_kerns[0], &convolution_blur, sizeof(convolution_blur));
   }
+
+  rebuild_shadow_exclude_reg(ps);
 }
 
 /**
@@ -6434,9 +6540,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     }
   }
 
-  // Second pass
-  get_cfg(ps, argc, argv, false);
-
   XSetErrorHandler(error);
   if (ps->o.synchronize) {
     XSynchronize(ps->dpy, 1);
@@ -6447,6 +6550,17 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   ps->vis = DefaultVisual(ps->dpy, ps->scr);
   ps->depth = DefaultDepth(ps->dpy, ps->scr);
+
+  // Start listening to events on root earlier to catch all possible
+  // root geometry changes
+  XSelectInput(ps->dpy, ps->root,
+    SubstructureNotifyMask
+    | ExposureMask
+    | StructureNotifyMask
+    | PropertyChangeMask);
+
+  ps->root_width = DisplayWidth(ps->dpy, ps->scr);
+  ps->root_height = DisplayHeight(ps->dpy, ps->scr);
 
   if (!XRenderQueryExtension(ps->dpy,
         &ps->render_event, &ps->render_error)) {
@@ -6485,6 +6599,9 @@ session_init(session_t *ps_old, int argc, char **argv) {
     ps->shape_exists = true;
   }
 
+  // Second pass
+  get_cfg(ps, argc, argv, false);
+
   // Query X RandR
   if (ps->o.sw_opti && !ps->o.refresh_rate) {
     if (XRRQueryExtension(ps->dpy, &ps->randr_event, &ps->randr_error))
@@ -6509,17 +6626,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     if (!ps->dbe_exists)
       ps->o.dbe = false;
   }
-
-  // Start listening to events on root earlier to catch all possible
-  // root geometry changes
-  XSelectInput(ps->dpy, ps->root,
-    SubstructureNotifyMask
-    | ExposureMask
-    | StructureNotifyMask
-    | PropertyChangeMask);
-
-  ps->root_width = DisplayWidth(ps->dpy, ps->scr);
-  ps->root_height = DisplayHeight(ps->dpy, ps->scr);
 
   rebuild_screen_reg(ps);
 

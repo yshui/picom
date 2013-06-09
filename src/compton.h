@@ -112,6 +112,41 @@ array_wid_exists(const Window *arr, int count, Window wid) {
 }
 
 /**
+ * Convert a geometry_t value to XRectangle.
+ */
+static inline XRectangle
+geom_to_rect(session_t *ps, const geometry_t *src, const XRectangle *def) {
+  XRectangle rect_def = { .x = 0, .y = 0,
+    .width = ps->root_width, .height = ps->root_height };
+  if (!def) def = &rect_def;
+
+  XRectangle rect = { .x = src->x, .y = src->y,
+    .width = src->wid, .height = src->hei };
+  if (src->wid < 0) rect.width = def->width;
+  if (src->hei < 0) rect.height = def->height;
+  if (-1 == src->x) rect.x = def->x;
+  else if (src->x < 0) rect.x = ps->root_width + rect.x + 2 - rect.width;
+  if (-1 == src->y) rect.y = def->y;
+  else if (src->y < 0) rect.y = ps->root_height + rect.y + 2 - rect.height;
+  return rect;
+}
+
+/**
+ * Convert a XRectangle to a XServerRegion.
+ */
+static inline XserverRegion
+rect_to_reg(session_t *ps, const XRectangle *src) {
+  if (!src) return None;
+  XRectangle bound = { .x = 0, .y = 0,
+    .width = ps->root_width, .height = ps->root_height };
+  XRectangle res = { };
+  rect_crop(&res, src, &bound);
+  if (res.width && res.height)
+    return XFixesCreateRegion(ps->dpy, &res, 1);
+  return None;
+}
+
+/**
  * Destroy a <code>Picture</code>.
  */
 inline static void
