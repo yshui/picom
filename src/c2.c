@@ -1043,6 +1043,14 @@ c2_match_once_leaf(session_t *ps, win *w, const c2_l_t *pleaf,
           *perr = false;
           switch (pleaf->predef) {
             case C2_L_PID:      tgt = wid;                      break;
+            case C2_L_PX:       tgt = w->a.x;                   break;
+            case C2_L_PY:       tgt = w->a.y;                   break;
+            case C2_L_PWIDTH:   tgt = w->a.width;               break;
+            case C2_L_PHEIGHT:  tgt = w->a.height;              break;
+            case C2_L_PWIDTHB:  tgt = w->widthb;                break;
+            case C2_L_PHEIGHTB: tgt = w->heightb;               break;
+            case C2_L_PBDW:     tgt = w->a.border_width;        break;
+            case C2_L_PFULLSCREEN: tgt = win_is_fullscreen(ps, w); break;
             case C2_L_POVREDIR: tgt = w->a.override_redirect;   break;
             case C2_L_PARGB:    tgt = (WMODE_ARGB == w->mode);  break;
             case C2_L_PFOCUSED: tgt = w->focused_real;          break;

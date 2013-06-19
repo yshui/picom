@@ -43,4 +43,4 @@ include(GNUInstallDirs)
 install(FILES
 	"compton.1"
 	"compton-trans.1"
-	DESTINATION "${CMAKE_INSTALL_MANDIR}" COMPONENT doc)
+	DESTINATION "${CMAKE_INSTALL_MANDIR}/man1" COMPONENT doc)

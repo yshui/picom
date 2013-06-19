@@ -1128,6 +1128,8 @@ paint_preprocess(session_t *ps, win *list) {
       to_paint = false;
     }
 
+    to_paint = to_paint && !w->paint_excluded;
+
     if (to_paint) {
       // If opacity changes
       if (w->opacity != opacity_old) {
@@ -2493,6 +2495,9 @@ win_on_factor_change(session_t *ps, win *w) {
     win_determine_blur_background(ps, w);
   if (ps->o.opacity_rules)
     win_update_opacity_rule(ps, w);
+  if (ps->o.paint_blacklist)
+    w->paint_excluded = win_match(ps, w, ps->o.paint_blacklist,
+        &w->cache_pblst);
 }
 
 /**
@@ -2934,6 +2939,8 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
       restack_win(ps, w, ce->above);
     }
 
+    bool factor_change = false;
+
     // Windows restack (including window restacks happened when this
     // window is not mapped) could mess up all reg_ignore
     ps->reg_ignore_expire = true;
@@ -2949,6 +2956,7 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
     if (w->a.x != ce->x || w->a.y != ce->y
         || w->a.width != ce->width || w->a.height != ce->height
         || w->a.border_width != ce->border_width) {
+      factor_change = true;
       free_region(ps, &w->extents);
       free_region(ps, &w->border_size);
     }
@@ -2979,6 +2987,9 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
       XFixesDestroyRegion(ps->dpy, extents);
       add_damage(ps, damage);
     }
+
+    if (factor_change)
+      win_on_factor_change(ps, w);
   }
 
   // override_redirect flag cannot be changed after window creation, as far
@@ -5217,6 +5228,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "glx-use-gpushader4", no_argument, NULL, 303 },
     { "opacity-rule", required_argument, NULL, 304 },
     { "shadow-exclude-reg", required_argument, NULL, 305 },
+    { "paint-exclude", required_argument, NULL, 306 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5459,6 +5471,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --shadow-exclude-reg
         if (!parse_geometry(ps, optarg, &ps->o.shadow_exclude_reg_geom))
           exit(1);
+        break;
+      case 306:
+        // --paint-exclude
+        condlst_add(ps, &ps->o.paint_blacklist, optarg);
         break;
       default:
         usage(1);
@@ -6817,6 +6833,7 @@ session_destroy(session_t *ps) {
   free_wincondlst(&ps->o.invert_color_list);
   free_wincondlst(&ps->o.blur_background_blacklist);
   free_wincondlst(&ps->o.opacity_rules);
+  free_wincondlst(&ps->o.paint_blacklist);
 #endif
 
   // Free tracked atom list

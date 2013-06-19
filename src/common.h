@@ -468,6 +468,8 @@ typedef struct {
   int benchmark;
   /// Window to constantly repaint in benchmark mode. 0 for full-screen.
   Window benchmark_wid;
+  /// A list of conditions of windows not to paint.
+  c2_lptr_t *paint_blacklist;
   /// Whether to work under synchronized mode for debugging.
   bool synchronize;
 
@@ -896,6 +898,8 @@ typedef struct _win {
   bool rounded_corners;
   /// Whether this window is to be painted.
   bool to_paint;
+  /// Whether the window is painting excluded.
+  bool paint_excluded;
   /// Whether this window is in open/close state.
   bool in_openclose;
 
@@ -936,6 +940,7 @@ typedef struct _win {
   const c2_lptr_t *cache_ivclst;
   const c2_lptr_t *cache_bbblst;
   const c2_lptr_t *cache_oparule;
+  const c2_lptr_t *cache_pblst;
 
   // Opacity-related members
   /// Current window opacity.
@@ -1718,6 +1723,17 @@ static inline bool
 rect_is_fullscreen(session_t *ps, int x, int y, unsigned wid, unsigned hei) {
   return (x <= 0 && y <= 0
       && (x + wid) >= ps->root_width && (y + hei) >= ps->root_height);
+}
+
+/**
+ * Check if a window is a fullscreen window.
+ *
+ * It's not using w->border_size for performance measures.
+ */
+static inline bool
+win_is_fullscreen(session_t *ps, const win *w) {
+  return rect_is_fullscreen(ps, w->a.x, w->a.y, w->widthb, w->heightb)
+      && !w->bounding_shaped;
 }
 
 /**
