@@ -58,7 +58,7 @@ __R__ for runtime
 * libdrm (B) (Can be disabled with `NO_VSYNC_DRM` at compile time)
 * libGL (B,R) (Can be disabled with `NO_VSYNC_OPENGL` at compile time)
 * libdbus (B,R) (Can be disabled with `NO_DBUS` at compile time)
-* asciidoc (B)
+* asciidoc (B) (and docbook-xml-dtd-4.5, libxml-utils, libxslt, xsltproc, xmlto, etc. if your distro doesn't pull them in)
 
 ### How to build
 
