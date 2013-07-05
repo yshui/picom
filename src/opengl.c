@@ -383,16 +383,29 @@ glx_update_fbconfig(session_t *ps) {
       .texture_tgts = 0,
       .y_inverted = false,
     };
+    int id = (int) (pcur - pfbcfgs);
     int depth = 0, depth_alpha = 0, val = 0;
 
     if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BUFFER_SIZE, &depth)
         || Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_ALPHA_SIZE, &depth_alpha)) {
-      printf_errf("(): Failed to retrieve buffer size and alpha size of FBConfig %d.", (int) (pcur - pfbcfgs));
+      printf_errf("(): Failed to retrieve buffer size and alpha size of FBConfig %d.", id);
       continue;
     }
     if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BIND_TO_TEXTURE_TARGETS_EXT, &fbinfo.texture_tgts)) {
-      printf_errf("(): Failed to retrieve BIND_TO_TEXTURE_TARGETS_EXT of FBConfig %d.", (int) (pcur - pfbcfgs));
+      printf_errf("(): Failed to retrieve BIND_TO_TEXTURE_TARGETS_EXT of FBConfig %d.", id);
       continue;
+    }
+
+    int visualdepth = 0;
+    {
+      XVisualInfo *pvi = glXGetVisualFromFBConfig(ps->dpy, *pcur);
+      if (!pvi) {
+        // On nvidia-drivers-325.08 this happens slightly too often...
+        // printf_errf("(): Failed to retrieve X Visual of FBConfig %d.", id);
+        continue;
+      }
+      visualdepth = pvi->depth;
+	  cxfree(pvi);
     }
 
     bool rgb = false;
@@ -407,12 +420,15 @@ glx_update_fbconfig(session_t *ps) {
     if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_Y_INVERTED_EXT, &val))
       fbinfo.y_inverted = val;
 
-    if ((depth - depth_alpha) < 32 && rgb) {
-      fbinfo.texture_fmt = GLX_TEXTURE_FORMAT_RGB_EXT;
-      glx_update_fbconfig_bydepth(ps, depth - depth_alpha, &fbinfo);
+    {
+      int tgtdpt = depth - depth_alpha;
+      if (tgtdpt == visualdepth && tgtdpt < 32 && rgb) {
+        fbinfo.texture_fmt = GLX_TEXTURE_FORMAT_RGB_EXT;
+        glx_update_fbconfig_bydepth(ps, tgtdpt, &fbinfo);
+      }
     }
 
-    if (rgba) {
+    if (depth == visualdepth && rgba) {
       fbinfo.texture_fmt = GLX_TEXTURE_FORMAT_RGBA_EXT;
       glx_update_fbconfig_bydepth(ps, depth, &fbinfo);
     }
