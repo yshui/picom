@@ -582,6 +582,12 @@ cdbus_process(session_t *ps, DBusMessage *msg) {
       cdbus_reply_bool(ps, msg, true);
     success = true;
   }
+  else if (cdbus_m_ismethod("repaint")) {
+    force_repaint(ps);
+    if (!dbus_message_get_no_reply(msg))
+      cdbus_reply_bool(ps, msg, true);
+    success = true;
+  }
   else if (cdbus_m_ismethod("list_win")) {
     success = cdbus_process_list_win(ps, msg);
   }
@@ -892,6 +898,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_opts_get_do(detect_rounded_corners, cdbus_reply_bool);
   cdbus_m_opts_get_do(paint_on_overlay, cdbus_reply_bool);
   cdbus_m_opts_get_do(unredir_if_possible, cdbus_reply_bool);
+  cdbus_m_opts_get_do(redirected_force, cdbus_reply_enum);
   cdbus_m_opts_get_do(logpath, cdbus_reply_string);
   cdbus_m_opts_get_do(synchronize, cdbus_reply_bool);
 
@@ -1064,6 +1071,16 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
     return true;
   }
 
+  // redirected_force
+  if (!strcmp("redirected_force", target)) {
+    cdbus_enum_t val = UNSET;
+    if (!cdbus_msg_get_arg(msg, 1, CDBUS_TYPE_ENUM, &val))
+      return false;
+    ps->o.redirected_force = val;
+    force_repaint(ps);
+    goto cdbus_process_opts_set_success;
+  }
+
 #undef cdbus_m_opts_set_do
 
   printf_errf("(): " CDBUS_ERROR_BADTGT_S, target);
@@ -1117,6 +1134,7 @@ cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
     "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
     "    </signal>\n"
     "    <method name='reset' />\n"
+    "    <method name='repaint' />\n"
     "  </interface>\n"
     "</node>\n";
 

@@ -460,6 +460,8 @@ typedef struct {
   /// Whether to unredirect all windows if a full-screen opaque window
   /// is detected.
   bool unredir_if_possible;
+  /// Forced redirection setting through D-Bus.
+  switch_t redirected_force;
   /// Whether to enable D-Bus support.
   bool dbus;
   /// Path to log file.
@@ -647,9 +649,6 @@ typedef struct {
   XserverRegion all_damage_last[CGLX_MAX_BUFFER_AGE];
   /// Whether all windows are currently redirected.
   bool redirected;
-  /// Whether there's a highest full-screen window, and all windows could
-  /// be unredirected.
-  bool unredir_possible;
   /// Pre-generated alpha pictures.
   Picture *alpha_picts;
   /// Whether all reg_ignore of windows should expire in this paint.

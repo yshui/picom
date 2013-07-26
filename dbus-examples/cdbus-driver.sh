@@ -51,3 +51,13 @@ dbus-send --print-reply --dest="$service" "$object" "${interface}.opts_get" stri
 sleep 3
 dbus-send --print-reply --dest="$service" "$object" "${interface}.reset"
 
+# Undirect window
+sleep 3
+dbus-send --print-reply --dest="$service" "$object" "${interface}.opts_set" string:redirected_force uint16:0
+
+# Revert back to auto
+sleep 3
+dbus-send --print-reply --dest="$service" "$object" "${interface}.opts_set" string:redirected_force uint16:2
+
+# Force repaint
+dbus-send --print-reply --dest="$service" "$object" "${interface}.repaint"

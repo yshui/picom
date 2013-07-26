@@ -1076,7 +1076,7 @@ get_alpha_pict_o(session_t *ps, opacity_t o) {
 static win *
 paint_preprocess(session_t *ps, win *list) {
   // Initialize unredir_possible
-  ps->unredir_possible = false;
+  bool unredir_possible = false;
 
   win *w;
   win *t = NULL, *next = NULL;
@@ -1229,13 +1229,13 @@ paint_preprocess(session_t *ps, win *list) {
 
       last_reg_ignore = w->reg_ignore;
 
-      if (is_highest && to_paint) {
+      if (ps->o.unredir_if_possible && is_highest && to_paint) {
         is_highest = false;
         // Disable unredirection for multi-screen setups
         if (WMODE_SOLID == w->mode
             && (!w->frame_opacity || !win_has_frame(w))
             && win_is_fullscreen(ps, w))
-          ps->unredir_possible = true;
+          unredir_possible = true;
       }
 
       // Reset flags
@@ -1259,12 +1259,13 @@ paint_preprocess(session_t *ps, win *list) {
   }
 
   // If possible, unredirect all windows and stop painting
-  if (ps->o.unredir_if_possible && ps->unredir_possible) {
+  if (UNSET != ps->o.redirected_force)
+    unredir_possible = !ps->o.redirected_force;
+
+  if (unredir_possible)
     redir_stop(ps);
-  }
-  else {
+  else
     redir_start(ps);
-  }
 
   return t;
 }
@@ -6365,6 +6366,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .paint_on_overlay = false,
       .resize_damage = 0,
       .unredir_if_possible = false,
+      .redirected_force = UNSET,
       .dbus = false,
       .benchmark = 0,
       .benchmark_wid = None,
@@ -6435,7 +6437,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .all_damage_last = { None },
     .time_start = { 0, 0 },
     .redirected = false,
-    .unredir_possible = false,
     .alpha_picts = NULL,
     .reg_ignore_expire = false,
     .idling = false,
