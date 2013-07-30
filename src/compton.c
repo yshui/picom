@@ -4333,13 +4333,16 @@ usage(int ret) {
     "      Only work on some drivers. Works only with GLX backend.\n"
     "      Does not actually control paint timing, only buffer swap is\n"
     "      affected, so it doesn't have the effect of --sw-opti unlike\n"
-    "      other methods. Experimental." WARNING "\n"
+    "      other methods." WARNING "\n"
     "    opengl-mswc = Try to VSync with MESA_swap_control OpenGL\n"
     "      extension. Basically the same as opengl-swc above, except the\n"
     "      extension we use." WARNING "\n"
+    "--vsync-aggressive\n"
+    "  Attempt to send painting request before VBlank and do XFlush()\n"
+    "  during VBlank. This switch may be lifted out at any moment.\n"
     "--alpha-step val\n"
-    "  Step for pregenerating alpha pictures. 0.01 - 1.0. Defaults to\n"
-    "  0.03.\n"
+    "  X Render backend: Step for pregenerating alpha pictures. \n"
+    "  0.01 - 1.0. Defaults to 0.03.\n"
     "--dbe\n"
     "  Enable DBE painting mode, intended to use with VSync to\n"
     "  (hopefully) eliminate tearing.\n"
@@ -4347,10 +4350,7 @@ usage(int ret) {
     "  Painting on X Composite overlay window.\n"
     "--sw-opti\n"
     "  Limit compton to repaint at most once every 1 / refresh_rate\n"
-    "  second to boost performance. Experimental.\n"
-    "--vsync-aggressive\n"
-    "  Attempt to send painting request before VBlank and do XFlush()\n"
-    "  during VBlank. This switch may be lifted out at any moment.\n"
+    "  second to boost performance.\n"
     "--use-ewmh-active-win\n"
     "  Use _NET_WM_ACTIVE_WINDOW on the root window to determine which\n"
     "  window is focused instead of using FocusIn/Out events.\n"
@@ -4360,7 +4360,6 @@ usage(int ret) {
     "--unredir-if-possible\n"
     "  Unredirect all windows if a full-screen opaque window is\n"
     "  detected, to maximize performance for full-screen windows.\n"
-    "  Experimental.\n"
     "--focus-exclude condition\n"
     "  Specify a list of conditions of windows that should always be\n"
     "  considered focused.\n"
@@ -4976,6 +4975,8 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   config_t cfg;
   int ival = 0;
   double dval = 0.0;
+  // libconfig manages string memory itself, so no need to manually free
+  // anything
   const char *sval = NULL;
 
   f = open_config_file(ps->o.config_file, &path);
@@ -5068,6 +5069,10 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   config_lookup_float(&cfg, "shadow-green", &ps->o.shadow_green);
   // --shadow-blue
   config_lookup_float(&cfg, "shadow-blue", &ps->o.shadow_blue);
+  // --shadow-exclude-reg
+  if (config_lookup_string(&cfg, "shadow-exclude-reg", &sval)
+      && !parse_geometry(ps, sval, &ps->o.shadow_exclude_reg_geom))
+    exit(1);
   // --inactive-opacity-override
   lcfg_lookup_bool(&cfg, "inactive-opacity-override",
       &ps->o.inactive_opacity_override);
@@ -5126,6 +5131,8 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   parse_cfg_condlst(ps, &cfg, &ps->o.invert_color_list, "invert-color-include");
   // --blur-background-exclude
   parse_cfg_condlst(ps, &cfg, &ps->o.blur_background_blacklist, "blur-background-exclude");
+  // --opacity-rule
+  parse_cfg_condlst(ps, &cfg, &ps->o.opacity_rules, "opacity-rule");
   // --blur-background
   lcfg_lookup_bool(&cfg, "blur-background", &ps->o.blur_background);
   // --blur-background-frame
@@ -5134,6 +5141,12 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // --blur-background-fixed
   lcfg_lookup_bool(&cfg, "blur-background-fixed",
       &ps->o.blur_background_fixed);
+  // --blur-kern
+  if (config_lookup_string(&cfg, "blur-kern", &sval)
+      && !parse_conv_kern_lst(ps, sval, ps->o.blur_kerns, MAX_BLUR_PASS))
+    exit(1);
+  // --resize-damage
+  config_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);
   // --glx-no-stencil
   lcfg_lookup_bool(&cfg, "glx-no-stencil", &ps->o.glx_no_stencil);
   // --glx-copy-from-front
@@ -5146,6 +5159,8 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   if (config_lookup_string(&cfg, "glx-swap-method", &sval)
       && !parse_glx_swap_method(ps, sval))
     exit(1);
+  // --glx-use-gpushader4
+  lcfg_lookup_bool(&cfg, "glx-use-gpushader4", &ps->o.glx_use_gpushader4);
   // Wintype settings
   {
     wintype_t i;
@@ -5563,6 +5578,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   }
 
   rebuild_shadow_exclude_reg(ps);
+
+  if (ps->o.resize_damage < 0)
+    printf_errf("(): Negative --resize-damage does not work correctly.");
 }
 
 /**
@@ -6367,6 +6385,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .resize_damage = 0,
       .unredir_if_possible = false,
       .redirected_force = UNSET,
+      .stoppaint_force = UNSET,
       .dbus = false,
       .benchmark = 0,
       .benchmark_wid = None,
@@ -6995,7 +7014,7 @@ session_run(session_t *ps) {
     t = paint_preprocess(ps, ps->list);
 
     // If the screen is unredirected, free all_damage to stop painting
-    if (!ps->redirected)
+    if (!ps->redirected || ON == ps->o.stoppaint_force)
       free_region(ps, &ps->all_damage);
 
     XserverRegion all_damage_orig = None;

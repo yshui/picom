@@ -1045,6 +1045,8 @@ c2_match_once_leaf(session_t *ps, win *w, const c2_l_t *pleaf,
             case C2_L_PID:      tgt = wid;                      break;
             case C2_L_PX:       tgt = w->a.x;                   break;
             case C2_L_PY:       tgt = w->a.y;                   break;
+            case C2_L_PX2:      tgt = w->a.x + w->widthb;       break;
+            case C2_L_PY2:      tgt = w->a.y + w->heightb;      break;
             case C2_L_PWIDTH:   tgt = w->a.width;               break;
             case C2_L_PHEIGHT:  tgt = w->a.height;              break;
             case C2_L_PWIDTHB:  tgt = w->widthb;                break;

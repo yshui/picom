@@ -98,11 +98,17 @@ OPTIONS
 *--inactive-opacity-override*::
 	Let inactive opacity set by *-i* overrides the windows' '_NET_WM_OPACITY' values.
 
-*--inactive-dim* value::
+*--active-opacity* 'OPACITY'::
+  Default opacity for active windows. (0.0 - 1.0)
+
+*--inactive-dim* 'VALUE'::
 	Dim inactive windows. (0.0 - 1.0, defaults to 0.0)
 
 *--mark-wmwin-focused*::
-	Try to detect WM windows and mark them as active.
+	Try to detect WM windows (a non-override-redirect window with no child that has `WM_STATE`) and mark them as active.
+
+*--mark-ovredir-focused*::
+	Mark override-redirect windows that doesn't have a child window with `WM_STATE` focused.
 
 *--no-fading-openclose*::
 	Do not fade on window open/close.
@@ -124,17 +130,20 @@ OPTIONS
 +
 --
 * 'none': No VSync
-* 'drm': VSync with 'DRM_IOCTL_WAIT_VBLANK'. May only work on some drivers. Experimental.
-* 'opengl': Try to VSync with 'SGI_video_sync' OpenGL extension. Only work on some drivers. Experimental.
-* 'opengl-oml': Try to VSync with 'OML_sync_control' OpenGL extension. Only work on some drivers. Experimental.
+* 'drm': VSync with 'DRM_IOCTL_WAIT_VBLANK'. May only work on some drivers.
+* 'opengl': Try to VSync with 'SGI_video_sync' OpenGL extension. Only work on some drivers.
+* 'opengl-oml': Try to VSync with 'OML_sync_control' OpenGL extension. Only work on some drivers.
 * 'opengl-swc': Try to VSync with 'SGI_swap_control' OpenGL extension. Only work on some drivers. Works only with GLX backend. Known to be most effective on many drivers. Does not actually control paint timing, only buffer swap is affected, so it doesn't have the effect of *--sw-opti* unlike other methods. Experimental.
 * 'opengl-mswc': Try to VSync with 'MESA_swap_control' OpenGL extension. Basically the same as 'opengl-swc' above, except the extension we use.
 
 (Note some VSync methods may not be enabled at compile time.)
 --
 
+*--vsync-aggressive*::
+	Attempt to send painting request before VBlank and do XFlush() during VBlank. Reported to work pretty terribly. This switch may be lifted out at any moment.
+
 *--alpha-step* 'VALUE'::
-	Step for pregenerating alpha pictures. (0.01 - 1.0, defaults to 0.03)
+	X Render backend: Step for pregenerating alpha pictures. (0.01 - 1.0, defaults to 0.03)
 
 *--dbe*::
 	Enable DBE painting mode, intended to use with VSync to (hopefully) eliminate tearing. Reported to have no effect, though.
@@ -143,13 +152,16 @@ OPTIONS
 	Painting on X Composite overlay window instead of on root window.
 
 *--sw-opti*::
-	Limit compton to repaint at most once every 1 / 'refresh_rate' second to boost performance. Experimental. This should not be used with *--vsync* as *--vsync* essentially does *--sw-opti*'s job already, unless you wish to specify a lower refresh rate than the actual value.
+	Limit compton to repaint at most once every 1 / 'refresh_rate' second to boost performance. This should not be used with *--vsync* drm/opengl/opengl-oml as they essentially does *--sw-opti*'s job already, unless you wish to specify a lower refresh rate than the actual value.
 
 *--use-ewmh-active-win*::
-	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it. Experimental.
+	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it.
+
+*--respect-prop-shadow*::
+	Respect '_COMPTON_SHADOW'. This a prototype-level feature, which you must not rely on.
 
 *--unredir-if-possible*::
-	Unredirect all windows if a full-screen opaque window is detected, to maximize performance for full-screen windows. Known to cause flickering when redirecting/unredirecting windows. *--paint-on-overlay* may make the flickering less obvious. Experimental.
+	Unredirect all windows if a full-screen opaque window is detected, to maximize performance for full-screen windows. Known to cause flickering when redirecting/unredirecting windows. *--paint-on-overlay* may make the flickering less obvious.
 
 *--shadow-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should have no shadow.
@@ -178,7 +190,7 @@ OPTIONS
 *--blur-background-fixed*::
 	Use fixed blur strength rather than adjusting according to window opacity.
 
-*--blur-kern* matrix::
+*--blur-kern* 'MATRIX'::
 	Specify the blur convolution kernel, with the following format:
 +
 ----
@@ -195,32 +207,50 @@ A 7x7 Guassian blur kernel (sigma = 0.84089642) looks like:
 +
 May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box`, `3x3gaussian`, `5x5gaussian`, `7x7gaussian`, `9x9gaussian`, `11x11gaussian`. All Guassian kernels are generated with sigma = 0.84089642 . You may use the accompanied `compton-convgen.py` to generate blur kernels.
 
-*--resize-damage* integer::
+*--blur-background-exclude* 'CONDITION'::
+	Exclude conditions for background blur.
+
+*--resize-damage* 'INTEGER'::
 	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--dbe* or *--glx-swap-method*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use *--resize-damage* 1, with a 5x5 one you use *--resize-damage* 2, and so on). May or may not work with `--glx-no-stencil`. Shrinking doesn't function correctly.
 
-*--invert-color-include* condition::
+*--invert-color-include* 'CONDITION'::
 	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested.
 
-*--backend* backend::
-	Specify the backend to use: 'xrender` or 'glx'. GLX (OpenGL) backend generally has much superior performance as far as you have a graphic card/chip and driver.
+*--opacity-rule* 'OPACITY':'CONDITION'::
+	Specify a list of opacity rules, in the format `PERCENT:PATTERN`, like `50:name *= "Firefox"`. compton-trans is recommended over this. Note we do not distinguish 100% and unset, and we don't make any guarantee about possible conflicts with other programs that set '_NET_WM_WINDOW_OPACITY' on frame or client windows.
+
+*--shadow-exclude-reg* 'GEOMETRY'::
+	Specify a X geometry that describes the region in which shadow should not be painted in, such as a dock window region.  Use `--shadow-exclude-reg x10+0-0`, for example, if the 10 pixels on the bottom of the screen should not have shadows painted on.
+
+*--backend* 'BACKEND'::
+	Specify the backend to use: `xrender` or `glx`. GLX (OpenGL) backend generally has much superior performance as far as you have a graphic card/chip and driver.
 
 *--glx-no-stencil*::
-  GLX backend: Avoid using stencil buffer, useful if you don't have a stencil buffer. Might cause incorrect opacity when rendering transparent content and cannot work with *--blur-background*. My tests show a 15% performance boost.
+  GLX backend: Avoid using stencil buffer, useful if you don't have a stencil buffer. Might cause incorrect opacity when rendering transparent content (but never practically happened) and may not work with *--blur-background*. My tests show a 15% performance boost. Recommended.
 
 *--glx-copy-from-front*::
-	GLX backend: Copy unmodified regions from front buffer instead of redrawing them all. My tests with nvidia-drivers show a 10% decrease in performance when the whole screen is modified, but a 20% increase when only 1/4 is. My tests on nouveau show terrible slowdown.
+	GLX backend: Copy unmodified regions from front buffer instead of redrawing them all. My tests with nvidia-drivers show a 10% decrease in performance when the whole screen is modified, but a 20% increase when only 1/4 is. My tests on nouveau show terrible slowdown. Useful with `--glx-swap-method`, as well.
 
 *--glx-use-copysubbuffermesa*::
-	GLX backend: Use MESA_copy_sub_buffer to do partial screen update. My tests on nouveau shows a 200% performance boost when only 1/4 of the screen is updated. May break VSync and is not available on some drivers. Overrides *--glx-copy-from-front*.
+	GLX backend: Use 'MESA_copy_sub_buffer' to do partial screen update. My tests on nouveau shows a 200% performance boost when only 1/4 of the screen is updated. May break VSync and is not available on some drivers. Overrides *--glx-copy-from-front*.
 
 *--glx-no-rebind-pixmap*::
-	GLX backend: Avoid rebinding pixmap on window damage. Probably could improve performance on rapid window content changes, but is known to break things on some drivers (LLVMpipe).
+	GLX backend: Avoid rebinding pixmap on window damage. Probably could improve performance on rapid window content changes, but is known to break things on some drivers (LLVMpipe). Recommended if it works.
 
-*--glx-swap-method* undefined/exchange/copy/3/4/5/6::
+*--glx-swap-method* undefined/exchange/copy/3/4/5/6/buffer-age::
 	GLX backend: GLX buffer swap method we assume. Could be `undefined` (0), `copy` (1), `exchange` (2), 3-6, or `buffer-age` (-1).  `undefined` is the slowest and the safest, and the default value. `copy` is fastest, but may fail on some drivers, 2-6 are gradually slower but safer (6 is still faster than 0). Usually, double buffer means 2, triple buffer means 3. `buffer-age` means auto-detect using 'GLX_EXT_buffer_age', supported by some drivers. Useless with *--glx-use-copysubbuffermesa*. Partially breaks `--resize-damage`. Defaults to `undefined`.
+
+*--glx-use-gpushader4*::
+	GLX backend: Use 'GL_EXT_gpu_shader4' for some optimization on blur GLSL code. My tests on GTX 670 show no noticeable effect.
 
 *--dbus*::
 	Enable remote control via D-Bus. See the *D-BUS API* section below for more details.
+
+*--benchmark* 'CYCLES'::
+	Benchmark mode. Repeatedly paint until reaching the specified cycles.
+
+*--benchmark-wid* 'WINDOW_ID'::
+	Specify window ID to repaint in benchmark mode. If omitted or is 0, the whole screen is repainted.
 
 FORMAT OF CONDITIONS
 --------------------
@@ -240,7 +270,7 @@ With greater-than/less-than operators it looks like:
 
 'NEGATION' (optional) is one or more exclamation marks;
 
-'TARGET' is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
+'TARGET' is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `x`, `y`, `x2` (x + widthb), `y2`, `width`, `height`, `widthb` (width + 2 * border), `heightb`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
 
 'CLIENT/FRAME' is a single `@` if the window attribute should be be looked up on client window, nothing if on frame window;
 

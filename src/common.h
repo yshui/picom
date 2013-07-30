@@ -462,6 +462,8 @@ typedef struct {
   bool unredir_if_possible;
   /// Forced redirection setting through D-Bus.
   switch_t redirected_force;
+  /// Whether to stop painting. Controlled through D-Bus.
+  switch_t stoppaint_force;
   /// Whether to enable D-Bus support.
   bool dbus;
   /// Path to log file.

@@ -899,6 +899,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_opts_get_do(paint_on_overlay, cdbus_reply_bool);
   cdbus_m_opts_get_do(unredir_if_possible, cdbus_reply_bool);
   cdbus_m_opts_get_do(redirected_force, cdbus_reply_enum);
+  cdbus_m_opts_get_do(stoppaint_force, cdbus_reply_enum);
   cdbus_m_opts_get_do(logpath, cdbus_reply_string);
   cdbus_m_opts_get_do(synchronize, cdbus_reply_bool);
 
@@ -1080,6 +1081,9 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
     force_repaint(ps);
     goto cdbus_process_opts_set_success;
   }
+
+  // stoppaint_force
+  cdbus_m_opts_set_do(stoppaint_force, CDBUS_TYPE_ENUM, cdbus_enum_t);
 
 #undef cdbus_m_opts_set_do
 
