@@ -17,6 +17,12 @@ OBJS = compton.o
 # === Configuration flags ===
 CFG = -std=c99
 
+# ==== Xinerama ====
+ifeq "$(NO_XINERAMA)" ""
+  CFG += -DCONFIG_XINERAMA
+  PACKAGES += xinerama
+endif
+
 # ==== libconfig ====
 ifeq "$(NO_LIBCONFIG)" ""
   CFG += -DCONFIG_LIBCONFIG

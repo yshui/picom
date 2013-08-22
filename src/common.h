@@ -85,6 +85,10 @@
 #include <X11/extensions/Xrandr.h>
 #include <X11/extensions/Xdbe.h>
 
+#ifdef CONFIG_XINERAMA
+#include <X11/extensions/Xinerama.h>
+#endif
+
 // Workarounds for missing definitions in very old versions of X headers,
 // thanks to consolers for reporting
 #ifndef PictOpDifference
@@ -506,6 +510,8 @@ typedef struct {
   bool shadow_ignore_shaped;
   /// Whether to respect _COMPTON_SHADOW.
   bool respect_prop_shadow;
+  /// Whether to crop shadow to the very Xinerama screen.
+  bool xinerama_shadow_crop;
 
   // === Fading ===
   /// Enable/disable fading for specific window types.
@@ -806,6 +812,16 @@ typedef struct {
 #endif
   /// Whether X DBE extension exists.
   bool dbe_exists;
+#ifdef CONFIG_XINERAMA
+  /// Whether X Xinerama extension exists.
+  bool xinerama_exists;
+  /// Xinerama screen info.
+  XineramaScreenInfo *xinerama_scrs;
+  /// Xinerama screen regions.
+  XserverRegion *xinerama_scr_regs;
+  /// Number of Xinerama screens.
+  int xinerama_nscrs;
+#endif
   /// Whether X Render convolution filter exists.
   bool xrfilter_convolution_exists;
 
@@ -861,6 +877,10 @@ typedef struct _win {
   Window id;
   /// Window attributes.
   XWindowAttributes a;
+#ifdef CONFIG_XINERAMA
+  /// Xinerama screen this window is on.
+  int xinerama_scr;
+#endif
   /// Window visual pict format;
   XRenderPictFormat *pictfmt;
   /// Window painting mode.
@@ -1107,12 +1127,13 @@ XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
 /**
  * @brief Quit if the passed-in pointer is empty.
  */
-static inline void
+static inline void *
 allocchk_(const char *func_name, void *ptr) {
   if (!ptr) {
     printf_err("%s(): Failed to allocate memory.", func_name);
     exit(1);
   }
+  return ptr;
 }
 
 /// @brief Wrapper of allocchk_().

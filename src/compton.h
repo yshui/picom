@@ -193,6 +193,23 @@ free_wincondlst(c2_lptr_t **pcondlst) {
 }
 
 /**
+ * Free Xinerama screen info.
+ */
+static inline void
+free_xinerama_info(session_t *ps) {
+#ifdef CONFIG_XINERAMA
+  if (ps->xinerama_scr_regs) {
+    for (int i = 0; i < ps->xinerama_nscrs; ++i)
+      free_region(ps, &ps->xinerama_scr_regs[i]);
+    free(ps->xinerama_scr_regs);
+  }
+  cxfree(ps->xinerama_scrs);
+  ps->xinerama_scrs = NULL;
+  ps->xinerama_nscrs = 0;
+#endif
+}
+
+/**
  * Check whether a paint_t contains enough data.
  */
 static inline bool
@@ -1190,6 +1207,31 @@ timeout_clear(session_t *ps);
 
 static bool
 mainloop(session_t *ps);
+
+#ifdef CONFIG_XINERAMA
+static void
+cxinerama_upd_scrs(session_t *ps);
+#endif
+
+/**
+ * Get the Xinerama screen a window is on.
+ *
+ * Return an index >= 0, or -1 if not found.
+ */
+static inline void
+cxinerama_win_upd_scr(session_t *ps, win *w) {
+#ifdef CONFIG_XINERAMA
+  w->xinerama_scr = -1;
+  for (XineramaScreenInfo *s = ps->xinerama_scrs;
+      s < ps->xinerama_scrs + ps->xinerama_nscrs; ++s)
+    if (s->x_org <= w->a.x && s->y_org <= w->a.y
+        && s->x_org + s->width >= w->a.x + w->widthb
+        && s->y_org + s->height >= w->a.y + w->heightb) {
+      w->xinerama_scr = s - ps->xinerama_scrs;
+      return;
+    }
+#endif
+}
 
 static session_t *
 session_init(session_t *ps_old, int argc, char **argv);

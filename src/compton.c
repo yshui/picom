@@ -1817,6 +1817,12 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       if (ps->o.clear_shadow && w->border_size)
         XFixesSubtractRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
 
+#ifdef CONFIG_XINERAMA
+      if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0)
+        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint,
+            ps->xinerama_scr_regs[w->xinerama_scr]);
+#endif
+
       // Detect if the region is empty before painting
       {
         reg_data_t cache_reg = REG_DATA_INIT;
@@ -2034,6 +2040,8 @@ map_win(session_t *ps, Window id) {
   assert(!w->focused_real);
 
   w->a.map_state = IsViewable;
+
+  cxinerama_win_upd_scr(ps, w);
 
   // Set focused to false
   bool focused_real = false;
@@ -2677,6 +2685,9 @@ add_win(session_t *ps, Window id, Window prev) {
 
     .id = None,
     .a = { },
+#ifdef CONFIG_XINERAMA
+    .xinerama_scr = -1,
+#endif
     .pictfmt = NULL,
     .mode = WMODE_TRANS,
     .damaged = false,
@@ -2989,8 +3000,10 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
       add_damage(ps, damage);
     }
 
-    if (factor_change)
+    if (factor_change) {
+      cxinerama_win_upd_scr(ps, w);
       win_on_factor_change(ps, w);
+    }
   }
 
   // override_redirect flag cannot be changed after window creation, as far
@@ -4417,6 +4430,15 @@ usage(int ret) {
     "  should not be painted in, such as a dock window region.\n"
     "  Use --shadow-exclude-reg \'x10+0-0\', for example, if the 10 pixels\n"
     "  on the bottom of the screen should not have shadows painted on.\n"
+#undef WARNING
+#ifndef CONFIG_XINERAMA
+#define WARNING WARNING_DISABLED
+#else
+#define WARNING
+#endif
+    "--xinerama-shadow-crop\n"
+    "  Crop shadow of a window fully on a particular Xinerama screen to the\n"
+    "  screen." WARNING "\n"
     "--backend backend\n"
     "  Choose backend. Possible choices are xrender and glx" WARNING ".\n"
     "--glx-no-stencil\n"
@@ -5245,6 +5267,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "opacity-rule", required_argument, NULL, 304 },
     { "shadow-exclude-reg", required_argument, NULL, 305 },
     { "paint-exclude", required_argument, NULL, 306 },
+    { "xinerama-shadow-crop", no_argument, NULL, 307 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5492,6 +5515,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --paint-exclude
         condlst_add(ps, &ps->o.paint_blacklist, optarg);
         break;
+      P_CASEBOOL(307, xinerama_shadow_crop);
       default:
         usage(1);
         break;
@@ -6343,6 +6367,35 @@ mainloop(session_t *ps) {
   return true;
 }
 
+static void
+cxinerama_upd_scrs(session_t *ps) {
+#ifdef CONFIG_XINERAMA
+  free_xinerama_info(ps);
+
+  if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists) return;
+
+  if (!XineramaIsActive(ps->dpy)) return;
+
+  ps->xinerama_scrs = XineramaQueryScreens(ps->dpy, &ps->xinerama_nscrs);
+
+  // Just in case the shit hits the fan...
+  if (!ps->xinerama_nscrs) {
+    cxfree(ps->xinerama_scrs);
+    ps->xinerama_scrs = NULL;
+    return;
+  }
+
+  ps->xinerama_scr_regs = allocchk(malloc(sizeof(XserverRegion *)
+        * ps->xinerama_nscrs));
+  for (int i = 0; i < ps->xinerama_nscrs; ++i) {
+    const XineramaScreenInfo * const s = &ps->xinerama_scrs[i];
+    XRectangle r = { .x = s->x_org, .y = s->y_org,
+      .width = s->width, .height = s->height };
+    ps->xinerama_scr_regs[i] = XFixesCreateRegion(ps->dpy, &r, 1);
+  }
+#endif
+}
+
 /**
  * Initialize a session.
  *
@@ -6409,6 +6462,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .shadow_blacklist = NULL,
       .shadow_ignore_shaped = false,
       .respect_prop_shadow = false,
+      .xinerama_shadow_crop = false,
 
       .wintype_fade = { false },
       .fade_in_step = 0.028 * OPAQUE,
@@ -6663,6 +6717,17 @@ session_init(session_t *ps_old, int argc, char **argv) {
       ps->o.dbe = false;
   }
 
+  // Query X Xinerama extension
+  if (ps->o.xinerama_shadow_crop) {
+#ifdef CONFIG_XINERAMA
+    int xinerama_event = 0, xinerama_error = 0;
+    if (XineramaQueryExtension(ps->dpy, &xinerama_event, &xinerama_error))
+      ps->xinerama_exists = true;
+#else
+    printf_errf("(): Xinerama support not compiled in.");
+#endif
+  }
+
   rebuild_screen_reg(ps);
 
   // Overlay must be initialized before double buffer, and before creation
@@ -6696,6 +6761,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // Initialize VSync
   if (!vsync_init(ps))
     exit(1);
+
+  cxinerama_upd_scrs(ps);
 
   // Create registration window
   if (!ps->reg_win && !register_cm(ps))
@@ -6923,6 +6990,7 @@ session_destroy(session_t *ps) {
   free(ps->pfds_read);
   free(ps->pfds_write);
   free(ps->pfds_except);
+  free_xinerama_info(ps);
 
 #ifdef CONFIG_VSYNC_OPENGL
   glx_destroy(ps);
