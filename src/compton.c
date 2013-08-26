@@ -5111,6 +5111,9 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // --detect-rounded-corners
   lcfg_lookup_bool(&cfg, "detect-rounded-corners",
       &ps->o.detect_rounded_corners);
+  // --xinerama-shadow-crop
+  lcfg_lookup_bool(&cfg, "xinerama-shadow-crop",
+      &ps->o.xinerama_shadow_crop);
   // --detect-client-opacity
   lcfg_lookup_bool(&cfg, "detect-client-opacity",
       &ps->o.detect_client_opacity);
@@ -5217,6 +5220,20 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   const static struct option longopts[] = {
     { "help", no_argument, NULL, 'h' },
     { "config", required_argument, NULL, 256 },
+    { "shadow-radius", required_argument, NULL, 'r' },
+    { "shadow-opacity", required_argument, NULL, 'o' },
+    { "shadow-offset-x", required_argument, NULL, 'l' },
+    { "shadow-offset-y", required_argument, NULL, 't' },
+    { "fade-in-step", required_argument, NULL, 'I' },
+    { "fade-out-step", required_argument, NULL, 'O' },
+    { "menu-opacity", required_argument, NULL, 'm' },
+    { "shadow", no_argument, NULL, 'c' },
+    { "no-dock-shadow", no_argument, NULL, 'C' },
+    { "clear-shadow", no_argument, NULL, 'z' },
+    { "fading", no_argument, NULL, 'f' },
+    { "inactive-opacity", required_argument, NULL, 'i' },
+    { "frame-opacity", required_argument, NULL, 'e' },
+    { "no-dnd-shadow", no_argument, NULL, 'G' },
     { "shadow-red", required_argument, NULL, 257 },
     { "shadow-green", required_argument, NULL, 258 },
     { "shadow-blue", required_argument, NULL, 259 },

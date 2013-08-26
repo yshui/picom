@@ -222,6 +222,9 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--shadow-exclude-reg* 'GEOMETRY'::
 	Specify a X geometry that describes the region in which shadow should not be painted in, such as a dock window region.  Use `--shadow-exclude-reg x10+0-0`, for example, if the 10 pixels on the bottom of the screen should not have shadows painted on.
 
+*--xinerama-shadow-crop*::
+	Crop shadow of a window fully on a particular Xinerama screen to the screen.
+
 *--backend* 'BACKEND'::
 	Specify the backend to use: `xrender` or `glx`. GLX (OpenGL) backend generally has much superior performance as far as you have a graphic card/chip and driver.
 

@@ -48,6 +48,7 @@ __R__ for runtime
 * libXext (B,R)
 * libxrender (B,R)
 * libXrandr (B,R)
+* libXinerama (B,R) (Can be disabled with `NO_XINERAMA` at compile time)
 * pkg-config (B)
 * make (B)
 * xproto / x11proto (B)
