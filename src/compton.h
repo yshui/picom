@@ -1233,6 +1233,9 @@ cxinerama_win_upd_scr(session_t *ps, win *w) {
 #endif
 }
 
+static void
+cxinerama_upd_scrs(session_t *ps);
+
 static session_t *
 session_init(session_t *ps_old, int argc, char **argv);
 

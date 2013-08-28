@@ -4114,12 +4114,15 @@ ev_shape_notify(session_t *ps, XShapeEvent *ev) {
 static void
 ev_screen_change_notify(session_t *ps,
     XRRScreenChangeNotifyEvent __attribute__((unused)) *ev) {
-  if (!ps->o.refresh_rate) {
+  if (ps->o.xinerama_shadow_crop)
+    cxinerama_upd_scrs(ps);
+
+  if (ps->o.sw_opti && !ps->o.refresh_rate) {
     update_refresh_rate(ps);
     if (!ps->refresh_rate) {
       fprintf(stderr, "ev_screen_change_notify(): Refresh rate detection "
-          "failed, software VSync disabled.");
-      ps->o.vsync = VSYNC_NONE;
+          "failed, --sw-opti disabled.");
+      ps->o.sw_opti = false;
     }
   }
 }
@@ -5714,11 +5717,6 @@ swopti_init(session_t *ps) {
   if (!ps->refresh_rate)
     return false;
 
-  // Monitor screen changes only if vsync_sw is enabled and we are using
-  // an auto-detected refresh rate
-  if (ps->randr_exists && !ps->o.refresh_rate)
-    XRRSelectInput(ps->dpy, ps->root, RRScreenChangeNotify);
-
   return true;
 }
 
@@ -6710,11 +6708,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
   get_cfg(ps, argc, argv, false);
 
   // Query X RandR
-  if (ps->o.sw_opti && !ps->o.refresh_rate) {
+  if ((ps->o.sw_opti && !ps->o.refresh_rate) || ps->o.xinerama_shadow_crop) {
     if (XRRQueryExtension(ps->dpy, &ps->randr_event, &ps->randr_error))
       ps->randr_exists = true;
     else
-      printf_errf("(): No XRandR extension, automatic refresh rate "
+      printf_errf("(): No XRandR extension, automatic screen change "
           "detection impossible.");
   }
 
@@ -6774,6 +6772,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // Initialize software optimization
   if (ps->o.sw_opti)
     ps->o.sw_opti = swopti_init(ps);
+
+  // Monitor screen changes if vsync_sw is enabled and we are using
+  // an auto-detected refresh rate, or when Xinerama features are enabled
+  if (ps->randr_exists && ((ps->o.sw_opti && !ps->o.refresh_rate)
+        || ps->o.xinerama_shadow_crop))
+    XRRSelectInput(ps->dpy, ps->root, RRScreenChangeNotifyMask);
 
   // Initialize VSync
   if (!vsync_init(ps))
