@@ -386,6 +386,14 @@ glx_update_fbconfig(session_t *ps) {
     int id = (int) (pcur - pfbcfgs);
     int depth = 0, depth_alpha = 0, val = 0;
 
+    // Skip over multi-sampled visuals
+    // http://people.freedesktop.org/~glisse/0001-glx-do-not-use-multisample-visual-config-for-front-o.patch
+#ifdef GLX_SAMPLES
+    if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_SAMPLES, &val)
+        && val > 1)
+      continue;
+#endif
+
     if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BUFFER_SIZE, &depth)
         || Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_ALPHA_SIZE, &depth_alpha)) {
       printf_errf("(): Failed to retrieve buffer size and alpha size of FBConfig %d.", id);
@@ -405,7 +413,7 @@ glx_update_fbconfig(session_t *ps) {
         continue;
       }
       visualdepth = pvi->depth;
-	  cxfree(pvi);
+      cxfree(pvi);
     }
 
     bool rgb = false;
@@ -445,6 +453,12 @@ glx_update_fbconfig(session_t *ps) {
   if (!ps->glx_fbconfigs[32]) {
     printf_errf("(): No FBConfig found for depth 32. Expect crazy things.");
   }
+
+#ifdef DEBUG_GLX
+  printf_dbgf("(): %d-bit: %#3x, 32-bit: %#3x\n",
+      ps->depth, (int) ps->glx_fbconfigs[ps->depth]->cfg,
+      (int) ps->glx_fbconfigs[32]->cfg);
+#endif
 
   return true;
 }
