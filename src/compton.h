@@ -325,6 +325,14 @@ ms_to_tv(int timeout) {
 }
 
 /**
+ * Whether an event is DamageNotify.
+ */
+static inline bool
+isdamagenotify(session_t *ps, const XEvent *ev) {
+  return ps->damage_event + XDamageNotify == ev->type;
+}
+
+/**
  * Create a XTextProperty of a single string.
  */
 static inline XTextProperty *
@@ -1204,6 +1212,9 @@ timeout_get_poll_time(session_t *ps);
 
 static void
 timeout_clear(session_t *ps);
+
+static bool
+tmout_unredir_callback(session_t *ps, timeout_t *tmout);
 
 static bool
 mainloop(session_t *ps);

@@ -1075,13 +1075,7 @@ get_alpha_pict_o(session_t *ps, opacity_t o) {
 
 static win *
 paint_preprocess(session_t *ps, win *list) {
-  // Initialize unredir_possible
-  bool unredir_possible = false;
-
-  win *w;
   win *t = NULL, *next = NULL;
-  // Trace whether it's the highest window to paint
-  bool is_highest = true;
 
   // Fading step calculation
   time_ms_t steps = 0L;
@@ -1097,7 +1091,10 @@ paint_preprocess(session_t *ps, win *list) {
 
   XserverRegion last_reg_ignore = None;
 
-  for (w = list; w; w = next) {
+  bool unredir_possible = false;
+  // Trace whether it's the highest window to paint
+  bool is_highest = true;
+  for (win *w = list; w; w = next) {
     bool to_paint = true;
     const winmode_t mode_old = w->mode;
 
@@ -1229,19 +1226,23 @@ paint_preprocess(session_t *ps, win *list) {
 
       last_reg_ignore = w->reg_ignore;
 
+      // (Un)redirect screen
+      // We could definitely unredirect the screen when there's no window to
+      // paint, but this is typically unnecessary, may cause flickering when
+      // fading is enabled, and could create inconsistency when the wallpaper
+      // is not correctly set.
       if (ps->o.unredir_if_possible && is_highest && to_paint) {
         is_highest = false;
-        // Disable unredirection for multi-screen setups
         if (WMODE_SOLID == w->mode
             && (!w->frame_opacity || !win_has_frame(w))
-            && win_is_fullscreen(ps, w))
+            && win_is_fullscreen(ps, w)
+            && !w->unredir_if_possible_excluded)
           unredir_possible = true;
       }
 
       // Reset flags
       w->flags = 0;
     }
-
 
     // Avoid setting w->to_paint if w is to be freed
     bool destroyed = (w->opacity_tgt == w->opacity && w->destroyed);
@@ -1258,14 +1259,25 @@ paint_preprocess(session_t *ps, win *list) {
       w->to_paint = to_paint;
   }
 
+
   // If possible, unredirect all windows and stop painting
   if (UNSET != ps->o.redirected_force)
     unredir_possible = !ps->o.redirected_force;
 
-  if (unredir_possible)
-    redir_stop(ps);
-  else
+  if (unredir_possible) {
+    if (ps->redirected) {
+      if (!ps->o.unredir_if_possible_delay || ps->tmout_unredir_hit)
+        redir_stop(ps);
+      else if (!ps->tmout_unredir->enabled) {
+        timeout_reset(ps, ps->tmout_unredir);
+        ps->tmout_unredir->enabled = true;
+      }
+    }
+  }
+  else {
+    ps->tmout_unredir->enabled = false;
     redir_start(ps);
+  }
 
   return t;
 }
@@ -1691,7 +1703,6 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 #ifdef DEBUG_REPAINT
   static struct timespec last_paint = { 0 };
 #endif
-  win *w = NULL;
   XserverRegion reg_paint = None, reg_tmp = None, reg_tmp2 = None;
 
 #ifdef CONFIG_VSYNC_OPENGL
@@ -1771,7 +1782,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
   reg_tmp2 = XFixesCreateRegion(ps->dpy, NULL, 0);
 
-  for (w = t; w; w = w->prev_trans) {
+  for (win *w = t; w; w = w->prev_trans) {
     // Painting shadow
     if (w->shadow) {
       // Shadow is to be painted based on the ignore region of current
@@ -1953,7 +1964,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   printf("[ %5ld:%09ld ] ", diff.tv_sec, diff.tv_nsec);
   last_paint = now;
   printf("paint:");
-  for (w = t; w; w = w->prev_trans)
+  for (win *w = t; w; w = w->prev_trans)
     printf(" %#010lx", w->id);
   putchar('\n');
   fflush(stdout);
@@ -1962,7 +1973,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   // Check if fading is finished on all painted windows
   {
     win *pprev = NULL;
-    for (w = t; w; w = pprev) {
+    for (win *w = t; w; w = pprev) {
       pprev = w->prev_trans;
       check_fade_fin(ps, w);
     }
@@ -1971,6 +1982,11 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 
 static void
 add_damage(session_t *ps, XserverRegion damage) {
+  // Ignore damage when screen isn't redirected
+  if (!ps->redirected)
+    free_region(ps, &damage);
+
+  if (!damage) return;
   if (ps->all_damage) {
     XFixesUnionRegion(ps->dpy, ps->all_damage, ps->all_damage, damage);
     XFixesDestroyRegion(ps->dpy, damage);
@@ -1999,13 +2015,18 @@ repair_win(session_t *ps, win *w) {
       w->a.y + w->a.border_width);
   }
 
+  w->damaged = true;
+  w->pixmap_damaged = true;
+
+  // Why care about damage when screen is unredirected?
+  // We will force full-screen repaint on redirection.
+  if (!ps->redirected) return;
+
   // Remove the part in the damage area that could be ignored
   if (!ps->reg_ignore_expire && w->prev_trans && w->prev_trans->reg_ignore)
     XFixesSubtractRegion(ps->dpy, parts, parts, w->prev_trans->reg_ignore);
 
   add_damage(ps, parts);
-  w->damaged = true;
-  w->pixmap_damaged = true;
 }
 
 static wintype_t
@@ -2507,6 +2528,9 @@ win_on_factor_change(session_t *ps, win *w) {
   if (ps->o.paint_blacklist)
     w->paint_excluded = win_match(ps, w, ps->o.paint_blacklist,
         &w->cache_pblst);
+  if (ps->o.unredir_if_possible_blacklist)
+    w->unredir_if_possible_excluded = win_match(ps, w,
+        ps->o.unredir_if_possible_blacklist, &w->cache_uipblst);
 }
 
 /**
@@ -3677,9 +3701,8 @@ ev_name(session_t *ps, XEvent *ev) {
     CASESTRRET(PropertyNotify);
     CASESTRRET(ClientMessage);
     default:
-      if (ev->type == ps->damage_event + XDamageNotify) {
+      if (isdamagenotify(ps, ev))
         return "Damage";
-      }
 
       if (ps->shape_exists && ev->type == ps->shape_event) {
         return "ShapeNotify";
@@ -3718,7 +3741,7 @@ ev_window(session_t *ps, XEvent *ev) {
     case ClientMessage:
       return ev->xclient.window;
     default:
-      if (ev->type == ps->damage_event + XDamageNotify) {
+      if (isdamagenotify(ps, ev)) {
         return ((XDamageNotifyEvent *)ev)->drawable;
       }
 
@@ -4166,7 +4189,7 @@ ev_handle(session_t *ps, XEvent *ev) {
   }
 
 #ifdef DEBUG_EVENTS
-  if (ev->type != ps->damage_event + XDamageNotify) {
+  if (!isdamagenotify(ps, ev)) {
     Window wid = ev_window(ps, ev);
     char *window_name = NULL;
     bool to_free = false;
@@ -4228,10 +4251,10 @@ ev_handle(session_t *ps, XEvent *ev) {
         ev_screen_change_notify(ps, (XRRScreenChangeNotifyEvent *) ev);
         break;
       }
-      if (ev->type == ps->damage_event + XDamageNotify) {
-        ev_damage_notify(ps, (XDamageNotifyEvent *)ev);
+      if (isdamagenotify(ps, ev)) {
+        ev_damage_notify(ps, (XDamageNotifyEvent *) ev);
+        break;
       }
-      break;
   }
 }
 
@@ -4376,6 +4399,12 @@ usage(int ret) {
     "--unredir-if-possible\n"
     "  Unredirect all windows if a full-screen opaque window is\n"
     "  detected, to maximize performance for full-screen windows.\n"
+    "--unredir-if-possible-delay ms\n"
+    "  Delay before unredirecting the window, in milliseconds.\n"
+    "  Defaults to 0.\n"
+    "--unredir-if-possible-exclude condition\n"
+    "  Conditions of windows that shouldn't be considered full-screen\n"
+    "  for unredirecting screen.\n"
     "--focus-exclude condition\n"
     "  Specify a list of conditions of windows that should always be\n"
     "  considered focused.\n"
@@ -4600,6 +4629,27 @@ fork_after(session_t *ps) {
   success = ostream_reopen(ps, NULL);
 
   return success;
+}
+
+/**
+ * Parse a long number.
+ */
+static inline bool
+parse_long(const char *s, long *dest) {
+  const char *endptr = NULL;
+  long val = strtol(s, (char **) &endptr, 0);
+  if (!endptr || endptr == s) {
+    printf_errf("(\"%s\"): Invalid number.", s);
+    return false;
+  }
+  while (isspace(*endptr))
+    ++endptr;
+  if (*endptr) {
+    printf_errf("(\"%s\"): Trailing characters.", s);
+    return false;
+  }
+  *dest = val;
+  return true;
 }
 
 /**
@@ -5288,6 +5338,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "shadow-exclude-reg", required_argument, NULL, 305 },
     { "paint-exclude", required_argument, NULL, 306 },
     { "xinerama-shadow-crop", no_argument, NULL, 307 },
+    { "unredir-if-possible-exclude", required_argument, NULL, 308 },
+    { "unredir-if-possible-delay", required_argument, NULL, 309 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5344,17 +5396,22 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   optind = 1;
   while (-1 !=
       (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
+    long val = 0;
     switch (o) {
 #define P_CASEBOOL(idx, option) case idx: ps->o.option = true; break
+#define P_CASELONG(idx, option) \
+      case idx: \
+        if (!parse_long(optarg, &val)) exit(1); \
+        ps->o.option = val; \
+        break
+
       // Short options
       case 'h':
         usage(0);
         break;
       case 'd':
         break;
-      case 'D':
-        ps->o.fade_delta = atoi(optarg);
-        break;
+      P_CASELONG('D', fade_delta);
       case 'I':
         ps->o.fade_in_step = normalize_d(atof(optarg)) * OPAQUE;
         break;
@@ -5378,18 +5435,12 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         fading_enable = true;
         break;
       P_CASEBOOL('S', synchronize);
-      case 'r':
-        ps->o.shadow_radius = atoi(optarg);
-        break;
+      P_CASELONG('r', shadow_radius);
       case 'o':
         ps->o.shadow_opacity = atof(optarg);
         break;
-      case 'l':
-        ps->o.shadow_offset_x = atoi(optarg);
-        break;
-      case 't':
-        ps->o.shadow_offset_y = atoi(optarg);
-        break;
+      P_CASELONG('l', shadow_offset_x);
+      P_CASELONG('t', shadow_offset_y);
       case 'i':
         ps->o.inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
         break;
@@ -5434,10 +5485,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(266, shadow_ignore_shaped);
       P_CASEBOOL(267, detect_rounded_corners);
       P_CASEBOOL(268, detect_client_opacity);
-      case 269:
-        // --refresh-rate
-        ps->o.refresh_rate = atoi(optarg);
-        break;
+      P_CASELONG(269, refresh_rate);
       case 270:
         // --vsync
         if (!parse_vsync(ps, optarg))
@@ -5484,10 +5532,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       P_CASEBOOL(291, glx_no_stencil);
       P_CASEBOOL(292, glx_copy_from_front);
-      case 293:
-        // --benchmark
-        ps->o.benchmark = atoi(optarg);
-        break;
+      P_CASELONG(293, benchmark);
       case 294:
         // --benchmark-wid
         ps->o.benchmark_wid = strtol(optarg, NULL, 0);
@@ -5516,10 +5561,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         if (!parse_conv_kern_lst(ps, optarg, ps->o.blur_kerns, MAX_BLUR_PASS))
           exit(1);
         break;
-      case 302:
-        // --resize-damage
-        ps->o.resize_damage = atoi(optarg);
-        break;
+      P_CASELONG(302, resize_damage);
       P_CASEBOOL(303, glx_use_gpushader4);
       case 304:
         // --opacity-rule
@@ -5536,6 +5578,11 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         condlst_add(ps, &ps->o.paint_blacklist, optarg);
         break;
       P_CASEBOOL(307, xinerama_shadow_crop);
+      case 308:
+        // --unredir-if-possible-exclude
+        condlst_add(ps, &ps->o.unredir_if_possible_blacklist, optarg);
+        break;
+      P_CASELONG(309, unredir_if_possible_delay);
       default:
         usage(1);
         break;
@@ -5582,10 +5629,6 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   // --blur-background-frame implies --blur-background
   if (ps->o.blur_background_frame)
     ps->o.blur_background = true;
-
-  // Free background blur blacklist if background blur is not actually enabled
-  if (!ps->o.blur_background)
-    free_wincondlst(&ps->o.blur_background_blacklist);
 
   // Other variables determined by options
 
@@ -6110,7 +6153,8 @@ static void
 redir_start(session_t *ps) {
   if (!ps->redirected) {
 #ifdef DEBUG_REDIR
-    printf("redir_start(): Screen redirected.\n");
+    print_timestamp(ps);
+    printf_dbgf("(): Screen redirected.\n");
 #endif
 
     // Map overlay window. Done firstly according to this:
@@ -6133,6 +6177,9 @@ redir_start(session_t *ps) {
     XSync(ps->dpy, False);
 
     ps->redirected = true;
+
+    // Repaint the whole screen
+    force_repaint(ps);
   }
 }
 
@@ -6273,13 +6320,22 @@ timeout_invoke(session_t *ps, timeout_t *ptmout) {
 }
 
 /**
+ * Reset a timeout to initial state.
+ */
+void
+timeout_reset(session_t *ps, timeout_t *ptmout) {
+  ptmout->firstrun = ptmout->lastrun = get_time_ms();
+}
+
+/**
  * Unredirect all windows.
  */
 static void
 redir_stop(session_t *ps) {
   if (ps->redirected) {
 #ifdef DEBUG_REDIR
-    printf("redir_stop(): Screen unredirected.\n");
+    print_timestamp(ps);
+    printf_dbgf("(): Screen unredirected.\n");
 #endif
     // Destroy all Pictures as they expire once windows are unredirected
     // If we don't destroy them here, looks like the resources are just
@@ -6297,6 +6353,17 @@ redir_stop(session_t *ps) {
 
     ps->redirected = false;
   }
+}
+
+/**
+ * Unredirection timeout callback.
+ */
+static bool
+tmout_unredir_callback(session_t *ps, timeout_t *tmout) {
+  ps->tmout_unredir_hit = true;
+  tmout->enabled = false;
+
+  return true;
 }
 
 /**
@@ -6452,6 +6519,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .paint_on_overlay = false,
       .resize_damage = 0,
       .unredir_if_possible = false,
+      .unredir_if_possible_blacklist = NULL,
+      .unredir_if_possible_delay = 0,
       .redirected_force = UNSET,
       .stoppaint_force = UNSET,
       .dbus = false,
@@ -6829,10 +6898,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
   }
 
   fds_insert(ps, ConnectionNumber(ps->dpy), POLLIN);
+  ps->tmout_unredir = timeout_insert(ps, ps->o.unredir_if_possible_delay,
+      tmout_unredir_callback, NULL);
+  ps->tmout_unredir->enabled = false;
 
   XGrabServer(ps->dpy);
-
-  redir_start(ps);
 
   {
     Window root_return, parent_return;
@@ -6942,6 +7012,7 @@ session_destroy(session_t *ps) {
   free_wincondlst(&ps->o.blur_background_blacklist);
   free_wincondlst(&ps->o.opacity_rules);
   free_wincondlst(&ps->o.paint_blacklist);
+  free_wincondlst(&ps->o.unredir_if_possible_blacklist);
 #endif
 
   // Free tracked atom list
@@ -7047,6 +7118,7 @@ session_destroy(session_t *ps) {
   XSync(ps->dpy, True);
 
   // Free timeouts
+  ps->tmout_unredir = NULL;
   timeout_clear(ps);
 
   if (ps == ps_g)
@@ -7101,6 +7173,7 @@ session_run(session_t *ps) {
     ps->idling = true;
 
     t = paint_preprocess(ps, ps->list);
+    ps->tmout_unredir_hit = false;
 
     // If the screen is unredirected, free all_damage to stop painting
     if (!ps->redirected || ON == ps->o.stoppaint_force)

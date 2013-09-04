@@ -898,6 +898,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_opts_get_do(detect_rounded_corners, cdbus_reply_bool);
   cdbus_m_opts_get_do(paint_on_overlay, cdbus_reply_bool);
   cdbus_m_opts_get_do(unredir_if_possible, cdbus_reply_bool);
+  cdbus_m_opts_get_do(unredir_if_possible_delay, cdbus_reply_int32);
   cdbus_m_opts_get_do(redirected_force, cdbus_reply_enum);
   cdbus_m_opts_get_do(stoppaint_force, cdbus_reply_enum);
   cdbus_m_opts_get_do(logpath, cdbus_reply_string);
