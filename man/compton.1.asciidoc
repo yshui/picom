@@ -163,6 +163,12 @@ OPTIONS
 *--unredir-if-possible*::
 	Unredirect all windows if a full-screen opaque window is detected, to maximize performance for full-screen windows. Known to cause flickering when redirecting/unredirecting windows. *--paint-on-overlay* may make the flickering less obvious.
 
+*--unredir-if-possible-delay* 'MILLISECONDS'::
+	Delay before unredirecting the window, in milliseconds. Defaults to 0.
+
+*--unredir-if-possible-exclude* 'CONDITION'::
+	Conditions of windows that shouldn't be considered full-screen for unredirecting screen.
+
 *--shadow-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should have no shadow.
 

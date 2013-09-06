@@ -49,6 +49,11 @@ if (CONFIG_VSYNC_OPENGL)
 	list(APPEND compton_SRCS src/opengl.c)
 endif ()
 
+option(CONFIG_XINERAMA "Enable additional Xinerama features" ON)
+if (CONFIG_XINERAMA)
+	add_definitions("-DCONFIG_XINERAMA")
+endif ()
+
 option(CONFIG_C2 "Enable matching system" ON)
 if (CONFIG_C2)
 	add_definitions("-DCONFIG_C2")
@@ -78,12 +83,16 @@ macro(X11LIB_CHK lib)
 	target_link_libraries(compton "${X11_${lib}_LIB}")
 endmacro ()
 
+target_link_libraries(compton "${X11_X11_LIB}")
 X11LIB_CHK(Xcomposite)
 X11LIB_CHK(Xdamage)
 X11LIB_CHK(Xext)
 X11LIB_CHK(Xfixes)
 X11LIB_CHK(Xrender)
 X11LIB_CHK(Xrandr)
+if (CONFIG_XINERAMA)
+	X11LIB_CHK(Xinerama)
+endif ()
 
 # --- Find libpcre ---
 if (CONFIG_REGEX_PCRE)
@@ -170,12 +179,10 @@ set(CPACK_SOURCE_IGNORE_FILES
 
 # --- DEB package config ---
 set(CPACK_DEBIAN_PACKAGE_SECTION "x11")
-# The dependencies are unreliable, just an example here
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libx11-6, libxext6, libxcomposite1, libxrender1, libxdamage1, libxfixes3, libpcre3, libconfig8, libdrm2")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.15), libconfig9, libdbus-1-3 (>= 1.1.1), libgl1-mesa-glx | libgl1 | libgl1-nvidia-glx | libgl1-fglrx-glx, libpcre3 (>= 8.10), libx11-6, libxcomposite1 (>= 1:0.3-1), libxdamage1 (>= 1:1.1), libxext6, libxfixes3, libxrandr2 (>= 4.3), libxrender1, libxinerama1")
 
 # --- RPM package config ---
 set(CPACK_RPM_PACKAGE_LICENSE "unknown")
-# The dependencies are unreliable, just an example here
-set(CPACK_RPM_PACKAGE_REQUIRES "libx11, libxext, libxcomposite, libxrender, libxdamage, libxfixes, libpcre, libconfig, libdrm")
+set(CPACK_RPM_PACKAGE_REQUIRES "/bin/sh,libGL.so.1,libX11.so.6,libXcomposite.so.1,libXdamage.so.1,libXext.so.6,libXfixes.so.3,libXrandr.so.2,libXrender.so.1,libc.so.6,libconfig.so.9,libdbus-1.so.3,libm.so.6,libpcre.so.1")
 
 include(CPack)
