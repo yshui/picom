@@ -1102,9 +1102,16 @@ paint_preprocess(session_t *ps, win *list) {
     next = w->next;
     opacity_t opacity_old = w->opacity;
 
-    // Destroy reg_ignore on all windows if they should expire
-    if (ps->reg_ignore_expire)
-      free_region(ps, &w->reg_ignore);
+    // Data expiration
+    {
+      // Remove built shadow if needed
+      if (w->flags & WFLAG_SIZE_CHANGE)
+        free_paint(ps, &w->shadow_paint);
+
+      // Destroy reg_ignore on all windows if they should expire
+      if (ps->reg_ignore_expire)
+        free_region(ps, &w->reg_ignore);
+    }
 
     // Update window opacity target and dim state if asked
     if (WFLAG_OPCT_CHANGE & w->flags) {
@@ -1115,43 +1122,33 @@ paint_preprocess(session_t *ps, win *list) {
     // Run fading
     run_fade(ps, w, steps);
 
+    // Opacity will not change, from now on.
+
     // Give up if it's not damaged or invisible, or it's unmapped and its
-    // pixmap is gone (for example due to a ConfigureNotify)
+    // pixmap is gone (for example due to a ConfigureNotify), or when it's
+    // excluded
     if (!w->damaged
         || w->a.x + w->a.width < 1 || w->a.y + w->a.height < 1
         || w->a.x >= ps->root_width || w->a.y >= ps->root_height
-        || ((IsUnmapped == w->a.map_state || w->destroyed)
-          && !w->paint.pixmap)) {
+        || ((IsUnmapped == w->a.map_state || w->destroyed) && !w->paint.pixmap)
+        || get_alpha_pict_o(ps, w->opacity) == ps->alpha_picts[0]
+        || w->paint_excluded)
       to_paint = false;
-    }
 
-    to_paint = to_paint && !w->paint_excluded;
+    // to_paint will never change afterward
 
-    if (to_paint) {
-      // If opacity changes
-      if (w->opacity != opacity_old) {
-        win_determine_mode(ps, w);
-        add_damage_win(ps, w);
-      }
-
-      if (get_alpha_pict_o(ps, w->opacity) == ps->alpha_picts[0])
-        to_paint = false;
-    }
+    // Determine mode as early as possible
+    if (to_paint && (!w->to_paint || w->opacity != opacity_old))
+      win_determine_mode(ps, w);
 
     if (to_paint) {
       // Fetch bounding region
-      if (!w->border_size) {
+      if (!w->border_size)
         w->border_size = border_size(ps, w, true);
-      }
 
       // Fetch window extents
-      if (!w->extents) {
+      if (!w->extents)
         w->extents = win_extents(ps, w);
-        // If w->extents does not exist, the previous add_damage_win()
-        // call when opacity changes has no effect, so redo it here.
-        if (w->opacity != opacity_old)
-          add_damage_win(ps, w);
-      }
 
       // Calculate frame_opacity
       {
@@ -1164,6 +1161,8 @@ paint_preprocess(session_t *ps, win *list) {
         else
           w->frame_opacity = 0.0;
 
+        // Destroy all reg_ignore above when frame opaque state changes on
+        // SOLID mode
         if (w->to_paint && WMODE_SOLID == mode_old
             && (0.0 == frame_opacity_old) != (0.0 == w->frame_opacity))
           ps->reg_ignore_expire = true;
@@ -1174,23 +1173,17 @@ paint_preprocess(session_t *ps, win *list) {
         w->shadow_opacity = ps->o.shadow_opacity * w->frame_opacity;
       else
         w->shadow_opacity = ps->o.shadow_opacity * get_opacity_percent(w);
-
-      // Rebuild shadow if necessary
-      if (w->flags & WFLAG_SIZE_CHANGE) {
-        free_paint(ps, &w->shadow_paint);
-      }
-
-      if (w->shadow && !paint_isvalid(ps, &w->shadow_paint))
-        win_build_shadow(ps, w, 1);
     }
 
+    // Add window to damaged area if its painting status changes
+    // or opacity changes
+    if (to_paint != w->to_paint || w->opacity != opacity_old)
+      add_damage_win(ps, w);
+
+    // Destroy all reg_ignore above when window mode changes
     if ((to_paint && WMODE_SOLID == w->mode)
         != (w->to_paint && WMODE_SOLID == mode_old))
       ps->reg_ignore_expire = true;
-
-    // Add window to damaged area if its painting status changes
-    if (to_paint != w->to_paint)
-      add_damage_win(ps, w);
 
     if (to_paint) {
       // Generate ignore region for painting to reduce GPU load
@@ -1264,6 +1257,10 @@ paint_preprocess(session_t *ps, win *list) {
   if (UNSET != ps->o.redirected_force)
     unredir_possible = !ps->o.redirected_force;
 
+  // If there's no window to paint, and the screen isn't redirected,
+  // don't redirect it.
+  if (ps->o.unredir_if_possible && is_highest && !ps->redirected)
+    unredir_possible = true;
   if (unredir_possible) {
     if (ps->redirected) {
       if (!ps->o.unredir_if_possible_delay || ps->tmout_unredir_hit)
@@ -1785,6 +1782,10 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   for (win *w = t; w; w = w->prev_trans) {
     // Painting shadow
     if (w->shadow) {
+      // Lazy shadow building
+      if (!paint_isvalid(ps, &w->shadow_paint))
+        win_build_shadow(ps, w, 1);
+
       // Shadow is to be painted based on the ignore region of current
       // window
       if (w->reg_ignore) {
@@ -2050,6 +2051,13 @@ wid_get_prop_wintype(session_t *ps, Window wid) {
 
 static void
 map_win(session_t *ps, Window id) {
+  // Unmap overlay window if it got mapped but we are currently not
+  // in redirected state.
+  if (ps->overlay && id == ps->overlay && !ps->redirected) {
+    XUnmapWindow(ps->dpy, ps->overlay);
+    XFlush(ps->dpy);
+  }
+
   win *w = find_win(ps, id);
 
   // Don't care about window mapping if it's an InputOnly window
@@ -2831,14 +2839,13 @@ add_win(session_t *ps, Window id, Window prev) {
   assert(IsViewable == map_state || IsUnmapped == map_state);
   new->a.map_state = IsUnmapped;
 
-  // Get window picture format
-  if (InputOutput == new->a.class)
+  if (InputOutput == new->a.class) {
+       // Get window picture format
     new->pictfmt = XRenderFindVisualFormat(ps->dpy, new->a.visual);
 
-  // Create Damage for window
-  if (InputOutput == new->a.class) {
-    set_ignore_next(ps);
-    new->damage = XDamageCreate(ps->dpy, id, XDamageReportNonEmpty);
+       // Create Damage for window
+       set_ignore_next(ps);
+       new->damage = XDamageCreate(ps->dpy, id, XDamageReportNonEmpty);
   }
 
   calc_win_size(ps, new);
@@ -6097,6 +6104,11 @@ init_overlay(session_t *ps) {
     // Retrieve DamageNotify on root window if we are painting on an
     // overlay
     // root_damage = XDamageCreate(ps->dpy, root, XDamageReportNonEmpty);
+
+    // Unmap overlay, firstly. But this typically does not work because
+    // the window isn't created yet.
+    // XUnmapWindow(ps->dpy, ps->overlay);
+    // XFlush(ps->dpy);
   }
   else {
     fprintf(stderr, "Cannot get X Composite overlay window. Falling "
@@ -6371,6 +6383,9 @@ tmout_unredir_callback(session_t *ps, timeout_t *tmout) {
  */
 static bool
 mainloop(session_t *ps) {
+  // Don't miss timeouts even when we have a LOT of other events!
+  timeout_run(ps);
+
   // Process existing events
   // Sometimes poll() returns 1 but no events are actually read,
   // causing XNextEvent() to block, I have no idea what's wrong, so we
@@ -6443,8 +6458,6 @@ mainloop(session_t *ps) {
   fds_poll(ps, ptv);
   free(ptv);
   ptv = NULL;
-
-  timeout_run(ps);
 
   return true;
 }
@@ -6732,6 +6745,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     | ExposureMask
     | StructureNotifyMask
     | PropertyChangeMask);
+  XFlush(ps->dpy);
 
   ps->root_width = DisplayWidth(ps->dpy, ps->scr);
   ps->root_height = DisplayHeight(ps->dpy, ps->scr);
