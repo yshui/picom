@@ -5390,15 +5390,15 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     ps->o.wintype_opacity[i] = 1.0;
   }
 
+  // Enforce LC_NUMERIC locale "C" here to make sure dots are recognized
+  // instead of commas in atof().
+  setlocale(LC_NUMERIC, "C");
+
 #ifdef CONFIG_LIBCONFIG
   parse_config(ps, &cfgtmp);
 #endif
 
   // Parse commandline arguments. Range checking will be done later.
-
-  // Enforce LC_NUMERIC locale "C" here to make sure dots are recognized
-  // instead of commas in atof().
-  setlocale(LC_NUMERIC, "C");
 
   optind = 1;
   while (-1 !=
