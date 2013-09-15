@@ -2587,6 +2587,31 @@ calc_shadow_geometry(session_t *ps, win *w) {
 }
 
 /**
+ * Update window type.
+ */
+static void
+win_upd_wintype(session_t *ps, win *w) {
+  const wintype_t wtype_old = w->window_type;
+
+  // Detect window type here
+  w->window_type = wid_get_prop_wintype(ps, w->client_win);
+
+  // Conform to EWMH standard, if _NET_WM_WINDOW_TYPE is not present, take
+  // override-redirect windows or windows without WM_TRANSIENT_FOR as
+  // _NET_WM_WINDOW_TYPE_NORMAL, otherwise as _NET_WM_WINDOW_TYPE_DIALOG.
+  if (WINTYPE_UNKNOWN == w->window_type) {
+    if (w->a.override_redirect
+        || !wid_has_prop(ps, w->client_win, ps->atom_transient))
+      w->window_type = WINTYPE_NORMAL;
+    else
+      w->window_type = WINTYPE_DIALOG;
+  }
+
+  if (w->window_type != wtype_old)
+    win_on_wtype_change(ps, w);
+}
+
+/**
  * Mark a window as the client window of another.
  *
  * @param ps current session
@@ -2608,32 +2633,11 @@ win_mark_client(session_t *ps, win *w, Window client) {
   // Make sure the XSelectInput() requests are sent
   XSync(ps->dpy, False);
 
-  // Get frame widths if needed
-  if (ps->o.frame_opacity) {
+  win_upd_wintype(ps, w);
+
+  // Get frame widths. The window is in damaged area already.
+  if (ps->o.frame_opacity)
     get_frame_extents(ps, w, client);
-  }
-
-  {
-    wintype_t wtype_old = w->window_type;
-
-    // Detect window type here
-    if (WINTYPE_UNKNOWN == w->window_type)
-      w->window_type = wid_get_prop_wintype(ps, w->client_win);
-
-    // Conform to EWMH standard, if _NET_WM_WINDOW_TYPE is not present, take
-    // override-redirect windows or windows without WM_TRANSIENT_FOR as
-    // _NET_WM_WINDOW_TYPE_NORMAL, otherwise as _NET_WM_WINDOW_TYPE_DIALOG.
-    if (WINTYPE_UNKNOWN == w->window_type) {
-      if (w->a.override_redirect
-          || !wid_has_prop(ps, client, ps->atom_transient))
-        w->window_type = WINTYPE_NORMAL;
-      else
-        w->window_type = WINTYPE_DIALOG;
-    }
-
-    if (w->window_type != wtype_old)
-      win_on_wtype_change(ps, w);
-  }
 
   // Get window group
   if (ps->o.track_leader)
@@ -4025,6 +4029,14 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
         win_mark_client(ps, w_top, ev->window);
       }
     }
+  }
+
+  // If _NET_WM_WINDOW_TYPE changes... God knows why this would happen, but
+  // there are always some stupid applications. (#144)
+  if (ev->atom == ps->atom_win_type) {
+    win *w = NULL;
+    if ((w = find_toplevel(ps, ev->window)))
+      win_upd_wintype(ps, w);
   }
 
   // If _NET_WM_OPACITY changes

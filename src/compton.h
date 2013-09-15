@@ -804,6 +804,9 @@ static void
 calc_shadow_geometry(session_t *ps, win *w);
 
 static void
+win_upd_wintype(session_t *ps, win *w);
+
+static void
 win_mark_client(session_t *ps, win *w, Window client);
 
 static void
