@@ -11,6 +11,7 @@
 #include "common.h"
 
 #include <ctype.h>
+#include <locale.h>
 
 #ifdef DEBUG_GLX_ERR
 

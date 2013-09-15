@@ -225,6 +225,11 @@ glx_init_blur(session_t *ps) {
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   {
+    char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
+    // Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
+    // Thanks to hiciu for reporting.
+    setlocale(LC_NUMERIC, "C");
+
     static const char *FRAG_SHADER_BLUR_PREFIX =
       "#version 110\n"
       "%s"
@@ -331,6 +336,10 @@ glx_init_blur(session_t *ps) {
 #undef P_GET_UNIFM_LOC
     }
     free(extension);
+
+    // Restore LC_NUMERIC
+    setlocale(LC_NUMERIC, lc_numeric_old);
+    free(lc_numeric_old);
   }
 
 
