@@ -954,8 +954,6 @@ typedef struct _win {
   bool focused;
   /// Override value of window focus state. Set by D-Bus method calls.
   switch_t focused_force;
-  /// Whether the window is actually focused.
-  bool focused_real;
 
   // Blacklist related members
   /// Name of the window.
@@ -1696,25 +1694,29 @@ find_toplevel(session_t *ps, Window id) {
 }
 
 /**
+ * Check if a window is really focused.
+ */
+static inline bool
+win_is_focused_real(session_t *ps, const win *w) {
+  return IsViewable == w->a.map_state && ps->active_win == w;
+}
+
+/**
  * Find out the currently focused window.
  *
  * @return struct _win object of the found window, NULL if not found
  */
 static inline win *
 find_focused(session_t *ps) {
-  if (!ps->o.track_focus)
-    return NULL;
+  if (!ps->o.track_focus) return NULL;
 
-  for (win *w = ps->list; w; w = w->next) {
-    if (w->focused_real && !w->destroyed)
-      return w;
-  }
-
+  if (ps->active_win && win_is_focused_real(ps, ps->active_win))
+    return ps->active_win;
   return NULL;
 }
 
 /**
- * Copies a region
+ * Copies a region.
  */
 static inline XserverRegion
 copy_region(const session_t *ps, XserverRegion oldregion) {

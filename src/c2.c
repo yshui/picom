@@ -1055,7 +1055,7 @@ c2_match_once_leaf(session_t *ps, win *w, const c2_l_t *pleaf,
             case C2_L_PFULLSCREEN: tgt = win_is_fullscreen(ps, w); break;
             case C2_L_POVREDIR: tgt = w->a.override_redirect;   break;
             case C2_L_PARGB:    tgt = (WMODE_ARGB == w->mode);  break;
-            case C2_L_PFOCUSED: tgt = w->focused_real;          break;
+            case C2_L_PFOCUSED: tgt = win_is_focused_real(ps, w); break;
             case C2_L_PWMWIN:   tgt = w->wmwin;                 break;
             case C2_L_PCLIENT:  tgt = w->client_win;            break;
             case C2_L_PLEADER:  tgt = w->leader;                break;

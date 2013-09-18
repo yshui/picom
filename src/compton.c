@@ -776,19 +776,12 @@ recheck_focus(session_t *ps) {
   // opacity on it
   Window wid = 0;
   int revert_to;
-  win *w = NULL;
 
   XGetInputFocus(ps->dpy, &wid, &revert_to);
 
-  if (!wid || PointerRoot == wid)
-    return NULL;
+  win *w = find_win_all(ps, wid);
 
-  // Fallback to the old method if find_toplevel() fails
-  if (!(w = find_toplevel(ps, wid))) {
-    w = find_toplevel2(ps, wid);
-  }
-
-  // And we set the focus state and opacity here
+  // And we set the focus state here
   if (w) {
     win_set_focused(ps, w, true);
     return w;
@@ -2066,18 +2059,11 @@ map_win(session_t *ps, Window id) {
       || IsViewable == w->a.map_state)
     return;
 
-  assert(!w->focused_real);
+  assert(!win_is_focused_real(ps, w));
 
   w->a.map_state = IsViewable;
 
   cxinerama_win_upd_scr(ps, w);
-
-  // Set focused to false
-  bool focused_real = false;
-  if (ps->o.track_focus && ps->o.use_ewmh_active_win
-      && w == ps->active_win)
-    focused_real = true;
-  win_set_focused(ps, w, focused_real);
 
   // Call XSelectInput() before reading properties so that no property
   // changes are lost
@@ -2113,14 +2099,10 @@ map_win(session_t *ps, Window id) {
   // Detect if the window is shaped or has rounded corners
   win_update_shape_raw(ps, w);
 
-  // Occasionally compton does not seem able to get a FocusIn event from
-  // a window just mapped. I suspect it's a timing issue again when the
-  // XSelectInput() is called too late. We have to recheck the focused
-  // window here. It makes no sense if we are using EWMH
-  // _NET_ACTIVE_WINDOW.
-  if (ps->o.track_focus && !ps->o.use_ewmh_active_win) {
+  // FocusIn/Out may be ignored when the window is unmapped, so we must
+  // recheck focus here
+  if (ps->o.track_focus)
     recheck_focus(ps);
-  }
 
   // Update window focus state
   win_update_focused(ps, w);
@@ -2296,7 +2278,7 @@ calc_opacity(session_t *ps, win *w) {
     }
 
     // Respect active_opacity only when the window is physically focused
-    if (OPAQUE == opacity && ps->o.active_opacity && w->focused_real)
+    if (OPAQUE == opacity && ps->o.active_opacity && win_is_focused_real(ps, w))
       opacity = ps->o.active_opacity;
   }
 
@@ -2752,7 +2734,6 @@ add_win(session_t *ps, Window id, Window prev) {
 
     .focused = false,
     .focused_force = UNSET,
-    .focused_real = false,
 
     .name = NULL,
     .class_instance = NULL,
@@ -3270,7 +3251,7 @@ win_update_focused(session_t *ps, win *w) {
     w->focused = w->focused_force;
   }
   else {
-    w->focused = w->focused_real;
+    w->focused = win_is_focused_real(ps, w);
 
     // Use wintype_focus, and treat WM windows and override-redirected
     // windows specially
@@ -3302,51 +3283,68 @@ win_set_focused(session_t *ps, win *w, bool focused) {
   if (IsUnmapped == w->a.map_state)
     return;
 
-  if (w->focused_real != focused) {
-    w->focused_real = focused;
+  if (win_is_focused_real(ps, w) == focused) return;
 
-    // If window grouping detection is enabled
-    if (ps->o.track_leader) {
-      Window leader = win_get_leader(ps, w);
+  if (focused) {
+    if (ps->active_win)
+      win_set_focused(ps, ps->active_win, false);
+    ps->active_win = w;
+  }
+  else if (w == ps->active_win)
+    ps->active_win = NULL;
 
-      // If the window gets focused, replace the old active_leader
-      if (w->focused_real && leader != ps->active_leader) {
-        Window active_leader_old = ps->active_leader;
+  assert(win_is_focused_real(ps, w) == focused);
 
-        ps->active_leader = leader;
+  win_on_focus_change(ps, w);
+}
 
-        group_update_focused(ps, active_leader_old);
-        group_update_focused(ps, leader);
-      }
-      // If the group get unfocused, remove it from active_leader
-      else if (!w->focused_real && leader && leader == ps->active_leader
-          && !group_is_focused(ps, leader)) {
-        ps->active_leader = None;
-        group_update_focused(ps, leader);
-      }
+/**
+ * Handle window focus change.
+ */
+static void
+win_on_focus_change(session_t *ps, win *w) {
+  // If window grouping detection is enabled
+  if (ps->o.track_leader) {
+    Window leader = win_get_leader(ps, w);
 
-      // The window itself must be updated anyway
-      win_update_focused(ps, w);
+    // If the window gets focused, replace the old active_leader
+    if (win_is_focused_real(ps, w) && leader != ps->active_leader) {
+      Window active_leader_old = ps->active_leader;
+
+      ps->active_leader = leader;
+
+      group_update_focused(ps, active_leader_old);
+      group_update_focused(ps, leader);
     }
-    // Otherwise, only update the window itself
-    else {
-      win_update_focused(ps, w);
+    // If the group get unfocused, remove it from active_leader
+    else if (!win_is_focused_real(ps, w) && leader && leader == ps->active_leader
+        && !group_is_focused(ps, leader)) {
+      ps->active_leader = None;
+      group_update_focused(ps, leader);
     }
 
-    // Update everything related to conditions
-    win_on_factor_change(ps, w);
+    // The window itself must be updated anyway
+    win_update_focused(ps, w);
+  }
+  // Otherwise, only update the window itself
+  else {
+    win_update_focused(ps, w);
+  }
+
+  // Update everything related to conditions
+  win_on_factor_change(ps, w);
 
 #ifdef CONFIG_DBUS
-    // Send D-Bus signal
-    if (ps->o.dbus) {
-      if (w->focused_real)
-        cdbus_ev_win_focusin(ps, w);
-      else
-        cdbus_ev_win_focusout(ps, w);
-    }
-#endif
+  // Send D-Bus signal
+  if (ps->o.dbus) {
+    if (win_is_focused_real(ps, w))
+      cdbus_ev_win_focusin(ps, w);
+    else
+      cdbus_ev_win_focusout(ps, w);
   }
+#endif
 }
+
 /**
  * Update leader of a window.
  */
@@ -3386,7 +3384,7 @@ win_set_leader(session_t *ps, win *w, Window nleader) {
     // Update the old and new window group and active_leader if the window
     // could affect their state.
     Window cache_leader = win_get_leader(ps, w);
-    if (w->focused_real && cache_leader_old != cache_leader) {
+    if (win_is_focused_real(ps, w) && cache_leader_old != cache_leader) {
       ps->active_leader = cache_leader;
 
       group_update_focused(ps, cache_leader_old);
@@ -3808,11 +3806,10 @@ ev_focus_report(XFocusChangeEvent* ev) {
  */
 inline static bool
 ev_focus_accept(XFocusChangeEvent *ev) {
-  return ev->detail == NotifyNonlinear
-    || ev->detail == NotifyNonlinearVirtual;
+  return NotifyNormal == ev->mode || NotifyUngrab == ev->mode;
 }
 
-inline static void
+static inline void
 ev_focus_in(session_t *ps, XFocusChangeEvent *ev) {
 #ifdef DEBUG_EVENTS
   ev_focus_report(ev);
@@ -3821,12 +3818,9 @@ ev_focus_in(session_t *ps, XFocusChangeEvent *ev) {
   if (!ev_focus_accept(ev))
     return;
 
-  win *w = find_win(ps, ev->window);
-
-  // To deal with events sent from windows just destroyed
-  if (!w) return;
-
-  win_set_focused(ps, w, true);
+  win *w = find_win_all(ps, ev->window);
+  if (w)
+    win_set_focused(ps, w, true);
 }
 
 inline static void
@@ -3838,12 +3832,9 @@ ev_focus_out(session_t *ps, XFocusChangeEvent *ev) {
   if (!ev_focus_accept(ev))
     return;
 
-  win *w = find_win(ps, ev->window);
-
-  // To deal with events sent from windows just destroyed
-  if (!w) return;
-
-  win_set_focused(ps, w, false);
+  win *w = find_win_all(ps, ev->window);
+  if (w)
+    win_set_focused(ps, w, false);
 }
 
 inline static void
@@ -3965,21 +3956,11 @@ ev_expose(session_t *ps, XExposeEvent *ev) {
 static void
 update_ewmh_active_win(session_t *ps) {
   // Search for the window
-  Window wid =
-    wid_get_prop_window(ps, ps->root, ps->atom_ewmh_active_win);
-  win *w = NULL;
+  Window wid = wid_get_prop_window(ps, ps->root, ps->atom_ewmh_active_win);
+  win *w = find_win_all(ps, wid);
 
-  if (wid && !(w = find_toplevel(ps, wid)))
-    if (!(w = find_win(ps, wid)))
-      w = find_toplevel2(ps, wid);
-
-  // Mark the window focused
-  if (w) {
-    if (ps->active_win && w != ps->active_win)
-      win_set_focused(ps, ps->active_win, false);
-    ps->active_win = w;
-    win_set_focused(ps, w, true);
-  }
+  // Mark the window focused. No need to unfocus the previous one.
+  if (w) win_set_focused(ps, w, true);
 }
 
 inline static void
