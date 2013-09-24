@@ -5192,6 +5192,9 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // --unredir-if-possible
   lcfg_lookup_bool(&cfg, "unredir-if-possible",
       &ps->o.unredir_if_possible);
+  // --unredir-if-possible-delay
+  if (lcfg_lookup_int(&cfg, "unredir-if-possible-delay", &ival))
+    ps->o.unredir_if_possible_delay = ival;
   // --inactive-dim-fixed
   lcfg_lookup_bool(&cfg, "inactive-dim-fixed", &ps->o.inactive_dim_fixed);
   // --detect-transient
@@ -5211,6 +5214,8 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   parse_cfg_condlst(ps, &cfg, &ps->o.blur_background_blacklist, "blur-background-exclude");
   // --opacity-rule
   parse_cfg_condlst(ps, &cfg, &ps->o.opacity_rules, "opacity-rule");
+  // --unredir-if-possible-exclude
+  parse_cfg_condlst(ps, &cfg, &ps->o.unredir_if_possible_blacklist, "unredir-if-possible-exclude");
   // --blur-background
   lcfg_lookup_bool(&cfg, "blur-background", &ps->o.blur_background);
   // --blur-background-frame
