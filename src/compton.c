@@ -5868,7 +5868,7 @@ vsync_opengl_init(session_t *ps) {
     return false;
 
   // Get video sync functions
-  if (!ps->glXWaitVideoSyncSGI)
+  if (!ps->glXGetVideoSyncSGI)
     ps->glXGetVideoSyncSGI = (f_GetVideoSync)
       glXGetProcAddress((const GLubyte *) "glXGetVideoSyncSGI");
   if (!ps->glXWaitVideoSyncSGI)
