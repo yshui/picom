@@ -2469,7 +2469,7 @@ static void
 win_update_opacity_rule(session_t *ps, win *w) {
   // If long is 32-bit, unfortunately there's no way could we express "unset",
   // so we just entirely don't distinguish "unset" and OPAQUE
-  long opacity = OPAQUE;
+  opacity_t opacity = OPAQUE;
   void *val = NULL;
   if (c2_matchd(ps, w, ps->o.opacity_rules, &w->cache_oparule, &val))
     opacity = ((double) (long) val) / 100.0 * OPAQUE;
@@ -5029,13 +5029,32 @@ parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
     // Parse an array of options
     if (config_setting_is_array(setting)) {
       int i = config_setting_length(setting);
-      while (i--) {
+      while (i--)
         condlst_add(ps, pcondlst, config_setting_get_string_elem(setting, i));
-      }
     }
     // Treat it as a single pattern if it's a string
     else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
       condlst_add(ps, pcondlst, config_setting_get_string(setting));
+    }
+  }
+}
+
+/**
+ * Parse an opacity rule list in configuration file.
+ */
+static inline void
+parse_cfg_condlst_opct(session_t *ps, const config_t *pcfg, const char *name) {
+  config_setting_t *setting = config_lookup(pcfg, name);
+  if (setting) {
+    // Parse an array of options
+    if (config_setting_is_array(setting)) {
+      int i = config_setting_length(setting);
+      while (i--)
+        parse_rule_opacity(ps, config_setting_get_string_elem(setting, i));
+    }
+    // Treat it as a single pattern if it's a string
+    else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
+      parse_rule_opacity(ps, config_setting_get_string(setting));
     }
   }
 }
@@ -5213,7 +5232,7 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // --blur-background-exclude
   parse_cfg_condlst(ps, &cfg, &ps->o.blur_background_blacklist, "blur-background-exclude");
   // --opacity-rule
-  parse_cfg_condlst(ps, &cfg, &ps->o.opacity_rules, "opacity-rule");
+  parse_cfg_condlst_opct(ps, &cfg, "opacity-rule");
   // --unredir-if-possible-exclude
   parse_cfg_condlst(ps, &cfg, &ps->o.unredir_if_possible_blacklist, "unredir-if-possible-exclude");
   // --blur-background

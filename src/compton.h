@@ -476,9 +476,10 @@ win_has_frame(const win *w) {
 }
 
 static inline void
-wid_set_opacity_prop(session_t *ps, Window wid, long val) {
+wid_set_opacity_prop(session_t *ps, Window wid, opacity_t val) {
+  const unsigned long v = val;
   XChangeProperty(ps->dpy, wid, ps->atom_opacity, XA_CARDINAL, 32,
-      PropModeReplace, (unsigned char *) &val, 1);
+      PropModeReplace, (unsigned char *) &v, 1);
 }
 
 static inline void
