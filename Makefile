@@ -49,7 +49,7 @@ ifeq "$(NO_VSYNC_DRM)" ""
   CFG += -DCONFIG_VSYNC_DRM
 endif
 
-# ==== OpenGL VSync ====
+# ==== OpenGL ====
 ifeq "$(NO_VSYNC_OPENGL)" ""
   CFG += -DCONFIG_VSYNC_OPENGL
   # -lGL must precede some other libraries, or it segfaults on FreeBSD (#74)

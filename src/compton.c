@@ -781,6 +781,12 @@ recheck_focus(session_t *ps) {
 
   win *w = find_win_all(ps, wid);
 
+#ifdef DEBUG_EVENTS
+  print_timestamp(ps);
+  printf_dbgf("(): %#010lx (%#010lx \"%s\") focused.\n", wid,
+      (w ? w->id: None), (w ? w->name: NULL));
+#endif
+
   // And we set the focus state here
   if (w) {
     win_set_focused(ps, w, true);
@@ -3815,12 +3821,7 @@ ev_focus_in(session_t *ps, XFocusChangeEvent *ev) {
   ev_focus_report(ev);
 #endif
 
-  if (!ev_focus_accept(ev))
-    return;
-
-  win *w = find_win_all(ps, ev->window);
-  if (w)
-    win_set_focused(ps, w, true);
+  recheck_focus(ps);
 }
 
 inline static void
@@ -3829,12 +3830,7 @@ ev_focus_out(session_t *ps, XFocusChangeEvent *ev) {
   ev_focus_report(ev);
 #endif
 
-  if (!ev_focus_accept(ev))
-    return;
-
-  win *w = find_win_all(ps, ev->window);
-  if (w)
-    win_set_focused(ps, w, false);
+  recheck_focus(ps);
 }
 
 inline static void
