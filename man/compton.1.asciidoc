@@ -86,6 +86,9 @@ OPTIONS
 *--config* 'PATH'::
 	Look for configuration file at the path. See *CONFIGURATION FILES* section below for where compton looks for a configuration file by default.
 
+*--write-pid-path* 'PATH'::
+	Write process ID to a file.
+
 *--shadow-red* 'VALUE'::
 	Red color value of shadow (0.0 - 1.0, defaults to 0).
 

@@ -1571,7 +1571,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
     }
   }
 
-  double dopacity = get_opacity_percent(w);;
+  double dopacity = get_opacity_percent(w);
 
   if (!w->frame_opacity) {
     win_render(ps, w, 0, 0, wid, hei, dopacity, reg_paint, pcache_reg, pict);
@@ -4309,6 +4309,8 @@ usage(int ret) {
     "  Enable synchronous operation (for debugging).\n"
     "--config path\n"
     "  Look for configuration file at the path.\n"
+    "--write-pid-path path\n"
+    "  Write process ID to a file.\n"
     "--shadow-red value\n"
     "  Red color value of shadow (0.0 - 1.0, defaults to 0).\n"
     "--shadow-green value\n"
@@ -4584,7 +4586,7 @@ ostream_reopen(session_t *ps, const char *path) {
 /**
  * Fork program to background and disable all I/O streams.
  */
-static bool
+static inline bool
 fork_after(session_t *ps) {
   if (getppid() == 1)
     return true;
@@ -4625,6 +4627,26 @@ fork_after(session_t *ps) {
   success = ostream_reopen(ps, NULL);
 
   return success;
+}
+
+/**
+ * Write PID to a file.
+ */
+static inline bool
+write_pid(session_t *ps) {
+  if (!ps->o.write_pid_path)
+    return true;
+
+  FILE *f = fopen(ps->o.write_pid_path, "w");
+  if (unlikely(!f)) {
+    printf_errf("(): Failed to write PID to \"%s\".", ps->o.write_pid_path);
+    return false;
+  }
+
+  fprintf(f, "%ld\n", (long) getpid());
+  fclose(f);
+
+  return true;
 }
 
 /**
@@ -5360,6 +5382,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "xinerama-shadow-crop", no_argument, NULL, 307 },
     { "unredir-if-possible-exclude", required_argument, NULL, 308 },
     { "unredir-if-possible-delay", required_argument, NULL, 309 },
+    { "write-pid-path", required_argument, NULL, 310 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5603,6 +5626,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         condlst_add(ps, &ps->o.unredir_if_possible_blacklist, optarg);
         break;
       P_CASELONG(309, unredir_if_possible_delay);
+      case 310:
+        // --write-pid-path
+        ps->o.write_pid_path = mstrcpy(optarg);
+        break;
       default:
         usage(1);
         break;
@@ -6800,6 +6827,27 @@ session_init(session_t *ps_old, int argc, char **argv) {
     ps->shape_exists = true;
   }
 
+  // Build a safe representation of display name
+  {
+    char *display_repr = DisplayString(ps->dpy);
+    if (!display_repr)
+      display_repr = "unknown";
+    display_repr = mstrcpy(display_repr);
+
+    // Convert all special characters in display_repr name to underscore
+    {
+      char *pdisp = display_repr;
+
+      while (*pdisp) {
+        if (!isalnum(*pdisp))
+          *pdisp = '_';
+        ++pdisp;
+      }
+    }
+
+    ps->o.display_repr = display_repr;
+  }
+
   // Second pass
   get_cfg(ps, argc, argv, false);
 
@@ -6974,6 +7022,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
     }
   }
 
+  write_pid(ps);
+
   // Free the old session
   if (ps_old)
     free(ps_old);
@@ -7099,9 +7149,12 @@ session_destroy(session_t *ps) {
   free(ps->shadow_corner);
   free(ps->shadow_top);
   free(ps->gaussian_map);
-  free(ps->o.display);
-  free(ps->o.logpath);
+
   free(ps->o.config_file);
+  free(ps->o.write_pid_path);
+  free(ps->o.display);
+  free(ps->o.display_repr);
+  free(ps->o.logpath);
   for (int i = 0; i < MAX_BLUR_PASS; ++i) {
     free(ps->o.blur_kerns[i]);
     free(ps->blur_kerns_cache[i]);

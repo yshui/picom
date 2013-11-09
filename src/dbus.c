@@ -39,29 +39,9 @@ cdbus_init(session_t *ps) {
 
   // Request service name
   {
-    // Get display name
-    char *display = DisplayString(ps->dpy);
-    if (!display)
-      display = "unknown";
-    display = mstrcpy(display);
-
-    // Convert all special characters in display name to underscore
-    {
-      char *pdisp = display;
-
-      while (*pdisp) {
-        if (!isalnum(*pdisp))
-          *pdisp = '_';
-        ++pdisp;
-      }
-    }
-
     // Build service name
-    char *service = mstrjoin3(CDBUS_SERVICE_NAME, ".", display);
+    char *service = mstrjoin3(CDBUS_SERVICE_NAME, ".", ps->o.display_repr);
     ps->dbus_service = service;
-
-    free(display);
-    display = NULL;
 
     // Request for the name
     int ret = dbus_bus_request_name(ps->dbus_conn, service,
@@ -735,7 +715,13 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_win_get_do(class_instance, cdbus_reply_string);
   cdbus_m_win_get_do(class_general, cdbus_reply_string);
   cdbus_m_win_get_do(role, cdbus_reply_string);
+
   cdbus_m_win_get_do(opacity, cdbus_reply_uint32);
+  cdbus_m_win_get_do(opacity_tgt, cdbus_reply_uint32);
+  cdbus_m_win_get_do(opacity_prop, cdbus_reply_uint32);
+  cdbus_m_win_get_do(opacity_prop_client, cdbus_reply_uint32);
+  cdbus_m_win_get_do(opacity_set, cdbus_reply_uint32);
+
   cdbus_m_win_get_do(frame_opacity, cdbus_reply_double);
   cdbus_m_win_get_do(left_width, cdbus_reply_uint32);
   cdbus_m_win_get_do(right_width, cdbus_reply_uint32);
@@ -889,6 +875,18 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
     return true; \
   }
 
+  // version
+  if (!strcmp("version", target)) {
+    cdbus_reply_string(ps, msg, COMPTON_VERSION);
+    return true;
+  }
+
+  // pid
+  if (!strcmp("pid", target)) {
+    cdbus_reply_int32(ps, msg, getpid());
+    return true;
+  }
+
   // display
   if (!strcmp("display", target)) {
     cdbus_reply_string(ps, msg, DisplayString(ps->dpy));
@@ -896,6 +894,8 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   }
 
   cdbus_m_opts_get_do(config_file, cdbus_reply_string);
+  cdbus_m_opts_get_do(display_repr, cdbus_reply_string);
+  cdbus_m_opts_get_do(write_pid_path, cdbus_reply_string);
   cdbus_m_opts_get_do(mark_wmwin_focused, cdbus_reply_bool);
   cdbus_m_opts_get_do(mark_ovredir_focused, cdbus_reply_bool);
   cdbus_m_opts_get_do(fork_after_register, cdbus_reply_bool);

@@ -10,6 +10,8 @@
 
 #include "common.h"
 #include <ctype.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #define CDBUS_SERVICE_NAME      "com.github.chjj.compton"
 #define CDBUS_INTERFACE_NAME    CDBUS_SERVICE_NAME
