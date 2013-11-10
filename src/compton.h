@@ -337,9 +337,7 @@ isdamagenotify(session_t *ps, const XEvent *ev) {
  */
 static inline XTextProperty *
 make_text_prop(session_t *ps, char *str) {
-  XTextProperty *pprop = malloc(sizeof(XTextProperty));
-  if (!pprop)
-    printf_errfq(1, "(): Failed to allocate memory.");
+  XTextProperty *pprop = cmalloc(1, XTextProperty);
 
   if (XmbTextListToTextProperty(ps->dpy, &str, 1,  XStringStyle, pprop)) {
     cxfree(pprop->value);
@@ -348,6 +346,25 @@ make_text_prop(session_t *ps, char *str) {
   }
 
   return pprop;
+}
+
+
+/**
+ * Set a single-string text property on a window.
+ */
+static inline bool
+wid_set_text_prop(session_t *ps, Window wid, Atom prop_atom, char *str) {
+  XTextProperty *pprop = make_text_prop(ps, str);
+  if (!pprop) {
+    printf_errf("(\"%s\"): Failed to make text property.", str);
+    return false;
+  }
+
+  XSetTextProperty(ps->dpy, wid, pprop, prop_atom);
+  cxfree(pprop->value);
+  cxfree(pprop);
+
+  return true;
 }
 
 static void

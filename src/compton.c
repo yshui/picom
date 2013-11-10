@@ -4543,8 +4543,31 @@ register_cm(session_t *ps) {
   if (ps->redirected)
     XCompositeUnredirectWindow(ps->dpy, ps->reg_win, CompositeRedirectManual);
 
-  Xutf8SetWMProperties(ps->dpy, ps->reg_win, "xcompmgr", "xcompmgr",
-      NULL, 0, NULL, NULL, NULL);
+  {
+    XClassHint *h = XAllocClassHint();
+    if (h) {
+      h->res_name = "compton";
+      h->res_class = "xcompmgr";
+    }
+    Xutf8SetWMProperties(ps->dpy, ps->reg_win, "xcompmgr", "xcompmgr",
+        NULL, 0, NULL, NULL, h);
+    cxfree(h);
+  }
+
+  // Set _NET_WM_PID
+  {
+    long pid = getpid();
+    if (!XChangeProperty(ps->dpy, ps->reg_win,
+          get_atom(ps, "_NET_WM_PID"), XA_CARDINAL, 32, PropModeReplace,
+          (unsigned char *) &pid, 1)) {
+      printf_errf("(): Failed to set _NET_WM_PID.");
+    }
+  }
+
+  // Set COMPTON_VERSION
+  if (!wid_set_text_prop(ps, ps->reg_win, get_atom(ps, "COMPTON_VERSION"), COMPTON_VERSION)) {
+    printf_errf("(): Failed to set COMPTON_VERSION.");
+  }
 
   {
     unsigned len = strlen(REGISTER_PROP) + 2;
