@@ -219,7 +219,7 @@ paint_isvalid(session_t *ps, const paint_t *ppaint) {
   if (!ppaint)
     return false;
 
-  if (BKEND_XRENDER == ps->o.backend && !ppaint->pict)
+  if (bkend_use_xrender(ps) && !ppaint->pict)
     return false;
 
 #ifdef CONFIG_VSYNC_OPENGL
@@ -229,22 +229,29 @@ paint_isvalid(session_t *ps, const paint_t *ppaint) {
 
   return true;
 }
+
 /**
  * Bind texture in paint_t if we are using GLX backend.
  */
 static inline bool
-paint_bind_tex(session_t *ps, paint_t *ppaint,
+paint_bind_tex_real(session_t *ps, paint_t *ppaint,
     unsigned wid, unsigned hei, unsigned depth, bool force) {
 #ifdef CONFIG_VSYNC_OPENGL
-  if (BKEND_GLX == ps->o.backend) {
-    if (!ppaint->pixmap)
-      return false;
+  if (!ppaint->pixmap)
+    return false;
 
-    if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))
-      return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, depth);
-  }
+  if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))
+    return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, depth);
 #endif
 
+  return true;
+}
+
+static inline bool
+paint_bind_tex(session_t *ps, paint_t *ppaint,
+    unsigned wid, unsigned hei, unsigned depth, bool force) {
+  if (BKEND_GLX == ps->o.backend)
+    return paint_bind_tex_real(ps, ppaint, wid, hei, depth, force);
   return true;
 }
 
@@ -679,7 +686,8 @@ static inline void
 set_tgt_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
   switch (ps->o.backend) {
     case BKEND_XRENDER:
-      XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer, 0, 0, reg);
+    case BKEND_XR_GLX_HYBIRD:
+      XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer.pict, 0, 0, reg);
       break;
 #ifdef CONFIG_VSYNC_OPENGL
     case BKEND_GLX:

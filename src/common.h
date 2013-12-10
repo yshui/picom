@@ -323,6 +323,7 @@ typedef enum {
 enum backend {
   BKEND_XRENDER,
   BKEND_GLX,
+  BKEND_XR_GLX_HYBIRD,
   NUM_BKEND,
 };
 
@@ -645,7 +646,7 @@ typedef struct {
   /// A Picture acting as the painting target.
   Picture tgt_picture;
   /// Temporary buffer to paint to before sending to display.
-  Picture tgt_buffer;
+  paint_t tgt_buffer;
   /// DBE back buffer for root window. Used in DBE painting mode.
   XdbeBackBuffer root_dbe;
   /// Window ID of the window we register as a symbol.
@@ -1712,6 +1713,25 @@ find_toplevel(session_t *ps, Window id) {
   return NULL;
 }
 
+
+/**
+ * Check if current backend uses XRender for rendering.
+ */
+static inline bool
+bkend_use_xrender(session_t *ps) {
+  return BKEND_XRENDER == ps->o.backend
+    || BKEND_XR_GLX_HYBIRD == ps->o.backend;
+}
+
+/**
+ * Check if current backend uses GLX.
+ */
+static inline bool
+bkend_use_glx(session_t *ps) {
+  return BKEND_GLX == ps->o.backend
+    || BKEND_XR_GLX_HYBIRD == ps->o.backend;
+}
+
 /**
  * Check if a window is really focused.
  */
@@ -2026,7 +2046,7 @@ free_texture(session_t *ps, glx_texture_t **pptex) {
 static inline void
 glx_mark_(session_t *ps, const char *func, XID xid, bool start) {
 #ifdef DEBUG_GLX_MARK
-  if (BKEND_GLX == ps->o.backend && ps->glStringMarkerGREMEDY) {
+  if (bkend_use_glx(ps) && ps->glStringMarkerGREMEDY) {
     if (!func) func = "(unknown)";
     const char *postfix = (start ? " (start)": " (end)");
     char *str = malloc((strlen(func) + 12 + 2
@@ -2047,7 +2067,7 @@ glx_mark_(session_t *ps, const char *func, XID xid, bool start) {
 static inline void
 glx_mark_frame(session_t *ps) {
 #ifdef DEBUG_GLX_MARK
-  if (BKEND_GLX == ps->o.backend && ps->glFrameTerminatorGREMEDY)
+  if (bkend_use_glx(ps) && ps->glFrameTerminatorGREMEDY)
     ps->glFrameTerminatorGREMEDY();
 #endif
 }

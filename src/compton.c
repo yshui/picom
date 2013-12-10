@@ -47,6 +47,7 @@ const char * const VSYNC_STRS[NUM_VSYNC + 1] = {
 const char * const BACKEND_STRS[NUM_BKEND + 1] = {
   "xrender",      // BKEND_XRENDER
   "glx",          // BKEND_GLX
+  "xr_glx_hybird",// BKEND_XR_GLX_HYBIRD
   NULL
 };
 
@@ -1404,6 +1405,7 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
 
   switch (ps->o.backend) {
     case BKEND_XRENDER:
+    case BKEND_XR_GLX_HYBIRD:
       {
         // Normalize blur kernels
         for (int i = 0; i < MAX_BLUR_PASS; ++i) {
@@ -1476,12 +1478,13 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     XserverRegion reg_paint, const reg_data_t *pcache_reg) {
   switch (ps->o.backend) {
     case BKEND_XRENDER:
+    case BKEND_XR_GLX_HYBIRD:
       {
         Picture alpha_pict = get_alpha_pict_d(ps, opacity);
         if (alpha_pict != ps->alpha_picts[0]) {
           int op = ((!argb && !alpha_pict) ? PictOpSrc: PictOpOver);
           XRenderComposite(ps->dpy, op, pict, alpha_pict,
-              ps->tgt_buffer, x, y, 0, 0, dx, dy, wid, hei);
+              ps->tgt_buffer.pict, x, y, 0, 0, dx, dy, wid, hei);
         }
         break;
       }
@@ -1511,7 +1514,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
     w->paint.pixmap = XCompositeNameWindowPixmap(ps->dpy, w->id);
   }
   // XRender: Build picture
-  if (BKEND_XRENDER == ps->o.backend && !w->paint.pict) {
+  if (bkend_use_xrender(ps) && !w->paint.pict) {
     Drawable draw = w->paint.pixmap;
     if (!draw)
       draw = w->id;
@@ -1547,7 +1550,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
   Picture pict = w->paint.pict;
 
   // Invert window color, if required
-  if (BKEND_XRENDER == ps->o.backend && w->invert_color) {
+  if (bkend_use_xrender(ps) && w->invert_color) {
     Picture newpict = xr_build_picture(ps, wid, hei, w->pictfmt);
     if (newpict) {
       // Apply clipping region to save some CPU
@@ -1571,7 +1574,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
     }
   }
 
-  double dopacity = get_opacity_percent(w);
+  const double dopacity = get_opacity_percent(w);
 
   if (!w->frame_opacity) {
     win_render(ps, w, 0, 0, wid, hei, dopacity, reg_paint, pcache_reg, pict);
@@ -1640,6 +1643,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 
     switch (ps->o.backend) {
       case BKEND_XRENDER:
+      case BKEND_XR_GLX_HYBIRD:
         {
           unsigned short cval = 0xffff * dim_opacity;
 
@@ -1655,8 +1659,8 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
             .height = hei,
           };
 
-          XRenderFillRectangles(ps->dpy, PictOpOver, ps->tgt_buffer, &color,
-              &rect, 1);
+          XRenderFillRectangles(ps->dpy, PictOpOver, ps->tgt_buffer.pict,
+              &color, &rect, 1);
         }
         break;
 #ifdef CONFIG_VSYNC_OPENGL
@@ -1702,7 +1706,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   XserverRegion reg_paint = None, reg_tmp = None, reg_tmp2 = None;
 
 #ifdef CONFIG_VSYNC_OPENGL
-  if (BKEND_GLX == ps->o.backend) {
+  if (bkend_use_glx(ps)) {
     glx_paint_pre(ps, &region);
   }
 #endif
@@ -1717,27 +1721,29 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 
 #ifdef MONITOR_REPAINT
   // Note: MONITOR_REPAINT cannot work with DBE right now.
-  ps->tgt_buffer = ps->tgt_picture;
+  // Picture old_tgt_buffer = ps->tgt_buffer.pict;
+  ps->tgt_buffer.pict = ps->tgt_picture;
 #else
-  if (!ps->tgt_buffer) {
+  if (!paint_isvalid(ps, &ps->tgt_buffer)) {
     // DBE painting mode: Directly paint to a Picture of the back buffer
-    if (ps->o.dbe) {
-      ps->tgt_buffer = XRenderCreatePicture(ps->dpy, ps->root_dbe,
+    if (BKEND_XRENDER == ps->o.backend && ps->o.dbe) {
+      ps->tgt_buffer.pict = XRenderCreatePicture(ps->dpy, ps->root_dbe,
           XRenderFindVisualFormat(ps->dpy, ps->vis),
           0, 0);
     }
     // No-DBE painting mode: Paint to an intermediate Picture then paint
     // the Picture to root window
     else {
-      Pixmap root_pixmap = XCreatePixmap(
-        ps->dpy, ps->root, ps->root_width, ps->root_height,
-        ps->depth);
+      if (!ps->tgt_buffer.pixmap) {
+        free_paint(ps, &ps->tgt_buffer);
+        ps->tgt_buffer.pixmap = XCreatePixmap(ps->dpy, ps->root,
+            ps->root_width, ps->root_height, ps->depth);
+      }
 
-      ps->tgt_buffer = XRenderCreatePicture(ps->dpy, root_pixmap,
-        XRenderFindVisualFormat(ps->dpy, ps->vis),
-        0, 0);
-
-      XFreePixmap(ps->dpy, root_pixmap);
+      if (BKEND_GLX != ps->o.backend)
+        ps->tgt_buffer.pict = XRenderCreatePicture(ps->dpy,
+            ps->tgt_buffer.pixmap, XRenderFindVisualFormat(ps->dpy, ps->vis),
+            0, 0);
     }
   }
 #endif
@@ -1753,6 +1759,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
           ps->root_width, ps->root_height);
       break;
     case BKEND_GLX:
+    case BKEND_XR_GLX_HYBIRD:
       glClearColor(0.0f, 0.0f, 1.0f, 1.0f);
       glClear(GL_COLOR_BUFFER_BIT);
       glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1874,7 +1881,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
         // Blur window background
         if (w->blur_background && (WMODE_SOLID != w->mode
               || (ps->o.blur_background_frame && w->frame_opacity))) {
-          win_blur_background(ps, w, ps->tgt_buffer, reg_paint, &cache_reg);
+          win_blur_background(ps, w, ps->tgt_buffer.pict, reg_paint, &cache_reg);
         }
 
         // Painting the window
@@ -1898,7 +1905,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     XSync(ps->dpy, False);
 #ifdef CONFIG_VSYNC_OPENGL
     if (ps->glx_context) {
-      glFlush();
+      glFinish();
       glXWaitX();
     }
 #endif
@@ -1922,14 +1929,24 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
         XdbeSwapBuffers(ps->dpy, &swap_info, 1);
       }
       // No-DBE painting mode
-      else if (ps->tgt_buffer != ps->tgt_picture) {
+      else if (ps->tgt_buffer.pict != ps->tgt_picture) {
         XRenderComposite(
-          ps->dpy, PictOpSrc, ps->tgt_buffer, None,
+          ps->dpy, PictOpSrc, ps->tgt_buffer.pict, None,
           ps->tgt_picture, 0, 0, 0, 0,
           0, 0, ps->root_width, ps->root_height);
       }
       break;
 #ifdef CONFIG_VSYNC_OPENGL
+    case BKEND_XR_GLX_HYBIRD:
+      XSync(ps->dpy, False);
+      glFinish();
+      glXWaitX();
+      paint_bind_tex_real(ps, &ps->tgt_buffer,
+          ps->root_width, ps->root_height, ps->depth,
+          !ps->o.glx_no_rebind_pixmap);
+      glx_render(ps, ps->tgt_buffer.ptex, 0, 0, 0, 0,
+          ps->root_width, ps->root_height, 0, 1.0, false, region_real, NULL);
+      // No break here!
     case BKEND_GLX:
       if (ps->o.glx_use_copysubbuffermesa)
         glx_swap_copysubbuffermesa(ps, region_real);
@@ -2937,10 +2954,7 @@ static void
 configure_win(session_t *ps, XConfigureEvent *ce) {
   // On root window changes
   if (ce->window == ps->root) {
-    if (ps->tgt_buffer) {
-      XRenderFreePicture(ps->dpy, ps->tgt_buffer);
-      ps->tgt_buffer = None;
-    }
+    free_paint(ps, &ps->tgt_buffer);
 
     ps->root_width = ce->width;
     ps->root_height = ce->height;
@@ -4470,7 +4484,8 @@ usage(int ret) {
     "  Crop shadow of a window fully on a particular Xinerama screen to the\n"
     "  screen." WARNING "\n"
     "--backend backend\n"
-    "  Choose backend. Possible choices are xrender and glx" WARNING ".\n"
+    "  Choose backend. Possible choices are xrender, glx, and\n"
+    "  xr_glx_hybird" WARNING ".\n"
     "--glx-no-stencil\n"
     "  GLX backend: Avoid using stencil buffer. Might cause issues\n"
     "  when rendering transparent content. My tests show a 15% performance\n"
@@ -5982,7 +5997,7 @@ vsync_opengl_swc_init(session_t *ps) {
   if (!ensure_glx_context(ps))
     return false;
 
-  if (BKEND_GLX != ps->o.backend) {
+  if (!bkend_use_glx(ps)) {
     printf_errf("(): I'm afraid glXSwapIntervalSGI wouldn't help if you are "
         "not using GLX backend. You could try, nonetheless.");
   }
@@ -6010,7 +6025,7 @@ vsync_opengl_mswc_init(session_t *ps) {
   if (!ensure_glx_context(ps))
     return false;
 
-  if (BKEND_GLX != ps->o.backend) {
+  if (!bkend_use_glx(ps)) {
     printf_errf("(): I'm afraid glXSwapIntervalMESA wouldn't help if you are "
         "not using GLX backend. You could try, nonetheless.");
   }
@@ -6189,6 +6204,7 @@ init_filters(session_t *ps) {
   if (ps->o.blur_background || ps->o.blur_background_frame) {
     switch (ps->o.backend) {
       case BKEND_XRENDER:
+      case BKEND_XR_GLX_HYBIRD:
         {
           // Query filters
           XFilters *pf = XRenderQueryFilters(ps->dpy, get_tgt_window(ps));
@@ -6578,7 +6594,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .root_tile_paint = PAINT_INIT,
     .screen_reg = None,
     .tgt_picture = None,
-    .tgt_buffer = None,
+    .tgt_buffer = PAINT_INIT,
     .root_dbe = None,
     .reg_win = None,
     .o = {
@@ -6918,7 +6934,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     init_overlay(ps);
 
   // Initialize DBE
-  if (ps->o.dbe && BKEND_GLX == ps->o.backend) {
+  if (ps->o.dbe && BKEND_XRENDER != ps->o.backend) {
     printf_errf("(): DBE couldn't be used on GLX backend.");
     ps->o.dbe = false;
   }
@@ -6927,7 +6943,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     exit(1);
 
   // Initialize OpenGL as early as possible
-  if (BKEND_GLX == ps->o.backend) {
+  if (bkend_use_glx(ps)) {
 #ifdef CONFIG_VSYNC_OPENGL
     if (!glx_init(ps, true))
       exit(1);
@@ -7150,10 +7166,8 @@ session_destroy(session_t *ps) {
   free_picture(ps, &ps->white_picture);
 
   // Free tgt_{buffer,picture} and root_picture
-  if (ps->tgt_buffer == ps->tgt_picture)
-    ps->tgt_buffer = None;
-  else
-    free_picture(ps, &ps->tgt_buffer);
+  if (ps->tgt_buffer.pict == ps->tgt_picture)
+    ps->tgt_buffer.pict = None;
 
   if (ps->tgt_picture == ps->root_picture)
     ps->tgt_picture = None;
@@ -7161,6 +7175,7 @@ session_destroy(session_t *ps) {
     free_picture(ps, &ps->tgt_picture);
 
   free_picture(ps, &ps->root_picture);
+  free_paint(ps, &ps->tgt_buffer);
 
   // Free other X resources
   free_root_tile(ps);
