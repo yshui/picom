@@ -323,7 +323,7 @@ typedef enum {
 enum backend {
   BKEND_XRENDER,
   BKEND_GLX,
-  BKEND_XR_GLX_HYBIRD,
+  BKEND_XR_GLX_HYBRID,
   NUM_BKEND,
 };
 
@@ -1491,6 +1491,11 @@ parse_backend(session_t *ps, const char *str) {
       ps->o.backend = i;
       return true;
     }
+  // Keep compatibility with an old revision containing a spelling mistake...
+  if (!strcasecmp(str, "xr_glx_hybird")) {
+    ps->o.backend = BKEND_XR_GLX_HYBRID;
+    return true;
+  }
   printf_errf("(\"%s\"): Invalid backend argument.", str);
   return false;
 }
@@ -1720,7 +1725,7 @@ find_toplevel(session_t *ps, Window id) {
 static inline bool
 bkend_use_xrender(session_t *ps) {
   return BKEND_XRENDER == ps->o.backend
-    || BKEND_XR_GLX_HYBIRD == ps->o.backend;
+    || BKEND_XR_GLX_HYBRID == ps->o.backend;
 }
 
 /**
@@ -1729,7 +1734,7 @@ bkend_use_xrender(session_t *ps) {
 static inline bool
 bkend_use_glx(session_t *ps) {
   return BKEND_GLX == ps->o.backend
-    || BKEND_XR_GLX_HYBIRD == ps->o.backend;
+    || BKEND_XR_GLX_HYBRID == ps->o.backend;
 }
 
 /**
