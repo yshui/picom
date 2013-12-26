@@ -1905,7 +1905,10 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     XSync(ps->dpy, False);
 #ifdef CONFIG_VSYNC_OPENGL
     if (ps->glx_context) {
-      glFinish();
+      if (ps->o.vsync_use_glfinish)
+        glFinish();
+      else
+        glFlush();
       glXWaitX();
     }
 #endif
@@ -1939,7 +1942,10 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 #ifdef CONFIG_VSYNC_OPENGL
     case BKEND_XR_GLX_HYBRID:
       XSync(ps->dpy, False);
-      glFinish();
+      if (ps->o.vsync_use_glfinish)
+        glFinish();
+      else
+        glFlush();
       glXWaitX();
       paint_bind_tex_real(ps, &ps->tgt_buffer,
           ps->root_width, ps->root_height, ps->depth,
@@ -5421,6 +5427,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "unredir-if-possible-exclude", required_argument, NULL, 308 },
     { "unredir-if-possible-delay", required_argument, NULL, 309 },
     { "write-pid-path", required_argument, NULL, 310 },
+    { "vsync-use-glfinish", no_argument, NULL, 311 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5668,6 +5675,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --write-pid-path
         ps->o.write_pid_path = mstrcpy(optarg);
         break;
+      P_CASEBOOL(311, vsync_use_glfinish);
       default:
         usage(1);
         break;

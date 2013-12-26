@@ -513,6 +513,9 @@ typedef struct {
   bool dbe;
   /// Whether to do VSync aggressively.
   bool vsync_aggressive;
+  /// Whether to use glFinish() instead of glFlush() for (possibly) better
+  /// VSync yet probably higher CPU usage.
+  bool vsync_use_glfinish;
 
   // === Shadow ===
   /// Enable/disable shadow for specific window types.
