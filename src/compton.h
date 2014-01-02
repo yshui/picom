@@ -686,7 +686,7 @@ static inline void
 set_tgt_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
   switch (ps->o.backend) {
     case BKEND_XRENDER:
-    case BKEND_XR_GLX_HYBIRD:
+    case BKEND_XR_GLX_HYBRID:
       XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer.pict, 0, 0, reg);
       break;
 #ifdef CONFIG_VSYNC_OPENGL

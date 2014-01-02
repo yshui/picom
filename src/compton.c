@@ -47,7 +47,7 @@ const char * const VSYNC_STRS[NUM_VSYNC + 1] = {
 const char * const BACKEND_STRS[NUM_BKEND + 1] = {
   "xrender",      // BKEND_XRENDER
   "glx",          // BKEND_GLX
-  "xr_glx_hybird",// BKEND_XR_GLX_HYBIRD
+  "xr_glx_hybrid",// BKEND_XR_GLX_HYBRID
   NULL
 };
 
@@ -1405,7 +1405,7 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
 
   switch (ps->o.backend) {
     case BKEND_XRENDER:
-    case BKEND_XR_GLX_HYBIRD:
+    case BKEND_XR_GLX_HYBRID:
       {
         // Normalize blur kernels
         for (int i = 0; i < MAX_BLUR_PASS; ++i) {
@@ -1478,7 +1478,7 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     XserverRegion reg_paint, const reg_data_t *pcache_reg) {
   switch (ps->o.backend) {
     case BKEND_XRENDER:
-    case BKEND_XR_GLX_HYBIRD:
+    case BKEND_XR_GLX_HYBRID:
       {
         Picture alpha_pict = get_alpha_pict_d(ps, opacity);
         if (alpha_pict != ps->alpha_picts[0]) {
@@ -1643,7 +1643,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 
     switch (ps->o.backend) {
       case BKEND_XRENDER:
-      case BKEND_XR_GLX_HYBIRD:
+      case BKEND_XR_GLX_HYBRID:
         {
           unsigned short cval = 0xffff * dim_opacity;
 
@@ -1759,7 +1759,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
           ps->root_width, ps->root_height);
       break;
     case BKEND_GLX:
-    case BKEND_XR_GLX_HYBIRD:
+    case BKEND_XR_GLX_HYBRID:
       glClearColor(0.0f, 0.0f, 1.0f, 1.0f);
       glClear(GL_COLOR_BUFFER_BIT);
       glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1937,7 +1937,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       }
       break;
 #ifdef CONFIG_VSYNC_OPENGL
-    case BKEND_XR_GLX_HYBIRD:
+    case BKEND_XR_GLX_HYBRID:
       XSync(ps->dpy, False);
       glFinish();
       glXWaitX();
@@ -4485,7 +4485,7 @@ usage(int ret) {
     "  screen." WARNING "\n"
     "--backend backend\n"
     "  Choose backend. Possible choices are xrender, glx, and\n"
-    "  xr_glx_hybird" WARNING ".\n"
+    "  xr_glx_hybrid" WARNING ".\n"
     "--glx-no-stencil\n"
     "  GLX backend: Avoid using stencil buffer. Might cause issues\n"
     "  when rendering transparent content. My tests show a 15% performance\n"
@@ -6204,7 +6204,7 @@ init_filters(session_t *ps) {
   if (ps->o.blur_background || ps->o.blur_background_frame) {
     switch (ps->o.backend) {
       case BKEND_XRENDER:
-      case BKEND_XR_GLX_HYBIRD:
+      case BKEND_XR_GLX_HYBRID:
         {
           // Query filters
           XFilters *pf = XRenderQueryFilters(ps->dpy, get_tgt_window(ps));
