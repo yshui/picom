@@ -49,7 +49,6 @@ elif [ -n "$(${compton_dbus}list_win | grep "$1")" ]; then
   window="$1"
 else
   echo "$0" "[ selected | focused | window-id ]"
-  exit 1;
 fi
 
 # Color invert the selected or focused window
