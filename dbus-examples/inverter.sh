@@ -45,7 +45,7 @@ elif [ "$1" = "focused" ]; then
   # Ensure we are tracking focus
   ${compton_dbus}opts_set string:track_focus boolean:true &
   window=$(${compton_dbus}find_win string:focused | $SED -n 's/^[[:space:]]*'${type_win}'[[:space:]]*\([[:digit:]]*\).*/\1/p') # Query compton for the active window
-elif [ -n "$(${compton_dbus}list_win | grep "$1")" ]; then
+elif [ -n "$(${compton_dbus}list_win | grep -w "$1")" ]; then
   window="$1"
 else
   echo "$0" "[ selected | focused | window-id ]"
