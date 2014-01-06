@@ -513,6 +513,9 @@ typedef struct {
   bool dbe;
   /// Whether to do VSync aggressively.
   bool vsync_aggressive;
+  /// Whether to use glFinish() instead of glFlush() for (possibly) better
+  /// VSync yet probably higher CPU usage.
+  bool vsync_use_glfinish;
 
   // === Shadow ===
   /// Enable/disable shadow for specific window types.
@@ -1491,6 +1494,11 @@ parse_backend(session_t *ps, const char *str) {
       ps->o.backend = i;
       return true;
     }
+  // Keep compatibility with an old revision containing a spelling mistake...
+  if (!strcasecmp(str, "xr_glx_hybird")) {
+    ps->o.backend = BKEND_XR_GLX_HYBRID;
+    return true;
+  }
   printf_errf("(\"%s\"): Invalid backend argument.", str);
   return false;
 }
