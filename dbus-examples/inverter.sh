@@ -39,24 +39,25 @@ type_enum='uint16'
 # === Color Inversion ===
 
 # Get window ID of window to invert
-if [ -z "$1" ] || [ "$1" = "selected" ]; then
+if [ -z "$1" -o "$1" = "selected" ]; then
   window=$(xwininfo -frame | sed -n 's/^xwininfo: Window id: \(0x[[:xdigit:]][[:xdigit:]]*\).*/\1/p') # Select window by mouse
 elif [ "$1" = "focused" ]; then
   # Ensure we are tracking focus
   ${compton_dbus}opts_set string:track_focus boolean:true &
   window=$(${compton_dbus}find_win string:focused | $SED -n 's/^[[:space:]]*'${type_win}'[[:space:]]*\([[:digit:]]*\).*/\1/p') # Query compton for the active window
-elif [ -n "$(${compton_dbus}list_win | grep -w "$1")" ]; then
-  window="$1" # Accept user-specified window-id if compton managed
+elif echo "$1" | grep -Eiq '^([[:digit:]][[:digit:]]*|0x[[:xdigit:]][[:xdigit:]]*)$'; then
+  window="$1" # Accept user-specified window-id if the format is correct
 else
   echo "$0" "[ selected | focused | window-id ]"
 fi
 
 # Color invert the selected or focused window
 if [ -n "$window" ]; then
-  if [ "$(${compton_dbus}win_get "${type_win}:${window}" string:invert_color_force | $SED -n 's/^[[:space:]]*'${type_enum}'[[:space:]]*\([[:digit:]]*\).*/\1/p')" -eq 0 ]; then
-    invert=1 # Set the window to have inverted color
-  else
+  invert_status="$(${compton_dbus}win_get "${type_win}:${window}" string:invert_color | $SED -n 's/^[[:space:]]*boolean[[:space:]]*\([[:alpha:]]*\).*/\1/p')"
+  if [ "$invert_status" = true ]; then
     invert=0 # Set the window to have normal color
+  else
+    invert=1 # Set the window to have inverted color
   fi
   ${compton_dbus}win_set "${type_win}:${window}" string:invert_color_force "${type_enum}:${invert}" &
 else
