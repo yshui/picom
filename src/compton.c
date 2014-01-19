@@ -1950,6 +1950,13 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       paint_bind_tex_real(ps, &ps->tgt_buffer,
           ps->root_width, ps->root_height, ps->depth,
           !ps->o.glx_no_rebind_pixmap);
+      // See #163
+      XSync(ps->dpy, False);
+      if (ps->o.vsync_use_glfinish)
+        glFinish();
+      else
+        glFlush();
+      glXWaitX();
       glx_render(ps, ps->tgt_buffer.ptex, 0, 0, 0, 0,
           ps->root_width, ps->root_height, 0, 1.0, false, region_real, NULL);
       // No break here!
