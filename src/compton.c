@@ -1245,6 +1245,7 @@ paint_preprocess(session_t *ps, win *list) {
       t = w;
     }
     else {
+      assert(w->destroyed == (w->fade_callback == destroy_callback));
       check_fade_fin(ps, w);
     }
 
@@ -2089,6 +2090,10 @@ map_win(session_t *ps, Window id) {
 
   win *w = find_win(ps, id);
 
+#ifdef DEBUG_EVENTS
+  printf_dbgf("(%#010lx \"%s\"): %p\n", id, (w ? w->name: NULL), w);
+#endif
+
   // Don't care about window mapping if it's an InputOnly window
   // Try avoiding mapping a window twice
   if (!w || InputOnly == w->a.class
@@ -2824,6 +2829,10 @@ add_win(session_t *ps, Window id, Window prev) {
   // Allocate and initialize the new win structure
   win *new = malloc(sizeof(win));
 
+#ifdef DEBUG_EVENTS
+  printf_dbgf("(%#010lx): %p\n", id, new);
+#endif
+
   if (!new) {
     printf_errf("(%#010lx): Failed to allocate memory for the new window.", id);
     return false;
@@ -3078,10 +3087,18 @@ circulate_win(session_t *ps, XCirculateEvent *ce) {
 
 static void
 finish_destroy_win(session_t *ps, Window id) {
-  win **prev, *w;
+  win **prev = NULL, *w = NULL;
+
+#ifdef DEBUG_EVENTS
+  printf_dbgf("(%#010lx): Starting...\n", id);
+#endif
 
   for (prev = &ps->list; (w = *prev); prev = &w->next) {
     if (w->id == id && w->destroyed) {
+#ifdef DEBUG_EVENTS
+		printf_dbgf("(%#010lx \"%s\"): %p\n", id, w->name, w);
+#endif
+
       finish_unmap_win(ps, w);
       *prev = w->next;
 
@@ -3090,6 +3107,12 @@ finish_destroy_win(session_t *ps, Window id) {
         ps->active_win = NULL;
 
       free_win_res(ps, w);
+
+      // Drop w from all prev_trans to avoid accessing freed memory in
+      // repair_win()
+      for (win *w2 = ps->list; w2; w2 = w2->next)
+        if (w == w2->prev_trans)
+          w2->prev_trans = NULL;
 
       free(w);
       break;
@@ -3105,6 +3128,10 @@ destroy_callback(session_t *ps, win *w) {
 static void
 destroy_win(session_t *ps, Window id) {
   win *w = find_win(ps, id);
+
+#ifdef DEBUG_EVENTS
+  printf_dbgf("(%#010lx \"%s\"): %p\n", id, (w ? w->name: NULL), w);
+#endif
 
   if (w) {
     unmap_win(ps, w);
