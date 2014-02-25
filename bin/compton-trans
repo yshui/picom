@@ -26,7 +26,7 @@
 
 # "command" is a shell built-in, faster than "which"
 if test -z "$(command -v xprop)" -o -z "$(command -v xwininfo)"; then
-  echo 'Please install x11-utils/xorg-xprop/xorg-xwininfo.' >& 2
+  echo 'The command xwininfo or xprop is not available. They might reside in a package named xwininfo, xprop, x11-utils, xorg-xprop, or xorg-xwininfo.' >& 2
   exit 1
 fi
 
