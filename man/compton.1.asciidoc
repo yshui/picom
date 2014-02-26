@@ -352,7 +352,7 @@ CONFIGURATION FILES
 -------------------
 compton could read from a configuration file if libconfig support is compiled in. If *--config* is not used, compton will seek for a configuration file in `$XDG_CONFIG_HOME/compton.conf` (`~/.config/compton.conf`, usually), then `~/.compton.conf`, then `compton.conf` under `$XDG_DATA_DIRS` (often `/etc/xdg/compton.conf`).
 
-compton uses general libconfig configurtion file format. A sample configuration file is available as `compton.sample.conf` in the source tree. Most commandline switches each could be replaced with an option in configuration file, thus documented above. Window-type-specific settings are exposed only in configuration file and has the following format:
+compton uses general libconfig configuration file format. A sample configuration file is available as `compton.sample.conf` in the source tree. Most commandline switches each could be replaced with an option in configuration file, thus documented above. Window-type-specific settings are exposed only in configuration file and has the following format:
 
 ------------
 wintypes:
