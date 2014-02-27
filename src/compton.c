@@ -5480,6 +5480,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.config_file = mstrcpy(optarg);
       else if ('d' == o)
         ps->o.display = mstrcpy(optarg);
+      else if ('S' == o)
+        ps->o.synchronize = true;
       else if ('?' == o || ':' == o)
         usage(1);
     }
@@ -5532,6 +5534,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         usage(0);
         break;
       case 'd':
+      case 'S':
         break;
       P_CASELONG('D', fade_delta);
       case 'I':
@@ -5556,7 +5559,6 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 'F':
         fading_enable = true;
         break;
-      P_CASEBOOL('S', synchronize);
       P_CASELONG('r', shadow_radius);
       case 'o':
         ps->o.shadow_opacity = atof(optarg);
