@@ -1499,6 +1499,11 @@ parse_backend(session_t *ps, const char *str) {
     ps->o.backend = BKEND_XR_GLX_HYBRID;
     return true;
   }
+  // cju wants to use dashes
+  if (!strcasecmp(str, "xr-glx-hybrid")) {
+    ps->o.backend = BKEND_XR_GLX_HYBRID;
+    return true;
+  }
   printf_errf("(\"%s\"): Invalid backend argument.", str);
   return false;
 }
@@ -1786,6 +1791,15 @@ free_region(session_t *ps, XserverRegion *p) {
     XFixesDestroyRegion(ps->dpy, *p);
     *p = None;
   }
+}
+
+/**
+ * Free all regions in ps->all_damage_last .
+ */
+static inline void
+free_all_damage_last(session_t *ps) {
+  for (int i = 0; i < CGLX_MAX_BUFFER_AGE; ++i)
+    free_region(ps, &ps->all_damage_last[i]);
 }
 
 /**

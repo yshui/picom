@@ -2983,6 +2983,7 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
 
     rebuild_screen_reg(ps);
     rebuild_shadow_exclude_reg(ps);
+    free_all_damage_last(ps);
 
 #ifdef CONFIG_VSYNC_OPENGL
     if (BKEND_GLX == ps->o.backend)
@@ -3275,6 +3276,7 @@ error(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 
 static void
 expose_root(session_t *ps, XRectangle *rects, int nrects) {
+  free_all_damage_last(ps);
   XserverRegion region = XFixesCreateRegion(ps->dpy, rects, nrects);
   add_damage(ps, region);
 }
