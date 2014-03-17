@@ -73,6 +73,11 @@ ifeq "$(NO_DBUS)" ""
   OBJS += dbus.o
 endif
 
+# ==== D-Bus ====
+ifeq "$(NO_XSYNC)" ""
+  CFG += -DCONFIG_XSYNC
+endif
+
 # ==== C2 ====
 ifeq "$(NO_C2)" ""
   CFG += -DCONFIG_C2

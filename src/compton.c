@@ -489,6 +489,9 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   w->shadow_paint.pixmap = shadow_pixmap_argb;
   w->shadow_paint.pict = shadow_picture_argb;
 
+  // Sync it once and only once
+  xr_sync(ps, w->shadow_paint.pixmap, NULL);
+
   bool success = paint_bind_tex(ps, &w->shadow_paint, shadow_image->width, shadow_image->height, 32, true);
 
   XFreeGC(ps->dpy, gc);
@@ -1513,12 +1516,16 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
   if (!w->paint.pixmap && ps->has_name_pixmap) {
     set_ignore_next(ps);
     w->paint.pixmap = XCompositeNameWindowPixmap(ps->dpy, w->id);
+    if (w->paint.pixmap)
+      free_fence(ps, &w->fence);
   }
+
+  Drawable draw = w->paint.pixmap;
+  if (!draw)
+    draw = w->id;
+
   // XRender: Build picture
   if (bkend_use_xrender(ps) && !w->paint.pict) {
-    Drawable draw = w->paint.pixmap;
-    if (!draw)
-      draw = w->id;
     {
       XRenderPictureAttributes pa = {
         .subwindow_mode = IncludeInferiors,
@@ -1528,6 +1535,10 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
           CPSubwindowMode, &pa);
     }
   }
+
+  if (IsViewable == w->a.map_state)
+    xr_sync(ps, draw, &w->fence);
+
   // GLX: Build texture
   // Let glx_bind_pixmap() determine pixmap size, because if the user
   // is resizing windows, the width and height we get may not be up-to-date,
@@ -1948,11 +1959,13 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       else
         glFlush();
       glXWaitX();
+      assert(ps->tgt_buffer.pixmap);
+      xr_sync(ps, ps->tgt_buffer.pixmap, &ps->tgt_buffer_fence);
       paint_bind_tex_real(ps, &ps->tgt_buffer,
           ps->root_width, ps->root_height, ps->depth,
           !ps->o.glx_no_rebind_pixmap);
       // See #163
-      XSync(ps->dpy, False);
+      xr_sync(ps, ps->tgt_buffer.pixmap, &ps->tgt_buffer_fence);
       if (ps->o.vsync_use_glfinish)
         glFinish();
       else
@@ -2116,7 +2129,7 @@ map_win(session_t *ps, Window id) {
   }
 
   // Make sure the XSelectInput() requests are sent
-  XSync(ps->dpy, False);
+  XFlush(ps->dpy);
 
   // Update window mode here to check for ARGB windows
   win_determine_mode(ps, w);
@@ -2205,7 +2218,7 @@ finish_unmap_win(session_t *ps, win *w) {
     w->extents = None;
   }
 
-  free_paint(ps, &w->paint);
+  free_wpaint(ps, w);
   free_region(ps, &w->border_size);
   free_paint(ps, &w->shadow_paint);
 }
@@ -2218,6 +2231,11 @@ unmap_callback(session_t *ps, win *w) {
 static void
 unmap_win(session_t *ps, win *w) {
   if (!w || IsUnmapped == w->a.map_state) return;
+
+  // One last synchronization
+  if (w->paint.pixmap)
+    xr_sync(ps, w->paint.pixmap, &w->fence);
+  free_fence(ps, &w->fence);
 
   // Set focus out
   win_set_focused(ps, w, false);
@@ -2654,7 +2672,7 @@ win_mark_client(session_t *ps, win *w, Window client) {
       determine_evmask(ps, client, WIN_EVMODE_CLIENT));
 
   // Make sure the XSelectInput() requests are sent
-  XSync(ps->dpy, False);
+  XFlush(ps->dpy);
 
   win_upd_wintype(ps, w);
 
@@ -3037,7 +3055,7 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
 
     if (w->a.width != ce->width || w->a.height != ce->height
         || w->a.border_width != ce->border_width)
-      free_paint(ps, &w->paint);
+      free_wpaint(ps, w);
 
     if (w->a.width != ce->width || w->a.height != ce->height
         || w->a.border_width != ce->border_width) {
@@ -3097,7 +3115,7 @@ finish_destroy_win(session_t *ps, Window id) {
   for (prev = &ps->list; (w = *prev); prev = &w->next) {
     if (w->id == id && w->destroyed) {
 #ifdef DEBUG_EVENTS
-		printf_dbgf("(%#010lx \"%s\"): %p\n", id, w->name, w);
+      printf_dbgf("(%#010lx \"%s\"): %p\n", id, w->name, w);
 #endif
 
       finish_unmap_win(ps, w);
@@ -3188,10 +3206,10 @@ damage_win(session_t *ps, XDamageNotifyEvent *de) {
  * Xlib error handler function.
  */
 static int
-error(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
+xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
   session_t * const ps = ps_g;
 
-  int o;
+  int o = 0;
   const char *name = "Unknown";
 
   if (should_ignore(ps, ev->serial)) {
@@ -3236,6 +3254,17 @@ error(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
       CASESTRRET2(GLX_BAD_CONTEXT);
       CASESTRRET2(GLX_BAD_VALUE);
       CASESTRRET2(GLX_BAD_ENUM);
+    }
+  }
+#endif
+
+#ifdef CONFIG_XSYNC
+  if (ps->xsync_exists) {
+    o = ev->error_code - ps->xsync_error;
+    switch (o) {
+      CASESTRRET2(XSyncBadCounter);
+      CASESTRRET2(XSyncBadAlarm);
+      CASESTRRET2(XSyncBadFence);
     }
   }
 #endif
@@ -3771,18 +3800,27 @@ ev_name(session_t *ps, XEvent *ev) {
     CASESTRRET(Expose);
     CASESTRRET(PropertyNotify);
     CASESTRRET(ClientMessage);
-    default:
-      if (isdamagenotify(ps, ev))
-        return "Damage";
-
-      if (ps->shape_exists && ev->type == ps->shape_event) {
-        return "ShapeNotify";
-      }
-
-      sprintf(buf, "Event %d", ev->type);
-
-      return buf;
   }
+
+  if (isdamagenotify(ps, ev))
+    return "Damage";
+
+  if (ps->shape_exists && ev->type == ps->shape_event)
+    return "ShapeNotify";
+
+#ifdef CONFIG_XSYNC
+  if (ps->xsync_exists) {
+    int o = ev->type - ps->xsync_event;
+    switch (o) {
+      CASESTRRET(CounterNotify);
+      CASESTRRET(AlarmNotify);
+    }
+  }
+#endif
+
+  sprintf(buf, "Event %d", ev->type);
+
+  return buf;
 }
 
 static Window
@@ -5464,6 +5502,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "unredir-if-possible-delay", required_argument, NULL, 309 },
     { "write-pid-path", required_argument, NULL, 310 },
     { "vsync-use-glfinish", no_argument, NULL, 311 },
+    { "xrender-sync", no_argument, NULL, 312 },
+    { "xrender-sync-fence", no_argument, NULL, 313 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5714,6 +5754,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.write_pid_path = mstrcpy(optarg);
         break;
       P_CASEBOOL(311, vsync_use_glfinish);
+      P_CASEBOOL(312, xrender_sync);
+      P_CASEBOOL(313, xrender_sync_fence);
       default:
         usage(1);
         break;
@@ -5760,6 +5802,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   // --blur-background-frame implies --blur-background
   if (ps->o.blur_background_frame)
     ps->o.blur_background = true;
+
+  if (ps->o.xrender_sync_fence)
+    ps->o.xrender_sync = true;
 
   // Other variables determined by options
 
@@ -6478,7 +6523,7 @@ redir_stop(session_t *ps) {
     // If we don't destroy them here, looks like the resources are just
     // kept inaccessible somehow
     for (win *w = ps->list; w; w = w->next)
-      free_paint(ps, &w->paint);
+      free_wpaint(ps, w);
 
     XCompositeUnredirectSubwindows(ps->dpy, ps->root, CompositeRedirectManual);
     // Unmap overlay window
@@ -6852,7 +6897,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     }
   }
 
-  XSetErrorHandler(error);
+  XSetErrorHandler(xerror);
   if (ps->o.synchronize) {
     XSynchronize(ps->dpy, 1);
   }
@@ -6907,11 +6952,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     exit(1);
   }
 
-  // Query X Shape
-  if (XShapeQueryExtension(ps->dpy, &ps->shape_event, &ps->shape_error)) {
-    ps->shape_exists = true;
-  }
-
   // Build a safe representation of display name
   {
     char *display_repr = DisplayString(ps->dpy);
@@ -6935,6 +6975,32 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Second pass
   get_cfg(ps, argc, argv, false);
+
+  // Query X Shape
+  if (XShapeQueryExtension(ps->dpy, &ps->shape_event, &ps->shape_error)) {
+    ps->shape_exists = true;
+  }
+
+  if (ps->o.xrender_sync_fence) {
+#ifdef CONFIG_XSYNC
+    // Query X Sync
+    if (XSyncQueryExtension(ps->dpy, &ps->xsync_event, &ps->xsync_error)) {
+      // TODO: Fencing may require version >= 3.0?
+      int major_version_return = 0, minor_version_return = 0;
+      if (XSyncInitialize(ps->dpy, &major_version_return, &minor_version_return))
+        ps->xsync_exists = true;
+    }
+    if (!ps->xsync_exists) {
+      printf_errf("(): X Sync extension not found. No X Sync fence sync is "
+          "possible.");
+      exit(1);
+    }
+#else
+    printf_errf("(): X Sync support not compiled in. --xrender-sync-fence"
+        "can't work.");
+    exit(1);
+#endif
+  }
 
   // Query X RandR
   if ((ps->o.sw_opti && !ps->o.refresh_rate) || ps->o.xinerama_shadow_crop) {
@@ -7219,6 +7285,7 @@ session_destroy(session_t *ps) {
     ps->tgt_picture = None;
   else
     free_picture(ps, &ps->tgt_picture);
+  free_fence(ps, &ps->tgt_buffer_fence);
 
   free_picture(ps, &ps->root_picture);
   free_paint(ps, &ps->tgt_buffer);

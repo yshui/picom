@@ -59,6 +59,8 @@ glx_check_err_(session_t *ps, const char *func, int line) {
 }
 
 #define glx_check_err(ps) glx_check_err_(ps, __func__, __LINE__)
+#else
+#define glx_check_err(ps) ((void) 0)
 #endif
 
 /**

@@ -276,6 +276,15 @@ free_paint(session_t *ps, paint_t *ppaint) {
 }
 
 /**
+ * Free w->paint.
+ */
+static inline void
+free_wpaint(session_t *ps, win *w) {
+  free_paint(ps, &w->paint);
+  free_fence(ps, &w->fence);
+}
+
+/**
  * Destroy all resources in a <code>struct _win</code>.
  */
 static inline void
@@ -883,7 +892,7 @@ static void
 damage_win(session_t *ps, XDamageNotifyEvent *de);
 
 static int
-error(Display *dpy, XErrorEvent *ev);
+xerror(Display *dpy, XErrorEvent *ev);
 
 static void
 expose_root(session_t *ps, XRectangle *rects, int nrects);

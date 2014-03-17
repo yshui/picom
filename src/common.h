@@ -55,9 +55,17 @@
 // #define CONFIG_DBUS 1
 // Whether to enable condition support.
 // #define CONFIG_C2 1
+// Whether to enable X Sync support.
+// #define CONFIG_XSYNC 1
+// Whether to enable GLX Sync support.
+// #define CONFIG_GLX_XSYNC 1
 
 #if !defined(CONFIG_C2) && defined(DEBUG_C2)
 #error Cannot enable c2 debugging without c2 support.
+#endif
+
+#if (!defined(CONFIG_XSYNC) || !defined(CONFIG_VSYNC_OPENGL)) && defined(CONFIG_GLX_SYNC)
+#error Cannot enable GL sync without X Sync / OpenGL support.
 #endif
 
 #ifndef COMPTON_VERSION
@@ -89,6 +97,9 @@
 #include <X11/extensions/shape.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/extensions/Xdbe.h>
+#ifdef CONFIG_XSYNC
+#include <X11/extensions/sync.h>
+#endif
 
 #ifdef CONFIG_XINERAMA
 #include <X11/extensions/Xinerama.h>
@@ -338,6 +349,16 @@ enum {
 typedef struct _glx_texture glx_texture_t;
 
 #ifdef CONFIG_VSYNC_OPENGL
+#ifdef DEBUG_GLX_DEBUG_CONTEXT
+typedef GLXContext (*f_glXCreateContextAttribsARB) (Display *dpy,
+    GLXFBConfig config, GLXContext share_context, Bool direct,
+    const int *attrib_list);
+typedef void (*GLDEBUGPROC) (GLenum source, GLenum type,
+    GLuint id, GLenum severity, GLsizei length, const GLchar* message,
+    GLvoid* userParam);
+typedef void (*f_DebugMessageCallback) (GLDEBUGPROC, void *userParam);
+#endif
+
 typedef int (*f_WaitVideoSync) (int, int, unsigned *);
 typedef int (*f_GetVideoSync) (unsigned *);
 
@@ -351,6 +372,47 @@ typedef void (*f_BindTexImageEXT) (Display *display, GLXDrawable drawable, int b
 typedef void (*f_ReleaseTexImageEXT) (Display *display, GLXDrawable drawable, int buffer);
 
 typedef void (*f_CopySubBuffer) (Display *dpy, GLXDrawable drawable, int x, int y, int width, int height);
+
+#ifdef CONFIG_GLX_SYNC
+// Looks like duplicate typedef of the same type is safe?
+typedef int64_t GLint64;
+typedef uint64_t GLuint64;
+typedef struct __GLsync *GLsync;
+
+#ifndef GL_SYNC_FLUSH_COMMANDS_BIT
+#define GL_SYNC_FLUSH_COMMANDS_BIT 0x00000001
+#endif
+
+#ifndef GL_TIMEOUT_IGNORED
+#define GL_TIMEOUT_IGNORED 0xFFFFFFFFFFFFFFFFull
+#endif
+
+#ifndef GL_ALREADY_SIGNALED
+#define GL_ALREADY_SIGNALED 0x911A
+#endif
+
+#ifndef GL_TIMEOUT_EXPIRED
+#define GL_TIMEOUT_EXPIRED 0x911B
+#endif
+
+#ifndef GL_CONDITION_SATISFIED
+#define GL_CONDITION_SATISFIED 0x911C
+#endif
+
+#ifndef GL_WAIT_FAILED
+#define GL_WAIT_FAILED 0x911D
+#endif
+
+typedef GLsync (*f_FenceSync) (GLenum condition, GLbitfield flags);
+typedef GLboolean (*f_IsSync) (GLsync sync);
+typedef void (*f_DeleteSync) (GLsync sync);
+typedef GLenum (*f_ClientWaitSync) (GLsync sync, GLbitfield flags,
+    GLuint64 timeout);
+typedef void (*f_WaitSync) (GLsync sync, GLbitfield flags,
+    GLuint64 timeout);
+typedef GLsync (*f_ImportSyncEXT) (GLenum external_sync_type,
+    GLintptr external_sync, GLbitfield flags);
+#endif
 
 #ifdef DEBUG_GLX_MARK
 typedef void (*f_StringMarkerGREMEDY) (GLsizei len, const void *string);
@@ -438,7 +500,7 @@ struct _win;
 typedef struct _c2_lptr c2_lptr_t;
 
 /// Structure representing all options.
-typedef struct {
+typedef struct _options_t {
   // === General ===
   /// The configuration file we used.
   char *config_file;
@@ -451,6 +513,11 @@ typedef struct {
   char *display_repr;
   /// The backend in use.
   enum backend backend;
+  /// Whether to sync X drawing to avoid certain delay issues with
+  /// GLX backend.
+  bool xrender_sync;
+  /// Whether to sync X drawing with X Sync fence.
+  bool xrender_sync_fence;
   /// Whether to avoid using stencil buffer under GLX backend. Might be
   /// unsafe.
   bool glx_no_stencil;
@@ -617,7 +684,7 @@ typedef struct {
 } options_t;
 
 /// Structure containing all necessary data for a compton session.
-typedef struct {
+typedef struct _session_t {
   // === Display related ===
   /// Display in use.
   Display *dpy;
@@ -650,6 +717,9 @@ typedef struct {
   Picture tgt_picture;
   /// Temporary buffer to paint to before sending to display.
   paint_t tgt_buffer;
+#ifdef CONFIG_XSYNC
+  XSyncFence tgt_buffer_fence;
+#endif
   /// DBE back buffer for root window. Used in DBE painting mode.
   XdbeBackBuffer root_dbe;
   /// Window ID of the window we register as a symbol.
@@ -783,6 +853,20 @@ typedef struct {
   f_ReleaseTexImageEXT glXReleaseTexImageProc;
   /// Pointer to glXCopySubBufferMESA function.
   f_CopySubBuffer glXCopySubBufferProc;
+#ifdef CONFIG_GLX_SYNC
+  /// Pointer to the glFenceSync() function.
+  f_FenceSync glFenceSyncProc;
+  /// Pointer to the glIsSync() function.
+  f_IsSync glIsSyncProc;
+  /// Pointer to the glDeleteSync() function.
+  f_DeleteSync glDeleteSyncProc;
+  /// Pointer to the glClientWaitSync() function.
+  f_ClientWaitSync glClientWaitSyncProc;
+  /// Pointer to the glWaitSync() function.
+  f_WaitSync glWaitSyncProc;
+  /// Pointer to the glImportSyncEXT() function.
+  f_ImportSyncEXT glImportSyncEXT;
+#endif
 #ifdef DEBUG_GLX_MARK
   /// Pointer to StringMarkerGREMEDY function.
   f_StringMarkerGREMEDY glStringMarkerGREMEDY;
@@ -850,6 +934,14 @@ typedef struct {
   /// Number of Xinerama screens.
   int xinerama_nscrs;
 #endif
+#ifdef CONFIG_XSYNC
+  /// Whether X Sync extension exists.
+  bool xsync_exists;
+  /// Event base number for X Sync extension.
+  int xsync_event;
+  /// Error base number for X Sync extension.
+  int xsync_error;
+#endif
   /// Whether X Render convolution filter exists.
   bool xrfilter_convolution_exists;
 
@@ -915,6 +1007,10 @@ typedef struct _win {
   winmode_t mode;
   /// Whether the window has been damaged at least once.
   bool damaged;
+#ifdef CONFIG_XSYNC
+  /// X Sync fence of drawable.
+  XSyncFence fence;
+#endif
   /// Whether the window was damaged after last paint.
   bool pixmap_damaged;
   /// Damage of the window.
@@ -1802,6 +1898,20 @@ free_all_damage_last(session_t *ps) {
     free_region(ps, &ps->all_damage_last[i]);
 }
 
+#ifdef CONFIG_XSYNC
+/**
+ * Free a XSync fence.
+ */
+static inline void
+free_fence(session_t *ps, XSyncFence *pfence) {
+  if (*pfence)
+    XSyncDestroyFence(ps->dpy, *pfence);
+  *pfence = None;
+}
+#else
+#define free_fence(ps, pfence) ((void) 0)
+#endif
+
 /**
  * Crop a rectangle by another rectangle.
  *
@@ -1926,6 +2036,11 @@ vsync_deinit(session_t *ps);
 /** @name GLX
  */
 ///@{
+
+#ifdef CONFIG_GLX_SYNC
+void
+xr_glx_sync(session_t *ps, Drawable d, XSyncFence *pfence);
+#endif
 
 bool
 glx_init(session_t *ps, bool need_render);
@@ -2095,6 +2210,58 @@ glx_mark_frame(session_t *ps) {
 }
 
 ///@}
+
+#ifdef CONFIG_XSYNC
+#define xr_sync(ps, d, pfence) xr_sync_(ps, d, pfence)
+#else
+#define xr_sync(ps, d, pfence) xr_sync_(ps, d)
+#endif
+
+/**
+ * Synchronizes a X Render drawable to ensure all pending painting requests
+ * are completed.
+ */
+static inline void
+xr_sync_(session_t *ps, Drawable d
+#ifdef CONFIG_XSYNC
+    , XSyncFence *pfence
+#endif
+    ) {
+  if (!ps->o.xrender_sync)
+    return;
+
+#ifdef CONFIG_XSYNC
+  if (ps->o.xrender_sync_fence && ps->xsync_exists) {
+    // TODO: If everybody just follows the rules stated in X Sync prototype,
+    // we need only one fence per screen, but let's stay a bit cautious right
+    // now
+    XSyncFence tmp_fence = None;
+    if (!pfence)
+      pfence = &tmp_fence;
+    assert(pfence);
+    if (!*pfence)
+      *pfence = XSyncCreateFence(ps->dpy, d, False);
+    if (*pfence) {
+      Bool triggered = False;
+      // The fence may fail to be created (e.g. because of died drawable)
+      assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || !triggered);
+      XSyncTriggerFence(ps->dpy, *pfence);
+      XSyncAwaitFence(ps->dpy, pfence, 1);
+      assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || triggered);
+    }
+    else {
+      printf_errf("(%#010lx): Failed to create X Sync fence.", d);
+    }
+    free_fence(ps, &tmp_fence);
+    if (*pfence)
+      XSyncResetFence(ps->dpy, *pfence);
+  }
+#endif
+  XSync(ps->dpy, False);
+#ifdef CONFIG_GLX_SYNC
+  xr_glx_sync(ps, d, pfence);
+#endif
+}
 
 /** @name DBus handling
  */

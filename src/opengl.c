@@ -10,6 +10,50 @@
 
 #include "opengl.h"
 
+#ifdef CONFIG_GLX_SYNC
+void
+xr_glx_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
+  if (*pfence) {
+    // GLsync sync = ps->glFenceSyncProc(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    GLsync sync = ps->glImportSyncEXT(GL_SYNC_X11_FENCE_EXT, *pfence, 0);
+    XSync(ps->dpy, False);
+    glx_check_err(ps);
+    /* GLenum ret = ps->glClientWaitSyncProc(sync, GL_SYNC_FLUSH_COMMANDS_BIT,
+        1000);
+    assert(GL_CONDITION_SATISFIED == ret); */
+    ps->glWaitSyncProc(sync, 0, GL_TIMEOUT_IGNORED);
+    // ps->glDeleteSyncProc(sync);
+    // XSyncResetFence(ps->dpy, *pfence);
+  }
+  glx_check_err(ps);
+}
+#endif
+
+static inline GLXFBConfig
+get_fbconfig_from_visualinfo(session_t *ps, const XVisualInfo *visualinfo) {
+  int nelements = 0;
+  GLXFBConfig *fbconfigs = glXGetFBConfigs(ps->dpy, visualinfo->screen,
+      &nelements);
+  for (int i = 0; i < nelements; ++i) {
+    int visual_id = 0;
+    if (Success == glXGetFBConfigAttrib(ps->dpy, fbconfigs[i], GLX_VISUAL_ID, &visual_id)
+        && visual_id == visualinfo->visualid)
+      return fbconfigs[i];
+  }
+
+  return NULL;
+}
+
+#ifdef DEBUG_GLX_DEBUG_CONTEXT
+static void
+glx_debug_msg_callback(GLenum source, GLenum type,
+    GLuint id, GLenum severity, GLsizei length, const GLchar *message,
+    GLvoid *userParam) {
+  printf_dbgf("(): source 0x%04X, type 0x%04X, id %u, severity 0x%0X, \"%s\"\n",
+      source, type, id, severity, message);
+}
+#endif
+
 /**
  * Initialize OpenGL.
  */
@@ -56,7 +100,33 @@ glx_init(session_t *ps, bool need_render) {
 
   if (!ps->glx_context) {
     // Get GLX context
+#ifndef DEBUG_GLX_DEBUG_CONTEXT
     ps->glx_context = glXCreateContext(ps->dpy, pvis, None, GL_TRUE);
+#else
+    {
+      GLXFBConfig fbconfig = get_fbconfig_from_visualinfo(ps, pvis);
+      if (!fbconfig) {
+        printf_errf("(): Failed to get GLXFBConfig for root visual %#lx.",
+            pvis->visualid);
+        goto glx_init_end;
+      }
+
+      f_glXCreateContextAttribsARB p_glXCreateContextAttribsARB =
+        (f_glXCreateContextAttribsARB)
+        glXGetProcAddress((const GLubyte *) "glXCreateContextAttribsARB");
+      if (!p_glXCreateContextAttribsARB) {
+        printf_errf("(): Failed to get glXCreateContextAttribsARB().");
+        goto glx_init_end;
+      }
+
+      static const int attrib_list[] = {
+        GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_DEBUG_BIT_ARB,
+        None
+      };
+      ps->glx_context = p_glXCreateContextAttribsARB(ps->dpy, fbconfig, NULL,
+          GL_TRUE, attrib_list);
+    }
+#endif
 
     if (!ps->glx_context) {
       printf_errf("(): Failed to get GLX context.");
@@ -68,6 +138,20 @@ glx_init(session_t *ps, bool need_render) {
       printf_errf("(): Failed to attach GLX context.");
       goto glx_init_end;
     }
+
+#ifdef DEBUG_GLX_DEBUG_CONTEXT
+    {
+      f_DebugMessageCallback p_DebugMessageCallback =
+        (f_DebugMessageCallback)
+        glXGetProcAddress((const GLubyte *) "glDebugMessageCallback");
+      if (!p_DebugMessageCallback) {
+        printf_errf("(): Failed to get glDebugMessageCallback(0.");
+        goto glx_init_end;
+      }
+      p_DebugMessageCallback(glx_debug_msg_callback, ps);
+    }
+#endif
+
   }
 
   // Ensure we have a stencil buffer. X Fixes does not guarantee rectangles
@@ -114,6 +198,27 @@ glx_init(session_t *ps, bool need_render) {
         goto glx_init_end;
       }
     }
+
+#ifdef CONFIG_GLX_SYNC
+    ps->glFenceSyncProc = (f_FenceSync)
+      glXGetProcAddress((const GLubyte *) "glFenceSync");
+    ps->glIsSyncProc = (f_IsSync)
+      glXGetProcAddress((const GLubyte *) "glIsSync");
+    ps->glDeleteSyncProc = (f_DeleteSync)
+      glXGetProcAddress((const GLubyte *) "glDeleteSync");
+    ps->glClientWaitSyncProc = (f_ClientWaitSync)
+      glXGetProcAddress((const GLubyte *) "glClientWaitSync");
+    ps->glWaitSyncProc = (f_WaitSync)
+      glXGetProcAddress((const GLubyte *) "glWaitSync");
+    ps->glImportSyncEXT = (f_ImportSyncEXT)
+      glXGetProcAddress((const GLubyte *) "glImportSyncEXT");
+    if (!ps->glFenceSyncProc || !ps->glIsSyncProc || !ps->glDeleteSyncProc
+        || !ps->glClientWaitSyncProc || !ps->glWaitSyncProc
+        || !ps->glImportSyncEXT) {
+      printf_errf("(): Failed to acquire GLX sync functions.");
+      goto glx_init_end;
+    }
+#endif
   }
 
   // Acquire FBConfigs
@@ -344,9 +449,7 @@ glx_init_blur(session_t *ps) {
   }
 
 
-#ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
-#endif
 
   return true;
 #else
@@ -655,9 +758,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
   glBindTexture(ptex->target, 0);
   glDisable(ptex->target);
 
-#ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
-#endif
 
   return true;
 }
@@ -680,9 +781,7 @@ glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
     ptex->glpixmap = 0;
   }
 
-#ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
-#endif
 }
 
 /**
@@ -803,9 +902,7 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
   glx_render_color(ps, 0, 0, ps->root_width, ps->root_height, 0, *preg, NULL);
 #endif
 
-#ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
-#endif
 }
 
 /**
@@ -886,9 +983,7 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
 
   cxfree(rects_free);
 
-#ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
-#endif
 }
 
 #define P_PAINTREG_START() \
@@ -1174,9 +1269,7 @@ glx_blur_dst_end:
     free_glx_bc(ps, pbc);
   }
 
-#ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
-#endif
 
   return ret;
 }
@@ -1212,9 +1305,7 @@ glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
   glDisable(GL_BLEND);
 
-#ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
-#endif
 
   return true;
 }
@@ -1412,9 +1503,7 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     glActiveTexture(GL_TEXTURE0);
   }
 
-#ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
-#endif
 
   return true;
 }
@@ -1452,9 +1541,7 @@ glx_render_color(session_t *ps, int dx, int dy, int width, int height, int z,
   }
   glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
 
-#ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
-#endif
 }
 
 /**
@@ -1492,9 +1579,7 @@ glx_render_dots(session_t *ps, int dx, int dy, int width, int height, int z,
   }
   glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
 
-#ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
-#endif
 }
 
 /**
@@ -1524,9 +1609,7 @@ glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg) {
     }
   }
 
-#ifdef DEBUG_GLX_ERR
   glx_check_err(ps);
-#endif
 
   cxfree(rects);
 }
