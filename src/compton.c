@@ -4596,6 +4596,18 @@ usage(int ret) {
     "--glx-use-gpushader4\n"
     "  GLX backend: Use GL_EXT_gpu_shader4 for some optimization on blur\n"
     "  GLSL code. My tests on GTX 670 show no noticeable effect.\n"
+    "--xrender-sync\n"
+    "  Attempt to synchronize client applications' draw calls with XSync(),\n"
+    "  used on GLX backend to ensure up-to-date window content is painted.\n"
+#undef WARNING
+#ifndef CONFIG_XSYNC
+#define WARNING WARNING_DISABLED
+#else
+#define WARNING
+#endif
+    "--xrender-sync-fence\n"
+    "  Additionally use X Sync fence to sync clients' draw calls. Needed\n"
+    "  on nvidia-drivers with GLX backend for some users." WARNING "\n"
 #undef WARNING
 #ifndef CONFIG_DBUS
 #define WARNING WARNING_DISABLED
@@ -5186,7 +5198,9 @@ parse_cfg_condlst_opct(session_t *ps, const config_t *pcfg, const char *name) {
     if (config_setting_is_array(setting)) {
       int i = config_setting_length(setting);
       while (i--)
-        parse_rule_opacity(ps, config_setting_get_string_elem(setting, i));
+        if (!parse_rule_opacity(ps, config_setting_get_string_elem(setting,
+                i)))
+          exit(1);
     }
     // Treat it as a single pattern if it's a string
     else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
@@ -5399,6 +5413,10 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
     exit(1);
   // --glx-use-gpushader4
   lcfg_lookup_bool(&cfg, "glx-use-gpushader4", &ps->o.glx_use_gpushader4);
+  // --xrender-sync
+  lcfg_lookup_bool(&cfg, "xrender-sync", &ps->o.xrender_sync);
+  // --xrender-sync-fence
+  lcfg_lookup_bool(&cfg, "xrender-sync-fence", &ps->o.xrender_sync_fence);
   // Wintype settings
   {
     wintype_t i;
@@ -6996,7 +7014,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       exit(1);
     }
 #else
-    printf_errf("(): X Sync support not compiled in. --xrender-sync-fence"
+    printf_errf("(): X Sync support not compiled in. --xrender-sync-fence "
         "can't work.");
     exit(1);
 #endif

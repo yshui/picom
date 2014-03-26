@@ -2230,6 +2230,7 @@ xr_sync_(session_t *ps, Drawable d
   if (!ps->o.xrender_sync)
     return;
 
+  XSync(ps->dpy, False);
 #ifdef CONFIG_XSYNC
   if (ps->o.xrender_sync_fence && ps->xsync_exists) {
     // TODO: If everybody just follows the rules stated in X Sync prototype,
@@ -2243,6 +2244,8 @@ xr_sync_(session_t *ps, Drawable d
       *pfence = XSyncCreateFence(ps->dpy, d, False);
     if (*pfence) {
       Bool triggered = False;
+      /* if (XSyncQueryFence(ps->dpy, *pfence, &triggered) && triggered)
+        XSyncResetFence(ps->dpy, *pfence); */
       // The fence may fail to be created (e.g. because of died drawable)
       assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || !triggered);
       XSyncTriggerFence(ps->dpy, *pfence);
@@ -2257,7 +2260,6 @@ xr_sync_(session_t *ps, Drawable d
       XSyncResetFence(ps->dpy, *pfence);
   }
 #endif
-  XSync(ps->dpy, False);
 #ifdef CONFIG_GLX_SYNC
   xr_glx_sync(ps, d, pfence);
 #endif

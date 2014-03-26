@@ -16,11 +16,11 @@ xr_glx_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
   if (*pfence) {
     // GLsync sync = ps->glFenceSyncProc(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     GLsync sync = ps->glImportSyncEXT(GL_SYNC_X11_FENCE_EXT, *pfence, 0);
-    XSync(ps->dpy, False);
-    glx_check_err(ps);
     /* GLenum ret = ps->glClientWaitSyncProc(sync, GL_SYNC_FLUSH_COMMANDS_BIT,
         1000);
     assert(GL_CONDITION_SATISFIED == ret); */
+    XSyncTriggerFence(ps->dpy, *pfence);
+    XFlush(ps->dpy);
     ps->glWaitSyncProc(sync, 0, GL_TIMEOUT_IGNORED);
     // ps->glDeleteSyncProc(sync);
     // XSyncResetFence(ps->dpy, *pfence);
