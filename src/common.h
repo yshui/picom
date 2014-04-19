@@ -14,6 +14,7 @@
 // === Options ===
 
 // Debug options, enable them using -D in CFLAGS
+// #define DEBUG_BACKTRACE  1
 // #define DEBUG_REPAINT    1
 // #define DEBUG_EVENTS     1
 // #define DEBUG_RESTACK    1
@@ -70,6 +71,10 @@
 
 #ifndef COMPTON_VERSION
 #define COMPTON_VERSION "unknown"
+#endif
+
+#if defined(DEBUG_ALLOC_REG)
+#define DEBUG_BACKTRACE 1
 #endif
 
 // === Includes ===
@@ -568,6 +573,8 @@ typedef struct _options_t {
   c2_lptr_t *paint_blacklist;
   /// Whether to work under synchronized mode for debugging.
   bool synchronize;
+  /// Whether to show all X errors.
+  bool show_all_xerrors;
 
   // === VSync & software optimization ===
   /// User-specified refresh rate.
@@ -1192,13 +1199,13 @@ extern session_t *ps_g;
 static inline void
 print_timestamp(session_t *ps);
 
-#ifdef DEBUG_ALLOC_REG
+#ifdef DEBUG_BACKTRACE
 
 #include <execinfo.h>
-#define BACKTRACE_SIZE  5
+#define BACKTRACE_SIZE  25
 
 /**
- * Print current backtrace, excluding the first two items.
+ * Print current backtrace.
  *
  * Stolen from glibc manual.
  */
@@ -1211,11 +1218,13 @@ print_backtrace(void) {
   size = backtrace(array, BACKTRACE_SIZE);
   strings = backtrace_symbols(array, size);
 
-  for (size_t i = 2; i < size; i++)
+  for (size_t i = 0; i < size; i++)
      printf ("%s\n", strings[i]);
 
   free(strings);
 }
+
+#ifdef DEBUG_ALLOC_REG
 
 /**
  * Wrapper of <code>XFixesCreateRegion</code>, for debugging.
@@ -1245,6 +1254,8 @@ XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
 
 #define XFixesCreateRegion(dpy, p, n) XFixesCreateRegion_(dpy, p, n, __func__, __LINE__)
 #define XFixesDestroyRegion(dpy, reg) XFixesDestroyRegion_(dpy, reg, __func__, __LINE__)
+#endif
+
 #endif
 
 // === Functions ===

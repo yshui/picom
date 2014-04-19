@@ -576,6 +576,9 @@ discard_ignore(session_t *ps, unsigned long sequence) {
 
 static void
 set_ignore(session_t *ps, unsigned long sequence) {
+  if (ps->o.show_all_xerrors)
+    return;
+
   ignore_t *i = malloc(sizeof(ignore_t));
   if (!i) return;
 
@@ -2374,8 +2377,13 @@ static void
 win_determine_fade(session_t *ps, win *w) {
   if (UNSET != w->fade_force)
     w->fade = w->fade_force;
-  else if ((ps->o.no_fading_openclose && w->in_openclose)
-      || win_match(ps, w, ps->o.fade_blacklist, &w->cache_fblst))
+  else if (ps->o.no_fading_openclose && w->in_openclose)
+    w->fade = false;
+  // Ignore other possible causes of fading state changes after window
+  // gets unmapped
+  else if (IsViewable != w->a.map_state) {
+  }
+  else if (win_match(ps, w, ps->o.fade_blacklist, &w->cache_fblst))
     w->fade = false;
   else
     w->fade = ps->o.wintype_fade[w->window_type];
@@ -2403,8 +2411,7 @@ win_update_shape(session_t *ps, win *w) {
 
     win_update_shape_raw(ps, w);
 
-    // Shadow state could be changed
-    win_determine_shadow(ps, w);
+    win_on_factor_change(ps, w);
 
     /*
     // If clear_shadow state on the window possibly changed, destroy the old
@@ -2457,13 +2464,14 @@ static void
 win_determine_shadow(session_t *ps, win *w) {
   bool shadow_old = w->shadow;
 
-  w->shadow = (UNSET == w->shadow_force ?
-      (ps->o.wintype_shadow[w->window_type]
-       && !win_match(ps, w, ps->o.shadow_blacklist, &w->cache_sblst)
-       && !(ps->o.shadow_ignore_shaped && w->bounding_shaped
-         && !w->rounded_corners)
-       && !(ps->o.respect_prop_shadow && 0 == w->prop_shadow))
-       : w->shadow_force);
+  if (UNSET != w->shadow_force)
+    w->shadow = w->shadow_force;
+  else if (IsViewable == w->a.map_state)
+    w->shadow = (ps->o.wintype_shadow[w->window_type]
+        && !win_match(ps, w, ps->o.shadow_blacklist, &w->cache_sblst)
+        && !(ps->o.shadow_ignore_shaped && w->bounding_shaped
+          && !w->rounded_corners)
+        && !(ps->o.respect_prop_shadow && 0 == w->prop_shadow));
 
   // Window extents need update on shadow state change
   if (w->shadow != shadow_old) {
@@ -2488,17 +2496,13 @@ win_determine_shadow(session_t *ps, win *w) {
  */
 static void
 win_determine_invert_color(session_t *ps, win *w) {
-  // Do not change window invert color state when the window is unmapped,
-  // unless it comes from w->invert_color_force.
-  if (UNSET == w->invert_color_force && IsViewable != w->a.map_state)
-    return;
-
   bool invert_color_old = w->invert_color;
 
   if (UNSET != w->invert_color_force)
     w->invert_color = w->invert_color_force;
-  else 
-    w->invert_color = win_match(ps, w, ps->o.invert_color_list, &w->cache_ivclst);
+  else if (IsViewable == w->a.map_state)
+    w->invert_color = win_match(ps, w, ps->o.invert_color_list,
+        &w->cache_ivclst);
 
   if (w->invert_color != invert_color_old)
     add_damage_win(ps, w);
@@ -2509,6 +2513,9 @@ win_determine_invert_color(session_t *ps, win *w) {
  */
 static void
 win_determine_blur_background(session_t *ps, win *w) {
+  if (IsViewable != w->a.map_state)
+    return;
+
   bool blur_background_old = w->blur_background;
 
   w->blur_background = ps->o.blur_background
@@ -2526,6 +2533,9 @@ win_determine_blur_background(session_t *ps, win *w) {
  */
 static void
 win_update_opacity_rule(session_t *ps, win *w) {
+  if (IsViewable != w->a.map_state)
+    return;
+
   // If long is 32-bit, unfortunately there's no way could we express "unset",
   // so we just entirely don't distinguish "unset" and OPAQUE
   opacity_t opacity = OPAQUE;
@@ -3295,10 +3305,12 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
   {
     char buf[BUF_LEN] = "";
     XGetErrorText(ps->dpy, ev->error_code, buf, BUF_LEN);
-    printf("error %d (%s) request %d minor %d serial %lu (\"%s\")\n",
+    printf("error %4d %-12s request %4d minor %4d serial %6lu: \"%s\"\n",
         ev->error_code, name, ev->request_code,
         ev->minor_code, ev->serial, buf);
   }
+
+  // print_backtrace();
 
   return 0;
 }
@@ -3904,10 +3916,12 @@ ev_focus_report(XFocusChangeEvent* ev) {
  * Determine whether we should respond to a <code>FocusIn/Out</code>
  * event.
  */
+/*
 inline static bool
 ev_focus_accept(XFocusChangeEvent *ev) {
   return NotifyNormal == ev->mode || NotifyUngrab == ev->mode;
 }
+*/
 
 static inline void
 ev_focus_in(session_t *ps, XFocusChangeEvent *ev) {
@@ -4401,6 +4415,8 @@ usage(int ret) {
     "  Daemonize process.\n"
     "-S\n"
     "  Enable synchronous operation (for debugging).\n"
+    "--show-all-xerrors\n"
+    "  Show all X errors (for debugging).\n"
     "--config path\n"
     "  Look for configuration file at the path.\n"
     "--write-pid-path path\n"
@@ -5522,6 +5538,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "vsync-use-glfinish", no_argument, NULL, 311 },
     { "xrender-sync", no_argument, NULL, 312 },
     { "xrender-sync-fence", no_argument, NULL, 313 },
+    { "show-all-xerrors", no_argument, NULL, 314 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5542,6 +5559,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.display = mstrcpy(optarg);
       else if ('S' == o)
         ps->o.synchronize = true;
+      else if (314 == o)
+        ps->o.show_all_xerrors = true;
       else if ('?' == o || ':' == o)
         usage(1);
     }
@@ -5595,6 +5614,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       case 'd':
       case 'S':
+      case 314:
         break;
       P_CASELONG('D', fade_delta);
       case 'I':
