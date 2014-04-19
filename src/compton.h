@@ -832,10 +832,19 @@ static void
 win_update_prop_shadow(session_t *ps, win *w);
 
 static void
+win_set_shadow(session_t *ps, win *w, bool shadow_new);
+
+static void
 win_determine_shadow(session_t *ps, win *w);
 
 static void
+win_set_invert_color(session_t *ps, win *w, bool invert_color_new);
+
+static void
 win_determine_invert_color(session_t *ps, win *w);
+
+static void
+win_set_blur_background(session_t *ps, win *w, bool blur_background_new);
 
 static void
 win_determine_blur_background(session_t *ps, win *w);

@@ -1119,6 +1119,14 @@ paint_preprocess(session_t *ps, win *list) {
         free_region(ps, &w->reg_ignore);
     }
 
+    // Restore flags from last paint if the window is being faded out
+    if (IsUnmapped == w->a.map_state) {
+      win_set_shadow(ps, w, w->shadow_last);
+      w->fade = w->fade_last;
+      win_set_invert_color(ps, w, w->invert_color_last);
+      win_set_blur_background(ps, w, w->blur_background_last);
+    }
+
     // Update window opacity target and dim state if asked
     if (WFLAG_OPCT_CHANGE & w->flags) {
       calc_opacity(ps, w);
@@ -1255,8 +1263,17 @@ paint_preprocess(session_t *ps, win *list) {
       check_fade_fin(ps, w);
     }
 
-    if (!destroyed)
+    if (!destroyed) {
       w->to_paint = to_paint;
+
+      if (w->to_paint) {
+        // Save flags
+        w->shadow_last = w->shadow;
+        w->fade_last = w->fade;
+        w->invert_color_last = w->invert_color;
+        w->blur_background_last = w->blur_background;
+      }
+    }
   }
 
 
@@ -2456,39 +2473,55 @@ win_update_prop_shadow(session_t *ps, win *w) {
     win_determine_shadow(ps, w);
 }
 
+static void
+win_set_shadow(session_t *ps, win *w, bool shadow_new) {
+  if (w->shadow == shadow_new) return;
+
+  w->shadow = shadow_new;
+
+  // Window extents need update on shadow state change
+  // Shadow geometry currently doesn't change on shadow state change
+  // calc_shadow_geometry(ps, w);
+  if (w->extents) {
+    // Mark the old extents as damaged if the shadow is removed
+    if (!w->shadow)
+      add_damage(ps, w->extents);
+    else
+      free_region(ps, &w->extents);
+    w->extents = win_extents(ps, w);
+    // Mark the new extents as damaged if the shadow is added
+    if (w->shadow)
+      add_damage_win(ps, w);
+  }
+}
+
 /**
  * Determine if a window should have shadow, and update things depending
  * on shadow state.
  */
 static void
 win_determine_shadow(session_t *ps, win *w) {
-  bool shadow_old = w->shadow;
+  bool shadow_new = w->shadow;
 
   if (UNSET != w->shadow_force)
-    w->shadow = w->shadow_force;
+    shadow_new = w->shadow_force;
   else if (IsViewable == w->a.map_state)
-    w->shadow = (ps->o.wintype_shadow[w->window_type]
+    shadow_new = (ps->o.wintype_shadow[w->window_type]
         && !win_match(ps, w, ps->o.shadow_blacklist, &w->cache_sblst)
         && !(ps->o.shadow_ignore_shaped && w->bounding_shaped
           && !w->rounded_corners)
         && !(ps->o.respect_prop_shadow && 0 == w->prop_shadow));
 
-  // Window extents need update on shadow state change
-  if (w->shadow != shadow_old) {
-    // Shadow geometry currently doesn't change on shadow state change
-    // calc_shadow_geometry(ps, w);
-    if (w->extents) {
-      // Mark the old extents as damaged if the shadow is removed
-      if (!w->shadow)
-        add_damage(ps, w->extents);
-      else
-        free_region(ps, &w->extents);
-      w->extents = win_extents(ps, w);
-      // Mark the new extents as damaged if the shadow is added
-      if (w->shadow)
-        add_damage_win(ps, w);
-    }
-  }
+  win_set_shadow(ps, w, shadow_new);
+}
+
+static void
+win_set_invert_color(session_t *ps, win *w, bool invert_color_new) {
+  if (w->invert_color == invert_color_new) return;
+
+  w->invert_color = invert_color_new;
+
+  add_damage_win(ps, w);
 }
 
 /**
@@ -2496,15 +2529,27 @@ win_determine_shadow(session_t *ps, win *w) {
  */
 static void
 win_determine_invert_color(session_t *ps, win *w) {
-  bool invert_color_old = w->invert_color;
+  bool invert_color_new = w->invert_color;
 
   if (UNSET != w->invert_color_force)
-    w->invert_color = w->invert_color_force;
+    invert_color_new = w->invert_color_force;
   else if (IsViewable == w->a.map_state)
-    w->invert_color = win_match(ps, w, ps->o.invert_color_list,
+    invert_color_new = win_match(ps, w, ps->o.invert_color_list,
         &w->cache_ivclst);
 
-  if (w->invert_color != invert_color_old)
+  win_set_invert_color(ps, w, invert_color_new);
+}
+
+static void
+win_set_blur_background(session_t *ps, win *w, bool blur_background_new) {
+  if (w->blur_background == blur_background_new) return;
+
+  w->blur_background = blur_background_new;
+
+  // Only consider window damaged if it's previously painted with background
+  // blurred
+  if ((WMODE_SOLID != w->mode
+        || (ps->o.blur_background_frame && w->frame_opacity)))
     add_damage_win(ps, w);
 }
 
@@ -2516,16 +2561,10 @@ win_determine_blur_background(session_t *ps, win *w) {
   if (IsViewable != w->a.map_state)
     return;
 
-  bool blur_background_old = w->blur_background;
-
-  w->blur_background = ps->o.blur_background
+  bool blur_background_new = ps->o.blur_background
     && !win_match(ps, w, ps->o.blur_background_blacklist, &w->cache_bbblst);
 
-  // Only consider window damaged if it's previously painted with background
-  // blurred
-  if (w->blur_background != blur_background_old && (WMODE_SOLID != w->mode
-        || (ps->o.blur_background_frame && w->frame_opacity)))
-    add_damage_win(ps, w);
+  win_set_blur_background(ps, w, blur_background_new);
 }
 
 /**

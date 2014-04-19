@@ -1113,6 +1113,8 @@ typedef struct _win {
   /// Do not fade if it's false. Change on window type change.
   /// Used by fading blacklist in the future.
   bool fade;
+  /// Fade state on last paint.
+  bool fade_last;
   /// Override value of window fade state. Set by D-Bus method calls.
   switch_t fade_force;
   /// Callback to be called after fading completed.
@@ -1127,6 +1129,8 @@ typedef struct _win {
   // Shadow-related members
   /// Whether a window has shadow. Calculated.
   bool shadow;
+  /// Shadow state on last paint.
+  bool shadow_last;
   /// Override value of window shadow state. Set by D-Bus method calls.
   switch_t shadow_force;
   /// Opacity of the shadow. Affected by window opacity and frame opacity.
@@ -1151,12 +1155,16 @@ typedef struct _win {
 
   /// Whether to invert window color.
   bool invert_color;
+  /// Color inversion state on last paint.
+  bool invert_color_last;
   /// Override value of window color inversion state. Set by D-Bus method
   /// calls.
   switch_t invert_color_force;
 
   /// Whether to blur window background.
   bool blur_background;
+  /// Background state on last paint.
+  bool blur_background_last;
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   /// Textures and FBO background blur use.
