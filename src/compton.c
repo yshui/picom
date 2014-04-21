@@ -647,6 +647,8 @@ wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
  */
 static void
 win_rounded_corners(session_t *ps, win *w) {
+  w->rounded_corners = false;
+
   if (!w->bounding_shaped)
     return;
 
@@ -676,11 +678,9 @@ win_rounded_corners(session_t *ps, win *w) {
   for (i = 0; i < nrects; ++i)
     if (rects[i].width >= minwidth && rects[i].height >= minheight) {
       w->rounded_corners = true;
-      cxfree(rects);
-      return;
+      break;
     }
 
-  w->rounded_corners = false;
   cxfree(rects);
 }
 
@@ -4483,10 +4483,15 @@ usage(int ret) {
     "--no-fading-openclose\n"
     "  Do not fade on window open/close.\n"
     "--shadow-ignore-shaped\n"
-    "  Do not paint shadows on shaped windows.\n"
+    "  Do not paint shadows on shaped windows. (Deprecated, use\n"
+    "  --shadow-exclude \'bounding_shaped\' or\n"
+    "  --shadow-exclude \'bounding_shaped && !rounded_corners\' instead.)\n"
     "--detect-rounded-corners\n"
     "  Try to detect windows with rounded corners and don't consider\n"
-    "  them shaped windows.\n"
+    "  them shaped windows. Affects --shadow-ignore-shaped,\n"
+    "  --unredir-if-possible, and possibly others. You need to turn this\n"
+    "  on manually if you want to match against rounded_corners in\n"
+    "  conditions.\n"
     "--detect-client-opacity\n"
     "  Detect _NET_WM_OPACITY on client windows, useful for window\n"
     "  managers not passing _NET_WM_OPACITY of client windows to frame\n"

@@ -1962,7 +1962,7 @@ rect_is_fullscreen(session_t *ps, int x, int y, unsigned wid, unsigned hei) {
 static inline bool
 win_is_fullscreen(session_t *ps, const win *w) {
   return rect_is_fullscreen(ps, w->a.x, w->a.y, w->widthb, w->heightb)
-      && !w->bounding_shaped;
+      && (!w->bounding_shaped || w->rounded_corners);
 }
 
 /**
