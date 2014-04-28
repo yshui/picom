@@ -2623,10 +2623,10 @@ win_on_factor_change(session_t *ps, win *w) {
     win_determine_blur_background(ps, w);
   if (ps->o.opacity_rules)
     win_update_opacity_rule(ps, w);
-  if (ps->o.paint_blacklist)
+  if (IsViewable == w->a.map_state && ps->o.paint_blacklist)
     w->paint_excluded = win_match(ps, w, ps->o.paint_blacklist,
         &w->cache_pblst);
-  if (ps->o.unredir_if_possible_blacklist)
+  if (IsViewable == w->a.map_state && ps->o.unredir_if_possible_blacklist)
     w->unredir_if_possible_excluded = win_match(ps, w,
         ps->o.unredir_if_possible_blacklist, &w->cache_uipblst);
 }
