@@ -5458,7 +5458,7 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
       && !parse_conv_kern_lst(ps, sval, ps->o.blur_kerns, MAX_BLUR_PASS))
     exit(1);
   // --resize-damage
-  config_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);
+  lcfg_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);
   // --glx-no-stencil
   lcfg_lookup_bool(&cfg, "glx-no-stencil", &ps->o.glx_no_stencil);
   // --glx-copy-from-front
