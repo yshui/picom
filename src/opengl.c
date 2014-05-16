@@ -259,6 +259,23 @@ glx_init_end:
   return success;
 }
 
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+
+static void
+glx_free_prog_main(session_t *ps, glx_prog_main_t *pprogram) {
+  if (!pprogram)
+    return;
+  if (pprogram->prog) {
+    glDeleteProgram(pprogram->prog);
+    pprogram->prog = 0;
+  }
+  pprogram->unifm_opacity = -1;
+  pprogram->unifm_invert_color = -1;
+  pprogram->unifm_tex = -1;
+}
+
+#endif
+
 /**
  * Destroy GLX related resources.
  */
@@ -273,6 +290,10 @@ glx_destroy(session_t *ps) {
     if (ppass->prog)
       glDeleteProgram(ppass->prog);
   }
+
+  glx_free_prog_main(ps, &ps->o.glx_prog_win);
+
+  glx_check_err(ps);
 #endif
 
   // Free FBConfigs
@@ -439,6 +460,7 @@ glx_init_blur(session_t *ps) {
         P_GET_UNIFM_LOC("offset_x", unifm_offset_x);
         P_GET_UNIFM_LOC("offset_y", unifm_offset_y);
       }
+
 #undef P_GET_UNIFM_LOC
     }
     free(extension);
@@ -457,6 +479,43 @@ glx_init_blur(session_t *ps) {
   return false;
 #endif
 }
+
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+
+/**
+ * Load a GLSL main program from shader strings.
+ */
+bool
+glx_load_prog_main(session_t *ps,
+    const char *vshader_str, const char *fshader_str,
+    glx_prog_main_t *pprogram) {
+  assert(pprogram);
+
+  // Build program
+  pprogram->prog = glx_create_program_from_str(vshader_str, fshader_str);
+  if (!pprogram->prog) {
+    printf_errf("(): Failed to create GLSL program.");
+    return false;
+  }
+
+  // Get uniform addresses
+#define P_GET_UNIFM_LOC(name, target) { \
+      pprogram->target = glGetUniformLocation(pprogram->prog, name); \
+      if (pprogram->target < 0) { \
+        printf_errf("(): Failed to get location of uniform '" name "'. Might be troublesome."); \
+      } \
+    }
+  P_GET_UNIFM_LOC("opacity", unifm_opacity);
+  P_GET_UNIFM_LOC("invert_color", unifm_invert_color);
+  P_GET_UNIFM_LOC("tex", unifm_tex);
+#undef P_GET_UNIFM_LOC
+
+  glx_check_err(ps);
+
+  return true;
+}
+
+#endif
 
 /**
  * @brief Update the FBConfig of given depth.
@@ -1314,10 +1373,14 @@ glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
  * @brief Render a region with texture data.
  */
 bool
-glx_render(session_t *ps, const glx_texture_t *ptex,
+glx_render_(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
-    double opacity, bool neg,
-    XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
+    double opacity, bool argb, bool neg,
+    XserverRegion reg_tgt, const reg_data_t *pcache_reg
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+    , const glx_prog_main_t *pprogram
+#endif
+    ) {
   if (!ptex || !ptex->texture) {
     printf_errf("(): Missing texture.");
     return false;
@@ -1328,8 +1391,11 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
   return true;
 #endif
 
-  const bool argb = (GLX_TEXTURE_FORMAT_RGBA_EXT ==
-      ps->glx_fbconfigs[ptex->depth]->texture_fmt);
+  argb = argb || (GLX_TEXTURE_FORMAT_RGBA_EXT ==
+			ps->glx_fbconfigs[ptex->depth]->texture_fmt);
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  const bool has_prog = pprogram && pprogram->prog;
+#endif
   bool dual_texture = false;
 
   // It's required by legacy versions of OpenGL to enable texture target
@@ -1350,77 +1416,96 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     glColor4f(opacity, opacity, opacity, opacity);
   }
 
-  // Color negation
-  if (neg) {
-    // Simple color negation
-    if (!glIsEnabled(GL_BLEND)) {
-      glEnable(GL_COLOR_LOGIC_OP);
-      glLogicOp(GL_COPY_INVERTED);
-    }
-    // ARGB texture color negation
-    else if (argb) {
-      dual_texture = true;
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  if (!has_prog)
+#endif
+  {
+    // The default, fixed-function path
+    // Color negation
+    if (neg) {
+      // Simple color negation
+      if (!glIsEnabled(GL_BLEND)) {
+        glEnable(GL_COLOR_LOGIC_OP);
+        glLogicOp(GL_COPY_INVERTED);
+      }
+      // ARGB texture color negation
+      else if (argb) {
+        dual_texture = true;
 
-      // Use two texture stages because the calculation is too complicated,
-      // thanks to madsy for providing code
-      // Texture stage 0
-      glActiveTexture(GL_TEXTURE0);
+        // Use two texture stages because the calculation is too complicated,
+        // thanks to madsy for providing code
+        // Texture stage 0
+        glActiveTexture(GL_TEXTURE0);
 
-      // Negation for premultiplied color: color = A - C
-      glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_SUBTRACT);
-      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_ALPHA);
-      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_TEXTURE);
-      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+        // Negation for premultiplied color: color = A - C
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_SUBTRACT);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_ALPHA);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_TEXTURE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
 
-      // Pass texture alpha through
-      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
-      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
-      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-   
-      // Texture stage 1
-      glActiveTexture(GL_TEXTURE1);
-      glEnable(ptex->target);
-      glBindTexture(ptex->target, ptex->texture);
+        // Pass texture alpha through
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_REPLACE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
 
-      glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+        // Texture stage 1
+        glActiveTexture(GL_TEXTURE1);
+        glEnable(ptex->target);
+        glBindTexture(ptex->target, ptex->texture);
 
-      // Modulation with constant factor
-      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PREVIOUS);
-      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
-      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
-      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_ALPHA);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
 
-      // Modulation with constant factor
-      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
-      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
-      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
-      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+        // Modulation with constant factor
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PREVIOUS);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_SRC_COLOR);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_ALPHA);
 
-      glActiveTexture(GL_TEXTURE0);
-    }
-    // RGB blend color negation
-    else {
-      glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+        // Modulation with constant factor
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_PREVIOUS);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
 
-      // Modulation with constant factor
-      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
-      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
-      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+        glActiveTexture(GL_TEXTURE0);
+      }
+      // RGB blend color negation
+      else {
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
 
-      // Modulation with constant factor
-      glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
-      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
-      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-      glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
-      glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+        // Modulation with constant factor
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+
+        // Modulation with constant factor
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
+        glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);
+      }
     }
   }
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  else {
+    // Programmable path
+    assert(pprogram->prog);
+    glUseProgram(pprogram->prog);
+    if (pprogram->unifm_opacity >= 0)
+      glUniform1f(pprogram->unifm_opacity, opacity);
+    if (pprogram->unifm_invert_color >= 0)
+      glUniform1i(pprogram->unifm_invert_color, neg);
+    if (pprogram->unifm_tex >= 0)
+      glUniform1i(pprogram->unifm_tex, 0);
+  }
+#endif
 
 #ifdef DEBUG_GLX
   printf_dbgf("(): Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n", x, y, width, height, dx, dy, ptex->width, ptex->height, z);
@@ -1502,6 +1587,11 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     glDisable(ptex->target);
     glActiveTexture(GL_TEXTURE0);
   }
+
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  if (has_prog)
+    glUseProgram(0);
+#endif
 
   glx_check_err(ps);
 
@@ -1625,7 +1715,7 @@ glx_create_shader(GLenum shader_type, const char *shader_str) {
   bool success = false;
   GLuint shader = glCreateShader(shader_type);
   if (!shader) {
-    printf_errf("(): Failed to create shader with type %d.", shader_type);
+    printf_errf("(): Failed to create shader with type %#x.", shader_type);
     goto glx_create_shader_end;
   }
   glShaderSource(shader, 1, &shader_str, NULL);
@@ -1700,6 +1790,41 @@ glx_create_program_end:
   }
 
   return program;
+}
+
+/**
+ * @brief Create a program from vertex and fragment shader strings.
+ */
+GLuint
+glx_create_program_from_str(const char *vert_shader_str,
+		const char *frag_shader_str) {
+	GLuint vert_shader = 0;
+	GLuint frag_shader = 0;
+	GLuint prog = 0;
+
+	if (vert_shader_str)
+		vert_shader = glx_create_shader(GL_VERTEX_SHADER, vert_shader_str);
+	if (frag_shader_str)
+		frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, frag_shader_str);
+
+	{
+		GLuint shaders[2];
+		int count = 0;
+		if (vert_shader)
+			shaders[count++] = vert_shader;
+		if (frag_shader)
+			shaders[count++] = frag_shader;
+		assert(count <= sizeof(shaders) / sizeof(shaders[0]));
+		if (count)
+			prog = glx_create_program(shaders, count);
+	}
+
+	if (vert_shader)
+		glDeleteShader(vert_shader);
+	if (frag_shader)
+		glDeleteShader(frag_shader);
+
+	return prog;
 }
 #endif
 

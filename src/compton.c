@@ -1206,7 +1206,7 @@ paint_preprocess(session_t *ps, win *list) {
 
         // If the window is solid, we add the window region to the
         // ignored region
-        if (WMODE_SOLID == w->mode) {
+        if (win_is_solid(ps, w)) {
           if (!w->frame_opacity) {
             if (w->border_size)
               w->reg_ignore = copy_region(ps, w->border_size);
@@ -1240,7 +1240,7 @@ paint_preprocess(session_t *ps, win *list) {
       // is not correctly set.
       if (ps->o.unredir_if_possible && is_highest && to_paint) {
         is_highest = false;
-        if (WMODE_SOLID == w->mode
+        if (win_is_solid(ps, w)
             && (!w->frame_opacity || !win_has_frame(w))
             && win_is_fullscreen(ps, w)
             && !w->unredir_if_possible_excluded)
@@ -1316,7 +1316,7 @@ win_paint_shadow(session_t *ps, win *w,
 
   render(ps, 0, 0, w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
       w->shadow_width, w->shadow_height, w->shadow_opacity, true, false,
-      w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint, pcache_reg);
+      w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint, pcache_reg, NULL);
 }
 
 /**
@@ -1472,7 +1472,7 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
         // Minimize the region we try to blur, if the window itself is not
         // opaque, only the frame is.
         XserverRegion reg_noframe = None;
-        if (WMODE_SOLID == w->mode) {
+        if (win_is_solid(ps, w)) {
           XserverRegion reg_all = border_size(ps, w, false);
           reg_noframe = win_get_region_noframe(ps, w, false);
           XFixesSubtractRegion(ps->dpy, reg_noframe, reg_all, reg_noframe);
@@ -1496,10 +1496,14 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
 }
 
 static void
-render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
+render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     double opacity, bool argb, bool neg,
     Picture pict, glx_texture_t *ptex,
-    XserverRegion reg_paint, const reg_data_t *pcache_reg) {
+    XserverRegion reg_paint, const reg_data_t *pcache_reg
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+    , const glx_prog_main_t *pprogram
+#endif
+    ) {
   switch (ps->o.backend) {
     case BKEND_XRENDER:
     case BKEND_XR_GLX_HYBRID:
@@ -1515,7 +1519,7 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
 #ifdef CONFIG_VSYNC_OPENGL
     case BKEND_GLX:
       glx_render(ps, ptex, x, y, dx, dy, wid, hei,
-          ps->glx_z, opacity, neg, reg_paint, pcache_reg);
+          ps->glx_z, opacity, argb, neg, reg_paint, pcache_reg, pprogram);
       ps->glx_z += 1;
       break;
 #endif
@@ -1911,7 +1915,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       if (!is_region_empty(ps, reg_paint, &cache_reg)) {
         set_tgt_clip(ps, reg_paint, &cache_reg);
         // Blur window background
-        if (w->blur_background && (WMODE_SOLID != w->mode
+        if (w->blur_background && (!win_is_solid(ps, w)
               || (ps->o.blur_background_frame && w->frame_opacity))) {
           win_blur_background(ps, w, ps->tgt_buffer.pict, reg_paint, &cache_reg);
         }
@@ -1992,7 +1996,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
         glFlush();
       glXWaitX();
       glx_render(ps, ps->tgt_buffer.ptex, 0, 0, 0, 0,
-          ps->root_width, ps->root_height, 0, 1.0, false, region_real, NULL);
+          ps->root_width, ps->root_height, 0, 1.0, false, false,
+          region_real, NULL, NULL);
       // No break here!
     case BKEND_GLX:
       if (ps->o.glx_use_copysubbuffermesa)
@@ -2396,6 +2401,12 @@ win_determine_fade(session_t *ps, win *w) {
     w->fade = w->fade_force;
   else if (ps->o.no_fading_openclose && w->in_openclose)
     w->fade = false;
+  else if (ps->o.no_fading_destroyed_argb && w->destroyed
+      && WMODE_ARGB == w->mode && w->client_win && w->client_win != w->id) {
+    w->fade = false;
+    // Prevent it from being overwritten by last-paint value
+    w->fade_last = false;
+  }
   // Ignore other possible causes of fading state changes after window
   // gets unmapped
   else if (IsViewable != w->a.map_state) {
@@ -2548,8 +2559,8 @@ win_set_blur_background(session_t *ps, win *w, bool blur_background_new) {
 
   // Only consider window damaged if it's previously painted with background
   // blurred
-  if ((WMODE_SOLID != w->mode
-        || (ps->o.blur_background_frame && w->frame_opacity)))
+  if (!win_is_solid(ps, w)
+        || (ps->o.blur_background_frame && w->frame_opacity))
     add_damage_win(ps, w);
 }
 
@@ -3205,6 +3216,9 @@ destroy_win(session_t *ps, Window id) {
     unmap_win(ps, w);
 
     w->destroyed = true;
+
+    if (ps->o.no_fading_destroyed_argb)
+      win_determine_fade(ps, w);
 
     // Set fading callback
     set_fade_callback(ps, w, destroy_callback, false);
@@ -4482,6 +4496,9 @@ usage(int ret) {
     "  Mark windows that have no WM frame as active.\n"
     "--no-fading-openclose\n"
     "  Do not fade on window open/close.\n"
+    "--no-fading-destroyed-argb\n"
+    "  Do not fade destroyed ARGB windows with WM frame. Workaround of bugs\n"
+    "  in Openbox, Fluxbox, etc.\n"
     "--shadow-ignore-shaped\n"
     "  Do not paint shadows on shaped windows. (Deprecated, use\n"
     "  --shadow-exclude \'bounding_shaped\' or\n"
@@ -4674,6 +4691,12 @@ usage(int ret) {
 #else
 #define WARNING
 #endif
+    "--glx-fshader-win shader\n"
+    "  GLX backend: Use specified GLSL fragment shader for rendering window\n"
+    "  contents.\n"
+    "--force-win-blend\n"
+    "  Force all windows to be painted with blending. Useful if you have a\n"
+    "  --glx-fshader-win that could turn opaque pixels transparent.\n"
     "--dbus\n"
     "  Enable remote control via D-Bus. See the D-BUS API section in the\n"
     "  man page for more details." WARNING "\n"
@@ -5367,6 +5390,9 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
     wintype_arr_enable(ps->o.wintype_fade);
   // --no-fading-open-close
   lcfg_lookup_bool(&cfg, "no-fading-openclose", &ps->o.no_fading_openclose);
+  // --no-fading-destroyed-argb
+  lcfg_lookup_bool(&cfg, "no-fading-destroyed-argb",
+      &ps->o.no_fading_destroyed_argb);
   // --shadow-red
   config_lookup_float(&cfg, "shadow-red", &ps->o.shadow_red);
   // --shadow-green
@@ -5583,6 +5609,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "xrender-sync", no_argument, NULL, 312 },
     { "xrender-sync-fence", no_argument, NULL, 313 },
     { "show-all-xerrors", no_argument, NULL, 314 },
+    { "no-fading-destroyed-argb", no_argument, NULL, 315 },
+    { "force-win-blend", no_argument, NULL, 316 },
+    { "glx-fshader-win", required_argument, NULL, 317 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5838,6 +5867,11 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(311, vsync_use_glfinish);
       P_CASEBOOL(312, xrender_sync);
       P_CASEBOOL(313, xrender_sync_fence);
+      P_CASEBOOL(315, no_fading_destroyed_argb);
+      P_CASEBOOL(316, force_win_blend);
+      case 317:
+        ps->o.glx_fshader_win_str = mstrcpy(optarg);
+        break;
       default:
         usage(1);
         break;
@@ -6776,6 +6810,9 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .backend = BKEND_XRENDER,
       .glx_no_stencil = false,
       .glx_copy_from_front = false,
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+      .glx_prog_win = GLX_PROG_MAIN_INIT,
+#endif
       .mark_wmwin_focused = false,
       .mark_ovredir_focused = false,
       .fork_after_register = false,
@@ -6818,6 +6855,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .fade_out_step = 0.03 * OPAQUE,
       .fade_delta = 10,
       .no_fading_openclose = false,
+      .no_fading_destroyed_argb = false,
       .fade_blacklist = NULL,
 
       .wintype_opacity = { 0.0 },
@@ -7146,6 +7184,17 @@ session_init(session_t *ps_old, int argc, char **argv) {
 #endif
   }
 
+  // Initialize window GL shader
+  if (BKEND_GLX == ps->o.backend && ps->o.glx_fshader_win_str) {
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+    if (!glx_load_prog_main(ps, NULL, ps->o.glx_fshader_win_str, &ps->o.glx_prog_win))
+      exit(1);
+#else
+    printf_errf("(): GLSL supported not compiled in, can't load shader.");
+    exit(1);
+#endif
+  }
+
   // Initialize software optimization
   if (ps->o.sw_opti)
     ps->o.sw_opti = swopti_init(ps);
@@ -7226,7 +7275,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
     cxfree(children);
   }
-
 
   if (ps->o.track_focus) {
     recheck_focus(ps);
@@ -7395,6 +7443,7 @@ session_destroy(session_t *ps) {
   free(ps->pfds_read);
   free(ps->pfds_write);
   free(ps->pfds_except);
+  free(ps->o.glx_fshader_win_str);
   free_xinerama_info(ps);
 
 #ifdef CONFIG_VSYNC_OPENGL

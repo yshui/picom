@@ -469,6 +469,25 @@ typedef struct {
   /// Height of the textures.
   int height;
 } glx_blur_cache_t;
+
+typedef struct {
+  /// GLSL program.
+  GLuint prog;
+  /// Location of uniform "opacity" in window GLSL program.
+  GLint unifm_opacity;
+  /// Location of uniform "invert_color" in blur GLSL program.
+  GLint unifm_invert_color;
+  /// Location of uniform "tex" in window GLSL program.
+  GLint unifm_tex;
+} glx_prog_main_t;
+
+#define GLX_PROG_MAIN_INIT { \
+  .prog = 0, \
+  .unifm_opacity = -1, \
+  .unifm_invert_color = -1, \
+  .unifm_tex = -1, \
+}
+
 #endif
 
 typedef struct {
@@ -536,10 +555,12 @@ typedef struct _options_t {
   int glx_swap_method;
   /// Whether to use GL_EXT_gpu_shader4 to (hopefully) accelerates blurring.
   bool glx_use_gpushader4;
-  /// Whether to try to detect WM windows and mark them as focused.
-  bool mark_wmwin_focused;
-  /// Whether to mark override-redirect windows as focused.
-  bool mark_ovredir_focused;
+  /// Custom fragment shader for painting windows, as a string.
+  char *glx_fshader_win_str;
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  /// Custom GLX program used for painting window.
+  glx_prog_main_t glx_prog_win;
+#endif
   /// Whether to fork to background.
   bool fork_after_register;
   /// Whether to detect rounded corners.
@@ -547,6 +568,8 @@ typedef struct _options_t {
   /// Whether to paint on X Composite overlay window instead of root
   /// window.
   bool paint_on_overlay;
+  /// Force painting of window content with blending.
+  bool force_win_blend;
   /// Resize damage for a specific number of pixels.
   int resize_damage;
   /// Whether to unredirect all windows if a full-screen opaque window
@@ -622,6 +645,8 @@ typedef struct _options_t {
   time_ms_t fade_delta;
   /// Whether to disable fading on window open/close.
   bool no_fading_openclose;
+  /// Whether to disable fading on ARGB managed destroyed windows.
+  bool no_fading_destroyed_argb;
   /// Fading blacklist. A linked list of conditions.
   c2_lptr_t *fade_blacklist;
 
@@ -672,6 +697,10 @@ typedef struct _options_t {
   // === Focus related ===
   /// Consider windows of specific types to be always focused.
   bool wintype_focus[NUM_WINTYPES];
+  /// Whether to try to detect WM windows and mark them as focused.
+  bool mark_wmwin_focused;
+  /// Whether to mark override-redirect windows as focused.
+  bool mark_ovredir_focused;
   /// Whether to use EWMH _NET_ACTIVE_WINDOW to find active window.
   bool use_ewmh_active_win;
   /// A list of windows always to be considered focused.
@@ -1966,6 +1995,14 @@ win_is_fullscreen(session_t *ps, const win *w) {
 }
 
 /**
+ * Check if a window will be painted solid.
+ */
+static inline bool
+win_is_solid(session_t *ps, const win *w) {
+  return WMODE_SOLID == w->mode && !ps->o.force_win_blend;
+}
+
+/**
  * Determine if a window has a specific property.
  *
  * @param ps current session
@@ -2073,6 +2110,13 @@ glx_on_root_change(session_t *ps);
 bool
 glx_init_blur(session_t *ps);
 
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+bool
+glx_load_prog_main(session_t *ps,
+    const char *vshader_str, const char *fshader_str,
+    glx_prog_main_t *pprogram);
+#endif
+
 bool
 glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
     unsigned width, unsigned height, unsigned depth);
@@ -2108,10 +2152,24 @@ glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     GLfloat factor, XserverRegion reg_tgt, const reg_data_t *pcache_reg);
 
 bool
-glx_render(session_t *ps, const glx_texture_t *ptex,
+glx_render_(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
-    double opacity, bool neg,
-    XserverRegion reg_tgt, const reg_data_t *pcache_reg);
+    double opacity, bool argb, bool neg,
+    XserverRegion reg_tgt, const reg_data_t *pcache_reg
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+    , const glx_prog_main_t *pprogram
+#endif
+    );
+
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#define \
+   glx_render(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg, reg_tgt, pcache_reg, pprogram) \
+  glx_render_(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg, reg_tgt, pcache_reg, pprogram)
+#else
+#define \
+   glx_render(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg, reg_tgt, pcache_reg, pprogram) \
+  glx_render_(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg, reg_tgt, pcache_reg)
+#endif
 
 void
 glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg);
@@ -2122,6 +2180,10 @@ glx_create_shader(GLenum shader_type, const char *shader_str);
 
 GLuint
 glx_create_program(const GLuint * const shaders, int nshaders);
+
+GLuint
+glx_create_program_from_str(const char *vert_shader_str,
+		const char *frag_shader_str);
 #endif
 
 /**
