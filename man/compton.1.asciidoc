@@ -29,52 +29,52 @@ OPTIONS
 *-d* 'DISPLAY'::
 	Display to be managed.
 
-*-r* 'RADIUS'::
+*-r*, *--shadow-radius*='RADIUS'::
 	The blur radius for shadows, in pixels. (defaults to 12)
 
-*-o* 'OPACITY'::
+*-o*, *--shadow-opacity*='OPACITY'::
 	The opacity of shadows. (0.0 - 1.0, defaults to 0.75)
 
-*-l* 'OFFSET'::
+*-l*, *--shadow-offset-x*='OFFSET'::
 	The left offset for shadows, in pixels. (defaults to -15)
 
-*-t* 'OFFSET'::
+*-t*, *--shadow-offset-y*='OFFSET'::
 	The top offset for shadows, in pixels. (defaults to -15)
 
-*-I* 'OPACITY_STEP'::
+*-I*, *--fade-in-step*='OPACITY_STEP'::
 	Opacity change between steps while fading in. (0.01 - 1.0, defaults to 0.028)
 
-*-O* 'OPACITY_STEP'::
+*-O*, *--fade-out-step*='OPACITY_STEP'::
 	Opacity change between steps while fading out. (0.01 - 1.0, defaults to 0.03)
 
 *-D* 'MILLISECONDS'::
 	The time between steps in fade step, in milliseconds. (> 0, defaults to 10)
 
-*-m* 'OPACITY'::
+*-m*, *--menu-opacity*='OPACITY'::
 	Default opacity for dropdown menus and popup menus. (0.0 - 1.0, defaults to 1.0)
 
-*-c*::
+*-c*, *--shadow*::
 	Enabled client-side shadows on windows. Note desktop windows (windows with '_NET_WM_WINDOW_TYPE_DESKTOP') never get shadow.
 
-*-C*::
+*-C*, *--no-dock-shadow*::
 	Avoid drawing shadows on dock/panel windows.
 
-*-z*::
+*-z*, *--clear-shadow*::
 	Zero the part of the shadow's mask behind the window. Note this may not work properly on ARGB windows with fully transparent areas.
 
-*-f*::
+*-f*, *--fading*::
 	Fade windows in/out when opening/closing and when opacity changes, unless *--no-fading-openclose* is used.
 
 *-F*::
 	Equals *-f*. Deprecated.
 
-*-i* 'OPACITY'::
+*-i*, *--inactive-opacity*='OPACITY'::
 	Opacity of inactive windows. (0.1 - 1.0, disabled by default)
 
-*-e* 'OPACITY'::
+*-e*, *--frame-opacity*='OPACITY'::
 	Opacity of window titlebars and borders. (0.1 - 1.0, disabled by default)
 
-*-G*::
+*-G*, *--no-dnd-shadow*::
 	Don't draw shadows on drag-and-drop windows.
 
 *-b*::
