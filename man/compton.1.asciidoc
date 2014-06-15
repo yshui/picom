@@ -47,7 +47,7 @@ OPTIONS
 *-O*, *--fade-out-step*='OPACITY_STEP'::
 	Opacity change between steps while fading out. (0.01 - 1.0, defaults to 0.03)
 
-*-D* 'MILLISECONDS'::
+*-D*, *--fade-delta*='MILLISECONDS'::
 	The time between steps in fade step, in milliseconds. (> 0, defaults to 10)
 
 *-m*, *--menu-opacity*='OPACITY'::
@@ -66,7 +66,7 @@ OPTIONS
 	Fade windows in/out when opening/closing and when opacity changes, unless *--no-fading-openclose* is used.
 
 *-F*::
-	Equals *-f*. Deprecated.
+	Equals to *-f*. Deprecated.
 
 *-i*, *--inactive-opacity*='OPACITY'::
 	Opacity of inactive windows. (0.1 - 1.0, disabled by default)
@@ -77,7 +77,7 @@ OPTIONS
 *-G*, *--no-dnd-shadow*::
 	Don't draw shadows on drag-and-drop windows.
 
-*-b*::
+*-b*, *--daemon*::
 	Daemonize process. Fork to background after initialization.
 
 *-S*::
@@ -118,6 +118,9 @@ OPTIONS
 
 *--no-fading-openclose*::
 	Do not fade on window open/close.
+
+*--no-fading-destroyed-argb*::
+	Do not fade destroyed ARGB windows with WM frame. Workaround of bugs in Openbox, Fluxbox, etc.
 
 *--shadow-ignore-shaped*::
 	Do not paint shadows on shaped windows. Note shaped windows here means windows setting its shape through X Shape extension. Those using ARGB background is beyond our control.
@@ -263,6 +266,12 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 
 *--xrender-sync-fence*::
 	Additionally use X Sync fence to sync clients' draw calls. Needed on nvidia-drivers with GLX backend for some users. May be disabled at compile time with `NO_XSYNC=1`.
+
+*--glx-fshader-win* 'SHADER'::
+	GLX backend: Use specified GLSL fragment shader for rendering window contents. See `compton-default-fshader-win.glsl` and `compton-fake-transparency-fshader-win.glsl` in the source tree for examples.
+
+*--force-win-blend*::
+	Force all windows to be painted with blending. Useful if you have a *--glx-fshader-win* that could turn opaque pixels transparent.
 
 *--dbus*::
 	Enable remote control via D-Bus. See the *D-BUS API* section below for more details.
