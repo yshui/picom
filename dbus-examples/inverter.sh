@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# === Verify `compton --dbus` status === 
+# === Verify `compton --dbus` status ===
 
 if [ -z "`dbus-send --session --dest=org.freedesktop.DBus --type=method_call --print-reply /org/freedesktop/DBus org.freedesktop.DBus.ListNames | grep compton`" ]; then
   echo "compton DBus interface unavailable"

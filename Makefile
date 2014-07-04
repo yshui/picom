@@ -132,7 +132,7 @@ docs: $(MANPAGES) $(MANPAGES_HTML)
 
 install: $(BINS) docs
 	@install -d "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(MANDIR)" "$(DESTDIR)$(APPDIR)"
-	@install -m755 $(BINS) "$(DESTDIR)$(BINDIR)"/ 
+	@install -m755 $(BINS) "$(DESTDIR)$(BINDIR)"/
 	@install -m644 $(MANPAGES) "$(DESTDIR)$(MANDIR)"/
 	@install -m644 compton.desktop "$(DESTDIR)$(APPDIR)"/
 ifneq "$(DOCDIR)" ""
