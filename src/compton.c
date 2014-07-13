@@ -4759,7 +4759,8 @@ register_cm(session_t *ps) {
     printf_errf("(): Failed to set COMPTON_VERSION.");
   }
 
-  {
+  // Acquire X Selection _NET_WM_CM_S?
+  if (!ps->o.no_x_selection) {
     unsigned len = strlen(REGISTER_PROP) + 2;
     int s = ps->scr;
 
@@ -5614,6 +5615,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "no-fading-destroyed-argb", no_argument, NULL, 315 },
     { "force-win-blend", no_argument, NULL, 316 },
     { "glx-fshader-win", required_argument, NULL, 317 },
+    { "version", no_argument, NULL, 318 },
+    { "no-x-selection", no_argument, NULL, 319 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5636,6 +5639,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.synchronize = true;
       else if (314 == o)
         ps->o.show_all_xerrors = true;
+      else if (318 == o) {
+        printf("%s\n", COMPTON_VERSION);
+        exit(0);
+      }
       else if ('?' == o || ':' == o)
         usage(1);
     }
@@ -5690,6 +5697,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 'd':
       case 'S':
       case 314:
+      case 318:
         break;
       P_CASELONG('D', fade_delta);
       case 'I':
@@ -5874,6 +5882,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 317:
         ps->o.glx_fshader_win_str = mstrcpy(optarg);
         break;
+      P_CASEBOOL(319, no_x_selection);
       default:
         usage(1);
         break;

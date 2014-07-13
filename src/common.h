@@ -598,6 +598,8 @@ typedef struct _options_t {
   bool synchronize;
   /// Whether to show all X errors.
   bool show_all_xerrors;
+  /// Whether to avoid acquiring X Selection.
+  bool no_x_selection;
 
   // === VSync & software optimization ===
   /// User-specified refresh rate.
