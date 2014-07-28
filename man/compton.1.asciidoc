@@ -253,7 +253,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	GLX backend: Use 'MESA_copy_sub_buffer' to do partial screen update. My tests on nouveau shows a 200% performance boost when only 1/4 of the screen is updated. May break VSync and is not available on some drivers. Overrides *--glx-copy-from-front*.
 
 *--glx-no-rebind-pixmap*::
-	GLX backend: Avoid rebinding pixmap on window damage. Probably could improve performance on rapid window content changes, but is known to break things on some drivers (LLVMpipe). Recommended if it works.
+	GLX backend: Avoid rebinding pixmap on window damage. Probably could improve performance on rapid window content changes, but is known to break things on some drivers (LLVMpipe, xf86-video-intel, etc.). Recommended if it works.
 
 *--glx-swap-method* undefined/exchange/copy/3/4/5/6/buffer-age::
 	GLX backend: GLX buffer swap method we assume. Could be `undefined` (0), `copy` (1), `exchange` (2), 3-6, or `buffer-age` (-1).  `undefined` is the slowest and the safest, and the default value. `copy` is fastest, but may fail on some drivers, 2-6 are gradually slower but safer (6 is still faster than 0). Usually, double buffer means 2, triple buffer means 3. `buffer-age` means auto-detect using 'GLX_EXT_buffer_age', supported by some drivers. Useless with *--glx-use-copysubbuffermesa*. Partially breaks `--resize-damage`. Defaults to `undefined`.
