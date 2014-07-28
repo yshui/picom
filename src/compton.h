@@ -270,7 +270,7 @@ free_reg_data(reg_data_t *pregd) {
  */
 static inline void
 free_paint(session_t *ps, paint_t *ppaint) {
-  free_texture(ps, &ppaint->ptex);
+  free_paint_glx(ps, ppaint);
   free_picture(ps, &ppaint->pict);
   free_pixmap(ps, &ppaint->pixmap);
 }
@@ -289,6 +289,7 @@ free_wpaint(session_t *ps, win *w) {
  */
 static inline void
 free_win_res(session_t *ps, win *w) {
+  free_win_res_glx(ps, w);
   free_region(ps, &w->extents);
   free_paint(ps, &w->paint);
   free_region(ps, &w->border_size);
@@ -299,9 +300,6 @@ free_win_res(session_t *ps, win *w) {
   free(w->class_instance);
   free(w->class_general);
   free(w->role);
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
-  free_glx_bc(ps, &w->glx_blur_cache);
-#endif
 }
 
 /**
@@ -1224,10 +1222,10 @@ swopti_handle_timeout(session_t *ps, struct timeval *ptv);
 static inline bool
 ensure_glx_context(session_t *ps) {
   // Create GLX context
-  if (!ps->glx_context)
+  if (!glx_has_context(ps))
     glx_init(ps, false);
 
-  return ps->glx_context;
+  return ps->psglx->context;
 }
 #endif
 
@@ -1274,7 +1272,7 @@ init_alpha_picts(session_t *ps);
 static bool
 init_dbe(session_t *ps);
 
-static void
+static bool
 init_overlay(session_t *ps);
 
 static void

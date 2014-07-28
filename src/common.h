@@ -443,7 +443,6 @@ struct _glx_texture {
   unsigned depth;
   bool y_inverted;
 };
-#endif
 
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
 typedef struct {
@@ -488,6 +487,7 @@ typedef struct {
   .unifm_tex = -1, \
 }
 
+#endif
 #endif
 
 typedef struct {
@@ -584,6 +584,10 @@ typedef struct _options_t {
   switch_t redirected_force;
   /// Whether to stop painting. Controlled through D-Bus.
   switch_t stoppaint_force;
+  /// Whether to re-redirect screen on root size change.
+  bool reredir_on_root_change;
+  /// Whether to reinitialize GLX on root size change.
+  bool glx_reinit_on_root_change;
   /// Whether to enable D-Bus support.
   bool dbus;
   /// Path to log file.
@@ -721,6 +725,65 @@ typedef struct _options_t {
   bool track_leader;
 } options_t;
 
+#ifdef CONFIG_VSYNC_OPENGL
+/// Structure containing GLX-dependent data for a compton session.
+typedef struct {
+  // === OpenGL related ===
+  /// GLX context.
+  GLXContext context;
+  /// Whether we have GL_ARB_texture_non_power_of_two.
+  bool has_texture_non_power_of_two;
+  /// Pointer to glXGetVideoSyncSGI function.
+  f_GetVideoSync glXGetVideoSyncSGI;
+  /// Pointer to glXWaitVideoSyncSGI function.
+  f_WaitVideoSync glXWaitVideoSyncSGI;
+   /// Pointer to glXGetSyncValuesOML function.
+  f_GetSyncValuesOML glXGetSyncValuesOML;
+  /// Pointer to glXWaitForMscOML function.
+  f_WaitForMscOML glXWaitForMscOML;
+  /// Pointer to glXSwapIntervalSGI function.
+  f_SwapIntervalSGI glXSwapIntervalProc;
+  /// Pointer to glXSwapIntervalMESA function.
+  f_SwapIntervalMESA glXSwapIntervalMESAProc;
+  /// Pointer to glXBindTexImageEXT function.
+  f_BindTexImageEXT glXBindTexImageProc;
+  /// Pointer to glXReleaseTexImageEXT function.
+  f_ReleaseTexImageEXT glXReleaseTexImageProc;
+  /// Pointer to glXCopySubBufferMESA function.
+  f_CopySubBuffer glXCopySubBufferProc;
+#ifdef CONFIG_GLX_SYNC
+  /// Pointer to the glFenceSync() function.
+  f_FenceSync glFenceSyncProc;
+  /// Pointer to the glIsSync() function.
+  f_IsSync glIsSyncProc;
+  /// Pointer to the glDeleteSync() function.
+  f_DeleteSync glDeleteSyncProc;
+  /// Pointer to the glClientWaitSync() function.
+  f_ClientWaitSync glClientWaitSyncProc;
+  /// Pointer to the glWaitSync() function.
+  f_WaitSync glWaitSyncProc;
+  /// Pointer to the glImportSyncEXT() function.
+  f_ImportSyncEXT glImportSyncEXT;
+#endif
+#ifdef DEBUG_GLX_MARK
+  /// Pointer to StringMarkerGREMEDY function.
+  f_StringMarkerGREMEDY glStringMarkerGREMEDY;
+  /// Pointer to FrameTerminatorGREMEDY function.
+  f_FrameTerminatorGREMEDY glFrameTerminatorGREMEDY;
+#endif
+  /// Current GLX Z value.
+  int z;
+  /// FBConfig-s for GLX pixmap of different depths.
+  glx_fbconfig_t *fbconfigs[OPENGL_MAX_DEPTH + 1];
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  glx_blur_pass_t blur_passes[MAX_BLUR_PASS];
+#endif
+} glx_session_t;
+
+#define CGLX_SESSION_INIT { .context = NULL }
+
+#endif
+
 /// Structure containing all necessary data for a compton session.
 typedef struct _session_t {
   // === Display related ===
@@ -762,6 +825,10 @@ typedef struct _session_t {
   XdbeBackBuffer root_dbe;
   /// Window ID of the window we register as a symbol.
   Window reg_win;
+#ifdef CONFIG_VSYNC_OPENGL
+  /// Pointer to GLX data.
+  glx_session_t *psglx;
+#endif
 
   // === Operation related ===
   /// Program options.
@@ -804,10 +871,6 @@ typedef struct _session_t {
   /// Pointer to the <code>next</code> member of tail element of the error
   /// ignore linked list.
   ignore_t **ignore_tail;
-#ifdef CONFIG_VSYNC_OPENGL
-  /// Current GLX Z value.
-  int glx_z;
-#endif
   // Cached blur convolution kernels.
   XFixed *blur_kerns_cache[MAX_BLUR_PASS];
   /// Reset program after next paint.
@@ -865,57 +928,6 @@ typedef struct _session_t {
   // === DRM VSync related ===
   /// File descriptor of DRI device file. Used for DRM VSync.
   int drm_fd;
-#endif
-
-#ifdef CONFIG_VSYNC_OPENGL
-  // === OpenGL related ===
-  /// GLX context.
-  GLXContext glx_context;
-  /// Whether we have GL_ARB_texture_non_power_of_two.
-  bool glx_has_texture_non_power_of_two;
-  /// Pointer to glXGetVideoSyncSGI function.
-  f_GetVideoSync glXGetVideoSyncSGI;
-  /// Pointer to glXWaitVideoSyncSGI function.
-  f_WaitVideoSync glXWaitVideoSyncSGI;
-   /// Pointer to glXGetSyncValuesOML function.
-  f_GetSyncValuesOML glXGetSyncValuesOML;
-  /// Pointer to glXWaitForMscOML function.
-  f_WaitForMscOML glXWaitForMscOML;
-  /// Pointer to glXSwapIntervalSGI function.
-  f_SwapIntervalSGI glXSwapIntervalProc;
-  /// Pointer to glXSwapIntervalMESA function.
-  f_SwapIntervalMESA glXSwapIntervalMESAProc;
-  /// Pointer to glXBindTexImageEXT function.
-  f_BindTexImageEXT glXBindTexImageProc;
-  /// Pointer to glXReleaseTexImageEXT function.
-  f_ReleaseTexImageEXT glXReleaseTexImageProc;
-  /// Pointer to glXCopySubBufferMESA function.
-  f_CopySubBuffer glXCopySubBufferProc;
-#ifdef CONFIG_GLX_SYNC
-  /// Pointer to the glFenceSync() function.
-  f_FenceSync glFenceSyncProc;
-  /// Pointer to the glIsSync() function.
-  f_IsSync glIsSyncProc;
-  /// Pointer to the glDeleteSync() function.
-  f_DeleteSync glDeleteSyncProc;
-  /// Pointer to the glClientWaitSync() function.
-  f_ClientWaitSync glClientWaitSyncProc;
-  /// Pointer to the glWaitSync() function.
-  f_WaitSync glWaitSyncProc;
-  /// Pointer to the glImportSyncEXT() function.
-  f_ImportSyncEXT glImportSyncEXT;
-#endif
-#ifdef DEBUG_GLX_MARK
-  /// Pointer to StringMarkerGREMEDY function.
-  f_StringMarkerGREMEDY glStringMarkerGREMEDY;
-  /// Pointer to FrameTerminatorGREMEDY function.
-  f_FrameTerminatorGREMEDY glFrameTerminatorGREMEDY;
-#endif
-  /// FBConfig-s for GLX pixmap of different depths.
-  glx_fbconfig_t *glx_fbconfigs[OPENGL_MAX_DEPTH + 1];
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
-  glx_blur_pass_t glx_blur_passes[MAX_BLUR_PASS];
-#endif
 #endif
 
   // === X extension related ===
@@ -1892,6 +1904,18 @@ bkend_use_glx(session_t *ps) {
 }
 
 /**
+ * Check if there's a GLX context.
+ */
+static inline bool
+glx_has_context(session_t *ps) {
+#ifdef CONFIG_VSYNC_OPENGL
+  return ps->psglx && ps->psglx->context;
+#else
+  return false;
+#endif
+}
+
+/**
  * Check if a window is really focused.
  */
 static inline bool
@@ -2106,6 +2130,9 @@ glx_init(session_t *ps, bool need_render);
 void
 glx_destroy(session_t *ps);
 
+bool
+glx_reinit(session_t *ps, bool need_render);
+
 void
 glx_on_root_change(session_t *ps);
 
@@ -2185,7 +2212,7 @@ glx_create_program(const GLuint * const shaders, int nshaders);
 
 GLuint
 glx_create_program_from_str(const char *vert_shader_str,
-		const char *frag_shader_str);
+    const char *frag_shader_str);
 #endif
 
 /**
@@ -2194,7 +2221,7 @@ glx_create_program_from_str(const char *vert_shader_str,
 static inline void
 free_texture_r(session_t *ps, GLuint *ptexture) {
   if (*ptexture) {
-    assert(ps->glx_context);
+    assert(glx_has_context(ps));
     glDeleteTextures(1, ptexture);
     *ptexture = 0;
   }
@@ -2261,19 +2288,39 @@ free_texture(session_t *ps, glx_texture_t **pptex) {
 }
 
 /**
+ * Free GLX part of paint_t.
+ */
+static inline void
+free_paint_glx(session_t *ps, paint_t *ppaint) {
+  free_texture(ps, &ppaint->ptex);
+}
+
+/**
+ * Free GLX part of win.
+ */
+static inline void
+free_win_res_glx(session_t *ps, win *w) {
+  free_paint_glx(ps, &w->paint);
+  free_paint_glx(ps, &w->shadow_paint);
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
+  free_glx_bc(ps, &w->glx_blur_cache);
+#endif
+}
+
+/**
  * Add a OpenGL debugging marker.
  */
 static inline void
 glx_mark_(session_t *ps, const char *func, XID xid, bool start) {
 #ifdef DEBUG_GLX_MARK
-  if (bkend_use_glx(ps) && ps->glStringMarkerGREMEDY) {
+  if (glx_has_context(ps) && ps->psglx->glStringMarkerGREMEDY) {
     if (!func) func = "(unknown)";
     const char *postfix = (start ? " (start)": " (end)");
     char *str = malloc((strlen(func) + 12 + 2
           + strlen(postfix) + 5) * sizeof(char));
     strcpy(str, func);
     sprintf(str + strlen(str), "(%#010lx)%s", xid, postfix);
-    ps->glStringMarkerGREMEDY(strlen(str), str);
+    ps->psglx->glStringMarkerGREMEDY(strlen(str), str);
     free(str);
   }
 #endif
@@ -2287,8 +2334,8 @@ glx_mark_(session_t *ps, const char *func, XID xid, bool start) {
 static inline void
 glx_mark_frame(session_t *ps) {
 #ifdef DEBUG_GLX_MARK
-  if (bkend_use_glx(ps) && ps->glFrameTerminatorGREMEDY)
-    ps->glFrameTerminatorGREMEDY();
+  if (glx_has_context(ps) && ps->psglx->glFrameTerminatorGREMEDY)
+    ps->psglx->glFrameTerminatorGREMEDY();
 #endif
 }
 

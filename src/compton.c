@@ -492,14 +492,12 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   // Sync it once and only once
   xr_sync(ps, w->shadow_paint.pixmap, NULL);
 
-  bool success = paint_bind_tex(ps, &w->shadow_paint, shadow_image->width, shadow_image->height, 32, true);
-
   XFreeGC(ps->dpy, gc);
   XDestroyImage(shadow_image);
   XFreePixmap(ps->dpy, shadow_pixmap);
   XRenderFreePicture(ps->dpy, shadow_picture);
 
-  return success;
+  return true;
 
 shadow_picture_err:
   if (shadow_image)
@@ -1309,6 +1307,9 @@ paint_preprocess(session_t *ps, win *list) {
 static inline void
 win_paint_shadow(session_t *ps, win *w,
     XserverRegion reg_paint, const reg_data_t *pcache_reg) {
+  // Bind shadow pixmap to GLX texture if needed
+  paint_bind_tex(ps, &w->shadow_paint, 0, 0, 32, false);
+
   if (!paint_isvalid(ps, &w->shadow_paint)) {
     printf_errf("(%#010lx): Missing painting data. This is a bad sign.", w->id);
     return;
@@ -1486,7 +1487,7 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
     case BKEND_GLX:
       // TODO: Handle frame opacity
-      glx_blur_dst(ps, x, y, wid, hei, ps->glx_z - 0.5, factor_center,
+      glx_blur_dst(ps, x, y, wid, hei, ps->psglx->z - 0.5, factor_center,
           reg_paint, pcache_reg, &w->glx_blur_cache);
       break;
 #endif
@@ -1519,8 +1520,8 @@ render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
 #ifdef CONFIG_VSYNC_OPENGL
     case BKEND_GLX:
       glx_render(ps, ptex, x, y, dx, dy, wid, hei,
-          ps->glx_z, opacity, argb, neg, reg_paint, pcache_reg, pprogram);
-      ps->glx_z += 1;
+          ps->psglx->z, opacity, argb, neg, reg_paint, pcache_reg, pprogram);
+      ps->psglx->z += 1;
       break;
 #endif
     default:
@@ -1701,7 +1702,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
         break;
 #ifdef CONFIG_VSYNC_OPENGL
       case BKEND_GLX:
-        glx_dim_dst(ps, x, y, wid, hei, ps->glx_z - 0.7, dim_opacity,
+        glx_dim_dst(ps, x, y, wid, hei, ps->psglx->z - 0.7, dim_opacity,
             reg_paint, pcache_reg);
         break;
 #endif
@@ -1940,7 +1941,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     // effect
     XSync(ps->dpy, False);
 #ifdef CONFIG_VSYNC_OPENGL
-    if (ps->glx_context) {
+    if (glx_has_context(ps)) {
       if (ps->o.vsync_use_glfinish)
         glFinish();
       else
@@ -2017,7 +2018,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   XFlush(ps->dpy);
 
 #ifdef CONFIG_VSYNC_OPENGL
-  if (ps->glx_context) {
+  if (glx_has_context(ps)) {
     glFlush();
     glXWaitX();
   }
@@ -3050,6 +3051,9 @@ restack_win(session_t *ps, win *w, Window new_above) {
   }
 }
 
+static bool
+init_filters(session_t *ps);
+
 static void
 configure_win(session_t *ps, XConfigureEvent *ce) {
   // On root window changes
@@ -3063,10 +3067,27 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
     rebuild_shadow_exclude_reg(ps);
     free_all_damage_last(ps);
 
+    // Re-redirect screen if required
+    if (ps->o.reredir_on_root_change && ps->redirected) {
+      redir_stop(ps);
+      redir_start(ps);
+    }
+
 #ifdef CONFIG_VSYNC_OPENGL
+    // Reinitialize GLX on root change
+    if (ps->o.glx_reinit_on_root_change && ps->psglx) {
+      if (!glx_reinit(ps, bkend_use_glx(ps)))
+        printf_errf("(): Failed to reinitialize GLX, troubles ahead.");
+      if (BKEND_GLX == ps->o.backend && !init_filters(ps))
+        printf_errf("(): Failed to initialize filters.");
+    }
+
+    // GLX root change callback
     if (BKEND_GLX == ps->o.backend)
       glx_on_root_change(ps);
 #endif
+
+    force_repaint(ps);
 
     return;
   }
@@ -4807,7 +4828,7 @@ fork_after(session_t *ps) {
 
 #ifdef CONFIG_VSYNC_OPENGL
   // GLX context must be released and reattached on fork
-  if (ps->glx_context && !glXMakeCurrent(ps->dpy, None, NULL)) {
+  if (glx_has_context(ps) && !glXMakeCurrent(ps->dpy, None, NULL)) {
     printf_errf("(): Failed to detach GLx context.");
     return false;
   }
@@ -4825,8 +4846,8 @@ fork_after(session_t *ps) {
   setsid();
 
 #ifdef CONFIG_VSYNC_OPENGL
-  if (ps->glx_context
-      && !glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->glx_context)) {
+  if (glx_has_context(ps)
+      && !glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->psglx->context)) {
     printf_errf("(): Failed to make GLX context current.");
     return false;
   }
@@ -5617,6 +5638,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "glx-fshader-win", required_argument, NULL, 317 },
     { "version", no_argument, NULL, 318 },
     { "no-x-selection", no_argument, NULL, 319 },
+    { "reredir-on-root-change", no_argument, NULL, 731 },
+    { "glx-reinit-on-root-change", no_argument, NULL, 732 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -5883,6 +5906,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.glx_fshader_win_str = mstrcpy(optarg);
         break;
       P_CASEBOOL(319, no_x_selection);
+      P_CASEBOOL(731, reredir_on_root_change);
+      P_CASEBOOL(732, glx_reinit_on_root_change);
       default:
         usage(1);
         break;
@@ -6166,13 +6191,13 @@ vsync_opengl_init(session_t *ps) {
     return false;
 
   // Get video sync functions
-  if (!ps->glXGetVideoSyncSGI)
-    ps->glXGetVideoSyncSGI = (f_GetVideoSync)
+  if (!ps->psglx->glXGetVideoSyncSGI)
+    ps->psglx->glXGetVideoSyncSGI = (f_GetVideoSync)
       glXGetProcAddress((const GLubyte *) "glXGetVideoSyncSGI");
-  if (!ps->glXWaitVideoSyncSGI)
-    ps->glXWaitVideoSyncSGI = (f_WaitVideoSync)
+  if (!ps->psglx->glXWaitVideoSyncSGI)
+    ps->psglx->glXWaitVideoSyncSGI = (f_WaitVideoSync)
       glXGetProcAddress((const GLubyte *) "glXWaitVideoSyncSGI");
-  if (!ps->glXWaitVideoSyncSGI || !ps->glXGetVideoSyncSGI) {
+  if (!ps->psglx->glXWaitVideoSyncSGI || !ps->psglx->glXGetVideoSyncSGI) {
     printf_errf("(): Failed to get glXWait/GetVideoSyncSGI function.");
     return false;
   }
@@ -6191,13 +6216,13 @@ vsync_opengl_oml_init(session_t *ps) {
     return false;
 
   // Get video sync functions
-  if (!ps->glXGetSyncValuesOML)
-    ps->glXGetSyncValuesOML = (f_GetSyncValuesOML)
+  if (!ps->psglx->glXGetSyncValuesOML)
+    ps->psglx->glXGetSyncValuesOML = (f_GetSyncValuesOML)
       glXGetProcAddress ((const GLubyte *) "glXGetSyncValuesOML");
-  if (!ps->glXWaitForMscOML)
-    ps->glXWaitForMscOML = (f_WaitForMscOML)
+  if (!ps->psglx->glXWaitForMscOML)
+    ps->psglx->glXWaitForMscOML = (f_WaitForMscOML)
       glXGetProcAddress ((const GLubyte *) "glXWaitForMscOML");
-  if (!ps->glXGetSyncValuesOML || !ps->glXWaitForMscOML) {
+  if (!ps->psglx->glXGetSyncValuesOML || !ps->psglx->glXWaitForMscOML) {
     printf_errf("(): Failed to get OML_sync_control functions.");
     return false;
   }
@@ -6221,14 +6246,14 @@ vsync_opengl_swc_init(session_t *ps) {
   }
 
   // Get video sync functions
-  if (!ps->glXSwapIntervalProc)
-    ps->glXSwapIntervalProc = (f_SwapIntervalSGI)
+  if (!ps->psglx->glXSwapIntervalProc)
+    ps->psglx->glXSwapIntervalProc = (f_SwapIntervalSGI)
       glXGetProcAddress ((const GLubyte *) "glXSwapIntervalSGI");
-  if (!ps->glXSwapIntervalProc) {
+  if (!ps->psglx->glXSwapIntervalProc) {
     printf_errf("(): Failed to get SGI_swap_control function.");
     return false;
   }
-  ps->glXSwapIntervalProc(1);
+  ps->psglx->glXSwapIntervalProc(1);
 
   return true;
 #else
@@ -6249,14 +6274,14 @@ vsync_opengl_mswc_init(session_t *ps) {
   }
 
   // Get video sync functions
-  if (!ps->glXSwapIntervalMESAProc)
-    ps->glXSwapIntervalMESAProc = (f_SwapIntervalMESA)
+  if (!ps->psglx->glXSwapIntervalMESAProc)
+    ps->psglx->glXSwapIntervalMESAProc = (f_SwapIntervalMESA)
       glXGetProcAddress ((const GLubyte *) "glXSwapIntervalMESA");
-  if (!ps->glXSwapIntervalMESAProc) {
+  if (!ps->psglx->glXSwapIntervalMESAProc) {
     printf_errf("(): Failed to get MESA_swap_control function.");
     return false;
   }
-  ps->glXSwapIntervalMESAProc(1);
+  ps->psglx->glXSwapIntervalMESAProc(1);
 
   return true;
 #else
@@ -6273,8 +6298,8 @@ static int
 vsync_opengl_wait(session_t *ps) {
   unsigned vblank_count = 0;
 
-  ps->glXGetVideoSyncSGI(&vblank_count);
-  ps->glXWaitVideoSyncSGI(2, (vblank_count + 1) % 2, &vblank_count);
+  ps->psglx->glXGetVideoSyncSGI(&vblank_count);
+  ps->psglx->glXWaitVideoSyncSGI(2, (vblank_count + 1) % 2, &vblank_count);
   // I see some code calling glXSwapIntervalSGI(1) afterwards, is it required?
 
   return 0;
@@ -6289,8 +6314,8 @@ static int
 vsync_opengl_oml_wait(session_t *ps) {
   int64_t ust = 0, msc = 0, sbc = 0;
 
-  ps->glXGetSyncValuesOML(ps->dpy, ps->reg_win, &ust, &msc, &sbc);
-  ps->glXWaitForMscOML(ps->dpy, ps->reg_win, 0, 2, (msc + 1) % 2,
+  ps->psglx->glXGetSyncValuesOML(ps->dpy, ps->reg_win, &ust, &msc, &sbc);
+  ps->psglx->glXWaitForMscOML(ps->dpy, ps->reg_win, 0, 2, (msc + 1) % 2,
       &ust, &msc, &sbc);
 
   return 0;
@@ -6299,14 +6324,14 @@ vsync_opengl_oml_wait(session_t *ps) {
 static void
 vsync_opengl_swc_deinit(session_t *ps) {
   // The standard says it doesn't accept 0, but in fact it probably does
-  if (ps->glx_context && ps->glXSwapIntervalProc)
-    ps->glXSwapIntervalProc(0);
+  if (glx_has_context(ps) && ps->psglx->glXSwapIntervalProc)
+    ps->psglx->glXSwapIntervalProc(0);
 }
 
 static void
 vsync_opengl_mswc_deinit(session_t *ps) {
-  if (ps->glx_context && ps->glXSwapIntervalMESAProc)
-    ps->glXSwapIntervalMESAProc(0);
+  if (glx_has_context(ps) && ps->psglx->glXSwapIntervalMESAProc)
+    ps->psglx->glXSwapIntervalMESAProc(0);
 }
 #endif
 
@@ -6343,7 +6368,6 @@ void
 vsync_deinit(session_t *ps) {
   if (ps->o.vsync && VSYNC_FUNCS_DEINIT[ps->o.vsync])
     VSYNC_FUNCS_DEINIT[ps->o.vsync](ps);
-  ps->o.vsync = VSYNC_NONE;
 }
 
 /**
@@ -6383,7 +6407,7 @@ init_dbe(session_t *ps) {
 /**
  * Initialize X composite overlay window.
  */
-static void
+static bool
 init_overlay(session_t *ps) {
   ps->overlay = XCompositeGetOverlayWindow(ps->dpy, ps->root);
   if (ps->overlay) {
@@ -6411,6 +6435,11 @@ init_overlay(session_t *ps) {
         "back to painting on root window.\n");
     ps->o.paint_on_overlay = false;
   }
+#ifdef DEBUG_REDIR
+  printf_dbgf("(): overlay = %#010lx\n", ps->overlay);
+#endif
+
+  return ps->overlay;
 }
 
 /**
@@ -6940,15 +6969,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .drm_fd = -1,
 #endif
 
-#ifdef CONFIG_VSYNC_OPENGL
-    .glx_context = None,
-    .glx_has_texture_non_power_of_two = false,
-    .glXGetVideoSyncSGI = NULL,
-    .glXWaitVideoSyncSGI = NULL,
-    .glXGetSyncValuesOML = NULL,
-    .glXWaitForMscOML = NULL,
-#endif
-
     .xfixes_event = 0,
     .xfixes_error = 0,
     .damage_event = 0,
@@ -6996,14 +7016,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // Allocate a session and copy default values into it
   session_t *ps = malloc(sizeof(session_t));
   memcpy(ps, &s_def, sizeof(session_t));
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
-  for (int i = 0; i < MAX_BLUR_PASS; ++i) {
-    glx_blur_pass_t *ppass = &ps->glx_blur_passes[i];
-    ppass->unifm_factor_center = -1;
-    ppass->unifm_offset_x = -1;
-    ppass->unifm_offset_y = -1;
-  }
-#endif
   ps_g = ps;
   ps->ignore_tail = &ps->ignore_head;
   gettimeofday(&ps->time_start, NULL);

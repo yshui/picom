@@ -14,15 +14,15 @@
 void
 xr_glx_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
   if (*pfence) {
-    // GLsync sync = ps->glFenceSyncProc(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    GLsync sync = ps->glImportSyncEXT(GL_SYNC_X11_FENCE_EXT, *pfence, 0);
-    /* GLenum ret = ps->glClientWaitSyncProc(sync, GL_SYNC_FLUSH_COMMANDS_BIT,
+    // GLsync sync = ps->psglx->glFenceSyncProc(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    GLsync sync = ps->psglx->glImportSyncEXT(GL_SYNC_X11_FENCE_EXT, *pfence, 0);
+    /* GLenum ret = ps->psglx->glClientWaitSyncProc(sync, GL_SYNC_FLUSH_COMMANDS_BIT,
         1000);
     assert(GL_CONDITION_SATISFIED == ret); */
     XSyncTriggerFence(ps->dpy, *pfence);
     XFlush(ps->dpy);
-    ps->glWaitSyncProc(sync, 0, GL_TIMEOUT_IGNORED);
-    // ps->glDeleteSyncProc(sync);
+    ps->psglx->glWaitSyncProc(sync, 0, GL_TIMEOUT_IGNORED);
+    // ps->psglx->glDeleteSyncProc(sync);
     // XSyncResetFence(ps->dpy, *pfence);
   }
   glx_check_err(ps);
@@ -98,10 +98,26 @@ glx_init(session_t *ps, bool need_render) {
   if (need_render && !glx_hasglxext(ps, "GLX_EXT_texture_from_pixmap"))
     goto glx_init_end;
 
-  if (!ps->glx_context) {
+  // Initialize GLX data structure
+  if (!ps->psglx) {
+    static const glx_session_t CGLX_SESSION_DEF = CGLX_SESSION_INIT;
+    ps->psglx = cmalloc(1, glx_session_t);
+    memcpy(ps->psglx, &CGLX_SESSION_DEF, sizeof(glx_session_t));
+
+    for (int i = 0; i < MAX_BLUR_PASS; ++i) {
+      glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
+      ppass->unifm_factor_center = -1;
+      ppass->unifm_offset_x = -1;
+      ppass->unifm_offset_y = -1;
+    }
+  }
+
+  glx_session_t *psglx = ps->psglx;
+
+  if (!psglx->context) {
     // Get GLX context
 #ifndef DEBUG_GLX_DEBUG_CONTEXT
-    ps->glx_context = glXCreateContext(ps->dpy, pvis, None, GL_TRUE);
+    psglx->context = glXCreateContext(ps->dpy, pvis, None, GL_TRUE);
 #else
     {
       GLXFBConfig fbconfig = get_fbconfig_from_visualinfo(ps, pvis);
@@ -123,18 +139,18 @@ glx_init(session_t *ps, bool need_render) {
         GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_DEBUG_BIT_ARB,
         None
       };
-      ps->glx_context = p_glXCreateContextAttribsARB(ps->dpy, fbconfig, NULL,
+      psglx->context = p_glXCreateContextAttribsARB(ps->dpy, fbconfig, NULL,
           GL_TRUE, attrib_list);
     }
 #endif
 
-    if (!ps->glx_context) {
+    if (!psglx->context) {
       printf_errf("(): Failed to get GLX context.");
       goto glx_init_end;
     }
 
     // Attach GLX context
-    if (!glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->glx_context)) {
+    if (!glXMakeCurrent(ps->dpy, get_tgt_window(ps), psglx->context)) {
       printf_errf("(): Failed to attach GLX context.");
       goto glx_init_end;
     }
@@ -169,52 +185,52 @@ glx_init(session_t *ps, bool need_render) {
   // Check GL_ARB_texture_non_power_of_two, requires a GLX context and
   // must precede FBConfig fetching
   if (need_render)
-    ps->glx_has_texture_non_power_of_two = glx_hasglext(ps,
+    psglx->has_texture_non_power_of_two = glx_hasglext(ps,
         "GL_ARB_texture_non_power_of_two");
 
   // Acquire function addresses
   if (need_render) {
 #ifdef DEBUG_GLX_MARK
-    ps->glStringMarkerGREMEDY = (f_StringMarkerGREMEDY)
+    psglx->glStringMarkerGREMEDY = (f_StringMarkerGREMEDY)
       glXGetProcAddress((const GLubyte *) "glStringMarkerGREMEDY");
-    ps->glFrameTerminatorGREMEDY = (f_FrameTerminatorGREMEDY)
+    psglx->glFrameTerminatorGREMEDY = (f_FrameTerminatorGREMEDY)
       glXGetProcAddress((const GLubyte *) "glFrameTerminatorGREMEDY");
 #endif
 
-    ps->glXBindTexImageProc = (f_BindTexImageEXT)
+    psglx->glXBindTexImageProc = (f_BindTexImageEXT)
       glXGetProcAddress((const GLubyte *) "glXBindTexImageEXT");
-    ps->glXReleaseTexImageProc = (f_ReleaseTexImageEXT)
+    psglx->glXReleaseTexImageProc = (f_ReleaseTexImageEXT)
       glXGetProcAddress((const GLubyte *) "glXReleaseTexImageEXT");
-    if (!ps->glXBindTexImageProc || !ps->glXReleaseTexImageProc) {
+    if (!psglx->glXBindTexImageProc || !psglx->glXReleaseTexImageProc) {
       printf_errf("(): Failed to acquire glXBindTexImageEXT() / glXReleaseTexImageEXT().");
       goto glx_init_end;
     }
 
     if (ps->o.glx_use_copysubbuffermesa) {
-      ps->glXCopySubBufferProc = (f_CopySubBuffer)
+      psglx->glXCopySubBufferProc = (f_CopySubBuffer)
         glXGetProcAddress((const GLubyte *) "glXCopySubBufferMESA");
-      if (!ps->glXCopySubBufferProc) {
+      if (!psglx->glXCopySubBufferProc) {
         printf_errf("(): Failed to acquire glXCopySubBufferMESA().");
         goto glx_init_end;
       }
     }
 
 #ifdef CONFIG_GLX_SYNC
-    ps->glFenceSyncProc = (f_FenceSync)
+    psglx->glFenceSyncProc = (f_FenceSync)
       glXGetProcAddress((const GLubyte *) "glFenceSync");
-    ps->glIsSyncProc = (f_IsSync)
+    psglx->glIsSyncProc = (f_IsSync)
       glXGetProcAddress((const GLubyte *) "glIsSync");
-    ps->glDeleteSyncProc = (f_DeleteSync)
+    psglx->glDeleteSyncProc = (f_DeleteSync)
       glXGetProcAddress((const GLubyte *) "glDeleteSync");
-    ps->glClientWaitSyncProc = (f_ClientWaitSync)
+    psglx->glClientWaitSyncProc = (f_ClientWaitSync)
       glXGetProcAddress((const GLubyte *) "glClientWaitSync");
-    ps->glWaitSyncProc = (f_WaitSync)
+    psglx->glWaitSyncProc = (f_WaitSync)
       glXGetProcAddress((const GLubyte *) "glWaitSync");
-    ps->glImportSyncEXT = (f_ImportSyncEXT)
+    psglx->glImportSyncEXT = (f_ImportSyncEXT)
       glXGetProcAddress((const GLubyte *) "glImportSyncEXT");
-    if (!ps->glFenceSyncProc || !ps->glIsSyncProc || !ps->glDeleteSyncProc
-        || !ps->glClientWaitSyncProc || !ps->glWaitSyncProc
-        || !ps->glImportSyncEXT) {
+    if (!psglx->glFenceSyncProc || !psglx->glIsSyncProc || !psglx->glDeleteSyncProc
+        || !psglx->glClientWaitSyncProc || !psglx->glWaitSyncProc
+        || !psglx->glImportSyncEXT) {
       printf_errf("(): Failed to acquire GLX sync functions.");
       goto glx_init_end;
     }
@@ -281,10 +297,17 @@ glx_free_prog_main(session_t *ps, glx_prog_main_t *pprogram) {
  */
 void
 glx_destroy(session_t *ps) {
+  if (!ps->psglx)
+    return;
+
+  // Free all GLX resources of windows
+  for (win *w = ps->list; w; w = w->next)
+    free_win_res_glx(ps, w);
+
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   // Free GLSL shaders/programs
   for (int i = 0; i < MAX_BLUR_PASS; ++i) {
-    glx_blur_pass_t *ppass = &ps->glx_blur_passes[i];
+    glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
     if (ppass->frag_shader)
       glDeleteShader(ppass->frag_shader);
     if (ppass->prog)
@@ -298,15 +321,40 @@ glx_destroy(session_t *ps) {
 
   // Free FBConfigs
   for (int i = 0; i <= OPENGL_MAX_DEPTH; ++i) {
-    free(ps->glx_fbconfigs[i]);
-    ps->glx_fbconfigs[i] = NULL;
+    free(ps->psglx->fbconfigs[i]);
+    ps->psglx->fbconfigs[i] = NULL;
   }
 
   // Destroy GLX context
-  if (ps->glx_context) {
-    glXDestroyContext(ps->dpy, ps->glx_context);
-    ps->glx_context = NULL;
+  if (ps->psglx->context) {
+    glXDestroyContext(ps->dpy, ps->psglx->context);
+    ps->psglx->context = NULL;
   }
+
+  free(ps->psglx);
+  ps->psglx = NULL;
+}
+
+/**
+ * Reinitialize GLX.
+ */
+bool
+glx_reinit(session_t *ps, bool need_render) {
+  // Reinitialize VSync as well
+  vsync_deinit(ps);
+
+  glx_destroy(ps);
+  if (!glx_init(ps, need_render)) {
+    printf_errf("(): Failed to initialize GLX.");
+    return false;
+  }
+
+  if (!vsync_init(ps)) {
+    printf_errf("(): Failed to initialize VSync.");
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -376,7 +424,7 @@ glx_init_blur(session_t *ps) {
       "  gl_FragColor = sum / (factor_center + float(%.7g));\n"
       "}\n";
 
-    const bool use_texture_rect = !ps->glx_has_texture_non_power_of_two;
+    const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
     const char *sampler_type = (use_texture_rect ?
         "sampler2DRect": "sampler2D");
     const char *texture_func = (use_texture_rect ?
@@ -395,7 +443,7 @@ glx_init_blur(session_t *ps) {
       if (!kern)
         break;
 
-      glx_blur_pass_t *ppass = &ps->glx_blur_passes[i];
+      glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
 
       // Build shader
       {
@@ -527,15 +575,15 @@ glx_update_fbconfig_bydepth(session_t *ps, int depth, glx_fbconfig_t *pfbcfg) {
     return;
 
   // Compare new FBConfig with current one
-  if (glx_cmp_fbconfig(ps, ps->glx_fbconfigs[depth], pfbcfg) < 0) {
+  if (glx_cmp_fbconfig(ps, ps->psglx->fbconfigs[depth], pfbcfg) < 0) {
 #ifdef DEBUG_GLX
-    printf_dbgf("(%d): %#x overrides %#x, target %#x.\n", depth, (unsigned) pfbcfg->cfg, (ps->glx_fbconfigs[depth] ? (unsigned) ps->glx_fbconfigs[depth]->cfg: 0), pfbcfg->texture_tgts);
+    printf_dbgf("(%d): %#x overrides %#x, target %#x.\n", depth, (unsigned) pfbcfg->cfg, (ps->psglx->fbconfigs[depth] ? (unsigned) ps->psglx->fbconfigs[depth]->cfg: 0), pfbcfg->texture_tgts);
 #endif
-    if (!ps->glx_fbconfigs[depth]) {
-      ps->glx_fbconfigs[depth] = malloc(sizeof(glx_fbconfig_t));
-      allocchk(ps->glx_fbconfigs[depth]);
+    if (!ps->psglx->fbconfigs[depth]) {
+      ps->psglx->fbconfigs[depth] = malloc(sizeof(glx_fbconfig_t));
+      allocchk(ps->psglx->fbconfigs[depth]);
     }
-    (*ps->glx_fbconfigs[depth]) = *pfbcfg;
+    (*ps->psglx->fbconfigs[depth]) = *pfbcfg;
   }
 }
 
@@ -617,19 +665,19 @@ glx_update_fbconfig(session_t *ps) {
   cxfree(pfbcfgs);
 
   // Sanity checks
-  if (!ps->glx_fbconfigs[ps->depth]) {
+  if (!ps->psglx->fbconfigs[ps->depth]) {
     printf_errf("(): No FBConfig found for default depth %d.", ps->depth);
     return false;
   }
 
-  if (!ps->glx_fbconfigs[32]) {
+  if (!ps->psglx->fbconfigs[32]) {
     printf_errf("(): No FBConfig found for depth 32. Expect crazy things.");
   }
 
 #ifdef DEBUG_GLX
   printf_dbgf("(): %d-bit: %#3x, 32-bit: %#3x\n",
-      ps->depth, (int) ps->glx_fbconfigs[ps->depth]->cfg,
-      (int) ps->glx_fbconfigs[32]->cfg);
+      ps->depth, (int) ps->psglx->fbconfigs[ps->depth]->cfg,
+      (int) ps->psglx->fbconfigs[32]->cfg);
 #endif
 
   return true;
@@ -733,7 +781,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
       }
     }
 
-    const glx_fbconfig_t *pcfg = ps->glx_fbconfigs[depth];
+    const glx_fbconfig_t *pcfg = ps->psglx->fbconfigs[depth];
     if (!pcfg) {
       printf_errf("(%d): Couldn't find FBConfig with requested depth.", depth);
       return false;
@@ -744,7 +792,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
     // pixmap-specific parameters, and this may change in the future
     GLenum tex_tgt = 0;
     if (GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts
-        && ps->glx_has_texture_non_power_of_two)
+        && ps->psglx->has_texture_non_power_of_two)
       tex_tgt = GLX_TEXTURE_2D_EXT;
     else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & pcfg->texture_tgts)
       tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
@@ -809,9 +857,9 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
   // The specification requires rebinding whenever the content changes...
   // We can't follow this, too slow.
   if (need_release)
-    ps->glXReleaseTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+    ps->psglx->glXReleaseTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
 
-  ps->glXBindTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
+  ps->psglx->glXBindTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
 
   // Cleanup
   glBindTexture(ptex->target, 0);
@@ -830,7 +878,7 @@ glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
   // Release binding
   if (ptex->glpixmap && ptex->texture) {
     glBindTexture(ptex->target, ptex->texture);
-    ps->glXReleaseTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+    ps->psglx->glXReleaseTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
     glBindTexture(ptex->target, 0);
   }
 
@@ -848,7 +896,7 @@ glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
  */
 void
 glx_paint_pre(session_t *ps, XserverRegion *preg) {
-  ps->glx_z = 0.0;
+  ps->psglx->z = 0.0;
   // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   // Get buffer age
@@ -1116,8 +1164,8 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     GLfloat factor_center,
     XserverRegion reg_tgt, const reg_data_t *pcache_reg,
     glx_blur_cache_t *pbc) {
-  assert(ps->glx_blur_passes[0].prog);
-  const bool more_passes = ps->glx_blur_passes[1].prog;
+  assert(ps->psglx->blur_passes[0].prog);
+  const bool more_passes = ps->psglx->blur_passes[1].prog;
   const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
   const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
   bool ret = false;
@@ -1154,7 +1202,7 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   */
 
   GLenum tex_tgt = GL_TEXTURE_RECTANGLE;
-  if (ps->glx_has_texture_non_power_of_two)
+  if (ps->psglx->has_texture_non_power_of_two)
     tex_tgt = GL_TEXTURE_2D;
 
   // Free textures if size inconsistency discovered
@@ -1217,9 +1265,9 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 
   bool last_pass = false;
   for (int i = 0; !last_pass; ++i) {
-    last_pass = !ps->glx_blur_passes[i + 1].prog;
+    last_pass = !ps->psglx->blur_passes[i + 1].prog;
     assert(i < MAX_BLUR_PASS - 1);
-    const glx_blur_pass_t *ppass = &ps->glx_blur_passes[i];
+    const glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
     assert(ppass->prog);
 
     assert(tex_scr);
@@ -1392,7 +1440,7 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
 #endif
 
   argb = argb || (GLX_TEXTURE_FORMAT_RGBA_EXT ==
-			ps->glx_fbconfigs[ptex->depth]->texture_fmt);
+			ps->psglx->fbconfigs[ptex->depth]->texture_fmt);
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   const bool has_prog = pprogram && pprogram->prog;
 #endif
@@ -1695,7 +1743,7 @@ glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg) {
 #ifdef DEBUG_GLX
       printf_dbgf("(): %d, %d, %d, %d\n", x, y, wid, hei);
 #endif
-      ps->glXCopySubBufferProc(ps->dpy, get_tgt_window(ps), x, y, wid, hei);
+      ps->psglx->glXCopySubBufferProc(ps->dpy, get_tgt_window(ps), x, y, wid, hei);
     }
   }
 
