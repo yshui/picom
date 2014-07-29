@@ -104,12 +104,14 @@ glx_init(session_t *ps, bool need_render) {
     ps->psglx = cmalloc(1, glx_session_t);
     memcpy(ps->psglx, &CGLX_SESSION_DEF, sizeof(glx_session_t));
 
+#ifdef CONFIG_VSYNC_OPENGL_GLSL
     for (int i = 0; i < MAX_BLUR_PASS; ++i) {
       glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
       ppass->unifm_factor_center = -1;
       ppass->unifm_offset_x = -1;
       ppass->unifm_offset_y = -1;
     }
+#endif
   }
 
   glx_session_t *psglx = ps->psglx;

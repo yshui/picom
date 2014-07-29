@@ -2587,6 +2587,7 @@ win_update_opacity_rule(session_t *ps, win *w) {
   if (IsViewable != w->a.map_state)
     return;
 
+#ifdef CONFIG_C2
   // If long is 32-bit, unfortunately there's no way could we express "unset",
   // so we just entirely don't distinguish "unset" and OPAQUE
   opacity_t opacity = OPAQUE;
@@ -2602,6 +2603,7 @@ win_update_opacity_rule(session_t *ps, win *w) {
   else if (OPAQUE != w->opacity_set)
     wid_rm_opacity_prop(ps, w->id);
   w->opacity_set = opacity;
+#endif
 }
 
 /**
@@ -5162,6 +5164,7 @@ parse_geometry_end:
  */
 static inline bool
 parse_rule_opacity(session_t *ps, const char *src) {
+#ifdef CONFIG_C2
   // Find opacity value
   char *endptr = NULL;
   long val = strtol(src, &endptr, 0);
@@ -5186,6 +5189,10 @@ parse_rule_opacity(session_t *ps, const char *src) {
   // Parse pattern
   // I hope 1-100 is acceptable for (void *)
   return c2_parsed(ps, &ps->o.opacity_rules, endptr, (void *) val);
+#else
+  printf_errf("(\"%s\"): Condition support not compiled in.", src);
+  return false;
+#endif
 }
 
 #ifdef CONFIG_LIBCONFIG
