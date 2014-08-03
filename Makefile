@@ -84,6 +84,12 @@ ifeq "$(NO_C2)" ""
   OBJS += c2.o
 endif
 
+# ==== X resource checker ====
+ifneq "$(ENABLE_XRESCHECK)" ""
+  CFG += -DDEBUG_XRC
+  OBJS += xrescheck.o
+endif
+
 # === Version string ===
 COMPTON_VERSION ?= git-$(shell git describe --always --dirty)-$(shell git log -1 --date=short --pretty=format:%cd)
 CFG += -DCOMPTON_VERSION="\"$(COMPTON_VERSION)\""

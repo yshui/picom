@@ -486,7 +486,9 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
       shadow_picture_argb, 0, 0, 0, 0, 0, 0,
       shadow_image->width, shadow_image->height);
 
+  assert(!w->shadow_paint.pixmap);
   w->shadow_paint.pixmap = shadow_pixmap_argb;
+  assert(!w->shadow_paint.pict);
   w->shadow_paint.pict = shadow_picture_argb;
 
   // Sync it once and only once
@@ -1826,7 +1828,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     // Painting shadow
     if (w->shadow) {
       // Lazy shadow building
-      if (!paint_isvalid(ps, &w->shadow_paint))
+      if (!w->shadow_paint.pixmap)
         win_build_shadow(ps, w, 1);
 
       // Shadow is to be painted based on the ignore region of current
@@ -7509,6 +7511,11 @@ session_destroy(session_t *ps) {
 
   // Flush all events
   XSync(ps->dpy, True);
+
+#ifdef DEBUG_XRC
+  // Report about resource leakage
+  xrc_report_xid();
+#endif
 
   // Free timeouts
   ps->tmout_unredir = NULL;

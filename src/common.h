@@ -145,8 +145,6 @@
 #define GLX_BACK_BUFFER_AGE_EXT 0x20F4
 #endif
 
-#endif
-
 // === Macros ===
 
 #define MSTR_(s)        #s
@@ -185,6 +183,11 @@
 // Use #s here to prevent macro expansion
 /// Macro used for shortening some debugging code.
 #define CASESTRRET(s)   case s: return #s
+
+// X resource checker
+#ifdef DEBUG_XRC
+#include "xrescheck.h"
+#endif
 
 // === Constants ===
 #if !(COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2)
@@ -2514,3 +2517,4 @@ hexdump(const char *data, int len) {
   fflush(stdout);
 }
 
+#endif
