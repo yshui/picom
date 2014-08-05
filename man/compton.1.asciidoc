@@ -214,13 +214,13 @@ WIDTH,HEIGHT,ELE1,ELE2,ELE3,ELE4,ELE5...
 +
 The element in the center must not be included, it will be forever 1.0 or changing based on opacity, depending on whether you have `--blur-background-fixed`. Yet the automatic adjustment of blur factor may not work well with a custom blur kernel.
 +
-A 7x7 Guassian blur kernel (sigma = 0.84089642) looks like:
+A 7x7 Gaussian blur kernel (sigma = 0.84089642) looks like:
 +
 ----
 --blur-kern '7,7,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.001723,0.059106,0.493069,0.493069,0.059106,0.001723,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003'
 ----
 +
-May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box`, `3x3gaussian`, `5x5gaussian`, `7x7gaussian`, `9x9gaussian`, `11x11gaussian`. All Guassian kernels are generated with sigma = 0.84089642 . You may use the accompanied `compton-convgen.py` to generate blur kernels.
+May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box`, `3x3gaussian`, `5x5gaussian`, `7x7gaussian`, `9x9gaussian`, `11x11gaussian`. All Gaussian kernels are generated with sigma = 0.84089642 . You may use the accompanied `compton-convgen.py` to generate blur kernels.
 
 *--blur-background-exclude* 'CONDITION'::
 	Exclude conditions for background blur.
