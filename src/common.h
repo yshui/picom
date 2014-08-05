@@ -216,7 +216,7 @@
 #define MS_PER_SEC 1000
 
 #define XRFILTER_CONVOLUTION  "convolution"
-#define XRFILTER_GUASSIAN     "gaussian"
+#define XRFILTER_GAUSSIAN     "gaussian"
 #define XRFILTER_BINOMIAL     "binomial"
 
 /// @brief Maximum OpenGL FBConfig depth.

@@ -4628,7 +4628,7 @@ usage(int ret) {
     "  The element in the center must not be included, it will be forever\n"
     "  1.0 or changing based on opacity, depending on whether you have\n"
     "  --blur-background-fixed.\n"
-    "  A 7x7 Guassian blur kernel looks like:\n"
+    "  A 7x7 Gaussian blur kernel looks like:\n"
     "    --blur-kern '7,7,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.001723,0.059106,0.493069,0.493069,0.059106,0.001723,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003'\n"
     "  Up to 4 blur kernels may be specified, separated with semicolon, for\n"
     "  multi-pass blur.\n"
