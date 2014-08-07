@@ -351,7 +351,7 @@ isdamagenotify(session_t *ps, const XEvent *ev) {
  */
 static inline XTextProperty *
 make_text_prop(session_t *ps, char *str) {
-  XTextProperty *pprop = cmalloc(1, XTextProperty);
+  XTextProperty *pprop = ccalloc(1, XTextProperty);
 
   if (XmbTextListToTextProperty(ps->dpy, &str, 1,  XStringStyle, pprop)) {
     cxfree(pprop->value);
