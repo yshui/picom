@@ -2208,6 +2208,9 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
 void
 glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg);
 
+unsigned char *
+glx_take_screenshot(session_t *ps, int *out_length);
+
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
 GLuint
 glx_create_shader(GLenum shader_type, const char *shader_str);
@@ -2483,6 +2486,28 @@ c2_matchd(session_t *ps, win *w, const c2_lptr_t *condlst,
 ///@}
 
 #endif
+
+/**
+ * @brief Dump the given data to a file.
+ */
+static inline bool
+write_binary_data(const char *path, const unsigned char *data, int length) {
+  if (!data)
+    return false;
+  FILE *f = fopen(path, "wb");
+  if (!f) {
+    printf_errf("(\"%s\"): Failed to open file for writing.", path);
+    return false;
+  }
+  int wrote_len = fwrite(data, sizeof(unsigned char), length, f);
+  fclose(f);
+  if (wrote_len != length) {
+    printf_errf("(\"%s\"): Failed to write all blocks: %d / %d", path,
+        wrote_len, length);
+    return false;
+  }
+  return true;
+}
 
 /**
  * @brief Dump raw bytes in HEX format.

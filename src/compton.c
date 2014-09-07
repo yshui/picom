@@ -1411,6 +1411,20 @@ xr_blur_dst(session_t *ps, Picture tgt_buffer,
   return true;
 }
 
+/*
+ * WORK-IN-PROGRESS!
+static void
+xr_take_screenshot(session_t *ps) {
+  XImage *img = XGetImage(ps->dpy, get_tgt_window(ps), 0, 0,
+      ps->root_width, ps->root_height, AllPlanes, XYPixmap);
+  if (!img) {
+    printf_errf("(): Failed to get XImage.");
+    return NULL;
+  }
+  assert(0 == img->xoffset);
+}
+*/
+
 /**
  * Blur the background of a window.
  */
@@ -7529,6 +7543,16 @@ session_destroy(session_t *ps) {
   if (ps == ps_g)
     ps_g = NULL;
 }
+
+/*
+static inline void
+dump_img(session_t *ps) {
+  int len = 0;
+  unsigned char *d = glx_take_screenshot(ps, &len);
+  write_binary_data("/tmp/dump.raw", d, len);
+  free(d);
+}
+*/
 
 /**
  * Do the actual work.

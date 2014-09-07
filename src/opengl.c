@@ -1442,7 +1442,7 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
 #endif
 
   argb = argb || (GLX_TEXTURE_FORMAT_RGBA_EXT ==
-			ps->psglx->fbconfigs[ptex->depth]->texture_fmt);
+      ps->psglx->fbconfigs[ptex->depth]->texture_fmt);
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
   const bool has_prog = pprogram && pprogram->prog;
 #endif
@@ -1754,6 +1754,32 @@ glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg) {
   cxfree(rects);
 }
 
+/**
+ * @brief Get tightly packed RGB888 data from GL front buffer.
+ *
+ * Don't expect any sort of decent performance.
+ *
+ * @returns tightly packed RGB888 data of the size of the screen,
+ *          to be freed with `free()`
+ */
+unsigned char *
+glx_take_screenshot(session_t *ps, int *out_length) {
+  int length = 3 * ps->root_width * ps->root_height;
+  GLint unpack_align_old = 0;
+  glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpack_align_old);
+  assert(unpack_align_old > 0);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  unsigned char *buf = cmalloc(length, unsigned char);
+  glReadBuffer(GL_FRONT);
+  glReadPixels(0, 0, ps->root_width, ps->root_height, GL_RGB,
+      GL_UNSIGNED_BYTE, buf);
+  glReadBuffer(GL_BACK);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, unpack_align_old);
+  if (out_length)
+    *out_length = sizeof(unsigned char) * length;
+  return buf;
+}
+
 #ifdef CONFIG_VSYNC_OPENGL_GLSL
 GLuint
 glx_create_shader(GLenum shader_type, const char *shader_str) {
@@ -1847,34 +1873,34 @@ glx_create_program_end:
  */
 GLuint
 glx_create_program_from_str(const char *vert_shader_str,
-		const char *frag_shader_str) {
-	GLuint vert_shader = 0;
-	GLuint frag_shader = 0;
-	GLuint prog = 0;
+    const char *frag_shader_str) {
+  GLuint vert_shader = 0;
+  GLuint frag_shader = 0;
+  GLuint prog = 0;
 
-	if (vert_shader_str)
-		vert_shader = glx_create_shader(GL_VERTEX_SHADER, vert_shader_str);
-	if (frag_shader_str)
-		frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, frag_shader_str);
+  if (vert_shader_str)
+    vert_shader = glx_create_shader(GL_VERTEX_SHADER, vert_shader_str);
+  if (frag_shader_str)
+    frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, frag_shader_str);
 
-	{
-		GLuint shaders[2];
-		int count = 0;
-		if (vert_shader)
-			shaders[count++] = vert_shader;
-		if (frag_shader)
-			shaders[count++] = frag_shader;
-		assert(count <= sizeof(shaders) / sizeof(shaders[0]));
-		if (count)
-			prog = glx_create_program(shaders, count);
-	}
+  {
+    GLuint shaders[2];
+    int count = 0;
+    if (vert_shader)
+      shaders[count++] = vert_shader;
+    if (frag_shader)
+      shaders[count++] = frag_shader;
+    assert(count <= sizeof(shaders) / sizeof(shaders[0]));
+    if (count)
+      prog = glx_create_program(shaders, count);
+  }
 
-	if (vert_shader)
-		glDeleteShader(vert_shader);
-	if (frag_shader)
-		glDeleteShader(frag_shader);
+  if (vert_shader)
+    glDeleteShader(vert_shader);
+  if (frag_shader)
+    glDeleteShader(frag_shader);
 
-	return prog;
+  return prog;
 }
 #endif
 
