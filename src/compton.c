@@ -5648,6 +5648,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "glx-fshader-win", required_argument, NULL, 317 },
     { "version", no_argument, NULL, 318 },
     { "no-x-selection", no_argument, NULL, 319 },
+    { "no-name-pixmap", no_argument, NULL, 320 },
     { "reredir-on-root-change", no_argument, NULL, 731 },
     { "glx-reinit-on-root-change", no_argument, NULL, 732 },
     // Must terminate with a NULL entry
@@ -5676,6 +5677,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         printf("%s\n", COMPTON_VERSION);
         exit(0);
       }
+      else if (320 == o)
+        ps->o.no_name_pixmap = true;
       else if ('?' == o || ':' == o)
         usage(1);
     }
@@ -5731,6 +5734,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 'S':
       case 314:
       case 318:
+      case 320:
         break;
       P_CASELONG('D', fade_delta);
       case 'I':
@@ -7090,7 +7094,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
     XCompositeQueryVersion(ps->dpy, &composite_major, &composite_minor);
 
-    if (composite_major > 0 || composite_minor >= 2) {
+    if (!ps->o.no_name_pixmap
+        && (composite_major > 0 || composite_minor >= 2)) {
       ps->has_name_pixmap = true;
     }
   }

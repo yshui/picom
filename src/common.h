@@ -601,6 +601,8 @@ typedef struct _options_t {
   Window benchmark_wid;
   /// A list of conditions of windows not to paint.
   c2_lptr_t *paint_blacklist;
+  /// Whether to avoid using XCompositeNameWindowPixmap(), for debugging.
+  bool no_name_pixmap;
   /// Whether to work under synchronized mode for debugging.
   bool synchronize;
   /// Whether to show all X errors.
