@@ -7333,6 +7333,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
   }
 
   XUngrabServer(ps->dpy);
+  // ALWAYS flush after XUngrabServer()!
+  XFlush(ps->dpy);
 
   // Initialize DBus
   if (ps->o.dbus) {
