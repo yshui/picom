@@ -2,7 +2,7 @@ compton(1)
 ==========
 :doctype:     manpage
 :man source:  compton
-:man version: nightly-20140419
+:man version: nightly-20141124
 :man manual:  LOCAL USER COMMANDS
 
 NAME
@@ -78,7 +78,7 @@ OPTIONS
 	Don't draw shadows on drag-and-drop windows.
 
 *-b*, *--daemon*::
-	Daemonize process. Fork to background after initialization.
+	Daemonize process. Fork to background after initialization. Causes issues with certain (badly-written) drivers.
 
 *-S*::
 	Enable synchronous X operation (for debugging).
@@ -87,7 +87,7 @@ OPTIONS
 	Show all X errors (for debugging).
 
 *--config* 'PATH'::
-	Look for configuration file at the path. See *CONFIGURATION FILES* section below for where compton looks for a configuration file by default.
+	Look for configuration file at the path. See *CONFIGURATION FILES* section below for where compton looks for a configuration file by default. Use `/dev/null` to avoid loading configuration file.
 
 *--write-pid-path* 'PATH'::
 	Write process ID to a file.
@@ -123,7 +123,7 @@ OPTIONS
 	Do not fade destroyed ARGB windows with WM frame. Workaround of bugs in Openbox, Fluxbox, etc.
 
 *--shadow-ignore-shaped*::
-	Do not paint shadows on shaped windows. Note shaped windows here means windows setting its shape through X Shape extension. Those using ARGB background is beyond our control.
+	Do not paint shadows on shaped windows. Note shaped windows here means windows setting its shape through X Shape extension. Those using ARGB background is beyond our control. Deprecated, use `--shadow-exclude 'bounding_shaped'` or `--shadow-exclude 'bounding_shaped && !rounded_corners'` instead.
 
 *--detect-rounded-corners*::
 	Try to detect windows with rounded corners and don't consider them shaped windows. The accuracy is not very high, unfortunately.
@@ -139,10 +139,10 @@ OPTIONS
 +
 --
 * 'none': No VSync
-* 'drm': VSync with 'DRM_IOCTL_WAIT_VBLANK'. May only work on some drivers.
+* 'drm': VSync with 'DRM_IOCTL_WAIT_VBLANK'. May only work on some (DRI-based) drivers.
 * 'opengl': Try to VSync with 'SGI_video_sync' OpenGL extension. Only work on some drivers.
 * 'opengl-oml': Try to VSync with 'OML_sync_control' OpenGL extension. Only work on some drivers.
-* 'opengl-swc': Try to VSync with 'SGI_swap_control' OpenGL extension. Only work on some drivers. Works only with GLX backend. Known to be most effective on many drivers. Does not actually control paint timing, only buffer swap is affected, so it doesn't have the effect of *--sw-opti* unlike other methods. Experimental.
+* 'opengl-swc': Try to VSync with 'SGI_swap_control' OpenGL extension. Only work on some drivers. Works only with GLX backend. Known to be most effective on many drivers. Does not guarantee to control paint timing.
 * 'opengl-mswc': Try to VSync with 'MESA_swap_control' OpenGL extension. Basically the same as 'opengl-swc' above, except the extension we use.
 
 (Note some VSync methods may not be enabled at compile time.)
