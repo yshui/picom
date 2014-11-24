@@ -3916,8 +3916,8 @@ ev_name(session_t *ps, XEvent *ev) {
   if (ps->xsync_exists) {
     int o = ev->type - ps->xsync_event;
     switch (o) {
-      CASESTRRET(CounterNotify);
-      CASESTRRET(AlarmNotify);
+      CASESTRRET(XSyncCounterNotify);
+      CASESTRRET(XSyncAlarmNotify);
     }
   }
 #endif
