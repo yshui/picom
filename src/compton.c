@@ -2414,15 +2414,15 @@ calc_dim(session_t *ps, win *w) {
  */
 static void
 win_determine_fade(session_t *ps, win *w) {
+  // To prevent it from being overwritten by last-paint value if the window is
+  // unmapped on next frame, write w->fade_last as well
   if (UNSET != w->fade_force)
-    w->fade = w->fade_force;
+    w->fade_last = w->fade = w->fade_force;
   else if (ps->o.no_fading_openclose && w->in_openclose)
-    w->fade = false;
+    w->fade_last = w->fade = false;
   else if (ps->o.no_fading_destroyed_argb && w->destroyed
       && WMODE_ARGB == w->mode && w->client_win && w->client_win != w->id) {
-    w->fade = false;
-    // Prevent it from being overwritten by last-paint value
-    w->fade_last = false;
+    w->fade_last = w->fade = false;
   }
   // Ignore other possible causes of fading state changes after window
   // gets unmapped
