@@ -49,6 +49,11 @@ if (CONFIG_VSYNC_OPENGL)
 	list(APPEND compton_SRCS src/opengl.c)
 endif ()
 
+option(CONFIG_VSYNC_OPENGL_GLSL "Enable GLSL" ON)
+if (CONFIG_VSYNC_OPENGL_GLSL)
+	add_definitions("-DCONFIG_VSYNC_OPENGL_GLSL")
+endif ()
+
 option(CONFIG_XINERAMA "Enable additional Xinerama features" ON)
 if (CONFIG_XINERAMA)
 	add_definitions("-DCONFIG_XINERAMA")
