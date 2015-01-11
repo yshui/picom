@@ -23,6 +23,8 @@ add_definitions("-DCOMPTON_VERSION=${COMPTON_VERSION}")
 
 # == Options ==
 
+include(CMakeDependentOption)
+
 option(CONFIG_REGEX_PCRE "Enable PCRE regular expression support for blacklist entries (requires libpcre)" ON)
 if (CONFIG_REGEX_PCRE)
 	add_definitions("-DCONFIG_REGEX_PCRE")
@@ -49,14 +51,41 @@ if (CONFIG_VSYNC_OPENGL)
 	list(APPEND compton_SRCS src/opengl.c)
 endif ()
 
-option(CONFIG_VSYNC_OPENGL_GLSL "Enable GLSL" ON)
+CMAKE_DEPENDENT_OPTION(CONFIG_VSYNC_OPENGL_GLSL
+	"Enable GLSL support (GLX background blur, etc.)" ON
+	"CONFIG_VSYNC_OPENGL" OFF)
 if (CONFIG_VSYNC_OPENGL_GLSL)
 	add_definitions("-DCONFIG_VSYNC_OPENGL_GLSL")
+endif ()
+
+CMAKE_DEPENDENT_OPTION(CONFIG_VSYNC_OPENGL_FBO
+	"Enable OpenGL FBO support (GLX multi-pass blur, etc.)" ON
+	"CONFIG_VSYNC_OPENGL" OFF)
+if (CONFIG_VSYNC_OPENGL_FBO)
+	add_definitions("-DCONFIG_VSYNC_OPENGL_FBO")
+endif ()
+
+CMAKE_DEPENDENT_OPTION(CONFIG_VSYNC_OPENGL_VBO
+	"Enable OpenGL VBO support (does nothing right now)" ON
+	"CONFIG_VSYNC_OPENGL" OFF)
+if (CONFIG_VSYNC_OPENGL_VBO)
+	add_definitions("-DCONFIG_VSYNC_OPENGL_VBO")
 endif ()
 
 option(CONFIG_XINERAMA "Enable additional Xinerama features" ON)
 if (CONFIG_XINERAMA)
 	add_definitions("-DCONFIG_XINERAMA")
+endif ()
+
+option(CONFIG_DBUS "Enable D-Bus support" ON)
+if (CONFIG_DBUS)
+	add_definitions("-DCONFIG_DBUS")
+	list(APPEND compton_SRCS src/dbus.c)
+endif ()
+
+option(CONFIG_XSYNC "Enable X Sync support (X Sync fence)" ON)
+if (CONFIG_XSYNC)
+	add_definitions("-DCONFIG_XSYNC")
 endif ()
 
 option(CONFIG_C2 "Enable matching system" ON)
@@ -85,10 +114,10 @@ macro(X11LIB_CHK lib)
 	if (NOT X11_${lib}_FOUND)
 		message(FATAL_ERROR "Could not find lib${lib}.")
 	endif ()
-	target_link_libraries(compton "${X11_${lib}_LIB}")
+	target_link_libraries(compton ${X11_${lib}_LIB})
 endmacro ()
 
-target_link_libraries(compton "${X11_X11_LIB}")
+target_link_libraries(compton ${X11_X11_LIB})
 X11LIB_CHK(Xcomposite)
 X11LIB_CHK(Xdamage)
 X11LIB_CHK(Xext)
@@ -102,26 +131,33 @@ endif ()
 # --- Find libpcre ---
 if (CONFIG_REGEX_PCRE)
 	pkg_check_modules(LIBPCRE REQUIRED libpcre>=8.12)
-	add_definitions("${LIBPCRE_CFLAGS}")
-	target_link_libraries(compton "${LIBPCRE_LDFLAGS}")
+	add_definitions(${LIBPCRE_CFLAGS})
+	target_link_libraries(compton ${LIBPCRE_LDFLAGS})
 endif ()
 
 # --- Find libconfig ---
 if (CONFIG_LIBCONFIG)
 	pkg_check_modules(LIBCONFIG REQUIRED libconfig>=1.3.2)
-	add_definitions("${LIBCONFIG_CFLAGS}")
-	target_link_libraries(compton "${LIBCONFIG_LDFLAGS}")
+	add_definitions(${LIBCONFIG_CFLAGS})
+	target_link_libraries(compton ${LIBCONFIG_LDFLAGS})
 	if (LIBCONFIG_VERSION VERSION_LESS 1.4)
-		add_definitions("-DCONFIG_LIBCONFIG_LEGACY")
+		add_definitions(-DCONFIG_LIBCONFIG_LEGACY)
 		message(STATUS "libconfig-1.3* detected. Enable legacy mode.")
 	endif ()
+endif ()
+
+# --- Find libdbus ---
+if (CONFIG_DBUS)
+	pkg_check_modules(DBUS REQUIRED dbus-1)
+	add_definitions(${DBUS_CFLAGS})
+	target_link_libraries(compton ${DBUS_LDFLAGS})
 endif ()
 
 # --- Find libdrm ---
 if (CONFIG_VSYNC_DRM)
 	pkg_check_modules(LIBDRM REQUIRED libdrm)
 	# We only use its header file
-	add_definitions("${LIBDRM_CFLAGS}")
+	add_definitions(${LIBDRM_CFLAGS})
 endif ()
 
 # == Install ==
