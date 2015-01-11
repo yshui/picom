@@ -18,12 +18,14 @@ OBJS = compton.o
 CFG = -std=c99
 
 # ==== Xinerama ====
+# Enables support for --xinerama-shadow-crop
 ifeq "$(NO_XINERAMA)" ""
   CFG += -DCONFIG_XINERAMA
   PACKAGES += xinerama
 endif
 
 # ==== libconfig ====
+# Enables configuration file parsing support
 ifeq "$(NO_LIBCONFIG)" ""
   CFG += -DCONFIG_LIBCONFIG
   PACKAGES += libconfig
@@ -34,57 +36,68 @@ ifeq "$(NO_LIBCONFIG)" ""
 endif
 
 # ==== PCRE regular expression ====
+# Enables support for PCRE regular expression pattern in window conditions
 ifeq "$(NO_REGEX_PCRE)" ""
   CFG += -DCONFIG_REGEX_PCRE
   LIBS += $(shell pcre-config --libs)
   INCS += $(shell pcre-config --cflags)
+  # Enables JIT support in libpcre
   ifeq "$(NO_REGEX_PCRE_JIT)" ""
     CFG += -DCONFIG_REGEX_PCRE_JIT
   endif
 endif
 
 # ==== DRM VSync ====
+# Enables support for "drm" VSync method
 ifeq "$(NO_VSYNC_DRM)" ""
   INCS += $(shell pkg-config --cflags libdrm)
   CFG += -DCONFIG_VSYNC_DRM
 endif
 
 # ==== OpenGL ====
+# Enables support for GLX backend, OpenGL VSync methods, etc.
 ifeq "$(NO_VSYNC_OPENGL)" ""
   CFG += -DCONFIG_VSYNC_OPENGL
   # -lGL must precede some other libraries, or it segfaults on FreeBSD (#74)
   LIBS := -lGL $(LIBS)
   OBJS += opengl.o
+  # Enables support for GLSL (GLX background blur, etc.)
   ifeq "$(NO_VSYNC_OPENGL_GLSL)" ""
     CFG += -DCONFIG_VSYNC_OPENGL_GLSL
   endif
+  # Enables support for GL FBO (GLX multi-pass blur, etc.)
   ifeq "$(NO_VSYNC_OPENGL_FBO)" ""
     CFG += -DCONFIG_VSYNC_OPENGL_FBO
   endif
+  # Enables support for GL VBO (does nothing right now)
   ifeq "$(NO_VSYNC_OPENGL_VBO)" ""
     CFG += -DCONFIG_VSYNC_OPENGL_VBO
   endif
 endif
 
 # ==== D-Bus ====
+# Enables support for --dbus (D-Bus remote control)
 ifeq "$(NO_DBUS)" ""
   CFG += -DCONFIG_DBUS
   PACKAGES += dbus-1
   OBJS += dbus.o
 endif
 
-# ==== D-Bus ====
+# ==== X Sync ====
+# Enables support for --xrender-sync-fence
 ifeq "$(NO_XSYNC)" ""
   CFG += -DCONFIG_XSYNC
 endif
 
 # ==== C2 ====
+# Enable window condition support
 ifeq "$(NO_C2)" ""
   CFG += -DCONFIG_C2
   OBJS += c2.o
 endif
 
 # ==== X resource checker ====
+# Enable X resource leakage checking (Pixmap only, presently)
 ifneq "$(ENABLE_XRESCHECK)" ""
   CFG += -DDEBUG_XRC
   OBJS += xrescheck.o
