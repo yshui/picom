@@ -4529,9 +4529,15 @@ usage(int ret) {
     "--show-all-xerrors\n"
     "  Show all X errors (for debugging).\n"
     "\n"
+#undef WARNING
+#ifndef CONFIG_LIBCONFIG
+#define WARNING WARNING_DISABLED
+#else
+#define WARNING
+#endif
     "--config path\n"
     "  Look for configuration file at the path. Use /dev/null to avoid\n"
-    "  loading configuration file.\n"
+    "  loading configuration file." WARNING "\n"
     "\n"
     "--write-pid-path path\n"
     "  Write process ID to a file.\n"
@@ -4741,6 +4747,12 @@ usage(int ret) {
     "  Crop shadow of a window fully on a particular Xinerama screen to the\n"
     "  screen." WARNING "\n"
     "\n"
+#undef WARNING
+#ifndef CONFIG_VSYNC_OPENGL
+#define WARNING "(GLX BACKENDS DISABLED AT COMPILE TIME)"
+#else
+#define WARNING
+#endif
     "--backend backend\n"
     "  Choose backend. Possible choices are xrender, glx, and\n"
     "  xr_glx_hybrid" WARNING ".\n"
@@ -4795,12 +4807,6 @@ usage(int ret) {
     "--xrender-sync-fence\n"
     "  Additionally use X Sync fence to sync clients' draw calls. Needed\n"
     "  on nvidia-drivers with GLX backend for some users." WARNING "\n"
-#undef WARNING
-#ifndef CONFIG_DBUS
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
     "\n"
     "--glx-fshader-win shader\n"
     "  GLX backend: Use specified GLSL fragment shader for rendering window\n"
@@ -4810,6 +4816,12 @@ usage(int ret) {
     "  Force all windows to be painted with blending. Useful if you have a\n"
     "  --glx-fshader-win that could turn opaque pixels transparent.\n"
     "\n"
+#undef WARNING
+#ifndef CONFIG_DBUS
+#define WARNING WARNING_DISABLED
+#else
+#define WARNING
+#endif
     "--dbus\n"
     "  Enable remote control via D-Bus. See the D-BUS API section in the\n"
     "  man page for more details." WARNING "\n"
