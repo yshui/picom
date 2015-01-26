@@ -4965,7 +4965,6 @@ fork_after(session_t *ps) {
     printf_errf("(): freopen() failed.");
     return false;
   }
-  success = ostream_reopen(ps, NULL);
 
   return success;
 }
@@ -7443,6 +7442,10 @@ session_init(session_t *ps_old, int argc, char **argv) {
       return NULL;
     }
   }
+
+  // Redirect output stream
+  if (ps->o.fork_after_register || ps->o.logpath)
+    ostream_reopen(ps, NULL);
 
   write_pid(ps);
 
