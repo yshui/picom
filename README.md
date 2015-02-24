@@ -1,5 +1,7 @@
 # Compton
 
+[![Join the chat at https://gitter.im/chjj/compton](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/chjj/compton?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 __Compton__ is a compositor for X, and a fork of __xcompmgr-dana__.
 
 I was frustrated by the low amount of standalone lightweight compositors.
