@@ -3465,8 +3465,10 @@ win_update_focused(session_t *ps, win *w) {
     }
   }
 
-  if (w->focused != focused_old)
-    w->flags |= WFLAG_OPCT_CHANGE;
+  // Always recalculate the window target opacity, since some opacity-related
+  // options depend on the output value of win_is_focused_real() instead of
+  // w->focused
+  w->flags |= WFLAG_OPCT_CHANGE;
 }
 
 /**
