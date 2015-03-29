@@ -83,7 +83,7 @@ while test $# -gt 0; do
       s) wprefix=''; window='' ;;
       c)
         active=$(xprop -root -notype _NET_ACTIVE_WINDOW \
-          | sed 's/^.*\(0x\S*\).*$/\1/')
+          | grep -Eo '0x[[:xdigit:]]+' | head -n 1)
         wprefix='-id'; window=$active
       ;;
       r) action='reset' ;;
