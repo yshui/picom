@@ -241,7 +241,13 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Crop shadow of a window fully on a particular Xinerama screen to the screen.
 
 *--backend* 'BACKEND'::
-	Specify the backend to use: `xrender` or `glx`. GLX (OpenGL) backend generally has much superior performance as far as you have a graphic card/chip and driver.
+	Specify the backend to use: `xrender`, `glx`, or `xr_glx_hybrid`. `xrender` is the default one.
++
+--
+* `xrender` backend performs all rendering operations with X Render extension. It is what `xcompmgr` uses, and is generally a safe fallback when you encounter rendering artifacts or instability.
+* `glx` (OpenGL) backend performs all rendering operations with OpenGL. It is more friendly to some VSync methods, and has significantly superior performance on color inversion (`--invert-color-include`) or blur (`--blur-background`). It requires proper OpenGL 2.0 support from your driver and hardware. You may wish to look at the GLX performance optimization options below. `--xrender-sync` and `--xrender-sync-fence` might be needed on some systems to avoid delay in changes of screen contents.
+* `xr_glx_hybrid` backend renders the updated screen contents with X Render and presents it on the screen with GLX. It attempts to address the rendering issues some users encountered with GLX backend and enables the better VSync of GLX backends. `--vsync-use-glfinish` might fix some rendering issues with this backend.
+--
 
 *--glx-no-stencil*::
   GLX backend: Avoid using stencil buffer, useful if you don't have a stencil buffer. Might cause incorrect opacity when rendering transparent content (but never practically happened) and may not work with *--blur-background*. My tests show a 15% performance boost. Recommended.
