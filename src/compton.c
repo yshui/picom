@@ -2106,7 +2106,10 @@ repair_win(session_t *ps, win *w) {
 
   // Why care about damage when screen is unredirected?
   // We will force full-screen repaint on redirection.
-  if (!ps->redirected) return;
+  if (!ps->redirected) {
+    free_region(ps, &parts);
+    return;
+  }
 
   // Remove the part in the damage area that could be ignored
   if (!ps->reg_ignore_expire && w->prev_trans && w->prev_trans->reg_ignore)
