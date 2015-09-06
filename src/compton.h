@@ -507,6 +507,20 @@ win_has_frame(const win *w) {
     || w->frame_extents.right || w->frame_extents.bottom;
 }
 
+/**
+ * Calculate the extents of the frame of the given window based on EWMH
+ * _NET_FRAME_EXTENTS and the X window border width.
+ */
+static inline margin_t __attribute__((pure))
+win_calc_frame_extents(session_t *ps, const win *w) {
+  margin_t result = w->frame_extents;
+  result.top = max_i(result.top, w->a.border_width);
+  result.left = max_i(result.left, w->a.border_width);
+  result.bottom = max_i(result.bottom, w->a.border_width);
+  result.right = max_i(result.right, w->a.border_width);
+  return result;
+}
+
 static inline void
 wid_set_opacity_prop(session_t *ps, Window wid, opacity_t val) {
   const unsigned long v = val;

@@ -901,12 +901,13 @@ win_get_region(session_t *ps, win *w, bool use_offset) {
  */
 static XserverRegion
 win_get_region_noframe(session_t *ps, win *w, bool use_offset) {
+  const margin_t extents = win_calc_frame_extents(ps, w);
   XRectangle r;
 
-  r.x = (use_offset ? w->a.x: 0) + w->a.border_width + w->frame_extents.left;
-  r.y = (use_offset ? w->a.y: 0) + w->a.border_width + w->frame_extents.top;
-  r.width = max_i(w->a.width - w->frame_extents.left - w->frame_extents.right, 0);
-  r.height = max_i(w->a.height - w->frame_extents.top - w->frame_extents.bottom, 0);
+  r.x = (use_offset ? w->a.x: 0) + extents.left;
+  r.y = (use_offset ? w->a.y: 0) + extents.top;
+  r.width = max_i(w->a.width - extents.left - extents.right, 0);
+  r.height = max_i(w->a.height - extents.top - extents.bottom, 0);
 
   if (r.width > 0 && r.height > 0)
     return XFixesCreateRegion(ps->dpy, &r, 1);
@@ -1632,10 +1633,11 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
   }
   else {
     // Painting parameters
-    const int t = w->a.border_width + w->frame_extents.top;
-    const int l = w->a.border_width + w->frame_extents.left;
-    const int b = w->a.border_width + w->frame_extents.bottom;
-    const int r = w->a.border_width + w->frame_extents.right;
+    const margin_t extents = win_calc_frame_extents(ps, w);
+    const int t = extents.top;
+    const int l = extents.left;
+    const int b = extents.bottom;
+    const int r = extents.right;
 
 #define COMP_BDR(cx, cy, cwid, chei) \
     win_render(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity, \
