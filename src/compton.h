@@ -500,7 +500,7 @@ update_reg_ignore_expire(session_t *ps, const win *w) {
 /**
  * Check whether a window has WM frames.
  */
-static inline bool __attribute__((const))
+static inline bool __attribute__((pure))
 win_has_frame(const win *w) {
   return w->a.border_width
     || w->frame_extents.top || w->frame_extents.left

@@ -1475,7 +1475,7 @@ timespec_subtract(struct timespec *result,
 /**
  * Get current time in struct timeval.
  */
-static inline struct timeval __attribute__((const))
+static inline struct timeval
 get_time_timeval(void) {
   struct timeval tv = { 0, 0 };
 
@@ -1490,7 +1490,7 @@ get_time_timeval(void) {
  *
  * Note its starting time is unspecified.
  */
-static inline struct timespec __attribute__((const))
+static inline struct timespec
 get_time_timespec(void) {
   struct timespec tm = { 0, 0 };
 
