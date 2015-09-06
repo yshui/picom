@@ -723,10 +723,22 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_win_get_do(opacity_set, cdbus_reply_uint32);
 
   cdbus_m_win_get_do(frame_opacity, cdbus_reply_double);
-  cdbus_m_win_get_do(left_width, cdbus_reply_uint32);
-  cdbus_m_win_get_do(right_width, cdbus_reply_uint32);
-  cdbus_m_win_get_do(top_width, cdbus_reply_uint32);
-  cdbus_m_win_get_do(bottom_width, cdbus_reply_uint32);
+  if (!strcmp("left_width", target)) {
+    cdbus_reply_uint32(ps, msg, w->frame_extents.left);
+    return true;
+  }
+  if (!strcmp("right_width", target)) {
+    cdbus_reply_uint32(ps, msg, w->frame_extents.right);
+    return true;
+  }
+  if (!strcmp("top_width", target)) {
+    cdbus_reply_uint32(ps, msg, w->frame_extents.top);
+    return true;
+  }
+  if (!strcmp("bottom_width", target)) {
+    cdbus_reply_uint32(ps, msg, w->frame_extents.bottom);
+    return true;
+  }
 
   cdbus_m_win_get_do(shadow, cdbus_reply_bool);
   cdbus_m_win_get_do(fade, cdbus_reply_bool);

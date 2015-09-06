@@ -503,7 +503,8 @@ update_reg_ignore_expire(session_t *ps, const win *w) {
 static inline bool __attribute__((const))
 win_has_frame(const win *w) {
   return w->a.border_width
-    || w->top_width || w->left_width || w->right_width || w->bottom_width;
+    || w->frame_extents.top || w->frame_extents.left
+    || w->frame_extents.right || w->frame_extents.bottom;
 }
 
 static inline void

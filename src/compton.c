@@ -903,10 +903,10 @@ static XserverRegion
 win_get_region_noframe(session_t *ps, win *w, bool use_offset) {
   XRectangle r;
 
-  r.x = (use_offset ? w->a.x: 0) + w->a.border_width + w->left_width;
-  r.y = (use_offset ? w->a.y: 0) + w->a.border_width + w->top_width;
-  r.width = max_i(w->a.width - w->left_width - w->right_width, 0);
-  r.height = max_i(w->a.height - w->top_width - w->bottom_width, 0);
+  r.x = (use_offset ? w->a.x: 0) + w->a.border_width + w->frame_extents.left;
+  r.y = (use_offset ? w->a.y: 0) + w->a.border_width + w->frame_extents.top;
+  r.width = max_i(w->a.width - w->frame_extents.left - w->frame_extents.right, 0);
+  r.height = max_i(w->a.height - w->frame_extents.top - w->frame_extents.bottom, 0);
 
   if (r.width > 0 && r.height > 0)
     return XFixesCreateRegion(ps->dpy, &r, 1);
@@ -1033,20 +1033,17 @@ find_client_win(session_t *ps, Window w) {
  */
 static void
 get_frame_extents(session_t *ps, win *w, Window client) {
-  w->left_width = 0;
-  w->right_width = 0;
-  w->top_width = 0;
-  w->bottom_width = 0;
+  cmemzero_one(&w->frame_extents);
 
   winprop_t prop = wid_get_prop(ps, client, ps->atom_frame_extents,
     4L, XA_CARDINAL, 32);
 
   if (4 == prop.nitems) {
     const long * const extents = prop.data.p32;
-    w->left_width = extents[0];
-    w->right_width = extents[1];
-    w->top_width = extents[2];
-    w->bottom_width = extents[3];
+    w->frame_extents.left = extents[0];
+    w->frame_extents.right = extents[1];
+    w->frame_extents.top = extents[2];
+    w->frame_extents.bottom = extents[3];
 
     if (ps->o.frame_opacity)
       update_reg_ignore_expire(ps, w);
@@ -1054,7 +1051,8 @@ get_frame_extents(session_t *ps, win *w, Window client) {
 
 #ifdef DEBUG_FRAME
   printf_dbgf("(%#010lx): %d, %d, %d, %d\n", w->id,
-      w->left_width, w->right_width, w->top_width, w->bottom_width);
+      w->frame_extents.left, w->frame_extents.right,
+      w->frame_extents.top, w->frame_extents.bottom);
 #endif
 
   free_winprop(&prop);
@@ -1634,10 +1632,10 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
   }
   else {
     // Painting parameters
-    const int t = w->a.border_width + w->top_width;
-    const int l = w->a.border_width + w->left_width;
-    const int b = w->a.border_width + w->bottom_width;
-    const int r = w->a.border_width + w->right_width;
+    const int t = w->a.border_width + w->frame_extents.top;
+    const int l = w->a.border_width + w->frame_extents.left;
+    const int b = w->a.border_width + w->frame_extents.bottom;
+    const int r = w->a.border_width + w->frame_extents.right;
 
 #define COMP_BDR(cx, cy, cwid, chei) \
     win_render(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity, \
@@ -2898,10 +2896,7 @@ add_win(session_t *ps, Window id, Window prev) {
     .fade_callback = NULL,
 
     .frame_opacity = 0.0,
-    .left_width = 0,
-    .right_width = 0,
-    .top_width = 0,
-    .bottom_width = 0,
+    .frame_extents = MARGIN_INIT,
 
     .shadow = false,
     .shadow_force = UNSET,
