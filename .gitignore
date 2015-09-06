@@ -29,6 +29,7 @@ install_manifest.txt
 
 
 # Vim files
+.sw[a-z]
 .*.sw[a-z]
 *~
 
@@ -42,5 +43,7 @@ man/*.html
 man/*.1
 doxygen/
 .clang_complete
+.ycm_extra_conf.py
+.ycm_extra_conf.pyc
 /src/backtrace-symbols.[ch]
 /compton*.trace
