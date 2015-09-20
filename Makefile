@@ -156,6 +156,9 @@ install: $(BINS) docs
 ifneq "$(MANPAGES)" ""
 	@install -m644 $(MANPAGES) "$(DESTDIR)$(MANDIR)"/
 endif
+	@install -d \
+		"$(DESTDIR)$(ICODIR)/scalable/apps" \
+		"$(DESTDIR)$(ICODIR)/48x48/apps"
 	@install -m644 media/compton.svg "$(DESTDIR)$(ICODIR)/scalable/apps"/
 	@install -m644 media/icons/48x48/compton.png "$(DESTDIR)$(ICODIR)/48x48/apps"/
 	@install -m644 compton.desktop "$(DESTDIR)$(APPDIR)"/
