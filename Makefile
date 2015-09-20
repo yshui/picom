@@ -7,6 +7,7 @@ PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
 APPDIR ?= $(PREFIX)/share/applications
+ICODIR ?= $(PREFIX)/share/icons/hicolor/
 
 PACKAGES = x11 xcomposite xfixes xdamage xrender xext xrandr
 LIBS = -lm -lrt
@@ -155,6 +156,8 @@ install: $(BINS) docs
 ifneq "$(MANPAGES)" ""
 	@install -m644 $(MANPAGES) "$(DESTDIR)$(MANDIR)"/
 endif
+	@install -m644 media/compton.svg "$(DESTDIR)$(ICODIR)/scalable/apps"/
+	@install -m644 media/icons/48x48/compton.png "$(DESTDIR)$(ICODIR)/48x48/apps"/
 	@install -m644 compton.desktop "$(DESTDIR)$(APPDIR)"/
 ifneq "$(DOCDIR)" ""
 	@install -d "$(DESTDIR)$(DOCDIR)"
