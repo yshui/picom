@@ -5466,12 +5466,17 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   }
 #endif
 
-  if (CONFIG_FALSE == config_read(&cfg, f)) {
-    printf("Error when reading configuration file \"%s\", line %d: %s\n",
-        path, config_error_line(&cfg), config_error_text(&cfg));
-    config_destroy(&cfg);
-    free(path);
-    return;
+  {
+    int read_result = config_read(&cfg, f);
+    fclose(f);
+    f = NULL;
+    if (CONFIG_FALSE == read_result) {
+      printf("Error when reading configuration file \"%s\", line %d: %s\n",
+          path, config_error_line(&cfg), config_error_text(&cfg));
+      config_destroy(&cfg);
+      free(path);
+      return;
+    }
   }
   config_set_auto_convert(&cfg, 1);
 
