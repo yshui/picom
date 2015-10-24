@@ -4352,6 +4352,16 @@ ev_screen_change_notify(session_t *ps,
   }
 }
 
+inline static void
+ev_selection_clear(session_t *ps,
+    XSelectionClearEvent __attribute__((unused)) *ev) {
+  // The only selection we own is the _NET_WM_CM_Sn selection.
+  // If we lose that one, we should exit.
+  fprintf(stderr, "Another composite manager started and "
+      "took the _NET_WM_CM_Sn selection.\n");
+  exit(1);
+}
+
 #if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
 /**
  * Get a window's name from window ID.
@@ -4443,6 +4453,9 @@ ev_handle(session_t *ps, XEvent *ev) {
       break;
     case PropertyNotify:
       ev_property_notify(ps, (XPropertyEvent *)ev);
+      break;
+    case SelectionClear:
+      ev_selection_clear(ps, (XSelectionClearEvent *)ev);
       break;
     default:
       if (ps->shape_exists && ev->type == ps->shape_event) {
