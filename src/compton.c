@@ -3323,7 +3323,8 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 
   if (ev->request_code == ps->composite_opcode
       && ev->minor_code == X_CompositeRedirectSubwindows) {
-    fprintf(stderr, "Another composite manager is already running\n");
+    fprintf(stderr, "Another composite manager is already running "
+        "(and does not handle _NET_WM_CM_Sn correctly)\n");
     exit(1);
   }
 
@@ -4895,6 +4896,7 @@ register_cm(session_t *ps) {
   if (!ps->o.no_x_selection) {
     unsigned len = strlen(REGISTER_PROP) + 2;
     int s = ps->scr;
+    Atom atom;
 
     while (s >= 10) {
       ++len;
@@ -4904,7 +4906,13 @@ register_cm(session_t *ps) {
     char *buf = malloc(len);
     snprintf(buf, len, REGISTER_PROP "%d", ps->scr);
     buf[len - 1] = '\0';
-    XSetSelectionOwner(ps->dpy, get_atom(ps, buf), ps->reg_win, 0);
+    atom = get_atom(ps, buf);
+
+    if (XGetSelectionOwner(ps->dpy, atom) != None) {
+      fprintf(stderr, "Another composite manager is already running\n");
+      return false;
+    }
+    XSetSelectionOwner(ps->dpy, atom, ps->reg_win, 0);
     free(buf);
   }
 
