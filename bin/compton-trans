@@ -114,7 +114,7 @@ fi
 if test x"$action" = x'reset'; then
   xwininfo -root -tree \
   | sed -n 's/^     \(0x[[:xdigit:]]*\).*/\1/p' \
-  | while IFS=$'\n' read wid; do
+  | while IFS=$(printf '\n') read wid; do
     xprop -id "$wid" -remove _NET_WM_WINDOW_OPACITY
   done
   exit 0
