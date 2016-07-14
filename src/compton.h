@@ -919,7 +919,7 @@ static void
 circulate_win(session_t *ps, XCirculateEvent *ce);
 
 static void
-finish_destroy_win(session_t *ps, Window id);
+finish_destroy_win(session_t *ps, win *w);
 
 static void
 destroy_callback(session_t *ps, win *w);

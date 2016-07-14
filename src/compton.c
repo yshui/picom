@@ -3206,17 +3206,18 @@ circulate_win(session_t *ps, XCirculateEvent *ce) {
 }
 
 static void
-finish_destroy_win(session_t *ps, Window id) {
-  win **prev = NULL, *w = NULL;
+finish_destroy_win(session_t *ps, win *w) {
+  assert(w->destroyed);
+  win **prev = NULL, *i = NULL;
 
 #ifdef DEBUG_EVENTS
-  printf_dbgf("(%#010lx): Starting...\n", id);
+  printf_dbgf("(%#010lx): Starting...\n", w->id);
 #endif
 
-  for (prev = &ps->list; (w = *prev); prev = &w->next) {
-    if (w->id == id && w->destroyed) {
+  for (prev = &ps->list; (i = *prev); prev = &i->next) {
+    if (w == i) {
 #ifdef DEBUG_EVENTS
-      printf_dbgf("(%#010lx \"%s\"): %p\n", id, w->name, w);
+      printf_dbgf("(%#010lx \"%s\"): %p\n", w->id, w->name, w);
 #endif
 
       finish_unmap_win(ps, w);
@@ -3242,7 +3243,7 @@ finish_destroy_win(session_t *ps, Window id) {
 
 static void
 destroy_callback(session_t *ps, win *w) {
-  finish_destroy_win(ps, w->id);
+  finish_destroy_win(ps, w);
 }
 
 static void
