@@ -2277,6 +2277,8 @@ static void
 unmap_win(session_t *ps, win *w) {
   if (!w || IsUnmapped == w->a.map_state) return;
 
+  if (w->destroyed) return;
+
   // One last synchronization
   if (w->paint.pixmap)
     xr_sync(ps, w->paint.pixmap, &w->fence);
