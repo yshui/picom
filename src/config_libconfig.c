@@ -353,6 +353,29 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// -O (fade_out_step)
 	if (config_lookup_float(&cfg, "fade-out-step", &dval))
 		opt->fade_out_step = normalize_d(dval);
+    // --transition-length
+    if (config_lookup_int(&cfg, "transition-length", &ival))
+      opt->transition_length = ival;
+    // --transition-pow-x
+    if (config_lookup_float(&cfg, "transition-pow-x", &dval))
+      opt->transition_pow_x = dval;
+    // --transition-pow-y
+    if (config_lookup_float(&cfg, "transition-pow-y", &dval))
+      opt->transition_pow_y = dval;
+    // --transition-pow-w
+    if (config_lookup_float(&cfg, "transition-pow-w", &dval))
+      opt->transition_pow_w = dval;
+    // --transition-pow-h
+    if (config_lookup_float(&cfg, "transition-pow-h", &dval))
+      opt->transition_pow_h = dval;
+    // --size-transition
+    lcfg_lookup_bool(&cfg, "size-transition", &opt->size_transition);
+    // --spawn-center-screen
+    lcfg_lookup_bool(&cfg, "spawn-center-screen", &opt->spawn_center_screen);
+    // --spawn-center
+    lcfg_lookup_bool(&cfg, "spawn-center", &opt->spawn_center);
+    // --no-scale-down
+    lcfg_lookup_bool(&cfg, "no-scale-down", &opt->no_scale_down);
 	// -r (shadow_radius)
 	config_lookup_int(&cfg, "shadow-radius", &opt->shadow_radius);
 	// -o (shadow_opacity)

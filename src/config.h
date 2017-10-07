@@ -87,6 +87,24 @@ typedef struct options {
 	bool glx_no_stencil;
 	/// Whether to avoid rebinding pixmap on window damage.
 	bool glx_no_rebind_pixmap;
+	/// Length of window transitions
+	int transition_length;
+	/// For smoothing on the x-coordinate of window animations
+	float transition_pow_x;
+	/// For smoothing on the y-coordinate of window animations
+	float transition_pow_y;
+	/// For smoothing on the width of window animations
+	float transition_pow_w;
+	/// For smoothing on the height of window animations
+	float transition_pow_h;
+	/// Wether to animate on window size change
+	bool size_transition;
+	/// Wether to scale new windows in from the center of the screen
+	bool spawn_center_screen;
+	/// Wether to scale new windows in from their center
+	bool spawn_center;
+	/// Does not animate downscaling
+	bool no_scale_down;
 	/// Custom fragment shader for painting windows, as a string.
 	char *glx_fshader_win_str;
 	/// Whether to detect rounded corners.

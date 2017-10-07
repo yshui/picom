@@ -1190,6 +1190,12 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .dim = false,
 	    .invert_color = false,
 	    .blur_background = false,
+
+        .oldX = -10000,
+        .oldY = -10000,
+        .oldW = 0,
+        .oldH = 0,
+
 	    .reg_ignore = NULL,
 	    // The following ones are updated for other reasons
 	    .pixmap_damaged = false,          // updated by damage events
@@ -1772,6 +1778,7 @@ static void destroy_win_finish(session_t *ps, struct win *w) {
 
 static void map_win_finish(struct managed_win *w) {
 	w->in_openclose = false;
+    w->isOld   = true;
 	w->state = WSTATE_MAPPED;
 }
 
@@ -2079,6 +2086,13 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 
 	// XXX Can we assume map_state is always viewable?
 	w->a.map_state = XCB_MAP_STATE_VIEWABLE;
+
+    if (!w->isOld) {
+        w->oldX = -10000;
+        w->oldY = -10000;
+        w->oldW = 0;
+        w->oldH = 0;
+    }
 
 	win_update_screen(ps, w);
 

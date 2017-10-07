@@ -126,7 +126,7 @@ static inline void free_xinerama_info(session_t *ps) {
 /**
  * Get current system clock in milliseconds.
  */
-static inline int64_t get_time_ms(void) {
+int64_t get_time_ms(void) {
 	struct timespec tp;
 	clock_gettime(CLOCK_MONOTONIC, &tp);
 	return (int64_t)tp.tv_sec * 1000 + (int64_t)tp.tv_nsec / 1000000;
@@ -675,6 +675,57 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			w->reg_ignore_valid = false;
 		}
 	}
+
+    win_stack_foreach_managed(w, &ps->window_stack) {
+        bool posChanged = (w->oldX != -10000 && w->oldY != -10000 && w->oldW != 0 && w->oldH != 0)
+            && (w->g.x != w->newX || w->g.y != w->newY || w->g.width != w->newW || w->g.height != w->newH);
+
+        if (posChanged) {
+            float t      = get_time_ms();
+            float moveDx = (t - w->moveTimeX) / ps->o.transition_length;
+            float moveDy = (t - w->moveTimeY) / ps->o.transition_length;
+            float moveDw = (t - w->moveTimeW) / ps->o.transition_length;
+            float moveDh = (t - w->moveTimeH) / ps->o.transition_length;
+            if (moveDx >= 1.0) moveDx = 1.0;
+            if (moveDy >= 1.0) moveDy = 1.0;
+            if (moveDw >= 1.0) moveDw = 1.0;
+            if (moveDh >= 1.0) moveDh = 1.0;
+
+            float q = pow (moveDx, ps->o.transition_pow_x);
+            float k = pow (moveDy, ps->o.transition_pow_y);
+            float g = pow (moveDw, ps->o.transition_pow_w);
+            float z = pow (moveDh, ps->o.transition_pow_h);
+
+            float x = (float) w->oldX * (1-q) + (float) w->newX * q;
+            float y = (float) w->oldY * (1-k) + (float) w->newY * k;
+            float W = (float) w->oldW * (1-g) + (float) w->newW * g;
+            float h = (float) w->oldH * (1-z) + (float) w->newH * z;
+
+            add_damage_from_win(ps, w);
+            w->g.x = (int) x;
+            w->g.y = (int) y;
+            if (ps->o.size_transition) {
+                w->g.width  = (int) W;
+                w->g.height = (int) h;
+            }
+
+            /* w->to_paint = true; */
+            w->mode = WMODE_TRANS;
+            *fade_running = true;
+        }
+        // TODO
+        //if ((w->shadow && posChanged) || (ps->o.size_transition && w->pixmap_damaged)) {
+        //    rc_region_unref(&w->extents);
+        //    rc_region_unref(&w->border_size);
+        //    w->extents = win_extents(ps, w);
+        //    calc_win_size(ps, w);
+
+        //    if (ps->shape_exists && ps->o.shadow_ignore_shaped
+        //            && ps->o.detect_rounded_corners && w->bounding_shaped)
+        //        win_update_shape(ps, w);
+        //}
+        /* add_damage_win(ps, w); */
+    }
 
 	// Opacity will not change, from now on.
 	rc_region_t *last_reg_ignore = rc_region_new();

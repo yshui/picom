@@ -529,8 +529,10 @@ static void paint_root(session_t *ps, const region_t *reg_paint) {
  * Generate shadow <code>Picture</code> for a window.
  */
 static bool win_build_shadow(session_t *ps, struct managed_win *w, double opacity) {
-	const int width = w->widthb;
-	const int height = w->heightb;
+	/* const int width = w->widthb; */
+	/* const int height = w->heightb; */
+	const int width = w->newW; // TODO!
+	const int height = w->newH;
 	// log_trace("(): building shadow for %s %d %d", w->name, width, height);
 
 	xcb_image_t *shadow_image = NULL;
@@ -909,7 +911,8 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		pixman_region32_intersect(&reg_tmp, &reg_tmp, &bshape);
 		pixman_region32_fini(&bshape);
 
-		if (pixman_region32_not_empty(&reg_tmp)) {
+		reg_tmp = region;
+		if (pixman_region32_not_empty(&reg_tmp) || true) {
 			set_tgt_clip(ps, &reg_tmp);
 			// Blur window background
 			if (w->blur_background &&

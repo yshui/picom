@@ -248,6 +248,13 @@ struct managed_win {
 	/// Whether to blur window background.
 	bool blur_background;
 
+    /// Animation state
+    int oldX; int oldY; int oldW; int oldH;
+    int newX; int newY; int newW; int newH;
+    float moveTimeX; float moveTimeY;
+    float moveTimeW; float moveTimeH;
+    bool isOld;
+
 #ifdef CONFIG_OPENGL
 	/// Textures and FBO background blur use.
 	glx_blur_cache_t glx_blur_cache;
