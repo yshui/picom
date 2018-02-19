@@ -352,6 +352,13 @@ typedef enum {
   NUM_VSYNC,
 } vsync_t;
 
+/// Possible background blur algorithms.
+enum blur_method {
+    BLRMTHD_CONV,
+    BLRMTHD_KAWASE,
+    NUM_BLRMTHD,
+};
+
 /// @brief Possible backends of compton.
 enum backend {
   BKEND_XRENDER,
@@ -473,13 +480,18 @@ typedef struct {
   GLint unifm_offset_y;
   /// Location of uniform "factor_center" in blur GLSL program.
   GLint unifm_factor_center;
+  /// Location of uniform "offset" in blur GLSL program.
+  GLint unifm_offset;
+  /// Location of uniform "halfpixel" in blur GLSL program.
+  GLint unifm_halfpixel;
 } glx_blur_pass_t;
 
 typedef struct {
   /// Framebuffer used for blurring.
   GLuint fbo;
+  // FIXME.kawase: Set maximum number of textures for kawase blur
   /// Textures used for blurring.
-  GLuint textures[2];
+  GLuint textures[6]; // 4 + 2
   /// Width of the textures.
   int width;
   /// Height of the textures.
@@ -707,8 +719,13 @@ typedef struct _options_t {
   bool blur_background_fixed;
   /// Background blur blacklist. A linked list of conditions.
   c2_lptr_t *blur_background_blacklist;
+  /// Blur method.
+  enum blur_method blur_method;
   /// Blur convolution kernel.
   XFixed *blur_kerns[MAX_BLUR_PASS];
+  /// Blur strength.
+  int blur_strength_iterations;
+  float blur_strength_offset;
   /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
   double inactive_dim;
   /// Whether to use fixed inactive dim opacity, instead of deciding
@@ -1263,6 +1280,7 @@ typedef enum {
 extern const char * const WINTYPES[NUM_WINTYPES];
 extern const char * const VSYNC_STRS[NUM_VSYNC + 1];
 extern const char * const BACKEND_STRS[NUM_BKEND + 1];
+extern const char * const BLUR_METHOD_STRS[NUM_BLRMTHD + 1];
 extern session_t *ps_g;
 
 // == Debugging code ==
@@ -1666,6 +1684,108 @@ parse_vsync(session_t *ps, const char *str) {
 
   printf_errf("(\"%s\"): Invalid vsync argument.", str);
   return false;
+}
+
+/**
+ * Parse a blur_method option argument.
+ */
+static inline bool
+parse_blur_method(session_t *ps, const char *str) {
+  for (enum blur_method i = 0; BLUR_METHOD_STRS[i]; ++i)
+    if (!strcasecmp(str, BLUR_METHOD_STRS[i])) {
+      ps->o.blur_method = i;
+      return true;
+    }
+
+  printf_errf("(\"%s\"): Invalid blur_method argument.", str);
+  return false;
+}
+
+/**
+ * Parse a blur_strength option argument.
+ */
+static inline bool
+parse_blur_strength(session_t *ps, const char *str) {
+  const char *endptr = NULL;
+  long level = strtol(str, (char **) &endptr, 0);
+  if (!endptr || endptr == str) {
+    printf_errf("(\"%s\"): Invalid number.", str);
+    return false;
+  }
+  while (isspace(*endptr))
+    ++endptr;
+  if (*endptr) {
+    printf_errf("(\"%s\"): Trailing characters.", str);
+    return false;
+  }
+
+  switch (level) {
+      case 1:
+        ps->o.blur_strength_iterations = 1;
+        ps->o.blur_strength_offset = 1.5;
+        break;
+      case 2:
+        ps->o.blur_strength_iterations = 1;
+        ps->o.blur_strength_offset = 2.0;
+        break;
+      case 3:
+        ps->o.blur_strength_iterations = 2;
+        ps->o.blur_strength_offset = 2.5;
+        break;
+      case 4:
+        ps->o.blur_strength_iterations = 2;
+        ps->o.blur_strength_offset = 3.0;
+        break;
+      case 5:
+        ps->o.blur_strength_iterations = 3;
+        ps->o.blur_strength_offset = 2.6;
+        break;
+      case 6:
+        ps->o.blur_strength_iterations = 3;
+        ps->o.blur_strength_offset = 3.2;
+        break;
+      case 7:
+        ps->o.blur_strength_iterations = 3;
+        ps->o.blur_strength_offset = 3.8;
+        break;
+      case 8:
+        ps->o.blur_strength_iterations = 3;
+        ps->o.blur_strength_offset = 4.4;
+        break;
+      case 9:
+        ps->o.blur_strength_iterations = 3;
+        ps->o.blur_strength_offset = 5.0;
+        break;
+      case 10:
+        ps->o.blur_strength_iterations = 4;
+        ps->o.blur_strength_offset = 3.833;
+        break;
+      case 11:
+        ps->o.blur_strength_iterations = 4;
+        ps->o.blur_strength_offset = 4.667;
+        break;
+      case 12:
+        ps->o.blur_strength_iterations = 4;
+        ps->o.blur_strength_offset = 5.5;
+        break;
+      case 13:
+        ps->o.blur_strength_iterations = 4;
+        ps->o.blur_strength_offset = 6.333;
+        break;
+      case 14:
+        ps->o.blur_strength_iterations = 4;
+        ps->o.blur_strength_offset = 7.167;
+        break;
+      case 15:
+        ps->o.blur_strength_iterations = 4;
+        ps->o.blur_strength_offset = 8.0;
+        break;
+      default:
+        printf_errf("(\"%s\"): Invalid blur_strength argument. Needs to be a number between 1 and 15.", str);
+        return false;
+  }
+
+  return true;
 }
 
 /**
@@ -2276,8 +2396,9 @@ free_glx_fbo(session_t *ps, GLuint *pfbo) {
  */
 static inline void
 free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
-  free_texture_r(ps, &pbc->textures[0]);
-  free_texture_r(ps, &pbc->textures[1]);
+  // FIXME.kawase: Use maximum number of textures
+  for (int i = 0; i < 6; i++)
+    free_texture_r(ps, &pbc->textures[i]);
   pbc->width = 0;
   pbc->height = 0;
 }
