@@ -560,34 +560,40 @@ glx_init_kawase_blur(session_t *ps) {
       "%s"  // extensions
       "uniform float offset;\n"
       "uniform vec2 halfpixel;\n"
+      "uniform vec2 fulltex;\n"
       "uniform %s tex_scr;\n" // sampler2D | sampler2DRect
+      "vec4 clamp_tex(vec2 uv)\n"
+      "{\n"
+      "  return %s(tex_scr, clamp(uv, vec2(0), fulltex));\n" // texture2D | texture2DRect
+      "}\n"
+      "\n"
       "void main()\n"
       "{\n"
-      "  vec2 uv = gl_TexCoord[0].xy;\n"
-      "  \n";
+      "  vec2 uv = (gl_TexCoord[0].xy / fulltex);\n"
+      "\n";
 
     // Fragment shader (Dual Kawase Blur) - Downsample
     static const char *FRAG_SHADER_KAWASE_DOWN =
-      "  vec4 sum = %1$s(tex_scr, uv) * 4.0;\n" // texture | texture2D
-      "  sum += %1$s(tex_scr, uv - halfpixel.xy * offset);\n"
-      "  sum += %1$s(tex_scr, uv + halfpixel.xy * offset);\n"
-      "  sum += %1$s(tex_scr, uv + vec2(halfpixel.x, -halfpixel.y) * offset);\n"
-      "  sum += %1$s(tex_scr, uv - vec2(halfpixel.x, -halfpixel.y) * offset);\n"
-      "  \n"
+      "  vec4 sum = clamp_tex(uv) * 4.0;\n"
+      "  sum += clamp_tex(uv - halfpixel.xy * offset);\n"
+      "  sum += clamp_tex(uv + halfpixel.xy * offset);\n"
+      "  sum += clamp_tex(uv + vec2(halfpixel.x, -halfpixel.y) * offset);\n"
+      "  sum += clamp_tex(uv - vec2(halfpixel.x, -halfpixel.y) * offset);\n"
+      "\n"
       "  gl_FragColor = sum / 8.0;\n"
       "}\n";
 
     // Fragment shader (Dual Kawase Blur) - Upsample
     static const char *FRAG_SHADER_KAWASE_UP =
-      "  vec4 sum = %1$s(tex_scr, uv + vec2(-halfpixel.x * 2.0, 0.0) * offset);\n" // texture | texture2D
-      "  sum += %1$s(tex_scr, uv + vec2(-halfpixel.x, halfpixel.y) * offset) * 2.0;\n"
-      "  sum += %1$s(tex_scr, uv + vec2(0.0, halfpixel.y * 2.0) * offset);\n"
-      "  sum += %1$s(tex_scr, uv + vec2(halfpixel.x, halfpixel.y) * offset) * 2.0;\n"
-      "  sum += %1$s(tex_scr, uv + vec2(halfpixel.x * 2.0, 0.0) * offset);\n"
-      "  sum += %1$s(tex_scr, uv + vec2(halfpixel.x, -halfpixel.y) * offset) * 2.0;\n"
-      "  sum += %1$s(tex_scr, uv + vec2(0.0, -halfpixel.y * 2.0) * offset);\n"
-      "  sum += %1$s(tex_scr, uv + vec2(-halfpixel.x, -halfpixel.y) * offset) * 2.0;\n"
-      "  \n"
+      "  vec4 sum = clamp_tex(uv + vec2(-halfpixel.x * 2.0, 0.0) * offset);\n"
+      "  sum += clamp_tex(uv + vec2(-halfpixel.x, halfpixel.y) * offset) * 2.0;\n"
+      "  sum += clamp_tex(uv + vec2(0.0, halfpixel.y * 2.0) * offset);\n"
+      "  sum += clamp_tex(uv + vec2(halfpixel.x, halfpixel.y) * offset) * 2.0;\n"
+      "  sum += clamp_tex(uv + vec2(halfpixel.x * 2.0, 0.0) * offset);\n"
+      "  sum += clamp_tex(uv + vec2(halfpixel.x, -halfpixel.y) * offset) * 2.0;\n"
+      "  sum += clamp_tex(uv + vec2(0.0, -halfpixel.y * 2.0) * offset);\n"
+      "  sum += clamp_tex(uv + vec2(-halfpixel.x, -halfpixel.y) * offset) * 2.0;\n"
+      "\n"
       "  gl_FragColor = sum / 12.0;\n"
       "}\n";
 
@@ -603,7 +609,7 @@ glx_init_kawase_blur(session_t *ps) {
     // Build kawase downsample shader
     glx_blur_pass_t *down_pass = &ps->psglx->blur_passes[0];
     {
-      int len = strlen(FRAG_SHADER_PREFIX) + strlen(extension) + (strlen(FRAG_SHADER_KAWASE_DOWN) + strlen(texture_func)) * 5 + 1;
+      int len = strlen(FRAG_SHADER_PREFIX) + strlen(extension) + strlen(sampler_type) + strlen(texture_func) + strlen(FRAG_SHADER_KAWASE_DOWN) + 1;
       char *shader_str = calloc(len, sizeof(char));
       if (!shader_str) {
         printf_errf("(): Failed to allocate %d bytes for shader string.", len);
@@ -611,11 +617,11 @@ glx_init_kawase_blur(session_t *ps) {
       }
 
       char *pc = shader_str;
-      sprintf(pc, FRAG_SHADER_PREFIX, extension, sampler_type);
+      sprintf(pc, FRAG_SHADER_PREFIX, extension, sampler_type, texture_func);
       pc += strlen(pc);
       assert(strlen(shader_str) < len);
 
-      sprintf(pc, FRAG_SHADER_KAWASE_DOWN, texture_func);
+      sprintf(pc, FRAG_SHADER_KAWASE_DOWN);
       assert(strlen(shader_str) < len);
 #ifdef DEBUG_GLX
       printf_dbgf("(): Generated kawase downsample shader:\n%s\n", shader_str);
@@ -644,13 +650,14 @@ glx_init_kawase_blur(session_t *ps) {
     }
       P_GET_UNIFM_LOC("offset", unifm_offset);
       P_GET_UNIFM_LOC("halfpixel", unifm_halfpixel);
+      P_GET_UNIFM_LOC("fulltex", unifm_fulltex);
 #undef P_GET_UNIFM_LOC
     }
 
     // Build kawase downsample shader
     glx_blur_pass_t *up_pass = &ps->psglx->blur_passes[1];
     {
-      int len = strlen(FRAG_SHADER_PREFIX) + strlen(extension) + (strlen(FRAG_SHADER_KAWASE_UP) + strlen(texture_func)) * 8 + 1;
+      int len = strlen(FRAG_SHADER_PREFIX) + strlen(extension) + strlen(sampler_type) + strlen(texture_func) + strlen(FRAG_SHADER_KAWASE_UP) + 1;
       char *shader_str = calloc(len, sizeof(char));
       if (!shader_str) {
         printf_errf("(): Failed to allocate %d bytes for shader string.", len);
@@ -658,11 +665,11 @@ glx_init_kawase_blur(session_t *ps) {
       }
 
       char *pc = shader_str;
-      sprintf(pc, FRAG_SHADER_PREFIX, extension, sampler_type);
+      sprintf(pc, FRAG_SHADER_PREFIX, extension, sampler_type, texture_func);
       pc += strlen(pc);
       assert(strlen(shader_str) < len);
 
-      sprintf(pc, FRAG_SHADER_KAWASE_UP, texture_func);
+      sprintf(pc, FRAG_SHADER_KAWASE_UP);
       assert(strlen(shader_str) < len);
 #ifdef DEBUG_GLX
       printf_dbgf("(): Generated kawase upsample shader:\n%s\n", shader_str);
@@ -691,6 +698,7 @@ glx_init_kawase_blur(session_t *ps) {
     }
       P_GET_UNIFM_LOC("offset", unifm_offset);
       P_GET_UNIFM_LOC("halfpixel", unifm_halfpixel);
+      P_GET_UNIFM_LOC("fulltex", unifm_fulltex);
 #undef P_GET_UNIFM_LOC
     }
 
@@ -714,6 +722,8 @@ glx_init_blur(session_t *ps) {
       return glx_init_conv_blur(ps);
     case BLRMTHD_KAWASE:
       return glx_init_kawase_blur(ps);
+    default:
+      return false;
   }
 #else
   printf_errf("(): GLSL support not compiled in. Cannot do blur with GLX backend.");
@@ -1605,7 +1615,7 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
   // FIXME.kawase: Allocate only as many textures as needed
   for (int i = 1; i < 6; i++) {
     if (!pbc->textures[i])
-      pbc->textures[i] = glx_gen_texture(ps, tex_tgt, mwidth, mheight);
+      pbc->textures[i] = glx_gen_texture(ps, tex_tgt, mwidth / (1 << (i-1)), mheight / (1 << (i-1)));
   }
 
   pbc->width = mwidth;
@@ -1629,23 +1639,13 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
   glBindTexture(tex_tgt, tex_scr);
   glx_copy_region_to_tex(ps, tex_tgt, mdx, mdy, mdx, mdy, mwidth, mheight);
 
-  // Texture scaling factor
-  GLfloat texfac_x = 1.0f, texfac_y = 1.0f;
-  if (GL_TEXTURE_2D == tex_tgt) {
-    texfac_x /= mwidth;
-    texfac_y /= mheight;
-  }
-
   // Paint it back
-  //if (more_passes) {
-    glDisable(GL_STENCIL_TEST);
-    glDisable(GL_SCISSOR_TEST);
-  //}
+  glDisable(GL_STENCIL_TEST);
+  glDisable(GL_SCISSOR_TEST);
 
   // First pass(es): Kawase Downsample
   for (int i = 1; i <= ps->o.blur_strength_iterations; i++) {
     const glx_blur_pass_t *down_pass = &ps->psglx->blur_passes[0];
-    bool is_first = (i == 1);
     assert(down_pass->prog);
 
     int tex_width = mwidth / (1 << (i-1)), tex_height = mheight / (1 << (i-1));
@@ -1672,41 +1672,32 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
         glUniform1f(down_pass->unifm_offset, ps->o.blur_strength_offset);
     if (down_pass->unifm_halfpixel >= 0)
         glUniform2f(down_pass->unifm_halfpixel, 0.5 / tex_width, 0.5 / tex_height);
+    if (down_pass->unifm_fulltex >= 0)
+        glUniform2f(down_pass->unifm_fulltex, tex_width, tex_height);
 
     // Start actual rendering
     P_PAINTREG_START();
     {
-      GLfloat rx = ((crect.x - mdx) * texfac_x) / (1 << (i-2));
-      GLfloat ry = ((mheight - (crect.y - mdy)) * texfac_y) / (1 << (i-2));
-      GLfloat rxe = rx + (crect.width * texfac_x) / (1 << (i-2));
-      GLfloat rye = ry - (crect.height * texfac_y) / (1 << (i-2));
-      const GLfloat rdx = (crect.x - mdx) / (1 << (i-1));
-      const GLfloat rdy = (mheight - crect.y + mdy) / (1 << (i-1));
-      const GLfloat rdxe = rdx + (crect.width / (1 << (i-1)));
-      const GLfloat rdye = rdy - (crect.height / (1 << (i-1)));
-
-      if (is_first) {
-        rx = (crect.x - mdx) * texfac_x;
-        ry = (mheight - (crect.y - mdy)) * texfac_y;
-        rxe = rx + crect.width * texfac_x;
-        rye = ry - crect.height * texfac_y;
-      }
+      const GLfloat rx = crect.x - mdx;
+      const GLfloat ry = mheight - (crect.y - mdy);
+      const GLfloat rxe = rx + crect.width;
+      const GLfloat rye = ry - crect.height;
 
 #ifdef DEBUG_GLX
       printf_dbgf("(): Downsample Pass %d: %f, %f, %f, %f -> %f, %f, %f, %f\n", i, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
 #endif
 
       glTexCoord2f(rx, ry);
-      glVertex3f(rdx, rdy, z);
+      glVertex3f(rx, ry, z);
 
       glTexCoord2f(rxe, ry);
-      glVertex3f(rdxe, rdy, z);
+      glVertex3f(rxe, ry, z);
 
       glTexCoord2f(rxe, rye);
-      glVertex3f(rdxe, rdye, z);
+      glVertex3f(rxe, rye, z);
 
       glTexCoord2f(rx, rye);
-      glVertex3f(rdx, rdye, z);
+      glVertex3f(rx, rye, z);
     }
     P_PAINTREG_END();
   }
@@ -1717,7 +1708,10 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
     bool is_last = (i == 1);
     assert(up_pass->prog);
 
-    int tex_width = mwidth / (1 << (i-1)), tex_height = mheight / (1 << (i-1));
+    int tex_width = mwidth / (1 << (i-2)), tex_height = mheight / (1 << (i-2));
+    if (is_last) {
+      tex_width = mwidth, tex_height = mheight;
+    }
     GLuint tex_src2 = pbc->textures[i];
     GLuint tex_dest = pbc->textures[i - 1];
 
@@ -1751,18 +1745,20 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
         glUniform1f(up_pass->unifm_offset, ps->o.blur_strength_offset);
     if (up_pass->unifm_halfpixel >= 0)
         glUniform2f(up_pass->unifm_halfpixel, 0.5 / tex_width, 0.5 / tex_height);
+    if (up_pass->unifm_fulltex >= 0)
+        glUniform2f(up_pass->unifm_fulltex, tex_width, tex_height);
 
     // Start actual rendering
     P_PAINTREG_START();
     {
-      const GLfloat rx = ((crect.x - mdx) * texfac_x) / (1 << (i-1));
-      const GLfloat ry = ((mheight - (crect.y - mdy)) * texfac_y) / (1 << (i-1));
-      const GLfloat rxe = rx + (crect.width * texfac_x) / (1 << (i-1));
-      const GLfloat rye = ry - (crect.height * texfac_y) / (1 << (i-1));
-      GLfloat rdx = (crect.x - mdx) / (1 << (i-2));
-      GLfloat rdy = (mheight - crect.y + mdy) / (1 << (i-2));
-      GLfloat rdxe = rdx + (crect.width / (1 << (i-2)));
-      GLfloat rdye = rdy - (crect.height / (1 << (i-2)));
+      const GLfloat rx = crect.x - mdx;
+      const GLfloat ry = mheight - (crect.y - mdy);
+      const GLfloat rxe = rx + crect.width;
+      const GLfloat rye = ry - crect.height;
+      GLfloat rdx = rx;
+      GLfloat rdy = ry;
+      GLfloat rdxe = rxe;
+      GLfloat rdye = rye;
 
       if (is_last) {
         rdx = crect.x;
