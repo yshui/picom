@@ -1645,6 +1645,7 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
   // First pass(es): Kawase Downsample
   for (int i = 1; i <= ps->o.blur_strength_iterations; i++) {
     const glx_blur_pass_t *down_pass = &ps->psglx->blur_passes[0];
+    bool is_first = (i == 1);
     assert(down_pass->prog);
 
     int tex_width = mwidth / (1 << (i-1)), tex_height = mheight / (1 << (i-1));
@@ -1675,14 +1676,21 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
     // Start actual rendering
     P_PAINTREG_START();
     {
-      const GLfloat rx = (crect.x - mdx) * texfac_x;
-      const GLfloat ry = (mheight - (crect.y - mdy)) * texfac_y;
-      const GLfloat rxe = rx + crect.width * texfac_x;
-      const GLfloat rye = ry - crect.height * texfac_y;
-      GLfloat rdx = (crect.x - mdx) / (1 << (i-1));
-      GLfloat rdy = (mheight - crect.y + mdy) / (1 << (i-1));
-      GLfloat rdxe = rdx + (crect.width / (1 << (i-1)));
-      GLfloat rdye = rdy - (crect.height / (1 << (i-1)));
+      GLfloat rx = ((crect.x - mdx) * texfac_x) / (1 << (i-2));
+      GLfloat ry = ((mheight - (crect.y - mdy)) * texfac_y) / (1 << (i-2));
+      GLfloat rxe = rx + (crect.width * texfac_x) / (1 << (i-2));
+      GLfloat rye = ry - (crect.height * texfac_y) / (1 << (i-2));
+      const GLfloat rdx = (crect.x - mdx) / (1 << (i-1));
+      const GLfloat rdy = (mheight - crect.y + mdy) / (1 << (i-1));
+      const GLfloat rdxe = rdx + (crect.width / (1 << (i-1)));
+      const GLfloat rdye = rdy - (crect.height / (1 << (i-1)));
+
+      if (is_first) {
+        rx = (crect.x - mdx) * texfac_x;
+        ry = (mheight - (crect.y - mdy)) * texfac_y;
+        rxe = rx + crect.width * texfac_x;
+        rye = ry - crect.height * texfac_y;
+      }
 
 #ifdef DEBUG_GLX
       printf_dbgf("(): Downsample Pass %d: %f, %f, %f, %f -> %f, %f, %f, %f\n", i, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
@@ -1751,10 +1759,10 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
       const GLfloat ry = ((mheight - (crect.y - mdy)) * texfac_y) / (1 << (i-1));
       const GLfloat rxe = rx + (crect.width * texfac_x) / (1 << (i-1));
       const GLfloat rye = ry - (crect.height * texfac_y) / (1 << (i-1));
-      GLfloat rdx = crect.x - mdx;
-      GLfloat rdy = mheight - crect.y + mdy;
-      GLfloat rdxe = rdx + crect.width;
-      GLfloat rdye = rdy - crect.height;
+      GLfloat rdx = (crect.x - mdx) / (1 << (i-2));
+      GLfloat rdy = (mheight - crect.y + mdy) / (1 << (i-2));
+      GLfloat rdxe = rdx + (crect.width / (1 << (i-2)));
+      GLfloat rdye = rdy - (crect.height / (1 << (i-2)));
 
       if (is_last) {
         rdx = crect.x;
