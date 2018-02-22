@@ -212,7 +212,7 @@ Note: `kawase` only works with the `glx` backend.
 
 *--blur-strength* 'LEVEL'::
 	Only valid for *--blur-method kawase*!
-	The strength of the kawase blur as an integer between 1 and 15.
+	The strength of the kawase blur as an integer between 1 and 20. Defaults to 5.
 
 *--blur-kern* 'MATRIX'::
 	Only valid for *--blur-method convolution*!

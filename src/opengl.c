@@ -1589,6 +1589,9 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
   const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
   bool ret = false;
 
+  int iterations = ps->o.blur_strength.iterations;
+  float offset = ps->o.blur_strength.offset;
+
   // Calculate copy region size
   glx_blur_cache_t ibc = { .width = 0, .height = 0 };
   if (!pbc)
@@ -1612,8 +1615,12 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
     pbc->textures[0] = glx_gen_texture(ps, tex_tgt, mwidth, mheight);
   GLuint tex_scr = pbc->textures[0];
 
-  // FIXME.kawase: Allocate only as many textures as needed
-  for (int i = 1; i < 6; i++) {
+  // Check if we can scale down blur_strength.iterations
+  while ((mwidth / (1 << (iterations-1))) < 1 || (mheight / (1 << (iterations-1))) < 1)
+    --iterations;
+
+  assert(iterations < MAX_BLUR_PASS);
+  for (int i = 1; i <= iterations; i++) {
     if (!pbc->textures[i])
       pbc->textures[i] = glx_gen_texture(ps, tex_tgt, mwidth / (1 << (i-1)), mheight / (1 << (i-1)));
   }
@@ -1625,9 +1632,15 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
     glGenFramebuffers(1, &pbc->fbo);
   const GLuint fbo = pbc->fbo;
 
-  if (!tex_scr || !pbc->textures[1] || !pbc->textures[2] || !pbc->textures[3] || !pbc->textures[4] || !pbc->textures[5]) {
-    printf_errf("(): Failed to allocate textures.");
+  if (!tex_scr) {
+    printf_errf("(): Failed to allocate texture.");
     goto glx_kawase_blur_dst_end;
+  }
+  for (int i = 1; i <= iterations; i++) {
+    if (!pbc->textures[i]) {
+      printf_errf("(): Failed to allocate additional textures.");
+      goto glx_kawase_blur_dst_end;
+    }
   }
   if (!fbo) {
     printf_errf("(): Failed to allocate framebuffer.");
@@ -1644,7 +1657,7 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
   glDisable(GL_SCISSOR_TEST);
 
   // First pass(es): Kawase Downsample
-  for (int i = 1; i <= ps->o.blur_strength_iterations; i++) {
+  for (int i = 1; i <= iterations; i++) {
     const glx_blur_pass_t *down_pass = &ps->psglx->blur_passes[0];
     assert(down_pass->prog);
 
@@ -1669,7 +1682,7 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
     glUseProgram(down_pass->prog);
     if (down_pass->unifm_offset >= 0)
-        glUniform1f(down_pass->unifm_offset, ps->o.blur_strength_offset);
+        glUniform1f(down_pass->unifm_offset, offset);
     if (down_pass->unifm_halfpixel >= 0)
         glUniform2f(down_pass->unifm_halfpixel, 0.5 / tex_width, 0.5 / tex_height);
     if (down_pass->unifm_fulltex >= 0)
@@ -1703,7 +1716,7 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
   }
 
   // Second pass(es): Kawase Upsample
-  for (int i = ps->o.blur_strength_iterations; i >= 1; i--) {
+  for (int i = iterations; i >= 1; i--) {
     const glx_blur_pass_t *up_pass = &ps->psglx->blur_passes[1];
     bool is_last = (i == 1);
     assert(up_pass->prog);
@@ -1742,7 +1755,7 @@ glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float 
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
     glUseProgram(up_pass->prog);
     if (up_pass->unifm_offset >= 0)
-        glUniform1f(up_pass->unifm_offset, ps->o.blur_strength_offset);
+        glUniform1f(up_pass->unifm_offset, offset);
     if (up_pass->unifm_halfpixel >= 0)
         glUniform2f(up_pass->unifm_halfpixel, 0.5 / tex_width, 0.5 / tex_height);
     if (up_pass->unifm_fulltex >= 0)

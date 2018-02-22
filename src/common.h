@@ -229,7 +229,7 @@
 #define CGLX_MAX_BUFFER_AGE 5
 
 /// @brief Maximum passes for blur.
-#define MAX_BLUR_PASS 5
+#define MAX_BLUR_PASS 6
 
 // Window flags
 
@@ -491,9 +491,8 @@ typedef struct {
 typedef struct {
   /// Framebuffer used for blurring.
   GLuint fbo;
-  // FIXME.kawase: Set maximum number of textures for kawase blur
   /// Textures used for blurring.
-  GLuint textures[6]; // 4 + 2
+  GLuint textures[MAX_BLUR_PASS];
   /// Width of the textures.
   int width;
   /// Height of the textures.
@@ -551,6 +550,11 @@ typedef struct {
 struct _timeout_t;
 
 struct _win;
+
+typedef struct {
+  int iterations;
+  float offset;
+} blur_strength_t;
 
 typedef struct _c2_lptr c2_lptr_t;
 
@@ -726,8 +730,7 @@ typedef struct _options_t {
   /// Blur convolution kernel.
   XFixed *blur_kerns[MAX_BLUR_PASS];
   /// Blur strength.
-  int blur_strength_iterations;
-  float blur_strength_offset;
+  blur_strength_t blur_strength;
   /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
   double inactive_dim;
   /// Whether to use fixed inactive dim opacity, instead of deciding
@@ -1708,72 +1711,35 @@ parse_blur_method(session_t *ps, const char *str) {
  */
 static inline bool
 parse_blur_strength(session_t *ps, const int level) {
-  switch (level) {
-      case 1:
-        ps->o.blur_strength_iterations = 1;
-        ps->o.blur_strength_offset = 1.5;
-        break;
-      case 2:
-        ps->o.blur_strength_iterations = 1;
-        ps->o.blur_strength_offset = 2.0;
-        break;
-      case 3:
-        ps->o.blur_strength_iterations = 2;
-        ps->o.blur_strength_offset = 2.5;
-        break;
-      case 4:
-        ps->o.blur_strength_iterations = 2;
-        ps->o.blur_strength_offset = 3.0;
-        break;
-      case 5:
-        ps->o.blur_strength_iterations = 3;
-        ps->o.blur_strength_offset = 2.6;
-        break;
-      case 6:
-        ps->o.blur_strength_iterations = 3;
-        ps->o.blur_strength_offset = 3.2;
-        break;
-      case 7:
-        ps->o.blur_strength_iterations = 3;
-        ps->o.blur_strength_offset = 3.8;
-        break;
-      case 8:
-        ps->o.blur_strength_iterations = 3;
-        ps->o.blur_strength_offset = 4.4;
-        break;
-      case 9:
-        ps->o.blur_strength_iterations = 3;
-        ps->o.blur_strength_offset = 5.0;
-        break;
-      case 10:
-        ps->o.blur_strength_iterations = 4;
-        ps->o.blur_strength_offset = 3.833;
-        break;
-      case 11:
-        ps->o.blur_strength_iterations = 4;
-        ps->o.blur_strength_offset = 4.667;
-        break;
-      case 12:
-        ps->o.blur_strength_iterations = 4;
-        ps->o.blur_strength_offset = 5.5;
-        break;
-      case 13:
-        ps->o.blur_strength_iterations = 4;
-        ps->o.blur_strength_offset = 6.333;
-        break;
-      case 14:
-        ps->o.blur_strength_iterations = 4;
-        ps->o.blur_strength_offset = 7.167;
-        break;
-      case 15:
-        ps->o.blur_strength_iterations = 4;
-        ps->o.blur_strength_offset = 8.0;
-        break;
-      default:
-        printf_errf("(\"%d\"): Invalid blur_strength argument. Needs to be a number between 1 and 15.", level);
-        return false;
+  static const blur_strength_t values[20] = {
+    { .iterations = 1, .offset = 1.5 },     // 1
+    { .iterations = 1, .offset = 2.0 },     // 2
+    { .iterations = 2, .offset = 2.5 },     // 3
+    { .iterations = 2, .offset = 3.0 },     // 4
+    { .iterations = 3, .offset = 2.75 },    // 5
+    { .iterations = 3, .offset = 3.5 },     // 6
+    { .iterations = 3, .offset = 4.25 },    // 7
+    { .iterations = 3, .offset = 5.0 },     // 8
+    { .iterations = 4, .offset = 3.71429 }, // 9
+    { .iterations = 4, .offset = 4.42857 }, // 10
+    { .iterations = 4, .offset = 5.14286 }, // 11
+    { .iterations = 4, .offset = 5.85714 }, // 12
+    { .iterations = 4, .offset = 6.57143 }, // 13
+    { .iterations = 4, .offset = 7.28571 }, // 14
+    { .iterations = 4, .offset = 8.0 },     // 15
+    { .iterations = 5, .offset = 6.0 },     // 16
+    { .iterations = 5, .offset = 7.0 },     // 17
+    { .iterations = 5, .offset = 8.0 },     // 18
+    { .iterations = 5, .offset = 9.0 },     // 19
+    { .iterations = 5, .offset = 10.0 },    // 20
+  };
+
+  if (level < 1 || level > 20) {
+    printf_errf("(\"%d\"): Invalid blur_strength argument. Needs to be a number between 1 and 20.", level);
+    return false;
   }
 
+  ps->o.blur_strength = values[level - 1];
   return true;
 }
 
@@ -2385,8 +2351,7 @@ free_glx_fbo(session_t *ps, GLuint *pfbo) {
  */
 static inline void
 free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
-  // FIXME.kawase: Use maximum number of textures
-  for (int i = 0; i < 6; i++)
+  for (int i = 0; i < MAX_BLUR_PASS; i++)
     free_texture_r(ps, &pbc->textures[i]);
   pbc->width = 0;
   pbc->height = 0;

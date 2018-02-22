@@ -4712,7 +4712,7 @@ usage(int ret) {
     "\n"
     "--blur-strength level\n"
     "  Only valid for '--blur-method kawase'!\n"
-    "  The strength of the kawase blur as an integer between 1 and 15.\n"
+    "  The strength of the kawase blur as an integer between 1 and 20. Defaults to 5.\n"
     "\n"
     "--blur-kern matrix\n"
     "  Only valid for '--blur-method convolution'!\n"
@@ -7075,8 +7075,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .blur_background_blacklist = NULL,
       .blur_method = BLRMTHD_CONV,
       .blur_kerns = { NULL },
-      .blur_strength_iterations = 1,
-      .blur_strength_offset = 1.5,
+      .blur_strength = { .iterations = 3, .offset = 2.75 },
       .inactive_dim = 0.0,
       .inactive_dim_fixed = false,
       .invert_color_list = NULL,
