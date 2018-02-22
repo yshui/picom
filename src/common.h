@@ -1707,20 +1707,7 @@ parse_blur_method(session_t *ps, const char *str) {
  * Parse a blur_strength option argument.
  */
 static inline bool
-parse_blur_strength(session_t *ps, const char *str) {
-  const char *endptr = NULL;
-  long level = strtol(str, (char **) &endptr, 0);
-  if (!endptr || endptr == str) {
-    printf_errf("(\"%s\"): Invalid number.", str);
-    return false;
-  }
-  while (isspace(*endptr))
-    ++endptr;
-  if (*endptr) {
-    printf_errf("(\"%s\"): Trailing characters.", str);
-    return false;
-  }
-
+parse_blur_strength(session_t *ps, const int level) {
   switch (level) {
       case 1:
         ps->o.blur_strength_iterations = 1;
@@ -1783,7 +1770,7 @@ parse_blur_strength(session_t *ps, const char *str) {
         ps->o.blur_strength_offset = 8.0;
         break;
       default:
-        printf_errf("(\"%s\"): Invalid blur_strength argument. Needs to be a number between 1 and 15.", str);
+        printf_errf("(\"%d\"): Invalid blur_strength argument. Needs to be a number between 1 and 15.", level);
         return false;
   }
 

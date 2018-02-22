@@ -5645,9 +5645,8 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
       && !parse_conv_kern_lst(ps, sval, ps->o.blur_kerns, MAX_BLUR_PASS))
     exit(1);
   // --blur-strength
-  //lcfg_lookup_int(&cfg, "blur-strength", &ps->o.blur_strength);
-  if (config_lookup_string(&cfg, "blur-strength", &sval)
-      && !parse_blur_strength(ps, sval))
+  if (lcfg_lookup_int(&cfg, "blur-strength", &ival)
+      && !parse_blur_strength(ps, ival))
     exit(1);
   // --resize-damage
   lcfg_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);
@@ -6063,7 +6062,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       case 322:
         // --blur-strength
-        if (!parse_blur_strength(ps, optarg))
+        if (!parse_blur_strength(ps, strtol(optarg, NULL, 0)))
           exit(1);
         break;
       P_CASEBOOL(731, reredir_on_root_change);
