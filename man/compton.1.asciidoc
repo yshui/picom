@@ -205,7 +205,15 @@ OPTIONS
 *--blur-background-fixed*::
 	Use fixed blur strength rather than adjusting according to window opacity.
 
+*--blur-method* 'ALGORITHM'::
+	Specify the algorithm for background blur. It is either one of: `convolution` (default), `kawase`.
+
+*--blur-strength* 'LEVEL'::
+	Only valid for *--blur-method kawase*!
+	The strength of the kawase blur as an integer between 1 and 15.
+
 *--blur-kern* 'MATRIX'::
+	Only valid for *--blur-method convolution*!
 	Specify the blur convolution kernel, with the following format:
 +
 ----

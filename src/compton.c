@@ -4706,10 +4706,13 @@ usage(int ret) {
     "  Use fixed blur strength instead of adjusting according to window\n"
     "  opacity.\n"
     "\n"
-    // FIXME.kawse: kawase algorithm only available when compiled with GLX support
     "--blur-method algorithm\n"
     "  Specify the algorithm for background blur. It is either one of:\n"
     "    convolution (default), kawase\n"
+    "\n"
+    "--blur-strength level\n"
+    "  Only valid for '--blur-method kawase'!\n"
+    "  The strength of the kawase blur as an integer between 1 and 15.\n"
     "\n"
     "--blur-kern matrix\n"
     "  Only valid for '--blur-method convolution'!\n"
@@ -4725,11 +4728,6 @@ usage(int ret) {
     "  May also be one the predefined kernels: 3x3box (default), 5x5box,\n"
     "  7x7box, 3x3gaussian, 5x5gaussian, 7x7gaussian, 9x9gaussian,\n"
     "  11x11gaussian.\n"
-    "\n"
-    // FIXME.kawse: kawase algorithm only available when compiled with GLX support
-    "--blur-strength integer\n"
-    "  Only valid for '--blur-method kawase'!\n"
-    "  The strength of the kawase blur as an integer between 1 and 15.\n"
     "\n"
     "--blur-background-exclude condition\n"
     "  Exclude conditions for background blur.\n"
@@ -5640,13 +5638,13 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   if (config_lookup_string(&cfg, "blur-method", &sval)
       && !parse_blur_method(ps, sval))
     exit(1);
-  // --blur-kern
-  if (config_lookup_string(&cfg, "blur-kern", &sval)
-      && !parse_conv_kern_lst(ps, sval, ps->o.blur_kerns, MAX_BLUR_PASS))
-    exit(1);
   // --blur-strength
   if (lcfg_lookup_int(&cfg, "blur-strength", &ival)
       && !parse_blur_strength(ps, ival))
+    exit(1);
+  // --blur-kern
+  if (config_lookup_string(&cfg, "blur-kern", &sval)
+      && !parse_conv_kern_lst(ps, sval, ps->o.blur_kerns, MAX_BLUR_PASS))
     exit(1);
   // --resize-damage
   lcfg_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);

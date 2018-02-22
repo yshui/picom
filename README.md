@@ -4,6 +4,10 @@
 
 __Compton__ is a compositor for X, and a fork of __xcompmgr-dana__.
 
+This branch includes a new blur method: The multi-pass **dual kawase blur**!
+Use it with the `--blur-method kawase` and `--blur-strength LEVEL` options.
+Only works with the `glx` backend!
+
 I was frustrated by the low amount of standalone lightweight compositors.
 Compton was forked from Dana Jansens' fork of xcompmgr and refactored.  I fixed
 whatever bug I found, and added features I wanted. Things seem stable, but don't
