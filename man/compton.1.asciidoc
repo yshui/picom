@@ -207,6 +207,8 @@ OPTIONS
 
 *--blur-method* 'ALGORITHM'::
 	Specify the algorithm for background blur. It is either one of: `convolution` (default), `kawase`.
++
+Note: `kawase` only works with the `glx` backend.
 
 *--blur-strength* 'LEVEL'::
 	Only valid for *--blur-method kawase*!

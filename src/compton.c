@@ -6127,6 +6127,12 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     ps->o.track_leader = true;
   }
 
+  // Blur method kawase is not compatible with the xrender backend
+  if (ps->o.backend != BKEND_GLX && ps->o.blur_method == BLRMTHD_KAWASE) {
+      printf_errf("(): Blur method 'kawase' is incompatible with the XRender backend. Fall back to default.\n");
+      ps->o.blur_method = BLRMTHD_CONV;
+  }
+
   // Fill default blur kernel
   if (ps->o.blur_background && (BLRMTHD_CONV == ps->o.blur_method) && !ps->o.blur_kerns[0]) {
     // Convolution filter parameter (box blur)
