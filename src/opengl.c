@@ -710,6 +710,16 @@ glx_cmp_fbconfig(session_t *ps,
     return -1;
   if (!pfbc_b)
     return 1;
+  int tmpattr;
+
+  // Avoid 10-bit colors
+  glXGetFBConfigAttrib(ps->dpy, pfbc_a->cfg, GLX_RED_SIZE, &tmpattr);
+  if (tmpattr != 8)
+    return -1;
+
+  glXGetFBConfigAttrib(ps->dpy, pfbc_b->cfg, GLX_RED_SIZE, &tmpattr);
+  if (tmpattr != 8)
+    return 1;
 
 #define P_CMPATTR_LT(attr) { if ((result = glx_cmp_fbconfig_cmpattr(ps, pfbc_a, pfbc_b, (attr)))) return -result; }
 #define P_CMPATTR_GT(attr) { if ((result = glx_cmp_fbconfig_cmpattr(ps, pfbc_a, pfbc_b, (attr)))) return result; }
