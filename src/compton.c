@@ -5064,7 +5064,7 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
   int wid = 0, hei = 0;
   const char *pc = NULL;
   XFixed *matrix = NULL;
-  
+
   // Get matrix width and height
   {
     double val = 0.0;
@@ -5087,10 +5087,9 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
     printf_errf("(): Width/height not odd.");
     goto parse_matrix_err;
   }
-  if (wid > 16 || hei > 16) {
-    printf_errf("(): Matrix width/height too large.");
-    goto parse_matrix_err;
-  }
+  if (wid > 16 || hei > 16)
+    printf_errf("(): Matrix width/height too large, may slow down"
+                "rendering, and/or consume lots of memory");
 
   // Allocate memory
   matrix = calloc(wid * hei + 2, sizeof(XFixed));
