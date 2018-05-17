@@ -1660,8 +1660,10 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
 
 /**
  * Render a region with color.
+ *
+ * Unused but can be useful for debugging
  */
-static void
+static void __attribute__((unused))
 glx_render_color(session_t *ps, int dx, int dy, int width, int height, int z,
     XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
   static int color = 0;
@@ -1696,8 +1698,10 @@ glx_render_color(session_t *ps, int dx, int dy, int width, int height, int z,
 
 /**
  * Render a region with dots.
+ *
+ * Unused but can be useful for debugging
  */
-static void
+static void __attribute__((unused))
 glx_render_dots(session_t *ps, int dx, int dy, int width, int height, int z,
     XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
   glColor4f(0.0f, 0.0f, 0.0f, 1.0f);
