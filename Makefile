@@ -110,15 +110,16 @@ CFG += -DCOMPTON_VERSION="\"$(COMPTON_VERSION)\""
 
 LDFLAGS ?= -Wl,-O1 -Wl,--as-needed
 
-ifeq "$(CFG_DEV)" ""
+BUILD_TYPE ?= "Debug"
+
+ifeq "$(BUILD_TYPE)" "Release"
   CFLAGS ?= -DNDEBUG -O2 -D_FORTIFY_SOURCE=2
-else
-  CC = clang
-  export LD_ALTEXEC = /usr/bin/ld.gold
-  OBJS += backtrace-symbols.o
-  LIBS += -lbfd
+else ifeq "$(BUILD_TYPE)" "Debug"
   CFLAGS += -ggdb -Wshadow
-  # CFLAGS += -Weverything -Wno-disabled-macro-expansion -Wno-padded -Wno-gnu
+endif
+
+ifeq "$(ENABLE_SAN)" "1"
+  CFLAGS += -fsanitize=address,undefined
 endif
 
 LIBS += $(shell pkg-config --libs $(PACKAGES))
