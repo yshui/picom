@@ -2368,6 +2368,8 @@ calc_opacity(session_t *ps, win *w) {
 
   if (w->destroyed || IsViewable != w->a.map_state)
     opacity = 0;
+  else if (w->opacity_disabled)
+    w->opacity_tgt = OPAQUE; 
   else {
     // Try obeying opacity property and window type opacity firstly
     if (OPAQUE == (opacity = w->opacity_prop)
@@ -2377,7 +2379,8 @@ calc_opacity(session_t *ps, win *w) {
 
     // Respect inactive_opacity in some cases
     if (ps->o.inactive_opacity && false == w->focused
-        && (OPAQUE == opacity || ps->o.inactive_opacity_override)) {
+        && (OPAQUE == opacity || ps->o.inactive_opacity_override)
+	&& false == w->opacity_disabled) {
       opacity = ps->o.inactive_opacity;
     }
 
@@ -2613,6 +2616,11 @@ win_update_opacity_rule(session_t *ps, win *w) {
   void *val = NULL;
   if (c2_matchd(ps, w, ps->o.opacity_rules, &w->cache_oparule, &val))
     opacity = ((double) (long) val) / 100.0 * OPAQUE;
+
+  if ((long) val == (long) 100)
+    w->opacity_disabled = true;
+  else
+    w->opacity_disabled = false;
 
   if (opacity == w->opacity_set)
     return;

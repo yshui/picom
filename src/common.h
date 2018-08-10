@@ -1170,6 +1170,8 @@ typedef struct _win {
   opacity_t opacity_prop_client;
   /// Last window opacity value we set.
   opacity_t opacity_set;
+  /// Opacity disabled - use opacity-rule 100 will set it to true
+  bool opacity_disabled;
 
   // Fading-related members
   /// Do not fade if it's false. Change on window type change.
