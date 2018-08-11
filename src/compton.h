@@ -783,21 +783,29 @@ unmap_callback(session_t *ps, win *w);
 static void
 unmap_win(session_t *ps, win *w);
 
-static opacity_t
-wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def);
+static bool
+wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def, opacity_t *out);
 
 /**
  * Reread opacity property of a window.
  */
 static inline void
 win_update_opacity_prop(session_t *ps, win *w) {
-  w->opacity_prop = wid_get_opacity_prop(ps, w->id, OPAQUE);
-  if (!ps->o.detect_client_opacity || !w->client_win
-      || w->id == w->client_win)
-    w->opacity_prop_client = OPAQUE;
-  else
-    w->opacity_prop_client = wid_get_opacity_prop(ps, w->client_win,
-          OPAQUE);
+  // get frame opacity first
+  w->has_opacity_prop =
+    wid_get_opacity_prop(ps, w->id, OPAQUE, &w->opacity_prop);
+
+  if (w->has_opacity_prop)
+    // opacity found
+    return;
+
+  if (ps->o.detect_client_opacity && w->client_win && w->id == w->client_win)
+    // checking client opacity not allowed
+    return;
+
+  // get client opacity
+  w->has_opacity_prop =
+    wid_get_opacity_prop(ps, w->client_win, OPAQUE, &w->opacity_prop);
 }
 
 static double
@@ -1351,3 +1359,5 @@ session_run(session_t *ps);
 
 static void
 reset_enable(int __attribute__((unused)) signum);
+
+// vim: set et sw=2 :

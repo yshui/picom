@@ -1162,12 +1162,11 @@ typedef struct _win {
   opacity_t opacity;
   /// Target window opacity.
   opacity_t opacity_tgt;
+  /// true if window (or client window, for broken window managers
+  /// not transferring client window's _NET_WM_OPACITY value) has opacity prop
+  bool has_opacity_prop;
   /// Cached value of opacity window attribute.
   opacity_t opacity_prop;
-  /// Cached value of opacity window attribute on client window. For
-  /// broken window managers not transferring client window's
-  /// _NET_WM_OPACITY value
-  opacity_t opacity_prop_client;
   /// Last window opacity value we set.
   opacity_t opacity_set;
 

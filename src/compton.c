@@ -2312,19 +2312,22 @@ unmap_win(session_t *ps, win *w) {
 #endif
 }
 
-static opacity_t
-wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def) {
-  opacity_t val = def;
+static bool
+wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def, opacity_t *out) {
+  bool ret = false;
+  *out = def;
 
   winprop_t prop = wid_get_prop(ps, wid, ps->atom_opacity, 1L,
       XA_CARDINAL, 32);
 
-  if (prop.nitems)
-    val = *prop.data.p32;
+  if (prop.nitems) {
+    *out = *prop.data.p32;
+    ret = true;
+  }
 
   free_winprop(&prop);
 
-  return val;
+  return ret;
 }
 
 static double
@@ -2374,8 +2377,7 @@ calc_opacity(session_t *ps, win *w) {
     opacity = 0;
   else {
     // Try obeying opacity property and window type opacity firstly
-    if (OPAQUE == (opacity = w->opacity_prop)
-        && OPAQUE == (opacity = w->opacity_prop_client)) {
+    if (OPAQUE == (opacity = w->opacity_prop)) {
       opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
     }
 
@@ -2870,8 +2872,8 @@ add_win(session_t *ps, Window id, Window prev) {
 
     .opacity = 0,
     .opacity_tgt = 0,
+    .has_opacity_prop = false,
     .opacity_prop = OPAQUE,
-    .opacity_prop_client = OPAQUE,
     .opacity_set = OPAQUE,
 
     .fade = false,
@@ -4201,14 +4203,9 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
 
   // If _NET_WM_OPACITY changes
   if (ev->atom == ps->atom_opacity) {
-    win *w = NULL;
-    if ((w = find_win(ps, ev->window)))
-      w->opacity_prop = wid_get_opacity_prop(ps, w->id, OPAQUE);
-    else if (ps->o.detect_client_opacity
-        && (w = find_toplevel(ps, ev->window)))
-      w->opacity_prop_client = wid_get_opacity_prop(ps, w->client_win,
-            OPAQUE);
+    win *w = find_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
     if (w) {
+      win_update_opacity_prop(ps, w);
       w->flags |= WFLAG_OPCT_CHANGE;
     }
   }
@@ -7777,3 +7774,5 @@ main(int argc, char **argv) {
 
   return 0;
 }
+
+// vim: set et sw=2 :
