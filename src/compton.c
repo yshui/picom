@@ -2380,18 +2380,22 @@ calc_opacity(session_t *ps, win *w) {
     if(w->has_opacity_prop)
       opacity = w->opacity_prop;
     else {
-      opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
-
-      // Respect inactive_opacity in some cases
-      if (ps->o.inactive_opacity && false == w->focused
-          && (OPAQUE == opacity || ps->o.inactive_opacity_override)) {
-        opacity = ps->o.inactive_opacity;
+      if (!isnan(ps->o.wintype_opacity[w->window_type]))
+        opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
+      else {
+        // Respect active_opacity only when the window is physically focused
+        if (ps->o.active_opacity && win_is_focused_real(ps, w))
+          opacity = ps->o.active_opacity;
+        else if (ps->o.inactive_opacity && false == w->focused)
+          // Respect inactive_opacity in some cases
+          opacity = ps->o.inactive_opacity;
       }
-
-      // Respect active_opacity only when the window is physically focused
-      if (OPAQUE == opacity && ps->o.active_opacity && win_is_focused_real(ps, w))
-        opacity = ps->o.active_opacity;
     }
+
+    // respect inactive override
+    if (ps->o.inactive_opacity && false == w->focused &&
+        ps->o.inactive_opacity_override)
+          opacity = ps->o.inactive_opacity;
   }
 
   w->opacity_tgt = opacity;
@@ -5656,8 +5660,10 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
           ps->o.wintype_fade[i] = (bool) ival;
         if (config_setting_lookup_bool(setting, "focus", &ival))
           ps->o.wintype_focus[i] = (bool) ival;
-        config_setting_lookup_float(setting, "opacity",
-            &ps->o.wintype_opacity[i]);
+
+        double fval;
+        if (config_setting_lookup_float(setting, "opacity", &fval))
+          ps->o.wintype_opacity[i] = normalize_d(fval);
       }
     }
   }
@@ -5799,7 +5805,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   struct options_tmp cfgtmp = {
     .no_dock_shadow = false,
     .no_dnd_shadow = false,
-    .menu_opacity = 1.0,
+    .menu_opacity = NAN,
   };
   bool shadow_enable = false, fading_enable = false;
   char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
@@ -5807,7 +5813,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   for (i = 0; i < NUM_WINTYPES; ++i) {
     ps->o.wintype_fade[i] = false;
     ps->o.wintype_shadow[i] = false;
-    ps->o.wintype_opacity[i] = 1.0;
+    ps->o.wintype_opacity[i] = NAN;
   }
 
   // Enforce LC_NUMERIC locale "C" here to make sure dots are recognized
@@ -6066,7 +6072,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     ps->o.wintype_shadow[WINTYPE_DND] = false;
   if (fading_enable)
     wintype_arr_enable(ps->o.wintype_fade);
-  if (1.0 != cfgtmp.menu_opacity) {
+  if (!isnan(cfgtmp.menu_opacity)) {
     ps->o.wintype_opacity[WINTYPE_DROPDOWN_MENU] = cfgtmp.menu_opacity;
     ps->o.wintype_opacity[WINTYPE_POPUP_MENU] = cfgtmp.menu_opacity;
   }
@@ -7017,7 +7023,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .no_fading_destroyed_argb = false,
       .fade_blacklist = NULL,
 
-      .wintype_opacity = { 0.0 },
+      .wintype_opacity = { NAN },
       .inactive_opacity = 0,
       .inactive_opacity_override = false,
       .active_opacity = 0,
