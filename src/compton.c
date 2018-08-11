@@ -2377,19 +2377,21 @@ calc_opacity(session_t *ps, win *w) {
     opacity = 0;
   else {
     // Try obeying opacity property and window type opacity firstly
-    if (OPAQUE == (opacity = w->opacity_prop)) {
+    if(w->has_opacity_prop)
+      opacity = w->opacity_prop;
+    else {
       opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
-    }
 
-    // Respect inactive_opacity in some cases
-    if (ps->o.inactive_opacity && false == w->focused
-        && (OPAQUE == opacity || ps->o.inactive_opacity_override)) {
-      opacity = ps->o.inactive_opacity;
-    }
+      // Respect inactive_opacity in some cases
+      if (ps->o.inactive_opacity && false == w->focused
+          && (OPAQUE == opacity || ps->o.inactive_opacity_override)) {
+        opacity = ps->o.inactive_opacity;
+      }
 
-    // Respect active_opacity only when the window is physically focused
-    if (OPAQUE == opacity && ps->o.active_opacity && win_is_focused_real(ps, w))
-      opacity = ps->o.active_opacity;
+      // Respect active_opacity only when the window is physically focused
+      if (OPAQUE == opacity && ps->o.active_opacity && win_is_focused_real(ps, w))
+        opacity = ps->o.active_opacity;
+    }
   }
 
   w->opacity_tgt = opacity;
