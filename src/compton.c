@@ -2619,21 +2619,23 @@ win_update_opacity_rule(session_t *ps, win *w) {
     return;
 
 #ifdef CONFIG_C2
-  // If long is 32-bit, unfortunately there's no way could we express "unset",
-  // so we just entirely don't distinguish "unset" and OPAQUE
   opacity_t opacity = OPAQUE;
+  bool is_set = false;
   void *val = NULL;
-  if (c2_matchd(ps, w, ps->o.opacity_rules, &w->cache_oparule, &val))
+  if (c2_matchd(ps, w, ps->o.opacity_rules, &w->cache_oparule, &val)) {
     opacity = ((double) (long) val) / 100.0 * OPAQUE;
+    is_set = true;
+  }
 
-  if (opacity == w->opacity_set)
+  if (is_set == w->opacity_is_set && opacity == w->opacity_set)
     return;
 
-  if (OPAQUE != opacity)
-    wid_set_opacity_prop(ps, w->id, opacity);
-  else if (OPAQUE != w->opacity_set)
-    wid_rm_opacity_prop(ps, w->id);
   w->opacity_set = opacity;
+  w->opacity_is_set = is_set;
+  if (!is_set)
+    wid_rm_opacity_prop(ps, w->id);
+  else
+    wid_set_opacity_prop(ps, w->id, opacity);
 #endif
 }
 
@@ -2880,6 +2882,7 @@ add_win(session_t *ps, Window id, Window prev) {
     .opacity_tgt = 0,
     .has_opacity_prop = false,
     .opacity_prop = OPAQUE,
+    .opacity_is_set = false,
     .opacity_set = OPAQUE,
 
     .fade = false,

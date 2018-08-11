@@ -1167,6 +1167,8 @@ typedef struct _win {
   bool has_opacity_prop;
   /// Cached value of opacity window attribute.
   opacity_t opacity_prop;
+  /// true if opacity is set by some rules
+  bool opacity_is_set;
   /// Last window opacity value we set.
   opacity_t opacity_set;
 
