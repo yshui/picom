@@ -69,7 +69,7 @@ OPTIONS
 	Equals to *-f*. Deprecated.
 
 *-i*, *--inactive-opacity*='OPACITY'::
-	Opacity of inactive windows. (0.1 - 1.0, disabled by default)
+	Opacity of inactive windows. (0.1 - 1.0, defaults to 1.0)
 
 *-e*, *--frame-opacity*='OPACITY'::
 	Opacity of window titlebars and borders. (0.1 - 1.0, disabled by default)
@@ -105,7 +105,7 @@ OPTIONS
 	Let inactive opacity set by *-i* overrides the windows' '_NET_WM_OPACITY' values.
 
 *--active-opacity* 'OPACITY'::
-  Default opacity for active windows. (0.0 - 1.0)
+	Default opacity for active windows. (0.0 - 1.0, defaults to 1.0)
 
 *--inactive-dim* 'VALUE'::
 	Dim inactive windows. (0.0 - 1.0, defaults to 0.0)

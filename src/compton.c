@@ -2379,22 +2379,19 @@ calc_opacity(session_t *ps, win *w) {
     // Try obeying opacity property and window type opacity firstly
     if(w->has_opacity_prop)
       opacity = w->opacity_prop;
-    else {
-      if (!isnan(ps->o.wintype_opacity[w->window_type]))
+    else if (!isnan(ps->o.wintype_opacity[w->window_type]))
         opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
-      else {
-        // Respect active_opacity only when the window is physically focused
-        if (ps->o.active_opacity && win_is_focused_real(ps, w))
-          opacity = ps->o.active_opacity;
-        else if (ps->o.inactive_opacity && false == w->focused)
-          // Respect inactive_opacity in some cases
-          opacity = ps->o.inactive_opacity;
-      }
+    else {
+      // Respect active_opacity only when the window is physically focused
+      if (win_is_focused_real(ps, w))
+        opacity = ps->o.active_opacity;
+      else if (false == w->focused)
+        // Respect inactive_opacity in some cases
+        opacity = ps->o.inactive_opacity;
     }
 
     // respect inactive override
-    if (ps->o.inactive_opacity && false == w->focused &&
-        ps->o.inactive_opacity_override)
+    if (ps->o.inactive_opacity_override && false == w->focused)
           opacity = ps->o.inactive_opacity;
   }
 
@@ -6060,12 +6057,6 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   cfgtmp.menu_opacity = normalize_d(cfgtmp.menu_opacity);
   ps->o.refresh_rate = normalize_i_range(ps->o.refresh_rate, 0, 300);
   ps->o.alpha_step = normalize_d_range(ps->o.alpha_step, 0.01, 1.0);
-  if (OPAQUE == ps->o.inactive_opacity) {
-    ps->o.inactive_opacity = 0;
-  }
-  if (OPAQUE == ps->o.active_opacity) {
-    ps->o.active_opacity = 0;
-  }
   if (shadow_enable)
     wintype_arr_enable(ps->o.wintype_shadow);
   ps->o.wintype_shadow[WINTYPE_DESKTOP] = false;
@@ -6090,7 +6081,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   // Other variables determined by options
 
   // Determine whether we need to track focus changes
-  if (ps->o.inactive_opacity || ps->o.active_opacity || ps->o.inactive_dim) {
+  if (ps->o.inactive_opacity != ps->o.active_opacity ||
+      ps->o.inactive_dim) {
     ps->o.track_focus = true;
   }
 
@@ -7027,9 +7019,9 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .fade_blacklist = NULL,
 
       .wintype_opacity = { NAN },
-      .inactive_opacity = 0,
+      .inactive_opacity = OPAQUE,
       .inactive_opacity_override = false,
-      .active_opacity = 0,
+      .active_opacity = OPAQUE,
       .frame_opacity = 0.0,
       .detect_client_opacity = false,
       .alpha_step = 0.03,
