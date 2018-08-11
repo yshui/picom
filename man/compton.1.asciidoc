@@ -232,7 +232,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested.
 
 *--opacity-rule* 'OPACITY':'CONDITION'::
-	Specify a list of opacity rules, in the format `PERCENT:PATTERN`, like `50:name *= "Firefox"`. compton-trans is recommended over this. Note we do not distinguish 100% and unset, and we don't make any guarantee about possible conflicts with other programs that set '_NET_WM_WINDOW_OPACITY' on frame or client windows.
+	Specify a list of opacity rules, in the format `PERCENT:PATTERN`, like `50:name *= "Firefox"`. compton-trans is recommended over this. Note we don't make any guarantee about possible conflicts with other programs that set '_NET_WM_WINDOW_OPACITY' on frame or client windows.
 
 *--shadow-exclude-reg* 'GEOMETRY'::
 	Specify a X geometry that describes the region in which shadow should not be painted in, such as a dock window region.  Use `--shadow-exclude-reg x10+0-0`, for example, if the 10 pixels on the bottom of the screen should not have shadows painted on.
