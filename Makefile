@@ -129,7 +129,7 @@ endif
 LIBS += $(shell pkg-config --libs $(PACKAGES))
 INCS += $(shell pkg-config --cflags $(PACKAGES))
 
-CFLAGS += -Wall
+CFLAGS += -Wall -Wimplicit-fallthrough
 
 BINS = compton bin/compton-trans
 MANPAGES = man/compton.1 man/compton-trans.1

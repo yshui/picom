@@ -2017,7 +2017,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       glx_render(ps, ps->tgt_buffer.ptex, 0, 0, 0, 0,
           ps->root_width, ps->root_height, 0, 1.0, false, false,
           region_real, NULL, NULL);
-      // No break here!
+      // falls through
     case BKEND_GLX:
       if (ps->o.glx_use_copysubbuffermesa)
         glx_swap_copysubbuffermesa(ps, region_real);
@@ -6594,10 +6594,7 @@ init_filters(session_t *ps) {
         }
 #ifdef CONFIG_VSYNC_OPENGL
       case BKEND_GLX:
-        {
-          if (!glx_init_blur(ps))
-            return false;
-        }
+        return glx_init_blur(ps);
 #endif
       default:
         assert(false);
