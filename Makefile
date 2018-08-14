@@ -120,6 +120,10 @@ endif
 
 ifeq "$(ENABLE_SAN)" "1"
   CFLAGS += -fsanitize=address,undefined
+else ifeq "$(ENABLE_SAN)" "thread"
+  CFLAGS += -fsanitize=thread
+else ifeq "$(ENABLE_SAN)" "memory"
+  CFLAGS += -fsanitize=memory
 endif
 
 LIBS += $(shell pkg-config --libs $(PACKAGES))
