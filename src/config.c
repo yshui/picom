@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "config.h"
+#include "c2.h"
 
 /**
  * Parse a long number.

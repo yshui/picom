@@ -227,6 +227,7 @@
 
 typedef uint32_t opacity_t;
 typedef long time_ms_t;
+typedef struct _c2_lptr c2_lptr_t;
 
 typedef enum {
   WINTYPE_UNKNOWN,
@@ -519,9 +520,7 @@ typedef struct {
 
 struct _timeout_t;
 
-struct _win;
-
-typedef struct _c2_lptr c2_lptr_t;
+typedef struct win win;
 
 /// Structure representing all options.
 typedef struct _options_t {
@@ -787,7 +786,7 @@ typedef struct {
 #endif
 
 /// Structure containing all necessary data for a compton session.
-typedef struct _session_t {
+typedef struct session {
   // === Display related ===
   /// Display in use.
   Display *dpy;
@@ -888,13 +887,13 @@ typedef struct _session_t {
 
   // === Window related ===
   /// Linked list of all windows.
-  struct _win *list;
+  win *list;
   /// Pointer to <code>win</code> of current active window. Used by
   /// EWMH <code>_NET_ACTIVE_WINDOW</code> focus detection. In theory,
   /// it's more reliable to store the window ID directly here, just in
   /// case the WM does something extraordinary, but caching the pointer
   /// means another layer of complexity.
-  struct _win *active_win;
+  win *active_win;
   /// Window ID of leader window of currently active window. Used for
   /// subsidiary window detection.
   Window active_leader;
@@ -1038,11 +1037,11 @@ typedef struct _session_t {
 } session_t;
 
 /// Structure representing a top-level window compton manages.
-typedef struct _win {
+struct win {
   /// Pointer to the next structure in the linked list.
-  struct _win *next;
+  win *next;
   /// Pointer to the next higher window to paint.
-  struct _win *prev_trans;
+  win *prev_trans;
 
   // Core members
   /// ID of the top-level frame window.
@@ -1164,7 +1163,7 @@ typedef struct _win {
   /// Override value of window fade state. Set by D-Bus method calls.
   switch_t fade_force;
   /// Callback to be called after fading completed.
-  void (*fade_callback) (session_t *ps, struct _win *w);
+  void (*fade_callback) (session_t *ps, win *w);
 
   // Frame-opacity-related members
   /// Current window frame opacity. Affected by window opacity.
@@ -1216,7 +1215,7 @@ typedef struct _win {
   /// Textures and FBO background blur use.
   glx_blur_cache_t glx_blur_cache;
 #endif
-} win;
+};
 
 /// Temporary structure used for communication between
 /// <code>get_cfg()</code> and <code>parse_config()</code>.
@@ -1879,7 +1878,7 @@ find_win(session_t *ps, Window id) {
  * Find out the WM frame of a client window using existing data.
  *
  * @param id window ID
- * @return struct _win object of the found window, NULL if not found
+ * @return struct win object of the found window, NULL if not found
  */
 static inline win *
 find_toplevel(session_t *ps, Window id) {
@@ -1936,7 +1935,7 @@ win_is_focused_real(session_t *ps, const win *w) {
 /**
  * Find out the currently focused window.
  *
- * @return struct _win object of the found window, NULL if not found
+ * @return struct win object of the found window, NULL if not found
  */
 static inline win *
 find_focused(session_t *ps) {
@@ -2465,28 +2464,6 @@ void
 opts_set_no_fading_openclose(session_t *ps, bool newval);
 //!@}
 #endif
-
-/** @name c2
- */
-///@{
-
-c2_lptr_t *
-c2_parsed(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
-    void *data);
-
-#define c2_parse(ps, pcondlst, pattern) c2_parsed((ps), (pcondlst), (pattern), NULL)
-
-c2_lptr_t *
-c2_free_lptr(c2_lptr_t *lp);
-
-bool
-c2_matchd(session_t *ps, win *w, const c2_lptr_t *condlst,
-    const c2_lptr_t **cache, void **pdata);
-
-#define c2_match(ps, w, condlst, cache) c2_matchd((ps), (w), (condlst), \
-    (cache), NULL)
-
-///@}
 
 /**
  * @brief Dump the given data to a file.

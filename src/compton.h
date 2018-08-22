@@ -7,8 +7,6 @@
 
 // === Includes ===
 
-#include "common.h"
-
 #include <math.h>
 #include <sys/select.h>
 #include <limits.h>
@@ -26,6 +24,9 @@
 #include <sys/ioctl.h>
 #include <errno.h>
 #endif
+
+#include "common.h"
+#include "c2.h"
 
 // == Functions ==
 
