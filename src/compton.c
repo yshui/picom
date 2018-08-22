@@ -82,7 +82,7 @@ static void (* const (VSYNC_FUNCS_DEINIT[NUM_VSYNC]))(session_t *ps) = {
 
 /// Names of root window properties that could point to a pixmap of
 /// background.
-const static char *background_props_str[] = {
+static const char *background_props_str[] = {
   "_XROOTPMAP_ID",
   "_XSETROOT_ID",
   0,
@@ -2807,7 +2807,7 @@ win_recheck_client(session_t *ps, win *w) {
 
 static bool
 add_win(session_t *ps, Window id, Window prev) {
-  const static win win_def = {
+  static const win win_def = {
     .next = NULL,
     .prev_trans = NULL,
 
@@ -4443,7 +4443,7 @@ static void
 usage(int ret) {
 #define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
 #define WARNING
-  const static char *usage_text =
+  static const char *usage_text =
     "compton (" COMPTON_VERSION ")\n"
     "This is the maintenance fork of compton, please report\n"
     "bugs to https://github.com/yshui/compton\n\n"
@@ -4983,8 +4983,8 @@ write_pid(session_t *ps) {
  */
 static void
 get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
-  const static char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:hscnfFCaSzGb";
-  const static struct option longopts[] = {
+  static const char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:hscnfFCaSzGb";
+  static const struct option longopts[] = {
     { "help", no_argument, NULL, 'h' },
     { "config", required_argument, NULL, 256 },
     { "shadow-radius", required_argument, NULL, 'r' },
@@ -5400,7 +5400,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     // Convolution filter parameter (box blur)
     // gaussian or binomial filters are definitely superior, yet looks
     // like they aren't supported as of xorg-server-1.13.0
-    const static XFixed convolution_blur[] = {
+    static const XFixed convolution_blur[] = {
       // Must convert to XFixed with XDoubleToFixed()
       // Matrix size
       XDoubleToFixed(3), XDoubleToFixed(3),
@@ -5978,7 +5978,7 @@ timeout_get_poll_time(session_t *ps) {
 timeout_t *
 timeout_insert(session_t *ps, time_ms_t interval,
     bool (*callback)(session_t *ps, timeout_t *ptmout), void *data) {
-  const static timeout_t tmout_def = {
+  static const timeout_t tmout_def = {
     .enabled = true,
     .data = NULL,
     .callback = NULL,
@@ -6251,7 +6251,7 @@ cxinerama_upd_scrs(session_t *ps) {
  */
 static session_t *
 session_init(session_t *ps_old, int argc, char **argv) {
-  const static session_t s_def = {
+  static const session_t s_def = {
     .dpy = NULL,
     .scr = 0,
     .vis = NULL,

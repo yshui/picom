@@ -48,7 +48,7 @@ typedef struct {
   .l = NULL, \
 }
 
-const static c2_ptr_t C2_PTR_NULL = C2_PTR_INIT;
+static const c2_ptr_t C2_PTR_NULL = C2_PTR_INIT;
 
 /// Operator of a branch element.
 typedef enum {
@@ -164,7 +164,7 @@ struct _c2_l {
   .ptnint = 0, \
 }
 
-const static c2_l_t leaf_def = C2_L_INIT;
+static const c2_l_t leaf_def = C2_L_INIT;
 
 /// Linked list type of conditions.
 struct _c2_lptr {
@@ -188,7 +188,7 @@ typedef struct {
 } c2_predef_t;
 
 // Predefined targets.
-const static c2_predef_t C2_PREDEFS[] = {
+static const c2_predef_t C2_PREDEFS[] = {
   [C2_L_PID         ] = { "id"                , C2_L_TCARDINAL  , 0  },
   [C2_L_PX          ] = { "x"                 , C2_L_TCARDINAL  , 0  },
   [C2_L_PY          ] = { "y"                 , C2_L_TCARDINAL  , 0  },
@@ -378,7 +378,7 @@ c2_parsed(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
 
   // Insert to pcondlst
   {
-    const static c2_lptr_t lptr_def = C2_LPTR_INIT;
+    static const c2_lptr_t lptr_def = C2_LPTR_INIT;
     c2_lptr_t *plptr = malloc(sizeof(c2_lptr_t));
     if (!plptr)
       printf_errfq(1, "(): Failed to allocate memory for new condition linked"

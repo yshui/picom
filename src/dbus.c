@@ -1127,7 +1127,7 @@ cdbus_process_opts_set_success:
  */
 static bool
 cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
-  const static char *str_introspect =
+  static const char *str_introspect =
     "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\"\n"
     " \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n"
     "<node name='" CDBUS_OBJECT_NAME "'>\n"

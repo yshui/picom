@@ -41,10 +41,10 @@ lcfg_lookup_int(const config_t *config, const char *path, int *value) {
  */
 FILE *
 open_config_file(char *cpath, char **ppath) {
-  const static char *config_filename = "/compton.conf";
-  const static char *config_filename_legacy = "/.compton.conf";
-  const static char *config_home_suffix = "/.config";
-  const static char *config_system_dir = "/etc/xdg";
+  static const char *config_filename = "/compton.conf";
+  static const char *config_filename_legacy = "/.compton.conf";
+  static const char *config_home_suffix = "/.config";
+  static const char *config_system_dir = "/etc/xdg";
 
   char *dir = NULL, *home = NULL;
   char *path = cpath;
