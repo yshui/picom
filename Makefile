@@ -134,9 +134,9 @@ src/.clang_complete: Makefile
 	@(for i in $(filter-out -O% -DNDEBUG, $(CFG) $(CPPFLAGS) $(INCS)); do echo "$$i"; done) > $@
 
 .deps:
-	mkdir -p .deps
+	mkdir -p $@
 
-%.o: src/%.c .deps
+%.o: src/%.c | .deps
 	$(eval DEP=$(addprefix .deps/,$(@:.o=.d)))
 	@set -e; rm -f $(DEP); \
 	  $(CC) -M $(CPPFLAGS) $< > $@.$$$$; \
