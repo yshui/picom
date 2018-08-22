@@ -29,6 +29,7 @@ xr_glx_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
 }
 #endif
 
+#ifdef DEBUG_GLX_DEBUG_CONTEXT
 static inline GLXFBConfig
 get_fbconfig_from_visualinfo(session_t *ps, const XVisualInfo *visualinfo) {
   int nelements = 0;
@@ -44,7 +45,6 @@ get_fbconfig_from_visualinfo(session_t *ps, const XVisualInfo *visualinfo) {
   return NULL;
 }
 
-#ifdef DEBUG_GLX_DEBUG_CONTEXT
 static void
 glx_debug_msg_callback(GLenum source, GLenum type,
     GLuint id, GLenum severity, GLsizei length, const GLchar *message,

@@ -8,8 +8,7 @@
  *
  */
 
-#ifndef COMPTON_COMMON_H
-#define COMPTON_COMMON_H
+#pragma once
 
 // === Options ===
 
@@ -42,8 +41,6 @@
 // #define CONFIG_REGEX_PCRE_JIT 1
 // Whether to enable parsing of configuration files using libconfig.
 // #define CONFIG_LIBCONFIG 1
-// Whether we are using a legacy version of libconfig (1.3.x).
-// #define CONFIG_LIBCONFIG_LEGACY 1
 // Whether to enable DRM VSync support
 // #define CONFIG_VSYNC_DRM 1
 // Whether to enable OpenGL support
@@ -54,16 +51,10 @@
 // #define CONFIG_VSYNC_OPENGL_FBO 1
 // Whether to enable DBus support with libdbus.
 // #define CONFIG_DBUS 1
-// Whether to enable condition support.
-// #define CONFIG_C2 1
 // Whether to enable X Sync support.
 // #define CONFIG_XSYNC 1
 // Whether to enable GLX Sync support.
 // #define CONFIG_GLX_XSYNC 1
-
-#if !defined(CONFIG_C2) && defined(DEBUG_C2)
-#error Cannot enable c2 debugging without c2 support.
-#endif
 
 #if (!defined(CONFIG_XSYNC) || !defined(CONFIG_VSYNC_OPENGL)) && defined(CONFIG_GLX_SYNC)
 #error Cannot enable GL sync without X Sync / OpenGL support.
@@ -80,8 +71,6 @@
 // === Includes ===
 
 // For some special functions
-#define _GNU_SOURCE
-
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -114,12 +103,6 @@
 // thanks to consolers for reporting
 #ifndef PictOpDifference
 #define PictOpDifference 0x39
-#endif
-
-// libconfig
-#ifdef CONFIG_LIBCONFIG
-#include <libgen.h>
-#include <libconfig.h>
 #endif
 
 // libdbus
@@ -2483,7 +2466,6 @@ opts_set_no_fading_openclose(session_t *ps, bool newval);
 //!@}
 #endif
 
-#ifdef CONFIG_C2
 /** @name c2
  */
 ///@{
@@ -2503,7 +2485,6 @@ c2_matchd(session_t *ps, win *w, const c2_lptr_t *condlst,
 
 #define c2_match(ps, w, condlst, cache) c2_matchd((ps), (w), (condlst), \
     (cache), NULL)
-#endif
 
 ///@}
 
@@ -2564,4 +2545,14 @@ hexdump(const char *data, int len) {
   fflush(stdout);
 }
 
-#endif
+/**
+ * Set a <code>bool</code> array of all wintypes to true.
+ */
+static inline void
+wintype_arr_enable(bool arr[]) {
+  wintype_t i;
+
+  for (i = 0; i < NUM_WINTYPES; ++i) {
+    arr[i] = true;
+  }
+}

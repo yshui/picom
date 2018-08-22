@@ -70,18 +70,6 @@ sub_unslong(unsigned long a, unsigned long b) {
 }
 
 /**
- * Set a <code>bool</code> array of all wintypes to true.
- */
-static inline void
-wintype_arr_enable(bool arr[]) {
-  wintype_t i;
-
-  for (i = 0; i < NUM_WINTYPES; ++i) {
-    arr[i] = true;
-  }
-}
-
-/**
  * Set a <code>switch_t</code> array of all unset wintypes to true.
  */
 static inline void
@@ -186,10 +174,8 @@ free_damage(session_t *ps, Damage *p) {
  */
 static inline void
 free_wincondlst(c2_lptr_t **pcondlst) {
-#ifdef CONFIG_C2
   while ((*pcondlst = c2_free_lptr(*pcondlst)))
     continue;
-#endif
 }
 
 /**
@@ -585,15 +571,8 @@ win_validate_pixmap(session_t *ps, win *w) {
  */
 static inline bool
 win_match(session_t *ps, win *w, c2_lptr_t *condlst, const c2_lptr_t **cache) {
-#ifdef CONFIG_C2
   return c2_match(ps, w, condlst, cache);
-#else
-  return false;
-#endif
 }
-
-static bool
-condlst_add(session_t *ps, c2_lptr_t **pcondlst, const char *pattern);
 
 static long
 determine_evmask(session_t *ps, Window wid, win_evmode_t mode);
@@ -1173,54 +1152,6 @@ ev_handle(session_t *ps, XEvent *ev);
 
 static bool
 fork_after(session_t *ps);
-
-#ifdef CONFIG_LIBCONFIG
-/**
- * Wrapper of libconfig's <code>config_lookup_int</code>.
- *
- * To convert <code>int</code> value <code>config_lookup_bool</code>
- * returns to <code>bool</code>.
- */
-static inline void
-lcfg_lookup_bool(const config_t *config, const char *path,
-    bool *value) {
-  int ival;
-
-  if (config_lookup_bool(config, path, &ival))
-    *value = ival;
-}
-
-/**
- * Wrapper of libconfig's <code>config_lookup_int</code>.
- *
- * To deal with the different value types <code>config_lookup_int</code>
- * returns in libconfig-1.3 and libconfig-1.4.
- */
-static inline int
-lcfg_lookup_int(const config_t *config, const char *path, int *value) {
-#ifndef CONFIG_LIBCONFIG_LEGACY
-  return config_lookup_int(config, path, value);
-#else
-  long lval;
-  int ret;
-
-  if ((ret = config_lookup_int(config, path, &lval)))
-    *value = lval;
-
-  return ret;
-#endif
-}
-
-static FILE *
-open_config_file(char *cpath, char **path);
-
-static void
-parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
-    const char *name);
-
-static void
-parse_config(session_t *ps, struct options_tmp *pcfgtmp);
-#endif
 
 static void
 get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass);

@@ -13,10 +13,10 @@ PACKAGES = x11 xcomposite xfixes xdamage xrender xext xrandr
 LIBS = -lm -lrt
 INCS =
 
-OBJS = compton.o
+OBJS = compton.o config.o
 
 # === Configuration flags ===
-CFG = -std=c99
+CFG = -std=c99 -D_GNU_SOURCE
 
 # ==== Xinerama ====
 # Enables support for --xinerama-shadow-crop
@@ -30,10 +30,14 @@ endif
 ifeq "$(NO_LIBCONFIG)" ""
   CFG += -DCONFIG_LIBCONFIG
   PACKAGES += libconfig
+  OBJS += config_libconfig.o
 
   # libconfig-1.3* does not define LIBCONFIG_VER* macros, so we use
   # pkg-config to determine its version here
-  CFG += $(shell pkg-config --atleast-version=1.4 libconfig || echo '-DCONFIG_LIBCONFIG_LEGACY')
+  LIBCONFIG_VER = $(shell pkg-config --atleast-version=1.4 libconfig; echo $$?)
+  ifeq ($LIBCONFIG_VER, 1)
+    $(error "Your libconfig is too old, at least 1.4 is required")
+  endif
 endif
 
 # ==== PCRE regular expression ====
@@ -90,12 +94,7 @@ ifeq "$(NO_XSYNC)" ""
   CFG += -DCONFIG_XSYNC
 endif
 
-# ==== C2 ====
-# Enable window condition support
-ifeq "$(NO_C2)" ""
-  CFG += -DCONFIG_C2
-  OBJS += c2.o
-endif
+OBJS += c2.o
 
 # ==== X resource checker ====
 # Enable X resource leakage checking (Pixmap only, presently)
@@ -141,7 +140,15 @@ MANPAGES_HTML = $(addsuffix .html,$(MANPAGES))
 src/.clang_complete: Makefile
 	@(for i in $(filter-out -O% -DNDEBUG, $(CFG) $(CPPFLAGS) $(CFLAGS) $(INCS)); do echo "$$i"; done) > $@
 
-%.o: src/%.c src/%.h src/common.h
+.deps:
+	mkdir -p .deps
+
+%.o: src/%.c .deps
+	$(eval DEP=$(addprefix .deps/,$(@:.o=.d)))
+	@set -e; rm -f $(DEP); \
+	  $(CC) -M $(CPPFLAGS) $< > $@.$$$$; \
+	  sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $(DEP); \
+	  rm -f $@.$$$$
 	$(CC) $(CFG) $(CPPFLAGS) $(CFLAGS) $(INCS) -c src/$*.c
 
 compton: $(OBJS)
@@ -183,8 +190,10 @@ endif
 
 clean:
 	@rm -f $(OBJS) compton $(MANPAGES) $(MANPAGES_HTML) .clang_complete
+	@rm -rf .deps
 
 version:
 	@echo "$(COMPTON_VERSION)"
 
 .PHONY: uninstall clean docs version
+include $(addprefix .deps/,$(sources:.c=.d))
