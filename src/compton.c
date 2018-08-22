@@ -66,7 +66,7 @@ static int (* const (VSYNC_FUNCS_WAIT[NUM_VSYNC]))(session_t *ps) = {
 #ifdef CONFIG_VSYNC_DRM
   [VSYNC_DRM        ] = vsync_drm_wait,
 #endif
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   [VSYNC_OPENGL     ] = vsync_opengl_wait,
   [VSYNC_OPENGL_OML ] = vsync_opengl_oml_wait,
 #endif
@@ -74,7 +74,7 @@ static int (* const (VSYNC_FUNCS_WAIT[NUM_VSYNC]))(session_t *ps) = {
 
 /// Function pointers to deinitialize VSync.
 static void (* const (VSYNC_FUNCS_DEINIT[NUM_VSYNC]))(session_t *ps) = {
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   [VSYNC_OPENGL_SWC   ] = vsync_opengl_swc_deinit,
   [VSYNC_OPENGL_MSWC  ] = vsync_opengl_mswc_deinit,
 #endif
@@ -844,7 +844,7 @@ get_root_tile(session_t *ps) {
 
   ps->root_tile_fill = fill;
   ps->root_tile_paint.pixmap = pixmap;
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   if (BKEND_GLX == ps->o.backend)
     return glx_bind_pixmap(ps, &ps->root_tile_paint.ptex, ps->root_tile_paint.pixmap, 0, 0, 0);
 #endif
@@ -1482,7 +1482,7 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
         free_region(ps, &reg_noframe);
       }
       break;
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
     case BKEND_GLX:
       // TODO: Handle frame opacity
       glx_blur_dst(ps, x, y, wid, hei, ps->psglx->z - 0.5, factor_center,
@@ -1499,7 +1499,7 @@ render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     double opacity, bool argb, bool neg,
     Picture pict, glx_texture_t *ptex,
     XserverRegion reg_paint, const reg_data_t *pcache_reg
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
     , const glx_prog_main_t *pprogram
 #endif
     ) {
@@ -1515,7 +1515,7 @@ render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
         }
         break;
       }
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
     case BKEND_GLX:
       glx_render(ps, ptex, x, y, dx, dy, wid, hei,
           ps->psglx->z, opacity, argb, neg, reg_paint, pcache_reg, pprogram);
@@ -1699,7 +1699,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
               &color, &rect, 1);
         }
         break;
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
       case BKEND_GLX:
         glx_dim_dst(ps, x, y, wid, hei, ps->psglx->z - 0.7, dim_opacity,
             reg_paint, pcache_reg);
@@ -1743,7 +1743,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 #endif
   XserverRegion reg_paint = None, reg_tmp = None, reg_tmp2 = None;
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   if (bkend_use_glx(ps)) {
     glx_paint_pre(ps, &region);
   }
@@ -1941,7 +1941,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     // Make sure all previous requests are processed to achieve best
     // effect
     XSync(ps->dpy, False);
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
     if (glx_has_context(ps)) {
       if (ps->o.vsync_use_glfinish)
         glFinish();
@@ -1977,7 +1977,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
           0, 0, ps->root_width, ps->root_height);
       }
       break;
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
     case BKEND_XR_GLX_HYBRID:
       XSync(ps->dpy, False);
       if (ps->o.vsync_use_glfinish)
@@ -2018,7 +2018,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 
   XFlush(ps->dpy);
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   if (glx_has_context(ps)) {
     glFlush();
     glXWaitX();
@@ -3061,7 +3061,7 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
       redir_start(ps);
     }
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
     // Reinitialize GLX on root change
     if (ps->o.glx_reinit_on_root_change && ps->psglx) {
       if (!glx_reinit(ps, bkend_use_glx(ps)))
@@ -3317,7 +3317,7 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
     CASESTRRET2(BadGlyph);
   }
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   if (ps->glx_exists) {
     o = ev->error_code - ps->glx_error;
     switch (o) {
@@ -4595,7 +4595,7 @@ usage(int ret) {
     "    drm = VSync with DRM_IOCTL_WAIT_VBLANK. May only work on some\n"
     "      (DRI-based) drivers." WARNING "\n"
 #undef WARNING
-#ifndef CONFIG_VSYNC_OPENGL
+#ifndef CONFIG_OPENGL
 #define WARNING WARNING_DISABLED
 #else
 #define WARNING
@@ -4730,7 +4730,7 @@ usage(int ret) {
     "  screen." WARNING "\n"
     "\n"
 #undef WARNING
-#ifndef CONFIG_VSYNC_OPENGL
+#ifndef CONFIG_OPENGL
 #define WARNING "(GLX BACKENDS DISABLED AT COMPILE TIME)"
 #else
 #define WARNING
@@ -4921,7 +4921,7 @@ fork_after(session_t *ps) {
   if (getppid() == 1)
     return true;
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   // GLX context must be released and reattached on fork
   if (glx_has_context(ps) && !glXMakeCurrent(ps->dpy, None, NULL)) {
     printf_errf("(): Failed to detach GLx context.");
@@ -4940,7 +4940,7 @@ fork_after(session_t *ps) {
 
   setsid();
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   if (glx_has_context(ps)
       && !glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->psglx->context)) {
     printf_errf("(): Failed to make GLX context current.");
@@ -5126,9 +5126,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   // instead of commas in atof().
   setlocale(LC_NUMERIC, "C");
 
-#ifdef CONFIG_LIBCONFIG
   parse_config(ps, &cfgtmp);
-#endif
 
   // Parse commandline arguments. Range checking will be done later.
 
@@ -5613,7 +5611,7 @@ vsync_drm_wait(session_t *ps) {
  */
 static bool
 vsync_opengl_init(session_t *ps) {
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   if (!ensure_glx_context(ps))
     return false;
 
@@ -5638,7 +5636,7 @@ vsync_opengl_init(session_t *ps) {
 
 static bool
 vsync_opengl_oml_init(session_t *ps) {
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   if (!ensure_glx_context(ps))
     return false;
 
@@ -5663,7 +5661,7 @@ vsync_opengl_oml_init(session_t *ps) {
 
 static bool
 vsync_opengl_swc_init(session_t *ps) {
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   if (!ensure_glx_context(ps))
     return false;
 
@@ -5691,7 +5689,7 @@ vsync_opengl_swc_init(session_t *ps) {
 
 static bool
 vsync_opengl_mswc_init(session_t *ps) {
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   if (!ensure_glx_context(ps))
     return false;
 
@@ -5717,7 +5715,7 @@ vsync_opengl_mswc_init(session_t *ps) {
 #endif
 }
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
 /**
  * Wait for next VSync, OpenGL method.
  */
@@ -5898,7 +5896,7 @@ init_filters(session_t *ps) {
           }
           break;
         }
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
       case BKEND_GLX:
         return glx_init_blur(ps);
 #endif
@@ -6276,7 +6274,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .backend = BKEND_XRENDER,
       .glx_no_stencil = false,
       .glx_copy_from_front = false,
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
       .glx_prog_win = GLX_PROG_MAIN_INIT,
 #endif
       .mark_wmwin_focused = false,
@@ -6411,7 +6409,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .randr_exists = 0,
     .randr_event = 0,
     .randr_error = 0,
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
     .glx_exists = false,
     .glx_event = 0,
     .glx_error = 0,
@@ -6626,7 +6624,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Initialize OpenGL as early as possible
   if (bkend_use_glx(ps)) {
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
     if (!glx_init(ps, true))
       exit(1);
 #else
@@ -6636,7 +6634,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Initialize window GL shader
   if (BKEND_GLX == ps->o.backend && ps->o.glx_fshader_win_str) {
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
     if (!glx_load_prog_main(ps, NULL, ps->o.glx_fshader_win_str, &ps->o.glx_prog_win))
       exit(1);
 #else
@@ -6900,7 +6898,7 @@ session_destroy(session_t *ps) {
   free(ps->o.glx_fshader_win_str);
   free_xinerama_info(ps);
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   glx_destroy(ps);
 #endif
 

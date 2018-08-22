@@ -43,12 +43,8 @@
 // #define CONFIG_LIBCONFIG 1
 // Whether to enable DRM VSync support
 // #define CONFIG_VSYNC_DRM 1
-// Whether to enable OpenGL support
-// #define CONFIG_VSYNC_OPENGL 1
-// Whether to enable GLX GLSL support
-// #define CONFIG_VSYNC_OPENGL_GLSL 1
-// Whether to enable GLX FBO support
-// #define CONFIG_VSYNC_OPENGL_FBO 1
+// Whether to enable OpenGL support (include GLSL, FBO)
+// #define CONFIG_OPENGL 1
 // Whether to enable DBus support with libdbus.
 // #define CONFIG_DBUS 1
 // Whether to enable X Sync support.
@@ -56,7 +52,7 @@
 // Whether to enable GLX Sync support.
 // #define CONFIG_GLX_XSYNC 1
 
-#if (!defined(CONFIG_XSYNC) || !defined(CONFIG_VSYNC_OPENGL)) && defined(CONFIG_GLX_SYNC)
+#if (!defined(CONFIG_XSYNC) || !defined(CONFIG_OPENGL)) && defined(CONFIG_GLX_SYNC)
 #error Cannot enable GL sync without X Sync / OpenGL support.
 #endif
 
@@ -110,12 +106,9 @@
 #include <dbus/dbus.h>
 #endif
 
-#ifdef CONFIG_VSYNC_OPENGL
-
+#ifdef CONFIG_OPENGL
 // libGL
-#if defined(CONFIG_VSYNC_OPENGL_GLSL) || defined(CONFIG_VSYNC_OPENGL_FBO)
 #define GL_GLEXT_PROTOTYPES
-#endif
 
 #include <GL/glx.h>
 
@@ -354,7 +347,7 @@ enum {
 
 typedef struct _glx_texture glx_texture_t;
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
 #ifdef DEBUG_GLX_DEBUG_CONTEXT
 typedef GLXContext (*f_glXCreateContextAttribsARB) (Display *dpy,
     GLXFBConfig config, GLXContext share_context, Bool direct,
@@ -445,7 +438,7 @@ struct _glx_texture {
   bool y_inverted;
 };
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
 typedef struct {
   /// Fragment shader for blur.
   GLuint frag_shader;
@@ -556,7 +549,7 @@ typedef struct _options_t {
   bool glx_use_gpushader4;
   /// Custom fragment shader for painting windows, as a string.
   char *glx_fshader_win_str;
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
   /// Custom GLX program used for painting window.
   glx_prog_main_t glx_prog_win;
 #endif
@@ -726,7 +719,7 @@ typedef struct _options_t {
   bool track_leader;
 } options_t;
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
 /// Structure containing GLX-dependent data for a compton session.
 typedef struct {
   // === OpenGL related ===
@@ -776,7 +769,7 @@ typedef struct {
   int z;
   /// FBConfig-s for GLX pixmap of different depths.
   glx_fbconfig_t *fbconfigs[OPENGL_MAX_DEPTH + 1];
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
   glx_blur_pass_t blur_passes[MAX_BLUR_PASS];
 #endif
 } glx_session_t;
@@ -826,7 +819,7 @@ typedef struct session {
   XdbeBackBuffer root_dbe;
   /// Window ID of the window we register as a symbol.
   Window reg_win;
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   /// Pointer to GLX data.
   glx_session_t *psglx;
 #endif
@@ -965,7 +958,7 @@ typedef struct session {
   int randr_event;
   /// Error base number for X RandR extension.
   int randr_error;
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   /// Whether X GLX extension exists.
   bool glx_exists;
   /// Event base number for X GLX extension.
@@ -1211,7 +1204,7 @@ struct win {
   /// Background state on last paint.
   bool blur_background_last;
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
   /// Textures and FBO background blur use.
   glx_blur_cache_t glx_blur_cache;
 #endif
@@ -1917,7 +1910,7 @@ bkend_use_glx(session_t *ps) {
  */
 static inline bool
 glx_has_context(session_t *ps) {
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   return ps->psglx && ps->psglx->context;
 #else
   return false;
@@ -2124,7 +2117,7 @@ vsync_init(session_t *ps);
 void
 vsync_deinit(session_t *ps);
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
 /** @name GLX
  */
 ///@{
@@ -2149,7 +2142,7 @@ glx_on_root_change(session_t *ps);
 bool
 glx_init_blur(session_t *ps);
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
 bool
 glx_load_prog_main(session_t *ps,
     const char *vshader_str, const char *fshader_str,
@@ -2178,7 +2171,7 @@ glx_tex_binded(const glx_texture_t *ptex, Pixmap pixmap) {
 void
 glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg);
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
 bool
 glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     GLfloat factor_center,
@@ -2195,12 +2188,12 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
     double opacity, bool argb, bool neg,
     XserverRegion reg_tgt, const reg_data_t *pcache_reg
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
     , const glx_prog_main_t *pprogram
 #endif
     );
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
 #define \
    glx_render(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg, reg_tgt, pcache_reg, pprogram) \
   glx_render_(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg, reg_tgt, pcache_reg, pprogram)
@@ -2216,7 +2209,7 @@ glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg);
 unsigned char *
 glx_take_screenshot(session_t *ps, int *out_length);
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
 GLuint
 glx_create_shader(GLenum shader_type, const char *shader_str);
 
@@ -2245,7 +2238,7 @@ free_texture_r(session_t *ps, GLuint *ptexture) {
  */
 static inline void
 free_glx_fbo(session_t *ps, GLuint *pfbo) {
-#ifdef CONFIG_VSYNC_OPENGL_FBO
+#ifdef CONFIG_OPENGL
   if (*pfbo) {
     glDeleteFramebuffers(1, pfbo);
     *pfbo = 0;
@@ -2254,7 +2247,7 @@ free_glx_fbo(session_t *ps, GLuint *pfbo) {
   assert(!*pfbo);
 }
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
 /**
  * Free data in glx_blur_cache_t on resize.
  */
@@ -2288,7 +2281,7 @@ free_texture(session_t *ps, glx_texture_t **pptex) {
   if (!ptex)
     return;
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   glx_release_pixmap(ps, ptex);
 
   free_texture_r(ps, &ptex->texture);
@@ -2315,7 +2308,7 @@ static inline void
 free_win_res_glx(session_t *ps, win *w) {
   free_paint_glx(ps, &w->paint);
   free_paint_glx(ps, &w->shadow_paint);
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
   free_glx_bc(ps, &w->glx_blur_cache);
 #endif
 }

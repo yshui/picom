@@ -209,7 +209,7 @@ paint_isvalid(session_t *ps, const paint_t *ppaint) {
   if (bkend_use_xrender(ps) && !ppaint->pict)
     return false;
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   if (BKEND_GLX == ps->o.backend && !glx_tex_binded(ppaint->ptex, None))
     return false;
 #endif
@@ -223,7 +223,7 @@ paint_isvalid(session_t *ps, const paint_t *ppaint) {
 static inline bool
 paint_bind_tex_real(session_t *ps, paint_t *ppaint,
     unsigned wid, unsigned hei, unsigned depth, bool force) {
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
   if (!ppaint->pixmap)
     return false;
 
@@ -672,12 +672,12 @@ render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     double opacity, bool argb, bool neg,
     Picture pict, glx_texture_t *ptex,
     XserverRegion reg_paint, const reg_data_t *pcache_reg
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
     , const glx_prog_main_t *pprogram
 #endif
     );
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
+#ifdef CONFIG_OPENGL
 #define \
    render(ps, x, y, dx, dy, wid, hei, opacity, argb, neg, pict, ptex, reg_paint, pcache_reg, pprogram) \
   render_(ps, x, y, dx, dy, wid, hei, opacity, argb, neg, pict, ptex, reg_paint, pcache_reg, pprogram)
@@ -708,7 +708,7 @@ set_tgt_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
     case BKEND_XR_GLX_HYBRID:
       XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer.pict, 0, 0, reg);
       break;
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
     case BKEND_GLX:
       glx_set_clip(ps, reg, pcache_reg);
       break;
@@ -1169,7 +1169,7 @@ swopti_init(session_t *ps);
 static void
 swopti_handle_timeout(session_t *ps, struct timeval *ptv);
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
 /**
  * Ensure we have a GLX context.
  */
@@ -1203,7 +1203,7 @@ vsync_opengl_swc_init(session_t *ps);
 static bool
 vsync_opengl_mswc_init(session_t *ps);
 
-#ifdef CONFIG_VSYNC_OPENGL
+#ifdef CONFIG_OPENGL
 static int
 vsync_opengl_wait(session_t *ps);
 

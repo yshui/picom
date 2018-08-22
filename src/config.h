@@ -29,4 +29,9 @@ parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
 
 void
 parse_config(session_t *ps, struct options_tmp *pcfgtmp);
+#else
+static inline void parse_config(session_t *a, struct options_tmp *b) {
+  (void)a;
+  (void)b;
+}
 #endif

@@ -65,23 +65,14 @@ endif
 
 # ==== OpenGL ====
 # Enables support for GLX backend, OpenGL VSync methods, etc.
-ifeq "$(NO_VSYNC_OPENGL)" ""
-  CFG += -DCONFIG_VSYNC_OPENGL
+ifneq "$(NO_VSYNC_OPENGL)" ""
+  NO_OPENGL=$(NO_VSYNC_OPENGL)
+endif
+ifeq "$(NO_OPENGL)" ""
+  CFG += -DCONFIG_OPENGL
   # -lGL must precede some other libraries, or it segfaults on FreeBSD (#74)
   LIBS := -lGL $(LIBS)
   OBJS += opengl.o
-  # Enables support for GLSL (GLX background blur, etc.)
-  ifeq "$(NO_VSYNC_OPENGL_GLSL)" ""
-    CFG += -DCONFIG_VSYNC_OPENGL_GLSL
-  endif
-  # Enables support for GL FBO (GLX multi-pass blur, etc.)
-  ifeq "$(NO_VSYNC_OPENGL_FBO)" ""
-    CFG += -DCONFIG_VSYNC_OPENGL_FBO
-  endif
-  # Enables support for GL VBO (does nothing right now)
-  ifeq "$(NO_VSYNC_OPENGL_VBO)" ""
-    CFG += -DCONFIG_VSYNC_OPENGL_VBO
-  endif
 endif
 
 # ==== D-Bus ====

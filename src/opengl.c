@@ -104,14 +104,12 @@ glx_init(session_t *ps, bool need_render) {
     ps->psglx = cmalloc(1, glx_session_t);
     memcpy(ps->psglx, &CGLX_SESSION_DEF, sizeof(glx_session_t));
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
     for (int i = 0; i < MAX_BLUR_PASS; ++i) {
       glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
       ppass->unifm_factor_center = -1;
       ppass->unifm_offset_x = -1;
       ppass->unifm_offset_y = -1;
     }
-#endif
   }
 
   glx_session_t *psglx = ps->psglx;
@@ -277,8 +275,6 @@ glx_init_end:
   return success;
 }
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
-
 static void
 glx_free_prog_main(session_t *ps, glx_prog_main_t *pprogram) {
   if (!pprogram)
@@ -292,8 +288,6 @@ glx_free_prog_main(session_t *ps, glx_prog_main_t *pprogram) {
   pprogram->unifm_tex = -1;
 }
 
-#endif
-
 /**
  * Destroy GLX related resources.
  */
@@ -306,7 +300,6 @@ glx_destroy(session_t *ps) {
   for (win *w = ps->list; w; w = w->next)
     free_win_res_glx(ps, w);
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
   // Free GLSL shaders/programs
   for (int i = 0; i < MAX_BLUR_PASS; ++i) {
     glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
@@ -319,7 +312,6 @@ glx_destroy(session_t *ps) {
   glx_free_prog_main(ps, &ps->o.glx_prog_win);
 
   glx_check_err(ps);
-#endif
 
   // Free FBConfigs
   for (int i = 0; i <= OPENGL_MAX_DEPTH; ++i) {
@@ -383,7 +375,6 @@ glx_init_blur(session_t *ps) {
 
   // Allocate PBO if more than one blur kernel is present
   if (ps->o.blur_kerns[1]) {
-#ifdef CONFIG_VSYNC_OPENGL_FBO
     // Try to generate a framebuffer
     GLuint fbo = 0;
     glGenFramebuffers(1, &fbo);
@@ -393,14 +384,8 @@ glx_init_blur(session_t *ps) {
       return false;
     }
     glDeleteFramebuffers(1, &fbo);
-#else
-    printf_errf("(): FBO support not compiled in. Cannot do multi-pass blur "
-        "with GLX backend.");
-    return false;
-#endif
   }
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
   {
     char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
     // Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
@@ -529,13 +514,7 @@ glx_init_blur(session_t *ps) {
   glx_check_err(ps);
 
   return true;
-#else
-  printf_errf("(): GLSL support not compiled in. Cannot do blur with GLX backend.");
-  return false;
-#endif
 }
-
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
 
 /**
  * Load a GLSL main program from shader strings.
@@ -569,8 +548,6 @@ glx_load_prog_main(session_t *ps,
 
   return true;
 }
-
-#endif
 
 /**
  * @brief Update the FBConfig of given depth.
@@ -1172,7 +1149,6 @@ glx_copy_region_to_tex(session_t *ps, GLenum tex_tgt, int basex, int basey,
         dx, ps->root_height - dy - height, width, height);
 }
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
 /**
  * Blur contents in a particular region.
  */
@@ -1235,22 +1211,18 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   pbc->width = mwidth;
   pbc->height = mheight;
   GLuint tex_scr2 = pbc->textures[1];
-#ifdef CONFIG_VSYNC_OPENGL_FBO
   if (more_passes && !pbc->fbo)
     glGenFramebuffers(1, &pbc->fbo);
   const GLuint fbo = pbc->fbo;
-#endif
 
   if (!tex_scr || (more_passes && !tex_scr2)) {
     printf_errf("(): Failed to allocate texture.");
     goto glx_blur_dst_end;
   }
-#ifdef CONFIG_VSYNC_OPENGL_FBO
   if (more_passes && !fbo) {
     printf_errf("(): Failed to allocate framebuffer.");
     goto glx_blur_dst_end;
   }
-#endif
 
   // Read destination pixels into a texture
   glEnable(tex_tgt);
@@ -1290,7 +1262,6 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     assert(tex_scr);
     glBindTexture(tex_tgt, tex_scr);
 
-#ifdef CONFIG_VSYNC_OPENGL_FBO
     if (!last_pass) {
       static const GLenum DRAWBUFS[2] = { GL_COLOR_ATTACHMENT0 };
       glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -1312,7 +1283,6 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
       if (have_stencil)
         glEnable(GL_STENCIL_TEST);
     }
-#endif
 
     // Color negation for testing...
     // glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
@@ -1379,9 +1349,7 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   ret = true;
 
 glx_blur_dst_end:
-#ifdef CONFIG_VSYNC_OPENGL_FBO
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
-#endif
   glBindTexture(tex_tgt, 0);
   glDisable(tex_tgt);
   if (have_scissors)
@@ -1397,7 +1365,6 @@ glx_blur_dst_end:
 
   return ret;
 }
-#endif
 
 bool
 glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
@@ -1442,9 +1409,7 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
     double opacity, bool argb, bool neg,
     XserverRegion reg_tgt, const reg_data_t *pcache_reg
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
     , const glx_prog_main_t *pprogram
-#endif
     ) {
   if (!ptex || !ptex->texture) {
     printf_errf("(): Missing texture.");
@@ -1458,9 +1423,7 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
 
   argb = argb || (GLX_TEXTURE_FORMAT_RGBA_EXT ==
       ps->psglx->fbconfigs[ptex->depth]->texture_fmt);
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
   const bool has_prog = pprogram && pprogram->prog;
-#endif
   bool dual_texture = false;
 
   // It's required by legacy versions of OpenGL to enable texture target
@@ -1481,9 +1444,7 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
     glColor4f(opacity, opacity, opacity, opacity);
   }
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
   if (!has_prog)
-#endif
   {
     // The default, fixed-function path
     // Color negation
@@ -1558,7 +1519,6 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
       }
     }
   }
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
   else {
     // Programmable path
     assert(pprogram->prog);
@@ -1570,7 +1530,6 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
     if (pprogram->unifm_tex >= 0)
       glUniform1i(pprogram->unifm_tex, 0);
   }
-#endif
 
 #ifdef DEBUG_GLX
   printf_dbgf("(): Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n", x, y, width, height, dx, dy, ptex->width, ptex->height, z);
@@ -1653,10 +1612,8 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
     glActiveTexture(GL_TEXTURE0);
   }
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
   if (has_prog)
     glUseProgram(0);
-#endif
 
   glx_check_err(ps);
 
@@ -1799,7 +1756,6 @@ glx_take_screenshot(session_t *ps, int *out_length) {
   return buf;
 }
 
-#ifdef CONFIG_VSYNC_OPENGL_GLSL
 GLuint
 glx_create_shader(GLenum shader_type, const char *shader_str) {
 #ifdef DEBUG_GLX_GLSL
@@ -1921,5 +1877,3 @@ glx_create_program_from_str(const char *vert_shader_str,
 
   return prog;
 }
-#endif
-
