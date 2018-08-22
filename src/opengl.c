@@ -451,7 +451,12 @@ glx_init_blur(session_t *ps) {
       {
         int wid = XFixedToDouble(kern[0]), hei = XFixedToDouble(kern[1]);
         int nele = wid * hei - 1;
-        int len = strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) + strlen(extension) + (strlen(shader_add) + strlen(texture_func) + 42) * nele + strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
+        unsigned int len = strlen(FRAG_SHADER_BLUR_PREFIX) +
+                           strlen(sampler_type) +
+                           strlen(extension) +
+                           (strlen(shader_add) + strlen(texture_func) + 42) * nele +
+                           strlen(FRAG_SHADER_BLUR_SUFFIX) +
+                           strlen(texture_func) + 12 + 1;
         char *shader_str = calloc(len, sizeof(char));
         if (!shader_str) {
           printf_errf("(): Failed to allocate %d bytes for shader string.", len);
@@ -1899,7 +1904,7 @@ glx_create_program_from_str(const char *vert_shader_str,
 
   {
     GLuint shaders[2];
-    int count = 0;
+    unsigned int count = 0;
     if (vert_shader)
       shaders[count++] = vert_shader;
     if (frag_shader)

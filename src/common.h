@@ -2014,8 +2014,9 @@ rect_crop(XRectangle *pdst, const XRectangle *psrc, const XRectangle *pbound) {
  */
 static inline bool
 rect_is_fullscreen(session_t *ps, int x, int y, unsigned wid, unsigned hei) {
-  return (x <= 0 && y <= 0
-      && (x + wid) >= ps->root_width && (y + hei) >= ps->root_height);
+  return (x <= 0 && y <= 0 &&
+          (x + wid) >= (unsigned int)ps->root_width &&
+          (y + hei) >= (unsigned int)ps->root_height);
 }
 
 /**

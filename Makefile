@@ -16,7 +16,11 @@ INCS =
 OBJS = compton.o config.o
 
 # === Configuration flags ===
-CFG = -std=c11 -D_GNU_SOURCE
+CFG = -std=c11 -D_GNU_SOURCE -Wall -Wextra -Wno-unused-parameter
+
+ifeq "$(CC)" "clang"
+  CFG += -Wconditional-uninitialized
+endif
 
 # ==== Xinerama ====
 # Enables support for --xinerama-shadow-crop
@@ -112,23 +116,21 @@ LDFLAGS ?= -Wl,-O1 -Wl,--as-needed
 BUILD_TYPE ?= "Debug"
 
 ifeq "$(BUILD_TYPE)" "Release"
-  CFLAGS += -DNDEBUG -O2 -D_FORTIFY_SOURCE=2
+  CFG += -DNDEBUG -O2 -D_FORTIFY_SOURCE=2
 else ifeq "$(BUILD_TYPE)" "Debug"
-  CFLAGS += -ggdb -Wshadow
+  CFG += -ggdb -Wshadow
 endif
 
 ifeq "$(ENABLE_SAN)" "1"
-  CFLAGS += -fsanitize=address,undefined
+  CFG += -fsanitize=address,undefined
 else ifeq "$(ENABLE_SAN)" "thread"
-  CFLAGS += -fsanitize=thread
+  CFG += -fsanitize=thread
 else ifeq "$(ENABLE_SAN)" "memory"
-  CFLAGS += -fsanitize=memory
+  CFG += -fsanitize=memory
 endif
 
 LIBS += $(shell pkg-config --libs $(PACKAGES))
 INCS += $(shell pkg-config --cflags $(PACKAGES))
-
-CFLAGS += -Wall -Wimplicit-fallthrough
 
 BINS = compton bin/compton-trans
 MANPAGES = man/compton.1 man/compton-trans.1
@@ -138,7 +140,7 @@ MANPAGES_HTML = $(addsuffix .html,$(MANPAGES))
 .DEFAULT_GOAL := compton
 
 src/.clang_complete: Makefile
-	@(for i in $(filter-out -O% -DNDEBUG, $(CFG) $(CPPFLAGS) $(CFLAGS) $(INCS)); do echo "$$i"; done) > $@
+	@(for i in $(filter-out -O% -DNDEBUG, $(CFG) $(CPPFLAGS) $(INCS)); do echo "$$i"; done) > $@
 
 .deps:
 	mkdir -p .deps
@@ -149,10 +151,10 @@ src/.clang_complete: Makefile
 	  $(CC) -M $(CPPFLAGS) $< > $@.$$$$; \
 	  sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $(DEP); \
 	  rm -f $@.$$$$
-	$(CC) $(CFG) $(CPPFLAGS) $(CFLAGS) $(INCS) -c src/$*.c
+	$(CC) $(CFG) $(CPPFLAGS) $(INCS) -c src/$*.c
 
 compton: $(OBJS)
-	$(CC) $(CFG) $(CPPFLAGS) $(LDFLAGS) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
+	$(CC) $(CFG) $(CPPFLAGS) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
 
 man/%.1: man/%.1.asciidoc
 	a2x --format manpage $<
