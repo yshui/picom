@@ -16,7 +16,7 @@ INCS =
 OBJS = compton.o config.o
 
 # === Configuration flags ===
-CFG = -std=c99 -D_GNU_SOURCE
+CFG = -std=c11 -D_GNU_SOURCE
 
 # ==== Xinerama ====
 # Enables support for --xinerama-shadow-crop
