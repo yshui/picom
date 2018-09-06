@@ -13,7 +13,7 @@ PACKAGES = x11 xcomposite xfixes xdamage xrender xext xrandr
 LIBS = -lm -lrt
 INCS =
 
-OBJS = compton.o config.o
+OBJS = compton.o config.o win.o x.o
 
 # === Configuration flags ===
 CFG = -std=c11 -D_GNU_SOURCE -Wall -Wextra -Wno-unused-parameter

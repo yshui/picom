@@ -283,7 +283,7 @@ typedef struct {
 } win_upd_t;
 
 /// Structure representing Window property value.
-typedef struct {
+typedef struct winprop {
   // All pointers have the same length, right?
   // I wanted to use anonymous union but it's a GNU extension...
   union {
@@ -1448,6 +1448,11 @@ timespec_subtract(struct timespec *result,
   return x->tv_sec < y->tv_sec;
 }
 
+static inline double
+get_opacity_percent(win *w) {
+  return ((double) w->opacity) / OPAQUE;
+}
+
 /**
  * Get current time in struct timeval.
  */
@@ -2010,6 +2015,43 @@ rect_is_fullscreen(session_t *ps, int x, int y, unsigned wid, unsigned hei) {
   return (x <= 0 && y <= 0 &&
           (x + wid) >= (unsigned int)ps->root_width &&
           (y + hei) >= (unsigned int)ps->root_height);
+}
+
+static void
+set_ignore(session_t *ps, unsigned long sequence) {
+  if (ps->o.show_all_xerrors)
+    return;
+
+  ignore_t *i = malloc(sizeof(ignore_t));
+  if (!i) return;
+
+  i->sequence = sequence;
+  i->next = 0;
+  *ps->ignore_tail = i;
+  ps->ignore_tail = &i->next;
+}
+
+/**
+ * Ignore X errors caused by next X request.
+ */
+static inline void
+set_ignore_next(session_t *ps) {
+  set_ignore(ps, NextRequest(ps->dpy));
+}
+
+static inline void
+add_damage(session_t *ps, XserverRegion damage) {
+  // Ignore damage when screen isn't redirected
+  if (!ps->redirected)
+    free_region(ps, &damage);
+
+  if (!damage) return;
+  if (ps->all_damage) {
+    XFixesUnionRegion(ps->dpy, ps->all_damage, ps->all_damage, damage);
+    XFixesDestroyRegion(ps->dpy, damage);
+  } else {
+    ps->all_damage = damage;
+  }
 }
 
 /**

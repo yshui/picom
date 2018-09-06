@@ -29,28 +29,33 @@
 #include "c2.h"
 
 // == Functions ==
+// TODO move static inline functions that are only used in compton.c, into
+//      compton.c
 
 // inline functions must be made static to compile correctly under clang:
 // http://clang.llvm.org/compatibility.html#inline
 
-// Helper functions
+long determine_evmask(session_t *ps, Window wid, win_evmode_t mode);
 
-static void
-discard_ignore(session_t *ps, unsigned long sequence);
+Window
+find_client_win(session_t *ps, Window w);
 
-static void
-set_ignore(session_t *ps, unsigned long sequence);
+win *find_toplevel2(session_t *ps, Window wid);
 
-/**
- * Ignore X errors caused by next X request.
- */
-static inline void
-set_ignore_next(session_t *ps) {
-  set_ignore(ps, NextRequest(ps->dpy));
-}
+void set_fade_callback(session_t *ps, win *w,
+    void (*callback) (session_t *ps, win *w), bool exec_callback);
 
-static int
-should_ignore(session_t *ps, unsigned long sequence);
+void map_win(session_t *ps, Window id);
+
+void
+render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
+    double opacity, bool argb, bool neg,
+    Picture pict, glx_texture_t *ptex,
+    XserverRegion reg_paint, const reg_data_t *pcache_reg
+#ifdef CONFIG_OPENGL
+    , const glx_prog_main_t *pprogram
+#endif
+    );
 
 /**
  * Reset filter on a <code>Picture</code>.
@@ -368,13 +373,6 @@ wid_set_text_prop(session_t *ps, Window wid, Atom prop_atom, char *str) {
   return true;
 }
 
-static void
-run_fade(session_t *ps, win *w, unsigned steps);
-
-static void
-set_fade_callback(session_t *ps, win *w,
-    void (*callback) (session_t *ps, win *w), bool exec_callback);
-
 /**
  * Execute fade callback of a window if fading finished.
  */
@@ -385,33 +383,6 @@ check_fade_fin(session_t *ps, win *w) {
     set_fade_callback(ps, w, NULL, true);
   }
 }
-
-static void
-set_fade_callback(session_t *ps, win *w,
-    void (*callback) (session_t *ps, win *w), bool exec_callback);
-
-static double
-gaussian(double r, double x, double y);
-
-static conv *
-make_gaussian_map(double r);
-
-static unsigned char
-sum_gaussian(conv *map, double opacity,
-             int x, int y, int width, int height);
-
-static void
-presum_gaussian(session_t *ps, conv *map);
-
-static XImage *
-make_shadow(session_t *ps, double opacity, int width, int height);
-
-static bool
-win_build_shadow(session_t *ps, win *w, double opacity);
-
-static Picture
-solid_picture(session_t *ps, bool argb, double a,
-              double r, double g, double b);
 
 /**
  * Stop listening for events on a particular window.
@@ -456,25 +427,6 @@ wid_get_children(session_t *ps, Window w,
 }
 
 /**
- * Check if a window is bounding-shaped.
- */
-static inline bool
-wid_bounding_shaped(const session_t *ps, Window wid) {
-  if (ps->shape_exists) {
-    Bool bounding_shaped = False, clip_shaped = False;
-    int x_bounding, y_bounding, x_clip, y_clip;
-    unsigned int w_bounding, h_bounding, w_clip, h_clip;
-
-    XShapeQueryExtents(ps->dpy, wid, &bounding_shaped,
-        &x_bounding, &y_bounding, &w_bounding, &h_bounding,
-        &clip_shaped, &x_clip, &y_clip, &w_clip, &h_clip);
-    return bounding_shaped;
-  }
-
-  return false;
-}
-
-/**
  * Determine if a window change affects <code>reg_ignore</code> and set
  * <code>reg_ignore_expire</code> accordingly.
  */
@@ -508,18 +460,6 @@ win_calc_frame_extents(session_t *ps, const win *w) {
   return result;
 }
 
-static inline void
-wid_set_opacity_prop(session_t *ps, Window wid, opacity_t val) {
-  const unsigned long v = val;
-  XChangeProperty(ps->dpy, wid, ps->atom_opacity, XA_CARDINAL, 32,
-      PropModeReplace, (unsigned char *) &v, 1);
-}
-
-static inline void
-wid_rm_opacity_prop(session_t *ps, Window wid) {
-  XDeleteProperty(ps->dpy, wid, ps->atom_opacity);
-}
-
 /**
  * Dump an drawable's info.
  */
@@ -537,8 +477,6 @@ dump_drawable(session_t *ps, Drawable drawable) {
   }
 }
 
-static void
-win_rounded_corners(session_t *ps, win *w);
 
 /**
  * Validate a pixmap.
@@ -568,29 +506,6 @@ win_validate_pixmap(session_t *ps, win *w) {
 }
 
 /**
- * Wrapper of c2_match().
- */
-static inline bool
-win_match(session_t *ps, win *w, c2_lptr_t *condlst, const c2_lptr_t **cache) {
-  return c2_match(ps, w, condlst, cache);
-}
-
-static long
-determine_evmask(session_t *ps, Window wid, win_evmode_t mode);
-
-/**
- * Clear leader cache of all windows.
- */
-static void
-clear_cache_win_leaders(session_t *ps) {
-  for (win *w = ps->list; w; w = w->next)
-    w->cache_leader = None;
-}
-
-static win *
-find_toplevel2(session_t *ps, Window wid);
-
-/**
  * Find matched window.
  */
 static inline win *
@@ -603,79 +518,6 @@ find_win_all(session_t *ps, const Window wid) {
   if (!w) w = find_toplevel2(ps, wid);
   return w;
 }
-
-static Window
-win_get_leader_raw(session_t *ps, win *w, int recursions);
-
-/**
- * Get the leader of a window.
- *
- * This function updates w->cache_leader if necessary.
- */
-static inline Window
-win_get_leader(session_t *ps, win *w) {
-  return win_get_leader_raw(ps, w, 0);
-}
-
-/**
- * Return whether a window group is really focused.
- *
- * @param leader leader window ID
- * @return true if the window group is focused, false otherwise
- */
-static inline bool
-group_is_focused(session_t *ps, Window leader) {
-  if (!leader)
-    return false;
-
-  for (win *w = ps->list; w; w = w->next) {
-    if (win_get_leader(ps, w) == leader && !w->destroyed
-        && win_is_focused_real(ps, w))
-      return true;
-  }
-
-  return false;
-}
-
-static win *
-recheck_focus(session_t *ps);
-
-static bool
-get_root_tile(session_t *ps);
-
-static void
-paint_root(session_t *ps, XserverRegion reg_paint);
-
-static XserverRegion
-win_get_region(session_t *ps, win *w, bool use_offset);
-
-static XserverRegion
-win_get_region_noframe(session_t *ps, win *w, bool use_offset);
-
-static XserverRegion
-win_extents(session_t *ps, win *w);
-
-static XserverRegion
-border_size(session_t *ps, win *w, bool use_offset);
-
-static Window
-find_client_win(session_t *ps, Window w);
-
-static void
-get_frame_extents(session_t *ps, win *w, Window client);
-
-static win *
-paint_preprocess(session_t *ps, win *list);
-
-static void
-render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
-    double opacity, bool argb, bool neg,
-    Picture pict, glx_texture_t *ptex,
-    XserverRegion reg_paint, const reg_data_t *pcache_reg
-#ifdef CONFIG_OPENGL
-    , const glx_prog_main_t *pprogram
-#endif
-    );
 
 #ifdef CONFIG_OPENGL
 #define \
@@ -718,11 +560,6 @@ set_tgt_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
   }
 }
 
-static bool
-xr_blur_dst(session_t *ps, Picture tgt_buffer,
-    int x, int y, int wid, int hei, XFixed **blur_kerns,
-    XserverRegion reg_clip);
-
 /**
  * Normalize a convolution kernel.
  */
@@ -735,292 +572,6 @@ normalize_conv_kern(int wid, int hei, XFixed *kern) {
   for (int i = 0; i < wid * hei; ++i)
     kern[i] = XDoubleToFixed(XFixedToDouble(kern[i]) * factor);
 }
-
-static void
-paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t);
-
-static void
-add_damage(session_t *ps, XserverRegion damage);
-
-static void
-repair_win(session_t *ps, win *w);
-
-static wintype_t
-wid_get_prop_wintype(session_t *ps, Window w);
-
-static void
-map_win(session_t *ps, Window id);
-
-static void
-finish_map_win(session_t *ps, win *w);
-
-static void
-finish_unmap_win(session_t *ps, win *w);
-
-static void
-unmap_callback(session_t *ps, win *w);
-
-static void
-unmap_win(session_t *ps, win *w);
-
-static bool
-wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def, opacity_t *out);
-
-/**
- * Reread opacity property of a window.
- */
-static inline void
-win_update_opacity_prop(session_t *ps, win *w) {
-  // get frame opacity first
-  w->has_opacity_prop =
-    wid_get_opacity_prop(ps, w->id, OPAQUE, &w->opacity_prop);
-
-  if (w->has_opacity_prop)
-    // opacity found
-    return;
-
-  if (ps->o.detect_client_opacity && w->client_win && w->id == w->client_win)
-    // checking client opacity not allowed
-    return;
-
-  // get client opacity
-  w->has_opacity_prop =
-    wid_get_opacity_prop(ps, w->client_win, OPAQUE, &w->opacity_prop);
-}
-
-static double
-get_opacity_percent(win *w);
-
-static void
-win_determine_mode(session_t *ps, win *w);
-
-static void
-calc_opacity(session_t *ps, win *w);
-
-static void
-calc_dim(session_t *ps, win *w);
-
-static Window
-wid_get_prop_window(session_t *ps, Window wid, Atom aprop);
-
-static void
-win_update_leader(session_t *ps, win *w);
-
-static void
-win_set_leader(session_t *ps, win *w, Window leader);
-
-static void
-win_update_focused(session_t *ps, win *w);
-
-/**
- * Run win_update_focused() on all windows with the same leader window.
- *
- * @param leader leader window ID
- */
-static inline void
-group_update_focused(session_t *ps, Window leader) {
-  if (!leader)
-    return;
-
-  for (win *w = ps->list; w; w = w->next) {
-    if (win_get_leader(ps, w) == leader && !w->destroyed)
-      win_update_focused(ps, w);
-  }
-
-  return;
-}
-
-static inline void
-win_set_focused(session_t *ps, win *w, bool focused);
-
-static void
-win_on_focus_change(session_t *ps, win *w);
-
-static void
-win_determine_fade(session_t *ps, win *w);
-
-static void
-win_update_shape_raw(session_t *ps, win *w);
-
-static void
-win_update_shape(session_t *ps, win *w);
-
-static void
-win_update_prop_shadow_raw(session_t *ps, win *w);
-
-static void
-win_update_prop_shadow(session_t *ps, win *w);
-
-static void
-win_set_shadow(session_t *ps, win *w, bool shadow_new);
-
-static void
-win_determine_shadow(session_t *ps, win *w);
-
-static void
-win_set_invert_color(session_t *ps, win *w, bool invert_color_new);
-
-static void
-win_determine_invert_color(session_t *ps, win *w);
-
-static void
-win_set_blur_background(session_t *ps, win *w, bool blur_background_new);
-
-static void
-win_determine_blur_background(session_t *ps, win *w);
-
-static void
-win_on_wtype_change(session_t *ps, win *w);
-
-static void
-win_on_factor_change(session_t *ps, win *w);
-
-static void
-calc_win_size(session_t *ps, win *w);
-
-static void
-calc_shadow_geometry(session_t *ps, win *w);
-
-static void
-win_upd_wintype(session_t *ps, win *w);
-
-static void
-win_mark_client(session_t *ps, win *w, Window client);
-
-static void
-win_unmark_client(session_t *ps, win *w);
-
-static void
-win_recheck_client(session_t *ps, win *w);
-
-static bool
-add_win(session_t *ps, Window id, Window prev);
-
-static void
-restack_win(session_t *ps, win *w, Window new_above);
-
-static void
-configure_win(session_t *ps, XConfigureEvent *ce);
-
-static void
-circulate_win(session_t *ps, XCirculateEvent *ce);
-
-static void
-finish_destroy_win(session_t *ps, win *w);
-
-static void
-destroy_callback(session_t *ps, win *w);
-
-static void
-destroy_win(session_t *ps, Window id);
-
-static void
-damage_win(session_t *ps, XDamageNotifyEvent *de);
-
-static int
-xerror(Display *dpy, XErrorEvent *ev);
-
-static void
-expose_root(session_t *ps, XRectangle *rects, int nrects);
-
-static Window
-wid_get_prop_window(session_t *ps, Window wid, Atom aprop);
-
-static bool
-wid_get_name(session_t *ps, Window w, char **name);
-
-static bool
-wid_get_role(session_t *ps, Window w, char **role);
-
-static int
-win_get_prop_str(session_t *ps, win *w, char **tgt,
-    bool (*func_wid_get_prop_str)(session_t *ps, Window wid, char **tgt));
-
-static inline int
-win_get_name(session_t *ps, win *w) {
-  int ret = win_get_prop_str(ps, w, &w->name, wid_get_name);
-
-#ifdef DEBUG_WINDATA
-  printf_dbgf("(%#010lx): client = %#010lx, name = \"%s\", "
-      "ret = %d\n", w->id, w->client_win, w->name, ret);
-#endif
-
-  return ret;
-}
-
-static inline int
-win_get_role(session_t *ps, win *w) {
-  int ret = win_get_prop_str(ps, w, &w->role, wid_get_role);
-
-#ifdef DEBUG_WINDATA
-  printf_dbgf("(%#010lx): client = %#010lx, role = \"%s\", "
-      "ret = %d\n", w->id, w->client_win, w->role, ret);
-#endif
-
-  return ret;
-}
-
-static bool
-win_get_class(session_t *ps, win *w);
-
-#ifdef DEBUG_EVENTS
-static int
-ev_serial(XEvent *ev);
-
-static const char *
-ev_name(session_t *ps, XEvent *ev);
-
-static Window
-ev_window(session_t *ps, XEvent *ev);
-#endif
-
-static void __attribute__ ((noreturn))
-usage(int ret);
-
-static bool
-register_cm(session_t *ps);
-
-inline static void
-ev_focus_in(session_t *ps, XFocusChangeEvent *ev);
-
-inline static void
-ev_focus_out(session_t *ps, XFocusChangeEvent *ev);
-
-inline static void
-ev_create_notify(session_t *ps, XCreateWindowEvent *ev);
-
-inline static void
-ev_configure_notify(session_t *ps, XConfigureEvent *ev);
-
-inline static void
-ev_destroy_notify(session_t *ps, XDestroyWindowEvent *ev);
-
-inline static void
-ev_map_notify(session_t *ps, XMapEvent *ev);
-
-inline static void
-ev_unmap_notify(session_t *ps, XUnmapEvent *ev);
-
-inline static void
-ev_reparent_notify(session_t *ps, XReparentEvent *ev);
-
-inline static void
-ev_circulate_notify(session_t *ps, XCirculateEvent *ev);
-
-inline static void
-ev_expose(session_t *ps, XExposeEvent *ev);
-
-static void
-update_ewmh_active_win(session_t *ps);
-
-inline static void
-ev_property_notify(session_t *ps, XPropertyEvent *ev);
-
-inline static void
-ev_damage_notify(session_t *ps, XDamageNotifyEvent *ev);
-
-inline static void
-ev_shape_notify(session_t *ps, XShapeEvent *ev);
 
 /**
  * Get a region of the screen size.
@@ -1130,45 +681,6 @@ is_region_empty(const session_t *ps, XserverRegion region,
   return !nrects;
 }
 
-/**
- * Add a window to damaged area.
- *
- * @param ps current session
- * @param w struct _win element representing the window
- */
-static inline void
-add_damage_win(session_t *ps, win *w) {
-  if (w->extents) {
-    add_damage(ps, copy_region(ps, w->extents));
-  }
-}
-
-#if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
-static bool
-ev_window_name(session_t *ps, Window wid, char **name);
-#endif
-
-inline static void
-ev_handle(session_t *ps, XEvent *ev);
-
-static bool
-fork_after(session_t *ps);
-
-static void
-get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass);
-
-static void
-init_atoms(session_t *ps);
-
-static void
-update_refresh_rate(session_t *ps);
-
-static bool
-swopti_init(session_t *ps);
-
-static void
-swopti_handle_timeout(session_t *ps, struct timeval *ptv);
-
 #ifdef CONFIG_OPENGL
 /**
  * Ensure we have a GLX context.
@@ -1183,79 +695,10 @@ ensure_glx_context(session_t *ps) {
 }
 #endif
 
-static bool
-vsync_drm_init(session_t *ps);
-
-#ifdef CONFIG_VSYNC_DRM
-static int
-vsync_drm_wait(session_t *ps);
-#endif
-
-static bool
-vsync_opengl_init(session_t *ps);
-
-static bool
-vsync_opengl_oml_init(session_t *ps);
-
-static bool
-vsync_opengl_swc_init(session_t *ps);
-
-static bool
-vsync_opengl_mswc_init(session_t *ps);
-
-#ifdef CONFIG_OPENGL
-static int
-vsync_opengl_wait(session_t *ps);
-
-static int
-vsync_opengl_oml_wait(session_t *ps);
-
-static void
-vsync_opengl_swc_deinit(session_t *ps);
-
-static void
-vsync_opengl_mswc_deinit(session_t *ps);
-#endif
-
-static void
-vsync_wait(session_t *ps);
-
-static void
-init_alpha_picts(session_t *ps);
-
-static bool
-init_dbe(session_t *ps);
-
-static bool
-init_overlay(session_t *ps);
-
-static void
-redir_start(session_t *ps);
-
-static void
-redir_stop(session_t *ps);
-
 static inline time_ms_t
 timeout_get_newrun(const timeout_t *ptmout) {
   return ptmout->firstrun + (max_l((ptmout->lastrun + (time_ms_t) (ptmout->interval * TIMEOUT_RUN_TOLERANCE) - ptmout->firstrun) / ptmout->interval, (ptmout->lastrun + (time_ms_t) (ptmout->interval * (1 - TIMEOUT_RUN_TOLERANCE)) - ptmout->firstrun) / ptmout->interval) + 1) * ptmout->interval;
 }
-
-static time_ms_t
-timeout_get_poll_time(session_t *ps);
-
-static void
-timeout_clear(session_t *ps);
-
-static bool
-tmout_unredir_callback(session_t *ps, timeout_t *tmout);
-
-static bool
-mainloop(session_t *ps);
-
-#ifdef CONFIG_XINERAMA
-static void
-cxinerama_upd_scrs(session_t *ps);
-#endif
 
 /**
  * Get the Xinerama screen a window is on.
@@ -1276,20 +719,5 @@ cxinerama_win_upd_scr(session_t *ps, win *w) {
     }
 #endif
 }
-
-static void
-cxinerama_upd_scrs(session_t *ps);
-
-static session_t *
-session_init(session_t *ps_old, int argc, char **argv);
-
-static void
-session_destroy(session_t *ps);
-
-static void
-session_run(session_t *ps);
-
-static void
-reset_enable(int __attribute__((unused)) signum);
 
 // vim: set et sw=2 :
