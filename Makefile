@@ -136,13 +136,13 @@ src/.clang_complete: Makefile
 .deps:
 	mkdir -p $@
 
-%.o: src/%.c | .deps
-	$(eval DEP=$(addprefix .deps/,$(@:.o=.d)))
-	@set -e; rm -f $(DEP); \
+.deps/%.d: src/%.c | .deps
+	@set -e; rm -f $@; \
 	  $(CC) -M $(CPPFLAGS) $< > $@.$$$$; \
-	  sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $(DEP); \
+	  sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
 	  rm -f $@.$$$$
-	$(CC) $(CFG) $(CPPFLAGS) $(INCS) -c src/$*.c
+%.o: src/%.c
+	$(CC) $(CFG) $(CPPFLAGS) $(INCS) -c src/$*.c -o $@
 
 compton: $(OBJS)
 	$(CC) $(CFG) $(CPPFLAGS) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
@@ -189,4 +189,4 @@ version:
 	@echo "$(COMPTON_VERSION)"
 
 .PHONY: uninstall clean docs version
-include $(addprefix .deps/,$(sources:.c=.d))
+include $(addprefix .deps/,$(OBJS:.o=.d))
