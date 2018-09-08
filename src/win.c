@@ -185,7 +185,7 @@ int win_get_name(session_t *ps, win *w) {
   }
 
   int ret = 0;
-  if (strcmp(w->name, strlst[0]) != 0) {
+  if (!w->name || strcmp(w->name, strlst[0]) != 0) {
     ret = 1;
     free(w->name);
     w->name = mstrcpy(strlst[0]);
@@ -208,7 +208,7 @@ int win_get_role(session_t *ps, win *w) {
     return -1;
 
   int ret = 0;
-  if (strcmp(w->role, strlst[0]) != 0) {
+  if (!w->role || strcmp(w->role, strlst[0]) != 0) {
     ret = 1;
     free(w->role);
     w->role = mstrcpy(strlst[0]);
