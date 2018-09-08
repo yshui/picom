@@ -49,14 +49,8 @@ swopti_handle_timeout(session_t *ps, struct timeval *ptv);
 static void
 cxinerama_upd_scrs(session_t *ps);
 
-static session_t *
-session_init(session_t *ps_old, int argc, char **argv);
-
 static void
 session_destroy(session_t *ps);
-
-static void
-session_run(session_t *ps);
 
 static void
 reset_enable(int __attribute__((unused)) signum);
@@ -116,15 +110,6 @@ static void
 vsync_wait(session_t *ps);
 
 static void
-init_alpha_picts(session_t *ps);
-
-static bool
-init_dbe(session_t *ps);
-
-static bool
-init_overlay(session_t *ps);
-
-static void
 redir_start(session_t *ps);
 
 static void
@@ -170,12 +155,6 @@ get_root_tile(session_t *ps);
 
 static void
 paint_root(session_t *ps, XserverRegion reg_paint);
-
-static win *
-paint_preprocess(session_t *ps, win *list);
-
-static void
-paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t);
 
 static void
 add_damage(session_t *ps, XserverRegion damage);
