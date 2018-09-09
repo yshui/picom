@@ -2084,7 +2084,7 @@ add_damage(session_t *ps, XserverRegion damage) {
 }
 
 static void
-repair_win(session_t *ps, win *w) {
+repair_win(session_t *ps, win *w, XDamageNotifyEvent *de) {
   if (IsViewable != w->a.map_state)
     return;
 
@@ -2092,12 +2092,8 @@ repair_win(session_t *ps, win *w) {
 
   if (!w->damaged) {
     parts = win_extents(ps, w);
-    set_ignore_next(ps);
-    XDamageSubtract(ps->dpy, w->damage, None, None);
   } else {
-    parts = XFixesCreateRegion(ps->dpy, 0, 0);
-    set_ignore_next(ps);
-    XDamageSubtract(ps->dpy, w->damage, None, parts);
+    parts = XFixesCreateRegion(ps->dpy, (XRectangle[]){de->area}, 1);
     XFixesTranslateRegion(ps->dpy, parts,
       w->a.x + w->a.border_width,
       w->a.y + w->a.border_width);
@@ -2961,7 +2957,7 @@ add_win(session_t *ps, Window id, Window prev) {
 
        // Create Damage for window
        set_ignore_next(ps);
-       new->damage = XDamageCreate(ps->dpy, id, XDamageReportNonEmpty);
+       new->damage = XDamageCreate(ps->dpy, id, XDamageReportRawRectangles);
   }
 
   calc_win_size(ps, new);
@@ -3291,7 +3287,7 @@ damage_win(session_t *ps, XDamageNotifyEvent *de) {
 
   if (!w) return;
 
-  repair_win(ps, w);
+  repair_win(ps, w, de);
 }
 
 /**

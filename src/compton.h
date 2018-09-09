@@ -763,7 +763,7 @@ static void
 add_damage(session_t *ps, XserverRegion damage);
 
 static void
-repair_win(session_t *ps, win *w);
+repair_win(session_t *ps, win *w, XDamageNotifyEvent *de);
 
 static wintype_t
 wid_get_prop_wintype(session_t *ps, Window w);
