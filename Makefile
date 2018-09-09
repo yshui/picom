@@ -113,7 +113,7 @@ LDFLAGS ?= -Wl,-O1 -Wl,--as-needed
 BUILD_TYPE ?= "Debug"
 
 ifeq "$(BUILD_TYPE)" "Release"
-  CFLAGS ?= -DNDEBUG -O2 -D_FORTIFY_SOURCE=2
+  CFLAGS += -DNDEBUG -O2 -D_FORTIFY_SOURCE=2
 else ifeq "$(BUILD_TYPE)" "Debug"
   CFLAGS += -ggdb -Wshadow
 endif
