@@ -878,7 +878,7 @@ bool add_win(session_t *ps, Window id, Window prev) {
 
     // Create Damage for window
     set_ignore_next(ps);
-    new->damage = XDamageCreate(ps->dpy, id, XDamageReportNonEmpty);
+    new->damage = XDamageCreate(ps->dpy, id, XDamageReportRawRectangles);
   }
 
   calc_win_size(ps, new);

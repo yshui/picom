@@ -2089,7 +2089,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 }
 
 static void
-repair_win(session_t *ps, win *w) {
+repair_win(session_t *ps, win *w, XDamageNotifyEvent *de) {
   if (IsViewable != w->a.map_state)
     return;
 
@@ -2097,12 +2097,8 @@ repair_win(session_t *ps, win *w) {
 
   if (!w->ever_damaged) {
     parts = win_extents(ps, w);
-    set_ignore_next(ps);
-    XDamageSubtract(ps->dpy, w->damage, None, None);
   } else {
-    parts = XFixesCreateRegion(ps->dpy, 0, 0);
-    set_ignore_next(ps);
-    XDamageSubtract(ps->dpy, w->damage, None, parts);
+    parts = XFixesCreateRegion(ps->dpy, (XRectangle[]){de->area}, 1);
     XFixesTranslateRegion(ps->dpy, parts,
       w->a.x + w->a.border_width,
       w->a.y + w->a.border_width);
