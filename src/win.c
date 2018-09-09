@@ -754,7 +754,7 @@ bool add_win(session_t *ps, Window id, Window prev) {
 #endif
       .pictfmt = NULL,
       .mode = WMODE_TRANS,
-      .damaged = false,
+      .ever_damaged = false,
       .damage = None,
       .pixmap_damaged = false,
       .paint = PAINT_INIT,

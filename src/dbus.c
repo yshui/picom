@@ -697,7 +697,7 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 
   cdbus_m_win_get_do(mode, cdbus_reply_enum);
   cdbus_m_win_get_do(client_win, cdbus_reply_wid);
-  cdbus_m_win_get_do(damaged, cdbus_reply_bool);
+  cdbus_m_win_get_do(ever_damaged, cdbus_reply_bool);
   cdbus_m_win_get_do(destroyed, cdbus_reply_bool);
   cdbus_m_win_get_do(window_type, cdbus_reply_enum);
   cdbus_m_win_get_do(wmwin, cdbus_reply_bool);

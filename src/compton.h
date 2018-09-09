@@ -35,6 +35,8 @@
 // inline functions must be made static to compile correctly under clang:
 // http://clang.llvm.org/compatibility.html#inline
 
+void add_damage(session_t *ps, XserverRegion damage);
+
 long determine_evmask(session_t *ps, Window wid, win_evmode_t mode);
 
 Window
@@ -652,33 +654,6 @@ dump_region(const session_t *ps, XserverRegion region) {
   fflush(stdout);
 
   cxfree(rects);
-}
-
-/**
- * Check if a region is empty.
- *
- * Keith Packard said this is slow:
- * http://lists.freedesktop.org/archives/xorg/2007-November/030467.html
- *
- * @param ps current session
- * @param region region to check for
- * @param pcache_rects a place to cache the dumped rectangles
- * @param ncache_nrects a place to cache the number of dumped rectangles
- */
-static inline bool
-is_region_empty(const session_t *ps, XserverRegion region,
-    reg_data_t *pcache_reg) {
-  int nrects = 0;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
-
-  if (pcache_reg) {
-    pcache_reg->rects = rects;
-    pcache_reg->nrects = nrects;
-  }
-  else
-    cxfree(rects);
-
-  return !nrects;
 }
 
 #ifdef CONFIG_OPENGL

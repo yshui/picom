@@ -9,6 +9,7 @@
  */
 
 #include <ctype.h>
+#include <string.h>
 
 #include "compton.h"
 #include "win.h"
@@ -19,11 +20,6 @@ static bool
 xr_blur_dst(session_t *ps, Picture tgt_buffer,
     int x, int y, int wid, int hei, XFixed **blur_kerns,
     XserverRegion reg_clip);
-
-#if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
-static bool
-ev_window_name(session_t *ps, Window wid, char **name);
-#endif
 
 inline static void
 ev_handle(session_t *ps, XEvent *ev);
@@ -59,9 +55,6 @@ reset_enable(int __attribute__((unused)) signum);
 static void
 cxinerama_upd_scrs(session_t *ps);
 #endif
-
-static time_ms_t
-timeout_get_poll_time(session_t *ps);
 
 static void
 timeout_clear(session_t *ps);
@@ -157,12 +150,6 @@ static void
 paint_root(session_t *ps, XserverRegion reg_paint);
 
 static void
-add_damage(session_t *ps, XserverRegion damage);
-
-static void
-repair_win(session_t *ps, win *w);
-
-static void
 finish_map_win(session_t *ps, win *w);
 
 static void
@@ -195,25 +182,11 @@ destroy_callback(session_t *ps, win *w);
 static void
 destroy_win(session_t *ps, Window id);
 
-static void
-damage_win(session_t *ps, XDamageNotifyEvent *de);
-
 static int
 xerror(Display *dpy, XErrorEvent *ev);
 
 static void
 expose_root(session_t *ps, XRectangle *rects, int nrects);
-
-#ifdef DEBUG_EVENTS
-static int
-ev_serial(XEvent *ev);
-
-static const char *
-ev_name(session_t *ps, XEvent *ev);
-
-static Window
-ev_window(session_t *ps, XEvent *ev);
-#endif
 
 static void __attribute__ ((noreturn))
 usage(int ret);
@@ -253,15 +226,6 @@ ev_expose(session_t *ps, XExposeEvent *ev);
 
 static void
 update_ewmh_active_win(session_t *ps);
-
-inline static void
-ev_property_notify(session_t *ps, XPropertyEvent *ev);
-
-inline static void
-ev_damage_notify(session_t *ps, XDamageNotifyEvent *ev);
-
-inline static void
-ev_shape_notify(session_t *ps, XShapeEvent *ev);
 
 // === Global constants ===
 
@@ -345,6 +309,54 @@ static const char *background_props_str[] = {
 /// <code>error()</code> and <code>reset_enable()</code>, which could not
 /// have a pointer to current session passed in.
 session_t *ps_g = NULL;
+
+void add_damage(session_t *ps, XserverRegion damage) {
+  // Ignore damage when screen isn't redirected
+  if (!ps->redirected)
+    free_region(ps, &damage);
+
+  if (!damage) return;
+  if (ps->all_damage) {
+    XFixesUnionRegion(ps->dpy, ps->all_damage, ps->all_damage, damage);
+    XFixesDestroyRegion(ps->dpy, damage);
+  } else {
+    ps->all_damage = damage;
+  }
+}
+
+#define CPY_FDS(key) \
+  fd_set * key = NULL; \
+  if (ps->key) { \
+    key = malloc(sizeof(fd_set)); \
+    memcpy(key, ps->key, sizeof(fd_set)); \
+    if (!key) { \
+      fprintf(stderr, "Failed to allocate memory for copying select() fdset.\n"); \
+      exit(1); \
+    } \
+  } \
+
+/**
+ * Poll for changes.
+ *
+ * poll() is much better than select(), but ppoll() does not exist on
+ * *BSD.
+ */
+static inline int
+fds_poll(session_t *ps, struct timeval *ptv) {
+  // Copy fds
+  CPY_FDS(pfds_read);
+  CPY_FDS(pfds_write);
+  CPY_FDS(pfds_except);
+
+  int ret = select(ps->nfds_max, pfds_read, pfds_write, pfds_except, ptv);
+
+  free(pfds_read);
+  free(pfds_write);
+  free(pfds_except);
+
+  return ret;
+}
+#undef CPY_FDS
 
 // === Fading ===
 
@@ -812,7 +824,7 @@ solid_picture(session_t *ps, bool argb, double a,
 static void
 discard_ignore(session_t *ps, unsigned long sequence) {
   while (ps->ignore_head) {
-    if ((long) (sequence - ps->ignore_head->sequence) > 0) {
+    if (sequence > ps->ignore_head->sequence) {
       ignore_t *next = ps->ignore_head->next;
       free(ps->ignore_head);
       ps->ignore_head = next;
@@ -1121,7 +1133,7 @@ paint_preprocess(session_t *ps, win *list) {
     // Give up if it's not damaged or invisible, or it's unmapped and its
     // pixmap is gone (for example due to a ConfigureNotify), or when it's
     // excluded
-    if (!w->damaged
+    if (!w->ever_damaged
         || w->a.x + w->a.width < 1 || w->a.y + w->a.height < 1
         || w->a.x >= ps->root_width || w->a.y >= ps->root_height
         || ((IsUnmapped == w->a.map_state || w->destroyed) && !w->paint.pixmap)
@@ -1731,6 +1743,33 @@ rebuild_shadow_exclude_reg(session_t *ps) {
   ps->shadow_exclude_reg = rect_to_reg(ps, &rect);
 }
 
+/**
+ * Check if a region is empty.
+ *
+ * Keith Packard said this is slow:
+ * http://lists.freedesktop.org/archives/xorg/2007-November/030467.html
+ *
+ * @param ps current session
+ * @param region region to check for
+ * @param pcache_rects a place to cache the dumped rectangles
+ * @param ncache_nrects a place to cache the number of dumped rectangles
+ */
+static inline bool
+is_region_empty(const session_t *ps, XserverRegion region,
+    reg_data_t *pcache_reg) {
+  int nrects = 0;
+  XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
+
+  if (pcache_reg) {
+    pcache_reg->rects = rects;
+    pcache_reg->nrects = nrects;
+  }
+  else
+    cxfree(rects);
+
+  return !nrects;
+}
+
 static void
 paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t) {
   if (!region_real)
@@ -2056,7 +2095,7 @@ repair_win(session_t *ps, win *w) {
 
   XserverRegion parts;
 
-  if (!w->damaged) {
+  if (!w->ever_damaged) {
     parts = win_extents(ps, w);
     set_ignore_next(ps);
     XDamageSubtract(ps->dpy, w->damage, None, None);
@@ -2069,7 +2108,7 @@ repair_win(session_t *ps, win *w) {
       w->a.y + w->a.border_width);
   }
 
-  w->damaged = true;
+  w->ever_damaged = true;
   w->pixmap_damaged = true;
 
   // Why care about damage when screen is unredirected?
@@ -2173,7 +2212,7 @@ map_win(session_t *ps, Window id) {
 
   win_determine_blur_background(ps, w);
 
-  w->damaged = false;
+  w->ever_damaged = false;
 
   /* if any configure events happened while
      the window was unmapped, then configure
@@ -2200,7 +2239,7 @@ finish_map_win(session_t *ps, win *w) {
 
 static void
 finish_unmap_win(session_t *ps, win *w) {
-  w->damaged = false;
+  w->ever_damaged = false;
 
   w->in_openclose = false;
 
@@ -2555,21 +2594,6 @@ root_damaged(session_t *ps) {
   force_repaint(ps);
 }
 
-static void
-damage_win(session_t *ps, XDamageNotifyEvent *de) {
-  /*
-  if (ps->root == de->drawable) {
-    root_damaged();
-    return;
-  } */
-
-  win *w = find_win(ps, de->drawable);
-
-  if (!w) return;
-
-  repair_win(ps, w);
-}
-
 /**
  * Xlib error handler function.
  */
@@ -2785,8 +2809,7 @@ opts_set_no_fading_openclose(session_t *ps, bool newval) {
 //!@}
 #endif
 
-#ifdef DEBUG_EVENTS
-static int
+static inline int
 ev_serial(XEvent *ev) {
   if ((ev->type & 0x7f) != KeymapNotify) {
     return ev->xany.serial;
@@ -2794,7 +2817,7 @@ ev_serial(XEvent *ev) {
   return NextRequest(ev->xany.display);
 }
 
-static const char *
+static inline const char *
 ev_name(session_t *ps, XEvent *ev) {
   static char buf[128];
   switch (ev->type & 0x7f) {
@@ -2833,7 +2856,7 @@ ev_name(session_t *ps, XEvent *ev) {
   return buf;
 }
 
-static Window
+static inline Window
 ev_window(session_t *ps, XEvent *ev) {
   switch (ev->type) {
     case FocusIn:
@@ -2905,8 +2928,6 @@ ev_focus_report(XFocusChangeEvent* ev) {
   printf("  { mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
       ev_focus_detail_name(ev));
 }
-
-#endif
 
 // === Events ===
 
@@ -3197,8 +3218,18 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
 }
 
 inline static void
-ev_damage_notify(session_t *ps, XDamageNotifyEvent *ev) {
-  damage_win(ps, ev);
+ev_damage_notify(session_t *ps, XDamageNotifyEvent *de) {
+  /*
+  if (ps->root == de->drawable) {
+    root_damaged();
+    return;
+  } */
+
+  win *w = find_win(ps, de->drawable);
+
+  if (!w) return;
+
+  repair_win(ps, w, de);
 }
 
 inline static void
@@ -3257,14 +3288,11 @@ ev_selection_clear(session_t *ps,
   exit(1);
 }
 
-#if defined(DEBUG_EVENTS) || defined(DEBUG_RESTACK)
 /**
  * Get a window's name from window ID.
  */
-static bool
+static inline void
 ev_window_name(session_t *ps, Window wid, char **name) {
-  bool to_free = false;
-
   *name = "";
   if (wid) {
     *name = "(Failed to get title)";
@@ -3277,17 +3305,15 @@ ev_window_name(session_t *ps, Window wid, char **name) {
       if (!w)
         w = find_toplevel(ps, wid);
 
+      if (w)
+        win_get_name(ps, w);
       if (w && w->name)
         *name = w->name;
-      else if (!(w && w->client_win
-            && (to_free = wid_get_name(ps, w->client_win, name))))
-          to_free = wid_get_name(ps, wid, name);
+      else
+        *name = "unknown";
     }
   }
-
-  return to_free;
 }
-#endif
 
 static void
 ev_handle(session_t *ps, XEvent *ev) {
@@ -3299,20 +3325,12 @@ ev_handle(session_t *ps, XEvent *ev) {
   if (!isdamagenotify(ps, ev)) {
     Window wid = ev_window(ps, ev);
     char *window_name = NULL;
-    bool to_free = false;
-
-    to_free = ev_window_name(ps, wid, &window_name);
+    ev_window_name(ps, wid, &window_name);
 
     print_timestamp(ps);
-    printf("event %10.10s serial %#010x window %#010lx \"%s\"\n",
+    printf_errf(" event %10.10s serial %#010x window %#010lx \"%s\"\n",
       ev_name(ps, ev), ev_serial(ev), wid, window_name);
-
-    if (to_free) {
-      cxfree(window_name);
-      window_name = NULL;
-    }
   }
-
 #endif
 
   switch (ev->type) {

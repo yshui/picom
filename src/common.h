@@ -1050,7 +1050,7 @@ struct win {
   /// Window painting mode.
   winmode_t mode;
   /// Whether the window has been damaged at least once.
-  bool damaged;
+  bool ever_damaged;
 #ifdef CONFIG_XSYNC
   /// X Sync fence of drawable.
   XSyncFence fence;
@@ -1494,7 +1494,7 @@ print_timestamp(session_t *ps) {
   if (gettimeofday(&tm, NULL)) return;
 
   timeval_subtract(&diff, &tm, &ps->time_start);
-  printf("[ %5ld.%02ld ] ", diff.tv_sec, diff.tv_usec / 10000);
+  fprintf(stderr, "[ %5ld.%02ld ] ", diff.tv_sec, diff.tv_usec / 10000);
 }
 
 /**
@@ -1741,7 +1741,7 @@ timeout_reset(session_t *ps, timeout_t *ptmout);
 /**
  * Add a file descriptor to a select() fd_set.
  */
-static inline bool
+static inline void
 fds_insert_select(fd_set **ppfds, int fd) {
   assert(fd <= FD_SETSIZE);
 
@@ -1751,32 +1751,26 @@ fds_insert_select(fd_set **ppfds, int fd) {
     }
     else {
       fprintf(stderr, "Failed to allocate memory for select() fdset.\n");
-      exit(1);
+      abort();
     }
   }
 
   FD_SET(fd, *ppfds);
-
-  return true;
 }
 
 /**
  * Add a new file descriptor to wait for.
  */
-static inline bool
+static inline void
 fds_insert(session_t *ps, int fd, short events) {
-  bool result = true;
-
   ps->nfds_max = max_i(fd + 1, ps->nfds_max);
 
   if (POLLIN & events)
-    result = fds_insert_select(&ps->pfds_read, fd) && result;
+    fds_insert_select(&ps->pfds_read, fd);
   if (POLLOUT & events)
-    result = fds_insert_select(&ps->pfds_write, fd) && result;
+    fds_insert_select(&ps->pfds_write, fd);
   if (POLLPRI & events)
-    result = fds_insert_select(&ps->pfds_except, fd) && result;
-
-  return result;
+    fds_insert_select(&ps->pfds_except, fd);
 }
 
 /**
@@ -1792,40 +1786,6 @@ fds_drop(session_t *ps, int fd, short events) {
   if (POLLPRI & events && ps->pfds_except)
     FD_CLR(fd, ps->pfds_except);
 }
-
-#define CPY_FDS(key) \
-  fd_set * key = NULL; \
-  if (ps->key) { \
-    key = malloc(sizeof(fd_set)); \
-    memcpy(key, ps->key, sizeof(fd_set)); \
-    if (!key) { \
-      fprintf(stderr, "Failed to allocate memory for copying select() fdset.\n"); \
-      exit(1); \
-    } \
-  } \
-
-/**
- * Poll for changes.
- *
- * poll() is much better than select(), but ppoll() does not exist on
- * *BSD.
- */
-static inline int
-fds_poll(session_t *ps, struct timeval *ptv) {
-  // Copy fds
-  CPY_FDS(pfds_read);
-  CPY_FDS(pfds_write);
-  CPY_FDS(pfds_except);
-
-  int ret = select(ps->nfds_max, pfds_read, pfds_write, pfds_except, ptv);
-
-  free(pfds_read);
-  free(pfds_write);
-  free(pfds_except);
-
-  return ret;
-}
-#undef CPY_FDS
 
 /**
  * Wrapper of XFree() for convenience.
@@ -2037,21 +1997,6 @@ set_ignore(session_t *ps, unsigned long sequence) {
 static inline void
 set_ignore_next(session_t *ps) {
   set_ignore(ps, NextRequest(ps->dpy));
-}
-
-static inline void
-add_damage(session_t *ps, XserverRegion damage) {
-  // Ignore damage when screen isn't redirected
-  if (!ps->redirected)
-    free_region(ps, &damage);
-
-  if (!damage) return;
-  if (ps->all_damage) {
-    XFixesUnionRegion(ps->dpy, ps->all_damage, ps->all_damage, damage);
-    XFixesDestroyRegion(ps->dpy, damage);
-  } else {
-    ps->all_damage = damage;
-  }
 }
 
 /**
