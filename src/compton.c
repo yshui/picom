@@ -4464,6 +4464,8 @@ usage(int ret) {
 #define WARNING
   const static char *usage_text =
     "compton (" COMPTON_VERSION ")\n"
+    "This is the maintenance fork of compton, please report\n"
+    "bugs to https://github.com/yshui/compton\n\n"
     "usage: compton [options]\n"
     "Options:\n"
     "\n"
