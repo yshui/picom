@@ -2089,7 +2089,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 }
 
 static void
-repair_win(session_t *ps, win *w, XDamageNotifyEvent *de) {
+repair_win(session_t *ps, win *w) {
   if (IsViewable != w->a.map_state)
     return;
 
@@ -2097,8 +2097,12 @@ repair_win(session_t *ps, win *w, XDamageNotifyEvent *de) {
 
   if (!w->ever_damaged) {
     parts = win_extents(ps, w);
+    set_ignore_next(ps);
+    XDamageSubtract(ps->dpy, w->damage, None, None);
   } else {
-    parts = XFixesCreateRegion(ps->dpy, (XRectangle[]){de->area}, 1);
+    parts = XFixesCreateRegion(ps->dpy, 0, 0);
+    set_ignore_next(ps);
+    XDamageSubtract(ps->dpy, w->damage, None, parts);
     XFixesTranslateRegion(ps->dpy, parts,
       w->a.x + w->a.border_width,
       w->a.y + w->a.border_width);
@@ -3225,7 +3229,7 @@ ev_damage_notify(session_t *ps, XDamageNotifyEvent *de) {
 
   if (!w) return;
 
-  repair_win(ps, w, de);
+  repair_win(ps, w);
 }
 
 inline static void
@@ -5410,6 +5414,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     if (!ps->dpy) {
       printf_errfq(1, "(): Can't open display.");
     }
+    XSetEventQueueOwner(ps->dpy, XCBOwnsEventQueue);
   }
 
   XSetErrorHandler(xerror);
