@@ -78,6 +78,7 @@
 #include <ctype.h>
 #include <sys/time.h>
 
+#include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
@@ -1071,7 +1072,7 @@ struct win {
   /// when the window is unmapped.
   bool need_configure;
   /// Queued <code>ConfigureNotify</code> when the window is unmapped.
-  XConfigureEvent queue_configure;
+  xcb_configure_notify_event_t queue_configure;
   /// Region to be ignored when painting. Basically the region where
   /// higher opaque windows will paint upon. Depends on window frame
   /// opacity state, window geometry, window mapped/unmapped state,

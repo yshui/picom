@@ -10,19 +10,22 @@
 
 #include <ctype.h>
 #include <string.h>
+#include <xcb/shape.h>
+#include <xcb/randr.h>
+#include <xcb/damage.h>
 
 #include "compton.h"
 #include "win.h"
 #include "x.h"
 #include "config.h"
 
+static void
+configure_win(session_t *ps, xcb_configure_notify_event_t *ce);
+
 static bool
 xr_blur_dst(session_t *ps, Picture tgt_buffer,
     int x, int y, int wid, int hei, XFixed **blur_kerns,
     XserverRegion reg_clip);
-
-inline static void
-ev_handle(session_t *ps, XEvent *ev);
 
 static bool
 fork_after(session_t *ps);
@@ -168,12 +171,6 @@ static void
 restack_win(session_t *ps, win *w, Window new_above);
 
 static void
-configure_win(session_t *ps, XConfigureEvent *ce);
-
-static void
-circulate_win(session_t *ps, XCirculateEvent *ce);
-
-static void
 finish_destroy_win(session_t *ps, win *w);
 
 static void
@@ -193,36 +190,6 @@ usage(int ret);
 
 static bool
 register_cm(session_t *ps);
-
-inline static void
-ev_focus_in(session_t *ps, XFocusChangeEvent *ev);
-
-inline static void
-ev_focus_out(session_t *ps, XFocusChangeEvent *ev);
-
-inline static void
-ev_create_notify(session_t *ps, XCreateWindowEvent *ev);
-
-inline static void
-ev_configure_notify(session_t *ps, XConfigureEvent *ev);
-
-inline static void
-ev_destroy_notify(session_t *ps, XDestroyWindowEvent *ev);
-
-inline static void
-ev_map_notify(session_t *ps, XMapEvent *ev);
-
-inline static void
-ev_unmap_notify(session_t *ps, XUnmapEvent *ev);
-
-inline static void
-ev_reparent_notify(session_t *ps, XReparentEvent *ev);
-
-inline static void
-ev_circulate_notify(session_t *ps, XCirculateEvent *ev);
-
-inline static void
-ev_expose(session_t *ps, XExposeEvent *ev);
 
 static void
 update_ewmh_active_win(session_t *ps);
@@ -2377,7 +2344,7 @@ static bool
 init_filters(session_t *ps);
 
 static void
-configure_win(session_t *ps, XConfigureEvent *ce) {
+configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
   // On root window changes
   if (ce->window == ps->root) {
     free_paint(ps, &ps->tgt_buffer);
@@ -2425,10 +2392,10 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
     /* save the configure event for when the window maps */
     w->need_configure = true;
     w->queue_configure = *ce;
-    restack_win(ps, w, ce->above);
+    restack_win(ps, w, ce->above_sibling);
   } else {
     if (!(w->need_configure)) {
-      restack_win(ps, w, ce->above);
+      restack_win(ps, w, ce->above_sibling);
     }
 
     bool factor_change = false;
@@ -2492,7 +2459,7 @@ configure_win(session_t *ps, XConfigureEvent *ce) {
 }
 
 static void
-circulate_win(session_t *ps, XCirculateEvent *ce) {
+circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
   win *w = find_win(ps, ce->window);
   Window new_above;
 
@@ -2818,9 +2785,9 @@ ev_serial(XEvent *ev) {
 }
 
 static inline const char *
-ev_name(session_t *ps, XEvent *ev) {
+ev_name(session_t *ps, xcb_generic_event_t *ev) {
   static char buf[128];
-  switch (ev->type & 0x7f) {
+  switch (ev->response_type & 0x7f) {
     CASESTRRET(FocusIn);
     CASESTRRET(FocusOut);
     CASESTRRET(CreateNotify);
@@ -2835,15 +2802,15 @@ ev_name(session_t *ps, XEvent *ev) {
     CASESTRRET(ClientMessage);
   }
 
-  if (isdamagenotify(ps, ev))
+  if (ps->damage_event + XDamageNotify == ev->response_type)
     return "Damage";
 
-  if (ps->shape_exists && ev->type == ps->shape_event)
+  if (ps->shape_exists && ev->response_type == ps->shape_event)
     return "ShapeNotify";
 
 #ifdef CONFIG_XSYNC
   if (ps->xsync_exists) {
-    int o = ev->type - ps->xsync_event;
+    int o = ev->response_type - ps->xsync_event;
     switch (o) {
       CASESTRRET(XSyncCounterNotify);
       CASESTRRET(XSyncAlarmNotify);
@@ -2851,44 +2818,44 @@ ev_name(session_t *ps, XEvent *ev) {
   }
 #endif
 
-  sprintf(buf, "Event %d", ev->type);
+  sprintf(buf, "Event %d", ev->response_type);
 
   return buf;
 }
 
 static inline Window
-ev_window(session_t *ps, XEvent *ev) {
-  switch (ev->type) {
+ev_window(session_t *ps, xcb_generic_event_t *ev) {
+  switch (ev->response_type) {
     case FocusIn:
     case FocusOut:
-      return ev->xfocus.window;
+      return ((xcb_focus_in_event_t *)ev)->event;
     case CreateNotify:
-      return ev->xcreatewindow.window;
+      return ((xcb_create_notify_event_t *)ev)->window;
     case ConfigureNotify:
-      return ev->xconfigure.window;
+      return ((xcb_configure_notify_event_t *)ev)->window;
     case DestroyNotify:
-      return ev->xdestroywindow.window;
+      return ((xcb_destroy_notify_event_t *)ev)->window;
     case MapNotify:
-      return ev->xmap.window;
+      return ((xcb_map_notify_event_t *)ev)->window;
     case UnmapNotify:
-      return ev->xunmap.window;
+      return ((xcb_unmap_notify_event_t *)ev)->window;
     case ReparentNotify:
-      return ev->xreparent.window;
+      return ((xcb_reparent_notify_event_t *)ev)->window;
     case CirculateNotify:
-      return ev->xcirculate.window;
+      return ((xcb_circulate_notify_event_t *)ev)->window;
     case Expose:
-      return ev->xexpose.window;
+      return ((xcb_expose_event_t *)ev)->window;
     case PropertyNotify:
-      return ev->xproperty.window;
+      return ((xcb_property_notify_event_t *)ev)->window;
     case ClientMessage:
-      return ev->xclient.window;
+      return ((xcb_client_message_event_t *)ev)->window;
     default:
-      if (isdamagenotify(ps, ev)) {
-        return ((XDamageNotifyEvent *)ev)->drawable;
+      if (ps->damage_event + XDamageNotify == ev->response_type) {
+        return ((xcb_damage_notify_event_t *)ev)->drawable;
       }
 
-      if (ps->shape_exists && ev->type == ps->shape_event) {
-        return ((XShapeEvent *) ev)->window;
+      if (ps->shape_exists && ev->response_type == ps->shape_event) {
+        return ((xcb_shape_notify_event_t *) ev)->affected_window;
       }
 
       return 0;
@@ -2943,7 +2910,7 @@ ev_focus_accept(XFocusChangeEvent *ev) {
 */
 
 static inline void
-ev_focus_in(session_t *ps, XFocusChangeEvent *ev) {
+ev_focus_in(session_t *ps, xcb_focus_in_event_t *ev) {
 #ifdef DEBUG_EVENTS
   ev_focus_report(ev);
 #endif
@@ -2952,7 +2919,7 @@ ev_focus_in(session_t *ps, XFocusChangeEvent *ev) {
 }
 
 inline static void
-ev_focus_out(session_t *ps, XFocusChangeEvent *ev) {
+ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 #ifdef DEBUG_EVENTS
   ev_focus_report(ev);
 #endif
@@ -2961,13 +2928,13 @@ ev_focus_out(session_t *ps, XFocusChangeEvent *ev) {
 }
 
 inline static void
-ev_create_notify(session_t *ps, XCreateWindowEvent *ev) {
+ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
   assert(ev->parent == ps->root);
   add_win(ps, ev->window, 0);
 }
 
 inline static void
-ev_configure_notify(session_t *ps, XConfigureEvent *ev) {
+ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
 #ifdef DEBUG_EVENTS
   printf("  { send_event: %d, "
          " above: %#010lx, "
@@ -2978,17 +2945,17 @@ ev_configure_notify(session_t *ps, XConfigureEvent *ev) {
 }
 
 inline static void
-ev_destroy_notify(session_t *ps, XDestroyWindowEvent *ev) {
+ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
   destroy_win(ps, ev->window);
 }
 
 inline static void
-ev_map_notify(session_t *ps, XMapEvent *ev) {
+ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
   map_win(ps, ev->window);
 }
 
 inline static void
-ev_unmap_notify(session_t *ps, XUnmapEvent *ev) {
+ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
   win *w = find_win(ps, ev->window);
 
   if (w)
@@ -2996,7 +2963,7 @@ ev_unmap_notify(session_t *ps, XUnmapEvent *ev) {
 }
 
 inline static void
-ev_reparent_notify(session_t *ps, XReparentEvent *ev) {
+ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
 #ifdef DEBUG_EVENTS
   printf_dbg("  { new_parent: %#010lx, override_redirect: %d }\n",
       ev->parent, ev->override_redirect);
@@ -3038,12 +3005,12 @@ ev_reparent_notify(session_t *ps, XReparentEvent *ev) {
 }
 
 inline static void
-ev_circulate_notify(session_t *ps, XCirculateEvent *ev) {
+ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {
   circulate_win(ps, ev);
 }
 
 inline static void
-ev_expose(session_t *ps, XExposeEvent *ev) {
+ev_expose(session_t *ps, xcb_expose_event_t *ev) {
   if (ev->window == ps->root || (ps->overlay && ev->window == ps->overlay)) {
     int more = ev->count + 1;
     if (ps->n_expose == ps->size_expose) {
@@ -3087,7 +3054,7 @@ update_ewmh_active_win(session_t *ps) {
 }
 
 inline static void
-ev_property_notify(session_t *ps, XPropertyEvent *ev) {
+ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
 #ifdef DEBUG_EVENTS
   {
     // Print out changed atom
@@ -3218,7 +3185,7 @@ ev_property_notify(session_t *ps, XPropertyEvent *ev) {
 }
 
 inline static void
-ev_damage_notify(session_t *ps, XDamageNotifyEvent *de) {
+ev_damage_notify(session_t *ps, xcb_damage_notify_event_t *de) {
   /*
   if (ps->root == de->drawable) {
     root_damaged();
@@ -3233,8 +3200,8 @@ ev_damage_notify(session_t *ps, XDamageNotifyEvent *de) {
 }
 
 inline static void
-ev_shape_notify(session_t *ps, XShapeEvent *ev) {
-  win *w = find_win(ps, ev->window);
+ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) {
+  win *w = find_win(ps, ev->affected_window);
   if (!w || IsUnmapped == w->a.map_state) return;
 
   /*
@@ -3264,7 +3231,7 @@ ev_shape_notify(session_t *ps, XShapeEvent *ev) {
  */
 static void
 ev_screen_change_notify(session_t *ps,
-    XRRScreenChangeNotifyEvent __attribute__((unused)) *ev) {
+    xcb_randr_screen_change_notify_event_t __attribute__((unused)) *ev) {
   if (ps->o.xinerama_shadow_crop)
     cxinerama_upd_scrs(ps);
 
@@ -3280,7 +3247,7 @@ ev_screen_change_notify(session_t *ps,
 
 inline static void
 ev_selection_clear(session_t *ps,
-    XSelectionClearEvent __attribute__((unused)) *ev) {
+    xcb_selection_clear_event_t __attribute__((unused)) *ev) {
   // The only selection we own is the _NET_WM_CM_Sn selection.
   // If we lose that one, we should exit.
   fprintf(stderr, "Another composite manager started and "
@@ -3316,9 +3283,9 @@ ev_window_name(session_t *ps, Window wid, char **name) {
 }
 
 static void
-ev_handle(session_t *ps, XEvent *ev) {
-  if ((ev->type & 0x7f) != KeymapNotify) {
-    discard_ignore(ps, ev->xany.serial);
+ev_handle(session_t *ps, xcb_generic_event_t *ev) {
+  if ((ev->response_type & 0x7f) != KeymapNotify) {
+    discard_ignore(ps, ev->full_sequence);
   }
 
 #ifdef DEBUG_EVENTS
@@ -3333,54 +3300,54 @@ ev_handle(session_t *ps, XEvent *ev) {
   }
 #endif
 
-  switch (ev->type) {
+  switch (ev->response_type) {
     case FocusIn:
-      ev_focus_in(ps, (XFocusChangeEvent *)ev);
+      ev_focus_in(ps, (xcb_focus_in_event_t *)ev);
       break;
     case FocusOut:
-      ev_focus_out(ps, (XFocusChangeEvent *)ev);
+      ev_focus_out(ps, (xcb_focus_out_event_t *)ev);
       break;
     case CreateNotify:
-      ev_create_notify(ps, (XCreateWindowEvent *)ev);
+      ev_create_notify(ps, (xcb_create_notify_event_t *)ev);
       break;
     case ConfigureNotify:
-      ev_configure_notify(ps, (XConfigureEvent *)ev);
+      ev_configure_notify(ps, (xcb_configure_notify_event_t *)ev);
       break;
     case DestroyNotify:
-      ev_destroy_notify(ps, (XDestroyWindowEvent *)ev);
+      ev_destroy_notify(ps, (xcb_destroy_notify_event_t *)ev);
       break;
     case MapNotify:
-      ev_map_notify(ps, (XMapEvent *)ev);
+      ev_map_notify(ps, (xcb_map_notify_event_t *)ev);
       break;
     case UnmapNotify:
-      ev_unmap_notify(ps, (XUnmapEvent *)ev);
+      ev_unmap_notify(ps, (xcb_unmap_notify_event_t *)ev);
       break;
     case ReparentNotify:
-      ev_reparent_notify(ps, (XReparentEvent *)ev);
+      ev_reparent_notify(ps, (xcb_reparent_notify_event_t *)ev);
       break;
     case CirculateNotify:
-      ev_circulate_notify(ps, (XCirculateEvent *)ev);
+      ev_circulate_notify(ps, (xcb_circulate_notify_event_t *)ev);
       break;
     case Expose:
-      ev_expose(ps, (XExposeEvent *)ev);
+      ev_expose(ps, (xcb_expose_event_t *)ev);
       break;
     case PropertyNotify:
-      ev_property_notify(ps, (XPropertyEvent *)ev);
+      ev_property_notify(ps, (xcb_property_notify_event_t *)ev);
       break;
     case SelectionClear:
-      ev_selection_clear(ps, (XSelectionClearEvent *)ev);
+      ev_selection_clear(ps, (xcb_selection_clear_event_t *)ev);
       break;
     default:
-      if (ps->shape_exists && ev->type == ps->shape_event) {
-        ev_shape_notify(ps, (XShapeEvent *) ev);
+      if (ps->shape_exists && ev->response_type == ps->shape_event) {
+        ev_shape_notify(ps, (xcb_shape_notify_event_t *) ev);
         break;
       }
-      if (ps->randr_exists && ev->type == (ps->randr_event + RRScreenChangeNotify)) {
-        ev_screen_change_notify(ps, (XRRScreenChangeNotifyEvent *) ev);
+      if (ps->randr_exists && ev->response_type == (ps->randr_event + RRScreenChangeNotify)) {
+        ev_screen_change_notify(ps, (xcb_randr_screen_change_notify_event_t *) ev);
         break;
       }
-      if (isdamagenotify(ps, ev)) {
-        ev_damage_notify(ps, (XDamageNotifyEvent *) ev);
+      if (ps->damage_event + XDamageNotify == ev->response_type) {
+        ev_damage_notify(ps, (xcb_damage_notify_event_t *) ev);
         break;
       }
   }
@@ -5092,12 +5059,12 @@ mainloop(session_t *ps) {
   // Sometimes poll() returns 1 but no events are actually read,
   // causing XNextEvent() to block, I have no idea what's wrong, so we
   // check for the number of events here.
-  if (XEventsQueued(ps->dpy, QueuedAfterReading)) {
-    XEvent ev = { };
-
-    XNextEvent(ps->dpy, &ev);
-    ev_handle(ps, &ev);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_generic_event_t *ev = xcb_poll_for_event(c);
+  if (ev) {
+    ev_handle(ps, ev);
     ps->ev_received = true;
+    free(ev);
 
     return true;
   }

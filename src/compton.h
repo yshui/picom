@@ -333,14 +333,6 @@ ms_to_tv(int timeout) {
 }
 
 /**
- * Whether an event is DamageNotify.
- */
-static inline bool
-isdamagenotify(session_t *ps, const XEvent *ev) {
-  return ps->damage_event + XDamageNotify == ev->type;
-}
-
-/**
  * Create a XTextProperty of a single string.
  */
 static inline XTextProperty *
