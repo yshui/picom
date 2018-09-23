@@ -1808,7 +1808,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 
       // Clear the shadow here instead of in make_shadow() for saving GPU
       // power and handling shaped windows
-      if (ps->o.clear_shadow && w->border_size)
+      if (w->mode != WMODE_SOLID && w->border_size)
         XFixesSubtractRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
 
 #ifdef CONFIG_XINERAMA
@@ -4037,7 +4037,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 'e':
         ps->o.frame_opacity = atof(optarg);
         break;
-      P_CASEBOOL('z', clear_shadow);
+      case 'z':
+        printf_errf("(): clear-shadow is removed, shadows are automatically cleared now.");
+        break;
       case 'n':
       case 'a':
       case 's':
@@ -5159,7 +5161,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .shadow_offset_x = -15,
       .shadow_offset_y = -15,
       .shadow_opacity = .75,
-      .clear_shadow = false,
       .shadow_blacklist = NULL,
       .shadow_ignore_shaped = false,
       .respect_prop_shadow = false,

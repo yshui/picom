@@ -59,9 +59,6 @@ OPTIONS
 *-C*, *--no-dock-shadow*::
 	Avoid drawing shadows on dock/panel windows.
 
-*-z*, *--clear-shadow*::
-	Zero the part of the shadow's mask behind the window. Note this may not work properly on ARGB windows with fully transparent areas.
-
 *-f*, *--fading*::
 	Fade windows in/out when opening/closing and when opacity changes, unless *--no-fading-openclose* is used.
 

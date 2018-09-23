@@ -625,7 +625,6 @@ typedef struct _options_t {
   int shadow_radius;
   int shadow_offset_x, shadow_offset_y;
   double shadow_opacity;
-  bool clear_shadow;
   /// Geometry of a region in which shadow is not painted on.
   geometry_t shadow_exclude_reg_geom;
   /// Shadow blacklist. A linked list of conditions.

@@ -888,6 +888,12 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
     return true; \
   }
 
+#define cdbus_m_opts_get_stub(tgt, apdarg_func, ret) \
+  if (!strcmp(MSTR(tgt), target)) { \
+    apdarg_func(ps, msg, ret); \
+    return true; \
+  }
+
   // version
   if (!strcmp("version", target)) {
     cdbus_reply_string(ps, msg, COMPTON_VERSION);
@@ -948,7 +954,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_opts_get_do(shadow_offset_x, cdbus_reply_int32);
   cdbus_m_opts_get_do(shadow_offset_y, cdbus_reply_int32);
   cdbus_m_opts_get_do(shadow_opacity, cdbus_reply_double);
-  cdbus_m_opts_get_do(clear_shadow, cdbus_reply_bool);
+  cdbus_m_opts_get_stub(clear_shadow, cdbus_reply_bool, true);
   cdbus_m_opts_get_do(xinerama_shadow_crop, cdbus_reply_bool);
 
   cdbus_m_opts_get_do(fade_delta, cdbus_reply_int32);
@@ -1054,16 +1060,8 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
   }
 
   // clear_shadow
-  if (!strcmp("clear_shadow", target)) {
-    dbus_bool_t val = FALSE;
-    if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_BOOLEAN, &val))
-      return false;
-    if (ps->o.clear_shadow != val) {
-      ps->o.clear_shadow = val;
-      force_repaint(ps);
-    }
+  if (!strcmp("clear_shadow", target))
     goto cdbus_process_opts_set_success;
-  }
 
   // track_focus
   if (!strcmp("track_focus", target)) {

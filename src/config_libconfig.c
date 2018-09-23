@@ -245,8 +245,6 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
     ps->o.active_opacity = normalize_d(dval) * OPAQUE;
   // -e (frame_opacity)
   config_lookup_float(&cfg, "frame-opacity", &ps->o.frame_opacity);
-  // -z (clear_shadow)
-  lcfg_lookup_bool(&cfg, "clear-shadow", &ps->o.clear_shadow);
   // -c (shadow_enable)
   if (config_lookup_bool(&cfg, "shadow", &ival) && ival)
     wintype_arr_enable(ps->o.wintype_shadow);
