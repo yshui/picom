@@ -1,4 +1,5 @@
 #include <X11/Xlib.h>
+#include <xcb/xcb_renderutil.h>
 
 #include "common.h"
 #include "x.h"
@@ -92,4 +93,113 @@ bool wid_get_text_prop(session_t *ps, Window wid, Atom prop,
 
   cxfree(text_prop.value);
   return true;
+}
+
+static inline void x_get_server_pictfmts(session_t *ps) {
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_generic_error_t *e = NULL;
+    // Get window picture format
+    ps->pictfmts =
+      xcb_render_query_pict_formats_reply(c,
+          xcb_render_query_pict_formats(c), &e);
+    if (e || !ps->pictfmts) {
+      printf_errf("(): failed to get pict formats\n");
+      abort();
+    }
+}
+
+xcb_render_pictforminfo_t *x_get_pictform_for_visual(session_t *ps, xcb_visualid_t visual) {
+  if (!ps->pictfmts)
+    x_get_server_pictfmts(ps);
+
+  xcb_render_pictvisual_t *pv = xcb_render_util_find_visual_format(ps->pictfmts, visual);
+  for(xcb_render_pictforminfo_iterator_t i =
+      xcb_render_query_pict_formats_formats_iterator(ps->pictfmts); i.rem;
+      xcb_render_pictforminfo_next(&i)) {
+    if (i.data->id == pv->format)
+      return i.data;
+  }
+  return NULL;
+}
+
+xcb_render_picture_t
+x_create_picture_with_pictfmt_and_pixmap(
+  session_t *ps, xcb_render_pictforminfo_t * pictfmt,
+  xcb_pixmap_t pixmap, unsigned long valuemask,
+  const xcb_render_create_picture_value_list_t *attr)
+{
+  void *buf = NULL;
+  if (attr) {
+    xcb_render_create_picture_value_list_serialize(&buf, valuemask, attr);
+    if (!buf) {
+      printf_errf("(): failed to serialize picture attributes");
+      return None;
+    }
+  }
+
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_render_picture_t tmp_picture = xcb_generate_id(c);
+  xcb_generic_error_t *e =
+    xcb_request_check(c, xcb_render_create_picture_checked(c, tmp_picture,
+      pixmap, pictfmt->id, valuemask, buf));
+  free(buf);
+  if (e) {
+    printf_errf("(): failed to create picture");
+    return None;
+  }
+  return tmp_picture;
+}
+
+xcb_render_picture_t
+x_create_picture_with_visual_and_pixmap(
+  session_t *ps, xcb_visualid_t visual,
+  xcb_pixmap_t pixmap, unsigned long valuemask,
+  const xcb_render_create_picture_value_list_t *attr)
+{
+  xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps, visual);
+  return x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, pixmap, valuemask, attr);
+}
+
+xcb_render_picture_t
+x_create_picture_with_standard_and_pixmap(
+  session_t *ps, xcb_pict_standard_t standard,
+  xcb_pixmap_t pixmap, unsigned long valuemask,
+  const xcb_render_create_picture_value_list_t *attr)
+{
+  if (!ps->pictfmts)
+    x_get_server_pictfmts(ps);
+
+  xcb_render_pictforminfo_t *pictfmt =
+    xcb_render_util_find_standard_format(ps->pictfmts, standard);
+  assert(pictfmt);
+  return x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, pixmap, valuemask, attr);
+}
+
+/**
+ * Create an picture.
+ */
+xcb_render_picture_t
+x_create_picture(session_t *ps, int wid, int hei,
+  xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
+  const xcb_render_create_picture_value_list_t *attr)
+{
+  if (!pictfmt)
+    pictfmt = x_get_pictform_for_visual(ps, ps->vis);
+
+  if (!pictfmt) {
+    printf_errf("(): default visual is invalid");
+    abort();
+  }
+
+  int depth = pictfmt->depth;
+
+  Pixmap tmp_pixmap = XCreatePixmap(ps->dpy, ps->root, wid, hei, depth);
+  if (!tmp_pixmap)
+    return None;
+
+  xcb_render_picture_t picture =
+    x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, tmp_pixmap, valuemask, attr);
+  free_pixmap(ps, &tmp_pixmap);
+
+  return picture;
 }

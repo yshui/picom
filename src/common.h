@@ -96,6 +96,8 @@
 #include <X11/extensions/Xinerama.h>
 #endif
 
+#include <xcb/render.h>
+
 // Workarounds for missing definitions in very old versions of X headers,
 // thanks to consolers for reporting
 #ifndef PictOpDifference
@@ -787,7 +789,9 @@ typedef struct session {
   /// Default screen.
   int scr;
   /// Default visual.
-  Visual *vis;
+  xcb_visualid_t vis;
+  /// Pict formats info
+  xcb_render_query_pict_formats_reply_t *pictfmts;
   /// Default depth.
   int depth;
   /// Root window.
@@ -1041,13 +1045,14 @@ struct win {
   /// ID of the top-level frame window.
   Window id;
   /// Window attributes.
-  XWindowAttributes a;
+  xcb_get_window_attributes_reply_t a;
+  xcb_get_geometry_reply_t g;
 #ifdef CONFIG_XINERAMA
   /// Xinerama screen this window is on.
   int xinerama_scr;
 #endif
   /// Window visual pict format;
-  XRenderPictFormat *pictfmt;
+  xcb_render_pictforminfo_t *pictfmt;
   /// Window painting mode.
   winmode_t mode;
   /// Whether the window has been damaged at least once.
@@ -1852,16 +1857,6 @@ find_toplevel(session_t *ps, Window id) {
   return NULL;
 }
 
-
-/**
- * Check if current backend uses XRender for rendering.
- */
-static inline bool
-bkend_use_xrender(session_t *ps) {
-  return BKEND_XRENDER == ps->o.backend
-    || BKEND_XR_GLX_HYBRID == ps->o.backend;
-}
-
 /**
  * Check if current backend uses GLX.
  */
@@ -2007,7 +2002,7 @@ set_ignore_next(session_t *ps) {
  */
 static inline bool
 win_is_fullscreen(session_t *ps, const win *w) {
-  return rect_is_fullscreen(ps, w->a.x, w->a.y, w->widthb, w->heightb)
+  return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb)
       && (!w->bounding_shaped || w->rounded_corners);
 }
 
@@ -2513,5 +2508,16 @@ wintype_arr_enable(bool arr[]) {
 
   for (i = 0; i < NUM_WINTYPES; ++i) {
     arr[i] = true;
+  }
+}
+
+/**
+ * Destroy a <code>Pixmap</code>.
+ */
+static inline void
+free_pixmap(session_t *ps, Pixmap *p) {
+  if (*p) {
+    XFreePixmap(ps->dpy, *p);
+    *p = None;
   }
 }

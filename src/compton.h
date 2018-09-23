@@ -154,17 +154,6 @@ free_picture(session_t *ps, Picture *p) {
 }
 
 /**
- * Destroy a <code>Pixmap</code>.
- */
-inline static void
-free_pixmap(session_t *ps, Pixmap *p) {
-  if (*p) {
-    XFreePixmap(ps->dpy, *p);
-    *p = None;
-  }
-}
-
-/**
  * Destroy a <code>Damage</code>.
  */
 inline static void
@@ -201,27 +190,6 @@ free_xinerama_info(session_t *ps) {
   ps->xinerama_scrs = NULL;
   ps->xinerama_nscrs = 0;
 #endif
-}
-
-/**
- * Check whether a paint_t contains enough data.
- */
-static inline bool
-paint_isvalid(session_t *ps, const paint_t *ppaint) {
-  // Don't check for presence of Pixmap here, because older X Composite doesn't
-  // provide it
-  if (!ppaint)
-    return false;
-
-  if (bkend_use_xrender(ps) && !ppaint->pict)
-    return false;
-
-#ifdef CONFIG_OPENGL
-  if (BKEND_GLX == ps->o.backend && !glx_tex_binded(ppaint->ptex, None))
-    return false;
-#endif
-
-  return true;
 }
 
 /**
@@ -435,7 +403,7 @@ update_reg_ignore_expire(session_t *ps, const win *w) {
  */
 static inline bool __attribute__((pure))
 win_has_frame(const win *w) {
-  return w->a.border_width
+  return w->g.border_width
     || w->frame_extents.top || w->frame_extents.left
     || w->frame_extents.right || w->frame_extents.bottom;
 }
@@ -447,10 +415,10 @@ win_has_frame(const win *w) {
 static inline margin_t __attribute__((pure))
 win_calc_frame_extents(session_t *ps, const win *w) {
   margin_t result = w->frame_extents;
-  result.top = max_i(result.top, w->a.border_width);
-  result.left = max_i(result.left, w->a.border_width);
-  result.bottom = max_i(result.bottom, w->a.border_width);
-  result.right = max_i(result.right, w->a.border_width);
+  result.top = max_i(result.top, w->g.border_width);
+  result.left = max_i(result.left, w->g.border_width);
+  result.bottom = max_i(result.bottom, w->g.border_width);
+  result.right = max_i(result.right, w->g.border_width);
   return result;
 }
 
@@ -527,8 +495,8 @@ static inline void
 win_render(session_t *ps, win *w, int x, int y, int wid, int hei,
     double opacity, XserverRegion reg_paint, const reg_data_t *pcache_reg,
     Picture pict) {
-  const int dx = (w ? w->a.x: 0) + x;
-  const int dy = (w ? w->a.y: 0) + y;
+  const int dx = (w ? w->g.x: 0) + x;
+  const int dy = (w ? w->g.y: 0) + y;
   const bool argb = (w && (WMODE_ARGB == w->mode || ps->o.force_win_blend));
   const bool neg = (w && w->invert_color);
 
@@ -678,9 +646,9 @@ cxinerama_win_upd_scr(session_t *ps, win *w) {
   w->xinerama_scr = -1;
   for (XineramaScreenInfo *s = ps->xinerama_scrs;
       s < ps->xinerama_scrs + ps->xinerama_nscrs; ++s)
-    if (s->x_org <= w->a.x && s->y_org <= w->a.y
-        && s->x_org + s->width >= w->a.x + w->widthb
-        && s->y_org + s->height >= w->a.y + w->heightb) {
+    if (s->x_org <= w->g.x && s->y_org <= w->g.y
+        && s->x_org + s->width >= w->g.x + w->widthb
+        && s->y_org + s->height >= w->g.y + w->heightb) {
       w->xinerama_scr = s - ps->xinerama_scrs;
       return;
     }

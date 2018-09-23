@@ -1,5 +1,8 @@
 #include <X11/Xlib.h>
 #include <X11/extensions/Xfixes.h>
+#include <xcb/render.h>
+#include <xcb/damage.h>
+#include <xcb/xcb_renderutil.h>
 #include <stdbool.h>
 #include <math.h>
 
@@ -76,8 +79,8 @@ XserverRegion
 win_get_region(session_t *ps, win *w, bool use_offset) {
   XRectangle r;
 
-  r.x = (use_offset ? w->a.x: 0);
-  r.y = (use_offset ? w->a.y: 0);
+  r.x = (use_offset ? w->g.x: 0);
+  r.y = (use_offset ? w->g.y: 0);
   r.width = w->widthb;
   r.height = w->heightb;
 
@@ -93,10 +96,10 @@ win_get_region_noframe(session_t *ps, win *w, bool use_offset) {
   const margin_t extents = win_calc_frame_extents(ps, w);
   XRectangle r;
 
-  r.x = (use_offset ? w->a.x: 0) + extents.left;
-  r.y = (use_offset ? w->a.y: 0) + extents.top;
-  r.width = max_i(w->a.width - extents.left - extents.right, 0);
-  r.height = max_i(w->a.height - extents.top - extents.bottom, 0);
+  r.x = (use_offset ? w->g.x: 0) + extents.left;
+  r.y = (use_offset ? w->g.y: 0) + extents.top;
+  r.width = max_i(w->g.width - extents.left - extents.right, 0);
+  r.height = max_i(w->g.height - extents.top - extents.bottom, 0);
 
   if (r.width > 0 && r.height > 0)
     return XFixesCreateRegion(ps->dpy, &r, 1);
@@ -280,7 +283,7 @@ void win_determine_mode(session_t *ps, win *w) {
   winmode_t mode = WMODE_SOLID;
 
   if (w->pictfmt && w->pictfmt->type == PictTypeDirect &&
-      w->pictfmt->direct.alphaMask) {
+      w->pictfmt->direct.alpha_mask) {
     mode = WMODE_ARGB;
   } else if (w->opacity != OPAQUE) {
     mode = WMODE_TRANS;
@@ -602,8 +605,8 @@ void win_on_factor_change(session_t *ps, win *w) {
  * Update cache data in struct _win that depends on window size.
  */
 void calc_win_size(session_t *ps, win *w) {
-  w->widthb = w->a.width + w->a.border_width * 2;
-  w->heightb = w->a.height + w->a.border_width * 2;
+  w->widthb = w->g.width + w->g.border_width * 2;
+  w->heightb = w->g.height + w->g.border_width * 2;
   calc_shadow_geometry(ps, w);
   w->flags |= WFLAG_SIZE_CHANGE;
 }
@@ -857,28 +860,48 @@ bool add_win(session_t *ps, Window id, Window prev) {
   // Fill structure
   new->id = id;
 
-  set_ignore_next(ps);
-  if (!XGetWindowAttributes(ps->dpy, id, &new->a) ||
-      IsUnviewable == new->a.map_state) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_get_window_attributes_cookie_t acookie = xcb_get_window_attributes(c, id);
+  xcb_get_geometry_cookie_t gcookie = xcb_get_geometry(c, id);
+  xcb_get_window_attributes_reply_t *a = xcb_get_window_attributes_reply(c, acookie, NULL);
+  xcb_get_geometry_reply_t *g = xcb_get_geometry_reply(c, gcookie, NULL);
+  if (!a || IsUnviewable == a->map_state) {
     // Failed to get window attributes probably means the window is gone
     // already. IsUnviewable means the window is already reparented
     // elsewhere.
+    free(a);
+    free(g);
     free(new);
     return false;
   }
+
+  new->a = *a;
+  free(a);
+
+  if (!g) {
+    free(new);
+    return false;
+  }
+
+  new->g = *g;
+  free(g);
 
   // Delay window mapping
   int map_state = new->a.map_state;
   assert(IsViewable == map_state || IsUnmapped == map_state);
   new->a.map_state = IsUnmapped;
 
-  if (InputOutput == new->a.class) {
-    // Get window picture format
-    new->pictfmt = XRenderFindVisualFormat(ps->dpy, new->a.visual);
-
+  if (InputOutput == new->a._class) {
     // Create Damage for window
-    set_ignore_next(ps);
-    new->damage = XDamageCreate(ps->dpy, id, XDamageReportNonEmpty);
+    new->damage = xcb_generate_id(c);
+    xcb_generic_error_t *e = xcb_request_check(c,
+      xcb_damage_create_checked(c, new->damage, id, XDamageReportNonEmpty));
+    if (e) {
+      free(e);
+      free(new);
+      return false;
+    }
+    new->pictfmt = x_get_pictform_for_visual(ps, new->a.visual);
   }
 
   calc_win_size(ps, new);
@@ -1133,16 +1156,16 @@ win_set_focused(session_t *ps, win *w, bool focused) {
 XserverRegion win_extents(session_t *ps, win *w) {
   XRectangle r;
 
-  r.x = w->a.x;
-  r.y = w->a.y;
+  r.x = w->g.x;
+  r.y = w->g.y;
   r.width = w->widthb;
   r.height = w->heightb;
 
   if (w->shadow) {
     XRectangle sr;
 
-    sr.x = w->a.x + w->shadow_dx;
-    sr.y = w->a.y + w->shadow_dy;
+    sr.x = w->g.x + w->shadow_dx;
+    sr.y = w->g.y + w->shadow_dy;
     sr.width = w->shadow_width;
     sr.height = w->shadow_height;
 
@@ -1195,8 +1218,8 @@ win_border_size(session_t *ps, win *w, bool use_offset) {
     if (use_offset) {
       // Translate the region to the correct place
       XFixesTranslateRegion(ps->dpy, border,
-        w->a.x + w->a.border_width,
-        w->a.y + w->a.border_width);
+        w->g.x + w->g.border_width,
+        w->g.y + w->g.border_width);
     }
 
     // Intersect the bounding region we got with the window rectangle, to

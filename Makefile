@@ -9,14 +9,14 @@ MANDIR ?= $(PREFIX)/share/man/man1
 APPDIR ?= $(PREFIX)/share/applications
 ICODIR ?= $(PREFIX)/share/icons/hicolor/
 
-PACKAGES = x11 x11-xcb xcomposite xfixes xdamage xrender xext xrandr
+PACKAGES = x11 x11-xcb xcb-renderutil xcb-render xcb-damage xcb-image xcomposite xfixes xdamage xrender xext xrandr
 LIBS = -lm -lrt
 INCS =
 
 OBJS = compton.o config.o win.o x.o
 
 # === Configuration flags ===
-CFG = -std=c11 -D_GNU_SOURCE -Wall -Wextra -Wno-unused-parameter
+CFG = -std=c11 -D_GNU_SOURCE -Wall -Wextra -Wno-unused-parameter -Wnonnull
 
 ifeq "$(CC)" "clang"
   CFG += -Wconditional-uninitialized

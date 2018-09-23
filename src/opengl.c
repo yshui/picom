@@ -10,6 +10,14 @@
 
 #include "opengl.h"
 
+static inline XVisualInfo *
+get_visualinfo_from_visual(session_t *ps, xcb_visualid_t visual) {
+  XVisualInfo vreq = { .visualid = visual };
+  int nitems = 0;
+
+  return XGetVisualInfo(ps->dpy, VisualIDMask, &vreq, &nitems);
+}
+
 #ifdef CONFIG_GLX_SYNC
 void
 xr_glx_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
@@ -1618,84 +1626,6 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
   glx_check_err(ps);
 
   return true;
-}
-
-/**
- * Render a region with color.
- *
- * Unused but can be useful for debugging
- */
-static void __attribute__((unused))
-glx_render_color(session_t *ps, int dx, int dy, int width, int height, int z,
-    XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
-  static int color = 0;
-
-  color = color % (3 * 3 * 3 - 1) + 1;
-  glColor4f(1.0 / 3.0 * (color / (3 * 3)),
-      1.0 / 3.0 * (color % (3 * 3) / 3),
-      1.0 / 3.0 * (color % 3),
-      1.0f
-      );
-  z -= 0.2;
-
-  {
-    P_PAINTREG_START();
-    {
-      GLint rdx = crect.x;
-      GLint rdy = ps->root_height - crect.y;
-      GLint rdxe = rdx + crect.width;
-      GLint rdye = rdy - crect.height;
-
-      glVertex3i(rdx, rdy, z);
-      glVertex3i(rdxe, rdy, z);
-      glVertex3i(rdxe, rdye, z);
-      glVertex3i(rdx, rdye, z);
-    }
-    P_PAINTREG_END();
-  }
-  glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
-
-  glx_check_err(ps);
-}
-
-/**
- * Render a region with dots.
- *
- * Unused but can be useful for debugging
- */
-static void __attribute__((unused))
-glx_render_dots(session_t *ps, int dx, int dy, int width, int height, int z,
-    XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
-  glColor4f(0.0f, 0.0f, 0.0f, 1.0f);
-  z -= 0.1;
-
-  {
-    P_PAINTREG_START();
-    {
-      static const GLint BLK_WID = 5, BLK_HEI = 5;
-
-      glEnd();
-      glPointSize(1.0);
-      glBegin(GL_POINTS);
-
-      GLint rdx = crect.x;
-      GLint rdy = ps->root_height - crect.y;
-      GLint rdxe = rdx + crect.width;
-      GLint rdye = rdy - crect.height;
-      rdx = (rdx) / BLK_WID * BLK_WID;
-      rdy = (rdy) / BLK_HEI * BLK_HEI;
-      rdxe = (rdxe) / BLK_WID * BLK_WID;
-      rdye = (rdye) / BLK_HEI * BLK_HEI;
-
-      for (GLint cdx = rdx; cdx < rdxe; cdx += BLK_WID)
-        for (GLint cdy = rdy; cdy > rdye; cdy -= BLK_HEI)
-          glVertex3i(cdx + BLK_WID / 2, cdy - BLK_HEI / 2, z);
-    }
-    P_PAINTREG_END();
-  }
-  glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
-
-  glx_check_err(ps);
 }
 
 /**

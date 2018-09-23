@@ -13,6 +13,8 @@
 #include <xcb/shape.h>
 #include <xcb/randr.h>
 #include <xcb/damage.h>
+#include <xcb/render.h>
+#include <xcb/xcb_image.h>
 
 #include "compton.h"
 #include "win.h"
@@ -27,14 +29,8 @@ xr_blur_dst(session_t *ps, Picture tgt_buffer,
     int x, int y, int wid, int hei, XFixed **blur_kerns,
     XserverRegion reg_clip);
 
-static bool
-fork_after(session_t *ps);
-
 static void
 get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass);
-
-static void
-init_atoms(session_t *ps);
 
 static void
 update_refresh_rate(session_t *ps);
@@ -58,15 +54,6 @@ reset_enable(int __attribute__((unused)) signum);
 static void
 cxinerama_upd_scrs(session_t *ps);
 #endif
-
-static void
-timeout_clear(session_t *ps);
-
-static bool
-tmout_unredir_callback(session_t *ps, timeout_t *tmout);
-
-static bool
-mainloop(session_t *ps);
 
 static bool
 vsync_drm_init(session_t *ps);
@@ -111,38 +98,6 @@ redir_start(session_t *ps);
 static void
 redir_stop(session_t *ps);
 
-static void
-discard_ignore(session_t *ps, unsigned long sequence);
-
-static int
-should_ignore(session_t *ps, unsigned long sequence);
-
-static void
-run_fade(session_t *ps, win *w, unsigned steps);
-
-static double
-gaussian(double r, double x, double y);
-
-static conv *
-make_gaussian_map(double r);
-
-static unsigned char
-sum_gaussian(conv *map, double opacity,
-             int x, int y, int width, int height);
-
-static void
-presum_gaussian(session_t *ps, conv *map);
-
-static XImage *
-make_shadow(session_t *ps, double opacity, int width, int height);
-
-static bool
-win_build_shadow(session_t *ps, win *w, double opacity);
-
-static Picture
-solid_picture(session_t *ps, bool argb, double a,
-              double r, double g, double b);
-
 static win *
 recheck_focus(session_t *ps);
 
@@ -150,19 +105,7 @@ static bool
 get_root_tile(session_t *ps);
 
 static void
-paint_root(session_t *ps, XserverRegion reg_paint);
-
-static void
 finish_map_win(session_t *ps, win *w);
-
-static void
-finish_unmap_win(session_t *ps, win *w);
-
-static void
-unmap_callback(session_t *ps, win *w);
-
-static void
-unmap_win(session_t *ps, win *w);
 
 static double
 get_opacity_percent(win *w);
@@ -171,25 +114,7 @@ static void
 restack_win(session_t *ps, win *w, Window new_above);
 
 static void
-finish_destroy_win(session_t *ps, win *w);
-
-static void
 destroy_callback(session_t *ps, win *w);
-
-static void
-destroy_win(session_t *ps, Window id);
-
-static int
-xerror(Display *dpy, XErrorEvent *ev);
-
-static void
-expose_root(session_t *ps, XRectangle *rects, int nrects);
-
-static void __attribute__ ((noreturn))
-usage(int ret);
-
-static bool
-register_cm(session_t *ps);
 
 static void
 update_ewmh_active_win(session_t *ps);
@@ -276,6 +201,36 @@ static const char *background_props_str[] = {
 /// <code>error()</code> and <code>reset_enable()</code>, which could not
 /// have a pointer to current session passed in.
 session_t *ps_g = NULL;
+
+/**
+ * Check if current backend uses XRender for rendering.
+ */
+static inline bool
+bkend_use_xrender(session_t *ps) {
+  return BKEND_XRENDER == ps->o.backend
+    || BKEND_XR_GLX_HYBRID == ps->o.backend;
+}
+
+/**
+ * Check whether a paint_t contains enough data.
+ */
+static inline bool
+paint_isvalid(session_t *ps, const paint_t *ppaint) {
+  // Don't check for presence of Pixmap here, because older X Composite doesn't
+  // provide it
+  if (!ppaint)
+    return false;
+
+  if (bkend_use_xrender(ps) && !ppaint->pict)
+    return false;
+
+#ifdef CONFIG_OPENGL
+  if (BKEND_GLX == ps->o.backend && !glx_tex_binded(ppaint->ptex, None))
+    return false;
+#endif
+
+  return true;
+}
 
 void add_damage(session_t *ps, XserverRegion damage) {
   // Ignore damage when screen isn't redirected
@@ -544,11 +499,10 @@ presum_gaussian(session_t *ps, conv *map) {
   }
 }
 
-static XImage *
+static xcb_image_t *
 make_shadow(session_t *ps, double opacity,
             int width, int height) {
-  XImage *ximage;
-  unsigned char *data;
+  xcb_image_t *ximage;
   int ylimit, xlimit;
   int swidth = width + ps->cgsize;
   int sheight = height + ps->cgsize;
@@ -558,16 +512,17 @@ make_shadow(session_t *ps, double opacity,
   int x_diff;
   int opacity_int = (int)(opacity * 25);
 
-  data = malloc(swidth * sheight * sizeof(unsigned char));
-  if (!data) return 0;
-
-  ximage = XCreateImage(ps->dpy, ps->vis, 8,
-    ZPixmap, 0, (char *) data, swidth, sheight, 8, swidth * sizeof(char));
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  ximage = xcb_image_create_native(c, swidth, sheight, XCB_IMAGE_FORMAT_Z_PIXMAP, 8,
+    0, 0, NULL);
 
   if (!ximage) {
-    free(data);
+    printf_errf("(): failed to create an X image");
     return 0;
   }
+
+  unsigned char *data = ximage->data;
+  uint32_t sstride = ximage->stride;
 
   /*
    * Build the gaussian in sections
@@ -611,10 +566,10 @@ make_shadow(session_t *ps, double opacity,
         d = sum_gaussian(ps->gaussian_map,
           opacity, x - center, y - center, width, height);
       }
-      data[y * swidth + x] = d;
-      data[(sheight - y - 1) * swidth + x] = d;
-      data[(sheight - y - 1) * swidth + (swidth - x - 1)] = d;
-      data[y * swidth + (swidth - x - 1)] = d;
+      data[y * sstride + x] = d;
+      data[(sheight - y - 1) * sstride + x] = d;
+      data[(sheight - y - 1) * sstride + (swidth - x - 1)] = d;
+      data[y * sstride + (swidth - x - 1)] = d;
     }
   }
 
@@ -631,8 +586,8 @@ make_shadow(session_t *ps, double opacity,
         d = sum_gaussian(ps->gaussian_map,
           opacity, center, y - center, width, height);
       }
-      memset(&data[y * swidth + ps->cgsize], d, x_diff);
-      memset(&data[(sheight - y - 1) * swidth + ps->cgsize], d, x_diff);
+      memset(&data[y * sstride + ps->cgsize], d, x_diff);
+      memset(&data[(sheight - y - 1) * sstride + ps->cgsize], d, x_diff);
     }
   }
 
@@ -648,8 +603,8 @@ make_shadow(session_t *ps, double opacity,
         opacity, x - center, center, width, height);
     }
     for (y = ps->cgsize; y < sheight - ps->cgsize; y++) {
-      data[y * swidth + x] = d;
-      data[y * swidth + (swidth - x - 1)] = d;
+      data[y * sstride + x] = d;
+      data[y * sstride + (swidth - x - 1)] = d;
     }
   }
 
@@ -682,36 +637,42 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   const int width = w->widthb;
   const int height = w->heightb;
 
-  XImage *shadow_image = NULL;
+  xcb_image_t *shadow_image = NULL;
   Pixmap shadow_pixmap = None, shadow_pixmap_argb = None;
   Picture shadow_picture = None, shadow_picture_argb = None;
   GC gc = None;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
   shadow_image = make_shadow(ps, opacity, width, height);
-  if (!shadow_image)
+  if (!shadow_image) {
+    printf_errf("(): failed to make shadow");
     return None;
+  }
 
   shadow_pixmap = XCreatePixmap(ps->dpy, ps->root,
     shadow_image->width, shadow_image->height, 8);
   shadow_pixmap_argb = XCreatePixmap(ps->dpy, ps->root,
     shadow_image->width, shadow_image->height, 32);
 
-  if (!shadow_pixmap || !shadow_pixmap_argb)
+  if (!shadow_pixmap || !shadow_pixmap_argb) {
+    printf_errf("(): failed to create shadow pixmaps");
     goto shadow_picture_err;
+  }
 
-  shadow_picture = XRenderCreatePicture(ps->dpy, shadow_pixmap,
-    XRenderFindStandardFormat(ps->dpy, PictStandardA8), 0, 0);
-  shadow_picture_argb = XRenderCreatePicture(ps->dpy, shadow_pixmap_argb,
-    XRenderFindStandardFormat(ps->dpy, PictStandardARGB32), 0, 0);
+  shadow_picture = x_create_picture_with_standard_and_pixmap(ps,
+    XCB_PICT_STANDARD_A_8, shadow_pixmap, 0, NULL);
+  shadow_picture_argb = x_create_picture_with_standard_and_pixmap(ps,
+    XCB_PICT_STANDARD_ARGB_32, shadow_pixmap_argb, 0, NULL);
   if (!shadow_picture || !shadow_picture_argb)
     goto shadow_picture_err;
 
   gc = XCreateGC(ps->dpy, shadow_pixmap, 0, 0);
-  if (!gc)
+  if (!gc) {
+    printf_errf("(): failed to create graphic context");
     goto shadow_picture_err;
+  }
 
-  XPutImage(ps->dpy, shadow_pixmap, gc, shadow_image, 0, 0, 0, 0,
-    shadow_image->width, shadow_image->height);
+  xcb_image_put(c, shadow_pixmap, XGContextFromGC(gc), shadow_image, 0, 0, 0);
   XRenderComposite(ps->dpy, PictOpSrc, ps->cshadow_picture, shadow_picture,
       shadow_picture_argb, 0, 0, 0, 0, 0, 0,
       shadow_image->width, shadow_image->height);
@@ -725,7 +686,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   xr_sync(ps, w->shadow_paint.pixmap, NULL);
 
   XFreeGC(ps->dpy, gc);
-  XDestroyImage(shadow_image);
+  xcb_image_destroy(shadow_image);
   XFreePixmap(ps->dpy, shadow_pixmap);
   XRenderFreePicture(ps->dpy, shadow_picture);
 
@@ -733,7 +694,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
 
 shadow_picture_err:
   if (shadow_image)
-    XDestroyImage(shadow_image);
+    xcb_image_destroy(shadow_image);
   if (shadow_pixmap)
     XFreePixmap(ps->dpy, shadow_pixmap);
   if (shadow_pixmap_argb)
@@ -756,7 +717,7 @@ solid_picture(session_t *ps, bool argb, double a,
               double r, double g, double b) {
   Pixmap pixmap;
   Picture picture;
-  XRenderPictureAttributes pa;
+  xcb_render_create_picture_value_list_t pa;
   XRenderColor c;
 
   pixmap = XCreatePixmap(ps->dpy, ps->root, 1, 1, argb ? 32 : 8);
@@ -764,11 +725,9 @@ solid_picture(session_t *ps, bool argb, double a,
   if (!pixmap) return None;
 
   pa.repeat = True;
-  picture = XRenderCreatePicture(ps->dpy, pixmap,
-    XRenderFindStandardFormat(ps->dpy, argb
-      ? PictStandardARGB32 : PictStandardA8),
-    CPRepeat,
-    &pa);
+  picture = x_create_picture_with_standard_and_pixmap(ps,
+    argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8, pixmap,
+    CPRepeat, &pa);
 
   if (!picture) {
     XFreePixmap(ps->dpy, pixmap);
@@ -951,14 +910,11 @@ get_root_tile(session_t *ps) {
   }
 
   // Create Picture
-  {
-    XRenderPictureAttributes pa = {
-      .repeat = True,
-    };
-    ps->root_tile_paint.pict = XRenderCreatePicture(
-        ps->dpy, pixmap, XRenderFindVisualFormat(ps->dpy, ps->vis),
-        CPRepeat, &pa);
-  }
+  xcb_render_create_picture_value_list_t pa = {
+    .repeat = True,
+  };
+  ps->root_tile_paint.pict = x_create_picture_with_visual_and_pixmap(
+    ps, ps->vis, pixmap, CPRepeat, &pa);
 
   // Fill pixmap if needed
   if (fill) {
@@ -1078,6 +1034,7 @@ paint_preprocess(session_t *ps, win *list) {
         free_region(ps, &w->reg_ignore);
     }
 
+    //printf_errf("(): %d %d %s", w->a.map_state, w->ever_damaged, w->name);
     // Restore flags from last paint if the window is being faded out
     if (IsUnmapped == w->a.map_state) {
       win_set_shadow(ps, w, w->shadow_last);
@@ -1101,8 +1058,8 @@ paint_preprocess(session_t *ps, win *list) {
     // pixmap is gone (for example due to a ConfigureNotify), or when it's
     // excluded
     if (!w->ever_damaged
-        || w->a.x + w->a.width < 1 || w->a.y + w->a.height < 1
-        || w->a.x >= ps->root_width || w->a.y >= ps->root_height
+        || w->g.x + w->g.width < 1 || w->g.y + w->g.height < 1
+        || w->g.x >= ps->root_width || w->g.y >= ps->root_height
         || ((IsUnmapped == w->a.map_state || w->destroyed) && !w->paint.pixmap)
         || get_alpha_pict_o(ps, w->opacity) == ps->alpha_picts[0]
         || w->paint_excluded)
@@ -1272,35 +1229,13 @@ win_paint_shadow(session_t *ps, win *w,
   paint_bind_tex(ps, &w->shadow_paint, 0, 0, 32, false);
 
   if (!paint_isvalid(ps, &w->shadow_paint)) {
-    printf_errf("(%#010lx): Missing painting data. This is a bad sign.", w->id);
+    printf_errf("(%#010lx): Missing shadow data.", w->id);
     return;
   }
 
-  render(ps, 0, 0, w->a.x + w->shadow_dx, w->a.y + w->shadow_dy,
+  render(ps, 0, 0, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy,
       w->shadow_width, w->shadow_height, w->shadow_opacity, true, false,
       w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint, pcache_reg, NULL);
-}
-
-/**
- * Create an picture.
- */
-static inline Picture
-xr_build_picture(session_t *ps, int wid, int hei,
-    XRenderPictFormat *pictfmt) {
-  if (!pictfmt)
-    pictfmt = XRenderFindVisualFormat(ps->dpy, ps->vis);
-
-  int depth = pictfmt->depth;
-
-  Pixmap tmp_pixmap = XCreatePixmap(ps->dpy, ps->root, wid, hei, depth);
-  if (!tmp_pixmap)
-    return None;
-
-  Picture tmp_picture = XRenderCreatePicture(ps->dpy, tmp_pixmap,
-    pictfmt, 0, 0);
-  free_pixmap(ps, &tmp_pixmap);
-
-  return tmp_picture;
 }
 
 /**
@@ -1326,7 +1261,7 @@ xr_blur_dst(session_t *ps, Picture tgt_buffer,
 
   // Directly copying from tgt_buffer to it does not work, so we create a
   // Picture in the middle.
-  Picture tmp_picture = xr_build_picture(ps, wid, hei, NULL);
+  Picture tmp_picture = x_create_picture(ps, wid, hei, NULL, 0, NULL);
 
   if (!tmp_picture) {
     printf_errf("(): Failed to build intermediate Picture.");
@@ -1390,8 +1325,8 @@ xr_take_screenshot(session_t *ps) {
 static inline void
 win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
     XserverRegion reg_paint, const reg_data_t *pcache_reg) {
-  const int x = w->a.x;
-  const int y = w->a.y;
+  const int x = w->g.x;
+  const int y = w->g.y;
   const int wid = w->widthb;
   const int hei = w->heightb;
 
@@ -1527,12 +1462,12 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
   // XRender: Build picture
   if (bkend_use_xrender(ps) && !w->paint.pict) {
     {
-      XRenderPictureAttributes pa = {
-        .subwindow_mode = IncludeInferiors,
+      xcb_render_create_picture_value_list_t pa = {
+        .subwindowmode = IncludeInferiors,
       };
 
-      w->paint.pict = XRenderCreatePicture(ps->dpy, draw, w->pictfmt,
-          CPSubwindowMode, &pa);
+      w->paint.pict = x_create_picture_with_pictfmt_and_pixmap(ps, w->pictfmt,
+          draw, CPSubwindowMode, &pa);
     }
   }
 
@@ -1554,8 +1489,8 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
     return;
   }
 
-  const int x = w->a.x;
-  const int y = w->a.y;
+  const int x = w->g.x;
+  const int y = w->g.y;
   const int wid = w->widthb;
   const int hei = w->heightb;
 
@@ -1563,7 +1498,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 
   // Invert window color, if required
   if (bkend_use_xrender(ps) && w->invert_color) {
-    Picture newpict = xr_build_picture(ps, wid, hei, w->pictfmt);
+    Picture newpict = x_create_picture(ps, wid, hei, w->pictfmt, 0, NULL);
     if (newpict) {
       // Apply clipping region to save some CPU
       if (reg_paint) {
@@ -1769,9 +1704,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   if (!paint_isvalid(ps, &ps->tgt_buffer)) {
     // DBE painting mode: Directly paint to a Picture of the back buffer
     if (BKEND_XRENDER == ps->o.backend && ps->o.dbe) {
-      ps->tgt_buffer.pict = XRenderCreatePicture(ps->dpy, ps->root_dbe,
-          XRenderFindVisualFormat(ps->dpy, ps->vis),
-          0, 0);
+      ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
+        ps, ps->vis, ps->root_dbe, 0, 0);
     }
     // No-DBE painting mode: Paint to an intermediate Picture then paint
     // the Picture to root window
@@ -1783,9 +1717,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       }
 
       if (BKEND_GLX != ps->o.backend)
-        ps->tgt_buffer.pict = XRenderCreatePicture(ps->dpy,
-            ps->tgt_buffer.pixmap, XRenderFindVisualFormat(ps->dpy, ps->vis),
-            0, 0);
+        ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
+          ps, ps->vis, ps->tgt_buffer.pixmap, 0, 0);
     }
   }
 #endif
@@ -1814,8 +1747,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     // based on the ignore region of the lowest window, if available
     reg_paint = reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
     XFixesSubtractRegion(ps->dpy, reg_paint, region, t->reg_ignore);
-  }
-  else {
+  } else {
     reg_paint = region;
   }
 
@@ -1831,8 +1763,10 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     // Painting shadow
     if (w->shadow) {
       // Lazy shadow building
-      if (!w->shadow_paint.pixmap)
-        win_build_shadow(ps, w, 1);
+      if (!w->shadow_paint.pixmap) {
+        if (!win_build_shadow(ps, w, 1))
+          printf_errf("(): build shadow failed");
+      }
 
       // Shadow is to be painted based on the ignore region of current
       // window
@@ -1861,8 +1795,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       // Might be worthwhile to crop the region to shadow border
       {
         XRectangle rec_shadow_border = {
-          .x = w->a.x + w->shadow_dx,
-          .y = w->a.y + w->shadow_dy,
+          .x = w->g.x + w->shadow_dx,
+          .y = w->g.y + w->shadow_dy,
           .width = w->shadow_width,
           .height = w->shadow_height
         };
@@ -2071,8 +2005,8 @@ repair_win(session_t *ps, win *w) {
     set_ignore_next(ps);
     XDamageSubtract(ps->dpy, w->damage, None, parts);
     XFixesTranslateRegion(ps->dpy, parts,
-      w->a.x + w->a.border_width,
-      w->a.y + w->a.border_width);
+      w->g.x + w->g.border_width,
+      w->g.y + w->g.border_width);
   }
 
   w->ever_damaged = true;
@@ -2109,7 +2043,7 @@ map_win(session_t *ps, Window id) {
 
   // Don't care about window mapping if it's an InputOnly window
   // Try avoiding mapping a window twice
-  if (!w || InputOnly == w->a.class
+  if (!w || InputOnly == w->a._class
       || IsViewable == w->a.map_state)
     return;
 
@@ -2412,26 +2346,26 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     }
 
     // If window geometry did not change, don't free extents here
-    if (w->a.x != ce->x || w->a.y != ce->y
-        || w->a.width != ce->width || w->a.height != ce->height
-        || w->a.border_width != ce->border_width) {
+    if (w->g.x != ce->x || w->g.y != ce->y
+        || w->g.width != ce->width || w->g.height != ce->height
+        || w->g.border_width != ce->border_width) {
       factor_change = true;
       free_region(ps, &w->extents);
       free_region(ps, &w->border_size);
     }
 
-    w->a.x = ce->x;
-    w->a.y = ce->y;
+    w->g.x = ce->x;
+    w->g.y = ce->y;
 
-    if (w->a.width != ce->width || w->a.height != ce->height
-        || w->a.border_width != ce->border_width)
+    if (w->g.width != ce->width || w->g.height != ce->height
+        || w->g.border_width != ce->border_width)
       free_wpaint(ps, w);
 
-    if (w->a.width != ce->width || w->a.height != ce->height
-        || w->a.border_width != ce->border_width) {
-      w->a.width = ce->width;
-      w->a.height = ce->height;
-      w->a.border_width = ce->border_width;
+    if (w->g.width != ce->width || w->g.height != ce->height
+        || w->g.border_width != ce->border_width) {
+      w->g.width = ce->width;
+      w->g.height = ce->height;
+      w->g.border_width = ce->border_width;
       calc_win_size(ps, w);
 
       // Rounded corner detection is affected by window size
@@ -2776,15 +2710,12 @@ opts_set_no_fading_openclose(session_t *ps, bool newval) {
 //!@}
 #endif
 
-static inline int
-ev_serial(XEvent *ev) {
-  if ((ev->type & 0x7f) != KeymapNotify) {
-    return ev->xany.serial;
-  }
-  return NextRequest(ev->xany.display);
+static inline int __attribute__((unused))
+ev_serial(xcb_generic_event_t *ev) {
+  return ev->full_sequence;
 }
 
-static inline const char *
+static inline const char * __attribute__((unused))
 ev_name(session_t *ps, xcb_generic_event_t *ev) {
   static char buf[128];
   switch (ev->response_type & 0x7f) {
@@ -2823,7 +2754,7 @@ ev_name(session_t *ps, xcb_generic_event_t *ev) {
   return buf;
 }
 
-static inline Window
+static inline Window __attribute__((unused))
 ev_window(session_t *ps, xcb_generic_event_t *ev) {
   switch (ev->response_type) {
     case FocusIn:
@@ -2863,7 +2794,7 @@ ev_window(session_t *ps, xcb_generic_event_t *ev) {
 }
 
 static inline const char *
-ev_focus_mode_name(XFocusChangeEvent* ev) {
+ev_focus_mode_name(xcb_focus_in_event_t* ev) {
   switch (ev->mode) {
     CASESTRRET(NotifyNormal);
     CASESTRRET(NotifyWhileGrabbed);
@@ -2875,7 +2806,7 @@ ev_focus_mode_name(XFocusChangeEvent* ev) {
 }
 
 static inline const char *
-ev_focus_detail_name(XFocusChangeEvent* ev) {
+ev_focus_detail_name(xcb_focus_in_event_t* ev) {
   switch (ev->detail) {
     CASESTRRET(NotifyAncestor);
     CASESTRRET(NotifyVirtual);
@@ -2890,8 +2821,8 @@ ev_focus_detail_name(XFocusChangeEvent* ev) {
   return "Unknown";
 }
 
-static inline void
-ev_focus_report(XFocusChangeEvent* ev) {
+static inline void __attribute__((unused))
+ev_focus_report(xcb_focus_in_event_t *ev) {
   printf("  { mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
       ev_focus_detail_name(ev));
 }
@@ -2937,9 +2868,9 @@ inline static void
 ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
 #ifdef DEBUG_EVENTS
   printf("  { send_event: %d, "
-         " above: %#010lx, "
+         " above: %#010x, "
          " override_redirect: %d }\n",
-         ev->send_event, ev->above, ev->override_redirect);
+         ev->event, ev->above_sibling, ev->override_redirect);
 #endif
   configure_win(ps, ev);
 }
@@ -2965,7 +2896,7 @@ ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
 inline static void
 ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
 #ifdef DEBUG_EVENTS
-  printf_dbg("  { new_parent: %#010lx, override_redirect: %d }\n",
+  printf_dbg("  { new_parent: %#010x, override_redirect: %d }\n",
       ev->parent, ev->override_redirect);
 #endif
 
@@ -3258,7 +3189,7 @@ ev_selection_clear(session_t *ps,
 /**
  * Get a window's name from window ID.
  */
-static inline void
+static inline void __attribute__((unused))
 ev_window_name(session_t *ps, Window wid, char **name) {
   *name = "";
   if (wid) {
@@ -3289,7 +3220,7 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
   }
 
 #ifdef DEBUG_EVENTS
-  if (!isdamagenotify(ps, ev)) {
+  if (ev->response_type == ps->damage_event + XDamageNotify) {
     Window wid = ev_window(ps, ev);
     char *window_name = NULL;
     ev_window_name(ps, wid, &window_name);
@@ -4726,9 +4657,10 @@ init_alpha_picts(session_t *ps) {
 
   for (i = 0; i < num; ++i) {
     double o = i * ps->o.alpha_step;
-    if ((1.0 - o) > ps->o.alpha_step)
+    if ((1.0 - o) > ps->o.alpha_step) {
       ps->alpha_picts[i] = solid_picture(ps, false, o, 0, 0, 0);
-    else
+      assert(ps->alpha_picts[i] != None);
+    } else
       ps->alpha_picts[i] = None;
   }
 }
@@ -5173,7 +5105,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   static const session_t s_def = {
     .dpy = NULL,
     .scr = 0,
-    .vis = NULL,
+    .vis = 0,
     .depth = 0,
     .root = None,
     .root_height = 0,
@@ -5392,7 +5324,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->scr = DefaultScreen(ps->dpy);
   ps->root = RootWindow(ps->dpy, ps->scr);
 
-  ps->vis = DefaultVisual(ps->dpy, ps->scr);
+  ps->vis = XVisualIDFromVisual(DefaultVisual(ps->dpy, ps->scr));
   ps->depth = DefaultDepth(ps->dpy, ps->scr);
 
   // Start listening to events on root earlier to catch all possible
@@ -5590,20 +5522,17 @@ session_init(session_t *ps_old, int argc, char **argv) {
   presum_gaussian(ps, ps->gaussian_map);
 
   {
-    XRenderPictureAttributes pa;
-    pa.subwindow_mode = IncludeInferiors;
+    xcb_render_create_picture_value_list_t pa = {
+      .subwindowmode = IncludeInferiors,
+    };
 
-    ps->root_picture = XRenderCreatePicture(ps->dpy, ps->root,
-        XRenderFindVisualFormat(ps->dpy, ps->vis),
-        CPSubwindowMode, &pa);
+    ps->root_picture = x_create_picture_with_visual_and_pixmap(ps,
+      ps->vis, ps->root, CPSubwindowMode, &pa);
     if (ps->o.paint_on_overlay) {
-      ps->tgt_picture = XRenderCreatePicture(ps->dpy, ps->overlay,
-          XRenderFindVisualFormat(ps->dpy, ps->vis),
-          CPSubwindowMode, &pa);
-    }
-    else {
+      ps->tgt_picture = x_create_picture_with_visual_and_pixmap(ps,
+        ps->vis, ps->overlay, CPSubwindowMode, &pa);
+    } else
       ps->tgt_picture = ps->root_picture;
-    }
   }
 
   // Initialize filters, must be preceded by OpenGL context creation
@@ -5817,6 +5746,7 @@ session_destroy(session_t *ps) {
   free(ps->pfds_except);
   free(ps->o.glx_fshader_win_str);
   free_xinerama_info(ps);
+  free(ps->pictfmts);
 
 #ifdef CONFIG_OPENGL
   glx_destroy(ps);

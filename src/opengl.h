@@ -121,25 +121,9 @@ glx_hasglext(session_t *ps, const char *ext) {
   return found;
 }
 
-static inline XVisualInfo *
-get_visualinfo_from_visual(session_t *ps, Visual *visual) {
-  XVisualInfo vreq = { .visualid = XVisualIDFromVisual(visual) };
-  int nitems = 0;
-
-  return XGetVisualInfo(ps->dpy, VisualIDMask, &vreq, &nitems);
-}
-
 static bool
 glx_update_fbconfig(session_t *ps);
 
 static int
 glx_cmp_fbconfig(session_t *ps,
     const glx_fbconfig_t *pfbc_a, const glx_fbconfig_t *pfbc_b);
-
-static void
-glx_render_color(session_t *ps, int dx, int dy, int width, int height, int z,
-    XserverRegion reg_tgt, const reg_data_t *pcache_reg);
-
-static void
-glx_render_dots(session_t *ps, int dx, int dy, int width, int height, int z,
-    XserverRegion reg_tgt, const reg_data_t *pcache_reg);
