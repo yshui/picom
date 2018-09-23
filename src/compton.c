@@ -532,20 +532,18 @@ make_shadow(session_t *ps, double opacity,
    * center (fill the complete data array)
    */
 
-  // If clear_shadow is enabled and the border & corner shadow (which
-  // later will be filled) could entirely cover the area of the shadow
-  // that will be displayed, do not bother filling other pixels. If it
-  // can't, we must fill the other pixels here.
-  /* if (!(clear_shadow && ps->o.shadow_offset_x <= 0 && ps->o.shadow_offset_x >= -ps->cgsize
-        && ps->o.shadow_offset_y <= 0 && ps->o.shadow_offset_y >= -ps->cgsize)) { */
-    if (ps->cgsize > 0) {
-      d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + ps->cgsize];
-    } else {
-      d = sum_gaussian(ps->gaussian_map,
-        opacity, center, center, width, height);
-    }
-    memset(data, d, sheight * swidth);
-  // }
+  // XXX If the center part of the shadow would be entirely covered by
+  // the body of the window, we shouldn't need to fill the center here.
+  // XXX In general, we want to just fill the part that is not behind
+  // the window, in order to reduce CPU load and make transparent window
+  // look correct
+  if (ps->cgsize > 0) {
+    d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + ps->cgsize];
+  } else {
+    d = sum_gaussian(ps->gaussian_map,
+      opacity, center, center, width, height);
+  }
+  memset(data, d, sheight * swidth);
 
   /*
    * corners
@@ -607,24 +605,6 @@ make_shadow(session_t *ps, double opacity,
       data[y * sstride + (swidth - x - 1)] = d;
     }
   }
-
-  /*
-  if (clear_shadow) {
-    // Clear the region in the shadow that the window would cover based
-    // on shadow_offset_{x,y} user provides
-    int xstart = normalize_i_range(- (int) ps->o.shadow_offset_x, 0, swidth);
-    int xrange = normalize_i_range(width - (int) ps->o.shadow_offset_x,
-        0, swidth) - xstart;
-    int ystart = normalize_i_range(- (int) ps->o.shadow_offset_y, 0, sheight);
-    int yend = normalize_i_range(height - (int) ps->o.shadow_offset_y,
-        0, sheight);
-    int y;
-
-    for (y = ystart; y < yend; y++) {
-      memset(&data[y * swidth + xstart], 0, xrange);
-    }
-  }
-  */
 
   return ximage;
 }

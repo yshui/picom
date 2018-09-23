@@ -407,12 +407,9 @@ void win_update_shape(session_t *ps, win *w) {
 
     win_on_factor_change(ps, w);
 
-    /*
-    // If clear_shadow state on the window possibly changed, destroy the old
-    // shadow_pict
-    if (ps->o.clear_shadow && w->bounding_shaped != bounding_shaped_old)
-      free_paint(ps, &w->shadow_paint);
-    */
+    // XXX Window shape changed, and if we didn't fill in the pixels
+    // behind the window (not implemented yet), we should rebuild
+    // the shadow_pict
   }
 }
 

@@ -41,12 +41,6 @@ else
   echo "Cannot find focused window."
 fi
 
-# Set the clear_shadow setting to true
-dbus-send --print-reply --dest="$service" "$object" "${interface}.opts_set" string:clear_shadow boolean:true
-
-# Get the clear_shadow setting
-dbus-send --print-reply --dest="$service" "$object" "${interface}.opts_get" string:clear_shadow
-
 # Reset compton
 sleep 3
 dbus-send --print-reply --dest="$service" "$object" "${interface}.reset"
