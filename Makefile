@@ -189,4 +189,7 @@ version:
 	@echo "$(COMPTON_VERSION)"
 
 .PHONY: uninstall clean docs version
+
+ifneq ($(MAKECMDGOALS),clean)
 include $(addprefix .deps/,$(OBJS:.o=.d))
+endif
