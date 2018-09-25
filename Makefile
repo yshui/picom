@@ -138,7 +138,7 @@ src/.clang_complete: Makefile
 
 .deps/%.d: src/%.c | .deps
 	@set -e; rm -f $@; \
-	  $(CC) -M $(CPPFLAGS) $< > $@.$$$$; \
+	  $(CC) -M $(CPPFLAGS) $(INCS) $< > $@.$$$$; \
 	  sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
 	  rm -f $@.$$$$
 %.o: src/%.c
