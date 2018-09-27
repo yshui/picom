@@ -2,7 +2,9 @@
 
 #include <stdbool.h>
 
+#ifdef CONFIG_LIBCONFIG
 #include <libconfig.h>
+#endif
 
 #include "common.h"
 
