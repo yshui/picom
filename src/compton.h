@@ -52,7 +52,7 @@ void map_win(session_t *ps, Window id);
 void
 render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     double opacity, bool argb, bool neg,
-    Picture pict, glx_texture_t *ptex,
+    xcb_render_picture_t pict, glx_texture_t *ptex,
     XserverRegion reg_paint, const reg_data_t *pcache_reg
 #ifdef CONFIG_OPENGL
     , const glx_prog_main_t *pprogram
@@ -63,8 +63,11 @@ render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
  * Reset filter on a <code>Picture</code>.
  */
 static inline void
-xrfilter_reset(session_t *ps, Picture p) {
-  XRenderSetPictureFilter(ps->dpy, p, "Nearest", NULL, 0);
+xrfilter_reset(session_t *ps, xcb_render_picture_t p) {
+#define FILTER "Nearest"
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_render_set_picture_filter(c, p, strlen(FILTER), FILTER, 0, NULL);
+#undef FILTER
 }
 
 /**
@@ -146,9 +149,10 @@ rect_to_reg(session_t *ps, const XRectangle *src) {
  * Destroy a <code>Picture</code>.
  */
 inline static void
-free_picture(session_t *ps, Picture *p) {
+free_picture(session_t *ps, xcb_render_picture_t *p) {
   if (*p) {
-    XRenderFreePicture(ps->dpy, *p);
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_render_free_picture(c, *p);
     *p = None;
   }
 }
@@ -494,7 +498,7 @@ find_win_all(session_t *ps, const Window wid) {
 static inline void
 win_render(session_t *ps, win *w, int x, int y, int wid, int hei,
     double opacity, XserverRegion reg_paint, const reg_data_t *pcache_reg,
-    Picture pict) {
+    xcb_render_picture_t pict) {
   const int dx = (w ? w->g.x: 0) + x;
   const int dy = (w ? w->g.y: 0) + y;
   const bool argb = (w && (WMODE_ARGB == w->mode || ps->o.force_win_blend));
@@ -526,13 +530,13 @@ set_tgt_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
  * Normalize a convolution kernel.
  */
 static inline void
-normalize_conv_kern(int wid, int hei, XFixed *kern) {
+normalize_conv_kern(int wid, int hei, xcb_render_fixed_t *kern) {
   double sum = 0.0;
   for (int i = 0; i < wid * hei; ++i)
-    sum += XFixedToDouble(kern[i]);
+    sum += XFIXED_TO_DOUBLE(kern[i]);
   double factor = 1.0 / sum;
   for (int i = 0; i < wid * hei; ++i)
-    kern[i] = XDoubleToFixed(XFixedToDouble(kern[i]) * factor);
+    kern[i] = DOUBLE_TO_XFIXED(XFIXED_TO_DOUBLE(kern[i]) * factor);
 }
 
 /**

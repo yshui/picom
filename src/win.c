@@ -282,7 +282,7 @@ bool wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def,
 void win_determine_mode(session_t *ps, win *w) {
   winmode_t mode = WMODE_SOLID;
 
-  if (w->pictfmt && w->pictfmt->type == PictTypeDirect &&
+  if (w->pictfmt && w->pictfmt->type == XCB_RENDER_PICT_TYPE_DIRECT &&
       w->pictfmt->direct.alpha_mask) {
     mode = WMODE_ARGB;
   } else if (w->opacity != OPAQUE) {
