@@ -157,11 +157,11 @@ free_picture(session_t *ps, Picture *p) {
  * Destroy a <code>Damage</code>.
  */
 inline static void
-free_damage(session_t *ps, Damage *p) {
+free_damage(session_t *ps, xcb_damage_damage_t *p) {
   if (*p) {
     // BadDamage will be thrown if the window is destroyed
     set_ignore_next(ps);
-    XDamageDestroy(ps->dpy, *p);
+    xcb_damage_destroy(XGetXCBConnection(ps->dpy), *p);
     *p = None;
   }
 }

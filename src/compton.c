@@ -1975,15 +1975,16 @@ repair_win(session_t *ps, win *w) {
     return;
 
   XserverRegion parts;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
   if (!w->ever_damaged) {
     parts = win_extents(ps, w);
     set_ignore_next(ps);
-    XDamageSubtract(ps->dpy, w->damage, None, None);
+    xcb_damage_subtract(c, w->damage, XCB_NONE, XCB_NONE);
   } else {
     parts = XFixesCreateRegion(ps->dpy, 0, 0);
     set_ignore_next(ps);
-    XDamageSubtract(ps->dpy, w->damage, None, parts);
+    xcb_damage_subtract(c, w->damage, XCB_NONE, parts);
     XFixesTranslateRegion(ps->dpy, parts,
       w->g.x + w->g.border_width,
       w->g.y + w->g.border_width);
@@ -2465,8 +2466,9 @@ root_damaged(session_t *ps) {
       free_root_tile(ps);
     /* }
     if (root_damage) {
+      xcb_connection_t *c = XGetXCBConnection(ps->dpy);
       XserverRegion parts = XFixesCreateRegion(ps->dpy, 0, 0);
-      XDamageSubtract(ps->dpy, root_damage, None, parts);
+      xcb_damage_subtract(c, root_damage, XCB_NONE, parts);
       add_damage(ps, parts);
     } */
   }
@@ -2505,7 +2507,7 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 
   o = ev->error_code - ps->damage_error;
   switch (o) {
-    CASESTRRET2(BadDamage);
+    CASESTRRET2(XCB_DAMAGE_BAD_DAMAGE);
   }
 
   o = ev->error_code - ps->render_error;
@@ -2713,7 +2715,7 @@ ev_name(session_t *ps, xcb_generic_event_t *ev) {
     CASESTRRET(ClientMessage);
   }
 
-  if (ps->damage_event + XDamageNotify == ev->response_type)
+  if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type)
     return "Damage";
 
   if (ps->shape_exists && ev->response_type == ps->shape_event)
@@ -2761,7 +2763,7 @@ ev_window(session_t *ps, xcb_generic_event_t *ev) {
     case ClientMessage:
       return ((xcb_client_message_event_t *)ev)->window;
     default:
-      if (ps->damage_event + XDamageNotify == ev->response_type) {
+      if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
         return ((xcb_damage_notify_event_t *)ev)->drawable;
       }
 
@@ -3200,7 +3202,7 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
   }
 
 #ifdef DEBUG_EVENTS
-  if (ev->response_type == ps->damage_event + XDamageNotify) {
+  if (ev->response_type == ps->damage_event + XCB_DAMAGE_NOTIFY) {
     Window wid = ev_window(ps, ev);
     char *window_name = NULL;
     ev_window_name(ps, wid, &window_name);
@@ -3257,7 +3259,7 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
         ev_screen_change_notify(ps, (xcb_randr_screen_change_notify_event_t *) ev);
         break;
       }
-      if (ps->damage_event + XDamageNotify == ev->response_type) {
+      if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
         ev_damage_notify(ps, (xcb_damage_notify_event_t *) ev);
         break;
       }
@@ -5296,6 +5298,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
     }
     XSetEventQueueOwner(ps->dpy, XCBOwnsEventQueue);
   }
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  const xcb_query_extension_reply_t *ext_info;
 
   XSetErrorHandler(xerror);
   if (ps->o.synchronize) {
@@ -5320,6 +5324,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->root_width = DisplayWidth(ps->dpy, ps->scr);
   ps->root_height = DisplayHeight(ps->dpy, ps->scr);
 
+  xcb_prefetch_extension_data(c, &xcb_damage_id);
+
   if (!XRenderQueryExtension(ps->dpy,
         &ps->render_event, &ps->render_error)) {
     fprintf(stderr, "No render extension\n");
@@ -5343,10 +5349,15 @@ session_init(session_t *ps_old, int argc, char **argv) {
     }
   }
 
-  if (!XDamageQueryExtension(ps->dpy, &ps->damage_event, &ps->damage_error)) {
+  ext_info = xcb_get_extension_data(c, &xcb_damage_id);
+  if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No damage extension\n");
     exit(1);
   }
+  ps->damage_event = ext_info->first_event;
+  ps->damage_error = ext_info->first_error;
+  xcb_discard_reply(c,
+      xcb_damage_query_version(c, XCB_DAMAGE_MAJOR_VERSION, XCB_DAMAGE_MINOR_VERSION).sequence);
 
   if (!XFixesQueryExtension(ps->dpy, &ps->xfixes_event, &ps->xfixes_error)) {
     fprintf(stderr, "No XFixes extension\n");

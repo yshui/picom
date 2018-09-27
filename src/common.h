@@ -83,7 +83,6 @@
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
 #include <X11/extensions/Xcomposite.h>
-#include <X11/extensions/Xdamage.h>
 #include <X11/extensions/Xrender.h>
 #include <X11/extensions/shape.h>
 #include <X11/extensions/Xrandr.h>
@@ -97,6 +96,7 @@
 #endif
 
 #include <xcb/render.h>
+#include <xcb/damage.h>
 
 // Workarounds for missing definitions in very old versions of X headers,
 // thanks to consolers for reporting
@@ -1063,7 +1063,7 @@ struct win {
   /// Whether the window was damaged after last paint.
   bool pixmap_damaged;
   /// Damage of the window.
-  Damage damage;
+  xcb_damage_damage_t damage;
   /// Paint info of the window.
   paint_t paint;
   /// Bounding shape of the window.
