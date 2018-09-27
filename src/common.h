@@ -85,7 +85,6 @@
 #include <X11/extensions/Xcomposite.h>
 #include <X11/extensions/Xrender.h>
 #include <X11/extensions/shape.h>
-#include <X11/extensions/Xrandr.h>
 #include <X11/extensions/Xdbe.h>
 #ifdef CONFIG_XSYNC
 #include <X11/extensions/sync.h>
@@ -97,6 +96,7 @@
 
 #include <xcb/render.h>
 #include <xcb/damage.h>
+#include <xcb/randr.h>
 
 // Workarounds for missing definitions in very old versions of X headers,
 // thanks to consolers for reporting

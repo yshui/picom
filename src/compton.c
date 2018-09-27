@@ -3255,7 +3255,7 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
         ev_shape_notify(ps, (xcb_shape_notify_event_t *) ev);
         break;
       }
-      if (ps->randr_exists && ev->response_type == (ps->randr_event + RRScreenChangeNotify)) {
+      if (ps->randr_exists && ev->response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
         ev_screen_change_notify(ps, (xcb_randr_screen_change_notify_event_t *) ev);
         break;
       }
@@ -4311,13 +4311,15 @@ init_atoms(session_t *ps) {
  */
 static void
 update_refresh_rate(session_t *ps) {
-  XRRScreenConfiguration* randr_info;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_randr_get_screen_info_reply_t *randr_info =
+    xcb_randr_get_screen_info_reply(c,
+        xcb_randr_get_screen_info(c, ps->root), NULL);
 
-  if (!(randr_info = XRRGetScreenInfo(ps->dpy, ps->root)))
+  if (!randr_info)
     return;
-  ps->refresh_rate = XRRConfigCurrentRate(randr_info);
-
-  XRRFreeScreenConfigInfo(randr_info);
+  ps->refresh_rate = randr_info->rate;
+  free(randr_info);
 
   if (ps->refresh_rate)
     ps->refresh_intv = US_PER_SEC / ps->refresh_rate;
@@ -5325,6 +5327,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->root_height = DisplayHeight(ps->dpy, ps->scr);
 
   xcb_prefetch_extension_data(c, &xcb_damage_id);
+  xcb_prefetch_extension_data(c, &xcb_randr_id);
 
   if (!XRenderQueryExtension(ps->dpy,
         &ps->render_event, &ps->render_error)) {
@@ -5416,9 +5419,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Query X RandR
   if ((ps->o.sw_opti && !ps->o.refresh_rate) || ps->o.xinerama_shadow_crop) {
-    if (XRRQueryExtension(ps->dpy, &ps->randr_event, &ps->randr_error))
+    ext_info = xcb_get_extension_data(c, &xcb_randr_id);
+    if (ext_info && ext_info->present) {
       ps->randr_exists = true;
-    else
+      ps->randr_event = ext_info->first_event;
+      ps->randr_error = ext_info->first_error;
+    } else
       printf_errf("(): No XRandR extension, automatic screen change "
           "detection impossible.");
   }
@@ -5495,7 +5501,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // an auto-detected refresh rate, or when Xinerama features are enabled
   if (ps->randr_exists && ((ps->o.sw_opti && !ps->o.refresh_rate)
         || ps->o.xinerama_shadow_crop))
-    XRRSelectInput(ps->dpy, ps->root, RRScreenChangeNotifyMask);
+    xcb_randr_select_input(c, ps->root, XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
 
   // Initialize VSync
   if (!vsync_init(ps))
