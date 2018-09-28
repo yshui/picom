@@ -1843,7 +1843,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
           w->prev_trans->reg_ignore);
       // Copy the subtracted region to be used for shadow painting in next
       // cycle
-      XFixesCopyRegion(ps->dpy, reg_tmp2, reg_paint);
+      xcb_xfixes_copy_region(c, reg_paint, reg_tmp2);
 
       if (w->border_size)
         XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
@@ -2351,7 +2351,7 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     damage = xcb_generate_id(c);
     xcb_xfixes_create_region(c, damage, 0, NULL);
     if (w->extents != None) {
-      XFixesCopyRegion(ps->dpy, damage, w->extents);
+      xcb_xfixes_copy_region(c, w->extents, damage);
     }
 
     // If window geometry did not change, don't free extents here

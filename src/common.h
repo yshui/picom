@@ -1913,7 +1913,7 @@ copy_region(const session_t *ps, XserverRegion oldregion) {
   XserverRegion region = xcb_generate_id(c);
   xcb_xfixes_create_region(c, region, 0, NULL);
 
-  XFixesCopyRegion(ps->dpy, region, oldregion);
+  xcb_xfixes_copy_region(c, oldregion, region);
 
   return region;
 }
