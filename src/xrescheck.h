@@ -48,16 +48,16 @@ XCreatePixmap_(Display *dpy, Drawable drawable,
 #define XCreatePixmap(dpy, drawable, width, height, depth) \
   XCreatePixmap_(dpy, drawable, width, height, depth, M_POS_DATA)
 
-static inline Pixmap
-XCompositeNameWindowPixmap_(Display *dpy, Window window, M_POS_DATA_PARAMS) {
-  Pixmap ret = XCompositeNameWindowPixmap(dpy, window);
+static inline xcb_pixmap_t
+xcb_composite_name_window_pixmap_(xcb_connection_t *c, xcb_window_t window, xcb_pixmap_t pixmap, M_POS_DATA_PARAMS) {
+  xcb_pixmap_t ret = xcb_composite_name_window_pixmap(c, window, pixmap);
   if (ret)
     xrc_add_xid_(ret, "PixmapC", M_POS_DATA_PASSTHROUGH);
   return ret;
 }
 
-#define XCompositeNameWindowPixmap(dpy, window) \
-  XCompositeNameWindowPixmap_(dpy, window, M_POS_DATA)
+#define xcb_composite_name_window_pixmap(dpy, window, pixmap) \
+  xcb_composite_name_window_pixmap_(dpy, window, pixmap, M_POS_DATA)
 
 static inline void
 XFreePixmap_(Display *dpy, Pixmap pixmap, M_POS_DATA_PARAMS) {
