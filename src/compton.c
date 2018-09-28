@@ -4740,7 +4740,8 @@ init_filters(session_t *ps) {
             xcb_str_iterator_t iter = xcb_render_query_filters_filters_iterator(pf);
             for (; iter.rem; xcb_str_next(&iter)) {
               // Convolution filter
-              if (!strcmp(xcb_str_name(iter.data), XRFILTER_CONVOLUTION))
+              if (strlen(XRFILTER_CONVOLUTION) == xcb_str_name_length(iter.data)
+                  && !memcmp(XRFILTER_CONVOLUTION, xcb_str_name(iter.data), strlen(XRFILTER_CONVOLUTION)))
                 ps->xrfilter_convolution_exists = true;
             }
             free(pf);
