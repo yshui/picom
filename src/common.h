@@ -512,10 +512,11 @@ typedef struct _latom {
 /// A representation of raw region data
 typedef struct {
   XRectangle *rects;
+  XRectangle *to_free;
   int nrects;
 } reg_data_t;
 
-#define REG_DATA_INIT { NULL, 0 }
+#define REG_DATA_INIT { NULL, NULL, 0 }
 
 struct _timeout_t;
 

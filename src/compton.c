@@ -1664,6 +1664,7 @@ is_region_empty(const session_t *ps, XserverRegion region,
   XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
 
   if (pcache_reg) {
+    pcache_reg->to_free = rects;
     pcache_reg->rects = rects;
     pcache_reg->nrects = nrects;
   }

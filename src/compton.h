@@ -231,7 +231,7 @@ paint_bind_tex(session_t *ps, paint_t *ppaint,
  */
 static inline void
 free_reg_data(reg_data_t *pregd) {
-  cxfree(pregd->rects);
+  cxfree(pregd->to_free);
   pregd->rects = NULL;
   pregd->nrects = 0;
 }
