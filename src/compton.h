@@ -571,14 +571,14 @@ resize_region(session_t *ps, XserverRegion region, short mod) {
   if (!mod || !region) return;
 
   int nrects = 0, nnewrects = 0;
-  XRectangle *newrects = NULL;
+  xcb_rectangle_t *newrects = NULL;
   XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
   if (!rects || !nrects)
     goto resize_region_end;
 
   // Allocate memory for new rectangle list, because I don't know if it's
   // safe to write in the memory Xlib allocates
-  newrects = calloc(nrects, sizeof(XRectangle));
+  newrects = calloc(nrects, sizeof(xcb_rectangle_t));
   if (!newrects) {
     printf_errf("(): Failed to allocate memory.");
     exit(1);
@@ -602,7 +602,8 @@ resize_region(session_t *ps, XserverRegion region, short mod) {
   }
 
   // Set region
-  XFixesSetRegion(ps->dpy, region, newrects, nnewrects);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_xfixes_set_region(c, region, nnewrects, newrects);
 
 resize_region_end:
   cxfree(rects);
