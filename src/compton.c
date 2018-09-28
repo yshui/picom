@@ -4716,7 +4716,15 @@ init_dbe(session_t *ps) {
 static bool
 init_overlay(session_t *ps) {
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  ps->overlay = XCompositeGetOverlayWindow(ps->dpy, ps->root);
+  xcb_composite_get_overlay_window_reply_t *reply =
+    xcb_composite_get_overlay_window_reply(c,
+        xcb_composite_get_overlay_window(c, ps->root), NULL);
+  if (reply) {
+    ps->overlay = reply->overlay_win;
+    free(reply);
+  } else {
+    ps->overlay = XCB_NONE;
+  }
   if (ps->overlay) {
     // Set window region of the overlay window, code stolen from
     // compiz-0.8.8
@@ -4806,12 +4814,14 @@ redir_start(session_t *ps) {
     printf_dbgf("(): Screen redirected.\n");
 #endif
 
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
     // Map overlay window. Done firstly according to this:
     // https://bugzilla.gnome.org/show_bug.cgi?id=597014
     if (ps->overlay)
       XMapWindow(ps->dpy, ps->overlay);
 
-    XCompositeRedirectSubwindows(ps->dpy, ps->root, CompositeRedirectManual);
+    xcb_composite_redirect_subwindows(c, ps->root, CompositeRedirectManual);
 
     /*
     // Unredirect GL context window as this may have an effect on VSync:
@@ -5686,6 +5696,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
  */
 static void
 session_destroy(session_t *ps) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   redir_stop(ps);
 
   // Stop listening to events on root window
@@ -5829,7 +5840,7 @@ session_destroy(session_t *ps) {
 
   // Release overlay window
   if (ps->overlay) {
-    XCompositeReleaseOverlayWindow(ps->dpy, ps->overlay);
+    xcb_composite_release_overlay_window(c, ps->overlay);
     ps->overlay = None;
   }
 
