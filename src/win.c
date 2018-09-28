@@ -149,10 +149,15 @@ void win_rounded_corners(session_t *ps, win *w) {
       w->heightb - ROUNDED_PIXELS);
 
   // Get the rectangles in the bounding region
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   int nrects = 0, i;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, w->border_size, &nrects);
-  if (!rects)
+  xcb_xfixes_fetch_region_reply_t *reply =
+    xcb_xfixes_fetch_region_reply(c,
+      xcb_xfixes_fetch_region(c, w->border_size), NULL);
+  if (!reply)
     return;
+  xcb_rectangle_t *rects = xcb_xfixes_fetch_region_rectangles(reply);
+  nrects = xcb_xfixes_fetch_region_rectangles_length(reply);
 
   // Look for a rectangle large enough for this window be considered
   // having rounded corners
@@ -162,7 +167,7 @@ void win_rounded_corners(session_t *ps, win *w) {
       break;
     }
 
-  cxfree(rects);
+  free(reply);
 }
 
 int win_get_name(session_t *ps, win *w) {

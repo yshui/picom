@@ -511,8 +511,8 @@ typedef struct _latom {
 
 /// A representation of raw region data
 typedef struct {
-  XRectangle *rects;
-  XRectangle *to_free;
+  xcb_rectangle_t *rects;
+  xcb_xfixes_fetch_region_reply_t *to_free;
   int nrects;
 } reg_data_t;
 
@@ -1960,7 +1960,7 @@ free_fence(session_t *ps, XSyncFence *pfence) {
  * psrc and pdst cannot be the same.
  */
 static inline void
-rect_crop(XRectangle *pdst, const XRectangle *psrc, const XRectangle *pbound) {
+rect_crop(xcb_rectangle_t *pdst, const xcb_rectangle_t *psrc, const xcb_rectangle_t *pbound) {
   assert(psrc != pdst);
   pdst->x = max_i(psrc->x, pbound->x);
   pdst->y = max_i(psrc->y, pbound->y);

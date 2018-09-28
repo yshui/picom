@@ -1642,7 +1642,7 @@ rebuild_screen_reg(session_t *ps) {
 static void
 rebuild_shadow_exclude_reg(session_t *ps) {
   free_region(ps, &ps->shadow_exclude_reg);
-  XRectangle rect = geom_to_rect(ps, &ps->o.shadow_exclude_reg_geom, NULL);
+  xcb_rectangle_t rect = geom_to_rect(ps, &ps->o.shadow_exclude_reg_geom, NULL);
   ps->shadow_exclude_reg = rect_to_reg(ps, &rect);
 }
 
@@ -1661,15 +1661,24 @@ static inline bool
 is_region_empty(const session_t *ps, XserverRegion region,
     reg_data_t *pcache_reg) {
   int nrects = 0;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
+  xcb_rectangle_t *rects = NULL;
+  xcb_xfixes_fetch_region_reply_t *reply;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
+  reply = xcb_xfixes_fetch_region_reply(c,
+      xcb_xfixes_fetch_region(c, region), NULL);
+  if (reply) {
+    rects = xcb_xfixes_fetch_region_rectangles(reply);
+    nrects = xcb_xfixes_fetch_region_rectangles_length(reply);
+  }
 
   if (pcache_reg) {
-    pcache_reg->to_free = rects;
+    pcache_reg->to_free = reply;
     pcache_reg->rects = rects;
     pcache_reg->nrects = nrects;
   }
   else
-    cxfree(rects);
+    free(reply);
 
   return !nrects;
 }

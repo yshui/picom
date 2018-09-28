@@ -968,7 +968,16 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
           glRasterPos2f(0.0, 0.0);
           {
             int nrects = 0;
-            XRectangle *rects = XFixesFetchRegion(ps->dpy, reg_copy, &nrects);
+            xcb_rectangle_t *rects = NULL;
+            xcb_xfixes_fetch_region_reply_t *reply;
+
+            reply = xcb_xfixes_fetch_region_reply(c,
+                xcb_xfixes_fetch_region(c, reg_copy), NULL);
+            if (reply) {
+              rects = xcb_xfixes_fetch_region_rectangles(reply);
+              nrects = xcb_xfixes_fetch_region_rectangles_length(reply);
+            }
+
             for (int i = 0; i < nrects; ++i) {
               const int x = rects[i].x;
               const int y = ps->root_height - rects[i].y - rects[i].height;
@@ -979,7 +988,7 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
               cury = y;
               glCopyPixels(x, y, rects[i].width, rects[i].height, GL_COLOR);
             }
-            cxfree(rects);
+            free(reply);
           }
           glReadBuffer(GL_BACK);
           glRasterPos4fv(raster_pos);
@@ -1025,7 +1034,7 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
   if (ps->o.glx_no_stencil)
     return;
 
-  static XRectangle rect_blank = { .x = 0, .y = 0, .width = 0, .height = 0 };
+  static const xcb_rectangle_t rect_blank = { .x = 0, .y = 0, .width = 0, .height = 0 };
 
   glDisable(GL_STENCIL_TEST);
   glDisable(GL_SCISSOR_TEST);
@@ -1034,20 +1043,27 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
     return;
 
   int nrects = 0;
-  XRectangle *rects_free = NULL;
-  const XRectangle *rects = NULL;
+  const xcb_rectangle_t *rects = NULL;
+  xcb_xfixes_fetch_region_reply_t *reply_free = NULL;
   if (pcache_reg) {
     rects = pcache_reg->rects;
     nrects = pcache_reg->nrects;
   }
   if (!rects) {
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
     nrects = 0;
-    rects = rects_free = XFixesFetchRegion(ps->dpy, reg, &nrects);
+
+    reply_free = xcb_xfixes_fetch_region_reply(c,
+        xcb_xfixes_fetch_region(c, reg), NULL);
+    if (reply_free) {
+      rects = xcb_xfixes_fetch_region_rectangles(reply_free);
+      nrects = xcb_xfixes_fetch_region_rectangles_length(reply_free);
+    }
   }
   // Use one empty rectangle if the region is empty
   if (!nrects) {
-    cxfree(rects_free);
-    rects_free = NULL;
+    free(reply_free);
+    reply_free = NULL;
     nrects = 1;
     rects = &rect_blank;
   }
@@ -1092,7 +1108,7 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
     // glDepthMask(GL_TRUE);
   }
 
-  cxfree(rects_free);
+  free(reply_free);
 
   glx_check_err(ps);
 }
@@ -1100,8 +1116,8 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
 #define P_PAINTREG_START() \
   XserverRegion reg_new = None; \
   xcb_rectangle_t rec_all = { .x = dx, .y = dy, .width = width, .height = height }; \
-  XRectangle rec_all2 = { .x = dx, .y = dy, .width = width, .height = height }; /* FIXME remove this once Xfixes is gone */ \
-  XRectangle *rects = &rec_all2; \
+  xcb_rectangle_t *rects = &rec_all; \
+  xcb_xfixes_fetch_region_reply_t *reply = NULL; \
   int nrects = 1; \
  \
   if (ps->o.glx_no_stencil && reg_tgt) { \
@@ -1115,14 +1131,19 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
       xcb_xfixes_intersect_region(c, reg_new, reg_tgt, reg_new); \
  \
       nrects = 0; \
-      rects = XFixesFetchRegion(ps->dpy, reg_new, &nrects); \
+      reply = xcb_xfixes_fetch_region_reply(c, \
+          xcb_xfixes_fetch_region(c, reg_new), NULL); \
+      if (reply) { \
+        rects = xcb_xfixes_fetch_region_rectangles(reply); \
+        nrects = xcb_xfixes_fetch_region_rectangles_length(reply); \
+      } \
     } \
   } \
   glBegin(GL_QUADS); \
  \
   for (int ri = 0; ri < nrects; ++ri) { \
-    XRectangle crect; \
-    rect_crop(&crect, &rects[ri], &rec_all2); \
+    xcb_rectangle_t crect; \
+    rect_crop(&crect, &rects[ri], &rec_all); \
  \
     if (!crect.width || !crect.height) \
       continue; \
@@ -1131,8 +1152,7 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
   } \
   glEnd(); \
  \
-  if (rects && rects != &rec_all2 && !(pcache_reg && pcache_reg->rects == rects)) \
-    cxfree(rects); \
+  free(reply); \
   free_region(ps, &reg_new); \
 
 static inline GLuint
@@ -1641,7 +1661,16 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
 void
 glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg) {
   int nrects = 0;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, reg, &nrects);
+  xcb_rectangle_t *rects = NULL;
+  xcb_xfixes_fetch_region_reply_t *reply;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
+  reply = xcb_xfixes_fetch_region_reply(c,
+      xcb_xfixes_fetch_region(c, reg), NULL);
+  if (reply) {
+    rects = xcb_xfixes_fetch_region_rectangles(reply);
+    nrects = xcb_xfixes_fetch_region_rectangles_length(reply);
+  }
 
   if (1 == nrects && rect_is_fullscreen(ps, rects[0].x, rects[0].y,
         rects[0].width, rects[0].height)) {
@@ -1664,7 +1693,7 @@ glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg) {
 
   glx_check_err(ps);
 
-  cxfree(rects);
+  free(reply);
 }
 
 /**

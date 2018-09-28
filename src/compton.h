@@ -111,15 +111,15 @@ array_wid_exists(const Window *arr, int count, Window wid) {
 }
 
 /**
- * Convert a geometry_t value to XRectangle.
+ * Convert a geometry_t value to xcb_rectangle_t.
  */
-static inline XRectangle
-geom_to_rect(session_t *ps, const geometry_t *src, const XRectangle *def) {
-  XRectangle rect_def = { .x = 0, .y = 0,
+static inline xcb_rectangle_t
+geom_to_rect(session_t *ps, const geometry_t *src, const xcb_rectangle_t *def) {
+  xcb_rectangle_t rect_def = { .x = 0, .y = 0,
     .width = ps->root_width, .height = ps->root_height };
   if (!def) def = &rect_def;
 
-  XRectangle rect = { .x = src->x, .y = src->y,
+  xcb_rectangle_t rect = { .x = src->x, .y = src->y,
     .width = src->wid, .height = src->hei };
   if (src->wid < 0) rect.width = def->width;
   if (src->hei < 0) rect.height = def->height;
@@ -131,20 +131,19 @@ geom_to_rect(session_t *ps, const geometry_t *src, const XRectangle *def) {
 }
 
 /**
- * Convert a XRectangle to a XServerRegion.
+ * Convert a xcb_rectangle_t to a XServerRegion.
  */
 static inline XserverRegion
-rect_to_reg(session_t *ps, const XRectangle *src) {
+rect_to_reg(session_t *ps, const xcb_rectangle_t *src) {
   if (!src) return None;
-  XRectangle bound = { .x = 0, .y = 0,
+  xcb_rectangle_t bound = { .x = 0, .y = 0,
     .width = ps->root_width, .height = ps->root_height };
-  XRectangle res = { };
+  xcb_rectangle_t res = { };
   rect_crop(&res, src, &bound);
   if (res.width && res.height) {
-    xcb_rectangle_t res2 = { .x = res.x, .y = res.y, .width = res.width, .height = res.height }; /* FIXME remove this once XFixes is gone */
     xcb_connection_t *c = XGetXCBConnection(ps->dpy);
     xcb_xfixes_region_t result = xcb_generate_id(c);
-    xcb_xfixes_create_region(c, result, 1, &res2);
+    xcb_xfixes_create_region(c, result, 1, &res);
     return result;
   }
   return None;
@@ -231,7 +230,7 @@ paint_bind_tex(session_t *ps, paint_t *ppaint,
  */
 static inline void
 free_reg_data(reg_data_t *pregd) {
-  cxfree(pregd->to_free);
+  free(pregd->to_free);
   pregd->rects = NULL;
   pregd->nrects = 0;
 }
@@ -572,7 +571,17 @@ resize_region(session_t *ps, XserverRegion region, short mod) {
 
   int nrects = 0, nnewrects = 0;
   xcb_rectangle_t *newrects = NULL;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
+  xcb_rectangle_t *rects = NULL;
+  xcb_xfixes_fetch_region_reply_t *reply;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
+  reply = xcb_xfixes_fetch_region_reply(c,
+      xcb_xfixes_fetch_region(c, region), NULL);
+  if (reply) {
+    rects = xcb_xfixes_fetch_region_rectangles(reply);
+    nrects = xcb_xfixes_fetch_region_rectangles_length(reply);
+  }
+
   if (!rects || !nrects)
     goto resize_region_end;
 
@@ -602,11 +611,10 @@ resize_region(session_t *ps, XserverRegion region, short mod) {
   }
 
   // Set region
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   xcb_xfixes_set_region(c, region, nnewrects, newrects);
 
 resize_region_end:
-  cxfree(rects);
+  free(reply);
   free(newrects);
 }
 
@@ -616,9 +624,17 @@ resize_region_end:
 static inline void
 dump_region(const session_t *ps, XserverRegion region) {
   int nrects = 0;
-  XRectangle *rects = NULL;
-  if (!rects && region)
-    rects = XFixesFetchRegion(ps->dpy, region, &nrects);
+  xcb_rectangle_t *rects = NULL;
+  xcb_xfixes_fetch_region_reply_t *reply = NULL;
+  if (!rects && region) {
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    reply = xcb_xfixes_fetch_region_reply(c,
+        xcb_xfixes_fetch_region(c, region), NULL);
+    if (reply) {
+      rects = xcb_xfixes_fetch_region_rectangles(reply);
+      nrects = xcb_xfixes_fetch_region_rectangles_length(reply);
+    }
+  }
 
   printf_dbgf("(%#010lx): %d rects\n", region, nrects);
   if (!rects) return;
@@ -628,7 +644,7 @@ dump_region(const session_t *ps, XserverRegion region) {
   putchar('\n');
   fflush(stdout);
 
-  cxfree(rects);
+  free(reply);
 }
 
 #ifdef CONFIG_OPENGL
