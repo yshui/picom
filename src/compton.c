@@ -5403,21 +5403,26 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->render_event = ext_info->first_event;
   ps->render_error = ext_info->first_error;
 
-  if (!XQueryExtension(ps->dpy, COMPOSITE_NAME, &ps->composite_opcode,
-        &ps->composite_event, &ps->composite_error)) {
+  ext_info = xcb_get_extension_data(c, &xcb_composite_id);
+  if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No composite extension\n");
     exit(1);
   }
+  ps->composite_opcode = ext_info->major_opcode;
+  ps->composite_event = ext_info->first_event;
+  ps->composite_error = ext_info->first_error;
 
   {
-    int composite_major = 0, composite_minor = 0;
-
-    XCompositeQueryVersion(ps->dpy, &composite_major, &composite_minor);
+    xcb_composite_query_version_reply_t *reply =
+      xcb_composite_query_version_reply(c,
+          xcb_composite_query_version(c, XCB_COMPOSITE_MAJOR_VERSION, XCB_COMPOSITE_MINOR_VERSION),
+          NULL);
 
     if (!ps->o.no_name_pixmap
-        && (composite_major > 0 || composite_minor >= 2)) {
+        && reply && (reply->major_version > 0 || reply->minor_version >= 2)) {
       ps->has_name_pixmap = true;
     }
+    free(reply);
   }
 
   ext_info = xcb_get_extension_data(c, &xcb_damage_id);

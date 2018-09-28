@@ -9,7 +9,7 @@ MANDIR ?= $(PREFIX)/share/man/man1
 APPDIR ?= $(PREFIX)/share/applications
 ICODIR ?= $(PREFIX)/share/icons/hicolor/
 
-PACKAGES = x11 x11-xcb xcb-renderutil xcb-render xcb-damage xcb-randr xcb-xfixes xcb-composite xcb-image xcomposite xext
+PACKAGES = x11 x11-xcb xcb-renderutil xcb-render xcb-damage xcb-randr xcb-xfixes xcb-composite xcb-image xext
 LIBS = -lm -lrt
 INCS =
 
