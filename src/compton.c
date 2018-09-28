@@ -239,8 +239,9 @@ void add_damage(session_t *ps, XserverRegion damage) {
 
   if (!damage) return;
   if (ps->all_damage) {
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
     XFixesUnionRegion(ps->dpy, ps->all_damage, ps->all_damage, damage);
-    XFixesDestroyRegion(ps->dpy, damage);
+    xcb_xfixes_destroy_region(c, damage);
   } else {
     ps->all_damage = damage;
   }
@@ -1626,8 +1627,10 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
  */
 static void
 rebuild_screen_reg(session_t *ps) {
-  if (ps->screen_reg)
-    XFixesDestroyRegion(ps->dpy, ps->screen_reg);
+  if (ps->screen_reg) {
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_xfixes_destroy_region(c, ps->screen_reg);
+  }
   ps->screen_reg = get_screen_region(ps);
 }
 
@@ -1865,8 +1868,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   }
 
   // Free up all temporary regions
-  XFixesDestroyRegion(ps->dpy, reg_tmp);
-  XFixesDestroyRegion(ps->dpy, reg_tmp2);
+  xcb_xfixes_destroy_region(c, reg_tmp);
+  xcb_xfixes_destroy_region(c, reg_tmp2);
 
   // Do this as early as possible
   if (!ps->o.dbe)
@@ -1960,7 +1963,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   }
 #endif
 
-  XFixesDestroyRegion(ps->dpy, region);
+  xcb_xfixes_destroy_region(c, region);
 
 #ifdef DEBUG_REPAINT
   print_timestamp(ps);
@@ -2277,6 +2280,7 @@ init_filters(session_t *ps);
 
 static void
 configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   // On root window changes
   if (ce->window == ps->root) {
     free_paint(ps, &ps->tgt_buffer);
@@ -2375,7 +2379,7 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     if (damage) {
       XserverRegion extents = win_extents(ps, w);
       XFixesUnionRegion(ps->dpy, damage, damage, extents);
-      XFixesDestroyRegion(ps->dpy, extents);
+      xcb_xfixes_destroy_region(c, extents);
       add_damage(ps, damage);
     }
 
@@ -4688,6 +4692,7 @@ init_dbe(session_t *ps) {
  */
 static bool
 init_overlay(session_t *ps) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   ps->overlay = XCompositeGetOverlayWindow(ps->dpy, ps->root);
   if (ps->overlay) {
     // Set window region of the overlay window, code stolen from
@@ -4695,7 +4700,7 @@ init_overlay(session_t *ps) {
     XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
     XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeBounding, 0, 0, 0);
     XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeInput, 0, 0, region);
-    XFixesDestroyRegion(ps->dpy, region);
+    xcb_xfixes_destroy_region(c, region);
 
     // Listen to Expose events on the overlay
     XSelectInput(ps->dpy, ps->overlay, ExposureMask);

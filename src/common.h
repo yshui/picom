@@ -1295,19 +1295,19 @@ XFixesCreateRegion_(Display *dpy, XRectangle *p, int n,
 }
 
 /**
- * Wrapper of <code>XFixesDestroyRegion</code>, for debugging.
+ * Wrapper of <code>xcb_xfixes_destroy_region</code>, for debugging.
  */
 static inline void
-XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
+xcb_xfixes_destroy_region_(xcb_connection_t *c, XserverRegion reg,
     const char *func, int line) {
-  XFixesDestroyRegion(dpy, reg);
+  xcb_xfixes_destroy_region(c, reg);
   print_timestamp(ps_g);
-  printf("%#010lx: XFixesDestroyRegion() in %s():%d\n", reg, func, line);
+  printf("%#010lx: xcb_xfixes_destroy_region() in %s():%d\n", reg, func, line);
   fflush(stdout);
 }
 
-#define XFixesCreateRegion(dpy, p, n) XFixesCreateRegion_(dpy, p, n, __func__, __LINE__)
-#define XFixesDestroyRegion(dpy, reg) XFixesDestroyRegion_(dpy, reg, __func__, __LINE__)
+#define XFixesCreateRegion(c, p, n) XFixesCreateRegion_(c, p, n, __func__, __LINE__)
+#define xcb_xfixes_destroy_region(c, reg) xcb_xfixes_destroy_region_(c, reg, __func__, __LINE__)
 #endif
 
 #endif
@@ -1923,7 +1923,8 @@ copy_region(const session_t *ps, XserverRegion oldregion) {
 static inline void
 free_region(session_t *ps, XserverRegion *p) {
   if (*p) {
-    XFixesDestroyRegion(ps->dpy, *p);
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_xfixes_destroy_region(c, *p);
     *p = None;
   }
 }

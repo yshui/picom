@@ -1,5 +1,4 @@
 #include <X11/Xlib.h>
-#include <X11/extensions/Xfixes.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
 #include <xcb/xcb_renderutil.h>
@@ -1193,6 +1192,7 @@ XserverRegion win_extents(session_t *ps, win *w) {
  */
 XserverRegion
 win_border_size(session_t *ps, win *w, bool use_offset) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   // Start with the window rectangular region
   XserverRegion fin = win_get_region(ps, w, use_offset);
 
@@ -1223,7 +1223,7 @@ win_border_size(session_t *ps, win *w, bool use_offset) {
     // make sure the bounding region is not bigger than the window
     // rectangle
     XFixesIntersectRegion(ps->dpy, fin, fin, border);
-    XFixesDestroyRegion(ps->dpy, border);
+    xcb_xfixes_destroy_region(c, border);
   }
 
   return fin;
