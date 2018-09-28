@@ -898,6 +898,7 @@ glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
  */
 void
 glx_paint_pre(session_t *ps, XserverRegion *preg) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   ps->psglx->z = 0.0;
   // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -946,7 +947,8 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
       // Copy pixels
       if (ps->o.glx_copy_from_front) {
         // Determine copy area
-        XserverRegion reg_copy = XFixesCreateRegion(ps->dpy, NULL, 0);
+        XserverRegion reg_copy = xcb_generate_id(c);
+        xcb_xfixes_create_region(c, reg_copy, 0, NULL);
         if (!buffer_age) {
           XFixesSubtractRegion(ps->dpy, reg_copy, ps->screen_reg, *preg);
         }
@@ -1097,8 +1099,9 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
 
 #define P_PAINTREG_START() \
   XserverRegion reg_new = None; \
-  XRectangle rec_all = { .x = dx, .y = dy, .width = width, .height = height }; \
-  XRectangle *rects = &rec_all; \
+  xcb_rectangle_t rec_all = { .x = dx, .y = dy, .width = width, .height = height }; \
+  XRectangle rec_all2 = { .x = dx, .y = dy, .width = width, .height = height }; /* FIXME remove this once Xfixes is gone */ \
+  XRectangle *rects = &rec_all2; \
   int nrects = 1; \
  \
   if (ps->o.glx_no_stencil && reg_tgt) { \
@@ -1107,7 +1110,8 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
       nrects = pcache_reg->nrects; \
     } \
     else { \
-      reg_new = XFixesCreateRegion(ps->dpy, &rec_all, 1); \
+      reg_new = xcb_generate_id(c); \
+      xcb_xfixes_create_region(c, reg_new, 1, &rec_all); \
       XFixesIntersectRegion(ps->dpy, reg_new, reg_new, reg_tgt); \
  \
       nrects = 0; \
@@ -1118,7 +1122,7 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
  \
   for (int ri = 0; ri < nrects; ++ri) { \
     XRectangle crect; \
-    rect_crop(&crect, &rects[ri], &rec_all); \
+    rect_crop(&crect, &rects[ri], &rec_all2); \
  \
     if (!crect.width || !crect.height) \
       continue; \
@@ -1127,7 +1131,7 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
   } \
   glEnd(); \
  \
-  if (rects && rects != &rec_all && !(pcache_reg && pcache_reg->rects == rects)) \
+  if (rects && rects != &rec_all2 && !(pcache_reg && pcache_reg->rects == rects)) \
     cxfree(rects); \
   free_region(ps, &reg_new); \
 
@@ -1166,6 +1170,7 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     XserverRegion reg_tgt, const reg_data_t *pcache_reg,
     glx_blur_cache_t *pbc) {
   assert(ps->psglx->blur_passes[0].prog);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   const bool more_passes = ps->psglx->blur_passes[1].prog;
   const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
   const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
@@ -1379,6 +1384,7 @@ glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     GLfloat factor, XserverRegion reg_tgt, const reg_data_t *pcache_reg) {
   // It's possible to dim in glx_render(), but it would be over-complicated
   // considering all those mess in color negation and modulation
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   glEnable(GL_BLEND);
   glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
   glColor4f(0.0f, 0.0f, 0.0f, factor);
@@ -1433,6 +1439,7 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
       ps->psglx->fbconfigs[ptex->depth]->texture_fmt);
   const bool has_prog = pprogram && pprogram->prog;
   bool dual_texture = false;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
   // It's required by legacy versions of OpenGL to enable texture target
   // before specifying environment. Thanks to madsy for telling me.

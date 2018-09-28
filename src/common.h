@@ -879,7 +879,7 @@ typedef struct session {
 
   // === Expose event related ===
   /// Pointer to an array of <code>XRectangle</code>-s of exposed region.
-  XRectangle *expose_rects;
+  xcb_rectangle_t *expose_rects;
   /// Number of <code>XRectangle</code>-s in <code>expose_rects</code>.
   int size_expose;
   /// Index of the next free slot in <code>expose_rects</code>.
@@ -1281,17 +1281,16 @@ print_backtrace(void) {
 #ifdef DEBUG_ALLOC_REG
 
 /**
- * Wrapper of <code>XFixesCreateRegion</code>, for debugging.
+ * Wrapper of <code>xcb_xfixes_create_region</code>, for debugging.
  */
-static inline XserverRegion
-XFixesCreateRegion_(Display *dpy, XRectangle *p, int n,
+static inline void
+xcb_xfixes_create_region_(xcb_connection_t *c, xcb_xfixes_region_t region, int n, xcb_rectangle_t *p,
     const char *func, int line) {
-  XserverRegion reg = XFixesCreateRegion(dpy, p, n);
+  xcb_xfixes_create_region(c, region, n, p);
   print_timestamp(ps_g);
-  printf("%#010lx: XFixesCreateRegion() in %s():%d\n", reg, func, line);
+  printf("%#010lx: xcb_xfixes_create_region() in %s():%d\n", reg, func, line);
   print_backtrace();
   fflush(stdout);
-  return reg;
 }
 
 /**
@@ -1306,7 +1305,7 @@ xcb_xfixes_destroy_region_(xcb_connection_t *c, XserverRegion reg,
   fflush(stdout);
 }
 
-#define XFixesCreateRegion(c, p, n) XFixesCreateRegion_(c, p, n, __func__, __LINE__)
+#define xcb_xfixes_create_region(c, r, p, n) xcb_xfixes_create_region_(c, r, p, n, __func__, __LINE__)
 #define xcb_xfixes_destroy_region(c, reg) xcb_xfixes_destroy_region_(c, reg, __func__, __LINE__)
 #endif
 
@@ -1910,7 +1909,9 @@ copy_region(const session_t *ps, XserverRegion oldregion) {
   if (!oldregion)
     return None;
 
-  XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  XserverRegion region = xcb_generate_id(c);
+  xcb_xfixes_create_region(c, region, 0, NULL);
 
   XFixesCopyRegion(ps->dpy, region, oldregion);
 

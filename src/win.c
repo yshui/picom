@@ -76,14 +76,17 @@ group_is_focused(session_t *ps, Window leader) {
  */
 XserverRegion
 win_get_region(session_t *ps, win *w, bool use_offset) {
-  XRectangle r;
+  xcb_rectangle_t r;
 
   r.x = (use_offset ? w->g.x: 0);
   r.y = (use_offset ? w->g.y: 0);
   r.width = w->widthb;
   r.height = w->heightb;
 
-  return XFixesCreateRegion(ps->dpy, &r, 1);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  XserverRegion result = xcb_generate_id(c);
+  xcb_xfixes_create_region(c, result, 1, &r);
+  return result;
 }
 
 
@@ -93,17 +96,20 @@ win_get_region(session_t *ps, win *w, bool use_offset) {
 XserverRegion
 win_get_region_noframe(session_t *ps, win *w, bool use_offset) {
   const margin_t extents = win_calc_frame_extents(ps, w);
-  XRectangle r;
+  xcb_rectangle_t r;
 
   r.x = (use_offset ? w->g.x: 0) + extents.left;
   r.y = (use_offset ? w->g.y: 0) + extents.top;
   r.width = max_i(w->g.width - extents.left - extents.right, 0);
   r.height = max_i(w->g.height - extents.top - extents.bottom, 0);
 
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_xfixes_region_t result = xcb_generate_id(c);
   if (r.width > 0 && r.height > 0)
-    return XFixesCreateRegion(ps->dpy, &r, 1);
+    xcb_xfixes_create_region(c, result, 1, &r);
   else
-    return XFixesCreateRegion(ps->dpy, NULL, 0);
+    xcb_xfixes_create_region(c, result, 0, NULL);
+  return result;
 }
 
 /**
@@ -1150,7 +1156,7 @@ win_set_focused(session_t *ps, win *w, bool focused) {
  * function.
  */
 XserverRegion win_extents(session_t *ps, win *w) {
-  XRectangle r;
+  xcb_rectangle_t r;
 
   r.x = w->g.x;
   r.y = w->g.y;
@@ -1158,7 +1164,7 @@ XserverRegion win_extents(session_t *ps, win *w) {
   r.height = w->heightb;
 
   if (w->shadow) {
-    XRectangle sr;
+    xcb_rectangle_t sr;
 
     sr.x = w->g.x + w->shadow_dx;
     sr.y = w->g.y + w->shadow_dy;
@@ -1184,7 +1190,10 @@ XserverRegion win_extents(session_t *ps, win *w) {
     }
   }
 
-  return XFixesCreateRegion(ps->dpy, &r, 1);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_xfixes_region_t result = xcb_generate_id(c);
+  xcb_xfixes_create_region(c, result, 1, &r);
+  return result;
 }
 
 /**
@@ -1206,8 +1215,8 @@ win_border_size(session_t *ps, win *w, bool use_offset) {
      * instead of an invalid XID.
      */
 
-    XserverRegion border = XFixesCreateRegionFromWindow(
-      ps->dpy, w->id, WindowRegionBounding);
+    XserverRegion border = xcb_generate_id(c);
+    xcb_xfixes_create_region_from_window(c, border, w->id, WindowRegionBounding);
 
     if (!border)
       return fin;

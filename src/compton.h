@@ -140,8 +140,13 @@ rect_to_reg(session_t *ps, const XRectangle *src) {
     .width = ps->root_width, .height = ps->root_height };
   XRectangle res = { };
   rect_crop(&res, src, &bound);
-  if (res.width && res.height)
-    return XFixesCreateRegion(ps->dpy, &res, 1);
+  if (res.width && res.height) {
+    xcb_rectangle_t res2 = { .x = res.x, .y = res.y, .width = res.width, .height = res.height }; /* FIXME remove this once XFixes is gone */
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_xfixes_region_t result = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, result, 1, &res2);
+    return result;
+  }
   return None;
 }
 
@@ -544,13 +549,17 @@ normalize_conv_kern(int wid, int hei, xcb_render_fixed_t *kern) {
  */
 inline static XserverRegion
 get_screen_region(session_t *ps) {
-  XRectangle r;
+  xcb_rectangle_t r;
 
   r.x = 0;
   r.y = 0;
   r.width = ps->root_width;
   r.height = ps->root_height;
-  return XFixesCreateRegion(ps->dpy, &r, 1);
+
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_xfixes_region_t result = xcb_generate_id(c);
+  xcb_xfixes_create_region(c, result, 1, &r);
+  return result;
 }
 
 /**

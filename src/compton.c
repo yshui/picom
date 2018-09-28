@@ -1745,7 +1745,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   if (t && t->reg_ignore) {
     // Calculate the region upon which the root window is to be painted
     // based on the ignore region of the lowest window, if available
-    reg_paint = reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
+    reg_paint = reg_tmp = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, reg_paint, 0, NULL);
     XFixesSubtractRegion(ps->dpy, reg_paint, region, t->reg_ignore);
   } else {
     reg_paint = region;
@@ -1755,9 +1756,12 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   paint_root(ps, reg_paint);
 
   // Create temporary regions for use during painting
-  if (!reg_tmp)
-    reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
-  reg_tmp2 = XFixesCreateRegion(ps->dpy, NULL, 0);
+  if (!reg_tmp) {
+    reg_tmp = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, reg_tmp, 0, NULL);
+  }
+  reg_tmp2 = xcb_generate_id(c);
+  xcb_xfixes_create_region(c, reg_tmp2, 0, NULL);
 
   for (win *w = t; w; w = w->prev_trans) {
     // Painting shadow
@@ -1794,14 +1798,14 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 
       // Might be worthwhile to crop the region to shadow border
       {
-        XRectangle rec_shadow_border = {
+        xcb_rectangle_t rec_shadow_border = {
           .x = w->g.x + w->shadow_dx,
           .y = w->g.y + w->shadow_dy,
           .width = w->shadow_width,
           .height = w->shadow_height
         };
-        XserverRegion reg_shadow = XFixesCreateRegion(ps->dpy,
-            &rec_shadow_border, 1);
+        XserverRegion reg_shadow = xcb_generate_id(c);
+        xcb_xfixes_create_region(c, reg_shadow, 1, &rec_shadow_border);
         XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, reg_shadow);
         free_region(ps, &reg_shadow);
       }
@@ -2002,7 +2006,8 @@ repair_win(session_t *ps, win *w) {
     set_ignore_next(ps);
     xcb_damage_subtract(c, w->damage, XCB_NONE, XCB_NONE);
   } else {
-    parts = XFixesCreateRegion(ps->dpy, 0, 0);
+    parts = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, parts, 0, NULL);
     set_ignore_next(ps);
     xcb_damage_subtract(c, w->damage, XCB_NONE, parts);
     XFixesTranslateRegion(ps->dpy, parts,
@@ -2342,7 +2347,8 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
     w->need_configure = false;
 
-    damage = XFixesCreateRegion(ps->dpy, 0, 0);
+    damage = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, damage, 0, NULL);
     if (w->extents != None) {
       XFixesCopyRegion(ps->dpy, damage, w->extents);
     }
@@ -2488,7 +2494,8 @@ root_damaged(session_t *ps) {
     /* }
     if (root_damage) {
       xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-      XserverRegion parts = XFixesCreateRegion(ps->dpy, 0, 0);
+      XserverRegion parts = xcb_generate_id(c);
+      xcb_xfixes_create_region(c, parts, 0, NULL);
       xcb_damage_subtract(c, root_damage, XCB_NONE, parts);
       add_damage(ps, parts);
     } */
@@ -2603,9 +2610,11 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 }
 
 static void
-expose_root(session_t *ps, XRectangle *rects, int nrects) {
+expose_root(session_t *ps, int nrects, xcb_rectangle_t *rects) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   free_all_damage_last(ps);
-  XserverRegion region = XFixesCreateRegion(ps->dpy, rects, nrects);
+  XserverRegion region = xcb_generate_id(c);
+  xcb_xfixes_create_region(c, region, nrects, rects);
   add_damage(ps, region);
 }
 /**
@@ -2950,10 +2959,10 @@ ev_expose(session_t *ps, xcb_expose_event_t *ev) {
     if (ps->n_expose == ps->size_expose) {
       if (ps->expose_rects) {
         ps->expose_rects = realloc(ps->expose_rects,
-          (ps->size_expose + more) * sizeof(XRectangle));
+          (ps->size_expose + more) * sizeof(xcb_rectangle_t));
         ps->size_expose += more;
       } else {
-        ps->expose_rects = malloc(more * sizeof(XRectangle));
+        ps->expose_rects = malloc(more * sizeof(xcb_rectangle_t));
         ps->size_expose = more;
       }
     }
@@ -2965,7 +2974,7 @@ ev_expose(session_t *ps, xcb_expose_event_t *ev) {
     ps->n_expose++;
 
     if (ev->count == 0) {
-      expose_root(ps, ps->expose_rects, ps->n_expose);
+      expose_root(ps, ps->n_expose, ps->expose_rects);
       ps->n_expose = 0;
     }
   }
@@ -4697,7 +4706,8 @@ init_overlay(session_t *ps) {
   if (ps->overlay) {
     // Set window region of the overlay window, code stolen from
     // compiz-0.8.8
-    XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
+    XserverRegion region = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, region, 0, NULL);
     XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeBounding, 0, 0, 0);
     XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeInput, 0, 0, region);
     xcb_xfixes_destroy_region(c, region);
@@ -5078,6 +5088,8 @@ mainloop(session_t *ps) {
 static void
 cxinerama_upd_scrs(session_t *ps) {
 #ifdef CONFIG_XINERAMA
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
   free_xinerama_info(ps);
 
   if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists) return;
@@ -5097,9 +5109,10 @@ cxinerama_upd_scrs(session_t *ps) {
         * ps->xinerama_nscrs));
   for (int i = 0; i < ps->xinerama_nscrs; ++i) {
     const XineramaScreenInfo * const s = &ps->xinerama_scrs[i];
-    XRectangle r = { .x = s->x_org, .y = s->y_org,
+    xcb_rectangle_t r = { .x = s->x_org, .y = s->y_org,
       .width = s->width, .height = s->height };
-    ps->xinerama_scr_regs[i] = XFixesCreateRegion(ps->dpy, &r, 1);
+    ps->xinerama_scr_regs[i] = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, ps->xinerama_scr_regs[i], 1, &r);
   }
 #endif
 }
