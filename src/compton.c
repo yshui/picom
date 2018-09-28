@@ -3680,6 +3680,7 @@ static bool
 register_cm(session_t *ps) {
   assert(!ps->reg_win);
 
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   ps->reg_win = XCreateSimpleWindow(ps->dpy, ps->root, 0, 0, 1, 1, 0,
         None, None);
 
@@ -3690,7 +3691,7 @@ register_cm(session_t *ps) {
 
   // Unredirect the window if it's redirected, just in case
   if (ps->redirected)
-    XCompositeUnredirectWindow(ps->dpy, ps->reg_win, CompositeRedirectManual);
+    xcb_composite_unredirect_window(c, ps->reg_win, CompositeRedirectManual);
 
   {
     XClassHint *h = XAllocClassHint();
@@ -4788,9 +4789,9 @@ redir_start(session_t *ps) {
     /*
     // Unredirect GL context window as this may have an effect on VSync:
     // < http://dri.freedesktop.org/wiki/CompositeSwap >
-    XCompositeUnredirectWindow(ps->dpy, ps->reg_win, CompositeRedirectManual);
+    xcb_composite_unredirect_window(c, ps->reg_win, CompositeRedirectManual);
     if (ps->o.paint_on_overlay && ps->overlay) {
-      XCompositeUnredirectWindow(ps->dpy, ps->overlay,
+      xcb_composite_unredirect_window(c, ps->overlay,
           CompositeRedirectManual);
     } */
 
@@ -4954,6 +4955,7 @@ timeout_reset(session_t *ps, timeout_t *ptmout) {
 static void
 redir_stop(session_t *ps) {
   if (ps->redirected) {
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 #ifdef DEBUG_REDIR
     print_timestamp(ps);
     printf_dbgf("(): Screen unredirected.\n");
@@ -4964,7 +4966,7 @@ redir_stop(session_t *ps) {
     for (win *w = ps->list; w; w = w->next)
       free_wpaint(ps, w);
 
-    XCompositeUnredirectSubwindows(ps->dpy, ps->root, CompositeRedirectManual);
+    xcb_composite_unredirect_subwindows(c, ps->root, CompositeRedirectManual);
     // Unmap overlay window
     if (ps->overlay)
       XUnmapWindow(ps->dpy, ps->overlay);
