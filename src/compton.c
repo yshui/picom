@@ -1127,8 +1127,8 @@ paint_preprocess(session_t *ps, win *list) {
           else {
             w->reg_ignore = win_get_region_noframe(ps, w, true);
             if (w->border_size)
-              XFixesIntersectRegion(ps->dpy, w->reg_ignore, w->reg_ignore,
-                  w->border_size);
+              xcb_xfixes_intersect_region(c, w->reg_ignore,
+                  w->border_size, w->reg_ignore);
           }
 
           if (last_reg_ignore)
@@ -1694,7 +1694,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   }
   else {
     // Remove the damaged area out of screen
-    XFixesIntersectRegion(ps->dpy, region, region, ps->screen_reg);
+    xcb_xfixes_intersect_region(c, region, ps->screen_reg, region);
   }
 
 #ifdef MONITOR_REPAINT
@@ -1786,11 +1786,11 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
           // Otherwise, used the cached region during last cycle
           reg_paint = reg_tmp2;
         }
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, w->extents);
+        xcb_xfixes_intersect_region(c, reg_paint, w->extents, reg_paint);
       }
       else {
         reg_paint = reg_tmp;
-        XFixesIntersectRegion(ps->dpy, reg_paint, region, w->extents);
+        xcb_xfixes_intersect_region(c, region, w->extents, reg_paint);
       }
 
       if (ps->shadow_exclude_reg)
@@ -1807,7 +1807,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
         };
         XserverRegion reg_shadow = xcb_generate_id(c);
         xcb_xfixes_create_region(c, reg_shadow, 1, &rec_shadow_border);
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, reg_shadow);
+        xcb_xfixes_intersect_region(c, reg_paint, reg_shadow, reg_paint);
         free_region(ps, &reg_shadow);
       }
 
@@ -1818,8 +1818,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 
 #ifdef CONFIG_XINERAMA
       if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0)
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint,
-            ps->xinerama_scr_regs[w->xinerama_scr]);
+        xcb_xfixes_intersect_region(c, reg_paint,
+            ps->xinerama_scr_regs[w->xinerama_scr], reg_paint);
 #endif
 
       // Detect if the region is empty before painting
@@ -1846,11 +1846,11 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       xcb_xfixes_copy_region(c, reg_paint, reg_tmp2);
 
       if (w->border_size)
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
+        xcb_xfixes_intersect_region(c, reg_paint, w->border_size, reg_paint);
     }
     else {
       if (w->border_size)
-        XFixesIntersectRegion(ps->dpy, reg_paint, region, w->border_size);
+        xcb_xfixes_intersect_region(c, region, w->border_size, reg_paint);
       else
         reg_paint = region;
     }

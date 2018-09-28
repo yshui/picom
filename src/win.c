@@ -1231,7 +1231,7 @@ win_border_size(session_t *ps, win *w, bool use_offset) {
     // Intersect the bounding region we got with the window rectangle, to
     // make sure the bounding region is not bigger than the window
     // rectangle
-    XFixesIntersectRegion(ps->dpy, fin, fin, border);
+    xcb_xfixes_intersect_region(c, fin, border, fin);
     xcb_xfixes_destroy_region(c, border);
   }
 

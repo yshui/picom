@@ -1112,7 +1112,7 @@ glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
     else { \
       reg_new = xcb_generate_id(c); \
       xcb_xfixes_create_region(c, reg_new, 1, &rec_all); \
-      XFixesIntersectRegion(ps->dpy, reg_new, reg_new, reg_tgt); \
+      xcb_xfixes_intersect_region(c, reg_new, reg_tgt, reg_new); \
  \
       nrects = 0; \
       rects = XFixesFetchRegion(ps->dpy, reg_new, &nrects); \
