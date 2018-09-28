@@ -1500,7 +1500,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
       // Apply clipping region to save some CPU
       if (reg_paint) {
         XserverRegion reg = copy_region(ps, reg_paint);
-        XFixesTranslateRegion(ps->dpy, reg, -x, -y);
+        xcb_xfixes_translate_region(c, reg, -x, -y);
         XFixesSetPictureClipRegion(ps->dpy, newpict, 0, 0, reg);
         free_region(ps, &reg);
       }
@@ -2010,7 +2010,7 @@ repair_win(session_t *ps, win *w) {
     xcb_xfixes_create_region(c, parts, 0, NULL);
     set_ignore_next(ps);
     xcb_damage_subtract(c, w->damage, XCB_NONE, parts);
-    XFixesTranslateRegion(ps->dpy, parts,
+    xcb_xfixes_translate_region(c, parts,
       w->g.x + w->g.border_width,
       w->g.y + w->g.border_width);
   }

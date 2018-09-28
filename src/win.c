@@ -1223,7 +1223,7 @@ win_border_size(session_t *ps, win *w, bool use_offset) {
 
     if (use_offset) {
       // Translate the region to the correct place
-      XFixesTranslateRegion(ps->dpy, border,
+      xcb_xfixes_translate_region(c, border,
         w->g.x + w->g.border_width,
         w->g.y + w->g.border_width);
     }
