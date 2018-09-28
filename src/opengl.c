@@ -954,8 +954,8 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
         }
         else {
           for (int i = 0; i < buffer_age - 1; ++i)
-            XFixesUnionRegion(ps->dpy, reg_copy, reg_copy,
-                ps->all_damage_last[i]);
+            xcb_xfixes_union_region(c, reg_copy,
+                ps->all_damage_last[i], reg_copy);
           XFixesSubtractRegion(ps->dpy, reg_copy, reg_copy, *preg);
         }
 
@@ -992,7 +992,7 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
       if (ps->o.glx_copy_from_front) { }
       else if (buffer_age) {
         for (int i = 0; i < buffer_age - 1; ++i)
-          XFixesUnionRegion(ps->dpy, *preg, *preg, ps->all_damage_last[i]);
+          xcb_xfixes_union_region(c, *preg, ps->all_damage_last[i], *preg);
       }
       else {
         free_region(ps, preg);

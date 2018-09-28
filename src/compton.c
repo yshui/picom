@@ -240,7 +240,7 @@ void add_damage(session_t *ps, XserverRegion damage) {
   if (!damage) return;
   if (ps->all_damage) {
     xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-    XFixesUnionRegion(ps->dpy, ps->all_damage, ps->all_damage, damage);
+    xcb_xfixes_union_region(c, ps->all_damage, damage, ps->all_damage);
     xcb_xfixes_destroy_region(c, damage);
   } else {
     ps->all_damage = damage;
@@ -990,6 +990,7 @@ get_alpha_pict_o(session_t *ps, opacity_t o) {
 
 static win *
 paint_preprocess(session_t *ps, win *list) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   win *t = NULL, *next = NULL;
 
   // Fading step calculation
@@ -1131,8 +1132,8 @@ paint_preprocess(session_t *ps, win *list) {
           }
 
           if (last_reg_ignore)
-            XFixesUnionRegion(ps->dpy, w->reg_ignore, w->reg_ignore,
-                last_reg_ignore);
+            xcb_xfixes_union_region(c, w->reg_ignore,
+                last_reg_ignore, w->reg_ignore);
         }
         // Otherwise we copy the last region over
         else if (last_reg_ignore)
@@ -2384,7 +2385,7 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
     if (damage) {
       XserverRegion extents = win_extents(ps, w);
-      XFixesUnionRegion(ps->dpy, damage, damage, extents);
+      xcb_xfixes_union_region(c, damage, extents, damage);
       xcb_xfixes_destroy_region(c, extents);
       add_damage(ps, damage);
     }
