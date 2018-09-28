@@ -1265,7 +1265,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
   }
 
   if (reg_clip && tmp_picture)
-    XFixesSetPictureClipRegion(ps->dpy, tmp_picture, reg_clip, 0, 0);
+    xcb_xfixes_set_picture_clip_region(c, tmp_picture, 0, reg_clip, 0); /* FIXME: This is wrong; using 0 for the region */
 
   xcb_render_picture_t src_pict = tgt_buffer, dst_pict = tmp_picture;
   for (int i = 0; blur_kerns[i]; ++i) {
@@ -1503,7 +1503,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
       if (reg_paint) {
         XserverRegion reg = copy_region(ps, reg_paint);
         xcb_xfixes_translate_region(c, reg, -x, -y);
-        XFixesSetPictureClipRegion(ps->dpy, newpict, 0, 0, reg);
+        xcb_xfixes_set_picture_clip_region(c, newpict, reg, 0, 0);
         free_region(ps, &reg);
       }
 
@@ -1726,7 +1726,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 #endif
 
   if (BKEND_XRENDER == ps->o.backend)
-    XFixesSetPictureClipRegion(ps->dpy, ps->tgt_picture, 0, 0, region_real);
+    xcb_xfixes_set_picture_clip_region(c, ps->tgt_picture, region_real, 0, 0);
 
 #ifdef MONITOR_REPAINT
   switch (ps->o.backend) {
@@ -4710,8 +4710,8 @@ init_overlay(session_t *ps) {
     // compiz-0.8.8
     XserverRegion region = xcb_generate_id(c);
     xcb_xfixes_create_region(c, region, 0, NULL);
-    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeBounding, 0, 0, 0);
-    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeInput, 0, 0, region);
+    xcb_xfixes_set_window_shape_region(c, ps->overlay, ShapeBounding, 0, 0, 0);
+    xcb_xfixes_set_window_shape_region(c, ps->overlay, ShapeInput, 0, 0, region);
     xcb_xfixes_destroy_region(c, region);
 
     // Listen to Expose events on the overlay

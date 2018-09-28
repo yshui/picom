@@ -516,10 +516,11 @@ win_render(session_t *ps, win *w, int x, int y, int wid, int hei,
 
 static inline void
 set_tgt_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   switch (ps->o.backend) {
     case BKEND_XRENDER:
     case BKEND_XR_GLX_HYBRID:
-      XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer.pict, 0, 0, reg);
+      xcb_xfixes_set_picture_clip_region(c, ps->tgt_buffer.pict, reg, 0, 0);
       break;
 #ifdef CONFIG_OPENGL
     case BKEND_GLX:
