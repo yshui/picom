@@ -434,7 +434,7 @@ glx_init_blur(session_t *ps) {
     }
 
     for (int i = 0; i < MAX_BLUR_PASS && ps->o.blur_kerns[i]; ++i) {
-      XFixed *kern = ps->o.blur_kerns[i];
+      xcb_render_fixed_t *kern = ps->o.blur_kerns[i];
       if (!kern)
         break;
 
@@ -442,7 +442,7 @@ glx_init_blur(session_t *ps) {
 
       // Build shader
       {
-        int wid = XFixedToDouble(kern[0]), hei = XFixedToDouble(kern[1]);
+        int wid = XFIXED_TO_DOUBLE(kern[0]), hei = XFIXED_TO_DOUBLE(kern[1]);
         int nele = wid * hei - 1;
         unsigned int len = strlen(FRAG_SHADER_BLUR_PREFIX) +
                            strlen(sampler_type) +
@@ -466,7 +466,7 @@ glx_init_blur(session_t *ps) {
             for (int k = 0; k < wid; ++k) {
               if (hei / 2 == j && wid / 2 == k)
                 continue;
-              double val = XFixedToDouble(kern[2 + j * wid + k]);
+              double val = XFIXED_TO_DOUBLE(kern[2 + j * wid + k]);
               if (0.0 == val)
                 continue;
               sum += val;
@@ -1187,8 +1187,8 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     for (int i = 0; i < MAX_BLUR_PASS; ++i) {
       XFixed *kern = ps->o.blur_kerns[i];
       if (!kern) break;
-      inc_x += XFixedToDouble(kern[0]) / 2;
-      inc_y += XFixedToDouble(kern[1]) / 2;
+      inc_x += XFIXED_TO_DOUBLE(kern[0]) / 2;
+      inc_y += XFIXED_TO_DOUBLE(kern[1]) / 2;
     }
     inc_x = min_i(ps->o.resize_damage, inc_x);
     inc_y = min_i(ps->o.resize_damage, inc_y);

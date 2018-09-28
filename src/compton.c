@@ -25,8 +25,8 @@ static void
 configure_win(session_t *ps, xcb_configure_notify_event_t *ce);
 
 static bool
-xr_blur_dst(session_t *ps, Picture tgt_buffer,
-    int x, int y, int wid, int hei, XFixed **blur_kerns,
+xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
+    int x, int y, int wid, int hei, xcb_render_fixed_t **blur_kerns,
     XserverRegion reg_clip);
 
 static void
@@ -619,7 +619,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
 
   xcb_image_t *shadow_image = NULL;
   Pixmap shadow_pixmap = None, shadow_pixmap_argb = None;
-  Picture shadow_picture = None, shadow_picture_argb = None;
+  xcb_render_picture_t shadow_picture = None, shadow_picture_argb = None;
   GC gc = None;
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
@@ -653,7 +653,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   }
 
   xcb_image_put(c, shadow_pixmap, XGContextFromGC(gc), shadow_image, 0, 0, 0);
-  XRenderComposite(ps->dpy, PictOpSrc, ps->cshadow_picture, shadow_picture,
+  xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, ps->cshadow_picture, shadow_picture,
       shadow_picture_argb, 0, 0, 0, 0, 0, 0,
       shadow_image->width, shadow_image->height);
 
@@ -668,7 +668,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   XFreeGC(ps->dpy, gc);
   xcb_image_destroy(shadow_image);
   XFreePixmap(ps->dpy, shadow_pixmap);
-  XRenderFreePicture(ps->dpy, shadow_picture);
+  xcb_render_free_picture(c, shadow_picture);
 
   return true;
 
@@ -680,9 +680,9 @@ shadow_picture_err:
   if (shadow_pixmap_argb)
     XFreePixmap(ps->dpy, shadow_pixmap_argb);
   if (shadow_picture)
-    XRenderFreePicture(ps->dpy, shadow_picture);
+    xcb_render_free_picture(c, shadow_picture);
   if (shadow_picture_argb)
-    XRenderFreePicture(ps->dpy, shadow_picture_argb);
+    xcb_render_free_picture(c, shadow_picture_argb);
   if (gc)
     XFreeGC(ps->dpy, gc);
 
@@ -692,13 +692,15 @@ shadow_picture_err:
 /**
  * Generate a 1x1 <code>Picture</code> of a particular color.
  */
-static Picture
+static xcb_render_picture_t
 solid_picture(session_t *ps, bool argb, double a,
               double r, double g, double b) {
   Pixmap pixmap;
-  Picture picture;
+  xcb_render_picture_t picture;
   xcb_render_create_picture_value_list_t pa;
-  XRenderColor c;
+  xcb_render_color_t col;
+  xcb_rectangle_t rect;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
   pixmap = XCreatePixmap(ps->dpy, ps->root, 1, 1, argb ? 32 : 8);
 
@@ -707,19 +709,24 @@ solid_picture(session_t *ps, bool argb, double a,
   pa.repeat = True;
   picture = x_create_picture_with_standard_and_pixmap(ps,
     argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8, pixmap,
-    CPRepeat, &pa);
+    XCB_RENDER_CP_REPEAT, &pa);
 
   if (!picture) {
     XFreePixmap(ps->dpy, pixmap);
     return None;
   }
 
-  c.alpha = a * 0xffff;
-  c.red =   r * 0xffff;
-  c.green = g * 0xffff;
-  c.blue =  b * 0xffff;
+  col.alpha = a * 0xffff;
+  col.red =   r * 0xffff;
+  col.green = g * 0xffff;
+  col.blue =  b * 0xffff;
 
-  XRenderFillRectangle(ps->dpy, PictOpSrc, picture, &c, 0, 0, 1, 1);
+  rect.x = 0;
+  rect.y = 0;
+  rect.width = 1;
+  rect.height = 1;
+
+  xcb_render_fill_rectangles(c, XCB_RENDER_PICT_OP_SRC, picture, col, 1, &rect);
   XFreePixmap(ps->dpy, pixmap);
 
   return picture;
@@ -858,6 +865,7 @@ get_root_tile(session_t *ps) {
   if (ps->o.paint_on_overlay) {
     return ps->root_picture;
   } */
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
   assert(!ps->root_tile_paint.pixmap);
   ps->root_tile_fill = false;
@@ -894,15 +902,20 @@ get_root_tile(session_t *ps) {
     .repeat = True,
   };
   ps->root_tile_paint.pict = x_create_picture_with_visual_and_pixmap(
-    ps, ps->vis, pixmap, CPRepeat, &pa);
+    ps, ps->vis, pixmap, XCB_RENDER_CP_REPEAT, &pa);
 
   // Fill pixmap if needed
   if (fill) {
-    XRenderColor  c;
+    xcb_render_color_t col;
+    xcb_rectangle_t rect;
 
-    c.red = c.green = c.blue = 0x8080;
-    c.alpha = 0xffff;
-    XRenderFillRectangle(ps->dpy, PictOpSrc, ps->root_tile_paint.pict, &c, 0, 0, 1, 1);
+    col.red = col.green = col.blue = 0x8080;
+    col.alpha = 0xffff;
+
+    rect.x = rect.y = 0;
+    rect.width = rect.height = 1;
+
+    xcb_render_fill_rectangles(c, XCB_RENDER_PICT_OP_SRC, ps->root_tile_paint.pict, col, 1, &rect);
   }
 
   ps->root_tile_fill = fill;
@@ -958,7 +971,7 @@ find_client_win(session_t *ps, Window w) {
 /**
  * Get alpha <code>Picture</code> for an opacity in <code>double</code>.
  */
-static inline Picture
+static inline xcb_render_picture_t
 get_alpha_pict_d(session_t *ps, double o) {
   assert((round(normalize_d(o) / ps->o.alpha_step)) <= round(1.0 / ps->o.alpha_step));
   return ps->alpha_picts[(int) (round(normalize_d(o)
@@ -969,7 +982,7 @@ get_alpha_pict_d(session_t *ps, double o) {
  * Get alpha <code>Picture</code> for an opacity in
  * <code>opacity_t</code>.
  */
-static inline Picture
+static inline xcb_render_picture_t
 get_alpha_pict_o(session_t *ps, opacity_t o) {
   return get_alpha_pict_d(ps, (double) o / OPAQUE);
 }
@@ -1234,14 +1247,15 @@ win_paint_shadow(session_t *ps, win *w,
  * @return true if successful, false otherwise
  */
 static bool
-xr_blur_dst(session_t *ps, Picture tgt_buffer,
-    int x, int y, int wid, int hei, XFixed **blur_kerns,
+xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
+    int x, int y, int wid, int hei, xcb_render_fixed_t **blur_kerns,
     XserverRegion reg_clip) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   assert(blur_kerns[0]);
 
   // Directly copying from tgt_buffer to it does not work, so we create a
   // Picture in the middle.
-  Picture tmp_picture = x_create_picture(ps, wid, hei, NULL, 0, NULL);
+  xcb_render_picture_t tmp_picture = x_create_picture(ps, wid, hei, NULL, 0, NULL);
 
   if (!tmp_picture) {
     printf_errf("(): Failed to build intermediate Picture.");
@@ -1251,20 +1265,20 @@ xr_blur_dst(session_t *ps, Picture tgt_buffer,
   if (reg_clip && tmp_picture)
     XFixesSetPictureClipRegion(ps->dpy, tmp_picture, reg_clip, 0, 0);
 
-  Picture src_pict = tgt_buffer, dst_pict = tmp_picture;
+  xcb_render_picture_t src_pict = tgt_buffer, dst_pict = tmp_picture;
   for (int i = 0; blur_kerns[i]; ++i) {
     assert(i < MAX_BLUR_PASS - 1);
-    XFixed *convolution_blur = blur_kerns[i];
-    int kwid = XFixedToDouble(convolution_blur[0]),
-        khei = XFixedToDouble(convolution_blur[1]);
+    xcb_render_fixed_t *convolution_blur = blur_kerns[i];
+    int kwid = XFIXED_TO_DOUBLE(convolution_blur[0]),
+        khei = XFIXED_TO_DOUBLE(convolution_blur[1]);
     bool rd_from_tgt = (tgt_buffer == src_pict);
 
     // Copy from source picture to destination. The filter must
     // be applied on source picture, to get the nearby pixels outside the
     // window.
-    XRenderSetPictureFilter(ps->dpy, src_pict, XRFILTER_CONVOLUTION,
-        convolution_blur, kwid * khei + 2);
-    XRenderComposite(ps->dpy, PictOpSrc, src_pict, None, dst_pict,
+    xcb_render_set_picture_filter(c, src_pict, strlen(XRFILTER_CONVOLUTION), XRFILTER_CONVOLUTION,
+        kwid * khei + 2, convolution_blur);
+    xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, src_pict, None, dst_pict,
         (rd_from_tgt ? x: 0), (rd_from_tgt ? y: 0), 0, 0,
         (rd_from_tgt ? 0: x), (rd_from_tgt ? 0: y), wid, hei);
     xrfilter_reset(ps, src_pict);
@@ -1277,7 +1291,7 @@ xr_blur_dst(session_t *ps, Picture tgt_buffer,
   }
 
   if (src_pict != tgt_buffer)
-    XRenderComposite(ps->dpy, PictOpSrc, src_pict, None, tgt_buffer,
+    xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, src_pict, None, tgt_buffer,
         0, 0, 0, 0, x, y, wid, hei);
 
   free_picture(ps, &tmp_picture);
@@ -1303,7 +1317,7 @@ xr_take_screenshot(session_t *ps) {
  * Blur the background of a window.
  */
 static inline void
-win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
+win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
     XserverRegion reg_paint, const reg_data_t *pcache_reg) {
   const int x = w->g.x;
   const int y = w->g.y;
@@ -1324,8 +1338,8 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
       {
         // Normalize blur kernels
         for (int i = 0; i < MAX_BLUR_PASS; ++i) {
-          XFixed *kern_src = ps->o.blur_kerns[i];
-          XFixed *kern_dst = ps->blur_kerns_cache[i];
+          xcb_render_fixed_t *kern_src = ps->o.blur_kerns[i];
+          xcb_render_fixed_t *kern_dst = ps->blur_kerns_cache[i];
           assert(i < MAX_BLUR_PASS);
           if (!kern_src) {
             assert(!kern_dst);
@@ -1338,12 +1352,12 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
           // Skip for fixed factor_center if the cache exists already
           if (ps->o.blur_background_fixed && kern_dst) continue;
 
-          int kwid = XFixedToDouble(kern_src[0]),
-              khei = XFixedToDouble(kern_src[1]);
+          int kwid = XFIXED_TO_DOUBLE(kern_src[0]),
+              khei = XFIXED_TO_DOUBLE(kern_src[1]);
 
           // Allocate cache space if needed
           if (!kern_dst) {
-            kern_dst = malloc((kwid * khei + 2) * sizeof(XFixed));
+            kern_dst = malloc((kwid * khei + 2) * sizeof(xcb_render_fixed_t));
             if (!kern_dst) {
               printf_errf("(): Failed to allocate memory for blur kernel.");
               return;
@@ -1353,10 +1367,10 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
 
           // Modify the factor of the center pixel
           kern_src[2 + (khei / 2) * kwid + kwid / 2] =
-            XDoubleToFixed(factor_center);
+            DOUBLE_TO_XFIXED(factor_center);
 
           // Copy over
-          memcpy(kern_dst, kern_src, (kwid * khei + 2) * sizeof(XFixed));
+          memcpy(kern_dst, kern_src, (kwid * khei + 2) * sizeof(xcb_render_fixed_t));
           normalize_conv_kern(kwid, khei, kern_dst + 2);
         }
 
@@ -1389,20 +1403,21 @@ win_blur_background(session_t *ps, win *w, Picture tgt_buffer,
 void
 render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     double opacity, bool argb, bool neg,
-    Picture pict, glx_texture_t *ptex,
+    xcb_render_picture_t pict, glx_texture_t *ptex,
     XserverRegion reg_paint, const reg_data_t *pcache_reg
 #ifdef CONFIG_OPENGL
     , const glx_prog_main_t *pprogram
 #endif
     ) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   switch (ps->o.backend) {
     case BKEND_XRENDER:
     case BKEND_XR_GLX_HYBRID:
       {
-        Picture alpha_pict = get_alpha_pict_d(ps, opacity);
+        xcb_render_picture_t alpha_pict = get_alpha_pict_d(ps, opacity);
         if (alpha_pict != ps->alpha_picts[0]) {
-          int op = ((!argb && !alpha_pict) ? PictOpSrc: PictOpOver);
-          XRenderComposite(ps->dpy, op, pict, alpha_pict,
+          int op = ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC: XCB_RENDER_PICT_OP_OVER);
+          xcb_render_composite(c, op, pict, alpha_pict,
               ps->tgt_buffer.pict, x, y, 0, 0, dx, dy, wid, hei);
         }
         break;
@@ -1425,6 +1440,7 @@ render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
 static inline void
 win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
     const reg_data_t *pcache_reg) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   glx_mark(ps, w->id, true);
 
   // Fetch Pixmap
@@ -1447,7 +1463,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
       };
 
       w->paint.pict = x_create_picture_with_pictfmt_and_pixmap(ps, w->pictfmt,
-          draw, CPSubwindowMode, &pa);
+          draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
     }
   }
 
@@ -1474,11 +1490,11 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
   const int wid = w->widthb;
   const int hei = w->heightb;
 
-  Picture pict = w->paint.pict;
+  xcb_render_picture_t pict = w->paint.pict;
 
   // Invert window color, if required
   if (bkend_use_xrender(ps) && w->invert_color) {
-    Picture newpict = x_create_picture(ps, wid, hei, w->pictfmt, 0, NULL);
+    xcb_render_picture_t newpict = x_create_picture(ps, wid, hei, w->pictfmt, 0, NULL);
     if (newpict) {
       // Apply clipping region to save some CPU
       if (reg_paint) {
@@ -1488,14 +1504,14 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
         free_region(ps, &reg);
       }
 
-      XRenderComposite(ps->dpy, PictOpSrc, pict, None,
+      xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, pict, None,
           newpict, 0, 0, 0, 0, 0, 0, wid, hei);
-      XRenderComposite(ps->dpy, PictOpDifference, ps->white_picture, None,
+      xcb_render_composite(c, XCB_RENDER_PICT_OP_DIFFERENCE, ps->white_picture, None,
           newpict, 0, 0, 0, 0, 0, 0, wid, hei);
       // We use an extra PictOpInReverse operation to get correct pixel
       // alpha. There could be a better solution.
       if (WMODE_ARGB == w->mode)
-        XRenderComposite(ps->dpy, PictOpInReverse, pict, None,
+        xcb_render_composite(c, XCB_RENDER_PICT_OP_IN_REVERSE, pict, None,
             newpict, 0, 0, 0, 0, 0, 0, wid, hei);
       pict = newpict;
     }
@@ -1576,19 +1592,19 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
           unsigned short cval = 0xffff * dim_opacity;
 
           // Premultiply color
-          XRenderColor color = {
+          xcb_render_color_t color = {
             .red = 0, .green = 0, .blue = 0, .alpha = cval,
           };
 
-          XRectangle rect = {
+          xcb_rectangle_t rect = {
             .x = x,
             .y = y,
             .width = wid,
             .height = hei,
           };
 
-          XRenderFillRectangles(ps->dpy, PictOpOver, ps->tgt_buffer.pict,
-              &color, &rect, 1);
+          xcb_render_fill_rectangles(c, XCB_RENDER_PICT_OP_OVER, ps->tgt_buffer.pict,
+              color, 1, &rect);
         }
         break;
 #ifdef CONFIG_OPENGL
@@ -1654,6 +1670,7 @@ is_region_empty(const session_t *ps, XserverRegion region,
 
 static void
 paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   if (!region_real)
     region_real = region;
 
@@ -1709,7 +1726,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 #ifdef MONITOR_REPAINT
   switch (ps->o.backend) {
     case BKEND_XRENDER:
-      XRenderComposite(ps->dpy, PictOpSrc, ps->black_picture, None,
+      xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, ps->black_picture, None,
           ps->tgt_picture, 0, 0, 0, 0, 0, 0,
           ps->root_width, ps->root_height);
       break;
@@ -1889,8 +1906,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       }
       // No-DBE painting mode
       else if (ps->tgt_buffer.pict != ps->tgt_picture) {
-        XRenderComposite(
-          ps->dpy, PictOpSrc, ps->tgt_buffer.pict, None,
+        xcb_render_composite(
+          c, XCB_RENDER_PICT_OP_SRC, ps->tgt_buffer.pict, None,
           ps->tgt_picture, 0, 0, 0, 0,
           0, 0, ps->root_width, ps->root_height);
       }
@@ -1975,15 +1992,16 @@ repair_win(session_t *ps, win *w) {
     return;
 
   XserverRegion parts;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
   if (!w->ever_damaged) {
     parts = win_extents(ps, w);
     set_ignore_next(ps);
-    XDamageSubtract(ps->dpy, w->damage, None, None);
+    xcb_damage_subtract(c, w->damage, XCB_NONE, XCB_NONE);
   } else {
     parts = XFixesCreateRegion(ps->dpy, 0, 0);
     set_ignore_next(ps);
-    XDamageSubtract(ps->dpy, w->damage, None, parts);
+    xcb_damage_subtract(c, w->damage, XCB_NONE, parts);
     XFixesTranslateRegion(ps->dpy, parts,
       w->g.x + w->g.border_width,
       w->g.y + w->g.border_width);
@@ -2465,8 +2483,9 @@ root_damaged(session_t *ps) {
       free_root_tile(ps);
     /* }
     if (root_damage) {
+      xcb_connection_t *c = XGetXCBConnection(ps->dpy);
       XserverRegion parts = XFixesCreateRegion(ps->dpy, 0, 0);
-      XDamageSubtract(ps->dpy, root_damage, None, parts);
+      xcb_damage_subtract(c, root_damage, XCB_NONE, parts);
       add_damage(ps, parts);
     } */
   }
@@ -2505,16 +2524,16 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 
   o = ev->error_code - ps->damage_error;
   switch (o) {
-    CASESTRRET2(BadDamage);
+    CASESTRRET2(XCB_DAMAGE_BAD_DAMAGE);
   }
 
   o = ev->error_code - ps->render_error;
   switch (o) {
-    CASESTRRET2(BadPictFormat);
-    CASESTRRET2(BadPicture);
-    CASESTRRET2(BadPictOp);
-    CASESTRRET2(BadGlyphSet);
-    CASESTRRET2(BadGlyph);
+    CASESTRRET2(XCB_RENDER_PICT_FORMAT);
+    CASESTRRET2(XCB_RENDER_PICTURE);
+    CASESTRRET2(XCB_RENDER_PICT_OP);
+    CASESTRRET2(XCB_RENDER_GLYPH_SET);
+    CASESTRRET2(XCB_RENDER_GLYPH);
   }
 
 #ifdef CONFIG_OPENGL
@@ -2713,7 +2732,7 @@ ev_name(session_t *ps, xcb_generic_event_t *ev) {
     CASESTRRET(ClientMessage);
   }
 
-  if (ps->damage_event + XDamageNotify == ev->response_type)
+  if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type)
     return "Damage";
 
   if (ps->shape_exists && ev->response_type == ps->shape_event)
@@ -2761,7 +2780,7 @@ ev_window(session_t *ps, xcb_generic_event_t *ev) {
     case ClientMessage:
       return ((xcb_client_message_event_t *)ev)->window;
     default:
-      if (ps->damage_event + XDamageNotify == ev->response_type) {
+      if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
         return ((xcb_damage_notify_event_t *)ev)->drawable;
       }
 
@@ -3200,7 +3219,7 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
   }
 
 #ifdef DEBUG_EVENTS
-  if (ev->response_type == ps->damage_event + XDamageNotify) {
+  if (ev->response_type == ps->damage_event + XCB_DAMAGE_NOTIFY) {
     Window wid = ev_window(ps, ev);
     char *window_name = NULL;
     ev_window_name(ps, wid, &window_name);
@@ -3253,11 +3272,11 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
         ev_shape_notify(ps, (xcb_shape_notify_event_t *) ev);
         break;
       }
-      if (ps->randr_exists && ev->response_type == (ps->randr_event + RRScreenChangeNotify)) {
+      if (ps->randr_exists && ev->response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
         ev_screen_change_notify(ps, (xcb_randr_screen_change_notify_event_t *) ev);
         break;
       }
-      if (ps->damage_event + XDamageNotify == ev->response_type) {
+      if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
         ev_damage_notify(ps, (xcb_damage_notify_event_t *) ev);
         break;
       }
@@ -4232,14 +4251,14 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     // Convolution filter parameter (box blur)
     // gaussian or binomial filters are definitely superior, yet looks
     // like they aren't supported as of xorg-server-1.13.0
-    static const XFixed convolution_blur[] = {
-      // Must convert to XFixed with XDoubleToFixed()
+    static const xcb_render_fixed_t convolution_blur[] = {
+      // Must convert to XFixed with DOUBLE_TO_XFIXED()
       // Matrix size
-      XDoubleToFixed(3), XDoubleToFixed(3),
+      DOUBLE_TO_XFIXED(3), DOUBLE_TO_XFIXED(3),
       // Matrix
-      XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
-      XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
-      XDoubleToFixed(1), XDoubleToFixed(1), XDoubleToFixed(1),
+      DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1),
+      DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1),
+      DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1),
     };
     ps->o.blur_kerns[0] = malloc(sizeof(convolution_blur));
     if (!ps->o.blur_kerns[0]) {
@@ -4309,13 +4328,15 @@ init_atoms(session_t *ps) {
  */
 static void
 update_refresh_rate(session_t *ps) {
-  XRRScreenConfiguration* randr_info;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_randr_get_screen_info_reply_t *randr_info =
+    xcb_randr_get_screen_info_reply(c,
+        xcb_randr_get_screen_info(c, ps->root), NULL);
 
-  if (!(randr_info = XRRGetScreenInfo(ps->dpy, ps->root)))
+  if (!randr_info)
     return;
-  ps->refresh_rate = XRRConfigCurrentRate(randr_info);
-
-  XRRFreeScreenConfigInfo(randr_info);
+  ps->refresh_rate = randr_info->rate;
+  free(randr_info);
 
   if (ps->refresh_rate)
     ps->refresh_intv = US_PER_SEC / ps->refresh_rate;
@@ -4635,7 +4656,7 @@ init_alpha_picts(session_t *ps) {
   int i;
   int num = round(1.0 / ps->o.alpha_step) + 1;
 
-  ps->alpha_picts = malloc(sizeof(Picture) * num);
+  ps->alpha_picts = malloc(sizeof(xcb_render_picture_t) * num);
 
   for (i = 0; i < num; ++i) {
     double o = i * ps->o.alpha_step;
@@ -4705,6 +4726,7 @@ init_overlay(session_t *ps) {
  */
 static bool
 init_filters(session_t *ps) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   // Blur filter
   if (ps->o.blur_background || ps->o.blur_background_frame) {
     switch (ps->o.backend) {
@@ -4712,15 +4734,18 @@ init_filters(session_t *ps) {
       case BKEND_XR_GLX_HYBRID:
         {
           // Query filters
-          XFilters *pf = XRenderQueryFilters(ps->dpy, get_tgt_window(ps));
+          xcb_render_query_filters_reply_t *pf = xcb_render_query_filters_reply(c,
+              xcb_render_query_filters(c, get_tgt_window(ps)), NULL);
           if (pf) {
-            for (int i = 0; i < pf->nfilter; ++i) {
+            xcb_str_iterator_t iter = xcb_render_query_filters_filters_iterator(pf);
+            for (; iter.rem; xcb_str_next(&iter)) {
               // Convolution filter
-              if (!strcmp(pf->filter[i], XRFILTER_CONVOLUTION))
+              if (strlen(XRFILTER_CONVOLUTION) == xcb_str_name_length(iter.data)
+                  && !memcmp(XRFILTER_CONVOLUTION, xcb_str_name(iter.data), strlen(XRFILTER_CONVOLUTION)))
                 ps->xrfilter_convolution_exists = true;
             }
+            free(pf);
           }
-          cxfree(pf);
 
           // Turn features off if any required filter is not present
           if (!ps->xrfilter_convolution_exists) {
@@ -5296,6 +5321,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
     }
     XSetEventQueueOwner(ps->dpy, XCBOwnsEventQueue);
   }
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  const xcb_query_extension_reply_t *ext_info;
 
   XSetErrorHandler(xerror);
   if (ps->o.synchronize) {
@@ -5320,11 +5347,17 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->root_width = DisplayWidth(ps->dpy, ps->scr);
   ps->root_height = DisplayHeight(ps->dpy, ps->scr);
 
-  if (!XRenderQueryExtension(ps->dpy,
-        &ps->render_event, &ps->render_error)) {
+  xcb_prefetch_extension_data(c, &xcb_render_id);
+  xcb_prefetch_extension_data(c, &xcb_damage_id);
+  xcb_prefetch_extension_data(c, &xcb_randr_id);
+
+  ext_info = xcb_get_extension_data(c, &xcb_render_id);
+  if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No render extension\n");
     exit(1);
   }
+  ps->render_event = ext_info->first_event;
+  ps->render_error = ext_info->first_error;
 
   if (!XQueryExtension(ps->dpy, COMPOSITE_NAME, &ps->composite_opcode,
         &ps->composite_event, &ps->composite_error)) {
@@ -5343,10 +5376,15 @@ session_init(session_t *ps_old, int argc, char **argv) {
     }
   }
 
-  if (!XDamageQueryExtension(ps->dpy, &ps->damage_event, &ps->damage_error)) {
+  ext_info = xcb_get_extension_data(c, &xcb_damage_id);
+  if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No damage extension\n");
     exit(1);
   }
+  ps->damage_event = ext_info->first_event;
+  ps->damage_error = ext_info->first_error;
+  xcb_discard_reply(c,
+      xcb_damage_query_version(c, XCB_DAMAGE_MAJOR_VERSION, XCB_DAMAGE_MINOR_VERSION).sequence);
 
   if (!XFixesQueryExtension(ps->dpy, &ps->xfixes_event, &ps->xfixes_error)) {
     fprintf(stderr, "No XFixes extension\n");
@@ -5405,9 +5443,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Query X RandR
   if ((ps->o.sw_opti && !ps->o.refresh_rate) || ps->o.xinerama_shadow_crop) {
-    if (XRRQueryExtension(ps->dpy, &ps->randr_event, &ps->randr_error))
+    ext_info = xcb_get_extension_data(c, &xcb_randr_id);
+    if (ext_info && ext_info->present) {
       ps->randr_exists = true;
-    else
+      ps->randr_event = ext_info->first_event;
+      ps->randr_error = ext_info->first_error;
+    } else
       printf_errf("(): No XRandR extension, automatic screen change "
           "detection impossible.");
   }
@@ -5484,7 +5525,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // an auto-detected refresh rate, or when Xinerama features are enabled
   if (ps->randr_exists && ((ps->o.sw_opti && !ps->o.refresh_rate)
         || ps->o.xinerama_shadow_crop))
-    XRRSelectInput(ps->dpy, ps->root, RRScreenChangeNotifyMask);
+    xcb_randr_select_input(c, ps->root, XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
 
   // Initialize VSync
   if (!vsync_init(ps))
@@ -5508,10 +5549,10 @@ session_init(session_t *ps_old, int argc, char **argv) {
     };
 
     ps->root_picture = x_create_picture_with_visual_and_pixmap(ps,
-      ps->vis, ps->root, CPSubwindowMode, &pa);
+      ps->vis, ps->root, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
     if (ps->o.paint_on_overlay) {
       ps->tgt_picture = x_create_picture_with_visual_and_pixmap(ps,
-        ps->vis, ps->overlay, CPSubwindowMode, &pa);
+        ps->vis, ps->overlay, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
     } else
       ps->tgt_picture = ps->root_picture;
   }

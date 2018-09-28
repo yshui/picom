@@ -83,10 +83,7 @@
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
 #include <X11/extensions/Xcomposite.h>
-#include <X11/extensions/Xdamage.h>
-#include <X11/extensions/Xrender.h>
 #include <X11/extensions/shape.h>
-#include <X11/extensions/Xrandr.h>
 #include <X11/extensions/Xdbe.h>
 #ifdef CONFIG_XSYNC
 #include <X11/extensions/sync.h>
@@ -97,6 +94,8 @@
 #endif
 
 #include <xcb/render.h>
+#include <xcb/damage.h>
+#include <xcb/randr.h>
 
 // Workarounds for missing definitions in very old versions of X headers,
 // thanks to consolers for reporting
@@ -218,6 +217,10 @@
 #define WFLAG_POS_CHANGE    0x0002
 // Window opacity / dim state changed
 #define WFLAG_OPCT_CHANGE   0x0004
+
+// xcb-render specific macros
+#define XFIXED_TO_DOUBLE(value) (((double) (value)) / 65536)
+#define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t) (((double) (value)) * 65536))
 
 // === Types ===
 
@@ -489,7 +492,7 @@ typedef struct {
 
 typedef struct {
   Pixmap pixmap;
-  Picture pict;
+  xcb_render_picture_t pict;
   glx_texture_t *ptex;
 } paint_t;
 
@@ -685,7 +688,7 @@ typedef struct _options_t {
   /// Background blur blacklist. A linked list of conditions.
   c2_lptr_t *blur_background_blacklist;
   /// Blur convolution kernel.
-  XFixed *blur_kerns[MAX_BLUR_PASS];
+  xcb_render_fixed_t *blur_kerns[MAX_BLUR_PASS];
   /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
   double inactive_dim;
   /// Whether to use fixed inactive dim opacity, instead of deciding
@@ -811,9 +814,9 @@ typedef struct session {
   XserverRegion screen_reg;
   /// Picture of root window. Destination of painting in no-DBE painting
   /// mode.
-  Picture root_picture;
+  xcb_render_picture_t root_picture;
   /// A Picture acting as the painting target.
-  Picture tgt_picture;
+  xcb_render_picture_t tgt_picture;
   /// Temporary buffer to paint to before sending to display.
   paint_t tgt_buffer;
 #ifdef CONFIG_XSYNC
@@ -859,7 +862,7 @@ typedef struct session {
   /// Whether all windows are currently redirected.
   bool redirected;
   /// Pre-generated alpha pictures.
-  Picture *alpha_picts;
+  xcb_render_picture_t *alpha_picts;
   /// Whether all reg_ignore of windows should expire in this paint.
   bool reg_ignore_expire;
   /// Time of last fading. In milliseconds.
@@ -870,7 +873,7 @@ typedef struct session {
   /// ignore linked list.
   ignore_t **ignore_tail;
   // Cached blur convolution kernels.
-  XFixed *blur_kerns_cache[MAX_BLUR_PASS];
+  xcb_render_fixed_t *blur_kerns_cache[MAX_BLUR_PASS];
   /// Reset program after next paint.
   bool reset;
 
@@ -897,11 +900,11 @@ typedef struct session {
 
   // === Shadow/dimming related ===
   /// 1x1 black Picture.
-  Picture black_picture;
+  xcb_render_picture_t black_picture;
   /// 1x1 Picture of the shadow color.
-  Picture cshadow_picture;
+  xcb_render_picture_t cshadow_picture;
   /// 1x1 white Picture.
-  Picture white_picture;
+  xcb_render_picture_t white_picture;
   /// Gaussian map of shadow.
   conv *gaussian_map;
   // for shadow precomputation
@@ -1063,7 +1066,7 @@ struct win {
   /// Whether the window was damaged after last paint.
   bool pixmap_damaged;
   /// Damage of the window.
-  Damage damage;
+  xcb_damage_damage_t damage;
   /// Paint info of the window.
   paint_t paint;
   /// Bounding shape of the window.

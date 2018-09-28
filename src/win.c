@@ -282,7 +282,7 @@ bool wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def,
 void win_determine_mode(session_t *ps, win *w) {
   winmode_t mode = WMODE_SOLID;
 
-  if (w->pictfmt && w->pictfmt->type == PictTypeDirect &&
+  if (w->pictfmt && w->pictfmt->type == XCB_RENDER_PICT_TYPE_DIRECT &&
       w->pictfmt->direct.alpha_mask) {
     mode = WMODE_ARGB;
   } else if (w->opacity != OPAQUE) {
@@ -892,7 +892,7 @@ bool add_win(session_t *ps, Window id, Window prev) {
     // Create Damage for window
     new->damage = xcb_generate_id(c);
     xcb_generic_error_t *e = xcb_request_check(c,
-      xcb_damage_create_checked(c, new->damage, id, XDamageReportNonEmpty));
+      xcb_damage_create_checked(c, new->damage, id, XCB_DAMAGE_REPORT_LEVEL_NON_EMPTY));
     if (e) {
       free(e);
       free(new);

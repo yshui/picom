@@ -49,11 +49,11 @@ parse_matrix_readnum(const char *src, double *dest) {
 /**
  * Parse a matrix.
  */
-XFixed *
+xcb_render_fixed_t *
 parse_matrix(session_t *ps, const char *src, const char **endptr) {
   int wid = 0, hei = 0;
   const char *pc = NULL;
-  XFixed *matrix = NULL;
+  xcb_render_fixed_t *matrix = NULL;
 
   // Get matrix width and height
   {
@@ -82,7 +82,7 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
                 "rendering, and/or consume lots of memory");
 
   // Allocate memory
-  matrix = calloc(wid * hei + 2, sizeof(XFixed));
+  matrix = calloc(wid * hei + 2, sizeof(xcb_render_fixed_t));
   if (!matrix) {
     printf_errf("(): Failed to allocate memory for matrix.");
     goto parse_matrix_err;
@@ -95,7 +95,7 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
     for (int i = 0; i < wid * hei; ++i) {
       // Ignore the center element
       if (i == skip) {
-        matrix[2 + i] = XDoubleToFixed(0);
+        matrix[2 + i] = DOUBLE_TO_XFIXED(0);
         continue;
       }
       double val = 0;
@@ -103,7 +103,7 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
         goto parse_matrix_err;
       src = pc;
       if (val < 0) hasneg = true;
-      matrix[2 + i] = XDoubleToFixed(val);
+      matrix[2 + i] = DOUBLE_TO_XFIXED(val);
     }
     if (BKEND_XRENDER == ps->o.backend && hasneg)
       printf_errf("(): A convolution kernel with negative values "
@@ -134,8 +134,8 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
   }
 
   // Fill in width and height
-  matrix[0] = XDoubleToFixed(wid);
-  matrix[1] = XDoubleToFixed(hei);
+  matrix[0] = DOUBLE_TO_XFIXED(wid);
+  matrix[1] = DOUBLE_TO_XFIXED(hei);
 
   return matrix;
 
@@ -147,7 +147,7 @@ parse_matrix_err:
 /**
  * Parse a convolution kernel.
  */
-XFixed *
+xcb_render_fixed_t *
 parse_conv_kern(session_t *ps, const char *src, const char **endptr) {
   return parse_matrix(ps, src, endptr);
 }
@@ -156,7 +156,7 @@ parse_conv_kern(session_t *ps, const char *src, const char **endptr) {
  * Parse a list of convolution kernels.
  */
 bool
-parse_conv_kern_lst(session_t *ps, const char *src, XFixed **dest, int max) {
+parse_conv_kern_lst(session_t *ps, const char *src, xcb_render_fixed_t **dest, int max) {
   static const struct {
     const char *name;
     const char *kern_str;
