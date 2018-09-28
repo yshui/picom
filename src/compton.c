@@ -5379,6 +5379,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   xcb_prefetch_extension_data(c, &xcb_render_id);
   xcb_prefetch_extension_data(c, &xcb_damage_id);
+  xcb_prefetch_extension_data(c, &xcb_xfixes_id);
   xcb_prefetch_extension_data(c, &xcb_randr_id);
 
   ext_info = xcb_get_extension_data(c, &xcb_render_id);
@@ -5416,10 +5417,15 @@ session_init(session_t *ps_old, int argc, char **argv) {
   xcb_discard_reply(c,
       xcb_damage_query_version(c, XCB_DAMAGE_MAJOR_VERSION, XCB_DAMAGE_MINOR_VERSION).sequence);
 
-  if (!XFixesQueryExtension(ps->dpy, &ps->xfixes_event, &ps->xfixes_error)) {
+  ext_info = xcb_get_extension_data(c, &xcb_xfixes_id);
+  if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No XFixes extension\n");
     exit(1);
   }
+  ps->xfixes_event = ext_info->first_event;
+  ps->xfixes_error = ext_info->first_error;
+  xcb_discard_reply(c,
+      xcb_xfixes_query_version(c, XCB_XFIXES_MAJOR_VERSION, XCB_XFIXES_MINOR_VERSION).sequence);
 
   // Build a safe representation of display name
   {
