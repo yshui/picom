@@ -950,13 +950,13 @@ glx_paint_pre(session_t *ps, XserverRegion *preg) {
         XserverRegion reg_copy = xcb_generate_id(c);
         xcb_xfixes_create_region(c, reg_copy, 0, NULL);
         if (!buffer_age) {
-          XFixesSubtractRegion(ps->dpy, reg_copy, ps->screen_reg, *preg);
+          xcb_xfixes_subtract_region(c, ps->screen_reg, *preg, reg_copy);
         }
         else {
           for (int i = 0; i < buffer_age - 1; ++i)
             xcb_xfixes_union_region(c, reg_copy,
                 ps->all_damage_last[i], reg_copy);
-          XFixesSubtractRegion(ps->dpy, reg_copy, reg_copy, *preg);
+          xcb_xfixes_subtract_region(c, reg_copy, *preg, reg_copy);
         }
 
         // Actually copy pixels

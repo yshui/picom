@@ -1338,6 +1338,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
     case BKEND_XRENDER:
     case BKEND_XR_GLX_HYBRID:
       {
+        xcb_connection_t *c = XGetXCBConnection(ps->dpy);
         // Normalize blur kernels
         for (int i = 0; i < MAX_BLUR_PASS; ++i) {
           xcb_render_fixed_t *kern_src = ps->o.blur_kerns[i];
@@ -1382,7 +1383,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
         if (win_is_solid(ps, w)) {
           XserverRegion reg_all = win_border_size(ps, w, false);
           reg_noframe = win_get_region_noframe(ps, w, false);
-          XFixesSubtractRegion(ps->dpy, reg_noframe, reg_all, reg_noframe);
+          xcb_xfixes_subtract_region(c, reg_all, reg_noframe, reg_noframe);
           free_region(ps, &reg_all);
         }
         xr_blur_dst(ps, tgt_buffer, x, y, wid, hei, ps->blur_kerns_cache,
@@ -1748,7 +1749,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     // based on the ignore region of the lowest window, if available
     reg_paint = reg_tmp = xcb_generate_id(c);
     xcb_xfixes_create_region(c, reg_paint, 0, NULL);
-    XFixesSubtractRegion(ps->dpy, reg_paint, region, t->reg_ignore);
+    xcb_xfixes_subtract_region(c, region, t->reg_ignore, reg_paint);
   } else {
     reg_paint = region;
   }
@@ -1780,7 +1781,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
           // If it's the first cycle and reg_tmp2 is not ready, calculate
           // the paint region here
           reg_paint = reg_tmp;
-          XFixesSubtractRegion(ps->dpy, reg_paint, region, w->reg_ignore);
+          xcb_xfixes_subtract_region(c, region, w->reg_ignore, reg_paint);
         }
         else {
           // Otherwise, used the cached region during last cycle
@@ -1794,8 +1795,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       }
 
       if (ps->shadow_exclude_reg)
-        XFixesSubtractRegion(ps->dpy, reg_paint, reg_paint,
-            ps->shadow_exclude_reg);
+        xcb_xfixes_subtract_region(c, reg_paint,
+            ps->shadow_exclude_reg, reg_paint);
 
       // Might be worthwhile to crop the region to shadow border
       {
@@ -1814,7 +1815,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       // Clear the shadow here instead of in make_shadow() for saving GPU
       // power and handling shaped windows
       if (w->mode != WMODE_SOLID && w->border_size)
-        XFixesSubtractRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
+        xcb_xfixes_subtract_region(c, reg_paint, w->border_size, reg_paint);
 
 #ifdef CONFIG_XINERAMA
       if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0)
@@ -1839,8 +1840,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     // window and the bounding region
     reg_paint = reg_tmp;
     if (w->prev_trans && w->prev_trans->reg_ignore) {
-      XFixesSubtractRegion(ps->dpy, reg_paint, region,
-          w->prev_trans->reg_ignore);
+      xcb_xfixes_subtract_region(c, region,
+          w->prev_trans->reg_ignore, reg_paint);
       // Copy the subtracted region to be used for shadow painting in next
       // cycle
       xcb_xfixes_copy_region(c, reg_paint, reg_tmp2);
@@ -2028,7 +2029,7 @@ repair_win(session_t *ps, win *w) {
 
   // Remove the part in the damage area that could be ignored
   if (!ps->reg_ignore_expire && w->prev_trans && w->prev_trans->reg_ignore)
-    XFixesSubtractRegion(ps->dpy, parts, parts, w->prev_trans->reg_ignore);
+    xcb_xfixes_subtract_region(c, parts, w->prev_trans->reg_ignore, parts);
 
   add_damage(ps, parts);
 }
