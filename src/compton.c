@@ -1449,7 +1449,8 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
   // Fetch Pixmap
   if (!w->paint.pixmap && ps->has_name_pixmap) {
     set_ignore_next(ps);
-    w->paint.pixmap = XCompositeNameWindowPixmap(ps->dpy, w->id);
+    w->paint.pixmap = xcb_generate_id(c);
+    xcb_composite_name_window_pixmap(c, w->id, w->paint.pixmap);
     if (w->paint.pixmap)
       free_fence(ps, &w->fence);
   }

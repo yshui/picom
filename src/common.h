@@ -82,7 +82,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
-#include <X11/extensions/Xcomposite.h>
+#include <X11/extensions/Xcomposite.h> /* FIXME remove this once done porting to xcb-composite */
 #include <X11/extensions/shape.h>
 #include <X11/extensions/Xdbe.h>
 #ifdef CONFIG_XSYNC
@@ -93,6 +93,7 @@
 #include <X11/extensions/Xinerama.h>
 #endif
 
+#include <xcb/composite.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
 #include <xcb/randr.h>
@@ -597,7 +598,7 @@ typedef struct _options_t {
   Window benchmark_wid;
   /// A list of conditions of windows not to paint.
   c2_lptr_t *paint_blacklist;
-  /// Whether to avoid using XCompositeNameWindowPixmap(), for debugging.
+  /// Whether to avoid using xcb_composite_name_window_pixmap(), for debugging.
   bool no_name_pixmap;
   /// Whether to work under synchronized mode for debugging.
   bool synchronize;
