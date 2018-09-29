@@ -2510,7 +2510,7 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
   }
 
   if (ev->request_code == ps->composite_opcode
-      && ev->minor_code == X_CompositeRedirectSubwindows) {
+      && ev->minor_code == XCB_COMPOSITE_REDIRECT_SUBWINDOWS) {
     fprintf(stderr, "Another composite manager is already running "
         "(and does not handle _NET_WM_CM_Sn correctly)\n");
     exit(1);
@@ -3691,7 +3691,7 @@ register_cm(session_t *ps) {
 
   // Unredirect the window if it's redirected, just in case
   if (ps->redirected)
-    xcb_composite_unredirect_window(c, ps->reg_win, CompositeRedirectManual);
+    xcb_composite_unredirect_window(c, ps->reg_win, XCB_COMPOSITE_REDIRECT_MANUAL);
 
   {
     XClassHint *h = XAllocClassHint();
@@ -4795,15 +4795,15 @@ redir_start(session_t *ps) {
     if (ps->overlay)
       XMapWindow(ps->dpy, ps->overlay);
 
-    xcb_composite_redirect_subwindows(c, ps->root, CompositeRedirectManual);
+    xcb_composite_redirect_subwindows(c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
 
     /*
     // Unredirect GL context window as this may have an effect on VSync:
     // < http://dri.freedesktop.org/wiki/CompositeSwap >
-    xcb_composite_unredirect_window(c, ps->reg_win, CompositeRedirectManual);
+    xcb_composite_unredirect_window(c, ps->reg_win, XCB_COMPOSITE_REDIRECT_MANUAL);
     if (ps->o.paint_on_overlay && ps->overlay) {
       xcb_composite_unredirect_window(c, ps->overlay,
-          CompositeRedirectManual);
+          XCB_COMPOSITE_REDIRECT_MANUAL);
     } */
 
     // Must call XSync() here
@@ -4977,7 +4977,7 @@ redir_stop(session_t *ps) {
     for (win *w = ps->list; w; w = w->next)
       free_wpaint(ps, w);
 
-    xcb_composite_unredirect_subwindows(c, ps->root, CompositeRedirectManual);
+    xcb_composite_unredirect_subwindows(c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
     // Unmap overlay window
     if (ps->overlay)
       XUnmapWindow(ps->dpy, ps->overlay);

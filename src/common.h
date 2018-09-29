@@ -82,7 +82,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
-#include <X11/extensions/Xcomposite.h> /* FIXME remove this once done porting to xcb-composite */
+#include <X11/extensions/Xfixes.h>
 #include <X11/extensions/shape.h>
 #include <X11/extensions/Xdbe.h>
 #ifdef CONFIG_XSYNC
@@ -172,9 +172,6 @@
 #endif
 
 // === Constants ===
-#if !(COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2)
-#error libXcomposite version unsupported
-#endif
 
 /// @brief Length of generic buffers.
 #define BUF_LEN 80
