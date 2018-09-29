@@ -193,9 +193,11 @@ x_create_picture(session_t *ps, int wid, int hei,
 
   int depth = pictfmt->depth;
 
-  Pixmap tmp_pixmap = XCreatePixmap(ps->dpy, ps->root, wid, hei, depth);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  Pixmap tmp_pixmap = xcb_generate_id(c);
   if (!tmp_pixmap)
     return None;
+  xcb_create_pixmap(c, depth, tmp_pixmap, ps->root, wid, hei);
 
   xcb_render_picture_t picture =
     x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, tmp_pixmap, valuemask, attr);
