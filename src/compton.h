@@ -47,9 +47,6 @@ find_client_win(session_t *ps, Window w);
 
 win *find_toplevel2(session_t *ps, Window wid);
 
-void set_fade_callback(session_t *ps, win *w,
-    void (*callback) (session_t *ps, win *w), bool exec_callback);
-
 void map_win(session_t *ps, Window id);
 
 void
@@ -346,17 +343,6 @@ wid_set_text_prop(session_t *ps, Window wid, Atom prop_atom, char *str) {
   cxfree(pprop);
 
   return true;
-}
-
-/**
- * Execute fade callback of a window if fading finished.
- */
-static inline void
-check_fade_fin(session_t *ps, win *w) {
-  if (w->fade_callback && w->opacity == w->opacity_tgt) {
-    // Must be the last line as the callback could destroy w!
-    set_fade_callback(ps, w, NULL, true);
-  }
 }
 
 /**

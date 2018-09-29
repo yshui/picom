@@ -16,17 +16,18 @@
 #include <xcb/xcb_image.h>
 
 #include "compton.h"
+#ifdef CONFIG_OPENGL
+#include "opengl.h"
+#endif
 #include "win.h"
 #include "x.h"
 #include "config.h"
 
 static void
-configure_win(session_t *ps, xcb_configure_notify_event_t *ce);
+finish_destroy_win(session_t *ps, win **_w);
 
-static bool
-xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
-    int x, int y, int wid, int hei, xcb_render_fixed_t **blur_kerns,
-    XserverRegion reg_clip);
+static void
+configure_win(session_t *ps, xcb_configure_notify_event_t *ce);
 
 static void
 get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass);
@@ -103,17 +104,11 @@ recheck_focus(session_t *ps);
 static bool
 get_root_tile(session_t *ps);
 
-static void
-finish_map_win(session_t *ps, win *w);
-
 static double
 get_opacity_percent(win *w);
 
 static void
 restack_win(session_t *ps, win *w, Window new_above);
-
-static void
-destroy_callback(session_t *ps, win *w);
 
 static void
 update_ewmh_active_win(session_t *ps);
@@ -333,17 +328,31 @@ run_fade(session_t *ps, win *w, unsigned steps) {
  *
  * @param exec_callback whether the previous callback is to be executed
  */
-void set_fade_callback(session_t *ps, win *w,
-    void (*callback) (session_t *ps, win *w), bool exec_callback) {
-  void (*old_callback) (session_t *ps, win *w) = w->fade_callback;
+void set_fade_callback(session_t *ps, win **_w,
+    void (*callback) (session_t *ps, win **w), bool exec_callback) {
+  win *w = *_w;
+  void (*old_callback) (session_t *ps, win **w) = w->fade_callback;
 
   w->fade_callback = callback;
   // Must be the last line as the callback could destroy w!
   if (exec_callback && old_callback) {
-    old_callback(ps, w);
+    old_callback(ps, _w);
     // Although currently no callback function affects window state on
     // next paint, it could, in the future
     ps->idling = false;
+  }
+}
+
+/**
+ * Execute fade callback of a window if fading finished.
+ * XXX should be in win.c
+ */
+static inline void
+check_fade_fin(session_t *ps, win **_w) {
+  win *w = *_w;
+  if (w->fade_callback && w->opacity == w->opacity_tgt) {
+    // Must be the last line as the callback could destroy w!
+    set_fade_callback(ps, _w, NULL, true);
   }
 }
 
@@ -1160,19 +1169,17 @@ paint_preprocess(session_t *ps, win *list) {
       w->flags = 0;
     }
 
-    // Avoid setting w->to_paint if w is to be freed
-    bool destroyed = (w->opacity_tgt == w->opacity && w->destroyed);
-
     if (to_paint) {
       w->prev_trans = t;
       t = w;
     }
     else {
-      assert(w->destroyed == (w->fade_callback == destroy_callback));
-      check_fade_fin(ps, w);
+      assert(w->destroyed == (w->fade_callback == finish_destroy_win));
+      check_fade_fin(ps, &w);
     }
 
-    if (!destroyed) {
+    // Avoid setting w->to_paint if w is to be freed
+    if (w) {
       w->to_paint = to_paint;
 
       if (w->to_paint) {
@@ -1980,7 +1987,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     win *pprev = NULL;
     for (win *w = t; w; w = pprev) {
       pprev = w->prev_trans;
-      check_fade_fin(ps, w);
+      check_fade_fin(ps, &w);
     }
   }
 }
@@ -2021,6 +2028,15 @@ repair_win(session_t *ps, win *w) {
     XFixesSubtractRegion(ps->dpy, parts, parts, w->prev_trans->reg_ignore);
 
   add_damage(ps, parts);
+}
+
+static void
+finish_map_win(session_t *ps, win **_w) {
+  win *w = *_w;
+  w->in_openclose = false;
+  if (ps->o.no_fading_openclose) {
+    win_determine_fade(ps, w);
+  }
 }
 
 void
@@ -2107,7 +2123,7 @@ map_win(session_t *ps, Window id) {
 
   // Set fading state
   w->in_openclose = true;
-  set_fade_callback(ps, w, finish_map_win, true);
+  set_fade_callback(ps, &w, finish_map_win, true);
   win_determine_fade(ps, w);
 
   win_determine_blur_background(ps, w);
@@ -2130,17 +2146,9 @@ map_win(session_t *ps, Window id) {
 }
 
 static void
-finish_map_win(session_t *ps, win *w) {
-  w->in_openclose = false;
-  if (ps->o.no_fading_openclose) {
-    win_determine_fade(ps, w);
-  }
-}
-
-static void
-finish_unmap_win(session_t *ps, win *w) {
+finish_unmap_win(session_t *ps, win **_w) {
+  win *w = *_w;
   w->ever_damaged = false;
-
   w->in_openclose = false;
 
   update_reg_ignore_expire(ps, w);
@@ -2157,12 +2165,8 @@ finish_unmap_win(session_t *ps, win *w) {
 }
 
 static void
-unmap_callback(session_t *ps, win *w) {
-  finish_unmap_win(ps, w);
-}
-
-static void
-unmap_win(session_t *ps, win *w) {
+unmap_win(session_t *ps, win **_w) {
+  win *w = *_w;
   if (!w || IsUnmapped == w->a.map_state) return;
 
   if (w->destroyed) return;
@@ -2179,7 +2183,7 @@ unmap_win(session_t *ps, win *w) {
 
   // Fading out
   w->flags |= WFLAG_OPCT_CHANGE;
-  set_fade_callback(ps, w, unmap_callback, false);
+  set_fade_callback(ps, _w, finish_unmap_win, false);
   w->in_openclose = true;
   win_determine_fade(ps, w);
 
@@ -2408,7 +2412,8 @@ circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
 }
 
 static void
-finish_destroy_win(session_t *ps, win *w) {
+finish_destroy_win(session_t *ps, win **_w) {
+  win *w = *_w;
   assert(w->destroyed);
   win **prev = NULL, *i = NULL;
 
@@ -2422,7 +2427,7 @@ finish_destroy_win(session_t *ps, win *w) {
       printf_dbgf("(%#010lx \"%s\"): %p\n", w->id, w->name, w);
 #endif
 
-      finish_unmap_win(ps, w);
+      finish_unmap_win(ps, _w);
       *prev = w->next;
 
       // Clear active_win if it's pointing to the destroyed window
@@ -2438,14 +2443,10 @@ finish_destroy_win(session_t *ps, win *w) {
           w2->prev_trans = NULL;
 
       free(w);
+      *_w = NULL;
       break;
     }
   }
-}
-
-static void
-destroy_callback(session_t *ps, win *w) {
-  finish_destroy_win(ps, w);
 }
 
 static void
@@ -2457,7 +2458,7 @@ destroy_win(session_t *ps, Window id) {
 #endif
 
   if (w) {
-    unmap_win(ps, w);
+    unmap_win(ps, &w);
 
     w->destroyed = true;
 
@@ -2465,7 +2466,7 @@ destroy_win(session_t *ps, Window id) {
       win_determine_fade(ps, w);
 
     // Set fading callback
-    set_fade_callback(ps, w, destroy_callback, false);
+    set_fade_callback(ps, &w, finish_destroy_win, false);
 
 #ifdef CONFIG_DBUS
     // Send D-Bus signal
@@ -2905,7 +2906,7 @@ ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
   win *w = find_win(ps, ev->window);
 
   if (w)
-    unmap_win(ps, w);
+    unmap_win(ps, &w);
 }
 
 inline static void

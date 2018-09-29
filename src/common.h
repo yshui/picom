@@ -1162,7 +1162,7 @@ struct win {
   /// Override value of window fade state. Set by D-Bus method calls.
   switch_t fade_force;
   /// Callback to be called after fading completed.
-  void (*fade_callback) (session_t *ps, win *w);
+  void (*fade_callback) (session_t *ps, win **w);
 
   // Frame-opacity-related members
   /// Current window frame opacity. Affected by window opacity.
