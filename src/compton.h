@@ -497,13 +497,14 @@ find_win_all(session_t *ps, const Window wid) {
   render_(ps, x, y, dx, dy, wid, hei, opacity, argb, neg, pict, ptex, reg_paint, pcache_reg)
 #endif
 
+bool win_has_alpha(win *);
 static inline void
 win_render(session_t *ps, win *w, int x, int y, int wid, int hei,
     double opacity, XserverRegion reg_paint, const reg_data_t *pcache_reg,
     xcb_render_picture_t pict) {
   const int dx = (w ? w->g.x: 0) + x;
   const int dy = (w ? w->g.y: 0) + y;
-  const bool argb = (w && (WMODE_ARGB == w->mode || ps->o.force_win_blend));
+  const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
   const bool neg = (w && w->invert_color);
 
   render(ps, x, y, dx, dy, wid, hei, opacity, argb, neg,

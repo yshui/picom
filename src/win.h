@@ -95,3 +95,6 @@ static inline Window
 win_get_leader(session_t *ps, win *w) {
   return win_get_leader_raw(ps, w, 0);
 }
+
+/// check if window has ARGB visual
+bool win_has_alpha(win *w);

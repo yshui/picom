@@ -273,9 +273,9 @@ typedef struct {
 
 /// Enumeration type of window painting mode.
 typedef enum {
-  WMODE_TRANS,
-  WMODE_SOLID,
-  WMODE_ARGB
+  WMODE_TRANS, // The window body is (potentially) transparent
+  WMODE_FRAME_TRANS, // The window body is opaque, but the frame is not
+  WMODE_SOLID, // The window is opaque including the frame
 } winmode_t;
 
 /// Structure representing needed window updates.

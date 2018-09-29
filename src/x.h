@@ -64,5 +64,5 @@ __attribute__((nonnull(1)));
  */
 xcb_render_picture_t
 x_create_picture(session_t *ps, int wid, int hei,
-    xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
-    const xcb_render_create_picture_value_list_t *attr);
+  xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
+  const xcb_render_create_picture_value_list_t *attr);

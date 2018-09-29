@@ -1,3 +1,5 @@
+#include <stdbool.h>
+
 #include <X11/Xlib.h>
 #include <xcb/xcb_renderutil.h>
 
@@ -96,16 +98,18 @@ bool wid_get_text_prop(session_t *ps, Window wid, Atom prop,
 }
 
 static inline void x_get_server_pictfmts(session_t *ps) {
-    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-    xcb_generic_error_t *e = NULL;
-    // Get window picture format
-    ps->pictfmts =
-      xcb_render_query_pict_formats_reply(c,
-          xcb_render_query_pict_formats(c), &e);
-    if (e || !ps->pictfmts) {
-      printf_errf("(): failed to get pict formats\n");
-      abort();
-    }
+  if (ps->pictfmts)
+    return;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_generic_error_t *e = NULL;
+  // Get window picture format
+  ps->pictfmts =
+    xcb_render_query_pict_formats_reply(c,
+        xcb_render_query_pict_formats(c), &e);
+  if (e || !ps->pictfmts) {
+    printf_errf("(): failed to get pict formats\n");
+    abort();
+  }
 }
 
 xcb_render_pictforminfo_t *x_get_pictform_for_visual(session_t *ps, xcb_visualid_t visual) {
@@ -116,8 +120,9 @@ xcb_render_pictforminfo_t *x_get_pictform_for_visual(session_t *ps, xcb_visualid
   for(xcb_render_pictforminfo_iterator_t i =
       xcb_render_query_pict_formats_formats_iterator(ps->pictfmts); i.rem;
       xcb_render_pictforminfo_next(&i)) {
-    if (i.data->id == pv->format)
+    if (i.data->id == pv->format) {
       return i.data;
+    }
   }
   return NULL;
 }

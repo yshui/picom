@@ -1511,7 +1511,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
           newpict, 0, 0, 0, 0, 0, 0, wid, hei);
       // We use an extra PictOpInReverse operation to get correct pixel
       // alpha. There could be a better solution.
-      if (WMODE_ARGB == w->mode)
+      if (win_has_alpha(w))
         xcb_render_composite(c, XCB_RENDER_PICT_OP_IN_REVERSE, pict, None,
             newpict, 0, 0, 0, 0, 0, 0, wid, hei);
       pict = newpict;

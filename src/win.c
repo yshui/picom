@@ -281,19 +281,21 @@ bool wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def,
   return ret;
 }
 
+// XXX should distinguish between frame has alpha and window body has alpha
+bool win_has_alpha(win *w) {
+  return w->pictfmt &&
+    w->pictfmt->type == XCB_RENDER_PICT_TYPE_DIRECT &&
+    w->pictfmt->direct.alpha_mask;
+}
+
 void win_determine_mode(session_t *ps, win *w) {
-  winmode_t mode = WMODE_SOLID;
-
-  if (w->pictfmt && w->pictfmt->type == XCB_RENDER_PICT_TYPE_DIRECT &&
-      w->pictfmt->direct.alpha_mask) {
-    mode = WMODE_ARGB;
-  } else if (w->opacity != OPAQUE) {
-    mode = WMODE_TRANS;
+  if (win_has_alpha(w) || w->opacity != OPAQUE) {
+    w->mode = WMODE_TRANS;
+  } else if (w->frame_opacity) {
+    w->mode = WMODE_FRAME_TRANS;
   } else {
-    mode = WMODE_SOLID;
+    w->mode = WMODE_SOLID;
   }
-
-  w->mode = mode;
 }
 
 /**
@@ -375,7 +377,7 @@ void win_determine_fade(session_t *ps, win *w) {
   else if (ps->o.no_fading_openclose && w->in_openclose)
     w->fade_last = w->fade = false;
   else if (ps->o.no_fading_destroyed_argb && w->destroyed &&
-           WMODE_ARGB == w->mode && w->client_win && w->client_win != w->id) {
+           win_has_alpha(w) && w->client_win && w->client_win != w->id) {
     w->fade_last = w->fade = false;
   }
   // Ignore other possible causes of fading state changes after window
