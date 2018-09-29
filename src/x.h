@@ -4,8 +4,12 @@
 #include <xcb/xcb.h>
 #include <xcb/render.h>
 #include <xcb/xcb_renderutil.h>
+
+#include "region.h"
+
 typedef struct session session_t;
 typedef struct winprop winprop_t;
+
 /**
  * Get a specific attribute of a window.
  *
@@ -66,3 +70,9 @@ xcb_render_picture_t
 x_create_picture(session_t *ps, int wid, int hei,
   xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr);
+
+/// Fetch a X region and store it in a pixman region
+bool x_fetch_region(session_t *ps, XserverRegion r, region_t *res);
+
+void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t,
+  int clip_x_origin, int clip_y_origin, const region_t *);

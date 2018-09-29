@@ -2,6 +2,8 @@
 
 #include <X11/Xlib.h>
 #include <xcb/xcb_renderutil.h>
+#include <xcb/xfixes.h>
+#include <pixman.h>
 
 #include "common.h"
 #include "x.h"
@@ -207,4 +209,55 @@ x_create_picture(session_t *ps, int wid, int hei,
   free_pixmap(ps, &tmp_pixmap);
 
   return picture;
+}
+
+bool x_fetch_region(session_t *ps, XserverRegion r, pixman_region32_t *res) {
+  xcb_generic_error_t *e = NULL;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_xfixes_fetch_region_reply_t *xr = xcb_xfixes_fetch_region_reply(c,
+    xcb_xfixes_fetch_region(c, r), &e);
+  if (!xr) {
+    printf_errf("(): failed to fetch rectangles");
+    return false;
+  }
+
+  int nrect = xcb_xfixes_fetch_region_rectangles_length(xr);
+  pixman_box32_t *b = calloc(nrect, sizeof *b);
+  xcb_rectangle_t *xrect = xcb_xfixes_fetch_region_rectangles(xr);
+  for (int i = 0; i < nrect; i++) {
+    b[i] = (pixman_box32_t) {
+      .x1 = xrect[i].x,
+      .y1 = xrect[i].y,
+      .x2 = xrect[i].x + xrect[i].width,
+      .y2 = xrect[i].y + xrect[i].height
+    };
+  }
+  bool ret = pixman_region32_init_rects(res, b, nrect);
+  free(b);
+  free(xr);
+  return ret;
+}
+
+void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t pict,
+    int clip_x_origin, int clip_y_origin, const region_t *reg) {
+  int nrects;
+  const rect_t *rects = pixman_region32_rectangles((region_t *)reg, &nrects);
+  xcb_rectangle_t *xrects = calloc(nrects, sizeof *xrects);
+  for (int i = 0; i < nrects; i++)
+    xrects[i] = (xcb_rectangle_t){
+      .x = rects[i].x1,
+      .y = rects[i].y1,
+      .width = rects[i].x2 - rects[i].x1,
+      .height = rects[i].y2 - rects[i].y1,
+    };
+
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_generic_error_t *e =
+    xcb_request_check(c, xcb_render_set_picture_clip_rectangles_checked(c, pict,
+      clip_x_origin, clip_y_origin, nrects, xrects));
+  if (e)
+    printf_errf("(): failed to set clip region");
+  free(e);
+  free(xrects);
+  return;
 }
