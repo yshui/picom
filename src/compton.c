@@ -1941,10 +1941,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
           region_real, NULL, NULL);
       // falls through
     case BKEND_GLX:
-      if (ps->o.glx_use_copysubbuffermesa)
-        glx_swap_copysubbuffermesa(ps, region_real);
-      else
-        glXSwapBuffers(ps->dpy, get_tgt_window(ps));
+      glXSwapBuffers(ps->dpy, get_tgt_window(ps));
       break;
 #endif
     default:

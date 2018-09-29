@@ -2197,9 +2197,6 @@ glx_render_(session_t *ps, const glx_texture_t *ptex,
   glx_render_(ps, ptex, x, y, dx, dy, width, height, z, opacity, argb, neg, reg_tgt, pcache_reg)
 #endif
 
-void
-glx_swap_copysubbuffermesa(session_t *ps, XserverRegion reg);
-
 unsigned char *
 glx_take_screenshot(session_t *ps, int *out_length);
 

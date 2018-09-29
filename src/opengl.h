@@ -1,3 +1,4 @@
+#pragma once
 /*
  * Compton - a compositor for X11
  *
@@ -120,10 +121,3 @@ glx_hasglext(session_t *ps, const char *ext) {
 
   return found;
 }
-
-static bool
-glx_update_fbconfig(session_t *ps);
-
-static int
-glx_cmp_fbconfig(session_t *ps,
-    const glx_fbconfig_t *pfbc_a, const glx_fbconfig_t *pfbc_b);
