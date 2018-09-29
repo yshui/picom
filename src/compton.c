@@ -1401,14 +1401,12 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
 }
 
 void
-render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
-    double opacity, bool argb, bool neg,
-    xcb_render_picture_t pict, glx_texture_t *ptex,
-    XserverRegion reg_paint, const reg_data_t *pcache_reg
-#ifdef CONFIG_OPENGL
-    , const glx_prog_main_t *pprogram
-#endif
-    ) {
+render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
+  double opacity, bool argb, bool neg,
+  xcb_render_picture_t pict, glx_texture_t *ptex,
+  XserverRegion reg_paint, const reg_data_t *pcache_reg,
+  const glx_prog_main_t *pprogram)
+{
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   switch (ps->o.backend) {
     case BKEND_XRENDER:
@@ -1926,7 +1924,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       glXWaitX();
       assert(ps->tgt_buffer.pixmap);
       xr_sync(ps, ps->tgt_buffer.pixmap, &ps->tgt_buffer_fence);
-      paint_bind_tex_real(ps, &ps->tgt_buffer,
+      paint_bind_tex(ps, &ps->tgt_buffer,
           ps->root_width, ps->root_height, ps->depth,
           !ps->o.glx_no_rebind_pixmap);
       // See #163

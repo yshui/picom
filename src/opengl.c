@@ -729,6 +729,9 @@ glx_load_prog_main(session_t *ps,
 bool
 glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
     unsigned width, unsigned height, unsigned depth) {
+  if (ps->o.backend != BKEND_GLX)
+    return true;
+
   if (!pixmap) {
     printf_errf("(%#010lx): Binding to an empty pixmap. This can't work.",
         pixmap);
@@ -1413,7 +1416,7 @@ glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
  * @brief Render a region with texture data.
  */
 bool
-glx_render_(session_t *ps, const glx_texture_t *ptex,
+glx_render(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
     double opacity, bool argb, bool neg,
     XserverRegion reg_tgt, const reg_data_t *pcache_reg

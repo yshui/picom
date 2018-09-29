@@ -25,6 +25,9 @@
 #include <errno.h>
 #endif
 
+#ifdef CONFIG_OPENGL
+#include "opengl.h"
+#endif
 #include "common.h"
 #include "c2.h"
 
@@ -50,13 +53,11 @@ void set_fade_callback(session_t *ps, win *w,
 void map_win(session_t *ps, Window id);
 
 void
-render_(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
+render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     double opacity, bool argb, bool neg,
     xcb_render_picture_t pict, glx_texture_t *ptex,
     XserverRegion reg_paint, const reg_data_t *pcache_reg
-#ifdef CONFIG_OPENGL
     , const glx_prog_main_t *pprogram
-#endif
     );
 
 /**
@@ -196,30 +197,38 @@ free_xinerama_info(session_t *ps) {
 #endif
 }
 
+#ifdef CONFIG_OPENGL
 /**
  * Bind texture in paint_t if we are using GLX backend.
  */
 static inline bool
-paint_bind_tex_real(session_t *ps, paint_t *ppaint,
-    unsigned wid, unsigned hei, unsigned depth, bool force) {
-#ifdef CONFIG_OPENGL
+paint_bind_tex(session_t *ps, paint_t *ppaint,
+  unsigned wid, unsigned hei, unsigned depth, bool force)
+{
   if (!ppaint->pixmap)
     return false;
 
   if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))
     return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, depth);
-#endif
 
   return true;
 }
-
+#else
 static inline bool
 paint_bind_tex(session_t *ps, paint_t *ppaint,
-    unsigned wid, unsigned hei, unsigned depth, bool force) {
-  if (BKEND_GLX == ps->o.backend)
-    return paint_bind_tex_real(ps, ppaint, wid, hei, depth, force);
+  unsigned wid, unsigned hei, unsigned depth, bool force)
+{
   return true;
 }
+static inline void
+free_paint_glx(session_t *ps, paint_t *p) {}
+static inline void
+free_win_res_glx(session_t *ps, win *w) {}
+static inline void
+free_texture(session_t *ps, glx_texture_t **t) {
+  assert(!*t);
+}
+#endif
 
 /**
  * Free data in a reg_data_t.
@@ -486,16 +495,6 @@ find_win_all(session_t *ps, const Window wid) {
   if (!w) w = find_toplevel2(ps, wid);
   return w;
 }
-
-#ifdef CONFIG_OPENGL
-#define \
-   render(ps, x, y, dx, dy, wid, hei, opacity, argb, neg, pict, ptex, reg_paint, pcache_reg, pprogram) \
-  render_(ps, x, y, dx, dy, wid, hei, opacity, argb, neg, pict, ptex, reg_paint, pcache_reg, pprogram)
-#else
-#define \
-   render(ps, x, y, dx, dy, wid, hei, opacity, argb, neg, pict, ptex, reg_paint, pcache_reg, pprogram) \
-  render_(ps, x, y, dx, dy, wid, hei, opacity, argb, neg, pict, ptex, reg_paint, pcache_reg)
-#endif
 
 bool win_has_alpha(win *);
 static inline void

@@ -121,3 +121,119 @@ glx_hasglext(session_t *ps, const char *ext) {
 
   return found;
 }
+
+bool
+glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+    GLfloat factor, XserverRegion reg_tgt, const reg_data_t *);
+
+bool
+glx_render(session_t *ps, const glx_texture_t *ptex,
+    int x, int y, int dx, int dy, int width, int height, int z,
+    double opacity, bool argb, bool neg,
+    XserverRegion reg_tgt, const reg_data_t *,
+    const glx_prog_main_t *pprogram);
+
+bool
+glx_init(session_t *ps, bool need_render);
+
+void
+glx_destroy(session_t *ps);
+
+bool
+glx_reinit(session_t *ps, bool need_render);
+
+void
+glx_on_root_change(session_t *ps);
+
+bool
+glx_init_blur(session_t *ps);
+
+#ifdef CONFIG_OPENGL
+bool
+glx_load_prog_main(session_t *ps,
+    const char *vshader_str, const char *fshader_str,
+    glx_prog_main_t *pprogram);
+#endif
+
+bool
+glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
+    unsigned width, unsigned height, unsigned depth);
+
+void
+glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
+
+void glx_paint_pre(session_t *ps, XserverRegion *preg)
+__attribute__((nonnull(1, 2)));
+
+/**
+ * Check if a texture is binded, or is binded to the given pixmap.
+ */
+static inline bool
+glx_tex_binded(const glx_texture_t *ptex, Pixmap pixmap) {
+  return ptex && ptex->glpixmap && ptex->texture
+    && (!pixmap || pixmap == ptex->pixmap);
+}
+
+void
+glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *);
+
+bool
+glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+    GLfloat factor_center,
+    XserverRegion reg_tgt,
+    const reg_data_t *,
+    glx_blur_cache_t *pbc);
+
+GLuint
+glx_create_shader(GLenum shader_type, const char *shader_str);
+
+GLuint
+glx_create_program(const GLuint * const shaders, int nshaders);
+
+GLuint
+glx_create_program_from_str(const char *vert_shader_str,
+    const char *frag_shader_str);
+
+unsigned char *
+glx_take_screenshot(session_t *ps, int *out_length);
+
+/**
+ * Free a glx_texture_t.
+ */
+static inline void
+free_texture(session_t *ps, glx_texture_t **pptex) {
+  glx_texture_t *ptex = *pptex;
+
+  // Quit if there's nothing
+  if (!ptex)
+    return;
+
+  glx_release_pixmap(ps, ptex);
+
+  free_texture_r(ps, &ptex->texture);
+
+  // Free structure itself
+  free(ptex);
+  *pptex = NULL;
+  assert(!*pptex);
+}
+
+/**
+ * Free GLX part of paint_t.
+ */
+static inline void
+free_paint_glx(session_t *ps, paint_t *ppaint) {
+  free_texture(ps, &ppaint->ptex);
+}
+
+/**
+ * Free GLX part of win.
+ */
+static inline void
+free_win_res_glx(session_t *ps, win *w) {
+  free_paint_glx(ps, &w->paint);
+  free_paint_glx(ps, &w->shadow_paint);
+#ifdef CONFIG_OPENGL
+  free_glx_bc(ps, &w->glx_blur_cache);
+#endif
+}
