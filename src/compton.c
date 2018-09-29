@@ -2496,21 +2496,21 @@ root_damaged(session_t *ps) {
 }
 
 /**
- * Xlib error handler function.
+ * X11 error handler function.
  */
-static int
-xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
+static void
+xerror_common(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_code) {
   session_t * const ps = ps_g;
 
   int o = 0;
   const char *name = "Unknown";
 
-  if (should_ignore(ps, ev->serial)) {
-    return 0;
+  if (should_ignore(ps, serial)) {
+    return;
   }
 
-  if (ev->request_code == ps->composite_opcode
-      && ev->minor_code == XCB_COMPOSITE_REDIRECT_SUBWINDOWS) {
+  if (major == ps->composite_opcode
+      && minor == XCB_COMPOSITE_REDIRECT_SUBWINDOWS) {
     fprintf(stderr, "Another composite manager is already running "
         "(and does not handle _NET_WM_CM_Sn correctly)\n");
     exit(1);
@@ -2518,17 +2518,17 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 
 #define CASESTRRET2(s)   case s: name = #s; break
 
-  o = ev->error_code - ps->xfixes_error;
+  o = error_code - ps->xfixes_error;
   switch (o) {
     CASESTRRET2(BadRegion);
   }
 
-  o = ev->error_code - ps->damage_error;
+  o = error_code - ps->damage_error;
   switch (o) {
     CASESTRRET2(XCB_DAMAGE_BAD_DAMAGE);
   }
 
-  o = ev->error_code - ps->render_error;
+  o = error_code - ps->render_error;
   switch (o) {
     CASESTRRET2(XCB_RENDER_PICT_FORMAT);
     CASESTRRET2(XCB_RENDER_PICTURE);
@@ -2539,7 +2539,7 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 
 #ifdef CONFIG_OPENGL
   if (ps->glx_exists) {
-    o = ev->error_code - ps->glx_error;
+    o = error_code - ps->glx_error;
     switch (o) {
       CASESTRRET2(GLX_BAD_SCREEN);
       CASESTRRET2(GLX_BAD_ATTRIBUTE);
@@ -2554,7 +2554,7 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 
 #ifdef CONFIG_XSYNC
   if (ps->xsync_exists) {
-    o = ev->error_code - ps->xsync_error;
+    o = error_code - ps->xsync_error;
     switch (o) {
       CASESTRRET2(XSyncBadCounter);
       CASESTRRET2(XSyncBadAlarm);
@@ -2563,7 +2563,7 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
   }
 #endif
 
-  switch (ev->error_code) {
+  switch (error_code) {
     CASESTRRET2(BadAccess);
     CASESTRRET2(BadAlloc);
     CASESTRRET2(BadAtom);
@@ -2588,15 +2588,30 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
   print_timestamp(ps);
   {
     char buf[BUF_LEN] = "";
-    XGetErrorText(ps->dpy, ev->error_code, buf, BUF_LEN);
+    XGetErrorText(ps->dpy, error_code, buf, BUF_LEN);
     printf("error %4d %-12s request %4d minor %4d serial %6lu: \"%s\"\n",
-        ev->error_code, name, ev->request_code,
-        ev->minor_code, ev->serial, buf);
+        error_code, name, major,
+        minor, serial, buf);
   }
 
   // print_backtrace();
+}
 
+/**
+ * Xlib error handler function.
+ */
+static int
+xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
+  xerror_common(ev->serial, ev->request_code, ev->minor_code, ev->error_code);
   return 0;
+}
+
+/**
+ * XCB error handler function.
+ */
+inline static void
+ev_xcb_error(session_t __attribute__((unused)) *ps, xcb_generic_error_t *err) {
+  xerror_common(err->sequence, err->major_code, err->minor_code, err->error_code);
 }
 
 static void
@@ -3267,6 +3282,9 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
       break;
     case SelectionClear:
       ev_selection_clear(ps, (xcb_selection_clear_event_t *)ev);
+      break;
+    case 0:
+      ev_xcb_error(ps, (xcb_generic_error_t *)ev);
       break;
     default:
       if (ps->shape_exists && ev->response_type == ps->shape_event) {
