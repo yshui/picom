@@ -1996,6 +1996,14 @@ set_ignore_next(session_t *ps) {
 }
 
 /**
+ * Ignore X errors caused by given X request.
+ */
+static inline void
+set_ignore_cookie(session_t *ps, xcb_void_cookie_t cookie) {
+  set_ignore(ps, cookie.sequence);
+}
+
+/**
  * Check if a window is a fullscreen window.
  *
  * It's not using w->border_size for performance measures.

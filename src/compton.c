@@ -1445,9 +1445,9 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 
   // Fetch Pixmap
   if (!w->paint.pixmap && ps->has_name_pixmap) {
-    set_ignore_next(ps);
     w->paint.pixmap = xcb_generate_id(c);
-    xcb_composite_name_window_pixmap(c, w->id, w->paint.pixmap);
+    set_ignore_cookie(ps,
+        xcb_composite_name_window_pixmap(c, w->id, w->paint.pixmap));
     if (w->paint.pixmap)
       free_fence(ps, &w->fence);
   }
@@ -1997,12 +1997,12 @@ repair_win(session_t *ps, win *w) {
 
   if (!w->ever_damaged) {
     parts = win_extents(ps, w);
-    set_ignore_next(ps);
-    xcb_damage_subtract(c, w->damage, XCB_NONE, XCB_NONE);
+    set_ignore_cookie(ps,
+        xcb_damage_subtract(c, w->damage, XCB_NONE, XCB_NONE));
   } else {
     parts = XFixesCreateRegion(ps->dpy, 0, 0);
-    set_ignore_next(ps);
-    xcb_damage_subtract(c, w->damage, XCB_NONE, parts);
+    set_ignore_cookie(ps,
+        xcb_damage_subtract(c, w->damage, XCB_NONE, parts));
     XFixesTranslateRegion(ps->dpy, parts,
       w->g.x + w->g.border_width,
       w->g.y + w->g.border_width);

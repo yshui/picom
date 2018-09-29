@@ -164,8 +164,8 @@ inline static void
 free_damage(session_t *ps, xcb_damage_damage_t *p) {
   if (*p) {
     // BadDamage will be thrown if the window is destroyed
-    set_ignore_next(ps);
-    xcb_damage_destroy(XGetXCBConnection(ps->dpy), *p);
+    set_ignore_cookie(ps,
+        xcb_damage_destroy(XGetXCBConnection(ps->dpy), *p));
     *p = None;
   }
 }
