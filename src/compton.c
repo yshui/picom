@@ -5110,21 +5110,28 @@ cxinerama_upd_scrs(session_t *ps) {
 
   if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists) return;
 
-  if (!XineramaIsActive(ps->dpy)) return;
-
-  ps->xinerama_scrs = XineramaQueryScreens(ps->dpy, &ps->xinerama_nscrs);
-
-  // Just in case the shit hits the fan...
-  if (!ps->xinerama_nscrs) {
-    cxfree(ps->xinerama_scrs);
-    ps->xinerama_scrs = NULL;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_xinerama_is_active_reply_t *active =
+    xcb_xinerama_is_active_reply(c,
+        xcb_xinerama_is_active(c), NULL);
+  if (!active || !active->state) {
+    free(active);
     return;
   }
+  free(active);
+
+  ps->xinerama_scrs = xcb_xinerama_query_screens_reply(c,
+      xcb_xinerama_query_screens(c), NULL);
+  if (!ps->xinerama_scrs)
+    return;
+
+  xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
+  ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
 
   ps->xinerama_scr_regs = allocchk(malloc(sizeof(XserverRegion *)
         * ps->xinerama_nscrs));
   for (int i = 0; i < ps->xinerama_nscrs; ++i) {
-    const XineramaScreenInfo * const s = &ps->xinerama_scrs[i];
+    const xcb_xinerama_screen_info_t * const s = &scrs[i];
     XRectangle r = { .x = s->x_org, .y = s->y_org,
       .width = s->width, .height = s->height };
     ps->xinerama_scr_regs[i] = XFixesCreateRegion(ps->dpy, &r, 1);
@@ -5385,6 +5392,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   xcb_prefetch_extension_data(c, &xcb_damage_id);
   xcb_prefetch_extension_data(c, &xcb_shape_id);
   xcb_prefetch_extension_data(c, &xcb_randr_id);
+  xcb_prefetch_extension_data(c, &xcb_xinerama_id);
 
   ext_info = xcb_get_extension_data(c, &xcb_render_id);
   if (!ext_info || !ext_info->present) {
@@ -5515,9 +5523,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // Query X Xinerama extension
   if (ps->o.xinerama_shadow_crop) {
 #ifdef CONFIG_XINERAMA
-    int xinerama_event = 0, xinerama_error = 0;
-    if (XineramaQueryExtension(ps->dpy, &xinerama_event, &xinerama_error))
-      ps->xinerama_exists = true;
+    ext_info = xcb_get_extension_data(c, &xcb_xinerama_id);
+    ps->xinerama_exists = ext_info && ext_info->present;
 #else
     printf_errf("(): Xinerama support not compiled in.");
 #endif

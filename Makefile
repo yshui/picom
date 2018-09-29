@@ -26,7 +26,7 @@ endif
 # Enables support for --xinerama-shadow-crop
 ifeq "$(NO_XINERAMA)" ""
   CFG += -DCONFIG_XINERAMA
-  PACKAGES += xinerama
+  PACKAGES += xcb-xinerama
 endif
 
 # ==== libconfig ====

@@ -88,15 +88,15 @@
 #include <X11/extensions/sync.h>
 #endif
 
-#ifdef CONFIG_XINERAMA
-#include <X11/extensions/Xinerama.h>
-#endif
-
 #include <xcb/composite.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
 #include <xcb/randr.h>
 #include <xcb/shape.h>
+
+#ifdef CONFIG_XINERAMA
+#include <xcb/xinerama.h>
+#endif
 
 // Workarounds for missing definitions in very old versions of X headers,
 // thanks to consolers for reporting
@@ -977,7 +977,7 @@ typedef struct session {
   /// Whether X Xinerama extension exists.
   bool xinerama_exists;
   /// Xinerama screen info.
-  XineramaScreenInfo *xinerama_scrs;
+  xcb_xinerama_query_screens_reply_t *xinerama_scrs;
   /// Xinerama screen regions.
   XserverRegion *xinerama_scr_regs;
   /// Number of Xinerama screens.

@@ -650,14 +650,21 @@ static inline void
 cxinerama_win_upd_scr(session_t *ps, win *w) {
 #ifdef CONFIG_XINERAMA
   w->xinerama_scr = -1;
-  for (XineramaScreenInfo *s = ps->xinerama_scrs;
-      s < ps->xinerama_scrs + ps->xinerama_nscrs; ++s)
+
+  if (!ps->xinerama_scrs)
+    return;
+
+  xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
+  int length = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
+  for (int i = 0; i < length; i++) {
+    xcb_xinerama_screen_info_t *s = &scrs[i];
     if (s->x_org <= w->g.x && s->y_org <= w->g.y
         && s->x_org + s->width >= w->g.x + w->widthb
         && s->y_org + s->height >= w->g.y + w->heightb) {
-      w->xinerama_scr = s - ps->xinerama_scrs;
+      w->xinerama_scr = i;
       return;
     }
+  }
 #endif
 }
 
