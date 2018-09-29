@@ -231,13 +231,15 @@ int win_get_role(session_t *ps, win *w) {
  */
 static inline bool win_bounding_shaped(const session_t *ps, Window wid) {
   if (ps->shape_exists) {
-    Bool bounding_shaped = False, clip_shaped = False;
-    int x_bounding, y_bounding, x_clip, y_clip;
-    unsigned int w_bounding, h_bounding, w_clip, h_clip;
+    xcb_shape_query_extents_reply_t *reply;
+    Bool bounding_shaped;
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
-    XShapeQueryExtents(ps->dpy, wid, &bounding_shaped,
-        &x_bounding, &y_bounding, &w_bounding, &h_bounding,
-        &clip_shaped, &x_clip, &y_clip, &w_clip, &h_clip);
+    reply = xcb_shape_query_extents_reply(c,
+        xcb_shape_query_extents(c, wid), NULL);
+    bounding_shaped = reply && reply->bounding_shaped;
+    free(reply);
+
     return bounding_shaped;
   }
 

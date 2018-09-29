@@ -10,7 +10,6 @@
 
 #include <ctype.h>
 #include <string.h>
-#include <xcb/shape.h>
 #include <xcb/randr.h>
 #include <xcb/damage.h>
 #include <xcb/render.h>
@@ -2027,6 +2026,8 @@ repair_win(session_t *ps, win *w) {
 
 void
 map_win(session_t *ps, Window id) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
   // Unmap overlay window if it got mapped but we are currently not
   // in redirected state.
   if (ps->overlay && id == ps->overlay && !ps->redirected) {
@@ -2058,7 +2059,7 @@ map_win(session_t *ps, Window id) {
 
   // Notify compton when the shape of a window changes
   if (ps->shape_exists) {
-    XShapeSelectInput(ps->dpy, id, ShapeNotifyMask);
+    xcb_shape_select_input(c, id, 1);
   }
 
   // Make sure the XSelectInput() requests are sent
@@ -4722,8 +4723,8 @@ init_overlay(session_t *ps) {
     // Set window region of the overlay window, code stolen from
     // compiz-0.8.8
     XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
-    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeBounding, 0, 0, 0);
-    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeInput, 0, 0, region);
+    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, XCB_SHAPE_SK_BOUNDING, 0, 0, 0);
+    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, XCB_SHAPE_SK_INPUT, 0, 0, region);
     XFixesDestroyRegion(ps->dpy, region);
 
     // Listen to Expose events on the overlay
@@ -5382,6 +5383,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   xcb_prefetch_extension_data(c, &xcb_render_id);
   xcb_prefetch_extension_data(c, &xcb_composite_id);
   xcb_prefetch_extension_data(c, &xcb_damage_id);
+  xcb_prefetch_extension_data(c, &xcb_shape_id);
   xcb_prefetch_extension_data(c, &xcb_randr_id);
 
   ext_info = xcb_get_extension_data(c, &xcb_render_id);
@@ -5454,7 +5456,10 @@ session_init(session_t *ps_old, int argc, char **argv) {
   get_cfg(ps, argc, argv, false);
 
   // Query X Shape
-  if (XShapeQueryExtension(ps->dpy, &ps->shape_event, &ps->shape_error)) {
+  ext_info = xcb_get_extension_data(c, &xcb_shape_id);
+  if (ext_info && ext_info->present) {
+    ps->shape_event = ext_info->first_event;
+    ps->shape_error = ext_info->first_error;
     ps->shape_exists = true;
   }
 

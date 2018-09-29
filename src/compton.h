@@ -355,6 +355,8 @@ check_fade_fin(session_t *ps, win *w) {
  */
 static inline void
 win_ev_stop(session_t *ps, win *w) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
   // Will get BadWindow if the window is destroyed
   set_ignore_next(ps);
   XSelectInput(ps->dpy, w->id, 0);
@@ -365,8 +367,8 @@ win_ev_stop(session_t *ps, win *w) {
   }
 
   if (ps->shape_exists) {
-    set_ignore_next(ps);
-    XShapeSelectInput(ps->dpy, w->id, 0);
+    set_ignore_cookie(ps,
+        xcb_shape_select_input(c, w->id, 0));
   }
 }
 
