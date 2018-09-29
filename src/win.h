@@ -1,7 +1,8 @@
 #pragma once
 #include <stdbool.h>
 #include <X11/Xlib.h>
-#include <X11/extensions/Xfixes.h>
+#include <X11/extensions/Xfixes.h> /* FIXME: Remove this */
+#include <xcb/xfixes.h>
 
 typedef struct session session_t;
 typedef struct win win;

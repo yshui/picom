@@ -1,5 +1,4 @@
 #include <X11/Xlib.h>
-#include <X11/extensions/Xfixes.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
 #include <xcb/xcb_renderutil.h>
@@ -77,14 +76,17 @@ group_is_focused(session_t *ps, Window leader) {
  */
 XserverRegion
 win_get_region(session_t *ps, win *w, bool use_offset) {
-  XRectangle r;
+  xcb_rectangle_t r;
 
   r.x = (use_offset ? w->g.x: 0);
   r.y = (use_offset ? w->g.y: 0);
   r.width = w->widthb;
   r.height = w->heightb;
 
-  return XFixesCreateRegion(ps->dpy, &r, 1);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  XserverRegion result = xcb_generate_id(c);
+  xcb_xfixes_create_region(c, result, 1, &r);
+  return result;
 }
 
 
@@ -94,17 +96,20 @@ win_get_region(session_t *ps, win *w, bool use_offset) {
 XserverRegion
 win_get_region_noframe(session_t *ps, win *w, bool use_offset) {
   const margin_t extents = win_calc_frame_extents(ps, w);
-  XRectangle r;
+  xcb_rectangle_t r;
 
   r.x = (use_offset ? w->g.x: 0) + extents.left;
   r.y = (use_offset ? w->g.y: 0) + extents.top;
   r.width = max_i(w->g.width - extents.left - extents.right, 0);
   r.height = max_i(w->g.height - extents.top - extents.bottom, 0);
 
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_xfixes_region_t result = xcb_generate_id(c);
   if (r.width > 0 && r.height > 0)
-    return XFixesCreateRegion(ps->dpy, &r, 1);
+    xcb_xfixes_create_region(c, result, 1, &r);
   else
-    return XFixesCreateRegion(ps->dpy, NULL, 0);
+    xcb_xfixes_create_region(c, result, 0, NULL);
+  return result;
 }
 
 /**
@@ -144,10 +149,15 @@ void win_rounded_corners(session_t *ps, win *w) {
       w->heightb - ROUNDED_PIXELS);
 
   // Get the rectangles in the bounding region
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   int nrects = 0, i;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, w->border_size, &nrects);
-  if (!rects)
+  xcb_xfixes_fetch_region_reply_t *reply =
+    xcb_xfixes_fetch_region_reply(c,
+      xcb_xfixes_fetch_region(c, w->border_size), NULL);
+  if (!reply)
     return;
+  xcb_rectangle_t *rects = xcb_xfixes_fetch_region_rectangles(reply);
+  nrects = xcb_xfixes_fetch_region_rectangles_length(reply);
 
   // Look for a rectangle large enough for this window be considered
   // having rounded corners
@@ -157,7 +167,7 @@ void win_rounded_corners(session_t *ps, win *w) {
       break;
     }
 
-  cxfree(rects);
+  free(reply);
 }
 
 int win_get_name(session_t *ps, win *w) {
@@ -1151,7 +1161,7 @@ win_set_focused(session_t *ps, win *w, bool focused) {
  * function.
  */
 XserverRegion win_extents(session_t *ps, win *w) {
-  XRectangle r;
+  xcb_rectangle_t r;
 
   r.x = w->g.x;
   r.y = w->g.y;
@@ -1159,7 +1169,7 @@ XserverRegion win_extents(session_t *ps, win *w) {
   r.height = w->heightb;
 
   if (w->shadow) {
-    XRectangle sr;
+    xcb_rectangle_t sr;
 
     sr.x = w->g.x + w->shadow_dx;
     sr.y = w->g.y + w->shadow_dy;
@@ -1185,7 +1195,10 @@ XserverRegion win_extents(session_t *ps, win *w) {
     }
   }
 
-  return XFixesCreateRegion(ps->dpy, &r, 1);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_xfixes_region_t result = xcb_generate_id(c);
+  xcb_xfixes_create_region(c, result, 1, &r);
+  return result;
 }
 
 /**
@@ -1193,6 +1206,7 @@ XserverRegion win_extents(session_t *ps, win *w) {
  */
 XserverRegion
 win_border_size(session_t *ps, win *w, bool use_offset) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   // Start with the window rectangular region
   XserverRegion fin = win_get_region(ps, w, use_offset);
 
@@ -1206,15 +1220,15 @@ win_border_size(session_t *ps, win *w, bool use_offset) {
      * instead of an invalid XID.
      */
 
-    XserverRegion border = XFixesCreateRegionFromWindow(
-      ps->dpy, w->id, WindowRegionBounding);
+    XserverRegion border = xcb_generate_id(c);
+    xcb_xfixes_create_region_from_window(c, border, w->id, WindowRegionBounding);
 
     if (!border)
       return fin;
 
     if (use_offset) {
       // Translate the region to the correct place
-      XFixesTranslateRegion(ps->dpy, border,
+      xcb_xfixes_translate_region(c, border,
         w->g.x + w->g.border_width,
         w->g.y + w->g.border_width);
     }
@@ -1222,8 +1236,8 @@ win_border_size(session_t *ps, win *w, bool use_offset) {
     // Intersect the bounding region we got with the window rectangle, to
     // make sure the bounding region is not bigger than the window
     // rectangle
-    XFixesIntersectRegion(ps->dpy, fin, fin, border);
-    XFixesDestroyRegion(ps->dpy, border);
+    xcb_xfixes_intersect_region(c, fin, border, fin);
+    xcb_xfixes_destroy_region(c, border);
   }
 
   return fin;

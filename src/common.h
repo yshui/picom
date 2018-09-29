@@ -82,7 +82,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
-#include <X11/extensions/Xcomposite.h>
+#include <X11/extensions/Xcomposite.h> /* FIXME remove this once done porting to xcb-composite */
 #include <X11/extensions/shape.h>
 #include <X11/extensions/Xdbe.h>
 #ifdef CONFIG_XSYNC
@@ -93,6 +93,7 @@
 #include <X11/extensions/Xinerama.h>
 #endif
 
+#include <xcb/composite.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
 #include <xcb/randr.h>
@@ -511,11 +512,12 @@ typedef struct _latom {
 
 /// A representation of raw region data
 typedef struct {
-  XRectangle *rects;
+  xcb_rectangle_t *rects;
+  xcb_xfixes_fetch_region_reply_t *to_free;
   int nrects;
 } reg_data_t;
 
-#define REG_DATA_INIT { NULL, 0 }
+#define REG_DATA_INIT { NULL, NULL, 0 }
 
 struct _timeout_t;
 
@@ -596,7 +598,7 @@ typedef struct _options_t {
   Window benchmark_wid;
   /// A list of conditions of windows not to paint.
   c2_lptr_t *paint_blacklist;
-  /// Whether to avoid using XCompositeNameWindowPixmap(), for debugging.
+  /// Whether to avoid using xcb_composite_name_window_pixmap(), for debugging.
   bool no_name_pixmap;
   /// Whether to work under synchronized mode for debugging.
   bool synchronize;
@@ -879,7 +881,7 @@ typedef struct session {
 
   // === Expose event related ===
   /// Pointer to an array of <code>XRectangle</code>-s of exposed region.
-  XRectangle *expose_rects;
+  xcb_rectangle_t *expose_rects;
   /// Number of <code>XRectangle</code>-s in <code>expose_rects</code>.
   int size_expose;
   /// Index of the next free slot in <code>expose_rects</code>.
@@ -1281,33 +1283,32 @@ print_backtrace(void) {
 #ifdef DEBUG_ALLOC_REG
 
 /**
- * Wrapper of <code>XFixesCreateRegion</code>, for debugging.
+ * Wrapper of <code>xcb_xfixes_create_region</code>, for debugging.
  */
-static inline XserverRegion
-XFixesCreateRegion_(Display *dpy, XRectangle *p, int n,
+static inline void
+xcb_xfixes_create_region_(xcb_connection_t *c, xcb_xfixes_region_t region, int n, xcb_rectangle_t *p,
     const char *func, int line) {
-  XserverRegion reg = XFixesCreateRegion(dpy, p, n);
+  xcb_xfixes_create_region(c, region, n, p);
   print_timestamp(ps_g);
-  printf("%#010lx: XFixesCreateRegion() in %s():%d\n", reg, func, line);
+  printf("%#010lx: xcb_xfixes_create_region() in %s():%d\n", reg, func, line);
   print_backtrace();
   fflush(stdout);
-  return reg;
 }
 
 /**
- * Wrapper of <code>XFixesDestroyRegion</code>, for debugging.
+ * Wrapper of <code>xcb_xfixes_destroy_region</code>, for debugging.
  */
 static inline void
-XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
+xcb_xfixes_destroy_region_(xcb_connection_t *c, XserverRegion reg,
     const char *func, int line) {
-  XFixesDestroyRegion(dpy, reg);
+  xcb_xfixes_destroy_region(c, reg);
   print_timestamp(ps_g);
-  printf("%#010lx: XFixesDestroyRegion() in %s():%d\n", reg, func, line);
+  printf("%#010lx: xcb_xfixes_destroy_region() in %s():%d\n", reg, func, line);
   fflush(stdout);
 }
 
-#define XFixesCreateRegion(dpy, p, n) XFixesCreateRegion_(dpy, p, n, __func__, __LINE__)
-#define XFixesDestroyRegion(dpy, reg) XFixesDestroyRegion_(dpy, reg, __func__, __LINE__)
+#define xcb_xfixes_create_region(c, r, p, n) xcb_xfixes_create_region_(c, r, p, n, __func__, __LINE__)
+#define xcb_xfixes_destroy_region(c, reg) xcb_xfixes_destroy_region_(c, reg, __func__, __LINE__)
 #endif
 
 #endif
@@ -1910,9 +1911,11 @@ copy_region(const session_t *ps, XserverRegion oldregion) {
   if (!oldregion)
     return None;
 
-  XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  XserverRegion region = xcb_generate_id(c);
+  xcb_xfixes_create_region(c, region, 0, NULL);
 
-  XFixesCopyRegion(ps->dpy, region, oldregion);
+  xcb_xfixes_copy_region(c, oldregion, region);
 
   return region;
 }
@@ -1923,7 +1926,8 @@ copy_region(const session_t *ps, XserverRegion oldregion) {
 static inline void
 free_region(session_t *ps, XserverRegion *p) {
   if (*p) {
-    XFixesDestroyRegion(ps->dpy, *p);
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_xfixes_destroy_region(c, *p);
     *p = None;
   }
 }
@@ -1957,7 +1961,7 @@ free_fence(session_t *ps, XSyncFence *pfence) {
  * psrc and pdst cannot be the same.
  */
 static inline void
-rect_crop(XRectangle *pdst, const XRectangle *psrc, const XRectangle *pbound) {
+rect_crop(xcb_rectangle_t *pdst, const xcb_rectangle_t *psrc, const xcb_rectangle_t *pbound) {
   assert(psrc != pdst);
   pdst->x = max_i(psrc->x, pbound->x);
   pdst->y = max_i(psrc->y, pbound->y);

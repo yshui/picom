@@ -239,8 +239,9 @@ void add_damage(session_t *ps, XserverRegion damage) {
 
   if (!damage) return;
   if (ps->all_damage) {
-    XFixesUnionRegion(ps->dpy, ps->all_damage, ps->all_damage, damage);
-    XFixesDestroyRegion(ps->dpy, damage);
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_xfixes_union_region(c, ps->all_damage, damage, ps->all_damage);
+    xcb_xfixes_destroy_region(c, damage);
   } else {
     ps->all_damage = damage;
   }
@@ -989,6 +990,7 @@ get_alpha_pict_o(session_t *ps, opacity_t o) {
 
 static win *
 paint_preprocess(session_t *ps, win *list) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   win *t = NULL, *next = NULL;
 
   // Fading step calculation
@@ -1125,13 +1127,13 @@ paint_preprocess(session_t *ps, win *list) {
           else {
             w->reg_ignore = win_get_region_noframe(ps, w, true);
             if (w->border_size)
-              XFixesIntersectRegion(ps->dpy, w->reg_ignore, w->reg_ignore,
-                  w->border_size);
+              xcb_xfixes_intersect_region(c, w->reg_ignore,
+                  w->border_size, w->reg_ignore);
           }
 
           if (last_reg_ignore)
-            XFixesUnionRegion(ps->dpy, w->reg_ignore, w->reg_ignore,
-                last_reg_ignore);
+            xcb_xfixes_union_region(c, w->reg_ignore,
+                last_reg_ignore, w->reg_ignore);
         }
         // Otherwise we copy the last region over
         else if (last_reg_ignore)
@@ -1263,7 +1265,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
   }
 
   if (reg_clip && tmp_picture)
-    XFixesSetPictureClipRegion(ps->dpy, tmp_picture, reg_clip, 0, 0);
+    xcb_xfixes_set_picture_clip_region(c, tmp_picture, 0, reg_clip, 0); /* FIXME: This is wrong; using 0 for the region */
 
   xcb_render_picture_t src_pict = tgt_buffer, dst_pict = tmp_picture;
   for (int i = 0; blur_kerns[i]; ++i) {
@@ -1336,6 +1338,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
     case BKEND_XRENDER:
     case BKEND_XR_GLX_HYBRID:
       {
+        xcb_connection_t *c = XGetXCBConnection(ps->dpy);
         // Normalize blur kernels
         for (int i = 0; i < MAX_BLUR_PASS; ++i) {
           xcb_render_fixed_t *kern_src = ps->o.blur_kerns[i];
@@ -1380,7 +1383,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
         if (win_is_solid(ps, w)) {
           XserverRegion reg_all = win_border_size(ps, w, false);
           reg_noframe = win_get_region_noframe(ps, w, false);
-          XFixesSubtractRegion(ps->dpy, reg_noframe, reg_all, reg_noframe);
+          xcb_xfixes_subtract_region(c, reg_all, reg_noframe, reg_noframe);
           free_region(ps, &reg_all);
         }
         xr_blur_dst(ps, tgt_buffer, x, y, wid, hei, ps->blur_kerns_cache,
@@ -1446,7 +1449,8 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
   // Fetch Pixmap
   if (!w->paint.pixmap && ps->has_name_pixmap) {
     set_ignore_next(ps);
-    w->paint.pixmap = XCompositeNameWindowPixmap(ps->dpy, w->id);
+    w->paint.pixmap = xcb_generate_id(c);
+    xcb_composite_name_window_pixmap(c, w->id, w->paint.pixmap);
     if (w->paint.pixmap)
       free_fence(ps, &w->fence);
   }
@@ -1499,8 +1503,8 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
       // Apply clipping region to save some CPU
       if (reg_paint) {
         XserverRegion reg = copy_region(ps, reg_paint);
-        XFixesTranslateRegion(ps->dpy, reg, -x, -y);
-        XFixesSetPictureClipRegion(ps->dpy, newpict, 0, 0, reg);
+        xcb_xfixes_translate_region(c, reg, -x, -y);
+        xcb_xfixes_set_picture_clip_region(c, newpict, reg, 0, 0);
         free_region(ps, &reg);
       }
 
@@ -1626,8 +1630,10 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
  */
 static void
 rebuild_screen_reg(session_t *ps) {
-  if (ps->screen_reg)
-    XFixesDestroyRegion(ps->dpy, ps->screen_reg);
+  if (ps->screen_reg) {
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_xfixes_destroy_region(c, ps->screen_reg);
+  }
   ps->screen_reg = get_screen_region(ps);
 }
 
@@ -1637,7 +1643,7 @@ rebuild_screen_reg(session_t *ps) {
 static void
 rebuild_shadow_exclude_reg(session_t *ps) {
   free_region(ps, &ps->shadow_exclude_reg);
-  XRectangle rect = geom_to_rect(ps, &ps->o.shadow_exclude_reg_geom, NULL);
+  xcb_rectangle_t rect = geom_to_rect(ps, &ps->o.shadow_exclude_reg_geom, NULL);
   ps->shadow_exclude_reg = rect_to_reg(ps, &rect);
 }
 
@@ -1656,14 +1662,24 @@ static inline bool
 is_region_empty(const session_t *ps, XserverRegion region,
     reg_data_t *pcache_reg) {
   int nrects = 0;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
+  xcb_rectangle_t *rects = NULL;
+  xcb_xfixes_fetch_region_reply_t *reply;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
+  reply = xcb_xfixes_fetch_region_reply(c,
+      xcb_xfixes_fetch_region(c, region), NULL);
+  if (reply) {
+    rects = xcb_xfixes_fetch_region_rectangles(reply);
+    nrects = xcb_xfixes_fetch_region_rectangles_length(reply);
+  }
 
   if (pcache_reg) {
+    pcache_reg->to_free = reply;
     pcache_reg->rects = rects;
     pcache_reg->nrects = nrects;
   }
   else
-    cxfree(rects);
+    free(reply);
 
   return !nrects;
 }
@@ -1690,7 +1706,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   }
   else {
     // Remove the damaged area out of screen
-    XFixesIntersectRegion(ps->dpy, region, region, ps->screen_reg);
+    xcb_xfixes_intersect_region(c, region, ps->screen_reg, region);
   }
 
 #ifdef MONITOR_REPAINT
@@ -1721,7 +1737,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 #endif
 
   if (BKEND_XRENDER == ps->o.backend)
-    XFixesSetPictureClipRegion(ps->dpy, ps->tgt_picture, 0, 0, region_real);
+    xcb_xfixes_set_picture_clip_region(c, ps->tgt_picture, region_real, 0, 0);
 
 #ifdef MONITOR_REPAINT
   switch (ps->o.backend) {
@@ -1742,8 +1758,9 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   if (t && t->reg_ignore) {
     // Calculate the region upon which the root window is to be painted
     // based on the ignore region of the lowest window, if available
-    reg_paint = reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
-    XFixesSubtractRegion(ps->dpy, reg_paint, region, t->reg_ignore);
+    reg_paint = reg_tmp = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, reg_paint, 0, NULL);
+    xcb_xfixes_subtract_region(c, region, t->reg_ignore, reg_paint);
   } else {
     reg_paint = region;
   }
@@ -1752,9 +1769,12 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   paint_root(ps, reg_paint);
 
   // Create temporary regions for use during painting
-  if (!reg_tmp)
-    reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
-  reg_tmp2 = XFixesCreateRegion(ps->dpy, NULL, 0);
+  if (!reg_tmp) {
+    reg_tmp = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, reg_tmp, 0, NULL);
+  }
+  reg_tmp2 = xcb_generate_id(c);
+  xcb_xfixes_create_region(c, reg_tmp2, 0, NULL);
 
   for (win *w = t; w; w = w->prev_trans) {
     // Painting shadow
@@ -1772,46 +1792,46 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
           // If it's the first cycle and reg_tmp2 is not ready, calculate
           // the paint region here
           reg_paint = reg_tmp;
-          XFixesSubtractRegion(ps->dpy, reg_paint, region, w->reg_ignore);
+          xcb_xfixes_subtract_region(c, region, w->reg_ignore, reg_paint);
         }
         else {
           // Otherwise, used the cached region during last cycle
           reg_paint = reg_tmp2;
         }
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, w->extents);
+        xcb_xfixes_intersect_region(c, reg_paint, w->extents, reg_paint);
       }
       else {
         reg_paint = reg_tmp;
-        XFixesIntersectRegion(ps->dpy, reg_paint, region, w->extents);
+        xcb_xfixes_intersect_region(c, region, w->extents, reg_paint);
       }
 
       if (ps->shadow_exclude_reg)
-        XFixesSubtractRegion(ps->dpy, reg_paint, reg_paint,
-            ps->shadow_exclude_reg);
+        xcb_xfixes_subtract_region(c, reg_paint,
+            ps->shadow_exclude_reg, reg_paint);
 
       // Might be worthwhile to crop the region to shadow border
       {
-        XRectangle rec_shadow_border = {
+        xcb_rectangle_t rec_shadow_border = {
           .x = w->g.x + w->shadow_dx,
           .y = w->g.y + w->shadow_dy,
           .width = w->shadow_width,
           .height = w->shadow_height
         };
-        XserverRegion reg_shadow = XFixesCreateRegion(ps->dpy,
-            &rec_shadow_border, 1);
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, reg_shadow);
+        XserverRegion reg_shadow = xcb_generate_id(c);
+        xcb_xfixes_create_region(c, reg_shadow, 1, &rec_shadow_border);
+        xcb_xfixes_intersect_region(c, reg_paint, reg_shadow, reg_paint);
         free_region(ps, &reg_shadow);
       }
 
       // Clear the shadow here instead of in make_shadow() for saving GPU
       // power and handling shaped windows
       if (w->mode != WMODE_SOLID && w->border_size)
-        XFixesSubtractRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
+        xcb_xfixes_subtract_region(c, reg_paint, w->border_size, reg_paint);
 
 #ifdef CONFIG_XINERAMA
       if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0)
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint,
-            ps->xinerama_scr_regs[w->xinerama_scr]);
+        xcb_xfixes_intersect_region(c, reg_paint,
+            ps->xinerama_scr_regs[w->xinerama_scr], reg_paint);
 #endif
 
       // Detect if the region is empty before painting
@@ -1831,18 +1851,18 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     // window and the bounding region
     reg_paint = reg_tmp;
     if (w->prev_trans && w->prev_trans->reg_ignore) {
-      XFixesSubtractRegion(ps->dpy, reg_paint, region,
-          w->prev_trans->reg_ignore);
+      xcb_xfixes_subtract_region(c, region,
+          w->prev_trans->reg_ignore, reg_paint);
       // Copy the subtracted region to be used for shadow painting in next
       // cycle
-      XFixesCopyRegion(ps->dpy, reg_tmp2, reg_paint);
+      xcb_xfixes_copy_region(c, reg_paint, reg_tmp2);
 
       if (w->border_size)
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
+        xcb_xfixes_intersect_region(c, reg_paint, w->border_size, reg_paint);
     }
     else {
       if (w->border_size)
-        XFixesIntersectRegion(ps->dpy, reg_paint, region, w->border_size);
+        xcb_xfixes_intersect_region(c, region, w->border_size, reg_paint);
       else
         reg_paint = region;
     }
@@ -1865,8 +1885,8 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   }
 
   // Free up all temporary regions
-  XFixesDestroyRegion(ps->dpy, reg_tmp);
-  XFixesDestroyRegion(ps->dpy, reg_tmp2);
+  xcb_xfixes_destroy_region(c, reg_tmp);
+  xcb_xfixes_destroy_region(c, reg_tmp2);
 
   // Do this as early as possible
   if (!ps->o.dbe)
@@ -1960,7 +1980,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   }
 #endif
 
-  XFixesDestroyRegion(ps->dpy, region);
+  xcb_xfixes_destroy_region(c, region);
 
 #ifdef DEBUG_REPAINT
   print_timestamp(ps);
@@ -1999,10 +2019,11 @@ repair_win(session_t *ps, win *w) {
     set_ignore_next(ps);
     xcb_damage_subtract(c, w->damage, XCB_NONE, XCB_NONE);
   } else {
-    parts = XFixesCreateRegion(ps->dpy, 0, 0);
+    parts = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, parts, 0, NULL);
     set_ignore_next(ps);
     xcb_damage_subtract(c, w->damage, XCB_NONE, parts);
-    XFixesTranslateRegion(ps->dpy, parts,
+    xcb_xfixes_translate_region(c, parts,
       w->g.x + w->g.border_width,
       w->g.y + w->g.border_width);
   }
@@ -2019,7 +2040,7 @@ repair_win(session_t *ps, win *w) {
 
   // Remove the part in the damage area that could be ignored
   if (!ps->reg_ignore_expire && w->prev_trans && w->prev_trans->reg_ignore)
-    XFixesSubtractRegion(ps->dpy, parts, parts, w->prev_trans->reg_ignore);
+    xcb_xfixes_subtract_region(c, parts, w->prev_trans->reg_ignore, parts);
 
   add_damage(ps, parts);
 }
@@ -2277,6 +2298,7 @@ init_filters(session_t *ps);
 
 static void
 configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   // On root window changes
   if (ce->window == ps->root) {
     free_paint(ps, &ps->tgt_buffer);
@@ -2338,9 +2360,10 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
     w->need_configure = false;
 
-    damage = XFixesCreateRegion(ps->dpy, 0, 0);
+    damage = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, damage, 0, NULL);
     if (w->extents != None) {
-      XFixesCopyRegion(ps->dpy, damage, w->extents);
+      xcb_xfixes_copy_region(c, w->extents, damage);
     }
 
     // If window geometry did not change, don't free extents here
@@ -2374,8 +2397,8 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
     if (damage) {
       XserverRegion extents = win_extents(ps, w);
-      XFixesUnionRegion(ps->dpy, damage, damage, extents);
-      XFixesDestroyRegion(ps->dpy, extents);
+      xcb_xfixes_union_region(c, damage, extents, damage);
+      xcb_xfixes_destroy_region(c, extents);
       add_damage(ps, damage);
     }
 
@@ -2484,7 +2507,8 @@ root_damaged(session_t *ps) {
     /* }
     if (root_damage) {
       xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-      XserverRegion parts = XFixesCreateRegion(ps->dpy, 0, 0);
+      XserverRegion parts = xcb_generate_id(c);
+      xcb_xfixes_create_region(c, parts, 0, NULL);
       xcb_damage_subtract(c, root_damage, XCB_NONE, parts);
       add_damage(ps, parts);
     } */
@@ -2599,9 +2623,11 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 }
 
 static void
-expose_root(session_t *ps, XRectangle *rects, int nrects) {
+expose_root(session_t *ps, int nrects, xcb_rectangle_t *rects) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   free_all_damage_last(ps);
-  XserverRegion region = XFixesCreateRegion(ps->dpy, rects, nrects);
+  XserverRegion region = xcb_generate_id(c);
+  xcb_xfixes_create_region(c, region, nrects, rects);
   add_damage(ps, region);
 }
 /**
@@ -2946,10 +2972,10 @@ ev_expose(session_t *ps, xcb_expose_event_t *ev) {
     if (ps->n_expose == ps->size_expose) {
       if (ps->expose_rects) {
         ps->expose_rects = realloc(ps->expose_rects,
-          (ps->size_expose + more) * sizeof(XRectangle));
+          (ps->size_expose + more) * sizeof(xcb_rectangle_t));
         ps->size_expose += more;
       } else {
-        ps->expose_rects = malloc(more * sizeof(XRectangle));
+        ps->expose_rects = malloc(more * sizeof(xcb_rectangle_t));
         ps->size_expose = more;
       }
     }
@@ -2961,7 +2987,7 @@ ev_expose(session_t *ps, xcb_expose_event_t *ev) {
     ps->n_expose++;
 
     if (ev->count == 0) {
-      expose_root(ps, ps->expose_rects, ps->n_expose);
+      expose_root(ps, ps->n_expose, ps->expose_rects);
       ps->n_expose = 0;
     }
   }
@@ -3679,6 +3705,7 @@ static bool
 register_cm(session_t *ps) {
   assert(!ps->reg_win);
 
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   ps->reg_win = XCreateSimpleWindow(ps->dpy, ps->root, 0, 0, 1, 1, 0,
         None, None);
 
@@ -3689,7 +3716,7 @@ register_cm(session_t *ps) {
 
   // Unredirect the window if it's redirected, just in case
   if (ps->redirected)
-    XCompositeUnredirectWindow(ps->dpy, ps->reg_win, CompositeRedirectManual);
+    xcb_composite_unredirect_window(c, ps->reg_win, CompositeRedirectManual);
 
   {
     XClassHint *h = XAllocClassHint();
@@ -4688,14 +4715,24 @@ init_dbe(session_t *ps) {
  */
 static bool
 init_overlay(session_t *ps) {
-  ps->overlay = XCompositeGetOverlayWindow(ps->dpy, ps->root);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_composite_get_overlay_window_reply_t *reply =
+    xcb_composite_get_overlay_window_reply(c,
+        xcb_composite_get_overlay_window(c, ps->root), NULL);
+  if (reply) {
+    ps->overlay = reply->overlay_win;
+    free(reply);
+  } else {
+    ps->overlay = XCB_NONE;
+  }
   if (ps->overlay) {
     // Set window region of the overlay window, code stolen from
     // compiz-0.8.8
-    XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
-    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeBounding, 0, 0, 0);
-    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeInput, 0, 0, region);
-    XFixesDestroyRegion(ps->dpy, region);
+    XserverRegion region = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, region, 0, NULL);
+    xcb_xfixes_set_window_shape_region(c, ps->overlay, ShapeBounding, 0, 0, 0);
+    xcb_xfixes_set_window_shape_region(c, ps->overlay, ShapeInput, 0, 0, region);
+    xcb_xfixes_destroy_region(c, region);
 
     // Listen to Expose events on the overlay
     XSelectInput(ps->dpy, ps->overlay, ExposureMask);
@@ -4777,19 +4814,21 @@ redir_start(session_t *ps) {
     printf_dbgf("(): Screen redirected.\n");
 #endif
 
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
     // Map overlay window. Done firstly according to this:
     // https://bugzilla.gnome.org/show_bug.cgi?id=597014
     if (ps->overlay)
       XMapWindow(ps->dpy, ps->overlay);
 
-    XCompositeRedirectSubwindows(ps->dpy, ps->root, CompositeRedirectManual);
+    xcb_composite_redirect_subwindows(c, ps->root, CompositeRedirectManual);
 
     /*
     // Unredirect GL context window as this may have an effect on VSync:
     // < http://dri.freedesktop.org/wiki/CompositeSwap >
-    XCompositeUnredirectWindow(ps->dpy, ps->reg_win, CompositeRedirectManual);
+    xcb_composite_unredirect_window(c, ps->reg_win, CompositeRedirectManual);
     if (ps->o.paint_on_overlay && ps->overlay) {
-      XCompositeUnredirectWindow(ps->dpy, ps->overlay,
+      xcb_composite_unredirect_window(c, ps->overlay,
           CompositeRedirectManual);
     } */
 
@@ -4953,6 +4992,7 @@ timeout_reset(session_t *ps, timeout_t *ptmout) {
 static void
 redir_stop(session_t *ps) {
   if (ps->redirected) {
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 #ifdef DEBUG_REDIR
     print_timestamp(ps);
     printf_dbgf("(): Screen unredirected.\n");
@@ -4963,7 +5003,7 @@ redir_stop(session_t *ps) {
     for (win *w = ps->list; w; w = w->next)
       free_wpaint(ps, w);
 
-    XCompositeUnredirectSubwindows(ps->dpy, ps->root, CompositeRedirectManual);
+    xcb_composite_unredirect_subwindows(c, ps->root, CompositeRedirectManual);
     // Unmap overlay window
     if (ps->overlay)
       XUnmapWindow(ps->dpy, ps->overlay);
@@ -5073,6 +5113,8 @@ mainloop(session_t *ps) {
 static void
 cxinerama_upd_scrs(session_t *ps) {
 #ifdef CONFIG_XINERAMA
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
   free_xinerama_info(ps);
 
   if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists) return;
@@ -5092,9 +5134,10 @@ cxinerama_upd_scrs(session_t *ps) {
         * ps->xinerama_nscrs));
   for (int i = 0; i < ps->xinerama_nscrs; ++i) {
     const XineramaScreenInfo * const s = &ps->xinerama_scrs[i];
-    XRectangle r = { .x = s->x_org, .y = s->y_org,
+    xcb_rectangle_t r = { .x = s->x_org, .y = s->y_org,
       .width = s->width, .height = s->height };
-    ps->xinerama_scr_regs[i] = XFixesCreateRegion(ps->dpy, &r, 1);
+    ps->xinerama_scr_regs[i] = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, ps->xinerama_scr_regs[i], 1, &r);
   }
 #endif
 }
@@ -5349,6 +5392,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   xcb_prefetch_extension_data(c, &xcb_render_id);
   xcb_prefetch_extension_data(c, &xcb_damage_id);
+  xcb_prefetch_extension_data(c, &xcb_xfixes_id);
   xcb_prefetch_extension_data(c, &xcb_randr_id);
 
   ext_info = xcb_get_extension_data(c, &xcb_render_id);
@@ -5359,21 +5403,26 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->render_event = ext_info->first_event;
   ps->render_error = ext_info->first_error;
 
-  if (!XQueryExtension(ps->dpy, COMPOSITE_NAME, &ps->composite_opcode,
-        &ps->composite_event, &ps->composite_error)) {
+  ext_info = xcb_get_extension_data(c, &xcb_composite_id);
+  if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No composite extension\n");
     exit(1);
   }
+  ps->composite_opcode = ext_info->major_opcode;
+  ps->composite_event = ext_info->first_event;
+  ps->composite_error = ext_info->first_error;
 
   {
-    int composite_major = 0, composite_minor = 0;
-
-    XCompositeQueryVersion(ps->dpy, &composite_major, &composite_minor);
+    xcb_composite_query_version_reply_t *reply =
+      xcb_composite_query_version_reply(c,
+          xcb_composite_query_version(c, XCB_COMPOSITE_MAJOR_VERSION, XCB_COMPOSITE_MINOR_VERSION),
+          NULL);
 
     if (!ps->o.no_name_pixmap
-        && (composite_major > 0 || composite_minor >= 2)) {
+        && reply && (reply->major_version > 0 || reply->minor_version >= 2)) {
       ps->has_name_pixmap = true;
     }
+    free(reply);
   }
 
   ext_info = xcb_get_extension_data(c, &xcb_damage_id);
@@ -5386,10 +5435,15 @@ session_init(session_t *ps_old, int argc, char **argv) {
   xcb_discard_reply(c,
       xcb_damage_query_version(c, XCB_DAMAGE_MAJOR_VERSION, XCB_DAMAGE_MINOR_VERSION).sequence);
 
-  if (!XFixesQueryExtension(ps->dpy, &ps->xfixes_event, &ps->xfixes_error)) {
+  ext_info = xcb_get_extension_data(c, &xcb_xfixes_id);
+  if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No XFixes extension\n");
     exit(1);
   }
+  ps->xfixes_event = ext_info->first_event;
+  ps->xfixes_error = ext_info->first_error;
+  xcb_discard_reply(c,
+      xcb_xfixes_query_version(c, XCB_XFIXES_MAJOR_VERSION, XCB_XFIXES_MINOR_VERSION).sequence);
 
   // Build a safe representation of display name
   {
@@ -5647,6 +5701,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
  */
 static void
 session_destroy(session_t *ps) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   redir_stop(ps);
 
   // Stop listening to events on root window
@@ -5790,7 +5845,7 @@ session_destroy(session_t *ps) {
 
   // Release overlay window
   if (ps->overlay) {
-    XCompositeReleaseOverlayWindow(ps->dpy, ps->overlay);
+    xcb_composite_release_overlay_window(c, ps->overlay);
     ps->overlay = None;
   }
 
