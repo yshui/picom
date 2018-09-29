@@ -2525,7 +2525,8 @@ wintype_arr_enable(bool arr[]) {
 static inline void
 free_pixmap(session_t *ps, Pixmap *p) {
   if (*p) {
-    XFreePixmap(ps->dpy, *p);
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_free_pixmap(c, *p);
     *p = None;
   }
 }

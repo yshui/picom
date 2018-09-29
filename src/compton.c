@@ -666,7 +666,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
 
   XFreeGC(ps->dpy, gc);
   xcb_image_destroy(shadow_image);
-  XFreePixmap(ps->dpy, shadow_pixmap);
+  xcb_free_pixmap(c, shadow_pixmap);
   xcb_render_free_picture(c, shadow_picture);
 
   return true;
@@ -675,9 +675,9 @@ shadow_picture_err:
   if (shadow_image)
     xcb_image_destroy(shadow_image);
   if (shadow_pixmap)
-    XFreePixmap(ps->dpy, shadow_pixmap);
+    xcb_free_pixmap(c, shadow_pixmap);
   if (shadow_pixmap_argb)
-    XFreePixmap(ps->dpy, shadow_pixmap_argb);
+    xcb_free_pixmap(c, shadow_pixmap_argb);
   if (shadow_picture)
     xcb_render_free_picture(c, shadow_picture);
   if (shadow_picture_argb)
@@ -711,7 +711,7 @@ solid_picture(session_t *ps, bool argb, double a,
     XCB_RENDER_CP_REPEAT, &pa);
 
   if (!picture) {
-    XFreePixmap(ps->dpy, pixmap);
+    xcb_free_pixmap(c, pixmap);
     return None;
   }
 
@@ -726,7 +726,7 @@ solid_picture(session_t *ps, bool argb, double a,
   rect.height = 1;
 
   xcb_render_fill_rectangles(c, XCB_RENDER_PICT_OP_SRC, picture, col, 1, &rect);
-  XFreePixmap(ps->dpy, pixmap);
+  xcb_free_pixmap(c, pixmap);
 
   return picture;
 }
