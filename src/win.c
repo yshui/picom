@@ -75,7 +75,8 @@ group_is_focused(session_t *ps, Window leader) {
  * Get a rectangular region a window occupies, excluding shadow.
  */
 void win_get_region(session_t *ps, win *w, bool global, region_t *res) {
-  pixman_region32_union_rect(res, res,
+  pixman_region32_fini(res);
+  pixman_region32_init_rect(res,
       global ? w->g.x : 0,
       global ? w->g.y : 0,
       w->widthb, w->heightb);
@@ -93,8 +94,9 @@ void win_get_region_noframe(session_t *ps, win *w, bool global, region_t *res) {
   int width = max_i(w->g.width - extents.left - extents.right, 0);
   int height = max_i(w->g.height - extents.top - extents.bottom, 0);
 
+  pixman_region32_fini(res);
   if (width > 0 && height > 0)
-    pixman_region32_union_rect(res, res, x, y, width, height);
+    pixman_region32_init_rect(res, x, y, width, height);
 }
 
 /**
