@@ -1960,10 +1960,11 @@ repair_win(session_t *ps, win *w) {
     set_ignore_cookie(ps,
         xcb_damage_subtract(c, w->damage, XCB_NONE, XCB_NONE));
   } else {
-    XserverRegion tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
+    xcb_xfixes_region_t tmp = xcb_generate_id(c);
+    xcb_xfixes_create_region(c, tmp, 0, NULL);
     set_ignore_cookie(ps,
         xcb_damage_subtract(c, w->damage, XCB_NONE, tmp));
-    XFixesTranslateRegion(ps->dpy, tmp,
+    xcb_xfixes_translate_region(c, tmp,
       w->g.x + w->g.border_width,
       w->g.y + w->g.border_width);
     x_fetch_region(ps, tmp, &parts);
@@ -4551,10 +4552,19 @@ init_overlay(session_t *ps) {
   if (ps->overlay) {
     // Set window region of the overlay window, code stolen from
     // compiz-0.8.8
-    XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
-    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, XCB_SHAPE_SK_BOUNDING, 0, 0, 0);
-    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, XCB_SHAPE_SK_INPUT, 0, 0, region);
-    XFixesDestroyRegion(ps->dpy, region);
+    xcb_generic_error_t *e;
+    e = XCB_SYNCED_VOID(xcb_shape_mask, c, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING,
+      ps->overlay, 0, 0, 0);
+    if (e) {
+      printf_errf("(): failed to set the bounding shape of overlay, giving up.");
+      exit(1);
+    }
+    e = XCB_SYNCED_VOID(xcb_shape_rectangles, c, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_INPUT,
+      XCB_CLIP_ORDERING_UNSORTED, ps->overlay, 0, 0, 0, NULL);
+    if (e) {
+      printf_errf("(): failed to set the input shape of overlay, giving up.");
+      exit(1);
+    }
 
     // Listen to Expose events on the overlay
     XSelectInput(ps->dpy, ps->overlay, ExposureMask);
