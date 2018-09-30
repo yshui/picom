@@ -82,20 +82,21 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
-#include <X11/extensions/Xcomposite.h>
-#include <X11/extensions/shape.h>
+#include <X11/extensions/Xfixes.h>
 #include <X11/extensions/Xdbe.h>
 #ifdef CONFIG_XSYNC
 #include <X11/extensions/sync.h>
 #endif
 
-#ifdef CONFIG_XINERAMA
-#include <X11/extensions/Xinerama.h>
-#endif
-
+#include <xcb/composite.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
 #include <xcb/randr.h>
+#include <xcb/shape.h>
+
+#ifdef CONFIG_XINERAMA
+#include <xcb/xinerama.h>
+#endif
 
 // Workarounds for missing definitions in very old versions of X headers,
 // thanks to consolers for reporting
@@ -171,9 +172,6 @@
 #endif
 
 // === Constants ===
-#if !(COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2)
-#error libXcomposite version unsupported
-#endif
 
 /// @brief Length of generic buffers.
 #define BUF_LEN 80
@@ -596,7 +594,7 @@ typedef struct _options_t {
   Window benchmark_wid;
   /// A list of conditions of windows not to paint.
   c2_lptr_t *paint_blacklist;
-  /// Whether to avoid using XCompositeNameWindowPixmap(), for debugging.
+  /// Whether to avoid using xcb_composite_name_window_pixmap(), for debugging.
   bool no_name_pixmap;
   /// Whether to work under synchronized mode for debugging.
   bool synchronize;
@@ -979,7 +977,7 @@ typedef struct session {
   /// Whether X Xinerama extension exists.
   bool xinerama_exists;
   /// Xinerama screen info.
-  XineramaScreenInfo *xinerama_scrs;
+  xcb_xinerama_query_screens_reply_t *xinerama_scrs;
   /// Xinerama screen regions.
   XserverRegion *xinerama_scr_regs;
   /// Number of Xinerama screens.
@@ -1252,6 +1250,9 @@ extern session_t *ps_g;
 // == Debugging code ==
 static inline void
 print_timestamp(session_t *ps);
+
+void
+ev_xcb_error(session_t *ps, xcb_generic_error_t *err);
 
 #ifdef DEBUG_BACKTRACE
 
@@ -1998,6 +1999,14 @@ set_ignore_next(session_t *ps) {
 }
 
 /**
+ * Ignore X errors caused by given X request.
+ */
+static inline void
+set_ignore_cookie(session_t *ps, xcb_void_cookie_t cookie) {
+  set_ignore(ps, cookie.sequence);
+}
+
+/**
  * Check if a window is a fullscreen window.
  *
  * It's not using w->border_size for performance measures.
@@ -2519,7 +2528,27 @@ wintype_arr_enable(bool arr[]) {
 static inline void
 free_pixmap(session_t *ps, Pixmap *p) {
   if (*p) {
-    XFreePixmap(ps->dpy, *p);
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_free_pixmap(c, *p);
     *p = None;
   }
+}
+
+/**
+ * Create a pixmap and check that creation succeeded.
+ */
+static inline xcb_pixmap_t
+create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t width, uint16_t height)
+{
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_pixmap_t pix = xcb_generate_id(c);
+  xcb_void_cookie_t cookie = xcb_create_pixmap_checked(c, depth, pix, drawable, width, height);
+  xcb_generic_error_t *err = xcb_request_check(c, cookie);
+  if (err == NULL)
+    return pix;
+
+  printf_err("Failed to create pixmap:");
+  ev_xcb_error(ps, err);
+  free(err);
+  return XCB_NONE;
 }

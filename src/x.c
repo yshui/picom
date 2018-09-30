@@ -193,7 +193,7 @@ x_create_picture(session_t *ps, int wid, int hei,
 
   int depth = pictfmt->depth;
 
-  Pixmap tmp_pixmap = XCreatePixmap(ps->dpy, ps->root, wid, hei, depth);
+  Pixmap tmp_pixmap = create_pixmap(ps, depth, ps->root, wid, hei);
   if (!tmp_pixmap)
     return None;
 

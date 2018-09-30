@@ -10,7 +10,6 @@
 
 #include <ctype.h>
 #include <string.h>
-#include <xcb/shape.h>
 #include <xcb/randr.h>
 #include <xcb/damage.h>
 #include <xcb/render.h>
@@ -629,10 +628,8 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
     return None;
   }
 
-  shadow_pixmap = XCreatePixmap(ps->dpy, ps->root,
-    shadow_image->width, shadow_image->height, 8);
-  shadow_pixmap_argb = XCreatePixmap(ps->dpy, ps->root,
-    shadow_image->width, shadow_image->height, 32);
+  shadow_pixmap = create_pixmap(ps, 8, ps->root, shadow_image->width, shadow_image->height);
+  shadow_pixmap_argb = create_pixmap(ps, 32, ps->root, shadow_image->width, shadow_image->height);
 
   if (!shadow_pixmap || !shadow_pixmap_argb) {
     printf_errf("(): failed to create shadow pixmaps");
@@ -667,7 +664,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
 
   XFreeGC(ps->dpy, gc);
   xcb_image_destroy(shadow_image);
-  XFreePixmap(ps->dpy, shadow_pixmap);
+  xcb_free_pixmap(c, shadow_pixmap);
   xcb_render_free_picture(c, shadow_picture);
 
   return true;
@@ -676,9 +673,9 @@ shadow_picture_err:
   if (shadow_image)
     xcb_image_destroy(shadow_image);
   if (shadow_pixmap)
-    XFreePixmap(ps->dpy, shadow_pixmap);
+    xcb_free_pixmap(c, shadow_pixmap);
   if (shadow_pixmap_argb)
-    XFreePixmap(ps->dpy, shadow_pixmap_argb);
+    xcb_free_pixmap(c, shadow_pixmap_argb);
   if (shadow_picture)
     xcb_render_free_picture(c, shadow_picture);
   if (shadow_picture_argb)
@@ -702,8 +699,7 @@ solid_picture(session_t *ps, bool argb, double a,
   xcb_rectangle_t rect;
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
-  pixmap = XCreatePixmap(ps->dpy, ps->root, 1, 1, argb ? 32 : 8);
-
+  pixmap = create_pixmap(ps, argb ? 32 : 8, ps->root, 1, 1);
   if (!pixmap) return None;
 
   pa.repeat = True;
@@ -712,7 +708,7 @@ solid_picture(session_t *ps, bool argb, double a,
     XCB_RENDER_CP_REPEAT, &pa);
 
   if (!picture) {
-    XFreePixmap(ps->dpy, pixmap);
+    xcb_free_pixmap(c, pixmap);
     return None;
   }
 
@@ -727,7 +723,7 @@ solid_picture(session_t *ps, bool argb, double a,
   rect.height = 1;
 
   xcb_render_fill_rectangles(c, XCB_RENDER_PICT_OP_SRC, picture, col, 1, &rect);
-  XFreePixmap(ps->dpy, pixmap);
+  xcb_free_pixmap(c, pixmap);
 
   return picture;
 }
@@ -893,7 +889,11 @@ get_root_tile(session_t *ps) {
 
   // Create a pixmap if there isn't any
   if (!pixmap) {
-    pixmap = XCreatePixmap(ps->dpy, ps->root, 1, 1, ps->depth);
+    pixmap = create_pixmap(ps, ps->depth, ps->root, 1, 1);
+    if (pixmap == XCB_NONE) {
+      fprintf(stderr, "Failed to create some pixmap\n");
+      exit(1);
+    }
     fill = true;
   }
 
@@ -1445,8 +1445,9 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 
   // Fetch Pixmap
   if (!w->paint.pixmap && ps->has_name_pixmap) {
-    set_ignore_next(ps);
-    w->paint.pixmap = XCompositeNameWindowPixmap(ps->dpy, w->id);
+    w->paint.pixmap = xcb_generate_id(c);
+    set_ignore_cookie(ps,
+        xcb_composite_name_window_pixmap(c, w->id, w->paint.pixmap));
     if (w->paint.pixmap)
       free_fence(ps, &w->fence);
   }
@@ -1709,8 +1710,11 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     else {
       if (!ps->tgt_buffer.pixmap) {
         free_paint(ps, &ps->tgt_buffer);
-        ps->tgt_buffer.pixmap = XCreatePixmap(ps->dpy, ps->root,
-            ps->root_width, ps->root_height, ps->depth);
+        ps->tgt_buffer.pixmap = create_pixmap(ps, ps->depth, ps->root, ps->root_width, ps->root_height);
+        if (ps->tgt_buffer.pixmap == XCB_NONE) {
+          fprintf(stderr, "Failed to allocate a screen-sized pixmap\n");
+          exit(1);
+        }
       }
 
       if (BKEND_GLX != ps->o.backend)
@@ -1996,12 +2000,12 @@ repair_win(session_t *ps, win *w) {
 
   if (!w->ever_damaged) {
     parts = win_extents(ps, w);
-    set_ignore_next(ps);
-    xcb_damage_subtract(c, w->damage, XCB_NONE, XCB_NONE);
+    set_ignore_cookie(ps,
+        xcb_damage_subtract(c, w->damage, XCB_NONE, XCB_NONE));
   } else {
     parts = XFixesCreateRegion(ps->dpy, 0, 0);
-    set_ignore_next(ps);
-    xcb_damage_subtract(c, w->damage, XCB_NONE, parts);
+    set_ignore_cookie(ps,
+        xcb_damage_subtract(c, w->damage, XCB_NONE, parts));
     XFixesTranslateRegion(ps->dpy, parts,
       w->g.x + w->g.border_width,
       w->g.y + w->g.border_width);
@@ -2026,6 +2030,8 @@ repair_win(session_t *ps, win *w) {
 
 void
 map_win(session_t *ps, Window id) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
   // Unmap overlay window if it got mapped but we are currently not
   // in redirected state.
   if (ps->overlay && id == ps->overlay && !ps->redirected) {
@@ -2057,7 +2063,7 @@ map_win(session_t *ps, Window id) {
 
   // Notify compton when the shape of a window changes
   if (ps->shape_exists) {
-    XShapeSelectInput(ps->dpy, id, ShapeNotifyMask);
+    xcb_shape_select_input(c, id, 1);
   }
 
   // Make sure the XSelectInput() requests are sent
@@ -2495,21 +2501,21 @@ root_damaged(session_t *ps) {
 }
 
 /**
- * Xlib error handler function.
+ * X11 error handler function.
  */
-static int
-xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
+static void
+xerror_common(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_code) {
   session_t * const ps = ps_g;
 
   int o = 0;
   const char *name = "Unknown";
 
-  if (should_ignore(ps, ev->serial)) {
-    return 0;
+  if (should_ignore(ps, serial)) {
+    return;
   }
 
-  if (ev->request_code == ps->composite_opcode
-      && ev->minor_code == X_CompositeRedirectSubwindows) {
+  if (major == ps->composite_opcode
+      && minor == XCB_COMPOSITE_REDIRECT_SUBWINDOWS) {
     fprintf(stderr, "Another composite manager is already running "
         "(and does not handle _NET_WM_CM_Sn correctly)\n");
     exit(1);
@@ -2517,17 +2523,17 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 
 #define CASESTRRET2(s)   case s: name = #s; break
 
-  o = ev->error_code - ps->xfixes_error;
+  o = error_code - ps->xfixes_error;
   switch (o) {
     CASESTRRET2(BadRegion);
   }
 
-  o = ev->error_code - ps->damage_error;
+  o = error_code - ps->damage_error;
   switch (o) {
     CASESTRRET2(XCB_DAMAGE_BAD_DAMAGE);
   }
 
-  o = ev->error_code - ps->render_error;
+  o = error_code - ps->render_error;
   switch (o) {
     CASESTRRET2(XCB_RENDER_PICT_FORMAT);
     CASESTRRET2(XCB_RENDER_PICTURE);
@@ -2538,7 +2544,7 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 
 #ifdef CONFIG_OPENGL
   if (ps->glx_exists) {
-    o = ev->error_code - ps->glx_error;
+    o = error_code - ps->glx_error;
     switch (o) {
       CASESTRRET2(GLX_BAD_SCREEN);
       CASESTRRET2(GLX_BAD_ATTRIBUTE);
@@ -2553,7 +2559,7 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 
 #ifdef CONFIG_XSYNC
   if (ps->xsync_exists) {
-    o = ev->error_code - ps->xsync_error;
+    o = error_code - ps->xsync_error;
     switch (o) {
       CASESTRRET2(XSyncBadCounter);
       CASESTRRET2(XSyncBadAlarm);
@@ -2562,7 +2568,7 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
   }
 #endif
 
-  switch (ev->error_code) {
+  switch (error_code) {
     CASESTRRET2(BadAccess);
     CASESTRRET2(BadAlloc);
     CASESTRRET2(BadAtom);
@@ -2587,15 +2593,30 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
   print_timestamp(ps);
   {
     char buf[BUF_LEN] = "";
-    XGetErrorText(ps->dpy, ev->error_code, buf, BUF_LEN);
+    XGetErrorText(ps->dpy, error_code, buf, BUF_LEN);
     printf("error %4d %-12s request %4d minor %4d serial %6lu: \"%s\"\n",
-        ev->error_code, name, ev->request_code,
-        ev->minor_code, ev->serial, buf);
+        error_code, name, major,
+        minor, serial, buf);
   }
 
   // print_backtrace();
+}
 
+/**
+ * Xlib error handler function.
+ */
+static int
+xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
+  xerror_common(ev->serial, ev->request_code, ev->minor_code, ev->error_code);
   return 0;
+}
+
+/**
+ * XCB error handler function.
+ */
+void
+ev_xcb_error(session_t __attribute__((unused)) *ps, xcb_generic_error_t *err) {
+  xerror_common(err->sequence, err->major_code, err->minor_code, err->error_code);
 }
 
 static void
@@ -3267,6 +3288,9 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
     case SelectionClear:
       ev_selection_clear(ps, (xcb_selection_clear_event_t *)ev);
       break;
+    case 0:
+      ev_xcb_error(ps, (xcb_generic_error_t *)ev);
+      break;
     default:
       if (ps->shape_exists && ev->response_type == ps->shape_event) {
         ev_shape_notify(ps, (xcb_shape_notify_event_t *) ev);
@@ -3679,6 +3703,7 @@ static bool
 register_cm(session_t *ps) {
   assert(!ps->reg_win);
 
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   ps->reg_win = XCreateSimpleWindow(ps->dpy, ps->root, 0, 0, 1, 1, 0,
         None, None);
 
@@ -3689,7 +3714,7 @@ register_cm(session_t *ps) {
 
   // Unredirect the window if it's redirected, just in case
   if (ps->redirected)
-    XCompositeUnredirectWindow(ps->dpy, ps->reg_win, CompositeRedirectManual);
+    xcb_composite_unredirect_window(c, ps->reg_win, XCB_COMPOSITE_REDIRECT_MANUAL);
 
   {
     XClassHint *h = XAllocClassHint();
@@ -4688,13 +4713,22 @@ init_dbe(session_t *ps) {
  */
 static bool
 init_overlay(session_t *ps) {
-  ps->overlay = XCompositeGetOverlayWindow(ps->dpy, ps->root);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_composite_get_overlay_window_reply_t *reply =
+    xcb_composite_get_overlay_window_reply(c,
+        xcb_composite_get_overlay_window(c, ps->root), NULL);
+  if (reply) {
+    ps->overlay = reply->overlay_win;
+    free(reply);
+  } else {
+    ps->overlay = XCB_NONE;
+  }
   if (ps->overlay) {
     // Set window region of the overlay window, code stolen from
     // compiz-0.8.8
     XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
-    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeBounding, 0, 0, 0);
-    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, ShapeInput, 0, 0, region);
+    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, XCB_SHAPE_SK_BOUNDING, 0, 0, 0);
+    XFixesSetWindowShapeRegion(ps->dpy, ps->overlay, XCB_SHAPE_SK_INPUT, 0, 0, region);
     XFixesDestroyRegion(ps->dpy, region);
 
     // Listen to Expose events on the overlay
@@ -4777,20 +4811,22 @@ redir_start(session_t *ps) {
     printf_dbgf("(): Screen redirected.\n");
 #endif
 
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
     // Map overlay window. Done firstly according to this:
     // https://bugzilla.gnome.org/show_bug.cgi?id=597014
     if (ps->overlay)
       XMapWindow(ps->dpy, ps->overlay);
 
-    XCompositeRedirectSubwindows(ps->dpy, ps->root, CompositeRedirectManual);
+    xcb_composite_redirect_subwindows(c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
 
     /*
     // Unredirect GL context window as this may have an effect on VSync:
     // < http://dri.freedesktop.org/wiki/CompositeSwap >
-    XCompositeUnredirectWindow(ps->dpy, ps->reg_win, CompositeRedirectManual);
+    xcb_composite_unredirect_window(c, ps->reg_win, XCB_COMPOSITE_REDIRECT_MANUAL);
     if (ps->o.paint_on_overlay && ps->overlay) {
-      XCompositeUnredirectWindow(ps->dpy, ps->overlay,
-          CompositeRedirectManual);
+      xcb_composite_unredirect_window(c, ps->overlay,
+          XCB_COMPOSITE_REDIRECT_MANUAL);
     } */
 
     // Must call XSync() here
@@ -4953,6 +4989,7 @@ timeout_reset(session_t *ps, timeout_t *ptmout) {
 static void
 redir_stop(session_t *ps) {
   if (ps->redirected) {
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 #ifdef DEBUG_REDIR
     print_timestamp(ps);
     printf_dbgf("(): Screen unredirected.\n");
@@ -4963,7 +5000,7 @@ redir_stop(session_t *ps) {
     for (win *w = ps->list; w; w = w->next)
       free_wpaint(ps, w);
 
-    XCompositeUnredirectSubwindows(ps->dpy, ps->root, CompositeRedirectManual);
+    xcb_composite_unredirect_subwindows(c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
     // Unmap overlay window
     if (ps->overlay)
       XUnmapWindow(ps->dpy, ps->overlay);
@@ -5077,21 +5114,28 @@ cxinerama_upd_scrs(session_t *ps) {
 
   if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists) return;
 
-  if (!XineramaIsActive(ps->dpy)) return;
-
-  ps->xinerama_scrs = XineramaQueryScreens(ps->dpy, &ps->xinerama_nscrs);
-
-  // Just in case the shit hits the fan...
-  if (!ps->xinerama_nscrs) {
-    cxfree(ps->xinerama_scrs);
-    ps->xinerama_scrs = NULL;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_xinerama_is_active_reply_t *active =
+    xcb_xinerama_is_active_reply(c,
+        xcb_xinerama_is_active(c), NULL);
+  if (!active || !active->state) {
+    free(active);
     return;
   }
+  free(active);
+
+  ps->xinerama_scrs = xcb_xinerama_query_screens_reply(c,
+      xcb_xinerama_query_screens(c), NULL);
+  if (!ps->xinerama_scrs)
+    return;
+
+  xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
+  ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
 
   ps->xinerama_scr_regs = allocchk(malloc(sizeof(XserverRegion *)
         * ps->xinerama_nscrs));
   for (int i = 0; i < ps->xinerama_nscrs; ++i) {
-    const XineramaScreenInfo * const s = &ps->xinerama_scrs[i];
+    const xcb_xinerama_screen_info_t * const s = &scrs[i];
     XRectangle r = { .x = s->x_org, .y = s->y_org,
       .width = s->width, .height = s->height };
     ps->xinerama_scr_regs[i] = XFixesCreateRegion(ps->dpy, &r, 1);
@@ -5348,9 +5392,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->root_height = DisplayHeight(ps->dpy, ps->scr);
 
   xcb_prefetch_extension_data(c, &xcb_render_id);
+  xcb_prefetch_extension_data(c, &xcb_composite_id);
   xcb_prefetch_extension_data(c, &xcb_damage_id);
+  xcb_prefetch_extension_data(c, &xcb_shape_id);
   xcb_prefetch_extension_data(c, &xcb_xfixes_id);
   xcb_prefetch_extension_data(c, &xcb_randr_id);
+  xcb_prefetch_extension_data(c, &xcb_xinerama_id);
 
   ext_info = xcb_get_extension_data(c, &xcb_render_id);
   if (!ext_info || !ext_info->present) {
@@ -5360,21 +5407,26 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->render_event = ext_info->first_event;
   ps->render_error = ext_info->first_error;
 
-  if (!XQueryExtension(ps->dpy, COMPOSITE_NAME, &ps->composite_opcode,
-        &ps->composite_event, &ps->composite_error)) {
+  ext_info = xcb_get_extension_data(c, &xcb_composite_id);
+  if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No composite extension\n");
     exit(1);
   }
+  ps->composite_opcode = ext_info->major_opcode;
+  ps->composite_event = ext_info->first_event;
+  ps->composite_error = ext_info->first_error;
 
   {
-    int composite_major = 0, composite_minor = 0;
-
-    XCompositeQueryVersion(ps->dpy, &composite_major, &composite_minor);
+    xcb_composite_query_version_reply_t *reply =
+      xcb_composite_query_version_reply(c,
+          xcb_composite_query_version(c, XCB_COMPOSITE_MAJOR_VERSION, XCB_COMPOSITE_MINOR_VERSION),
+          NULL);
 
     if (!ps->o.no_name_pixmap
-        && (composite_major > 0 || composite_minor >= 2)) {
+        && reply && (reply->major_version > 0 || reply->minor_version >= 2)) {
       ps->has_name_pixmap = true;
     }
+    free(reply);
   }
 
   ext_info = xcb_get_extension_data(c, &xcb_damage_id);
@@ -5422,7 +5474,10 @@ session_init(session_t *ps_old, int argc, char **argv) {
   get_cfg(ps, argc, argv, false);
 
   // Query X Shape
-  if (XShapeQueryExtension(ps->dpy, &ps->shape_event, &ps->shape_error)) {
+  ext_info = xcb_get_extension_data(c, &xcb_shape_id);
+  if (ext_info && ext_info->present) {
+    ps->shape_event = ext_info->first_event;
+    ps->shape_error = ext_info->first_error;
     ps->shape_exists = true;
   }
 
@@ -5478,9 +5533,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // Query X Xinerama extension
   if (ps->o.xinerama_shadow_crop) {
 #ifdef CONFIG_XINERAMA
-    int xinerama_event = 0, xinerama_error = 0;
-    if (XineramaQueryExtension(ps->dpy, &xinerama_event, &xinerama_error))
-      ps->xinerama_exists = true;
+    ext_info = xcb_get_extension_data(c, &xcb_xinerama_id);
+    ps->xinerama_exists = ext_info && ext_info->present;
 #else
     printf_errf("(): Xinerama support not compiled in.");
 #endif
@@ -5653,6 +5707,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
  */
 static void
 session_destroy(session_t *ps) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   redir_stop(ps);
 
   // Stop listening to events on root window
@@ -5796,7 +5851,7 @@ session_destroy(session_t *ps) {
 
   // Release overlay window
   if (ps->overlay) {
-    XCompositeReleaseOverlayWindow(ps->dpy, ps->overlay);
+    xcb_composite_release_overlay_window(c, ps->overlay);
     ps->overlay = None;
   }
 

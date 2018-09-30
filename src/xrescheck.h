@@ -35,36 +35,33 @@ xrc_clear_xid(void);
 
 // Pixmap
 
-static inline Pixmap
-XCreatePixmap_(Display *dpy, Drawable drawable,
-    unsigned int width, unsigned int height, unsigned int depth,
-    M_POS_DATA_PARAMS) {
-  Pixmap ret = XCreatePixmap(dpy, drawable, width, height, depth);
-  if (ret)
-    xrc_add_xid_(ret, "Pixmap", M_POS_DATA_PASSTHROUGH);
-  return ret;
+static inline void
+xcb_create_pixmap_(xcb_connection_t *c, uint8_t depth, xcb_pixmap_t pixmap,
+    xcb_drawable_t drawable, uint16_t width, uint16_t height, M_POS_DATA_PARAMS) {
+  xcb_create_pixmap(c, depth, pixmap, drawable, width, height);
+  xrc_add_xid_(pixmap, "Pixmap", M_POS_DATA_PASSTHROUGH);
 }
 
-#define XCreatePixmap(dpy, drawable, width, height, depth) \
-  XCreatePixmap_(dpy, drawable, width, height, depth, M_POS_DATA)
+#define xcb_create_pixmap(c, depth, pixmap, drawable, width, height) \
+  xcb_create_pixmap_(c, depth, pixmap, drawable, width, height, M_POS_DATA)
 
-static inline Pixmap
-XCompositeNameWindowPixmap_(Display *dpy, Window window, M_POS_DATA_PARAMS) {
-  Pixmap ret = XCompositeNameWindowPixmap(dpy, window);
+static inline xcb_pixmap_t
+xcb_composite_name_window_pixmap_(xcb_connection_t *c, xcb_window_t window, xcb_pixmap_t pixmap, M_POS_DATA_PARAMS) {
+  xcb_pixmap_t ret = xcb_composite_name_window_pixmap(c, window, pixmap);
   if (ret)
     xrc_add_xid_(ret, "PixmapC", M_POS_DATA_PASSTHROUGH);
   return ret;
 }
 
-#define XCompositeNameWindowPixmap(dpy, window) \
-  XCompositeNameWindowPixmap_(dpy, window, M_POS_DATA)
+#define xcb_composite_name_window_pixmap(dpy, window, pixmap) \
+  xcb_composite_name_window_pixmap_(dpy, window, pixmap, M_POS_DATA)
 
 static inline void
-XFreePixmap_(Display *dpy, Pixmap pixmap, M_POS_DATA_PARAMS) {
-  XFreePixmap(dpy, pixmap);
+xcb_free_pixmap_(xcb_connection_t *c, Pixmap pixmap, M_POS_DATA_PARAMS) {
+  xcb_free_pixmap(c, pixmap);
   xrc_delete_xid_(pixmap, M_POS_DATA_PASSTHROUGH);
 }
 
-#define XFreePixmap(dpy, pixmap) XFreePixmap_(dpy, pixmap, M_POS_DATA);
+#define xcb_free_pixmap(c, pixmap) xcb_free_pixmap_(c, pixmap, M_POS_DATA);
 
 #endif
