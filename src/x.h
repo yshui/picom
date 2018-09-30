@@ -11,6 +11,17 @@
 typedef struct session session_t;
 typedef struct winprop winprop_t;
 
+#define XCB_SYNCED_VOID(func, c, ...) xcb_request_check(c, func##_checked(c, __VA_ARGS__));
+#define XCB_SYNCED(func, c, ...) ({ \
+  xcb_generic_error_t *e = NULL; \
+  __auto_type r = func##_reply(c, func(c, __VA_ARGS__), &e); \
+  if (e) { \
+    x_print_error(e->sequence, e->major_code, e->minor_code, e->error_code); \
+    free(e); \
+  } \
+  r; \
+})
+
 /**
  * Get a specific attribute of a window.
  *
