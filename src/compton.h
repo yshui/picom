@@ -197,9 +197,12 @@ free_texture(session_t *ps, glx_texture_t **t) {
  */
 static inline void
 free_paint(session_t *ps, paint_t *ppaint) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   free_paint_glx(ps, ppaint);
   free_picture(ps, &ppaint->pict);
-  free_pixmap(ps, &ppaint->pixmap);
+  if (ppaint->pixmap)
+    xcb_free_pixmap(c, ppaint->pixmap);
+  ppaint->pixmap = XCB_NONE;
 }
 
 /**
@@ -233,10 +236,13 @@ free_win_res(session_t *ps, win *w) {
  */
 static inline void
 free_root_tile(session_t *ps) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   free_picture(ps, &ps->root_tile_paint.pict);
   free_texture(ps, &ps->root_tile_paint.ptex);
-  if (ps->root_tile_fill)
-    free_pixmap(ps, &ps->root_tile_paint.pixmap);
+  if (ps->root_tile_fill) {
+    xcb_free_pixmap(c, ps->root_tile_paint.pixmap);
+    ps->root_tile_paint.pixmap = XCB_NONE;
+  }
   ps->root_tile_paint.pixmap = None;
   ps->root_tile_fill = false;
 }
@@ -392,7 +398,7 @@ dump_drawable(session_t *ps, Drawable drawable) {
  * are better ways.
  */
 static inline bool
-validate_pixmap(session_t *ps, Pixmap pxmap) {
+validate_pixmap(session_t *ps, xcb_pixmap_t pxmap) {
   if (!pxmap) return false;
 
   Window rroot = None;

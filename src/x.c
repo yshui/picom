@@ -200,13 +200,15 @@ x_create_picture(session_t *ps, int wid, int hei,
 
   int depth = pictfmt->depth;
 
-  Pixmap tmp_pixmap = create_pixmap(ps, depth, ps->root, wid, hei);
+  xcb_pixmap_t tmp_pixmap = x_create_pixmap(ps, depth, ps->root, wid, hei);
   if (!tmp_pixmap)
     return None;
 
   xcb_render_picture_t picture =
     x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, tmp_pixmap, valuemask, attr);
-  free_pixmap(ps, &tmp_pixmap);
+
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_free_pixmap(c, tmp_pixmap);
 
   return picture;
 }
@@ -360,4 +362,22 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
   }
 
   // print_backtrace();
+}
+
+/**
+ * Create a pixmap and check that creation succeeded.
+ */
+xcb_pixmap_t
+x_create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t width, uint16_t height) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_pixmap_t pix = xcb_generate_id(c);
+  xcb_void_cookie_t cookie = xcb_create_pixmap_checked(c, depth, pix, drawable, width, height);
+  xcb_generic_error_t *err = xcb_request_check(c, cookie);
+  if (err == NULL)
+    return pix;
+
+  printf_err("Failed to create pixmap:");
+  ev_xcb_error(ps, err);
+  free(err);
+  return XCB_NONE;
 }

@@ -727,14 +727,13 @@ glx_load_prog_main(session_t *ps,
  * Bind a X pixmap to an OpenGL texture.
  */
 bool
-glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
+glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
     unsigned width, unsigned height, unsigned depth) {
   if (ps->o.backend != BKEND_GLX)
     return true;
 
   if (!pixmap) {
-    printf_errf("(%#010lx): Binding to an empty pixmap. This can't work.",
-        pixmap);
+    printf_errf("(%#010x): Binding to an empty pixmap. This can't work.", pixmap);
     return false;
   }
 
@@ -776,7 +775,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
       unsigned rbdwid = 0;
       if (!XGetGeometry(ps->dpy, pixmap, &rroot, &rx, &ry,
             &width, &height, &rbdwid, &depth)) {
-        printf_errf("(%#010lx): Failed to query Pixmap info.", pixmap);
+        printf_errf("(%#010x): Failed to query Pixmap info.", pixmap);
         return false;
       }
       if (depth > OPENGL_MAX_DEPTH) {

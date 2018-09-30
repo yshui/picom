@@ -96,3 +96,6 @@ void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t,
  */
 void
 x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_code);
+
+xcb_pixmap_t
+x_create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t width, uint16_t height);

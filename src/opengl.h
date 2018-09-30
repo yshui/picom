@@ -156,7 +156,7 @@ glx_load_prog_main(session_t *ps,
 #endif
 
 bool
-glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
+glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
     unsigned width, unsigned height, unsigned depth);
 
 void
@@ -169,7 +169,7 @@ __attribute__((nonnull(1, 2)));
  * Check if a texture is binded, or is binded to the given pixmap.
  */
 static inline bool
-glx_tex_binded(const glx_texture_t *ptex, Pixmap pixmap) {
+glx_tex_binded(const glx_texture_t *ptex, xcb_pixmap_t pixmap) {
   return ptex && ptex->glpixmap && ptex->texture
     && (!pixmap || pixmap == ptex->pixmap);
 }

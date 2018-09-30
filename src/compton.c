@@ -667,7 +667,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   const int height = w->heightb;
 
   xcb_image_t *shadow_image = NULL;
-  Pixmap shadow_pixmap = None, shadow_pixmap_argb = None;
+  xcb_pixmap_t shadow_pixmap = None, shadow_pixmap_argb = None;
   xcb_render_picture_t shadow_picture = None, shadow_picture_argb = None;
   GC gc = None;
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
@@ -678,8 +678,8 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
     return None;
   }
 
-  shadow_pixmap = create_pixmap(ps, 8, ps->root, shadow_image->width, shadow_image->height);
-  shadow_pixmap_argb = create_pixmap(ps, 32, ps->root, shadow_image->width, shadow_image->height);
+  shadow_pixmap = x_create_pixmap(ps, 8, ps->root, shadow_image->width, shadow_image->height);
+  shadow_pixmap_argb = x_create_pixmap(ps, 32, ps->root, shadow_image->width, shadow_image->height);
 
   if (!shadow_pixmap || !shadow_pixmap_argb) {
     printf_errf("(): failed to create shadow pixmaps");
@@ -742,14 +742,14 @@ shadow_picture_err:
 static xcb_render_picture_t
 solid_picture(session_t *ps, bool argb, double a,
               double r, double g, double b) {
-  Pixmap pixmap;
+  xcb_pixmap_t pixmap;
   xcb_render_picture_t picture;
   xcb_render_create_picture_value_list_t pa;
   xcb_render_color_t col;
   xcb_rectangle_t rect;
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
-  pixmap = create_pixmap(ps, argb ? 32 : 8, ps->root, 1, 1);
+  pixmap = x_create_pixmap(ps, argb ? 32 : 8, ps->root, 1, 1);
   if (!pixmap) return None;
 
   pa.repeat = True;
@@ -917,7 +917,7 @@ get_root_tile(session_t *ps) {
   ps->root_tile_fill = false;
 
   bool fill = false;
-  Pixmap pixmap = None;
+  xcb_pixmap_t pixmap = None;
 
   // Get the values of background attributes
   for (int p = 0; background_props_str[p]; p++) {
@@ -939,7 +939,7 @@ get_root_tile(session_t *ps) {
 
   // Create a pixmap if there isn't any
   if (!pixmap) {
-    pixmap = create_pixmap(ps, ps->depth, ps->root, 1, 1);
+    pixmap = x_create_pixmap(ps, ps->depth, ps->root, 1, 1);
     if (pixmap == XCB_NONE) {
       fprintf(stderr, "Failed to create some pixmap\n");
       exit(1);
@@ -1719,7 +1719,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
     else {
       if (!ps->tgt_buffer.pixmap) {
         free_paint(ps, &ps->tgt_buffer);
-        ps->tgt_buffer.pixmap = create_pixmap(ps, ps->depth, ps->root, ps->root_width, ps->root_height);
+        ps->tgt_buffer.pixmap = x_create_pixmap(ps, ps->depth, ps->root, ps->root_width, ps->root_height);
         if (ps->tgt_buffer.pixmap == XCB_NONE) {
           fprintf(stderr, "Failed to allocate a screen-sized pixmap\n");
           exit(1);

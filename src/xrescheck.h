@@ -56,7 +56,7 @@ xcb_composite_name_window_pixmap_(xcb_connection_t *c, xcb_window_t window, xcb_
   xcb_composite_name_window_pixmap_(dpy, window, pixmap, M_POS_DATA)
 
 static inline void
-xcb_free_pixmap_(xcb_connection_t *c, Pixmap pixmap, M_POS_DATA_PARAMS) {
+xcb_free_pixmap_(xcb_connection_t *c, xcb_pixmap_t pixmap, M_POS_DATA_PARAMS) {
   xcb_free_pixmap(c, pixmap);
   xrc_delete_xid_(pixmap, M_POS_DATA_PASSTHROUGH);
 }

@@ -438,7 +438,7 @@ typedef struct {
 struct _glx_texture {
   GLuint texture;
   GLXPixmap glpixmap;
-  Pixmap pixmap;
+  xcb_pixmap_t pixmap;
   GLenum target;
   unsigned width;
   unsigned height;
@@ -495,7 +495,7 @@ typedef uint32_t glx_prog_main_t;
 #endif
 
 typedef struct {
-  Pixmap pixmap;
+  xcb_pixmap_t pixmap;
   xcb_render_picture_t pict;
   glx_texture_t *ptex;
 } paint_t;
@@ -2310,35 +2310,4 @@ wintype_arr_enable(bool arr[]) {
   for (i = 0; i < NUM_WINTYPES; ++i) {
     arr[i] = true;
   }
-}
-
-/**
- * Destroy a <code>Pixmap</code>.
- */
-static inline void
-free_pixmap(session_t *ps, Pixmap *p) {
-  if (*p) {
-    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-    xcb_free_pixmap(c, *p);
-    *p = None;
-  }
-}
-
-/**
- * Create a pixmap and check that creation succeeded.
- */
-static inline xcb_pixmap_t
-create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t width, uint16_t height)
-{
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_pixmap_t pix = xcb_generate_id(c);
-  xcb_void_cookie_t cookie = xcb_create_pixmap_checked(c, depth, pix, drawable, width, height);
-  xcb_generic_error_t *err = xcb_request_check(c, cookie);
-  if (err == NULL)
-    return pix;
-
-  printf_err("Failed to create pixmap:");
-  ev_xcb_error(ps, err);
-  free(err);
-  return XCB_NONE;
 }
