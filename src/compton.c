@@ -3441,19 +3441,6 @@ usage(int ret) {
     "  when rendering transparent content. My tests show a 15% performance\n"
     "  boost.\n"
     "\n"
-    "--glx-copy-from-front\n"
-    "  GLX backend: Copy unmodified regions from front buffer instead of\n"
-    "  redrawing them all. My tests with nvidia-drivers show a 5% decrease\n"
-    "  in performance when the whole screen is modified, but a 30% increase\n"
-    "  when only 1/4 is. My tests on nouveau show terrible slowdown. Could\n"
-    "  work with --glx-swap-method but not --glx-use-copysubbuffermesa.\n"
-    "\n"
-    "--glx-use-copysubbuffermesa\n"
-    "  GLX backend: Use MESA_copy_sub_buffer to do partial screen update.\n"
-    "  My tests on nouveau shows a 200% performance boost when only 1/4 of\n"
-    "  the screen is updated. May break VSync and is not available on some\n"
-    "  drivers. Overrides --glx-copy-from-front.\n"
-    "\n"
     "--glx-no-rebind-pixmap\n"
     "  GLX backend: Avoid rebinding pixmap on window damage. Probably\n"
     "  could improve performance on rapid window content changes, but is\n"
@@ -3466,8 +3453,7 @@ usage(int ret) {
     "  \"undefined\" is the slowest and the safest, and the default value.\n"
     "  1 is fastest, but may fail on some drivers, 2-6 are gradually slower\n"
     "  but safer (6 is still faster than 0). -1 means auto-detect using\n"
-    "  GLX_EXT_buffer_age, supported by some drivers. Useless with\n"
-    "  --glx-use-copysubbuffermesa.\n"
+    "  GLX_EXT_buffer_age, supported by some drivers. \n"
     "\n"
     "--glx-use-gpushader4\n"
     "  GLX backend: Use GL_EXT_gpu_shader4 for some optimization on blur\n"
@@ -3971,13 +3957,17 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
           exit(1);
         break;
       P_CASEBOOL(291, glx_no_stencil);
-      P_CASEBOOL(292, glx_copy_from_front);
+      case 292:
+        printf_errf("(): --glx-copy-from-front is deprecated");
+        break;
       P_CASELONG(293, benchmark);
       case 294:
         // --benchmark-wid
         ps->o.benchmark_wid = strtol(optarg, NULL, 0);
         break;
-      P_CASEBOOL(295, glx_use_copysubbuffermesa);
+      case 295:
+        printf_errf("(): --glx-use-copysubbuffermesa is deprecated");
+        break;
       case 296:
         // --blur-background-exclude
         condlst_add(ps, &ps->o.blur_background_blacklist, optarg);
@@ -5007,7 +4997,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .display = NULL,
       .backend = BKEND_XRENDER,
       .glx_no_stencil = false,
-      .glx_copy_from_front = false,
 #ifdef CONFIG_OPENGL
       .glx_prog_win = GLX_PROG_MAIN_INIT,
 #endif

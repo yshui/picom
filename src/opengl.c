@@ -380,15 +380,6 @@ glx_init(session_t *ps, bool need_render) {
       goto glx_init_end;
     }
 
-    if (ps->o.glx_use_copysubbuffermesa) {
-      psglx->glXCopySubBufferProc = (f_CopySubBuffer)
-        glXGetProcAddress((const GLubyte *) "glXCopySubBufferMESA");
-      if (!psglx->glXCopySubBufferProc) {
-        printf_errf("(): Failed to acquire glXCopySubBufferMESA().");
-        goto glx_init_end;
-      }
-    }
-
 #ifdef CONFIG_GLX_SYNC
     psglx->glFenceSyncProc = (f_FenceSync)
       glXGetProcAddress((const GLubyte *) "glFenceSync");

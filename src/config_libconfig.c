@@ -355,10 +355,6 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   lcfg_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);
   // --glx-no-stencil
   lcfg_lookup_bool(&cfg, "glx-no-stencil", &ps->o.glx_no_stencil);
-  // --glx-copy-from-front
-  lcfg_lookup_bool(&cfg, "glx-copy-from-front", &ps->o.glx_copy_from_front);
-  // --glx-use-copysubbuffermesa
-  lcfg_lookup_bool(&cfg, "glx-use-copysubbuffermesa", &ps->o.glx_use_copysubbuffermesa);
   // --glx-no-rebind-pixmap
   lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &ps->o.glx_no_rebind_pixmap);
   // --glx-swap-method

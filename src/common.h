@@ -378,8 +378,6 @@ typedef int (*f_SwapIntervalMESA) (unsigned int interval);
 typedef void (*f_BindTexImageEXT) (Display *display, GLXDrawable drawable, int buffer, const int *attrib_list);
 typedef void (*f_ReleaseTexImageEXT) (Display *display, GLXDrawable drawable, int buffer);
 
-typedef void (*f_CopySubBuffer) (Display *dpy, GLXDrawable drawable, int x, int y, int width, int height);
-
 #ifdef CONFIG_GLX_SYNC
 // Looks like duplicate typedef of the same type is safe?
 typedef int64_t GLint64;
@@ -541,10 +539,6 @@ typedef struct options_t {
   /// Whether to avoid using stencil buffer under GLX backend. Might be
   /// unsafe.
   bool glx_no_stencil;
-  /// Whether to copy unmodified regions from front buffer.
-  bool glx_copy_from_front;
-  /// Whether to use glXCopySubBufferMESA() to update screen.
-  bool glx_use_copysubbuffermesa;
   /// Whether to avoid rebinding pixmap on window damage.
   bool glx_no_rebind_pixmap;
   /// GLX swap method we assume OpenGL uses.
@@ -744,8 +738,6 @@ typedef struct {
   f_BindTexImageEXT glXBindTexImageProc;
   /// Pointer to glXReleaseTexImageEXT function.
   f_ReleaseTexImageEXT glXReleaseTexImageProc;
-  /// Pointer to glXCopySubBufferMESA function.
-  f_CopySubBuffer glXCopySubBufferProc;
 #ifdef CONFIG_GLX_SYNC
   /// Pointer to the glFenceSync() function.
   f_FenceSync glFenceSyncProc;

@@ -974,9 +974,9 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_opts_get_do(detect_client_leader, cdbus_reply_bool);
 
 #ifdef CONFIG_OPENGL
+  cdbus_m_opts_get_stub(glx_use_copysubbuffermesa, cdbus_reply_bool, false);
+  cdbus_m_opts_get_stub(glx_copy_from_front, cdbus_reply_bool, false);
   cdbus_m_opts_get_do(glx_no_stencil, cdbus_reply_bool);
-  cdbus_m_opts_get_do(glx_copy_from_front, cdbus_reply_bool);
-  cdbus_m_opts_get_do(glx_use_copysubbuffermesa, cdbus_reply_bool);
   cdbus_m_opts_get_do(glx_no_rebind_pixmap, cdbus_reply_bool);
   cdbus_m_opts_get_do(glx_swap_method, cdbus_reply_int32);
 #endif
@@ -985,6 +985,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_opts_get_do(track_wdata, cdbus_reply_bool);
   cdbus_m_opts_get_do(track_leader, cdbus_reply_bool);
 #undef cdbus_m_opts_get_do
+#undef cdbus_m_opts_get_stub
 
   printf_errf("(): " CDBUS_ERROR_BADTGT_S, target);
   cdbus_reply_err(ps, msg, CDBUS_ERROR_BADTGT, CDBUS_ERROR_BADTGT_S, target);
