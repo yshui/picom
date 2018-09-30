@@ -1796,8 +1796,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
       // Mask out the body of the window from the shadow
       // Doing it here instead of in make_shadow() for saving GPU
       // power and handling shaped windows (XXX unconfirmed)
-      if (w->mode != WMODE_SOLID)
-        pixman_region32_subtract(&reg_tmp, &reg_tmp, &w->bounding_shape);
+      pixman_region32_subtract(&reg_tmp, &reg_tmp, &w->bounding_shape);
 
 #ifdef CONFIG_XINERAMA
       if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0)
