@@ -1894,21 +1894,6 @@ free_fence(session_t *ps, XSyncFence *pfence) {
 #endif
 
 /**
- * Crop a rectangle by another rectangle.
- *
- * psrc and pdst cannot be the same.
- */
-static inline void
-rect_crop(rect_t *restrict pdst, const rect_t *psrc, const rect_t *pbound) {
-  assert(psrc != pdst);
-  assert(psrc != pbound);
-  pdst->x1 = max_i(psrc->x1, pbound->x1);
-  pdst->y1 = max_i(psrc->y1, pbound->y1);
-  pdst->x2 = min_i(psrc->x2, pbound->x2);
-  pdst->y2 = min_i(psrc->y2, pbound->y2);
-}
-
-/**
  * Check if a rectangle includes the whole screen.
  */
 static inline bool
