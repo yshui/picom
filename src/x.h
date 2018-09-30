@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 #include <stdbool.h>
 #include <X11/Xlib.h>
 #include <xcb/xcb.h>
@@ -76,3 +77,11 @@ bool x_fetch_region(session_t *ps, XserverRegion r, region_t *res);
 
 void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t,
   int clip_x_origin, int clip_y_origin, const region_t *);
+
+/**
+ * X11 error handler function.
+ *
+ * XXX consider making this error to string
+ */
+void
+x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_code);

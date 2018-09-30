@@ -2435,113 +2435,12 @@ root_damaged(session_t *ps) {
 }
 
 /**
- * X11 error handler function.
- */
-static void
-xerror_common(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_code) {
-  session_t * const ps = ps_g;
-
-  int o = 0;
-  const char *name = "Unknown";
-
-  if (should_ignore(ps, serial)) {
-    return;
-  }
-
-  if (major == ps->composite_opcode
-      && minor == XCB_COMPOSITE_REDIRECT_SUBWINDOWS) {
-    fprintf(stderr, "Another composite manager is already running "
-        "(and does not handle _NET_WM_CM_Sn correctly)\n");
-    exit(1);
-  }
-
-#define CASESTRRET2(s)   case s: name = #s; break
-
-  o = error_code - ps->xfixes_error;
-  switch (o) {
-    CASESTRRET2(BadRegion);
-  }
-
-  o = error_code - ps->damage_error;
-  switch (o) {
-    CASESTRRET2(XCB_DAMAGE_BAD_DAMAGE);
-  }
-
-  o = error_code - ps->render_error;
-  switch (o) {
-    CASESTRRET2(XCB_RENDER_PICT_FORMAT);
-    CASESTRRET2(XCB_RENDER_PICTURE);
-    CASESTRRET2(XCB_RENDER_PICT_OP);
-    CASESTRRET2(XCB_RENDER_GLYPH_SET);
-    CASESTRRET2(XCB_RENDER_GLYPH);
-  }
-
-#ifdef CONFIG_OPENGL
-  if (ps->glx_exists) {
-    o = error_code - ps->glx_error;
-    switch (o) {
-      CASESTRRET2(GLX_BAD_SCREEN);
-      CASESTRRET2(GLX_BAD_ATTRIBUTE);
-      CASESTRRET2(GLX_NO_EXTENSION);
-      CASESTRRET2(GLX_BAD_VISUAL);
-      CASESTRRET2(GLX_BAD_CONTEXT);
-      CASESTRRET2(GLX_BAD_VALUE);
-      CASESTRRET2(GLX_BAD_ENUM);
-    }
-  }
-#endif
-
-#ifdef CONFIG_XSYNC
-  if (ps->xsync_exists) {
-    o = error_code - ps->xsync_error;
-    switch (o) {
-      CASESTRRET2(XSyncBadCounter);
-      CASESTRRET2(XSyncBadAlarm);
-      CASESTRRET2(XSyncBadFence);
-    }
-  }
-#endif
-
-  switch (error_code) {
-    CASESTRRET2(BadAccess);
-    CASESTRRET2(BadAlloc);
-    CASESTRRET2(BadAtom);
-    CASESTRRET2(BadColor);
-    CASESTRRET2(BadCursor);
-    CASESTRRET2(BadDrawable);
-    CASESTRRET2(BadFont);
-    CASESTRRET2(BadGC);
-    CASESTRRET2(BadIDChoice);
-    CASESTRRET2(BadImplementation);
-    CASESTRRET2(BadLength);
-    CASESTRRET2(BadMatch);
-    CASESTRRET2(BadName);
-    CASESTRRET2(BadPixmap);
-    CASESTRRET2(BadRequest);
-    CASESTRRET2(BadValue);
-    CASESTRRET2(BadWindow);
-  }
-
-#undef CASESTRRET2
-
-  print_timestamp(ps);
-  {
-    char buf[BUF_LEN] = "";
-    XGetErrorText(ps->dpy, error_code, buf, BUF_LEN);
-    printf("error %4d %-12s request %4d minor %4d serial %6lu: \"%s\"\n",
-        error_code, name, major,
-        minor, serial, buf);
-  }
-
-  // print_backtrace();
-}
-
-/**
  * Xlib error handler function.
  */
 static int
 xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
-  xerror_common(ev->serial, ev->request_code, ev->minor_code, ev->error_code);
+  if (!should_ignore(ps_g, ev->serial))
+    x_print_error(ev->serial, ev->request_code, ev->minor_code, ev->error_code);
   return 0;
 }
 
@@ -2550,7 +2449,8 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
  */
 void
 ev_xcb_error(session_t __attribute__((unused)) *ps, xcb_generic_error_t *err) {
-  xerror_common(err->sequence, err->major_code, err->minor_code, err->error_code);
+  if (!should_ignore(ps, err->sequence))
+    x_print_error(err->sequence, err->major_code, err->minor_code, err->error_code);
 }
 
 static void
