@@ -269,9 +269,8 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // --shadow-blue
   config_lookup_float(&cfg, "shadow-blue", &ps->o.shadow_blue);
   // --shadow-exclude-reg
-  if (config_lookup_string(&cfg, "shadow-exclude-reg", &sval)
-      && !parse_geometry(ps, sval, &ps->o.shadow_exclude_reg_geom))
-    exit(1);
+  if (config_lookup_string(&cfg, "shadow-exclude-reg", &sval))
+    ps->o.shadow_exclude_reg_str = strdup(sval);
   // --inactive-opacity-override
   lcfg_lookup_bool(&cfg, "inactive-opacity-override",
       &ps->o.inactive_opacity_override);

@@ -97,6 +97,7 @@
 #ifdef CONFIG_XINERAMA
 #include <xcb/xinerama.h>
 #endif
+#include <pixman.h>
 
 // Workarounds for missing definitions in very old versions of X headers,
 // thanks to consolers for reporting
@@ -170,6 +171,9 @@
 #ifdef DEBUG_XRC
 #include "xrescheck.h"
 #endif
+
+#include "x.h"
+#include "region.h"
 
 // === Constants ===
 
@@ -509,12 +513,6 @@ typedef struct _latom {
   struct _latom *next;
 } latom_t;
 
-/// A representation of raw region data
-typedef struct {
-  XRectangle *rects;
-  int nrects;
-} reg_data_t;
-
 #define REG_DATA_INIT { NULL, 0 }
 
 struct _timeout_t;
@@ -522,7 +520,7 @@ struct _timeout_t;
 typedef struct win win;
 
 /// Structure representing all options.
-typedef struct _options_t {
+typedef struct options_t {
   // === General ===
   /// The configuration file we used.
   char *config_file;
@@ -626,8 +624,8 @@ typedef struct _options_t {
   int shadow_radius;
   int shadow_offset_x, shadow_offset_y;
   double shadow_opacity;
-  /// Geometry of a region in which shadow is not painted on.
-  geometry_t shadow_exclude_reg_geom;
+  /// argument string to shadow-exclude-reg option
+  char *shadow_exclude_reg_str;
   /// Shadow blacklist. A linked list of conditions.
   c2_lptr_t *shadow_blacklist;
   /// Whether bounding-shaped window should be ignored.
@@ -809,7 +807,7 @@ typedef struct session {
   /// Picture of the root window background.
   paint_t root_tile_paint;
   /// A region of the size of the screen.
-  XserverRegion screen_reg;
+  region_t screen_reg;
   /// Picture of root window. Destination of painting in no-DBE painting
   /// mode.
   xcb_render_picture_t root_picture;
@@ -854,15 +852,13 @@ typedef struct session {
   /// Program start time.
   struct timeval time_start;
   /// The region needs to painted on next paint.
-  XserverRegion all_damage;
+  region_t all_damage;
   /// The region damaged on the last paint.
-  XserverRegion all_damage_last[CGLX_MAX_BUFFER_AGE];
+  region_t all_damage_last[CGLX_MAX_BUFFER_AGE];
   /// Whether all windows are currently redirected.
   bool redirected;
   /// Pre-generated alpha pictures.
   xcb_render_picture_t *alpha_picts;
-  /// Whether all reg_ignore of windows should expire in this paint.
-  bool reg_ignore_expire;
   /// Time of last fading. In milliseconds.
   time_ms_t fade_time;
   /// Head pointer of the error ignore linked list.
@@ -877,7 +873,8 @@ typedef struct session {
 
   // === Expose event related ===
   /// Pointer to an array of <code>XRectangle</code>-s of exposed region.
-  XRectangle *expose_rects;
+  /// XXX why do we need this array?
+  rect_t *expose_rects;
   /// Number of <code>XRectangle</code>-s in <code>expose_rects</code>.
   int size_expose;
   /// Index of the next free slot in <code>expose_rects</code>.
@@ -913,7 +910,7 @@ typedef struct session {
   /// Pre-computed color table for a side of shadow.
   unsigned char *shadow_top;
   /// A region in which shadow is not painted on.
-  XserverRegion shadow_exclude_reg;
+  region_t shadow_exclude_reg;
 
   // === Software-optimization-related ===
   /// Currently used refresh rate.
@@ -979,7 +976,7 @@ typedef struct session {
   /// Xinerama screen info.
   xcb_xinerama_query_screens_reply_t *xinerama_scrs;
   /// Xinerama screen regions.
-  XserverRegion *xinerama_scr_regs;
+  region_t *xinerama_scr_regs;
   /// Number of Xinerama screens.
   int xinerama_nscrs;
 #endif
@@ -1036,7 +1033,7 @@ typedef struct session {
 
 /// Structure representing a top-level window compton manages.
 struct win {
-  /// Pointer to the next structure in the linked list.
+  /// Pointer to the next lower window in window stack.
   win *next;
   /// Pointer to the next higher window to paint.
   win *prev_trans;
@@ -1068,9 +1065,7 @@ struct win {
   /// Paint info of the window.
   paint_t paint;
   /// Bounding shape of the window.
-  XserverRegion border_size;
-  /// Region of the whole window, shadow region included.
-  XserverRegion extents;
+  region_t bounding_shape;
   /// Window flags. Definitions above.
   int_fast16_t flags;
   /// Whether there's a pending <code>ConfigureNotify</code> happening
@@ -1078,11 +1073,15 @@ struct win {
   bool need_configure;
   /// Queued <code>ConfigureNotify</code> when the window is unmapped.
   xcb_configure_notify_event_t queue_configure;
-  /// Region to be ignored when painting. Basically the region where
-  /// higher opaque windows will paint upon. Depends on window frame
+  /// The region of screen that will be obscured when windows above is painted.
+  /// We use this to reduce the pixels that needed to be paint when painting
+  /// this window and anything underneath. Depends on window frame
   /// opacity state, window geometry, window mapped/unmapped state,
-  /// window mode, of this and all higher windows.
-  XserverRegion reg_ignore;
+  /// window mode of the windows above. DOES NOT INCLUDE the body of THIS WINDOW.
+  /// NULL means reg_ignore has not been calculated for this window.
+  rc_region_t *reg_ignore;
+  /// Whether the reg_ignore of all windows beneath this window are valid
+  bool reg_ignore_valid;
   /// Cached width/height of the window including border.
   int widthb, heightb;
   /// Whether the window has been destroyed.
@@ -1278,38 +1277,6 @@ print_backtrace(void) {
 
   free(strings);
 }
-
-#ifdef DEBUG_ALLOC_REG
-
-/**
- * Wrapper of <code>XFixesCreateRegion</code>, for debugging.
- */
-static inline XserverRegion
-XFixesCreateRegion_(Display *dpy, XRectangle *p, int n,
-    const char *func, int line) {
-  XserverRegion reg = XFixesCreateRegion(dpy, p, n);
-  print_timestamp(ps_g);
-  printf("%#010lx: XFixesCreateRegion() in %s():%d\n", reg, func, line);
-  print_backtrace();
-  fflush(stdout);
-  return reg;
-}
-
-/**
- * Wrapper of <code>XFixesDestroyRegion</code>, for debugging.
- */
-static inline void
-XFixesDestroyRegion_(Display *dpy, XserverRegion reg,
-    const char *func, int line) {
-  XFixesDestroyRegion(dpy, reg);
-  print_timestamp(ps_g);
-  printf("%#010lx: XFixesDestroyRegion() in %s():%d\n", reg, func, line);
-  fflush(stdout);
-}
-
-#define XFixesCreateRegion(dpy, p, n) XFixesCreateRegion_(dpy, p, n, __func__, __LINE__)
-#define XFixesDestroyRegion(dpy, reg) XFixesDestroyRegion_(dpy, reg, __func__, __LINE__)
-#endif
 
 #endif
 
@@ -1904,38 +1871,12 @@ find_focused(session_t *ps) {
 }
 
 /**
- * Copies a region.
- */
-static inline XserverRegion
-copy_region(const session_t *ps, XserverRegion oldregion) {
-  if (!oldregion)
-    return None;
-
-  XserverRegion region = XFixesCreateRegion(ps->dpy, NULL, 0);
-
-  XFixesCopyRegion(ps->dpy, region, oldregion);
-
-  return region;
-}
-
-/**
- * Destroy a <code>XserverRegion</code>.
- */
-static inline void
-free_region(session_t *ps, XserverRegion *p) {
-  if (*p) {
-    XFixesDestroyRegion(ps->dpy, *p);
-    *p = None;
-  }
-}
-
-/**
  * Free all regions in ps->all_damage_last .
  */
 static inline void
 free_all_damage_last(session_t *ps) {
   for (int i = 0; i < CGLX_MAX_BUFFER_AGE; ++i)
-    free_region(ps, &ps->all_damage_last[i]);
+    pixman_region32_clear(&ps->all_damage_last[i]);
 }
 
 #ifdef CONFIG_XSYNC
@@ -1958,12 +1899,13 @@ free_fence(session_t *ps, XSyncFence *pfence) {
  * psrc and pdst cannot be the same.
  */
 static inline void
-rect_crop(XRectangle *pdst, const XRectangle *psrc, const XRectangle *pbound) {
+rect_crop(rect_t *restrict pdst, const rect_t *psrc, const rect_t *pbound) {
   assert(psrc != pdst);
-  pdst->x = max_i(psrc->x, pbound->x);
-  pdst->y = max_i(psrc->y, pbound->y);
-  pdst->width = max_i(0, min_i(psrc->x + psrc->width, pbound->x + pbound->width) - pdst->x);
-  pdst->height = max_i(0, min_i(psrc->y + psrc->height, pbound->y + pbound->height) - pdst->y);
+  assert(psrc != pbound);
+  pdst->x1 = max_i(psrc->x1, pbound->x1);
+  pdst->y1 = max_i(psrc->y1, pbound->y1);
+  pdst->x2 = min_i(psrc->x2, pbound->x2);
+  pdst->y2 = min_i(psrc->y2, pbound->y2);
 }
 
 /**

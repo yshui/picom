@@ -196,6 +196,51 @@ static const char *background_props_str[] = {
 /// have a pointer to current session passed in.
 session_t *ps_g = NULL;
 
+static inline void
+__attribute__((nonnull(1, 2)))
+set_tgt_clip(session_t *ps, region_t *reg) {
+  switch (ps->o.backend) {
+    case BKEND_XRENDER:
+    case BKEND_XR_GLX_HYBRID:
+      x_set_picture_clip_region(ps, ps->tgt_buffer.pict, 0, 0, reg);
+      break;
+#ifdef CONFIG_OPENGL
+    case BKEND_GLX:
+      glx_set_clip(ps, reg);
+      break;
+#endif
+    default:
+      assert(false);
+  }
+}
+
+static inline void
+paint_region(session_t *ps, win *w, int x, int y, int wid, int hei,
+    double opacity, const region_t *reg_paint, xcb_render_picture_t pict) {
+  const int dx = (w ? w->g.x: 0) + x;
+  const int dy = (w ? w->g.y: 0) + y;
+  const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
+  const bool neg = (w && w->invert_color);
+
+  render(ps, x, y, dx, dy, wid, hei, opacity, argb, neg,
+      pict, (w ? w->paint.ptex: ps->root_tile_paint.ptex),
+      reg_paint, (w ? &ps->o.glx_prog_win: NULL));
+}
+
+/**
+ * Get a region of the screen size.
+ */
+static inline void
+get_screen_region(session_t *ps, region_t *res) {
+  pixman_box32_t b = {
+    .x1 = 0, .y1 = 0,
+    .x2 = ps->root_width,
+    .y2 = ps->root_height
+  };
+  pixman_region32_fini(res);
+  pixman_region32_init_rects(res, &b, 1);
+}
+
 /**
  * Check if current backend uses XRender for rendering.
  */
@@ -226,18 +271,14 @@ paint_isvalid(session_t *ps, const paint_t *ppaint) {
   return true;
 }
 
-void add_damage(session_t *ps, XserverRegion damage) {
+void add_damage(session_t *ps, const region_t *damage) {
   // Ignore damage when screen isn't redirected
   if (!ps->redirected)
-    free_region(ps, &damage);
+    return;
 
-  if (!damage) return;
-  if (ps->all_damage) {
-    XFixesUnionRegion(ps->dpy, ps->all_damage, ps->all_damage, damage);
-    XFixesDestroyRegion(ps->dpy, damage);
-  } else {
-    ps->all_damage = damage;
-  }
+  if (!damage)
+    return;
+  pixman_region32_union(&ps->all_damage, &ps->all_damage, (region_t *)damage);
 }
 
 #define CPY_FDS(key) \
@@ -941,12 +982,12 @@ get_root_tile(session_t *ps) {
  * Paint root window content.
  */
 static void
-paint_root(session_t *ps, XserverRegion reg_paint) {
+paint_root(session_t *ps, const region_t *reg_paint) {
   if (!ps->root_tile_paint.pixmap)
     get_root_tile(ps);
 
-  win_render(ps, NULL, 0, 0, ps->root_width, ps->root_height, 1.0, reg_paint,
-      NULL, ps->root_tile_paint.pict);
+  paint_region(ps, NULL, 0, 0, ps->root_width, ps->root_height, 1.0, reg_paint,
+    ps->root_tile_paint.pict);
 }
 
 /**
@@ -1002,9 +1043,10 @@ paint_preprocess(session_t *ps, win *list) {
 
   // Fading step calculation
   time_ms_t steps = 0L;
-  if (ps->fade_time) {
-    steps = ((get_time_ms() - ps->fade_time) + FADE_DELTA_TOLERANCE * ps->o.fade_delta) / ps->o.fade_delta;
-  }
+  if (ps->fade_time)
+    steps = (get_time_ms() - ps->fade_time +
+             FADE_DELTA_TOLERANCE*ps->o.fade_delta) /
+            ps->o.fade_delta;
   // Reset fade_time if unset, or there appears to be a time disorder
   if (!ps->fade_time || steps < 0L) {
     ps->fade_time = get_time_ms();
@@ -1012,31 +1054,12 @@ paint_preprocess(session_t *ps, win *list) {
   }
   ps->fade_time += steps * ps->o.fade_delta;
 
-  XserverRegion last_reg_ignore = None;
-
-  bool unredir_possible = false;
-  // Trace whether it's the highest window to paint
-  bool is_highest = true;
+  // First, let's process fading
   for (win *w = list; w; w = next) {
-    bool to_paint = true;
-    const winmode_t mode_old = w->mode;
-
-    // In case calling the fade callback function destroys this window
     next = w->next;
-    opacity_t opacity_old = w->opacity;
-
-    // Data expiration
-    {
-      // Remove built shadow if needed
-      if (w->flags & WFLAG_SIZE_CHANGE)
-        free_paint(ps, &w->shadow_paint);
-
-      // Destroy reg_ignore on all windows if they should expire
-      if (ps->reg_ignore_expire)
-        free_region(ps, &w->reg_ignore);
-    }
-
-    //printf_errf("(): %d %d %s", w->a.map_state, w->ever_damaged, w->name);
+    const winmode_t mode_old = w->mode;
+    const bool was_painted = w->to_paint;
+    const opacity_t opacity_old = w->opacity;
     // Restore flags from last paint if the window is being faded out
     if (IsUnmapped == w->a.map_state) {
       win_set_shadow(ps, w, w->shadow_last);
@@ -1054,7 +1077,47 @@ paint_preprocess(session_t *ps, win *list) {
     // Run fading
     run_fade(ps, w, steps);
 
-    // Opacity will not change, from now on.
+    if (win_has_frame(w))
+      w->frame_opacity = ps->o.frame_opacity;
+    else
+      w->frame_opacity = 1.0;
+
+    // Update window mode
+    win_determine_mode(ps, w);
+
+    // Destroy all reg_ignore above when frame opaque state changes on
+    // SOLID mode
+    if (was_painted && w->mode != mode_old)
+      w->reg_ignore_valid = false;
+
+    // Add window to damaged area if its opacity changes
+    // If was_painted == false, and to_paint is also false, we don't care
+    // If was_painted == false, but to_paint is true, damage will be added in the loop below
+    if (was_painted && w->opacity != opacity_old)
+      add_damage_from_win(ps, w);
+  }
+
+  // Opacity will not change, from now on.
+  rc_region_t *last_reg_ignore = rc_region_new();
+
+  bool unredir_possible = false;
+  // Trace whether it's the highest window to paint
+  bool is_highest = true;
+  bool reg_ignore_valid = true;
+  for (win *w = list; w; w = next) {
+    __label__ skip_window;
+    bool to_paint = true;
+    // w->to_paint remembers whether this window is painted last time
+    const bool was_painted = w->to_paint;
+
+    // In case calling the fade callback function destroys this window
+    next = w->next;
+
+    // Destroy reg_ignore if some window above us invalidated it
+    if (!reg_ignore_valid)
+      rc_region_unref(&w->reg_ignore);
+
+    //printf_errf("(): %d %d %s", w->a.map_state, w->ever_damaged, w->name);
 
     // Give up if it's not damaged or invisible, or it's unmapped and its
     // pixmap is gone (for example due to a ConfigureNotify), or when it's
@@ -1067,118 +1130,78 @@ paint_preprocess(session_t *ps, win *list) {
         || w->paint_excluded)
       to_paint = false;
 
-    // to_paint will never change afterward
-
-    // Determine mode as early as possible
-    if (to_paint && (!w->to_paint || w->opacity != opacity_old))
-      win_determine_mode(ps, w);
-
-    if (to_paint) {
-      // Fetch bounding region
-      if (!w->border_size)
-        w->border_size = win_border_size(ps, w, true);
-
-      // Fetch window extents
-      if (!w->extents)
-        w->extents = win_extents(ps, w);
-
-      // Calculate frame_opacity
-      {
-        double frame_opacity_old = w->frame_opacity;
-
-        if (ps->o.frame_opacity && 1.0 != ps->o.frame_opacity
-            && win_has_frame(w))
-          w->frame_opacity = get_opacity_percent(w) *
-            ps->o.frame_opacity;
-        else
-          w->frame_opacity = 0.0;
-
-        // Destroy all reg_ignore above when frame opaque state changes on
-        // SOLID mode
-        if (w->to_paint && WMODE_SOLID == mode_old
-            && (0.0 == frame_opacity_old) != (0.0 == w->frame_opacity))
-          ps->reg_ignore_expire = true;
-      }
-
-      // Calculate shadow opacity
-      if (w->frame_opacity)
-        w->shadow_opacity = ps->o.shadow_opacity * w->frame_opacity;
-      else
-        w->shadow_opacity = ps->o.shadow_opacity * get_opacity_percent(w);
-    }
-
     // Add window to damaged area if its painting status changes
     // or opacity changes
-    if (to_paint != w->to_paint || w->opacity != opacity_old)
+    if (to_paint != was_painted) {
+      w->reg_ignore_valid = false;
       add_damage_from_win(ps, w);
+    }
 
-    // Destroy all reg_ignore above when window mode changes
-    if ((to_paint && WMODE_SOLID == w->mode)
-        != (w->to_paint && WMODE_SOLID == mode_old))
-      ps->reg_ignore_expire = true;
+    // to_paint will never change afterward
+    if (!to_paint)
+      goto skip_window;
 
-    if (to_paint) {
-      // Generate ignore region for painting to reduce GPU load
-      if (ps->reg_ignore_expire || !w->to_paint) {
-        free_region(ps, &w->reg_ignore);
+    // XXX shouldn't need these
+    // Fetch bounding region
+    if (!pixman_region32_not_empty(&w->bounding_shape))
+      win_update_bounding_shape(ps, w);
 
-        // If the window is solid, we add the window region to the
-        // ignored region
-        if (win_is_solid(ps, w)) {
-          if (!w->frame_opacity) {
-            if (w->border_size)
-              w->reg_ignore = copy_region(ps, w->border_size);
-            else
-              w->reg_ignore = win_get_region(ps, w, true);
-          }
-          else {
-            w->reg_ignore = win_get_region_noframe(ps, w, true);
-            if (w->border_size)
-              XFixesIntersectRegion(ps->dpy, w->reg_ignore, w->reg_ignore,
-                  w->border_size);
-          }
+    // Fetch window extents
+    region_t extents;
+    pixman_region32_init(&extents);
+    win_extents(w, &extents);
 
-          if (last_reg_ignore)
-            XFixesUnionRegion(ps->dpy, w->reg_ignore, w->reg_ignore,
-                last_reg_ignore);
-        }
-        // Otherwise we copy the last region over
-        else if (last_reg_ignore)
-          w->reg_ignore = copy_region(ps, last_reg_ignore);
-        else
-          w->reg_ignore = None;
+    // Calculate shadow opacity
+    w->shadow_opacity = ps->o.shadow_opacity * get_opacity_percent(w) * ps->o.frame_opacity;
+
+    // Generate ignore region for painting to reduce GPU load
+    if (!w->reg_ignore)
+      w->reg_ignore = rc_region_ref(last_reg_ignore);
+
+    // If the window is solid, we add the window region to the
+    // ignored region
+    // Otherwise last_reg_ignore shouldn't change
+    if (w->mode == WMODE_SOLID && !ps->o.force_win_blend) {
+      region_t *tmp = rc_region_new();
+      if (w->frame_opacity == 1)
+        copy_region(tmp, &w->bounding_shape);
+      else {
+        win_get_region_noframe(ps, w, true, tmp);
+        pixman_region32_intersect(tmp, tmp, &w->bounding_shape);
       }
 
-      last_reg_ignore = w->reg_ignore;
-
-      // (Un)redirect screen
-      // We could definitely unredirect the screen when there's no window to
-      // paint, but this is typically unnecessary, may cause flickering when
-      // fading is enabled, and could create inconsistency when the wallpaper
-      // is not correctly set.
-      if (ps->o.unredir_if_possible && is_highest && to_paint) {
-        is_highest = false;
-        if (win_is_solid(ps, w)
-            && (!w->frame_opacity || !win_has_frame(w))
-            && win_is_fullscreen(ps, w)
-            && !w->unredir_if_possible_excluded)
-          unredir_possible = true;
-      }
-
-      // Reset flags
-      w->flags = 0;
+      pixman_region32_union(tmp, tmp, last_reg_ignore);
+      rc_region_unref(&last_reg_ignore);
+      last_reg_ignore = tmp;
     }
 
-    if (to_paint) {
-      w->prev_trans = t;
-      t = w;
-    }
-    else {
-      assert(w->destroyed == (w->fade_callback == finish_destroy_win));
-      check_fade_fin(ps, &w);
+    // (Un)redirect screen
+    // We could definitely unredirect the screen when there's no window to
+    // paint, but this is typically unnecessary, may cause flickering when
+    // fading is enabled, and could create inconsistency when the wallpaper
+    // is not correctly set.
+    if (ps->o.unredir_if_possible && is_highest) {
+      if (win_is_solid(ps, w)
+          && (w->frame_opacity == 1 || !win_has_frame(w))
+          && win_is_fullscreen(ps, w)
+          && !w->unredir_if_possible_excluded)
+        unredir_possible = true;
     }
 
-    // Avoid setting w->to_paint if w is to be freed
+    // Reset flags
+    w->flags = 0;
+    w->prev_trans = t;
+    t = w;
+    is_highest = false;
+
+  skip_window:
+    reg_ignore_valid = reg_ignore_valid && w->reg_ignore_valid;
+    w->reg_ignore_valid = true;
+
+    assert(w->destroyed == (w->fade_callback == finish_destroy_win));
+    check_fade_fin(ps, &w);
+
+    // Avoid setting w->to_paint if w is freed
     if (w) {
       w->to_paint = to_paint;
 
@@ -1192,14 +1215,14 @@ paint_preprocess(session_t *ps, win *list) {
     }
   }
 
+  rc_region_unref(&last_reg_ignore);
 
   // If possible, unredirect all windows and stop painting
   if (UNSET != ps->o.redirected_force)
     unredir_possible = !ps->o.redirected_force;
-
-  // If there's no window to paint, and the screen isn't redirected,
-  // don't redirect it.
-  if (ps->o.unredir_if_possible && is_highest && !ps->redirected)
+  else if (ps->o.unredir_if_possible && is_highest && !ps->redirected)
+    // If there's no window to paint, and the screen isn't redirected,
+    // don't redirect it.
     unredir_possible = true;
   if (unredir_possible) {
     if (ps->redirected) {
@@ -1223,8 +1246,7 @@ paint_preprocess(session_t *ps, win *list) {
  * Paint the shadow of a window.
  */
 static inline void
-win_paint_shadow(session_t *ps, win *w,
-    XserverRegion reg_paint, const reg_data_t *pcache_reg) {
+win_paint_shadow(session_t *ps, win *w, region_t *reg_paint) {
   // Bind shadow pixmap to GLX texture if needed
   paint_bind_tex(ps, &w->shadow_paint, 0, 0, 32, false);
 
@@ -1235,7 +1257,7 @@ win_paint_shadow(session_t *ps, win *w,
 
   render(ps, 0, 0, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy,
       w->shadow_width, w->shadow_height, w->shadow_opacity, true, false,
-      w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint, pcache_reg, NULL);
+      w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint, NULL);
 }
 
 /**
@@ -1256,7 +1278,7 @@ win_paint_shadow(session_t *ps, win *w,
 static bool
 xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
     int x, int y, int wid, int hei, xcb_render_fixed_t **blur_kerns,
-    XserverRegion reg_clip) {
+    const region_t *reg_clip) {
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   assert(blur_kerns[0]);
 
@@ -1270,7 +1292,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
   }
 
   if (reg_clip && tmp_picture)
-    XFixesSetPictureClipRegion(ps->dpy, tmp_picture, reg_clip, 0, 0);
+    x_set_picture_clip_region(ps, tmp_picture, 0, 0, reg_clip);
 
   xcb_render_picture_t src_pict = tgt_buffer, dst_pict = tmp_picture;
   for (int i = 0; blur_kerns[i]; ++i) {
@@ -1325,7 +1347,7 @@ xr_take_screenshot(session_t *ps) {
  */
 static inline void
 win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
-    XserverRegion reg_paint, const reg_data_t *pcache_reg) {
+    const region_t *reg_paint) {
   const int x = w->g.x;
   const int y = w->g.y;
   const int wid = w->widthb;
@@ -1383,23 +1405,28 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
 
         // Minimize the region we try to blur, if the window itself is not
         // opaque, only the frame is.
-        XserverRegion reg_noframe = None;
+        region_t reg_blur;
+        pixman_region32_init(&reg_blur);
+        pixman_region32_copy(&reg_blur, &w->bounding_shape);
         if (win_is_solid(ps, w)) {
-          XserverRegion reg_all = win_border_size(ps, w, false);
-          reg_noframe = win_get_region_noframe(ps, w, false);
-          XFixesSubtractRegion(ps->dpy, reg_noframe, reg_all, reg_noframe);
-          free_region(ps, &reg_all);
+          region_t reg_noframe;
+          pixman_region32_init(&reg_noframe);
+          win_get_region_noframe(ps, w, true, &reg_noframe);
+          pixman_region32_subtract(&reg_blur, &reg_blur, &reg_noframe);
+          pixman_region32_fini(&reg_noframe);
         }
+        // Translate global coordinates to local ones
+        pixman_region32_translate(&reg_blur, -x, -y);
         xr_blur_dst(ps, tgt_buffer, x, y, wid, hei, ps->blur_kerns_cache,
-            reg_noframe);
-        free_region(ps, &reg_noframe);
+            &reg_blur);
+        pixman_region32_clear(&reg_blur);
       }
       break;
 #ifdef CONFIG_OPENGL
     case BKEND_GLX:
       // TODO: Handle frame opacity
       glx_blur_dst(ps, x, y, wid, hei, ps->psglx->z - 0.5, factor_center,
-          reg_paint, pcache_reg, &w->glx_blur_cache);
+          reg_paint, &w->glx_blur_cache);
       break;
 #endif
     default:
@@ -1411,8 +1438,7 @@ void
 render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
   double opacity, bool argb, bool neg,
   xcb_render_picture_t pict, glx_texture_t *ptex,
-  XserverRegion reg_paint, const reg_data_t *pcache_reg,
-  const glx_prog_main_t *pprogram)
+  const region_t *reg_paint, const glx_prog_main_t *pprogram)
 {
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   switch (ps->o.backend) {
@@ -1430,7 +1456,7 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
 #ifdef CONFIG_OPENGL
     case BKEND_GLX:
       glx_render(ps, ptex, x, y, dx, dy, wid, hei,
-          ps->psglx->z, opacity, argb, neg, reg_paint, pcache_reg, pprogram);
+          ps->psglx->z, opacity, argb, neg, reg_paint, pprogram);
       ps->psglx->z += 1;
       break;
 #endif
@@ -1443,8 +1469,7 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
  * Paint a window itself and dim it if asked.
  */
 static inline void
-win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
-    const reg_data_t *pcache_reg) {
+paint_one(session_t *ps, win *w, const region_t *reg_paint) {
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   glx_mark(ps, w->id, true);
 
@@ -1463,14 +1488,12 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 
   // XRender: Build picture
   if (bkend_use_xrender(ps) && !w->paint.pict) {
-    {
-      xcb_render_create_picture_value_list_t pa = {
-        .subwindowmode = IncludeInferiors,
-      };
+    xcb_render_create_picture_value_list_t pa = {
+      .subwindowmode = IncludeInferiors,
+    };
 
-      w->paint.pict = x_create_picture_with_pictfmt_and_pixmap(ps, w->pictfmt,
-          draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
-    }
+    w->paint.pict = x_create_picture_with_pictfmt_and_pixmap(ps, w->pictfmt,
+        draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
   }
 
   if (IsViewable == w->a.map_state)
@@ -1504,10 +1527,12 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
     if (newpict) {
       // Apply clipping region to save some CPU
       if (reg_paint) {
-        XserverRegion reg = copy_region(ps, reg_paint);
-        XFixesTranslateRegion(ps->dpy, reg, -x, -y);
-        XFixesSetPictureClipRegion(ps->dpy, newpict, 0, 0, reg);
-        free_region(ps, &reg);
+        region_t reg;
+        pixman_region32_init(&reg);
+        pixman_region32_copy(&reg, (region_t *)reg_paint);
+        pixman_region32_translate(&reg, -x, -y);
+        // FIXME XFixesSetPictureClipRegion(ps->dpy, newpict, 0, 0, reg);
+        pixman_region32_fini(&reg);
       }
 
       xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, pict, None,
@@ -1525,10 +1550,9 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 
   const double dopacity = get_opacity_percent(w);
 
-  if (!w->frame_opacity) {
-    win_render(ps, w, 0, 0, wid, hei, dopacity, reg_paint, pcache_reg, pict);
-  }
-  else {
+  if (w->frame_opacity == 1) {
+    paint_region(ps, w, 0, 0, wid, hei, dopacity, reg_paint, pict);
+  } else {
     // Painting parameters
     const margin_t extents = win_calc_frame_extents(ps, w);
     const int t = extents.top;
@@ -1537,47 +1561,56 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
     const int r = extents.right;
 
 #define COMP_BDR(cx, cy, cwid, chei) \
-    win_render(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity, \
-        reg_paint, pcache_reg, pict)
+paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity * dopacity, \
+  reg_paint, pict)
 
-    // The following complicated logic is required because some broken
-    // window managers (I'm talking about you, Openbox!) that makes
+    // Sanitize the margins, in case some broken WM makes
     // top_width + bottom_width > height in some cases.
 
-    // top
-    int phei = min_i(t, hei);
-    if (phei > 0)
-      COMP_BDR(0, 0, wid, phei);
+    do {
+      // top
+      int body_height = hei;
+      // ctop = checked top
+      int ctop = min_i(body_height, t); // Make sure top margin is smaller than height
+      if (ctop > 0)
+        COMP_BDR(0, 0, wid, ctop);
 
-    if (hei > t) {
-      phei = min_i(hei - t, b);
+      body_height -= ctop;
+      if (body_height <= 0)
+        break;
 
       // bottom
-      if (phei > 0)
-        COMP_BDR(0, hei - phei, wid, phei);
+      // cbot = checked bottom
+      int cbot = min_i(body_height, b); // Make sure bottom margin is not too large
+      if (cbot > 0)
+        COMP_BDR(0, hei-cbot, wid, cbot);
 
-      phei = hei - t - phei;
-      if (phei > 0) {
-        int pwid = min_i(l, wid);
-        // left
-        if (pwid > 0)
-          COMP_BDR(0, t, pwid, phei);
+      body_height -= cbot; // Height of window exclude the margin
+      if (body_height <= 0)
+        break;
 
-        if (wid > l) {
-          pwid = min_i(wid - l, r);
+      // left
+      int body_width = wid;
+      int cleft = min_i(body_width, l);
+      if (cleft > 0)
+        COMP_BDR(0, ctop, cleft, body_height);
 
-          // right
-          if (pwid > 0)
-            COMP_BDR(wid - pwid, t, pwid, phei);
+      body_width -= cleft;
+      if (body_width <= 0)
+        break;
 
-          pwid = wid - l - pwid;
-          if (pwid > 0) {
-            // body
-            win_render(ps, w, l, t, pwid, phei, dopacity, reg_paint, pcache_reg, pict);
-          }
-        }
-      }
-    }
+      // right
+      int cright = min_i(body_width, r);
+      if (cright > 0)
+        COMP_BDR(wid - cright, ctop, cright, body_height);
+
+      body_width -= cright;
+      if (body_width <= 0)
+        break;
+
+      // body
+      paint_region(ps, w, cleft, ctop, body_width, body_height, dopacity, reg_paint, pict);
+    } while (0);
   }
 
 #undef COMP_BDR
@@ -1616,7 +1649,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
 #ifdef CONFIG_OPENGL
       case BKEND_GLX:
         glx_dim_dst(ps, x, y, wid, hei, ps->psglx->z - 0.7, dim_opacity,
-            reg_paint, pcache_reg);
+            reg_paint);
         break;
 #endif
       default:
@@ -1632,9 +1665,7 @@ win_paint_win(session_t *ps, win *w, XserverRegion reg_paint,
  */
 static void
 rebuild_screen_reg(session_t *ps) {
-  if (ps->screen_reg)
-    XFixesDestroyRegion(ps->dpy, ps->screen_reg);
-  ps->screen_reg = get_screen_region(ps);
+  get_screen_region(ps, &ps->screen_reg);
 }
 
 /**
@@ -1642,40 +1673,17 @@ rebuild_screen_reg(session_t *ps) {
  */
 static void
 rebuild_shadow_exclude_reg(session_t *ps) {
-  free_region(ps, &ps->shadow_exclude_reg);
-  XRectangle rect = geom_to_rect(ps, &ps->o.shadow_exclude_reg_geom, NULL);
-  ps->shadow_exclude_reg = rect_to_reg(ps, &rect);
+  bool ret = parse_geometry(ps, ps->o.shadow_exclude_reg_str,
+      &ps->shadow_exclude_reg);
+  if (!ret)
+    exit(1);
 }
 
-/**
- * Check if a region is empty.
- *
- * Keith Packard said this is slow:
- * http://lists.freedesktop.org/archives/xorg/2007-November/030467.html
- *
- * @param ps current session
- * @param region region to check for
- * @param pcache_rects a place to cache the dumped rectangles
- * @param ncache_nrects a place to cache the number of dumped rectangles
- */
-static inline bool
-is_region_empty(const session_t *ps, XserverRegion region,
-    reg_data_t *pcache_reg) {
-  int nrects = 0;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
-
-  if (pcache_reg) {
-    pcache_reg->rects = rects;
-    pcache_reg->nrects = nrects;
-  }
-  else
-    cxfree(rects);
-
-  return !nrects;
-}
-
+/// paint all windows
+/// region = ??
+/// region_real = the damage region
 static void
-paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t) {
+paint_all(session_t *ps, region_t *region, const region_t *region_real, win * const t) {
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   if (!region_real)
     region_real = region;
@@ -1683,21 +1691,17 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
 #ifdef DEBUG_REPAINT
   static struct timespec last_paint = { 0 };
 #endif
-  XserverRegion reg_paint = None, reg_tmp = None, reg_tmp2 = None;
+
+  if (!region)
+    region_real = region = &ps->screen_reg;
+  else
+    // Remove the damaged area out of screen
+    pixman_region32_intersect(region, region, &ps->screen_reg);
 
 #ifdef CONFIG_OPENGL
-  if (bkend_use_glx(ps)) {
-    glx_paint_pre(ps, &region);
-  }
+  if (bkend_use_glx(ps))
+    glx_paint_pre(ps, region);
 #endif
-
-  if (!region) {
-    region_real = region = get_screen_region(ps);
-  }
-  else {
-    // Remove the damaged area out of screen
-    XFixesIntersectRegion(ps->dpy, region, region, ps->screen_reg);
-  }
 
 #ifdef MONITOR_REPAINT
   // Note: MONITOR_REPAINT cannot work with DBE right now.
@@ -1729,8 +1733,9 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   }
 #endif
 
-  if (BKEND_XRENDER == ps->o.backend)
-    XFixesSetPictureClipRegion(ps->dpy, ps->tgt_picture, 0, 0, region_real);
+  if (BKEND_XRENDER == ps->o.backend) {
+    x_set_picture_clip_region(ps, ps->tgt_picture, 0, 0, region_real);
+  }
 
 #ifdef MONITOR_REPAINT
   switch (ps->o.backend) {
@@ -1748,138 +1753,89 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
   }
 #endif
 
-  if (t && t->reg_ignore) {
+  region_t reg_tmp, *reg_paint;
+  pixman_region32_init(&reg_tmp);
+  if (t) {
     // Calculate the region upon which the root window is to be painted
     // based on the ignore region of the lowest window, if available
-    reg_paint = reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
-    XFixesSubtractRegion(ps->dpy, reg_paint, region, t->reg_ignore);
+    pixman_region32_subtract(&reg_tmp, region, t->reg_ignore);
+    reg_paint = &reg_tmp;
   } else {
     reg_paint = region;
   }
 
-  set_tgt_clip(ps, reg_paint, NULL);
+  set_tgt_clip(ps, reg_paint);
   paint_root(ps, reg_paint);
 
-  // Create temporary regions for use during painting
-  if (!reg_tmp)
-    reg_tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
-  reg_tmp2 = XFixesCreateRegion(ps->dpy, NULL, 0);
-
+  // Windows are sorted from bottom to top
+  // Each window has a reg_ignore, which is the region obscured by all the windows
+  // on top of that window. This is used to reduce the number of pixels painted.
+  //
+  // Whether this is beneficial is to be determined XXX
   for (win *w = t; w; w = w->prev_trans) {
     // Painting shadow
     if (w->shadow) {
       // Lazy shadow building
-      if (!w->shadow_paint.pixmap) {
+      if (!w->shadow_paint.pixmap)
         if (!win_build_shadow(ps, w, 1))
           printf_errf("(): build shadow failed");
-      }
 
-      // Shadow is to be painted based on the ignore region of current
-      // window
-      if (w->reg_ignore) {
-        if (w == t) {
-          // If it's the first cycle and reg_tmp2 is not ready, calculate
-          // the paint region here
-          reg_paint = reg_tmp;
-          XFixesSubtractRegion(ps->dpy, reg_paint, region, w->reg_ignore);
-        }
-        else {
-          // Otherwise, used the cached region during last cycle
-          reg_paint = reg_tmp2;
-        }
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, w->extents);
-      }
-      else {
-        reg_paint = reg_tmp;
-        XFixesIntersectRegion(ps->dpy, reg_paint, region, w->extents);
-      }
+      // Shadow doesn't need to be painted underneath the body of the window
+      // Because no one can see it
+      pixman_region32_subtract(&reg_tmp, region, w->reg_ignore);
 
-      if (ps->shadow_exclude_reg)
-        XFixesSubtractRegion(ps->dpy, reg_paint, reg_paint,
-            ps->shadow_exclude_reg);
+      // Mask out the region we don't want shadow on
+      if (pixman_region32_not_empty(&ps->shadow_exclude_reg))
+        pixman_region32_subtract(&reg_tmp, &reg_tmp, &ps->shadow_exclude_reg);
 
-      // Might be worthwhile to crop the region to shadow border
-      {
-        XRectangle rec_shadow_border = {
-          .x = w->g.x + w->shadow_dx,
-          .y = w->g.y + w->shadow_dy,
-          .width = w->shadow_width,
-          .height = w->shadow_height
-        };
-        XserverRegion reg_shadow = XFixesCreateRegion(ps->dpy,
-            &rec_shadow_border, 1);
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, reg_shadow);
-        free_region(ps, &reg_shadow);
-      }
+      // Might be worth while to crop the region to shadow border
+      pixman_region32_intersect_rect(&reg_tmp, &reg_tmp,
+        w->g.x + w->shadow_dx, w->g.y + w->shadow_dy,
+        w->shadow_width, w->shadow_height);
 
-      // Clear the shadow here instead of in make_shadow() for saving GPU
-      // power and handling shaped windows
-      if (w->mode != WMODE_SOLID && w->border_size)
-        XFixesSubtractRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
+      // Mask out the body of the window from the shadow
+      // Doing it here instead of in make_shadow() for saving GPU
+      // power and handling shaped windows (XXX unconfirmed)
+      if (w->mode != WMODE_SOLID)
+        pixman_region32_subtract(&reg_tmp, &reg_tmp, &w->bounding_shape);
 
 #ifdef CONFIG_XINERAMA
       if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0)
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint,
-            ps->xinerama_scr_regs[w->xinerama_scr]);
+        pixman_region32_intersect(&reg_tmp, &reg_tmp,
+          &ps->xinerama_scr_regs[w->xinerama_scr]);
 #endif
 
       // Detect if the region is empty before painting
-      {
-        reg_data_t cache_reg = REG_DATA_INIT;
-        if (region == reg_paint
-            || !is_region_empty(ps, reg_paint, &cache_reg)) {
-          set_tgt_clip(ps, reg_paint, &cache_reg);
-
-          win_paint_shadow(ps, w, reg_paint, &cache_reg);
-        }
-        free_reg_data(&cache_reg);
+      if (pixman_region32_not_empty(&reg_tmp)) {
+        set_tgt_clip(ps, &reg_tmp);
+        win_paint_shadow(ps, w, &reg_tmp);
       }
     }
 
     // Calculate the region based on the reg_ignore of the next (higher)
     // window and the bounding region
-    reg_paint = reg_tmp;
-    if (w->prev_trans && w->prev_trans->reg_ignore) {
-      XFixesSubtractRegion(ps->dpy, reg_paint, region,
-          w->prev_trans->reg_ignore);
-      // Copy the subtracted region to be used for shadow painting in next
-      // cycle
-      XFixesCopyRegion(ps->dpy, reg_tmp2, reg_paint);
+    // XXX XXX
+    pixman_region32_subtract(&reg_tmp, region, w->reg_ignore);
+    pixman_region32_intersect(&reg_tmp, &reg_tmp, &w->bounding_shape);
 
-      if (w->border_size)
-        XFixesIntersectRegion(ps->dpy, reg_paint, reg_paint, w->border_size);
-    }
-    else {
-      if (w->border_size)
-        XFixesIntersectRegion(ps->dpy, reg_paint, region, w->border_size);
-      else
-        reg_paint = region;
-    }
-
-    {
-      reg_data_t cache_reg = REG_DATA_INIT;
-      if (!is_region_empty(ps, reg_paint, &cache_reg)) {
-        set_tgt_clip(ps, reg_paint, &cache_reg);
+    if (pixman_region32_not_empty(&reg_tmp)) {
+        set_tgt_clip(ps, &reg_tmp);
         // Blur window background
         if (w->blur_background && (!win_is_solid(ps, w)
-              || (ps->o.blur_background_frame && w->frame_opacity))) {
-          win_blur_background(ps, w, ps->tgt_buffer.pict, reg_paint, &cache_reg);
-        }
+            || (ps->o.blur_background_frame && w->frame_opacity != 1)))
+          win_blur_background(ps, w, ps->tgt_buffer.pict, &reg_tmp);
 
         // Painting the window
-        win_paint_win(ps, w, reg_paint, &cache_reg);
-      }
-      free_reg_data(&cache_reg);
+        paint_one(ps, w, &reg_tmp);
     }
   }
 
   // Free up all temporary regions
-  XFixesDestroyRegion(ps->dpy, reg_tmp);
-  XFixesDestroyRegion(ps->dpy, reg_tmp2);
+  pixman_region32_fini(&reg_tmp);
 
   // Do this as early as possible
   if (!ps->o.dbe)
-    set_tgt_clip(ps, None, NULL);
+    set_tgt_clip(ps, &ps->screen_reg);
 
   if (ps->o.vsync) {
     // Make sure all previous requests are processed to achieve best
@@ -1943,7 +1899,7 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
       glXWaitX();
       glx_render(ps, ps->tgt_buffer.ptex, 0, 0, 0, 0,
           ps->root_width, ps->root_height, 0, 1.0, false, false,
-          region_real, NULL, NULL);
+          region_real, NULL);
       // falls through
     case BKEND_GLX:
       glXSwapBuffers(ps->dpy, get_tgt_window(ps));
@@ -1965,8 +1921,6 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     glXWaitX();
   }
 #endif
-
-  XFixesDestroyRegion(ps->dpy, region);
 
 #ifdef DEBUG_REPAINT
   print_timestamp(ps);
@@ -1997,20 +1951,22 @@ repair_win(session_t *ps, win *w) {
   if (IsViewable != w->a.map_state)
     return;
 
-  XserverRegion parts;
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  region_t parts;
+  pixman_region32_init(&parts);
 
   if (!w->ever_damaged) {
-    parts = win_extents(ps, w);
+    win_extents(w, &parts);
     set_ignore_cookie(ps,
         xcb_damage_subtract(c, w->damage, XCB_NONE, XCB_NONE));
   } else {
-    parts = XFixesCreateRegion(ps->dpy, 0, 0);
+    XserverRegion tmp = XFixesCreateRegion(ps->dpy, NULL, 0);
     set_ignore_cookie(ps,
-        xcb_damage_subtract(c, w->damage, XCB_NONE, parts));
-    XFixesTranslateRegion(ps->dpy, parts,
+        xcb_damage_subtract(c, w->damage, XCB_NONE, tmp));
+    XFixesTranslateRegion(ps->dpy, tmp,
       w->g.x + w->g.border_width,
       w->g.y + w->g.border_width);
+    x_fetch_region(ps, tmp, &parts);
   }
 
   w->ever_damaged = true;
@@ -2019,15 +1975,16 @@ repair_win(session_t *ps, win *w) {
   // Why care about damage when screen is unredirected?
   // We will force full-screen repaint on redirection.
   if (!ps->redirected) {
-    free_region(ps, &parts);
+    pixman_region32_fini(&parts);
     return;
   }
 
   // Remove the part in the damage area that could be ignored
-  if (!ps->reg_ignore_expire && w->prev_trans && w->prev_trans->reg_ignore)
-    XFixesSubtractRegion(ps->dpy, parts, parts, w->prev_trans->reg_ignore);
+  if (w->reg_ignore && win_is_region_ignore_valid(ps, w))
+    pixman_region32_subtract(&parts, &parts, w->reg_ignore);
 
-  add_damage(ps, parts);
+  add_damage(ps, &parts);
+  pixman_region32_fini(&parts);
 }
 
 static void
@@ -2099,9 +2056,6 @@ map_win(session_t *ps, Window id) {
   printf_dbgf("(%#010lx): type %s\n", w->id, WINTYPES[w->window_type]);
 #endif
 
-  // Detect if the window is shaped or has rounded corners
-  win_update_shape_raw(ps, w);
-
   // FocusIn/Out may be ignored when the window is unmapped, so we must
   // recheck focus here
   if (ps->o.track_focus)
@@ -2133,9 +2087,8 @@ map_win(session_t *ps, Window id) {
   /* if any configure events happened while
      the window was unmapped, then configure
      the window to its correct place */
-  if (w->need_configure) {
+  if (w->need_configure)
     configure_win(ps, &w->queue_configure);
-  }
 
 #ifdef CONFIG_DBUS
   // Send D-Bus signal
@@ -2150,17 +2103,12 @@ finish_unmap_win(session_t *ps, win **_w) {
   win *w = *_w;
   w->ever_damaged = false;
   w->in_openclose = false;
+  w->reg_ignore_valid = false;
 
-  update_reg_ignore_expire(ps, w);
-
-  if (w->extents != None) {
-    /* destroys region */
-    add_damage(ps, w->extents);
-    w->extents = None;
-  }
+  /* damage region */
+  add_damage_from_win(ps, w);
 
   free_wpaint(ps, w);
-  free_region(ps, &w->border_size);
   free_paint(ps, &w->shadow_paint);
 }
 
@@ -2206,8 +2154,6 @@ static void
 restack_win(session_t *ps, win *w, Window new_above) {
   Window old_above;
 
-  update_reg_ignore_expire(ps, w);
-
   if (w->next) {
     old_above = w->next->id;
   } else {
@@ -2215,6 +2161,13 @@ restack_win(session_t *ps, win *w, Window new_above) {
   }
 
   if (old_above != new_above) {
+    w->reg_ignore_valid = false;
+    rc_region_unref(&w->reg_ignore);
+    if (w->next) {
+      w->next->reg_ignore_valid = false;
+      rc_region_unref(&w->next->reg_ignore);
+    }
+
     win **prev = NULL, **prev_old = NULL;
 
     // unhook
@@ -2299,6 +2252,10 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
       redir_start(ps);
     }
 
+    // Invalidate reg_ignore from the top
+    rc_region_unref(&ps->list->reg_ignore);
+    ps->list->reg_ignore_valid = false;
+
 #ifdef CONFIG_OPENGL
     // Reinitialize GLX on root change
     if (ps->o.glx_reinit_on_root_change && ps->psglx) {
@@ -2320,7 +2277,8 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
   // Other window changes
   win *w = find_win(ps, ce->window);
-  XserverRegion damage = None;
+  region_t damage;
+  pixman_region32_init(&damage);
 
   if (!w)
     return;
@@ -2331,30 +2289,20 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     w->queue_configure = *ce;
     restack_win(ps, w, ce->above_sibling);
   } else {
-    if (!(w->need_configure)) {
+    if (!w->need_configure)
       restack_win(ps, w, ce->above_sibling);
-    }
 
     bool factor_change = false;
 
-    // Windows restack (including window restacks happened when this
-    // window is not mapped) could mess up all reg_ignore
-    ps->reg_ignore_expire = true;
-
     w->need_configure = false;
+    win_extents(w, &damage);
 
-    damage = XFixesCreateRegion(ps->dpy, 0, 0);
-    if (w->extents != None) {
-      XFixesCopyRegion(ps->dpy, damage, w->extents);
-    }
-
-    // If window geometry did not change, don't free extents here
+    // If window geometry change, free old extents
     if (w->g.x != ce->x || w->g.y != ce->y
         || w->g.width != ce->width || w->g.height != ce->height
         || w->g.border_width != ce->border_width) {
       factor_change = true;
-      free_region(ps, &w->extents);
-      free_region(ps, &w->border_size);
+      pixman_region32_clear(&w->bounding_shape);
     }
 
     w->g.x = ce->x;
@@ -2370,25 +2318,23 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
       w->g.height = ce->height;
       w->g.border_width = ce->border_width;
       calc_win_size(ps, w);
-
-      // Rounded corner detection is affected by window size
-      if (ps->shape_exists && ps->o.shadow_ignore_shaped
-          && ps->o.detect_rounded_corners && w->bounding_shaped)
-        win_update_shape(ps, w);
+      win_update_bounding_shape(ps, w);
     }
 
-    if (damage) {
-      XserverRegion extents = win_extents(ps, w);
-      XFixesUnionRegion(ps->dpy, damage, damage, extents);
-      XFixesDestroyRegion(ps->dpy, extents);
-      add_damage(ps, damage);
-    }
+    region_t new_extents;
+    pixman_region32_init(&new_extents);
+    win_extents(w, &new_extents);
+    pixman_region32_union(&damage, &damage, &new_extents);
+    pixman_region32_fini(&new_extents);
 
     if (factor_change) {
+      add_damage(ps, &damage);
       cxinerama_win_upd_scr(ps, w);
       win_on_factor_change(ps, w);
     }
   }
+
+  pixman_region32_fini(&damage);
 
   // override_redirect flag cannot be changed after window creation, as far
   // as I know, so there's no point to re-match windows here.
@@ -2481,15 +2427,7 @@ static inline void
 root_damaged(session_t *ps) {
   if (ps->root_tile_paint.pixmap) {
     XClearArea(ps->dpy, ps->root, 0, 0, 0, 0, true);
-    // if (ps->root_picture != ps->root_tile) {
-      free_root_tile(ps);
-    /* }
-    if (root_damage) {
-      xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-      XserverRegion parts = XFixesCreateRegion(ps->dpy, 0, 0);
-      xcb_damage_subtract(c, root_damage, XCB_NONE, parts);
-      add_damage(ps, parts);
-    } */
+    free_root_tile(ps);
   }
 
   // Mark screen damaged
@@ -2616,22 +2554,20 @@ ev_xcb_error(session_t __attribute__((unused)) *ps, xcb_generic_error_t *err) {
 }
 
 static void
-expose_root(session_t *ps, XRectangle *rects, int nrects) {
+expose_root(session_t *ps, const rect_t *rects, int nrects) {
   free_all_damage_last(ps);
-  XserverRegion region = XFixesCreateRegion(ps->dpy, rects, nrects);
-  add_damage(ps, region);
+  region_t region;
+  pixman_region32_init_rects(&region, rects, nrects);
+  add_damage(ps, &region);
 }
 /**
  * Force a full-screen repaint.
  */
 void
 force_repaint(session_t *ps) {
-  assert(ps->screen_reg);
-  XserverRegion reg = None;
-  if (ps->screen_reg && (reg = copy_region(ps, ps->screen_reg))) {
-    ps->ev_received = true;
-    add_damage(ps, reg);
-  }
+  assert(pixman_region32_not_empty(&ps->screen_reg));
+  ps->ev_received = true;
+  add_damage(ps, &ps->screen_reg);
 }
 
 #ifdef CONFIG_DBUS
@@ -2963,18 +2899,18 @@ ev_expose(session_t *ps, xcb_expose_event_t *ev) {
     if (ps->n_expose == ps->size_expose) {
       if (ps->expose_rects) {
         ps->expose_rects = realloc(ps->expose_rects,
-          (ps->size_expose + more) * sizeof(XRectangle));
+          (ps->size_expose + more) * sizeof(rect_t));
         ps->size_expose += more;
       } else {
-        ps->expose_rects = malloc(more * sizeof(XRectangle));
+        ps->expose_rects = malloc(more * sizeof(rect_t));
         ps->size_expose = more;
       }
     }
 
-    ps->expose_rects[ps->n_expose].x = ev->x;
-    ps->expose_rects[ps->n_expose].y = ev->y;
-    ps->expose_rects[ps->n_expose].width = ev->width;
-    ps->expose_rects[ps->n_expose].height = ev->height;
+    ps->expose_rects[ps->n_expose].x1 = ev->x;
+    ps->expose_rects[ps->n_expose].y1 = ev->y;
+    ps->expose_rects[ps->n_expose].x2 = ev->x + ev->width;
+    ps->expose_rects[ps->n_expose].y2 = ev->y + ev->height;
     ps->n_expose++;
 
     if (ev->count == 0) {
@@ -3070,7 +3006,7 @@ ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
   if (ps->o.frame_opacity && ev->atom == ps->atom_frame_extents) {
     win *w = find_toplevel(ps, ev->window);
     if (w) {
-      win_get_frame_extents(ps, w, ev->window);
+      win_update_frame_extents(ps, w, ev->window);
       // If frame extents change, the window needs repaint
       add_damage_from_win(ps, w);
     }
@@ -3152,25 +3088,17 @@ ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) {
   if (!w || IsUnmapped == w->a.map_state) return;
 
   /*
-   * Empty border_size may indicated an
+   * Empty bounding_shape may indicated an
    * unmapped/destroyed window, in which case
    * seemingly BadRegion errors would be triggered
    * if we attempt to rebuild border_size
    */
-  if (w->border_size) {
-    // Mark the old border_size as damaged
-    add_damage(ps, w->border_size);
-
-    w->border_size = win_border_size(ps, w, true);
-
-    // Mark the new border_size as damaged
-    add_damage(ps, copy_region(ps, w->border_size));
-  }
-
-  // Redo bounding shape detection and rounded corner detection
-  win_update_shape(ps, w);
-
-  update_reg_ignore_expire(ps, w);
+  // Mark the old border_size as damaged
+  add_damage(ps, &w->bounding_shape);
+  win_update_bounding_shape(ps, w);
+  // Mark the new border_size as damaged
+  add_damage(ps, &w->bounding_shape);
+  w->reg_ignore_valid = false;
 }
 
 /**
@@ -4182,8 +4110,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       case 305:
         // --shadow-exclude-reg
-        if (!parse_geometry(ps, optarg, &ps->o.shadow_exclude_reg_geom))
-          exit(1);
+        ps->o.shadow_exclude_reg_str = strdup(optarg);
+        printf_err("--shadow-exclude-reg is deprecated.\n"
+                   "You are likely better off using --shadow-exclude anyway");
         break;
       case 306:
         // --paint-exclude
@@ -5106,6 +5035,7 @@ mainloop(session_t *ps) {
 static void
 cxinerama_upd_scrs(session_t *ps) {
 #ifdef CONFIG_XINERAMA
+  // XXX Consider deprecating Xinerama, switch to RandR when necessary
   free_xinerama_info(ps);
 
   if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists) return;
@@ -5132,9 +5062,7 @@ cxinerama_upd_scrs(session_t *ps) {
         * ps->xinerama_nscrs));
   for (int i = 0; i < ps->xinerama_nscrs; ++i) {
     const xcb_xinerama_screen_info_t * const s = &scrs[i];
-    XRectangle r = { .x = s->x_org, .y = s->y_org,
-      .width = s->width, .height = s->height };
-    ps->xinerama_scr_regs[i] = XFixesCreateRegion(ps->dpy, &r, 1);
+    pixman_region32_init_rect(&ps->xinerama_scr_regs[i], s->x_org, s->y_org, s->width, s->height);
   }
 #endif
 }
@@ -5161,7 +5089,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .overlay = None,
     .root_tile_fill = false,
     .root_tile_paint = PAINT_INIT,
-    .screen_reg = None,
     .tgt_picture = None,
     .tgt_buffer = PAINT_INIT,
     .root_dbe = None,
@@ -5223,7 +5150,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .inactive_opacity = OPAQUE,
       .inactive_opacity_override = false,
       .active_opacity = OPAQUE,
-      .frame_opacity = 0.0,
+      .frame_opacity = 1.0,
       .detect_client_opacity = false,
       .alpha_step = 0.03,
 
@@ -5254,12 +5181,9 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .nfds_max = 0,
     .tmout_lst = NULL,
 
-    .all_damage = None,
-    .all_damage_last = { None },
     .time_start = { 0, 0 },
     .redirected = false,
     .alpha_picts = NULL,
-    .reg_ignore_expire = false,
     .idling = false,
     .fade_time = 0L,
     .ignore_head = NULL,
@@ -5336,7 +5260,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Allocate a session and copy default values into it
   session_t *ps = malloc(sizeof(session_t));
-  memcpy(ps, &s_def, sizeof(session_t));
+  *ps = s_def;
+  pixman_region32_init(&ps->screen_reg);
+  pixman_region32_init(&ps->all_damage);
+  for (int i = 0; i < CGLX_MAX_BUFFER_AGE; i ++)
+    pixman_region32_init(&ps->all_damage_last[i]);
+
   ps_g = ps;
   ps->ignore_tail = &ps->ignore_head;
   gettimeofday(&ps->time_start, NULL);
@@ -5802,10 +5731,10 @@ session_destroy(session_t *ps) {
 
   // Free other X resources
   free_root_tile(ps);
-  free_region(ps, &ps->screen_reg);
-  free_region(ps, &ps->all_damage);
+  pixman_region32_fini(&ps->screen_reg);
+  pixman_region32_fini(&ps->all_damage);
   for (int i = 0; i < CGLX_MAX_BUFFER_AGE; ++i)
-    free_region(ps, &ps->all_damage_last[i]);
+    pixman_region32_fini(&ps->all_damage_last[i]);
   free(ps->expose_rects);
   free(ps->shadow_corner);
   free(ps->shadow_top);
@@ -5895,12 +5824,10 @@ session_run(session_t *ps) {
   if (ps->o.sw_opti)
     ps->paint_tm_offset = get_time_timeval().tv_usec;
 
-  ps->reg_ignore_expire = true;
-
   t = paint_preprocess(ps, ps->list);
 
   if (ps->redirected)
-    paint_all(ps, None, None, t);
+    paint_all(ps, NULL, NULL, t);
 
   // Initialize idling
   ps->idling = false;
@@ -5935,23 +5862,31 @@ session_run(session_t *ps) {
 
     // If the screen is unredirected, free all_damage to stop painting
     if (!ps->redirected || ON == ps->o.stoppaint_force)
-      free_region(ps, &ps->all_damage);
+      pixman_region32_clear(&ps->all_damage);
 
-    XserverRegion all_damage_orig = None;
-    if (ps->o.resize_damage > 0)
-      all_damage_orig = copy_region(ps, ps->all_damage);
-    resize_region(ps, ps->all_damage, ps->o.resize_damage);
-    if (ps->all_damage && !is_region_empty(ps, ps->all_damage, NULL)) {
+    if (pixman_region32_not_empty(&ps->all_damage)) {
+      region_t all_damage_orig, *region_real = NULL;
+      pixman_region32_init(&all_damage_orig);
+
+      // keep a copy of non-resized all_damage for region_real
+      if (ps->o.resize_damage > 0) {
+        copy_region(&all_damage_orig, &ps->all_damage);
+        resize_region(ps, &ps->all_damage, ps->o.resize_damage);
+        region_real = &all_damage_orig;
+      }
+
       static int paint = 0;
-      paint_all(ps, ps->all_damage, all_damage_orig, t);
-      ps->reg_ignore_expire = false;
+      paint_all(ps, &ps->all_damage, region_real, t);
+
+      pixman_region32_clear(&ps->all_damage);
+      pixman_region32_fini(&all_damage_orig);
+
       paint++;
       if (ps->o.benchmark && paint >= ps->o.benchmark)
         exit(0);
+
       XSync(ps->dpy, False);
-      ps->all_damage = None;
     }
-    free_region(ps, &all_damage_orig);
 
     if (ps->idling)
       ps->fade_time = 0L;

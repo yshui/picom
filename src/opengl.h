@@ -124,13 +124,13 @@ glx_hasglext(session_t *ps, const char *ext) {
 
 bool
 glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
-    GLfloat factor, XserverRegion reg_tgt, const reg_data_t *);
+    GLfloat factor, const region_t *reg_tgt);
 
 bool
 glx_render(session_t *ps, const glx_texture_t *ptex,
     int x, int y, int dx, int dy, int width, int height, int z,
     double opacity, bool argb, bool neg,
-    XserverRegion reg_tgt, const reg_data_t *,
+    const region_t *reg_tgt,
     const glx_prog_main_t *pprogram);
 
 bool
@@ -162,7 +162,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, Pixmap pixmap,
 void
 glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
 
-void glx_paint_pre(session_t *ps, XserverRegion *preg)
+void glx_paint_pre(session_t *ps, region_t *preg)
 __attribute__((nonnull(1, 2)));
 
 /**
@@ -175,13 +175,12 @@ glx_tex_binded(const glx_texture_t *ptex, Pixmap pixmap) {
 }
 
 void
-glx_set_clip(session_t *ps, XserverRegion reg, const reg_data_t *);
+glx_set_clip(session_t *ps, const region_t *reg);
 
 bool
 glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     GLfloat factor_center,
-    XserverRegion reg_tgt,
-    const reg_data_t *,
+    const region_t *reg_tgt,
     glx_blur_cache_t *pbc);
 
 GLuint

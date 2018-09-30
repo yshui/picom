@@ -11,12 +11,12 @@ RC_TYPE(region_t, rc_region, pixman_region32_init, pixman_region32_fini, static 
 
 /// copy a region_t
 static inline void
-copy_region_(region_t *dst, const region_t *p) {
+copy_region(region_t *dst, const region_t *p) {
   pixman_region32_copy(dst, (region_t *)p);
 }
 
 static inline void
-dump_region_(const region_t *x) {
+dump_region(const region_t *x) {
   int nrects;
   const rect_t *rects = pixman_region32_rectangles((region_t *)x, &nrects);
   fprintf(stderr, "nrects: %d\n", nrects);

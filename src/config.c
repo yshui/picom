@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "config.h"
+#include "utils.h"
 #include "c2.h"
 
 /**
@@ -201,19 +202,24 @@ parse_conv_kern_lst(session_t *ps, const char *src, xcb_render_fixed_t **dest, i
 
 /**
  * Parse a X geometry.
+ *
+ * ps->root_width and ps->root_height must be valid
  */
 bool
-parse_geometry(session_t *ps, const char *src, geometry_t *dest) {
+parse_geometry(session_t *ps, const char *src, region_t *dest) {
+  pixman_region32_clear(dest);
+  if (!src)
+    return true;
+  if (!ps->root_width || !ps->root_height)
+    return true;
+
   geometry_t geom = { .wid = -1, .hei = -1, .x = -1, .y = -1 };
   long val = 0L;
   char *endptr = NULL;
 
-#define T_STRIPSPACE() do { \
-  while (*src && isspace(*src)) ++src; \
-  if (!*src) goto parse_geometry_end; \
-} while(0)
-
-  T_STRIPSPACE();
+  src = skip_space(src);
+  if (!*src)
+    goto parse_geometry_end;
 
   // Parse width
   // Must be base 10, because "0x0..." may appear
@@ -221,10 +227,13 @@ parse_geometry(session_t *ps, const char *src, geometry_t *dest) {
     val = strtol(src, &endptr, 10);
     if (endptr && src != endptr) {
       geom.wid = val;
-      assert(geom.wid >= 0);
+      if (geom.wid < 0) {
+        printf_errf("(\"%s\"): Invalid width.", src);
+        return false;
+      }
       src = endptr;
     }
-    T_STRIPSPACE();
+    src = skip_space(src);
   }
 
   // Parse height
@@ -239,7 +248,7 @@ parse_geometry(session_t *ps, const char *src, geometry_t *dest) {
       }
       src = endptr;
     }
-    T_STRIPSPACE();
+    src = skip_space(src);
   }
 
   // Parse x
@@ -247,11 +256,11 @@ parse_geometry(session_t *ps, const char *src, geometry_t *dest) {
     val = strtol(src, &endptr, 10);
     if (endptr && src != endptr) {
       geom.x = val;
-      if ('-' == *src && geom.x <= 0)
-        geom.x -= 2;
+      if (*src == '-')
+        geom.x += ps->root_width - geom.wid;
       src = endptr;
     }
-    T_STRIPSPACE();
+    src = skip_space(src);
   }
 
   // Parse y
@@ -259,11 +268,11 @@ parse_geometry(session_t *ps, const char *src, geometry_t *dest) {
     val = strtol(src, &endptr, 10);
     if (endptr && src != endptr) {
       geom.y = val;
-      if ('-' == *src && geom.y <= 0)
-        geom.y -= 2;
+      if (*src == '-')
+        geom.y += ps->root_height - geom.hei;
       src = endptr;
     }
-    T_STRIPSPACE();
+    src = skip_space(src);
   }
 
   if (*src) {
@@ -272,7 +281,7 @@ parse_geometry(session_t *ps, const char *src, geometry_t *dest) {
   }
 
 parse_geometry_end:
-  *dest = geom;
+  pixman_region32_union_rect(dest, dest, geom.x, geom.y, geom.wid, geom.hei);
   return true;
 }
 

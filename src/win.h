@@ -1,7 +1,8 @@
 #pragma once
 #include <stdbool.h>
 #include <X11/Xlib.h>
-#include <X11/extensions/Xfixes.h>
+
+#include "x.h"
 
 typedef struct session session_t;
 typedef struct win win;
@@ -15,8 +16,6 @@ void win_determine_mode(session_t *ps, win *w);
  */
 void win_set_focused(session_t *ps, win *w, bool focused);
 void win_determine_fade(session_t *ps, win *w);
-void win_update_shape_raw(session_t *ps, win *w);
-void win_update_shape(session_t *ps, win *w);
 void win_update_prop_shadow_raw(session_t *ps, win *w);
 void win_update_prop_shadow(session_t *ps, win *w);
 void win_set_shadow(session_t *ps, win *w, bool shadow_new);
@@ -53,15 +52,15 @@ void win_update_focused(session_t *ps, win *w);
 /**
  * Retrieve the bounding shape of a window.
  */
-XserverRegion
-win_border_size(session_t *ps, win *w, bool use_offset);
+// XXX was win_border_size
+void win_update_bounding_shape(session_t *ps, win *w);
 /**
  * Get a rectangular region a window (and possibly its shadow) occupies.
  *
  * Note w->shadow and shadow geometry must be correct before calling this
  * function.
  */
-XserverRegion win_extents(session_t *ps, win *w);
+void win_extents(win *w, region_t *res);
 /**
  * Add a window to damaged area.
  *
@@ -71,19 +70,19 @@ XserverRegion win_extents(session_t *ps, win *w);
 void add_damage_from_win(session_t *ps, win *w);
 /**
  * Get a rectangular region a window occupies, excluding shadow.
+ *
+ * global = use global coordinates
  */
-XserverRegion
-win_get_region(session_t *ps, win *w, bool use_offset);
+void win_get_region(session_t *ps, win *w, bool global, region_t *);
 /**
  * Get a rectangular region a window occupies, excluding frame and shadow.
  */
-XserverRegion
-win_get_region_noframe(session_t *ps, win *w, bool use_offset);
+void win_get_region_noframe(session_t *ps, win *w, bool global, region_t *);
 /**
  * Retrieve frame extents from a window.
  */
 void
-win_get_frame_extents(session_t *ps, win *w, Window client);
+win_update_frame_extents(session_t *ps, win *w, Window client);
 bool add_win(session_t *ps, Window id, Window prev);
 
 /**
@@ -98,3 +97,6 @@ win_get_leader(session_t *ps, win *w) {
 
 /// check if window has ARGB visual
 bool win_has_alpha(win *w);
+
+/// check if reg_ignore_valid is true for all windows above us
+bool win_is_region_ignore_valid(session_t *ps, win *w);

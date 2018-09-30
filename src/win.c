@@ -1,5 +1,4 @@
 #include <X11/Xlib.h>
-#include <X11/extensions/Xfixes.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
 #include <xcb/xcb_renderutil.h>
@@ -75,36 +74,27 @@ group_is_focused(session_t *ps, Window leader) {
 /**
  * Get a rectangular region a window occupies, excluding shadow.
  */
-XserverRegion
-win_get_region(session_t *ps, win *w, bool use_offset) {
-  XRectangle r;
-
-  r.x = (use_offset ? w->g.x: 0);
-  r.y = (use_offset ? w->g.y: 0);
-  r.width = w->widthb;
-  r.height = w->heightb;
-
-  return XFixesCreateRegion(ps->dpy, &r, 1);
+void win_get_region(session_t *ps, win *w, bool global, region_t *res) {
+  pixman_region32_union_rect(res, res,
+      global ? w->g.x : 0,
+      global ? w->g.y : 0,
+      w->widthb, w->heightb);
 }
 
 
 /**
  * Get a rectangular region a window occupies, excluding frame and shadow.
  */
-XserverRegion
-win_get_region_noframe(session_t *ps, win *w, bool use_offset) {
+void win_get_region_noframe(session_t *ps, win *w, bool global, region_t *res) {
   const margin_t extents = win_calc_frame_extents(ps, w);
-  XRectangle r;
 
-  r.x = (use_offset ? w->g.x: 0) + extents.left;
-  r.y = (use_offset ? w->g.y: 0) + extents.top;
-  r.width = max_i(w->g.width - extents.left - extents.right, 0);
-  r.height = max_i(w->g.height - extents.top - extents.bottom, 0);
+  int x = (global ? w->g.x: 0) + extents.left;
+  int y = (global ? w->g.y: 0) + extents.top;
+  int width = max_i(w->g.width - extents.left - extents.right, 0);
+  int height = max_i(w->g.height - extents.top - extents.bottom, 0);
 
-  if (r.width > 0 && r.height > 0)
-    return XFixesCreateRegion(ps->dpy, &r, 1);
-  else
-    return XFixesCreateRegion(ps->dpy, NULL, 0);
+  if (width > 0 && height > 0)
+    pixman_region32_union_rect(res, res, x, y, width, height);
 }
 
 /**
@@ -114,13 +104,18 @@ win_get_region_noframe(session_t *ps, win *w, bool use_offset) {
  * @param w struct _win element representing the window
  */
 void add_damage_from_win(session_t *ps, win *w) {
-  if (w->extents) {
-    add_damage(ps, copy_region(ps, w->extents));
-  }
+  // XXX there was a cached extents region, investigate
+  //     if that's better
+  region_t extents;
+  pixman_region32_init(&extents);
+  win_extents(w, &extents);
+  add_damage(ps, &extents);
+  pixman_region32_fini(&extents);
 }
 
 /**
  * Check if a window has rounded corners.
+ * XXX This is really dumb
  */
 void win_rounded_corners(session_t *ps, win *w) {
   w->rounded_corners = false;
@@ -129,11 +124,11 @@ void win_rounded_corners(session_t *ps, win *w) {
     return;
 
   // Fetch its bounding region
-  if (!w->border_size)
-    w->border_size = win_border_size(ps, w, true);
+  if (!pixman_region32_not_empty(&w->bounding_shape))
+    win_update_bounding_shape(ps, w);
 
   // Quit if border_size() returns None
-  if (!w->border_size)
+  if (!pixman_region32_not_empty(&w->bounding_shape))
     return;
 
   // Determine the minimum width/height of a rectangle that could mark
@@ -144,20 +139,16 @@ void win_rounded_corners(session_t *ps, win *w) {
       w->heightb - ROUNDED_PIXELS);
 
   // Get the rectangles in the bounding region
-  int nrects = 0, i;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, w->border_size, &nrects);
-  if (!rects)
-    return;
+  int nrects = 0;
+  const rect_t *rects = pixman_region32_rectangles(&w->bounding_shape, &nrects);
 
   // Look for a rectangle large enough for this window be considered
   // having rounded corners
-  for (i = 0; i < nrects; ++i)
-    if (rects[i].width >= minwidth && rects[i].height >= minheight) {
+  for (int i = 0; i < nrects; ++i)
+    if (rects[i].x2 - rects[i].x1 >= minwidth && rects[i].y2 - rects[i].y1 >= minheight) {
       w->rounded_corners = true;
       break;
     }
-
-  cxfree(rects);
 }
 
 int win_get_name(session_t *ps, win *w) {
@@ -291,7 +282,7 @@ bool win_has_alpha(win *w) {
 void win_determine_mode(session_t *ps, win *w) {
   if (win_has_alpha(w) || w->opacity != OPAQUE) {
     w->mode = WMODE_TRANS;
-  } else if (w->frame_opacity) {
+  } else if (w->frame_opacity != 1.0) {
     w->mode = WMODE_FRAME_TRANS;
   } else {
     w->mode = WMODE_SOLID;
@@ -390,34 +381,6 @@ void win_determine_fade(session_t *ps, win *w) {
 }
 
 /**
- * Update window-shape.
- */
-void win_update_shape_raw(session_t *ps, win *w) {
-  if (ps->shape_exists) {
-    w->bounding_shaped = win_bounding_shaped(ps, w->id);
-    if (w->bounding_shaped && ps->o.detect_rounded_corners)
-      win_rounded_corners(ps, w);
-  }
-}
-
-/**
- * Update window-shape related information.
- */
-void win_update_shape(session_t *ps, win *w) {
-  if (ps->shape_exists) {
-    // bool bounding_shaped_old = w->bounding_shaped;
-
-    win_update_shape_raw(ps, w);
-
-    win_on_factor_change(ps, w);
-
-    // XXX Window shape changed, and if we didn't fill in the pixels
-    // behind the window (not implemented yet), we should rebuild
-    // the shadow_pict
-  }
-}
-
-/**
  * Reread _COMPTON_SHADOW property from a window.
  *
  * The property must be set on the outermost window, usually the WM frame.
@@ -452,22 +415,26 @@ void win_set_shadow(session_t *ps, win *w, bool shadow_new) {
   if (w->shadow == shadow_new)
     return;
 
+  region_t extents;
+  pixman_region32_init(&extents);
+  win_extents(w, &extents);
+
   w->shadow = shadow_new;
 
   // Window extents need update on shadow state change
   // Shadow geometry currently doesn't change on shadow state change
   // calc_shadow_geometry(ps, w);
-  if (w->extents) {
-    // Mark the old extents as damaged if the shadow is removed
-    if (!w->shadow)
-      add_damage(ps, w->extents);
-    else
-      free_region(ps, &w->extents);
-    w->extents = win_extents(ps, w);
-    // Mark the new extents as damaged if the shadow is added
-    if (w->shadow)
-      add_damage_from_win(ps, w);
+  // Mark the old extents as damaged if the shadow is removed
+  if (!w->shadow)
+    add_damage(ps, &extents);
+
+  pixman_region32_clear(&extents);
+  // Mark the new extents as damaged if the shadow is added
+  if (w->shadow) {
+    win_extents(w, &extents);
+    add_damage_from_win(ps, w);
   }
+  pixman_region32_fini(&extents);
 }
 
 /**
@@ -521,7 +488,7 @@ void win_set_blur_background(session_t *ps, win *w, bool blur_background_new) {
 
   // Only consider window damaged if it's previously painted with background
   // blurred
-  if (!win_is_solid(ps, w) || (ps->o.blur_background_frame && w->frame_opacity))
+  if (!win_is_solid(ps, w) || (ps->o.blur_background_frame && w->frame_opacity != 1))
     add_damage_from_win(ps, w);
 }
 
@@ -600,6 +567,7 @@ void win_on_factor_change(session_t *ps, win *w) {
   if (IsViewable == w->a.map_state && ps->o.unredir_if_possible_blacklist)
     w->unredir_if_possible_excluded = c2_match(
         ps, w, ps->o.unredir_if_possible_blacklist, &w->cache_uipblst);
+  w->reg_ignore_valid = false;
 }
 
 /**
@@ -610,6 +578,8 @@ void calc_win_size(session_t *ps, win *w) {
   w->heightb = w->g.height + w->g.border_width * 2;
   calc_shadow_geometry(ps, w);
   w->flags |= WFLAG_SIZE_CHANGE;
+  // Invalidate the shadow we built
+  free_paint(ps, &w->shadow_paint);
 }
 
 /**
@@ -670,8 +640,8 @@ void win_mark_client(session_t *ps, win *w, Window client) {
   win_upd_wintype(ps, w);
 
   // Get frame widths. The window is in damaged area already.
-  if (ps->o.frame_opacity)
-    win_get_frame_extents(ps, w, client);
+  if (ps->o.frame_opacity != 1)
+    win_update_frame_extents(ps, w, client);
 
   // Get window group
   if (ps->o.track_leader)
@@ -762,12 +732,12 @@ bool add_win(session_t *ps, Window id, Window prev) {
       .damage = None,
       .pixmap_damaged = false,
       .paint = PAINT_INIT,
-      .border_size = None,
-      .extents = None,
       .flags = 0,
       .need_configure = false,
       .queue_configure = {},
-      .reg_ignore = None,
+      .reg_ignore = NULL,
+      .reg_ignore_valid = false,
+
       .widthb = 0,
       .heightb = 0,
       .destroyed = false,
@@ -807,7 +777,7 @@ bool add_win(session_t *ps, Window id, Window prev) {
       .fade_force = UNSET,
       .fade_callback = NULL,
 
-      .frame_opacity = 0.0,
+      .frame_opacity = 1.0,
       .frame_extents = MARGIN_INIT,
 
       .shadow = false,
@@ -845,7 +815,8 @@ bool add_win(session_t *ps, Window id, Window prev) {
     return false;
   }
 
-  memcpy(new, &win_def, sizeof(win));
+  *new = win_def;
+  pixman_region32_init(&new->bounding_shape);
 
   // Find window insertion point
   win **p = NULL;
@@ -1154,51 +1125,26 @@ win_set_focused(session_t *ps, win *w, bool focused) {
  * Note w->shadow and shadow geometry must be correct before calling this
  * function.
  */
-XserverRegion win_extents(session_t *ps, win *w) {
-  XRectangle r;
+void win_extents(win *w, region_t *res) {
+  pixman_region32_clear(res);
+  pixman_region32_union_rect(res, res, w->g.x, w->g.y, w->widthb, w->heightb);
 
-  r.x = w->g.x;
-  r.y = w->g.y;
-  r.width = w->widthb;
-  r.height = w->heightb;
-
-  if (w->shadow) {
-    XRectangle sr;
-
-    sr.x = w->g.x + w->shadow_dx;
-    sr.y = w->g.y + w->shadow_dy;
-    sr.width = w->shadow_width;
-    sr.height = w->shadow_height;
-
-    if (sr.x < r.x) {
-      r.width = (r.x + r.width) - sr.x;
-      r.x = sr.x;
-    }
-
-    if (sr.y < r.y) {
-      r.height = (r.y + r.height) - sr.y;
-      r.y = sr.y;
-    }
-
-    if (sr.x + sr.width > r.x + r.width) {
-      r.width = sr.x + sr.width - r.x;
-    }
-
-    if (sr.y + sr.height > r.y + r.height) {
-      r.height = sr.y + sr.height - r.y;
-    }
-  }
-
-  return XFixesCreateRegion(ps->dpy, &r, 1);
+  if (w->shadow)
+    pixman_region32_union_rect(res, res, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy, w->shadow_width, w->shadow_height);
 }
 
 /**
- * Retrieve the bounding shape of a window.
+ * Update the out-dated bounding shape of a window.
+ *
+ * Mark the window shape as updated
  */
-XserverRegion
-win_border_size(session_t *ps, win *w, bool use_offset) {
+void win_update_bounding_shape(session_t *ps, win *w) {
+  if (ps->shape_exists)
+    w->bounding_shaped = win_bounding_shaped(ps, w->id);
+
+  pixman_region32_clear(&w->bounding_shape);
   // Start with the window rectangular region
-  XserverRegion fin = win_get_region(ps, w, use_offset);
+  win_get_region(ps, w, true, &w->bounding_shape);
 
   // Only request for a bounding region if the window is shaped
   if (w->bounding_shaped) {
@@ -1214,23 +1160,32 @@ win_border_size(session_t *ps, win *w, bool use_offset) {
       ps->dpy, w->id, WindowRegionBounding);
 
     if (!border)
-      return fin;
+      return;
 
-    if (use_offset) {
-      // Translate the region to the correct place
-      XFixesTranslateRegion(ps->dpy, border,
-        w->g.x + w->g.border_width,
-        w->g.y + w->g.border_width);
-    }
+    region_t br;
+    pixman_region32_init(&br);
+    x_fetch_region(ps, border, &br);
+
+    // Add border width because we are using a different origin.
+    // X thinks the top left of the inner window is the origin,
+    // We think the top left of the border is the origin
+    pixman_region32_translate(&br, w->g.x + w->g.border_width,
+      w->g.y + w->g.border_width);
 
     // Intersect the bounding region we got with the window rectangle, to
     // make sure the bounding region is not bigger than the window
     // rectangle
-    XFixesIntersectRegion(ps->dpy, fin, fin, border);
-    XFixesDestroyRegion(ps->dpy, border);
+    pixman_region32_intersect(&w->bounding_shape, &w->bounding_shape, &br);
+    pixman_region32_fini(&br);
   }
 
-  return fin;
+  if (w->bounding_shaped && ps->o.detect_rounded_corners)
+    win_rounded_corners(ps, w);
+
+  // XXX Window shape changed, and if we didn't fill in the pixels
+  // behind the window (not implemented yet), we should rebuild
+  // the shadow_pict
+  win_on_factor_change(ps, w);
 }
 
 /**
@@ -1258,21 +1213,25 @@ void win_update_opacity_prop(session_t *ps, win *w) {
  * Retrieve frame extents from a window.
  */
 void
-win_get_frame_extents(session_t *ps, win *w, Window client) {
-  cmemzero_one(&w->frame_extents);
-
+win_update_frame_extents(session_t *ps, win *w, Window client) {
   winprop_t prop = wid_get_prop(ps, client, ps->atom_frame_extents,
     4L, XA_CARDINAL, 32);
 
-  if (4 == prop.nitems) {
+  if (prop.nitems == 4) {
     const long * const extents = prop.data.p32;
+    const bool changed = w->frame_extents.left != extents[0] ||
+                         w->frame_extents.right != extents[1] ||
+                         w->frame_extents.top != extents[2] ||
+                         w->frame_extents.bottom != extents[3];
     w->frame_extents.left = extents[0];
     w->frame_extents.right = extents[1];
     w->frame_extents.top = extents[2];
     w->frame_extents.bottom = extents[3];
 
-    if (ps->o.frame_opacity)
-      update_reg_ignore_expire(ps, w);
+    // If frame_opacity != 1, then frame of this window
+    // is not included in reg_ignore of underneath windows
+    if (ps->o.frame_opacity == 1 && changed)
+      w->reg_ignore_valid = false;
   }
 
 #ifdef DEBUG_FRAME
@@ -1282,4 +1241,14 @@ win_get_frame_extents(session_t *ps, win *w, Window client) {
 #endif
 
   free_winprop(&prop);
+}
+
+bool win_is_region_ignore_valid(session_t *ps, win *w) {
+  for(win *i = ps->list; w; w = w->next) {
+    if (i == w)
+      break;
+    if (!i->reg_ignore_valid)
+      return false;
+  }
+  return true;
 }

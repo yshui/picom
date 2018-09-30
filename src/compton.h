@@ -25,10 +25,12 @@
 #include <errno.h>
 #endif
 
+#include <pixman.h>
 #ifdef CONFIG_OPENGL
-#include "opengl.h"
+#include "opengl.h" // XXX clean up
 #endif
 #include "common.h"
+#include "x.h"
 #include "c2.h"
 
 // == Functions ==
@@ -38,7 +40,7 @@
 // inline functions must be made static to compile correctly under clang:
 // http://clang.llvm.org/compatibility.html#inline
 
-void add_damage(session_t *ps, XserverRegion damage);
+void add_damage(session_t *ps, const region_t *damage);
 
 long determine_evmask(session_t *ps, Window wid, win_evmode_t mode);
 
@@ -53,9 +55,7 @@ void
 render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     double opacity, bool argb, bool neg,
     xcb_render_picture_t pict, glx_texture_t *ptex,
-    XserverRegion reg_paint, const reg_data_t *pcache_reg
-    , const glx_prog_main_t *pprogram
-    );
+    const region_t *reg_paint, const glx_prog_main_t *pprogram);
 
 /**
  * Reset filter on a <code>Picture</code>.
@@ -109,41 +109,6 @@ array_wid_exists(const Window *arr, int count, Window wid) {
 }
 
 /**
- * Convert a geometry_t value to XRectangle.
- */
-static inline XRectangle
-geom_to_rect(session_t *ps, const geometry_t *src, const XRectangle *def) {
-  XRectangle rect_def = { .x = 0, .y = 0,
-    .width = ps->root_width, .height = ps->root_height };
-  if (!def) def = &rect_def;
-
-  XRectangle rect = { .x = src->x, .y = src->y,
-    .width = src->wid, .height = src->hei };
-  if (src->wid < 0) rect.width = def->width;
-  if (src->hei < 0) rect.height = def->height;
-  if (-1 == src->x) rect.x = def->x;
-  else if (src->x < 0) rect.x = ps->root_width + rect.x + 2 - rect.width;
-  if (-1 == src->y) rect.y = def->y;
-  else if (src->y < 0) rect.y = ps->root_height + rect.y + 2 - rect.height;
-  return rect;
-}
-
-/**
- * Convert a XRectangle to a XServerRegion.
- */
-static inline XserverRegion
-rect_to_reg(session_t *ps, const XRectangle *src) {
-  if (!src) return None;
-  XRectangle bound = { .x = 0, .y = 0,
-    .width = ps->root_width, .height = ps->root_height };
-  XRectangle res = { };
-  rect_crop(&res, src, &bound);
-  if (res.width && res.height)
-    return XFixesCreateRegion(ps->dpy, &res, 1);
-  return None;
-}
-
-/**
  * Destroy a <code>Picture</code>.
  */
 inline static void
@@ -185,7 +150,7 @@ free_xinerama_info(session_t *ps) {
 #ifdef CONFIG_XINERAMA
   if (ps->xinerama_scr_regs) {
     for (int i = 0; i < ps->xinerama_nscrs; ++i)
-      free_region(ps, &ps->xinerama_scr_regs[i]);
+      pixman_region32_fini(&ps->xinerama_scr_regs[i]);
     free(ps->xinerama_scr_regs);
   }
   cxfree(ps->xinerama_scrs);
@@ -228,16 +193,6 @@ free_texture(session_t *ps, glx_texture_t **t) {
 #endif
 
 /**
- * Free data in a reg_data_t.
- */
-static inline void
-free_reg_data(reg_data_t *pregd) {
-  cxfree(pregd->rects);
-  pregd->rects = NULL;
-  pregd->nrects = 0;
-}
-
-/**
  * Free paint_t.
  */
 static inline void
@@ -262,12 +217,11 @@ free_wpaint(session_t *ps, win *w) {
 static inline void
 free_win_res(session_t *ps, win *w) {
   free_win_res_glx(ps, w);
-  free_region(ps, &w->extents);
   free_paint(ps, &w->paint);
-  free_region(ps, &w->border_size);
+  pixman_region32_fini(&w->bounding_shape);
   free_paint(ps, &w->shadow_paint);
   free_damage(ps, &w->damage);
-  free_region(ps, &w->reg_ignore);
+  rc_region_unref(&w->reg_ignore);
   free(w->name);
   free(w->class_instance);
   free(w->class_general);
@@ -390,16 +344,6 @@ wid_get_children(session_t *ps, Window w,
 }
 
 /**
- * Determine if a window change affects <code>reg_ignore</code> and set
- * <code>reg_ignore_expire</code> accordingly.
- */
-static inline void
-update_reg_ignore_expire(session_t *ps, const win *w) {
-  if (w->to_paint && WMODE_SOLID == w->mode)
-    ps->reg_ignore_expire = true;
-}
-
-/**
  * Check whether a window has WM frames.
  */
 static inline bool __attribute__((pure))
@@ -482,38 +426,6 @@ find_win_all(session_t *ps, const Window wid) {
   return w;
 }
 
-bool win_has_alpha(win *);
-static inline void
-win_render(session_t *ps, win *w, int x, int y, int wid, int hei,
-    double opacity, XserverRegion reg_paint, const reg_data_t *pcache_reg,
-    xcb_render_picture_t pict) {
-  const int dx = (w ? w->g.x: 0) + x;
-  const int dy = (w ? w->g.y: 0) + y;
-  const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
-  const bool neg = (w && w->invert_color);
-
-  render(ps, x, y, dx, dy, wid, hei, opacity, argb, neg,
-      pict, (w ? w->paint.ptex: ps->root_tile_paint.ptex),
-      reg_paint, pcache_reg, (w ? &ps->o.glx_prog_win: NULL));
-}
-
-static inline void
-set_tgt_clip(session_t *ps, XserverRegion reg, const reg_data_t *pcache_reg) {
-  switch (ps->o.backend) {
-    case BKEND_XRENDER:
-    case BKEND_XR_GLX_HYBRID:
-      XFixesSetPictureClipRegion(ps->dpy, ps->tgt_buffer.pict, 0, 0, reg);
-      break;
-#ifdef CONFIG_OPENGL
-    case BKEND_GLX:
-      glx_set_clip(ps, reg, pcache_reg);
-      break;
-#endif
-    default:
-      assert(false);
-  }
-}
-
 /**
  * Normalize a convolution kernel.
  */
@@ -528,84 +440,35 @@ normalize_conv_kern(int wid, int hei, xcb_render_fixed_t *kern) {
 }
 
 /**
- * Get a region of the screen size.
- */
-inline static XserverRegion
-get_screen_region(session_t *ps) {
-  XRectangle r;
-
-  r.x = 0;
-  r.y = 0;
-  r.width = ps->root_width;
-  r.height = ps->root_height;
-  return XFixesCreateRegion(ps->dpy, &r, 1);
-}
-
-/**
  * Resize a region.
  */
 static inline void
-resize_region(session_t *ps, XserverRegion region, short mod) {
+resize_region(session_t *ps, region_t *region, short mod) {
   if (!mod || !region) return;
-
-  int nrects = 0, nnewrects = 0;
-  XRectangle *newrects = NULL;
-  XRectangle *rects = XFixesFetchRegion(ps->dpy, region, &nrects);
-  if (!rects || !nrects)
-    goto resize_region_end;
-
-  // Allocate memory for new rectangle list, because I don't know if it's
-  // safe to write in the memory Xlib allocates
-  newrects = calloc(nrects, sizeof(XRectangle));
-  if (!newrects) {
-    printf_errf("(): Failed to allocate memory.");
-    exit(1);
-  }
-
   // Loop through all rectangles
-  for (int i = 0; i < nrects; ++i) {
-    int x1 = max_i(rects[i].x - mod, 0);
-    int y1 = max_i(rects[i].y - mod, 0);
-    int x2 = min_i(rects[i].x + rects[i].width + mod, ps->root_width);
-    int y2 = min_i(rects[i].y + rects[i].height + mod, ps->root_height);
+  int nrects;
+  int nnewrects = 0;
+  pixman_box32_t *rects = pixman_region32_rectangles(region, &nrects);
+  pixman_box32_t *newrects = calloc(nrects, sizeof *newrects);
+  for (int i = 0; i < nrects; i++) {
+    int x1 = max_i(rects[i].x1 - mod, 0);
+    int y1 = max_i(rects[i].y1 - mod, 0);
+    int x2 = min_i(rects[i].x2 + mod, ps->root_width);
+    int y2 = min_i(rects[i].y2 + mod, ps->root_height);
     int wid = x2 - x1;
     int hei = y2 - y1;
     if (wid <= 0 || hei <= 0)
       continue;
-    newrects[nnewrects].x = x1;
-    newrects[nnewrects].y = y1;
-    newrects[nnewrects].width = wid;
-    newrects[nnewrects].height = hei;
+    newrects[nnewrects] = (pixman_box32_t) {
+      .x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2
+    };
     ++nnewrects;
   }
 
-  // Set region
-  XFixesSetRegion(ps->dpy, region, newrects, nnewrects);
+  pixman_region32_fini(region);
+  pixman_region32_init_rects(region, newrects, nnewrects);
 
-resize_region_end:
-  cxfree(rects);
   free(newrects);
-}
-
-/**
- * Dump a region.
- */
-static inline void
-dump_region(const session_t *ps, XserverRegion region) {
-  int nrects = 0;
-  XRectangle *rects = NULL;
-  if (!rects && region)
-    rects = XFixesFetchRegion(ps->dpy, region, &nrects);
-
-  printf_dbgf("(%#010lx): %d rects\n", region, nrects);
-  if (!rects) return;
-  for (int i = 0; i < nrects; ++i)
-    printf("Rect #%d: %8d, %8d, %8d, %8d\n", i, rects[i].x, rects[i].y,
-        rects[i].width, rects[i].height);
-  putchar('\n');
-  fflush(stdout);
-
-  cxfree(rects);
 }
 
 #ifdef CONFIG_OPENGL
