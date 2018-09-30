@@ -2,7 +2,7 @@
 #define COMPTON_XRESCHECK_H
 
 #include "common.h"
-#include <uthash.h>
+#include "uthash.h"
 
 typedef struct {
   XID xid;
@@ -45,11 +45,10 @@ xcb_create_pixmap_(xcb_connection_t *c, uint8_t depth, xcb_pixmap_t pixmap,
 #define xcb_create_pixmap(c, depth, pixmap, drawable, width, height) \
   xcb_create_pixmap_(c, depth, pixmap, drawable, width, height, M_POS_DATA)
 
-static inline xcb_pixmap_t
+static inline xcb_void_cookie_t
 xcb_composite_name_window_pixmap_(xcb_connection_t *c, xcb_window_t window, xcb_pixmap_t pixmap, M_POS_DATA_PARAMS) {
-  xcb_pixmap_t ret = xcb_composite_name_window_pixmap(c, window, pixmap);
-  if (ret)
-    xrc_add_xid_(ret, "PixmapC", M_POS_DATA_PASSTHROUGH);
+  xcb_void_cookie_t ret = xcb_composite_name_window_pixmap(c, window, pixmap);
+  xrc_add_xid_(pixmap, "PixmapC", M_POS_DATA_PASSTHROUGH);
   return ret;
 }
 
