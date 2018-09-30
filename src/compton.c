@@ -628,10 +628,8 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
     return None;
   }
 
-  shadow_pixmap = xcb_generate_id(c);
-  shadow_pixmap_argb = xcb_generate_id(c);
-  xcb_create_pixmap(c, 8, shadow_pixmap, ps->root, shadow_image->width, shadow_image->height);
-  xcb_create_pixmap(c, 32, shadow_pixmap_argb, ps->root, shadow_image->width, shadow_image->height);
+  shadow_pixmap = create_pixmap(ps, 8, ps->root, shadow_image->width, shadow_image->height);
+  shadow_pixmap_argb = create_pixmap(ps, 32, ps->root, shadow_image->width, shadow_image->height);
 
   if (!shadow_pixmap || !shadow_pixmap_argb) {
     printf_errf("(): failed to create shadow pixmaps");
@@ -701,9 +699,8 @@ solid_picture(session_t *ps, bool argb, double a,
   xcb_rectangle_t rect;
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
-  pixmap = xcb_generate_id(c);
+  pixmap = create_pixmap(ps, argb ? 32 : 8, ps->root, 1, 1);
   if (!pixmap) return None;
-  xcb_create_pixmap(c, argb ? 32 : 8, pixmap, ps->root, 1, 1);
 
   pa.repeat = True;
   picture = x_create_picture_with_standard_and_pixmap(ps,
@@ -892,8 +889,11 @@ get_root_tile(session_t *ps) {
 
   // Create a pixmap if there isn't any
   if (!pixmap) {
-    pixmap = xcb_generate_id(c);
-    xcb_create_pixmap(c, ps->depth, pixmap, ps->root, 1, 1);
+    pixmap = create_pixmap(ps, ps->depth, ps->root, 1, 1);
+    if (pixmap == XCB_NONE) {
+      fprintf(stderr, "Failed to create some pixmap\n");
+      exit(1);
+    }
     fill = true;
   }
 
@@ -1710,9 +1710,11 @@ paint_all(session_t *ps, XserverRegion region, XserverRegion region_real, win *t
     else {
       if (!ps->tgt_buffer.pixmap) {
         free_paint(ps, &ps->tgt_buffer);
-        ps->tgt_buffer.pixmap = xcb_generate_id(c);
-        xcb_create_pixmap(c, ps->depth, ps->tgt_buffer.pixmap,
-            ps->root, ps->root_width, ps->root_height);
+        ps->tgt_buffer.pixmap = create_pixmap(ps, ps->depth, ps->root, ps->root_width, ps->root_height);
+        if (ps->tgt_buffer.pixmap == XCB_NONE) {
+          fprintf(stderr, "Failed to allocate a screen-sized pixmap\n");
+          exit(1);
+        }
       }
 
       if (BKEND_GLX != ps->o.backend)
@@ -2612,7 +2614,7 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
 /**
  * XCB error handler function.
  */
-inline static void
+void
 ev_xcb_error(session_t __attribute__((unused)) *ps, xcb_generic_error_t *err) {
   xerror_common(err->sequence, err->major_code, err->minor_code, err->error_code);
 }
