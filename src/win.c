@@ -1150,21 +1150,24 @@ void win_update_bounding_shape(session_t *ps, win *w) {
   if (w->bounding_shaped) {
     /*
      * if window doesn't exist anymore,  this will generate an error
-     * as well as not generate a region.  Perhaps a better XFixes
-     * architecture would be to have a request that copies instead
-     * of creates, that way you'd just end up with an empty region
-     * instead of an invalid XID.
+     * as well as not generate a region.
      */
 
-    XserverRegion border = XFixesCreateRegionFromWindow(
-      ps->dpy, w->id, WindowRegionBounding);
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_shape_get_rectangles_reply_t *r = xcb_shape_get_rectangles_reply(c,
+        xcb_shape_get_rectangles(c, w->id, XCB_SHAPE_SK_BOUNDING), NULL);
 
-    if (!border)
+    if (!r)
       return;
 
+    xcb_rectangle_t *xrects = xcb_shape_get_rectangles_rectangles(r);
+    int nrects = xcb_shape_get_rectangles_rectangles_length(r);
+    rect_t *rects = from_x_rects(nrects, xrects);
+    free(r);
+
     region_t br;
-    pixman_region32_init(&br);
-    x_fetch_region(ps, border, &br);
+    pixman_region32_init_rects(&br, rects, nrects);
+    free(rects);
 
     // Add border width because we are using a different origin.
     // X thinks the top left of the inner window is the origin,
