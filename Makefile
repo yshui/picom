@@ -113,9 +113,11 @@ else ifeq "$(BUILD_TYPE)" "Debug"
 endif
 
 ifeq "$(ENABLE_SAN)" "1"
-  CFG += -fsanitize=address,undefined
-else ifeq "$(ENABLE_SAN)" "thread"
-  CFG += -fsanitize=thread
+  ifeq "$(CC)" "clang"
+    CFG += -fsanitize=address,undefined,integer,nullability
+  else
+    CFG += -fsanitize=address,undefined
+  endif
 else ifeq "$(ENABLE_SAN)" "memory"
   CFG += -fsanitize=memory
 endif
