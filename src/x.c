@@ -213,7 +213,7 @@ x_create_picture(session_t *ps, int wid, int hei,
   return picture;
 }
 
-bool x_fetch_region(session_t *ps, XserverRegion r, pixman_region32_t *res) {
+bool x_fetch_region(session_t *ps, xcb_xfixes_region_t r, pixman_region32_t *res) {
   xcb_generic_error_t *e = NULL;
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   xcb_xfixes_fetch_region_reply_t *xr = xcb_xfixes_fetch_region_reply(c,

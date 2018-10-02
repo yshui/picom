@@ -1313,7 +1313,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
     xrfilter_reset(ps, src_pict);
 
     {
-      XserverRegion tmp = src_pict;
+      xcb_xfixes_region_t tmp = src_pict;
       src_pict = dst_pict;
       dst_pict = tmp;
     }
@@ -4957,7 +4957,7 @@ cxinerama_upd_scrs(session_t *ps) {
   xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
   ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
 
-  ps->xinerama_scr_regs = allocchk(malloc(sizeof(XserverRegion *)
+  ps->xinerama_scr_regs = allocchk(malloc(sizeof(xcb_xfixes_region_t *)
         * ps->xinerama_nscrs));
   for (int i = 0; i < ps->xinerama_nscrs; ++i) {
     const xcb_xinerama_screen_info_t * const s = &scrs[i];
