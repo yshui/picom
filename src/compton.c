@@ -3064,7 +3064,7 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
   }
 
 #ifdef DEBUG_EVENTS
-  if (ev->response_type == ps->damage_event + XCB_DAMAGE_NOTIFY) {
+  if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
     Window wid = ev_window(ps, ev);
     char *window_name = NULL;
     ev_window_name(ps, wid, &window_name);
