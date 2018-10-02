@@ -63,7 +63,7 @@ Window
 wid_get_prop_window(session_t *ps, Window wid, Atom aprop) {
   // Get the attribute
   Window p = None;
-  winprop_t prop = wid_get_prop(ps, wid, aprop, 1L, XA_WINDOW, 32);
+  winprop_t prop = wid_get_prop(ps, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
 
   // Return it
   if (prop.nitems) {

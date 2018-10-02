@@ -81,7 +81,6 @@
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include <X11/Xatom.h>
 #include <X11/extensions/Xdbe.h>
 #ifdef CONFIG_XSYNC
 #include <X11/extensions/sync.h>
