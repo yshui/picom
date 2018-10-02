@@ -491,11 +491,6 @@ ensure_glx_context(session_t *ps) {
 }
 #endif
 
-static inline time_ms_t
-timeout_get_newrun(const timeout_t *ptmout) {
-  return ptmout->firstrun + (max_l((ptmout->lastrun + (time_ms_t) (ptmout->interval * TIMEOUT_RUN_TOLERANCE) - ptmout->firstrun) / ptmout->interval, (ptmout->lastrun + (time_ms_t) (ptmout->interval * (1 - TIMEOUT_RUN_TOLERANCE)) - ptmout->firstrun) / ptmout->interval) + 1) * ptmout->interval;
-}
-
 /**
  * Get the Xinerama screen a window is on.
  *

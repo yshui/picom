@@ -10,6 +10,27 @@
 
 #include "dbus.h"
 
+static DBusHandlerResult
+cdbus_process(DBusConnection *conn, DBusMessage *m, void *);
+
+static dbus_bool_t
+cdbus_callback_add_timeout(DBusTimeout *timeout, void *data);
+
+static void
+cdbus_callback_remove_timeout(DBusTimeout *timeout, void *data);
+
+static void
+cdbus_callback_timeout_toggled(DBusTimeout *timeout, void *data);
+
+static dbus_bool_t
+cdbus_callback_add_watch(DBusWatch *watch, void *data);
+
+static void
+cdbus_callback_remove_watch(DBusWatch *watch, void *data);
+
+static void
+cdbus_callback_watch_toggled(DBusWatch *watch, void *data);
+
 /**
  * Initialize D-Bus connection.
  */
@@ -84,7 +105,7 @@ cdbus_init(session_t *ps) {
     dbus_error_free(&err);
     return false;
   }
-
+  dbus_connection_add_filter(ps->dbus_conn, cdbus_process, ps, NULL);
   return true;
 }
 
@@ -117,6 +138,20 @@ cdbus_destroy(session_t *ps) {
  */
 ///@{
 
+typedef struct ev_dbus_timer {
+  ev_timer w;
+  DBusTimeout *t;
+} ev_dbus_timer;
+
+/**
+ * Callback for handling a D-Bus timeout.
+ */
+static void
+cdbus_callback_handle_timeout(EV_P_ ev_timer *w, int revents) {
+  ev_dbus_timer *t = (void *)w;
+  dbus_timeout_handle(t->t);
+}
+
 /**
  * Callback for adding D-Bus timeout.
  */
@@ -124,12 +159,16 @@ static dbus_bool_t
 cdbus_callback_add_timeout(DBusTimeout *timeout, void *data) {
   session_t *ps = data;
 
-  timeout_t *ptmout = timeout_insert(ps, dbus_timeout_get_interval(timeout),
-      cdbus_callback_handle_timeout, timeout);
-  if (ptmout)
-    dbus_timeout_set_data(timeout, ptmout, NULL);
+  ev_dbus_timer *t = calloc(1, sizeof *t);
+  double i = dbus_timeout_get_interval(timeout) / 1000.0;
+  ev_timer_init(&t->w, cdbus_callback_handle_timeout, i, i);
+  t->t = timeout;
+  dbus_timeout_set_data(timeout, t, NULL);
 
-  return (bool) ptmout;
+  if (dbus_timeout_get_enabled(timeout))
+    ev_timer_start(ps->loop, &t->w);
+
+  return true;
 }
 
 /**
@@ -139,10 +178,10 @@ static void
 cdbus_callback_remove_timeout(DBusTimeout *timeout, void *data) {
   session_t *ps = data;
 
-  timeout_t *ptmout = dbus_timeout_get_data(timeout);
-  assert(ptmout);
-  if (ptmout)
-    timeout_drop(ps, ptmout);
+  ev_dbus_timer *t = dbus_timeout_get_data(timeout);
+  assert(t);
+  ev_timer_stop(ps->loop, &t->w);
+  free(t);
 }
 
 /**
@@ -150,27 +189,16 @@ cdbus_callback_remove_timeout(DBusTimeout *timeout, void *data) {
  */
 static void
 cdbus_callback_timeout_toggled(DBusTimeout *timeout, void *data) {
-  timeout_t *ptmout = dbus_timeout_get_data(timeout);
+  session_t *ps = data;
+  ev_dbus_timer *t = dbus_timeout_get_data(timeout);
 
-  assert(ptmout);
-  if (ptmout) {
-    ptmout->enabled = dbus_timeout_get_enabled(timeout);
-    // Refresh interval as libdbus doc says: "Whenever a timeout is toggled,
-    // its interval may change."
-    ptmout->interval = dbus_timeout_get_interval(timeout);
+  assert(t);
+  ev_timer_stop(ps->loop, &t->w);
+  if (dbus_timeout_get_enabled(timeout)) {
+    double i = dbus_timeout_get_interval(timeout) / 1000.0;
+    ev_timer_set(&t->w, i, i);
+    ev_timer_start(ps->loop, &t->w);
   }
-}
-
-/**
- * Callback for handling a D-Bus timeout.
- */
-static bool
-cdbus_callback_handle_timeout(session_t *ps, timeout_t *ptmout) {
-  assert(ptmout && ptmout->data);
-  if (ptmout && ptmout->data)
-    return dbus_timeout_handle(ptmout->data);
-
-  return false;
 }
 
 ///@}
@@ -179,23 +207,59 @@ cdbus_callback_handle_timeout(session_t *ps, timeout_t *ptmout) {
  */
 ///@{
 
+typedef struct ev_dbus_io {
+  ev_io w;
+  session_t *ps;
+  DBusWatch *dw;
+} ev_dbus_io;
+
+void cdbus_io_callback(EV_P_ ev_io *w, int revents) {
+  ev_dbus_io *dw = (void *)w;
+  DBusWatchFlags flags = 0;
+  if (revents & EV_READ)
+    flags |= DBUS_WATCH_READABLE;
+  if (revents & EV_WRITE)
+    flags |= DBUS_WATCH_WRITABLE;
+  dbus_watch_handle(dw->dw, flags);
+  while (dbus_connection_dispatch(dw->ps->dbus_conn) != DBUS_DISPATCH_COMPLETE);
+}
+
+/**
+ * Determine the poll condition of a DBusWatch.
+ */
+static inline int
+cdbus_get_watch_cond(DBusWatch *watch) {
+  const unsigned flags = dbus_watch_get_flags(watch);
+  int condition = 0;
+  if (flags & DBUS_WATCH_READABLE)
+    condition |= EV_READ;
+  if (flags & DBUS_WATCH_WRITABLE)
+    condition |= EV_WRITE;
+
+  return condition;
+}
+
 /**
  * Callback for adding D-Bus watch.
  */
 static dbus_bool_t
 cdbus_callback_add_watch(DBusWatch *watch, void *data) {
-  // Leave disabled watches alone
-  if (!dbus_watch_get_enabled(watch))
-    return TRUE;
-
   session_t *ps = data;
 
-  // Insert the file descriptor
-  fds_insert(ps, dbus_watch_get_unix_fd(watch),
-      cdbus_get_watch_cond(watch));
+  ev_dbus_io *w = calloc(1, sizeof *w);
+  w->dw = watch;
+  w->ps = ps;
+  ev_io_init(&w->w, cdbus_io_callback, dbus_watch_get_unix_fd(watch),
+    cdbus_get_watch_cond(watch));
+
+  // Leave disabled watches alone
+  if (dbus_watch_get_enabled(watch))
+    ev_io_start(ps->loop, &w->w);
+
+  dbus_watch_set_data(watch, w, NULL);
 
   // Always return true
-  return TRUE;
+  return true;
 }
 
 /**
@@ -204,9 +268,9 @@ cdbus_callback_add_watch(DBusWatch *watch, void *data) {
 static void
 cdbus_callback_remove_watch(DBusWatch *watch, void *data) {
   session_t *ps = data;
-
-  fds_drop(ps, dbus_watch_get_unix_fd(watch),
-      cdbus_get_watch_cond(watch));
+  ev_dbus_io *w = dbus_watch_get_data(watch);
+  ev_io_stop(ps->loop, &w->w);
+  free(w);
 }
 
 /**
@@ -214,12 +278,12 @@ cdbus_callback_remove_watch(DBusWatch *watch, void *data) {
  */
 static void
 cdbus_callback_watch_toggled(DBusWatch *watch, void *data) {
-  if (dbus_watch_get_enabled(watch)) {
-    cdbus_callback_add_watch(watch, data);
-  }
-  else {
-    cdbus_callback_remove_watch(watch, data);
-  }
+  session_t *ps = data;
+  ev_io *w = dbus_watch_get_data(watch);
+  if (dbus_watch_get_enabled(watch))
+    ev_io_start(ps->loop, w);
+  else
+    ev_io_stop(ps->loop, w);
 }
 
 ///@}
@@ -534,109 +598,9 @@ cdbus_msg_get_arg(DBusMessage *msg, int count, const int type, void *pdest) {
   return true;
 }
 
-void
-cdbus_loop(session_t *ps) {
-  dbus_connection_read_write(ps->dbus_conn, 0);
-  DBusMessage *msg = NULL;
-  while ((msg = dbus_connection_pop_message(ps->dbus_conn)))
-    cdbus_process(ps, msg);
-}
-
 /** @name Message processing
  */
 ///@{
-
-/**
- * Process a message from D-Bus.
- */
-static void
-cdbus_process(session_t *ps, DBusMessage *msg) {
-  bool success = false;
-
-#define cdbus_m_ismethod(method) \
-  dbus_message_is_method_call(msg, CDBUS_INTERFACE_NAME, method)
-
-  if (cdbus_m_ismethod("reset")) {
-    ps->reset = true;
-    if (!dbus_message_get_no_reply(msg))
-      cdbus_reply_bool(ps, msg, true);
-    success = true;
-  }
-  else if (cdbus_m_ismethod("repaint")) {
-    force_repaint(ps);
-    if (!dbus_message_get_no_reply(msg))
-      cdbus_reply_bool(ps, msg, true);
-    success = true;
-  }
-  else if (cdbus_m_ismethod("list_win")) {
-    success = cdbus_process_list_win(ps, msg);
-  }
-  else if (cdbus_m_ismethod("win_get")) {
-    success = cdbus_process_win_get(ps, msg);
-  }
-  else if (cdbus_m_ismethod("win_set")) {
-    success = cdbus_process_win_set(ps, msg);
-  }
-  else if (cdbus_m_ismethod("find_win")) {
-    success = cdbus_process_find_win(ps, msg);
-  }
-  else if (cdbus_m_ismethod("opts_get")) {
-    success = cdbus_process_opts_get(ps, msg);
-  }
-  else if (cdbus_m_ismethod("opts_set")) {
-    success = cdbus_process_opts_set(ps, msg);
-  }
-#undef cdbus_m_ismethod
-  else if (dbus_message_is_method_call(msg,
-        "org.freedesktop.DBus.Introspectable", "Introspect")) {
-    success = cdbus_process_introspect(ps, msg);
-  }
-  else if (dbus_message_is_method_call(msg,
-        "org.freedesktop.DBus.Peer", "Ping")) {
-    cdbus_reply(ps, msg, NULL, NULL);
-    success = true;
-  }
-  else if (dbus_message_is_method_call(msg,
-        "org.freedesktop.DBus.Peer", "GetMachineId")) {
-    char *uuid = dbus_get_local_machine_id();
-    if (uuid) {
-      cdbus_reply_string(ps, msg, uuid);
-      dbus_free(uuid);
-      success = true;
-    }
-  }
-  else if (dbus_message_is_signal(msg, "org.freedesktop.DBus", "NameAcquired")
-      || dbus_message_is_signal(msg, "org.freedesktop.DBus", "NameLost")) {
-    success = true;
-  }
-  else {
-    if (DBUS_MESSAGE_TYPE_ERROR == dbus_message_get_type(msg)) {
-      printf_errf("(): Error message of path \"%s\" "
-          "interface \"%s\", member \"%s\", error \"%s\"",
-          dbus_message_get_path(msg), dbus_message_get_interface(msg),
-          dbus_message_get_member(msg), dbus_message_get_error_name(msg));
-    }
-    else {
-      printf_errf("(): Illegal message of type \"%s\", path \"%s\" "
-          "interface \"%s\", member \"%s\"",
-          cdbus_repr_msgtype(msg), dbus_message_get_path(msg),
-          dbus_message_get_interface(msg), dbus_message_get_member(msg));
-    }
-    if (DBUS_MESSAGE_TYPE_METHOD_CALL == dbus_message_get_type(msg)
-        && !dbus_message_get_no_reply(msg))
-      cdbus_reply_err(ps, msg, CDBUS_ERROR_BADMSG, CDBUS_ERROR_BADMSG_S);
-    success = true;
-  }
-
-  // If the message could not be processed, and an reply is expected, return
-  // an empty reply.
-  if (!success && DBUS_MESSAGE_TYPE_METHOD_CALL == dbus_message_get_type(msg)
-      && !dbus_message_get_no_reply(msg))
-    cdbus_reply_err(ps, msg, CDBUS_ERROR_UNKNOWN, CDBUS_ERROR_UNKNOWN_S);
-
-  // Free the message
-  dbus_message_unref(msg);
-}
 
 /**
  * Process a list_win D-Bus request.
@@ -993,6 +957,9 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   return true;
 }
 
+// XXX Remove this after header clean up
+void queue_redraw(session_t *ps);
+
 /**
  * Process a opts_set D-Bus request.
  */
@@ -1055,7 +1022,7 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
       return false;
     if (ps->o.unredir_if_possible != val) {
       ps->o.unredir_if_possible = val;
-      ps->ev_received = true;
+      queue_redraw(ps);
     }
     goto cdbus_process_opts_set_success;
   }
@@ -1170,6 +1137,100 @@ cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
   return true;
 }
 ///@}
+
+/**
+ * Process a message from D-Bus.
+ */
+static DBusHandlerResult
+cdbus_process(DBusConnection *c, DBusMessage *msg, void *ud) {
+  session_t *ps = ud;
+  bool handled = false;
+
+#define cdbus_m_ismethod(method) \
+  dbus_message_is_method_call(msg, CDBUS_INTERFACE_NAME, method)
+
+  if (cdbus_m_ismethod("reset")) {
+    ps->reset = true;
+    if (!dbus_message_get_no_reply(msg))
+      cdbus_reply_bool(ps, msg, true);
+    handled = true;
+  }
+  else if (cdbus_m_ismethod("repaint")) {
+    force_repaint(ps);
+    if (!dbus_message_get_no_reply(msg))
+      cdbus_reply_bool(ps, msg, true);
+    handled = true;
+  }
+  else if (cdbus_m_ismethod("list_win")) {
+    handled = cdbus_process_list_win(ps, msg);
+  }
+  else if (cdbus_m_ismethod("win_get")) {
+    handled = cdbus_process_win_get(ps, msg);
+  }
+  else if (cdbus_m_ismethod("win_set")) {
+    handled = cdbus_process_win_set(ps, msg);
+  }
+  else if (cdbus_m_ismethod("find_win")) {
+    handled = cdbus_process_find_win(ps, msg);
+  }
+  else if (cdbus_m_ismethod("opts_get")) {
+    handled = cdbus_process_opts_get(ps, msg);
+  }
+  else if (cdbus_m_ismethod("opts_set")) {
+    handled = cdbus_process_opts_set(ps, msg);
+  }
+#undef cdbus_m_ismethod
+  else if (dbus_message_is_method_call(msg,
+        "org.freedesktop.DBus.Introspectable", "Introspect")) {
+    handled = cdbus_process_introspect(ps, msg);
+  }
+  else if (dbus_message_is_method_call(msg,
+        "org.freedesktop.DBus.Peer", "Ping")) {
+    cdbus_reply(ps, msg, NULL, NULL);
+    handled = true;
+  }
+  else if (dbus_message_is_method_call(msg,
+        "org.freedesktop.DBus.Peer", "GetMachineId")) {
+    char *uuid = dbus_get_local_machine_id();
+    if (uuid) {
+      cdbus_reply_string(ps, msg, uuid);
+      dbus_free(uuid);
+      handled = true;
+    }
+  }
+  else if (dbus_message_is_signal(msg, "org.freedesktop.DBus", "NameAcquired")
+      || dbus_message_is_signal(msg, "org.freedesktop.DBus", "NameLost")) {
+    handled = true;
+  }
+  else {
+    if (DBUS_MESSAGE_TYPE_ERROR == dbus_message_get_type(msg)) {
+      printf_errf("(): Error message of path \"%s\" "
+          "interface \"%s\", member \"%s\", error \"%s\"",
+          dbus_message_get_path(msg), dbus_message_get_interface(msg),
+          dbus_message_get_member(msg), dbus_message_get_error_name(msg));
+    }
+    else {
+      printf_errf("(): Illegal message of type \"%s\", path \"%s\" "
+          "interface \"%s\", member \"%s\"",
+          cdbus_repr_msgtype(msg), dbus_message_get_path(msg),
+          dbus_message_get_interface(msg), dbus_message_get_member(msg));
+    }
+    if (DBUS_MESSAGE_TYPE_METHOD_CALL == dbus_message_get_type(msg)
+        && !dbus_message_get_no_reply(msg))
+      cdbus_reply_err(ps, msg, CDBUS_ERROR_BADMSG, CDBUS_ERROR_BADMSG_S);
+    handled = true;
+  }
+
+  // If the message could not be processed, and an reply is expected, return
+  // an empty reply.
+  if (!handled && DBUS_MESSAGE_TYPE_METHOD_CALL == dbus_message_get_type(msg)
+      && !dbus_message_get_no_reply(msg)) {
+    cdbus_reply_err(ps, msg, CDBUS_ERROR_UNKNOWN, CDBUS_ERROR_UNKNOWN_S);
+    handled = true;
+  }
+
+  return handled ? DBUS_HANDLER_RESULT_HANDLED : DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
 
 /** @name Core callbacks
  */

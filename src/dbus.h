@@ -42,42 +42,6 @@ typedef uint16_t cdbus_enum_t;
 #define CDBUS_TYPE_ENUM         DBUS_TYPE_UINT16
 #define CDBUS_TYPE_ENUM_STR     DBUS_TYPE_UINT16_AS_STRING
 
-static dbus_bool_t
-cdbus_callback_add_timeout(DBusTimeout *timeout, void *data);
-
-static void
-cdbus_callback_remove_timeout(DBusTimeout *timeout, void *data);
-
-static void
-cdbus_callback_timeout_toggled(DBusTimeout *timeout, void *data);
-
-static bool
-cdbus_callback_handle_timeout(session_t *ps, timeout_t *ptmout);
-
-/**
- * Determine the poll condition of a DBusWatch.
- */
-static inline short
-cdbus_get_watch_cond(DBusWatch *watch) {
-  const unsigned flags = dbus_watch_get_flags(watch);
-  short condition = POLLERR | POLLHUP;
-  if (flags & DBUS_WATCH_READABLE)
-    condition |= POLLIN;
-  if (flags & DBUS_WATCH_WRITABLE)
-    condition |= POLLOUT;
-
-  return condition;
-}
-
-static dbus_bool_t
-cdbus_callback_add_watch(DBusWatch *watch, void *data);
-
-static void
-cdbus_callback_remove_watch(DBusWatch *watch, void *data);
-
-static void
-cdbus_callback_watch_toggled(DBusWatch *watch, void *data);
-
 static bool
 cdbus_apdarg_bool(session_t *ps, DBusMessage *msg, const void *data);
 
@@ -220,33 +184,5 @@ static inline const char *
 cdbus_repr_msgtype(DBusMessage *msg) {
   return dbus_message_type_to_string(dbus_message_get_type(msg));
 }
-
-/** @name Message processing
- */
-///@{
-
-static void
-cdbus_process(session_t *ps, DBusMessage *msg);
-
-static bool
-cdbus_process_list_win(session_t *ps, DBusMessage *msg);
-
-static bool
-cdbus_process_win_get(session_t *ps, DBusMessage *msg);
-
-static bool
-cdbus_process_win_set(session_t *ps, DBusMessage *msg);
-
-static bool
-cdbus_process_find_win(session_t *ps, DBusMessage *msg);
-
-static bool
-cdbus_process_opts_get(session_t *ps, DBusMessage *msg);
-
-static bool
-cdbus_process_opts_set(session_t *ps, DBusMessage *msg);
-
-static bool
-cdbus_process_introspect(session_t *ps, DBusMessage *msg);
 
 ///@}

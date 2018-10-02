@@ -15,6 +15,8 @@
 #include <xcb/render.h>
 #include <xcb/xcb_image.h>
 
+#include <ev.h>
+
 #include "compton.h"
 #ifdef CONFIG_OPENGL
 #include "opengl.h"
@@ -37,9 +39,6 @@ update_refresh_rate(session_t *ps);
 
 static bool
 swopti_init(session_t *ps);
-
-static void
-swopti_handle_timeout(session_t *ps, struct timeval *ptv);
 
 static void
 cxinerama_upd_scrs(session_t *ps);
@@ -112,6 +111,24 @@ restack_win(session_t *ps, win *w, Window new_above);
 
 static void
 update_ewmh_active_win(session_t *ps);
+
+static void
+draw_callback(EV_P_ ev_idle *w, int revents);
+
+typedef struct ev_session_timer {
+  ev_timer w;
+  session_t *ps;
+} ev_session_timer;
+
+typedef struct ev_session_idle {
+  ev_idle w;
+  session_t *ps;
+} ev_session_idle;
+
+typedef struct ev_session_prepare {
+  ev_prepare w;
+  session_t *ps;
+} ev_session_prepare;
 
 // === Global constants ===
 
@@ -214,6 +231,13 @@ set_tgt_clip(session_t *ps, region_t *reg) {
   }
 }
 
+void queue_redraw(session_t *ps) {
+  // If --benchmark is used, redraw is always queued
+  if (!ps->redraw_needed && !ps->o.benchmark)
+    ev_idle_start(ps->loop, &ps->draw_idle->w);
+  ps->redraw_needed = true;
+}
+
 static inline void
 paint_region(session_t *ps, win *w, int x, int y, int wid, int hei,
     double opacity, const region_t *reg_paint, xcb_render_picture_t pict) {
@@ -281,40 +305,6 @@ void add_damage(session_t *ps, const region_t *damage) {
   pixman_region32_union(&ps->all_damage, &ps->all_damage, (region_t *)damage);
 }
 
-#define CPY_FDS(key) \
-  fd_set * key = NULL; \
-  if (ps->key) { \
-    key = malloc(sizeof(fd_set)); \
-    memcpy(key, ps->key, sizeof(fd_set)); \
-    if (!key) { \
-      fprintf(stderr, "Failed to allocate memory for copying select() fdset.\n"); \
-      exit(1); \
-    } \
-  } \
-
-/**
- * Poll for changes.
- *
- * poll() is much better than select(), but ppoll() does not exist on
- * *BSD.
- */
-static inline int
-fds_poll(session_t *ps, struct timeval *ptv) {
-  // Copy fds
-  CPY_FDS(pfds_read);
-  CPY_FDS(pfds_write);
-  CPY_FDS(pfds_except);
-
-  int ret = select(ps->nfds_max, pfds_read, pfds_write, pfds_except, ptv);
-
-  free(pfds_read);
-  free(pfds_write);
-  free(pfds_except);
-
-  return ret;
-}
-#undef CPY_FDS
-
 // === Fading ===
 
 /**
@@ -322,13 +312,13 @@ fds_poll(session_t *ps, struct timeval *ptv) {
  *
  * In milliseconds.
  */
-static int
+static double
 fade_timeout(session_t *ps) {
   int diff = ps->o.fade_delta - get_time_ms() + ps->fade_time;
 
   diff = normalize_i_range(diff, 0, ps->o.fade_delta * 2);
 
-  return diff;
+  return diff / 1000.0;
 }
 
 /**
@@ -359,13 +349,16 @@ run_fade(session_t *ps, win *w, unsigned steps) {
   }
 
   if (w->opacity != w->opacity_tgt) {
-    ps->idling = false;
+    ps->fade_running = true;
   }
 }
 
 /**
  * Set fade callback of a window, and possibly execute the previous
  * callback.
+ *
+ * If a callback can cause rendering result to change, it should call
+ * `queue_redraw`.
  *
  * @param exec_callback whether the previous callback is to be executed
  */
@@ -376,12 +369,8 @@ void set_fade_callback(session_t *ps, win **_w,
 
   w->fade_callback = callback;
   // Must be the last line as the callback could destroy w!
-  if (exec_callback && old_callback) {
+  if (exec_callback && old_callback)
     old_callback(ps, _w);
-    // Although currently no callback function affects window state on
-    // next paint, it could, in the future
-    ps->idling = false;
-  }
 }
 
 /**
@@ -1228,14 +1217,15 @@ paint_preprocess(session_t *ps, win *list) {
     if (ps->redirected) {
       if (!ps->o.unredir_if_possible_delay || ps->tmout_unredir_hit)
         redir_stop(ps);
-      else if (!ps->tmout_unredir->enabled) {
-        timeout_reset(ps, ps->tmout_unredir);
-        ps->tmout_unredir->enabled = true;
+      else if (!ev_is_active(&ps->unredir_timer->w)) {
+        ev_timer_set(&ps->unredir_timer->w,
+          ps->o.unredir_if_possible_delay / 1000.0, 0);
+        ev_timer_start(ps->loop, &ps->unredir_timer->w);
       }
     }
   }
   else {
-    ps->tmout_unredir->enabled = false;
+    ev_timer_stop(ps->loop, &ps->unredir_timer->w);
     redir_start(ps);
   }
 
@@ -2466,7 +2456,7 @@ expose_root(session_t *ps, const rect_t *rects, int nrects) {
 void
 force_repaint(session_t *ps) {
   assert(pixman_region32_not_empty(&ps->screen_reg));
-  ps->ev_received = true;
+  queue_redraw(ps);
   add_damage(ps, &ps->screen_reg);
 }
 
@@ -2483,7 +2473,7 @@ win_set_shadow_force(session_t *ps, win *w, switch_t val) {
   if (val != w->shadow_force) {
     w->shadow_force = val;
     win_determine_shadow(ps, w);
-    ps->ev_received = true;
+    queue_redraw(ps);
   }
 }
 
@@ -2495,7 +2485,7 @@ win_set_fade_force(session_t *ps, win *w, switch_t val) {
   if (val != w->fade_force) {
     w->fade_force = val;
     win_determine_fade(ps, w);
-    ps->ev_received = true;
+    queue_redraw(ps);
   }
 }
 
@@ -2507,7 +2497,7 @@ win_set_focused_force(session_t *ps, win *w, switch_t val) {
   if (val != w->focused_force) {
     w->focused_force = val;
     win_update_focused(ps, w);
-    ps->ev_received = true;
+    queue_redraw(ps);
   }
 }
 
@@ -2519,7 +2509,7 @@ win_set_invert_color_force(session_t *ps, win *w, switch_t val) {
   if (val != w->invert_color_force) {
     w->invert_color_force = val;
     win_determine_invert_color(ps, w);
-    ps->ev_received = true;
+    queue_redraw(ps);
   }
 }
 
@@ -2555,7 +2545,7 @@ opts_set_no_fading_openclose(session_t *ps, bool newval) {
     ps->o.no_fading_openclose = newval;
     for (win *w = ps->list; w; w = w->next)
       win_determine_fade(ps, w);
-    ps->ev_received = true;
+    queue_redraw(ps);
   }
 }
 
@@ -3074,6 +3064,9 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
       ev_name(ps, ev), ev_serial(ev), wid, window_name);
   }
 #endif
+
+  // XXX redraw needs to be more fine grained
+  queue_redraw(ps);
 
   switch (ev->response_type) {
     case FocusIn:
@@ -4215,31 +4208,22 @@ swopti_init(session_t *ps) {
  * @param ps current session
  * @param[in,out] ptv pointer to the timeout
  */
-static void
-swopti_handle_timeout(session_t *ps, struct timeval *ptv) {
-  if (!ptv)
-    return;
-
+static double
+swopti_handle_timeout(session_t *ps) {
   // Get the microsecond offset of the time when the we reach the timeout
   // I don't think a 32-bit long could overflow here.
-  long offset = (ptv->tv_usec + get_time_timeval().tv_usec - ps->paint_tm_offset) % ps->refresh_intv;
+  long offset = (get_time_timeval().tv_usec - ps->paint_tm_offset) % ps->refresh_intv;
   if (offset < 0)
     offset += ps->refresh_intv;
-
-  assert(offset >= 0 && offset < ps->refresh_intv);
 
   // If the target time is sufficiently close to a refresh time, don't add
   // an offset, to avoid certain blocking conditions.
   if (offset < SWOPTI_TOLERANCE
       || offset > ps->refresh_intv - SWOPTI_TOLERANCE)
-    return;
+    return 0;
 
   // Add an offset so we wait until the next refresh after timeout
-  ptv->tv_usec += ps->refresh_intv - offset;
-  if (ptv->tv_usec > US_PER_SEC) {
-    ptv->tv_usec -= US_PER_SEC;
-    ++ptv->tv_sec;
-  }
+  return (ps->refresh_intv - offset) / 1e6;
 }
 
 /**
@@ -4664,150 +4648,6 @@ redir_start(session_t *ps) {
 }
 
 /**
- * Get the poll time.
- */
-static time_ms_t
-timeout_get_poll_time(session_t *ps) {
-  const time_ms_t now = get_time_ms();
-  time_ms_t wait = TIME_MS_MAX;
-
-  // Traverse throught the timeout linked list
-  for (timeout_t *ptmout = ps->tmout_lst; ptmout; ptmout = ptmout->next) {
-    if (ptmout->enabled) {
-      time_ms_t newrun = timeout_get_newrun(ptmout);
-      if (newrun <= now) {
-        wait = 0;
-        break;
-      }
-      else {
-        time_ms_t newwait = newrun - now;
-        if (newwait < wait)
-          wait = newwait;
-      }
-    }
-  }
-
-  return wait;
-}
-
-/**
- * Insert a new timeout.
- */
-timeout_t *
-timeout_insert(session_t *ps, time_ms_t interval,
-    bool (*callback)(session_t *ps, timeout_t *ptmout), void *data) {
-  static const timeout_t tmout_def = {
-    .enabled = true,
-    .data = NULL,
-    .callback = NULL,
-    .firstrun = 0L,
-    .lastrun = 0L,
-    .interval = 0L,
-  };
-
-  const time_ms_t now = get_time_ms();
-  timeout_t *ptmout = malloc(sizeof(timeout_t));
-  if (!ptmout)
-    printf_errfq(1, "(): Failed to allocate memory for timeout.");
-  memcpy(ptmout, &tmout_def, sizeof(timeout_t));
-
-  ptmout->interval = interval;
-  ptmout->firstrun = now;
-  ptmout->lastrun = now;
-  ptmout->data = data;
-  ptmout->callback = callback;
-  ptmout->next = ps->tmout_lst;
-  ps->tmout_lst = ptmout;
-
-  return ptmout;
-}
-
-/**
- * Drop a timeout.
- *
- * @return true if we have found the timeout and removed it, false
- *         otherwise
- */
-bool
-timeout_drop(session_t *ps, timeout_t *prm) {
-  timeout_t **pplast = &ps->tmout_lst;
-
-  for (timeout_t *ptmout = ps->tmout_lst; ptmout;
-      pplast = &ptmout->next, ptmout = ptmout->next) {
-    if (prm == ptmout) {
-      *pplast = ptmout->next;
-      free(ptmout);
-
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/**
- * Clear all timeouts.
- */
-static void
-timeout_clear(session_t *ps) {
-  timeout_t *ptmout = ps->tmout_lst;
-  timeout_t *next = NULL;
-  while (ptmout) {
-    next = ptmout->next;
-    free(ptmout);
-    ptmout = next;
-  }
-}
-
-/**
- * Run timeouts.
- *
- * @return true if we have ran a timeout, false otherwise
- */
-static bool
-timeout_run(session_t *ps) {
-  const time_ms_t now = get_time_ms();
-  bool ret = false;
-  timeout_t *pnext = NULL;
-
-  for (timeout_t *ptmout = ps->tmout_lst; ptmout; ptmout = pnext) {
-    pnext = ptmout->next;
-    if (ptmout->enabled) {
-      const time_ms_t max = now +
-        (time_ms_t) (ptmout->interval * TIMEOUT_RUN_TOLERANCE);
-      time_ms_t newrun = timeout_get_newrun(ptmout);
-      if (newrun <= max) {
-        ret = true;
-        timeout_invoke(ps, ptmout);
-      }
-    }
-  }
-
-  return ret;
-}
-
-/**
- * Invoke a timeout.
- */
-void
-timeout_invoke(session_t *ps, timeout_t *ptmout) {
-  const time_ms_t now = get_time_ms();
-  ptmout->lastrun = now;
-  // Avoid modifying the timeout structure after running timeout, to
-  // make it possible to remove timeout in callback
-  if (ptmout->callback)
-    ptmout->callback(ps, ptmout);
-}
-
-/**
- * Reset a timeout to initial state.
- */
-void
-timeout_reset(session_t *ps, timeout_t *ptmout) {
-  ptmout->firstrun = ptmout->lastrun = get_time_ms();
-}
-
-/**
  * Unredirect all windows.
  */
 static void
@@ -4836,99 +4676,156 @@ redir_stop(session_t *ps) {
   }
 }
 
-/**
- * Unredirection timeout callback.
- */
-static bool
-tmout_unredir_callback(session_t *ps, timeout_t *tmout) {
-  ps->tmout_unredir_hit = true;
-  tmout->enabled = false;
-
-  return true;
+// Handle queued events before we go to sleep
+static void
+handle_queued_x_events(EV_P_ ev_prepare *w, int revents) {
+  ev_session_prepare *sw = (void *)w;
+  session_t *ps = sw->ps;
+  xcb_generic_event_t *ev;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  while ((ev = xcb_poll_for_queued_event(c))) {
+    ev_handle(ps, ev);
+    free(ev);
+  };
+  XFlush(ps->dpy);
+  xcb_flush(c);
 }
 
 /**
- * Main loop.
+ * Unredirection timeout callback.
  */
-static bool
-mainloop(session_t *ps) {
-  // Don't miss timeouts even when we have a LOT of other events!
-  timeout_run(ps);
+static void
+tmout_unredir_callback(EV_P_ ev_timer *w, int revents) {
+  ev_session_timer *sw = (void *)w;
+  sw->ps->tmout_unredir_hit = true;
+  queue_redraw(sw->ps);
+}
 
-  // Process existing events
-  // Sometimes poll() returns 1 but no events are actually read,
-  // causing XNextEvent() to block, I have no idea what's wrong, so we
-  // check for the number of events here.
+static void
+fade_timer_callback(EV_P_ ev_timer *w, int revents) {
+  ev_session_timer *sw = (void *)w;
+  queue_redraw(sw->ps);
+}
+
+static void
+_draw_callback(EV_P_ session_t *ps, int revents) {
+  if (ps->o.benchmark) {
+    if (ps->o.benchmark_wid) {
+      win *wi = find_win(ps, ps->o.benchmark_wid);
+      if (!wi) {
+        printf_errf("(): Couldn't find specified benchmark window.");
+        exit(1);
+      }
+      add_damage_from_win(ps, wi);
+    }
+    else {
+      force_repaint(ps);
+    }
+  }
+
+  ps->fade_running = false;
+  win *t = paint_preprocess(ps, ps->list);
+  ps->tmout_unredir_hit = false;
+
+  // Start/stop fade timer depends on whether window are fading
+  if (!ps->fade_running && ev_is_active(&ps->fade_timer->w))
+    ev_timer_stop(ps->loop, &ps->fade_timer->w);
+  else if (ps->fade_running && !ev_is_active(&ps->fade_timer->w)) {
+    ev_timer_set(&ps->fade_timer->w, fade_timeout(ps), 0);
+    ev_timer_start(ps->loop, &ps->fade_timer->w);
+  }
+
+  // If the screen is unredirected, free all_damage to stop painting
+  if (!ps->redirected || ps->o.stoppaint_force == ON)
+    pixman_region32_clear(&ps->all_damage);
+
+  if (pixman_region32_not_empty(&ps->all_damage)) {
+    region_t all_damage_orig, *region_real = NULL;
+    pixman_region32_init(&all_damage_orig);
+
+    // keep a copy of non-resized all_damage for region_real
+    if (ps->o.resize_damage > 0) {
+      copy_region(&all_damage_orig, &ps->all_damage);
+      resize_region(ps, &ps->all_damage, ps->o.resize_damage);
+      region_real = &all_damage_orig;
+    }
+
+    static int paint = 0;
+    paint_all(ps, &ps->all_damage, region_real, t);
+
+    pixman_region32_clear(&ps->all_damage);
+    pixman_region32_fini(&all_damage_orig);
+
+    paint++;
+    if (ps->o.benchmark && paint >= ps->o.benchmark)
+      exit(0);
+  }
+
+  if (!ps->fade_running)
+    ps->fade_time = 0L;
+
+  ps->redraw_needed = false;
+}
+
+static void
+draw_callback(EV_P_ ev_idle *w, int revents) {
+  // This function is not used if we are using --swopti
+  ev_session_idle *sw = (void *)w;
+
+  _draw_callback(EV_A_ sw->ps, revents);
+
+  // Don't do painting non-stop unless we are in benchmark mode
+  if (!sw->ps->o.benchmark)
+    ev_idle_stop(sw->ps->loop, &sw->ps->draw_idle->w);
+}
+
+static void
+delayed_draw_timer_callback(EV_P_ ev_timer *w, int revents) {
+  ev_session_timer *sw = (void *)w;
+  _draw_callback(EV_A_ sw->ps, revents);
+
+  // We might have stopped the ev_idle in delayed_draw_callback,
+  // so we restart it if we are in benchmark mode
+  if (sw->ps->o.benchmark)
+    ev_idle_start(EV_A_ &sw->ps->draw_idle->w);
+}
+
+static void
+delayed_draw_callback(EV_P_ ev_idle *w, int revents) {
+  // This function is only used if we are using --swopti
+  ev_session_idle *sw = (void *)w;
+  if (ev_is_active(sw->ps->delayed_draw_timer))
+    return;
+
+  double delay = swopti_handle_timeout(sw->ps);
+  printf_errf("(): %lf", delay);
+  if (delay < 1e-6)
+    return _draw_callback(EV_A_ sw->ps, revents);
+
+  // This is a little bit hacky. When we get to this point in code, we need
+  // to update the screen , but we will only be updated after a delay, So
+  // we want to stop the ev_idle, so this callback doesn't get call repeatedly
+  // during the delay, we also want queue_redraw to not restart the ev_idle.
+  // So we stop ev_idle and leave ps->redraw_needed to be true.
+  //
+  // We do this anyway even if we are in benchmark mode. That means we will
+  // have to restart draw_idle after the draw actually happened when we are in
+  // benchmark mode.
+  ev_idle_stop(sw->ps->loop, &sw->ps->draw_idle->w);
+
+  ev_timer_set(&sw->ps->delayed_draw_timer->w, delay, 0);
+  ev_timer_start(sw->ps->loop, &sw->ps->delayed_draw_timer->w);
+}
+
+static void
+x_event_callback(EV_P_ ev_io *w, int revents) {
+  session_t *ps = (session_t *)w;
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   xcb_generic_event_t *ev = xcb_poll_for_event(c);
   if (ev) {
     ev_handle(ps, ev);
-    ps->ev_received = true;
     free(ev);
-
-    return true;
   }
-
-#ifdef CONFIG_DBUS
-  if (ps->o.dbus) {
-    cdbus_loop(ps);
-  }
-#endif
-
-  if (ps->reset)
-    return false;
-
-  // Calculate timeout
-  struct timeval *ptv = NULL;
-  {
-    // Consider ev_received firstly
-    if (ps->ev_received || ps->o.benchmark) {
-      ptv = malloc(sizeof(struct timeval));
-      ptv->tv_sec = 0L;
-      ptv->tv_usec = 0L;
-    }
-    // Then consider fading timeout
-    else if (!ps->idling) {
-      ptv = malloc(sizeof(struct timeval));
-      *ptv = ms_to_tv(fade_timeout(ps));
-    }
-
-    // Software optimization is to be applied on timeouts that require
-    // immediate painting only
-    if (ptv && ps->o.sw_opti)
-      swopti_handle_timeout(ps, ptv);
-
-    // Don't continue looping for 0 timeout
-    if (ptv && timeval_isempty(ptv)) {
-      free(ptv);
-      return false;
-    }
-
-    // Now consider the waiting time of other timeouts
-    time_ms_t tmout_ms = timeout_get_poll_time(ps);
-    if (tmout_ms < TIME_MS_MAX) {
-      if (!ptv) {
-        ptv = malloc(sizeof(struct timeval));
-        *ptv = ms_to_tv(tmout_ms);
-      }
-      else if (timeval_ms_cmp(ptv, tmout_ms) > 0) {
-        *ptv = ms_to_tv(tmout_ms);
-      }
-    }
-
-    // Don't continue looping for 0 timeout
-    if (ptv && timeval_isempty(ptv)) {
-      free(ptv);
-      return false;
-    }
-  }
-
-  // Polling
-  fds_poll(ps, ptv);
-  free(ptv);
-  ptv = NULL;
-
-  return true;
 }
 
 static void
@@ -5073,20 +4970,14 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .track_leader = false,
     },
 
-    .pfds_read = NULL,
-    .pfds_write = NULL,
-    .pfds_except = NULL,
-    .nfds_max = 0,
-    .tmout_lst = NULL,
-
     .time_start = { 0, 0 },
     .redirected = false,
     .alpha_picts = NULL,
-    .idling = false,
+    .fade_running = false,
     .fade_time = 0L,
     .ignore_head = NULL,
     .ignore_tail = NULL,
-    .reset = false,
+    .quit = false,
 
     .expose_rects = NULL,
     .size_expose = 0,
@@ -5159,6 +5050,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // Allocate a session and copy default values into it
   session_t *ps = malloc(sizeof(session_t));
   *ps = s_def;
+  ps->loop = EV_DEFAULT;
   pixman_region32_init(&ps->screen_reg);
   pixman_region32_init(&ps->all_damage);
   for (int i = 0; i < CGLX_MAX_BUFFER_AGE; i ++)
@@ -5456,10 +5348,44 @@ session_init(session_t *ps_old, int argc, char **argv) {
         ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue);
   }
 
-  fds_insert(ps, ConnectionNumber(ps->dpy), POLLIN);
-  ps->tmout_unredir = timeout_insert(ps, ps->o.unredir_if_possible_delay,
-      tmout_unredir_callback, NULL);
-  ps->tmout_unredir->enabled = false;
+  ev_io_init(&ps->xiow, x_event_callback, ConnectionNumber(ps->dpy), EV_READ);
+  ev_io_start(ps->loop, &ps->xiow);
+  ps->unredir_timer = calloc(1, sizeof(ev_session_timer));
+  ps->unredir_timer->ps = ps;
+  ev_init(&ps->unredir_timer->w, tmout_unredir_callback);
+  ps->draw_idle = calloc(1, sizeof(ev_session_idle));
+  ps->draw_idle->ps = ps;
+  if (ps->o.sw_opti)
+    ev_idle_init(&ps->draw_idle->w, delayed_draw_callback);
+  else
+    ev_idle_init(&ps->draw_idle->w, draw_callback);
+
+  ps->fade_timer = calloc(1, sizeof(ev_session_timer));
+  ps->fade_timer->ps = ps;
+  ev_init(&ps->fade_timer->w, fade_timer_callback);
+
+  ps->delayed_draw_timer = calloc(1, sizeof(ev_session_timer));
+  ps->delayed_draw_timer->ps = ps;
+  ev_init(&ps->delayed_draw_timer->w, delayed_draw_timer_callback);
+
+  // xcb can read multiple events from the socket anytime a request which requires
+  // reply is made.
+  //
+  // Use an ev_prepare to make sure we cannot accidentally forget to handle them
+  // before we go to sleep.
+  //
+  // If we don't drain the queue before goes to sleep (i.e. blocking on socket
+  // input), we will be sleeping with events available in queue. Which might
+  // cause us to block indefinitely because arrival of new events could be
+  // dependent on processing of existing events (e.g. if we don't process damage
+  // event and do damage subtract, new damage event won't be generated.
+  ps->event_check = calloc(1, sizeof(ev_session_prepare));
+  ps->event_check->ps = ps;
+  ev_prepare_init(&ps->event_check->w, handle_queued_x_events);
+  // Make sure nothing can cause xcb to read from the X socket after events are
+  // handled and before we going to sleep.
+  ev_set_priority(&ps->event_check->w, EV_MINPRI);
+  ev_prepare_start(ps->loop, &ps->event_check->w);
 
   XGrabServer(ps->dpy);
 
@@ -5647,9 +5573,6 @@ session_destroy(session_t *ps) {
     free(ps->o.blur_kerns[i]);
     free(ps->blur_kerns_cache[i]);
   }
-  free(ps->pfds_read);
-  free(ps->pfds_write);
-  free(ps->pfds_except);
   free(ps->o.glx_fshader_win_str);
   free_xinerama_info(ps);
   free(ps->pictfmts);
@@ -5686,6 +5609,7 @@ session_destroy(session_t *ps) {
 
   // Flush all events
   XSync(ps->dpy, True);
+  ev_io_stop(ps->loop, &ps->xiow);
 
 #ifdef DEBUG_XRC
   // Report about resource leakage
@@ -5693,8 +5617,21 @@ session_destroy(session_t *ps) {
 #endif
 
   // Free timeouts
-  ps->tmout_unredir = NULL;
-  timeout_clear(ps);
+  ev_timer_stop(ps->loop, &ps->unredir_timer->w);
+  free(ps->unredir_timer);
+  ps->unredir_timer = NULL;
+
+  ev_timer_stop(ps->loop, &ps->fade_timer->w);
+  free(ps->fade_timer);
+  ps->fade_timer = NULL;
+
+  ev_idle_stop(ps->loop, &ps->draw_idle->w);
+  free(ps->draw_idle);
+  ps->draw_idle = NULL;
+
+  ev_prepare_stop(ps->loop, &ps->event_check->w);
+  free(ps->event_check);
+  ps->event_check = NULL;
 
   if (ps == ps_g)
     ps_g = NULL;
@@ -5727,68 +5664,10 @@ session_run(session_t *ps) {
   if (ps->redirected)
     paint_all(ps, NULL, NULL, t);
 
-  // Initialize idling
-  ps->idling = false;
+  if (ps->o.benchmark)
+    ev_idle_start(ps->loop, &ps->draw_idle->w);
 
-  // Main loop
-  while (!ps->reset) {
-    ps->ev_received = false;
-
-    while (mainloop(ps))
-      continue;
-
-    if (ps->o.benchmark) {
-      if (ps->o.benchmark_wid) {
-        win *w = find_win(ps, ps->o.benchmark_wid);
-        if (!w) {
-          printf_errf("(): Couldn't find specified benchmark window.");
-          session_destroy(ps);
-          exit(1);
-        }
-        add_damage_from_win(ps, w);
-      }
-      else {
-        force_repaint(ps);
-      }
-    }
-
-    // idling will be turned off during paint_preprocess() if needed
-    ps->idling = true;
-
-    t = paint_preprocess(ps, ps->list);
-    ps->tmout_unredir_hit = false;
-
-    // If the screen is unredirected, free all_damage to stop painting
-    if (!ps->redirected || ON == ps->o.stoppaint_force)
-      pixman_region32_clear(&ps->all_damage);
-
-    if (pixman_region32_not_empty(&ps->all_damage)) {
-      region_t all_damage_orig, *region_real = NULL;
-      pixman_region32_init(&all_damage_orig);
-
-      // keep a copy of non-resized all_damage for region_real
-      if (ps->o.resize_damage > 0) {
-        copy_region(&all_damage_orig, &ps->all_damage);
-        resize_region(ps, &ps->all_damage, ps->o.resize_damage);
-        region_real = &all_damage_orig;
-      }
-
-      static int paint = 0;
-      paint_all(ps, &ps->all_damage, region_real, t);
-
-      pixman_region32_clear(&ps->all_damage);
-      pixman_region32_fini(&all_damage_orig);
-
-      paint++;
-      if (ps->o.benchmark && paint >= ps->o.benchmark)
-        exit(0);
-
-      XSync(ps->dpy, False);
-    }
-
-    if (ps->idling)
-      ps->fade_time = 0L;
-  }
+  ev_run(ps->loop, 0);
 }
 
 /**
@@ -5799,8 +5678,7 @@ session_run(session_t *ps) {
 static void
 reset_enable(int __attribute__((unused)) signum) {
   session_t * const ps = ps_g;
-
-  ps->reset = true;
+  ev_break(ps->loop, EVBREAK_ALL);
 }
 
 /**
@@ -5826,7 +5704,8 @@ main(int argc, char **argv) {
 
   // Main loop
   session_t *ps_old = ps_g;
-  while (1) {
+  bool quit = false;
+  while (!quit) {
     ps_g = session_init(ps_old, argc, argv);
     if (!ps_g) {
       printf_errf("(): Failed to create new session.");
@@ -5834,6 +5713,7 @@ main(int argc, char **argv) {
     }
     session_run(ps_g);
     ps_old = ps_g;
+    quit = ps_g->quit;
     session_destroy(ps_g);
   }
 

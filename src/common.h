@@ -94,6 +94,7 @@
 #ifdef CONFIG_XINERAMA
 #include <xcb/xinerama.h>
 #endif
+#include <ev.h>
 #include <pixman.h>
 
 // libdbus
@@ -180,7 +181,6 @@
 #define TIME_MS_MAX LONG_MAX
 #define FADE_DELTA_TOLERANCE 0.2
 #define SWOPTI_TOLERANCE 3000
-#define TIMEOUT_RUN_TOLERANCE 0.05
 #define WIN_GET_LEADER_MAX_RECURSION 20
 
 #define SEC_WRAP (15L * 24L * 60L * 60L)
@@ -504,9 +504,10 @@ typedef struct _latom {
 
 #define REG_DATA_INIT { NULL, 0 }
 
-struct _timeout_t;
-
 typedef struct win win;
+typedef struct ev_session_timer ev_session_timer;
+typedef struct ev_session_idle ev_session_idle;
+typedef struct ev_session_prepare ev_session_prepare;
 
 /// Structure representing all options.
 typedef struct options_t {
@@ -764,6 +765,10 @@ typedef struct {
 
 /// Structure containing all necessary data for a compton session.
 typedef struct session {
+  /// ev_io for X connection
+  ev_io xiow;
+  /// libev mainloop
+  struct ev_loop *loop;
   // === Display related ===
   /// Display in use.
   Display *dpy;
@@ -813,25 +818,27 @@ typedef struct session {
   // === Operation related ===
   /// Program options.
   options_t o;
-  /// File descriptors to check for reading.
-  fd_set *pfds_read;
-  /// File descriptors to check for writing.
-  fd_set *pfds_write;
-  /// File descriptors to check for exceptions.
-  fd_set *pfds_except;
-  /// Largest file descriptor in fd_set-s above.
-  int nfds_max;
-  /// Linked list of all timeouts.
-  struct _timeout_t *tmout_lst;
   /// Timeout for delayed unredirection.
-  struct _timeout_t *tmout_unredir;
+  ev_session_timer *unredir_timer;
+  /// Timer for fading
+  ev_session_timer *fade_timer;
+  /// Timer for delayed drawing, right now only used by
+  /// swopti
+  ev_session_timer *delayed_draw_timer;
+  /// Use an ev_idle callback for drawing
+  /// So we only start drawing when events are processed
+  ev_session_idle *draw_idle;
+  /// Called everytime we have timeouts or new data on socket,
+  /// so we can be sure if xcb read from X socket at anytime during event
+  /// handling, we will not left any event unhandled in the queue
+  ev_session_prepare *event_check;
   /// Whether we have hit unredirection timeout.
   bool tmout_unredir_hit;
-  /// Whether we have received an event in this cycle.
-  bool ev_received;
+  /// Whether we need to redraw the screen
+  bool redraw_needed;
   /// Whether the program is idling. I.e. no fading, no potential window
   /// changes.
-  bool idling;
+  bool fade_running;
   /// Program start time.
   struct timeval time_start;
   /// The region needs to painted on next paint.
@@ -853,6 +860,8 @@ typedef struct session {
   xcb_render_fixed_t *blur_kerns_cache[MAX_BLUR_PASS];
   /// Reset program after next paint.
   bool reset;
+  /// If compton should quit
+  bool quit;
 
   // === Expose event related ===
   /// Pointer to an array of <code>XRectangle</code>-s of exposed region.
@@ -1206,17 +1215,6 @@ struct options_tmp {
   double menu_opacity;
 };
 
-/// Structure for a recorded timeout.
-typedef struct _timeout_t {
-  bool enabled;
-  void *data;
-  bool (*callback)(session_t *ps, struct _timeout_t *ptmout);
-  time_ms_t interval;
-  time_ms_t firstrun;
-  time_ms_t lastrun;
-  struct _timeout_t *next;
-} timeout_t;
-
 /// Enumeration for window event hints.
 typedef enum {
   WIN_EVMODE_UNKNOWN,
@@ -1453,7 +1451,7 @@ print_timestamp(session_t *ps) {
   if (gettimeofday(&tm, NULL)) return;
 
   timeval_subtract(&diff, &tm, &ps->time_start);
-  fprintf(stderr, "[ %5ld.%02ld ] ", diff.tv_sec, diff.tv_usec / 10000);
+  fprintf(stderr, "[ %5ld.%06ld ] ", diff.tv_sec, diff.tv_usec);
 }
 
 /**
@@ -1682,68 +1680,6 @@ parse_glx_swap_method(session_t *ps, const char *str) {
   }
 
   return true;
-}
-
-timeout_t *
-timeout_insert(session_t *ps, time_ms_t interval,
-    bool (*callback)(session_t *ps, timeout_t *ptmout), void *data);
-
-void
-timeout_invoke(session_t *ps, timeout_t *ptmout);
-
-bool
-timeout_drop(session_t *ps, timeout_t *prm);
-
-void
-timeout_reset(session_t *ps, timeout_t *ptmout);
-
-/**
- * Add a file descriptor to a select() fd_set.
- */
-static inline void
-fds_insert_select(fd_set **ppfds, int fd) {
-  assert(fd <= FD_SETSIZE);
-
-  if (!*ppfds) {
-    if ((*ppfds = malloc(sizeof(fd_set)))) {
-      FD_ZERO(*ppfds);
-    }
-    else {
-      fprintf(stderr, "Failed to allocate memory for select() fdset.\n");
-      abort();
-    }
-  }
-
-  FD_SET(fd, *ppfds);
-}
-
-/**
- * Add a new file descriptor to wait for.
- */
-static inline void
-fds_insert(session_t *ps, int fd, short events) {
-  ps->nfds_max = max_i(fd + 1, ps->nfds_max);
-
-  if (POLLIN & events)
-    fds_insert_select(&ps->pfds_read, fd);
-  if (POLLOUT & events)
-    fds_insert_select(&ps->pfds_write, fd);
-  if (POLLPRI & events)
-    fds_insert_select(&ps->pfds_except, fd);
-}
-
-/**
- * Delete a file descriptor to wait for.
- */
-static inline void
-fds_drop(session_t *ps, int fd, short events) {
-  // Drop fd from respective fd_set-s
-  if (POLLIN & events && ps->pfds_read)
-    FD_CLR(fd, ps->pfds_read);
-  if (POLLOUT & events && ps->pfds_write)
-    FD_CLR(fd, ps->pfds_write);
-  if (POLLPRI & events && ps->pfds_except)
-    FD_CLR(fd, ps->pfds_except);
 }
 
 /**
