@@ -96,12 +96,6 @@
 #endif
 #include <pixman.h>
 
-// Workarounds for missing definitions in very old versions of X headers,
-// thanks to consolers for reporting
-#ifndef PictOpDifference
-#define PictOpDifference 0x39
-#endif
-
 // libdbus
 #ifdef CONFIG_DBUS
 #include <dbus/dbus.h>
