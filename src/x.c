@@ -287,7 +287,7 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
 
   o = error_code - ps->xfixes_error;
   switch (o) {
-    CASESTRRET2(BadRegion);
+    CASESTRRET2(XCB_XFIXES_BAD_REGION);
   }
 
   o = error_code - ps->damage_error;
