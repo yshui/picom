@@ -63,7 +63,7 @@ Window
 wid_get_prop_window(session_t *ps, Window wid, Atom aprop) {
   // Get the attribute
   Window p = None;
-  winprop_t prop = wid_get_prop(ps, wid, aprop, 1L, XA_WINDOW, 32);
+  winprop_t prop = wid_get_prop(ps, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
 
   // Return it
   if (prop.nitems) {
@@ -213,7 +213,7 @@ x_create_picture(session_t *ps, int wid, int hei,
   return picture;
 }
 
-bool x_fetch_region(session_t *ps, XserverRegion r, pixman_region32_t *res) {
+bool x_fetch_region(session_t *ps, xcb_xfixes_region_t r, pixman_region32_t *res) {
   xcb_generic_error_t *e = NULL;
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   xcb_xfixes_fetch_region_reply_t *xr = xcb_xfixes_fetch_region_reply(c,
@@ -287,7 +287,7 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
 
   o = error_code - ps->xfixes_error;
   switch (o) {
-    CASESTRRET2(BadRegion);
+    CASESTRRET2(XCB_XFIXES_BAD_REGION);
   }
 
   o = error_code - ps->damage_error;

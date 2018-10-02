@@ -923,7 +923,7 @@ get_root_tile(session_t *ps) {
   for (int p = 0; background_props_str[p]; p++) {
     winprop_t prop = wid_get_prop(ps, ps->root,
         get_atom(ps, background_props_str[p]),
-        1L, XA_PIXMAP, 32);
+        1L, XCB_ATOM_PIXMAP, 32);
     if (prop.nitems) {
       pixmap = *prop.data.p32;
       fill = false;
@@ -1313,7 +1313,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
     xrfilter_reset(ps, src_pict);
 
     {
-      XserverRegion tmp = src_pict;
+      xcb_xfixes_region_t tmp = src_pict;
       src_pict = dst_pict;
       dst_pict = tmp;
     }
@@ -3541,7 +3541,7 @@ register_cm(session_t *ps) {
   {
     long pid = getpid();
     if (!XChangeProperty(ps->dpy, ps->reg_win,
-          get_atom(ps, "_NET_WM_PID"), XA_CARDINAL, 32, PropModeReplace,
+          get_atom(ps, "_NET_WM_PID"), XCB_ATOM_CARDINAL, 32, PropModeReplace,
           (unsigned char *) &pid, 1)) {
       printf_errf("(): Failed to set _NET_WM_PID.");
     }
@@ -4122,11 +4122,11 @@ init_atoms(session_t *ps) {
   ps->atom_opacity = get_atom(ps, "_NET_WM_WINDOW_OPACITY");
   ps->atom_frame_extents = get_atom(ps, "_NET_FRAME_EXTENTS");
   ps->atom_client = get_atom(ps, "WM_STATE");
-  ps->atom_name = XA_WM_NAME;
+  ps->atom_name = XCB_ATOM_WM_NAME;
   ps->atom_name_ewmh = get_atom(ps, "_NET_WM_NAME");
-  ps->atom_class = XA_WM_CLASS;
+  ps->atom_class = XCB_ATOM_WM_CLASS;
   ps->atom_role = get_atom(ps, "WM_WINDOW_ROLE");
-  ps->atom_transient = XA_WM_TRANSIENT_FOR;
+  ps->atom_transient = XCB_ATOM_WM_TRANSIENT_FOR;
   ps->atom_client_leader = get_atom(ps, "WM_CLIENT_LEADER");
   ps->atom_ewmh_active_win = get_atom(ps, "_NET_ACTIVE_WINDOW");
   ps->atom_compton_shadow = get_atom(ps, "_COMPTON_SHADOW");
@@ -4957,7 +4957,7 @@ cxinerama_upd_scrs(session_t *ps) {
   xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
   ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
 
-  ps->xinerama_scr_regs = allocchk(malloc(sizeof(XserverRegion *)
+  ps->xinerama_scr_regs = allocchk(malloc(sizeof(xcb_xfixes_region_t *)
         * ps->xinerama_nscrs));
   for (int i = 0; i < ps->xinerama_nscrs; ++i) {
     const xcb_xinerama_screen_info_t * const s = &scrs[i];

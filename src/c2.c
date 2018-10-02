@@ -1340,15 +1340,15 @@ static Atom
 c2_get_atom_type(const c2_l_t *pleaf) {
   switch (pleaf->type) {
     case C2_L_TCARDINAL:
-      return XA_CARDINAL;
+      return XCB_ATOM_CARDINAL;
     case C2_L_TWINDOW:
-      return XA_WINDOW;
+      return XCB_ATOM_WINDOW;
     case C2_L_TSTRING:
-      return XA_STRING;
+      return XCB_ATOM_STRING;
     case C2_L_TATOM:
-      return XA_ATOM;
+      return XCB_ATOM_ATOM;
     case C2_L_TDRAWABLE:
-      return XA_DRAWABLE;
+      return XCB_ATOM_DRAWABLE;
     default:
       assert(0);
       break;

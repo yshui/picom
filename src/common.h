@@ -80,9 +80,6 @@
 
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/Xatom.h>
-#include <X11/extensions/Xfixes.h>
 #include <X11/extensions/Xdbe.h>
 #ifdef CONFIG_XSYNC
 #include <X11/extensions/sync.h>
@@ -98,12 +95,6 @@
 #include <xcb/xinerama.h>
 #endif
 #include <pixman.h>
-
-// Workarounds for missing definitions in very old versions of X headers,
-// thanks to consolers for reporting
-#ifndef PictOpDifference
-#define PictOpDifference 0x39
-#endif
 
 // libdbus
 #ifdef CONFIG_DBUS

@@ -24,7 +24,7 @@ clear_cache_win_leaders(session_t *ps) {
 static inline void
 wid_set_opacity_prop(session_t *ps, Window wid, opacity_t val) {
   const unsigned long v = val;
-  XChangeProperty(ps->dpy, wid, ps->atom_opacity, XA_CARDINAL, 32,
+  XChangeProperty(ps->dpy, wid, ps->atom_opacity, XCB_ATOM_CARDINAL, 32,
       PropModeReplace, (unsigned char *) &v, 1);
 }
 
@@ -241,7 +241,7 @@ static inline bool win_bounding_shaped(const session_t *ps, Window wid) {
 
 wintype_t wid_get_prop_wintype(session_t *ps, Window wid) {
   set_ignore_next(ps);
-  winprop_t prop = wid_get_prop(ps, wid, ps->atom_win_type, 32L, XA_ATOM, 32);
+  winprop_t prop = wid_get_prop(ps, wid, ps->atom_win_type, 32L, XCB_ATOM_ATOM, 32);
 
   for (unsigned i = 0; i < prop.nitems; ++i) {
     for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
@@ -262,7 +262,7 @@ bool wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def,
   bool ret = false;
   *out = def;
 
-  winprop_t prop = wid_get_prop(ps, wid, ps->atom_opacity, 1L, XA_CARDINAL, 32);
+  winprop_t prop = wid_get_prop(ps, wid, ps->atom_opacity, 1L, XCB_ATOM_CARDINAL, 32);
 
   if (prop.nitems) {
     *out = *prop.data.p32;
@@ -389,7 +389,7 @@ void win_determine_fade(session_t *ps, win *w) {
  */
 void win_update_prop_shadow_raw(session_t *ps, win *w) {
   winprop_t prop =
-      wid_get_prop(ps, w->id, ps->atom_compton_shadow, 1, XA_CARDINAL, 32);
+      wid_get_prop(ps, w->id, ps->atom_compton_shadow, 1, XCB_ATOM_CARDINAL, 32);
 
   if (!prop.nitems) {
     w->prop_shadow = -1;
@@ -1220,7 +1220,7 @@ void win_update_opacity_prop(session_t *ps, win *w) {
 void
 win_update_frame_extents(session_t *ps, win *w, Window client) {
   winprop_t prop = wid_get_prop(ps, client, ps->atom_frame_extents,
-    4L, XA_CARDINAL, 32);
+    4L, XCB_ATOM_CARDINAL, 32);
 
   if (prop.nitems == 4) {
     const long * const extents = prop.data.p32;
