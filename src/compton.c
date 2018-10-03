@@ -3563,7 +3563,7 @@ register_cm(session_t *ps) {
       fprintf(stderr, "Another composite manager is already running\n");
       return false;
     }
-    XSetSelectionOwner(ps->dpy, atom, ps->reg_win, 0);
+    xcb_set_selection_owner(c, ps->reg_win, atom, 0);
     free(buf);
   }
 
