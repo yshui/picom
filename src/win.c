@@ -27,14 +27,16 @@ clear_cache_win_leaders(session_t *ps) {
 
 static inline void
 wid_set_opacity_prop(session_t *ps, Window wid, opacity_t val) {
-  const unsigned long v = val;
-  XChangeProperty(ps->dpy, wid, ps->atom_opacity, XCB_ATOM_CARDINAL, 32,
-      PropModeReplace, (unsigned char *) &v, 1);
+  const uint32_t v = val;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_change_property(c, XCB_PROP_MODE_REPLACE, wid, ps->atom_opacity,
+      XCB_ATOM_CARDINAL, 32, 1, &v);
 }
 
 static inline void
 wid_rm_opacity_prop(session_t *ps, Window wid) {
-  XDeleteProperty(ps->dpy, wid, ps->atom_opacity);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_delete_property(c, wid, ps->atom_opacity);
 }
 
 /**
