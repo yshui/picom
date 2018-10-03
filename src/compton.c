@@ -869,10 +869,15 @@ recheck_focus(session_t *ps) {
 
   // Determine the currently focused window so we can apply appropriate
   // opacity on it
-  Window wid = 0;
-  int revert_to;
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_window_t wid = XCB_NONE;
+  xcb_get_input_focus_reply_t *reply =
+    xcb_get_input_focus_reply(c, xcb_get_input_focus(c), NULL);
 
-  XGetInputFocus(ps->dpy, &wid, &revert_to);
+  if (reply) {
+    wid = reply->focus;
+    free(reply);
+  }
 
   win *w = find_win_all(ps, wid);
 
