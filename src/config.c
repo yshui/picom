@@ -213,7 +213,7 @@ parse_geometry(session_t *ps, const char *src, region_t *dest) {
   if (!ps->root_width || !ps->root_height)
     return true;
 
-  geometry_t geom = { .wid = -1, .hei = -1, .x = -1, .y = -1 };
+  geometry_t geom = { .wid = ps->root_width, .hei = ps->root_height, .x = 0, .y = 0 };
   long val = 0L;
   char *endptr = NULL;
 
@@ -225,7 +225,8 @@ parse_geometry(session_t *ps, const char *src, region_t *dest) {
   // Must be base 10, because "0x0..." may appear
   if (!('+' == *src || '-' == *src)) {
     val = strtol(src, &endptr, 10);
-    if (endptr && src != endptr) {
+    assert(endptr);
+    if (src != endptr) {
       geom.wid = val;
       if (geom.wid < 0) {
         printf_errf("(\"%s\"): Invalid width.", src);
@@ -240,7 +241,8 @@ parse_geometry(session_t *ps, const char *src, region_t *dest) {
   if ('x' == *src) {
     ++src;
     val = strtol(src, &endptr, 10);
-    if (endptr && src != endptr) {
+    assert(endptr);
+    if (src != endptr) {
       geom.hei = val;
       if (geom.hei < 0) {
         printf_errf("(\"%s\"): Invalid height.", src);
