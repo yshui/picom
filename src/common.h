@@ -777,6 +777,8 @@ typedef struct session {
   Display *dpy;
   /// Default screen.
   int scr;
+  /// XCB connection.
+  xcb_connection_t *c;
   /// Default visual.
   xcb_visualid_t vis;
   /// Pict formats info
@@ -1707,10 +1709,9 @@ die(const char *msg) {
  */
 static inline xcb_atom_t
 get_atom(session_t *ps, const char *atom_name) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   xcb_intern_atom_reply_t *reply =
-    xcb_intern_atom_reply(c,
-        xcb_intern_atom(c, False, strlen(atom_name), atom_name),
+    xcb_intern_atom_reply(ps->c,
+        xcb_intern_atom(ps->c, False, strlen(atom_name), atom_name),
         NULL);
 
   xcb_atom_t atom = XCB_NONE;
@@ -2090,7 +2091,7 @@ xr_sync_(session_t *ps, Drawable d
   if (!ps->o.xrender_sync)
     return;
 
-  XSync(ps->dpy, False);
+  x_sync(ps->c);
 #ifdef CONFIG_XSYNC
   if (ps->o.xrender_sync_fence && ps->xsync_exists) {
     // TODO: If everybody just follows the rules stated in X Sync prototype,

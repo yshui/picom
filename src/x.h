@@ -25,6 +25,18 @@ typedef struct winprop winprop_t;
 })
 
 /**
+ * Send a request to X server and get the reply to make sure all previous
+ * requests are processed, and their replies received
+ *
+ * xcb_get_input_focus is used here because it is the same request used by
+ * libX11
+ */
+static inline void
+x_sync(xcb_connection_t *c) {
+  free(xcb_get_input_focus_reply(c, xcb_get_input_focus(c), NULL));
+}
+
+/**
  * Get a specific attribute of a window.
  *
  * Returns a blank structure if the returned type and format does not

@@ -28,15 +28,13 @@ clear_cache_win_leaders(session_t *ps) {
 static inline void
 wid_set_opacity_prop(session_t *ps, Window wid, opacity_t val) {
   const uint32_t v = val;
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_change_property(c, XCB_PROP_MODE_REPLACE, wid, ps->atom_opacity,
+  xcb_change_property(ps->c, XCB_PROP_MODE_REPLACE, wid, ps->atom_opacity,
       XCB_ATOM_CARDINAL, 32, 1, &v);
 }
 
 static inline void
 wid_rm_opacity_prop(session_t *ps, Window wid) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_delete_property(c, wid, ps->atom_opacity);
+  xcb_delete_property(ps->c, wid, ps->atom_opacity);
 }
 
 /**
@@ -232,10 +230,9 @@ static inline bool win_bounding_shaped(const session_t *ps, Window wid) {
   if (ps->shape_exists) {
     xcb_shape_query_extents_reply_t *reply;
     Bool bounding_shaped;
-    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
-    reply = xcb_shape_query_extents_reply(c,
-        xcb_shape_query_extents(c, wid), NULL);
+    reply = xcb_shape_query_extents_reply(ps->c,
+        xcb_shape_query_extents(ps->c, wid), NULL);
     bounding_shaped = reply && reply->bounding_shaped;
     free(reply);
 
@@ -639,8 +636,7 @@ void win_mark_client(session_t *ps, win *w, Window client) {
   if (IsViewable != w->a.map_state)
     return;
 
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_change_window_attributes(c, client, XCB_CW_EVENT_MASK,
+  xcb_change_window_attributes(ps->c, client, XCB_CW_EVENT_MASK,
       (const uint32_t[]) { determine_evmask(ps, client, WIN_EVMODE_CLIENT) });
 
   // Make sure the XSelectInput() requests are sent
@@ -677,14 +673,12 @@ void win_mark_client(session_t *ps, win *w, Window client) {
  * @param w struct _win of the parent window
  */
 void win_unmark_client(session_t *ps, win *w) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-
   Window client = w->client_win;
 
   w->client_win = None;
 
   // Recheck event mask
-  xcb_change_window_attributes(c, client, XCB_CW_EVENT_MASK,
+  xcb_change_window_attributes(ps->c, client, XCB_CW_EVENT_MASK,
       (const uint32_t[]) { determine_evmask(ps, client, WIN_EVMODE_UNKNOWN) });
 }
 
@@ -843,11 +837,10 @@ bool add_win(session_t *ps, Window id, Window prev) {
   // Fill structure
   new->id = id;
 
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_get_window_attributes_cookie_t acookie = xcb_get_window_attributes(c, id);
-  xcb_get_geometry_cookie_t gcookie = xcb_get_geometry(c, id);
-  xcb_get_window_attributes_reply_t *a = xcb_get_window_attributes_reply(c, acookie, NULL);
-  xcb_get_geometry_reply_t *g = xcb_get_geometry_reply(c, gcookie, NULL);
+  xcb_get_window_attributes_cookie_t acookie = xcb_get_window_attributes(ps->c, id);
+  xcb_get_geometry_cookie_t gcookie = xcb_get_geometry(ps->c, id);
+  xcb_get_window_attributes_reply_t *a = xcb_get_window_attributes_reply(ps->c, acookie, NULL);
+  xcb_get_geometry_reply_t *g = xcb_get_geometry_reply(ps->c, gcookie, NULL);
   if (!a || IsUnviewable == a->map_state) {
     // Failed to get window attributes probably means the window is gone
     // already. IsUnviewable means the window is already reparented
@@ -876,9 +869,9 @@ bool add_win(session_t *ps, Window id, Window prev) {
 
   if (InputOutput == new->a._class) {
     // Create Damage for window
-    new->damage = xcb_generate_id(c);
-    xcb_generic_error_t *e = xcb_request_check(c,
-      xcb_damage_create_checked(c, new->damage, id, XCB_DAMAGE_REPORT_LEVEL_NON_EMPTY));
+    new->damage = xcb_generate_id(ps->c);
+    xcb_generic_error_t *e = xcb_request_check(ps->c,
+      xcb_damage_create_checked(ps->c, new->damage, id, XCB_DAMAGE_REPORT_LEVEL_NON_EMPTY));
     if (e) {
       free(e);
       free(new);
@@ -1164,9 +1157,8 @@ void win_update_bounding_shape(session_t *ps, win *w) {
      * as well as not generate a region.
      */
 
-    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-    xcb_shape_get_rectangles_reply_t *r = xcb_shape_get_rectangles_reply(c,
-        xcb_shape_get_rectangles(c, w->id, XCB_SHAPE_SK_BOUNDING), NULL);
+    xcb_shape_get_rectangles_reply_t *r = xcb_shape_get_rectangles_reply(ps->c,
+        xcb_shape_get_rectangles(ps->c, w->id, XCB_SHAPE_SK_BOUNDING), NULL);
 
     if (!r)
       return;

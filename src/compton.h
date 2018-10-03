@@ -62,8 +62,7 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
 static inline void
 xrfilter_reset(session_t *ps, xcb_render_picture_t p) {
 #define FILTER "Nearest"
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_render_set_picture_filter(c, p, strlen(FILTER), FILTER, 0, NULL);
+  xcb_render_set_picture_filter(ps->c, p, strlen(FILTER), FILTER, 0, NULL);
 #undef FILTER
 }
 
@@ -113,8 +112,7 @@ array_wid_exists(const Window *arr, int count, Window wid) {
 inline static void
 free_picture(session_t *ps, xcb_render_picture_t *p) {
   if (*p) {
-    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-    xcb_render_free_picture(c, *p);
+    xcb_render_free_picture(ps->c, *p);
     *p = None;
   }
 }
@@ -127,7 +125,7 @@ free_damage(session_t *ps, xcb_damage_damage_t *p) {
   if (*p) {
     // BadDamage will be thrown if the window is destroyed
     set_ignore_cookie(ps,
-        xcb_damage_destroy(XGetXCBConnection(ps->dpy), *p));
+        xcb_damage_destroy(ps->c, *p));
     *p = None;
   }
 }
@@ -196,11 +194,10 @@ free_texture(session_t *ps, glx_texture_t **t) {
  */
 static inline void
 free_paint(session_t *ps, paint_t *ppaint) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   free_paint_glx(ps, ppaint);
   free_picture(ps, &ppaint->pict);
   if (ppaint->pixmap)
-    xcb_free_pixmap(c, ppaint->pixmap);
+    xcb_free_pixmap(ps->c, ppaint->pixmap);
   ppaint->pixmap = XCB_NONE;
 }
 
@@ -235,11 +232,10 @@ free_win_res(session_t *ps, win *w) {
  */
 static inline void
 free_root_tile(session_t *ps) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   free_picture(ps, &ps->root_tile_paint.pict);
   free_texture(ps, &ps->root_tile_paint.ptex);
   if (ps->root_tile_fill) {
-    xcb_free_pixmap(c, ps->root_tile_paint.pixmap);
+    xcb_free_pixmap(ps->c, ps->root_tile_paint.pixmap);
     ps->root_tile_paint.pixmap = XCB_NONE;
   }
   ps->root_tile_paint.pixmap = None;
@@ -309,20 +305,18 @@ wid_set_text_prop(session_t *ps, Window wid, Atom prop_atom, char *str) {
  */
 static inline void
 win_ev_stop(session_t *ps, win *w) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-
   // Will get BadWindow if the window is destroyed
   set_ignore_cookie(ps,
-      xcb_change_window_attributes(c, w->id, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
+      xcb_change_window_attributes(ps->c, w->id, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
 
   if (w->client_win) {
     set_ignore_cookie(ps,
-        xcb_change_window_attributes(c, w->client_win, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
+        xcb_change_window_attributes(ps->c, w->client_win, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
   }
 
   if (ps->shape_exists) {
     set_ignore_cookie(ps,
-        xcb_shape_select_input(c, w->id, 0));
+        xcb_shape_select_input(ps->c, w->id, 0));
   }
 }
 
