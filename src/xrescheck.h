@@ -1,5 +1,6 @@
-#ifndef COMPTON_XRESCHECK_H
-#define COMPTON_XRESCHECK_H
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2014 Richard Grenville <pyxlcy@gmail.com>
+#pragma once
 
 #include "common.h"
 #include "uthash.h"
@@ -62,5 +63,3 @@ xcb_free_pixmap_(xcb_connection_t *c, xcb_pixmap_t pixmap, M_POS_DATA_PARAMS) {
 }
 
 #define xcb_free_pixmap(c, pixmap) xcb_free_pixmap_(c, pixmap, M_POS_DATA);
-
-#endif

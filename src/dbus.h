@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /*
  * Compton - a compositor for X11
  *

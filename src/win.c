@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2011-2013, Christopher Jeffrey
+// Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
+
 #include <X11/Xlib.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>

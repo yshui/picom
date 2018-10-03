@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2012-2014 Richard Grenville <pyxlcy@gmail.com>
+
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>

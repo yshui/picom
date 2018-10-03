@@ -1,6 +1,9 @@
 #pragma once
 #include <stdbool.h>
 #include <X11/Xlib.h>
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2011-2013, Christopher Jeffrey
+// Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 
 #include "x.h"
 

@@ -1,4 +1,4 @@
-#pragma once
+// SPDX-License-Identifier: MIT
 /*
  * Compton - a compositor for X11
  *
@@ -8,6 +8,8 @@
  * See LICENSE for more information.
  *
  */
+
+#pragma once
 
 #include "common.h"
 

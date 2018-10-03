@@ -1,6 +1,5 @@
-/**
- * compton.h
- */
+// SPDX-License-Identifier: MIT
+// Copyright (c)
 
 // Throw everything in here.
 

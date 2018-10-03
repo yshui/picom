@@ -53,3 +53,7 @@ You can look at the [Projects](https://github.com/yshui/compton/projects) page, 
 ### Non-code
 
 Even if you don't want to contribute code, you can still contribute by compiling and running this branch, and report any issue you can find.
+
+## Contributors
+
+See [CONTRIBUTORS](CONTRIBUTORS)
