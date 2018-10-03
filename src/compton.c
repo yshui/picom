@@ -883,7 +883,7 @@ recheck_focus(session_t *ps) {
 
 #ifdef DEBUG_EVENTS
   print_timestamp(ps);
-  printf_dbgf("(): %#010lx (%#010lx \"%s\") focused.\n", wid,
+  printf_dbgf("(): %#010" PRIx32 " (%#010lx \"%s\") focused.\n", wid,
       (w ? w->id: None), (w ? w->name: NULL));
 #endif
 
