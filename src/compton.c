@@ -3530,12 +3530,9 @@ register_cm(session_t *ps) {
 
   // Set _NET_WM_PID
   {
-    long pid = getpid();
-    if (!XChangeProperty(ps->dpy, ps->reg_win,
-          get_atom(ps, "_NET_WM_PID"), XCB_ATOM_CARDINAL, 32, PropModeReplace,
-          (unsigned char *) &pid, 1)) {
-      printf_errf("(): Failed to set _NET_WM_PID.");
-    }
+    uint32_t pid = getpid();
+    xcb_change_property(c, XCB_PROP_MODE_REPLACE, ps->reg_win,
+        get_atom(ps, "_NET_WM_PID"), XCB_ATOM_CARDINAL, 32, 1, &pid);
   }
 
   // Set COMPTON_VERSION
