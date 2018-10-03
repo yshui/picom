@@ -827,27 +827,24 @@ long determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
 win *find_toplevel2(session_t *ps, Window wid) {
   // TODO this should probably be an "update tree", then find_toplevel.
   //      current approach is a bit more "racy"
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   win *w = NULL;
 
   // We traverse through its ancestors to find out the frame
   while (wid && wid != ps->root && !(w = find_win(ps, wid))) {
-    Window troot;
-    Window parent;
-    Window *tchildren;
-    unsigned tnchildren;
+    xcb_query_tree_reply_t *reply;
 
-    // XQueryTree probably fails if you run compton when X is somehow
+    // xcb_query_tree probably fails if you run compton when X is somehow
     // initializing (like add it in .xinitrc). In this case
     // just leave it alone.
-    if (!XQueryTree(ps->dpy, wid, &troot, &parent, &tchildren,
-          &tnchildren)) {
-      parent = 0;
+    reply = xcb_query_tree_reply(c, xcb_query_tree(c, wid), NULL);
+    if (reply == NULL) {
       break;
     }
 
-    cxfree(tchildren);
+    wid = reply->parent;
 
-    wid = parent;
+    free(reply);
   }
 
   return w;
@@ -5413,18 +5410,25 @@ session_init(session_t *ps_old, int argc, char **argv) {
   xcb_grab_server(c);
 
   {
-    Window root_return, parent_return;
-    Window *children;
-    unsigned int nchildren;
+    xcb_window_t *children;
+    int nchildren;
 
-    XQueryTree(ps->dpy, ps->root, &root_return,
-      &parent_return, &children, &nchildren);
+    xcb_query_tree_reply_t *reply = xcb_query_tree_reply(c,
+        xcb_query_tree(c, ps->root), NULL);
 
-    for (unsigned i = 0; i < nchildren; i++) {
-      add_win(ps, children[i], i ? children[i-1] : None);
+    if (reply) {
+      children = xcb_query_tree_children(reply);
+      nchildren = xcb_query_tree_children_length(reply);
+    } else {
+      children = NULL;
+      nchildren = 0;
     }
 
-    cxfree(children);
+    for (int i = 0; i < nchildren; i++) {
+      add_win(ps, children[i], i ? children[i-1] : XCB_NONE);
+    }
+
+    free(reply);
   }
 
   if (ps->o.track_focus) {
