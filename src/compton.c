@@ -5601,7 +5601,7 @@ session_destroy(session_t *ps) {
 
   // Free reg_win
   if (ps->reg_win) {
-    XDestroyWindow(ps->dpy, ps->reg_win);
+    xcb_destroy_window(c, ps->reg_win);
     ps->reg_win = None;
   }
 
