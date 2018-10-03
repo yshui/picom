@@ -2019,7 +2019,8 @@ map_win(session_t *ps, Window id) {
 
   // Call XSelectInput() before reading properties so that no property
   // changes are lost
-  XSelectInput(ps->dpy, id, determine_evmask(ps, id, WIN_EVMODE_FRAME));
+  xcb_change_window_attributes(c, id, XCB_CW_EVENT_MASK,
+      (const uint32_t[]) { determine_evmask(ps, id, WIN_EVMODE_FRAME) });
 
   // Notify compton when the shape of a window changes
   if (ps->shape_exists) {
@@ -2525,14 +2526,15 @@ opts_init_track_focus(session_t *ps) {
   if (ps->o.track_focus)
     return;
 
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   ps->o.track_focus = true;
 
   if (!ps->o.use_ewmh_active_win) {
     // Start listening to FocusChange events
     for (win *w = ps->list; w; w = w->next)
       if (IsViewable == w->a.map_state)
-        XSelectInput(ps->dpy, w->id,
-            determine_evmask(ps, w->id, WIN_EVMODE_FRAME));
+        xcb_change_window_attributes(c, w->id, XCB_CW_EVENT_MASK,
+            (const uint32_t[]) { determine_evmask(ps, w->id, WIN_EVMODE_FRAME) });
   }
 
   // Recheck focus
@@ -2748,11 +2750,13 @@ ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
   if (ev->parent == ps->root) {
     add_win(ps, ev->window, 0);
   } else {
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
     destroy_win(ps, ev->window);
 
     // Reset event mask in case something wrong happens
-    XSelectInput(ps->dpy, ev->window,
-        determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN));
+    xcb_change_window_attributes(c, ev->window, XCB_CW_EVENT_MASK,
+        (const uint32_t[]) { determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) });
 
     // Check if the window is an undetected client window
     // Firstly, check if it's a known client window
@@ -2771,9 +2775,8 @@ ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
         }
         // Otherwise, watch for WM_STATE on it
         else {
-          XSelectInput(ps->dpy, ev->window,
-              determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN)
-              | PropertyChangeMask);
+          xcb_change_window_attributes(c, ev->window, XCB_CW_EVENT_MASK, (const uint32_t[]) {
+              determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) | PropertyChangeMask });
         }
       }
     }
@@ -2831,6 +2834,7 @@ update_ewmh_active_win(session_t *ps) {
 
 inline static void
 ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 #ifdef DEBUG_EVENTS
   {
     // Print out changed atom
@@ -2864,8 +2868,8 @@ ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
     // Check whether it could be a client window
     if (!find_toplevel(ps, ev->window)) {
       // Reset event mask anyway
-      XSelectInput(ps->dpy, ev->window,
-          determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN));
+      xcb_change_window_attributes(c, ev->window, XCB_CW_EVENT_MASK, (const uint32_t[]) {
+          determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) });
 
       win *w_top = find_toplevel2(ps, ev->window);
       // Initialize client_win as early as possible
@@ -4546,7 +4550,8 @@ init_overlay(session_t *ps) {
     }
 
     // Listen to Expose events on the overlay
-    XSelectInput(ps->dpy, ps->overlay, ExposureMask);
+    xcb_change_window_attributes(c, ps->overlay, XCB_CW_EVENT_MASK,
+        (const uint32_t[]) { XCB_EVENT_MASK_EXPOSURE });
 
     // Retrieve DamageNotify on root window if we are painting on an
     // overlay
@@ -5102,11 +5107,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Start listening to events on root earlier to catch all possible
   // root geometry changes
-  XSelectInput(ps->dpy, ps->root,
-    SubstructureNotifyMask
-    | ExposureMask
-    | StructureNotifyMask
-    | PropertyChangeMask);
+  xcb_change_window_attributes(c, ps->root, XCB_CW_EVENT_MASK, (const uint32_t[]) {
+      XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY
+      | XCB_EVENT_MASK_EXPOSURE
+      | XCB_EVENT_MASK_STRUCTURE_NOTIFY
+      | XCB_EVENT_MASK_PROPERTY_CHANGE });
   XFlush(ps->dpy);
 
   ps->root_width = DisplayWidth(ps->dpy, ps->scr);
@@ -5466,7 +5471,8 @@ session_destroy(session_t *ps) {
   redir_stop(ps);
 
   // Stop listening to events on root window
-  XSelectInput(ps->dpy, ps->root, 0);
+  xcb_change_window_attributes(c, ps->root, XCB_CW_EVENT_MASK,
+      (const uint32_t[]) { 0 });
 
 #ifdef CONFIG_DBUS
   // Kill DBus connection
