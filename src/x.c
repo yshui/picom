@@ -102,12 +102,11 @@ bool wid_get_text_prop(session_t *ps, Window wid, Atom prop,
 static inline void x_get_server_pictfmts(session_t *ps) {
   if (ps->pictfmts)
     return;
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   xcb_generic_error_t *e = NULL;
   // Get window picture format
   ps->pictfmts =
-    xcb_render_query_pict_formats_reply(c,
-        xcb_render_query_pict_formats(c), &e);
+    xcb_render_query_pict_formats_reply(ps->c,
+        xcb_render_query_pict_formats(ps->c), &e);
   if (e || !ps->pictfmts) {
     printf_errf("(): failed to get pict formats\n");
     abort();
@@ -144,10 +143,9 @@ x_create_picture_with_pictfmt_and_pixmap(
     }
   }
 
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_render_picture_t tmp_picture = xcb_generate_id(c);
+  xcb_render_picture_t tmp_picture = xcb_generate_id(ps->c);
   xcb_generic_error_t *e =
-    xcb_request_check(c, xcb_render_create_picture_checked(c, tmp_picture,
+    xcb_request_check(ps->c, xcb_render_create_picture_checked(ps->c, tmp_picture,
       pixmap, pictfmt->id, valuemask, buf));
   free(buf);
   if (e) {
@@ -207,17 +205,15 @@ x_create_picture(session_t *ps, int wid, int hei,
   xcb_render_picture_t picture =
     x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, tmp_pixmap, valuemask, attr);
 
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_free_pixmap(c, tmp_pixmap);
+  xcb_free_pixmap(ps->c, tmp_pixmap);
 
   return picture;
 }
 
 bool x_fetch_region(session_t *ps, xcb_xfixes_region_t r, pixman_region32_t *res) {
   xcb_generic_error_t *e = NULL;
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_xfixes_fetch_region_reply_t *xr = xcb_xfixes_fetch_region_reply(c,
-    xcb_xfixes_fetch_region(c, r), &e);
+  xcb_xfixes_fetch_region_reply_t *xr = xcb_xfixes_fetch_region_reply(ps->c,
+    xcb_xfixes_fetch_region(ps->c, r), &e);
   if (!xr) {
     printf_errf("(): failed to fetch rectangles");
     return false;
@@ -253,9 +249,8 @@ void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t pict,
       .height = rects[i].y2 - rects[i].y1,
     };
 
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   xcb_generic_error_t *e =
-    xcb_request_check(c, xcb_render_set_picture_clip_rectangles_checked(c, pict,
+    xcb_request_check(ps->c, xcb_render_set_picture_clip_rectangles_checked(ps->c, pict,
       clip_x_origin, clip_y_origin, nrects, xrects));
   if (e)
     printf_errf("(): failed to set clip region");
@@ -369,10 +364,9 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
  */
 xcb_pixmap_t
 x_create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t width, uint16_t height) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_pixmap_t pix = xcb_generate_id(c);
-  xcb_void_cookie_t cookie = xcb_create_pixmap_checked(c, depth, pix, drawable, width, height);
-  xcb_generic_error_t *err = xcb_request_check(c, cookie);
+  xcb_pixmap_t pix = xcb_generate_id(ps->c);
+  xcb_void_cookie_t cookie = xcb_create_pixmap_checked(ps->c, depth, pix, drawable, width, height);
+  xcb_generic_error_t *err = xcb_request_check(ps->c, cookie);
   if (err == NULL)
     return pix;
 

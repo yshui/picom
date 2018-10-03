@@ -550,8 +550,7 @@ make_shadow(session_t *ps, double opacity,
   int x_diff;
   int opacity_int = (int)(opacity * 25);
 
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  ximage = xcb_image_create_native(c, swidth, sheight, XCB_IMAGE_FORMAT_Z_PIXMAP, 8,
+  ximage = xcb_image_create_native(ps->c, swidth, sheight, XCB_IMAGE_FORMAT_Z_PIXMAP, 8,
     0, 0, NULL);
 
   if (!ximage) {
@@ -659,7 +658,6 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   xcb_pixmap_t shadow_pixmap = None, shadow_pixmap_argb = None;
   xcb_render_picture_t shadow_picture = None, shadow_picture_argb = None;
   xcb_gcontext_t gc = None;
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
   shadow_image = make_shadow(ps, opacity, width, height);
   if (!shadow_image) {
@@ -682,11 +680,11 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   if (!shadow_picture || !shadow_picture_argb)
     goto shadow_picture_err;
 
-  gc = xcb_generate_id(c);
-  xcb_create_gc(c, gc, shadow_pixmap, 0, NULL);
+  gc = xcb_generate_id(ps->c);
+  xcb_create_gc(ps->c, gc, shadow_pixmap, 0, NULL);
 
-  xcb_image_put(c, shadow_pixmap, gc, shadow_image, 0, 0, 0);
-  xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, ps->cshadow_picture, shadow_picture,
+  xcb_image_put(ps->c, shadow_pixmap, gc, shadow_image, 0, 0, 0);
+  xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, ps->cshadow_picture, shadow_picture,
       shadow_picture_argb, 0, 0, 0, 0, 0, 0,
       shadow_image->width, shadow_image->height);
 
@@ -698,10 +696,10 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   // Sync it once and only once
   xr_sync(ps, w->shadow_paint.pixmap, NULL);
 
-  xcb_free_gc(c, gc);
+  xcb_free_gc(ps->c, gc);
   xcb_image_destroy(shadow_image);
-  xcb_free_pixmap(c, shadow_pixmap);
-  xcb_render_free_picture(c, shadow_picture);
+  xcb_free_pixmap(ps->c, shadow_pixmap);
+  xcb_render_free_picture(ps->c, shadow_picture);
 
   return true;
 
@@ -709,15 +707,15 @@ shadow_picture_err:
   if (shadow_image)
     xcb_image_destroy(shadow_image);
   if (shadow_pixmap)
-    xcb_free_pixmap(c, shadow_pixmap);
+    xcb_free_pixmap(ps->c, shadow_pixmap);
   if (shadow_pixmap_argb)
-    xcb_free_pixmap(c, shadow_pixmap_argb);
+    xcb_free_pixmap(ps->c, shadow_pixmap_argb);
   if (shadow_picture)
-    xcb_render_free_picture(c, shadow_picture);
+    xcb_render_free_picture(ps->c, shadow_picture);
   if (shadow_picture_argb)
-    xcb_render_free_picture(c, shadow_picture_argb);
+    xcb_render_free_picture(ps->c, shadow_picture_argb);
   if (gc)
-    xcb_free_gc(c, gc);
+    xcb_free_gc(ps->c, gc);
 
   return false;
 }
@@ -733,7 +731,6 @@ solid_picture(session_t *ps, bool argb, double a,
   xcb_render_create_picture_value_list_t pa;
   xcb_render_color_t col;
   xcb_rectangle_t rect;
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
   pixmap = x_create_pixmap(ps, argb ? 32 : 8, ps->root, 1, 1);
   if (!pixmap) return None;
@@ -744,7 +741,7 @@ solid_picture(session_t *ps, bool argb, double a,
     XCB_RENDER_CP_REPEAT, &pa);
 
   if (!picture) {
-    xcb_free_pixmap(c, pixmap);
+    xcb_free_pixmap(ps->c, pixmap);
     return None;
   }
 
@@ -758,8 +755,8 @@ solid_picture(session_t *ps, bool argb, double a,
   rect.width = 1;
   rect.height = 1;
 
-  xcb_render_fill_rectangles(c, XCB_RENDER_PICT_OP_SRC, picture, col, 1, &rect);
-  xcb_free_pixmap(c, pixmap);
+  xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, picture, col, 1, &rect);
+  xcb_free_pixmap(ps->c, pixmap);
 
   return picture;
 }
@@ -826,7 +823,6 @@ long determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
 win *find_toplevel2(session_t *ps, Window wid) {
   // TODO this should probably be an "update tree", then find_toplevel.
   //      current approach is a bit more "racy"
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   win *w = NULL;
 
   // We traverse through its ancestors to find out the frame
@@ -836,7 +832,7 @@ win *find_toplevel2(session_t *ps, Window wid) {
     // xcb_query_tree probably fails if you run compton when X is somehow
     // initializing (like add it in .xinitrc). In this case
     // just leave it alone.
-    reply = xcb_query_tree_reply(c, xcb_query_tree(c, wid), NULL);
+    reply = xcb_query_tree_reply(ps->c, xcb_query_tree(ps->c, wid), NULL);
     if (reply == NULL) {
       break;
     }
@@ -866,10 +862,9 @@ recheck_focus(session_t *ps) {
 
   // Determine the currently focused window so we can apply appropriate
   // opacity on it
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   xcb_window_t wid = XCB_NONE;
   xcb_get_input_focus_reply_t *reply =
-    xcb_get_input_focus_reply(c, xcb_get_input_focus(c), NULL);
+    xcb_get_input_focus_reply(ps->c, xcb_get_input_focus(ps->c), NULL);
 
   if (reply) {
     wid = reply->focus;
@@ -899,7 +894,6 @@ get_root_tile(session_t *ps) {
   if (ps->o.paint_on_overlay) {
     return ps->root_picture;
   } */
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
   assert(!ps->root_tile_paint.pixmap);
   ps->root_tile_fill = false;
@@ -953,7 +947,7 @@ get_root_tile(session_t *ps) {
     rect.x = rect.y = 0;
     rect.width = rect.height = 1;
 
-    xcb_render_fill_rectangles(c, XCB_RENDER_PICT_OP_SRC, ps->root_tile_paint.pict, col, 1, &rect);
+    xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, ps->root_tile_paint.pict, col, 1, &rect);
   }
 
   ps->root_tile_fill = fill;
@@ -987,9 +981,8 @@ find_client_win(session_t *ps, xcb_window_t w) {
     return w;
   }
 
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_query_tree_reply_t *reply = xcb_query_tree_reply(c,
-      xcb_query_tree(c, w), NULL);
+  xcb_query_tree_reply_t *reply = xcb_query_tree_reply(ps->c,
+      xcb_query_tree(ps->c, w), NULL);
   if (!reply)
     return 0;
 
@@ -1270,7 +1263,6 @@ static bool
 xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
     int x, int y, int wid, int hei, xcb_render_fixed_t **blur_kerns,
     const region_t *reg_clip) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   assert(blur_kerns[0]);
 
   // Directly copying from tgt_buffer to it does not work, so we create a
@@ -1296,9 +1288,9 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
     // Copy from source picture to destination. The filter must
     // be applied on source picture, to get the nearby pixels outside the
     // window.
-    xcb_render_set_picture_filter(c, src_pict, strlen(XRFILTER_CONVOLUTION), XRFILTER_CONVOLUTION,
+    xcb_render_set_picture_filter(ps->c, src_pict, strlen(XRFILTER_CONVOLUTION), XRFILTER_CONVOLUTION,
         kwid * khei + 2, convolution_blur);
-    xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, src_pict, None, dst_pict,
+    xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, None, dst_pict,
         (rd_from_tgt ? x: 0), (rd_from_tgt ? y: 0), 0, 0,
         (rd_from_tgt ? 0: x), (rd_from_tgt ? 0: y), wid, hei);
     xrfilter_reset(ps, src_pict);
@@ -1311,7 +1303,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
   }
 
   if (src_pict != tgt_buffer)
-    xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, src_pict, None, tgt_buffer,
+    xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, None, tgt_buffer,
         0, 0, 0, 0, x, y, wid, hei);
 
   free_picture(ps, &tmp_picture);
@@ -1431,7 +1423,6 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
   xcb_render_picture_t pict, glx_texture_t *ptex,
   const region_t *reg_paint, const glx_prog_main_t *pprogram)
 {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   switch (ps->o.backend) {
     case BKEND_XRENDER:
     case BKEND_XR_GLX_HYBRID:
@@ -1439,7 +1430,7 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
         xcb_render_picture_t alpha_pict = get_alpha_pict_d(ps, opacity);
         if (alpha_pict != ps->alpha_picts[0]) {
           int op = ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC: XCB_RENDER_PICT_OP_OVER);
-          xcb_render_composite(c, op, pict, alpha_pict,
+          xcb_render_composite(ps->c, op, pict, alpha_pict,
               ps->tgt_buffer.pict, x, y, 0, 0, dx, dy, wid, hei);
         }
         break;
@@ -1461,14 +1452,13 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
  */
 static inline void
 paint_one(session_t *ps, win *w, const region_t *reg_paint) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   glx_mark(ps, w->id, true);
 
   // Fetch Pixmap
   if (!w->paint.pixmap && ps->has_name_pixmap) {
-    w->paint.pixmap = xcb_generate_id(c);
+    w->paint.pixmap = xcb_generate_id(ps->c);
     set_ignore_cookie(ps,
-        xcb_composite_name_window_pixmap(c, w->id, w->paint.pixmap));
+        xcb_composite_name_window_pixmap(ps->c, w->id, w->paint.pixmap));
     if (w->paint.pixmap)
       free_fence(ps, &w->fence);
   }
@@ -1526,14 +1516,14 @@ paint_one(session_t *ps, win *w, const region_t *reg_paint) {
         pixman_region32_fini(&reg);
       }
 
-      xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, pict, None,
+      xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, pict, None,
           newpict, 0, 0, 0, 0, 0, 0, wid, hei);
-      xcb_render_composite(c, XCB_RENDER_PICT_OP_DIFFERENCE, ps->white_picture, None,
+      xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE, ps->white_picture, None,
           newpict, 0, 0, 0, 0, 0, 0, wid, hei);
       // We use an extra PictOpInReverse operation to get correct pixel
       // alpha. There could be a better solution.
       if (win_has_alpha(w))
-        xcb_render_composite(c, XCB_RENDER_PICT_OP_IN_REVERSE, pict, None,
+        xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_IN_REVERSE, pict, None,
             newpict, 0, 0, 0, 0, 0, 0, wid, hei);
       pict = newpict;
     }
@@ -1633,7 +1623,7 @@ paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity * dopacity, \
             .height = hei,
           };
 
-          xcb_render_fill_rectangles(c, XCB_RENDER_PICT_OP_OVER, ps->tgt_buffer.pict,
+          xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_OVER, ps->tgt_buffer.pict,
               color, 1, &rect);
         }
         break;
@@ -1675,7 +1665,6 @@ rebuild_shadow_exclude_reg(session_t *ps) {
 /// region_real = the damage region
 static void
 paint_all(session_t *ps, region_t *region, const region_t *region_real, win * const t) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   if (!region_real)
     region_real = region;
 
@@ -1830,7 +1819,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
   if (ps->o.vsync) {
     // Make sure all previous requests are processed to achieve best
     // effect
-    XSync(ps->dpy, False);
+    x_sync(ps->c);
 #ifdef CONFIG_OPENGL
     if (glx_has_context(ps)) {
       if (ps->o.vsync_use_glfinish)
@@ -1862,14 +1851,14 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
       // No-DBE painting mode
       else if (ps->tgt_buffer.pict != ps->tgt_picture) {
         xcb_render_composite(
-          c, XCB_RENDER_PICT_OP_SRC, ps->tgt_buffer.pict, None,
+          ps->c, XCB_RENDER_PICT_OP_SRC, ps->tgt_buffer.pict, None,
           ps->tgt_picture, 0, 0, 0, 0,
           0, 0, ps->root_width, ps->root_height);
       }
       break;
 #ifdef CONFIG_OPENGL
     case BKEND_XR_GLX_HYBRID:
-      XSync(ps->dpy, False);
+      x_sync(ps->c);
       if (ps->o.vsync_use_glfinish)
         glFinish();
       else
@@ -1941,20 +1930,19 @@ repair_win(session_t *ps, win *w) {
   if (IsViewable != w->a.map_state)
     return;
 
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   region_t parts;
   pixman_region32_init(&parts);
 
   if (!w->ever_damaged) {
     win_extents(w, &parts);
     set_ignore_cookie(ps,
-        xcb_damage_subtract(c, w->damage, XCB_NONE, XCB_NONE));
+        xcb_damage_subtract(ps->c, w->damage, XCB_NONE, XCB_NONE));
   } else {
-    xcb_xfixes_region_t tmp = xcb_generate_id(c);
-    xcb_xfixes_create_region(c, tmp, 0, NULL);
+    xcb_xfixes_region_t tmp = xcb_generate_id(ps->c);
+    xcb_xfixes_create_region(ps->c, tmp, 0, NULL);
     set_ignore_cookie(ps,
-        xcb_damage_subtract(c, w->damage, XCB_NONE, tmp));
-    xcb_xfixes_translate_region(c, tmp,
+        xcb_damage_subtract(ps->c, w->damage, XCB_NONE, tmp));
+    xcb_xfixes_translate_region(ps->c, tmp,
       w->g.x + w->g.border_width,
       w->g.y + w->g.border_width);
     x_fetch_region(ps, tmp, &parts);
@@ -1989,12 +1977,10 @@ finish_map_win(session_t *ps, win **_w) {
 
 void
 map_win(session_t *ps, Window id) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-
   // Unmap overlay window if it got mapped but we are currently not
   // in redirected state.
   if (ps->overlay && id == ps->overlay && !ps->redirected) {
-    xcb_unmap_window(c, ps->overlay);
+    xcb_unmap_window(ps->c, ps->overlay);
     XFlush(ps->dpy);
   }
 
@@ -2018,12 +2004,12 @@ map_win(session_t *ps, Window id) {
 
   // Call XSelectInput() before reading properties so that no property
   // changes are lost
-  xcb_change_window_attributes(c, id, XCB_CW_EVENT_MASK,
+  xcb_change_window_attributes(ps->c, id, XCB_CW_EVENT_MASK,
       (const uint32_t[]) { determine_evmask(ps, id, WIN_EVMODE_FRAME) });
 
   // Notify compton when the shape of a window changes
   if (ps->shape_exists) {
-    xcb_shape_select_input(c, id, 1);
+    xcb_shape_select_input(ps->c, id, 1);
   }
 
   // Make sure the XSelectInput() requests are sent
@@ -2418,8 +2404,7 @@ destroy_win(session_t *ps, Window id) {
 static inline void
 root_damaged(session_t *ps) {
   if (ps->root_tile_paint.pixmap) {
-    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-    xcb_clear_area(c, true, ps->root, 0, 0, 0, 0);
+    xcb_clear_area(ps->c, true, ps->root, 0, 0, 0, 0);
     free_root_tile(ps);
   }
 
@@ -2525,14 +2510,13 @@ opts_init_track_focus(session_t *ps) {
   if (ps->o.track_focus)
     return;
 
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   ps->o.track_focus = true;
 
   if (!ps->o.use_ewmh_active_win) {
     // Start listening to FocusChange events
     for (win *w = ps->list; w; w = w->next)
       if (IsViewable == w->a.map_state)
-        xcb_change_window_attributes(c, w->id, XCB_CW_EVENT_MASK,
+        xcb_change_window_attributes(ps->c, w->id, XCB_CW_EVENT_MASK,
             (const uint32_t[]) { determine_evmask(ps, w->id, WIN_EVMODE_FRAME) });
   }
 
@@ -2749,12 +2733,10 @@ ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
   if (ev->parent == ps->root) {
     add_win(ps, ev->window, 0);
   } else {
-    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-
     destroy_win(ps, ev->window);
 
     // Reset event mask in case something wrong happens
-    xcb_change_window_attributes(c, ev->window, XCB_CW_EVENT_MASK,
+    xcb_change_window_attributes(ps->c, ev->window, XCB_CW_EVENT_MASK,
         (const uint32_t[]) { determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) });
 
     // Check if the window is an undetected client window
@@ -2774,7 +2756,7 @@ ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
         }
         // Otherwise, watch for WM_STATE on it
         else {
-          xcb_change_window_attributes(c, ev->window, XCB_CW_EVENT_MASK, (const uint32_t[]) {
+          xcb_change_window_attributes(ps->c, ev->window, XCB_CW_EVENT_MASK, (const uint32_t[]) {
               determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) | PropertyChangeMask });
         }
       }
@@ -2833,7 +2815,6 @@ update_ewmh_active_win(session_t *ps) {
 
 inline static void
 ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 #ifdef DEBUG_EVENTS
   {
     // Print out changed atom
@@ -2870,7 +2851,7 @@ ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
     // Check whether it could be a client window
     if (!find_toplevel(ps, ev->window)) {
       // Reset event mask anyway
-      xcb_change_window_attributes(c, ev->window, XCB_CW_EVENT_MASK, (const uint32_t[]) {
+      xcb_change_window_attributes(ps->c, ev->window, XCB_CW_EVENT_MASK, (const uint32_t[]) {
           determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) });
 
       win *w_top = find_toplevel2(ps, ev->window);
@@ -3515,7 +3496,6 @@ static bool
 register_cm(session_t *ps) {
   assert(!ps->reg_win);
 
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   ps->reg_win = XCreateSimpleWindow(ps->dpy, ps->root, 0, 0, 1, 1, 0,
         None, None);
 
@@ -3526,7 +3506,7 @@ register_cm(session_t *ps) {
 
   // Unredirect the window if it's redirected, just in case
   if (ps->redirected)
-    xcb_composite_unredirect_window(c, ps->reg_win, XCB_COMPOSITE_REDIRECT_MANUAL);
+    xcb_composite_unredirect_window(ps->c, ps->reg_win, XCB_COMPOSITE_REDIRECT_MANUAL);
 
   {
     XClassHint *h = XAllocClassHint();
@@ -3542,7 +3522,7 @@ register_cm(session_t *ps) {
   // Set _NET_WM_PID
   {
     uint32_t pid = getpid();
-    xcb_change_property(c, XCB_PROP_MODE_REPLACE, ps->reg_win,
+    xcb_change_property(ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win,
         get_atom(ps, "_NET_WM_PID"), XCB_ATOM_CARDINAL, 32, 1, &pid);
   }
 
@@ -3569,8 +3549,8 @@ register_cm(session_t *ps) {
     free(buf);
 
     xcb_get_selection_owner_reply_t *reply =
-      xcb_get_selection_owner_reply(c,
-          xcb_get_selection_owner(c, atom), NULL);
+      xcb_get_selection_owner_reply(ps->c,
+          xcb_get_selection_owner(ps->c, atom), NULL);
 
     if (reply && reply->owner != XCB_NONE) {
       free(reply);
@@ -3578,7 +3558,7 @@ register_cm(session_t *ps) {
       return false;
     }
     free(reply);
-    xcb_set_selection_owner(c, ps->reg_win, atom, 0);
+    xcb_set_selection_owner(ps->c, ps->reg_win, atom, 0);
   }
 
   return true;
@@ -4173,10 +4153,9 @@ init_atoms(session_t *ps) {
  */
 static void
 update_refresh_rate(session_t *ps) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   xcb_randr_get_screen_info_reply_t *randr_info =
-    xcb_randr_get_screen_info_reply(c,
-        xcb_randr_get_screen_info(c, ps->root), NULL);
+    xcb_randr_get_screen_info_reply(ps->c,
+        xcb_randr_get_screen_info(ps->c, ps->root), NULL);
 
   if (!randr_info)
     return;
@@ -4524,10 +4503,9 @@ init_dbe(session_t *ps) {
  */
 static bool
 init_overlay(session_t *ps) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   xcb_composite_get_overlay_window_reply_t *reply =
-    xcb_composite_get_overlay_window_reply(c,
-        xcb_composite_get_overlay_window(c, ps->root), NULL);
+    xcb_composite_get_overlay_window_reply(ps->c,
+        xcb_composite_get_overlay_window(ps->c, ps->root), NULL);
   if (reply) {
     ps->overlay = reply->overlay_win;
     free(reply);
@@ -4538,13 +4516,13 @@ init_overlay(session_t *ps) {
     // Set window region of the overlay window, code stolen from
     // compiz-0.8.8
     xcb_generic_error_t *e;
-    e = XCB_SYNCED_VOID(xcb_shape_mask, c, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING,
+    e = XCB_SYNCED_VOID(xcb_shape_mask, ps->c, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING,
       ps->overlay, 0, 0, 0);
     if (e) {
       printf_errf("(): failed to set the bounding shape of overlay, giving up.");
       exit(1);
     }
-    e = XCB_SYNCED_VOID(xcb_shape_rectangles, c, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_INPUT,
+    e = XCB_SYNCED_VOID(xcb_shape_rectangles, ps->c, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_INPUT,
       XCB_CLIP_ORDERING_UNSORTED, ps->overlay, 0, 0, 0, NULL);
     if (e) {
       printf_errf("(): failed to set the input shape of overlay, giving up.");
@@ -4552,7 +4530,7 @@ init_overlay(session_t *ps) {
     }
 
     // Listen to Expose events on the overlay
-    xcb_change_window_attributes(c, ps->overlay, XCB_CW_EVENT_MASK,
+    xcb_change_window_attributes(ps->c, ps->overlay, XCB_CW_EVENT_MASK,
         (const uint32_t[]) { XCB_EVENT_MASK_EXPOSURE });
 
     // Retrieve DamageNotify on root window if we are painting on an
@@ -4581,7 +4559,6 @@ init_overlay(session_t *ps) {
  */
 static bool
 init_filters(session_t *ps) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   // Blur filter
   if (ps->o.blur_background || ps->o.blur_background_frame) {
     switch (ps->o.backend) {
@@ -4589,8 +4566,8 @@ init_filters(session_t *ps) {
       case BKEND_XR_GLX_HYBRID:
         {
           // Query filters
-          xcb_render_query_filters_reply_t *pf = xcb_render_query_filters_reply(c,
-              xcb_render_query_filters(c, get_tgt_window(ps)), NULL);
+          xcb_render_query_filters_reply_t *pf = xcb_render_query_filters_reply(ps->c,
+              xcb_render_query_filters(ps->c, get_tgt_window(ps)), NULL);
           if (pf) {
             xcb_str_iterator_t iter = xcb_render_query_filters_filters_iterator(pf);
             for (; iter.rem; xcb_str_next(&iter)) {
@@ -4632,14 +4609,12 @@ redir_start(session_t *ps) {
     printf_dbgf("(): Screen redirected.\n");
 #endif
 
-    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-
     // Map overlay window. Done firstly according to this:
     // https://bugzilla.gnome.org/show_bug.cgi?id=597014
     if (ps->overlay)
-      xcb_map_window(c, ps->overlay);
+      xcb_map_window(ps->c, ps->overlay);
 
-    xcb_composite_redirect_subwindows(c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
+    xcb_composite_redirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
 
     /*
     // Unredirect GL context window as this may have an effect on VSync:
@@ -4651,7 +4626,7 @@ redir_start(session_t *ps) {
     } */
 
     // Must call XSync() here
-    XSync(ps->dpy, False);
+    x_sync(ps->c);
 
     ps->redirected = true;
 
@@ -4666,7 +4641,6 @@ redir_start(session_t *ps) {
 static void
 redir_stop(session_t *ps) {
   if (ps->redirected) {
-    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 #ifdef DEBUG_REDIR
     print_timestamp(ps);
     printf_dbgf("(): Screen unredirected.\n");
@@ -4677,13 +4651,13 @@ redir_stop(session_t *ps) {
     for (win *w = ps->list; w; w = w->next)
       free_wpaint(ps, w);
 
-    xcb_composite_unredirect_subwindows(c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
+    xcb_composite_unredirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
     // Unmap overlay window
     if (ps->overlay)
-      xcb_unmap_window(c, ps->overlay);
+      xcb_unmap_window(ps->c, ps->overlay);
 
     // Must call XSync() here
-    XSync(ps->dpy, False);
+    x_sync(ps->c);
 
     ps->redirected = false;
   }
@@ -4695,13 +4669,12 @@ handle_queued_x_events(EV_P_ ev_prepare *w, int revents) {
   ev_session_prepare *sw = (void *)w;
   session_t *ps = sw->ps;
   xcb_generic_event_t *ev;
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  while ((ev = xcb_poll_for_queued_event(c))) {
+  while ((ev = xcb_poll_for_queued_event(ps->c))) {
     ev_handle(ps, ev);
     free(ev);
   };
   XFlush(ps->dpy);
-  xcb_flush(c);
+  xcb_flush(ps->c);
 }
 
 /**
@@ -4833,8 +4806,7 @@ delayed_draw_callback(EV_P_ ev_idle *w, int revents) {
 static void
 x_event_callback(EV_P_ ev_io *w, int revents) {
   session_t *ps = (session_t *)w;
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
-  xcb_generic_event_t *ev = xcb_poll_for_event(c);
+  xcb_generic_event_t *ev = xcb_poll_for_event(ps->c);
   if (ev) {
     ev_handle(ps, ev);
     free(ev);
@@ -4849,18 +4821,17 @@ cxinerama_upd_scrs(session_t *ps) {
 
   if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists) return;
 
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   xcb_xinerama_is_active_reply_t *active =
-    xcb_xinerama_is_active_reply(c,
-        xcb_xinerama_is_active(c), NULL);
+    xcb_xinerama_is_active_reply(ps->c,
+        xcb_xinerama_is_active(ps->c), NULL);
   if (!active || !active->state) {
     free(active);
     return;
   }
   free(active);
 
-  ps->xinerama_scrs = xcb_xinerama_query_screens_reply(c,
-      xcb_xinerama_query_screens(c), NULL);
+  ps->xinerama_scrs = xcb_xinerama_query_screens_reply(ps->c,
+      xcb_xinerama_query_screens(ps->c), NULL);
   if (!ps->xinerama_scrs)
     return;
 
@@ -4889,6 +4860,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   static const session_t s_def = {
     .dpy = NULL,
     .scr = 0,
+    .c = NULL,
     .vis = 0,
     .depth = 0,
     .root = None,
@@ -5093,7 +5065,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     }
     XSetEventQueueOwner(ps->dpy, XCBOwnsEventQueue);
   }
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  ps->c = XGetXCBConnection(ps->dpy);
   const xcb_query_extension_reply_t *ext_info;
 
   XSetErrorHandler(xerror);
@@ -5109,7 +5081,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Start listening to events on root earlier to catch all possible
   // root geometry changes
-  xcb_change_window_attributes(c, ps->root, XCB_CW_EVENT_MASK, (const uint32_t[]) {
+  xcb_change_window_attributes(ps->c, ps->root, XCB_CW_EVENT_MASK, (const uint32_t[]) {
       XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY
       | XCB_EVENT_MASK_EXPOSURE
       | XCB_EVENT_MASK_STRUCTURE_NOTIFY
@@ -5119,15 +5091,15 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->root_width = DisplayWidth(ps->dpy, ps->scr);
   ps->root_height = DisplayHeight(ps->dpy, ps->scr);
 
-  xcb_prefetch_extension_data(c, &xcb_render_id);
-  xcb_prefetch_extension_data(c, &xcb_composite_id);
-  xcb_prefetch_extension_data(c, &xcb_damage_id);
-  xcb_prefetch_extension_data(c, &xcb_shape_id);
-  xcb_prefetch_extension_data(c, &xcb_xfixes_id);
-  xcb_prefetch_extension_data(c, &xcb_randr_id);
-  xcb_prefetch_extension_data(c, &xcb_xinerama_id);
+  xcb_prefetch_extension_data(ps->c, &xcb_render_id);
+  xcb_prefetch_extension_data(ps->c, &xcb_composite_id);
+  xcb_prefetch_extension_data(ps->c, &xcb_damage_id);
+  xcb_prefetch_extension_data(ps->c, &xcb_shape_id);
+  xcb_prefetch_extension_data(ps->c, &xcb_xfixes_id);
+  xcb_prefetch_extension_data(ps->c, &xcb_randr_id);
+  xcb_prefetch_extension_data(ps->c, &xcb_xinerama_id);
 
-  ext_info = xcb_get_extension_data(c, &xcb_render_id);
+  ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
   if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No render extension\n");
     exit(1);
@@ -5135,7 +5107,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->render_event = ext_info->first_event;
   ps->render_error = ext_info->first_error;
 
-  ext_info = xcb_get_extension_data(c, &xcb_composite_id);
+  ext_info = xcb_get_extension_data(ps->c, &xcb_composite_id);
   if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No composite extension\n");
     exit(1);
@@ -5146,8 +5118,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   {
     xcb_composite_query_version_reply_t *reply =
-      xcb_composite_query_version_reply(c,
-          xcb_composite_query_version(c, XCB_COMPOSITE_MAJOR_VERSION, XCB_COMPOSITE_MINOR_VERSION),
+      xcb_composite_query_version_reply(ps->c,
+          xcb_composite_query_version(ps->c, XCB_COMPOSITE_MAJOR_VERSION, XCB_COMPOSITE_MINOR_VERSION),
           NULL);
 
     if (!ps->o.no_name_pixmap
@@ -5157,25 +5129,25 @@ session_init(session_t *ps_old, int argc, char **argv) {
     free(reply);
   }
 
-  ext_info = xcb_get_extension_data(c, &xcb_damage_id);
+  ext_info = xcb_get_extension_data(ps->c, &xcb_damage_id);
   if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No damage extension\n");
     exit(1);
   }
   ps->damage_event = ext_info->first_event;
   ps->damage_error = ext_info->first_error;
-  xcb_discard_reply(c,
-      xcb_damage_query_version(c, XCB_DAMAGE_MAJOR_VERSION, XCB_DAMAGE_MINOR_VERSION).sequence);
+  xcb_discard_reply(ps->c,
+      xcb_damage_query_version(ps->c, XCB_DAMAGE_MAJOR_VERSION, XCB_DAMAGE_MINOR_VERSION).sequence);
 
-  ext_info = xcb_get_extension_data(c, &xcb_xfixes_id);
+  ext_info = xcb_get_extension_data(ps->c, &xcb_xfixes_id);
   if (!ext_info || !ext_info->present) {
     fprintf(stderr, "No XFixes extension\n");
     exit(1);
   }
   ps->xfixes_event = ext_info->first_event;
   ps->xfixes_error = ext_info->first_error;
-  xcb_discard_reply(c,
-      xcb_xfixes_query_version(c, XCB_XFIXES_MAJOR_VERSION, XCB_XFIXES_MINOR_VERSION).sequence);
+  xcb_discard_reply(ps->c,
+      xcb_xfixes_query_version(ps->c, XCB_XFIXES_MAJOR_VERSION, XCB_XFIXES_MINOR_VERSION).sequence);
 
   // Build a safe representation of display name
   {
@@ -5202,7 +5174,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   get_cfg(ps, argc, argv, false);
 
   // Query X Shape
-  ext_info = xcb_get_extension_data(c, &xcb_shape_id);
+  ext_info = xcb_get_extension_data(ps->c, &xcb_shape_id);
   if (ext_info && ext_info->present) {
     ps->shape_event = ext_info->first_event;
     ps->shape_error = ext_info->first_error;
@@ -5232,7 +5204,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Query X RandR
   if ((ps->o.sw_opti && !ps->o.refresh_rate) || ps->o.xinerama_shadow_crop) {
-    ext_info = xcb_get_extension_data(c, &xcb_randr_id);
+    ext_info = xcb_get_extension_data(ps->c, &xcb_randr_id);
     if (ext_info && ext_info->present) {
       ps->randr_exists = true;
       ps->randr_event = ext_info->first_event;
@@ -5261,7 +5233,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // Query X Xinerama extension
   if (ps->o.xinerama_shadow_crop) {
 #ifdef CONFIG_XINERAMA
-    ext_info = xcb_get_extension_data(c, &xcb_xinerama_id);
+    ext_info = xcb_get_extension_data(ps->c, &xcb_xinerama_id);
     ps->xinerama_exists = ext_info && ext_info->present;
 #else
     printf_errf("(): Xinerama support not compiled in.");
@@ -5313,7 +5285,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // an auto-detected refresh rate, or when Xinerama features are enabled
   if (ps->randr_exists && ((ps->o.sw_opti && !ps->o.refresh_rate)
         || ps->o.xinerama_shadow_crop))
-    xcb_randr_select_input(c, ps->root, XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
+    xcb_randr_select_input(ps->c, ps->root, XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
 
   // Initialize VSync
   if (!vsync_init(ps))
@@ -5400,14 +5372,14 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ev_set_priority(&ps->event_check->w, EV_MINPRI);
   ev_prepare_start(ps->loop, &ps->event_check->w);
 
-  xcb_grab_server(c);
+  xcb_grab_server(ps->c);
 
   {
     xcb_window_t *children;
     int nchildren;
 
-    xcb_query_tree_reply_t *reply = xcb_query_tree_reply(c,
-        xcb_query_tree(c, ps->root), NULL);
+    xcb_query_tree_reply_t *reply = xcb_query_tree_reply(ps->c,
+        xcb_query_tree(ps->c, ps->root), NULL);
 
     if (reply) {
       children = xcb_query_tree_children(reply);
@@ -5428,7 +5400,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     recheck_focus(ps);
   }
 
-  xcb_ungrab_server(c);
+  xcb_ungrab_server(ps->c);
   // ALWAYS flush after xcb_ungrab_server()!
   XFlush(ps->dpy);
 
@@ -5476,11 +5448,10 @@ session_init(session_t *ps_old, int argc, char **argv) {
  */
 static void
 session_destroy(session_t *ps) {
-  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
   redir_stop(ps);
 
   // Stop listening to events on root window
-  xcb_change_window_attributes(c, ps->root, XCB_CW_EVENT_MASK,
+  xcb_change_window_attributes(ps->c, ps->root, XCB_CW_EVENT_MASK,
       (const uint32_t[]) { 0 });
 
 #ifdef CONFIG_DBUS
@@ -5618,18 +5589,18 @@ session_destroy(session_t *ps) {
 
   // Release overlay window
   if (ps->overlay) {
-    xcb_composite_release_overlay_window(c, ps->overlay);
+    xcb_composite_release_overlay_window(ps->c, ps->overlay);
     ps->overlay = None;
   }
 
   // Free reg_win
   if (ps->reg_win) {
-    xcb_destroy_window(c, ps->reg_win);
+    xcb_destroy_window(ps->c, ps->reg_win);
     ps->reg_win = None;
   }
 
   // Flush all events
-  XSync(ps->dpy, True);
+  x_sync(ps->c);
   ev_io_stop(ps->loop, &ps->xiow);
 
 #ifdef DEBUG_XRC

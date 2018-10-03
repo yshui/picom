@@ -1461,9 +1461,8 @@ c2_match_once_leaf(session_t *ps, win *w, const c2_l_t *pleaf,
               idx, 1L, c2_get_atom_type(pleaf), pleaf->format);
           Atom atom = winprop_get_int(prop);
           if (atom) {
-            xcb_connection_t *c = XGetXCBConnection(ps->dpy);
             xcb_get_atom_name_reply_t *reply =
-              xcb_get_atom_name_reply(c, xcb_get_atom_name(c, atom), NULL);
+              xcb_get_atom_name_reply(ps->c, xcb_get_atom_name(ps->c, atom), NULL);
             if (reply) {
               tgt_free = strndup(
                   xcb_get_atom_name_name(reply), xcb_get_atom_name_name_length(reply));
