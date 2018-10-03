@@ -659,7 +659,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   xcb_image_t *shadow_image = NULL;
   xcb_pixmap_t shadow_pixmap = None, shadow_pixmap_argb = None;
   xcb_render_picture_t shadow_picture = None, shadow_picture_argb = None;
-  GC gc = None;
+  xcb_gcontext_t gc = None;
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
   shadow_image = make_shadow(ps, opacity, width, height);
@@ -683,13 +683,10 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   if (!shadow_picture || !shadow_picture_argb)
     goto shadow_picture_err;
 
-  gc = XCreateGC(ps->dpy, shadow_pixmap, 0, 0);
-  if (!gc) {
-    printf_errf("(): failed to create graphic context");
-    goto shadow_picture_err;
-  }
+  gc = xcb_generate_id(c);
+  xcb_create_gc(c, gc, shadow_pixmap, 0, NULL);
 
-  xcb_image_put(c, shadow_pixmap, XGContextFromGC(gc), shadow_image, 0, 0, 0);
+  xcb_image_put(c, shadow_pixmap, gc, shadow_image, 0, 0, 0);
   xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, ps->cshadow_picture, shadow_picture,
       shadow_picture_argb, 0, 0, 0, 0, 0, 0,
       shadow_image->width, shadow_image->height);
@@ -702,7 +699,7 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   // Sync it once and only once
   xr_sync(ps, w->shadow_paint.pixmap, NULL);
 
-  XFreeGC(ps->dpy, gc);
+  xcb_free_gc(c, gc);
   xcb_image_destroy(shadow_image);
   xcb_free_pixmap(c, shadow_pixmap);
   xcb_render_free_picture(c, shadow_picture);
@@ -721,7 +718,7 @@ shadow_picture_err:
   if (shadow_picture_argb)
     xcb_render_free_picture(c, shadow_picture_argb);
   if (gc)
-    XFreeGC(ps->dpy, gc);
+    xcb_free_gc(c, gc);
 
   return false;
 }
