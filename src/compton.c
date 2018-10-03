@@ -984,27 +984,29 @@ paint_root(session_t *ps, const region_t *reg_paint) {
 /**
  * Look for the client window of a particular window.
  */
-Window
-find_client_win(session_t *ps, Window w) {
+xcb_window_t
+find_client_win(session_t *ps, xcb_window_t w) {
   if (wid_has_prop(ps, w, ps->atom_client)) {
     return w;
   }
 
-  Window *children;
-  unsigned int nchildren;
-  unsigned int i;
-  Window ret = 0;
-
-  if (!wid_get_children(ps, w, &children, &nchildren)) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_query_tree_reply_t *reply = xcb_query_tree_reply(c,
+      xcb_query_tree(c, w), NULL);
+  if (!reply)
     return 0;
-  }
+
+  xcb_window_t *children = xcb_query_tree_children(reply);
+  int nchildren = xcb_query_tree_children_length(reply);
+  int i;
+  xcb_window_t ret = 0;
 
   for (i = 0; i < nchildren; ++i) {
     if ((ret = find_client_win(ps, children[i])))
       break;
   }
 
-  cxfree(children);
+  free(reply);
 
   return ret;
 }
