@@ -5,7 +5,7 @@
  * Based on `xcompmgr` - Copyright (c) 2003, Keith Packard
  *
  * Copyright (c) 2011-2013, Christopher Jeffrey
- * See LICENSE for more information.
+ * See LICENSE-mit for more information.
  *
  */
 

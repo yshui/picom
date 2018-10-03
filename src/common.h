@@ -7,7 +7,7 @@
  * Copyright (c) 2011-2013, Christopher Jeffrey
  * Copyright (c) 2018, Yuxuan Shui <yshuiv7@gmail.com>
  *
- * See LICENSE for more information.
+ * See LICENSE-mit for more information.
  *
  */
 
