@@ -2413,7 +2413,8 @@ destroy_win(session_t *ps, Window id) {
 static inline void
 root_damaged(session_t *ps) {
   if (ps->root_tile_paint.pixmap) {
-    XClearArea(ps->dpy, ps->root, 0, 0, 0, 0, true);
+    xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+    xcb_clear_area(c, true, ps->root, 0, 0, 0, 0);
     free_root_tile(ps);
   }
 
