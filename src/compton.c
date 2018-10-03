@@ -3562,13 +3562,19 @@ register_cm(session_t *ps) {
     snprintf(buf, len, REGISTER_PROP "%d", ps->scr);
     buf[len - 1] = '\0';
     atom = get_atom(ps, buf);
+    free(buf);
 
-    if (XGetSelectionOwner(ps->dpy, atom) != None) {
+    xcb_get_selection_owner_reply_t *reply =
+      xcb_get_selection_owner_reply(c,
+          xcb_get_selection_owner(c, atom), NULL);
+
+    if (reply && reply->owner != XCB_NONE) {
+      free(reply);
       fprintf(stderr, "Another composite manager is already running\n");
       return false;
     }
+    free(reply);
     xcb_set_selection_owner(c, ps->reg_win, atom, 0);
-    free(buf);
   }
 
   return true;
