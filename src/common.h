@@ -1696,9 +1696,19 @@ cxfree(void *data) {
 /**
  * Wrapper of XInternAtom() for convenience.
  */
-static inline Atom
+static inline xcb_atom_t
 get_atom(session_t *ps, const char *atom_name) {
-  return XInternAtom(ps->dpy, atom_name, False);
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_intern_atom_reply_t *reply =
+    xcb_intern_atom_reply(c,
+        xcb_intern_atom(c, False, strlen(atom_name), atom_name),
+        NULL);
+
+  xcb_atom_t atom = XCB_NONE;
+  if (reply)
+    atom = reply->atom;
+  free(reply);
+  return atom;
 }
 
 /**
