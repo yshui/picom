@@ -2840,9 +2840,17 @@ ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
 #ifdef DEBUG_EVENTS
   {
     // Print out changed atom
-    char *name = XGetAtomName(ps->dpy, ev->atom);
-    printf_dbg("  { atom = %s }\n", name);
-    cxfree(name);
+    xcb_get_atom_name_reply_t *reply =
+      xcb_get_atom_name_reply(ps->c, xcb_get_atom_name(ps->c, ev->atom), NULL);
+    const char *name = "?";
+    int name_len = 1;
+    if (reply) {
+        name = xcb_get_atom_name_name(reply);
+        name_len = xcb_get_atom_name_name_length(reply);
+    }
+
+    printf_dbg("  { atom = %.*s }\n", name_len, name);
+    free(reply);
   }
 #endif
 
