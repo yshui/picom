@@ -2838,9 +2838,12 @@ ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
 #ifdef DEBUG_EVENTS
   {
     // Print out changed atom
-    char *name = XGetAtomName(ps->dpy, ev->atom);
-    printf_dbg("  { atom = %s }\n", name);
-    cxfree(name);
+    xcb_get_atom_name_reply_t *reply =
+      xcb_get_atom_name_reply(c, xcb_get_atom_name(c, ev->atom), NULL);
+    printf_dbg("  { atom = %.*s }\n",
+        xcb_get_atom_name_name_length(reply),
+        xcb_get_atom_name_name(reply));
+    free(reply);
   }
 #endif
 
