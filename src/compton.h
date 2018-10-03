@@ -312,12 +312,12 @@ win_ev_stop(session_t *ps, win *w) {
   xcb_connection_t *c = XGetXCBConnection(ps->dpy);
 
   // Will get BadWindow if the window is destroyed
-  set_ignore_next(ps);
-  XSelectInput(ps->dpy, w->id, 0);
+  set_ignore_cookie(ps,
+      xcb_change_window_attributes(c, w->id, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
 
   if (w->client_win) {
-    set_ignore_next(ps);
-    XSelectInput(ps->dpy, w->client_win, 0);
+    set_ignore_cookie(ps,
+        xcb_change_window_attributes(c, w->client_win, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
   }
 
   if (ps->shape_exists) {

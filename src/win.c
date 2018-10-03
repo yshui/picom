@@ -639,8 +639,9 @@ void win_mark_client(session_t *ps, win *w, Window client) {
   if (IsViewable != w->a.map_state)
     return;
 
-  XSelectInput(ps->dpy, client,
-               determine_evmask(ps, client, WIN_EVMODE_CLIENT));
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+  xcb_change_window_attributes(c, client, XCB_CW_EVENT_MASK,
+      (const uint32_t[]) { determine_evmask(ps, client, WIN_EVMODE_CLIENT) });
 
   // Make sure the XSelectInput() requests are sent
   XFlush(ps->dpy);
@@ -676,13 +677,15 @@ void win_mark_client(session_t *ps, win *w, Window client) {
  * @param w struct _win of the parent window
  */
 void win_unmark_client(session_t *ps, win *w) {
+  xcb_connection_t *c = XGetXCBConnection(ps->dpy);
+
   Window client = w->client_win;
 
   w->client_win = None;
 
   // Recheck event mask
-  XSelectInput(ps->dpy, client,
-               determine_evmask(ps, client, WIN_EVMODE_UNKNOWN));
+  xcb_change_window_attributes(c, client, XCB_CW_EVENT_MASK,
+      (const uint32_t[]) { determine_evmask(ps, client, WIN_EVMODE_UNKNOWN) });
 }
 
 /**
