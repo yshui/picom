@@ -4854,7 +4854,7 @@ cxinerama_upd_scrs(session_t *ps) {
   xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
   ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
 
-  ps->xinerama_scr_regs = allocchk(malloc(sizeof(xcb_xfixes_region_t *)
+  ps->xinerama_scr_regs = allocchk(malloc(sizeof(region_t)
         * ps->xinerama_nscrs));
   for (int i = 0; i < ps->xinerama_nscrs; ++i) {
     const xcb_xinerama_screen_info_t * const s = &scrs[i];
