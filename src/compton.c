@@ -1995,7 +1995,7 @@ map_win(session_t *ps, Window id) {
   // Unmap overlay window if it got mapped but we are currently not
   // in redirected state.
   if (ps->overlay && id == ps->overlay && !ps->redirected) {
-    XUnmapWindow(ps->dpy, ps->overlay);
+    xcb_unmap_window(c, ps->overlay);
     XFlush(ps->dpy);
   }
 
@@ -4550,7 +4550,7 @@ init_overlay(session_t *ps) {
 
     // Unmap overlay, firstly. But this typically does not work because
     // the window isn't created yet.
-    // XUnmapWindow(ps->dpy, ps->overlay);
+    // xcb_unmap_window(c, ps->overlay);
     // XFlush(ps->dpy);
   }
   else {
@@ -4626,7 +4626,7 @@ redir_start(session_t *ps) {
     // Map overlay window. Done firstly according to this:
     // https://bugzilla.gnome.org/show_bug.cgi?id=597014
     if (ps->overlay)
-      XMapWindow(ps->dpy, ps->overlay);
+      xcb_map_window(c, ps->overlay);
 
     xcb_composite_redirect_subwindows(c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
 
@@ -4669,7 +4669,7 @@ redir_stop(session_t *ps) {
     xcb_composite_unredirect_subwindows(c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
     // Unmap overlay window
     if (ps->overlay)
-      XUnmapWindow(ps->dpy, ps->overlay);
+      xcb_unmap_window(c, ps->overlay);
 
     // Must call XSync() here
     XSync(ps->dpy, False);
