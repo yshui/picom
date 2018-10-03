@@ -33,6 +33,7 @@ Assuming you already have all the usual building tools installed (e.g. gcc, make
 * libconfig (optional, disable with the `NO_LIBCONFIG=1` make flag)
 * libGL (optional, disable with the `NO_OPENGL=1` make flag)
 * libpcre (optional, disable with the `NO_REGEX_PCRE=1` make flag)
+* libev
 
 To build the documents, you need `asciidoc`
 
