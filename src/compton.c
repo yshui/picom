@@ -5389,7 +5389,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ev_set_priority(&ps->event_check->w, EV_MINPRI);
   ev_prepare_start(ps->loop, &ps->event_check->w);
 
-  XGrabServer(ps->dpy);
+  xcb_grab_server(c);
 
   {
     Window root_return, parent_return;
@@ -5410,8 +5410,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
     recheck_focus(ps);
   }
 
-  XUngrabServer(ps->dpy);
-  // ALWAYS flush after XUngrabServer()!
+  xcb_ungrab_server(c);
+  // ALWAYS flush after xcb_ungrab_server()!
   XFlush(ps->dpy);
 
   // Initialize DBus
