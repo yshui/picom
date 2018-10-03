@@ -43,8 +43,8 @@ void add_damage(session_t *ps, const region_t *damage);
 
 long determine_evmask(session_t *ps, Window wid, win_evmode_t mode);
 
-Window
-find_client_win(session_t *ps, Window w);
+xcb_window_t
+find_client_win(session_t *ps, xcb_window_t w);
 
 win *find_toplevel2(session_t *ps, Window wid);
 
@@ -324,28 +324,6 @@ win_ev_stop(session_t *ps, win *w) {
     set_ignore_cookie(ps,
         xcb_shape_select_input(c, w->id, 0));
   }
-}
-
-/**
- * Get the children of a window.
- *
- * @param ps current session
- * @param w window to check
- * @param children [out] an array of child window IDs
- * @param nchildren [out] number of children
- * @return 1 if successful, 0 otherwise
- */
-static inline bool
-wid_get_children(session_t *ps, Window w,
-    Window **children, unsigned *nchildren) {
-  Window troot, tparent;
-
-  if (!XQueryTree(ps->dpy, w, &troot, &tparent, children, nchildren)) {
-    *nchildren = 0;
-    return false;
-  }
-
-  return true;
 }
 
 /**
