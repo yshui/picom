@@ -2819,10 +2819,15 @@ ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
   {
     // Print out changed atom
     xcb_get_atom_name_reply_t *reply =
-      xcb_get_atom_name_reply(c, xcb_get_atom_name(c, ev->atom), NULL);
-    printf_dbg("  { atom = %.*s }\n",
-        xcb_get_atom_name_name_length(reply),
-        xcb_get_atom_name_name(reply));
+      xcb_get_atom_name_reply(ps->c, xcb_get_atom_name(ps->c, ev->atom), NULL);
+    const char *name = "?";
+    int name_len = 1;
+    if (reply) {
+        name = xcb_get_atom_name_name(reply);
+        name_len = xcb_get_atom_name_name_length(reply);
+    }
+
+    printf_dbg("  { atom = %.*s }\n", name_len, name);
     free(reply);
   }
 #endif
