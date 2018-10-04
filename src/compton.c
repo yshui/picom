@@ -4680,6 +4680,11 @@ handle_queued_x_events(EV_P_ ev_prepare *w, int revents) {
   };
   XFlush(ps->dpy);
   xcb_flush(ps->c);
+
+  int err = xcb_connection_has_error(ps->c);
+  if (err) {
+    printf_errfq(1, "(): X11 server connection broke (error %d)", err);
+  }
 }
 
 /**
