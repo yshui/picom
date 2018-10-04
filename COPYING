@@ -8,3 +8,13 @@ and Carl Worth. Menu transparency was implemented by Dana Jansens.
 Numerous contributions to compton from Richard Grenville.
 
 See the CONTRIBUTORS file for a complete list of contributors
+
+This source code is provided under:
+
+	SPDX-License-Identifier: MPL-2.0 AND MIT
+
+And the preferred license for new source files in this project is:
+
+	SPDX-License-Identifier: MPL-2.0
+
+You can find the text of the licenses in the LICENSES directory.
