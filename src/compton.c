@@ -792,15 +792,15 @@ should_ignore(session_t *ps, unsigned long sequence) {
  * Determine the event mask for a window.
  */
 long determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
-  long evmask = NoEventMask;
+  long evmask = 0;
   win *w = NULL;
 
   // Check if it's a mapped frame window
   if (WIN_EVMODE_FRAME == mode
       || ((w = find_win(ps, wid)) && IsViewable == w->a.map_state)) {
-    evmask |= PropertyChangeMask;
+    evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
     if (ps->o.track_focus && !ps->o.use_ewmh_active_win)
-      evmask |= FocusChangeMask;
+      evmask |= XCB_EVENT_MASK_FOCUS_CHANGE;
   }
 
   // Check if it's a mapped client window
@@ -808,7 +808,7 @@ long determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
       || ((w = find_toplevel(ps, wid)) && IsViewable == w->a.map_state)) {
     if (ps->o.frame_opacity || ps->o.track_wdata || ps->track_atom_lst
         || ps->o.detect_client_opacity)
-      evmask |= PropertyChangeMask;
+      evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
   }
 
   return evmask;
@@ -2759,7 +2759,7 @@ ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
         // Otherwise, watch for WM_STATE on it
         else {
           xcb_change_window_attributes(ps->c, ev->window, XCB_CW_EVENT_MASK, (const uint32_t[]) {
-              determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) | PropertyChangeMask });
+              determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) | XCB_EVENT_MASK_PROPERTY_CHANGE });
         }
       }
     }
