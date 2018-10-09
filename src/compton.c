@@ -1958,6 +1958,7 @@ repair_win(session_t *ps, win *w) {
       w->g.x + w->g.border_width,
       w->g.y + w->g.border_width);
     x_fetch_region(ps, tmp, &parts);
+    xcb_xfixes_destroy_region(c, tmp);
   }
 
   w->ever_damaged = true;
