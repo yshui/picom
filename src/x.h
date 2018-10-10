@@ -24,6 +24,11 @@ typedef struct winprop winprop_t;
   r; \
 })
 
+static inline void
+x_sync(xcb_connection_t *c) {
+  free(xcb_get_input_focus_reply(c, xcb_get_input_focus(c), NULL));
+}
+
 /**
  * Get a specific attribute of a window.
  *
