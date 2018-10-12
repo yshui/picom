@@ -37,7 +37,6 @@ void win_unmark_client(session_t *ps, win *w);
 void win_recheck_client(session_t *ps, win *w);
 Window win_get_leader_raw(session_t *ps, win *w, int recursions);
 bool win_get_class(session_t *ps, win *w);
-void win_rounded_corners(session_t *ps, win *w);
 void win_calc_opacity(session_t *ps, win *w);
 void win_calc_dim(session_t *ps, win *w);
 /**

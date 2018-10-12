@@ -129,10 +129,6 @@ void win_rounded_corners(session_t *ps, win *w) {
   if (!w->bounding_shaped)
     return;
 
-  // Fetch its bounding region
-  if (!pixman_region32_not_empty(&w->bounding_shape))
-    win_update_bounding_shape(ps, w);
-
   // Quit if border_size() returns None
   if (!pixman_region32_not_empty(&w->bounding_shape))
     return;
