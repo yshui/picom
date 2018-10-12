@@ -1838,10 +1838,10 @@ free_fence(session_t *ps, XSyncFence *pfence) {
  * Check if a rectangle includes the whole screen.
  */
 static inline bool
-rect_is_fullscreen(session_t *ps, int x, int y, unsigned wid, unsigned hei) {
+rect_is_fullscreen(session_t *ps, int x, int y, int wid, int hei) {
   return (x <= 0 && y <= 0 &&
-          (x + wid) >= (unsigned int)ps->root_width &&
-          (y + hei) >= (unsigned int)ps->root_height);
+          (x + wid) >= ps->root_width &&
+          (y + hei) >= ps->root_height);
 }
 
 static void
