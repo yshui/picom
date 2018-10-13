@@ -71,15 +71,11 @@ void win_extents(win *w, region_t *res);
  */
 void add_damage_from_win(session_t *ps, win *w);
 /**
- * Get a rectangular region a window occupies, excluding shadow.
- *
- * global = use global coordinates
- */
-void win_get_region(session_t *ps, win *w, bool global, region_t *);
-/**
  * Get a rectangular region a window occupies, excluding frame and shadow.
+ *
+ * Return region in global coordinates.
  */
-void win_get_region_noframe(session_t *ps, win *w, bool global, region_t *);
+void win_get_region_noframe_local(session_t *ps, win *w, region_t *);
 /**
  * Retrieve frame extents from a window.
  */
@@ -102,3 +98,12 @@ bool win_has_alpha(win *w);
 
 /// check if reg_ignore_valid is true for all windows above us
 bool win_is_region_ignore_valid(session_t *ps, win *w);
+
+static inline region_t
+win_get_bounding_shape_global_by_val(win *w) {
+  region_t ret;
+  pixman_region32_init(&ret);
+  pixman_region32_copy(&ret, &w->bounding_shape);
+  pixman_region32_translate(&ret, w->g.x, w->g.y);
+  return ret;
+}

@@ -16,6 +16,16 @@
 
 #include "win.h"
 
+/// Generate a "return by value" function, from a function that returns the
+/// region via a region_t pointer argument.
+/// Function signature has to be (win *, region_t *)
+#define gen_by_val(fun) void region_t fun##_by_val(win *w) { \
+  region_t ret; \
+  pixman_region32_init(&ret); \
+  fun(w, &ret); \
+  return ret; \
+}
+
 /**
  * Clear leader cache of all windows.
  */
@@ -78,23 +88,20 @@ group_is_focused(session_t *ps, Window leader) {
 /**
  * Get a rectangular region a window occupies, excluding shadow.
  */
-void win_get_region(session_t *ps, win *w, bool global, region_t *res) {
+static void win_get_region_local(session_t *ps, win *w, region_t *res) {
   pixman_region32_fini(res);
-  pixman_region32_init_rect(res,
-      global ? w->g.x : 0,
-      global ? w->g.y : 0,
-      w->widthb, w->heightb);
+  pixman_region32_init_rect(res, 0, 0, w->widthb, w->heightb);
 }
 
 
 /**
  * Get a rectangular region a window occupies, excluding frame and shadow.
  */
-void win_get_region_noframe(session_t *ps, win *w, bool global, region_t *res) {
+void win_get_region_noframe_local(session_t *ps, win *w, region_t *res) {
   const margin_t extents = win_calc_frame_extents(ps, w);
 
-  int x = (global ? w->g.x: 0) + extents.left;
-  int y = (global ? w->g.y: 0) + extents.top;
+  int x = extents.left;
+  int y = extents.top;
   int width = max_i(w->g.width - extents.left - extents.right, 0);
   int height = max_i(w->g.height - extents.top - extents.bottom, 0);
 
@@ -880,6 +887,7 @@ bool add_win(session_t *ps, Window id, Window prev) {
 
   new->next = *p;
   *p = new;
+  win_update_bounding_shape(ps, new);
 
 #ifdef CONFIG_DBUS
   // Send D-Bus signal
@@ -1144,10 +1152,11 @@ void win_update_bounding_shape(session_t *ps, win *w) {
 
   pixman_region32_clear(&w->bounding_shape);
   // Start with the window rectangular region
-  win_get_region(ps, w, true, &w->bounding_shape);
+  win_get_region_local(ps, w, &w->bounding_shape);
 
   // Only request for a bounding region if the window is shaped
-  if (w->bounding_shaped) {
+  // (while loop is used to avoid goto, not an actual loop)
+  while (w->bounding_shaped) {
     /*
      * if window doesn't exist anymore,  this will generate an error
      * as well as not generate a region.
@@ -1157,7 +1166,7 @@ void win_update_bounding_shape(session_t *ps, win *w) {
         xcb_shape_get_rectangles(ps->c, w->id, XCB_SHAPE_SK_BOUNDING), NULL);
 
     if (!r)
-      return;
+      break;
 
     xcb_rectangle_t *xrects = xcb_shape_get_rectangles_rectangles(r);
     int nrects = xcb_shape_get_rectangles_rectangles_length(r);
@@ -1171,22 +1180,24 @@ void win_update_bounding_shape(session_t *ps, win *w) {
     // Add border width because we are using a different origin.
     // X thinks the top left of the inner window is the origin,
     // We think the top left of the border is the origin
-    pixman_region32_translate(&br, w->g.x + w->g.border_width,
-      w->g.y + w->g.border_width);
+    pixman_region32_translate(&br, w->g.border_width, w->g.border_width);
 
     // Intersect the bounding region we got with the window rectangle, to
     // make sure the bounding region is not bigger than the window
     // rectangle
     pixman_region32_intersect(&w->bounding_shape, &w->bounding_shape, &br);
     pixman_region32_fini(&br);
+    break;
   }
 
   if (w->bounding_shaped && ps->o.detect_rounded_corners)
     win_rounded_corners(ps, w);
 
-  // XXX Window shape changed, and if we didn't fill in the pixels
-  // behind the window (not implemented yet), we should rebuild
-  // the shadow_pict
+  // Window shape changed, we should free old wpaint and shadow pict
+  free_wpaint(ps, w);
+  free_paint(ps, &w->shadow_paint);
+  //printf_errf("(): free out dated pict");
+
   win_on_factor_change(ps, w);
 }
 

@@ -1028,6 +1028,16 @@ typedef struct session {
 #endif
 } session_t;
 
+/**
+ * About coordinate systems
+ *
+ * In general, X is the horizontal axis, Y is the vertical axis.
+ * X goes from left to right, Y goes downwards.
+ *
+ * Global: the origin is the top left corner of the Xorg screen.
+ * Local: the origin is the top left corner of the window, including border.
+ */
+
 /// Structure representing a top-level window compton manages.
 struct win {
   /// Pointer to the next lower window in window stack.
@@ -1061,7 +1071,8 @@ struct win {
   xcb_damage_damage_t damage;
   /// Paint info of the window.
   paint_t paint;
-  /// Bounding shape of the window.
+  /// Bounding shape of the window. In local coordinates.
+  /// See above about coordinate systems.
   region_t bounding_shape;
   /// Window flags. Definitions above.
   int_fast16_t flags;

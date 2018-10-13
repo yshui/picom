@@ -654,6 +654,7 @@ static bool
 win_build_shadow(session_t *ps, win *w, double opacity) {
   const int width = w->widthb;
   const int height = w->heightb;
+  //printf_errf("(): building shadow for %s %d %d", w->name, width, height);
 
   xcb_image_t *shadow_image = NULL;
   xcb_pixmap_t shadow_pixmap = None, shadow_pixmap_argb = None;
@@ -1113,6 +1114,7 @@ paint_preprocess(session_t *ps, win *list) {
         || get_alpha_pict_o(ps, w->opacity) == ps->alpha_picts[0]
         || w->paint_excluded)
       to_paint = false;
+    //printf_errf("(): %s %d %d %d", w->name, to_paint, w->opacity, w->paint_excluded);
 
     // Add window to damaged area if its painting status changes
     // or opacity changes
@@ -1124,11 +1126,6 @@ paint_preprocess(session_t *ps, win *list) {
     // to_paint will never change afterward
     if (!to_paint)
       goto skip_window;
-
-    // XXX shouldn't need these
-    // Fetch bounding region
-    if (!pixman_region32_not_empty(&w->bounding_shape))
-      win_update_bounding_shape(ps, w);
 
     // Fetch window extents
     region_t extents;
@@ -1148,10 +1145,11 @@ paint_preprocess(session_t *ps, win *list) {
     if (w->mode == WMODE_SOLID && !ps->o.force_win_blend) {
       region_t *tmp = rc_region_new();
       if (w->frame_opacity == 1)
-        copy_region(tmp, &w->bounding_shape);
+        *tmp = win_get_bounding_shape_global_by_val(w);
       else {
-        win_get_region_noframe(ps, w, true, tmp);
+        win_get_region_noframe_local(ps, w, tmp);
         pixman_region32_intersect(tmp, tmp, &w->bounding_shape);
+        pixman_region32_translate(tmp, w->g.x, w->g.y);
       }
 
       pixman_region32_union(tmp, tmp, last_reg_ignore);
@@ -1389,13 +1387,12 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
 
         // Minimize the region we try to blur, if the window itself is not
         // opaque, only the frame is.
-        region_t reg_blur;
-        pixman_region32_init(&reg_blur);
-        pixman_region32_copy(&reg_blur, &w->bounding_shape);
+        region_t reg_blur = win_get_bounding_shape_global_by_val(w);
         if (win_is_solid(ps, w)) {
           region_t reg_noframe;
           pixman_region32_init(&reg_noframe);
-          win_get_region_noframe(ps, w, true, &reg_noframe);
+          win_get_region_noframe_local(ps, w, &reg_noframe);
+          pixman_region32_translate(&reg_noframe, w->g.x, w->g.y);
           pixman_region32_subtract(&reg_blur, &reg_blur, &reg_noframe);
           pixman_region32_fini(&reg_noframe);
         }
@@ -1754,6 +1751,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
   //
   // Whether this is beneficial is to be determined XXX
   for (win *w = t; w; w = w->prev_trans) {
+    region_t bshape = win_get_bounding_shape_global_by_val(w);
     // Painting shadow
     if (w->shadow) {
       // Lazy shadow building
@@ -1777,7 +1775,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
       // Mask out the body of the window from the shadow
       // Doing it here instead of in make_shadow() for saving GPU
       // power and handling shaped windows (XXX unconfirmed)
-      pixman_region32_subtract(&reg_tmp, &reg_tmp, &w->bounding_shape);
+      pixman_region32_subtract(&reg_tmp, &reg_tmp, &bshape);
 
 #ifdef CONFIG_XINERAMA
       if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0)
@@ -1796,7 +1794,8 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
     // window and the bounding region
     // XXX XXX
     pixman_region32_subtract(&reg_tmp, region, w->reg_ignore);
-    pixman_region32_intersect(&reg_tmp, &reg_tmp, &w->bounding_shape);
+    pixman_region32_intersect(&reg_tmp, &reg_tmp, &bshape);
+    pixman_region32_fini(&bshape);
 
     if (pixman_region32_not_empty(&reg_tmp)) {
         set_tgt_clip(ps, &reg_tmp);
@@ -2280,17 +2279,11 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     // If window geometry change, free old extents
     if (w->g.x != ce->x || w->g.y != ce->y
         || w->g.width != ce->width || w->g.height != ce->height
-        || w->g.border_width != ce->border_width) {
+        || w->g.border_width != ce->border_width)
       factor_change = true;
-      pixman_region32_clear(&w->bounding_shape);
-    }
 
     w->g.x = ce->x;
     w->g.y = ce->y;
-
-    if (w->g.width != ce->width || w->g.height != ce->height
-        || w->g.border_width != ce->border_width)
-      free_wpaint(ps, w);
 
     if (w->g.width != ce->width || w->g.height != ce->height
         || w->g.border_width != ce->border_width) {
@@ -2310,7 +2303,6 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     if (factor_change) {
       add_damage(ps, &damage);
       cxinerama_win_upd_scr(ps, w);
-      win_on_factor_change(ps, w);
     }
   }
 
@@ -2981,10 +2973,17 @@ ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) {
    * if we attempt to rebuild border_size
    */
   // Mark the old border_size as damaged
-  add_damage(ps, &w->bounding_shape);
+  region_t tmp = win_get_bounding_shape_global_by_val(w);
+  add_damage(ps, &tmp);
+  pixman_region32_fini(&tmp);
+
   win_update_bounding_shape(ps, w);
+
   // Mark the new border_size as damaged
-  add_damage(ps, &w->bounding_shape);
+  tmp = win_get_bounding_shape_global_by_val(w);
+  add_damage(ps, &tmp);
+  pixman_region32_fini(&tmp);
+
   w->reg_ignore_valid = false;
 }
 
