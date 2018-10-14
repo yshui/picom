@@ -5,15 +5,13 @@ Compton
 
 This is forked from the original Compton because that seems to have become unmaintained. I'll merge pull requests as they appear upstream, as well as trying to fix bugs reported to upstream, or found by myself.
 
-New features are not likely to be added, since I expect compton to become irrelevant in near future.
-
 The original README can be found [here](README_orig.md)
 
 ## Build
 
 ### Dependencies
 
-Assuming you already have all the usual building tools installed (e.g. gcc, make, etc.), you still need:
+Assuming you already have all the usual building tools installed (e.g. gcc, meson, ninja, etc.), you still need:
 
 * libx11
 * libXext
@@ -27,12 +25,12 @@ Assuming you already have all the usual building tools installed (e.g. gcc, make
 * xcb-randr
 * xcb-composite
 * xcb-image
-* xcb-xinerama (optional, disable with `NO_XINERAMA=1` make flag)
+* xcb-xinerama (optional, disable with `-Dxinerama=false` meson configure flag)
 * pixman
-* libdbus (optional, disable with the `NO_DBUS=1` make flag)
-* libconfig (optional, disable with the `NO_LIBCONFIG=1` make flag)
-* libGL (optional, disable with the `NO_OPENGL=1` make flag)
-* libpcre (optional, disable with the `NO_REGEX_PCRE=1` make flag)
+* libdbus (optional, disable with the `-Ddbus=false` meson configure flag)
+* libconfig (optional, disable with the `-Dconfig_file=false` meson configure flag)
+* libGL (optional, disable with the `-Dopengl=false` meson configure flag)
+* libpcre (optional, disable with the `-Dregex=false` meson configure flag)
 * libev
 
 To build the documents, you need `asciidoc`
@@ -40,9 +38,11 @@ To build the documents, you need `asciidoc`
 ### How to build
 
 ```bash
-$ make
-$ make install
+$ meson . build
+$ ninja -C build
 ```
+
+Built binary can be found in `build/bin`
 
 ## How to Contribute
 
