@@ -1,0 +1,36 @@
+project('compton', 'c')
+
+cc = meson.get_compiler('c')
+
+add_global_arguments('-std=c11', language: 'c')
+
+if get_option('sanitize')
+	sanitizers = ['address', 'undefined']
+	if cc.has_argument('-fsanitize=integer')
+		sanitizers += ['integer']
+	endif
+	if cc.has_argument('-fsanitize=nullability')
+		sanitizers += ['nullability']
+	endif
+	add_global_arguments('-fsanitize='+','.join(sanitizers), language: 'c')
+	add_global_link_arguments('-fsanitize='+','.join(sanitizers), language: 'c')
+endif
+
+add_global_arguments('-D_GNU_SOURCE', language: 'c')
+
+warns = [ 'all', 'extra', 'no-unused-parameter', 'nonnull', 'shadow' ]
+foreach w : warns
+	if cc.has_argument('-W'+w)
+		add_global_arguments('-W'+w, language: 'c')
+	endif
+endforeach
+
+subdir('src')
+subdir('man')
+
+install_subdir('bin', install_dir: '')
+install_data('compton.desktop', install_dir: 'share/applications')
+install_data('media/icons/48x48/compton.png',
+             install_dir: 'share/icons/hicolor/48x48/apps')
+install_data('media/compton.svg',
+             install_dir: 'share/icons/hicolor/scalable/apps')

@@ -1709,7 +1709,7 @@ cxfree(void *data) {
     XFree(data);
 }
 
-static inline void _Noreturn
+_Noreturn static inline void
 die(const char *msg) {
   puts(msg);
   exit(1);
