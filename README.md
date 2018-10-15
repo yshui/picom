@@ -38,7 +38,7 @@ To build the documents, you need `asciidoc`
 ### How to build
 
 ```bash
-$ meson . build
+$ meson --buildtype=release . build
 $ ninja -C build
 ```
 
