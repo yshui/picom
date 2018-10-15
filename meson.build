@@ -4,6 +4,10 @@ cc = meson.get_compiler('c')
 
 add_global_arguments('-std=c11', language: 'c')
 
+if get_option('buildtype') == 'release'
+  add_global_arguments('-DNDEBUG', language: 'c')
+endif
+
 if get_option('sanitize')
 	sanitizers = ['address', 'undefined']
 	if cc.has_argument('-fsanitize=integer')
