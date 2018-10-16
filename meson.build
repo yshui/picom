@@ -1,8 +1,20 @@
-project('compton', 'c')
+project('compton', 'c', version: '2')
 
 cc = meson.get_compiler('c')
 
-version = run_command('git', 'describe').stdout().strip()
+version = ''
+git = find_program('git', required: false)
+if git.found()
+	gitv = run_command('git', 'describe')
+	if gitv.returncode() == 0
+		version = gitv.stdout().strip()
+	endif
+endif
+
+if version == ''
+	# use project version by default
+	version = 'v'+meson.project_version()
+endif
 
 add_global_arguments('-std=c11', language: 'c')
 add_global_arguments('-DCOMPTON_VERSION="'+version+'"', language: 'c')
