@@ -2,7 +2,10 @@ project('compton', 'c')
 
 cc = meson.get_compiler('c')
 
+version = run_command('git', 'describe').stdout().strip()
+
 add_global_arguments('-std=c11', language: 'c')
+add_global_arguments('-DCOMPTON_VERSION="'+version+'"', language: 'c')
 
 if get_option('buildtype') == 'release'
   add_global_arguments('-DNDEBUG', language: 'c')
