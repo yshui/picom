@@ -2301,6 +2301,7 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     pixman_region32_fini(&new_extents);
 
     if (factor_change) {
+      win_on_factor_change(ps, w);
       add_damage(ps, &damage);
       cxinerama_win_upd_scr(ps, w);
     }
