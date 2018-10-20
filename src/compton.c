@@ -214,6 +214,12 @@ static const char *background_props_str[] = {
 /// have a pointer to current session passed in.
 session_t *ps_g = NULL;
 
+static inline int
+get_alpha_step(session_t *ps, opacity_t o) {
+  double d = ((double) o) / OPAQUE;
+  return (int)(round(normalize_d(d) / ps->o.alpha_step));
+}
+
 static inline void
 __attribute__((nonnull(1, 2)))
 set_tgt_clip(session_t *ps, region_t *reg) {
@@ -1003,25 +1009,6 @@ find_client_win(session_t *ps, xcb_window_t w) {
   return ret;
 }
 
-/**
- * Get alpha <code>Picture</code> for an opacity in <code>double</code>.
- */
-static inline xcb_render_picture_t
-get_alpha_pict_d(session_t *ps, double o) {
-  assert((round(normalize_d(o) / ps->o.alpha_step)) <= round(1.0 / ps->o.alpha_step));
-  return ps->alpha_picts[(int) (round(normalize_d(o)
-        / ps->o.alpha_step))];
-}
-
-/**
- * Get alpha <code>Picture</code> for an opacity in
- * <code>opacity_t</code>.
- */
-static inline xcb_render_picture_t
-get_alpha_pict_o(session_t *ps, opacity_t o) {
-  return get_alpha_pict_d(ps, (double) o / OPAQUE);
-}
-
 static win *
 paint_preprocess(session_t *ps, win *list) {
   win *t = NULL, *next = NULL;
@@ -1111,7 +1098,7 @@ paint_preprocess(session_t *ps, win *list) {
         || w->g.x + w->g.width < 1 || w->g.y + w->g.height < 1
         || w->g.x >= ps->root_width || w->g.y >= ps->root_height
         || ((IsUnmapped == w->a.map_state || w->destroyed) && !w->paint.pixmap)
-        || get_alpha_pict_o(ps, w->opacity) == ps->alpha_picts[0]
+        || get_alpha_step(ps, w->opacity) == 0
         || w->paint_excluded)
       to_paint = false;
     //printf_errf("(): %s %d %d %d", w->name, to_paint, w->opacity, w->paint_excluded);
@@ -1425,8 +1412,9 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     case BKEND_XRENDER:
     case BKEND_XR_GLX_HYBRID:
       {
-        xcb_render_picture_t alpha_pict = get_alpha_pict_d(ps, opacity);
-        if (alpha_pict != ps->alpha_picts[0]) {
+        int alpha_step = get_alpha_step(ps, opacity * OPAQUE);
+        xcb_render_picture_t alpha_pict = ps->alpha_picts[alpha_step];
+        if (alpha_step != 0) {
           int op = ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC: XCB_RENDER_PICT_OP_OVER);
           xcb_render_composite(ps->c, op, pict, alpha_pict,
               ps->tgt_buffer.pict, x, y, 0, 0, dx, dy, wid, hei);
