@@ -34,7 +34,6 @@
 // #define DEBUG_GLX_ERR    1
 // #define DEBUG_GLX_MARK   1
 // #define DEBUG_GLX_PAINTREG 1
-// #define MONITOR_REPAINT  1
 
 // Whether to enable PCRE regular expression support in blacklists, enabled
 // by default
@@ -447,6 +446,8 @@ typedef struct ev_session_prepare ev_session_prepare;
 
 /// Structure representing all options.
 typedef struct options_t {
+  // === Debugging ===
+  bool monitor_repaint;
   // === General ===
   /// The configuration file we used.
   char *config_file;

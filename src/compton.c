@@ -1669,11 +1669,6 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
     glx_paint_pre(ps, region);
 #endif
 
-#ifdef MONITOR_REPAINT
-  // Note: MONITOR_REPAINT cannot work with DBE right now.
-  // Picture old_tgt_buffer = ps->tgt_buffer.pict;
-  ps->tgt_buffer.pict = ps->tgt_picture;
-#else
   if (!paint_isvalid(ps, &ps->tgt_buffer)) {
     if (!ps->tgt_buffer.pixmap) {
       free_paint(ps, &ps->tgt_buffer);
@@ -1688,27 +1683,10 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
       ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
         ps, ps->vis, ps->tgt_buffer.pixmap, 0, 0);
   }
-#endif
 
   if (BKEND_XRENDER == ps->o.backend) {
-    x_set_picture_clip_region(ps, ps->tgt_picture, 0, 0, region_real);
+    x_set_picture_clip_region(ps, ps->tgt_buffer.pict, 0, 0, region_real);
   }
-
-#ifdef MONITOR_REPAINT
-  switch (ps->o.backend) {
-    case BKEND_XRENDER:
-      xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, ps->black_picture, None,
-          ps->tgt_picture, 0, 0, 0, 0, 0, 0,
-          ps->root_width, ps->root_height);
-      break;
-    case BKEND_GLX:
-    case BKEND_XR_GLX_HYBRID:
-      glClearColor(0.0f, 0.0f, 1.0f, 1.0f);
-      glClear(GL_COLOR_BUFFER_BIT);
-      glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-      break;
-  }
-#endif
 
   region_t reg_tmp, *reg_paint;
   pixman_region32_init(&reg_tmp);
@@ -1823,12 +1801,41 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
 
   switch (ps->o.backend) {
     case BKEND_XRENDER:
-      if (ps->tgt_buffer.pict != ps->tgt_picture) {
+      if (ps->o.monitor_repaint) {
+        // Copy the screen content to a new picture, and highlight the paint
+        // region. This is not very efficient, but since it's for debug only,
+        // we don't really care
+
+        // First, we clear tgt_buffer.pict's clip region, since we want to copy
+        // everything
+        x_set_picture_clip_region(ps, ps->tgt_buffer.pict, 0, 0, &ps->screen_reg);
+
+        // Then we create a new picture, and copy content to it
+        xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps, ps->vis);
+        xcb_render_picture_t new_pict = x_create_picture(
+          ps, ps->root_width, ps->root_height, pictfmt, 0, NULL);
+        xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, ps->tgt_buffer.pict,
+          None, new_pict, 0, 0, 0, 0, 0, 0, ps->root_width, ps->root_height);
+
+        // Next, we set the region of paint and highlight it
+        x_set_picture_clip_region(ps, new_pict, 0, 0, region_real);
+        xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER, ps->white_picture,
+          ps->alpha_picts[(int)(0.5 / ps->o.alpha_step)],
+          new_pict, 0, 0, 0, 0, 0, 0,
+          ps->root_width, ps->root_height);
+
+        // Finally, clear clip region and put the whole thing on screen
+        x_set_picture_clip_region(ps, new_pict, 0, 0, &ps->screen_reg);
+        xcb_render_composite(
+          ps->c, XCB_RENDER_PICT_OP_SRC, new_pict, None,
+          ps->tgt_picture, 0, 0, 0, 0,
+          0, 0, ps->root_width, ps->root_height);
+        xcb_render_free_picture(ps->c, new_pict);
+      } else
         xcb_render_composite(
           ps->c, XCB_RENDER_PICT_OP_SRC, ps->tgt_buffer.pict, None,
           ps->tgt_picture, 0, 0, 0, 0,
           0, 0, ps->root_width, ps->root_height);
-      }
       break;
 #ifdef CONFIG_OPENGL
     case BKEND_XR_GLX_HYBRID:
@@ -3457,6 +3464,9 @@ usage(int ret) {
     "--benchmark-wid window-id\n"
     "  Specify window ID to repaint in benchmark mode. If omitted or is 0,\n"
     "  the whole screen is repainted.\n"
+    "--monitor-repaint\n"
+    "  Highlight the updated area of the screen. For debugging the xrender\n"
+    "  backend only.\n"
     ;
   FILE *f = (ret ? stderr: stdout);
   fputs(usage_text, f);
@@ -3715,6 +3725,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "no-name-pixmap", no_argument, NULL, 320 },
     { "reredir-on-root-change", no_argument, NULL, 731 },
     { "glx-reinit-on-root-change", no_argument, NULL, 732 },
+    { "monitor-repaint", no_argument, NULL, 800 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3995,6 +4006,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(319, no_x_selection);
       P_CASEBOOL(731, reredir_on_root_change);
       P_CASEBOOL(732, glx_reinit_on_root_change);
+      P_CASEBOOL(800, monitor_repaint);
       default:
         usage(1);
         break;
@@ -4005,6 +4017,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   // Restore LC_NUMERIC
   setlocale(LC_NUMERIC, lc_numeric_old);
   free(lc_numeric_old);
+
+  if (ps->o.monitor_repaint && ps->o.backend != BKEND_XRENDER)
+    printf_errf("(): --monitor-repaint has no effect when backend is not xrender");
 
   // Range checking and option assignments
   ps->o.fade_delta = max_i(ps->o.fade_delta, 1);
