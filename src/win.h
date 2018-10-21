@@ -329,7 +329,7 @@ void add_damage_from_win(session_t *ps, win *w);
  *
  * Return region in global coordinates.
  */
-void win_get_region_noframe_local(session_t *ps, win *w, region_t *);
+void win_get_region_noframe_local(win *w, region_t *);
 /**
  * Retrieve frame extents from a window.
  */
@@ -367,7 +367,7 @@ win_get_bounding_shape_global_by_val(win *w) {
  * _NET_FRAME_EXTENTS and the X window border width.
  */
 static inline margin_t __attribute__((pure))
-win_calc_frame_extents(session_t *ps, const win *w) {
+win_calc_frame_extents(const win *w) {
   margin_t result = w->frame_extents;
   result.top = max_i(result.top, w->g.border_width);
   result.left = max_i(result.left, w->g.border_width);

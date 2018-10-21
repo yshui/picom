@@ -1134,7 +1134,7 @@ paint_preprocess(session_t *ps, win *list) {
       if (w->frame_opacity == 1)
         *tmp = win_get_bounding_shape_global_by_val(w);
       else {
-        win_get_region_noframe_local(ps, w, tmp);
+        win_get_region_noframe_local(w, tmp);
         pixman_region32_intersect(tmp, tmp, &w->bounding_shape);
         pixman_region32_translate(tmp, w->g.x, w->g.y);
       }
@@ -1378,7 +1378,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
         if (win_is_solid(ps, w)) {
           region_t reg_noframe;
           pixman_region32_init(&reg_noframe);
-          win_get_region_noframe_local(ps, w, &reg_noframe);
+          win_get_region_noframe_local(w, &reg_noframe);
           pixman_region32_translate(&reg_noframe, w->g.x, w->g.y);
           pixman_region32_subtract(&reg_blur, &reg_blur, &reg_noframe);
           pixman_region32_fini(&reg_noframe);
@@ -1521,7 +1521,7 @@ paint_one(session_t *ps, win *w, const region_t *reg_paint) {
     paint_region(ps, w, 0, 0, wid, hei, dopacity, reg_paint, pict);
   } else {
     // Painting parameters
-    const margin_t extents = win_calc_frame_extents(ps, w);
+    const margin_t extents = win_calc_frame_extents(w);
     const int t = extents.top;
     const int l = extents.left;
     const int b = extents.bottom;

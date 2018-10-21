@@ -19,7 +19,7 @@
 /// Generate a "return by value" function, from a function that returns the
 /// region via a region_t pointer argument.
 /// Function signature has to be (win *, region_t *)
-#define gen_by_val(fun) void region_t fun##_by_val(win *w) { \
+#define gen_by_val(fun) region_t fun##_by_val(win *w) { \
   region_t ret; \
   pixman_region32_init(&ret); \
   fun(w, &ret); \
@@ -97,8 +97,8 @@ static void win_get_region_local(session_t *ps, win *w, region_t *res) {
 /**
  * Get a rectangular region a window occupies, excluding frame and shadow.
  */
-void win_get_region_noframe_local(session_t *ps, win *w, region_t *res) {
-  const margin_t extents = win_calc_frame_extents(ps, w);
+void win_get_region_noframe_local(win *w, region_t *res) {
+  const margin_t extents = win_calc_frame_extents(w);
 
   int x = extents.left;
   int y = extents.top;
