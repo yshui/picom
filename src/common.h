@@ -83,7 +83,6 @@
 
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
-#include <X11/extensions/Xdbe.h>
 #ifdef CONFIG_XSYNC
 #include <X11/extensions/sync.h>
 #endif
@@ -531,8 +530,6 @@ typedef struct options_t {
   bool sw_opti;
   /// VSync method to use;
   vsync_t vsync;
-  /// Whether to enable double buffer.
-  bool dbe;
   /// Whether to do VSync aggressively.
   bool vsync_aggressive;
   /// Whether to use glFinish() instead of glFlush() for (possibly) better
@@ -745,8 +742,6 @@ typedef struct session {
 #ifdef CONFIG_XSYNC
   XSyncFence tgt_buffer_fence;
 #endif
-  /// DBE back buffer for root window. Used in DBE painting mode.
-  XdbeBackBuffer root_dbe;
   /// Window ID of the window we register as a symbol.
   Window reg_win;
 #ifdef CONFIG_OPENGL
@@ -899,8 +894,6 @@ typedef struct session {
   /// Error base number for X GLX extension.
   int glx_error;
 #endif
-  /// Whether X DBE extension exists.
-  bool dbe_exists;
 #ifdef CONFIG_XINERAMA
   /// Whether X Xinerama extension exists.
   bool xinerama_exists;

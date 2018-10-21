@@ -1675,27 +1675,18 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
   ps->tgt_buffer.pict = ps->tgt_picture;
 #else
   if (!paint_isvalid(ps, &ps->tgt_buffer)) {
-    // DBE painting mode: Directly paint to a Picture of the back buffer
-    if (BKEND_XRENDER == ps->o.backend && ps->o.dbe) {
-      ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
-        ps, ps->vis, ps->root_dbe, 0, 0);
-    }
-    // No-DBE painting mode: Paint to an intermediate Picture then paint
-    // the Picture to root window
-    else {
-      if (!ps->tgt_buffer.pixmap) {
-        free_paint(ps, &ps->tgt_buffer);
-        ps->tgt_buffer.pixmap = x_create_pixmap(ps, ps->depth, ps->root, ps->root_width, ps->root_height);
-        if (ps->tgt_buffer.pixmap == XCB_NONE) {
-          fprintf(stderr, "Failed to allocate a screen-sized pixmap\n");
-          exit(1);
-        }
+    if (!ps->tgt_buffer.pixmap) {
+      free_paint(ps, &ps->tgt_buffer);
+      ps->tgt_buffer.pixmap = x_create_pixmap(ps, ps->depth, ps->root, ps->root_width, ps->root_height);
+      if (ps->tgt_buffer.pixmap == XCB_NONE) {
+        fprintf(stderr, "Failed to allocate a screen-sized pixmap\n");
+        exit(1);
       }
-
-      if (BKEND_GLX != ps->o.backend)
-        ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
-          ps, ps->vis, ps->tgt_buffer.pixmap, 0, 0);
     }
+
+    if (BKEND_GLX != ps->o.backend)
+      ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
+        ps, ps->vis, ps->tgt_buffer.pixmap, 0, 0);
   }
 #endif
 
@@ -1807,8 +1798,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
   pixman_region32_fini(&reg_tmp);
 
   // Do this as early as possible
-  if (!ps->o.dbe)
-    set_tgt_clip(ps, &ps->screen_reg);
+  set_tgt_clip(ps, &ps->screen_reg);
 
   if (ps->o.vsync) {
     // Make sure all previous requests are processed to achieve best
@@ -1833,17 +1823,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
 
   switch (ps->o.backend) {
     case BKEND_XRENDER:
-      // DBE painting mode, only need to swap the buffer
-      if (ps->o.dbe) {
-        XdbeSwapInfo swap_info = {
-          .swap_window = get_tgt_window(ps),
-          // Is it safe to use XdbeUndefined?
-          .swap_action = XdbeCopied
-        };
-        XdbeSwapBuffers(ps->dpy, &swap_info, 1);
-      }
-      // No-DBE painting mode
-      else if (ps->tgt_buffer.pict != ps->tgt_picture) {
+      if (ps->tgt_buffer.pict != ps->tgt_picture) {
         xcb_render_composite(
           ps->c, XCB_RENDER_PICT_OP_SRC, ps->tgt_buffer.pict, None,
           ps->tgt_picture, 0, 0, 0, 0,
@@ -3299,10 +3279,6 @@ usage(int ret) {
     "  X Render backend: Step for pregenerating alpha pictures. \n"
     "  0.01 - 1.0. Defaults to 0.03.\n"
     "\n"
-    "--dbe\n"
-    "  Enable DBE painting mode, intended to use with VSync to\n"
-    "  (hopefully) eliminate tearing.\n"
-    "\n"
     "--paint-on-overlay\n"
     "  Painting on X Composite overlay window.\n"
     "\n"
@@ -3909,7 +3885,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --alpha-step
         ps->o.alpha_step = atof(optarg);
         break;
-      P_CASEBOOL(272, dbe);
+      case 272:
+        printf_errf("(): use of --dbe is deprecated");
+        break;
       P_CASEBOOL(273, paint_on_overlay);
       P_CASEBOOL(274, sw_opti);
       P_CASEBOOL(275, vsync_aggressive);
@@ -4487,21 +4465,6 @@ init_alpha_picts(session_t *ps) {
 }
 
 /**
- * Initialize double buffer.
- */
-static bool
-init_dbe(session_t *ps) {
-  if (!(ps->root_dbe = XdbeAllocateBackBufferName(ps->dpy,
-          (ps->o.paint_on_overlay ? ps->overlay: ps->root), XdbeCopied))) {
-    printf_errf("(): Failed to create double buffer. Double buffering "
-        "cannot work.");
-    return false;
-  }
-
-  return true;
-}
-
-/**
  * Initialize X composite overlay window.
  */
 static bool
@@ -4880,7 +4843,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .root_tile_paint = PAINT_INIT,
     .tgt_picture = None,
     .tgt_buffer = PAINT_INIT,
-    .root_dbe = None,
     .reg_win = None,
     .o = {
       .config_file = NULL,
@@ -4910,7 +4872,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .refresh_rate = 0,
       .sw_opti = false,
       .vsync = VSYNC_NONE,
-      .dbe = false,
       .vsync_aggressive = false,
 
       .wintype_shadow = { false },
@@ -5017,7 +4978,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .glx_event = 0,
     .glx_error = 0,
 #endif
-    .dbe_exists = false,
     .xrfilter_convolution_exists = false,
 
     .atom_opacity = None,
@@ -5222,22 +5182,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
           "detection impossible.");
   }
 
-  // Query X DBE extension
-  if (ps->o.dbe) {
-    int dbe_ver_major = 0, dbe_ver_minor = 0;
-    if (XdbeQueryExtension(ps->dpy, &dbe_ver_major, &dbe_ver_minor))
-      if (dbe_ver_major >= 1)
-        ps->dbe_exists = true;
-      else
-        fprintf(stderr, "DBE extension version too low. Double buffering "
-            "impossible.\n");
-    else {
-      fprintf(stderr, "No DBE extension. Double buffering impossible.\n");
-    }
-    if (!ps->dbe_exists)
-      ps->o.dbe = false;
-  }
-
   // Query X Xinerama extension
   if (ps->o.xinerama_shadow_crop) {
 #ifdef CONFIG_XINERAMA
@@ -5254,15 +5198,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // of OpenGL context.
   if (ps->o.paint_on_overlay)
     init_overlay(ps);
-
-  // Initialize DBE
-  if (ps->o.dbe && BKEND_XRENDER != ps->o.backend) {
-    printf_errf("(): DBE couldn't be used on GLX backend.");
-    ps->o.dbe = false;
-  }
-
-  if (ps->o.dbe && !init_dbe(ps))
-    exit(1);
 
   // Initialize OpenGL as early as possible
   if (bkend_use_glx(ps)) {
@@ -5580,12 +5515,6 @@ session_destroy(session_t *ps) {
 #ifdef CONFIG_OPENGL
   glx_destroy(ps);
 #endif
-
-  // Free double buffer
-  if (ps->root_dbe) {
-    XdbeDeallocateBackBufferName(ps->dpy, ps->root_dbe);
-    ps->root_dbe = None;
-  }
 
 #ifdef CONFIG_VSYNC_DRM
   // Close file opened for DRM VSync

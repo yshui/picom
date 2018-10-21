@@ -297,8 +297,6 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
     exit(1);
   // --alpha-step
   config_lookup_float(&cfg, "alpha-step", &ps->o.alpha_step);
-  // --dbe
-  lcfg_lookup_bool(&cfg, "dbe", &ps->o.dbe);
   // --paint-on-overlay
   lcfg_lookup_bool(&cfg, "paint-on-overlay", &ps->o.paint_on_overlay);
   // --sw-opti
