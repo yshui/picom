@@ -167,6 +167,7 @@
 #include "xrescheck.h"
 #endif
 
+#include "types.h"
 #include "x.h"
 #include "region.h"
 
@@ -220,7 +221,6 @@
 
 // === Types ===
 
-typedef uint32_t opacity_t;
 typedef long time_ms_t;
 typedef struct _c2_lptr c2_lptr_t;
 
@@ -243,31 +243,7 @@ typedef enum {
   NUM_WINTYPES
 } wintype_t;
 
-/// Enumeration type to represent switches.
-typedef enum {
-  OFF,    // false
-  ON,     // true
-  UNSET
-} switch_t;
-
-/// Structure representing a X geometry.
-typedef struct {
-  int wid;
-  int hei;
-  int x;
-  int y;
-} geometry_t;
-
-/// A structure representing margins around a rectangle.
-typedef struct {
-  int top;
-  int left;
-  int bottom;
-  int right;
-} margin_t;
-
 // Or use cmemzero().
-#define MARGIN_INIT { 0, 0, 0, 0 }
 
 /// Enumeration type of window painting mode.
 typedef enum {
