@@ -470,7 +470,7 @@ typedef struct {
 
 #define PAINT_INIT { .pixmap = None, .pict = None }
 
-typedef struct {
+typedef struct conv {
   int size;
   double *data;
 } conv;
@@ -1508,79 +1508,6 @@ mstrextend(char **psrc1, const char *src2) {
       char);
 
   strcat(*psrc1, src2);
-}
-
-/**
- * Normalize an int value to a specific range.
- *
- * @param i int value to normalize
- * @param min minimal value
- * @param max maximum value
- * @return normalized value
- */
-static inline int __attribute__((const))
-normalize_i_range(int i, int min, int max) {
-  if (i > max) return max;
-  if (i < min) return min;
-  return i;
-}
-
-/**
- * Select the larger integer of two.
- */
-static inline int __attribute__((const))
-max_i(int a, int b) {
-  return (a > b ? a : b);
-}
-
-/**
- * Select the smaller integer of two.
- */
-static inline int __attribute__((const))
-min_i(int a, int b) {
-  return (a > b ? b : a);
-}
-
-/**
- * Select the larger long integer of two.
- */
-static inline long __attribute__((const))
-max_l(long a, long b) {
-  return (a > b ? a : b);
-}
-
-/**
- * Select the smaller long integer of two.
- */
-static inline long __attribute__((const))
-min_l(long a, long b) {
-  return (a > b ? b : a);
-}
-
-/**
- * Normalize a double value to a specific range.
- *
- * @param d double value to normalize
- * @param min minimal value
- * @param max maximum value
- * @return normalized value
- */
-static inline double __attribute__((const))
-normalize_d_range(double d, double min, double max) {
-  if (d > max) return max;
-  if (d < min) return min;
-  return d;
-}
-
-/**
- * Normalize a double value to 0.\ 0 - 1.\ 0.
- *
- * @param d double value to normalize
- * @return normalized value
- */
-static inline double __attribute__((const))
-normalize_d(double d) {
-  return normalize_d_range(d, 0.0, 1.0);
 }
 
 /**
