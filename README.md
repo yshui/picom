@@ -42,7 +42,7 @@ $ meson --buildtype=release . build
 $ ninja -C build
 ```
 
-Built binary can be found in `build/bin`
+Built binary can be found in `build/src`
 
 ## How to Contribute
 
