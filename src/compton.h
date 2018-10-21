@@ -30,6 +30,7 @@
 #include "opengl.h" // XXX clean up
 #endif
 #include "common.h"
+#include "win.h"
 #include "x.h"
 #include "c2.h"
 
@@ -319,30 +320,6 @@ win_ev_stop(session_t *ps, win *w) {
     set_ignore_cookie(ps,
         xcb_shape_select_input(ps->c, w->id, 0));
   }
-}
-
-/**
- * Check whether a window has WM frames.
- */
-static inline bool __attribute__((pure))
-win_has_frame(const win *w) {
-  return w->g.border_width
-    || w->frame_extents.top || w->frame_extents.left
-    || w->frame_extents.right || w->frame_extents.bottom;
-}
-
-/**
- * Calculate the extents of the frame of the given window based on EWMH
- * _NET_FRAME_EXTENTS and the X window border width.
- */
-static inline margin_t __attribute__((pure))
-win_calc_frame_extents(session_t *ps, const win *w) {
-  margin_t result = w->frame_extents;
-  result.top = max_i(result.top, w->g.border_width);
-  result.left = max_i(result.left, w->g.border_width);
-  result.bottom = max_i(result.bottom, w->g.border_width);
-  result.right = max_i(result.right, w->g.border_width);
-  return result;
 }
 
 /**
