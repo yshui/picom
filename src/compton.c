@@ -1778,7 +1778,13 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
       pixman_region32_subtract(&reg_tmp, &reg_tmp, &bshape);
 
 #ifdef CONFIG_XINERAMA
-      if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0)
+      if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
+          w->xinerama_scr < ps->xinerama_nscrs)
+        // There can be a window where number of screens is updated,
+        // but the screen number attached to the windows have not.
+        //
+        // Window screen number will be updated eventually, so here we
+        // just check to make sure we don't access out of bounds.
         pixman_region32_intersect(&reg_tmp, &reg_tmp,
           &ps->xinerama_scr_regs[w->xinerama_scr]);
 #endif
