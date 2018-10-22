@@ -6,6 +6,9 @@
 ### GPU, drivers, and screen setup
 // Example: NVidia GTX 670, nvidia-drivers 381.09, two monitors configured side-by-side with xrandr
 
+### Environment
+// Tell us something about the desktop environment you are using, for example: i3-gaps, Gnome Shell, etc.
+
 ### Compton version
 // You can run `compton --version` to get that
 // Example: v1
@@ -27,4 +30,5 @@
 ### Current Behavior
 
 ### Other details
+// If your problem is visual, you are encouraged to record a short video when the problem occurs and link to it here.
 
