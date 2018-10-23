@@ -14,27 +14,17 @@
 /**
  * Wrapper of libconfig's <code>config_lookup_int</code>.
  *
- * To convert <code>int</code> value <code>config_lookup_bool</code>
- * returns to <code>bool</code>.
- */
-static inline void
-lcfg_lookup_bool(const config_t *config, const char *path,
-    bool *value) {
-  int ival;
-
-  if (config_lookup_bool(config, path, &ival))
-    *value = ival;
-}
-
-/**
- * Wrapper of libconfig's <code>config_lookup_int</code>.
- *
- * To deal with the different value types <code>config_lookup_int</code>
- * returns in libconfig-1.3 and libconfig-1.4.
+ * So it takes a pointer to bool.
  */
 static inline int
-lcfg_lookup_int(const config_t *config, const char *path, int *value) {
-  return config_lookup_int(config, path, value);
+lcfg_lookup_bool(const config_t *config, const char *path, bool *value) {
+  int ival;
+
+  int ret = config_lookup_bool(config, path, &ival);
+  if (ret)
+    *value = ival;
+
+  return ret;
 }
 
 /**
@@ -172,6 +162,7 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   FILE *f;
   config_t cfg;
   int ival = 0;
+  bool bval;
   double dval = 0.0;
   // libconfig manages string memory itself, so no need to manually free
   // anything
@@ -224,7 +215,7 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // right now. It will be done later
 
   // -D (fade_delta)
-  if (lcfg_lookup_int(&cfg, "fade-delta", &ival))
+  if (config_lookup_int(&cfg, "fade-delta", &ival))
     ps->o.fade_delta = ival;
   // -I (fade_in_step)
   if (config_lookup_float(&cfg, "fade-in-step", &dval))
@@ -233,13 +224,13 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   if (config_lookup_float(&cfg, "fade-out-step", &dval))
     ps->o.fade_out_step = normalize_d(dval) * OPAQUE;
   // -r (shadow_radius)
-  lcfg_lookup_int(&cfg, "shadow-radius", &ps->o.shadow_radius);
+  config_lookup_int(&cfg, "shadow-radius", &ps->o.shadow_radius);
   // -o (shadow_opacity)
   config_lookup_float(&cfg, "shadow-opacity", &ps->o.shadow_opacity);
   // -l (shadow_offset_x)
-  lcfg_lookup_int(&cfg, "shadow-offset-x", &ps->o.shadow_offset_x);
+  config_lookup_int(&cfg, "shadow-offset-x", &ps->o.shadow_offset_x);
   // -t (shadow_offset_y)
-  lcfg_lookup_int(&cfg, "shadow-offset-y", &ps->o.shadow_offset_y);
+  config_lookup_int(&cfg, "shadow-offset-y", &ps->o.shadow_offset_y);
   // -i (inactive_opacity)
   if (config_lookup_float(&cfg, "inactive-opacity", &dval))
     ps->o.inactive_opacity = normalize_d(dval) * OPAQUE;
@@ -297,7 +288,7 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   lcfg_lookup_bool(&cfg, "detect-client-opacity",
       &ps->o.detect_client_opacity);
   // --refresh-rate
-  lcfg_lookup_int(&cfg, "refresh-rate", &ps->o.refresh_rate);
+  config_lookup_int(&cfg, "refresh-rate", &ps->o.refresh_rate);
   // --vsync
   if (config_lookup_string(&cfg, "vsync", &sval) && !parse_vsync(ps, sval))
     exit(1);
@@ -319,7 +310,7 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   lcfg_lookup_bool(&cfg, "unredir-if-possible",
       &ps->o.unredir_if_possible);
   // --unredir-if-possible-delay
-  if (lcfg_lookup_int(&cfg, "unredir-if-possible-delay", &ival))
+  if (config_lookup_int(&cfg, "unredir-if-possible-delay", &ival))
     ps->o.unredir_if_possible_delay = ival;
   // --inactive-dim-fixed
   lcfg_lookup_bool(&cfg, "inactive-dim-fixed", &ps->o.inactive_dim_fixed);
@@ -355,7 +346,7 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
       && !parse_conv_kern_lst(ps, sval, ps->o.blur_kerns, MAX_BLUR_PASS))
     exit(1);
   // --resize-damage
-  lcfg_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);
+  config_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);
   // --glx-no-stencil
   lcfg_lookup_bool(&cfg, "glx-no-stencil", &ps->o.glx_no_stencil);
   // --glx-no-rebind-pixmap
@@ -370,6 +361,18 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   lcfg_lookup_bool(&cfg, "xrender-sync", &ps->o.xrender_sync);
   // --xrender-sync-fence
   lcfg_lookup_bool(&cfg, "xrender-sync-fence", &ps->o.xrender_sync_fence);
+
+  if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
+    printf_errf("(): \"clear-shadow\" is removed as an option, and is always"
+                " enabled now. Consider removing it from your config file");
+
+  const char *deprecation_message = "has been removed. If you encounter problems "
+    "without this feature, please feel free to open a bug report.";
+  if (lcfg_lookup_bool(&cfg, "glx-use-copysubbuffermesa", &bval) && bval)
+    printf_errf("(): \"glx-use-copysubbuffermesa\" %s", deprecation_message);
+  if (lcfg_lookup_bool(&cfg, "glx-copy-from-front", &bval) && bval)
+    printf_errf("(): \"glx-copy-from-front\" %s", deprecation_message);
+
   // Wintype settings
 
   for (wintype_t i = 0; i < NUM_WINTYPES; ++i) {

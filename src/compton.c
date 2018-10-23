@@ -3812,6 +3812,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
 
   // Parse commandline arguments. Range checking will be done later.
 
+  const char *deprecation_message = "has been removed. If you encounter problems "
+    "without this feature, please feel free to open a bug report.";
   optind = 1;
   while (-1 !=
       (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
@@ -3956,7 +3958,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       P_CASEBOOL(291, glx_no_stencil);
       case 292:
-        printf_errf("(): --glx-copy-from-front is deprecated");
+        printf_errf("(): --glx-copy-from-front %s", deprecation_message);
         break;
       P_CASELONG(293, benchmark);
       case 294:
@@ -3964,7 +3966,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.benchmark_wid = strtol(optarg, NULL, 0);
         break;
       case 295:
-        printf_errf("(): --glx-use-copysubbuffermesa is deprecated");
+        printf_errf("(): --glx-use-copysubbuffermesa %s", deprecation_message);
         break;
       case 296:
         // --blur-background-exclude
