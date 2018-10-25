@@ -2,6 +2,7 @@
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #include <stdbool.h>
 
+#include <X11/Xutil.h>
 #include <X11/Xlib.h>
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xfixes.h>

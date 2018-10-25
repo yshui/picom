@@ -24,6 +24,7 @@
 #include <errno.h>
 #endif
 
+#include <X11/Xutil.h>
 #include <pixman.h>
 #ifdef CONFIG_OPENGL
 #include "opengl.h" // XXX clean up
