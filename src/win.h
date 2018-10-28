@@ -29,6 +29,7 @@ typedef struct {
   glx_texture_t *ptex;
 } paint_t;
 
+#ifdef CONFIG_OPENGL
 // FIXME this type should be in opengl.h
 //       it is very unideal for it to be here
 typedef struct {
@@ -41,6 +42,7 @@ typedef struct {
   /// Height of the textures.
   int height;
 } glx_blur_cache_t;
+#endif
 
 typedef enum {
   WINTYPE_UNKNOWN,
