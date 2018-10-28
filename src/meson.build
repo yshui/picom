@@ -1,6 +1,6 @@
 deps = [ cc.find_library('m'), cc.find_library('ev') ]
 
-cflags = [ '-DCONFIG_XSYNC' ]
+cflags = [ ]
 
 srcs = ['compton.c', 'win.c', 'c2.c', 'x.c', 'config.c']
 

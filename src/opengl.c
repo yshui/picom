@@ -185,25 +185,6 @@ get_visualinfo_from_visual(session_t *ps, xcb_visualid_t visual) {
   return XGetVisualInfo(ps->dpy, VisualIDMask, &vreq, &nitems);
 }
 
-#ifdef CONFIG_GLX_SYNC
-void
-xr_glx_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
-  if (*pfence) {
-    // GLsync sync = ps->psglx->glFenceSyncProc(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    GLsync sync = ps->psglx->glImportSyncEXT(GL_SYNC_X11_FENCE_EXT, *pfence, 0);
-    /* GLenum ret = ps->psglx->glClientWaitSyncProc(sync, GL_SYNC_FLUSH_COMMANDS_BIT,
-        1000);
-    assert(GL_CONDITION_SATISFIED == ret); */
-    XSyncTriggerFence(ps->dpy, *pfence);
-    XFlush(ps->dpy);
-    ps->psglx->glWaitSyncProc(sync, 0, GL_TIMEOUT_IGNORED);
-    // ps->psglx->glDeleteSyncProc(sync);
-    // XSyncResetFence(ps->dpy, *pfence);
-  }
-  glx_check_err(ps);
-}
-#endif
-
 #ifdef DEBUG_GLX_DEBUG_CONTEXT
 static inline GLXFBConfig
 get_fbconfig_from_visualinfo(session_t *ps, const XVisualInfo *visualinfo) {

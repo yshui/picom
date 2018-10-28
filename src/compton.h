@@ -209,7 +209,6 @@ free_paint(session_t *ps, paint_t *ppaint) {
 static inline void
 free_wpaint(session_t *ps, win *w) {
   free_paint(ps, &w->paint);
-  free_fence(ps, &w->fence);
 }
 
 /**

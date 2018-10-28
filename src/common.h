@@ -49,14 +49,6 @@
 // #define CONFIG_OPENGL 1
 // Whether to enable DBus support with libdbus.
 // #define CONFIG_DBUS 1
-// Whether to enable X Sync support.
-// #define CONFIG_XSYNC 1
-// Whether to enable GLX Sync support.
-// #define CONFIG_GLX_XSYNC 1
-
-#if (!defined(CONFIG_XSYNC) || !defined(CONFIG_OPENGL)) && defined(CONFIG_GLX_SYNC)
-#error Cannot enable GL sync without X Sync / OpenGL support.
-#endif
 
 #ifndef COMPTON_VERSION
 #define COMPTON_VERSION "unknown"
@@ -82,9 +74,6 @@
 
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
-#ifdef CONFIG_XSYNC
-#include <X11/extensions/sync.h>
-#endif
 
 #include <xcb/composite.h>
 #include <xcb/render.h>
@@ -460,11 +449,6 @@ typedef struct options_t {
   char *display_repr;
   /// The backend in use.
   enum backend backend;
-  /// Whether to sync X drawing to avoid certain delay issues with
-  /// GLX backend.
-  bool xrender_sync;
-  /// Whether to sync X drawing with X Sync fence.
-  bool xrender_sync_fence;
   /// Whether to avoid using stencil buffer under GLX backend. Might be
   /// unsafe.
   bool glx_no_stencil;
@@ -740,9 +724,6 @@ typedef struct session {
   xcb_render_picture_t tgt_picture;
   /// Temporary buffer to paint to before sending to display.
   paint_t tgt_buffer;
-#ifdef CONFIG_XSYNC
-  XSyncFence tgt_buffer_fence;
-#endif
   /// Window ID of the window we register as a symbol.
   Window reg_win;
 #ifdef CONFIG_OPENGL
@@ -904,14 +885,6 @@ typedef struct session {
   region_t *xinerama_scr_regs;
   /// Number of Xinerama screens.
   int xinerama_nscrs;
-#endif
-#ifdef CONFIG_XSYNC
-  /// Whether X Sync extension exists.
-  bool xsync_exists;
-  /// Event base number for X Sync extension.
-  int xsync_event;
-  /// Error base number for X Sync extension.
-  int xsync_error;
 #endif
   /// Whether X Render convolution filter exists.
   bool xrfilter_convolution_exists;
@@ -1491,20 +1464,6 @@ free_all_damage_last(session_t *ps) {
     pixman_region32_clear(&ps->all_damage_last[i]);
 }
 
-#ifdef CONFIG_XSYNC
-/**
- * Free a XSync fence.
- */
-static inline void
-free_fence(session_t *ps, XSyncFence *pfence) {
-  if (*pfence)
-    XSyncDestroyFence(ps->dpy, *pfence);
-  *pfence = None;
-}
-#else
-#define free_fence(ps, pfence) ((void) 0)
-#endif
-
 /**
  * Check if a rectangle includes the whole screen.
  */
@@ -1742,60 +1701,6 @@ glx_mark_frame(session_t *ps) {
 }
 
 ///@}
-
-#ifdef CONFIG_XSYNC
-#define xr_sync(ps, d, pfence) xr_sync_(ps, d, pfence)
-#else
-#define xr_sync(ps, d, pfence) xr_sync_(ps, d)
-#endif
-
-/**
- * Synchronizes a X Render drawable to ensure all pending painting requests
- * are completed.
- */
-static inline void
-xr_sync_(session_t *ps, Drawable d
-#ifdef CONFIG_XSYNC
-    , XSyncFence *pfence
-#endif
-    ) {
-  if (!ps->o.xrender_sync)
-    return;
-
-  x_sync(ps->c);
-#ifdef CONFIG_XSYNC
-  if (ps->o.xrender_sync_fence && ps->xsync_exists) {
-    // TODO: If everybody just follows the rules stated in X Sync prototype,
-    // we need only one fence per screen, but let's stay a bit cautious right
-    // now
-    XSyncFence tmp_fence = None;
-    if (!pfence)
-      pfence = &tmp_fence;
-    assert(pfence);
-    if (!*pfence)
-      *pfence = XSyncCreateFence(ps->dpy, d, False);
-    if (*pfence) {
-      Bool __attribute__((unused)) triggered = False;
-      /* if (XSyncQueryFence(ps->dpy, *pfence, &triggered) && triggered)
-        XSyncResetFence(ps->dpy, *pfence); */
-      // The fence may fail to be created (e.g. because of died drawable)
-      assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || !triggered);
-      XSyncTriggerFence(ps->dpy, *pfence);
-      XSyncAwaitFence(ps->dpy, pfence, 1);
-      assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || triggered);
-    }
-    else {
-      printf_errf("(%#010lx): Failed to create X Sync fence.", d);
-    }
-    free_fence(ps, &tmp_fence);
-    if (*pfence)
-      XSyncResetFence(ps->dpy, *pfence);
-  }
-#endif
-#ifdef CONFIG_GLX_SYNC
-  xr_glx_sync(ps, d, pfence);
-#endif
-}
 
 /** @name DBus handling
  */

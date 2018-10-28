@@ -701,9 +701,6 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   assert(!w->shadow_paint.pict);
   w->shadow_paint.pict = shadow_picture_argb;
 
-  // Sync it once and only once
-  xr_sync(ps, w->shadow_paint.pixmap, NULL);
-
   xcb_free_gc(ps->c, gc);
   xcb_image_destroy(shadow_image);
   xcb_free_pixmap(ps->c, shadow_pixmap);
@@ -1445,8 +1442,6 @@ paint_one(session_t *ps, win *w, const region_t *reg_paint) {
     w->paint.pixmap = xcb_generate_id(ps->c);
     set_ignore_cookie(ps,
         xcb_composite_name_window_pixmap(ps->c, w->id, w->paint.pixmap));
-    if (w->paint.pixmap)
-      free_fence(ps, &w->fence);
   }
 
   Drawable draw = w->paint.pixmap;
@@ -1462,9 +1457,6 @@ paint_one(session_t *ps, win *w, const region_t *reg_paint) {
     w->paint.pict = x_create_picture_with_pictfmt_and_pixmap(ps, w->pictfmt,
         draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
   }
-
-  if (IsViewable == w->a.map_state)
-    xr_sync(ps, draw, &w->fence);
 
   // GLX: Build texture
   // Let glx_bind_pixmap() determine pixmap size, because if the user
@@ -1846,12 +1838,9 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
         glFlush();
       glXWaitX();
       assert(ps->tgt_buffer.pixmap);
-      xr_sync(ps, ps->tgt_buffer.pixmap, &ps->tgt_buffer_fence);
       paint_bind_tex(ps, &ps->tgt_buffer,
           ps->root_width, ps->root_height, ps->depth,
           !ps->o.glx_no_rebind_pixmap);
-      // See #163
-      xr_sync(ps, ps->tgt_buffer.pixmap, &ps->tgt_buffer_fence);
       if (ps->o.vsync_use_glfinish)
         glFinish();
       else
@@ -2078,11 +2067,6 @@ unmap_win(session_t *ps, win **_w) {
   if (!w || IsUnmapped == w->a.map_state) return;
 
   if (w->destroyed) return;
-
-  // One last synchronization
-  if (w->paint.pixmap)
-    xr_sync(ps, w->paint.pixmap, &w->fence);
-  free_fence(ps, &w->fence);
 
   // Set focus out
   win_set_focused(ps, w, false);
@@ -2544,16 +2528,6 @@ ev_name(session_t *ps, xcb_generic_event_t *ev) {
 
   if (ps->shape_exists && ev->response_type == ps->shape_event)
     return "ShapeNotify";
-
-#ifdef CONFIG_XSYNC
-  if (ps->xsync_exists) {
-    int o = ev->response_type - ps->xsync_event;
-    switch (o) {
-      CASESTRRET(XSyncCounterNotify);
-      CASESTRRET(XSyncAlarmNotify);
-    }
-  }
-#endif
 
   sprintf(buf, "Event %d", ev->response_type);
 
@@ -3402,6 +3376,7 @@ usage(int ret) {
     "--backend backend\n"
     "  Choose backend. Possible choices are xrender, glx, and\n"
     "  xr_glx_hybrid" WARNING ".\n"
+#undef WARNING
     "\n"
     "--glx-no-stencil\n"
     "  GLX backend: Avoid using stencil buffer. Might cause issues\n"
@@ -3426,20 +3401,6 @@ usage(int ret) {
     "  GLX backend: Use GL_EXT_gpu_shader4 for some optimization on blur\n"
     "  GLSL code. My tests on GTX 670 show no noticeable effect.\n"
     "\n"
-    "--xrender-sync\n"
-    "  Attempt to synchronize client applications' draw calls with XSync(),\n"
-    "  used on GLX backend to ensure up-to-date window content is painted.\n"
-#undef WARNING
-#ifndef CONFIG_XSYNC
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
-    "\n"
-    "--xrender-sync-fence\n"
-    "  Additionally use X Sync fence to sync clients' draw calls. Needed\n"
-    "  on nvidia-drivers with GLX backend for some users." WARNING "\n"
-    "\n"
     "--glx-fshader-win shader\n"
     "  GLX backend: Use specified GLSL fragment shader for rendering window\n"
     "  contents.\n"
@@ -3457,6 +3418,7 @@ usage(int ret) {
     "--dbus\n"
     "  Enable remote control via D-Bus. See the D-BUS API section in the\n"
     "  man page for more details." WARNING "\n"
+#undef WARNING
     "\n"
     "--benchmark cycles\n"
     "  Benchmark mode. Repeatedly paint until reaching the specified cycles.\n"
@@ -3470,7 +3432,6 @@ usage(int ret) {
     ;
   FILE *f = (ret ? stderr: stdout);
   fputs(usage_text, f);
-#undef WARNING
 #undef WARNING_DISABLED
 
   exit(ret);
@@ -3996,8 +3957,12 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.write_pid_path = mstrcpy(optarg);
         break;
       P_CASEBOOL(311, vsync_use_glfinish);
-      P_CASEBOOL(312, xrender_sync);
-      P_CASEBOOL(313, xrender_sync_fence);
+      case 312:
+        printf_errf("(): --xrender-sync %s", deprecation_message);
+        break;
+      case 313:
+        printf_errf("(): --xrender-sync-fence %s", deprecation_message);
+        break;
       P_CASEBOOL(315, no_fading_destroyed_argb);
       P_CASEBOOL(316, force_win_blend);
       case 317:
@@ -4050,9 +4015,6 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   // --blur-background-frame implies --blur-background
   if (ps->o.blur_background_frame)
     ps->o.blur_background = true;
-
-  if (ps->o.xrender_sync_fence)
-    ps->o.xrender_sync = true;
 
   // Other variables determined by options
 
@@ -5164,27 +5126,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     ps->shape_exists = true;
   }
 
-  if (ps->o.xrender_sync_fence) {
-#ifdef CONFIG_XSYNC
-    // Query X Sync
-    if (XSyncQueryExtension(ps->dpy, &ps->xsync_event, &ps->xsync_error)) {
-      // TODO: Fencing may require version >= 3.0?
-      int major_version_return = 0, minor_version_return = 0;
-      if (XSyncInitialize(ps->dpy, &major_version_return, &minor_version_return))
-        ps->xsync_exists = true;
-    }
-    if (!ps->xsync_exists) {
-      printf_errf("(): X Sync extension not found. No X Sync fence sync is "
-          "possible.");
-      exit(1);
-    }
-#else
-    printf_errf("(): X Sync support not compiled in. --xrender-sync-fence "
-        "can't work.");
-    exit(1);
-#endif
-  }
-
   // Query X RandR
   if ((ps->o.sw_opti && !ps->o.refresh_rate) || ps->o.xinerama_shadow_crop) {
     ext_info = xcb_get_extension_data(ps->c, &xcb_randr_id);
@@ -5498,7 +5439,6 @@ session_destroy(session_t *ps) {
     ps->tgt_picture = None;
   else
     free_picture(ps, &ps->tgt_picture);
-  free_fence(ps, &ps->tgt_buffer_fence);
 
   free_picture(ps, &ps->root_picture);
   free_paint(ps, &ps->tgt_buffer);

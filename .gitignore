@@ -12,6 +12,8 @@ stamp-h1
 compton
 *.o
 build/
+compile_commands.json
+build.ninja
 
 # CMake files
 compton-*.deb
@@ -45,3 +47,4 @@ doxygen/
 .ycm_extra_conf.pyc
 /src/backtrace-symbols.[ch]
 /compton*.trace
+*.orig

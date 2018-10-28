@@ -355,10 +355,6 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
     exit(1);
   // --glx-use-gpushader4
   lcfg_lookup_bool(&cfg, "glx-use-gpushader4", &ps->o.glx_use_gpushader4);
-  // --xrender-sync
-  lcfg_lookup_bool(&cfg, "xrender-sync", &ps->o.xrender_sync);
-  // --xrender-sync-fence
-  lcfg_lookup_bool(&cfg, "xrender-sync-fence", &ps->o.xrender_sync_fence);
 
   if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
     printf_errf("(): \"clear-shadow\" is removed as an option, and is always"
@@ -370,6 +366,10 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
     printf_errf("(): \"glx-use-copysubbuffermesa\" %s", deprecation_message);
   if (lcfg_lookup_bool(&cfg, "glx-copy-from-front", &bval) && bval)
     printf_errf("(): \"glx-copy-from-front\" %s", deprecation_message);
+  if (lcfg_lookup_bool(&cfg, "xrender-sync", &bval) && bval)
+    printf_errf("(): \"xrender-sync\" %s", deprecation_message);
+  if (lcfg_lookup_bool(&cfg, "xrender-sync-fence", &bval) && bval)
+    printf_errf("(): \"xrender-sync-fence\" %s", deprecation_message);
 
   // Wintype settings
 
