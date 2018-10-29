@@ -1,8 +1,6 @@
 Compton
 =======
 
-**This is a development branch, bug to be expected**
-
 This is forked from the original Compton because that seems to have become unmaintained. I'll merge pull requests as they appear upstream, as well as trying to fix bugs reported to upstream, or found by myself.
 
 The original README can be found [here](README_orig.md)
