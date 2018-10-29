@@ -4732,7 +4732,6 @@ delayed_draw_callback(EV_P_ ev_idle *w, int revents) {
     return;
 
   double delay = swopti_handle_timeout(sw->ps);
-  printf_errf("(): %lf", delay);
   if (delay < 1e-6)
     return _draw_callback(EV_A_ sw->ps, revents);
 
