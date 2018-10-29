@@ -2142,6 +2142,9 @@ restack_win(session_t *ps, win *w, Window new_above) {
     w->next = *prev;
     *prev = w;
 
+    // add damage for this window
+    add_damage_from_win(ps, w);
+
 #ifdef DEBUG_RESTACK
     {
       const char *desc;
