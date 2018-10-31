@@ -271,7 +271,12 @@ bool wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def,
   winprop_t prop = wid_get_prop(ps, wid, ps->atom_opacity, 1L, XCB_ATOM_CARDINAL, 32);
 
   if (prop.nitems) {
-    *out = *prop.data.p32;
+    // sanitize the opacity data, if opacity is out of bounds,
+    // assuming they are opaque
+    if (*prop.data.p32 < 0 || *prop.data.p32 > OPAQUE)
+      *out = OPAQUE;
+    else
+      *out = *prop.data.p32;
     ret = true;
   }
 
