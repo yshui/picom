@@ -40,7 +40,7 @@ wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
       && (!rformat || format == rformat)
       && (8 == format || 16 == format || 32 == format)) {
       return (winprop_t) {
-        .data.p8 = data,
+        .ptr = data,
         .nitems = nitems,
         .type = type,
         .format = format,
@@ -50,7 +50,7 @@ wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
   cxfree(data);
 
   return (winprop_t) {
-    .data.p8 = NULL,
+    .ptr = NULL,
     .nitems = 0,
     .type = AnyPropertyType,
     .format = 0
@@ -70,7 +70,7 @@ wid_get_prop_window(session_t *ps, Window wid, Atom aprop) {
 
   // Return it
   if (prop.nitems) {
-    p = *prop.data.p32;
+    p = *prop.p32;
   }
 
   free_winprop(&prop);

@@ -912,7 +912,7 @@ get_root_tile(session_t *ps) {
         get_atom(ps, background_props_str[p]),
         1L, XCB_ATOM_PIXMAP, 32);
     if (prop.nitems) {
-      pixmap = *prop.data.p32;
+      pixmap = *prop.p32;
       fill = false;
       free_winprop(&prop);
       break;

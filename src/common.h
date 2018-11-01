@@ -224,13 +224,13 @@ typedef struct {
 
 /// Structure representing Window property value.
 typedef struct winprop {
-  // All pointers have the same length, right?
-  // I wanted to use anonymous union but it's a GNU extension...
   union {
-    unsigned char *p8;
-    short *p16;
-    long *p32;
-  } data;
+    void *ptr;
+    uint8_t *p8;
+    int16_t *p16;
+    int32_t *p32;
+    uint32_t *c32; // 32bit cardinal
+  };
   unsigned long nitems;
   Atom type;
   int format;
@@ -1570,9 +1570,9 @@ winprop_get_int(winprop_t prop) {
     return 0;
 
   switch (prop.format) {
-    case 8:   tgt = *(prop.data.p8);    break;
-    case 16:  tgt = *(prop.data.p16);   break;
-    case 32:  tgt = *(prop.data.p32);   break;
+    case 8:   tgt = *(prop.p8);    break;
+    case 16:  tgt = *(prop.p16);   break;
+    case 32:  tgt = *(prop.p32);   break;
     default:  assert(0);
               break;
   }
@@ -1592,9 +1592,9 @@ wid_get_text_prop(session_t *ps, Window wid, Atom prop,
 static inline void
 free_winprop(winprop_t *pprop) {
   // Empty the whole structure to avoid possible issues
-  if (pprop->data.p8) {
-    cxfree(pprop->data.p8);
-    pprop->data.p8 = NULL;
+  if (pprop->ptr) {
+    cxfree(pprop->ptr);
+    pprop->ptr = NULL;
   }
   pprop->nitems = 0;
 }

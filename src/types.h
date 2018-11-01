@@ -24,10 +24,10 @@ typedef struct {
 
 /// A structure representing margins around a rectangle.
 typedef struct {
-  int top;
-  int left;
-  int bottom;
-  int right;
+  unsigned int top;
+  unsigned int left;
+  unsigned int bottom;
+  unsigned int right;
 } margin_t;
 
 typedef uint32_t opacity_t;

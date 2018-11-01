@@ -251,7 +251,7 @@ wintype_t wid_get_prop_wintype(session_t *ps, Window wid) {
 
   for (unsigned i = 0; i < prop.nitems; ++i) {
     for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
-      if (ps->atoms_wintypes[j] == (Atom)prop.data.p32[i]) {
+      if (ps->atoms_wintypes[j] == (xcb_atom_t)prop.p32[i]) {
         free_winprop(&prop);
         return j;
       }
@@ -271,12 +271,7 @@ bool wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def,
   winprop_t prop = wid_get_prop(ps, wid, ps->atom_opacity, 1L, XCB_ATOM_CARDINAL, 32);
 
   if (prop.nitems) {
-    // sanitize the opacity data, if opacity is out of bounds,
-    // assuming they are opaque
-    if (*prop.data.p32 < 0 || *prop.data.p32 > OPAQUE)
-      *out = OPAQUE;
-    else
-      *out = *prop.data.p32;
+    *out = *prop.c32;
     ret = true;
   }
 
@@ -405,7 +400,7 @@ void win_update_prop_shadow_raw(session_t *ps, win *w) {
   if (!prop.nitems) {
     w->prop_shadow = -1;
   } else {
-    w->prop_shadow = *prop.data.p32;
+    w->prop_shadow = *prop.c32;
   }
 
   free_winprop(&prop);
@@ -1236,7 +1231,7 @@ win_update_frame_extents(session_t *ps, win *w, Window client) {
     4L, XCB_ATOM_CARDINAL, 32);
 
   if (prop.nitems == 4) {
-    const long * const extents = prop.data.p32;
+    const uint32_t * const extents = prop.c32;
     const bool changed = w->frame_extents.left != extents[0] ||
                          w->frame_extents.right != extents[1] ||
                          w->frame_extents.top != extents[2] ||
