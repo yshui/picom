@@ -2039,6 +2039,12 @@ map_win(session_t *ps, Window id) {
   if (w->need_configure)
     configure_win(ps, &w->queue_configure);
 
+  // We stopped listening on ShapeNotify events
+  // when the window is unmapped (XXX we shouldn't),
+  // so the shape of the window might have changed,
+  // update. (Issue #35)
+  win_update_bounding_shape(ps, w);
+
 #ifdef CONFIG_DBUS
   // Send D-Bus signal
   if (ps->o.dbus) {
@@ -2230,7 +2236,7 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
   if (!w)
     return;
 
-  if (w->a.map_state == IsUnmapped) {
+  if (w->a.map_state == XCB_MAP_STATE_UNMAPPED) {
     /* save the configure event for when the window maps */
     w->need_configure = true;
     w->queue_configure = *ce;
