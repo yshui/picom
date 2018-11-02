@@ -4,6 +4,17 @@
 #include <ctype.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <math.h>
+
+#ifdef __FAST_MATH__
+#warning Use of -ffast-math can cause rendering error or artifacts, \
+  therefore it is not recommended.
+#endif
+
+__attribute__((optimize("-fno-fast-math")))
+static inline bool safe_isnan(double a) {
+  return isnan(a);
+}
 
 /**
  * Normalize an int value to a specific range.

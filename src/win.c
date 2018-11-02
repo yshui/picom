@@ -324,7 +324,7 @@ void win_calc_opacity(session_t *ps, win *w) {
     // Try obeying opacity property and window type opacity firstly
     if (w->has_opacity_prop)
       opacity = w->opacity_prop;
-    else if (!isnan(ps->o.wintype_opacity[w->window_type]))
+    else if (!safe_isnan(ps->o.wintype_opacity[w->window_type]))
       opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
     else {
       // Respect active_opacity only when the window is physically focused

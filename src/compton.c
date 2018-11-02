@@ -4016,7 +4016,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     ps->o.wintype_shadow[WINTYPE_DND] = false;
   if (fading_enable)
     wintype_arr_enable(ps->o.wintype_fade);
-  if (!isnan(cfgtmp.menu_opacity)) {
+  if (!safe_isnan(cfgtmp.menu_opacity)) {
     ps->o.wintype_opacity[WINTYPE_DROPDOWN_MENU] = cfgtmp.menu_opacity;
     ps->o.wintype_opacity[WINTYPE_POPUP_MENU] = cfgtmp.menu_opacity;
   }
