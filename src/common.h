@@ -465,9 +465,6 @@ typedef struct options_t {
   bool fork_after_register;
   /// Whether to detect rounded corners.
   bool detect_rounded_corners;
-  /// Whether to paint on X Composite overlay window instead of root
-  /// window.
-  bool paint_on_overlay;
   /// Force painting of window content with blending.
   bool force_win_blend;
   /// Resize damage for a specific number of pixels.
@@ -1371,7 +1368,7 @@ get_atom(session_t *ps, const char *atom_name) {
  */
 static inline Window
 get_tgt_window(session_t *ps) {
-  return ps->o.paint_on_overlay ? ps->overlay: ps->root;
+  return ps->overlay != XCB_NONE ? ps->overlay: ps->root;
 }
 
 /**

@@ -3869,7 +3869,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 272:
         printf_errf("(): use of --dbe is deprecated");
         break;
-      P_CASEBOOL(273, paint_on_overlay);
+      case 273:
+        printf_errf("(): --paint-on-overlay is removed, and is enabled when possible");
+        break;
       P_CASEBOOL(274, sw_opti);
       P_CASEBOOL(275, vsync_aggressive);
       P_CASEBOOL(276, use_ewmh_active_win);
@@ -4494,11 +4496,9 @@ init_overlay(session_t *ps) {
     // xcb_unmap_window(c, ps->overlay);
     // XFlush(ps->dpy);
   }
-  else {
+  else
     fprintf(stderr, "Cannot get X Composite overlay window. Falling "
         "back to painting on root window.\n");
-    ps->o.paint_on_overlay = false;
-  }
 #ifdef DEBUG_REDIR
   printf_dbgf("(): overlay = %#010lx\n", ps->overlay);
 #endif
@@ -4842,7 +4842,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .fork_after_register = false,
       .synchronize = false,
       .detect_rounded_corners = false,
-      .paint_on_overlay = false,
       .resize_damage = 0,
       .unredir_if_possible = false,
       .unredir_if_possible_blacklist = NULL,
@@ -5160,8 +5159,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Overlay must be initialized before double buffer, and before creation
   // of OpenGL context.
-  if (ps->o.paint_on_overlay)
-    init_overlay(ps);
+  init_overlay(ps);
 
   // Initialize OpenGL as early as possible
   if (bkend_use_glx(ps)) {
@@ -5217,7 +5215,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
     ps->root_picture = x_create_picture_with_visual_and_pixmap(ps,
       ps->vis, ps->root, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
-    if (ps->o.paint_on_overlay) {
+    if (ps->overlay != XCB_NONE) {
       ps->tgt_picture = x_create_picture_with_visual_and_pixmap(ps,
         ps->vis, ps->overlay, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
     } else

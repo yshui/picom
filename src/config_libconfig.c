@@ -297,8 +297,6 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
     exit(1);
   // --alpha-step
   config_lookup_float(&cfg, "alpha-step", &ps->o.alpha_step);
-  // --paint-on-overlay
-  lcfg_lookup_bool(&cfg, "paint-on-overlay", &ps->o.paint_on_overlay);
   // --sw-opti
   lcfg_lookup_bool(&cfg, "sw-opti", &ps->o.sw_opti);
   // --use-ewmh-active-win
@@ -359,6 +357,9 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
     printf_errf("(): \"clear-shadow\" is removed as an option, and is always"
                 " enabled now. Consider removing it from your config file");
+  if (lcfg_lookup_bool(&cfg, "paint-on-overlay", &bval))
+    printf_errf("(): \"paint-on-overlay\" has been removed as an option, and "
+                "is enabled whenever possible");
 
   const char *deprecation_message = "has been removed. If you encounter problems "
     "without this feature, please feel free to open a bug report.";
