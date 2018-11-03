@@ -12,6 +12,7 @@
 #include <ctype.h>
 #include <string.h>
 #include <xcb/randr.h>
+#include <xcb/present.h>
 #include <xcb/damage.h>
 #include <xcb/render.h>
 #include <xcb/xcb_image.h>
@@ -25,6 +26,7 @@
 #include "win.h"
 #include "x.h"
 #include "config.h"
+#include "diagnostic.h"
 
 static void
 finish_destroy_win(session_t *ps, win **_w);
@@ -3696,6 +3698,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "reredir-on-root-change", no_argument, NULL, 731 },
     { "glx-reinit-on-root-change", no_argument, NULL, 732 },
     { "monitor-repaint", no_argument, NULL, 800 },
+    { "diagnostics", no_argument, NULL, 801 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3983,6 +3986,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(731, reredir_on_root_change);
       P_CASEBOOL(732, glx_reinit_on_root_change);
       P_CASEBOOL(800, monitor_repaint);
+      case 801:
+        ps->o.print_diagnostics = true;
+        break;
       default:
         usage(1);
         break;
@@ -5050,6 +5056,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   xcb_prefetch_extension_data(ps->c, &xcb_xfixes_id);
   xcb_prefetch_extension_data(ps->c, &xcb_randr_id);
   xcb_prefetch_extension_data(ps->c, &xcb_xinerama_id);
+  xcb_prefetch_extension_data(ps->c, &xcb_present_id);
 
   ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
   if (!ext_info || !ext_info->present) {
@@ -5133,16 +5140,24 @@ session_init(session_t *ps_old, int argc, char **argv) {
     ps->shape_exists = true;
   }
 
+  ext_info = xcb_get_extension_data(ps->c, &xcb_randr_id);
+  if (ext_info && ext_info->present) {
+    ps->randr_exists = true;
+    ps->randr_event = ext_info->first_event;
+    ps->randr_error = ext_info->first_error;
+  }
+
+  ext_info = xcb_get_extension_data(ps->c, &xcb_present_id);
+  if (ext_info && ext_info->present) {
+    ps->present_exists = true;
+  }
+
   // Query X RandR
   if ((ps->o.sw_opti && !ps->o.refresh_rate) || ps->o.xinerama_shadow_crop) {
-    ext_info = xcb_get_extension_data(ps->c, &xcb_randr_id);
-    if (ext_info && ext_info->present) {
-      ps->randr_exists = true;
-      ps->randr_event = ext_info->first_event;
-      ps->randr_error = ext_info->first_error;
-    } else
+    if (!ps->randr_exists) {
       printf_errf("(): No XRandR extension, automatic screen change "
           "detection impossible.");
+    }
   }
 
   // Query X Xinerama extension
@@ -5160,6 +5175,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // Overlay must be initialized before double buffer, and before creation
   // of OpenGL context.
   init_overlay(ps);
+
+  if (ps->o.print_diagnostics) {
+    print_diagnostics(ps);
+    exit(0);
+  }
 
   // Initialize OpenGL as early as possible
   if (bkend_use_glx(ps)) {

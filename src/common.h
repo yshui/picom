@@ -436,6 +436,7 @@ typedef struct ev_session_prepare ev_session_prepare;
 typedef struct options_t {
   // === Debugging ===
   bool monitor_repaint;
+  bool print_diagnostics;
   // === General ===
   /// The configuration file we used.
   char *config_file;
@@ -864,6 +865,8 @@ typedef struct session {
   int randr_event;
   /// Error base number for X RandR extension.
   int randr_error;
+  /// Whether X Present extension exists.
+  bool present_exists;
 #ifdef CONFIG_OPENGL
   /// Whether X GLX extension exists.
   bool glx_exists;

@@ -25,6 +25,7 @@ Assuming you already have all the usual building tools installed (e.g. gcc, meso
 * xcb-randr
 * xcb-composite
 * xcb-image
+* xcb-present
 * xcb-xinerama (optional, disable with `-Dxinerama=false` meson configure flag)
 * pixman
 * libdbus (optional, disable with the `-Ddbus=false` meson configure flag)
