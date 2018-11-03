@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <math.h>
 
 #ifdef __FAST_MATH__
@@ -11,7 +12,11 @@
   therefore it is not recommended.
 #endif
 
+#ifdef __clang__
+__attribute__((optnone))
+#else
 __attribute__((optimize("-fno-fast-math")))
+#endif
 static inline bool safe_isnan(double a) {
   return isnan(a);
 }
