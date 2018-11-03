@@ -52,12 +52,6 @@ win *find_toplevel2(session_t *ps, Window wid);
 
 void map_win(session_t *ps, Window id);
 
-void
-render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
-    double opacity, bool argb, bool neg,
-    xcb_render_picture_t pict, glx_texture_t *ptex,
-    const region_t *reg_paint, const glx_prog_main_t *pprogram);
-
 /**
  * Reset filter on a <code>Picture</code>.
  */
@@ -120,42 +114,12 @@ free_picture(session_t *ps, xcb_render_picture_t *p) {
 }
 
 /**
- * Destroy a <code>Damage</code>.
- */
-inline static void
-free_damage(session_t *ps, xcb_damage_damage_t *p) {
-  if (*p) {
-    // BadDamage will be thrown if the window is destroyed
-    set_ignore_cookie(ps,
-        xcb_damage_destroy(ps->c, *p));
-    *p = None;
-  }
-}
-
-/**
  * Destroy a condition list.
  */
 static inline void
 free_wincondlst(c2_lptr_t **pcondlst) {
   while ((*pcondlst = c2_free_lptr(*pcondlst)))
     continue;
-}
-
-/**
- * Free Xinerama screen info.
- */
-static inline void
-free_xinerama_info(session_t *ps) {
-#ifdef CONFIG_XINERAMA
-  if (ps->xinerama_scr_regs) {
-    for (int i = 0; i < ps->xinerama_nscrs; ++i)
-      pixman_region32_fini(&ps->xinerama_scr_regs[i]);
-    free(ps->xinerama_scr_regs);
-  }
-  cxfree(ps->xinerama_scrs);
-  ps->xinerama_scrs = NULL;
-  ps->xinerama_nscrs = 0;
-#endif
 }
 
 #ifdef CONFIG_OPENGL
@@ -204,69 +168,6 @@ free_paint(session_t *ps, paint_t *ppaint) {
 }
 
 /**
- * Free w->paint.
- */
-static inline void
-free_wpaint(session_t *ps, win *w) {
-  free_paint(ps, &w->paint);
-}
-
-/**
- * Destroy all resources in a <code>struct _win</code>.
- */
-static inline void
-free_win_res(session_t *ps, win *w) {
-  free_win_res_glx(ps, w);
-  free_paint(ps, &w->paint);
-  pixman_region32_fini(&w->bounding_shape);
-  free_paint(ps, &w->shadow_paint);
-  free_damage(ps, &w->damage);
-  rc_region_unref(&w->reg_ignore);
-  free(w->name);
-  free(w->class_instance);
-  free(w->class_general);
-  free(w->role);
-}
-
-/**
- * Free root tile related things.
- */
-static inline void
-free_root_tile(session_t *ps) {
-  free_picture(ps, &ps->root_tile_paint.pict);
-  free_texture(ps, &ps->root_tile_paint.ptex);
-  if (ps->root_tile_fill) {
-    xcb_free_pixmap(ps->c, ps->root_tile_paint.pixmap);
-    ps->root_tile_paint.pixmap = XCB_NONE;
-  }
-  ps->root_tile_paint.pixmap = None;
-  ps->root_tile_fill = false;
-}
-
-/**
- * Get current system clock in milliseconds.
- */
-static inline time_ms_t
-get_time_ms(void) {
-  struct timeval tv;
-
-  gettimeofday(&tv, NULL);
-
-  return tv.tv_sec % SEC_WRAP * 1000 + tv.tv_usec / 1000;
-}
-
-/**
- * Convert time from milliseconds to struct timeval.
- */
-static inline struct timeval
-ms_to_tv(int timeout) {
-  return (struct timeval) {
-    .tv_sec = timeout / MS_PER_SEC,
-    .tv_usec = timeout % MS_PER_SEC * (US_PER_SEC / MS_PER_SEC)
-  };
-}
-
-/**
  * Create a XTextProperty of a single string.
  */
 static inline XTextProperty *
@@ -299,26 +200,6 @@ wid_set_text_prop(session_t *ps, Window wid, Atom prop_atom, char *str) {
   cxfree(pprop);
 
   return true;
-}
-
-/**
- * Stop listening for events on a particular window.
- */
-static inline void
-win_ev_stop(session_t *ps, win *w) {
-  // Will get BadWindow if the window is destroyed
-  set_ignore_cookie(ps,
-      xcb_change_window_attributes(ps->c, w->id, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
-
-  if (w->client_win) {
-    set_ignore_cookie(ps,
-        xcb_change_window_attributes(ps->c, w->client_win, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
-  }
-
-  if (ps->shape_exists) {
-    set_ignore_cookie(ps,
-        xcb_shape_select_input(ps->c, w->id, 0));
-  }
 }
 
 /**
@@ -367,20 +248,6 @@ win_validate_pixmap(session_t *ps, win *w) {
 }
 
 /**
- * Find matched window.
- */
-static inline win *
-find_win_all(session_t *ps, const Window wid) {
-  if (!wid || PointerRoot == wid || wid == ps->root || wid == ps->overlay)
-    return NULL;
-
-  win *w = find_win(ps, wid);
-  if (!w) w = find_toplevel(ps, wid);
-  if (!w) w = find_toplevel2(ps, wid);
-  return w;
-}
-
-/**
  * Normalize a convolution kernel.
  */
 static inline void
@@ -391,38 +258,6 @@ normalize_conv_kern(int wid, int hei, xcb_render_fixed_t *kern) {
   double factor = 1.0 / sum;
   for (int i = 0; i < wid * hei; ++i)
     kern[i] = DOUBLE_TO_XFIXED(XFIXED_TO_DOUBLE(kern[i]) * factor);
-}
-
-/**
- * Resize a region.
- */
-static inline void
-resize_region(session_t *ps, region_t *region, short mod) {
-  if (!mod || !region) return;
-  // Loop through all rectangles
-  int nrects;
-  int nnewrects = 0;
-  pixman_box32_t *rects = pixman_region32_rectangles(region, &nrects);
-  pixman_box32_t *newrects = calloc(nrects, sizeof *newrects);
-  for (int i = 0; i < nrects; i++) {
-    int x1 = max_i(rects[i].x1 - mod, 0);
-    int y1 = max_i(rects[i].y1 - mod, 0);
-    int x2 = min_i(rects[i].x2 + mod, ps->root_width);
-    int y2 = min_i(rects[i].y2 + mod, ps->root_height);
-    int wid = x2 - x1;
-    int hei = y2 - y1;
-    if (wid <= 0 || hei <= 0)
-      continue;
-    newrects[nnewrects] = (pixman_box32_t) {
-      .x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2
-    };
-    ++nnewrects;
-  }
-
-  pixman_region32_fini(region);
-  pixman_region32_init_rects(region, newrects, nnewrects);
-
-  free(newrects);
 }
 
 #ifdef CONFIG_OPENGL
@@ -438,32 +273,5 @@ ensure_glx_context(session_t *ps) {
   return ps->psglx->context;
 }
 #endif
-
-/**
- * Get the Xinerama screen a window is on.
- *
- * Return an index >= 0, or -1 if not found.
- */
-static inline void
-cxinerama_win_upd_scr(session_t *ps, win *w) {
-#ifdef CONFIG_XINERAMA
-  w->xinerama_scr = -1;
-
-  if (!ps->xinerama_scrs)
-    return;
-
-  xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
-  int length = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
-  for (int i = 0; i < length; i++) {
-    xcb_xinerama_screen_info_t *s = &scrs[i];
-    if (s->x_org <= w->g.x && s->y_org <= w->g.y
-        && s->x_org + s->width >= w->g.x + w->widthb
-        && s->y_org + s->height >= w->g.y + w->heightb) {
-      w->xinerama_scr = i;
-      return;
-    }
-  }
-#endif
-}
 
 // vim: set et sw=2 :

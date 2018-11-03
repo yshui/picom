@@ -1194,7 +1194,7 @@ void win_update_bounding_shape(session_t *ps, win *w) {
     win_rounded_corners(ps, w);
 
   // Window shape changed, we should free old wpaint and shadow pict
-  free_wpaint(ps, w);
+  free_paint(ps, &w->paint);
   free_paint(ps, &w->shadow_paint);
   //printf_errf("(): free out dated pict");
 
@@ -1264,4 +1264,23 @@ bool win_is_region_ignore_valid(session_t *ps, win *w) {
       return false;
   }
   return true;
+}
+
+/**
+ * Stop listening for events on a particular window.
+ */
+void win_ev_stop(session_t *ps, win *w) {
+  // Will get BadWindow if the window is destroyed
+  set_ignore_cookie(ps,
+      xcb_change_window_attributes(ps->c, w->id, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
+
+  if (w->client_win) {
+    set_ignore_cookie(ps,
+        xcb_change_window_attributes(ps->c, w->client_win, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
+  }
+
+  if (ps->shape_exists) {
+    set_ignore_cookie(ps,
+        xcb_shape_select_input(ps->c, w->id, 0));
+  }
 }

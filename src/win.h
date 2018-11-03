@@ -332,6 +332,9 @@ void
 win_update_frame_extents(session_t *ps, win *w, Window client);
 bool add_win(session_t *ps, Window id, Window prev);
 
+// Stop receiving events (except ConfigureNotify, XXX why?) from a window
+void win_ev_stop(session_t *ps, win *w);
+
 /**
  * Get the leader of a window.
  *

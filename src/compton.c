@@ -118,6 +118,12 @@ update_ewmh_active_win(session_t *ps);
 static void
 draw_callback(EV_P_ ev_idle *w, int revents);
 
+static void
+render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
+    double opacity, bool argb, bool neg,
+    xcb_render_picture_t pict, glx_texture_t *ptex,
+    const region_t *reg_paint, const glx_prog_main_t *pprogram);
+
 typedef struct ev_session_timer {
   ev_timer w;
   session_t *ps;
@@ -216,6 +222,103 @@ static const char *background_props_str[] = {
 /// have a pointer to current session passed in.
 session_t *ps_g = NULL;
 
+/**
+ * Free Xinerama screen info.
+ *
+ * XXX consider moving to x.c
+ */
+static inline void
+free_xinerama_info(session_t *ps) {
+#ifdef CONFIG_XINERAMA
+  if (ps->xinerama_scr_regs) {
+    for (int i = 0; i < ps->xinerama_nscrs; ++i)
+      pixman_region32_fini(&ps->xinerama_scr_regs[i]);
+    free(ps->xinerama_scr_regs);
+  }
+  cxfree(ps->xinerama_scrs);
+  ps->xinerama_scrs = NULL;
+  ps->xinerama_nscrs = 0;
+#endif
+}
+
+/**
+ * Destroy all resources in a <code>struct _win</code>.
+ */
+static inline void
+free_win_res(session_t *ps, win *w) {
+  free_win_res_glx(ps, w);
+  free_paint(ps, &w->paint);
+  pixman_region32_fini(&w->bounding_shape);
+  free_paint(ps, &w->shadow_paint);
+  // BadDamage may be thrown if the window is destroyed
+  set_ignore_cookie(ps,
+      xcb_damage_destroy(ps->c, w->damage));
+  rc_region_unref(&w->reg_ignore);
+  free(w->name);
+  free(w->class_instance);
+  free(w->class_general);
+  free(w->role);
+}
+
+/**
+ * Free root tile related things.
+ */
+static inline void
+free_root_tile(session_t *ps) {
+  free_picture(ps, &ps->root_tile_paint.pict);
+  free_texture(ps, &ps->root_tile_paint.ptex);
+  if (ps->root_tile_fill) {
+    xcb_free_pixmap(ps->c, ps->root_tile_paint.pixmap);
+    ps->root_tile_paint.pixmap = XCB_NONE;
+  }
+  ps->root_tile_paint.pixmap = None;
+  ps->root_tile_fill = false;
+}
+
+/**
+ * Get current system clock in milliseconds.
+ */
+static inline time_ms_t
+get_time_ms(void) {
+  struct timeval tv;
+
+  gettimeofday(&tv, NULL);
+
+  return tv.tv_sec % SEC_WRAP * 1000 + tv.tv_usec / 1000;
+}
+
+/**
+ * Resize a region.
+ */
+static inline void
+resize_region(session_t *ps, region_t *region, short mod) {
+  if (!mod || !region) return;
+  // Loop through all rectangles
+  int nrects;
+  int nnewrects = 0;
+  pixman_box32_t *rects = pixman_region32_rectangles(region, &nrects);
+  pixman_box32_t *newrects = calloc(nrects, sizeof *newrects);
+  for (int i = 0; i < nrects; i++) {
+    int x1 = max_i(rects[i].x1 - mod, 0);
+    int y1 = max_i(rects[i].y1 - mod, 0);
+    int x2 = min_i(rects[i].x2 + mod, ps->root_width);
+    int y2 = min_i(rects[i].y2 + mod, ps->root_height);
+    int wid = x2 - x1;
+    int hei = y2 - y1;
+    if (wid <= 0 || hei <= 0)
+      continue;
+    newrects[nnewrects] = (pixman_box32_t) {
+      .x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2
+    };
+    ++nnewrects;
+  }
+
+  pixman_region32_fini(region);
+  pixman_region32_init_rects(region, newrects, nnewrects);
+
+  free(newrects);
+}
+
 static inline int
 get_alpha_step(session_t *ps, opacity_t o) {
   double d = ((double) o) / OPAQUE;
@@ -238,6 +341,86 @@ set_tgt_clip(session_t *ps, region_t *reg) {
     default:
       assert(false);
   }
+}
+
+/**
+ * Get the Xinerama screen a window is on.
+ *
+ * Return an index >= 0, or -1 if not found.
+ *
+ * XXX move to x.c
+ */
+static inline void
+cxinerama_win_upd_scr(session_t *ps, win *w) {
+#ifdef CONFIG_XINERAMA
+  w->xinerama_scr = -1;
+
+  if (!ps->xinerama_scrs)
+    return;
+
+  xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
+  int length = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
+  for (int i = 0; i < length; i++) {
+    xcb_xinerama_screen_info_t *s = &scrs[i];
+    if (s->x_org <= w->g.x && s->y_org <= w->g.y
+        && s->x_org + s->width >= w->g.x + w->widthb
+        && s->y_org + s->height >= w->g.y + w->heightb) {
+      w->xinerama_scr = i;
+      return;
+    }
+  }
+#endif
+}
+
+// XXX Move to x.c
+static void
+cxinerama_upd_scrs(session_t *ps) {
+#ifdef CONFIG_XINERAMA
+  // XXX Consider deprecating Xinerama, switch to RandR when necessary
+  free_xinerama_info(ps);
+
+  if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists) return;
+
+  xcb_xinerama_is_active_reply_t *active =
+    xcb_xinerama_is_active_reply(ps->c,
+        xcb_xinerama_is_active(ps->c), NULL);
+  if (!active || !active->state) {
+    free(active);
+    return;
+  }
+  free(active);
+
+  ps->xinerama_scrs = xcb_xinerama_query_screens_reply(ps->c,
+      xcb_xinerama_query_screens(ps->c), NULL);
+  if (!ps->xinerama_scrs)
+    return;
+
+  xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
+  ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
+
+  ps->xinerama_scr_regs = allocchk(malloc(sizeof(region_t)
+        * ps->xinerama_nscrs));
+  for (int i = 0; i < ps->xinerama_nscrs; ++i) {
+    const xcb_xinerama_screen_info_t * const s = &scrs[i];
+    pixman_region32_init_rect(&ps->xinerama_scr_regs[i], s->x_org, s->y_org, s->width, s->height);
+  }
+#endif
+}
+
+/**
+ * Find matched window.
+ *
+ * XXX move to win.c
+ */
+static inline win *
+find_win_all(session_t *ps, const Window wid) {
+  if (!wid || PointerRoot == wid || wid == ps->root || wid == ps->overlay)
+    return NULL;
+
+  win *w = find_win(ps, wid);
+  if (!w) w = find_toplevel(ps, wid);
+  if (!w) w = find_toplevel2(ps, wid);
+  return w;
 }
 
 void queue_redraw(session_t *ps) {
@@ -1401,7 +1584,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
   }
 }
 
-void
+static void
 render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
   double opacity, bool argb, bool neg,
   xcb_render_picture_t pict, glx_texture_t *ptex,
@@ -2065,7 +2248,7 @@ finish_unmap_win(session_t *ps, win **_w) {
   /* damage region */
   add_damage_from_win(ps, w);
 
-  free_wpaint(ps, w);
+  free_paint(ps, &w->paint);
   free_paint(ps, &w->shadow_paint);
 }
 
@@ -4607,7 +4790,7 @@ redir_stop(session_t *ps) {
     // If we don't destroy them here, looks like the resources are just
     // kept inaccessible somehow
     for (win *w = ps->list; w; w = w->next)
-      free_wpaint(ps, w);
+      free_paint(ps, &w->paint);
 
     xcb_composite_unredirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
     // Unmap overlay window
@@ -4773,40 +4956,6 @@ x_event_callback(EV_P_ ev_io *w, int revents) {
     ev_handle(ps, ev);
     free(ev);
   }
-}
-
-static void
-cxinerama_upd_scrs(session_t *ps) {
-#ifdef CONFIG_XINERAMA
-  // XXX Consider deprecating Xinerama, switch to RandR when necessary
-  free_xinerama_info(ps);
-
-  if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists) return;
-
-  xcb_xinerama_is_active_reply_t *active =
-    xcb_xinerama_is_active_reply(ps->c,
-        xcb_xinerama_is_active(ps->c), NULL);
-  if (!active || !active->state) {
-    free(active);
-    return;
-  }
-  free(active);
-
-  ps->xinerama_scrs = xcb_xinerama_query_screens_reply(ps->c,
-      xcb_xinerama_query_screens(ps->c), NULL);
-  if (!ps->xinerama_scrs)
-    return;
-
-  xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
-  ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
-
-  ps->xinerama_scr_regs = allocchk(malloc(sizeof(region_t)
-        * ps->xinerama_nscrs));
-  for (int i = 0; i < ps->xinerama_nscrs; ++i) {
-    const xcb_xinerama_screen_info_t * const s = &scrs[i];
-    pixman_region32_init_rect(&ps->xinerama_scr_regs[i], s->x_org, s->y_org, s->width, s->height);
-  }
-#endif
 }
 
 /**
