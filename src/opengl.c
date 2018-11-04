@@ -702,7 +702,7 @@ glx_load_prog_main(session_t *ps,
 bool
 glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
     unsigned width, unsigned height, unsigned depth) {
-  if (ps->o.backend != BKEND_GLX)
+  if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID)
     return true;
 
   if (!pixmap) {
