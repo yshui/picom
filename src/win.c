@@ -2,7 +2,6 @@
 // Copyright (c) 2011-2013, Christopher Jeffrey
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 
-#include <X11/Xlib.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
 #include <xcb/xcb_renderutil.h>
@@ -318,7 +317,7 @@ void win_determine_mode(session_t *ps, win *w) {
 void win_calc_opacity(session_t *ps, win *w) {
   opacity_t opacity = OPAQUE;
 
-  if (w->destroyed || IsViewable != w->a.map_state)
+  if (w->destroyed || w->a.map_state != XCB_MAP_STATE_VIEWABLE)
     opacity = 0;
   else {
     // Try obeying opacity property and window type opacity firstly
@@ -350,7 +349,7 @@ void win_calc_dim(session_t *ps, win *w) {
   bool dim;
 
   // Make sure we do nothing if the window is unmapped / destroyed
-  if (w->destroyed || IsViewable != w->a.map_state)
+  if (w->destroyed || w->a.map_state != XCB_MAP_STATE_VIEWABLE)
     return;
 
   if (ps->o.inactive_dim && !(w->focused)) {
@@ -381,7 +380,7 @@ void win_determine_fade(session_t *ps, win *w) {
   }
   // Ignore other possible causes of fading state changes after window
   // gets unmapped
-  else if (IsViewable != w->a.map_state) {
+  else if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
   } else if (c2_match(ps, w, ps->o.fade_blacklist, &w->cache_fblst, NULL))
     w->fade = false;
   else
@@ -454,7 +453,7 @@ void win_determine_shadow(session_t *ps, win *w) {
 
   if (UNSET != w->shadow_force)
     shadow_new = w->shadow_force;
-  else if (IsViewable == w->a.map_state)
+  else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
     shadow_new = (ps->o.wintype_shadow[w->window_type] &&
                   !c2_match(ps, w, ps->o.shadow_blacklist, &w->cache_sblst, NULL) &&
                   !(ps->o.shadow_ignore_shaped && w->bounding_shaped &&
@@ -481,7 +480,7 @@ void win_determine_invert_color(session_t *ps, win *w) {
 
   if (UNSET != w->invert_color_force)
     invert_color_new = w->invert_color_force;
-  else if (IsViewable == w->a.map_state)
+  else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
     invert_color_new =
         c2_match(ps, w, ps->o.invert_color_list, &w->cache_ivclst, NULL);
 
@@ -504,7 +503,7 @@ void win_set_blur_background(session_t *ps, win *w, bool blur_background_new) {
  * Determine if a window should have background blurred.
  */
 void win_determine_blur_background(session_t *ps, win *w) {
-  if (IsViewable != w->a.map_state)
+  if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
     return;
 
   bool blur_background_new =
@@ -518,7 +517,7 @@ void win_determine_blur_background(session_t *ps, win *w) {
  * Update window opacity according to opacity rules.
  */
 void win_update_opacity_rule(session_t *ps, win *w) {
-  if (IsViewable != w->a.map_state)
+  if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
     return;
 
   opacity_t opacity = OPAQUE;
@@ -569,10 +568,10 @@ void win_on_factor_change(session_t *ps, win *w) {
     win_determine_blur_background(ps, w);
   if (ps->o.opacity_rules)
     win_update_opacity_rule(ps, w);
-  if (IsViewable == w->a.map_state && ps->o.paint_blacklist)
+  if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->o.paint_blacklist)
     w->paint_excluded =
         c2_match(ps, w, ps->o.paint_blacklist, &w->cache_pblst, NULL);
-  if (IsViewable == w->a.map_state && ps->o.unredir_if_possible_blacklist)
+  if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->o.unredir_if_possible_blacklist)
     w->unredir_if_possible_excluded = c2_match(
         ps, w, ps->o.unredir_if_possible_blacklist, &w->cache_uipblst, NULL);
   w->reg_ignore_valid = false;
@@ -636,7 +635,7 @@ void win_mark_client(session_t *ps, win *w, Window client) {
 
   // If the window isn't mapped yet, stop here, as the function will be
   // called in map_win()
-  if (IsViewable != w->a.map_state)
+  if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
     return;
 
   xcb_change_window_attributes(ps->c, client, XCB_CW_EVENT_MASK,
@@ -844,9 +843,9 @@ bool add_win(session_t *ps, Window id, Window prev) {
   xcb_get_geometry_cookie_t gcookie = xcb_get_geometry(ps->c, id);
   xcb_get_window_attributes_reply_t *a = xcb_get_window_attributes_reply(ps->c, acookie, NULL);
   xcb_get_geometry_reply_t *g = xcb_get_geometry_reply(ps->c, gcookie, NULL);
-  if (!a || IsUnviewable == a->map_state) {
+  if (!a || a->map_state == XCB_MAP_STATE_UNVIEWABLE) {
     // Failed to get window attributes probably means the window is gone
-    // already. IsUnviewable means the window is already reparented
+    // already. Unviewable means the window is already reparented
     // elsewhere.
     free(a);
     free(g);
@@ -867,8 +866,8 @@ bool add_win(session_t *ps, Window id, Window prev) {
 
   // Delay window mapping
   int map_state = new->a.map_state;
-  assert(IsViewable == map_state || IsUnmapped == map_state);
-  new->a.map_state = IsUnmapped;
+  assert(map_state == XCB_MAP_STATE_VIEWABLE || map_state == XCB_MAP_STATE_UNMAPPED);
+  new->a.map_state = XCB_MAP_STATE_UNMAPPED;
 
   if (InputOutput == new->a._class) {
     // Create Damage for window
@@ -896,7 +895,7 @@ bool add_win(session_t *ps, Window id, Window prev) {
   }
 #endif
 
-  if (IsViewable == map_state) {
+  if (map_state == XCB_MAP_STATE_VIEWABLE) {
     map_win(ps, id);
   }
 
@@ -919,7 +918,7 @@ void win_update_focused(session_t *ps, win *w) {
         || (ps->o.mark_wmwin_focused && w->wmwin)
         || (ps->o.mark_ovredir_focused &&
             w->id == w->client_win && !w->wmwin)
-        || (IsViewable == w->a.map_state &&
+        || (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
             c2_match(ps, w, ps->o.focus_blacklist, &w->cache_fcblst, NULL)))
       w->focused = true;
 
@@ -1110,7 +1109,7 @@ win_on_focus_change(session_t *ps, win *w) {
 void
 win_set_focused(session_t *ps, win *w, bool focused) {
   // Unmapped windows will have their focused state reset on map
-  if (IsUnmapped == w->a.map_state)
+  if (w->a.map_state == XCB_MAP_STATE_UNMAPPED)
     return;
 
   if (win_is_focused_real(ps, w) == focused) return;

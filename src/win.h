@@ -3,7 +3,6 @@
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 #pragma once
 #include <stdbool.h>
-#include <X11/Xlib.h>
 #include <xcb/damage.h>
 
 // FIXME shouldn't need this

@@ -1437,7 +1437,7 @@ glx_has_context(session_t *ps) {
  */
 static inline bool
 win_is_focused_real(session_t *ps, const win *w) {
-  return IsViewable == w->a.map_state && ps->active_win == w;
+  return w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->active_win == w;
 }
 
 /**

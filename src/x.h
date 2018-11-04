@@ -3,7 +3,6 @@
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
-#include <X11/Xlib.h>
 #include <xcb/xcb.h>
 #include <xcb/render.h>
 #include <xcb/xcb_renderutil.h>

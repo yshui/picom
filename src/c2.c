@@ -1647,7 +1647,7 @@ c2_match_once(session_t *ps, win *w, const c2_ptr_t cond) {
 bool
 c2_match(session_t *ps, win *w, const c2_lptr_t *condlst,
     const c2_lptr_t **cache, void **pdata) {
-  assert(IsViewable == w->a.map_state);
+  assert(w->a.map_state == XCB_MAP_STATE_VIEWABLE);
 
   // Check if the cached entry matches firstly
   if (cache && *cache && c2_match_once(ps, w, (*cache)->ptr)) {

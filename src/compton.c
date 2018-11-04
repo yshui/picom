@@ -986,7 +986,7 @@ long determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
 
   // Check if it's a mapped frame window
   if (WIN_EVMODE_FRAME == mode
-      || ((w = find_win(ps, wid)) && IsViewable == w->a.map_state)) {
+      || ((w = find_win(ps, wid)) && w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
     evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
     if (ps->o.track_focus && !ps->o.use_ewmh_active_win)
       evmask |= XCB_EVENT_MASK_FOCUS_CHANGE;
@@ -994,7 +994,7 @@ long determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
 
   // Check if it's a mapped client window
   if (WIN_EVMODE_CLIENT == mode
-      || ((w = find_toplevel(ps, wid)) && IsViewable == w->a.map_state)) {
+      || ((w = find_toplevel(ps, wid)) && w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
     if (ps->o.frame_opacity || ps->o.track_wdata || ps->track_atom_lst
         || ps->o.detect_client_opacity)
       evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
@@ -1215,7 +1215,7 @@ paint_preprocess(session_t *ps, win *list) {
     const bool was_painted = w->to_paint;
     const opacity_t opacity_old = w->opacity;
     // Restore flags from last paint if the window is being faded out
-    if (IsUnmapped == w->a.map_state) {
+    if (w->a.map_state == XCB_MAP_STATE_UNMAPPED) {
       win_set_shadow(ps, w, w->shadow_last);
       w->fade = w->fade_last;
       win_set_invert_color(ps, w, w->invert_color_last);
@@ -1279,7 +1279,7 @@ paint_preprocess(session_t *ps, win *list) {
     if (!w->ever_damaged
         || w->g.x + w->g.width < 1 || w->g.y + w->g.height < 1
         || w->g.x >= ps->root_width || w->g.y >= ps->root_height
-        || ((IsUnmapped == w->a.map_state || w->destroyed) && !w->paint.pixmap)
+        || ((w->a.map_state == XCB_MAP_STATE_UNMAPPED || w->destroyed) && !w->paint.pixmap)
         || get_alpha_step(ps, w->opacity) == 0
         || w->paint_excluded)
       to_paint = false;
@@ -2082,7 +2082,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
 
 static void
 repair_win(session_t *ps, win *w) {
-  if (IsViewable != w->a.map_state)
+  if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
     return;
 
   region_t parts;
@@ -2149,12 +2149,12 @@ map_win(session_t *ps, Window id) {
   // Don't care about window mapping if it's an InputOnly window
   // Try avoiding mapping a window twice
   if (!w || InputOnly == w->a._class
-      || IsViewable == w->a.map_state)
+      || w->a.map_state == XCB_MAP_STATE_VIEWABLE)
     return;
 
   assert(!win_is_focused_real(ps, w));
 
-  w->a.map_state = IsViewable;
+  w->a.map_state = XCB_MAP_STATE_VIEWABLE;
 
   cxinerama_win_upd_scr(ps, w);
 
@@ -2255,14 +2255,14 @@ finish_unmap_win(session_t *ps, win **_w) {
 static void
 unmap_win(session_t *ps, win **_w) {
   win *w = *_w;
-  if (!w || IsUnmapped == w->a.map_state) return;
+  if (!w || w->a.map_state == XCB_MAP_STATE_UNMAPPED) return;
 
   if (w->destroyed) return;
 
   // Set focus out
   win_set_focused(ps, w, false);
 
-  w->a.map_state = IsUnmapped;
+  w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 
   // Fading out
   w->flags |= WFLAG_OPCT_CHANGE;
@@ -2669,7 +2669,7 @@ opts_init_track_focus(session_t *ps) {
   if (!ps->o.use_ewmh_active_win) {
     // Start listening to FocusChange events
     for (win *w = ps->list; w; w = w->next)
-      if (IsViewable == w->a.map_state)
+      if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
         xcb_change_window_attributes(ps->c, w->id, XCB_CW_EVENT_MASK,
             (const uint32_t[]) { determine_evmask(ps, w->id, WIN_EVMODE_FRAME) });
   }
@@ -3114,7 +3114,7 @@ ev_damage_notify(session_t *ps, xcb_damage_notify_event_t *de) {
 inline static void
 ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) {
   win *w = find_win(ps, ev->affected_window);
-  if (!w || IsUnmapped == w->a.map_state) return;
+  if (!w || w->a.map_state == XCB_MAP_STATE_UNMAPPED) return;
 
   /*
    * Empty bounding_shape may indicated an
@@ -5543,7 +5543,7 @@ session_destroy(session_t *ps) {
       // Must be put here to avoid segfault
       next = w->next;
 
-      if (IsViewable == w->a.map_state && !w->destroyed)
+      if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && !w->destroyed)
         win_ev_stop(ps, w);
 
       free_win_res(ps, w);
