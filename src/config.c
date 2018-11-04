@@ -318,7 +318,7 @@ bool parse_rule_opacity(session_t *ps, const char *src) {
 
   // Parse pattern
   // I hope 1-100 is acceptable for (void *)
-  return c2_parsed(ps, &ps->o.opacity_rules, endptr, (void *) val);
+  return c2_parse(ps, &ps->o.opacity_rules, endptr, (void *) val);
 }
 
 /**
@@ -329,7 +329,7 @@ condlst_add(session_t *ps, c2_lptr_t **pcondlst, const char *pattern) {
   if (!pattern)
     return false;
 
-  if (!c2_parse(ps, pcondlst, pattern))
+  if (!c2_parse(ps, pcondlst, pattern, NULL))
     exit(1);
 
   return true;

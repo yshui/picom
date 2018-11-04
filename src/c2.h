@@ -18,17 +18,12 @@ typedef struct session session_t;
 typedef struct win win;
 
 c2_lptr_t *
-c2_parsed(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
+c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
     void *data);
-
-#define c2_parse(ps, pcondlst, pattern) c2_parsed((ps), (pcondlst), (pattern), NULL)
 
 c2_lptr_t *
 c2_free_lptr(c2_lptr_t *lp);
 
 bool
-c2_matchd(session_t *ps, win *w, const c2_lptr_t *condlst,
+c2_match(session_t *ps, win *w, const c2_lptr_t *condlst,
     const c2_lptr_t **cache, void **pdata);
-
-#define c2_match(ps, w, condlst, cache) c2_matchd((ps), (w), (condlst), \
-    (cache), NULL)

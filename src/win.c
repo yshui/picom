@@ -382,7 +382,7 @@ void win_determine_fade(session_t *ps, win *w) {
   // Ignore other possible causes of fading state changes after window
   // gets unmapped
   else if (IsViewable != w->a.map_state) {
-  } else if (c2_match(ps, w, ps->o.fade_blacklist, &w->cache_fblst))
+  } else if (c2_match(ps, w, ps->o.fade_blacklist, &w->cache_fblst, NULL))
     w->fade = false;
   else
     w->fade = ps->o.wintype_fade[w->window_type];
@@ -456,7 +456,7 @@ void win_determine_shadow(session_t *ps, win *w) {
     shadow_new = w->shadow_force;
   else if (IsViewable == w->a.map_state)
     shadow_new = (ps->o.wintype_shadow[w->window_type] &&
-                  !c2_match(ps, w, ps->o.shadow_blacklist, &w->cache_sblst) &&
+                  !c2_match(ps, w, ps->o.shadow_blacklist, &w->cache_sblst, NULL) &&
                   !(ps->o.shadow_ignore_shaped && w->bounding_shaped &&
                     !w->rounded_corners) &&
                   !(ps->o.respect_prop_shadow && 0 == w->prop_shadow));
@@ -483,7 +483,7 @@ void win_determine_invert_color(session_t *ps, win *w) {
     invert_color_new = w->invert_color_force;
   else if (IsViewable == w->a.map_state)
     invert_color_new =
-        c2_match(ps, w, ps->o.invert_color_list, &w->cache_ivclst);
+        c2_match(ps, w, ps->o.invert_color_list, &w->cache_ivclst, NULL);
 
   win_set_invert_color(ps, w, invert_color_new);
 }
@@ -509,7 +509,7 @@ void win_determine_blur_background(session_t *ps, win *w) {
 
   bool blur_background_new =
       ps->o.blur_background &&
-      !c2_match(ps, w, ps->o.blur_background_blacklist, &w->cache_bbblst);
+      !c2_match(ps, w, ps->o.blur_background_blacklist, &w->cache_bbblst, NULL);
 
   win_set_blur_background(ps, w, blur_background_new);
 }
@@ -524,7 +524,7 @@ void win_update_opacity_rule(session_t *ps, win *w) {
   opacity_t opacity = OPAQUE;
   bool is_set = false;
   void *val = NULL;
-  if (c2_matchd(ps, w, ps->o.opacity_rules, &w->cache_oparule, &val)) {
+  if (c2_match(ps, w, ps->o.opacity_rules, &w->cache_oparule, &val)) {
     opacity = ((double)(long)val) / 100.0 * OPAQUE;
     is_set = true;
   }
@@ -571,10 +571,10 @@ void win_on_factor_change(session_t *ps, win *w) {
     win_update_opacity_rule(ps, w);
   if (IsViewable == w->a.map_state && ps->o.paint_blacklist)
     w->paint_excluded =
-        c2_match(ps, w, ps->o.paint_blacklist, &w->cache_pblst);
+        c2_match(ps, w, ps->o.paint_blacklist, &w->cache_pblst, NULL);
   if (IsViewable == w->a.map_state && ps->o.unredir_if_possible_blacklist)
     w->unredir_if_possible_excluded = c2_match(
-        ps, w, ps->o.unredir_if_possible_blacklist, &w->cache_uipblst);
+        ps, w, ps->o.unredir_if_possible_blacklist, &w->cache_uipblst, NULL);
   w->reg_ignore_valid = false;
 }
 
@@ -917,9 +917,10 @@ void win_update_focused(session_t *ps, win *w) {
     // windows specially
     if (ps->o.wintype_focus[w->window_type]
         || (ps->o.mark_wmwin_focused && w->wmwin)
-        || (ps->o.mark_ovredir_focused
-          && w->id == w->client_win && !w->wmwin)
-        || (IsViewable == w->a.map_state && c2_match(ps, w, ps->o.focus_blacklist, &w->cache_fcblst)))
+        || (ps->o.mark_ovredir_focused &&
+            w->id == w->client_win && !w->wmwin)
+        || (IsViewable == w->a.map_state &&
+            c2_match(ps, w, ps->o.focus_blacklist, &w->cache_fcblst, NULL)))
       w->focused = true;
 
     // If window grouping detection is enabled, mark the window active if
