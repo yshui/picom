@@ -12,6 +12,7 @@
 #include <ctype.h>
 #include <string.h>
 #include <xcb/randr.h>
+#include <xcb/present.h>
 #include <xcb/damage.h>
 #include <xcb/render.h>
 #include <xcb/xcb_image.h>
@@ -25,6 +26,7 @@
 #include "win.h"
 #include "x.h"
 #include "config.h"
+#include "diagnostic.h"
 
 static void
 finish_destroy_win(session_t *ps, win **_w);
@@ -115,6 +117,12 @@ update_ewmh_active_win(session_t *ps);
 
 static void
 draw_callback(EV_P_ ev_idle *w, int revents);
+
+static void
+render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
+    double opacity, bool argb, bool neg,
+    xcb_render_picture_t pict, glx_texture_t *ptex,
+    const region_t *reg_paint, const glx_prog_main_t *pprogram);
 
 typedef struct ev_session_timer {
   ev_timer w;
@@ -214,6 +222,109 @@ static const char *background_props_str[] = {
 /// have a pointer to current session passed in.
 session_t *ps_g = NULL;
 
+/**
+ * Free Xinerama screen info.
+ *
+ * XXX consider moving to x.c
+ */
+static inline void
+free_xinerama_info(session_t *ps) {
+#ifdef CONFIG_XINERAMA
+  if (ps->xinerama_scr_regs) {
+    for (int i = 0; i < ps->xinerama_nscrs; ++i)
+      pixman_region32_fini(&ps->xinerama_scr_regs[i]);
+    free(ps->xinerama_scr_regs);
+  }
+  cxfree(ps->xinerama_scrs);
+  ps->xinerama_scrs = NULL;
+  ps->xinerama_nscrs = 0;
+#endif
+}
+
+/**
+ * Destroy all resources in a <code>struct _win</code>.
+ */
+static inline void
+free_win_res(session_t *ps, win *w) {
+  free_win_res_glx(ps, w);
+  free_paint(ps, &w->paint);
+  pixman_region32_fini(&w->bounding_shape);
+  free_paint(ps, &w->shadow_paint);
+  // BadDamage may be thrown if the window is destroyed
+  set_ignore_cookie(ps,
+      xcb_damage_destroy(ps->c, w->damage));
+  rc_region_unref(&w->reg_ignore);
+  free(w->name);
+  free(w->class_instance);
+  free(w->class_general);
+  free(w->role);
+}
+
+/**
+ * Free root tile related things.
+ */
+static inline void
+free_root_tile(session_t *ps) {
+  free_picture(ps, &ps->root_tile_paint.pict);
+  free_texture(ps, &ps->root_tile_paint.ptex);
+  if (ps->root_tile_fill) {
+    xcb_free_pixmap(ps->c, ps->root_tile_paint.pixmap);
+    ps->root_tile_paint.pixmap = XCB_NONE;
+  }
+  ps->root_tile_paint.pixmap = None;
+  ps->root_tile_fill = false;
+}
+
+/**
+ * Get current system clock in milliseconds.
+ */
+static inline time_ms_t
+get_time_ms(void) {
+  struct timeval tv;
+
+  gettimeofday(&tv, NULL);
+
+  return tv.tv_sec % SEC_WRAP * 1000 + tv.tv_usec / 1000;
+}
+
+/**
+ * Resize a region.
+ */
+static inline void
+resize_region(session_t *ps, region_t *region, short mod) {
+  if (!mod || !region) return;
+  // Loop through all rectangles
+  int nrects;
+  int nnewrects = 0;
+  pixman_box32_t *rects = pixman_region32_rectangles(region, &nrects);
+  pixman_box32_t *newrects = calloc(nrects, sizeof *newrects);
+  for (int i = 0; i < nrects; i++) {
+    int x1 = max_i(rects[i].x1 - mod, 0);
+    int y1 = max_i(rects[i].y1 - mod, 0);
+    int x2 = min_i(rects[i].x2 + mod, ps->root_width);
+    int y2 = min_i(rects[i].y2 + mod, ps->root_height);
+    int wid = x2 - x1;
+    int hei = y2 - y1;
+    if (wid <= 0 || hei <= 0)
+      continue;
+    newrects[nnewrects] = (pixman_box32_t) {
+      .x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2
+    };
+    ++nnewrects;
+  }
+
+  pixman_region32_fini(region);
+  pixman_region32_init_rects(region, newrects, nnewrects);
+
+  free(newrects);
+}
+
+static inline int
+get_alpha_step(session_t *ps, opacity_t o) {
+  double d = ((double) o) / OPAQUE;
+  return (int)(round(normalize_d(d) / ps->o.alpha_step));
+}
+
 static inline void
 __attribute__((nonnull(1, 2)))
 set_tgt_clip(session_t *ps, region_t *reg) {
@@ -230,6 +341,86 @@ set_tgt_clip(session_t *ps, region_t *reg) {
     default:
       assert(false);
   }
+}
+
+/**
+ * Get the Xinerama screen a window is on.
+ *
+ * Return an index >= 0, or -1 if not found.
+ *
+ * XXX move to x.c
+ */
+static inline void
+cxinerama_win_upd_scr(session_t *ps, win *w) {
+#ifdef CONFIG_XINERAMA
+  w->xinerama_scr = -1;
+
+  if (!ps->xinerama_scrs)
+    return;
+
+  xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
+  int length = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
+  for (int i = 0; i < length; i++) {
+    xcb_xinerama_screen_info_t *s = &scrs[i];
+    if (s->x_org <= w->g.x && s->y_org <= w->g.y
+        && s->x_org + s->width >= w->g.x + w->widthb
+        && s->y_org + s->height >= w->g.y + w->heightb) {
+      w->xinerama_scr = i;
+      return;
+    }
+  }
+#endif
+}
+
+// XXX Move to x.c
+static void
+cxinerama_upd_scrs(session_t *ps) {
+#ifdef CONFIG_XINERAMA
+  // XXX Consider deprecating Xinerama, switch to RandR when necessary
+  free_xinerama_info(ps);
+
+  if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists) return;
+
+  xcb_xinerama_is_active_reply_t *active =
+    xcb_xinerama_is_active_reply(ps->c,
+        xcb_xinerama_is_active(ps->c), NULL);
+  if (!active || !active->state) {
+    free(active);
+    return;
+  }
+  free(active);
+
+  ps->xinerama_scrs = xcb_xinerama_query_screens_reply(ps->c,
+      xcb_xinerama_query_screens(ps->c), NULL);
+  if (!ps->xinerama_scrs)
+    return;
+
+  xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
+  ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
+
+  ps->xinerama_scr_regs = allocchk(malloc(sizeof(region_t)
+        * ps->xinerama_nscrs));
+  for (int i = 0; i < ps->xinerama_nscrs; ++i) {
+    const xcb_xinerama_screen_info_t * const s = &scrs[i];
+    pixman_region32_init_rect(&ps->xinerama_scr_regs[i], s->x_org, s->y_org, s->width, s->height);
+  }
+#endif
+}
+
+/**
+ * Find matched window.
+ *
+ * XXX move to win.c
+ */
+static inline win *
+find_win_all(session_t *ps, const Window wid) {
+  if (!wid || PointerRoot == wid || wid == ps->root || wid == ps->overlay)
+    return NULL;
+
+  win *w = find_win(ps, wid);
+  if (!w) w = find_toplevel(ps, wid);
+  if (!w) w = find_toplevel2(ps, wid);
+  return w;
 }
 
 void queue_redraw(session_t *ps) {
@@ -695,9 +886,6 @@ win_build_shadow(session_t *ps, win *w, double opacity) {
   assert(!w->shadow_paint.pict);
   w->shadow_paint.pict = shadow_picture_argb;
 
-  // Sync it once and only once
-  xr_sync(ps, w->shadow_paint.pixmap, NULL);
-
   xcb_free_gc(ps->c, gc);
   xcb_image_destroy(shadow_image);
   xcb_free_pixmap(ps->c, shadow_pixmap);
@@ -909,7 +1097,7 @@ get_root_tile(session_t *ps) {
         get_atom(ps, background_props_str[p]),
         1L, XCB_ATOM_PIXMAP, 32);
     if (prop.nitems) {
-      pixmap = *prop.data.p32;
+      pixmap = *prop.p32;
       fill = false;
       free_winprop(&prop);
       break;
@@ -1003,25 +1191,6 @@ find_client_win(session_t *ps, xcb_window_t w) {
   return ret;
 }
 
-/**
- * Get alpha <code>Picture</code> for an opacity in <code>double</code>.
- */
-static inline xcb_render_picture_t
-get_alpha_pict_d(session_t *ps, double o) {
-  assert((round(normalize_d(o) / ps->o.alpha_step)) <= round(1.0 / ps->o.alpha_step));
-  return ps->alpha_picts[(int) (round(normalize_d(o)
-        / ps->o.alpha_step))];
-}
-
-/**
- * Get alpha <code>Picture</code> for an opacity in
- * <code>opacity_t</code>.
- */
-static inline xcb_render_picture_t
-get_alpha_pict_o(session_t *ps, opacity_t o) {
-  return get_alpha_pict_d(ps, (double) o / OPAQUE);
-}
-
 static win *
 paint_preprocess(session_t *ps, win *list) {
   win *t = NULL, *next = NULL;
@@ -1111,7 +1280,7 @@ paint_preprocess(session_t *ps, win *list) {
         || w->g.x + w->g.width < 1 || w->g.y + w->g.height < 1
         || w->g.x >= ps->root_width || w->g.y >= ps->root_height
         || ((IsUnmapped == w->a.map_state || w->destroyed) && !w->paint.pixmap)
-        || get_alpha_pict_o(ps, w->opacity) == ps->alpha_picts[0]
+        || get_alpha_step(ps, w->opacity) == 0
         || w->paint_excluded)
       to_paint = false;
     //printf_errf("(): %s %d %d %d", w->name, to_paint, w->opacity, w->paint_excluded);
@@ -1147,7 +1316,7 @@ paint_preprocess(session_t *ps, win *list) {
       if (w->frame_opacity == 1)
         *tmp = win_get_bounding_shape_global_by_val(w);
       else {
-        win_get_region_noframe_local(ps, w, tmp);
+        win_get_region_noframe_local(w, tmp);
         pixman_region32_intersect(tmp, tmp, &w->bounding_shape);
         pixman_region32_translate(tmp, w->g.x, w->g.y);
       }
@@ -1391,7 +1560,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
         if (win_is_solid(ps, w)) {
           region_t reg_noframe;
           pixman_region32_init(&reg_noframe);
-          win_get_region_noframe_local(ps, w, &reg_noframe);
+          win_get_region_noframe_local(w, &reg_noframe);
           pixman_region32_translate(&reg_noframe, w->g.x, w->g.y);
           pixman_region32_subtract(&reg_blur, &reg_blur, &reg_noframe);
           pixman_region32_fini(&reg_noframe);
@@ -1415,7 +1584,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
   }
 }
 
-void
+static void
 render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
   double opacity, bool argb, bool neg,
   xcb_render_picture_t pict, glx_texture_t *ptex,
@@ -1425,8 +1594,9 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     case BKEND_XRENDER:
     case BKEND_XR_GLX_HYBRID:
       {
-        xcb_render_picture_t alpha_pict = get_alpha_pict_d(ps, opacity);
-        if (alpha_pict != ps->alpha_picts[0]) {
+        int alpha_step = get_alpha_step(ps, opacity * OPAQUE);
+        xcb_render_picture_t alpha_pict = ps->alpha_picts[alpha_step];
+        if (alpha_step != 0) {
           int op = ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC: XCB_RENDER_PICT_OP_OVER);
           xcb_render_composite(ps->c, op, pict, alpha_pict,
               ps->tgt_buffer.pict, x, y, 0, 0, dx, dy, wid, hei);
@@ -1457,8 +1627,6 @@ paint_one(session_t *ps, win *w, const region_t *reg_paint) {
     w->paint.pixmap = xcb_generate_id(ps->c);
     set_ignore_cookie(ps,
         xcb_composite_name_window_pixmap(ps->c, w->id, w->paint.pixmap));
-    if (w->paint.pixmap)
-      free_fence(ps, &w->fence);
   }
 
   Drawable draw = w->paint.pixmap;
@@ -1474,9 +1642,6 @@ paint_one(session_t *ps, win *w, const region_t *reg_paint) {
     w->paint.pict = x_create_picture_with_pictfmt_and_pixmap(ps, w->pictfmt,
         draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
   }
-
-  if (IsViewable == w->a.map_state)
-    xr_sync(ps, draw, &w->fence);
 
   // GLX: Build texture
   // Let glx_bind_pixmap() determine pixmap size, because if the user
@@ -1533,7 +1698,7 @@ paint_one(session_t *ps, win *w, const region_t *reg_paint) {
     paint_region(ps, w, 0, 0, wid, hei, dopacity, reg_paint, pict);
   } else {
     // Painting parameters
-    const margin_t extents = win_calc_frame_extents(ps, w);
+    const margin_t extents = win_calc_frame_extents(w);
     const int t = extents.top;
     const int l = extents.left;
     const int b = extents.bottom;
@@ -1681,55 +1846,24 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
     glx_paint_pre(ps, region);
 #endif
 
-#ifdef MONITOR_REPAINT
-  // Note: MONITOR_REPAINT cannot work with DBE right now.
-  // Picture old_tgt_buffer = ps->tgt_buffer.pict;
-  ps->tgt_buffer.pict = ps->tgt_picture;
-#else
   if (!paint_isvalid(ps, &ps->tgt_buffer)) {
-    // DBE painting mode: Directly paint to a Picture of the back buffer
-    if (BKEND_XRENDER == ps->o.backend && ps->o.dbe) {
-      ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
-        ps, ps->vis, ps->root_dbe, 0, 0);
-    }
-    // No-DBE painting mode: Paint to an intermediate Picture then paint
-    // the Picture to root window
-    else {
-      if (!ps->tgt_buffer.pixmap) {
-        free_paint(ps, &ps->tgt_buffer);
-        ps->tgt_buffer.pixmap = x_create_pixmap(ps, ps->depth, ps->root, ps->root_width, ps->root_height);
-        if (ps->tgt_buffer.pixmap == XCB_NONE) {
-          fprintf(stderr, "Failed to allocate a screen-sized pixmap\n");
-          exit(1);
-        }
+    if (!ps->tgt_buffer.pixmap) {
+      free_paint(ps, &ps->tgt_buffer);
+      ps->tgt_buffer.pixmap = x_create_pixmap(ps, ps->depth, ps->root, ps->root_width, ps->root_height);
+      if (ps->tgt_buffer.pixmap == XCB_NONE) {
+        fprintf(stderr, "Failed to allocate a screen-sized pixmap\n");
+        exit(1);
       }
-
-      if (BKEND_GLX != ps->o.backend)
-        ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
-          ps, ps->vis, ps->tgt_buffer.pixmap, 0, 0);
     }
+
+    if (BKEND_GLX != ps->o.backend)
+      ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
+        ps, ps->vis, ps->tgt_buffer.pixmap, 0, 0);
   }
-#endif
 
   if (BKEND_XRENDER == ps->o.backend) {
-    x_set_picture_clip_region(ps, ps->tgt_picture, 0, 0, region_real);
+    x_set_picture_clip_region(ps, ps->tgt_buffer.pict, 0, 0, region_real);
   }
-
-#ifdef MONITOR_REPAINT
-  switch (ps->o.backend) {
-    case BKEND_XRENDER:
-      xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, ps->black_picture, None,
-          ps->tgt_picture, 0, 0, 0, 0, 0, 0,
-          ps->root_width, ps->root_height);
-      break;
-    case BKEND_GLX:
-    case BKEND_XR_GLX_HYBRID:
-      glClearColor(0.0f, 0.0f, 1.0f, 1.0f);
-      glClear(GL_COLOR_BUFFER_BIT);
-      glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-      break;
-  }
-#endif
 
   region_t reg_tmp, *reg_paint;
   pixman_region32_init(&reg_tmp);
@@ -1819,8 +1953,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
   pixman_region32_fini(&reg_tmp);
 
   // Do this as early as possible
-  if (!ps->o.dbe)
-    set_tgt_clip(ps, &ps->screen_reg);
+  set_tgt_clip(ps, &ps->screen_reg);
 
   if (ps->o.vsync) {
     // Make sure all previous requests are processed to achieve best
@@ -1845,22 +1978,41 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
 
   switch (ps->o.backend) {
     case BKEND_XRENDER:
-      // DBE painting mode, only need to swap the buffer
-      if (ps->o.dbe) {
-        XdbeSwapInfo swap_info = {
-          .swap_window = get_tgt_window(ps),
-          // Is it safe to use XdbeUndefined?
-          .swap_action = XdbeCopied
-        };
-        XdbeSwapBuffers(ps->dpy, &swap_info, 1);
-      }
-      // No-DBE painting mode
-      else if (ps->tgt_buffer.pict != ps->tgt_picture) {
+      if (ps->o.monitor_repaint) {
+        // Copy the screen content to a new picture, and highlight the paint
+        // region. This is not very efficient, but since it's for debug only,
+        // we don't really care
+
+        // First, we clear tgt_buffer.pict's clip region, since we want to copy
+        // everything
+        x_set_picture_clip_region(ps, ps->tgt_buffer.pict, 0, 0, &ps->screen_reg);
+
+        // Then we create a new picture, and copy content to it
+        xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps, ps->vis);
+        xcb_render_picture_t new_pict = x_create_picture(
+          ps, ps->root_width, ps->root_height, pictfmt, 0, NULL);
+        xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, ps->tgt_buffer.pict,
+          None, new_pict, 0, 0, 0, 0, 0, 0, ps->root_width, ps->root_height);
+
+        // Next, we set the region of paint and highlight it
+        x_set_picture_clip_region(ps, new_pict, 0, 0, region_real);
+        xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER, ps->white_picture,
+          ps->alpha_picts[(int)(0.5 / ps->o.alpha_step)],
+          new_pict, 0, 0, 0, 0, 0, 0,
+          ps->root_width, ps->root_height);
+
+        // Finally, clear clip region and put the whole thing on screen
+        x_set_picture_clip_region(ps, new_pict, 0, 0, &ps->screen_reg);
+        xcb_render_composite(
+          ps->c, XCB_RENDER_PICT_OP_SRC, new_pict, None,
+          ps->tgt_picture, 0, 0, 0, 0,
+          0, 0, ps->root_width, ps->root_height);
+        xcb_render_free_picture(ps->c, new_pict);
+      } else
         xcb_render_composite(
           ps->c, XCB_RENDER_PICT_OP_SRC, ps->tgt_buffer.pict, None,
           ps->tgt_picture, 0, 0, 0, 0,
           0, 0, ps->root_width, ps->root_height);
-      }
       break;
 #ifdef CONFIG_OPENGL
     case BKEND_XR_GLX_HYBRID:
@@ -1871,12 +2023,9 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
         glFlush();
       glXWaitX();
       assert(ps->tgt_buffer.pixmap);
-      xr_sync(ps, ps->tgt_buffer.pixmap, &ps->tgt_buffer_fence);
       paint_bind_tex(ps, &ps->tgt_buffer,
           ps->root_width, ps->root_height, ps->depth,
           !ps->o.glx_no_rebind_pixmap);
-      // See #163
-      xr_sync(ps, ps->tgt_buffer.pixmap, &ps->tgt_buffer_fence);
       if (ps->o.vsync_use_glfinish)
         glFinish();
       else
@@ -2075,6 +2224,12 @@ map_win(session_t *ps, Window id) {
   if (w->need_configure)
     configure_win(ps, &w->queue_configure);
 
+  // We stopped listening on ShapeNotify events
+  // when the window is unmapped (XXX we shouldn't),
+  // so the shape of the window might have changed,
+  // update. (Issue #35)
+  win_update_bounding_shape(ps, w);
+
 #ifdef CONFIG_DBUS
   // Send D-Bus signal
   if (ps->o.dbus) {
@@ -2093,7 +2248,7 @@ finish_unmap_win(session_t *ps, win **_w) {
   /* damage region */
   add_damage_from_win(ps, w);
 
-  free_wpaint(ps, w);
+  free_paint(ps, &w->paint);
   free_paint(ps, &w->shadow_paint);
 }
 
@@ -2103,11 +2258,6 @@ unmap_win(session_t *ps, win **_w) {
   if (!w || IsUnmapped == w->a.map_state) return;
 
   if (w->destroyed) return;
-
-  // One last synchronization
-  if (w->paint.pixmap)
-    xr_sync(ps, w->paint.pixmap, &w->fence);
-  free_fence(ps, &w->fence);
 
   // Set focus out
   win_set_focused(ps, w, false);
@@ -2182,6 +2332,9 @@ restack_win(session_t *ps, win *w, Window new_above) {
 
     w->next = *prev;
     *prev = w;
+
+    // add damage for this window
+    add_damage_from_win(ps, w);
 
 #ifdef DEBUG_RESTACK
     {
@@ -2268,7 +2421,7 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
   if (!w)
     return;
 
-  if (w->a.map_state == IsUnmapped) {
+  if (w->a.map_state == XCB_MAP_STATE_UNMAPPED) {
     /* save the configure event for when the window maps */
     w->need_configure = true;
     w->queue_configure = *ce;
@@ -2569,16 +2722,6 @@ ev_name(session_t *ps, xcb_generic_event_t *ev) {
 
   if (ps->shape_exists && ev->response_type == ps->shape_event)
     return "ShapeNotify";
-
-#ifdef CONFIG_XSYNC
-  if (ps->xsync_exists) {
-    int o = ev->response_type - ps->xsync_event;
-    switch (o) {
-      CASESTRRET(XSyncCounterNotify);
-      CASESTRRET(XSyncAlarmNotify);
-    }
-  }
-#endif
 
   sprintf(buf, "Event %d", ev->response_type);
 
@@ -3311,10 +3454,6 @@ usage(int ret) {
     "  X Render backend: Step for pregenerating alpha pictures. \n"
     "  0.01 - 1.0. Defaults to 0.03.\n"
     "\n"
-    "--dbe\n"
-    "  Enable DBE painting mode, intended to use with VSync to\n"
-    "  (hopefully) eliminate tearing.\n"
-    "\n"
     "--paint-on-overlay\n"
     "  Painting on X Composite overlay window.\n"
     "\n"
@@ -3431,6 +3570,7 @@ usage(int ret) {
     "--backend backend\n"
     "  Choose backend. Possible choices are xrender, glx, and\n"
     "  xr_glx_hybrid" WARNING ".\n"
+#undef WARNING
     "\n"
     "--glx-no-stencil\n"
     "  GLX backend: Avoid using stencil buffer. Might cause issues\n"
@@ -3455,20 +3595,6 @@ usage(int ret) {
     "  GLX backend: Use GL_EXT_gpu_shader4 for some optimization on blur\n"
     "  GLSL code. My tests on GTX 670 show no noticeable effect.\n"
     "\n"
-    "--xrender-sync\n"
-    "  Attempt to synchronize client applications' draw calls with XSync(),\n"
-    "  used on GLX backend to ensure up-to-date window content is painted.\n"
-#undef WARNING
-#ifndef CONFIG_XSYNC
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
-    "\n"
-    "--xrender-sync-fence\n"
-    "  Additionally use X Sync fence to sync clients' draw calls. Needed\n"
-    "  on nvidia-drivers with GLX backend for some users." WARNING "\n"
-    "\n"
     "--glx-fshader-win shader\n"
     "  GLX backend: Use specified GLSL fragment shader for rendering window\n"
     "  contents.\n"
@@ -3486,6 +3612,7 @@ usage(int ret) {
     "--dbus\n"
     "  Enable remote control via D-Bus. See the D-BUS API section in the\n"
     "  man page for more details." WARNING "\n"
+#undef WARNING
     "\n"
     "--benchmark cycles\n"
     "  Benchmark mode. Repeatedly paint until reaching the specified cycles.\n"
@@ -3493,10 +3620,12 @@ usage(int ret) {
     "--benchmark-wid window-id\n"
     "  Specify window ID to repaint in benchmark mode. If omitted or is 0,\n"
     "  the whole screen is repainted.\n"
+    "--monitor-repaint\n"
+    "  Highlight the updated area of the screen. For debugging the xrender\n"
+    "  backend only.\n"
     ;
   FILE *f = (ret ? stderr: stdout);
   fputs(usage_text, f);
-#undef WARNING
 #undef WARNING_DISABLED
 
   exit(ret);
@@ -3751,6 +3880,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "no-name-pixmap", no_argument, NULL, 320 },
     { "reredir-on-root-change", no_argument, NULL, 731 },
     { "glx-reinit-on-root-change", no_argument, NULL, 732 },
+    { "monitor-repaint", no_argument, NULL, 800 },
+    { "diagnostics", no_argument, NULL, 801 },
     // Must terminate with a NULL entry
     { NULL, 0, NULL, 0 },
   };
@@ -3921,8 +4052,12 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         // --alpha-step
         ps->o.alpha_step = atof(optarg);
         break;
-      P_CASEBOOL(272, dbe);
-      P_CASEBOOL(273, paint_on_overlay);
+      case 272:
+        printf_errf("(): use of --dbe is deprecated");
+        break;
+      case 273:
+        printf_errf("(): --paint-on-overlay is removed, and is enabled when possible");
+        break;
       P_CASEBOOL(274, sw_opti);
       P_CASEBOOL(275, vsync_aggressive);
       P_CASEBOOL(276, use_ewmh_active_win);
@@ -4019,8 +4154,12 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.write_pid_path = mstrcpy(optarg);
         break;
       P_CASEBOOL(311, vsync_use_glfinish);
-      P_CASEBOOL(312, xrender_sync);
-      P_CASEBOOL(313, xrender_sync_fence);
+      case 312:
+        printf_errf("(): --xrender-sync %s", deprecation_message);
+        break;
+      case 313:
+        printf_errf("(): --xrender-sync-fence %s", deprecation_message);
+        break;
       P_CASEBOOL(315, no_fading_destroyed_argb);
       P_CASEBOOL(316, force_win_blend);
       case 317:
@@ -4029,6 +4168,10 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(319, no_x_selection);
       P_CASEBOOL(731, reredir_on_root_change);
       P_CASEBOOL(732, glx_reinit_on_root_change);
+      P_CASEBOOL(800, monitor_repaint);
+      case 801:
+        ps->o.print_diagnostics = true;
+        break;
       default:
         usage(1);
         break;
@@ -4039,6 +4182,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   // Restore LC_NUMERIC
   setlocale(LC_NUMERIC, lc_numeric_old);
   free(lc_numeric_old);
+
+  if (ps->o.monitor_repaint && ps->o.backend != BKEND_XRENDER)
+    printf_errf("(): --monitor-repaint has no effect when backend is not xrender");
 
   // Range checking and option assignments
   ps->o.fade_delta = max_i(ps->o.fade_delta, 1);
@@ -4061,7 +4207,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     ps->o.wintype_shadow[WINTYPE_DND] = false;
   if (fading_enable)
     wintype_arr_enable(ps->o.wintype_fade);
-  if (!isnan(cfgtmp.menu_opacity)) {
+  if (!safe_isnan(cfgtmp.menu_opacity)) {
     ps->o.wintype_opacity[WINTYPE_DROPDOWN_MENU] = cfgtmp.menu_opacity;
     ps->o.wintype_opacity[WINTYPE_POPUP_MENU] = cfgtmp.menu_opacity;
   }
@@ -4069,9 +4215,6 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   // --blur-background-frame implies --blur-background
   if (ps->o.blur_background_frame)
     ps->o.blur_background = true;
-
-  if (ps->o.xrender_sync_fence)
-    ps->o.xrender_sync = true;
 
   // Other variables determined by options
 
@@ -4499,21 +4642,6 @@ init_alpha_picts(session_t *ps) {
 }
 
 /**
- * Initialize double buffer.
- */
-static bool
-init_dbe(session_t *ps) {
-  if (!(ps->root_dbe = XdbeAllocateBackBufferName(ps->dpy,
-          (ps->o.paint_on_overlay ? ps->overlay: ps->root), XdbeCopied))) {
-    printf_errf("(): Failed to create double buffer. Double buffering "
-        "cannot work.");
-    return false;
-  }
-
-  return true;
-}
-
-/**
  * Initialize X composite overlay window.
  */
 static bool
@@ -4557,11 +4685,9 @@ init_overlay(session_t *ps) {
     // xcb_unmap_window(c, ps->overlay);
     // XFlush(ps->dpy);
   }
-  else {
+  else
     fprintf(stderr, "Cannot get X Composite overlay window. Falling "
         "back to painting on root window.\n");
-    ps->o.paint_on_overlay = false;
-  }
 #ifdef DEBUG_REDIR
   printf_dbgf("(): overlay = %#010lx\n", ps->overlay);
 #endif
@@ -4664,7 +4790,7 @@ redir_stop(session_t *ps) {
     // If we don't destroy them here, looks like the resources are just
     // kept inaccessible somehow
     for (win *w = ps->list; w; w = w->next)
-      free_wpaint(ps, w);
+      free_paint(ps, &w->paint);
 
     xcb_composite_unredirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
     // Unmap overlay window
@@ -4804,7 +4930,6 @@ delayed_draw_callback(EV_P_ ev_idle *w, int revents) {
     return;
 
   double delay = swopti_handle_timeout(sw->ps);
-  printf_errf("(): %lf", delay);
   if (delay < 1e-6)
     return _draw_callback(EV_A_ sw->ps, revents);
 
@@ -4833,40 +4958,6 @@ x_event_callback(EV_P_ ev_io *w, int revents) {
   }
 }
 
-static void
-cxinerama_upd_scrs(session_t *ps) {
-#ifdef CONFIG_XINERAMA
-  // XXX Consider deprecating Xinerama, switch to RandR when necessary
-  free_xinerama_info(ps);
-
-  if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists) return;
-
-  xcb_xinerama_is_active_reply_t *active =
-    xcb_xinerama_is_active_reply(ps->c,
-        xcb_xinerama_is_active(ps->c), NULL);
-  if (!active || !active->state) {
-    free(active);
-    return;
-  }
-  free(active);
-
-  ps->xinerama_scrs = xcb_xinerama_query_screens_reply(ps->c,
-      xcb_xinerama_query_screens(ps->c), NULL);
-  if (!ps->xinerama_scrs)
-    return;
-
-  xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
-  ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
-
-  ps->xinerama_scr_regs = allocchk(malloc(sizeof(region_t)
-        * ps->xinerama_nscrs));
-  for (int i = 0; i < ps->xinerama_nscrs; ++i) {
-    const xcb_xinerama_screen_info_t * const s = &scrs[i];
-    pixman_region32_init_rect(&ps->xinerama_scr_regs[i], s->x_org, s->y_org, s->width, s->height);
-  }
-#endif
-}
-
 /**
  * Initialize a session.
  *
@@ -4892,7 +4983,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .root_tile_paint = PAINT_INIT,
     .tgt_picture = None,
     .tgt_buffer = PAINT_INIT,
-    .root_dbe = None,
     .reg_win = None,
     .o = {
       .config_file = NULL,
@@ -4907,7 +4997,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .fork_after_register = false,
       .synchronize = false,
       .detect_rounded_corners = false,
-      .paint_on_overlay = false,
       .resize_damage = 0,
       .unredir_if_possible = false,
       .unredir_if_possible_blacklist = NULL,
@@ -4922,7 +5011,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .refresh_rate = 0,
       .sw_opti = false,
       .vsync = VSYNC_NONE,
-      .dbe = false,
       .vsync_aggressive = false,
 
       .wintype_shadow = { false },
@@ -5029,7 +5117,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .glx_event = 0,
     .glx_error = 0,
 #endif
-    .dbe_exists = false,
     .xrfilter_convolution_exists = false,
 
     .atom_opacity = None,
@@ -5118,6 +5205,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   xcb_prefetch_extension_data(ps->c, &xcb_xfixes_id);
   xcb_prefetch_extension_data(ps->c, &xcb_randr_id);
   xcb_prefetch_extension_data(ps->c, &xcb_xinerama_id);
+  xcb_prefetch_extension_data(ps->c, &xcb_present_id);
 
   ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
   if (!ext_info || !ext_info->present) {
@@ -5201,53 +5289,24 @@ session_init(session_t *ps_old, int argc, char **argv) {
     ps->shape_exists = true;
   }
 
-  if (ps->o.xrender_sync_fence) {
-#ifdef CONFIG_XSYNC
-    // Query X Sync
-    if (XSyncQueryExtension(ps->dpy, &ps->xsync_event, &ps->xsync_error)) {
-      // TODO: Fencing may require version >= 3.0?
-      int major_version_return = 0, minor_version_return = 0;
-      if (XSyncInitialize(ps->dpy, &major_version_return, &minor_version_return))
-        ps->xsync_exists = true;
-    }
-    if (!ps->xsync_exists) {
-      printf_errf("(): X Sync extension not found. No X Sync fence sync is "
-          "possible.");
-      exit(1);
-    }
-#else
-    printf_errf("(): X Sync support not compiled in. --xrender-sync-fence "
-        "can't work.");
-    exit(1);
-#endif
+  ext_info = xcb_get_extension_data(ps->c, &xcb_randr_id);
+  if (ext_info && ext_info->present) {
+    ps->randr_exists = true;
+    ps->randr_event = ext_info->first_event;
+    ps->randr_error = ext_info->first_error;
+  }
+
+  ext_info = xcb_get_extension_data(ps->c, &xcb_present_id);
+  if (ext_info && ext_info->present) {
+    ps->present_exists = true;
   }
 
   // Query X RandR
   if ((ps->o.sw_opti && !ps->o.refresh_rate) || ps->o.xinerama_shadow_crop) {
-    ext_info = xcb_get_extension_data(ps->c, &xcb_randr_id);
-    if (ext_info && ext_info->present) {
-      ps->randr_exists = true;
-      ps->randr_event = ext_info->first_event;
-      ps->randr_error = ext_info->first_error;
-    } else
+    if (!ps->randr_exists) {
       printf_errf("(): No XRandR extension, automatic screen change "
           "detection impossible.");
-  }
-
-  // Query X DBE extension
-  if (ps->o.dbe) {
-    int dbe_ver_major = 0, dbe_ver_minor = 0;
-    if (XdbeQueryExtension(ps->dpy, &dbe_ver_major, &dbe_ver_minor))
-      if (dbe_ver_major >= 1)
-        ps->dbe_exists = true;
-      else
-        fprintf(stderr, "DBE extension version too low. Double buffering "
-            "impossible.\n");
-    else {
-      fprintf(stderr, "No DBE extension. Double buffering impossible.\n");
     }
-    if (!ps->dbe_exists)
-      ps->o.dbe = false;
   }
 
   // Query X Xinerama extension
@@ -5264,17 +5323,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Overlay must be initialized before double buffer, and before creation
   // of OpenGL context.
-  if (ps->o.paint_on_overlay)
-    init_overlay(ps);
+  init_overlay(ps);
 
-  // Initialize DBE
-  if (ps->o.dbe && BKEND_XRENDER != ps->o.backend) {
-    printf_errf("(): DBE couldn't be used on GLX backend.");
-    ps->o.dbe = false;
+  if (ps->o.print_diagnostics) {
+    print_diagnostics(ps);
+    exit(0);
   }
-
-  if (ps->o.dbe && !init_dbe(ps))
-    exit(1);
 
   // Initialize OpenGL as early as possible
   if (bkend_use_glx(ps)) {
@@ -5330,7 +5384,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
     ps->root_picture = x_create_picture_with_visual_and_pixmap(ps,
       ps->vis, ps->root, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
-    if (ps->o.paint_on_overlay) {
+    if (ps->overlay != XCB_NONE) {
       ps->tgt_picture = x_create_picture_with_visual_and_pixmap(ps,
         ps->vis, ps->overlay, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
     } else
@@ -5560,7 +5614,6 @@ session_destroy(session_t *ps) {
     ps->tgt_picture = None;
   else
     free_picture(ps, &ps->tgt_picture);
-  free_fence(ps, &ps->tgt_buffer_fence);
 
   free_picture(ps, &ps->root_picture);
   free_paint(ps, &ps->tgt_buffer);
@@ -5592,12 +5645,6 @@ session_destroy(session_t *ps) {
 #ifdef CONFIG_OPENGL
   glx_destroy(ps);
 #endif
-
-  // Free double buffer
-  if (ps->root_dbe) {
-    XdbeDeallocateBackBufferName(ps->dpy, ps->root_dbe);
-    ps->root_dbe = None;
-  }
 
 #ifdef CONFIG_VSYNC_DRM
   // Close file opened for DRM VSync

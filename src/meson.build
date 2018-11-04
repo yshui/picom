@@ -1,14 +1,19 @@
-deps = [ cc.find_library('m'), cc.find_library('ev') ]
+deps = [
+	cc.find_library('m'),
+	cc.find_library('ev'),
+	dependency('xcb', version: '>=1.9.2')
+]
 
-cflags = [ '-DCONFIG_XSYNC' ]
+cflags = [ ]
 
-srcs = ['compton.c', 'win.c', 'c2.c', 'x.c', 'config.c']
+srcs = ['compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'diagnostic.c']
 
-required_package =[
+required_package = [
 	'x11', 'x11-xcb', 'xcb-renderutil',
 	'xcb-render', 'xcb-damage', 'xcb-randr',
 	'xcb-composite', 'xcb-shape', 'xcb-image',
-	'xcb-xfixes', 'xext', 'pixman-1']
+	'xcb-xfixes', 'xcb-present', 'xext', 'pixman-1'
+]
 
 foreach i : required_package
 	deps += [dependency(i, required: true)]

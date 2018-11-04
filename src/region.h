@@ -5,6 +5,7 @@
 #include <pixman.h>
 #include <stdio.h>
 #include "utils.h"
+
 typedef struct pixman_region32 pixman_region32_t;
 typedef struct pixman_box32 pixman_box32_t;
 typedef pixman_region32_t region_t;

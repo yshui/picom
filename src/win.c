@@ -19,7 +19,7 @@
 /// Generate a "return by value" function, from a function that returns the
 /// region via a region_t pointer argument.
 /// Function signature has to be (win *, region_t *)
-#define gen_by_val(fun) void region_t fun##_by_val(win *w) { \
+#define gen_by_val(fun) region_t fun##_by_val(win *w) { \
   region_t ret; \
   pixman_region32_init(&ret); \
   fun(w, &ret); \
@@ -97,8 +97,8 @@ static void win_get_region_local(session_t *ps, win *w, region_t *res) {
 /**
  * Get a rectangular region a window occupies, excluding frame and shadow.
  */
-void win_get_region_noframe_local(session_t *ps, win *w, region_t *res) {
-  const margin_t extents = win_calc_frame_extents(ps, w);
+void win_get_region_noframe_local(win *w, region_t *res) {
+  const margin_t extents = win_calc_frame_extents(w);
 
   int x = extents.left;
   int y = extents.top;
@@ -251,7 +251,7 @@ wintype_t wid_get_prop_wintype(session_t *ps, Window wid) {
 
   for (unsigned i = 0; i < prop.nitems; ++i) {
     for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
-      if (ps->atoms_wintypes[j] == (Atom)prop.data.p32[i]) {
+      if (ps->atoms_wintypes[j] == (xcb_atom_t)prop.p32[i]) {
         free_winprop(&prop);
         return j;
       }
@@ -271,7 +271,7 @@ bool wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def,
   winprop_t prop = wid_get_prop(ps, wid, ps->atom_opacity, 1L, XCB_ATOM_CARDINAL, 32);
 
   if (prop.nitems) {
-    *out = *prop.data.p32;
+    *out = *prop.c32;
     ret = true;
   }
 
@@ -324,7 +324,7 @@ void win_calc_opacity(session_t *ps, win *w) {
     // Try obeying opacity property and window type opacity firstly
     if (w->has_opacity_prop)
       opacity = w->opacity_prop;
-    else if (!isnan(ps->o.wintype_opacity[w->window_type]))
+    else if (!safe_isnan(ps->o.wintype_opacity[w->window_type]))
       opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
     else {
       // Respect active_opacity only when the window is physically focused
@@ -400,7 +400,7 @@ void win_update_prop_shadow_raw(session_t *ps, win *w) {
   if (!prop.nitems) {
     w->prop_shadow = -1;
   } else {
-    w->prop_shadow = *prop.data.p32;
+    w->prop_shadow = *prop.c32;
   }
 
   free_winprop(&prop);
@@ -1194,7 +1194,7 @@ void win_update_bounding_shape(session_t *ps, win *w) {
     win_rounded_corners(ps, w);
 
   // Window shape changed, we should free old wpaint and shadow pict
-  free_wpaint(ps, w);
+  free_paint(ps, &w->paint);
   free_paint(ps, &w->shadow_paint);
   //printf_errf("(): free out dated pict");
 
@@ -1231,7 +1231,7 @@ win_update_frame_extents(session_t *ps, win *w, Window client) {
     4L, XCB_ATOM_CARDINAL, 32);
 
   if (prop.nitems == 4) {
-    const long * const extents = prop.data.p32;
+    const uint32_t * const extents = prop.c32;
     const bool changed = w->frame_extents.left != extents[0] ||
                          w->frame_extents.right != extents[1] ||
                          w->frame_extents.top != extents[2] ||
@@ -1264,4 +1264,23 @@ bool win_is_region_ignore_valid(session_t *ps, win *w) {
       return false;
   }
   return true;
+}
+
+/**
+ * Stop listening for events on a particular window.
+ */
+void win_ev_stop(session_t *ps, win *w) {
+  // Will get BadWindow if the window is destroyed
+  set_ignore_cookie(ps,
+      xcb_change_window_attributes(ps->c, w->id, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
+
+  if (w->client_win) {
+    set_ignore_cookie(ps,
+        xcb_change_window_attributes(ps->c, w->client_win, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
+  }
+
+  if (ps->shape_exists) {
+    set_ignore_cookie(ps,
+        xcb_shape_select_input(ps->c, w->id, 0));
+  }
 }

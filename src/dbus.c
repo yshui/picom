@@ -10,6 +10,7 @@
  */
 
 #include "dbus.h"
+#include "win.h"
 
 static DBusHandlerResult
 cdbus_process(DBusConnection *conn, DBusMessage *m, void *);
@@ -884,7 +885,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_opts_get_do(mark_ovredir_focused, cdbus_reply_bool);
   cdbus_m_opts_get_do(fork_after_register, cdbus_reply_bool);
   cdbus_m_opts_get_do(detect_rounded_corners, cdbus_reply_bool);
-  cdbus_m_opts_get_do(paint_on_overlay, cdbus_reply_bool);
+  cdbus_m_opts_get_stub(paint_on_overlay, cdbus_reply_bool, ps->overlay != XCB_NONE);
   // paint_on_overlay_id: Get ID of the X composite overlay window
   if (!strcmp("paint_on_overlay_id", target)) {
     cdbus_reply_uint32(ps, msg, ps->overlay);
@@ -909,7 +910,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
     cdbus_reply_string(ps, msg, BACKEND_STRS[ps->o.backend]);
     return true;
   }
-  cdbus_m_opts_get_do(dbe, cdbus_reply_bool);
+  cdbus_m_opts_get_stub(dbe, cdbus_reply_bool, false);
   cdbus_m_opts_get_do(vsync_aggressive, cdbus_reply_bool);
 
   cdbus_m_opts_get_do(shadow_red, cdbus_reply_double);

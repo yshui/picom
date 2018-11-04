@@ -9,3 +9,5 @@ option('opengl', type: 'boolean', value: true, description: 'Enable features tha
 option('dbus', type: 'boolean', value: true, description: 'Enable suport for D-Bus remote control')
 
 option('xrescheck', type: 'boolean', value: false, description: 'Enable X resource leak checker (for debug only)')
+
+option('build_docs', type: 'boolean', value: false, description: 'Build documentation and man pages')

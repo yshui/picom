@@ -10,7 +10,8 @@
 // Tell us something about the desktop environment you are using, for example: i3-gaps, Gnome Shell, etc.
 
 ### Compton version
-// You can run `compton --version` to get that
+// Put the output of `compton --version` here.
+// If you are running compton v4 or later, please also include the output of `compton --diagnostics`
 // Example: v1
 
 ### Compton configuration:
