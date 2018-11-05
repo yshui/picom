@@ -5,6 +5,8 @@
 
 ### GPU, drivers, and screen setup
 // Example: NVidia GTX 670, nvidia-drivers 381.09, two monitors configured side-by-side with xrandr
+// Please include the version of the video drivers (xf86-video-*) and mesa.
+// Please also paste the output of `glxinfo -B` here.
 
 ### Environment
 // Tell us something about the desktop environment you are using, for example: i3-gaps, Gnome Shell, etc.
