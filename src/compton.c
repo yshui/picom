@@ -4038,7 +4038,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.frame_opacity = atof(optarg);
         break;
       case 'z':
-        printf_errf("(): clear-shadow is removed, shadows are automatically cleared now.");
+        printf_errf("(): clear-shadow is removed, shadows are automatically cleared now.\n"
+          "If you want to prevent shadow from been cleared under certain types of windows,\n"
+          "you can use the \"full-shadow\" per window type option.");
         break;
       case 'n':
       case 'a':
