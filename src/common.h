@@ -531,6 +531,7 @@ typedef struct options_t {
   // === Shadow ===
   /// Enable/disable shadow for specific window types.
   bool wintype_shadow[NUM_WINTYPES];
+  bool wintype_full_shadow[NUM_WINTYPES];
   /// Red, green and blue tone of the shadow.
   double shadow_red, shadow_green, shadow_blue;
   int shadow_radius;

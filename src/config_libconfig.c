@@ -374,6 +374,7 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
 
   // Wintype settings
 
+  // XXX ! Refactor all the wintype_* arrays into a struct
   for (wintype_t i = 0; i < NUM_WINTYPES; ++i) {
     char *str = mstrjoin("wintypes.", WINTYPES[i]);
     config_setting_t *setting = config_lookup(&cfg, str);
@@ -385,6 +386,8 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
         ps->o.wintype_fade[i] = (bool) ival;
       if (config_setting_lookup_bool(setting, "focus", &ival))
         ps->o.wintype_focus[i] = (bool) ival;
+      if (config_setting_lookup_bool(setting, "full-shadow", &ival))
+        ps->o.wintype_full_shadow[i] = ival;
 
       double fval;
       if (config_setting_lookup_float(setting, "opacity", &fval))
