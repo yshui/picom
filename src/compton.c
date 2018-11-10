@@ -1871,7 +1871,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
   }
 
   if (BKEND_XRENDER == ps->o.backend) {
-    x_set_picture_clip_region(ps, ps->tgt_buffer.pict, 0, 0, region_real);
+    x_set_picture_clip_region(ps, ps->tgt_picture, 0, 0, region_real);
   }
 
   region_t reg_tmp, *reg_paint;
