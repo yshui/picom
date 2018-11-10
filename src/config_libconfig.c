@@ -295,8 +295,6 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // --backend
   if (config_lookup_string(&cfg, "backend", &sval) && !parse_backend(ps, sval))
     exit(1);
-  // --alpha-step
-  config_lookup_float(&cfg, "alpha-step", &ps->o.alpha_step);
   // --sw-opti
   lcfg_lookup_bool(&cfg, "sw-opti", &ps->o.sw_opti);
   // --use-ewmh-active-win
@@ -365,8 +363,12 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
     printf_errf("(): \"paint-on-overlay\" has been removed as an option, and "
                 "is enabled whenever possible");
 
+  if (config_lookup_float(&cfg, "alpha-step", &dval))
+    printf_errf("(): \"alpha-step\" has been removed, compton now tries to make use"
+                " of all alpha values");
+
   const char *deprecation_message = "has been removed. If you encounter problems "
-    "without this feature, please feel free to open a bug report.";
+    "without this feature, please feel free to open a bug report";
   if (lcfg_lookup_bool(&cfg, "glx-use-copysubbuffermesa", &bval) && bval)
     printf_errf("(): \"glx-use-copysubbuffermesa\" %s", deprecation_message);
   if (lcfg_lookup_bool(&cfg, "glx-copy-from-front", &bval) && bval)
