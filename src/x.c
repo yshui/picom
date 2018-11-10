@@ -317,6 +317,15 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
   }
 #endif
 
+  if (ps->xsync_exists) {
+    o = error_code - ps->xsync_error;
+    switch (o) {
+      CASESTRRET2(XSyncBadCounter);
+      CASESTRRET2(XSyncBadAlarm);
+      CASESTRRET2(XSyncBadFence);
+    }
+  }
+
   switch (error_code) {
     CASESTRRET2(BadAccess);
     CASESTRRET2(BadAlloc);

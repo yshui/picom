@@ -4,9 +4,9 @@ deps = [
 	dependency('xcb', version: '>=1.9.2')
 ]
 
-cflags = [ ]
-
 srcs = ['compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'diagnostic.c']
+
+cflags = []
 
 required_package = [
 	'x11', 'x11-xcb', 'xcb-renderutil',

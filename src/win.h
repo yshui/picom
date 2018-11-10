@@ -4,6 +4,7 @@
 #pragma once
 #include <stdbool.h>
 #include <X11/Xlib.h>
+#include <X11/extensions/sync.h>
 #include <xcb/damage.h>
 
 // FIXME shouldn't need this
@@ -101,6 +102,8 @@ struct win {
   winmode_t mode;
   /// Whether the window has been damaged at least once.
   bool ever_damaged;
+  /// X Sync fence of drawable.
+  XSyncFence fence;
   /// Whether the window was damaged after last paint.
   bool pixmap_damaged;
   /// Damage of the window.
