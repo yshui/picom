@@ -1638,9 +1638,6 @@ vsync_deinit(session_t *ps);
  */
 ///@{
 
-void
-xr_glx_sync(session_t *ps, Drawable d, XSyncFence *pfence);
-
 /**
  * Free a GLX texture.
  */
@@ -1761,9 +1758,6 @@ xr_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
     if (*pfence)
       XSyncResetFence(ps->dpy, *pfence);
   }
-#ifdef OPENGL
-  xr_glx_sync(ps, d, pfence);
-#endif
 }
 
 /** @name DBus handling
