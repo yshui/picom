@@ -11,6 +11,8 @@
 
 #include <ctype.h>
 #include <string.h>
+#include <X11/Xlib.h>
+#include <X11/Xlibint.h>
 #include <xcb/randr.h>
 #include <xcb/present.h>
 #include <xcb/damage.h>
@@ -27,6 +29,8 @@
 #include "x.h"
 #include "config.h"
 #include "diagnostic.h"
+
+#define auto __auto_type
 
 static void
 finish_destroy_win(session_t *ps, win **_w);
@@ -3235,6 +3239,28 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
       ev_name(ps, ev), ev_serial(ev), wid, window_name);
   }
 #endif
+
+  // Check if a custom XEvent constructor was registered in xlib for this event
+  // type, and call it discarding the constructed XEvent if any. XESetWireToEvent
+  // might be used by libraries to intercept messages from the X server e.g. the
+  // OpenGL lib waiting for DRI2 events.
+
+  // XXX This exists to workaround compton issue #33, #34, #47
+  // For even more details, see:
+  // https://bugs.freedesktop.org/show_bug.cgi?id=35945
+  // https://lists.freedesktop.org/archives/xcb/2011-November/007337.html
+  auto proc = XESetWireToEvent(ps->dpy, ev->response_type, 0);
+  if (proc) {
+    XESetWireToEvent(ps->dpy, ev->response_type, proc);
+    XEvent dummy;
+
+    // Stop Xlib from complaining about lost sequence numbers.
+    // proc might also just be Xlib internal event processing functions, and
+    // because they probably won't see all X replies, they will complain about
+    // missing sequence numbers.
+    ev->sequence = LastKnownRequestProcessed(ps->dpy);
+    proc(ps->dpy, &dummy, (xEvent *)ev);
+  }
 
   // XXX redraw needs to be more fine grained
   queue_redraw(ps);
