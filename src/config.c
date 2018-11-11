@@ -196,6 +196,12 @@ parse_conv_kern_lst(session_t *ps, const char *src, xcb_render_fixed_t **dest, i
       return false;
   }
 
+  if (i > 1) {
+    printf_errf("(): You are seeing this message because your are using multipass\n"
+        "blur. Please report an issue to us so we know multipass blur is actually been used.\n"
+        "Otherwise it might be removed in future releases");
+  }
+
   if (*pc) {
     printf_errf("(): Too many blur kernels!");
     return false;
