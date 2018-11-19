@@ -3655,10 +3655,6 @@ usage(int ret) {
     "  Additionally use X Sync fence to sync clients' draw calls. Needed\n"
     "  on nvidia-drivers with GLX backend for some users." WARNING "\n"
     "\n"
-    "--glx-fshader-win shader\n"
-    "  GLX backend: Use specified GLSL fragment shader for rendering window\n"
-    "  contents.\n"
-    "\n"
     "--force-win-blend\n"
     "  Force all windows to be painted with blending. Useful if you have a\n"
     "  --glx-fshader-win that could turn opaque pixels transparent.\n"
@@ -4220,6 +4216,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(316, force_win_blend);
       case 317:
         ps->o.glx_fshader_win_str = mstrcpy(optarg);
+        printf_errf("(): --glx-fshader-win is being deprecated, and might be\n"
+          " removed in the future. If you really need this feature, please report\n"
+          "an issue to let us know\n");
         break;
       P_CASEBOOL(319, no_x_selection);
       P_CASEBOOL(731, reredir_on_root_change);
