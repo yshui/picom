@@ -324,12 +324,6 @@ resize_region(session_t *ps, region_t *region, short mod) {
   free(newrects);
 }
 
-static inline int
-get_alpha_step(session_t *ps, opacity_t o) {
-  double d = ((double) o) / OPAQUE;
-  return (int)(round(normalize_d(d) / ps->o.alpha_step));
-}
-
 static inline void
 __attribute__((nonnull(1, 2)))
 set_tgt_clip(session_t *ps, region_t *reg) {
@@ -1288,7 +1282,7 @@ paint_preprocess(session_t *ps, win *list) {
         || w->g.x + w->g.width < 1 || w->g.y + w->g.height < 1
         || w->g.x >= ps->root_width || w->g.y >= ps->root_height
         || ((w->a.map_state == XCB_MAP_STATE_UNMAPPED || w->destroyed) && !w->paint.pixmap)
-        || get_alpha_step(ps, w->opacity) == 0
+        || (double) w->opacity / OPAQUE * MAX_ALPHA < 1
         || w->paint_excluded)
       to_paint = false;
     //printf_errf("(): %s %d %d %d", w->name, to_paint, w->opacity, w->paint_excluded);
@@ -1602,7 +1596,7 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     case BKEND_XRENDER:
     case BKEND_XR_GLX_HYBRID:
       {
-        int alpha_step = get_alpha_step(ps, opacity * OPAQUE);
+        int alpha_step = opacity * MAX_ALPHA;
         xcb_render_picture_t alpha_pict = ps->alpha_picts[alpha_step];
         if (alpha_step != 0) {
           int op = ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC: XCB_RENDER_PICT_OP_OVER);
@@ -2011,7 +2005,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
         // Next, we set the region of paint and highlight it
         x_set_picture_clip_region(ps, new_pict, 0, 0, region_real);
         xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER, ps->white_picture,
-          ps->alpha_picts[(int)(0.5 / ps->o.alpha_step)],
+          ps->alpha_picts[MAX_ALPHA / 2],
           new_pict, 0, 0, 0, 0, 0, 0,
           ps->root_width, ps->root_height);
 
@@ -3502,10 +3496,6 @@ usage(int ret) {
     "  Attempt to send painting request before VBlank and do XFlush()\n"
     "  during VBlank. This switch may be lifted out at any moment.\n"
     "\n"
-    "--alpha-step val\n"
-    "  X Render backend: Step for pregenerating alpha pictures. \n"
-    "  0.01 - 1.0. Defaults to 0.03.\n"
-    "\n"
     "--paint-on-overlay\n"
     "  Painting on X Composite overlay window.\n"
     "\n"
@@ -4109,13 +4099,15 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       case 271:
         // --alpha-step
-        ps->o.alpha_step = atof(optarg);
+        printf_errf("(): --alpha-step has been removed, compton now tries to make use"
+          " of all alpha values");
         break;
       case 272:
         printf_errf("(): use of --dbe is deprecated");
         break;
       case 273:
-        printf_errf("(): --paint-on-overlay is removed, and is enabled when possible");
+        printf_errf("(): --paint-on-overlay has been removed, and is enabled when "
+          "possible");
         break;
       P_CASEBOOL(274, sw_opti);
       P_CASEBOOL(275, vsync_aggressive);
@@ -4255,7 +4247,6 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   ps->o.shadow_opacity = normalize_d(ps->o.shadow_opacity);
   cfgtmp.menu_opacity = normalize_d(cfgtmp.menu_opacity);
   ps->o.refresh_rate = normalize_i_range(ps->o.refresh_rate, 0, 300);
-  ps->o.alpha_step = normalize_d_range(ps->o.alpha_step, 0.01, 1.0);
 
   if (shadow_enable)
     wintype_arr_enable(ps->o.wintype_shadow);
@@ -4689,18 +4680,12 @@ vsync_deinit(session_t *ps) {
  */
 static void
 init_alpha_picts(session_t *ps) {
-  int i;
-  int num = round(1.0 / ps->o.alpha_step) + 1;
+  ps->alpha_picts = malloc(sizeof(xcb_render_picture_t) * (MAX_ALPHA+1));
 
-  ps->alpha_picts = malloc(sizeof(xcb_render_picture_t) * num);
-
-  for (i = 0; i < num; ++i) {
-    double o = i * ps->o.alpha_step;
-    if ((1.0 - o) > ps->o.alpha_step) {
-      ps->alpha_picts[i] = solid_picture(ps, false, o, 0, 0, 0);
-      assert(ps->alpha_picts[i] != None);
-    } else
-      ps->alpha_picts[i] = None;
+  for (int i = 0; i <= MAX_ALPHA; ++i) {
+    double o = (double) i / MAX_ALPHA;
+    ps->alpha_picts[i] = solid_picture(ps, false, o, 0, 0, 0);
+    assert(ps->alpha_picts[i] != None);
   }
 }
 
@@ -5106,7 +5091,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .active_opacity = OPAQUE,
       .frame_opacity = 1.0,
       .detect_client_opacity = false,
-      .alpha_step = 0.03,
 
       .blur_background = false,
       .blur_background_frame = false,
@@ -5635,8 +5619,7 @@ session_destroy(session_t *ps) {
 
   // Free alpha_picts
   {
-    const int max = round(1.0 / ps->o.alpha_step) + 1;
-    for (int i = 0; i < max; ++i)
+    for (int i = 0; i <= MAX_ALPHA; ++i)
       free_picture(ps, &ps->alpha_picts[i]);
     free(ps->alpha_picts);
     ps->alpha_picts = NULL;

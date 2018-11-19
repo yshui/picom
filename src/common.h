@@ -62,6 +62,8 @@
 #define DEBUG_BACKTRACE 1
 #endif
 
+#define MAX_ALPHA (255)
+
 // === Includes ===
 
 // For some special functions
@@ -582,8 +584,6 @@ typedef struct options_t {
   /// Whether to detect _NET_WM_OPACITY on client windows. Used on window
   /// managers that don't pass _NET_WM_OPACITY to frame windows.
   bool detect_client_opacity;
-  /// Step for pregenerating alpha pictures. 0.01 - 1.0.
-  double alpha_step;
 
   // === Other window processing ===
   /// Whether to blur background of semi-transparent / ARGB windows.

@@ -148,9 +148,6 @@ OPTIONS
 *--vsync-aggressive*::
 	Attempt to send painting request before VBlank and do XFlush() during VBlank. Reported to work pretty terribly. This switch may be lifted out at any moment.
 
-*--alpha-step* 'VALUE'::
-	X Render backend: Step for pregenerating alpha pictures. (0.01 - 1.0, defaults to 0.03)
-
 *--dbe*::
 	Enable DBE painting mode, intended to use with VSync to (hopefully) eliminate tearing. Reported to have no effect, though.
 
