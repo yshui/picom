@@ -1919,10 +1919,11 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
         w->g.x + w->shadow_dx, w->g.y + w->shadow_dy,
         w->shadow_width, w->shadow_height);
 
-      // Mask out the body of the window from the shadow
+      // Mask out the body of the window from the shadow if needed
       // Doing it here instead of in make_shadow() for saving GPU
       // power and handling shaped windows (XXX unconfirmed)
-      pixman_region32_subtract(&reg_tmp, &reg_tmp, &bshape);
+      if (!ps->o.wintype_full_shadow[w->window_type])
+        pixman_region32_subtract(&reg_tmp, &reg_tmp, &bshape);
 
 #ifdef CONFIG_XINERAMA
       if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
@@ -4059,7 +4060,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.frame_opacity = atof(optarg);
         break;
       case 'z':
-        printf_errf("(): clear-shadow is removed, shadows are automatically cleared now.");
+        printf_errf("(): clear-shadow is removed, shadows are automatically cleared now.\n"
+          "If you want to prevent shadow from been cleared under certain types of windows,\n"
+          "you can use the \"full-shadow\" per window type option.");
         break;
       case 'n':
       case 'a':
@@ -4253,6 +4256,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   cfgtmp.menu_opacity = normalize_d(cfgtmp.menu_opacity);
   ps->o.refresh_rate = normalize_i_range(ps->o.refresh_rate, 0, 300);
   ps->o.alpha_step = normalize_d_range(ps->o.alpha_step, 0.01, 1.0);
+
   if (shadow_enable)
     wintype_arr_enable(ps->o.wintype_shadow);
   ps->o.wintype_shadow[WINTYPE_DESKTOP] = false;
@@ -4262,6 +4266,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     ps->o.wintype_shadow[WINTYPE_DND] = false;
   if (fading_enable)
     wintype_arr_enable(ps->o.wintype_fade);
+
   if (!safe_isnan(cfgtmp.menu_opacity)) {
     ps->o.wintype_opacity[WINTYPE_DROPDOWN_MENU] = cfgtmp.menu_opacity;
     ps->o.wintype_opacity[WINTYPE_POPUP_MENU] = cfgtmp.menu_opacity;
@@ -5074,6 +5079,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .vsync_aggressive = false,
 
       .wintype_shadow = { false },
+      .wintype_full_shadow = { false },
       .shadow_red = 0.0,
       .shadow_green = 0.0,
       .shadow_blue = 0.0,

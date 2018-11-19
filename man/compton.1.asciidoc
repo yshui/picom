@@ -372,11 +372,25 @@ compton uses general libconfig configuration file format. A sample configuration
 ------------
 wintypes:
 {
-  WINDOW_TYPE = { fade = BOOL; shadow = BOOL; opacity = FLOAT; focus = BOOL; };
+  WINDOW_TYPE = { fade = BOOL; shadow = BOOL; opacity = FLOAT; focus = BOOL; full-shadow = BOOL; };
 };
 ------------
 
-'WINDOW_TYPE' is one of the 15 window types defined in EWMH standard: "unknown", "desktop", "dock", "toolbar", "menu", "utility", "splash", "dialog", "normal", "dropdown_menu", "popup_menu", "tooltip", "notify", "combo", and "dnd". "fade" and "shadow" controls window-type-specific shadow and fade settings. "opacity" controls default opacity of the window type. "focus" controls whether the window of this type is to be always considered focused. (By default, all window types except "normal" and "dialog" has this on.)
+'WINDOW_TYPE' is one of the 15 window types defined in EWMH standard: "unknown", "desktop", "dock", "toolbar", "menu", "utility", "splash", "dialog", "normal", "dropdown_menu", "popup_menu", "tooltip", "notify", "combo", and "dnd".
+
+Following per window-type options are available: ::
+
+  fade, shadow:::
+    Controls window-type-specific shadow and fade settings.
+
+  opacity:::
+    Controls default opacity of the window type.
+
+  focus:::
+    Controls whether the window of this type is to be always considered focused. (By default, all window types except "normal" and "dialog" has this on.)
+
+  full-shadow:::
+    Controls whether shadow is drawn under the parts of the window that you normally won't be able to see. Useful when the window has parts of it transparent, and you want shadows in those areas.
 
 SIGNALS
 -------
