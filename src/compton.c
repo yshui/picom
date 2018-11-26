@@ -5493,8 +5493,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->delayed_draw_timer->ps = ps;
   ev_init(&ps->delayed_draw_timer->w, delayed_draw_timer_callback);
 
-  // xcb can read multiple events from the socket anytime a request which requires
-  // reply is made.
+  // xcb can read multiple events from the socket when a request with reply is
+  // made.
   //
   // Use an ev_prepare to make sure we cannot accidentally forget to handle them
   // before we go to sleep.
@@ -5503,7 +5503,10 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // input), we will be sleeping with events available in queue. Which might
   // cause us to block indefinitely because arrival of new events could be
   // dependent on processing of existing events (e.g. if we don't process damage
-  // event and do damage subtract, new damage event won't be generated.
+  // event and do damage subtract, new damage event won't be generated).
+  //
+  // So we make use of a ev_prepare handle, which is called right before libev
+  // goes into sleep, to handle all the queued X events.
   ps->event_check = calloc(1, sizeof(ev_session_prepare));
   ps->event_check->ps = ps;
   ev_prepare_init(&ps->event_check->w, handle_queued_x_events);
