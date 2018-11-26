@@ -53,9 +53,6 @@ cxinerama_upd_scrs(session_t *ps);
 static void
 session_destroy(session_t *ps);
 
-static void
-reset_enable(int __attribute__((unused)) signum);
-
 #ifdef CONFIG_XINERAMA
 static void
 cxinerama_upd_scrs(session_t *ps);
@@ -128,20 +125,25 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     xcb_render_picture_t pict, glx_texture_t *ptex,
     const region_t *reg_paint, const glx_prog_main_t *pprogram);
 
-typedef struct ev_session_timer {
+struct ev_session_timer {
   ev_timer w;
   session_t *ps;
-} ev_session_timer;
+};
 
-typedef struct ev_session_idle {
+struct ev_session_idle {
   ev_idle w;
   session_t *ps;
-} ev_session_idle;
+};
 
-typedef struct ev_session_prepare {
+struct ev_session_prepare {
   ev_prepare w;
   session_t *ps;
-} ev_session_prepare;
+};
+
+struct ev_session_signal {
+  ev_signal w;
+  session_t *ps;
+};
 
 // === Global constants ===
 
@@ -222,8 +224,8 @@ static const char *background_props_str[] = {
 // === Global variables ===
 
 /// Pointer to current session, as a global variable. Only used by
-/// <code>error()</code> and <code>reset_enable()</code>, which could not
-/// have a pointer to current session passed in.
+/// xerror(), which could not have a pointer to current session passed in.
+/// XXX Limit what xerror can access by not having this pointer
 session_t *ps_g = NULL;
 
 /**
@@ -5011,6 +5013,17 @@ x_event_callback(EV_P_ ev_io *w, int revents) {
 }
 
 /**
+ * Turn on the program reset flag.
+ *
+ * This will result in compton resetting itself after next paint.
+ */
+static void
+reset_enable(EV_P_ ev_signal *w, int revents) {
+  session_t *ps = ((ev_session_signal *)w)->ps;
+  ev_break(ps->loop, EVBREAK_ALL);
+}
+
+/**
  * Initialize a session.
  *
  * @param ps_old old session, from which the function will take the X
@@ -5493,6 +5506,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->delayed_draw_timer->ps = ps;
   ev_init(&ps->delayed_draw_timer->w, delayed_draw_timer_callback);
 
+  // Set up SIGUSR1 signal handler to reset program
+  ps->usr1_signal = calloc(1, sizeof(ev_session_signal));
+  ps->usr1_signal->ps = ps;
+  ev_signal_init(&ps->usr1_signal->w, reset_enable, SIGUSR1);
+  ev_signal_start(ps->loop, &ps->usr1_signal->w);
+
   // xcb can read multiple events from the socket when a request with reply is
   // made.
   //
@@ -5761,6 +5780,10 @@ session_destroy(session_t *ps) {
   free(ps->event_check);
   ps->event_check = NULL;
 
+  ev_signal_stop(ps->loop, &ps->usr1_signal->w);
+  free(ps->usr1_signal);
+  ps->usr1_signal = NULL;
+
   if (ps == ps_g)
     ps_g = NULL;
 }
@@ -5798,17 +5821,6 @@ session_run(session_t *ps) {
   ev_run(ps->loop, 0);
 }
 
-/**
- * Turn on the program reset flag.
- *
- * This will result in compton resetting itself after next paint.
- */
-static void
-reset_enable(int __attribute__((unused)) signum) {
-  session_t * const ps = ps_g;
-  ev_break(ps->loop, EVBREAK_ALL);
-}
-
 static void
 sigint_handler(int __attribute__((unused)) signum) {
   exit(0);
@@ -5823,16 +5835,8 @@ main(int argc, char **argv) {
   // correctly
   setlocale(LC_ALL, "");
 
-  // Set up SIGUSR1 signal handler to reset program
   sigset_t sigmask;
   sigemptyset(&sigmask);
-  const struct sigaction usr1_action = {
-    .sa_handler = reset_enable,
-    .sa_mask = sigmask,
-    .sa_flags = 0
-  };
-  sigaction(SIGUSR1, &usr1_action, NULL);
-
   const struct sigaction int_action = {
     .sa_handler = sigint_handler,
     .sa_mask = sigmask,

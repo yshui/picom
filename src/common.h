@@ -435,6 +435,7 @@ typedef struct _latom {
 
 #define REG_DATA_INIT { NULL, 0 }
 
+typedef struct ev_session_signal ev_session_signal;
 typedef struct ev_session_timer ev_session_timer;
 typedef struct ev_session_idle ev_session_idle;
 typedef struct ev_session_prepare ev_session_prepare;
@@ -755,6 +756,8 @@ typedef struct session {
   /// so we can be sure if xcb read from X socket at anytime during event
   /// handling, we will not left any event unhandled in the queue
   ev_session_prepare *event_check;
+  /// Signal handler for SIGUSR1
+  ev_session_signal *usr1_signal;
   /// Whether we have hit unredirection timeout.
   bool tmout_unredir_hit;
   /// Whether we need to redraw the screen
