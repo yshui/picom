@@ -1466,7 +1466,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer,
     xrfilter_reset(ps, src_pict);
 
     {
-      xcb_xfixes_region_t tmp = src_pict;
+      xcb_render_picture_t tmp = src_pict;
       src_pict = dst_pict;
       dst_pict = tmp;
     }
