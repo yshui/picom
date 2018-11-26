@@ -5809,6 +5809,11 @@ reset_enable(int __attribute__((unused)) signum) {
   ev_break(ps->loop, EVBREAK_ALL);
 }
 
+static void
+sigint_handler(int __attribute__((unused)) signum) {
+  exit(0);
+}
+
 /**
  * The function that everybody knows.
  */
@@ -5819,16 +5824,21 @@ main(int argc, char **argv) {
   setlocale(LC_ALL, "");
 
   // Set up SIGUSR1 signal handler to reset program
-  {
-    sigset_t block_mask;
-    sigemptyset(&block_mask);
-    const struct sigaction action= {
-      .sa_handler = reset_enable,
-      .sa_mask = block_mask,
-      .sa_flags = 0
-    };
-    sigaction(SIGUSR1, &action, NULL);
-  }
+  sigset_t sigmask;
+  sigemptyset(&sigmask);
+  const struct sigaction usr1_action = {
+    .sa_handler = reset_enable,
+    .sa_mask = sigmask,
+    .sa_flags = 0
+  };
+  sigaction(SIGUSR1, &usr1_action, NULL);
+
+  const struct sigaction int_action = {
+    .sa_handler = sigint_handler,
+    .sa_mask = sigmask,
+    .sa_flags = 0
+  };
+  sigaction(SIGINT, &int_action, NULL);
 
   // Main loop
   session_t *ps_old = ps_g;
