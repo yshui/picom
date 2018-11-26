@@ -3173,9 +3173,8 @@ ev_screen_change_notify(session_t *ps,
   if (ps->o.sw_opti && !ps->o.refresh_rate) {
     update_refresh_rate(ps);
     if (!ps->refresh_rate) {
-      fprintf(stderr, "ev_screen_change_notify(): Refresh rate detection "
-          "failed, --sw-opti disabled.");
-      ps->o.sw_opti = false;
+      fprintf(stderr, "ev_screen_change_notify(): Refresh rate detection failed."
+        "swopti will be temporarily disabled");
     }
   }
 }
@@ -4413,6 +4412,9 @@ swopti_init(session_t *ps) {
  */
 static double
 swopti_handle_timeout(session_t *ps) {
+  if (!ps->refresh_intv)
+    return 0;
+
   // Get the microsecond offset of the time when the we reach the timeout
   // I don't think a 32-bit long could overflow here.
   long offset = (get_time_timeval().tv_usec - ps->paint_tm_offset) % ps->refresh_intv;
