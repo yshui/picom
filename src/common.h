@@ -435,11 +435,6 @@ typedef struct _latom {
 
 #define REG_DATA_INIT { NULL, 0 }
 
-typedef struct ev_session_signal ev_session_signal;
-typedef struct ev_session_timer ev_session_timer;
-typedef struct ev_session_idle ev_session_idle;
-typedef struct ev_session_prepare ev_session_prepare;
-
 /// Structure representing all options.
 typedef struct options_t {
   // === Debugging ===
@@ -691,8 +686,25 @@ typedef struct {
 
 /// Structure containing all necessary data for a compton session.
 typedef struct session {
+  // === Event handlers ===
   /// ev_io for X connection
   ev_io xiow;
+  /// Timeout for delayed unredirection.
+  ev_timer unredir_timer;
+  /// Timer for fading
+  ev_timer fade_timer;
+  /// Timer for delayed drawing, right now only used by
+  /// swopti
+  ev_timer delayed_draw_timer;
+  /// Use an ev_idle callback for drawing
+  /// So we only start drawing when events are processed
+  ev_idle draw_idle;
+  /// Called everytime we have timeouts or new data on socket,
+  /// so we can be sure if xcb read from X socket at anytime during event
+  /// handling, we will not left any event unhandled in the queue
+  ev_prepare event_check;
+  /// Signal handler for SIGUSR1
+  ev_signal usr1_signal;
   /// libev mainloop
   struct ev_loop *loop;
   // === Display related ===
@@ -742,22 +754,6 @@ typedef struct session {
   // === Operation related ===
   /// Program options.
   options_t o;
-  /// Timeout for delayed unredirection.
-  ev_session_timer *unredir_timer;
-  /// Timer for fading
-  ev_session_timer *fade_timer;
-  /// Timer for delayed drawing, right now only used by
-  /// swopti
-  ev_session_timer *delayed_draw_timer;
-  /// Use an ev_idle callback for drawing
-  /// So we only start drawing when events are processed
-  ev_session_idle *draw_idle;
-  /// Called everytime we have timeouts or new data on socket,
-  /// so we can be sure if xcb read from X socket at anytime during event
-  /// handling, we will not left any event unhandled in the queue
-  ev_session_prepare *event_check;
-  /// Signal handler for SIGUSR1
-  ev_session_signal *usr1_signal;
   /// Whether we have hit unredirection timeout.
   bool tmout_unredir_hit;
   /// Whether we need to redraw the screen

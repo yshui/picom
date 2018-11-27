@@ -32,6 +32,12 @@
 
 #define auto __auto_type
 
+/// Get session_t pointer from a pointer to a member of session_t
+#define session_ptr(ptr, member) ({ \
+  const __typeof__( ((session_t *)0)->member ) *__mptr = (ptr); \
+  (session_t *)((char *)__mptr - offsetof(session_t, member)); \
+})
+
 static void
 finish_destroy_win(session_t *ps, win **_w);
 
@@ -124,26 +130,6 @@ render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
     double opacity, bool argb, bool neg,
     xcb_render_picture_t pict, glx_texture_t *ptex,
     const region_t *reg_paint, const glx_prog_main_t *pprogram);
-
-struct ev_session_timer {
-  ev_timer w;
-  session_t *ps;
-};
-
-struct ev_session_idle {
-  ev_idle w;
-  session_t *ps;
-};
-
-struct ev_session_prepare {
-  ev_prepare w;
-  session_t *ps;
-};
-
-struct ev_session_signal {
-  ev_signal w;
-  session_t *ps;
-};
 
 // === Global constants ===
 
@@ -427,7 +413,7 @@ find_win_all(session_t *ps, const Window wid) {
 void queue_redraw(session_t *ps) {
   // If --benchmark is used, redraw is always queued
   if (!ps->redraw_needed && !ps->o.benchmark)
-    ev_idle_start(ps->loop, &ps->draw_idle->w);
+    ev_idle_start(ps->loop, &ps->draw_idle);
   ps->redraw_needed = true;
 }
 
@@ -1383,15 +1369,15 @@ paint_preprocess(session_t *ps, win *list) {
     if (ps->redirected) {
       if (!ps->o.unredir_if_possible_delay || ps->tmout_unredir_hit)
         redir_stop(ps);
-      else if (!ev_is_active(&ps->unredir_timer->w)) {
-        ev_timer_set(&ps->unredir_timer->w,
+      else if (!ev_is_active(&ps->unredir_timer)) {
+        ev_timer_set(&ps->unredir_timer,
           ps->o.unredir_if_possible_delay / 1000.0, 0);
-        ev_timer_start(ps->loop, &ps->unredir_timer->w);
+        ev_timer_start(ps->loop, &ps->unredir_timer);
       }
     }
   }
   else {
-    ev_timer_stop(ps->loop, &ps->unredir_timer->w);
+    ev_timer_stop(ps->loop, &ps->unredir_timer);
     redir_start(ps);
   }
 
@@ -4861,8 +4847,7 @@ redir_stop(session_t *ps) {
 // Handle queued events before we go to sleep
 static void
 handle_queued_x_events(EV_P_ ev_prepare *w, int revents) {
-  ev_session_prepare *sw = (void *)w;
-  session_t *ps = sw->ps;
+  session_t *ps = session_ptr(w, event_check);
   xcb_generic_event_t *ev;
   while ((ev = xcb_poll_for_queued_event(ps->c))) {
     ev_handle(ps, ev);
@@ -4882,15 +4867,15 @@ handle_queued_x_events(EV_P_ ev_prepare *w, int revents) {
  */
 static void
 tmout_unredir_callback(EV_P_ ev_timer *w, int revents) {
-  ev_session_timer *sw = (void *)w;
-  sw->ps->tmout_unredir_hit = true;
-  queue_redraw(sw->ps);
+  session_t *ps = session_ptr(w, unredir_timer);
+  ps->tmout_unredir_hit = true;
+  queue_redraw(ps);
 }
 
 static void
 fade_timer_callback(EV_P_ ev_timer *w, int revents) {
-  ev_session_timer *sw = (void *)w;
-  queue_redraw(sw->ps);
+  session_t *ps = session_ptr(w, fade_timer);
+  queue_redraw(ps);
 }
 
 static void
@@ -4914,11 +4899,11 @@ _draw_callback(EV_P_ session_t *ps, int revents) {
   ps->tmout_unredir_hit = false;
 
   // Start/stop fade timer depends on whether window are fading
-  if (!ps->fade_running && ev_is_active(&ps->fade_timer->w))
-    ev_timer_stop(ps->loop, &ps->fade_timer->w);
-  else if (ps->fade_running && !ev_is_active(&ps->fade_timer->w)) {
-    ev_timer_set(&ps->fade_timer->w, fade_timeout(ps), 0);
-    ev_timer_start(ps->loop, &ps->fade_timer->w);
+  if (!ps->fade_running && ev_is_active(&ps->fade_timer))
+    ev_timer_stop(ps->loop, &ps->fade_timer);
+  else if (ps->fade_running && !ev_is_active(&ps->fade_timer)) {
+    ev_timer_set(&ps->fade_timer, fade_timeout(ps), 0);
+    ev_timer_start(ps->loop, &ps->fade_timer);
   }
 
   // If the screen is unredirected, free all_damage to stop painting
@@ -4956,50 +4941,51 @@ _draw_callback(EV_P_ session_t *ps, int revents) {
 static void
 draw_callback(EV_P_ ev_idle *w, int revents) {
   // This function is not used if we are using --swopti
-  ev_session_idle *sw = (void *)w;
+  session_t *ps = session_ptr(w, draw_idle);
 
-  _draw_callback(EV_A_ sw->ps, revents);
+  _draw_callback(EV_A_ ps, revents);
 
   // Don't do painting non-stop unless we are in benchmark mode
-  if (!sw->ps->o.benchmark)
-    ev_idle_stop(sw->ps->loop, &sw->ps->draw_idle->w);
+  if (!ps->o.benchmark)
+    ev_idle_stop(ps->loop, &ps->draw_idle);
 }
 
 static void
 delayed_draw_timer_callback(EV_P_ ev_timer *w, int revents) {
-  ev_session_timer *sw = (void *)w;
-  _draw_callback(EV_A_ sw->ps, revents);
+  session_t *ps = session_ptr(w, delayed_draw_timer);
+  _draw_callback(EV_A_ ps, revents);
 
   // We might have stopped the ev_idle in delayed_draw_callback,
   // so we restart it if we are in benchmark mode
-  if (sw->ps->o.benchmark)
-    ev_idle_start(EV_A_ &sw->ps->draw_idle->w);
+  if (ps->o.benchmark)
+    ev_idle_start(EV_A_ &ps->draw_idle);
 }
 
 static void
 delayed_draw_callback(EV_P_ ev_idle *w, int revents) {
   // This function is only used if we are using --swopti
-  ev_session_idle *sw = (void *)w;
-  if (ev_is_active(sw->ps->delayed_draw_timer))
+  session_t *ps = session_ptr(w, draw_idle);
+  if (ev_is_active(&ps->delayed_draw_timer))
     return;
 
-  double delay = swopti_handle_timeout(sw->ps);
+  double delay = swopti_handle_timeout(ps);
   if (delay < 1e-6)
-    return _draw_callback(EV_A_ sw->ps, revents);
+    return _draw_callback(EV_A_ ps, revents);
 
   // This is a little bit hacky. When we get to this point in code, we need
-  // to update the screen , but we will only be updated after a delay, So
+  // to update the screen , but we will only be updating after a delay, So
   // we want to stop the ev_idle, so this callback doesn't get call repeatedly
   // during the delay, we also want queue_redraw to not restart the ev_idle.
-  // So we stop ev_idle and leave ps->redraw_needed to be true.
+  // So we stop ev_idle and leave ps->redraw_needed to be true. (effectively,
+  // ps->redraw_needed means if redraw is needed or if draw is in progress).
   //
   // We do this anyway even if we are in benchmark mode. That means we will
   // have to restart draw_idle after the draw actually happened when we are in
   // benchmark mode.
-  ev_idle_stop(sw->ps->loop, &sw->ps->draw_idle->w);
+  ev_idle_stop(ps->loop, &ps->draw_idle);
 
-  ev_timer_set(&sw->ps->delayed_draw_timer->w, delay, 0);
-  ev_timer_start(sw->ps->loop, &sw->ps->delayed_draw_timer->w);
+  ev_timer_set(&ps->delayed_draw_timer, delay, 0);
+  ev_timer_start(ps->loop, &ps->delayed_draw_timer);
 }
 
 static void
@@ -5019,7 +5005,7 @@ x_event_callback(EV_P_ ev_io *w, int revents) {
  */
 static void
 reset_enable(EV_P_ ev_signal *w, int revents) {
-  session_t *ps = ((ev_session_signal *)w)->ps;
+  session_t *ps = session_ptr(w, usr1_signal);
   ev_break(ps->loop, EVBREAK_ALL);
 }
 
@@ -5488,29 +5474,18 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   ev_io_init(&ps->xiow, x_event_callback, ConnectionNumber(ps->dpy), EV_READ);
   ev_io_start(ps->loop, &ps->xiow);
-  ps->unredir_timer = calloc(1, sizeof(ev_session_timer));
-  ps->unredir_timer->ps = ps;
-  ev_init(&ps->unredir_timer->w, tmout_unredir_callback);
-  ps->draw_idle = calloc(1, sizeof(ev_session_idle));
-  ps->draw_idle->ps = ps;
+  ev_init(&ps->unredir_timer, tmout_unredir_callback);
   if (ps->o.sw_opti)
-    ev_idle_init(&ps->draw_idle->w, delayed_draw_callback);
+    ev_idle_init(&ps->draw_idle, delayed_draw_callback);
   else
-    ev_idle_init(&ps->draw_idle->w, draw_callback);
+    ev_idle_init(&ps->draw_idle, draw_callback);
 
-  ps->fade_timer = calloc(1, sizeof(ev_session_timer));
-  ps->fade_timer->ps = ps;
-  ev_init(&ps->fade_timer->w, fade_timer_callback);
-
-  ps->delayed_draw_timer = calloc(1, sizeof(ev_session_timer));
-  ps->delayed_draw_timer->ps = ps;
-  ev_init(&ps->delayed_draw_timer->w, delayed_draw_timer_callback);
+  ev_init(&ps->fade_timer, fade_timer_callback);
+  ev_init(&ps->delayed_draw_timer, delayed_draw_timer_callback);
 
   // Set up SIGUSR1 signal handler to reset program
-  ps->usr1_signal = calloc(1, sizeof(ev_session_signal));
-  ps->usr1_signal->ps = ps;
-  ev_signal_init(&ps->usr1_signal->w, reset_enable, SIGUSR1);
-  ev_signal_start(ps->loop, &ps->usr1_signal->w);
+  ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);
+  ev_signal_start(ps->loop, &ps->usr1_signal);
 
   // xcb can read multiple events from the socket when a request with reply is
   // made.
@@ -5526,13 +5501,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
   //
   // So we make use of a ev_prepare handle, which is called right before libev
   // goes into sleep, to handle all the queued X events.
-  ps->event_check = calloc(1, sizeof(ev_session_prepare));
-  ps->event_check->ps = ps;
-  ev_prepare_init(&ps->event_check->w, handle_queued_x_events);
+  ev_prepare_init(&ps->event_check, handle_queued_x_events);
   // Make sure nothing can cause xcb to read from the X socket after events are
   // handled and before we going to sleep.
-  ev_set_priority(&ps->event_check->w, EV_MINPRI);
-  ev_prepare_start(ps->loop, &ps->event_check->w);
+  ev_set_priority(&ps->event_check, EV_MINPRI);
+  ev_prepare_start(ps->loop, &ps->event_check);
 
   xcb_grab_server(ps->c);
 
@@ -5763,26 +5736,12 @@ session_destroy(session_t *ps) {
   xrc_report_xid();
 #endif
 
-  // Free timeouts
-  ev_timer_stop(ps->loop, &ps->unredir_timer->w);
-  free(ps->unredir_timer);
-  ps->unredir_timer = NULL;
-
-  ev_timer_stop(ps->loop, &ps->fade_timer->w);
-  free(ps->fade_timer);
-  ps->fade_timer = NULL;
-
-  ev_idle_stop(ps->loop, &ps->draw_idle->w);
-  free(ps->draw_idle);
-  ps->draw_idle = NULL;
-
-  ev_prepare_stop(ps->loop, &ps->event_check->w);
-  free(ps->event_check);
-  ps->event_check = NULL;
-
-  ev_signal_stop(ps->loop, &ps->usr1_signal->w);
-  free(ps->usr1_signal);
-  ps->usr1_signal = NULL;
+  // Stop libev event handlers
+  ev_timer_stop(ps->loop, &ps->unredir_timer);
+  ev_timer_stop(ps->loop, &ps->fade_timer);
+  ev_idle_stop(ps->loop, &ps->draw_idle);
+  ev_prepare_stop(ps->loop, &ps->event_check);
+  ev_signal_stop(ps->loop, &ps->usr1_signal);
 
   if (ps == ps_g)
     ps_g = NULL;
@@ -5815,8 +5774,9 @@ session_run(session_t *ps) {
   if (ps->redirected)
     paint_all(ps, NULL, NULL, t);
 
+  // In benchmark mode, we want draw_idle handler to always be active
   if (ps->o.benchmark)
-    ev_idle_start(ps->loop, &ps->draw_idle->w);
+    ev_idle_start(ps->loop, &ps->draw_idle);
 
   ev_run(ps->loop, 0);
 }
