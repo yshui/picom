@@ -260,8 +260,7 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   // -m (menu_opacity)
   if (config_lookup_float(&cfg, "menu-opacity", &dval)) {
     printf_errf("(): option `menu-opacity` is deprecated, and will be removed.\n"
-      "Please use the wintype option `opacity` of `popup_menu` and\n"
-      "`dropdown_menu` instead.");
+      "Please use the wintype option `opacity` of `popup_menu` and `dropdown_menu` instead.");
     ps->o.wintype_option[WINTYPE_DROPDOWN_MENU].opacity = dval;
     ps->o.wintype_option[WINTYPE_POPUP_MENU].opacity = dval;
     winopt_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
@@ -419,6 +418,10 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
       if (config_setting_lookup_bool(setting, "full-shadow", &ival)) {
         o->full_shadow = ival;
         mask->full_shadow = true;
+      }
+      if (config_setting_lookup_bool(setting, "redir-ignore", &ival)) {
+        o->redir_ignore = ival;
+        mask->redir_ignore = true;
       }
 
       double fval;

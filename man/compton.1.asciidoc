@@ -389,6 +389,9 @@ Following per window-type options are available: ::
   full-shadow:::
     Controls whether shadow is drawn under the parts of the window that you normally won't be able to see. Useful when the window has parts of it transparent, and you want shadows in those areas.
 
+  redir-ignore:::
+    Controls whether this type window should cause screen to become redirected again after been unredirected. If you have *--unredir-if-possible* set, and doesn't want certain window to cause unnecessary screen redirection, you can set this to `true`.
+
 SIGNALS
 -------
 

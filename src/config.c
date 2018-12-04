@@ -376,6 +376,10 @@ void parse_config(session_t *ps, bool *shadow_enable, bool *fading_enable,
       winopt_mask[i].full_shadow = true;
       ps->o.wintype_option[i].full_shadow = false;
     }
+    if (!winopt_mask[i].redir_ignore) {
+      winopt_mask[i].redir_ignore = true;
+      ps->o.wintype_option[i].redir_ignore = false;
+    }
     if (!winopt_mask[i].opacity) {
       winopt_mask[i].opacity = true;
       // Opacity is not set to a concrete number here because the opacity logic

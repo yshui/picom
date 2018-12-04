@@ -1333,7 +1333,12 @@ paint_preprocess(session_t *ps, win *list) {
     w->flags = 0;
     w->prev_trans = t;
     t = w;
-    is_highest = false;
+
+    // If the screen is not redirected and the window has redir_ignore set,
+    // this window should not cause the screen to become redirected
+    if (!(ps->o.wintype_option[w->window_type].redir_ignore && !ps->redirected)) {
+      is_highest = false;
+    }
 
   skip_window:
     reg_ignore_valid = reg_ignore_valid && w->reg_ignore_valid;
@@ -1375,8 +1380,7 @@ paint_preprocess(session_t *ps, win *list) {
         ev_timer_start(ps->loop, &ps->unredir_timer);
       }
     }
-  }
-  else {
+  } else {
     ev_timer_stop(ps->loop, &ps->unredir_timer);
     redir_start(ps);
   }
