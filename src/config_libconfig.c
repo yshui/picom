@@ -156,8 +156,8 @@ parse_cfg_condlst_opct(session_t *ps, const config_t *pcfg, const char *name) {
 /**
  * Parse a configuration file from default location.
  */
-void parse_config(session_t *ps, bool *shadow_enable, bool *fading_enable,
-  win_option_mask_t *winopt_mask)
+void parse_config_libconfig(session_t *ps, bool *shadow_enable,
+  bool *fading_enable, win_option_mask_t *winopt_mask)
 {
   char *path = NULL;
   FILE *f;
@@ -426,43 +426,6 @@ void parse_config(session_t *ps, bool *shadow_enable, bool *fading_enable,
         o->opacity = normalize_d(fval);
         mask->opacity = true;
       }
-    }
-  }
-
-  // Apply default wintype options that does not depends on global options.
-  // For example, wintype shadow option will depend on the global shadow
-  // option, so it is not set here.
-  //
-  // Except desktop windows are always drawn without shadow.
-  if (!winopt_mask[WINTYPE_DESKTOP].shadow) {
-    winopt_mask[WINTYPE_DESKTOP].shadow = true;
-    ps->o.wintype_option[WINTYPE_DESKTOP].shadow = false;
-  }
-
-  // Focused/unfocused state only apply to a few window types, all other windows
-  // are always considered focused.
-  const wintype_t nofocus_type[] =
-    { WINTYPE_UNKNOWN, WINTYPE_NORMAL, WINTYPE_UTILITY };
-  for (unsigned long i = 0; i < ARR_SIZE(nofocus_type); i++) {
-    if (!winopt_mask[nofocus_type[i]].focus) {
-      winopt_mask[nofocus_type[i]].focus = true;
-      ps->o.wintype_option[nofocus_type[i]].focus = false;
-    }
-  }
-  for (unsigned long i = 0; i < NUM_WINTYPES; i++) {
-    if (!winopt_mask[i].focus) {
-      winopt_mask[i].focus = true;
-      ps->o.wintype_option[i].focus = true;
-    }
-    if (!winopt_mask[i].full_shadow) {
-      winopt_mask[i].full_shadow = true;
-      ps->o.wintype_option[i].full_shadow = false;
-    }
-    if (!winopt_mask[i].opacity) {
-      winopt_mask[i].opacity = true;
-      // Opacity is not set to a concrete number here because the opacity logic
-      // is complicated, and needs an "unset" state
-      ps->o.wintype_option[i].opacity = NAN;
     }
   }
 

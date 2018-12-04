@@ -25,16 +25,11 @@ bool parse_rule_opacity(session_t *, const char *);
 bool condlst_add(session_t *, c2_lptr_t **, const char *);
 
 #ifdef CONFIG_LIBCONFIG
-FILE *
-open_config_file(char *cpath, char **path);
-
 void
-parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
-    const char *name);
+parse_config_libconfig(session_t *ps, bool *shadow_enable,
+  bool *fading_enable, win_option_mask_t *winopt_mask);
+#endif
 
 void
 parse_config(session_t *ps, bool *shadow_enable,
   bool *fading_enable, win_option_mask_t *winopt_mask);
-#else
-static inline void parse_config() {}
-#endif
