@@ -1904,7 +1904,7 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
       // Mask out the body of the window from the shadow if needed
       // Doing it here instead of in make_shadow() for saving GPU
       // power and handling shaped windows (XXX unconfirmed)
-      if (!ps->o.wintype_full_shadow[w->window_type])
+      if (!ps->o.wintype_option[w->window_type].full_shadow)
         pixman_region32_subtract(&reg_tmp, &reg_tmp, &bshape);
 
 #ifdef CONFIG_XINERAMA
@@ -3920,7 +3920,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { NULL, 0, NULL, 0 },
   };
 
-  int o = 0, longopt_idx = -1, i = 0;
+  int o = 0, longopt_idx = -1;
 
   if (first_pass) {
     // Pre-parse the commandline arguments to check for --config and invalid
@@ -3955,25 +3955,16 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     return;
   }
 
-  struct options_tmp cfgtmp = {
-    .no_dock_shadow = false,
-    .no_dnd_shadow = false,
-    .menu_opacity = NAN,
-  };
   bool shadow_enable = false, fading_enable = false;
   char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
 
-  for (i = 0; i < NUM_WINTYPES; ++i) {
-    ps->o.wintype_fade[i] = false;
-    ps->o.wintype_shadow[i] = false;
-    ps->o.wintype_opacity[i] = NAN;
-  }
+  win_option_mask_t winopt_mask[NUM_WINTYPES] = {{0}};
 
   // Enforce LC_NUMERIC locale "C" here to make sure dots are recognized
   // instead of commas in atof().
   setlocale(LC_NUMERIC, "C");
 
-  parse_config(ps, &cfgtmp);
+  parse_config(ps, &shadow_enable, &fading_enable, winopt_mask);
 
   // Parse commandline arguments. Range checking will be done later.
 
@@ -4012,13 +4003,20 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         shadow_enable = true;
         break;
       case 'C':
-        cfgtmp.no_dock_shadow = true;
+        winopt_mask[WINTYPE_DOCK].shadow = true;
+        ps->o.wintype_option[WINTYPE_DOCK].shadow = true;
         break;
       case 'G':
-        cfgtmp.no_dnd_shadow = true;
+        winopt_mask[WINTYPE_DND].shadow = true;
+        ps->o.wintype_option[WINTYPE_DND].shadow = true;
         break;
-      case 'm':
-        cfgtmp.menu_opacity = atof(optarg);
+      case 'm':;
+        double tmp;
+        tmp = normalize_d(atof(optarg));
+        winopt_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
+        winopt_mask[WINTYPE_POPUP_MENU].opacity = true;
+        ps->o.wintype_option[WINTYPE_POPUP_MENU].opacity = tmp;
+        ps->o.wintype_option[WINTYPE_DROPDOWN_MENU].opacity = tmp;
         break;
       case 'f':
       case 'F':
@@ -4232,22 +4230,20 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   ps->o.inactive_dim = normalize_d(ps->o.inactive_dim);
   ps->o.frame_opacity = normalize_d(ps->o.frame_opacity);
   ps->o.shadow_opacity = normalize_d(ps->o.shadow_opacity);
-  cfgtmp.menu_opacity = normalize_d(cfgtmp.menu_opacity);
   ps->o.refresh_rate = normalize_i_range(ps->o.refresh_rate, 0, 300);
 
-  if (shadow_enable)
-    wintype_arr_enable(ps->o.wintype_shadow);
-  ps->o.wintype_shadow[WINTYPE_DESKTOP] = false;
-  if (cfgtmp.no_dock_shadow)
-    ps->o.wintype_shadow[WINTYPE_DOCK] = false;
-  if (cfgtmp.no_dnd_shadow)
-    ps->o.wintype_shadow[WINTYPE_DND] = false;
-  if (fading_enable)
-    wintype_arr_enable(ps->o.wintype_fade);
-
-  if (!safe_isnan(cfgtmp.menu_opacity)) {
-    ps->o.wintype_opacity[WINTYPE_DROPDOWN_MENU] = cfgtmp.menu_opacity;
-    ps->o.wintype_opacity[WINTYPE_POPUP_MENU] = cfgtmp.menu_opacity;
+  // Apply default wintype options that are dependent on global options
+  for (int i = 0; i < NUM_WINTYPES; i++) {
+    auto wo = &ps->o.wintype_option[i];
+    auto mask = &winopt_mask[i];
+    if (!mask->shadow) {
+      wo->shadow = shadow_enable;
+      mask->shadow = true;
+    }
+    if (!mask->fade) {
+      wo->fade = fading_enable;
+      mask->fade = true;
+    }
   }
 
   // --blur-background-frame implies --blur-background
@@ -5064,8 +5060,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .vsync = VSYNC_NONE,
       .vsync_aggressive = false,
 
-      .wintype_shadow = { false },
-      .wintype_full_shadow = { false },
       .shadow_red = 0.0,
       .shadow_green = 0.0,
       .shadow_blue = 0.0,
@@ -5078,7 +5072,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .respect_prop_shadow = false,
       .xinerama_shadow_crop = false,
 
-      .wintype_fade = { false },
       .fade_in_step = 0.028 * OPAQUE,
       .fade_out_step = 0.03 * OPAQUE,
       .fade_delta = 10,
@@ -5086,7 +5079,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .no_fading_destroyed_argb = false,
       .fade_blacklist = NULL,
 
-      .wintype_opacity = { NAN },
       .inactive_opacity = OPAQUE,
       .inactive_opacity_override = false,
       .active_opacity = OPAQUE,
@@ -5103,7 +5095,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .invert_color_list = NULL,
       .opacity_rules = NULL,
 
-      .wintype_focus = { false },
       .use_ewmh_active_win = false,
       .focus_blacklist = NULL,
       .detect_transient = false,
@@ -5202,11 +5193,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps_g = ps;
   ps->ignore_tail = &ps->ignore_head;
   gettimeofday(&ps->time_start, NULL);
-
-  wintype_arr_enable(ps->o.wintype_focus);
-  ps->o.wintype_focus[WINTYPE_UNKNOWN] = false;
-  ps->o.wintype_focus[WINTYPE_NORMAL] = false;
-  ps->o.wintype_focus[WINTYPE_UTILITY] = false;
 
   // First pass
   get_cfg(ps, argc, argv, true);

@@ -64,6 +64,8 @@
 
 #define MAX_ALPHA (255)
 
+#define ARR_SIZE(arr) (sizeof(arr)/sizeof(arr[0]))
+
 // === Includes ===
 
 // For some special functions
@@ -435,6 +437,24 @@ typedef struct _latom {
 
 #define REG_DATA_INIT { NULL, 0 }
 
+typedef struct win_option_mask {
+  bool shadow: 1;
+  bool fade: 1;
+  bool focus: 1;
+  bool full_shadow: 1;
+  bool redir_ignore: 1;
+  bool opacity: 1;
+} win_option_mask_t;
+
+typedef struct win_option {
+  bool shadow;
+  bool fade;
+  bool focus;
+  bool full_shadow;
+  bool redir_ignore;
+  double opacity;
+} win_option_t;
+
 /// Structure representing all options.
 typedef struct options_t {
   // === Debugging ===
@@ -512,6 +532,8 @@ typedef struct options_t {
   bool show_all_xerrors;
   /// Whether to avoid acquiring X Selection.
   bool no_x_selection;
+  /// Window type option override.
+  win_option_t wintype_option[NUM_WINTYPES];
 
   // === VSync & software optimization ===
   /// User-specified refresh rate.
@@ -527,9 +549,6 @@ typedef struct options_t {
   bool vsync_use_glfinish;
 
   // === Shadow ===
-  /// Enable/disable shadow for specific window types.
-  bool wintype_shadow[NUM_WINTYPES];
-  bool wintype_full_shadow[NUM_WINTYPES];
   /// Red, green and blue tone of the shadow.
   double shadow_red, shadow_green, shadow_blue;
   int shadow_radius;
@@ -547,8 +566,6 @@ typedef struct options_t {
   bool xinerama_shadow_crop;
 
   // === Fading ===
-  /// Enable/disable fading for specific window types.
-  bool wintype_fade[NUM_WINTYPES];
   /// How much to fade in in a single fading step.
   opacity_t fade_in_step;
   /// How much to fade out in a single fading step.
@@ -563,8 +580,6 @@ typedef struct options_t {
   c2_lptr_t *fade_blacklist;
 
   // === Opacity ===
-  /// Default opacity for specific window types
-  double wintype_opacity[NUM_WINTYPES];
   /// Default opacity for inactive windows.
   /// 32-bit integer with the format of _NET_WM_OPACITY. 0 stands for
   /// not enabled, default.
@@ -605,8 +620,6 @@ typedef struct options_t {
   c2_lptr_t *opacity_rules;
 
   // === Focus related ===
-  /// Consider windows of specific types to be always focused.
-  bool wintype_focus[NUM_WINTYPES];
   /// Whether to try to detect WM windows and mark them as focused.
   bool mark_wmwin_focused;
   /// Whether to mark override-redirect windows as focused.

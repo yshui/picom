@@ -156,8 +156,9 @@ parse_cfg_condlst_opct(session_t *ps, const config_t *pcfg, const char *name) {
 /**
  * Parse a configuration file from default location.
  */
-void
-parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
+void parse_config(session_t *ps, bool *shadow_enable, bool *fading_enable,
+  win_option_mask_t *winopt_mask)
+{
   char *path = NULL;
   FILE *f;
   config_t cfg;
@@ -240,17 +241,35 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
   // -e (frame_opacity)
   config_lookup_float(&cfg, "frame-opacity", &ps->o.frame_opacity);
   // -c (shadow_enable)
-  if (config_lookup_bool(&cfg, "shadow", &ival) && ival)
-    wintype_arr_enable(ps->o.wintype_shadow);
+  if (config_lookup_bool(&cfg, "shadow", &ival))
+    *shadow_enable = ival;
   // -C (no_dock_shadow)
-  lcfg_lookup_bool(&cfg, "no-dock-shadow", &pcfgtmp->no_dock_shadow);
+  if (config_lookup_bool(&cfg, "no-dock-shadow", &ival)) {
+    printf_errf("(): option `no-dock-shadow` is deprecated, and will be removed.\n"
+      " Please use the wintype option `shadow` of `dock` instead.");
+    ps->o.wintype_option[WINTYPE_DOCK].shadow = false;
+    winopt_mask[WINTYPE_DOCK].shadow = true;
+  }
   // -G (no_dnd_shadow)
-  lcfg_lookup_bool(&cfg, "no-dnd-shadow", &pcfgtmp->no_dnd_shadow);
+  if (config_lookup_bool(&cfg, "no-dnd-shadow", &ival)) {
+    printf_errf("(): option `no-dnd-shadow` is deprecated, and will be removed.\n"
+      " Please use the wintype option `shadow` of `dnd` instead.");
+    ps->o.wintype_option[WINTYPE_DND].shadow = false;
+    winopt_mask[WINTYPE_DND].shadow = true;
+  };
   // -m (menu_opacity)
-  config_lookup_float(&cfg, "menu-opacity", &pcfgtmp->menu_opacity);
+  if (config_lookup_float(&cfg, "menu-opacity", &dval)) {
+    printf_errf("(): option `menu-opacity` is deprecated, and will be removed.\n"
+      "Please use the wintype option `opacity` of `popup_menu` and\n"
+      "`dropdown_menu` instead.");
+    ps->o.wintype_option[WINTYPE_DROPDOWN_MENU].opacity = dval;
+    ps->o.wintype_option[WINTYPE_POPUP_MENU].opacity = dval;
+    winopt_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
+    winopt_mask[WINTYPE_POPUP_MENU].opacity = true;
+  }
   // -f (fading_enable)
-  if (config_lookup_bool(&cfg, "fading", &ival) && ival)
-    wintype_arr_enable(ps->o.wintype_fade);
+  if (config_lookup_bool(&cfg, "fading", &ival))
+    *fading_enable = ival;
   // --no-fading-open-close
   lcfg_lookup_bool(&cfg, "no-fading-openclose", &ps->o.no_fading_openclose);
   // --no-fading-destroyed-argb
@@ -381,19 +400,69 @@ parse_config(session_t *ps, struct options_tmp *pcfgtmp) {
     char *str = mstrjoin("wintypes.", WINTYPES[i]);
     config_setting_t *setting = config_lookup(&cfg, str);
     free(str);
+
+    win_option_t *o = &ps->o.wintype_option[i];
+    win_option_mask_t *mask = &winopt_mask[i];
     if (setting) {
-      if (config_setting_lookup_bool(setting, "shadow", &ival))
-        ps->o.wintype_shadow[i] = (bool) ival;
-      if (config_setting_lookup_bool(setting, "fade", &ival))
-        ps->o.wintype_fade[i] = (bool) ival;
-      if (config_setting_lookup_bool(setting, "focus", &ival))
-        ps->o.wintype_focus[i] = (bool) ival;
-      if (config_setting_lookup_bool(setting, "full-shadow", &ival))
-        ps->o.wintype_full_shadow[i] = ival;
+      if (config_setting_lookup_bool(setting, "shadow", &ival)) {
+        o->shadow = ival;
+        mask->shadow = true;
+      }
+      if (config_setting_lookup_bool(setting, "fade", &ival)) {
+        o->fade = ival;
+        mask->fade = true;
+      }
+      if (config_setting_lookup_bool(setting, "focus", &ival)) {
+        o->focus = ival;
+        mask->focus = true;
+      }
+      if (config_setting_lookup_bool(setting, "full-shadow", &ival)) {
+        o->full_shadow = ival;
+        mask->full_shadow = true;
+      }
 
       double fval;
-      if (config_setting_lookup_float(setting, "opacity", &fval))
-        ps->o.wintype_opacity[i] = normalize_d(fval);
+      if (config_setting_lookup_float(setting, "opacity", &fval)) {
+        o->opacity = normalize_d(fval);
+        mask->opacity = true;
+      }
+    }
+  }
+
+  // Apply default wintype options that does not depends on global options.
+  // For example, wintype shadow option will depend on the global shadow
+  // option, so it is not set here.
+  //
+  // Except desktop windows are always drawn without shadow.
+  if (!winopt_mask[WINTYPE_DESKTOP].shadow) {
+    winopt_mask[WINTYPE_DESKTOP].shadow = true;
+    ps->o.wintype_option[WINTYPE_DESKTOP].shadow = false;
+  }
+
+  // Focused/unfocused state only apply to a few window types, all other windows
+  // are always considered focused.
+  const wintype_t nofocus_type[] =
+    { WINTYPE_UNKNOWN, WINTYPE_NORMAL, WINTYPE_UTILITY };
+  for (unsigned long i = 0; i < ARR_SIZE(nofocus_type); i++) {
+    if (!winopt_mask[nofocus_type[i]].focus) {
+      winopt_mask[nofocus_type[i]].focus = true;
+      ps->o.wintype_option[nofocus_type[i]].focus = false;
+    }
+  }
+  for (unsigned long i = 0; i < NUM_WINTYPES; i++) {
+    if (!winopt_mask[i].focus) {
+      winopt_mask[i].focus = true;
+      ps->o.wintype_option[i].focus = true;
+    }
+    if (!winopt_mask[i].full_shadow) {
+      winopt_mask[i].full_shadow = true;
+      ps->o.wintype_option[i].full_shadow = false;
+    }
+    if (!winopt_mask[i].opacity) {
+      winopt_mask[i].opacity = true;
+      // Opacity is not set to a concrete number here because the opacity logic
+      // is complicated, and needs an "unset" state
+      ps->o.wintype_option[i].opacity = NAN;
     }
   }
 

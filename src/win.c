@@ -323,8 +323,8 @@ void win_calc_opacity(session_t *ps, win *w) {
     // Try obeying opacity property and window type opacity firstly
     if (w->has_opacity_prop)
       opacity = w->opacity_prop;
-    else if (!safe_isnan(ps->o.wintype_opacity[w->window_type]))
-      opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
+    else if (!safe_isnan(ps->o.wintype_option[w->window_type].opacity))
+      opacity = ps->o.wintype_option[w->window_type].opacity * OPAQUE;
     else {
       // Respect active_opacity only when the window is physically focused
       if (win_is_focused_real(ps, w))
@@ -384,7 +384,7 @@ void win_determine_fade(session_t *ps, win *w) {
   } else if (c2_match(ps, w, ps->o.fade_blacklist, &w->cache_fblst, NULL))
     w->fade = false;
   else
-    w->fade = ps->o.wintype_fade[w->window_type];
+    w->fade = ps->o.wintype_option[w->window_type].fade;
 }
 
 /**
@@ -454,7 +454,7 @@ void win_determine_shadow(session_t *ps, win *w) {
   if (UNSET != w->shadow_force)
     shadow_new = w->shadow_force;
   else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
-    shadow_new = (ps->o.wintype_shadow[w->window_type] &&
+    shadow_new = (ps->o.wintype_option[w->window_type].shadow &&
                   !c2_match(ps, w, ps->o.shadow_blacklist, &w->cache_sblst, NULL) &&
                   !(ps->o.shadow_ignore_shaped && w->bounding_shaped &&
                     !w->rounded_corners) &&
@@ -914,7 +914,7 @@ void win_update_focused(session_t *ps, win *w) {
 
     // Use wintype_focus, and treat WM windows and override-redirected
     // windows specially
-    if (ps->o.wintype_focus[w->window_type]
+    if (ps->o.wintype_option[w->window_type].focus
         || (ps->o.mark_wmwin_focused && w->wmwin)
         || (ps->o.mark_ovredir_focused &&
             w->id == w->client_win && !w->wmwin)

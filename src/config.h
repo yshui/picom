@@ -33,10 +33,8 @@ parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
     const char *name);
 
 void
-parse_config(session_t *ps, struct options_tmp *pcfgtmp);
+parse_config(session_t *ps, bool *shadow_enable,
+  bool *fading_enable, win_option_mask_t *winopt_mask);
 #else
-static inline void parse_config(session_t *a, struct options_tmp *b) {
-  (void)a;
-  (void)b;
-}
+static inline void parse_config() {}
 #endif
