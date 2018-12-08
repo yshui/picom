@@ -4485,6 +4485,11 @@ vsync_opengl_init(session_t *ps) {
   if (!ensure_glx_context(ps))
     return false;
 
+  if (!glx_hasglxext(ps, "GLX_SGI_video_sync")) {
+    printf_errf("(): Your driver doesn't support SGI_video_sync, giving up.");
+    return false;
+  }
+
   // Get video sync functions
   if (!ps->psglx->glXGetVideoSyncSGI)
     ps->psglx->glXGetVideoSyncSGI = (f_GetVideoSync)
@@ -4510,6 +4515,11 @@ vsync_opengl_oml_init(session_t *ps) {
   if (!ensure_glx_context(ps))
     return false;
 
+  if (!glx_hasglxext(ps, "GLX_OML_sync_control")) {
+    printf_errf("(): Your driver doesn't support OML_sync_control, giving up.");
+    return false;
+  }
+
   // Get video sync functions
   if (!ps->psglx->glXGetSyncValuesOML)
     ps->psglx->glXGetSyncValuesOML = (f_GetSyncValuesOML)
@@ -4534,6 +4544,11 @@ vsync_opengl_swc_init(session_t *ps) {
 #ifdef CONFIG_OPENGL
   if (!ensure_glx_context(ps))
     return false;
+
+  if (!glx_hasglxext(ps, "GLX_SGI_swap_control")) {
+    printf_errf("(): Your driver doesn't support SGI_swap_control, giving up.");
+    return false;
+  }
 
   if (!bkend_use_glx(ps)) {
     printf_errf("(): I'm afraid glXSwapIntervalSGI wouldn't help if you are "
@@ -4562,6 +4577,11 @@ vsync_opengl_mswc_init(session_t *ps) {
 #ifdef CONFIG_OPENGL
   if (!ensure_glx_context(ps))
     return false;
+
+  if (!glx_hasglxext(ps, "GLX_MESA_swap_control")) {
+    printf_errf("(): Your driver doesn't support MESA_swap_control, giving up.");
+    return false;
+  }
 
   if (!bkend_use_glx(ps)) {
     printf_errf("(): I'm afraid glXSwapIntervalMESA wouldn't help if you are "
