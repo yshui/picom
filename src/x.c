@@ -27,28 +27,27 @@
  *    and number of items. A blank one on failure.
  */
 winprop_t
-wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
-    long length, Atom rtype, int rformat) {
-  Atom type = None;
-  int format = 0;
-  unsigned long nitems = 0, after = 0;
-  unsigned char *data = NULL;
+wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom, long offset,
+    long length, xcb_atom_t rtype, int rformat) {
+  xcb_get_property_reply_t *r = xcb_get_property_reply(ps->c,
+    xcb_get_property(ps->c, 0, w, atom, rtype, offset, length), NULL);
 
-  if (Success == XGetWindowProperty(ps->dpy, w, atom, offset, length,
-        False, rtype, &type, &format, &nitems, &after, &data)
-      && nitems && (AnyPropertyType == type || type == rtype)
-      && (!rformat || format == rformat)
-      && (8 == format || 16 == format || 32 == format)) {
-      return (winprop_t) {
-        .ptr = data,
-        .nitems = nitems,
-        .type = type,
-        .format = format,
-      };
+  if (r && xcb_get_property_value_length(r) &&
+      (rtype == XCB_ATOM_ANY || r->type == rtype) &&
+      (!rformat || r->format == rformat) &&
+      (r->format == 8 || r->format == 16 || r->format == 32))
+  {
+    int len = xcb_get_property_value_length(r);
+    return (winprop_t) {
+      .ptr = xcb_get_property_value(r),
+      .nitems = len/(r->format/8),
+      .type = r->type,
+      .format = r->format,
+      .r = r,
+    };
   }
 
-  cxfree(data);
-
+  free(r);
   return (winprop_t) {
     .ptr = NULL,
     .nitems = 0,

@@ -15,14 +15,16 @@ typedef struct session session_t;
 typedef struct winprop {
   union {
     void *ptr;
-    char *p8;
-    short *p16;
-    long *p32;
-    unsigned long *c32; // 32bit cardinal
+    int8_t *p8;
+    int16_t *p16;
+    int32_t *p32;
+    uint32_t *c32; // 32bit cardinal
   };
   unsigned long nitems;
   xcb_atom_t type;
   int format;
+
+  xcb_get_property_reply_t *r;
 } winprop_t;
 
 #define XCB_SYNCED_VOID(func, c, ...) xcb_request_check(c, func##_checked(c, __VA_ARGS__));
@@ -64,15 +66,15 @@ x_sync(xcb_connection_t *c) {
  *    and number of items. A blank one on failure.
  */
 winprop_t
-wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
-    long length, Atom rtype, int rformat);
+wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom, long offset,
+    long length, xcb_atom_t rtype, int rformat);
 
 /**
  * Wrapper of wid_get_prop_adv().
  */
 static inline winprop_t
-wid_get_prop(const session_t *ps, Window wid, Atom atom, long length,
-    Atom rtype, int rformat) {
+wid_get_prop(const session_t *ps, xcb_window_t wid, xcb_atom_t atom, long length,
+    xcb_atom_t rtype, int rformat) {
   return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
 }
 
@@ -134,3 +136,18 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
 
 xcb_pixmap_t
 x_create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t width, uint16_t height);
+
+/**
+ * Free a <code>winprop_t</code>.
+ *
+ * @param pprop pointer to the <code>winprop_t</code> to free.
+ */
+static inline void
+free_winprop(winprop_t *pprop) {
+  // Empty the whole structure to avoid possible issues
+  if (pprop->r)
+    free(pprop->r);
+  pprop->ptr = NULL;
+  pprop->r = NULL;
+  pprop->nitems = 0;
+}

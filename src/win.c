@@ -1231,7 +1231,7 @@ win_update_frame_extents(session_t *ps, win *w, Window client) {
     4L, XCB_ATOM_CARDINAL, 32);
 
   if (prop.nitems == 4) {
-    const unsigned long * const extents = prop.c32;
+    const uint32_t * const extents = prop.c32;
     const bool changed = w->frame_extents.left != extents[0] ||
                          w->frame_extents.right != extents[1] ||
                          w->frame_extents.top != extents[2] ||

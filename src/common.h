@@ -1595,21 +1595,6 @@ bool
 wid_get_text_prop(session_t *ps, Window wid, Atom prop,
     char ***pstrlst, int *pnstr);
 
-/**
- * Free a <code>winprop_t</code>.
- *
- * @param pprop pointer to the <code>winprop_t</code> to free.
- */
-static inline void
-free_winprop(winprop_t *pprop) {
-  // Empty the whole structure to avoid possible issues
-  if (pprop->ptr) {
-    cxfree(pprop->ptr);
-    pprop->ptr = NULL;
-  }
-  pprop->nitems = 0;
-}
-
 void
 force_repaint(session_t *ps);
 
