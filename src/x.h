@@ -10,7 +10,20 @@
 #include "region.h"
 
 typedef struct session session_t;
-typedef struct winprop winprop_t;
+
+/// Structure representing Window property value.
+typedef struct winprop {
+  union {
+    void *ptr;
+    char *p8;
+    short *p16;
+    long *p32;
+    unsigned long *c32; // 32bit cardinal
+  };
+  unsigned long nitems;
+  xcb_atom_t type;
+  int format;
+} winprop_t;
 
 #define XCB_SYNCED_VOID(func, c, ...) xcb_request_check(c, func##_checked(c, __VA_ARGS__));
 #define XCB_SYNCED(func, c, ...) ({ \
@@ -53,6 +66,15 @@ x_sync(xcb_connection_t *c) {
 winprop_t
 wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
     long length, Atom rtype, int rformat);
+
+/**
+ * Wrapper of wid_get_prop_adv().
+ */
+static inline winprop_t
+wid_get_prop(const session_t *ps, Window wid, Atom atom, long length,
+    Atom rtype, int rformat) {
+  return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
+}
 
 /**
  * Get the value of a type-<code>Window</code> property of a window.

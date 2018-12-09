@@ -231,20 +231,6 @@ typedef struct {
   bool invert_color : 1;
 } win_upd_t;
 
-/// Structure representing Window property value.
-typedef struct winprop {
-  union {
-    void *ptr;
-    char *p8;
-    short *p16;
-    long *p32;
-    unsigned long *c32; // 32bit cardinal
-  };
-  unsigned long nitems;
-  Atom type;
-  int format;
-} winprop_t;
-
 typedef struct _ignore {
   struct _ignore *next;
   unsigned long sequence;
@@ -1582,19 +1568,6 @@ wid_has_prop(const session_t *ps, Window w, Atom atom) {
   }
 
   return false;
-}
-
-winprop_t
-wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
-    long length, Atom rtype, int rformat);
-
-/**
- * Wrapper of wid_get_prop_adv().
- */
-static inline winprop_t
-wid_get_prop(const session_t *ps, Window wid, Atom atom, long length,
-    Atom rtype, int rformat) {
-  return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
 }
 
 /**
