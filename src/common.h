@@ -235,10 +235,10 @@ typedef struct {
 typedef struct winprop {
   union {
     void *ptr;
-    uint8_t *p8;
-    int16_t *p16;
-    int32_t *p32;
-    uint32_t *c32; // 32bit cardinal
+    char *p8;
+    short *p16;
+    long *p32;
+    unsigned long *c32; // 32bit cardinal
   };
   unsigned long nitems;
   Atom type;
