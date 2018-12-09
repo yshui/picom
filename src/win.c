@@ -1138,7 +1138,8 @@ void win_extents(win *w, region_t *res) {
   pixman_region32_union_rect(res, res, w->g.x, w->g.y, w->widthb, w->heightb);
 
   if (w->shadow)
-    pixman_region32_union_rect(res, res, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy, w->shadow_width, w->shadow_height);
+    pixman_region32_union_rect(res, res, w->g.x + w->shadow_dx,
+      w->g.y + w->shadow_dy, w->shadow_width, w->shadow_height);
 }
 
 /**

@@ -1292,11 +1292,6 @@ paint_preprocess(session_t *ps, win *list) {
     if (!to_paint)
       goto skip_window;
 
-    // Fetch window extents
-    region_t extents;
-    pixman_region32_init(&extents);
-    win_extents(w, &extents);
-
     // Calculate shadow opacity
     w->shadow_opacity = ps->o.shadow_opacity * get_opacity_percent(w) * ps->o.frame_opacity;
 
