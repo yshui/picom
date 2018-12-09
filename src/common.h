@@ -426,7 +426,7 @@ typedef uint32_t glx_prog_main_t;
 
 typedef struct conv {
   int size;
-  double *data;
+  double data[];
 } conv;
 
 /// Linked list type of atoms.

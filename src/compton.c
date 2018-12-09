@@ -569,36 +569,42 @@ check_fade_fin(session_t *ps, win **_w) {
 
 static double __attribute__((const))
 gaussian(double r, double x, double y) {
-  return ((1 / (sqrt(2 * M_PI * r))) *
-    exp((- (x * x + y * y)) / (2 * r * r)));
+  // Formula can be found here:
+  // https://en.wikipedia.org/wiki/Gaussian_blur#Mathematics
+  // Except a special case for r == 0 to produce sharp shadows
+  if (r == 0)
+    return 1;
+  return exp(-0.5*(x*x+y*y)/(r*r))/(2*M_PI*r*r);
 }
 
 static conv *
 make_gaussian_map(double r) {
   conv *c;
-  int size = ((int) ceil((r * 3)) + 1) & ~1;
-  int center = size / 2;
-  int x, y;
+  int size = r*2+1;
+  int center = size/2;
   double t;
-  double g;
 
-  c = malloc(sizeof(conv) + size * size * sizeof(double));
+  c = malloc(sizeof(conv)+size*size*sizeof(double));
   c->size = size;
-  c->data = (double *) (c + 1);
   t = 0.0;
 
-  for (y = 0; y < size; y++) {
-    for (x = 0; x < size; x++) {
-      g = gaussian(r, x - center, y - center);
+  /*printf_errf("(): %f", r);*/
+  for (int y = 0; y < size; y++) {
+    for (int x = 0; x < size; x++) {
+      double g = gaussian(r, x-center, y-center);
       t += g;
-      c->data[y * size + x] = g;
+      c->data[y*size+x] = g;
+      /*printf("%f ", c->data[y*size+x]);*/
     }
+    /*printf("\n");*/
   }
 
-  for (y = 0; y < size; y++) {
-    for (x = 0; x < size; x++) {
-      c->data[y * size + x] /= t;
+  for (int y = 0; y < size; y++) {
+    for (int x = 0; x < size; x++) {
+      c->data[y*size+x] /= t;
+      /*printf("%f ", c->data[y*size+x]);*/
     }
+    /*printf("\n");*/
   }
 
   return c;
@@ -4227,7 +4233,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
 
   // Range checking and option assignments
   ps->o.fade_delta = max_i(ps->o.fade_delta, 1);
-  ps->o.shadow_radius = max_i(ps->o.shadow_radius, 1);
+  ps->o.shadow_radius = max_i(ps->o.shadow_radius, 0);
   ps->o.shadow_red = normalize_d(ps->o.shadow_red);
   ps->o.shadow_green = normalize_d(ps->o.shadow_green);
   ps->o.shadow_blue = normalize_d(ps->o.shadow_blue);
