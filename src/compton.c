@@ -4630,6 +4630,9 @@ vsync_opengl_swc_deinit(session_t *ps) {
  */
 bool
 vsync_init(session_t *ps) {
+  // Mesa turns on swap control by default, undo that
+  vsync_opengl_swc_swap_interval(ps, 0);
+
   if (ps->o.vsync && VSYNC_FUNCS_INIT[ps->o.vsync]
       && !VSYNC_FUNCS_INIT[ps->o.vsync](ps)) {
     ps->o.vsync = VSYNC_NONE;
