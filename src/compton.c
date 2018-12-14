@@ -93,9 +93,6 @@ vsync_opengl_oml_wait(session_t *ps);
 
 static void
 vsync_opengl_swc_deinit(session_t *ps);
-
-static void
-vsync_opengl_mswc_deinit(session_t *ps);
 #endif
 
 static void
@@ -195,7 +192,7 @@ static int (* const (VSYNC_FUNCS_WAIT[NUM_VSYNC]))(session_t *ps) = {
 static void (* const (VSYNC_FUNCS_DEINIT[NUM_VSYNC]))(session_t *ps) = {
 #ifdef CONFIG_OPENGL
   [VSYNC_OPENGL_SWC   ] = vsync_opengl_swc_deinit,
-  [VSYNC_OPENGL_MSWC  ] = vsync_opengl_mswc_deinit,
+  [VSYNC_OPENGL_MSWC  ] = vsync_opengl_swc_deinit,
 #endif
 };
 
@@ -3478,11 +3475,8 @@ usage(int ret) {
     "      work on some drivers." WARNING"\n"
     "    opengl-oml = Try to VSync with OML_sync_control OpenGL extension.\n"
     "      Only work on some drivers." WARNING"\n"
-    "    opengl-swc = Try to VSync with SGI_swap_control OpenGL extension.\n"
-    "      Only work on some drivers. Works only with GLX backend." WARNING "\n"
-    "    opengl-mswc = Try to VSync with MESA_swap_control OpenGL\n"
-    "      extension. Basically the same as opengl-swc above, except the\n"
-    "      extension we use." WARNING "\n"
+    "    opengl-swc = Enable driver-level VSync. Works only with GLX backend." WARNING "\n"
+    "    opengl-mswc = Deprecated, use opengl-swc instead." WARNING "\n"
     "\n"
     "--vsync-aggressive\n"
     "  Attempt to send painting request before VBlank and do XFlush()\n"
@@ -4541,30 +4535,45 @@ vsync_opengl_oml_init(session_t *ps) {
 }
 
 static bool
-vsync_opengl_swc_init(session_t *ps) {
-#ifdef CONFIG_OPENGL
+vsync_opengl_swc_swap_interval(session_t *ps, unsigned int interval) {
   if (!ensure_glx_context(ps))
     return false;
 
-  if (!glx_hasglxext(ps, "GLX_SGI_swap_control")) {
-    printf_errf("(): Your driver doesn't support SGI_swap_control, giving up.");
-    return false;
+  if (!ps->psglx->glXSwapIntervalProc && !ps->psglx->glXSwapIntervalMESAProc) {
+    if (glx_hasglxext(ps, "GLX_MESA_swap_control")) {
+      ps->psglx->glXSwapIntervalMESAProc = (f_SwapIntervalMESA)
+        glXGetProcAddress ((const GLubyte *) "glXSwapIntervalMESA");
+    } else if (glx_hasglxext(ps, "GLX_SGI_swap_control")) {
+      ps->psglx->glXSwapIntervalProc = (f_SwapIntervalSGI)
+        glXGetProcAddress ((const GLubyte *) "glXSwapIntervalSGI");
+    } else {
+      printf_errf("(): Your driver doesn't support SGI_swap_control nor MESA_swap_control, giving up.");
+      return false;
+    }
   }
 
+  if (ps->psglx->glXSwapIntervalMESAProc)
+    ps->psglx->glXSwapIntervalMESAProc(interval);
+  else if (ps->psglx->glXSwapIntervalProc)
+    ps->psglx->glXSwapIntervalProc(interval);
+  else
+    return false;
+
+  return true;
+}
+
+static bool
+vsync_opengl_swc_init(session_t *ps) {
+#ifdef CONFIG_OPENGL
   if (!bkend_use_glx(ps)) {
-    printf_errf("(): I'm afraid glXSwapIntervalSGI wouldn't help if you are "
+    printf_errf("(): I'm afraid OpenGL swap control wouldn't help if you are "
         "not using GLX backend. You could try, nonetheless.");
   }
 
-  // Get video sync functions
-  if (!ps->psglx->glXSwapIntervalProc)
-    ps->psglx->glXSwapIntervalProc = (f_SwapIntervalSGI)
-      glXGetProcAddress ((const GLubyte *) "glXSwapIntervalSGI");
-  if (!ps->psglx->glXSwapIntervalProc) {
-    printf_errf("(): Failed to get SGI_swap_control function.");
+  if (!vsync_opengl_swc_swap_interval(ps, 1)) {
+    printf_errf("(): Failed to load a swap control extension.");
     return false;
   }
-  ps->psglx->glXSwapIntervalProc(1);
 
   return true;
 #else
@@ -4575,35 +4584,8 @@ vsync_opengl_swc_init(session_t *ps) {
 
 static bool
 vsync_opengl_mswc_init(session_t *ps) {
-#ifdef CONFIG_OPENGL
-  if (!ensure_glx_context(ps))
-    return false;
-
-  if (!glx_hasglxext(ps, "GLX_MESA_swap_control")) {
-    printf_errf("(): Your driver doesn't support MESA_swap_control, giving up.");
-    return false;
-  }
-
-  if (!bkend_use_glx(ps)) {
-    printf_errf("(): I'm afraid glXSwapIntervalMESA wouldn't help if you are "
-        "not using GLX backend. You could try, nonetheless.");
-  }
-
-  // Get video sync functions
-  if (!ps->psglx->glXSwapIntervalMESAProc)
-    ps->psglx->glXSwapIntervalMESAProc = (f_SwapIntervalMESA)
-      glXGetProcAddress ((const GLubyte *) "glXSwapIntervalMESA");
-  if (!ps->psglx->glXSwapIntervalMESAProc) {
-    printf_errf("(): Failed to get MESA_swap_control function.");
-    return false;
-  }
-  ps->psglx->glXSwapIntervalMESAProc(1);
-
-  return true;
-#else
-  printf_errf("(): Program not compiled with OpenGL VSync support.");
-  return false;
-#endif
+  printf_errf("(): opengl-mswc is deprecated, please use opengl-swc instead.");
+  return vsync_opengl_swc_init(ps);
 }
 
 #ifdef CONFIG_OPENGL
@@ -4639,15 +4621,7 @@ vsync_opengl_oml_wait(session_t *ps) {
 
 static void
 vsync_opengl_swc_deinit(session_t *ps) {
-  // The standard says it doesn't accept 0, but in fact it probably does
-  if (glx_has_context(ps) && ps->psglx->glXSwapIntervalProc)
-    ps->psglx->glXSwapIntervalProc(0);
-}
-
-static void
-vsync_opengl_mswc_deinit(session_t *ps) {
-  if (glx_has_context(ps) && ps->psglx->glXSwapIntervalMESAProc)
-    ps->psglx->glXSwapIntervalMESAProc(0);
+  vsync_opengl_swc_swap_interval(ps, 0);
 }
 #endif
 
