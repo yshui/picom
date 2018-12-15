@@ -4566,8 +4566,8 @@ static bool
 vsync_opengl_swc_init(session_t *ps) {
 #ifdef CONFIG_OPENGL
   if (!bkend_use_glx(ps)) {
-    printf_errf("(): I'm afraid OpenGL swap control wouldn't help if you are "
-        "not using GLX backend. You could try, nonetheless.");
+    printf_errf("(): OpenGL swap control requires the GLX backend.");
+    return false;
   }
 
   if (!vsync_opengl_swc_swap_interval(ps, 1)) {
@@ -4631,7 +4631,8 @@ vsync_opengl_swc_deinit(session_t *ps) {
 bool
 vsync_init(session_t *ps) {
   // Mesa turns on swap control by default, undo that
-  vsync_opengl_swc_swap_interval(ps, 0);
+  if (bkend_use_glx(ps))
+    vsync_opengl_swc_swap_interval(ps, 0);
 
   if (ps->o.vsync && VSYNC_FUNCS_INIT[ps->o.vsync]
       && !VSYNC_FUNCS_INIT[ps->o.vsync](ps)) {
