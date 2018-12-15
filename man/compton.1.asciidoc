@@ -445,7 +445,7 @@ $ compton --backend glx --vsync opengl-swc
 
 BUGS
 ----
-Please report any you find to <https://github.com/chjj/compton> .
+Please report any you find to <https://github.com/yshui/compton> .
 
 AUTHORS
 -------
@@ -453,7 +453,7 @@ xcompmgr, originally written by Keith Packard, with contributions from Matthew A
 
 RESOURCES
 ---------
-Homepage: <https://github.com/chjj/compton>
+Homepage: <https://github.com/yshui/compton>
 
 SEE ALSO
 --------

@@ -77,7 +77,7 @@ compton-trans -c -- -5
 
 BUGS
 ----
-Please report any bugs you find to <https://github.com/chjj/compton> .
+Please report any bugs you find to <https://github.com/yshui/compton> .
 
 AUTHORS
 -------
