@@ -7,6 +7,7 @@
 
 #include <libgen.h>
 #include <libconfig.h>
+#include <basedir_fs.h>
 
 #include "common.h"
 #include "config.h"
@@ -36,79 +37,47 @@ lcfg_lookup_bool(const config_t *config, const char *path, bool *value) {
  */
 FILE *
 open_config_file(char *cpath, char **ppath) {
-  static const char *config_filename = "/compton.conf";
-  static const char *config_filename_legacy = "/.compton.conf";
-  static const char *config_home_suffix = "/.config";
-  static const char *config_system_dir = "/etc/xdg";
+  static const char *config_paths[] = {
+    "/compton.conf",
+    "/compton/compton.conf"
+  };
+  static const char config_filename_legacy[] = "/.compton.conf";
 
-  char *dir = NULL, *home = NULL;
-  char *path = cpath;
-  FILE *f = NULL;
-
-  if (path) {
-    f = fopen(path, "r");
-    if (f && ppath)
-      *ppath = path;
-    return f;
+  if (cpath) {
+    FILE *ret = fopen(cpath, "r");
+    if (ret && ppath)
+      *ppath = cpath;
+    return ret;
   }
 
-  // Check user configuration file in $XDG_CONFIG_HOME firstly
-  if (!((dir = getenv("XDG_CONFIG_HOME")) && strlen(dir))) {
-    if (!((home = getenv("HOME")) && strlen(home)))
-      return NULL;
-
-    path = mstrjoin3(home, config_home_suffix, config_filename);
-  }
-  else
-    path = mstrjoin(dir, config_filename);
-
-  f = fopen(path, "r");
-
-  if (f && ppath)
-    *ppath = path;
-  else
+  for (size_t i = 0; i < ARR_SIZE(config_paths); i++) {
+    char *path = xdgConfigFind(config_paths[i], NULL);
+    FILE *ret = fopen(path, "r");
+    if (ret) {
+      printf_errf("(): file is %s", path);
+      if (ppath) {
+        *ppath = strdup(path);
+      }
+    }
     free(path);
-  if (f)
-    return f;
-
-  // Then check user configuration file in $HOME
-  if ((home = getenv("HOME")) && strlen(home)) {
-    path = mstrjoin(home, config_filename_legacy);
-    f = fopen(path, "r");
-    if (f && ppath)
-      *ppath = path;
-    else
-      free(path);
-    if (f)
-      return f;
-  }
-
-  // Check system configuration file in $XDG_CONFIG_DIRS at last
-  if ((dir = getenv("XDG_CONFIG_DIRS")) && strlen(dir)) {
-    char *part = strtok(dir, ":");
-    while (part) {
-      path = mstrjoin(part, config_filename);
-      f = fopen(path, "r");
-      if (f && ppath)
-        *ppath = path;
-      else
-        free(path);
-      if (f)
-        return f;
-      part = strtok(NULL, ":");
+    if (ret) {
+      return ret;
     }
   }
-  else {
-    path = mstrjoin(config_system_dir, config_filename);
-    f = fopen(path, "r");
-    if (f && ppath)
+
+  // Fall back to legacy config file names
+  const char *home = getenv("HOME");
+  if (home && strlen(home)) {
+    auto path = ccalloc(strlen(home)+strlen(config_filename_legacy)+1, char);
+    strcpy(path, home);
+    strcpy(path+strlen(home), config_filename_legacy);
+    FILE *ret = fopen(path, "r");
+    if (ret && ppath)
       *ppath = path;
     else
       free(path);
-    if (f)
-      return f;
+    return ret;
   }
-
   return NULL;
 }
 
@@ -199,7 +168,7 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
     int read_result = config_read(&cfg, f);
     fclose(f);
     f = NULL;
-    if (CONFIG_FALSE == read_result) {
+    if (read_result == CONFIG_FALSE) {
       printf("Error when reading configuration file \"%s\", line %d: %s\n",
           path, config_error_line(&cfg), config_error_text(&cfg));
       config_destroy(&cfg);
@@ -210,7 +179,7 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   config_set_auto_convert(&cfg, 1);
 
   if (path != ps->o.config_file) {
-    free(ps->o.config_file);
+    assert(ps->o.config_file == NULL);
     ps->o.config_file = path;
   }
 

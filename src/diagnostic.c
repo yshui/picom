@@ -17,6 +17,7 @@ void print_diagnostics(session_t *ps) {
 #ifdef __FAST_MATH__
 	printf("* Fast Math: Yes\n");
 #endif
+	printf("* Config file used: %s\n", ps->o.config_file ?: "None");
 }
 
 // vim: set noet sw=8 ts=8 :

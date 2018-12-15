@@ -26,10 +26,11 @@ Assuming you already have all the usual building tools installed (e.g. gcc, meso
 * xcb-composite
 * xcb-image
 * xcb-present
-* xcb-xinerama (optional, disable with `-Dxinerama=false` meson configure flag)
+* xcb-xinerama (optional, disable with the `-Dxinerama=false` meson configure flag)
 * pixman
 * libdbus (optional, disable with the `-Ddbus=false` meson configure flag)
 * libconfig (optional, disable with the `-Dconfig_file=false` meson configure flag)
+* libxdg-basedir (optional, disable with the `-Dconfig_file=false` meson configure flag)
 * libGL (optional, disable with the `-Dopengl=false` meson configure flag)
 * libpcre (optional, disable with the `-Dregex=false` meson configure flag)
 * libev
