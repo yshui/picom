@@ -516,7 +516,7 @@ glx_init_blur(session_t *ps) {
   }
 
   {
-    char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
+    char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
     // Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
     // Thanks to hiciu for reporting.
     setlocale(LC_NUMERIC, "C");
@@ -546,7 +546,7 @@ glx_init_blur(session_t *ps) {
     const char *texture_func = (use_texture_rect ?
         "texture2DRect": "texture2D");
     const char *shader_add = FRAG_SHADER_BLUR_ADD;
-    char *extension = mstrcpy("");
+    char *extension = strdup("");
     if (use_texture_rect)
       mstrextend(&extension, "#extension GL_ARB_texture_rectangle : require\n");
     if (ps->o.glx_use_gpushader4) {

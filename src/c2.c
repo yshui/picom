@@ -632,7 +632,7 @@ c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
   }
   if (!tgtlen)
     c2_error("Empty target.");
-  pleaf->tgt = mstrncpy(&pattern[offset - tgtlen], tgtlen);
+  pleaf->tgt = strndup(&pattern[offset - tgtlen], tgtlen);
 
   // Check for predefined targets
   for (unsigned i = 1; i < sizeof(C2_PREDEFS) / sizeof(C2_PREDEFS[0]); ++i) {
@@ -657,7 +657,7 @@ c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
 
     // Alias for custom properties
 #define TGTFILL(target, type, format) \
-  (pleaf->target = mstrcpy(target), \
+  (pleaf->target = strdup(target), \
    pleaf->type = type, \
    pleaf->format = format)
 
@@ -939,7 +939,7 @@ c2_parse_pattern(session_t *ps, const char *pattern, int offset, c2_ptr_t *presu
           case 'o':
           case 'x':
                       {
-                        char *tstr = mstrncpy(pattern + offset + 1, 2);
+                        char *tstr = strndup(pattern + offset + 1, 2);
                         char *pstr = NULL;
                         long val = strtol(tstr, &pstr,
                             ('o' == pattern[offset] ? 8: 16));
@@ -962,7 +962,7 @@ c2_parse_pattern(session_t *ps, const char *pattern, int offset, c2_ptr_t *presu
       c2_error("Premature end of pattern string.");
     ++offset;
     *ptptnstr = '\0';
-    pleaf->ptnstr = mstrcpy(tptnstr);
+    pleaf->ptnstr = strdup(tptnstr);
     free(tptnstr);
   }
 
@@ -1055,7 +1055,7 @@ c2_parse_legacy(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
   ++offset;
 
   // Copy the pattern
-  pleaf->ptnstr = mstrcpy(pattern + offset);
+  pleaf->ptnstr = strdup(pattern + offset);
 
   if (!c2_l_postprocess(ps, pleaf))
     return -1;
@@ -1483,7 +1483,7 @@ c2_match_once_leaf(session_t *ps, win *w, const c2_l_t *pleaf,
           int nstr;
           if (wid_get_text_prop(ps, wid, pleaf->tgtatom, &strlst,
               &nstr) && nstr > idx) {
-            tgt_free = mstrcpy(strlst[idx]);
+            tgt_free = strdup(strlst[idx]);
             tgt = tgt_free;
           }
           if (strlst)

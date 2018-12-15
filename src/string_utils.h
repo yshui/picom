@@ -6,8 +6,6 @@
 
 #define mstrncmp(s1, s2) strncmp((s1), (s2), strlen(s1))
 
-char *mstrcpy(const char *src);
-char *mstrncpy(const char *src, unsigned len);
 char *mstrjoin(const char *src1, const char *src2);
 char *
 mstrjoin3(const char *src1, const char *src2, const char *src3);

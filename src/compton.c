@@ -3932,9 +3932,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     while (-1 !=
         (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
       if (256 == o)
-        ps->o.config_file = mstrcpy(optarg);
+        ps->o.config_file = strdup(optarg);
       else if ('d' == o)
-        ps->o.display = mstrcpy(optarg);
+        ps->o.display = strdup(optarg);
       else if ('S' == o)
         ps->o.synchronize = true;
       else if (314 == o)
@@ -3957,7 +3957,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   }
 
   bool shadow_enable = false, fading_enable = false;
-  char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
+  char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
 
   win_option_mask_t winopt_mask[NUM_WINTYPES] = {{0}};
 
@@ -4113,7 +4113,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(286, dbus);
       case 287:
         // --logpath
-        ps->o.logpath = mstrcpy(optarg);
+        ps->o.logpath = strdup(optarg);
         break;
       case 288:
         // --invert-color-include
@@ -4188,7 +4188,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASELONG(309, unredir_if_possible_delay);
       case 310:
         // --write-pid-path
-        ps->o.write_pid_path = mstrcpy(optarg);
+        ps->o.write_pid_path = strdup(optarg);
         break;
       P_CASEBOOL(311, vsync_use_glfinish);
       P_CASEBOOL(312, xrender_sync);
@@ -4196,7 +4196,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(315, no_fading_destroyed_argb);
       P_CASEBOOL(316, force_win_blend);
       case 317:
-        ps->o.glx_fshader_win_str = mstrcpy(optarg);
+        ps->o.glx_fshader_win_str = strdup(optarg);
         printf_errf("(): --glx-fshader-win is being deprecated, and might be\n"
           " removed in the future. If you really need this feature, please report\n"
           "an issue to let us know\n");
@@ -5300,7 +5300,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     char *display_repr = DisplayString(ps->dpy);
     if (!display_repr)
       display_repr = "unknown";
-    display_repr = mstrcpy(display_repr);
+    display_repr = strdup(display_repr);
 
     // Convert all special characters in display_repr name to underscore
     {

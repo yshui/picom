@@ -186,7 +186,7 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   {
     // dirname() could modify the original string, thus we must pass a
     // copy
-    char *path2 = mstrcpy(path);
+    char *path2 = strdup(path);
     char *parent = dirname(path2);
 
     if (parent)

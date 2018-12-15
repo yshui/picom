@@ -3,28 +3,6 @@
 #include "compiler.h"
 #include "string_utils.h"
 #include "utils.h"
-/**
- * Allocate the space and copy a string.
- */
-char *mstrcpy(const char *src) {
-  auto str = ccalloc(strlen(src) + 1, char);
-
-  strcpy(str, src);
-
-  return str;
-}
-
-/**
- * Allocate the space and copy a string.
- */
-char *mstrncpy(const char *src, unsigned len) {
-  auto str = ccalloc(len + 1, char);
-
-  strncpy(str, src, len);
-  str[len] = '\0';
-
-  return str;
-}
 
 /**
  * Allocate the space and join two strings.

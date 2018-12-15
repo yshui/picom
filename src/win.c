@@ -194,7 +194,7 @@ int win_get_name(session_t *ps, win *w) {
   if (!w->name || strcmp(w->name, strlst[0]) != 0) {
     ret = 1;
     free(w->name);
-    w->name = mstrcpy(strlst[0]);
+    w->name = strdup(strlst[0]);
   }
 
   XFreeStringList(strlst);
@@ -217,7 +217,7 @@ int win_get_role(session_t *ps, win *w) {
   if (!w->role || strcmp(w->role, strlst[0]) != 0) {
     ret = 1;
     free(w->role);
-    w->role = mstrcpy(strlst[0]);
+    w->role = strdup(strlst[0]);
   }
 
   XFreeStringList(strlst);
@@ -1042,10 +1042,10 @@ bool win_get_class(session_t *ps, win *w) {
     return false;
 
   // Copy the strings if successful
-  w->class_instance = mstrcpy(strlst[0]);
+  w->class_instance = strdup(strlst[0]);
 
   if (nstr > 1)
-    w->class_general = mstrcpy(strlst[1]);
+    w->class_general = strdup(strlst[1]);
 
   XFreeStringList(strlst);
 
