@@ -139,8 +139,8 @@ OPTIONS
 * 'drm': VSync with 'DRM_IOCTL_WAIT_VBLANK'. May only work on some (DRI-based) drivers.
 * 'opengl': Try to VSync with 'SGI_video_sync' OpenGL extension. Only work on some drivers.
 * 'opengl-oml': Try to VSync with 'OML_sync_control' OpenGL extension. Only work on some drivers.
-* 'opengl-swc': Try to VSync with 'SGI_swap_control' OpenGL extension. Only work on some drivers. Works only with GLX backend. Known to be most effective on many drivers. Does not guarantee to control paint timing.
-* 'opengl-mswc': Try to VSync with 'MESA_swap_control' OpenGL extension. Basically the same as 'opengl-swc' above, except the extension we use.
+* 'opengl-swc': Try to VSync with 'MESA_swap_control' or 'SGI_swap_control' (in order of preference) OpenGL extension. Works only with GLX backend. Known to be most effective on many drivers. Does not guarantee to control paint timing.
+* 'opengl-mswc': Deprecated, use 'opengl-swc' instead.
 
 (Note some VSync methods may not be enabled at compile time.)
 --
