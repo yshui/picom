@@ -10,8 +10,6 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "log.h"
-
 #define ARR_SIZE(arr) (sizeof(arr)/sizeof(arr[0]))
 
 #ifdef __FAST_MATH__

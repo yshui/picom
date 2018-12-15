@@ -13,6 +13,7 @@
 #include "c2.h"
 #include "x.h"
 #include "string_utils.h"
+#include "log.h"
 
 #include "win.h"
 

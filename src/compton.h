@@ -33,6 +33,7 @@
 #include "win.h"
 #include "x.h"
 #include "c2.h"
+#include "log.h" // XXX clean up
 
 // == Functions ==
 // TODO move static inline functions that are only used in compton.c, into

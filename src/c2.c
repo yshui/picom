@@ -31,6 +31,7 @@
 #include "win.h"
 #include "c2.h"
 #include "string_utils.h"
+#include "log.h"
 
 #define C2_MAX_LEVELS 10
 

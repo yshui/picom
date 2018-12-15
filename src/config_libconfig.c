@@ -11,6 +11,7 @@
 #include "common.h"
 #include "config.h"
 #include "string_utils.h"
+#include "log.h"
 
 /**
  * Wrapper of libconfig's <code>config_lookup_int</code>.

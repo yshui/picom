@@ -10,6 +10,8 @@
  */
 
 #include "string_utils.h"
+#include "log.h"
+
 #include "opengl.h"
 
 static inline int

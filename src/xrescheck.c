@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2014 Richard Grenville <pyxlcy@gmail.com>
 
+#include "log.h"
+
 #include "xrescheck.h"
 
 static xrc_xid_record_t *gs_xid_records = NULL;

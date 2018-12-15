@@ -11,6 +11,7 @@
 
 #include "win.h"
 #include "string_utils.h"
+#include "log.h"
 
 #include "dbus.h"
 

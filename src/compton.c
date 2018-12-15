@@ -30,6 +30,7 @@
 #include "config.h"
 #include "diagnostic.h"
 #include "string_utils.h"
+#include "log.h"
 
 #define auto __auto_type
 

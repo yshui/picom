@@ -141,6 +141,7 @@
 #include "win.h"
 #include "x.h"
 #include "region.h"
+#include "log.h"
 
 // === Constants ===
 

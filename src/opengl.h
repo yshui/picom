@@ -12,6 +12,7 @@
 #pragma once
 
 #include "common.h"
+#include "log.h"
 
 #include <ctype.h>
 #include <locale.h>

@@ -10,6 +10,7 @@
 
 #include "common.h"
 #include "x.h"
+#include "log.h"
 
 /**
  * Get a specific attribute of a window.

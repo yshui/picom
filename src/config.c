@@ -9,6 +9,7 @@
 #include "utils.h"
 #include "c2.h"
 #include "string_utils.h"
+#include "log.h"
 
 #include "config.h"
 
