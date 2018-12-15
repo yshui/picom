@@ -7,6 +7,10 @@ This is forked from the original Compton because that seems to have become unmai
 
 The original README can be found [here](README_orig.md)
 
+## Changelog
+
+See [Releases](https://github.com/yshui/compton/releases)
+
 ## Build
 
 ### Dependencies
