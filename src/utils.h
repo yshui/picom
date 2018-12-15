@@ -10,6 +10,8 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include "compiler.h"
+
 #define ARR_SIZE(arr) (sizeof(arr)/sizeof(arr[0]))
 
 #ifdef __FAST_MATH__
@@ -104,7 +106,7 @@ normalize_d(double d) {
  */
 static inline void *
 allocchk_(const char *func_name, void *ptr) {
-  if (!ptr) {
+  if (unlikely(!ptr)) {
     // Since memory allocation failed, we try to print
     // this error message without any memory allocation.
     const char msg[] = "(): Failed to allocate memory\n";
