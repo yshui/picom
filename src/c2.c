@@ -30,6 +30,7 @@
 #include "common.h"
 #include "win.h"
 #include "c2.h"
+#include "string_utils.h"
 
 #define C2_MAX_LEVELS 10
 
@@ -217,8 +218,6 @@ static const c2_predef_t C2_PREDEFS[] = {
   [C2_L_PCLASSI     ] = { "class_i"           , C2_L_TSTRING    , 0  },
   [C2_L_PROLE       ] = { "role"              , C2_L_TSTRING    , 0  },
 };
-
-#define mstrncmp(s1, s2) strncmp((s1), (s2), strlen(s1))
 
 /**
  * Compare next word in a string with another string.

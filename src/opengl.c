@@ -9,6 +9,7 @@
  *
  */
 
+#include "string_utils.h"
 #include "opengl.h"
 
 static inline int

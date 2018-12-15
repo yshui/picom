@@ -64,8 +64,6 @@
 
 #define MAX_ALPHA (255)
 
-#define ARR_SIZE(arr) (sizeof(arr)/sizeof(arr[0]))
-
 // === Includes ===
 
 // For some special functions
@@ -128,30 +126,6 @@
 
 /// @brief Wrapper for gcc branch prediction builtin, for unlikely branch.
 #define unlikely(x)  __builtin_expect(!!(x), 0)
-
-/// Print out an error message.
-#define printf_err(format, ...) \
-  fprintf(stderr, format "\n", ## __VA_ARGS__)
-
-/// Print out an error message with function name.
-#define printf_errf(format, ...) \
-  printf_err("%s" format,  __func__, ## __VA_ARGS__)
-
-/// Print out an error message with function name, and quit with a
-/// specific exit code.
-#define printf_errfq(code, format, ...) { \
-  printf_err("%s" format,  __func__, ## __VA_ARGS__); \
-  exit(code); \
-}
-
-/// Print out a debug message.
-#define printf_dbg(format, ...) \
-  printf(format, ## __VA_ARGS__); \
-  fflush(stdout)
-
-/// Print out a debug message with function name.
-#define printf_dbgf(format, ...) \
-  printf_dbg("%s" format, __func__, ## __VA_ARGS__)
 
 // Use #s here to prevent macro expansion
 /// Macro used for shortening some debugging code.
@@ -220,8 +194,6 @@
 
 typedef long time_ms_t;
 typedef struct _c2_lptr c2_lptr_t;
-
-// Or use cmemzero().
 
 /// Structure representing needed window updates.
 typedef struct {
@@ -999,37 +971,6 @@ print_backtrace(void) {
 // === Functions ===
 
 /**
- * @brief Quit if the passed-in pointer is empty.
- */
-static inline void *
-allocchk_(const char *func_name, void *ptr) {
-  if (!ptr) {
-    printf_err("%s(): Failed to allocate memory.", func_name);
-    exit(1);
-  }
-  return ptr;
-}
-
-/// @brief Wrapper of allocchk_().
-#define allocchk(ptr) allocchk_(__func__, ptr)
-
-/// @brief Wrapper of malloc().
-#define cmalloc(nmemb, type) ((type *) allocchk(malloc((nmemb) * sizeof(type))))
-
-/// @brief Wrapper of calloc().
-#define ccalloc(nmemb, type) ((type *) allocchk(calloc((nmemb), sizeof(type))))
-
-/// @brief Wrapper of ealloc().
-#define crealloc(ptr, nmemb, type) ((type *) allocchk(realloc((ptr), (nmemb) * sizeof(type))))
-
-/// @brief Zero out the given memory block.
-#define cmemzero(ptr, size) memset((ptr), 0, (size))
-
-/// @brief Wrapper of cmemzero() that handles a pointer to a single item, for
-///        convenience.
-#define cmemzero_one(ptr) cmemzero((ptr), sizeof(*(ptr)))
-
-/**
  * Return whether a struct timeval value is empty.
  */
 static inline bool
@@ -1187,70 +1128,6 @@ print_timestamp(session_t *ps) {
 
   timeval_subtract(&diff, &tm, &ps->time_start);
   fprintf(stderr, "[ %5ld.%06ld ] ", diff.tv_sec, diff.tv_usec);
-}
-
-/**
- * Allocate the space and copy a string.
- */
-static inline char *
-mstrcpy(const char *src) {
-  char *str = cmalloc(strlen(src) + 1, char);
-
-  strcpy(str, src);
-
-  return str;
-}
-
-/**
- * Allocate the space and copy a string.
- */
-static inline char *
-mstrncpy(const char *src, unsigned len) {
-  char *str = cmalloc(len + 1, char);
-
-  strncpy(str, src, len);
-  str[len] = '\0';
-
-  return str;
-}
-
-/**
- * Allocate the space and join two strings.
- */
-static inline char *
-mstrjoin(const char *src1, const char *src2) {
-  char *str = cmalloc(strlen(src1) + strlen(src2) + 1, char);
-
-  strcpy(str, src1);
-  strcat(str, src2);
-
-  return str;
-}
-
-/**
- * Allocate the space and join two strings;
- */
-static inline char *
-mstrjoin3(const char *src1, const char *src2, const char *src3) {
-  char *str = cmalloc(strlen(src1) + strlen(src2)
-        + strlen(src3) + 1, char);
-
-  strcpy(str, src1);
-  strcat(str, src2);
-  strcat(str, src3);
-
-  return str;
-}
-
-/**
- * Concatenate a string on heap with another string.
- */
-static inline void
-mstrextend(char **psrc1, const char *src2) {
-  *psrc1 = crealloc(*psrc1, (*psrc1 ? strlen(*psrc1): 0) + strlen(src2) + 1,
-      char);
-
-  strcat(*psrc1, src2);
 }
 
 /**

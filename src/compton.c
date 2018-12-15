@@ -29,6 +29,7 @@
 #include "x.h"
 #include "config.h"
 #include "diagnostic.h"
+#include "string_utils.h"
 
 #define auto __auto_type
 

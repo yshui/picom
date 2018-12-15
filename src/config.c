@@ -6,9 +6,11 @@
 #include <stdbool.h>
 
 #include "common.h"
-#include "config.h"
 #include "utils.h"
 #include "c2.h"
+#include "string_utils.h"
+
+#include "config.h"
 
 /**
  * Parse a long number.

@@ -9,8 +9,10 @@
  *
  */
 
-#include "dbus.h"
 #include "win.h"
+#include "string_utils.h"
+
+#include "dbus.h"
 
 static DBusHandlerResult
 cdbus_process(DBusConnection *conn, DBusMessage *m, void *);

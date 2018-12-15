@@ -5,7 +5,14 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 #include <math.h>
+#include <stdio.h>
+#include <unistd.h>
+
+#include "log.h"
+
+#define ARR_SIZE(arr) (sizeof(arr)/sizeof(arr[0]))
 
 #ifdef __FAST_MATH__
 #warning Use of -ffast-math can cause rendering error or artifacts, \
@@ -94,28 +101,33 @@ normalize_d(double d) {
   return normalize_d_range(d, 0.0, 1.0);
 }
 
-static inline const char *
-skip_space_const(const char *src) {
-  if (!src)
-    return NULL;
-  while (*src && isspace(*src))
-    src++;
-  return src;
+/**
+ * @brief Quit if the passed-in pointer is empty.
+ */
+static inline void *
+allocchk_(const char *func_name, void *ptr) {
+  if (!ptr) {
+    // Since memory allocation failed, we try to print
+    // this error message without any memory allocation.
+    const char msg[] = "(): Failed to allocate memory\n";
+    write(STDERR_FILENO, func_name, strlen(func_name));
+    write(STDERR_FILENO, msg, ARR_SIZE(msg));
+    abort();
+  }
+  return ptr;
 }
 
-static inline char *
-skip_space_mut(char *src) {
-  if (!src)
-    return NULL;
-  while (*src && isspace(*src))
-    src++;
-  return src;
-}
+/// @brief Wrapper of allocchk_().
+#define allocchk(ptr) allocchk_(__func__, ptr)
 
-#define skip_space(x) _Generic((x), \
-  char *: skip_space_mut, \
-  const char *: skip_space_const \
-)(x)
+/// @brief Wrapper of malloc().
+#define cmalloc(nmemb, type) ((type *) allocchk(malloc((nmemb) * sizeof(type))))
+
+/// @brief Wrapper of calloc().
+#define ccalloc(nmemb, type) ((type *) allocchk(calloc((nmemb), sizeof(type))))
+
+/// @brief Wrapper of ealloc().
+#define crealloc(ptr, nmemb, type) ((type *) allocchk(realloc((ptr), (nmemb) * sizeof(type))))
 
 /// RC_TYPE generates a reference counted type from `type`
 ///

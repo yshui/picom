@@ -12,6 +12,7 @@
 #include "compton.h"
 #include "c2.h"
 #include "x.h"
+#include "string_utils.h"
 
 #include "win.h"
 

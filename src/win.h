@@ -9,6 +9,7 @@
 
 // FIXME shouldn't need this
 #ifdef CONFIG_OPENGL
+#define GL_GLEXT_PROTOTYPES
 #include <GL/glx.h>
 #endif
 
