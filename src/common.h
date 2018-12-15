@@ -138,6 +138,7 @@
 #include "log.h"
 #include "utils.h"
 #include "compiler.h"
+#include "kernel.h"
 
 // === Constants ===
 
@@ -354,7 +355,7 @@ typedef struct {
   GLint unifm_factor_center;
 } glx_blur_pass_t;
 
-typedef struct {
+typedef struct glx_prog_main {
   /// GLSL program.
   GLuint prog;
   /// Location of uniform "opacity" in window GLSL program.
@@ -378,11 +379,6 @@ typedef uint32_t glx_prog_main_t;
 #endif
 
 #define PAINT_INIT { .pixmap = None, .pict = None }
-
-typedef struct conv {
-  int size;
-  double data[];
-} conv;
 
 /// Linked list type of atoms.
 typedef struct _latom {
@@ -1309,18 +1305,6 @@ bkend_use_glx(session_t *ps) {
 }
 
 /**
- * Check if there's a GLX context.
- */
-static inline bool
-glx_has_context(session_t *ps) {
-#ifdef CONFIG_OPENGL
-  return ps->psglx && ps->psglx->context;
-#else
-  return false;
-#endif
-}
-
-/**
  * Check if a window is really focused.
  */
 static inline bool
@@ -1483,53 +1467,6 @@ vsync_deinit(session_t *ps);
  */
 ///@{
 
-/**
- * Free a GLX texture.
- */
-static inline void
-free_texture_r(session_t *ps, GLuint *ptexture) {
-  if (*ptexture) {
-    assert(glx_has_context(ps));
-    glDeleteTextures(1, ptexture);
-    *ptexture = 0;
-  }
-}
-
-/**
- * Free a GLX Framebuffer object.
- */
-static inline void
-free_glx_fbo(session_t *ps, GLuint *pfbo) {
-#ifdef CONFIG_OPENGL
-  if (*pfbo) {
-    glDeleteFramebuffers(1, pfbo);
-    *pfbo = 0;
-  }
-#endif
-  assert(!*pfbo);
-}
-
-#ifdef CONFIG_OPENGL
-/**
- * Free data in glx_blur_cache_t on resize.
- */
-static inline void
-free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
-  free_texture_r(ps, &pbc->textures[0]);
-  free_texture_r(ps, &pbc->textures[1]);
-  pbc->width = 0;
-  pbc->height = 0;
-}
-
-/**
- * Free a glx_blur_cache_t
- */
-static inline void
-free_glx_bc(session_t *ps, glx_blur_cache_t *pbc) {
-  free_glx_fbo(ps, &pbc->fbo);
-  free_glx_bc_resize(ps, pbc);
-}
-#endif
 #endif
 
 /**

@@ -1289,3 +1289,35 @@ void win_ev_stop(session_t *ps, win *w) {
         xcb_shape_select_input(ps->c, w->id, 0));
   }
 }
+
+/**
+ * Set fade callback of a window, and possibly execute the previous
+ * callback.
+ *
+ * If a callback can cause rendering result to change, it should call
+ * `queue_redraw`.
+ *
+ * @param exec_callback whether the previous callback is to be executed
+ */
+void win_set_fade_callback(session_t *ps, win **_w,
+    void (*callback) (session_t *ps, win **w), bool exec_callback) {
+  win *w = *_w;
+  void (*old_callback) (session_t *ps, win **w) = w->fade_callback;
+
+  w->fade_callback = callback;
+  // Must be the last line as the callback could destroy w!
+  if (exec_callback && old_callback)
+    old_callback(ps, _w);
+}
+
+/**
+ * Execute fade callback of a window if fading finished.
+ */
+void
+win_check_fade_finished(session_t *ps, win **_w) {
+  win *w = *_w;
+  if (w->fade_callback && w->opacity == w->opacity_tgt) {
+    // Must be the last line as the callback could destroy w!
+    win_set_fade_callback(ps, _w, NULL, true);
+  }
+}

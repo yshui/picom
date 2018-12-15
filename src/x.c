@@ -377,3 +377,20 @@ x_create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t 
   free(err);
   return XCB_NONE;
 }
+
+/**
+ * Validate a pixmap.
+ *
+ * Detect whether the pixmap is valid with XGetGeometry. Well, maybe there
+ * are better ways.
+ */
+bool
+x_validate_pixmap(session_t *ps, xcb_pixmap_t pxmap) {
+  if (!pxmap) return false;
+
+  Window rroot = None;
+  int rx = 0, ry = 0;
+  unsigned rwid = 0, rhei = 0, rborder = 0, rdepth = 0;
+  return XGetGeometry(ps->dpy, pxmap, &rroot, &rx, &ry,
+        &rwid, &rhei, &rborder, &rdepth) && rwid && rhei;
+}

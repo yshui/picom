@@ -4,7 +4,8 @@ deps = [
 	dependency('xcb', version: '>=1.9.2'),
 ]
 
-srcs = ['compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'diagnostic.c', 'string_utils.c']
+srcs = [ files('compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c',
+               'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c')]
 
 cflags = []
 

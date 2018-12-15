@@ -200,6 +200,70 @@ unsigned char *
 glx_take_screenshot(session_t *ps, int *out_length);
 
 /**
+ * Check if there's a GLX context.
+ */
+static inline bool
+glx_has_context(session_t *ps) {
+  return ps->psglx && ps->psglx->context;
+}
+
+/**
+ * Ensure we have a GLX context.
+ */
+static inline bool
+ensure_glx_context(session_t *ps) {
+  // Create GLX context
+  if (!glx_has_context(ps))
+    glx_init(ps, false);
+
+  return ps->psglx->context;
+}
+
+/**
+ * Free a GLX texture.
+ */
+static inline void
+free_texture_r(session_t *ps, GLuint *ptexture) {
+  if (*ptexture) {
+    assert(glx_has_context(ps));
+    glDeleteTextures(1, ptexture);
+    *ptexture = 0;
+  }
+}
+
+/**
+ * Free a GLX Framebuffer object.
+ */
+static inline void
+free_glx_fbo(session_t *ps, GLuint *pfbo) {
+  if (*pfbo) {
+    glDeleteFramebuffers(1, pfbo);
+    *pfbo = 0;
+  }
+  assert(!*pfbo);
+}
+
+/**
+ * Free data in glx_blur_cache_t on resize.
+ */
+static inline void
+free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
+  free_texture_r(ps, &pbc->textures[0]);
+  free_texture_r(ps, &pbc->textures[1]);
+  pbc->width = 0;
+  pbc->height = 0;
+}
+
+/**
+ * Free a glx_blur_cache_t
+ */
+static inline void
+free_glx_bc(session_t *ps, glx_blur_cache_t *pbc) {
+  free_glx_fbo(ps, &pbc->fbo);
+  free_glx_bc_resize(ps, pbc);
+}
+
+/**
  * Free a glx_texture_t.
  */
 static inline void

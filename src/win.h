@@ -16,16 +16,10 @@
 #include "x.h"
 #include "types.h"
 #include "c2.h"
+#include "render.h"
 
 typedef struct session session_t;
 typedef struct _glx_texture glx_texture_t;
-
-// FIXME not the best place for this type
-typedef struct {
-  xcb_pixmap_t pixmap;
-  xcb_render_picture_t pict;
-  glx_texture_t *ptex;
-} paint_t;
 
 #ifdef CONFIG_OPENGL
 // FIXME this type should be in opengl.h
@@ -334,6 +328,24 @@ void win_get_region_noframe_local(win *w, region_t *);
 void
 win_update_frame_extents(session_t *ps, win *w, Window client);
 bool add_win(session_t *ps, Window id, Window prev);
+
+/**
+ * Set fade callback of a window, and possibly execute the previous
+ * callback.
+ *
+ * If a callback can cause rendering result to change, it should call
+ * `queue_redraw`.
+ *
+ * @param exec_callback whether the previous callback is to be executed
+ */
+void win_set_fade_callback(session_t *ps, win **_w,
+    void (*callback) (session_t *ps, win **w), bool exec_callback);
+
+/**
+ * Execute fade callback of a window if fading finished.
+ */
+void
+win_check_fade_finished(session_t *ps, win **_w);
 
 // Stop receiving events (except ConfigureNotify, XXX why?) from a window
 void win_ev_stop(session_t *ps, win *w);
