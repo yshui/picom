@@ -4534,6 +4534,7 @@ vsync_opengl_oml_init(session_t *ps) {
 
 static bool
 vsync_opengl_swc_swap_interval(session_t *ps, unsigned int interval) {
+#ifdef CONFIG_OPENGL
   if (!ensure_glx_context(ps))
     return false;
 
@@ -4556,6 +4557,7 @@ vsync_opengl_swc_swap_interval(session_t *ps, unsigned int interval) {
     ps->psglx->glXSwapIntervalProc(interval);
   else
     return false;
+#endif
 
   return true;
 }
