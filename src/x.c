@@ -8,6 +8,7 @@
 #include <xcb/xfixes.h>
 #include <pixman.h>
 
+#include "compiler.h"
 #include "common.h"
 #include "x.h"
 #include "log.h"
@@ -223,7 +224,7 @@ bool x_fetch_region(session_t *ps, xcb_xfixes_region_t r, pixman_region32_t *res
   }
 
   int nrect = xcb_xfixes_fetch_region_rectangles_length(xr);
-  pixman_box32_t *b = calloc(nrect, sizeof *b);
+  auto b = ccalloc(nrect, pixman_box32_t);
   xcb_rectangle_t *xrect = xcb_xfixes_fetch_region_rectangles(xr);
   for (int i = 0; i < nrect; i++) {
     b[i] = (pixman_box32_t) {
@@ -243,7 +244,7 @@ void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t pict,
     int clip_x_origin, int clip_y_origin, const region_t *reg) {
   int nrects;
   const rect_t *rects = pixman_region32_rectangles((region_t *)reg, &nrects);
-  xcb_rectangle_t *xrects = calloc(nrects, sizeof *xrects);
+  auto xrects = ccalloc(nrects, xcb_rectangle_t);
   for (int i = 0; i < nrects; i++)
     xrects[i] = (xcb_rectangle_t){
       .x = rects[i].x1,

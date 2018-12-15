@@ -119,13 +119,17 @@ allocchk_(const char *func_name, void *ptr) {
 #define allocchk(ptr) allocchk_(__func__, ptr)
 
 /// @brief Wrapper of malloc().
-#define cmalloc(nmemb, type) ((type *) allocchk(malloc((nmemb) * sizeof(type))))
+#define cmalloc(type) ((type *) allocchk(malloc(sizeof(type))))
+
+/// @brief Wrapper of malloc() that takes a size
+#define cvalloc(size) allocchk(malloc(size))
 
 /// @brief Wrapper of calloc().
 #define ccalloc(nmemb, type) ((type *) allocchk(calloc((nmemb), sizeof(type))))
 
 /// @brief Wrapper of ealloc().
-#define crealloc(ptr, nmemb, type) ((type *) allocchk(realloc((ptr), (nmemb) * sizeof(type))))
+#define crealloc(ptr, nmemb) \
+  ((__typeof__(ptr)) allocchk(realloc((ptr), (nmemb) * sizeof(*(ptr)))))
 
 /// RC_TYPE generates a reference counted type from `type`
 ///
@@ -152,7 +156,7 @@ typedef struct { \
 } name##_internal_t; \
 typedef type name##_t; \
 Q type *name##_new(void) { \
-  name##_internal_t *ret = malloc(sizeof(name##_internal_t)); \
+  name##_internal_t *ret = cmalloc(name##_internal_t); \
   ctor((type *)ret); \
   ret->ref_count = 1; \
   return (type *)ret; \

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#include "compiler.h"
 #include "common.h"
 #include "utils.h"
 #include "c2.h"
@@ -61,17 +62,16 @@ xcb_render_fixed_t *
 parse_matrix(session_t *ps, const char *src, const char **endptr) {
   int wid = 0, hei = 0;
   const char *pc = NULL;
-  xcb_render_fixed_t *matrix = NULL;
 
   // Get matrix width and height
   {
     double val = 0.0;
     if (src == (pc = parse_matrix_readnum(src, &val)))
-      goto parse_matrix_err;
+      goto err1;
     src = pc;
     wid = val;
     if (src == (pc = parse_matrix_readnum(src, &val)))
-      goto parse_matrix_err;
+      goto err1;
     src = pc;
     hei = val;
   }
@@ -79,21 +79,21 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
   // Validate matrix width and height
   if (wid <= 0 || hei <= 0) {
     printf_errf("(): Invalid matrix width/height.");
-    goto parse_matrix_err;
+    goto err1;
   }
   if (!(wid % 2 && hei % 2)) {
     printf_errf("(): Width/height not odd.");
-    goto parse_matrix_err;
+    goto err1;
   }
   if (wid > 16 || hei > 16)
     printf_errf("(): Matrix width/height too large, may slow down"
                 "rendering, and/or consume lots of memory");
 
   // Allocate memory
-  matrix = calloc(wid * hei + 2, sizeof(xcb_render_fixed_t));
+  auto matrix = ccalloc(wid * hei + 2, xcb_render_fixed_t);
   if (!matrix) {
     printf_errf("(): Failed to allocate memory for matrix.");
-    goto parse_matrix_err;
+    goto err1;
   }
 
   // Read elements
@@ -108,7 +108,7 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
       }
       double val = 0;
       if (src == (pc = parse_matrix_readnum(src, &val)))
-        goto parse_matrix_err;
+        goto err2;
       src = pc;
       if (val < 0) hasneg = true;
       matrix[2 + i] = DOUBLE_TO_XFIXED(val);
@@ -122,7 +122,7 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
   for ( ;*pc && ';' != *pc; ++pc)
     if (!isspace(*pc) && ',' != *pc) {
       printf_errf("(): Trailing characters in matrix string.");
-      goto parse_matrix_err;
+      goto err2;
     }
 
   // Jump over spaces after ';'
@@ -138,7 +138,7 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
     *endptr = pc;
   else if (*pc) {
     printf_errf("(): Only one matrix expected.");
-    goto parse_matrix_err;
+    goto err2;
   }
 
   // Fill in width and height
@@ -147,8 +147,9 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
 
   return matrix;
 
-parse_matrix_err:
+err2:
   free(matrix);
+err1:
   return NULL;
 }
 

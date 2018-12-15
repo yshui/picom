@@ -31,6 +31,7 @@
 #include "win.h"
 #include "c2.h"
 #include "string_utils.h"
+#include "utils.h"
 #include "log.h"
 
 #define C2_MAX_LEVELS 10
@@ -260,7 +261,7 @@ static inline c2_ptr_t
 c2h_comb_tree(c2_b_op_t op, c2_ptr_t p1, c2_ptr_t p2) {
  c2_ptr_t p = {
    .isbranch = true,
-   .b = malloc(sizeof(c2_b_t))
+   .b = cmalloc(c2_b_t)
  };
 
  p.b->opr1 = p1;
@@ -382,7 +383,7 @@ c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
   // Insert to pcondlst
   {
     static const c2_lptr_t lptr_def = C2_LPTR_INIT;
-    c2_lptr_t *plptr = malloc(sizeof(c2_lptr_t));
+    auto plptr = cmalloc(c2_lptr_t);
     if (!plptr)
       printf_errfq(1, "(): Failed to allocate memory for new condition linked"
           " list element.");
@@ -609,7 +610,7 @@ static int
 c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult) {
   // Initialize leaf
   presult->isbranch = false;
-  presult->l = malloc(sizeof(c2_l_t));
+  presult->l = cmalloc(c2_l_t);
   if (!presult->l)
     c2_error("Failed to allocate memory for new leaf.");
 
@@ -918,7 +919,7 @@ c2_parse_pattern(session_t *ps, const char *pattern, int offset, c2_ptr_t *presu
     // We can't determine the length of the pattern, so we use the length
     // to the end of the pattern string -- currently escape sequences
     // cannot be converted to a string longer than itself.
-    char *tptnstr = malloc((strlen(pattern + offset) + 1) * sizeof(char));
+    auto tptnstr = ccalloc((strlen(pattern + offset) + 1), char);
     char *ptptnstr = tptnstr;
     pleaf->ptnstr = tptnstr;
     for (; pattern[offset] && delim != pattern[offset]; ++offset) {
@@ -1006,7 +1007,7 @@ c2_parse_legacy(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
     c2_error("Legacy parser: Invalid format.");
 
   // Allocate memory for new leaf
-  c2_l_t *pleaf = malloc(sizeof(c2_l_t));
+  auto pleaf = cmalloc(c2_l_t);
   if (!pleaf)
     printf_errfq(1, "(): Failed to allocate memory for new leaf.");
   presult->isbranch = false;
@@ -1096,7 +1097,7 @@ c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
       }
     }
     if (!found) {
-      latom_t *pnew = malloc(sizeof(latom_t));
+      auto pnew = cmalloc(latom_t);
       if (!pnew)
         printf_errfq(1, "(): Failed to allocate memory for new track atom.");
       pnew->next = ps->track_atom_lst;

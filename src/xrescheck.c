@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2014 Richard Grenville <pyxlcy@gmail.com>
 
+#include "compiler.h"
 #include "log.h"
 
 #include "xrescheck.h"
@@ -23,7 +24,7 @@ static xrc_xid_record_t *gs_xid_records = NULL;
  */
 void
 xrc_add_xid_(XID xid, const char *type, M_POS_DATA_PARAMS) {
-  xrc_xid_record_t *prec = cmalloc(1, xrc_xid_record_t);
+  auto prec = ccalloc(1, xrc_xid_record_t);
   prec->xid = xid;
   prec->type = type;
   M_CPY_POS_DATA(prec);

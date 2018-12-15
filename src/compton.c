@@ -21,6 +21,7 @@
 
 #include <ev.h>
 
+#include "compiler.h"
 #include "compton.h"
 #ifdef CONFIG_OPENGL
 #include "opengl.h"
@@ -30,6 +31,7 @@
 #include "config.h"
 #include "diagnostic.h"
 #include "string_utils.h"
+#include "utils.h"
 #include "log.h"
 
 #define auto __auto_type
@@ -289,7 +291,7 @@ resize_region(session_t *ps, region_t *region, short mod) {
   int nrects;
   int nnewrects = 0;
   pixman_box32_t *rects = pixman_region32_rectangles(region, &nrects);
-  pixman_box32_t *newrects = calloc(nrects, sizeof *newrects);
+  auto newrects = ccalloc(nrects, pixman_box32_t);
   for (int i = 0; i < nrects; i++) {
     int x1 = max_i(rects[i].x1 - mod, 0);
     int y1 = max_i(rects[i].y1 - mod, 0);
@@ -384,8 +386,7 @@ cxinerama_upd_scrs(session_t *ps) {
   xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
   ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
 
-  ps->xinerama_scr_regs = allocchk(malloc(sizeof(region_t)
-        * ps->xinerama_nscrs));
+  ps->xinerama_scr_regs = ccalloc(ps->xinerama_nscrs, region_t);
   for (int i = 0; i < ps->xinerama_nscrs; ++i) {
     const xcb_xinerama_screen_info_t * const s = &scrs[i];
     pixman_region32_init_rect(&ps->xinerama_scr_regs[i], s->x_org, s->y_org, s->width, s->height);
@@ -583,7 +584,7 @@ make_gaussian_map(double r) {
   int center = size/2;
   double t;
 
-  c = malloc(sizeof(conv)+size*size*sizeof(double));
+  c = cvalloc(sizeof(conv)+size*size*sizeof(double));
   c->size = size;
   t = 0.0;
 
@@ -691,8 +692,8 @@ presum_gaussian(session_t *ps, conv *map) {
   if (ps->shadow_top)
     free(ps->shadow_top);
 
-  ps->shadow_corner = malloc((ps->cgsize + 1) * (ps->cgsize + 1) * 26);
-  ps->shadow_top = malloc((ps->cgsize + 1) * 26);
+  ps->shadow_corner = cvalloc((ps->cgsize + 1) * (ps->cgsize + 1) * 26);
+  ps->shadow_top = cvalloc((ps->cgsize + 1) * 26);
 
   for (x = 0; x <= ps->cgsize; x++) {
     ps->shadow_top[25 * (ps->cgsize + 1) + x] =
@@ -1531,7 +1532,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
 
           // Allocate cache space if needed
           if (!kern_dst) {
-            kern_dst = malloc((kwid * khei + 2) * sizeof(xcb_render_fixed_t));
+            kern_dst = ccalloc(kwid * khei + 2, xcb_render_fixed_t);
             if (!kern_dst) {
               printf_errf("(): Failed to allocate memory for blur kernel.");
               return;
@@ -2935,11 +2936,10 @@ ev_expose(session_t *ps, xcb_expose_event_t *ev) {
     int more = ev->count + 1;
     if (ps->n_expose == ps->size_expose) {
       if (ps->expose_rects) {
-        ps->expose_rects = realloc(ps->expose_rects,
-          (ps->size_expose + more) * sizeof(rect_t));
+        ps->expose_rects = crealloc(ps->expose_rects, ps->size_expose + more);
         ps->size_expose += more;
       } else {
-        ps->expose_rects = malloc(more * sizeof(rect_t));
+        ps->expose_rects = ccalloc(more, rect_t);
         ps->size_expose = more;
       }
     }
@@ -3719,7 +3719,7 @@ register_cm(session_t *ps) {
       s /= 10;
     }
 
-    char *buf = malloc(len);
+    auto buf = ccalloc(len, char);
     snprintf(buf, len, REGISTER_PROP "%d", ps->scr);
     buf[len - 1] = '\0';
     atom = get_atom(ps, buf);
@@ -4281,12 +4281,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1),
       DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1), DOUBLE_TO_XFIXED(1),
     };
-    ps->o.blur_kerns[0] = malloc(sizeof(convolution_blur));
-    if (!ps->o.blur_kerns[0]) {
-      printf_errf("(): Failed to allocate memory for convolution kernel.");
-      exit(1);
-    }
-    memcpy(ps->o.blur_kerns[0], &convolution_blur, sizeof(convolution_blur));
+    ps->o.blur_kerns[0] = ccalloc(ARR_SIZE(convolution_blur), xcb_render_fixed_t);
+    memcpy(ps->o.blur_kerns[0], convolution_blur, sizeof(convolution_blur));
   }
 
   rebuild_shadow_exclude_reg(ps);
@@ -4671,7 +4667,7 @@ vsync_deinit(session_t *ps) {
  */
 static void
 init_alpha_picts(session_t *ps) {
-  ps->alpha_picts = malloc(sizeof(xcb_render_picture_t) * (MAX_ALPHA+1));
+  ps->alpha_picts = ccalloc(MAX_ALPHA+1, xcb_render_picture_t);
 
   for (int i = 0; i <= MAX_ALPHA; ++i) {
     double o = (double) i / MAX_ALPHA;
@@ -5187,7 +5183,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   };
 
   // Allocate a session and copy default values into it
-  session_t *ps = malloc(sizeof(session_t));
+  session_t *ps = cmalloc(session_t);
   *ps = s_def;
   ps->loop = EV_DEFAULT;
   pixman_region32_init(&ps->screen_reg);

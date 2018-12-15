@@ -9,6 +9,7 @@
  *
  */
 
+#include "compiler.h"
 #include "win.h"
 #include "string_utils.h"
 #include "log.h"
@@ -164,7 +165,7 @@ static dbus_bool_t
 cdbus_callback_add_timeout(DBusTimeout *timeout, void *data) {
   session_t *ps = data;
 
-  ev_dbus_timer *t = calloc(1, sizeof *t);
+  auto t = ccalloc(1, ev_dbus_timer);
   double i = dbus_timeout_get_interval(timeout) / 1000.0;
   ev_timer_init(&t->w, cdbus_callback_handle_timeout, i, i);
   t->t = timeout;
@@ -251,7 +252,7 @@ static dbus_bool_t
 cdbus_callback_add_watch(DBusWatch *watch, void *data) {
   session_t *ps = data;
 
-  ev_dbus_io *w = calloc(1, sizeof *w);
+  auto w = ccalloc(1, ev_dbus_io);
   w->dw = watch;
   w->ps = ps;
   ev_io_init(&w->w, cdbus_io_callback, dbus_watch_get_unix_fd(watch),
@@ -420,7 +421,7 @@ cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data) {
   }
 
   // Allocate memory for an array of window IDs
-  cdbus_window_t *arr = malloc(sizeof(cdbus_window_t) * count);
+  auto arr = ccalloc(count, cdbus_window_t);
   if (!arr) {
     printf_errf("(): Failed to allocate memory for window ID array.");
     return false;

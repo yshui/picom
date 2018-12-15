@@ -9,6 +9,7 @@
  *
  */
 
+#include "compiler.h"
 #include "string_utils.h"
 #include "log.h"
 
@@ -77,8 +78,7 @@ glx_update_fbconfig_bydepth(session_t *ps, int depth, glx_fbconfig_t *pfbcfg) {
     printf_dbgf("(%d): %#x overrides %#x, target %#x.\n", depth, (unsigned) pfbcfg->cfg, (ps->psglx->fbconfigs[depth] ? (unsigned) ps->psglx->fbconfigs[depth]->cfg: 0), pfbcfg->texture_tgts);
 #endif
     if (!ps->psglx->fbconfigs[depth]) {
-      ps->psglx->fbconfigs[depth] = malloc(sizeof(glx_fbconfig_t));
-      allocchk(ps->psglx->fbconfigs[depth]);
+      ps->psglx->fbconfigs[depth] = cmalloc(glx_fbconfig_t);
     }
     (*ps->psglx->fbconfigs[depth]) = *pfbcfg;
   }
@@ -260,7 +260,7 @@ glx_init(session_t *ps, bool need_render) {
   // Initialize GLX data structure
   if (!ps->psglx) {
     static const glx_session_t CGLX_SESSION_DEF = CGLX_SESSION_INIT;
-    ps->psglx = cmalloc(1, glx_session_t);
+    ps->psglx = cmalloc(glx_session_t);
     memcpy(ps->psglx, &CGLX_SESSION_DEF, sizeof(glx_session_t));
 
     for (int i = 0; i < MAX_BLUR_PASS; ++i) {
@@ -571,7 +571,7 @@ glx_init_blur(session_t *ps) {
                            (strlen(shader_add) + strlen(texture_func) + 42) * nele +
                            strlen(FRAG_SHADER_BLUR_SUFFIX) +
                            strlen(texture_func) + 12 + 1;
-        char *shader_str = calloc(len, sizeof(char));
+        char *shader_str = ccalloc(len, char);
         if (!shader_str) {
           printf_errf("(): Failed to allocate %d bytes for shader string.", len);
           return false;
@@ -708,7 +708,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
       .y_inverted = false,
     };
 
-    ptex = malloc(sizeof(glx_texture_t));
+    ptex = cmalloc(glx_texture_t);
     allocchk(ptex);
     memcpy(ptex, &GLX_TEX_DEF, sizeof(glx_texture_t));
     *pptex = ptex;
@@ -1457,7 +1457,7 @@ glx_take_screenshot(session_t *ps, int *out_length) {
   glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpack_align_old);
   assert(unpack_align_old > 0);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  unsigned char *buf = cmalloc(length, unsigned char);
+  auto buf = ccalloc(length, unsigned char);
   glReadBuffer(GL_FRONT);
   glReadPixels(0, 0, ps->root_width, ps->root_height, GL_RGB,
       GL_UNSIGNED_BYTE, buf);

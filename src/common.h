@@ -142,6 +142,8 @@
 #include "x.h"
 #include "region.h"
 #include "log.h"
+#include "utils.h"
+#include "compiler.h"
 
 // === Constants ===
 
@@ -1380,7 +1382,7 @@ set_ignore(session_t *ps, unsigned long sequence) {
   if (ps->o.show_all_xerrors)
     return;
 
-  ignore_t *i = malloc(sizeof(ignore_t));
+  auto i = cmalloc(ignore_t);
   if (!i) return;
 
   i->sequence = sequence;
@@ -1545,8 +1547,8 @@ glx_mark_(session_t *ps, const char *func, XID xid, bool start) {
   if (glx_has_context(ps) && ps->psglx->glStringMarkerGREMEDY) {
     if (!func) func = "(unknown)";
     const char *postfix = (start ? " (start)": " (end)");
-    char *str = malloc((strlen(func) + 12 + 2
-          + strlen(postfix) + 5) * sizeof(char));
+    auto str = ccalloc((strlen(func) + 12 + 2
+      + strlen(postfix) + 5), char);
     strcpy(str, func);
     sprintf(str + strlen(str), "(%#010lx)%s", xid, postfix);
     ps->psglx->glStringMarkerGREMEDY(strlen(str), str);

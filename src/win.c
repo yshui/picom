@@ -8,11 +8,13 @@
 #include <stdbool.h>
 #include <math.h>
 
+#include "compiler.h"
 #include "common.h"
 #include "compton.h"
 #include "c2.h"
 #include "x.h"
 #include "string_utils.h"
+#include "utils.h"
 #include "log.h"
 
 #include "win.h"
@@ -813,7 +815,7 @@ bool add_win(session_t *ps, Window id, Window prev) {
   }
 
   // Allocate and initialize the new win structure
-  win *new = malloc(sizeof(win));
+  auto new = cmalloc(win);
 
 #ifdef DEBUG_EVENTS
   printf_dbgf("(%#010lx): %p\n", id, new);
