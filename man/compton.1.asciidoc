@@ -2,8 +2,8 @@ compton(1)
 ==========
 :doctype:     manpage
 :man source:  compton
-:man version: nightly-20141124
-:man manual:  LOCAL USER COMMANDS
+:man version: {compton-version}
+:man manual:  User Commands
 
 NAME
 ----
@@ -12,10 +12,6 @@ compton - a compositor for X11
 SYNOPSIS
 --------
 *compton* ['OPTIONS']
-
-WARNING
--------
-This man page may be less up-to-date than the usage text in compton (`compton -h`).
 
 DESCRIPTION
 -----------
@@ -445,11 +441,9 @@ $ compton --backend glx --vsync opengl-swc
 
 BUGS
 ----
-Please report any you find to <https://github.com/yshui/compton> .
+Please submit bug reports to <https://github.com/yshui/compton>.
 
-AUTHORS
--------
-xcompmgr, originally written by Keith Packard, with contributions from Matthew Allum, Eric Anholt, Dan Doel, Thomas Luebking, Matthew Hawn, Ely Levy, Phil Blundell, and Carl Worth. Compton by Christopher Jeffrey, based on Dana Jansens' original work, with contributions from Richard Grenville.
+Out dated information in this man page is considered a bug.
 
 RESOURCES
 ---------
