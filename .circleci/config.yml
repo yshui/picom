@@ -1,55 +1,49 @@
-version: 2
+defaults: &defaults
+  docker:
+    - image: yshui/comptonci
+cached-checkout: &ccheckout
+just-build: &build
+
+version: 2.1
 jobs:
   build:
-    docker:
-      - image: yshui/comptonci
+    <<: *defaults
+    parameters:
+      build-config:
+        type: string
+        default: -Dbuild_docs=true
     steps:
+      - restore_cache:
+          keys:
+            - source-v1-{{ .Branch }}-{{ .Revision }}
+            - source-v1-{{ .Branch }}-
+            - source-v1-
       - checkout
+      - save_cache:
+          key: source-v1-{{ .Branch }}-{{ .Revision }}
+          paths:
+            - ".git"
       - run:
           name: config
-          command: meson -Dbuild_docs=true . build
+          command: meson << parameters.build-config >> . build
       - run:
           name: build
           command: ninja -C build
-  build_minimal:
-    docker:
-      - image: yshui/comptonci
+  test-xvfb:
+    <<: *defaults
     steps:
-      - checkout
       - run:
-          name: config
-          command: meson -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false . build
-      - run:
-          name: build
-          command: ninja -C build
-  build_nogl:
-    docker:
-      - image: yshui/comptonci
-    steps:
-      - checkout
-      - run:
-          name: config
-          command: meson -Dopengl=false . build
-      - run:
-          name: build
-          command: ninja -C build
-  build_noregex:
-    docker:
-      - image: yshui/comptonci
-    steps:
-      - checkout
-      - run:
-          name: config
-          command: meson -Dregex=false . build
-      - run:
-          name: build
-          command: ninja -C build
+          name: xxx
+          command: xvfb-run -s "-screen 0 640x480x24" glxinfo
 
 workflows:
-  version: 2
   all_builds:
     jobs:
       - build
-      - build_nogl
-      - build_noregex
-      - build_minimal
+      - build:
+          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
+      - build:
+          build-config: -Dopengl=false
+      - build:
+          build-config: -Dregex=false
+#     - test-xvfb
