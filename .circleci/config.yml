@@ -11,3 +11,45 @@ jobs:
       - run:
           name: build
           command: ninja -C build
+  build_minimal:
+    docker:
+      - image: yshui/comptonci
+    steps:
+      - checkout
+      - run:
+          name: config
+          command: meson -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false . build
+      - run:
+          name: build
+          command: ninja -C build
+  build_nogl:
+    docker:
+      - image: yshui/comptonci
+    steps:
+      - checkout
+      - run:
+          name: config
+          command: meson -Dopengl=false . build
+      - run:
+          name: build
+          command: ninja -C build
+  build_noregex:
+    docker:
+      - image: yshui/comptonci
+    steps:
+      - checkout
+      - run:
+          name: config
+          command: meson -Dregex=false . build
+      - run:
+          name: build
+          command: ninja -C build
+
+workflows:
+  version: 2
+  all_builds:
+    jobs:
+      - build
+      - build_nogl
+      - build_noregex
+      - build_minimal

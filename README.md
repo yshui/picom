@@ -18,6 +18,7 @@ See [Releases](https://github.com/yshui/compton/releases)
 Assuming you already have all the usual building tools installed (e.g. gcc, meson, ninja, etc.), you still need:
 
 * libx11
+* libx11-xcb
 * libXext
 * xproto
 * xcb
