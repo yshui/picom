@@ -1285,4 +1285,49 @@ bool init_render(session_t *ps) {
 	return true;
 }
 
+/**
+ * Free root tile related things.
+ */
+void free_root_tile(session_t *ps) {
+	free_picture(ps->c, &ps->root_tile_paint.pict);
+#ifdef CONFIG_OPENGL
+	free_texture(ps, &ps->root_tile_paint.ptex);
+#else
+	assert(!ps->root_tile_paint.ptex);
+#endif
+	if (ps->root_tile_fill) {
+		xcb_free_pixmap(ps->c, ps->root_tile_paint.pixmap);
+		ps->root_tile_paint.pixmap = XCB_NONE;
+	}
+	ps->root_tile_paint.pixmap = None;
+	ps->root_tile_fill = false;
+}
+
+void deinit_render(session_t *ps) {
+	// Free alpha_picts
+	for (int i = 0; i <= MAX_ALPHA; ++i)
+		free_picture(ps->c, &ps->alpha_picts[i]);
+	free(ps->alpha_picts);
+	ps->alpha_picts = NULL;
+
+	// Free cshadow_picture and black_picture
+	if (ps->cshadow_picture == ps->black_picture)
+		ps->cshadow_picture = XCB_NONE;
+	else
+		free_picture(ps->c, &ps->cshadow_picture);
+
+	free_picture(ps->c, &ps->black_picture);
+	free_picture(ps->c, &ps->white_picture);
+	free(ps->shadow_corner);
+	free(ps->shadow_top);
+	free(ps->gaussian_map);
+
+	// Free other X resources
+	free_root_tile(ps);
+
+#ifdef CONFIG_OPENGL
+	glx_destroy(ps);
+#endif
+}
+
 // vim: set ts=8 sw=8 noet :

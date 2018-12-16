@@ -187,21 +187,6 @@ free_win_res(session_t *ps, win *w) {
 }
 
 /**
- * Free root tile related things.
- */
-static inline void
-free_root_tile(session_t *ps) {
-  free_picture(ps->c, &ps->root_tile_paint.pict);
-  free_texture(ps, &ps->root_tile_paint.ptex);
-  if (ps->root_tile_fill) {
-    xcb_free_pixmap(ps->c, ps->root_tile_paint.pixmap);
-    ps->root_tile_paint.pixmap = XCB_NONE;
-  }
-  ps->root_tile_paint.pixmap = None;
-  ps->root_tile_fill = false;
-}
-
-/**
  * Get current system clock in milliseconds.
  */
 static inline time_ms_t
@@ -3959,14 +3944,6 @@ session_destroy(session_t *ps) {
     ps->list = NULL;
   }
 
-  // Free alpha_picts
-  {
-    for (int i = 0; i <= MAX_ALPHA; ++i)
-      free_picture(ps->c, &ps->alpha_picts[i]);
-    free(ps->alpha_picts);
-    ps->alpha_picts = NULL;
-  }
-
   // Free blacklists
   free_wincondlst(&ps->o.shadow_blacklist);
   free_wincondlst(&ps->o.fade_blacklist);
@@ -4002,15 +3979,6 @@ session_destroy(session_t *ps) {
     ps->ignore_tail = &ps->ignore_head;
   }
 
-  // Free cshadow_picture and black_picture
-  if (ps->cshadow_picture == ps->black_picture)
-    ps->cshadow_picture = None;
-  else
-    free_picture(ps->c, &ps->cshadow_picture);
-
-  free_picture(ps->c, &ps->black_picture);
-  free_picture(ps->c, &ps->white_picture);
-
   // Free tgt_{buffer,picture} and root_picture
   if (ps->tgt_buffer.pict == ps->tgt_picture)
     ps->tgt_buffer.pict = None;
@@ -4024,16 +3992,11 @@ session_destroy(session_t *ps) {
   free_picture(ps->c, &ps->root_picture);
   free_paint(ps, &ps->tgt_buffer);
 
-  // Free other X resources
-  free_root_tile(ps);
   pixman_region32_fini(&ps->screen_reg);
   pixman_region32_fini(&ps->all_damage);
   for (int i = 0; i < CGLX_MAX_BUFFER_AGE; ++i)
     pixman_region32_fini(&ps->all_damage_last[i]);
   free(ps->expose_rects);
-  free(ps->shadow_corner);
-  free(ps->shadow_top);
-  free(ps->gaussian_map);
 
   free(ps->o.config_file);
   free(ps->o.write_pid_path);
@@ -4048,9 +4011,7 @@ session_destroy(session_t *ps) {
   free_xinerama_info(ps);
   free(ps->pictfmts);
 
-#ifdef CONFIG_OPENGL
-  glx_destroy(ps);
-#endif
+  deinit_render(ps);
 
 #ifdef CONFIG_VSYNC_DRM
   // Close file opened for DRM VSync

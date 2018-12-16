@@ -108,10 +108,6 @@ static inline void
 free_paint_glx(session_t *ps, paint_t *p) {}
 static inline void
 free_win_res_glx(session_t *ps, win *w) {}
-static inline void
-free_texture(session_t *ps, glx_texture_t **t) {
-  assert(!*t);
-}
 #endif
 
 /**
