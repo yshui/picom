@@ -5,7 +5,10 @@
 
 #include "common.h"
 #include "log.h"
+
+#ifdef CONFIG_OPENGL
 #include "opengl.h"
+#endif
 
 #include "vsync.h"
 

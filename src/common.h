@@ -375,7 +375,7 @@ typedef struct glx_prog_main {
 
 #endif
 #else
-typedef uint32_t glx_prog_main_t;
+struct glx_prog_main { };
 #endif
 
 #define PAINT_INIT { .pixmap = None, .pict = None }

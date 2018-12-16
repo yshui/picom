@@ -4,7 +4,11 @@
 #include <xcb/xcb_image.h>
 
 #include "common.h"
+
+#ifdef CONFIG_OPENGL
 #include "opengl.h"
+#endif
+
 #include "vsync.h"
 #include "win.h"
 
@@ -76,7 +80,9 @@ void free_picture(xcb_connection_t *c, xcb_render_picture_t *p) {
  * Free paint_t.
  */
 void free_paint(session_t *ps, paint_t *ppaint) {
+#ifdef CONFIG_OPENGL
 	free_paint_glx(ps, ppaint);
+#endif
 	free_picture(ps->c, &ppaint->pict);
 	if (ppaint->pixmap)
 		xcb_free_pixmap(ps->c, ppaint->pixmap);
@@ -1214,9 +1220,13 @@ bool init_render(session_t *ps) {
 	// Blur filter
 	if (ps->o.blur_background || ps->o.blur_background_frame) {
 		bool ret;
-		if (ps->o.backend == BKEND_GLX)
+		if (ps->o.backend == BKEND_GLX) {
+#ifdef CONFIG_OPENGL
 			ret = glx_init_blur(ps);
-		else
+#else
+			assert(false);
+#endif
+		} else
 			ret = xr_init_blur(ps);
 		if (!ret)
 			return false;
