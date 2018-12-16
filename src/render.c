@@ -24,8 +24,7 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid,
 		return false;
 
 	if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))
-		return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei,
-		                       depth);
+		return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, depth);
 
 	return true;
 }
@@ -89,10 +88,9 @@ void free_paint(session_t *ps, paint_t *ppaint) {
 	ppaint->pixmap = XCB_NONE;
 }
 
-void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
-            double opacity, bool argb, bool neg, xcb_render_picture_t pict,
-            glx_texture_t *ptex, const region_t *reg_paint,
-            const glx_prog_main_t *pprogram) {
+void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, double opacity,
+            bool argb, bool neg, xcb_render_picture_t pict, glx_texture_t *ptex,
+            const region_t *reg_paint, const glx_prog_main_t *pprogram) {
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID: {
@@ -102,15 +100,15 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei,
 			int op = ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC
 			                                 : XCB_RENDER_PICT_OP_OVER);
 			xcb_render_composite(ps->c, op, pict, alpha_pict,
-			                     ps->tgt_buffer.pict, x, y, 0, 0, dx, dy,
-			                     wid, hei);
+			                     ps->tgt_buffer.pict, x, y, 0, 0, dx, dy, wid,
+			                     hei);
 		}
 		break;
 	}
 #ifdef CONFIG_OPENGL
 	case BKEND_GLX:
-		glx_render(ps, ptex, x, y, dx, dy, wid, hei, ps->psglx->z, opacity,
-		           argb, neg, reg_paint, pprogram);
+		glx_render(ps, ptex, x, y, dx, dy, wid, hei, ps->psglx->z, opacity, argb,
+		           neg, reg_paint, pprogram);
 		ps->psglx->z += 1;
 		break;
 #endif
@@ -160,8 +158,8 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	// Fetch Pixmap
 	if (!w->paint.pixmap && ps->has_name_pixmap) {
 		w->paint.pixmap = xcb_generate_id(ps->c);
-		set_ignore_cookie(ps, xcb_composite_name_window_pixmap(
-		                          ps->c, w->id, w->paint.pixmap));
+		set_ignore_cookie(
+		    ps, xcb_composite_name_window_pixmap(ps->c, w->id, w->paint.pixmap));
 		if (w->paint.pixmap)
 			free_fence(ps, &w->fence);
 	}
@@ -189,14 +187,12 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	// causing the jittering issue M4he reported in #7.
 	if (!paint_bind_tex(ps, &w->paint, 0, 0, 0,
 	                    (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
-		printf_errf("(%#010lx): Failed to bind texture. Expect troubles.",
-		            w->id);
+		printf_errf("(%#010lx): Failed to bind texture. Expect troubles.", w->id);
 	}
 	w->pixmap_damaged = false;
 
 	if (!paint_isvalid(ps, &w->paint)) {
-		printf_errf("(%#010lx): Missing painting data. This is a bad sign.",
-		            w->id);
+		printf_errf("(%#010lx): Missing painting data. This is a bad sign.", w->id);
 		return;
 	}
 
@@ -222,18 +218,17 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 				pixman_region32_fini(&reg);
 			}
 
-			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, pict,
-			                     None, newpict, 0, 0, 0, 0, 0, 0, wid,
-			                     hei);
+			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, pict, None,
+			                     newpict, 0, 0, 0, 0, 0, 0, wid, hei);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE,
-			                     ps->white_picture, None, newpict, 0, 0,
-			                     0, 0, 0, 0, wid, hei);
+			                     ps->white_picture, None, newpict, 0, 0, 0, 0,
+			                     0, 0, wid, hei);
 			// We use an extra PictOpInReverse operation to get correct
 			// pixel alpha. There could be a better solution.
 			if (win_has_alpha(w))
-				xcb_render_composite(
-				    ps->c, XCB_RENDER_PICT_OP_IN_REVERSE, pict, None,
-				    newpict, 0, 0, 0, 0, 0, 0, wid, hei);
+				xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_IN_REVERSE,
+				                     pict, None, newpict, 0, 0, 0, 0, 0,
+				                     0, wid, hei);
 			pict = newpict;
 		}
 	}
@@ -250,8 +245,8 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		const int b = extents.bottom;
 		const int r = extents.right;
 
-#define COMP_BDR(cx, cy, cwid, chei)                                                \
-	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity *dopacity, \
+#define COMP_BDR(cx, cy, cwid, chei)                                                     \
+	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity *dopacity,      \
 	             reg_paint, pict)
 
 		// Sanitize the margins, in case some broken WM makes
@@ -273,14 +268,13 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 
 			// bottom
 			// cbot = checked bottom
-			int cbot = min_i(
-			    body_height,
-			    b);        // Make sure bottom margin is not too large
+			int cbot =
+			    min_i(body_height,
+			          b);        // Make sure bottom margin is not too large
 			if (cbot > 0)
 				COMP_BDR(0, hei - cbot, wid, cbot);
 
-			body_height -=
-			    cbot;        // Height of window exclude the margin
+			body_height -= cbot;        // Height of window exclude the margin
 			if (body_height <= 0)
 				break;
 
@@ -341,13 +335,12 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 			};
 
 			xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_OVER,
-			                           ps->tgt_buffer.pict, color, 1,
-			                           &rect);
+			                           ps->tgt_buffer.pict, color, 1, &rect);
 		} break;
 #ifdef CONFIG_OPENGL
 		case BKEND_GLX:
-			glx_dim_dst(ps, x, y, wid, hei, ps->psglx->z - 0.7,
-			            dim_opacity, reg_paint);
+			glx_dim_dst(ps, x, y, wid, hei, ps->psglx->z - 0.7, dim_opacity,
+			            reg_paint);
 			break;
 #endif
 		default: assert(false);
@@ -374,8 +367,8 @@ static bool get_root_tile(session_t *ps) {
 	// Get the values of background attributes
 	for (int p = 0; background_props_str[p]; p++) {
 		winprop_t prop =
-		    wid_get_prop(ps, ps->root, get_atom(ps, background_props_str[p]),
-		                 1L, XCB_ATOM_PIXMAP, 32);
+		    wid_get_prop(ps, ps->root, get_atom(ps, background_props_str[p]), 1L,
+		                 XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
 			pixmap = *prop.p32;
 			fill = false;
@@ -481,8 +474,8 @@ static xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int he
 	if (ps->cgsize > 0) {
 		d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + ps->cgsize];
 	} else {
-		d = (unsigned char)(sum_kernel(ps->gaussian_map, center, center,
-		                               width, height) *
+		d = (unsigned char)(sum_kernel(ps->gaussian_map, center, center, width,
+		                               height) *
 		                    opacity * 255.0);
 	}
 	memset(data, d, sheight * swidth);
@@ -506,9 +499,8 @@ static xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int he
 				                          (ps->cgsize + 1) +
 				                      y * (ps->cgsize + 1) + x];
 			} else {
-				d = (unsigned char)(sum_kernel(ps->gaussian_map,
-				                               x - center, y - center,
-				                               width, height) *
+				d = (unsigned char)(sum_kernel(ps->gaussian_map, x - center,
+				                               y - center, width, height) *
 				                    opacity * 255.0);
 			}
 			data[y * sstride + x] = d;
@@ -528,14 +520,12 @@ static xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int he
 			if (ylimit == ps->cgsize) {
 				d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + y];
 			} else {
-				d = (unsigned char)(sum_kernel(ps->gaussian_map,
-				                               center, y - center,
-				                               width, height) *
+				d = (unsigned char)(sum_kernel(ps->gaussian_map, center,
+				                               y - center, width, height) *
 				                    opacity * 255.0);
 			}
 			memset(&data[y * sstride + ps->cgsize], d, x_diff);
-			memset(&data[(sheight - y - 1) * sstride + ps->cgsize], d,
-			       x_diff);
+			memset(&data[(sheight - y - 1) * sstride + ps->cgsize], d, x_diff);
 		}
 	}
 
@@ -579,10 +569,10 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 		return None;
 	}
 
-	shadow_pixmap = x_create_pixmap(ps, 8, ps->root, shadow_image->width,
-	                                shadow_image->height);
-	shadow_pixmap_argb = x_create_pixmap(ps, 32, ps->root, shadow_image->width,
-	                                     shadow_image->height);
+	shadow_pixmap =
+	    x_create_pixmap(ps, 8, ps->root, shadow_image->width, shadow_image->height);
+	shadow_pixmap_argb =
+	    x_create_pixmap(ps, 32, ps->root, shadow_image->width, shadow_image->height);
 
 	if (!shadow_pixmap || !shadow_pixmap_argb) {
 		printf_errf("(): failed to create shadow pixmaps");
@@ -648,9 +638,9 @@ static inline void win_paint_shadow(session_t *ps, win *w, region_t *reg_paint) 
 		return;
 	}
 
-	render(ps, 0, 0, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy,
-	       w->shadow_width, w->shadow_height, w->shadow_opacity, true, false,
-	       w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint, NULL);
+	render(ps, 0, 0, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy, w->shadow_width,
+	       w->shadow_height, w->shadow_opacity, true, false, w->shadow_paint.pict,
+	       w->shadow_paint.ptex, reg_paint, NULL);
 }
 
 /**
@@ -687,8 +677,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, int y, int wi
 
 	// Directly copying from tgt_buffer to it does not work, so we create a
 	// Picture in the middle.
-	xcb_render_picture_t tmp_picture =
-	    x_create_picture(ps, wid, hei, NULL, 0, NULL);
+	xcb_render_picture_t tmp_picture = x_create_picture(ps, wid, hei, NULL, 0, NULL);
 
 	if (!tmp_picture) {
 		printf_errf("(): Failed to build intermediate Picture.");
@@ -710,12 +699,12 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, int y, int wi
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
 		xcb_render_set_picture_filter(
-		    ps->c, src_pict, strlen(XRFILTER_CONVOLUTION),
-		    XRFILTER_CONVOLUTION, kwid * khei + 2, convolution_blur);
-		xcb_render_composite(
-		    ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, None, dst_pict,
-		    (rd_from_tgt ? x : 0), (rd_from_tgt ? y : 0), 0, 0,
-		    (rd_from_tgt ? 0 : x), (rd_from_tgt ? 0 : y), wid, hei);
+		    ps->c, src_pict, strlen(XRFILTER_CONVOLUTION), XRFILTER_CONVOLUTION,
+		    kwid * khei + 2, convolution_blur);
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, None,
+		                     dst_pict, (rd_from_tgt ? x : 0),
+		                     (rd_from_tgt ? y : 0), 0, 0, (rd_from_tgt ? 0 : x),
+		                     (rd_from_tgt ? 0 : y), wid, hei);
 		xrfilter_reset(ps, src_pict);
 
 		{
@@ -766,8 +755,8 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
 				break;
 			}
 
-			assert(!kern_dst || (kern_src[0] == kern_dst[0] &&
-			                     kern_src[1] == kern_dst[1]));
+			assert(!kern_dst ||
+			       (kern_src[0] == kern_dst[0] && kern_src[1] == kern_dst[1]));
 
 			// Skip for fixed factor_center if the cache exists already
 			if (ps->o.blur_background_fixed && kern_dst)
@@ -778,8 +767,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
 
 			// Allocate cache space if needed
 			if (!kern_dst) {
-				kern_dst =
-				    ccalloc(kwid * khei + 2, xcb_render_fixed_t);
+				kern_dst = ccalloc(kwid * khei + 2, xcb_render_fixed_t);
 				if (!kern_dst) {
 					printf_errf("(): Failed to allocate memory "
 					            "for blur kernel.");
@@ -829,8 +817,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
 /// paint all windows
 /// region = ??
 /// region_real = the damage region
-void paint_all(session_t *ps, region_t *region, const region_t *region_real,
-               win *const t) {
+void paint_all(session_t *ps, region_t *region, const region_t *region_real, win *const t) {
 	if (!region_real)
 		region_real = region;
 
@@ -953,8 +940,7 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real,
 			if (w->blur_background &&
 			    (!win_is_solid(ps, w) ||
 			     (ps->o.blur_background_frame && w->frame_opacity != 1)))
-				win_blur_background(ps, w, ps->tgt_buffer.pict,
-				                    &reg_tmp);
+				win_blur_background(ps, w, ps->tgt_buffer.pict, &reg_tmp);
 
 			// Painting the window
 			paint_one(ps, w, &reg_tmp);
@@ -1006,16 +992,15 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real,
 			xcb_render_picture_t new_pict = x_create_picture(
 			    ps, ps->root_width, ps->root_height, pictfmt, 0, NULL);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
-			                     ps->tgt_buffer.pict, None, new_pict, 0,
-			                     0, 0, 0, 0, 0, ps->root_width,
-			                     ps->root_height);
+			                     ps->tgt_buffer.pict, None, new_pict, 0, 0, 0,
+			                     0, 0, 0, ps->root_width, ps->root_height);
 
 			// Next, we set the region of paint and highlight it
 			x_set_picture_clip_region(ps, new_pict, 0, 0, region_real);
 			xcb_render_composite(
 			    ps->c, XCB_RENDER_PICT_OP_OVER, ps->white_picture,
-			    ps->alpha_picts[MAX_ALPHA / 2], new_pict, 0, 0, 0, 0, 0,
-			    0, ps->root_width, ps->root_height);
+			    ps->alpha_picts[MAX_ALPHA / 2], new_pict, 0, 0, 0, 0, 0, 0,
+			    ps->root_width, ps->root_height);
 
 			// Finally, clear clip region and put the whole thing on screen
 			x_set_picture_clip_region(ps, new_pict, 0, 0, &ps->screen_reg);
@@ -1025,9 +1010,9 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real,
 			xcb_render_free_picture(ps->c, new_pict);
 		} else
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
-			                     ps->tgt_buffer.pict, None,
-			                     ps->tgt_picture, 0, 0, 0, 0, 0, 0,
-			                     ps->root_width, ps->root_height);
+			                     ps->tgt_buffer.pict, None, ps->tgt_picture,
+			                     0, 0, 0, 0, 0, 0, ps->root_width,
+			                     ps->root_height);
 		break;
 #ifdef CONFIG_OPENGL
 	case BKEND_XR_GLX_HYBRID:
@@ -1101,8 +1086,7 @@ static bool xr_init_blur(session_t *ps) {
 	xcb_render_query_filters_reply_t *pf = xcb_render_query_filters_reply(
 	    ps->c, xcb_render_query_filters(ps->c, get_tgt_window(ps)), NULL);
 	if (pf) {
-		xcb_str_iterator_t iter =
-		    xcb_render_query_filters_filters_iterator(pf);
+		xcb_str_iterator_t iter = xcb_render_query_filters_filters_iterator(pf);
 		for (; iter.rem; xcb_str_next(&iter)) {
 			int len = xcb_str_name_length(iter.data);
 			char *name = xcb_str_name(iter.data);
@@ -1161,8 +1145,7 @@ solid_picture(session_t *ps, bool argb, double a, double r, double g, double b) 
 	rect.width = 1;
 	rect.height = 1;
 
-	xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, picture, col, 1,
-	                           &rect);
+	xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, picture, col, 1, &rect);
 	xcb_free_pixmap(ps->c, pixmap);
 
 	return picture;
@@ -1292,9 +1275,8 @@ bool init_render(session_t *ps) {
 	if (!ps->o.shadow_red && !ps->o.shadow_green && !ps->o.shadow_blue) {
 		ps->cshadow_picture = ps->black_picture;
 	} else {
-		ps->cshadow_picture =
-		    solid_picture(ps, true, 1, ps->o.shadow_red, ps->o.shadow_green,
-		                  ps->o.shadow_blue);
+		ps->cshadow_picture = solid_picture(
+		    ps, true, 1, ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue);
 		if (ps->cshadow_picture == XCB_NONE) {
 			printf_errf("(): Failed to create shadow picture.");
 			return false;
