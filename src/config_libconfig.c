@@ -53,11 +53,8 @@ open_config_file(char *cpath, char **ppath) {
   for (size_t i = 0; i < ARR_SIZE(config_paths); i++) {
     char *path = xdgConfigFind(config_paths[i], NULL);
     FILE *ret = fopen(path, "r");
-    if (ret) {
-      printf_errf("(): file is %s", path);
-      if (ppath) {
+    if (ret && ppath) {
         *ppath = strdup(path);
-      }
     }
     free(path);
     if (ret) {
