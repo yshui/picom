@@ -1,0 +1,13 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: yshui/comptonci
+    steps:
+      - checkout
+      - run:
+          name: config
+          command: meson -Dbuild_docs=true . build
+      - run:
+          name: build
+          command: ninja -C build
