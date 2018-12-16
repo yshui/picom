@@ -1183,6 +1183,50 @@ static bool init_alpha_picts(session_t *ps) {
 	return true;
 }
 
+/// precompute shadow corners and sides to save time for large windows
+static void presum_gaussian(session_t *ps, conv *map) {
+	ps->cgsize = map->size;
+
+	const int center = map->size / 2;
+	const int r = ps->cgsize + 1;        // radius of the kernel
+	const int width = ps->cgsize * 2, height = ps->cgsize * 2;
+
+
+	if (ps->shadow_corner)
+		free(ps->shadow_corner);
+	if (ps->shadow_top)
+		free(ps->shadow_top);
+
+	// clang-format off
+	ps->shadow_corner = cvalloc(r*r*26);
+	ps->shadow_top = cvalloc(r*26);
+
+	for (int x = 0; x < r; x++) {
+		double sum = sum_kernel(map, x-center, center, width, height);
+		int tmp = ps->shadow_top[25*r+x] = (unsigned char)(sum*255.0);
+
+		for (int opacity = 0; opacity < 25; opacity++) {
+			ps->shadow_top[opacity*r+x] = tmp*opacity/25;
+		}
+	}
+
+	for (int x = 0; x < r; x++) {
+		for (int y = 0; y <= x; y++) {
+			double sum =
+			    sum_kernel(map, x-center, y-center, width, height);
+			ps->shadow_corner[25*r*r+y*r+x] = (unsigned char)(sum*255.0);
+			ps->shadow_corner[25*r*r+x*r+y] = ps->shadow_corner[25*r*r+y*r+x];
+
+			for (int opacity = 0; opacity < 25; opacity++) {
+				ps->shadow_corner[opacity*r*r+y*r+x] =
+				ps->shadow_corner[opacity*r*r+x*r+y] =
+				    ps->shadow_corner[25*r*r+y*r+x]*opacity/25;
+			}
+		}
+	}
+	// clang-format on
+}
+
 bool init_render(session_t *ps) {
 	// Initialize OpenGL as early as possible
 	if (bkend_use_glx(ps)) {
@@ -1231,6 +1275,9 @@ bool init_render(session_t *ps) {
 		if (!ret)
 			return false;
 	}
+
+	ps->gaussian_map = gaussian_kernel(ps->o.shadow_radius);
+	presum_gaussian(ps, ps->gaussian_map);
 
 	ps->black_picture = solid_picture(ps, true, 1, 0, 0, 0);
 	ps->white_picture = solid_picture(ps, true, 1, 1, 1, 1);

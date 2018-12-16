@@ -403,54 +403,6 @@ run_fade(session_t *ps, win *w, unsigned steps) {
   }
 }
 
-// === Shadows ===
-
-/* precompute shadow corners and sides
-   to save time for large windows */
-
-static void
-presum_gaussian(session_t *ps, conv *map) {
-  int center = map->size / 2;
-  int opacity, x, y;
-
-  ps->cgsize = map->size;
-
-  if (ps->shadow_corner)
-    free(ps->shadow_corner);
-  if (ps->shadow_top)
-    free(ps->shadow_top);
-
-  ps->shadow_corner = cvalloc((ps->cgsize + 1) * (ps->cgsize + 1) * 26);
-  ps->shadow_top = cvalloc((ps->cgsize + 1) * 26);
-
-  for (x = 0; x <= ps->cgsize; x++) {
-    ps->shadow_top[25 * (ps->cgsize + 1) + x] = (unsigned char)
-      (sum_kernel(map, x - center, center, ps->cgsize * 2, ps->cgsize * 2) * 255.0);
-
-    for (opacity = 0; opacity < 25; opacity++) {
-      ps->shadow_top[opacity * (ps->cgsize + 1) + x] =
-        ps->shadow_top[25 * (ps->cgsize + 1) + x] * opacity / 25;
-    }
-
-    for (y = 0; y <= x; y++) {
-      ps->shadow_corner[25 * (ps->cgsize + 1) * (ps->cgsize + 1) + y * (ps->cgsize + 1) + x]
-        = (unsigned char)
-          (sum_kernel(map, x - center, y - center, ps->cgsize * 2, ps->cgsize * 2) * 255.0);
-      ps->shadow_corner[25 * (ps->cgsize + 1) * (ps->cgsize + 1) + x * (ps->cgsize + 1) + y]
-        = ps->shadow_corner[25 * (ps->cgsize + 1) * (ps->cgsize + 1) + y * (ps->cgsize + 1) + x];
-
-      for (opacity = 0; opacity < 25; opacity++) {
-        ps->shadow_corner[opacity * (ps->cgsize + 1) * (ps->cgsize + 1)
-                      + y * (ps->cgsize + 1) + x]
-          = ps->shadow_corner[opacity * (ps->cgsize + 1) * (ps->cgsize + 1)
-                          + x * (ps->cgsize + 1) + y]
-          = ps->shadow_corner[25 * (ps->cgsize + 1) * (ps->cgsize + 1)
-                          + y * (ps->cgsize + 1) + x] * opacity / 25;
-      }
-    }
-  }
-}
-
 // === Error handling ===
 
 static void
@@ -3850,9 +3802,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     exit(1);
 
   init_atoms(ps);
-
-  ps->gaussian_map = gaussian_kernel(ps->o.shadow_radius);
-  presum_gaussian(ps, ps->gaussian_map);
 
   {
     xcb_render_create_picture_value_list_t pa = {
