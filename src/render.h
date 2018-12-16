@@ -30,3 +30,5 @@ paint_all(session_t *ps, region_t *region, const region_t *region_real, win * co
 void free_picture(xcb_connection_t *c, xcb_render_picture_t *p);
 
 void free_paint(session_t *ps, paint_t *ppaint);
+
+bool init_render(session_t *ps);

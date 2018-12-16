@@ -451,48 +451,6 @@ presum_gaussian(session_t *ps, conv *map) {
   }
 }
 
-
-/**
- * Generate a 1x1 <code>Picture</code> of a particular color.
- */
-static xcb_render_picture_t
-solid_picture(session_t *ps, bool argb, double a,
-              double r, double g, double b) {
-  xcb_pixmap_t pixmap;
-  xcb_render_picture_t picture;
-  xcb_render_create_picture_value_list_t pa;
-  xcb_render_color_t col;
-  xcb_rectangle_t rect;
-
-  pixmap = x_create_pixmap(ps, argb ? 32 : 8, ps->root, 1, 1);
-  if (!pixmap) return None;
-
-  pa.repeat = True;
-  picture = x_create_picture_with_standard_and_pixmap(ps,
-    argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8, pixmap,
-    XCB_RENDER_CP_REPEAT, &pa);
-
-  if (!picture) {
-    xcb_free_pixmap(ps->c, pixmap);
-    return None;
-  }
-
-  col.alpha = a * 0xffff;
-  col.red =   r * 0xffff;
-  col.green = g * 0xffff;
-  col.blue =  b * 0xffff;
-
-  rect.x = 0;
-  rect.y = 0;
-  rect.width = 1;
-  rect.height = 1;
-
-  xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, picture, col, 1, &rect);
-  xcb_free_pixmap(ps->c, pixmap);
-
-  return picture;
-}
-
 // === Error handling ===
 
 static void
@@ -1177,9 +1135,6 @@ restack_win(session_t *ps, win *w, Window new_above) {
   }
 }
 
-static bool
-init_filters(session_t *ps);
-
 static void
 configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
   // On root window changes
@@ -1208,7 +1163,7 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     if (ps->o.glx_reinit_on_root_change && ps->psglx) {
       if (!glx_reinit(ps, bkend_use_glx(ps)))
         printf_errf("(): Failed to reinitialize GLX, troubles ahead.");
-      if (BKEND_GLX == ps->o.backend && !init_filters(ps))
+      if (BKEND_GLX == ps->o.backend && !glx_init_blur(ps))
         printf_errf("(): Failed to initialize filters.");
     }
 
@@ -3213,20 +3168,6 @@ swopti_handle_timeout(session_t *ps) {
 }
 
 /**
- * Pregenerate alpha pictures.
- */
-static void
-init_alpha_picts(session_t *ps) {
-  ps->alpha_picts = ccalloc(MAX_ALPHA+1, xcb_render_picture_t);
-
-  for (int i = 0; i <= MAX_ALPHA; ++i) {
-    double o = (double) i / MAX_ALPHA;
-    ps->alpha_picts[i] = solid_picture(ps, false, o, 0, 0, 0);
-    assert(ps->alpha_picts[i] != None);
-  }
-}
-
-/**
  * Initialize X composite overlay window.
  */
 static bool
@@ -3278,50 +3219,6 @@ init_overlay(session_t *ps) {
 #endif
 
   return ps->overlay;
-}
-
-/**
- * Query needed X Render / OpenGL filters to check for their existence.
- */
-static bool
-init_filters(session_t *ps) {
-  // Blur filter
-  if (ps->o.blur_background || ps->o.blur_background_frame) {
-    switch (ps->o.backend) {
-      case BKEND_XRENDER:
-      case BKEND_XR_GLX_HYBRID:
-        {
-          // Query filters
-          xcb_render_query_filters_reply_t *pf = xcb_render_query_filters_reply(ps->c,
-              xcb_render_query_filters(ps->c, get_tgt_window(ps)), NULL);
-          if (pf) {
-            xcb_str_iterator_t iter = xcb_render_query_filters_filters_iterator(pf);
-            for (; iter.rem; xcb_str_next(&iter)) {
-              // Convolution filter
-              if (strlen(XRFILTER_CONVOLUTION) == xcb_str_name_length(iter.data)
-                  && !memcmp(XRFILTER_CONVOLUTION, xcb_str_name(iter.data), strlen(XRFILTER_CONVOLUTION)))
-                ps->xrfilter_convolution_exists = true;
-            }
-            free(pf);
-          }
-
-          // Turn features off if any required filter is not present
-          if (!ps->xrfilter_convolution_exists) {
-            printf_errf("(): X Render convolution filter unsupported by your X server. Background blur is not possible.");
-            return false;
-          }
-          break;
-        }
-#ifdef CONFIG_OPENGL
-      case BKEND_GLX:
-        return glx_init_blur(ps);
-#endif
-      default:
-        assert(false);
-    }
-  }
-
-  return true;
 }
 
 /**
@@ -3927,30 +3824,13 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // of OpenGL context.
   init_overlay(ps);
 
+  // Initialize filters, must be preceded by OpenGL context creation
+  if (!init_render(ps))
+    exit(1);
+
   if (ps->o.print_diagnostics) {
     print_diagnostics(ps);
     exit(0);
-  }
-
-  // Initialize OpenGL as early as possible
-  if (bkend_use_glx(ps)) {
-#ifdef CONFIG_OPENGL
-    if (!glx_init(ps, true))
-      exit(1);
-#else
-    printf_errfq(1, "(): GLX backend support not compiled in.");
-#endif
-  }
-
-  // Initialize window GL shader
-  if (BKEND_GLX == ps->o.backend && ps->o.glx_fshader_win_str) {
-#ifdef CONFIG_OPENGL
-    if (!glx_load_prog_main(ps, NULL, ps->o.glx_fshader_win_str, &ps->o.glx_prog_win))
-      exit(1);
-#else
-    printf_errf("(): GLSL supported not compiled in, can't load shader.");
-    exit(1);
-#endif
   }
 
   // Initialize software optimization
@@ -3963,10 +3843,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
         || ps->o.xinerama_shadow_crop))
     xcb_randr_select_input(ps->c, ps->root, XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
 
-  // Initialize VSync
-  if (!vsync_init(ps))
-    exit(1);
-
   cxinerama_upd_scrs(ps);
 
   // Create registration window
@@ -3974,7 +3850,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     exit(1);
 
   init_atoms(ps);
-  init_alpha_picts(ps);
 
   ps->gaussian_map = gaussian_kernel(ps->o.shadow_radius);
   presum_gaussian(ps, ps->gaussian_map);
@@ -3991,22 +3866,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
         ps->vis, ps->overlay, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
     } else
       ps->tgt_picture = ps->root_picture;
-  }
-
-  // Initialize filters, must be preceded by OpenGL context creation
-  if (!init_filters(ps))
-    exit(1);
-
-  ps->black_picture = solid_picture(ps, true, 1, 0, 0, 0);
-  ps->white_picture = solid_picture(ps, true, 1, 1, 1, 1);
-
-  // Generates another Picture for shadows if the color is modified by
-  // user
-  if (!ps->o.shadow_red && !ps->o.shadow_green && !ps->o.shadow_blue) {
-    ps->cshadow_picture = ps->black_picture;
-  } else {
-    ps->cshadow_picture = solid_picture(ps, true, 1,
-        ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue);
   }
 
   ev_io_init(&ps->xiow, x_event_callback, ConnectionNumber(ps->dpy), EV_READ);

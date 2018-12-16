@@ -1087,4 +1087,163 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real,
 	}
 }
 
+/**
+ * Query needed X Render / OpenGL filters to check for their existence.
+ */
+static bool xr_init_blur(session_t *ps) {
+	// Query filters
+	xcb_render_query_filters_reply_t *pf = xcb_render_query_filters_reply(
+	    ps->c, xcb_render_query_filters(ps->c, get_tgt_window(ps)), NULL);
+	if (pf) {
+		xcb_str_iterator_t iter =
+		    xcb_render_query_filters_filters_iterator(pf);
+		for (; iter.rem; xcb_str_next(&iter)) {
+			int len = xcb_str_name_length(iter.data);
+			char *name = xcb_str_name(iter.data);
+			// Check for the convolution filter
+			if (strlen(XRFILTER_CONVOLUTION) == len &&
+			    !memcmp(XRFILTER_CONVOLUTION, name,
+			            strlen(XRFILTER_CONVOLUTION)))
+				ps->xrfilter_convolution_exists = true;
+		}
+		free(pf);
+	}
+
+	// Turn features off if any required filter is not present
+	if (!ps->xrfilter_convolution_exists) {
+		printf_errf("(): Xrender convolution filter "
+		            "unsupported by your X server. "
+		            "Background blur is not possible.");
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * Generate a 1x1 <code>Picture</code> of a particular color.
+ */
+static xcb_render_picture_t
+solid_picture(session_t *ps, bool argb, double a, double r, double g, double b) {
+	xcb_pixmap_t pixmap;
+	xcb_render_picture_t picture;
+	xcb_render_create_picture_value_list_t pa;
+	xcb_render_color_t col;
+	xcb_rectangle_t rect;
+
+	pixmap = x_create_pixmap(ps, argb ? 32 : 8, ps->root, 1, 1);
+	if (!pixmap)
+		return XCB_NONE;
+
+	pa.repeat = True;
+	picture = x_create_picture_with_standard_and_pixmap(
+	    ps, argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8, pixmap,
+	    XCB_RENDER_CP_REPEAT, &pa);
+
+	if (!picture) {
+		xcb_free_pixmap(ps->c, pixmap);
+		return XCB_NONE;
+	}
+
+	col.alpha = a * 0xffff;
+	col.red = r * 0xffff;
+	col.green = g * 0xffff;
+	col.blue = b * 0xffff;
+
+	rect.x = 0;
+	rect.y = 0;
+	rect.width = 1;
+	rect.height = 1;
+
+	xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, picture, col, 1,
+	                           &rect);
+	xcb_free_pixmap(ps->c, pixmap);
+
+	return picture;
+}
+
+/**
+ * Pregenerate alpha pictures.
+ */
+static bool init_alpha_picts(session_t *ps) {
+	ps->alpha_picts = ccalloc(MAX_ALPHA + 1, xcb_render_picture_t);
+
+	for (int i = 0; i <= MAX_ALPHA; ++i) {
+		double o = (double)i / MAX_ALPHA;
+		ps->alpha_picts[i] = solid_picture(ps, false, o, 0, 0, 0);
+		if (ps->alpha_picts[i] == XCB_NONE)
+			return false;
+	}
+	return true;
+}
+
+bool init_render(session_t *ps) {
+	// Initialize OpenGL as early as possible
+	if (bkend_use_glx(ps)) {
+#ifdef CONFIG_OPENGL
+		if (!glx_init(ps, true))
+			exit(1);
+#else
+		printf_errfq(1, "(): GLX backend support not compiled in.");
+#endif
+	}
+
+	// Initialize VSync
+	if (!vsync_init(ps)) {
+		return false;
+	}
+
+	// Initialize window GL shader
+	if (BKEND_GLX == ps->o.backend && ps->o.glx_fshader_win_str) {
+#ifdef CONFIG_OPENGL
+		if (!glx_load_prog_main(ps, NULL, ps->o.glx_fshader_win_str,
+		                        &ps->o.glx_prog_win))
+			return false;
+#else
+		printf_errf("(): GLSL supported not compiled in, can't load "
+		            "shader.");
+		return false;
+#endif
+	}
+
+	if (!init_alpha_picts(ps)) {
+		printf_errf("(): Failed to init alpha pictures.");
+		return false;
+	}
+
+	// Blur filter
+	if (ps->o.blur_background || ps->o.blur_background_frame) {
+		bool ret;
+		if (ps->o.backend == BKEND_GLX)
+			ret = glx_init_blur(ps);
+		else
+			ret = xr_init_blur(ps);
+		if (!ret)
+			return false;
+	}
+
+	ps->black_picture = solid_picture(ps, true, 1, 0, 0, 0);
+	ps->white_picture = solid_picture(ps, true, 1, 1, 1, 1);
+
+	if (ps->black_picture == XCB_NONE || ps->white_picture == XCB_NONE) {
+		printf_errf("(): Failed to create solid xrender pictures.");
+		return false;
+	}
+
+	// Generates another Picture for shadows if the color is modified by
+	// user
+	if (!ps->o.shadow_red && !ps->o.shadow_green && !ps->o.shadow_blue) {
+		ps->cshadow_picture = ps->black_picture;
+	} else {
+		ps->cshadow_picture =
+		    solid_picture(ps, true, 1, ps->o.shadow_red, ps->o.shadow_green,
+		                  ps->o.shadow_blue);
+		if (ps->cshadow_picture == XCB_NONE) {
+			printf_errf("(): Failed to create shadow picture.");
+			return false;
+		}
+	}
+	return true;
+}
+
 // vim: set ts=8 sw=8 noet :
