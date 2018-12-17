@@ -1936,7 +1936,9 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
     // proc might also just be Xlib internal event processing functions, and
     // because they probably won't see all X replies, they will complain about
     // missing sequence numbers.
-    ev->sequence = LastKnownRequestProcessed(ps->dpy);
+    //
+    // We only need the low 16 bits
+    ev->sequence = (uint16_t)(LastKnownRequestProcessed(ps->dpy) & 0xffff);
     proc(ps->dpy, &dummy, (xEvent *)ev);
   }
 
