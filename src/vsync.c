@@ -160,7 +160,7 @@ vsync_opengl_mswc_init(session_t *ps) {
   return vsync_opengl_swc_init(ps);
 }
 
-bool (*const VSYNC_FUNCS_INIT[])(session_t *ps) = {
+bool (*const VSYNC_FUNCS_INIT[NUM_VSYNC])(session_t *ps) = {
   [VSYNC_DRM          ] = vsync_drm_init,
   [VSYNC_OPENGL       ] = vsync_opengl_init,
   [VSYNC_OPENGL_OML   ] = vsync_opengl_oml_init,
@@ -230,7 +230,7 @@ vsync_opengl_oml_wait(session_t *ps) {
 #endif
 
 /// Function pointers to wait for VSync.
-int (*const VSYNC_FUNCS_WAIT[])(session_t *ps) = {
+int (*const VSYNC_FUNCS_WAIT[NUM_VSYNC])(session_t *ps) = {
 #ifdef CONFIG_VSYNC_DRM
   [VSYNC_DRM        ] = vsync_drm_wait,
 #endif
@@ -249,7 +249,7 @@ vsync_opengl_swc_deinit(session_t *ps) {
 
 
 /// Function pointers to deinitialize VSync.
-void (*const VSYNC_FUNCS_DEINIT[])(session_t *ps) = {
+void (*const VSYNC_FUNCS_DEINIT[NUM_VSYNC])(session_t *ps) = {
 #ifdef CONFIG_OPENGL
   [VSYNC_OPENGL_SWC   ] = vsync_opengl_swc_deinit,
   [VSYNC_OPENGL_MSWC  ] = vsync_opengl_swc_deinit,
