@@ -5,13 +5,15 @@ cached-checkout: &ccheckout
 just-build: &build
 
 version: 2.1
-jobs:
+commands:
   build:
-    <<: *defaults
     parameters:
       build-config:
         type: string
-        default: -Dbuild_docs=true
+        default:
+      cc:
+        type: string
+        default: cc
     steps:
       - restore_cache:
           keys:
@@ -25,25 +27,72 @@ jobs:
             - ".git"
       - run:
           name: config
-          command: meson << parameters.build-config >> -Dwerror=true . build
+          command: CC=<< parameters.cc >> meson << parameters.build-config >> --werror . build
       - run:
           name: build
           command: ninja -C build
   test-xvfb:
-    <<: *defaults
     steps:
       - run:
           name: xxx
           command: xvfb-run -s "-screen 0 640x480x24" glxinfo
 
+
+jobs:
+  basic:
+    <<: *defaults
+    steps:
+      - build:
+          build-config: -Dbuild_docs=true
+  minimal:
+    <<: *defaults
+    steps:
+      - build:
+          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
+  nogl:
+    <<: *defaults
+    steps:
+      - build:
+          build-config: -Dopengl=false
+  noregex:
+    <<: *defaults
+    steps:
+      - build:
+          build-config: -Dregex=false
+  clang_basic:
+    <<: *defaults
+    steps:
+      - build:
+          cc: clang-6.0
+          build-config:
+  clang_minimal:
+    <<: *defaults
+    steps:
+      - build:
+          cc: clang-6.0
+          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
+  clang_nogl:
+    <<: *defaults
+    steps:
+      - build:
+          cc: clang-6.0
+          build-config: -Dopengl=false
+  clang_noregex:
+    <<: *defaults
+    steps:
+      - build:
+          cc: clang-6.0
+          build-config: -Dregex=false
+
 workflows:
   all_builds:
     jobs:
-      - build
-      - build:
-          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
-      - build:
-          build-config: -Dopengl=false
-      - build:
-          build-config: -Dregex=false
+      - basic
+      - clang_basic
+      - minimal
+      - clang_minimal
+      - nogl
+      - clang_nogl
 #     - test-xvfb
+
+# vim: set sw=2 ts=8 et:
