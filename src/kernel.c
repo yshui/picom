@@ -23,7 +23,7 @@
  *  center  +-----+-------------------+-----+
  */
 
-double attr_const attr_pure sum_kernel(const conv *map, int x, int y, int width,
+double sum_kernel(const conv *map, int x, int y, int width,
                                        int height) {
 	int fx, fy;
 	const double *g_data;
@@ -77,7 +77,7 @@ double attr_const attr_pure sum_kernel(const conv *map, int x, int y, int width,
 	return v;
 }
 
-static double attr_const attr_pure gaussian(double r, double x, double y) {
+static double attr_const gaussian(double r, double x, double y) {
 	// Formula can be found here:
 	// https://en.wikipedia.org/wiki/Gaussian_blur#Mathematics
 	// Except a special case for r == 0 to produce sharp shadows

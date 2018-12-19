@@ -25,7 +25,7 @@ jobs:
             - ".git"
       - run:
           name: config
-          command: meson << parameters.build-config >> . build
+          command: meson << parameters.build-config >> -Dwerror=true . build
       - run:
           name: build
           command: ninja -C build
