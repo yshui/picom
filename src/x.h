@@ -98,19 +98,19 @@ xcb_render_picture_t x_create_picture_with_pictfmt_and_pixmap(
   session_t *ps, xcb_render_pictforminfo_t *pictfmt,
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
-__attribute__((nonnull(1, 2)));
+attr_nonnull(1, 2);
 
 xcb_render_picture_t x_create_picture_with_visual_and_pixmap(
   session_t *ps, xcb_visualid_t visual,
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
-__attribute__((nonnull(1)));
+attr_nonnull(1);
 
 xcb_render_picture_t x_create_picture_with_standard_and_pixmap(
   session_t *ps, xcb_pict_standard_t standard,
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
-__attribute__((nonnull(1)));
+attr_nonnull(1);
 
 /**
  * Create an picture.

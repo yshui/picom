@@ -1271,7 +1271,7 @@ root_damaged(session_t *ps) {
  * Xlib error handler function.
  */
 static int
-xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
+xerror(Display attr_unused *dpy, XErrorEvent *ev) {
   if (!should_ignore(ps_g, ev->serial))
     x_print_error(ev->serial, ev->request_code, ev->minor_code, ev->error_code);
   return 0;
@@ -1281,7 +1281,7 @@ xerror(Display __attribute__((unused)) *dpy, XErrorEvent *ev) {
  * XCB error handler function.
  */
 void
-ev_xcb_error(session_t __attribute__((unused)) *ps, xcb_generic_error_t *err) {
+ev_xcb_error(session_t attr_unused *ps, xcb_generic_error_t *err) {
   if (!should_ignore(ps, err->sequence))
     x_print_error(err->sequence, err->major_code, err->minor_code, err->error_code);
 }
@@ -1395,12 +1395,12 @@ opts_set_no_fading_openclose(session_t *ps, bool newval) {
 //!@}
 #endif
 
-static inline int __attribute__((unused))
+static inline int attr_unused
 ev_serial(xcb_generic_event_t *ev) {
   return ev->full_sequence;
 }
 
-static inline const char * __attribute__((unused))
+static inline const char * attr_unused
 ev_name(session_t *ps, xcb_generic_event_t *ev) {
   static char buf[128];
   switch (ev->response_type & 0x7f) {
@@ -1437,7 +1437,7 @@ ev_name(session_t *ps, xcb_generic_event_t *ev) {
   return buf;
 }
 
-static inline Window __attribute__((unused))
+static inline Window attr_unused
 ev_window(session_t *ps, xcb_generic_event_t *ev) {
   switch (ev->response_type) {
     case FocusIn:
@@ -1504,7 +1504,7 @@ ev_focus_detail_name(xcb_focus_in_event_t* ev) {
   return "Unknown";
 }
 
-static inline void __attribute__((unused))
+static inline void attr_unused
 ev_focus_report(xcb_focus_in_event_t *ev) {
   printf("  { mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
       ev_focus_detail_name(ev));
@@ -1850,7 +1850,7 @@ ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) {
  */
 static void
 ev_screen_change_notify(session_t *ps,
-    xcb_randr_screen_change_notify_event_t __attribute__((unused)) *ev) {
+    xcb_randr_screen_change_notify_event_t attr_unused *ev) {
   if (ps->o.xinerama_shadow_crop)
     cxinerama_upd_scrs(ps);
 
@@ -1865,7 +1865,7 @@ ev_screen_change_notify(session_t *ps,
 
 inline static void
 ev_selection_clear(session_t *ps,
-    xcb_selection_clear_event_t __attribute__((unused)) *ev) {
+    xcb_selection_clear_event_t attr_unused *ev) {
   // The only selection we own is the _NET_WM_CM_Sn selection.
   // If we lose that one, we should exit.
   fprintf(stderr, "Another composite manager started and "
@@ -1876,7 +1876,7 @@ ev_selection_clear(session_t *ps,
 /**
  * Get a window's name from window ID.
  */
-static inline void __attribute__((unused))
+static inline void attr_unused
 ev_window_name(session_t *ps, Window wid, char **name) {
   *name = "";
   if (wid) {
@@ -4090,7 +4090,7 @@ session_run(session_t *ps) {
 }
 
 static void
-sigint_handler(int __attribute__((unused)) signum) {
+sigint_handler(int attr_unused signum) {
   exit(0);
 }
 

@@ -344,7 +344,7 @@ c2_dump_raw(c2_ptr_t p);
 /**
  * Wrapper of c2_dump_raw().
  */
-static inline void __attribute__((unused))
+static inline void attr_unused
 c2_dump(c2_ptr_t p) {
   c2_dump_raw(p);
   printf("\n");

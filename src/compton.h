@@ -59,7 +59,7 @@ void map_win(session_t *ps, Window id);
  *
  * Truncate to 0 if the result is negative.
  */
-static inline unsigned long __attribute__((const))
+static inline unsigned long attr_const
 sub_unslong(unsigned long a, unsigned long b) {
   return (a > b) ? a - b : 0;
 }

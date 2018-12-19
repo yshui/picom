@@ -51,7 +51,7 @@ static inline void xrfilter_reset(session_t *ps, xcb_render_picture_t p) {
 #undef FILTER
 }
 
-static inline void __attribute__((nonnull(1, 2)))
+static inline void attr_nonnull(1, 2)
 set_tgt_clip(session_t *ps, region_t *reg) {
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:

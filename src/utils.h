@@ -36,7 +36,7 @@ static inline bool safe_isnan(double a) {
  * @param max maximum value
  * @return normalized value
  */
-static inline int __attribute__((const))
+static inline int attr_const
 normalize_i_range(int i, int min, int max) {
   if (i > max) return max;
   if (i < min) return min;
@@ -46,7 +46,7 @@ normalize_i_range(int i, int min, int max) {
 /**
  * Select the larger integer of two.
  */
-static inline int __attribute__((const))
+static inline int attr_const
 max_i(int a, int b) {
   return (a > b ? a : b);
 }
@@ -54,7 +54,7 @@ max_i(int a, int b) {
 /**
  * Select the smaller integer of two.
  */
-static inline int __attribute__((const))
+static inline int attr_const
 min_i(int a, int b) {
   return (a > b ? b : a);
 }
@@ -62,7 +62,7 @@ min_i(int a, int b) {
 /**
  * Select the larger long integer of two.
  */
-static inline long __attribute__((const))
+static inline long attr_const
 max_l(long a, long b) {
   return (a > b ? a : b);
 }
@@ -70,7 +70,7 @@ max_l(long a, long b) {
 /**
  * Select the smaller long integer of two.
  */
-static inline long __attribute__((const))
+static inline long attr_const
 min_l(long a, long b) {
   return (a > b ? b : a);
 }
@@ -83,7 +83,7 @@ min_l(long a, long b) {
  * @param max maximum value
  * @return normalized value
  */
-static inline double __attribute__((const))
+static inline double attr_const
 normalize_d_range(double d, double min, double max) {
   if (d > max) return max;
   if (d < min) return min;
@@ -96,7 +96,7 @@ normalize_d_range(double d, double min, double max) {
  * @param d double value to normalize
  * @return normalized value
  */
-static inline double __attribute__((const))
+static inline double attr_const
 normalize_d(double d) {
   return normalize_d_range(d, 0.0, 1.0);
 }

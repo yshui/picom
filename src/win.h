@@ -379,7 +379,7 @@ win_get_bounding_shape_global_by_val(win *w) {
  * Calculate the extents of the frame of the given window based on EWMH
  * _NET_FRAME_EXTENTS and the X window border width.
  */
-static inline margin_t __attribute__((pure))
+static inline margin_t attr_pure
 win_calc_frame_extents(const win *w) {
   margin_t result = w->frame_extents;
   result.top = max_i(result.top, w->g.border_width);
@@ -392,7 +392,7 @@ win_calc_frame_extents(const win *w) {
 /**
  * Check whether a window has WM frames.
  */
-static inline bool __attribute__((pure))
+static inline bool attr_pure
 win_has_frame(const win *w) {
   return w->g.border_width
     || w->frame_extents.top || w->frame_extents.left

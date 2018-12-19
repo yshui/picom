@@ -3,8 +3,8 @@
 
 #include <math.h>
 
-#include "utils.h"
 #include "kernel.h"
+#include "utils.h"
 
 /*
  * A picture will help
@@ -23,11 +23,11 @@
  *  center  +-----+-------------------+-----+
  */
 
-double
-sum_kernel(conv *map, int x, int y, int width, int height) {
+double attr_const attr_pure sum_kernel(const conv *map, int x, int y, int width,
+                                       int height) {
 	int fx, fy;
-	double *g_data;
-	double *g_line = map->data;
+	const double *g_data;
+	const double *g_line = map->data;
 	int g_size = map->size;
 	int center = g_size / 2;
 	int fx_start, fx_end;
@@ -77,7 +77,7 @@ sum_kernel(conv *map, int x, int y, int width, int height) {
 	return v;
 }
 
-static double __attribute__((const)) gaussian(double r, double x, double y) {
+static double attr_const attr_pure gaussian(double r, double x, double y) {
 	// Formula can be found here:
 	// https://en.wikipedia.org/wiki/Gaussian_blur#Mathematics
 	// Except a special case for r == 0 to produce sharp shadows
