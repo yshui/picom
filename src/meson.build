@@ -5,7 +5,7 @@ deps = [
 ]
 
 srcs = [ files('compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c',
-               'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c')]
+               'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c')]
 
 cflags = []
 

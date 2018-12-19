@@ -3568,6 +3568,9 @@ session_init(session_t *ps_old, int argc, char **argv) {
 #endif
   };
 
+  log_init_tls();
+  log_add_target_tls(stderr_logger_new());
+
   // Allocate a session and copy default values into it
   session_t *ps = cmalloc(session_t);
   *ps = s_def;
@@ -4053,6 +4056,8 @@ session_destroy(session_t *ps) {
 
   if (ps == ps_g)
     ps_g = NULL;
+
+  log_deinit_tls();
 }
 
 /*
