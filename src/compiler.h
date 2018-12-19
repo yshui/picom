@@ -2,6 +2,8 @@
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 
+#include <stdc-predef.h>
+
 #define auto         __auto_type
 #define likely(x)    __builtin_expect(!!(x), 1)
 #define unlikely(x)  __builtin_expect(!!(x), 0)
@@ -78,4 +80,14 @@
 # define unreachable __builtin_unreachable()
 #else
 # define unreachable do {} while(0)
+#endif
+
+#ifndef __STDC_NO_THREADS__
+# include <threads.h>
+#elif __STDC_VERSION__ >= 201112L
+# define thread_local _Thread_local
+#elif defined(__GNUC__) || defined(__clang__)
+# define thread_local __thread
+#else
+# define thread_local _Pragma("GCC error \"No thread local storage support\"") __error__
 #endif
