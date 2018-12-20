@@ -101,24 +101,21 @@ normalize_d(double d) {
   return normalize_d_range(d, 0.0, 1.0);
 }
 
+void report_allocation_failure(const char *func, const char *file, unsigned int line);
+
 /**
  * @brief Quit if the passed-in pointer is empty.
  */
 static inline void *
-allocchk_(const char *func_name, void *ptr) {
+allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr) {
   if (unlikely(!ptr)) {
-    // Since memory allocation failed, we try to print
-    // this error message without any memory allocation.
-    const char msg[] = "(): Failed to allocate memory\n";
-    write(STDERR_FILENO, func_name, strlen(func_name));
-    write(STDERR_FILENO, msg, ARR_SIZE(msg));
-    abort();
+    report_allocation_failure(func_name, file, line);
   }
   return ptr;
 }
 
 /// @brief Wrapper of allocchk_().
-#define allocchk(ptr) allocchk_(__func__, ptr)
+#define allocchk(ptr) allocchk_(__func__, __FILE__, __LINE__, ptr)
 
 /// @brief Wrapper of malloc().
 #define cmalloc(type) ((type *) allocchk(malloc(sizeof(type))))

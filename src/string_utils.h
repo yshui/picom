@@ -11,6 +11,25 @@ char *
 mstrjoin3(const char *src1, const char *src2, const char *src3);
 void mstrextend(char **psrc1, const char *src2);
 
+static inline int uitostr(unsigned int n, char *buf) {
+  int ret = 0;
+  unsigned int tmp = n;
+  while (tmp > 0) {
+    tmp /= 10;
+    ret++;
+  }
+
+  if (ret == 0)
+    ret = 1;
+
+  int pos = ret;
+  while (pos--) {
+    buf[pos] = n%10 + '0';
+    n /= 10;
+  }
+  return ret;
+}
+
 static inline const char *
 skip_space_const(const char *src) {
   if (!src)

@@ -16,18 +16,10 @@
 // === Options ===
 
 // Debug options, enable them using -D in CFLAGS
-// #define DEBUG_BACKTRACE  1
 // #define DEBUG_REPAINT    1
 // #define DEBUG_EVENTS     1
 // #define DEBUG_RESTACK    1
-// #define DEBUG_WINTYPE    1
-// #define DEBUG_CLIENTWIN  1
-// #define DEBUG_WINDATA    1
 // #define DEBUG_WINMATCH   1
-// #define DEBUG_REDIR      1
-// #define DEBUG_ALLOC_REG  1
-// #define DEBUG_FRAME      1
-// #define DEBUG_LEADER     1
 // #define DEBUG_C2         1
 // #define DEBUG_GLX        1
 // #define DEBUG_GLX_GLSL   1
@@ -56,10 +48,6 @@
 
 #ifndef COMPTON_VERSION
 #define COMPTON_VERSION "unknown"
-#endif
-
-#if defined(DEBUG_ALLOC_REG)
-#define DEBUG_BACKTRACE 1
 #endif
 
 #define MAX_ALPHA (255)
@@ -934,33 +922,6 @@ print_timestamp(session_t *ps);
 void
 ev_xcb_error(session_t *ps, xcb_generic_error_t *err);
 
-#ifdef DEBUG_BACKTRACE
-
-#include <execinfo.h>
-#define BACKTRACE_SIZE  25
-
-/**
- * Print current backtrace.
- *
- * Stolen from glibc manual.
- */
-static inline void
-print_backtrace(void) {
-  void *array[BACKTRACE_SIZE];
-  size_t size;
-  char **strings;
-
-  size = backtrace(array, BACKTRACE_SIZE);
-  strings = backtrace_symbols(array, size);
-
-  for (size_t i = 0; i < size; i++)
-     printf ("%s\n", strings[i]);
-
-  free(strings);
-}
-
-#endif
-
 // === Functions ===
 
 /**
@@ -1134,7 +1095,7 @@ parse_vsync(session_t *ps, const char *str) {
       return true;
     }
 
-  printf_errf("(\"%s\"): Invalid vsync argument.", str);
+  log_error("Invalid vsync argument: %s", str);
   return false;
 }
 
@@ -1158,7 +1119,7 @@ parse_backend(session_t *ps, const char *str) {
     ps->o.backend = BKEND_XR_GLX_HYBRID;
     return true;
   }
-  printf_errf("(\"%s\"): Invalid backend argument.", str);
+  log_error("Invalid backend argument: %s", str);
   return false;
 }
 
@@ -1193,18 +1154,18 @@ parse_glx_swap_method(session_t *ps, const char *str) {
     char *pc = NULL;
     int age = strtol(str, &pc, 0);
     if (!pc || str == pc) {
-      printf_errf("(\"%s\"): Invalid number.", str);
+      log_error("glx-swap-method is an invalid number: %s", str);
       return false;
     }
 
     for (; *pc; ++pc)
       if (!isspace(*pc)) {
-        printf_errf("(\"%s\"): Trailing characters.", str);
+        log_error("Trailing characters in glx-swap-method option: %s", str);
         return false;
       }
 
     if (age > CGLX_MAX_BUFFER_AGE + 1 || age < -1) {
-      printf_errf("(\"%s\"): Number too large / too small.", str);
+      log_error("Number for glx-swap-method is too large / too small: %s", str);
       return false;
     }
 
@@ -1534,7 +1495,7 @@ xr_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
       assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || triggered);
     }
     else {
-      printf_errf("(%#010lx): Failed to create X Sync fence.", d);
+      log_error("Failed to create X Sync fence for %#010lx", d);
     }
     free_fence(ps, &tmp_fence);
     if (*pfence)
@@ -1599,63 +1560,6 @@ void
 opts_set_no_fading_openclose(session_t *ps, bool newval);
 //!@}
 #endif
-
-/**
- * @brief Dump the given data to a file.
- */
-static inline bool
-write_binary_data(const char *path, const unsigned char *data, int length) {
-  if (!data)
-    return false;
-  FILE *f = fopen(path, "wb");
-  if (!f) {
-    printf_errf("(\"%s\"): Failed to open file for writing.", path);
-    return false;
-  }
-  int wrote_len = fwrite(data, sizeof(unsigned char), length, f);
-  fclose(f);
-  if (wrote_len != length) {
-    printf_errf("(\"%s\"): Failed to write all blocks: %d / %d", path,
-        wrote_len, length);
-    return false;
-  }
-  return true;
-}
-
-/**
- * @brief Dump raw bytes in HEX format.
- *
- * @param data pointer to raw data
- * @param len length of data
- */
-static inline void
-hexdump(const char *data, int len) {
-  static const int BYTE_PER_LN = 16;
-
-  if (len <= 0)
-    return;
-
-  // Print header
-  printf("%10s:", "Offset");
-  for (int i = 0; i < BYTE_PER_LN; ++i)
-    printf(" %2d", i);
-  putchar('\n');
-
-  // Dump content
-  for (int offset = 0; offset < len; ++offset) {
-    if (!(offset % BYTE_PER_LN))
-      printf("0x%08x:", offset);
-
-    printf(" %02hhx", data[offset]);
-
-    if ((BYTE_PER_LN - 1) == offset % BYTE_PER_LN)
-      putchar('\n');
-  }
-  if (len % BYTE_PER_LN)
-    putchar('\n');
-
-  fflush(stdout);
-}
 
 /**
  * Set a <code>bool</code> array of all wintypes to true.

@@ -134,7 +134,7 @@ static inline bool
 wid_set_text_prop(session_t *ps, Window wid, Atom prop_atom, char *str) {
   XTextProperty *pprop = make_text_prop(ps, str);
   if (!pprop) {
-    printf_errf("(\"%s\"): Failed to make text property.", str);
+    log_error("Failed to make text property: %s.", str);
     return false;
   }
 
@@ -155,10 +155,11 @@ dump_drawable(session_t *ps, Drawable drawable) {
   unsigned width = 0, height = 0, border = 0, depth = 0;
   if (XGetGeometry(ps->dpy, drawable, &rroot, &x, &y, &width, &height,
         &border, &depth)) {
-    printf_dbgf("(%#010lx): x = %u, y = %u, wid = %u, hei = %d, b = %u, d = %u\n", drawable, x, y, width, height, border, depth);
+    log_trace("Drawable %#010lx: x = %u, y = %u, wid = %u, hei = %d, b = %u, d = %u",
+              drawable, x, y, width, height, border, depth);
   }
   else {
-    printf_dbgf("(%#010lx): Failed\n", drawable);
+    log_trace("Drawable %#010lx: Failed", drawable);
   }
 }
 

@@ -50,14 +50,14 @@ glx_check_err_(session_t *ps, const char *func, int line) {
   GLenum err = GL_NO_ERROR;
 
   while (GL_NO_ERROR != (err = glGetError())) {
-    print_timestamp(ps);
-    printf("%s():%d: GLX error ", func, line);
     const char *errtext = glx_dump_err_str(err);
     if (errtext) {
-      printf_dbg("%s\n", errtext);
+      log_printf(tls_logger, LOG_LEVEL_ERROR, func, "GLX error at line %d: %s", line,
+                 errtext);
     }
     else {
-      printf_dbg("%d\n", err);
+      log_printf(tls_logger, LOG_LEVEL_ERROR, func, "GLX error at line %d: %d", line,
+                 err);
     }
   }
 }
@@ -96,13 +96,13 @@ static inline bool
 glx_hasglxext(session_t *ps, const char *ext) {
   const char *glx_exts = glXQueryExtensionsString(ps->dpy, ps->scr);
   if (!glx_exts) {
-    printf_errf("(): Failed get GLX extension list.");
+    log_error("Failed get GLX extension list.");
     return false;
   }
 
   bool found = wd_is_in_str(glx_exts, ext);
   if (!found)
-    printf_errf("(): Missing GLX extension %s.", ext);
+    log_info("Missing GLX extension %s.", ext);
 
   return found;
 }
@@ -114,13 +114,13 @@ static inline bool
 glx_hasglext(session_t *ps, const char *ext) {
   const char *gl_exts = (const char *) glGetString(GL_EXTENSIONS);
   if (!gl_exts) {
-    printf_errf("(): Failed get GL extension list.");
+    log_error("Failed get GL extension list.");
     return false;
   }
 
   bool found = wd_is_in_str(gl_exts, ext);
   if (!found)
-    printf_errf("(): Missing GL extension %s.", ext);
+    log_info("Missing GL extension %s.", ext);
 
   return found;
 }

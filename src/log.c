@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -31,6 +32,7 @@ struct log_target {
 
 struct log_ops {
 	void (*write)(struct log_target *, const char *, size_t);
+	void (*writev)(struct log_target *, const struct iovec *, int vcnt);
 	void (*destroy)(struct log_target *);
 
 	/// Additional strings to print around the log_level string
@@ -38,9 +40,22 @@ struct log_ops {
 	const char *(*colorize_end)(enum log_level);
 };
 
-/// Helper function for writing null terminated strings
-static void log_strwrite(struct log_target *tgt, const char *str) {
-	return tgt->ops->write(tgt, str, strlen(str));
+/// Fallback writev for targets don't implement it
+static attr_unused void
+log_default_writev(struct log_target *tgt, const struct iovec *vec, int vcnt) {
+	size_t total = 0;
+	for (int i = 0; i < vcnt; i++) {
+		total += vec[i].iov_len;
+	}
+
+	char *buf = ccalloc(total, char);
+	total = 0;
+	for (int i = 0; i < vcnt; i++) {
+		memcpy(buf + total, vec[i].iov_base, vec[i].iov_len);
+		total += vec[i].iov_len;
+	}
+	tgt->ops->write(tgt, buf, total);
+	free(buf);
 }
 
 static attr_const const char *log_level_to_string(enum log_level level) {
@@ -77,6 +92,7 @@ struct log *log_new(void) {
 }
 
 void log_add_target(struct log *l, struct log_target *tgt) {
+	assert(tgt->ops->writev);
 	tgt->next = l->head;
 	l->head = tgt;
 }
@@ -112,8 +128,11 @@ attr_printf(4, 5) void log_printf(struct log *l, int level, const char *func,
 	va_list args;
 
 	va_start(args, fmt);
-	size_t len = vasprintf(&buf, fmt, args);
+	size_t blen = vasprintf(&buf, fmt, args);
 	va_end(args);
+
+	if (!buf)
+		return;
 
 	struct timespec ts;
 	timespec_get(&ts, TIME_UTC);
@@ -121,47 +140,49 @@ attr_printf(4, 5) void log_printf(struct log *l, int level, const char *func,
 	char time_buf[100];
 	strftime(time_buf, sizeof time_buf, "%x %T", tm);
 
-	if (!buf)
+	char *time = NULL;
+	size_t tlen = asprintf(&time, "%s.%03ld", time_buf, ts.tv_nsec / 1000000);
+	if (!time) {
+		free(buf);
 		return;
+	}
 
 	const char *log_level_str = log_level_to_string(level);
-	char *common = NULL;
-	size_t plen = asprintf(&common, "[ %s.%03ld %s %s ] ", time_buf,
-	                       ts.tv_nsec / 1000000, func, log_level_str);
-	if (!common)
-		return;
-
-	common = crealloc(common, plen + len + 2);
-	strcpy(common + plen, buf);
-	strcpy(common + plen + len, "\n");
+	size_t llen = strlen(log_level_str);
+	size_t flen = strlen(func);
 
 	struct log_target *head = l->head;
 	while (head) {
+		const char *p = "", *s = "";
+		size_t plen = 0, slen = 0;
+
 		if (head->ops->colorize_begin) {
 			// construct target specific prefix
-			const char *p = head->ops->colorize_begin(level);
-			const char *s = "";
-			if (head->ops->colorize_end)
+			p = head->ops->colorize_begin(level);
+			plen = strlen(p);
+			if (head->ops->colorize_end) {
 				s = head->ops->colorize_end(level);
-			char *str = NULL;
-			size_t plen2 =
-			    asprintf(&str, "[ %s.%03ld %s %s%s%s ] ", time_buf,
-			             ts.tv_nsec / 1000000, func, p, log_level_str, s);
-			if (!str) {
-				log_strwrite(head, common);
-				continue;
+				slen = strlen(s);
 			}
-			str = crealloc(str, plen2 + len + 2);
-			strcpy(str + plen2, buf);
-			strcpy(str + plen2 + len, "\n");
-			log_strwrite(head, str);
-			free(str);
-		} else {
-			log_strwrite(head, common);
 		}
+		head->ops->writev(
+		    head,
+		    (struct iovec[]){{.iov_base = "[ ", .iov_len = 2},
+		                     {.iov_base = time, .iov_len = tlen},
+		                     {.iov_base = " ", .iov_len = 1},
+		                     {.iov_base = (void *)func, .iov_len = flen},
+		                     {.iov_base = " ", .iov_len = 1},
+		                     {.iov_base = (void *)p, .iov_len = plen},
+		                     {.iov_base = (void *)log_level_str, .iov_len = llen},
+		                     {.iov_base = (void *)s, .iov_len = slen},
+		                     {.iov_base = " ] ", .iov_len = 3},
+		                     {.iov_base = buf, .iov_len = blen},
+		                     {.iov_base = "\n", .iov_len = 1}},
+		    11);
 		head = head->next;
 	}
-	free(common);
+	free(time);
+	free(buf);
 }
 
 /// A trivial deinitializer that simply frees the memory
@@ -179,12 +200,19 @@ struct log_target *null_logger_new(void) {
 	return &null_logger_target;
 }
 
-static void null_logger_write(struct log_target *tgt, const char *str, size_t len) {
+static void null_logger_write(struct log_target *attr_unused tgt,
+                              const char *attr_unused str, size_t attr_unused len) {
+	return;
+}
+
+static void null_logger_writev(struct log_target *attr_unused tgt,
+                               const struct iovec *attr_unused vec, int attr_unused vcnt) {
 	return;
 }
 
 static const struct log_ops null_logger_ops = {
     .write = null_logger_write,
+    .writev = null_logger_writev,
 };
 
 /// A file based logger that writes to file (or stdout/stderr)
@@ -197,6 +225,12 @@ struct file_logger {
 void file_logger_write(struct log_target *tgt, const char *str, size_t len) {
 	auto f = (struct file_logger *)tgt;
 	fwrite(str, 1, len, f->f);
+}
+
+void file_logger_writev(struct log_target *tgt, const struct iovec *vec, int vcnt) {
+	auto f = (struct file_logger *)tgt;
+	fflush(f->f);
+	writev(fileno(f->f), vec, vcnt);
 }
 
 void file_logger_destroy(struct log_target *tgt) {
@@ -225,6 +259,7 @@ const char *terminal_colorize_end(enum log_level level) {
 
 static const struct log_ops file_logger_ops = {
     .write = file_logger_write,
+    .writev = file_logger_writev,
     .destroy = file_logger_destroy,
 };
 
@@ -282,6 +317,7 @@ void glx_string_marker_logger_write(struct log_target *tgt, const char *str, siz
 
 static const struct log_ops glx_string_marker_logger_ops = {
     .write = glx_string_marker_logger_write,
+    .writev = log_default_writev,
     .destroy = logger_trivial_destroy,
 };
 

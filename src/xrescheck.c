@@ -40,8 +40,8 @@ xrc_delete_xid_(XID xid, M_POS_DATA_PARAMS) {
   xrc_xid_record_t *prec = NULL;
   HASH_FIND_XID(gs_xid_records, &xid, prec);
   if (!prec) {
-    printf_err("XRC: %s:%d %s(): Can't find XID %#010lx we want to delete.",
-        file, line, func, xid);
+    log_error("XRC: %s:%d %s(): Can't find XID %#010lx we want to delete.",
+              file, line, func, xid);
     return;
   }
   HASH_DEL(gs_xid_records, prec);
@@ -54,8 +54,8 @@ xrc_delete_xid_(XID xid, M_POS_DATA_PARAMS) {
 void
 xrc_report_xid(void) {
   for (xrc_xid_record_t *prec = gs_xid_records; prec; prec = prec->hh.next)
-    printf_dbg("XRC: %s:%d %s(): %#010lx (%s) not freed.\n",
-        prec->file, prec->line, prec->func, prec->xid, prec->type);
+    log_trace("XRC: %s:%d %s(): %#010lx (%s) not freed.\n",
+              prec->file, prec->line, prec->func, prec->xid, prec->type);
 }
 
 /**

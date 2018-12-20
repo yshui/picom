@@ -31,26 +31,6 @@ enum log_level {
 #define log_error(x, ...) LOG(ERROR, x, ##__VA_ARGS__)
 #define log_fatal(x, ...) LOG(FATAL, x, ##__VA_ARGS__)
 
-/// Print out an error message.
-#define printf_err(format, ...) log_error(format, ##__VA_ARGS__)
-
-/// Print out an error message with function name.
-#define printf_errf(format, ...) log_error(format, ##__VA_ARGS__)
-
-/// Print out an error message with function name, and quit with a
-/// specific exit code.
-#define printf_errfq(code, format, ...)                                                  \
-	{                                                                                \
-		log_error(format, ##__VA_ARGS__);                                        \
-		exit(code);                                                              \
-	}
-
-/// Print out a debug message.
-#define printf_dbg(format, ...) log_debug(format, ##__VA_ARGS__)
-
-/// Print out a debug message with function name.
-#define printf_dbgf(format, ...) log_debug(format, ##__VA_ARGS__)
-
 struct log;
 struct log_target;
 

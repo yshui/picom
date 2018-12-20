@@ -22,7 +22,7 @@ vsync_drm_init(session_t *ps) {
 #ifdef CONFIG_VSYNC_DRM
   // Should we always open card0?
   if (ps->drm_fd < 0 && (ps->drm_fd = open("/dev/dri/card0", O_RDWR)) < 0) {
-    printf_errf("(): Failed to open device.");
+    log_error("Failed to open device.");
     return false;
   }
 
@@ -31,7 +31,7 @@ vsync_drm_init(session_t *ps) {
 
   return true;
 #else
-  printf_errf("(): Program not compiled with DRM VSync support.");
+  log_error("compton is not compiled with DRM VSync support.");
   return false;
 #endif
 }
@@ -51,7 +51,7 @@ vsync_opengl_init(session_t *ps) {
     return false;
 
   if (!glx_hasglxext(ps, "GLX_SGI_video_sync")) {
-    printf_errf("(): Your driver doesn't support SGI_video_sync, giving up.");
+    log_error("Your driver doesn't support SGI_video_sync, giving up.");
     return false;
   }
 
@@ -63,13 +63,13 @@ vsync_opengl_init(session_t *ps) {
     ps->psglx->glXWaitVideoSyncSGI = (f_WaitVideoSync)
       glXGetProcAddress((const GLubyte *) "glXWaitVideoSyncSGI");
   if (!ps->psglx->glXWaitVideoSyncSGI || !ps->psglx->glXGetVideoSyncSGI) {
-    printf_errf("(): Failed to get glXWait/GetVideoSyncSGI function.");
+    log_error("Failed to get glXWait/GetVideoSyncSGI function.");
     return false;
   }
 
   return true;
 #else
-  printf_errf("(): Program not compiled with OpenGL VSync support.");
+  log_error("compton is not compiled with OpenGL VSync support.");
   return false;
 #endif
 }
@@ -81,7 +81,7 @@ vsync_opengl_oml_init(session_t *ps) {
     return false;
 
   if (!glx_hasglxext(ps, "GLX_OML_sync_control")) {
-    printf_errf("(): Your driver doesn't support OML_sync_control, giving up.");
+    log_error("Your driver doesn't support OML_sync_control, giving up.");
     return false;
   }
 
@@ -93,13 +93,13 @@ vsync_opengl_oml_init(session_t *ps) {
     ps->psglx->glXWaitForMscOML = (f_WaitForMscOML)
       glXGetProcAddress ((const GLubyte *) "glXWaitForMscOML");
   if (!ps->psglx->glXGetSyncValuesOML || !ps->psglx->glXWaitForMscOML) {
-    printf_errf("(): Failed to get OML_sync_control functions.");
+    log_error("Failed to get OML_sync_control functions.");
     return false;
   }
 
   return true;
 #else
-  printf_errf("(): Program not compiled with OpenGL VSync support.");
+  log_error("compton is not compiled with OpenGL VSync support.");
   return false;
 #endif
 }
@@ -118,7 +118,7 @@ vsync_opengl_swc_swap_interval(session_t *ps, unsigned int interval) {
       ps->psglx->glXSwapIntervalProc = (f_SwapIntervalSGI)
         glXGetProcAddress ((const GLubyte *) "glXSwapIntervalSGI");
     } else {
-      printf_errf("(): Your driver doesn't support SGI_swap_control nor MESA_swap_control, giving up.");
+      log_error("Your driver doesn't support SGI_swap_control nor MESA_swap_control, giving up.");
       return false;
     }
   }
@@ -138,25 +138,25 @@ static bool
 vsync_opengl_swc_init(session_t *ps) {
 #ifdef CONFIG_OPENGL
   if (!bkend_use_glx(ps)) {
-    printf_errf("(): OpenGL swap control requires the GLX backend.");
+    log_warn("OpenGL swap control requires the GLX backend.");
     return false;
   }
 
   if (!vsync_opengl_swc_swap_interval(ps, 1)) {
-    printf_errf("(): Failed to load a swap control extension.");
+    log_error("Failed to load a swap control extension.");
     return false;
   }
 
   return true;
 #else
-  printf_errf("(): Program not compiled with OpenGL VSync support.");
+  log_error("compton is not compiled with OpenGL VSync support.");
   return false;
 #endif
 }
 
 static bool
 vsync_opengl_mswc_init(session_t *ps) {
-  printf_errf("(): opengl-mswc is deprecated, please use opengl-swc instead.");
+  log_warn("opengl-mswc is deprecated, please use opengl-swc instead.");
   return vsync_opengl_swc_init(ps);
 }
 
@@ -188,8 +188,7 @@ vsync_drm_wait(session_t *ps) {
   } while (ret && errno == EINTR);
 
   if (ret)
-    fprintf(stderr, "vsync_drm_wait(): VBlank ioctl did not work, "
-        "unimplemented in this drmver?\n");
+    log_error("VBlank ioctl did not work, unimplemented in this drmver?");
 
   return ret;
 

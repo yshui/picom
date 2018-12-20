@@ -338,18 +338,8 @@ c2h_dump_str_tgt(const c2_l_t *pleaf);
 static const char *
 c2h_dump_str_type(const c2_l_t *pleaf);
 
-static void
-c2_dump_raw(c2_ptr_t p);
-
-/**
- * Wrapper of c2_dump_raw().
- */
-static inline void attr_unused
-c2_dump(c2_ptr_t p) {
-  c2_dump_raw(p);
-  printf("\n");
-  fflush(stdout);
-}
+static void attr_unused
+c2_dump(c2_ptr_t p);
 
 static Atom
 c2_get_atom_type(const c2_l_t *pleaf);
@@ -384,9 +374,6 @@ c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
   {
     static const c2_lptr_t lptr_def = C2_LPTR_INIT;
     auto plptr = cmalloc(c2_lptr_t);
-    if (!plptr)
-      printf_errfq(1, "(): Failed to allocate memory for new condition linked"
-          " list element.");
     memcpy(plptr, &lptr_def, sizeof(c2_lptr_t));
     plptr->ptr = result;
     plptr->data = data;
@@ -396,7 +383,7 @@ c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
     }
 
 #ifdef DEBUG_C2
-    printf_dbgf("(\"%s\"): ", pattern);
+    log_trace("(\"%s\"): ", pattern);
     c2_dump(plptr->ptr);
 #endif
 
@@ -404,13 +391,12 @@ c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
   }
 }
 
-#undef c2_error
 #define c2_error(format, ...) do { \
-  printf_err("Pattern \"%s\" pos %d: " format, pattern, offset, \
-      ## __VA_ARGS__); \
-  return -1; \
+  log_error("Pattern \"%s\" pos %d: " format, pattern, offset, ##__VA_ARGS__); \
+  goto fail; \
 } while(0)
 
+// TODO Not a very good macro
 #define C2H_SKIP_SPACES() { while (isspace(pattern[offset])) ++offset; }
 
 /**
@@ -429,13 +415,6 @@ c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, 
 
   // Expected end character
   const char endchar = (offset ? ')': '\0');
-
-#undef c2_error
-#define c2_error(format, ...) do { \
-  printf_err("Pattern \"%s\" pos %d: " format, pattern, offset, \
-      ## __VA_ARGS__); \
-  goto c2_parse_grp_fail; \
-} while(0)
 
   // We use a system that a maximum of 2 elements are kept. When we find
   // the third element, we combine the elements according to operator
@@ -527,23 +506,23 @@ c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, 
     // It's a subgroup if it starts with '('
     if ('(' == pattern[offset]) {
       if ((offset = c2_parse_grp(ps, pattern, offset + 1, pele, level + 1)) < 0)
-        goto c2_parse_grp_fail;
+        goto fail;
     }
     // Otherwise it's a leaf
     else {
       if ((offset = c2_parse_target(ps, pattern, offset, pele)) < 0)
-        goto c2_parse_grp_fail;
+        goto fail;
 
       assert(!pele->isbranch && !c2_ptr_isempty(*pele));
 
       if ((offset = c2_parse_op(pattern, offset, pele)) < 0)
-        goto c2_parse_grp_fail;
+        goto fail;
 
       if ((offset = c2_parse_pattern(ps, pattern, offset, pele)) < 0)
-        goto c2_parse_grp_fail;
+        goto fail;
 
       if (!c2_l_postprocess(ps, pele->l))
-        goto c2_parse_grp_fail;
+        goto fail;
     }
     // Decrement offset -- we will increment it in loop update
     --offset;
@@ -589,19 +568,12 @@ c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, 
 
   return offset;
 
-c2_parse_grp_fail:
+fail:
   c2_freep(&eles[0]);
   c2_freep(&eles[1]);
 
   return -1;
 }
-
-#undef c2_error
-#define c2_error(format, ...) do { \
-  printf_err("Pattern \"%s\" pos %d: " format, pattern, offset, \
-      ## __VA_ARGS__); \
-  return -1; \
-} while(0)
 
 /**
  * Parse the target part of a rule.
@@ -611,8 +583,6 @@ c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
   // Initialize leaf
   presult->isbranch = false;
   presult->l = cmalloc(c2_l_t);
-  if (!presult->l)
-    c2_error("Failed to allocate memory for new leaf.");
 
   c2_l_t * const pleaf = presult->l;
   memcpy(pleaf, &leaf_def, sizeof(c2_l_t));
@@ -739,11 +709,11 @@ c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
 
       if (type) {
         if (pleaf->predef) {
-          printf_errf("(): Warning: Type specified for a default target will be ignored.");
+          log_warn("Type specified for a default target will be ignored.");
         }
         else {
           if (pleaf->type && type != pleaf->type)
-            printf_errf("(): Warning: Default type overridden on target.");
+            log_warn("Default type overridden on target.");
           pleaf->type = type;
         }
       }
@@ -769,13 +739,12 @@ c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
     // Write format
     if (hasformat) {
       if (pleaf->predef)
-        printf_errf("(): Warning: Format \"%d\" specified on a default target will be ignored.", format);
+        log_warn("Format \"%d\" specified on a default target will be ignored.", format);
       else if (C2_L_TSTRING == pleaf->type)
-        printf_errf("(): Warning: Format \"%d\" specified on a string target will be ignored.", format);
+        log_warn("Format \"%d\" specified on a string target will be ignored.", format);
       else {
         if (pleaf->format && pleaf->format != format)
-          printf_err("Warning: Default format %d overridden on target.",
-              pleaf->format);
+          log_warn("Default format %d overridden on target.", pleaf->format);
         pleaf->format = format;
       }
     }
@@ -792,6 +761,9 @@ c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
     c2_error("Invalid format.");
 
   return offset;
+
+fail:
+  return -1;
 }
 
 /**
@@ -857,6 +829,9 @@ c2_parse_op(const char *pattern, int offset, c2_ptr_t *presult) {
     c2_error("Exists/greater-than/less-than operators cannot have a qualifier.");
 
   return offset;
+
+fail:
+  return -1;
 }
 
 /**
@@ -993,6 +968,9 @@ c2_parse_pattern(session_t *ps, const char *pattern, int offset, c2_ptr_t *presu
     c2_error("String pattern cannot have an arithmetic operator.");
 
   return offset;
+
+fail:
+  return -1;
 }
 
 /**
@@ -1008,8 +986,6 @@ c2_parse_legacy(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
 
   // Allocate memory for new leaf
   auto pleaf = cmalloc(c2_l_t);
-  if (!pleaf)
-    printf_errfq(1, "(): Failed to allocate memory for new leaf.");
   presult->isbranch = false;
   presult->l = pleaf;
   memcpy(pleaf, &leaf_def, sizeof(c2_l_t));
@@ -1061,12 +1037,12 @@ c2_parse_legacy(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
     return -1;
 
   return offset;
+
+fail:
+  return -1;
 }
 
 #undef c2_error
-#define c2_error(format, ...) { \
-  printf_err(format, ## __VA_ARGS__); \
-  return false; }
 
 /**
  * Do postprocessing on a condition leaf.
@@ -1082,8 +1058,10 @@ c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
   // Get target atom if it's not a predefined one
   if (!pleaf->predef) {
     pleaf->tgtatom = get_atom(ps, pleaf->tgt);
-    if (!pleaf->tgtatom)
-      c2_error("Failed to get atom for target \"%s\".", pleaf->tgt);
+    if (!pleaf->tgtatom) {
+      log_error("Failed to get atom for target \"%s\".", pleaf->tgt);
+      return false;
+    }
   }
 
   // Insert target Atom into atom track list
@@ -1098,8 +1076,6 @@ c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
     }
     if (!found) {
       auto pnew = cmalloc(latom_t);
-      if (!pnew)
-        printf_errfq(1, "(): Failed to allocate memory for new track atom.");
       pnew->next = ps->track_atom_lst;
       pnew->atom = pleaf->tgtatom;
       ps->track_atom_lst = pnew;
@@ -1124,7 +1100,7 @@ c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
   if (!pleaf->predef) {
     for (const char *pc = pleaf->tgt; *pc; ++pc) {
       if (islower(*pc)) {
-        printf_errf("(): Warning: Lowercase character in target name \"%s\".", pleaf->tgt);
+        log_warn("Lowercase character in target name \"%s\".", pleaf->tgt);
         break;
       }
     }
@@ -1144,9 +1120,11 @@ c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
     // Compile PCRE expression
     pleaf->regex_pcre = pcre_compile(pleaf->ptnstr, options,
         &error, &erroffset, NULL);
-    if (!pleaf->regex_pcre)
-      c2_error("Pattern \"%s\": PCRE regular expression parsing failed on "
+    if (!pleaf->regex_pcre) {
+      log_error("Pattern \"%s\": PCRE regular expression parsing failed on "
           "offset %d: %s", pleaf->ptnstr, erroffset, error);
+      return false;
+    }
 #ifdef CONFIG_REGEX_PCRE_JIT
     pleaf->regex_pcre_extra = pcre_study(pleaf->regex_pcre,
         PCRE_STUDY_JIT_COMPILE, &error);
@@ -1160,7 +1138,8 @@ c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
     // free(pleaf->tgt);
     // pleaf->tgt = NULL;
 #else
-    c2_error("PCRE regular expression support not compiled in.");
+    log_error("PCRE regular expression support not compiled in.");
+    return false;
 #endif
   }
 
@@ -1246,7 +1225,7 @@ c2h_dump_str_type(const c2_l_t *pleaf) {
  * Dump a condition tree.
  */
 static void
-c2_dump_raw(c2_ptr_t p) {
+c2_dump(c2_ptr_t p) {
   // For a branch
   if (p.isbranch) {
     const c2_b_t * const pbranch = p.b;
@@ -1258,7 +1237,7 @@ c2_dump_raw(c2_ptr_t p) {
       putchar('!');
 
     printf("(");
-    c2_dump_raw(pbranch->opr1);
+    c2_dump(pbranch->opr1);
 
     switch (pbranch->op) {
       case C2_B_OAND: printf(" && ");   break;
@@ -1267,7 +1246,7 @@ c2_dump_raw(c2_ptr_t p) {
       default:        assert(0);        break;
     }
 
-    c2_dump_raw(pbranch->opr2);
+    c2_dump(pbranch->opr2);
     printf(")");
   }
   // For a leaf
@@ -1601,7 +1580,7 @@ c2_match_once(session_t *ps, win *w, const c2_ptr_t cond) {
     }
 
 #ifdef DEBUG_WINMATCH
-    printf_dbgf("(%#010lx): branch: result = %d, pattern = ", w->id, result);
+    log_trace("(%#010lx): branch: result = %d, pattern = ", w->id, result);
     c2_dump(cond);
 #endif
   }
@@ -1621,9 +1600,9 @@ c2_match_once(session_t *ps, win *w, const c2_ptr_t cond) {
     }
 
 #ifdef DEBUG_WINMATCH
-    printf_dbgf("(%#010lx): leaf: result = %d, error = %d, "
-        "client = %#010lx,  pattern = ",
-        w->id, result, error, w->client_win);
+    log_trace("(%#010lx): leaf: result = %d, error = %d, "
+              "client = %#010lx,  pattern = ",
+              w->id, result, error, w->client_win);
     c2_dump(cond);
 #endif
   }
