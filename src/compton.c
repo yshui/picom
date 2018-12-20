@@ -3752,8 +3752,10 @@ session_init(session_t *ps_old, int argc, char **argv) {
   init_overlay(ps);
 
   // Initialize filters, must be preceded by OpenGL context creation
-  if (!init_render(ps))
+  if (!init_render(ps)) {
+    log_fatal("Failed to initialize the backend");
     exit(1);
+  }
 
   if (ps->o.print_diagnostics) {
     print_diagnostics(ps);
