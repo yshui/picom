@@ -13,7 +13,7 @@
 /**
  * Print usage text and exit.
  */
-static attr_noret void usage(int ret) {
+static void usage(int ret) {
 #define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
 #define WARNING
 	static const char *usage_text =
@@ -363,139 +363,148 @@ static attr_noret void usage(int ret) {
 	fputs(usage_text, f);
 #undef WARNING
 #undef WARNING_DISABLED
+}
 
-	exit(ret);
+static const char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:hscnfFCaSzGb";
+static const struct option longopts[] = {
+    {"help", no_argument, NULL, 'h'},
+    {"config", required_argument, NULL, 256},
+    {"shadow-radius", required_argument, NULL, 'r'},
+    {"shadow-opacity", required_argument, NULL, 'o'},
+    {"shadow-offset-x", required_argument, NULL, 'l'},
+    {"shadow-offset-y", required_argument, NULL, 't'},
+    {"fade-in-step", required_argument, NULL, 'I'},
+    {"fade-out-step", required_argument, NULL, 'O'},
+    {"fade-delta", required_argument, NULL, 'D'},
+    {"menu-opacity", required_argument, NULL, 'm'},
+    {"shadow", no_argument, NULL, 'c'},
+    {"no-dock-shadow", no_argument, NULL, 'C'},
+    {"clear-shadow", no_argument, NULL, 'z'},
+    {"fading", no_argument, NULL, 'f'},
+    {"inactive-opacity", required_argument, NULL, 'i'},
+    {"frame-opacity", required_argument, NULL, 'e'},
+    {"daemon", no_argument, NULL, 'b'},
+    {"no-dnd-shadow", no_argument, NULL, 'G'},
+    {"shadow-red", required_argument, NULL, 257},
+    {"shadow-green", required_argument, NULL, 258},
+    {"shadow-blue", required_argument, NULL, 259},
+    {"inactive-opacity-override", no_argument, NULL, 260},
+    {"inactive-dim", required_argument, NULL, 261},
+    {"mark-wmwin-focused", no_argument, NULL, 262},
+    {"shadow-exclude", required_argument, NULL, 263},
+    {"mark-ovredir-focused", no_argument, NULL, 264},
+    {"no-fading-openclose", no_argument, NULL, 265},
+    {"shadow-ignore-shaped", no_argument, NULL, 266},
+    {"detect-rounded-corners", no_argument, NULL, 267},
+    {"detect-client-opacity", no_argument, NULL, 268},
+    {"refresh-rate", required_argument, NULL, 269},
+    {"vsync", required_argument, NULL, 270},
+    {"alpha-step", required_argument, NULL, 271},
+    {"dbe", no_argument, NULL, 272},
+    {"paint-on-overlay", no_argument, NULL, 273},
+    {"sw-opti", no_argument, NULL, 274},
+    {"vsync-aggressive", no_argument, NULL, 275},
+    {"use-ewmh-active-win", no_argument, NULL, 276},
+    {"respect-prop-shadow", no_argument, NULL, 277},
+    {"unredir-if-possible", no_argument, NULL, 278},
+    {"focus-exclude", required_argument, NULL, 279},
+    {"inactive-dim-fixed", no_argument, NULL, 280},
+    {"detect-transient", no_argument, NULL, 281},
+    {"detect-client-leader", no_argument, NULL, 282},
+    {"blur-background", no_argument, NULL, 283},
+    {"blur-background-frame", no_argument, NULL, 284},
+    {"blur-background-fixed", no_argument, NULL, 285},
+    {"dbus", no_argument, NULL, 286},
+    {"logpath", required_argument, NULL, 287},
+    {"invert-color-include", required_argument, NULL, 288},
+    {"opengl", no_argument, NULL, 289},
+    {"backend", required_argument, NULL, 290},
+    {"glx-no-stencil", no_argument, NULL, 291},
+    {"glx-copy-from-front", no_argument, NULL, 292},
+    {"benchmark", required_argument, NULL, 293},
+    {"benchmark-wid", required_argument, NULL, 294},
+    {"glx-use-copysubbuffermesa", no_argument, NULL, 295},
+    {"blur-background-exclude", required_argument, NULL, 296},
+    {"active-opacity", required_argument, NULL, 297},
+    {"glx-no-rebind-pixmap", no_argument, NULL, 298},
+    {"glx-swap-method", required_argument, NULL, 299},
+    {"fade-exclude", required_argument, NULL, 300},
+    {"blur-kern", required_argument, NULL, 301},
+    {"resize-damage", required_argument, NULL, 302},
+    {"glx-use-gpushader4", no_argument, NULL, 303},
+    {"opacity-rule", required_argument, NULL, 304},
+    {"shadow-exclude-reg", required_argument, NULL, 305},
+    {"paint-exclude", required_argument, NULL, 306},
+    {"xinerama-shadow-crop", no_argument, NULL, 307},
+    {"unredir-if-possible-exclude", required_argument, NULL, 308},
+    {"unredir-if-possible-delay", required_argument, NULL, 309},
+    {"write-pid-path", required_argument, NULL, 310},
+    {"vsync-use-glfinish", no_argument, NULL, 311},
+    {"xrender-sync", no_argument, NULL, 312},
+    {"xrender-sync-fence", no_argument, NULL, 313},
+    {"show-all-xerrors", no_argument, NULL, 314},
+    {"no-fading-destroyed-argb", no_argument, NULL, 315},
+    {"force-win-blend", no_argument, NULL, 316},
+    {"glx-fshader-win", required_argument, NULL, 317},
+    {"version", no_argument, NULL, 318},
+    {"no-x-selection", no_argument, NULL, 319},
+    {"no-name-pixmap", no_argument, NULL, 320},
+    {"log-level", required_argument, NULL, 321},
+    {"reredir-on-root-change", no_argument, NULL, 731},
+    {"glx-reinit-on-root-change", no_argument, NULL, 732},
+    {"monitor-repaint", no_argument, NULL, 800},
+    {"diagnostics", no_argument, NULL, 801},
+    // Must terminate with a NULL entry
+    {NULL, 0, NULL, 0},
+};
+
+/// Get config options that are needed to parse the rest of the options
+/// Return true if we should quit
+bool get_early_config(int argc, char *const *argv, char **config_file, bool *all_xerrors,
+                      int *exit_code) {
+	int o = 0, longopt_idx = -1;
+
+	// Pre-parse the commandline arguments to check for --config and invalid
+	// switches
+	// Must reset optind to 0 here in case we reread the commandline
+	// arguments
+	optind = 1;
+	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
+		if (o == 256)
+			*config_file = strdup(optarg);
+		else if (o == 'd') {
+			log_warn("-d will be ignored, please use the DISPLAY "
+			         "environment variable");
+		} else if (o == 314) {
+			*all_xerrors = true;
+		} else if (o == 318) {
+			printf("%s\n", COMPTON_VERSION);
+			*exit_code = 0;
+			return true;
+		} else if (o == 'S') {
+			log_warn("-S will be ignored");
+		} else if (o == 320) {
+			log_warn("--no-name-pixmap will be ignored");
+		} else if (o == '?' || o == ':') {
+			usage(1);
+			*exit_code = 1;
+			return true;
+		}
+	}
+
+	// Check for abundant positional arguments
+	if (optind < argc)
+		log_fatal("compton doesn't accept positional arguments.");
+
+	return false;
 }
 
 /**
  * Process arguments and configuration files.
  */
-void get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
-	static const char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:hscnfFCaSzGb";
-	static const struct option longopts[] = {
-	    {"help", no_argument, NULL, 'h'},
-	    {"config", required_argument, NULL, 256},
-	    {"shadow-radius", required_argument, NULL, 'r'},
-	    {"shadow-opacity", required_argument, NULL, 'o'},
-	    {"shadow-offset-x", required_argument, NULL, 'l'},
-	    {"shadow-offset-y", required_argument, NULL, 't'},
-	    {"fade-in-step", required_argument, NULL, 'I'},
-	    {"fade-out-step", required_argument, NULL, 'O'},
-	    {"fade-delta", required_argument, NULL, 'D'},
-	    {"menu-opacity", required_argument, NULL, 'm'},
-	    {"shadow", no_argument, NULL, 'c'},
-	    {"no-dock-shadow", no_argument, NULL, 'C'},
-	    {"clear-shadow", no_argument, NULL, 'z'},
-	    {"fading", no_argument, NULL, 'f'},
-	    {"inactive-opacity", required_argument, NULL, 'i'},
-	    {"frame-opacity", required_argument, NULL, 'e'},
-	    {"daemon", no_argument, NULL, 'b'},
-	    {"no-dnd-shadow", no_argument, NULL, 'G'},
-	    {"shadow-red", required_argument, NULL, 257},
-	    {"shadow-green", required_argument, NULL, 258},
-	    {"shadow-blue", required_argument, NULL, 259},
-	    {"inactive-opacity-override", no_argument, NULL, 260},
-	    {"inactive-dim", required_argument, NULL, 261},
-	    {"mark-wmwin-focused", no_argument, NULL, 262},
-	    {"shadow-exclude", required_argument, NULL, 263},
-	    {"mark-ovredir-focused", no_argument, NULL, 264},
-	    {"no-fading-openclose", no_argument, NULL, 265},
-	    {"shadow-ignore-shaped", no_argument, NULL, 266},
-	    {"detect-rounded-corners", no_argument, NULL, 267},
-	    {"detect-client-opacity", no_argument, NULL, 268},
-	    {"refresh-rate", required_argument, NULL, 269},
-	    {"vsync", required_argument, NULL, 270},
-	    {"alpha-step", required_argument, NULL, 271},
-	    {"dbe", no_argument, NULL, 272},
-	    {"paint-on-overlay", no_argument, NULL, 273},
-	    {"sw-opti", no_argument, NULL, 274},
-	    {"vsync-aggressive", no_argument, NULL, 275},
-	    {"use-ewmh-active-win", no_argument, NULL, 276},
-	    {"respect-prop-shadow", no_argument, NULL, 277},
-	    {"unredir-if-possible", no_argument, NULL, 278},
-	    {"focus-exclude", required_argument, NULL, 279},
-	    {"inactive-dim-fixed", no_argument, NULL, 280},
-	    {"detect-transient", no_argument, NULL, 281},
-	    {"detect-client-leader", no_argument, NULL, 282},
-	    {"blur-background", no_argument, NULL, 283},
-	    {"blur-background-frame", no_argument, NULL, 284},
-	    {"blur-background-fixed", no_argument, NULL, 285},
-	    {"dbus", no_argument, NULL, 286},
-	    {"logpath", required_argument, NULL, 287},
-	    {"invert-color-include", required_argument, NULL, 288},
-	    {"opengl", no_argument, NULL, 289},
-	    {"backend", required_argument, NULL, 290},
-	    {"glx-no-stencil", no_argument, NULL, 291},
-	    {"glx-copy-from-front", no_argument, NULL, 292},
-	    {"benchmark", required_argument, NULL, 293},
-	    {"benchmark-wid", required_argument, NULL, 294},
-	    {"glx-use-copysubbuffermesa", no_argument, NULL, 295},
-	    {"blur-background-exclude", required_argument, NULL, 296},
-	    {"active-opacity", required_argument, NULL, 297},
-	    {"glx-no-rebind-pixmap", no_argument, NULL, 298},
-	    {"glx-swap-method", required_argument, NULL, 299},
-	    {"fade-exclude", required_argument, NULL, 300},
-	    {"blur-kern", required_argument, NULL, 301},
-	    {"resize-damage", required_argument, NULL, 302},
-	    {"glx-use-gpushader4", no_argument, NULL, 303},
-	    {"opacity-rule", required_argument, NULL, 304},
-	    {"shadow-exclude-reg", required_argument, NULL, 305},
-	    {"paint-exclude", required_argument, NULL, 306},
-	    {"xinerama-shadow-crop", no_argument, NULL, 307},
-	    {"unredir-if-possible-exclude", required_argument, NULL, 308},
-	    {"unredir-if-possible-delay", required_argument, NULL, 309},
-	    {"write-pid-path", required_argument, NULL, 310},
-	    {"vsync-use-glfinish", no_argument, NULL, 311},
-	    {"xrender-sync", no_argument, NULL, 312},
-	    {"xrender-sync-fence", no_argument, NULL, 313},
-	    {"show-all-xerrors", no_argument, NULL, 314},
-	    {"no-fading-destroyed-argb", no_argument, NULL, 315},
-	    {"force-win-blend", no_argument, NULL, 316},
-	    {"glx-fshader-win", required_argument, NULL, 317},
-	    {"version", no_argument, NULL, 318},
-	    {"no-x-selection", no_argument, NULL, 319},
-	    {"no-name-pixmap", no_argument, NULL, 320},
-	    {"log-level", required_argument, NULL, 321},
-	    {"reredir-on-root-change", no_argument, NULL, 731},
-	    {"glx-reinit-on-root-change", no_argument, NULL, 732},
-	    {"monitor-repaint", no_argument, NULL, 800},
-	    {"diagnostics", no_argument, NULL, 801},
-	    // Must terminate with a NULL entry
-	    {NULL, 0, NULL, 0},
-	};
+void get_cfg(session_t *ps, int argc, char *const *argv) {
 
 	int o = 0, longopt_idx = -1;
-
-	if (first_pass) {
-		// Pre-parse the commandline arguments to check for --config and invalid
-		// switches
-		// Must reset optind to 0 here in case we reread the commandline
-		// arguments
-		optind = 1;
-		while (-1 !=
-		       (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
-			if (256 == o)
-				ps->o.config_file = strdup(optarg);
-			else if ('d' == o) {
-				log_warn("-d will be ignored, please use the DISPLAY "
-				         "environment variable");
-			} else if (314 == o)
-				ps->o.show_all_xerrors = true;
-			else if (318 == o) {
-				printf("%s\n", COMPTON_VERSION);
-				exit(0);
-			} else if (320 == o) {
-				log_warn("--no-name-pixmap will be ignored");
-			} else if ('?' == o || ':' == o)
-				usage(1);
-		}
-
-		// Check for abundant positional arguments
-		if (optind < argc)
-			log_fatal("compton doesn't accept positional arguments.");
-
-		return;
-	}
 
 	bool shadow_enable = false, fading_enable = false;
 	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));

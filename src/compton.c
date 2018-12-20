@@ -2730,8 +2730,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->ignore_tail = &ps->ignore_head;
   gettimeofday(&ps->time_start, NULL);
 
-  // First pass
-  get_cfg(ps, argc, argv, true);
+  int exit_code;
+  if (get_early_config(argc, argv, &ps->o.config_file, &ps->o.show_all_xerrors,
+                       &exit_code)) {
+    exit(exit_code);
+  }
 
   // Inherit old Display if possible, primarily for resource leak checking
   if (ps_old && ps_old->dpy)
@@ -2828,7 +2831,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       xcb_xfixes_query_version(ps->c, XCB_XFIXES_MAJOR_VERSION, XCB_XFIXES_MINOR_VERSION).sequence);
 
   // Second pass
-  get_cfg(ps, argc, argv, false);
+  get_cfg(ps, argc, argv);
 
   rebuild_shadow_exclude_reg(ps);
 
