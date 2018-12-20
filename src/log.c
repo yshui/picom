@@ -50,6 +50,7 @@ static attr_const const char *log_level_to_string(enum log_level level) {
 	case LOG_LEVEL_INFO: return "INFO";
 	case LOG_LEVEL_WARN: return "WARN";
 	case LOG_LEVEL_ERROR: return "ERROR";
+	case LOG_LEVEL_FATAL: return "FATAL ERROR";
 	default: assert(false);
 	}
 }
@@ -93,13 +94,13 @@ void log_destroy(struct log *l) {
 }
 
 void log_set_level(struct log *l, int level) {
-	assert(level < LOG_LEVEL_INVALID && level > 0);
+	assert(level <= LOG_LEVEL_FATAL && level >= 0);
 	l->log_level = level;
 }
 
 attr_printf(4, 5) void log_printf(struct log *l, int level, const char *func,
                                   const char *fmt, ...) {
-	assert(level < LOG_LEVEL_INVALID && level > 0);
+	assert(level <= LOG_LEVEL_FATAL && level >= 0);
 	if (level < l->log_level)
 		return;
 
@@ -208,6 +209,7 @@ const char *terminal_colorize_begin(enum log_level level) {
 	case LOG_LEVEL_INFO: return ANSI("92");
 	case LOG_LEVEL_WARN: return ANSI("33");
 	case LOG_LEVEL_ERROR: return ANSI("31;1");
+	case LOG_LEVEL_FATAL: return ANSI("30;103;1");
 	default: assert(false);
 	}
 }

@@ -8,12 +8,13 @@
 #include "compiler.h"
 
 enum log_level {
+	LOG_LEVEL_INVALID = -1,
 	LOG_LEVEL_TRACE = 0,
 	LOG_LEVEL_DEBUG,
 	LOG_LEVEL_INFO,
 	LOG_LEVEL_WARN,
 	LOG_LEVEL_ERROR,
-	LOG_LEVEL_INVALID
+	LOG_LEVEL_FATAL,
 };
 
 #define LOG(level, x, ...)                                                               \
@@ -23,6 +24,7 @@ enum log_level {
 #define log_info(x, ...) LOG(INFO, x, ##__VA_ARGS__)
 #define log_warn(x, ...) LOG(WARN, x, ##__VA_ARGS__)
 #define log_error(x, ...) LOG(ERROR, x, ##__VA_ARGS__)
+#define log_fatal(x, ...) LOG(FATAL, x, ##__VA_ARGS__)
 
 /// Print out an error message.
 #define printf_err(format, ...) log_error(format, ##__VA_ARGS__)
