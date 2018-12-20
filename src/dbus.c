@@ -85,7 +85,7 @@ cdbus_callback_watch_toggled(DBusWatch *watch, void *data);
  * Initialize D-Bus connection.
  */
 bool
-cdbus_init(session_t *ps) {
+cdbus_init(session_t *ps, const char *uniq) {
   auto cd = cmalloc(struct cdbus_data);
   cd->dbus_service = NULL;
 
@@ -117,7 +117,18 @@ cdbus_init(session_t *ps) {
   // Request service name
   {
     // Build service name
-    char *service = mstrjoin3(CDBUS_SERVICE_NAME, ".", ps->o.display_repr);
+    size_t service_len = strlen(CDBUS_SERVICE_NAME)+strlen(uniq)+2;
+    char *service = ccalloc(service_len, char);
+    snprintf(service, service_len, "%s.%s", CDBUS_SERVICE_NAME, uniq);
+
+    // Make a valid dbus name by converting non alphanumeric characters to underscore
+    char *tmp = service + strlen(CDBUS_SERVICE_NAME)+1;
+    while (*tmp) {
+      if (!isalnum(*tmp)) {
+        *tmp = '_';
+      }
+      tmp++;
+    }
     cd->dbus_service = service;
 
     // Request for the name
@@ -1001,7 +1012,6 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   }
 
   cdbus_m_opts_get_do(config_file, cdbus_reply_string);
-  cdbus_m_opts_get_do(display_repr, cdbus_reply_string);
   cdbus_m_opts_get_do(write_pid_path, cdbus_reply_string);
   cdbus_m_opts_get_do(mark_wmwin_focused, cdbus_reply_bool);
   cdbus_m_opts_get_do(mark_ovredir_focused, cdbus_reply_bool);
@@ -1018,7 +1028,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_opts_get_do(redirected_force, cdbus_reply_enum);
   cdbus_m_opts_get_do(stoppaint_force, cdbus_reply_enum);
   cdbus_m_opts_get_do(logpath, cdbus_reply_string);
-  cdbus_m_opts_get_do(synchronize, cdbus_reply_bool);
+  cdbus_m_opts_get_stub(synchronize, cdbus_reply_bool, false);
 
   cdbus_m_opts_get_do(refresh_rate, cdbus_reply_int32);
   cdbus_m_opts_get_do(sw_opti, cdbus_reply_bool);

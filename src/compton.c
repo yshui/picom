@@ -2569,7 +2569,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .reg_win = None,
     .o = {
       .config_file = NULL,
-      .display = NULL,
       .backend = BKEND_XRENDER,
       .glx_no_stencil = false,
 #ifdef CONFIG_OPENGL
@@ -2578,7 +2577,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .mark_wmwin_focused = false,
       .mark_ovredir_focused = false,
       .fork_after_register = false,
-      .synchronize = false,
       .detect_rounded_corners = false,
       .resize_damage = 0,
       .unredir_if_possible = false,
@@ -2741,7 +2739,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Open Display
   if (!ps->dpy) {
-    ps->dpy = XOpenDisplay(ps->o.display);
+    ps->dpy = XOpenDisplay(NULL);
     if (!ps->dpy) {
       log_fatal("Can't open display.");
       exit(1);
@@ -2752,9 +2750,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
   const xcb_query_extension_reply_t *ext_info;
 
   XSetErrorHandler(xerror);
-  if (ps->o.synchronize) {
-    XSynchronize(ps->dpy, 1);
-  }
 
   ps->scr = DefaultScreen(ps->dpy);
   ps->root = RootWindow(ps->dpy, ps->scr);
@@ -2806,8 +2801,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
           xcb_composite_query_version(ps->c, XCB_COMPOSITE_MAJOR_VERSION, XCB_COMPOSITE_MINOR_VERSION),
           NULL);
 
-    if (!ps->o.no_name_pixmap
-        && reply && (reply->major_version > 0 || reply->minor_version >= 2)) {
+    if (reply && (reply->major_version > 0 || reply->minor_version >= 2)) {
       ps->has_name_pixmap = true;
     }
     free(reply);
@@ -2832,27 +2826,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->xfixes_error = ext_info->first_error;
   xcb_discard_reply(ps->c,
       xcb_xfixes_query_version(ps->c, XCB_XFIXES_MAJOR_VERSION, XCB_XFIXES_MINOR_VERSION).sequence);
-
-  // Build a safe representation of display name
-  {
-    char *display_repr = DisplayString(ps->dpy);
-    if (!display_repr)
-      display_repr = "unknown";
-    display_repr = strdup(display_repr);
-
-    // Convert all special characters in display_repr name to underscore
-    {
-      char *pdisp = display_repr;
-
-      while (*pdisp) {
-        if (!isalnum(*pdisp))
-          *pdisp = '_';
-        ++pdisp;
-      }
-    }
-
-    ps->o.display_repr = display_repr;
-  }
 
   // Second pass
   get_cfg(ps, argc, argv, false);
@@ -3002,7 +2975,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // Initialize DBus. We need to do this early, because add_win might call dbus functions
   if (ps->o.dbus) {
 #ifdef CONFIG_DBUS
-    cdbus_init(ps);
+    cdbus_init(ps, DisplayString(ps->dpy));
     if (!ps->dbus_data) {
       ps->o.dbus = false;
     }
@@ -3160,8 +3133,6 @@ session_destroy(session_t *ps) {
 
   free(ps->o.config_file);
   free(ps->o.write_pid_path);
-  free(ps->o.display);
-  free(ps->o.display_repr);
   free(ps->o.logpath);
   for (int i = 0; i < MAX_BLUR_PASS; ++i) {
     free(ps->o.blur_kerns[i]);

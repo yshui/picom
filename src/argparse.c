@@ -23,9 +23,6 @@ static attr_noret void usage(int ret) {
 	    "usage: compton [options]\n"
 	    "Options:\n"
 	    "\n"
-	    "-d display\n"
-	    "  Which display should be managed.\n"
-	    "\n"
 	    "-r radius\n"
 	    "  The blur radius for shadows. (default 12)\n"
 	    "\n"
@@ -77,9 +74,6 @@ static attr_noret void usage(int ret) {
 	    "\n"
 	    "-b\n"
 	    "  Daemonize process.\n"
-	    "\n"
-	    "-S\n"
-	    "  Enable synchronous operation (for debugging).\n"
 	    "\n"
 	    "--show-all-xerrors\n"
 	    "  Show all X errors (for debugging).\n"
@@ -482,18 +476,17 @@ void get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
 		       (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
 			if (256 == o)
 				ps->o.config_file = strdup(optarg);
-			else if ('d' == o)
-				ps->o.display = strdup(optarg);
-			else if ('S' == o)
-				ps->o.synchronize = true;
-			else if (314 == o)
+			else if ('d' == o) {
+				log_warn("-d will be ignored, please use the DISPLAY "
+				         "environment variable");
+			} else if (314 == o)
 				ps->o.show_all_xerrors = true;
 			else if (318 == o) {
 				printf("%s\n", COMPTON_VERSION);
 				exit(0);
-			} else if (320 == o)
-				ps->o.no_name_pixmap = true;
-			else if ('?' == o || ':' == o)
+			} else if (320 == o) {
+				log_warn("--no-name-pixmap will be ignored");
+			} else if ('?' == o || ':' == o)
 				usage(1);
 		}
 
@@ -577,11 +570,9 @@ void get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
 		case 'e': ps->o.frame_opacity = atof(optarg); break;
 		case 'z':
 			log_warn("clear-shadow is removed, shadows are automatically "
-			         "cleared now. "
-			         "If you want to prevent shadow from been cleared under "
-			         "certain types of windows, "
-			         "you can use the \"full-shadow\" per window type "
-			         "option.");
+			         "cleared now. If you want to prevent shadow from been "
+			         "cleared under certain types of windows, you can use "
+			         "the \"full-shadow\" per window type option.");
 			break;
 		case 'n':
 		case 'a':
@@ -629,14 +620,12 @@ void get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
 		case 271:
 			// --alpha-step
 			log_warn("--alpha-step has been removed, compton now tries to "
-			         "make use"
-			         " of all alpha values");
+			         "make use of all alpha values");
 			break;
 		case 272: log_warn("use of --dbe is deprecated"); break;
 		case 273:
 			log_warn("--paint-on-overlay has been removed, and is enabled "
-			         "when "
-			         "possible");
+			         "when possible");
 			break;
 			P_CASEBOOL(274, sw_opti);
 			P_CASEBOOL(275, vsync_aggressive);
@@ -717,9 +706,8 @@ void get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
 		case 305:
 			// --shadow-exclude-reg
 			ps->o.shadow_exclude_reg_str = strdup(optarg);
-			log_warn("--shadow-exclude-reg is deprecated. "
-			         "You are likely better off using --shadow-exclude "
-			         "anyway");
+			log_warn("--shadow-exclude-reg is deprecated. You are likely "
+			         "better off using --shadow-exclude anyway");
 			break;
 		case 306:
 			// --paint-exclude
@@ -742,10 +730,9 @@ void get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
 			P_CASEBOOL(316, force_win_blend);
 		case 317:
 			ps->o.glx_fshader_win_str = strdup(optarg);
-			log_warn("--glx-fshader-win is being deprecated, and might be"
-			         " removed in the future. If you really need this "
-			         "feature, please report"
-			         " an issue to let us know");
+			log_warn("--glx-fshader-win is being deprecated, and might be "
+			         "removed in the future. If you really need this "
+			         "feature, please report an issue to let us know");
 			break;
 		case 321: {
 			enum log_level tmp_level = string_to_log_level(optarg);

@@ -22,9 +22,6 @@ OPTIONS
 *-h*, *--help*::
 	Get the usage text embedded in program code, which may be more up-to-date than this man page.
 
-*-d* 'DISPLAY'::
-	Display to be managed.
-
 *-r*, *--shadow-radius*='RADIUS'::
 	The blur radius for shadows, in pixels. (defaults to 12)
 
@@ -72,9 +69,6 @@ OPTIONS
 
 *-b*, *--daemon*::
 	Daemonize process. Fork to background after initialization. Causes issues with certain (badly-written) drivers.
-
-*-S*::
-	Enable synchronous X operation (for debugging).
 
 *--log-level*::
 	Set the log level. Possible values are "TRACE", "DEBUG", "INFO", "WARN", "ERROR", in increasing level of importance. Case doesn't matter.

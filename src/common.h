@@ -399,11 +399,6 @@ typedef struct options_t {
   char *config_file;
   /// Path to write PID to.
   char *write_pid_path;
-  /// The display name we used. NULL means we are using the value of the
-  /// <code>DISPLAY</code> environment variable.
-  char *display;
-  /// Safe representation of display name.
-  char *display_repr;
   /// The backend in use.
   enum backend backend;
   /// Whether to sync X drawing to avoid certain delay issues with
@@ -458,10 +453,6 @@ typedef struct options_t {
   Window benchmark_wid;
   /// A list of conditions of windows not to paint.
   c2_lptr_t *paint_blacklist;
-  /// Whether to avoid using xcb_composite_name_window_pixmap(), for debugging.
-  bool no_name_pixmap;
-  /// Whether to work under synchronized mode for debugging.
-  bool synchronize;
   /// Whether to show all X errors.
   bool show_all_xerrors;
   /// Whether to avoid acquiring X Selection.

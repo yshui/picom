@@ -26,7 +26,7 @@ static inline const char *cdbus_repr_msgtype(DBusMessage *msg) {
 /**
  * Initialize D-Bus connection.
  */
-bool cdbus_init(session_t *ps);
+bool cdbus_init(session_t *ps, const char *uniq_name);
 
 /**
  * Destroy D-Bus connection.
