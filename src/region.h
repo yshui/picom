@@ -4,7 +4,9 @@
 #include <xcb/xcb.h>
 #include <pixman.h>
 #include <stdio.h>
+
 #include "utils.h"
+#include "log.h"
 
 typedef struct pixman_region32 pixman_region32_t;
 typedef struct pixman_box32 pixman_box32_t;
@@ -23,9 +25,9 @@ static inline void
 dump_region(const region_t *x) {
   int nrects;
   const rect_t *rects = pixman_region32_rectangles((region_t *)x, &nrects);
-  fprintf(stderr, "nrects: %d\n", nrects);
+  log_trace("nrects: %d", nrects);
   for (int i = 0; i < nrects; i++)
-    fprintf(stderr, "(%d, %d) - (%d, %d)\n", rects[i].x1, rects[i].y1, rects[i].x2, rects[i].y2);
+    log_trace("(%d, %d) - (%d, %d)", rects[i].x1, rects[i].y1, rects[i].x2, rects[i].y2);
 }
 
 /// Convert one xcb rectangle to our rectangle type

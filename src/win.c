@@ -172,9 +172,7 @@ int win_get_name(session_t *ps, win *w) {
     return 0;
 
   if (!(wid_get_text_prop(ps, w->client_win, ps->atom_name_ewmh, &strlst, &nstr))) {
-#ifdef DEBUG_WINDATA
-    printf_dbgf("(%#010lx): _NET_WM_NAME unset, falling back to WM_NAME.\n", wid);
-#endif
+    log_trace("(%#010lx): _NET_WM_NAME unset, falling back to WM_NAME.", w->client_win);
 
     if (!(XGetWMName(ps->dpy, w->client_win, &text_prop) && text_prop.value)) {
       return -1;
@@ -199,10 +197,8 @@ int win_get_name(session_t *ps, win *w) {
 
   XFreeStringList(strlst);
 
-#ifdef DEBUG_WINDATA
-  printf_dbgf("(%#010lx): client = %#010lx, name = \"%s\", "
-      "ret = %d\n", w->id, w->client_win, w->name, ret);
-#endif
+  log_trace("(%#010lx): client = %#010lx, name = \"%s\", "
+            "ret = %d", w->id, w->client_win, w->name, ret);
   return ret;
 }
 
@@ -222,10 +218,8 @@ int win_get_role(session_t *ps, win *w) {
 
   XFreeStringList(strlst);
 
-#ifdef DEBUG_WINDATA
-  printf_dbgf("(%#010lx): client = %#010lx, role = \"%s\", "
-      "ret = %d\n", w->id, w->client_win, w->role, ret);
-#endif
+  log_trace("(%#010lx): client = %#010lx, role = \"%s\", "
+            "ret = %d", w->id, w->client_win, w->role, ret);
   return ret;
 }
 
@@ -703,19 +697,15 @@ void win_recheck_client(session_t *ps, win *w) {
   // Always recursively look for a window with WM_STATE, as Fluxbox
   // sets override-redirect flags on all frame windows.
   Window cw = find_client_win(ps, w->id);
-#ifdef DEBUG_CLIENTWIN
   if (cw)
-    printf_dbgf("(%#010lx): client %#010lx\n", w->id, cw);
-#endif
+    log_trace("(%#010lx): client %#010lx", w->id, cw);
   // Set a window's client window to itself if we couldn't find a
   // client window
   if (!cw) {
     cw = w->id;
     w->wmwin = !w->a.override_redirect;
-#ifdef DEBUG_CLIENTWIN
-    printf_dbgf("(%#010lx): client self (%s)\n", w->id,
+    log_trace("(%#010lx): client self (%s)", w->id,
                 (w->wmwin ? "wmwin" : "override-redirected"));
-#endif
   }
 
   // Unmark the old one
@@ -817,14 +807,7 @@ bool add_win(session_t *ps, Window id, Window prev) {
   // Allocate and initialize the new win structure
   auto new = cmalloc(win);
 
-#ifdef DEBUG_EVENTS
-  printf_dbgf("(%#010lx): %p\n", id, new);
-#endif
-
-  if (!new) {
-    printf_errf("(%#010lx): Failed to allocate memory for the new window.", id);
-    return false;
-  }
+  log_trace("(%#010lx): %p", id, new);
 
   *new = win_def;
   pixman_region32_init(&new->bounding_shape);
@@ -988,9 +971,8 @@ void win_update_leader(session_t *ps, win *w) {
 
   win_set_leader(ps, w, leader);
 
-#ifdef DEBUG_LEADER
-  printf_dbgf("(%#010lx): client %#010lx, leader %#010lx, cache %#010lx\n", w->id, w->client_win, w->leader, win_get_leader(ps, w));
-#endif
+  log_trace("(%#010lx): client %#010lx, leader %#010lx, cache %#010lx",
+            w->id, w->client_win, w->leader, win_get_leader(ps, w));
 }
 
 /**
@@ -1049,11 +1031,9 @@ bool win_get_class(session_t *ps, win *w) {
 
   XFreeStringList(strlst);
 
-#ifdef DEBUG_WINDATA
-  printf_dbgf("(%#010lx): client = %#010lx, "
-      "instance = \"%s\", general = \"%s\"\n",
-      w->id, w->client_win, w->class_instance, w->class_general);
-#endif
+  log_trace("(%#010lx): client = %#010lx, "
+            "instance = \"%s\", general = \"%s\"",
+            w->id, w->client_win, w->class_instance, w->class_general);
 
   return true;
 }
@@ -1201,7 +1181,7 @@ void win_update_bounding_shape(session_t *ps, win *w) {
   // Window shape changed, we should free old wpaint and shadow pict
   free_paint(ps, &w->paint);
   free_paint(ps, &w->shadow_paint);
-  //printf_errf("(): free out dated pict");
+  //log_trace("free out dated pict");
 
   win_on_factor_change(ps, w);
 }
@@ -1252,11 +1232,9 @@ win_update_frame_extents(session_t *ps, win *w, Window client) {
       w->reg_ignore_valid = false;
   }
 
-#ifdef DEBUG_FRAME
-  printf_dbgf("(%#010lx): %d, %d, %d, %d\n", w->id,
+  log_trace("(%#010lx): %d, %d, %d, %d", w->id,
       w->frame_extents.left, w->frame_extents.right,
       w->frame_extents.top, w->frame_extents.bottom);
-#endif
 
   free_winprop(&prop);
 }

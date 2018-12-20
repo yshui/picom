@@ -500,11 +500,8 @@ recheck_focus(session_t *ps) {
 
   win *w = find_win_all(ps, wid);
 
-#ifdef DEBUG_EVENTS
-  print_timestamp(ps);
-  printf_dbgf("(): %#010" PRIx32 " (%#010lx \"%s\") focused.\n", wid,
+  log_trace("%#010" PRIx32 " (%#010lx \"%s\") focused.", wid,
       (w ? w->id: None), (w ? w->name: NULL));
-#endif
 
   // And we set the focus state here
   if (w) {
@@ -624,7 +621,7 @@ paint_preprocess(session_t *ps, win *list) {
     if (!reg_ignore_valid)
       rc_region_unref(&w->reg_ignore);
 
-    //printf_errf("(): %d %d %s", w->a.map_state, w->ever_damaged, w->name);
+    //log_trace("%d %d %s", w->a.map_state, w->ever_damaged, w->name);
 
     // Give up if it's not damaged or invisible, or it's unmapped and its
     // pixmap is gone (for example due to a ConfigureNotify), or when it's
@@ -636,7 +633,7 @@ paint_preprocess(session_t *ps, win *list) {
         || (double) w->opacity / OPAQUE * MAX_ALPHA < 1
         || w->paint_excluded)
       to_paint = false;
-    //printf_errf("(): %s %d %d %d", w->name, to_paint, w->opacity, w->paint_excluded);
+    //log_trace("%s %d %d %d", w->name, to_paint, w->opacity, w->paint_excluded);
 
     // Add window to damaged area if its painting status changes
     // or opacity changes
@@ -753,7 +750,7 @@ xr_take_screenshot(session_t *ps) {
   XImage *img = XGetImage(ps->dpy, get_tgt_window(ps), 0, 0,
       ps->root_width, ps->root_height, AllPlanes, XYPixmap);
   if (!img) {
-    printf_errf("(): Failed to get XImage.");
+    log_error("Failed to get XImage.");
     return NULL;
   }
   assert(0 == img->xoffset);
@@ -841,9 +838,7 @@ map_win(session_t *ps, Window id) {
 
   win *w = find_win(ps, id);
 
-#ifdef DEBUG_EVENTS
-  printf_dbgf("(%#010lx \"%s\"): %p\n", id, (w ? w->name: NULL), w);
-#endif
+  log_trace("(%#010lx \"%s\"): %p", id, (w ? w->name: NULL), w);
 
   // Don't care about window mapping if it's an InputOnly window
   // Try avoiding mapping a window twice
@@ -885,9 +880,7 @@ map_win(session_t *ps, Window id) {
 
   assert(w->client_win);
 
-#ifdef DEBUG_WINTYPE
-  printf_dbgf("(%#010lx): type %s\n", w->id, WINTYPES[w->window_type]);
-#endif
+  log_trace("(%#010lx): type %s", w->id, WINTYPES[w->window_type]);
 
   // FocusIn/Out may be ignored when the window is unmapped, so we must
   // recheck focus here
@@ -1027,8 +1020,7 @@ restack_win(session_t *ps, win *w, Window new_above) {
     }
 
     if (new_above && !found) {
-      printf_errf("(%#010lx, %#010lx): "
-          "Failed to found new above window.", w->id, new_above);
+      log_error("(%#010lx, %#010lx): Failed to found new above window.", w->id, new_above);
       return;
     }
 
@@ -1047,8 +1039,8 @@ restack_win(session_t *ps, win *w, Window new_above) {
       bool to_free;
       win* c = ps->list;
 
-      printf_dbgf("(%#010lx, %#010lx): "
-             "Window stack modified. Current stack:\n", w->id, new_above);
+      log_trace("(%#010lx, %#010lx): "
+                "Window stack modified. Current stack:", w->id, new_above);
 
       for (; c; c = c->next) {
         window_name = "(Failed to get title)";
@@ -1099,9 +1091,9 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     // Reinitialize GLX on root change
     if (ps->o.glx_reinit_on_root_change && ps->psglx) {
       if (!glx_reinit(ps, bkend_use_glx(ps)))
-        printf_errf("(): Failed to reinitialize GLX, troubles ahead.");
+        log_error("Failed to reinitialize GLX, troubles ahead.");
       if (BKEND_GLX == ps->o.backend && !glx_init_blur(ps))
-        printf_errf("(): Failed to initialize filters.");
+        log_error("Failed to initialize filters.");
     }
 
     // GLX root change callback
@@ -1196,15 +1188,11 @@ finish_destroy_win(session_t *ps, win **_w) {
   assert(w->destroyed);
   win **prev = NULL, *i = NULL;
 
-#ifdef DEBUG_EVENTS
-  printf_dbgf("(%#010lx): Starting...\n", w->id);
-#endif
+  log_trace("(%#010lx): Starting...", w->id);
 
   for (prev = &ps->list; (i = *prev); prev = &i->next) {
     if (w == i) {
-#ifdef DEBUG_EVENTS
-      printf_dbgf("(%#010lx \"%s\"): %p\n", w->id, w->name, w);
-#endif
+      log_trace("(%#010lx \"%s\"): %p", w->id, w->name, w);
 
       finish_unmap_win(ps, _w);
       *prev = w->next;
@@ -1232,9 +1220,7 @@ static void
 destroy_win(session_t *ps, Window id) {
   win *w = find_win(ps, id);
 
-#ifdef DEBUG_EVENTS
-  printf_dbgf("(%#010lx \"%s\"): %p\n", id, (w ? w->name: NULL), w);
-#endif
+  log_trace("(%#010lx \"%s\"): %p", id, (w ? w->name: NULL), w);
 
   if (w) {
     unmap_win(ps, &w);
@@ -1506,7 +1492,7 @@ ev_focus_detail_name(xcb_focus_in_event_t* ev) {
 
 static inline void attr_unused
 ev_focus_report(xcb_focus_in_event_t *ev) {
-  printf("  { mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
+  log_trace("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
       ev_focus_detail_name(ev));
 }
 
@@ -1549,12 +1535,8 @@ ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
 
 inline static void
 ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
-#ifdef DEBUG_EVENTS
-  printf("  { send_event: %d, "
-         " above: %#010x, "
-         " override_redirect: %d }\n",
+  log_trace("{ send_event: %d, above: %#010x, override_redirect: %d }",
          ev->event, ev->above_sibling, ev->override_redirect);
-#endif
   configure_win(ps, ev);
 }
 
@@ -1578,10 +1560,8 @@ ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
 
 inline static void
 ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
-#ifdef DEBUG_EVENTS
-  printf_dbg("  { new_parent: %#010x, override_redirect: %d }\n",
-      ev->parent, ev->override_redirect);
-#endif
+  log_trace("{ new_parent: %#010x, override_redirect: %d }",
+            ev->parent, ev->override_redirect);
 
   if (ev->parent == ps->root) {
     add_win(ps, ev->window, 0);
@@ -1679,7 +1659,7 @@ ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
         name_len = xcb_get_atom_name_name_length(reply);
     }
 
-    printf_dbg("  { atom = %.*s }\n", name_len, name);
+    log_trace("{ atom = %.*s }", name_len, name);
     free(reply);
   }
 #endif
@@ -1857,8 +1837,7 @@ ev_screen_change_notify(session_t *ps,
   if (ps->o.sw_opti && !ps->o.refresh_rate) {
     update_refresh_rate(ps);
     if (!ps->refresh_rate) {
-      fprintf(stderr, "ev_screen_change_notify(): Refresh rate detection failed."
-        "swopti will be temporarily disabled");
+      log_warn("Refresh rate detection failed. swopti will be temporarily disabled");
     }
   }
 }
@@ -1868,8 +1847,7 @@ ev_selection_clear(session_t *ps,
     xcb_selection_clear_event_t attr_unused *ev) {
   // The only selection we own is the _NET_WM_CM_Sn selection.
   // If we lose that one, we should exit.
-  fprintf(stderr, "Another composite manager started and "
-      "took the _NET_WM_CM_Sn selection.\n");
+  log_fatal("Another composite manager started and took the _NET_WM_CM_Sn selection.");
   exit(1);
 }
 
@@ -1912,9 +1890,8 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
     char *window_name = NULL;
     ev_window_name(ps, wid, &window_name);
 
-    print_timestamp(ps);
-    printf_errf(" event %10.10s serial %#010x window %#010lx \"%s\"\n",
-      ev_name(ps, ev), ev_serial(ev), wid, window_name);
+    log_trace("event %10.10s serial %#010x window %#010lx \"%s\"",
+              ev_name(ps, ev), ev_serial(ev), wid, window_name);
   }
 #endif
 
@@ -2371,7 +2348,7 @@ register_cm(session_t *ps) {
         None, None);
 
   if (!ps->reg_win) {
-    printf_errf("(): Failed to create window.");
+    log_fatal("Failed to create window.");
     return false;
   }
 
@@ -2398,8 +2375,9 @@ register_cm(session_t *ps) {
   }
 
   // Set COMPTON_VERSION
-  if (!wid_set_text_prop(ps, ps->reg_win, get_atom(ps, "COMPTON_VERSION"), COMPTON_VERSION)) {
-    printf_errf("(): Failed to set COMPTON_VERSION.");
+  if (!wid_set_text_prop(ps, ps->reg_win, get_atom(ps, "COMPTON_VERSION"),
+                         COMPTON_VERSION)) {
+    log_error("Failed to set COMPTON_VERSION.");
   }
 
   // Acquire X Selection _NET_WM_CM_S?
@@ -2425,7 +2403,7 @@ register_cm(session_t *ps) {
 
     if (reply && reply->owner != XCB_NONE) {
       free(reply);
-      fprintf(stderr, "Another composite manager is already running\n");
+      log_fatal("Another composite manager is already running");
       return false;
     }
     free(reply);
@@ -2439,7 +2417,7 @@ register_cm(session_t *ps) {
  * Reopen streams for logging.
  */
 static bool
-ostream_reopen(session_t *ps, const char *path) {
+stdout_reopen(session_t *ps, const char *path) {
   if (!path)
     path = ps->o.logpath;
   if (!path)
@@ -2447,8 +2425,10 @@ ostream_reopen(session_t *ps, const char *path) {
 
   bool success = freopen(path, "a", stdout);
   success = freopen(path, "a", stderr) && success;
-  if (!success)
-    printf_errfq(1, "(%s): freopen() failed.", path);
+  if (!success) {
+    log_fatal("(%s): freopen() failed.", path);
+    exit(1);
+  }
 
   return success;
 }
@@ -2464,7 +2444,7 @@ fork_after(session_t *ps) {
 #ifdef CONFIG_OPENGL
   // GLX context must be released and reattached on fork
   if (glx_has_context(ps) && !glXMakeCurrent(ps->dpy, None, NULL)) {
-    printf_errf("(): Failed to detach GLx context.");
+    log_fatal("Failed to detach GLX context.");
     return false;
   }
 #endif
@@ -2472,7 +2452,7 @@ fork_after(session_t *ps) {
   int pid = fork();
 
   if (-1 == pid) {
-    printf_errf("(): fork() failed.");
+    log_fatal("fork() failed.");
     return false;
   }
 
@@ -2483,19 +2463,17 @@ fork_after(session_t *ps) {
 #ifdef CONFIG_OPENGL
   if (glx_has_context(ps)
       && !glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->psglx->context)) {
-    printf_errf("(): Failed to make GLX context current.");
+    log_fatal("Failed to make GLX context current.");
     return false;
   }
 #endif
 
-  // Mainly to suppress the _FORTIFY_SOURCE warning
-  bool success = freopen("/dev/null", "r", stdin);
-  if (!success) {
-    printf_errf("(): freopen() failed.");
+  if (!freopen("/dev/null", "r", stdin)) {
+    log_fatal("freopen() failed.");
     return false;
   }
 
-  return success;
+  return true;
 }
 
 /**
@@ -2508,7 +2486,7 @@ write_pid(session_t *ps) {
 
   FILE *f = fopen(ps->o.write_pid_path, "w");
   if (unlikely(!f)) {
-    printf_errf("(): Failed to write PID to \"%s\".", ps->o.write_pid_path);
+    log_error("Failed to write PID to \"%s\".", ps->o.write_pid_path);
     return false;
   }
 
@@ -2646,7 +2624,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
 
     // Check for abundant positional arguments
     if (optind < argc)
-      printf_errfq(1, "(): compton doesn't accept positional arguments.");
+      log_fatal("compton doesn't accept positional arguments.");
 
     return;
   }
@@ -2731,14 +2709,14 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.frame_opacity = atof(optarg);
         break;
       case 'z':
-        printf_errf("(): clear-shadow is removed, shadows are automatically cleared now.\n"
-          "If you want to prevent shadow from been cleared under certain types of windows,\n"
+        log_warn("clear-shadow is removed, shadows are automatically cleared now. "
+          "If you want to prevent shadow from been cleared under certain types of windows, "
           "you can use the \"full-shadow\" per window type option.");
         break;
       case 'n':
       case 'a':
       case 's':
-        printf_errfq(1, "(): -n, -a, and -s have been removed.");
+        log_error("-n, -a, and -s have been removed.");
         break;
       P_CASEBOOL('b', fork_after_register);
       // Long options
@@ -2780,14 +2758,14 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       case 271:
         // --alpha-step
-        printf_errf("(): --alpha-step has been removed, compton now tries to make use"
+        log_warn("--alpha-step has been removed, compton now tries to make use"
           " of all alpha values");
         break;
       case 272:
-        printf_errf("(): use of --dbe is deprecated");
+        log_warn("use of --dbe is deprecated");
         break;
       case 273:
-        printf_errf("(): --paint-on-overlay has been removed, and is enabled when "
+        log_warn("--paint-on-overlay has been removed, and is enabled when "
           "possible");
         break;
       P_CASEBOOL(274, sw_opti);
@@ -2825,7 +2803,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         break;
       P_CASEBOOL(291, glx_no_stencil);
       case 292:
-        printf_errf("(): --glx-copy-from-front %s", deprecation_message);
+        log_warn("--glx-copy-from-front %s", deprecation_message);
         break;
       P_CASELONG(293, benchmark);
       case 294:
@@ -2833,7 +2811,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
         ps->o.benchmark_wid = strtol(optarg, NULL, 0);
         break;
       case 295:
-        printf_errf("(): --glx-use-copysubbuffermesa %s", deprecation_message);
+        log_warn("--glx-use-copysubbuffermesa %s", deprecation_message);
         break;
       case 296:
         // --blur-background-exclude
@@ -2868,8 +2846,8 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       case 305:
         // --shadow-exclude-reg
         ps->o.shadow_exclude_reg_str = strdup(optarg);
-        printf_err("--shadow-exclude-reg is deprecated.\n"
-                   "You are likely better off using --shadow-exclude anyway");
+        log_warn("--shadow-exclude-reg is deprecated. "
+                 "You are likely better off using --shadow-exclude anyway");
         break;
       case 306:
         // --paint-exclude
@@ -2892,9 +2870,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
       P_CASEBOOL(316, force_win_blend);
       case 317:
         ps->o.glx_fshader_win_str = strdup(optarg);
-        printf_errf("(): --glx-fshader-win is being deprecated, and might be\n"
-          " removed in the future. If you really need this feature, please report\n"
-          "an issue to let us know\n");
+        log_warn("--glx-fshader-win is being deprecated, and might be"
+          " removed in the future. If you really need this feature, please report"
+          " an issue to let us know");
         break;
       case 321: {
         enum log_level tmp_level = string_to_log_level(optarg);
@@ -2923,8 +2901,9 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   setlocale(LC_NUMERIC, lc_numeric_old);
   free(lc_numeric_old);
 
-  if (ps->o.monitor_repaint && ps->o.backend != BKEND_XRENDER)
-    printf_errf("(): --monitor-repaint has no effect when backend is not xrender");
+  if (ps->o.monitor_repaint && ps->o.backend != BKEND_XRENDER) {
+    log_warn("--monitor-repaint has no effect when backend is not xrender");
+  }
 
   // Range checking and option assignments
   ps->o.fade_delta = max_i(ps->o.fade_delta, 1);
@@ -2992,7 +2971,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
   rebuild_shadow_exclude_reg(ps);
 
   if (ps->o.resize_damage < 0)
-    printf_errf("(): Negative --resize-damage does not work correctly.");
+    log_warn("Negative --resize-damage will not work correctly.");
 }
 
 /**
@@ -3137,13 +3116,13 @@ init_overlay(session_t *ps) {
     e = XCB_SYNCED_VOID(xcb_shape_mask, ps->c, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_BOUNDING,
       ps->overlay, 0, 0, 0);
     if (e) {
-      printf_errf("(): failed to set the bounding shape of overlay, giving up.");
+      log_fatal("Failed to set the bounding shape of overlay, giving up.");
       exit(1);
     }
     e = XCB_SYNCED_VOID(xcb_shape_rectangles, ps->c, XCB_SHAPE_SO_SET, XCB_SHAPE_SK_INPUT,
       XCB_CLIP_ORDERING_UNSORTED, ps->overlay, 0, 0, 0, NULL);
     if (e) {
-      printf_errf("(): failed to set the input shape of overlay, giving up.");
+      log_fatal("Failed to set the input shape of overlay, giving up.");
       exit(1);
     }
 
@@ -3159,13 +3138,11 @@ init_overlay(session_t *ps) {
     // the window isn't created yet.
     // xcb_unmap_window(c, ps->overlay);
     // XFlush(ps->dpy);
+  } else {
+    log_error("Cannot get X Composite overlay window. Falling "
+              "back to painting on root window.");
   }
-  else
-    fprintf(stderr, "Cannot get X Composite overlay window. Falling "
-        "back to painting on root window.\n");
-#ifdef DEBUG_REDIR
-  printf_dbgf("(): overlay = %#010lx\n", ps->overlay);
-#endif
+  log_debug("overlay = %#010lx", ps->overlay);
 
   return ps->overlay;
 }
@@ -3176,10 +3153,7 @@ init_overlay(session_t *ps) {
 static void
 redir_start(session_t *ps) {
   if (!ps->redirected) {
-#ifdef DEBUG_REDIR
-    print_timestamp(ps);
-    printf_dbgf("(): Screen redirected.\n");
-#endif
+    log_trace("Screen redirected.");
 
     // Map overlay window. Done firstly according to this:
     // https://bugzilla.gnome.org/show_bug.cgi?id=597014
@@ -3213,10 +3187,7 @@ redir_start(session_t *ps) {
 static void
 redir_stop(session_t *ps) {
   if (ps->redirected) {
-#ifdef DEBUG_REDIR
-    print_timestamp(ps);
-    printf_dbgf("(): Screen unredirected.\n");
-#endif
+    log_trace("Screen unredirected.");
     // Destroy all Pictures as they expire once windows are unredirected
     // If we don't destroy them here, looks like the resources are just
     // kept inaccessible somehow
@@ -3251,7 +3222,8 @@ handle_queued_x_events(EV_P_ ev_prepare *w, int revents) {
 
   int err = xcb_connection_has_error(ps->c);
   if (err) {
-    printf_errfq(1, "(): X11 server connection broke (error %d)", err);
+    log_fatal("X11 server connection broke (error %d)", err);
+    exit(1);
   }
 }
 
@@ -3277,7 +3249,7 @@ _draw_callback(EV_P_ session_t *ps, int revents) {
     if (ps->o.benchmark_wid) {
       win *wi = find_win(ps, ps->o.benchmark_wid);
       if (!wi) {
-        printf_errf("(): Couldn't find specified benchmark window.");
+        log_fatal("Couldn't find specified benchmark window.");
         exit(1);
       }
       add_damage_from_win(ps, wi);
@@ -3605,7 +3577,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
   if (!ps->dpy) {
     ps->dpy = XOpenDisplay(ps->o.display);
     if (!ps->dpy) {
-      printf_errfq(1, "(): Can't open display.");
+      log_fatal("Can't open display.");
+      exit(1);
     }
     XSetEventQueueOwner(ps->dpy, XCBOwnsEventQueue);
   }
@@ -3646,7 +3619,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
   if (!ext_info || !ext_info->present) {
-    fprintf(stderr, "No render extension\n");
+    log_fatal("No render extension");
     exit(1);
   }
   ps->render_event = ext_info->first_event;
@@ -3654,7 +3627,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   ext_info = xcb_get_extension_data(ps->c, &xcb_composite_id);
   if (!ext_info || !ext_info->present) {
-    fprintf(stderr, "No composite extension\n");
+    log_fatal("No composite extension");
     exit(1);
   }
   ps->composite_opcode = ext_info->major_opcode;
@@ -3676,7 +3649,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   ext_info = xcb_get_extension_data(ps->c, &xcb_damage_id);
   if (!ext_info || !ext_info->present) {
-    fprintf(stderr, "No damage extension\n");
+    log_fatal("No damage extension");
     exit(1);
   }
   ps->damage_event = ext_info->first_event;
@@ -3686,7 +3659,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   ext_info = xcb_get_extension_data(ps->c, &xcb_xfixes_id);
   if (!ext_info || !ext_info->present) {
-    fprintf(stderr, "No XFixes extension\n");
+    log_fatal("No XFixes extension");
     exit(1);
   }
   ps->xfixes_event = ext_info->first_event;
@@ -3747,16 +3720,17 @@ session_init(session_t *ps_old, int argc, char **argv) {
   }
 
   if (!ps->xsync_exists && ps->o.xrender_sync_fence) {
-    printf_errf("(): X Sync extension not found. No X Sync fence sync is "
-        "possible.");
+    log_fatal("X Sync extension not found. No X Sync fence sync is "
+              "possible. (xrender-sync-fence can't be enabled)");
     exit(1);
   }
 
   // Query X RandR
   if ((ps->o.sw_opti && !ps->o.refresh_rate) || ps->o.xinerama_shadow_crop) {
     if (!ps->randr_exists) {
-      printf_errf("(): No XRandR extension, automatic screen change "
-          "detection impossible.");
+      log_fatal("No XRandR extension. sw-opti, refresh-rate or xinerama-shadow-crop "
+                "cannot be enabled.");
+      exit(1);
     }
   }
 
@@ -3766,7 +3740,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
     ext_info = xcb_get_extension_data(ps->c, &xcb_xinerama_id);
     ps->xinerama_exists = ext_info && ext_info->present;
 #else
-    printf_errf("(): Xinerama support not compiled in.");
+    log_fatal("Xinerama support not compiled in. xinerama-shadow-crop cannot be enabled");
+    exit(1);
 #endif
   }
 
@@ -3893,7 +3868,8 @@ session_init(session_t *ps_old, int argc, char **argv) {
       ps->o.dbus = false;
     }
 #else
-    printf_errfq(1, "(): DBus support not compiled in!");
+    log_fatal("DBus support not compiled in!");
+    exit(1);
 #endif
   }
 
@@ -3907,7 +3883,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Redirect output stream
   if (ps->o.fork_after_register || ps->o.logpath)
-    ostream_reopen(ps, NULL);
+    stdout_reopen(ps, NULL);
 
   write_pid(ps);
 
@@ -4133,7 +4109,7 @@ main(int argc, char **argv) {
   while (!quit) {
     ps_g = session_init(ps_old, argc, argv);
     if (!ps_g) {
-      printf_errf("(): Failed to create new session.");
+      log_fatal("Failed to create new compton session.");
       return 1;
     }
     session_run(ps_g);

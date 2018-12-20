@@ -16,18 +16,10 @@
 // === Options ===
 
 // Debug options, enable them using -D in CFLAGS
-// #define DEBUG_BACKTRACE  1
 // #define DEBUG_REPAINT    1
 // #define DEBUG_EVENTS     1
 // #define DEBUG_RESTACK    1
-// #define DEBUG_WINTYPE    1
-// #define DEBUG_CLIENTWIN  1
-// #define DEBUG_WINDATA    1
 // #define DEBUG_WINMATCH   1
-// #define DEBUG_REDIR      1
-// #define DEBUG_ALLOC_REG  1
-// #define DEBUG_FRAME      1
-// #define DEBUG_LEADER     1
 // #define DEBUG_C2         1
 // #define DEBUG_GLX        1
 // #define DEBUG_GLX_GLSL   1
@@ -56,10 +48,6 @@
 
 #ifndef COMPTON_VERSION
 #define COMPTON_VERSION "unknown"
-#endif
-
-#if defined(DEBUG_ALLOC_REG)
-#define DEBUG_BACKTRACE 1
 #endif
 
 #define MAX_ALPHA (255)
@@ -933,33 +921,6 @@ print_timestamp(session_t *ps);
 
 void
 ev_xcb_error(session_t *ps, xcb_generic_error_t *err);
-
-#ifdef DEBUG_BACKTRACE
-
-#include <execinfo.h>
-#define BACKTRACE_SIZE  25
-
-/**
- * Print current backtrace.
- *
- * Stolen from glibc manual.
- */
-static inline void
-print_backtrace(void) {
-  void *array[BACKTRACE_SIZE];
-  size_t size;
-  char **strings;
-
-  size = backtrace(array, BACKTRACE_SIZE);
-  strings = backtrace_symbols(array, size);
-
-  for (size_t i = 0; i < size; i++)
-     printf ("%s\n", strings[i]);
-
-  free(strings);
-}
-
-#endif
 
 // === Functions ===
 

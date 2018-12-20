@@ -96,13 +96,13 @@ static inline bool
 glx_hasglxext(session_t *ps, const char *ext) {
   const char *glx_exts = glXQueryExtensionsString(ps->dpy, ps->scr);
   if (!glx_exts) {
-    printf_errf("(): Failed get GLX extension list.");
+    log_error("Failed get GLX extension list.");
     return false;
   }
 
   bool found = wd_is_in_str(glx_exts, ext);
   if (!found)
-    printf_errf("(): Missing GLX extension %s.", ext);
+    log_info("Missing GLX extension %s.", ext);
 
   return found;
 }
