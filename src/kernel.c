@@ -96,23 +96,18 @@ conv *gaussian_kernel(double r) {
 	c->size = size;
 	t = 0.0;
 
-	/*printf_errf("(): %f", r);*/
 	for (int y = 0; y < size; y++) {
 		for (int x = 0; x < size; x++) {
 			double g = gaussian(r, x - center, y - center);
 			t += g;
 			c->data[y * size + x] = g;
-			/*printf("%f ", c->data[y*size+x]);*/
 		}
-		/*printf("\n");*/
 	}
 
 	for (int y = 0; y < size; y++) {
 		for (int x = 0; x < size; x++) {
 			c->data[y * size + x] /= t;
-			/*printf("%f ", c->data[y*size+x]);*/
 		}
-		/*printf("\n");*/
 	}
 
 	return c;
