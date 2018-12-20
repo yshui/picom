@@ -4046,7 +4046,28 @@ session_destroy(session_t *ps) {
   log_deinit_tls();
 }
 
-/*
+#if 0
+/**
+ * @brief Dump the given data to a file.
+ */
+static inline bool
+write_binary_data(const char *path, const unsigned char *data, int length) {
+  if (!data)
+    return false;
+  FILE *f = fopen(path, "wb");
+  if (!f) {
+    log_error("Failed to open \"%s\" for writing.", path);
+    return false;
+  }
+  int wrote_len = fwrite(data, sizeof(unsigned char), length, f);
+  fclose(f);
+  if (wrote_len != length) {
+    printf_errf("(\"%s\"): Failed to write all blocks: %d / %d", path,
+        wrote_len, length);
+    return false;
+  }
+  return true;
+}
 static inline void
 dump_img(session_t *ps) {
   int len = 0;
@@ -4054,7 +4075,7 @@ dump_img(session_t *ps) {
   write_binary_data("/tmp/dump.raw", d, len);
   free(d);
 }
-*/
+#endif
 
 /**
  * Do the actual work.
