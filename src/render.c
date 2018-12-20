@@ -51,8 +51,7 @@ static inline void xrfilter_reset(session_t *ps, xcb_render_picture_t p) {
 #undef FILTER
 }
 
-static inline void attr_nonnull(1, 2)
-set_tgt_clip(session_t *ps, region_t *reg) {
+static inline void attr_nonnull(1, 2) set_tgt_clip(session_t *ps, region_t *reg) {
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID:
@@ -187,12 +186,12 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	// causing the jittering issue M4he reported in #7.
 	if (!paint_bind_tex(ps, &w->paint, 0, 0, 0,
 	                    (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
-		printf_errf("(%#010lx): Failed to bind texture. Expect troubles.", w->id);
+		log_error("Failed to bind texture for window %#010lx.", w->id);
 	}
 	w->pixmap_damaged = false;
 
 	if (!paint_isvalid(ps, &w->paint)) {
-		printf_errf("(%#010lx): Missing painting data. This is a bad sign.", w->id);
+		log_error("Window %#010lx is missing painting data.", w->id);
 		return;
 	}
 
@@ -380,14 +379,14 @@ static bool get_root_tile(session_t *ps) {
 
 	// Make sure the pixmap we got is valid
 	if (pixmap && !x_validate_pixmap(ps, pixmap))
-		pixmap = None;
+		pixmap = XCB_NONE;
 
 	// Create a pixmap if there isn't any
 	if (!pixmap) {
 		pixmap = x_create_pixmap(ps, ps->depth, ps->root, 1, 1);
 		if (pixmap == XCB_NONE) {
-			fprintf(stderr, "Failed to create some pixmap\n");
-			exit(1);
+			log_error("Failed to create pixmaps for root tile.");
+			return false;
 		}
 		fill = true;
 	}
@@ -429,8 +428,10 @@ static bool get_root_tile(session_t *ps) {
  * Paint root window content.
  */
 static void paint_root(session_t *ps, const region_t *reg_paint) {
-	if (!ps->root_tile_paint.pixmap)
-		get_root_tile(ps);
+	// If there is no root tile pixmap, try getting one.
+	// If that fails, give up.
+	if (!ps->root_tile_paint.pixmap && !get_root_tile(ps))
+		return;
 
 	paint_region(ps, NULL, 0, 0, ps->root_width, ps->root_height, 1.0, reg_paint,
 	             ps->root_tile_paint.pict);
@@ -451,7 +452,7 @@ static xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int he
 	                                 XCB_IMAGE_FORMAT_Z_PIXMAP, 8, 0, 0, NULL);
 
 	if (!ximage) {
-		printf_errf("(): failed to create an X image");
+		log_error("failed to create an X image");
 		return 0;
 	}
 
@@ -556,7 +557,7 @@ static xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int he
 static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 	const int width = w->widthb;
 	const int height = w->heightb;
-	// printf_errf("(): building shadow for %s %d %d", w->name, width, height);
+	// log_trace("(): building shadow for %s %d %d", w->name, width, height);
 
 	xcb_image_t *shadow_image = NULL;
 	xcb_pixmap_t shadow_pixmap = None, shadow_pixmap_argb = None;
@@ -565,7 +566,7 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 
 	shadow_image = make_shadow(ps, opacity, width, height);
 	if (!shadow_image) {
-		printf_errf("(): failed to make shadow");
+		log_error("failed to make shadow");
 		return None;
 	}
 
@@ -575,7 +576,7 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 	    x_create_pixmap(ps, 32, ps->root, shadow_image->width, shadow_image->height);
 
 	if (!shadow_pixmap || !shadow_pixmap_argb) {
-		printf_errf("(): failed to create shadow pixmaps");
+		log_error("failed to create shadow pixmaps");
 		goto shadow_picture_err;
 	}
 
@@ -634,7 +635,7 @@ static inline void win_paint_shadow(session_t *ps, win *w, region_t *reg_paint) 
 	paint_bind_tex(ps, &w->shadow_paint, 0, 0, 32, false);
 
 	if (!paint_isvalid(ps, &w->shadow_paint)) {
-		printf_errf("(%#010lx): Missing shadow data.", w->id);
+		log_error("Window %#010lx is missing shadow data.", w->id);
 		return;
 	}
 
@@ -680,7 +681,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, int y, int wi
 	xcb_render_picture_t tmp_picture = x_create_picture(ps, wid, hei, NULL, 0, NULL);
 
 	if (!tmp_picture) {
-		printf_errf("(): Failed to build intermediate Picture.");
+		log_error("Failed to build intermediate Picture.");
 		return false;
 	}
 
@@ -837,8 +838,8 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			ps->tgt_buffer.pixmap = x_create_pixmap(
 			    ps, ps->depth, ps->root, ps->root_width, ps->root_height);
 			if (ps->tgt_buffer.pixmap == XCB_NONE) {
-				fprintf(stderr, "Failed to allocate a screen-sized "
-				                "pixmap\n");
+				log_fatal("Failed to allocate a screen-sized pixmap for"
+				          "painting");
 				exit(1);
 			}
 		}
@@ -878,7 +879,7 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			// Lazy shadow building
 			if (!w->shadow_paint.pixmap)
 				if (!win_build_shadow(ps, w, 1))
-					printf_errf("(): build shadow failed");
+					log_error("build shadow failed");
 
 			// Shadow doesn't need to be painted underneath the body of
 			// the window Because no one can see it
@@ -1050,17 +1051,14 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 #endif
 
 #ifdef DEBUG_REPAINT
-	print_timestamp(ps);
 	struct timespec now = get_time_timespec();
 	struct timespec diff = {0};
 	timespec_subtract(&diff, &now, &last_paint);
-	printf("[ %5ld:%09ld ] ", diff.tv_sec, diff.tv_nsec);
+	log_trace("[ %5ld:%09ld ] ", diff.tv_sec, diff.tv_nsec);
 	last_paint = now;
-	printf("paint:");
+	log_trace("paint:");
 	for (win *w = t; w; w = w->prev_trans)
-		printf(" %#010lx", w->id);
-	putchar('\n');
-	fflush(stdout);
+		log_trace(" %#010lx", w->id);
 #endif
 
 	// Check if fading is finished on all painted windows
@@ -1096,9 +1094,9 @@ static bool xr_init_blur(session_t *ps) {
 
 	// Turn features off if any required filter is not present
 	if (!ps->xrfilter_convolution_exists) {
-		printf_errf("(): Xrender convolution filter "
-		            "unsupported by your X server. "
-		            "Background blur is not possible.");
+		log_error("Xrender convolution filter "
+		          "unsupported by your X server. "
+		          "Background blur is not possible.");
 		return false;
 	}
 
@@ -1169,7 +1167,6 @@ static void presum_gaussian(session_t *ps, conv *map) {
 	const int r = ps->cgsize + 1;        // radius of the kernel
 	const int width = ps->cgsize * 2, height = ps->cgsize * 2;
 
-
 	if (ps->shadow_corner)
 		free(ps->shadow_corner);
 	if (ps->shadow_top)
@@ -1210,9 +1207,10 @@ bool init_render(session_t *ps) {
 	if (bkend_use_glx(ps)) {
 #ifdef CONFIG_OPENGL
 		if (!glx_init(ps, true))
-			exit(1);
+			return false;
 #else
-		printf_errfq(1, "(): GLX backend support not compiled in.");
+		log_error("GLX backend support not compiled in.");
+		return false;
 #endif
 	}
 
@@ -1228,14 +1226,14 @@ bool init_render(session_t *ps) {
 		                        &ps->o.glx_prog_win))
 			return false;
 #else
-		printf_errf("(): GLSL supported not compiled in, can't load "
-		            "shader.");
+		log_error("GLSL supported not compiled in, can't load "
+		          "shader.");
 		return false;
 #endif
 	}
 
 	if (!init_alpha_picts(ps)) {
-		printf_errf("(): Failed to init alpha pictures.");
+		log_error("Failed to init alpha pictures.");
 		return false;
 	}
 
@@ -1261,7 +1259,7 @@ bool init_render(session_t *ps) {
 	ps->white_picture = solid_picture(ps, true, 1, 1, 1, 1);
 
 	if (ps->black_picture == XCB_NONE || ps->white_picture == XCB_NONE) {
-		printf_errf("(): Failed to create solid xrender pictures.");
+		log_error("Failed to create solid xrender pictures.");
 		return false;
 	}
 
@@ -1273,7 +1271,7 @@ bool init_render(session_t *ps) {
 		ps->cshadow_picture = solid_picture(
 		    ps, true, 1, ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue);
 		if (ps->cshadow_picture == XCB_NONE) {
-			printf_errf("(): Failed to create shadow picture.");
+			log_error("Failed to create shadow picture.");
 			return false;
 		}
 	}
