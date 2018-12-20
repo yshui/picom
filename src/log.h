@@ -54,6 +54,7 @@ attr_malloc struct log *log_new(void);
 attr_nonnull_all void log_destroy(struct log *);
 attr_nonnull(1) void log_set_level(struct log *l, int level);
 attr_nonnull_all void log_add_target(struct log *, struct log_target *);
+attr_const enum log_level string_to_log_level(const char *);
 
 extern thread_local struct log *tls_logger;
 

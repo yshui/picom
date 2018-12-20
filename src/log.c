@@ -54,7 +54,7 @@ static attr_const const char *log_level_to_string(enum log_level level) {
 	}
 }
 
-attr_const enum log_level string_to_log_level(const char *str) {
+enum log_level string_to_log_level(const char *str) {
 	if (strcasecmp(str, "TRACE") == 0)
 		return LOG_LEVEL_TRACE;
 	else if (strcasecmp(str, "DEBUG") == 0)
