@@ -4064,8 +4064,8 @@ write_binary_data(const char *path, const unsigned char *data, int length) {
   int wrote_len = fwrite(data, sizeof(unsigned char), length, f);
   fclose(f);
   if (wrote_len != length) {
-    printf_errf("(\"%s\"): Failed to write all blocks: %d / %d", path,
-        wrote_len, length);
+    log_error("Failed to write all blocks: %d / %d to %s",
+        wrote_len, length, path);
     return false;
   }
   return true;

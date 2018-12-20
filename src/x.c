@@ -112,7 +112,7 @@ static inline void x_get_server_pictfmts(session_t *ps) {
     xcb_render_query_pict_formats_reply(ps->c,
         xcb_render_query_pict_formats(ps->c), &e);
   if (e || !ps->pictfmts) {
-    printf_errf("(): failed to get pict formats\n");
+    log_fatal("failed to get pict formats\n");
     abort();
   }
 }
@@ -142,8 +142,8 @@ x_create_picture_with_pictfmt_and_pixmap(
   if (attr) {
     xcb_render_create_picture_value_list_serialize(&buf, valuemask, attr);
     if (!buf) {
-      printf_errf("(): failed to serialize picture attributes");
-      return None;
+      log_error("failed to serialize picture attributes");
+      return XCB_NONE;
     }
   }
 
@@ -153,8 +153,8 @@ x_create_picture_with_pictfmt_and_pixmap(
       pixmap, pictfmt->id, valuemask, buf));
   free(buf);
   if (e) {
-    printf_errf("(): failed to create picture");
-    return None;
+    log_error("failed to create picture");
+    return XCB_NONE;
   }
   return tmp_picture;
 }
