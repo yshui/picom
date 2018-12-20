@@ -140,10 +140,11 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   f = open_config_file(ps->o.config_file, &path);
   if (!f) {
     if (ps->o.config_file) {
-      printf_errfq(1, "(): Failed to read configuration file \"%s\".",
-          ps->o.config_file);
       free(ps->o.config_file);
       ps->o.config_file = NULL;
+
+      log_fatal("Failed to read configuration file \"%s\".", ps->o.config_file);
+      abort();
     }
     return;
   }
@@ -166,8 +167,8 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
     fclose(f);
     f = NULL;
     if (read_result == CONFIG_FALSE) {
-      printf("Error when reading configuration file \"%s\", line %d: %s\n",
-          path, config_error_line(&cfg), config_error_text(&cfg));
+      log_error("Error when reading configuration file \"%s\", line %d: %s",
+                path, config_error_line(&cfg), config_error_text(&cfg));
       config_destroy(&cfg);
       free(path);
       return;
@@ -213,22 +214,22 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
     *shadow_enable = ival;
   // -C (no_dock_shadow)
   if (config_lookup_bool(&cfg, "no-dock-shadow", &ival)) {
-    printf_errf("(): option `no-dock-shadow` is deprecated, and will be removed.\n"
-      " Please use the wintype option `shadow` of `dock` instead.");
+    log_warn("Option `no-dock-shadow` is deprecated, and will be removed."
+             " Please use the wintype option `shadow` of `dock` instead.");
     ps->o.wintype_option[WINTYPE_DOCK].shadow = false;
     winopt_mask[WINTYPE_DOCK].shadow = true;
   }
   // -G (no_dnd_shadow)
   if (config_lookup_bool(&cfg, "no-dnd-shadow", &ival)) {
-    printf_errf("(): option `no-dnd-shadow` is deprecated, and will be removed.\n"
-      " Please use the wintype option `shadow` of `dnd` instead.");
+    log_warn("Option `no-dnd-shadow` is deprecated, and will be removed."
+             " Please use the wintype option `shadow` of `dnd` instead.");
     ps->o.wintype_option[WINTYPE_DND].shadow = false;
     winopt_mask[WINTYPE_DND].shadow = true;
   };
   // -m (menu_opacity)
   if (config_lookup_float(&cfg, "menu-opacity", &dval)) {
-    printf_errf("(): option `menu-opacity` is deprecated, and will be removed.\n"
-      "Please use the wintype option `opacity` of `popup_menu` and `dropdown_menu` instead.");
+    log_warn("Option `menu-opacity` is deprecated, and will be removed.Please use the "
+             "wintype option `opacity` of `popup_menu` and `dropdown_menu` instead.");
     ps->o.wintype_option[WINTYPE_DROPDOWN_MENU].opacity = dval;
     ps->o.wintype_option[WINTYPE_POPUP_MENU].opacity = dval;
     winopt_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
@@ -276,11 +277,15 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   // --refresh-rate
   config_lookup_int(&cfg, "refresh-rate", &ps->o.refresh_rate);
   // --vsync
-  if (config_lookup_string(&cfg, "vsync", &sval) && !parse_vsync(ps, sval))
+  if (config_lookup_string(&cfg, "vsync", &sval) && !parse_vsync(ps, sval)) {
+    log_fatal("Cannot parse vsync");
     exit(1);
+  }
   // --backend
-  if (config_lookup_string(&cfg, "backend", &sval) && !parse_backend(ps, sval))
+  if (config_lookup_string(&cfg, "backend", &sval) && !parse_backend(ps, sval)) {
+    log_fatal("Cannot parse backend");
     exit(1);
+  }
   // --log-level
   if (config_lookup_string(&cfg, "log-level", &sval)) {
     auto level = string_to_log_level(sval);
@@ -332,8 +337,10 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
       &ps->o.blur_background_fixed);
   // --blur-kern
   if (config_lookup_string(&cfg, "blur-kern", &sval)
-      && !parse_conv_kern_lst(ps, sval, ps->o.blur_kerns, MAX_BLUR_PASS))
+      && !parse_conv_kern_lst(ps, sval, ps->o.blur_kerns, MAX_BLUR_PASS)) {
+    log_fatal("Cannot parse \"blur-kern\"");
     exit(1);
+  }
   // --resize-damage
   config_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);
   // --glx-no-stencil
@@ -341,9 +348,11 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   // --glx-no-rebind-pixmap
   lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &ps->o.glx_no_rebind_pixmap);
   // --glx-swap-method
-  if (config_lookup_string(&cfg, "glx-swap-method", &sval)
-      && !parse_glx_swap_method(ps, sval))
+  if (config_lookup_string(&cfg, "glx-swap-method", &sval) &&
+      !parse_glx_swap_method(ps, sval)) {
+    log_fatal("Cannot parse \"glx-swap-method\"");
     exit(1);
+  }
   // --glx-use-gpushader4
   lcfg_lookup_bool(&cfg, "glx-use-gpushader4", &ps->o.glx_use_gpushader4);
   // --xrender-sync
@@ -352,22 +361,22 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   lcfg_lookup_bool(&cfg, "xrender-sync-fence", &ps->o.xrender_sync_fence);
 
   if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
-    printf_errf("(): \"clear-shadow\" is removed as an option, and is always"
-                " enabled now. Consider removing it from your config file");
+    log_warn("\"clear-shadow\" is removed as an option, and is always"
+             " enabled now. Consider removing it from your config file");
   if (lcfg_lookup_bool(&cfg, "paint-on-overlay", &bval))
-    printf_errf("(): \"paint-on-overlay\" has been removed as an option, and "
-                "is enabled whenever possible");
+    log_warn("\"paint-on-overlay\" has been removed as an option, and "
+             "is enabled whenever possible");
 
   if (config_lookup_float(&cfg, "alpha-step", &dval))
-    printf_errf("(): \"alpha-step\" has been removed, compton now tries to make use"
-                " of all alpha values");
+    log_warn("\"alpha-step\" has been removed, compton now tries to make use"
+             " of all alpha values");
 
   const char *deprecation_message = "has been removed. If you encounter problems "
     "without this feature, please feel free to open a bug report";
   if (lcfg_lookup_bool(&cfg, "glx-use-copysubbuffermesa", &bval) && bval)
-    printf_errf("(): \"glx-use-copysubbuffermesa\" %s", deprecation_message);
+    log_warn("\"glx-use-copysubbuffermesa\" %s", deprecation_message);
   if (lcfg_lookup_bool(&cfg, "glx-copy-from-front", &bval) && bval)
-    printf_errf("(): \"glx-copy-from-front\" %s", deprecation_message);
+    log_warn("\"glx-copy-from-front\" %s", deprecation_message);
 
   // Wintype settings
 

@@ -22,13 +22,13 @@ parse_long(const char *s, long *dest) {
   const char *endptr = NULL;
   long val = strtol(s, (char **) &endptr, 0);
   if (!endptr || endptr == s) {
-    printf_errf("(\"%s\"): Invalid number.", s);
+    log_error("Invalid number: %s", s);
     return false;
   }
   while (isspace(*endptr))
     ++endptr;
   if (*endptr) {
-    printf_errf("(\"%s\"): Trailing characters.", s);
+    log_error("Trailing characters: %s", s);
     return false;
   }
   *dest = val;
@@ -43,7 +43,7 @@ parse_matrix_readnum(const char *src, double *dest) {
   char *pc = NULL;
   double val = strtod(src, &pc);
   if (!pc || pc == src) {
-    printf_errf("(\"%s\"): No number found.", src);
+    log_error("No number found: %s", src);
     return src;
   }
 
@@ -78,16 +78,16 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
 
   // Validate matrix width and height
   if (wid <= 0 || hei <= 0) {
-    printf_errf("(): Invalid matrix width/height.");
+    log_error("Invalid matrix width/height.");
     goto err1;
   }
   if (!(wid % 2 && hei % 2)) {
-    printf_errf("(): Width/height not odd.");
+    log_error("Width/height not odd.");
     goto err1;
   }
   if (wid > 16 || hei > 16)
-    printf_errf("(): Matrix width/height too large, may slow down"
-                "rendering, and/or consume lots of memory");
+    log_warn("Matrix width/height too large, may slow down"
+             "rendering, and/or consume lots of memory");
 
   // Allocate memory
   auto matrix = ccalloc(wid * hei + 2, xcb_render_fixed_t);
@@ -110,14 +110,14 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
       matrix[2 + i] = DOUBLE_TO_XFIXED(val);
     }
     if (BKEND_XRENDER == ps->o.backend && hasneg)
-      printf_errf("(): A convolution kernel with negative values "
-          "may not work properly under X Render backend.");
+      log_warn("A convolution kernel with negative values may not work properly under X "
+               "Render backend.");
   }
 
   // Detect trailing characters
   for ( ;*pc && ';' != *pc; ++pc)
     if (!isspace(*pc) && ',' != *pc) {
-      printf_errf("(): Trailing characters in matrix string.");
+      log_error("Trailing characters in matrix string.");
       goto err2;
     }
 
@@ -133,7 +133,7 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
   if (endptr)
     *endptr = pc;
   else if (*pc) {
-    printf_errf("(): Only one matrix expected.");
+    log_error("Only one matrix expected.");
     goto err2;
   }
 
@@ -197,13 +197,13 @@ parse_conv_kern_lst(session_t *ps, const char *src, xcb_render_fixed_t **dest, i
   }
 
   if (i > 1) {
-    printf_errf("(): You are seeing this message because your are using multipass\n"
-        "blur. Please report an issue to us so we know multipass blur is actually been used.\n"
-        "Otherwise it might be removed in future releases");
+    log_warn("You are seeing this message because your are using multipassblur. Please "
+             "report an issue to us so we know multipass blur is actually been used. "
+             "Otherwise it might be removed in future releases");
   }
 
   if (*pc) {
-    printf_errf("(): Too many blur kernels!");
+    log_error("Too many blur kernels!");
     return false;
   }
 
@@ -239,7 +239,7 @@ parse_geometry(session_t *ps, const char *src, region_t *dest) {
     if (src != endptr) {
       geom.wid = val;
       if (geom.wid < 0) {
-        printf_errf("(\"%s\"): Invalid width.", src);
+        log_error("Invalid width: %s", src);
         return false;
       }
       src = endptr;
@@ -255,7 +255,7 @@ parse_geometry(session_t *ps, const char *src, region_t *dest) {
     if (src != endptr) {
       geom.hei = val;
       if (geom.hei < 0) {
-        printf_errf("(\"%s\"): Invalid height.", src);
+        log_error("Invalid height: %s", src);
         return false;
       }
       src = endptr;
@@ -288,7 +288,7 @@ parse_geometry(session_t *ps, const char *src, region_t *dest) {
   }
 
   if (*src) {
-    printf_errf("(\"%s\"): Trailing characters.", src);
+    log_error("Trailing characters: %s", src);
     return false;
   }
 
@@ -305,11 +305,11 @@ bool parse_rule_opacity(session_t *ps, const char *src) {
   char *endptr = NULL;
   long val = strtol(src, &endptr, 0);
   if (!endptr || endptr == src) {
-    printf_errf("(\"%s\"): No opacity specified?", src);
+    log_error("No opacity specified: %s", src);
     return false;
   }
   if (val > 100 || val < 0) {
-    printf_errf("(\"%s\"): Opacity %ld invalid.", src, val);
+    log_error("Opacity %ld invalid: %s", val, src);
     return false;
   }
 
@@ -317,7 +317,7 @@ bool parse_rule_opacity(session_t *ps, const char *src) {
   while (*endptr && isspace(*endptr))
     ++endptr;
   if (':' != *endptr) {
-    printf_errf("(\"%s\"): Opacity terminator not found.", src);
+    log_error("Opacity terminator not found: %s", src);
     return false;
   }
   ++endptr;
