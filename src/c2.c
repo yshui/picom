@@ -384,9 +384,6 @@ c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
   {
     static const c2_lptr_t lptr_def = C2_LPTR_INIT;
     auto plptr = cmalloc(c2_lptr_t);
-    if (!plptr)
-      printf_errfq(1, "(): Failed to allocate memory for new condition linked"
-          " list element.");
     memcpy(plptr, &lptr_def, sizeof(c2_lptr_t));
     plptr->ptr = result;
     plptr->data = data;
@@ -611,8 +608,6 @@ c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
   // Initialize leaf
   presult->isbranch = false;
   presult->l = cmalloc(c2_l_t);
-  if (!presult->l)
-    c2_error("Failed to allocate memory for new leaf.");
 
   c2_l_t * const pleaf = presult->l;
   memcpy(pleaf, &leaf_def, sizeof(c2_l_t));
@@ -1008,8 +1003,6 @@ c2_parse_legacy(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
 
   // Allocate memory for new leaf
   auto pleaf = cmalloc(c2_l_t);
-  if (!pleaf)
-    printf_errfq(1, "(): Failed to allocate memory for new leaf.");
   presult->isbranch = false;
   presult->l = pleaf;
   memcpy(pleaf, &leaf_def, sizeof(c2_l_t));
@@ -1098,8 +1091,6 @@ c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
     }
     if (!found) {
       auto pnew = cmalloc(latom_t);
-      if (!pnew)
-        printf_errfq(1, "(): Failed to allocate memory for new track atom.");
       pnew->next = ps->track_atom_lst;
       pnew->atom = pleaf->tgtatom;
       ps->track_atom_lst = pnew;

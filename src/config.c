@@ -91,10 +91,6 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
 
   // Allocate memory
   auto matrix = ccalloc(wid * hei + 2, xcb_render_fixed_t);
-  if (!matrix) {
-    printf_errf("(): Failed to allocate memory for matrix.");
-    goto err1;
-  }
 
   // Read elements
   {

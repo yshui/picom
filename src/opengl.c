@@ -572,10 +572,6 @@ glx_init_blur(session_t *ps) {
                            strlen(FRAG_SHADER_BLUR_SUFFIX) +
                            strlen(texture_func) + 12 + 1;
         char *shader_str = ccalloc(len, char);
-        if (!shader_str) {
-          printf_errf("(): Failed to allocate %d bytes for shader string.", len);
-          return false;
-        }
         {
           char *pc = shader_str;
           sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
@@ -596,7 +592,6 @@ glx_init_blur(session_t *ps) {
               assert(strlen(shader_str) < len);
             }
           }
-
           sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
           assert(strlen(shader_str) < len);
         }

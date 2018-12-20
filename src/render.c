@@ -768,11 +768,6 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
 			// Allocate cache space if needed
 			if (!kern_dst) {
 				kern_dst = ccalloc(kwid * khei + 2, xcb_render_fixed_t);
-				if (!kern_dst) {
-					printf_errf("(): Failed to allocate memory "
-					            "for blur kernel.");
-					return;
-				}
 				ps->blur_kerns_cache[i] = kern_dst;
 			}
 
