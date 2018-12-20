@@ -281,6 +281,15 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   // --backend
   if (config_lookup_string(&cfg, "backend", &sval) && !parse_backend(ps, sval))
     exit(1);
+  // --log-level
+  if (config_lookup_string(&cfg, "log-level", &sval)) {
+    auto level = string_to_log_level(sval);
+    if (level == LOG_LEVEL_INVALID) {
+      log_warn("Invalid log level, defaults to WARN");
+    } else {
+      log_set_level_tls(level);
+    }
+  }
   // --sw-opti
   lcfg_lookup_bool(&cfg, "sw-opti", &ps->o.sw_opti);
   // --use-ewmh-active-win

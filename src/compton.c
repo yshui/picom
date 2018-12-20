@@ -2607,6 +2607,7 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
     { "version", no_argument, NULL, 318 },
     { "no-x-selection", no_argument, NULL, 319 },
     { "no-name-pixmap", no_argument, NULL, 320 },
+    { "log-level", required_argument, NULL, 321 },
     { "reredir-on-root-change", no_argument, NULL, 731 },
     { "glx-reinit-on-root-change", no_argument, NULL, 732 },
     { "monitor-repaint", no_argument, NULL, 800 },
@@ -2895,6 +2896,15 @@ get_cfg(session_t *ps, int argc, char *const *argv, bool first_pass) {
           " removed in the future. If you really need this feature, please report\n"
           "an issue to let us know\n");
         break;
+      case 321: {
+        enum log_level tmp_level = string_to_log_level(optarg);
+        if (tmp_level == LOG_LEVEL_INVALID) {
+          log_warn("Invalid log level, defaults to WARN");
+        } else {
+          log_set_level_tls(tmp_level);
+        }
+        break;
+      }
       P_CASEBOOL(319, no_x_selection);
       P_CASEBOOL(731, reredir_on_root_change);
       P_CASEBOOL(732, glx_reinit_on_root_change);
@@ -3568,6 +3578,9 @@ session_init(session_t *ps_old, int argc, char **argv) {
 #endif
   };
 
+  log_init_tls();
+  log_add_target_tls(stderr_logger_new());
+
   // Allocate a session and copy default values into it
   session_t *ps = cmalloc(session_t);
   *ps = s_def;
@@ -4053,6 +4066,8 @@ session_destroy(session_t *ps) {
 
   if (ps == ps_g)
     ps_g = NULL;
+
+  log_deinit_tls();
 }
 
 /*
