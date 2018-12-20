@@ -17,6 +17,10 @@
 #include "utils.h"
 #include "log.h"
 
+#ifdef CONFIG_DBUS
+#include "dbus.h"
+#endif
+
 #include "win.h"
 
 /// Generate a "return by value" function, from a function that returns the

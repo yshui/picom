@@ -36,6 +36,9 @@
 #include "kernel.h"
 #include "vsync.h"
 #include "log.h"
+#ifdef CONFIG_DBUS
+#include "dbus.h"
+#endif
 
 #define auto __auto_type
 
@@ -3545,8 +3548,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .track_atom_lst = NULL,
 
 #ifdef CONFIG_DBUS
-    .dbus_conn = NULL,
-    .dbus_service = NULL,
+    .dbus_data = NULL,
 #endif
   };
 
@@ -3831,6 +3833,19 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   xcb_grab_server(ps->c);
 
+  // Initialize DBus. We need to do this early, because add_win might call dbus functions
+  if (ps->o.dbus) {
+#ifdef CONFIG_DBUS
+    cdbus_init(ps);
+    if (!ps->dbus_data) {
+      ps->o.dbus = false;
+    }
+#else
+    log_fatal("DBus support not compiled in!");
+    exit(1);
+#endif
+  }
+
   {
     xcb_window_t *children;
     int nchildren;
@@ -3860,20 +3875,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
   xcb_ungrab_server(ps->c);
   // ALWAYS flush after xcb_ungrab_server()!
   XFlush(ps->dpy);
-
-  // Initialize DBus
-  if (ps->o.dbus) {
-#ifdef CONFIG_DBUS
-    cdbus_init(ps);
-    if (!ps->dbus_conn) {
-      cdbus_destroy(ps);
-      ps->o.dbus = false;
-    }
-#else
-    log_fatal("DBus support not compiled in!");
-    exit(1);
-#endif
-  }
 
   // Fork to background, if asked
   if (ps->o.fork_after_register) {
@@ -3914,10 +3915,10 @@ session_destroy(session_t *ps) {
 
 #ifdef CONFIG_DBUS
   // Kill DBus connection
-  if (ps->o.dbus)
+  if (ps->o.dbus) {
+    assert(ps->dbus_data);
     cdbus_destroy(ps);
-
-  free(ps->dbus_service);
+  }
 #endif
 
   // Free window linked list

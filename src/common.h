@@ -81,11 +81,6 @@
 #include <ev.h>
 #include <pixman.h>
 
-// libdbus
-#ifdef CONFIG_DBUS
-#include <dbus/dbus.h>
-#endif
-
 #ifdef CONFIG_OPENGL
 // libGL
 #define GL_GLEXT_PROTOTYPES
@@ -888,10 +883,7 @@ typedef struct session {
 
 #ifdef CONFIG_DBUS
   // === DBus related ===
-  // DBus connection.
-  DBusConnection *dbus_conn;
-  // DBus service name.
-  char *dbus_service;
+  void *dbus_data;
 #endif
 } session_t;
 
@@ -1507,37 +1499,6 @@ xr_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
  */
 ///@{
 #ifdef CONFIG_DBUS
-/** @name DBus handling
- */
-///@{
-bool
-cdbus_init(session_t *ps);
-
-void
-cdbus_destroy(session_t *ps);
-
-void
-cdbus_loop(session_t *ps);
-
-void
-cdbus_ev_win_added(session_t *ps, win *w);
-
-void
-cdbus_ev_win_destroyed(session_t *ps, win *w);
-
-void
-cdbus_ev_win_mapped(session_t *ps, win *w);
-
-void
-cdbus_ev_win_unmapped(session_t *ps, win *w);
-
-void
-cdbus_ev_win_focusout(session_t *ps, win *w);
-
-void
-cdbus_ev_win_focusin(session_t *ps, win *w);
-//!@}
-
 /** @name DBus hooks
  */
 ///@{
