@@ -18,7 +18,12 @@ enum log_level {
 };
 
 #define LOG(level, x, ...)                                                               \
-	log_printf(tls_logger, LOG_LEVEL_##level, __func__, x, ##__VA_ARGS__)
+	do {                                                                             \
+		if (LOG_LEVEL_##level >= log_get_level_tls()) {                          \
+			log_printf(tls_logger, LOG_LEVEL_##level, __func__, x,           \
+			           ##__VA_ARGS__);                                       \
+		}                                                                        \
+	} while (0)
 #define log_trace(x, ...) LOG(TRACE, x, ##__VA_ARGS__)
 #define log_debug(x, ...) LOG(DEBUG, x, ##__VA_ARGS__)
 #define log_info(x, ...) LOG(INFO, x, ##__VA_ARGS__)
@@ -55,6 +60,7 @@ attr_printf(4, 5) void log_printf(struct log *, int level, const char *func,
 attr_malloc struct log *log_new(void);
 attr_nonnull_all void log_destroy(struct log *);
 attr_nonnull(1) void log_set_level(struct log *l, int level);
+attr_pure enum log_level log_get_level(const struct log *l);
 attr_nonnull_all void log_add_target(struct log *, struct log_target *);
 attr_const enum log_level string_to_log_level(const char *);
 
@@ -72,6 +78,11 @@ static inline void log_set_level_tls(int level) {
 static inline attr_nonnull_all void log_add_target_tls(struct log_target *tgt) {
 	assert(tls_logger);
 	log_add_target(tls_logger, tgt);
+}
+
+static inline attr_pure enum log_level log_get_level_tls(void) {
+	assert(tls_logger);
+	return log_get_level(tls_logger);
 }
 
 static inline void log_deinit_tls(void) {

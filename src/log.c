@@ -98,6 +98,10 @@ void log_set_level(struct log *l, int level) {
 	l->log_level = level;
 }
 
+enum log_level log_get_level(const struct log *l) {
+	return l->log_level;
+}
+
 attr_printf(4, 5) void log_printf(struct log *l, int level, const char *func,
                                   const char *fmt, ...) {
 	assert(level <= LOG_LEVEL_FATAL && level >= 0);
