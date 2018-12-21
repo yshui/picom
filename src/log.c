@@ -264,7 +264,7 @@ static const struct log_ops file_logger_ops = {
 };
 
 struct log_target *file_logger_new(const char *filename) {
-	FILE *f = fopen(filename, "w+");
+	FILE *f = fopen(filename, "a");
 	if (!f) {
 		return NULL;
 	}
