@@ -3,7 +3,11 @@ Compton
 
 **This is a development branch, bug to be expected**
 
-This is forked from the original Compton because that seems to have become unmaintained. I'll merge pull requests as they appear upstream, as well as trying to fix bugs reported to upstream, or found by myself.
+This is forked from the original Compton because that seems to have become unmaintained.
+
+The current battle plan of this fork is to refactor it to make the code _possible_ to maintain, so potential contributors won't be scared away when they take a look at the code.
+
+We also try to fix bugs.
 
 The original README can be found [here](README_orig.md)
 
