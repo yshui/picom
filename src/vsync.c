@@ -10,7 +10,43 @@
 #include "opengl.h"
 #endif
 
+#ifdef CONFIG_VSYNC_DRM
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <drm.h>
+#include <errno.h>
+#include <sys/ioctl.h>
+#endif
+
 #include "vsync.h"
+
+#ifdef CONFIG_VSYNC_DRM
+/**
+ * Wait for next VSync, DRM method.
+ *
+ * Stolen from: https://github.com/MythTV/mythtv/blob/master/mythtv/libs/libmythtv/vsync.cpp
+ */
+static int
+vsync_drm_wait(session_t *ps) {
+  int ret = -1;
+  drm_wait_vblank_t vbl;
+
+  vbl.request.type = _DRM_VBLANK_RELATIVE,
+  vbl.request.sequence = 1;
+
+  do {
+     ret = ioctl(ps->drm_fd, DRM_IOCTL_WAIT_VBLANK, &vbl);
+     vbl.request.type &= ~_DRM_VBLANK_RELATIVE;
+  } while (ret && errno == EINTR);
+
+  if (ret)
+    log_error("VBlank ioctl did not work, unimplemented in this drmver?");
+
+  return ret;
+
+}
+#endif
 
 /**
  * Initialize DRM VSync.
@@ -167,33 +203,6 @@ bool (*const VSYNC_FUNCS_INIT[NUM_VSYNC])(session_t *ps) = {
   [VSYNC_OPENGL_SWC   ] = vsync_opengl_swc_init,
   [VSYNC_OPENGL_MSWC  ] = vsync_opengl_mswc_init,
 };
-
-#ifdef CONFIG_VSYNC_DRM
-/**
- * Wait for next VSync, DRM method.
- *
- * Stolen from: https://github.com/MythTV/mythtv/blob/master/mythtv/libs/libmythtv/vsync.cpp
- */
-static int
-vsync_drm_wait(session_t *ps) {
-  int ret = -1;
-  drm_wait_vblank_t vbl;
-
-  vbl.request.type = _DRM_VBLANK_RELATIVE,
-  vbl.request.sequence = 1;
-
-  do {
-     ret = ioctl(ps->drm_fd, DRM_IOCTL_WAIT_VBLANK, &vbl);
-     vbl.request.type &= ~_DRM_VBLANK_RELATIVE;
-  } while (ret && errno == EINTR);
-
-  if (ret)
-    log_error("VBlank ioctl did not work, unimplemented in this drmver?");
-
-  return ret;
-
-}
-#endif
 
 #ifdef CONFIG_OPENGL
 /**
