@@ -59,8 +59,10 @@ parse_matrix_readnum(const char *src, double *dest) {
  * Parse a matrix.
  */
 xcb_render_fixed_t *
-parse_matrix(session_t *ps, const char *src, const char **endptr) {
+parse_matrix(const char *src, const char **endptr, bool *hasneg) {
   int wid = 0, hei = 0;
+  *hasneg = false;
+
   const char *pc = NULL;
 
   // Get matrix width and height
@@ -95,7 +97,6 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
   // Read elements
   {
     int skip = hei / 2 * wid + wid / 2;
-    bool hasneg = false;
     for (int i = 0; i < wid * hei; ++i) {
       // Ignore the center element
       if (i == skip) {
@@ -106,12 +107,9 @@ parse_matrix(session_t *ps, const char *src, const char **endptr) {
       if (src == (pc = parse_matrix_readnum(src, &val)))
         goto err2;
       src = pc;
-      if (val < 0) hasneg = true;
+      if (val < 0) *hasneg = true;
       matrix[2 + i] = DOUBLE_TO_XFIXED(val);
     }
-    if (BKEND_XRENDER == ps->o.backend && hasneg)
-      log_warn("A convolution kernel with negative values may not work properly under X "
-               "Render backend.");
   }
 
   // Detect trailing characters
@@ -151,17 +149,23 @@ err1:
 
 /**
  * Parse a convolution kernel.
+ *
+ * Output:
+ *   hasneg: whether the convolution kernel has negative values
  */
 xcb_render_fixed_t *
-parse_conv_kern(session_t *ps, const char *src, const char **endptr) {
-  return parse_matrix(ps, src, endptr);
+parse_conv_kern(const char *src, const char **endptr, bool *hasneg) {
+  return parse_matrix(src, endptr, hasneg);
 }
 
 /**
  * Parse a list of convolution kernels.
+ *
+ * Output:
+ *   hasneg: whether any of the convolution kernel has negative values
  */
 bool
-parse_conv_kern_lst(session_t *ps, const char *src, xcb_render_fixed_t **dest, int max) {
+parse_conv_kern_lst(const char *src, xcb_render_fixed_t **dest, int max, bool *hasneg) {
   static const struct {
     const char *name;
     const char *kern_str;
@@ -175,10 +179,13 @@ parse_conv_kern_lst(session_t *ps, const char *src, xcb_render_fixed_t **dest, i
     { "9x9gaussian", "9,9,0.000000,0.000000,0.000001,0.000006,0.000012,0.000006,0.000001,0.000000,0.000000,0.000000,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000000,0.000001,0.000102,0.003493,0.029143,0.059106,0.029143,0.003493,0.000102,0.000001,0.000006,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000006,0.000012,0.001723,0.059106,0.493069,0.493069,0.059106,0.001723,0.000012,0.000006,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000006,0.000001,0.000102,0.003493,0.029143,0.059106,0.029143,0.003493,0.000102,0.000001,0.000000,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000000,0.000000,0.000000,0.000001,0.000006,0.000012,0.000006,0.000001,0.000000,0.000000," },
     { "11x11gaussian", "11,11,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000001,0.000006,0.000012,0.000006,0.000001,0.000000,0.000000,0.000000,0.000000,0.000000,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000000,0.000000,0.000000,0.000001,0.000102,0.003493,0.029143,0.059106,0.029143,0.003493,0.000102,0.000001,0.000000,0.000000,0.000006,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000006,0.000000,0.000000,0.000012,0.001723,0.059106,0.493069,0.493069,0.059106,0.001723,0.000012,0.000000,0.000000,0.000006,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000006,0.000000,0.000000,0.000001,0.000102,0.003493,0.029143,0.059106,0.029143,0.003493,0.000102,0.000001,0.000000,0.000000,0.000000,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000000,0.000000,0.000000,0.000000,0.000000,0.000001,0.000006,0.000012,0.000006,0.000001,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000,0.000000," },
   };
+
+  *hasneg = false;
+
   for (unsigned int i = 0;
       i < sizeof(CONV_KERN_PREDEF) / sizeof(CONV_KERN_PREDEF[0]); ++i)
     if (!strcmp(CONV_KERN_PREDEF[i].name, src))
-      return parse_conv_kern_lst(ps, CONV_KERN_PREDEF[i].kern_str, dest, max);
+      return parse_conv_kern_lst(CONV_KERN_PREDEF[i].kern_str, dest, max, hasneg);
 
   int i = 0;
   const char *pc = src;
@@ -192,8 +199,10 @@ parse_conv_kern_lst(session_t *ps, const char *src, xcb_render_fixed_t **dest, i
   // Continue parsing until the end of source string
   i = 0;
   while (pc && *pc && i < max - 1) {
-    if (!(dest[i++] = parse_conv_kern(ps, pc, &pc)))
+    bool tmp_hasneg;
+    if (!(dest[i++] = parse_conv_kern(pc, &pc, &tmp_hasneg)))
       return false;
+    *hasneg |= tmp_hasneg;
   }
 
   if (i > 1) {
@@ -300,7 +309,7 @@ parse_geometry_end:
 /**
  * Parse a list of opacity rules.
  */
-bool parse_rule_opacity(session_t *ps, const char *src) {
+bool parse_rule_opacity(c2_lptr_t **res, const char *src) {
   // Find opacity value
   char *endptr = NULL;
   long val = strtol(src, &endptr, 0);
@@ -324,27 +333,30 @@ bool parse_rule_opacity(session_t *ps, const char *src) {
 
   // Parse pattern
   // I hope 1-100 is acceptable for (void *)
-  return c2_parse(ps, &ps->o.opacity_rules, endptr, (void *) val);
+  return c2_parse(res, endptr, (void *) val);
 }
 
 /**
  * Add a pattern to a condition linked list.
  */
 bool
-condlst_add(session_t *ps, c2_lptr_t **pcondlst, const char *pattern) {
+condlst_add(c2_lptr_t **pcondlst, const char *pattern) {
   if (!pattern)
     return false;
 
-  if (!c2_parse(ps, pcondlst, pattern, NULL))
+  if (!c2_parse(pcondlst, pattern, NULL))
     exit(1);
 
   return true;
 }
 
-void parse_config(session_t *ps, bool *shadow_enable, bool *fading_enable,
-    win_option_mask_t *winopt_mask) {
+char *parse_config(options_t *opt, const char *config_file,
+                   bool *shadow_enable, bool *fading_enable, bool *hasneg,
+                   win_option_mask_t *winopt_mask) {
+  char *ret = NULL;
 #ifdef CONFIG_LIBCONFIG
-  parse_config_libconfig(ps, shadow_enable, fading_enable, winopt_mask);
+  ret = parse_config_libconfig(opt, config_file, shadow_enable, fading_enable,
+                               hasneg, winopt_mask);
 #endif
 
   // Apply default wintype options that does not depends on global options.
@@ -354,7 +366,7 @@ void parse_config(session_t *ps, bool *shadow_enable, bool *fading_enable,
   // Except desktop windows are always drawn without shadow.
   if (!winopt_mask[WINTYPE_DESKTOP].shadow) {
     winopt_mask[WINTYPE_DESKTOP].shadow = true;
-    ps->o.wintype_option[WINTYPE_DESKTOP].shadow = false;
+    opt->wintype_option[WINTYPE_DESKTOP].shadow = false;
   }
 
   // Focused/unfocused state only apply to a few window types, all other windows
@@ -364,27 +376,28 @@ void parse_config(session_t *ps, bool *shadow_enable, bool *fading_enable,
   for (unsigned long i = 0; i < ARR_SIZE(nofocus_type); i++) {
     if (!winopt_mask[nofocus_type[i]].focus) {
       winopt_mask[nofocus_type[i]].focus = true;
-      ps->o.wintype_option[nofocus_type[i]].focus = false;
+      opt->wintype_option[nofocus_type[i]].focus = false;
     }
   }
   for (unsigned long i = 0; i < NUM_WINTYPES; i++) {
     if (!winopt_mask[i].focus) {
       winopt_mask[i].focus = true;
-      ps->o.wintype_option[i].focus = true;
+      opt->wintype_option[i].focus = true;
     }
     if (!winopt_mask[i].full_shadow) {
       winopt_mask[i].full_shadow = true;
-      ps->o.wintype_option[i].full_shadow = false;
+      opt->wintype_option[i].full_shadow = false;
     }
     if (!winopt_mask[i].redir_ignore) {
       winopt_mask[i].redir_ignore = true;
-      ps->o.wintype_option[i].redir_ignore = false;
+      opt->wintype_option[i].redir_ignore = false;
     }
     if (!winopt_mask[i].opacity) {
       winopt_mask[i].opacity = true;
       // Opacity is not set to a concrete number here because the opacity logic
       // is complicated, and needs an "unset" state
-      ps->o.wintype_option[i].opacity = NAN;
+      opt->wintype_option[i].opacity = NAN;
     }
   }
+  return ret;
 }

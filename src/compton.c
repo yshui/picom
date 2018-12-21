@@ -190,7 +190,7 @@ free_win_res(session_t *ps, win *w) {
 /**
  * Get current system clock in milliseconds.
  */
-static inline time_ms_t
+static inline unsigned long
 get_time_ms(void) {
   struct timeval tv;
 
@@ -350,7 +350,11 @@ void add_damage(session_t *ps, const region_t *damage) {
  */
 static double
 fade_timeout(session_t *ps) {
-  int diff = ps->o.fade_delta - get_time_ms() + ps->fade_time;
+  auto now = get_time_ms();
+  if (ps->o.fade_delta + ps->fade_time < now)
+    return 0;
+
+  int diff = ps->o.fade_delta + ps->fade_time - now;
 
   diff = normalize_i_range(diff, 0, ps->o.fade_delta * 2);
 
@@ -547,13 +551,13 @@ paint_preprocess(session_t *ps, win *list) {
   win *t = NULL, *next = NULL;
 
   // Fading step calculation
-  time_ms_t steps = 0L;
-  if (ps->fade_time)
-    steps = (get_time_ms() - ps->fade_time +
-             FADE_DELTA_TOLERANCE*ps->o.fade_delta) /
-            ps->o.fade_delta;
-  // Reset fade_time if unset, or there appears to be a time disorder
-  if (!ps->fade_time || steps < 0L) {
+  unsigned long steps = 0L;
+  auto now = get_time_ms();
+  auto tolerance = FADE_DELTA_TOLERANCE*ps->o.fade_delta;
+  if (ps->fade_time && now+tolerance >= ps->fade_time) {
+    steps = (now - ps->fade_time + tolerance) / ps->o.fade_delta;
+  } else {
+    // Reset fade_time if unset, or there appears to be a time disorder
     ps->fade_time = get_time_ms();
     steps = 0L;
   }
@@ -2567,13 +2571,13 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .tgt_picture = None,
     .tgt_buffer = PAINT_INIT,
     .reg_win = None,
+#ifdef CONFIG_OPENGL
+    .glx_prog_win = GLX_PROG_MAIN_INIT,
+#endif
     .o = {
       .config_file = NULL,
       .backend = BKEND_XRENDER,
       .glx_no_stencil = false,
-#ifdef CONFIG_OPENGL
-      .glx_prog_win = GLX_PROG_MAIN_INIT,
-#endif
       .mark_wmwin_focused = false,
       .mark_ovredir_focused = false,
       .fork_after_register = false,
@@ -2830,8 +2834,28 @@ session_init(session_t *ps_old, int argc, char **argv) {
   xcb_discard_reply(ps->c,
       xcb_xfixes_query_version(ps->c, XCB_XFIXES_MAJOR_VERSION, XCB_XFIXES_MINOR_VERSION).sequence);
 
-  // Second pass
-  get_cfg(ps, argc, argv);
+  // Parse configuration file
+  win_option_mask_t winopt_mask[NUM_WINTYPES] = {{0}};
+  bool shadow_enabled = false, fading_enable = false, hasneg = false;
+  char *config_file = parse_config(&ps->o, ps->o.config_file, &shadow_enabled,
+                                   &fading_enable, &hasneg, winopt_mask);
+  free(ps->o.config_file);
+  ps->o.config_file = config_file;
+
+  // Parse all of the rest command line options
+  get_cfg(&ps->o, argc, argv, shadow_enabled, fading_enable, hasneg, winopt_mask);
+
+  // Get needed atoms for c2 condition lists
+  if (!(c2_list_postprocess(ps, ps->o.unredir_if_possible_blacklist) &&
+        c2_list_postprocess(ps, ps->o.paint_blacklist) &&
+        c2_list_postprocess(ps, ps->o.shadow_blacklist) &&
+        c2_list_postprocess(ps, ps->o.fade_blacklist) &&
+        c2_list_postprocess(ps, ps->o.blur_background_blacklist) &&
+        c2_list_postprocess(ps, ps->o.invert_color_list) &&
+        c2_list_postprocess(ps, ps->o.opacity_rules) &&
+        c2_list_postprocess(ps, ps->o.focus_blacklist))) {
+    log_error("Post-processing of conditionals failed, some of your rules might not work");
+  }
 
   rebuild_shadow_exclude_reg(ps);
 

@@ -4,6 +4,7 @@
 #include <xcb/xcb_image.h>
 
 #include "common.h"
+#include "options.h"
 
 #ifdef CONFIG_OPENGL
 #include "opengl.h"
@@ -125,7 +126,12 @@ paint_region(session_t *ps, win *w, int x, int y, int wid, int hei, double opaci
 
 	render(ps, x, y, dx, dy, wid, hei, opacity, argb, neg, pict,
 	       (w ? w->paint.ptex : ps->root_tile_paint.ptex), reg_paint,
-	       (w ? &ps->o.glx_prog_win : NULL));
+#ifdef CONFIG_OPENGL
+	       w ? &ps->glx_prog_win : NULL
+#else
+	       NULL
+#endif
+	);
 }
 
 /**
@@ -1223,7 +1229,7 @@ bool init_render(session_t *ps) {
 	if (BKEND_GLX == ps->o.backend && ps->o.glx_fshader_win_str) {
 #ifdef CONFIG_OPENGL
 		if (!glx_load_prog_main(ps, NULL, ps->o.glx_fshader_win_str,
-		                        &ps->o.glx_prog_win))
+		                        &ps->glx_prog_win))
 			return false;
 #else
 		log_error("GLSL supported not compiled in, can't load "

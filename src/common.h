@@ -122,6 +122,7 @@
 #include "utils.h"
 #include "compiler.h"
 #include "kernel.h"
+#include "options.h"
 
 // === Constants ===
 
@@ -155,9 +156,6 @@
 /// @brief Maximum OpenGL buffer age.
 #define CGLX_MAX_BUFFER_AGE 5
 
-/// @brief Maximum passes for blur.
-#define MAX_BLUR_PASS 5
-
 // Window flags
 
 // Window size is changed
@@ -172,9 +170,6 @@
 #define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t) (((double) (value)) * 65536))
 
 // === Types ===
-
-typedef long time_ms_t;
-typedef struct _c2_lptr c2_lptr_t;
 
 /// Structure representing needed window updates.
 typedef struct {
@@ -205,25 +200,6 @@ enum wincond_type {
 };
 
 #define CONDF_IGNORECASE 0x0001
-
-/// VSync modes.
-typedef enum {
-  VSYNC_NONE,
-  VSYNC_DRM,
-  VSYNC_OPENGL,
-  VSYNC_OPENGL_OML,
-  VSYNC_OPENGL_SWC,
-  VSYNC_OPENGL_MSWC,
-  NUM_VSYNC,
-} vsync_t;
-
-/// @brief Possible backends of compton.
-enum backend {
-  BKEND_XRENDER,
-  BKEND_GLX,
-  BKEND_XR_GLX_HYBRID,
-  NUM_BKEND,
-};
 
 /// @brief Possible swap methods.
 enum {
@@ -371,202 +347,6 @@ typedef struct _latom {
 
 #define REG_DATA_INIT { NULL, 0 }
 
-typedef struct win_option_mask {
-  bool shadow: 1;
-  bool fade: 1;
-  bool focus: 1;
-  bool full_shadow: 1;
-  bool redir_ignore: 1;
-  bool opacity: 1;
-} win_option_mask_t;
-
-typedef struct win_option {
-  bool shadow;
-  bool fade;
-  bool focus;
-  bool full_shadow;
-  bool redir_ignore;
-  double opacity;
-} win_option_t;
-
-/// Structure representing all options.
-typedef struct options_t {
-  // === Debugging ===
-  bool monitor_repaint;
-  bool print_diagnostics;
-  // === General ===
-  /// The configuration file we used.
-  char *config_file;
-  /// Path to write PID to.
-  char *write_pid_path;
-  /// The backend in use.
-  enum backend backend;
-  /// Whether to sync X drawing to avoid certain delay issues with
-  /// GLX backend.
-  bool xrender_sync;
-  /// Whether to sync X drawing with X Sync fence.
-  bool xrender_sync_fence;
-  /// Whether to avoid using stencil buffer under GLX backend. Might be
-  /// unsafe.
-  bool glx_no_stencil;
-  /// Whether to avoid rebinding pixmap on window damage.
-  bool glx_no_rebind_pixmap;
-  /// GLX swap method we assume OpenGL uses.
-  int glx_swap_method;
-  /// Whether to use GL_EXT_gpu_shader4 to (hopefully) accelerates blurring.
-  bool glx_use_gpushader4;
-  /// Custom fragment shader for painting windows, as a string.
-  char *glx_fshader_win_str;
-  /// Custom GLX program used for painting window.
-  glx_prog_main_t glx_prog_win;
-  /// Whether to fork to background.
-  bool fork_after_register;
-  /// Whether to detect rounded corners.
-  bool detect_rounded_corners;
-  /// Force painting of window content with blending.
-  bool force_win_blend;
-  /// Resize damage for a specific number of pixels.
-  int resize_damage;
-  /// Whether to unredirect all windows if a full-screen opaque window
-  /// is detected.
-  bool unredir_if_possible;
-  /// List of conditions of windows to ignore as a full-screen window
-  /// when determining if a window could be unredirected.
-  c2_lptr_t *unredir_if_possible_blacklist;
-  /// Delay before unredirecting screen.
-  time_ms_t unredir_if_possible_delay;
-  /// Forced redirection setting through D-Bus.
-  switch_t redirected_force;
-  /// Whether to stop painting. Controlled through D-Bus.
-  switch_t stoppaint_force;
-  /// Whether to re-redirect screen on root size change.
-  bool reredir_on_root_change;
-  /// Whether to reinitialize GLX on root size change.
-  bool glx_reinit_on_root_change;
-  /// Whether to enable D-Bus support.
-  bool dbus;
-  /// Path to log file.
-  char *logpath;
-  /// Number of cycles to paint in benchmark mode. 0 for disabled.
-  int benchmark;
-  /// Window to constantly repaint in benchmark mode. 0 for full-screen.
-  Window benchmark_wid;
-  /// A list of conditions of windows not to paint.
-  c2_lptr_t *paint_blacklist;
-  /// Whether to show all X errors.
-  bool show_all_xerrors;
-  /// Whether to avoid acquiring X Selection.
-  bool no_x_selection;
-  /// Window type option override.
-  win_option_t wintype_option[NUM_WINTYPES];
-
-  // === VSync & software optimization ===
-  /// User-specified refresh rate.
-  int refresh_rate;
-  /// Whether to enable refresh-rate-based software optimization.
-  bool sw_opti;
-  /// VSync method to use;
-  vsync_t vsync;
-  /// Whether to do VSync aggressively.
-  bool vsync_aggressive;
-  /// Whether to use glFinish() instead of glFlush() for (possibly) better
-  /// VSync yet probably higher CPU usage.
-  bool vsync_use_glfinish;
-
-  // === Shadow ===
-  /// Red, green and blue tone of the shadow.
-  double shadow_red, shadow_green, shadow_blue;
-  int shadow_radius;
-  int shadow_offset_x, shadow_offset_y;
-  double shadow_opacity;
-  /// argument string to shadow-exclude-reg option
-  char *shadow_exclude_reg_str;
-  /// Shadow blacklist. A linked list of conditions.
-  c2_lptr_t *shadow_blacklist;
-  /// Whether bounding-shaped window should be ignored.
-  bool shadow_ignore_shaped;
-  /// Whether to respect _COMPTON_SHADOW.
-  bool respect_prop_shadow;
-  /// Whether to crop shadow to the very Xinerama screen.
-  bool xinerama_shadow_crop;
-
-  // === Fading ===
-  /// How much to fade in in a single fading step.
-  opacity_t fade_in_step;
-  /// How much to fade out in a single fading step.
-  opacity_t fade_out_step;
-  /// Fading time delta. In milliseconds.
-  time_ms_t fade_delta;
-  /// Whether to disable fading on window open/close.
-  bool no_fading_openclose;
-  /// Whether to disable fading on ARGB managed destroyed windows.
-  bool no_fading_destroyed_argb;
-  /// Fading blacklist. A linked list of conditions.
-  c2_lptr_t *fade_blacklist;
-
-  // === Opacity ===
-  /// Default opacity for inactive windows.
-  /// 32-bit integer with the format of _NET_WM_OPACITY. 0 stands for
-  /// not enabled, default.
-  opacity_t inactive_opacity;
-  /// Default opacity for inactive windows.
-  opacity_t active_opacity;
-  /// Whether inactive_opacity overrides the opacity set by window
-  /// attributes.
-  bool inactive_opacity_override;
-  /// Frame opacity. Relative to window opacity, also affects shadow
-  /// opacity.
-  double frame_opacity;
-  /// Whether to detect _NET_WM_OPACITY on client windows. Used on window
-  /// managers that don't pass _NET_WM_OPACITY to frame windows.
-  bool detect_client_opacity;
-
-  // === Other window processing ===
-  /// Whether to blur background of semi-transparent / ARGB windows.
-  bool blur_background;
-  /// Whether to blur background when the window frame is not opaque.
-  /// Implies blur_background.
-  bool blur_background_frame;
-  /// Whether to use fixed blur strength instead of adjusting according
-  /// to window opacity.
-  bool blur_background_fixed;
-  /// Background blur blacklist. A linked list of conditions.
-  c2_lptr_t *blur_background_blacklist;
-  /// Blur convolution kernel.
-  xcb_render_fixed_t *blur_kerns[MAX_BLUR_PASS];
-  /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
-  double inactive_dim;
-  /// Whether to use fixed inactive dim opacity, instead of deciding
-  /// based on window opacity.
-  bool inactive_dim_fixed;
-  /// Conditions of windows to have inverted colors.
-  c2_lptr_t *invert_color_list;
-  /// Rules to change window opacity.
-  c2_lptr_t *opacity_rules;
-
-  // === Focus related ===
-  /// Whether to try to detect WM windows and mark them as focused.
-  bool mark_wmwin_focused;
-  /// Whether to mark override-redirect windows as focused.
-  bool mark_ovredir_focused;
-  /// Whether to use EWMH _NET_ACTIVE_WINDOW to find active window.
-  bool use_ewmh_active_win;
-  /// A list of windows always to be considered focused.
-  c2_lptr_t *focus_blacklist;
-  /// Whether to do window grouping with <code>WM_TRANSIENT_FOR</code>.
-  bool detect_transient;
-  /// Whether to do window grouping with <code>WM_CLIENT_LEADER</code>.
-  bool detect_client_leader;
-
-  // === Calculated ===
-  /// Whether compton needs to track focus changes.
-  bool track_focus;
-  /// Whether compton needs to track window name and class.
-  bool track_wdata;
-  /// Whether compton needs to track window leaders.
-  bool track_leader;
-} options_t;
-
 #ifdef CONFIG_OPENGL
 /// Structure containing GLX-dependent data for a compton session.
 typedef struct {
@@ -687,6 +467,9 @@ typedef struct session {
 #ifdef CONFIG_OPENGL
   /// Pointer to GLX data.
   glx_session_t *psglx;
+  /// Custom GLX program used for painting window.
+  // XXX should be in glx_session_t
+  glx_prog_main_t glx_prog_win;
 #endif
 
   // === Operation related ===
@@ -710,7 +493,7 @@ typedef struct session {
   /// Pre-generated alpha pictures.
   xcb_render_picture_t *alpha_picts;
   /// Time of last fading. In milliseconds.
-  time_ms_t fade_time;
+  unsigned long fade_time;
   /// Head pointer of the error ignore linked list.
   ignore_t *ignore_head;
   /// Pointer to the <code>next</code> member of tail element of the error
@@ -894,8 +677,6 @@ typedef enum {
 } win_evmode_t;
 
 extern const char * const WINTYPES[NUM_WINTYPES];
-extern const char * const VSYNC_STRS[NUM_VSYNC + 1];
-extern const char * const BACKEND_STRS[NUM_BKEND + 1];
 extern session_t *ps_g;
 
 // == Debugging code ==
@@ -924,7 +705,7 @@ timeval_isempty(struct timeval *ptv) {
  * @return > 0 if ptv > ms, 0 if ptv == 0, -1 if ptv < ms
  */
 static inline int
-timeval_ms_cmp(struct timeval *ptv, time_ms_t ms) {
+timeval_ms_cmp(struct timeval *ptv, unsigned long ms) {
   assert(ptv);
 
   // We use those if statement instead of a - expression because of possible
@@ -1068,97 +849,6 @@ print_timestamp(session_t *ps) {
 }
 
 /**
- * Parse a VSync option argument.
- */
-static inline bool
-parse_vsync(session_t *ps, const char *str) {
-  for (vsync_t i = 0; VSYNC_STRS[i]; ++i)
-    if (!strcasecmp(str, VSYNC_STRS[i])) {
-      ps->o.vsync = i;
-      return true;
-    }
-
-  log_error("Invalid vsync argument: %s", str);
-  return false;
-}
-
-/**
- * Parse a backend option argument.
- */
-static inline bool
-parse_backend(session_t *ps, const char *str) {
-  for (enum backend i = 0; BACKEND_STRS[i]; ++i)
-    if (!strcasecmp(str, BACKEND_STRS[i])) {
-      ps->o.backend = i;
-      return true;
-    }
-  // Keep compatibility with an old revision containing a spelling mistake...
-  if (!strcasecmp(str, "xr_glx_hybird")) {
-    ps->o.backend = BKEND_XR_GLX_HYBRID;
-    return true;
-  }
-  // cju wants to use dashes
-  if (!strcasecmp(str, "xr-glx-hybrid")) {
-    ps->o.backend = BKEND_XR_GLX_HYBRID;
-    return true;
-  }
-  log_error("Invalid backend argument: %s", str);
-  return false;
-}
-
-/**
- * Parse a glx_swap_method option argument.
- */
-static inline bool
-parse_glx_swap_method(session_t *ps, const char *str) {
-  // Parse alias
-  if (!strcmp("undefined", str)) {
-    ps->o.glx_swap_method = 0;
-    return true;
-  }
-
-  if (!strcmp("copy", str)) {
-    ps->o.glx_swap_method = 1;
-    return true;
-  }
-
-  if (!strcmp("exchange", str)) {
-    ps->o.glx_swap_method = 2;
-    return true;
-  }
-
-  if (!strcmp("buffer-age", str)) {
-    ps->o.glx_swap_method = -1;
-    return true;
-  }
-
-  // Parse number
-  {
-    char *pc = NULL;
-    int age = strtol(str, &pc, 0);
-    if (!pc || str == pc) {
-      log_error("glx-swap-method is an invalid number: %s", str);
-      return false;
-    }
-
-    for (; *pc; ++pc)
-      if (!isspace(*pc)) {
-        log_error("Trailing characters in glx-swap-method option: %s", str);
-        return false;
-      }
-
-    if (age > CGLX_MAX_BUFFER_AGE + 1 || age < -1) {
-      log_error("Number for glx-swap-method is too large / too small: %s", str);
-      return false;
-    }
-
-    ps->o.glx_swap_method = age;
-  }
-
-  return true;
-}
-
-/**
  * Wrapper of XFree() for convenience.
  *
  * Because a NULL pointer cannot be passed to XFree(), its man page says.
@@ -1187,6 +877,7 @@ get_atom(session_t *ps, const char *atom_name) {
 
   xcb_atom_t atom = XCB_NONE;
   if (reply) {
+    log_debug("Atom %s is %d", atom_name, reply->atom);
     atom = reply->atom;
     free(reply);
   } else
