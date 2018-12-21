@@ -230,6 +230,11 @@ glx_init(session_t *ps, bool need_render) {
     }
   }
 
+  if (ps->o.glx_swap_method > CGLX_MAX_BUFFER_AGE) {
+    log_error("glx-swap-method is too big");
+    goto glx_init_end;
+  }
+
   // Get XVisualInfo
   pvis = get_visualinfo_from_visual(ps, ps->vis);
   if (!pvis) {
@@ -436,7 +441,7 @@ glx_destroy(session_t *ps) {
       glDeleteProgram(ppass->prog);
   }
 
-  glx_free_prog_main(ps, &ps->o.glx_prog_win);
+  glx_free_prog_main(ps, &ps->glx_prog_win);
 
   glx_check_err(ps);
 

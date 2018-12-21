@@ -34,6 +34,8 @@
 #include "utils.h"
 #include "log.h"
 
+#pragma GCC diagnostic error "-Wunused-parameter"
+
 #define C2_MAX_LEVELS 10
 
 typedef struct _c2_b c2_b_t;
@@ -301,22 +303,19 @@ c2h_b_opcmp(c2_b_op_t op1, c2_b_op_t op2) {
 }
 
 static int
-c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, int level);
+c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int level);
 
 static int
-c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult);
+c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult);
 
 static int
 c2_parse_op(const char *pattern, int offset, c2_ptr_t *presult);
 
 static int
-c2_parse_pattern(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult);
+c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult);
 
 static int
-c2_parse_legacy(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult);
-
-static bool
-c2_l_postprocess(session_t *ps, c2_l_t *pleaf);
+c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult);
 
 static void
 c2_free(c2_ptr_t p);
@@ -351,7 +350,7 @@ c2_match_once(session_t *ps, win *w, const c2_ptr_t cond);
  * Parse a condition string.
  */
 c2_lptr_t *
-c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
+c2_parse(c2_lptr_t **pcondlst, const char *pattern,
     void *data) {
   if (!pattern)
     return NULL;
@@ -361,9 +360,9 @@ c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
   int offset = -1;
 
   if (strlen(pattern) >= 2 && ':' == pattern[1])
-    offset = c2_parse_legacy(ps, pattern, 0, &result);
+    offset = c2_parse_legacy(pattern, 0, &result);
   else
-    offset = c2_parse_grp(ps, pattern, 0, &result, 0);
+    offset = c2_parse_grp(pattern, 0, &result, 0);
 
   if (offset < 0) {
     c2_freep(&result);
@@ -405,7 +404,7 @@ c2_parse(session_t *ps, c2_lptr_t **pcondlst, const char *pattern,
  * @return offset of next character in string
  */
 static int
-c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, int level) {
+c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int level) {
   // Check for recursion levels
   if (level > C2_MAX_LEVELS)
     c2_error("Exceeded maximum recursion levels.");
@@ -505,12 +504,12 @@ c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, 
 
     // It's a subgroup if it starts with '('
     if ('(' == pattern[offset]) {
-      if ((offset = c2_parse_grp(ps, pattern, offset + 1, pele, level + 1)) < 0)
+      if ((offset = c2_parse_grp(pattern, offset + 1, pele, level + 1)) < 0)
         goto fail;
     }
     // Otherwise it's a leaf
     else {
-      if ((offset = c2_parse_target(ps, pattern, offset, pele)) < 0)
+      if ((offset = c2_parse_target(pattern, offset, pele)) < 0)
         goto fail;
 
       assert(!pele->isbranch && !c2_ptr_isempty(*pele));
@@ -518,10 +517,7 @@ c2_parse_grp(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult, 
       if ((offset = c2_parse_op(pattern, offset, pele)) < 0)
         goto fail;
 
-      if ((offset = c2_parse_pattern(ps, pattern, offset, pele)) < 0)
-        goto fail;
-
-      if (!c2_l_postprocess(ps, pele->l))
+      if ((offset = c2_parse_pattern(pattern, offset, pele)) < 0)
         goto fail;
     }
     // Decrement offset -- we will increment it in loop update
@@ -579,7 +575,7 @@ fail:
  * Parse the target part of a rule.
  */
 static int
-c2_parse_target(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult) {
+c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
   // Initialize leaf
   presult->isbranch = false;
   presult->l = cmalloc(c2_l_t);
@@ -838,7 +834,7 @@ fail:
  * Parse the pattern part of a leaf.
  */
 static int
-c2_parse_pattern(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult) {
+c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) {
   c2_l_t * const pleaf = presult->l;
 
   // Exists operator cannot have pattern
@@ -977,7 +973,7 @@ fail:
  * Parse a condition with legacy syntax.
  */
 static int
-c2_parse_legacy(session_t *ps, const char *pattern, int offset, c2_ptr_t *presult) {
+c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult) {
   unsigned plen = strlen(pattern + offset);
 
   if (plen < 4 || ':' != pattern[offset + 1]
@@ -1032,9 +1028,6 @@ c2_parse_legacy(session_t *ps, const char *pattern, int offset, c2_ptr_t *presul
 
   // Copy the pattern
   pleaf->ptnstr = strdup(pattern + offset);
-
-  if (!c2_l_postprocess(ps, pleaf))
-    return -1;
 
   return offset;
 
@@ -1143,6 +1136,25 @@ c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 #endif
   }
 
+  return true;
+}
+
+static bool c2_tree_postprocess(session_t *ps, c2_ptr_t node) {
+  if (!node.isbranch) {
+    return c2_l_postprocess(ps, node.l);
+  }
+  if (!c2_tree_postprocess(ps, node.b->opr1))
+    return false;
+  return c2_tree_postprocess(ps, node.b->opr2);
+}
+
+bool c2_list_postprocess(session_t *ps, c2_lptr_t *list) {
+  c2_lptr_t *head = list;
+  while (head) {
+    if (!c2_tree_postprocess(ps, head->ptr))
+      return false;
+    head = head->next;
+  }
   return true;
 }
 /**

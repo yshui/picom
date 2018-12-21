@@ -12,7 +12,10 @@
 #include "common.h"
 #include "config.h"
 #include "string_utils.h"
+#include "options.h"
 #include "log.h"
+
+#pragma GCC diagnostic error "-Wunused-parameter"
 
 /**
  * Wrapper of libconfig's <code>config_lookup_int</code>.
@@ -36,7 +39,7 @@ lcfg_lookup_bool(const config_t *config, const char *path, bool *value) {
  * Follows the XDG specification to search for the configuration file.
  */
 FILE *
-open_config_file(char *cpath, char **ppath) {
+open_config_file(const char *cpath, char **ppath) {
   static const char *config_paths[] = {
     "/compton.conf",
     "/compton/compton.conf"
@@ -46,7 +49,7 @@ open_config_file(char *cpath, char **ppath) {
   if (cpath) {
     FILE *ret = fopen(cpath, "r");
     if (ret && ppath)
-      *ppath = cpath;
+      *ppath = strdup(cpath);
     return ret;
   }
 
@@ -82,7 +85,7 @@ open_config_file(char *cpath, char **ppath) {
  * Parse a condition list in configuration file.
  */
 void
-parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
+parse_cfg_condlst(const config_t *pcfg, c2_lptr_t **pcondlst,
     const char *name) {
   config_setting_t *setting = config_lookup(pcfg, name);
   if (setting) {
@@ -90,11 +93,11 @@ parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
     if (config_setting_is_array(setting)) {
       int i = config_setting_length(setting);
       while (i--)
-        condlst_add(ps, pcondlst, config_setting_get_string_elem(setting, i));
+        condlst_add(pcondlst, config_setting_get_string_elem(setting, i));
     }
     // Treat it as a single pattern if it's a string
     else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
-      condlst_add(ps, pcondlst, config_setting_get_string(setting));
+      condlst_add(pcondlst, config_setting_get_string(setting));
     }
   }
 }
@@ -103,29 +106,32 @@ parse_cfg_condlst(session_t *ps, const config_t *pcfg, c2_lptr_t **pcondlst,
  * Parse an opacity rule list in configuration file.
  */
 static inline void
-parse_cfg_condlst_opct(session_t *ps, const config_t *pcfg, const char *name) {
+parse_cfg_condlst_opct(options_t *opt, const config_t *pcfg, const char *name) {
   config_setting_t *setting = config_lookup(pcfg, name);
   if (setting) {
     // Parse an array of options
     if (config_setting_is_array(setting)) {
       int i = config_setting_length(setting);
       while (i--)
-        if (!parse_rule_opacity(ps, config_setting_get_string_elem(setting,
-                i)))
+        if (!parse_rule_opacity(&opt->opacity_rules,
+                                config_setting_get_string_elem(setting, i)))
           exit(1);
     }
     // Treat it as a single pattern if it's a string
-    else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
-      parse_rule_opacity(ps, config_setting_get_string(setting));
+    else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
+      if (!parse_rule_opacity(&opt->opacity_rules, config_setting_get_string(setting)))
+        exit(1);
     }
   }
 }
 
 /**
  * Parse a configuration file from default location.
+ *
+ * Returns the actually config_file name
  */
-void parse_config_libconfig(session_t *ps, bool *shadow_enable,
-  bool *fading_enable, win_option_mask_t *winopt_mask)
+char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shadow_enable,
+  bool *fading_enable, bool *conv_kern_hasneg, win_option_mask_t *winopt_mask)
 {
   char *path = NULL;
   FILE *f;
@@ -137,16 +143,14 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   // anything
   const char *sval = NULL;
 
-  f = open_config_file(ps->o.config_file, &path);
+  f = open_config_file(config_file, &path);
   if (!f) {
-    if (ps->o.config_file) {
-      free(ps->o.config_file);
-      ps->o.config_file = NULL;
-
-      log_fatal("Failed to read configuration file \"%s\".", ps->o.config_file);
+    if (config_file) {
+      log_fatal("Failed to read configuration file \"%s\".", config_file);
       abort();
     }
-    return;
+    free(path);
+    return NULL;
   }
 
   config_init(&cfg);
@@ -171,44 +175,39 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
                 path, config_error_line(&cfg), config_error_text(&cfg));
       config_destroy(&cfg);
       free(path);
-      return;
+      return NULL;
     }
   }
   config_set_auto_convert(&cfg, 1);
-
-  if (path != ps->o.config_file) {
-    assert(ps->o.config_file == NULL);
-    ps->o.config_file = path;
-  }
 
   // Get options from the configuration file. We don't do range checking
   // right now. It will be done later
 
   // -D (fade_delta)
   if (config_lookup_int(&cfg, "fade-delta", &ival))
-    ps->o.fade_delta = ival;
+    opt->fade_delta = ival;
   // -I (fade_in_step)
   if (config_lookup_float(&cfg, "fade-in-step", &dval))
-    ps->o.fade_in_step = normalize_d(dval) * OPAQUE;
+    opt->fade_in_step = normalize_d(dval) * OPAQUE;
   // -O (fade_out_step)
   if (config_lookup_float(&cfg, "fade-out-step", &dval))
-    ps->o.fade_out_step = normalize_d(dval) * OPAQUE;
+    opt->fade_out_step = normalize_d(dval) * OPAQUE;
   // -r (shadow_radius)
-  config_lookup_int(&cfg, "shadow-radius", &ps->o.shadow_radius);
+  config_lookup_int(&cfg, "shadow-radius", &opt->shadow_radius);
   // -o (shadow_opacity)
-  config_lookup_float(&cfg, "shadow-opacity", &ps->o.shadow_opacity);
+  config_lookup_float(&cfg, "shadow-opacity", &opt->shadow_opacity);
   // -l (shadow_offset_x)
-  config_lookup_int(&cfg, "shadow-offset-x", &ps->o.shadow_offset_x);
+  config_lookup_int(&cfg, "shadow-offset-x", &opt->shadow_offset_x);
   // -t (shadow_offset_y)
-  config_lookup_int(&cfg, "shadow-offset-y", &ps->o.shadow_offset_y);
+  config_lookup_int(&cfg, "shadow-offset-y", &opt->shadow_offset_y);
   // -i (inactive_opacity)
   if (config_lookup_float(&cfg, "inactive-opacity", &dval))
-    ps->o.inactive_opacity = normalize_d(dval) * OPAQUE;
+    opt->inactive_opacity = normalize_d(dval) * OPAQUE;
   // --active_opacity
   if (config_lookup_float(&cfg, "active-opacity", &dval))
-    ps->o.active_opacity = normalize_d(dval) * OPAQUE;
+    opt->active_opacity = normalize_d(dval) * OPAQUE;
   // -e (frame_opacity)
-  config_lookup_float(&cfg, "frame-opacity", &ps->o.frame_opacity);
+  config_lookup_float(&cfg, "frame-opacity", &opt->frame_opacity);
   // -c (shadow_enable)
   if (config_lookup_bool(&cfg, "shadow", &ival))
     *shadow_enable = ival;
@@ -216,22 +215,22 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   if (config_lookup_bool(&cfg, "no-dock-shadow", &ival)) {
     log_warn("Option `no-dock-shadow` is deprecated, and will be removed."
              " Please use the wintype option `shadow` of `dock` instead.");
-    ps->o.wintype_option[WINTYPE_DOCK].shadow = false;
+    opt->wintype_option[WINTYPE_DOCK].shadow = false;
     winopt_mask[WINTYPE_DOCK].shadow = true;
   }
   // -G (no_dnd_shadow)
   if (config_lookup_bool(&cfg, "no-dnd-shadow", &ival)) {
     log_warn("Option `no-dnd-shadow` is deprecated, and will be removed."
              " Please use the wintype option `shadow` of `dnd` instead.");
-    ps->o.wintype_option[WINTYPE_DND].shadow = false;
+    opt->wintype_option[WINTYPE_DND].shadow = false;
     winopt_mask[WINTYPE_DND].shadow = true;
   };
   // -m (menu_opacity)
   if (config_lookup_float(&cfg, "menu-opacity", &dval)) {
     log_warn("Option `menu-opacity` is deprecated, and will be removed.Please use the "
              "wintype option `opacity` of `popup_menu` and `dropdown_menu` instead.");
-    ps->o.wintype_option[WINTYPE_DROPDOWN_MENU].opacity = dval;
-    ps->o.wintype_option[WINTYPE_POPUP_MENU].opacity = dval;
+    opt->wintype_option[WINTYPE_DROPDOWN_MENU].opacity = dval;
+    opt->wintype_option[WINTYPE_POPUP_MENU].opacity = dval;
     winopt_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
     winopt_mask[WINTYPE_POPUP_MENU].opacity = true;
   }
@@ -239,52 +238,58 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   if (config_lookup_bool(&cfg, "fading", &ival))
     *fading_enable = ival;
   // --no-fading-open-close
-  lcfg_lookup_bool(&cfg, "no-fading-openclose", &ps->o.no_fading_openclose);
+  lcfg_lookup_bool(&cfg, "no-fading-openclose", &opt->no_fading_openclose);
   // --no-fading-destroyed-argb
   lcfg_lookup_bool(&cfg, "no-fading-destroyed-argb",
-      &ps->o.no_fading_destroyed_argb);
+      &opt->no_fading_destroyed_argb);
   // --shadow-red
-  config_lookup_float(&cfg, "shadow-red", &ps->o.shadow_red);
+  config_lookup_float(&cfg, "shadow-red", &opt->shadow_red);
   // --shadow-green
-  config_lookup_float(&cfg, "shadow-green", &ps->o.shadow_green);
+  config_lookup_float(&cfg, "shadow-green", &opt->shadow_green);
   // --shadow-blue
-  config_lookup_float(&cfg, "shadow-blue", &ps->o.shadow_blue);
+  config_lookup_float(&cfg, "shadow-blue", &opt->shadow_blue);
   // --shadow-exclude-reg
   if (config_lookup_string(&cfg, "shadow-exclude-reg", &sval))
-    ps->o.shadow_exclude_reg_str = strdup(sval);
+    opt->shadow_exclude_reg_str = strdup(sval);
   // --inactive-opacity-override
   lcfg_lookup_bool(&cfg, "inactive-opacity-override",
-      &ps->o.inactive_opacity_override);
+      &opt->inactive_opacity_override);
   // --inactive-dim
-  config_lookup_float(&cfg, "inactive-dim", &ps->o.inactive_dim);
+  config_lookup_float(&cfg, "inactive-dim", &opt->inactive_dim);
   // --mark-wmwin-focused
-  lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &ps->o.mark_wmwin_focused);
+  lcfg_lookup_bool(&cfg, "mark-wmwin-focused", &opt->mark_wmwin_focused);
   // --mark-ovredir-focused
   lcfg_lookup_bool(&cfg, "mark-ovredir-focused",
-      &ps->o.mark_ovredir_focused);
+      &opt->mark_ovredir_focused);
   // --shadow-ignore-shaped
   lcfg_lookup_bool(&cfg, "shadow-ignore-shaped",
-      &ps->o.shadow_ignore_shaped);
+      &opt->shadow_ignore_shaped);
   // --detect-rounded-corners
   lcfg_lookup_bool(&cfg, "detect-rounded-corners",
-      &ps->o.detect_rounded_corners);
+      &opt->detect_rounded_corners);
   // --xinerama-shadow-crop
   lcfg_lookup_bool(&cfg, "xinerama-shadow-crop",
-      &ps->o.xinerama_shadow_crop);
+      &opt->xinerama_shadow_crop);
   // --detect-client-opacity
   lcfg_lookup_bool(&cfg, "detect-client-opacity",
-      &ps->o.detect_client_opacity);
+      &opt->detect_client_opacity);
   // --refresh-rate
-  config_lookup_int(&cfg, "refresh-rate", &ps->o.refresh_rate);
+  config_lookup_int(&cfg, "refresh-rate", &opt->refresh_rate);
   // --vsync
-  if (config_lookup_string(&cfg, "vsync", &sval) && !parse_vsync(ps, sval)) {
-    log_fatal("Cannot parse vsync");
-    exit(1);
+  if (config_lookup_string(&cfg, "vsync", &sval)) {
+    opt->vsync = parse_vsync(sval);
+    if (opt->vsync >= NUM_VSYNC) {
+      log_fatal("Cannot parse vsync");
+      exit(1);
+    }
   }
   // --backend
-  if (config_lookup_string(&cfg, "backend", &sval) && !parse_backend(ps, sval)) {
-    log_fatal("Cannot parse backend");
-    exit(1);
+  if (config_lookup_string(&cfg, "backend", &sval)) {
+    opt->backend = parse_backend(sval);
+    if (opt->backend >= NUM_BKEND) {
+      log_fatal("Cannot parse backend");
+      exit(1);
+    }
   }
   // --log-level
   if (config_lookup_string(&cfg, "log-level", &sval)) {
@@ -296,69 +301,71 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
     }
   }
   // --sw-opti
-  lcfg_lookup_bool(&cfg, "sw-opti", &ps->o.sw_opti);
+  lcfg_lookup_bool(&cfg, "sw-opti", &opt->sw_opti);
   // --use-ewmh-active-win
   lcfg_lookup_bool(&cfg, "use-ewmh-active-win",
-      &ps->o.use_ewmh_active_win);
+      &opt->use_ewmh_active_win);
   // --unredir-if-possible
   lcfg_lookup_bool(&cfg, "unredir-if-possible",
-      &ps->o.unredir_if_possible);
+      &opt->unredir_if_possible);
   // --unredir-if-possible-delay
   if (config_lookup_int(&cfg, "unredir-if-possible-delay", &ival))
-    ps->o.unredir_if_possible_delay = ival;
+    opt->unredir_if_possible_delay = ival;
   // --inactive-dim-fixed
-  lcfg_lookup_bool(&cfg, "inactive-dim-fixed", &ps->o.inactive_dim_fixed);
+  lcfg_lookup_bool(&cfg, "inactive-dim-fixed", &opt->inactive_dim_fixed);
   // --detect-transient
-  lcfg_lookup_bool(&cfg, "detect-transient", &ps->o.detect_transient);
+  lcfg_lookup_bool(&cfg, "detect-transient", &opt->detect_transient);
   // --detect-client-leader
   lcfg_lookup_bool(&cfg, "detect-client-leader",
-      &ps->o.detect_client_leader);
+      &opt->detect_client_leader);
   // --shadow-exclude
-  parse_cfg_condlst(ps, &cfg, &ps->o.shadow_blacklist, "shadow-exclude");
+  parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude");
   // --fade-exclude
-  parse_cfg_condlst(ps, &cfg, &ps->o.fade_blacklist, "fade-exclude");
+  parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude");
   // --focus-exclude
-  parse_cfg_condlst(ps, &cfg, &ps->o.focus_blacklist, "focus-exclude");
+  parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude");
   // --invert-color-include
-  parse_cfg_condlst(ps, &cfg, &ps->o.invert_color_list, "invert-color-include");
+  parse_cfg_condlst(&cfg, &opt->invert_color_list, "invert-color-include");
   // --blur-background-exclude
-  parse_cfg_condlst(ps, &cfg, &ps->o.blur_background_blacklist, "blur-background-exclude");
+  parse_cfg_condlst(&cfg, &opt->blur_background_blacklist, "blur-background-exclude");
   // --opacity-rule
-  parse_cfg_condlst_opct(ps, &cfg, "opacity-rule");
+  parse_cfg_condlst_opct(opt, &cfg, "opacity-rule");
   // --unredir-if-possible-exclude
-  parse_cfg_condlst(ps, &cfg, &ps->o.unredir_if_possible_blacklist, "unredir-if-possible-exclude");
+  parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist, "unredir-if-possible-exclude");
   // --blur-background
-  lcfg_lookup_bool(&cfg, "blur-background", &ps->o.blur_background);
+  lcfg_lookup_bool(&cfg, "blur-background", &opt->blur_background);
   // --blur-background-frame
   lcfg_lookup_bool(&cfg, "blur-background-frame",
-      &ps->o.blur_background_frame);
+      &opt->blur_background_frame);
   // --blur-background-fixed
   lcfg_lookup_bool(&cfg, "blur-background-fixed",
-      &ps->o.blur_background_fixed);
+      &opt->blur_background_fixed);
   // --blur-kern
-  if (config_lookup_string(&cfg, "blur-kern", &sval)
-      && !parse_conv_kern_lst(ps, sval, ps->o.blur_kerns, MAX_BLUR_PASS)) {
+  if (config_lookup_string(&cfg, "blur-kern", &sval) &&
+      !parse_conv_kern_lst(sval, opt->blur_kerns, MAX_BLUR_PASS, conv_kern_hasneg)) {
     log_fatal("Cannot parse \"blur-kern\"");
     exit(1);
   }
   // --resize-damage
-  config_lookup_int(&cfg, "resize-damage", &ps->o.resize_damage);
+  config_lookup_int(&cfg, "resize-damage", &opt->resize_damage);
   // --glx-no-stencil
-  lcfg_lookup_bool(&cfg, "glx-no-stencil", &ps->o.glx_no_stencil);
+  lcfg_lookup_bool(&cfg, "glx-no-stencil", &opt->glx_no_stencil);
   // --glx-no-rebind-pixmap
-  lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &ps->o.glx_no_rebind_pixmap);
+  lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &opt->glx_no_rebind_pixmap);
   // --glx-swap-method
-  if (config_lookup_string(&cfg, "glx-swap-method", &sval) &&
-      !parse_glx_swap_method(ps, sval)) {
-    log_fatal("Cannot parse \"glx-swap-method\"");
-    exit(1);
+  if (config_lookup_string(&cfg, "glx-swap-method", &sval)) {
+    opt->glx_swap_method = parse_glx_swap_method(sval);
+    if (opt->glx_swap_method == -2) {
+      log_fatal("Cannot parse \"glx-swap-method\"");
+      exit(1);
+    }
   }
   // --glx-use-gpushader4
-  lcfg_lookup_bool(&cfg, "glx-use-gpushader4", &ps->o.glx_use_gpushader4);
+  lcfg_lookup_bool(&cfg, "glx-use-gpushader4", &opt->glx_use_gpushader4);
   // --xrender-sync
-  lcfg_lookup_bool(&cfg, "xrender-sync", &ps->o.xrender_sync);
+  lcfg_lookup_bool(&cfg, "xrender-sync", &opt->xrender_sync);
   // --xrender-sync-fence
-  lcfg_lookup_bool(&cfg, "xrender-sync-fence", &ps->o.xrender_sync_fence);
+  lcfg_lookup_bool(&cfg, "xrender-sync-fence", &opt->xrender_sync_fence);
 
   if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
     log_warn("\"clear-shadow\" is removed as an option, and is always"
@@ -386,7 +393,7 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
     config_setting_t *setting = config_lookup(&cfg, str);
     free(str);
 
-    win_option_t *o = &ps->o.wintype_option[i];
+    win_option_t *o = &opt->wintype_option[i];
     win_option_mask_t *mask = &winopt_mask[i];
     if (setting) {
       if (config_setting_lookup_bool(setting, "shadow", &ival)) {
@@ -419,4 +426,5 @@ void parse_config_libconfig(session_t *ps, bool *shadow_enable,
   }
 
   config_destroy(&cfg);
+  return path;
 }
