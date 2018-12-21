@@ -657,6 +657,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(286, dbus);
 		case 287:
 			log_warn("Please use --log-file instead of --logpath");
+			// fallthrough
 		case 322:
 			// --logpath, --log-file
 			free(opt->logpath);
