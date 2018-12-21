@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 
-#include "argparse.h"
+#include "options.h"
 #include "common.h"
 #include "config.h"
 

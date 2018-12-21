@@ -39,7 +39,7 @@
 #ifdef CONFIG_DBUS
 #include "dbus.h"
 #endif
-#include "argparse.h"
+#include "options.h"
 
 #define auto __auto_type
 
