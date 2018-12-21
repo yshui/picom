@@ -81,11 +81,6 @@
 #include <ev.h>
 #include <pixman.h>
 
-// libdbus
-#ifdef CONFIG_DBUS
-#include <dbus/dbus.h>
-#endif
-
 #ifdef CONFIG_OPENGL
 // libGL
 #define GL_GLEXT_PROTOTYPES
@@ -404,11 +399,6 @@ typedef struct options_t {
   char *config_file;
   /// Path to write PID to.
   char *write_pid_path;
-  /// The display name we used. NULL means we are using the value of the
-  /// <code>DISPLAY</code> environment variable.
-  char *display;
-  /// Safe representation of display name.
-  char *display_repr;
   /// The backend in use.
   enum backend backend;
   /// Whether to sync X drawing to avoid certain delay issues with
@@ -463,10 +453,6 @@ typedef struct options_t {
   Window benchmark_wid;
   /// A list of conditions of windows not to paint.
   c2_lptr_t *paint_blacklist;
-  /// Whether to avoid using xcb_composite_name_window_pixmap(), for debugging.
-  bool no_name_pixmap;
-  /// Whether to work under synchronized mode for debugging.
-  bool synchronize;
   /// Whether to show all X errors.
   bool show_all_xerrors;
   /// Whether to avoid acquiring X Selection.
@@ -888,10 +874,7 @@ typedef struct session {
 
 #ifdef CONFIG_DBUS
   // === DBus related ===
-  // DBus connection.
-  DBusConnection *dbus_conn;
-  // DBus service name.
-  char *dbus_service;
+  void *dbus_data;
 #endif
 } session_t;
 
@@ -1507,37 +1490,6 @@ xr_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
  */
 ///@{
 #ifdef CONFIG_DBUS
-/** @name DBus handling
- */
-///@{
-bool
-cdbus_init(session_t *ps);
-
-void
-cdbus_destroy(session_t *ps);
-
-void
-cdbus_loop(session_t *ps);
-
-void
-cdbus_ev_win_added(session_t *ps, win *w);
-
-void
-cdbus_ev_win_destroyed(session_t *ps, win *w);
-
-void
-cdbus_ev_win_mapped(session_t *ps, win *w);
-
-void
-cdbus_ev_win_unmapped(session_t *ps, win *w);
-
-void
-cdbus_ev_win_focusout(session_t *ps, win *w);
-
-void
-cdbus_ev_win_focusin(session_t *ps, win *w);
-//!@}
-
 /** @name DBus hooks
  */
 ///@{
