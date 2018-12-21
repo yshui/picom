@@ -877,6 +877,7 @@ get_atom(session_t *ps, const char *atom_name) {
 
   xcb_atom_t atom = XCB_NONE;
   if (reply) {
+    log_debug("Atom %s is %d", atom_name, reply->atom);
     atom = reply->atom;
     free(reply);
   } else
