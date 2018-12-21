@@ -300,6 +300,13 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
       log_set_level_tls(level);
     }
   }
+  // --log-file
+  if (config_lookup_string(&cfg, "log-file", &sval)) {
+    if (*sval != '/') {
+      log_warn("The log-file in your configuration file is not an absolute path");
+    }
+    opt->logpath = strdup(sval);
+  }
   // --sw-opti
   lcfg_lookup_bool(&cfg, "sw-opti", &opt->sw_opti);
   // --use-ewmh-active-win

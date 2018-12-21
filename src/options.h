@@ -29,7 +29,6 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
  *   winopt_mask
  */
 void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
-             bool fading_enable, bool conv_kern_hasneg,
-             win_option_mask_t *winopt_mask);
+             bool fading_enable, bool conv_kern_hasneg, win_option_mask_t *winopt_mask);
 
 // vim: set noet sw=8 ts=8:

@@ -452,6 +452,7 @@ static const struct option longopts[] = {
     {"no-x-selection", no_argument, NULL, 319},
     {"no-name-pixmap", no_argument, NULL, 320},
     {"log-level", required_argument, NULL, 321},
+    {"log-file", required_argument, NULL, 322},
     {"reredir-on-root-change", no_argument, NULL, 731},
     {"glx-reinit-on-root-change", no_argument, NULL, 732},
     {"monitor-repaint", no_argument, NULL, 800},
@@ -471,10 +472,11 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 	// Must reset optind to 0 here in case we reread the commandline
 	// arguments
 	optind = 1;
+	*config_file = NULL;
 	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
-		if (o == 256)
+		if (o == 256) {
 			*config_file = strdup(optarg);
-		else if (o == 'd') {
+		} else if (o == 'd') {
 			log_warn("-d will be ignored, please use the DISPLAY "
 			         "environment variable");
 		} else if (o == 314) {
@@ -505,8 +507,7 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
  * Process arguments and configuration files.
  */
 void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
-             bool fading_enable, bool conv_kern_hasneg,
-             win_option_mask_t *winopt_mask) {
+             bool fading_enable, bool conv_kern_hasneg, win_option_mask_t *winopt_mask) {
 
 	int o = 0, longopt_idx = -1;
 
@@ -655,7 +656,10 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(285, blur_background_fixed);
 		P_CASEBOOL(286, dbus);
 		case 287:
-			// --logpath
+			log_warn("Please use --log-file instead of --logpath");
+		case 322:
+			// --logpath, --log-file
+			free(opt->logpath);
 			opt->logpath = strdup(optarg);
 			break;
 		case 288:

@@ -2063,26 +2063,6 @@ register_cm(session_t *ps) {
 }
 
 /**
- * Reopen streams for logging.
- */
-static bool
-stdout_reopen(session_t *ps, const char *path) {
-  if (!path)
-    path = ps->o.logpath;
-  if (!path)
-    path = "/dev/null";
-
-  bool success = freopen(path, "a", stdout);
-  success = freopen(path, "a", stderr) && success;
-  if (!success) {
-    log_fatal("(%s): freopen() failed.", path);
-    exit(1);
-  }
-
-  return success;
-}
-
-/**
  * Fork program to background and disable all I/O streams.
  */
 static inline bool
@@ -2719,7 +2699,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
   };
 
   log_init_tls();
-  log_add_target_tls(stderr_logger_new());
+  struct log_target *log_target = stderr_logger_new();
+  if (!log_target) {
+    fprintf(stderr, "Cannot create any logger, giving up.\n");
+    abort();
+  }
+  log_add_target_tls(log_target);
 
   // Allocate a session and copy default values into it
   session_t *ps = cmalloc(session_t);
@@ -2844,6 +2829,20 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Parse all of the rest command line options
   get_cfg(&ps->o, argc, argv, shadow_enabled, fading_enable, hasneg, winopt_mask);
+
+  if (ps->o.logpath) {
+    log_target = file_logger_new(ps->o.logpath);
+    if (log_target) {
+      auto level = log_get_level_tls();
+      log_info("Switching to log file: %s", ps->o.logpath);
+      log_deinit_tls();
+      log_init_tls();
+      log_set_level_tls(level);
+      log_add_target_tls(log_target);
+    } else {
+      log_error("Failed to setup log file %s, I will keep using stderr", ps->o.logpath);
+    }
+  }
 
   // Get needed atoms for c2 condition lists
   if (!(c2_list_postprocess(ps, ps->o.unredir_if_possible_blacklist) &&
@@ -3051,8 +3050,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
   }
 
   // Redirect output stream
-  if (ps->o.fork_after_register || ps->o.logpath)
-    stdout_reopen(ps, NULL);
+  if (ps->o.fork_after_register) {
+    if (!freopen("/dev/null", "w", stdout) || !freopen("/dev/null", "w", stderr)) {
+      log_fatal("Failed to redirect stdout/stderr to /dev/null");
+      exit(1);
+    }
+  }
 
   write_pid(ps);
 
