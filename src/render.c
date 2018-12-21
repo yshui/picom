@@ -211,7 +211,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	// Invert window color, if required
 	if (bkend_use_xrender(ps) && w->invert_color) {
 		xcb_render_picture_t newpict =
-		    x_create_picture(ps, wid, hei, w->pictfmt, 0, NULL);
+		    x_create_picture_with_pictfmt(ps, wid, hei, w->pictfmt, 0, NULL);
 		if (newpict) {
 			// Apply clipping region to save some CPU
 			if (reg_paint) {
@@ -684,7 +684,8 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, int y, int wi
 
 	// Directly copying from tgt_buffer to it does not work, so we create a
 	// Picture in the middle.
-	xcb_render_picture_t tmp_picture = x_create_picture(ps, wid, hei, NULL, 0, NULL);
+	xcb_render_picture_t tmp_picture =
+	    x_create_picture_with_pictfmt(ps, wid, hei, NULL, 0, NULL);
 
 	if (!tmp_picture) {
 		log_error("Failed to build intermediate Picture.");
@@ -991,7 +992,7 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			// Then we create a new picture, and copy content to it
 			xcb_render_pictforminfo_t *pictfmt =
 			    x_get_pictform_for_visual(ps, ps->vis);
-			xcb_render_picture_t new_pict = x_create_picture(
+			xcb_render_picture_t new_pict = x_create_picture_with_pictfmt(
 			    ps, ps->root_width, ps->root_height, pictfmt, 0, NULL);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
 			                     ps->tgt_buffer.pict, None, new_pict, 0, 0, 0,

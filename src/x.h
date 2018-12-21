@@ -116,8 +116,13 @@ attr_nonnull(1);
  * Create an picture.
  */
 xcb_render_picture_t
-x_create_picture(session_t *ps, int wid, int hei,
+x_create_picture_with_pictfmt(session_t *ps, int wid, int hei,
   xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
+  const xcb_render_create_picture_value_list_t *attr);
+
+xcb_render_picture_t
+x_create_picture_with_visual(session_t *ps, int w, int h,
+  xcb_visualid_t visual, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr);
 
 /// Fetch a X region and store it in a pixman region
@@ -125,6 +130,8 @@ bool x_fetch_region(session_t *ps, xcb_xfixes_region_t r, region_t *res);
 
 void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t,
   int clip_x_origin, int clip_y_origin, const region_t *);
+
+void x_clear_picture_clip_region(session_t *ps, xcb_render_picture_t pict);
 
 /**
  * X11 error handler function.
@@ -154,3 +161,9 @@ free_winprop(winprop_t *pprop) {
   pprop->r = NULL;
   pprop->nitems = 0;
 }
+/// Get the back pixmap of the root window
+xcb_pixmap_t x_get_root_back_pixmap(session_t *ps);
+
+/// Return true if the atom refers to a property name that is used for the
+/// root window background pixmap
+bool x_atom_is_background_prop(session_t *ps, xcb_atom_t atom);
