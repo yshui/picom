@@ -117,6 +117,8 @@ void win_get_region_noframe_local(win *w, region_t *res) {
     pixman_region32_init_rect(res, x, y, width, height);
 }
 
+gen_by_val(win_get_region_noframe_local)
+
 /**
  * Add a window to damaged area.
  *
@@ -1129,6 +1131,8 @@ void win_extents(win *w, region_t *res) {
     pixman_region32_union_rect(res, res, w->g.x + w->shadow_dx,
       w->g.y + w->shadow_dy, w->shadow_width, w->shadow_height);
 }
+
+gen_by_val(win_extents)
 
 /**
  * Update the out-dated bounding shape of a window.
