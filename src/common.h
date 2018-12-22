@@ -83,8 +83,6 @@
 
 #ifdef CONFIG_OPENGL
 // libGL
-#define GL_GLEXT_PROTOTYPES
-
 #include <GL/glx.h>
 
 // Workarounds for missing definitions in some broken GL drivers, thanks to
@@ -423,6 +421,8 @@ typedef struct session {
   ev_prepare event_check;
   /// Signal handler for SIGUSR1
   ev_signal usr1_signal;
+  /// backend data
+  void *backend_data;
   /// libev mainloop
   struct ev_loop *loop;
   // === Display related ===

@@ -27,7 +27,7 @@ commands:
             - ".git"
       - run:
           name: config
-          command: CC=<< parameters.cc >> meson << parameters.build-config >> --werror . build
+          command: CC=<< parameters.cc >> meson << parameters.build-config >> -Dnew_backends=true --werror . build
       - run:
           name: build
           command: ninja -C build

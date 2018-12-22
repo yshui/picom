@@ -9,7 +9,6 @@
 
 // FIXME shouldn't need this
 #ifdef CONFIG_OPENGL
-#define GL_GLEXT_PROTOTYPES
 #include <GL/glx.h>
 #endif
 
@@ -75,6 +74,9 @@ typedef enum {
 /// Structure representing a top-level window compton manages.
 typedef struct win win;
 struct win {
+  /// backend data attached to this window. Only available when
+  /// `state` is not UNMAPPED
+  void *win_data;
   /// Pointer to the next lower window in window stack.
   win *next;
   /// Pointer to the next higher window to paint.

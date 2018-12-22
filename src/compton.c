@@ -2536,6 +2536,7 @@ reset_enable(EV_P_ ev_signal *w, int revents) {
 static session_t *
 session_init(session_t *ps_old, int argc, char **argv) {
   static const session_t s_def = {
+    .backend_data = NULL,
     .dpy = NULL,
     .scr = 0,
     .c = NULL,

@@ -725,6 +725,7 @@ void win_recheck_client(session_t *ps, win *w) {
 // TODO: probably split into win_new (in win.c) and add_win (in compton.c)
 bool add_win(session_t *ps, Window id, Window prev) {
   static const win win_def = {
+      .win_data = NULL,
       .next = NULL,
       .prev_trans = NULL,
 
