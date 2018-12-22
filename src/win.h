@@ -115,7 +115,8 @@ struct win {
   bool need_configure;
   /// Queued <code>ConfigureNotify</code> when the window is unmapped.
   xcb_configure_notify_event_t queue_configure;
-  /// The region of screen that will be obscured when windows above is painted.
+  /// The region of screen that will be obscured when windows above is painted,
+  /// in global coordinates.
   /// We use this to reduce the pixels that needed to be paint when painting
   /// this window and anything underneath. Depends on window frame
   /// opacity state, window geometry, window mapped/unmapped state,
@@ -303,12 +304,14 @@ void win_update_focused(session_t *ps, win *w);
 // XXX was win_border_size
 void win_update_bounding_shape(session_t *ps, win *w);
 /**
- * Get a rectangular region a window (and possibly its shadow) occupies.
+ * Get a rectangular region in global coordinates a window (and possibly
+ * its shadow) occupies.
  *
  * Note w->shadow and shadow geometry must be correct before calling this
  * function.
  */
 void win_extents(win *w, region_t *res);
+region_t win_extents_by_val(win *w);
 /**
  * Add a window to damaged area.
  *
@@ -322,6 +325,7 @@ void add_damage_from_win(session_t *ps, win *w);
  * Return region in global coordinates.
  */
 void win_get_region_noframe_local(win *w, region_t *);
+region_t win_get_region_noframe_local_by_val(win *w);
 /**
  * Retrieve frame extents from a window.
  */
