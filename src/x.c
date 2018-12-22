@@ -374,7 +374,7 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
   {
     char buf[BUF_LEN] = "";
     XGetErrorText(ps->dpy, error_code, buf, BUF_LEN);
-    log_warn("X error %d %s request %d minor %d serial %lu: \"%s\"",
+    log_debug("X error %d %s request %d minor %d serial %lu: \"%s\"",
               error_code, name, major, minor, serial, buf);
   }
 }
