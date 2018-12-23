@@ -1,9 +1,17 @@
 Compton
 =======
 
-This is forked from the original Compton because that seems to have become unmaintained. I'll merge pull requests as they appear upstream, as well as trying to fix bugs reported to upstream, or found by myself.
+This is forked from the original Compton because that seems to have become unmaintained.
+
+The current battle plan of this fork is to refactor it to make the code _possible_ to maintain, so potential contributors won't be scared away when they take a look at the code.
+
+We also try to fix bugs.
 
 The original README can be found [here](README_orig.md)
+
+## Changelog
+
+See [Releases](https://github.com/yshui/compton/releases)
 
 ## Build
 
@@ -12,6 +20,7 @@ The original README can be found [here](README_orig.md)
 Assuming you already have all the usual building tools installed (e.g. gcc, meson, ninja, etc.), you still need:
 
 * libx11
+* libx11-xcb
 * libXext
 * xproto
 * xcb
@@ -24,10 +33,11 @@ Assuming you already have all the usual building tools installed (e.g. gcc, meso
 * xcb-composite
 * xcb-image
 * xcb-present
-* xcb-xinerama (optional, disable with `-Dxinerama=false` meson configure flag)
+* xcb-xinerama (optional, disable with the `-Dxinerama=false` meson configure flag)
 * pixman
 * libdbus (optional, disable with the `-Ddbus=false` meson configure flag)
 * libconfig (optional, disable with the `-Dconfig_file=false` meson configure flag)
+* libxdg-basedir (optional, disable with the `-Dconfig_file=false` meson configure flag)
 * libGL (optional, disable with the `-Dopengl=false` meson configure flag)
 * libpcre (optional, disable with the `-Dregex=false` meson configure flag)
 * libev

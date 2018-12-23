@@ -9,6 +9,10 @@
  *
  */
 
+#include "compiler.h"
+#include "string_utils.h"
+#include "log.h"
+
 #include "opengl.h"
 
 static inline int
@@ -70,12 +74,13 @@ glx_update_fbconfig_bydepth(session_t *ps, int depth, glx_fbconfig_t *pfbcfg) {
 
   // Compare new FBConfig with current one
   if (glx_cmp_fbconfig(ps, ps->psglx->fbconfigs[depth], pfbcfg) < 0) {
-#ifdef DEBUG_GLX
-    printf_dbgf("(%d): %#x overrides %#x, target %#x.\n", depth, (unsigned) pfbcfg->cfg, (ps->psglx->fbconfigs[depth] ? (unsigned) ps->psglx->fbconfigs[depth]->cfg: 0), pfbcfg->texture_tgts);
-#endif
+    log_trace("(depth %d): %p overrides %p, target %#x.", depth,
+              pfbcfg->cfg,
+              ps->psglx->fbconfigs[depth] ? ps->psglx->fbconfigs[depth]->cfg:
+                                            0,
+              pfbcfg->texture_tgts);
     if (!ps->psglx->fbconfigs[depth]) {
-      ps->psglx->fbconfigs[depth] = malloc(sizeof(glx_fbconfig_t));
-      allocchk(ps->psglx->fbconfigs[depth]);
+      ps->psglx->fbconfigs[depth] = cmalloc(glx_fbconfig_t);
     }
     (*ps->psglx->fbconfigs[depth]) = *pfbcfg;
   }
@@ -110,11 +115,11 @@ glx_update_fbconfig(session_t *ps) {
 
     if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BUFFER_SIZE, &depth)
         || Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_ALPHA_SIZE, &depth_alpha)) {
-      printf_errf("(): Failed to retrieve buffer size and alpha size of FBConfig %d.", id);
+      log_error("Failed to retrieve buffer size and alpha size of FBConfig %d.", id);
       continue;
     }
     if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BIND_TO_TEXTURE_TARGETS_EXT, &fbinfo.texture_tgts)) {
-      printf_errf("(): Failed to retrieve BIND_TO_TEXTURE_TARGETS_EXT of FBConfig %d.", id);
+      log_error("Failed to retrieve BIND_TO_TEXTURE_TARGETS_EXT of FBConfig %d.", id);
       continue;
     }
 
@@ -123,7 +128,7 @@ glx_update_fbconfig(session_t *ps) {
       XVisualInfo *pvi = glXGetVisualFromFBConfig(ps->dpy, *pcur);
       if (!pvi) {
         // On nvidia-drivers-325.08 this happens slightly too often...
-        // printf_errf("(): Failed to retrieve X Visual of FBConfig %d.", id);
+        // log_error("Failed to retrieve X Visual of FBConfig %d.", id);
         continue;
       }
       visualdepth = pvi->depth;
@@ -160,19 +165,16 @@ glx_update_fbconfig(session_t *ps) {
 
   // Sanity checks
   if (!ps->psglx->fbconfigs[ps->depth]) {
-    printf_errf("(): No FBConfig found for default depth %d.", ps->depth);
+    log_error("No FBConfig found for default depth %d.", ps->depth);
     return false;
   }
 
   if (!ps->psglx->fbconfigs[32]) {
-    printf_errf("(): No FBConfig found for depth 32. Expect crazy things.");
+    log_error("No FBConfig found for depth 32. Expect crazy things.");
   }
 
-#ifdef DEBUG_GLX
-  printf_dbgf("(): %d-bit: %#3x, 32-bit: %#3x\n",
-      ps->depth, (int) ps->psglx->fbconfigs[ps->depth]->cfg,
-      (int) ps->psglx->fbconfigs[32]->cfg);
-#endif
+  log_trace("%d-bit: %p, 32-bit: %p", ps->depth, ps->psglx->fbconfigs[ps->depth]->cfg,
+            ps->psglx->fbconfigs[32]->cfg);
 
   return true;
 }
@@ -205,8 +207,8 @@ static void
 glx_debug_msg_callback(GLenum source, GLenum type,
     GLuint id, GLenum severity, GLsizei length, const GLchar *message,
     GLvoid *userParam) {
-  printf_dbgf("(): source 0x%04X, type 0x%04X, id %u, severity 0x%0X, \"%s\"\n",
-      source, type, id, severity, message);
+  log_trace("source 0x%04X, type 0x%04X, id %u, severity 0x%0X, \"%s\"",
+            source, type, id, severity, message);
 }
 #endif
 
@@ -223,15 +225,20 @@ glx_init(session_t *ps, bool need_render) {
     if (glXQueryExtension(ps->dpy, &ps->glx_event, &ps->glx_error))
       ps->glx_exists = true;
     else {
-      printf_errf("(): No GLX extension.");
+      log_error("No GLX extension.");
       goto glx_init_end;
     }
+  }
+
+  if (ps->o.glx_swap_method > CGLX_MAX_BUFFER_AGE) {
+    log_error("glx-swap-method is too big");
+    goto glx_init_end;
   }
 
   // Get XVisualInfo
   pvis = get_visualinfo_from_visual(ps, ps->vis);
   if (!pvis) {
-    printf_errf("(): Failed to acquire XVisualInfo for current visual.");
+    log_error("Failed to acquire XVisualInfo for current visual.");
     goto glx_init_end;
   }
 
@@ -239,13 +246,13 @@ glx_init(session_t *ps, bool need_render) {
   if (need_render) {
     int value = 0;
     if (Success != glXGetConfig(ps->dpy, pvis, GLX_USE_GL, &value) || !value) {
-      printf_errf("(): Root visual is not a GL visual.");
+      log_error("Root visual is not a GL visual.");
       goto glx_init_end;
     }
 
     if (Success != glXGetConfig(ps->dpy, pvis, GLX_DOUBLEBUFFER, &value)
         || !value) {
-      printf_errf("(): Root visual is not a double buffered GL visual.");
+      log_error("Root visual is not a double buffered GL visual.");
       goto glx_init_end;
     }
   }
@@ -257,7 +264,7 @@ glx_init(session_t *ps, bool need_render) {
   // Initialize GLX data structure
   if (!ps->psglx) {
     static const glx_session_t CGLX_SESSION_DEF = CGLX_SESSION_INIT;
-    ps->psglx = cmalloc(1, glx_session_t);
+    ps->psglx = cmalloc(glx_session_t);
     memcpy(ps->psglx, &CGLX_SESSION_DEF, sizeof(glx_session_t));
 
     for (int i = 0; i < MAX_BLUR_PASS; ++i) {
@@ -278,8 +285,7 @@ glx_init(session_t *ps, bool need_render) {
     {
       GLXFBConfig fbconfig = get_fbconfig_from_visualinfo(ps, pvis);
       if (!fbconfig) {
-        printf_errf("(): Failed to get GLXFBConfig for root visual %#lx.",
-            pvis->visualid);
+        log_error("Failed to get GLXFBConfig for root visual %#lx.", pvis->visualid);
         goto glx_init_end;
       }
 
@@ -287,7 +293,7 @@ glx_init(session_t *ps, bool need_render) {
         (f_glXCreateContextAttribsARB)
         glXGetProcAddress((const GLubyte *) "glXCreateContextAttribsARB");
       if (!p_glXCreateContextAttribsARB) {
-        printf_errf("(): Failed to get glXCreateContextAttribsARB().");
+        log_error("Failed to get glXCreateContextAttribsARB().");
         goto glx_init_end;
       }
 
@@ -301,13 +307,13 @@ glx_init(session_t *ps, bool need_render) {
 #endif
 
     if (!psglx->context) {
-      printf_errf("(): Failed to get GLX context.");
+      log_error("Failed to get GLX context.");
       goto glx_init_end;
     }
 
     // Attach GLX context
     if (!glXMakeCurrent(ps->dpy, get_tgt_window(ps), psglx->context)) {
-      printf_errf("(): Failed to attach GLX context.");
+      log_error("Failed to attach GLX context.");
       goto glx_init_end;
     }
 
@@ -317,7 +323,7 @@ glx_init(session_t *ps, bool need_render) {
         (f_DebugMessageCallback)
         glXGetProcAddress((const GLubyte *) "glDebugMessageCallback");
       if (!p_DebugMessageCallback) {
-        printf_errf("(): Failed to get glDebugMessageCallback(0.");
+        log_error("Failed to get glDebugMessageCallback(0.");
         goto glx_init_end;
       }
       p_DebugMessageCallback(glx_debug_msg_callback, ps);
@@ -333,7 +339,7 @@ glx_init(session_t *ps, bool need_render) {
     GLint val = 0;
     glGetIntegerv(GL_STENCIL_BITS, &val);
     if (!val) {
-      printf_errf("(): Target window doesn't have stencil buffer.");
+      log_error("Target window doesn't have stencil buffer.");
       goto glx_init_end;
     }
   }
@@ -358,7 +364,7 @@ glx_init(session_t *ps, bool need_render) {
     psglx->glXReleaseTexImageProc = (f_ReleaseTexImageEXT)
       glXGetProcAddress((const GLubyte *) "glXReleaseTexImageEXT");
     if (!psglx->glXBindTexImageProc || !psglx->glXReleaseTexImageProc) {
-      printf_errf("(): Failed to acquire glXBindTexImageEXT() / glXReleaseTexImageEXT().");
+      log_error("Failed to acquire glXBindTexImageEXT() / glXReleaseTexImageEXT().");
       goto glx_init_end;
     }
   }
@@ -435,7 +441,7 @@ glx_destroy(session_t *ps) {
       glDeleteProgram(ppass->prog);
   }
 
-  glx_free_prog_main(ps, &ps->o.glx_prog_win);
+  glx_free_prog_main(ps, &ps->glx_prog_win);
 
   glx_check_err(ps);
 
@@ -465,12 +471,12 @@ glx_reinit(session_t *ps, bool need_render) {
 
   glx_destroy(ps);
   if (!glx_init(ps, need_render)) {
-    printf_errf("(): Failed to initialize GLX.");
+    log_error("Failed to initialize GLX.");
     return false;
   }
 
   if (!vsync_init(ps)) {
-    printf_errf("(): Failed to initialize VSync.");
+    log_error("Failed to initialize VSync.");
     return false;
   }
 
@@ -505,15 +511,15 @@ glx_init_blur(session_t *ps) {
     GLuint fbo = 0;
     glGenFramebuffers(1, &fbo);
     if (!fbo) {
-      printf_errf("(): Failed to generate Framebuffer. Cannot do "
-          "multi-pass blur with GLX backend.");
+      log_error("Failed to generate Framebuffer. Cannot do multi-pass blur with GLX"
+                " backend.");
       return false;
     }
     glDeleteFramebuffers(1, &fbo);
   }
 
   {
-    char *lc_numeric_old = mstrcpy(setlocale(LC_NUMERIC, NULL));
+    char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
     // Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
     // Thanks to hiciu for reporting.
     setlocale(LC_NUMERIC, "C");
@@ -543,7 +549,7 @@ glx_init_blur(session_t *ps) {
     const char *texture_func = (use_texture_rect ?
         "texture2DRect": "texture2D");
     const char *shader_add = FRAG_SHADER_BLUR_ADD;
-    char *extension = mstrcpy("");
+    char *extension = strdup("");
     if (use_texture_rect)
       mstrextend(&extension, "#extension GL_ARB_texture_rectangle : require\n");
     if (ps->o.glx_use_gpushader4) {
@@ -568,48 +574,42 @@ glx_init_blur(session_t *ps) {
                            (strlen(shader_add) + strlen(texture_func) + 42) * nele +
                            strlen(FRAG_SHADER_BLUR_SUFFIX) +
                            strlen(texture_func) + 12 + 1;
-        char *shader_str = calloc(len, sizeof(char));
-        if (!shader_str) {
-          printf_errf("(): Failed to allocate %d bytes for shader string.", len);
-          return false;
-        }
-        {
-          char *pc = shader_str;
-          sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
-          pc += strlen(pc);
-          assert(strlen(shader_str) < len);
+        char *shader_str = ccalloc(len, char);
+        char *pc = shader_str;
+        sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
+        pc += strlen(pc);
+        assert(strlen(shader_str) < len);
 
-          double sum = 0.0;
-          for (int j = 0; j < hei; ++j) {
-            for (int k = 0; k < wid; ++k) {
-              if (hei / 2 == j && wid / 2 == k)
-                continue;
-              double val = XFIXED_TO_DOUBLE(kern[2 + j * wid + k]);
-              if (0.0 == val)
-                continue;
-              sum += val;
-              sprintf(pc, shader_add, val, texture_func, k - wid / 2, j - hei / 2);
-              pc += strlen(pc);
-              assert(strlen(shader_str) < len);
-            }
+        double sum = 0.0;
+        for (int j = 0; j < hei; ++j) {
+          for (int k = 0; k < wid; ++k) {
+            if (hei / 2 == j && wid / 2 == k)
+              continue;
+            double val = XFIXED_TO_DOUBLE(kern[2 + j * wid + k]);
+            if (0.0 == val)
+              continue;
+            sum += val;
+            sprintf(pc, shader_add, val, texture_func, k - wid / 2, j - hei / 2);
+            pc += strlen(pc);
+            assert(strlen(shader_str) < len);
           }
-
-          sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
-          assert(strlen(shader_str) < len);
         }
+
+        sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
+        assert(strlen(shader_str) < len);
         ppass->frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, shader_str);
         free(shader_str);
       }
 
       if (!ppass->frag_shader) {
-        printf_errf("(): Failed to create fragment shader %d.", i);
+        log_error("Failed to create fragment shader %d.", i);
         return false;
       }
 
       // Build program
       ppass->prog = glx_create_program(&ppass->frag_shader, 1);
       if (!ppass->prog) {
-        printf_errf("(): Failed to create GLSL program.");
+        log_error("Failed to create GLSL program.");
         return false;
       }
 
@@ -617,7 +617,7 @@ glx_init_blur(session_t *ps) {
 #define P_GET_UNIFM_LOC(name, target) { \
       ppass->target = glGetUniformLocation(ppass->prog, name); \
       if (ppass->target < 0) { \
-        printf_errf("(): Failed to get location of %d-th uniform '" name "'. Might be troublesome.", i); \
+        log_error("Failed to get location of %d-th uniform '" name "'. Might be troublesome.", i); \
       } \
     }
 
@@ -654,7 +654,7 @@ glx_load_prog_main(session_t *ps,
   // Build program
   pprogram->prog = glx_create_program_from_str(vshader_str, fshader_str);
   if (!pprogram->prog) {
-    printf_errf("(): Failed to create GLSL program.");
+    log_error("Failed to create GLSL program.");
     return false;
   }
 
@@ -662,7 +662,7 @@ glx_load_prog_main(session_t *ps,
 #define P_GET_UNIFM_LOC(name, target) { \
       pprogram->target = glGetUniformLocation(pprogram->prog, name); \
       if (pprogram->target < 0) { \
-        printf_errf("(): Failed to get location of uniform '" name "'. Might be troublesome."); \
+        log_error("Failed to get location of uniform '" name "'. Might be troublesome."); \
       } \
     }
   P_GET_UNIFM_LOC("opacity", unifm_opacity);
@@ -685,7 +685,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
     return true;
 
   if (!pixmap) {
-    printf_errf("(%#010x): Binding to an empty pixmap. This can't work.", pixmap);
+    log_error("Binding to an empty pixmap %#010x. This can't work.", pixmap);
     return false;
   }
 
@@ -705,7 +705,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
       .y_inverted = false,
     };
 
-    ptex = malloc(sizeof(glx_texture_t));
+    ptex = cmalloc(glx_texture_t);
     allocchk(ptex);
     memcpy(ptex, &GLX_TEX_DEF, sizeof(glx_texture_t));
     *pptex = ptex;
@@ -727,19 +727,19 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
       unsigned rbdwid = 0;
       if (!XGetGeometry(ps->dpy, pixmap, &rroot, &rx, &ry,
             &width, &height, &rbdwid, &depth)) {
-        printf_errf("(%#010x): Failed to query Pixmap info.", pixmap);
+        log_error("Failed to query info of pixmap %#010x.", pixmap);
         return false;
       }
       if (depth > OPENGL_MAX_DEPTH) {
-        printf_errf("(%d): Requested depth higher than %d.", depth,
-            OPENGL_MAX_DEPTH);
+        log_error("Requested depth %d higher than %d.", depth,
+                  OPENGL_MAX_DEPTH);
         return false;
       }
     }
 
     const glx_fbconfig_t *pcfg = ps->psglx->fbconfigs[depth];
     if (!pcfg) {
-      printf_errf("(%d): Couldn't find FBConfig with requested depth.", depth);
+      log_error("Couldn't find FBConfig with requested depth %d.", depth);
       return false;
     }
 
@@ -757,10 +757,8 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
     else
       tex_tgt = GLX_TEXTURE_2D_EXT;
 
-#ifdef DEBUG_GLX
-    printf_dbgf("(): depth %d, tgt %#x, rgba %d\n", depth, tex_tgt,
-        (GLX_TEXTURE_FORMAT_RGBA_EXT == pcfg->texture_fmt));
-#endif
+    log_debug("depth %d, tgt %#x, rgba %d", depth, tex_tgt,
+              (GLX_TEXTURE_FORMAT_RGBA_EXT == pcfg->texture_fmt));
 
     GLint attrs[] = {
         GLX_TEXTURE_FORMAT_EXT,
@@ -780,7 +778,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
     ptex->y_inverted = pcfg->y_inverted;
   }
   if (!ptex->glpixmap) {
-    printf_errf("(): Failed to allocate GLX pixmap.");
+    log_error("Failed to allocate GLX pixmap.");
     return false;
   }
 
@@ -804,7 +802,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
     ptex->texture = texture;
   }
   if (!ptex->texture) {
-    printf_errf("(): Failed to allocate texture.");
+    log_error("Failed to allocate texture.");
     return false;
   }
 
@@ -1000,9 +998,7 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     pbc = &ibc;
 
   int mdx = dx, mdy = dy, mwidth = width, mheight = height;
-#ifdef DEBUG_GLX
-  printf_dbgf("(): %d, %d, %d, %d\n", mdx, mdy, mwidth, mheight);
-#endif
+  //log_trace("%d, %d, %d, %d", mdx, mdy, mwidth, mheight);
 
   /*
   if (ps->o.resize_damage > 0) {
@@ -1047,11 +1043,11 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   const GLuint fbo = pbc->fbo;
 
   if (!tex_scr || (more_passes && !tex_scr2)) {
-    printf_errf("(): Failed to allocate texture.");
+    log_error("Failed to allocate texture.");
     goto glx_blur_dst_end;
   }
   if (more_passes && !fbo) {
-    printf_errf("(): Failed to allocate framebuffer.");
+    log_error("Failed to allocate framebuffer.");
     goto glx_blur_dst_end;
   }
 
@@ -1101,7 +1097,7 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
       glDrawBuffers(1, DRAWBUFS);
       if (glCheckFramebufferStatus(GL_FRAMEBUFFER)
           != GL_FRAMEBUFFER_COMPLETE) {
-        printf_errf("(): Framebuffer attachment failed.");
+        log_error("Framebuffer attachment failed.");
         goto glx_blur_dst_end;
       }
     }
@@ -1144,9 +1140,8 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
         GLfloat rdxe = rdx + (crect.x2 - crect.x1);
         GLfloat rdye = rdy - (crect.y2 - crect.y1);
 
-#ifdef DEBUG_GLX
-        printf_dbgf("(): %f, %f, %f, %f -> %f, %f, %f, %f\n", rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
-#endif
+        //log_trace("%f, %f, %f, %f -> %f, %f, %f, %f", rx, ry, rxe, rye, rdx,
+        //          rdy, rdxe, rdye);
 
         glTexCoord2f(rx, ry);
         glVertex3f(rdx, rdy, z);
@@ -1237,7 +1232,7 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     const region_t *reg_tgt, const glx_prog_main_t *pprogram
     ) {
   if (!ptex || !ptex->texture) {
-    printf_errf("(): Missing texture.");
+    log_error("Missing texture.");
     return false;
   }
 
@@ -1351,9 +1346,8 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
       glUniform1i(pprogram->unifm_tex, 0);
   }
 
-#ifdef DEBUG_GLX
-  printf_dbgf("(): Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n", x, y, width, height, dx, dy, ptex->width, ptex->height, z);
-#endif
+  //log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d", x, y, width, height,
+  //          dx, dy, ptex->width, ptex->height, z);
 
   // Bind texture
   glBindTexture(ptex->target, ptex->texture);
@@ -1391,9 +1385,8 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
         rye = 1.0 - rye;
       }
 
-#ifdef DEBUG_GLX
-      printf_dbgf("(): Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d\n", ri, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
-#endif
+      //log_trace("Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d", ri, rx, ry, rxe, rye,
+      //          rdx, rdy, rdxe, rdye);
 
 #define P_TEXCOORD(cx, cy) { \
   if (dual_texture) { \
@@ -1454,7 +1447,7 @@ glx_take_screenshot(session_t *ps, int *out_length) {
   glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpack_align_old);
   assert(unpack_align_old > 0);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  unsigned char *buf = cmalloc(length, unsigned char);
+  auto buf = ccalloc(length, unsigned char);
   glReadBuffer(GL_FRONT);
   glReadPixels(0, 0, ps->root_width, ps->root_height, GL_RGB,
       GL_UNSIGNED_BYTE, buf);
@@ -1467,15 +1460,12 @@ glx_take_screenshot(session_t *ps, int *out_length) {
 
 GLuint
 glx_create_shader(GLenum shader_type, const char *shader_str) {
-#ifdef DEBUG_GLX_GLSL
-  printf("glx_create_shader(): ===\n%s\n===\n", shader_str);
-  fflush(stdout);
-#endif
+  log_trace("glx_create_shader(): ===\n%s\n===", shader_str);
 
   bool success = false;
   GLuint shader = glCreateShader(shader_type);
   if (!shader) {
-    printf_errf("(): Failed to create shader with type %#x.", shader_type);
+    log_error("Failed to create shader with type %#x.", shader_type);
     goto glx_create_shader_end;
   }
   glShaderSource(shader, 1, &shader_str, NULL);
@@ -1491,8 +1481,7 @@ glx_create_shader(GLenum shader_type, const char *shader_str) {
       if (log_len) {
         char log[log_len + 1];
         glGetShaderInfoLog(shader, log_len, NULL, log);
-        printf_errf("(): Failed to compile shader with type %d: %s",
-            shader_type, log);
+        log_error("Failed to compile shader with type %d: %s", shader_type, log);
       }
       goto glx_create_shader_end;
     }
@@ -1514,7 +1503,7 @@ glx_create_program(const GLuint * const shaders, int nshaders) {
   bool success = false;
   GLuint program = glCreateProgram();
   if (!program) {
-    printf_errf("(): Failed to create program.");
+    log_error("Failed to create program.");
     goto glx_create_program_end;
   }
 
@@ -1532,7 +1521,7 @@ glx_create_program(const GLuint * const shaders, int nshaders) {
       if (log_len) {
         char log[log_len + 1];
         glGetProgramInfoLog(program, log_len, NULL, log);
-        printf_errf("(): Failed to link program: %s", log);
+        log_error("Failed to link program: %s", log);
       }
       goto glx_create_program_end;
     }
@@ -1567,17 +1556,15 @@ glx_create_program_from_str(const char *vert_shader_str,
   if (frag_shader_str)
     frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, frag_shader_str);
 
-  {
-    GLuint shaders[2];
-    unsigned int count = 0;
-    if (vert_shader)
-      shaders[count++] = vert_shader;
-    if (frag_shader)
-      shaders[count++] = frag_shader;
-    assert(count <= sizeof(shaders) / sizeof(shaders[0]));
-    if (count)
-      prog = glx_create_program(shaders, count);
-  }
+  GLuint shaders[2];
+  unsigned int count = 0;
+  if (vert_shader)
+    shaders[count++] = vert_shader;
+  if (frag_shader)
+    shaders[count++] = frag_shader;
+  assert(count <= sizeof(shaders) / sizeof(shaders[0]));
+  if (count)
+    prog = glx_create_program(shaders, count);
 
   if (vert_shader)
     glDeleteShader(vert_shader);

@@ -16,18 +16,10 @@
 // === Options ===
 
 // Debug options, enable them using -D in CFLAGS
-// #define DEBUG_BACKTRACE  1
 // #define DEBUG_REPAINT    1
 // #define DEBUG_EVENTS     1
 // #define DEBUG_RESTACK    1
-// #define DEBUG_WINTYPE    1
-// #define DEBUG_CLIENTWIN  1
-// #define DEBUG_WINDATA    1
 // #define DEBUG_WINMATCH   1
-// #define DEBUG_REDIR      1
-// #define DEBUG_ALLOC_REG  1
-// #define DEBUG_FRAME      1
-// #define DEBUG_LEADER     1
 // #define DEBUG_C2         1
 // #define DEBUG_GLX        1
 // #define DEBUG_GLX_GLSL   1
@@ -58,9 +50,7 @@
 #define COMPTON_VERSION "unknown"
 #endif
 
-#if defined(DEBUG_ALLOC_REG)
-#define DEBUG_BACKTRACE 1
-#endif
+#define MAX_ALPHA (255)
 
 // === Includes ===
 
@@ -91,15 +81,8 @@
 #include <ev.h>
 #include <pixman.h>
 
-// libdbus
-#ifdef CONFIG_DBUS
-#include <dbus/dbus.h>
-#endif
-
 #ifdef CONFIG_OPENGL
 // libGL
-#define GL_GLEXT_PROTOTYPES
-
 #include <GL/glx.h>
 
 // Workarounds for missing definitions in some broken GL drivers, thanks to
@@ -119,36 +102,6 @@
 #define MSTR_(s)        #s
 #define MSTR(s)         MSTR_(s)
 
-/// @brief Wrapper for gcc branch prediction builtin, for likely branch.
-#define likely(x)    __builtin_expect(!!(x), 1)
-
-/// @brief Wrapper for gcc branch prediction builtin, for unlikely branch.
-#define unlikely(x)  __builtin_expect(!!(x), 0)
-
-/// Print out an error message.
-#define printf_err(format, ...) \
-  fprintf(stderr, format "\n", ## __VA_ARGS__)
-
-/// Print out an error message with function name.
-#define printf_errf(format, ...) \
-  printf_err("%s" format,  __func__, ## __VA_ARGS__)
-
-/// Print out an error message with function name, and quit with a
-/// specific exit code.
-#define printf_errfq(code, format, ...) { \
-  printf_err("%s" format,  __func__, ## __VA_ARGS__); \
-  exit(code); \
-}
-
-/// Print out a debug message.
-#define printf_dbg(format, ...) \
-  printf(format, ## __VA_ARGS__); \
-  fflush(stdout)
-
-/// Print out a debug message with function name.
-#define printf_dbgf(format, ...) \
-  printf_dbg("%s" format, __func__, ## __VA_ARGS__)
-
 // Use #s here to prevent macro expansion
 /// Macro used for shortening some debugging code.
 #define CASESTRRET(s)   case s: return #s
@@ -163,6 +116,11 @@
 #include "win.h"
 #include "x.h"
 #include "region.h"
+#include "log.h"
+#include "utils.h"
+#include "compiler.h"
+#include "kernel.h"
+#include "options.h"
 
 // === Constants ===
 
@@ -196,9 +154,6 @@
 /// @brief Maximum OpenGL buffer age.
 #define CGLX_MAX_BUFFER_AGE 5
 
-/// @brief Maximum passes for blur.
-#define MAX_BLUR_PASS 5
-
 // Window flags
 
 // Window size is changed
@@ -214,11 +169,6 @@
 
 // === Types ===
 
-typedef long time_ms_t;
-typedef struct _c2_lptr c2_lptr_t;
-
-// Or use cmemzero().
-
 /// Structure representing needed window updates.
 typedef struct {
   bool shadow       : 1;
@@ -226,20 +176,6 @@ typedef struct {
   bool focus        : 1;
   bool invert_color : 1;
 } win_upd_t;
-
-/// Structure representing Window property value.
-typedef struct winprop {
-  union {
-    void *ptr;
-    uint8_t *p8;
-    int16_t *p16;
-    int32_t *p32;
-    uint32_t *c32; // 32bit cardinal
-  };
-  unsigned long nitems;
-  Atom type;
-  int format;
-} winprop_t;
 
 typedef struct _ignore {
   struct _ignore *next;
@@ -262,25 +198,6 @@ enum wincond_type {
 };
 
 #define CONDF_IGNORECASE 0x0001
-
-/// VSync modes.
-typedef enum {
-  VSYNC_NONE,
-  VSYNC_DRM,
-  VSYNC_OPENGL,
-  VSYNC_OPENGL_OML,
-  VSYNC_OPENGL_SWC,
-  VSYNC_OPENGL_MSWC,
-  NUM_VSYNC,
-} vsync_t;
-
-/// @brief Possible backends of compton.
-enum backend {
-  BKEND_XRENDER,
-  BKEND_GLX,
-  BKEND_XR_GLX_HYBRID,
-  NUM_BKEND,
-};
 
 /// @brief Possible swap methods.
 enum {
@@ -395,7 +312,7 @@ typedef struct {
   GLint unifm_factor_center;
 } glx_blur_pass_t;
 
-typedef struct {
+typedef struct glx_prog_main {
   /// GLSL program.
   GLuint prog;
   /// Location of uniform "opacity" in window GLSL program.
@@ -415,15 +332,10 @@ typedef struct {
 
 #endif
 #else
-typedef uint32_t glx_prog_main_t;
+struct glx_prog_main { };
 #endif
 
 #define PAINT_INIT { .pixmap = None, .pict = None }
-
-typedef struct conv {
-  int size;
-  double *data;
-} conv;
 
 /// Linked list type of atoms.
 typedef struct _latom {
@@ -432,205 +344,6 @@ typedef struct _latom {
 } latom_t;
 
 #define REG_DATA_INIT { NULL, 0 }
-
-typedef struct ev_session_timer ev_session_timer;
-typedef struct ev_session_idle ev_session_idle;
-typedef struct ev_session_prepare ev_session_prepare;
-
-/// Structure representing all options.
-typedef struct options_t {
-  // === Debugging ===
-  bool monitor_repaint;
-  bool print_diagnostics;
-  // === General ===
-  /// The configuration file we used.
-  char *config_file;
-  /// Path to write PID to.
-  char *write_pid_path;
-  /// The display name we used. NULL means we are using the value of the
-  /// <code>DISPLAY</code> environment variable.
-  char *display;
-  /// Safe representation of display name.
-  char *display_repr;
-  /// The backend in use.
-  enum backend backend;
-  /// Whether to sync X drawing to avoid certain delay issues with
-  /// GLX backend.
-  bool xrender_sync;
-  /// Whether to sync X drawing with X Sync fence.
-  bool xrender_sync_fence;
-  /// Whether to avoid using stencil buffer under GLX backend. Might be
-  /// unsafe.
-  bool glx_no_stencil;
-  /// Whether to avoid rebinding pixmap on window damage.
-  bool glx_no_rebind_pixmap;
-  /// GLX swap method we assume OpenGL uses.
-  int glx_swap_method;
-  /// Whether to use GL_EXT_gpu_shader4 to (hopefully) accelerates blurring.
-  bool glx_use_gpushader4;
-  /// Custom fragment shader for painting windows, as a string.
-  char *glx_fshader_win_str;
-  /// Custom GLX program used for painting window.
-  glx_prog_main_t glx_prog_win;
-  /// Whether to fork to background.
-  bool fork_after_register;
-  /// Whether to detect rounded corners.
-  bool detect_rounded_corners;
-  /// Force painting of window content with blending.
-  bool force_win_blend;
-  /// Resize damage for a specific number of pixels.
-  int resize_damage;
-  /// Whether to unredirect all windows if a full-screen opaque window
-  /// is detected.
-  bool unredir_if_possible;
-  /// List of conditions of windows to ignore as a full-screen window
-  /// when determining if a window could be unredirected.
-  c2_lptr_t *unredir_if_possible_blacklist;
-  /// Delay before unredirecting screen.
-  time_ms_t unredir_if_possible_delay;
-  /// Forced redirection setting through D-Bus.
-  switch_t redirected_force;
-  /// Whether to stop painting. Controlled through D-Bus.
-  switch_t stoppaint_force;
-  /// Whether to re-redirect screen on root size change.
-  bool reredir_on_root_change;
-  /// Whether to reinitialize GLX on root size change.
-  bool glx_reinit_on_root_change;
-  /// Whether to enable D-Bus support.
-  bool dbus;
-  /// Path to log file.
-  char *logpath;
-  /// Number of cycles to paint in benchmark mode. 0 for disabled.
-  int benchmark;
-  /// Window to constantly repaint in benchmark mode. 0 for full-screen.
-  Window benchmark_wid;
-  /// A list of conditions of windows not to paint.
-  c2_lptr_t *paint_blacklist;
-  /// Whether to avoid using xcb_composite_name_window_pixmap(), for debugging.
-  bool no_name_pixmap;
-  /// Whether to work under synchronized mode for debugging.
-  bool synchronize;
-  /// Whether to show all X errors.
-  bool show_all_xerrors;
-  /// Whether to avoid acquiring X Selection.
-  bool no_x_selection;
-
-  // === VSync & software optimization ===
-  /// User-specified refresh rate.
-  int refresh_rate;
-  /// Whether to enable refresh-rate-based software optimization.
-  bool sw_opti;
-  /// VSync method to use;
-  vsync_t vsync;
-  /// Whether to do VSync aggressively.
-  bool vsync_aggressive;
-  /// Whether to use glFinish() instead of glFlush() for (possibly) better
-  /// VSync yet probably higher CPU usage.
-  bool vsync_use_glfinish;
-
-  // === Shadow ===
-  /// Enable/disable shadow for specific window types.
-  bool wintype_shadow[NUM_WINTYPES];
-  /// Red, green and blue tone of the shadow.
-  double shadow_red, shadow_green, shadow_blue;
-  int shadow_radius;
-  int shadow_offset_x, shadow_offset_y;
-  double shadow_opacity;
-  /// argument string to shadow-exclude-reg option
-  char *shadow_exclude_reg_str;
-  /// Shadow blacklist. A linked list of conditions.
-  c2_lptr_t *shadow_blacklist;
-  /// Whether bounding-shaped window should be ignored.
-  bool shadow_ignore_shaped;
-  /// Whether to respect _COMPTON_SHADOW.
-  bool respect_prop_shadow;
-  /// Whether to crop shadow to the very Xinerama screen.
-  bool xinerama_shadow_crop;
-
-  // === Fading ===
-  /// Enable/disable fading for specific window types.
-  bool wintype_fade[NUM_WINTYPES];
-  /// How much to fade in in a single fading step.
-  opacity_t fade_in_step;
-  /// How much to fade out in a single fading step.
-  opacity_t fade_out_step;
-  /// Fading time delta. In milliseconds.
-  time_ms_t fade_delta;
-  /// Whether to disable fading on window open/close.
-  bool no_fading_openclose;
-  /// Whether to disable fading on ARGB managed destroyed windows.
-  bool no_fading_destroyed_argb;
-  /// Fading blacklist. A linked list of conditions.
-  c2_lptr_t *fade_blacklist;
-
-  // === Opacity ===
-  /// Default opacity for specific window types
-  double wintype_opacity[NUM_WINTYPES];
-  /// Default opacity for inactive windows.
-  /// 32-bit integer with the format of _NET_WM_OPACITY. 0 stands for
-  /// not enabled, default.
-  opacity_t inactive_opacity;
-  /// Default opacity for inactive windows.
-  opacity_t active_opacity;
-  /// Whether inactive_opacity overrides the opacity set by window
-  /// attributes.
-  bool inactive_opacity_override;
-  /// Frame opacity. Relative to window opacity, also affects shadow
-  /// opacity.
-  double frame_opacity;
-  /// Whether to detect _NET_WM_OPACITY on client windows. Used on window
-  /// managers that don't pass _NET_WM_OPACITY to frame windows.
-  bool detect_client_opacity;
-  /// Step for pregenerating alpha pictures. 0.01 - 1.0.
-  double alpha_step;
-
-  // === Other window processing ===
-  /// Whether to blur background of semi-transparent / ARGB windows.
-  bool blur_background;
-  /// Whether to blur background when the window frame is not opaque.
-  /// Implies blur_background.
-  bool blur_background_frame;
-  /// Whether to use fixed blur strength instead of adjusting according
-  /// to window opacity.
-  bool blur_background_fixed;
-  /// Background blur blacklist. A linked list of conditions.
-  c2_lptr_t *blur_background_blacklist;
-  /// Blur convolution kernel.
-  xcb_render_fixed_t *blur_kerns[MAX_BLUR_PASS];
-  /// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
-  double inactive_dim;
-  /// Whether to use fixed inactive dim opacity, instead of deciding
-  /// based on window opacity.
-  bool inactive_dim_fixed;
-  /// Conditions of windows to have inverted colors.
-  c2_lptr_t *invert_color_list;
-  /// Rules to change window opacity.
-  c2_lptr_t *opacity_rules;
-
-  // === Focus related ===
-  /// Consider windows of specific types to be always focused.
-  bool wintype_focus[NUM_WINTYPES];
-  /// Whether to try to detect WM windows and mark them as focused.
-  bool mark_wmwin_focused;
-  /// Whether to mark override-redirect windows as focused.
-  bool mark_ovredir_focused;
-  /// Whether to use EWMH _NET_ACTIVE_WINDOW to find active window.
-  bool use_ewmh_active_win;
-  /// A list of windows always to be considered focused.
-  c2_lptr_t *focus_blacklist;
-  /// Whether to do window grouping with <code>WM_TRANSIENT_FOR</code>.
-  bool detect_transient;
-  /// Whether to do window grouping with <code>WM_CLIENT_LEADER</code>.
-  bool detect_client_leader;
-
-  // === Calculated ===
-  /// Whether compton needs to track focus changes.
-  bool track_focus;
-  /// Whether compton needs to track window name and class.
-  bool track_wdata;
-  /// Whether compton needs to track window leaders.
-  bool track_leader;
-} options_t;
 
 #ifdef CONFIG_OPENGL
 /// Structure containing GLX-dependent data for a compton session.
@@ -689,8 +402,27 @@ typedef struct {
 
 /// Structure containing all necessary data for a compton session.
 typedef struct session {
+  // === Event handlers ===
   /// ev_io for X connection
   ev_io xiow;
+  /// Timeout for delayed unredirection.
+  ev_timer unredir_timer;
+  /// Timer for fading
+  ev_timer fade_timer;
+  /// Timer for delayed drawing, right now only used by
+  /// swopti
+  ev_timer delayed_draw_timer;
+  /// Use an ev_idle callback for drawing
+  /// So we only start drawing when events are processed
+  ev_idle draw_idle;
+  /// Called everytime we have timeouts or new data on socket,
+  /// so we can be sure if xcb read from X socket at anytime during event
+  /// handling, we will not left any event unhandled in the queue
+  ev_prepare event_check;
+  /// Signal handler for SIGUSR1
+  ev_signal usr1_signal;
+  /// backend data
+  void *backend_data;
   /// libev mainloop
   struct ev_loop *loop;
   // === Display related ===
@@ -735,25 +467,14 @@ typedef struct session {
 #ifdef CONFIG_OPENGL
   /// Pointer to GLX data.
   glx_session_t *psglx;
+  /// Custom GLX program used for painting window.
+  // XXX should be in glx_session_t
+  glx_prog_main_t glx_prog_win;
 #endif
 
   // === Operation related ===
   /// Program options.
   options_t o;
-  /// Timeout for delayed unredirection.
-  ev_session_timer *unredir_timer;
-  /// Timer for fading
-  ev_session_timer *fade_timer;
-  /// Timer for delayed drawing, right now only used by
-  /// swopti
-  ev_session_timer *delayed_draw_timer;
-  /// Use an ev_idle callback for drawing
-  /// So we only start drawing when events are processed
-  ev_session_idle *draw_idle;
-  /// Called everytime we have timeouts or new data on socket,
-  /// so we can be sure if xcb read from X socket at anytime during event
-  /// handling, we will not left any event unhandled in the queue
-  ev_session_prepare *event_check;
   /// Whether we have hit unredirection timeout.
   bool tmout_unredir_hit;
   /// Whether we need to redraw the screen
@@ -772,7 +493,7 @@ typedef struct session {
   /// Pre-generated alpha pictures.
   xcb_render_picture_t *alpha_picts;
   /// Time of last fading. In milliseconds.
-  time_ms_t fade_time;
+  unsigned long fade_time;
   /// Head pointer of the error ignore linked list.
   ignore_t *ignore_head;
   /// Pointer to the <code>next</code> member of tail element of the error
@@ -936,10 +657,7 @@ typedef struct session {
 
 #ifdef CONFIG_DBUS
   // === DBus related ===
-  // DBus connection.
-  DBusConnection *dbus_conn;
-  // DBus service name.
-  char *dbus_service;
+  void *dbus_data;
 #endif
 } session_t;
 
@@ -959,8 +677,6 @@ typedef enum {
 } win_evmode_t;
 
 extern const char * const WINTYPES[NUM_WINTYPES];
-extern const char * const VSYNC_STRS[NUM_VSYNC + 1];
-extern const char * const BACKEND_STRS[NUM_BKEND + 1];
 extern session_t *ps_g;
 
 // == Debugging code ==
@@ -970,65 +686,7 @@ print_timestamp(session_t *ps);
 void
 ev_xcb_error(session_t *ps, xcb_generic_error_t *err);
 
-#ifdef DEBUG_BACKTRACE
-
-#include <execinfo.h>
-#define BACKTRACE_SIZE  25
-
-/**
- * Print current backtrace.
- *
- * Stolen from glibc manual.
- */
-static inline void
-print_backtrace(void) {
-  void *array[BACKTRACE_SIZE];
-  size_t size;
-  char **strings;
-
-  size = backtrace(array, BACKTRACE_SIZE);
-  strings = backtrace_symbols(array, size);
-
-  for (size_t i = 0; i < size; i++)
-     printf ("%s\n", strings[i]);
-
-  free(strings);
-}
-
-#endif
-
 // === Functions ===
-
-/**
- * @brief Quit if the passed-in pointer is empty.
- */
-static inline void *
-allocchk_(const char *func_name, void *ptr) {
-  if (!ptr) {
-    printf_err("%s(): Failed to allocate memory.", func_name);
-    exit(1);
-  }
-  return ptr;
-}
-
-/// @brief Wrapper of allocchk_().
-#define allocchk(ptr) allocchk_(__func__, ptr)
-
-/// @brief Wrapper of malloc().
-#define cmalloc(nmemb, type) ((type *) allocchk(malloc((nmemb) * sizeof(type))))
-
-/// @brief Wrapper of calloc().
-#define ccalloc(nmemb, type) ((type *) allocchk(calloc((nmemb), sizeof(type))))
-
-/// @brief Wrapper of ealloc().
-#define crealloc(ptr, nmemb, type) ((type *) allocchk(realloc((ptr), (nmemb) * sizeof(type))))
-
-/// @brief Zero out the given memory block.
-#define cmemzero(ptr, size) memset((ptr), 0, (size))
-
-/// @brief Wrapper of cmemzero() that handles a pointer to a single item, for
-///        convenience.
-#define cmemzero_one(ptr) cmemzero((ptr), sizeof(*(ptr)))
 
 /**
  * Return whether a struct timeval value is empty.
@@ -1047,7 +705,7 @@ timeval_isempty(struct timeval *ptv) {
  * @return > 0 if ptv > ms, 0 if ptv == 0, -1 if ptv < ms
  */
 static inline int
-timeval_ms_cmp(struct timeval *ptv, time_ms_t ms) {
+timeval_ms_cmp(struct timeval *ptv, unsigned long ms) {
   assert(ptv);
 
   // We use those if statement instead of a - expression because of possible
@@ -1191,161 +849,6 @@ print_timestamp(session_t *ps) {
 }
 
 /**
- * Allocate the space and copy a string.
- */
-static inline char *
-mstrcpy(const char *src) {
-  char *str = cmalloc(strlen(src) + 1, char);
-
-  strcpy(str, src);
-
-  return str;
-}
-
-/**
- * Allocate the space and copy a string.
- */
-static inline char *
-mstrncpy(const char *src, unsigned len) {
-  char *str = cmalloc(len + 1, char);
-
-  strncpy(str, src, len);
-  str[len] = '\0';
-
-  return str;
-}
-
-/**
- * Allocate the space and join two strings.
- */
-static inline char *
-mstrjoin(const char *src1, const char *src2) {
-  char *str = cmalloc(strlen(src1) + strlen(src2) + 1, char);
-
-  strcpy(str, src1);
-  strcat(str, src2);
-
-  return str;
-}
-
-/**
- * Allocate the space and join two strings;
- */
-static inline char *
-mstrjoin3(const char *src1, const char *src2, const char *src3) {
-  char *str = cmalloc(strlen(src1) + strlen(src2)
-        + strlen(src3) + 1, char);
-
-  strcpy(str, src1);
-  strcat(str, src2);
-  strcat(str, src3);
-
-  return str;
-}
-
-/**
- * Concatenate a string on heap with another string.
- */
-static inline void
-mstrextend(char **psrc1, const char *src2) {
-  *psrc1 = crealloc(*psrc1, (*psrc1 ? strlen(*psrc1): 0) + strlen(src2) + 1,
-      char);
-
-  strcat(*psrc1, src2);
-}
-
-/**
- * Parse a VSync option argument.
- */
-static inline bool
-parse_vsync(session_t *ps, const char *str) {
-  for (vsync_t i = 0; VSYNC_STRS[i]; ++i)
-    if (!strcasecmp(str, VSYNC_STRS[i])) {
-      ps->o.vsync = i;
-      return true;
-    }
-
-  printf_errf("(\"%s\"): Invalid vsync argument.", str);
-  return false;
-}
-
-/**
- * Parse a backend option argument.
- */
-static inline bool
-parse_backend(session_t *ps, const char *str) {
-  for (enum backend i = 0; BACKEND_STRS[i]; ++i)
-    if (!strcasecmp(str, BACKEND_STRS[i])) {
-      ps->o.backend = i;
-      return true;
-    }
-  // Keep compatibility with an old revision containing a spelling mistake...
-  if (!strcasecmp(str, "xr_glx_hybird")) {
-    ps->o.backend = BKEND_XR_GLX_HYBRID;
-    return true;
-  }
-  // cju wants to use dashes
-  if (!strcasecmp(str, "xr-glx-hybrid")) {
-    ps->o.backend = BKEND_XR_GLX_HYBRID;
-    return true;
-  }
-  printf_errf("(\"%s\"): Invalid backend argument.", str);
-  return false;
-}
-
-/**
- * Parse a glx_swap_method option argument.
- */
-static inline bool
-parse_glx_swap_method(session_t *ps, const char *str) {
-  // Parse alias
-  if (!strcmp("undefined", str)) {
-    ps->o.glx_swap_method = 0;
-    return true;
-  }
-
-  if (!strcmp("copy", str)) {
-    ps->o.glx_swap_method = 1;
-    return true;
-  }
-
-  if (!strcmp("exchange", str)) {
-    ps->o.glx_swap_method = 2;
-    return true;
-  }
-
-  if (!strcmp("buffer-age", str)) {
-    ps->o.glx_swap_method = -1;
-    return true;
-  }
-
-  // Parse number
-  {
-    char *pc = NULL;
-    int age = strtol(str, &pc, 0);
-    if (!pc || str == pc) {
-      printf_errf("(\"%s\"): Invalid number.", str);
-      return false;
-    }
-
-    for (; *pc; ++pc)
-      if (!isspace(*pc)) {
-        printf_errf("(\"%s\"): Trailing characters.", str);
-        return false;
-      }
-
-    if (age > CGLX_MAX_BUFFER_AGE + 1 || age < -1) {
-      printf_errf("(\"%s\"): Number too large / too small.", str);
-      return false;
-    }
-
-    ps->o.glx_swap_method = age;
-  }
-
-  return true;
-}
-
-/**
  * Wrapper of XFree() for convenience.
  *
  * Because a NULL pointer cannot be passed to XFree(), its man page says.
@@ -1374,6 +877,7 @@ get_atom(session_t *ps, const char *atom_name) {
 
   xcb_atom_t atom = XCB_NONE;
   if (reply) {
+    log_debug("Atom %s is %d", atom_name, reply->atom);
     atom = reply->atom;
     free(reply);
   } else
@@ -1436,18 +940,6 @@ bkend_use_glx(session_t *ps) {
 }
 
 /**
- * Check if there's a GLX context.
- */
-static inline bool
-glx_has_context(session_t *ps) {
-#ifdef CONFIG_OPENGL
-  return ps->psglx && ps->psglx->context;
-#else
-  return false;
-#endif
-}
-
-/**
  * Check if a window is really focused.
  */
 static inline bool
@@ -1503,7 +995,7 @@ set_ignore(session_t *ps, unsigned long sequence) {
   if (ps->o.show_all_xerrors)
     return;
 
-  ignore_t *i = malloc(sizeof(ignore_t));
+  auto i = cmalloc(ignore_t);
   if (!i) return;
 
   i->sequence = sequence;
@@ -1571,19 +1063,6 @@ wid_has_prop(const session_t *ps, Window w, Atom atom) {
   return false;
 }
 
-winprop_t
-wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
-    long length, Atom rtype, int rformat);
-
-/**
- * Wrapper of wid_get_prop_adv().
- */
-static inline winprop_t
-wid_get_prop(const session_t *ps, Window wid, Atom atom, long length,
-    Atom rtype, int rformat) {
-  return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
-}
-
 /**
  * Get the numeric property value from a win_prop_t.
  */
@@ -1609,21 +1088,6 @@ bool
 wid_get_text_prop(session_t *ps, Window wid, Atom prop,
     char ***pstrlst, int *pnstr);
 
-/**
- * Free a <code>winprop_t</code>.
- *
- * @param pprop pointer to the <code>winprop_t</code> to free.
- */
-static inline void
-free_winprop(winprop_t *pprop) {
-  // Empty the whole structure to avoid possible issues
-  if (pprop->ptr) {
-    cxfree(pprop->ptr);
-    pprop->ptr = NULL;
-  }
-  pprop->nitems = 0;
-}
-
 void
 force_repaint(session_t *ps);
 
@@ -1638,53 +1102,6 @@ vsync_deinit(session_t *ps);
  */
 ///@{
 
-/**
- * Free a GLX texture.
- */
-static inline void
-free_texture_r(session_t *ps, GLuint *ptexture) {
-  if (*ptexture) {
-    assert(glx_has_context(ps));
-    glDeleteTextures(1, ptexture);
-    *ptexture = 0;
-  }
-}
-
-/**
- * Free a GLX Framebuffer object.
- */
-static inline void
-free_glx_fbo(session_t *ps, GLuint *pfbo) {
-#ifdef CONFIG_OPENGL
-  if (*pfbo) {
-    glDeleteFramebuffers(1, pfbo);
-    *pfbo = 0;
-  }
-#endif
-  assert(!*pfbo);
-}
-
-#ifdef CONFIG_OPENGL
-/**
- * Free data in glx_blur_cache_t on resize.
- */
-static inline void
-free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
-  free_texture_r(ps, &pbc->textures[0]);
-  free_texture_r(ps, &pbc->textures[1]);
-  pbc->width = 0;
-  pbc->height = 0;
-}
-
-/**
- * Free a glx_blur_cache_t
- */
-static inline void
-free_glx_bc(session_t *ps, glx_blur_cache_t *pbc) {
-  free_glx_fbo(ps, &pbc->fbo);
-  free_glx_bc_resize(ps, pbc);
-}
-#endif
 #endif
 
 /**
@@ -1696,8 +1113,8 @@ glx_mark_(session_t *ps, const char *func, XID xid, bool start) {
   if (glx_has_context(ps) && ps->psglx->glStringMarkerGREMEDY) {
     if (!func) func = "(unknown)";
     const char *postfix = (start ? " (start)": " (end)");
-    char *str = malloc((strlen(func) + 12 + 2
-          + strlen(postfix) + 5) * sizeof(char));
+    auto str = ccalloc((strlen(func) + 12 + 2
+      + strlen(postfix) + 5), char);
     strcpy(str, func);
     sprintf(str + strlen(str), "(%#010lx)%s", xid, postfix);
     ps->psglx->glStringMarkerGREMEDY(strlen(str), str);
@@ -1742,7 +1159,7 @@ xr_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
     if (!*pfence)
       *pfence = XSyncCreateFence(ps->dpy, d, False);
     if (*pfence) {
-      Bool __attribute__((unused)) triggered = False;
+      Bool attr_unused triggered = False;
       /* if (XSyncQueryFence(ps->dpy, *pfence, &triggered) && triggered)
         XSyncResetFence(ps->dpy, *pfence); */
       // The fence may fail to be created (e.g. because of died drawable)
@@ -1752,7 +1169,7 @@ xr_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
       assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || triggered);
     }
     else {
-      printf_errf("(%#010lx): Failed to create X Sync fence.", d);
+      log_error("Failed to create X Sync fence for %#010lx", d);
     }
     free_fence(ps, &tmp_fence);
     if (*pfence)
@@ -1764,37 +1181,6 @@ xr_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
  */
 ///@{
 #ifdef CONFIG_DBUS
-/** @name DBus handling
- */
-///@{
-bool
-cdbus_init(session_t *ps);
-
-void
-cdbus_destroy(session_t *ps);
-
-void
-cdbus_loop(session_t *ps);
-
-void
-cdbus_ev_win_added(session_t *ps, win *w);
-
-void
-cdbus_ev_win_destroyed(session_t *ps, win *w);
-
-void
-cdbus_ev_win_mapped(session_t *ps, win *w);
-
-void
-cdbus_ev_win_unmapped(session_t *ps, win *w);
-
-void
-cdbus_ev_win_focusout(session_t *ps, win *w);
-
-void
-cdbus_ev_win_focusin(session_t *ps, win *w);
-//!@}
-
 /** @name DBus hooks
  */
 ///@{
@@ -1817,63 +1203,6 @@ void
 opts_set_no_fading_openclose(session_t *ps, bool newval);
 //!@}
 #endif
-
-/**
- * @brief Dump the given data to a file.
- */
-static inline bool
-write_binary_data(const char *path, const unsigned char *data, int length) {
-  if (!data)
-    return false;
-  FILE *f = fopen(path, "wb");
-  if (!f) {
-    printf_errf("(\"%s\"): Failed to open file for writing.", path);
-    return false;
-  }
-  int wrote_len = fwrite(data, sizeof(unsigned char), length, f);
-  fclose(f);
-  if (wrote_len != length) {
-    printf_errf("(\"%s\"): Failed to write all blocks: %d / %d", path,
-        wrote_len, length);
-    return false;
-  }
-  return true;
-}
-
-/**
- * @brief Dump raw bytes in HEX format.
- *
- * @param data pointer to raw data
- * @param len length of data
- */
-static inline void
-hexdump(const char *data, int len) {
-  static const int BYTE_PER_LN = 16;
-
-  if (len <= 0)
-    return;
-
-  // Print header
-  printf("%10s:", "Offset");
-  for (int i = 0; i < BYTE_PER_LN; ++i)
-    printf(" %2d", i);
-  putchar('\n');
-
-  // Dump content
-  for (int offset = 0; offset < len; ++offset) {
-    if (!(offset % BYTE_PER_LN))
-      printf("0x%08x:", offset);
-
-    printf(" %02hhx", data[offset]);
-
-    if ((BYTE_PER_LN - 1) == offset % BYTE_PER_LN)
-      putchar('\n');
-  }
-  if (len % BYTE_PER_LN)
-    putchar('\n');
-
-  fflush(stdout);
-}
 
 /**
  * Set a <code>bool</code> array of all wintypes to true.

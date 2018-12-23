@@ -2,8 +2,8 @@ compton-trans(1)
 ================
 :doctype:     manpage
 :man source:  compton
-:man version: nightly-20121114
-:man manual:  LOCAL USER COMMANDS
+:man version: {compton-version}
+:man manual:  User Commands
 
 NAME
 ----
@@ -77,11 +77,7 @@ compton-trans -c -- -5
 
 BUGS
 ----
-Please report any bugs you find to <https://github.com/chjj/compton> .
-
-AUTHORS
--------
-Christopher Jeffrey (<https://github.com/chjj>).
+Please submit bug reports to <https://github.com/yshui/compton>.
 
 SEE ALSO
 --------

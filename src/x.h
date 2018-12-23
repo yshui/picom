@@ -10,7 +10,22 @@
 #include "region.h"
 
 typedef struct session session_t;
-typedef struct winprop winprop_t;
+
+/// Structure representing Window property value.
+typedef struct winprop {
+  union {
+    void *ptr;
+    int8_t *p8;
+    int16_t *p16;
+    int32_t *p32;
+    uint32_t *c32; // 32bit cardinal
+  };
+  unsigned long nitems;
+  xcb_atom_t type;
+  int format;
+
+  xcb_get_property_reply_t *r;
+} winprop_t;
 
 #define XCB_SYNCED_VOID(func, c, ...) xcb_request_check(c, func##_checked(c, __VA_ARGS__));
 #define XCB_SYNCED(func, c, ...) ({ \
@@ -51,8 +66,17 @@ x_sync(xcb_connection_t *c) {
  *    and number of items. A blank one on failure.
  */
 winprop_t
-wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
-    long length, Atom rtype, int rformat);
+wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom, long offset,
+    long length, xcb_atom_t rtype, int rformat);
+
+/**
+ * Wrapper of wid_get_prop_adv().
+ */
+static inline winprop_t
+wid_get_prop(const session_t *ps, xcb_window_t wid, xcb_atom_t atom, long length,
+    xcb_atom_t rtype, int rformat) {
+  return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
+}
 
 /**
  * Get the value of a type-<code>Window</code> property of a window.
@@ -74,26 +98,31 @@ xcb_render_picture_t x_create_picture_with_pictfmt_and_pixmap(
   session_t *ps, xcb_render_pictforminfo_t *pictfmt,
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
-__attribute__((nonnull(1, 2)));
+attr_nonnull(1, 2);
 
 xcb_render_picture_t x_create_picture_with_visual_and_pixmap(
   session_t *ps, xcb_visualid_t visual,
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
-__attribute__((nonnull(1)));
+attr_nonnull(1);
 
 xcb_render_picture_t x_create_picture_with_standard_and_pixmap(
   session_t *ps, xcb_pict_standard_t standard,
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
-__attribute__((nonnull(1)));
+attr_nonnull(1);
 
 /**
  * Create an picture.
  */
 xcb_render_picture_t
-x_create_picture(session_t *ps, int wid, int hei,
+x_create_picture_with_pictfmt(session_t *ps, int wid, int hei,
   xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
+  const xcb_render_create_picture_value_list_t *attr);
+
+xcb_render_picture_t
+x_create_picture_with_visual(session_t *ps, int w, int h,
+  xcb_visualid_t visual, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr);
 
 /// Fetch a X region and store it in a pixman region
@@ -101,6 +130,8 @@ bool x_fetch_region(session_t *ps, xcb_xfixes_region_t r, region_t *res);
 
 void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t,
   int clip_x_origin, int clip_y_origin, const region_t *);
+
+void x_clear_picture_clip_region(session_t *ps, xcb_render_picture_t pict);
 
 /**
  * X11 error handler function.
@@ -112,3 +143,27 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
 
 xcb_pixmap_t
 x_create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t width, uint16_t height);
+
+bool
+x_validate_pixmap(session_t *ps, xcb_pixmap_t pxmap);
+
+/**
+ * Free a <code>winprop_t</code>.
+ *
+ * @param pprop pointer to the <code>winprop_t</code> to free.
+ */
+static inline void
+free_winprop(winprop_t *pprop) {
+  // Empty the whole structure to avoid possible issues
+  if (pprop->r)
+    free(pprop->r);
+  pprop->ptr = NULL;
+  pprop->r = NULL;
+  pprop->nitems = 0;
+}
+/// Get the back pixmap of the root window
+xcb_pixmap_t x_get_root_back_pixmap(session_t *ps);
+
+/// Return true if the atom refers to a property name that is used for the
+/// root window background pixmap
+bool x_atom_is_background_prop(session_t *ps, xcb_atom_t atom);

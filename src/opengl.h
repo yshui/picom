@@ -12,6 +12,7 @@
 #pragma once
 
 #include "common.h"
+#include "log.h"
 
 #include <ctype.h>
 #include <locale.h>
@@ -49,14 +50,14 @@ glx_check_err_(session_t *ps, const char *func, int line) {
   GLenum err = GL_NO_ERROR;
 
   while (GL_NO_ERROR != (err = glGetError())) {
-    print_timestamp(ps);
-    printf("%s():%d: GLX error ", func, line);
     const char *errtext = glx_dump_err_str(err);
     if (errtext) {
-      printf_dbg("%s\n", errtext);
+      log_printf(tls_logger, LOG_LEVEL_ERROR, func, "GLX error at line %d: %s", line,
+                 errtext);
     }
     else {
-      printf_dbg("%d\n", err);
+      log_printf(tls_logger, LOG_LEVEL_ERROR, func, "GLX error at line %d: %d", line,
+                 err);
     }
   }
 }
@@ -95,13 +96,13 @@ static inline bool
 glx_hasglxext(session_t *ps, const char *ext) {
   const char *glx_exts = glXQueryExtensionsString(ps->dpy, ps->scr);
   if (!glx_exts) {
-    printf_errf("(): Failed get GLX extension list.");
+    log_error("Failed get GLX extension list.");
     return false;
   }
 
   bool found = wd_is_in_str(glx_exts, ext);
   if (!found)
-    printf_errf("(): Missing GLX extension %s.", ext);
+    log_info("Missing GLX extension %s.", ext);
 
   return found;
 }
@@ -113,13 +114,13 @@ static inline bool
 glx_hasglext(session_t *ps, const char *ext) {
   const char *gl_exts = (const char *) glGetString(GL_EXTENSIONS);
   if (!gl_exts) {
-    printf_errf("(): Failed get GL extension list.");
+    log_error("Failed get GL extension list.");
     return false;
   }
 
   bool found = wd_is_in_str(gl_exts, ext);
   if (!found)
-    printf_errf("(): Missing GL extension %s.", ext);
+    log_info("Missing GL extension %s.", ext);
 
   return found;
 }
@@ -165,7 +166,7 @@ void
 glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
 
 void glx_paint_pre(session_t *ps, region_t *preg)
-__attribute__((nonnull(1, 2)));
+attr_nonnull(1, 2);
 
 /**
  * Check if a texture is binded, or is binded to the given pixmap.
@@ -197,6 +198,70 @@ glx_create_program_from_str(const char *vert_shader_str,
 
 unsigned char *
 glx_take_screenshot(session_t *ps, int *out_length);
+
+/**
+ * Check if there's a GLX context.
+ */
+static inline bool
+glx_has_context(session_t *ps) {
+  return ps->psglx && ps->psglx->context;
+}
+
+/**
+ * Ensure we have a GLX context.
+ */
+static inline bool
+ensure_glx_context(session_t *ps) {
+  // Create GLX context
+  if (!glx_has_context(ps))
+    glx_init(ps, false);
+
+  return ps->psglx->context;
+}
+
+/**
+ * Free a GLX texture.
+ */
+static inline void
+free_texture_r(session_t *ps, GLuint *ptexture) {
+  if (*ptexture) {
+    assert(glx_has_context(ps));
+    glDeleteTextures(1, ptexture);
+    *ptexture = 0;
+  }
+}
+
+/**
+ * Free a GLX Framebuffer object.
+ */
+static inline void
+free_glx_fbo(session_t *ps, GLuint *pfbo) {
+  if (*pfbo) {
+    glDeleteFramebuffers(1, pfbo);
+    *pfbo = 0;
+  }
+  assert(!*pfbo);
+}
+
+/**
+ * Free data in glx_blur_cache_t on resize.
+ */
+static inline void
+free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
+  free_texture_r(ps, &pbc->textures[0]);
+  free_texture_r(ps, &pbc->textures[1]);
+  pbc->width = 0;
+  pbc->height = 0;
+}
+
+/**
+ * Free a glx_blur_cache_t
+ */
+static inline void
+free_glx_bc(session_t *ps, glx_blur_cache_t *pbc) {
+  free_glx_fbo(ps, &pbc->fbo);
+  free_glx_bc_resize(ps, pbc);
+}
 
 /**
  * Free a glx_texture_t.

@@ -11,3 +11,5 @@ option('dbus', type: 'boolean', value: true, description: 'Enable suport for D-B
 option('xrescheck', type: 'boolean', value: false, description: 'Enable X resource leak checker (for debug only)')
 
 option('build_docs', type: 'boolean', value: false, description: 'Build documentation and man pages')
+
+option('new_backends', type: 'boolean', value: false, description: 'Does not really do anything right now')

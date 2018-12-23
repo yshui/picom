@@ -8,10 +8,18 @@
 #include <stdbool.h>
 #include <math.h>
 
+#include "compiler.h"
 #include "common.h"
 #include "compton.h"
 #include "c2.h"
 #include "x.h"
+#include "string_utils.h"
+#include "utils.h"
+#include "log.h"
+
+#ifdef CONFIG_DBUS
+#include "dbus.h"
+#endif
 
 #include "win.h"
 
@@ -109,6 +117,8 @@ void win_get_region_noframe_local(win *w, region_t *res) {
     pixman_region32_init_rect(res, x, y, width, height);
 }
 
+gen_by_val(win_get_region_noframe_local)
+
 /**
  * Add a window to damaged area.
  *
@@ -168,9 +178,7 @@ int win_get_name(session_t *ps, win *w) {
     return 0;
 
   if (!(wid_get_text_prop(ps, w->client_win, ps->atom_name_ewmh, &strlst, &nstr))) {
-#ifdef DEBUG_WINDATA
-    printf_dbgf("(%#010lx): _NET_WM_NAME unset, falling back to WM_NAME.\n", wid);
-#endif
+    log_trace("(%#010lx): _NET_WM_NAME unset, falling back to WM_NAME.", w->client_win);
 
     if (!(XGetWMName(ps->dpy, w->client_win, &text_prop) && text_prop.value)) {
       return -1;
@@ -190,15 +198,13 @@ int win_get_name(session_t *ps, win *w) {
   if (!w->name || strcmp(w->name, strlst[0]) != 0) {
     ret = 1;
     free(w->name);
-    w->name = mstrcpy(strlst[0]);
+    w->name = strdup(strlst[0]);
   }
 
   XFreeStringList(strlst);
 
-#ifdef DEBUG_WINDATA
-  printf_dbgf("(%#010lx): client = %#010lx, name = \"%s\", "
-      "ret = %d\n", w->id, w->client_win, w->name, ret);
-#endif
+  log_trace("(%#010lx): client = %#010lx, name = \"%s\", "
+            "ret = %d", w->id, w->client_win, w->name, ret);
   return ret;
 }
 
@@ -213,15 +219,13 @@ int win_get_role(session_t *ps, win *w) {
   if (!w->role || strcmp(w->role, strlst[0]) != 0) {
     ret = 1;
     free(w->role);
-    w->role = mstrcpy(strlst[0]);
+    w->role = strdup(strlst[0]);
   }
 
   XFreeStringList(strlst);
 
-#ifdef DEBUG_WINDATA
-  printf_dbgf("(%#010lx): client = %#010lx, role = \"%s\", "
-      "ret = %d\n", w->id, w->client_win, w->role, ret);
-#endif
+  log_trace("(%#010lx): client = %#010lx, role = \"%s\", "
+            "ret = %d", w->id, w->client_win, w->role, ret);
   return ret;
 }
 
@@ -323,8 +327,8 @@ void win_calc_opacity(session_t *ps, win *w) {
     // Try obeying opacity property and window type opacity firstly
     if (w->has_opacity_prop)
       opacity = w->opacity_prop;
-    else if (!safe_isnan(ps->o.wintype_opacity[w->window_type]))
-      opacity = ps->o.wintype_opacity[w->window_type] * OPAQUE;
+    else if (!safe_isnan(ps->o.wintype_option[w->window_type].opacity))
+      opacity = ps->o.wintype_option[w->window_type].opacity * OPAQUE;
     else {
       // Respect active_opacity only when the window is physically focused
       if (win_is_focused_real(ps, w))
@@ -384,7 +388,7 @@ void win_determine_fade(session_t *ps, win *w) {
   } else if (c2_match(ps, w, ps->o.fade_blacklist, &w->cache_fblst, NULL))
     w->fade = false;
   else
-    w->fade = ps->o.wintype_fade[w->window_type];
+    w->fade = ps->o.wintype_option[w->window_type].fade;
 }
 
 /**
@@ -454,7 +458,7 @@ void win_determine_shadow(session_t *ps, win *w) {
   if (UNSET != w->shadow_force)
     shadow_new = w->shadow_force;
   else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
-    shadow_new = (ps->o.wintype_shadow[w->window_type] &&
+    shadow_new = (ps->o.wintype_option[w->window_type].shadow &&
                   !c2_match(ps, w, ps->o.shadow_blacklist, &w->cache_sblst, NULL) &&
                   !(ps->o.shadow_ignore_shaped && w->bounding_shaped &&
                     !w->rounded_corners) &&
@@ -699,19 +703,15 @@ void win_recheck_client(session_t *ps, win *w) {
   // Always recursively look for a window with WM_STATE, as Fluxbox
   // sets override-redirect flags on all frame windows.
   Window cw = find_client_win(ps, w->id);
-#ifdef DEBUG_CLIENTWIN
   if (cw)
-    printf_dbgf("(%#010lx): client %#010lx\n", w->id, cw);
-#endif
+    log_trace("(%#010lx): client %#010lx", w->id, cw);
   // Set a window's client window to itself if we couldn't find a
   // client window
   if (!cw) {
     cw = w->id;
     w->wmwin = !w->a.override_redirect;
-#ifdef DEBUG_CLIENTWIN
-    printf_dbgf("(%#010lx): client self (%s)\n", w->id,
+    log_trace("(%#010lx): client self (%s)", w->id,
                 (w->wmwin ? "wmwin" : "override-redirected"));
-#endif
   }
 
   // Unmark the old one
@@ -725,6 +725,7 @@ void win_recheck_client(session_t *ps, win *w) {
 // TODO: probably split into win_new (in win.c) and add_win (in compton.c)
 bool add_win(session_t *ps, Window id, Window prev) {
   static const win win_def = {
+      .win_data = NULL,
       .next = NULL,
       .prev_trans = NULL,
 
@@ -811,16 +812,9 @@ bool add_win(session_t *ps, Window id, Window prev) {
   }
 
   // Allocate and initialize the new win structure
-  win *new = malloc(sizeof(win));
+  auto new = cmalloc(win);
 
-#ifdef DEBUG_EVENTS
-  printf_dbgf("(%#010lx): %p\n", id, new);
-#endif
-
-  if (!new) {
-    printf_errf("(%#010lx): Failed to allocate memory for the new window.", id);
-    return false;
-  }
+  log_trace("(%#010lx): %p", id, new);
 
   *new = win_def;
   pixman_region32_init(&new->bounding_shape);
@@ -914,7 +908,7 @@ void win_update_focused(session_t *ps, win *w) {
 
     // Use wintype_focus, and treat WM windows and override-redirected
     // windows specially
-    if (ps->o.wintype_focus[w->window_type]
+    if (ps->o.wintype_option[w->window_type].focus
         || (ps->o.mark_wmwin_focused && w->wmwin)
         || (ps->o.mark_ovredir_focused &&
             w->id == w->client_win && !w->wmwin)
@@ -984,9 +978,8 @@ void win_update_leader(session_t *ps, win *w) {
 
   win_set_leader(ps, w, leader);
 
-#ifdef DEBUG_LEADER
-  printf_dbgf("(%#010lx): client %#010lx, leader %#010lx, cache %#010lx\n", w->id, w->client_win, w->leader, win_get_leader(ps, w));
-#endif
+  log_trace("(%#010lx): client %#010lx, leader %#010lx, cache %#010lx",
+            w->id, w->client_win, w->leader, win_get_leader(ps, w));
 }
 
 /**
@@ -1038,18 +1031,16 @@ bool win_get_class(session_t *ps, win *w) {
     return false;
 
   // Copy the strings if successful
-  w->class_instance = mstrcpy(strlst[0]);
+  w->class_instance = strdup(strlst[0]);
 
   if (nstr > 1)
-    w->class_general = mstrcpy(strlst[1]);
+    w->class_general = strdup(strlst[1]);
 
   XFreeStringList(strlst);
 
-#ifdef DEBUG_WINDATA
-  printf_dbgf("(%#010lx): client = %#010lx, "
-      "instance = \"%s\", general = \"%s\"\n",
-      w->id, w->client_win, w->class_instance, w->class_general);
-#endif
+  log_trace("(%#010lx): client = %#010lx, "
+            "instance = \"%s\", general = \"%s\"",
+            w->id, w->client_win, w->class_instance, w->class_general);
 
   return true;
 }
@@ -1138,8 +1129,11 @@ void win_extents(win *w, region_t *res) {
   pixman_region32_union_rect(res, res, w->g.x, w->g.y, w->widthb, w->heightb);
 
   if (w->shadow)
-    pixman_region32_union_rect(res, res, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy, w->shadow_width, w->shadow_height);
+    pixman_region32_union_rect(res, res, w->g.x + w->shadow_dx,
+      w->g.y + w->shadow_dy, w->shadow_width, w->shadow_height);
 }
+
+gen_by_val(win_extents)
 
 /**
  * Update the out-dated bounding shape of a window.
@@ -1196,7 +1190,7 @@ void win_update_bounding_shape(session_t *ps, win *w) {
   // Window shape changed, we should free old wpaint and shadow pict
   free_paint(ps, &w->paint);
   free_paint(ps, &w->shadow_paint);
-  //printf_errf("(): free out dated pict");
+  //log_trace("free out dated pict");
 
   win_on_factor_change(ps, w);
 }
@@ -1247,11 +1241,9 @@ win_update_frame_extents(session_t *ps, win *w, Window client) {
       w->reg_ignore_valid = false;
   }
 
-#ifdef DEBUG_FRAME
-  printf_dbgf("(%#010lx): %d, %d, %d, %d\n", w->id,
+  log_trace("(%#010lx): %d, %d, %d, %d", w->id,
       w->frame_extents.left, w->frame_extents.right,
       w->frame_extents.top, w->frame_extents.bottom);
-#endif
 
   free_winprop(&prop);
 }
@@ -1282,5 +1274,37 @@ void win_ev_stop(session_t *ps, win *w) {
   if (ps->shape_exists) {
     set_ignore_cookie(ps,
         xcb_shape_select_input(ps->c, w->id, 0));
+  }
+}
+
+/**
+ * Set fade callback of a window, and possibly execute the previous
+ * callback.
+ *
+ * If a callback can cause rendering result to change, it should call
+ * `queue_redraw`.
+ *
+ * @param exec_callback whether the previous callback is to be executed
+ */
+void win_set_fade_callback(session_t *ps, win **_w,
+    void (*callback) (session_t *ps, win **w), bool exec_callback) {
+  win *w = *_w;
+  void (*old_callback) (session_t *ps, win **w) = w->fade_callback;
+
+  w->fade_callback = callback;
+  // Must be the last line as the callback could destroy w!
+  if (exec_callback && old_callback)
+    old_callback(ps, _w);
+}
+
+/**
+ * Execute fade callback of a window if fading finished.
+ */
+void
+win_check_fade_finished(session_t *ps, win **_w) {
+  win *w = *_w;
+  if (w->fade_callback && w->opacity == w->opacity_tgt) {
+    // Must be the last line as the callback could destroy w!
+    win_set_fade_callback(ps, _w, NULL, true);
   }
 }

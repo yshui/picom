@@ -15,17 +15,10 @@
 #include "x.h"
 #include "types.h"
 #include "c2.h"
-#include "utils.h"
+#include "render.h"
 
 typedef struct session session_t;
 typedef struct _glx_texture glx_texture_t;
-
-// FIXME not the best place for this type
-typedef struct {
-  xcb_pixmap_t pixmap;
-  xcb_render_picture_t pict;
-  glx_texture_t *ptex;
-} paint_t;
 
 #ifdef CONFIG_OPENGL
 // FIXME this type should be in opengl.h
@@ -81,6 +74,9 @@ typedef enum {
 /// Structure representing a top-level window compton manages.
 typedef struct win win;
 struct win {
+  /// backend data attached to this window. Only available when
+  /// `state` is not UNMAPPED
+  void *win_data;
   /// Pointer to the next lower window in window stack.
   win *next;
   /// Pointer to the next higher window to paint.
@@ -121,7 +117,8 @@ struct win {
   bool need_configure;
   /// Queued <code>ConfigureNotify</code> when the window is unmapped.
   xcb_configure_notify_event_t queue_configure;
-  /// The region of screen that will be obscured when windows above is painted.
+  /// The region of screen that will be obscured when windows above is painted,
+  /// in global coordinates.
   /// We use this to reduce the pixels that needed to be paint when painting
   /// this window and anything underneath. Depends on window frame
   /// opacity state, window geometry, window mapped/unmapped state,
@@ -309,12 +306,14 @@ void win_update_focused(session_t *ps, win *w);
 // XXX was win_border_size
 void win_update_bounding_shape(session_t *ps, win *w);
 /**
- * Get a rectangular region a window (and possibly its shadow) occupies.
+ * Get a rectangular region in global coordinates a window (and possibly
+ * its shadow) occupies.
  *
  * Note w->shadow and shadow geometry must be correct before calling this
  * function.
  */
 void win_extents(win *w, region_t *res);
+region_t win_extents_by_val(win *w);
 /**
  * Add a window to damaged area.
  *
@@ -328,12 +327,31 @@ void add_damage_from_win(session_t *ps, win *w);
  * Return region in global coordinates.
  */
 void win_get_region_noframe_local(win *w, region_t *);
+region_t win_get_region_noframe_local_by_val(win *w);
 /**
  * Retrieve frame extents from a window.
  */
 void
 win_update_frame_extents(session_t *ps, win *w, Window client);
 bool add_win(session_t *ps, Window id, Window prev);
+
+/**
+ * Set fade callback of a window, and possibly execute the previous
+ * callback.
+ *
+ * If a callback can cause rendering result to change, it should call
+ * `queue_redraw`.
+ *
+ * @param exec_callback whether the previous callback is to be executed
+ */
+void win_set_fade_callback(session_t *ps, win **_w,
+    void (*callback) (session_t *ps, win **w), bool exec_callback);
+
+/**
+ * Execute fade callback of a window if fading finished.
+ */
+void
+win_check_fade_finished(session_t *ps, win **_w);
 
 // Stop receiving events (except ConfigureNotify, XXX why?) from a window
 void win_ev_stop(session_t *ps, win *w);
@@ -367,7 +385,7 @@ win_get_bounding_shape_global_by_val(win *w) {
  * Calculate the extents of the frame of the given window based on EWMH
  * _NET_FRAME_EXTENTS and the X window border width.
  */
-static inline margin_t __attribute__((pure))
+static inline margin_t attr_pure
 win_calc_frame_extents(const win *w) {
   margin_t result = w->frame_extents;
   result.top = max_i(result.top, w->g.border_width);
@@ -380,7 +398,7 @@ win_calc_frame_extents(const win *w) {
 /**
  * Check whether a window has WM frames.
  */
-static inline bool __attribute__((pure))
+static inline bool attr_pure
 win_has_frame(const win *w) {
   return w->g.border_width
     || w->frame_extents.top || w->frame_extents.left

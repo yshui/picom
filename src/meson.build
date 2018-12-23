@@ -1,12 +1,16 @@
-deps = [
+base_deps = [
 	cc.find_library('m'),
 	cc.find_library('ev'),
-	dependency('xcb', version: '>=1.9.2')
+	dependency('xcb', version: '>=1.9.2'),
 ]
 
-srcs = ['compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'diagnostic.c']
+srcs = [ files('compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
+               'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
+               'options.c') ]
+compton_inc = include_directories('.')
 
 cflags = []
+
 
 required_package = [
 	'x11', 'x11-xcb', 'xcb-renderutil',
@@ -16,8 +20,10 @@ required_package = [
 ]
 
 foreach i : required_package
-	deps += [dependency(i, required: true)]
+	base_deps += [dependency(i, required: true)]
 endforeach
+
+deps = []
 
 if get_option('xinerama')
 	deps += [dependency('xcb-xinerama', required: true)]
@@ -25,7 +31,8 @@ if get_option('xinerama')
 endif
 
 if get_option('config_file')
-	deps += [dependency('libconfig', version: '>=1.4', required: true)]
+	deps += [dependency('libconfig', version: '>=1.4', required: true),
+	         dependency('libxdg-basedir', required: true)]
 	cflags += ['-DCONFIG_LIBCONFIG']
 	srcs += [ 'config_libconfig.c' ]
 endif
@@ -44,7 +51,7 @@ if get_option('vsync_drm')
 endif
 
 if get_option('opengl')
-	cflags += ['-DCONFIG_OPENGL']
+	cflags += ['-DCONFIG_OPENGL', '-DGL_GLEXT_PROTOTYPES']
 	deps += [dependency('gl', required: true)]
 	srcs += [ 'opengl.c' ]
 endif
@@ -60,4 +67,8 @@ if get_option('xrescheck')
 	srcs += [ 'xrescheck.c' ]
 endif
 
-executable('compton', srcs, c_args: cflags, dependencies: deps, install: true)
+subdir('backend')
+
+executable('compton', srcs, c_args: cflags,
+  dependencies: [ base_deps, deps ],
+  install: true, include_directories: compton_inc)

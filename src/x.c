@@ -8,8 +8,10 @@
 #include <xcb/xfixes.h>
 #include <pixman.h>
 
+#include "compiler.h"
 #include "common.h"
 #include "x.h"
+#include "log.h"
 
 /**
  * Get a specific attribute of a window.
@@ -27,28 +29,27 @@
  *    and number of items. A blank one on failure.
  */
 winprop_t
-wid_get_prop_adv(const session_t *ps, Window w, Atom atom, long offset,
-    long length, Atom rtype, int rformat) {
-  Atom type = None;
-  int format = 0;
-  unsigned long nitems = 0, after = 0;
-  unsigned char *data = NULL;
+wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom, long offset,
+    long length, xcb_atom_t rtype, int rformat) {
+  xcb_get_property_reply_t *r = xcb_get_property_reply(ps->c,
+    xcb_get_property(ps->c, 0, w, atom, rtype, offset, length), NULL);
 
-  if (Success == XGetWindowProperty(ps->dpy, w, atom, offset, length,
-        False, rtype, &type, &format, &nitems, &after, &data)
-      && nitems && (AnyPropertyType == type || type == rtype)
-      && (!rformat || format == rformat)
-      && (8 == format || 16 == format || 32 == format)) {
-      return (winprop_t) {
-        .ptr = data,
-        .nitems = nitems,
-        .type = type,
-        .format = format,
-      };
+  if (r && xcb_get_property_value_length(r) &&
+      (rtype == XCB_ATOM_ANY || r->type == rtype) &&
+      (!rformat || r->format == rformat) &&
+      (r->format == 8 || r->format == 16 || r->format == 32))
+  {
+    int len = xcb_get_property_value_length(r);
+    return (winprop_t) {
+      .ptr = xcb_get_property_value(r),
+      .nitems = len/(r->format/8),
+      .type = r->type,
+      .format = r->format,
+      .r = r,
+    };
   }
 
-  cxfree(data);
-
+  free(r);
   return (winprop_t) {
     .ptr = NULL,
     .nitems = 0,
@@ -111,7 +112,7 @@ static inline void x_get_server_pictfmts(session_t *ps) {
     xcb_render_query_pict_formats_reply(ps->c,
         xcb_render_query_pict_formats(ps->c), &e);
   if (e || !ps->pictfmts) {
-    printf_errf("(): failed to get pict formats\n");
+    log_fatal("failed to get pict formats\n");
     abort();
   }
 }
@@ -141,8 +142,8 @@ x_create_picture_with_pictfmt_and_pixmap(
   if (attr) {
     xcb_render_create_picture_value_list_serialize(&buf, valuemask, attr);
     if (!buf) {
-      printf_errf("(): failed to serialize picture attributes");
-      return None;
+      log_error("failed to serialize picture attributes");
+      return XCB_NONE;
     }
   }
 
@@ -152,8 +153,8 @@ x_create_picture_with_pictfmt_and_pixmap(
       pixmap, pictfmt->id, valuemask, buf));
   free(buf);
   if (e) {
-    printf_errf("(): failed to create picture");
-    return None;
+    log_error("failed to create picture");
+    return XCB_NONE;
   }
   return tmp_picture;
 }
@@ -187,7 +188,7 @@ x_create_picture_with_standard_and_pixmap(
  * Create an picture.
  */
 xcb_render_picture_t
-x_create_picture(session_t *ps, int wid, int hei,
+x_create_picture_with_pictfmt(session_t *ps, int wid, int hei,
   xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
@@ -195,7 +196,7 @@ x_create_picture(session_t *ps, int wid, int hei,
     pictfmt = x_get_pictform_for_visual(ps, ps->vis);
 
   if (!pictfmt) {
-    printf_errf("(): default visual is invalid");
+    log_fatal("Default visual is invalid");
     abort();
   }
 
@@ -213,17 +214,26 @@ x_create_picture(session_t *ps, int wid, int hei,
   return picture;
 }
 
+xcb_render_picture_t
+x_create_picture_with_visual(session_t *ps, int w, int h,
+  xcb_visualid_t visual, unsigned long valuemask,
+  const xcb_render_create_picture_value_list_t *attr)
+{
+  xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps, visual);
+  return x_create_picture_with_pictfmt(ps, w, h, pictfmt, valuemask, attr);
+}
+
 bool x_fetch_region(session_t *ps, xcb_xfixes_region_t r, pixman_region32_t *res) {
   xcb_generic_error_t *e = NULL;
   xcb_xfixes_fetch_region_reply_t *xr = xcb_xfixes_fetch_region_reply(ps->c,
     xcb_xfixes_fetch_region(ps->c, r), &e);
   if (!xr) {
-    printf_errf("(): failed to fetch rectangles");
+    log_error("Failed to fetch rectangles");
     return false;
   }
 
   int nrect = xcb_xfixes_fetch_region_rectangles_length(xr);
-  pixman_box32_t *b = calloc(nrect, sizeof *b);
+  auto b = ccalloc(nrect, pixman_box32_t);
   xcb_rectangle_t *xrect = xcb_xfixes_fetch_region_rectangles(xr);
   for (int i = 0; i < nrect; i++) {
     b[i] = (pixman_box32_t) {
@@ -243,7 +253,7 @@ void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t pict,
     int clip_x_origin, int clip_y_origin, const region_t *reg) {
   int nrects;
   const rect_t *rects = pixman_region32_rectangles((region_t *)reg, &nrects);
-  xcb_rectangle_t *xrects = calloc(nrects, sizeof *xrects);
+  auto xrects = ccalloc(nrects, xcb_rectangle_t);
   for (int i = 0; i < nrects; i++)
     xrects[i] = (xcb_rectangle_t){
       .x = rects[i].x1,
@@ -256,9 +266,22 @@ void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t pict,
     xcb_request_check(ps->c, xcb_render_set_picture_clip_rectangles_checked(ps->c, pict,
       clip_x_origin, clip_y_origin, nrects, xrects));
   if (e)
-    printf_errf("(): failed to set clip region");
+    log_error("Failed to set clip region");
   free(e);
   free(xrects);
+  return;
+}
+
+void x_clear_picture_clip_region(session_t *ps, xcb_render_picture_t pict) {
+  xcb_render_change_picture_value_list_t v = {
+    .clipmask = None
+  };
+  xcb_generic_error_t *e =
+    xcb_request_check(ps->c, xcb_render_change_picture(ps->c, pict,
+      XCB_RENDER_CP_CLIP_MASK, &v));
+  if (e)
+    log_error("failed to clear clip region");
+  free(e);
   return;
 }
 
@@ -276,8 +299,8 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
 
   if (major == ps->composite_opcode
       && minor == XCB_COMPOSITE_REDIRECT_SUBWINDOWS) {
-    fprintf(stderr, "Another composite manager is already running "
-        "(and does not handle _NET_WM_CM_Sn correctly)\n");
+    log_fatal("Another composite manager is already running "
+              "(and does not handle _NET_WM_CM_Sn correctly)");
     exit(1);
   }
 
@@ -348,16 +371,12 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
 
 #undef CASESTRRET2
 
-  print_timestamp(ps);
   {
     char buf[BUF_LEN] = "";
     XGetErrorText(ps->dpy, error_code, buf, BUF_LEN);
-    printf("error %4d %-12s request %4d minor %4d serial %6lu: \"%s\"\n",
-        error_code, name, major,
-        minor, serial, buf);
+    log_debug("X error %d %s request %d minor %d serial %lu: \"%s\"",
+              error_code, name, major, minor, serial, buf);
   }
-
-  // print_backtrace();
 }
 
 /**
@@ -371,8 +390,60 @@ x_create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t 
   if (err == NULL)
     return pix;
 
-  printf_err("Failed to create pixmap:");
+  log_error("Failed to create pixmap:");
   ev_xcb_error(ps, err);
   free(err);
   return XCB_NONE;
+}
+
+/**
+ * Validate a pixmap.
+ *
+ * Detect whether the pixmap is valid with XGetGeometry. Well, maybe there
+ * are better ways.
+ */
+bool
+x_validate_pixmap(session_t *ps, xcb_pixmap_t pxmap) {
+  if (!pxmap) return false;
+
+  Window rroot = None;
+  int rx = 0, ry = 0;
+  unsigned rwid = 0, rhei = 0, rborder = 0, rdepth = 0;
+  return XGetGeometry(ps->dpy, pxmap, &rroot, &rx, &ry,
+        &rwid, &rhei, &rborder, &rdepth) && rwid && rhei;
+}
+/// Names of root window properties that could point to a pixmap of
+/// background.
+static const char *background_props_str[] = {
+  "_XROOTPMAP_ID",
+  "_XSETROOT_ID",
+  0,
+};
+
+xcb_pixmap_t x_get_root_back_pixmap(session_t *ps) {
+  xcb_pixmap_t pixmap = XCB_NONE;
+
+  // Get the values of background attributes
+  for (int p = 0; background_props_str[p]; p++) {
+    xcb_atom_t prop_atom = get_atom(ps, background_props_str[p]);
+    winprop_t prop =
+      wid_get_prop(ps, ps->root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
+    if (prop.nitems) {
+      pixmap = *prop.p32;
+      free_winprop(&prop);
+      break;
+    }
+    free_winprop(&prop);
+  }
+
+  return pixmap;
+}
+
+bool x_atom_is_background_prop(session_t *ps, xcb_atom_t atom) {
+  for (int p = 0; background_props_str[p]; p++) {
+    xcb_atom_t prop_atom = get_atom(ps, background_props_str[p]);
+    if (prop_atom == atom)
+      return true;
+  }
+  return false;
 }

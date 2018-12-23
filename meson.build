@@ -1,8 +1,12 @@
-project('compton', 'c', version: '3')
+project('compton', 'c', version: '4',
+        default_options: ['c_std=c11'])
 
 cc = meson.get_compiler('c')
 
-version = ''
+# use project version by default
+version = 'v'+meson.project_version()
+
+# use git describe if that's available
 git = find_program('git', required: false)
 if git.found()
 	gitv = run_command('git', 'describe')
@@ -11,16 +15,10 @@ if git.found()
 	endif
 endif
 
-if version == ''
-	# use project version by default
-	version = 'v'+meson.project_version()
-endif
-
-add_global_arguments('-std=c11', language: 'c')
 add_global_arguments('-DCOMPTON_VERSION="'+version+'"', language: 'c')
 
 if get_option('buildtype') == 'release'
-  add_global_arguments('-DNDEBUG', language: 'c')
+	add_global_arguments('-DNDEBUG', language: 'c')
 endif
 
 if get_option('sanitize')

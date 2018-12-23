@@ -1,0 +1,98 @@
+defaults: &defaults
+  docker:
+    - image: yshui/comptonci
+cached-checkout: &ccheckout
+just-build: &build
+
+version: 2.1
+commands:
+  build:
+    parameters:
+      build-config:
+        type: string
+        default:
+      cc:
+        type: string
+        default: cc
+    steps:
+      - restore_cache:
+          keys:
+            - source-v1-{{ .Branch }}-{{ .Revision }}
+            - source-v1-{{ .Branch }}-
+            - source-v1-
+      - checkout
+      - save_cache:
+          key: source-v1-{{ .Branch }}-{{ .Revision }}
+          paths:
+            - ".git"
+      - run:
+          name: config
+          command: CC=<< parameters.cc >> meson << parameters.build-config >> -Dnew_backends=true --werror . build
+      - run:
+          name: build
+          command: ninja -C build
+  test-xvfb:
+    steps:
+      - run:
+          name: xxx
+          command: xvfb-run -s "-screen 0 640x480x24" glxinfo
+
+
+jobs:
+  basic:
+    <<: *defaults
+    steps:
+      - build:
+          build-config: -Dbuild_docs=true
+  minimal:
+    <<: *defaults
+    steps:
+      - build:
+          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
+  nogl:
+    <<: *defaults
+    steps:
+      - build:
+          build-config: -Dopengl=false
+  noregex:
+    <<: *defaults
+    steps:
+      - build:
+          build-config: -Dregex=false
+  clang_basic:
+    <<: *defaults
+    steps:
+      - build:
+          cc: clang-6.0
+          build-config:
+  clang_minimal:
+    <<: *defaults
+    steps:
+      - build:
+          cc: clang-6.0
+          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
+  clang_nogl:
+    <<: *defaults
+    steps:
+      - build:
+          cc: clang-6.0
+          build-config: -Dopengl=false
+  clang_noregex:
+    <<: *defaults
+    steps:
+      - build:
+          cc: clang-6.0
+          build-config: -Dregex=false
+
+workflows:
+  all_builds:
+    jobs:
+      - basic
+      - clang_basic
+      - minimal
+      - clang_minimal
+      - nogl
+      - clang_nogl
+#     - test-xvfb
+
+# vim: set sw=2 ts=8 et:

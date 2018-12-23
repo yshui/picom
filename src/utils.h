@@ -5,7 +5,14 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 #include <math.h>
+#include <stdio.h>
+#include <unistd.h>
+
+#include "compiler.h"
+
+#define ARR_SIZE(arr) (sizeof(arr)/sizeof(arr[0]))
 
 #ifdef __FAST_MATH__
 #warning Use of -ffast-math can cause rendering error or artifacts, \
@@ -29,7 +36,7 @@ static inline bool safe_isnan(double a) {
  * @param max maximum value
  * @return normalized value
  */
-static inline int __attribute__((const))
+static inline int attr_const
 normalize_i_range(int i, int min, int max) {
   if (i > max) return max;
   if (i < min) return min;
@@ -39,7 +46,7 @@ normalize_i_range(int i, int min, int max) {
 /**
  * Select the larger integer of two.
  */
-static inline int __attribute__((const))
+static inline int attr_const
 max_i(int a, int b) {
   return (a > b ? a : b);
 }
@@ -47,7 +54,7 @@ max_i(int a, int b) {
 /**
  * Select the smaller integer of two.
  */
-static inline int __attribute__((const))
+static inline int attr_const
 min_i(int a, int b) {
   return (a > b ? b : a);
 }
@@ -55,7 +62,7 @@ min_i(int a, int b) {
 /**
  * Select the larger long integer of two.
  */
-static inline long __attribute__((const))
+static inline long attr_const
 max_l(long a, long b) {
   return (a > b ? a : b);
 }
@@ -63,7 +70,7 @@ max_l(long a, long b) {
 /**
  * Select the smaller long integer of two.
  */
-static inline long __attribute__((const))
+static inline long attr_const
 min_l(long a, long b) {
   return (a > b ? b : a);
 }
@@ -76,7 +83,7 @@ min_l(long a, long b) {
  * @param max maximum value
  * @return normalized value
  */
-static inline double __attribute__((const))
+static inline double attr_const
 normalize_d_range(double d, double min, double max) {
   if (d > max) return max;
   if (d < min) return min;
@@ -89,33 +96,39 @@ normalize_d_range(double d, double min, double max) {
  * @param d double value to normalize
  * @return normalized value
  */
-static inline double __attribute__((const))
+static inline double attr_const
 normalize_d(double d) {
   return normalize_d_range(d, 0.0, 1.0);
 }
 
-static inline const char *
-skip_space_const(const char *src) {
-  if (!src)
-    return NULL;
-  while (*src && isspace(*src))
-    src++;
-  return src;
+void report_allocation_failure(const char *func, const char *file, unsigned int line);
+
+/**
+ * @brief Quit if the passed-in pointer is empty.
+ */
+static inline void *
+allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr) {
+  if (unlikely(!ptr)) {
+    report_allocation_failure(func_name, file, line);
+  }
+  return ptr;
 }
 
-static inline char *
-skip_space_mut(char *src) {
-  if (!src)
-    return NULL;
-  while (*src && isspace(*src))
-    src++;
-  return src;
-}
+/// @brief Wrapper of allocchk_().
+#define allocchk(ptr) allocchk_(__func__, __FILE__, __LINE__, ptr)
 
-#define skip_space(x) _Generic((x), \
-  char *: skip_space_mut, \
-  const char *: skip_space_const \
-)(x)
+/// @brief Wrapper of malloc().
+#define cmalloc(type) ((type *) allocchk(malloc(sizeof(type))))
+
+/// @brief Wrapper of malloc() that takes a size
+#define cvalloc(size) allocchk(malloc(size))
+
+/// @brief Wrapper of calloc().
+#define ccalloc(nmemb, type) ((type *) allocchk(calloc((nmemb), sizeof(type))))
+
+/// @brief Wrapper of ealloc().
+#define crealloc(ptr, nmemb) \
+  ((__typeof__(ptr)) allocchk(realloc((ptr), (nmemb) * sizeof(*(ptr)))))
 
 /// RC_TYPE generates a reference counted type from `type`
 ///
@@ -142,7 +155,7 @@ typedef struct { \
 } name##_internal_t; \
 typedef type name##_t; \
 Q type *name##_new(void) { \
-  name##_internal_t *ret = malloc(sizeof(name##_internal_t)); \
+  name##_internal_t *ret = cmalloc(name##_internal_t); \
   ctor((type *)ret); \
   ret->ref_count = 1; \
   return (type *)ret; \

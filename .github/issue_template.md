@@ -32,6 +32,12 @@
 
 ### Current Behavior
 
+### Stack trace
+// If compton crashes, please make sure your compton is built with debug info, and provide a stack trace of compton when it crashed.
+// Note, when compton crashes in a debugger, your screen might look frozen. But gdb will still handle your input if it is focused.
+// Usually you can use 'bt' and press enter to get the stack trace, then 'q', enter, 'y', enter to quit gdb.
+
+// Or, you can enable core dump, and upload the core file and the compton executable here.
+
 ### Other details
 // If your problem is visual, you are encouraged to record a short video when the problem occurs and link to it here.
-
