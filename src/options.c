@@ -551,11 +551,11 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'c': shadow_enable = true; break;
 		case 'C':
 			winopt_mask[WINTYPE_DOCK].shadow = true;
-			opt->wintype_option[WINTYPE_DOCK].shadow = true;
+			opt->wintype_option[WINTYPE_DOCK].shadow = false;
 			break;
 		case 'G':
 			winopt_mask[WINTYPE_DND].shadow = true;
-			opt->wintype_option[WINTYPE_DND].shadow = true;
+			opt->wintype_option[WINTYPE_DND].shadow = false;
 			break;
 		case 'm':;
 			double tmp;
