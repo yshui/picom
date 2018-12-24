@@ -350,22 +350,11 @@ condlst_add(c2_lptr_t **pcondlst, const char *pattern) {
   return true;
 }
 
-char *parse_config(options_t *opt, const char *config_file,
-                   bool *shadow_enable, bool *fading_enable, bool *hasneg,
-                   win_option_mask_t *winopt_mask) {
-  char *ret = NULL;
-#ifdef CONFIG_LIBCONFIG
-  ret = parse_config_libconfig(opt, config_file, shadow_enable, fading_enable,
-                               hasneg, winopt_mask);
-#endif
-
-  // Apply default wintype options that does not depends on global options.
-  // For example, wintype shadow option will depend on the global shadow
-  // option, so it is not set here.
-  //
-  // Except desktop windows are always drawn without shadow.
-  if (!winopt_mask[WINTYPE_DESKTOP].shadow) {
-    winopt_mask[WINTYPE_DESKTOP].shadow = true;
+void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_enable, bool fading_enable) {
+  // Apply default wintype options.
+  if (!mask[WINTYPE_DESKTOP].shadow) {
+    // Desktop windows are always drawn without shadow by default.
+    mask[WINTYPE_DESKTOP].shadow = true;
     opt->wintype_option[WINTYPE_DESKTOP].shadow = false;
   }
 
@@ -374,30 +363,48 @@ char *parse_config(options_t *opt, const char *config_file,
   const wintype_t nofocus_type[] =
     { WINTYPE_UNKNOWN, WINTYPE_NORMAL, WINTYPE_UTILITY };
   for (unsigned long i = 0; i < ARR_SIZE(nofocus_type); i++) {
-    if (!winopt_mask[nofocus_type[i]].focus) {
-      winopt_mask[nofocus_type[i]].focus = true;
+    if (!mask[nofocus_type[i]].focus) {
+      mask[nofocus_type[i]].focus = true;
       opt->wintype_option[nofocus_type[i]].focus = false;
     }
   }
   for (unsigned long i = 0; i < NUM_WINTYPES; i++) {
-    if (!winopt_mask[i].focus) {
-      winopt_mask[i].focus = true;
+    if (!mask[i].shadow) {
+      mask[i].shadow = true;
+      opt->wintype_option[i].shadow = shadow_enable;
+    }
+    if (!mask[i].fade) {
+      mask[i].fade = true;
+      opt->wintype_option[i].fade = fading_enable;
+    }
+    if (!mask[i].focus) {
+      mask[i].focus = true;
       opt->wintype_option[i].focus = true;
     }
-    if (!winopt_mask[i].full_shadow) {
-      winopt_mask[i].full_shadow = true;
+    if (!mask[i].full_shadow) {
+      mask[i].full_shadow = true;
       opt->wintype_option[i].full_shadow = false;
     }
-    if (!winopt_mask[i].redir_ignore) {
-      winopt_mask[i].redir_ignore = true;
+    if (!mask[i].redir_ignore) {
+      mask[i].redir_ignore = true;
       opt->wintype_option[i].redir_ignore = false;
     }
-    if (!winopt_mask[i].opacity) {
-      winopt_mask[i].opacity = true;
+    if (!mask[i].opacity) {
+      mask[i].opacity = true;
       // Opacity is not set to a concrete number here because the opacity logic
       // is complicated, and needs an "unset" state
       opt->wintype_option[i].opacity = NAN;
     }
   }
+}
+
+char *parse_config(options_t *opt, const char *config_file,
+                   bool *shadow_enable, bool *fading_enable, bool *hasneg,
+                   win_option_mask_t *winopt_mask) {
+  char *ret = NULL;
+#ifdef CONFIG_LIBCONFIG
+  ret = parse_config_libconfig(opt, config_file, shadow_enable, fading_enable,
+                               hasneg, winopt_mask);
+#endif
   return ret;
 }

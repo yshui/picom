@@ -551,11 +551,11 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'c': shadow_enable = true; break;
 		case 'C':
 			winopt_mask[WINTYPE_DOCK].shadow = true;
-			opt->wintype_option[WINTYPE_DOCK].shadow = true;
+			opt->wintype_option[WINTYPE_DOCK].shadow = false;
 			break;
 		case 'G':
 			winopt_mask[WINTYPE_DND].shadow = true;
-			opt->wintype_option[WINTYPE_DND].shadow = true;
+			opt->wintype_option[WINTYPE_DND].shadow = false;
 			break;
 		case 'm':;
 			double tmp;
@@ -793,18 +793,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	opt->refresh_rate = normalize_i_range(opt->refresh_rate, 0, 300);
 
 	// Apply default wintype options that are dependent on global options
-	for (int i = 0; i < NUM_WINTYPES; i++) {
-		auto wo = &opt->wintype_option[i];
-		auto mask = &winopt_mask[i];
-		if (!mask->shadow) {
-			wo->shadow = shadow_enable;
-			mask->shadow = true;
-		}
-		if (!mask->fade) {
-			wo->fade = fading_enable;
-			mask->fade = true;
-		}
-	}
+	set_default_winopts(opt, winopt_mask, shadow_enable, fading_enable);
 
 	// --blur-background-frame implies --blur-background
 	if (opt->blur_background_frame)
