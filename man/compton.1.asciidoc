@@ -74,7 +74,7 @@ OPTIONS
 	Set the log level. Possible values are "TRACE", "DEBUG", "INFO", "WARN", "ERROR", in increasing level of importance. Case doesn't matter.
 
 *--log-file*::
-	Set the log file. If *--log-file* is never specified, logs will be written to stderr. Otherwise, logs will to writeen to the give file, though some of the early logs might still be written to the stderr. When setting this option from the config file, it is recommended to use an absolute path.
+	Set the log file. If *--log-file* is never specified, logs will be written to stderr. Otherwise, logs will to writeen to the given file, though some of the early logs might still be written to the stderr. When setting this option from the config file, it is recommended to use an absolute path.
 
 *--show-all-xerrors*::
 	Show all X errors (for debugging).
