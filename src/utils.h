@@ -99,7 +99,7 @@ static inline double attr_const normalize_d(double d) {
 	return normalize_d_range(d, 0.0, 1.0);
 }
 
-void attr_noret report_allocation_failure(const char *func, const char *file,
+attr_noret void report_allocation_failure(const char *func, const char *file,
                                           unsigned int line);
 
 /**
