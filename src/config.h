@@ -119,7 +119,7 @@ typedef struct options_t {
 	/// Number of cycles to paint in benchmark mode. 0 for disabled.
 	int benchmark;
 	/// Window to constantly repaint in benchmark mode. 0 for full-screen.
-	Window benchmark_wid;
+	xcb_window_t benchmark_wid;
 	/// A list of conditions of windows not to paint.
 	c2_lptr_t *paint_blacklist;
 	/// Whether to show all X errors.

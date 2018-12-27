@@ -1362,7 +1362,7 @@ c2_match_once_leaf(session_t *ps, win *w, const c2_l_t *pleaf,
     bool *pres, bool *perr) {
   assert(pleaf);
 
-  const Window wid = (pleaf->tgt_onframe ? w->client_win: w->id);
+  const xcb_window_t wid = (pleaf->tgt_onframe ? w->client_win: w->id);
 
   // Return if wid is missing
   if (!pleaf->predef && !wid)

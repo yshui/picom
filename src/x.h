@@ -79,17 +79,17 @@ wid_get_prop(const session_t *ps, xcb_window_t wid, xcb_atom_t atom, long length
 }
 
 /**
- * Get the value of a type-<code>Window</code> property of a window.
+ * Get the value of a type-<code>xcb_window_t</code> property of a window.
  *
  * @return the value if successful, 0 otherwise
  */
-Window
-wid_get_prop_window(session_t *ps, Window wid, Atom aprop);
+xcb_window_t
+wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t aprop);
 
 /**
  * Get the value of a text property of a window.
  */
-bool wid_get_text_prop(session_t *ps, Window wid, Atom prop,
+bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop,
     char ***pstrlst, int *pnstr);
 
 xcb_render_pictforminfo_t *x_get_pictform_for_visual(session_t *, xcb_visualid_t);

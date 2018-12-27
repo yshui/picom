@@ -71,7 +71,7 @@ static inline void attr_nonnull(1, 2) set_tgt_clip(session_t *ps, region_t *reg)
 void free_picture(xcb_connection_t *c, xcb_render_picture_t *p) {
 	if (*p) {
 		xcb_render_free_picture(c, *p);
-		*p = None;
+		*p = XCB_NONE;
 	}
 }
 
@@ -147,7 +147,7 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
 		return false;
 
 #ifdef CONFIG_OPENGL
-	if (BKEND_GLX == ps->o.backend && !glx_tex_binded(ppaint->ptex, None))
+	if (BKEND_GLX == ps->o.backend && !glx_tex_binded(ppaint->ptex, XCB_NONE))
 		return false;
 #endif
 
@@ -192,12 +192,12 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	// causing the jittering issue M4he reported in #7.
 	if (!paint_bind_tex(ps, &w->paint, 0, 0, 0,
 	                    (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
-		log_error("Failed to bind texture for window %#010lx.", w->id);
+		log_error("Failed to bind texture for window %#010x.", w->id);
 	}
 	w->pixmap_damaged = false;
 
 	if (!paint_isvalid(ps, &w->paint)) {
-		log_error("Window %#010lx is missing painting data.", w->id);
+		log_error("Window %#010x is missing painting data.", w->id);
 		return;
 	}
 
@@ -223,16 +223,16 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 				pixman_region32_fini(&reg);
 			}
 
-			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, pict, None,
+			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, pict, XCB_NONE,
 			                     newpict, 0, 0, 0, 0, 0, 0, wid, hei);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE,
-			                     ps->white_picture, None, newpict, 0, 0, 0, 0,
+			                     ps->white_picture, XCB_NONE, newpict, 0, 0, 0, 0,
 			                     0, 0, wid, hei);
 			// We use an extra PictOpInReverse operation to get correct
 			// pixel alpha. There could be a better solution.
 			if (win_has_alpha(w))
 				xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_IN_REVERSE,
-				                     pict, None, newpict, 0, 0, 0, 0, 0,
+				                     pict, XCB_NONE, newpict, 0, 0, 0, 0, 0,
 				                     0, wid, hei);
 			pict = newpict;
 		}
@@ -367,7 +367,7 @@ static bool get_root_tile(session_t *ps) {
 	ps->root_tile_fill = false;
 
 	bool fill = false;
-	xcb_pixmap_t pixmap = None;
+	xcb_pixmap_t pixmap = XCB_NONE;
 
 	// Get the values of background attributes
 	for (int p = 0; background_props_str[p]; p++) {
@@ -566,14 +566,14 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 	// log_trace("(): building shadow for %s %d %d", w->name, width, height);
 
 	xcb_image_t *shadow_image = NULL;
-	xcb_pixmap_t shadow_pixmap = None, shadow_pixmap_argb = None;
-	xcb_render_picture_t shadow_picture = None, shadow_picture_argb = None;
-	xcb_gcontext_t gc = None;
+	xcb_pixmap_t shadow_pixmap = XCB_NONE, shadow_pixmap_argb = XCB_NONE;
+	xcb_render_picture_t shadow_picture = XCB_NONE, shadow_picture_argb = XCB_NONE;
+	xcb_gcontext_t gc = XCB_NONE;
 
 	shadow_image = make_shadow(ps, opacity, width, height);
 	if (!shadow_image) {
 		log_error("failed to make shadow");
-		return None;
+		return XCB_NONE;
 	}
 
 	shadow_pixmap =
@@ -641,7 +641,7 @@ static inline void win_paint_shadow(session_t *ps, win *w, region_t *reg_paint) 
 	paint_bind_tex(ps, &w->shadow_paint, 0, 0, 32, false);
 
 	if (!paint_isvalid(ps, &w->shadow_paint)) {
-		log_error("Window %#010lx is missing shadow data.", w->id);
+		log_error("Window %#010x is missing shadow data.", w->id);
 		return;
 	}
 
@@ -709,7 +709,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, int y, int wi
 		xcb_render_set_picture_filter(
 		    ps->c, src_pict, strlen(XRFILTER_CONVOLUTION), XRFILTER_CONVOLUTION,
 		    kwid * khei + 2, convolution_blur);
-		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, None,
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
 		                     dst_pict, (rd_from_tgt ? x : 0),
 		                     (rd_from_tgt ? y : 0), 0, 0, (rd_from_tgt ? 0 : x),
 		                     (rd_from_tgt ? 0 : y), wid, hei);
@@ -723,7 +723,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, int y, int wi
 	}
 
 	if (src_pict != tgt_buffer)
-		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, None,
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
 		                     tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
 
 	free_picture(ps->c, &tmp_picture);
@@ -995,7 +995,7 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			xcb_render_picture_t new_pict = x_create_picture_with_pictfmt(
 			    ps, ps->root_width, ps->root_height, pictfmt, 0, NULL);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
-			                     ps->tgt_buffer.pict, None, new_pict, 0, 0, 0,
+			                     ps->tgt_buffer.pict, XCB_NONE, new_pict, 0, 0, 0,
 			                     0, 0, 0, ps->root_width, ps->root_height);
 
 			// Next, we set the region of paint and highlight it
@@ -1008,12 +1008,12 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			// Finally, clear clip region and put the whole thing on screen
 			x_set_picture_clip_region(ps, new_pict, 0, 0, &ps->screen_reg);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, new_pict,
-			                     None, ps->tgt_picture, 0, 0, 0, 0, 0, 0,
+			                     XCB_NONE, ps->tgt_picture, 0, 0, 0, 0, 0, 0,
 			                     ps->root_width, ps->root_height);
 			xcb_render_free_picture(ps->c, new_pict);
 		} else
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
-			                     ps->tgt_buffer.pict, None, ps->tgt_picture,
+			                     ps->tgt_buffer.pict, XCB_NONE, ps->tgt_picture,
 			                     0, 0, 0, 0, 0, 0, ps->root_width,
 			                     ps->root_height);
 		break;
@@ -1299,7 +1299,7 @@ void free_root_tile(session_t *ps) {
 		xcb_free_pixmap(ps->c, ps->root_tile_paint.pixmap);
 		ps->root_tile_paint.pixmap = XCB_NONE;
 	}
-	ps->root_tile_paint.pixmap = None;
+	ps->root_tile_paint.pixmap = XCB_NONE;
 	ps->root_tile_fill = false;
 }
 

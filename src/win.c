@@ -39,18 +39,18 @@
 static inline void
 clear_cache_win_leaders(session_t *ps) {
   for (win *w = ps->list; w; w = w->next)
-    w->cache_leader = None;
+    w->cache_leader = XCB_NONE;
 }
 
 static inline void
-wid_set_opacity_prop(session_t *ps, Window wid, opacity_t val) {
+wid_set_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t val) {
   const uint32_t v = val;
   xcb_change_property(ps->c, XCB_PROP_MODE_REPLACE, wid, ps->atom_opacity,
       XCB_ATOM_CARDINAL, 32, 1, &v);
 }
 
 static inline void
-wid_rm_opacity_prop(session_t *ps, Window wid) {
+wid_rm_opacity_prop(session_t *ps, xcb_window_t wid) {
   xcb_delete_property(ps->c, wid, ps->atom_opacity);
 }
 
@@ -60,7 +60,7 @@ wid_rm_opacity_prop(session_t *ps, Window wid) {
  * @param leader leader window ID
  */
 static inline void
-group_update_focused(session_t *ps, Window leader) {
+group_update_focused(session_t *ps, xcb_window_t leader) {
   if (!leader)
     return;
 
@@ -79,7 +79,7 @@ group_update_focused(session_t *ps, Window leader) {
  * @return true if the window group is focused, false otherwise
  */
 static inline bool
-group_is_focused(session_t *ps, Window leader) {
+group_is_focused(session_t *ps, xcb_window_t leader) {
   if (!leader)
     return false;
 
@@ -145,7 +145,7 @@ void win_rounded_corners(session_t *ps, win *w) {
   if (!w->bounding_shaped)
     return;
 
-  // Quit if border_size() returns None
+  // Quit if border_size() returns XCB_NONE
   if (!pixman_region32_not_empty(&w->bounding_shape))
     return;
 
@@ -170,7 +170,7 @@ void win_rounded_corners(session_t *ps, win *w) {
 }
 
 int win_get_name(session_t *ps, win *w) {
-  XTextProperty text_prop = { NULL, None, 0, 0 };
+  XTextProperty text_prop = { NULL, XCB_NONE, 0, 0 };
   char **strlst = NULL;
   int nstr = 0;
 
@@ -178,7 +178,7 @@ int win_get_name(session_t *ps, win *w) {
     return 0;
 
   if (!(wid_get_text_prop(ps, w->client_win, ps->atom_name_ewmh, &strlst, &nstr))) {
-    log_trace("(%#010lx): _NET_WM_NAME unset, falling back to WM_NAME.", w->client_win);
+    log_trace("(%#010x): _NET_WM_NAME unset, falling back to WM_NAME.", w->client_win);
 
     if (!(XGetWMName(ps->dpy, w->client_win, &text_prop) && text_prop.value)) {
       return -1;
@@ -203,7 +203,7 @@ int win_get_name(session_t *ps, win *w) {
 
   XFreeStringList(strlst);
 
-  log_trace("(%#010lx): client = %#010lx, name = \"%s\", "
+  log_trace("(%#010x): client = %#010x, name = \"%s\", "
             "ret = %d", w->id, w->client_win, w->name, ret);
   return ret;
 }
@@ -224,7 +224,7 @@ int win_get_role(session_t *ps, win *w) {
 
   XFreeStringList(strlst);
 
-  log_trace("(%#010lx): client = %#010lx, role = \"%s\", "
+  log_trace("(%#010x): client = %#010x, role = \"%s\", "
             "ret = %d", w->id, w->client_win, w->role, ret);
   return ret;
 }
@@ -232,7 +232,7 @@ int win_get_role(session_t *ps, win *w) {
 /**
  * Check if a window is bounding-shaped.
  */
-static inline bool win_bounding_shaped(const session_t *ps, Window wid) {
+static inline bool win_bounding_shaped(const session_t *ps, xcb_window_t wid) {
   if (ps->shape_exists) {
     xcb_shape_query_extents_reply_t *reply;
     Bool bounding_shaped;
@@ -248,7 +248,7 @@ static inline bool win_bounding_shaped(const session_t *ps, Window wid) {
   return false;
 }
 
-wintype_t wid_get_prop_wintype(session_t *ps, Window wid) {
+wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
   set_ignore_next(ps);
   winprop_t prop = wid_get_prop(ps, wid, ps->atom_win_type, 32L, XCB_ATOM_ATOM, 32);
 
@@ -266,7 +266,7 @@ wintype_t wid_get_prop_wintype(session_t *ps, Window wid) {
   return WINTYPE_UNKNOWN;
 }
 
-bool wid_get_opacity_prop(session_t *ps, Window wid, opacity_t def,
+bool wid_get_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t def,
                           opacity_t *out) {
   bool ret = false;
   *out = def;
@@ -634,7 +634,7 @@ void win_upd_wintype(session_t *ps, win *w) {
  * @param w struct _win of the parent window
  * @param client window ID of the client window
  */
-void win_mark_client(session_t *ps, win *w, Window client) {
+void win_mark_client(session_t *ps, win *w, xcb_window_t client) {
   w->client_win = client;
 
   // If the window isn't mapped yet, stop here, as the function will be
@@ -679,9 +679,9 @@ void win_mark_client(session_t *ps, win *w, Window client) {
  * @param w struct _win of the parent window
  */
 void win_unmark_client(session_t *ps, win *w) {
-  Window client = w->client_win;
+  xcb_window_t client = w->client_win;
 
-  w->client_win = None;
+  w->client_win = XCB_NONE;
 
   // Recheck event mask
   xcb_change_window_attributes(ps->c, client, XCB_CW_EVENT_MASK,
@@ -702,15 +702,15 @@ void win_recheck_client(session_t *ps, win *w) {
 
   // Always recursively look for a window with WM_STATE, as Fluxbox
   // sets override-redirect flags on all frame windows.
-  Window cw = find_client_win(ps, w->id);
+  xcb_window_t cw = find_client_win(ps, w->id);
   if (cw)
-    log_trace("(%#010lx): client %#010lx", w->id, cw);
+    log_trace("(%#010x): client %#010x", w->id, cw);
   // Set a window's client window to itself if we couldn't find a
   // client window
   if (!cw) {
     cw = w->id;
     w->wmwin = !w->a.override_redirect;
-    log_trace("(%#010lx): client self (%s)", w->id,
+    log_trace("(%#010x): client self (%s)", w->id,
                 (w->wmwin ? "wmwin" : "override-redirected"));
   }
 
@@ -723,13 +723,13 @@ void win_recheck_client(session_t *ps, win *w) {
 }
 
 // TODO: probably split into win_new (in win.c) and add_win (in compton.c)
-bool add_win(session_t *ps, Window id, Window prev) {
+bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
   static const win win_def = {
       .win_data = NULL,
       .next = NULL,
       .prev_trans = NULL,
 
-      .id = None,
+      .id = XCB_NONE,
       .a = {},
 #ifdef CONFIG_XINERAMA
       .xinerama_scr = -1,
@@ -737,7 +737,7 @@ bool add_win(session_t *ps, Window id, Window prev) {
       .pictfmt = NULL,
       .mode = WMODE_TRANS,
       .ever_damaged = false,
-      .damage = None,
+      .damage = XCB_NONE,
       .pixmap_damaged = false,
       .paint = PAINT_INIT,
       .flags = 0,
@@ -754,11 +754,11 @@ bool add_win(session_t *ps, Window id, Window prev) {
       .to_paint = false,
       .in_openclose = false,
 
-      .client_win = None,
+      .client_win = XCB_NONE,
       .window_type = WINTYPE_UNKNOWN,
       .wmwin = false,
-      .leader = None,
-      .cache_leader = None,
+      .leader = XCB_NONE,
+      .cache_leader = XCB_NONE,
 
       .focused = false,
       .focused_force = UNSET,
@@ -814,7 +814,7 @@ bool add_win(session_t *ps, Window id, Window prev) {
   // Allocate and initialize the new win structure
   auto new = cmalloc(win);
 
-  log_trace("(%#010lx): %p", id, new);
+  log_trace("(%#010x): %p", id, new);
 
   *new = win_def;
   pixman_region32_init(&new->bounding_shape);
@@ -933,10 +933,10 @@ void win_update_focused(session_t *ps, win *w) {
 /**
  * Set leader of a window.
  */
-static inline void win_set_leader(session_t *ps, win *w, Window nleader) {
+static inline void win_set_leader(session_t *ps, win *w, xcb_window_t nleader) {
   // If the leader changes
   if (w->leader != nleader) {
-    Window cache_leader_old = win_get_leader(ps, w);
+    xcb_window_t cache_leader_old = win_get_leader(ps, w);
 
     w->leader = nleader;
 
@@ -946,7 +946,7 @@ static inline void win_set_leader(session_t *ps, win *w, Window nleader) {
 
     // Update the old and new window group and active_leader if the window
     // could affect their state.
-    Window cache_leader = win_get_leader(ps, w);
+    xcb_window_t cache_leader = win_get_leader(ps, w);
     if (win_is_focused_real(ps, w) && cache_leader_old != cache_leader) {
       ps->active_leader = cache_leader;
 
@@ -967,7 +967,7 @@ static inline void win_set_leader(session_t *ps, win *w, Window nleader) {
  * Update leader of a window.
  */
 void win_update_leader(session_t *ps, win *w) {
-  Window leader = None;
+  xcb_window_t leader = XCB_NONE;
 
   // Read the leader properties
   if (ps->o.detect_transient && !leader)
@@ -978,14 +978,14 @@ void win_update_leader(session_t *ps, win *w) {
 
   win_set_leader(ps, w, leader);
 
-  log_trace("(%#010lx): client %#010lx, leader %#010lx, cache %#010lx",
+  log_trace("(%#010x): client %#010x, leader %#010x, cache %#010x",
             w->id, w->client_win, w->leader, win_get_leader(ps, w));
 }
 
 /**
  * Internal function of win_get_leader().
  */
-Window win_get_leader_raw(session_t *ps, win *w, int recursions) {
+xcb_window_t win_get_leader_raw(session_t *ps, win *w, int recursions) {
   // Rebuild the cache if needed
   if (!w->cache_leader && (w->client_win || w->leader)) {
     // Leader defaults to client window
@@ -998,7 +998,7 @@ Window win_get_leader_raw(session_t *ps, win *w, int recursions) {
       if (wp) {
         // Dead loop?
         if (recursions > WIN_GET_LEADER_MAX_RECURSION)
-          return None;
+          return XCB_NONE;
 
         w->cache_leader = win_get_leader_raw(ps, wp, recursions + 1);
       }
@@ -1038,7 +1038,7 @@ bool win_get_class(session_t *ps, win *w) {
 
   XFreeStringList(strlst);
 
-  log_trace("(%#010lx): client = %#010lx, "
+  log_trace("(%#010x): client = %#010x, "
             "instance = \"%s\", general = \"%s\"",
             w->id, w->client_win, w->class_instance, w->class_general);
 
@@ -1054,11 +1054,11 @@ static void
 win_on_focus_change(session_t *ps, win *w) {
   // If window grouping detection is enabled
   if (ps->o.track_leader) {
-    Window leader = win_get_leader(ps, w);
+    xcb_window_t leader = win_get_leader(ps, w);
 
     // If the window gets focused, replace the old active_leader
     if (win_is_focused_real(ps, w) && leader != ps->active_leader) {
-      Window active_leader_old = ps->active_leader;
+      xcb_window_t active_leader_old = ps->active_leader;
 
       ps->active_leader = leader;
 
@@ -1068,7 +1068,7 @@ win_on_focus_change(session_t *ps, win *w) {
     // If the group get unfocused, remove it from active_leader
     else if (!win_is_focused_real(ps, w) && leader && leader == ps->active_leader
         && !group_is_focused(ps, leader)) {
-      ps->active_leader = None;
+      ps->active_leader = XCB_NONE;
       group_update_focused(ps, leader);
     }
 
@@ -1220,7 +1220,7 @@ void win_update_opacity_prop(session_t *ps, win *w) {
  * Retrieve frame extents from a window.
  */
 void
-win_update_frame_extents(session_t *ps, win *w, Window client) {
+win_update_frame_extents(session_t *ps, win *w, xcb_window_t client) {
   winprop_t prop = wid_get_prop(ps, client, ps->atom_frame_extents,
     4L, XCB_ATOM_CARDINAL, 32);
 
@@ -1241,7 +1241,7 @@ win_update_frame_extents(session_t *ps, win *w, Window client) {
       w->reg_ignore_valid = false;
   }
 
-  log_trace("(%#010lx): %d, %d, %d, %d", w->id,
+  log_trace("(%#010x): %d, %d, %d, %d", w->id,
       w->frame_extents.left, w->frame_extents.right,
       w->frame_extents.top, w->frame_extents.bottom);
 

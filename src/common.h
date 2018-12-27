@@ -335,11 +335,11 @@ typedef struct glx_prog_main {
 struct glx_prog_main { };
 #endif
 
-#define PAINT_INIT { .pixmap = None, .pict = None }
+#define PAINT_INIT { .pixmap = XCB_NONE, .pict = XCB_NONE }
 
 /// Linked list type of atoms.
 typedef struct _latom {
-  Atom atom;
+  xcb_atom_t atom;
   struct _latom *next;
 } latom_t;
 
@@ -439,7 +439,7 @@ typedef struct session {
   /// Default depth.
   int depth;
   /// Root window.
-  Window root;
+  xcb_window_t root;
   /// Height of root window.
   int root_height;
   /// Width of root window.
@@ -447,7 +447,7 @@ typedef struct session {
   // Damage of root window.
   // Damage root_damage;
   /// X Composite overlay window. Used if <code>--paint-on-overlay</code>.
-  Window overlay;
+  xcb_window_t overlay;
   /// Whether the root tile is filled by compton.
   bool root_tile_fill;
   /// Picture of the root window background.
@@ -463,7 +463,7 @@ typedef struct session {
   paint_t tgt_buffer;
   XSyncFence tgt_buffer_fence;
   /// Window ID of the window we register as a symbol.
-  Window reg_win;
+  xcb_window_t reg_win;
 #ifdef CONFIG_OPENGL
   /// Pointer to GLX data.
   glx_session_t *psglx;
@@ -526,7 +526,7 @@ typedef struct session {
   win *active_win;
   /// Window ID of leader window of currently active window. Used for
   /// subsidiary window detection.
-  Window active_leader;
+  xcb_window_t active_leader;
 
   // === Shadow/dimming related ===
   /// 1x1 black Picture.
@@ -626,32 +626,32 @@ typedef struct session {
 
   // === Atoms ===
   /// Atom of property <code>_NET_WM_OPACITY</code>.
-  Atom atom_opacity;
+  xcb_atom_t atom_opacity;
   /// Atom of <code>_NET_FRAME_EXTENTS</code>.
-  Atom atom_frame_extents;
+  xcb_atom_t atom_frame_extents;
   /// Property atom to identify top-level frame window. Currently
   /// <code>WM_STATE</code>.
-  Atom atom_client;
+  xcb_atom_t atom_client;
   /// Atom of property <code>WM_NAME</code>.
-  Atom atom_name;
+  xcb_atom_t atom_name;
   /// Atom of property <code>_NET_WM_NAME</code>.
-  Atom atom_name_ewmh;
+  xcb_atom_t atom_name_ewmh;
   /// Atom of property <code>WM_CLASS</code>.
-  Atom atom_class;
+  xcb_atom_t atom_class;
   /// Atom of property <code>WM_WINDOW_ROLE</code>.
-  Atom atom_role;
+  xcb_atom_t atom_role;
   /// Atom of property <code>WM_TRANSIENT_FOR</code>.
-  Atom atom_transient;
+  xcb_atom_t atom_transient;
   /// Atom of property <code>WM_CLIENT_LEADER</code>.
-  Atom atom_client_leader;
+  xcb_atom_t atom_client_leader;
   /// Atom of property <code>_NET_ACTIVE_WINDOW</code>.
-  Atom atom_ewmh_active_win;
+  xcb_atom_t atom_ewmh_active_win;
   /// Atom of property <code>_COMPTON_SHADOW</code>.
-  Atom atom_compton_shadow;
+  xcb_atom_t atom_compton_shadow;
   /// Atom of property <code>_NET_WM_WINDOW_TYPE</code>.
-  Atom atom_win_type;
+  xcb_atom_t atom_win_type;
   /// Array of atoms of all possible window types.
-  Atom atoms_wintypes[NUM_WINTYPES];
+  xcb_atom_t atoms_wintypes[NUM_WINTYPES];
   /// Linked list of additional atoms to track.
   latom_t *track_atom_lst;
 
@@ -888,7 +888,7 @@ get_atom(session_t *ps, const char *atom_name) {
 /**
  * Return the painting target window.
  */
-static inline Window
+static inline xcb_window_t
 get_tgt_window(session_t *ps) {
   return ps->overlay != XCB_NONE ? ps->overlay: ps->root;
 }
@@ -897,7 +897,7 @@ get_tgt_window(session_t *ps) {
  * Find a window from window id in window linked list of the session.
  */
 static inline win *
-find_win(session_t *ps, Window id) {
+find_win(session_t *ps, xcb_window_t id) {
   if (!id)
     return NULL;
 
@@ -918,7 +918,7 @@ find_win(session_t *ps, Window id) {
  * @return struct win object of the found window, NULL if not found
  */
 static inline win *
-find_toplevel(session_t *ps, Window id) {
+find_toplevel(session_t *ps, xcb_window_t id) {
   if (!id)
     return NULL;
 
@@ -977,7 +977,7 @@ static inline void
 free_fence(session_t *ps, XSyncFence *pfence) {
   if (*pfence)
     XSyncDestroyFence(ps->dpy, *pfence);
-  *pfence = None;
+  *pfence = XCB_NONE;
 }
 
 /**
@@ -1045,21 +1045,25 @@ win_is_solid(session_t *ps, const win *w) {
  * @param ps current session
  * @param w window to check
  * @param atom atom of property to check
- * @return 1 if it has the attribute, 0 otherwise
+ * @return true if it has the attribute, false otherwise
  */
 static inline bool
-wid_has_prop(const session_t *ps, Window w, Atom atom) {
-  Atom type = None;
-  int format;
-  unsigned long nitems, after;
-  unsigned char *data;
-
-  if (Success == XGetWindowProperty(ps->dpy, w, atom, 0, 0, False,
-        AnyPropertyType, &type, &format, &nitems, &after, &data)) {
-    cxfree(data);
-    if (type) return true;
+wid_has_prop(const session_t *ps, xcb_window_t w, xcb_atom_t atom) {
+  auto r =
+    xcb_get_property_reply(ps->c,
+                           xcb_get_property(ps->c, 0, w, atom,
+                                            XCB_GET_PROPERTY_TYPE_ANY, 0, 0),
+                           NULL);
+  if (!r) {
+	  return false;
   }
 
+  auto rtype = r->type;
+  free(r);
+
+  if (rtype != XCB_NONE) {
+    return true;
+  }
   return false;
 }
 
@@ -1083,10 +1087,6 @@ winprop_get_int(winprop_t prop) {
 
   return tgt;
 }
-
-bool
-wid_get_text_prop(session_t *ps, Window wid, Atom prop,
-    char ***pstrlst, int *pnstr);
 
 void
 force_repaint(session_t *ps);

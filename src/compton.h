@@ -45,14 +45,14 @@
 
 void add_damage(session_t *ps, const region_t *damage);
 
-long determine_evmask(session_t *ps, Window wid, win_evmode_t mode);
+long determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode);
 
 xcb_window_t
 find_client_win(session_t *ps, xcb_window_t w);
 
-win *find_toplevel2(session_t *ps, Window wid);
+win *find_toplevel2(session_t *ps, xcb_window_t wid);
 
-void map_win(session_t *ps, Window id);
+void map_win(session_t *ps, xcb_window_t id);
 
 /**
  * Subtract two unsigned long values.
@@ -84,7 +84,7 @@ wintype_arr_enable_unset(switch_t arr[]) {
  * @param wid window ID to search for
  */
 static inline bool
-array_wid_exists(const Window *arr, int count, Window wid) {
+array_wid_exists(const xcb_window_t *arr, int count, xcb_window_t wid) {
   while (count--) {
     if (arr[count] == wid) {
       return true;
@@ -131,7 +131,7 @@ make_text_prop(session_t *ps, char *str) {
  * Set a single-string text property on a window.
  */
 static inline bool
-wid_set_text_prop(session_t *ps, Window wid, Atom prop_atom, char *str) {
+wid_set_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop_atom, char *str) {
   XTextProperty *pprop = make_text_prop(ps, str);
   if (!pprop) {
     log_error("Failed to make text property: %s.", str);
@@ -149,18 +149,15 @@ wid_set_text_prop(session_t *ps, Window wid, Atom prop_atom, char *str) {
  * Dump an drawable's info.
  */
 static inline void
-dump_drawable(session_t *ps, Drawable drawable) {
-  Window rroot = None;
-  int x = 0, y = 0;
-  unsigned width = 0, height = 0, border = 0, depth = 0;
-  if (XGetGeometry(ps->dpy, drawable, &rroot, &x, &y, &width, &height,
-        &border, &depth)) {
-    log_trace("Drawable %#010lx: x = %u, y = %u, wid = %u, hei = %d, b = %u, d = %u",
-              drawable, x, y, width, height, border, depth);
+dump_drawable(session_t *ps, xcb_drawable_t drawable) {
+  auto r = xcb_get_geometry_reply(ps->c, xcb_get_geometry(ps->c, drawable), NULL);
+  if (!r) {
+    log_trace("Drawable %#010x: Failed", drawable);
+    return;
   }
-  else {
-    log_trace("Drawable %#010lx: Failed", drawable);
-  }
+  log_trace("Drawable %#010x: x = %u, y = %u, wid = %u, hei = %d, b = %u, d = %u",
+            drawable, r->x, r->y, r->width, r->height, r->border_width, r->depth);
+  free(r);
 }
 
 /**
