@@ -48,6 +48,10 @@ log_default_writev(struct log_target *tgt, const struct iovec *vec, int vcnt) {
 		total += vec[i].iov_len;
 	}
 
+	if (!total) {
+		// Nothing to write
+		return;
+	}
 	char *buf = ccalloc(total, char);
 	total = 0;
 	for (int i = 0; i < vcnt; i++) {
