@@ -488,6 +488,11 @@ cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data) {
       ++count;
   }
 
+  if (!count) {
+    // Nothing to append
+    return true;
+  }
+
   // Allocate memory for an array of window IDs
   auto arr = ccalloc(count, cdbus_window_t);
 
