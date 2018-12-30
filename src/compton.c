@@ -2901,6 +2901,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
     if (e) {
       log_error("Failed to create a XSync fence. xrender-sync-fence will be disabled");
       ps->o.xrender_sync_fence = false;
+      ps->sync_fence = XCB_NONE;
       free(e);
     }
   }
