@@ -2,8 +2,6 @@
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #include <stdbool.h>
 
-#include <X11/Xutil.h>
-#include <X11/Xlib.h>
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xfixes.h>
 #include <pixman.h>
@@ -371,12 +369,8 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
 
 #undef CASESTRRET2
 
-  {
-    char buf[BUF_LEN] = "";
-    XGetErrorText(ps->dpy, error_code, buf, BUF_LEN);
-    log_debug("X error %d %s request %d minor %d serial %lu: \"%s\"",
-              error_code, name, major, minor, serial, buf);
-  }
+  log_debug("X error %d %s request %d minor %d serial %lu",
+            error_code, name, major, minor, serial);
 }
 
 /**
