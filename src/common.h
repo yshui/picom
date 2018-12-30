@@ -65,6 +65,7 @@
 #include <ctype.h>
 #include <sys/time.h>
 
+#include <X11/Xlib.h>
 #include <xcb/composite.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
@@ -871,7 +872,7 @@ static inline xcb_atom_t
 get_atom(session_t *ps, const char *atom_name) {
   xcb_intern_atom_reply_t *reply =
     xcb_intern_atom_reply(ps->c,
-        xcb_intern_atom(ps->c, False, strlen(atom_name), atom_name),
+        xcb_intern_atom(ps->c, 0, strlen(atom_name), atom_name),
         NULL);
 
   xcb_atom_t atom = XCB_NONE;
@@ -991,14 +992,6 @@ set_ignore(session_t *ps, unsigned long sequence) {
   i->next = 0;
   *ps->ignore_tail = i;
   ps->ignore_tail = &i->next;
-}
-
-/**
- * Ignore X errors caused by next X request.
- */
-static inline void
-set_ignore_next(session_t *ps) {
-  set_ignore(ps, NextRequest(ps->dpy));
 }
 
 /**

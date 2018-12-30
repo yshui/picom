@@ -249,7 +249,6 @@ static inline bool win_bounding_shaped(const session_t *ps, xcb_window_t wid) {
 }
 
 wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
-  set_ignore_next(ps);
   winprop_t prop = wid_get_prop(ps, wid, ps->atom_win_type, 32L, XCB_ATOM_ATOM, 32);
 
   for (unsigned i = 0; i < prop.nitems; ++i) {
