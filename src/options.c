@@ -743,7 +743,11 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->write_pid_path = strdup(optarg);
 			break;
 		P_CASEBOOL(311, vsync_use_glfinish);
-		P_CASEBOOL(312, xrender_sync);
+		case 312:
+			// --xrender-sync
+			log_warn("Please use --xrender-sync-fence instead of --xrender-sync");
+			opt->xrender_sync_fence = true;
+ 			break;
 		P_CASEBOOL(313, xrender_sync_fence);
 		P_CASEBOOL(315, no_fading_destroyed_argb);
 		P_CASEBOOL(316, force_win_blend);
@@ -798,9 +802,6 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	// --blur-background-frame implies --blur-background
 	if (opt->blur_background_frame)
 		opt->blur_background = true;
-
-	if (opt->xrender_sync_fence)
-		opt->xrender_sync = true;
 
 	// Other variables determined by options
 

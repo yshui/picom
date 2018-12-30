@@ -72,10 +72,8 @@ typedef struct options_t {
 	char *write_pid_path;
 	/// The backend in use.
 	enum backend backend;
-	/// Whether to sync X drawing to avoid certain delay issues with
-	/// GLX backend.
-	bool xrender_sync;
-	/// Whether to sync X drawing with X Sync fence.
+	/// Whether to sync X drawing with X Sync fence to avoid certain delay
+	/// issues with GLX backend.
 	bool xrender_sync_fence;
 	/// Whether to avoid using stencil buffer under GLX backend. Might be
 	/// unsafe.

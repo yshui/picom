@@ -165,8 +165,6 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		w->paint.pixmap = xcb_generate_id(ps->c);
 		set_ignore_cookie(
 		    ps, xcb_composite_name_window_pixmap(ps->c, w->id, w->paint.pixmap));
-		if (w->paint.pixmap)
-			free_fence(ps, &w->fence);
 	}
 
 	Drawable draw = w->paint.pixmap;
@@ -183,8 +181,9 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		    ps, w->pictfmt, draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
 	}
 
-	if (IsViewable == w->a.map_state)
-		xr_sync(ps, draw, &w->fence);
+	if (IsViewable == w->a.map_state && ps->o.xrender_sync_fence) {
+		x_fence_sync(ps, draw);
+	}
 
 	// GLX: Build texture
 	// Let glx_bind_pixmap() determine pixmap size, because if the user
@@ -607,7 +606,9 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 	w->shadow_paint.pict = shadow_picture_argb;
 
 	// Sync it once and only once
-	xr_sync(ps, w->shadow_paint.pixmap, NULL);
+	if (ps->o.xrender_sync_fence) {
+		x_fence_sync(ps, w->shadow_paint.pixmap);
+	}
 
 	xcb_free_gc(ps->c, gc);
 	xcb_image_destroy(shadow_image);
@@ -1026,11 +1027,15 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			glFlush();
 		glXWaitX();
 		assert(ps->tgt_buffer.pixmap);
-		xr_sync(ps, ps->tgt_buffer.pixmap, &ps->tgt_buffer_fence);
+		if (ps->o.xrender_sync_fence) {
+			x_fence_sync(ps, ps->tgt_buffer.pixmap);
+		}
 		paint_bind_tex(ps, &ps->tgt_buffer, ps->root_width, ps->root_height,
 		               ps->depth, !ps->o.glx_no_rebind_pixmap);
 		// See #163
-		xr_sync(ps, ps->tgt_buffer.pixmap, &ps->tgt_buffer_fence);
+		if (ps->o.xrender_sync_fence) {
+			x_fence_sync(ps, ps->tgt_buffer.pixmap);
+		}
 		if (ps->o.vsync_use_glfinish)
 			glFinish();
 		else

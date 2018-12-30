@@ -65,10 +65,6 @@
 #include <ctype.h>
 #include <sys/time.h>
 
-#include <X11/Xlib-xcb.h>
-#include <X11/Xlib.h>
-#include <X11/extensions/sync.h>
-
 #include <xcb/composite.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
@@ -461,7 +457,6 @@ typedef struct session {
   xcb_render_picture_t tgt_picture;
   /// Temporary buffer to paint to before sending to display.
   paint_t tgt_buffer;
-  XSyncFence tgt_buffer_fence;
   /// Window ID of the window we register as a symbol.
   xcb_window_t reg_win;
 #ifdef CONFIG_OPENGL
@@ -971,16 +966,6 @@ free_all_damage_last(session_t *ps) {
 }
 
 /**
- * Free a XSync fence.
- */
-static inline void
-free_fence(session_t *ps, XSyncFence *pfence) {
-  if (*pfence)
-    XSyncDestroyFence(ps->dpy, *pfence);
-  *pfence = XCB_NONE;
-}
-
-/**
  * Check if a rectangle includes the whole screen.
  */
 static inline bool
@@ -1137,45 +1122,6 @@ glx_mark_frame(session_t *ps) {
 }
 
 ///@}
-
-/**
- * Synchronizes a X Render drawable to ensure all pending painting requests
- * are completed.
- */
-static inline void
-xr_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
-  if (!ps->o.xrender_sync)
-    return;
-
-  x_sync(ps->c);
-  if (ps->o.xrender_sync_fence && ps->xsync_exists) {
-    // TODO: If everybody just follows the rules stated in X Sync prototype,
-    // we need only one fence per screen, but let's stay a bit cautious right
-    // now
-    XSyncFence tmp_fence = None;
-    if (!pfence)
-      pfence = &tmp_fence;
-    assert(pfence);
-    if (!*pfence)
-      *pfence = XSyncCreateFence(ps->dpy, d, False);
-    if (*pfence) {
-      Bool attr_unused triggered = False;
-      /* if (XSyncQueryFence(ps->dpy, *pfence, &triggered) && triggered)
-        XSyncResetFence(ps->dpy, *pfence); */
-      // The fence may fail to be created (e.g. because of died drawable)
-      assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || !triggered);
-      XSyncTriggerFence(ps->dpy, *pfence);
-      XSyncAwaitFence(ps->dpy, pfence, 1);
-      assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || triggered);
-    }
-    else {
-      log_error("Failed to create X Sync fence for %#010lx", d);
-    }
-    free_fence(ps, &tmp_fence);
-    if (*pfence)
-      XSyncResetFence(ps->dpy, *pfence);
-  }
-}
 
 /** @name DBus handling
  */

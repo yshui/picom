@@ -14,7 +14,7 @@ cflags = []
 
 required_package = [
 	'x11', 'x11-xcb', 'xcb-renderutil',
-	'xcb-render', 'xcb-damage', 'xcb-randr',
+	'xcb-render', 'xcb-damage', 'xcb-randr', 'xcb-sync',
 	'xcb-composite', 'xcb-shape', 'xcb-image',
 	'xcb-xfixes', 'xcb-present', 'xext', 'pixman-1'
 ]

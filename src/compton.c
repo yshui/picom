@@ -12,7 +12,9 @@
 #include <ctype.h>
 #include <string.h>
 #include <X11/Xlib.h>
+#include <X11/Xlib-xcb.h>
 #include <X11/Xlibint.h>
+#include <X11/extensions/sync.h>
 #include <xcb/randr.h>
 #include <xcb/present.h>
 #include <xcb/damage.h>
@@ -174,7 +176,6 @@ static inline void
 free_win_res(session_t *ps, win *w) {
   free_win_res_glx(ps, w);
   free_paint(ps, &w->paint);
-  free_fence(ps, &w->fence);
   pixman_region32_fini(&w->bounding_shape);
   free_paint(ps, &w->shadow_paint);
   // BadDamage may be thrown if the window is destroyed
@@ -957,9 +958,9 @@ unmap_win(session_t *ps, win **_w) {
   if (w->destroyed) return;
 
   // One last synchronization
-  if (w->paint.pixmap)
-    xr_sync(ps, w->paint.pixmap, &w->fence);
-  free_fence(ps, &w->fence);
+  if (w->paint.pixmap && ps->o.xrender_sync_fence) {
+    x_fence_sync(ps, w->paint.pixmap);
+  }
 
   // Set focus out
   win_set_focused(ps, w, false);
@@ -2344,7 +2345,6 @@ redir_stop(session_t *ps) {
     // kept inaccessible somehow
     for (win *w = ps->list; w; w = w->next) {
       free_paint(ps, &w->paint);
-      free_fence(ps, &w->fence);
     }
 
     xcb_composite_unredirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
@@ -3151,7 +3151,6 @@ session_destroy(session_t *ps) {
     ps->tgt_picture = XCB_NONE;
   else
     free_picture(ps->c, &ps->tgt_picture);
-  free_fence(ps, &ps->tgt_buffer_fence);
 
   free_picture(ps->c, &ps->root_picture);
   free_paint(ps, &ps->tgt_buffer);

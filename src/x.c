@@ -4,6 +4,7 @@
 
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xfixes.h>
+#include <xcb/sync.h>
 #include <pixman.h>
 
 #include "compiler.h"
@@ -283,6 +284,12 @@ void x_clear_picture_clip_region(session_t *ps, xcb_render_picture_t pict) {
   return;
 }
 
+enum {
+  XSyncBadCounter = 0,
+  XSyncBadAlarm = 1,
+  XSyncBadFence = 2,
+};
+
 /**
  * X11 error handler function.
  *
@@ -445,4 +452,48 @@ bool x_atom_is_background_prop(session_t *ps, xcb_atom_t atom) {
       return true;
   }
   return false;
+}
+
+/**
+ * Free a XSync fence.
+ */
+static inline void
+x_free_fence(session_t *ps, xcb_sync_fence_t *pfence) {
+  if (*pfence) {
+    xcb_sync_destroy_fence(ps->c, *pfence);
+  }
+  *pfence = XCB_NONE;
+}
+
+/**
+ * Synchronizes a X Render drawable to ensure all pending painting requests
+ * are completed.
+ */
+void x_fence_sync(session_t *ps, xcb_drawable_t d) {
+  x_sync(ps->c);
+  if (ps->xsync_exists) {
+    // TODO(richardgv): If everybody just follows the rules stated in X Sync
+    // prototype, we need only one fence per screen, but let's stay a bit
+    // cautious right now
+    xcb_sync_fence_t tmp_fence = xcb_generate_id(ps->c);
+    xcb_generic_error_t *e =
+      xcb_request_check(ps->c,
+                        xcb_sync_create_fence(ps->c, d, tmp_fence, 0));
+    if (e) {
+      log_error("Failed to create a XSync fence for %#010x", d);
+      free(e);
+      return;
+    }
+
+    e = xcb_request_check(ps->c, xcb_sync_trigger_fence(ps->c, tmp_fence));
+    if (e) {
+      log_error("Failed to trigger the fence");
+      free(e);
+      x_free_fence(ps, &tmp_fence);
+      return;
+    }
+
+    xcb_sync_await_fence(ps->c, 1, &tmp_fence);
+    x_free_fence(ps, &tmp_fence);
+  }
 }

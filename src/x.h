@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <xcb/xcb.h>
 #include <xcb/render.h>
+#include <xcb/sync.h>
 #include <xcb/xcb_renderutil.h>
 
 #include "region.h"
@@ -167,3 +168,5 @@ xcb_pixmap_t x_get_root_back_pixmap(session_t *ps);
 /// Return true if the atom refers to a property name that is used for the
 /// root window background pixmap
 bool x_atom_is_background_prop(session_t *ps, xcb_atom_t atom);
+
+void x_fence_sync(session_t *, xcb_sync_fence_t);

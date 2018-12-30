@@ -370,7 +370,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
   // --glx-use-gpushader4
   lcfg_lookup_bool(&cfg, "glx-use-gpushader4", &opt->glx_use_gpushader4);
   // --xrender-sync
-  lcfg_lookup_bool(&cfg, "xrender-sync", &opt->xrender_sync);
+  if (config_lookup_bool(&cfg, "xrender-sync", &ival) && ival) {
+    log_warn("Please use xrender-sync-fence instead of xrender-sync.");
+    opt->xrender_sync_fence = true;
+  }
   // --xrender-sync-fence
   lcfg_lookup_bool(&cfg, "xrender-sync-fence", &opt->xrender_sync_fence);
 
