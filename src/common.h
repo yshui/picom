@@ -70,6 +70,7 @@
 #include <xcb/damage.h>
 #include <xcb/randr.h>
 #include <xcb/shape.h>
+#include <xcb/sync.h>
 
 #ifdef CONFIG_XINERAMA
 #include <xcb/xinerama.h>
@@ -421,6 +422,7 @@ typedef struct session {
   void *backend_data;
   /// libev mainloop
   struct ev_loop *loop;
+
   // === Display related ===
   /// Display in use.
   Display *dpy;
@@ -466,6 +468,8 @@ typedef struct session {
   // XXX should be in glx_session_t
   glx_prog_main_t glx_prog_win;
 #endif
+  /// Sync fence to sync draw operations
+  xcb_sync_fence_t sync_fence;
 
   // === Operation related ===
   /// Program options.

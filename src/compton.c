@@ -957,11 +957,6 @@ unmap_win(session_t *ps, win **_w) {
 
   if (w->destroyed) return;
 
-  // One last synchronization
-  if (w->paint.pixmap && ps->o.xrender_sync_fence) {
-    x_fence_sync(ps, w->paint.pixmap);
-  }
-
   // Set focus out
   win_set_focused(ps, w, false);
 
@@ -2770,6 +2765,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   xcb_prefetch_extension_data(ps->c, &xcb_randr_id);
   xcb_prefetch_extension_data(ps->c, &xcb_xinerama_id);
   xcb_prefetch_extension_data(ps->c, &xcb_present_id);
+  xcb_prefetch_extension_data(ps->c, &xcb_sync_id);
 
   ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
   if (!ext_info || !ext_info->present) {
@@ -2880,17 +2876,33 @@ session_init(session_t *ps_old, int argc, char **argv) {
   }
 
   // Query X Sync
-  if (XSyncQueryExtension(ps->dpy, &ps->xsync_event, &ps->xsync_error)) {
-    // TODO: Fencing may require version >= 3.0?
-    int major_version_return = 0, minor_version_return = 0;
-    if (XSyncInitialize(ps->dpy, &major_version_return, &minor_version_return))
+  ext_info = xcb_get_extension_data(ps->c, &xcb_sync_id);
+  if (ext_info && ext_info->present) {
+    ps->xsync_error = ext_info->first_error;
+    ps->xsync_event = ext_info->first_event;
+    // Need X Sync 3.1 for fences
+    auto r = xcb_sync_initialize_reply(ps->c, xcb_sync_initialize(ps->c, 3, 1), NULL);
+    if (r) {
       ps->xsync_exists = true;
+      free(r);
+    }
   }
 
+  ps->sync_fence = XCB_NONE;
   if (!ps->xsync_exists && ps->o.xrender_sync_fence) {
-    log_fatal("X Sync extension not found. No X Sync fence sync is "
+    log_error("XSync extension not found. No XSync fence sync is "
               "possible. (xrender-sync-fence can't be enabled)");
-    exit(1);
+    ps->o.xrender_sync_fence = false;
+  }
+
+  if (ps->o.xrender_sync_fence) {
+    ps->sync_fence = xcb_generate_id(ps->c);
+    auto e = xcb_request_check(ps->c, xcb_sync_create_fence(ps->c, ps->root, ps->sync_fence, 0));
+    if (e) {
+      log_error("Failed to create a XSync fence. xrender-sync-fence will be disabled");
+      ps->o.xrender_sync_fence = false;
+      free(e);
+    }
   }
 
   // Query X RandR
@@ -3186,6 +3198,11 @@ session_destroy(session_t *ps) {
   if (ps->overlay) {
     xcb_composite_release_overlay_window(ps->c, ps->overlay);
     ps->overlay = XCB_NONE;
+  }
+
+  if (ps->sync_fence) {
+    xcb_sync_destroy_fence(ps->c, ps->sync_fence);
+    ps->sync_fence = XCB_NONE;
   }
 
   // Free reg_win

@@ -167,7 +167,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		    ps, xcb_composite_name_window_pixmap(ps->c, w->id, w->paint.pixmap));
 	}
 
-	Drawable draw = w->paint.pixmap;
+	xcb_drawable_t draw = w->paint.pixmap;
 	if (!draw)
 		draw = w->id;
 
@@ -179,10 +179,6 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 
 		w->paint.pict = x_create_picture_with_pictfmt_and_pixmap(
 		    ps, w->pictfmt, draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
-	}
-
-	if (IsViewable == w->a.map_state && ps->o.xrender_sync_fence) {
-		x_fence_sync(ps, draw);
 	}
 
 	// GLX: Build texture
@@ -605,11 +601,6 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 	assert(!w->shadow_paint.pict);
 	w->shadow_paint.pict = shadow_picture_argb;
 
-	// Sync it once and only once
-	if (ps->o.xrender_sync_fence) {
-		x_fence_sync(ps, w->shadow_paint.pixmap);
-	}
-
 	xcb_free_gc(ps->c, gc);
 	xcb_image_destroy(shadow_image);
 	xcb_free_pixmap(ps->c, shadow_pixmap);
@@ -822,8 +813,17 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
 /// region = ??
 /// region_real = the damage region
 void paint_all(session_t *ps, region_t *region, const region_t *region_real, win *const t) {
-	if (!region_real)
+	if (ps->o.xrender_sync_fence) {
+		if (!x_fence_sync(ps, ps->sync_fence)) {
+			log_error("x_fence_sync failed, xrender-sync-fence will be disabled from now on.");
+			xcb_sync_destroy_fence(ps->c, ps->sync_fence);
+			ps->o.xrender_sync_fence = false;
+		}
+	}
+
+	if (!region_real) {
 		region_real = region;
+	}
 
 #ifdef DEBUG_REPAINT
 	static struct timespec last_paint = {0};
@@ -1027,15 +1027,8 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			glFlush();
 		glXWaitX();
 		assert(ps->tgt_buffer.pixmap);
-		if (ps->o.xrender_sync_fence) {
-			x_fence_sync(ps, ps->tgt_buffer.pixmap);
-		}
 		paint_bind_tex(ps, &ps->tgt_buffer, ps->root_width, ps->root_height,
 		               ps->depth, !ps->o.glx_no_rebind_pixmap);
-		// See #163
-		if (ps->o.xrender_sync_fence) {
-			x_fence_sync(ps, ps->tgt_buffer.pixmap);
-		}
 		if (ps->o.vsync_use_glfinish)
 			glFinish();
 		else
