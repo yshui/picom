@@ -817,6 +817,7 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 		if (!x_fence_sync(ps, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be disabled from now on.");
 			xcb_sync_destroy_fence(ps->c, ps->sync_fence);
+			ps->sync_fence = XCB_NONE;
 			ps->o.xrender_sync_fence = false;
 		}
 	}
