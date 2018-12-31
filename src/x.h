@@ -6,6 +6,7 @@
 #include <xcb/xcb.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
+#include <xcb/xfixes.h>
 #include <xcb/xcb_renderutil.h>
 
 #include "region.h"
