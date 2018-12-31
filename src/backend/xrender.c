@@ -235,9 +235,6 @@ static void render_win(void *backend_data, session_t *ps, win *w, void *win_data
                        const region_t *reg_paint) {
 	struct _xrender_data *xd = backend_data;
 	struct _xrender_win_data *wd = win_data;
-	xcb_drawable_t draw = wd->pixmap;
-	if (!draw)
-		draw = w->id;
 
 	w->pixmap_damaged = false;
 
@@ -326,7 +323,7 @@ static void render_win(void *backend_data, session_t *ps, win *w, void *win_data
 		                           wd->rendered_pict, color, 1, &rect);
 	}
 
-  pixman_region32_fini(&reg_paint_local);
+	pixman_region32_fini(&reg_paint_local);
 }
 
 static void *prepare_win(void *backend_data, session_t *ps, win *w) {
