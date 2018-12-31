@@ -162,20 +162,20 @@ glx_cmp_fbconfig(session_t *ps, const glx_fbconfig_t *pfbc_a, const glx_fbconfig
  * @brief Update the FBConfig of given depth.
  */
 static inline void
-glx_update_fbconfig_bydepth(session_t *ps, int depth, glx_fbconfig_t *pfbcfg) {
+glx_update_fbconfig_bydepth(session_t *ps, struct _glx_data *gd, int depth, glx_fbconfig_t *pfbcfg) {
 	// Make sure the depth is sane
 	if (depth < 0 || depth > OPENGL_MAX_DEPTH)
 		return;
 
 	// Compare new FBConfig with current one
-	if (glx_cmp_fbconfig(ps, ps->psglx->fbconfigs[depth], pfbcfg) < 0) {
+	if (glx_cmp_fbconfig(ps, gd->fbconfigs[depth], pfbcfg) < 0) {
 		log_debug("(depth %d): %p overrides %p, target %#x.\n", depth, pfbcfg->cfg,
-		          ps->psglx->fbconfigs[depth] ? ps->psglx->fbconfigs[depth]->cfg : 0,
+		          gd->fbconfigs[depth] ? gd->fbconfigs[depth]->cfg : 0,
 		          pfbcfg->texture_tgts);
-		if (!ps->psglx->fbconfigs[depth]) {
-			ps->psglx->fbconfigs[depth] = cmalloc(glx_fbconfig_t);
+		if (!gd->fbconfigs[depth]) {
+			gd->fbconfigs[depth] = cmalloc(glx_fbconfig_t);
 		}
-		(*ps->psglx->fbconfigs[depth]) = *pfbcfg;
+		(*gd->fbconfigs[depth]) = *pfbcfg;
 	}
 }
 
@@ -255,13 +255,13 @@ static bool glx_update_fbconfig(struct _glx_data *gd, session_t *ps) {
 			int tgtdpt = depth - depth_alpha;
 			if (tgtdpt == visualdepth && tgtdpt < 32 && rgb) {
 				fbinfo.texture_fmt = GLX_TEXTURE_FORMAT_RGB_EXT;
-				glx_update_fbconfig_bydepth(ps, tgtdpt, &fbinfo);
+				glx_update_fbconfig_bydepth(ps, gd, tgtdpt, &fbinfo);
 			}
 		}
 
 		if (depth == visualdepth && rgba) {
 			fbinfo.texture_fmt = GLX_TEXTURE_FORMAT_RGBA_EXT;
-			glx_update_fbconfig_bydepth(ps, depth, &fbinfo);
+			glx_update_fbconfig_bydepth(ps, gd, depth, &fbinfo);
 		}
 	}
 
@@ -325,8 +325,8 @@ void glx_deinit(void *backend_data, session_t *ps) {
 
 	// Free FBConfigs
 	for (int i = 0; i <= OPENGL_MAX_DEPTH; ++i) {
-		free(ps->psglx->fbconfigs[i]);
-		ps->psglx->fbconfigs[i] = NULL;
+		free(gd->fbconfigs[i]);
+		gd->fbconfigs[i] = NULL;
 	}
 
 	// Destroy GLX context
@@ -504,8 +504,7 @@ void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 	// Refer to GLX_EXT_texture_om_pixmap spec to see what are the mean
 	// of the bits in texture_tgts
 	GLenum tex_tgt = 0;
-	if (GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts &&
-	    ps->psglx->has_texture_non_power_of_two)
+	if (GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts && gd->cap.non_power_of_two_texture)
 		tex_tgt = GLX_TEXTURE_2D_EXT;
 	else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & pcfg->texture_tgts)
 		tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
@@ -597,7 +596,6 @@ void glx_render_win(void *backend_data, session_t *ps, win *w, void *win_data,
  */
 static void attr_unused
 glx_paint_pre(session_t *ps, region_t *preg) {
-  ps->psglx->z = 0.0;
   // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   // Get buffer age
