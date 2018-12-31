@@ -29,6 +29,8 @@ safe_isnan(double a) {
 	return isnan(a);
 }
 
+typedef struct conv conv;
+
 /**
  * Normalize an int value to a specific range.
  *

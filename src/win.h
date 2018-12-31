@@ -13,26 +13,9 @@
 #include "x.h"
 #include "types.h"
 #include "c2.h"
-#include "render.h"
 
 typedef struct session session_t;
 typedef struct _glx_texture glx_texture_t;
-
-#ifdef CONFIG_OPENGL
-// FIXME this type should be in opengl.h
-//       it is very unideal for it to be here
-typedef struct {
-  /// Framebuffer used for blurring.
-  GLuint fbo;
-  /// Textures used for blurring.
-  GLuint textures[2];
-  /// Width of the textures.
-  int width;
-  /// Height of the textures.
-  int height;
-} glx_blur_cache_t;
-#endif
-
 typedef enum {
   WINTYPE_UNKNOWN,
   WINTYPE_DESKTOP,
@@ -59,6 +42,17 @@ typedef enum {
   WMODE_SOLID, // The window is opaque including the frame
 } winmode_t;
 
+typedef enum {
+  // The window is been unmapped, meaning unmap_win is called, but
+  // the window might need fading. This also implies this window
+  // was in mapped state.
+  WSTATE_UNMAPPING,
+  // The window is mapped
+  WSTATE_MAPPED,
+  // The window is unmapped
+  WSTATE_UNMAPPED,
+} winstate_t;
+
 /**
  * About coordinate systems
  *
@@ -83,6 +77,9 @@ struct win {
   // Core members
   /// ID of the top-level frame window.
   xcb_window_t id;
+  /// The "mapped state" of this window, doesn't necessary
+  /// match X mapped state, because of fading.
+  winstate_t state;
   /// Window attributes.
   xcb_get_window_attributes_reply_t a;
   xcb_get_geometry_reply_t g;
@@ -100,8 +97,6 @@ struct win {
   bool pixmap_damaged;
   /// Damage of the window.
   xcb_damage_damage_t damage;
-  /// Paint info of the window.
-  paint_t paint;
 
   /// Bounding shape of the window. In local coordinates.
   /// See above about coordinate systems.
@@ -125,8 +120,9 @@ struct win {
   bool reg_ignore_valid;
   /// Cached width/height of the window including border.
   int widthb, heightb;
-  /// Whether the window has been destroyed.
-  bool destroyed;
+  /// Whether the window is being destroyed. This being true means destroy_win
+  /// is called, but window might still need to be faded out
+  bool destroying;
   /// Whether the window is bounding-shaped.
   bool bounding_shaped;
   /// Whether the window just have rounded corners.
@@ -227,8 +223,6 @@ struct win {
   int shadow_width;
   /// Height of shadow. Affected by window size and commandline argument.
   int shadow_height;
-  /// Picture to render shadow. Affected by window size.
-  paint_t shadow_paint;
   /// The value of _COMPTON_SHADOW attribute of the window. Below 0 for
   /// none.
   long prop_shadow;
@@ -367,6 +361,11 @@ bool win_has_alpha(win *w);
 
 /// check if reg_ignore_valid is true for all windows above us
 bool win_is_region_ignore_valid(session_t *ps, win *w);
+
+/// Free a struct win
+/// prev = pointer to the `next` field of the previous
+///        win in the list
+void free_win(session_t *ps, win *w);
 
 static inline region_t
 win_get_bounding_shape_global_by_val(win *w) {

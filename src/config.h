@@ -237,6 +237,7 @@ typedef struct options_t {
 extern const char *const VSYNC_STRS[NUM_VSYNC + 1];
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
+void normalize_conv_kern(int wid, int hei, xcb_render_fixed_t *kern);
 attr_warn_unused_result bool parse_long(const char *, long *);
 attr_warn_unused_result const char *parse_matrix_readnum(const char *, double *);
 attr_warn_unused_result xcb_render_fixed_t *
@@ -267,13 +268,14 @@ parse_config_libconfig(options_t *, const char *config_file, bool *shadow_enable
                        bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
 #endif
 
-void set_default_winopts(options_t *, win_option_mask_t *, bool shadow_enable, bool fading_enable);
+void set_default_winopts(options_t *, win_option_mask_t *, bool shadow_enable,
+                         bool fading_enable);
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
 /// default values
 /// Outputs and returns:
 ///   same as parse_config_libconfig
 char *parse_config(options_t *, const char *config_file, bool *shadow_enable,
-                  bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
+                   bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
 
 /**
  * Parse a backend option argument.
