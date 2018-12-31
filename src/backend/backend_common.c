@@ -244,5 +244,3 @@ shadow_picture_err:
 
 	return false;
 }
-
-// vim: set noet sw=8 ts=8 :
