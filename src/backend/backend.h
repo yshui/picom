@@ -58,7 +58,8 @@ typedef struct backend_info {
 	    __attribute__((nonnull(1, 2, 4)));
 
 	/// Present the buffered target picture onto the screen. If target
-	/// is not buffered, this should be NULL.
+	/// is not buffered, this should be NULL. Otherwise, it should always
+	/// be non-NULL.
 	///
 	/// Optional
 	void (*present)(void *backend_data, session_t *ps) __attribute__((nonnull(1, 2)));
@@ -85,8 +86,7 @@ typedef struct backend_info {
 	/// another time.
 	///
 	/// Optional
-	void (*finish_render_win)(void *backend_data, session_t *ps, win *w,
-	                          void *win_data);
+	void (*finish_render_win)(void *backend_data, session_t *ps, win *w, void *win_data);
 
 	// ============ Resource management ===========
 
@@ -94,7 +94,7 @@ typedef struct backend_info {
 	//     is wasteful, since there can be multiple such notifies per drawing.
 	//     But if we don't, it can mean there will be a state where is window is
 	//     mapped and visible, but there is no win_data attached to it. We don't
-	//     want to break that assumption.
+	//     want to break that assumption as for now. We need to reconsider this.
 
 	/// Create a structure to stored additional data needed for rendering a
 	/// window, later used for render() and compose().
@@ -115,11 +115,17 @@ typedef struct backend_info {
 
 	/// Return if a window has transparent content. Guaranteed to only
 	/// be called after render_win is called.
+	///
+	/// This function is needed because some backend might change the content of the
+	/// window (e.g. when using a custom shader with the glx backend), so we only now
+	/// the transparency after the window is rendered
 	bool (*is_win_transparent)(void *backend_data, win *w, void *win_data)
 	    __attribute__((nonnull(1, 2)));
 
 	/// Return if the frame window has transparent content. Guaranteed to
 	/// only be called after render_win is called.
+	///
+  /// Same logic as is_win_transparent applies here.
 	bool (*is_frame_transparent)(void *backend_data, win *w, void *win_data)
 	    __attribute__((nonnull(1, 2)));
 } backend_info_t;
