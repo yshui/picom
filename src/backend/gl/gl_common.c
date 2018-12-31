@@ -7,6 +7,8 @@
 
 #include "backend/gl/gl_common.h"
 
+struct gl_data {};
+
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str) {
 	log_trace("===\n%s\n===", shader_str);
 
@@ -92,8 +94,7 @@ end:
 /**
  * @brief Create a program from vertex and fragment shader strings.
  */
-GLuint
-gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str) {
+GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str) {
 	GLuint vert_shader = 0;
 	GLuint frag_shader = 0;
 	GLuint prog = 0;
@@ -121,6 +122,18 @@ gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_
 		glDeleteShader(frag_shader);
 
 	return prog;
+}
+
+void gl_free_prog_main(session_t *ps, gl_win_shader_t *pprogram) {
+	if (!pprogram)
+		return;
+	if (pprogram->prog) {
+		glDeleteProgram(pprogram->prog);
+		pprogram->prog = 0;
+	}
+	pprogram->unifm_opacity = -1;
+	pprogram->unifm_invert_color = -1;
+	pprogram->unifm_tex = -1;
 }
 
 /**
@@ -521,11 +534,14 @@ void gl_set_clip(const region_t *reg) {
 	gl_check_err();
 }
 
-static GLint glGetUniformLocationChecked(GLint prog, const char *name) {
-	GLint ret = glGetUniformLocation(prog, name);
-	if (ret < 0)
-		log_error("Failed to get location of uniform '%s'. Might be troublesome.",
+GLuint glGetUniformLocationChecked(GLuint p, const char *name) {
+	auto ret = glGetUniformLocation(p, name);
+	if (ret < 0) {
+		log_error("Failed to get location of uniform '%s'. compton might not "
+		          "work correctly.",
 		          name);
+		return 0;
+	}
 	return ret;
 }
 

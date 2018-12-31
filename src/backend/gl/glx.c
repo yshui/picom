@@ -9,13 +9,14 @@
  *
  */
 
-#include <GL/glx.h>
 #include "backend/gl/glx.h"
+#include <GL/glx.h>
 #include "backend/backend.h"
 #include "backend/gl/gl_common.h"
+#include "string_utils.h"
 
 /// @brief Wrapper of a GLX FBConfig.
-typedef struct {
+typedef struct glx_fbconfig {
 	GLXFBConfig cfg;
 	GLint texture_fmt;
 	GLint texture_tgts;
@@ -33,7 +34,9 @@ struct _glx_data {
 	int glx_error;
 	GLXContext ctx;
 	gl_cap_t cap;
+	gl_win_shader_t win_shader;
 	gl_blur_shader_t blur_shader[MAX_BLUR_PASS];
+	glx_fbconfig_t *fbconfigs[OPENGL_MAX_DEPTH + 1];
 
 	void (*glXBindTexImage)(Display *display, GLXDrawable drawable, int buffer,
 	                        const int *attrib_list);
@@ -63,7 +66,7 @@ static inline bool glx_has_extension(session_t *ps, const char *ext) {
 /**
  * @brief Release binding of a texture.
  */
-void glx_release_pixmap(struct _glx_data *gd, Display *dpy, struct _glx_win_data *wd) {
+static void glx_release_pixmap(struct _glx_data *gd, Display *dpy, struct _glx_win_data *wd) {
 	// Release binding
 	if (wd->glpixmap && wd->texture.texture) {
 		glBindTexture(wd->texture.target, wd->texture.texture);
@@ -83,12 +86,12 @@ void glx_release_pixmap(struct _glx_data *gd, Display *dpy, struct _glx_win_data
 /**
  * Free a glx_texture_t.
  */
-static void glx_release_win(struct _glx_data *gd, Display *dpy, gl_texture_t *ptex) {
-	glx_release_pixmap(gd, dpy, ptex);
-	glDeleteTextures(1, &ptex->texture);
+static void attr_unused glx_release_win(struct _glx_data *gd, Display *dpy, struct _glx_win_data *wd) {
+	glx_release_pixmap(gd, dpy, wd);
+	glDeleteTextures(1, &wd->texture.texture);
 
 	// Free structure itself
-	free(ptex);
+	free(wd);
 }
 
 /**
@@ -99,7 +102,6 @@ static inline void free_win_res_glx(session_t *ps, win *w) {
 	/*free_paint_glx(ps, &w->shadow_paint);*/
 	/*free_glx_bc(ps, &w->glx_blur_cache);*/
 }
->>>>>>> 4bc5ef8... wip glx backend:src/backend/gl/glx.c
 
 static inline int glx_cmp_fbconfig_cmpattr(session_t *ps, const glx_fbconfig_t *pfbc_a,
                                            const glx_fbconfig_t *pfbc_b, int attr) {
@@ -115,8 +117,8 @@ static inline int glx_cmp_fbconfig_cmpattr(session_t *ps, const glx_fbconfig_t *
 /**
  * Compare two GLX FBConfig's to find the preferred one.
  */
-static int glx_cmp_fbconfig(session_t *ps, const glx_fbconfig_t *pfbc_a,
-                            const glx_fbconfig_t *pfbc_b) {
+static int
+glx_cmp_fbconfig(session_t *ps, const glx_fbconfig_t *pfbc_a, const glx_fbconfig_t *pfbc_b) {
 	int result = 0;
 
 	if (!pfbc_a)
@@ -165,10 +167,9 @@ glx_update_fbconfig_bydepth(session_t *ps, int depth, glx_fbconfig_t *pfbcfg) {
 
 	// Compare new FBConfig with current one
 	if (glx_cmp_fbconfig(ps, ps->psglx->fbconfigs[depth], pfbcfg) < 0) {
-		log_debug(
-		    "(depth %d): %p overrides %p, target %#x.\n", depth, pfbcfg->cfg,
-		    ps->psglx->fbconfigs[depth] ? ps->psglx->fbconfigs[depth]->cfg : 0,
-		    pfbcfg->texture_tgts);
+		log_debug("(depth %d): %p overrides %p, target %#x.\n", depth, pfbcfg->cfg,
+		          ps->psglx->fbconfigs[depth] ? ps->psglx->fbconfigs[depth]->cfg : 0,
+		          pfbcfg->texture_tgts);
 		if (!ps->psglx->fbconfigs[depth]) {
 			ps->psglx->fbconfigs[depth] = cmalloc(glx_fbconfig_t);
 		}
@@ -179,7 +180,7 @@ glx_update_fbconfig_bydepth(session_t *ps, int depth, glx_fbconfig_t *pfbcfg) {
 /**
  * Get GLX FBConfigs for all depths.
  */
-static bool glx_update_fbconfig(session_t *ps) {
+static bool glx_update_fbconfig(struct _glx_data *gd, session_t *ps) {
 	// Acquire all FBConfigs and loop through them
 	int nele = 0;
 	GLXFBConfig *pfbcfgs = glXGetFBConfigs(ps->dpy, ps->scr, &nele);
@@ -202,8 +203,7 @@ static bool glx_update_fbconfig(session_t *ps) {
 			continue;
 #endif
 
-		if (Success !=
-		        glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BUFFER_SIZE, &depth) ||
+		if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BUFFER_SIZE, &depth) ||
 		    Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_ALPHA_SIZE,
 		                                    &depth_alpha)) {
 			log_error("Failed to retrieve buffer size and alpha size of "
@@ -246,8 +246,7 @@ static bool glx_update_fbconfig(session_t *ps) {
 		    val)
 			rgb = true;
 
-		if (Success ==
-		    glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_Y_INVERTED_EXT, &val))
+		if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_Y_INVERTED_EXT, &val))
 			fbinfo.y_inverted = val;
 
 		{
@@ -267,17 +266,18 @@ static bool glx_update_fbconfig(session_t *ps) {
 	cxfree(pfbcfgs);
 
 	// Sanity checks
-	if (!ps->psglx->fbconfigs[ps->depth]) {
+	if (!gd->fbconfigs[ps->depth]) {
 		log_error("No FBConfig found for default depth %d.", ps->depth);
 		return false;
 	}
 
-	if (!ps->psglx->fbconfigs[32]) {
-		log_error("No FBConfig found for depth 32. Expect crazy things.");
+	if (!gd->fbconfigs[32]) {
+		log_error("No FBConfig found for depth 32. compton may not work "
+		          "correctly");
 	}
 
-	log_trace("%d-bit: %p, 32-bit: %p", ps->depth,
-	          ps->psglx->fbconfigs[ps->depth]->cfg, ps->psglx->fbconfigs[32]->cfg);
+	log_trace("%d-bit: %p, 32-bit: %p", ps->depth, gd->fbconfigs[ps->depth]->cfg,
+	          gd->fbconfigs[32]->cfg);
 
 	return true;
 }
@@ -298,9 +298,8 @@ get_fbconfig_from_visualinfo(session_t *ps, const XVisualInfo *visualinfo) {
 	return NULL;
 }
 
-static void
-glx_debug_msg_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
-                       GLsizei length, const GLchar *message, GLvoid *userParam) {
+static void glx_debug_msg_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
+                                   GLsizei length, const GLchar *message, GLvoid *userParam) {
 	log_trace("(): source 0x%04X, type 0x%04X, id %u, severity 0x%0X, \"%s\"", source,
 	          type, id, severity, message);
 }
@@ -321,7 +320,7 @@ void glx_deinit(void *backend_data, session_t *ps) {
 		gl_free_blur_shader(&gd->blur_shader[i]);
 	}
 
-	glx_free_prog_main(ps, &ps->o.glx_prog_win);
+	gl_free_prog_main(ps, &gd->win_shader);
 
 	gl_check_err();
 
@@ -343,7 +342,7 @@ void glx_deinit(void *backend_data, session_t *ps) {
 /**
  * Initialize OpenGL.
  */
-void *glx_init(session_t *ps) {
+static void *glx_init(session_t *ps) {
 	bool success = false;
 	auto gd = ccalloc(1, struct _glx_data);
 	XVisualInfo *pvis = NULL;
@@ -434,14 +433,6 @@ void *glx_init(session_t *ps) {
 	gd->cap.non_power_of_two_texture = gl_has_extension(ps, "GL_ARB_texture_non_"
 	                                                        "power_of_two");
 
-	// Acquire function addresses
-#if 0
-  psglx->glStringMarkerGREMEDY = (f_StringMarkerGREMEDY)
-    glXGetProcAddress((const GLubyte *) "glStringMarkerGREMEDY");
-  psglx->glFrameTerminatorGREMEDY = (f_FrameTerminatorGREMEDY)
-    glXGetProcAddress((const GLubyte *) "glFrameTerminatorGREMEDY");
-#endif
-
 	gd->glXBindTexImage = (void *)glXGetProcAddress((const GLubyte *)"glXBindTexImage"
 	                                                                 "EXT");
 	gd->glXReleaseTexImage = (void *)glXGetProcAddress((const GLubyte *)"glXReleaseTe"
@@ -454,7 +445,7 @@ void *glx_init(session_t *ps) {
 	}
 
 	// Acquire FBConfigs
-	if (!glx_update_fbconfig(ps))
+	if (!glx_update_fbconfig(gd, ps))
 		goto end;
 
 	// Render preparations
@@ -494,7 +485,8 @@ end:
 /**
  * Initialize GLX blur filter.
  */
-bool glx_init_blur(session_t *ps) {
+static bool attr_unused glx_init_blur(session_t *ps) {
+	struct _glx_data *gd = ps->backend_data;
 	assert(ps->o.blur_kerns[0]);
 
 	// Allocate PBO if more than one blur kernel is present
@@ -516,40 +508,28 @@ bool glx_init_blur(session_t *ps) {
 		// Thanks to hiciu for reporting.
 		setlocale(LC_NUMERIC, "C");
 
-		static const char *FRAG_SHADER_BLUR_PREFIX = "#version 110\n"
-		                                             "%s"
-		                                             "uniform float offset_x;\n"
-		                                             "uniform float offset_y;\n"
-		                                             "uniform float "
-		                                             "factor_center;\n"
-		                                             "uniform %s tex_scr;\n"
-		                                             "\n"
-		                                             "void main() {\n"
-		                                             "  vec4 sum = vec4(0.0, "
-		                                             "0.0, 0.0, 0.0);\n";
-		static const char *FRAG_SHADER_BLUR_ADD = "  sum += float(%.7g) * "
-		                                          "%s(tex_scr, "
-		                                          "vec2(gl_TexCoord[0].x + "
-		                                          "offset_x * float(%d), "
-		                                          "gl_TexCoord[0].y + offset_y * "
-		                                          "float(%d)));\n";
-		static const char *FRAG_SHADER_BLUR_ADD_GPUSHADER4 = "  sum += "
-		                                                     "float(%.7g) * "
-		                                                     "%sOffset(tex_scr, "
-		                                                     "vec2(gl_TexCoord[0]"
-		                                                     ".x, "
-		                                                     "gl_TexCoord[0].y), "
-		                                                     "ivec2(%d, %d));\n";
-		static const char *FRAG_SHADER_BLUR_SUFFIX = "  sum += %s(tex_scr, "
-		                                             "vec2(gl_TexCoord[0].x, "
-		                                             "gl_TexCoord[0].y)) * "
-		                                             "factor_center;\n"
-		                                             "  gl_FragColor = sum / "
-		                                             "(factor_center + "
-		                                             "float(%.7g));\n"
-		                                             "}\n";
+		static const char *FRAG_SHADER_BLUR_PREFIX =
+		    "#version 110\n"
+		    "%s"
+		    "uniform float offset_x;\n"
+		    "uniform float offset_y;\n"
+		    "uniform float factor_center;\n"
+		    "uniform %s tex_scr;\n\n"
+		    "void main() {\n"
+		    "  vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);\n";
+		static const char *FRAG_SHADER_BLUR_ADD =
+		    "  sum += float(%.7g) * %s(tex_scr, vec2(gl_TexCoord[0].x + offset_x "
+		    "* float(%d), gl_TexCoord[0].y + offset_y * float(%d)));\n";
+		static const char *FRAG_SHADER_BLUR_ADD_GPUSHADER4 =
+		    "  sum += float(%.7g) * %sOffset(tex_scr, vec2(gl_TexCoord[0].x, "
+		    "gl_TexCoord[0].y), ivec2(%d, %d));\n";
+		static const char *FRAG_SHADER_BLUR_SUFFIX =
+		    "  sum += %s(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * "
+		    "factor_center;\n"
+		    "  gl_FragColor = sum / (factor_center + float(%.7g));\n"
+		    "}\n";
 
-		const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
+		const bool use_texture_rect = !gd->cap.non_power_of_two_texture;
 		const char *sampler_type =
 		    (use_texture_rect ? "sampler2DRect" : "sampler2D");
 		const char *texture_func =
@@ -573,47 +553,40 @@ bool glx_init_blur(session_t *ps) {
 			glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
 
 			// Build shader
-			{
-				int wid = XFIXED_TO_DOUBLE(kern[0]),
-				    hei = XFIXED_TO_DOUBLE(kern[1]);
-				int nele = wid * hei - 1;
-				unsigned int len =
-				    strlen(FRAG_SHADER_BLUR_PREFIX) +
-				    strlen(sampler_type) + strlen(extension) +
-				    (strlen(shader_add) + strlen(texture_func) + 42) *
-				        nele +
-				    strlen(FRAG_SHADER_BLUR_SUFFIX) +
-				    strlen(texture_func) + 12 + 1;
-				char *shader_str = ccalloc(len, char);
-				char *pc = shader_str;
-				sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension,
-				        sampler_type);
-				pc += strlen(pc);
-				assert(strlen(shader_str) < len);
+			int wid = XFIXED_TO_DOUBLE(kern[0]), hei = XFIXED_TO_DOUBLE(kern[1]);
+			int nele = wid * hei - 1;
+			unsigned int len =
+			    strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) +
+			    strlen(extension) +
+			    (strlen(shader_add) + strlen(texture_func) + 42) * nele +
+			    strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
+			char *shader_str = ccalloc(len, char);
+			char *pc = shader_str;
+			sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
+			pc += strlen(pc);
+			assert(strlen(shader_str) < len);
 
-				double sum = 0.0;
-				for (int j = 0; j < hei; ++j) {
-					for (int k = 0; k < wid; ++k) {
-						if (hei / 2 == j && wid / 2 == k)
-							continue;
-						double val = XFIXED_TO_DOUBLE(
-						    kern[2 + j * wid + k]);
-						if (0.0 == val)
-							continue;
-						sum += val;
-						sprintf(pc, shader_add, val, texture_func,
-						        k - wid / 2, j - hei / 2);
-						pc += strlen(pc);
-						assert(strlen(shader_str) < len);
-					}
+			double sum = 0.0;
+			for (int j = 0; j < hei; ++j) {
+				for (int k = 0; k < wid; ++k) {
+					if (hei / 2 == j && wid / 2 == k)
+						continue;
+					double val = XFIXED_TO_DOUBLE(kern[2 + j * wid + k]);
+					if (0.0 == val)
+						continue;
+					sum += val;
+					sprintf(pc, shader_add, val, texture_func,
+					        k - wid / 2, j - hei / 2);
+					pc += strlen(pc);
+					assert(strlen(shader_str) < len);
 				}
-
-				sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
-				assert(strlen(shader_str) < len);
-				ppass->frag_shader =
-				    glx_create_shader(GL_FRAGMENT_SHADER, shader_str);
-				free(shader_str);
 			}
+
+			sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
+			assert(strlen(shader_str) < len);
+			ppass->frag_shader =
+			    gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
+			free(shader_str);
 
 			if (!ppass->frag_shader) {
 				log_error("Failed to create fragment shader %d.", i);
@@ -621,37 +594,21 @@ bool glx_init_blur(session_t *ps) {
 			}
 
 			// Build program
-			ppass->prog = glx_create_program(&ppass->frag_shader, 1);
+			ppass->prog = gl_create_program(&ppass->frag_shader, 1);
 			if (!ppass->prog) {
 				log_error("Failed to create GLSL program.");
 				return false;
 			}
 
 			// Get uniform addresses
-#define P_GET_UNIFM_LOC(name, target)                                                    \
-	{                                                                                \
-		ppass->target = glGetUniformLocation(ppass->prog, name);                 \
-		if (ppass->target < 0) {                                                 \
-			log_error("Failed to get location of %d-th uniform '" name "'. " \
-			                                                           "Mig" \
-			                                                           "ht " \
-			                                                           "be " \
-			                                                           "tro" \
-			                                                           "ubl" \
-			                                                           "eso" \
-			                                                           "me"  \
-			                                                           ".",  \
-			          i);                                                    \
-		}                                                                        \
-	}
-
-			P_GET_UNIFM_LOC("factor_center", unifm_factor_center);
+			ppass->unifm_factor_center =
+			    glGetUniformLocationChecked(ppass->prog, "factor_center");
 			if (!ps->o.glx_use_gpushader4) {
-				P_GET_UNIFM_LOC("offset_x", unifm_offset_x);
-				P_GET_UNIFM_LOC("offset_y", unifm_offset_y);
+				ppass->unifm_offset_x =
+				    glGetUniformLocationChecked(ppass->prog, "offset_x");
+				ppass->unifm_offset_y =
+				    glGetUniformLocationChecked(ppass->prog, "offset_y");
 			}
-
-#undef P_GET_UNIFM_LOC
 		}
 		free(extension);
 
@@ -660,156 +617,118 @@ bool glx_init_blur(session_t *ps) {
 		free(lc_numeric_old);
 	}
 
-	glx_check_err(ps);
+	gl_check_err();
 
 	return true;
+}
+
+void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
+	struct _glx_data *gd = backend_data;
+	auto wd = ccalloc(1, struct _glx_win_data);
+	// Retrieve pixmap parameters, if they aren't provided
+	if (w->g.depth > OPENGL_MAX_DEPTH) {
+		log_error("Requested depth %d higher than max possible depth %d.",
+		          w->g.depth, OPENGL_MAX_DEPTH);
+		return false;
+	}
+
+	const glx_fbconfig_t *pcfg = gd->fbconfigs[w->g.depth];
+	if (!pcfg) {
+		log_error("Couldn't find FBConfig with requested depth %d", w->g.depth);
+		return false;
+	}
+
+	// Choose a suitable texture target for our pixmap.
+	// Refer to GLX_EXT_texture_om_pixmap spec to see what are the mean
+	// of the bits in texture_tgts
+	GLenum tex_tgt = 0;
+	if (GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts &&
+	    ps->psglx->has_texture_non_power_of_two)
+		tex_tgt = GLX_TEXTURE_2D_EXT;
+	else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & pcfg->texture_tgts)
+		tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
+	else if (!(GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts))
+		tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
+	else
+		tex_tgt = GLX_TEXTURE_2D_EXT;
+
+	log_debug("depth %d, tgt %#x, rgba %d\n", w->g.depth, tex_tgt,
+	          (GLX_TEXTURE_FORMAT_RGBA_EXT == pcfg->texture_fmt));
+
+	GLint attrs[] = {
+	    GLX_TEXTURE_FORMAT_EXT, pcfg->texture_fmt, GLX_TEXTURE_TARGET_EXT, tex_tgt, 0,
+	};
+
+	wd->texture.target =
+	    (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
+	wd->texture.y_inverted = pcfg->y_inverted;
+
+	if (ps->has_name_pixmap) {
+		wd->pixmap = xcb_generate_id(ps->c);
+		xcb_composite_name_window_pixmap(ps->c, w->id, wd->pixmap);
+	} else {
+		wd->pixmap = w->id;
+	}
+	if (!wd->pixmap) {
+		log_error("Failed to get pixmap for window %#010x", w->id);
+		goto err;
+	}
+
+	wd->glpixmap = glXCreatePixmap(ps->dpy, pcfg->cfg, wd->pixmap, attrs);
+	if (!wd->glpixmap) {
+		log_error("Failed to create glpixmap for window %#010x", w->id);
+		goto err;
+	}
+
+	// Create texture
+
+	GLuint texture = 0;
+	GLuint target = wd->texture.target;
+	glGenTextures(1, &texture);
+	if (!texture) {
+		log_error("Failed to generate texture for window %#010x", w->id);
+		goto err;
+	}
+
+	glBindTexture(target, texture);
+	glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glBindTexture(target, 0);
+
+	wd->texture.texture = texture;
+	return wd;
+err:
+	if (wd->pixmap && wd->pixmap != w->id) {
+		xcb_free_pixmap(ps->c, wd->pixmap);
+	}
+	if (wd->glpixmap) {
+		glXDestroyPixmap(ps->dpy, wd->glpixmap);
+	}
+	free(wd);
+	return NULL;
 }
 
 /**
  * Bind a X pixmap to an OpenGL texture.
  */
-bool glx_render_win(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
-                    unsigned width, unsigned height, unsigned depth) {
+bool glx_render_win(void *backend_data, session_t *ps, win *w, void *win_data,
+                    const region_t *reg_paint) {
+	struct _glx_data *gd = backend_data;
+	struct _glx_win_data *wd = win_data;
 	if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID)
 		return true;
 
-	if (!pixmap) {
-		log_error("Binding to an empty pixmap %#010x. This can't work.", pixmap);
-		return false;
-	}
+	assert(wd->pixmap);
+	assert(wd->glpixmap);
+	assert(wd->texture.texture);
 
-	glx_texture_t *ptex = *pptex;
-	bool need_release = true;
+	glBindTexture(wd->texture.target, wd->texture.texture);
+	gd->glXBindTexImage(ps->dpy, wd->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
+	glBindTexture(wd->texture.target, 0);
 
-	// Allocate structure
-	if (!ptex) {
-		static const glx_texture_t GLX_TEX_DEF = {
-		    .texture = 0,
-		    .glpixmap = 0,
-		    .pixmap = 0,
-		    .target = 0,
-		    .width = 0,
-		    .height = 0,
-		    .depth = 0,
-		    .y_inverted = false,
-		};
-
-		ptex = cmalloc(glx_texture_t);
-		memcpy(ptex, &GLX_TEX_DEF, sizeof(glx_texture_t));
-		*pptex = ptex;
-	}
-
-	// Release pixmap if parameters are inconsistent
-	if (ptex->texture && ptex->pixmap != pixmap) {
-		glx_release_pixmap(ps, ptex);
-	}
-
-	// Create GLX pixmap
-	if (!ptex->glpixmap) {
-		need_release = false;
-
-		// Retrieve pixmap parameters, if they aren't provided
-		if (!(width && height && depth)) {
-			Window rroot = None;
-			int rx = 0, ry = 0;
-			unsigned rbdwid = 0;
-			if (!XGetGeometry(ps->dpy, pixmap, &rroot, &rx, &ry, &width,
-			                  &height, &rbdwid, &depth)) {
-				log_error("Failed to query info of pixmap %#010x.", pixmap);
-				return false;
-			}
-			if (depth > OPENGL_MAX_DEPTH) {
-				log_error("Requested depth %d higher than max possible "
-				          "depth %d.",
-				          depth, OPENGL_MAX_DEPTH);
-				return false;
-			}
-		}
-
-		const glx_fbconfig_t *pcfg = ps->psglx->fbconfigs[depth];
-		if (!pcfg) {
-			log_error("Couldn't find FBConfig with requested depth %d", depth);
-			return false;
-		}
-
-		// Choose a suitable texture target for our pixmap.
-		// Refer to GLX_EXT_texture_om_pixmap spec to see what are the mean
-		// of the bits in texture_tgts
-		GLenum tex_tgt = 0;
-		if (GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts &&
-		    ps->psglx->has_texture_non_power_of_two)
-			tex_tgt = GLX_TEXTURE_2D_EXT;
-		else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & pcfg->texture_tgts)
-			tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
-		else if (!(GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts))
-			tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
-		else
-			tex_tgt = GLX_TEXTURE_2D_EXT;
-
-		log_debug("depth %d, tgt %#x, rgba %d\n", depth, tex_tgt,
-		          (GLX_TEXTURE_FORMAT_RGBA_EXT == pcfg->texture_fmt));
-
-		GLint attrs[] = {
-		    GLX_TEXTURE_FORMAT_EXT,
-		    pcfg->texture_fmt,
-		    GLX_TEXTURE_TARGET_EXT,
-		    tex_tgt,
-		    0,
-		};
-
-		ptex->glpixmap = glXCreatePixmap(ps->dpy, pcfg->cfg, pixmap, attrs);
-		ptex->pixmap = pixmap;
-		ptex->target =
-		    (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
-		ptex->width = width;
-		ptex->height = height;
-		ptex->depth = depth;
-		ptex->y_inverted = pcfg->y_inverted;
-	}
-	if (!ptex->glpixmap) {
-		log_error("Failed to allocate GLX pixmap.");
-		return false;
-	}
-
-	glEnable(ptex->target);
-
-	// Create texture
-	if (!ptex->texture) {
-		need_release = false;
-
-		GLuint texture = 0;
-		glGenTextures(1, &texture);
-		glBindTexture(ptex->target, texture);
-
-		glTexParameteri(ptex->target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(ptex->target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(ptex->target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(ptex->target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-		glBindTexture(ptex->target, 0);
-
-		ptex->texture = texture;
-	}
-	if (!ptex->texture) {
-		log_error("Failed to allocate texture.");
-		return false;
-	}
-
-	glBindTexture(ptex->target, ptex->texture);
-
-	// The specification requires rebinding whenever the content changes...
-	// We can't follow this, too slow.
-	if (need_release)
-		ps->psglx->glXReleaseTexImageProc(ps->dpy, ptex->glpixmap,
-		                                  GLX_FRONT_LEFT_EXT);
-
-	ps->psglx->glXBindTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
-
-	// Cleanup
-	glBindTexture(ptex->target, 0);
-	glDisable(ptex->target);
-
-	glx_check_err(ps);
+	gl_check_err();
 
 	return true;
 }
@@ -872,7 +791,7 @@ glx_paint_pre(session_t *ps, region_t *preg) {
   glx_render_color(ps, 0, 0, ps->root_width, ps->root_height, 0, *preg, NULL);
 #endif
 
-  glx_check_err(ps);
+  gl_check_err();
 }
 #endif
 

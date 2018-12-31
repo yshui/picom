@@ -5,7 +5,7 @@ if get_option('new_backends')
 
   # enable opengl
   if get_option('opengl')
-    srcs += [ files('gl/gl_common.c') ]
+    srcs += [ files('gl/gl_common.c', 'gl/glx.c') ]
     deps += [ dependency('gl', required: true) ]
     cflags += [ '-DGL_GLEXT_PROTOTYPES' ]
   endif
