@@ -166,6 +166,7 @@
 #define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t) (((double) (value)) * 65536))
 
 // === Types ===
+typedef struct glx_fbconfig glx_fbconfig_t;
 
 /// Structure representing needed window updates.
 typedef struct {
@@ -275,14 +276,6 @@ typedef GLsync (*f_ImportSyncEXT) (GLenum external_sync_type,
 typedef void (*f_StringMarkerGREMEDY) (GLsizei len, const void *string);
 typedef void (*f_FrameTerminatorGREMEDY) (void);
 #endif
-
-/// @brief Wrapper of a GLX FBConfig.
-typedef struct {
-  GLXFBConfig cfg;
-  GLint texture_fmt;
-  GLint texture_tgts;
-  bool y_inverted;
-} glx_fbconfig_t;
 
 /// @brief Wrapper of a binded GLX texture.
 struct _glx_texture {

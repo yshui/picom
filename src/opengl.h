@@ -17,6 +17,14 @@
 #include <ctype.h>
 #include <locale.h>
 
+/// @brief Wrapper of a GLX FBConfig.
+typedef struct glx_fbconfig {
+  GLXFBConfig cfg;
+  GLint texture_fmt;
+  GLint texture_tgts;
+  bool y_inverted;
+} glx_fbconfig_t;
+
 #ifdef DEBUG_GLX_ERR
 
 /**
