@@ -9,8 +9,8 @@
  *
  */
 
-#include <locale.h>
 #include <GL/glx.h>
+#include <locale.h>
 #include "backend/backend.h"
 #include "backend/gl/gl_common.h"
 #include "string_utils.h"
@@ -55,12 +55,14 @@ static inline bool glx_has_extension(session_t *ps, const char *ext) {
 
 	int len = strlen(ext);
 	char *found = strstr(glx_exts, ext);
-	if (!found)
+	if (!found) {
 		log_info("Missing GLX extension %s.", ext);
+		return false;
+	}
 
 	// Make sure extension names are not crazy...
 	assert(found[len] == ' ' || found[len] == 0);
-	return found != NULL;
+	return true;
 }
 
 /**
@@ -86,7 +88,8 @@ static void glx_release_pixmap(struct _glx_data *gd, Display *dpy, struct _glx_w
 /**
  * Free a glx_texture_t.
  */
-static void attr_unused glx_release_win(struct _glx_data *gd, Display *dpy, struct _glx_win_data *wd) {
+static void attr_unused glx_release_win(struct _glx_data *gd, Display *dpy,
+                                        struct _glx_win_data *wd) {
 	glx_release_pixmap(gd, dpy, wd);
 	glDeleteTextures(1, &wd->texture.texture);
 
@@ -276,9 +279,6 @@ static bool glx_update_fbconfig(struct _glx_data *gd, session_t *ps) {
 		          "correctly");
 	}
 
-	log_trace("%d-bit: %p, 32-bit: %p", ps->depth, gd->fbconfigs[ps->depth]->cfg,
-	          gd->fbconfigs[32]->cfg);
-
 	return true;
 }
 
@@ -388,7 +388,7 @@ static void *glx_init(session_t *ps) {
 	}
 
 	// Get GLX context
-	gd->ctx = glXCreateContext(ps->dpy, pvis, None, GL_TRUE);
+	gd->ctx = glXCreateContext(ps->dpy, pvis, NULL, GL_TRUE);
 
 	if (!gd->ctx) {
 		log_error("Failed to get GLX context.");
@@ -502,129 +502,128 @@ static bool attr_unused glx_init_blur(session_t *ps) {
 		glDeleteFramebuffers(1, &fbo);
 	}
 
-	{
-		char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
-		// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
-		// Thanks to hiciu for reporting.
-		setlocale(LC_NUMERIC, "C");
+	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
+	// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
+	// Thanks to hiciu for reporting.
+	setlocale(LC_NUMERIC, "C");
 
-		static const char *FRAG_SHADER_BLUR_PREFIX =
-		    "#version 110\n"
-		    "%s"
-		    "uniform float offset_x;\n"
-		    "uniform float offset_y;\n"
-		    "uniform float factor_center;\n"
-		    "uniform %s tex_scr;\n\n"
-		    "void main() {\n"
-		    "  vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);\n";
-		static const char *FRAG_SHADER_BLUR_ADD =
-		    "  sum += float(%.7g) * %s(tex_scr, vec2(gl_TexCoord[0].x + offset_x "
-		    "* float(%d), gl_TexCoord[0].y + offset_y * float(%d)));\n";
-		static const char *FRAG_SHADER_BLUR_ADD_GPUSHADER4 =
-		    "  sum += float(%.7g) * %sOffset(tex_scr, vec2(gl_TexCoord[0].x, "
-		    "gl_TexCoord[0].y), ivec2(%d, %d));\n";
-		static const char *FRAG_SHADER_BLUR_SUFFIX =
-		    "  sum += %s(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * "
-		    "factor_center;\n"
-		    "  gl_FragColor = sum / (factor_center + float(%.7g));\n"
-		    "}\n";
+	static const char *FRAG_SHADER_BLUR_PREFIX = "#version 110\n"
+	                                             "%s"
+	                                             "uniform float offset_x;\n"
+	                                             "uniform float offset_y;\n"
+	                                             "uniform float factor_center;\n"
+	                                             "uniform %s tex_scr;\n\n"
+	                                             "void main() {\n"
+	                                             "  vec4 sum = vec4(0.0, 0.0, 0.0, "
+	                                             "0.0);\n";
+	static const char *FRAG_SHADER_BLUR_ADD =
+	    "  sum += float(%.7g) * %s(tex_scr, vec2(gl_TexCoord[0].x + offset_x "
+	    "* float(%d), gl_TexCoord[0].y + offset_y * float(%d)));\n";
+	static const char *FRAG_SHADER_BLUR_ADD_GPUSHADER4 =
+	    "  sum += float(%.7g) * %sOffset(tex_scr, vec2(gl_TexCoord[0].x, "
+	    "gl_TexCoord[0].y), ivec2(%d, %d));\n";
+	static const char *FRAG_SHADER_BLUR_SUFFIX =
+	    "  sum += %s(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * "
+	    "factor_center;\n"
+	    "  gl_FragColor = sum / (factor_center + float(%.7g));\n"
+	    "}\n";
 
-		const bool use_texture_rect = !gd->cap.non_power_of_two_texture;
-		const char *sampler_type =
-		    (use_texture_rect ? "sampler2DRect" : "sampler2D");
-		const char *texture_func =
-		    (use_texture_rect ? "texture2DRect" : "texture2D");
-		const char *shader_add = FRAG_SHADER_BLUR_ADD;
-		char *extension = strdup("");
-		if (use_texture_rect)
-			mstrextend(&extension, "#extension GL_ARB_texture_rectangle : "
-			                       "require\n");
-		if (ps->o.glx_use_gpushader4) {
-			mstrextend(&extension, "#extension GL_EXT_gpu_shader4 : "
-			                       "require\n");
-			shader_add = FRAG_SHADER_BLUR_ADD_GPUSHADER4;
-		}
-
-		for (int i = 0; i < MAX_BLUR_PASS && ps->o.blur_kerns[i]; ++i) {
-			xcb_render_fixed_t *kern = ps->o.blur_kerns[i];
-			if (!kern)
-				break;
-
-			glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
-
-			// Build shader
-			int wid = XFIXED_TO_DOUBLE(kern[0]), hei = XFIXED_TO_DOUBLE(kern[1]);
-			int nele = wid * hei - 1;
-			unsigned int len =
-			    strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) +
-			    strlen(extension) +
-			    (strlen(shader_add) + strlen(texture_func) + 42) * nele +
-			    strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
-			char *shader_str = ccalloc(len, char);
-			char *pc = shader_str;
-			sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
-			pc += strlen(pc);
-			assert(strlen(shader_str) < len);
-
-			double sum = 0.0;
-			for (int j = 0; j < hei; ++j) {
-				for (int k = 0; k < wid; ++k) {
-					if (hei / 2 == j && wid / 2 == k)
-						continue;
-					double val = XFIXED_TO_DOUBLE(kern[2 + j * wid + k]);
-					if (0.0 == val)
-						continue;
-					sum += val;
-					sprintf(pc, shader_add, val, texture_func,
-					        k - wid / 2, j - hei / 2);
-					pc += strlen(pc);
-					assert(strlen(shader_str) < len);
-				}
-			}
-
-			sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
-			assert(strlen(shader_str) < len);
-			ppass->frag_shader =
-			    gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
-			free(shader_str);
-
-			if (!ppass->frag_shader) {
-				log_error("Failed to create fragment shader %d.", i);
-				return false;
-			}
-
-			// Build program
-			ppass->prog = gl_create_program(&ppass->frag_shader, 1);
-			if (!ppass->prog) {
-				log_error("Failed to create GLSL program.");
-				return false;
-			}
-
-			// Get uniform addresses
-			ppass->unifm_factor_center =
-			    glGetUniformLocationChecked(ppass->prog, "factor_center");
-			if (!ps->o.glx_use_gpushader4) {
-				ppass->unifm_offset_x =
-				    glGetUniformLocationChecked(ppass->prog, "offset_x");
-				ppass->unifm_offset_y =
-				    glGetUniformLocationChecked(ppass->prog, "offset_y");
-			}
-		}
-		free(extension);
-
-		// Restore LC_NUMERIC
-		setlocale(LC_NUMERIC, lc_numeric_old);
-		free(lc_numeric_old);
+	const bool use_texture_rect = !gd->cap.non_power_of_two_texture;
+	const char *sampler_type = (use_texture_rect ? "sampler2DRect" : "sampler2D");
+	const char *texture_func = (use_texture_rect ? "texture2DRect" : "texture2D");
+	const char *shader_add = FRAG_SHADER_BLUR_ADD;
+	char *extension = strdup("");
+	if (use_texture_rect)
+		mstrextend(&extension, "#extension GL_ARB_texture_rectangle : "
+		                       "require\n");
+	if (ps->o.glx_use_gpushader4) {
+		mstrextend(&extension, "#extension GL_EXT_gpu_shader4 : "
+		                       "require\n");
+		shader_add = FRAG_SHADER_BLUR_ADD_GPUSHADER4;
 	}
+
+	for (int i = 0; i < MAX_BLUR_PASS && ps->o.blur_kerns[i]; ++i) {
+		xcb_render_fixed_t *kern = ps->o.blur_kerns[i];
+		if (!kern)
+			break;
+
+		glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
+
+		// Build shader
+		int wid = XFIXED_TO_DOUBLE(kern[0]), hei = XFIXED_TO_DOUBLE(kern[1]);
+		int nele = wid * hei - 1;
+		unsigned int len =
+		    strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) +
+		    strlen(extension) +
+		    (strlen(shader_add) + strlen(texture_func) + 42) * nele +
+		    strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
+		char *shader_str = ccalloc(len, char);
+		char *pc = shader_str;
+		sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
+		pc += strlen(pc);
+		assert(strlen(shader_str) < len);
+
+		double sum = 0.0;
+		for (int j = 0; j < hei; ++j) {
+			for (int k = 0; k < wid; ++k) {
+				if (hei / 2 == j && wid / 2 == k)
+					continue;
+				double val = XFIXED_TO_DOUBLE(kern[2 + j * wid + k]);
+				if (0.0 == val)
+					continue;
+				sum += val;
+				sprintf(pc, shader_add, val, texture_func, k - wid / 2,
+				        j - hei / 2);
+				pc += strlen(pc);
+				assert(strlen(shader_str) < len);
+			}
+		}
+
+		sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
+		assert(strlen(shader_str) < len);
+		ppass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
+		free(shader_str);
+
+		if (!ppass->frag_shader) {
+			log_error("Failed to create fragment shader %d.", i);
+			goto err;
+		}
+
+		// Build program
+		ppass->prog = gl_create_program(&ppass->frag_shader, 1);
+		if (!ppass->prog) {
+			log_error("Failed to create GLSL program.");
+			goto err;
+		}
+
+		// Get uniform addresses
+		ppass->unifm_factor_center =
+		    glGetUniformLocationChecked(ppass->prog, "factor_center");
+		if (!ps->o.glx_use_gpushader4) {
+			ppass->unifm_offset_x =
+			    glGetUniformLocationChecked(ppass->prog, "offset_x");
+			ppass->unifm_offset_y =
+			    glGetUniformLocationChecked(ppass->prog, "offset_y");
+		}
+	}
+	free(extension);
+
+	// Restore LC_NUMERIC
+	setlocale(LC_NUMERIC, lc_numeric_old);
+	free(lc_numeric_old);
 
 	gl_check_err();
 
 	return true;
+err:
+	free(extension);
+	setlocale(LC_NUMERIC, lc_numeric_old);
+	free(lc_numeric_old);
+	return false;
 }
 
 void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 	struct _glx_data *gd = backend_data;
-	auto wd = ccalloc(1, struct _glx_win_data);
 	// Retrieve pixmap parameters, if they aren't provided
 	if (w->g.depth > OPENGL_MAX_DEPTH) {
 		log_error("Requested depth %d higher than max possible depth %d.",
@@ -659,6 +658,7 @@ void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 	    GLX_TEXTURE_FORMAT_EXT, pcfg->texture_fmt, GLX_TEXTURE_TARGET_EXT, tex_tgt, 0,
 	};
 
+	auto wd = ccalloc(1, struct _glx_win_data);
 	wd->texture.target =
 	    (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
 	wd->texture.y_inverted = pcfg->y_inverted;
