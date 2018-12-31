@@ -2,9 +2,11 @@
 // Copyright (c) 2018, Yuxuan Shui <yshuiv7@gmail.com>
 
 #pragma once
-#include "common.h"
+
 #include "region.h"
 
+typedef struct session session_t;
+typedef struct win win;
 typedef struct backend_info {
 
 	// ===========    Initialization    ===========
@@ -124,7 +126,7 @@ typedef struct backend_info {
 
 extern backend_info_t xrender_backend;
 extern backend_info_t glx_backend;
-extern backend_info_t *backend_list[NUM_BKEND];
+extern backend_info_t *backend_list[];
 
 bool default_is_win_transparent(void *, win *, void *);
 bool default_is_frame_transparent(void *, win *, void *);

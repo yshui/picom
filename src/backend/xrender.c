@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <math.h>
+#include "common.h"
 #include "backend/backend.h"
 #include "backend_common.h"
 #include "utils.h"

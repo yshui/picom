@@ -438,7 +438,7 @@ static void paint_root(session_t *ps, const region_t *reg_paint) {
 	             ps->root_tile_paint.pict);
 }
 
-xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int height) {
+static xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int height) {
 	xcb_image_t *ximage;
 	int ylimit, xlimit;
 	int swidth = width + ps->cgsize;

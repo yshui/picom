@@ -35,5 +35,3 @@ void free_root_tile(session_t *ps);
 
 bool init_render(session_t *ps);
 void deinit_render(session_t *ps);
-
-xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int height);
