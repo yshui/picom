@@ -12,23 +12,30 @@ bool default_is_frame_transparent(void *backend_data, win *w, void *win_data) {
 }
 
 /// paint all windows
-void paint_all_new(session_t *ps, region_t *region, win *const t) {
+void paint_all_new(session_t *ps, region_t *_region, win *const t) {
 	auto bi = backend_list[ps->o.backend];
 	assert(bi);
+
+	const region_t *region;
+	if (!_region) {
+		region = &ps->screen_reg;
+	} else {
+		// Ignore out-of-screen damages
+		pixman_region32_intersect(_region, _region, &ps->screen_reg);
+		region = _region;
+	}
 
 #ifdef DEBUG_REPAINT
 	static struct timespec last_paint = {0};
 #endif
 
-	// Ignore out-of-screen damages
-	pixman_region32_intersect(region, region, &ps->screen_reg);
-
-	region_t reg_tmp, *reg_paint;
+	region_t reg_tmp;
+	const region_t *reg_paint;
 	pixman_region32_init(&reg_tmp);
 	if (t) {
 		// Calculate the region upon which the root window (wallpaper) is to be
 		// painted based on the ignore region of the lowest window, if available
-		pixman_region32_subtract(&reg_tmp, region, t->reg_ignore);
+		pixman_region32_subtract(&reg_tmp, (region_t *)region, t->reg_ignore);
 		reg_paint = &reg_tmp;
 	} else {
 		reg_paint = region;
@@ -46,7 +53,7 @@ void paint_all_new(session_t *ps, region_t *region, win *const t) {
 		// Calculate the region based on the reg_ignore of the next (higher)
 		// window and the bounding region
 		// XXX XXX
-		pixman_region32_subtract(&reg_tmp, region, w->reg_ignore);
+		pixman_region32_subtract(&reg_tmp, (region_t *)region, w->reg_ignore);
 
 		if (pixman_region32_not_empty(&reg_tmp)) {
 			// Render window content
