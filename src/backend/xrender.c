@@ -241,16 +241,16 @@ static void render_win(void *backend_data, session_t *ps, win *w, void *win_data
 
 	w->pixmap_damaged = false;
 
-	region_t reg_paint_local;
-	pixman_region32_init(&reg_paint_local);
-	pixman_region32_copy(&reg_paint_local, (region_t *)reg_paint);
-	pixman_region32_translate(&reg_paint_local, -w->g.x, -w->g.y);
-
 	if (!w->invert_color && w->frame_opacity == 1 && !w->dim) {
 		// No extra processing needed
 		wd->rendered_pict = wd->pict;
 		return;
 	}
+
+	region_t reg_paint_local;
+	pixman_region32_init(&reg_paint_local);
+	pixman_region32_copy(&reg_paint_local, (region_t *)reg_paint);
+	pixman_region32_translate(&reg_paint_local, -w->g.x, -w->g.y);
 
 	// We don't want to modify the content of the original window when we process
 	// it, so we create a buffer.
@@ -325,6 +325,8 @@ static void render_win(void *backend_data, session_t *ps, win *w, void *win_data
 		xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_OVER,
 		                           wd->rendered_pict, color, 1, &rect);
 	}
+
+  pixman_region32_fini(&reg_paint_local);
 }
 
 static void *prepare_win(void *backend_data, session_t *ps, win *w) {
