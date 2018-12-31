@@ -598,8 +598,8 @@ void calc_win_size(session_t *ps, win *w) {
 void calc_shadow_geometry(session_t *ps, win *w) {
   w->shadow_dx = ps->o.shadow_offset_x;
   w->shadow_dy = ps->o.shadow_offset_y;
-  w->shadow_width = w->widthb + ps->gaussian_map->size;
-  w->shadow_height = w->heightb + ps->gaussian_map->size;
+  w->shadow_width = w->widthb + ps->o.shadow_radius * 2;
+  w->shadow_height = w->heightb + ps->o.shadow_radius * 2;
 }
 
 /**
