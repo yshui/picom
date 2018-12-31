@@ -9,7 +9,7 @@
  *
  */
 
-#include "backend/gl/glx.h"
+#include <locale.h>
 #include <GL/glx.h>
 #include "backend/backend.h"
 #include "backend/gl/gl_common.h"
