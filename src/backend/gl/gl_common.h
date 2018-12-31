@@ -70,6 +70,7 @@ void gl_free_prog_main(session_t *ps, gl_win_shader_t *prog);
 
 unsigned char *gl_take_screenshot(session_t *ps, int *out_length);
 void gl_resize(int width, int height);
+bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_cap_t *cap);
 
 GLuint glGetUniformLocationChecked(GLuint p, const char *name);
 
