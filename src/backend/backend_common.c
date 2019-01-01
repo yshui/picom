@@ -2,8 +2,8 @@
 
 #include "backend.h"
 #include "backend_common.h"
-#include "x.h"
 #include "common.h"
+#include "x.h"
 
 /**
  * Generate a 1x1 <code>Picture</code> of a particular color.
@@ -46,20 +46,31 @@ solid_picture(session_t *ps, bool argb, double a, double r, double g, double b) 
 	return picture;
 }
 
-static xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int height) {
+static xcb_image_t *
+make_shadow(xcb_connection_t *c, const conv *kernel, const double *shadow_sum,
+            double opacity, int width, int height) {
+	/*
+	 * We classify shadows into 4 kinds of regions
+	 *    r = shadow radius
+	 * (0, 0) is the top left of the window itself
+	 *         -r     r      width-r  width+r
+	 *       -r +-----+---------+-----+
+	 *          |  1  |    2    |  1  |
+	 *        r +-----+---------+-----+
+	 *          |  2  |    3    |  2  |
+	 * height-r +-----+---------+-----+
+	 *          |  1  |    2    |  1  |
+	 * height+r +-----+---------+-----+
+	 */
 	xcb_image_t *ximage;
-	int ylimit, xlimit;
-	int swidth = width + ps->cgsize;
-	int sheight = height + ps->cgsize;
-	int center = ps->cgsize / 2;
-	int x, y;
-	unsigned char d;
-	int x_diff;
-	int opacity_int = (int)(opacity * 25);
+	int d = kernel->size, r = d / 2;
+	int swidth = width + r * 2, sheight = height + r * 2;
 
-	ximage = xcb_image_create_native(ps->c, swidth, sheight,
-	                                 XCB_IMAGE_FORMAT_Z_PIXMAP, 8, 0, 0, NULL);
+	assert(d % 2 == 1);
+	assert(d > 0);
 
+	ximage = xcb_image_create_native(c, swidth, sheight, XCB_IMAGE_FORMAT_Z_PIXMAP, 8,
+	                                 0, 0, NULL);
 	if (!ximage) {
 		log_error("failed to create an X image");
 		return 0;
@@ -68,92 +79,91 @@ static xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int he
 	unsigned char *data = ximage->data;
 	uint32_t sstride = ximage->stride;
 
-	/*
-	 * Build the gaussian in sections
-	 */
-
-	/*
-	 * center (fill the complete data array)
-	 */
-
-	// XXX If the center part of the shadow would be entirely covered by
-	// the body of the window, we shouldn't need to fill the center here.
-	// XXX In general, we want to just fill the part that is not behind
-	// the window, in order to reduce CPU load and make transparent window
-	// look correct
-	if (ps->cgsize > 0) {
-		d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + ps->cgsize];
-	} else {
-		d = (unsigned char)(sum_kernel(ps->gaussian_map, center, center, width,
-		                               height) *
-		                    opacity * 255.0);
-	}
-	memset(data, d, sheight * swidth);
-
-	/*
-	 * corners
-	 */
-
-	ylimit = ps->cgsize;
-	if (ylimit > sheight / 2)
-		ylimit = (sheight + 1) / 2;
-
-	xlimit = ps->cgsize;
-	if (xlimit > swidth / 2)
-		xlimit = (swidth + 1) / 2;
-
-	for (y = 0; y < ylimit; y++) {
-		for (x = 0; x < xlimit; x++) {
-			if (xlimit == ps->cgsize && ylimit == ps->cgsize) {
-				d = ps->shadow_corner[opacity_int * (ps->cgsize + 1) *
-				                          (ps->cgsize + 1) +
-				                      y * (ps->cgsize + 1) + x];
-			} else {
-				d = (unsigned char)(sum_kernel(ps->gaussian_map, x - center,
-				                               y - center, width, height) *
-				                    opacity * 255.0);
+	// If the window body is smaller than the kernel, we do convolution directly
+	if (width < r * 2 && height < r * 2) {
+		for (int y = 0; y < sheight; y++) {
+			for (int x = 0; x < swidth; x++) {
+				double sum = sum_kernel_normalized(
+				    kernel, d - x - 1, d - y - 1, width, height);
+				data[y * sstride + x] = sum * 255.0;
 			}
-			data[y * sstride + x] = d;
-			data[(sheight - y - 1) * sstride + x] = d;
-			data[(sheight - y - 1) * sstride + (swidth - x - 1)] = d;
-			data[y * sstride + (swidth - x - 1)] = d;
 		}
+		return ximage;
 	}
 
-	/*
-	 * top/bottom
-	 */
-
-	x_diff = swidth - (ps->cgsize * 2);
-	if (x_diff > 0 && ylimit > 0) {
-		for (y = 0; y < ylimit; y++) {
-			if (ylimit == ps->cgsize) {
-				d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + y];
-			} else {
-				d = (unsigned char)(sum_kernel(ps->gaussian_map, center,
-				                               y - center, width, height) *
-				                    opacity * 255.0);
+	if (height < r * 2) {
+		// If the window height is smaller than the kernel, we divide
+		// the window like this:
+		// -r     r         width-r  width+r
+		// +------+-------------+------+
+		// |      |             |      |
+		// +------+-------------+------+
+		for (int y = 0; y < sheight; y++) {
+			for (int x = 0; x < r * 2; x++) {
+				double sum = sum_kernel_normalized(kernel, d - x - 1,
+				                                   d - y - 1, d, height) *
+				             255.0;
+				data[y * sstride + x] = sum;
+				data[y * sstride + swidth - x - 1] = sum;
 			}
-			memset(&data[y * sstride + ps->cgsize], d, x_diff);
-			memset(&data[(sheight - y - 1) * sstride + ps->cgsize], d, x_diff);
+		}
+		for (int y = 0; y < sheight; y++) {
+			double sum =
+			    sum_kernel_normalized(kernel, 0, d - y - 1, d, height) * 255.0;
+			memset(&data[y * sstride + r * 2], sum, width - 2 * r);
+		}
+		return ximage;
+	}
+	if (width < r * 2) {
+		// Similarly, for width smaller than kernel
+		for (int y = 0; y < r * 2; y++) {
+			for (int x = 0; x < swidth; x++) {
+				double sum = sum_kernel_normalized(kernel, d - x - 1,
+				                                   d - y - 1, width, d) *
+				             255.0;
+				data[y * sstride + x] = sum;
+				data[(sheight - y - 1) * sstride + x] = sum;
+			}
+		}
+		for (int x = 0; x < swidth; x++) {
+			double sum =
+			    sum_kernel_normalized(kernel, d - x - 1, 0, width, d) * 255.0;
+			for (int y = r * 2; y < height; y++) {
+				data[y * sstride + x] = sum;
+			}
+		}
+		return ximage;
+	}
+
+	// Fill part 3
+	for (int y = r; y < height + r; y++) {
+		memset(data + sstride * y + r, 255, width);
+	}
+
+	// Part 1
+	for (int y = 0; y < r * 2; y++) {
+		for (int x = 0; x < r * 2; x++) {
+			double tmpsum = shadow_sum[y * d + x] * opacity * 255.0;
+			data[y * sstride + x] = tmpsum;
+			data[(sheight - y - 1) * sstride + x] = tmpsum;
+			data[(sheight - y - 1) * sstride + (swidth - x - 1)] = tmpsum;
+			data[y * sstride + (swidth - x - 1)] = tmpsum;
 		}
 	}
 
-	/*
-	 * sides
-	 */
+	// Part 2, top/bottom
+	for (int y = 0; y < r * 2; y++) {
+		double tmpsum = shadow_sum[d * y + d - 1] * opacity * 255.0;
+		memset(&data[y * sstride + r * 2], tmpsum, width - r * 2);
+		memset(&data[(sheight - y - 1) * sstride + r * 2], tmpsum, width - r * 2);
+	}
 
-	for (x = 0; x < xlimit; x++) {
-		if (xlimit == ps->cgsize) {
-			d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + x];
-		} else {
-			d = (unsigned char)(sum_kernel(ps->gaussian_map, x - center,
-			                               center, width, height) *
-			                    opacity * 255.0);
-		}
-		for (y = ps->cgsize; y < sheight - ps->cgsize; y++) {
-			data[y * sstride + x] = d;
-			data[y * sstride + (swidth - x - 1)] = d;
+	// Part 2, left/right
+	for (int x = 0; x < r * 2; x++) {
+		double tmpsum = shadow_sum[d * (d - 1) + x] * opacity * 255.0;
+		for (int y = r * 2; y < height; y++) {
+			data[y * sstride + x] = tmpsum;
+			data[y * sstride + (swidth - x - 1)] = tmpsum;
 		}
 	}
 
@@ -171,7 +181,8 @@ bool build_shadow(session_t *ps, double opacity, const int width, const int heig
 	xcb_render_picture_t shadow_picture = None, shadow_picture_argb = None;
 	xcb_gcontext_t gc = None;
 
-	shadow_image = make_shadow(ps, opacity, width, height);
+	shadow_image =
+	    make_shadow(ps->c, ps->gaussian_map, ps->shadow_sum, opacity, width, height);
 	if (!shadow_image) {
 		log_error("Failed to make shadow");
 		return false;

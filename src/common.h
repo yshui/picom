@@ -531,12 +531,8 @@ typedef struct session {
   /// Gaussian map of shadow.
   conv *gaussian_map;
   // for shadow precomputation
-  /// Shadow depth on one side.
-  int cgsize;
-  /// Pre-computed color table for corners of shadow.
-  unsigned char *shadow_corner;
-  /// Pre-computed color table for a side of shadow.
-  unsigned char *shadow_top;
+  /// Pre-computed table for shadow.
+  double *shadow_sum;
   /// A region in which shadow is not painted on.
   region_t shadow_exclude_reg;
 

@@ -99,9 +99,8 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, doubl
 		if (alpha_step != 0) {
 			int op = ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC
 			                                 : XCB_RENDER_PICT_OP_OVER);
-			xcb_render_composite(ps->c, op, pict, alpha_pict,
-			                     ps->tgt_buffer.pict, x, y, 0, 0, dx, dy, wid,
-			                     hei);
+			xcb_render_composite(ps->c, op, pict, alpha_pict, ps->tgt_buffer.pict,
+			                     x, y, 0, 0, dx, dy, wid, hei);
 		}
 		break;
 	}
@@ -221,14 +220,14 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, pict, XCB_NONE,
 			                     newpict, 0, 0, 0, 0, 0, 0, wid, hei);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE,
-			                     ps->white_picture, XCB_NONE, newpict, 0, 0, 0, 0,
-			                     0, 0, wid, hei);
+			                     ps->white_picture, XCB_NONE, newpict, 0, 0,
+			                     0, 0, 0, 0, wid, hei);
 			// We use an extra PictOpInReverse operation to get correct
 			// pixel alpha. There could be a better solution.
 			if (win_has_alpha(w))
 				xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_IN_REVERSE,
-				                     pict, XCB_NONE, newpict, 0, 0, 0, 0, 0,
-				                     0, wid, hei);
+				                     pict, XCB_NONE, newpict, 0, 0, 0, 0,
+				                     0, 0, wid, hei);
 			pict = newpict;
 		}
 	}
@@ -256,9 +255,8 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 			// top
 			int body_height = hei;
 			// ctop = checked top
-			int ctop = min_i(
-			    body_height,
-			    t);        // Make sure top margin is smaller than height
+			// Make sure top margin is smaller than height
+			int ctop = min_i(body_height, t);
 			if (ctop > 0)
 				COMP_BDR(0, 0, wid, ctop);
 
@@ -268,13 +266,13 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 
 			// bottom
 			// cbot = checked bottom
-			int cbot =
-			    min_i(body_height,
-			          b);        // Make sure bottom margin is not too large
+			// Make sure bottom margin is not too large
+			int cbot = min_i(body_height, b);
 			if (cbot > 0)
 				COMP_BDR(0, hei - cbot, wid, cbot);
 
-			body_height -= cbot;        // Height of window exclude the margin
+			// Height of window exclude the margin
+			body_height -= cbot;
 			if (body_height <= 0)
 				break;
 
@@ -438,20 +436,31 @@ static void paint_root(session_t *ps, const region_t *reg_paint) {
 	             ps->root_tile_paint.pict);
 }
 
-static xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int height) {
+static xcb_image_t *
+make_shadow(xcb_connection_t *c, const conv *kernel, const double *shadow_sum,
+            double opacity, int width, int height) {
+	/*
+	 * We classify shadows into 4 kinds of regions
+	 *    r = shadow radius
+	 * (0, 0) is the top left of the window itself
+	 *         -r     r      width-r  width+r
+	 *       -r +-----+---------+-----+
+	 *          |  1  |    2    |  1  |
+	 *        r +-----+---------+-----+
+	 *          |  2  |    3    |  2  |
+	 * height-r +-----+---------+-----+
+	 *          |  1  |    2    |  1  |
+	 * height+r +-----+---------+-----+
+	 */
 	xcb_image_t *ximage;
-	int ylimit, xlimit;
-	int swidth = width + ps->cgsize;
-	int sheight = height + ps->cgsize;
-	int center = ps->cgsize / 2;
-	int x, y;
-	unsigned char d;
-	int x_diff;
-	int opacity_int = (int)(opacity * 25);
+	int d = kernel->size, r = d / 2;
+	int swidth = width + r * 2, sheight = height + r * 2;
 
-	ximage = xcb_image_create_native(ps->c, swidth, sheight,
-	                                 XCB_IMAGE_FORMAT_Z_PIXMAP, 8, 0, 0, NULL);
+	assert(d % 2 == 1);
+	assert(d > 0);
 
+	ximage = xcb_image_create_native(c, swidth, sheight, XCB_IMAGE_FORMAT_Z_PIXMAP, 8,
+	                                 0, 0, NULL);
 	if (!ximage) {
 		log_error("failed to create an X image");
 		return 0;
@@ -460,92 +469,91 @@ static xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int he
 	unsigned char *data = ximage->data;
 	uint32_t sstride = ximage->stride;
 
-	/*
-	 * Build the gaussian in sections
-	 */
-
-	/*
-	 * center (fill the complete data array)
-	 */
-
-	// XXX If the center part of the shadow would be entirely covered by
-	// the body of the window, we shouldn't need to fill the center here.
-	// XXX In general, we want to just fill the part that is not behind
-	// the window, in order to reduce CPU load and make transparent window
-	// look correct
-	if (ps->cgsize > 0) {
-		d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + ps->cgsize];
-	} else {
-		d = (unsigned char)(sum_kernel(ps->gaussian_map, center, center, width,
-		                               height) *
-		                    opacity * 255.0);
-	}
-	memset(data, d, sheight * swidth);
-
-	/*
-	 * corners
-	 */
-
-	ylimit = ps->cgsize;
-	if (ylimit > sheight / 2)
-		ylimit = (sheight + 1) / 2;
-
-	xlimit = ps->cgsize;
-	if (xlimit > swidth / 2)
-		xlimit = (swidth + 1) / 2;
-
-	for (y = 0; y < ylimit; y++) {
-		for (x = 0; x < xlimit; x++) {
-			if (xlimit == ps->cgsize && ylimit == ps->cgsize) {
-				d = ps->shadow_corner[opacity_int * (ps->cgsize + 1) *
-				                          (ps->cgsize + 1) +
-				                      y * (ps->cgsize + 1) + x];
-			} else {
-				d = (unsigned char)(sum_kernel(ps->gaussian_map, x - center,
-				                               y - center, width, height) *
-				                    opacity * 255.0);
+	// If the window body is smaller than the kernel, we do convolution directly
+	if (width < r * 2 && height < r * 2) {
+		for (int y = 0; y < sheight; y++) {
+			for (int x = 0; x < swidth; x++) {
+				double sum = sum_kernel_normalized(
+				    kernel, d - x - 1, d - y - 1, width, height);
+				data[y * sstride + x] = sum * 255.0;
 			}
-			data[y * sstride + x] = d;
-			data[(sheight - y - 1) * sstride + x] = d;
-			data[(sheight - y - 1) * sstride + (swidth - x - 1)] = d;
-			data[y * sstride + (swidth - x - 1)] = d;
 		}
+		return ximage;
 	}
 
-	/*
-	 * top/bottom
-	 */
-
-	x_diff = swidth - (ps->cgsize * 2);
-	if (x_diff > 0 && ylimit > 0) {
-		for (y = 0; y < ylimit; y++) {
-			if (ylimit == ps->cgsize) {
-				d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + y];
-			} else {
-				d = (unsigned char)(sum_kernel(ps->gaussian_map, center,
-				                               y - center, width, height) *
-				                    opacity * 255.0);
+	if (height < r * 2) {
+		// If the window height is smaller than the kernel, we divide
+		// the window like this:
+		// -r     r         width-r  width+r
+		// +------+-------------+------+
+		// |      |             |      |
+		// +------+-------------+------+
+		for (int y = 0; y < sheight; y++) {
+			for (int x = 0; x < r * 2; x++) {
+				double sum = sum_kernel_normalized(kernel, d - x - 1,
+				                                   d - y - 1, d, height) *
+				             255.0;
+				data[y * sstride + x] = sum;
+				data[y * sstride + swidth - x - 1] = sum;
 			}
-			memset(&data[y * sstride + ps->cgsize], d, x_diff);
-			memset(&data[(sheight - y - 1) * sstride + ps->cgsize], d, x_diff);
+		}
+		for (int y = 0; y < sheight; y++) {
+			double sum =
+			    sum_kernel_normalized(kernel, 0, d - y - 1, d, height) * 255.0;
+			memset(&data[y * sstride + r * 2], sum, width - 2 * r);
+		}
+		return ximage;
+	}
+	if (width < r * 2) {
+		// Similarly, for width smaller than kernel
+		for (int y = 0; y < r * 2; y++) {
+			for (int x = 0; x < swidth; x++) {
+				double sum = sum_kernel_normalized(kernel, d - x - 1,
+				                                   d - y - 1, width, d) *
+				             255.0;
+				data[y * sstride + x] = sum;
+				data[(sheight - y - 1) * sstride + x] = sum;
+			}
+		}
+		for (int x = 0; x < swidth; x++) {
+			double sum =
+			    sum_kernel_normalized(kernel, d - x - 1, 0, width, d) * 255.0;
+			for (int y = r * 2; y < height; y++) {
+				data[y * sstride + x] = sum;
+			}
+		}
+		return ximage;
+	}
+
+	// Fill part 3
+	for (int y = r; y < height + r; y++) {
+		memset(data + sstride * y + r, 255, width);
+	}
+
+	// Part 1
+	for (int y = 0; y < r * 2; y++) {
+		for (int x = 0; x < r * 2; x++) {
+			double tmpsum = shadow_sum[y * d + x] * opacity * 255.0;
+			data[y * sstride + x] = tmpsum;
+			data[(sheight - y - 1) * sstride + x] = tmpsum;
+			data[(sheight - y - 1) * sstride + (swidth - x - 1)] = tmpsum;
+			data[y * sstride + (swidth - x - 1)] = tmpsum;
 		}
 	}
 
-	/*
-	 * sides
-	 */
+	// Part 2, top/bottom
+	for (int y = 0; y < r * 2; y++) {
+		double tmpsum = shadow_sum[d * y + d - 1] * opacity * 255.0;
+		memset(&data[y * sstride + r * 2], tmpsum, width - r * 2);
+		memset(&data[(sheight - y - 1) * sstride + r * 2], tmpsum, width - r * 2);
+	}
 
-	for (x = 0; x < xlimit; x++) {
-		if (xlimit == ps->cgsize) {
-			d = ps->shadow_top[opacity_int * (ps->cgsize + 1) + x];
-		} else {
-			d = (unsigned char)(sum_kernel(ps->gaussian_map, x - center,
-			                               center, width, height) *
-			                    opacity * 255.0);
-		}
-		for (y = ps->cgsize; y < sheight - ps->cgsize; y++) {
-			data[y * sstride + x] = d;
-			data[y * sstride + (swidth - x - 1)] = d;
+	// Part 2, left/right
+	for (int x = 0; x < r * 2; x++) {
+		double tmpsum = shadow_sum[d * (d - 1) + x] * opacity * 255.0;
+		for (int y = r * 2; y < height; y++) {
+			data[y * sstride + x] = tmpsum;
+			data[y * sstride + (swidth - x - 1)] = tmpsum;
 		}
 	}
 
@@ -565,7 +573,8 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 	xcb_render_picture_t shadow_picture = XCB_NONE, shadow_picture_argb = XCB_NONE;
 	xcb_gcontext_t gc = XCB_NONE;
 
-	shadow_image = make_shadow(ps, opacity, width, height);
+	shadow_image =
+	    make_shadow(ps->c, ps->gaussian_map, ps->shadow_sum, opacity, width, height);
 	if (!shadow_image) {
 		log_error("failed to make shadow");
 		return XCB_NONE;
@@ -698,9 +707,9 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, int y, int wi
 		// Copy from source picture to destination. The filter must
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
-		xcb_render_set_picture_filter(
-		    ps->c, src_pict, strlen(XRFILTER_CONVOLUTION), XRFILTER_CONVOLUTION,
-		    kwid * khei + 2, convolution_blur);
+		xcb_render_set_picture_filter(ps->c, src_pict, strlen(XRFILTER_CONVOLUTION),
+		                              XRFILTER_CONVOLUTION, kwid * khei + 2,
+		                              convolution_blur);
 		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
 		                     dst_pict, (rd_from_tgt ? x : 0),
 		                     (rd_from_tgt ? y : 0), 0, 0, (rd_from_tgt ? 0 : x),
@@ -726,9 +735,8 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, int y, int wi
 /**
  * Blur the background of a window.
  */
-static inline void
-win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
-                    const region_t *reg_paint) {
+static inline void win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
+                                       const region_t *reg_paint) {
 	const int x = w->g.x;
 	const int y = w->g.y;
 	const int wid = w->widthb;
@@ -794,8 +802,7 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
 		}
 		// Translate global coordinates to local ones
 		pixman_region32_translate(&reg_blur, -x, -y);
-		xr_blur_dst(ps, tgt_buffer, x, y, wid, hei, ps->blur_kerns_cache,
-		            &reg_blur);
+		xr_blur_dst(ps, tgt_buffer, x, y, wid, hei, ps->blur_kerns_cache, &reg_blur);
 		pixman_region32_clear(&reg_blur);
 	} break;
 #ifdef CONFIG_OPENGL
@@ -815,7 +822,8 @@ win_blur_background(session_t *ps, win *w, xcb_render_picture_t tgt_buffer,
 void paint_all(session_t *ps, region_t *region, const region_t *region_real, win *const t) {
 	if (ps->o.xrender_sync_fence) {
 		if (!x_fence_sync(ps, ps->sync_fence)) {
-			log_error("x_fence_sync failed, xrender-sync-fence will be disabled from now on.");
+			log_error("x_fence_sync failed, xrender-sync-fence will be "
+			          "disabled from now on.");
 			xcb_sync_destroy_fence(ps->c, ps->sync_fence);
 			ps->sync_fence = XCB_NONE;
 			ps->o.xrender_sync_fence = false;
@@ -997,15 +1005,15 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			xcb_render_picture_t new_pict = x_create_picture_with_pictfmt(
 			    ps, ps->root_width, ps->root_height, pictfmt, 0, NULL);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
-			                     ps->tgt_buffer.pict, XCB_NONE, new_pict, 0, 0, 0,
-			                     0, 0, 0, ps->root_width, ps->root_height);
+			                     ps->tgt_buffer.pict, XCB_NONE, new_pict, 0, 0,
+			                     0, 0, 0, 0, ps->root_width, ps->root_height);
 
 			// Next, we set the region of paint and highlight it
 			x_set_picture_clip_region(ps, new_pict, 0, 0, region_real);
-			xcb_render_composite(
-			    ps->c, XCB_RENDER_PICT_OP_OVER, ps->white_picture,
-			    ps->alpha_picts[MAX_ALPHA / 2], new_pict, 0, 0, 0, 0, 0, 0,
-			    ps->root_width, ps->root_height);
+			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER,
+			                     ps->white_picture,
+			                     ps->alpha_picts[MAX_ALPHA / 2], new_pict, 0, 0,
+			                     0, 0, 0, 0, ps->root_width, ps->root_height);
 
 			// Finally, clear clip region and put the whole thing on screen
 			x_set_picture_clip_region(ps, new_pict, 0, 0, &ps->screen_reg);
@@ -1015,9 +1023,9 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			xcb_render_free_picture(ps->c, new_pict);
 		} else
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
-			                     ps->tgt_buffer.pict, XCB_NONE, ps->tgt_picture,
-			                     0, 0, 0, 0, 0, 0, ps->root_width,
-			                     ps->root_height);
+			                     ps->tgt_buffer.pict, XCB_NONE,
+			                     ps->tgt_picture, 0, 0, 0, 0, 0, 0,
+			                     ps->root_width, ps->root_height);
 		break;
 #ifdef CONFIG_OPENGL
 	case BKEND_XR_GLX_HYBRID:
@@ -1091,8 +1099,7 @@ static bool xr_init_blur(session_t *ps) {
 			char *name = xcb_str_name(iter.data);
 			// Check for the convolution filter
 			if (strlen(XRFILTER_CONVOLUTION) == len &&
-			    !memcmp(XRFILTER_CONVOLUTION, name,
-			            strlen(XRFILTER_CONVOLUTION)))
+			    !memcmp(XRFILTER_CONVOLUTION, name, strlen(XRFILTER_CONVOLUTION)))
 				ps->xrfilter_convolution_exists = true;
 		}
 		free(pf);
@@ -1165,49 +1172,6 @@ static bool init_alpha_picts(session_t *ps) {
 	return true;
 }
 
-/// precompute shadow corners and sides to save time for large windows
-static void presum_gaussian(session_t *ps, conv *map) {
-	ps->cgsize = map->size;
-
-	const int center = map->size / 2;
-	const int r = ps->cgsize + 1;        // radius of the kernel
-	const int width = ps->cgsize * 2, height = ps->cgsize * 2;
-
-	if (ps->shadow_corner)
-		free(ps->shadow_corner);
-	if (ps->shadow_top)
-		free(ps->shadow_top);
-
-	// clang-format off
-	ps->shadow_corner = cvalloc(r*r*26);
-	ps->shadow_top = cvalloc(r*26);
-
-	for (int x = 0; x < r; x++) {
-		double sum = sum_kernel(map, x-center, center, width, height);
-		int tmp = ps->shadow_top[25*r+x] = (unsigned char)(sum*255.0);
-
-		for (int opacity = 0; opacity < 25; opacity++) {
-			ps->shadow_top[opacity*r+x] = tmp*opacity/25;
-		}
-	}
-
-	for (int x = 0; x < r; x++) {
-		for (int y = 0; y <= x; y++) {
-			double sum =
-			    sum_kernel(map, x-center, y-center, width, height);
-			ps->shadow_corner[25*r*r+y*r+x] = (unsigned char)(sum*255.0);
-			ps->shadow_corner[25*r*r+x*r+y] = ps->shadow_corner[25*r*r+y*r+x];
-
-			for (int opacity = 0; opacity < 25; opacity++) {
-				ps->shadow_corner[opacity*r*r+y*r+x] =
-				ps->shadow_corner[opacity*r*r+x*r+y] =
-				    ps->shadow_corner[25*r*r+y*r+x]*opacity/25;
-			}
-		}
-	}
-	// clang-format on
-}
-
 bool init_render(session_t *ps) {
 	// Initialize OpenGL as early as possible
 	if (bkend_use_glx(ps)) {
@@ -1228,8 +1192,7 @@ bool init_render(session_t *ps) {
 	// Initialize window GL shader
 	if (BKEND_GLX == ps->o.backend && ps->o.glx_fshader_win_str) {
 #ifdef CONFIG_OPENGL
-		if (!glx_load_prog_main(ps, NULL, ps->o.glx_fshader_win_str,
-		                        &ps->glx_prog_win))
+		if (!glx_load_prog_main(ps, NULL, ps->o.glx_fshader_win_str, &ps->glx_prog_win))
 			return false;
 #else
 		log_error("GLSL supported not compiled in, can't load "
@@ -1259,7 +1222,7 @@ bool init_render(session_t *ps) {
 	}
 
 	ps->gaussian_map = gaussian_kernel(ps->o.shadow_radius);
-	presum_gaussian(ps, ps->gaussian_map);
+	shadow_preprocess(ps->gaussian_map, &ps->shadow_sum);
 
 	ps->black_picture = solid_picture(ps, true, 1, 0, 0, 0);
 	ps->white_picture = solid_picture(ps, true, 1, 1, 1, 1);
@@ -1317,8 +1280,7 @@ void deinit_render(session_t *ps) {
 
 	free_picture(ps->c, &ps->black_picture);
 	free_picture(ps->c, &ps->white_picture);
-	free(ps->shadow_corner);
-	free(ps->shadow_top);
+	free(ps->shadow_sum);
 	free(ps->gaussian_map);
 
 	// Free other X resources
