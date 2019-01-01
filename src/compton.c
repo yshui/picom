@@ -2878,8 +2878,13 @@ session_init(session_t *ps_old, int argc, char **argv) {
     ps->xsync_error = ext_info->first_error;
     ps->xsync_event = ext_info->first_event;
     // Need X Sync 3.1 for fences
-    auto r = xcb_sync_initialize_reply(ps->c, xcb_sync_initialize(ps->c, 3, 1), NULL);
-    if (r) {
+    auto r = xcb_sync_initialize_reply(ps->c,
+                                       xcb_sync_initialize(ps->c,
+                                                           XCB_SYNC_MAJOR_VERSION,
+                                                           XCB_SYNC_MINOR_VERSION),
+                                       NULL);
+    if (r && (r->major_version > 3 ||
+              (r->major_version == 3 && r->minor_version >= 1))) {
       ps->xsync_exists = true;
       free(r);
     }
