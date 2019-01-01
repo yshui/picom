@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <assert.h>
 #include <math.h>
 
 #include "kernel.h"
@@ -28,9 +29,20 @@ double sum_kernel(const conv *map, int x, int y, int width, int height) {
 	if (yend > map->size)
 		yend = map->size;
 
+	assert(yend > 0 && xend > 0);
+
+	int d = map->size;
+	if (map->rsum) {
+		double v1 = xstart ? map->rsum[(yend - 1) * d + xstart - 1] : 0;
+		double v2 = ystart ? map->rsum[(ystart - 1) * d + xend - 1] : 0;
+		double v3 =
+		    (xstart && ystart) ? map->rsum[(ystart - 1) * d + xstart - 1] : 0;
+		return map->rsum[(yend - 1) * d + xend - 1] - v1 - v2 + v3;
+	}
+
 	for (int yi = ystart; yi < yend; yi++) {
 		for (int xi = xstart; xi < xend; xi++) {
-			ret += map->data[yi * map->size + xi];
+			ret += map->data[yi * d + xi];
 		}
 	}
 
@@ -65,6 +77,7 @@ conv *gaussian_kernel(double r) {
 
 	c = cvalloc(sizeof(conv) + size * size * sizeof(double));
 	c->size = size;
+	c->rsum = NULL;
 	t = 0.0;
 
 	for (int y = 0; y < size; y++) {
@@ -86,13 +99,13 @@ conv *gaussian_kernel(double r) {
 
 /// preprocess kernels to make shadow generation faster
 /// shadow_sum[x*d+y] is the sum of the kernel from (0, 0) to (x, y), inclusive
-void shadow_preprocess(conv *map, double **shadow_sum) {
+void shadow_preprocess(conv *map) {
 	const int d = map->size;
 
-	if (*shadow_sum)
-		free(*shadow_sum);
+	if (map->rsum)
+		free(map->rsum);
 
-	auto sum = *shadow_sum = ccalloc(d * d, double);
+	auto sum = map->rsum = ccalloc(d * d, double);
 	sum[0] = map->data[0];
 
 	for (int x = 1; x < d; x++) {

@@ -2,12 +2,14 @@
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
 #pragma once
+#include <stdlib.h>
 #include "compiler.h"
 
 /// Code for generating convolution kernels
 
 typedef struct conv {
 	int size;
+	double *rsum;
 	double data[];
 } conv;
 
@@ -21,4 +23,9 @@ conv *gaussian_kernel(double r);
 
 /// preprocess kernels to make shadow generation faster
 /// shadow_sum[x*d+y] is the sum of the kernel from (0, 0) to (x, y), inclusive
-void shadow_preprocess(conv *map, double **shadow_sum);
+void shadow_preprocess(conv *map);
+
+static inline void free_conv(conv *k) {
+	free(k->rsum);
+	free(k);
+}

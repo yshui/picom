@@ -2640,7 +2640,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .cshadow_picture = XCB_NONE,
     .white_picture = XCB_NONE,
     .gaussian_map = NULL,
-    .shadow_sum = NULL,
 
     .refresh_rate = 0,
     .refresh_intv = 0UL,

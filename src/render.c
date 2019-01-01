@@ -451,7 +451,7 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 	xcb_gcontext_t gc = XCB_NONE;
 
 	shadow_image =
-	    make_shadow(ps->c, ps->gaussian_map, ps->shadow_sum, opacity, width, height);
+	    make_shadow(ps->c, ps->gaussian_map, opacity, width, height);
 	if (!shadow_image) {
 		log_error("failed to make shadow");
 		return XCB_NONE;
@@ -1058,7 +1058,7 @@ bool init_render(session_t *ps) {
 	}
 
 	ps->gaussian_map = gaussian_kernel(ps->o.shadow_radius);
-	shadow_preprocess(ps->gaussian_map, &ps->shadow_sum);
+	shadow_preprocess(ps->gaussian_map);
 
 	ps->black_picture = solid_picture(ps, true, 1, 0, 0, 0);
 	ps->white_picture = solid_picture(ps, true, 1, 1, 1, 1);
@@ -1116,8 +1116,7 @@ void deinit_render(session_t *ps) {
 
 	free_picture(ps->c, &ps->black_picture);
 	free_picture(ps->c, &ps->white_picture);
-	free(ps->shadow_sum);
-	free(ps->gaussian_map);
+	free_conv(ps->gaussian_map);
 
 	// Free other X resources
 	free_root_tile(ps);

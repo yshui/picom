@@ -47,7 +47,7 @@ solid_picture(session_t *ps, bool argb, double a, double r, double g, double b) 
 }
 
 xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel,
-                         const double *shadow_sum, double opacity, int width, int height) {
+                         double opacity, int width, int height) {
 	/*
 	 * We classify shadows into 4 kinds of regions
 	 *    r = shadow radius
@@ -62,6 +62,7 @@ xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel,
 	 * height+r +-----+---------+-----+
 	 */
 	xcb_image_t *ximage;
+	const double *shadow_sum = kernel->rsum;
 	int d = kernel->size, r = d / 2;
 	int swidth = width + r * 2, sheight = height + r * 2;
 
@@ -181,7 +182,7 @@ bool build_shadow(session_t *ps, double opacity, const int width, const int heig
 	xcb_gcontext_t gc = None;
 
 	shadow_image =
-	    make_shadow(ps->c, ps->gaussian_map, ps->shadow_sum, opacity, width, height);
+	    make_shadow(ps->c, ps->gaussian_map, opacity, width, height);
 	if (!shadow_image) {
 		log_error("Failed to make shadow");
 		return false;

@@ -531,8 +531,6 @@ typedef struct session {
   /// Gaussian map of shadow.
   conv *gaussian_map;
   // for shadow precomputation
-  /// Pre-computed table for shadow.
-  double *shadow_sum;
   /// A region in which shadow is not painted on.
   region_t shadow_exclude_reg;
 
