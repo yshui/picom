@@ -2869,7 +2869,15 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   ext_info = xcb_get_extension_data(ps->c, &xcb_present_id);
   if (ext_info && ext_info->present) {
-    ps->present_exists = true;
+    auto r =
+      xcb_present_query_version_reply(ps->c,
+                                      xcb_present_query_version(ps->c,
+                                                                XCB_PRESENT_MAJOR_VERSION,
+                                                                XCB_PRESENT_MINOR_VERSION),
+                                      NULL);
+    if (r) {
+      ps->present_exists = true;
+    }
   }
 
   // Query X Sync

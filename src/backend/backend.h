@@ -34,6 +34,11 @@ typedef struct backend_info {
 	/// Optional
 	void *(*root_change)(void *backend_data, session_t *ps);
 
+	/// Called when vsync is toggled after initialization. If vsync is enabled when init()
+	/// is called, these function won't be called
+	void (*vsync_start)(void *backend_data, session_t *ps);
+	void (*vsync_stop)(void *backend_data, session_t *ps);
+
 	// ===========      Rendering      ============
 
 	/// Called before any compose() calls.
@@ -125,9 +130,12 @@ typedef struct backend_info {
 	/// Return if the frame window has transparent content. Guaranteed to
 	/// only be called after render_win is called.
 	///
-  /// Same logic as is_win_transparent applies here.
+	/// Same logic as is_win_transparent applies here.
 	bool (*is_frame_transparent)(void *backend_data, win *w, void *win_data)
 	    __attribute__((nonnull(1, 2)));
+
+	// ===========         Hooks        ============
+	/// Let the backend hook into the event handling queue
 } backend_info_t;
 
 extern backend_info_t xrender_backend;
