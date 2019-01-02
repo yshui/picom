@@ -2577,7 +2577,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .shadow_red = 0.0,
       .shadow_green = 0.0,
       .shadow_blue = 0.0,
-      .shadow_radius = 12,
+      .shadow_radius = 18,
       .shadow_offset_x = -15,
       .shadow_offset_y = -15,
       .shadow_opacity = .75,
