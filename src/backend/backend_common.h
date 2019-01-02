@@ -17,7 +17,5 @@ bool build_shadow(session_t *ps, double opacity, const int width, const int heig
 xcb_render_picture_t
 solid_picture(session_t *ps, bool argb, double a, double r, double g, double b);
 
-void paint_all_new(session_t *ps, region_t *region, win *const t);
-
 xcb_image_t *
 make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, int height);
