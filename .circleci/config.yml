@@ -93,7 +93,7 @@ jobs:
     <<: *defaults
     steps:
       - build:
-          build-config: -Dnew_backends=true
+          build-config:
 
 workflows:
   all_builds:
@@ -104,6 +104,8 @@ workflows:
       - clang_minimal
       - nogl
       - clang_nogl
+      - clang_basic_nonew
+      - basic_nonew
 #     - test-xvfb
 
 # vim: set sw=2 ts=8 et:
