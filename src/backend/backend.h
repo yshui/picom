@@ -134,6 +134,12 @@ typedef struct backend_info {
 	bool (*is_frame_transparent)(void *backend_data, win *w, void *win_data)
 	    __attribute__((nonnull(1, 2)));
 
+	/// Get the age of the buffer content we are currently rendering ontop
+	/// of. The buffer that has just been `present`ed has a buffer age of 1.
+	/// Everytime `present` is called, buffers get older. Return -1 if the
+	/// buffer is empty.
+	int (*buffer_age)(void *backend_data, session_t *);
+
 	// ===========         Hooks        ============
 	/// Let the backend hook into the event handling queue
 } backend_info_t;
@@ -144,4 +150,6 @@ extern backend_info_t *backend_list[];
 
 bool default_is_win_transparent(void *, win *, void *);
 bool default_is_frame_transparent(void *, win *, void *);
-void paint_all_new(session_t *ps, region_t *region, win *const t);
+void paint_all_new(session_t *ps, region_t *region, win *const t) attr_nonnull(1);
+
+// vim: set noet sw=8 ts=8 :
