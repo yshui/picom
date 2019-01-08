@@ -892,7 +892,7 @@ glx_paint_pre(session_t *ps, region_t *preg) {
     // XXX use a circular queue instead of memmove
     pixman_region32_fini(&ps->all_damage_last[CGLX_MAX_BUFFER_AGE - 1]);
     memmove(ps->all_damage_last + 1, ps->all_damage_last,
-        (CGLX_MAX_BUFFER_AGE - 1) * sizeof(region_t *));
+        (CGLX_MAX_BUFFER_AGE - 1) * sizeof(region_t));
     ps->all_damage_last[0] = newdamage;
   }
 
