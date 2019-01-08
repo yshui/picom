@@ -27,7 +27,7 @@ void
 paint_one(session_t *ps, win *w, const region_t *reg_paint);
 
 void
-paint_all(session_t *ps, region_t *region, const region_t *region_real, win * const t);
+paint_all(session_t *ps, win * const t, bool ignore_damage);
 
 void free_picture(xcb_connection_t *c, xcb_render_picture_t *p);
 

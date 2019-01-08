@@ -207,38 +207,6 @@ get_time_ms(void) {
 }
 
 /**
- * Resize a region.
- */
-static inline void
-resize_region(session_t *ps, region_t *region, short mod) {
-  if (!mod || !region) return;
-  // Loop through all rectangles
-  int nrects;
-  int nnewrects = 0;
-  pixman_box32_t *rects = pixman_region32_rectangles(region, &nrects);
-  auto newrects = ccalloc(nrects, pixman_box32_t);
-  for (int i = 0; i < nrects; i++) {
-    int x1 = max_i(rects[i].x1 - mod, 0);
-    int y1 = max_i(rects[i].y1 - mod, 0);
-    int x2 = min_i(rects[i].x2 + mod, ps->root_width);
-    int y2 = min_i(rects[i].y2 + mod, ps->root_height);
-    int wid = x2 - x1;
-    int hei = y2 - y1;
-    if (wid <= 0 || hei <= 0)
-      continue;
-    newrects[nnewrects] = (pixman_box32_t) {
-      .x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2
-    };
-    ++nnewrects;
-  }
-
-  pixman_region32_fini(region);
-  pixman_region32_init_rects(region, newrects, nnewrects);
-
-  free(newrects);
-}
-
-/**
  * Get the Xinerama screen a window is on.
  *
  * Return an index >= 0, or -1 if not found.
@@ -345,7 +313,7 @@ void add_damage(session_t *ps, const region_t *damage) {
 
   if (!damage)
     return;
-  pixman_region32_union(&ps->all_damage, &ps->all_damage, (region_t *)damage);
+  pixman_region32_union(ps->damage, ps->damage, (region_t *)damage);
 }
 
 // === Fading ===
@@ -1082,7 +1050,10 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
     rebuild_screen_reg(ps);
     rebuild_shadow_exclude_reg(ps);
-    free_all_damage_last(ps);
+    for (int i = 0; i < ps->ndamage; i++) {
+	    pixman_region32_clear(&ps->damage_ring[i]);
+    }
+    ps->damage = ps->damage_ring + ps->ndamage - 1;
 
     // Re-redirect screen if required
     if (ps->o.reredir_on_root_change && ps->redirected) {
@@ -1281,7 +1252,6 @@ ev_xcb_error(session_t attr_unused *ps, xcb_generic_error_t *err) {
 
 static void
 expose_root(session_t *ps, const rect_t *rects, int nrects) {
-  free_all_damage_last(ps);
   region_t region;
   pixman_region32_init_rects(&region, rects, nrects);
   add_damage(ps, &region);
@@ -2424,25 +2394,9 @@ _draw_callback(EV_P_ session_t *ps, int revents) {
   }
 
   // If the screen is unredirected, free all_damage to stop painting
-  if (!ps->redirected || ps->o.stoppaint_force == ON)
-    pixman_region32_clear(&ps->all_damage);
-
-  if (pixman_region32_not_empty(&ps->all_damage)) {
-    region_t all_damage_orig, *region_real = NULL;
-    pixman_region32_init(&all_damage_orig);
-
-    // keep a copy of non-resized all_damage for region_real
-    if (ps->o.resize_damage > 0) {
-      copy_region(&all_damage_orig, &ps->all_damage);
-      resize_region(ps, &ps->all_damage, ps->o.resize_damage);
-      region_real = &all_damage_orig;
-    }
-
+  if (ps->redirected && ps->o.stoppaint_force != ON) {
     static int paint = 0;
-    paint_all(ps, &ps->all_damage, region_real, t);
-
-    pixman_region32_clear(&ps->all_damage);
-    pixman_region32_fini(&all_damage_orig);
+    paint_all(ps, t, false);
 
     paint++;
     if (ps->o.benchmark && paint >= ps->o.benchmark)
@@ -2710,9 +2664,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
   *ps = s_def;
   ps->loop = EV_DEFAULT;
   pixman_region32_init(&ps->screen_reg);
-  pixman_region32_init(&ps->all_damage);
-  for (int i = 0; i < CGLX_MAX_BUFFER_AGE; i ++)
-    pixman_region32_init(&ps->all_damage_last[i]);
 
   ps_g = ps;
   ps->ignore_tail = &ps->ignore_head;
@@ -3193,9 +3144,10 @@ session_destroy(session_t *ps) {
   free_paint(ps, &ps->tgt_buffer);
 
   pixman_region32_fini(&ps->screen_reg);
-  pixman_region32_fini(&ps->all_damage);
-  for (int i = 0; i < CGLX_MAX_BUFFER_AGE; ++i)
-    pixman_region32_fini(&ps->all_damage_last[i]);
+  for (int i = 0; i < ps->ndamage; ++i)
+    pixman_region32_fini(&ps->damage_ring[i]);
+  ps->ndamage = 0;
+  ps->damage_ring = ps->damage = NULL;
   free(ps->expose_rects);
 
   free(ps->o.config_file);
@@ -3304,7 +3256,7 @@ session_run(session_t *ps) {
   t = paint_preprocess(ps, ps->list);
 
   if (ps->redirected)
-    paint_all(ps, NULL, NULL, t);
+    paint_all(ps, t, true);
 
   // In benchmark mode, we want draw_idle handler to always be active
   if (ps->o.benchmark)
