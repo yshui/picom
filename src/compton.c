@@ -2953,6 +2953,14 @@ session_init(session_t *ps_old, int argc, char **argv) {
     exit(0);
   }
 
+  if (bkend_use_glx(ps)) {
+    auto glx_logger = glx_string_marker_logger_new();
+    if (glx_logger) {
+      log_info("Enabling gl string marker");
+      log_add_target_tls(glx_logger);
+    }
+  }
+
   // Initialize software optimization
   if (ps->o.sw_opti)
     ps->o.sw_opti = swopti_init(ps);

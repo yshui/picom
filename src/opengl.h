@@ -119,7 +119,7 @@ glx_hasglxext(session_t *ps, const char *ext) {
  * Check if a GLX extension exists.
  */
 static inline bool
-glx_hasglext(session_t *ps, const char *ext) {
+glx_hasglext(const char *ext) {
   const char *gl_exts = (const char *) glGetString(GL_EXTENSIONS);
   if (!gl_exts) {
     log_error("Failed get GL extension list.");

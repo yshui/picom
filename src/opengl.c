@@ -347,7 +347,7 @@ glx_init(session_t *ps, bool need_render) {
   // Check GL_ARB_texture_non_power_of_two, requires a GLX context and
   // must precede FBConfig fetching
   if (need_render)
-    psglx->has_texture_non_power_of_two = glx_hasglext(ps,
+    psglx->has_texture_non_power_of_two = glx_hasglext(
         "GL_ARB_texture_non_power_of_two");
 
   // Acquire function addresses

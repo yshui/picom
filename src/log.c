@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 #ifdef CONFIG_OPENGL
-#include <GL/glx.h>
+#include <opengl.h>
 #endif
 
 #include "compiler.h"
@@ -326,6 +326,10 @@ static const struct log_ops glx_string_marker_logger_ops = {
 };
 
 struct log_target *glx_string_marker_logger_new(void) {
+	if (!glx_hasglext("GL_GREMEDY_string_marker")) {
+		return NULL;
+	}
+
 	void *fnptr = glXGetProcAddress((GLubyte *)"glStringMarkerGREMEDY");
 	if (!fnptr)
 		return NULL;
