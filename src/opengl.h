@@ -12,6 +12,10 @@
 #pragma once
 
 #include "common.h"
+#include "region.h"
+#include "render.h"
+#include "compiler.h"
+#include "win.h"
 #include "log.h"
 
 #include <ctype.h>

@@ -11,6 +11,8 @@
 #endif
 
 #include "x.h"
+#include "compiler.h"
+#include "region.h"
 #include "types.h"
 #include "c2.h"
 #include "render.h"

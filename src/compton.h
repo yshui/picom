@@ -34,6 +34,10 @@
 #include "x.h"
 #include "c2.h"
 #include "log.h" // XXX clean up
+#include "region.h"
+#include "compiler.h"
+#include "types.h"
+#include "utils.h"
 #include "render.h"
 
 // == Functions ==

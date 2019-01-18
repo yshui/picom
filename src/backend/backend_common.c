@@ -2,6 +2,7 @@
 
 #include "backend.h"
 #include "backend_common.h"
+#include "kernel.h"
 #include "common.h"
 #include "x.h"
 

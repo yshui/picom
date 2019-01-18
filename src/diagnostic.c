@@ -2,6 +2,7 @@
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
 #include "diagnostic.h"
+#include "config.h"
 #include "common.h"
 
 void print_diagnostics(session_t *ps) {

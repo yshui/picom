@@ -3,7 +3,7 @@
 #pragma once
 
 #include <xcb/render.h>
-#include <xcb/xcb_image.h>
+#include <stdbool.h>
 #include "region.h"
 
 typedef struct _glx_texture glx_texture_t;

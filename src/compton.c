@@ -23,6 +23,7 @@
 
 #include <ev.h>
 
+#include "common.h"
 #include "compiler.h"
 #include "compton.h"
 #ifdef CONFIG_OPENGL
@@ -35,6 +36,9 @@
 #include "string_utils.h"
 #include "render.h"
 #include "utils.h"
+#include "region.h"
+#include "types.h"
+#include "c2.h"
 #include "kernel.h"
 #include "vsync.h"
 #include "log.h"

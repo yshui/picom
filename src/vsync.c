@@ -19,6 +19,7 @@
 #include <sys/ioctl.h>
 #endif
 
+#include "config.h"
 #include "vsync.h"
 
 #ifdef CONFIG_VSYNC_DRM

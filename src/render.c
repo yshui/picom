@@ -12,6 +12,7 @@
 
 #include "vsync.h"
 #include "win.h"
+#include "kernel.h"
 
 #include "backend/backend_common.h"
 #include "render.h"

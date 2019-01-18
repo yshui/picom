@@ -10,6 +10,7 @@
 
 #include "compiler.h"
 #include "common.h"
+#include "config.h"
 #include "compton.h"
 #include "c2.h"
 #include "x.h"

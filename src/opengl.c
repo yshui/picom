@@ -12,6 +12,7 @@
 #include "compiler.h"
 #include "string_utils.h"
 #include "log.h"
+#include "config.h"
 
 #include "opengl.h"
 

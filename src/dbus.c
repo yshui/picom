@@ -14,6 +14,7 @@
 #include <sys/types.h>
 
 #include "common.h"
+#include "config.h"
 #include "compiler.h"
 #include "win.h"
 #include "string_utils.h"

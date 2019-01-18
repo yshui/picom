@@ -8,6 +8,8 @@
 #include <xcb/sync.h>
 #include <pixman.h>
 
+#include "utils.h"
+#include "region.h"
 #include "compiler.h"
 #include "common.h"
 #include "x.h"

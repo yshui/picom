@@ -27,29 +27,6 @@
 // #define DEBUG_GLX_MARK   1
 // #define DEBUG_GLX_PAINTREG 1
 
-// Whether to enable PCRE regular expression support in blacklists, enabled
-// by default
-// #define CONFIG_REGEX_PCRE 1
-// Whether to enable JIT support of libpcre. This may cause problems on PaX
-// kernels.
-// #define CONFIG_REGEX_PCRE_JIT 1
-// Whether to enable parsing of configuration files using libconfig.
-// #define CONFIG_LIBCONFIG 1
-// Whether to enable DRM VSync support
-// #define CONFIG_VSYNC_DRM 1
-// Whether to enable OpenGL support (include GLSL, FBO)
-// #define CONFIG_OPENGL 1
-// Whether to enable DBus support with libdbus.
-// #define CONFIG_DBUS 1
-// Whether to enable X Sync support.
-// #define CONFIG_XSYNC 1
-// Whether to enable GLX Sync support.
-// #define CONFIG_GLX_XSYNC 1
-
-#ifndef COMPTON_VERSION
-#define COMPTON_VERSION "unknown"
-#endif
-
 #define MAX_ALPHA (255)
 
 // === Includes ===
@@ -112,13 +89,10 @@
 // FIXME This list of includes should get shorter
 #include "types.h"
 #include "win.h"
-#include "x.h"
 #include "region.h"
-#include "log.h"
-#include "utils.h"
-#include "compiler.h"
 #include "kernel.h"
-#include "options.h"
+#include "render.h"
+#include "config.h"
 
 // === Constants ===
 

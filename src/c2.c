@@ -30,6 +30,7 @@
 #include "common.h"
 #include "win.h"
 #include "c2.h"
+#include "config.h"
 #include "string_utils.h"
 #include "utils.h"
 #include "log.h"

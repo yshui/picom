@@ -3,12 +3,14 @@
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <xcb/xcb.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xfixes.h>
 #include <xcb/xcb_renderutil.h>
 
+#include "compiler.h"
 #include "region.h"
 
 typedef struct session session_t;

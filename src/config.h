@@ -8,12 +8,21 @@
 /// Used for command line arguments and config files
 
 #include <stdbool.h>
+#include <ctype.h>
+#include <strings.h>
+#include <xcb/xfixes.h>
 
 #ifdef CONFIG_LIBCONFIG
 #include <libconfig.h>
 #endif
 
-#include "common.h"
+#include "region.h"
+#include "log.h"
+#include "compiler.h"
+#include "win.h"
+#include "types.h"
+
+typedef struct session session_t;
 
 /// VSync modes.
 typedef enum {
