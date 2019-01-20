@@ -1,8 +1,13 @@
 #include <assert.h>
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
 
+#include <xcb/xcb.h>
 #include <xcb/present.h>
 #include <xcb/sync.h>
+#include <xcb/render.h>
+#include <xcb/composite.h>
 
 #include "backend/backend.h"
 #include "backend_common.h"

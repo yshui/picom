@@ -2,6 +2,7 @@
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 
+#include <xcb/xcb.h>
 #include <xcb/render.h>
 #include <stdbool.h>
 #include "region.h"

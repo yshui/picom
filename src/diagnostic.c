@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <stdio.h>
+#include <xcb/xcb.h>
+
 #include "diagnostic.h"
 #include "config.h"
 #include "common.h"

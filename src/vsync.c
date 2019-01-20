@@ -3,6 +3,8 @@
 
 /// Function pointers to init VSync modes.
 
+#include <GL/glx.h>
+
 #include "common.h"
 #include "log.h"
 

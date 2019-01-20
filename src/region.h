@@ -2,6 +2,7 @@
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 #include <xcb/xcb.h>
+#include <stdlib.h>
 #include <pixman.h>
 #include <stdio.h>
 

@@ -9,9 +9,11 @@
  *
  */
 
-#include <ctype.h>
+#include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlibint.h>
 #include <X11/extensions/sync.h>
@@ -19,7 +21,10 @@
 #include <xcb/present.h>
 #include <xcb/damage.h>
 #include <xcb/render.h>
-#include <xcb/xcb_image.h>
+#include <xcb/xfixes.h>
+#include <xcb/sync.h>
+#include <xcb/composite.h>
+#include <GL/glx.h>
 
 #include <ev.h>
 
@@ -33,14 +38,11 @@
 #include "x.h"
 #include "config.h"
 #include "diagnostic.h"
-#include "string_utils.h"
 #include "render.h"
 #include "utils.h"
 #include "region.h"
 #include "types.h"
 #include "c2.h"
-#include "kernel.h"
-#include "vsync.h"
 #include "log.h"
 #ifdef CONFIG_DBUS
 #include "dbus.h"

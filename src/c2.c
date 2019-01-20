@@ -10,6 +10,8 @@
  *
  */
 
+#include <string.h>
+#include <stdio.h>
 #include <fnmatch.h>
 #include <ctype.h>
 

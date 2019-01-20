@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <stdlib.h>
+#include <string.h>
 #include <xcb/xcb_image.h>
+#include <xcb/composite.h>
+#include <xcb/sync.h>
+#include <xcb/render.h>
+#include <xcb/xcb_renderutil.h>
 
 #include "common.h"
 #include "options.h"
 
 #ifdef CONFIG_OPENGL
+#include <GL/glx.h>
 #include "opengl.h"
 #endif
 

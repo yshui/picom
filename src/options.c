@@ -4,14 +4,18 @@
 #include <getopt.h>
 #include <locale.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+#include <xcb/render.h> // for xcb_render_fixed_t, XXX
 
 #include "common.h"
+#include "config.h"
 #include "log.h"
+#include "options.h"
 #include "utils.h"
 #include "win.h"
-#include "config.h"
-#include "options.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"
 
@@ -466,8 +470,7 @@ static const struct option longopts[] = {
 
 /// Get config options that are needed to parse the rest of the options
 /// Return true if we should quit
-bool get_early_config(int argc, char *const *argv, char **config_file, bool *all_xerrors,
-                      int *exit_code) {
+bool get_early_config(int argc, char *const *argv, char **config_file, bool *all_xerrors, int *exit_code) {
 	int o = 0, longopt_idx = -1;
 
 	// Pre-parse the commandline arguments to check for --config and invalid
@@ -839,8 +842,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		    DOUBLE_TO_XFIXED(1),
 		    DOUBLE_TO_XFIXED(1),
 		};
-		opt->blur_kerns[0] =
-		    ccalloc(ARR_SIZE(convolution_blur), xcb_render_fixed_t);
+		opt->blur_kerns[0] = ccalloc(ARR_SIZE(convolution_blur), xcb_render_fixed_t);
 		memcpy(opt->blur_kerns[0], convolution_blur, sizeof(convolution_blur));
 	}
 

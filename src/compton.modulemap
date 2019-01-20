@@ -14,14 +14,15 @@ module kernel {
   header "kernel.h"
 }
 module utils {
+  // Has macros expands to calloc/malloc
   header "utils.h"
+  export libc.stdlib
 }
 module region {
   header "region.h"
 }
 module compton {
   header "compton.h"
-  exclude header "/usr/include/X11/Xlib.h"
 }
 module types {
   header "types.h"
@@ -43,7 +44,6 @@ module diagnostic {
 }
 module win {
   header "win.h"
-  exclude header "/usr/include/GL/glx.h"
 }
 module log {
   header "log.h"
@@ -56,8 +56,6 @@ module vsync {
 }
 module common {
   header "common.h"
-  exclude header "/usr/include/X11/Xlib.h"
-  exclude header "/usr/include/GL/glx.h"
 }
 module config {
   header "config.h"
@@ -78,7 +76,128 @@ module backend {
     header "backend/backend_common.h"
   }
 }
-module Xlib {
-  header "/usr/include/X11/Xlib.h"
+module xcb [system] {
+  module xcb {
+    header "/usr/include/xcb/xcb.h"
+    export *
+  }
+  module randr {
+    header "/usr/include/xcb/randr.h"
+    export *
+  }
+  module render {
+    header "/usr/include/xcb/render.h"
+    export *
+  }
+  module sync {
+    header "/usr/include/xcb/sync.h"
+    export *
+  }
+  module composite {
+    header "/usr/include/xcb/composite.h"
+    export *
+  }
+  module xfixes {
+    header "/usr/include/xcb/xfixes.h"
+    export *
+  }
+  module damage {
+    header "/usr/include/xcb/damage.h"
+    export *
+  }
+  module xproto {
+    header "/usr/include/xcb/xproto.h"
+    export *
+  }
+  module present {
+    header "/usr/include/xcb/present.h"
+  }
+  module util {
+    module render {
+      header "/usr/include/xcb/xcb_renderutil.h"
+    export *
+    }
+  }
+}
+module X11 [system] {
+  module Xlib {
+    header "/usr/include/X11/Xlib.h"
+    export *
+  }
+  module Xutil {
+    header "/usr/include/X11/Xutil.h"
+    export *
+  }
+}
+module GL [system] {
+  module glx {
+    header "/usr/include/GL/glx.h"
+    export *
+  }
+  module gl {
+    header "/usr/include/GL/gl.h"
+    export *
+  }
+}
+module libc [system] {
   export *
+  module assert {
+    export *
+    textual header "/usr/include/assert.h"
+  }
+  module string {
+    export *
+    header "/usr/include/string.h"
+  }
+  module ctype {
+    export *
+    header "/usr/include/ctype.h"
+  }
+  module errno {
+    export *
+    header "/usr/include/errno.h"
+  }
+  module fenv {
+    export *
+    header "/usr/include/fenv.h"
+  }
+  module inttypes {
+    export *
+    header "/usr/include/inttypes.h"
+  }
+  module math {
+    export *
+    header "/usr/include/math.h"
+  }
+  module setjmp {
+    export *
+    header "/usr/include/setjmp.h"
+  }
+  module stdio {
+    export *
+    header "/usr/include/stdio.h"
+  }
+
+  module stdlib [system] {
+    export *
+    header "/usr/include/stdlib.h"
+  }
+}
+
+// glib specific header. In it's own module because it
+// doesn't exist on some systems with unpatched glib 2.26+
+module "xlocale.h" [system] {
+  export *
+  header "/usr/include/xlocale.h"
+}
+
+// System header that we have difficult with merging.
+module "sys_types.h" [system] {
+  export *
+  header "/usr/include/sys/types.h"
+}
+
+module "signal.h" [system] {
+  export *
+  header "/usr/include/signal.h"
 }

@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include <X11/Xutil.h>
+#include <xcb/xcb.h>
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xfixes.h>
 #include <xcb/sync.h>
+#include <xcb/composite.h>
+#include <xcb/damage.h>
+#include <xcb/render.h>
 #include <pixman.h>
+#include <GL/glx.h>
 
 #include "utils.h"
 #include "region.h"

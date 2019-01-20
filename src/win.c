@@ -3,11 +3,15 @@
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <xcb/xcb.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
 #include <xcb/xcb_renderutil.h>
 #include <stdbool.h>
 #include <math.h>
+#include <string.h>
+#include <stdlib.h>
 
 #include "compiler.h"
 #include "common.h"

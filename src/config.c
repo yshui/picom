@@ -2,8 +2,12 @@
 // Copyright (c) 2011-2013, Christopher Jeffrey
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 
+#include <math.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
+#include <ctype.h>
+#include <xcb/render.h> // for xcb_render_fixed_t, XXX
 
 #include "compiler.h"
 #include "common.h"

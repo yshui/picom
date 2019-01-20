@@ -18,8 +18,12 @@
 #include "win.h"
 #include "log.h"
 
+#include <xcb/xcb.h>
+#include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 #include <locale.h>
+#include <GL/glx.h>
 
 /// @brief Wrapper of a GLX FBConfig.
 typedef struct glx_fbconfig {
