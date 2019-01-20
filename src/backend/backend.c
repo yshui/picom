@@ -1,5 +1,9 @@
 #include "backend.h"
+#include "config.h"
+#include "win.h"
+#include "region.h"
 #include "common.h"
+#include "compiler.h"
 
 backend_info_t *backend_list[NUM_BKEND] = {[BKEND_XRENDER] = &xrender_backend};
 

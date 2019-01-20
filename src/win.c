@@ -2,6 +2,7 @@
 // Copyright (c) 2011-2013, Christopher Jeffrey
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 
+#include <X11/Xlib.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
 #include <xcb/xcb_renderutil.h>
@@ -17,6 +18,9 @@
 #include "string_utils.h"
 #include "utils.h"
 #include "log.h"
+#include "types.h"
+#include "region.h"
+#include "render.h"
 
 #ifdef CONFIG_DBUS
 #include "dbus.h"

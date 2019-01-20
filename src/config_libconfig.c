@@ -10,10 +10,13 @@
 #include <basedir_fs.h>
 
 #include "common.h"
+#include "compiler.h"
 #include "config.h"
 #include "string_utils.h"
 #include "options.h"
 #include "log.h"
+#include "utils.h"
+#include "win.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"
 

@@ -1,9 +1,11 @@
 #include <xcb/xcb_image.h>
+#include <xcb/render.h>
 
 #include "backend.h"
 #include "backend_common.h"
 #include "kernel.h"
 #include "common.h"
+#include "log.h"
 #include "x.h"
 
 /**
@@ -178,9 +180,9 @@ bool build_shadow(session_t *ps, double opacity, const int width, const int heig
                   xcb_render_picture_t shadow_pixel, xcb_pixmap_t *pixmap,
                   xcb_render_picture_t *pict) {
 	xcb_image_t *shadow_image = NULL;
-	xcb_pixmap_t shadow_pixmap = None, shadow_pixmap_argb = None;
-	xcb_render_picture_t shadow_picture = None, shadow_picture_argb = None;
-	xcb_gcontext_t gc = None;
+	xcb_pixmap_t shadow_pixmap = XCB_NONE, shadow_pixmap_argb = XCB_NONE;
+	xcb_render_picture_t shadow_picture = XCB_NONE, shadow_picture_argb = XCB_NONE;
+	xcb_gcontext_t gc = XCB_NONE;
 
 	shadow_image =
 	    make_shadow(ps->c, ps->gaussian_map, opacity, width, height);

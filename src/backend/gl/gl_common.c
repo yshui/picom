@@ -1,11 +1,15 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
-#include <stdbool.h>
 #include <locale.h>
+#include <stdbool.h>
 
 #include "common.h"
 #include "log.h"
+#include "region.h"
 #include "string_utils.h"
+#include "utils.h"
+#include "compiler.h"
+#include "config.h"
 
 #include "backend/gl/gl_common.h"
 
@@ -420,8 +424,7 @@ bool gl_blur_dst(session_t *ps, const gl_cap_t *cap, int dx, int dy, int width,
 			                       GL_TEXTURE_2D, tex_scr2,
 			                       0);        // XXX wrong, should use tex_tgt
 			glDrawBuffers(1, (GLenum[]){GL_COLOR_ATTACHMENT0});
-			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) !=
-			    GL_FRAMEBUFFER_COMPLETE) {
+			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 				log_error("Framebuffer attachment failed.");
 				goto end;
 			}
@@ -451,10 +454,8 @@ bool gl_blur_dst(session_t *ps, const gl_cap_t *cap, int dx, int dy, int width,
 			// Texture coordinates
 			const GLfloat texture_x1 = (crect.x1 - dx) * texfac_x;
 			const GLfloat texture_y1 = (crect.y1 - dy) * texfac_y;
-			const GLfloat texture_x2 =
-			    texture_x1 + (crect.x2 - crect.x1) * texfac_x;
-			const GLfloat texture_y2 =
-			    texture_y1 + (crect.y2 - crect.y1) * texfac_y;
+			const GLfloat texture_x2 = texture_x1 + (crect.x2 - crect.x1) * texfac_x;
+			const GLfloat texture_y2 = texture_y1 + (crect.y2 - crect.y1) * texfac_y;
 
 			// Vertex coordinates
 			// For passes before the last one, we are drawing into a buffer,
@@ -470,10 +471,8 @@ bool gl_blur_dst(session_t *ps, const gl_cap_t *cap, int dx, int dy, int width,
 			GLfloat vx2 = vx1 + (crect.x2 - crect.x1);
 			GLfloat vy2 = vy1 + (crect.y2 - crect.y1);
 
-			GLfloat texture_x[] = {texture_x1, texture_x2, texture_x2,
-			                       texture_x1};
-			GLfloat texture_y[] = {texture_y1, texture_y1, texture_y2,
-			                       texture_y2};
+			GLfloat texture_x[] = {texture_x1, texture_x2, texture_x2, texture_x1};
+			GLfloat texture_y[] = {texture_y1, texture_y1, texture_y2, texture_y2};
 			GLint vx[] = {vx1, vx2, vx2, vx1};
 			GLint vy[] = {vy1, vy1, vy2, vy2};
 
@@ -595,7 +594,8 @@ static void attr_unused gl_destroy_win_shader(session_t *ps, gl_win_shader_t *sh
 /**
  * Initialize GL blur filters.
  *
- * Fill `passes` with blur filters, won't create more than MAX_BLUR_FILTER number of filters
+ * Fill `passes` with blur filters, won't create more than MAX_BLUR_FILTER number of
+ * filters
  */
 bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_cap_t *cap) {
 	assert(ps->o.blur_kerns[0]);
@@ -663,8 +663,7 @@ bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_ca
 		int nele = wid * hei - 1;
 		unsigned int len =
 		    strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) +
-		    strlen(extension) +
-		    (strlen(shader_add) + strlen(texture_func) + 42) * nele +
+		    strlen(extension) + (strlen(shader_add) + strlen(texture_func) + 42) * nele +
 		    strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
 		char *shader_str = ccalloc(len, char);
 		char *pc = shader_str;
@@ -681,8 +680,7 @@ bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_ca
 				if (0.0 == val)
 					continue;
 				sum += val;
-				sprintf(pc, shader_add, val, texture_func, k - wid / 2,
-				        j - hei / 2);
+				sprintf(pc, shader_add, val, texture_func, k - wid / 2, j - hei / 2);
 				pc += strlen(pc);
 				assert(strlen(shader_str) < len);
 			}

@@ -16,6 +16,7 @@
 #include "types.h"
 #include "c2.h"
 #include "render.h"
+#include "utils.h"
 
 typedef struct session session_t;
 typedef struct _glx_texture glx_texture_t;

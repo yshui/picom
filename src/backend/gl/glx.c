@@ -10,9 +10,19 @@
  */
 
 #include <GL/glx.h>
+#include <stdbool.h>
+#include <xcb/xcb.h>
+
 #include "backend/backend.h"
 #include "backend/gl/gl_common.h"
+#include "common.h"
+#include "compiler.h"
+#include "log.h"
+#include "region.h"
 #include "string_utils.h"
+#include "utils.h"
+#include "win.h"
+#include "config.h"
 
 /// @brief Wrapper of a GLX FBConfig.
 typedef struct glx_fbconfig {
@@ -87,8 +97,7 @@ static void glx_release_pixmap(struct _glx_data *gd, Display *dpy, struct _glx_w
 /**
  * Free a glx_texture_t.
  */
-static void attr_unused glx_release_win(struct _glx_data *gd, Display *dpy,
-                                        struct _glx_win_data *wd) {
+static void attr_unused glx_release_win(struct _glx_data *gd, Display *dpy, struct _glx_win_data *wd) {
 	glx_release_pixmap(gd, dpy, wd);
 	glDeleteTextures(1, &wd->texture.texture);
 
@@ -161,8 +170,8 @@ glx_cmp_fbconfig(session_t *ps, const glx_fbconfig_t *pfbc_a, const glx_fbconfig
 /**
  * @brief Update the FBConfig of given depth.
  */
-static inline void
-glx_update_fbconfig_bydepth(session_t *ps, struct _glx_data *gd, int depth, glx_fbconfig_t *pfbcfg) {
+static inline void glx_update_fbconfig_bydepth(session_t *ps, struct _glx_data *gd,
+                                               int depth, glx_fbconfig_t *pfbcfg) {
 	// Make sure the depth is sane
 	if (depth < 0 || depth > OPENGL_MAX_DEPTH)
 		return;
@@ -170,8 +179,7 @@ glx_update_fbconfig_bydepth(session_t *ps, struct _glx_data *gd, int depth, glx_
 	// Compare new FBConfig with current one
 	if (glx_cmp_fbconfig(ps, gd->fbconfigs[depth], pfbcfg) < 0) {
 		log_debug("(depth %d): %p overrides %p, target %#x.\n", depth, pfbcfg->cfg,
-		          gd->fbconfigs[depth] ? gd->fbconfigs[depth]->cfg : 0,
-		          pfbcfg->texture_tgts);
+		          gd->fbconfigs[depth] ? gd->fbconfigs[depth]->cfg : 0, pfbcfg->texture_tgts);
 		if (!gd->fbconfigs[depth]) {
 			gd->fbconfigs[depth] = cmalloc(glx_fbconfig_t);
 		}
@@ -200,21 +208,18 @@ static bool glx_update_fbconfig(struct _glx_data *gd, session_t *ps) {
 		// Skip over multi-sampled visuals
 		// http://people.freedesktop.org/~glisse/0001-glx-do-not-use-multisample-visual-config-for-front-o.patch
 #ifdef GLX_SAMPLES
-		if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_SAMPLES, &val) &&
-		    val > 1)
+		if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_SAMPLES, &val) && val > 1)
 			continue;
 #endif
 
 		if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BUFFER_SIZE, &depth) ||
-		    Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_ALPHA_SIZE,
-		                                    &depth_alpha)) {
+		    Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_ALPHA_SIZE, &depth_alpha)) {
 			log_error("Failed to retrieve buffer size and alpha size of "
 			          "FBConfig %d.",
 			          id);
 			continue;
 		}
-		if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur,
-		                                    GLX_BIND_TO_TEXTURE_TARGETS_EXT,
+		if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BIND_TO_TEXTURE_TARGETS_EXT,
 		                                    &fbinfo.texture_tgts)) {
 			log_error("Failed to retrieve BIND_TO_TEXTURE_TARGETS_EXT of "
 			          "FBConfig %d.",
@@ -238,14 +243,10 @@ static bool glx_update_fbconfig(struct _glx_data *gd, session_t *ps) {
 		bool rgba = false;
 
 		if (depth >= 32 && depth_alpha &&
-		    Success == glXGetFBConfigAttrib(ps->dpy, *pcur,
-		                                    GLX_BIND_TO_TEXTURE_RGBA_EXT, &val) &&
-		    val)
+		    Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BIND_TO_TEXTURE_RGBA_EXT, &val) && val)
 			rgba = true;
 
-		if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur,
-		                                    GLX_BIND_TO_TEXTURE_RGB_EXT, &val) &&
-		    val)
+		if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BIND_TO_TEXTURE_RGB_EXT, &val) && val)
 			rgb = true;
 
 		if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_Y_INVERTED_EXT, &val))
@@ -282,14 +283,12 @@ static bool glx_update_fbconfig(struct _glx_data *gd, session_t *ps) {
 }
 
 #ifdef DEBUG_GLX_DEBUG_CONTEXT
-static inline GLXFBConfig
-get_fbconfig_from_visualinfo(session_t *ps, const XVisualInfo *visualinfo) {
+static inline GLXFBConfig get_fbconfig_from_visualinfo(session_t *ps, const XVisualInfo *visualinfo) {
 	int nelements = 0;
 	GLXFBConfig *fbconfigs = glXGetFBConfigs(ps->dpy, visualinfo->screen, &nelements);
 	for (int i = 0; i < nelements; ++i) {
 		int visual_id = 0;
-		if (Success == glXGetFBConfigAttrib(ps->dpy, fbconfigs[i], GLX_VISUAL_ID,
-		                                    &visual_id) &&
+		if (Success == glXGetFBConfigAttrib(ps->dpy, fbconfigs[i], GLX_VISUAL_ID, &visual_id) &&
 		    visual_id == visualinfo->visualid)
 			return fbconfigs[i];
 	}
@@ -521,8 +520,7 @@ void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 	};
 
 	auto wd = ccalloc(1, struct _glx_win_data);
-	wd->texture.target =
-	    (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
+	wd->texture.target = (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
 	wd->texture.y_inverted = pcfg->y_inverted;
 
 	if (ps->has_name_pixmap) {
@@ -575,8 +573,7 @@ err:
 /**
  * Bind a X pixmap to an OpenGL texture.
  */
-void glx_render_win(void *backend_data, session_t *ps, win *w, void *win_data,
-                    const region_t *reg_paint) {
+void glx_render_win(void *backend_data, session_t *ps, win *w, void *win_data, const region_t *reg_paint) {
 	struct _glx_data *gd = backend_data;
 	struct _glx_win_data *wd = win_data;
 
@@ -594,60 +591,58 @@ void glx_render_win(void *backend_data, session_t *ps, win *w, void *win_data,
 /**
  * Preprocess function before start painting.
  */
-static void attr_unused
-glx_paint_pre(session_t *ps, region_t *preg) {
-  // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+static void attr_unused glx_paint_pre(session_t *ps, region_t *preg) {
+	// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  // Get buffer age
-  bool trace_damage = (ps->o.glx_swap_method < 0 || ps->o.glx_swap_method > 1);
+	// Get buffer age
+	bool trace_damage = (ps->o.glx_swap_method < 0 || ps->o.glx_swap_method > 1);
 
-  // Trace raw damage regions
-  region_t newdamage;
-  pixman_region32_init(&newdamage);
-  if (trace_damage)
-    copy_region(&newdamage, preg);
+	// Trace raw damage regions
+	region_t newdamage;
+	pixman_region32_init(&newdamage);
+	if (trace_damage)
+		copy_region(&newdamage, preg);
 
-  // We use GLX buffer_age extension to decide which pixels in
-  // the back buffer is reusable, and limit our redrawing
-  int buffer_age = 0;
+	// We use GLX buffer_age extension to decide which pixels in
+	// the back buffer is reusable, and limit our redrawing
+	int buffer_age = 0;
 
-  // Query GLX_EXT_buffer_age for buffer age
-  if (ps->o.glx_swap_method == SWAPM_BUFFER_AGE) {
-    unsigned val = 0;
-    glXQueryDrawable(ps->dpy, get_tgt_window(ps),
-        GLX_BACK_BUFFER_AGE_EXT, &val);
-    buffer_age = val;
-  }
+	// Query GLX_EXT_buffer_age for buffer age
+	if (ps->o.glx_swap_method == SWAPM_BUFFER_AGE) {
+		unsigned val = 0;
+		glXQueryDrawable(ps->dpy, get_tgt_window(ps), GLX_BACK_BUFFER_AGE_EXT, &val);
+		buffer_age = val;
+	}
 
-  // Buffer age too high
-  if (buffer_age > CGLX_MAX_BUFFER_AGE + 1)
-    buffer_age = 0;
+	// Buffer age too high
+	if (buffer_age > CGLX_MAX_BUFFER_AGE + 1)
+		buffer_age = 0;
 
-  assert(buffer_age >= 0);
+	assert(buffer_age >= 0);
 
-  if (buffer_age) {
-    // Determine paint area
-      for (int i = 0; i < buffer_age - 1; ++i)
-        pixman_region32_union(preg, preg, &ps->all_damage_last[i]);
-  } else
-    // buffer_age == 0 means buffer age is not available, paint everything
-    copy_region(preg, &ps->screen_reg);
+	if (buffer_age) {
+		// Determine paint area
+		for (int i = 0; i < buffer_age - 1; ++i)
+			pixman_region32_union(preg, preg, &ps->all_damage_last[i]);
+	} else
+		// buffer_age == 0 means buffer age is not available, paint everything
+		copy_region(preg, &ps->screen_reg);
 
-  if (trace_damage) {
-    // XXX use a circular queue instead of memmove
-    pixman_region32_fini(&ps->all_damage_last[CGLX_MAX_BUFFER_AGE - 1]);
-    memmove(ps->all_damage_last + 1, ps->all_damage_last,
-        (CGLX_MAX_BUFFER_AGE - 1) * sizeof(region_t *));
-    ps->all_damage_last[0] = newdamage;
-  }
+	if (trace_damage) {
+		// XXX use a circular queue instead of memmove
+		pixman_region32_fini(&ps->all_damage_last[CGLX_MAX_BUFFER_AGE - 1]);
+		memmove(ps->all_damage_last + 1, ps->all_damage_last,
+		        (CGLX_MAX_BUFFER_AGE - 1) * sizeof(region_t *));
+		ps->all_damage_last[0] = newdamage;
+	}
 
-  //gl_set_clip(ps, preg);
+	// gl_set_clip(ps, preg);
 
 #ifdef DEBUG_GLX_PAINTREG
-  glx_render_color(ps, 0, 0, ps->root_width, ps->root_height, 0, *preg, NULL);
+	glx_render_color(ps, 0, 0, ps->root_width, ps->root_height, 0, *preg, NULL);
 #endif
 
-  gl_check_err();
+	gl_check_err();
 }
 
 backend_info_t glx_backend = {

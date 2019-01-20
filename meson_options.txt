@@ -13,3 +13,5 @@ option('xrescheck', type: 'boolean', value: false, description: 'Enable X resour
 option('build_docs', type: 'boolean', value: false, description: 'Build documentation and man pages')
 
 option('new_backends', type: 'boolean', value: false, description: 'Does not really do anything right now')
+
+option('modularize', type: 'boolean', value: false, description: 'Build with clang\'s module system')

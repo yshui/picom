@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <math.h>
 
+#include "compiler.h"
 #include "kernel.h"
 #include "utils.h"
 
