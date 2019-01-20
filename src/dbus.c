@@ -12,10 +12,14 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <xcb/xcb.h>
+#include <X11/Xlib.h>
 
 #include "common.h"
 #include "config.h"
 #include "compiler.h"
+#include "utils.h"
+#include "types.h"
 #include "win.h"
 #include "string_utils.h"
 #include "log.h"

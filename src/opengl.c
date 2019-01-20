@@ -9,10 +9,16 @@
  *
  */
 
+#include <GL/glx.h>
+
 #include "compiler.h"
 #include "string_utils.h"
 #include "log.h"
 #include "config.h"
+#include "common.h"
+#include "utils.h"
+#include "win.h"
+#include "region.h"
 
 #include "opengl.h"
 

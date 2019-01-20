@@ -13,6 +13,13 @@
 #include "vsync.h"
 #include "win.h"
 #include "kernel.h"
+#include "compiler.h"
+#include "x.h"
+#include "config.h"
+#include "region.h"
+#include "log.h"
+#include "types.h"
+#include "utils.h"
 
 #include "backend/backend_common.h"
 #include "render.h"
@@ -175,7 +182,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	// XRender: Build picture
 	if (bkend_use_xrender(ps) && !w->paint.pict) {
 		xcb_render_create_picture_value_list_t pa = {
-		    .subwindowmode = IncludeInferiors,
+		    .subwindowmode = XCB_SUBWINDOW_MODE_INCLUDE_INFERIORS,
 		};
 
 		w->paint.pict = x_create_picture_with_pictfmt_and_pixmap(
@@ -394,7 +401,7 @@ static bool get_root_tile(session_t *ps) {
 
 	// Create Picture
 	xcb_render_create_picture_value_list_t pa = {
-	    .repeat = True,
+	    .repeat = true,
 	};
 	ps->root_tile_paint.pict = x_create_picture_with_visual_and_pixmap(
 	    ps, ps->vis, pixmap, XCB_RENDER_CP_REPEAT, &pa);
@@ -933,7 +940,7 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 	if (ps->o.vsync_aggressive)
 		vsync_wait(ps);
 
-	XFlush(ps->dpy);
+	xcb_flush(ps->c);
 
 #ifdef CONFIG_OPENGL
 	if (glx_has_context(ps)) {

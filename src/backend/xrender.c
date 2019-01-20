@@ -7,8 +7,12 @@
 #include "backend/backend.h"
 #include "backend_common.h"
 #include "common.h"
+#include "config.h"
+#include "log.h"
+#include "region.h"
 #include "utils.h"
 #include "win.h"
+#include "x.h"
 
 #define auto __auto_type
 
@@ -108,8 +112,7 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 		pixman_region32_intersect(&reg_tmp, &reg_tmp, (region_t *)reg_paint);
 
 #ifdef CONFIG_XINERAMA
-		if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
-		    w->xinerama_scr < ps->xinerama_nscrs)
+		if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 && w->xinerama_scr < ps->xinerama_nscrs)
 			// There can be a window where number of screens is updated,
 			// but the screen number attached to the windows have not.
 			//
@@ -128,10 +131,10 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 		// Detect if the region is empty before painting
 		if (pixman_region32_not_empty(&reg_tmp)) {
 			x_set_picture_clip_region(ps, xd->back, 0, 0, &reg_tmp);
-			xcb_render_composite(
-			    ps->c, XCB_RENDER_PICT_OP_OVER, wd->shadow_pict, alpha_pict,
-			    xd->back, 0, 0, 0, 0, dst_x + w->shadow_dx,
-			    dst_y + w->shadow_dy, w->shadow_width, w->shadow_height);
+			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER,
+			                     wd->shadow_pict, alpha_pict, xd->back, 0, 0, 0,
+			                     0, dst_x + w->shadow_dx, dst_y + w->shadow_dy,
+			                     w->shadow_width, w->shadow_height);
 		}
 		pixman_region32_fini(&reg_tmp);
 		pixman_region32_fini(&shadow_reg);
@@ -154,8 +157,7 @@ static inline void xrfilter_reset(session_t *ps, xcb_render_picture_t p) {
 	xcb_render_set_picture_filter(ps->c, p, strlen(filter), filter, 0, NULL);
 }
 
-static bool
-blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_paint) {
+static bool blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_paint) {
 	struct _xrender_data *xd = backend_data;
 	const pixman_box32_t *reg = pixman_region32_extents((region_t *)reg_paint);
 	const int height = reg->y2 - reg->y1;
@@ -203,14 +205,12 @@ blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_pain
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
 		xcb_render_set_picture_filter(ps->c, src_pict, strlen(XRFILTER_CONVOLUTION),
-		                              XRFILTER_CONVOLUTION, kwid * khei + 2,
-		                              convolution_blur);
+		                              XRFILTER_CONVOLUTION, kwid * khei + 2, convolution_blur);
 
 		if (ps->o.blur_kerns[i + 1] || i == 0) {
 			// This is not the last pass, or this is the first pass
-			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict,
-			                     XCB_NONE, dst_pict, src_x, src_y, 0, 0, 0, 0,
-			                     width, height);
+			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
+			                     dst_pict, src_x, src_y, 0, 0, 0, 0, width, height);
 		} else {
 			// This is the last pass, and this is also not the first
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER, src_pict,
@@ -238,8 +238,8 @@ blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_pain
 	return true;
 }
 
-static void render_win(void *backend_data, session_t *ps, win *w, void *win_data,
-                       const region_t *reg_paint) {
+static void
+render_win(void *backend_data, session_t *ps, win *w, void *win_data, const region_t *reg_paint) {
 	struct _xrender_data *xd = backend_data;
 	struct _xrender_win_data *wd = win_data;
 
@@ -266,22 +266,21 @@ static void render_win(void *backend_data, session_t *ps, win *w, void *win_data
 	// Copy the content of the window over to the buffer
 	x_clear_picture_clip_region(ps, wd->buffer);
 	wd->rendered_pict = wd->buffer;
-	xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, wd->pict, None,
+	xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, wd->pict, XCB_NONE,
 	                     wd->rendered_pict, 0, 0, 0, 0, 0, 0, w->widthb, w->heightb);
 
 	if (w->invert_color) {
 		// Handle invert color
 		x_set_picture_clip_region(ps, wd->rendered_pict, 0, 0, &reg_paint_local);
 
-		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE,
-		                     xd->white_pixel, None, wd->rendered_pict, 0, 0, 0, 0,
-		                     0, 0, w->widthb, w->heightb);
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE, xd->white_pixel, XCB_NONE,
+		                     wd->rendered_pict, 0, 0, 0, 0, 0, 0, w->widthb, w->heightb);
 		// We use an extra PictOpInReverse operation to get correct pixel
 		// alpha. There could be a better solution.
 		if (win_has_alpha(w))
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_IN_REVERSE,
-			                     wd->pict, None, wd->rendered_pict, 0, 0, 0,
-			                     0, 0, 0, w->widthb, w->heightb);
+			                     wd->pict, XCB_NONE, wd->rendered_pict, 0, 0,
+			                     0, 0, 0, 0, w->widthb, w->heightb);
 	}
 
 	const double dopacity = get_opacity_percent(w);
@@ -302,9 +301,8 @@ static void render_win(void *backend_data, session_t *ps, win *w, void *win_data
 
 		// Step 2: multiply alpha value
 		// XXX test
-		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->white_pixel,
-		                     alpha_pict, wd->rendered_pict, 0, 0, 0, 0, 0, 0,
-		                     w->widthb, w->heightb);
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->white_pixel, alpha_pict,
+		                     wd->rendered_pict, 0, 0, 0, 0, 0, 0, w->widthb, w->heightb);
 	}
 
 	if (w->dim) {
@@ -359,8 +357,7 @@ static void *prepare_win(void *backend_data, session_t *ps, win *w) {
 	//     leave this here until we have chance to re-think the backend API
 	if (w->shadow) {
 		xcb_pixmap_t pixmap;
-		build_shadow(ps, 1, w->widthb, w->heightb, xd->shadow_pixel, &pixmap,
-		             &wd->shadow_pict);
+		build_shadow(ps, 1, w->widthb, w->heightb, xd->shadow_pixel, &pixmap, &wd->shadow_pict);
 		xcb_free_pixmap(ps->c, pixmap);
 	}
 	return wd;
@@ -383,17 +380,17 @@ static void *init(session_t *ps) {
 	for (int i = 0; i < 256; ++i) {
 		double o = (double)i / 255.0;
 		xd->alpha_pict[i] = solid_picture(ps, false, o, 0, 0, 0);
-		assert(xd->alpha_pict[i] != None);
+		assert(xd->alpha_pict[i] != XCB_NONE);
 	}
 
 	xd->black_pixel = solid_picture(ps, true, 1, 0, 0, 0);
 	xd->white_pixel = solid_picture(ps, true, 1, 1, 1, 1);
-	xd->shadow_pixel = solid_picture(ps, true, 1, ps->o.shadow_red,
-	                                 ps->o.shadow_green, ps->o.shadow_blue);
+	xd->shadow_pixel =
+	    solid_picture(ps, true, 1, ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue);
 
 	if (ps->overlay != XCB_NONE) {
-		xd->target = x_create_picture_with_visual_and_pixmap(
-		    ps, ps->vis, ps->overlay, 0, NULL);
+		xd->target =
+		    x_create_picture_with_visual_and_pixmap(ps, ps->vis, ps->overlay, 0, NULL);
 		xd->target_win = ps->overlay;
 	} else {
 		xcb_render_create_picture_value_list_t pa = {
@@ -412,15 +409,14 @@ static void *init(session_t *ps) {
 
 	xd->back_pixmap =
 	    x_create_pixmap(ps, pictfmt->depth, ps->root, ps->root_width, ps->root_height);
-	xd->back =
-	    x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, xd->back_pixmap, 0, NULL);
+	xd->back = x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, xd->back_pixmap, 0, NULL);
 
 	xcb_pixmap_t root_pixmap = x_get_root_back_pixmap(ps);
 	if (root_pixmap == XCB_NONE) {
 		xd->root_pict = solid_picture(ps, false, 1, 0.5, 0.5, 0.5);
 	} else {
-		xd->root_pict = x_create_picture_with_visual_and_pixmap(
-		    ps, ps->vis, root_pixmap, 0, NULL);
+		xd->root_pict =
+		    x_create_picture_with_visual_and_pixmap(ps, ps->vis, root_pixmap, 0, NULL);
 	}
 
 	if (ps->present_exists) {
@@ -472,11 +468,11 @@ static void present(void *backend_data, session_t *ps) {
 
 	if (ps->o.vsync != VSYNC_NONE && ps->present_exists) {
 		// Only reset the fence when we are sure we will trigger it again.
-		// To make sure rendering won't get stuck if user toggles vsync on the fly.
+		// To make sure rendering won't get stuck if user toggles vsync on the
+		// fly.
 		xcb_sync_reset_fence(ps->c, xd->idle_fence);
-		xcb_present_pixmap(ps->c, xd->target_win, xd->back_pixmap, 0, XCB_NONE,
-		                   XCB_NONE, 0, 0, XCB_NONE, XCB_NONE, xd->idle_fence, 0,
-		                   0, 1, 0, 0, NULL);
+		xcb_present_pixmap(ps->c, xd->target_win, xd->back_pixmap, 0, XCB_NONE, XCB_NONE,
+		                   0, 0, XCB_NONE, XCB_NONE, xd->idle_fence, 0, 0, 1, 0, 0, NULL);
 	} else {
 		// compose() sets clip region, so clear it first to make
 		// sure we update the whole screen.
@@ -484,9 +480,8 @@ static void present(void *backend_data, session_t *ps) {
 
 		// TODO buffer-age-like optimization might be possible here.
 		//      but that will require a different backend API
-		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->back, None,
-		                     xd->target, 0, 0, 0, 0, 0, 0, ps->root_width,
-		                     ps->root_height);
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->back, XCB_NONE, xd->target,
+		                     0, 0, 0, 0, 0, 0, ps->root_width, ps->root_height);
 	}
 }
 

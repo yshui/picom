@@ -33,6 +33,17 @@ if get_option('sanitize')
 	add_global_link_arguments('-fsanitize='+','.join(sanitizers), language: 'c')
 endif
 
+if get_option('modularize')
+	if not cc.has_argument('-fmodules')
+		error('option \'modularize\' requires clang')
+	endif
+	add_global_arguments(['-fmodules',
+	                      '-fmodule-map-file='+
+	                      meson.current_source_dir()+
+	                      '/src/compton.modulemap'],
+	                     language: 'c')
+endif
+
 add_global_arguments('-D_GNU_SOURCE', language: 'c')
 
 warns = [ 'all', 'extra', 'no-unused-parameter', 'nonnull', 'shadow', 'implicit-fallthrough' ]

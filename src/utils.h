@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
+#include <stdlib.h>
 #include <ctype.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 

@@ -7,9 +7,10 @@
 /// Common functions and definitions for configuration parsing
 /// Used for command line arguments and config files
 
+#include <stdlib.h>
 #include <stdbool.h>
 #include <ctype.h>
-#include <strings.h>
+#include <string.h>
 #include <xcb/xfixes.h>
 
 #ifdef CONFIG_LIBCONFIG

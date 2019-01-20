@@ -93,6 +93,10 @@
 #include "kernel.h"
 #include "render.h"
 #include "config.h"
+#include "log.h"
+#include "compiler.h"
+#include "utils.h"
+#include "x.h"
 
 // === Constants ===
 
@@ -206,35 +210,6 @@ typedef void (*f_BindTexImageEXT) (Display *display, GLXDrawable drawable, int b
 typedef void (*f_ReleaseTexImageEXT) (Display *display, GLXDrawable drawable, int buffer);
 
 #ifdef CONFIG_OPENGL
-// Looks like duplicate typedef of the same type is safe?
-typedef int64_t GLint64;
-typedef uint64_t GLuint64;
-typedef struct __GLsync *GLsync;
-
-#ifndef GL_SYNC_FLUSH_COMMANDS_BIT
-#define GL_SYNC_FLUSH_COMMANDS_BIT 0x00000001
-#endif
-
-#ifndef GL_TIMEOUT_IGNORED
-#define GL_TIMEOUT_IGNORED 0xFFFFFFFFFFFFFFFFull
-#endif
-
-#ifndef GL_ALREADY_SIGNALED
-#define GL_ALREADY_SIGNALED 0x911A
-#endif
-
-#ifndef GL_TIMEOUT_EXPIRED
-#define GL_TIMEOUT_EXPIRED 0x911B
-#endif
-
-#ifndef GL_CONDITION_SATISFIED
-#define GL_CONDITION_SATISFIED 0x911C
-#endif
-
-#ifndef GL_WAIT_FAILED
-#define GL_WAIT_FAILED 0x911D
-#endif
-
 typedef GLsync (*f_FenceSync) (GLenum condition, GLbitfield flags);
 typedef GLboolean (*f_IsSync) (GLsync sync);
 typedef void (*f_DeleteSync) (GLsync sync);

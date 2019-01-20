@@ -4,6 +4,7 @@
 #pragma once
 
 #include "region.h"
+#include "compiler.h"
 
 typedef struct session session_t;
 typedef struct win win;

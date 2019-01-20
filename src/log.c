@@ -8,7 +8,8 @@
 #include <unistd.h>
 
 #ifdef CONFIG_OPENGL
-#include <opengl.h>
+#include <GL/glx.h>
+#include "opengl.h"
 #endif
 
 #include "compiler.h"

@@ -7,6 +7,9 @@
 #include <unistd.h>
 
 #include "common.h"
+#include "log.h"
+#include "utils.h"
+#include "win.h"
 #include "config.h"
 #include "options.h"
 

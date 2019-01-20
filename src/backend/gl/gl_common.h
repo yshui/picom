@@ -3,6 +3,7 @@
 #include <GL/glext.h>
 
 #include "common.h"
+#include "log.h"
 
 // Program and uniforms for window shader
 typedef struct {

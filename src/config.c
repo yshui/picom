@@ -11,6 +11,9 @@
 #include "c2.h"
 #include "string_utils.h"
 #include "log.h"
+#include "region.h"
+#include "types.h"
+#include "win.h"
 
 #include "config.h"
 
