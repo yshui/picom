@@ -1,8 +1,10 @@
 #pragma once
+#include <string.h>
 #include <GL/gl.h>
 #include <GL/glext.h>
 
 #include "common.h"
+#include "log.h"
 
 // Program and uniforms for window shader
 typedef struct {
@@ -66,9 +68,13 @@ gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_
 
 bool gl_load_prog_main(session_t *ps, const char *vshader_str, const char *fshader_str,
                        gl_win_shader_t *pprogram);
+void gl_free_prog_main(session_t *ps, gl_win_shader_t *prog);
 
 unsigned char *gl_take_screenshot(session_t *ps, int *out_length);
 void gl_resize(int width, int height);
+bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_cap_t *cap);
+
+GLuint glGetUniformLocationChecked(GLuint p, const char *name);
 
 /**
  * Get a textual representation of an OpenGL error.

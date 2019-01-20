@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <sys/uio.h>
 
 #include "compiler.h"

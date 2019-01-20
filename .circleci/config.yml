@@ -27,7 +27,7 @@ commands:
             - ".git"
       - run:
           name: config
-          command: CC=<< parameters.cc >> meson << parameters.build-config >> -Dnew_backends=true --werror . build
+          command: CC=<< parameters.cc >> meson << parameters.build-config >> --werror . build
       - run:
           name: build
           command: ninja -C build
@@ -43,46 +43,57 @@ jobs:
     <<: *defaults
     steps:
       - build:
-          build-config: -Dbuild_docs=true
+          build-config: -Dbuild_docs=true -Dnew_backends=true
   minimal:
     <<: *defaults
     steps:
       - build:
-          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
+          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false -Dnew_backends=true
   nogl:
     <<: *defaults
     steps:
       - build:
-          build-config: -Dopengl=false
+          build-config: -Dopengl=false -Dnew_backends=true
   noregex:
     <<: *defaults
     steps:
       - build:
-          build-config: -Dregex=false
+          build-config: -Dregex=false -Dnew_backends=true
   clang_basic:
     <<: *defaults
     steps:
       - build:
           cc: clang-6.0
-          build-config:
+          build-config: -Dnew_backends=true
   clang_minimal:
     <<: *defaults
     steps:
       - build:
           cc: clang-6.0
-          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
+          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false -Dnew_backends=true
   clang_nogl:
     <<: *defaults
     steps:
       - build:
           cc: clang-6.0
-          build-config: -Dopengl=false
+          build-config: -Dopengl=false -Dnew_backends=true
   clang_noregex:
     <<: *defaults
     steps:
       - build:
           cc: clang-6.0
-          build-config: -Dregex=false
+          build-config: -Dregex=false -Dnew_backends=true
+  clang_basic_nonew:
+    <<: *defaults
+    steps:
+      - build:
+          cc: clang-6.0
+          build-config:
+  basic_nonew:
+    <<: *defaults
+    steps:
+      - build:
+          build-config:
 
 workflows:
   all_builds:
@@ -93,6 +104,8 @@ workflows:
       - clang_minimal
       - nogl
       - clang_nogl
+      - clang_basic_nonew
+      - basic_nonew
 #     - test-xvfb
 
 # vim: set sw=2 ts=8 et:

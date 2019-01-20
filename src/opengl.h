@@ -12,10 +12,26 @@
 #pragma once
 
 #include "common.h"
+#include "region.h"
+#include "render.h"
+#include "compiler.h"
+#include "win.h"
 #include "log.h"
 
+#include <xcb/xcb.h>
+#include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 #include <locale.h>
+#include <GL/glx.h>
+
+/// @brief Wrapper of a GLX FBConfig.
+typedef struct glx_fbconfig {
+  GLXFBConfig cfg;
+  GLint texture_fmt;
+  GLint texture_tgts;
+  bool y_inverted;
+} glx_fbconfig_t;
 
 #ifdef DEBUG_GLX_ERR
 
@@ -111,7 +127,7 @@ glx_hasglxext(session_t *ps, const char *ext) {
  * Check if a GLX extension exists.
  */
 static inline bool
-glx_hasglext(session_t *ps, const char *ext) {
+glx_hasglext(const char *ext) {
   const char *gl_exts = (const char *) glGetString(GL_EXTENSIONS);
   if (!gl_exts) {
     log_error("Failed get GL extension list.");

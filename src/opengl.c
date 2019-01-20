@@ -9,9 +9,21 @@
  *
  */
 
+#include <string.h>
+#include <stdlib.h>
+#include <GL/glx.h>
+#include <xcb/xcb.h>
+#include <xcb/render.h>
+#include <stdio.h>
+
 #include "compiler.h"
 #include "string_utils.h"
 #include "log.h"
+#include "config.h"
+#include "common.h"
+#include "utils.h"
+#include "win.h"
+#include "region.h"
 
 #include "opengl.h"
 
@@ -347,7 +359,7 @@ glx_init(session_t *ps, bool need_render) {
   // Check GL_ARB_texture_non_power_of_two, requires a GLX context and
   // must precede FBConfig fetching
   if (need_render)
-    psglx->has_texture_non_power_of_two = glx_hasglext(ps,
+    psglx->has_texture_non_power_of_two = glx_hasglext(
         "GL_ARB_texture_non_power_of_two");
 
   // Acquire function addresses
@@ -892,7 +904,7 @@ glx_paint_pre(session_t *ps, region_t *preg) {
     // XXX use a circular queue instead of memmove
     pixman_region32_fini(&ps->all_damage_last[CGLX_MAX_BUFFER_AGE - 1]);
     memmove(ps->all_damage_last + 1, ps->all_damage_last,
-        (CGLX_MAX_BUFFER_AGE - 1) * sizeof(region_t *));
+        (CGLX_MAX_BUFFER_AGE - 1) * sizeof(region_t));
     ps->all_damage_last[0] = newdamage;
   }
 

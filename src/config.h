@@ -7,13 +7,25 @@
 /// Common functions and definitions for configuration parsing
 /// Used for command line arguments and config files
 
+#include <stdlib.h>
 #include <stdbool.h>
+#include <ctype.h>
+#include <string.h>
+#include <xcb/xcb.h>
+#include <xcb/render.h> // for xcb_render_fixed_t, XXX
+#include <xcb/xfixes.h>
 
 #ifdef CONFIG_LIBCONFIG
 #include <libconfig.h>
 #endif
 
-#include "common.h"
+#include "region.h"
+#include "log.h"
+#include "compiler.h"
+#include "win.h"
+#include "types.h"
+
+typedef struct session session_t;
 
 /// VSync modes.
 typedef enum {
@@ -72,10 +84,8 @@ typedef struct options_t {
 	char *write_pid_path;
 	/// The backend in use.
 	enum backend backend;
-	/// Whether to sync X drawing to avoid certain delay issues with
-	/// GLX backend.
-	bool xrender_sync;
-	/// Whether to sync X drawing with X Sync fence.
+	/// Whether to sync X drawing with X Sync fence to avoid certain delay
+	/// issues with GLX backend.
 	bool xrender_sync_fence;
 	/// Whether to avoid using stencil buffer under GLX backend. Might be
 	/// unsafe.
@@ -119,7 +129,7 @@ typedef struct options_t {
 	/// Number of cycles to paint in benchmark mode. 0 for disabled.
 	int benchmark;
 	/// Window to constantly repaint in benchmark mode. 0 for full-screen.
-	Window benchmark_wid;
+	xcb_window_t benchmark_wid;
 	/// A list of conditions of windows not to paint.
 	c2_lptr_t *paint_blacklist;
 	/// Whether to show all X errors.
@@ -269,6 +279,7 @@ parse_config_libconfig(options_t *, const char *config_file, bool *shadow_enable
                        bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
 #endif
 
+void set_default_winopts(options_t *, win_option_mask_t *, bool shadow_enable, bool fading_enable);
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
 /// default values
 /// Outputs and returns:

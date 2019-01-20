@@ -2,6 +2,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/uio.h>
 #include <time.h>
@@ -9,6 +10,7 @@
 
 #ifdef CONFIG_OPENGL
 #include <GL/glx.h>
+#include "opengl.h"
 #endif
 
 #include "compiler.h"
@@ -48,6 +50,10 @@ log_default_writev(struct log_target *tgt, const struct iovec *vec, int vcnt) {
 		total += vec[i].iov_len;
 	}
 
+	if (!total) {
+		// Nothing to write
+		return;
+	}
 	char *buf = ccalloc(total, char);
 	total = 0;
 	for (int i = 0; i < vcnt; i++) {
@@ -322,6 +328,10 @@ static const struct log_ops glx_string_marker_logger_ops = {
 };
 
 struct log_target *glx_string_marker_logger_new(void) {
+	if (!glx_hasglext("GL_GREMEDY_string_marker")) {
+		return NULL;
+	}
+
 	void *fnptr = glXGetProcAddress((GLubyte *)"glStringMarkerGREMEDY");
 	if (!fnptr)
 		return NULL;

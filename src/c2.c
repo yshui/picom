@@ -10,6 +10,8 @@
  *
  */
 
+#include <string.h>
+#include <stdio.h>
 #include <fnmatch.h>
 #include <ctype.h>
 
@@ -27,12 +29,19 @@
 
 #endif
 
+#include <xcb/xcb.h>
+#include <X11/Xlib.h>
+
 #include "common.h"
 #include "win.h"
-#include "c2.h"
+#include "config.h"
 #include "string_utils.h"
 #include "utils.h"
 #include "log.h"
+#include "x.h"
+#include "compiler.h"
+
+#include "c2.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"
 
@@ -102,7 +111,7 @@ struct _c2_l {
   } match     : 3;
   bool match_ignorecase : 1;
   char *tgt;
-  Atom tgtatom;
+  xcb_atom_t tgtatom;
   bool tgt_onframe;
   int index;
   enum {
@@ -340,7 +349,7 @@ c2h_dump_str_type(const c2_l_t *pleaf);
 static void attr_unused
 c2_dump(c2_ptr_t p);
 
-static Atom
+static xcb_atom_t
 c2_get_atom_type(const c2_l_t *pleaf);
 
 static bool
@@ -1330,7 +1339,7 @@ c2_dump(c2_ptr_t p) {
 /**
  * Get the type atom of a condition.
  */
-static Atom
+static xcb_atom_t
 c2_get_atom_type(const c2_l_t *pleaf) {
   switch (pleaf->type) {
     case C2_L_TCARDINAL:
@@ -1347,9 +1356,7 @@ c2_get_atom_type(const c2_l_t *pleaf) {
       assert(0);
       break;
   }
-
-  assert(0);
-  return AnyPropertyType;
+  unreachable;
 }
 
 /**
@@ -1362,7 +1369,7 @@ c2_match_once_leaf(session_t *ps, win *w, const c2_l_t *pleaf,
     bool *pres, bool *perr) {
   assert(pleaf);
 
-  const Window wid = (pleaf->tgt_onframe ? w->client_win: w->id);
+  const xcb_window_t wid = (pleaf->tgt_onframe ? w->client_win: w->id);
 
   // Return if wid is missing
   if (!pleaf->predef && !wid)
@@ -1453,7 +1460,7 @@ c2_match_once_leaf(session_t *ps, win *w, const c2_l_t *pleaf,
         else if (C2_L_TATOM == pleaf->type) {
           winprop_t prop = wid_get_prop_adv(ps, wid, pleaf->tgtatom,
               idx, 1L, c2_get_atom_type(pleaf), pleaf->format);
-          Atom atom = winprop_get_int(prop);
+          xcb_atom_t atom = winprop_get_int(prop);
           if (atom) {
             xcb_get_atom_name_reply_t *reply =
               xcb_get_atom_name_reply(ps->c, xcb_get_atom_name(ps->c, atom), NULL);

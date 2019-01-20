@@ -4,11 +4,18 @@
 #include <getopt.h>
 #include <locale.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+#include <xcb/render.h> // for xcb_render_fixed_t, XXX
 
 #include "common.h"
 #include "config.h"
+#include "log.h"
 #include "options.h"
+#include "utils.h"
+#include "win.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"
 
@@ -463,8 +470,7 @@ static const struct option longopts[] = {
 
 /// Get config options that are needed to parse the rest of the options
 /// Return true if we should quit
-bool get_early_config(int argc, char *const *argv, char **config_file, bool *all_xerrors,
-                      int *exit_code) {
+bool get_early_config(int argc, char *const *argv, char **config_file, bool *all_xerrors, int *exit_code) {
 	int o = 0, longopt_idx = -1;
 
 	// Pre-parse the commandline arguments to check for --config and invalid
@@ -551,11 +557,11 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'c': shadow_enable = true; break;
 		case 'C':
 			winopt_mask[WINTYPE_DOCK].shadow = true;
-			opt->wintype_option[WINTYPE_DOCK].shadow = true;
+			opt->wintype_option[WINTYPE_DOCK].shadow = false;
 			break;
 		case 'G':
 			winopt_mask[WINTYPE_DND].shadow = true;
-			opt->wintype_option[WINTYPE_DND].shadow = true;
+			opt->wintype_option[WINTYPE_DND].shadow = false;
 			break;
 		case 'm':;
 			double tmp;
@@ -743,7 +749,11 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->write_pid_path = strdup(optarg);
 			break;
 		P_CASEBOOL(311, vsync_use_glfinish);
-		P_CASEBOOL(312, xrender_sync);
+		case 312:
+			// --xrender-sync
+			log_warn("Please use --xrender-sync-fence instead of --xrender-sync");
+			opt->xrender_sync_fence = true;
+ 			break;
 		P_CASEBOOL(313, xrender_sync_fence);
 		P_CASEBOOL(315, no_fading_destroyed_argb);
 		P_CASEBOOL(316, force_win_blend);
@@ -793,25 +803,11 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	opt->refresh_rate = normalize_i_range(opt->refresh_rate, 0, 300);
 
 	// Apply default wintype options that are dependent on global options
-	for (int i = 0; i < NUM_WINTYPES; i++) {
-		auto wo = &opt->wintype_option[i];
-		auto mask = &winopt_mask[i];
-		if (!mask->shadow) {
-			wo->shadow = shadow_enable;
-			mask->shadow = true;
-		}
-		if (!mask->fade) {
-			wo->fade = fading_enable;
-			mask->fade = true;
-		}
-	}
+	set_default_winopts(opt, winopt_mask, shadow_enable, fading_enable);
 
 	// --blur-background-frame implies --blur-background
 	if (opt->blur_background_frame)
 		opt->blur_background = true;
-
-	if (opt->xrender_sync_fence)
-		opt->xrender_sync = true;
 
 	// Other variables determined by options
 
@@ -846,8 +842,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		    DOUBLE_TO_XFIXED(1),
 		    DOUBLE_TO_XFIXED(1),
 		};
-		opt->blur_kerns[0] =
-		    ccalloc(ARR_SIZE(convolution_blur), xcb_render_fixed_t);
+		opt->blur_kerns[0] = ccalloc(ARR_SIZE(convolution_blur), xcb_render_fixed_t);
 		memcpy(opt->blur_kerns[0], convolution_blur, sizeof(convolution_blur));
 	}
 

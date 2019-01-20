@@ -1,80 +1,64 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <assert.h>
 #include <math.h>
 
+#include "compiler.h"
 #include "kernel.h"
 #include "utils.h"
 
-/*
- * A picture will help
- *
- *      -center   0                width  width+center
- *  -center +-----+-------------------+-----+
- *          |     |                   |     |
- *          |     |                   |     |
- *        0 +-----+-------------------+-----+
- *          |     |                   |     |
- *          |     |                   |     |
- *          |     |                   |     |
- *   height +-----+-------------------+-----+
- *          |     |                   |     |
- * height+  |     |                   |     |
- *  center  +-----+-------------------+-----+
- */
-
-double sum_kernel(const conv *map, int x, int y, int width,
-                                       int height) {
-	int fx, fy;
-	const double *g_data;
-	const double *g_line = map->data;
-	int g_size = map->size;
-	int center = g_size / 2;
-	int fx_start, fx_end;
-	int fy_start, fy_end;
-	double v;
-
+/// Sum a region convolution kernel. Region is defined by a width x height rectangle whose
+/// top left corner is at (x, y)
+double sum_kernel(const conv *map, int x, int y, int width, int height) {
+	double ret = 0;
 	/*
-	 * Compute set of filter values which are "in range",
-	 * that's the set with:
-	 *    0 <= x + (fx-center) && x + (fx-center) < width &&
-	 *  0 <= y + (fy-center) && y + (fy-center) < height
-	 *
-	 *  0 <= x + (fx - center)    x + fx - center < width
-	 *  center - x <= fx    fx < width + center - x
+	 * Compute set of filter values which are "in range"
 	 */
 
-	fx_start = center - x;
-	if (fx_start < 0)
-		fx_start = 0;
-	fx_end = width + center - x;
-	if (fx_end > g_size)
-		fx_end = g_size;
+	int xstart = x;
+	if (xstart < 0)
+		xstart = 0;
+	int xend = width + x;
+	if (xend > map->size)
+		xend = map->size;
 
-	fy_start = center - y;
-	if (fy_start < 0)
-		fy_start = 0;
-	fy_end = height + center - y;
-	if (fy_end > g_size)
-		fy_end = g_size;
+	int ystart = y;
+	if (ystart < 0)
+		ystart = 0;
+	int yend = height + y;
+	if (yend > map->size)
+		yend = map->size;
 
-	g_line = g_line + fy_start * g_size + fx_start;
+	assert(yend > 0 && xend > 0);
 
-	v = 0;
+	int d = map->size;
+	if (map->rsum) {
+		double v1 = xstart ? map->rsum[(yend - 1) * d + xstart - 1] : 0;
+		double v2 = ystart ? map->rsum[(ystart - 1) * d + xend - 1] : 0;
+		double v3 =
+		    (xstart && ystart) ? map->rsum[(ystart - 1) * d + xstart - 1] : 0;
+		return map->rsum[(yend - 1) * d + xend - 1] - v1 - v2 + v3;
+	}
 
-	for (fy = fy_start; fy < fy_end; fy++) {
-		g_data = g_line;
-		g_line += g_size;
-
-		for (fx = fx_start; fx < fx_end; fx++) {
-			v += *g_data++;
+	for (int yi = ystart; yi < yend; yi++) {
+		for (int xi = xstart; xi < xend; xi++) {
+			ret += map->data[yi * d + xi];
 		}
 	}
 
-	if (v > 1)
-		v = 1;
+	return ret;
+}
 
-	return v;
+double sum_kernel_normalized(const conv *map, int x, int y, int width, int height) {
+	double ret = sum_kernel(map, x, y, width, height);
+	if (ret < 0) {
+		ret = 0;
+	}
+	if (ret > 1) {
+		ret = 1;
+	}
+	return ret;
 }
 
 static double attr_const gaussian(double r, double x, double y) {
@@ -94,6 +78,7 @@ conv *gaussian_kernel(double r) {
 
 	c = cvalloc(sizeof(conv) + size * size * sizeof(double));
 	c->size = size;
+	c->rsum = NULL;
 	t = 0.0;
 
 	for (int y = 0; y < size; y++) {
@@ -111,6 +96,31 @@ conv *gaussian_kernel(double r) {
 	}
 
 	return c;
+}
+
+/// preprocess kernels to make shadow generation faster
+/// shadow_sum[x*d+y] is the sum of the kernel from (0, 0) to (x, y), inclusive
+void shadow_preprocess(conv *map) {
+	const int d = map->size;
+
+	if (map->rsum)
+		free(map->rsum);
+
+	auto sum = map->rsum = ccalloc(d * d, double);
+	sum[0] = map->data[0];
+
+	for (int x = 1; x < d; x++) {
+		sum[x] = sum[x - 1] + map->data[x];
+	}
+
+	for (int y = 1; y < d; y++) {
+		sum[y * d] = sum[(y - 1) * d] + map->data[y * d];
+		for (int x = 1; x < d; x++) {
+			double tmp = sum[(y - 1) * d + x] + sum[y * d + x - 1] -
+			             sum[(y - 1) * d + x - 1];
+			sum[y * d + x] = tmp + map->data[y * d + x];
+		}
+	}
 }
 
 // vim: set noet sw=8 ts=8 :

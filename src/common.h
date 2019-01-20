@@ -27,29 +27,6 @@
 // #define DEBUG_GLX_MARK   1
 // #define DEBUG_GLX_PAINTREG 1
 
-// Whether to enable PCRE regular expression support in blacklists, enabled
-// by default
-// #define CONFIG_REGEX_PCRE 1
-// Whether to enable JIT support of libpcre. This may cause problems on PaX
-// kernels.
-// #define CONFIG_REGEX_PCRE_JIT 1
-// Whether to enable parsing of configuration files using libconfig.
-// #define CONFIG_LIBCONFIG 1
-// Whether to enable DRM VSync support
-// #define CONFIG_VSYNC_DRM 1
-// Whether to enable OpenGL support (include GLSL, FBO)
-// #define CONFIG_OPENGL 1
-// Whether to enable DBus support with libdbus.
-// #define CONFIG_DBUS 1
-// Whether to enable X Sync support.
-// #define CONFIG_XSYNC 1
-// Whether to enable GLX Sync support.
-// #define CONFIG_GLX_XSYNC 1
-
-#ifndef COMPTON_VERSION
-#define COMPTON_VERSION "unknown"
-#endif
-
 #define MAX_ALPHA (255)
 
 // === Includes ===
@@ -65,15 +42,13 @@
 #include <ctype.h>
 #include <sys/time.h>
 
-#include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
-#include <X11/extensions/sync.h>
-
 #include <xcb/composite.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
 #include <xcb/randr.h>
 #include <xcb/shape.h>
+#include <xcb/sync.h>
 
 #ifdef CONFIG_XINERAMA
 #include <xcb/xinerama.h>
@@ -114,13 +89,14 @@
 // FIXME This list of includes should get shorter
 #include "types.h"
 #include "win.h"
-#include "x.h"
 #include "region.h"
-#include "log.h"
-#include "utils.h"
-#include "compiler.h"
 #include "kernel.h"
-#include "options.h"
+#include "render.h"
+#include "config.h"
+#include "log.h"
+#include "compiler.h"
+#include "utils.h"
+#include "x.h"
 
 // === Constants ===
 
@@ -168,6 +144,7 @@
 #define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t) (((double) (value)) * 65536))
 
 // === Types ===
+typedef struct glx_fbconfig glx_fbconfig_t;
 
 /// Structure representing needed window updates.
 typedef struct {
@@ -233,35 +210,6 @@ typedef void (*f_BindTexImageEXT) (Display *display, GLXDrawable drawable, int b
 typedef void (*f_ReleaseTexImageEXT) (Display *display, GLXDrawable drawable, int buffer);
 
 #ifdef CONFIG_OPENGL
-// Looks like duplicate typedef of the same type is safe?
-typedef int64_t GLint64;
-typedef uint64_t GLuint64;
-typedef struct __GLsync *GLsync;
-
-#ifndef GL_SYNC_FLUSH_COMMANDS_BIT
-#define GL_SYNC_FLUSH_COMMANDS_BIT 0x00000001
-#endif
-
-#ifndef GL_TIMEOUT_IGNORED
-#define GL_TIMEOUT_IGNORED 0xFFFFFFFFFFFFFFFFull
-#endif
-
-#ifndef GL_ALREADY_SIGNALED
-#define GL_ALREADY_SIGNALED 0x911A
-#endif
-
-#ifndef GL_TIMEOUT_EXPIRED
-#define GL_TIMEOUT_EXPIRED 0x911B
-#endif
-
-#ifndef GL_CONDITION_SATISFIED
-#define GL_CONDITION_SATISFIED 0x911C
-#endif
-
-#ifndef GL_WAIT_FAILED
-#define GL_WAIT_FAILED 0x911D
-#endif
-
 typedef GLsync (*f_FenceSync) (GLenum condition, GLbitfield flags);
 typedef GLboolean (*f_IsSync) (GLsync sync);
 typedef void (*f_DeleteSync) (GLsync sync);
@@ -277,14 +225,6 @@ typedef GLsync (*f_ImportSyncEXT) (GLenum external_sync_type,
 typedef void (*f_StringMarkerGREMEDY) (GLsizei len, const void *string);
 typedef void (*f_FrameTerminatorGREMEDY) (void);
 #endif
-
-/// @brief Wrapper of a GLX FBConfig.
-typedef struct {
-  GLXFBConfig cfg;
-  GLint texture_fmt;
-  GLint texture_tgts;
-  bool y_inverted;
-} glx_fbconfig_t;
 
 /// @brief Wrapper of a binded GLX texture.
 struct _glx_texture {
@@ -335,11 +275,11 @@ typedef struct glx_prog_main {
 struct glx_prog_main { };
 #endif
 
-#define PAINT_INIT { .pixmap = None, .pict = None }
+#define PAINT_INIT { .pixmap = XCB_NONE, .pict = XCB_NONE }
 
 /// Linked list type of atoms.
 typedef struct _latom {
-  Atom atom;
+  xcb_atom_t atom;
   struct _latom *next;
 } latom_t;
 
@@ -425,6 +365,7 @@ typedef struct session {
   void *backend_data;
   /// libev mainloop
   struct ev_loop *loop;
+
   // === Display related ===
   /// Display in use.
   Display *dpy;
@@ -439,7 +380,7 @@ typedef struct session {
   /// Default depth.
   int depth;
   /// Root window.
-  Window root;
+  xcb_window_t root;
   /// Height of root window.
   int root_height;
   /// Width of root window.
@@ -447,7 +388,7 @@ typedef struct session {
   // Damage of root window.
   // Damage root_damage;
   /// X Composite overlay window. Used if <code>--paint-on-overlay</code>.
-  Window overlay;
+  xcb_window_t overlay;
   /// Whether the root tile is filled by compton.
   bool root_tile_fill;
   /// Picture of the root window background.
@@ -461,9 +402,8 @@ typedef struct session {
   xcb_render_picture_t tgt_picture;
   /// Temporary buffer to paint to before sending to display.
   paint_t tgt_buffer;
-  XSyncFence tgt_buffer_fence;
   /// Window ID of the window we register as a symbol.
-  Window reg_win;
+  xcb_window_t reg_win;
 #ifdef CONFIG_OPENGL
   /// Pointer to GLX data.
   glx_session_t *psglx;
@@ -471,6 +411,8 @@ typedef struct session {
   // XXX should be in glx_session_t
   glx_prog_main_t glx_prog_win;
 #endif
+  /// Sync fence to sync draw operations
+  xcb_sync_fence_t sync_fence;
 
   // === Operation related ===
   /// Program options.
@@ -526,7 +468,7 @@ typedef struct session {
   win *active_win;
   /// Window ID of leader window of currently active window. Used for
   /// subsidiary window detection.
-  Window active_leader;
+  xcb_window_t active_leader;
 
   // === Shadow/dimming related ===
   /// 1x1 black Picture.
@@ -538,12 +480,6 @@ typedef struct session {
   /// Gaussian map of shadow.
   conv *gaussian_map;
   // for shadow precomputation
-  /// Shadow depth on one side.
-  int cgsize;
-  /// Pre-computed color table for corners of shadow.
-  unsigned char *shadow_corner;
-  /// Pre-computed color table for a side of shadow.
-  unsigned char *shadow_top;
   /// A region in which shadow is not painted on.
   region_t shadow_exclude_reg;
 
@@ -626,32 +562,32 @@ typedef struct session {
 
   // === Atoms ===
   /// Atom of property <code>_NET_WM_OPACITY</code>.
-  Atom atom_opacity;
+  xcb_atom_t atom_opacity;
   /// Atom of <code>_NET_FRAME_EXTENTS</code>.
-  Atom atom_frame_extents;
+  xcb_atom_t atom_frame_extents;
   /// Property atom to identify top-level frame window. Currently
   /// <code>WM_STATE</code>.
-  Atom atom_client;
+  xcb_atom_t atom_client;
   /// Atom of property <code>WM_NAME</code>.
-  Atom atom_name;
+  xcb_atom_t atom_name;
   /// Atom of property <code>_NET_WM_NAME</code>.
-  Atom atom_name_ewmh;
+  xcb_atom_t atom_name_ewmh;
   /// Atom of property <code>WM_CLASS</code>.
-  Atom atom_class;
+  xcb_atom_t atom_class;
   /// Atom of property <code>WM_WINDOW_ROLE</code>.
-  Atom atom_role;
+  xcb_atom_t atom_role;
   /// Atom of property <code>WM_TRANSIENT_FOR</code>.
-  Atom atom_transient;
+  xcb_atom_t atom_transient;
   /// Atom of property <code>WM_CLIENT_LEADER</code>.
-  Atom atom_client_leader;
+  xcb_atom_t atom_client_leader;
   /// Atom of property <code>_NET_ACTIVE_WINDOW</code>.
-  Atom atom_ewmh_active_win;
+  xcb_atom_t atom_ewmh_active_win;
   /// Atom of property <code>_COMPTON_SHADOW</code>.
-  Atom atom_compton_shadow;
+  xcb_atom_t atom_compton_shadow;
   /// Atom of property <code>_NET_WM_WINDOW_TYPE</code>.
-  Atom atom_win_type;
+  xcb_atom_t atom_win_type;
   /// Array of atoms of all possible window types.
-  Atom atoms_wintypes[NUM_WINTYPES];
+  xcb_atom_t atoms_wintypes[NUM_WINTYPES];
   /// Linked list of additional atoms to track.
   latom_t *track_atom_lst;
 
@@ -872,7 +808,7 @@ static inline xcb_atom_t
 get_atom(session_t *ps, const char *atom_name) {
   xcb_intern_atom_reply_t *reply =
     xcb_intern_atom_reply(ps->c,
-        xcb_intern_atom(ps->c, False, strlen(atom_name), atom_name),
+        xcb_intern_atom(ps->c, 0, strlen(atom_name), atom_name),
         NULL);
 
   xcb_atom_t atom = XCB_NONE;
@@ -888,7 +824,7 @@ get_atom(session_t *ps, const char *atom_name) {
 /**
  * Return the painting target window.
  */
-static inline Window
+static inline xcb_window_t
 get_tgt_window(session_t *ps) {
   return ps->overlay != XCB_NONE ? ps->overlay: ps->root;
 }
@@ -897,7 +833,7 @@ get_tgt_window(session_t *ps) {
  * Find a window from window id in window linked list of the session.
  */
 static inline win *
-find_win(session_t *ps, Window id) {
+find_win(session_t *ps, xcb_window_t id) {
   if (!id)
     return NULL;
 
@@ -918,7 +854,7 @@ find_win(session_t *ps, Window id) {
  * @return struct win object of the found window, NULL if not found
  */
 static inline win *
-find_toplevel(session_t *ps, Window id) {
+find_toplevel(session_t *ps, xcb_window_t id) {
   if (!id)
     return NULL;
 
@@ -971,16 +907,6 @@ free_all_damage_last(session_t *ps) {
 }
 
 /**
- * Free a XSync fence.
- */
-static inline void
-free_fence(session_t *ps, XSyncFence *pfence) {
-  if (*pfence)
-    XSyncDestroyFence(ps->dpy, *pfence);
-  *pfence = None;
-}
-
-/**
  * Check if a rectangle includes the whole screen.
  */
 static inline bool
@@ -1002,14 +928,6 @@ set_ignore(session_t *ps, unsigned long sequence) {
   i->next = 0;
   *ps->ignore_tail = i;
   ps->ignore_tail = &i->next;
-}
-
-/**
- * Ignore X errors caused by next X request.
- */
-static inline void
-set_ignore_next(session_t *ps) {
-  set_ignore(ps, NextRequest(ps->dpy));
 }
 
 /**
@@ -1045,21 +963,25 @@ win_is_solid(session_t *ps, const win *w) {
  * @param ps current session
  * @param w window to check
  * @param atom atom of property to check
- * @return 1 if it has the attribute, 0 otherwise
+ * @return true if it has the attribute, false otherwise
  */
 static inline bool
-wid_has_prop(const session_t *ps, Window w, Atom atom) {
-  Atom type = None;
-  int format;
-  unsigned long nitems, after;
-  unsigned char *data;
-
-  if (Success == XGetWindowProperty(ps->dpy, w, atom, 0, 0, False,
-        AnyPropertyType, &type, &format, &nitems, &after, &data)) {
-    cxfree(data);
-    if (type) return true;
+wid_has_prop(const session_t *ps, xcb_window_t w, xcb_atom_t atom) {
+  auto r =
+    xcb_get_property_reply(ps->c,
+                           xcb_get_property(ps->c, 0, w, atom,
+                                            XCB_GET_PROPERTY_TYPE_ANY, 0, 0),
+                           NULL);
+  if (!r) {
+	  return false;
   }
 
+  auto rtype = r->type;
+  free(r);
+
+  if (rtype != XCB_NONE) {
+    return true;
+  }
   return false;
 }
 
@@ -1083,10 +1005,6 @@ winprop_get_int(winprop_t prop) {
 
   return tgt;
 }
-
-bool
-wid_get_text_prop(session_t *ps, Window wid, Atom prop,
-    char ***pstrlst, int *pnstr);
 
 void
 force_repaint(session_t *ps);
@@ -1137,45 +1055,6 @@ glx_mark_frame(session_t *ps) {
 }
 
 ///@}
-
-/**
- * Synchronizes a X Render drawable to ensure all pending painting requests
- * are completed.
- */
-static inline void
-xr_sync(session_t *ps, Drawable d, XSyncFence *pfence) {
-  if (!ps->o.xrender_sync)
-    return;
-
-  x_sync(ps->c);
-  if (ps->o.xrender_sync_fence && ps->xsync_exists) {
-    // TODO: If everybody just follows the rules stated in X Sync prototype,
-    // we need only one fence per screen, but let's stay a bit cautious right
-    // now
-    XSyncFence tmp_fence = None;
-    if (!pfence)
-      pfence = &tmp_fence;
-    assert(pfence);
-    if (!*pfence)
-      *pfence = XSyncCreateFence(ps->dpy, d, False);
-    if (*pfence) {
-      Bool attr_unused triggered = False;
-      /* if (XSyncQueryFence(ps->dpy, *pfence, &triggered) && triggered)
-        XSyncResetFence(ps->dpy, *pfence); */
-      // The fence may fail to be created (e.g. because of died drawable)
-      assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || !triggered);
-      XSyncTriggerFence(ps->dpy, *pfence);
-      XSyncAwaitFence(ps->dpy, pfence, 1);
-      assert(!XSyncQueryFence(ps->dpy, *pfence, &triggered) || triggered);
-    }
-    else {
-      log_error("Failed to create X Sync fence for %#010lx", d);
-    }
-    free_fence(ps, &tmp_fence);
-    if (*pfence)
-      XSyncResetFence(ps->dpy, *pfence);
-  }
-}
 
 /** @name DBus handling
  */

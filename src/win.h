@@ -3,19 +3,22 @@
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 #pragma once
 #include <stdbool.h>
-#include <X11/Xlib.h>
-#include <X11/extensions/sync.h>
+#include <xcb/xcb.h>
+#include <xcb/render.h>
 #include <xcb/damage.h>
 
 // FIXME shouldn't need this
 #ifdef CONFIG_OPENGL
-#include <GL/glx.h>
+#include <GL/gl.h>
 #endif
 
 #include "x.h"
+#include "compiler.h"
+#include "region.h"
 #include "types.h"
 #include "c2.h"
 #include "render.h"
+#include "utils.h"
 
 typedef struct session session_t;
 typedef struct _glx_texture glx_texture_t;
@@ -84,7 +87,7 @@ struct win {
 
   // Core members
   /// ID of the top-level frame window.
-  Window id;
+  xcb_window_t id;
   /// Window attributes.
   xcb_get_window_attributes_reply_t a;
   xcb_get_geometry_reply_t g;
@@ -98,8 +101,6 @@ struct win {
   winmode_t mode;
   /// Whether the window has been damaged at least once.
   bool ever_damaged;
-  /// X Sync fence of drawable.
-  XSyncFence fence;
   /// Whether the window was damaged after last paint.
   bool pixmap_damaged;
   /// Damage of the window.
@@ -146,7 +147,7 @@ struct win {
 
   // Client window related members
   /// ID of the top-level client window of the window.
-  Window client_win;
+  xcb_window_t client_win;
   /// Type of the window.
   wintype_t window_type;
   /// Whether it looks like a WM window. We consider a window WM window if
@@ -154,9 +155,9 @@ struct win {
   /// redirected itself.
   bool wmwin;
   /// Leader window ID of the window.
-  Window leader;
+  xcb_window_t leader;
   /// Cached topmost window ID of the window.
-  Window cache_leader;
+  xcb_window_t cache_leader;
 
   // Focus-related members
   /// Whether the window is to be considered focused.
@@ -281,10 +282,10 @@ void win_on_factor_change(session_t *ps, win *w);
 void calc_win_size(session_t *ps, win *w);
 void calc_shadow_geometry(session_t *ps, win *w);
 void win_upd_wintype(session_t *ps, win *w);
-void win_mark_client(session_t *ps, win *w, Window client);
+void win_mark_client(session_t *ps, win *w, xcb_window_t client);
 void win_unmark_client(session_t *ps, win *w);
 void win_recheck_client(session_t *ps, win *w);
-Window win_get_leader_raw(session_t *ps, win *w, int recursions);
+xcb_window_t win_get_leader_raw(session_t *ps, win *w, int recursions);
 bool win_get_class(session_t *ps, win *w);
 void win_calc_opacity(session_t *ps, win *w);
 void win_calc_dim(session_t *ps, win *w);
@@ -332,8 +333,8 @@ region_t win_get_region_noframe_local_by_val(win *w);
  * Retrieve frame extents from a window.
  */
 void
-win_update_frame_extents(session_t *ps, win *w, Window client);
-bool add_win(session_t *ps, Window id, Window prev);
+win_update_frame_extents(session_t *ps, win *w, xcb_window_t client);
+bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev);
 
 /**
  * Set fade callback of a window, and possibly execute the previous
@@ -361,7 +362,7 @@ void win_ev_stop(session_t *ps, win *w);
  *
  * This function updates w->cache_leader if necessary.
  */
-static inline Window
+static inline xcb_window_t
 win_get_leader(session_t *ps, win *w) {
   return win_get_leader_raw(ps, w, 0);
 }

@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include <X11/Xutil.h>
-#include <X11/Xlib.h>
+#include <xcb/xcb.h>
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xfixes.h>
+#include <xcb/sync.h>
+#include <xcb/composite.h>
+#include <xcb/damage.h>
+#include <xcb/render.h>
 #include <pixman.h>
+#include <GL/glx.h>
 
+#include "utils.h"
+#include "region.h"
 #include "compiler.h"
 #include "common.h"
 #include "x.h"
@@ -35,7 +43,7 @@ wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom, long offs
     xcb_get_property(ps->c, 0, w, atom, rtype, offset, length), NULL);
 
   if (r && xcb_get_property_value_length(r) &&
-      (rtype == XCB_ATOM_ANY || r->type == rtype) &&
+      (rtype == XCB_GET_PROPERTY_TYPE_ANY || r->type == rtype) &&
       (!rformat || r->format == rformat) &&
       (r->format == 8 || r->format == 16 || r->format == 32))
   {
@@ -53,20 +61,20 @@ wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom, long offs
   return (winprop_t) {
     .ptr = NULL,
     .nitems = 0,
-    .type = AnyPropertyType,
+    .type = XCB_GET_PROPERTY_TYPE_ANY,
     .format = 0
   };
 }
 
 /**
- * Get the value of a type-<code>Window</code> property of a window.
+ * Get the value of a type-<code>xcb_window_t</code> property of a window.
  *
  * @return the value if successful, 0 otherwise
  */
-Window
-wid_get_prop_window(session_t *ps, Window wid, Atom aprop) {
+xcb_window_t
+wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t aprop) {
   // Get the attribute
-  Window p = None;
+  xcb_window_t p = XCB_NONE;
   winprop_t prop = wid_get_prop(ps, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
 
   // Return it
@@ -82,9 +90,9 @@ wid_get_prop_window(session_t *ps, Window wid, Atom aprop) {
 /**
  * Get the value of a text property of a window.
  */
-bool wid_get_text_prop(session_t *ps, Window wid, Atom prop,
+bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop,
     char ***pstrlst, int *pnstr) {
-  XTextProperty text_prop = { NULL, None, 0, 0 };
+  XTextProperty text_prop = { NULL, XCB_NONE, 0, 0 };
 
   if (!(XGetTextProperty(ps->dpy, wid, &text_prop, prop) && text_prop.value))
     return false;
@@ -204,7 +212,7 @@ x_create_picture_with_pictfmt(session_t *ps, int wid, int hei,
 
   xcb_pixmap_t tmp_pixmap = x_create_pixmap(ps, depth, ps->root, wid, hei);
   if (!tmp_pixmap)
-    return None;
+    return XCB_NONE;
 
   xcb_render_picture_t picture =
     x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, tmp_pixmap, valuemask, attr);
@@ -274,7 +282,7 @@ void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t pict,
 
 void x_clear_picture_clip_region(session_t *ps, xcb_render_picture_t pict) {
   xcb_render_change_picture_value_list_t v = {
-    .clipmask = None
+    .clipmask = XCB_NONE
   };
   xcb_generic_error_t *e =
     xcb_request_check(ps->c, xcb_render_change_picture(ps->c, pict,
@@ -284,6 +292,12 @@ void x_clear_picture_clip_region(session_t *ps, xcb_render_picture_t pict) {
   free(e);
   return;
 }
+
+enum {
+  XSyncBadCounter = 0,
+  XSyncBadAlarm = 1,
+  XSyncBadFence = 2,
+};
 
 /**
  * X11 error handler function.
@@ -371,12 +385,8 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
 
 #undef CASESTRRET2
 
-  {
-    char buf[BUF_LEN] = "";
-    XGetErrorText(ps->dpy, error_code, buf, BUF_LEN);
-    log_debug("X error %d %s request %d minor %d serial %lu: \"%s\"",
-              error_code, name, major, minor, serial, buf);
-  }
+  log_debug("X error %d %s request %d minor %d serial %lu",
+            error_code, name, major, minor, serial);
 }
 
 /**
@@ -403,14 +413,19 @@ x_create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t 
  * are better ways.
  */
 bool
-x_validate_pixmap(session_t *ps, xcb_pixmap_t pxmap) {
-  if (!pxmap) return false;
+x_validate_pixmap(session_t *ps, xcb_pixmap_t pixmap) {
+	if (pixmap == XCB_NONE) {
+		return false;
+	}
 
-  Window rroot = None;
-  int rx = 0, ry = 0;
-  unsigned rwid = 0, rhei = 0, rborder = 0, rdepth = 0;
-  return XGetGeometry(ps->dpy, pxmap, &rroot, &rx, &ry,
-        &rwid, &rhei, &rborder, &rdepth) && rwid && rhei;
+  auto r = xcb_get_geometry_reply(ps->c, xcb_get_geometry(ps->c, pixmap), NULL);
+  if (!r) {
+    return false;
+  }
+
+  bool ret = r->width && r->height;
+  free(r);
+  return ret;
 }
 /// Names of root window properties that could point to a pixmap of
 /// background.
@@ -446,4 +461,38 @@ bool x_atom_is_background_prop(session_t *ps, xcb_atom_t atom) {
       return true;
   }
   return false;
+}
+
+/**
+ * Synchronizes a X Render drawable to ensure all pending painting requests
+ * are completed.
+ */
+bool x_fence_sync(session_t *ps, xcb_sync_fence_t f) {
+  if (ps->xsync_exists) {
+    // TODO(richardgv): If everybody just follows the rules stated in X Sync
+    // prototype, we need only one fence per screen, but let's stay a bit
+    // cautious right now
+
+    auto e = xcb_request_check(ps->c, xcb_sync_trigger_fence_checked(ps->c, f));
+    if (e) {
+      log_error("Failed to trigger the fence.");
+      free(e);
+      return false;
+    }
+
+    e = xcb_request_check(ps->c, xcb_sync_await_fence_checked(ps->c, 1, &f));
+    if (e) {
+      log_error("Failed to await on a fence.");
+      free(e);
+      return false;
+    }
+
+    e = xcb_request_check(ps->c, xcb_sync_reset_fence_checked(ps->c, f));
+    if (e) {
+      log_error("Failed to reset the fence.");
+      free(e);
+      return false;
+    }
+  }
+  return true;
 }

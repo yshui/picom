@@ -9,18 +9,26 @@
  *
  */
 
-#include <ctype.h>
+#include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xlib-xcb.h>
 #include <X11/Xlibint.h>
+#include <X11/extensions/sync.h>
 #include <xcb/randr.h>
 #include <xcb/present.h>
 #include <xcb/damage.h>
 #include <xcb/render.h>
-#include <xcb/xcb_image.h>
+#include <xcb/xfixes.h>
+#include <xcb/sync.h>
+#include <xcb/composite.h>
+#include <GL/glx.h>
 
 #include <ev.h>
 
+#include "common.h"
 #include "compiler.h"
 #include "compton.h"
 #ifdef CONFIG_OPENGL
@@ -30,11 +38,11 @@
 #include "x.h"
 #include "config.h"
 #include "diagnostic.h"
-#include "string_utils.h"
 #include "render.h"
 #include "utils.h"
-#include "kernel.h"
-#include "vsync.h"
+#include "region.h"
+#include "types.h"
+#include "c2.h"
 #include "log.h"
 #ifdef CONFIG_DBUS
 #include "dbus.h"
@@ -85,7 +93,7 @@ static double
 get_opacity_percent(win *w);
 
 static void
-restack_win(session_t *ps, win *w, Window new_above);
+restack_win(session_t *ps, win *w, xcb_window_t new_above);
 
 static void
 update_ewmh_active_win(session_t *ps);
@@ -174,7 +182,6 @@ static inline void
 free_win_res(session_t *ps, win *w) {
   free_win_res_glx(ps, w);
   free_paint(ps, &w->paint);
-  free_fence(ps, &w->fence);
   pixman_region32_fini(&w->bounding_shape);
   free_paint(ps, &w->shadow_paint);
   // BadDamage may be thrown if the window is destroyed
@@ -300,7 +307,7 @@ cxinerama_upd_scrs(session_t *ps) {
  * XXX move to win.c
  */
 static inline win *
-find_win_all(session_t *ps, const Window wid) {
+find_win_all(session_t *ps, const xcb_window_t wid) {
   if (!wid || PointerRoot == wid || wid == ps->root || wid == ps->overlay)
     return NULL;
 
@@ -422,7 +429,7 @@ should_ignore(session_t *ps, unsigned long sequence) {
 /**
  * Determine the event mask for a window.
  */
-long determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
+long determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
   long evmask = 0;
   win *w = NULL;
 
@@ -452,7 +459,7 @@ long determine_evmask(session_t *ps, Window wid, win_evmode_t mode) {
  * @param wid window ID
  * @return struct _win object of the found window, NULL if not found
  */
-win *find_toplevel2(session_t *ps, Window wid) {
+win *find_toplevel2(session_t *ps, xcb_window_t wid) {
   // TODO this should probably be an "update tree", then find_toplevel.
   //      current approach is a bit more "racy"
   win *w = NULL;
@@ -506,7 +513,7 @@ recheck_focus(session_t *ps) {
   win *w = find_win_all(ps, wid);
 
   log_trace("%#010" PRIx32 " (%#010lx \"%s\") focused.", wid,
-      (w ? w->id: None), (w ? w->name: NULL));
+      (w ? w->id: XCB_NONE), (w ? w->name: NULL));
 
   // And we set the focus state here
   if (w) {
@@ -833,7 +840,7 @@ finish_map_win(session_t *ps, win **_w) {
 }
 
 void
-map_win(session_t *ps, Window id) {
+map_win(session_t *ps, xcb_window_t id) {
   // Unmap overlay window if it got mapped but we are currently not
   // in redirected state.
   if (ps->overlay && id == ps->overlay && !ps->redirected) {
@@ -843,7 +850,7 @@ map_win(session_t *ps, Window id) {
 
   win *w = find_win(ps, id);
 
-  log_trace("(%#010lx \"%s\"): %p", id, (w ? w->name: NULL), w);
+  log_trace("(%#010x \"%s\"): %p", id, (w ? w->name: NULL), w);
 
   // Don't care about window mapping if it's an InputOnly window
   // Try avoiding mapping a window twice
@@ -885,7 +892,7 @@ map_win(session_t *ps, Window id) {
 
   assert(w->client_win);
 
-  log_trace("(%#010lx): type %s", w->id, WINTYPES[w->window_type]);
+  log_trace("(%#010x): type %s", w->id, WINTYPES[w->window_type]);
 
   // FocusIn/Out may be ignored when the window is unmapped, so we must
   // recheck focus here
@@ -956,11 +963,6 @@ unmap_win(session_t *ps, win **_w) {
 
   if (w->destroyed) return;
 
-  // One last synchronization
-  if (w->paint.pixmap)
-    xr_sync(ps, w->paint.pixmap, &w->fence);
-  free_fence(ps, &w->fence);
-
   // Set focus out
   win_set_focused(ps, w, false);
 
@@ -988,13 +990,13 @@ unmap_win(session_t *ps, win **_w) {
 }
 
 static void
-restack_win(session_t *ps, win *w, Window new_above) {
-  Window old_above;
+restack_win(session_t *ps, win *w, xcb_window_t new_above) {
+  xcb_window_t old_above;
 
   if (w->next) {
     old_above = w->next->id;
   } else {
-    old_above = None;
+    old_above = XCB_NONE;
   }
 
   if (old_above != new_above) {
@@ -1025,7 +1027,7 @@ restack_win(session_t *ps, win *w, Window new_above) {
     }
 
     if (new_above && !found) {
-      log_error("(%#010lx, %#010lx): Failed to found new above window.", w->id, new_above);
+      log_error("(%#010x, %#010x): Failed to found new above window.", w->id, new_above);
       return;
     }
 
@@ -1174,14 +1176,14 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 static void
 circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
   win *w = find_win(ps, ce->window);
-  Window new_above;
+  xcb_window_t new_above;
 
   if (!w) return;
 
   if (ce->place == PlaceOnTop) {
     new_above = ps->list->id;
   } else {
-    new_above = None;
+    new_above = XCB_NONE;
   }
 
   restack_win(ps, w, new_above);
@@ -1193,11 +1195,11 @@ finish_destroy_win(session_t *ps, win **_w) {
   assert(w->destroyed);
   win **prev = NULL, *i = NULL;
 
-  log_trace("(%#010lx): Starting...", w->id);
+  log_trace("(%#010x): Starting...", w->id);
 
   for (prev = &ps->list; (i = *prev); prev = &i->next) {
     if (w == i) {
-      log_trace("(%#010lx \"%s\"): %p", w->id, w->name, w);
+      log_trace("(%#010x \"%s\"): %p", w->id, w->name, w);
 
       finish_unmap_win(ps, _w);
       *prev = w->next;
@@ -1222,10 +1224,10 @@ finish_destroy_win(session_t *ps, win **_w) {
 }
 
 static void
-destroy_win(session_t *ps, Window id) {
+destroy_win(session_t *ps, xcb_window_t id) {
   win *w = find_win(ps, id);
 
-  log_trace("(%#010lx \"%s\"): %p", id, (w ? w->name: NULL), w);
+  log_trace("(%#010x \"%s\"): %p", id, (w ? w->name: NULL), w);
 
   if (w) {
     unmap_win(ps, &w);
@@ -1428,7 +1430,7 @@ ev_name(session_t *ps, xcb_generic_event_t *ev) {
   return buf;
 }
 
-static inline Window attr_unused
+static inline xcb_window_t attr_unused
 ev_window(session_t *ps, xcb_generic_event_t *ev) {
   switch (ev->response_type) {
     case FocusIn:
@@ -1643,7 +1645,7 @@ ev_expose(session_t *ps, xcb_expose_event_t *ev) {
 static void
 update_ewmh_active_win(session_t *ps) {
   // Search for the window
-  Window wid = wid_get_prop_window(ps, ps->root, ps->atom_ewmh_active_win);
+  xcb_window_t wid = wid_get_prop_window(ps, ps->root, ps->atom_ewmh_active_win);
   win *w = find_win_all(ps, wid);
 
   // Mark the window focused. No need to unfocus the previous one.
@@ -1860,7 +1862,7 @@ ev_selection_clear(session_t *ps,
  * Get a window's name from window ID.
  */
 static inline void attr_unused
-ev_window_name(session_t *ps, Window wid, char **name) {
+ev_window_name(session_t *ps, xcb_window_t wid, char **name) {
   *name = "";
   if (wid) {
     *name = "(Failed to get title)";
@@ -1891,7 +1893,7 @@ ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 
 #ifdef DEBUG_EVENTS
   if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
-    Window wid = ev_window(ps, ev);
+    xcb_window_t wid = ev_window(ps, ev);
     char *window_name = NULL;
     ev_window_name(ps, wid, &window_name);
 
@@ -1994,7 +1996,7 @@ register_cm(session_t *ps) {
   assert(!ps->reg_win);
 
   ps->reg_win = XCreateSimpleWindow(ps->dpy, ps->root, 0, 0, 1, 1, 0,
-        None, None);
+        XCB_NONE, XCB_NONE);
 
   if (!ps->reg_win) {
     log_fatal("Failed to create window.");
@@ -2072,7 +2074,7 @@ fork_after(session_t *ps) {
 
 #ifdef CONFIG_OPENGL
   // GLX context must be released and reattached on fork
-  if (glx_has_context(ps) && !glXMakeCurrent(ps->dpy, None, NULL)) {
+  if (glx_has_context(ps) && !glXMakeCurrent(ps->dpy, XCB_NONE, NULL)) {
     log_fatal("Failed to detach GLX context.");
     return false;
   }
@@ -2293,7 +2295,7 @@ init_overlay(session_t *ps) {
     log_error("Cannot get X Composite overlay window. Falling "
               "back to painting on root window.");
   }
-  log_debug("overlay = %#010lx", ps->overlay);
+  log_debug("overlay = %#010x", ps->overlay);
 
   return ps->overlay;
 }
@@ -2344,7 +2346,6 @@ redir_stop(session_t *ps) {
     // kept inaccessible somehow
     for (win *w = ps->list; w; w = w->next) {
       free_paint(ps, &w->paint);
-      free_fence(ps, &w->fence);
     }
 
     xcb_composite_unredirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
@@ -2542,16 +2543,16 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .c = NULL,
     .vis = 0,
     .depth = 0,
-    .root = None,
+    .root = XCB_NONE,
     .root_height = 0,
     .root_width = 0,
-    // .root_damage = None,
-    .overlay = None,
+    // .root_damage = XCB_NONE,
+    .overlay = XCB_NONE,
     .root_tile_fill = false,
     .root_tile_paint = PAINT_INIT,
-    .tgt_picture = None,
+    .tgt_picture = XCB_NONE,
     .tgt_buffer = PAINT_INIT,
-    .reg_win = None,
+    .reg_win = XCB_NONE,
 #ifdef CONFIG_OPENGL
     .glx_prog_win = GLX_PROG_MAIN_INIT,
 #endif
@@ -2571,7 +2572,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .stoppaint_force = UNSET,
       .dbus = false,
       .benchmark = 0,
-      .benchmark_wid = None,
+      .benchmark_wid = XCB_NONE,
       .logpath = NULL,
 
       .refresh_rate = 0,
@@ -2582,7 +2583,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .shadow_red = 0.0,
       .shadow_green = 0.0,
       .shadow_blue = 0.0,
-      .shadow_radius = 12,
+      .shadow_radius = 18,
       .shadow_offset_x = -15,
       .shadow_offset_y = -15,
       .shadow_opacity = .75,
@@ -2639,15 +2640,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
     .list = NULL,
     .active_win = NULL,
-    .active_leader = None,
+    .active_leader = XCB_NONE,
 
-    .black_picture = None,
-    .cshadow_picture = None,
-    .white_picture = None,
+    .black_picture = XCB_NONE,
+    .cshadow_picture = XCB_NONE,
+    .white_picture = XCB_NONE,
     .gaussian_map = NULL,
-    .cgsize = 0,
-    .shadow_corner = NULL,
-    .shadow_top = NULL,
 
     .refresh_rate = 0,
     .refresh_intv = 0UL,
@@ -2680,17 +2678,17 @@ session_init(session_t *ps_old, int argc, char **argv) {
 #endif
     .xrfilter_convolution_exists = false,
 
-    .atom_opacity = None,
-    .atom_frame_extents = None,
-    .atom_client = None,
-    .atom_name = None,
-    .atom_name_ewmh = None,
-    .atom_class = None,
-    .atom_role = None,
-    .atom_transient = None,
-    .atom_ewmh_active_win = None,
-    .atom_compton_shadow = None,
-    .atom_win_type = None,
+    .atom_opacity = XCB_NONE,
+    .atom_frame_extents = XCB_NONE,
+    .atom_client = XCB_NONE,
+    .atom_name = XCB_NONE,
+    .atom_name_ewmh = XCB_NONE,
+    .atom_class = XCB_NONE,
+    .atom_role = XCB_NONE,
+    .atom_transient = XCB_NONE,
+    .atom_ewmh_active_win = XCB_NONE,
+    .atom_compton_shadow = XCB_NONE,
+    .atom_win_type = XCB_NONE,
     .atoms_wintypes = { 0 },
     .track_atom_lst = NULL,
 
@@ -2770,6 +2768,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
   xcb_prefetch_extension_data(ps->c, &xcb_randr_id);
   xcb_prefetch_extension_data(ps->c, &xcb_xinerama_id);
   xcb_prefetch_extension_data(ps->c, &xcb_present_id);
+  xcb_prefetch_extension_data(ps->c, &xcb_sync_id);
 
   ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
   if (!ext_info || !ext_info->present) {
@@ -2876,21 +2875,51 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   ext_info = xcb_get_extension_data(ps->c, &xcb_present_id);
   if (ext_info && ext_info->present) {
-    ps->present_exists = true;
+    auto r =
+      xcb_present_query_version_reply(ps->c,
+                                      xcb_present_query_version(ps->c,
+                                                                XCB_PRESENT_MAJOR_VERSION,
+                                                                XCB_PRESENT_MINOR_VERSION),
+                                      NULL);
+    if (r) {
+      ps->present_exists = true;
+    }
   }
 
   // Query X Sync
-  if (XSyncQueryExtension(ps->dpy, &ps->xsync_event, &ps->xsync_error)) {
-    // TODO: Fencing may require version >= 3.0?
-    int major_version_return = 0, minor_version_return = 0;
-    if (XSyncInitialize(ps->dpy, &major_version_return, &minor_version_return))
+  ext_info = xcb_get_extension_data(ps->c, &xcb_sync_id);
+  if (ext_info && ext_info->present) {
+    ps->xsync_error = ext_info->first_error;
+    ps->xsync_event = ext_info->first_event;
+    // Need X Sync 3.1 for fences
+    auto r = xcb_sync_initialize_reply(ps->c,
+                                       xcb_sync_initialize(ps->c,
+                                                           XCB_SYNC_MAJOR_VERSION,
+                                                           XCB_SYNC_MINOR_VERSION),
+                                       NULL);
+    if (r && (r->major_version > 3 ||
+              (r->major_version == 3 && r->minor_version >= 1))) {
       ps->xsync_exists = true;
+      free(r);
+    }
   }
 
+  ps->sync_fence = XCB_NONE;
   if (!ps->xsync_exists && ps->o.xrender_sync_fence) {
-    log_fatal("X Sync extension not found. No X Sync fence sync is "
+    log_error("XSync extension not found. No XSync fence sync is "
               "possible. (xrender-sync-fence can't be enabled)");
-    exit(1);
+    ps->o.xrender_sync_fence = false;
+  }
+
+  if (ps->o.xrender_sync_fence) {
+    ps->sync_fence = xcb_generate_id(ps->c);
+    auto e = xcb_request_check(ps->c, xcb_sync_create_fence(ps->c, ps->root, ps->sync_fence, 0));
+    if (e) {
+      log_error("Failed to create a XSync fence. xrender-sync-fence will be disabled");
+      ps->o.xrender_sync_fence = false;
+      ps->sync_fence = XCB_NONE;
+      free(e);
+    }
   }
 
   // Query X RandR
@@ -2928,6 +2957,14 @@ session_init(session_t *ps_old, int argc, char **argv) {
   if (ps->o.print_diagnostics) {
     print_diagnostics(ps);
     exit(0);
+  }
+
+  if (bkend_use_glx(ps)) {
+    auto glx_logger = glx_string_marker_logger_new();
+    if (glx_logger) {
+      log_info("Enabling gl string marker");
+      log_add_target_tls(glx_logger);
+    }
   }
 
   // Initialize software optimization
@@ -3145,13 +3182,12 @@ session_destroy(session_t *ps) {
 
   // Free tgt_{buffer,picture} and root_picture
   if (ps->tgt_buffer.pict == ps->tgt_picture)
-    ps->tgt_buffer.pict = None;
+    ps->tgt_buffer.pict = XCB_NONE;
 
   if (ps->tgt_picture == ps->root_picture)
-    ps->tgt_picture = None;
+    ps->tgt_picture = XCB_NONE;
   else
     free_picture(ps->c, &ps->tgt_picture);
-  free_fence(ps, &ps->tgt_buffer_fence);
 
   free_picture(ps->c, &ps->root_picture);
   free_paint(ps, &ps->tgt_buffer);
@@ -3186,13 +3222,18 @@ session_destroy(session_t *ps) {
   // Release overlay window
   if (ps->overlay) {
     xcb_composite_release_overlay_window(ps->c, ps->overlay);
-    ps->overlay = None;
+    ps->overlay = XCB_NONE;
+  }
+
+  if (ps->sync_fence) {
+    xcb_sync_destroy_fence(ps->c, ps->sync_fence);
+    ps->sync_fence = XCB_NONE;
   }
 
   // Free reg_win
   if (ps->reg_win) {
     xcb_destroy_window(ps->c, ps->reg_win);
-    ps->reg_win = None;
+    ps->reg_win = XCB_NONE;
   }
 
   // Flush all events

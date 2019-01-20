@@ -3,6 +3,8 @@
 
 /// Function pointers to init VSync modes.
 
+#include <GL/glx.h>
+
 #include "common.h"
 #include "log.h"
 
@@ -19,6 +21,7 @@
 #include <sys/ioctl.h>
 #endif
 
+#include "config.h"
 #include "vsync.h"
 
 #ifdef CONFIG_VSYNC_DRM

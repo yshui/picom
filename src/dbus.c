@@ -9,12 +9,20 @@
  *
  */
 
+#include <string.h>
+#include <stdlib.h>
 #include <ctype.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <xcb/xcb.h>
+#include <X11/Xlib.h>
+#include <stdio.h>
 
 #include "common.h"
+#include "config.h"
 #include "compiler.h"
+#include "utils.h"
+#include "types.h"
 #include "win.h"
 #include "string_utils.h"
 #include "log.h"
@@ -432,7 +440,7 @@ cdbus_apdarg_double(session_t *ps, DBusMessage *msg, const void *data) {
 static bool
 cdbus_apdarg_wid(session_t *ps, DBusMessage *msg, const void *data) {
   assert(data);
-  cdbus_window_t val = *(const Window *)data;
+  cdbus_window_t val = *(const xcb_window_t *)data;
 
   if (!dbus_message_append_args(msg, CDBUS_TYPE_WINDOW, &val,
         DBUS_TYPE_INVALID)) {
@@ -486,6 +494,11 @@ cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data) {
   for (win *w = ps->list; w; w = w->next) {
     if (!w->destroyed)
       ++count;
+  }
+
+  if (!count) {
+    // Nothing to append
+    return true;
   }
 
   // Allocate memory for an array of window IDs
@@ -565,7 +578,7 @@ cdbus_signal(session_t *ps, const char *name,
  * Send a signal with a Window ID as argument.
  */
 static inline bool
-cdbus_signal_wid(session_t *ps, const char *name, Window wid) {
+cdbus_signal_wid(session_t *ps, const char *name, xcb_window_t wid) {
   return cdbus_signal(ps, name, cdbus_apdarg_wid, &wid);
 }
 
@@ -648,7 +661,7 @@ cdbus_reply_double(session_t *ps, DBusMessage *srcmsg, double val) {
  * Send a reply with a wid argument.
  */
 static inline bool
-cdbus_reply_wid(session_t *ps, DBusMessage *srcmsg, Window wid) {
+cdbus_reply_wid(session_t *ps, DBusMessage *srcmsg, xcb_window_t wid) {
   return cdbus_reply(ps, srcmsg, cdbus_apdarg_wid, &wid);
 }
 
@@ -754,7 +767,7 @@ cdbus_process_list_win(session_t *ps, DBusMessage *msg) {
  */
 static bool
 cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
-  cdbus_window_t wid = None;
+  cdbus_window_t wid = XCB_NONE;
   const char *target = NULL;
   DBusError err = { };
 
@@ -858,7 +871,7 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
  */
 static bool
 cdbus_process_win_set(session_t *ps, DBusMessage *msg) {
-  cdbus_window_t wid = None;
+  cdbus_window_t wid = XCB_NONE;
   const char *target = NULL;
   DBusError err = { };
 
@@ -942,11 +955,11 @@ cdbus_process_find_win(session_t *ps, DBusMessage *msg) {
   if (!cdbus_msg_get_arg(msg, 0, DBUS_TYPE_STRING, &target))
     return false;
 
-  Window wid = None;
+  xcb_window_t wid = XCB_NONE;
 
   // Find window by client window
   if (!strcmp("client", target)) {
-    cdbus_window_t client = None;
+    cdbus_window_t client = XCB_NONE;
     if (!cdbus_msg_get_arg(msg, 1, CDBUS_TYPE_WINDOW, &client))
       return false;
     win *w = find_toplevel(ps, client);

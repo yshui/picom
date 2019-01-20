@@ -1,11 +1,22 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
+#include <locale.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <xcb/render.h> // for xcb_render_fixed_t, XXX
 
 #include "common.h"
+#include "compiler.h"
+#include "config.h"
 #include "log.h"
+#include "region.h"
+#include "string_utils.h"
+#include "utils.h"
 
 #include "backend/gl/gl_common.h"
+
+struct gl_data {};
 
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str) {
 	log_trace("===\n%s\n===", shader_str);
@@ -92,8 +103,7 @@ end:
 /**
  * @brief Create a program from vertex and fragment shader strings.
  */
-GLuint
-gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str) {
+GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str) {
 	GLuint vert_shader = 0;
 	GLuint frag_shader = 0;
 	GLuint prog = 0;
@@ -121,6 +131,18 @@ gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_
 		glDeleteShader(frag_shader);
 
 	return prog;
+}
+
+void gl_free_prog_main(session_t *ps, gl_win_shader_t *pprogram) {
+	if (!pprogram)
+		return;
+	if (pprogram->prog) {
+		glDeleteProgram(pprogram->prog);
+		pprogram->prog = 0;
+	}
+	pprogram->unifm_opacity = -1;
+	pprogram->unifm_invert_color = -1;
+	pprogram->unifm_tex = -1;
 }
 
 /**
@@ -405,8 +427,7 @@ bool gl_blur_dst(session_t *ps, const gl_cap_t *cap, int dx, int dy, int width,
 			                       GL_TEXTURE_2D, tex_scr2,
 			                       0);        // XXX wrong, should use tex_tgt
 			glDrawBuffers(1, (GLenum[]){GL_COLOR_ATTACHMENT0});
-			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) !=
-			    GL_FRAMEBUFFER_COMPLETE) {
+			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 				log_error("Framebuffer attachment failed.");
 				goto end;
 			}
@@ -436,10 +457,8 @@ bool gl_blur_dst(session_t *ps, const gl_cap_t *cap, int dx, int dy, int width,
 			// Texture coordinates
 			const GLfloat texture_x1 = (crect.x1 - dx) * texfac_x;
 			const GLfloat texture_y1 = (crect.y1 - dy) * texfac_y;
-			const GLfloat texture_x2 =
-			    texture_x1 + (crect.x2 - crect.x1) * texfac_x;
-			const GLfloat texture_y2 =
-			    texture_y1 + (crect.y2 - crect.y1) * texfac_y;
+			const GLfloat texture_x2 = texture_x1 + (crect.x2 - crect.x1) * texfac_x;
+			const GLfloat texture_y2 = texture_y1 + (crect.y2 - crect.y1) * texfac_y;
 
 			// Vertex coordinates
 			// For passes before the last one, we are drawing into a buffer,
@@ -455,10 +474,8 @@ bool gl_blur_dst(session_t *ps, const gl_cap_t *cap, int dx, int dy, int width,
 			GLfloat vx2 = vx1 + (crect.x2 - crect.x1);
 			GLfloat vy2 = vy1 + (crect.y2 - crect.y1);
 
-			GLfloat texture_x[] = {texture_x1, texture_x2, texture_x2,
-			                       texture_x1};
-			GLfloat texture_y[] = {texture_y1, texture_y1, texture_y2,
-			                       texture_y2};
+			GLfloat texture_x[] = {texture_x1, texture_x2, texture_x2, texture_x1};
+			GLfloat texture_y[] = {texture_y1, texture_y1, texture_y2, texture_y2};
 			GLint vx[] = {vx1, vx2, vx2, vx1};
 			GLint vy[] = {vy1, vy1, vy2, vy2};
 
@@ -521,11 +538,14 @@ void gl_set_clip(const region_t *reg) {
 	gl_check_err();
 }
 
-static GLint glGetUniformLocationChecked(GLint prog, const char *name) {
-	GLint ret = glGetUniformLocation(prog, name);
-	if (ret < 0)
-		log_error("Failed to get location of uniform '%s'. Might be troublesome.",
+GLuint glGetUniformLocationChecked(GLuint p, const char *name) {
+	auto ret = glGetUniformLocation(p, name);
+	if (ret < 0) {
+		log_error("Failed to get location of uniform '%s'. compton might not "
+		          "work correctly.",
 		          name);
+		return 0;
+	}
 	return ret;
 }
 
@@ -572,4 +592,143 @@ static void attr_unused gl_destroy_win_shader(session_t *ps, gl_win_shader_t *sh
 	shader->unifm_opacity = -1;
 	shader->unifm_invert_color = -1;
 	shader->unifm_tex = -1;
+}
+
+/**
+ * Initialize GL blur filters.
+ *
+ * Fill `passes` with blur filters, won't create more than MAX_BLUR_FILTER number of
+ * filters
+ */
+bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_cap_t *cap) {
+	assert(ps->o.blur_kerns[0]);
+
+	// Allocate PBO if more than one blur kernel is present
+	if (ps->o.blur_kerns[1]) {
+		// Try to generate a framebuffer
+		GLuint fbo = 0;
+		glGenFramebuffers(1, &fbo);
+		if (!fbo) {
+			log_error("Failed to generate Framebuffer. Cannot do "
+			          "multi-pass blur with GL backends.");
+			return false;
+		}
+		glDeleteFramebuffers(1, &fbo);
+	}
+
+	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
+	// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
+	// Thanks to hiciu for reporting.
+	setlocale(LC_NUMERIC, "C");
+
+	static const char *FRAG_SHADER_BLUR_PREFIX = "#version 110\n"
+	                                             "%s"
+	                                             "uniform float offset_x;\n"
+	                                             "uniform float offset_y;\n"
+	                                             "uniform float factor_center;\n"
+	                                             "uniform %s tex_scr;\n\n"
+	                                             "void main() {\n"
+	                                             "  vec4 sum = vec4(0.0, 0.0, 0.0, "
+	                                             "0.0);\n";
+	static const char *FRAG_SHADER_BLUR_ADD =
+	    "  sum += float(%.7g) * %s(tex_scr, vec2(gl_TexCoord[0].x + offset_x "
+	    "* float(%d), gl_TexCoord[0].y + offset_y * float(%d)));\n";
+	static const char *FRAG_SHADER_BLUR_ADD_GPUSHADER4 =
+	    "  sum += float(%.7g) * %sOffset(tex_scr, vec2(gl_TexCoord[0].x, "
+	    "gl_TexCoord[0].y), ivec2(%d, %d));\n";
+	static const char *FRAG_SHADER_BLUR_SUFFIX =
+	    "  sum += %s(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * "
+	    "factor_center;\n"
+	    "  gl_FragColor = sum / (factor_center + float(%.7g));\n"
+	    "}\n";
+
+	const bool use_texture_rect = !cap->non_power_of_two_texture;
+	const char *sampler_type = (use_texture_rect ? "sampler2DRect" : "sampler2D");
+	const char *texture_func = (use_texture_rect ? "texture2DRect" : "texture2D");
+	const char *shader_add = FRAG_SHADER_BLUR_ADD;
+	char *extension = strdup("");
+	if (use_texture_rect)
+		mstrextend(&extension, "#extension GL_ARB_texture_rectangle : "
+		                       "require\n");
+	if (ps->o.glx_use_gpushader4) {
+		mstrextend(&extension, "#extension GL_EXT_gpu_shader4 : "
+		                       "require\n");
+		shader_add = FRAG_SHADER_BLUR_ADD_GPUSHADER4;
+	}
+
+	for (int i = 0; i < MAX_BLUR_PASS && ps->o.blur_kerns[i]; ++i) {
+		xcb_render_fixed_t *kern = ps->o.blur_kerns[i];
+		if (!kern)
+			break;
+
+		// Build shader
+		int wid = XFIXED_TO_DOUBLE(kern[0]), hei = XFIXED_TO_DOUBLE(kern[1]);
+		int nele = wid * hei - 1;
+		unsigned int len =
+		    strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) +
+		    strlen(extension) + (strlen(shader_add) + strlen(texture_func) + 42) * nele +
+		    strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
+		char *shader_str = ccalloc(len, char);
+		char *pc = shader_str;
+		sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
+		pc += strlen(pc);
+		assert(strlen(shader_str) < len);
+
+		double sum = 0.0;
+		for (int j = 0; j < hei; ++j) {
+			for (int k = 0; k < wid; ++k) {
+				if (hei / 2 == j && wid / 2 == k)
+					continue;
+				double val = XFIXED_TO_DOUBLE(kern[2 + j * wid + k]);
+				if (0.0 == val)
+					continue;
+				sum += val;
+				sprintf(pc, shader_add, val, texture_func, k - wid / 2, j - hei / 2);
+				pc += strlen(pc);
+				assert(strlen(shader_str) < len);
+			}
+		}
+
+		auto pass = passes + i;
+		sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
+		assert(strlen(shader_str) < len);
+		pass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
+		free(shader_str);
+
+		if (!pass->frag_shader) {
+			log_error("Failed to create fragment shader %d.", i);
+			goto err;
+		}
+
+		// Build program
+		pass->prog = gl_create_program(&pass->frag_shader, 1);
+		if (!pass->prog) {
+			log_error("Failed to create GLSL program.");
+			goto err;
+		}
+
+		// Get uniform addresses
+		pass->unifm_factor_center =
+		    glGetUniformLocationChecked(pass->prog, "factor_center");
+		if (!ps->o.glx_use_gpushader4) {
+			pass->unifm_offset_x =
+			    glGetUniformLocationChecked(pass->prog, "offset_x");
+			pass->unifm_offset_y =
+			    glGetUniformLocationChecked(pass->prog, "offset_y");
+		}
+	}
+	free(extension);
+
+	// Restore LC_NUMERIC
+	setlocale(LC_NUMERIC, lc_numeric_old);
+	free(lc_numeric_old);
+
+	gl_check_err();
+
+	return true;
+err:
+	free(extension);
+	setlocale(LC_NUMERIC, lc_numeric_old);
+	free(lc_numeric_old);
+	return false;
 }

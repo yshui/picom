@@ -3,10 +3,14 @@
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <xcb/xcb.h>
 #include <xcb/render.h>
+#include <xcb/sync.h>
+#include <xcb/xfixes.h>
 #include <xcb/xcb_renderutil.h>
 
+#include "compiler.h"
 #include "region.h"
 
 typedef struct session session_t;
@@ -79,17 +83,17 @@ wid_get_prop(const session_t *ps, xcb_window_t wid, xcb_atom_t atom, long length
 }
 
 /**
- * Get the value of a type-<code>Window</code> property of a window.
+ * Get the value of a type-<code>xcb_window_t</code> property of a window.
  *
  * @return the value if successful, 0 otherwise
  */
-Window
-wid_get_prop_window(session_t *ps, Window wid, Atom aprop);
+xcb_window_t
+wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t aprop);
 
 /**
  * Get the value of a text property of a window.
  */
-bool wid_get_text_prop(session_t *ps, Window wid, Atom prop,
+bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop,
     char ***pstrlst, int *pnstr);
 
 xcb_render_pictforminfo_t *x_get_pictform_for_visual(session_t *, xcb_visualid_t);
@@ -167,3 +171,5 @@ xcb_pixmap_t x_get_root_back_pixmap(session_t *ps);
 /// Return true if the atom refers to a property name that is used for the
 /// root window background pixmap
 bool x_atom_is_background_prop(session_t *ps, xcb_atom_t atom);
+
+bool x_fence_sync(session_t *, xcb_sync_fence_t);

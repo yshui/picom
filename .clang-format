@@ -1,0 +1,37 @@
+BasedOnStyle: LLVM
+TabWidth: 8
+UseTab: ForIndentation
+BreakBeforeBraces: Attach
+#BreakStringLiterals: true
+IndentWidth: 8
+AlignAfterOpenBracket: Align
+ColumnLimit: 90
+#ExperimentalAutoDetectBinPacking: true
+BinPackArguments: true
+BinPackParameters: true
+#ReflowComments: true
+AlignTrailingComments: true
+SpacesBeforeTrailingComments: 8
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+AllowShortIfStatementsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: false
+IndentCaseLabels: false
+PenaltyReturnTypeOnItsOwnLine: 0
+PenaltyBreakAssignment: 0
+PenaltyBreakBeforeFirstCallParameter: 1
+PenaltyBreakComment: 1
+PenaltyBreakString: 5
+PenaltyExcessCharacter: 1
+PenaltyBreakFirstLessLess: 0
+PenaltyBreakTemplateDeclaration: 0
+BreakBeforeBinaryOperators: None
+IncludeCategories:
+  - Regex:           '<.*\.h>'
+    Priority:        1
+  - Regex:           '".*\.h"'
+    Priority:        2
+SortIncludes: true
+#ForEachMacros:   [ list_for_each_entry, list_for_each_entry_safe, HASH_ITER ]
+#AlignConsecutiveAssignments: true

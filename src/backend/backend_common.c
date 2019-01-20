@@ -1,7 +1,14 @@
+#include <string.h>
 #include <xcb/xcb_image.h>
+#include <xcb/render.h>
+#include <xcb/xcb_renderutil.h>
 
-#include "render.h"
+#include "backend.h"
 #include "backend_common.h"
+#include "kernel.h"
+#include "common.h"
+#include "log.h"
+#include "x.h"
 
 /**
  * Generate a 1x1 <code>Picture</code> of a particular color.
@@ -16,16 +23,16 @@ solid_picture(session_t *ps, bool argb, double a, double r, double g, double b) 
 
 	pixmap = x_create_pixmap(ps, argb ? 32 : 8, ps->root, 1, 1);
 	if (!pixmap)
-		return None;
+		return XCB_NONE;
 
-	pa.repeat = True;
+	pa.repeat = 1;
 	picture = x_create_picture_with_standard_and_pixmap(
 	    ps, argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8, pixmap,
 	    XCB_RENDER_CP_REPEAT, &pa);
 
 	if (!picture) {
 		xcb_free_pixmap(ps->c, pixmap);
-		return None;
+		return XCB_NONE;
 	}
 
 	col.alpha = a * 0xffff;
@@ -44,6 +51,130 @@ solid_picture(session_t *ps, bool argb, double a, double r, double g, double b) 
 	return picture;
 }
 
+xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel,
+                         double opacity, int width, int height) {
+	/*
+	 * We classify shadows into 4 kinds of regions
+	 *    r = shadow radius
+	 * (0, 0) is the top left of the window itself
+	 *         -r     r      width-r  width+r
+	 *       -r +-----+---------+-----+
+	 *          |  1  |    2    |  1  |
+	 *        r +-----+---------+-----+
+	 *          |  2  |    3    |  2  |
+	 * height-r +-----+---------+-----+
+	 *          |  1  |    2    |  1  |
+	 * height+r +-----+---------+-----+
+	 */
+	xcb_image_t *ximage;
+	const double *shadow_sum = kernel->rsum;
+	int d = kernel->size, r = d / 2;
+	int swidth = width + r * 2, sheight = height + r * 2;
+
+	assert(d % 2 == 1);
+	assert(d > 0);
+
+	ximage = xcb_image_create_native(c, swidth, sheight, XCB_IMAGE_FORMAT_Z_PIXMAP, 8,
+	                                 0, 0, NULL);
+	if (!ximage) {
+		log_error("failed to create an X image");
+		return 0;
+	}
+
+	unsigned char *data = ximage->data;
+	uint32_t sstride = ximage->stride;
+
+	// If the window body is smaller than the kernel, we do convolution directly
+	if (width < r * 2 && height < r * 2) {
+		for (int y = 0; y < sheight; y++) {
+			for (int x = 0; x < swidth; x++) {
+				double sum = sum_kernel_normalized(
+				    kernel, d - x - 1, d - y - 1, width, height);
+				data[y * sstride + x] = sum * 255.0;
+			}
+		}
+		return ximage;
+	}
+
+	if (height < r * 2) {
+		// If the window height is smaller than the kernel, we divide
+		// the window like this:
+		// -r     r         width-r  width+r
+		// +------+-------------+------+
+		// |      |             |      |
+		// +------+-------------+------+
+		for (int y = 0; y < sheight; y++) {
+			for (int x = 0; x < r * 2; x++) {
+				double sum = sum_kernel_normalized(kernel, d - x - 1,
+				                                   d - y - 1, d, height) *
+				             255.0;
+				data[y * sstride + x] = sum;
+				data[y * sstride + swidth - x - 1] = sum;
+			}
+		}
+		for (int y = 0; y < sheight; y++) {
+			double sum =
+			    sum_kernel_normalized(kernel, 0, d - y - 1, d, height) * 255.0;
+			memset(&data[y * sstride + r * 2], sum, width - 2 * r);
+		}
+		return ximage;
+	}
+	if (width < r * 2) {
+		// Similarly, for width smaller than kernel
+		for (int y = 0; y < r * 2; y++) {
+			for (int x = 0; x < swidth; x++) {
+				double sum = sum_kernel_normalized(kernel, d - x - 1,
+				                                   d - y - 1, width, d) *
+				             255.0;
+				data[y * sstride + x] = sum;
+				data[(sheight - y - 1) * sstride + x] = sum;
+			}
+		}
+		for (int x = 0; x < swidth; x++) {
+			double sum =
+			    sum_kernel_normalized(kernel, d - x - 1, 0, width, d) * 255.0;
+			for (int y = r * 2; y < height; y++) {
+				data[y * sstride + x] = sum;
+			}
+		}
+		return ximage;
+	}
+
+	// Fill part 3
+	for (int y = r; y < height + r; y++) {
+		memset(data + sstride * y + r, 255, width);
+	}
+
+	// Part 1
+	for (int y = 0; y < r * 2; y++) {
+		for (int x = 0; x < r * 2; x++) {
+			double tmpsum = shadow_sum[y * d + x] * opacity * 255.0;
+			data[y * sstride + x] = tmpsum;
+			data[(sheight - y - 1) * sstride + x] = tmpsum;
+			data[(sheight - y - 1) * sstride + (swidth - x - 1)] = tmpsum;
+			data[y * sstride + (swidth - x - 1)] = tmpsum;
+		}
+	}
+
+	// Part 2, top/bottom
+	for (int y = 0; y < r * 2; y++) {
+		double tmpsum = shadow_sum[d * y + d - 1] * opacity * 255.0;
+		memset(&data[y * sstride + r * 2], tmpsum, width - r * 2);
+		memset(&data[(sheight - y - 1) * sstride + r * 2], tmpsum, width - r * 2);
+	}
+
+	// Part 2, left/right
+	for (int x = 0; x < r * 2; x++) {
+		double tmpsum = shadow_sum[d * (d - 1) + x] * opacity * 255.0;
+		for (int y = r * 2; y < height; y++) {
+			data[y * sstride + x] = tmpsum;
+			data[y * sstride + (swidth - x - 1)] = tmpsum;
+		}
+	}
+
+	return ximage;
+}
+
 /**
  * Generate shadow <code>Picture</code> for a window.
  */
@@ -51,11 +182,12 @@ bool build_shadow(session_t *ps, double opacity, const int width, const int heig
                   xcb_render_picture_t shadow_pixel, xcb_pixmap_t *pixmap,
                   xcb_render_picture_t *pict) {
 	xcb_image_t *shadow_image = NULL;
-	xcb_pixmap_t shadow_pixmap = None, shadow_pixmap_argb = None;
-	xcb_render_picture_t shadow_picture = None, shadow_picture_argb = None;
-	xcb_gcontext_t gc = None;
+	xcb_pixmap_t shadow_pixmap = XCB_NONE, shadow_pixmap_argb = XCB_NONE;
+	xcb_render_picture_t shadow_picture = XCB_NONE, shadow_picture_argb = XCB_NONE;
+	xcb_gcontext_t gc = XCB_NONE;
 
-	shadow_image = make_shadow(ps, opacity, width, height);
+	shadow_image =
+	    make_shadow(ps->c, ps->gaussian_map, opacity, width, height);
 	if (!shadow_image) {
 		log_error("Failed to make shadow");
 		return false;

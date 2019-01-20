@@ -2,8 +2,9 @@
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 
+#include <xcb/xcb.h>
 #include <xcb/render.h>
-#include <xcb/xcb_image.h>
+#include <stdbool.h>
 #include "region.h"
 
 typedef struct _glx_texture glx_texture_t;
@@ -35,5 +36,3 @@ void free_root_tile(session_t *ps);
 
 bool init_render(session_t *ps);
 void deinit_render(session_t *ps);
-
-xcb_image_t *make_shadow(session_t *ps, double opacity, int width, int height);
