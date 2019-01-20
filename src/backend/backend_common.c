@@ -1,5 +1,7 @@
+#include <string.h>
 #include <xcb/xcb_image.h>
 #include <xcb/render.h>
+#include <xcb/xcb_renderutil.h>
 
 #include "backend.h"
 #include "backend_common.h"

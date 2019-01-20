@@ -3,11 +3,13 @@
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 #pragma once
 #include <stdbool.h>
+#include <xcb/xcb.h>
+#include <xcb/render.h>
 #include <xcb/damage.h>
 
 // FIXME shouldn't need this
 #ifdef CONFIG_OPENGL
-#include <GL/glx.h>
+#include <GL/gl.h>
 #endif
 
 #include "x.h"

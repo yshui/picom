@@ -11,6 +11,8 @@
 #include <stdbool.h>
 #include <ctype.h>
 #include <string.h>
+#include <xcb/xcb.h>
+#include <xcb/render.h> // for xcb_render_fixed_t, XXX
 #include <xcb/xfixes.h>
 
 #ifdef CONFIG_LIBCONFIG

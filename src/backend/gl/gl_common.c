@@ -2,14 +2,17 @@
 #include <GL/glext.h>
 #include <locale.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <xcb/render.h> // for xcb_render_fixed_t, XXX
 
 #include "common.h"
+#include "compiler.h"
+#include "config.h"
 #include "log.h"
 #include "region.h"
 #include "string_utils.h"
 #include "utils.h"
-#include "compiler.h"
-#include "config.h"
 
 #include "backend/gl/gl_common.h"
 

@@ -1,3 +1,5 @@
+#include <xcb/xcb.h>
+
 #include "backend.h"
 #include "config.h"
 #include "win.h"

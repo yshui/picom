@@ -9,9 +9,14 @@
  *
  */
 
+#include <assert.h>
 #include <GL/glx.h>
 #include <stdbool.h>
 #include <xcb/xcb.h>
+#include <xcb/composite.h>
+#include <string.h>
+#include <stdlib.h>
+#include <pixman.h>
 
 #include "backend/backend.h"
 #include "backend/gl/gl_common.h"
@@ -19,7 +24,6 @@
 #include "compiler.h"
 #include "log.h"
 #include "region.h"
-#include "string_utils.h"
 #include "utils.h"
 #include "win.h"
 #include "config.h"
