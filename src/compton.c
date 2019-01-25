@@ -2482,12 +2482,16 @@ static void
 delayed_draw_callback(EV_P_ ev_idle *w, int revents) {
   // This function is only used if we are using --swopti
   session_t *ps = session_ptr(w, draw_idle);
-  if (ev_is_active(&ps->delayed_draw_timer))
-    return;
+  assert(ps->redraw_needed);
+  assert(!ev_is_active(&ps->delayed_draw_timer));
 
   double delay = swopti_handle_timeout(ps);
-  if (delay < 1e-6)
+  if (delay < 1e-6) {
+    if (!ps->o.benchmark) {
+      ev_idle_stop(ps->loop, &ps->draw_idle);
+    }
     return _draw_callback(EV_A_ ps, revents);
+  }
 
   // This is a little bit hacky. When we get to this point in code, we need
   // to update the screen , but we will only be updating after a delay, So
