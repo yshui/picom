@@ -592,9 +592,16 @@ void glx_render_win(void *backend_data, session_t *ps, win *w, void *win_data, c
 	gl_check_err();
 }
 
+static void glx_present(void *backend_data, session_t *ps) {
+	glXSwapBuffers(ps->dpy, ps->overlay != XCB_NONE ? ps->overlay : ps->root);
+}
+
 backend_info_t glx_backend = {
     .init = glx_init,
     .deinit = glx_deinit,
     .prepare_win = glx_prepare_win,
     .render_win = glx_render_win,
+    .present = glx_present,
+    .is_win_transparent = default_is_win_transparent,
+    .is_frame_transparent = default_is_frame_transparent,
 };
