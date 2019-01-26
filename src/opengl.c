@@ -858,66 +858,6 @@ glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
 }
 
 /**
- * Preprocess function before start painting.
- */
-void
-glx_paint_pre(session_t *ps, region_t *preg) {
-  ps->psglx->z = 0.0;
-  // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-  // Get buffer age
-  bool trace_damage = (ps->o.glx_swap_method < 0 || ps->o.glx_swap_method > 1);
-
-  // Trace raw damage regions
-  region_t newdamage;
-  pixman_region32_init(&newdamage);
-  if (trace_damage)
-    copy_region(&newdamage, preg);
-
-  // We use GLX buffer_age extension to decide which pixels in
-  // the back buffer is reusable, and limit our redrawing
-  int buffer_age = 0;
-
-  // Query GLX_EXT_buffer_age for buffer age
-  if (ps->o.glx_swap_method == SWAPM_BUFFER_AGE) {
-    unsigned val = 0;
-    glXQueryDrawable(ps->dpy, get_tgt_window(ps),
-        GLX_BACK_BUFFER_AGE_EXT, &val);
-    buffer_age = val;
-  }
-
-  // Buffer age too high
-  if (buffer_age > CGLX_MAX_BUFFER_AGE + 1)
-    buffer_age = 0;
-
-  assert(buffer_age >= 0);
-
-  if (buffer_age) {
-    // Determine paint area
-      for (int i = 0; i < buffer_age - 1; ++i)
-        pixman_region32_union(preg, preg, &ps->all_damage_last[i]);
-  } else
-    // buffer_age == 0 means buffer age is not available, paint everything
-    copy_region(preg, &ps->screen_reg);
-
-  if (trace_damage) {
-    // XXX use a circular queue instead of memmove
-    pixman_region32_fini(&ps->all_damage_last[CGLX_MAX_BUFFER_AGE - 1]);
-    memmove(ps->all_damage_last + 1, ps->all_damage_last,
-        (CGLX_MAX_BUFFER_AGE - 1) * sizeof(region_t));
-    ps->all_damage_last[0] = newdamage;
-  }
-
-  glx_set_clip(ps, preg);
-
-#ifdef DEBUG_GLX_PAINTREG
-  glx_render_color(ps, 0, 0, ps->root_width, ps->root_height, 0, *preg, NULL);
-#endif
-
-  glx_check_err(ps);
-}
-
-/**
  * Set clipping region on the target window.
  */
 void

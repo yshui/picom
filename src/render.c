@@ -59,6 +59,28 @@ static inline bool bkend_use_xrender(session_t *ps) {
 	return BKEND_XRENDER == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
 }
 
+int maximum_buffer_age(session_t *ps) {
+	if (bkend_use_glx(ps) && ps->o.glx_swap_method == SWAPM_BUFFER_AGE) {
+		return CGLX_MAX_BUFFER_AGE;
+	}
+	return 1;
+}
+
+static int get_buffer_age(session_t *ps) {
+#ifdef CONFIG_OPENGL
+	if (bkend_use_glx(ps)) {
+		if (ps->o.glx_swap_method == SWAPM_BUFFER_AGE) {
+			unsigned int val;
+			glXQueryDrawable(ps->dpy, get_tgt_window(ps), GLX_BACK_BUFFER_AGE_EXT, &val);
+			return (int)val ?: -1;
+		} else {
+			return -1;
+		}
+	}
+#endif
+	return 1;
+}
+
 /**
  * Reset filter on a <code>Picture</code>.
  */
@@ -68,6 +90,7 @@ static inline void xrfilter_reset(session_t *ps, xcb_render_picture_t p) {
 #undef FILTER
 }
 
+/// Set the input/output clip region of the target buffer (not the actual target!)
 static inline void attr_nonnull(1, 2) set_tgt_clip(session_t *ps, region_t *reg) {
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
@@ -113,8 +136,7 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, doubl
 		int alpha_step = opacity * MAX_ALPHA;
 		xcb_render_picture_t alpha_pict = ps->alpha_picts[alpha_step];
 		if (alpha_step != 0) {
-			int op = ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC
-			                                 : XCB_RENDER_PICT_OP_OVER);
+			int op = ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC : XCB_RENDER_PICT_OP_OVER);
 			xcb_render_composite(ps->c, op, pict, alpha_pict, ps->tgt_buffer.pict,
 			                     x, y, 0, 0, dx, dy, wid, hei);
 		}
@@ -131,9 +153,8 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, doubl
 	}
 }
 
-static inline void
-paint_region(session_t *ps, win *w, int x, int y, int wid, int hei, double opacity,
-             const region_t *reg_paint, xcb_render_picture_t pict) {
+static inline void paint_region(session_t *ps, win *w, int x, int y, int wid, int hei, double opacity,
+                                const region_t *reg_paint, xcb_render_picture_t pict) {
 	const int dx = (w ? w->g.x : 0) + x;
 	const int dy = (w ? w->g.y : 0) + y;
 	const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
@@ -200,8 +221,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	// Let glx_bind_pixmap() determine pixmap size, because if the user
 	// is resizing windows, the width and height we get may not be up-to-date,
 	// causing the jittering issue M4he reported in #7.
-	if (!paint_bind_tex(ps, &w->paint, 0, 0, 0,
-	                    (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
+	if (!paint_bind_tex(ps, &w->paint, 0, 0, 0, (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
 		log_error("Failed to bind texture for window %#010x.", w->id);
 	}
 	w->pixmap_damaged = false;
@@ -229,15 +249,15 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 				pixman_region32_init(&reg);
 				pixman_region32_copy(&reg, (region_t *)reg_paint);
 				pixman_region32_translate(&reg, -x, -y);
-				// FIXME XFixesSetPictureClipRegion(ps->dpy, newpict, 0, 0, reg);
+				// FIXME XFixesSetPictureClipRegion(ps->dpy, newpict, 0,
+				// 0, reg);
 				pixman_region32_fini(&reg);
 			}
 
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, pict, XCB_NONE,
 			                     newpict, 0, 0, 0, 0, 0, 0, wid, hei);
-			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE,
-			                     ps->white_picture, XCB_NONE, newpict, 0, 0,
-			                     0, 0, 0, 0, wid, hei);
+			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE, ps->white_picture,
+			                     XCB_NONE, newpict, 0, 0, 0, 0, 0, 0, wid, hei);
 			// We use an extra PictOpInReverse operation to get correct
 			// pixel alpha. There could be a better solution.
 			if (win_has_alpha(w))
@@ -261,8 +281,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		const int r = extents.right;
 
 #define COMP_BDR(cx, cy, cwid, chei)                                                     \
-	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity *dopacity,      \
-	             reg_paint, pict)
+	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity *dopacity, reg_paint, pict)
 
 		// Sanitize the margins, in case some broken WM makes
 		// top_width + bottom_width > height in some cases.
@@ -353,8 +372,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		} break;
 #ifdef CONFIG_OPENGL
 		case BKEND_GLX:
-			glx_dim_dst(ps, x, y, wid, hei, ps->psglx->z - 0.7, dim_opacity,
-			            reg_paint);
+			glx_dim_dst(ps, x, y, wid, hei, ps->psglx->z - 0.7, dim_opacity, reg_paint);
 			break;
 #endif
 		default: assert(false);
@@ -380,9 +398,8 @@ static bool get_root_tile(session_t *ps) {
 
 	// Get the values of background attributes
 	for (int p = 0; background_props_str[p]; p++) {
-		winprop_t prop =
-		    wid_get_prop(ps, ps->root, get_atom(ps, background_props_str[p]), 1L,
-		                 XCB_ATOM_PIXMAP, 32);
+		winprop_t prop = wid_get_prop(
+		    ps, ps->root, get_atom(ps, background_props_str[p]), 1L, XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
 			pixmap = *prop.p32;
 			fill = false;
@@ -465,15 +482,13 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 	xcb_render_picture_t shadow_picture = XCB_NONE, shadow_picture_argb = XCB_NONE;
 	xcb_gcontext_t gc = XCB_NONE;
 
-	shadow_image =
-	    make_shadow(ps->c, ps->gaussian_map, opacity, width, height);
+	shadow_image = make_shadow(ps->c, ps->gaussian_map, opacity, width, height);
 	if (!shadow_image) {
 		log_error("failed to make shadow");
 		return XCB_NONE;
 	}
 
-	shadow_pixmap =
-	    x_create_pixmap(ps, 8, ps->root, shadow_image->width, shadow_image->height);
+	shadow_pixmap = x_create_pixmap(ps, 8, ps->root, shadow_image->width, shadow_image->height);
 	shadow_pixmap_argb =
 	    x_create_pixmap(ps, 32, ps->root, shadow_image->width, shadow_image->height);
 
@@ -570,9 +585,8 @@ static inline void normalize_conv_kern(int wid, int hei, xcb_render_fixed_t *ker
  *
  * @return true if successful, false otherwise
  */
-static bool
-xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, int y, int wid,
-            int hei, xcb_render_fixed_t **blur_kerns, const region_t *reg_clip) {
+static bool xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, int y, int wid,
+                        int hei, xcb_render_fixed_t **blur_kerns, const region_t *reg_clip) {
 	assert(blur_kerns[0]);
 
 	// Directly copying from tgt_buffer to it does not work, so we create a
@@ -600,12 +614,10 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, int y, int wi
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
 		xcb_render_set_picture_filter(ps->c, src_pict, strlen(XRFILTER_CONVOLUTION),
-		                              XRFILTER_CONVOLUTION, kwid * khei + 2,
-		                              convolution_blur);
-		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
-		                     dst_pict, (rd_from_tgt ? x : 0),
-		                     (rd_from_tgt ? y : 0), 0, 0, (rd_from_tgt ? 0 : x),
-		                     (rd_from_tgt ? 0 : y), wid, hei);
+		                              XRFILTER_CONVOLUTION, kwid * khei + 2, convolution_blur);
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE, dst_pict,
+		                     (rd_from_tgt ? x : 0), (rd_from_tgt ? y : 0), 0, 0,
+		                     (rd_from_tgt ? 0 : x), (rd_from_tgt ? 0 : y), wid, hei);
 		xrfilter_reset(ps, src_pict);
 
 		{
@@ -672,12 +684,10 @@ static inline void win_blur_background(session_t *ps, win *w, xcb_render_picture
 			}
 
 			// Modify the factor of the center pixel
-			kern_src[2 + (khei / 2) * kwid + kwid / 2] =
-			    DOUBLE_TO_XFIXED(factor_center);
+			kern_src[2 + (khei / 2) * kwid + kwid / 2] = DOUBLE_TO_XFIXED(factor_center);
 
 			// Copy over
-			memcpy(kern_dst, kern_src,
-			       (kwid * khei + 2) * sizeof(xcb_render_fixed_t));
+			memcpy(kern_dst, kern_src, (kwid * khei + 2) * sizeof(xcb_render_fixed_t));
 			normalize_conv_kern(kwid, khei, kern_dst + 2);
 		}
 
@@ -708,10 +718,40 @@ static inline void win_blur_background(session_t *ps, win *w, xcb_render_picture
 	}
 }
 
+/**
+ * Resize a region.
+ */
+static inline void resize_region(region_t *region, short mod) {
+	if (!mod || !region)
+		return;
+	// Loop through all rectangles
+	int nrects;
+	int nnewrects = 0;
+	pixman_box32_t *rects = pixman_region32_rectangles(region, &nrects);
+	auto newrects = ccalloc(nrects, pixman_box32_t);
+	for (int i = 0; i < nrects; i++) {
+		int x1 = rects[i].x1 - mod;
+		int y1 = rects[i].y1 - mod;
+		int x2 = rects[i].x2 + mod;
+		int y2 = rects[i].y2 + mod;
+		int wid = x2 - x1;
+		int hei = y2 - y1;
+		if (wid <= 0 || hei <= 0)
+			continue;
+		newrects[nnewrects] = (pixman_box32_t){.x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2};
+		++nnewrects;
+	}
+
+	pixman_region32_fini(region);
+	pixman_region32_init_rects(region, newrects, nnewrects);
+
+	free(newrects);
+}
+
 /// paint all windows
 /// region = ??
 /// region_real = the damage region
-void paint_all(session_t *ps, region_t *region, const region_t *region_real, win *const t) {
+void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 	if (ps->o.xrender_sync_fence) {
 		if (!x_fence_sync(ps, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
@@ -722,24 +762,32 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 		}
 	}
 
-	if (!region_real) {
-		region_real = region;
+	region_t region;
+	pixman_region32_init(&region);
+	int buffer_age = get_buffer_age(ps);
+	if (buffer_age == -1 || buffer_age > ps->ndamage || ignore_damage) {
+		pixman_region32_copy(&region, &ps->screen_reg);
+	} else {
+		for (int i = 0; i < get_buffer_age(ps); i++) {
+			const int curr = ((ps->damage - ps->damage_ring) + i) % ps->ndamage;
+			pixman_region32_union(&region, &region, &ps->damage_ring[curr]);
+		}
+	}
+
+	if (!pixman_region32_not_empty(&region)) {
+		return;
 	}
 
 #ifdef DEBUG_REPAINT
 	static struct timespec last_paint = {0};
 #endif
 
-	if (!region)
-		region_real = region = &ps->screen_reg;
-	else
-		// Remove the damaged area out of screen
-		pixman_region32_intersect(region, region, &ps->screen_reg);
+	if (ps->o.resize_damage > 0) {
+		resize_region(&region, ps->o.resize_damage);
+	}
 
-#ifdef CONFIG_OPENGL
-	if (bkend_use_glx(ps))
-		glx_paint_pre(ps, region);
-#endif
+	// Remove the damaged area out of screen
+	pixman_region32_intersect(&region, &region, &ps->screen_reg);
 
 	if (!paint_isvalid(ps, &ps->tgt_buffer)) {
 		if (!ps->tgt_buffer.pixmap) {
@@ -759,26 +807,34 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 	}
 
 	if (BKEND_XRENDER == ps->o.backend) {
-		x_set_picture_clip_region(ps, ps->tgt_picture, 0, 0, region_real);
+		x_set_picture_clip_region(ps, ps->tgt_picture, 0, 0, &region);
 	}
+
+#ifdef CONFIG_OPENGL
+	if (bkend_use_glx(ps)) {
+		ps->psglx->z = 0.0;
+	}
+#endif
 
 	region_t reg_tmp, *reg_paint;
 	pixman_region32_init(&reg_tmp);
 	if (t) {
-		// Calculate the region upon which the root window is to be painted
-		// based on the ignore region of the lowest window, if available
-		pixman_region32_subtract(&reg_tmp, region, t->reg_ignore);
+		// Calculate the region upon which the root window is to be
+		// painted based on the ignore region of the lowest window, if
+		// available
+		pixman_region32_subtract(&reg_tmp, &region, t->reg_ignore);
 		reg_paint = &reg_tmp;
 	} else {
-		reg_paint = region;
+		reg_paint = &region;
 	}
 
 	set_tgt_clip(ps, reg_paint);
 	paint_root(ps, reg_paint);
 
 	// Windows are sorted from bottom to top
-	// Each window has a reg_ignore, which is the region obscured by all the windows
-	// on top of that window. This is used to reduce the number of pixels painted.
+	// Each window has a reg_ignore, which is the region obscured by all the
+	// windows on top of that window. This is used to reduce the number of
+	// pixels painted.
 	//
 	// Whether this is beneficial is to be determined XXX
 	for (win *w = t; w; w = w->prev_trans) {
@@ -790,39 +846,39 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 				if (!win_build_shadow(ps, w, 1))
 					log_error("build shadow failed");
 
-			// Shadow doesn't need to be painted underneath the body of
-			// the window Because no one can see it
-			pixman_region32_subtract(&reg_tmp, region, w->reg_ignore);
+			// Shadow doesn't need to be painted underneath the body
+			// of the windows above. Because no one can see it
+			pixman_region32_subtract(&reg_tmp, &region, w->reg_ignore);
 
 			// Mask out the region we don't want shadow on
 			if (pixman_region32_not_empty(&ps->shadow_exclude_reg))
-				pixman_region32_subtract(&reg_tmp, &reg_tmp,
-				                         &ps->shadow_exclude_reg);
+				pixman_region32_subtract(&reg_tmp, &reg_tmp, &ps->shadow_exclude_reg);
 
-			// Might be worth while to crop the region to shadow border
-			pixman_region32_intersect_rect(
-			    &reg_tmp, &reg_tmp, w->g.x + w->shadow_dx,
-			    w->g.y + w->shadow_dy, w->shadow_width, w->shadow_height);
+			// Might be worth while to crop the region to shadow
+			// border
+			pixman_region32_intersect_rect(&reg_tmp, &reg_tmp, w->g.x + w->shadow_dx,
+			                               w->g.y + w->shadow_dy,
+			                               w->shadow_width, w->shadow_height);
 
-			// Mask out the body of the window from the shadow if needed
-			// Doing it here instead of in make_shadow() for saving GPU
-			// power and handling shaped windows (XXX unconfirmed)
+			// Mask out the body of the window from the shadow if
+			// needed Doing it here instead of in make_shadow() for
+			// saving GPU power and handling shaped windows (XXX
+			// unconfirmed)
 			if (!ps->o.wintype_option[w->window_type].full_shadow)
 				pixman_region32_subtract(&reg_tmp, &reg_tmp, &bshape);
 
 #ifdef CONFIG_XINERAMA
 			if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
 			    w->xinerama_scr < ps->xinerama_nscrs)
-				// There can be a window where number of screens is
-				// updated, but the screen number attached to the
-				// windows have not.
+				// There can be a window where number of screens
+				// is updated, but the screen number attached to
+				// the windows have not.
 				//
-				// Window screen number will be updated eventually,
-				// so here we just check to make sure we don't access
-				// out of bounds.
+				// Window screen number will be updated
+				// eventually, so here we just check to make sure
+				// we don't access out of bounds.
 				pixman_region32_intersect(
-				    &reg_tmp, &reg_tmp,
-				    &ps->xinerama_scr_regs[w->xinerama_scr]);
+				    &reg_tmp, &reg_tmp, &ps->xinerama_scr_regs[w->xinerama_scr]);
 #endif
 
 			// Detect if the region is empty before painting
@@ -832,10 +888,11 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			}
 		}
 
-		// Calculate the region based on the reg_ignore of the next (higher)
-		// window and the bounding region
-		// XXX XXX
-		pixman_region32_subtract(&reg_tmp, region, w->reg_ignore);
+		// Calculate the paint region based on the reg_ignore of the current
+		// window and its bounding region.
+		// Remeber, reg_ignore is the union of all windows above the current
+		// window.
+		pixman_region32_subtract(&reg_tmp, &region, w->reg_ignore);
 		pixman_region32_intersect(&reg_tmp, &reg_tmp, &bshape);
 		pixman_region32_fini(&bshape);
 
@@ -854,6 +911,13 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 
 	// Free up all temporary regions
 	pixman_region32_fini(&reg_tmp);
+
+	// Move the head of the damage ring
+	ps->damage = ps->damage - 1;
+	if (ps->damage < ps->damage_ring) {
+		ps->damage = ps->damage_ring + ps->ndamage - 1;
+	}
+	pixman_region32_clear(ps->damage);
 
 	// Do this as early as possible
 	set_tgt_clip(ps, &ps->screen_reg);
@@ -886,14 +950,8 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			// the paint region. This is not very efficient, but since
 			// it's for debug only, we don't really care
 
-			// First, we clear tgt_buffer.pict's clip region, since we
-			// want to copy everything
-			x_set_picture_clip_region(ps, ps->tgt_buffer.pict, 0, 0,
-			                          &ps->screen_reg);
-
-			// Then we create a new picture, and copy content to it
-			xcb_render_pictforminfo_t *pictfmt =
-			    x_get_pictform_for_visual(ps, ps->vis);
+			// First we create a new picture, and copy content from the buffer to it
+			xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps, ps->vis);
 			xcb_render_picture_t new_pict = x_create_picture_with_pictfmt(
 			    ps, ps->root_width, ps->root_height, pictfmt, 0, NULL);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
@@ -901,22 +959,22 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			                     0, 0, 0, 0, ps->root_width, ps->root_height);
 
 			// Next, we set the region of paint and highlight it
-			x_set_picture_clip_region(ps, new_pict, 0, 0, region_real);
-			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER,
-			                     ps->white_picture,
+			x_set_picture_clip_region(ps, new_pict, 0, 0, &region);
+			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER, ps->white_picture,
 			                     ps->alpha_picts[MAX_ALPHA / 2], new_pict, 0, 0,
 			                     0, 0, 0, 0, ps->root_width, ps->root_height);
 
-			// Finally, clear clip region and put the whole thing on screen
+			// Finally, clear clip regions of new_pict and the screen, and put
+			// the whole thing on screen
 			x_set_picture_clip_region(ps, new_pict, 0, 0, &ps->screen_reg);
+			x_set_picture_clip_region(ps, ps->tgt_picture, 0, 0, &ps->screen_reg);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, new_pict,
 			                     XCB_NONE, ps->tgt_picture, 0, 0, 0, 0, 0, 0,
 			                     ps->root_width, ps->root_height);
 			xcb_render_free_picture(ps->c, new_pict);
 		} else
-			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
-			                     ps->tgt_buffer.pict, XCB_NONE,
-			                     ps->tgt_picture, 0, 0, 0, 0, 0, 0,
+			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, ps->tgt_buffer.pict,
+			                     XCB_NONE, ps->tgt_picture, 0, 0, 0, 0, 0, 0,
 			                     ps->root_width, ps->root_height);
 		break;
 #ifdef CONFIG_OPENGL
@@ -936,7 +994,7 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 			glFlush();
 		glXWaitX();
 		glx_render(ps, ps->tgt_buffer.ptex, 0, 0, 0, 0, ps->root_width,
-		           ps->root_height, 0, 1.0, false, false, region_real, NULL);
+		           ps->root_height, 0, 1.0, false, false, &region, NULL);
 		// falls through
 	case BKEND_GLX: glXSwapBuffers(ps->dpy, get_tgt_window(ps)); break;
 #endif
@@ -966,6 +1024,9 @@ void paint_all(session_t *ps, region_t *region, const region_t *region_real, win
 	for (win *w = t; w; w = w->prev_trans)
 		log_trace(" %#010lx", w->id);
 #endif
+
+	// Free the paint region
+	pixman_region32_fini(&region);
 
 	// Check if fading is finished on all painted windows
 	{
@@ -1094,6 +1155,14 @@ bool init_render(session_t *ps) {
 			log_error("Failed to create shadow picture.");
 			return false;
 		}
+	}
+
+	ps->ndamage = maximum_buffer_age(ps);
+	ps->damage_ring = ccalloc(ps->ndamage, region_t);
+	ps->damage = ps->damage_ring + ps->ndamage - 1;
+
+	for (int i = 0; i < ps->ndamage; i++) {
+		pixman_region32_init(&ps->damage_ring[i]);
 	}
 	return true;
 }

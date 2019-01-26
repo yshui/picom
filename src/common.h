@@ -427,9 +427,11 @@ typedef struct session {
   /// Program start time.
   struct timeval time_start;
   /// The region needs to painted on next paint.
-  region_t all_damage;
+  region_t *damage;
   /// The region damaged on the last paint.
-  region_t all_damage_last[CGLX_MAX_BUFFER_AGE];
+  region_t *damage_ring;
+  /// Number of damage regions we track
+  int ndamage;
   /// Whether all windows are currently redirected.
   bool redirected;
   /// Pre-generated alpha pictures.
@@ -895,15 +897,6 @@ find_focused(session_t *ps) {
   if (ps->active_win && win_is_focused_real(ps, ps->active_win))
     return ps->active_win;
   return NULL;
-}
-
-/**
- * Free all regions in ps->all_damage_last .
- */
-static inline void
-free_all_damage_last(session_t *ps) {
-  for (int i = 0; i < CGLX_MAX_BUFFER_AGE; ++i)
-    pixman_region32_clear(&ps->all_damage_last[i]);
 }
 
 /**
