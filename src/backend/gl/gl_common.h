@@ -118,7 +118,7 @@ static inline void gl_check_err_(const char *func, int line) {
 /**
  * Check if a GLX extension exists.
  */
-static inline bool gl_has_extension(session_t *ps, const char *ext) {
+static inline bool gl_has_extension(const char *ext) {
 	GLint nexts = 0;
 	glGetIntegerv(GL_NUM_EXTENSIONS, &nexts);
 	if (!nexts) {
