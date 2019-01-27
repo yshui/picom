@@ -8,6 +8,8 @@
 #include "region.h"
 #include "log.h"
 
+#define CASESTRRET(s)   case s: return #s
+
 // Program and uniforms for window shader
 typedef struct {
 	/// GLSL program.

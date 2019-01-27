@@ -77,10 +77,6 @@
 #define MSTR_(s)        #s
 #define MSTR(s)         MSTR_(s)
 
-// Use #s here to prevent macro expansion
-/// Macro used for shortening some debugging code.
-#define CASESTRRET(s)   case s: return #s
-
 // X resource checker
 #ifdef DEBUG_XRC
 #include "xrescheck.h"

@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-#include <xcb/render.h> // for xcb_render_fixed_t, XXX
+#include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 
 #include "common.h"
 #include "compiler.h"
@@ -16,7 +16,7 @@
 
 #include "backend/gl/gl_common.h"
 
-#define P_PAINTREG_START(var)                                                            \
+#define P_PAINTREG_START(reg_tgt, var)                                                   \
 	do {                                                                             \
 		region_t reg_new;                                                        \
 		int nrects;                                                              \
@@ -244,7 +244,7 @@ bool gl_compose(const gl_texture_t *ptex, int x, int y, int dx, int dy, int widt
 	}
 
 	// Painting
-	P_PAINTREG_START(crect) {
+	P_PAINTREG_START(reg_tgt, crect) {
 		// Calculate texture coordinates
 		GLfloat texture_x1 = (double)(crect.x1 - dx + x);
 		GLfloat texture_y1 = (double)(crect.y1 - dy + y);
@@ -317,7 +317,7 @@ bool gl_dim_reg(session_t *ps, int dx, int dy, int width, int height, float z,
 	glColor4f(0.0f, 0.0f, 0.0f, factor);
 
 	{
-		P_PAINTREG_START(crect) {
+		P_PAINTREG_START(reg_tgt, crect) {
 			glVertex3i(crect.x1, crect.y1, z);
 			glVertex3i(crect.x2, crect.y1, z);
 			glVertex3i(crect.x2, crect.y2, z);
@@ -473,7 +473,7 @@ bool gl_blur_dst(session_t *ps, const gl_cap_t *cap, int dx, int dy, int width,
 		// XXX use multiple draw calls is probably going to be slow than
 		//     just simply blur the whole area.
 
-		P_PAINTREG_START(crect) {
+		P_PAINTREG_START(reg_tgt, crect) {
 			// Texture coordinates
 			const GLfloat texture_x1 = (crect.x1 - dx) * texfac_x;
 			const GLfloat texture_y1 = (crect.y1 - dy) * texfac_y;

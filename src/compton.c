@@ -50,7 +50,7 @@
 #endif
 #include "options.h"
 
-#define auto __auto_type
+#define CASESTRRET(s)   case s: return #s
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member) ({ \
