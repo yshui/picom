@@ -16,6 +16,26 @@
 
 #include "backend/gl/gl_common.h"
 
+#define P_PAINTREG_START(var)                                                            \
+	do {                                                                             \
+		region_t reg_new;                                                        \
+		int nrects;                                                              \
+		const rect_t *rects;                                                     \
+		pixman_region32_init_rect(&reg_new, dx, dy, width, height);              \
+		pixman_region32_intersect(&reg_new, &reg_new, (region_t *)reg_tgt);      \
+		rects = pixman_region32_rectangles(&reg_new, &nrects);                   \
+		glBegin(GL_QUADS);                                                       \
+                                                                                         \
+		for (int ri = 0; ri < nrects; ++ri) {                                    \
+			rect_t var = rects[ri];
+
+#define P_PAINTREG_END()                                                                 \
+	}                                                                                \
+	glEnd();                                                                         \
+	pixman_region32_fini(&reg_new);                                                  \
+	}                                                                                \
+	while (0)
+
 struct gl_data {};
 
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str) {

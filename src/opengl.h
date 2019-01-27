@@ -33,56 +33,6 @@ typedef struct glx_fbconfig {
   bool y_inverted;
 } glx_fbconfig_t;
 
-#ifdef DEBUG_GLX_ERR
-
-/**
- * Get a textual representation of an OpenGL error.
- */
-static inline const char *
-glx_dump_err_str(GLenum err) {
-  switch (err) {
-    CASESTRRET(GL_NO_ERROR);
-    CASESTRRET(GL_INVALID_ENUM);
-    CASESTRRET(GL_INVALID_VALUE);
-    CASESTRRET(GL_INVALID_OPERATION);
-    CASESTRRET(GL_INVALID_FRAMEBUFFER_OPERATION);
-    CASESTRRET(GL_OUT_OF_MEMORY);
-    CASESTRRET(GL_STACK_UNDERFLOW);
-    CASESTRRET(GL_STACK_OVERFLOW);
-  }
-
-  return NULL;
-}
-
-/**
- * Check for GLX error.
- *
- * http://blog.nobel-joergensen.com/2013/01/29/debugging-opengl-using-glgeterror/
- */
-static inline void
-glx_check_err_(session_t *ps, const char *func, int line) {
-  if (!ps->psglx->context) return;
-
-  GLenum err = GL_NO_ERROR;
-
-  while (GL_NO_ERROR != (err = glGetError())) {
-    const char *errtext = glx_dump_err_str(err);
-    if (errtext) {
-      log_printf(tls_logger, LOG_LEVEL_ERROR, func, "GLX error at line %d: %s", line,
-                 errtext);
-    }
-    else {
-      log_printf(tls_logger, LOG_LEVEL_ERROR, func, "GLX error at line %d: %d", line,
-                 err);
-    }
-  }
-}
-
-#define glx_check_err(ps) glx_check_err_(ps, __func__, __LINE__)
-#else
-#define glx_check_err(ps) ((void) 0)
-#endif
-
 /**
  * Check if a word is in string.
  */
@@ -119,24 +69,6 @@ glx_hasglxext(session_t *ps, const char *ext) {
   bool found = wd_is_in_str(glx_exts, ext);
   if (!found)
     log_info("Missing GLX extension %s.", ext);
-
-  return found;
-}
-
-/**
- * Check if a GLX extension exists.
- */
-static inline bool
-glx_hasglext(const char *ext) {
-  const char *gl_exts = (const char *) glGetString(GL_EXTENSIONS);
-  if (!gl_exts) {
-    log_error("Failed get GL extension list.");
-    return false;
-  }
-
-  bool found = wd_is_in_str(gl_exts, ext);
-  if (!found)
-    log_info("Missing GL extension %s.", ext);
 
   return found;
 }

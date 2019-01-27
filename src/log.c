@@ -10,7 +10,7 @@
 
 #ifdef CONFIG_OPENGL
 #include <GL/glx.h>
-#include "opengl.h"
+#include "backend/gl/gl_common.h"
 #endif
 
 #include "compiler.h"
@@ -328,7 +328,7 @@ static const struct log_ops glx_string_marker_logger_ops = {
 };
 
 struct log_target *glx_string_marker_logger_new(void) {
-	if (!glx_hasglext("GL_GREMEDY_string_marker")) {
+	if (!gl_has_extension("GL_GREMEDY_string_marker")) {
 		return NULL;
 	}
 
