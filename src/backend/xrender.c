@@ -503,6 +503,7 @@ struct backend_info xrender_backend = {
     .release_win = release_win,
     .is_win_transparent = default_is_win_transparent,
     .is_frame_transparent = default_is_frame_transparent,
+    .max_buffer_age = 2,
 };
 
 // vim: set noet sw=8 ts=8:

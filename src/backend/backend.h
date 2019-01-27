@@ -143,6 +143,9 @@ typedef struct backend_info {
 	/// buffer is empty.
 	int (*buffer_age)(void *backend_data, session_t *);
 
+	/// The maximum number buffer_age might return.
+	int max_buffer_age;
+
 	// ===========         Hooks        ============
 	/// Let the backend hook into the event handling queue
 } backend_info_t;

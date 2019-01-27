@@ -604,4 +604,5 @@ backend_info_t glx_backend = {
     .present = glx_present,
     .is_win_transparent = default_is_win_transparent,
     .is_frame_transparent = default_is_frame_transparent,
+    .max_buffer_age = 5,        // XXX why?
 };
