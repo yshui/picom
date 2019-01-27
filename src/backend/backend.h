@@ -151,6 +151,6 @@ extern backend_info_t *backend_list[];
 
 bool default_is_win_transparent(void *, win *, void *);
 bool default_is_frame_transparent(void *, win *, void *);
-void paint_all_new(session_t *ps, region_t *region, win *const t) attr_nonnull(1);
+void paint_all_new(session_t *ps, win *const t, bool ignore_damage) attr_nonnull(1);
 
 // vim: set noet sw=8 ts=8 :

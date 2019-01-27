@@ -22,19 +22,38 @@ bool default_is_frame_transparent(void *backend_data, win *w, void *win_data) {
 	return w->frame_opacity != 1;
 }
 
+region_t get_damage(session_t *ps) {
+	region_t region;
+	pixman_region32_init(&region);
+	int buffer_age = backend_list[ps->o.backend]->buffer_age(ps->backend_data, ps);
+	if (buffer_age == -1 || buffer_age > ps->ndamage) {
+		pixman_region32_copy(&region, &ps->screen_reg);
+	} else {
+		for (int i = 0; i < buffer_age; i++) {
+			const int curr = ((ps->damage - ps->damage_ring) + i) % ps->ndamage;
+			pixman_region32_union(&region, &region, &ps->damage_ring[curr]);
+		}
+		pixman_region32_intersect(&region, &region, &ps->screen_reg);
+	}
+	return region;
+}
+
 /// paint all windows
-void paint_all_new(session_t *ps, region_t *_region, win *const t) {
+void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
+	region_t region;
+	if (!ignore_damage) {
+		region = get_damage(ps);
+	} else {
+		pixman_region32_init(&region);
+		pixman_region32_copy(&region, &ps->screen_reg);
+	}
+
+	if (!pixman_region32_not_empty(&region)) {
+		pixman_region32_fini(&region);
+		return;
+	}
 	auto bi = backend_list[ps->o.backend];
 	assert(bi);
-
-	const region_t *region;
-	if (!_region) {
-		region = &ps->screen_reg;
-	} else {
-		// Ignore out-of-screen damages
-		pixman_region32_intersect(_region, _region, &ps->screen_reg);
-		region = _region;
-	}
 
 #ifdef DEBUG_REPAINT
 	static struct timespec last_paint = {0};
@@ -46,10 +65,10 @@ void paint_all_new(session_t *ps, region_t *_region, win *const t) {
 	if (t) {
 		// Calculate the region upon which the root window (wallpaper) is to be
 		// painted based on the ignore region of the lowest window, if available
-		pixman_region32_subtract(&reg_tmp, (region_t *)region, t->reg_ignore);
+		pixman_region32_subtract(&reg_tmp, &region, t->reg_ignore);
 		reg_paint = &reg_tmp;
 	} else {
-		reg_paint = region;
+		reg_paint = &region;
 	}
 
 	if (bi->prepare)
@@ -64,7 +83,7 @@ void paint_all_new(session_t *ps, region_t *_region, win *const t) {
 		// Calculate the region based on the reg_ignore of the next (higher)
 		// window and the bounding region
 		// XXX XXX
-		pixman_region32_subtract(&reg_tmp, (region_t *)region, w->reg_ignore);
+		pixman_region32_subtract(&reg_tmp, &region, w->reg_ignore);
 
 		if (pixman_region32_not_empty(&reg_tmp)) {
 			// Render window content
