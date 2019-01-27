@@ -13,6 +13,7 @@
 
 #include <X11/Xutil.h>
 #include "common.h"
+#include "backend/backend.h"
 #include "win.h"
 #include "x.h"
 #include "c2.h"
@@ -21,7 +22,6 @@
 #include "compiler.h"
 #include "types.h"
 #include "utils.h"
-#include "render.h"
 #include "config.h"
 
 // == Functions ==
@@ -90,14 +90,6 @@ free_wincondlst(c2_lptr_t **pcondlst) {
   while ((*pcondlst = c2_free_lptr(*pcondlst)))
     continue;
 }
-
-#ifndef CONFIG_OPENGL
-static inline void
-free_paint_glx(session_t *ps, paint_t *p) {}
-static inline void
-free_win_res_glx(session_t *ps, win *w) {}
-#endif
-
 /**
  * Create a XTextProperty of a single string.
  */
@@ -146,16 +138,6 @@ dump_drawable(session_t *ps, xcb_drawable_t drawable) {
   log_trace("Drawable %#010x: x = %u, y = %u, wid = %u, hei = %d, b = %u, d = %u",
             drawable, r->x, r->y, r->width, r->height, r->border_width, r->depth);
   free(r);
-}
-
-/**
- * Validate pixmap of a window, and destroy pixmap and picture if invalid.
- */
-static inline void
-win_validate_pixmap(session_t *ps, win *w) {
-  // Destroy pixmap and picture, if invalid
-  if (!x_validate_pixmap(ps, w->paint.pixmap))
-    free_paint(ps, &w->paint);
 }
 
 // vim: set et sw=2 :

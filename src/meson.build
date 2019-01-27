@@ -4,8 +4,8 @@ base_deps = [
 	dependency('xcb', version: '>=1.9.2'),
 ]
 
-srcs = [ files('compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
-               'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
+srcs = [ files('compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'utils.c',
+               'diagnostic.c', 'string_utils.c', 'kernel.c', 'log.c',
                'options.c') ]
 compton_inc = include_directories('.')
 
@@ -49,13 +49,6 @@ if get_option('vsync_drm')
 	cflags += ['-DCONFIG_VSYNC_DRM']
 	deps += [dependency('libdrm', required: true)]
 endif
-
-if get_option('opengl')
-	cflags += ['-DCONFIG_OPENGL', '-DGL_GLEXT_PROTOTYPES']
-	deps += [dependency('gl', required: true)]
-	srcs += [ 'opengl.c' ]
-endif
-
 if get_option('dbus')
 	cflags += ['-DCONFIG_DBUS']
 	deps += [dependency('dbus-1', required: true)]
@@ -67,6 +60,10 @@ if get_option('xrescheck')
 	srcs += [ 'xrescheck.c' ]
 endif
 
+if get_option('opengl')
+	cflags += ['-DCONFIG_OPENGL', '-DGL_GLEXT_PROTOTYPES']
+	deps += [dependency('gl', required: true)]
+endif
 subdir('backend')
 
 executable('compton', srcs, c_args: cflags,

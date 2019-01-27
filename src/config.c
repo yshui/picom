@@ -155,6 +155,19 @@ err1:
 }
 
 /**
+ * Normalize a convolution kernel.
+ */
+void
+normalize_conv_kern(int wid, int hei, xcb_render_fixed_t *kern) {
+  double sum = 0.0;
+  for (int i = 0; i < wid * hei; ++i)
+    sum += XFIXED_TO_DOUBLE(kern[i]);
+  double factor = 1.0 / sum;
+  for (int i = 0; i < wid * hei; ++i)
+    kern[i] = DOUBLE_TO_XFIXED(XFIXED_TO_DOUBLE(kern[i]) * factor);
+}
+
+/**
  * Parse a convolution kernel.
  *
  * Output:
@@ -162,7 +175,15 @@ err1:
  */
 xcb_render_fixed_t *
 parse_conv_kern(const char *src, const char **endptr, bool *hasneg) {
-  return parse_matrix(src, endptr, hasneg);
+  xcb_render_fixed_t *res = parse_matrix(src, endptr, hasneg);
+
+  if (!res)
+    return res;
+
+  int w = XFIXED_TO_DOUBLE(res[0]), h = XFIXED_TO_DOUBLE(res[1]);
+  res[h/2*w+w/2+2] = DOUBLE_TO_XFIXED(1.0);
+  normalize_conv_kern(w, h, res+2);
+  return res;
 }
 
 /**

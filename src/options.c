@@ -844,6 +844,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		};
 		opt->blur_kerns[0] = ccalloc(ARR_SIZE(convolution_blur), xcb_render_fixed_t);
 		memcpy(opt->blur_kerns[0], convolution_blur, sizeof(convolution_blur));
+		normalize_conv_kern(3, 3, opt->blur_kerns[0] + 2);
 	}
 
 	if (opt->resize_damage < 0)
