@@ -24,8 +24,10 @@ bool default_is_frame_transparent(void *backend_data, win *w, void *win_data) {
 
 region_t get_damage(session_t *ps) {
 	region_t region;
+	auto buffer_age_fn = backend_list[ps->o.backend]->buffer_age;
+	int buffer_age = buffer_age_fn ? buffer_age_fn(ps->backend_data, ps) : -1;
+
 	pixman_region32_init(&region);
-	int buffer_age = backend_list[ps->o.backend]->buffer_age(ps->backend_data, ps);
 	if (buffer_age == -1 || buffer_age > ps->ndamage) {
 		pixman_region32_copy(&region, &ps->screen_reg);
 	} else {
