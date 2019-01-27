@@ -7,7 +7,12 @@
 #include "common.h"
 #include "compiler.h"
 
-backend_info_t *backend_list[NUM_BKEND] = {[BKEND_XRENDER] = &xrender_backend};
+backend_info_t *backend_list[NUM_BKEND] = {
+    [BKEND_XRENDER] = &xrender_backend,
+#ifdef CONFIG_OPENGL
+    [BKEND_GLX] = &glx_backend,
+#endif
+};
 
 bool default_is_win_transparent(void *backend_data, win *w, void *win_data) {
 	return w->mode != WMODE_SOLID;
