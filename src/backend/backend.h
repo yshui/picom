@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <stdbool.h>
+
 #include "region.h"
 #include "compiler.h"
 

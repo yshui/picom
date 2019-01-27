@@ -9,24 +9,24 @@
  *
  */
 
-#include <assert.h>
 #include <GL/glx.h>
-#include <stdbool.h>
-#include <xcb/xcb.h>
-#include <xcb/composite.h>
-#include <string.h>
-#include <stdlib.h>
+#include <assert.h>
 #include <pixman.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+#include <xcb/composite.h>
+#include <xcb/xcb.h>
 
 #include "backend/backend.h"
 #include "backend/gl/gl_common.h"
 #include "common.h"
 #include "compiler.h"
+#include "config.h"
 #include "log.h"
 #include "region.h"
 #include "utils.h"
 #include "win.h"
-#include "config.h"
 
 /// @brief Wrapper of a GLX FBConfig.
 typedef struct glx_fbconfig {

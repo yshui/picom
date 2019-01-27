@@ -1,9 +1,11 @@
 #pragma once
+#include <stdbool.h>
 #include <string.h>
 #include <GL/gl.h>
 #include <GL/glext.h>
 
 #include "common.h"
+#include "region.h"
 #include "log.h"
 
 // Program and uniforms for window shader
@@ -122,7 +124,7 @@ static inline bool gl_has_extension(const char *ext) {
 	GLint nexts = 0;
 	glGetIntegerv(GL_NUM_EXTENSIONS, &nexts);
 	if (!nexts) {
-		log_error("Failed get GL extension list.");
+		log_error("Failed to get GL extension list.");
 		return false;
 	}
 

@@ -28,6 +28,7 @@
 
 #include <ev.h>
 
+#include "kernel.h"
 #include "common.h"
 #include "compiler.h"
 #include "compton.h"
