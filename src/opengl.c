@@ -24,6 +24,7 @@
 #include "utils.h"
 #include "win.h"
 #include "region.h"
+#include "backend/gl/gl_common.h"
 
 #include "opengl.h"
 
@@ -359,7 +360,7 @@ glx_init(session_t *ps, bool need_render) {
   // Check GL_ARB_texture_non_power_of_two, requires a GLX context and
   // must precede FBConfig fetching
   if (need_render)
-    psglx->has_texture_non_power_of_two = glx_hasglext(
+    psglx->has_texture_non_power_of_two = gl_has_extension(
         "GL_ARB_texture_non_power_of_two");
 
   // Acquire function addresses
@@ -455,7 +456,7 @@ glx_destroy(session_t *ps) {
 
   glx_free_prog_main(ps, &ps->glx_prog_win);
 
-  glx_check_err(ps);
+  gl_check_err();
 
   // Free FBConfigs
   for (int i = 0; i <= OPENGL_MAX_DEPTH; ++i) {
@@ -609,7 +610,7 @@ glx_init_blur(session_t *ps) {
 
         sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
         assert(strlen(shader_str) < len);
-        ppass->frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, shader_str);
+        ppass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
         free(shader_str);
       }
 
@@ -619,7 +620,7 @@ glx_init_blur(session_t *ps) {
       }
 
       // Build program
-      ppass->prog = glx_create_program(&ppass->frag_shader, 1);
+      ppass->prog = gl_create_program(&ppass->frag_shader, 1);
       if (!ppass->prog) {
         log_error("Failed to create GLSL program.");
         return false;
@@ -649,7 +650,7 @@ glx_init_blur(session_t *ps) {
   }
 
 
-  glx_check_err(ps);
+  gl_check_err();
 
   return true;
 }
@@ -664,7 +665,7 @@ glx_load_prog_main(session_t *ps,
   assert(pprogram);
 
   // Build program
-  pprogram->prog = glx_create_program_from_str(vshader_str, fshader_str);
+  pprogram->prog = gl_create_program_from_str(vshader_str, fshader_str);
   if (!pprogram->prog) {
     log_error("Failed to create GLSL program.");
     return false;
@@ -682,7 +683,7 @@ glx_load_prog_main(session_t *ps,
   P_GET_UNIFM_LOC("tex", unifm_tex);
 #undef P_GET_UNIFM_LOC
 
-  glx_check_err(ps);
+  gl_check_err();
 
   return true;
 }
@@ -831,7 +832,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
   glBindTexture(ptex->target, 0);
   glDisable(ptex->target);
 
-  glx_check_err(ps);
+  gl_check_err();
 
   return true;
 }
@@ -854,7 +855,7 @@ glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
     ptex->glpixmap = 0;
   }
 
-  glx_check_err(ps);
+  gl_check_err();
 }
 
 /**
@@ -881,7 +882,7 @@ glx_set_clip(session_t *ps, const region_t *reg) {
         rects[0].x2-rects[0].x1, rects[0].y2-rects[0].y1);
   }
 
-  glx_check_err(ps);
+  gl_check_err();
 }
 
 #define P_PAINTREG_START(var) \
@@ -1134,7 +1135,7 @@ glx_blur_dst_end:
     free_glx_bc(ps, pbc);
   }
 
-  glx_check_err(ps);
+  gl_check_err();
 
   return ret;
 }
@@ -1169,7 +1170,7 @@ glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
   glDisable(GL_BLEND);
 
-  glx_check_err(ps);
+  gl_check_err();
 
   return true;
 }
@@ -1379,149 +1380,7 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
   if (has_prog)
     glUseProgram(0);
 
-  glx_check_err(ps);
+  gl_check_err();
 
   return true;
-}
-
-/**
- * @brief Get tightly packed RGB888 data from GL front buffer.
- *
- * Don't expect any sort of decent performance.
- *
- * @returns tightly packed RGB888 data of the size of the screen,
- *          to be freed with `free()`
- */
-unsigned char *
-glx_take_screenshot(session_t *ps, int *out_length) {
-  int length = 3 * ps->root_width * ps->root_height;
-  GLint unpack_align_old = 0;
-  glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpack_align_old);
-  assert(unpack_align_old > 0);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  auto buf = ccalloc(length, unsigned char);
-  glReadBuffer(GL_FRONT);
-  glReadPixels(0, 0, ps->root_width, ps->root_height, GL_RGB,
-      GL_UNSIGNED_BYTE, buf);
-  glReadBuffer(GL_BACK);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, unpack_align_old);
-  if (out_length)
-    *out_length = sizeof(unsigned char) * length;
-  return buf;
-}
-
-GLuint
-glx_create_shader(GLenum shader_type, const char *shader_str) {
-  log_trace("glx_create_shader(): ===\n%s\n===", shader_str);
-
-  bool success = false;
-  GLuint shader = glCreateShader(shader_type);
-  if (!shader) {
-    log_error("Failed to create shader with type %#x.", shader_type);
-    goto glx_create_shader_end;
-  }
-  glShaderSource(shader, 1, &shader_str, NULL);
-  glCompileShader(shader);
-
-  // Get shader status
-  {
-    GLint status = GL_FALSE;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
-    if (GL_FALSE == status) {
-      GLint log_len = 0;
-      glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_len);
-      if (log_len) {
-        char log[log_len + 1];
-        glGetShaderInfoLog(shader, log_len, NULL, log);
-        log_error("Failed to compile shader with type %d: %s", shader_type, log);
-      }
-      goto glx_create_shader_end;
-    }
-  }
-
-  success = true;
-
-glx_create_shader_end:
-  if (shader && !success) {
-    glDeleteShader(shader);
-    shader = 0;
-  }
-
-  return shader;
-}
-
-GLuint
-glx_create_program(const GLuint * const shaders, int nshaders) {
-  bool success = false;
-  GLuint program = glCreateProgram();
-  if (!program) {
-    log_error("Failed to create program.");
-    goto glx_create_program_end;
-  }
-
-  for (int i = 0; i < nshaders; ++i)
-    glAttachShader(program, shaders[i]);
-  glLinkProgram(program);
-
-  // Get program status
-  {
-    GLint status = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &status);
-    if (GL_FALSE == status) {
-      GLint log_len = 0;
-      glGetProgramiv(program, GL_INFO_LOG_LENGTH, &log_len);
-      if (log_len) {
-        char log[log_len + 1];
-        glGetProgramInfoLog(program, log_len, NULL, log);
-        log_error("Failed to link program: %s", log);
-      }
-      goto glx_create_program_end;
-    }
-  }
-  success = true;
-
-glx_create_program_end:
-  if (program) {
-    for (int i = 0; i < nshaders; ++i)
-      glDetachShader(program, shaders[i]);
-  }
-  if (program && !success) {
-    glDeleteProgram(program);
-    program = 0;
-  }
-
-  return program;
-}
-
-/**
- * @brief Create a program from vertex and fragment shader strings.
- */
-GLuint
-glx_create_program_from_str(const char *vert_shader_str,
-    const char *frag_shader_str) {
-  GLuint vert_shader = 0;
-  GLuint frag_shader = 0;
-  GLuint prog = 0;
-
-  if (vert_shader_str)
-    vert_shader = glx_create_shader(GL_VERTEX_SHADER, vert_shader_str);
-  if (frag_shader_str)
-    frag_shader = glx_create_shader(GL_FRAGMENT_SHADER, frag_shader_str);
-
-  GLuint shaders[2];
-  unsigned int count = 0;
-  if (vert_shader)
-    shaders[count++] = vert_shader;
-  if (frag_shader)
-    shaders[count++] = frag_shader;
-  assert(count <= sizeof(shaders) / sizeof(shaders[0]));
-  if (count)
-    prog = glx_create_program(shaders, count);
-
-  if (vert_shader)
-    glDeleteShader(vert_shader);
-  if (frag_shader)
-    glDeleteShader(frag_shader);
-
-  return prog;
 }
