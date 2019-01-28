@@ -564,6 +564,8 @@ void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 	glBindTexture(target, 0);
 
 	wd->texture.texture = texture;
+	wd->texture.width = w->widthb;
+	wd->texture.height = w->heightb;
 	return wd;
 err:
 	if (wd->pixmap && wd->pixmap != w->id) {
@@ -613,7 +615,7 @@ static void glx_compose(void *backend_data, session_t *ps, win *w, void *win_dat
 	struct _glx_data *gd = backend_data;
 	struct _glx_win_data *wd = win_data;
 
-	gl_compose(&wd->texture, 0, 0, dst_x, dst_y, w->widthb, w->heightb, 0, 0, false,
+	gl_compose(&wd->texture, 0, 0, dst_x, dst_y, w->widthb, w->heightb, 0, 1, true,
 	           false, region, &gd->win_shader);
 }
 

@@ -252,7 +252,7 @@ bool gl_compose(const gl_texture_t *ptex, int x, int y, int dx, int dy, int widt
 		GLfloat texture_x2 = texture_x1 + (double)(crect.x2 - crect.x1);
 		GLfloat texture_y2 = texture_y1 + (double)(crect.y2 - crect.y1);
 
-		if (GL_TEXTURE_2D == ptex->target) {
+		if (ptex->target == GL_TEXTURE_2D) {
 			// GL_TEXTURE_2D coordinates are 0-1
 			texture_x1 /= ptex->width;
 			texture_y1 /= ptex->height;
