@@ -101,8 +101,10 @@ static void glx_release_pixmap(struct _glx_data *gd, Display *dpy, struct _glx_w
 /**
  * Free a glx_texture_t.
  */
-static void attr_unused glx_release_win(struct _glx_data *gd, Display *dpy, struct _glx_win_data *wd) {
-	glx_release_pixmap(gd, dpy, wd);
+static void glx_release_win(void *backend_data, session_t *ps, win *w, void *win_data) {
+	struct _glx_win_data *wd = win_data;
+	struct _glx_data *gd = backend_data;
+	glx_release_pixmap(gd, ps->dpy, wd);
 	glDeleteTextures(1, &wd->texture.texture);
 
 	// Free structure itself
@@ -433,7 +435,7 @@ static void *glx_init(session_t *ps) {
 	// Check GL_ARB_texture_non_power_of_two, requires a GLX context and
 	// must precede FBConfig fetching
 	gd->cap.non_power_of_two_texture = gl_has_extension("GL_ARB_texture_non_"
-							    "power_of_two");
+	                                                    "power_of_two");
 
 	gd->glXBindTexImage = (void *)glXGetProcAddress((const GLubyte *)"glXBindTexImage"
 	                                                                 "EXT");
@@ -472,7 +474,7 @@ static void *glx_init(session_t *ps) {
 	// glXSwapBuffers(ps->dpy, get_tgt_window(ps));
 
 	// Initialize blur filters
-	gl_create_blur_filters(ps, gd->blur_shader, &gd->cap);
+	// gl_create_blur_filters(ps, gd->blur_shader, &gd->cap);
 
 	success = true;
 
@@ -596,13 +598,35 @@ static void glx_present(void *backend_data, session_t *ps) {
 	glXSwapBuffers(ps->dpy, ps->overlay != XCB_NONE ? ps->overlay : ps->root);
 }
 
+static int glx_buffer_age(void *backend_data, session_t *ps) {
+	if (ps->o.glx_swap_method == SWAPM_BUFFER_AGE) {
+		unsigned int val;
+		glXQueryDrawable(ps->dpy, get_tgt_window(ps), GLX_BACK_BUFFER_AGE_EXT, &val);
+		return (int)val ?: -1;
+	} else {
+		return -1;
+	}
+}
+
+static void glx_compose(void *backend_data, session_t *ps, win *w, void *win_data,
+                       int dst_x, int dst_y, const region_t *region) {
+	struct _glx_data *gd = backend_data;
+	struct _glx_win_data *wd = win_data;
+
+	gl_compose(&wd->texture, 0, 0, dst_x, dst_y, w->widthb, w->heightb, 0, 0, false,
+	           false, region, &gd->win_shader);
+}
+
 backend_info_t glx_backend = {
     .init = glx_init,
     .deinit = glx_deinit,
     .prepare_win = glx_prepare_win,
     .render_win = glx_render_win,
+    .release_win = glx_release_win,
     .present = glx_present,
+    .compose = glx_compose,
     .is_win_transparent = default_is_win_transparent,
     .is_frame_transparent = default_is_frame_transparent,
+    .buffer_age = glx_buffer_age,
     .max_buffer_age = 5,        // XXX why?
 };

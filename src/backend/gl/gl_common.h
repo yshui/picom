@@ -69,6 +69,12 @@ GLuint gl_create_shader(GLenum shader_type, const char *shader_str);
 GLuint gl_create_program(const GLuint *const shaders, int nshaders);
 GLuint
 gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str);
+/**
+ * @brief Render a region with texture data.
+ */
+bool gl_compose(const gl_texture_t *ptex, int x, int y, int dx, int dy, int width,
+                int height, int z, double opacity, bool argb, bool neg,
+                const region_t *reg_tgt, const gl_win_shader_t *shader);
 
 bool gl_load_prog_main(session_t *ps, const char *vshader_str, const char *fshader_str,
                        gl_win_shader_t *pprogram);

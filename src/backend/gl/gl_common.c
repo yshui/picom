@@ -223,14 +223,15 @@ bool gl_compose(const gl_texture_t *ptex, int x, int y, int dx, int dy, int widt
 	}
 
 	// Programmable path
-	assert(shader->prog);
-	glUseProgram(shader->prog);
-	if (shader->unifm_opacity >= 0)
-		glUniform1f(shader->unifm_opacity, opacity);
-	if (shader->unifm_invert_color >= 0)
-		glUniform1i(shader->unifm_invert_color, neg);
-	if (shader->unifm_tex >= 0)
-		glUniform1i(shader->unifm_tex, 0);
+	if (shader->prog) {
+		glUseProgram(shader->prog);
+		if (shader->unifm_opacity >= 0)
+			glUniform1f(shader->unifm_opacity, opacity);
+		if (shader->unifm_invert_color >= 0)
+			glUniform1i(shader->unifm_invert_color, neg);
+		if (shader->unifm_tex >= 0)
+			glUniform1i(shader->unifm_tex, 0);
+	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
 	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
