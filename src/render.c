@@ -890,7 +890,7 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 
 		// Calculate the paint region based on the reg_ignore of the current
 		// window and its bounding region.
-		// Remeber, reg_ignore is the union of all windows above the current
+		// Remember, reg_ignore is the union of all windows above the current
 		// window.
 		pixman_region32_subtract(&reg_tmp, &region, w->reg_ignore);
 		pixman_region32_intersect(&reg_tmp, &reg_tmp, &bshape);
