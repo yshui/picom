@@ -611,12 +611,31 @@ static int glx_buffer_age(void *backend_data, session_t *ps) {
 }
 
 static void glx_compose(void *backend_data, session_t *ps, win *w, void *win_data,
-                       int dst_x, int dst_y, const region_t *region) {
+                        int dst_x, int dst_y, const region_t *region) {
 	struct _glx_data *gd = backend_data;
 	struct _glx_win_data *wd = win_data;
 
-	gl_compose(&wd->texture, 0, 0, dst_x, dst_y, w->widthb, w->heightb, 0, 1, true,
-	           false, region, &gd->win_shader);
+	// OpenGL and Xorg uses different coordinate systems.
+	// First, We need to flip the y axis of the paint region
+	region_t region_yflipped;
+	pixman_region32_init(&region_yflipped);
+	pixman_region32_copy(&region_yflipped, (region_t *)region);
+
+	int nrects;
+	auto rect = pixman_region32_rectangles(&region_yflipped, &nrects);
+	for (int i = 0; i < nrects; i++) {
+		auto tmp = rect[i].y1;
+		rect[i].y1 = ps->root_height - rect[i].y2;
+		rect[i].y2 = ps->root_height - tmp;
+	}
+	dump_region(&region_yflipped);
+
+	// Then, we still need to convert the origin of painting.
+	// Note, in GL coordinates, we need to specified the bottom left corner of the
+	// rectangle, while what we get from the arguments are the top left corner.
+	gl_compose(&wd->texture, 0, 0, dst_x, ps->root_height - dst_y - w->heightb, w->widthb,
+	           w->heightb, 0, 1, true, false, &region_yflipped, &gd->win_shader);
+	pixman_region32_fini(&region_yflipped);
 }
 
 backend_info_t glx_backend = {
