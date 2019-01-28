@@ -50,7 +50,7 @@ for v in "$@"; do
 done
 
 # This takes into account the fact that getopts stops on
-# any argument it doesn't recongize or errors on. This
+# any argument it doesn't recognize or errors on. This
 # allows for things like `compton-trans -5` as well
 # as `compton-trans -c +5 -s` (contrived example).
 while test $# -gt 0; do
