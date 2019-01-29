@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <xcb/render.h> // for xcb_render_fixed_t, XXX
+#include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 
 #include "common.h"
 #include "config.h"
@@ -20,7 +20,7 @@
 #pragma GCC diagnostic error "-Wunused-parameter"
 
 /**
- * Print usage text and exit.
+ * Print usage text.
  */
 static void usage(int ret) {
 #define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
@@ -479,9 +479,13 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 	// arguments
 	optind = 1;
 	*config_file = NULL;
+	*exit_code = 0;
 	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
 		if (o == 256) {
 			*config_file = strdup(optarg);
+		} else if (o == 'h') {
+			usage(0);
+			return true;
 		} else if (o == 'd') {
 			log_warn("-d will be ignored, please use the DISPLAY "
 			         "environment variable");
@@ -489,7 +493,6 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 			*all_xerrors = true;
 		} else if (o == 318) {
 			printf("%s\n", COMPTON_VERSION);
-			*exit_code = 0;
 			return true;
 		} else if (o == 'S') {
 			log_warn("-S will be ignored");
@@ -497,7 +500,6 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 			log_warn("--no-name-pixmap will be ignored");
 		} else if (o == '?' || o == ':') {
 			usage(1);
-			*exit_code = 1;
 			return true;
 		}
 	}
