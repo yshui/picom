@@ -306,8 +306,6 @@ bool gl_dim_reg(session_t *ps, int dx, int dy, int width, int height, float z,
 		P_PAINTREG_END();
 	}
 
-	glEnd();
-
 	glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
 	glDisable(GL_BLEND);
 

@@ -344,7 +344,7 @@ struct log_target *glx_string_marker_logger_new(void) {
 
 #else
 struct log_target *glx_string_marker_logger_new(void) {
-	return null_logger_new();
+	return NULL;
 }
 #endif
 

@@ -6,7 +6,7 @@ option('regex', type: 'boolean', value: true, description: 'Enable regex support
 option('vsync_drm', type: 'boolean', value: false, description: 'Enable support for using drm for vsync')
 
 option('opengl', type: 'boolean', value: true, description: 'Enable features that require opengl (opengl backend, and opengl vsync methods)')
-option('dbus', type: 'boolean', value: true, description: 'Enable suport for D-Bus remote control')
+option('dbus', type: 'boolean', value: true, description: 'Enable support for D-Bus remote control')
 
 option('xrescheck', type: 'boolean', value: false, description: 'Enable X resource leak checker (for debug only)')
 

@@ -561,7 +561,7 @@ glx_init_blur(session_t *ps) {
     const char *texture_func = (use_texture_rect ?
         "texture2DRect": "texture2D");
     const char *shader_add = FRAG_SHADER_BLUR_ADD;
-    char *extension = strdup("");
+    char *extension = NULL;
     if (use_texture_rect)
       mstrextend(&extension, "#extension GL_ARB_texture_rectangle : require\n");
     if (ps->o.glx_use_gpushader4) {
@@ -1102,11 +1102,10 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     glBindTexture(tex_tgt, tex_scr);
 
     if (!last_pass) {
-      static const GLenum DRAWBUFS[2] = { GL_COLOR_ATTACHMENT0 };
       glBindFramebuffer(GL_FRAMEBUFFER, fbo);
       glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
           GL_TEXTURE_2D, tex_scr2, 0);
-      glDrawBuffers(1, DRAWBUFS);
+      glDrawBuffer(GL_COLOR_ATTACHMENT0);
       if (glCheckFramebufferStatus(GL_FRAMEBUFFER)
           != GL_FRAMEBUFFER_COMPLETE) {
         log_error("Framebuffer attachment failed.");
@@ -1114,9 +1113,8 @@ glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
       }
     }
     else {
-      static const GLenum DRAWBUFS[2] = { GL_BACK };
       glBindFramebuffer(GL_FRAMEBUFFER, 0);
-      glDrawBuffers(1, DRAWBUFS);
+      glDrawBuffer(GL_BACK);
       if (have_scissors)
         glEnable(GL_SCISSOR_TEST);
       if (have_stencil)
@@ -1223,8 +1221,6 @@ glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     }
     P_PAINTREG_END();
   }
-
-  glEnd();
 
   glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
   glDisable(GL_BLEND);

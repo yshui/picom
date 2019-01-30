@@ -19,7 +19,7 @@
 #ifdef CONFIG_REGEX_PCRE
 #include <pcre.h>
 
-// For compatiblity with <libpcre-8.20
+// For compatibility with <libpcre-8.20
 #ifndef PCRE_STUDY_JIT_COMPILE
 #define PCRE_STUDY_JIT_COMPILE    0
 #define LPCRE_FREE_STUDY(extra)   pcre_free(extra)

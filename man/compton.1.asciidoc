@@ -144,9 +144,6 @@ OPTIONS
 *--vsync-aggressive*::
 	Attempt to send painting request before VBlank and do XFlush() during VBlank. Reported to work pretty terribly. This switch may be lifted out at any moment.
 
-*--dbe*::
-	Enable DBE painting mode, intended to use with VSync to (hopefully) eliminate tearing. Reported to have no effect, though.
-
 *--paint-on-overlay*::
 	Painting on X Composite overlay window instead of on root window.
 
@@ -216,7 +213,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Exclude conditions for background blur.
 
 *--resize-damage* 'INTEGER'::
-	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--dbe* or *--glx-swap-method*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use *--resize-damage* 1, with a 5x5 one you use *--resize-damage* 2, and so on). May or may not work with `--glx-no-stencil`. Shrinking doesn't function correctly.
+	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--glx-swap-method*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use *--resize-damage* 1, with a 5x5 one you use *--resize-damage* 2, and so on). May or may not work with `--glx-no-stencil`. Shrinking doesn't function correctly.
 
 *--invert-color-include* 'CONDITION'::
 	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested.
@@ -357,7 +354,9 @@ CONFIGURATION FILES
 -------------------
 compton could read from a configuration file if libconfig support is compiled in. If *--config* is not used, compton will seek for a configuration file in `$XDG_CONFIG_HOME/compton.conf` (`~/.config/compton.conf`, usually), then `~/.compton.conf`, then `compton.conf` under `$XDG_CONFIG_DIRS` (often `/etc/xdg/compton.conf`).
 
-compton uses general libconfig configuration file format. A sample configuration file is available as `compton.sample.conf` in the source tree. Most commandline switches each could be replaced with an option in configuration file, thus documented above. Window-type-specific settings are exposed only in configuration file and has the following format:
+compton uses general libconfig configuration file format. A sample configuration file is available as `compton.sample.conf` in the source tree. Most of commandline switches can be used as options in configuration file as well. For example, *--vsync* option documented above can be set in the configuration file using `vsync = `. Command line options will always overwrite the settings in the configuration file.
+
+Window-type-specific settings are exposed only in configuration file and has the following format:
 
 ------------
 wintypes:

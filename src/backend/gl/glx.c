@@ -432,8 +432,8 @@ static void *glx_init(session_t *ps) {
 
 	// Check GL_ARB_texture_non_power_of_two, requires a GLX context and
 	// must precede FBConfig fetching
-	gd->cap.non_power_of_two_texture = gl_has_extension(ps, "GL_ARB_texture_non_"
-	                                                        "power_of_two");
+	gd->cap.non_power_of_two_texture = gl_has_extension("GL_ARB_texture_non_"
+							    "power_of_two");
 
 	gd->glXBindTexImage = (void *)glXGetProcAddress((const GLubyte *)"glXBindTexImage"
 	                                                                 "EXT");
