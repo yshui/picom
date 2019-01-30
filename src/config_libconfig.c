@@ -37,6 +37,28 @@ lcfg_lookup_bool(const config_t *config, const char *path, bool *value) {
   return ret;
 }
 
+/// Search for config file under a base directory
+FILE *
+open_config_file_at(const char *base, char **out_path) {
+  static const char *config_paths[] = {
+    "/compton.conf",
+    "/compton/compton.conf"
+  };
+  for (size_t i = 0; i < ARR_SIZE(config_paths); i++) {
+    char *path = mstrjoin(base, config_paths[i]);
+    FILE *ret = fopen(path, "r");
+    if (ret && out_path) {
+      *out_path = path;
+    } else {
+      free(path);
+    }
+    if (ret) {
+      return ret;
+    }
+  }
+  return NULL;
+}
+
 /**
  * Get a file stream of the configuration file to read.
  *
@@ -44,10 +66,6 @@ lcfg_lookup_bool(const config_t *config, const char *path, bool *value) {
  */
 FILE *
 open_config_file(const char *cpath, char **ppath) {
-  static const char *config_paths[] = {
-    "/compton.conf",
-    "/compton/compton.conf"
-  };
   static const char config_filename_legacy[] = "/.compton.conf";
 
   if (cpath) {
@@ -57,31 +75,40 @@ open_config_file(const char *cpath, char **ppath) {
     return ret;
   }
 
-  for (size_t i = 0; i < ARR_SIZE(config_paths); i++) {
-    char *path = xdgConfigFind(config_paths[i], NULL);
-    FILE *ret = fopen(path, "r");
+  // First search for config file in user config directory
+  auto config_home = xdgConfigHome(NULL);
+  auto ret = open_config_file_at(config_home, ppath);
+  free((void *)config_home);
+  if (ret) {
+    return ret;
+  }
+
+  // Fall back to legacy config file in user home directory
+  const char *home = getenv("HOME");
+  if (home && strlen(home)) {
+    auto path = mstrjoin(home, config_filename_legacy);
+    ret = fopen(path, "r");
     if (ret && ppath) {
-        *ppath = strdup(path);
+      *ppath = path;
+    } else {
+      free(path);
     }
-    free(path);
     if (ret) {
       return ret;
     }
   }
 
-  // Fall back to legacy config file names
-  const char *home = getenv("HOME");
-  if (home && strlen(home)) {
-    auto path = ccalloc(strlen(home)+strlen(config_filename_legacy)+1, char);
-    strcpy(path, home);
-    strcpy(path+strlen(home), config_filename_legacy);
-    FILE *ret = fopen(path, "r");
-    if (ret && ppath)
-      *ppath = path;
-    else
-      free(path);
-    return ret;
+  // Fall back to config file in system config directory
+  auto config_dirs = xdgConfigDirectories(NULL);
+  for (int i = 0; config_dirs[i]; i++) {
+    ret = open_config_file_at(config_dirs[i], ppath);
+    if (ret) {
+      free((void *)config_dirs);
+      return ret;
+    }
   }
+  free((void *)config_dirs);
+
   return NULL;
 }
 
