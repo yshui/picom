@@ -562,7 +562,7 @@ glx_init_blur(session_t *ps) {
     const char *texture_func = (use_texture_rect ?
         "texture2DRect": "texture2D");
     const char *shader_add = FRAG_SHADER_BLUR_ADD;
-    char *extension = strdup("");
+    char *extension = NULL;
     if (use_texture_rect)
       mstrextend(&extension, "#extension GL_ARB_texture_rectangle : require\n");
     if (ps->o.glx_use_gpushader4) {

@@ -11,33 +11,32 @@
  * Allocate the space and join two strings.
  */
 char *mstrjoin(const char *src1, const char *src2) {
-  auto str = ccalloc(strlen(src1)+strlen(src2)+1, char);
+	auto len1 = strlen(src1);
+	auto len2 = strlen(src2);
+	auto len = len1 + len2 + 1;
+	auto str = ccalloc(len, char);
 
-  strcpy(str, src1);
-  strcat(str, src2);
+	strncpy(str, src1, len1);
+	strncpy(str + len1, src2, len2);
+	str[len - 1] = '\0';
 
-  return str;
-}
-
-/**
- * Allocate the space and join two strings;
- */
-char *
-mstrjoin3(const char *src1, const char *src2, const char *src3) {
-  auto str = ccalloc(strlen(src1)+strlen(src2)+strlen(src3)+1, char);
-
-  strcpy(str, src1);
-  strcat(str, src2);
-  strcat(str, src3);
-
-  return str;
+	return str;
 }
 
 /**
  * Concatenate a string on heap with another string.
  */
 void mstrextend(char **psrc1, const char *src2) {
-  *psrc1 = crealloc(*psrc1, (*psrc1 ? strlen(*psrc1) : 0)+strlen(src2)+1);
+	if (!*psrc1) {
+		*psrc1 = strdup(src2);
+		return;
+	}
 
-  strcat(*psrc1, src2);
+	auto len1 = strlen(*psrc1);
+	auto len2 = strlen(src2);
+	auto len = len1 + len2 + 1;
+	*psrc1 = crealloc(*psrc1, len);
+
+	strncpy(*psrc1 + len1, src2, len2);
+	(*psrc1)[len - 1] = '\0';
 }
