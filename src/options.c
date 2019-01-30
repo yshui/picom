@@ -500,6 +500,7 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 			log_warn("--no-name-pixmap will be ignored");
 		} else if (o == '?' || o == ':') {
 			usage(1);
+			*exit_code = 1;
 			return true;
 		}
 	}
