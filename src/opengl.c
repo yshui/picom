@@ -183,11 +183,11 @@ glx_update_fbconfig(session_t *ps) {
   }
 
   if (!ps->psglx->fbconfigs[32]) {
-    log_error("No FBConfig found for depth 32. Expect crazy things.");
+    log_error("No FBConfig found for depth 32. compton will try to continue.");
+  } else {
+    log_trace("%d-bit: %p, 32-bit: %p", ps->depth,
+              ps->psglx->fbconfigs[ps->depth]->cfg, ps->psglx->fbconfigs[32]->cfg);
   }
-
-  log_trace("%d-bit: %p, 32-bit: %p", ps->depth, ps->psglx->fbconfigs[ps->depth]->cfg,
-            ps->psglx->fbconfigs[32]->cfg);
 
   return true;
 }
