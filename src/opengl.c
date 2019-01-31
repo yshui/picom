@@ -619,6 +619,8 @@ glx_init_blur(session_t *ps) {
 
       if (!ppass->frag_shader) {
         log_error("Failed to create fragment shader %d.", i);
+        free(extension);
+        free(lc_numeric_old);
         return false;
       }
 
@@ -626,6 +628,8 @@ glx_init_blur(session_t *ps) {
       ppass->prog = glx_create_program(&ppass->frag_shader, 1);
       if (!ppass->prog) {
         log_error("Failed to create GLSL program.");
+        free(extension);
+        free(lc_numeric_old);
         return false;
       }
 
