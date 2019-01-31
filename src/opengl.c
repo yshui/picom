@@ -563,11 +563,15 @@ glx_init_blur(session_t *ps) {
         "texture2DRect": "texture2D");
     const char *shader_add = FRAG_SHADER_BLUR_ADD;
     char *extension = NULL;
-    if (use_texture_rect)
+    if (use_texture_rect) {
       mstrextend(&extension, "#extension GL_ARB_texture_rectangle : require\n");
+    }
     if (ps->o.glx_use_gpushader4) {
       mstrextend(&extension, "#extension GL_EXT_gpu_shader4 : require\n");
       shader_add = FRAG_SHADER_BLUR_ADD_GPUSHADER4;
+    }
+    if (!extension) {
+      extension = strdup("");
     }
 
     for (int i = 0; i < MAX_BLUR_PASS && ps->o.blur_kerns[i]; ++i) {
