@@ -194,8 +194,6 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
  * Paint a window itself and dim it if asked.
  */
 void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
-	glx_mark(ps, w->id, true);
-
 	// Fetch Pixmap
 	if (!w->paint.pixmap && ps->has_name_pixmap) {
 		w->paint.pixmap = xcb_generate_id(ps->c);
@@ -378,8 +376,6 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		default: assert(false);
 		}
 	}
-
-	glx_mark(ps, w->id, false);
 }
 
 extern const char *background_props_str[];
@@ -1000,7 +996,6 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 #endif
 	default: assert(0);
 	}
-	glx_mark_frame(ps);
 
 	if (ps->o.vsync_aggressive)
 		vsync_wait(ps);
