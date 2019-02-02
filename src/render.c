@@ -1205,6 +1205,13 @@ void deinit_render(session_t *ps) {
 	// Free other X resources
 	free_root_tile(ps);
 
+  // Free the damage ring
+  for (int i = 0; i < ps->ndamage; ++i)
+    pixman_region32_fini(&ps->damage_ring[i]);
+  ps->ndamage = 0;
+  free(ps->damage_ring);
+  ps->damage_ring = ps->damage = NULL;
+
 #ifdef CONFIG_OPENGL
 	glx_destroy(ps);
 #endif

@@ -3150,10 +3150,6 @@ session_destroy(session_t *ps) {
   free_paint(ps, &ps->tgt_buffer);
 
   pixman_region32_fini(&ps->screen_reg);
-  for (int i = 0; i < ps->ndamage; ++i)
-    pixman_region32_fini(&ps->damage_ring[i]);
-  ps->ndamage = 0;
-  ps->damage_ring = ps->damage = NULL;
   free(ps->expose_rects);
 
   free(ps->o.config_file);
