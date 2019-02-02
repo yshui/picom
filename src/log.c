@@ -72,7 +72,7 @@ static attr_const const char *log_level_to_string(enum log_level level) {
 	case LOG_LEVEL_WARN: return "WARN";
 	case LOG_LEVEL_ERROR: return "ERROR";
 	case LOG_LEVEL_FATAL: return "FATAL ERROR";
-	default: assert(false);
+	default: return "????";
 	}
 }
 
@@ -254,7 +254,7 @@ const char *terminal_colorize_begin(enum log_level level) {
 	case LOG_LEVEL_WARN: return ANSI("33");
 	case LOG_LEVEL_ERROR: return ANSI("31;1");
 	case LOG_LEVEL_FATAL: return ANSI("30;103;1");
-	default: assert(false);
+	default: return "";
 	}
 }
 
