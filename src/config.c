@@ -47,8 +47,8 @@ parse_long(const char *s, long *dest) {
  */
 const char *
 parse_matrix_readnum(const char *src, double *dest) {
-  char *pc = NULL;
-  double val = strtod(src, &pc);
+  const char *pc = NULL;
+  double val = strtod_simple(src, &pc);
   if (!pc || pc == src) {
     log_error("No number found: %s", src);
     return src;

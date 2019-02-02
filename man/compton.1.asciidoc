@@ -199,7 +199,11 @@ OPTIONS
 WIDTH,HEIGHT,ELE1,ELE2,ELE3,ELE4,ELE5...
 ----
 +
-The element in the center must not be included, it will be forever 1.0 or changing based on opacity, depending on whether you have `--blur-background-fixed`. Yet the automatic adjustment of blur factor may not work well with a custom blur kernel.
+In other words, the matrix is formatted as a list of comma separated numbers. The first two numbers must be integers, which specify the width and height of the matrix. They must be odd numbers. Then, the following 'width * height - 1' numbers specifies the numbers in the matrix, row by row, excluding the center element.
++
+The elements are finite floating point numbers. The decimal pointer has to be '.' (a period), and scientific notation is not supported.
++
+The element in the center will either be 1.0 or changing based on opacity, depending on whether you have `--blur-background-fixed`. Yet the automatic adjustment of blur factor may not work well with a custom blur kernel.
 +
 A 7x7 Gaussian blur kernel (sigma = 0.84089642) looks like:
 +
