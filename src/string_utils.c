@@ -13,6 +13,7 @@
 // strncpy(str, src1, len1) intentional truncates the null byte from src1.
 // strncpy(str+len1, src2, len2) uses bound depends on the source argument,
 // but str is allocated with len1+len2+1, so this strncpy can't overflow
+#pragma GCC diagnostic ignored "-Wpragmas"
 #pragma GCC diagnostic ignored "-Wstringop-truncation"
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
 
