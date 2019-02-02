@@ -445,7 +445,7 @@ bool gl_blur_dst(session_t *ps, const gl_cap_t *cap, int dx, int dy, int width,
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
 			                       GL_TEXTURE_2D, tex_scr2,
 			                       0);        // XXX wrong, should use tex_tgt
-			glDrawBuffers(1, (GLenum[]){GL_COLOR_ATTACHMENT0});
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 				log_error("Framebuffer attachment failed.");
 				goto end;
@@ -453,7 +453,7 @@ bool gl_blur_dst(session_t *ps, const gl_cap_t *cap, int dx, int dy, int width,
 		} else {
 			// last pass, draw directly into the back buffer
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glDrawBuffers(1, (GLenum[]){GL_BACK});
+			glDrawBuffer(GL_BACK);
 			if (have_scissors)
 				glEnable(GL_SCISSOR_TEST);
 			if (have_stencil)
