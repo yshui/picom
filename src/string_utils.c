@@ -7,6 +7,15 @@
 #include "string_utils.h"
 #include "utils.h"
 
+#pragma GCC diagnostic push
+
+// gcc warns about legitimate strncpy in mstrjoin and mstrextend
+// strncpy(str, src1, len1) intentional truncates the null byte from src1.
+// strncpy(str+len1, src2, len2) uses bound depends on the source argument,
+// but str is allocated with len1+len2+1, so this strncpy can't overflow
+#pragma GCC diagnostic ignored "-Wstringop-truncation"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+
 /**
  * Allocate the space and join two strings.
  */
@@ -40,6 +49,8 @@ void mstrextend(char **psrc1, const char *src2) {
 	strncpy(*psrc1 + len1, src2, len2);
 	(*psrc1)[len - 1] = '\0';
 }
+
+#pragma GCC diagnostic pop
 
 /// Parse a floating point number of form (+|-)?[0-9]*(\.[0-9]*)
 double strtod_simple(const char *src, const char **end) {
