@@ -40,3 +40,34 @@ void mstrextend(char **psrc1, const char *src2) {
 	strncpy(*psrc1 + len1, src2, len2);
 	(*psrc1)[len - 1] = '\0';
 }
+
+/// Parse a floating point number of form (+|-)?[0-9]*(\.[0-9]*)
+double strtod_simple(const char *src, const char **end) {
+  double neg = 1;
+  if (*src == '-') {
+    neg = -1;
+    src++;
+  } else if (*src == '+') {
+    src++;
+  }
+
+  double ret = 0;
+  while (*src >= '0' && *src <= '9') {
+    ret = ret * 10 + (*src - '0');
+    src++;
+  }
+
+  if (*src == '.') {
+    double frac = 0, mult = 0.1;
+    src++;
+    while (*src >= '0' && *src <= '9') {
+      frac += mult * (*src - '0');
+      mult *= 0.1;
+      src++;
+    }
+    ret += frac;
+  }
+
+  *end = src;
+  return ret * neg;
+}

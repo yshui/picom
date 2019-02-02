@@ -11,6 +11,9 @@ char *
 mstrjoin3(const char *src1, const char *src2, const char *src3);
 void mstrextend(char **psrc1, const char *src2);
 
+/// Parse a floating point number of form (+|-)?[0-9]*(\.[0-9]*)
+double strtod_simple(const char *, const char **);
+
 static inline int uitostr(unsigned int n, char *buf) {
   int ret = 0;
   unsigned int tmp = n;
