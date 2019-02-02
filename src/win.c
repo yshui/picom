@@ -74,7 +74,7 @@ group_update_focused(session_t *ps, xcb_window_t leader) {
     return;
 
   for (win *w = ps->list; w; w = w->next) {
-    if (win_get_leader(ps, w) == leader && !w->destroyed)
+    if (win_get_leader(ps, w) == leader && !w->destroying)
       win_update_focused(ps, w);
   }
 
@@ -93,7 +93,7 @@ group_is_focused(session_t *ps, xcb_window_t leader) {
     return false;
 
   for (win *w = ps->list; w; w = w->next) {
-    if (win_get_leader(ps, w) == leader && !w->destroyed
+    if (win_get_leader(ps, w) == leader && !w->destroying
         && win_is_focused_real(ps, w))
       return true;
   }
@@ -329,7 +329,7 @@ void win_determine_mode(session_t *ps, win *w) {
 void win_calc_opacity(session_t *ps, win *w) {
   opacity_t opacity = OPAQUE;
 
-  if (w->destroyed || w->a.map_state != XCB_MAP_STATE_VIEWABLE)
+  if (w->destroying || w->a.map_state != XCB_MAP_STATE_VIEWABLE)
     opacity = 0;
   else {
     // Try obeying opacity property and window type opacity firstly
@@ -360,8 +360,8 @@ void win_calc_opacity(session_t *ps, win *w) {
 void win_calc_dim(session_t *ps, win *w) {
   bool dim;
 
-  // Make sure we do nothing if the window is unmapped / destroyed
-  if (w->destroyed || w->a.map_state != XCB_MAP_STATE_VIEWABLE)
+  // Make sure we do nothing if the window is unmapped / being destroyed
+  if (w->destroying || w->a.map_state != XCB_MAP_STATE_VIEWABLE)
     return;
 
   if (ps->o.inactive_dim && !(w->focused)) {
@@ -386,7 +386,7 @@ void win_determine_fade(session_t *ps, win *w) {
     w->fade_last = w->fade = w->fade_force;
   else if (ps->o.no_fading_openclose && w->in_openclose)
     w->fade_last = w->fade = false;
-  else if (ps->o.no_fading_destroyed_argb && w->destroyed &&
+  else if (ps->o.no_fading_destroyed_argb && w->destroying &&
            win_has_alpha(w) && w->client_win && w->client_win != w->id) {
     w->fade_last = w->fade = false;
   }
@@ -756,7 +756,7 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 
       .widthb = 0,
       .heightb = 0,
-      .destroyed = false,
+      .destroying = false,
       .bounding_shaped = false,
       .rounded_corners = false,
       .to_paint = false,
@@ -831,7 +831,7 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
   win **p = NULL;
   if (prev) {
     for (p = &ps->list; *p; p = &(*p)->next) {
-      if ((*p)->id == prev && !(*p)->destroyed)
+      if ((*p)->id == prev && !(*p)->destroying)
         break;
     }
   } else {

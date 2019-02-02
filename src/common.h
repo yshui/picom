@@ -838,7 +838,7 @@ find_win(session_t *ps, xcb_window_t id) {
   win *w;
 
   for (w = ps->list; w; w = w->next) {
-    if (w->id == id && !w->destroyed)
+    if (w->id == id && !w->destroying)
       return w;
   }
 
@@ -857,7 +857,7 @@ find_toplevel(session_t *ps, xcb_window_t id) {
     return NULL;
 
   for (win *w = ps->list; w; w = w->next) {
-    if (w->client_win == id && !w->destroyed)
+    if (w->client_win == id && !w->destroying)
       return w;
   }
 

@@ -492,7 +492,7 @@ cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data) {
   // Get the number of wids we are to include
   unsigned count = 0;
   for (win *w = ps->list; w; w = w->next) {
-    if (!w->destroyed)
+    if (!w->destroying)
       ++count;
   }
 
@@ -508,7 +508,7 @@ cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data) {
   {
     cdbus_window_t *pcur = arr;
     for (win *w = ps->list; w; w = w->next) {
-      if (!w->destroyed) {
+      if (!w->destroying) {
         *pcur = w->id;
         ++pcur;
         assert(pcur <= arr + count);
@@ -811,7 +811,7 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
   cdbus_m_win_get_do(mode, cdbus_reply_enum);
   cdbus_m_win_get_do(client_win, cdbus_reply_wid);
   cdbus_m_win_get_do(ever_damaged, cdbus_reply_bool);
-  cdbus_m_win_get_do(destroyed, cdbus_reply_bool);
+  cdbus_m_win_get_do(destroying, cdbus_reply_bool);
   cdbus_m_win_get_do(window_type, cdbus_reply_enum);
   cdbus_m_win_get_do(wmwin, cdbus_reply_bool);
   cdbus_m_win_get_do(leader, cdbus_reply_wid);

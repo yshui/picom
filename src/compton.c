@@ -610,7 +610,7 @@ paint_preprocess(session_t *ps, win *list) {
     if (!w->ever_damaged
         || w->g.x + w->g.width < 1 || w->g.y + w->g.height < 1
         || w->g.x >= ps->root_width || w->g.y >= ps->root_height
-        || ((w->a.map_state == XCB_MAP_STATE_UNMAPPED || w->destroyed) && !w->paint.pixmap)
+        || ((w->a.map_state == XCB_MAP_STATE_UNMAPPED || w->destroying) && !w->paint.pixmap)
         || (double) w->opacity / OPAQUE * MAX_ALPHA < 1
         || w->paint_excluded)
       to_paint = false;
@@ -680,7 +680,7 @@ paint_preprocess(session_t *ps, win *list) {
     reg_ignore_valid = reg_ignore_valid && w->reg_ignore_valid;
     w->reg_ignore_valid = true;
 
-    assert(w->destroyed == (w->fade_callback == finish_destroy_win));
+    assert(w->destroying == (w->fade_callback == finish_destroy_win));
     win_check_fade_finished(ps, &w);
 
     // Avoid setting w->to_paint if w is freed
@@ -930,7 +930,7 @@ unmap_win(session_t *ps, win **_w) {
   win *w = *_w;
   if (!w || w->a.map_state == XCB_MAP_STATE_UNMAPPED) return;
 
-  if (w->destroyed) return;
+  if (w->destroying) return;
 
   // Set focus out
   win_set_focused(ps, w, false);
@@ -989,7 +989,7 @@ restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 
     // rehook
     for (prev = &ps->list; *prev; prev = &(*prev)->next) {
-      if ((*prev)->id == new_above && !(*prev)->destroyed) {
+      if ((*prev)->id == new_above && !(*prev)->destroying) {
         found = true;
         break;
       }
@@ -1024,7 +1024,7 @@ restack_win(session_t *ps, win *w, xcb_window_t new_above) {
         to_free = ev_window_name(ps, c->id, &window_name);
 
         desc = "";
-        if (c->destroyed) desc = "(D) ";
+        if (c->destroying) desc = "(D) ";
         printf("%#010lx \"%s\" %s", c->id, window_name, desc);
         if (c->next)
           printf("-> ");
@@ -1161,10 +1161,11 @@ circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
   restack_win(ps, w, new_above);
 }
 
+// TODO move to win.c
 static void
 finish_destroy_win(session_t *ps, win **_w) {
   win *w = *_w;
-  assert(w->destroyed);
+  assert(w->destroying);
   win **prev = NULL, *i = NULL;
 
   log_trace("(%#010x): Starting...", w->id);
@@ -1199,12 +1200,12 @@ static void
 destroy_win(session_t *ps, xcb_window_t id) {
   win *w = find_win(ps, id);
 
-  log_trace("(%#010x \"%s\"): %p", id, (w ? w->name: NULL), w);
+  log_trace("%#010x \"%s\": %p", id, (w ? w->name: NULL), w);
 
   if (w) {
     unmap_win(ps, &w);
 
-    w->destroyed = true;
+    w->destroying = true;
 
     if (ps->o.no_fading_destroyed_argb)
       win_determine_fade(ps, w);
@@ -3087,18 +3088,18 @@ session_destroy(session_t *ps) {
   // Free window linked list
   {
     win *next = NULL;
-    for (win *w = ps->list; w; w = next) {
-      // Must be put here to avoid segfault
+    win *list = ps->list;
+    ps->list = NULL;
+
+    for (win *w = list; w; w = next) {
       next = w->next;
 
-      if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && !w->destroyed)
+      if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && !w->destroying)
         win_ev_stop(ps, w);
 
       free_win_res(ps, w);
       free(w);
     }
-
-    ps->list = NULL;
   }
 
   // Free blacklists
