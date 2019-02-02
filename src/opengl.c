@@ -365,13 +365,6 @@ glx_init(session_t *ps, bool need_render) {
 
   // Acquire function addresses
   if (need_render) {
-#ifdef DEBUG_GLX_MARK
-    psglx->glStringMarkerGREMEDY = (f_StringMarkerGREMEDY)
-      glXGetProcAddress((const GLubyte *) "glStringMarkerGREMEDY");
-    psglx->glFrameTerminatorGREMEDY = (f_FrameTerminatorGREMEDY)
-      glXGetProcAddress((const GLubyte *) "glFrameTerminatorGREMEDY");
-#endif
-
     psglx->glXBindTexImageProc = (f_BindTexImageEXT)
       glXGetProcAddress((const GLubyte *) "glXBindTexImageEXT");
     psglx->glXReleaseTexImageProc = (f_ReleaseTexImageEXT)

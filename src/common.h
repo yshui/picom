@@ -21,10 +21,7 @@
 // #define DEBUG_RESTACK    1
 // #define DEBUG_WINMATCH   1
 // #define DEBUG_C2         1
-// #define DEBUG_GLX        1
-// #define DEBUG_GLX_GLSL   1
-// #define DEBUG_GLX_ERR    1
-// #define DEBUG_GLX_PAINTREG 1
+// #define DEBUG_GLX_DEBUG_CONTEXT        1
 
 #define MAX_ALPHA (255)
 
@@ -991,15 +988,6 @@ vsync_init(session_t *ps);
 
 void
 vsync_deinit(session_t *ps);
-
-#ifdef CONFIG_OPENGL
-/** @name GLX
- */
-///@{
-
-#endif
-
-///@}
 
 /** @name DBus handling
  */
