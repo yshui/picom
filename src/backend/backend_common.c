@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #include <string.h>
 #include <xcb/xcb_image.h>
 #include <xcb/render.h>
@@ -9,6 +11,7 @@
 #include "common.h"
 #include "log.h"
 #include "x.h"
+#include "win.h"
 
 /**
  * Generate a 1x1 <code>Picture</code> of a particular color.
