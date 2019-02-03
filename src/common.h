@@ -221,7 +221,6 @@ struct _glx_texture {
   GLenum target;
   unsigned width;
   unsigned height;
-  unsigned depth;
   bool y_inverted;
 };
 
@@ -310,8 +309,6 @@ typedef struct {
   f_ImportSyncEXT glImportSyncEXT;
   /// Current GLX Z value.
   int z;
-  /// FBConfig-s for GLX pixmap of different depths.
-  glx_fbconfig_t *fbconfigs[OPENGL_MAX_DEPTH + 1];
 #ifdef CONFIG_OPENGL
   glx_blur_pass_t blur_passes[MAX_BLUR_PASS];
 #endif

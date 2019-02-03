@@ -25,172 +25,9 @@
 #include "win.h"
 #include "region.h"
 #include "backend/gl/gl_common.h"
+#include "backend/gl/glx.h"
 
 #include "opengl.h"
-
-static inline int
-glx_cmp_fbconfig_cmpattr(session_t *ps,
-    const glx_fbconfig_t *pfbc_a, const glx_fbconfig_t *pfbc_b,
-    int attr) {
-  int attr_a = 0, attr_b = 0;
-
-  // TODO: Error checking
-  glXGetFBConfigAttrib(ps->dpy, pfbc_a->cfg, attr, &attr_a);
-  glXGetFBConfigAttrib(ps->dpy, pfbc_b->cfg, attr, &attr_b);
-
-  return attr_a - attr_b;
-}
-
-/**
- * Compare two GLX FBConfig's to find the preferred one.
- */
-static int
-glx_cmp_fbconfig(session_t *ps,
-    const glx_fbconfig_t *pfbc_a, const glx_fbconfig_t *pfbc_b) {
-  int result = 0;
-
-  if (!pfbc_a)
-    return -1;
-  if (!pfbc_b)
-    return 1;
-  int tmpattr;
-
-  // Avoid 10-bit colors
-  glXGetFBConfigAttrib(ps->dpy, pfbc_a->cfg, GLX_RED_SIZE, &tmpattr);
-  if (tmpattr != 8)
-    return -1;
-
-  glXGetFBConfigAttrib(ps->dpy, pfbc_b->cfg, GLX_RED_SIZE, &tmpattr);
-  if (tmpattr != 8)
-    return 1;
-
-#define P_CMPATTR_LT(attr) { if ((result = glx_cmp_fbconfig_cmpattr(ps, pfbc_a, pfbc_b, (attr)))) return -result; }
-#define P_CMPATTR_GT(attr) { if ((result = glx_cmp_fbconfig_cmpattr(ps, pfbc_a, pfbc_b, (attr)))) return result; }
-
-  P_CMPATTR_LT(GLX_BIND_TO_TEXTURE_RGBA_EXT);
-  P_CMPATTR_LT(GLX_DOUBLEBUFFER);
-  P_CMPATTR_LT(GLX_STENCIL_SIZE);
-  P_CMPATTR_LT(GLX_DEPTH_SIZE);
-  P_CMPATTR_GT(GLX_BIND_TO_MIPMAP_TEXTURE_EXT);
-
-  return 0;
-}
-
-/**
- * @brief Update the FBConfig of given depth.
- */
-static inline void
-glx_update_fbconfig_bydepth(session_t *ps, int depth, glx_fbconfig_t *pfbcfg) {
-  // Make sure the depth is sane
-  if (depth < 0 || depth > OPENGL_MAX_DEPTH)
-    return;
-
-  // Compare new FBConfig with current one
-  if (glx_cmp_fbconfig(ps, ps->psglx->fbconfigs[depth], pfbcfg) < 0) {
-    log_trace("(depth %d): %p overrides %p, target %#x.", depth,
-              pfbcfg->cfg,
-              ps->psglx->fbconfigs[depth] ? ps->psglx->fbconfigs[depth]->cfg:
-                                            0,
-              pfbcfg->texture_tgts);
-    if (!ps->psglx->fbconfigs[depth]) {
-      ps->psglx->fbconfigs[depth] = cmalloc(glx_fbconfig_t);
-    }
-    (*ps->psglx->fbconfigs[depth]) = *pfbcfg;
-  }
-}
-
-/**
- * Get GLX FBConfigs for all depths.
- */
-static bool
-glx_update_fbconfig(session_t *ps) {
-  // Acquire all FBConfigs and loop through them
-  int nele = 0;
-  GLXFBConfig* pfbcfgs = glXGetFBConfigs(ps->dpy, ps->scr, &nele);
-
-  for (GLXFBConfig *pcur = pfbcfgs; pcur < pfbcfgs + nele; pcur++) {
-    glx_fbconfig_t fbinfo = {
-      .cfg = *pcur,
-      .texture_fmt = 0,
-      .texture_tgts = 0,
-      .y_inverted = false,
-    };
-    int id = (int) (pcur - pfbcfgs);
-    int depth = 0, depth_alpha = 0, val = 0;
-
-    // Skip over multi-sampled visuals
-    // http://people.freedesktop.org/~glisse/0001-glx-do-not-use-multisample-visual-config-for-front-o.patch
-#ifdef GLX_SAMPLES
-    if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_SAMPLES, &val)
-        && val > 1)
-      continue;
-#endif
-
-    if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BUFFER_SIZE, &depth)
-        || Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_ALPHA_SIZE, &depth_alpha)) {
-      log_error("Failed to retrieve buffer size and alpha size of FBConfig %d.", id);
-      continue;
-    }
-    if (Success != glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BIND_TO_TEXTURE_TARGETS_EXT, &fbinfo.texture_tgts)) {
-      log_error("Failed to retrieve BIND_TO_TEXTURE_TARGETS_EXT of FBConfig %d.", id);
-      continue;
-    }
-
-    int visualdepth = 0;
-    {
-      XVisualInfo *pvi = glXGetVisualFromFBConfig(ps->dpy, *pcur);
-      if (!pvi) {
-        // On nvidia-drivers-325.08 this happens slightly too often...
-        // log_error("Failed to retrieve X Visual of FBConfig %d.", id);
-        continue;
-      }
-      visualdepth = pvi->depth;
-      cxfree(pvi);
-    }
-
-    bool rgb = false;
-    bool rgba = false;
-
-    if (depth >= 32 && depth_alpha && Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BIND_TO_TEXTURE_RGBA_EXT, &val) && val)
-      rgba = true;
-
-    if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_BIND_TO_TEXTURE_RGB_EXT, &val) && val)
-      rgb = true;
-
-    if (Success == glXGetFBConfigAttrib(ps->dpy, *pcur, GLX_Y_INVERTED_EXT, &val))
-      fbinfo.y_inverted = val;
-
-    {
-      int tgtdpt = depth - depth_alpha;
-      if (tgtdpt == visualdepth && tgtdpt < 32 && rgb) {
-        fbinfo.texture_fmt = GLX_TEXTURE_FORMAT_RGB_EXT;
-        glx_update_fbconfig_bydepth(ps, tgtdpt, &fbinfo);
-      }
-    }
-
-    if (depth == visualdepth && rgba) {
-      fbinfo.texture_fmt = GLX_TEXTURE_FORMAT_RGBA_EXT;
-      glx_update_fbconfig_bydepth(ps, depth, &fbinfo);
-    }
-  }
-
-  cxfree(pfbcfgs);
-
-  // Sanity checks
-  if (!ps->psglx->fbconfigs[ps->depth]) {
-    log_error("No FBConfig found for default depth %d.", ps->depth);
-    return false;
-  }
-
-  if (!ps->psglx->fbconfigs[32]) {
-    log_error("No FBConfig found for depth 32. compton will try to continue.");
-  } else {
-    log_trace("%d-bit: %p, 32-bit: %p", ps->depth,
-              ps->psglx->fbconfigs[ps->depth]->cfg, ps->psglx->fbconfigs[32]->cfg);
-  }
-
-  return true;
-}
 
 static inline XVisualInfo *
 get_visualinfo_from_visual(session_t *ps, xcb_visualid_t visual) {
@@ -199,31 +36,6 @@ get_visualinfo_from_visual(session_t *ps, xcb_visualid_t visual) {
 
   return XGetVisualInfo(ps->dpy, VisualIDMask, &vreq, &nitems);
 }
-
-#ifdef DEBUG_GLX_DEBUG_CONTEXT
-static inline GLXFBConfig
-get_fbconfig_from_visualinfo(session_t *ps, const XVisualInfo *visualinfo) {
-  int nelements = 0;
-  GLXFBConfig *fbconfigs = glXGetFBConfigs(ps->dpy, visualinfo->screen,
-      &nelements);
-  for (int i = 0; i < nelements; ++i) {
-    int visual_id = 0;
-    if (Success == glXGetFBConfigAttrib(ps->dpy, fbconfigs[i], GLX_VISUAL_ID, &visual_id)
-        && visual_id == visualinfo->visualid)
-      return fbconfigs[i];
-  }
-
-  return NULL;
-}
-
-static void
-glx_debug_msg_callback(GLenum source, GLenum type,
-    GLuint id, GLenum severity, GLsizei length, const GLchar *message,
-    GLvoid *userParam) {
-  log_trace("source 0x%04X, type 0x%04X, id %u, severity 0x%0X, \"%s\"",
-            source, type, id, severity, message);
-}
-#endif
 
 /**
  * Initialize OpenGL.
@@ -375,10 +187,6 @@ glx_init(session_t *ps, bool need_render) {
     }
   }
 
-  // Acquire FBConfigs
-  if (need_render && !glx_update_fbconfig(ps))
-    goto glx_init_end;
-
   // Render preparations
   if (need_render) {
     glx_on_root_change(ps);
@@ -450,12 +258,6 @@ glx_destroy(session_t *ps) {
   glx_free_prog_main(ps, &ps->glx_prog_win);
 
   gl_check_err();
-
-  // Free FBConfigs
-  for (int i = 0; i <= OPENGL_MAX_DEPTH; ++i) {
-    free(ps->psglx->fbconfigs[i]);
-    ps->psglx->fbconfigs[i] = NULL;
-  }
 
   // Destroy GLX context
   if (ps->psglx->context) {
@@ -694,7 +496,7 @@ glx_load_prog_main(session_t *ps,
  */
 bool
 glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
-    unsigned width, unsigned height, unsigned depth) {
+    unsigned width, unsigned height, const struct glx_fbconfig_info *fbcfg) {
   if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID)
     return true;
 
@@ -703,6 +505,7 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
     return false;
   }
 
+  assert(fbcfg);
   glx_texture_t *ptex = *pptex;
   bool need_release = true;
 
@@ -715,7 +518,6 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
       .target = 0,
       .width = 0,
       .height = 0,
-      .depth = 0,
       .y_inverted = false,
     };
 
@@ -731,11 +533,12 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
   }
 
   // Create GLX pixmap
+  unsigned depth;
   if (!ptex->glpixmap) {
     need_release = false;
 
     // Retrieve pixmap parameters, if they aren't provided
-    if (!(width && height && depth)) {
+    if (!(width && height)) {
       Window rroot = None;
       int rx = 0, ry = 0;
       unsigned rbdwid = 0;
@@ -751,45 +554,38 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
       }
     }
 
-    const glx_fbconfig_t *pcfg = ps->psglx->fbconfigs[depth];
-    if (!pcfg) {
-      log_error("Couldn't find FBConfig with requested depth %d.", depth);
-      return false;
-    }
-
     // Determine texture target, copied from compiz
     // The assumption we made here is the target never changes based on any
     // pixmap-specific parameters, and this may change in the future
     GLenum tex_tgt = 0;
-    if (GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts
+    if (GLX_TEXTURE_2D_BIT_EXT & fbcfg->texture_tgts
         && ps->psglx->has_texture_non_power_of_two)
       tex_tgt = GLX_TEXTURE_2D_EXT;
-    else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & pcfg->texture_tgts)
+    else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & fbcfg->texture_tgts)
       tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
-    else if (!(GLX_TEXTURE_2D_BIT_EXT & pcfg->texture_tgts))
+    else if (!(GLX_TEXTURE_2D_BIT_EXT & fbcfg->texture_tgts))
       tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
     else
       tex_tgt = GLX_TEXTURE_2D_EXT;
 
     log_debug("depth %d, tgt %#x, rgba %d", depth, tex_tgt,
-              (GLX_TEXTURE_FORMAT_RGBA_EXT == pcfg->texture_fmt));
+              (GLX_TEXTURE_FORMAT_RGBA_EXT == fbcfg->texture_fmt));
 
     GLint attrs[] = {
         GLX_TEXTURE_FORMAT_EXT,
-        pcfg->texture_fmt,
+        fbcfg->texture_fmt,
         GLX_TEXTURE_TARGET_EXT,
         tex_tgt,
         0,
     };
 
-    ptex->glpixmap = glXCreatePixmap(ps->dpy, pcfg->cfg, pixmap, attrs);
+    ptex->glpixmap = glXCreatePixmap(ps->dpy, fbcfg->cfg, pixmap, attrs);
     ptex->pixmap = pixmap;
     ptex->target = (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D:
         GL_TEXTURE_RECTANGLE);
     ptex->width = width;
     ptex->height = height;
-    ptex->depth = depth;
-    ptex->y_inverted = pcfg->y_inverted;
+    ptex->y_inverted = fbcfg->y_inverted;
   }
   if (!ptex->glpixmap) {
     log_error("Failed to allocate GLX pixmap.");
@@ -1186,8 +982,6 @@ glx_render(session_t *ps, const glx_texture_t *ptex,
     return false;
   }
 
-  argb = argb || (GLX_TEXTURE_FORMAT_RGBA_EXT ==
-      ps->psglx->fbconfigs[ptex->depth]->texture_fmt);
   const bool has_prog = pprogram && pprogram->prog;
   bool dual_texture = false;
 

@@ -5,6 +5,10 @@
 #include <xcb/xcb.h>
 #include <xcb/render.h>
 #include <stdbool.h>
+#ifdef CONFIG_OPENGL
+#include <GL/glx.h>
+#include "backend/gl/glx.h"
+#endif
 #include "region.h"
 
 typedef struct _glx_texture glx_texture_t;
@@ -16,6 +20,9 @@ typedef struct paint {
   xcb_pixmap_t pixmap;
   xcb_render_picture_t pict;
   glx_texture_t *ptex;
+#ifdef CONFIG_OPENGL
+  struct glx_fbconfig_info *fbcfg;
+#endif
 } paint_t;
 
 void
