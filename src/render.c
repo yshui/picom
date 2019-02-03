@@ -1249,6 +1249,7 @@ void deinit_render(session_t *ps) {
 	ps->damage_ring = ps->damage = NULL;
 
 #ifdef CONFIG_OPENGL
+	free(ps->root_tile_paint.fbcfg);
 	glx_destroy(ps);
 #endif
 }
