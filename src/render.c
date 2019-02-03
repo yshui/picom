@@ -38,45 +38,54 @@
 static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid, unsigned hei,
                                   unsigned depth, xcb_visualid_t visual, bool force) {
 #ifdef CONFIG_OPENGL
+	// XXX This is a mess. But this will go away after the backend refactor.
+	static thread_local struct glx_fbconfig_info *argb_fbconfig = NULL;
 	if (!ppaint->pixmap)
 		return false;
 
-	xcb_render_pictforminfo_t *pictfmt = NULL;
-	xcb_render_pictforminfo_t tmp_pictfmt = {.direct =
-	                                             {
-	                                                 .red_mask = 255,
-	                                                 .blue_mask = 255,
-	                                                 .green_mask = 255,
-	                                                 .alpha_mask = depth == 32 ? 255 : 0,
-	                                             },
-	                                         .type = XCB_RENDER_PICT_TYPE_DIRECT};
-
-	if (!depth) {
-		assert(visual);
-		depth = x_get_visual_depth(ps->c, visual);
-	}
-
+	struct glx_fbconfig_info *fbcfg;
 	if (!visual) {
-		assert(depth);
-		pictfmt = &tmp_pictfmt;
+		assert(depth == 32);
+		if (!argb_fbconfig) {
+			xcb_render_pictforminfo_t tmp_pictfmt = {
+			    .direct =
+			        {
+			            .red_mask = 255,
+			            .blue_mask = 255,
+			            .green_mask = 255,
+			            .alpha_mask = 255,
+			        },
+			    .type = XCB_RENDER_PICT_TYPE_DIRECT};
+			argb_fbconfig = glx_find_fbconfig(ps->dpy, ps->scr, &tmp_pictfmt, 32);
+		}
+		if (!argb_fbconfig) {
+			log_error("Failed to find appropriate FBConfig for 32 bit depth");
+			return false;
+		}
+		fbcfg = argb_fbconfig;
 	} else {
-		pictfmt = x_get_pictform_for_visual(ps->c, visual);
-	}
+		xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps->c, visual);
+		if (!depth) {
+			assert(visual);
+			depth = x_get_visual_depth(ps->c, visual);
+		}
 
-	if (!pictfmt) {
-		return false;
-	}
+		if (!pictfmt) {
+			return false;
+		}
 
-	if (!ppaint->fbcfg) {
-		ppaint->fbcfg = glx_find_fbconfig(ps->dpy, ps->scr, pictfmt, depth);
-	}
-	if (!ppaint->fbcfg) {
-		log_error("Failed to find appropriate FBConfig for X pixmap");
-		return false;
+		if (!ppaint->fbcfg) {
+			ppaint->fbcfg = glx_find_fbconfig(ps->dpy, ps->scr, pictfmt, depth);
+		}
+		if (!ppaint->fbcfg) {
+			log_error("Failed to find appropriate FBConfig for X pixmap");
+			return false;
+		}
+		fbcfg = ppaint->fbcfg;
 	}
 
 	if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))
-		return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, ppaint->fbcfg);
+		return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, fbcfg);
 #endif
 	return true;
 }
