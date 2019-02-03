@@ -10,7 +10,7 @@
 #include <xcb/composite.h>
 
 #include "backend/backend.h"
-#include "backend_common.h"
+#include "backend/backend_common.h"
 #include "common.h"
 #include "config.h"
 #include "log.h"
@@ -135,7 +135,7 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 
 		// Detect if the region is empty before painting
 		if (pixman_region32_not_empty(&reg_tmp)) {
-			x_set_picture_clip_region(ps, xd->back, 0, 0, &reg_tmp);
+			x_set_picture_clip_region(ps->c, xd->back, 0, 0, &reg_tmp);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER,
 			                     wd->shadow_pict, alpha_pict, xd->back, 0, 0, 0,
 			                     0, dst_x + w->shadow_dx, dst_y + w->shadow_dy,
@@ -147,9 +147,9 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 
 	// Clip region of rendered_pict might be set during rendering, clear it to make
 	// sure we get everything into the buffer
-	x_clear_picture_clip_region(ps, wd->rendered_pict);
+	x_clear_picture_clip_region(ps->c, wd->rendered_pict);
 
-	x_set_picture_clip_region(ps, xd->back, 0, 0, reg_paint);
+	x_set_picture_clip_region(ps->c, xd->back, 0, 0, reg_paint);
 	xcb_render_composite(ps->c, op, wd->rendered_pict, alpha_pict, xd->back, 0, 0, 0,
 	                     0, dst_x, dst_y, w->widthb, w->heightb);
 }
@@ -184,8 +184,8 @@ static bool blur(void *backend_data, session_t *ps, double opacity, const region
 		return false;
 	}
 
-	x_set_picture_clip_region(ps, tmp_picture[0], 0, 0, &clip);
-	x_set_picture_clip_region(ps, tmp_picture[1], 0, 0, &clip);
+	x_set_picture_clip_region(ps->c, tmp_picture[0], 0, 0, &clip);
+	x_set_picture_clip_region(ps->c, tmp_picture[1], 0, 0, &clip);
 
 	// The multipass blur implemented here is not correct, but this is what old
 	// compton did anyway. XXX
@@ -269,14 +269,14 @@ render_win(void *backend_data, session_t *ps, win *w, void *win_data, const regi
 	}
 
 	// Copy the content of the window over to the buffer
-	x_clear_picture_clip_region(ps, wd->buffer);
+	x_clear_picture_clip_region(ps->c, wd->buffer);
 	wd->rendered_pict = wd->buffer;
 	xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, wd->pict, XCB_NONE,
 	                     wd->rendered_pict, 0, 0, 0, 0, 0, 0, w->widthb, w->heightb);
 
 	if (w->invert_color) {
 		// Handle invert color
-		x_set_picture_clip_region(ps, wd->rendered_pict, 0, 0, &reg_paint_local);
+		x_set_picture_clip_region(ps->c, wd->rendered_pict, 0, 0, &reg_paint_local);
 
 		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE, xd->white_pixel, XCB_NONE,
 		                     wd->rendered_pict, 0, 0, 0, 0, 0, 0, w->widthb, w->heightb);
@@ -302,7 +302,7 @@ render_win(void *backend_data, session_t *ps, win *w, void *win_data, const regi
 		// Draw the frame with frame opacity
 		xcb_render_picture_t alpha_pict =
 		    xd->alpha_pict[(int)(w->frame_opacity * dopacity * 255)];
-		x_set_picture_clip_region(ps, wd->rendered_pict, 0, 0, &frame_reg);
+		x_set_picture_clip_region(ps->c, wd->rendered_pict, 0, 0, &frame_reg);
 
 		// Step 2: multiply alpha value
 		// XXX test
@@ -328,7 +328,7 @@ render_win(void *backend_data, session_t *ps, win *w, void *win_data, const regi
 		    .height = w->heightb,
 		};
 
-		x_clear_picture_clip_region(ps, wd->rendered_pict);
+		x_clear_picture_clip_region(ps->c, wd->rendered_pict);
 		xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_OVER,
 		                           wd->rendered_pict, color, 1, &rect);
 	}
@@ -350,7 +350,7 @@ static void *prepare_win(void *backend_data, session_t *ps, win *w) {
 		draw = w->id;
 
 	log_trace("%s %x", w->name, wd->pixmap);
-	wd->pict = x_create_picture_with_pictfmt_and_pixmap(ps, w->pictfmt, draw, 0, NULL);
+	wd->pict = x_create_picture_with_pictfmt_and_pixmap(ps->c, w->pictfmt, draw, 0, NULL);
 	wd->buffer = XCB_NONE;
 
 	// XXX delay allocating shadow pict until compose() will dramatical
@@ -395,33 +395,33 @@ static void *init(session_t *ps) {
 
 	if (ps->overlay != XCB_NONE) {
 		xd->target =
-		    x_create_picture_with_visual_and_pixmap(ps, ps->vis, ps->overlay, 0, NULL);
+		    x_create_picture_with_visual_and_pixmap(ps->c, ps->vis, ps->overlay, 0, NULL);
 		xd->target_win = ps->overlay;
 	} else {
 		xcb_render_create_picture_value_list_t pa = {
 		    .subwindowmode = XCB_SUBWINDOW_MODE_INCLUDE_INFERIORS,
 		};
 		xd->target = x_create_picture_with_visual_and_pixmap(
-		    ps, ps->vis, ps->root, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
+		    ps->c, ps->vis, ps->root, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
 		xd->target_win = ps->root;
 	}
 
-	auto pictfmt = x_get_pictform_for_visual(ps, ps->vis);
+	auto pictfmt = x_get_pictform_for_visual(ps->c, ps->vis);
 	if (!pictfmt) {
 		log_fatal("Default visual is invalid");
 		abort();
 	}
 
 	xd->back_pixmap =
-	    x_create_pixmap(ps, pictfmt->depth, ps->root, ps->root_width, ps->root_height);
-	xd->back = x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, xd->back_pixmap, 0, NULL);
+	    x_create_pixmap(ps->c, pictfmt->depth, ps->root, ps->root_width, ps->root_height);
+	xd->back = x_create_picture_with_pictfmt_and_pixmap(ps->c, pictfmt, xd->back_pixmap, 0, NULL);
 
 	xcb_pixmap_t root_pixmap = x_get_root_back_pixmap(ps);
 	if (root_pixmap == XCB_NONE) {
 		xd->root_pict = solid_picture(ps, false, 1, 0.5, 0.5, 0.5);
 	} else {
 		xd->root_pict =
-		    x_create_picture_with_visual_and_pixmap(ps, ps->vis, root_pixmap, 0, NULL);
+		    x_create_picture_with_visual_and_pixmap(ps->c, ps->vis, root_pixmap, 0, NULL);
 	}
 
 	if (ps->present_exists) {
@@ -462,7 +462,7 @@ static void prepare(void *backend_data, session_t *ps, const region_t *reg_paint
 
 	// Paint the root pixmap (i.e. wallpaper)
 	// Limit the paint area
-	x_set_picture_clip_region(ps, xd->back, 0, 0, reg_paint);
+	x_set_picture_clip_region(ps->c, xd->back, 0, 0, reg_paint);
 
 	xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->root_pict, XCB_NONE,
 	                     xd->back, 0, 0, 0, 0, 0, 0, ps->root_width, ps->root_height);
@@ -481,7 +481,7 @@ static void present(void *backend_data, session_t *ps) {
 	} else {
 		// compose() sets clip region, so clear it first to make
 		// sure we update the whole screen.
-		x_clear_picture_clip_region(ps, xd->back);
+		x_clear_picture_clip_region(ps->c, xd->back);
 
 		// TODO buffer-age-like optimization might be possible here.
 		//      but that will require a different backend API

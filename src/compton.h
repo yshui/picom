@@ -154,7 +154,7 @@ dump_drawable(session_t *ps, xcb_drawable_t drawable) {
 static inline void
 win_validate_pixmap(session_t *ps, win *w) {
   // Destroy pixmap and picture, if invalid
-  if (!x_validate_pixmap(ps, w->paint.pixmap))
+  if (!x_validate_pixmap(ps->c, w->paint.pixmap))
     free_paint(ps, &w->paint);
 }
 

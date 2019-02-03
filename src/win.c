@@ -881,7 +881,7 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
       free(new);
       return false;
     }
-    new->pictfmt = x_get_pictform_for_visual(ps, new->a.visual);
+    new->pictfmt = x_get_pictform_for_visual(ps->c, new->a.visual);
   }
 
   calc_win_size(ps, new);

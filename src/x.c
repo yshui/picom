@@ -129,8 +129,8 @@ static inline void x_get_server_pictfmts(xcb_connection_t *c) {
   }
 }
 
-xcb_render_pictforminfo_t *x_get_pictform_for_visual(session_t *ps, xcb_visualid_t visual) {
-  x_get_server_pictfmts(ps->c);
+xcb_render_pictforminfo_t *x_get_pictform_for_visual(xcb_connection_t *c, xcb_visualid_t visual) {
+  x_get_server_pictfmts(c);
 
   xcb_render_pictvisual_t *pv = xcb_render_util_find_visual_format(g_pictfmts, visual);
   for(xcb_render_pictforminfo_iterator_t i =
@@ -145,7 +145,7 @@ xcb_render_pictforminfo_t *x_get_pictform_for_visual(session_t *ps, xcb_visualid
 
 xcb_render_picture_t
 x_create_picture_with_pictfmt_and_pixmap(
-  session_t *ps, xcb_render_pictforminfo_t * pictfmt,
+  xcb_connection_t *c, xcb_render_pictforminfo_t * pictfmt,
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
@@ -158,9 +158,9 @@ x_create_picture_with_pictfmt_and_pixmap(
     }
   }
 
-  xcb_render_picture_t tmp_picture = xcb_generate_id(ps->c);
+  xcb_render_picture_t tmp_picture = xcb_generate_id(c);
   xcb_generic_error_t *e =
-    xcb_request_check(ps->c, xcb_render_create_picture_checked(ps->c, tmp_picture,
+    xcb_request_check(c, xcb_render_create_picture_checked(c, tmp_picture,
       pixmap, pictfmt->id, valuemask, buf));
   free(buf);
   if (e) {
@@ -172,26 +172,26 @@ x_create_picture_with_pictfmt_and_pixmap(
 
 xcb_render_picture_t
 x_create_picture_with_visual_and_pixmap(
-  session_t *ps, xcb_visualid_t visual,
+  xcb_connection_t *c, xcb_visualid_t visual,
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
-  xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps, visual);
-  return x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, pixmap, valuemask, attr);
+  xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(c, visual);
+  return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, pixmap, valuemask, attr);
 }
 
 xcb_render_picture_t
 x_create_picture_with_standard_and_pixmap(
-  session_t *ps, xcb_pict_standard_t standard,
+  xcb_connection_t *c, xcb_pict_standard_t standard,
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
-  x_get_server_pictfmts(ps->c);
+  x_get_server_pictfmts(c);
 
   xcb_render_pictforminfo_t *pictfmt =
     xcb_render_util_find_standard_format(g_pictfmts, standard);
   assert(pictfmt);
-  return x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, pixmap, valuemask, attr);
+  return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, pixmap, valuemask, attr);
 }
 
 /**
@@ -203,7 +203,7 @@ x_create_picture_with_pictfmt(session_t *ps, int wid, int hei,
   const xcb_render_create_picture_value_list_t *attr)
 {
   if (!pictfmt)
-    pictfmt = x_get_pictform_for_visual(ps, ps->vis);
+    pictfmt = x_get_pictform_for_visual(ps->c, ps->vis);
 
   if (!pictfmt) {
     log_fatal("Default visual is invalid");
@@ -212,12 +212,12 @@ x_create_picture_with_pictfmt(session_t *ps, int wid, int hei,
 
   int depth = pictfmt->depth;
 
-  xcb_pixmap_t tmp_pixmap = x_create_pixmap(ps, depth, ps->root, wid, hei);
+  xcb_pixmap_t tmp_pixmap = x_create_pixmap(ps->c, depth, ps->root, wid, hei);
   if (!tmp_pixmap)
     return XCB_NONE;
 
   xcb_render_picture_t picture =
-    x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, tmp_pixmap, valuemask, attr);
+    x_create_picture_with_pictfmt_and_pixmap(ps->c, pictfmt, tmp_pixmap, valuemask, attr);
 
   xcb_free_pixmap(ps->c, tmp_pixmap);
 
@@ -229,14 +229,14 @@ x_create_picture_with_visual(session_t *ps, int w, int h,
   xcb_visualid_t visual, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
-  xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps, visual);
+  xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps->c, visual);
   return x_create_picture_with_pictfmt(ps, w, h, pictfmt, valuemask, attr);
 }
 
-bool x_fetch_region(session_t *ps, xcb_xfixes_region_t r, pixman_region32_t *res) {
+bool x_fetch_region(xcb_connection_t *c, xcb_xfixes_region_t r, pixman_region32_t *res) {
   xcb_generic_error_t *e = NULL;
-  xcb_xfixes_fetch_region_reply_t *xr = xcb_xfixes_fetch_region_reply(ps->c,
-    xcb_xfixes_fetch_region(ps->c, r), &e);
+  xcb_xfixes_fetch_region_reply_t *xr = xcb_xfixes_fetch_region_reply(c,
+    xcb_xfixes_fetch_region(c, r), &e);
   if (!xr) {
     log_error("Failed to fetch rectangles");
     return false;
@@ -259,7 +259,7 @@ bool x_fetch_region(session_t *ps, xcb_xfixes_region_t r, pixman_region32_t *res
   return ret;
 }
 
-void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t pict,
+void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
     int clip_x_origin, int clip_y_origin, const region_t *reg) {
   int nrects;
   const rect_t *rects = pixman_region32_rectangles((region_t *)reg, &nrects);
@@ -273,7 +273,7 @@ void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t pict,
     };
 
   xcb_generic_error_t *e =
-    xcb_request_check(ps->c, xcb_render_set_picture_clip_rectangles_checked(ps->c, pict,
+    xcb_request_check(c, xcb_render_set_picture_clip_rectangles_checked(c, pict,
       clip_x_origin, clip_y_origin, nrects, xrects));
   if (e)
     log_error("Failed to set clip region");
@@ -282,12 +282,12 @@ void x_set_picture_clip_region(session_t *ps, xcb_render_picture_t pict,
   return;
 }
 
-void x_clear_picture_clip_region(session_t *ps, xcb_render_picture_t pict) {
+void x_clear_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict) {
   xcb_render_change_picture_value_list_t v = {
     .clipmask = XCB_NONE
   };
   xcb_generic_error_t *e =
-    xcb_request_check(ps->c, xcb_render_change_picture(ps->c, pict,
+    xcb_request_check(c, xcb_render_change_picture(c, pict,
       XCB_RENDER_CP_CLIP_MASK, &v));
   if (e)
     log_error("failed to clear clip region");
@@ -395,15 +395,15 @@ x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_
  * Create a pixmap and check that creation succeeded.
  */
 xcb_pixmap_t
-x_create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t width, uint16_t height) {
-  xcb_pixmap_t pix = xcb_generate_id(ps->c);
-  xcb_void_cookie_t cookie = xcb_create_pixmap_checked(ps->c, depth, pix, drawable, width, height);
-  xcb_generic_error_t *err = xcb_request_check(ps->c, cookie);
+x_create_pixmap(xcb_connection_t *c, uint8_t depth, xcb_drawable_t drawable, uint16_t width, uint16_t height) {
+  xcb_pixmap_t pix = xcb_generate_id(c);
+  xcb_void_cookie_t cookie = xcb_create_pixmap_checked(c, depth, pix, drawable, width, height);
+  xcb_generic_error_t *err = xcb_request_check(c, cookie);
   if (err == NULL)
     return pix;
 
   log_error("Failed to create pixmap:");
-  ev_xcb_error(ps, err);
+  x_print_error(err->sequence, err->major_code, err->minor_code, err->error_code);
   free(err);
   return XCB_NONE;
 }
@@ -415,12 +415,12 @@ x_create_pixmap(session_t *ps, uint8_t depth, xcb_drawable_t drawable, uint16_t 
  * are better ways.
  */
 bool
-x_validate_pixmap(session_t *ps, xcb_pixmap_t pixmap) {
-	if (pixmap == XCB_NONE) {
-		return false;
-	}
+x_validate_pixmap(xcb_connection_t *c, xcb_pixmap_t pixmap) {
+  if (pixmap == XCB_NONE) {
+    return false;
+  }
 
-  auto r = xcb_get_geometry_reply(ps->c, xcb_get_geometry(ps->c, pixmap), NULL);
+  auto r = xcb_get_geometry_reply(c, xcb_get_geometry(c, pixmap), NULL);
   if (!r) {
     return false;
   }
@@ -469,32 +469,30 @@ bool x_atom_is_background_prop(session_t *ps, xcb_atom_t atom) {
  * Synchronizes a X Render drawable to ensure all pending painting requests
  * are completed.
  */
-bool x_fence_sync(session_t *ps, xcb_sync_fence_t f) {
-  if (ps->xsync_exists) {
-    // TODO(richardgv): If everybody just follows the rules stated in X Sync
-    // prototype, we need only one fence per screen, but let's stay a bit
-    // cautious right now
+bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
+  // TODO(richardgv): If everybody just follows the rules stated in X Sync
+  // prototype, we need only one fence per screen, but let's stay a bit
+  // cautious right now
 
-    auto e = xcb_request_check(ps->c, xcb_sync_trigger_fence_checked(ps->c, f));
-    if (e) {
-      log_error("Failed to trigger the fence.");
-      free(e);
-      return false;
-    }
+  auto e = xcb_request_check(c, xcb_sync_trigger_fence_checked(c, f));
+  if (e) {
+    log_error("Failed to trigger the fence.");
+    free(e);
+    return false;
+  }
 
-    e = xcb_request_check(ps->c, xcb_sync_await_fence_checked(ps->c, 1, &f));
-    if (e) {
-      log_error("Failed to await on a fence.");
-      free(e);
-      return false;
-    }
+  e = xcb_request_check(c, xcb_sync_await_fence_checked(c, 1, &f));
+  if (e) {
+    log_error("Failed to await on a fence.");
+    free(e);
+    return false;
+  }
 
-    e = xcb_request_check(ps->c, xcb_sync_reset_fence_checked(ps->c, f));
-    if (e) {
-      log_error("Failed to reset the fence.");
-      free(e);
-      return false;
-    }
+  e = xcb_request_check(c, xcb_sync_reset_fence_checked(c, f));
+  if (e) {
+    log_error("Failed to reset the fence.");
+    free(e);
+    return false;
   }
   return true;
 }
