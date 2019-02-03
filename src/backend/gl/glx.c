@@ -53,8 +53,6 @@ struct _glx_data {
 
 struct glx_fbconfig_info *
 glx_find_fbconfig(Display *dpy, int screen, xcb_render_pictforminfo_t *pictfmt, int depth) {
-	// Alright, this might not be right, but it might just be enough to just match
-	// visual against GLX_VISUAL_ID, and use the one that matches
 	assert(pictfmt);
 
 	if (pictfmt->type != XCB_RENDER_PICT_TYPE_DIRECT) {
@@ -122,8 +120,9 @@ glx_find_fbconfig(Display *dpy, int screen, xcb_render_pictforminfo_t *pictfmt, 
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_VISUAL_ID, &visual);
 		if (depth != -1 && x_get_visual_depth(XGetXCBConnection(dpy), visual) != depth) {
 			// Some driver might attach fbconfig to a GLX visual with a
-			// different depth. (That totally makes sense. - NVIDIA
-			// developers)
+			// different depth.
+			//
+			// (That makes total sense. - NVIDIA developers)
 			continue;
 		}
 
