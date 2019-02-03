@@ -10,6 +10,7 @@
  *
  */
 
+#include <limits.h>
 #include <GL/glx.h>
 #include <X11/Xlib-xcb.h>
 #include <assert.h>
@@ -96,8 +97,15 @@ glx_find_fbconfig(Display *dpy, int screen, xcb_render_pictforminfo_t *pictfmt, 
 	} while (0)
 	int texture_tgts, y_inverted, texture_fmt;
 	bool found = false;
+	int min_cost = INT_MAX;
 	GLXFBConfig ret;
 	for (int i = 0; i < ncfg; i++) {
+		int depthbuf, stencil;
+		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_DEPTH_SIZE, &depthbuf);
+		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_STENCIL_SIZE, &stencil);
+		if (depthbuf + stencil >= min_cost) {
+			continue;
+		}
 		int red, green, blue;
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_RED_SIZE, &red);
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BLUE_SIZE, &blue);
@@ -139,7 +147,7 @@ glx_find_fbconfig(Display *dpy, int screen, xcb_render_pictforminfo_t *pictfmt, 
 		} else {
 			texture_fmt = rgb ? GLX_TEXTURE_FORMAT_RGB_EXT : GLX_TEXTURE_FORMAT_RGBA_EXT;
 		}
-		break;
+		min_cost = depthbuf + stencil;
 	}
 #undef glXGetFBConfigAttribChecked
 	free(cfg);
