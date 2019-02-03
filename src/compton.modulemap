@@ -68,6 +68,9 @@ module backend {
     module gl_common {
       header "backend/gl/gl_common.h"
     }
+    module glx {
+      header "backend/gl/glx.h"
+    }
   }
   module backend {
     header "backend/backend.h"

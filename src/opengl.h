@@ -19,19 +19,12 @@
 #include "log.h"
 
 #include <xcb/xcb.h>
+#include <xcb/render.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <locale.h>
 #include <GL/glx.h>
-
-/// @brief Wrapper of a GLX FBConfig.
-typedef struct glx_fbconfig {
-  GLXFBConfig cfg;
-  GLint texture_fmt;
-  GLint texture_tgts;
-  bool y_inverted;
-} glx_fbconfig_t;
 
 /**
  * Check if a word is in string.
@@ -108,7 +101,7 @@ glx_load_prog_main(session_t *ps,
 
 bool
 glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
-    unsigned width, unsigned height, unsigned depth);
+    unsigned width, unsigned height, const struct glx_fbconfig_info *);
 
 void
 glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
@@ -249,5 +242,6 @@ free_win_res_glx(session_t *ps, win *w) {
   free_paint_glx(ps, &w->shadow_paint);
 #ifdef CONFIG_OPENGL
   free_glx_bc(ps, &w->glx_blur_cache);
+  free(w->paint.fbcfg);
 #endif
 }

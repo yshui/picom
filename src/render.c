@@ -3,10 +3,10 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <xcb/xcb_image.h>
 #include <xcb/composite.h>
-#include <xcb/sync.h>
 #include <xcb/render.h>
+#include <xcb/sync.h>
+#include <xcb/xcb_image.h>
 #include <xcb/xcb_renderutil.h>
 
 #include "common.h"
@@ -17,40 +17,78 @@
 #include "opengl.h"
 #endif
 
-#include "vsync.h"
-#include "win.h"
-#include "kernel.h"
 #include "compiler.h"
-#include "x.h"
 #include "config.h"
-#include "region.h"
+#include "kernel.h"
 #include "log.h"
+#include "region.h"
 #include "types.h"
 #include "utils.h"
+#include "vsync.h"
+#include "win.h"
+#include "x.h"
 
 #include "backend/backend_common.h"
+#include "backend/gl/glx.h"
 #include "render.h"
 
-#ifdef CONFIG_OPENGL
 /**
  * Bind texture in paint_t if we are using GLX backend.
  */
-static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid,
-                                  unsigned hei, unsigned depth, bool force) {
+static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid, unsigned hei,
+                                  unsigned depth, xcb_visualid_t visual, bool force) {
+#ifdef CONFIG_OPENGL
+	// XXX This is a mess. But this will go away after the backend refactor.
+	static thread_local struct glx_fbconfig_info *argb_fbconfig = NULL;
 	if (!ppaint->pixmap)
 		return false;
 
-	if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))
-		return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, depth);
+	struct glx_fbconfig_info *fbcfg;
+	if (!visual) {
+		assert(depth == 32);
+		if (!argb_fbconfig) {
+			xcb_render_pictforminfo_t tmp_pictfmt = {
+			    .direct =
+			        {
+			            .red_mask = 255,
+			            .blue_mask = 255,
+			            .green_mask = 255,
+			            .alpha_mask = 255,
+			        },
+			    .type = XCB_RENDER_PICT_TYPE_DIRECT};
+			argb_fbconfig = glx_find_fbconfig(ps->dpy, ps->scr, &tmp_pictfmt, 32);
+		}
+		if (!argb_fbconfig) {
+			log_error("Failed to find appropriate FBConfig for 32 bit depth");
+			return false;
+		}
+		fbcfg = argb_fbconfig;
+	} else {
+		xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps->c, visual);
+		if (!depth) {
+			assert(visual);
+			depth = x_get_visual_depth(ps->c, visual);
+		}
 
-	return true;
-}
-#else
-static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid,
-                                  unsigned hei, unsigned depth, bool force) {
-	return true;
-}
+		if (!pictfmt) {
+			return false;
+		}
+
+		if (!ppaint->fbcfg) {
+			ppaint->fbcfg = glx_find_fbconfig(ps->dpy, ps->scr, pictfmt, depth);
+		}
+		if (!ppaint->fbcfg) {
+			log_error("Failed to find appropriate FBConfig for X pixmap");
+			return false;
+		}
+		fbcfg = ppaint->fbcfg;
+	}
+
+	if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))
+		return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, fbcfg);
 #endif
+	return true;
+}
 
 /**
  * Check if current backend uses XRender for rendering.
@@ -219,7 +257,8 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	// Let glx_bind_pixmap() determine pixmap size, because if the user
 	// is resizing windows, the width and height we get may not be up-to-date,
 	// causing the jittering issue M4he reported in #7.
-	if (!paint_bind_tex(ps, &w->paint, 0, 0, 0, (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
+	if (!paint_bind_tex(ps, &w->paint, 0, 0, 0, w->a.visual,
+	                    (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
 		log_error("Failed to bind texture for window %#010x.", w->id);
 	}
 	w->pixmap_damaged = false;
@@ -445,8 +484,7 @@ static bool get_root_tile(session_t *ps) {
 	ps->root_tile_paint.pixmap = pixmap;
 #ifdef CONFIG_OPENGL
 	if (BKEND_GLX == ps->o.backend)
-		return glx_bind_pixmap(ps, &ps->root_tile_paint.ptex,
-		                       ps->root_tile_paint.pixmap, 0, 0, 0);
+		return paint_bind_tex(ps, &ps->root_tile_paint, 0, 0, 0, ps->vis, false);
 #endif
 
 	return true;
@@ -484,7 +522,8 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 		return XCB_NONE;
 	}
 
-	shadow_pixmap = x_create_pixmap(ps->c, 8, ps->root, shadow_image->width, shadow_image->height);
+	shadow_pixmap =
+	    x_create_pixmap(ps->c, 8, ps->root, shadow_image->width, shadow_image->height);
 	shadow_pixmap_argb =
 	    x_create_pixmap(ps->c, 32, ps->root, shadow_image->width, shadow_image->height);
 
@@ -542,7 +581,7 @@ shadow_picture_err:
  */
 static inline void win_paint_shadow(session_t *ps, win *w, region_t *reg_paint) {
 	// Bind shadow pixmap to GLX texture if needed
-	paint_bind_tex(ps, &w->shadow_paint, 0, 0, 32, false);
+	paint_bind_tex(ps, &w->shadow_paint, 0, 0, 32, 0, false);
 
 	if (!paint_isvalid(ps, &w->shadow_paint)) {
 		log_error("Window %#010x is missing shadow data.", w->id);
@@ -942,12 +981,14 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
 		if (ps->o.monitor_repaint) {
-			// Copy the screen content to a new picture, and highlight
-			// the paint region. This is not very efficient, but since
-			// it's for debug only, we don't really care
+			// Copy the screen content to a new picture, and highlight the
+			// paint region. This is not very efficient, but since it's for
+			// debug only, we don't really care
 
-			// First we create a new picture, and copy content from the buffer to it
-			xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps->c, ps->vis);
+			// First we create a new picture, and copy content from the buffer
+			// to it
+			xcb_render_pictforminfo_t *pictfmt =
+			    x_get_pictform_for_visual(ps->c, ps->vis);
 			xcb_render_picture_t new_pict = x_create_picture_with_pictfmt(
 			    ps, ps->root_width, ps->root_height, pictfmt, 0, NULL);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
@@ -983,7 +1024,7 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 		glXWaitX();
 		assert(ps->tgt_buffer.pixmap);
 		paint_bind_tex(ps, &ps->tgt_buffer, ps->root_width, ps->root_height,
-		               ps->depth, !ps->o.glx_no_rebind_pixmap);
+		               ps->depth, ps->vis, !ps->o.glx_no_rebind_pixmap);
 		if (ps->o.vsync_use_glfinish)
 			glFinish();
 		else
@@ -1200,14 +1241,15 @@ void deinit_render(session_t *ps) {
 	// Free other X resources
 	free_root_tile(ps);
 
-  // Free the damage ring
-  for (int i = 0; i < ps->ndamage; ++i)
-    pixman_region32_fini(&ps->damage_ring[i]);
-  ps->ndamage = 0;
-  free(ps->damage_ring);
-  ps->damage_ring = ps->damage = NULL;
+	// Free the damage ring
+	for (int i = 0; i < ps->ndamage; ++i)
+		pixman_region32_fini(&ps->damage_ring[i]);
+	ps->ndamage = 0;
+	free(ps->damage_ring);
+	ps->damage_ring = ps->damage = NULL;
 
 #ifdef CONFIG_OPENGL
+	free(ps->root_tile_paint.fbcfg);
 	glx_destroy(ps);
 #endif
 }

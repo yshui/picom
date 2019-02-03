@@ -73,6 +73,10 @@ static inline long attr_const min_l(long a, long b) {
 	return (a > b ? b : a);
 }
 
+static inline int attr_const popcountl(unsigned long a) {
+	return __builtin_popcountl(a);
+}
+
 /**
  * Normalize a double value to a specific range.
  *

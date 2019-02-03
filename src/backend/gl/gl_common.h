@@ -4,7 +4,6 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
 
-#include "common.h"
 #include "region.h"
 #include "log.h"
 
@@ -61,6 +60,8 @@ typedef struct {
 	/// Height of the textures.
 	int height;
 } gl_blur_cache_t;
+
+typedef struct session session_t;
 
 #define GL_PROG_MAIN_INIT                                                                \
 	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
