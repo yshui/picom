@@ -143,6 +143,22 @@ xcb_render_pictforminfo_t *x_get_pictform_for_visual(xcb_connection_t *c, xcb_vi
   return NULL;
 }
 
+int x_get_visual_depth(xcb_connection_t *c, xcb_visualid_t visual) {
+  auto setup = xcb_get_setup(c);
+  for (auto screen = xcb_setup_roots_iterator(setup); screen.rem; xcb_screen_next(&screen)) {
+    for (auto depth = xcb_screen_allowed_depths_iterator(screen.data); depth.rem; xcb_depth_next(&depth)) {
+      const int len = xcb_depth_visuals_length(depth.data);
+      const xcb_visualtype_t *visuals = xcb_depth_visuals(depth.data);
+      for (int i = 0; i < len; i++) {
+        if (visual == visuals[i].visual_id) {
+          return depth.data->depth;
+        }
+      }
+    }
+  }
+  return -1;
+}
+
 xcb_render_picture_t
 x_create_picture_with_pictfmt_and_pixmap(
   xcb_connection_t *c, xcb_render_pictforminfo_t * pictfmt,
