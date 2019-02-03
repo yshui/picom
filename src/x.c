@@ -111,27 +111,30 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop,
   return true;
 }
 
-static inline void x_get_server_pictfmts(session_t *ps) {
-  if (ps->pictfmts)
+// A cache of pict formats. We assume they don't change during the lifetime
+// of compton
+static thread_local xcb_render_query_pict_formats_reply_t *g_pictfmts = NULL;
+
+static inline void x_get_server_pictfmts(xcb_connection_t *c) {
+  if (g_pictfmts)
     return;
   xcb_generic_error_t *e = NULL;
   // Get window picture format
-  ps->pictfmts =
-    xcb_render_query_pict_formats_reply(ps->c,
-        xcb_render_query_pict_formats(ps->c), &e);
-  if (e || !ps->pictfmts) {
+  g_pictfmts =
+    xcb_render_query_pict_formats_reply(c,
+        xcb_render_query_pict_formats(c), &e);
+  if (e || !g_pictfmts) {
     log_fatal("failed to get pict formats\n");
     abort();
   }
 }
 
 xcb_render_pictforminfo_t *x_get_pictform_for_visual(session_t *ps, xcb_visualid_t visual) {
-  if (!ps->pictfmts)
-    x_get_server_pictfmts(ps);
+  x_get_server_pictfmts(ps->c);
 
-  xcb_render_pictvisual_t *pv = xcb_render_util_find_visual_format(ps->pictfmts, visual);
+  xcb_render_pictvisual_t *pv = xcb_render_util_find_visual_format(g_pictfmts, visual);
   for(xcb_render_pictforminfo_iterator_t i =
-      xcb_render_query_pict_formats_formats_iterator(ps->pictfmts); i.rem;
+      xcb_render_query_pict_formats_formats_iterator(g_pictfmts); i.rem;
       xcb_render_pictforminfo_next(&i)) {
     if (i.data->id == pv->format) {
       return i.data;
@@ -183,11 +186,10 @@ x_create_picture_with_standard_and_pixmap(
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
-  if (!ps->pictfmts)
-    x_get_server_pictfmts(ps);
+  x_get_server_pictfmts(ps->c);
 
   xcb_render_pictforminfo_t *pictfmt =
-    xcb_render_util_find_standard_format(ps->pictfmts, standard);
+    xcb_render_util_find_standard_format(g_pictfmts, standard);
   assert(pictfmt);
   return x_create_picture_with_pictfmt_and_pixmap(ps, pictfmt, pixmap, valuemask, attr);
 }

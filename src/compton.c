@@ -3161,7 +3161,6 @@ session_destroy(session_t *ps) {
   }
   free(ps->o.glx_fshader_win_str);
   free_xinerama_info(ps);
-  free(ps->pictfmts);
 
   deinit_render(ps);
 

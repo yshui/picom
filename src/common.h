@@ -356,8 +356,6 @@ typedef struct session {
   xcb_connection_t *c;
   /// Default visual.
   xcb_visualid_t vis;
-  /// Pict formats info
-  xcb_render_query_pict_formats_reply_t *pictfmts;
   /// Default depth.
   int depth;
   /// Root window.
