@@ -95,7 +95,7 @@ static inline void attr_nonnull(1, 2) set_tgt_clip(session_t *ps, region_t *reg)
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID:
-		x_set_picture_clip_region(ps, ps->tgt_buffer.pict, 0, 0, reg);
+		x_set_picture_clip_region(ps->c, ps->tgt_buffer.pict, 0, 0, reg);
 		break;
 #ifdef CONFIG_OPENGL
 	case BKEND_GLX: glx_set_clip(ps, reg); break;
@@ -212,7 +212,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		};
 
 		w->paint.pict = x_create_picture_with_pictfmt_and_pixmap(
-		    ps, w->pictfmt, draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
+		    ps->c, w->pictfmt, draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
 	}
 
 	// GLX: Build texture
@@ -406,12 +406,12 @@ static bool get_root_tile(session_t *ps) {
 	}
 
 	// Make sure the pixmap we got is valid
-	if (pixmap && !x_validate_pixmap(ps, pixmap))
+	if (pixmap && !x_validate_pixmap(ps->c, pixmap))
 		pixmap = XCB_NONE;
 
 	// Create a pixmap if there isn't any
 	if (!pixmap) {
-		pixmap = x_create_pixmap(ps, ps->depth, ps->root, 1, 1);
+		pixmap = x_create_pixmap(ps->c, ps->depth, ps->root, 1, 1);
 		if (pixmap == XCB_NONE) {
 			log_error("Failed to create pixmaps for root tile.");
 			return false;
@@ -424,7 +424,7 @@ static bool get_root_tile(session_t *ps) {
 	    .repeat = true,
 	};
 	ps->root_tile_paint.pict = x_create_picture_with_visual_and_pixmap(
-	    ps, ps->vis, pixmap, XCB_RENDER_CP_REPEAT, &pa);
+	    ps->c, ps->vis, pixmap, XCB_RENDER_CP_REPEAT, &pa);
 
 	// Fill pixmap if needed
 	if (fill) {
@@ -484,9 +484,9 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 		return XCB_NONE;
 	}
 
-	shadow_pixmap = x_create_pixmap(ps, 8, ps->root, shadow_image->width, shadow_image->height);
+	shadow_pixmap = x_create_pixmap(ps->c, 8, ps->root, shadow_image->width, shadow_image->height);
 	shadow_pixmap_argb =
-	    x_create_pixmap(ps, 32, ps->root, shadow_image->width, shadow_image->height);
+	    x_create_pixmap(ps->c, 32, ps->root, shadow_image->width, shadow_image->height);
 
 	if (!shadow_pixmap || !shadow_pixmap_argb) {
 		log_error("failed to create shadow pixmaps");
@@ -494,9 +494,9 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 	}
 
 	shadow_picture = x_create_picture_with_standard_and_pixmap(
-	    ps, XCB_PICT_STANDARD_A_8, shadow_pixmap, 0, NULL);
+	    ps->c, XCB_PICT_STANDARD_A_8, shadow_pixmap, 0, NULL);
 	shadow_picture_argb = x_create_picture_with_standard_and_pixmap(
-	    ps, XCB_PICT_STANDARD_ARGB_32, shadow_pixmap_argb, 0, NULL);
+	    ps->c, XCB_PICT_STANDARD_ARGB_32, shadow_pixmap_argb, 0, NULL);
 	if (!shadow_picture || !shadow_picture_argb)
 		goto shadow_picture_err;
 
@@ -596,7 +596,7 @@ static bool xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, i
 	}
 
 	if (reg_clip && tmp_picture)
-		x_set_picture_clip_region(ps, tmp_picture, 0, 0, reg_clip);
+		x_set_picture_clip_region(ps->c, tmp_picture, 0, 0, reg_clip);
 
 	xcb_render_picture_t src_pict = tgt_buffer, dst_pict = tmp_picture;
 	for (int i = 0; blur_kerns[i]; ++i) {
@@ -749,7 +749,7 @@ static inline void resize_region(region_t *region, short mod) {
 /// region_real = the damage region
 void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 	if (ps->o.xrender_sync_fence) {
-		if (!x_fence_sync(ps, ps->sync_fence)) {
+		if (ps->xsync_exists && !x_fence_sync(ps->c, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
 			          "disabled from now on.");
 			xcb_sync_destroy_fence(ps->c, ps->sync_fence);
@@ -789,7 +789,7 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 		if (!ps->tgt_buffer.pixmap) {
 			free_paint(ps, &ps->tgt_buffer);
 			ps->tgt_buffer.pixmap = x_create_pixmap(
-			    ps, ps->depth, ps->root, ps->root_width, ps->root_height);
+			    ps->c, ps->depth, ps->root, ps->root_width, ps->root_height);
 			if (ps->tgt_buffer.pixmap == XCB_NONE) {
 				log_fatal("Failed to allocate a screen-sized pixmap for"
 				          "painting");
@@ -799,11 +799,11 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 
 		if (BKEND_GLX != ps->o.backend)
 			ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
-			    ps, ps->vis, ps->tgt_buffer.pixmap, 0, 0);
+			    ps->c, ps->vis, ps->tgt_buffer.pixmap, 0, 0);
 	}
 
 	if (BKEND_XRENDER == ps->o.backend) {
-		x_set_picture_clip_region(ps, ps->tgt_picture, 0, 0, &region);
+		x_set_picture_clip_region(ps->c, ps->tgt_picture, 0, 0, &region);
 	}
 
 #ifdef CONFIG_OPENGL
@@ -947,7 +947,7 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 			// it's for debug only, we don't really care
 
 			// First we create a new picture, and copy content from the buffer to it
-			xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps, ps->vis);
+			xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps->c, ps->vis);
 			xcb_render_picture_t new_pict = x_create_picture_with_pictfmt(
 			    ps, ps->root_width, ps->root_height, pictfmt, 0, NULL);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
@@ -955,15 +955,15 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 			                     0, 0, 0, 0, ps->root_width, ps->root_height);
 
 			// Next, we set the region of paint and highlight it
-			x_set_picture_clip_region(ps, new_pict, 0, 0, &region);
+			x_set_picture_clip_region(ps->c, new_pict, 0, 0, &region);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER, ps->white_picture,
 			                     ps->alpha_picts[MAX_ALPHA / 2], new_pict, 0, 0,
 			                     0, 0, 0, 0, ps->root_width, ps->root_height);
 
 			// Finally, clear clip regions of new_pict and the screen, and put
 			// the whole thing on screen
-			x_set_picture_clip_region(ps, new_pict, 0, 0, &ps->screen_reg);
-			x_set_picture_clip_region(ps, ps->tgt_picture, 0, 0, &ps->screen_reg);
+			x_set_picture_clip_region(ps->c, new_pict, 0, 0, &ps->screen_reg);
+			x_set_picture_clip_region(ps->c, ps->tgt_picture, 0, 0, &ps->screen_reg);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, new_pict,
 			                     XCB_NONE, ps->tgt_picture, 0, 0, 0, 0, 0, 0,
 			                     ps->root_width, ps->root_height);

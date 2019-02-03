@@ -777,7 +777,7 @@ repair_win(session_t *ps, win *w) {
     xcb_xfixes_translate_region(ps->c, tmp,
       w->g.x + w->g.border_width,
       w->g.y + w->g.border_width);
-    x_fetch_region(ps, tmp, &parts);
+    x_fetch_region(ps->c, tmp, &parts);
     xcb_xfixes_destroy_region(ps->c, tmp);
   }
 
@@ -1247,7 +1247,7 @@ xerror(Display attr_unused *dpy, XErrorEvent *ev) {
  * XCB error handler function.
  */
 void
-ev_xcb_error(session_t attr_unused *ps, xcb_generic_error_t *err) {
+ev_xcb_error(session_t *ps, xcb_generic_error_t *err) {
   if (!should_ignore(ps, err->sequence))
     x_print_error(err->sequence, err->major_code, err->minor_code, err->error_code);
 }
@@ -2947,10 +2947,10 @@ session_init(session_t *ps_old, int argc, char **argv) {
       .subwindowmode = IncludeInferiors,
     };
 
-    ps->root_picture = x_create_picture_with_visual_and_pixmap(ps,
+    ps->root_picture = x_create_picture_with_visual_and_pixmap(ps->c,
       ps->vis, ps->root, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
     if (ps->overlay != XCB_NONE) {
-      ps->tgt_picture = x_create_picture_with_visual_and_pixmap(ps,
+      ps->tgt_picture = x_create_picture_with_visual_and_pixmap(ps->c,
         ps->vis, ps->overlay, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
     } else
       ps->tgt_picture = ps->root_picture;

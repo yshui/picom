@@ -3,8 +3,8 @@
 #include <xcb/render.h>
 #include <xcb/xcb_renderutil.h>
 
-#include "backend.h"
-#include "backend_common.h"
+#include "backend/backend.h"
+#include "backend/backend_common.h"
 #include "kernel.h"
 #include "common.h"
 #include "log.h"
@@ -21,13 +21,13 @@ solid_picture(session_t *ps, bool argb, double a, double r, double g, double b) 
 	xcb_render_color_t col;
 	xcb_rectangle_t rect;
 
-	pixmap = x_create_pixmap(ps, argb ? 32 : 8, ps->root, 1, 1);
+	pixmap = x_create_pixmap(ps->c, argb ? 32 : 8, ps->root, 1, 1);
 	if (!pixmap)
 		return XCB_NONE;
 
 	pa.repeat = 1;
 	picture = x_create_picture_with_standard_and_pixmap(
-	    ps, argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8, pixmap,
+	    ps->c, argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8, pixmap,
 	    XCB_RENDER_CP_REPEAT, &pa);
 
 	if (!picture) {
@@ -194,9 +194,9 @@ bool build_shadow(session_t *ps, double opacity, const int width, const int heig
 	}
 
 	shadow_pixmap =
-	    x_create_pixmap(ps, 8, ps->root, shadow_image->width, shadow_image->height);
+	    x_create_pixmap(ps->c, 8, ps->root, shadow_image->width, shadow_image->height);
 	shadow_pixmap_argb =
-	    x_create_pixmap(ps, 32, ps->root, shadow_image->width, shadow_image->height);
+	    x_create_pixmap(ps->c, 32, ps->root, shadow_image->width, shadow_image->height);
 
 	if (!shadow_pixmap || !shadow_pixmap_argb) {
 		log_error("Failed to create shadow pixmaps");
@@ -204,9 +204,9 @@ bool build_shadow(session_t *ps, double opacity, const int width, const int heig
 	}
 
 	shadow_picture = x_create_picture_with_standard_and_pixmap(
-	    ps, XCB_PICT_STANDARD_A_8, shadow_pixmap, 0, NULL);
+	    ps->c, XCB_PICT_STANDARD_A_8, shadow_pixmap, 0, NULL);
 	shadow_picture_argb = x_create_picture_with_standard_and_pixmap(
-	    ps, XCB_PICT_STANDARD_ARGB_32, shadow_pixmap_argb, 0, NULL);
+	    ps->c, XCB_PICT_STANDARD_ARGB_32, shadow_pixmap_argb, 0, NULL);
 	if (!shadow_picture || !shadow_picture_argb)
 		goto shadow_picture_err;
 
