@@ -19,3 +19,11 @@ solid_picture(session_t *ps, bool argb, double a, double r, double g, double b);
 
 xcb_image_t *
 make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, int height);
+
+/// The default implementation of `is_win_transparent`, it simply looks at win::mode. So
+/// this is not suitable for backends that alter the content of windows
+bool default_is_win_transparent(void *, win *, void *);
+
+/// The default implementation of `is_frame_transparent`, it uses win::frame_opacity. Same
+/// caveat as `default_is_win_transparent` applies.
+bool default_is_frame_transparent(void *, win *, void *);

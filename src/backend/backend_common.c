@@ -244,3 +244,11 @@ shadow_picture_err:
 
 	return false;
 }
+
+bool default_is_win_transparent(void *backend_data, win *w, void *win_data) {
+	return w->mode != WMODE_SOLID;
+}
+
+bool default_is_frame_transparent(void *backend_data, win *w, void *win_data) {
+	return w->frame_opacity != 1;
+}

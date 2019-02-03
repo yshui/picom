@@ -14,14 +14,6 @@ backend_info_t *backend_list[NUM_BKEND] = {
 #endif
 };
 
-bool default_is_win_transparent(void *backend_data, win *w, void *win_data) {
-	return w->mode != WMODE_SOLID;
-}
-
-bool default_is_frame_transparent(void *backend_data, win *w, void *win_data) {
-	return w->frame_opacity != 1;
-}
-
 region_t get_damage(session_t *ps) {
 	region_t region;
 	auto buffer_age_fn = backend_list[ps->o.backend]->buffer_age;
