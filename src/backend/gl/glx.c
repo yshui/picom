@@ -105,7 +105,7 @@ glx_find_fbconfig(Display *dpy, int screen, xcb_render_pictforminfo_t *pictfmt, 
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_DEPTH_SIZE, &depthbuf);
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_STENCIL_SIZE, &stencil);
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_DOUBLEBUFFER, &doublebuf);
-		if ((depthbuf + stencil + bufsize) * (doublebuf + 1) >= min_cost) {
+		if (depthbuf + stencil + bufsize * (doublebuf + 1) >= min_cost) {
 			continue;
 		}
 		int red, green, blue;
@@ -149,7 +149,7 @@ glx_find_fbconfig(Display *dpy, int screen, xcb_render_pictforminfo_t *pictfmt, 
 		} else {
 			texture_fmt = rgb ? GLX_TEXTURE_FORMAT_RGB_EXT : GLX_TEXTURE_FORMAT_RGBA_EXT;
 		}
-		min_cost = (depthbuf + stencil + bufsize) * (doublebuf + 1);
+		min_cost = depthbuf + stencil + bufsize * (doublebuf + 1);
 	}
 #undef glXGetFBConfigAttribChecked
 	free(cfg);
