@@ -1,4 +1,4 @@
-project('compton', 'c', version: '4',
+project('compton', 'c', version: '5',
         default_options: ['c_std=c11'])
 
 cc = meson.get_compiler('c')
