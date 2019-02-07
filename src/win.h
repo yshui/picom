@@ -96,7 +96,7 @@ struct win {
   int xinerama_scr;
 #endif
   /// Window visual pict format;
-  xcb_render_pictforminfo_t *pictfmt;
+  const xcb_render_pictforminfo_t *pictfmt;
   /// Window painting mode.
   winmode_t mode;
   /// Whether the window has been damaged at least once.

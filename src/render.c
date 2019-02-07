@@ -998,7 +998,7 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 
 			// First we create a new picture, and copy content from the buffer
 			// to it
-			xcb_render_pictforminfo_t *pictfmt =
+			auto pictfmt =
 			    x_get_pictform_for_visual(ps->c, ps->vis);
 			xcb_render_picture_t new_pict = x_create_picture_with_pictfmt(
 			    ps, ps->root_width, ps->root_height, pictfmt, 0, NULL);

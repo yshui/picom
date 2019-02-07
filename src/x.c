@@ -129,7 +129,8 @@ static inline void x_get_server_pictfmts(xcb_connection_t *c) {
   }
 }
 
-xcb_render_pictforminfo_t *x_get_pictform_for_visual(xcb_connection_t *c, xcb_visualid_t visual) {
+const xcb_render_pictforminfo_t *
+x_get_pictform_for_visual(xcb_connection_t *c, xcb_visualid_t visual) {
   x_get_server_pictfmts(c);
 
   xcb_render_pictvisual_t *pv = xcb_render_util_find_visual_format(g_pictfmts, visual);
@@ -161,7 +162,7 @@ int x_get_visual_depth(xcb_connection_t *c, xcb_visualid_t visual) {
 
 xcb_render_picture_t
 x_create_picture_with_pictfmt_and_pixmap(
-  xcb_connection_t *c, xcb_render_pictforminfo_t * pictfmt,
+  xcb_connection_t *c, const xcb_render_pictforminfo_t * pictfmt,
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
@@ -192,7 +193,7 @@ x_create_picture_with_visual_and_pixmap(
   xcb_pixmap_t pixmap, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
-  xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(c, visual);
+  const xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(c, visual);
   return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, pixmap, valuemask, attr);
 }
 
@@ -204,7 +205,7 @@ x_create_picture_with_standard_and_pixmap(
 {
   x_get_server_pictfmts(c);
 
-  xcb_render_pictforminfo_t *pictfmt =
+  auto pictfmt =
     xcb_render_util_find_standard_format(g_pictfmts, standard);
   assert(pictfmt);
   return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, pixmap, valuemask, attr);
@@ -215,7 +216,7 @@ x_create_picture_with_standard_and_pixmap(
  */
 xcb_render_picture_t
 x_create_picture_with_pictfmt(session_t *ps, int wid, int hei,
-  xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
+  const xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
   if (!pictfmt)
@@ -245,7 +246,7 @@ x_create_picture_with_visual(session_t *ps, int w, int h,
   xcb_visualid_t visual, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
-  xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps->c, visual);
+  auto pictfmt = x_get_pictform_for_visual(ps->c, visual);
   return x_create_picture_with_pictfmt(ps, w, h, pictfmt, valuemask, attr);
 }
 

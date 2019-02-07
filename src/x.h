@@ -93,11 +93,11 @@ xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t apr
  */
 bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char ***pstrlst, int *pnstr);
 
-xcb_render_pictforminfo_t *x_get_pictform_for_visual(xcb_connection_t *, xcb_visualid_t);
+const xcb_render_pictforminfo_t *x_get_pictform_for_visual(xcb_connection_t *, xcb_visualid_t);
 int x_get_visual_depth(xcb_connection_t *, xcb_visualid_t);
 
 xcb_render_picture_t
-x_create_picture_with_pictfmt_and_pixmap(xcb_connection_t *, xcb_render_pictforminfo_t *pictfmt,
+x_create_picture_with_pictfmt_and_pixmap(xcb_connection_t *, const xcb_render_pictforminfo_t *pictfmt,
                                          xcb_pixmap_t pixmap, unsigned long valuemask,
                                          const xcb_render_create_picture_value_list_t *attr)
     attr_nonnull(1, 2);
@@ -119,7 +119,7 @@ x_create_picture_with_standard_and_pixmap(xcb_connection_t *, xcb_pict_standard_
  */
 xcb_render_picture_t
 x_create_picture_with_pictfmt(session_t *ps, int wid, int hei,
-                              xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
+                              const xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
                               const xcb_render_create_picture_value_list_t *attr);
 
 xcb_render_picture_t
