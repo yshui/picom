@@ -36,7 +36,7 @@
  * Bind texture in paint_t if we are using GLX backend.
  */
 static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid, unsigned hei,
-                                  unsigned depth, xcb_visualid_t visual, bool force) {
+                                  int depth, xcb_visualid_t visual, bool force) {
 #ifdef CONFIG_OPENGL
 	// XXX This is a mess. But this will go away after the backend refactor.
 	static thread_local struct glx_fbconfig_info *argb_fbconfig = NULL;
@@ -47,16 +47,13 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid, 
 	if (!visual) {
 		assert(depth == 32);
 		if (!argb_fbconfig) {
-			xcb_render_pictforminfo_t tmp_pictfmt = {
-			    .direct =
-			        {
-			            .red_mask = 255,
-			            .blue_mask = 255,
-			            .green_mask = 255,
-			            .alpha_mask = 255,
-			        },
-			    .type = XCB_RENDER_PICT_TYPE_DIRECT};
-			argb_fbconfig = glx_find_fbconfig(ps->dpy, ps->scr, &tmp_pictfmt, 32);
+			argb_fbconfig = glx_find_fbconfig(
+			    ps->dpy, ps->scr,
+			    (struct glx_fbconfig_criteria){.red_size = 8,
+			                                   .green_size = 8,
+			                                   .blue_size = 8,
+			                                   .alpha_size = 8,
+			                                   .visual_depth = 32});
 		}
 		if (!argb_fbconfig) {
 			log_error("Failed to find appropriate FBConfig for 32 bit depth");
@@ -64,18 +61,18 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid, 
 		}
 		fbcfg = argb_fbconfig;
 	} else {
-		xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(ps->c, visual);
-		if (!depth) {
-			assert(visual);
-			depth = x_get_visual_depth(ps->c, visual);
+		auto m = x_visual_to_fbconfig_criteria(ps->c, visual);
+		if (m.visual_depth < 0) {
+			return false;
 		}
 
-		if (!pictfmt) {
+		if (depth && depth != m.visual_depth) {
+			log_error("Mismatching visual depth: %d != %d", depth, m.visual_depth);
 			return false;
 		}
 
 		if (!ppaint->fbcfg) {
-			ppaint->fbcfg = glx_find_fbconfig(ps->dpy, ps->scr, pictfmt, depth);
+			ppaint->fbcfg = glx_find_fbconfig(ps->dpy, ps->scr, m);
 		}
 		if (!ppaint->fbcfg) {
 			log_error("Failed to find appropriate FBConfig for X pixmap");
@@ -109,7 +106,8 @@ static int get_buffer_age(session_t *ps) {
 	if (bkend_use_glx(ps)) {
 		if (ps->o.glx_swap_method == SWAPM_BUFFER_AGE) {
 			unsigned int val;
-			glXQueryDrawable(ps->dpy, get_tgt_window(ps), GLX_BACK_BUFFER_AGE_EXT, &val);
+			glXQueryDrawable(ps->dpy, get_tgt_window(ps),
+			                 GLX_BACK_BUFFER_AGE_EXT, &val);
 			return (int)val ?: -1;
 		} else {
 			return -1;
@@ -174,7 +172,8 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, doubl
 		int alpha_step = opacity * MAX_ALPHA;
 		xcb_render_picture_t alpha_pict = ps->alpha_picts[alpha_step];
 		if (alpha_step != 0) {
-			int op = ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC : XCB_RENDER_PICT_OP_OVER);
+			int op = ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC
+			                                 : XCB_RENDER_PICT_OP_OVER);
 			xcb_render_composite(ps->c, op, pict, alpha_pict, ps->tgt_buffer.pict,
 			                     x, y, 0, 0, dx, dy, wid, hei);
 		}
@@ -191,8 +190,9 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, doubl
 	}
 }
 
-static inline void paint_region(session_t *ps, win *w, int x, int y, int wid, int hei, double opacity,
-                                const region_t *reg_paint, xcb_render_picture_t pict) {
+static inline void
+paint_region(session_t *ps, win *w, int x, int y, int wid, int hei, double opacity,
+             const region_t *reg_paint, xcb_render_picture_t pict) {
 	const int dx = (w ? w->g.x : 0) + x;
 	const int dy = (w ? w->g.y : 0) + y;
 	const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
@@ -293,8 +293,9 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, pict, XCB_NONE,
 			                     newpict, 0, 0, 0, 0, 0, 0, wid, hei);
-			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE, ps->white_picture,
-			                     XCB_NONE, newpict, 0, 0, 0, 0, 0, 0, wid, hei);
+			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE,
+			                     ps->white_picture, XCB_NONE, newpict, 0, 0,
+			                     0, 0, 0, 0, wid, hei);
 			// We use an extra PictOpInReverse operation to get correct
 			// pixel alpha. There could be a better solution.
 			if (win_has_alpha(w))
@@ -318,7 +319,8 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		const int r = extents.right;
 
 #define COMP_BDR(cx, cy, cwid, chei)                                                     \
-	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity *dopacity, reg_paint, pict)
+	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity *dopacity,      \
+	             reg_paint, pict)
 
 		// Sanitize the margins, in case some broken WM makes
 		// top_width + bottom_width > height in some cases.
@@ -409,7 +411,8 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		} break;
 #ifdef CONFIG_OPENGL
 		case BKEND_GLX:
-			glx_dim_dst(ps, x, y, wid, hei, ps->psglx->z - 0.7, dim_opacity, reg_paint);
+			glx_dim_dst(ps, x, y, wid, hei, ps->psglx->z - 0.7, dim_opacity,
+			            reg_paint);
 			break;
 #endif
 		default: assert(false);
@@ -433,8 +436,9 @@ static bool get_root_tile(session_t *ps) {
 
 	// Get the values of background attributes
 	for (int p = 0; background_props_str[p]; p++) {
-		winprop_t prop = wid_get_prop(
-		    ps, ps->root, get_atom(ps, background_props_str[p]), 1L, XCB_ATOM_PIXMAP, 32);
+		winprop_t prop =
+		    wid_get_prop(ps, ps->root, get_atom(ps, background_props_str[p]), 1L,
+		                 XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
 			pixmap = *prop.p32;
 			fill = false;
@@ -649,10 +653,12 @@ static bool xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, i
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
 		xcb_render_set_picture_filter(ps->c, src_pict, strlen(XRFILTER_CONVOLUTION),
-		                              XRFILTER_CONVOLUTION, kwid * khei + 2, convolution_blur);
-		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE, dst_pict,
-		                     (rd_from_tgt ? x : 0), (rd_from_tgt ? y : 0), 0, 0,
-		                     (rd_from_tgt ? 0 : x), (rd_from_tgt ? 0 : y), wid, hei);
+		                              XRFILTER_CONVOLUTION, kwid * khei + 2,
+		                              convolution_blur);
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
+		                     dst_pict, (rd_from_tgt ? x : 0),
+		                     (rd_from_tgt ? y : 0), 0, 0, (rd_from_tgt ? 0 : x),
+		                     (rd_from_tgt ? 0 : y), wid, hei);
 		xrfilter_reset(ps, src_pict);
 
 		{
@@ -719,10 +725,12 @@ static inline void win_blur_background(session_t *ps, win *w, xcb_render_picture
 			}
 
 			// Modify the factor of the center pixel
-			kern_src[2 + (khei / 2) * kwid + kwid / 2] = DOUBLE_TO_XFIXED(factor_center);
+			kern_src[2 + (khei / 2) * kwid + kwid / 2] =
+			    DOUBLE_TO_XFIXED(factor_center);
 
 			// Copy over
-			memcpy(kern_dst, kern_src, (kwid * khei + 2) * sizeof(xcb_render_fixed_t));
+			memcpy(kern_dst, kern_src,
+			       (kwid * khei + 2) * sizeof(xcb_render_fixed_t));
 			normalize_conv_kern(kwid, khei, kern_dst + 2);
 		}
 
@@ -773,7 +781,8 @@ static inline void resize_region(region_t *region, short mod) {
 		int hei = y2 - y1;
 		if (wid <= 0 || hei <= 0)
 			continue;
-		newrects[nnewrects] = (pixman_box32_t){.x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2};
+		newrects[nnewrects] =
+		    (pixman_box32_t){.x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2};
 		++nnewrects;
 	}
 
@@ -887,13 +896,14 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 
 			// Mask out the region we don't want shadow on
 			if (pixman_region32_not_empty(&ps->shadow_exclude_reg))
-				pixman_region32_subtract(&reg_tmp, &reg_tmp, &ps->shadow_exclude_reg);
+				pixman_region32_subtract(&reg_tmp, &reg_tmp,
+				                         &ps->shadow_exclude_reg);
 
 			// Might be worth while to crop the region to shadow
 			// border
-			pixman_region32_intersect_rect(&reg_tmp, &reg_tmp, w->g.x + w->shadow_dx,
-			                               w->g.y + w->shadow_dy,
-			                               w->shadow_width, w->shadow_height);
+			pixman_region32_intersect_rect(
+			    &reg_tmp, &reg_tmp, w->g.x + w->shadow_dx,
+			    w->g.y + w->shadow_dy, w->shadow_width, w->shadow_height);
 
 			// Mask out the body of the window from the shadow if
 			// needed Doing it here instead of in make_shadow() for
@@ -913,7 +923,8 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 				// eventually, so here we just check to make sure
 				// we don't access out of bounds.
 				pixman_region32_intersect(
-				    &reg_tmp, &reg_tmp, &ps->xinerama_scr_regs[w->xinerama_scr]);
+				    &reg_tmp, &reg_tmp,
+				    &ps->xinerama_scr_regs[w->xinerama_scr]);
 #endif
 
 			// Detect if the region is empty before painting

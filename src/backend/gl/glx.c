@@ -10,10 +10,10 @@
  *
  */
 
-#include <limits.h>
 #include <GL/glx.h>
 #include <X11/Xlib-xcb.h>
 #include <assert.h>
+#include <limits.h>
 #include <pixman.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -53,20 +53,9 @@ struct _glx_data {
 };
 
 struct glx_fbconfig_info *
-glx_find_fbconfig(Display *dpy, int screen, xcb_render_pictforminfo_t *pictfmt, int depth) {
-	assert(pictfmt);
-
-	if (pictfmt->type != XCB_RENDER_PICT_TYPE_DIRECT) {
-		log_error("compton cannot handle non-DirectColor visuals. Report an "
-		          "issue if you see this error message.");
-		return NULL;
-	}
-	int red_size = popcountl(pictfmt->direct.red_mask),
-	    blue_size = popcountl(pictfmt->direct.blue_mask),
-	    green_size = popcountl(pictfmt->direct.green_mask),
-	    alpha_size = popcountl(pictfmt->direct.alpha_mask);
-	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth %d", red_size, blue_size,
-	          green_size, alpha_size, depth);
+glx_find_fbconfig(Display *dpy, int screen, struct glx_fbconfig_criteria m) {
+	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth %d", m.red_size, m.blue_size,
+	          m.green_size, m.alpha_size, m.visual_depth);
 
 	int ncfg;
 	// clang-format off
@@ -77,11 +66,12 @@ glx_find_fbconfig(Display *dpy, int screen, xcb_render_pictforminfo_t *pictfmt, 
 	                          GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
 	                          GLX_X_RENDERABLE, true,
 	                          GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT, GLX_DONT_CARE,
-	                          GLX_BUFFER_SIZE, red_size + green_size + blue_size + alpha_size,
-	                          GLX_RED_SIZE, red_size,
-	                          GLX_BLUE_SIZE, blue_size,
-	                          GLX_GREEN_SIZE, green_size,
-	                          GLX_ALPHA_SIZE, alpha_size,
+	                          GLX_BUFFER_SIZE, m.red_size + m.green_size +
+	                                           m.blue_size + m.alpha_size,
+	                          GLX_RED_SIZE, m.red_size,
+	                          GLX_BLUE_SIZE, m.blue_size,
+	                          GLX_GREEN_SIZE, m.green_size,
+	                          GLX_ALPHA_SIZE, m.alpha_size,
 	                          GLX_STENCIL_SIZE, 0,
 	                          GLX_DEPTH_SIZE, 0,
 	                          0
@@ -112,7 +102,7 @@ glx_find_fbconfig(Display *dpy, int screen, xcb_render_pictforminfo_t *pictfmt, 
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_RED_SIZE, &red);
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BLUE_SIZE, &blue);
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_GREEN_SIZE, &green);
-		if (red != red_size || green != green_size || blue != blue_size) {
+		if (red != m.red_size || green != m.green_size || blue != m.blue_size) {
 			// Color size doesn't match, this cannot work
 			continue;
 		}
@@ -128,7 +118,8 @@ glx_find_fbconfig(Display *dpy, int screen, xcb_render_pictforminfo_t *pictfmt, 
 
 		int visual;
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_VISUAL_ID, &visual);
-		if (depth != -1 && x_get_visual_depth(XGetXCBConnection(dpy), visual) != depth) {
+		if (m.visual_depth != -1 &&
+		    x_get_visual_depth(XGetXCBConnection(dpy), visual) != m.visual_depth) {
 			// Some driver might attach fbconfig to a GLX visual with a
 			// different depth.
 			//
@@ -144,7 +135,7 @@ glx_find_fbconfig(Display *dpy, int screen, xcb_render_pictforminfo_t *pictfmt, 
 
 		// Prefer the texture format with matching alpha, with the other one as
 		// fallback
-		if (alpha_size) {
+		if (m.alpha_size) {
 			texture_fmt = rgba ? GLX_TEXTURE_FORMAT_RGBA_EXT : GLX_TEXTURE_FORMAT_RGB_EXT;
 		} else {
 			texture_fmt = rgb ? GLX_TEXTURE_FORMAT_RGB_EXT : GLX_TEXTURE_FORMAT_RGBA_EXT;
@@ -421,13 +412,8 @@ static void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 		goto err;
 	}
 
-	auto pictfmt = x_get_pictform_for_visual(ps->c, w->a.visual);
-	if (!pictfmt) {
-		log_error("Window %#010x has invalid visual %#x", w->id, w->a.visual);
-		goto err;
-	}
-	int depth = x_get_visual_depth(ps->c, w->a.visual);
-	auto fbcfg = glx_find_fbconfig(ps->dpy, ps->scr, pictfmt, depth);
+	auto criteria = x_visual_to_fbconfig_criteria(ps->c, w->a.visual);
+	auto fbcfg = glx_find_fbconfig(ps->dpy, ps->scr, criteria);
 	if (!fbcfg) {
 		log_error("Couldn't find FBConfig with requested visual %x", w->a.visual);
 		goto err;
