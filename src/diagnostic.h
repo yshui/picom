@@ -5,4 +5,4 @@
 
 typedef struct session session_t;
 
-void print_diagnostics(session_t *);
+void print_diagnostics(session_t *, const char *config_file);

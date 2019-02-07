@@ -78,8 +78,6 @@ typedef struct options_t {
 	bool monitor_repaint;
 	bool print_diagnostics;
 	// === General ===
-	/// The configuration file we used.
-	char *config_file;
 	/// Path to write PID to.
 	char *write_pid_path;
 	/// The backend in use.

@@ -2491,7 +2491,8 @@ reset_enable(EV_P_ ev_signal *w, int revents) {
  * @param argv commandline arguments
  */
 static session_t *
-session_init(session_t *ps_old, int argc, char **argv) {
+session_init(int argc, char **argv, Display *dpy, bool all_xerrors,
+             const char *config_file) {
   static const session_t s_def = {
     .backend_data = NULL,
     .dpy = NULL,
@@ -2513,7 +2514,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
     .glx_prog_win = GLX_PROG_MAIN_INIT,
 #endif
     .o = {
-      .config_file = NULL,
       .backend = BKEND_XRENDER,
       .glx_no_stencil = false,
       .mark_wmwin_focused = false,
@@ -2671,26 +2671,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
   ps->ignore_tail = &ps->ignore_head;
   gettimeofday(&ps->time_start, NULL);
 
-  int exit_code;
-  if (get_early_config(argc, argv, &ps->o.config_file, &ps->o.show_all_xerrors,
-                       &exit_code)) {
-    exit(exit_code);
-  }
+  ps->o.show_all_xerrors = all_xerrors;
 
-  // Inherit old Display if possible, primarily for resource leak checking
-  if (ps_old && ps_old->dpy)
-    ps->dpy = ps_old->dpy;
-
-  // Open Display
-  if (!ps->dpy) {
-    ps->dpy = XOpenDisplay(NULL);
-    if (!ps->dpy) {
-      log_fatal("Can't open display.");
-      exit(1);
-    }
-    XSetEventQueueOwner(ps->dpy, XCBOwnsEventQueue);
-  }
+  // Use the same Display across reset, primarily for resource leak checking
+  ps->dpy = dpy;
   ps->c = XGetXCBConnection(ps->dpy);
+
   const xcb_query_extension_reply_t *ext_info;
 
   XSetErrorHandler(xerror);
@@ -2779,10 +2765,10 @@ session_init(session_t *ps_old, int argc, char **argv) {
   // Parse configuration file
   win_option_mask_t winopt_mask[NUM_WINTYPES] = {{0}};
   bool shadow_enabled = false, fading_enable = false, hasneg = false;
-  char *config_file = parse_config(&ps->o, ps->o.config_file, &shadow_enabled,
-                                   &fading_enable, &hasneg, winopt_mask);
-  free(ps->o.config_file);
-  ps->o.config_file = config_file;
+  char *config_file_to_free = NULL;
+  config_file = config_file_to_free =
+    parse_config(&ps->o, config_file, &shadow_enabled,
+                 &fading_enable, &hasneg, winopt_mask);
 
   // Parse all of the rest command line options
   get_cfg(&ps->o, argc, argv, shadow_enabled, fading_enable, hasneg, winopt_mask);
@@ -2909,9 +2895,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
   }
 
   if (ps->o.print_diagnostics) {
-    print_diagnostics(ps);
+    print_diagnostics(ps, config_file);
+    free(config_file_to_free);
     exit(0);
   }
+  free(config_file_to_free);
 
   if (bkend_use_glx(ps)) {
     auto glx_logger = glx_string_marker_logger_new();
@@ -3052,11 +3040,6 @@ session_init(session_t *ps_old, int argc, char **argv) {
   }
 
   write_pid(ps);
-
-  // Free the old session
-  if (ps_old)
-    free(ps_old);
-
   return ps;
 }
 
@@ -3151,7 +3134,6 @@ session_destroy(session_t *ps) {
   pixman_region32_fini(&ps->screen_reg);
   free(ps->expose_rects);
 
-  free(ps->o.config_file);
   free(ps->o.write_pid_path);
   free(ps->o.logpath);
   for (int i = 0; i < MAX_BLUR_PASS; ++i) {
@@ -3248,6 +3230,13 @@ main(int argc, char **argv) {
   // correctly
   setlocale(LC_ALL, "");
 
+  int exit_code;
+  char *config_file = NULL;
+  bool all_xerrors = 0;
+  if (get_early_config(argc, argv, &config_file, &all_xerrors, &exit_code)) {
+    return exit_code;
+  }
+
   sigset_t sigmask;
   sigemptyset(&sigmask);
   const struct sigaction int_action = {
@@ -3258,21 +3247,30 @@ main(int argc, char **argv) {
   sigaction(SIGINT, &int_action, NULL);
 
   // Main loop
-  session_t *ps_old = ps_g;
   bool quit = false;
-  while (!quit) {
-    ps_g = session_init(ps_old, argc, argv);
+  Display *dpy = XOpenDisplay(NULL);
+  if (!dpy) {
+    log_fatal("Can't open display.");
+    return 1;
+  }
+  XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
+
+  do {
+    ps_g = session_init(argc, argv, dpy, all_xerrors, config_file);
     if (!ps_g) {
       log_fatal("Failed to create new compton session.");
       return 1;
     }
     session_run(ps_g);
-    ps_old = ps_g;
     quit = ps_g->quit;
     session_destroy(ps_g);
-  }
+    free(ps_g);
+  } while (!quit);
 
-  free(ps_g);
+  if (dpy) {
+    XCloseDisplay(dpy);
+  }
+  free(config_file);
 
   return 0;
 }
