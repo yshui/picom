@@ -3,8 +3,12 @@
 #pragma once
 #include <GL/glx.h>
 #include <X11/Xlib.h>
+#include <xcb/xcb.h>
+#include <xcb/render.h>
 
 #include "log.h"
+#include "compiler.h"
+#include "utils.h"
 #include "x.h"
 
 struct glx_fbconfig_info {
