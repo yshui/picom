@@ -207,6 +207,7 @@ cdbus_destroy(session_t *ps) {
         log_error("Failed to release DBus name (%s).", err.message);
         dbus_error_free(&err);
       }
+      free(cd->dbus_service);
     }
 
     // Close and unref the connection
