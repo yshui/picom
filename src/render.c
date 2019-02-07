@@ -432,21 +432,7 @@ static bool get_root_tile(session_t *ps) {
 	ps->root_tile_fill = false;
 
 	bool fill = false;
-	xcb_pixmap_t pixmap = XCB_NONE;
-
-	// Get the values of background attributes
-	for (int p = 0; background_props_str[p]; p++) {
-		winprop_t prop =
-		    wid_get_prop(ps, ps->root, get_atom(ps, background_props_str[p]), 1L,
-		                 XCB_ATOM_PIXMAP, 32);
-		if (prop.nitems) {
-			pixmap = *prop.p32;
-			fill = false;
-			free_winprop(&prop);
-			break;
-		}
-		free_winprop(&prop);
-	}
+	xcb_pixmap_t pixmap = x_get_root_back_pixmap(ps);
 
 	// Make sure the pixmap we got is valid
 	if (pixmap && !x_validate_pixmap(ps->c, pixmap))

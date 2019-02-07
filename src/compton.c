@@ -142,14 +142,6 @@ const char * const BACKEND_STRS[NUM_BKEND + 1] = {
   NULL
 };
 
-/// Names of root window properties that could point to a pixmap of
-/// background.
-const char *background_props_str[] = {
-  "_XROOTPMAP_ID",
-  "_XSETROOT_ID",
-  0,
-};
-
 // === Global variables ===
 
 /// Pointer to current session, as a global variable. Only used by
@@ -1647,14 +1639,10 @@ ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
     if (ps->o.track_focus && ps->o.use_ewmh_active_win
         && ps->atom_ewmh_active_win == ev->atom) {
       update_ewmh_active_win(ps);
-    }
-    else {
+    } else {
       // Destroy the root "image" if the wallpaper probably changed
-      for (int p = 0; background_props_str[p]; p++) {
-        if (ev->atom == get_atom(ps, background_props_str[p])) {
+      if (x_is_root_back_pixmap_atom(ps, ev->atom)) {
           root_damaged(ps);
-          break;
-        }
       }
     }
 

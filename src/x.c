@@ -473,7 +473,7 @@ xcb_pixmap_t x_get_root_back_pixmap(session_t *ps) {
   return pixmap;
 }
 
-bool x_atom_is_background_prop(session_t *ps, xcb_atom_t atom) {
+bool x_is_root_back_pixmap_atom(session_t *ps, xcb_atom_t atom) {
   for (int p = 0; background_props_str[p]; p++) {
     xcb_atom_t prop_atom = get_atom(ps, background_props_str[p]);
     if (prop_atom == atom)
