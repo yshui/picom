@@ -805,8 +805,13 @@ map_win(session_t *ps, xcb_window_t id) {
   // Unmap overlay window if it got mapped but we are currently not
   // in redirected state.
   if (ps->overlay && id == ps->overlay && !ps->redirected) {
-    xcb_unmap_window(ps->c, ps->overlay);
-    XFlush(ps->dpy);
+    auto e = xcb_request_check(ps->c, xcb_unmap_window(ps->c, ps->overlay));
+    if (e) {
+      log_error("Failed to unmap the overlay window");
+      free(e);
+    }
+    // We don't track the overlay window, so we can return
+    return;
   }
 
   win *w = find_win(ps, id);
@@ -835,8 +840,8 @@ map_win(session_t *ps, xcb_window_t id) {
     xcb_shape_select_input(ps->c, id, 1);
   }
 
-  // Make sure the XSelectInput() requests are sent
-  XFlush(ps->dpy);
+  // Make sure the select input requests are sent
+  x_sync(ps->c);
 
   // Update window mode here to check for ARGB windows
   win_determine_mode(ps, w);
@@ -845,8 +850,7 @@ map_win(session_t *ps, xcb_window_t id) {
   // window should have been prepared at this point
   if (!w->client_win) {
     win_recheck_client(ps, w);
-  }
-  else {
+  } else {
     // Re-mark client window here
     win_mark_client(ps, w, w->client_win);
   }
@@ -2329,9 +2333,13 @@ handle_queued_x_events(EV_P_ ev_prepare *w, int revents) {
     ev_handle(ps, ev);
     free(ev);
   };
+  // Flush because if we go into sleep when there is still
+  // requests in the outgoing buffer, they will not be sent
+  // for an indefinite amount of time.
+  // Use XFlush here too, we might still use some Xlib functions
+  // because OpenGL.
   XFlush(ps->dpy);
   xcb_flush(ps->c);
-
   int err = xcb_connection_has_error(ps->c);
   if (err) {
     log_fatal("X11 server connection broke (error %d)", err);
@@ -2695,12 +2703,16 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   // Start listening to events on root earlier to catch all possible
   // root geometry changes
-  xcb_change_window_attributes(ps->c, ps->root, XCB_CW_EVENT_MASK, (const uint32_t[]) {
-      XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY
-      | XCB_EVENT_MASK_EXPOSURE
-      | XCB_EVENT_MASK_STRUCTURE_NOTIFY
-      | XCB_EVENT_MASK_PROPERTY_CHANGE });
-  XFlush(ps->dpy);
+  auto e = xcb_request_check(
+      ps->c, xcb_change_window_attributes_checked(
+           ps->c, ps->root, XCB_CW_EVENT_MASK,
+           (const uint32_t[]){XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+                              XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY |
+                              XCB_EVENT_MASK_PROPERTY_CHANGE}));
+  if (e) {
+    log_error("Failed to setup root window event mask");
+    free(e);
+  }
 
   ps->root_width = DisplayWidth(ps->dpy, ps->scr);
   ps->root_height = DisplayHeight(ps->dpy, ps->scr);
@@ -2858,7 +2870,7 @@ session_init(session_t *ps_old, int argc, char **argv) {
 
   if (ps->o.xrender_sync_fence) {
     ps->sync_fence = xcb_generate_id(ps->c);
-    auto e = xcb_request_check(ps->c, xcb_sync_create_fence(ps->c, ps->root, ps->sync_fence, 0));
+    e = xcb_request_check(ps->c, xcb_sync_create_fence(ps->c, ps->root, ps->sync_fence, 0));
     if (e) {
       log_error("Failed to create a XSync fence. xrender-sync-fence will be disabled");
       ps->o.xrender_sync_fence = false;
@@ -3020,9 +3032,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
     recheck_focus(ps);
   }
 
-  xcb_ungrab_server(ps->c);
-  // ALWAYS flush after xcb_ungrab_server()!
-  XFlush(ps->dpy);
+  e = xcb_request_check(ps->c, xcb_ungrab_server(ps->c));
+  if (e) {
+    log_error("Failed to ungrad server");
+    free(e);
+  }
 
   // Fork to background, if asked
   if (ps->o.fork_after_register) {

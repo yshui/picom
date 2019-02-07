@@ -650,11 +650,14 @@ void win_mark_client(session_t *ps, win *w, xcb_window_t client) {
   if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
     return;
 
-  xcb_change_window_attributes(ps->c, client, XCB_CW_EVENT_MASK,
-      (const uint32_t[]) { determine_evmask(ps, client, WIN_EVMODE_CLIENT) });
-
-  // Make sure the XSelectInput() requests are sent
-  XFlush(ps->dpy);
+  auto e = xcb_request_check(
+      ps->c, xcb_change_window_attributes(
+           ps->c, client, XCB_CW_EVENT_MASK,
+           (const uint32_t[]){determine_evmask(ps, client, WIN_EVMODE_CLIENT)}));
+  if (e) {
+	  log_error("Failed to change event mask of window %#010x", client);
+	  free(e);
+  }
 
   win_upd_wintype(ps, w);
 

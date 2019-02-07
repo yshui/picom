@@ -972,6 +972,7 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 	// Wait for VBlank. We could do it aggressively (send the painting
 	// request and XFlush() on VBlank) or conservatively (send the request
 	// only on VBlank).
+	// TODO Investigate and potentially remove this option
 	if (!ps->o.vsync_aggressive)
 		vsync_wait(ps);
 
@@ -1038,7 +1039,7 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 	if (ps->o.vsync_aggressive)
 		vsync_wait(ps);
 
-	xcb_flush(ps->c);
+	x_sync(ps->c);
 
 #ifdef CONFIG_OPENGL
 	if (glx_has_context(ps)) {
