@@ -103,7 +103,22 @@ void log_add_target(struct log *l, struct log_target *tgt) {
 	l->head = tgt;
 }
 
-/// Destroy a log struct
+/// Remove a previously added log target for a log struct. If the log target was never
+/// added, nothing happens.
+void log_remove_target(struct log *l, struct log_target *tgt) {
+	struct log_target *now = l->head, **prev = &l->head;
+	while (now) {
+		if (now == tgt) {
+			*prev = now->next;
+			tgt->ops->destroy(tgt);
+			break;
+		}
+		prev = &now->next;
+		now = now->next;
+	}
+}
+
+/// Destroy a log struct and every log target added to it
 void log_destroy(struct log *l) {
 	// free all tgt
 	struct log_target *head = l->head;

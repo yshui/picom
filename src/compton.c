@@ -2654,12 +2654,12 @@ session_init(session_t *ps_old, int argc, char **argv) {
   };
 
   log_init_tls();
-  struct log_target *log_target = stderr_logger_new();
-  if (!log_target) {
+  auto stderr_logger = stderr_logger_new();
+  if (!stderr_logger) {
     fprintf(stderr, "Cannot create any logger, giving up.\n");
     abort();
   }
-  log_add_target_tls(log_target);
+  log_add_target_tls(stderr_logger);
 
   // Allocate a session and copy default values into it
   session_t *ps = cmalloc(session_t);
@@ -2788,14 +2788,11 @@ session_init(session_t *ps_old, int argc, char **argv) {
   get_cfg(&ps->o, argc, argv, shadow_enabled, fading_enable, hasneg, winopt_mask);
 
   if (ps->o.logpath) {
-    log_target = file_logger_new(ps->o.logpath);
-    if (log_target) {
-      auto level = log_get_level_tls();
+    auto l = file_logger_new(ps->o.logpath);
+    if (l) {
       log_info("Switching to log file: %s", ps->o.logpath);
-      log_deinit_tls();
-      log_init_tls();
-      log_set_level_tls(level);
-      log_add_target_tls(log_target);
+      log_remove_target_tls(stderr_logger);
+      log_add_target_tls(l);
     } else {
       log_error("Failed to setup log file %s, I will keep using stderr", ps->o.logpath);
     }
