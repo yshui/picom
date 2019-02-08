@@ -90,24 +90,7 @@ vsync_opengl_init(session_t *ps) {
   if (!ensure_glx_context(ps))
     return false;
 
-  if (!glx_has_extension(ps->dpy, ps->scr, "GLX_SGI_video_sync")) {
-    log_error("Your driver doesn't support SGI_video_sync, giving up.");
-    return false;
-  }
-
-  // Get video sync functions
-  if (!ps->psglx->glXGetVideoSyncSGI)
-    ps->psglx->glXGetVideoSyncSGI = (f_GetVideoSync)
-      glXGetProcAddress((const GLubyte *) "glXGetVideoSyncSGI");
-  if (!ps->psglx->glXWaitVideoSyncSGI)
-    ps->psglx->glXWaitVideoSyncSGI = (f_WaitVideoSync)
-      glXGetProcAddress((const GLubyte *) "glXWaitVideoSyncSGI");
-  if (!ps->psglx->glXWaitVideoSyncSGI || !ps->psglx->glXGetVideoSyncSGI) {
-    log_error("Failed to get glXWait/GetVideoSyncSGI function.");
-    return false;
-  }
-
-  return true;
+  return glxext.has_GLX_SGI_video_sync;
 #else
   log_error("compton is not compiled with OpenGL VSync support.");
   return false;
@@ -120,59 +103,32 @@ vsync_opengl_oml_init(session_t *ps) {
   if (!ensure_glx_context(ps))
     return false;
 
-  if (!glx_has_extension(ps->dpy, ps->scr, "GLX_OML_sync_control")) {
-    log_error("Your driver doesn't support OML_sync_control, giving up.");
-    return false;
-  }
-
-  // Get video sync functions
-  if (!ps->psglx->glXGetSyncValuesOML)
-    ps->psglx->glXGetSyncValuesOML = (f_GetSyncValuesOML)
-      glXGetProcAddress ((const GLubyte *) "glXGetSyncValuesOML");
-  if (!ps->psglx->glXWaitForMscOML)
-    ps->psglx->glXWaitForMscOML = (f_WaitForMscOML)
-      glXGetProcAddress ((const GLubyte *) "glXWaitForMscOML");
-  if (!ps->psglx->glXGetSyncValuesOML || !ps->psglx->glXWaitForMscOML) {
-    log_error("Failed to get OML_sync_control functions.");
-    return false;
-  }
-
-  return true;
+  return glxext.has_GLX_OML_sync_control;
 #else
   log_error("compton is not compiled with OpenGL VSync support.");
   return false;
 #endif
 }
 
-static bool
-vsync_opengl_swc_swap_interval(session_t *ps, unsigned int interval) {
 #ifdef CONFIG_OPENGL
-  if (!ensure_glx_context(ps))
-    return false;
-
-  if (!ps->psglx->glXSwapIntervalProc && !ps->psglx->glXSwapIntervalMESAProc) {
-    if (glx_has_extension(ps->dpy, ps->scr, "GLX_MESA_swap_control")) {
-      ps->psglx->glXSwapIntervalMESAProc = (f_SwapIntervalMESA)
-        glXGetProcAddress ((const GLubyte *) "glXSwapIntervalMESA");
-    } else if (glx_has_extension(ps->dpy, ps->scr, "GLX_SGI_swap_control")) {
-      ps->psglx->glXSwapIntervalProc = (f_SwapIntervalSGI)
-        glXGetProcAddress ((const GLubyte *) "glXSwapIntervalSGI");
-    } else {
-      log_error("Your driver doesn't support SGI_swap_control nor MESA_swap_control, giving up.");
+static inline bool
+vsync_opengl_swc_swap_interval(session_t *ps, unsigned int interval) {
+  if (glxext.has_GLX_MESA_swap_control)
+    return glXSwapIntervalMESA(interval) == 0;
+  else if (glxext.has_GLX_SGI_swap_control)
+    return glXSwapIntervalSGI(interval) == 0;
+  else if (glxext.has_GLX_EXT_swap_control) {
+    GLXDrawable d = glXGetCurrentDrawable();
+    if (d == None) {
+      // We don't have a context??
       return false;
     }
+    glXSwapIntervalEXT(ps->dpy, glXGetCurrentDrawable(), interval);
+    return true;
   }
-
-  if (ps->psglx->glXSwapIntervalMESAProc)
-    ps->psglx->glXSwapIntervalMESAProc(interval);
-  else if (ps->psglx->glXSwapIntervalProc)
-    ps->psglx->glXSwapIntervalProc(interval);
-  else
-    return false;
-#endif
-
-  return true;
+  return false;
 }
+#endif
 
 static bool
 vsync_opengl_swc_init(session_t *ps) {
@@ -216,8 +172,8 @@ static int
 vsync_opengl_wait(session_t *ps) {
   unsigned vblank_count = 0;
 
-  ps->psglx->glXGetVideoSyncSGI(&vblank_count);
-  ps->psglx->glXWaitVideoSyncSGI(2, (vblank_count + 1) % 2, &vblank_count);
+  glXGetVideoSyncSGI(&vblank_count);
+  glXWaitVideoSyncSGI(2, (vblank_count + 1) % 2, &vblank_count);
   // I see some code calling glXSwapIntervalSGI(1) afterwards, is it required?
 
   return 0;
@@ -232,8 +188,8 @@ static int
 vsync_opengl_oml_wait(session_t *ps) {
   int64_t ust = 0, msc = 0, sbc = 0;
 
-  ps->psglx->glXGetSyncValuesOML(ps->dpy, ps->reg_win, &ust, &msc, &sbc);
-  ps->psglx->glXWaitForMscOML(ps->dpy, ps->reg_win, 0, 2, (msc + 1) % 2,
+  glXGetSyncValuesOML(ps->dpy, ps->reg_win, &ust, &msc, &sbc);
+  glXWaitForMscOML(ps->dpy, ps->reg_win, 0, 2, (msc + 1) % 2,
       &ust, &msc, &sbc);
 
   return 0;

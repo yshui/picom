@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
+#include <stdbool.h>
 #include <GL/glx.h>
+#include <GL/glxext.h>
 #include <X11/Xlib.h>
 #include <xcb/xcb.h>
 #include <xcb/render.h>
@@ -64,36 +66,26 @@ x_visual_to_fbconfig_criteria(xcb_connection_t *c, xcb_visualid_t visual) {
 	};
 }
 
-/**
- * Check if a GLX extension exists.
- */
-static inline bool glx_has_extension(Display *dpy, int screen, const char *ext) {
-	const char *glx_exts = glXQueryExtensionsString(dpy, screen);
-	if (!glx_exts) {
-		log_error("Failed get GLX extension list.");
-		return false;
-	}
+struct glxext_info {
+	bool initialized;
+	bool has_GLX_SGI_video_sync;
+	bool has_GLX_SGI_swap_control;
+	bool has_GLX_OML_sync_control;
+	bool has_GLX_MESA_swap_control;
+	bool has_GLX_EXT_swap_control;
+	bool has_GLX_EXT_texture_from_pixmap;
+};
 
-	long inlen = strlen(ext);
-	const char *curr = glx_exts;
-	bool match = false;
-	while (curr && !match) {
-		const char *end = strchr(curr, ' ');
-		if (!end) {
-			// Last extension string
-			match = strcmp(ext, curr) == 0;
-		} else if (end - curr == inlen) {
-			// Length match, do match string
-			match = strncmp(ext, curr, end - curr) == 0;
-		}
-		curr = end ? end + 1 : NULL;
-	}
+extern struct glxext_info glxext;
 
-	if (!match) {
-		log_info("Missing GLX extension %s.", ext);
-	} else {
-		log_info("Found GLX extension %s.", ext);
-	}
+extern PFNGLXGETVIDEOSYNCSGIPROC glXGetVideoSyncSGI;
+extern PFNGLXWAITVIDEOSYNCSGIPROC glXWaitVideoSyncSGI;
+extern PFNGLXGETSYNCVALUESOMLPROC glXGetSyncValuesOML;
+extern PFNGLXWAITFORMSCOMLPROC glXWaitForMscOML;
+extern PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT;
+extern PFNGLXSWAPINTERVALSGIPROC glXSwapIntervalSGI;
+extern PFNGLXSWAPINTERVALMESAPROC glXSwapIntervalMESA;
+extern PFNGLXBINDTEXIMAGEEXTPROC glXBindTexImageEXT;
+extern PFNGLXRELEASETEXIMAGEEXTPROC glXReleaseTexImageEXT;
 
-	return match;
-}
+void glxext_init(Display *, int screen);

@@ -83,7 +83,7 @@ glx_init(session_t *ps, bool need_render) {
   }
 
   // Ensure GLX_EXT_texture_from_pixmap exists
-  if (need_render && !glx_has_extension(ps->dpy, ps->scr, "GLX_EXT_texture_from_pixmap"))
+  if (need_render && !glxext.has_GLX_EXT_texture_from_pixmap)
     goto glx_init_end;
 
   // Initialize GLX data structure
@@ -174,18 +174,6 @@ glx_init(session_t *ps, bool need_render) {
   if (need_render)
     psglx->has_texture_non_power_of_two = gl_has_extension(
         "GL_ARB_texture_non_power_of_two");
-
-  // Acquire function addresses
-  if (need_render) {
-    psglx->glXBindTexImageProc = (f_BindTexImageEXT)
-      glXGetProcAddress((const GLubyte *) "glXBindTexImageEXT");
-    psglx->glXReleaseTexImageProc = (f_ReleaseTexImageEXT)
-      glXGetProcAddress((const GLubyte *) "glXReleaseTexImageEXT");
-    if (!psglx->glXBindTexImageProc || !psglx->glXReleaseTexImageProc) {
-      log_error("Failed to acquire glXBindTexImageEXT() / glXReleaseTexImageEXT().");
-      goto glx_init_end;
-    }
-  }
 
   // Render preparations
   if (need_render) {
@@ -626,9 +614,9 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
   // The specification requires rebinding whenever the content changes...
   // We can't follow this, too slow.
   if (need_release)
-    ps->psglx->glXReleaseTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+    glXReleaseTexImageEXT(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
 
-  ps->psglx->glXBindTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
+  glXBindTexImageEXT(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
 
   // Cleanup
   glBindTexture(ptex->target, 0);
@@ -647,7 +635,7 @@ glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
   // Release binding
   if (ptex->glpixmap && ptex->texture) {
     glBindTexture(ptex->target, ptex->texture);
-    ps->psglx->glXReleaseTexImageProc(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+    glXReleaseTexImageEXT(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
     glBindTexture(ptex->target, 0);
   }
 

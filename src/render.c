@@ -1121,6 +1121,9 @@ static bool init_alpha_picts(session_t *ps) {
 
 bool init_render(session_t *ps) {
 	// Initialize OpenGL as early as possible
+#ifdef CONFIG_OPENGL
+	glxext_init(ps->dpy, ps->scr);
+#endif
 	if (bkend_use_glx(ps)) {
 #ifdef CONFIG_OPENGL
 		if (!glx_init(ps, true))

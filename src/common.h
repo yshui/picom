@@ -189,18 +189,6 @@ typedef void (*GLDEBUGPROC) (GLenum source, GLenum type,
 typedef void (*f_DebugMessageCallback) (GLDEBUGPROC, void *userParam);
 #endif
 
-typedef int (*f_WaitVideoSync) (int, int, unsigned *);
-typedef int (*f_GetVideoSync) (unsigned *);
-
-typedef Bool (*f_GetSyncValuesOML) (Display* dpy, GLXDrawable drawable, int64_t* ust, int64_t* msc, int64_t* sbc);
-typedef Bool (*f_WaitForMscOML) (Display* dpy, GLXDrawable drawable, int64_t target_msc, int64_t divisor, int64_t remainder, int64_t* ust, int64_t* msc, int64_t* sbc);
-
-typedef int (*f_SwapIntervalSGI) (int interval);
-typedef int (*f_SwapIntervalMESA) (unsigned int interval);
-
-typedef void (*f_BindTexImageEXT) (Display *display, GLXDrawable drawable, int buffer, const int *attrib_list);
-typedef void (*f_ReleaseTexImageEXT) (Display *display, GLXDrawable drawable, int buffer);
-
 #ifdef CONFIG_OPENGL
 typedef GLsync (*f_FenceSync) (GLenum condition, GLbitfield flags);
 typedef GLboolean (*f_IsSync) (GLsync sync);
@@ -279,22 +267,6 @@ typedef struct {
   GLXContext context;
   /// Whether we have GL_ARB_texture_non_power_of_two.
   bool has_texture_non_power_of_two;
-  /// Pointer to glXGetVideoSyncSGI function.
-  f_GetVideoSync glXGetVideoSyncSGI;
-  /// Pointer to glXWaitVideoSyncSGI function.
-  f_WaitVideoSync glXWaitVideoSyncSGI;
-   /// Pointer to glXGetSyncValuesOML function.
-  f_GetSyncValuesOML glXGetSyncValuesOML;
-  /// Pointer to glXWaitForMscOML function.
-  f_WaitForMscOML glXWaitForMscOML;
-  /// Pointer to glXSwapIntervalSGI function.
-  f_SwapIntervalSGI glXSwapIntervalProc;
-  /// Pointer to glXSwapIntervalMESA function.
-  f_SwapIntervalMESA glXSwapIntervalMESAProc;
-  /// Pointer to glXBindTexImageEXT function.
-  f_BindTexImageEXT glXBindTexImageProc;
-  /// Pointer to glXReleaseTexImageEXT function.
-  f_ReleaseTexImageEXT glXReleaseTexImageProc;
   /// Pointer to the glFenceSync() function.
   f_FenceSync glFenceSyncProc;
   /// Pointer to the glIsSync() function.

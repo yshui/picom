@@ -265,7 +265,7 @@ static void *glx_init(session_t *ps) {
 	}
 
 	// Ensure GLX_EXT_texture_from_pixmap exists
-	if (!glx_has_extension(ps->dpy, ps->scr, "GLX_EXT_texture_from_pixmap"))
+	if (!glxext.has_GLX_EXT_texture_from_pixmap)
 		goto end;
 
 	// Initialize GLX data structure
@@ -542,3 +542,87 @@ backend_info_t glx_backend = {
     .buffer_age = glx_buffer_age,
     .max_buffer_age = 5,        // XXX why?
 };
+
+/**
+ * Check if a GLX extension exists.
+ */
+static inline bool glx_has_extension(Display *dpy, int screen, const char *ext) {
+	const char *glx_exts = glXQueryExtensionsString(dpy, screen);
+	if (!glx_exts) {
+		log_error("Failed get GLX extension list.");
+		return false;
+	}
+
+	long inlen = strlen(ext);
+	const char *curr = glx_exts;
+	bool match = false;
+	while (curr && !match) {
+		const char *end = strchr(curr, ' ');
+		if (!end) {
+			// Last extension string
+			match = strcmp(ext, curr) == 0;
+		} else if (end - curr == inlen) {
+			// Length match, do match string
+			match = strncmp(ext, curr, end - curr) == 0;
+		}
+		curr = end ? end + 1 : NULL;
+	}
+
+	if (!match) {
+		log_info("Missing GLX extension %s.", ext);
+	} else {
+		log_info("Found GLX extension %s.", ext);
+	}
+
+	return match;
+}
+
+struct glxext_info glxext = {0};
+PFNGLXGETVIDEOSYNCSGIPROC glXGetVideoSyncSGI;
+PFNGLXWAITVIDEOSYNCSGIPROC glXWaitVideoSyncSGI;
+PFNGLXGETSYNCVALUESOMLPROC glXGetSyncValuesOML;
+PFNGLXWAITFORMSCOMLPROC glXWaitForMscOML;
+PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT;
+PFNGLXSWAPINTERVALSGIPROC glXSwapIntervalSGI;
+PFNGLXSWAPINTERVALMESAPROC glXSwapIntervalMESA;
+PFNGLXBINDTEXIMAGEEXTPROC glXBindTexImageEXT;
+PFNGLXRELEASETEXIMAGEEXTPROC glXReleaseTexImageEXT;
+
+void glxext_init(Display *dpy, int screen) {
+	if (glxext.initialized) {
+		return;
+	}
+	glxext.initialized = true;
+#define check_ext(name) glxext.has_##name = glx_has_extension(dpy, screen, #name)
+	check_ext(GLX_SGI_video_sync);
+	check_ext(GLX_SGI_swap_control);
+	check_ext(GLX_OML_sync_control);
+	check_ext(GLX_MESA_swap_control);
+	check_ext(GLX_EXT_swap_control);
+	check_ext(GLX_EXT_texture_from_pixmap);
+#undef check_ext
+
+#define lookup(name) (name = (__typeof__(name))glXGetProcAddress((GLubyte *)#name))
+	// Checking if the returned function pointer is NULL is not really necessary,
+	// or maybe not even useful, since glXGetProcAddress might always return something.
+	// We are doing it just for completeness' sake.
+	if (!lookup(glXGetVideoSyncSGI) || !lookup(glXWaitVideoSyncSGI)) {
+		glxext.has_GLX_SGI_video_sync = false;
+	}
+	if (!lookup(glXSwapIntervalEXT)) {
+		glxext.has_GLX_EXT_swap_control = false;
+	}
+	if (!lookup(glXSwapIntervalMESA)) {
+		glxext.has_GLX_MESA_swap_control = false;
+	}
+	if (!lookup(glXSwapIntervalSGI)) {
+		glxext.has_GLX_SGI_swap_control = false;
+	}
+	if (!lookup(glXWaitForMscOML) || !lookup(glXGetSyncValuesOML)) {
+		glxext.has_GLX_OML_sync_control = false;
+	}
+	if (!lookup(glXBindTexImageEXT) || !lookup(glXReleaseTexImageEXT)) {
+		glxext.has_GLX_EXT_texture_from_pixmap = false;
+	}
+#undef lookup
+}
