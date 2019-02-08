@@ -510,8 +510,12 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 	}
 
 	// Check for abundant positional arguments
-	if (optind < argc)
-		log_fatal("compton doesn't accept positional arguments.");
+	if (optind < argc) {
+		// log is not initialized here yet
+		fprintf(stderr, "compton doesn't accept positional arguments.\n");
+		*exit_code = 1;
+		return true;
+	}
 
 	return false;
 }
