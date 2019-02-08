@@ -96,8 +96,6 @@ typedef struct options_t {
 	bool glx_use_gpushader4;
 	/// Custom fragment shader for painting windows, as a string.
 	char *glx_fshader_win_str;
-	/// Whether to fork to background.
-	bool fork_after_register;
 	/// Whether to detect rounded corners.
 	bool detect_rounded_corners;
 	/// Force painting of window content with blending.

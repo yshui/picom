@@ -470,7 +470,8 @@ static const struct option longopts[] = {
 
 /// Get config options that are needed to parse the rest of the options
 /// Return true if we should quit
-bool get_early_config(int argc, char *const *argv, char **config_file, bool *all_xerrors, int *exit_code) {
+bool get_early_config(int argc, char *const *argv, char **config_file, bool *all_xerrors,
+                      bool *fork, int *exit_code) {
 	int o = 0, longopt_idx = -1;
 
 	// Pre-parse the commandline arguments to check for --config and invalid
@@ -486,6 +487,9 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 'h') {
 			usage(0);
 			return true;
+
+		} else if (o == 'b') {
+			*fork = true;
 		} else if (o == 'd') {
 			log_warn("-d will be ignored, please use the DISPLAY "
 			         "environment variable");
@@ -548,12 +552,19 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 		// clang-format off
 		// Short options
-		case 'h': usage(0); break;
+		case 318:
+		case 'h':
+			// These options should cause compton to exit early,
+			// so assert(false) here
+			assert(false);
+			break;
 		case 'd':
+		case 'b':
 		case 'S':
 		case 314:
-		case 318:
-		case 320: break;
+		case 320:
+			// These options are handled by get_early_config()
+			break;
 		P_CASELONG('D', fade_delta);
 		case 'I': opt->fade_in_step = normalize_d(atof(optarg)) * OPAQUE; break;
 		case 'O': opt->fade_out_step = normalize_d(atof(optarg)) * OPAQUE; break;
@@ -599,7 +610,6 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 's':
 			log_error("-n, -a, and -s have been removed.");
 			break;
-		P_CASEBOOL('b', fork_after_register);
 		// Long options
 		case 256:
 			// --config

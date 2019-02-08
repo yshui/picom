@@ -9,6 +9,7 @@
  *
  */
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
@@ -2029,49 +2030,6 @@ register_cm(session_t *ps) {
 }
 
 /**
- * Fork program to background and disable all I/O streams.
- */
-static inline bool
-fork_after(session_t *ps) {
-  if (getppid() == 1)
-    return true;
-
-#ifdef CONFIG_OPENGL
-  // GLX context must be released and reattached on fork
-  if (glx_has_context(ps) && !glXMakeCurrent(ps->dpy, XCB_NONE, NULL)) {
-    log_fatal("Failed to detach GLX context.");
-    return false;
-  }
-#endif
-
-  int pid = fork();
-
-  if (-1 == pid) {
-    log_fatal("fork() failed.");
-    return false;
-  }
-
-  if (pid > 0) _exit(0);
-
-  setsid();
-
-#ifdef CONFIG_OPENGL
-  if (glx_has_context(ps)
-      && !glXMakeCurrent(ps->dpy, get_tgt_window(ps), ps->psglx->context)) {
-    log_fatal("Failed to make GLX context current.");
-    return false;
-  }
-#endif
-
-  if (!freopen("/dev/null", "r", stdin)) {
-    log_fatal("freopen() failed.");
-    return false;
-  }
-
-  return true;
-}
-
-/**
  * Write PID to a file.
  */
 static inline bool
@@ -2485,14 +2443,16 @@ reset_enable(EV_P_ ev_signal *w, int revents) {
 /**
  * Initialize a session.
  *
- * @param ps_old old session, from which the function will take the X
- *    connection, then free it
  * @param argc number of commandline arguments
  * @param argv commandline arguments
+ * @param dpy  the X Display
+ * @param config_file the path to the config file
+ * @param all_xerros whether we should report all X errors
+ * @param fork whether we will fork after initialization
  */
 static session_t *
-session_init(int argc, char **argv, Display *dpy, bool all_xerrors,
-             const char *config_file) {
+session_init(int argc, char **argv, Display *dpy, const char *config_file,
+             bool all_xerrors, bool fork) {
   static const session_t s_def = {
     .backend_data = NULL,
     .dpy = NULL,
@@ -2518,7 +2478,6 @@ session_init(int argc, char **argv, Display *dpy, bool all_xerrors,
       .glx_no_stencil = false,
       .mark_wmwin_focused = false,
       .mark_ovredir_focused = false,
-      .fork_after_register = false,
       .detect_rounded_corners = false,
       .resize_damage = 0,
       .unredir_if_possible = false,
@@ -2779,6 +2738,7 @@ session_init(int argc, char **argv, Display *dpy, bool all_xerrors,
       log_info("Switching to log file: %s", ps->o.logpath);
       log_remove_target_tls(stderr_logger);
       log_add_target_tls(l);
+      stderr_logger = NULL;
     } else {
       log_error("Failed to setup log file %s, I will keep using stderr", ps->o.logpath);
     }
@@ -3023,23 +2983,12 @@ session_init(int argc, char **argv, Display *dpy, bool all_xerrors,
     free(e);
   }
 
-  // Fork to background, if asked
-  if (ps->o.fork_after_register) {
-    if (!fork_after(ps)) {
-      session_destroy(ps);
-      return NULL;
-    }
-  }
-
-  // Redirect output stream
-  if (ps->o.fork_after_register) {
-    if (!freopen("/dev/null", "w", stdout) || !freopen("/dev/null", "w", stderr)) {
-      log_fatal("Failed to redirect stdout/stderr to /dev/null");
-      exit(1);
-    }
-  }
-
   write_pid(ps);
+
+  if (fork && stderr_logger) {
+    // Remove the stderr logger if we will fork
+    log_remove_target_tls(stderr_logger);
+  }
   return ps;
 }
 
@@ -3232,9 +3181,39 @@ main(int argc, char **argv) {
 
   int exit_code;
   char *config_file = NULL;
-  bool all_xerrors = 0;
-  if (get_early_config(argc, argv, &config_file, &all_xerrors, &exit_code)) {
+  bool all_xerrors = false, need_fork = false;
+  if (get_early_config(argc, argv, &config_file, &all_xerrors, &need_fork, &exit_code)) {
     return exit_code;
+  }
+
+  int pfds[2];
+  if (need_fork) {
+    if (pipe2(pfds, O_CLOEXEC)) {
+      perror("pipe2");
+      return 1;
+    }
+    auto pid = fork();
+    if (pid < 0) {
+      perror("fork");
+      return 1;
+    }
+    if (pid > 0) {
+      // We are the parent
+      close(pfds[1]);
+      // We wait for the child to tell us it has finished initialization
+      // by sending us something via the pipe.
+      int tmp;
+      if (read(pfds[0], &tmp, sizeof tmp) <= 0) {
+        // Failed to read, the child has most likely died
+        // We can probably waitpid() here.
+        return 1;
+      } else {
+        // We are done
+        return 0;
+      }
+    }
+    // We are the child
+    close(pfds[0]);
   }
 
   sigset_t sigmask;
@@ -3256,10 +3235,28 @@ main(int argc, char **argv) {
   XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
 
   do {
-    ps_g = session_init(argc, argv, dpy, all_xerrors, config_file);
+    ps_g = session_init(argc, argv, dpy, config_file, all_xerrors, need_fork);
     if (!ps_g) {
       log_fatal("Failed to create new compton session.");
       return 1;
+    }
+    if (need_fork) {
+      // Finishing up daemonization
+      // Close files
+      if (fclose(stdout) || fclose(stderr) || fclose(stdin)) {
+        log_fatal("Failed to close standard input/output");
+        return 1;
+      }
+      // Make us the session and process group leader so we don't get killed when
+      // our parent die.
+      setsid();
+      // Notify the parent that we are done. This might cause the parent to quit,
+      // so only do this after setsid()
+      int tmp = 1;
+      write(pfds[1], &tmp, sizeof tmp);
+      close(pfds[1]);
+      // We only do this once
+      need_fork = false;
     }
     session_run(ps_g);
     quit = ps_g->quit;
