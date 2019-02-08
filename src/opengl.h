@@ -26,46 +26,6 @@
 #include <locale.h>
 #include <GL/glx.h>
 
-/**
- * Check if a word is in string.
- */
-static inline bool
-wd_is_in_str(const char *haystick, const char *needle) {
-  if (!haystick)
-    return false;
-
-  assert(*needle);
-
-  const char *pos = haystick - 1;
-  while ((pos = strstr(pos + 1, needle))) {
-    // Continue if it isn't a word boundary
-    if (((pos - haystick) && !isspace(*(pos - 1)))
-        || (strlen(pos) > strlen(needle) && !isspace(pos[strlen(needle)])))
-      continue;
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Check if a GLX extension exists.
- */
-static inline bool
-glx_hasglxext(session_t *ps, const char *ext) {
-  const char *glx_exts = glXQueryExtensionsString(ps->dpy, ps->scr);
-  if (!glx_exts) {
-    log_error("Failed get GLX extension list.");
-    return false;
-  }
-
-  bool found = wd_is_in_str(glx_exts, ext);
-  if (!found)
-    log_info("Missing GLX extension %s.", ext);
-
-  return found;
-}
-
 bool
 glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
     GLfloat factor, const region_t *reg_tgt);

@@ -63,3 +63,37 @@ x_visual_to_fbconfig_criteria(xcb_connection_t *c, xcb_visualid_t visual) {
 	    .visual_depth = depth,
 	};
 }
+
+/**
+ * Check if a GLX extension exists.
+ */
+static inline bool glx_has_extension(Display *dpy, int screen, const char *ext) {
+	const char *glx_exts = glXQueryExtensionsString(dpy, screen);
+	if (!glx_exts) {
+		log_error("Failed get GLX extension list.");
+		return false;
+	}
+
+	long inlen = strlen(ext);
+	const char *curr = glx_exts;
+	bool match = false;
+	while (curr && !match) {
+		const char *end = strchr(curr, ' ');
+		if (!end) {
+			// Last extension string
+			match = strcmp(ext, curr) == 0;
+		} else if (end - curr == inlen) {
+			// Length match, do match string
+			match = strncmp(ext, curr, end - curr) == 0;
+		}
+		curr = end ? end + 1 : NULL;
+	}
+
+	if (!match) {
+		log_info("Missing GLX extension %s.", ext);
+	} else {
+		log_info("Found GLX extension %s.", ext);
+	}
+
+	return match;
+}

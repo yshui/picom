@@ -9,6 +9,7 @@
 #include "log.h"
 
 #ifdef CONFIG_OPENGL
+#include "backend/gl/glx.h"
 #include "opengl.h"
 #endif
 
@@ -89,7 +90,7 @@ vsync_opengl_init(session_t *ps) {
   if (!ensure_glx_context(ps))
     return false;
 
-  if (!glx_hasglxext(ps, "GLX_SGI_video_sync")) {
+  if (!glx_has_extension(ps->dpy, ps->scr, "GLX_SGI_video_sync")) {
     log_error("Your driver doesn't support SGI_video_sync, giving up.");
     return false;
   }
@@ -119,7 +120,7 @@ vsync_opengl_oml_init(session_t *ps) {
   if (!ensure_glx_context(ps))
     return false;
 
-  if (!glx_hasglxext(ps, "GLX_OML_sync_control")) {
+  if (!glx_has_extension(ps->dpy, ps->scr, "GLX_OML_sync_control")) {
     log_error("Your driver doesn't support OML_sync_control, giving up.");
     return false;
   }
@@ -150,10 +151,10 @@ vsync_opengl_swc_swap_interval(session_t *ps, unsigned int interval) {
     return false;
 
   if (!ps->psglx->glXSwapIntervalProc && !ps->psglx->glXSwapIntervalMESAProc) {
-    if (glx_hasglxext(ps, "GLX_MESA_swap_control")) {
+    if (glx_has_extension(ps->dpy, ps->scr, "GLX_MESA_swap_control")) {
       ps->psglx->glXSwapIntervalMESAProc = (f_SwapIntervalMESA)
         glXGetProcAddress ((const GLubyte *) "glXSwapIntervalMESA");
-    } else if (glx_hasglxext(ps, "GLX_SGI_swap_control")) {
+    } else if (glx_has_extension(ps->dpy, ps->scr, "GLX_SGI_swap_control")) {
       ps->psglx->glXSwapIntervalProc = (f_SwapIntervalSGI)
         glXGetProcAddress ((const GLubyte *) "glXSwapIntervalSGI");
     } else {

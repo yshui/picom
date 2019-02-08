@@ -83,7 +83,7 @@ glx_init(session_t *ps, bool need_render) {
   }
 
   // Ensure GLX_EXT_texture_from_pixmap exists
-  if (need_render && !glx_hasglxext(ps, "GLX_EXT_texture_from_pixmap"))
+  if (need_render && !glx_has_extension(ps->dpy, ps->scr, "GLX_EXT_texture_from_pixmap"))
     goto glx_init_end;
 
   // Initialize GLX data structure

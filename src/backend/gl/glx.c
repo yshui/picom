@@ -54,8 +54,8 @@ struct _glx_data {
 
 struct glx_fbconfig_info *
 glx_find_fbconfig(Display *dpy, int screen, struct glx_fbconfig_criteria m) {
-	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth %d", m.red_size, m.blue_size,
-	          m.green_size, m.alpha_size, m.visual_depth);
+	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth %d", m.red_size,
+	          m.blue_size, m.green_size, m.alpha_size, m.visual_depth);
 
 	int ncfg;
 	// clang-format off
@@ -130,15 +130,18 @@ glx_find_fbconfig(Display *dpy, int screen, struct glx_fbconfig_criteria m) {
 		// All check passed, we are using this one.
 		found = true;
 		ret = cfg[i];
-		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BIND_TO_TEXTURE_TARGETS_EXT, &texture_tgts);
+		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BIND_TO_TEXTURE_TARGETS_EXT,
+		                            &texture_tgts);
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_Y_INVERTED_EXT, &y_inverted);
 
 		// Prefer the texture format with matching alpha, with the other one as
 		// fallback
 		if (m.alpha_size) {
-			texture_fmt = rgba ? GLX_TEXTURE_FORMAT_RGBA_EXT : GLX_TEXTURE_FORMAT_RGB_EXT;
+			texture_fmt = rgba ? GLX_TEXTURE_FORMAT_RGBA_EXT
+			                   : GLX_TEXTURE_FORMAT_RGB_EXT;
 		} else {
-			texture_fmt = rgb ? GLX_TEXTURE_FORMAT_RGB_EXT : GLX_TEXTURE_FORMAT_RGBA_EXT;
+			texture_fmt =
+			    rgb ? GLX_TEXTURE_FORMAT_RGB_EXT : GLX_TEXTURE_FORMAT_RGBA_EXT;
 		}
 		min_cost = depthbuf + stencil + bufsize * (doublebuf + 1);
 	}
@@ -154,28 +157,6 @@ glx_find_fbconfig(Display *dpy, int screen, struct glx_fbconfig_criteria m) {
 	info->texture_fmt = texture_fmt;
 	info->y_inverted = y_inverted;
 	return info;
-}
-
-/**
- * Check if a GLX extension exists.
- */
-static inline bool glx_has_extension(session_t *ps, const char *ext) {
-	const char *glx_exts = glXQueryExtensionsString(ps->dpy, ps->scr);
-	if (!glx_exts) {
-		log_error("Failed get GLX extension list.");
-		return false;
-	}
-
-	int len = strlen(ext);
-	char *found = strstr(glx_exts, ext);
-	if (!found) {
-		log_info("Missing GLX extension %s.", ext);
-		return false;
-	}
-
-	// Make sure extension names are not crazy...
-	assert(found[len] == ' ' || found[len] == 0);
-	return true;
 }
 
 /**
@@ -284,7 +265,7 @@ static void *glx_init(session_t *ps) {
 	}
 
 	// Ensure GLX_EXT_texture_from_pixmap exists
-	if (!glx_has_extension(ps, "GLX_EXT_texture_from_pixmap"))
+	if (!glx_has_extension(ps->dpy, ps->scr, "GLX_EXT_texture_from_pixmap"))
 		goto end;
 
 	// Initialize GLX data structure
@@ -443,7 +424,8 @@ static void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 	    0,
 	};
 
-	wd->texture.target = (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
+	wd->texture.target =
+	    (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
 	wd->texture.y_inverted = fbcfg->y_inverted;
 
 	wd->glpixmap = glXCreatePixmap(ps->dpy, fbcfg->cfg, wd->pixmap, attrs);
