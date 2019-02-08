@@ -103,8 +103,8 @@ void log_add_target(struct log *l, struct log_target *tgt) {
 	l->head = tgt;
 }
 
-/// Remove a previously added log target for a log struct. If the log target was never
-/// added, nothing happens.
+/// Remove a previously added log target for a log struct, and destroy it. If the log
+/// target was never added, nothing happens.
 void log_remove_target(struct log *l, struct log_target *tgt) {
 	struct log_target *now = l->head, **prev = &l->head;
 	while (now) {

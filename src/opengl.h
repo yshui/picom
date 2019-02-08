@@ -101,7 +101,7 @@ glx_load_prog_main(session_t *ps,
 
 bool
 glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
-    unsigned width, unsigned height, const struct glx_fbconfig_info *);
+    unsigned width, unsigned height, bool repeat, const struct glx_fbconfig_info *);
 
 void
 glx_release_pixmap(session_t *ps, glx_texture_t *ptex);

@@ -35,8 +35,9 @@
 /**
  * Bind texture in paint_t if we are using GLX backend.
  */
-static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid, unsigned hei,
-                                  int depth, xcb_visualid_t visual, bool force) {
+static inline bool
+paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid, unsigned hei, bool repeat,
+               int depth, xcb_visualid_t visual, bool force) {
 #ifdef CONFIG_OPENGL
 	// XXX This is a mess. But this will go away after the backend refactor.
 	static thread_local struct glx_fbconfig_info *argb_fbconfig = NULL;
@@ -82,7 +83,8 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid, 
 	}
 
 	if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))
-		return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei, fbcfg);
+		return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei,
+		                       repeat, fbcfg);
 #endif
 	return true;
 }
@@ -257,7 +259,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	// Let glx_bind_pixmap() determine pixmap size, because if the user
 	// is resizing windows, the width and height we get may not be up-to-date,
 	// causing the jittering issue M4he reported in #7.
-	if (!paint_bind_tex(ps, &w->paint, 0, 0, 0, w->a.visual,
+	if (!paint_bind_tex(ps, &w->paint, 0, 0, false, 0, w->a.visual,
 	                    (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
 		log_error("Failed to bind texture for window %#010x.", w->id);
 	}
@@ -474,7 +476,7 @@ static bool get_root_tile(session_t *ps) {
 	ps->root_tile_paint.pixmap = pixmap;
 #ifdef CONFIG_OPENGL
 	if (BKEND_GLX == ps->o.backend)
-		return paint_bind_tex(ps, &ps->root_tile_paint, 0, 0, 0, ps->vis, false);
+		return paint_bind_tex(ps, &ps->root_tile_paint, 0, 0, true, 0, ps->vis, false);
 #endif
 
 	return true;
@@ -571,7 +573,7 @@ shadow_picture_err:
  */
 static inline void win_paint_shadow(session_t *ps, win *w, region_t *reg_paint) {
 	// Bind shadow pixmap to GLX texture if needed
-	paint_bind_tex(ps, &w->shadow_paint, 0, 0, 32, 0, false);
+	paint_bind_tex(ps, &w->shadow_paint, 0, 0, false, 32, 0, false);
 
 	if (!paint_isvalid(ps, &w->shadow_paint)) {
 		log_error("Window %#010x is missing shadow data.", w->id);
@@ -985,8 +987,7 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 
 			// First we create a new picture, and copy content from the buffer
 			// to it
-			auto pictfmt =
-			    x_get_pictform_for_visual(ps->c, ps->vis);
+			auto pictfmt = x_get_pictform_for_visual(ps->c, ps->vis);
 			xcb_render_picture_t new_pict = x_create_picture_with_pictfmt(
 			    ps, ps->root_width, ps->root_height, pictfmt, 0, NULL);
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
@@ -1021,7 +1022,7 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 			glFlush();
 		glXWaitX();
 		assert(ps->tgt_buffer.pixmap);
-		paint_bind_tex(ps, &ps->tgt_buffer, ps->root_width, ps->root_height,
+		paint_bind_tex(ps, &ps->tgt_buffer, ps->root_width, ps->root_height, false,
 		               ps->depth, ps->vis, !ps->o.glx_no_rebind_pixmap);
 		if (ps->o.vsync_use_glfinish)
 			glFinish();

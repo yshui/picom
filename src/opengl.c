@@ -496,7 +496,7 @@ glx_load_prog_main(session_t *ps,
  */
 bool
 glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
-    unsigned width, unsigned height, const struct glx_fbconfig_info *fbcfg) {
+    unsigned width, unsigned height, bool repeat, const struct glx_fbconfig_info *fbcfg) {
   if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID)
     return true;
 
@@ -604,8 +604,13 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
 
     glTexParameteri(ptex->target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(ptex->target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(ptex->target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(ptex->target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (repeat) {
+      glTexParameteri(ptex->target, GL_TEXTURE_WRAP_S, GL_REPEAT);
+      glTexParameteri(ptex->target, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    } else {
+      glTexParameteri(ptex->target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(ptex->target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
 
     glBindTexture(ptex->target, 0);
 
