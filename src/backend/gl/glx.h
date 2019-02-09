@@ -4,8 +4,12 @@
 #include <stdbool.h>
 // Older version of glx.h defines function prototypes...
 #define glXSwapIntervalMESA glXSwapIntervalMESA_
+#define glXBindTexImageEXT glXBindTexImageEXT_
+#define glXReleaseTexImageEXT glXReleaseTexImageEXT
 #include <GL/glx.h>
 #undef glXSwapIntervalMESA
+#undef glXBindTexImageEXT
+#undef glXReleaseTexImageEXT
 #include <X11/Xlib.h>
 #include <xcb/xcb.h>
 #include <xcb/render.h>
