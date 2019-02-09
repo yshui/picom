@@ -79,6 +79,8 @@ typedef struct options_t {
 	bool monitor_repaint;
 	bool print_diagnostics;
 	// === General ===
+	/// Use the experimental new backends?
+	bool experimental_backends;
 	/// Path to write PID to.
 	char *write_pid_path;
 	/// The backend in use.
@@ -270,13 +272,14 @@ parse_config_libconfig(options_t *, const char *config_file, bool *shadow_enable
                        bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
 #endif
 
-void set_default_winopts(options_t *, win_option_mask_t *, bool shadow_enable, bool fading_enable);
+void set_default_winopts(options_t *, win_option_mask_t *, bool shadow_enable,
+                         bool fading_enable);
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
 /// default values
 /// Outputs and returns:
 ///   same as parse_config_libconfig
 char *parse_config(options_t *, const char *config_file, bool *shadow_enable,
-                  bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
+                   bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
 
 /**
  * Parse a backend option argument.

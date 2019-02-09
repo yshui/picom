@@ -46,6 +46,7 @@
 #include "types.h"
 #include "c2.h"
 #include "log.h"
+#include "backend/backend.h"
 #ifdef CONFIG_DBUS
 #include "dbus.h"
 #endif
@@ -738,6 +739,7 @@ repair_win(session_t *ps, win *w) {
   add_damage(ps, &parts);
   pixman_region32_fini(&parts);
 }
+
 static void
 restack_win(session_t *ps, win *w, xcb_window_t new_above) {
   xcb_window_t old_above;
@@ -802,8 +804,17 @@ restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 void
 configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
   // On root window changes
+  auto root_change_fn = backend_list[ps->o.backend]->root_change;
   if (ce->window == ps->root) {
-    free_paint(ps, &ps->tgt_buffer);
+    if (ps->o.experimental_backends) {
+      if (!root_change_fn) {
+        // deinit/reinit backend if the backend cannot handle root change
+        backend_list[ps->o.backend]->deinit(ps->backend_data, ps);
+	ps->backend_data = NULL;
+      }
+    } else {
+      free_paint(ps, &ps->tgt_buffer);
+    }
 
     ps->root_width = ce->width;
     ps->root_height = ce->height;
@@ -838,7 +849,13 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     if (BKEND_GLX == ps->o.backend)
       glx_on_root_change(ps);
 #endif
-
+    if (ps->o.experimental_backends) {
+      if (root_change_fn) {
+        root_change_fn(ps->backend_data, ps);
+      } else {
+        ps->backend_data = backend_list[ps->o.backend]->init(ps);
+      }
+    }
     force_repaint(ps);
 
     return;
@@ -1948,10 +1965,25 @@ redir_start(session_t *ps) {
 
     // Map overlay window. Done firstly according to this:
     // https://bugzilla.gnome.org/show_bug.cgi?id=597014
-    if (ps->overlay)
+    if (ps->overlay) {
       xcb_map_window(ps->c, ps->overlay);
+    }
 
     xcb_composite_redirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
+
+    x_sync(ps->c);
+
+    if (ps->o.experimental_backends) {
+      // Reinitialize win_data
+      backend_info_t *bi = backend_list[ps->o.backend];
+      assert(bi);
+      ps->backend_data = bi->init(ps);
+      for (win *w = ps->list; w; w = w->next) {
+        if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+          w->win_data = bi->prepare_win(ps->backend_data, ps, w);
+        }
+      }
+    }
 
     /*
     // Unredirect GL context window as this may have an effect on VSync:
@@ -1979,6 +2011,7 @@ static void
 redir_stop(session_t *ps) {
   if (ps->redirected) {
     log_debug("Screen unredirected.");
+    backend_info_t *bi = backend_list[ps->o.backend];
     // Destroy all Pictures as they expire once windows are unredirected
     // If we don't destroy them here, looks like the resources are just
     // kept inaccessible somehow
@@ -1992,7 +2025,18 @@ redir_stop(session_t *ps) {
       }
 
       // `w` might be freed by win_check_fade_finished
-      if (w) {
+      if (!w) {
+        continue;
+      }
+      if (ps->o.experimental_backends) {
+        assert(bi);
+        if (w->state == WSTATE_MAPPED) {
+          bi->release_win(ps->backend_data, ps, w, w->win_data);
+          w->win_data = NULL;
+        } else {
+          assert(!w->win_data);
+        }
+      } else {
         free_paint(ps, &w->paint);
       }
     }
@@ -2001,6 +2045,12 @@ redir_stop(session_t *ps) {
     // Unmap overlay window
     if (ps->overlay)
       xcb_unmap_window(ps->c, ps->overlay);
+
+    if (ps->o.experimental_backends) {
+      // deinit backend
+      bi->deinit(ps->backend_data, ps);
+      ps->backend_data = NULL;
+    }
 
     // Must call XSync() here
     x_sync(ps->c);
@@ -2079,7 +2129,11 @@ _draw_callback(EV_P_ session_t *ps, int revents) {
   // If the screen is unredirected, free all_damage to stop painting
   if (ps->redirected && ps->o.stoppaint_force != ON) {
     static int paint = 0;
-    paint_all(ps, t, false);
+    if (ps->o.experimental_backends) {
+      paint_all_new(ps, t, false);
+    } else {
+      paint_all(ps, t, false);
+    }
 
     paint++;
     if (ps->o.benchmark && paint >= ps->o.benchmark)
@@ -2836,8 +2890,6 @@ session_destroy(session_t *ps) {
   free(ps->o.glx_fshader_win_str);
   free_xinerama_info(ps);
 
-  deinit_render(ps);
-
 #ifdef CONFIG_VSYNC_DRM
   // Close file opened for DRM VSync
   if (ps->drm_fd >= 0) {
@@ -2861,6 +2913,13 @@ session_destroy(session_t *ps) {
   if (ps->reg_win) {
     xcb_destroy_window(ps->c, ps->reg_win);
     ps->reg_win = XCB_NONE;
+  }
+
+  if (ps->o.experimental_backends) {
+    // backend is deinitialized in redir_stop
+    assert(ps->backend_data == NULL);
+  } else {
+    deinit_render(ps);
   }
 
   // Flush all events
