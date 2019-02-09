@@ -2613,11 +2613,11 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
 
   log_init_tls();
   auto stderr_logger = stderr_logger_new();
-  if (!stderr_logger) {
-    fprintf(stderr, "Cannot create any logger, giving up.\n");
-    abort();
+  if (stderr_logger) {
+    // stderr logger might fail to create if we are already
+    // daemonized.
+    log_add_target_tls(stderr_logger);
   }
-  log_add_target_tls(stderr_logger);
 
   // Allocate a session and copy default values into it
   session_t *ps = cmalloc(session_t);
