@@ -9,7 +9,8 @@
 #include <unistd.h>
 
 #ifdef CONFIG_OPENGL
-#include <GL/glx.h>
+#include <GL/gl.h>
+#include "backend/gl/glx.h"
 #include "backend/gl/gl_common.h"
 #endif
 

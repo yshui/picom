@@ -24,7 +24,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <locale.h>
-#include <GL/glx.h>
+#include <GL/gl.h>
 
 bool
 glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,

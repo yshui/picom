@@ -25,7 +25,6 @@
 #include <xcb/xfixes.h>
 #include <xcb/sync.h>
 #include <xcb/composite.h>
-#include <GL/glx.h>
 
 #include <ev.h>
 

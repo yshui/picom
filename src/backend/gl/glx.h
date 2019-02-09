@@ -2,8 +2,10 @@
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 #include <stdbool.h>
+// Older version of glx.h defines function prototypes...
+#define glXSwapIntervalMESA glXSwapIntervalMESA_
 #include <GL/glx.h>
-#include <GL/glxext.h>
+#undef glXSwapIntervalMESA
 #include <X11/Xlib.h>
 #include <xcb/xcb.h>
 #include <xcb/render.h>

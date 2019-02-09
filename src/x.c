@@ -12,7 +12,6 @@
 #include <xcb/damage.h>
 #include <xcb/render.h>
 #include <pixman.h>
-#include <GL/glx.h>
 
 #include "utils.h"
 #include "region.h"
@@ -20,6 +19,7 @@
 #include "common.h"
 #include "x.h"
 #include "log.h"
+#include "backend/gl/glx.h"
 
 /**
  * Get a specific attribute of a window.

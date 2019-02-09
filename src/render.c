@@ -13,7 +13,7 @@
 #include "options.h"
 
 #ifdef CONFIG_OPENGL
-#include <GL/glx.h>
+#include "backend/gl/glx.h"
 #include "opengl.h"
 #endif
 
@@ -29,7 +29,6 @@
 #include "x.h"
 
 #include "backend/backend_common.h"
-#include "backend/gl/glx.h"
 #include "render.h"
 
 /**

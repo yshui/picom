@@ -54,7 +54,7 @@
 
 #ifdef CONFIG_OPENGL
 // libGL
-#include <GL/glx.h>
+#include "backend/gl/glx.h"
 
 // Workarounds for missing definitions in some broken GL drivers, thanks to
 // douglasp and consolers for reporting

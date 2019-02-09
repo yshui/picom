@@ -70,6 +70,7 @@ module backend {
     }
     module glx {
       header "backend/gl/glx.h"
+      export GL.glx
     }
   }
   module backend {

@@ -11,7 +11,6 @@
 
 #include <string.h>
 #include <stdlib.h>
-#include <GL/glx.h>
 #include <xcb/xcb.h>
 #include <xcb/render.h>
 #include <stdio.h>

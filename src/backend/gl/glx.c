@@ -10,7 +10,6 @@
  *
  */
 
-#include <GL/glx.h>
 #include <X11/Xlib-xcb.h>
 #include <assert.h>
 #include <limits.h>
