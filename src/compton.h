@@ -148,14 +148,4 @@ dump_drawable(session_t *ps, xcb_drawable_t drawable) {
   free(r);
 }
 
-/**
- * Validate pixmap of a window, and destroy pixmap and picture if invalid.
- */
-static inline void
-win_validate_pixmap(session_t *ps, win *w) {
-  // Destroy pixmap and picture, if invalid
-  if (!x_validate_pixmap(ps->c, w->paint.pixmap))
-    free_paint(ps, &w->paint);
-}
-
 // vim: set et sw=2 :

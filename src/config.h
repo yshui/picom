@@ -167,9 +167,9 @@ typedef struct options_t {
 
 	// === Fading ===
 	/// How much to fade in in a single fading step.
-	opacity_t fade_in_step;
+	double fade_in_step;
 	/// How much to fade out in a single fading step.
-	opacity_t fade_out_step;
+	double fade_out_step;
 	/// Fading time delta. In milliseconds.
 	unsigned long fade_delta;
 	/// Whether to disable fading on window open/close.
@@ -181,11 +181,10 @@ typedef struct options_t {
 
 	// === Opacity ===
 	/// Default opacity for inactive windows.
-	/// 32-bit integer with the format of _NET_WM_OPACITY. 0 stands for
-	/// not enabled, default.
-	opacity_t inactive_opacity;
+	/// 32-bit integer with the format of _NET_WM_OPACITY.
+	double inactive_opacity;
 	/// Default opacity for inactive windows.
-	opacity_t active_opacity;
+	double active_opacity;
 	/// Whether inactive_opacity overrides the opacity set by window
 	/// attributes.
 	bool inactive_opacity_override;

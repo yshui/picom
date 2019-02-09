@@ -218,10 +218,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
     opt->fade_delta = ival;
   // -I (fade_in_step)
   if (config_lookup_float(&cfg, "fade-in-step", &dval))
-    opt->fade_in_step = normalize_d(dval) * OPAQUE;
+    opt->fade_in_step = normalize_d(dval);
   // -O (fade_out_step)
   if (config_lookup_float(&cfg, "fade-out-step", &dval))
-    opt->fade_out_step = normalize_d(dval) * OPAQUE;
+    opt->fade_out_step = normalize_d(dval);
   // -r (shadow_radius)
   config_lookup_int(&cfg, "shadow-radius", &opt->shadow_radius);
   // -o (shadow_opacity)
@@ -232,10 +232,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
   config_lookup_int(&cfg, "shadow-offset-y", &opt->shadow_offset_y);
   // -i (inactive_opacity)
   if (config_lookup_float(&cfg, "inactive-opacity", &dval))
-    opt->inactive_opacity = normalize_d(dval) * OPAQUE;
+    opt->inactive_opacity = normalize_d(dval);
   // --active_opacity
   if (config_lookup_float(&cfg, "active-opacity", &dval))
-    opt->active_opacity = normalize_d(dval) * OPAQUE;
+    opt->active_opacity = normalize_d(dval);
   // -e (frame_opacity)
   config_lookup_float(&cfg, "frame-opacity", &opt->frame_opacity);
   // -c (shadow_enable)

@@ -4,9 +4,11 @@
 
 #include <stdc-predef.h>
 
-#define auto         __auto_type
-#define likely(x)    __builtin_expect(!!(x), 1)
-#define unlikely(x)  __builtin_expect(!!(x), 0)
+#define auto           __auto_type
+#define likely(x)      __builtin_expect(!!(x), 1)
+#define unlikely(x)    __builtin_expect(!!(x), 0)
+#define likely_if(x)   if (likely(x))
+#define unlikely_if(x) if (unlikely(x))
 
 #ifndef __has_attribute
 # if __GNUC__ >= 4

@@ -89,7 +89,7 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 	bool blend = default_is_frame_transparent(NULL, w, win_data) ||
 	             default_is_win_transparent(NULL, w, win_data);
 	int op = (blend ? XCB_RENDER_PICT_OP_OVER : XCB_RENDER_PICT_OP_SRC);
-	auto alpha_pict = xd->alpha_pict[(int)(((double)w->opacity / OPAQUE) * 255.0)];
+	auto alpha_pict = xd->alpha_pict[(int)(w->opacity * 255.0)];
 
 	// XXX Move shadow drawing into a separate function,
 	//     also do shadow excluding outside of backend
@@ -290,7 +290,6 @@ render_win(void *backend_data, session_t *ps, win *w, void *win_data, const regi
 			                     0, 0, 0, 0, w->widthb, w->heightb);
 	}
 
-	const double dopacity = get_opacity_percent(w);
 	if (w->frame_opacity != 1) {
 		// Handle transparent frame
 		// Step 1: clip paint area to frame
@@ -303,7 +302,7 @@ render_win(void *backend_data, session_t *ps, win *w, void *win_data, const regi
 
 		// Draw the frame with frame opacity
 		xcb_render_picture_t alpha_pict =
-		    xd->alpha_pict[(int)(w->frame_opacity * dopacity * 255)];
+		    xd->alpha_pict[(int)(w->frame_opacity * w->opacity * 255)];
 		x_set_picture_clip_region(ps->c, wd->rendered_pict, 0, 0, &frame_reg);
 
 		// Step 2: multiply alpha value
@@ -317,7 +316,7 @@ render_win(void *backend_data, session_t *ps, win *w, void *win_data, const regi
 
 		double dim_opacity = ps->o.inactive_dim;
 		if (!ps->o.inactive_dim_fixed)
-			dim_opacity *= get_opacity_percent(w);
+			dim_opacity *= w->opacity;
 
 		xcb_render_color_t color = {
 		    .red = 0, .green = 0, .blue = 0, .alpha = 0xffff * dim_opacity};

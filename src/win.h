@@ -64,6 +64,46 @@ typedef enum {
   WMODE_SOLID, // The window is opaque including the frame
 } winmode_t;
 
+/// Transition table:
+/// (DESTROYED is when the win struct is destroyed and freed)
+/// ('o' means in all other cases)
+/// (Window is created in the UNMAPPED state)
+/// +-------------+---------+----------+-------+-------+--------+--------+---------+
+/// |             |UNMAPPING|DESTROYING|MAPPING|FADING |UNMAPPED| MAPPED |DESTROYED|
+/// +-------------+---------+----------+-------+-------+--------+--------+---------+
+/// |  UNMAPPING  |    o    |  Window  |Window |  -    | Fading |  -     |    -    |
+/// |             |         |destroyed |mapped |       |finished|        |         |
+/// +-------------+---------+----------+-------+-------+--------+--------+---------+
+/// |  DESTROYING |    -    |    o     |   -   |  -    |   -    |  -     | Fading  |
+/// |             |         |          |       |       |        |        |finished |
+/// +-------------+---------+----------+-------+-------+--------+--------+---------+
+/// |   MAPPING   | Window  |  Window  |   o   |  -    |   -    | Fading |    -    |
+/// |             |unmapped |destroyed |       |       |        |finished|         |
+/// +-------------+---------+----------+-------+-------+--------+--------+---------+
+/// |    FADING   | Window  |  Window  |   -   |  o    |   -    | Fading |    -    |
+/// |             |unmapped |destroyed |       |       |        |finished|         |
+/// +-------------+---------+----------+-------+-------+--------+--------+---------+
+/// |   UNMAPPED  |    -    |    -     |Window |  -    |   o    |   -    | Window  |
+/// |             |         |          |mapped |       |        |        |destroyed|
+/// +-------------+---------+----------+-------+-------+--------+--------+---------+
+/// |    MAPPED   | Window  |  Window  |   -   |Opacity|   -    |   o    |    -    |
+/// |             |unmapped |destroyed |       |change |        |        |         |
+/// +-------------+---------+----------+-------+-------+--------+--------+---------+
+typedef enum {
+  // The window is being faded out because it's unmapped.
+  WSTATE_UNMAPPING,
+  // The window is being faded out because it's destroyed,
+  WSTATE_DESTROYING,
+  // The window is being faded in
+  WSTATE_MAPPING,
+  // Window opacity is not at the target level
+  WSTATE_FADING,
+  // The window is mapped, no fading is in progress.
+  WSTATE_MAPPED,
+  // The window is unmapped, no fading is in progress.
+  WSTATE_UNMAPPED,
+} winstate_t;
+
 /**
  * About coordinate systems
  *
@@ -88,6 +128,9 @@ struct win {
   // Core members
   /// ID of the top-level frame window.
   xcb_window_t id;
+  /// The "mapped state" of this window, doesn't necessary
+  /// match X mapped state, because of fading.
+  winstate_t state;
   /// Window attributes.
   xcb_get_window_attributes_reply_t a;
   xcb_get_geometry_reply_t g;
@@ -175,20 +218,12 @@ struct win {
   char *class_general;
   /// <code>WM_WINDOW_ROLE</code> value of the window.
   char *role;
-  const c2_lptr_t *cache_sblst;
-  const c2_lptr_t *cache_fblst;
-  const c2_lptr_t *cache_fcblst;
-  const c2_lptr_t *cache_ivclst;
-  const c2_lptr_t *cache_bbblst;
-  const c2_lptr_t *cache_oparule;
-  const c2_lptr_t *cache_pblst;
-  const c2_lptr_t *cache_uipblst;
 
   // Opacity-related members
   /// Current window opacity.
-  opacity_t opacity;
+  double opacity;
   /// Target window opacity.
-  opacity_t opacity_tgt;
+  double opacity_tgt;
   /// true if window (or client window, for broken window managers
   /// not transferring client window's _NET_WM_OPACITY value) has opacity prop
   bool has_opacity_prop;
@@ -197,18 +232,11 @@ struct win {
   /// true if opacity is set by some rules
   bool opacity_is_set;
   /// Last window opacity value we set.
-  opacity_t opacity_set;
+  double opacity_set;
 
   // Fading-related members
-  /// Do not fade if it's false. Change on window type change.
-  /// Used by fading blacklist in the future.
-  bool fade;
-  /// Fade state on last paint.
-  bool fade_last;
   /// Override value of window fade state. Set by D-Bus method calls.
   switch_t fade_force;
-  /// Callback to be called after fading completed.
-  void (*fade_callback) (session_t *ps, win **w);
 
   // Frame-opacity-related members
   /// Current window frame opacity. Affected by window opacity.
@@ -269,7 +297,7 @@ void win_determine_mode(session_t *ps, win *w);
  * Set real focused state of a window.
  */
 void win_set_focused(session_t *ps, win *w, bool focused);
-void win_determine_fade(session_t *ps, win *w);
+bool attr_const win_should_fade(session_t *ps, const win *w);
 void win_update_prop_shadow_raw(session_t *ps, win *w);
 void win_update_prop_shadow(session_t *ps, win *w);
 void win_set_shadow(session_t *ps, win *w, bool shadow_new);
@@ -288,8 +316,11 @@ void win_unmark_client(session_t *ps, win *w);
 void win_recheck_client(session_t *ps, win *w);
 xcb_window_t win_get_leader_raw(session_t *ps, win *w, int recursions);
 bool win_get_class(session_t *ps, win *w);
-void win_calc_opacity(session_t *ps, win *w);
-void win_calc_dim(session_t *ps, win *w);
+double attr_const win_get_opacity_target(session_t *ps, const win *w);
+bool attr_const win_should_dim(session_t *ps, const win *w);
+void win_update_screen(session_t *, win *);
+/// Prepare window for fading because opacity target changed
+void win_start_fade(session_t *, win **);
 /**
  * Reread opacity property of a window.
  */
@@ -336,18 +367,8 @@ region_t win_get_region_noframe_local_by_val(win *w);
 void
 win_update_frame_extents(session_t *ps, win *w, xcb_window_t client);
 bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev);
-
-/**
- * Set fade callback of a window, and possibly execute the previous
- * callback.
- *
- * If a callback can cause rendering result to change, it should call
- * `queue_redraw`.
- *
- * @param exec_callback whether the previous callback is to be executed
- */
-void win_set_fade_callback(session_t *ps, win **_w,
-    void (*callback) (session_t *ps, win **w), bool exec_callback);
+/// Unmap or destroy a window
+void unmap_win(session_t *ps, win **, bool destroy);
 
 /**
  * Execute fade callback of a window if fading finished.
@@ -369,10 +390,13 @@ win_get_leader(session_t *ps, win *w) {
 }
 
 /// check if window has ARGB visual
-bool win_has_alpha(win *w);
+bool attr_const win_has_alpha(const win *w);
 
 /// check if reg_ignore_valid is true for all windows above us
 bool win_is_region_ignore_valid(session_t *ps, win *w);
+
+/// Free all resources in a struct win
+void free_win_res(session_t *ps, win *w);
 
 static inline region_t
 win_get_bounding_shape_global_by_val(win *w) {

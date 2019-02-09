@@ -3,11 +3,11 @@
 #include <xcb/xcb.h>
 
 #include "backend.h"
-#include "config.h"
-#include "win.h"
-#include "region.h"
 #include "common.h"
 #include "compiler.h"
+#include "config.h"
+#include "region.h"
+#include "win.h"
 
 backend_info_t *backend_list[NUM_BKEND] = {
     [BKEND_XRENDER] = &xrender_backend,
@@ -107,8 +107,7 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 					                         &reg_noframe);
 					pixman_region32_fini(&reg_noframe);
 				}
-				bi->blur(ps->backend_data, ps,
-				         (double)w->opacity / OPAQUE, &reg_blur);
+				bi->blur(ps->backend_data, ps, w->opacity, &reg_blur);
 				pixman_region32_fini(&reg_blur);
 			}
 

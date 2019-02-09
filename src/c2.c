@@ -353,7 +353,7 @@ static xcb_atom_t
 c2_get_atom_type(const c2_l_t *pleaf);
 
 static bool
-c2_match_once(session_t *ps, win *w, const c2_ptr_t cond);
+c2_match_once(session_t *ps, const win *w, const c2_ptr_t cond);
 
 /**
  * Parse a condition string.
@@ -1365,7 +1365,7 @@ c2_get_atom_type(const c2_l_t *pleaf) {
  * For internal use.
  */
 static inline void
-c2_match_once_leaf(session_t *ps, win *w, const c2_l_t *pleaf,
+c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf,
     bool *pres, bool *perr) {
   assert(pleaf);
 
@@ -1567,7 +1567,7 @@ c2_match_once_leaf(session_t *ps, win *w, const c2_l_t *pleaf,
  * @return true if matched, false otherwise.
  */
 static bool
-c2_match_once(session_t *ps, win *w, const c2_ptr_t cond) {
+c2_match_once(session_t *ps, const win *w, const c2_ptr_t cond) {
   bool result = false;
   bool error = true;
 
@@ -1644,22 +1644,10 @@ c2_match_once(session_t *ps, win *w, const c2_ptr_t cond) {
  * @return true if matched, false otherwise.
  */
 bool
-c2_match(session_t *ps, win *w, const c2_lptr_t *condlst,
-    const c2_lptr_t **cache, void **pdata) {
-  assert(w->a.map_state == XCB_MAP_STATE_VIEWABLE);
-
-  // Check if the cached entry matches firstly
-  if (cache && *cache && c2_match_once(ps, w, (*cache)->ptr)) {
-    if (pdata)
-      *pdata = (*cache)->data;
-    return true;
-  }
-
+c2_match(session_t *ps, const win *w, const c2_lptr_t *condlst, void **pdata) {
   // Then go through the whole linked list
   for (; condlst; condlst = condlst->next) {
     if (c2_match_once(ps, w, condlst->ptr)) {
-      if (cache)
-        *cache = condlst;
       if (pdata)
         *pdata = condlst->data;
       return true;
