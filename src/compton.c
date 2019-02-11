@@ -2436,6 +2436,15 @@ x_event_callback(EV_P_ ev_io *w, int revents) {
 static void
 reset_enable(EV_P_ ev_signal *w, int revents) {
   session_t *ps = session_ptr(w, usr1_signal);
+  log_info("compton is resetting...");
+  ev_break(ps->loop, EVBREAK_ALL);
+}
+
+static void
+exit_enable(EV_P_ ev_signal *w, int revents) {
+  session_t *ps = session_ptr(w, int_signal);
+  log_info("compton is quitting...");
+  ps->quit = true;
   ev_break(ps->loop, EVBREAK_ALL);
 }
 
@@ -2916,7 +2925,9 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
 
   // Set up SIGUSR1 signal handler to reset program
   ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);
+  ev_signal_init(&ps->int_signal, exit_enable, SIGINT);
   ev_signal_start(ps->loop, &ps->usr1_signal);
+  ev_signal_start(ps->loop, &ps->int_signal);
 
   // xcb can read multiple events from the socket when a request with reply is
   // made.
@@ -3136,6 +3147,7 @@ session_destroy(session_t *ps) {
   ev_idle_stop(ps->loop, &ps->draw_idle);
   ev_prepare_stop(ps->loop, &ps->event_check);
   ev_signal_stop(ps->loop, &ps->usr1_signal);
+  ev_signal_stop(ps->loop, &ps->int_signal);
 
   if (ps == ps_g)
     ps_g = NULL;
@@ -3165,11 +3177,6 @@ session_run(session_t *ps) {
     ev_idle_start(ps->loop, &ps->draw_idle);
 
   ev_run(ps->loop, 0);
-}
-
-static void
-sigint_handler(int attr_unused signum) {
-  exit(0);
 }
 
 /**
@@ -3217,15 +3224,6 @@ main(int argc, char **argv) {
     // We are the child
     close(pfds[0]);
   }
-
-  sigset_t sigmask;
-  sigemptyset(&sigmask);
-  const struct sigaction int_action = {
-    .sa_handler = sigint_handler,
-    .sa_mask = sigmask,
-    .sa_flags = 0
-  };
-  sigaction(SIGINT, &int_action, NULL);
 
   // Main loop
   bool quit = false;

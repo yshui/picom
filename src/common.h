@@ -311,6 +311,8 @@ typedef struct session {
   ev_prepare event_check;
   /// Signal handler for SIGUSR1
   ev_signal usr1_signal;
+  /// Signal handler for SIGINT
+  ev_signal int_signal;
   /// backend data
   void *backend_data;
   /// libev mainloop
