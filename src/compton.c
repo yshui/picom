@@ -2735,7 +2735,10 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
     auto l = file_logger_new(ps->o.logpath);
     if (l) {
       log_info("Switching to log file: %s", ps->o.logpath);
-      log_remove_target_tls(stderr_logger);
+      if (stderr_logger) {
+        log_remove_target_tls(stderr_logger);
+        stderr_logger = NULL;
+      }
       log_add_target_tls(l);
       stderr_logger = NULL;
     } else {
