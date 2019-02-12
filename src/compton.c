@@ -277,14 +277,15 @@ fade_timeout(session_t *ps) {
  * Run fading on a window.
  *
  * @param steps steps of fading
+ * @return whether we are still in fading mode
  */
-static void
+static bool
 run_fade(session_t *ps, win **_w, unsigned steps) {
   win *w = *_w;
   if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
     // We are not fading
     assert(w->opacity_tgt == w->opacity);
-    return;
+    return false;
   }
 
   if (!win_should_fade(ps, w)) {
@@ -292,10 +293,13 @@ run_fade(session_t *ps, win **_w, unsigned steps) {
     w->opacity = w->opacity_tgt;
   }
   if (w->opacity == w->opacity_tgt) {
-    // We have reached target opacity, wrapping up
+    // We have reached target opacity, wrapping up.
+    // Note, we reach here after we have rendered the window with the target
+    // opacity at least once. If the window is destroyed because it is faded out,
+    // there is no need to add damage here.
     log_debug("Fading finished for window %#010x %s", w->id, w->name);
     win_check_fade_finished(ps, _w);
-    return;
+    return false;
   }
 
   if (steps) {
@@ -310,9 +314,9 @@ run_fade(session_t *ps, win **_w, unsigned steps) {
     }
   }
 
-  if (w->opacity != w->opacity_tgt) {
-    ps->fade_running = true;
-  }
+  // Note even if opacity == opacity_tgt, we still want to run preprocess one last
+  // time to finish state transition. So return true in that case too.
+  return true;
 }
 
 // === Error handling ===
@@ -469,8 +473,11 @@ find_client_win(session_t *ps, xcb_window_t w) {
 }
 
 static win *
-paint_preprocess(session_t *ps, win *list) {
+paint_preprocess(session_t *ps, win *list, bool *fade_running) {
+  // XXX need better, more general name for `fade_running`. It really
+  // means if fade is still ongoing after the current frame is rendered
   win *t = NULL, *next = NULL;
+  *fade_running = false;
 
   // Fading step calculation
   unsigned long steps = 0L;
@@ -506,7 +513,10 @@ paint_preprocess(session_t *ps, win *list) {
     }
 
     // Run fading
-    run_fade(ps, &w, steps);
+    if (run_fade(ps, &w, steps)) {
+      *fade_running = true;
+    }
+
     if (!w) {
       // the window might have been destroyed because fading finished
       continue;
@@ -2084,14 +2094,14 @@ _draw_callback(EV_P_ session_t *ps, int revents) {
     }
   }
 
-  ps->fade_running = false;
-  win *t = paint_preprocess(ps, ps->list);
+  bool fade_running = false;
+  win *t = paint_preprocess(ps, ps->list, &fade_running);
   ps->tmout_unredir_hit = false;
 
   // Start/stop fade timer depends on whether window are fading
-  if (!ps->fade_running && ev_is_active(&ps->fade_timer))
+  if (!fade_running && ev_is_active(&ps->fade_timer))
     ev_timer_stop(ps->loop, &ps->fade_timer);
-  else if (ps->fade_running && !ev_is_active(&ps->fade_timer)) {
+  else if (fade_running && !ev_is_active(&ps->fade_timer)) {
     ev_timer_set(&ps->fade_timer, fade_timeout(ps), 0);
     ev_timer_start(ps->loop, &ps->fade_timer);
   }
@@ -2106,7 +2116,7 @@ _draw_callback(EV_P_ session_t *ps, int revents) {
       exit(0);
   }
 
-  if (!ps->fade_running)
+  if (!fade_running)
     ps->fade_time = 0L;
 
   ps->redraw_needed = false;
@@ -2299,7 +2309,6 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
     .time_start = { 0, 0 },
     .redirected = false,
     .alpha_picts = NULL,
-    .fade_running = false,
     .fade_time = 0L,
     .ignore_head = NULL,
     .ignore_tail = NULL,

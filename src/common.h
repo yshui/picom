@@ -370,9 +370,6 @@ typedef struct session {
   bool tmout_unredir_hit;
   /// Whether we need to redraw the screen
   bool redraw_needed;
-  /// Whether the program is idling. I.e. no fading, no potential window
-  /// changes.
-  bool fade_running;
   /// Program start time.
   struct timeval time_start;
   /// The region needs to painted on next paint.
