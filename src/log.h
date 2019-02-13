@@ -17,14 +17,21 @@ enum log_level {
 	LOG_LEVEL_FATAL,
 };
 
+#define LOG_UNLIKELY(level, x, ...)                                                            \
+	do {                                                                                   \
+		if (unlikely(LOG_LEVEL_##level >= log_get_level_tls())) {                      \
+			log_printf(tls_logger, LOG_LEVEL_##level, __func__, x, ##__VA_ARGS__); \
+		}                                                                              \
+	} while (0)
+
 #define LOG(level, x, ...)                                                                     \
 	do {                                                                                   \
 		if (LOG_LEVEL_##level >= log_get_level_tls()) {                                \
 			log_printf(tls_logger, LOG_LEVEL_##level, __func__, x, ##__VA_ARGS__); \
 		}                                                                              \
 	} while (0)
-#define log_trace(x, ...) LOG(TRACE, x, ##__VA_ARGS__)
-#define log_debug(x, ...) LOG(DEBUG, x, ##__VA_ARGS__)
+#define log_trace(x, ...) LOG_UNLIKELY(TRACE, x, ##__VA_ARGS__)
+#define log_debug(x, ...) LOG_UNLIKELY(DEBUG, x, ##__VA_ARGS__)
 #define log_info(x, ...) LOG(INFO, x, ##__VA_ARGS__)
 #define log_warn(x, ...) LOG(WARN, x, ##__VA_ARGS__)
 #define log_error(x, ...) LOG(ERROR, x, ##__VA_ARGS__)
