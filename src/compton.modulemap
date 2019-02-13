@@ -47,6 +47,7 @@ module win {
 }
 module log {
   header "log.h"
+  export compiler
 }
 module x {
   header "x.h"
