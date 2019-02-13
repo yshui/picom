@@ -496,6 +496,11 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
   glx_texture_t *ptex = *pptex;
   bool need_release = true;
 
+  // Release pixmap if parameters are inconsistent
+  if (ptex && ptex->texture && ptex->pixmap != pixmap) {
+    glx_release_pixmap(ps, ptex);
+  }
+
   // Allocate structure
   if (!ptex) {
     static const glx_texture_t GLX_TEX_DEF = {
@@ -509,18 +514,12 @@ glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap,
     };
 
     ptex = cmalloc(glx_texture_t);
-    allocchk(ptex);
     memcpy(ptex, &GLX_TEX_DEF, sizeof(glx_texture_t));
     *pptex = ptex;
   }
 
-  // Release pixmap if parameters are inconsistent
-  if (ptex->texture && ptex->pixmap != pixmap) {
-    glx_release_pixmap(ps, ptex);
-  }
-
   // Create GLX pixmap
-  unsigned depth;
+  unsigned depth = 0;
   if (!ptex->glpixmap) {
     need_release = false;
 
