@@ -10,6 +10,7 @@
 #include <libconfig.h>
 #include <basedir_fs.h>
 
+#include "err.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
@@ -176,11 +177,11 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 
   f = open_config_file(config_file, &path);
   if (!f) {
+    free(path);
     if (config_file) {
       log_fatal("Failed to read configuration file \"%s\".", config_file);
-      abort();
+      return ERR_PTR(-1);
     }
-    free(path);
     return NULL;
   }
 
@@ -202,11 +203,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
     fclose(f);
     f = NULL;
     if (read_result == CONFIG_FALSE) {
-      log_error("Error when reading configuration file \"%s\", line %d: %s",
+      log_fatal("Error when reading configuration file \"%s\", line %d: %s",
                 path, config_error_line(&cfg), config_error_text(&cfg));
-      config_destroy(&cfg);
-      free(path);
-      return NULL;
+      goto err;
     }
   }
   config_set_auto_convert(&cfg, 1);
@@ -311,7 +310,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
     opt->vsync = parse_vsync(sval);
     if (opt->vsync >= NUM_VSYNC) {
       log_fatal("Cannot parse vsync");
-      exit(1);
+      goto err;
     }
   }
   // --backend
@@ -319,7 +318,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
     opt->backend = parse_backend(sval);
     if (opt->backend >= NUM_BKEND) {
       log_fatal("Cannot parse backend");
-      exit(1);
+      goto err;
     }
   }
   // --log-level
@@ -382,7 +381,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
   if (config_lookup_string(&cfg, "blur-kern", &sval) &&
       !parse_conv_kern_lst(sval, opt->blur_kerns, MAX_BLUR_PASS, conv_kern_hasneg)) {
     log_fatal("Cannot parse \"blur-kern\"");
-    exit(1);
+    goto err;
   }
   // --resize-damage
   config_lookup_int(&cfg, "resize-damage", &opt->resize_damage);
@@ -395,7 +394,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
     opt->glx_swap_method = parse_glx_swap_method(sval);
     if (opt->glx_swap_method == -2) {
       log_fatal("Cannot parse \"glx-swap-method\"");
-      exit(1);
+      goto err;
     }
   }
   // --glx-use-gpushader4
@@ -468,4 +467,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 
   config_destroy(&cfg);
   return path;
+
+err:
+  config_destroy(&cfg);
+  free(path);
+  return ERR_PTR(-1);
 }

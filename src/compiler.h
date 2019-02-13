@@ -45,6 +45,8 @@
 #else
 # define attr_warn_unused_result
 #endif
+// An alias for conveninence
+#define must_use attr_warn_unused_result
 
 #if __has_attribute(nonnull)
 # define attr_nonnull(...) __attribute__((nonnull(__VA_ARGS__)))

@@ -28,6 +28,7 @@
 
 #include <ev.h>
 
+#include "err.h"
 #include "kernel.h"
 #include "common.h"
 #include "compiler.h"
@@ -2736,6 +2737,10 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
   config_file = config_file_to_free =
     parse_config(&ps->o, config_file, &shadow_enabled,
                  &fading_enable, &hasneg, winopt_mask);
+
+  if (IS_ERR(config_file_to_free)) {
+    return NULL;
+  }
 
   // Parse all of the rest command line options
   get_cfg(&ps->o, argc, argv, shadow_enabled, fading_enable, hasneg, winopt_mask);
