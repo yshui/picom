@@ -50,7 +50,7 @@ OPTIONS
 	Enabled client-side shadows on windows. Note desktop windows (windows with '_NET_WM_WINDOW_TYPE_DESKTOP') never get shadow, unless explicitly requested using the wintypes option.
 
 *-C*, *--no-dock-shadow*::
-	Avoid drawing shadows on dock/panel windows.
+	Avoid drawing shadows on dock/panel windows. This option is deprecated, you should use the *wintypes* option in your config file instead.
 
 *-f*, *--fading*::
 	Fade windows in/out when opening/closing and when opacity changes, unless *--no-fading-openclose* is used.
@@ -65,7 +65,7 @@ OPTIONS
 	Opacity of window titlebars and borders. (0.1 - 1.0, disabled by default)
 
 *-G*, *--no-dnd-shadow*::
-	Don't draw shadows on drag-and-drop windows.
+	Don't draw shadows on drag-and-drop windows. This option is deprecated, you should use the *wintypes* option in your config file instead.
 
 *-b*, *--daemon*::
 	Daemonize process. Fork to background after initialization. Causes issues with certain (badly-written) drivers.
@@ -143,9 +143,6 @@ OPTIONS
 
 *--vsync-aggressive*::
 	Attempt to send painting request before VBlank and do XFlush() during VBlank. Reported to work pretty terribly. This switch may be lifted out at any moment.
-
-*--paint-on-overlay*::
-	Painting on X Composite overlay window instead of on root window.
 
 *--sw-opti*::
 	Limit compton to repaint at most once every 1 / 'refresh_rate' second to boost performance. This should not be used with *--vsync* drm/opengl/opengl-oml as they essentially does *--sw-opti*'s job already, unless you wish to specify a lower refresh rate than the actual value.
