@@ -570,8 +570,8 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// These options are handled by get_early_config()
 			break;
 		P_CASELONG('D', fade_delta);
-		case 'I': opt->fade_in_step = normalize_d(atof(optarg)) * OPAQUE; break;
-		case 'O': opt->fade_out_step = normalize_d(atof(optarg)) * OPAQUE; break;
+		case 'I': opt->fade_in_step = normalize_d(atof(optarg)); break;
+		case 'O': opt->fade_out_step = normalize_d(atof(optarg)); break;
 		case 'c': shadow_enable = true; break;
 		case 'C':
 			winopt_mask[WINTYPE_DOCK].shadow = true;
@@ -600,7 +600,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASELONG('l', shadow_offset_x);
 		P_CASELONG('t', shadow_offset_y);
 		case 'i':
-			opt->inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
+			opt->inactive_opacity = normalize_d(atof(optarg));
 			break;
 		case 'e': opt->frame_opacity = atof(optarg); break;
 		case 'z':
@@ -718,7 +718,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 297:
 			// --active-opacity
-			opt->active_opacity = (normalize_d(atof(optarg)) * OPAQUE);
+			opt->active_opacity = normalize_d(atof(optarg));
 			break;
 		P_CASEBOOL(298, glx_no_rebind_pixmap);
 		case 299:

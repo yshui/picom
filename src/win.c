@@ -30,7 +30,14 @@
 #include "dbus.h"
 #endif
 
+#ifdef CONFIG_OPENGL
+// TODO remove this include
+#include "opengl.h"
+#endif
+
 #include "win.h"
+
+#define OPAQUE 0xffffffff
 
 /// Generate a "return by value" function, from a function that returns the
 /// region via a region_t pointer argument.
@@ -74,7 +81,7 @@ group_update_focused(session_t *ps, xcb_window_t leader) {
     return;
 
   for (win *w = ps->list; w; w = w->next) {
-    if (win_get_leader(ps, w) == leader && !w->destroying)
+    if (win_get_leader(ps, w) == leader && w->state != WSTATE_DESTROYING)
       win_update_focused(ps, w);
   }
 
@@ -93,7 +100,7 @@ group_is_focused(session_t *ps, xcb_window_t leader) {
     return false;
 
   for (win *w = ps->list; w; w = w->next) {
-    if (win_get_leader(ps, w) == leader && !w->destroying
+    if (win_get_leader(ps, w) == leader && w->state != WSTATE_DESTROYING
         && win_is_focused_real(ps, w))
       return true;
   }
@@ -292,14 +299,14 @@ bool wid_get_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t def,
 }
 
 // XXX should distinguish between frame has alpha and window body has alpha
-bool win_has_alpha(win *w) {
+bool win_has_alpha(const win *w) {
   return w->pictfmt &&
     w->pictfmt->type == XCB_RENDER_PICT_TYPE_DIRECT &&
     w->pictfmt->direct.alpha_mask;
 }
 
 void win_determine_mode(session_t *ps, win *w) {
-  if (win_has_alpha(w) || w->opacity != OPAQUE) {
+  if (win_has_alpha(w) || w->opacity < 1.0) {
     w->mode = WMODE_TRANS;
   } else if (w->frame_opacity != 1.0) {
     w->mode = WMODE_FRAME_TRANS;
@@ -309,7 +316,7 @@ void win_determine_mode(session_t *ps, win *w) {
 }
 
 /**
- * Calculate and set the opacity of a window.
+ * Calculate and return the opacity target of a window.
  *
  * If window is inactive and inactive_opacity_override is set, the
  * priority is: (Simulates the old behavior)
@@ -325,78 +332,81 @@ void win_determine_mode(session_t *ps, win *w) {
  *
  * @param ps current session
  * @param w struct _win object representing the window
+ *
+ * @return target opacity
  */
-void win_calc_opacity(session_t *ps, win *w) {
-  opacity_t opacity = OPAQUE;
+double win_get_opacity_target(session_t *ps, const win *w) {
+  double opacity = 1;
 
-  if (w->destroying || w->a.map_state != XCB_MAP_STATE_VIEWABLE)
-    opacity = 0;
-  else {
-    // Try obeying opacity property and window type opacity firstly
-    if (w->has_opacity_prop)
-      opacity = w->opacity_prop;
-    else if (!safe_isnan(ps->o.wintype_option[w->window_type].opacity))
-      opacity = ps->o.wintype_option[w->window_type].opacity * OPAQUE;
-    else {
-      // Respect active_opacity only when the window is physically focused
-      if (win_is_focused_real(ps, w))
-        opacity = ps->o.active_opacity;
-      else if (false == w->focused)
-        // Respect inactive_opacity in some cases
-        opacity = ps->o.inactive_opacity;
-    }
-
-    // respect inactive override
-    if (ps->o.inactive_opacity_override && false == w->focused)
+  if (w->state == WSTATE_UNMAPPED) {
+    // be consistent
+    return 0;
+  }
+  if (w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING) {
+    return 0;
+  }
+  // Try obeying opacity property and window type opacity firstly
+  if (w->has_opacity_prop) {
+    opacity = ((double)w->opacity_prop) / OPAQUE;
+  } else if (!safe_isnan(ps->o.wintype_option[w->window_type].opacity)) {
+    opacity = ps->o.wintype_option[w->window_type].opacity;
+  } else {
+    // Respect active_opacity only when the window is physically focused
+    if (win_is_focused_real(ps, w))
+      opacity = ps->o.active_opacity;
+    else if (!w->focused)
+      // Respect inactive_opacity in some cases
       opacity = ps->o.inactive_opacity;
   }
 
-  w->opacity_tgt = opacity;
+  // respect inactive override
+  if (ps->o.inactive_opacity_override && !w->focused)
+    opacity = ps->o.inactive_opacity;
+
+  return opacity;
 }
 
 /**
  * Determine whether a window is to be dimmed.
  */
-void win_calc_dim(session_t *ps, win *w) {
-  bool dim;
-
+bool win_should_dim(session_t *ps, const win *w) {
   // Make sure we do nothing if the window is unmapped / being destroyed
-  if (w->destroying || w->a.map_state != XCB_MAP_STATE_VIEWABLE)
-    return;
-
-  if (ps->o.inactive_dim && !(w->focused)) {
-    dim = true;
-  } else {
-    dim = false;
+  if (w->state == WSTATE_UNMAPPED) {
+    return false;
   }
 
-  if (dim != w->dim) {
-    w->dim = dim;
-    add_damage_from_win(ps, w);
+  if (ps->o.inactive_dim && !(w->focused)) {
+    return true;
+  } else {
+    return false;
   }
 }
 
 /**
  * Determine if a window should fade on opacity change.
  */
-void win_determine_fade(session_t *ps, win *w) {
+bool win_should_fade(session_t *ps, const win *w) {
   // To prevent it from being overwritten by last-paint value if the window is
   // unmapped on next frame, write w->fade_last as well
-  if (UNSET != w->fade_force)
-    w->fade_last = w->fade = w->fade_force;
-  else if (ps->o.no_fading_openclose && w->in_openclose)
-    w->fade_last = w->fade = false;
-  else if (ps->o.no_fading_destroyed_argb && w->destroying &&
-           win_has_alpha(w) && w->client_win && w->client_win != w->id) {
-    w->fade_last = w->fade = false;
+  if (w->fade_force != UNSET) {
+    return w->fade_force;
+  }
+  if (ps->o.no_fading_openclose && w->in_openclose) {
+    return false;
+  }
+  if (ps->o.no_fading_destroyed_argb && w->state == WSTATE_DESTROYING &&
+      win_has_alpha(w) && w->client_win && w->client_win != w->id) {
+    // deprecated
+    return false;
   }
   // Ignore other possible causes of fading state changes after window
   // gets unmapped
-  else if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
-  } else if (c2_match(ps, w, ps->o.fade_blacklist, &w->cache_fblst, NULL))
-    w->fade = false;
-  else
-    w->fade = ps->o.wintype_option[w->window_type].fade;
+  //if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
+  //}
+  if (c2_match(ps, w, ps->o.fade_blacklist, NULL)) {
+    return false;
+  }
+  return ps->o.wintype_option[w->window_type].fade;
 }
 
 /**
@@ -467,7 +477,7 @@ void win_determine_shadow(session_t *ps, win *w) {
     shadow_new = w->shadow_force;
   else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
     shadow_new = (ps->o.wintype_option[w->window_type].shadow &&
-                  !c2_match(ps, w, ps->o.shadow_blacklist, &w->cache_sblst, NULL) &&
+                  !c2_match(ps, w, ps->o.shadow_blacklist, NULL) &&
                   !(ps->o.shadow_ignore_shaped && w->bounding_shaped &&
                     !w->rounded_corners) &&
                   !(ps->o.respect_prop_shadow && 0 == w->prop_shadow));
@@ -494,7 +504,7 @@ void win_determine_invert_color(session_t *ps, win *w) {
     invert_color_new = w->invert_color_force;
   else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
     invert_color_new =
-        c2_match(ps, w, ps->o.invert_color_list, &w->cache_ivclst, NULL);
+        c2_match(ps, w, ps->o.invert_color_list, NULL);
 
   win_set_invert_color(ps, w, invert_color_new);
 }
@@ -520,23 +530,26 @@ void win_determine_blur_background(session_t *ps, win *w) {
 
   bool blur_background_new =
       ps->o.blur_background &&
-      !c2_match(ps, w, ps->o.blur_background_blacklist, &w->cache_bbblst, NULL);
+      !c2_match(ps, w, ps->o.blur_background_blacklist, NULL);
 
   win_set_blur_background(ps, w, blur_background_new);
 }
 
 /**
  * Update window opacity according to opacity rules.
+ *
+ * TODO This override the window's opacity property, may not be
+ *      a good idea.
  */
 void win_update_opacity_rule(session_t *ps, win *w) {
   if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
     return;
 
-  opacity_t opacity = OPAQUE;
+  double opacity = 1.0;
   bool is_set = false;
   void *val = NULL;
-  if (c2_match(ps, w, ps->o.opacity_rules, &w->cache_oparule, &val)) {
-    opacity = ((double)(long)val) / 100.0 * OPAQUE;
+  if (c2_match(ps, w, ps->o.opacity_rules, &val)) {
+    opacity = ((double)(long)val) / 100.0;
     is_set = true;
   }
 
@@ -548,7 +561,7 @@ void win_update_opacity_rule(session_t *ps, win *w) {
   if (!is_set)
     wid_rm_opacity_prop(ps, w->id);
   else
-    wid_set_opacity_prop(ps, w->id, opacity);
+    wid_set_opacity_prop(ps, w->id, opacity * OPAQUE);
 }
 
 /**
@@ -556,7 +569,6 @@ void win_update_opacity_rule(session_t *ps, win *w) {
  */
 void win_on_wtype_change(session_t *ps, win *w) {
   win_determine_shadow(ps, w);
-  win_determine_fade(ps, w);
   win_update_focused(ps, w);
   if (ps->o.invert_color_list)
     win_determine_invert_color(ps, w);
@@ -566,12 +578,12 @@ void win_on_wtype_change(session_t *ps, win *w) {
 
 /**
  * Function to be called on window data changes.
+ *
+ * TODO need better name
  */
 void win_on_factor_change(session_t *ps, win *w) {
   if (ps->o.shadow_blacklist)
     win_determine_shadow(ps, w);
-  if (ps->o.fade_blacklist)
-    win_determine_fade(ps, w);
   if (ps->o.invert_color_list)
     win_determine_invert_color(ps, w);
   if (ps->o.focus_blacklist)
@@ -582,10 +594,10 @@ void win_on_factor_change(session_t *ps, win *w) {
     win_update_opacity_rule(ps, w);
   if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->o.paint_blacklist)
     w->paint_excluded =
-        c2_match(ps, w, ps->o.paint_blacklist, &w->cache_pblst, NULL);
+        c2_match(ps, w, ps->o.paint_blacklist, NULL);
   if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->o.unredir_if_possible_blacklist)
     w->unredir_if_possible_excluded = c2_match(
-        ps, w, ps->o.unredir_if_possible_blacklist, &w->cache_uipblst, NULL);
+        ps, w, ps->o.unredir_if_possible_blacklist, NULL);
   w->reg_ignore_valid = false;
 }
 
@@ -733,6 +745,31 @@ void win_recheck_client(session_t *ps, win *w) {
   win_mark_client(ps, w, cw);
 }
 
+/**
+ * Free all resources in a <code>struct _win</code>.
+ */
+void free_win_res(session_t *ps, win *w) {
+  // No need to call backend release_win here because
+  // finish_unmap_win should've done that for us.
+  // XXX unless we are called by session_destroy
+  // assert(w->win_data == NULL);
+  free_win_res_glx(ps, w);
+  free_paint(ps, &w->paint);
+  free_paint(ps, &w->shadow_paint);
+  // Above should be done during unmapping
+  // Except when we are called by session_destroy
+
+  pixman_region32_fini(&w->bounding_shape);
+  // BadDamage may be thrown if the window is destroyed
+  set_ignore_cookie(ps,
+      xcb_damage_destroy(ps->c, w->damage));
+  rc_region_unref(&w->reg_ignore);
+  free(w->name);
+  free(w->class_instance);
+  free(w->class_general);
+  free(w->role);
+}
+
 // TODO: probably split into win_new (in win.c) and add_win (in compton.c)
 bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
   static const win win_def = {
@@ -759,11 +796,14 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 
       .widthb = 0,
       .heightb = 0,
-      .destroying = false,
+      .state = WSTATE_UNMAPPED,
       .bounding_shaped = false,
       .rounded_corners = false,
       .to_paint = false,
-      .in_openclose = false,
+
+      // true when the window is first created.
+      // set to false after the first map is done
+      .in_openclose = true,
 
       .client_win = XCB_NONE,
       .window_type = WINTYPE_UNKNOWN,
@@ -778,23 +818,15 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
       .class_instance = NULL,
       .class_general = NULL,
       .role = NULL,
-      .cache_sblst = NULL,
-      .cache_fblst = NULL,
-      .cache_fcblst = NULL,
-      .cache_ivclst = NULL,
-      .cache_bbblst = NULL,
-      .cache_oparule = NULL,
 
       .opacity = 0,
       .opacity_tgt = 0,
       .has_opacity_prop = false,
       .opacity_prop = OPAQUE,
       .opacity_is_set = false,
-      .opacity_set = OPAQUE,
+      .opacity_set = 1,
 
-      .fade = false,
       .fade_force = UNSET,
-      .fade_callback = NULL,
 
       .frame_opacity = 1.0,
       .frame_extents = MARGIN_INIT,
@@ -834,7 +866,7 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
   win **p = NULL;
   if (prev) {
     for (p = &ps->list; *p; p = &(*p)->next) {
-      if ((*p)->id == prev && !(*p)->destroying)
+      if ((*p)->id == prev && (*p)->state != WSTATE_DESTROYING)
         break;
     }
   } else {
@@ -874,7 +906,7 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
   assert(map_state == XCB_MAP_STATE_VIEWABLE || map_state == XCB_MAP_STATE_UNMAPPED);
   new->a.map_state = XCB_MAP_STATE_UNMAPPED;
 
-  if (InputOutput == new->a._class) {
+  if (new->a._class == XCB_WINDOW_CLASS_INPUT_OUTPUT) {
     // Create Damage for window
     new->damage = xcb_generate_id(ps->c);
     xcb_generic_error_t *e = xcb_request_check(ps->c,
@@ -924,7 +956,7 @@ void win_update_focused(session_t *ps, win *w) {
         || (ps->o.mark_ovredir_focused &&
             w->id == w->client_win && !w->wmwin)
         || (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
-            c2_match(ps, w, ps->o.focus_blacklist, &w->cache_fcblst, NULL)))
+            c2_match(ps, w, ps->o.focus_blacklist, NULL)))
       w->focused = true;
 
     // If window grouping detection is enabled, mark the window active if
@@ -938,7 +970,8 @@ void win_update_focused(session_t *ps, win *w) {
   // Always recalculate the window target opacity, since some opacity-related
   // options depend on the output value of win_is_focused_real() instead of
   // w->focused
-  w->flags |= WFLAG_OPCT_CHANGE;
+  w->opacity_tgt = win_get_opacity_target(ps, w);
+  w->state = WSTATE_FADING;
 }
 
 /**
@@ -1288,24 +1321,120 @@ void win_ev_stop(session_t *ps, win *w) {
   }
 }
 
-/**
- * Set fade callback of a window, and possibly execute the previous
- * callback.
- *
- * If a callback can cause rendering result to change, it should call
- * `queue_redraw`.
- *
- * @param exec_callback whether the previous callback is to be executed
- */
-void win_set_fade_callback(session_t *ps, win **_w,
-    void (*callback) (session_t *ps, win **w), bool exec_callback) {
+static void
+finish_unmap_win(session_t *ps, win **_w) {
   win *w = *_w;
-  void (*old_callback) (session_t *ps, win **w) = w->fade_callback;
+  w->ever_damaged = false;
+  w->reg_ignore_valid = false;
+  w->state = WSTATE_UNMAPPED;
+  w->flags = 0;
 
-  w->fade_callback = callback;
-  // Must be the last line as the callback could destroy w!
-  if (exec_callback && old_callback)
-    old_callback(ps, _w);
+  free_paint(ps, &w->paint);
+  free_paint(ps, &w->shadow_paint);
+}
+
+static void
+finish_destroy_win(session_t *ps, win **_w) {
+  win *w = *_w;
+  win **prev = NULL;
+
+  // Window can't go from UNMAPPED to DESTROYING, and
+  // UNMAPPED is the only state where the window resource
+  // is freed. That means the window resources have not
+  // been freed at this point. call finish_unmap_win to
+  // free them.
+  finish_unmap_win(ps, _w);
+
+  log_trace("Trying to destroy (%#010x)", w->id);
+  for (prev = &ps->list; *prev; prev = &(*prev)->next) {
+    if (w == *prev) {
+      log_trace("Found (%#010x \"%s\")", w->id, w->name);
+      *prev = w->next;
+
+      if (w == ps->active_win) {
+        ps->active_win = NULL;
+      }
+
+      free_win_res(ps, w);
+
+      // Drop w from all prev_trans to avoid accessing freed memory in
+      // repair_win()
+      // TODO there can only be one prev_trans pointing to w
+      for (win *w2 = ps->list; w2; w2 = w2->next) {
+        if (w == w2->prev_trans) {
+          w2->prev_trans = NULL;
+        }
+      }
+      free(w);
+      *_w = NULL;
+      return;
+    }
+  }
+  log_warn("Destroyed window is not in window list");
+  assert(false);
+}
+
+static void
+finish_map_win(session_t *ps, win **_w) {
+  win *w = *_w;
+  w->in_openclose = false;
+  w->state = WSTATE_MAPPED;
+}
+
+void
+unmap_win(session_t *ps, win **_w, bool destroy) {
+  win *w = *_w;
+
+  log_trace("Unmapping %#010x \"%s\", destroy = %d", w->id, (w ? w->name: NULL), destroy);
+  winstate_t target_state = destroy ? WSTATE_DESTROYING : WSTATE_UNMAPPING;
+
+  if (unlikely(!w)) {
+    return;
+  }
+
+  if (unlikely(w->state == WSTATE_DESTROYING && !destroy)) {
+    log_warn("Trying to undestroy a window?");
+    assert(false);
+  }
+
+  // If the window is already in the state we want
+  if (unlikely(w->state == target_state)) {
+    log_warn("%s a window twice", destroy ? "Destroying" : "Unmapping");
+    return;
+  }
+
+  if (unlikely(w->state == WSTATE_UNMAPPED)) {
+    if (unlikely(!destroy)) {
+      log_warn("Unmapping an already unmapped window twice");
+      return;
+    }
+    // Window is already unmapped, just destroy it
+    finish_destroy_win(ps, _w);
+    return;
+  }
+
+  // Set focus out
+  win_set_focused(ps, w, false);
+
+  w->a.map_state = XCB_MAP_STATE_UNMAPPED;
+  w->state = target_state;
+  w->opacity_tgt = win_get_opacity_target(ps, w);
+
+  w->in_openclose = destroy;
+
+  // don't care about properties anymore
+  win_ev_stop(ps, w);
+
+#ifdef CONFIG_DBUS
+  // Send D-Bus signal
+  if (ps->o.dbus) {
+    if (destroy) {
+      cdbus_ev_win_destroyed(ps, w);
+    } else {
+      cdbus_ev_win_unmapped(ps, w);
+    }
+  }
+#endif
 }
 
 /**
@@ -1314,8 +1443,161 @@ void win_set_fade_callback(session_t *ps, win **_w,
 void
 win_check_fade_finished(session_t *ps, win **_w) {
   win *w = *_w;
-  if (w->fade_callback && w->opacity == w->opacity_tgt) {
-    // Must be the last line as the callback could destroy w!
-    win_set_fade_callback(ps, _w, NULL, true);
+  if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
+    // No fading in progress
+    assert(w->opacity_tgt == w->opacity);
+    return;
+  }
+  if (w->opacity == w->opacity_tgt) {
+    switch (w->state) {
+    case WSTATE_UNMAPPING: return finish_unmap_win(ps, _w);
+    case WSTATE_DESTROYING: return finish_destroy_win(ps, _w);
+    case WSTATE_MAPPING: return finish_map_win(ps, _w);
+    case WSTATE_FADING: w->state = WSTATE_MAPPED; break;
+    default: unreachable;
+    }
   }
 }
+
+/**
+ * Get the Xinerama screen a window is on.
+ *
+ * Return an index >= 0, or -1 if not found.
+ *
+ * XXX move to x.c
+ */
+void win_update_screen(session_t *ps, win *w) {
+#ifdef CONFIG_XINERAMA
+  w->xinerama_scr = -1;
+
+  if (!ps->xinerama_scrs)
+    return;
+
+  xcb_xinerama_screen_info_t *scrs = xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
+  int length = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
+  for (int i = 0; i < length; i++) {
+    xcb_xinerama_screen_info_t *s = &scrs[i];
+    if (s->x_org <= w->g.x && s->y_org <= w->g.y
+        && s->x_org + s->width >= w->g.x + w->widthb
+        && s->y_org + s->height >= w->g.y + w->heightb) {
+      w->xinerama_scr = i;
+      return;
+    }
+  }
+#endif
+}
+
+// TODO remove this
+void configure_win(session_t *, xcb_configure_notify_event_t *);
+
+/// Map an already registered window
+void
+map_win(session_t *ps, xcb_window_t id) {
+  // Unmap overlay window if it got mapped but we are currently not
+  // in redirected state.
+  if (ps->overlay && id == ps->overlay && !ps->redirected) {
+    log_debug("Overlay is mapped while we are not redirected");
+    auto e = xcb_request_check(ps->c, xcb_unmap_window(ps->c, ps->overlay));
+    if (e) {
+      log_error("Failed to unmap the overlay window");
+      free(e);
+    }
+    // We don't track the overlay window, so we can return
+    return;
+  }
+
+  win *w = find_win(ps, id);
+  log_debug("Mapping (%#010x \"%s\")", id, (w ? w->name: NULL));
+
+  // Don't care about window mapping if it's an InputOnly window
+  // Also, try avoiding mapping a window twice
+  // TODO don't even add the input only windows
+  if (!w || w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
+    return;
+  }
+
+  if (w->state != WSTATE_UNMAPPED && w->state != WSTATE_UNMAPPING) {
+    log_warn("Mapping an already mapped window");
+    return;
+  }
+
+  // XXX ???
+  assert(!win_is_focused_real(ps, w));
+
+  // XXX Can we assume map_state is always viewable?
+  w->a.map_state = XCB_MAP_STATE_VIEWABLE;
+
+  win_update_screen(ps, w);
+
+  // Set window event mask before reading properties so that no property
+  // changes are lost
+  xcb_change_window_attributes(ps->c, id, XCB_CW_EVENT_MASK,
+      (const uint32_t[]) { determine_evmask(ps, id, WIN_EVMODE_FRAME) });
+
+  // Notify compton when the shape of a window changes
+  if (ps->shape_exists) {
+    xcb_shape_select_input(ps->c, id, 1);
+  }
+
+  // Update window mode here to check for ARGB windows
+  win_determine_mode(ps, w);
+
+  // Detect client window here instead of in add_win() as the client
+  // window should have been prepared at this point
+  if (!w->client_win) {
+    win_recheck_client(ps, w);
+  } else {
+    // Re-mark client window here
+    win_mark_client(ps, w, w->client_win);
+  }
+  assert(w->client_win);
+
+  log_debug("Window (%#010x) has type %s", w->id, WINTYPES[w->window_type]);
+
+  // Update window focus state
+  win_update_focused(ps, w);
+
+  // Update opacity and dim state
+  win_update_opacity_prop(ps, w);
+
+  // Check for _COMPTON_SHADOW
+  if (ps->o.respect_prop_shadow) {
+    win_update_prop_shadow_raw(ps, w);
+  }
+
+  // Many things above could affect shadow
+  win_determine_shadow(ps, w);
+
+  // XXX We need to make sure that win_data is available
+  // iff `state` is MAPPED
+  w->state = WSTATE_MAPPING;
+  w->opacity_tgt = win_get_opacity_target(ps, w);
+  log_debug("Window %#010x has opacity %f, opacity target is %f", w->id, w->opacity, w->opacity_tgt);
+
+  win_determine_blur_background(ps, w);
+
+  w->ever_damaged = false;
+
+  /* if any configure events happened while
+     the window was unmapped, then configure
+     the window to its correct place */
+  if (w->need_configure) {
+    configure_win(ps, &w->queue_configure);
+  }
+
+  // We stopped listening on ShapeNotify events
+  // when the window is unmapped (XXX we shouldn't),
+  // so the shape of the window might have changed,
+  // update. (Issue #35)
+  win_update_bounding_shape(ps, w);
+
+#ifdef CONFIG_DBUS
+  // Send D-Bus signal
+  if (ps->o.dbus) {
+    cdbus_ev_win_mapped(ps, w);
+  }
+#endif
+}
+
+
+// vim: set et sw=2 :

@@ -21,7 +21,6 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data);
 
 c2_lptr_t *c2_free_lptr(c2_lptr_t *lp);
 
-bool c2_match(session_t *ps, win *w, const c2_lptr_t *condlst, const c2_lptr_t **cache,
-              void **pdata);
+bool c2_match(session_t *ps, const win *w, const c2_lptr_t *condlst, void **pdata);
 
 bool c2_list_postprocess(session_t *ps, c2_lptr_t *list);

@@ -307,10 +307,8 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		}
 	}
 
-	const double dopacity = get_opacity_percent(w);
-
 	if (w->frame_opacity == 1) {
-		paint_region(ps, w, 0, 0, wid, hei, dopacity, reg_paint, pict);
+		paint_region(ps, w, 0, 0, wid, hei, w->opacity, reg_paint, pict);
 	} else {
 		// Painting parameters
 		const margin_t extents = win_calc_frame_extents(w);
@@ -320,7 +318,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		const int r = extents.right;
 
 #define COMP_BDR(cx, cy, cwid, chei)                                                     \
-	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity *dopacity,      \
+	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity * w->opacity,      \
 	             reg_paint, pict)
 
 		// Sanitize the margins, in case some broken WM makes
@@ -372,7 +370,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 
 			// body
 			paint_region(ps, w, cleft, ctop, body_width, body_height,
-			             dopacity, reg_paint, pict);
+			             w->opacity, reg_paint, pict);
 		} while (0);
 	}
 
@@ -385,7 +383,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	if (w->dim) {
 		double dim_opacity = ps->o.inactive_dim;
 		if (!ps->o.inactive_dim_fixed)
-			dim_opacity *= get_opacity_percent(w);
+			dim_opacity *= w->opacity;
 
 		switch (ps->o.backend) {
 		case BKEND_XRENDER:
@@ -678,7 +676,7 @@ static inline void win_blur_background(session_t *ps, win *w, xcb_render_picture
 	// Adjust blur strength according to window opacity, to make it appear
 	// better during fading
 	if (!ps->o.blur_background_fixed) {
-		double pct = 1.0 - get_opacity_percent(w) * (1.0 - 1.0 / 9.0);
+		double pct = 1.0 - w->opacity * (1.0 - 1.0 / 9.0);
 		factor_center = pct * 8.0 / (1.1 - pct);
 	}
 

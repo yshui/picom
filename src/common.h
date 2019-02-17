@@ -98,7 +98,6 @@
 #define ROUNDED_PERCENT 0.05
 #define ROUNDED_PIXELS  10
 
-#define OPAQUE 0xffffffff
 #define REGISTER_PROP "_NET_WM_CM_S"
 
 #define TIME_MS_MAX LONG_MAX
@@ -371,9 +370,6 @@ typedef struct session {
   bool tmout_unredir_hit;
   /// Whether we need to redraw the screen
   bool redraw_needed;
-  /// Whether the program is idling. I.e. no fading, no potential window
-  /// changes.
-  bool fade_running;
   /// Program start time.
   struct timeval time_start;
   /// The region needs to painted on next paint.
@@ -687,11 +683,6 @@ timespec_subtract(struct timespec *result,
   return x->tv_sec < y->tv_sec;
 }
 
-static inline double
-get_opacity_percent(win *w) {
-  return ((double) w->opacity) / OPAQUE;
-}
-
 /**
  * Get current time in struct timeval.
  */
@@ -792,8 +783,9 @@ find_win(session_t *ps, xcb_window_t id) {
   win *w;
 
   for (w = ps->list; w; w = w->next) {
-    if (w->id == id && !w->destroying)
+    if (w->id == id && w->state != WSTATE_DESTROYING) {
       return w;
+    }
   }
 
   return 0;
@@ -811,8 +803,9 @@ find_toplevel(session_t *ps, xcb_window_t id) {
     return NULL;
 
   for (win *w = ps->list; w; w = w->next) {
-    if (w->client_win == id && !w->destroying)
+    if (w->client_win == id && w->state != WSTATE_DESTROYING) {
       return w;
+    }
   }
 
   return NULL;

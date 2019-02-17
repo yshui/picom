@@ -9,7 +9,7 @@
 
 /// Enumeration type to represent switches.
 typedef enum {
-  OFF,    // false
+  OFF = 0,    // false
   ON,     // true
   UNSET
 } switch_t;
