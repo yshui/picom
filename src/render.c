@@ -1169,7 +1169,7 @@ bool init_render(session_t *ps) {
 	}
 
 	ps->gaussian_map = gaussian_kernel(ps->o.shadow_radius);
-	shadow_preprocess(ps->gaussian_map);
+	sum_kernel_preprocess(ps->gaussian_map);
 
 	ps->black_picture = solid_picture(ps, true, 1, 0, 0, 0);
 	ps->white_picture = solid_picture(ps, true, 1, 1, 1, 1);

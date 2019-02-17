@@ -71,7 +71,9 @@ xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel,
 	 */
 	xcb_image_t *ximage;
 	const double *shadow_sum = kernel->rsum;
-	int d = kernel->size, r = d / 2;
+	// We only support square kernels for shadow
+	assert(kernel->w == kernel->h);
+	int d = kernel->w, r = d / 2;
 	int swidth = width + r * 2, sheight = height + r * 2;
 
 	assert(d % 2 == 1);
