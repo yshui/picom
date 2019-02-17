@@ -1384,12 +1384,13 @@ void
 unmap_win(session_t *ps, win **_w, bool destroy) {
   win *w = *_w;
 
-  log_trace("Unmapping %#010x \"%s\", destroy = %d", w->id, (w ? w->name: NULL), destroy);
   winstate_t target_state = destroy ? WSTATE_DESTROYING : WSTATE_UNMAPPING;
 
-  if (unlikely(!w)) {
+  if (unlikely(!w) || w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
     return;
   }
+
+  log_trace("Unmapping %#010x \"%s\", destroy = %d", w->id, (w ? w->name: NULL), destroy);
 
   if (unlikely(w->state == WSTATE_DESTROYING && !destroy)) {
     log_warn("Trying to undestroy a window?");
@@ -1506,14 +1507,14 @@ map_win(session_t *ps, xcb_window_t id) {
   }
 
   win *w = find_win(ps, id);
-  log_debug("Mapping (%#010x \"%s\")", id, (w ? w->name: NULL));
-
   // Don't care about window mapping if it's an InputOnly window
   // Also, try avoiding mapping a window twice
   // TODO don't even add the input only windows
   if (!w || w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
     return;
   }
+
+  log_debug("Mapping (%#010x \"%s\")", id, (w ? w->name: NULL));
 
   if (w->state != WSTATE_UNMAPPED && w->state != WSTATE_UNMAPPING) {
     log_warn("Mapping an already mapped window");
