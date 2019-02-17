@@ -2391,7 +2391,6 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
   ps->loop = EV_DEFAULT;
   pixman_region32_init(&ps->screen_reg);
 
-  ps_g = ps;
   ps->ignore_tail = &ps->ignore_head;
   gettimeofday(&ps->time_start, NULL);
 
@@ -2555,6 +2554,7 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
                                       NULL);
     if (r) {
       ps->present_exists = true;
+      free(r);
     }
   }
 
@@ -2910,9 +2910,6 @@ session_destroy(session_t *ps) {
   ev_signal_stop(ps->loop, &ps->usr1_signal);
   ev_signal_stop(ps->loop, &ps->int_signal);
 
-  if (ps == ps_g)
-    ps_g = NULL;
-
   log_deinit_tls();
 }
 
@@ -3019,6 +3016,7 @@ main(int argc, char **argv) {
     quit = ps_g->quit;
     session_destroy(ps_g);
     free(ps_g);
+    ps_g = NULL;
   } while (!quit);
 
   if (dpy) {
