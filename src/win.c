@@ -387,7 +387,6 @@ bool win_should_dim(session_t *ps, const win *w) {
  */
 bool win_should_fade(session_t *ps, const win *w) {
   // To prevent it from being overwritten by last-paint value if the window is
-  // unmapped on next frame, write w->fade_last as well
   if (w->fade_force != UNSET) {
     return w->fade_force;
   }
@@ -1405,7 +1404,7 @@ unmap_win(session_t *ps, win **_w, bool destroy) {
 
   if (unlikely(w->state == WSTATE_UNMAPPED)) {
     if (unlikely(!destroy)) {
-      log_warn("Unmapping an already unmapped window twice");
+      log_warn("Unmapping an already unmapped window %#010x %s twice", w->id, w->name);
       return;
     }
     // Window is already unmapped, just destroy it

@@ -247,8 +247,6 @@ struct win {
   // Shadow-related members
   /// Whether a window has shadow. Calculated.
   bool shadow;
-  /// Shadow state on last paint.
-  bool shadow_last;
   /// Override value of window shadow state. Set by D-Bus method calls.
   switch_t shadow_force;
   /// Opacity of the shadow. Affected by window opacity and frame opacity.
@@ -273,16 +271,12 @@ struct win {
 
   /// Whether to invert window color.
   bool invert_color;
-  /// Color inversion state on last paint.
-  bool invert_color_last;
   /// Override value of window color inversion state. Set by D-Bus method
   /// calls.
   switch_t invert_color_force;
 
   /// Whether to blur window background.
   bool blur_background;
-  /// Background state on last paint.
-  bool blur_background_last;
 
 #ifdef CONFIG_OPENGL
   /// Textures and FBO background blur use.

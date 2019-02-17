@@ -498,14 +498,6 @@ paint_preprocess(session_t *ps, win *list, bool *fade_running) {
     const winmode_t mode_old = w->mode;
     const bool was_painted = w->to_paint;
     const opacity_t opacity_old = w->opacity;
-    // Restore flags from last paint if the window is being faded out
-    // TODO probably should just stop updating window flags when window
-    //      is fading out
-    if (w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING) {
-      win_set_shadow(ps, w, w->shadow_last);
-      win_set_invert_color(ps, w, w->invert_color_last);
-      win_set_blur_background(ps, w, w->blur_background_last);
-    }
 
     if (win_should_dim(ps, w) != w->dim) {
         w->dim = win_should_dim(ps, w);
@@ -648,13 +640,6 @@ paint_preprocess(session_t *ps, win *list, bool *fade_running) {
     // Avoid setting w->to_paint if w is freed
     if (w) {
       w->to_paint = to_paint;
-
-      if (w->to_paint) {
-        // Save flags
-        w->shadow_last = w->shadow;
-        w->invert_color_last = w->invert_color;
-        w->blur_background_last = w->blur_background;
-      }
     }
   }
 
