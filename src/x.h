@@ -12,6 +12,7 @@
 
 #include "compiler.h"
 #include "region.h"
+#include "kernel.h"
 
 typedef struct session session_t;
 
@@ -167,3 +168,15 @@ xcb_pixmap_t x_get_root_back_pixmap(session_t *ps);
 bool x_is_root_back_pixmap_atom(session_t *ps, xcb_atom_t atom);
 
 bool x_fence_sync(xcb_connection_t *, xcb_sync_fence_t);
+
+/**
+ * Set the picture filter of a xrender picture to a convolution
+ * kernel.
+ *
+ * @param c   xcb connection
+ * @param pict the picture
+ * @param kern the convolution kernel
+ */
+void
+x_set_picture_convolution_kernel(xcb_connection_t *c,
+                                 xcb_render_picture_t pict, conv *kernel);

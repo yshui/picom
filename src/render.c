@@ -318,7 +318,7 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 		const int r = extents.right;
 
 #define COMP_BDR(cx, cy, cwid, chei)                                                     \
-	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity * w->opacity,      \
+	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity * w->opacity,   \
 	             reg_paint, pict)
 
 		// Sanitize the margins, in case some broken WM makes
@@ -583,18 +583,6 @@ static inline void win_paint_shadow(session_t *ps, win *w, region_t *reg_paint) 
 }
 
 /**
- * Normalize a convolution kernel.
- */
-static inline void normalize_conv_kern(int wid, int hei, xcb_render_fixed_t *kern) {
-	double sum = 0.0;
-	for (int i = 0; i < wid * hei; ++i)
-		sum += XFIXED_TO_DOUBLE(kern[i]);
-	double factor = 1.0 / sum;
-	for (int i = 0; i < wid * hei; ++i)
-		kern[i] = DOUBLE_TO_XFIXED(XFIXED_TO_DOUBLE(kern[i]) * factor);
-}
-
-/**
  * @brief Blur an area on a buffer.
  *
  * @param ps current session
@@ -630,8 +618,9 @@ static bool xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int x, i
 	for (int i = 0; blur_kerns[i]; ++i) {
 		assert(i < MAX_BLUR_PASS - 1);
 		xcb_render_fixed_t *convolution_blur = blur_kerns[i];
-		int kwid = XFIXED_TO_DOUBLE(convolution_blur[0]),
-		    khei = XFIXED_TO_DOUBLE(convolution_blur[1]);
+		// `x / 65536.0` converts from X fixed point to double
+		int kwid = ((double)convolution_blur[0]) / 65536.0,
+		    khei = ((double)convolution_blur[1]) / 65536.0;
 		bool rd_from_tgt = (tgt_buffer == src_pict);
 
 		// Copy from source picture to destination. The filter must
@@ -685,7 +674,9 @@ static inline void win_blur_background(session_t *ps, win *w, xcb_render_picture
 	case BKEND_XR_GLX_HYBRID: {
 		// Normalize blur kernels
 		for (int i = 0; i < MAX_BLUR_PASS; ++i) {
-			xcb_render_fixed_t *kern_src = ps->o.blur_kerns[i];
+			// Note: `x * 65536` converts double `x` to a X fixed point
+			// representation. `x / 65536` is the other way.
+			auto kern_src = ps->o.blur_kerns[i];
 			xcb_render_fixed_t *kern_dst = ps->blur_kerns_cache[i];
 			assert(i < MAX_BLUR_PASS);
 			if (!kern_src) {
@@ -693,30 +684,33 @@ static inline void win_blur_background(session_t *ps, win *w, xcb_render_picture
 				break;
 			}
 
-			assert(!kern_dst ||
-			       (kern_src[0] == kern_dst[0] && kern_src[1] == kern_dst[1]));
+			assert(!kern_dst || (kern_src->w == kern_dst[0] / 65536 &&
+			                     kern_src->h == kern_dst[1] / 65536));
 
 			// Skip for fixed factor_center if the cache exists already
 			if (ps->o.blur_background_fixed && kern_dst)
 				continue;
 
-			int kwid = XFIXED_TO_DOUBLE(kern_src[0]),
-			    khei = XFIXED_TO_DOUBLE(kern_src[1]);
-
 			// Allocate cache space if needed
 			if (!kern_dst) {
-				kern_dst = ccalloc(kwid * khei + 2, xcb_render_fixed_t);
+				kern_dst = ccalloc(kern_src->w * kern_src->h + 2,
+				                   xcb_render_fixed_t);
 				ps->blur_kerns_cache[i] = kern_dst;
 			}
 
+			double sum = factor_center;
+			for (int j = 0; j < kern_src->w * kern_src->h; j++) {
+				sum += kern_src->data[j];
+			}
+			// Copy src to dst, normalizing in the process
+			for (int j = 0; j < kern_src->w * kern_src->h; j++) {
+				kern_dst[j + 2] = kern_src->data[j] / sum * 65536;
+			}
 			// Modify the factor of the center pixel
-			kern_src[2 + (khei / 2) * kwid + kwid / 2] =
-			    DOUBLE_TO_XFIXED(factor_center);
-
-			// Copy over
-			memcpy(kern_dst, kern_src,
-			       (kwid * khei + 2) * sizeof(xcb_render_fixed_t));
-			normalize_conv_kern(kwid, khei, kern_dst + 2);
+			kern_dst[2 + (kern_src->h / 2) * kern_src->w + kern_src->w / 2] =
+			    factor_center / sum * 65536;
+			kern_dst[0] = kern_src->w * 65536;
+			kern_dst[1] = kern_src->h * 65536;
 		}
 
 		// Minimize the region we try to blur, if the window itself is not
@@ -1017,8 +1011,8 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 			glFlush();
 		glXWaitX();
 		assert(ps->tgt_buffer.pixmap);
-		paint_bind_tex(ps, &ps->tgt_buffer, ps->root_width, ps->root_height, false,
-		               ps->depth, ps->vis, !ps->o.glx_no_rebind_pixmap);
+		paint_bind_tex(ps, &ps->tgt_buffer, ps->root_width, ps->root_height,
+		               false, ps->depth, ps->vis, !ps->o.glx_no_rebind_pixmap);
 		if (ps->o.vsync_use_glfinish)
 			glFinish();
 		else

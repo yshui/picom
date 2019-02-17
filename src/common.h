@@ -127,10 +127,6 @@
 // Window opacity / dim state changed
 #define WFLAG_OPCT_CHANGE   0x0004
 
-// xcb-render specific macros
-#define XFIXED_TO_DOUBLE(value) (((double) (value)) / 65536)
-#define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t) (((double) (value)) * 65536))
-
 // === Types ===
 typedef struct glx_fbconfig glx_fbconfig_t;
 

@@ -15,6 +15,7 @@
 #include "region.h"
 #include "string_utils.h"
 #include "utils.h"
+#include "kernel.h"
 
 #include "backend/gl/gl_common.h"
 
@@ -678,13 +679,10 @@ bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_ca
 	}
 
 	for (int i = 0; i < MAX_BLUR_PASS && ps->o.blur_kerns[i]; ++i) {
-		xcb_render_fixed_t *kern = ps->o.blur_kerns[i];
-		if (!kern)
-			break;
-
+		auto kern = ps->o.blur_kerns[i];
 		// Build shader
-		int wid = XFIXED_TO_DOUBLE(kern[0]), hei = XFIXED_TO_DOUBLE(kern[1]);
-		int nele = wid * hei - 1;
+		int width = kern->w, height = kern->h;
+		int nele = width * height - 1;
 		unsigned int len =
 		    strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) +
 		    strlen(extension) + (strlen(shader_add) + strlen(texture_func) + 42) * nele +
@@ -696,15 +694,16 @@ bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_ca
 		assert(strlen(shader_str) < len);
 
 		double sum = 0.0;
-		for (int j = 0; j < hei; ++j) {
-			for (int k = 0; k < wid; ++k) {
-				if (hei / 2 == j && wid / 2 == k)
+		for (int j = 0; j < height; ++j) {
+			for (int k = 0; k < width; ++k) {
+				if (height / 2 == j && width / 2 == k)
 					continue;
-				double val = XFIXED_TO_DOUBLE(kern[2 + j * wid + k]);
-				if (0.0 == val)
+				double val = kern->data[j * width + k];
+				if (val == 0) {
 					continue;
+				}
 				sum += val;
-				sprintf(pc, shader_add, val, texture_func, k - wid / 2, j - hei / 2);
+				sprintf(pc, shader_add, val, texture_func, k - width / 2, j - height / 2);
 				pc += strlen(pc);
 				assert(strlen(shader_str) < len);
 			}

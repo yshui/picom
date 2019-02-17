@@ -711,7 +711,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 301:
 			// --blur-kern
-			if (!parse_conv_kern_lst(optarg, opt->blur_kerns,
+			if (!parse_blur_kern_lst(optarg, opt->blur_kerns,
 			                         MAX_BLUR_PASS, &conv_kern_hasneg))
 				exit(1);
 			break;
@@ -818,35 +818,18 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	// Fill default blur kernel
 	if (opt->blur_background && !opt->blur_kerns[0]) {
-		// Convolution filter parameter (box blur)
-		// gaussian or binomial filters are definitely superior, yet looks
-		// like they aren't supported as of xorg-server-1.13.0
-		static const xcb_render_fixed_t convolution_blur[] = {
-		    // Must convert to XFixed with DOUBLE_TO_XFIXED()
-		    // Matrix size
-		    DOUBLE_TO_XFIXED(3),
-		    DOUBLE_TO_XFIXED(3),
-		    // Matrix
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		};
-		opt->blur_kerns[0] = ccalloc(ARR_SIZE(convolution_blur), xcb_render_fixed_t);
-		memcpy(opt->blur_kerns[0], convolution_blur, sizeof(convolution_blur));
+		bool ret = parse_blur_kern_lst("3x3box", opt->blur_kerns, MAX_BLUR_PASS, &conv_kern_hasneg);
+		assert(ret);
 	}
 
-	if (opt->resize_damage < 0)
+	if (opt->resize_damage < 0) {
 		log_warn("Negative --resize-damage will not work correctly.");
+	}
 
-	if (opt->backend == BKEND_XRENDER && conv_kern_hasneg)
+	if (opt->backend == BKEND_XRENDER && conv_kern_hasneg) {
 		log_warn("A convolution kernel with negative values may not work "
 		         "properly under X Render backend.");
+	}
 }
 
 // vim: set noet sw=8 ts=8 :
