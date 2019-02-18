@@ -1153,17 +1153,19 @@ bool init_render(session_t *ps) {
 
 	// Blur filter
 	if (ps->o.blur_background || ps->o.blur_background_frame) {
-		bool ret;
+		bool ret = false;
 		if (ps->o.backend == BKEND_GLX) {
 #ifdef CONFIG_OPENGL
 			ret = glx_init_blur(ps);
 #else
 			assert(false);
 #endif
-		} else
+		} else {
 			ret = xr_init_blur(ps);
-		if (!ret)
-			return false;
+		}
+		if (!ret) {
+			return ret;
+		}
 	}
 
 	ps->gaussian_map = gaussian_kernel(ps->o.shadow_radius);

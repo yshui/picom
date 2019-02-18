@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
 
 #include "compiler.h"
 
@@ -27,6 +28,13 @@ __attribute__((optimize("-fno-fast-math")))
 static inline bool
 safe_isnan(double a) {
 	return isnan(a);
+}
+
+/// Same as assert false, but make sure we abort _even in release builds_.
+/// Silence compiler warning caused by release builds making some code paths reachable.
+attr_noret static inline void BUG(void) {
+	assert(false);
+	abort();
 }
 
 /**
