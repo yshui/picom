@@ -118,7 +118,6 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 		// content, and destroying it.
 		pixman_region32_intersect(&reg_tmp, &reg_tmp, (region_t *)reg_paint);
 
-#ifdef CONFIG_XINERAMA
 		if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 && w->xinerama_scr < ps->xinerama_nscrs)
 			// There can be a window where number of screens is updated,
 			// but the screen number attached to the windows have not.
@@ -127,7 +126,6 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 			// just check to make sure we don't access out of bounds.
 			pixman_region32_intersect(
 			    &reg_tmp, &reg_tmp, &ps->xinerama_scr_regs[w->xinerama_scr]);
-#endif
 
 		// Mask out the body of the window from the shadow
 		// Doing it here instead of in make_shadow() for saving GPU

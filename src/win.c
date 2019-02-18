@@ -778,9 +778,7 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 
       .id = XCB_NONE,
       .a = {},
-#ifdef CONFIG_XINERAMA
       .xinerama_scr = -1,
-#endif
       .pictfmt = NULL,
       .mode = WMODE_TRANS,
       .ever_damaged = false,
@@ -1464,10 +1462,10 @@ win_check_fade_finished(session_t *ps, win **_w) {
  *
  * Return an index >= 0, or -1 if not found.
  *
- * XXX move to x.c
+ * TODO move to x.c
+ * TODO use xrandr
  */
 void win_update_screen(session_t *ps, win *w) {
-#ifdef CONFIG_XINERAMA
   w->xinerama_scr = -1;
 
   if (!ps->xinerama_scrs)
@@ -1484,7 +1482,6 @@ void win_update_screen(session_t *ps, win *w) {
       return;
     }
   }
-#endif
 }
 
 // TODO remove this

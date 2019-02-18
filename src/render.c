@@ -897,7 +897,6 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 			if (!ps->o.wintype_option[w->window_type].full_shadow)
 				pixman_region32_subtract(&reg_tmp, &reg_tmp, &bshape);
 
-#ifdef CONFIG_XINERAMA
 			if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
 			    w->xinerama_scr < ps->xinerama_nscrs)
 				// There can be a window where number of screens
@@ -910,7 +909,6 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 				pixman_region32_intersect(
 				    &reg_tmp, &reg_tmp,
 				    &ps->xinerama_scr_regs[w->xinerama_scr]);
-#endif
 
 			// Detect if the region is empty before painting
 			if (pixman_region32_not_empty(&reg_tmp)) {

@@ -134,10 +134,8 @@ struct win {
   /// Window attributes.
   xcb_get_window_attributes_reply_t a;
   xcb_get_geometry_reply_t g;
-#ifdef CONFIG_XINERAMA
   /// Xinerama screen this window is on.
   int xinerama_scr;
-#endif
   /// Window visual pict format;
   const xcb_render_pictforminfo_t *pictfmt;
   /// Window painting mode.

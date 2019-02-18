@@ -1,5 +1,4 @@
 option('sanitize', type: 'boolean', value: false, description: 'Compile compton with sanitizers')
-option('xinerama', type: 'boolean', value: true, description: 'Enable XINERAMA support')
 option('config_file', type: 'boolean', value: true, description: 'Enable config file support')
 option('regex', type: 'boolean', value: true, description: 'Enable regex support in window conditions')
 

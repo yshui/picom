@@ -15,7 +15,7 @@ cflags = []
 required_package = [
 	'x11', 'x11-xcb', 'xcb-renderutil',
 	'xcb-render', 'xcb-damage', 'xcb-randr', 'xcb-sync',
-	'xcb-composite', 'xcb-shape', 'xcb-image',
+	'xcb-composite', 'xcb-shape', 'xcb-image', 'xcb-xinerama',
 	'xcb-xfixes', 'xcb-present', 'xext', 'pixman-1'
 ]
 
@@ -24,11 +24,6 @@ foreach i : required_package
 endforeach
 
 deps = []
-
-if get_option('xinerama')
-	deps += [dependency('xcb-xinerama', required: true)]
-	cflags += ['-DCONFIG_XINERAMA']
-endif
 
 if get_option('config_file')
 	deps += [dependency('libconfig', version: '>=1.4', required: true),

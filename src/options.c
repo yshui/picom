@@ -24,7 +24,6 @@
  */
 static void usage(int ret) {
 #define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
-#define WARNING
 	static const char *usage_text =
 	    "compton (" COMPTON_VERSION ")\n"
 	    "This is the maintenance fork of compton, please report\n"
@@ -87,16 +86,13 @@ static void usage(int ret) {
 	    "--show-all-xerrors\n"
 	    "  Show all X errors (for debugging).\n"
 	    "\n"
-#undef WARNING
-#ifndef CONFIG_LIBCONFIG
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
 	    "--config path\n"
 	    "  Look for configuration file at the path. Use /dev/null to avoid\n"
-	    "  loading configuration file." WARNING "\n"
-	    "\n"
+	    "  loading configuration file."
+#ifndef CONFIG_LIBCONFIG
+	    WARNING_DISABLED
+#endif
+	    "\n\n"
 	    "--write-pid-path path\n"
 	    "  Write process ID to a file.\n"
 	    "\n"
@@ -162,15 +158,12 @@ static void usage(int ret) {
 	    "  Set VSync method. There are (up to) 5 VSync methods currently\n"
 	    "  available:\n"
 	    "    none = No VSync\n"
-#undef WARNING
-#ifndef CONFIG_VSYNC_DRM
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
 	    "    drm = VSync with DRM_IOCTL_WAIT_VBLANK. May only work on some\n"
-	    "      (DRI-based) drivers." WARNING "\n"
-#undef WARNING
+	    "      (DRI-based) drivers."
+#ifndef CONFIG_VSYNC_DRM
+	    WARNING_DISABLED
+#endif
+	    "\n\n"
 #ifndef CONFIG_OPENGL
 #define WARNING WARNING_DISABLED
 #else
@@ -182,7 +175,7 @@ static void usage(int ret) {
 	    "      Only work on some drivers." WARNING "\n"
 	    "    opengl-swc = Enable driver-level VSync. Works only with GLX "
 	    "backend." WARNING "\n"
-	    "    opengl-mswc = Deprecated, use opengl-swc instead." WARNING "\n"
+#undef WARNING
 	    "\n"
 	    "--vsync-aggressive\n"
 	    "  Attempt to send painting request before VBlank and do XFlush()\n"
@@ -291,27 +284,18 @@ static void usage(int ret) {
 	    "  should not be painted in, such as a dock window region.\n"
 	    "  Use --shadow-exclude-reg \'x10+0-0\', for example, if the 10 pixels\n"
 	    "  on the bottom of the screen should not have shadows painted on.\n"
-#undef WARNING
-#ifndef CONFIG_XINERAMA
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
 	    "\n"
 	    "--xinerama-shadow-crop\n"
 	    "  Crop shadow of a window fully on a particular Xinerama screen to the\n"
-	    "  screen." WARNING "\n"
+	    "  screen.\n"
 	    "\n"
-#undef WARNING
-#ifndef CONFIG_OPENGL
-#define WARNING "(GLX BACKENDS DISABLED AT COMPILE TIME)"
-#else
-#define WARNING
-#endif
 	    "--backend backend\n"
 	    "  Choose backend. Possible choices are xrender, glx, and\n"
-	    "  xr_glx_hybrid" WARNING ".\n"
-	    "\n"
+	    "  xr_glx_hybrid."
+#ifndef CONFIG_OPENGL
+	    " (GLX BACKENDS DISABLED AT COMPILE TIME)"
+#endif
+	    "\n\n"
 	    "--glx-no-stencil\n"
 	    "  GLX backend: Avoid using stencil buffer. Might cause issues\n"
 	    "  when rendering transparent content. My tests show a 15% performance\n"
@@ -338,27 +322,22 @@ static void usage(int ret) {
 	    "--xrender-sync\n"
 	    "  Attempt to synchronize client applications' draw calls with XSync(),\n"
 	    "  used on GLX backend to ensure up-to-date window content is painted.\n"
-#undef WARNING
-#define WARNING
 	    "\n"
 	    "--xrender-sync-fence\n"
 	    "  Additionally use X Sync fence to sync clients' draw calls. Needed\n"
-	    "  on nvidia-drivers with GLX backend for some users." WARNING "\n"
+	    "  on nvidia-drivers with GLX backend for some users.\n"
 	    "\n"
 	    "--force-win-blend\n"
 	    "  Force all windows to be painted with blending. Useful if you have a\n"
 	    "  --glx-fshader-win that could turn opaque pixels transparent.\n"
 	    "\n"
-#undef WARNING
-#ifndef CONFIG_DBUS
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
 	    "--dbus\n"
 	    "  Enable remote control via D-Bus. See the D-BUS API section in the\n"
-	    "  man page for more details." WARNING "\n"
-	    "\n"
+	    "  man page for more details."
+#ifndef CONFIG_DBUS
+	    WARNING_DISABLED
+#endif
+	    "\n\n"
 	    "--benchmark cycles\n"
 	    "  Benchmark mode. Repeatedly paint until reaching the specified cycles.\n"
 	    "\n"
@@ -370,7 +349,6 @@ static void usage(int ret) {
 	    "  backend only.\n";
 	FILE *f = (ret ? stderr : stdout);
 	fputs(usage_text, f);
-#undef WARNING
 #undef WARNING_DISABLED
 }
 

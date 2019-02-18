@@ -45,10 +45,7 @@
 #include <xcb/randr.h>
 #include <xcb/shape.h>
 #include <xcb/sync.h>
-
-#ifdef CONFIG_XINERAMA
 #include <xcb/xinerama.h>
-#endif
 #include <ev.h>
 #include <pixman.h>
 
@@ -489,7 +486,6 @@ typedef struct session {
   /// Error base number for X GLX extension.
   int glx_error;
 #endif
-#ifdef CONFIG_XINERAMA
   /// Whether X Xinerama extension exists.
   bool xinerama_exists;
   /// Xinerama screen info.
@@ -498,7 +494,6 @@ typedef struct session {
   region_t *xinerama_scr_regs;
   /// Number of Xinerama screens.
   int xinerama_nscrs;
-#endif
   /// Whether X Sync extension exists.
   bool xsync_exists;
   /// Event base number for X Sync extension.
