@@ -71,10 +71,8 @@ cxinerama_upd_scrs(session_t *ps);
 static void
 session_destroy(session_t *ps);
 
-#ifdef CONFIG_XINERAMA
 static void
 cxinerama_upd_scrs(session_t *ps);
-#endif
 
 static void
 redir_start(session_t *ps);
@@ -148,7 +146,6 @@ session_t *ps_g = NULL;
  */
 static inline void
 free_xinerama_info(session_t *ps) {
-#ifdef CONFIG_XINERAMA
   if (ps->xinerama_scr_regs) {
     for (int i = 0; i < ps->xinerama_nscrs; ++i)
       pixman_region32_fini(&ps->xinerama_scr_regs[i]);
@@ -157,7 +154,6 @@ free_xinerama_info(session_t *ps) {
   cxfree(ps->xinerama_scrs);
   ps->xinerama_scrs = NULL;
   ps->xinerama_nscrs = 0;
-#endif
 }
 
 /**
@@ -175,7 +171,6 @@ get_time_ms(void) {
 // XXX Move to x.c
 static void
 cxinerama_upd_scrs(session_t *ps) {
-#ifdef CONFIG_XINERAMA
   // XXX Consider deprecating Xinerama, switch to RandR when necessary
   free_xinerama_info(ps);
 
@@ -203,7 +198,6 @@ cxinerama_upd_scrs(session_t *ps) {
     const xcb_xinerama_screen_info_t * const s = &scrs[i];
     pixman_region32_init_rect(&ps->xinerama_scr_regs[i], s->x_org, s->y_org, s->width, s->height);
   }
-#endif
 }
 
 /**
@@ -2590,13 +2584,8 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
 
   // Query X Xinerama extension
   if (ps->o.xinerama_shadow_crop) {
-#ifdef CONFIG_XINERAMA
     ext_info = xcb_get_extension_data(ps->c, &xcb_xinerama_id);
     ps->xinerama_exists = ext_info && ext_info->present;
-#else
-    log_fatal("Xinerama support not compiled in. xinerama-shadow-crop cannot be enabled");
-    exit(1);
-#endif
   }
 
   rebuild_screen_reg(ps);
