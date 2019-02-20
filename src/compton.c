@@ -2645,6 +2645,18 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
     exit(1);
   }
 
+  if (ps->o.experimental_backends) {
+    ps->ndamage = backend_list[ps->o.backend]->max_buffer_age;
+  } else {
+    ps->ndamage = maximum_buffer_age(ps);
+  }
+  ps->damage_ring = ccalloc(ps->ndamage, region_t);
+  ps->damage = ps->damage_ring + ps->ndamage - 1;
+
+  for (int i = 0; i < ps->ndamage; i++) {
+    pixman_region32_init(&ps->damage_ring[i]);
+  }
+
   if (ps->o.print_diagnostics) {
     print_diagnostics(ps, config_file);
     free(config_file_to_free);

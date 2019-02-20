@@ -1170,14 +1170,6 @@ bool init_render(session_t *ps) {
 			return false;
 		}
 	}
-
-	ps->ndamage = maximum_buffer_age(ps);
-	ps->damage_ring = ccalloc(ps->ndamage, region_t);
-	ps->damage = ps->damage_ring + ps->ndamage - 1;
-
-	for (int i = 0; i < ps->ndamage; i++) {
-		pixman_region32_init(&ps->damage_ring[i]);
-	}
 	return true;
 }
 

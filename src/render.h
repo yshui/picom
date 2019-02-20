@@ -42,3 +42,5 @@ void free_root_tile(session_t *ps);
 
 bool init_render(session_t *ps);
 void deinit_render(session_t *ps);
+
+int maximum_buffer_age(session_t *);

@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #include <string.h>
-#include <xcb/xcb_image.h>
 #include <xcb/render.h>
+#include <xcb/xcb_image.h>
 #include <xcb/xcb_renderutil.h>
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
-#include "kernel.h"
 #include "common.h"
+#include "kernel.h"
 #include "log.h"
-#include "x.h"
 #include "win.h"
+#include "x.h"
 
 /**
  * Generate a 1x1 <code>Picture</code> of a particular color.
@@ -54,8 +54,8 @@ solid_picture(session_t *ps, bool argb, double a, double r, double g, double b) 
 	return picture;
 }
 
-xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel,
-                         double opacity, int width, int height) {
+xcb_image_t *
+make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, int height) {
 	/*
 	 * We classify shadows into 4 kinds of regions
 	 *    r = shadow radius
@@ -71,6 +71,7 @@ xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel,
 	 */
 	xcb_image_t *ximage;
 	const double *shadow_sum = kernel->rsum;
+	assert(shadow_sum);
 	// We only support square kernels for shadow
 	assert(kernel->w == kernel->h);
 	int d = kernel->w, r = d / 2;
@@ -184,15 +185,14 @@ xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel,
  * Generate shadow <code>Picture</code> for a window.
  */
 bool build_shadow(session_t *ps, double opacity, const int width, const int height,
-                  xcb_render_picture_t shadow_pixel, xcb_pixmap_t *pixmap,
-                  xcb_render_picture_t *pict) {
+                  const conv *kernel, xcb_render_picture_t shadow_pixel,
+                  xcb_pixmap_t *pixmap, xcb_render_picture_t *pict) {
 	xcb_image_t *shadow_image = NULL;
 	xcb_pixmap_t shadow_pixmap = XCB_NONE, shadow_pixmap_argb = XCB_NONE;
 	xcb_render_picture_t shadow_picture = XCB_NONE, shadow_picture_argb = XCB_NONE;
 	xcb_gcontext_t gc = XCB_NONE;
 
-	shadow_image =
-	    make_shadow(ps->c, ps->gaussian_map, opacity, width, height);
+	shadow_image = make_shadow(ps->c, kernel, opacity, width, height);
 	if (!shadow_image) {
 		log_error("Failed to make shadow");
 		return false;

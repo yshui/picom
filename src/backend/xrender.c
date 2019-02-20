@@ -20,6 +20,7 @@
 #include "utils.h"
 #include "win.h"
 #include "x.h"
+#include "kernel.h"
 
 #define auto __auto_type
 
@@ -51,6 +52,8 @@ typedef struct _xrender_data {
 
 	/// 1x1 picture of the shadow color
 	xcb_render_picture_t shadow_pixel;
+	/// convolution kernel for the shadow
+	conv *shadow_kernel;
 
 	/// Blur kernels converted to X format
 	xcb_render_fixed_t *x_blur_kern[MAX_BLUR_PASS];
@@ -365,8 +368,8 @@ static void *prepare_win(void *backend_data, session_t *ps, win *w) {
 	//     leave this here until we have chance to re-think the backend API
 	if (w->shadow) {
 		xcb_pixmap_t pixmap;
-		build_shadow(ps, 1, w->widthb, w->heightb, xd->shadow_pixel, &pixmap,
-		             &wd->shadow_pict);
+		build_shadow(ps, 1, w->widthb, w->heightb, xd->shadow_kernel,
+		             xd->shadow_pixel, &pixmap, &wd->shadow_pict);
 		xcb_free_pixmap(ps->c, pixmap);
 	}
 	return wd;
@@ -396,6 +399,8 @@ static void *init(session_t *ps) {
 	xd->white_pixel = solid_picture(ps, true, 1, 1, 1, 1);
 	xd->shadow_pixel = solid_picture(ps, true, 1, ps->o.shadow_red,
 	                                 ps->o.shadow_green, ps->o.shadow_blue);
+	xd->shadow_kernel = gaussian_kernel(ps->o.shadow_radius);
+	sum_kernel_preprocess(xd->shadow_kernel);
 
 	if (ps->overlay != XCB_NONE) {
 		xd->target = x_create_picture_with_visual_and_pixmap(
