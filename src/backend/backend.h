@@ -115,7 +115,7 @@ typedef struct backend_info {
 	void *(*prepare_win)(void *backend_data, session_t *ps, win *w)
 	    __attribute__((nonnull(1, 2, 3)));
 
-	/// Free resources allocated by prepare()
+	/// Free resources allocated by prepare_win()
 	void (*release_win)(void *backend_data, session_t *ps, win *w, void *win_data)
 	    __attribute__((nonnull(1, 2, 3)));
 

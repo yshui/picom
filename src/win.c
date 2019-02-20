@@ -24,6 +24,7 @@
 #include "log.h"
 #include "types.h"
 #include "region.h"
+#include "backend/backend.h"
 #include "render.h"
 
 #ifdef CONFIG_DBUS
@@ -609,7 +610,12 @@ void calc_win_size(session_t *ps, win *w) {
   calc_shadow_geometry(ps, w);
   w->flags |= WFLAG_SIZE_CHANGE;
   // Invalidate the shadow we built
-  free_paint(ps, &w->shadow_paint);
+  if (ps->o.experimental_backends) {
+    backend_list[ps->o.backend]->release_win(ps->backend_data, ps, w, w->win_data);
+    w->win_data = backend_list[ps->o.backend]->prepare_win(ps->backend_data, ps, w);
+  } else {
+    free_paint(ps, &w->shadow_paint);
+  }
 }
 
 /**
@@ -1228,9 +1234,21 @@ void win_update_bounding_shape(session_t *ps, win *w) {
     win_rounded_corners(ps, w);
 
   // Window shape changed, we should free old wpaint and shadow pict
-  free_paint(ps, &w->paint);
-  free_paint(ps, &w->shadow_paint);
-  //log_trace("free out dated pict");
+  if (ps->o.experimental_backends) {
+    //log_trace("free out dated pict");
+    // Window shape changed, we should free win_data
+    if (ps->redirected && w->state == WSTATE_MAPPED) {
+      // Note we only do this when screen is redirected, because
+      // otherwise win_data is not valid
+      backend_info_t *bi = backend_list[ps->o.backend];
+      bi->release_win(ps->backend_data, ps, w, w->win_data);
+      w->win_data = bi->prepare_win(ps->backend_data, ps, w);
+      //log_trace("free out dated pict");
+    }
+  } else {
+    free_paint(ps, &w->paint);
+    free_paint(ps, &w->shadow_paint);
+  }
 
   win_on_factor_change(ps, w);
 }
@@ -1321,8 +1339,17 @@ finish_unmap_win(session_t *ps, win **_w) {
   w->state = WSTATE_UNMAPPED;
   w->flags = 0;
 
-  free_paint(ps, &w->paint);
-  free_paint(ps, &w->shadow_paint);
+  if (ps->o.experimental_backends) {
+    // We are in unmap_win, we definitely was viewable
+    if (ps->redirected) {
+      assert(w->win_data);
+      backend_list[ps->o.backend]->release_win(ps->backend_data, ps, w, w->win_data);
+      w->win_data = NULL;
+    }
+  } else {
+    free_paint(ps, &w->paint);
+    free_paint(ps, &w->shadow_paint);
+  }
 }
 
 static void
@@ -1347,7 +1374,9 @@ finish_destroy_win(session_t *ps, win **_w) {
         ps->active_win = NULL;
       }
 
-      free_win_res(ps, w);
+      if (!ps->o.experimental_backends) {
+        free_win_res(ps, w);
+      }
 
       // Drop w from all prev_trans to avoid accessing freed memory in
       // repair_win()

@@ -13,6 +13,7 @@
 
 #include <X11/Xutil.h>
 #include "common.h"
+#include "backend/backend.h"
 #include "win.h"
 #include "x.h"
 #include "c2.h"
