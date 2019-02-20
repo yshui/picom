@@ -1982,8 +1982,19 @@ redir_stop(session_t *ps) {
     // Destroy all Pictures as they expire once windows are unredirected
     // If we don't destroy them here, looks like the resources are just
     // kept inaccessible somehow
-    for (win *w = ps->list; w; w = w->next) {
-      free_paint(ps, &w->paint);
+    for (win *w = ps->list, *next; w; w = next) {
+      next = w->next;
+      // Wrapping up fading in progress
+      if (w->opacity != w->opacity_tgt) {
+        assert(w->state != WSTATE_UNMAPPED && w->state != WSTATE_MAPPED);
+        w->opacity = w->opacity_tgt;
+        win_check_fade_finished(ps, &w);
+      }
+
+      // `w` might be freed by win_check_fade_finished
+      if (w) {
+        free_paint(ps, &w->paint);
+      }
     }
 
     xcb_composite_unredirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
