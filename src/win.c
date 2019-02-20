@@ -770,94 +770,145 @@ void free_win_res(session_t *ps, win *w) {
 }
 
 // TODO: probably split into win_new (in win.c) and add_win (in compton.c)
-bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
+void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
   static const win win_def = {
-      .win_data = NULL,
-      .next = NULL,
-      .prev_trans = NULL,
-
-      .id = XCB_NONE,
-      .a = {},
-      .xinerama_scr = -1,
-      .pictfmt = NULL,
-      .mode = WMODE_TRANS,
-      .ever_damaged = false,
-      .damage = XCB_NONE,
-      .pixmap_damaged = false,
-      .paint = PAINT_INIT,
-      .flags = 0,
-      .need_configure = false,
-      .queue_configure = {},
+      // No need to initialize. (or, you can think that
+      // they are initialized right here).
+      // The following ones are updated during paint or paint preprocess
+      .shadow_opacity = 0.0,
+      .to_paint = false,
+      .frame_opacity = 1.0,
+      .dim = false,
+      .invert_color = false,
+      .blur_background = false,
       .reg_ignore = NULL,
-      .reg_ignore_valid = false,
+      // The following ones are updated for other reasons
+      .pixmap_damaged = false,  // updated by damage events
+      .state = WSTATE_UNMAPPED, // updated by window state changes
+      .in_openclose = true,     // set to false after first map is done,
+                                // true here because window is just created
+      .need_configure = false,  // set to true when window is configured
+                                // while unmapped.
+      .queue_configure = {},    // same as above
+      .reg_ignore_valid = false,// set to true when damaged
+      .flags = 0,               // updated by property/attributes/etc change
 
+      // Runtime variables, updated by dbus
+      .fade_force = UNSET,
+      .shadow_force = UNSET,
+      .focused_force = UNSET,
+      .invert_color_force = UNSET,
+
+      // Initialized in this function
+      .next = NULL,
+      .id = XCB_NONE,
+      .a = {0},
+      .pictfmt = NULL,
       .widthb = 0,
       .heightb = 0,
-      .state = WSTATE_UNMAPPED,
-      .bounding_shaped = false,
-      .rounded_corners = false,
-      .to_paint = false,
+      .shadow_dx = 0,
+      .shadow_dy = 0,
+      .shadow_width = 0,
+      .shadow_height = 0,
+      .damage = XCB_NONE,
 
-      // true when the window is first created.
-      // set to false after the first map is done
-      .in_openclose = true,
-
+      // Not initialized until mapped, this variables
+      // have no meaning or have no use until the window
+      // is mapped
+      .win_data = NULL,
+      .prev_trans = NULL,
+      .shadow = false,
+      .xinerama_scr = -1,
+      .mode = WMODE_TRANS,
+      .ever_damaged = false,
       .client_win = XCB_NONE,
-      .window_type = WINTYPE_UNKNOWN,
-      .wmwin = false,
       .leader = XCB_NONE,
       .cache_leader = XCB_NONE,
-
+      .window_type = WINTYPE_UNKNOWN,
+      .wmwin = false,
       .focused = false,
-      .focused_force = UNSET,
-
-      .name = NULL,
-      .class_instance = NULL,
-      .class_general = NULL,
-      .role = NULL,
-
       .opacity = 0,
       .opacity_tgt = 0,
       .has_opacity_prop = false,
       .opacity_prop = OPAQUE,
       .opacity_is_set = false,
       .opacity_set = 1,
-
-      .fade_force = UNSET,
-
-      .frame_opacity = 1.0,
-      .frame_extents = MARGIN_INIT,
-
-      .shadow = false,
-      .shadow_force = UNSET,
-      .shadow_opacity = 0.0,
-      .shadow_dx = 0,
-      .shadow_dy = 0,
-      .shadow_width = 0,
-      .shadow_height = 0,
-      .shadow_paint = PAINT_INIT,
+      .frame_extents = MARGIN_INIT, // in win_mark_client
+      .bounding_shaped = false,
+      .bounding_shape = {0},
+      .rounded_corners = false,
+      .paint_excluded = false,
+      .unredir_if_possible_excluded = false,
       .prop_shadow = -1,
+      // following 4 are set in win_mark_client
+      .name = NULL,
+      .class_instance = NULL,
+      .class_general = NULL,
+      .role = NULL,
 
-      .dim = false,
-
-      .invert_color = false,
-      .invert_color_force = UNSET,
-
-      .blur_background = false,
+      // Initialized during paint
+      .paint = PAINT_INIT,
+      .shadow_paint = PAINT_INIT,
   };
 
   // Reject overlay window and already added windows
-  if (id == ps->overlay || find_win(ps, id)) {
-    return false;
+  if (id == ps->overlay) {
+    return;
+  }
+
+  auto duplicated_win = find_win(ps, id);
+  if (duplicated_win) {
+    log_warn("Window %#010x (recorded name: %s) added multiple times", id,
+             duplicated_win->name);
+    return;
+  }
+
+  log_debug("Adding window %#010x, prev %#010x", id, prev);
+  xcb_get_window_attributes_cookie_t acookie = xcb_get_window_attributes(ps->c, id);
+  xcb_get_geometry_cookie_t gcookie = xcb_get_geometry(ps->c, id);
+  xcb_get_window_attributes_reply_t *a = xcb_get_window_attributes_reply(ps->c, acookie, NULL);
+  xcb_get_geometry_reply_t *g = xcb_get_geometry_reply(ps->c, gcookie, NULL);
+  if (!a || !g || a->map_state == XCB_MAP_STATE_UNVIEWABLE) {
+    // Failed to get window attributes or geometry probably means
+    // the window is gone already. Unviewable means the window is
+    // already reparented elsewhere.
+    // BTW, we don't care about Input Only windows, except for stacking
+    // proposes, so we need to keep track of them still.
+    free(a);
+    free(g);
+    return;
   }
 
   // Allocate and initialize the new win structure
   auto new = cmalloc(win);
 
-  log_trace("(%#010x): %p", id, new);
-
+  // Fill structure
+  // We only need to initialize the part that are not initialized
+  // by map_win
   *new = win_def;
+  new->id = id;
+  new->a = *a;
+  new->g = *g;
   pixman_region32_init(&new->bounding_shape);
+
+  free(g);
+  free(a);
+
+  // Create Damage for window (if not Input Only)
+  if (new->a._class != XCB_WINDOW_CLASS_INPUT_ONLY) {
+    new->damage = xcb_generate_id(ps->c);
+    xcb_generic_error_t *e = xcb_request_check(ps->c,
+      xcb_damage_create_checked(ps->c, new->damage, id, XCB_DAMAGE_REPORT_LEVEL_NON_EMPTY));
+    if (e) {
+      free(e);
+      free(new);
+      return;
+    }
+
+    new->pictfmt = x_get_pictform_for_visual(ps->c, new->a.visual);
+  }
+
+  calc_win_size(ps, new);
 
   // Find window insertion point
   win **p = NULL;
@@ -869,58 +920,8 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
   } else {
     p = &ps->list;
   }
-
-  // Fill structure
-  new->id = id;
-
-  xcb_get_window_attributes_cookie_t acookie = xcb_get_window_attributes(ps->c, id);
-  xcb_get_geometry_cookie_t gcookie = xcb_get_geometry(ps->c, id);
-  xcb_get_window_attributes_reply_t *a = xcb_get_window_attributes_reply(ps->c, acookie, NULL);
-  xcb_get_geometry_reply_t *g = xcb_get_geometry_reply(ps->c, gcookie, NULL);
-  if (!a || a->map_state == XCB_MAP_STATE_UNVIEWABLE) {
-    // Failed to get window attributes probably means the window is gone
-    // already. Unviewable means the window is already reparented
-    // elsewhere.
-    free(a);
-    free(g);
-    free(new);
-    return false;
-  }
-
-  new->a = *a;
-  free(a);
-
-  if (!g) {
-    free(new);
-    return false;
-  }
-
-  new->g = *g;
-  free(g);
-
-  // Delay window mapping
-  int map_state = new->a.map_state;
-  assert(map_state == XCB_MAP_STATE_VIEWABLE || map_state == XCB_MAP_STATE_UNMAPPED);
-  new->a.map_state = XCB_MAP_STATE_UNMAPPED;
-
-  if (new->a._class == XCB_WINDOW_CLASS_INPUT_OUTPUT) {
-    // Create Damage for window
-    new->damage = xcb_generate_id(ps->c);
-    xcb_generic_error_t *e = xcb_request_check(ps->c,
-      xcb_damage_create_checked(ps->c, new->damage, id, XCB_DAMAGE_REPORT_LEVEL_NON_EMPTY));
-    if (e) {
-      free(e);
-      free(new);
-      return false;
-    }
-    new->pictfmt = x_get_pictform_for_visual(ps->c, new->a.visual);
-  }
-
-  calc_win_size(ps, new);
-
   new->next = *p;
   *p = new;
-  win_update_bounding_shape(ps, new);
 
 #ifdef CONFIG_DBUS
   // Send D-Bus signal
@@ -929,11 +930,10 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
   }
 #endif
 
-  if (map_state == XCB_MAP_STATE_VIEWABLE) {
+  if (new->a.map_state == XCB_MAP_STATE_VIEWABLE) {
     map_win(ps, id);
   }
-
-  return true;
+  return;
 }
 
 /**
@@ -942,8 +942,7 @@ bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 void win_update_focused(session_t *ps, win *w) {
   if (UNSET != w->focused_force) {
     w->focused = w->focused_force;
-  }
-  else {
+  } else {
     w->focused = win_is_focused_real(ps, w);
 
     // Use wintype_focus, and treat WM windows and override-redirected
@@ -1303,18 +1302,14 @@ bool win_is_region_ignore_valid(session_t *ps, win *w) {
  * Stop listening for events on a particular window.
  */
 void win_ev_stop(session_t *ps, win *w) {
-  // Will get BadWindow if the window is destroyed
-  set_ignore_cookie(ps,
-      xcb_change_window_attributes(ps->c, w->id, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
+  xcb_change_window_attributes(ps->c, w->id, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 });
 
   if (w->client_win) {
-    set_ignore_cookie(ps,
-        xcb_change_window_attributes(ps->c, w->client_win, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 }));
+    xcb_change_window_attributes(ps->c, w->client_win, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 });
   }
 
   if (ps->shape_exists) {
-    set_ignore_cookie(ps,
-        xcb_shape_select_input(ps->c, w->id, 0));
+    xcb_shape_select_input(ps->c, w->id, 0);
   }
 }
 
@@ -1384,7 +1379,15 @@ unmap_win(session_t *ps, win **_w, bool destroy) {
 
   winstate_t target_state = destroy ? WSTATE_DESTROYING : WSTATE_UNMAPPING;
 
-  if (unlikely(!w) || w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
+  if (unlikely(!w)) {
+    return;
+  }
+
+  if (!destroy &&  w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
+    // We don't care about mapping / unmapping of Input Only windows.
+    // But we need to remember to destroy them, so future window with
+    // the same id won't be handled incorrectly.
+    // Issue #119 was caused by this.
     return;
   }
 
@@ -1401,12 +1404,12 @@ unmap_win(session_t *ps, win **_w, bool destroy) {
     return;
   }
 
-  if (unlikely(w->state == WSTATE_UNMAPPED)) {
+  if (unlikely(w->state == WSTATE_UNMAPPED) || w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
     if (unlikely(!destroy)) {
       log_warn("Unmapping an already unmapped window %#010x %s twice", w->id, w->name);
       return;
     }
-    // Window is already unmapped, just destroy it
+    // Window is already unmapped, or is an Input Only window, just destroy it
     finish_destroy_win(ps, _w);
     return;
   }
@@ -1421,7 +1424,9 @@ unmap_win(session_t *ps, win **_w, bool destroy) {
   w->in_openclose = destroy;
 
   // don't care about properties anymore
-  win_ev_stop(ps, w);
+  if (!destroy) {
+    win_ev_stop(ps, w);
+  }
 
 #ifdef CONFIG_DBUS
   // Send D-Bus signal
@@ -1506,12 +1511,11 @@ map_win(session_t *ps, xcb_window_t id) {
   win *w = find_win(ps, id);
   // Don't care about window mapping if it's an InputOnly window
   // Also, try avoiding mapping a window twice
-  // TODO don't even add the input only windows
   if (!w || w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
     return;
   }
 
-  log_debug("Mapping (%#010x \"%s\")", id, (w ? w->name: NULL));
+  log_debug("Mapping (%#010x \"%s\")", id, w->name);
 
   if (w->state != WSTATE_UNMAPPED && w->state != WSTATE_UNMAPPING) {
     log_warn("Mapping an already mapped window");

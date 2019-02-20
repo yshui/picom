@@ -358,7 +358,7 @@ region_t win_get_region_noframe_local_by_val(win *w);
  */
 void
 win_update_frame_extents(session_t *ps, win *w, xcb_window_t client);
-bool add_win(session_t *ps, xcb_window_t id, xcb_window_t prev);
+void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev);
 /// Unmap or destroy a window
 void unmap_win(session_t *ps, win **, bool destroy);
 

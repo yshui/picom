@@ -747,6 +747,8 @@ restack_win(session_t *ps, win *w, xcb_window_t new_above) {
   } else {
     old_above = XCB_NONE;
   }
+  log_debug("Restack %#010x (%s), old_above: %#010x, new_above: %#010x",
+            w->id, w->name, old_above, new_above);
 
   if (old_above != new_above) {
     w->reg_ignore_valid = false;
@@ -758,16 +760,7 @@ restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 
     win **prev = NULL, **prev_old = NULL;
 
-    // unhook
-    for (prev = &ps->list; *prev; prev = &(*prev)->next) {
-      if ((*prev) == w) break;
-    }
-
-    prev_old = prev;
-
     bool found = false;
-
-    // rehook
     for (prev = &ps->list; *prev; prev = &(*prev)->next) {
       if ((*prev)->id == new_above && (*prev)->state != WSTATE_DESTROYING) {
         found = true;
@@ -780,8 +773,13 @@ restack_win(session_t *ps, win *w, xcb_window_t new_above) {
       return;
     }
 
-    *prev_old = w->next;
+    for (prev_old = &ps->list; *prev_old; prev_old = &(*prev_old)->next) {
+      if ((*prev_old) == w) {
+        break;
+      }
+    }
 
+    *prev_old = w->next;
     w->next = *prev;
     *prev = w;
 
@@ -789,32 +787,13 @@ restack_win(session_t *ps, win *w, xcb_window_t new_above) {
     add_damage_from_win(ps, w);
 
 #ifdef DEBUG_RESTACK
-    {
-      const char *desc;
-      char *window_name = NULL;
-      bool to_free;
-      win* c = ps->list;
-
-      log_trace("(%#010lx, %#010lx): "
-                "Window stack modified. Current stack:", w->id, new_above);
-
-      for (; c; c = c->next) {
-        window_name = "(Failed to get title)";
-
-        to_free = ev_window_name(ps, c->id, &window_name);
-
-        desc = "";
-        if (c->destroying) desc = "(D) ";
-        printf("%#010lx \"%s\" %s", c->id, window_name, desc);
-        if (c->next)
-          printf("-> ");
-
-        if (to_free) {
-          cxfree(window_name);
-          window_name = NULL;
-        }
+    log_trace("Window stack modified. Current stack:");
+    for (win *c = ps->list; c; c = c->next) {
+      const char *desc = "";
+      if (c->destroying) {
+        desc = "(D) ";
       }
-      fputs("\n", stdout);
+      log_trace("%#010x \"%s\" %s", c->id, c->name, desc);
     }
 #endif
   }
@@ -865,25 +844,26 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     return;
   }
 
-  // Other window changes
+  // Non-root window changes
   win *w = find_win(ps, ce->window);
   region_t damage;
   pixman_region32_init(&damage);
 
-  if (!w)
+  if (!w) {
     return;
+  }
 
-  if (w->a.map_state == XCB_MAP_STATE_UNMAPPED) {
+  if (w->state == WSTATE_UNMAPPED) {
     /* save the configure event for when the window maps */
     w->need_configure = true;
     w->queue_configure = *ce;
     restack_win(ps, w, ce->above_sibling);
   } else {
-    if (!w->need_configure)
+    if (!w->need_configure) {
       restack_win(ps, w, ce->above_sibling);
+    }
 
     bool factor_change = false;
-
     w->need_configure = false;
     win_extents(w, &damage);
 
@@ -1228,8 +1208,8 @@ ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
 
 inline static void
 ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
-  log_trace("{ send_event: %d, above: %#010x, override_redirect: %d }",
-         ev->event, ev->above_sibling, ev->override_redirect);
+  log_trace("{ send_event: %d, id: %#010x, above: %#010x, override_redirect: %d }",
+         ev->event, ev->window, ev->above_sibling, ev->override_redirect);
   configure_win(ps, ev);
 }
 
@@ -2719,6 +2699,14 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
     }
 
     free(reply);
+    log_trace("Initial stack:");
+    for (win *c = ps->list; c; c = c->next) {
+      const char *desc = "";
+      if (c->destroying) {
+        desc = "(D) ";
+      }
+      log_trace("%#010x \"%s\" %s", c->id, c->name, desc);
+    }
   }
 
   if (ps->o.track_focus) {
