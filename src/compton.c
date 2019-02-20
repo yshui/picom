@@ -2640,7 +2640,7 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
   init_overlay(ps);
 
   // Initialize filters, must be preceded by OpenGL context creation
-  if (!init_render(ps)) {
+  if (!ps->o.experimental_backends && !init_render(ps)) {
     log_fatal("Failed to initialize the backend");
     exit(1);
   }
