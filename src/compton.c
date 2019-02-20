@@ -2934,6 +2934,14 @@ session_destroy(session_t *ps) {
     deinit_render(ps);
   }
 
+  // Free the damage ring
+  for (int i = 0; i < ps->ndamage; ++i) {
+    pixman_region32_fini(&ps->damage_ring[i]);
+  }
+  ps->ndamage = 0;
+  free(ps->damage_ring);
+  ps->damage_ring = ps->damage = NULL;
+
   // Flush all events
   x_sync(ps->c);
   ev_io_stop(ps->loop, &ps->xiow);

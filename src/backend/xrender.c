@@ -461,6 +461,7 @@ static void deinit(void *backend_data, session_t *ps) {
 		xcb_render_free_picture(ps->c, xd->alpha_pict[i]);
 	xcb_render_free_picture(ps->c, xd->white_pixel);
 	xcb_render_free_picture(ps->c, xd->black_pixel);
+	free_conv(xd->shadow_kernel);
 	free(xd);
 }
 
