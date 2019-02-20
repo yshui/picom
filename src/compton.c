@@ -790,7 +790,7 @@ restack_win(session_t *ps, win *w, xcb_window_t new_above) {
     log_trace("Window stack modified. Current stack:");
     for (win *c = ps->list; c; c = c->next) {
       const char *desc = "";
-      if (c->destroying) {
+      if (c->state == WSTATE_DESTROYING) {
         desc = "(D) ";
       }
       log_trace("%#010x \"%s\" %s", c->id, c->name, desc);
@@ -2701,11 +2701,7 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
     free(reply);
     log_trace("Initial stack:");
     for (win *c = ps->list; c; c = c->next) {
-      const char *desc = "";
-      if (c->destroying) {
-        desc = "(D) ";
-      }
-      log_trace("%#010x \"%s\" %s", c->id, c->name, desc);
+      log_trace("%#010x \"%s\"", c->id, c->name);
     }
   }
 
@@ -2761,8 +2757,9 @@ session_destroy(session_t *ps) {
     for (win *w = list; w; w = next) {
       next = w->next;
 
-      if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && !w->destroying)
+      if (w->state != WSTATE_DESTROYING) {
         win_ev_stop(ps, w);
+      }
 
       free_win_res(ps, w);
       free(w);

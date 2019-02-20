@@ -171,9 +171,6 @@ struct win {
   bool reg_ignore_valid;
   /// Cached width/height of the window including border.
   int widthb, heightb;
-  /// Whether the window is being destroyed. This being true means destroy_win
-  /// is called, but window might still need to be faded out
-  bool destroying;
   /// Whether the window is bounding-shaped.
   bool bounding_shaped;
   /// Whether the window just have rounded corners.
