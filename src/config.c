@@ -97,7 +97,7 @@ parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
     goto err1;
   }
   if (!(width % 2 && height % 2)) {
-    log_error("Blur kernel idth/height must be odd.");
+    log_error("Blur kernel width/height must be odd.");
     goto err1;
   }
   if (width > 16 || height > 16)
