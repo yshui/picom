@@ -5,11 +5,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <xcb/xcb.h>
-#include <xcb/present.h>
-#include <xcb/sync.h>
-#include <xcb/render.h>
 #include <xcb/composite.h>
+#include <xcb/present.h>
+#include <xcb/render.h>
+#include <xcb/sync.h>
+#include <xcb/xcb.h>
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
@@ -154,19 +154,13 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 	                     0, dst_x, dst_y, w->widthb, w->heightb);
 }
 
-/**
- * Reset filter on a <code>Picture</code>.
- */
-static inline void xrfilter_reset(session_t *ps, xcb_render_picture_t p) {
-	const char *filter = "Nearest";
-	xcb_render_set_picture_filter(ps->c, p, strlen(filter), filter, 0, NULL);
-}
-
-static bool blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_paint) {
+static bool
+blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_paint) {
 	struct _xrender_data *xd = backend_data;
 	const pixman_box32_t *reg = pixman_region32_extents((region_t *)reg_paint);
 	const int height = reg->y2 - reg->y1;
 	const int width = reg->x2 - reg->x1;
+	static const char *default_filter = "Nearest";
 
 	// Create a buffer for storing blurred picture, make it just big enough
 	// for the blur region
@@ -202,20 +196,18 @@ static bool blur(void *backend_data, session_t *ps, double opacity, const region
 	int i;
 	for (i = 0; ps->o.blur_kerns[i]; i++) {
 		assert(i < MAX_BLUR_PASS - 1);
-		xcb_render_fixed_t *convolution_blur = ps->o.blur_kerns[i];
-		int kwid = XFIXED_TO_DOUBLE(convolution_blur[0]),
-		    khei = XFIXED_TO_DOUBLE(convolution_blur[1]);
 
 		// Copy from source picture to destination. The filter must
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
-		xcb_render_set_picture_filter(ps->c, src_pict, strlen(XRFILTER_CONVOLUTION),
-		                              XRFILTER_CONVOLUTION, kwid * khei + 2, convolution_blur);
+		// TODO cache converted blur_kerns
+		x_set_picture_convolution_kernel(ps->c, src_pict, ps->o.blur_kerns[i]);
 
 		if (ps->o.blur_kerns[i + 1] || i == 0) {
 			// This is not the last pass, or this is the first pass
-			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
-			                     dst_pict, src_x, src_y, 0, 0, 0, 0, width, height);
+			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, src_pict,
+			                     XCB_NONE, dst_pict, src_x, src_y, 0, 0, 0, 0,
+			                     width, height);
 		} else {
 			// This is the last pass, and this is also not the first
 			xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OVER, src_pict,
@@ -223,7 +215,9 @@ static bool blur(void *backend_data, session_t *ps, double opacity, const region
 			                     reg->y1, width, height);
 		}
 
-		xrfilter_reset(ps, src_pict);
+		// reset filter
+		xcb_render_set_picture_filter(ps->c, src_pict, strlen(default_filter),
+		                              default_filter, 0, NULL);
 
 		src_pict = tmp_picture[current];
 		dst_pict = tmp_picture[!current];
@@ -243,8 +237,8 @@ static bool blur(void *backend_data, session_t *ps, double opacity, const region
 	return true;
 }
 
-static void
-render_win(void *backend_data, session_t *ps, win *w, void *win_data, const region_t *reg_paint) {
+static void render_win(void *backend_data, session_t *ps, win *w, void *win_data,
+                       const region_t *reg_paint) {
 	struct _xrender_data *xd = backend_data;
 	struct _xrender_win_data *wd = win_data;
 
@@ -278,8 +272,9 @@ render_win(void *backend_data, session_t *ps, win *w, void *win_data, const regi
 		// Handle invert color
 		x_set_picture_clip_region(ps->c, wd->rendered_pict, 0, 0, &reg_paint_local);
 
-		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE, xd->white_pixel, XCB_NONE,
-		                     wd->rendered_pict, 0, 0, 0, 0, 0, 0, w->widthb, w->heightb);
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_DIFFERENCE,
+		                     xd->white_pixel, XCB_NONE, wd->rendered_pict, 0, 0,
+		                     0, 0, 0, 0, w->widthb, w->heightb);
 		// We use an extra PictOpInReverse operation to get correct pixel
 		// alpha. There could be a better solution.
 		if (win_has_alpha(w))
@@ -305,8 +300,9 @@ render_win(void *backend_data, session_t *ps, win *w, void *win_data, const regi
 
 		// Step 2: multiply alpha value
 		// XXX test
-		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->white_pixel, alpha_pict,
-		                     wd->rendered_pict, 0, 0, 0, 0, 0, 0, w->widthb, w->heightb);
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->white_pixel,
+		                     alpha_pict, wd->rendered_pict, 0, 0, 0, 0, 0, 0,
+		                     w->widthb, w->heightb);
 	}
 
 	if (w->dim) {
@@ -361,7 +357,8 @@ static void *prepare_win(void *backend_data, session_t *ps, win *w) {
 	//     leave this here until we have chance to re-think the backend API
 	if (w->shadow) {
 		xcb_pixmap_t pixmap;
-		build_shadow(ps, 1, w->widthb, w->heightb, xd->shadow_pixel, &pixmap, &wd->shadow_pict);
+		build_shadow(ps, 1, w->widthb, w->heightb, xd->shadow_pixel, &pixmap,
+		             &wd->shadow_pict);
 		xcb_free_pixmap(ps->c, pixmap);
 	}
 	return wd;
@@ -389,12 +386,12 @@ static void *init(session_t *ps) {
 
 	xd->black_pixel = solid_picture(ps, true, 1, 0, 0, 0);
 	xd->white_pixel = solid_picture(ps, true, 1, 1, 1, 1);
-	xd->shadow_pixel =
-	    solid_picture(ps, true, 1, ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue);
+	xd->shadow_pixel = solid_picture(ps, true, 1, ps->o.shadow_red,
+	                                 ps->o.shadow_green, ps->o.shadow_blue);
 
 	if (ps->overlay != XCB_NONE) {
-		xd->target =
-		    x_create_picture_with_visual_and_pixmap(ps->c, ps->vis, ps->overlay, 0, NULL);
+		xd->target = x_create_picture_with_visual_and_pixmap(
+		    ps->c, ps->vis, ps->overlay, 0, NULL);
 		xd->target_win = ps->overlay;
 	} else {
 		xcb_render_create_picture_value_list_t pa = {
@@ -411,16 +408,17 @@ static void *init(session_t *ps) {
 		abort();
 	}
 
-	xd->back_pixmap =
-	    x_create_pixmap(ps->c, pictfmt->depth, ps->root, ps->root_width, ps->root_height);
-	xd->back = x_create_picture_with_pictfmt_and_pixmap(ps->c, pictfmt, xd->back_pixmap, 0, NULL);
+	xd->back_pixmap = x_create_pixmap(ps->c, pictfmt->depth, ps->root, ps->root_width,
+	                                  ps->root_height);
+	xd->back = x_create_picture_with_pictfmt_and_pixmap(ps->c, pictfmt,
+	                                                    xd->back_pixmap, 0, NULL);
 
 	xcb_pixmap_t root_pixmap = x_get_root_back_pixmap(ps);
 	if (root_pixmap == XCB_NONE) {
 		xd->root_pict = solid_picture(ps, false, 1, 0.5, 0.5, 0.5);
 	} else {
-		xd->root_pict =
-		    x_create_picture_with_visual_and_pixmap(ps->c, ps->vis, root_pixmap, 0, NULL);
+		xd->root_pict = x_create_picture_with_visual_and_pixmap(
+		    ps->c, ps->vis, root_pixmap, 0, NULL);
 	}
 
 	if (ps->present_exists) {
@@ -475,8 +473,9 @@ static void present(void *backend_data, session_t *ps) {
 		// To make sure rendering won't get stuck if user toggles vsync on the
 		// fly.
 		xcb_sync_reset_fence(ps->c, xd->idle_fence);
-		xcb_present_pixmap(ps->c, xd->target_win, xd->back_pixmap, 0, XCB_NONE, XCB_NONE,
-		                   0, 0, XCB_NONE, XCB_NONE, xd->idle_fence, 0, 0, 1, 0, 0, NULL);
+		xcb_present_pixmap(ps->c, xd->target_win, xd->back_pixmap, 0, XCB_NONE,
+		                   XCB_NONE, 0, 0, XCB_NONE, XCB_NONE, xd->idle_fence, 0,
+		                   0, 1, 0, 0, NULL);
 	} else {
 		// compose() sets clip region, so clear it first to make
 		// sure we update the whole screen.
@@ -484,8 +483,9 @@ static void present(void *backend_data, session_t *ps) {
 
 		// TODO buffer-age-like optimization might be possible here.
 		//      but that will require a different backend API
-		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->back, XCB_NONE, xd->target,
-		                     0, 0, 0, 0, 0, 0, ps->root_width, ps->root_height);
+		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, xd->back, XCB_NONE,
+		                     xd->target, 0, 0, 0, 0, 0, 0, ps->root_width,
+		                     ps->root_height);
 	}
 }
 

@@ -17,6 +17,7 @@
 #include "region.h"
 #include "compiler.h"
 #include "common.h"
+#include "kernel.h"
 #include "x.h"
 #include "log.h"
 #include "backend/gl/glx.h"
@@ -512,4 +513,30 @@ bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
     return false;
   }
   return true;
+}
+
+// xcb-render specific macros
+#define XFIXED_TO_DOUBLE(value) (((double) (value)) / 65536)
+#define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t) (((double) (value)) * 65536))
+
+/**
+ * Set the picture filter of a xrender picture to a convolution
+ * kernel.
+ *
+ * @param c   xcb connection
+ * @param pict the picture
+ * @param kern the convolution kernel
+ */
+void
+x_set_picture_convolution_kernel(xcb_connection_t *c,
+                                 xcb_render_picture_t pict, conv *kernel) {
+  auto buf = ccalloc(kernel->w * kernel->h + 2, xcb_render_fixed_t);
+  static const char *filter = "convolution";
+  buf[0] = DOUBLE_TO_XFIXED(kernel->w);
+  buf[1] = DOUBLE_TO_XFIXED(kernel->h);
+  for (int i = 0; i < kernel->w * kernel->h; i++) {
+    buf[i + 2] = DOUBLE_TO_XFIXED(kernel->data[i]);
+  }
+  xcb_render_set_picture_filter(c, pict, sizeof(filter), filter, kernel->w * kernel->h + 2, buf);
+  free(buf);
 }

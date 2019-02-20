@@ -24,6 +24,7 @@
 #include "compiler.h"
 #include "win.h"
 #include "types.h"
+#include "kernel.h"
 
 typedef struct session session_t;
 
@@ -207,7 +208,7 @@ typedef struct options_t {
 	/// Background blur blacklist. A linked list of conditions.
 	c2_lptr_t *blur_background_blacklist;
 	/// Blur convolution kernel.
-	xcb_render_fixed_t *blur_kerns[MAX_BLUR_PASS];
+	conv *blur_kerns[MAX_BLUR_PASS];
 	/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
 	double inactive_dim;
 	/// Whether to use fixed inactive dim opacity, instead of deciding
@@ -245,13 +246,8 @@ extern const char *const VSYNC_STRS[NUM_VSYNC + 1];
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
 attr_warn_unused_result bool parse_long(const char *, long *);
-attr_warn_unused_result const char *parse_matrix_readnum(const char *, double *);
-attr_warn_unused_result xcb_render_fixed_t *
-parse_matrix(const char *, const char **, bool *hasneg);
-attr_warn_unused_result xcb_render_fixed_t *
-parse_conv_kern(const char *, const char **, bool *hasneg);
 attr_warn_unused_result bool
-parse_conv_kern_lst(const char *, xcb_render_fixed_t **, int, bool *hasneg);
+parse_blur_kern_lst(const char *, conv **, int, bool *hasneg);
 attr_warn_unused_result bool parse_geometry(session_t *, const char *, region_t *);
 attr_warn_unused_result bool parse_rule_opacity(c2_lptr_t **, const char *);
 

@@ -379,7 +379,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
       &opt->blur_background_fixed);
   // --blur-kern
   if (config_lookup_string(&cfg, "blur-kern", &sval) &&
-      !parse_conv_kern_lst(sval, opt->blur_kerns, MAX_BLUR_PASS, conv_kern_hasneg)) {
+      !parse_blur_kern_lst(sval, opt->blur_kerns, MAX_BLUR_PASS, conv_kern_hasneg)) {
     log_fatal("Cannot parse \"blur-kern\"");
     goto err;
   }

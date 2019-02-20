@@ -17,6 +17,7 @@
 #include "log.h"
 #include "region.h"
 #include "types.h"
+#include "kernel.h"
 #include "win.h"
 
 #include "config.h"
@@ -43,109 +44,116 @@ parse_long(const char *s, long *dest) {
 }
 
 /**
- * Parse a floating-point number in matrix.
+ * Parse a floating-point number in from a string,
+ * also strips the trailing space and comma after the number.
+ *
+ * @param[in]  src  string to parse
+ * @param[out] dest return the number parsed from the string
+ * @return          pointer to the last character parsed
  */
 const char *
-parse_matrix_readnum(const char *src, double *dest) {
+parse_readnum(const char *src, double *dest) {
   const char *pc = NULL;
   double val = strtod_simple(src, &pc);
   if (!pc || pc == src) {
     log_error("No number found: %s", src);
     return src;
   }
-
-  while (*pc && (isspace(*pc) || ',' == *pc))
+  while (*pc && (isspace(*pc) || *pc == ',')) {
     ++pc;
-
+  }
   *dest = val;
-
   return pc;
 }
 
 /**
  * Parse a matrix.
+ *
+ * @param[in]  src    the blur kernel string
+ * @param[out] endptr return where the end of kernel is in the string
+ * @param[out] hasneg whether the kernel has negative values
  */
-xcb_render_fixed_t *
-parse_matrix(const char *src, const char **endptr, bool *hasneg) {
-  int wid = 0, hei = 0;
+conv *
+parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
+  int width = 0, height = 0;
   *hasneg = false;
 
   const char *pc = NULL;
 
   // Get matrix width and height
-  {
-    double val = 0.0;
-    if (src == (pc = parse_matrix_readnum(src, &val)))
-      goto err1;
-    src = pc;
-    wid = val;
-    if (src == (pc = parse_matrix_readnum(src, &val)))
-      goto err1;
-    src = pc;
-    hei = val;
-  }
+  double val = 0.0;
+  if (src == (pc = parse_readnum(src, &val)))
+    goto err1;
+  src = pc;
+  width = val;
+  if (src == (pc = parse_readnum(src, &val)))
+    goto err1;
+  src = pc;
+  height = val;
 
   // Validate matrix width and height
-  if (wid <= 0 || hei <= 0) {
-    log_error("Invalid matrix width/height.");
+  if (width <= 0 || height <= 0) {
+    log_error("Blue kernel width/height can't be negative.");
     goto err1;
   }
-  if (!(wid % 2 && hei % 2)) {
-    log_error("Width/height not odd.");
+  if (!(width % 2 && height % 2)) {
+    log_error("Blur kernel idth/height must be odd.");
     goto err1;
   }
-  if (wid > 16 || hei > 16)
-    log_warn("Matrix width/height too large, may slow down"
+  if (width > 16 || height > 16)
+    log_warn("Blur kernel width/height too large, may slow down"
              "rendering, and/or consume lots of memory");
 
   // Allocate memory
-  auto matrix = ccalloc(wid * hei + 2, xcb_render_fixed_t);
+  conv *matrix = cvalloc(sizeof(conv) + width * height * sizeof(double));
 
   // Read elements
-  {
-    int skip = hei / 2 * wid + wid / 2;
-    for (int i = 0; i < wid * hei; ++i) {
-      // Ignore the center element
-      if (i == skip) {
-        matrix[2 + i] = DOUBLE_TO_XFIXED(0);
-        continue;
-      }
-      double val = 0;
-      if (src == (pc = parse_matrix_readnum(src, &val)))
-        goto err2;
-      src = pc;
-      if (val < 0) *hasneg = true;
-      matrix[2 + i] = DOUBLE_TO_XFIXED(val);
+  int skip = height / 2 * width + width / 2;
+  for (int i = 0; i < width * height; ++i) {
+    // Ignore the center element
+    if (i == skip) {
+      matrix->data[i] = 0;
+      continue;
     }
+    if (src == (pc = parse_readnum(src, &val))) {
+      goto err2;
+    }
+    src = pc;
+    if (val < 0) {
+      *hasneg = true;
+    }
+    matrix->data[i] = val;
   }
 
   // Detect trailing characters
-  for ( ;*pc && ';' != *pc; ++pc)
-    if (!isspace(*pc) && ',' != *pc) {
-      log_error("Trailing characters in matrix string.");
+  for (;*pc && *pc != ';'; pc++) {
+    if (!isspace(*pc) && *pc != ',') {
+      // TODO isspace is locale aware, be careful
+      log_error("Trailing characters in blur kernel string.");
       goto err2;
     }
+  }
 
   // Jump over spaces after ';'
-  if (';' == *pc) {
-    ++pc;
-    while (*pc && isspace(*pc))
+  if (*pc == ';') {
+    pc++;
+    while (*pc && isspace(*pc)) {
       ++pc;
+    }
   }
 
   // Require an end of string if endptr is not provided, otherwise
   // copy end pointer to endptr
-  if (endptr)
+  if (endptr) {
     *endptr = pc;
-  else if (*pc) {
-    log_error("Only one matrix expected.");
+  } else if (*pc) {
+    log_error("Only one blur kernel expected.");
     goto err2;
   }
 
   // Fill in width and height
-  matrix[0] = DOUBLE_TO_XFIXED(wid);
-  matrix[1] = DOUBLE_TO_XFIXED(hei);
-
+  matrix->w = width;
+  matrix->h = height;
   return matrix;
 
 err2:
@@ -155,24 +163,18 @@ err1:
 }
 
 /**
- * Parse a convolution kernel.
- *
- * Output:
- *   hasneg: whether the convolution kernel has negative values
- */
-xcb_render_fixed_t *
-parse_conv_kern(const char *src, const char **endptr, bool *hasneg) {
-  return parse_matrix(src, endptr, hasneg);
-}
-
-/**
  * Parse a list of convolution kernels.
  *
- * Output:
- *   hasneg: whether any of the convolution kernel has negative values
+ * @param[in]  src    string to parse
+ * @param[out] dest   pointer to an array of kernels, must points to an array
+ *                    of `max` elements.
+ * @param[in]  max    maximum number of kernels supported
+ * @param[out] hasneg whether any of the kernels have negative values
+ * @return            if the `src` string is a valid kernel list string
  */
 bool
-parse_conv_kern_lst(const char *src, xcb_render_fixed_t **dest, int max, bool *hasneg) {
+parse_blur_kern_lst(const char *src, conv **dest, int max, bool *hasneg) {
+  // TODO just return a predefined kernels, not parse predefined strings...
   static const struct {
     const char *name;
     const char *kern_str;
@@ -188,11 +190,11 @@ parse_conv_kern_lst(const char *src, xcb_render_fixed_t **dest, int max, bool *h
   };
 
   *hasneg = false;
-
   for (unsigned int i = 0;
-      i < sizeof(CONV_KERN_PREDEF) / sizeof(CONV_KERN_PREDEF[0]); ++i)
+       i < sizeof(CONV_KERN_PREDEF) / sizeof(CONV_KERN_PREDEF[0]); ++i) {
     if (!strcmp(CONV_KERN_PREDEF[i].name, src))
-      return parse_conv_kern_lst(CONV_KERN_PREDEF[i].kern_str, dest, max, hasneg);
+      return parse_blur_kern_lst(CONV_KERN_PREDEF[i].kern_str, dest, max, hasneg);
+  }
 
   int i = 0;
   const char *pc = src;
@@ -207,8 +209,11 @@ parse_conv_kern_lst(const char *src, xcb_render_fixed_t **dest, int max, bool *h
   i = 0;
   while (pc && *pc && i < max - 1) {
     bool tmp_hasneg;
-    if (!(dest[i++] = parse_conv_kern(pc, &pc, &tmp_hasneg)))
+    dest[i] = parse_blur_kern(pc, &pc, &tmp_hasneg);
+    if (!dest[i]) {
       return false;
+    }
+    i++;
     *hasneg |= tmp_hasneg;
   }
 
