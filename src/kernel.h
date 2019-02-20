@@ -25,6 +25,13 @@ conv *gaussian_kernel(double r);
 /// shadow_sum[x*d+y] is the sum of the kernel from (0, 0) to (x, y), inclusive
 void sum_kernel_preprocess(conv *map);
 
+/**
+ * Normalize a convolution kernel.
+ *
+ * @param[in,out] kern the kernel
+ */
+void normalize_conv_kern(conv *kern);
+
 static inline void free_conv(conv *k) {
 	free(k->rsum);
 	free(k);
