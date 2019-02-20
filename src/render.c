@@ -688,29 +688,14 @@ static inline void win_blur_background(session_t *ps, win *w, xcb_render_picture
 			                     kern_src->h == kern_dst[1] / 65536));
 
 			// Skip for fixed factor_center if the cache exists already
-			if (ps->o.blur_background_fixed && kern_dst)
+			if (ps->o.blur_background_fixed && kern_dst) {
 				continue;
-
-			// Allocate cache space if needed
-			if (!kern_dst) {
-				kern_dst = ccalloc(kern_src->w * kern_src->h + 2,
-				                   xcb_render_fixed_t);
-				ps->blur_kerns_cache[i] = kern_dst;
 			}
 
-			double sum = factor_center;
-			for (int j = 0; j < kern_src->w * kern_src->h; j++) {
-				sum += kern_src->data[j];
-			}
-			// Copy src to dst, normalizing in the process
-			for (int j = 0; j < kern_src->w * kern_src->h; j++) {
-				kern_dst[j + 2] = kern_src->data[j] / sum * 65536;
-			}
-			// Modify the factor of the center pixel
-			kern_dst[2 + (kern_src->h / 2) * kern_src->w + kern_src->w / 2] =
-			    factor_center / sum * 65536;
-			kern_dst[0] = kern_src->w * 65536;
-			kern_dst[1] = kern_src->h * 65536;
+			// If kern_dst is allocated, it's always allocated to the right size
+			size_t size = kern_dst ? kern_src->w * kern_src->h + 2 : 0;
+			x_picture_filter_from_conv(kern_src, factor_center, &kern_dst, &size);
+			ps->blur_kerns_cache[i] = kern_dst;
 		}
 
 		// Minimize the region we try to blur, if the window itself is not

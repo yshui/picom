@@ -520,23 +520,38 @@ bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
 #define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t) (((double) (value)) * 65536))
 
 /**
- * Set the picture filter of a xrender picture to a convolution
- * kernel.
+ * Convert a struct conv to a X picture convolution filter, normalizing the kernel
+ * in the process. Allow the caller to specify the element at the center of the kernel,
+ * for compatibility with legacy code.
  *
- * @param c   xcb connection
- * @param pict the picture
- * @param kern the convolution kernel
+ * @param[in] kernel the convolution kernel
+ * @param[in] center the element to put at the center of the matrix
+ * @param[inout] ret pointer to an array of `size`, if `size` is too small, more space
+ *                   will be allocated, and `*ret` will be updated
+ * @param[inout] size size of the array pointed to by `ret`, in number of elements
+ * @return number of elements filled into `*ret`
  */
-void
-x_set_picture_convolution_kernel(xcb_connection_t *c,
-                                 xcb_render_picture_t pict, conv *kernel) {
-  auto buf = ccalloc(kernel->w * kernel->h + 2, xcb_render_fixed_t);
-  static const char *filter = "convolution";
+size_t x_picture_filter_from_conv(const conv *kernel, double center, xcb_render_fixed_t **ret,
+                                size_t *size) {
+  if (*size < (size_t)(kernel->w * kernel->h + 2)) {
+    *size = kernel->w * kernel->h + 2;
+    *ret = crealloc(*ret, *size);
+  }
+  auto buf = *ret;
   buf[0] = DOUBLE_TO_XFIXED(kernel->w);
   buf[1] = DOUBLE_TO_XFIXED(kernel->h);
+  double sum = center;
   for (int i = 0; i < kernel->w * kernel->h; i++) {
-    buf[i + 2] = DOUBLE_TO_XFIXED(kernel->data[i]);
+    sum += kernel->data[i];
   }
-  xcb_render_set_picture_filter(c, pict, sizeof(filter), filter, kernel->w * kernel->h + 2, buf);
-  free(buf);
+
+  // Note for floating points a / b != a * (1 / b), but this shouldn't have any real
+  // impact on the result
+  double factor = sum != 0 ? 1.0 / sum : 1;
+  for (int i = 0; i < kernel->w * kernel->h; i++) {
+    buf[i + 2] = DOUBLE_TO_XFIXED(kernel->data[i] * factor);
+  }
+
+  buf[kernel->h / 2 * kernel->w + kernel->w / 2 + 2] = DOUBLE_TO_XFIXED(center * factor);
+  return kernel->w * kernel->h + 2;
 }

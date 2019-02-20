@@ -170,13 +170,14 @@ bool x_is_root_back_pixmap_atom(session_t *ps, xcb_atom_t atom);
 bool x_fence_sync(xcb_connection_t *, xcb_sync_fence_t);
 
 /**
- * Set the picture filter of a xrender picture to a convolution
- * kernel.
+ * Convert a struct conv to a X picture convolution filter, normalizing the kernel
+ * in the process. Allow the caller to specify the element at the center of the kernel,
+ * for compatibility with legacy code.
  *
- * @param c   xcb connection
- * @param pict the picture
- * @param kern the convolution kernel
+ * @param[in] kernel the convolution kernel
+ * @param[in] center the element to put at the center of the matrix
+ * @param[inout] ret pointer to an array of `size`, if `size` is too small, more space
+ *                   will be allocated, and `*ret` will be updated.
+ * @param[inout] size size of the array pointed to by `ret`.
  */
-void
-x_set_picture_convolution_kernel(xcb_connection_t *c,
-                                 xcb_render_picture_t pict, conv *kernel);
+size_t x_picture_filter_from_conv(const conv *kernel, double center, xcb_render_fixed_t **ret, size_t *size);

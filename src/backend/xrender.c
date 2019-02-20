@@ -51,6 +51,11 @@ typedef struct _xrender_data {
 
 	/// 1x1 picture of the shadow color
 	xcb_render_picture_t shadow_pixel;
+
+	/// Blur kernels converted to X format
+	xcb_render_fixed_t *x_blur_kern[MAX_BLUR_PASS];
+	/// Number of elements in each blur kernel
+	size_t x_blur_kern_size[MAX_BLUR_PASS];
 } xrender_data;
 
 #if 0
@@ -118,7 +123,8 @@ static void compose(void *backend_data, session_t *ps, win *w, void *win_data, i
 		// content, and destroying it.
 		pixman_region32_intersect(&reg_tmp, &reg_tmp, (region_t *)reg_paint);
 
-		if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 && w->xinerama_scr < ps->xinerama_nscrs)
+		if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
+		    w->xinerama_scr < ps->xinerama_nscrs)
 			// There can be a window where number of screens is updated,
 			// but the screen number attached to the windows have not.
 			//
@@ -160,7 +166,8 @@ blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_pain
 	const pixman_box32_t *reg = pixman_region32_extents((region_t *)reg_paint);
 	const int height = reg->y2 - reg->y1;
 	const int width = reg->x2 - reg->x1;
-	static const char *default_filter = "Nearest";
+	static const char *filter0 = "Nearest";        // The "null" filter
+	static const char *filter = "convolution";
 
 	// Create a buffer for storing blurred picture, make it just big enough
 	// for the blur region
@@ -194,14 +201,15 @@ blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_pain
 	// For 1 pass, we do
 	//   back -(pass 1)-> tmp0 -(copy)-> target_buffer
 	int i;
-	for (i = 0; ps->o.blur_kerns[i]; i++) {
+	for (i = 0; xd->x_blur_kern[i]; i++) {
 		assert(i < MAX_BLUR_PASS - 1);
 
 		// Copy from source picture to destination. The filter must
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
 		// TODO cache converted blur_kerns
-		x_set_picture_convolution_kernel(ps->c, src_pict, ps->o.blur_kerns[i]);
+		xcb_render_set_picture_filter(ps->c, src_pict, strlen(filter), filter,
+		                              xd->x_blur_kern_size[i], xd->x_blur_kern[i]);
 
 		if (ps->o.blur_kerns[i + 1] || i == 0) {
 			// This is not the last pass, or this is the first pass
@@ -216,8 +224,8 @@ blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_pain
 		}
 
 		// reset filter
-		xcb_render_set_picture_filter(ps->c, src_pict, strlen(default_filter),
-		                              default_filter, 0, NULL);
+		xcb_render_set_picture_filter(ps->c, src_pict, strlen(filter0), filter0,
+		                              0, NULL);
 
 		src_pict = tmp_picture[current];
 		dst_pict = tmp_picture[!current];
@@ -433,6 +441,11 @@ static void *init(session_t *ps) {
 			xd->idle_fence = XCB_NONE;
 			free(e);
 		}
+	}
+	for (int i = 0; ps->o.blur_kerns[i]; i++) {
+		assert(i < MAX_BLUR_PASS - 1);
+		xd->x_blur_kern_size[i] = x_picture_filter_from_conv(
+		    ps->o.blur_kerns[i], 1, &xd->x_blur_kern[i], (size_t[]){0});
 	}
 	return xd;
 }

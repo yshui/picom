@@ -121,24 +121,4 @@ void sum_kernel_preprocess(conv *map) {
 	}
 }
 
-/**
- * Normalize a convolution kernel.
- *
- * @param[in,out] kern the kernel
- */
-void normalize_conv_kern(conv *kern) {
-	double sum = 0.0;
-	for (int i = 0; i < kern->w * kern->h; i++) {
-		sum += kern->data[i];
-	}
-	double factor = 1.0 / sum;
-	for (int i = 0; i < kern->w * kern->h; i++) {
-		kern->data[i] *= factor;
-	}
-	if (kern->rsum) {
-		free(kern->rsum);
-		kern->rsum = NULL;
-	}
-}
-
 // vim: set noet sw=8 ts=8 :
