@@ -820,8 +820,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	// Fill default blur kernel
 	if (opt->blur_background && !opt->blur_kerns[0]) {
-		bool ret = parse_blur_kern_lst("3x3box", opt->blur_kerns, MAX_BLUR_PASS, &conv_kern_hasneg);
-		assert(ret);
+		CHECK(parse_blur_kern_lst("3x3box", opt->blur_kerns, MAX_BLUR_PASS, &conv_kern_hasneg));
 	}
 
 	if (opt->resize_damage < 0) {

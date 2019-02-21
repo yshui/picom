@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
-#include <stdlib.h>
+#include <assert.h>
 #include <ctype.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <assert.h>
 
 #include "compiler.h"
 
@@ -32,10 +32,19 @@ safe_isnan(double a) {
 
 /// Same as assert false, but make sure we abort _even in release builds_.
 /// Silence compiler warning caused by release builds making some code paths reachable.
-attr_noret static inline void BUG(void) {
-	assert(false);
-	abort();
-}
+#define BUG()                                                                            \
+	do {                                                                             \
+		assert(false);                                                           \
+		abort();                                                                 \
+	} while (0)
+
+/// Same as assert, but evaluates the expression even in release builds
+#define CHECK(expr)                                                                     \
+	do {                                                                             \
+		__auto_type __tmp = (expr);                                              \
+		assert(__tmp);                                                           \
+		(void)__tmp;                                                             \
+	} while (0)
 
 /**
  * Normalize an int value to a specific range.
@@ -111,8 +120,8 @@ static inline double attr_const normalize_d(double d) {
 	return normalize_d_range(d, 0.0, 1.0);
 }
 
-attr_noret void report_allocation_failure(const char *func, const char *file,
-                                          unsigned int line);
+attr_noret void
+report_allocation_failure(const char *func, const char *file, unsigned int line);
 
 /**
  * @brief Quit if the passed-in pointer is empty.
