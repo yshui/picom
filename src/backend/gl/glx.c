@@ -233,6 +233,7 @@ static void glx_deinit(void *backend_data, session_t *ps) {
  */
 static void *glx_init(session_t *ps) {
 	bool success = false;
+	glxext_init(ps->dpy, ps->scr);
 	auto gd = ccalloc(1, struct _glx_data);
 	XVisualInfo *pvis = NULL;
 
@@ -264,8 +265,10 @@ static void *glx_init(session_t *ps) {
 	}
 
 	// Ensure GLX_EXT_texture_from_pixmap exists
-	if (!glxext.has_GLX_EXT_texture_from_pixmap)
+	if (!glxext.has_GLX_EXT_texture_from_pixmap) {
+		log_error("GLX_EXT_texture_from_pixmap is not supported by your driver");
 		goto end;
+	}
 
 	// Initialize GLX data structure
 	for (int i = 0; i < MAX_BLUR_PASS; ++i) {

@@ -2662,7 +2662,7 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
   }
   free(config_file_to_free);
 
-  if (bkend_use_glx(ps)) {
+  if (bkend_use_glx(ps) && !ps->o.experimental_backends) {
     auto glx_logger = glx_string_marker_logger_new();
     if (glx_logger) {
       log_info("Enabling gl string marker");
