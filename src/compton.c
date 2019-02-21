@@ -468,7 +468,7 @@ find_client_win(session_t *ps, xcb_window_t w) {
 }
 
 static win *
-paint_preprocess(session_t *ps, win *list, bool *fade_running) {
+paint_preprocess(session_t *ps, bool *fade_running) {
   // XXX need better, more general name for `fade_running`. It really
   // means if fade is still ongoing after the current frame is rendered
   win *t = NULL, *next = NULL;
@@ -488,7 +488,7 @@ paint_preprocess(session_t *ps, win *list, bool *fade_running) {
   ps->fade_time += steps * ps->o.fade_delta;
 
   // First, let's process fading
-  for (win *w = list; w; w = next) {
+  for (win *w = ps->list; w; w = next) {
     next = w->next;
     const winmode_t mode_old = w->mode;
     const bool was_painted = w->to_paint;
@@ -539,7 +539,7 @@ paint_preprocess(session_t *ps, win *list, bool *fade_running) {
   // Trace whether it's the highest window to paint
   bool is_highest = true;
   bool reg_ignore_valid = true;
-  for (win *w = list; w; w = next) {
+  for (win *w = ps->list; w; w = next) {
     __label__ skip_window;
     bool to_paint = true;
     // w->to_paint remembers whether this window is painted last time
@@ -2115,7 +2115,7 @@ _draw_callback(EV_P_ session_t *ps, int revents) {
   }
 
   bool fade_running = false;
-  win *t = paint_preprocess(ps, ps->list, &fade_running);
+  win *t = paint_preprocess(ps, &fade_running);
   ps->tmout_unredir_hit = false;
 
   // Start/stop fade timer depends on whether window are fading
