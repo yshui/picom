@@ -46,7 +46,7 @@ Assuming you already have all the usual building tools installed (e.g. gcc, meso
 
 To build the documents, you need `asciidoc`
 
-### How to build
+### To build
 
 ```bash
 $ meson --buildtype=release . build
@@ -54,6 +54,14 @@ $ ninja -C build
 ```
 
 Built binary can be found in `build/src`
+
+### To install
+
+``` bash
+$ ninja -C build install
+```
+
+Default install prefix is `/usr/local`, you can change it with `meson configure -Dprefix=<path> build`
 
 ## How to Contribute
 
