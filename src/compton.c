@@ -160,13 +160,11 @@ free_xinerama_info(session_t *ps) {
 /**
  * Get current system clock in milliseconds.
  */
-static inline unsigned long
+static inline uint64_t
 get_time_ms(void) {
-  struct timeval tv;
-
-  gettimeofday(&tv, NULL);
-
-  return tv.tv_sec % SEC_WRAP * 1000 + tv.tv_usec / 1000;
+  struct timespec tp;
+  clock_gettime(CLOCK_MONOTONIC, &tp);
+  return tp.tv_sec * ((uint64_t)1000ul) + tp.tv_nsec / 1000000;
 }
 
 // XXX Move to x.c
@@ -477,11 +475,11 @@ paint_preprocess(session_t *ps, bool *fade_running) {
   // Fading step calculation
   unsigned long steps = 0L;
   auto now = get_time_ms();
-  auto tolerance = FADE_DELTA_TOLERANCE*ps->o.fade_delta;
-  if (ps->fade_time && now+tolerance >= ps->fade_time) {
-    steps = (now - ps->fade_time + tolerance) / ps->o.fade_delta;
+  if (ps->fade_time) {
+    assert(now >= ps->fade_time);
+    steps = (now - ps->fade_time) / ps->o.fade_delta;
   } else {
-    // Reset fade_time if unset, or there appears to be a time disorder
+    // Reset fade_time if unset
     ps->fade_time = get_time_ms();
     steps = 0L;
   }
@@ -1890,6 +1888,7 @@ swopti_handle_timeout(session_t *ps) {
   // Get the microsecond offset of the time when the we reach the timeout
   // I don't think a 32-bit long could overflow here.
   long offset = (get_time_timeval().tv_usec - ps->paint_tm_offset) % ps->refresh_intv;
+  // XXX this formula dones't work if refresh rate is not a whole number
   if (offset < 0)
     offset += ps->refresh_intv;
 
