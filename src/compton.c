@@ -2018,11 +2018,7 @@ redir_stop(session_t *ps) {
     for (win *w = ps->list, *next; w; w = next) {
       next = w->next;
       // Wrapping up fading in progress
-      if (w->opacity != w->opacity_tgt) {
-        assert(w->state != WSTATE_UNMAPPED && w->state != WSTATE_MAPPED);
-        w->opacity = w->opacity_tgt;
-        win_check_fade_finished(ps, &w);
-      }
+      win_skip_fading(ps, &w);
 
       // `w` might be freed by win_check_fade_finished
       if (!w) {

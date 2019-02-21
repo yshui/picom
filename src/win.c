@@ -1367,12 +1367,11 @@ finish_destroy_win(session_t *ps, win **_w) {
   win *w = *_w;
   win **prev = NULL;
 
-  // Window can't go from UNMAPPED to DESTROYING, and
-  // UNMAPPED is the only state where the window resource
-  // is freed. That means the window resources have not
-  // been freed at this point. call finish_unmap_win to
-  // free them.
-  finish_unmap_win(ps, _w);
+  if (w->state != WSTATE_UNMAPPED) {
+    // Only UNMAPPED state has window resources freed, otherwise
+    // we need to call finish_unmap_win to free them.
+    finish_unmap_win(ps, _w);
+  }
 
   log_trace("Trying to destroy (%#010x)", w->id);
   for (prev = &ps->list; *prev; prev = &(*prev)->next) {
@@ -1477,6 +1476,10 @@ unmap_win(session_t *ps, win **_w, bool destroy) {
     }
   }
 #endif
+
+  if (!ps->redirected) {
+    win_skip_fading(ps, _w);
+  }
 }
 
 /**
@@ -1499,6 +1502,18 @@ win_check_fade_finished(session_t *ps, win **_w) {
     default: unreachable;
     }
   }
+}
+
+/// Skip the current in progress fading of window,
+/// transition the window straight to its end state
+void win_skip_fading(session_t *ps, win **_w) {
+  win *w = *_w;
+  if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
+    assert(w->opacity_tgt == w->opacity);
+    return;
+  }
+  w->opacity = w->opacity_tgt;
+  win_check_fade_finished(ps, _w);
 }
 
 /**
@@ -1637,6 +1652,11 @@ map_win(session_t *ps, xcb_window_t id) {
     cdbus_ev_win_mapped(ps, w);
   }
 #endif
+
+  if (!ps->redirected) {
+    win_skip_fading(ps, &w);
+    assert(w);
+  }
 }
 
 

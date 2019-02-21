@@ -368,6 +368,10 @@ win_check_fade_finished(session_t *ps, win **_w);
 // Stop receiving events (except ConfigureNotify, XXX why?) from a window
 void win_ev_stop(session_t *ps, win *w);
 
+/// Skip the current in progress fading of window,
+/// transition the window straight to its end state
+void win_skip_fading(session_t *ps, win **_w);
+
 /**
  * Get the leader of a window.
  *
