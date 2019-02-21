@@ -124,6 +124,7 @@ struct win {
   win *next;
   /// Pointer to the next higher window to paint.
   win *prev_trans;
+  // TODO rethink reg_ignore
 
   // Core members
   /// ID of the top-level frame window.

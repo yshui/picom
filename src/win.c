@@ -1371,7 +1371,14 @@ finish_destroy_win(session_t *ps, win **_w) {
 
   // Invalidate reg_ignore of windows below this one
   // TODO what if w->next is not mapped??
+  // TODO seriously figure out how reg_ignore behaves.
+  //      I think if `w` is unmapped, and destroyed after
+  //      paint happened at least once, w->reg_ignore_valid would
+  //      be true, and there is no need to invalid w->next->reg_ignore
+  //      when w is destroyed.
   if (w->next) {
+    // should be `= w->reg_ignore_valid && w->next->reg_ignore_valid`,
+    // but keep it this way until we think about reg_ignore.
     w->next->reg_ignore_valid = false;
   }
 
