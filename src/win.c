@@ -1620,7 +1620,7 @@ void map_win(session_t *ps, win *w) {
 
   // TODO win_update_bounding_shape below will immediately
   //      reinit w->win_data, not very efficient
-  if (ps->redirected) {
+  if (ps->redirected && ps->o.experimental_backends) {
     w->win_data = backend_list[ps->o.backend]->prepare_win(ps->backend_data, ps, w);
   }
   log_debug("Window %#010x has opacity %f, opacity target is %f", w->id, w->opacity, w->opacity_tgt);
