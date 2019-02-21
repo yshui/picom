@@ -874,7 +874,7 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 
   auto duplicated_win = find_win(ps, id);
   if (duplicated_win) {
-    log_warn("Window %#010x (recorded name: %s) added multiple times", id,
+    log_debug("Window %#010x (recorded name: %s) added multiple times", id,
              duplicated_win->name);
     return;
   }

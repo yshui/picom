@@ -1856,6 +1856,8 @@ update_refresh_rate(session_t *ps) {
  */
 static bool
 swopti_init(session_t *ps) {
+  log_warn("--sw-opti is going to be deprecated. If you get real benefits from using "
+           "this option, please open an issue to let us know.");
   // Prepare refresh rate
   // Check if user provides one
   ps->refresh_rate = ps->o.refresh_rate;
