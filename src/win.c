@@ -1369,6 +1369,12 @@ finish_destroy_win(session_t *ps, win **_w) {
     finish_unmap_win(ps, _w);
   }
 
+  // Invalidate reg_ignore of windows below this one
+  // TODO what if w->next is not mapped??
+  if (w->next) {
+    w->next->reg_ignore_valid = false;
+  }
+
   log_trace("Trying to destroy (%#010x)", w->id);
   for (prev = &ps->list; *prev; prev = &(*prev)->next) {
     if (w == *prev) {
