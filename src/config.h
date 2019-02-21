@@ -284,7 +284,7 @@ char *parse_config(options_t *, const char *config_file, bool *shadow_enable,
 /**
  * Parse a backend option argument.
  */
-static inline attr_const enum backend parse_backend(const char *str) {
+static inline attr_pure enum backend parse_backend(const char *str) {
 	for (enum backend i = 0; BACKEND_STRS[i]; ++i) {
 		if (!strcasecmp(str, BACKEND_STRS[i])) {
 			return i;
@@ -311,7 +311,7 @@ static inline attr_const enum backend parse_backend(const char *str) {
  *
  * Returns -2 on failure
  */
-static inline attr_const int parse_glx_swap_method(const char *str) {
+static inline attr_pure int parse_glx_swap_method(const char *str) {
 	// Parse alias
 	if (!strcmp("undefined", str)) {
 		return 0;

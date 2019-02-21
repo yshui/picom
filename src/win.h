@@ -282,12 +282,12 @@ struct win {
 
 int win_get_name(session_t *ps, win *w);
 int win_get_role(session_t *ps, win *w);
-void win_determine_mode(session_t *ps, win *w);
+winmode_t attr_pure win_calc_mode(const win *w);
 /**
  * Set real focused state of a window.
  */
 void win_set_focused(session_t *ps, win *w, bool focused);
-bool attr_const win_should_fade(session_t *ps, const win *w);
+bool attr_pure win_should_fade(session_t *ps, const win *w);
 void win_update_prop_shadow_raw(session_t *ps, win *w);
 void win_update_prop_shadow(session_t *ps, win *w);
 void win_set_shadow(session_t *ps, win *w, bool shadow_new);
@@ -298,16 +298,18 @@ void win_set_blur_background(session_t *ps, win *w, bool blur_background_new);
 void win_determine_blur_background(session_t *ps, win *w);
 void win_on_wtype_change(session_t *ps, win *w);
 void win_on_factor_change(session_t *ps, win *w);
-void calc_win_size(session_t *ps, win *w);
-void calc_shadow_geometry(session_t *ps, win *w);
-void win_upd_wintype(session_t *ps, win *w);
+/**
+ * Update cache data in struct _win that depends on window size.
+ */
+void win_on_win_size_change(session_t *ps, win *w);
+void win_update_wintype(session_t *ps, win *w);
 void win_mark_client(session_t *ps, win *w, xcb_window_t client);
 void win_unmark_client(session_t *ps, win *w);
 void win_recheck_client(session_t *ps, win *w);
 xcb_window_t win_get_leader_raw(session_t *ps, win *w, int recursions);
 bool win_get_class(session_t *ps, win *w);
-double attr_const win_get_opacity_target(session_t *ps, const win *w);
-bool attr_const win_should_dim(session_t *ps, const win *w);
+double attr_pure win_calc_opacity_target(session_t *ps, const win *w);
+bool attr_pure win_should_dim(session_t *ps, const win *w);
 void win_update_screen(session_t *, win *);
 /// Prepare window for fading because opacity target changed
 void win_start_fade(session_t *, win **);
@@ -335,8 +337,8 @@ void win_update_bounding_shape(session_t *ps, win *w);
  * Note w->shadow and shadow geometry must be correct before calling this
  * function.
  */
-void win_extents(win *w, region_t *res);
-region_t win_extents_by_val(win *w);
+void win_extents(const win *w, region_t *res);
+region_t win_extents_by_val(const win *w);
 /**
  * Add a window to damaged area.
  *
@@ -349,8 +351,8 @@ void add_damage_from_win(session_t *ps, win *w);
  *
  * Return region in global coordinates.
  */
-void win_get_region_noframe_local(win *w, region_t *);
-region_t win_get_region_noframe_local_by_val(win *w);
+void win_get_region_noframe_local(const win *w, region_t *);
+region_t win_get_region_noframe_local_by_val(const win *w);
 /**
  * Retrieve frame extents from a window.
  */
@@ -370,7 +372,7 @@ void
 win_check_fade_finished(session_t *ps, win **_w);
 
 // Stop receiving events (except ConfigureNotify, XXX why?) from a window
-void win_ev_stop(session_t *ps, win *w);
+void win_ev_stop(session_t *ps, const win *w);
 
 /// Skip the current in progress fading of window,
 /// transition the window straight to its end state
@@ -387,10 +389,10 @@ win_get_leader(session_t *ps, win *w) {
 }
 
 /// check if window has ARGB visual
-bool attr_const win_has_alpha(const win *w);
+bool attr_pure win_has_alpha(const win *w);
 
 /// check if reg_ignore_valid is true for all windows above us
-bool win_is_region_ignore_valid(session_t *ps, win *w);
+bool attr_pure win_is_region_ignore_valid(session_t *ps, const win *w);
 
 /// Free all resources in a struct win
 void free_win_res(session_t *ps, win *w);

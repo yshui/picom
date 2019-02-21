@@ -514,7 +514,7 @@ paint_preprocess(session_t *ps, bool *fade_running) {
     }
 
     // Update window mode
-    win_determine_mode(ps, w);
+    w->mode = win_calc_mode(w);
 
     // Destroy all reg_ignore above when frame opaque state changes on
     // SOLID mode
@@ -897,7 +897,7 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
       w->g.width = ce->width;
       w->g.height = ce->height;
       w->g.border_width = ce->border_width;
-      calc_win_size(ps, w);
+      win_on_win_size_change(ps, w);
       win_update_bounding_shape(ps, w);
     }
 
@@ -1405,7 +1405,7 @@ ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
   if (ev->atom == ps->atom_win_type) {
     win *w = NULL;
     if ((w = find_toplevel(ps, ev->window)))
-      win_upd_wintype(ps, w);
+      win_update_wintype(ps, w);
   }
 
   // If _NET_WM_OPACITY changes
@@ -1419,7 +1419,7 @@ ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
         // See the winstate_t transition table
         w->state = WSTATE_FADING;
       }
-      w->opacity_tgt = win_get_opacity_target(ps, w);
+      w->opacity_tgt = win_calc_opacity_target(ps, w);
     }
   }
 

@@ -43,7 +43,7 @@
 /// Generate a "return by value" function, from a function that returns the
 /// region via a region_t pointer argument.
 /// Function signature has to be (win *, region_t *)
-#define gen_by_val(fun) region_t fun##_by_val(win *w) { \
+#define gen_by_val(fun) region_t fun##_by_val(const win *w) { \
   region_t ret; \
   pixman_region32_init(&ret); \
   fun(w, &ret); \
@@ -112,7 +112,7 @@ group_is_focused(session_t *ps, xcb_window_t leader) {
 /**
  * Get a rectangular region a window occupies, excluding shadow.
  */
-static void win_get_region_local(session_t *ps, win *w, region_t *res) {
+static void win_get_region_local(const win *w, region_t *res) {
   pixman_region32_fini(res);
   pixman_region32_init_rect(res, 0, 0, w->widthb, w->heightb);
 }
@@ -121,7 +121,7 @@ static void win_get_region_local(session_t *ps, win *w, region_t *res) {
 /**
  * Get a rectangular region a window occupies, excluding frame and shadow.
  */
-void win_get_region_noframe_local(win *w, region_t *res) {
+void win_get_region_noframe_local(const win *w, region_t *res) {
   const margin_t extents = win_calc_frame_extents(w);
 
   int x = extents.left;
@@ -156,15 +156,15 @@ void add_damage_from_win(session_t *ps, win *w) {
  * Check if a window has rounded corners.
  * XXX This is really dumb
  */
-void win_rounded_corners(session_t *ps, win *w) {
-  w->rounded_corners = false;
-
-  if (!w->bounding_shaped)
-    return;
+static bool attr_pure win_has_rounded_corners(const win *w) {
+  if (!w->bounding_shaped) {
+    return false;
+  }
 
   // Quit if border_size() returns XCB_NONE
-  if (!pixman_region32_not_empty(&w->bounding_shape))
-    return;
+  if (!pixman_region32_not_empty((region_t *)&w->bounding_shape)) {
+    return false;
+  }
 
   // Determine the minimum width/height of a rectangle that could mark
   // a window as having rounded corners
@@ -175,15 +175,16 @@ void win_rounded_corners(session_t *ps, win *w) {
 
   // Get the rectangles in the bounding region
   int nrects = 0;
-  const rect_t *rects = pixman_region32_rectangles(&w->bounding_shape, &nrects);
+  const rect_t *rects = pixman_region32_rectangles((region_t *)&w->bounding_shape, &nrects);
 
   // Look for a rectangle large enough for this window be considered
   // having rounded corners
-  for (int i = 0; i < nrects; ++i)
+  for (int i = 0; i < nrects; ++i) {
     if (rects[i].x2 - rects[i].x1 >= minwidth && rects[i].y2 - rects[i].y1 >= minheight) {
-      w->rounded_corners = true;
-      break;
+      return true;
     }
+  }
+  return false;
 }
 
 int win_get_name(session_t *ps, win *w) {
@@ -265,7 +266,8 @@ static inline bool win_bounding_shaped(const session_t *ps, xcb_window_t wid) {
   return false;
 }
 
-wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
+static wintype_t
+wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
   winprop_t prop = wid_get_prop(ps, wid, ps->atom_win_type, 32L, XCB_ATOM_ATOM, 32);
 
   for (unsigned i = 0; i < prop.nitems; ++i) {
@@ -282,8 +284,9 @@ wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
   return WINTYPE_UNKNOWN;
 }
 
-bool wid_get_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t def,
-                          opacity_t *out) {
+static bool
+wid_get_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t def,
+                     opacity_t *out) {
   bool ret = false;
   *out = def;
 
@@ -306,14 +309,14 @@ bool win_has_alpha(const win *w) {
     w->pictfmt->direct.alpha_mask;
 }
 
-void win_determine_mode(session_t *ps, win *w) {
+winmode_t win_calc_mode(const win *w) {
   if (win_has_alpha(w) || w->opacity < 1.0) {
-    w->mode = WMODE_TRANS;
-  } else if (w->frame_opacity != 1.0) {
-    w->mode = WMODE_FRAME_TRANS;
-  } else {
-    w->mode = WMODE_SOLID;
+    return WMODE_TRANS;
   }
+  if (w->frame_opacity != 1.0) {
+    return WMODE_FRAME_TRANS;
+  }
+  return WMODE_SOLID;
 }
 
 /**
@@ -336,7 +339,7 @@ void win_determine_mode(session_t *ps, win *w) {
  *
  * @return target opacity
  */
-double win_get_opacity_target(session_t *ps, const win *w) {
+double win_calc_opacity_target(session_t *ps, const win *w) {
   double opacity = 1;
 
   if (w->state == WSTATE_UNMAPPED) {
@@ -604,10 +607,13 @@ void win_on_factor_change(session_t *ps, win *w) {
 /**
  * Update cache data in struct _win that depends on window size.
  */
-void calc_win_size(session_t *ps, win *w) {
+void win_on_win_size_change(session_t *ps, win *w) {
   w->widthb = w->g.width + w->g.border_width * 2;
   w->heightb = w->g.height + w->g.border_width * 2;
-  calc_shadow_geometry(ps, w);
+  w->shadow_dx = ps->o.shadow_offset_x;
+  w->shadow_dy = ps->o.shadow_offset_y;
+  w->shadow_width = w->widthb + ps->o.shadow_radius * 2;
+  w->shadow_height = w->heightb + ps->o.shadow_radius * 2;
   w->flags |= WFLAG_SIZE_CHANGE;
   // Invalidate the shadow we built
   if (ps->o.experimental_backends) {
@@ -629,19 +635,9 @@ void calc_win_size(session_t *ps, win *w) {
 }
 
 /**
- * Calculate and update geometry of the shadow of a window.
- */
-void calc_shadow_geometry(session_t *ps, win *w) {
-  w->shadow_dx = ps->o.shadow_offset_x;
-  w->shadow_dy = ps->o.shadow_offset_y;
-  w->shadow_width = w->widthb + ps->o.shadow_radius * 2;
-  w->shadow_height = w->heightb + ps->o.shadow_radius * 2;
-}
-
-/**
  * Update window type.
  */
-void win_upd_wintype(session_t *ps, win *w) {
+void win_update_wintype(session_t *ps, win *w) {
   const wintype_t wtype_old = w->window_type;
 
   // Detect window type here
@@ -686,7 +682,7 @@ void win_mark_client(session_t *ps, win *w, xcb_window_t client) {
 	  free(e);
   }
 
-  win_upd_wintype(ps, w);
+  win_update_wintype(ps, w);
 
   // Get frame widths. The window is in damaged area already.
   if (ps->o.frame_opacity != 1)
@@ -924,7 +920,7 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
     new->pictfmt = x_get_pictform_for_visual(ps->c, new->a.visual);
   }
 
-  calc_win_size(ps, new);
+  win_on_win_size_change(ps, new);
 
   // Find window insertion point
   win **p = NULL;
@@ -978,7 +974,7 @@ void win_update_focused(session_t *ps, win *w) {
   // Always recalculate the window target opacity, since some opacity-related
   // options depend on the output value of win_is_focused_real() instead of
   // w->focused
-  w->opacity_tgt = win_get_opacity_target(ps, w);
+  w->opacity_tgt = win_calc_opacity_target(ps, w);
   w->state = WSTATE_FADING;
 }
 
@@ -1176,7 +1172,7 @@ win_set_focused(session_t *ps, win *w, bool focused) {
  * Note w->shadow and shadow geometry must be correct before calling this
  * function.
  */
-void win_extents(win *w, region_t *res) {
+void win_extents(const win *w, region_t *res) {
   pixman_region32_clear(res);
   pixman_region32_union_rect(res, res, w->g.x, w->g.y, w->widthb, w->heightb);
 
@@ -1198,7 +1194,7 @@ void win_update_bounding_shape(session_t *ps, win *w) {
 
   pixman_region32_clear(&w->bounding_shape);
   // Start with the window rectangular region
-  win_get_region_local(ps, w, &w->bounding_shape);
+  win_get_region_local(w, &w->bounding_shape);
 
   // Only request for a bounding region if the window is shaped
   // (while loop is used to avoid goto, not an actual loop)
@@ -1236,8 +1232,9 @@ void win_update_bounding_shape(session_t *ps, win *w) {
     break;
   }
 
-  if (w->bounding_shaped && ps->o.detect_rounded_corners)
-    win_rounded_corners(ps, w);
+  if (w->bounding_shaped && ps->o.detect_rounded_corners) {
+    w->rounded_corners = win_has_rounded_corners(w);
+  }
 
   // Window shape changed, we should free old wpaint and shadow pict
   if (ps->o.experimental_backends) {
@@ -1312,7 +1309,7 @@ win_update_frame_extents(session_t *ps, win *w, xcb_window_t client) {
   free_winprop(&prop);
 }
 
-bool win_is_region_ignore_valid(session_t *ps, win *w) {
+bool win_is_region_ignore_valid(session_t *ps, const win *w) {
   for(win *i = ps->list; w; w = w->next) {
     if (i == w)
       break;
@@ -1325,7 +1322,7 @@ bool win_is_region_ignore_valid(session_t *ps, win *w) {
 /**
  * Stop listening for events on a particular window.
  */
-void win_ev_stop(session_t *ps, win *w) {
+void win_ev_stop(session_t *ps, const win *w) {
   xcb_change_window_attributes(ps->c, w->id, XCB_CW_EVENT_MASK, (const uint32_t[]) { 0 });
 
   if (w->client_win) {
@@ -1466,7 +1463,7 @@ unmap_win(session_t *ps, win **_w, bool destroy) {
 
   w->a.map_state = XCB_MAP_STATE_UNMAPPED;
   w->state = target_state;
-  w->opacity_tgt = win_get_opacity_target(ps, w);
+  w->opacity_tgt = win_calc_opacity_target(ps, w);
 
   w->in_openclose = destroy;
 
@@ -1591,7 +1588,7 @@ void map_win(session_t *ps, win *w) {
   }
 
   // Update window mode here to check for ARGB windows
-  win_determine_mode(ps, w);
+  w->mode = win_calc_mode(w);
 
   // Detect client window here instead of in add_win() as the client
   // window should have been prepared at this point
@@ -1622,7 +1619,7 @@ void map_win(session_t *ps, win *w) {
   // XXX We need to make sure that win_data is available
   // iff `state` is MAPPED
   w->state = WSTATE_MAPPING;
-  w->opacity_tgt = win_get_opacity_target(ps, w);
+  w->opacity_tgt = win_calc_opacity_target(ps, w);
   log_debug("Window %#010x has opacity %f, opacity target is %f", w->id, w->opacity, w->opacity_tgt);
 
   win_determine_blur_background(ps, w);

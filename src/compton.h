@@ -42,16 +42,6 @@ find_client_win(session_t *ps, xcb_window_t w);
 win *find_toplevel2(session_t *ps, xcb_window_t wid);
 
 /**
- * Subtract two unsigned long values.
- *
- * Truncate to 0 if the result is negative.
- */
-static inline unsigned long attr_const
-sub_unslong(unsigned long a, unsigned long b) {
-  return (a > b) ? a - b : 0;
-}
-
-/**
  * Set a <code>switch_t</code> array of all unset wintypes to true.
  */
 static inline void
