@@ -802,12 +802,13 @@ restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 void
 configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
   // On root window changes
-  auto root_change_fn = backend_list[ps->o.backend]->root_change;
+  auto bi = backend_list[ps->o.backend];
   if (ce->window == ps->root) {
     if (ps->o.experimental_backends) {
-      if (!root_change_fn) {
+      assert(bi);
+      if (!bi->root_change) {
         // deinit/reinit backend if the backend cannot handle root change
-        backend_list[ps->o.backend]->deinit(ps->backend_data, ps);
+        bi->deinit(ps->backend_data, ps);
 	ps->backend_data = NULL;
       }
     } else {
@@ -848,10 +849,10 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
       glx_on_root_change(ps);
 #endif
     if (ps->o.experimental_backends) {
-      if (root_change_fn) {
-        root_change_fn(ps->backend_data, ps);
+      if (bi->root_change) {
+        bi->root_change(ps->backend_data, ps);
       } else {
-        ps->backend_data = backend_list[ps->o.backend]->init(ps);
+        ps->backend_data = bi->init(ps);
       }
     }
     force_repaint(ps);

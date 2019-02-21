@@ -292,13 +292,13 @@ static inline attr_const enum backend parse_backend(const char *str) {
 	}
 	// Keep compatibility with an old revision containing a spelling mistake...
 	if (!strcasecmp(str, "xr_glx_hybird")) {
-		log_warn("backend xr_glx_hybird should be xr_glx_hybrid, the misspelt"
+		log_warn("backend xr_glx_hybird should be xr_glx_hybrid, the misspelt "
 		         "version will be removed soon.");
 		return BKEND_XR_GLX_HYBRID;
 	}
 	// cju wants to use dashes
 	if (!strcasecmp(str, "xr-glx-hybrid")) {
-		log_warn("backend xr-glx-hybrid should be xr_glx_hybrid, the alternative"
+		log_warn("backend xr-glx-hybrid should be xr_glx_hybrid, the alternative "
 		         "version will be removed soon.");
 		return BKEND_XR_GLX_HYBRID;
 	}
