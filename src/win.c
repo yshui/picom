@@ -617,11 +617,7 @@ void win_on_win_size_change(session_t *ps, win *w) {
   w->flags |= WFLAG_SIZE_CHANGE;
   // Invalidate the shadow we built
   if (ps->o.experimental_backends) {
-    if (w->state != WSTATE_UNMAPPED && w->state != WSTATE_MAPPED) {
-      // wrapping up fading
-      w->opacity = w->opacity_tgt;
-      win_check_fade_finished(ps, &w);
-    }
+    win_skip_fading(ps, &w);
     if (!w) {
       return;
     }
@@ -1240,13 +1236,14 @@ void win_update_bounding_shape(session_t *ps, win *w) {
   if (ps->o.experimental_backends) {
     //log_trace("free out dated pict");
     // Window shape changed, we should free win_data
-    if (ps->redirected && w->state == WSTATE_MAPPED) {
+    if (ps->redirected && w->state != WSTATE_UNMAPPED) {
       // Note we only do this when screen is redirected, because
       // otherwise win_data is not valid
       backend_info_t *bi = backend_list[ps->o.backend];
       bi->release_win(ps->backend_data, ps, w, w->win_data);
-      w->win_data = bi->prepare_win(ps->backend_data, ps, w);
-      //log_trace("free out dated pict");
+      if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING) {
+        w->win_data = bi->prepare_win(ps->backend_data, ps, w);
+      }
     }
   } else {
     free_paint(ps, &w->paint);
@@ -1620,6 +1617,12 @@ void map_win(session_t *ps, win *w) {
   // iff `state` is MAPPED
   w->state = WSTATE_MAPPING;
   w->opacity_tgt = win_calc_opacity_target(ps, w);
+
+  // TODO win_update_bounding_shape below will immediately
+  //      reinit w->win_data, not very efficient
+  if (ps->redirected) {
+    w->win_data = backend_list[ps->o.backend]->prepare_win(ps->backend_data, ps, w);
+  }
   log_debug("Window %#010x has opacity %f, opacity target is %f", w->id, w->opacity, w->opacity_tgt);
 
   win_determine_blur_background(ps, w);
