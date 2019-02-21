@@ -945,10 +945,6 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
     cdbus_ev_win_added(ps, new);
   }
 #endif
-
-  if (new->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-    map_win(ps, id);
-  }
   return;
 }
 
@@ -1547,29 +1543,16 @@ void win_update_screen(session_t *ps, win *w) {
 void configure_win(session_t *, xcb_configure_notify_event_t *);
 
 /// Map an already registered window
-void
-map_win(session_t *ps, xcb_window_t id) {
-  // Unmap overlay window if it got mapped but we are currently not
-  // in redirected state.
-  if (ps->overlay && id == ps->overlay && !ps->redirected) {
-    log_debug("Overlay is mapped while we are not redirected");
-    auto e = xcb_request_check(ps->c, xcb_unmap_window(ps->c, ps->overlay));
-    if (e) {
-      log_error("Failed to unmap the overlay window");
-      free(e);
-    }
-    // We don't track the overlay window, so we can return
-    return;
-  }
+void map_win(session_t *ps, win *w) {
+  assert(w);
 
-  win *w = find_win(ps, id);
   // Don't care about window mapping if it's an InputOnly window
   // Also, try avoiding mapping a window twice
-  if (!w || w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
+  if (w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
     return;
   }
 
-  log_debug("Mapping (%#010x \"%s\")", id, w->name);
+  log_debug("Mapping (%#010x \"%s\")", w->id, w->name);
 
   if (w->state != WSTATE_UNMAPPED && w->state != WSTATE_UNMAPPING) {
     log_warn("Mapping an already mapped window");
@@ -1586,12 +1569,12 @@ map_win(session_t *ps, xcb_window_t id) {
 
   // Set window event mask before reading properties so that no property
   // changes are lost
-  xcb_change_window_attributes(ps->c, id, XCB_CW_EVENT_MASK,
-      (const uint32_t[]) { determine_evmask(ps, id, WIN_EVMODE_FRAME) });
+  xcb_change_window_attributes(ps->c, w->id, XCB_CW_EVENT_MASK,
+      (const uint32_t[]) { determine_evmask(ps, w->id, WIN_EVMODE_FRAME) });
 
   // Notify compton when the shape of a window changes
   if (ps->shape_exists) {
-    xcb_shape_select_input(ps->c, id, 1);
+    xcb_shape_select_input(ps->c, w->id, 1);
   }
 
   // Update window mode here to check for ARGB windows
@@ -1657,6 +1640,28 @@ map_win(session_t *ps, xcb_window_t id) {
     win_skip_fading(ps, &w);
     assert(w);
   }
+}
+
+void map_win_by_id(session_t *ps, xcb_window_t id) {
+  // Unmap overlay window if it got mapped but we are currently not
+  // in redirected state.
+  if (ps->overlay && id == ps->overlay && !ps->redirected) {
+    log_debug("Overlay is mapped while we are not redirected");
+    auto e = xcb_request_check(ps->c, xcb_unmap_window(ps->c, ps->overlay));
+    if (e) {
+      log_error("Failed to unmap the overlay window");
+      free(e);
+    }
+    // We don't track the overlay window, so we can return
+    return;
+  }
+
+  win *w = find_win(ps, id);
+  if (!w) {
+    return;
+  }
+
+  map_win(ps, w);
 }
 
 

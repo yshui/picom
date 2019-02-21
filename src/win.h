@@ -359,6 +359,9 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev);
 /// Unmap or destroy a window
 void unmap_win(session_t *ps, win **, bool destroy);
 
+void map_win(session_t *ps, win *w);
+void map_win_by_id(session_t *ps, xcb_window_t id);
+
 /**
  * Execute fade callback of a window if fading finished.
  */

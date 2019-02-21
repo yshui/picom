@@ -41,8 +41,6 @@ find_client_win(session_t *ps, xcb_window_t w);
 
 win *find_toplevel2(session_t *ps, xcb_window_t wid);
 
-void map_win(session_t *ps, xcb_window_t id);
-
 /**
  * Subtract two unsigned long values.
  *

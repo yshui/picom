@@ -1240,7 +1240,7 @@ ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
 
 inline static void
 ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
-  map_win(ps, ev->window);
+  map_win_by_id(ps, ev->window);
   // FocusIn/Out may be ignored when the window is unmapped, so we must
   // recheck focus here
   if (ps->o.track_focus) {
@@ -2769,6 +2769,12 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
 
     for (int i = 0; i < nchildren; i++) {
       add_win(ps, children[i], i ? children[i-1] : XCB_NONE);
+    }
+
+    for (win *i = ps->list; i; i = i->next) {
+      if (i->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+        map_win(ps, i);
+      }
     }
 
     free(reply);
