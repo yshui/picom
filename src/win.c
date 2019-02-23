@@ -617,13 +617,13 @@ void win_on_win_size_change(session_t *ps, win *w) {
   w->flags |= WFLAG_SIZE_CHANGE;
   // Invalidate the shadow we built
   if (ps->o.experimental_backends) {
-    win_skip_fading(ps, &w);
-    if (!w) {
-      return;
-    }
-    if (w->state == WSTATE_MAPPED) {
+    if (w->state == WSTATE_MAPPED ||
+        w->state == WSTATE_MAPPING ||
+        w->state == WSTATE_FADING) {
       backend_list[ps->o.backend]->release_win(ps->backend_data, ps, w, w->win_data);
       w->win_data = backend_list[ps->o.backend]->prepare_win(ps->backend_data, ps, w);
+    } else {
+      assert(false);
     }
   } else {
     free_paint(ps, &w->shadow_paint);
