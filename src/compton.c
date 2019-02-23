@@ -869,7 +869,9 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     return;
   }
 
-  if (w->state == WSTATE_UNMAPPED) {
+  if (w->state == WSTATE_UNMAPPED ||
+      w->state == WSTATE_UNMAPPING ||
+      w->state == WSTATE_DESTROYING) {
     /* save the configure event for when the window maps */
     w->need_configure = true;
     w->queue_configure = *ce;
