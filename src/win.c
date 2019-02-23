@@ -970,8 +970,14 @@ void win_update_focused(session_t *ps, win *w) {
   // Always recalculate the window target opacity, since some opacity-related
   // options depend on the output value of win_is_focused_real() instead of
   // w->focused
+  double opacity_tgt_old = w->opacity_tgt;
   w->opacity_tgt = win_calc_opacity_target(ps, w);
-  w->state = WSTATE_FADING;
+  if (opacity_tgt_old != w->opacity_tgt && w->state == WSTATE_MAPPED) {
+    // Only MAPPED can transition to FADING
+    assert(w->state != WSTATE_DESTROYING && w->state != WSTATE_UNMAPPING &&
+           w->state != WSTATE_UNMAPPED);
+    w->state = WSTATE_FADING;
+  }
 }
 
 /**
