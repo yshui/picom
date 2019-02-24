@@ -15,18 +15,19 @@
 #include "backend/backend_common.h"
 #include "common.h"
 #include "config.h"
+#include "kernel.h"
 #include "log.h"
 #include "region.h"
 #include "utils.h"
 #include "win.h"
 #include "x.h"
-#include "kernel.h"
 
 #define auto __auto_type
 
 typedef struct _xrender_data {
 	/// The idle fence for the present extension
 	xcb_sync_fence_t idle_fence;
+	bool present_in_progress;
 	/// The target window
 	xcb_window_t target_win;
 	/// The painting target, it is either the root or the overlay
@@ -59,6 +60,8 @@ typedef struct _xrender_data {
 	xcb_render_fixed_t *x_blur_kern[MAX_BLUR_PASS];
 	/// Number of elements in each blur kernel
 	size_t x_blur_kern_size[MAX_BLUR_PASS];
+
+	xcb_special_event_t *present_event;
 } xrender_data;
 
 #if 0
@@ -400,6 +403,7 @@ static void *init(session_t *ps) {
 	xd->shadow_pixel = solid_picture(ps, true, 1, ps->o.shadow_red,
 	                                 ps->o.shadow_green, ps->o.shadow_blue);
 	xd->shadow_kernel = gaussian_kernel(ps->o.shadow_radius);
+	xd->present_in_progress = false;
 	sum_kernel_preprocess(xd->shadow_kernel);
 
 	if (ps->overlay != XCB_NONE) {
@@ -435,16 +439,18 @@ static void *init(session_t *ps) {
 	}
 
 	if (ps->present_exists) {
-		xd->idle_fence = xcb_generate_id(ps->c);
-		// To make sure we won't get stuck waiting for the idle_fence, we maintain
-		// this invariant: the idle_fence is either triggered, or is in the
-		// process of being triggered (e.g. by xcb_present_pixmap)
-		auto e = xcb_request_check(
-		    ps->c, xcb_sync_create_fence(ps->c, ps->root, xd->idle_fence, 1));
+		auto eid = xcb_generate_id(ps->c);
+		auto e = xcb_request_check(ps->c, xcb_present_select_input_checked(
+		                                 ps->c, eid, xd->target_win,
+		                                 XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY));
 		if (e) {
-			log_error("Cannot create a fence, vsync might not work");
-			xd->idle_fence = XCB_NONE;
+			log_error("Cannot select present input, vsync will be disabled");
 			free(e);
+		}
+
+		xd->present_event = xcb_register_for_special_xge(ps->c, &xcb_present_id, eid, NULL);
+		if (!xd->present_event) {
+			log_error("Cannot register for special XGE, vsync will be disabled");
 		}
 	}
 	for (int i = 0; ps->o.blur_kerns[i]; i++) {
@@ -472,8 +478,15 @@ static void *root_change(void *backend_data, session_t *ps) {
 
 static void prepare(void *backend_data, session_t *ps, const region_t *reg_paint) {
 	struct _xrender_data *xd = backend_data;
-	if (ps->o.vsync != VSYNC_NONE && ps->present_exists) {
-		xcb_sync_await_fence(ps->c, 1, &xd->idle_fence);
+	if (ps->o.vsync != VSYNC_NONE && ps->present_exists && xd->present_in_progress) {
+		// TODO don't block wait for present completion
+		xcb_present_generic_event_t *pev = (void *)xcb_wait_for_special_event(ps->c, xd->present_event);
+		assert(pev->evtype == XCB_PRESENT_COMPLETE_NOTIFY);
+		//xcb_present_complete_notify_event_t *pcev = (void *)pev;
+		//log_trace("Present complete: %d %ld", pcev->mode, pcev->msc);
+		free(pev);
+
+		xd->present_in_progress = false;
 	}
 
 	// Paint the root pixmap (i.e. wallpaper)
@@ -491,10 +504,10 @@ static void present(void *backend_data, session_t *ps) {
 		// Only reset the fence when we are sure we will trigger it again.
 		// To make sure rendering won't get stuck if user toggles vsync on the
 		// fly.
-		xcb_sync_reset_fence(ps->c, xd->idle_fence);
 		xcb_present_pixmap(ps->c, xd->target_win, xd->back_pixmap, 0, XCB_NONE,
-		                   XCB_NONE, 0, 0, XCB_NONE, XCB_NONE, xd->idle_fence, 0,
-		                   0, 1, 0, 0, NULL);
+		                   XCB_NONE, 0, 0, XCB_NONE, XCB_NONE, XCB_NONE, 0,
+		                   0, 0, 0, 0, NULL);
+		xd->present_in_progress = true;
 	} else {
 		// compose() sets clip region, so clear it first to make
 		// sure we update the whole screen.
