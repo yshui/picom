@@ -117,8 +117,6 @@ typedef struct options_t {
 	switch_t redirected_force;
 	/// Whether to stop painting. Controlled through D-Bus.
 	switch_t stoppaint_force;
-	/// Whether to re-redirect screen on root size change.
-	bool reredir_on_root_change;
 	/// Whether to reinitialize GLX on root size change.
 	bool glx_reinit_on_root_change;
 	/// Whether to enable D-Bus support.

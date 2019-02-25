@@ -826,14 +826,6 @@ void configure_root(session_t *ps, int width, int height) {
   }
   ps->damage = ps->damage_ring + ps->ndamage - 1;
 
-  // Re-redirect screen if required
-  if (ps->o.reredir_on_root_change && ps->redirected) {
-    redir_stop(ps);
-    if (!redir_start(ps)) {
-      return;
-    }
-  }
-
   // Invalidate reg_ignore from the top
   rc_region_unref(&ps->list->reg_ignore);
   ps->list->reg_ignore_valid = false;
