@@ -29,13 +29,14 @@ typedef struct _xrender_data {
 	bool vsync;
 	/// The idle fence for the present extension
 	xcb_sync_fence_t idle_fence;
-	bool present_in_progress;
 	/// The target window
 	xcb_window_t target_win;
 	/// The painting target, it is either the root or the overlay
 	xcb_render_picture_t target;
 	/// A back buffer
 	xcb_render_picture_t back[2];
+	/// Age of each back buffer
+	int buffer_age[2];
 	/// The back buffer we should be painting into
 	int curr_back;
 	/// The corresponding pixmap to the back buffer
@@ -433,7 +434,6 @@ static void *init(session_t *ps) {
 	xd->shadow_pixel = solid_picture(ps, true, 1, ps->o.shadow_red,
 	                                 ps->o.shadow_green, ps->o.shadow_blue);
 	xd->shadow_kernel = gaussian_kernel(ps->o.shadow_radius);
-	xd->present_in_progress = false;
 	sum_kernel_preprocess(xd->shadow_kernel);
 
 	if (ps->overlay != XCB_NONE) {
@@ -486,6 +486,7 @@ static void *init(session_t *ps) {
 		                                     ps->root_width, ps->root_height);
 		xd->back[i] = x_create_picture_with_pictfmt_and_pixmap(
 		    ps->c, pictfmt, xd->back_pixmap[i], 0, NULL);
+		xd->buffer_age[i] = -1;
 		if (xd->back_pixmap[i] == XCB_NONE || xd->back[i] == XCB_NONE) {
 			log_error("Cannot create pixmap for rendering");
 			goto err;
@@ -518,21 +519,6 @@ static void *root_change(void *backend_data, session_t *ps) {
 
 static void prepare(void *backend_data, session_t *ps, const region_t *reg_paint) {
 	struct _xrender_data *xd = backend_data;
-	if (xd->vsync && xd->present_in_progress) {
-		// TODO don't block wait for present completion
-		xcb_present_generic_event_t *pev =
-		    (void *)xcb_wait_for_special_event(ps->c, xd->present_event);
-		assert(pev->evtype == XCB_PRESENT_COMPLETE_NOTIFY);
-		xcb_present_complete_notify_event_t *pcev = (void *)pev;
-		// log_trace("Present complete: %d %ld", pcev->mode, pcev->msc);
-		if (pcev->mode == XCB_PRESENT_COMPLETE_MODE_FLIP) {
-			// We cannot use the pixmap we used anymore
-			xd->curr_back = 1 - xd->curr_back;
-		}
-		free(pev);
-
-		xd->present_in_progress = false;
-	}
 
 	// Paint the root pixmap (i.e. wallpaper)
 	// Limit the paint area
@@ -547,13 +533,35 @@ static void present(void *backend_data, session_t *ps) {
 	struct _xrender_data *xd = backend_data;
 
 	if (xd->vsync) {
-		// Only reset the fence when we are sure we will trigger it again.
-		// To make sure rendering won't get stuck if user toggles vsync on the
-		// fly.
-		xcb_present_pixmap(ps->c, xd->target_win, xd->back_pixmap[xd->curr_back],
-		                   0, XCB_NONE, XCB_NONE, 0, 0, XCB_NONE, XCB_NONE,
-		                   XCB_NONE, 0, 0, 0, 0, 0, NULL);
-		xd->present_in_progress = true;
+		// Make sure we got reply from PresentPixmap before waiting for events,
+		// to avoid deadlock
+		auto e = xcb_request_check(
+		    ps->c, xcb_present_pixmap_checked(
+		               ps->c, xd->target_win, xd->back_pixmap[xd->curr_back], 0,
+		               XCB_NONE, XCB_NONE, 0, 0, XCB_NONE, XCB_NONE, XCB_NONE, 0,
+		               0, 0, 0, 0, NULL));
+		if (e) {
+			log_error("Failed to present pixmap");
+			free(e);
+			return;
+		}
+		// TODO don't block wait for present completion
+		xcb_present_generic_event_t *pev =
+		    (void *)xcb_wait_for_special_event(ps->c, xd->present_event);
+		assert(pev->evtype == XCB_PRESENT_COMPLETE_NOTIFY);
+		xcb_present_complete_notify_event_t *pcev = (void *)pev;
+		// log_trace("Present complete: %d %ld", pcev->mode, pcev->msc);
+		xd->buffer_age[xd->curr_back] = 1;
+
+		// buffer_age < 0 means that back buffer is empty
+		if (xd->buffer_age[1 - xd->curr_back] > 0) {
+			xd->buffer_age[1 - xd->curr_back]++;
+		}
+		if (pcev->mode == XCB_PRESENT_COMPLETE_MODE_FLIP) {
+			// We cannot use the pixmap we used anymore
+			xd->curr_back = 1 - xd->curr_back;
+		}
+		free(pev);
 	} else {
 		// compose() sets clip region, so clear it first to make
 		// sure we update the whole screen.
@@ -564,7 +572,13 @@ static void present(void *backend_data, session_t *ps) {
 		xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC,
 		                     xd->back[xd->curr_back], XCB_NONE, xd->target, 0, 0,
 		                     0, 0, 0, 0, ps->root_width, ps->root_height);
+		xd->buffer_age[xd->curr_back] = 1;
 	}
+}
+
+static int buffer_age(void *backend_data, session_t *ps) {
+	struct _xrender_data *xd = backend_data;
+	return xd->buffer_age[xd->curr_back];
 }
 
 struct backend_info xrender_backend = {
@@ -580,6 +594,7 @@ struct backend_info xrender_backend = {
     .release_win = release_win,
     .is_win_transparent = default_is_win_transparent,
     .is_frame_transparent = default_is_frame_transparent,
+    .buffer_age = buffer_age,
     .max_buffer_age = 2,
 };
 
