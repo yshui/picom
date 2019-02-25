@@ -851,6 +851,8 @@ void configure_root(session_t *ps, int width, int height) {
       if (!ps->backend_data) {
         log_fatal("Failed to re-initialize backend after root change, aborting...");
         ps->quit = true;
+        // TODO only event handlers should request ev_break, otherwise it's too hard to
+        // keep track of what can break the event loop
         ev_break(ps->loop, EVBREAK_ALL);
         return;
       }
