@@ -801,76 +801,76 @@ restack_win(session_t *ps, win *w, xcb_window_t new_above) {
   }
 }
 
-void
-configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
+/// Handle configure event of a root window
+void configure_root(session_t *ps, int width, int height) {
   // On root window changes
   auto bi = backend_list[ps->o.backend];
-  if (ce->window == ps->root) {
-    if (ps->o.experimental_backends) {
-      assert(bi);
-      if (!bi->root_change) {
-        // deinit/reinit backend if the backend cannot handle root change
-        bi->deinit(ps->backend_data, ps);
-        ps->backend_data = NULL;
-      }
+  if (ps->o.experimental_backends) {
+    assert(bi);
+    if (!bi->root_change) {
+      // deinit/reinit backend if the backend cannot handle root change
+      bi->deinit(ps->backend_data, ps);
+      ps->backend_data = NULL;
+    }
+  } else {
+    free_paint(ps, &ps->tgt_buffer);
+  }
+
+  ps->root_width = width;
+  ps->root_height = height;
+
+  rebuild_screen_reg(ps);
+  rebuild_shadow_exclude_reg(ps);
+  for (int i = 0; i < ps->ndamage; i++) {
+    pixman_region32_clear(&ps->damage_ring[i]);
+  }
+  ps->damage = ps->damage_ring + ps->ndamage - 1;
+
+  // Re-redirect screen if required
+  if (ps->o.reredir_on_root_change && ps->redirected) {
+    redir_stop(ps);
+    if (!redir_start(ps)) {
+      return;
+    }
+  }
+
+  // Invalidate reg_ignore from the top
+  rc_region_unref(&ps->list->reg_ignore);
+  ps->list->reg_ignore_valid = false;
+
+#ifdef CONFIG_OPENGL
+  // Reinitialize GLX on root change
+  if (ps->o.glx_reinit_on_root_change && ps->psglx) {
+    if (!glx_reinit(ps, bkend_use_glx(ps)))
+      log_error("Failed to reinitialize GLX, troubles ahead.");
+    if (BKEND_GLX == ps->o.backend && !glx_init_blur(ps))
+      log_error("Failed to initialize filters.");
+  }
+
+  // GLX root change callback
+  if (BKEND_GLX == ps->o.backend)
+    glx_on_root_change(ps);
+#endif
+  if (ps->o.experimental_backends) {
+    if (bi->root_change) {
+      bi->root_change(ps->backend_data, ps);
     } else {
-      free_paint(ps, &ps->tgt_buffer);
-    }
-
-    ps->root_width = ce->width;
-    ps->root_height = ce->height;
-
-    rebuild_screen_reg(ps);
-    rebuild_shadow_exclude_reg(ps);
-    for (int i = 0; i < ps->ndamage; i++) {
-      pixman_region32_clear(&ps->damage_ring[i]);
-    }
-    ps->damage = ps->damage_ring + ps->ndamage - 1;
-
-    // Re-redirect screen if required
-    if (ps->o.reredir_on_root_change && ps->redirected) {
-      redir_stop(ps);
-      if (!redir_start(ps)) {
+      ps->backend_data = bi->init(ps);
+      if (!ps->backend_data) {
+        log_fatal("Failed to re-initialize backend after root change, aborting...");
+        ps->quit = true;
+        ev_break(ps->loop, EVBREAK_ALL);
         return;
       }
     }
-
-    // Invalidate reg_ignore from the top
-    rc_region_unref(&ps->list->reg_ignore);
-    ps->list->reg_ignore_valid = false;
-
-#ifdef CONFIG_OPENGL
-    // Reinitialize GLX on root change
-    if (ps->o.glx_reinit_on_root_change && ps->psglx) {
-      if (!glx_reinit(ps, bkend_use_glx(ps)))
-        log_error("Failed to reinitialize GLX, troubles ahead.");
-      if (BKEND_GLX == ps->o.backend && !glx_init_blur(ps))
-        log_error("Failed to initialize filters.");
-    }
-
-    // GLX root change callback
-    if (BKEND_GLX == ps->o.backend)
-      glx_on_root_change(ps);
-#endif
-    if (ps->o.experimental_backends) {
-      if (bi->root_change) {
-        bi->root_change(ps->backend_data, ps);
-      } else {
-        ps->backend_data = bi->init(ps);
-        if (!ps->backend_data) {
-          log_fatal("Failed to re-initialize backend after root change, aborting...");
-          ps->quit = true;
-          ev_break(ps->loop, EVBREAK_ALL);
-          return;
-        }
-      }
-    }
-    force_repaint(ps);
-
-    return;
   }
+  force_repaint(ps);
+  return;
+}
 
-  // Non-root window changes
+/// Handle configure event of a regular window
+void
+configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
   win *w = find_win(ps, ce->window);
   region_t damage;
   pixman_region32_init(&damage);
@@ -1238,7 +1238,11 @@ inline static void
 ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
   log_trace("{ send_event: %d, id: %#010x, above: %#010x, override_redirect: %d }",
          ev->event, ev->window, ev->above_sibling, ev->override_redirect);
-  configure_win(ps, ev);
+  if (ev->window == ps->root) {
+    configure_root(ps, ev->width, ev->height);
+  } else {
+    configure_win(ps, ev);
+  }
 }
 
 inline static void
