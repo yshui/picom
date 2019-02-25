@@ -25,6 +25,8 @@
 #define auto __auto_type
 
 typedef struct _xrender_data {
+	/// If vsync is enabled and supported by the current system
+	bool vsync;
 	/// The idle fence for the present extension
 	xcb_sync_fence_t idle_fence;
 	bool present_in_progress;
@@ -393,6 +395,30 @@ static void release_win(void *backend_data, session_t *ps, win *w, void *win_dat
 	free(wd);
 }
 
+static void deinit(void *backend_data, session_t *ps) {
+	struct _xrender_data *xd = backend_data;
+	for (int i = 0; i < 256; i++) {
+		xcb_render_free_picture(ps->c, xd->alpha_pict[i]);
+	}
+	xcb_render_free_picture(ps->c, xd->target);
+	xcb_render_free_picture(ps->c, xd->root_pict);
+	for (int i = 0; i < 2; i++) {
+		xcb_render_free_picture(ps->c, xd->back[i]);
+		xcb_free_pixmap(ps->c, xd->back_pixmap[i]);
+	}
+	for (int i = 0; ps->o.blur_kerns[i]; i++) {
+		free(xd->x_blur_kern[i]);
+	}
+	if (xd->present_event) {
+		xcb_unregister_for_special_event(ps->c, xd->present_event);
+	}
+	xcb_render_free_picture(ps->c, xd->white_pixel);
+	xcb_render_free_picture(ps->c, xd->black_pixel);
+	xcb_render_free_picture(ps->c, xd->shadow_pixel);
+	free_conv(xd->shadow_kernel);
+	free(xd);
+}
+
 static void *init(session_t *ps) {
 	auto xd = ccalloc(1, struct _xrender_data);
 
@@ -429,13 +455,41 @@ static void *init(session_t *ps) {
 		abort();
 	}
 
+	xd->vsync = ps->o.vsync != VSYNC_NONE;
+	if (ps->present_exists) {
+		auto eid = xcb_generate_id(ps->c);
+		auto e =
+		    xcb_request_check(ps->c, xcb_present_select_input_checked(
+		                                 ps->c, eid, xd->target_win,
+		                                 XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY));
+		if (e) {
+			log_error("Cannot select present input, vsync will be disabled");
+			xd->vsync = false;
+			free(e);
+		}
+
+		xd->present_event =
+		    xcb_register_for_special_xge(ps->c, &xcb_present_id, eid, NULL);
+		if (!xd->present_event) {
+			log_error("Cannot register for special XGE, vsync will be "
+			          "disabled");
+			xd->vsync = false;
+		}
+	} else {
+		xd->vsync = false;
+	}
+
 	// We might need to do double buffering for vsync
-	int pixmap_needed = ps->o.vsync ? 2 : 1;
+	int pixmap_needed = xd->vsync ? 2 : 1;
 	for (int i = 0; i < pixmap_needed; i++) {
 		xd->back_pixmap[i] = x_create_pixmap(ps->c, pictfmt->depth, ps->root,
 		                                     ps->root_width, ps->root_height);
 		xd->back[i] = x_create_picture_with_pictfmt_and_pixmap(
 		    ps->c, pictfmt, xd->back_pixmap[i], 0, NULL);
+		if (xd->back_pixmap[i] == XCB_NONE || xd->back[i] == XCB_NONE) {
+			log_error("Cannot create pixmap for rendering");
+			goto err;
+		}
 	}
 	xd->curr_back = 0;
 
@@ -446,41 +500,15 @@ static void *init(session_t *ps) {
 		xd->root_pict = x_create_picture_with_visual_and_pixmap(
 		    ps->c, ps->vis, root_pixmap, 0, NULL);
 	}
-
-	if (ps->present_exists) {
-		auto eid = xcb_generate_id(ps->c);
-		auto e =
-		    xcb_request_check(ps->c, xcb_present_select_input_checked(
-		                                 ps->c, eid, xd->target_win,
-		                                 XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY));
-		if (e) {
-			log_error("Cannot select present input, vsync will be disabled");
-			free(e);
-		}
-
-		xd->present_event =
-		    xcb_register_for_special_xge(ps->c, &xcb_present_id, eid, NULL);
-		if (!xd->present_event) {
-			log_error("Cannot register for special XGE, vsync will be "
-			          "disabled");
-		}
-	}
 	for (int i = 0; ps->o.blur_kerns[i]; i++) {
 		assert(i < MAX_BLUR_PASS - 1);
 		xd->x_blur_kern_size[i] = x_picture_filter_from_conv(
 		    ps->o.blur_kerns[i], 1, &xd->x_blur_kern[i], (size_t[]){0});
 	}
 	return xd;
-}
-
-static void deinit(void *backend_data, session_t *ps) {
-	struct _xrender_data *xd = backend_data;
-	for (int i = 0; i < 256; i++)
-		xcb_render_free_picture(ps->c, xd->alpha_pict[i]);
-	xcb_render_free_picture(ps->c, xd->white_pixel);
-	xcb_render_free_picture(ps->c, xd->black_pixel);
-	free_conv(xd->shadow_kernel);
-	free(xd);
+err:
+	deinit(xd, ps);
+	return NULL;
 }
 
 static void *root_change(void *backend_data, session_t *ps) {
@@ -490,7 +518,7 @@ static void *root_change(void *backend_data, session_t *ps) {
 
 static void prepare(void *backend_data, session_t *ps, const region_t *reg_paint) {
 	struct _xrender_data *xd = backend_data;
-	if (ps->o.vsync != VSYNC_NONE && ps->present_exists && xd->present_in_progress) {
+	if (xd->vsync && xd->present_in_progress) {
 		// TODO don't block wait for present completion
 		xcb_present_generic_event_t *pev =
 		    (void *)xcb_wait_for_special_event(ps->c, xd->present_event);
@@ -518,7 +546,7 @@ static void prepare(void *backend_data, session_t *ps, const region_t *reg_paint
 static void present(void *backend_data, session_t *ps) {
 	struct _xrender_data *xd = backend_data;
 
-	if (ps->o.vsync != VSYNC_NONE && ps->present_exists) {
+	if (xd->vsync) {
 		// Only reset the fence when we are sure we will trigger it again.
 		// To make sure rendering won't get stuck if user toggles vsync on the
 		// fly.

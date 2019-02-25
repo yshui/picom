@@ -75,7 +75,7 @@ session_destroy(session_t *ps);
 static void
 cxinerama_upd_scrs(session_t *ps);
 
-static void
+static bool must_use
 redir_start(session_t *ps);
 
 static void
@@ -657,7 +657,9 @@ paint_preprocess(session_t *ps, bool *fade_running) {
     }
   } else {
     ev_timer_stop(ps->loop, &ps->unredir_timer);
-    redir_start(ps);
+    if (!redir_start(ps)) {
+      return NULL;
+    }
   }
 
   return t;
@@ -809,7 +811,7 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
       if (!bi->root_change) {
         // deinit/reinit backend if the backend cannot handle root change
         bi->deinit(ps->backend_data, ps);
-	ps->backend_data = NULL;
+        ps->backend_data = NULL;
       }
     } else {
       free_paint(ps, &ps->tgt_buffer);
@@ -821,14 +823,16 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
     rebuild_screen_reg(ps);
     rebuild_shadow_exclude_reg(ps);
     for (int i = 0; i < ps->ndamage; i++) {
-	    pixman_region32_clear(&ps->damage_ring[i]);
+      pixman_region32_clear(&ps->damage_ring[i]);
     }
     ps->damage = ps->damage_ring + ps->ndamage - 1;
 
     // Re-redirect screen if required
     if (ps->o.reredir_on_root_change && ps->redirected) {
       redir_stop(ps);
-      redir_start(ps);
+      if (!redir_start(ps)) {
+        return;
+      }
     }
 
     // Invalidate reg_ignore from the top
@@ -853,6 +857,12 @@ configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
         bi->root_change(ps->backend_data, ps);
       } else {
         ps->backend_data = bi->init(ps);
+        if (!ps->backend_data) {
+          log_fatal("Failed to re-initialize backend after root change, aborting...");
+          ps->quit = true;
+          ev_break(ps->loop, EVBREAK_ALL);
+          return;
+        }
       }
     }
     force_repaint(ps);
@@ -1961,8 +1971,10 @@ init_overlay(session_t *ps) {
 
 /**
  * Redirect all windows.
+ *
+ * @return whether the operation succeeded or not
  */
-static void
+static bool
 redir_start(session_t *ps) {
   if (!ps->redirected) {
     log_debug("Screen redirected.");
@@ -1982,6 +1994,12 @@ redir_start(session_t *ps) {
       backend_info_t *bi = backend_list[ps->o.backend];
       assert(bi);
       ps->backend_data = bi->init(ps);
+      if (!ps->backend_data) {
+        log_fatal("Failed to initialize backend, aborting...");
+        ps->quit = true;
+        ev_break(ps->loop, EVBREAK_ALL);
+        return false;
+      }
       for (win *w = ps->list; w; w = w->next) {
         if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
           w->win_data = bi->prepare_win(ps->backend_data, ps, w);
@@ -2006,6 +2024,7 @@ redir_start(session_t *ps) {
     // Repaint the whole screen
     force_repaint(ps);
   }
+  return true;
 }
 
 /**
