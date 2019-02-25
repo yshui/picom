@@ -548,6 +548,13 @@ static void present(void *backend_data, session_t *ps) {
 		// TODO don't block wait for present completion
 		xcb_present_generic_event_t *pev =
 		    (void *)xcb_wait_for_special_event(ps->c, xd->present_event);
+		if (!pev) {
+			// We don't know what happened, maybe X died
+			// But reset buffer age, so in case we do recover, we will
+			// render correctly.
+			xd->buffer_age[0] = xd->buffer_age[1] = -1;
+			return;
+		}
 		assert(pev->evtype == XCB_PRESENT_COMPLETE_NOTIFY);
 		xcb_present_complete_notify_event_t *pcev = (void *)pev;
 		// log_trace("Present complete: %d %ld", pcev->mode, pcev->msc);
