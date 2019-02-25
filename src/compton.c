@@ -831,14 +831,6 @@ void configure_root(session_t *ps, int width, int height) {
   ps->list->reg_ignore_valid = false;
 
 #ifdef CONFIG_OPENGL
-  // Reinitialize GLX on root change
-  if (ps->o.glx_reinit_on_root_change && ps->psglx) {
-    if (!glx_reinit(ps, bkend_use_glx(ps)))
-      log_error("Failed to reinitialize GLX, troubles ahead.");
-    if (BKEND_GLX == ps->o.backend && !glx_init_blur(ps))
-      log_error("Failed to initialize filters.");
-  }
-
   // GLX root change callback
   if (BKEND_GLX == ps->o.backend)
     glx_on_root_change(ps);

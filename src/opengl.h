@@ -43,9 +43,6 @@ glx_init(session_t *ps, bool need_render);
 void
 glx_destroy(session_t *ps);
 
-bool
-glx_reinit(session_t *ps, bool need_render);
-
 void
 glx_on_root_change(session_t *ps);
 

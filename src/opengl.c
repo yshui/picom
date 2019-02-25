@@ -258,28 +258,6 @@ glx_destroy(session_t *ps) {
 }
 
 /**
- * Reinitialize GLX.
- */
-bool
-glx_reinit(session_t *ps, bool need_render) {
-  // Reinitialize VSync as well
-  vsync_deinit(ps);
-
-  glx_destroy(ps);
-  if (!glx_init(ps, need_render)) {
-    log_error("Failed to initialize GLX.");
-    return false;
-  }
-
-  if (!vsync_init(ps)) {
-    log_error("Failed to initialize VSync.");
-    return false;
-  }
-
-  return true;
-}
-
-/**
  * Callback to run on root window size change.
  */
 void
