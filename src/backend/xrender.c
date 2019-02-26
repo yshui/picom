@@ -378,7 +378,7 @@ static void *prepare_win(void *backend_data, session_t *ps, win *w) {
 	//     leave this here until we have chance to re-think the backend API
 	if (w->shadow) {
 		xcb_pixmap_t pixmap;
-		build_shadow(ps, 1, w->widthb, w->heightb, xd->shadow_kernel,
+		build_shadow(ps->c, ps->root, 1, w->widthb, w->heightb, xd->shadow_kernel,
 		             xd->shadow_pixel, &pixmap, &wd->shadow_pict);
 		xcb_free_pixmap(ps->c, pixmap);
 	}
@@ -425,13 +425,13 @@ static void *init(session_t *ps) {
 
 	for (int i = 0; i < 256; ++i) {
 		double o = (double)i / 255.0;
-		xd->alpha_pict[i] = solid_picture(ps, false, o, 0, 0, 0);
+		xd->alpha_pict[i] = solid_picture(ps->c, ps->root, false, o, 0, 0, 0);
 		assert(xd->alpha_pict[i] != XCB_NONE);
 	}
 
-	xd->black_pixel = solid_picture(ps, true, 1, 0, 0, 0);
-	xd->white_pixel = solid_picture(ps, true, 1, 1, 1, 1);
-	xd->shadow_pixel = solid_picture(ps, true, 1, ps->o.shadow_red,
+	xd->black_pixel = solid_picture(ps->c, ps->root, true, 1, 0, 0, 0);
+	xd->white_pixel = solid_picture(ps->c, ps->root, true, 1, 1, 1, 1);
+	xd->shadow_pixel = solid_picture(ps->c, ps->root, true, 1, ps->o.shadow_red,
 	                                 ps->o.shadow_green, ps->o.shadow_blue);
 	xd->shadow_kernel = gaussian_kernel(ps->o.shadow_radius);
 	sum_kernel_preprocess(xd->shadow_kernel);
@@ -496,7 +496,7 @@ static void *init(session_t *ps) {
 
 	xcb_pixmap_t root_pixmap = x_get_root_back_pixmap(ps);
 	if (root_pixmap == XCB_NONE) {
-		xd->root_pict = solid_picture(ps, false, 1, 0.5, 0.5, 0.5);
+		xd->root_pict = solid_picture(ps->c, ps->root, false, 1, 0.5, 0.5, 0.5);
 	} else {
 		xd->root_pict = x_create_picture_with_visual_and_pixmap(
 		    ps->c, ps->vis, root_pixmap, 0, NULL);
@@ -538,8 +538,8 @@ static void present(void *backend_data, session_t *ps) {
 		auto e = xcb_request_check(
 		    ps->c, xcb_present_pixmap_checked(
 		               ps->c, xd->target_win, xd->back_pixmap[xd->curr_back], 0,
-		               XCB_NONE, XCB_NONE, 0, 0, XCB_NONE, XCB_NONE, XCB_NONE, 0,
-		               0, 0, 0, 0, NULL));
+		               XCB_NONE, XCB_NONE, 0, 0, XCB_NONE, XCB_NONE, XCB_NONE,
+		               XCB_PRESENT_OPTION_SUBOPTIMAL, 0, 0, 0, 0, NULL));
 		if (e) {
 			log_error("Failed to present pixmap");
 			free(e);

@@ -692,7 +692,8 @@ static inline void win_blur_background(session_t *ps, win *w, xcb_render_picture
 				continue;
 			}
 
-			// If kern_dst is allocated, it's always allocated to the right size
+			// If kern_dst is allocated, it's always allocated to the right
+			// size
 			size_t size = kern_dst ? kern_src->w * kern_src->h + 2 : 0;
 			x_picture_filter_from_conv(kern_src, factor_center, &kern_dst, &size);
 			ps->blur_kerns_cache[i] = kern_dst;
@@ -1086,7 +1087,7 @@ static bool init_alpha_picts(session_t *ps) {
 
 	for (int i = 0; i <= MAX_ALPHA; ++i) {
 		double o = (double)i / MAX_ALPHA;
-		ps->alpha_picts[i] = solid_picture(ps, false, o, 0, 0, 0);
+		ps->alpha_picts[i] = solid_picture(ps->c, ps->root, false, o, 0, 0, 0);
 		if (ps->alpha_picts[i] == XCB_NONE)
 			return false;
 	}
@@ -1150,8 +1151,8 @@ bool init_render(session_t *ps) {
 	ps->gaussian_map = gaussian_kernel(ps->o.shadow_radius);
 	sum_kernel_preprocess(ps->gaussian_map);
 
-	ps->black_picture = solid_picture(ps, true, 1, 0, 0, 0);
-	ps->white_picture = solid_picture(ps, true, 1, 1, 1, 1);
+	ps->black_picture = solid_picture(ps->c, ps->root, true, 1, 0, 0, 0);
+	ps->white_picture = solid_picture(ps->c, ps->root, true, 1, 1, 1, 1);
 
 	if (ps->black_picture == XCB_NONE || ps->white_picture == XCB_NONE) {
 		log_error("Failed to create solid xrender pictures.");
@@ -1163,8 +1164,8 @@ bool init_render(session_t *ps) {
 	if (!ps->o.shadow_red && !ps->o.shadow_green && !ps->o.shadow_blue) {
 		ps->cshadow_picture = ps->black_picture;
 	} else {
-		ps->cshadow_picture = solid_picture(
-		    ps, true, 1, ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue);
+		ps->cshadow_picture = solid_picture(ps->c, ps->root, true, 1, ps->o.shadow_red,
+		                                    ps->o.shadow_green, ps->o.shadow_blue);
 		if (ps->cshadow_picture == XCB_NONE) {
 			log_error("Failed to create shadow picture.");
 			return false;
