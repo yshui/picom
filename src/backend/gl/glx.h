@@ -40,37 +40,8 @@ struct glx_fbconfig_criteria {
 	int visual_depth;
 };
 
-struct glx_fbconfig_info *glx_find_fbconfig(Display *, int screen, struct glx_fbconfig_criteria);
+struct glx_fbconfig_info *glx_find_fbconfig(Display *, int screen, struct xvisual_info);
 
-/// Generate a search criteria for fbconfig from a X visual.
-/// Returns {-1, -1, -1, -1, -1} on failure
-static inline struct glx_fbconfig_criteria
-x_visual_to_fbconfig_criteria(xcb_connection_t *c, xcb_visualid_t visual) {
-	auto pictfmt = x_get_pictform_for_visual(c, visual);
-	auto depth = x_get_visual_depth(c, visual);
-	if (!pictfmt || depth == -1) {
-		log_error("Invalid visual %#03x", visual);
-		return (struct glx_fbconfig_criteria){-1, -1, -1, -1, -1};
-	}
-	if (pictfmt->type != XCB_RENDER_PICT_TYPE_DIRECT) {
-		log_error("compton cannot handle non-DirectColor visuals. Report an "
-		          "issue if you see this error message.");
-		return (struct glx_fbconfig_criteria){-1, -1, -1, -1, -1};
-	}
-
-	int red_size = popcountl(pictfmt->direct.red_mask),
-	    blue_size = popcountl(pictfmt->direct.blue_mask),
-	    green_size = popcountl(pictfmt->direct.green_mask),
-	    alpha_size = popcountl(pictfmt->direct.alpha_mask);
-
-	return (struct glx_fbconfig_criteria){
-	    .red_size = red_size,
-	    .green_size = green_size,
-	    .blue_size = blue_size,
-	    .alpha_size = alpha_size,
-	    .visual_depth = depth,
-	};
-}
 
 struct glxext_info {
 	bool initialized;

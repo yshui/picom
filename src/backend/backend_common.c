@@ -256,6 +256,22 @@ shadow_picture_err:
 	return false;
 }
 
+void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
+                                    const conv *kernel, double r, double g, double b) {
+	xcb_pixmap_t shadow_pixel = solid_picture(backend_data->c, backend_data->root,
+	                                          true, 1, r, g, b),
+	             shadow = XCB_NONE;
+	xcb_render_picture_t pict = XCB_NONE;
+
+	build_shadow(backend_data->c, backend_data->root, 1, width, height, kernel,
+	             shadow_pixel, &shadow, &pict);
+
+	auto visual = x_get_visual_for_standard(backend_data->c, XCB_PICT_STANDARD_ARGB_32);
+	void *ret = backend_data->ops->bind_pixmap(backend_data, shadow, x_get_visual_info(backend_data->c, visual), true);
+	xcb_render_free_picture(backend_data->c, pict);
+	return ret;
+}
+
 bool default_is_win_transparent(void *backend_data, win *w, void *win_data) {
 	return w->mode != WMODE_SOLID;
 }

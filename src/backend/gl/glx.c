@@ -39,6 +39,7 @@ struct _glx_win_data {
 };
 
 struct _glx_data {
+	backend_t base;
 	int glx_event;
 	int glx_error;
 	GLXContext ctx;
@@ -52,7 +53,7 @@ struct _glx_data {
 };
 
 struct glx_fbconfig_info *
-glx_find_fbconfig(Display *dpy, int screen, struct glx_fbconfig_criteria m) {
+glx_find_fbconfig(Display *dpy, int screen, struct xvisual_info m) {
 	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth %d", m.red_size,
 	          m.blue_size, m.green_size, m.alpha_size, m.visual_depth);
 
@@ -181,7 +182,7 @@ static void glx_release_pixmap(struct _glx_data *gd, Display *dpy, struct _glx_w
 /**
  * Free a glx_texture_t.
  */
-static void glx_release_win(void *backend_data, session_t *ps, win *w, void *win_data) {
+void glx_release_win(void *backend_data, session_t *ps, win *w, void *win_data) {
 	struct _glx_win_data *wd = win_data;
 	struct _glx_data *gd = backend_data;
 	glx_release_pixmap(gd, ps->dpy, wd);
@@ -203,7 +204,7 @@ static inline void free_win_res_glx(session_t *ps, win *w) {
 /**
  * Destroy GLX related resources.
  */
-static void glx_deinit(void *backend_data, session_t *ps) {
+void glx_deinit(void *backend_data, session_t *ps) {
 	struct _glx_data *gd = backend_data;
 
 	// Free all GLX resources of windows
@@ -231,10 +232,14 @@ static void glx_deinit(void *backend_data, session_t *ps) {
 /**
  * Initialize OpenGL.
  */
-static void *glx_init(session_t *ps) {
+backend_t *backend_glx_init(session_t *ps) {
 	bool success = false;
 	glxext_init(ps->dpy, ps->scr);
 	auto gd = ccalloc(1, struct _glx_data);
+	gd->base.c = ps->c;
+	gd->base.root = ps->root;
+	gd->base.ops = NULL; // TODO
+
 	XVisualInfo *pvis = NULL;
 
 	// Check for GLX extension
@@ -371,10 +376,10 @@ end:
 		return NULL;
 	}
 
-	return gd;
+	return &gd->base;
 }
 
-static void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
+void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 	struct _glx_data *gd = backend_data;
 	// Retrieve pixmap parameters, if they aren't provided
 	if (w->g.depth > OPENGL_MAX_DEPTH) {
@@ -395,8 +400,8 @@ static void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 		goto err;
 	}
 
-	auto criteria = x_visual_to_fbconfig_criteria(ps->c, w->a.visual);
-	auto fbcfg = glx_find_fbconfig(ps->dpy, ps->scr, criteria);
+	auto visual_info = x_get_visual_info(ps->c, w->a.visual);
+	auto fbcfg = glx_find_fbconfig(ps->dpy, ps->scr, visual_info);
 	if (!fbcfg) {
 		log_error("Couldn't find FBConfig with requested visual %x", w->a.visual);
 		goto err;
@@ -473,7 +478,7 @@ err:
 /**
  * Bind a X pixmap to an OpenGL texture.
  */
-static void glx_render_win(void *backend_data, session_t *ps, win *w, void *win_data,
+void glx_render_win(void *backend_data, session_t *ps, win *w, void *win_data,
                            const region_t *reg_paint) {
 	struct _glx_data *gd = backend_data;
 	struct _glx_win_data *wd = win_data;
@@ -489,11 +494,11 @@ static void glx_render_win(void *backend_data, session_t *ps, win *w, void *win_
 	gl_check_err();
 }
 
-static void glx_present(void *backend_data, session_t *ps) {
+void glx_present(void *backend_data, session_t *ps) {
 	glXSwapBuffers(ps->dpy, ps->overlay != XCB_NONE ? ps->overlay : ps->root);
 }
 
-static int glx_buffer_age(void *backend_data, session_t *ps) {
+int glx_buffer_age(void *backend_data, session_t *ps) {
 	if (ps->o.glx_swap_method == SWAPM_BUFFER_AGE) {
 		unsigned int val;
 		glXQueryDrawable(ps->dpy, get_tgt_window(ps), GLX_BACK_BUFFER_AGE_EXT, &val);
@@ -503,7 +508,7 @@ static int glx_buffer_age(void *backend_data, session_t *ps) {
 	}
 }
 
-static void glx_compose(void *backend_data, session_t *ps, win *w, void *win_data,
+void glx_compose(void *backend_data, session_t *ps, win *w, void *win_data,
                         int dst_x, int dst_y, const region_t *region) {
 	struct _glx_data *gd = backend_data;
 	struct _glx_win_data *wd = win_data;
@@ -531,19 +536,19 @@ static void glx_compose(void *backend_data, session_t *ps, win *w, void *win_dat
 	pixman_region32_fini(&region_yflipped);
 }
 
-backend_info_t glx_backend = {
-    .init = glx_init,
-    .deinit = glx_deinit,
-    .prepare_win = glx_prepare_win,
-    .render_win = glx_render_win,
-    .release_win = glx_release_win,
-    .present = glx_present,
-    .compose = glx_compose,
-    .is_win_transparent = default_is_win_transparent,
-    .is_frame_transparent = default_is_frame_transparent,
-    .buffer_age = glx_buffer_age,
-    .max_buffer_age = 5,        // XXX why?
-};
+/* backend_info_t glx_backend = { */
+/*     .init = glx_init, */
+/*     .deinit = glx_deinit, */
+/*     .prepare_win = glx_prepare_win, */
+/*     .render_win = glx_render_win, */
+/*     .release_win = glx_release_win, */
+/*     .present = glx_present, */
+/*     .compose = glx_compose, */
+/*     .is_win_transparent = default_is_win_transparent, */
+/*     .is_frame_transparent = default_is_frame_transparent, */
+/*     .buffer_age = glx_buffer_age, */
+/*     .max_buffer_age = 5,        // XXX why? */
+/* }; */
 
 /**
  * Check if a GLX extension exists.

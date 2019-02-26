@@ -7,6 +7,7 @@
 #include <xcb/xcb.h>
 #include <xcb/render.h>
 #include <xcb/damage.h>
+#include <xcb/composite.h>
 #include <xcb/xcb_renderutil.h>
 #include <stdbool.h>
 #include <math.h>
@@ -620,8 +621,19 @@ void win_on_win_size_change(session_t *ps, win *w) {
     if (w->state == WSTATE_MAPPED ||
         w->state == WSTATE_MAPPING ||
         w->state == WSTATE_FADING) {
-      backend_list[ps->o.backend]->release_win(ps->backend_data, ps, w, w->win_data);
-      w->win_data = backend_list[ps->o.backend]->prepare_win(ps->backend_data, ps, w);
+      ps->backend_data->ops->release_image(ps->backend_data, w->win_image);
+      if (w->shadow_image) {
+        ps->backend_data->ops->release_image(ps->backend_data, w->shadow_image);
+      }
+      w->pixmap = xcb_generate_id(ps->c);
+      xcb_composite_name_window_pixmap(ps->c, w->id, w->pixmap);
+      w->win_image = ps->backend_data->ops->bind_pixmap(ps->backend_data, w->pixmap, x_get_visual_info(ps->c, w->a.visual), true);
+      if (w->shadow) {
+        w->shadow_image = ps->backend_data->ops->render_shadow(ps->backend_data, w->widthb,
+                                                               w->heightb, ps->gaussian_map,
+                                                               ps->o.shadow_red, ps->o.shadow_green,
+                                                               ps->o.shadow_blue);
+      }
     } else {
       assert(w->state == WSTATE_UNMAPPED);
     }
@@ -756,7 +768,7 @@ void win_recheck_client(session_t *ps, win *w) {
  * Free all resources in a <code>struct _win</code>.
  */
 void free_win_res(session_t *ps, win *w) {
-  // No need to call backend release_win here because
+  // No need to call backend release_image here because
   // finish_unmap_win should've done that for us.
   // XXX unless we are called by session_destroy
   // assert(w->win_data == NULL);
@@ -823,7 +835,8 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
       // Not initialized until mapped, this variables
       // have no meaning or have no use until the window
       // is mapped
-      .win_data = NULL,
+      .win_image = NULL,
+      .shadow_image = NULL,
       .prev_trans = NULL,
       .shadow = false,
       .xinerama_scr = -1,
@@ -1245,10 +1258,19 @@ void win_update_bounding_shape(session_t *ps, win *w) {
     if (ps->redirected && w->state != WSTATE_UNMAPPED) {
       // Note we only do this when screen is redirected, because
       // otherwise win_data is not valid
-      backend_info_t *bi = backend_list[ps->o.backend];
-      bi->release_win(ps->backend_data, ps, w, w->win_data);
-      if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING) {
-        w->win_data = bi->prepare_win(ps->backend_data, ps, w);
+      assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
+      ps->backend_data->ops->release_image(ps->backend_data, w->win_image);
+      if (w->shadow_image) {
+        ps->backend_data->ops->release_image(ps->backend_data, w->shadow_image);
+      }
+      w->pixmap = xcb_generate_id(ps->c);
+      xcb_composite_name_window_pixmap(ps->c, w->id, w->pixmap);
+      w->win_image = ps->backend_data->ops->bind_pixmap(ps->backend_data, w->pixmap, x_get_visual_info(ps->c, w->a.visual), true);
+      if (w->shadow) {
+        w->shadow_image = ps->backend_data->ops->render_shadow(ps->backend_data, w->widthb,
+                                                               w->heightb, ps->gaussian_map,
+                                                               ps->o.shadow_red, ps->o.shadow_green,
+                                                               ps->o.shadow_blue);
       }
     }
   } else {
@@ -1348,9 +1370,13 @@ finish_unmap_win(session_t *ps, win **_w) {
   if (ps->o.experimental_backends) {
     // We are in unmap_win, we definitely was viewable
     if (ps->redirected) {
-      assert(w->win_data);
-      backend_list[ps->o.backend]->release_win(ps->backend_data, ps, w, w->win_data);
-      w->win_data = NULL;
+      assert(w->win_image);
+      ps->backend_data->ops->release_image(ps->backend_data, w->win_image);
+      if (w->shadow_image) {
+        ps->backend_data->ops->release_image(ps->backend_data, w->shadow_image);
+      }
+      w->win_image = NULL;
+      w->shadow_image = NULL;
     }
   } else {
     free_paint(ps, &w->paint);
@@ -1627,7 +1653,16 @@ void map_win(session_t *ps, win *w) {
   // TODO win_update_bounding_shape below will immediately
   //      reinit w->win_data, not very efficient
   if (ps->redirected && ps->o.experimental_backends) {
-    w->win_data = backend_list[ps->o.backend]->prepare_win(ps->backend_data, ps, w);
+    w->pixmap = xcb_generate_id(ps->c);
+    xcb_composite_name_window_pixmap(ps->c, w->id, w->pixmap);
+    w->win_image = ps->backend_data->ops->bind_pixmap(ps->backend_data, w->pixmap, x_get_visual_info(ps->c, w->a.visual), true);
+    if (w->shadow) {
+      w->shadow_image =
+        ps->backend_data->ops->render_shadow(ps->backend_data, w->widthb,
+                                             w->heightb, ps->gaussian_map,
+                                             ps->o.shadow_red, ps->o.shadow_green,
+                                             ps->o.shadow_blue);
+    }
   }
   log_debug("Window %#010x has opacity %f, opacity target is %f", w->id, w->opacity, w->opacity_tgt);
 
