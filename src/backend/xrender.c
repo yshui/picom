@@ -184,8 +184,8 @@ blur(void *backend_data, session_t *ps, double opacity, const region_t *reg_pain
 	// Create a buffer for storing blurred picture, make it just big enough
 	// for the blur region
 	xcb_render_picture_t tmp_picture[2] = {
-	    x_create_picture_with_visual(ps, width, height, ps->vis, 0, NULL),
-	    x_create_picture_with_visual(ps, width, height, ps->vis, 0, NULL)};
+	    x_create_picture_with_visual(ps->c, ps->root, width, height, ps->vis, 0, NULL),
+	    x_create_picture_with_visual(ps->c, ps->root, width, height, ps->vis, 0, NULL)};
 
 	region_t clip;
 	pixman_region32_init(&clip);
@@ -279,7 +279,7 @@ static void render_win(void *backend_data, session_t *ps, win *w, void *win_data
 	// We don't want to modify the content of the original window when we process
 	// it, so we create a buffer.
 	if (wd->buffer == XCB_NONE) {
-		wd->buffer = x_create_picture_with_pictfmt(ps, w->widthb, w->heightb,
+		wd->buffer = x_create_picture_with_pictfmt(ps->c, ps->root, w->widthb, w->heightb,
 		                                           w->pictfmt, 0, NULL);
 	}
 

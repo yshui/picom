@@ -182,6 +182,7 @@ x_create_picture_with_pictfmt_and_pixmap(
       pixmap, pictfmt->id, valuemask, buf));
   free(buf);
   if (e) {
+    x_print_error(e->full_sequence, e->major_code, e->minor_code, e->error_code);
     log_error("failed to create picture");
     return XCB_NONE;
   }
@@ -216,39 +217,31 @@ x_create_picture_with_standard_and_pixmap(
  * Create an picture.
  */
 xcb_render_picture_t
-x_create_picture_with_pictfmt(session_t *ps, int wid, int hei,
+x_create_picture_with_pictfmt(xcb_connection_t *c, xcb_drawable_t d, int wid, int hei,
   const xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
-  if (!pictfmt)
-    pictfmt = x_get_pictform_for_visual(ps->c, ps->vis);
-
-  if (!pictfmt) {
-    log_fatal("Default visual is invalid");
-    abort();
-  }
-
   int depth = pictfmt->depth;
 
-  xcb_pixmap_t tmp_pixmap = x_create_pixmap(ps->c, depth, ps->root, wid, hei);
+  xcb_pixmap_t tmp_pixmap = x_create_pixmap(c, depth, d, wid, hei);
   if (!tmp_pixmap)
     return XCB_NONE;
 
   xcb_render_picture_t picture =
-    x_create_picture_with_pictfmt_and_pixmap(ps->c, pictfmt, tmp_pixmap, valuemask, attr);
+    x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, tmp_pixmap, valuemask, attr);
 
-  xcb_free_pixmap(ps->c, tmp_pixmap);
+  xcb_free_pixmap(c, tmp_pixmap);
 
   return picture;
 }
 
 xcb_render_picture_t
-x_create_picture_with_visual(session_t *ps, int w, int h,
+x_create_picture_with_visual(xcb_connection_t *c, xcb_drawable_t d, int w, int h,
   xcb_visualid_t visual, unsigned long valuemask,
   const xcb_render_create_picture_value_list_t *attr)
 {
-  auto pictfmt = x_get_pictform_for_visual(ps->c, visual);
-  return x_create_picture_with_pictfmt(ps, w, h, pictfmt, valuemask, attr);
+  auto pictfmt = x_get_pictform_for_visual(c, visual);
+  return x_create_picture_with_pictfmt(c, d, w, h, pictfmt, valuemask, attr);
 }
 
 bool x_fetch_region(xcb_connection_t *c, xcb_xfixes_region_t r, pixman_region32_t *res) {
