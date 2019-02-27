@@ -122,7 +122,7 @@ x_create_picture_with_standard_and_pixmap(xcb_connection_t *, xcb_pict_standard_
 /**
  * Create an picture.
  */
-xcb_render_picture_t attr_nonnull(1, 4)
+xcb_render_picture_t attr_nonnull(1, 5)
     x_create_picture_with_pictfmt(xcb_connection_t *, xcb_drawable_t, int wid, int hei,
                                   const xcb_render_pictforminfo_t *pictfmt,
                                   unsigned long valuemask,

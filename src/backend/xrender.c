@@ -539,7 +539,7 @@ static void present(void *backend_data, session_t *ps) {
 		    ps->c, xcb_present_pixmap_checked(
 		               ps->c, xd->target_win, xd->back_pixmap[xd->curr_back], 0,
 		               XCB_NONE, XCB_NONE, 0, 0, XCB_NONE, XCB_NONE, XCB_NONE,
-		               XCB_PRESENT_OPTION_SUBOPTIMAL, 0, 0, 0, 0, NULL));
+		               0, 0, 0, 0, 0, NULL));
 		if (e) {
 			log_error("Failed to present pixmap");
 			free(e);
