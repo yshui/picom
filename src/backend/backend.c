@@ -8,18 +8,19 @@
 #include "config.h"
 #include "region.h"
 #include "win.h"
+#include "log.h"
 
-backend_info_t *backend_list[NUM_BKEND] = {
-    [BKEND_XRENDER] = &xrender_backend,
+backend_init_fn backend_list[NUM_BKEND] = {
+    [BKEND_XRENDER] = backend_xrender_init,
 #ifdef CONFIG_OPENGL
-    [BKEND_GLX] = &glx_backend,
+    [BKEND_GLX] = backend_glx_init,
 #endif
 };
 
 region_t get_damage(session_t *ps) {
 	region_t region;
-	auto buffer_age_fn = backend_list[ps->o.backend]->buffer_age;
-	int buffer_age = buffer_age_fn ? buffer_age_fn(ps->backend_data, ps) : -1;
+	auto buffer_age_fn = ps->backend_data->ops->buffer_age;
+	int buffer_age = buffer_age_fn ? buffer_age_fn(ps->backend_data) : -1;
 
 	pixman_region32_init(&region);
 	if (buffer_age == -1 || buffer_age > ps->ndamage) {
@@ -48,8 +49,6 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 		pixman_region32_fini(&region);
 		return;
 	}
-	auto bi = backend_list[ps->o.backend];
-	assert(bi);
 
 #ifdef DEBUG_REPAINT
 	static struct timespec last_paint = {0};
@@ -67,8 +66,16 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 		reg_paint = &region;
 	}
 
-	if (bi->prepare)
-		bi->prepare(ps->backend_data, ps, reg_paint);
+	// TODO Bind root pixmap
+
+	if (ps->backend_data->ops->prepare) {
+		ps->backend_data->ops->prepare(ps->backend_data, reg_paint);
+	}
+
+	if (ps->root_image) {
+		ps->backend_data->ops->compose(ps->backend_data, ps->root_image, 0, 0,
+		                               reg_paint);
+	}
 
 	// Windows are sorted from bottom to top
 	// Each window has a reg_ignore, which is the region obscured by all the windows
@@ -81,52 +88,124 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 		// XXX XXX
 		pixman_region32_subtract(&reg_tmp, &region, w->reg_ignore);
 
-		if (pixman_region32_not_empty(&reg_tmp)) {
-			// Render window content
-			// XXX do this in preprocess?
-			bi->render_win(ps->backend_data, ps, w, w->win_data, &reg_tmp);
+		if (!pixman_region32_not_empty(&reg_tmp)) {
+			continue;
+		}
 
-			// Blur window background
-			bool win_transparent =
-			    bi->is_win_transparent(ps->backend_data, w, w->win_data);
-			bool frame_transparent =
-			    bi->is_frame_transparent(ps->backend_data, w, w->win_data);
-			if (w->blur_background &&
-			    (win_transparent ||
-			     (ps->o.blur_background_frame && frame_transparent))) {
-				// Minimize the region we try to blur, if the window
-				// itself is not opaque, only the frame is.
-				region_t reg_blur = win_get_bounding_shape_global_by_val(w);
-				if (win_is_solid(ps, w)) {
-					region_t reg_noframe;
-					pixman_region32_init(&reg_noframe);
-					win_get_region_noframe_local(w, &reg_noframe);
-					pixman_region32_translate(&reg_noframe, w->g.x,
-					                          w->g.y);
-					pixman_region32_subtract(&reg_blur, &reg_blur,
-					                         &reg_noframe);
-					pixman_region32_fini(&reg_noframe);
-				}
-				bi->blur(ps->backend_data, ps, w->opacity, &reg_blur);
-				pixman_region32_fini(&reg_blur);
+		auto reg_bound = win_get_bounding_shape_global_by_val(w);
+		// Draw shadow on target
+		if (w->shadow) {
+			auto reg_shadow = win_extents_by_val(w);
+			pixman_region32_intersect(&reg_shadow, &reg_shadow, &reg_tmp);
+
+			if (!ps->o.wintype_option[w->window_type].full_shadow) {
+				pixman_region32_subtract(&reg_shadow, &reg_shadow, &reg_bound);
 			}
 
-			// Draw window on target
-			bi->compose(ps->backend_data, ps, w, w->win_data, w->g.x, w->g.y,
-			            &reg_tmp);
+			// Mask out the region we don't want shadow on
+			if (pixman_region32_not_empty(&ps->shadow_exclude_reg)) {
+				pixman_region32_subtract(&reg_tmp, &reg_tmp,
+				                         &ps->shadow_exclude_reg);
+			}
 
-			if (bi->finish_render_win)
-				bi->finish_render_win(ps->backend_data, ps, w, w->win_data);
+			if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
+			    w->xinerama_scr < ps->xinerama_nscrs) {
+				// There can be a window where number of screens is
+				// updated, but the screen number attached to the windows
+				// have not.
+				//
+				// Window screen number will be updated eventually, so
+				// here we just check to make sure we don't access out of
+				// bounds.
+				pixman_region32_intersect(
+				    &reg_shadow, &reg_shadow,
+				    &ps->xinerama_scr_regs[w->xinerama_scr]);
+			}
+
+			assert(w->shadow_image);
+			ps->backend_data->ops->compose(ps->backend_data, w->shadow_image,
+			                               w->g.x + w->shadow_dx,
+			                               w->g.y + w->shadow_dy, &reg_shadow);
+			pixman_region32_fini(&reg_shadow);
+		}
+
+		pixman_region32_intersect(&reg_tmp, &reg_tmp, &reg_bound);
+		pixman_region32_fini(&reg_bound);
+		if (!pixman_region32_not_empty(&reg_tmp)) {
+			continue;
+		}
+		// Blur window background
+		bool win_transparent = ps->backend_data->ops->is_image_transparent(
+		    ps->backend_data, w->win_image);
+		bool frame_transparent = w->frame_opacity != 1;
+		if (w->blur_background &&
+		    (win_transparent || (ps->o.blur_background_frame && frame_transparent))) {
+			// Minimize the region we try to blur, if the window
+			// itself is not opaque, only the frame is.
+			if (win_is_solid(ps, w)) {
+				region_t reg_blur;
+				pixman_region32_init(&reg_blur);
+				win_get_region_noframe_local(w, &reg_blur);
+				pixman_region32_translate(&reg_blur, w->g.x, w->g.y);
+				pixman_region32_subtract(&reg_blur, &reg_tmp, &reg_blur);
+				ps->backend_data->ops->blur(ps->backend_data, w->opacity,
+				                            &reg_blur);
+				pixman_region32_fini(&reg_blur);
+			} else {
+				ps->backend_data->ops->blur(ps->backend_data, w->opacity,
+				                            &reg_tmp);
+			}
+		}
+		// Draw window on target
+		if (!w->invert_color && !w->dim && w->frame_opacity == 1 && w->opacity == 1) {
+			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
+			                               w->g.x, w->g.y, &reg_tmp);
+		} else {
+			region_t reg_local;
+			pixman_region32_init(&reg_local);
+			pixman_region32_copy(&reg_local, &reg_tmp);
+			pixman_region32_translate(&reg_local, -w->g.x, -w->g.y);
+			auto new_img = ps->backend_data->ops->copy(
+			    ps->backend_data, w->win_image, &reg_local);
+			if (w->invert_color) {
+				ps->backend_data->ops->image_op(ps->backend_data,
+				                                IMAGE_OP_INVERT_COLOR,
+				                                new_img, &reg_local, NULL);
+			}
+			if (w->dim) {
+				double dim_opacity = ps->o.inactive_dim;
+				if (!ps->o.inactive_dim_fixed) {
+					dim_opacity *= w->opacity;
+				}
+				ps->backend_data->ops->image_op(
+				    ps->backend_data, IMAGE_OP_DIM, new_img, &reg_local,
+				    (double[]){dim_opacity});
+			}
+			if (w->frame_opacity != 1) {
+				auto reg_frame = win_get_region_noframe_local_by_val(w);
+				pixman_region32_subtract(&reg_frame, &reg_local, &reg_frame);
+				ps->backend_data->ops->image_op(
+				    ps->backend_data, IMAGE_OP_APPLY_ALPHA, new_img,
+				    &reg_frame, (double[]){w->frame_opacity});
+			}
+			if (w->opacity != 1) {
+				ps->backend_data->ops->image_op(
+				    ps->backend_data, IMAGE_OP_APPLY_ALPHA, new_img, NULL,
+				    (double[]){w->opacity});
+			}
+			ps->backend_data->ops->compose(ps->backend_data, new_img, w->g.x,
+			                               w->g.y, &reg_tmp);
+			ps->backend_data->ops->release_image(ps->backend_data, new_img);
 		}
 	}
 
 	// Free up all temporary regions
 	pixman_region32_fini(&reg_tmp);
 
-	if (bi->present) {
+	if (ps->backend_data->ops->present) {
 		// Present the rendered scene
 		// Vsync is done here
-		bi->present(ps->backend_data, ps);
+		ps->backend_data->ops->present(ps->backend_data);
 	}
 
 #ifdef DEBUG_REPAINT

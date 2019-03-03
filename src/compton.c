@@ -807,9 +807,9 @@ void configure_root(session_t *ps, int width, int height) {
   auto bi = backend_list[ps->o.backend];
   if (ps->o.experimental_backends) {
     assert(bi);
-    if (!bi->root_change) {
+    if (!ps->backend_data->ops->root_change) {
       // deinit/reinit backend if the backend cannot handle root change
-      bi->deinit(ps->backend_data, ps);
+      ps->backend_data->ops->deinit(ps->backend_data);
       ps->backend_data = NULL;
     }
   } else {
@@ -836,10 +836,10 @@ void configure_root(session_t *ps, int width, int height) {
     glx_on_root_change(ps);
 #endif
   if (ps->o.experimental_backends) {
-    if (bi->root_change) {
-      bi->root_change(ps->backend_data, ps);
+    if (ps->backend_data->ops->root_change) {
+      ps->backend_data->ops->root_change(ps->backend_data, ps);
     } else {
-      ps->backend_data = bi->init(ps);
+      ps->backend_data = backend_list[ps->o.backend](ps);
       if (!ps->backend_data) {
         log_fatal("Failed to re-initialize backend after root change, aborting...");
         ps->quit = true;
@@ -938,8 +938,19 @@ circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
 static inline void
 root_damaged(session_t *ps) {
   if (ps->root_tile_paint.pixmap) {
-    xcb_clear_area(ps->c, true, ps->root, 0, 0, 0, 0);
     free_root_tile(ps);
+  }
+
+  if (ps->o.experimental_backends) {
+    if (ps->root_image) {
+      ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+    }
+    auto pixmap = x_get_root_back_pixmap(ps);
+    if (pixmap != XCB_NONE) {
+      ps->root_image =
+        ps->backend_data->ops->bind_pixmap(ps->backend_data, pixmap,
+                                           x_get_visual_info(ps->c, ps->vis), false);
+    }
   }
 
   // Mark screen damaged
@@ -1981,20 +1992,42 @@ redir_start(session_t *ps) {
 
     if (ps->o.experimental_backends) {
       // Reinitialize win_data
-      backend_info_t *bi = backend_list[ps->o.backend];
-      assert(bi);
-      ps->backend_data = bi->init(ps);
+      ps->backend_data = backend_list[ps->o.backend](ps);
       if (!ps->backend_data) {
         log_fatal("Failed to initialize backend, aborting...");
         ps->quit = true;
         ev_break(ps->loop, EVBREAK_ALL);
         return false;
       }
+
       for (win *w = ps->list; w; w = w->next) {
         if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-          w->win_data = bi->prepare_win(ps->backend_data, ps, w);
+          w->pixmap = xcb_generate_id(ps->c);
+          xcb_composite_name_window_pixmap(ps->c, w->id, w->pixmap);
+          w->win_image = ps->backend_data->ops->bind_pixmap(ps->backend_data, w->pixmap,
+                                                            x_get_visual_info(ps->c, w->a.visual), true);
+          if (w->shadow) {
+            w->shadow_image =
+              ps->backend_data->ops->render_shadow(ps->backend_data, w->widthb,
+                                                   w->heightb, ps->gaussian_map,
+                                                   ps->o.shadow_red, ps->o.shadow_green,
+                                                   ps->o.shadow_blue);
+          }
         }
       }
+    }
+
+
+    if (ps->o.experimental_backends) {
+      ps->ndamage = ps->backend_data->ops->max_buffer_age;
+    } else {
+      ps->ndamage = maximum_buffer_age(ps);
+    }
+    ps->damage_ring = ccalloc(ps->ndamage, region_t);
+    ps->damage = ps->damage_ring + ps->ndamage - 1;
+
+    for (int i = 0; i < ps->ndamage; i++) {
+      pixman_region32_init(&ps->damage_ring[i]);
     }
 
     /*
@@ -2011,6 +2044,8 @@ redir_start(session_t *ps) {
 
     ps->redirected = true;
 
+    root_damaged(ps);
+
     // Repaint the whole screen
     force_repaint(ps);
   }
@@ -2024,7 +2059,6 @@ static void
 redir_stop(session_t *ps) {
   if (ps->redirected) {
     log_debug("Screen unredirected.");
-    backend_info_t *bi = backend_list[ps->o.backend];
     // Destroy all Pictures as they expire once windows are unredirected
     // If we don't destroy them here, looks like the resources are just
     // kept inaccessible somehow
@@ -2038,13 +2072,23 @@ redir_stop(session_t *ps) {
         continue;
       }
       if (ps->o.experimental_backends) {
-        assert(bi);
         if (w->state == WSTATE_MAPPED) {
-          bi->release_win(ps->backend_data, ps, w, w->win_data);
-          w->win_data = NULL;
+          ps->backend_data->ops->release_image(ps->backend_data, w->win_image);
+          if (w->shadow_image) {
+            ps->backend_data->ops->release_image(ps->backend_data, w->shadow_image);
+          }
+          xcb_free_pixmap(ps->c, w->pixmap);
+          w->win_image = NULL;
+          w->shadow_image = NULL;
+          w->pixmap = XCB_NONE;
         } else {
-          assert(!w->win_data);
+          assert(!w->win_image);
+          assert(!w->shadow_image);
         }
+        if (ps->root_image) {
+          ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+          ps->root_image = NULL;
+	}
       } else {
         free_paint(ps, &w->paint);
       }
@@ -2057,9 +2101,17 @@ redir_stop(session_t *ps) {
 
     if (ps->o.experimental_backends) {
       // deinit backend
-      bi->deinit(ps->backend_data, ps);
+      ps->backend_data->ops->deinit(ps->backend_data);
       ps->backend_data = NULL;
     }
+
+    // Free the damage ring
+    for (int i = 0; i < ps->ndamage; ++i) {
+      pixman_region32_fini(&ps->damage_ring[i]);
+    }
+    ps->ndamage = 0;
+    free(ps->damage_ring);
+    ps->damage_ring = ps->damage = NULL;
 
     // Must call XSync() here
     x_sync(ps->c);
@@ -2560,6 +2612,9 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
     log_error("Post-processing of conditionals failed, some of your rules might not work");
   }
 
+  ps->gaussian_map = gaussian_kernel(ps->o.shadow_radius);
+  sum_kernel_preprocess(ps->gaussian_map);
+
   rebuild_shadow_exclude_reg(ps);
 
   // Query X Shape
@@ -2652,18 +2707,6 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
   if (!ps->o.experimental_backends && !init_render(ps)) {
     log_fatal("Failed to initialize the backend");
     exit(1);
-  }
-
-  if (ps->o.experimental_backends) {
-    ps->ndamage = backend_list[ps->o.backend]->max_buffer_age;
-  } else {
-    ps->ndamage = maximum_buffer_age(ps);
-  }
-  ps->damage_ring = ccalloc(ps->ndamage, region_t);
-  ps->damage = ps->damage_ring + ps->ndamage - 1;
-
-  for (int i = 0; i < ps->ndamage; i++) {
-    pixman_region32_init(&ps->damage_ring[i]);
   }
 
   if (ps->o.print_diagnostics) {
@@ -2949,17 +2992,10 @@ session_destroy(session_t *ps) {
     deinit_render(ps);
   }
 
-  // Free the damage ring
-  for (int i = 0; i < ps->ndamage; ++i) {
-    pixman_region32_fini(&ps->damage_ring[i]);
-  }
-  ps->ndamage = 0;
-  free(ps->damage_ring);
-  ps->damage_ring = ps->damage = NULL;
-
   // Flush all events
   x_sync(ps->c);
   ev_io_stop(ps->loop, &ps->xiow);
+  free_conv(ps->gaussian_map);
 
 #ifdef DEBUG_XRC
   // Report about resource leakage

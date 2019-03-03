@@ -32,6 +32,21 @@ typedef struct winprop {
 	xcb_get_property_reply_t *r;
 } winprop_t;
 
+struct xvisual_info {
+	/// Bit depth of the red component
+	int red_size;
+	/// Bit depth of the green component
+	int green_size;
+	/// Bit depth of the blue component
+	int blue_size;
+	/// Bit depth of the alpha component
+	int alpha_size;
+	/// The depth of X visual
+	int visual_depth;
+
+	xcb_visualid_t visual;
+};
+
 #define XCB_SYNCED_VOID(func, c, ...)                                                    \
 	xcb_request_check(c, func##_checked(c, __VA_ARGS__));
 #define XCB_SYNCED(func, c, ...)                                                         \
@@ -188,3 +203,11 @@ bool x_fence_sync(xcb_connection_t *, xcb_sync_fence_t);
  */
 size_t x_picture_filter_from_conv(const conv *kernel, double center,
                                   xcb_render_fixed_t **ret, size_t *size);
+
+/// Generate a search criteria for fbconfig from a X visual.
+/// Returns {-1, -1, -1, -1, -1, -1} on failure
+struct xvisual_info
+x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual);
+
+xcb_visualid_t
+x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);

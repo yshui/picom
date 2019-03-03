@@ -30,3 +30,6 @@ bool default_is_win_transparent(void *, win *, void *);
 /// The default implementation of `is_frame_transparent`, it uses win::frame_opacity. Same
 /// caveat as `default_is_win_transparent` applies.
 bool default_is_frame_transparent(void *, win *, void *);
+
+void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
+                                    const conv *kernel, double r, double g, double b);

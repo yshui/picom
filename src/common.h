@@ -86,6 +86,7 @@
 #include "compiler.h"
 #include "utils.h"
 #include "x.h"
+#include "backend/backend.h"
 
 // === Constants ===
 
@@ -303,7 +304,7 @@ typedef struct session {
   /// Signal handler for SIGINT
   ev_signal int_signal;
   /// backend data
-  void *backend_data;
+  backend_t *backend_data;
   /// libev mainloop
   struct ev_loop *loop;
 
@@ -332,6 +333,8 @@ typedef struct session {
   bool root_tile_fill;
   /// Picture of the root window background.
   paint_t root_tile_paint;
+  /// The backend data the root pixmap bound to
+  void *root_image;
   /// A region of the size of the screen.
   region_t screen_reg;
   /// Picture of root window. Destination of painting in no-DBE painting

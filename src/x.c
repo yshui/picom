@@ -145,6 +145,34 @@ x_get_pictform_for_visual(xcb_connection_t *c, xcb_visualid_t visual) {
   return NULL;
 }
 
+static xcb_visualid_t attr_pure
+x_get_visual_for_pictfmt(xcb_render_query_pict_formats_reply_t *r,
+                         xcb_render_pictformat_t fmt) {
+  for (auto screen = xcb_render_query_pict_formats_screens_iterator(r);
+       screen.rem; xcb_render_pictscreen_next(&screen)) {
+    for (auto depth = xcb_render_pictscreen_depths_iterator(screen.data);
+         depth.rem; xcb_render_pictdepth_next(&depth)) {
+      for (auto pv = xcb_render_pictdepth_visuals_iterator(depth.data); pv.rem;
+           xcb_render_pictvisual_next(&pv)) {
+        if (pv.data->format == fmt) {
+          return pv.data->visual;
+        }
+      }
+    }
+  }
+  return XCB_NONE;
+}
+
+xcb_visualid_t
+x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_t std) {
+  x_get_server_pictfmts(c);
+
+  auto pictfmt =
+    xcb_render_util_find_standard_format(g_pictfmts, std);
+
+  return x_get_visual_for_pictfmt(g_pictfmts, pictfmt->id);
+}
+
 int x_get_visual_depth(xcb_connection_t *c, xcb_visualid_t visual) {
   auto setup = xcb_get_setup(c);
   for (auto screen = xcb_setup_roots_iterator(setup); screen.rem; xcb_screen_next(&screen)) {
@@ -547,4 +575,35 @@ size_t x_picture_filter_from_conv(const conv *kernel, double center, xcb_render_
 
   buf[kernel->h / 2 * kernel->w + kernel->w / 2 + 2] = DOUBLE_TO_XFIXED(center * factor);
   return kernel->w * kernel->h + 2;
+}
+
+/// Generate a search criteria for fbconfig from a X visual.
+/// Returns {-1, -1, -1, -1, -1, -1} on failure
+struct xvisual_info
+x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual) {
+	auto pictfmt = x_get_pictform_for_visual(c, visual);
+	auto depth = x_get_visual_depth(c, visual);
+	if (!pictfmt || depth == -1) {
+		log_error("Invalid visual %#03x", visual);
+		return (struct xvisual_info){-1, -1, -1, -1, -1, -1};
+	}
+	if (pictfmt->type != XCB_RENDER_PICT_TYPE_DIRECT) {
+		log_error("compton cannot handle non-DirectColor visuals. Report an "
+		          "issue if you see this error message.");
+		return (struct xvisual_info){-1, -1, -1, -1, -1, -1};
+	}
+
+	int red_size = popcountl(pictfmt->direct.red_mask),
+	    blue_size = popcountl(pictfmt->direct.blue_mask),
+	    green_size = popcountl(pictfmt->direct.green_mask),
+	    alpha_size = popcountl(pictfmt->direct.alpha_mask);
+
+	return (struct xvisual_info){
+	    .red_size = red_size,
+	    .green_size = green_size,
+	    .blue_size = blue_size,
+	    .alpha_size = alpha_size,
+	    .visual_depth = depth,
+	    .visual = visual,
+	};
 }

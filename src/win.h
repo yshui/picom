@@ -119,7 +119,8 @@ typedef struct win win;
 struct win {
   /// backend data attached to this window. Only available when
   /// `state` is not UNMAPPED
-  void *win_data;
+  void *win_image;
+  void *shadow_image;
   /// Pointer to the next lower window in window stack.
   win *next;
   /// Pointer to the next higher window to paint.
@@ -127,6 +128,8 @@ struct win {
   // TODO rethink reg_ignore
 
   // Core members
+  /// Named pixmap attached to this window
+  xcb_pixmap_t pixmap;
   /// ID of the top-level frame window.
   xcb_window_t id;
   /// The "mapped state" of this window, doesn't necessary

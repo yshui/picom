@@ -47,13 +47,13 @@ paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid, unsigned hei, bool 
 	if (!visual) {
 		assert(depth == 32);
 		if (!argb_fbconfig) {
-			argb_fbconfig = glx_find_fbconfig(
-			    ps->dpy, ps->scr,
-			    (struct glx_fbconfig_criteria){.red_size = 8,
-			                                   .green_size = 8,
-			                                   .blue_size = 8,
-			                                   .alpha_size = 8,
-			                                   .visual_depth = 32});
+			argb_fbconfig =
+			    glx_find_fbconfig(ps->dpy, ps->scr,
+			                      (struct xvisual_info){.red_size = 8,
+			                                            .green_size = 8,
+			                                            .blue_size = 8,
+			                                            .alpha_size = 8,
+			                                            .visual_depth = 32});
 		}
 		if (!argb_fbconfig) {
 			log_error("Failed to find appropriate FBConfig for 32 bit depth");
@@ -61,7 +61,7 @@ paint_bind_tex(session_t *ps, paint_t *ppaint, unsigned wid, unsigned hei, bool 
 		}
 		fbcfg = argb_fbconfig;
 	} else {
-		auto m = x_visual_to_fbconfig_criteria(ps->c, visual);
+		auto m = x_get_visual_info(ps->c, visual);
 		if (m.visual_depth < 0) {
 			return false;
 		}
@@ -278,8 +278,8 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 
 	// Invert window color, if required
 	if (bkend_use_xrender(ps) && w->invert_color) {
-		xcb_render_picture_t newpict =
-		    x_create_picture_with_pictfmt(ps->c, ps->root, wid, hei, w->pictfmt, 0, NULL);
+		xcb_render_picture_t newpict = x_create_picture_with_pictfmt(
+		    ps->c, ps->root, wid, hei, w->pictfmt, 0, NULL);
 		if (newpict) {
 			// Apply clipping region to save some CPU
 			if (reg_paint) {
@@ -1148,9 +1148,6 @@ bool init_render(session_t *ps) {
 		}
 	}
 
-	ps->gaussian_map = gaussian_kernel(ps->o.shadow_radius);
-	sum_kernel_preprocess(ps->gaussian_map);
-
 	ps->black_picture = solid_picture(ps->c, ps->root, true, 1, 0, 0, 0);
 	ps->white_picture = solid_picture(ps->c, ps->root, true, 1, 1, 1, 1);
 
@@ -1207,7 +1204,6 @@ void deinit_render(session_t *ps) {
 
 	free_picture(ps->c, &ps->black_picture);
 	free_picture(ps->c, &ps->white_picture);
-	free_conv(ps->gaussian_map);
 
 	// Free other X resources
 	free_root_tile(ps);
