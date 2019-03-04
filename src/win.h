@@ -111,7 +111,8 @@ typedef enum {
  * X goes from left to right, Y goes downwards.
  *
  * Global: the origin is the top left corner of the Xorg screen.
- * Local: the origin is the top left corner of the window, including border.
+ * Local: the origin is the top left corner of the window, border is
+ *        considered part of the window.
  */
 
 /// Structure representing a top-level window compton manages.
@@ -354,6 +355,11 @@ void add_damage_from_win(session_t *ps, win *w);
  */
 void win_get_region_noframe_local(const win *w, region_t *);
 region_t win_get_region_noframe_local_by_val(const win *w);
+
+/// Get the region for the frame of the window
+void win_get_region_frame_local(const win *w, region_t *res);
+/// Get the region for the frame of the window, by value
+region_t win_get_region_frame_local_by_val(const win *w);
 /**
  * Retrieve frame extents from a window.
  */

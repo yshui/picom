@@ -23,9 +23,15 @@ typedef struct backend_base {
 } backend_t;
 
 enum image_operations {
+	// Invert the color of the image
 	IMAGE_OP_INVERT_COLOR,
+	// Dim the image, argument is the percentage
 	IMAGE_OP_DIM,
+	// Multiply the alpha channel by the argument
 	IMAGE_OP_APPLY_ALPHA,
+	// Same as APPLY_ALPHA, but `reg_op` is ignored and the operation applies to the
+	// full image
+	IMAGE_OP_APPLY_ALPHA_ALL,
 };
 
 struct backend_operations {
@@ -64,25 +70,29 @@ struct backend_operations {
 	/// Optional?
 	void (*prepare)(backend_t *backend_data, const region_t *reg_paint);
 
-	/// Paint the content of an imageonto the (possibly buffered)
-	/// target picture. Always called after render_win(). Maybe called
-	/// multiple times between render_win() and finish_render_win().
-	/// The origin is the top left of the window, exclude the shadow,
-	/// (dst_x, dst_y) refers to where the origin should be in the target
-	/// buffer.
+	/**
+	 * Paint the content of an image onto the (possibly buffered)
+	 * target picture.
+	 *
+	 * @param backend_data the backend data
+	 * @param image_data   the image to paint
+	 * @param dst_x, dst_y the top left corner of the image in the target
+	 * @param reg_paint    the clip region, in target coordinates
+	 * @param reg_visibile the visible region, in target coordinates
+	 */
 	void (*compose)(backend_t *backend_data, void *image_data, int dst_x, int dst_y,
-	                const region_t *reg_paint);
+	                const region_t *reg_paint, const region_t *reg_visible);
 
 	/// Blur a given region on of the target.
-	bool (*blur)(backend_t *backend_data, double opacity, const region_t *)
-	    __attribute__((nonnull(1, 3)));
+	bool (*blur)(backend_t *backend_data, double opacity, const region_t *reg_blur,
+	             const region_t *reg_visible) attr_nonnull(1, 3, 4);
 
 	/// Present the buffered target picture onto the screen. If target
 	/// is not buffered, this should be NULL. Otherwise, it should always
 	/// be non-NULL.
 	///
 	/// Optional
-	void (*present)(backend_t *backend_data) __attribute__((nonnull(1)));
+	void (*present)(backend_t *backend_data) attr_nonnull(1);
 
 	/**
 	 * Bind a X pixmap to the backend's internal image data structure.
@@ -137,17 +147,22 @@ struct backend_operations {
 	 * Manipulate an image
 	 *
 	 * @param backend_data backend data
-	 * @param op the operation to perform
-	 * @param image_data an image data structure returned by the backend
-	 * @param reg_paint the clip region, limit the region of the image to be
-	 * manipulated
-	 * @param args extra arguments, specific to each operation
-	 * @return a new image data structure contains the same image as `image_data`
+	 * @param op           the operation to perform
+	 * @param image_data   an image data structure returned by the backend
+	 * @param reg_op       the clip region, define the part of the image to be
+	 *                     operated on.
+	 * @param reg_visible  define the part of the image that will eventually
+	 *                     be visible on screen. this is a hint to the backend
+	 *                     for optimization purposes.
+	 * @param args         extra arguments, operation specific
+	 * @return a new image data structure containing the result
 	 */
-	void (*image_op)(backend_t *backend_data, enum image_operations op,
-	                 void *image_data, const region_t *reg_paint, void *args);
+	bool (*image_op)(backend_t *backend_data, enum image_operations op, void *image_data,
+	                 const region_t *reg_op, const region_t *reg_visible, void *args);
 
-	void *(*copy)(backend_t *base, const void *image_data, const region_t *reg_copy);
+	/// Create another instance of the `image_data`. All `image_op` calls on the
+	/// returned image should not affect the original image
+	void *(*copy)(backend_t *base, const void *image_data, const region_t *reg_visible);
 
 	// ===========         Hooks        ============
 	/// Let the backend hook into the event handling queue

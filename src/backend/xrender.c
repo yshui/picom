@@ -83,28 +83,42 @@ struct _xrender_image_data {
 	bool owned;
 };
 
-static void
-compose(backend_t *base, void *img_data, int dst_x, int dst_y, const region_t *reg_paint) {
+static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
+                    const region_t *reg_paint, const region_t *reg_visible) {
 	struct _xrender_data *xd = (void *)base;
 	struct _xrender_image_data *img = img_data;
 	int op = (img->has_alpha ? XCB_RENDER_PICT_OP_OVER : XCB_RENDER_PICT_OP_SRC);
 	auto alpha_pict = xd->alpha_pict[(int)(img->opacity * 255.0)];
+	region_t reg;
+	pixman_region32_init(&reg);
+	pixman_region32_intersect(&reg, (region_t *)reg_paint, (region_t *)reg_visible);
 
 	// Clip region of rendered_pict might be set during rendering, clear it to make
 	// sure we get everything into the buffer
 	x_clear_picture_clip_region(base->c, img->pict);
 
-	x_set_picture_clip_region(base->c, xd->back[xd->curr_back], 0, 0, reg_paint);
+	x_set_picture_clip_region(base->c, xd->back[xd->curr_back], 0, 0, &reg);
 	xcb_render_composite(base->c, op, img->pict, alpha_pict, xd->back[xd->curr_back],
 	                     0, 0, 0, 0, dst_x, dst_y, img->width, img->height);
+	pixman_region32_fini(&reg);
 }
 
-static bool blur(backend_t *backend_data, double opacity, const region_t *reg_paint) {
+static bool blur(backend_t *backend_data, double opacity, const region_t *reg_blur,
+                 const region_t *reg_visible) {
 	struct _xrender_data *xd = (void *)backend_data;
 	xcb_connection_t *c = xd->base.c;
-	const pixman_box32_t *reg = pixman_region32_extents((region_t *)reg_paint);
-	const int height = reg->y2 - reg->y1;
-	const int width = reg->x2 - reg->x1;
+	region_t reg_op;
+	pixman_region32_init(&reg_op);
+	pixman_region32_intersect(&reg_op, (region_t *)reg_blur, (region_t *)reg_visible);
+	if (!pixman_region32_not_empty(&reg_op)) {
+		pixman_region32_fini(&reg_op);
+		return true;
+	}
+
+	const pixman_box32_t *extent = pixman_region32_extents(&reg_op);
+	const int height = extent->y2 - extent->y1;
+	const int width = extent->x2 - extent->x1;
+	int src_x = extent->x1, src_y = extent->y1;
 	static const char *filter0 = "Nearest";        // The "null" filter
 	static const char *filter = "convolution";
 
@@ -116,26 +130,26 @@ static bool blur(backend_t *backend_data, double opacity, const region_t *reg_pa
 	    x_create_picture_with_visual(xd->base.c, xd->base.root, width, height,
 	                                 xd->default_visual, 0, NULL)};
 
-	region_t clip;
-	pixman_region32_init(&clip);
-	pixman_region32_copy(&clip, (region_t *)reg_paint);
-	pixman_region32_translate(&clip, -reg->x1, -reg->y1);
-
 	if (!tmp_picture[0] || !tmp_picture[1]) {
 		log_error("Failed to build intermediate Picture.");
+		pixman_region32_fini(&reg_op);
 		return false;
 	}
 
+	region_t clip;
+	pixman_region32_init(&clip);
+	pixman_region32_copy(&clip, &reg_op);
+	pixman_region32_translate(&clip, -src_x, -src_y);
 	x_set_picture_clip_region(c, tmp_picture[0], 0, 0, &clip);
 	x_set_picture_clip_region(c, tmp_picture[1], 0, 0, &clip);
+	pixman_region32_fini(&clip);
 
 	// The multipass blur implemented here is not correct, but this is what old
 	// compton did anyway. XXX
 	xcb_render_picture_t src_pict = xd->back[xd->curr_back], dst_pict = tmp_picture[0];
 	auto alpha_pict = xd->alpha_pict[(int)(opacity * 255)];
 	int current = 0;
-	int src_x = reg->x1, src_y = reg->y1;
-	x_set_picture_clip_region(c, src_pict, 0, 0, reg_paint);
+	x_set_picture_clip_region(c, src_pict, 0, 0, &reg_op);
 
 	// For more than 1 pass, we do:
 	//   back -(pass 1)-> tmp0 -(pass 2)-> tmp1 ...
@@ -162,7 +176,7 @@ static bool blur(backend_t *backend_data, double opacity, const region_t *reg_pa
 			// This is the last pass, and this is also not the first
 			xcb_render_composite(c, XCB_RENDER_PICT_OP_OVER, src_pict,
 			                     alpha_pict, xd->back[xd->curr_back], 0, 0, 0,
-			                     0, reg->x1, reg->y1, width, height);
+			                     0, src_x, src_y, width, height);
 		}
 
 		// reset filter
@@ -178,12 +192,13 @@ static bool blur(backend_t *backend_data, double opacity, const region_t *reg_pa
 	// There is only 1 pass
 	if (i == 1) {
 		xcb_render_composite(c, XCB_RENDER_PICT_OP_OVER, src_pict, alpha_pict,
-		                     xd->back[xd->curr_back], 0, 0, 0, 0, reg->x1,
-		                     reg->y1, width, height);
+		                     xd->back[xd->curr_back], 0, 0, 0, 0, extent->x1, extent->y1,
+		                     width, height);
 	}
 
 	xcb_render_free_picture(c, tmp_picture[0]);
 	xcb_render_free_picture(c, tmp_picture[1]);
+	pixman_region32_fini(&reg_op);
 	return true;
 }
 
@@ -321,16 +336,30 @@ static bool is_image_transparent(backend_t *bd, void *image) {
 	return img->has_alpha;
 }
 
-static void image_op(backend_t *base, enum image_operations op, void *image,
-                     const region_t *reg, void *arg) {
+static bool image_op(backend_t *base, enum image_operations op, void *image,
+                     const region_t *reg_op, const region_t *reg_visible, void *arg) {
 	struct _xrender_data *xd = (void *)base;
 	struct _xrender_image_data *img = image;
+	region_t reg;
 	double dim_opacity;
 	double alpha_multiplier;
+	if (op == IMAGE_OP_APPLY_ALPHA_ALL) {
+		alpha_multiplier = *(double *)arg;
+		img->opacity *= alpha_multiplier;
+		img->has_alpha = true;
+		return true;
+	}
+
+	pixman_region32_init(&reg);
+	pixman_region32_intersect(&reg, (region_t *)reg_op, (region_t *)reg_visible);
+	if (!pixman_region32_not_empty(&reg)) {
+		pixman_region32_fini(&reg);
+		return true;
+	}
+
 	switch (op) {
 	case IMAGE_OP_INVERT_COLOR:
-		assert(reg);
-		x_set_picture_clip_region(base->c, img->pict, 0, 0, reg);
+		x_set_picture_clip_region(base->c, img->pict, 0, 0, &reg);
 		if (img->has_alpha) {
 			auto tmp_pict =
 			    x_create_picture_with_visual(base->c, base->root, img->width,
@@ -355,8 +384,7 @@ static void image_op(backend_t *base, enum image_operations op, void *image,
 		}
 		break;
 	case IMAGE_OP_DIM:
-		assert(reg);
-		x_set_picture_clip_region(base->c, img->pict, 0, 0, reg);
+		x_set_picture_clip_region(base->c, img->pict, 0, 0, &reg);
 		dim_opacity = *(double *)arg;
 
 		xcb_render_color_t color = {
@@ -378,19 +406,17 @@ static void image_op(backend_t *base, enum image_operations op, void *image,
 		if (alpha_multiplier == 1) {
 			break;
 		}
-		if (!reg) {
-			img->opacity *= alpha_multiplier;
-			img->has_alpha = true;
-			break;
-		}
 
 		auto alpha_pict = xd->alpha_pict[(int)(alpha_multiplier * 255)];
-		x_set_picture_clip_region(base->c, img->pict, 0, 0, reg);
+		x_set_picture_clip_region(base->c, img->pict, 0, 0, &reg);
 		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_IN, img->pict, XCB_NONE,
 		                     alpha_pict, 0, 0, 0, 0, 0, 0, img->width, img->height);
 		img->has_alpha = true;
 		break;
+	case IMAGE_OP_APPLY_ALPHA_ALL: assert(false);
 	}
+	pixman_region32_fini(&reg);
+	return true;
 }
 
 static void *copy(backend_t *base, const void *image, const region_t *reg) {

@@ -137,6 +137,29 @@ void win_get_region_noframe_local(const win *w, region_t *res) {
 
 gen_by_val(win_get_region_noframe_local)
 
+void win_get_region_frame_local(const win *w, region_t *res) {
+  const margin_t extents = win_calc_frame_extents(w);
+  pixman_region32_fini(res);
+  pixman_region32_init_rects(res, (rect_t[]){
+    // top
+    {.x1 = 0, .y1 = 0, .x2 = w->g.width, .y2 = extents.top},
+    // bottom
+    {.x1 = 0, .y1 = w->g.height - extents.bottom, .x2 = w->g.width, .y2 = w->g.height},
+    //left
+    {.x1 = 0, .y1 = 0, .x2 = extents.left, .y2 = w->g.height},
+    // right
+    {.x1 = w->g.width - extents.right, .y1 = 0, .x2 = w->g.width, .y2 = w->g.height},
+  }, 4);
+
+  // limit the frame region to inside the window
+  region_t reg_win;
+  pixman_region32_init_rect(&reg_win, 0, 0, w->g.width, w->g.height);
+  pixman_region32_intersect(res, &reg_win, res);
+  pixman_region32_fini(&reg_win);
+}
+
+gen_by_val(win_get_region_frame_local)
+
 /**
  * Add a window to damaged area.
  *
@@ -1235,7 +1258,10 @@ void win_update_bounding_shape(session_t *ps, win *w) {
     free(rects);
 
     // Add border width because we are using a different origin.
-    // X thinks the top left of the inner window is the origin,
+    // X thinks the top left of the inner window is the origin
+    // (for the bounding shape, althought xcb_get_geometry thinks
+    //  the outer top left (outer means outside of the window
+    //  border) is the origin),
     // We think the top left of the border is the origin
     pixman_region32_translate(&br, w->g.border_width, w->g.border_width);
 
