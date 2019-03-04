@@ -2002,9 +2002,9 @@ redir_start(session_t *ps) {
 
       for (win *w = ps->list; w; w = w->next) {
         if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-          w->pixmap = xcb_generate_id(ps->c);
-          xcb_composite_name_window_pixmap(ps->c, w->id, w->pixmap);
-          w->win_image = ps->backend_data->ops->bind_pixmap(ps->backend_data, w->pixmap,
+          auto pixmap = xcb_generate_id(ps->c);
+          xcb_composite_name_window_pixmap(ps->c, w->id, pixmap);
+          w->win_image = ps->backend_data->ops->bind_pixmap(ps->backend_data, pixmap,
                                                             x_get_visual_info(ps->c, w->a.visual), true);
           if (w->shadow) {
             w->shadow_image =
@@ -2077,10 +2077,8 @@ redir_stop(session_t *ps) {
           if (w->shadow_image) {
             ps->backend_data->ops->release_image(ps->backend_data, w->shadow_image);
           }
-          xcb_free_pixmap(ps->c, w->pixmap);
           w->win_image = NULL;
           w->shadow_image = NULL;
-          w->pixmap = XCB_NONE;
         } else {
           assert(!w->win_image);
           assert(!w->shadow_image);

@@ -128,8 +128,6 @@ struct win {
   // TODO rethink reg_ignore
 
   // Core members
-  /// Named pixmap attached to this window
-  xcb_pixmap_t pixmap;
   /// ID of the top-level frame window.
   xcb_window_t id;
   /// The "mapped state" of this window, doesn't necessary
