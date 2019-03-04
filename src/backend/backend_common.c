@@ -148,7 +148,7 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 
 	// Fill part 3
 	for (int y = r; y < height + r; y++) {
-		memset(data + sstride * y + r, 255, width);
+		memset(data + sstride * y + r, 255 * opacity, width);
 	}
 
 	// Part 1
@@ -257,13 +257,13 @@ shadow_picture_err:
 }
 
 void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
-                                    const conv *kernel, double r, double g, double b) {
+                                    const conv *kernel, double r, double g, double b, double a) {
 	xcb_pixmap_t shadow_pixel = solid_picture(backend_data->c, backend_data->root,
 	                                          true, 1, r, g, b),
 	             shadow = XCB_NONE;
 	xcb_render_picture_t pict = XCB_NONE;
 
-	build_shadow(backend_data->c, backend_data->root, 1, width, height, kernel,
+	build_shadow(backend_data->c, backend_data->root, a, width, height, kernel,
 	             shadow_pixel, &shadow, &pict);
 
 	auto visual = x_get_visual_for_standard(backend_data->c, XCB_PICT_STANDARD_ARGB_32);

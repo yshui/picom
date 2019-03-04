@@ -2010,7 +2010,7 @@ redir_start(session_t *ps) {
               ps->backend_data->ops->render_shadow(ps->backend_data, w->widthb,
                                                    w->heightb, ps->gaussian_map,
                                                    ps->o.shadow_red, ps->o.shadow_green,
-                                                   ps->o.shadow_blue);
+                                                   ps->o.shadow_blue, ps->o.shadow_opacity);
           }
         }
       }

@@ -632,7 +632,7 @@ void win_on_win_size_change(session_t *ps, win *w) {
         w->shadow_image = ps->backend_data->ops->render_shadow(ps->backend_data, w->widthb,
                                                                w->heightb, ps->gaussian_map,
                                                                ps->o.shadow_red, ps->o.shadow_green,
-                                                               ps->o.shadow_blue);
+                                                               ps->o.shadow_blue, ps->o.shadow_opacity);
       }
     } else {
       assert(w->state == WSTATE_UNMAPPED);
@@ -1270,7 +1270,7 @@ void win_update_bounding_shape(session_t *ps, win *w) {
         w->shadow_image = ps->backend_data->ops->render_shadow(ps->backend_data, w->widthb,
                                                                w->heightb, ps->gaussian_map,
                                                                ps->o.shadow_red, ps->o.shadow_green,
-                                                               ps->o.shadow_blue);
+                                                               ps->o.shadow_blue, ps->o.shadow_opacity);
       }
     }
   } else {
@@ -1661,7 +1661,7 @@ void map_win(session_t *ps, win *w) {
         ps->backend_data->ops->render_shadow(ps->backend_data, w->widthb,
                                              w->heightb, ps->gaussian_map,
                                              ps->o.shadow_red, ps->o.shadow_green,
-                                             ps->o.shadow_blue);
+                                             ps->o.shadow_blue, ps->o.shadow_opacity);
     }
   }
   log_debug("Window %#010x has opacity %f, opacity target is %f", w->id, w->opacity, w->opacity_tgt);

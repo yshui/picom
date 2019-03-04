@@ -32,4 +32,4 @@ bool default_is_win_transparent(void *, win *, void *);
 bool default_is_frame_transparent(void *, win *, void *);
 
 void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
-                                    const conv *kernel, double r, double g, double b);
+                                    const conv *kernel, double r, double g, double b, double a);

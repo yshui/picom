@@ -98,7 +98,7 @@ struct backend_operations {
 
 	/// Create a shadow image based on the parameters
 	void *(*render_shadow)(backend_t *backend_data, int width, int height,
-	                       const conv *kernel, double r, double g, double b);
+	                       const conv *kernel, double r, double g, double b, double a);
 
 	// ============ Resource management ===========
 
