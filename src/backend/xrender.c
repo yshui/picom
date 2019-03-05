@@ -260,18 +260,6 @@ static void deinit(backend_t *backend_data) {
 	free(xd);
 }
 
-static void prepare(backend_t *base, const region_t *reg_paint) {
-	struct _xrender_data *xd = (void *)base;
-
-	// Paint the root pixmap (i.e. wallpaper)
-	// Limit the paint area
-	x_set_picture_clip_region(base->c, xd->back[xd->curr_back], 0, 0, reg_paint);
-
-	xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC, xd->root_pict, XCB_NONE,
-	                     xd->back[xd->curr_back], 0, 0, 0, 0, 0, 0, xd->target_width,
-	                     xd->target_height);
-}
-
 static void present(backend_t *base) {
 	struct _xrender_data *xd = (void *)base;
 
@@ -457,7 +445,6 @@ static struct backend_operations xrender_ops = {
     .deinit = deinit,
     .blur = blur,
     .present = present,
-    .prepare = prepare,
     .compose = compose,
     .bind_pixmap = bind_pixmap,
     .release_image = release_image,

@@ -71,7 +71,7 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 	// TODO Bind root pixmap
 
 	if (ps->backend_data->ops->prepare) {
-		ps->backend_data->ops->prepare(ps->backend_data, &reg_visible);
+		ps->backend_data->ops->prepare(ps->backend_data, &reg_damage);
 	}
 
 	if (ps->root_image) {

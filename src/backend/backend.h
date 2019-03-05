@@ -67,8 +67,8 @@ struct backend_operations {
 	/// Usually the backend should clear the buffer, or paint a background
 	/// on the buffer (usually the wallpaper).
 	///
-	/// Optional?
-	void (*prepare)(backend_t *backend_data, const region_t *reg_paint);
+	/// Optional
+	void (*prepare)(backend_t *backend_data, const region_t *reg_damage);
 
 	/**
 	 * Paint the content of an image onto the (possibly buffered)
