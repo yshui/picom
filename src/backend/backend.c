@@ -2,7 +2,7 @@
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #include <xcb/xcb.h>
 
-#include "backend.h"
+#include "backend/backend.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
@@ -17,10 +17,17 @@ backend_init_fn backend_list[NUM_BKEND] = {
 #endif
 };
 
-region_t get_damage(session_t *ps) {
+/**
+ * @param all_damage if true ignore damage and repaint the whole screen
+ */
+region_t get_damage(session_t *ps, bool all_damage) {
 	region_t region;
 	auto buffer_age_fn = ps->backend_data->ops->buffer_age;
 	int buffer_age = buffer_age_fn ? buffer_age_fn(ps->backend_data) : -1;
+
+	if (all_damage) {
+		buffer_age = -1;
+	}
 
 	pixman_region32_init(&region);
 	if (buffer_age == -1 || buffer_age > ps->ndamage) {
@@ -42,7 +49,7 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 	// part of the image we want to reuse
 	region_t reg_damage;
 	if (!ignore_damage) {
-		reg_damage = get_damage(ps);
+		reg_damage = get_damage(ps, ps->o.monitor_repaint);
 	} else {
 		pixman_region32_init(&reg_damage);
 		pixman_region32_copy(&reg_damage, &ps->screen_reg);
@@ -149,7 +156,8 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 				ps->backend_data->ops->blur(ps->backend_data, w->opacity,
 				                            &reg_paint, &reg_visible);
 			} else if (frame_transparent && ps->o.blur_background_frame) {
-				// Window itself is solid, we only need to blur the frame region
+				// Window itself is solid, we only need to blur the frame
+				// region
 				auto reg_blur = win_get_region_frame_local_by_val(w);
 				pixman_region32_translate(&reg_blur, w->g.x, w->g.y);
 				// make sure reg_blur \in reg_damage
@@ -165,8 +173,8 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 			                               w->g.y, &reg_paint, &reg_visible);
 		} else {
 			// For window image processing, we don't need to limit the process
-			// region to damage, since the window image data is independent from
-			// the target image data, which we want to protect.
+			// region to damage, since the window image data is independent
+			// from the target image data, which we want to protect.
 
 			// The bounding shape, in window local coordinates
 			region_t reg_bound_local;
@@ -183,8 +191,9 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 			pixman_region32_intersect(&reg_visible_local, &reg_visible, &reg_damage);
 			pixman_region32_translate(&reg_visible_local, -w->g.x, -w->g.y);
 			// Data outside of the bounding shape won't be visible, but it is
-			// not necessary to limit the image operations to the bounding shape
-			// yet. So pass that as the visible region, not the clip region.
+			// not necessary to limit the image operations to the bounding
+			// shape yet. So pass that as the visible region, not the clip
+			// region.
 			pixman_region32_intersect(&reg_visible_local, &reg_visible_local,
 			                          &reg_bound_local);
 
@@ -230,6 +239,15 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 		pixman_region32_fini(&reg_paint);
 	}
 	pixman_region32_fini(&reg_damage);
+
+	if (ps->o.monitor_repaint) {
+		reg_damage = get_damage(ps, false);
+		auto extent = pixman_region32_extents(&reg_damage);
+		ps->backend_data->ops->fill_rectangle(
+		    ps->backend_data, 0.5, 0, 0, 0.5, extent->x1, extent->y1,
+		    extent->x2 - extent->x1, extent->y2 - extent->y1, &reg_damage);
+		pixman_region32_fini(&reg_damage);
+	}
 
 	// Move the head of the damage ring
 	ps->damage = ps->damage - 1;

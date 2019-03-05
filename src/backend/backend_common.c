@@ -267,7 +267,8 @@ void *default_backend_render_shadow(backend_t *backend_data, int width, int heig
 	             shadow_pixel, &shadow, &pict);
 
 	auto visual = x_get_visual_for_standard(backend_data->c, XCB_PICT_STANDARD_ARGB_32);
-	void *ret = backend_data->ops->bind_pixmap(backend_data, shadow, x_get_visual_info(backend_data->c, visual), true);
+	void *ret = backend_data->ops->bind_pixmap(
+	    backend_data, shadow, x_get_visual_info(backend_data->c, visual), true);
 	xcb_render_free_picture(backend_data->c, pict);
 	return ret;
 }

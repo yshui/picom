@@ -83,6 +83,10 @@ struct backend_operations {
 	void (*compose)(backend_t *backend_data, void *image_data, int dst_x, int dst_y,
 	                const region_t *reg_paint, const region_t *reg_visible);
 
+	/// Fill rectangle of target, mostly for debug purposes, optional.
+	void (*fill_rectangle)(backend_t *backend_data, double r, double g, double b, double a,
+			       int x, int y, int width, int height, const region_t *clip);
+
 	/// Blur a given region on of the target.
 	bool (*blur)(backend_t *backend_data, double opacity, const region_t *reg_blur,
 	             const region_t *reg_visible) attr_nonnull(1, 3, 4);
