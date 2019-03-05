@@ -2426,7 +2426,6 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
     .composite_event = 0,
     .composite_error = 0,
     .composite_opcode = 0,
-    .has_name_pixmap = false,
     .shape_exists = false,
     .shape_event = 0,
     .shape_error = 0,
@@ -2541,8 +2540,9 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
           xcb_composite_query_version(ps->c, XCB_COMPOSITE_MAJOR_VERSION, XCB_COMPOSITE_MINOR_VERSION),
           NULL);
 
-    if (reply && (reply->major_version > 0 || reply->minor_version >= 2)) {
-      ps->has_name_pixmap = true;
+    if (!reply || (reply->major_version == 0 && reply->minor_version < 2)) {
+      log_fatal("Your X server doesn't have Composite >= 0.2 support, compton cannot run.");
+      exit(1);
     }
     free(reply);
   }

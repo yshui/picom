@@ -12,7 +12,6 @@ void print_diagnostics(session_t *ps, const char *config_file) {
 	printf("**Version:** " COMPTON_VERSION "\n");
 	//printf("**CFLAGS:** %s\n", "??");
 	printf("\n### Extensions:\n\n");
-	printf("* Name Pixmap: %s\n", ps->has_name_pixmap ? "Yes" : "No");
 	printf("* Shape: %s\n", ps->shape_exists ? "Yes" : "No");
 	printf("* XRandR: %s\n", ps->randr_exists ? "Yes" : "No");
 	printf("* Present: %s\n", ps->present_exists ? "Present" : "Not Present");

@@ -389,12 +389,8 @@ void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 	}
 
 	auto wd = ccalloc(1, struct _glx_win_data);
-	if (ps->has_name_pixmap) {
-		wd->pixmap = xcb_generate_id(ps->c);
-		xcb_composite_name_window_pixmap(ps->c, w->id, wd->pixmap);
-	} else {
-		wd->pixmap = w->id;
-	}
+	wd->pixmap = xcb_generate_id(ps->c);
+	xcb_composite_name_window_pixmap(ps->c, w->id, wd->pixmap);
 	if (!wd->pixmap) {
 		log_error("Failed to get pixmap for window %#010x", w->id);
 		goto err;

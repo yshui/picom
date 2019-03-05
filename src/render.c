@@ -234,15 +234,19 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
  */
 void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	// Fetch Pixmap
-	if (!w->paint.pixmap && ps->has_name_pixmap) {
+	if (!w->paint.pixmap) {
 		w->paint.pixmap = xcb_generate_id(ps->c);
 		set_ignore_cookie(
 		    ps, xcb_composite_name_window_pixmap(ps->c, w->id, w->paint.pixmap));
 	}
 
 	xcb_drawable_t draw = w->paint.pixmap;
-	if (!draw)
-		draw = w->id;
+	if (!draw) {
+		log_error("Failed to get pixmap from window %#010x (%s), window won't be "
+		          "visible",
+		          w->id, w->name);
+		return;
+	}
 
 	// XRender: Build picture
 	if (bkend_use_xrender(ps) && !w->paint.pict) {

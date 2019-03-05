@@ -457,9 +457,6 @@ typedef struct session {
   int composite_error;
   /// Major opcode for X Composite extension.
   int composite_opcode;
-  /// Whether X Composite NameWindowPixmap is available. Aka if X
-  /// Composite version >= 0.2.
-  bool has_name_pixmap;
   /// Whether X Shape extension exists.
   bool shape_exists;
   /// Event base number for X Shape extension.
