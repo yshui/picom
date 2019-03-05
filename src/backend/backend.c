@@ -229,6 +229,14 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 		pixman_region32_fini(&reg_bound);
 		pixman_region32_fini(&reg_paint);
 	}
+	pixman_region32_fini(&reg_damage);
+
+	// Move the head of the damage ring
+	ps->damage = ps->damage - 1;
+	if (ps->damage < ps->damage_ring) {
+		ps->damage = ps->damage_ring + ps->ndamage - 1;
+	}
+	pixman_region32_clear(ps->damage);
 
 	if (ps->backend_data->ops->present) {
 		// Present the rendered scene
