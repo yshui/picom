@@ -804,8 +804,9 @@ restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 /// Handle configure event of a root window
 void configure_root(session_t *ps, int width, int height) {
   // On root window changes
-  bool has_root_change = ps->backend_data->ops->root_change != NULL;
+  bool has_root_change = false;
   if (ps->o.experimental_backends) {
+    has_root_change = ps->backend_data->ops->root_change != NULL;
     if (!has_root_change) {
       // deinit/reinit backend if the backend cannot handle root change
       ps->backend_data->ops->deinit(ps->backend_data);
