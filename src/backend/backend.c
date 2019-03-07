@@ -10,10 +10,15 @@
 #include "region.h"
 #include "win.h"
 
-backend_init_fn backend_list[NUM_BKEND] = {
-    [BKEND_XRENDER] = backend_xrender_init,
+extern struct backend_operations xrender_ops;
 #ifdef CONFIG_OPENGL
-    [BKEND_GLX] = backend_glx_init,
+extern struct backend_operations glx_ops;
+#endif
+
+struct backend_operations *backend_list[NUM_BKEND] = {
+    [BKEND_XRENDER] = &xrender_ops,
+#ifdef CONFIG_OPENGL
+    [BKEND_GLX] = &glx_ops,
 #endif
 };
 
@@ -240,7 +245,7 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 	}
 	pixman_region32_fini(&reg_damage);
 
-	if (ps->o.monitor_repaint && ps->backend_data->ops->fill_rectangle) {
+	if (ps->o.monitor_repaint) {
 		reg_damage = get_damage(ps, false);
 		auto extent = pixman_region32_extents(&reg_damage);
 		ps->backend_data->ops->fill_rectangle(

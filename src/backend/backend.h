@@ -43,6 +43,7 @@ struct backend_operations {
 	///    1) if ps->overlay is not XCB_NONE, use that
 	///    2) use ps->root otherwise
 	/// XXX make the target window a parameter
+	backend_t *(*init)(session_t *) attr_nonnull(1);
 	void (*deinit)(backend_t *backend_data) __attribute__((nonnull(1)));
 
 	/// Called when rendering will be stopped for an unknown amount of
@@ -172,11 +173,9 @@ struct backend_operations {
 	/// Let the backend hook into the event handling queue
 };
 
-typedef backend_t *(*backend_init_fn)(session_t *ps) __attribute__((nonnull(1)));
+typedef backend_t *(*backend_init_fn)(session_t *ps) attr_nonnull(1);
 
-extern backend_t *backend_xrender_init(session_t *ps);
-extern backend_t *backend_glx_init(session_t *ps);
-extern backend_init_fn backend_list[];
+extern struct backend_operations *backend_list[];
 
 bool default_is_win_transparent(void *, win *, void *);
 bool default_is_frame_transparent(void *, win *, void *);

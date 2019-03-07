@@ -838,7 +838,8 @@ void configure_root(session_t *ps, int width, int height) {
     if (has_root_change) {
       ps->backend_data->ops->root_change(ps->backend_data, ps);
     } else {
-      ps->backend_data = backend_list[ps->o.backend](ps);
+      ps->backend_data = backend_list[ps->o.backend]->init(ps);
+      ps->backend_data->ops = backend_list[ps->o.backend];
       if (!ps->backend_data) {
         log_fatal("Failed to re-initialize backend after root change, aborting...");
         ps->quit = true;
@@ -1991,7 +1992,8 @@ redir_start(session_t *ps) {
 
     if (ps->o.experimental_backends) {
       // Reinitialize win_data
-      ps->backend_data = backend_list[ps->o.backend](ps);
+      ps->backend_data = backend_list[ps->o.backend]->init(ps);
+      ps->backend_data->ops = backend_list[ps->o.backend];
       if (!ps->backend_data) {
         log_fatal("Failed to initialize backend, aborting...");
         ps->quit = true;
@@ -2718,6 +2720,13 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
     if (glx_logger) {
       log_info("Enabling gl string marker");
       log_add_target_tls(glx_logger);
+    }
+  }
+
+  if (ps->o.experimental_backends) {
+    if (ps->o.monitor_repaint && !backend_list[ps->o.backend]->fill_rectangle) {
+      log_warn("--monitor-repaint is not supported by the backend, disabling");
+      ps->o.monitor_repaint = false;
     }
   }
 

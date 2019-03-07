@@ -453,31 +453,11 @@ static void *copy(backend_t *base, const void *image, const region_t *reg) {
 	return new_img;
 }
 
-static struct backend_operations xrender_ops = {
-    .deinit = deinit,
-    .blur = blur,
-    .present = present,
-    .compose = compose,
-    .fill_rectangle = fill_rectangle,
-    .bind_pixmap = bind_pixmap,
-    .release_image = release_image,
-    .render_shadow = default_backend_render_shadow,
-    //.prepare_win = prepare_win,
-    //.release_win = release_win,
-    .is_image_transparent = is_image_transparent,
-    .buffer_age = buffer_age,
-    .max_buffer_age = 2,
-
-    .image_op = image_op,
-    .copy = copy,
-};
-
 backend_t *backend_xrender_init(session_t *ps) {
 	auto xd = ccalloc(1, struct _xrender_data);
 
 	xd->base.c = ps->c;
 	xd->base.root = ps->root;
-	xd->base.ops = &xrender_ops;
 
 	for (int i = 0; i < 256; ++i) {
 		double o = (double)i / 255.0;
@@ -566,5 +546,25 @@ err:
 	deinit(&xd->base);
 	return NULL;
 }
+
+struct backend_operations xrender_ops = {
+    .init = backend_xrender_init,
+    .deinit = deinit,
+    .blur = blur,
+    .present = present,
+    .compose = compose,
+    .fill_rectangle = fill_rectangle,
+    .bind_pixmap = bind_pixmap,
+    .release_image = release_image,
+    .render_shadow = default_backend_render_shadow,
+    //.prepare_win = prepare_win,
+    //.release_win = release_win,
+    .is_image_transparent = is_image_transparent,
+    .buffer_age = buffer_age,
+    .max_buffer_age = 2,
+
+    .image_op = image_op,
+    .copy = copy,
+};
 
 // vim: set noet sw=8 ts=8:

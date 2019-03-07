@@ -532,6 +532,8 @@ void glx_compose(void *backend_data, session_t *ps, win *w, void *win_data,
 	pixman_region32_fini(&region_yflipped);
 }
 
+struct backend_operations glx_ops;
+
 /* backend_info_t glx_backend = { */
 /*     .init = glx_init, */
 /*     .deinit = glx_deinit, */
