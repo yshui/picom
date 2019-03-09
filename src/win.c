@@ -640,7 +640,7 @@ void win_on_win_size_change(session_t *ps, win *w) {
   w->shadow_height = w->heightb + ps->o.shadow_radius * 2;
   w->flags |= WFLAG_SIZE_CHANGE;
   // Invalidate the shadow we built
-  if (ps->o.experimental_backends) {
+  if (ps->o.experimental_backends && ps->redirected) {
     if (w->state == WSTATE_MAPPED ||
         w->state == WSTATE_MAPPING ||
         w->state == WSTATE_FADING) {
