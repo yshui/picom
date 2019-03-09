@@ -39,6 +39,8 @@
 	}                                                                                \
 	while (0)
 
+#define GLSL(version, ...) "#version " #version "\n" #__VA_ARGS__
+
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str) {
 	log_trace("===\n%s\n===", shader_str);
 
@@ -366,22 +368,6 @@ bool gl_dim_reg(session_t *ps, int dx, int dy, int width, int height, float z,
 	return true;
 }
 
-static inline int gl_gen_texture(GLenum tex_tgt, int width, int height, GLuint *tex) {
-	glGenTextures(1, tex);
-	if (!*tex)
-		return -1;
-	glEnable(tex_tgt);
-	glBindTexture(tex_tgt, *tex);
-	glTexParameteri(tex_tgt, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(tex_tgt, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(tex_tgt, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexImage2D(tex_tgt, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-	glBindTexture(tex_tgt, 0);
-
-	return 0;
-}
-
 #if 0
 /**
  * Blur contents in a particular region.
@@ -606,8 +592,8 @@ GLuint glGetUniformLocationChecked(GLuint p, const char *name) {
 /**
  * Load a GLSL main program from shader strings.
  */
-int gl_win_shader_from_string(session_t *ps, const char *vshader_str,
-                              const char *fshader_str, gl_win_shader_t *ret) {
+static int gl_win_shader_from_string(const char *vshader_str, const char *fshader_str,
+                                     gl_win_shader_t *ret) {
 	// Build program
 	ret->prog = gl_create_program_from_str(vshader_str, fshader_str);
 	if (!ret->prog) {
@@ -798,6 +784,22 @@ err:
 }
 #endif
 
+// clang-format off
+const char *win_shader_glsl = GLSL(110,
+	uniform float opacity;
+	uniform bool invert_color;
+	uniform sampler2D tex;
+
+	void main() {
+		vec4 c = texture2D(tex, gl_TexCoord[0].xy);
+		if (invert_color)
+			c = vec4(c.aaa - c.rgb, c.a);
+		c *= opacity;
+		gl_FragColor = c;
+	}
+);
+// clang-format on
+
 bool gl_init(struct gl_data *gd, session_t *ps) {
 	// Initialize GLX data structure
 	for (int i = 0; i < MAX_BLUR_PASS; ++i) {
@@ -846,6 +848,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 
 	// Initialize blur filters
 	// gl_create_blur_filters(ps, gd->blur_shader, &gd->cap);
+	gl_win_shader_from_string(NULL, win_shader_glsl, &gd->win_shader);
 
 	return true;
 }
@@ -881,6 +884,7 @@ GLuint gl_new_texture(GLenum target) {
 		return 0;
 	}
 
+	glEnable(target);
 	glBindTexture(target, texture);
 	glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -894,14 +898,16 @@ GLuint gl_new_texture(GLenum target) {
 /// stub for backend_operations::image_op
 bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
                  const region_t *reg_op, const region_t *reg_visible, void *arg) {
+	struct gl_texture *tex = image_data;
+	switch (op) {
+	case IMAGE_OP_INVERT_COLOR_ALL: tex->color_inverted = true; break;
+	case IMAGE_OP_DIM_ALL: log_warn("IMAGE_OP_DIM_ALL not implemented yet"); break;
+	case IMAGE_OP_APPLY_ALPHA_ALL: tex->opacity *= *(double *)arg; break;
+	case IMAGE_OP_APPLY_ALPHA:
+		log_warn("IMAGE_OP_APPLY_ALPHA not implemented yet");
+		break;
+	}
 	return true;
-}
-
-/// stub for backend_operations::copy
-void *gl_copy(backend_t *base, const void *image_data, const region_t *reg_visible) {
-	struct gl_texture *t = (void *)image_data;
-	t->refcount++;
-	return (void *)image_data;
 }
 
 bool gl_is_image_transparent(backend_t *base, void *image_data) {

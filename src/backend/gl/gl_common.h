@@ -43,7 +43,7 @@ typedef struct {
 /// @brief Wrapper of a binded GLX texture.
 typedef struct gl_texture {
 	double opacity;
-	int refcount;
+	int *refcount;
 	GLuint texture;
 	GLenum target;
 	unsigned width;
@@ -89,12 +89,7 @@ GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_
 void gl_compose(backend_t *, void *ptex, int dst_x, int dst_y, const region_t *reg_tgt,
                 const region_t *reg_visible);
 
-bool gl_load_prog_main(session_t *ps, const char *vshader_str, const char *fshader_str,
-                       gl_win_shader_t *pprogram);
-
-unsigned char *gl_take_screenshot(session_t *ps, int *out_length);
 void gl_resize(struct gl_data *, int width, int height);
-//bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_cap_t *cap);
 
 GLuint glGetUniformLocationChecked(GLuint p, const char *name);
 
@@ -105,8 +100,6 @@ GLuint gl_new_texture(GLenum target);
 
 bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
                  const region_t *reg_op, const region_t *reg_visible, void *arg);
-
-void *gl_copy(backend_t *base, const void *image_data, const region_t *reg_visible);
 
 bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
              const region_t *reg_visible);

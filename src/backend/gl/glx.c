@@ -161,8 +161,8 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 void glx_release_image(backend_t *base, void *image_data) {
 	struct _glx_image_data *wd = image_data;
 	struct _glx_data *gd = (void *)base;
-	wd->texture.refcount--;
-	if (wd->texture.refcount != 0) {
+	(*wd->texture.refcount)--;
+	if (*wd->texture.refcount != 0) {
 		return;
 	}
 	// Release binding
@@ -300,8 +300,8 @@ end:
 	return &gd->gl.base;
 }
 
-static void *glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap,
-                             struct xvisual_info fmt, bool owned) {
+static void *
+glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool owned) {
 	struct _glx_data *gd = (void *)base;
 	// Retrieve pixmap parameters, if they aren't provided
 	if (fmt.visual_depth > OPENGL_MAX_DEPTH) {
@@ -370,7 +370,8 @@ static void *glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap,
 	wd->texture.depth = fmt.visual_depth;
 	wd->texture.color_inverted = false;
 	wd->texture.has_alpha = fmt.alpha_size != 0;
-	wd->texture.refcount = 1;
+	wd->texture.refcount = ccalloc(1, int);
+	*wd->texture.refcount = 1;
 	glBindTexture(wd->texture.target, wd->texture.texture);
 	glXBindTexImageEXT(gd->display, wd->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
 	glBindTexture(wd->texture.target, 0);
@@ -404,6 +405,14 @@ static int glx_buffer_age(backend_t *base) {
 	return (int)val ?: -1;
 }
 
+static void *glx_copy(backend_t *base, const void *image_data, const region_t *reg_visible) {
+	const struct _glx_image_data *img = image_data;
+	auto new_img = ccalloc(1, struct _glx_image_data);
+	*new_img = *img;
+	(*new_img->texture.refcount)++;
+	return new_img;
+}
+
 struct backend_operations glx_ops = {
     .init = glx_init,
     .deinit = glx_deinit,
@@ -411,13 +420,13 @@ struct backend_operations glx_ops = {
     .release_image = glx_release_image,
     .compose = gl_compose,
     .image_op = gl_image_op,
-    .copy = gl_copy,
+    .copy = glx_copy,
     .blur = gl_blur,
     .is_image_transparent = gl_is_image_transparent,
     .present = glx_present,
     .buffer_age = glx_buffer_age,
     .render_shadow = default_backend_render_shadow,
-    .max_buffer_age = 5, // Why?
+    .max_buffer_age = 5,        // Why?
 };
 
 /**
