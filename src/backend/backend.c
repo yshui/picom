@@ -203,14 +203,12 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 			                          &reg_bound_local);
 
 			// A region covers the entire window
-			region_t reg_win;
-			pixman_region32_init_rect(&reg_win, 0, 0, w->g.width, w->g.height);
 			auto new_img = ps->backend_data->ops->copy(
 			    ps->backend_data, w->win_image, &reg_visible_local);
 			if (w->invert_color) {
 				ps->backend_data->ops->image_op(
-				    ps->backend_data, IMAGE_OP_INVERT_COLOR, new_img,
-				    &reg_win, &reg_visible_local, NULL);
+				    ps->backend_data, IMAGE_OP_INVERT_COLOR_ALL, new_img,
+				    NULL, &reg_visible_local, NULL);
 			}
 			if (w->dim) {
 				double dim_opacity = ps->o.inactive_dim;
@@ -218,7 +216,7 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 					dim_opacity *= w->opacity;
 				}
 				ps->backend_data->ops->image_op(
-				    ps->backend_data, IMAGE_OP_DIM, new_img, &reg_win,
+				    ps->backend_data, IMAGE_OP_DIM_ALL, new_img, NULL,
 				    &reg_visible_local, (double[]){dim_opacity});
 			}
 			if (w->frame_opacity != 1) {
@@ -236,7 +234,6 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 			ps->backend_data->ops->compose(ps->backend_data, new_img, w->g.x,
 			                               w->g.y, &reg_paint, &reg_visible);
 			ps->backend_data->ops->release_image(ps->backend_data, new_img);
-			pixman_region32_fini(&reg_win);
 			pixman_region32_fini(&reg_visible_local);
 			pixman_region32_fini(&reg_bound_local);
 		}

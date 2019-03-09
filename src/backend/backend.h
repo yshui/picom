@@ -23,10 +23,10 @@ typedef struct backend_base {
 } backend_t;
 
 enum image_operations {
-	// Invert the color of the image
-	IMAGE_OP_INVERT_COLOR,
-	// Dim the image, argument is the percentage
-	IMAGE_OP_DIM,
+	// Invert the color of the entire image, `reg_op` ignored
+	IMAGE_OP_INVERT_COLOR_ALL,
+	// Dim the entire image, argument is the percentage. `reg_op` ignored
+	IMAGE_OP_DIM_ALL,
 	// Multiply the alpha channel by the argument
 	IMAGE_OP_APPLY_ALPHA,
 	// Same as APPLY_ALPHA, but `reg_op` is ignored and the operation applies to the

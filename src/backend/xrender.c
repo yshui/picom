@@ -351,15 +351,10 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 	}
 
 	pixman_region32_init(&reg);
-	pixman_region32_intersect(&reg, (region_t *)reg_op, (region_t *)reg_visible);
-	if (!pixman_region32_not_empty(&reg)) {
-		pixman_region32_fini(&reg);
-		return true;
-	}
 
 	switch (op) {
-	case IMAGE_OP_INVERT_COLOR:
-		x_set_picture_clip_region(base->c, img->pict, 0, 0, &reg);
+	case IMAGE_OP_INVERT_COLOR_ALL:
+		x_set_picture_clip_region(base->c, img->pict, 0, 0, reg_visible);
 		if (img->has_alpha) {
 			auto tmp_pict =
 			    x_create_picture_with_visual(base->c, base->root, img->width,
@@ -383,8 +378,8 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 			                     0, 0, 0, 0, img->width, img->height);
 		}
 		break;
-	case IMAGE_OP_DIM:
-		x_set_picture_clip_region(base->c, img->pict, 0, 0, &reg);
+	case IMAGE_OP_DIM_ALL:
+		x_set_picture_clip_region(base->c, img->pict, 0, 0, reg_visible);
 		dim_opacity = *(double *)arg;
 
 		xcb_render_color_t color = {
@@ -402,6 +397,12 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 		                           color, 1, &rect);
 		break;
 	case IMAGE_OP_APPLY_ALPHA:
+		assert(reg_op);
+		pixman_region32_intersect(&reg, (region_t *)reg_op, (region_t *)reg_visible);
+		if (!pixman_region32_not_empty(&reg)) {
+			break;
+		}
+
 		alpha_multiplier = *(double *)arg;
 		if (alpha_multiplier == 1) {
 			break;
