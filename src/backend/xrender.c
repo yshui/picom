@@ -76,6 +76,8 @@ struct _xrender_image_data {
 	// A Picture links to the Pixmap
 	xcb_render_picture_t pict;
 	long width, height;
+	// The effective size of the image
+	long ewidth, eheight;
 	bool has_alpha;
 	double opacity;
 	xcb_visualid_t visual;
@@ -99,7 +101,7 @@ static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
 
 	x_set_picture_clip_region(base->c, xd->back[xd->curr_back], 0, 0, &reg);
 	xcb_render_composite(base->c, op, img->pict, alpha_pict, xd->back[xd->curr_back],
-	                     0, 0, 0, 0, dst_x, dst_y, img->width, img->height);
+	                     0, 0, 0, 0, dst_x, dst_y, img->ewidth, img->eheight);
 	pixman_region32_fini(&reg);
 }
 
@@ -226,8 +228,8 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 
 	auto img = ccalloc(1, struct _xrender_image_data);
 	img->depth = fmt.visual_depth;
-	img->width = r->width;
-	img->height = r->height;
+	img->width = img->ewidth = r->width;
+	img->height = img->eheight = r->height;
 	img->pixmap = pixmap;
 	img->opacity = 1;
 	img->has_alpha = fmt.alpha_size != 0;
@@ -343,6 +345,7 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 	region_t reg;
 	double dim_opacity;
 	double alpha_multiplier;
+	int *iargs = arg;
 	if (op == IMAGE_OP_APPLY_ALPHA_ALL) {
 		alpha_multiplier = *(double *)arg;
 		img->opacity *= alpha_multiplier;
@@ -413,6 +416,10 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_IN, img->pict, XCB_NONE,
 		                     alpha_pict, 0, 0, 0, 0, 0, 0, img->width, img->height);
 		img->has_alpha = true;
+		break;
+	case IMAGE_OP_RESIZE_TILE:
+		img->ewidth = iargs[0];
+		img->eheight = iargs[1];
 		break;
 	case IMAGE_OP_APPLY_ALPHA_ALL: assert(false);
 	}

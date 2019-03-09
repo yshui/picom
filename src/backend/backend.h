@@ -32,6 +32,11 @@ enum image_operations {
 	// Same as APPLY_ALPHA, but `reg_op` is ignored and the operation applies to the
 	// full image
 	IMAGE_OP_APPLY_ALPHA_ALL,
+	// Change the effective size of the image, without touching the backing image
+	// itself. When the image is used, the backing image should be tiled to fill its
+	// effective size. `reg_op` and `reg_visibile` is ignored. `arg` is two integers,
+	// width and height, in that order.
+	IMAGE_OP_RESIZE_TILE,
 };
 
 struct backend_operations {

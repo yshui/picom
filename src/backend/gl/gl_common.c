@@ -267,6 +267,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 
 	// Painting
 	int nrects;
+
 	const rect_t *rects;
 	rects = pixman_region32_rectangles((region_t *)reg_tgt, &nrects);
 
@@ -291,7 +292,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		}
 
 		if (ptex->target == GL_TEXTURE_2D) {
-			// GL_TEXTURE_2D coordinates are 0-1
+			// GL_TEXTURE_2D coordinates are normalized
 			texture_x1 /= ptex->width;
 			texture_y1 /= ptex->height;
 			texture_x2 /= ptex->width;
@@ -899,6 +900,7 @@ GLuint gl_new_texture(GLenum target) {
 bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
                  const region_t *reg_op, const region_t *reg_visible, void *arg) {
 	struct gl_texture *tex = image_data;
+	int *iargs = arg;
 	switch (op) {
 	case IMAGE_OP_INVERT_COLOR_ALL: tex->color_inverted = true; break;
 	case IMAGE_OP_DIM_ALL: log_warn("IMAGE_OP_DIM_ALL not implemented yet"); break;
@@ -906,7 +908,13 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 	case IMAGE_OP_APPLY_ALPHA:
 		log_warn("IMAGE_OP_APPLY_ALPHA not implemented yet");
 		break;
+	case IMAGE_OP_RESIZE_TILE:
+		// texture is already set to repeat, so nothing else we need to do
+		tex->ewidth = iargs[0];
+		tex->eheight = iargs[1];
+		break;
 	}
+
 	return true;
 }
 

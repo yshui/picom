@@ -355,8 +355,8 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 
 	auto wd = ccalloc(1, struct _glx_image_data);
 	wd->pixmap = pixmap;
-	wd->texture.width = r->width;
-	wd->texture.height = r->height;
+	wd->texture.width = wd->texture.ewidth = r->width;
+	wd->texture.height = wd->texture.eheight = r->height;
 	free(r);
 
 	auto fbcfg = glx_find_fbconfig(gd->display, gd->screen, fmt);

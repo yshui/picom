@@ -951,6 +951,8 @@ root_damaged(session_t *ps) {
       ps->root_image =
         ps->backend_data->ops->bind_pixmap(ps->backend_data, pixmap,
                                            x_get_visual_info(ps->c, ps->vis), false);
+      ps->backend_data->ops->image_op(ps->backend_data, IMAGE_OP_RESIZE_TILE,
+          ps->root_image, NULL, NULL, (int[]){ps->root_width, ps->root_height});
     }
   }
 
@@ -2088,7 +2090,7 @@ redir_stop(session_t *ps) {
         if (ps->root_image) {
           ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
           ps->root_image = NULL;
-	}
+        }
       } else {
         free_paint(ps, &w->paint);
       }

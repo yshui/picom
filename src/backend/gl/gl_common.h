@@ -46,8 +46,9 @@ typedef struct gl_texture {
 	int *refcount;
 	GLuint texture;
 	GLenum target;
-	unsigned width;
-	unsigned height;
+	int width, height;
+	// The effective size of the texture
+	int ewidth, eheight;
 	unsigned depth;
 	bool y_inverted;
 	bool has_alpha;
