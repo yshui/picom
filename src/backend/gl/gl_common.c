@@ -888,8 +888,8 @@ GLuint gl_new_texture(GLenum target) {
 	glBindTexture(target, texture);
 	glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	glBindTexture(target, 0);
 
 	return texture;
