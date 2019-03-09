@@ -249,9 +249,6 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--glx-swap-method* undefined/exchange/copy/3/4/5/6/buffer-age::
 	GLX backend: GLX buffer swap method we assume. Could be `undefined` (0), `copy` (1), `exchange` (2), 3-6, or `buffer-age` (-1).  `undefined` is the slowest and the safest, and the default value. `copy` is fastest, but may fail on some drivers, 2-6 are gradually slower but safer (6 is still faster than 0). Usually, double buffer means 2, triple buffer means 3. `buffer-age` means auto-detect using 'GLX_EXT_buffer_age', supported by some drivers. Partially breaks `--resize-damage`. Defaults to `undefined`.
 
-*--glx-use-gpushader4*::
-	GLX backend: Use 'GL_EXT_gpu_shader4' for some optimization on blur GLSL code. My tests on GTX 670 show no noticeable effect.
-
 *--xrender-sync-fence*::
 	Use X Sync fence to sync clients' draw calls, to make sure all draw calls are finished before compton starts drawing. Needed on nvidia-drivers with GLX backend for some users.
 

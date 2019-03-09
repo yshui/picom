@@ -715,7 +715,11 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 				exit(1);
 			break;
 		P_CASELONG(302, resize_damage);
-		P_CASEBOOL(303, glx_use_gpushader4);
+		case 303:
+			// --glx-use-gpushader4
+			log_warn("--glx-use-gpushader4 is deprecated since v6."
+			         " Please remove it from command line options.");
+			break;
 		case 304:
 			// --opacity-rule
 			if (!parse_rule_opacity(&opt->opacity_rules, optarg))
@@ -816,7 +820,8 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	// Fill default blur kernel
 	if (opt->blur_background && !opt->blur_kerns[0]) {
-		CHECK(parse_blur_kern_lst("3x3box", opt->blur_kerns, MAX_BLUR_PASS, &conv_kern_hasneg));
+		CHECK(parse_blur_kern_lst("3x3box", opt->blur_kerns, MAX_BLUR_PASS,
+		                          &conv_kern_hasneg));
 	}
 
 	if (opt->resize_damage < 0) {

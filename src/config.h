@@ -95,8 +95,6 @@ typedef struct options_t {
 	bool glx_no_rebind_pixmap;
 	/// GLX swap method we assume OpenGL uses.
 	int glx_swap_method;
-	/// Whether to use GL_EXT_gpu_shader4 to (hopefully) accelerates blurring.
-	bool glx_use_gpushader4;
 	/// Custom fragment shader for painting windows, as a string.
 	char *glx_fshader_win_str;
 	/// Whether to detect rounded corners.

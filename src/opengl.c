@@ -310,8 +310,6 @@ glx_init_blur(session_t *ps) {
       "  vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);\n";
     static const char *FRAG_SHADER_BLUR_ADD =
       "  sum += float(%.7g) * %s(tex_scr, vec2(gl_TexCoord[0].x + offset_x * float(%d), gl_TexCoord[0].y + offset_y * float(%d)));\n";
-    static const char *FRAG_SHADER_BLUR_ADD_GPUSHADER4 =
-      "  sum += float(%.7g) * %sOffset(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y), ivec2(%d, %d));\n";
     static const char *FRAG_SHADER_BLUR_SUFFIX =
       "  sum += %s(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * factor_center;\n"
       "  gl_FragColor = sum / (factor_center + float(%.7g));\n"
@@ -326,10 +324,6 @@ glx_init_blur(session_t *ps) {
     char *extension = NULL;
     if (use_texture_rect) {
       mstrextend(&extension, "#extension GL_ARB_texture_rectangle : require\n");
-    }
-    if (ps->o.glx_use_gpushader4) {
-      mstrextend(&extension, "#extension GL_EXT_gpu_shader4 : require\n");
-      shader_add = FRAG_SHADER_BLUR_ADD_GPUSHADER4;
     }
     if (!extension) {
       extension = strdup("");
@@ -402,10 +396,8 @@ glx_init_blur(session_t *ps) {
     }
 
       P_GET_UNIFM_LOC("factor_center", unifm_factor_center);
-      if (!ps->o.glx_use_gpushader4) {
-        P_GET_UNIFM_LOC("offset_x", unifm_offset_x);
-        P_GET_UNIFM_LOC("offset_y", unifm_offset_y);
-      }
+      P_GET_UNIFM_LOC("offset_x", unifm_offset_x);
+      P_GET_UNIFM_LOC("offset_y", unifm_offset_y);
 
 #undef P_GET_UNIFM_LOC
     }
