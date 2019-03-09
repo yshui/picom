@@ -49,6 +49,14 @@ struct _glx_data {
 	GLXContext ctx;
 };
 
+#define glXGetFBConfigAttribChecked(a, b, attr, c)                                       \
+	do {                                                                             \
+		if (glXGetFBConfigAttrib(a, b, attr, c)) {                               \
+			log_info("Cannot get FBConfig attribute " #attr);                \
+			continue;                                                        \
+		}                                                                        \
+	} while (0)
+
 struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvisual_info m) {
 	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth %d", m.red_size,
 	          m.blue_size, m.green_size, m.alpha_size, m.visual_depth);
@@ -74,13 +82,6 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 	                      }, &ncfg);
 	// clang-format on
 
-#define glXGetFBConfigAttribChecked(a, b, attr, c)                                       \
-	do {                                                                             \
-		if (glXGetFBConfigAttrib(a, b, attr, c)) {                               \
-			log_info("Cannot get FBConfig attribute " #attr);                \
-			continue;                                                        \
-		}                                                                        \
-	} while (0)
 	int texture_tgts, y_inverted, texture_fmt;
 	bool found = false;
 	int min_cost = INT_MAX;
@@ -141,7 +142,6 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 		}
 		min_cost = depthbuf + stencil + bufsize * (doublebuf + 1);
 	}
-#undef glXGetFBConfigAttribChecked
 	free(cfg);
 	if (!found) {
 		return NULL;
@@ -245,17 +245,54 @@ static backend_t *glx_init(session_t *ps) {
 		goto end;
 	}
 
+	if (glXGetConfig(ps->dpy, pvis, GLX_RGBA, &value) || !value) {
+		log_error("Root visual is a color index visual, not supported");
+		goto end;
+	}
+
 	// Ensure GLX_EXT_texture_from_pixmap exists
 	if (!glxext.has_GLX_EXT_texture_from_pixmap) {
 		log_error("GLX_EXT_texture_from_pixmap is not supported by your driver");
 		goto end;
 	}
 
-	// Get GLX context
-	gd->ctx = glXCreateContext(ps->dpy, pvis, NULL, GL_TRUE);
+	if (!glxext.has_GLX_ARB_create_context) {
+		log_error("GLX_ARB_create_context is not supported by your driver");
+		goto end;
+	}
 
-	if (!gd->ctx) {
-		log_error("Failed to get GLX context.");
+	// Find a fbconfig with visualid matching the one from the target win, so we can
+	// be sure that the fbconfig is compatible with our target window.
+	int ncfgs;
+	GLXFBConfig *cfg = glXGetFBConfigs(gd->display, gd->screen, &ncfgs);
+	bool found = false;
+	for (int i = 0; i < ncfgs; i++) {
+		int visualid;
+		glXGetFBConfigAttribChecked(gd->display, cfg[i], GLX_VISUAL_ID, &visualid);
+		if ((VisualID)visualid != pvis->visualid) {
+			continue;
+		}
+
+		gd->ctx = glXCreateContextAttribsARB(ps->dpy, cfg[i], 0, true,
+		                                     (int[]){
+		                                         GLX_CONTEXT_MAJOR_VERSION_ARB,
+		                                         3,
+		                                         GLX_CONTEXT_MINOR_VERSION_ARB,
+		                                         0,
+		                                         0,
+		                                     });
+		free(cfg);
+
+		if (!gd->ctx) {
+			log_error("Failed to get GLX context.");
+			goto end;
+		}
+		found = true;
+		break;
+	}
+
+	if (!found) {
+		log_error("Couldn't find a suitable fbconfig for the target window");
 		goto end;
 	}
 
@@ -341,7 +378,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	else
 		tex_tgt = GLX_TEXTURE_2D_EXT;
 
-	log_debug("depth %d, tgt %#x, rgba %d\n", fmt.visual_depth, tex_tgt,
+	log_debug("depth %d, tgt %#x, rgba %d", fmt.visual_depth, tex_tgt,
 	          (GLX_TEXTURE_FORMAT_RGBA_EXT == fbcfg->texture_fmt));
 
 	GLint attrs[] = {
@@ -473,6 +510,7 @@ PFNGLXSWAPINTERVALSGIPROC glXSwapIntervalSGI;
 PFNGLXSWAPINTERVALMESAPROC glXSwapIntervalMESA;
 PFNGLXBINDTEXIMAGEEXTPROC glXBindTexImageEXT;
 PFNGLXRELEASETEXIMAGEEXTPROC glXReleaseTexImageEXT;
+PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB;
 
 void glxext_init(Display *dpy, int screen) {
 	if (glxext.initialized) {
@@ -486,6 +524,7 @@ void glxext_init(Display *dpy, int screen) {
 	check_ext(GLX_MESA_swap_control);
 	check_ext(GLX_EXT_swap_control);
 	check_ext(GLX_EXT_texture_from_pixmap);
+	check_ext(GLX_ARB_create_context);
 	check_ext(GLX_EXT_buffer_age);
 #undef check_ext
 
@@ -510,6 +549,9 @@ void glxext_init(Display *dpy, int screen) {
 	}
 	if (!lookup(glXBindTexImageEXT) || !lookup(glXReleaseTexImageEXT)) {
 		glxext.has_GLX_EXT_texture_from_pixmap = false;
+	}
+	if (!lookup(glXCreateContextAttribsARB)) {
+		glxext.has_GLX_ARB_create_context = false;
 	}
 #undef lookup
 }
