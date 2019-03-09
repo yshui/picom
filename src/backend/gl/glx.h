@@ -2,7 +2,8 @@
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 #include <stdbool.h>
-// Older version of glx.h defines function prototypes...
+// Older version of glx.h defines function prototypes for these extensions...
+// Rename them to avoid conflicts
 #define glXSwapIntervalMESA glXSwapIntervalMESA_
 #define glXBindTexImageEXT glXBindTexImageEXT_
 #define glXReleaseTexImageEXT glXReleaseTexImageEXT
@@ -51,6 +52,7 @@ struct glxext_info {
 	bool has_GLX_MESA_swap_control;
 	bool has_GLX_EXT_swap_control;
 	bool has_GLX_EXT_texture_from_pixmap;
+	bool has_GLX_EXT_buffer_age;
 };
 
 extern struct glxext_info glxext;

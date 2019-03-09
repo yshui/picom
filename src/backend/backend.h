@@ -125,7 +125,7 @@ struct backend_operations {
 
 	/// Free resources associated with an image data structure
 	void (*release_image)(backend_t *backend_data, void *img_data)
-	    __attribute__((nonnull(1, 2)));
+	    attr_nonnull(1, 2);
 
 	// ===========        Query         ===========
 
@@ -136,7 +136,7 @@ struct backend_operations {
 	/// window (e.g. when using a custom shader with the glx backend), so we only now
 	/// the transparency after the window is rendered
 	bool (*is_image_transparent)(backend_t *backend_data, void *image_data)
-	    __attribute__((nonnull(1, 2)));
+	    attr_nonnull(1, 2);
 
 	/// Get the age of the buffer content we are currently rendering ontop
 	/// of. The buffer that has just been `present`ed has a buffer age of 1.

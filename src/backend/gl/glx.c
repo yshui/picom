@@ -21,6 +21,7 @@
 #include <xcb/xcb.h>
 
 #include "backend/backend.h"
+#include "backend/backend_common.h"
 #include "backend/gl/gl_common.h"
 #include "backend/gl/glx.h"
 #include "common.h"
@@ -32,28 +33,23 @@
 #include "win.h"
 #include "x.h"
 
-struct _glx_win_data {
+struct _glx_image_data {
 	gl_texture_t texture;
 	GLXPixmap glpixmap;
 	xcb_pixmap_t pixmap;
 };
 
 struct _glx_data {
-	backend_t base;
+	struct gl_data gl;
+	Display *display;
+	int screen;
+	int target_win;
 	int glx_event;
 	int glx_error;
 	GLXContext ctx;
-	gl_cap_t cap;
-	gl_win_shader_t win_shader;
-	gl_blur_shader_t blur_shader[MAX_BLUR_PASS];
-
-	void (*glXBindTexImage)(Display *display, GLXDrawable drawable, int buffer,
-	                        const int *attrib_list);
-	void (*glXReleaseTexImage)(Display *display, GLXDrawable drawable, int buffer);
 };
 
-struct glx_fbconfig_info *
-glx_find_fbconfig(Display *dpy, int screen, struct xvisual_info m) {
+struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvisual_info m) {
 	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth %d", m.red_size,
 	          m.blue_size, m.green_size, m.alpha_size, m.visual_depth);
 
@@ -160,69 +156,47 @@ glx_find_fbconfig(Display *dpy, int screen, struct xvisual_info m) {
 }
 
 /**
- * @brief Release binding of a texture.
+ * Free a glx_texture_t.
  */
-static void glx_release_pixmap(struct _glx_data *gd, Display *dpy, struct _glx_win_data *wd) {
+void glx_release_image(backend_t *base, void *image_data) {
+	struct _glx_image_data *wd = image_data;
+	struct _glx_data *gd = (void *)base;
+	wd->texture.refcount--;
+	if (wd->texture.refcount != 0) {
+		return;
+	}
 	// Release binding
 	if (wd->glpixmap && wd->texture.texture) {
 		glBindTexture(wd->texture.target, wd->texture.texture);
-		gd->glXReleaseTexImage(dpy, wd->glpixmap, GLX_FRONT_LEFT_EXT);
+		glXReleaseTexImageEXT(gd->display, wd->glpixmap, GLX_FRONT_LEFT_EXT);
 		glBindTexture(wd->texture.target, 0);
 	}
 
 	// Free GLX Pixmap
 	if (wd->glpixmap) {
-		glXDestroyPixmap(dpy, wd->glpixmap);
+		glXDestroyPixmap(gd->display, wd->glpixmap);
 		wd->glpixmap = 0;
 	}
 
-	gl_check_err();
-}
-
-/**
- * Free a glx_texture_t.
- */
-void glx_release_win(void *backend_data, session_t *ps, win *w, void *win_data) {
-	struct _glx_win_data *wd = win_data;
-	struct _glx_data *gd = backend_data;
-	glx_release_pixmap(gd, ps->dpy, wd);
-	glDeleteTextures(1, &wd->texture.texture);
+	gl_delete_texture(wd->texture.texture);
 
 	// Free structure itself
 	free(wd);
-}
 
-/**
- * Free GLX part of win.
- */
-static inline void free_win_res_glx(session_t *ps, win *w) {
-	/*free_paint_glx(ps, &w->paint);*/
-	/*free_paint_glx(ps, &w->shadow_paint);*/
-	/*free_glx_bc(ps, &w->glx_blur_cache);*/
+	gl_check_err();
 }
 
 /**
  * Destroy GLX related resources.
  */
-void glx_deinit(void *backend_data, session_t *ps) {
-	struct _glx_data *gd = backend_data;
+void glx_deinit(backend_t *base) {
+	struct _glx_data *gd = (void *)base;
 
-	// Free all GLX resources of windows
-	for (win *w = ps->list; w; w = w->next)
-		free_win_res_glx(ps, w);
-
-	// Free GLSL shaders/programs
-	for (int i = 0; i < MAX_BLUR_PASS; ++i) {
-		gl_free_blur_shader(&gd->blur_shader[i]);
-	}
-
-	gl_free_prog_main(ps, &gd->win_shader);
-
-	gl_check_err();
+	gl_deinit(&gd->gl);
 
 	// Destroy GLX context
 	if (gd->ctx) {
-		glXDestroyContext(ps->dpy, gd->ctx);
+		glXDestroyContext(gd->display, gd->ctx);
 		gd->ctx = 0;
 	}
 
@@ -232,13 +206,15 @@ void glx_deinit(void *backend_data, session_t *ps) {
 /**
  * Initialize OpenGL.
  */
-backend_t *backend_glx_init(session_t *ps) {
+static backend_t *glx_init(session_t *ps) {
 	bool success = false;
 	glxext_init(ps->dpy, ps->scr);
 	auto gd = ccalloc(1, struct _glx_data);
-	gd->base.c = ps->c;
-	gd->base.root = ps->root;
-	gd->base.ops = NULL; // TODO
+	gd->gl.base.c = ps->c;
+	gd->gl.base.root = ps->root;
+	gd->display = ps->dpy;
+	gd->screen = ps->scr;
+	gd->target_win = ps->overlay != XCB_NONE ? ps->overlay : ps->root;
 
 	XVisualInfo *pvis = NULL;
 
@@ -275,15 +251,6 @@ backend_t *backend_glx_init(session_t *ps) {
 		goto end;
 	}
 
-	// Initialize GLX data structure
-	for (int i = 0; i < MAX_BLUR_PASS; ++i) {
-		gd->blur_shader[i] = (gl_blur_shader_t){.frag_shader = -1,
-		                                        .prog = -1,
-		                                        .unifm_offset_x = -1,
-		                                        .unifm_offset_y = -1,
-		                                        .unifm_factor_center = -1};
-	}
-
 	// Get GLX context
 	gd->ctx = glXCreateContext(ps->dpy, pvis, NULL, GL_TRUE);
 
@@ -313,93 +280,51 @@ backend_t *backend_glx_init(session_t *ps) {
 	p_DebugMessageCallback(glx_debug_msg_callback, ps);
 #endif
 
-	// Ensure we have a stencil buffer. X Fixes does not guarantee rectangles
-	// in regions don't overlap, so we must use stencil buffer to make sure
-	// we don't paint a region for more than one time, I think?
-	if (!ps->o.glx_no_stencil) {
-		GLint val = 0;
-		glGetIntegerv(GL_STENCIL_BITS, &val);
-		if (!val) {
-			log_error("Target window doesn't have stencil buffer.");
-			goto end;
-		}
-	}
-
-	// Check GL_ARB_texture_non_power_of_two, requires a GLX context and
-	// must precede FBConfig fetching
-	gd->cap.non_power_of_two_texture = gl_has_extension("GL_ARB_texture_non_"
-	                                                    "power_of_two");
-
-	gd->glXBindTexImage = (void *)glXGetProcAddress((const GLubyte *)"glXBindTexImage"
-	                                                                 "EXT");
-	gd->glXReleaseTexImage = (void *)glXGetProcAddress((const GLubyte *)"glXReleaseTe"
-	                                                                    "xImageEXT");
-	if (!gd->glXBindTexImage || !gd->glXReleaseTexImage) {
-		log_error("Failed to acquire glXBindTexImageEXT() and/or "
-		          "glXReleaseTexImageEXT(), make sure your OpenGL supports"
-		          "GLX_EXT_texture_from_pixmap");
+	if (!gl_init(&gd->gl, ps)) {
+		log_error("Failed to setup OpenGL");
 		goto end;
 	}
-
-	// Render preparations
-	gl_resize(ps->root_width, ps->root_height);
-
-	glDisable(GL_DEPTH_TEST);
-	glDepthMask(GL_FALSE);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-	glDisable(GL_BLEND);
-
-	if (!ps->o.glx_no_stencil) {
-		// Initialize stencil buffer
-		glClear(GL_STENCIL_BUFFER_BIT);
-		glDisable(GL_STENCIL_TEST);
-		glStencilMask(0x1);
-		glStencilFunc(GL_EQUAL, 0x1, 0x1);
-	}
-
-	// Clear screen
-	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-	// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	// glXSwapBuffers(ps->dpy, get_tgt_window(ps));
-
-	// Initialize blur filters
-	// gl_create_blur_filters(ps, gd->blur_shader, &gd->cap);
 
 	success = true;
 
 end:
-	if (pvis)
+	if (pvis) {
 		XFree(pvis);
+	}
 
 	if (!success) {
-		glx_deinit(gd, ps);
+		glx_deinit(&gd->gl.base);
 		return NULL;
 	}
 
-	return &gd->base;
+	return &gd->gl.base;
 }
 
-void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
-	struct _glx_data *gd = backend_data;
+static void *glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap,
+                             struct xvisual_info fmt, bool owned) {
+	struct _glx_data *gd = (void *)base;
 	// Retrieve pixmap parameters, if they aren't provided
-	if (w->g.depth > OPENGL_MAX_DEPTH) {
+	if (fmt.visual_depth > OPENGL_MAX_DEPTH) {
 		log_error("Requested depth %d higher than max possible depth %d.",
-		          w->g.depth, OPENGL_MAX_DEPTH);
+		          fmt.visual_depth, OPENGL_MAX_DEPTH);
 		return false;
 	}
 
-	auto wd = ccalloc(1, struct _glx_win_data);
-	wd->pixmap = xcb_generate_id(ps->c);
-	xcb_composite_name_window_pixmap(ps->c, w->id, wd->pixmap);
-	if (!wd->pixmap) {
-		log_error("Failed to get pixmap for window %#010x", w->id);
-		goto err;
+	auto r = xcb_get_geometry_reply(base->c, xcb_get_geometry(base->c, pixmap), NULL);
+	if (!r) {
+		log_error("Invalid pixmap %#010x", pixmap);
+		return NULL;
 	}
 
-	auto visual_info = x_get_visual_info(ps->c, w->a.visual);
-	auto fbcfg = glx_find_fbconfig(ps->dpy, ps->scr, visual_info);
+	auto wd = ccalloc(1, struct _glx_image_data);
+	wd->pixmap = pixmap;
+	wd->texture.width = r->width;
+	wd->texture.height = r->height;
+	free(r);
+
+	auto fbcfg = glx_find_fbconfig(gd->display, gd->screen, fmt);
 	if (!fbcfg) {
-		log_error("Couldn't find FBConfig with requested visual %x", w->a.visual);
+		log_error("Couldn't find FBConfig with requested visual %x", fmt.visual);
 		goto err;
 	}
 
@@ -407,7 +332,7 @@ void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 	// Refer to GLX_EXT_texture_om_pixmap spec to see what are the mean
 	// of the bits in texture_tgts
 	GLenum tex_tgt = 0;
-	if (GLX_TEXTURE_2D_BIT_EXT & fbcfg->texture_tgts && gd->cap.non_power_of_two_texture)
+	if (GLX_TEXTURE_2D_BIT_EXT & fbcfg->texture_tgts && gd->gl.non_power_of_two_texture)
 		tex_tgt = GLX_TEXTURE_2D_EXT;
 	else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & fbcfg->texture_tgts)
 		tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
@@ -416,7 +341,7 @@ void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 	else
 		tex_tgt = GLX_TEXTURE_2D_EXT;
 
-	log_debug("depth %d, tgt %#x, rgba %d\n", w->g.depth, tex_tgt,
+	log_debug("depth %d, tgt %#x, rgba %d\n", fmt.visual_depth, tex_tgt,
 	          (GLX_TEXTURE_FORMAT_RGBA_EXT == fbcfg->texture_fmt));
 
 	GLint attrs[] = {
@@ -431,122 +356,69 @@ void *glx_prepare_win(void *backend_data, session_t *ps, win *w) {
 	    (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
 	wd->texture.y_inverted = fbcfg->y_inverted;
 
-	wd->glpixmap = glXCreatePixmap(ps->dpy, fbcfg->cfg, wd->pixmap, attrs);
+	wd->glpixmap = glXCreatePixmap(gd->display, fbcfg->cfg, wd->pixmap, attrs);
 	free(fbcfg);
 
 	if (!wd->glpixmap) {
-		log_error("Failed to create glpixmap for window %#010x", w->id);
+		log_error("Failed to create glpixmap for pixmap %#010x", pixmap);
 		goto err;
 	}
 
 	// Create texture
+	wd->texture.texture = gl_new_texture(wd->texture.target);
+	wd->texture.opacity = 1;
+	wd->texture.depth = fmt.visual_depth;
+	wd->texture.color_inverted = false;
+	wd->texture.has_alpha = fmt.alpha_size != 0;
+	wd->texture.refcount = 1;
+	glBindTexture(wd->texture.target, wd->texture.texture);
+	glXBindTexImageEXT(gd->display, wd->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
+	glBindTexture(wd->texture.target, 0);
 
-	GLuint texture = 0;
-	GLuint target = wd->texture.target;
-	glGenTextures(1, &texture);
-	if (!texture) {
-		log_error("Failed to generate texture for window %#010x", w->id);
-		goto err;
-	}
-
-	glBindTexture(target, texture);
-	glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glBindTexture(target, 0);
-
-	wd->texture.texture = texture;
-	wd->texture.width = w->widthb;
-	wd->texture.height = w->heightb;
+	gl_check_err();
 	return wd;
 err:
-	if (wd->pixmap && wd->pixmap != w->id) {
-		xcb_free_pixmap(ps->c, wd->pixmap);
-	}
 	if (wd->glpixmap) {
-		glXDestroyPixmap(ps->dpy, wd->glpixmap);
+		glXDestroyPixmap(gd->display, wd->glpixmap);
+	}
+	if (owned) {
+		xcb_free_pixmap(base->c, pixmap);
 	}
 	free(wd);
 	return NULL;
 }
 
-/**
- * Bind a X pixmap to an OpenGL texture.
- */
-void glx_render_win(void *backend_data, session_t *ps, win *w, void *win_data,
-                           const region_t *reg_paint) {
-	struct _glx_data *gd = backend_data;
-	struct _glx_win_data *wd = win_data;
-
-	assert(wd->pixmap);
-	assert(wd->glpixmap);
-	assert(wd->texture.texture);
-
-	glBindTexture(wd->texture.target, wd->texture.texture);
-	gd->glXBindTexImage(ps->dpy, wd->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
-	glBindTexture(wd->texture.target, 0);
-
-	gl_check_err();
+static void glx_present(backend_t *base) {
+	struct _glx_data *gd = (void *)base;
+	glXSwapBuffers(gd->display, gd->target_win);
 }
 
-void glx_present(void *backend_data, session_t *ps) {
-	glXSwapBuffers(ps->dpy, ps->overlay != XCB_NONE ? ps->overlay : ps->root);
-}
-
-int glx_buffer_age(void *backend_data, session_t *ps) {
-	if (ps->o.glx_swap_method == SWAPM_BUFFER_AGE) {
-		unsigned int val;
-		glXQueryDrawable(ps->dpy, get_tgt_window(ps), GLX_BACK_BUFFER_AGE_EXT, &val);
-		return (int)val ?: -1;
-	} else {
+static int glx_buffer_age(backend_t *base) {
+	if (!glxext.has_GLX_EXT_buffer_age) {
 		return -1;
 	}
+
+	struct _glx_data *gd = (void *)base;
+	unsigned int val;
+	glXQueryDrawable(gd->display, gd->target_win, GLX_BACK_BUFFER_AGE_EXT, &val);
+	return (int)val ?: -1;
 }
 
-void glx_compose(void *backend_data, session_t *ps, win *w, void *win_data,
-                        int dst_x, int dst_y, const region_t *region) {
-	struct _glx_data *gd = backend_data;
-	struct _glx_win_data *wd = win_data;
-
-	// OpenGL and Xorg uses different coordinate systems.
-	// First, We need to flip the y axis of the paint region
-	region_t region_yflipped;
-	pixman_region32_init(&region_yflipped);
-	pixman_region32_copy(&region_yflipped, (region_t *)region);
-
-	int nrects;
-	auto rect = pixman_region32_rectangles(&region_yflipped, &nrects);
-	for (int i = 0; i < nrects; i++) {
-		auto tmp = rect[i].y1;
-		rect[i].y1 = ps->root_height - rect[i].y2;
-		rect[i].y2 = ps->root_height - tmp;
-	}
-	dump_region(&region_yflipped);
-
-	// Then, we still need to convert the origin of painting.
-	// Note, in GL coordinates, we need to specified the bottom left corner of the
-	// rectangle, while what we get from the arguments are the top left corner.
-	gl_compose(&wd->texture, 0, 0, dst_x, ps->root_height - dst_y - w->heightb, w->widthb,
-	           w->heightb, 0, 1, true, false, &region_yflipped, &gd->win_shader);
-	pixman_region32_fini(&region_yflipped);
-}
-
-struct backend_operations glx_ops;
-
-/* backend_info_t glx_backend = { */
-/*     .init = glx_init, */
-/*     .deinit = glx_deinit, */
-/*     .prepare_win = glx_prepare_win, */
-/*     .render_win = glx_render_win, */
-/*     .release_win = glx_release_win, */
-/*     .present = glx_present, */
-/*     .compose = glx_compose, */
-/*     .is_win_transparent = default_is_win_transparent, */
-/*     .is_frame_transparent = default_is_frame_transparent, */
-/*     .buffer_age = glx_buffer_age, */
-/*     .max_buffer_age = 5,        // XXX why? */
-/* }; */
+struct backend_operations glx_ops = {
+    .init = glx_init,
+    .deinit = glx_deinit,
+    .bind_pixmap = glx_bind_pixmap,
+    .release_image = glx_release_image,
+    .compose = gl_compose,
+    .image_op = gl_image_op,
+    .copy = gl_copy,
+    .blur = gl_blur,
+    .is_image_transparent = gl_is_image_transparent,
+    .present = glx_present,
+    .buffer_age = glx_buffer_age,
+    .render_shadow = default_backend_render_shadow,
+    .max_buffer_age = 5, // Why?
+};
 
 /**
  * Check if a GLX extension exists.
@@ -605,12 +477,13 @@ void glxext_init(Display *dpy, int screen) {
 	check_ext(GLX_MESA_swap_control);
 	check_ext(GLX_EXT_swap_control);
 	check_ext(GLX_EXT_texture_from_pixmap);
+	check_ext(GLX_EXT_buffer_age);
 #undef check_ext
 
 #define lookup(name) (name = (__typeof__(name))glXGetProcAddress((GLubyte *)#name))
 	// Checking if the returned function pointer is NULL is not really necessary,
-	// or maybe not even useful, since glXGetProcAddress might always return something.
-	// We are doing it just for completeness' sake.
+	// or maybe not even useful, since glXGetProcAddress might always return
+	// something. We are doing it just for completeness' sake.
 	if (!lookup(glXGetVideoSyncSGI) || !lookup(glXWaitVideoSyncSGI)) {
 		glxext.has_GLX_SGI_video_sync = false;
 	}

@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
-#include <stdbool.h>
-#include <string.h>
 #include <GL/gl.h>
 #include <GL/glext.h>
+#include <stdbool.h>
+#include <string.h>
 
-#include "region.h"
+#include "backend/backend.h"
+#include "config.h"
 #include "log.h"
+#include "region.h"
 
-#define CASESTRRET(s)   case s: return #s
+#define CASESTRRET(s)                                                                    \
+	case s: return #s
 
 // Program and uniforms for window shader
 typedef struct {
@@ -39,18 +42,26 @@ typedef struct {
 
 /// @brief Wrapper of a binded GLX texture.
 typedef struct gl_texture {
+	double opacity;
+	int refcount;
 	GLuint texture;
 	GLenum target;
 	unsigned width;
 	unsigned height;
 	unsigned depth;
 	bool y_inverted;
+	bool has_alpha;
+	bool color_inverted;
 } gl_texture_t;
 
-// OpenGL capabilities
-typedef struct gl_cap {
+struct gl_data {
+	backend_t base;
+	// Height and width of the viewport
+	int height, width;
+	gl_win_shader_t win_shader;
+	gl_blur_shader_t blur_shader[MAX_BLUR_PASS];
 	bool non_power_of_two_texture;
-} gl_cap_t;
+};
 
 typedef struct {
 	/// Framebuffer used for blurring.
@@ -70,24 +81,41 @@ typedef struct session session_t;
 
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str);
 GLuint gl_create_program(const GLuint *const shaders, int nshaders);
-GLuint
-gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str);
+GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str);
+
 /**
  * @brief Render a region with texture data.
  */
-bool gl_compose(const gl_texture_t *ptex, int x, int y, int dx, int dy, int width,
-                int height, int z, double opacity, bool argb, bool neg,
-                const region_t *reg_tgt, const gl_win_shader_t *shader);
+void gl_compose(backend_t *, void *ptex, int dst_x, int dst_y, const region_t *reg_tgt,
+                const region_t *reg_visible);
 
 bool gl_load_prog_main(session_t *ps, const char *vshader_str, const char *fshader_str,
                        gl_win_shader_t *pprogram);
-void gl_free_prog_main(session_t *ps, gl_win_shader_t *prog);
 
 unsigned char *gl_take_screenshot(session_t *ps, int *out_length);
-void gl_resize(int width, int height);
-bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_cap_t *cap);
+void gl_resize(struct gl_data *, int width, int height);
+//bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_cap_t *cap);
 
 GLuint glGetUniformLocationChecked(GLuint p, const char *name);
+
+bool gl_init(struct gl_data *gd, session_t *);
+void gl_deinit(struct gl_data *gd);
+
+GLuint gl_new_texture(GLenum target);
+
+bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
+                 const region_t *reg_op, const region_t *reg_visible, void *arg);
+
+void *gl_copy(backend_t *base, const void *image_data, const region_t *reg_visible);
+
+bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
+             const region_t *reg_visible);
+
+bool gl_is_image_transparent(backend_t *base, void *image_data);
+
+static inline void gl_delete_texture(GLuint texture) {
+	glDeleteTextures(1, &texture);
+}
 
 /**
  * Get a textual representation of an OpenGL error.
@@ -146,14 +174,4 @@ static inline bool gl_has_extension(const char *ext) {
 	}
 	log_info("Missing GL extension %s.", ext);
 	return false;
-}
-
-static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
-	if (shader->prog)
-		glDeleteShader(shader->prog);
-	if (shader->frag_shader)
-		glDeleteShader(shader->frag_shader);
-
-	shader->prog = 0;
-	shader->frag_shader = 0;
 }
