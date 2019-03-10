@@ -37,7 +37,6 @@ typedef struct gl_texture {
 	double dim;
 	int *refcount;
 	GLuint texture;
-	GLenum target;
 	// The size of the backing texture
 	int width, height;
 	// The effective size of the texture
@@ -55,7 +54,6 @@ struct gl_data {
 	int npasses;
 	gl_win_shader_t win_shader;
 	gl_blur_shader_t blur_shader[MAX_BLUR_PASS];
-	bool non_power_of_two_texture;
 
 	// Temporary textures used for blurring. They are always the same size as the
 	// target, so they are always big enough without resizing.
@@ -63,7 +61,6 @@ struct gl_data {
 	GLuint blur_texture[2];
 	// Temporary fbo used for blurring
 	GLuint blur_fbo;
-	GLenum blur_texture_target;
 };
 
 typedef struct {

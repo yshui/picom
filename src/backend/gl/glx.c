@@ -168,9 +168,9 @@ void glx_release_image(backend_t *base, void *image_data) {
 	}
 	// Release binding
 	if (wd->glpixmap && wd->texture.texture) {
-		glBindTexture(wd->texture.target, wd->texture.texture);
+		glBindTexture(GL_TEXTURE_2D, wd->texture.texture);
 		glXReleaseTexImageEXT(gd->display, wd->glpixmap, GLX_FRONT_LEFT_EXT);
-		glBindTexture(wd->texture.target, 0);
+		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
 	// Free GLX Pixmap
@@ -368,29 +368,22 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	// Choose a suitable texture target for our pixmap.
 	// Refer to GLX_EXT_texture_om_pixmap spec to see what are the mean
 	// of the bits in texture_tgts
-	GLenum tex_tgt = 0;
-	if (GLX_TEXTURE_2D_BIT_EXT & fbcfg->texture_tgts && gd->gl.non_power_of_two_texture)
-		tex_tgt = GLX_TEXTURE_2D_EXT;
-	else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & fbcfg->texture_tgts)
-		tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
-	else if (!(GLX_TEXTURE_2D_BIT_EXT & fbcfg->texture_tgts))
-		tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
-	else
-		tex_tgt = GLX_TEXTURE_2D_EXT;
+	if (!(fbcfg->texture_tgts & GLX_TEXTURE_2D_EXT)) {
+		log_error("Cannot bind pixmap to GL_TEXTURE_2D, giving up");
+		goto err;
+	}
 
-	log_debug("depth %d, tgt %#x, rgba %d", fmt.visual_depth, tex_tgt,
-	          (GLX_TEXTURE_FORMAT_RGBA_EXT == fbcfg->texture_fmt));
+	log_debug("depth %d, rgba %d", fmt.visual_depth,
+	          (fbcfg->texture_fmt = GLX_TEXTURE_FORMAT_RGBA_EXT));
 
 	GLint attrs[] = {
 	    GLX_TEXTURE_FORMAT_EXT,
 	    fbcfg->texture_fmt,
 	    GLX_TEXTURE_TARGET_EXT,
-	    tex_tgt,
+	    GLX_TEXTURE_2D_EXT,
 	    0,
 	};
 
-	wd->texture.target =
-	    (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
 	wd->texture.y_inverted = fbcfg->y_inverted;
 
 	wd->glpixmap = glXCreatePixmap(gd->display, fbcfg->cfg, wd->pixmap, attrs);
@@ -402,7 +395,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	}
 
 	// Create texture
-	wd->texture.texture = gl_new_texture(wd->texture.target);
+	wd->texture.texture = gl_new_texture(GL_TEXTURE_2D);
 	wd->texture.opacity = 1;
 	wd->texture.depth = fmt.visual_depth;
 	wd->texture.color_inverted = false;
@@ -411,9 +404,9 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	wd->texture.refcount = ccalloc(1, int);
 	*wd->texture.refcount = 1;
 	wd->owned = owned;
-	glBindTexture(wd->texture.target, wd->texture.texture);
+	glBindTexture(GL_TEXTURE_2D, wd->texture.texture);
 	glXBindTexImageEXT(gd->display, wd->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
-	glBindTexture(wd->texture.target, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
 
 	gl_check_err();
 	return wd;
