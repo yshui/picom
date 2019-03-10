@@ -37,6 +37,7 @@ struct _glx_image_data {
 	gl_texture_t texture;
 	GLXPixmap glpixmap;
 	xcb_pixmap_t pixmap;
+	bool owned;
 };
 
 struct _glx_data {
@@ -176,6 +177,11 @@ void glx_release_image(backend_t *base, void *image_data) {
 	if (wd->glpixmap) {
 		glXDestroyPixmap(gd->display, wd->glpixmap);
 		wd->glpixmap = 0;
+	}
+
+	if (wd->owned) {
+		xcb_free_pixmap(base->c, wd->pixmap);
+		wd->pixmap = XCB_NONE;
 	}
 
 	glDeleteTextures(1, &wd->texture.texture);
@@ -404,6 +410,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	wd->texture.has_alpha = fmt.alpha_size != 0;
 	wd->texture.refcount = ccalloc(1, int);
 	*wd->texture.refcount = 1;
+	wd->owned = owned;
 	glBindTexture(wd->texture.target, wd->texture.texture);
 	glXBindTexImageEXT(gd->display, wd->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
 	glBindTexture(wd->texture.target, 0);

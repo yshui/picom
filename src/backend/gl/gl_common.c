@@ -736,6 +736,7 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 		break;
 	case IMAGE_OP_APPLY_ALPHA_ALL: tex->opacity *= *(double *)arg; break;
 	case IMAGE_OP_APPLY_ALPHA:
+		// TODO
 		log_warn("IMAGE_OP_APPLY_ALPHA not implemented yet");
 		break;
 	case IMAGE_OP_RESIZE_TILE:
