@@ -178,7 +178,8 @@ void glx_release_image(backend_t *base, void *image_data) {
 		wd->glpixmap = 0;
 	}
 
-	gl_delete_texture(wd->texture.texture);
+	glDeleteTextures(1, &wd->texture.texture);
+	free(wd->texture.refcount);
 
 	// Free structure itself
 	free(wd);
@@ -255,7 +256,6 @@ static backend_t *glx_init(session_t *ps) {
 		goto end;
 	}
 
-	// Ensure GLX_EXT_texture_from_pixmap exists
 	if (!glxext.has_GLX_EXT_texture_from_pixmap) {
 		log_error("GLX_EXT_texture_from_pixmap is not supported by your driver");
 		goto end;
@@ -310,17 +310,6 @@ static backend_t *glx_init(session_t *ps) {
 		log_error("Failed to attach GLX context.");
 		goto end;
 	}
-
-#ifdef DEBUG_GLX_DEBUG_CONTEXT
-	f_DebugMessageCallback p_DebugMessageCallback =
-	    (f_DebugMessageCallback)glXGetProcAddress((const GLubyte *)"glDebugMessageCal"
-	                                                               "lback");
-	if (!p_DebugMessageCallback) {
-		log_error("Failed to get glDebugMessageCallback(0.");
-		goto glx_init_end;
-	}
-	p_DebugMessageCallback(glx_debug_msg_callback, ps);
-#endif
 
 	if (!gl_init(&gd->gl, ps)) {
 		log_error("Failed to setup OpenGL");
@@ -411,6 +400,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	wd->texture.opacity = 1;
 	wd->texture.depth = fmt.visual_depth;
 	wd->texture.color_inverted = false;
+	wd->texture.dim = 0;
 	wd->texture.has_alpha = fmt.alpha_size != 0;
 	wd->texture.refcount = ccalloc(1, int);
 	*wd->texture.refcount = 1;

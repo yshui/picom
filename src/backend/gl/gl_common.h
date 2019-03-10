@@ -20,6 +20,7 @@ typedef struct {
 	GLint unifm_opacity;
 	GLint unifm_invert_color;
 	GLint unifm_tex;
+	GLint unifm_dim;
 } gl_win_shader_t;
 
 // Program and uniforms for blur shader
@@ -33,6 +34,7 @@ typedef struct {
 /// @brief Wrapper of a binded GLX texture.
 typedef struct gl_texture {
 	double opacity;
+	double dim;
 	int *refcount;
 	GLuint texture;
 	GLenum target;

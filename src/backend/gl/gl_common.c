@@ -19,26 +19,6 @@
 
 #include "backend/gl/gl_common.h"
 
-#define P_PAINTREG_START(reg_tgt, var)                                                   \
-	do {                                                                             \
-		region_t reg_new;                                                        \
-		int nrects;                                                              \
-		const rect_t *rects;                                                     \
-		pixman_region32_init_rect(&reg_new, dx, dy, width, height);              \
-		pixman_region32_intersect(&reg_new, &reg_new, (region_t *)reg_tgt);      \
-		rects = pixman_region32_rectangles(&reg_new, &nrects);                   \
-		glBegin(GL_QUADS);                                                       \
-                                                                                         \
-		for (int ri = 0; ri < nrects; ++ri) {                                    \
-			rect_t var = rects[ri];
-
-#define P_PAINTREG_END()                                                                 \
-	}                                                                                \
-	glEnd();                                                                         \
-	pixman_region32_fini(&reg_new);                                                  \
-	}                                                                                \
-	while (0)
-
 #define GLSL(version, ...) "#version " #version "\n" #__VA_ARGS__
 #define QUOTE(...) #__VA_ARGS__
 
@@ -164,9 +144,6 @@ static void gl_free_prog_main(gl_win_shader_t *pprogram) {
 		glDeleteProgram(pprogram->prog);
 		pprogram->prog = 0;
 	}
-	pprogram->unifm_opacity = -1;
-	pprogram->unifm_invert_color = -1;
-	pprogram->unifm_tex = -1;
 }
 
 /**
@@ -207,12 +184,18 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	glEnable(ptex->target);
 	if (gd->win_shader.prog) {
 		glUseProgram(gd->win_shader.prog);
-		if (gd->win_shader.unifm_opacity >= 0)
+		if (gd->win_shader.unifm_opacity >= 0) {
 			glUniform1f(gd->win_shader.unifm_opacity, ptex->opacity);
-		if (gd->win_shader.unifm_invert_color >= 0)
+		}
+		if (gd->win_shader.unifm_invert_color >= 0) {
 			glUniform1i(gd->win_shader.unifm_invert_color, ptex->color_inverted);
-		if (gd->win_shader.unifm_tex >= 0)
+		}
+		if (gd->win_shader.unifm_tex >= 0) {
 			glUniform1i(gd->win_shader.unifm_tex, 0);
+		}
+		if (gd->win_shader.unifm_dim >= 0) {
+			glUniform1f(gd->win_shader.unifm_dim, ptex->dim);
+		}
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
@@ -302,26 +285,6 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	return;
 }
 
-bool gl_dim_reg(session_t *ps, int dx, int dy, int width, int height, float z,
-                GLfloat factor, const region_t *reg_tgt) {
-	glColor4f(0.0f, 0.0f, 0.0f, factor);
-	{
-		P_PAINTREG_START(reg_tgt, crect) {
-			glVertex3i(crect.x1, crect.y1, z);
-			glVertex3i(crect.x2, crect.y1, z);
-			glVertex3i(crect.x2, crect.y2, z);
-			glVertex3i(crect.x1, crect.y2, z);
-		}
-		P_PAINTREG_END();
-	}
-
-	glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
-
-	gl_check_err();
-
-	return true;
-}
-
 /**
  * Blur contents in a particular region.
  */
@@ -389,7 +352,6 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 		int nrects;
 		const rect_t *rect =
 		    pixman_region32_rectangles((region_t *)reg_blur, &nrects);
-		dump_region(reg_blur);
 		glBegin(GL_QUADS);
 		for (int j = 0; j < nrects; j++) {
 			rect_t crect = rect[j];
@@ -479,6 +441,7 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
 	ret->unifm_opacity = glGetUniformLocationChecked(ret->prog, "opacity");
 	ret->unifm_invert_color = glGetUniformLocationChecked(ret->prog, "invert_color");
 	ret->unifm_tex = glGetUniformLocationChecked(ret->prog, "tex");
+	ret->unifm_dim = glGetUniformLocationChecked(ret->prog, "dim");
 
 	gl_check_err();
 
@@ -622,8 +585,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		    glGetUniformLocationChecked(pass->prog, "offset_x");
 		pass->unifm_offset_y =
 		    glGetUniformLocationChecked(pass->prog, "offset_y");
-		pass->unifm_opacity =
-		    glGetUniformLocationChecked(pass->prog, "opacity");
+		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
 	}
 	free(extension);
 
@@ -666,14 +628,16 @@ err:
 // clang-format off
 const char *win_shader_glsl = GLSL(110,
 	uniform float opacity;
+	uniform float dim;
 	uniform bool invert_color;
 	uniform sampler2D tex;
 
 	void main() {
 		vec4 c = texture2D(tex, gl_TexCoord[0].xy);
-		if (invert_color)
+		if (invert_color) {
 			c = vec4(c.aaa - c.rgb, c.a);
-		c *= opacity;
+		}
+		c = vec4(c.rgb * (1.0 - dim), c.a) * opacity;
 		gl_FragColor = c;
 	}
 );
@@ -682,11 +646,7 @@ const char *win_shader_glsl = GLSL(110,
 bool gl_init(struct gl_data *gd, session_t *ps) {
 	// Initialize GLX data structure
 	for (int i = 0; i < MAX_BLUR_PASS; ++i) {
-		gd->blur_shader[i] = (gl_blur_shader_t){
-		    .prog = 0,
-		    .unifm_offset_x = -1,
-		    .unifm_offset_y = -1,
-		};
+		gd->blur_shader[i] = (gl_blur_shader_t){.prog = 0};
 	}
 
 	gd->non_power_of_two_texture =
@@ -771,7 +731,9 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 	int *iargs = arg;
 	switch (op) {
 	case IMAGE_OP_INVERT_COLOR_ALL: tex->color_inverted = true; break;
-	case IMAGE_OP_DIM_ALL: log_warn("IMAGE_OP_DIM_ALL not implemented yet"); break;
+	case IMAGE_OP_DIM_ALL:
+		tex->dim = 1.0 - (1.0 - tex->dim) * (1.0 - *(double *)arg);
+		break;
 	case IMAGE_OP_APPLY_ALPHA_ALL: tex->opacity *= *(double *)arg; break;
 	case IMAGE_OP_APPLY_ALPHA:
 		log_warn("IMAGE_OP_APPLY_ALPHA not implemented yet");
