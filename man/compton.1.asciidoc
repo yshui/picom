@@ -416,10 +416,10 @@ $ compton -c --shadow-red 1 --shadow-green 1 --shadow-blue 1
 $ compton -c --shadow-exclude 'class_g = "wbar"'
 ------------
 
-* Enable OpenGL SGI_swap_control VSync with GLX backend:
+* Enable VSync with GLX backend:
 +
 ------------
-$ compton --backend glx --vsync opengl-swc
+$ compton --backend glx --vsync
 ------------
 
 BUGS
