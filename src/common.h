@@ -526,6 +526,8 @@ typedef struct session {
 	// === DBus related ===
 	void *dbus_data;
 #endif
+
+	int (*vsync_wait)(session_t *);
 } session_t;
 
 /// Temporary structure used for communication between

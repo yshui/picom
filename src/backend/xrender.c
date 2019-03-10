@@ -503,7 +503,7 @@ backend_t *backend_xrender_init(session_t *ps) {
 		abort();
 	}
 
-	xd->vsync = ps->o.vsync != VSYNC_NONE;
+	xd->vsync = ps->o.vsync;
 	if (ps->present_exists) {
 		auto eid = xcb_generate_id(ps->c);
 		auto e =

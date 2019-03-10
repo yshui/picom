@@ -46,7 +46,6 @@ static int vsync_drm_wait(session_t *ps) {
 
 	return ret;
 }
-#endif
 
 /**
  * Initialize DRM VSync.
@@ -54,7 +53,6 @@ static int vsync_drm_wait(session_t *ps) {
  * @return true for success, false otherwise
  */
 static bool vsync_drm_init(session_t *ps) {
-#ifdef CONFIG_VSYNC_DRM
 	// Should we always open card0?
 	if (ps->drm_fd < 0 && (ps->drm_fd = open("/dev/dri/card0", O_RDWR)) < 0) {
 		log_error("Failed to open device.");
@@ -65,12 +63,10 @@ static bool vsync_drm_init(session_t *ps) {
 		return false;
 
 	return true;
-#else
-	log_error("compton is not compiled with DRM VSync support.");
-	return false;
-#endif
 }
+#endif
 
+#ifdef CONFIG_OPENGL
 /**
  * Initialize OpenGL VSync.
  *
@@ -81,30 +77,19 @@ static bool vsync_drm_init(session_t *ps) {
  * @return true for success, false otherwise
  */
 static bool vsync_opengl_init(session_t *ps) {
-#ifdef CONFIG_OPENGL
 	if (!ensure_glx_context(ps))
 		return false;
 
 	return glxext.has_GLX_SGI_video_sync;
-#else
-	log_error("compton is not compiled with OpenGL VSync support.");
-	return false;
-#endif
 }
 
 static bool vsync_opengl_oml_init(session_t *ps) {
-#ifdef CONFIG_OPENGL
 	if (!ensure_glx_context(ps))
 		return false;
 
 	return glxext.has_GLX_OML_sync_control;
-#else
-	log_error("compton is not compiled with OpenGL VSync support.");
-	return false;
-#endif
 }
 
-#ifdef CONFIG_OPENGL
 static inline bool vsync_opengl_swc_swap_interval(session_t *ps, unsigned int interval) {
 	if (glxext.has_GLX_MESA_swap_control)
 		return glXSwapIntervalMESA(interval) == 0;
@@ -121,12 +106,10 @@ static inline bool vsync_opengl_swc_swap_interval(session_t *ps, unsigned int in
 	}
 	return false;
 }
-#endif
 
 static bool vsync_opengl_swc_init(session_t *ps) {
-#ifdef CONFIG_OPENGL
 	if (!bkend_use_glx(ps)) {
-		log_warn("OpenGL swap control requires the GLX backend.");
+		log_error("OpenGL swap control requires the GLX backend.");
 		return false;
 	}
 
@@ -136,26 +119,8 @@ static bool vsync_opengl_swc_init(session_t *ps) {
 	}
 
 	return true;
-#else
-	log_error("compton is not compiled with OpenGL VSync support.");
-	return false;
-#endif
 }
 
-static bool vsync_opengl_mswc_init(session_t *ps) {
-	log_warn("opengl-mswc is deprecated, please use opengl-swc instead.");
-	return vsync_opengl_swc_init(ps);
-}
-
-bool (*const VSYNC_FUNCS_INIT[NUM_VSYNC])(session_t *ps) = {
-    [VSYNC_DRM] = vsync_drm_init,
-    [VSYNC_OPENGL] = vsync_opengl_init,
-    [VSYNC_OPENGL_OML] = vsync_opengl_oml_init,
-    [VSYNC_OPENGL_SWC] = vsync_opengl_swc_init,
-    [VSYNC_OPENGL_MSWC] = vsync_opengl_mswc_init,
-};
-
-#ifdef CONFIG_OPENGL
 /**
  * Wait for next VSync, OpenGL method.
  */
@@ -164,8 +129,6 @@ static int vsync_opengl_wait(session_t *ps) {
 
 	glXGetVideoSyncSGI(&vblank_count);
 	glXWaitVideoSyncSGI(2, (vblank_count + 1) % 2, &vblank_count);
-	// I see some code calling glXSwapIntervalSGI(1) afterwards, is it required?
-
 	return 0;
 }
 
@@ -179,69 +142,63 @@ static int vsync_opengl_oml_wait(session_t *ps) {
 
 	glXGetSyncValuesOML(ps->dpy, ps->reg_win, &ust, &msc, &sbc);
 	glXWaitForMscOML(ps->dpy, ps->reg_win, 0, 2, (msc + 1) % 2, &ust, &msc, &sbc);
-
 	return 0;
 }
-
 #endif
-
-/// Function pointers to wait for VSync.
-int (*const VSYNC_FUNCS_WAIT[NUM_VSYNC])(session_t *ps) = {
-#ifdef CONFIG_VSYNC_DRM
-    [VSYNC_DRM] = vsync_drm_wait,
-#endif
-#ifdef CONFIG_OPENGL
-    [VSYNC_OPENGL] = vsync_opengl_wait,
-    [VSYNC_OPENGL_OML] = vsync_opengl_oml_wait,
-#endif
-};
-
-#ifdef CONFIG_OPENGL
-static void vsync_opengl_swc_deinit(session_t *ps) {
-	vsync_opengl_swc_swap_interval(ps, 0);
-}
-#endif
-
-/// Function pointers to deinitialize VSync.
-void (*const VSYNC_FUNCS_DEINIT[NUM_VSYNC])(session_t *ps) = {
-#ifdef CONFIG_OPENGL
-    [VSYNC_OPENGL_SWC] = vsync_opengl_swc_deinit,
-    [VSYNC_OPENGL_MSWC] = vsync_opengl_swc_deinit,
-#endif
-};
 
 /**
  * Initialize current VSync method.
  */
 bool vsync_init(session_t *ps) {
-	// Mesa turns on swap control by default, undo that
 #ifdef CONFIG_OPENGL
-	if (bkend_use_glx(ps))
+	if (bkend_use_glx(ps)) {
+		// Mesa turns on swap control by default, undo that
 		vsync_opengl_swc_swap_interval(ps, 0);
+	}
+#endif
+#ifdef CONFIG_VSYNC_DRM
+	log_warn("The DRM vsync method is deprecated, please don't enable it.");
 #endif
 
-	if (ps->o.vsync && VSYNC_FUNCS_INIT[ps->o.vsync] && !VSYNC_FUNCS_INIT[ps->o.vsync](ps)) {
-		ps->o.vsync = VSYNC_NONE;
-		return false;
-	} else
+	if (!ps->o.vsync) {
 		return true;
-}
+	}
 
-/**
- * Wait for next VSync.
- */
-void vsync_wait(session_t *ps) {
-	if (!ps->o.vsync)
-		return;
+#ifdef CONFIG_OPENGL
+	if (bkend_use_glx(ps)) {
+		if (!vsync_opengl_swc_init(ps)) {
+			return false;
+		}
+		ps->vsync_wait = NULL;        // glXSwapBuffers will automatically wait
+		                              // for vsync, we don't need to do anything.
+		return true;
+	}
+#endif
 
-	if (VSYNC_FUNCS_WAIT[ps->o.vsync])
-		VSYNC_FUNCS_WAIT[ps->o.vsync](ps);
-}
+	// Oh no, we are not using glx backend.
+	// Throwing things at wall.
+#ifdef CONFIG_OPENGL
+	if (vsync_opengl_oml_init(ps)) {
+		log_info("Using the opengl-oml vsync method");
+		ps->vsync_wait = vsync_opengl_oml_wait;
+		return true;
+	}
 
-/**
- * Deinitialize current VSync method.
- */
-void vsync_deinit(session_t *ps) {
-	if (ps->o.vsync && VSYNC_FUNCS_DEINIT[ps->o.vsync])
-		VSYNC_FUNCS_DEINIT[ps->o.vsync](ps);
+	if (vsync_opengl_init(ps)) {
+		log_info("Using the opengl vsync method");
+		ps->vsync_wait = vsync_opengl_wait;
+		return true;
+	}
+#endif
+
+#ifdef CONFIG_VSYNC_DRM
+	if (vsync_drm_init(ps)) {
+		log_info("Using the drm vsync method");
+		ps->vsync_wait = vsync_drm_wait;
+		return true;
+	}
+#endif
+
+	log_error("No supported vsync method found for this backend");
+	return false;
 }

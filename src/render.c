@@ -950,6 +950,10 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 #endif
 	}
 
+	if (ps->vsync_wait) {
+		ps->vsync_wait(ps);
+	}
+
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
 		if (ps->o.monitor_repaint) {

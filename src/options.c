@@ -154,32 +154,8 @@ static void usage(int ret) {
 	    "  Specify refresh rate of the screen. If not specified or 0, compton\n"
 	    "  will try detecting this with X RandR extension.\n"
 	    "\n"
-	    "--vsync vsync-method\n"
-	    "  Set VSync method. There are (up to) 5 VSync methods currently\n"
-	    "  available:\n"
-	    "    none = No VSync\n"
-	    "    drm = VSync with DRM_IOCTL_WAIT_VBLANK. May only work on some\n"
-	    "      (DRI-based) drivers."
-#ifndef CONFIG_VSYNC_DRM
-	    WARNING_DISABLED
-#endif
-	    "\n\n"
-#ifndef CONFIG_OPENGL
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
-	    "    opengl = Try to VSync with SGI_video_sync OpenGL extension. Only\n"
-	    "      work on some drivers." WARNING "\n"
-	    "    opengl-oml = Try to VSync with OML_sync_control OpenGL extension.\n"
-	    "      Only work on some drivers." WARNING "\n"
-	    "    opengl-swc = Enable driver-level VSync. Works only with GLX "
-	    "backend." WARNING "\n"
-#undef WARNING
-	    "\n"
-	    "--vsync-aggressive\n"
-	    "  Attempt to send painting request before VBlank and do XFlush()\n"
-	    "  during VBlank. This switch may be lifted out at any moment.\n"
+	    "--vsync\n"
+	    "  Enable VSync\n"
 	    "\n"
 	    "--paint-on-overlay\n"
 	    "  Painting on X Composite overlay window.\n"
@@ -377,7 +353,7 @@ static const struct option longopts[] = {
     {"detect-rounded-corners", no_argument, NULL, 267},
     {"detect-client-opacity", no_argument, NULL, 268},
     {"refresh-rate", required_argument, NULL, 269},
-    {"vsync", required_argument, NULL, 270},
+    {"vsync", optional_argument, NULL, 270},
     {"alpha-step", required_argument, NULL, 271},
     {"dbe", no_argument, NULL, 272},
     {"paint-on-overlay", no_argument, NULL, 273},
@@ -615,10 +591,15 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(268, detect_client_opacity);
 		P_CASELONG(269, refresh_rate);
 		case 270:
-			// --vsync
-			opt->vsync = parse_vsync(optarg);
-			if (opt->vsync >= NUM_VSYNC)
-				exit(1);
+			if (optarg) {
+				opt->vsync = parse_vsync(optarg);
+				log_warn("--vsync doesn't take argument anymore. \"%s\" "
+					 "is interpreted as \"%s\" for compatibility, but "
+					 "this will stop working soon",
+					 optarg, opt->vsync ? "true" : "false");
+			} else {
+				opt->vsync = true;
+			}
 			break;
 		case 271:
 			// --alpha-step

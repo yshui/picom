@@ -299,11 +299,12 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --vsync
 	if (config_lookup_string(&cfg, "vsync", &sval)) {
 		opt->vsync = parse_vsync(sval);
-		if (opt->vsync >= NUM_VSYNC) {
-			log_fatal("Cannot parse vsync");
-			goto err;
-		}
+		log_warn("vsync option will take a boolean from now on. \"%s\" is "
+		         "interpreted as \"%s\" for compatibility, but this will stop "
+		         "working soon",
+		         sval, opt->vsync ? "true" : "false");
 	}
+	lcfg_lookup_bool(&cfg, "vsync", &opt->vsync);
 	// --backend
 	if (config_lookup_string(&cfg, "backend", &sval)) {
 		opt->backend = parse_backend(sval);
