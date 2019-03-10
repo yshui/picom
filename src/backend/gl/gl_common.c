@@ -354,6 +354,7 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 		assert(gd->blur_texture[curr]);
 		glBindTexture(gd->blur_texture_target, gd->blur_texture[curr]);
 
+		glUseProgram(p->prog);
 		if (i < gd->npasses - 1) {
 			// not last pass, draw into framebuffer
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->blur_fbo);
@@ -366,13 +367,14 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 				log_error("Framebuffer attachment failed.");
 				goto end;
 			}
+			glUniform1f(p->unifm_opacity, 1.0);
 		} else {
 			// last pass, draw directly into the back buffer
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glDrawBuffer(GL_BACK);
+			glUniform1f(p->unifm_opacity, opacity);
 		}
 
-		glUseProgram(p->prog);
 		if (gd->blur_texture_target == GL_TEXTURE_2D) {
 			glUniform1f(p->unifm_offset_x, 1.0 / gd->width);
 			glUniform1f(p->unifm_offset_y, 1.0 / gd->height);
@@ -457,7 +459,6 @@ static GLuint glGetUniformLocationChecked(GLuint p, const char *name) {
 		log_error("Failed to get location of uniform '%s'. compton might not "
 		          "work correctly.",
 		          name);
-		return 0;
 	}
 	return ret;
 }
@@ -543,11 +544,12 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		uniform float offset_x;
 		uniform float offset_y;
 		uniform %s tex_scr;
+		uniform float opacity;
 		out vec4 out_color;
 		void main() {
 			vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);
 			%s //body of the convolution
-			out_color = sum / float(%.7g);
+			out_color = sum / float(%.7g) * opacity;
 		}
 	);
 	static const char *FRAG_SHADER_BLUR_ADD = QUOTE(
@@ -620,6 +622,8 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		    glGetUniformLocationChecked(pass->prog, "offset_x");
 		pass->unifm_offset_y =
 		    glGetUniformLocationChecked(pass->prog, "offset_y");
+		pass->unifm_opacity =
+		    glGetUniformLocationChecked(pass->prog, "opacity");
 	}
 	free(extension);
 

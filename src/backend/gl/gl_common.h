@@ -16,24 +16,18 @@
 
 // Program and uniforms for window shader
 typedef struct {
-	/// GLSL program.
 	GLuint prog;
-	/// Location of uniform "opacity" in window GLSL program.
 	GLint unifm_opacity;
-	/// Location of uniform "invert_color" in blur GLSL program.
 	GLint unifm_invert_color;
-	/// Location of uniform "tex" in window GLSL program.
 	GLint unifm_tex;
 } gl_win_shader_t;
 
 // Program and uniforms for blur shader
 typedef struct {
-	/// GLSL program for blur.
 	GLuint prog;
-	/// Location of uniform "offset_x" in blur GLSL program.
 	GLint unifm_offset_x;
-	/// Location of uniform "offset_y" in blur GLSL program.
 	GLint unifm_offset_y;
+	GLint unifm_opacity;
 } gl_blur_shader_t;
 
 /// @brief Wrapper of a binded GLX texture.
@@ -42,6 +36,7 @@ typedef struct gl_texture {
 	int *refcount;
 	GLuint texture;
 	GLenum target;
+	// The size of the backing texture
 	int width, height;
 	// The effective size of the texture
 	int ewidth, eheight;
