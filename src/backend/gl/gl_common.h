@@ -28,16 +28,12 @@ typedef struct {
 
 // Program and uniforms for blur shader
 typedef struct {
-	/// Fragment shader for blur.
-	GLuint frag_shader;
 	/// GLSL program for blur.
 	GLuint prog;
 	/// Location of uniform "offset_x" in blur GLSL program.
 	GLint unifm_offset_x;
 	/// Location of uniform "offset_y" in blur GLSL program.
 	GLint unifm_offset_y;
-	/// Location of uniform "factor_center" in blur GLSL program.
-	GLint unifm_factor_center;
 } gl_blur_shader_t;
 
 /// @brief Wrapper of a binded GLX texture.
@@ -59,9 +55,18 @@ struct gl_data {
 	backend_t base;
 	// Height and width of the viewport
 	int height, width;
+	int npasses;
 	gl_win_shader_t win_shader;
 	gl_blur_shader_t blur_shader[MAX_BLUR_PASS];
 	bool non_power_of_two_texture;
+
+	// Temporary textures used for blurring. They are always the same size as the
+	// target, so they are always big enough without resizing.
+	// Turns out calling glTexImage to resize is expensive, so we avoid that.
+	GLuint blur_texture[2];
+	// Temporary fbo used for blurring
+	GLuint blur_fbo;
+	GLenum blur_texture_target;
 };
 
 typedef struct {
@@ -91,8 +96,6 @@ void gl_compose(backend_t *, void *ptex, int dst_x, int dst_y, const region_t *r
                 const region_t *reg_visible);
 
 void gl_resize(struct gl_data *, int width, int height);
-
-GLuint glGetUniformLocationChecked(GLuint p, const char *name);
 
 bool gl_init(struct gl_data *gd, session_t *);
 void gl_deinit(struct gl_data *gd);

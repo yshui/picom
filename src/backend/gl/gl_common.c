@@ -40,6 +40,7 @@
 	while (0)
 
 #define GLSL(version, ...) "#version " #version "\n" #__VA_ARGS__
+#define QUOTE(...) #__VA_ARGS__
 
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str) {
 	log_trace("===\n%s\n===", shader_str);
@@ -169,30 +170,6 @@ static void gl_free_prog_main(gl_win_shader_t *pprogram) {
 }
 
 /**
- * @brief Get tightly packed RGB888 data from GL front buffer.
- *
- * Don't expect any sort of decent performance.
- *
- * @returns tightly packed RGB888 data of the size of the screen,
- *          to be freed with `free()`
- */
-unsigned char *gl_take_screenshot(session_t *ps, int *out_length) {
-	int length = 3 * ps->root_width * ps->root_height;
-	GLint unpack_align_old = 0;
-	glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpack_align_old);
-	assert(unpack_align_old > 0);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	unsigned char *buf = ccalloc(length, unsigned char);
-	glReadBuffer(GL_FRONT);
-	glReadPixels(0, 0, ps->root_width, ps->root_height, GL_RGB, GL_UNSIGNED_BYTE, buf);
-	glReadBuffer(GL_BACK);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, unpack_align_old);
-	if (out_length)
-		*out_length = sizeof(unsigned char) * length;
-	return buf;
-}
-
-/**
  * Render a region with texture data.
  *
  * @param ptex the texture
@@ -233,10 +210,6 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	if (ptex->opacity < 1.0 || ptex->has_alpha) {
 
 		glEnable(GL_BLEND);
-
-		// Needed for handling opacity of ARGB texture
-		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-
 		// X pixmap is in premultiplied ARGB format, so
 		// we need to do this to correct it.
 		// Thanks to derhass for help.
@@ -324,7 +297,6 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	// Cleanup
 	glBindTexture(ptex->target, 0);
 	glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 	glDisable(GL_BLEND);
 	glDisable(GL_COLOR_LOGIC_OP);
 	glDisable(ptex->target);
@@ -369,101 +341,45 @@ bool gl_dim_reg(session_t *ps, int dx, int dy, int width, int height, float z,
 	return true;
 }
 
-#if 0
 /**
  * Blur contents in a particular region.
- *
- * XXX seems to be way to complex for what it does
  */
-
-// Blur the area sized width x height starting at dx x dy
-bool gl_blur_dst(session_t *ps, const gl_cap_t *cap, int dx, int dy, int width,
-                 int height, float z, GLfloat factor_center, const region_t *reg_tgt,
-                 gl_blur_cache_t *pbc, const gl_blur_shader_t *pass, int npasses) {
-	const bool more_passes = npasses > 1;
+bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
+             const region_t *reg_visible) {
+	// Remainder: regions are in Xorg coordinates
+	struct gl_data *gd = (void *)base;
+	const rect_t *extent = pixman_region32_extents((region_t *)reg_blur);
+	int width = extent->x2 - extent->x1, height = extent->y2 - extent->y1;
+	int dst_y = gd->height - extent->y2;
+	if (width == 0 || height == 0) {
+		return true;
+	}
 
 	// these should be arguments
-	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
-	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
 	bool ret = false;
 
-	// Calculate copy region size
-	gl_blur_cache_t ibc = {.width = 0, .height = 0};
-	if (!pbc)
-		pbc = &ibc;
-
-	// log_trace("(): %d, %d, %d, %d\n", dx, dy, width, height);
-
-	GLenum tex_tgt = GL_TEXTURE_RECTANGLE;
-	if (cap->non_power_of_two_texture)
-		tex_tgt = GL_TEXTURE_2D;
-
-	// Free textures if size inconsistency discovered
-	if (width != pbc->width || height != pbc->height) {
-		glDeleteTextures(1, &pbc->textures[0]);
-		glDeleteTextures(1, &pbc->textures[1]);
-		pbc->width = pbc->height = 0;
-		pbc->textures[0] = pbc->textures[1] = 0;
-	}
-
-	// Generate FBO and textures if needed
-	if (!pbc->textures[0])
-		gl_gen_texture(tex_tgt, width, height, &pbc->textures[0]);
-	GLuint tex_scr = pbc->textures[0];
-	if (npasses > 1 && !pbc->textures[1])
-		gl_gen_texture(tex_tgt, width, height, &pbc->textures[1]);
-	pbc->width = width;
-	pbc->height = height;
-	GLuint tex_scr2 = pbc->textures[1];
-	if (npasses > 1 && !pbc->fbo)
-		glGenFramebuffers(1, &pbc->fbo);
-	const GLuint fbo = pbc->fbo;
-
-	if (!tex_scr || (npasses > 1 && !tex_scr2)) {
-		log_error("Failed to allocate texture.");
-		goto end;
-	}
-	if (npasses > 1 && !fbo) {
-		log_error("Failed to allocate framebuffer.");
-		goto end;
-	}
-
-	// Read destination pixels into a texture
-	glEnable(tex_tgt);
-	glBindTexture(tex_tgt, tex_scr);
-
+	int curr = 0;
+	glReadBuffer(GL_BACK);
+	glEnable(gd->blur_texture_target);
+	glBindTexture(gd->blur_texture_target, gd->blur_texture[0]);
 	// Copy the area to be blurred into tmp buffer
-	glCopyTexSubImage2D(tex_tgt, 0, 0, 0, dx, dy, width, height);
+	glCopyTexSubImage2D(gd->blur_texture_target, 0, 0, 0, extent->x1, dst_y, width, height);
 
-	// Texture scaling factor
-	GLfloat texfac_x = 1.0f, texfac_y = 1.0f;
-	if (tex_tgt == GL_TEXTURE_2D) {
-		texfac_x /= width;
-		texfac_y /= height;
-	}
-
-	// Paint it back
-	if (more_passes) {
-		glDisable(GL_STENCIL_TEST);
-		glDisable(GL_SCISSOR_TEST);
-	}
-
-	for (int i = 0; i < npasses; ++i) {
+	for (int i = 0; i < gd->npasses; ++i) {
 		assert(i < MAX_BLUR_PASS - 1);
-		const gl_blur_shader_t *curr = &pass[i];
-		assert(curr->prog);
+		const gl_blur_shader_t *p = &gd->blur_shader[i];
+		assert(p->prog);
 
-		assert(tex_scr);
-		glBindTexture(tex_tgt, tex_scr);
+		assert(gd->blur_texture[curr]);
+		glBindTexture(gd->blur_texture_target, gd->blur_texture[curr]);
 
-		if (i < npasses - 1) {
+		if (i < gd->npasses - 1) {
 			// not last pass, draw into framebuffer
-			glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->blur_fbo);
 
-			// XXX not fixing bug during porting
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-			                       GL_TEXTURE_2D, tex_scr2,
-			                       0);        // XXX wrong, should use tex_tgt
+			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+			                       gd->blur_texture_target,
+			                       gd->blur_texture[!curr], 0);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 				log_error("Framebuffer attachment failed.");
@@ -473,113 +389,88 @@ bool gl_blur_dst(session_t *ps, const gl_cap_t *cap, int dx, int dy, int width,
 			// last pass, draw directly into the back buffer
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glDrawBuffer(GL_BACK);
-			if (have_scissors)
-				glEnable(GL_SCISSOR_TEST);
-			if (have_stencil)
-				glEnable(GL_STENCIL_TEST);
 		}
 
-		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-		glUseProgram(curr->prog);
-		if (curr->unifm_offset_x >= 0)
-			glUniform1f(curr->unifm_offset_x, texfac_x);
-		if (curr->unifm_offset_y >= 0)
-			glUniform1f(curr->unifm_offset_y, texfac_y);
-		if (curr->unifm_factor_center >= 0)
-			glUniform1f(curr->unifm_factor_center, factor_center);
+		glUseProgram(p->prog);
+		if (gd->blur_texture_target == GL_TEXTURE_2D) {
+			glUniform1f(p->unifm_offset_x, 1.0 / gd->width);
+			glUniform1f(p->unifm_offset_y, 1.0 / gd->height);
+		} else {
+			glUniform1f(p->unifm_offset_x, 1.0);
+			glUniform1f(p->unifm_offset_y, 1.0);
+		}
 
 		// XXX use multiple draw calls is probably going to be slow than
 		//     just simply blur the whole area.
 
-		P_PAINTREG_START(reg_tgt, crect) {
+		int nrects;
+		const rect_t *rect =
+		    pixman_region32_rectangles((region_t *)reg_blur, &nrects);
+		dump_region(reg_blur);
+		glBegin(GL_QUADS);
+		for (int j = 0; j < nrects; j++) {
+			rect_t crect = rect[j];
+			// flip y axis, because the regions are in Xorg's coordinates,
+			// which is y-flipped from OpenGL's.
+			crect.y1 = gd->height - crect.y1;
+			crect.y2 = gd->height - crect.y2;
+
 			// Texture coordinates
-			const GLfloat texture_x1 = (crect.x1 - dx) * texfac_x;
-			const GLfloat texture_y1 = (crect.y1 - dy) * texfac_y;
-			const GLfloat texture_x2 =
-			    texture_x1 + (crect.x2 - crect.x1) * texfac_x;
-			const GLfloat texture_y2 =
-			    texture_y1 + (crect.y2 - crect.y1) * texfac_y;
+			GLfloat texture_x1 = (crect.x1 - extent->x1);
+			GLfloat texture_y1 = (crect.y2 - dst_y);
+			GLfloat texture_x2 = texture_x1 + (crect.x2 - crect.x1);
+			GLfloat texture_y2 = texture_y1 + (crect.y1 - crect.y2);
+
+			if (gd->blur_texture_target == GL_TEXTURE_2D) {
+				texture_x1 /= gd->width;
+				texture_x2 /= gd->width;
+				texture_y1 /= gd->height;
+				texture_y2 /= gd->height;
+			}
 
 			// Vertex coordinates
 			// For passes before the last one, we are drawing into a buffer,
 			// so (dx, dy) from source maps to (0, 0)
-			GLfloat vx1 = crect.x1 - dx;
-			GLfloat vy1 = crect.y1 - dy;
-			if (i == npasses - 1) {
+			GLfloat vx1 = crect.x1 - extent->x1;
+			GLfloat vy1 = crect.y2 - dst_y;
+			if (i == gd->npasses - 1) {
 				// For last pass, we are drawing back to source, so we
 				// don't need to map
 				vx1 = crect.x1;
-				vy1 = crect.y1;
+				vy1 = crect.y2;
 			}
 			GLfloat vx2 = vx1 + (crect.x2 - crect.x1);
-			GLfloat vy2 = vy1 + (crect.y2 - crect.y1);
+			GLfloat vy2 = vy1 + (crect.y1 - crect.y2);
 
 			GLfloat texture_x[] = {texture_x1, texture_x2, texture_x2, texture_x1};
 			GLfloat texture_y[] = {texture_y1, texture_y1, texture_y2, texture_y2};
 			GLint vx[] = {vx1, vx2, vx2, vx1};
 			GLint vy[] = {vy1, vy1, vy2, vy2};
 
-			for (int j = 0; j < 4; j++) {
-				glTexCoord2f(texture_x[j], texture_y[j]);
-				glVertex3i(vx[j], vy[j], z);
+			for (int k = 0; k < 4; k++) {
+				glTexCoord2f(texture_x[k], texture_y[k]);
+				glVertex3i(vx[k], vy[k], 0);
 			}
 		}
-		P_PAINTREG_END();
+		glEnd();
 
 		glUseProgram(0);
-
-		// Swap tex_scr and tex_scr2
-		GLuint tmp = tex_scr2;
-		tex_scr2 = tex_scr;
-		tex_scr = tmp;
+		curr = !curr;
 	}
 
 	ret = true;
 
 end:
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glBindTexture(tex_tgt, 0);
-	glDisable(tex_tgt);
-	if (have_scissors)
-		glEnable(GL_SCISSOR_TEST);
-	if (have_stencil)
-		glEnable(GL_STENCIL_TEST);
-
-	if (&ibc == pbc) {
-		glDeleteTextures(1, &pbc->textures[0]);
-		glDeleteTextures(1, &pbc->textures[1]);
-		glDeleteFramebuffers(1, &pbc->fbo);
-	}
+	glBindTexture(gd->blur_texture_target, 0);
+	glDisable(gd->blur_texture_target);
 
 	gl_check_err();
 
 	return ret;
 }
-#endif
 
-/**
- * Set clipping region on the target window.
- */
-void gl_set_clip(const region_t *reg) {
-	glDisable(GL_STENCIL_TEST);
-	glDisable(GL_SCISSOR_TEST);
-
-	if (!reg)
-		return;
-
-	int nrects;
-	const rect_t *rects = pixman_region32_rectangles((region_t *)reg, &nrects);
-
-	if (nrects == 1) {
-		glEnable(GL_SCISSOR_TEST);
-		glScissor(rects[0].x1, rects[0].y2, rects[0].x2 - rects[0].x1,
-		          rects[0].y2 - rects[0].y1);
-	}
-
-	gl_check_err();
-}
-
-GLuint glGetUniformLocationChecked(GLuint p, const char *name) {
+static GLuint glGetUniformLocationChecked(GLuint p, const char *name) {
 	auto ret = glGetUniformLocation(p, name);
 	if (ret < 0) {
 		log_error("Failed to get location of uniform '%s'. compton might not "
@@ -625,30 +516,28 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 	glLoadIdentity();
 	gd->height = height;
 	gd->width = width;
+
+	// Resize the temporary textures
+	glBindTexture(gd->blur_texture_target, gd->blur_texture[0]);
+	glTexImage2D(gd->blur_texture_target, 0, GL_RGBA8, gd->width, gd->height, 0,
+	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+	if (gd->npasses > 1) {
+		glBindTexture(gd->blur_texture_target, gd->blur_texture[1]);
+		glTexImage2D(gd->blur_texture_target, 0, GL_RGBA8, gd->width, gd->height, 0,
+		             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+	}
 }
 
-static void attr_unused gl_destroy_win_shader(session_t *ps, gl_win_shader_t *shader) {
-	assert(shader);
-	assert(shader->prog);
-	glDeleteProgram(shader->prog);
-	shader->prog = 0;
-	shader->unifm_opacity = -1;
-	shader->unifm_invert_color = -1;
-	shader->unifm_tex = -1;
-}
-
-#if 0
 /**
  * Initialize GL blur filters.
- *
- * Fill `passes` with blur filters, won't create more than MAX_BLUR_FILTER number of
- * filters
  */
-bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_cap_t *cap) {
-	assert(ps->o.blur_kerns[0]);
+static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
+	if (!kernels[0]) {
+		return true;
+	}
 
 	// Allocate PBO if more than one blur kernel is present
-	if (ps->o.blur_kerns[1]) {
+	if (kernels[1]) {
 		// Try to generate a framebuffer
 		GLuint fbo = 0;
 		glGenFramebuffers(1, &fbo);
@@ -665,110 +554,111 @@ bool gl_create_blur_filters(session_t *ps, gl_blur_shader_t *passes, const gl_ca
 	// Thanks to hiciu for reporting.
 	setlocale(LC_NUMERIC, "C");
 
-	static const char *FRAG_SHADER_BLUR_PREFIX = "#version 110\n"
-	                                             "%s"
-	                                             "uniform float offset_x;\n"
-	                                             "uniform float offset_y;\n"
-	                                             "uniform float factor_center;\n"
-	                                             "uniform %s tex_scr;\n\n"
-	                                             "void main() {\n"
-	                                             "  vec4 sum = vec4(0.0, 0.0, 0.0, "
-	                                             "0.0);\n";
-	static const char *FRAG_SHADER_BLUR_ADD = "  sum += float(%.7g) * %s(tex_scr, "
-	                                          "vec2(gl_TexCoord[0].x + offset_x "
-	                                          "* float(%d), gl_TexCoord[0].y + "
-	                                          "offset_y * float(%d)));\n";
-	static const char *FRAG_SHADER_BLUR_ADD_GPUSHADER4 = "  sum += float(%.7g) * "
-	                                                     "%sOffset(tex_scr, "
-	                                                     "vec2(gl_TexCoord[0].x, "
-	                                                     "gl_TexCoord[0].y), "
-	                                                     "ivec2(%d, %d));\n";
-	static const char *FRAG_SHADER_BLUR_SUFFIX = "  sum += %s(tex_scr, "
-	                                             "vec2(gl_TexCoord[0].x, "
-	                                             "gl_TexCoord[0].y)) * "
-	                                             "factor_center;\n"
-	                                             "  gl_FragColor = sum / "
-	                                             "(factor_center + float(%.7g));\n"
-	                                             "}\n";
+	// clang-format off
+	static const char *FRAG_SHADER_BLUR = GLSL(130,
+		%s\n // other extension pragmas
+		uniform float offset_x;
+		uniform float offset_y;
+		uniform %s tex_scr;
+		out vec4 out_color;
+		void main() {
+			vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);
+			%s //body of the convolution
+			out_color = sum / float(%.7g);
+		}
+	);
+	static const char *FRAG_SHADER_BLUR_ADD = QUOTE(
+		sum += float(%.7g) *
+		       %s(tex_scr, vec2(gl_TexCoord[0].x + offset_x * float(%d),
+		                        gl_TexCoord[0].y + offset_y * float(%d)));
+	);
+	// clang-format on
 
-	const bool use_texture_rect = !cap->non_power_of_two_texture;
+	const bool use_texture_rect = !gd->non_power_of_two_texture;
 	const char *sampler_type = (use_texture_rect ? "sampler2DRect" : "sampler2D");
 	const char *texture_func = (use_texture_rect ? "texture2DRect" : "texture2D");
 	const char *shader_add = FRAG_SHADER_BLUR_ADD;
 	char *extension = strdup("");
-	if (use_texture_rect)
-		mstrextend(&extension, "#extension GL_ARB_texture_rectangle : "
-		                       "require\n");
-	if (ps->o.glx_use_gpushader4) {
-		mstrextend(&extension, "#extension GL_EXT_gpu_shader4 : "
-		                       "require\n");
-		shader_add = FRAG_SHADER_BLUR_ADD_GPUSHADER4;
+	if (use_texture_rect) {
+		mstrextend(&extension, "#extension GL_ARB_texture_rectangle : require\n");
 	}
 
-	for (int i = 0; i < MAX_BLUR_PASS && ps->o.blur_kerns[i]; ++i) {
-		auto kern = ps->o.blur_kerns[i];
+	gl_blur_shader_t *passes = gd->blur_shader;
+	for (int i = 0; i < MAX_BLUR_PASS && kernels[i]; gd->npasses = ++i) {
+		auto kern = kernels[i];
 		// Build shader
 		int width = kern->w, height = kern->h;
 		int nele = width * height - 1;
-		unsigned int len =
-		    strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) +
-		    strlen(extension) +
-		    (strlen(shader_add) + strlen(texture_func) + 42) * nele +
-		    strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
-		char *shader_str = ccalloc(len, char);
-		char *pc = shader_str;
-		sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
-		pc += strlen(pc);
-		assert(strlen(shader_str) < len);
+		size_t body_len = (strlen(shader_add) + strlen(texture_func) + 42) * nele;
+		char *shader_body = ccalloc(body_len, char);
+		char *pc = shader_body;
 
 		double sum = 0.0;
 		for (int j = 0; j < height; ++j) {
 			for (int k = 0; k < width; ++k) {
-				if (height / 2 == j && width / 2 == k)
-					continue;
-				double val = kern->data[j * width + k];
+				double val;
+				if (height / 2 == j && width / 2 == k) {
+					val = 1;
+				} else {
+					val = kern->data[j * width + k];
+				}
 				if (val == 0) {
 					continue;
 				}
 				sum += val;
-				sprintf(pc, shader_add, val, texture_func, k - width / 2,
-				        j - height / 2);
-				pc += strlen(pc);
-				assert(strlen(shader_str) < len);
+				pc += snprintf(pc, body_len - (pc - shader_body),
+				               FRAG_SHADER_BLUR_ADD, val, texture_func,
+				               k - width / 2, j - height / 2);
+				assert(pc < shader_body + body_len);
 			}
 		}
 
 		auto pass = passes + i;
-		sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
-		assert(strlen(shader_str) < len);
-		pass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
-		free(shader_str);
-
-		if (!pass->frag_shader) {
-			log_error("Failed to create fragment shader %d.", i);
-			goto err;
-		}
+		size_t shader_len = strlen(FRAG_SHADER_BLUR) + strlen(extension) +
+		                    strlen(sampler_type) + strlen(shader_body) +
+		                    10 /* sum */ + 1 /* null terminator */;
+		char *shader_str = ccalloc(shader_len, char);
+		size_t real_shader_len = snprintf(shader_str, shader_len, FRAG_SHADER_BLUR,
+		                                  extension, sampler_type, shader_body, sum);
+		assert(real_shader_len < shader_len);
+		free(shader_body);
 
 		// Build program
-		pass->prog = gl_create_program(&pass->frag_shader, 1);
+		pass->prog = gl_create_program_from_str(NULL, shader_str);
+		free(shader_str);
 		if (!pass->prog) {
 			log_error("Failed to create GLSL program.");
 			goto err;
 		}
+		glBindFragDataLocation(pass->prog, 0, "out_color");
 
 		// Get uniform addresses
-		pass->unifm_factor_center = glGetUniformLocationChecked(pass->prog, "fact"
-		                                                                    "or_"
-		                                                                    "cent"
-		                                                                    "er");
-		if (!ps->o.glx_use_gpushader4) {
-			pass->unifm_offset_x =
-			    glGetUniformLocationChecked(pass->prog, "offset_x");
-			pass->unifm_offset_y =
-			    glGetUniformLocationChecked(pass->prog, "offset_y");
-		}
+		pass->unifm_offset_x =
+		    glGetUniformLocationChecked(pass->prog, "offset_x");
+		pass->unifm_offset_y =
+		    glGetUniformLocationChecked(pass->prog, "offset_y");
 	}
 	free(extension);
+
+	// Generate FBO and textures if needed
+	gd->blur_texture_target = GL_TEXTURE_RECTANGLE;
+	if (gd->non_power_of_two_texture) {
+		gd->blur_texture_target = GL_TEXTURE_2D;
+	}
+	glGenTextures(gd->npasses > 1 ? 2 : 1, gd->blur_texture);
+	glBindTexture(gd->blur_texture_target, gd->blur_texture[0]);
+	glTexParameteri(gd->blur_texture_target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(gd->blur_texture_target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexImage2D(gd->blur_texture_target, 0, GL_RGBA8, gd->width, gd->height, 0,
+	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+	if (gd->npasses > 1) {
+		glBindTexture(gd->blur_texture_target, gd->blur_texture[1]);
+		glTexParameteri(gd->blur_texture_target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(gd->blur_texture_target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexImage2D(gd->blur_texture_target, 0, GL_RGBA8, gd->width, gd->height, 0,
+		             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		glGenFramebuffers(1, &gd->blur_fbo);
+	}
 
 	// Restore LC_NUMERIC
 	setlocale(LC_NUMERIC, lc_numeric_old);
@@ -783,7 +673,6 @@ err:
 	free(lc_numeric_old);
 	return false;
 }
-#endif
 
 // clang-format off
 const char *win_shader_glsl = GLSL(110,
@@ -804,66 +693,48 @@ const char *win_shader_glsl = GLSL(110,
 bool gl_init(struct gl_data *gd, session_t *ps) {
 	// Initialize GLX data structure
 	for (int i = 0; i < MAX_BLUR_PASS; ++i) {
-		gd->blur_shader[i] = (gl_blur_shader_t){.frag_shader = 0,
-		                                        .prog = 0,
-		                                        .unifm_offset_x = -1,
-		                                        .unifm_offset_y = -1,
-		                                        .unifm_factor_center = -1};
+		gd->blur_shader[i] = (gl_blur_shader_t){
+		    .prog = 0,
+		    .unifm_offset_x = -1,
+		    .unifm_offset_y = -1,
+		};
 	}
 
-	gd->non_power_of_two_texture = gl_has_extension("GL_ARB_texture_non_power_of_"
-	                                                "two");
-
-	// Ensure we have a stencil buffer. X Fixes does not guarantee rectangles
-	// in regions don't overlap, so we must use stencil buffer to make sure
-	// we don't paint a region for more than one time, I think?
-	if (!ps->o.glx_no_stencil) {
-		GLint val = 0;
-		glGetIntegerv(GL_STENCIL_BITS, &val);
-		if (!val) {
-			log_error("Target window doesn't have stencil buffer.");
-			return false;
-		}
-	}
-
-	// Render preparations
-	gl_resize(gd, ps->root_width, ps->root_height);
+	gd->non_power_of_two_texture =
+	    gl_has_extension("GL_ARB_texture_non_power_of_two");
 
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+
 	glDisable(GL_BLEND);
 
-	if (!ps->o.glx_no_stencil) {
-		// Initialize stencil buffer
-		glClear(GL_STENCIL_BUFFER_BIT);
-		glDisable(GL_STENCIL_TEST);
-		glStencilMask(0x1);
-		glStencilFunc(GL_EQUAL, 0x1, 0x1);
-	}
+	// Initialize stencil buffer
+	glDisable(GL_STENCIL_TEST);
+	glStencilMask(0x1);
+	glStencilFunc(GL_EQUAL, 0x1, 0x1);
 
 	// Clear screen
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-	// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	// glXSwapBuffers(ps->dpy, get_tgt_window(ps));
+	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-	// Initialize blur filters
-	// gl_create_blur_filters(ps, gd->blur_shader, &gd->cap);
 	gl_win_shader_from_string(NULL, win_shader_glsl, &gd->win_shader);
+	if (!gl_init_blur(gd, ps->o.blur_kerns)) {
+		return false;
+	}
+
+	// Set up the size of the viewport. We do this last because it expects the blur
+	// textures are already set up.
+	gl_resize(gd, ps->root_width, ps->root_height);
 
 	return true;
 }
 
 static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
 	if (shader->prog) {
-		glDeleteShader(shader->prog);
-	}
-	if (shader->frag_shader) {
-		glDeleteShader(shader->frag_shader);
+		glDeleteProgram(shader->prog);
 	}
 
 	shader->prog = 0;
-	shader->frag_shader = 0;
 }
 
 void gl_deinit(struct gl_data *gd) {
@@ -921,10 +792,4 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 bool gl_is_image_transparent(backend_t *base, void *image_data) {
 	gl_texture_t *img = image_data;
 	return img->has_alpha;
-}
-
-/// stub for backend_operations::blur
-bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
-             const region_t *reg_visible) {
-	return true;
 }
