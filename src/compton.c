@@ -93,15 +93,6 @@ const char *const WINTYPES[NUM_WINTYPES] = {
     "popup_menu", "tooltip", "notify", "combo",   "dnd",
 };
 
-/// Names of VSync modes.
-const char *const VSYNC_STRS[NUM_VSYNC + 1] = {"none",               // VSYNC_NONE
-                                               "drm",                // VSYNC_DRM
-                                               "opengl",             // VSYNC_OPENGL
-                                               "opengl-oml",         // VSYNC_OPENGL_OML
-                                               "opengl-swc",         // VSYNC_OPENGL_SWC
-                                               "opengl-mswc",        // VSYNC_OPENGL_MSWC
-                                               NULL};
-
 /// Names of backends.
 const char *const BACKEND_STRS[NUM_BKEND + 1] = {"xrender",              // BKEND_XRENDER
                                                  "glx",                  // BKEND_GLX
@@ -2226,7 +2217,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	            .refresh_rate = 0,
 	            .sw_opti = false,
-	            .vsync = VSYNC_NONE,
 
 	            .shadow_red = 0.0,
 	            .shadow_green = 0.0,

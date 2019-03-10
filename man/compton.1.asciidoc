@@ -130,19 +130,8 @@ OPTIONS
 *--refresh-rate* 'REFRESH_RATE'::
 	Specify refresh rate of the screen. If not specified or 0, compton will try detecting this with X RandR extension.
 
-*--vsync* 'VSYNC_METHOD'::
-	Set VSync method. VSync methods currently available:
-+
---
-* 'none': No VSync
-* 'drm': VSync with 'DRM_IOCTL_WAIT_VBLANK'. May only work on some (DRI-based) drivers.
-* 'opengl': Try to VSync with 'SGI_video_sync' OpenGL extension. Only work on some drivers.
-* 'opengl-oml': Try to VSync with 'OML_sync_control' OpenGL extension. Only work on some drivers.
-* 'opengl-swc': Try to VSync with 'MESA_swap_control' or 'SGI_swap_control' (in order of preference) OpenGL extension. Works only with GLX backend. Known to be most effective on many drivers. Does not guarantee to control paint timing.
-* 'opengl-mswc': Deprecated, use 'opengl-swc' instead.
-
-(Note some VSync methods may not be enabled at compile time.)
---
+*--vsync*::
+	Enable VSync.
 
 *--sw-opti*::
 	Limit compton to repaint at most once every 1 / 'refresh_rate' second to boost performance. This should not be used with *--vsync* drm/opengl/opengl-oml as they essentially does *--sw-opti*'s job already, unless you wish to specify a lower refresh rate than the actual value.

@@ -28,17 +28,6 @@
 
 typedef struct session session_t;
 
-/// VSync modes.
-typedef enum {
-	VSYNC_NONE,
-	VSYNC_DRM,
-	VSYNC_OPENGL,
-	VSYNC_OPENGL_OML,
-	VSYNC_OPENGL_SWC,
-	VSYNC_OPENGL_MSWC,
-	NUM_VSYNC,
-} vsync_t;
-
 /// @brief Possible backends of compton.
 enum backend {
 	BKEND_XRENDER,
@@ -138,9 +127,7 @@ typedef struct options_t {
 	/// Whether to enable refresh-rate-based software optimization.
 	bool sw_opti;
 	/// VSync method to use;
-	vsync_t vsync;
-	/// Whether to do VSync aggressively.
-	bool vsync_aggressive;
+	bool vsync;
 	/// Whether to use glFinish() instead of glFlush() for (possibly) better
 	/// VSync yet probably higher CPU usage.
 	bool vsync_use_glfinish;
@@ -238,7 +225,6 @@ typedef struct options_t {
 	bool track_leader;
 } options_t;
 
-extern const char *const VSYNC_STRS[NUM_VSYNC + 1];
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
 attr_warn_unused_result bool parse_long(const char *, long *);
@@ -347,14 +333,12 @@ static inline attr_pure int parse_glx_swap_method(const char *str) {
 /**
  * Parse a VSync option argument.
  */
-static inline vsync_t parse_vsync(const char *str) {
-	for (vsync_t i = 0; VSYNC_STRS[i]; ++i)
-		if (!strcasecmp(str, VSYNC_STRS[i])) {
-			return i;
-		}
-
-	log_error("Invalid vsync argument: %s", str);
-	return NUM_VSYNC;
+static inline bool parse_vsync(const char *str) {
+	if (strcmp(str, "no") == 0 || strcmp(str, "none") == 0 ||
+	    strcmp(str, "false") == 0 || strcmp(str, "nah") == 0) {
+		return false;
+	}
+	return true;
 }
 
 // vim: set noet sw=8 ts=8 :

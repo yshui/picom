@@ -5,5 +5,3 @@
 typedef struct session session_t;
 
 bool vsync_init(session_t *ps);
-void vsync_wait(session_t *ps);
-void vsync_deinit(session_t *ps);
