@@ -137,16 +137,17 @@ x_create_picture_with_standard_and_pixmap(xcb_connection_t *, xcb_pict_standard_
 /**
  * Create an picture.
  */
-xcb_render_picture_t attr_nonnull(1, 5)
-    x_create_picture_with_pictfmt(xcb_connection_t *, xcb_drawable_t, int wid, int hei,
-                                  const xcb_render_pictforminfo_t *pictfmt,
-                                  unsigned long valuemask,
-                                  const xcb_render_create_picture_value_list_t *attr);
+xcb_render_picture_t
+x_create_picture_with_pictfmt(xcb_connection_t *, xcb_drawable_t, int wid, int hei,
+                              const xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
+                              const xcb_render_create_picture_value_list_t *attr)
+    attr_nonnull(1, 5);
 
-xcb_render_picture_t attr_nonnull(1)
-    x_create_picture_with_visual(xcb_connection_t *, xcb_drawable_t, int w, int h,
-                                 xcb_visualid_t visual, unsigned long valuemask,
-                                 const xcb_render_create_picture_value_list_t *attr);
+xcb_render_picture_t
+x_create_picture_with_visual(xcb_connection_t *, xcb_drawable_t, int w, int h,
+                             xcb_visualid_t visual, unsigned long valuemask,
+                             const xcb_render_create_picture_value_list_t *attr)
+    attr_nonnull(1);
 
 /// Fetch a X region and store it in a pixman region
 bool x_fetch_region(xcb_connection_t *, xcb_xfixes_region_t r, region_t *res);
@@ -206,8 +207,6 @@ size_t x_picture_filter_from_conv(const conv *kernel, double center,
 
 /// Generate a search criteria for fbconfig from a X visual.
 /// Returns {-1, -1, -1, -1, -1, -1} on failure
-struct xvisual_info
-x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual);
+struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual);
 
-xcb_visualid_t
-x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
+xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);

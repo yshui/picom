@@ -7,24 +7,24 @@
 /// Common functions and definitions for configuration parsing
 /// Used for command line arguments and config files
 
-#include <stdlib.h>
-#include <stdbool.h>
 #include <ctype.h>
+#include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
+#include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 #include <xcb/xcb.h>
-#include <xcb/render.h> // for xcb_render_fixed_t, XXX
 #include <xcb/xfixes.h>
 
 #ifdef CONFIG_LIBCONFIG
 #include <libconfig.h>
 #endif
 
-#include "region.h"
-#include "log.h"
 #include "compiler.h"
-#include "win.h"
-#include "types.h"
 #include "kernel.h"
+#include "log.h"
+#include "region.h"
+#include "types.h"
+#include "win.h"
 
 typedef struct session session_t;
 
@@ -242,8 +242,7 @@ extern const char *const VSYNC_STRS[NUM_VSYNC + 1];
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
 attr_warn_unused_result bool parse_long(const char *, long *);
-attr_warn_unused_result bool
-parse_blur_kern_lst(const char *, conv **, int, bool *hasneg);
+attr_warn_unused_result bool parse_blur_kern_lst(const char *, conv **, int, bool *hasneg);
 attr_warn_unused_result bool parse_geometry(session_t *, const char *, region_t *);
 attr_warn_unused_result bool parse_rule_opacity(c2_lptr_t **, const char *);
 
