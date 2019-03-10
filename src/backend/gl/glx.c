@@ -164,6 +164,7 @@ void glx_release_image(backend_t *base, void *image_data) {
 	struct _glx_data *gd = (void *)base;
 	(*wd->texture.refcount)--;
 	if (*wd->texture.refcount != 0) {
+		free(wd);
 		return;
 	}
 	// Release binding
@@ -189,7 +190,6 @@ void glx_release_image(backend_t *base, void *image_data) {
 
 	// Free structure itself
 	free(wd);
-
 	gl_check_err();
 }
 
@@ -368,7 +368,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	// Choose a suitable texture target for our pixmap.
 	// Refer to GLX_EXT_texture_om_pixmap spec to see what are the mean
 	// of the bits in texture_tgts
-	if (!(fbcfg->texture_tgts & GLX_TEXTURE_2D_EXT)) {
+	if (!(fbcfg->texture_tgts & GLX_TEXTURE_2D_BIT_EXT)) {
 		log_error("Cannot bind pixmap to GL_TEXTURE_2D, giving up");
 		goto err;
 	}
