@@ -462,14 +462,16 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 	gd->height = height;
 	gd->width = width;
 
-	// Resize the temporary textures
-	glBindTexture(gd->blur_texture_target, gd->blur_texture[0]);
-	glTexImage2D(gd->blur_texture_target, 0, GL_RGBA8, gd->width, gd->height, 0,
-	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-	if (gd->npasses > 1) {
-		glBindTexture(gd->blur_texture_target, gd->blur_texture[1]);
+	if (gd->npasses > 0) {
+		// Resize the temporary textures used for blur
+		glBindTexture(gd->blur_texture_target, gd->blur_texture[0]);
 		glTexImage2D(gd->blur_texture_target, 0, GL_RGBA8, gd->width, gd->height,
 		             0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		if (gd->npasses > 1) {
+			glBindTexture(gd->blur_texture_target, gd->blur_texture[1]);
+			glTexImage2D(gd->blur_texture_target, 0, GL_RGBA8, gd->width,
+			             gd->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		}
 	}
 }
 
@@ -669,6 +671,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
+	gd->npasses = 0;
 	gl_win_shader_from_string(NULL, win_shader_glsl, &gd->win_shader);
 	if (!gl_init_blur(gd, ps->o.blur_kerns)) {
 		return false;
