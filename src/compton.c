@@ -2727,7 +2727,7 @@ session_init(int argc, char **argv, Display *dpy, const char *config_file,
   }
 
   if (ps->o.experimental_backends) {
-    if (ps->o.monitor_repaint && !backend_list[ps->o.backend]->fill_rectangle) {
+    if (ps->o.monitor_repaint && !backend_list[ps->o.backend]->fill) {
       log_warn("--monitor-repaint is not supported by the backend, disabling");
       ps->o.monitor_repaint = false;
     }

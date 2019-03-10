@@ -205,18 +205,6 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	// It's required by legacy versions of OpenGL to enable texture target
 	// before specifying environment. Thanks to madsy for telling me.
 	glEnable(ptex->target);
-
-	// Enable blending if needed
-	if (ptex->opacity < 1.0 || ptex->has_alpha) {
-
-		glEnable(GL_BLEND);
-		// X pixmap is in premultiplied ARGB format, so
-		// we need to do this to correct it.
-		// Thanks to derhass for help.
-		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-		glColor4f(ptex->opacity, ptex->opacity, ptex->opacity, ptex->opacity);
-	}
-
 	if (gd->win_shader.prog) {
 		glUseProgram(gd->win_shader.prog);
 		if (gd->win_shader.unifm_opacity >= 0)
@@ -297,7 +285,6 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	// Cleanup
 	glBindTexture(ptex->target, 0);
 	glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
-	glDisable(GL_BLEND);
 	glDisable(GL_COLOR_LOGIC_OP);
 	glDisable(ptex->target);
 
@@ -317,12 +304,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 
 bool gl_dim_reg(session_t *ps, int dx, int dy, int width, int height, float z,
                 GLfloat factor, const region_t *reg_tgt) {
-	// It's possible to dim in glx_render(), but it would be over-complicated
-	// considering all those mess in color negation and modulation
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glColor4f(0.0f, 0.0f, 0.0f, factor);
-
 	{
 		P_PAINTREG_START(reg_tgt, crect) {
 			glVertex3i(crect.x1, crect.y1, z);
@@ -334,7 +316,6 @@ bool gl_dim_reg(session_t *ps, int dx, int dy, int width, int height, float z,
 	}
 
 	glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
-	glDisable(GL_BLEND);
 
 	gl_check_err();
 
@@ -523,9 +504,24 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 	if (gd->npasses > 1) {
 		glBindTexture(gd->blur_texture_target, gd->blur_texture[1]);
-		glTexImage2D(gd->blur_texture_target, 0, GL_RGBA8, gd->width, gd->height, 0,
-		             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		glTexImage2D(gd->blur_texture_target, 0, GL_RGBA8, gd->width, gd->height,
+		             0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 	}
+}
+
+void gl_fill(backend_t *base, double r, double g, double b, double a, const region_t *clip) {
+	int nrects;
+	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
+	struct gl_data *gd = (void *)base;
+	glColor4f(r, g, b, a);
+	glBegin(GL_QUADS);
+	for (int i = 0; i < nrects; i++) {
+		glVertex2f(rect[i].x1, gd->height - rect[i].y2);
+		glVertex2f(rect[i].x2, gd->height - rect[i].y2);
+		glVertex2f(rect[i].x2, gd->height - rect[i].y1);
+		glVertex2f(rect[i].x1, gd->height - rect[i].y1);
+	}
+	glEnd();
 }
 
 /**
@@ -534,19 +530,6 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 	if (!kernels[0]) {
 		return true;
-	}
-
-	// Allocate PBO if more than one blur kernel is present
-	if (kernels[1]) {
-		// Try to generate a framebuffer
-		GLuint fbo = 0;
-		glGenFramebuffers(1, &fbo);
-		if (!fbo) {
-			log_error("Failed to generate Framebuffer. Cannot do "
-			          "multi-pass blur with GL backends.");
-			return false;
-		}
-		glDeleteFramebuffers(1, &fbo);
 	}
 
 	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
@@ -645,19 +628,21 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 	if (gd->non_power_of_two_texture) {
 		gd->blur_texture_target = GL_TEXTURE_2D;
 	}
+
+	// Texture size will be defined by gl_resize
 	glGenTextures(gd->npasses > 1 ? 2 : 1, gd->blur_texture);
 	glBindTexture(gd->blur_texture_target, gd->blur_texture[0]);
 	glTexParameteri(gd->blur_texture_target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(gd->blur_texture_target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(gd->blur_texture_target, 0, GL_RGBA8, gd->width, gd->height, 0,
-	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 	if (gd->npasses > 1) {
 		glBindTexture(gd->blur_texture_target, gd->blur_texture[1]);
 		glTexParameteri(gd->blur_texture_target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(gd->blur_texture_target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexImage2D(gd->blur_texture_target, 0, GL_RGBA8, gd->width, gd->height, 0,
-		             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 		glGenFramebuffers(1, &gd->blur_fbo);
+		if (!gd->blur_fbo) {
+			log_error("Failed to generate framebuffer object for blur");
+			return false;
+		}
 	}
 
 	// Restore LC_NUMERIC
@@ -706,7 +691,10 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
 
-	glDisable(GL_BLEND);
+	glEnable(GL_BLEND);
+	// X pixmap is in premultiplied alpha, so we might just as well use it too.
+	// Thanks to derhass for help.
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
 	// Initialize stencil buffer
 	glDisable(GL_STENCIL_TEST);
@@ -744,6 +732,11 @@ void gl_deinit(struct gl_data *gd) {
 	}
 
 	gl_free_prog_main(&gd->win_shader);
+
+	glDeleteTextures(gd->npasses > 1 ? 2 : 1, gd->blur_texture);
+	if (gd->npasses > 1) {
+		glDeleteFramebuffers(1, &gd->blur_fbo);
+	}
 
 	gl_check_err();
 }

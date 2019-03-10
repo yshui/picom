@@ -90,8 +90,8 @@ struct backend_operations {
 	                const region_t *reg_paint, const region_t *reg_visible);
 
 	/// Fill rectangle of target, mostly for debug purposes, optional.
-	void (*fill_rectangle)(backend_t *backend_data, double r, double g, double b, double a,
-			       int x, int y, int width, int height, const region_t *clip);
+	void (*fill)(backend_t *backend_data, double r, double g, double b, double a,
+		     const region_t *clip);
 
 	/// Blur a given region on of the target.
 	bool (*blur)(backend_t *backend_data, double opacity, const region_t *reg_blur,

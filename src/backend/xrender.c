@@ -105,16 +105,21 @@ static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
 	pixman_region32_fini(&reg);
 }
 
-static void fill_rectangle(backend_t *base, double r, double g, double b, double a, int x,
-                           int y, int width, int height, const region_t *clip) {
+static void
+fill(backend_t *base, double r, double g, double b, double a, const region_t *clip) {
 	struct _xrender_data *xd = (void *)base;
+	const rect_t *extent = pixman_region32_extents((region_t *)clip);
 	x_set_picture_clip_region(base->c, xd->back[xd->curr_back], 0, 0, clip);
 	// color is in X fixed point representation
 	xcb_render_fill_rectangles(
 	    base->c, XCB_RENDER_PICT_OP_OVER, xd->back[xd->curr_back],
 	    (xcb_render_color_t){
 	        .red = r * 0xffff, .green = g * 0xffff, .blue = b * 0xffff, .alpha = a * 0xffff},
-	    1, (xcb_rectangle_t[]){{.x = x, .y = y, .width = width, .height = height}});
+	    1,
+	    (xcb_rectangle_t[]){{.x = extent->x1,
+	                         .y = extent->y1,
+	                         .width = extent->x2 - extent->x1,
+	                         .height = extent->y2 - extent->y1}});
 }
 
 static bool blur(backend_t *backend_data, double opacity, const region_t *reg_blur,
@@ -561,7 +566,7 @@ struct backend_operations xrender_ops = {
     .blur = blur,
     .present = present,
     .compose = compose,
-    .fill_rectangle = fill_rectangle,
+    .fill = fill,
     .bind_pixmap = bind_pixmap,
     .release_image = release_image,
     .render_shadow = default_backend_render_shadow,

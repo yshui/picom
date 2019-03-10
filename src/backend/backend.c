@@ -244,10 +244,8 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 
 	if (ps->o.monitor_repaint) {
 		reg_damage = get_damage(ps, false);
-		auto extent = pixman_region32_extents(&reg_damage);
-		ps->backend_data->ops->fill_rectangle(
-		    ps->backend_data, 0.5, 0, 0, 0.5, extent->x1, extent->y1,
-		    extent->x2 - extent->x1, extent->y2 - extent->y1, &reg_damage);
+		ps->backend_data->ops->fill(
+		    ps->backend_data, 0.5, 0, 0, 0.5, &reg_damage);
 		pixman_region32_fini(&reg_damage);
 	}
 

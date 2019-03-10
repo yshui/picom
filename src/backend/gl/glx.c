@@ -468,6 +468,7 @@ struct backend_operations glx_ops = {
     .present = glx_present,
     .buffer_age = glx_buffer_age,
     .render_shadow = default_backend_render_shadow,
+    .fill = gl_fill,
     .max_buffer_age = 5,        // Why?
 };
 
