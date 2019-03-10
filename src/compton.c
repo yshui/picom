@@ -777,8 +777,9 @@ void configure_root(session_t *ps, int width, int height) {
 
 #ifdef CONFIG_OPENGL
 	// GLX root change callback
-	if (BKEND_GLX == ps->o.backend)
+	if (BKEND_GLX == ps->o.backend && !ps->o.experimental_backends) {
 		glx_on_root_change(ps);
+	}
 #endif
 	if (ps->o.experimental_backends) {
 		if (has_root_change) {
@@ -3010,5 +3011,3 @@ int main(int argc, char **argv) {
 
 	return 0;
 }
-
-// vim: set et sw=2 :
