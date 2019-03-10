@@ -348,12 +348,10 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 	struct _xrender_data *xd = (void *)base;
 	struct _xrender_image_data *img = image;
 	region_t reg;
-	double dim_opacity;
-	double alpha_multiplier;
+	double *dargs = arg;
 	int *iargs = arg;
 	if (op == IMAGE_OP_APPLY_ALPHA_ALL) {
-		alpha_multiplier = *(double *)arg;
-		img->opacity *= alpha_multiplier;
+		img->opacity *= dargs[0];
 		img->has_alpha = true;
 		return true;
 	}
@@ -388,10 +386,9 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 		break;
 	case IMAGE_OP_DIM_ALL:
 		x_set_picture_clip_region(base->c, img->pict, 0, 0, reg_visible);
-		dim_opacity = *(double *)arg;
 
 		xcb_render_color_t color = {
-		    .red = 0, .green = 0, .blue = 0, .alpha = 0xffff * dim_opacity};
+		    .red = 0, .green = 0, .blue = 0, .alpha = 0xffff * dargs[0]};
 
 		// Dim the actually content of window
 		xcb_rectangle_t rect = {
@@ -411,12 +408,11 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 			break;
 		}
 
-		alpha_multiplier = *(double *)arg;
-		if (alpha_multiplier == 1) {
+		if (dargs[0] == 1) {
 			break;
 		}
 
-		auto alpha_pict = xd->alpha_pict[(int)(alpha_multiplier * 255)];
+		auto alpha_pict = xd->alpha_pict[(int)(dargs[0] * 255)];
 		x_set_picture_clip_region(base->c, img->pict, 0, 0, &reg);
 		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_IN, img->pict, XCB_NONE,
 		                     alpha_pict, 0, 0, 0, 0, 0, 0, img->width, img->height);
@@ -438,22 +434,21 @@ static void *copy(backend_t *base, const void *image, const region_t *reg) {
 	auto new_img = ccalloc(1, struct _xrender_image_data);
 	assert(img->visual != XCB_NONE);
 	log_trace("xrender: copying %#010x visual %#x", img->pixmap, img->visual);
+	*new_img = *img;
 	x_set_picture_clip_region(base->c, img->pict, 0, 0, reg);
-	new_img->has_alpha = img->has_alpha;
-	new_img->width = img->width;
-	new_img->height = img->height;
-	new_img->visual = img->visual;
 	new_img->pixmap =
 	    x_create_pixmap(base->c, img->depth, base->root, img->width, img->height);
 	new_img->opacity = 1;
 	new_img->owned = true;
 	if (new_img->pixmap == XCB_NONE) {
+		log_error("Failed to create pixmap for copy");
 		free(new_img);
 		return NULL;
 	}
 	new_img->pict = x_create_picture_with_visual_and_pixmap(base->c, img->visual,
 	                                                        new_img->pixmap, 0, NULL);
-	if (new_img->pixmap == XCB_NONE) {
+	if (new_img->pict == XCB_NONE) {
+		log_error("Failed to create picture for copy");
 		xcb_free_pixmap(base->c, new_img->pixmap);
 		free(new_img);
 		return NULL;
