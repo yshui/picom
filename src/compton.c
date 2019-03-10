@@ -2227,7 +2227,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	            .refresh_rate = 0,
 	            .sw_opti = false,
 	            .vsync = VSYNC_NONE,
-	            .vsync_aggressive = false,
 
 	            .shadow_red = 0.0,
 	            .shadow_green = 0.0,

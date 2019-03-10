@@ -950,13 +950,6 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 #endif
 	}
 
-	// Wait for VBlank. We could do it aggressively (send the painting
-	// request and XFlush() on VBlank) or conservatively (send the request
-	// only on VBlank).
-	// TODO Investigate and potentially remove this option
-	if (!ps->o.vsync_aggressive)
-		vsync_wait(ps);
-
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
 		if (ps->o.monitor_repaint) {
@@ -1015,9 +1008,6 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 #endif
 	default: assert(0);
 	}
-
-	if (ps->o.vsync_aggressive)
-		vsync_wait(ps);
 
 	x_sync(ps->c);
 

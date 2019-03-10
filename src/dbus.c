@@ -990,7 +990,6 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(redirected_force, cdbus_reply_enum);
 	cdbus_m_opts_get_do(stoppaint_force, cdbus_reply_enum);
 	cdbus_m_opts_get_do(logpath, cdbus_reply_string);
-	cdbus_m_opts_get_stub(synchronize, cdbus_reply_bool, false);
 
 	cdbus_m_opts_get_do(refresh_rate, cdbus_reply_int32);
 	cdbus_m_opts_get_do(sw_opti, cdbus_reply_bool);
@@ -1004,8 +1003,6 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 		cdbus_reply_string(ps, msg, BACKEND_STRS[ps->o.backend]);
 		return true;
 	}
-	cdbus_m_opts_get_stub(dbe, cdbus_reply_bool, false);
-	cdbus_m_opts_get_do(vsync_aggressive, cdbus_reply_bool);
 
 	cdbus_m_opts_get_do(shadow_red, cdbus_reply_double);
 	cdbus_m_opts_get_do(shadow_green, cdbus_reply_double);
@@ -1014,7 +1011,6 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(shadow_offset_x, cdbus_reply_int32);
 	cdbus_m_opts_get_do(shadow_offset_y, cdbus_reply_int32);
 	cdbus_m_opts_get_do(shadow_opacity, cdbus_reply_double);
-	cdbus_m_opts_get_stub(clear_shadow, cdbus_reply_bool, true);
 	cdbus_m_opts_get_do(xinerama_shadow_crop, cdbus_reply_bool);
 
 	cdbus_m_opts_get_do(fade_delta, cdbus_reply_int32);
@@ -1034,8 +1030,6 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(detect_client_leader, cdbus_reply_bool);
 
 #ifdef CONFIG_OPENGL
-	cdbus_m_opts_get_stub(glx_use_copysubbuffermesa, cdbus_reply_bool, false);
-	cdbus_m_opts_get_stub(glx_copy_from_front, cdbus_reply_bool, false);
 	cdbus_m_opts_get_do(glx_no_stencil, cdbus_reply_bool);
 	cdbus_m_opts_get_do(glx_no_rebind_pixmap, cdbus_reply_bool);
 	cdbus_m_opts_get_do(glx_swap_method, cdbus_reply_int32);

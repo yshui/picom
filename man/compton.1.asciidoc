@@ -144,9 +144,6 @@ OPTIONS
 (Note some VSync methods may not be enabled at compile time.)
 --
 
-*--vsync-aggressive*::
-	Attempt to send painting request before VBlank and do XFlush() during VBlank. Reported to work pretty terribly. This switch may be lifted out at any moment.
-
 *--sw-opti*::
 	Limit compton to repaint at most once every 1 / 'refresh_rate' second to boost performance. This should not be used with *--vsync* drm/opengl/opengl-oml as they essentially does *--sw-opti*'s job already, unless you wish to specify a lower refresh rate than the actual value.
 

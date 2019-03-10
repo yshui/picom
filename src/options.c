@@ -382,7 +382,6 @@ static const struct option longopts[] = {
     {"dbe", no_argument, NULL, 272},
     {"paint-on-overlay", no_argument, NULL, 273},
     {"sw-opti", no_argument, NULL, 274},
-    {"vsync-aggressive", no_argument, NULL, 275},
     {"use-ewmh-active-win", no_argument, NULL, 276},
     {"respect-prop-shadow", no_argument, NULL, 277},
     {"unredir-if-possible", no_argument, NULL, 278},
@@ -632,7 +631,11 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			         "when possible");
 			break;
 		P_CASEBOOL(274, sw_opti);
-		P_CASEBOOL(275, vsync_aggressive);
+		case 275:
+			// --vsync-aggressive
+			log_warn("--vsync-aggressive has been deprecated, please remove it"
+			         " from the command line options");
+			break;
 		P_CASEBOOL(276, use_ewmh_active_win);
 		P_CASEBOOL(277, respect_prop_shadow);
 		P_CASEBOOL(278, unredir_if_possible);
