@@ -414,10 +414,14 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	const char *deprecation_message =
 	    "has been removed. If you encounter problems "
 	    "without this feature, please feel free to open a bug report";
-	if (lcfg_lookup_bool(&cfg, "glx-use-copysubbuffermesa", &bval) && bval)
-		log_warn("\"glx-use-copysubbuffermesa\" %s", deprecation_message);
-	if (lcfg_lookup_bool(&cfg, "glx-copy-from-front", &bval) && bval)
-		log_warn("\"glx-copy-from-front\" %s", deprecation_message);
+	if (lcfg_lookup_bool(&cfg, "glx-use-copysubbuffermesa", &bval) && bval) {
+		log_error("\"glx-use-copysubbuffermesa\" %s", deprecation_message);
+		return ERR_PTR(-1);
+	}
+	if (lcfg_lookup_bool(&cfg, "glx-copy-from-front", &bval) && bval) {
+		log_error("\"glx-copy-from-front\" %s", deprecation_message);
+		return ERR_PTR(-1);
+	}
 
 	// Wintype settings
 

@@ -655,7 +655,8 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		P_CASEBOOL(291, glx_no_stencil);
 		case 292:
-			log_warn("--glx-copy-from-front %s", deprecation_message);
+			log_error("--glx-copy-from-front %s", deprecation_message);
+			exit(1);
 			break;
 		P_CASELONG(293, benchmark);
 		case 294:
@@ -663,7 +664,8 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->benchmark_wid = strtol(optarg, NULL, 0);
 			break;
 		case 295:
-			log_warn("--glx-use-copysubbuffermesa %s", deprecation_message);
+			log_error("--glx-use-copysubbuffermesa %s", deprecation_message);
+			exit(1);
 			break;
 		case 296:
 			// --blur-background-exclude
