@@ -1028,7 +1028,7 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 #ifdef CONFIG_OPENGL
 	cdbus_m_opts_get_do(glx_no_stencil, cdbus_reply_bool);
 	cdbus_m_opts_get_do(glx_no_rebind_pixmap, cdbus_reply_bool);
-	cdbus_m_opts_get_do(glx_swap_method, cdbus_reply_int32);
+	cdbus_m_opts_get_do(use_damage, cdbus_reply_bool);
 #endif
 
 	cdbus_m_opts_get_do(track_focus, cdbus_reply_bool);

@@ -96,7 +96,7 @@ static inline bool bkend_use_xrender(session_t *ps) {
 }
 
 int maximum_buffer_age(session_t *ps) {
-	if (bkend_use_glx(ps) && ps->o.glx_swap_method == SWAPM_BUFFER_AGE) {
+	if (bkend_use_glx(ps) && ps->o.use_damage) {
 		return CGLX_MAX_BUFFER_AGE;
 	}
 	return 1;
@@ -105,17 +105,21 @@ int maximum_buffer_age(session_t *ps) {
 static int get_buffer_age(session_t *ps) {
 #ifdef CONFIG_OPENGL
 	if (bkend_use_glx(ps)) {
-		if (ps->o.glx_swap_method == SWAPM_BUFFER_AGE) {
+		if (!glxext.has_GLX_EXT_buffer_age && ps->o.use_damage) {
+			log_warn("GLX_EXT_buffer_age not supported by your driver,"
+			         "`use-damage` has to be disabled");
+			ps->o.use_damage = false;
+		}
+		if (ps->o.use_damage) {
 			unsigned int val;
 			glXQueryDrawable(ps->dpy, get_tgt_window(ps),
 			                 GLX_BACK_BUFFER_AGE_EXT, &val);
 			return (int)val ?: -1;
-		} else {
-			return -1;
 		}
+		return -1;
 	}
 #endif
-	return 1;
+	return ps->o.use_damage ? 1 : -1;
 }
 
 /**
