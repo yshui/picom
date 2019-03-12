@@ -283,13 +283,9 @@ static void usage(int ret) {
 	    "  known to break things on some drivers (LLVMpipe, xf86-video-intel,\n"
 	    "  etc.).\n"
 	    "\n"
-	    "--glx-swap-method undefined/copy/exchange/3/4/5/6/buffer-age\n"
-	    "  GLX backend: GLX buffer swap method we assume. Could be\n"
-	    "  undefined (0), copy (1), exchange (2), 3-6, or buffer-age (-1).\n"
-	    "  \"undefined\" is the slowest and the safest, and the default value.\n"
-	    "  1 is fastest, but may fail on some drivers, 2-6 are gradually slower\n"
-	    "  but safer (6 is still faster than 0). -1 means auto-detect using\n"
-	    "  GLX_EXT_buffer_age, supported by some drivers. \n"
+	    "--use-damage\n"
+	    "  Use the damage information to limit rendering to parts of the screen\n"
+	    "  that has actually changed. Potentially improves the performance.\n"
 	    "\n"
 	    "--xrender-sync-fence\n"
 	    "  Additionally use X Sync fence to sync clients' draw calls. Needed\n"
@@ -405,6 +401,7 @@ static const struct option longopts[] = {
     {"no-name-pixmap", no_argument, NULL, 320},
     {"log-level", required_argument, NULL, 321},
     {"log-file", required_argument, NULL, 322},
+    {"use-damage", no_argument, NULL, 323},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -676,12 +673,28 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->active_opacity = normalize_d(atof(optarg));
 			break;
 		P_CASEBOOL(298, glx_no_rebind_pixmap);
-		case 299:
+		case 299: {
 			// --glx-swap-method
-			opt->glx_swap_method = parse_glx_swap_method(optarg);
-			if (opt->glx_swap_method == -2)
-				exit(1);
+			char *endptr;
+			long tmpval = strtol(optarg, &endptr, 10);
+			bool should_remove = true;
+			if (*endptr || !(*optarg)) {
+				// optarg is not a number, or an empty string
+				tmpval = -1;
+			}
+			if (strcmp(optarg, "undefined") != 0 && tmpval != 0) {
+				// If not undefined, we will use damage and buffer-age to
+				// limit the rendering area.
+				opt->use_damage = true;
+				should_remove = false;
+			}
+			log_warn("--glx-swap-method has been deprecated, your setting "
+			         "\"%s\" should be %s.",
+			         optarg,
+			         !should_remove ? "replaced by `--use-damage`" :
+			                         "removed");
 			break;
+		}
 		case 300:
 			// --fade-exclude
 			condlst_add(&opt->fade_blacklist, optarg);
@@ -749,6 +762,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		}
 		P_CASEBOOL(319, no_x_selection);
+		P_CASEBOOL(323, use_damage);
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801: opt->print_diagnostics = true; break;

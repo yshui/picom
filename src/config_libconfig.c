@@ -380,12 +380,24 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &opt->glx_no_rebind_pixmap);
 	// --glx-swap-method
 	if (config_lookup_string(&cfg, "glx-swap-method", &sval)) {
-		opt->glx_swap_method = parse_glx_swap_method(sval);
-		if (opt->glx_swap_method == -2) {
-			log_fatal("Cannot parse \"glx-swap-method\"");
-			goto err;
+		char *endptr;
+		long val = strtol(sval, &endptr, 10);
+		if (*endptr || !(*sval)) {
+			// sval is not a number, or an empty string
+			val = -1;
 		}
+		if (strcmp(sval, "undefined") != 0 && val != 0) {
+			// If not undefined, we will use damage and buffer-age to limit
+			// the rendering area.
+			opt->use_damage = true;
+		}
+		log_warn("glx-swap-method has been deprecated since v6, your setting "
+		         "\"%s\" should be %s.",
+		         sval,
+		         opt->use_damage ? "replaced by `use-damage = true`" : "removed");
 	}
+	// --use-damage
+	lcfg_lookup_bool(&cfg, "use-damage", &opt->use_damage);
 	// --glx-use-gpushader4
 	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival) && ival) {
 		log_warn("glx-use-gpushader4 is deprecated since v6, please remove it "

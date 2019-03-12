@@ -82,8 +82,6 @@ typedef struct options_t {
 	bool glx_no_stencil;
 	/// Whether to avoid rebinding pixmap on window damage.
 	bool glx_no_rebind_pixmap;
-	/// GLX swap method we assume OpenGL uses.
-	int glx_swap_method;
 	/// Custom fragment shader for painting windows, as a string.
 	char *glx_fshader_win_str;
 	/// Whether to detect rounded corners.
@@ -131,6 +129,8 @@ typedef struct options_t {
 	/// Whether to use glFinish() instead of glFlush() for (possibly) better
 	/// VSync yet probably higher CPU usage.
 	bool vsync_use_glfinish;
+	/// Whether use damage information to help limit the area to paint
+	bool use_damage;
 
 	// === Shadow ===
 	/// Red, green and blue tone of the shadow.
@@ -283,51 +283,6 @@ static inline attr_pure enum backend parse_backend(const char *str) {
 	}
 	log_error("Invalid backend argument: %s", str);
 	return NUM_BKEND;
-}
-
-/**
- * Parse a glx_swap_method option argument.
- *
- * Returns -2 on failure
- */
-static inline attr_pure int parse_glx_swap_method(const char *str) {
-	// Parse alias
-	if (!strcmp("undefined", str)) {
-		return 0;
-	}
-
-	if (!strcmp("copy", str)) {
-		return 1;
-	}
-
-	if (!strcmp("exchange", str)) {
-		return 2;
-	}
-
-	if (!strcmp("buffer-age", str)) {
-		return -1;
-	}
-
-	// Parse number
-	char *pc = NULL;
-	int age = strtol(str, &pc, 0);
-	if (!pc || str == pc) {
-		log_error("glx-swap-method is an invalid number: %s", str);
-		return -2;
-	}
-
-	for (; *pc; ++pc)
-		if (!isspace(*pc)) {
-			log_error("Trailing characters in glx-swap-method option: %s", str);
-			return -2;
-		}
-
-	if (age < -1) {
-		log_error("Number for glx-swap-method is too small: %s", str);
-		return -2;
-	}
-
-	return age;
 }
 
 /**
