@@ -2,8 +2,8 @@
 #include <stdbool.h>
 #include "test.h"
 
-int main() {
-	run_tests();
+int main(int argc, char *const *argv) {
+	run_tests(argc, argv);
 }
 
 TEST_CASE(test1) {

@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 struct test_file_metadata;
 
@@ -75,7 +76,18 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 	                             struct test_file_metadata *file_metadata)
 
 /// Run defined tests, return true if all tests succeeds
-static inline bool __attribute__((unused)) run_tests(void) {
+static inline bool __attribute__((unused)) run_tests(int argc, char *const *argv) {
+	bool should_run = false;
+	for (int i = 0; i < argc; i++) {
+		if (strcmp(argv[i], "--unittest") == 0) {
+			should_run = true;
+			break;
+		}
+	}
+	if (!should_run) {
+		return true;
+	}
+
 	struct test_file_metadata *i = test_file_head;
 	int failed = 0, success = 0;
 	while (i) {
@@ -113,7 +125,7 @@ static inline bool __attribute__((unused)) run_tests(void) {
 #define TEST_EQUAL(a, b)
 #define TEST_TRUE(a)
 
-static inline bool __attribute__((unused)) run_tests(void) {
+static inline bool __attribute__((unused)) run_tests(int argc, char *const *argv) {
 	return true;
 }
 #endif
