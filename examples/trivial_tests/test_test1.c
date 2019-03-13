@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include "test.h"
 
 int main() {
@@ -8,6 +9,9 @@ int main() {
 }
 
 TEST_CASE(test1) {
-	printf("test1\n");
-	SHOULD_EQUAL(1, 0);
+	TEST_EQUAL(1, 0);
+}
+
+TEST_CASE(test2) {
+	TEST_TRUE(false);
 }

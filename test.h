@@ -3,58 +3,112 @@
 
 #ifdef UNIT_TEST
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
+
+struct test_file_metadata;
+
+struct test_failure {
+	bool present;
+	const char *message;
+	const char *file;
+	int line;
+};
 
 struct test_case_metadata {
-	void (*fn)(struct test_case_metadata *);
-	bool success;
+	void (*fn)(struct test_case_metadata *, struct test_file_metadata *);
+	struct test_failure failure;
+	const char *name;
 	struct test_case_metadata *next;
 };
 
-struct test_case_metadata __attribute__((weak)) *test_case_head;
+struct test_file_metadata {
+	bool registered;
+	const char *name;
+	struct test_file_metadata *next;
+	struct test_case_metadata *tests;
+};
 
-static inline void report_failure(const char *message, const char *file, int line) {
-	fprintf(stderr, "Test failed, %s at %s:%d\n", message, file, line);
-}
+struct test_file_metadata __attribute__((weak)) * test_file_head;
 
-#define SHOULD_EQUAL(a, b) do { \
-	if ((a) != (b)) { \
-		report_failure(#a " != " #b, __FILE__, __LINE__); \
-		metadata->success = false; \
-		return; \
-	} \
-} while(0)
+#define SET_FAILURE(_message)                                                             \
+	metadata->failure = (struct test_failure) {                                       \
+		.message = _message, .file = __FILE__, .line = __LINE__, .present = true, \
+	}
 
-#define TEST_CASE(name) \
-static void __test_h_##name(struct test_case_metadata *); \
-static void __attribute__((constructor)) __test_h_##name##_register(void) { \
-	struct test_case_metadata *t = malloc(sizeof(*t)); \
-	t->fn = __test_h_##name; \
-	t->next = test_case_head; \
-	test_case_head = t; \
-} \
-static void __test_h_##name(struct test_case_metadata *metadata)
+#define TEST_EQUAL(a, b)                                                                 \
+	do {                                                                             \
+		if ((a) != (b)) {                                                        \
+			SET_FAILURE(#a " != " #b);                                       \
+			return;                                                          \
+		}                                                                        \
+	} while (0)
 
-static inline void run_tests(void) {
-	struct test_case_metadata *i = test_case_head;
-	int failed = 0;
-	while(i) {
-		i->success = true;
-		i->fn(i);
-		if (!i->success) {
-			failed++;
+#define TEST_TRUE(a)                                                                     \
+	do {                                                                             \
+		if (!(a)) {                                                              \
+			SET_FAILURE(#a " is not true");                                  \
+			return;                                                          \
+		}                                                                        \
+	} while (0)
+
+#define TEST_CASE(_name)                                                                 \
+	static void __test_h_##_name(struct test_case_metadata *,                        \
+	                             struct test_file_metadata *);                       \
+	static struct test_file_metadata __test_h_file;                                  \
+	static struct test_case_metadata __test_h_meta_##_name = {                       \
+	    .name = #_name,                                                              \
+	    .fn = __test_h_##_name,                                                      \
+	};                                                                               \
+	static void __attribute__((constructor)) __test_h_##_name##_register(void) {     \
+		__test_h_meta_##_name.next = __test_h_file.tests;                        \
+		__test_h_file.tests = &__test_h_meta_##_name;                            \
+		if (!__test_h_file.registered) {                                         \
+			__test_h_file.name = __FILE__;                                   \
+			__test_h_file.next = test_file_head;                             \
+			test_file_head = &__test_h_file;                                 \
+			__test_h_file.registered = true;                                 \
+		}                                                                        \
+	}                                                                                \
+	static void __test_h_##_name(struct test_case_metadata *metadata,                \
+	                             struct test_file_metadata *file_metadata)
+
+/// Run defined tests, return true if all tests succeeds
+static inline bool run_tests(void) {
+	struct test_file_metadata *i = test_file_head;
+	int failed = 0, success = 0;
+	while (i) {
+		fprintf(stderr, "Running tests from %s:\n", i->name);
+		struct test_case_metadata *j = i->tests;
+		while (j) {
+			fprintf(stderr, "\t%s ... ", j->name);
+			j->failure.present = false;
+			j->fn(j, i);
+			if (j->failure.present) {
+				fprintf(stderr, "failed (%s at %s:%d)\n", j->failure.message,
+				        j->failure.file, j->failure.line);
+				failed++;
+			} else {
+				fprintf(stderr, "passed\n");
+				success++;
+			}
+			j = j->next;
 		}
+		fprintf(stderr, "\n");
 		i = i->next;
 	}
+	int total = failed + success;
+	fprintf(stderr, "Test results: passed %d/%d, failed %d/%d\n", success, total,
+	        failed, total);
+	return failed == 0;
 }
 
 #else
 
-#define TEST_CASE(name) \
-static void __attribute__((unused)) __test_h_##name(void)
+#define TEST_CASE(name) static void __attribute__((unused)) __test_h_##name(void)
 
-#define SHOULD_EQUAL(a, b)
+#define TEST_EQUAL(a, b)
+#define TEST_TRUE(a)
 
 #endif
