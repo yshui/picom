@@ -3,9 +3,7 @@
 #include "test.h"
 
 int main() {
-#ifdef UNIT_TEST
 	run_tests();
-#endif
 }
 
 TEST_CASE(test1) {

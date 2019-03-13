@@ -106,6 +106,8 @@ static inline bool __attribute__((unused)) run_tests(void) {
 
 #else
 
+#include <stdbool.h>
+
 #define TEST_CASE(name) static void __attribute__((unused)) __test_h_##name(void)
 
 #define TEST_EQUAL(a, b)
