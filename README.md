@@ -25,7 +25,7 @@ To enable the test cases in your code, compile your program with `-DUNIT_TEST`.
 TEST_CASE(test_case_name) {
 	// Your code here
 	// ...
-	SHOULD_EQUAL(1, 0); // Fail
+	TEST_EQUAL(1, 0); // Fail
 }
 ```
 
@@ -37,10 +37,11 @@ In your main function, call `run_tests`:
 int main() {
 	// necessary setup code
 	// ...
-#ifdef UNIT_TEST
-	run_tests();
+	if (!run_tests()) {
+		// test failed
+		abort();
+	}
 	// cleanup
-#endif
 	// usual code
 }
 
