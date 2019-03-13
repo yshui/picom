@@ -34,10 +34,10 @@ TEST_CASE(test_case_name) {
 In your main function, call `run_tests`:
 
 ```c
-int main() {
+int main(int argc, char *const *argv) {
 	// necessary setup code
 	// ...
-	if (!run_tests()) {
+	if (!run_tests(argc, argv)) {
 		// test failed
 		abort();
 	}
@@ -46,3 +46,5 @@ int main() {
 }
 
 ```
+
+Then, run your program with `./program --unittest`.
