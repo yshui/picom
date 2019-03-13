@@ -259,7 +259,8 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		GLint vy[] = {vy1, vy1, vy2, vy2};
 
 		for (int i = 0; i < 4; i++) {
-			glTexCoord2f(texture_x[i], texture_y[i]);
+			glVertexAttrib2f(gd->win_shader.in_texcoord, texture_x[i],
+			                 texture_y[i]);
 			glVertex3i(vx[i], vy[i], 0);
 		}
 	}
@@ -386,7 +387,7 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 			GLint vy[] = {vy1, vy1, vy2, vy2};
 
 			for (int k = 0; k < 4; k++) {
-				glTexCoord2f(texture_x[k], texture_y[k]);
+				glVertexAttrib2f(p->in_texcoord, texture_x[k], texture_y[k]);
 				glVertex3i(vx[k], vy[k], 0);
 			}
 		}
@@ -418,6 +419,19 @@ static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 	return ret;
 }
 
+// clang-format off
+const char *vertex_shader = GLSL(130,
+	uniform mat4 projection;
+	in vec2 in_texcoord;
+	out vec2 texcoord;
+	void main() {
+		gl_Position = projection * gl_Vertex;
+		texcoord = in_texcoord;
+	}
+
+);
+// clang-format on
+
 /**
  * Load a GLSL main program from shader strings.
  */
@@ -435,6 +449,7 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
 	ret->unifm_invert_color = glGetUniformLocationChecked(ret->prog, "invert_color");
 	ret->unifm_tex = glGetUniformLocationChecked(ret->prog, "tex");
 	ret->unifm_dim = glGetUniformLocationChecked(ret->prog, "dim");
+	ret->in_texcoord = glGetAttribLocation(ret->prog, "in_texcoord");
 
 	gl_check_err();
 
@@ -446,14 +461,12 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
  */
 void gl_resize(struct gl_data *gd, int width, int height) {
 	glViewport(0, 0, width, height);
-
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	glOrtho(0, width, 0, height, -1000.0, 1000.0);
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
 	gd->height = height;
 	gd->width = width;
+
+	// Note: OpenGL matrices are column major
+	GLfloat projection_matrix[4][4] = {
+	    {2.0 / width, 0, 0, 0}, {0, 2.0 / height, 0, 0}, {0, 0, 0, 0}, {-1, -1, 0, 1}};
 
 	if (gd->npasses > 0) {
 		// Resize the temporary textures used for blur
@@ -465,7 +478,22 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, gd->width, gd->height, 0,
 			             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 		}
+
+		// Update projection matrices in the blur shaders
+		for (int i = 0; i < gd->npasses; i++) {
+			assert(gd->blur_shader[i].prog);
+			glUseProgram(gd->blur_shader[i].prog);
+			int pml = glGetUniformLocationChecked(gd->blur_shader[i].prog,
+			                                      "projection");
+			glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+		}
 	}
+	// Update projection matrix in the win shader
+	glUseProgram(gd->win_shader.prog);
+	int pml = glGetUniformLocationChecked(gd->win_shader.prog, "projection");
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+
+	gl_check_err();
 }
 
 void gl_fill(backend_t *base, double r, double g, double b, double a, const region_t *clip) {
@@ -503,6 +531,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		uniform float offset_y;
 		uniform sampler2D tex_scr;
 		uniform float opacity;
+		in vec2 texcoord;
 		out vec4 out_color;
 		void main() {
 			vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);
@@ -512,8 +541,8 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 	);
 	static const char *FRAG_SHADER_BLUR_ADD = QUOTE(
 		sum += float(%.7g) *
-		       texture2D(tex_scr, vec2(gl_TexCoord[0].x + offset_x * float(%d),
-		                        gl_TexCoord[0].y + offset_y * float(%d)));
+		       texture2D(tex_scr, vec2(texcoord.x + offset_x * float(%d),
+		                               texcoord.y + offset_y * float(%d)));
 	);
 	// clang-format on
 
@@ -562,7 +591,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		free(shader_body);
 
 		// Build program
-		pass->prog = gl_create_program_from_str(NULL, shader_str);
+		pass->prog = gl_create_program_from_str(vertex_shader, shader_str);
 		free(shader_str);
 		if (!pass->prog) {
 			log_error("Failed to create GLSL program.");
@@ -576,6 +605,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		pass->unifm_offset_y =
 		    glGetUniformLocationChecked(pass->prog, "offset_y");
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
+		pass->in_texcoord = glGetAttribLocation(pass->prog, "in_texcoord");
 	}
 	free(extension);
 
@@ -611,14 +641,15 @@ err:
 }
 
 // clang-format off
-const char *win_shader_glsl = GLSL(110,
+const char *win_shader_glsl = GLSL(130,
 	uniform float opacity;
 	uniform float dim;
 	uniform bool invert_color;
+	in vec2 texcoord;
 	uniform sampler2D tex;
 
 	void main() {
-		vec4 c = texture2D(tex, gl_TexCoord[0].xy);
+		vec4 c = texture2D(tex, texcoord.xy);
 		if (invert_color) {
 			c = vec4(c.aaa - c.rgb, c.a);
 		}
@@ -652,7 +683,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
 	gd->npasses = 0;
-	gl_win_shader_from_string(NULL, win_shader_glsl, &gd->win_shader);
+	gl_win_shader_from_string(vertex_shader, win_shader_glsl, &gd->win_shader);
 	if (!gl_init_blur(gd, ps->o.blur_kerns)) {
 		return false;
 	}
