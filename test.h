@@ -75,7 +75,7 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 	                             struct test_file_metadata *file_metadata)
 
 /// Run defined tests, return true if all tests succeeds
-static inline bool run_tests(void) {
+static inline bool __attribute__((unused)) run_tests(void) {
 	struct test_file_metadata *i = test_file_head;
 	int failed = 0, success = 0;
 	while (i) {
@@ -111,4 +111,7 @@ static inline bool run_tests(void) {
 #define TEST_EQUAL(a, b)
 #define TEST_TRUE(a)
 
+static inline bool __attribute__((unused)) run_tests(void) {
+	return true;
+}
 #endif
