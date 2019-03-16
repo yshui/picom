@@ -54,7 +54,7 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 	// part of the image we want to reuse
 	region_t reg_damage;
 	if (!ignore_damage) {
-		reg_damage = get_damage(ps, ps->o.monitor_repaint);
+		reg_damage = get_damage(ps, ps->o.monitor_repaint || !ps->o.use_damage);
 	} else {
 		pixman_region32_init(&reg_damage);
 		pixman_region32_copy(&reg_damage, &ps->screen_reg);
