@@ -174,6 +174,70 @@ void add_damage_from_win(session_t *ps, win *w) {
 	pixman_region32_fini(&extents);
 }
 
+/// Release the images attached to this window
+void win_release_image(backend_t *base, win *w) {
+	assert(w->win_image || (w->flags & WIN_FLAGS_IMAGE_ERROR));
+	if (w->win_image) {
+		base->ops->release_image(base, w->win_image);
+		w->win_image = NULL;
+	}
+	if (w->shadow) {
+		assert(w->shadow_image || (w->flags & WIN_FLAGS_IMAGE_ERROR));
+		if (w->shadow_image) {
+			base->ops->release_image(base, w->shadow_image);
+			w->shadow_image = NULL;
+		}
+	}
+}
+
+static inline bool
+_win_bind_image(session_t *ps, win *w, void **win_image, void **shadow_image) {
+	auto pixmap = xcb_generate_id(ps->c);
+	auto e = xcb_request_check(
+	    ps->c, xcb_composite_name_window_pixmap_checked(ps->c, w->id, pixmap));
+	if (e) {
+		log_error("Failed to get named pixmap");
+		free(e);
+		return false;
+	}
+	*win_image = ps->backend_data->ops->bind_pixmap(
+	    ps->backend_data, pixmap, x_get_visual_info(ps->c, w->a.visual), true);
+	if (!*win_image) {
+		return false;
+	}
+	if (w->shadow) {
+		*shadow_image = ps->backend_data->ops->render_shadow(
+		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map, ps->o.shadow_red,
+		    ps->o.shadow_green, ps->o.shadow_blue, ps->o.shadow_opacity);
+		if (!*shadow_image) {
+			log_error("Failed to bind shadow image");
+			ps->backend_data->ops->release_image(ps->backend_data, *win_image);
+			*win_image = NULL;
+			return false;
+		}
+	}
+	return true;
+}
+
+bool win_bind_image(session_t *ps, win *w) {
+	assert(!w->win_image && !w->shadow_image);
+	return _win_bind_image(ps, w, &w->win_image, &w->shadow_image);
+}
+
+bool win_try_rebind_image(session_t *ps, win *w) {
+	void *new_image, *new_shadow;
+	if (!_win_bind_image(ps, w, &new_image, &new_shadow)) {
+		return false;
+	}
+
+	log_trace("Freeing old window image");
+	win_release_image(ps->backend_data, w);
+
+	w->shadow_image = new_shadow;
+	w->win_image = new_image;
+	return true;
+}
+
 /**
  * Check if a window has rounded corners.
  * XXX This is really dumb
@@ -634,27 +698,11 @@ void win_on_win_size_change(session_t *ps, win *w) {
 	w->shadow_dy = ps->o.shadow_offset_y;
 	w->shadow_width = w->widthb + ps->o.shadow_radius * 2;
 	w->shadow_height = w->heightb + ps->o.shadow_radius * 2;
-	w->flags |= WFLAG_SIZE_CHANGE;
 	// Invalidate the shadow we built
 	if (ps->o.experimental_backends && ps->redirected) {
 		if (w->state == WSTATE_MAPPED || w->state == WSTATE_MAPPING ||
 		    w->state == WSTATE_FADING) {
-			ps->backend_data->ops->release_image(ps->backend_data, w->win_image);
-			if (w->shadow_image) {
-				ps->backend_data->ops->release_image(ps->backend_data,
-				                                     w->shadow_image);
-			}
-			auto pixmap = xcb_generate_id(ps->c);
-			xcb_composite_name_window_pixmap(ps->c, w->id, pixmap);
-			w->win_image = ps->backend_data->ops->bind_pixmap(
-			    ps->backend_data, pixmap,
-			    x_get_visual_info(ps->c, w->a.visual), true);
-			if (w->shadow) {
-				w->shadow_image = ps->backend_data->ops->render_shadow(
-				    ps->backend_data, w->widthb, w->heightb,
-				    ps->gaussian_map, ps->o.shadow_red, ps->o.shadow_green,
-				    ps->o.shadow_blue, ps->o.shadow_opacity);
-			}
+			w->flags |= WIN_FLAGS_STALE_IMAGE;
 		} else {
 			assert(w->state == WSTATE_UNMAPPED);
 		}
@@ -1217,12 +1265,12 @@ void win_extents(const win *w, region_t *res) {
 
 gen_by_val(win_extents);
 
-    /**
-     * Update the out-dated bounding shape of a window.
-     *
-     * Mark the window shape as updated
-     */
-    void win_update_bounding_shape(session_t *ps, win *w) {
+/**
+ * Update the out-dated bounding shape of a window.
+ *
+ * Mark the window shape as updated
+ */
+void win_update_bounding_shape(session_t *ps, win *w) {
 	if (ps->shape_exists)
 		w->bounding_shaped = win_bounding_shaped(ps, w->id);
 
@@ -1281,22 +1329,7 @@ gen_by_val(win_extents);
 			// Note we only do this when screen is redirected, because
 			// otherwise win_data is not valid
 			assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
-			ps->backend_data->ops->release_image(ps->backend_data, w->win_image);
-			if (w->shadow_image) {
-				ps->backend_data->ops->release_image(ps->backend_data,
-				                                     w->shadow_image);
-			}
-			auto pixmap = xcb_generate_id(ps->c);
-			xcb_composite_name_window_pixmap(ps->c, w->id, pixmap);
-			w->win_image = ps->backend_data->ops->bind_pixmap(
-			    ps->backend_data, pixmap,
-			    x_get_visual_info(ps->c, w->a.visual), true);
-			if (w->shadow) {
-				w->shadow_image = ps->backend_data->ops->render_shadow(
-				    ps->backend_data, w->widthb, w->heightb,
-				    ps->gaussian_map, ps->o.shadow_red, ps->o.shadow_green,
-				    ps->o.shadow_blue, ps->o.shadow_opacity);
-			}
+			w->flags |= WIN_FLAGS_STALE_IMAGE;
 		}
 	} else {
 		free_paint(ps, &w->paint);
@@ -1392,14 +1425,7 @@ static void finish_unmap_win(session_t *ps, win **_w) {
 	if (ps->o.experimental_backends) {
 		// We are in unmap_win, we definitely was viewable
 		if (ps->redirected) {
-			assert(w->win_image);
-			ps->backend_data->ops->release_image(ps->backend_data, w->win_image);
-			if (w->shadow_image) {
-				ps->backend_data->ops->release_image(ps->backend_data,
-				                                     w->shadow_image);
-			}
-			w->win_image = NULL;
-			w->shadow_image = NULL;
+			win_release_image(ps->backend_data, w);
 		}
 	} else {
 		free_paint(ps, &w->paint);
@@ -1675,15 +1701,8 @@ void map_win(session_t *ps, win *w) {
 	// TODO win_update_bounding_shape below will immediately
 	//      reinit w->win_data, not very efficient
 	if (ps->redirected && ps->o.experimental_backends) {
-		auto pixmap = xcb_generate_id(ps->c);
-		xcb_composite_name_window_pixmap(ps->c, w->id, pixmap);
-		w->win_image = ps->backend_data->ops->bind_pixmap(
-		    ps->backend_data, pixmap, x_get_visual_info(ps->c, w->a.visual), true);
-		if (w->shadow) {
-			w->shadow_image = ps->backend_data->ops->render_shadow(
-			    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map,
-			    ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue,
-			    ps->o.shadow_opacity);
+		if (!win_bind_image(ps, w)) {
+			w->flags |= WIN_FLAGS_IMAGE_ERROR;
 		}
 	}
 	log_debug("Window %#010x has opacity %f, opacity target is %f", w->id, w->opacity,
@@ -1740,5 +1759,3 @@ void map_win_by_id(session_t *ps, xcb_window_t id) {
 
 	map_win(ps, w);
 }
-
-// vim: set et sw=2 :

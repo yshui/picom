@@ -118,13 +118,6 @@
 
 // Window flags
 
-// Window size is changed
-#define WFLAG_SIZE_CHANGE 0x0001
-// Window size/position is changed
-#define WFLAG_POS_CHANGE 0x0002
-// Window opacity / dim state changed
-#define WFLAG_OPCT_CHANGE 0x0004
-
 // === Types ===
 typedef struct glx_fbconfig glx_fbconfig_t;
 

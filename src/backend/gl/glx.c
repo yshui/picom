@@ -374,7 +374,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	}
 
 	log_debug("depth %d, rgba %d", fmt.visual_depth,
-	          (fbcfg->texture_fmt = GLX_TEXTURE_FORMAT_RGBA_EXT));
+	          (fbcfg->texture_fmt == GLX_TEXTURE_FORMAT_RGBA_EXT));
 
 	GLint attrs[] = {
 	    GLX_TEXTURE_FORMAT_EXT,

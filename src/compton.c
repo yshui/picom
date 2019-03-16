@@ -264,8 +264,8 @@ static bool run_fade(session_t *ps, win **_w, unsigned steps) {
 		}
 	}
 
-	// Note even if opacity == opacity_tgt, we still want to run preprocess one last
-	// time to finish state transition. So return true in that case too.
+	// Note even if opacity == opacity_tgt here, we still want to run preprocess one
+	// last time to finish state transition. So return true in that case too.
 	return true;
 }
 
@@ -564,8 +564,18 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 				unredir_possible = true;
 		}
 
-		// Reset flags
-		w->flags = 0;
+		if ((w->flags & WIN_FLAGS_STALE_IMAGE) != 0 &&
+		    (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0) {
+			// Image needs to be updated
+			w->flags &= ~WIN_FLAGS_STALE_IMAGE;
+			if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING) {
+				// If this window doesn't have an image available, don't
+				// try to rebind it
+				if (!win_try_rebind_image(ps, w)) {
+					w->flags |= WIN_FLAGS_IMAGE_ERROR;
+				}
+			}
+		}
 		w->prev_trans = t;
 		t = w;
 
@@ -1887,17 +1897,8 @@ static bool redir_start(session_t *ps) {
 
 			for (win *w = ps->list; w; w = w->next) {
 				if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-					auto pixmap = xcb_generate_id(ps->c);
-					xcb_composite_name_window_pixmap(ps->c, w->id, pixmap);
-					w->win_image = ps->backend_data->ops->bind_pixmap(
-					    ps->backend_data, pixmap,
-					    x_get_visual_info(ps->c, w->a.visual), true);
-					if (w->shadow) {
-						w->shadow_image = ps->backend_data->ops->render_shadow(
-						    ps->backend_data, w->widthb, w->heightb,
-						    ps->gaussian_map, ps->o.shadow_red,
-						    ps->o.shadow_green, ps->o.shadow_blue,
-						    ps->o.shadow_opacity);
+					if (!win_bind_image(ps, w)) {
+						w->flags |= WIN_FLAGS_IMAGE_ERROR;
 					}
 				}
 			}
@@ -1957,14 +1958,7 @@ static void redir_stop(session_t *ps) {
 			}
 			if (ps->o.experimental_backends) {
 				if (w->state == WSTATE_MAPPED) {
-					ps->backend_data->ops->release_image(
-					    ps->backend_data, w->win_image);
-					if (w->shadow_image) {
-						ps->backend_data->ops->release_image(
-						    ps->backend_data, w->shadow_image);
-					}
-					w->win_image = NULL;
-					w->shadow_image = NULL;
+					win_release_image(ps->backend_data, w);
 				} else {
 					assert(!w->win_image);
 					assert(!w->shadow_image);
