@@ -825,17 +825,13 @@ void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 	if (w->state == WSTATE_UNMAPPED || w->state == WSTATE_UNMAPPING ||
 	    w->state == WSTATE_DESTROYING) {
-		/* save the configure event for when the window maps */
-		w->need_configure = true;
-		w->queue_configure = *ce;
+		// Only restack the window to make sure we can handle future restack
+		// notification correctly
 		restack_win(ps, w, ce->above_sibling);
 	} else {
-		if (!w->need_configure) {
-			restack_win(ps, w, ce->above_sibling);
-		}
+		restack_win(ps, w, ce->above_sibling);
 
 		bool factor_change = false;
-		w->need_configure = false;
 		win_extents(w, &damage);
 
 		// If window geometry change, free old extents
@@ -848,6 +844,8 @@ void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 		if (w->g.width != ce->width || w->g.height != ce->height ||
 		    w->g.border_width != ce->border_width) {
+			log_trace("Window size changed, %dx%d -> %dx%d", w->g.width,
+			          w->g.height, ce->width, ce->height);
 			w->g.width = ce->width;
 			w->g.height = ce->height;
 			w->g.border_width = ce->border_width;

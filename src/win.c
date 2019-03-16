@@ -876,8 +876,6 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 	    .state = WSTATE_UNMAPPED,         // updated by window state changes
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
-	    .need_configure = false,          // set to true when window is configured
-	                                      // while unmapped.
 	    .queue_configure = {},            // same as above
 	    .reg_ignore_valid = false,        // set to true when damaged
 	    .flags = 0,                       // updated by property/attributes/etc change
@@ -955,18 +953,15 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 
 	log_debug("Adding window %#010x, prev %#010x", id, prev);
 	xcb_get_window_attributes_cookie_t acookie = xcb_get_window_attributes(ps->c, id);
-	xcb_get_geometry_cookie_t gcookie = xcb_get_geometry(ps->c, id);
 	xcb_get_window_attributes_reply_t *a =
 	    xcb_get_window_attributes_reply(ps->c, acookie, NULL);
-	xcb_get_geometry_reply_t *g = xcb_get_geometry_reply(ps->c, gcookie, NULL);
-	if (!a || !g || a->map_state == XCB_MAP_STATE_UNVIEWABLE) {
+	if (!a || a->map_state == XCB_MAP_STATE_UNVIEWABLE) {
 		// Failed to get window attributes or geometry probably means
 		// the window is gone already. Unviewable means the window is
 		// already reparented elsewhere.
 		// BTW, we don't care about Input Only windows, except for stacking
 		// proposes, so we need to keep track of them still.
 		free(a);
-		free(g);
 		return;
 	}
 
@@ -979,10 +974,8 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 	*new = win_def;
 	new->id = id;
 	new->a = *a;
-	new->g = *g;
 	pixman_region32_init(&new->bounding_shape);
 
-	free(g);
 	free(a);
 
 	// Create Damage for window (if not Input Only)
@@ -999,8 +992,6 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 
 		new->pictfmt = x_get_pictform_for_visual(ps->c, new->a.visual);
 	}
-
-	win_on_win_size_change(ps, new);
 
 	// Find window insertion point
 	win **p = NULL;
@@ -1645,6 +1636,29 @@ void map_win(session_t *ps, win *w) {
 		return;
 	}
 
+	// We stopped processing window size change when we were unmapped, refresh the
+	// size of the window
+	xcb_get_geometry_cookie_t gcookie = xcb_get_geometry(ps->c, w->id);
+	xcb_get_geometry_reply_t *g = xcb_get_geometry_reply(ps->c, gcookie, NULL);
+
+	if (!g) {
+		log_error("Failed to get the geometry of window %#010x", w->id);
+		return;
+	}
+
+	w->g = *g;
+	free(g);
+
+	win_on_win_size_change(ps, w);
+	log_trace("Window size: %dx%d", w->g.width, w->g.height);
+
+	// Rant: window size could change after we queried its geometry here and before
+	// we get its pixmap. Later, when we get back to the event processing loop, we
+	// will get the notification about size change from Xserver and try to refresh the
+	// pixmap, while the pixmap is actually already up-to-date (i.e. the notification
+	// is stale). There is basically no real way to prevent this, aside from grabbing
+	// the server.
+
 	// XXX ???
 	assert(!win_is_focused_real(ps, w));
 
@@ -1711,13 +1725,6 @@ void map_win(session_t *ps, win *w) {
 	win_determine_blur_background(ps, w);
 
 	w->ever_damaged = false;
-
-	/* if any configure events happened while
-	   the window was unmapped, then configure
-	   the window to its correct place */
-	if (w->need_configure) {
-		configure_win(ps, &w->queue_configure);
-	}
 
 	// We stopped listening on ShapeNotify events
 	// when the window is unmapped (XXX we shouldn't),
