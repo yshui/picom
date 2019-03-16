@@ -47,20 +47,24 @@ struct backend_operations {
 	/// Here is how you should choose target window:
 	///    1) if ps->overlay is not XCB_NONE, use that
 	///    2) use ps->root otherwise
-	/// XXX make the target window a parameter
+	/// TODO make the target window a parameter
 	backend_t *(*init)(session_t *) attr_nonnull(1);
-	void (*deinit)(backend_t *backend_data) __attribute__((nonnull(1)));
+	void (*deinit)(backend_t *backend_data) attr_nonnull(1);
 
 	/// Called when rendering will be stopped for an unknown amount of
 	/// time (e.g. screen is unredirected). Free some resources.
+	///
+	/// Optional, not yet used
 	void (*pause)(backend_t *backend_data, session_t *ps);
 
 	/// Called before rendering is resumed
+	///
+	/// Optional, not yet used
 	void (*resume)(backend_t *backend_data, session_t *ps);
 
 	/// Called when root property changed, returns the new
 	/// backend_data. Even if the backend_data changed, all
-	/// the existing win_data returned by prepare_win should
+	/// the existing image data returned by this backend should
 	/// remain valid.
 	///
 	/// Optional
@@ -68,10 +72,7 @@ struct backend_operations {
 
 	// ===========      Rendering      ============
 
-	/// Called before any compose() calls.
-	///
-	/// Usually the backend should clear the buffer, or paint a background
-	/// on the buffer (usually the wallpaper).
+	/// Called before when a new frame starts.
 	///
 	/// Optional
 	void (*prepare)(backend_t *backend_data, const region_t *reg_damage);
@@ -93,15 +94,13 @@ struct backend_operations {
 	void (*fill)(backend_t *backend_data, double r, double g, double b, double a,
 		     const region_t *clip);
 
-	/// Blur a given region on of the target.
+	/// Blur a given region of the target.
 	bool (*blur)(backend_t *backend_data, double opacity, const region_t *reg_blur,
 	             const region_t *reg_visible) attr_nonnull(1, 3, 4);
 
-	/// Present the buffered target picture onto the screen. If target
-	/// is not buffered, this should be NULL. Otherwise, it should always
-	/// be non-NULL.
+	/// Present the back buffer onto the screen.
 	///
-	/// Optional
+	/// Optional if the screen is not buffered
 	void (*present)(backend_t *backend_data) attr_nonnull(1);
 
 	/**
@@ -117,6 +116,7 @@ struct backend_operations {
 	                     struct xvisual_info fmt, bool owned);
 
 	/// Create a shadow image based on the parameters
+	/// Default implementation: default_backend_render_shadow
 	void *(*render_shadow)(backend_t *backend_data, int width, int height,
 	                       const conv *kernel, double r, double g, double b, double a);
 
@@ -134,12 +134,11 @@ struct backend_operations {
 
 	// ===========        Query         ===========
 
-	/// Return if a window has transparent content. Guaranteed to only
-	/// be called after render_win is called.
+	/// Return if image is not completely opaque.
 	///
 	/// This function is needed because some backend might change the content of the
-	/// window (e.g. when using a custom shader with the glx backend), so we only now
-	/// the transparency after the window is rendered
+	/// window (e.g. when using a custom shader with the glx backend), so only the
+	/// backend knows if an image is transparent.
 	bool (*is_image_transparent)(backend_t *backend_data, void *image_data)
 	    attr_nonnull(1, 2);
 
@@ -147,6 +146,8 @@ struct backend_operations {
 	/// of. The buffer that has just been `present`ed has a buffer age of 1.
 	/// Everytime `present` is called, buffers get older. Return -1 if the
 	/// buffer is empty.
+	///
+	/// Optional
 	int (*buffer_age)(backend_t *backend_data);
 
 	/// The maximum number buffer_age might return.
