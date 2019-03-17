@@ -345,6 +345,8 @@ typedef struct session {
 	xcb_sync_fence_t sync_fence;
 
 	// === Operation related ===
+	/// Flags related to the root window
+	uint64_t root_flags;
 	/// Program options.
 	options_t o;
 	/// Whether we have hit unredirection timeout.

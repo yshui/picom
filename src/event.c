@@ -506,23 +506,6 @@ static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) 
 	w->reg_ignore_valid = false;
 }
 
-/**
- * Handle ScreenChangeNotify events from X RandR extension.
- */
-static void ev_screen_change_notify(session_t *ps,
-                                    xcb_randr_screen_change_notify_event_t attr_unused *ev) {
-	if (ps->o.xinerama_shadow_crop)
-		cxinerama_upd_scrs(ps);
-
-	if (ps->o.sw_opti && !ps->o.refresh_rate) {
-		update_refresh_rate(ps);
-		if (!ps->refresh_rate) {
-			log_warn("Refresh rate detection failed. swopti will be "
-			         "temporarily disabled");
-		}
-	}
-}
-
 static inline void
 ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 	// The only selection we own is the _NET_WM_CM_Sn selection.
@@ -603,8 +586,7 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		}
 		if (ps->randr_exists &&
 		    ev->response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
-			ev_screen_change_notify(
-			    ps, (xcb_randr_screen_change_notify_event_t *)ev);
+			set_root_flags(ps, ROOT_FLAGS_SCREEN_CHANGE);
 			break;
 		}
 		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {

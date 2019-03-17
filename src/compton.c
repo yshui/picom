@@ -48,8 +48,8 @@
 #ifdef CONFIG_DBUS
 #include "dbus.h"
 #endif
-#include "options.h"
 #include "event.h"
+#include "options.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -57,7 +57,6 @@
 		const __typeof__(((session_t *)0)->member) *__mptr = (ptr);              \
 		(session_t *)((char *)__mptr - offsetof(session_t, member));             \
 	})
-
 
 static bool must_use redir_start(session_t *ps);
 
@@ -85,6 +84,10 @@ const char *const BACKEND_STRS[NUM_BKEND + 1] = {"xrender",              // BKEN
 /// XXX Limit what xerror can access by not having this pointer
 session_t *ps_g = NULL;
 
+void set_root_flags(session_t *ps, uint64_t flags) {
+	ps->root_flags |= flags;
+}
+
 /**
  * Free Xinerama screen info.
  *
@@ -96,7 +99,7 @@ static inline void free_xinerama_info(session_t *ps) {
 			pixman_region32_fini(&ps->xinerama_scr_regs[i]);
 		free(ps->xinerama_scr_regs);
 	}
-	cxfree(ps->xinerama_scrs);
+	free(ps->xinerama_scrs);
 	ps->xinerama_scrs = NULL;
 	ps->xinerama_nscrs = 0;
 }
@@ -395,6 +398,23 @@ xcb_window_t find_client_win(session_t *ps, xcb_window_t w) {
 	free(reply);
 
 	return ret;
+}
+
+static void handle_root_flags(session_t *ps) {
+	if ((ps->root_flags & ROOT_FLAGS_SCREEN_CHANGE) != 0) {
+		if (ps->o.xinerama_shadow_crop) {
+			cxinerama_upd_scrs(ps);
+		}
+
+		if (ps->o.sw_opti && !ps->o.refresh_rate) {
+			update_refresh_rate(ps);
+			if (!ps->refresh_rate) {
+				log_warn("Refresh rate detection failed. swopti will be "
+				         "temporarily disabled");
+			}
+		}
+		ps->root_flags &= ~ROOT_FLAGS_SCREEN_CHANGE;
+	}
 }
 
 static win *paint_preprocess(session_t *ps, bool *fade_running) {
@@ -970,7 +990,6 @@ void update_ewmh_active_win(session_t *ps) {
 		win_set_focused(ps, w, true);
 }
 
-
 // === Main ===
 
 /**
@@ -1406,6 +1425,11 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 		}
 	}
 
+	// TODO xcb_grab_server
+	// TODO clean up event queue
+
+	handle_root_flags(ps);
+
 	bool fade_running = false;
 	win *t = paint_preprocess(ps, &fade_running);
 	ps->tmout_unredir_hit = false;
@@ -1434,6 +1458,8 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 
 	if (!fade_running)
 		ps->fade_time = 0L;
+
+	// TODO xcb_ungrab_server
 
 	ps->redraw_needed = false;
 }
