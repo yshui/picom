@@ -1623,9 +1623,15 @@ void map_win(session_t *ps, win *w) {
 
 	log_debug("Mapping (%#010x \"%s\")", w->id, w->name);
 
+	assert(w->state != WSTATE_DESTROYING);
 	if (w->state != WSTATE_UNMAPPED && w->state != WSTATE_UNMAPPING) {
 		log_warn("Mapping an already mapped window");
 		return;
+	}
+
+	if (w->state == WSTATE_UNMAPPING) {
+		win_skip_fading(ps, &w);
+		assert(w);
 	}
 
 	// We stopped processing window size change when we were unmapped, refresh the
