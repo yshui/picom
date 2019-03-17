@@ -707,16 +707,78 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 	}
 }
 
+/// Free up all the images and deinit the backend
+static void destroy_backend(session_t *ps) {
+	for (win *w = ps->list, *next; w; w = next) {
+		next = w->next;
+		// Wrapping up fading in progress
+		win_skip_fading(ps, &w);
+
+		// `w` might be freed by win_check_fade_finished
+		if (!w) {
+			continue;
+		}
+		if (ps->o.experimental_backends) {
+			if (w->state == WSTATE_MAPPED) {
+				win_release_image(ps->backend_data, w);
+			} else {
+				assert(!w->win_image);
+				assert(!w->shadow_image);
+			}
+			if (ps->root_image) {
+				ps->backend_data->ops->release_image(ps->backend_data,
+				                                     ps->root_image);
+				ps->root_image = NULL;
+			}
+		} else {
+			free_paint(ps, &w->paint);
+		}
+	}
+
+	if (ps->o.experimental_backends) {
+		// deinit backend
+		ps->backend_data->ops->deinit(ps->backend_data);
+		ps->backend_data = NULL;
+	}
+}
+
+/// Init the backend and bind all the window pixmap to backend images
+static bool initialize_backend(session_t *ps) {
+	if (ps->o.experimental_backends) {
+		// Reinitialize win_data
+		ps->backend_data = backend_list[ps->o.backend]->init(ps);
+		ps->backend_data->ops = backend_list[ps->o.backend];
+		if (!ps->backend_data) {
+			log_fatal("Failed to initialize backend, aborting...");
+			ps->quit = true;
+			ev_break(ps->loop, EVBREAK_ALL);
+			return false;
+		}
+
+		for (win *w = ps->list; w; w = w->next) {
+			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+				if (!win_bind_image(ps, w)) {
+					w->flags |= WIN_FLAGS_IMAGE_ERROR;
+				}
+			}
+		}
+	}
+
+	// The old backends binds pixmap lazily, nothing to do here
+	return true;
+}
+
 /// Handle configure event of a root window
 void configure_root(session_t *ps, int width, int height) {
+	log_info("Root configuration changed, new geometry: %dx%d", width, height);
 	// On root window changes
 	bool has_root_change = false;
 	if (ps->o.experimental_backends) {
 		has_root_change = ps->backend_data->ops->root_change != NULL;
 		if (!has_root_change) {
-			// deinit/reinit backend if the backend cannot handle root change
-			ps->backend_data->ops->deinit(ps->backend_data);
-			ps->backend_data = NULL;
+			// deinit/reinit backend and free up resources if the backend
+			// cannot handle root change
+			destroy_backend(ps);
 		}
 	} else {
 		free_paint(ps, &ps->tgt_buffer);
@@ -746,9 +808,7 @@ void configure_root(session_t *ps, int width, int height) {
 		if (has_root_change) {
 			ps->backend_data->ops->root_change(ps->backend_data, ps);
 		} else {
-			ps->backend_data = backend_list[ps->o.backend]->init(ps);
-			ps->backend_data->ops = backend_list[ps->o.backend];
-			if (!ps->backend_data) {
+			if (!initialize_backend(ps)) {
 				log_fatal("Failed to re-initialize backend after root "
 				          "change, aborting...");
 				ps->quit = true;
@@ -1268,24 +1328,8 @@ static bool redir_start(session_t *ps) {
 
 		x_sync(ps->c);
 
-		if (ps->o.experimental_backends) {
-			// Reinitialize win_data
-			ps->backend_data = backend_list[ps->o.backend]->init(ps);
-			ps->backend_data->ops = backend_list[ps->o.backend];
-			if (!ps->backend_data) {
-				log_fatal("Failed to initialize backend, aborting...");
-				ps->quit = true;
-				ev_break(ps->loop, EVBREAK_ALL);
-				return false;
-			}
-
-			for (win *w = ps->list; w; w = w->next) {
-				if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-					if (!win_bind_image(ps, w)) {
-						w->flags |= WIN_FLAGS_IMAGE_ERROR;
-					}
-				}
-			}
+		if (!initialize_backend(ps)) {
+			return false;
 		}
 
 		if (ps->o.experimental_backends) {
@@ -1319,46 +1363,14 @@ static bool redir_start(session_t *ps) {
 static void redir_stop(session_t *ps) {
 	if (ps->redirected) {
 		log_debug("Screen unredirected.");
-		// Destroy all Pictures as they expire once windows are unredirected
-		// If we don't destroy them here, looks like the resources are just
-		// kept inaccessible somehow
-		for (win *w = ps->list, *next; w; w = next) {
-			next = w->next;
-			// Wrapping up fading in progress
-			win_skip_fading(ps, &w);
 
-			// `w` might be freed by win_check_fade_finished
-			if (!w) {
-				continue;
-			}
-			if (ps->o.experimental_backends) {
-				if (w->state == WSTATE_MAPPED) {
-					win_release_image(ps->backend_data, w);
-				} else {
-					assert(!w->win_image);
-					assert(!w->shadow_image);
-				}
-				if (ps->root_image) {
-					ps->backend_data->ops->release_image(
-					    ps->backend_data, ps->root_image);
-					ps->root_image = NULL;
-				}
-			} else {
-				free_paint(ps, &w->paint);
-			}
-		}
+		destroy_backend(ps);
 
 		xcb_composite_unredirect_subwindows(ps->c, ps->root,
 		                                    XCB_COMPOSITE_REDIRECT_MANUAL);
 		// Unmap overlay window
 		if (ps->overlay)
 			xcb_unmap_window(ps->c, ps->overlay);
-
-		if (ps->o.experimental_backends) {
-			// deinit backend
-			ps->backend_data->ops->deinit(ps->backend_data);
-			ps->backend_data = NULL;
-		}
 
 		// Free the damage ring
 		for (int i = 0; i < ps->ndamage; ++i) {
