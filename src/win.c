@@ -1458,9 +1458,7 @@ static void finish_destroy_win(session_t *ps, win **_w) {
 				ps->active_win = NULL;
 			}
 
-			if (!ps->o.experimental_backends) {
-				free_win_res(ps, w);
-			}
+			free_win_res(ps, w);
 
 			// Drop w from all prev_trans to avoid accessing freed memory in
 			// repair_win()
