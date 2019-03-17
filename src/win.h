@@ -291,7 +291,7 @@ void win_release_image(backend_t *base, win *w);
 bool must_use win_bind_image(session_t *ps, win *w);
 
 /// Attempt a rebind of window's images. If that failed, the original images are kept.
-bool win_try_rebind_image(session_t *ps, win *w);
+bool must_use win_try_rebind_image(session_t *ps, win *w);
 int win_get_name(session_t *ps, win *w);
 int win_get_role(session_t *ps, win *w);
 winmode_t attr_pure win_calc_mode(const win *w);

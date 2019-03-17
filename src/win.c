@@ -226,17 +226,10 @@ bool win_bind_image(session_t *ps, win *w) {
 }
 
 bool win_try_rebind_image(session_t *ps, win *w) {
-	void *new_image, *new_shadow;
-	if (!_win_bind_image(ps, w, &new_image, &new_shadow)) {
-		return false;
-	}
-
 	log_trace("Freeing old window image");
 	win_release_image(ps->backend_data, w);
 
-	w->shadow_image = new_shadow;
-	w->win_image = new_image;
-	return true;
+	return win_bind_image(ps, w);
 }
 
 /**
