@@ -1406,7 +1406,6 @@ static void finish_unmap_win(session_t *ps, win **_w) {
 	w->ever_damaged = false;
 	w->reg_ignore_valid = false;
 	w->state = WSTATE_UNMAPPED;
-	w->flags = 0;
 
 	if (ps->o.experimental_backends) {
 		// We are in unmap_win, we definitely was viewable
@@ -1417,6 +1416,8 @@ static void finish_unmap_win(session_t *ps, win **_w) {
 		free_paint(ps, &w->paint);
 		free_paint(ps, &w->shadow_paint);
 	}
+
+	w->flags = 0;
 }
 
 static void finish_destroy_win(session_t *ps, win **_w) {
