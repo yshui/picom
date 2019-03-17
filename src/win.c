@@ -200,6 +200,7 @@ _win_bind_image(session_t *ps, win *w, void **win_image, void **shadow_image) {
 		free(e);
 		return false;
 	}
+	log_trace("New named pixmap %#010x", pixmap);
 	*win_image = ps->backend_data->ops->bind_pixmap(
 	    ps->backend_data, pixmap, x_get_visual_info(ps->c, w->a.visual), true);
 	if (!*win_image) {

@@ -353,6 +353,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 		return NULL;
 	}
 
+	log_trace("Binding pixmap %#010x", pixmap);
 	auto wd = ccalloc(1, struct _glx_image_data);
 	wd->pixmap = pixmap;
 	wd->texture.width = wd->texture.ewidth = r->width;
@@ -393,6 +394,8 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 		log_error("Failed to create glpixmap for pixmap %#010x", pixmap);
 		goto err;
 	}
+
+	log_trace("GLXPixmap %#010lx", wd->glpixmap);
 
 	// Create texture
 	wd->texture.texture = gl_new_texture(GL_TEXTURE_2D);
