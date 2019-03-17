@@ -227,6 +227,7 @@ bool win_bind_image(session_t *ps, win *w) {
 
 bool win_try_rebind_image(session_t *ps, win *w) {
 	log_trace("Freeing old window image");
+	// Must release first, otherwise breaks NVIDIA driver
 	win_release_image(ps->backend_data, w);
 
 	return win_bind_image(ps, w);
