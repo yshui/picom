@@ -1712,13 +1712,6 @@ void map_win(session_t *ps, win *w) {
 	w->state = WSTATE_MAPPING;
 	w->opacity_tgt = win_calc_opacity_target(ps, w);
 
-	// TODO win_update_bounding_shape below will immediately
-	//      reinit w->win_data, not very efficient
-	if (ps->redirected && ps->o.experimental_backends) {
-		if (!win_bind_image(ps, w)) {
-			w->flags |= WIN_FLAGS_IMAGE_ERROR;
-		}
-	}
 	log_debug("Window %#010x has opacity %f, opacity target is %f", w->id, w->opacity,
 	          w->opacity_tgt);
 
@@ -1731,6 +1724,20 @@ void map_win(session_t *ps, win *w) {
 	// so the shape of the window might have changed,
 	// update. (Issue #35)
 	win_update_bounding_shape(ps, w);
+
+	// Reset the STALE_IMAGE flag set by win_update_bounding_shape. Because we are
+	// just about to bind the image, no way that's stale.
+	//
+	// Also because NVIDIA driver doesn't like seeing the same pixmap under different
+	// ids, so avoid naming the pixmap again when it didn't actually change.
+	w->flags &= ~WIN_FLAGS_STALE_IMAGE;
+
+	// Bind image after update_bounding_shape, so the shadow has the correct size.
+	if (ps->redirected && ps->o.experimental_backends) {
+		if (!win_bind_image(ps, w)) {
+			w->flags |= WIN_FLAGS_IMAGE_ERROR;
+		}
+	}
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
