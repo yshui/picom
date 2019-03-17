@@ -2,6 +2,7 @@
 // Copyright (c) 2019, Yuxuan Shui <yshuiv7@gmail.com>
 
 #include <X11/Xlibint.h>
+#include <X11/extensions/sync.h>
 
 #include "common.h"
 #include "compton.h"
@@ -35,6 +36,99 @@
 /// queried. All rendering should be done with our internal knowledge of the server state.
 ///
 /// TODO the things described above
+
+/**
+ * Get a window's name from window ID.
+ */
+static inline void attr_unused ev_window_name(session_t *ps, xcb_window_t wid, char **name) {
+	*name = "";
+	if (wid) {
+		*name = "(Failed to get title)";
+		if (ps->root == wid)
+			*name = "(Root window)";
+		else if (ps->overlay == wid)
+			*name = "(Overlay)";
+		else {
+			win *w = find_win(ps, wid);
+			if (!w)
+				w = find_toplevel(ps, wid);
+
+			if (w)
+				win_get_name(ps, w);
+			if (w && w->name)
+				*name = w->name;
+			else
+				*name = "unknown";
+		}
+	}
+}
+
+static inline xcb_window_t attr_unused ev_window(session_t *ps, xcb_generic_event_t *ev) {
+	switch (ev->response_type) {
+	case FocusIn:
+	case FocusOut: return ((xcb_focus_in_event_t *)ev)->event;
+	case CreateNotify: return ((xcb_create_notify_event_t *)ev)->window;
+	case ConfigureNotify: return ((xcb_configure_notify_event_t *)ev)->window;
+	case DestroyNotify: return ((xcb_destroy_notify_event_t *)ev)->window;
+	case MapNotify: return ((xcb_map_notify_event_t *)ev)->window;
+	case UnmapNotify: return ((xcb_unmap_notify_event_t *)ev)->window;
+	case ReparentNotify: return ((xcb_reparent_notify_event_t *)ev)->window;
+	case CirculateNotify: return ((xcb_circulate_notify_event_t *)ev)->window;
+	case Expose: return ((xcb_expose_event_t *)ev)->window;
+	case PropertyNotify: return ((xcb_property_notify_event_t *)ev)->window;
+	case ClientMessage: return ((xcb_client_message_event_t *)ev)->window;
+	default:
+		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+			return ((xcb_damage_notify_event_t *)ev)->drawable;
+		}
+
+		if (ps->shape_exists && ev->response_type == ps->shape_event) {
+			return ((xcb_shape_notify_event_t *)ev)->affected_window;
+		}
+
+		return 0;
+	}
+}
+
+static inline int attr_unused ev_serial(xcb_generic_event_t *ev) {
+	return ev->full_sequence;
+}
+
+static inline const char *attr_unused ev_name(session_t *ps, xcb_generic_event_t *ev) {
+	static char buf[128];
+	switch (ev->response_type & 0x7f) {
+		CASESTRRET(FocusIn);
+		CASESTRRET(FocusOut);
+		CASESTRRET(CreateNotify);
+		CASESTRRET(ConfigureNotify);
+		CASESTRRET(DestroyNotify);
+		CASESTRRET(MapNotify);
+		CASESTRRET(UnmapNotify);
+		CASESTRRET(ReparentNotify);
+		CASESTRRET(CirculateNotify);
+		CASESTRRET(Expose);
+		CASESTRRET(PropertyNotify);
+		CASESTRRET(ClientMessage);
+	}
+
+	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type)
+		return "Damage";
+
+	if (ps->shape_exists && ev->response_type == ps->shape_event)
+		return "ShapeNotify";
+
+	if (ps->xsync_exists) {
+		int o = ev->response_type - ps->xsync_event;
+		switch (o) {
+			CASESTRRET(XSyncCounterNotify);
+			CASESTRRET(XSyncAlarmNotify);
+		}
+	}
+
+	sprintf(buf, "Event %d", ev->response_type);
+
+	return buf;
+}
 
 static inline const char *ev_focus_mode_name(xcb_focus_in_event_t *ev) {
 	switch (ev->mode) {

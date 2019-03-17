@@ -11,8 +11,6 @@
 
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
-#include <X11/Xlibint.h>
-#include <X11/Xutil.h>
 #include <X11/extensions/sync.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -612,20 +610,6 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 	return t;
 }
 
-/*
- * WORK-IN-PROGRESS!
-static void
-xr_take_screenshot(session_t *ps) {
-  XImage *img = XGetImage(ps->dpy, get_tgt_window(ps), 0, 0,
-      ps->root_width, ps->root_height, AllPlanes, XYPixmap);
-  if (!img) {
-    log_error("Failed to get XImage.");
-    return NULL;
-  }
-  assert(0 == img->xoffset);
-}
-*/
-
 /**
  * Rebuild cached <code>screen_reg</code>.
  */
@@ -968,85 +952,7 @@ void opts_set_no_fading_openclose(session_t *ps, bool newval) {
 //!@}
 #endif
 
-static inline int attr_unused ev_serial(xcb_generic_event_t *ev) {
-	return ev->full_sequence;
-}
-
-static inline const char *attr_unused ev_name(session_t *ps, xcb_generic_event_t *ev) {
-	static char buf[128];
-	switch (ev->response_type & 0x7f) {
-		CASESTRRET(FocusIn);
-		CASESTRRET(FocusOut);
-		CASESTRRET(CreateNotify);
-		CASESTRRET(ConfigureNotify);
-		CASESTRRET(DestroyNotify);
-		CASESTRRET(MapNotify);
-		CASESTRRET(UnmapNotify);
-		CASESTRRET(ReparentNotify);
-		CASESTRRET(CirculateNotify);
-		CASESTRRET(Expose);
-		CASESTRRET(PropertyNotify);
-		CASESTRRET(ClientMessage);
-	}
-
-	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type)
-		return "Damage";
-
-	if (ps->shape_exists && ev->response_type == ps->shape_event)
-		return "ShapeNotify";
-
-	if (ps->xsync_exists) {
-		int o = ev->response_type - ps->xsync_event;
-		switch (o) {
-			CASESTRRET(XSyncCounterNotify);
-			CASESTRRET(XSyncAlarmNotify);
-		}
-	}
-
-	sprintf(buf, "Event %d", ev->response_type);
-
-	return buf;
-}
-
-static inline xcb_window_t attr_unused ev_window(session_t *ps, xcb_generic_event_t *ev) {
-	switch (ev->response_type) {
-	case FocusIn:
-	case FocusOut: return ((xcb_focus_in_event_t *)ev)->event;
-	case CreateNotify: return ((xcb_create_notify_event_t *)ev)->window;
-	case ConfigureNotify: return ((xcb_configure_notify_event_t *)ev)->window;
-	case DestroyNotify: return ((xcb_destroy_notify_event_t *)ev)->window;
-	case MapNotify: return ((xcb_map_notify_event_t *)ev)->window;
-	case UnmapNotify: return ((xcb_unmap_notify_event_t *)ev)->window;
-	case ReparentNotify: return ((xcb_reparent_notify_event_t *)ev)->window;
-	case CirculateNotify: return ((xcb_circulate_notify_event_t *)ev)->window;
-	case Expose: return ((xcb_expose_event_t *)ev)->window;
-	case PropertyNotify: return ((xcb_property_notify_event_t *)ev)->window;
-	case ClientMessage: return ((xcb_client_message_event_t *)ev)->window;
-	default:
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
-			return ((xcb_damage_notify_event_t *)ev)->drawable;
-		}
-
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
-			return ((xcb_shape_notify_event_t *)ev)->affected_window;
-		}
-
-		return 0;
-	}
-}
-
 // === Events ===
-
-/**
- * Determine whether we should respond to a <code>FocusIn/Out</code>
- * event.
- */
-/*
-inline static bool
-ev_focus_accept(XFocusChangeEvent *ev) {
-  return NotifyNormal == ev->mode || NotifyUngrab == ev->mode;
-}
-*/
 
 /**
  * Update current active window based on EWMH _NET_ACTIVE_WIN.
@@ -1064,31 +970,6 @@ void update_ewmh_active_win(session_t *ps) {
 		win_set_focused(ps, w, true);
 }
 
-/**
- * Get a window's name from window ID.
- */
-static inline void attr_unused ev_window_name(session_t *ps, xcb_window_t wid, char **name) {
-	*name = "";
-	if (wid) {
-		*name = "(Failed to get title)";
-		if (ps->root == wid)
-			*name = "(Root window)";
-		else if (ps->overlay == wid)
-			*name = "(Overlay)";
-		else {
-			win *w = find_win(ps, wid);
-			if (!w)
-				w = find_toplevel(ps, wid);
-
-			if (w)
-				win_get_name(ps, w);
-			if (w && w->name)
-				*name = w->name;
-			else
-				*name = "unknown";
-		}
-	}
-}
 
 // === Main ===
 
@@ -1399,15 +1280,6 @@ static bool redir_start(session_t *ps) {
 		for (int i = 0; i < ps->ndamage; i++) {
 			pixman_region32_init(&ps->damage_ring[i]);
 		}
-
-		/*
-		// Unredirect GL context window as this may have an effect on VSync:
-		// < http://dri.freedesktop.org/wiki/CompositeSwap >
-		xcb_composite_unredirect_window(c, ps->reg_win,
-		XCB_COMPOSITE_REDIRECT_MANUAL); if (ps->o.paint_on_overlay && ps->overlay)
-		{ xcb_composite_unredirect_window(c, ps->overlay,
-		      XCB_COMPOSITE_REDIRECT_MANUAL);
-		} */
 
 		// Must call XSync() here
 		x_sync(ps->c);
