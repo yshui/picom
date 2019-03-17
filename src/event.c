@@ -4,6 +4,7 @@
 #include <X11/Xlibint.h>
 #include <X11/extensions/sync.h>
 
+#include "compiler.h"
 #include "common.h"
 #include "compton.h"
 #include "event.h"
@@ -40,30 +41,32 @@
 /**
  * Get a window's name from window ID.
  */
-static inline void attr_unused ev_window_name(session_t *ps, xcb_window_t wid, char **name) {
-	*name = "";
+static inline const char *ev_window_name(session_t *ps, xcb_window_t wid) {
+	char *name = "";
 	if (wid) {
-		*name = "(Failed to get title)";
-		if (ps->root == wid)
-			*name = "(Root window)";
-		else if (ps->overlay == wid)
-			*name = "(Overlay)";
-		else {
+		name = "(Failed to get title)";
+		if (ps->root == wid) {
+			name = "(Root window)";
+		} else if (ps->overlay == wid) {
+			name = "(Overlay)";
+		} else {
 			win *w = find_win(ps, wid);
-			if (!w)
+			if (!w) {
 				w = find_toplevel(ps, wid);
+			}
 
-			if (w)
+			if (w) {
 				win_get_name(ps, w);
-			if (w && w->name)
-				*name = w->name;
-			else
-				*name = "unknown";
+				if (w->name) {
+					name = w->name;
+				}
+			}
 		}
 	}
+	return name;
 }
 
-static inline xcb_window_t attr_unused ev_window(session_t *ps, xcb_generic_event_t *ev) {
+static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_t *ev) {
 	switch (ev->response_type) {
 	case FocusIn:
 	case FocusOut: return ((xcb_focus_in_event_t *)ev)->event;
@@ -90,11 +93,7 @@ static inline xcb_window_t attr_unused ev_window(session_t *ps, xcb_generic_even
 	}
 }
 
-static inline int attr_unused ev_serial(xcb_generic_event_t *ev) {
-	return ev->full_sequence;
-}
-
-static inline const char *attr_unused ev_name(session_t *ps, xcb_generic_event_t *ev) {
+static inline const char * ev_name(session_t *ps, xcb_generic_event_t *ev) {
 	static char buf[128];
 	switch (ev->response_type & 0x7f) {
 		CASESTRRET(FocusIn);
@@ -130,7 +129,7 @@ static inline const char *attr_unused ev_name(session_t *ps, xcb_generic_event_t
 	return buf;
 }
 
-static inline const char *ev_focus_mode_name(xcb_focus_in_event_t *ev) {
+static inline const char *attr_pure ev_focus_mode_name(xcb_focus_in_event_t *ev) {
 	switch (ev->mode) {
 		CASESTRRET(NotifyNormal);
 		CASESTRRET(NotifyWhileGrabbed);
@@ -141,7 +140,7 @@ static inline const char *ev_focus_mode_name(xcb_focus_in_event_t *ev) {
 	return "Unknown";
 }
 
-static inline const char *ev_focus_detail_name(xcb_focus_in_event_t *ev) {
+static inline const char *attr_pure ev_focus_detail_name(xcb_focus_in_event_t *ev) {
 	switch (ev->detail) {
 		CASESTRRET(NotifyAncestor);
 		CASESTRRET(NotifyVirtual);
@@ -156,24 +155,15 @@ static inline const char *ev_focus_detail_name(xcb_focus_in_event_t *ev) {
 	return "Unknown";
 }
 
-static inline void attr_unused ev_focus_report(xcb_focus_in_event_t *ev) {
+static inline void ev_focus_in(session_t *ps, xcb_focus_in_event_t *ev) {
 	log_trace("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
 	          ev_focus_detail_name(ev));
-}
-
-static inline void ev_focus_in(session_t *ps, xcb_focus_in_event_t *ev) {
-#ifdef DEBUG_EVENTS
-	ev_focus_report(ev);
-#endif
-
 	recheck_focus(ps);
 }
 
 static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
-#ifdef DEBUG_EVENTS
-	ev_focus_report(ev);
-#endif
-
+	log_trace("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
+	          ev_focus_detail_name(ev));
 	recheck_focus(ps);
 }
 
@@ -299,8 +289,7 @@ static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
 }
 
 static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
-#ifdef DEBUG_EVENTS
-	{
+	if (unlikely(log_get_level_tls() <= LOG_LEVEL_TRACE)) {
 		// Print out changed atom
 		xcb_get_atom_name_reply_t *reply =
 		    xcb_get_atom_name_reply(ps->c, xcb_get_atom_name(ps->c, ev->atom), NULL);
@@ -314,7 +303,6 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		log_trace("{ atom = %.*s }", name_len, name);
 		free(reply);
 	}
-#endif
 
 	if (ps->root == ev->window) {
 		if (ps->o.track_focus && ps->o.use_ewmh_active_win &&
@@ -549,16 +537,11 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		discard_ignore(ps, ev->full_sequence);
 	}
 
-#ifdef DEBUG_EVENTS
 	if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
 		xcb_window_t wid = ev_window(ps, ev);
-		char *window_name = NULL;
-		ev_window_name(ps, wid, &window_name);
-
-		log_trace("event %10.10s serial %#010x window %#010lx \"%s\"",
-		          ev_name(ps, ev), ev_serial(ev), wid, window_name);
+		log_trace("event %10.10s serial %#010x window %#010x \"%s\"",
+		          ev_name(ps, ev), ev->full_sequence, wid, ev_window_name(ps, wid));
 	}
-#endif
 
 	// Check if a custom XEvent constructor was registered in xlib for this event
 	// type, and call it discarding the constructed XEvent if any. XESetWireToEvent
