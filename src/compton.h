@@ -40,6 +40,28 @@ xcb_window_t find_client_win(session_t *ps, xcb_window_t w);
 
 win *find_toplevel2(session_t *ps, xcb_window_t wid);
 
+win *recheck_focus(session_t *ps);
+
+/// Handle configure event of a root window
+void configure_root(session_t *ps, int width, int height);
+
+/// Handle configure event of a regular window
+void configure_win(session_t *ps, xcb_configure_notify_event_t *ce);
+
+void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce);
+
+void update_ewmh_active_win(session_t *ps);
+
+void update_refresh_rate(session_t *ps);
+
+void root_damaged(session_t *ps);
+
+void cxinerama_upd_scrs(session_t *ps);
+
+void queue_redraw(session_t *ps);
+
+void discard_ignore(session_t *ps, unsigned long sequence);
+
 /**
  * Set a <code>switch_t</code> array of all unset wintypes to true.
  */

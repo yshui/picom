@@ -6,7 +6,7 @@ base_deps = [
 
 srcs = [ files('compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
                'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
-               'options.c') ]
+               'options.c', 'event.c') ]
 compton_inc = include_directories('.')
 
 cflags = []
