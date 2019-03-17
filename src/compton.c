@@ -511,8 +511,13 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 		if (!w->ever_damaged || w->g.x + w->g.width < 1 ||
 		    w->g.y + w->g.height < 1 || w->g.x >= ps->root_width ||
 		    w->g.y >= ps->root_height || w->state == WSTATE_UNMAPPED ||
-		    (double)w->opacity * MAX_ALPHA < 1 || w->paint_excluded)
+		    (double)w->opacity * MAX_ALPHA < 1 || w->paint_excluded) {
 			to_paint = false;
+		}
+
+		if ((w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
+			to_paint = false;
+		}
 		// log_trace("%s %d %d %d", w->name, to_paint, w->opacity,
 		// w->paint_excluded);
 
