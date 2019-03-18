@@ -54,6 +54,14 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 		}                                                                        \
 	} while (0)
 
+#define TEST_STREQUAL(a, b)                                                              \
+	do {                                                                             \
+		if (strcmp(a, b) != 0) {                                                 \
+			SET_FAILURE(#a " != " #b);                                       \
+			return;                                                          \
+		}                                                                        \
+	} while(0)
+
 #define TEST_CASE(_name)                                                                 \
 	static void __test_h_##_name(struct test_case_metadata *,                        \
 	                             struct test_file_metadata *);                       \
@@ -134,6 +142,9 @@ run_tests(int argc, char *const *argv, bool *tests_run) {
 	(void)(a);                                                                       \
 	(void)(b)
 #define TEST_TRUE(a) (void)(a)
+#define TEST_STREQUAL(a, b)                                                              \
+	(void)(a);                                                                       \
+	(void)(b)
 
 static inline bool __attribute__((unused))
 run_tests(int argc, char *const *argv, bool *tests_run) {
