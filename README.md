@@ -37,7 +37,7 @@ In your main function, call `run_tests`:
 int main(int argc, char *const *argv) {
 	// necessary setup code
 	// ...
-	if (!run_tests(argc, argv)) {
+	if (!run_tests(argc, argv, NULL)) {
 		// test failed
 		abort();
 	}
