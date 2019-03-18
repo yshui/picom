@@ -3,7 +3,7 @@
 #include "test.h"
 
 int main(int argc, char *const *argv) {
-	run_tests(argc, argv);
+	run_tests(argc, argv, NULL);
 }
 
 TEST_CASE(test1) {

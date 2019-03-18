@@ -76,8 +76,13 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 	                             struct test_file_metadata *file_metadata)
 
 /// Run defined tests, return true if all tests succeeds
-static inline bool __attribute__((unused)) run_tests(int argc, char *const *argv) {
+/// @param[out] tests_run if not NULL, set to whether tests were run
+static inline bool __attribute__((unused))
+run_tests(int argc, char *const *argv, bool *tests_run) {
 	bool should_run = false;
+	if (tests_run) {
+		*tests_run = false;
+	}
 	for (int i = 0; i < argc; i++) {
 		if (strcmp(argv[i], "--unittest") == 0) {
 			should_run = true;
@@ -88,6 +93,9 @@ static inline bool __attribute__((unused)) run_tests(int argc, char *const *argv
 		return true;
 	}
 
+	if (tests_run) {
+		*tests_run = true;
+	}
 	struct test_file_metadata *i = test_file_head;
 	int failed = 0, success = 0;
 	while (i) {
@@ -122,10 +130,16 @@ static inline bool __attribute__((unused)) run_tests(int argc, char *const *argv
 
 #define TEST_CASE(name) static void __attribute__((unused)) __test_h_##name(void)
 
-#define TEST_EQUAL(a, b) (void)(a); (void)(b)
+#define TEST_EQUAL(a, b)                                                                 \
+	(void)(a);                                                                       \
+	(void)(b)
 #define TEST_TRUE(a) (void)(a)
 
-static inline bool __attribute__((unused)) run_tests(int argc, char *const *argv) {
+static inline bool __attribute__((unused))
+run_tests(int argc, char *const *argv, bool *tests_run) {
+	if (tests_run) {
+		*tests_run = false;
+	}
 	return true;
 }
 #endif
