@@ -24,6 +24,7 @@
 #include <xcb/sync.h>
 #include <xcb/xfixes.h>
 
+#include <test.h>
 #include <ev.h>
 
 #include "common.h"
