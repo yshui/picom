@@ -122,8 +122,8 @@ static inline bool __attribute__((unused)) run_tests(int argc, char *const *argv
 
 #define TEST_CASE(name) static void __attribute__((unused)) __test_h_##name(void)
 
-#define TEST_EQUAL(a, b)
-#define TEST_TRUE(a)
+#define TEST_EQUAL(a, b) (void)(a); (void)(b)
+#define TEST_TRUE(a) (void)(a)
 
 static inline bool __attribute__((unused)) run_tests(int argc, char *const *argv) {
 	return true;
