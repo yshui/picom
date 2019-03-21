@@ -79,25 +79,25 @@ jobs:
     executor: e
     steps:
       - build:
-          cc: clang-6.0
+          cc: clang
           build-config:
   clang_minimal:
     executor: e
     steps:
       - build:
-          cc: clang-6.0
+          cc: clang
           build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
   clang_nogl:
     executor: e
     steps:
       - build:
-          cc: clang-6.0
+          cc: clang
           build-config: -Dopengl=false
   clang_noregex:
     executor: e
     steps:
       - build:
-          cc: clang-6.0
+          cc: clang
           build-config: -Dregex=false
 
 workflows:
