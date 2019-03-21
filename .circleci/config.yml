@@ -43,7 +43,7 @@ jobs:
     executor: e
     steps:
       - build:
-          build-config: -Dbuild_docs=true
+          build-config: -Dbuild_docs=true -Db_coverage=true
       - persist_to_workspace:
           root: .
           paths:
@@ -56,6 +56,10 @@ jobs:
       - run:
           name: test
           command: ninja -vC /tmp/workspace/build test
+      - run:
+          name: upload coverage
+          command: bash <(curl -s https://codecov.io/bash)
+
   minimal:
     executor: e
     steps:
