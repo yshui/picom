@@ -60,50 +60,55 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 			SET_FAILURE(#a " != " #b);                                       \
 			return;                                                          \
 		}                                                                        \
-	} while(0)
+	} while (0)
 
-#define TEST_CASE(_name)                                                                 \
-	static void __test_h_##_name(struct test_case_metadata *,                        \
-	                             struct test_file_metadata *);                       \
-	static struct test_file_metadata __test_h_file;                                  \
-	static struct test_case_metadata __test_h_meta_##_name = {                       \
-	    .name = #_name,                                                              \
-	    .fn = __test_h_##_name,                                                      \
-	};                                                                               \
-	static void __attribute__((constructor)) __test_h_##_name##_register(void) {     \
-		__test_h_meta_##_name.next = __test_h_file.tests;                        \
-		__test_h_file.tests = &__test_h_meta_##_name;                            \
-		if (!__test_h_file.registered) {                                         \
-			__test_h_file.name = __FILE__;                                   \
-			__test_h_file.next = test_file_head;                             \
-			test_file_head = &__test_h_file;                                 \
-			__test_h_file.registered = true;                                 \
-		}                                                                        \
-	}                                                                                \
-	static void __test_h_##_name(struct test_case_metadata *metadata,                \
+#define TEST_CASE(_name)                                                                  \
+	static void __test_h_##_name(struct test_case_metadata *,                         \
+	                             struct test_file_metadata *);                        \
+	static struct test_file_metadata __test_h_file;                                   \
+	static struct test_case_metadata __test_h_meta_##_name = {                        \
+	    .name = #_name,                                                               \
+	    .fn = __test_h_##_name,                                                       \
+	};                                                                                \
+	static void __attribute__((constructor(101))) __test_h_##_name##_register(void) { \
+		__test_h_meta_##_name.next = __test_h_file.tests;                         \
+		__test_h_file.tests = &__test_h_meta_##_name;                             \
+		if (!__test_h_file.registered) {                                          \
+			__test_h_file.name = __FILE__;                                    \
+			__test_h_file.next = test_file_head;                              \
+			test_file_head = &__test_h_file;                                  \
+			__test_h_file.registered = true;                                  \
+		}                                                                         \
+	}                                                                                 \
+	static void __test_h_##_name(struct test_case_metadata *metadata,                 \
 	                             struct test_file_metadata *file_metadata)
 
+extern void __attribute__((weak)) (*test_h_unittest_setup)(void);
 /// Run defined tests, return true if all tests succeeds
 /// @param[out] tests_run if not NULL, set to whether tests were run
-static inline bool __attribute__((unused))
-run_tests(int argc, char *const *argv, bool *tests_run) {
+static inline void __attribute__((constructor(102))) run_tests(void) {
 	bool should_run = false;
-	if (tests_run) {
-		*tests_run = false;
-	}
-	for (int i = 0; i < argc; i++) {
-		if (strcmp(argv[i], "--unittest") == 0) {
+	FILE *cmdlinef = fopen("/proc/self/cmdline", "r");
+	char *arg = NULL;
+	int arglen;
+	fscanf(cmdlinef, "%ms%n", &arg, &arglen);
+	fclose(cmdlinef);
+	for (char *pos = arg; pos < arg + arglen; pos += strlen(pos) + 1) {
+		if (strcmp(pos, "--unittest") == 0) {
 			should_run = true;
 			break;
 		}
 	}
+	free(arg);
+
 	if (!should_run) {
-		return true;
+		return;
 	}
 
-	if (tests_run) {
-		*tests_run = true;
+	if (&test_h_unittest_setup) {
+		test_h_unittest_setup();
 	}
+
 	struct test_file_metadata *i = test_file_head;
 	int failed = 0, success = 0;
 	while (i) {
@@ -129,7 +134,7 @@ run_tests(int argc, char *const *argv, bool *tests_run) {
 	int total = failed + success;
 	fprintf(stderr, "Test results: passed %d/%d, failed %d/%d\n", success, total,
 	        failed, total);
-	return failed == 0;
+	exit(failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
 }
 
 #else
@@ -146,11 +151,4 @@ run_tests(int argc, char *const *argv, bool *tests_run) {
 	(void)(a);                                                                       \
 	(void)(b)
 
-static inline bool __attribute__((unused))
-run_tests(int argc, char *const *argv, bool *tests_run) {
-	if (tests_run) {
-		*tests_run = false;
-	}
-	return true;
-}
 #endif
