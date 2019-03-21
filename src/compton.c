@@ -1723,7 +1723,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 #endif
 	};
 
-	log_init_tls();
 	auto stderr_logger = stderr_logger_new();
 	if (stderr_logger) {
 		// stderr logger might fail to create if we are already
@@ -2315,6 +2314,7 @@ int main(int argc, char **argv) {
 	// Set locale so window names with special characters are interpreted
 	// correctly
 	setlocale(LC_ALL, "");
+	log_init_tls();
 
 	int exit_code;
 	char *config_file = NULL;
@@ -2357,7 +2357,7 @@ int main(int argc, char **argv) {
 	bool quit = false;
 	Display *dpy = XOpenDisplay(NULL);
 	if (!dpy) {
-		log_fatal("Can't open display.");
+		fprintf(stderr, "Can't open display.");
 		return 1;
 	}
 	XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
