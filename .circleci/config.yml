@@ -57,8 +57,14 @@ jobs:
           name: test
           command: ninja -vC /tmp/workspace/build test
       - run:
-          name: upload coverage
-          command: bash <(curl -s https://codecov.io/bash)
+          name: generate coverage reports
+          command: cd build; find -name '*.gcno' -exec gcov -pb {} +
+      - run:
+          name: download codecov scripts
+          command: curl -s https://codecov.io/bash > codecov.sh
+      - run:
+          name: upload coverage reports
+          command: bash ./codecov.sh -X gcov
 
   minimal:
     executor: e
