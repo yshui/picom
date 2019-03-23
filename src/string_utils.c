@@ -3,6 +3,8 @@
 
 #include <string.h>
 
+#include <test.h>
+
 #include "compiler.h"
 #include "string_utils.h"
 #include "utils.h"
@@ -33,6 +35,20 @@ char *mstrjoin(const char *src1, const char *src2) {
 	return str;
 }
 
+TEST_CASE(mstrjoin) {
+	char *str = mstrjoin("asdf", "qwer");
+	TEST_STREQUAL(str, "asdfqwer");
+	free(str);
+
+	str = mstrjoin("", "qwer");
+	TEST_STREQUAL(str, "qwer");
+	free(str);
+
+	str = mstrjoin("asdf", "");
+	TEST_STREQUAL(str, "asdf");
+	free(str);
+}
+
 /**
  * Concatenate a string on heap with another string.
  */
@@ -49,6 +65,19 @@ void mstrextend(char **psrc1, const char *src2) {
 
 	strncpy(*psrc1 + len1, src2, len2);
 	(*psrc1)[len - 1] = '\0';
+}
+
+TEST_CASE(mstrextend) {
+	char *str1 = NULL;
+	mstrextend(&str1, "asdf");
+	TEST_STREQUAL(str1, "asdf");
+
+	mstrextend(&str1, "asd");
+	TEST_STREQUAL(str1, "asdfasd");
+
+	mstrextend(&str1, "");
+	TEST_STREQUAL(str1, "asdfasd");
+	free(str1);
 }
 
 #pragma GCC diagnostic pop
@@ -82,4 +111,19 @@ double strtod_simple(const char *src, const char **end) {
 
 	*end = src;
 	return ret * neg;
+}
+
+TEST_CASE(strtod_simple) {
+	const char *end;
+	double result = strtod_simple("1.0", &end);
+	TEST_EQUAL(result, 1);
+	TEST_EQUAL(*end, '\0');
+
+	result = strtod_simple("-1.0", &end);
+	TEST_EQUAL(result, -1);
+	TEST_EQUAL(*end, '\0');
+
+	result = strtod_simple("+.5", &end);
+	TEST_EQUAL(result, 0.5);
+	TEST_EQUAL(*end, '\0');
 }

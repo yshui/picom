@@ -118,13 +118,6 @@
 
 // Window flags
 
-// Window size is changed
-#define WFLAG_SIZE_CHANGE 0x0001
-// Window size/position is changed
-#define WFLAG_POS_CHANGE 0x0002
-// Window opacity / dim state changed
-#define WFLAG_OPCT_CHANGE 0x0004
-
 // === Types ===
 typedef struct glx_fbconfig glx_fbconfig_t;
 
@@ -352,6 +345,8 @@ typedef struct session {
 	xcb_sync_fence_t sync_fence;
 
 	// === Operation related ===
+	/// Flags related to the root window
+	uint64_t root_flags;
 	/// Program options.
 	options_t o;
 	/// Whether we have hit unredirection timeout.

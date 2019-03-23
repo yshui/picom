@@ -11,8 +11,6 @@
 
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
-#include <X11/Xlibint.h>
-#include <X11/Xutil.h>
 #include <X11/extensions/sync.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -26,6 +24,7 @@
 #include <xcb/sync.h>
 #include <xcb/xfixes.h>
 
+#include <test.h>
 #include <ev.h>
 
 #include "common.h"
@@ -50,10 +49,8 @@
 #ifdef CONFIG_DBUS
 #include "dbus.h"
 #endif
+#include "event.h"
 #include "options.h"
-
-#define CASESTRRET(s)                                                                    \
-	case s: return #s
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -62,27 +59,9 @@
 		(session_t *)((char *)__mptr - offsetof(session_t, member));             \
 	})
 
-static void update_refresh_rate(session_t *ps);
-
-static bool swopti_init(session_t *ps);
-
-static void cxinerama_upd_scrs(session_t *ps);
-
-static void session_destroy(session_t *ps);
-
-static void cxinerama_upd_scrs(session_t *ps);
-
 static bool must_use redir_start(session_t *ps);
 
 static void redir_stop(session_t *ps);
-
-static win *recheck_focus(session_t *ps);
-
-static void restack_win(session_t *ps, win *w, xcb_window_t new_above);
-
-static void update_ewmh_active_win(session_t *ps);
-
-static void draw_callback(EV_P_ ev_idle *w, int revents);
 
 // === Global constants ===
 
@@ -106,6 +85,10 @@ const char *const BACKEND_STRS[NUM_BKEND + 1] = {"xrender",              // BKEN
 /// XXX Limit what xerror can access by not having this pointer
 session_t *ps_g = NULL;
 
+void set_root_flags(session_t *ps, uint64_t flags) {
+	ps->root_flags |= flags;
+}
+
 /**
  * Free Xinerama screen info.
  *
@@ -117,7 +100,7 @@ static inline void free_xinerama_info(session_t *ps) {
 			pixman_region32_fini(&ps->xinerama_scr_regs[i]);
 		free(ps->xinerama_scr_regs);
 	}
-	cxfree(ps->xinerama_scrs);
+	free(ps->xinerama_scrs);
 	ps->xinerama_scrs = NULL;
 	ps->xinerama_nscrs = 0;
 }
@@ -132,7 +115,7 @@ static inline uint64_t get_time_ms(void) {
 }
 
 // XXX Move to x.c
-static void cxinerama_upd_scrs(session_t *ps) {
+void cxinerama_upd_scrs(session_t *ps) {
 	// XXX Consider deprecating Xinerama, switch to RandR when necessary
 	free_xinerama_info(ps);
 
@@ -264,14 +247,14 @@ static bool run_fade(session_t *ps, win **_w, unsigned steps) {
 		}
 	}
 
-	// Note even if opacity == opacity_tgt, we still want to run preprocess one last
-	// time to finish state transition. So return true in that case too.
+	// Note even if opacity == opacity_tgt here, we still want to run preprocess one
+	// last time to finish state transition. So return true in that case too.
 	return true;
 }
 
 // === Error handling ===
 
-static void discard_ignore(session_t *ps, unsigned long sequence) {
+void discard_ignore(session_t *ps, unsigned long sequence) {
 	while (ps->ignore_head) {
 		if (sequence > ps->ignore_head->sequence) {
 			ignore_t *next = ps->ignore_head->next;
@@ -358,7 +341,7 @@ win *find_toplevel2(session_t *ps, xcb_window_t wid) {
  * @param ps current session
  * @return struct _win of currently focused window, NULL if not found
  */
-static win *recheck_focus(session_t *ps) {
+win *recheck_focus(session_t *ps) {
 	// Use EWMH _NET_ACTIVE_WINDOW if enabled
 	if (ps->o.use_ewmh_active_win) {
 		update_ewmh_active_win(ps);
@@ -416,6 +399,23 @@ xcb_window_t find_client_win(session_t *ps, xcb_window_t w) {
 	free(reply);
 
 	return ret;
+}
+
+static void handle_root_flags(session_t *ps) {
+	if ((ps->root_flags & ROOT_FLAGS_SCREEN_CHANGE) != 0) {
+		if (ps->o.xinerama_shadow_crop) {
+			cxinerama_upd_scrs(ps);
+		}
+
+		if (ps->o.sw_opti && !ps->o.refresh_rate) {
+			update_refresh_rate(ps);
+			if (!ps->refresh_rate) {
+				log_warn("Refresh rate detection failed. swopti will be "
+				         "temporarily disabled");
+			}
+		}
+		ps->root_flags &= ~ROOT_FLAGS_SCREEN_CHANGE;
+	}
 }
 
 static win *paint_preprocess(session_t *ps, bool *fade_running) {
@@ -511,8 +511,13 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 		if (!w->ever_damaged || w->g.x + w->g.width < 1 ||
 		    w->g.y + w->g.height < 1 || w->g.x >= ps->root_width ||
 		    w->g.y >= ps->root_height || w->state == WSTATE_UNMAPPED ||
-		    (double)w->opacity * MAX_ALPHA < 1 || w->paint_excluded)
+		    (double)w->opacity * MAX_ALPHA < 1 || w->paint_excluded) {
 			to_paint = false;
+		}
+
+		if ((w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
+			to_paint = false;
+		}
 		// log_trace("%s %d %d %d", w->name, to_paint, w->opacity,
 		// w->paint_excluded);
 
@@ -564,8 +569,18 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 				unredir_possible = true;
 		}
 
-		// Reset flags
-		w->flags = 0;
+		if ((w->flags & WIN_FLAGS_STALE_IMAGE) != 0 &&
+		    (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0) {
+			// Image needs to be updated
+			w->flags &= ~WIN_FLAGS_STALE_IMAGE;
+			if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING) {
+				// If this window doesn't have an image available, don't
+				// try to rebind it
+				if (!win_try_rebind_image(ps, w)) {
+					w->flags |= WIN_FLAGS_IMAGE_ERROR;
+				}
+			}
+		}
 		w->prev_trans = t;
 		t = w;
 
@@ -616,20 +631,6 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 	return t;
 }
 
-/*
- * WORK-IN-PROGRESS!
-static void
-xr_take_screenshot(session_t *ps) {
-  XImage *img = XGetImage(ps->dpy, get_tgt_window(ps), 0, 0,
-      ps->root_width, ps->root_height, AllPlanes, XYPixmap);
-  if (!img) {
-    log_error("Failed to get XImage.");
-    return NULL;
-  }
-  assert(0 == img->xoffset);
-}
-*/
-
 /**
  * Rebuild cached <code>screen_reg</code>.
  */
@@ -644,45 +645,6 @@ static void rebuild_shadow_exclude_reg(session_t *ps) {
 	bool ret = parse_geometry(ps, ps->o.shadow_exclude_reg_str, &ps->shadow_exclude_reg);
 	if (!ret)
 		exit(1);
-}
-
-static void repair_win(session_t *ps, win *w) {
-	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
-		return;
-
-	region_t parts;
-	pixman_region32_init(&parts);
-
-	if (!w->ever_damaged) {
-		win_extents(w, &parts);
-		set_ignore_cookie(
-		    ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, XCB_NONE));
-	} else {
-		xcb_xfixes_region_t tmp = xcb_generate_id(ps->c);
-		xcb_xfixes_create_region(ps->c, tmp, 0, NULL);
-		set_ignore_cookie(ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, tmp));
-		xcb_xfixes_translate_region(ps->c, tmp, w->g.x + w->g.border_width,
-		                            w->g.y + w->g.border_width);
-		x_fetch_region(ps->c, tmp, &parts);
-		xcb_xfixes_destroy_region(ps->c, tmp);
-	}
-
-	w->ever_damaged = true;
-	w->pixmap_damaged = true;
-
-	// Why care about damage when screen is unredirected?
-	// We will force full-screen repaint on redirection.
-	if (!ps->redirected) {
-		pixman_region32_fini(&parts);
-		return;
-	}
-
-	// Remove the part in the damage area that could be ignored
-	if (w->reg_ignore && win_is_region_ignore_valid(ps, w))
-		pixman_region32_subtract(&parts, &parts, w->reg_ignore);
-
-	add_damage(ps, &parts);
-	pixman_region32_fini(&parts);
 }
 
 static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
@@ -746,16 +708,78 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 	}
 }
 
+/// Free up all the images and deinit the backend
+static void destroy_backend(session_t *ps) {
+	for (win *w = ps->list, *next; w; w = next) {
+		next = w->next;
+		// Wrapping up fading in progress
+		win_skip_fading(ps, &w);
+
+		// `w` might be freed by win_check_fade_finished
+		if (!w) {
+			continue;
+		}
+		if (ps->o.experimental_backends) {
+			if (w->state == WSTATE_MAPPED) {
+				win_release_image(ps->backend_data, w);
+			} else {
+				assert(!w->win_image);
+				assert(!w->shadow_image);
+			}
+			if (ps->root_image) {
+				ps->backend_data->ops->release_image(ps->backend_data,
+				                                     ps->root_image);
+				ps->root_image = NULL;
+			}
+		} else {
+			free_paint(ps, &w->paint);
+		}
+	}
+
+	if (ps->o.experimental_backends) {
+		// deinit backend
+		ps->backend_data->ops->deinit(ps->backend_data);
+		ps->backend_data = NULL;
+	}
+}
+
+/// Init the backend and bind all the window pixmap to backend images
+static bool initialize_backend(session_t *ps) {
+	if (ps->o.experimental_backends) {
+		// Reinitialize win_data
+		ps->backend_data = backend_list[ps->o.backend]->init(ps);
+		ps->backend_data->ops = backend_list[ps->o.backend];
+		if (!ps->backend_data) {
+			log_fatal("Failed to initialize backend, aborting...");
+			ps->quit = true;
+			ev_break(ps->loop, EVBREAK_ALL);
+			return false;
+		}
+
+		for (win *w = ps->list; w; w = w->next) {
+			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+				if (!win_bind_image(ps, w)) {
+					w->flags |= WIN_FLAGS_IMAGE_ERROR;
+				}
+			}
+		}
+	}
+
+	// The old backends binds pixmap lazily, nothing to do here
+	return true;
+}
+
 /// Handle configure event of a root window
 void configure_root(session_t *ps, int width, int height) {
+	log_info("Root configuration changed, new geometry: %dx%d", width, height);
 	// On root window changes
 	bool has_root_change = false;
 	if (ps->o.experimental_backends) {
 		has_root_change = ps->backend_data->ops->root_change != NULL;
 		if (!has_root_change) {
-			// deinit/reinit backend if the backend cannot handle root change
-			ps->backend_data->ops->deinit(ps->backend_data);
-			ps->backend_data = NULL;
+			// deinit/reinit backend and free up resources if the backend
+			// cannot handle root change
+			destroy_backend(ps);
 		}
 	} else {
 		free_paint(ps, &ps->tgt_buffer);
@@ -785,9 +809,7 @@ void configure_root(session_t *ps, int width, int height) {
 		if (has_root_change) {
 			ps->backend_data->ops->root_change(ps->backend_data, ps);
 		} else {
-			ps->backend_data = backend_list[ps->o.backend]->init(ps);
-			ps->backend_data->ops = backend_list[ps->o.backend];
-			if (!ps->backend_data) {
+			if (!initialize_backend(ps)) {
 				log_fatal("Failed to re-initialize backend after root "
 				          "change, aborting...");
 				ps->quit = true;
@@ -815,17 +837,13 @@ void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 	if (w->state == WSTATE_UNMAPPED || w->state == WSTATE_UNMAPPING ||
 	    w->state == WSTATE_DESTROYING) {
-		/* save the configure event for when the window maps */
-		w->need_configure = true;
-		w->queue_configure = *ce;
+		// Only restack the window to make sure we can handle future restack
+		// notification correctly
 		restack_win(ps, w, ce->above_sibling);
 	} else {
-		if (!w->need_configure) {
-			restack_win(ps, w, ce->above_sibling);
-		}
+		restack_win(ps, w, ce->above_sibling);
 
 		bool factor_change = false;
-		w->need_configure = false;
 		win_extents(w, &damage);
 
 		// If window geometry change, free old extents
@@ -838,6 +856,8 @@ void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 		if (w->g.width != ce->width || w->g.height != ce->height ||
 		    w->g.border_width != ce->border_width) {
+			log_trace("Window size changed, %dx%d -> %dx%d", w->g.width,
+			          w->g.height, ce->width, ce->height);
 			w->g.width = ce->width;
 			w->g.height = ce->height;
 			w->g.border_width = ce->border_width;
@@ -865,7 +885,7 @@ void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	w->a.override_redirect = ce->override_redirect;
 }
 
-static void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
+void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
 	win *w = find_win(ps, ce->window);
 	xcb_window_t new_above;
 
@@ -881,7 +901,7 @@ static void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
 	restack_win(ps, w, new_above);
 }
 
-static inline void root_damaged(session_t *ps) {
+void root_damaged(session_t *ps) {
 	if (ps->root_tile_paint.pixmap) {
 		free_root_tile(ps);
 	}
@@ -921,11 +941,6 @@ void ev_xcb_error(session_t *ps, xcb_generic_error_t *err) {
 		x_print_error(err->sequence, err->major_code, err->minor_code, err->error_code);
 }
 
-static void expose_root(session_t *ps, const rect_t *rects, int nrects) {
-	region_t region;
-	pixman_region32_init_rects(&region, rects, nrects);
-	add_damage(ps, &region);
-}
 /**
  * Force a full-screen repaint.
  */
@@ -1018,247 +1033,7 @@ void opts_set_no_fading_openclose(session_t *ps, bool newval) {
 //!@}
 #endif
 
-static inline int attr_unused ev_serial(xcb_generic_event_t *ev) {
-	return ev->full_sequence;
-}
-
-static inline const char *attr_unused ev_name(session_t *ps, xcb_generic_event_t *ev) {
-	static char buf[128];
-	switch (ev->response_type & 0x7f) {
-		CASESTRRET(FocusIn);
-		CASESTRRET(FocusOut);
-		CASESTRRET(CreateNotify);
-		CASESTRRET(ConfigureNotify);
-		CASESTRRET(DestroyNotify);
-		CASESTRRET(MapNotify);
-		CASESTRRET(UnmapNotify);
-		CASESTRRET(ReparentNotify);
-		CASESTRRET(CirculateNotify);
-		CASESTRRET(Expose);
-		CASESTRRET(PropertyNotify);
-		CASESTRRET(ClientMessage);
-	}
-
-	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type)
-		return "Damage";
-
-	if (ps->shape_exists && ev->response_type == ps->shape_event)
-		return "ShapeNotify";
-
-	if (ps->xsync_exists) {
-		int o = ev->response_type - ps->xsync_event;
-		switch (o) {
-			CASESTRRET(XSyncCounterNotify);
-			CASESTRRET(XSyncAlarmNotify);
-		}
-	}
-
-	sprintf(buf, "Event %d", ev->response_type);
-
-	return buf;
-}
-
-static inline xcb_window_t attr_unused ev_window(session_t *ps, xcb_generic_event_t *ev) {
-	switch (ev->response_type) {
-	case FocusIn:
-	case FocusOut: return ((xcb_focus_in_event_t *)ev)->event;
-	case CreateNotify: return ((xcb_create_notify_event_t *)ev)->window;
-	case ConfigureNotify: return ((xcb_configure_notify_event_t *)ev)->window;
-	case DestroyNotify: return ((xcb_destroy_notify_event_t *)ev)->window;
-	case MapNotify: return ((xcb_map_notify_event_t *)ev)->window;
-	case UnmapNotify: return ((xcb_unmap_notify_event_t *)ev)->window;
-	case ReparentNotify: return ((xcb_reparent_notify_event_t *)ev)->window;
-	case CirculateNotify: return ((xcb_circulate_notify_event_t *)ev)->window;
-	case Expose: return ((xcb_expose_event_t *)ev)->window;
-	case PropertyNotify: return ((xcb_property_notify_event_t *)ev)->window;
-	case ClientMessage: return ((xcb_client_message_event_t *)ev)->window;
-	default:
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
-			return ((xcb_damage_notify_event_t *)ev)->drawable;
-		}
-
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
-			return ((xcb_shape_notify_event_t *)ev)->affected_window;
-		}
-
-		return 0;
-	}
-}
-
-static inline const char *ev_focus_mode_name(xcb_focus_in_event_t *ev) {
-	switch (ev->mode) {
-		CASESTRRET(NotifyNormal);
-		CASESTRRET(NotifyWhileGrabbed);
-		CASESTRRET(NotifyGrab);
-		CASESTRRET(NotifyUngrab);
-	}
-
-	return "Unknown";
-}
-
-static inline const char *ev_focus_detail_name(xcb_focus_in_event_t *ev) {
-	switch (ev->detail) {
-		CASESTRRET(NotifyAncestor);
-		CASESTRRET(NotifyVirtual);
-		CASESTRRET(NotifyInferior);
-		CASESTRRET(NotifyNonlinear);
-		CASESTRRET(NotifyNonlinearVirtual);
-		CASESTRRET(NotifyPointer);
-		CASESTRRET(NotifyPointerRoot);
-		CASESTRRET(NotifyDetailNone);
-	}
-
-	return "Unknown";
-}
-
-static inline void attr_unused ev_focus_report(xcb_focus_in_event_t *ev) {
-	log_trace("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
-	          ev_focus_detail_name(ev));
-}
-
 // === Events ===
-
-/**
- * Determine whether we should respond to a <code>FocusIn/Out</code>
- * event.
- */
-/*
-inline static bool
-ev_focus_accept(XFocusChangeEvent *ev) {
-  return NotifyNormal == ev->mode || NotifyUngrab == ev->mode;
-}
-*/
-
-static inline void ev_focus_in(session_t *ps, xcb_focus_in_event_t *ev) {
-#ifdef DEBUG_EVENTS
-	ev_focus_report(ev);
-#endif
-
-	recheck_focus(ps);
-}
-
-inline static void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
-#ifdef DEBUG_EVENTS
-	ev_focus_report(ev);
-#endif
-
-	recheck_focus(ps);
-}
-
-inline static void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
-	assert(ev->parent == ps->root);
-	add_win(ps, ev->window, 0);
-}
-
-inline static void ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
-	log_trace("{ send_event: %d, id: %#010x, above: %#010x, override_redirect: %d }",
-	          ev->event, ev->window, ev->above_sibling, ev->override_redirect);
-	if (ev->window == ps->root) {
-		configure_root(ps, ev->width, ev->height);
-	} else {
-		configure_win(ps, ev);
-	}
-}
-
-inline static void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
-	win *w = find_win(ps, ev->window);
-	if (w) {
-		unmap_win(ps, &w, true);
-	}
-}
-
-inline static void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
-	map_win_by_id(ps, ev->window);
-	// FocusIn/Out may be ignored when the window is unmapped, so we must
-	// recheck focus here
-	if (ps->o.track_focus) {
-		recheck_focus(ps);
-	}
-}
-
-inline static void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
-	win *w = find_win(ps, ev->window);
-	if (w) {
-		unmap_win(ps, &w, false);
-	}
-}
-
-inline static void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
-	log_trace("{ new_parent: %#010x, override_redirect: %d }", ev->parent,
-	          ev->override_redirect);
-
-	if (ev->parent == ps->root) {
-		// new window
-		add_win(ps, ev->window, 0);
-	} else {
-		// otherwise, find and destroy the window first
-		win *w = find_win(ps, ev->window);
-		if (w) {
-			unmap_win(ps, &w, true);
-		}
-
-		// Reset event mask in case something wrong happens
-		xcb_change_window_attributes(
-		    ps->c, ev->window, XCB_CW_EVENT_MASK,
-		    (const uint32_t[]){determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN)});
-
-		// Check if the window is an undetected client window
-		// Firstly, check if it's a known client window
-		if (!find_toplevel(ps, ev->window)) {
-			// If not, look for its frame window
-			win *w_top = find_toplevel2(ps, ev->parent);
-			// If found, and the client window has not been determined, or its
-			// frame may not have a correct client, continue
-			if (w_top && (!w_top->client_win || w_top->client_win == w_top->id)) {
-				// If it has WM_STATE, mark it the client window
-				if (wid_has_prop(ps, ev->window, ps->atom_client)) {
-					w_top->wmwin = false;
-					win_unmark_client(ps, w_top);
-					win_mark_client(ps, w_top, ev->window);
-				}
-				// Otherwise, watch for WM_STATE on it
-				else {
-					xcb_change_window_attributes(
-					    ps->c, ev->window, XCB_CW_EVENT_MASK,
-					    (const uint32_t[]){
-					        determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) |
-					        XCB_EVENT_MASK_PROPERTY_CHANGE});
-				}
-			}
-		}
-	}
-}
-
-inline static void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {
-	circulate_win(ps, ev);
-}
-
-inline static void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
-	if (ev->window == ps->root || (ps->overlay && ev->window == ps->overlay)) {
-		int more = ev->count + 1;
-		if (ps->n_expose == ps->size_expose) {
-			if (ps->expose_rects) {
-				ps->expose_rects =
-				    crealloc(ps->expose_rects, ps->size_expose + more);
-				ps->size_expose += more;
-			} else {
-				ps->expose_rects = ccalloc(more, rect_t);
-				ps->size_expose = more;
-			}
-		}
-
-		ps->expose_rects[ps->n_expose].x1 = ev->x;
-		ps->expose_rects[ps->n_expose].y1 = ev->y;
-		ps->expose_rects[ps->n_expose].x2 = ev->x + ev->width;
-		ps->expose_rects[ps->n_expose].y2 = ev->y + ev->height;
-		ps->n_expose++;
-
-		if (ev->count == 0) {
-			expose_root(ps, ps->expose_rects, ps->n_expose);
-			ps->n_expose = 0;
-		}
-	}
-}
 
 /**
  * Update current active window based on EWMH _NET_ACTIVE_WIN.
@@ -1266,7 +1041,7 @@ inline static void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
  * Does not change anything if we fail to get the attribute or the window
  * returned could not be found.
  */
-static void update_ewmh_active_win(session_t *ps) {
+void update_ewmh_active_win(session_t *ps) {
 	// Search for the window
 	xcb_window_t wid = wid_get_prop_window(ps, ps->root, ps->atom_ewmh_active_win);
 	win *w = find_win_all(ps, wid);
@@ -1274,326 +1049,6 @@ static void update_ewmh_active_win(session_t *ps) {
 	// Mark the window focused. No need to unfocus the previous one.
 	if (w)
 		win_set_focused(ps, w, true);
-}
-
-inline static void ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
-#ifdef DEBUG_EVENTS
-	{
-		// Print out changed atom
-		xcb_get_atom_name_reply_t *reply =
-		    xcb_get_atom_name_reply(ps->c, xcb_get_atom_name(ps->c, ev->atom), NULL);
-		const char *name = "?";
-		int name_len = 1;
-		if (reply) {
-			name = xcb_get_atom_name_name(reply);
-			name_len = xcb_get_atom_name_name_length(reply);
-		}
-
-		log_trace("{ atom = %.*s }", name_len, name);
-		free(reply);
-	}
-#endif
-
-	if (ps->root == ev->window) {
-		if (ps->o.track_focus && ps->o.use_ewmh_active_win &&
-		    ps->atom_ewmh_active_win == ev->atom) {
-			update_ewmh_active_win(ps);
-		} else {
-			// Destroy the root "image" if the wallpaper probably changed
-			if (x_is_root_back_pixmap_atom(ps, ev->atom)) {
-				root_damaged(ps);
-			}
-		}
-
-		// Unconcerned about any other proprties on root window
-		return;
-	}
-
-	// If WM_STATE changes
-	if (ev->atom == ps->atom_client) {
-		// Check whether it could be a client window
-		if (!find_toplevel(ps, ev->window)) {
-			// Reset event mask anyway
-			xcb_change_window_attributes(ps->c, ev->window, XCB_CW_EVENT_MASK,
-			                             (const uint32_t[]){determine_evmask(
-			                                 ps, ev->window, WIN_EVMODE_UNKNOWN)});
-
-			win *w_top = find_toplevel2(ps, ev->window);
-			// Initialize client_win as early as possible
-			if (w_top && (!w_top->client_win || w_top->client_win == w_top->id) &&
-			    wid_has_prop(ps, ev->window, ps->atom_client)) {
-				w_top->wmwin = false;
-				win_unmark_client(ps, w_top);
-				win_mark_client(ps, w_top, ev->window);
-			}
-		}
-	}
-
-	// If _NET_WM_WINDOW_TYPE changes... God knows why this would happen, but
-	// there are always some stupid applications. (#144)
-	if (ev->atom == ps->atom_win_type) {
-		win *w = NULL;
-		if ((w = find_toplevel(ps, ev->window)))
-			win_update_wintype(ps, w);
-	}
-
-	// If _NET_WM_OPACITY changes
-	if (ev->atom == ps->atom_opacity) {
-		win *w = find_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
-		if (w) {
-			win_update_opacity_prop(ps, w);
-			// we cannot receive OPACITY change when window is destroyed
-			assert(w->state != WSTATE_DESTROYING);
-			if (w->state == WSTATE_MAPPED) {
-				// See the winstate_t transition table
-				w->state = WSTATE_FADING;
-			}
-			w->opacity_tgt = win_calc_opacity_target(ps, w);
-		}
-	}
-
-	// If frame extents property changes
-	if (ps->o.frame_opacity && ev->atom == ps->atom_frame_extents) {
-		win *w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_update_frame_extents(ps, w, ev->window);
-			// If frame extents change, the window needs repaint
-			add_damage_from_win(ps, w);
-		}
-	}
-
-	// If name changes
-	if (ps->o.track_wdata && (ps->atom_name == ev->atom || ps->atom_name_ewmh == ev->atom)) {
-		win *w = find_toplevel(ps, ev->window);
-		if (w && 1 == win_get_name(ps, w)) {
-			win_on_factor_change(ps, w);
-		}
-	}
-
-	// If class changes
-	if (ps->o.track_wdata && ps->atom_class == ev->atom) {
-		win *w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_get_class(ps, w);
-			win_on_factor_change(ps, w);
-		}
-	}
-
-	// If role changes
-	if (ps->o.track_wdata && ps->atom_role == ev->atom) {
-		win *w = find_toplevel(ps, ev->window);
-		if (w && 1 == win_get_role(ps, w)) {
-			win_on_factor_change(ps, w);
-		}
-	}
-
-	// If _COMPTON_SHADOW changes
-	if (ps->o.respect_prop_shadow && ps->atom_compton_shadow == ev->atom) {
-		win *w = find_win(ps, ev->window);
-		if (w)
-			win_update_prop_shadow(ps, w);
-	}
-
-	// If a leader property changes
-	if ((ps->o.detect_transient && ps->atom_transient == ev->atom) ||
-	    (ps->o.detect_client_leader && ps->atom_client_leader == ev->atom)) {
-		win *w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_update_leader(ps, w);
-		}
-	}
-
-	// Check for other atoms we are tracking
-	for (latom_t *platom = ps->track_atom_lst; platom; platom = platom->next) {
-		if (platom->atom == ev->atom) {
-			win *w = find_win(ps, ev->window);
-			if (!w)
-				w = find_toplevel(ps, ev->window);
-			if (w)
-				win_on_factor_change(ps, w);
-			break;
-		}
-	}
-}
-
-inline static void ev_damage_notify(session_t *ps, xcb_damage_notify_event_t *de) {
-	/*
-	if (ps->root == de->drawable) {
-	  root_damaged();
-	  return;
-	} */
-
-	win *w = find_win(ps, de->drawable);
-
-	if (!w)
-		return;
-
-	repair_win(ps, w);
-}
-
-inline static void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) {
-	win *w = find_win(ps, ev->affected_window);
-	if (!w || w->a.map_state == XCB_MAP_STATE_UNMAPPED)
-		return;
-
-	/*
-	 * Empty bounding_shape may indicated an
-	 * unmapped/destroyed window, in which case
-	 * seemingly BadRegion errors would be triggered
-	 * if we attempt to rebuild border_size
-	 */
-	// Mark the old border_size as damaged
-	region_t tmp = win_get_bounding_shape_global_by_val(w);
-	add_damage(ps, &tmp);
-	pixman_region32_fini(&tmp);
-
-	win_update_bounding_shape(ps, w);
-
-	// Mark the new border_size as damaged
-	tmp = win_get_bounding_shape_global_by_val(w);
-	add_damage(ps, &tmp);
-	pixman_region32_fini(&tmp);
-
-	w->reg_ignore_valid = false;
-}
-
-/**
- * Handle ScreenChangeNotify events from X RandR extension.
- */
-static void ev_screen_change_notify(session_t *ps,
-                                    xcb_randr_screen_change_notify_event_t attr_unused *ev) {
-	if (ps->o.xinerama_shadow_crop)
-		cxinerama_upd_scrs(ps);
-
-	if (ps->o.sw_opti && !ps->o.refresh_rate) {
-		update_refresh_rate(ps);
-		if (!ps->refresh_rate) {
-			log_warn("Refresh rate detection failed. swopti will be "
-			         "temporarily disabled");
-		}
-	}
-}
-
-inline static void
-ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
-	// The only selection we own is the _NET_WM_CM_Sn selection.
-	// If we lose that one, we should exit.
-	log_fatal("Another composite manager started and took the _NET_WM_CM_Sn "
-	          "selection.");
-	exit(1);
-}
-
-/**
- * Get a window's name from window ID.
- */
-static inline void attr_unused ev_window_name(session_t *ps, xcb_window_t wid, char **name) {
-	*name = "";
-	if (wid) {
-		*name = "(Failed to get title)";
-		if (ps->root == wid)
-			*name = "(Root window)";
-		else if (ps->overlay == wid)
-			*name = "(Overlay)";
-		else {
-			win *w = find_win(ps, wid);
-			if (!w)
-				w = find_toplevel(ps, wid);
-
-			if (w)
-				win_get_name(ps, w);
-			if (w && w->name)
-				*name = w->name;
-			else
-				*name = "unknown";
-		}
-	}
-}
-
-static void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
-	if ((ev->response_type & 0x7f) != KeymapNotify) {
-		discard_ignore(ps, ev->full_sequence);
-	}
-
-#ifdef DEBUG_EVENTS
-	if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
-		xcb_window_t wid = ev_window(ps, ev);
-		char *window_name = NULL;
-		ev_window_name(ps, wid, &window_name);
-
-		log_trace("event %10.10s serial %#010x window %#010lx \"%s\"",
-		          ev_name(ps, ev), ev_serial(ev), wid, window_name);
-	}
-#endif
-
-	// Check if a custom XEvent constructor was registered in xlib for this event
-	// type, and call it discarding the constructed XEvent if any. XESetWireToEvent
-	// might be used by libraries to intercept messages from the X server e.g. the
-	// OpenGL lib waiting for DRI2 events.
-
-	// XXX This exists to workaround compton issue #33, #34, #47
-	// For even more details, see:
-	// https://bugs.freedesktop.org/show_bug.cgi?id=35945
-	// https://lists.freedesktop.org/archives/xcb/2011-November/007337.html
-	auto proc = XESetWireToEvent(ps->dpy, ev->response_type, 0);
-	if (proc) {
-		XESetWireToEvent(ps->dpy, ev->response_type, proc);
-		XEvent dummy;
-
-		// Stop Xlib from complaining about lost sequence numbers.
-		// proc might also just be Xlib internal event processing functions, and
-		// because they probably won't see all X replies, they will complain about
-		// missing sequence numbers.
-		//
-		// We only need the low 16 bits
-		ev->sequence = (uint16_t)(LastKnownRequestProcessed(ps->dpy) & 0xffff);
-		proc(ps->dpy, &dummy, (xEvent *)ev);
-	}
-
-	// XXX redraw needs to be more fine grained
-	queue_redraw(ps);
-
-	switch (ev->response_type) {
-	case FocusIn: ev_focus_in(ps, (xcb_focus_in_event_t *)ev); break;
-	case FocusOut: ev_focus_out(ps, (xcb_focus_out_event_t *)ev); break;
-	case CreateNotify: ev_create_notify(ps, (xcb_create_notify_event_t *)ev); break;
-	case ConfigureNotify:
-		ev_configure_notify(ps, (xcb_configure_notify_event_t *)ev);
-		break;
-	case DestroyNotify:
-		ev_destroy_notify(ps, (xcb_destroy_notify_event_t *)ev);
-		break;
-	case MapNotify: ev_map_notify(ps, (xcb_map_notify_event_t *)ev); break;
-	case UnmapNotify: ev_unmap_notify(ps, (xcb_unmap_notify_event_t *)ev); break;
-	case ReparentNotify:
-		ev_reparent_notify(ps, (xcb_reparent_notify_event_t *)ev);
-		break;
-	case CirculateNotify:
-		ev_circulate_notify(ps, (xcb_circulate_notify_event_t *)ev);
-		break;
-	case Expose: ev_expose(ps, (xcb_expose_event_t *)ev); break;
-	case PropertyNotify:
-		ev_property_notify(ps, (xcb_property_notify_event_t *)ev);
-		break;
-	case SelectionClear:
-		ev_selection_clear(ps, (xcb_selection_clear_event_t *)ev);
-		break;
-	case 0: ev_xcb_error(ps, (xcb_generic_error_t *)ev); break;
-	default:
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
-			ev_shape_notify(ps, (xcb_shape_notify_event_t *)ev);
-			break;
-		}
-		if (ps->randr_exists &&
-		    ev->response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
-			ev_screen_change_notify(
-			    ps, (xcb_randr_screen_change_notify_event_t *)ev);
-			break;
-		}
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
-			ev_damage_notify(ps, (xcb_damage_notify_event_t *)ev);
-			break;
-		}
-	}
 }
 
 // === Main ===
@@ -1733,7 +1188,7 @@ static void init_atoms(session_t *ps) {
 /**
  * Update refresh rate info with X Randr extension.
  */
-static void update_refresh_rate(session_t *ps) {
+void update_refresh_rate(session_t *ps) {
 	xcb_randr_get_screen_info_reply_t *randr_info = xcb_randr_get_screen_info_reply(
 	    ps->c, xcb_randr_get_screen_info(ps->c, ps->root), NULL);
 
@@ -1874,33 +1329,8 @@ static bool redir_start(session_t *ps) {
 
 		x_sync(ps->c);
 
-		if (ps->o.experimental_backends) {
-			// Reinitialize win_data
-			ps->backend_data = backend_list[ps->o.backend]->init(ps);
-			ps->backend_data->ops = backend_list[ps->o.backend];
-			if (!ps->backend_data) {
-				log_fatal("Failed to initialize backend, aborting...");
-				ps->quit = true;
-				ev_break(ps->loop, EVBREAK_ALL);
-				return false;
-			}
-
-			for (win *w = ps->list; w; w = w->next) {
-				if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-					auto pixmap = xcb_generate_id(ps->c);
-					xcb_composite_name_window_pixmap(ps->c, w->id, pixmap);
-					w->win_image = ps->backend_data->ops->bind_pixmap(
-					    ps->backend_data, pixmap,
-					    x_get_visual_info(ps->c, w->a.visual), true);
-					if (w->shadow) {
-						w->shadow_image = ps->backend_data->ops->render_shadow(
-						    ps->backend_data, w->widthb, w->heightb,
-						    ps->gaussian_map, ps->o.shadow_red,
-						    ps->o.shadow_green, ps->o.shadow_blue,
-						    ps->o.shadow_opacity);
-					}
-				}
-			}
+		if (!initialize_backend(ps)) {
+			return false;
 		}
 
 		if (ps->o.experimental_backends) {
@@ -1914,15 +1344,6 @@ static bool redir_start(session_t *ps) {
 		for (int i = 0; i < ps->ndamage; i++) {
 			pixman_region32_init(&ps->damage_ring[i]);
 		}
-
-		/*
-		// Unredirect GL context window as this may have an effect on VSync:
-		// < http://dri.freedesktop.org/wiki/CompositeSwap >
-		xcb_composite_unredirect_window(c, ps->reg_win,
-		XCB_COMPOSITE_REDIRECT_MANUAL); if (ps->o.paint_on_overlay && ps->overlay)
-		{ xcb_composite_unredirect_window(c, ps->overlay,
-		      XCB_COMPOSITE_REDIRECT_MANUAL);
-		} */
 
 		// Must call XSync() here
 		x_sync(ps->c);
@@ -1943,53 +1364,14 @@ static bool redir_start(session_t *ps) {
 static void redir_stop(session_t *ps) {
 	if (ps->redirected) {
 		log_debug("Screen unredirected.");
-		// Destroy all Pictures as they expire once windows are unredirected
-		// If we don't destroy them here, looks like the resources are just
-		// kept inaccessible somehow
-		for (win *w = ps->list, *next; w; w = next) {
-			next = w->next;
-			// Wrapping up fading in progress
-			win_skip_fading(ps, &w);
 
-			// `w` might be freed by win_check_fade_finished
-			if (!w) {
-				continue;
-			}
-			if (ps->o.experimental_backends) {
-				if (w->state == WSTATE_MAPPED) {
-					ps->backend_data->ops->release_image(
-					    ps->backend_data, w->win_image);
-					if (w->shadow_image) {
-						ps->backend_data->ops->release_image(
-						    ps->backend_data, w->shadow_image);
-					}
-					w->win_image = NULL;
-					w->shadow_image = NULL;
-				} else {
-					assert(!w->win_image);
-					assert(!w->shadow_image);
-				}
-				if (ps->root_image) {
-					ps->backend_data->ops->release_image(
-					    ps->backend_data, ps->root_image);
-					ps->root_image = NULL;
-				}
-			} else {
-				free_paint(ps, &w->paint);
-			}
-		}
+		destroy_backend(ps);
 
 		xcb_composite_unredirect_subwindows(ps->c, ps->root,
 		                                    XCB_COMPOSITE_REDIRECT_MANUAL);
 		// Unmap overlay window
 		if (ps->overlay)
 			xcb_unmap_window(ps->c, ps->overlay);
-
-		if (ps->o.experimental_backends) {
-			// deinit backend
-			ps->backend_data->ops->deinit(ps->backend_data);
-			ps->backend_data = NULL;
-		}
 
 		// Free the damage ring
 		for (int i = 0; i < ps->ndamage; ++i) {
@@ -2056,6 +1438,11 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 		}
 	}
 
+	// TODO xcb_grab_server
+	// TODO clean up event queue
+
+	handle_root_flags(ps);
+
 	bool fade_running = false;
 	win *t = paint_preprocess(ps, &fade_running);
 	ps->tmout_unredir_hit = false;
@@ -2084,6 +1471,8 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 
 	if (!fade_running)
 		ps->fade_time = 0L;
+
+	// TODO xcb_ungrab_server
 
 	ps->redraw_needed = false;
 }
@@ -2334,7 +1723,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 #endif
 	};
 
-	log_init_tls();
 	auto stderr_logger = stderr_logger_new();
 	if (stderr_logger) {
 		// stderr logger might fail to create if we are already
@@ -2926,6 +2314,7 @@ int main(int argc, char **argv) {
 	// Set locale so window names with special characters are interpreted
 	// correctly
 	setlocale(LC_ALL, "");
+	log_init_tls();
 
 	int exit_code;
 	char *config_file = NULL;
@@ -2968,7 +2357,7 @@ int main(int argc, char **argv) {
 	bool quit = false;
 	Display *dpy = XOpenDisplay(NULL);
 	if (!dpy) {
-		log_fatal("Can't open display.");
+		fprintf(stderr, "Can't open display.");
 		return 1;
 	}
 	XSetEventQueueOwner(dpy, XCBOwnsEventQueue);

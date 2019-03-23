@@ -6,7 +6,7 @@ base_deps = [
 
 srcs = [ files('compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
                'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
-               'options.c') ]
+               'options.c', 'event.c') ]
 compton_inc = include_directories('.')
 
 cflags = []
@@ -62,8 +62,16 @@ if get_option('xrescheck')
 	srcs += [ 'xrescheck.c' ]
 endif
 
+if get_option('unittest')
+	cflags += ['-DUNIT_TEST']
+endif
+
 subdir('backend')
 
-executable('compton', srcs, c_args: cflags,
-  dependencies: [ base_deps, deps ],
+compton = executable('compton', srcs, c_args: cflags,
+  dependencies: [ base_deps, deps, test_h_dep ],
   install: true, include_directories: compton_inc)
+
+if get_option('unittest')
+	test('compton unittest', compton, args: [ '--unittest' ])
+endif

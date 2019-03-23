@@ -25,6 +25,10 @@
 #include "win.h"
 #include "x.h"
 
+enum root_flags {
+	ROOT_FLAGS_SCREEN_CHANGE = 1
+};
+
 // == Functions ==
 // TODO move static inline functions that are only used in compton.c, into
 //      compton.c
@@ -39,6 +43,30 @@ long determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode);
 xcb_window_t find_client_win(session_t *ps, xcb_window_t w);
 
 win *find_toplevel2(session_t *ps, xcb_window_t wid);
+
+win *recheck_focus(session_t *ps);
+
+/// Handle configure event of a root window
+void configure_root(session_t *ps, int width, int height);
+
+/// Handle configure event of a regular window
+void configure_win(session_t *ps, xcb_configure_notify_event_t *ce);
+
+void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce);
+
+void update_ewmh_active_win(session_t *ps);
+
+void update_refresh_rate(session_t *ps);
+
+void root_damaged(session_t *ps);
+
+void cxinerama_upd_scrs(session_t *ps);
+
+void queue_redraw(session_t *ps);
+
+void discard_ignore(session_t *ps, unsigned long sequence);
+
+void set_root_flags(session_t *ps, uint64_t flags);
 
 /**
  * Set a <code>switch_t</code> array of all unset wintypes to true.
@@ -129,5 +157,3 @@ static inline void dump_drawable(session_t *ps, xcb_drawable_t drawable) {
 	          drawable, r->x, r->y, r->width, r->height, r->border_width, r->depth);
 	free(r);
 }
-
-// vim: set et sw=2 :

@@ -18,6 +18,7 @@
 #include "render.h"
 #include "types.h"
 #include "utils.h"
+#include "backend/backend.h"
 #include "x.h"
 
 typedef struct session session_t;
@@ -104,6 +105,13 @@ typedef enum {
 	WSTATE_UNMAPPED,
 } winstate_t;
 
+typedef enum win_flags {
+	/// win_image/shadow_image is out of date
+	WIN_FLAGS_STALE_IMAGE = 1,
+	/// there was an error trying to bind the images
+	WIN_FLAGS_IMAGE_ERROR = 2,
+} win_flags_t;
+
 /**
  * About coordinate systems
  *
@@ -157,9 +165,6 @@ struct win {
 	region_t bounding_shape;
 	/// Window flags. Definitions above.
 	int_fast16_t flags;
-	/// Whether there's a pending <code>ConfigureNotify</code> happening
-	/// when the window is unmapped.
-	bool need_configure;
 	/// Queued <code>ConfigureNotify</code> when the window is unmapped.
 	xcb_configure_notify_event_t queue_configure;
 	/// The region of screen that will be obscured when windows above is painted,
@@ -282,6 +287,11 @@ struct win {
 #endif
 };
 
+void win_release_image(backend_t *base, win *w);
+bool must_use win_bind_image(session_t *ps, win *w);
+
+/// Attempt a rebind of window's images. If that failed, the original images are kept.
+bool must_use win_try_rebind_image(session_t *ps, win *w);
 int win_get_name(session_t *ps, win *w);
 int win_get_role(session_t *ps, win *w);
 winmode_t attr_pure win_calc_mode(const win *w);

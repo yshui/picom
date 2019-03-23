@@ -1,8 +1,8 @@
-defaults: &defaults
-  docker:
-    - image: yshui/comptonci
-cached-checkout: &ccheckout
-just-build: &build
+executors:
+  e:
+    docker:
+      - image: yshui/comptonci
+    working_directory: "/tmp/workspace"
 
 version: 2.1
 commands:
@@ -27,10 +27,10 @@ commands:
             - ".git"
       - run:
           name: config
-          command: CC=<< parameters.cc >> meson << parameters.build-config >> --werror . build
+          command: CC=<< parameters.cc >> meson << parameters.build-config >> -Dunittest=true --werror . build
       - run:
           name: build
-          command: ninja -C build
+          command: ninja -vC build
   test-xvfb:
     steps:
       - run:
@@ -40,48 +40,64 @@ commands:
 
 jobs:
   basic:
-    <<: *defaults
+    executor: e
     steps:
       - build:
-          build-config: -Dbuild_docs=true
+          build-config: -Dbuild_docs=true -Db_coverage=true
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
+  test:
+    executor: e
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - run:
+          name: test
+          command: ninja -vC /tmp/workspace/build test
+      - run:
+          name: upload coverage
+          command: bash <(curl -s https://codecov.io/bash)
+
   minimal:
-    <<: *defaults
+    executor: e
     steps:
       - build:
           build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
   nogl:
-    <<: *defaults
+    executor: e
     steps:
       - build:
           build-config: -Dopengl=false
   noregex:
-    <<: *defaults
+    executor: e
     steps:
       - build:
           build-config: -Dregex=false
   clang_basic:
-    <<: *defaults
+    executor: e
     steps:
       - build:
-          cc: clang-6.0
+          cc: clang
           build-config:
   clang_minimal:
-    <<: *defaults
+    executor: e
     steps:
       - build:
-          cc: clang-6.0
+          cc: clang
           build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
   clang_nogl:
-    <<: *defaults
+    executor: e
     steps:
       - build:
-          cc: clang-6.0
+          cc: clang
           build-config: -Dopengl=false
   clang_noregex:
-    <<: *defaults
+    executor: e
     steps:
       - build:
-          cc: clang-6.0
+          cc: clang
           build-config: -Dregex=false
 
 workflows:
@@ -93,6 +109,9 @@ workflows:
       - clang_minimal
       - nogl
       - clang_nogl
+      - test:
+          requires:
+            - basic
 #     - test-xvfb
 
 # vim: set sw=2 ts=8 et:

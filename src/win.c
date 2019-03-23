@@ -174,6 +174,65 @@ void add_damage_from_win(session_t *ps, win *w) {
 	pixman_region32_fini(&extents);
 }
 
+/// Release the images attached to this window
+void win_release_image(backend_t *base, win *w) {
+	assert(w->win_image || (w->flags & WIN_FLAGS_IMAGE_ERROR));
+	if (w->win_image) {
+		base->ops->release_image(base, w->win_image);
+		w->win_image = NULL;
+	}
+	if (w->shadow) {
+		assert(w->shadow_image || (w->flags & WIN_FLAGS_IMAGE_ERROR));
+		if (w->shadow_image) {
+			base->ops->release_image(base, w->shadow_image);
+			w->shadow_image = NULL;
+		}
+	}
+}
+
+static inline bool
+_win_bind_image(session_t *ps, win *w, void **win_image, void **shadow_image) {
+	auto pixmap = xcb_generate_id(ps->c);
+	auto e = xcb_request_check(
+	    ps->c, xcb_composite_name_window_pixmap_checked(ps->c, w->id, pixmap));
+	if (e) {
+		log_error("Failed to get named pixmap");
+		free(e);
+		return false;
+	}
+	log_trace("New named pixmap %#010x", pixmap);
+	*win_image = ps->backend_data->ops->bind_pixmap(
+	    ps->backend_data, pixmap, x_get_visual_info(ps->c, w->a.visual), true);
+	if (!*win_image) {
+		return false;
+	}
+	if (w->shadow) {
+		*shadow_image = ps->backend_data->ops->render_shadow(
+		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map, ps->o.shadow_red,
+		    ps->o.shadow_green, ps->o.shadow_blue, ps->o.shadow_opacity);
+		if (!*shadow_image) {
+			log_error("Failed to bind shadow image");
+			ps->backend_data->ops->release_image(ps->backend_data, *win_image);
+			*win_image = NULL;
+			return false;
+		}
+	}
+	return true;
+}
+
+bool win_bind_image(session_t *ps, win *w) {
+	assert(!w->win_image && !w->shadow_image);
+	return _win_bind_image(ps, w, &w->win_image, &w->shadow_image);
+}
+
+bool win_try_rebind_image(session_t *ps, win *w) {
+	log_trace("Freeing old window image");
+	// Must release first, otherwise breaks NVIDIA driver
+	win_release_image(ps->backend_data, w);
+
+	return win_bind_image(ps, w);
+}
+
 /**
  * Check if a window has rounded corners.
  * XXX This is really dumb
@@ -634,27 +693,11 @@ void win_on_win_size_change(session_t *ps, win *w) {
 	w->shadow_dy = ps->o.shadow_offset_y;
 	w->shadow_width = w->widthb + ps->o.shadow_radius * 2;
 	w->shadow_height = w->heightb + ps->o.shadow_radius * 2;
-	w->flags |= WFLAG_SIZE_CHANGE;
 	// Invalidate the shadow we built
 	if (ps->o.experimental_backends && ps->redirected) {
 		if (w->state == WSTATE_MAPPED || w->state == WSTATE_MAPPING ||
 		    w->state == WSTATE_FADING) {
-			ps->backend_data->ops->release_image(ps->backend_data, w->win_image);
-			if (w->shadow_image) {
-				ps->backend_data->ops->release_image(ps->backend_data,
-				                                     w->shadow_image);
-			}
-			auto pixmap = xcb_generate_id(ps->c);
-			xcb_composite_name_window_pixmap(ps->c, w->id, pixmap);
-			w->win_image = ps->backend_data->ops->bind_pixmap(
-			    ps->backend_data, pixmap,
-			    x_get_visual_info(ps->c, w->a.visual), true);
-			if (w->shadow) {
-				w->shadow_image = ps->backend_data->ops->render_shadow(
-				    ps->backend_data, w->widthb, w->heightb,
-				    ps->gaussian_map, ps->o.shadow_red, ps->o.shadow_green,
-				    ps->o.shadow_blue, ps->o.shadow_opacity);
-			}
+			w->flags |= WIN_FLAGS_STALE_IMAGE;
 		} else {
 			assert(w->state == WSTATE_UNMAPPED);
 		}
@@ -828,8 +871,6 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 	    .state = WSTATE_UNMAPPED,         // updated by window state changes
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
-	    .need_configure = false,          // set to true when window is configured
-	                                      // while unmapped.
 	    .queue_configure = {},            // same as above
 	    .reg_ignore_valid = false,        // set to true when damaged
 	    .flags = 0,                       // updated by property/attributes/etc change
@@ -907,18 +948,15 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 
 	log_debug("Adding window %#010x, prev %#010x", id, prev);
 	xcb_get_window_attributes_cookie_t acookie = xcb_get_window_attributes(ps->c, id);
-	xcb_get_geometry_cookie_t gcookie = xcb_get_geometry(ps->c, id);
 	xcb_get_window_attributes_reply_t *a =
 	    xcb_get_window_attributes_reply(ps->c, acookie, NULL);
-	xcb_get_geometry_reply_t *g = xcb_get_geometry_reply(ps->c, gcookie, NULL);
-	if (!a || !g || a->map_state == XCB_MAP_STATE_UNVIEWABLE) {
+	if (!a || a->map_state == XCB_MAP_STATE_UNVIEWABLE) {
 		// Failed to get window attributes or geometry probably means
 		// the window is gone already. Unviewable means the window is
 		// already reparented elsewhere.
 		// BTW, we don't care about Input Only windows, except for stacking
 		// proposes, so we need to keep track of them still.
 		free(a);
-		free(g);
 		return;
 	}
 
@@ -931,10 +969,8 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 	*new = win_def;
 	new->id = id;
 	new->a = *a;
-	new->g = *g;
 	pixman_region32_init(&new->bounding_shape);
 
-	free(g);
 	free(a);
 
 	// Create Damage for window (if not Input Only)
@@ -951,8 +987,6 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 
 		new->pictfmt = x_get_pictform_for_visual(ps->c, new->a.visual);
 	}
-
-	win_on_win_size_change(ps, new);
 
 	// Find window insertion point
 	win **p = NULL;
@@ -1217,12 +1251,12 @@ void win_extents(const win *w, region_t *res) {
 
 gen_by_val(win_extents);
 
-    /**
-     * Update the out-dated bounding shape of a window.
-     *
-     * Mark the window shape as updated
-     */
-    void win_update_bounding_shape(session_t *ps, win *w) {
+/**
+ * Update the out-dated bounding shape of a window.
+ *
+ * Mark the window shape as updated
+ */
+void win_update_bounding_shape(session_t *ps, win *w) {
 	if (ps->shape_exists)
 		w->bounding_shaped = win_bounding_shaped(ps, w->id);
 
@@ -1281,22 +1315,7 @@ gen_by_val(win_extents);
 			// Note we only do this when screen is redirected, because
 			// otherwise win_data is not valid
 			assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
-			ps->backend_data->ops->release_image(ps->backend_data, w->win_image);
-			if (w->shadow_image) {
-				ps->backend_data->ops->release_image(ps->backend_data,
-				                                     w->shadow_image);
-			}
-			auto pixmap = xcb_generate_id(ps->c);
-			xcb_composite_name_window_pixmap(ps->c, w->id, pixmap);
-			w->win_image = ps->backend_data->ops->bind_pixmap(
-			    ps->backend_data, pixmap,
-			    x_get_visual_info(ps->c, w->a.visual), true);
-			if (w->shadow) {
-				w->shadow_image = ps->backend_data->ops->render_shadow(
-				    ps->backend_data, w->widthb, w->heightb,
-				    ps->gaussian_map, ps->o.shadow_red, ps->o.shadow_green,
-				    ps->o.shadow_blue, ps->o.shadow_opacity);
-			}
+			w->flags |= WIN_FLAGS_STALE_IMAGE;
 		}
 	} else {
 		free_paint(ps, &w->paint);
@@ -1387,24 +1406,18 @@ static void finish_unmap_win(session_t *ps, win **_w) {
 	w->ever_damaged = false;
 	w->reg_ignore_valid = false;
 	w->state = WSTATE_UNMAPPED;
-	w->flags = 0;
 
 	if (ps->o.experimental_backends) {
 		// We are in unmap_win, we definitely was viewable
 		if (ps->redirected) {
-			assert(w->win_image);
-			ps->backend_data->ops->release_image(ps->backend_data, w->win_image);
-			if (w->shadow_image) {
-				ps->backend_data->ops->release_image(ps->backend_data,
-				                                     w->shadow_image);
-			}
-			w->win_image = NULL;
-			w->shadow_image = NULL;
+			win_release_image(ps->backend_data, w);
 		}
 	} else {
 		free_paint(ps, &w->paint);
 		free_paint(ps, &w->shadow_paint);
 	}
+
+	w->flags = 0;
 }
 
 static void finish_destroy_win(session_t *ps, win **_w) {
@@ -1440,9 +1453,7 @@ static void finish_destroy_win(session_t *ps, win **_w) {
 				ps->active_win = NULL;
 			}
 
-			if (!ps->o.experimental_backends) {
-				free_win_res(ps, w);
-			}
+			free_win_res(ps, w);
 
 			// Drop w from all prev_trans to avoid accessing freed memory in
 			// repair_win()
@@ -1614,10 +1625,39 @@ void map_win(session_t *ps, win *w) {
 
 	log_debug("Mapping (%#010x \"%s\")", w->id, w->name);
 
+	assert(w->state != WSTATE_DESTROYING);
 	if (w->state != WSTATE_UNMAPPED && w->state != WSTATE_UNMAPPING) {
 		log_warn("Mapping an already mapped window");
 		return;
 	}
+
+	if (w->state == WSTATE_UNMAPPING) {
+		win_skip_fading(ps, &w);
+		assert(w);
+	}
+
+	// We stopped processing window size change when we were unmapped, refresh the
+	// size of the window
+	xcb_get_geometry_cookie_t gcookie = xcb_get_geometry(ps->c, w->id);
+	xcb_get_geometry_reply_t *g = xcb_get_geometry_reply(ps->c, gcookie, NULL);
+
+	if (!g) {
+		log_error("Failed to get the geometry of window %#010x", w->id);
+		return;
+	}
+
+	w->g = *g;
+	free(g);
+
+	win_on_win_size_change(ps, w);
+	log_trace("Window size: %dx%d", w->g.width, w->g.height);
+
+	// Rant: window size could change after we queried its geometry here and before
+	// we get its pixmap. Later, when we get back to the event processing loop, we
+	// will get the notification about size change from Xserver and try to refresh the
+	// pixmap, while the pixmap is actually already up-to-date (i.e. the notification
+	// is stale). There is basically no real way to prevent this, aside from grabbing
+	// the server.
 
 	// XXX ???
 	assert(!win_is_focused_real(ps, w));
@@ -1672,20 +1712,6 @@ void map_win(session_t *ps, win *w) {
 	w->state = WSTATE_MAPPING;
 	w->opacity_tgt = win_calc_opacity_target(ps, w);
 
-	// TODO win_update_bounding_shape below will immediately
-	//      reinit w->win_data, not very efficient
-	if (ps->redirected && ps->o.experimental_backends) {
-		auto pixmap = xcb_generate_id(ps->c);
-		xcb_composite_name_window_pixmap(ps->c, w->id, pixmap);
-		w->win_image = ps->backend_data->ops->bind_pixmap(
-		    ps->backend_data, pixmap, x_get_visual_info(ps->c, w->a.visual), true);
-		if (w->shadow) {
-			w->shadow_image = ps->backend_data->ops->render_shadow(
-			    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map,
-			    ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue,
-			    ps->o.shadow_opacity);
-		}
-	}
 	log_debug("Window %#010x has opacity %f, opacity target is %f", w->id, w->opacity,
 	          w->opacity_tgt);
 
@@ -1693,18 +1719,25 @@ void map_win(session_t *ps, win *w) {
 
 	w->ever_damaged = false;
 
-	/* if any configure events happened while
-	   the window was unmapped, then configure
-	   the window to its correct place */
-	if (w->need_configure) {
-		configure_win(ps, &w->queue_configure);
-	}
-
 	// We stopped listening on ShapeNotify events
 	// when the window is unmapped (XXX we shouldn't),
 	// so the shape of the window might have changed,
 	// update. (Issue #35)
 	win_update_bounding_shape(ps, w);
+
+	// Reset the STALE_IMAGE flag set by win_update_bounding_shape. Because we are
+	// just about to bind the image, no way that's stale.
+	//
+	// Also because NVIDIA driver doesn't like seeing the same pixmap under different
+	// ids, so avoid naming the pixmap again when it didn't actually change.
+	w->flags &= ~WIN_FLAGS_STALE_IMAGE;
+
+	// Bind image after update_bounding_shape, so the shadow has the correct size.
+	if (ps->redirected && ps->o.experimental_backends) {
+		if (!win_bind_image(ps, w)) {
+			w->flags |= WIN_FLAGS_IMAGE_ERROR;
+		}
+	}
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
@@ -1740,5 +1773,3 @@ void map_win_by_id(session_t *ps, xcb_window_t id) {
 
 	map_win(ps, w);
 }
-
-// vim: set et sw=2 :
