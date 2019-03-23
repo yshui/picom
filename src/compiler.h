@@ -4,9 +4,11 @@
 
 #include <stdc-predef.h>
 
-#define auto         __auto_type
-#define likely(x)    __builtin_expect(!!(x), 1)
-#define unlikely(x)  __builtin_expect(!!(x), 0)
+#define auto           __auto_type
+#define likely(x)      __builtin_expect(!!(x), 1)
+#define unlikely(x)    __builtin_expect(!!(x), 0)
+#define likely_if(x)   if (likely(x))
+#define unlikely_if(x) if (unlikely(x))
 
 #ifndef __has_attribute
 # if __GNUC__ >= 4
@@ -45,6 +47,8 @@
 #else
 # define attr_warn_unused_result
 #endif
+// An alias for conveninence
+#define must_use attr_warn_unused_result
 
 #if __has_attribute(nonnull)
 # define attr_nonnull(...) __attribute__((nonnull(__VA_ARGS__)))

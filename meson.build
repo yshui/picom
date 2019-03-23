@@ -1,4 +1,4 @@
-project('compton', 'c', version: '5',
+project('compton', 'c', version: '6',
         default_options: ['c_std=c11'])
 
 cc = meson.get_compiler('c')
@@ -46,7 +46,8 @@ endif
 
 add_global_arguments('-D_GNU_SOURCE', language: 'c')
 
-warns = [ 'all', 'extra', 'no-unused-parameter', 'nonnull', 'shadow', 'implicit-fallthrough' ]
+warns = [ 'all', 'extra', 'no-unused-parameter', 'nonnull', 'shadow',
+          'implicit-fallthrough', 'no-unknown-warning-option', 'no-missing-braces' ]
 foreach w : warns
 	if cc.has_argument('-W'+w)
 		add_global_arguments('-W'+w, language: 'c')

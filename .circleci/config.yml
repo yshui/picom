@@ -43,57 +43,46 @@ jobs:
     <<: *defaults
     steps:
       - build:
-          build-config: -Dbuild_docs=true -Dnew_backends=true
+          build-config: -Dbuild_docs=true
   minimal:
     <<: *defaults
     steps:
       - build:
-          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false -Dnew_backends=true
+          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
   nogl:
     <<: *defaults
     steps:
       - build:
-          build-config: -Dopengl=false -Dnew_backends=true
+          build-config: -Dopengl=false
   noregex:
     <<: *defaults
     steps:
       - build:
-          build-config: -Dregex=false -Dnew_backends=true
+          build-config: -Dregex=false
   clang_basic:
     <<: *defaults
     steps:
       - build:
           cc: clang-6.0
-          build-config: -Dnew_backends=true
+          build-config:
   clang_minimal:
     <<: *defaults
     steps:
       - build:
           cc: clang-6.0
-          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false -Dnew_backends=true
+          build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
   clang_nogl:
     <<: *defaults
     steps:
       - build:
           cc: clang-6.0
-          build-config: -Dopengl=false -Dnew_backends=true
+          build-config: -Dopengl=false
   clang_noregex:
     <<: *defaults
     steps:
       - build:
           cc: clang-6.0
-          build-config: -Dregex=false -Dnew_backends=true
-  clang_basic_nonew:
-    <<: *defaults
-    steps:
-      - build:
-          cc: clang-6.0
-          build-config:
-  basic_nonew:
-    <<: *defaults
-    steps:
-      - build:
-          build-config:
+          build-config: -Dregex=false
 
 workflows:
   all_builds:
@@ -104,8 +93,6 @@ workflows:
       - clang_minimal
       - nogl
       - clang_nogl
-      - clang_basic_nonew
-      - basic_nonew
 #     - test-xvfb
 
 # vim: set sw=2 ts=8 et:

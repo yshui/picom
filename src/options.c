@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <xcb/render.h> // for xcb_render_fixed_t, XXX
+#include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 
 #include "common.h"
 #include "config.h"
@@ -20,11 +20,10 @@
 #pragma GCC diagnostic error "-Wunused-parameter"
 
 /**
- * Print usage text and exit.
+ * Print usage text.
  */
 static void usage(int ret) {
 #define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
-#define WARNING
 	static const char *usage_text =
 	    "compton (" COMPTON_VERSION ")\n"
 	    "This is the maintenance fork of compton, please report\n"
@@ -87,16 +86,13 @@ static void usage(int ret) {
 	    "--show-all-xerrors\n"
 	    "  Show all X errors (for debugging).\n"
 	    "\n"
-#undef WARNING
-#ifndef CONFIG_LIBCONFIG
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
 	    "--config path\n"
 	    "  Look for configuration file at the path. Use /dev/null to avoid\n"
-	    "  loading configuration file." WARNING "\n"
-	    "\n"
+	    "  loading configuration file."
+#ifndef CONFIG_LIBCONFIG
+	    WARNING_DISABLED
+#endif
+	    "\n\n"
 	    "--write-pid-path path\n"
 	    "  Write process ID to a file.\n"
 	    "\n"
@@ -158,35 +154,8 @@ static void usage(int ret) {
 	    "  Specify refresh rate of the screen. If not specified or 0, compton\n"
 	    "  will try detecting this with X RandR extension.\n"
 	    "\n"
-	    "--vsync vsync-method\n"
-	    "  Set VSync method. There are (up to) 5 VSync methods currently\n"
-	    "  available:\n"
-	    "    none = No VSync\n"
-#undef WARNING
-#ifndef CONFIG_VSYNC_DRM
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
-	    "    drm = VSync with DRM_IOCTL_WAIT_VBLANK. May only work on some\n"
-	    "      (DRI-based) drivers." WARNING "\n"
-#undef WARNING
-#ifndef CONFIG_OPENGL
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
-	    "    opengl = Try to VSync with SGI_video_sync OpenGL extension. Only\n"
-	    "      work on some drivers." WARNING "\n"
-	    "    opengl-oml = Try to VSync with OML_sync_control OpenGL extension.\n"
-	    "      Only work on some drivers." WARNING "\n"
-	    "    opengl-swc = Enable driver-level VSync. Works only with GLX "
-	    "backend." WARNING "\n"
-	    "    opengl-mswc = Deprecated, use opengl-swc instead." WARNING "\n"
-	    "\n"
-	    "--vsync-aggressive\n"
-	    "  Attempt to send painting request before VBlank and do XFlush()\n"
-	    "  during VBlank. This switch may be lifted out at any moment.\n"
+	    "--vsync\n"
+	    "  Enable VSync\n"
 	    "\n"
 	    "--paint-on-overlay\n"
 	    "  Painting on X Composite overlay window.\n"
@@ -291,27 +260,18 @@ static void usage(int ret) {
 	    "  should not be painted in, such as a dock window region.\n"
 	    "  Use --shadow-exclude-reg \'x10+0-0\', for example, if the 10 pixels\n"
 	    "  on the bottom of the screen should not have shadows painted on.\n"
-#undef WARNING
-#ifndef CONFIG_XINERAMA
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
 	    "\n"
 	    "--xinerama-shadow-crop\n"
 	    "  Crop shadow of a window fully on a particular Xinerama screen to the\n"
-	    "  screen." WARNING "\n"
+	    "  screen.\n"
 	    "\n"
-#undef WARNING
-#ifndef CONFIG_OPENGL
-#define WARNING "(GLX BACKENDS DISABLED AT COMPILE TIME)"
-#else
-#define WARNING
-#endif
 	    "--backend backend\n"
 	    "  Choose backend. Possible choices are xrender, glx, and\n"
-	    "  xr_glx_hybrid" WARNING ".\n"
-	    "\n"
+	    "  xr_glx_hybrid."
+#ifndef CONFIG_OPENGL
+	    " (GLX BACKENDS DISABLED AT COMPILE TIME)"
+#endif
+	    "\n\n"
 	    "--glx-no-stencil\n"
 	    "  GLX backend: Avoid using stencil buffer. Might cause issues\n"
 	    "  when rendering transparent content. My tests show a 15% performance\n"
@@ -323,42 +283,25 @@ static void usage(int ret) {
 	    "  known to break things on some drivers (LLVMpipe, xf86-video-intel,\n"
 	    "  etc.).\n"
 	    "\n"
-	    "--glx-swap-method undefined/copy/exchange/3/4/5/6/buffer-age\n"
-	    "  GLX backend: GLX buffer swap method we assume. Could be\n"
-	    "  undefined (0), copy (1), exchange (2), 3-6, or buffer-age (-1).\n"
-	    "  \"undefined\" is the slowest and the safest, and the default value.\n"
-	    "  1 is fastest, but may fail on some drivers, 2-6 are gradually slower\n"
-	    "  but safer (6 is still faster than 0). -1 means auto-detect using\n"
-	    "  GLX_EXT_buffer_age, supported by some drivers. \n"
-	    "\n"
-	    "--glx-use-gpushader4\n"
-	    "  GLX backend: Use GL_EXT_gpu_shader4 for some optimization on blur\n"
-	    "  GLSL code. My tests on GTX 670 show no noticeable effect.\n"
-	    "\n"
-	    "--xrender-sync\n"
-	    "  Attempt to synchronize client applications' draw calls with XSync(),\n"
-	    "  used on GLX backend to ensure up-to-date window content is painted.\n"
-#undef WARNING
-#define WARNING
+	    "--use-damage\n"
+	    "  Use the damage information to limit rendering to parts of the screen\n"
+	    "  that has actually changed. Potentially improves the performance.\n"
 	    "\n"
 	    "--xrender-sync-fence\n"
 	    "  Additionally use X Sync fence to sync clients' draw calls. Needed\n"
-	    "  on nvidia-drivers with GLX backend for some users." WARNING "\n"
+	    "  on nvidia-drivers with GLX backend for some users.\n"
 	    "\n"
 	    "--force-win-blend\n"
 	    "  Force all windows to be painted with blending. Useful if you have a\n"
 	    "  --glx-fshader-win that could turn opaque pixels transparent.\n"
 	    "\n"
-#undef WARNING
-#ifndef CONFIG_DBUS
-#define WARNING WARNING_DISABLED
-#else
-#define WARNING
-#endif
 	    "--dbus\n"
 	    "  Enable remote control via D-Bus. See the D-BUS API section in the\n"
-	    "  man page for more details." WARNING "\n"
-	    "\n"
+	    "  man page for more details."
+#ifndef CONFIG_DBUS
+	    WARNING_DISABLED
+#endif
+	    "\n\n"
 	    "--benchmark cycles\n"
 	    "  Benchmark mode. Repeatedly paint until reaching the specified cycles.\n"
 	    "\n"
@@ -370,7 +313,6 @@ static void usage(int ret) {
 	    "  backend only.\n";
 	FILE *f = (ret ? stderr : stdout);
 	fputs(usage_text, f);
-#undef WARNING
 #undef WARNING_DISABLED
 }
 
@@ -407,12 +349,11 @@ static const struct option longopts[] = {
     {"detect-rounded-corners", no_argument, NULL, 267},
     {"detect-client-opacity", no_argument, NULL, 268},
     {"refresh-rate", required_argument, NULL, 269},
-    {"vsync", required_argument, NULL, 270},
+    {"vsync", optional_argument, NULL, 270},
     {"alpha-step", required_argument, NULL, 271},
     {"dbe", no_argument, NULL, 272},
     {"paint-on-overlay", no_argument, NULL, 273},
     {"sw-opti", no_argument, NULL, 274},
-    {"vsync-aggressive", no_argument, NULL, 275},
     {"use-ewmh-active-win", no_argument, NULL, 276},
     {"respect-prop-shadow", no_argument, NULL, 277},
     {"unredir-if-possible", no_argument, NULL, 278},
@@ -460,8 +401,8 @@ static const struct option longopts[] = {
     {"no-name-pixmap", no_argument, NULL, 320},
     {"log-level", required_argument, NULL, 321},
     {"log-file", required_argument, NULL, 322},
-    {"reredir-on-root-change", no_argument, NULL, 731},
-    {"glx-reinit-on-root-change", no_argument, NULL, 732},
+    {"use-damage", no_argument, NULL, 323},
+    {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
     // Must terminate with a NULL entry
@@ -470,7 +411,8 @@ static const struct option longopts[] = {
 
 /// Get config options that are needed to parse the rest of the options
 /// Return true if we should quit
-bool get_early_config(int argc, char *const *argv, char **config_file, bool *all_xerrors, int *exit_code) {
+bool get_early_config(int argc, char *const *argv, char **config_file, bool *all_xerrors,
+                      bool *fork, int *exit_code) {
 	int o = 0, longopt_idx = -1;
 
 	// Pre-parse the commandline arguments to check for --config and invalid
@@ -479,9 +421,16 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 	// arguments
 	optind = 1;
 	*config_file = NULL;
+	*exit_code = 0;
 	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
 		if (o == 256) {
 			*config_file = strdup(optarg);
+		} else if (o == 'h') {
+			usage(0);
+			return true;
+
+		} else if (o == 'b') {
+			*fork = true;
 		} else if (o == 'd') {
 			log_warn("-d will be ignored, please use the DISPLAY "
 			         "environment variable");
@@ -489,7 +438,6 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 			*all_xerrors = true;
 		} else if (o == 318) {
 			printf("%s\n", COMPTON_VERSION);
-			*exit_code = 0;
 			return true;
 		} else if (o == 'S') {
 			log_warn("-S will be ignored");
@@ -503,8 +451,12 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 	}
 
 	// Check for abundant positional arguments
-	if (optind < argc)
-		log_fatal("compton doesn't accept positional arguments.");
+	if (optind < argc) {
+		// log is not initialized here yet
+		fprintf(stderr, "compton doesn't accept positional arguments.\n");
+		*exit_code = 1;
+		return true;
+	}
 
 	return false;
 }
@@ -545,15 +497,22 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 		// clang-format off
 		// Short options
-		case 'h': usage(0); break;
+		case 318:
+		case 'h':
+			// These options should cause compton to exit early,
+			// so assert(false) here
+			assert(false);
+			break;
 		case 'd':
+		case 'b':
 		case 'S':
 		case 314:
-		case 318:
-		case 320: break;
+		case 320:
+			// These options are handled by get_early_config()
+			break;
 		P_CASELONG('D', fade_delta);
-		case 'I': opt->fade_in_step = normalize_d(atof(optarg)) * OPAQUE; break;
-		case 'O': opt->fade_out_step = normalize_d(atof(optarg)) * OPAQUE; break;
+		case 'I': opt->fade_in_step = normalize_d(atof(optarg)); break;
+		case 'O': opt->fade_out_step = normalize_d(atof(optarg)); break;
 		case 'c': shadow_enable = true; break;
 		case 'C':
 			winopt_mask[WINTYPE_DOCK].shadow = true;
@@ -582,7 +541,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASELONG('l', shadow_offset_x);
 		P_CASELONG('t', shadow_offset_y);
 		case 'i':
-			opt->inactive_opacity = (normalize_d(atof(optarg)) * OPAQUE);
+			opt->inactive_opacity = normalize_d(atof(optarg));
 			break;
 		case 'e': opt->frame_opacity = atof(optarg); break;
 		case 'z':
@@ -596,7 +555,6 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 's':
 			log_error("-n, -a, and -s have been removed.");
 			break;
-		P_CASEBOOL('b', fork_after_register);
 		// Long options
 		case 256:
 			// --config
@@ -630,10 +588,15 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(268, detect_client_opacity);
 		P_CASELONG(269, refresh_rate);
 		case 270:
-			// --vsync
-			opt->vsync = parse_vsync(optarg);
-			if (opt->vsync >= NUM_VSYNC)
-				exit(1);
+			if (optarg) {
+				opt->vsync = parse_vsync(optarg);
+				log_warn("--vsync doesn't take argument anymore. \"%s\" "
+					 "is interpreted as \"%s\" for compatibility, but "
+					 "this will stop working soon",
+					 optarg, opt->vsync ? "true" : "false");
+			} else {
+				opt->vsync = true;
+			}
 			break;
 		case 271:
 			// --alpha-step
@@ -646,7 +609,11 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			         "when possible");
 			break;
 		P_CASEBOOL(274, sw_opti);
-		P_CASEBOOL(275, vsync_aggressive);
+		case 275:
+			// --vsync-aggressive
+			log_warn("--vsync-aggressive has been deprecated, please remove it"
+			         " from the command line options");
+			break;
 		P_CASEBOOL(276, use_ewmh_active_win);
 		P_CASEBOOL(277, respect_prop_shadow);
 		P_CASEBOOL(278, unredir_if_possible);
@@ -685,7 +652,8 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		P_CASEBOOL(291, glx_no_stencil);
 		case 292:
-			log_warn("--glx-copy-from-front %s", deprecation_message);
+			log_error("--glx-copy-from-front %s", deprecation_message);
+			exit(1);
 			break;
 		P_CASELONG(293, benchmark);
 		case 294:
@@ -693,7 +661,8 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->benchmark_wid = strtol(optarg, NULL, 0);
 			break;
 		case 295:
-			log_warn("--glx-use-copysubbuffermesa %s", deprecation_message);
+			log_error("--glx-use-copysubbuffermesa %s", deprecation_message);
+			exit(1);
 			break;
 		case 296:
 			// --blur-background-exclude
@@ -701,27 +670,47 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 297:
 			// --active-opacity
-			opt->active_opacity = (normalize_d(atof(optarg)) * OPAQUE);
+			opt->active_opacity = normalize_d(atof(optarg));
 			break;
 		P_CASEBOOL(298, glx_no_rebind_pixmap);
-		case 299:
+		case 299: {
 			// --glx-swap-method
-			opt->glx_swap_method = parse_glx_swap_method(optarg);
-			if (opt->glx_swap_method == -2)
-				exit(1);
+			char *endptr;
+			long tmpval = strtol(optarg, &endptr, 10);
+			bool should_remove = true;
+			if (*endptr || !(*optarg)) {
+				// optarg is not a number, or an empty string
+				tmpval = -1;
+			}
+			if (strcmp(optarg, "undefined") != 0 && tmpval != 0) {
+				// If not undefined, we will use damage and buffer-age to
+				// limit the rendering area.
+				opt->use_damage = true;
+				should_remove = false;
+			}
+			log_warn("--glx-swap-method has been deprecated, your setting "
+			         "\"%s\" should be %s.",
+			         optarg,
+			         !should_remove ? "replaced by `--use-damage`" :
+			                         "removed");
 			break;
+		}
 		case 300:
 			// --fade-exclude
 			condlst_add(&opt->fade_blacklist, optarg);
 			break;
 		case 301:
 			// --blur-kern
-			if (!parse_conv_kern_lst(optarg, opt->blur_kerns,
+			if (!parse_blur_kern_lst(optarg, opt->blur_kerns,
 			                         MAX_BLUR_PASS, &conv_kern_hasneg))
 				exit(1);
 			break;
 		P_CASELONG(302, resize_damage);
-		P_CASEBOOL(303, glx_use_gpushader4);
+		case 303:
+			// --glx-use-gpushader4
+			log_warn("--glx-use-gpushader4 is deprecated since v6."
+			         " Please remove it from command line options.");
+			break;
 		case 304:
 			// --opacity-rule
 			if (!parse_rule_opacity(&opt->opacity_rules, optarg))
@@ -773,8 +762,8 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		}
 		P_CASEBOOL(319, no_x_selection);
-		P_CASEBOOL(731, reredir_on_root_change);
-		P_CASEBOOL(732, glx_reinit_on_root_change);
+		P_CASEBOOL(323, use_damage);
+		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801: opt->print_diagnostics = true; break;
 		default: usage(1); break;
@@ -823,35 +812,18 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	// Fill default blur kernel
 	if (opt->blur_background && !opt->blur_kerns[0]) {
-		// Convolution filter parameter (box blur)
-		// gaussian or binomial filters are definitely superior, yet looks
-		// like they aren't supported as of xorg-server-1.13.0
-		static const xcb_render_fixed_t convolution_blur[] = {
-		    // Must convert to XFixed with DOUBLE_TO_XFIXED()
-		    // Matrix size
-		    DOUBLE_TO_XFIXED(3),
-		    DOUBLE_TO_XFIXED(3),
-		    // Matrix
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		    DOUBLE_TO_XFIXED(1),
-		};
-		opt->blur_kerns[0] = ccalloc(ARR_SIZE(convolution_blur), xcb_render_fixed_t);
-		memcpy(opt->blur_kerns[0], convolution_blur, sizeof(convolution_blur));
+		CHECK(parse_blur_kern_lst("3x3box", opt->blur_kerns, MAX_BLUR_PASS,
+		                          &conv_kern_hasneg));
 	}
 
-	if (opt->resize_damage < 0)
+	if (opt->resize_damage < 0) {
 		log_warn("Negative --resize-damage will not work correctly.");
+	}
 
-	if (opt->backend == BKEND_XRENDER && conv_kern_hasneg)
+	if (opt->backend == BKEND_XRENDER && conv_kern_hasneg) {
 		log_warn("A convolution kernel with negative values may not work "
 		         "properly under X Render backend.");
+	}
 }
 
 // vim: set noet sw=8 ts=8 :

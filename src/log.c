@@ -9,8 +9,9 @@
 #include <unistd.h>
 
 #ifdef CONFIG_OPENGL
-#include <GL/glx.h>
-#include "opengl.h"
+#include <GL/gl.h>
+#include "backend/gl/glx.h"
+#include "backend/gl/gl_common.h"
 #endif
 
 #include "compiler.h"
@@ -72,7 +73,7 @@ static attr_const const char *log_level_to_string(enum log_level level) {
 	case LOG_LEVEL_WARN: return "WARN";
 	case LOG_LEVEL_ERROR: return "ERROR";
 	case LOG_LEVEL_FATAL: return "FATAL ERROR";
-	default: assert(false);
+	default: return "????";
 	}
 }
 
@@ -103,7 +104,22 @@ void log_add_target(struct log *l, struct log_target *tgt) {
 	l->head = tgt;
 }
 
-/// Destroy a log struct
+/// Remove a previously added log target for a log struct, and destroy it. If the log
+/// target was never added, nothing happens.
+void log_remove_target(struct log *l, struct log_target *tgt) {
+	struct log_target *now = l->head, **prev = &l->head;
+	while (now) {
+		if (now == tgt) {
+			*prev = now->next;
+			tgt->ops->destroy(tgt);
+			break;
+		}
+		prev = &now->next;
+		now = now->next;
+	}
+}
+
+/// Destroy a log struct and every log target added to it
 void log_destroy(struct log *l) {
 	// free all tgt
 	struct log_target *head = l->head;
@@ -254,7 +270,7 @@ const char *terminal_colorize_begin(enum log_level level) {
 	case LOG_LEVEL_WARN: return ANSI("33");
 	case LOG_LEVEL_ERROR: return ANSI("31;1");
 	case LOG_LEVEL_FATAL: return ANSI("30;103;1");
-	default: assert(false);
+	default: return "";
 	}
 }
 
@@ -328,7 +344,7 @@ static const struct log_ops glx_string_marker_logger_ops = {
 };
 
 struct log_target *glx_string_marker_logger_new(void) {
-	if (!glx_hasglext("GL_GREMEDY_string_marker")) {
+	if (!gl_has_extension("GL_GREMEDY_string_marker")) {
 		return NULL;
 	}
 
@@ -344,7 +360,7 @@ struct log_target *glx_string_marker_logger_new(void) {
 
 #else
 struct log_target *glx_string_marker_logger_new(void) {
-	return null_logger_new();
+	return NULL;
 }
 #endif
 

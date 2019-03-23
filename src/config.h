@@ -7,36 +7,26 @@
 /// Common functions and definitions for configuration parsing
 /// Used for command line arguments and config files
 
-#include <stdlib.h>
-#include <stdbool.h>
 #include <ctype.h>
+#include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
+#include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 #include <xcb/xcb.h>
-#include <xcb/render.h> // for xcb_render_fixed_t, XXX
 #include <xcb/xfixes.h>
 
 #ifdef CONFIG_LIBCONFIG
 #include <libconfig.h>
 #endif
 
-#include "region.h"
-#include "log.h"
 #include "compiler.h"
-#include "win.h"
+#include "kernel.h"
+#include "log.h"
+#include "region.h"
 #include "types.h"
+#include "win.h"
 
 typedef struct session session_t;
-
-/// VSync modes.
-typedef enum {
-	VSYNC_NONE,
-	VSYNC_DRM,
-	VSYNC_OPENGL,
-	VSYNC_OPENGL_OML,
-	VSYNC_OPENGL_SWC,
-	VSYNC_OPENGL_MSWC,
-	NUM_VSYNC,
-} vsync_t;
 
 /// @brief Possible backends of compton.
 enum backend {
@@ -78,8 +68,8 @@ typedef struct options_t {
 	bool monitor_repaint;
 	bool print_diagnostics;
 	// === General ===
-	/// The configuration file we used.
-	char *config_file;
+	/// Use the experimental new backends?
+	bool experimental_backends;
 	/// Path to write PID to.
 	char *write_pid_path;
 	/// The backend in use.
@@ -92,14 +82,8 @@ typedef struct options_t {
 	bool glx_no_stencil;
 	/// Whether to avoid rebinding pixmap on window damage.
 	bool glx_no_rebind_pixmap;
-	/// GLX swap method we assume OpenGL uses.
-	int glx_swap_method;
-	/// Whether to use GL_EXT_gpu_shader4 to (hopefully) accelerates blurring.
-	bool glx_use_gpushader4;
 	/// Custom fragment shader for painting windows, as a string.
 	char *glx_fshader_win_str;
-	/// Whether to fork to background.
-	bool fork_after_register;
 	/// Whether to detect rounded corners.
 	bool detect_rounded_corners;
 	/// Force painting of window content with blending.
@@ -118,10 +102,6 @@ typedef struct options_t {
 	switch_t redirected_force;
 	/// Whether to stop painting. Controlled through D-Bus.
 	switch_t stoppaint_force;
-	/// Whether to re-redirect screen on root size change.
-	bool reredir_on_root_change;
-	/// Whether to reinitialize GLX on root size change.
-	bool glx_reinit_on_root_change;
 	/// Whether to enable D-Bus support.
 	bool dbus;
 	/// Path to log file.
@@ -145,12 +125,12 @@ typedef struct options_t {
 	/// Whether to enable refresh-rate-based software optimization.
 	bool sw_opti;
 	/// VSync method to use;
-	vsync_t vsync;
-	/// Whether to do VSync aggressively.
-	bool vsync_aggressive;
+	bool vsync;
 	/// Whether to use glFinish() instead of glFlush() for (possibly) better
 	/// VSync yet probably higher CPU usage.
 	bool vsync_use_glfinish;
+	/// Whether use damage information to help limit the area to paint
+	bool use_damage;
 
 	// === Shadow ===
 	/// Red, green and blue tone of the shadow.
@@ -171,9 +151,9 @@ typedef struct options_t {
 
 	// === Fading ===
 	/// How much to fade in in a single fading step.
-	opacity_t fade_in_step;
+	double fade_in_step;
 	/// How much to fade out in a single fading step.
-	opacity_t fade_out_step;
+	double fade_out_step;
 	/// Fading time delta. In milliseconds.
 	unsigned long fade_delta;
 	/// Whether to disable fading on window open/close.
@@ -185,11 +165,10 @@ typedef struct options_t {
 
 	// === Opacity ===
 	/// Default opacity for inactive windows.
-	/// 32-bit integer with the format of _NET_WM_OPACITY. 0 stands for
-	/// not enabled, default.
-	opacity_t inactive_opacity;
+	/// 32-bit integer with the format of _NET_WM_OPACITY.
+	double inactive_opacity;
 	/// Default opacity for inactive windows.
-	opacity_t active_opacity;
+	double active_opacity;
 	/// Whether inactive_opacity overrides the opacity set by window
 	/// attributes.
 	bool inactive_opacity_override;
@@ -212,7 +191,7 @@ typedef struct options_t {
 	/// Background blur blacklist. A linked list of conditions.
 	c2_lptr_t *blur_background_blacklist;
 	/// Blur convolution kernel.
-	xcb_render_fixed_t *blur_kerns[MAX_BLUR_PASS];
+	conv *blur_kerns[MAX_BLUR_PASS];
 	/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
 	double inactive_dim;
 	/// Whether to use fixed inactive dim opacity, instead of deciding
@@ -246,17 +225,10 @@ typedef struct options_t {
 	bool track_leader;
 } options_t;
 
-extern const char *const VSYNC_STRS[NUM_VSYNC + 1];
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
 attr_warn_unused_result bool parse_long(const char *, long *);
-attr_warn_unused_result const char *parse_matrix_readnum(const char *, double *);
-attr_warn_unused_result xcb_render_fixed_t *
-parse_matrix(const char *, const char **, bool *hasneg);
-attr_warn_unused_result xcb_render_fixed_t *
-parse_conv_kern(const char *, const char **, bool *hasneg);
-attr_warn_unused_result bool
-parse_conv_kern_lst(const char *, xcb_render_fixed_t **, int, bool *hasneg);
+attr_warn_unused_result bool parse_blur_kern_lst(const char *, conv **, int, bool *hasneg);
 attr_warn_unused_result bool parse_geometry(session_t *, const char *, region_t *);
 attr_warn_unused_result bool parse_rule_opacity(c2_lptr_t **, const char *);
 
@@ -279,18 +251,19 @@ parse_config_libconfig(options_t *, const char *config_file, bool *shadow_enable
                        bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
 #endif
 
-void set_default_winopts(options_t *, win_option_mask_t *, bool shadow_enable, bool fading_enable);
+void set_default_winopts(options_t *, win_option_mask_t *, bool shadow_enable,
+                         bool fading_enable);
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
 /// default values
 /// Outputs and returns:
 ///   same as parse_config_libconfig
 char *parse_config(options_t *, const char *config_file, bool *shadow_enable,
-                  bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
+                   bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
 
 /**
  * Parse a backend option argument.
  */
-static inline attr_const enum backend parse_backend(const char *str) {
+static inline attr_pure enum backend parse_backend(const char *str) {
 	for (enum backend i = 0; BACKEND_STRS[i]; ++i) {
 		if (!strcasecmp(str, BACKEND_STRS[i])) {
 			return i;
@@ -298,13 +271,13 @@ static inline attr_const enum backend parse_backend(const char *str) {
 	}
 	// Keep compatibility with an old revision containing a spelling mistake...
 	if (!strcasecmp(str, "xr_glx_hybird")) {
-		log_warn("backend xr_glx_hybird should be xr_glx_hybrid, the misspelt"
+		log_warn("backend xr_glx_hybird should be xr_glx_hybrid, the misspelt "
 		         "version will be removed soon.");
 		return BKEND_XR_GLX_HYBRID;
 	}
 	// cju wants to use dashes
 	if (!strcasecmp(str, "xr-glx-hybrid")) {
-		log_warn("backend xr-glx-hybrid should be xr_glx_hybrid, the alternative"
+		log_warn("backend xr-glx-hybrid should be xr_glx_hybrid, the alternative "
 		         "version will be removed soon.");
 		return BKEND_XR_GLX_HYBRID;
 	}
@@ -313,61 +286,14 @@ static inline attr_const enum backend parse_backend(const char *str) {
 }
 
 /**
- * Parse a glx_swap_method option argument.
- *
- * Returns -2 on failure
- */
-static inline attr_const int parse_glx_swap_method(const char *str) {
-	// Parse alias
-	if (!strcmp("undefined", str)) {
-		return 0;
-	}
-
-	if (!strcmp("copy", str)) {
-		return 1;
-	}
-
-	if (!strcmp("exchange", str)) {
-		return 2;
-	}
-
-	if (!strcmp("buffer-age", str)) {
-		return -1;
-	}
-
-	// Parse number
-	char *pc = NULL;
-	int age = strtol(str, &pc, 0);
-	if (!pc || str == pc) {
-		log_error("glx-swap-method is an invalid number: %s", str);
-		return -2;
-	}
-
-	for (; *pc; ++pc)
-		if (!isspace(*pc)) {
-			log_error("Trailing characters in glx-swap-method option: %s", str);
-			return -2;
-		}
-
-	if (age < -1) {
-		log_error("Number for glx-swap-method is too small: %s", str);
-		return -2;
-	}
-
-	return age;
-}
-
-/**
  * Parse a VSync option argument.
  */
-static inline vsync_t parse_vsync(const char *str) {
-	for (vsync_t i = 0; VSYNC_STRS[i]; ++i)
-		if (!strcasecmp(str, VSYNC_STRS[i])) {
-			return i;
-		}
-
-	log_error("Invalid vsync argument: %s", str);
-	return NUM_VSYNC;
+static inline bool parse_vsync(const char *str) {
+	if (strcmp(str, "no") == 0 || strcmp(str, "none") == 0 ||
+	    strcmp(str, "false") == 0 || strcmp(str, "nah") == 0) {
+		return false;
+	}
+	return true;
 }
 
 // vim: set noet sw=8 ts=8 :

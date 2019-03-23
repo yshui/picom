@@ -5,6 +5,9 @@
 #include <xcb/xcb.h>
 #include <xcb/render.h>
 #include <stdbool.h>
+#ifdef CONFIG_OPENGL
+#include "backend/gl/glx.h"
+#endif
 #include "region.h"
 
 typedef struct _glx_texture glx_texture_t;
@@ -16,6 +19,9 @@ typedef struct paint {
   xcb_pixmap_t pixmap;
   xcb_render_picture_t pict;
   glx_texture_t *ptex;
+#ifdef CONFIG_OPENGL
+  struct glx_fbconfig_info *fbcfg;
+#endif
 } paint_t;
 
 void
@@ -27,7 +33,7 @@ void
 paint_one(session_t *ps, win *w, const region_t *reg_paint);
 
 void
-paint_all(session_t *ps, region_t *region, const region_t *region_real, win * const t);
+paint_all(session_t *ps, win * const t, bool ignore_damage);
 
 void free_picture(xcb_connection_t *c, xcb_render_picture_t *p);
 
@@ -36,3 +42,5 @@ void free_root_tile(session_t *ps);
 
 bool init_render(session_t *ps);
 void deinit_render(session_t *ps);
+
+int maximum_buffer_age(session_t *);

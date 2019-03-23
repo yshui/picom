@@ -50,7 +50,7 @@ OPTIONS
 	Enabled client-side shadows on windows. Note desktop windows (windows with '_NET_WM_WINDOW_TYPE_DESKTOP') never get shadow, unless explicitly requested using the wintypes option.
 
 *-C*, *--no-dock-shadow*::
-	Avoid drawing shadows on dock/panel windows.
+	Avoid drawing shadows on dock/panel windows. This option is deprecated, you should use the *wintypes* option in your config file instead.
 
 *-f*, *--fading*::
 	Fade windows in/out when opening/closing and when opacity changes, unless *--no-fading-openclose* is used.
@@ -65,7 +65,7 @@ OPTIONS
 	Opacity of window titlebars and borders. (0.1 - 1.0, disabled by default)
 
 *-G*, *--no-dnd-shadow*::
-	Don't draw shadows on drag-and-drop windows.
+	Don't draw shadows on drag-and-drop windows. This option is deprecated, you should use the *wintypes* option in your config file instead.
 
 *-b*, *--daemon*::
 	Daemonize process. Fork to background after initialization. Causes issues with certain (badly-written) drivers.
@@ -74,7 +74,10 @@ OPTIONS
 	Set the log level. Possible values are "TRACE", "DEBUG", "INFO", "WARN", "ERROR", in increasing level of importance. Case doesn't matter.
 
 *--log-file*::
-	Set the log file. If *--log-file* is never specified, logs will be written to stderr. Otherwise, logs will to writeen to the given file, though some of the early logs might still be written to the stderr. When setting this option from the config file, it is recommended to use an absolute path.
+	Set the log file. If *--log-file* is never specified, logs will be written to stderr. Otherwise, logs will to written to the given file, though some of the early logs might still be written to the stderr. When setting this option from the config file, it is recommended to use an absolute path.
+
+*--experimental-backends*::
+	Use the new, reimplemented version of the backends. The new backends are HIGHLY UNSTABLE at this point, you have been warned. This option is not available in the config file.
 
 *--show-all-xerrors*::
 	Show all X errors (for debugging).
@@ -127,28 +130,8 @@ OPTIONS
 *--refresh-rate* 'REFRESH_RATE'::
 	Specify refresh rate of the screen. If not specified or 0, compton will try detecting this with X RandR extension.
 
-*--vsync* 'VSYNC_METHOD'::
-	Set VSync method. VSync methods currently available:
-+
---
-* 'none': No VSync
-* 'drm': VSync with 'DRM_IOCTL_WAIT_VBLANK'. May only work on some (DRI-based) drivers.
-* 'opengl': Try to VSync with 'SGI_video_sync' OpenGL extension. Only work on some drivers.
-* 'opengl-oml': Try to VSync with 'OML_sync_control' OpenGL extension. Only work on some drivers.
-* 'opengl-swc': Try to VSync with 'MESA_swap_control' or 'SGI_swap_control' (in order of preference) OpenGL extension. Works only with GLX backend. Known to be most effective on many drivers. Does not guarantee to control paint timing.
-* 'opengl-mswc': Deprecated, use 'opengl-swc' instead.
-
-(Note some VSync methods may not be enabled at compile time.)
---
-
-*--vsync-aggressive*::
-	Attempt to send painting request before VBlank and do XFlush() during VBlank. Reported to work pretty terribly. This switch may be lifted out at any moment.
-
-*--dbe*::
-	Enable DBE painting mode, intended to use with VSync to (hopefully) eliminate tearing. Reported to have no effect, though.
-
-*--paint-on-overlay*::
-	Painting on X Composite overlay window instead of on root window.
+*--vsync*::
+	Enable VSync.
 
 *--sw-opti*::
 	Limit compton to repaint at most once every 1 / 'refresh_rate' second to boost performance. This should not be used with *--vsync* drm/opengl/opengl-oml as they essentially does *--sw-opti*'s job already, unless you wish to specify a lower refresh rate than the actual value.
@@ -202,7 +185,11 @@ OPTIONS
 WIDTH,HEIGHT,ELE1,ELE2,ELE3,ELE4,ELE5...
 ----
 +
-The element in the center must not be included, it will be forever 1.0 or changing based on opacity, depending on whether you have `--blur-background-fixed`. Yet the automatic adjustment of blur factor may not work well with a custom blur kernel.
+In other words, the matrix is formatted as a list of comma separated numbers. The first two numbers must be integers, which specify the width and height of the matrix. They must be odd numbers. Then, the following 'width * height - 1' numbers specifies the numbers in the matrix, row by row, excluding the center element.
++
+The elements are finite floating point numbers. The decimal pointer has to be '.' (a period), and scientific notation is not supported.
++
+The element in the center will either be 1.0 or changing based on opacity, depending on whether you have `--blur-background-fixed`. Yet the automatic adjustment of blur factor may not work well with a custom blur kernel.
 +
 A 7x7 Gaussian blur kernel (sigma = 0.84089642) looks like:
 +
@@ -216,7 +203,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Exclude conditions for background blur.
 
 *--resize-damage* 'INTEGER'::
-	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--dbe* or *--glx-swap-method*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use *--resize-damage* 1, with a 5x5 one you use *--resize-damage* 2, and so on). May or may not work with `--glx-no-stencil`. Shrinking doesn't function correctly.
+	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--use-damage*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use *--resize-damage* 1, with a 5x5 one you use *--resize-damage* 2, and so on). May or may not work with `--glx-no-stencil`. Shrinking doesn't function correctly.
 
 *--invert-color-include* 'CONDITION'::
 	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested.
@@ -245,11 +232,8 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--glx-no-rebind-pixmap*::
 	GLX backend: Avoid rebinding pixmap on window damage. Probably could improve performance on rapid window content changes, but is known to break things on some drivers (LLVMpipe, xf86-video-intel, etc.). Recommended if it works.
 
-*--glx-swap-method* undefined/exchange/copy/3/4/5/6/buffer-age::
-	GLX backend: GLX buffer swap method we assume. Could be `undefined` (0), `copy` (1), `exchange` (2), 3-6, or `buffer-age` (-1).  `undefined` is the slowest and the safest, and the default value. `copy` is fastest, but may fail on some drivers, 2-6 are gradually slower but safer (6 is still faster than 0). Usually, double buffer means 2, triple buffer means 3. `buffer-age` means auto-detect using 'GLX_EXT_buffer_age', supported by some drivers. Partially breaks `--resize-damage`. Defaults to `undefined`.
-
-*--glx-use-gpushader4*::
-	GLX backend: Use 'GL_EXT_gpu_shader4' for some optimization on blur GLSL code. My tests on GTX 670 show no noticeable effect.
+*-use-damage*::
+	Use the damage information to limit rendering to parts of the screen that has actually changed. Potentially improves the performance.
 
 *--xrender-sync-fence*::
 	Use X Sync fence to sync clients' draw calls, to make sure all draw calls are finished before compton starts drawing. Needed on nvidia-drivers with GLX backend for some users.
@@ -357,7 +341,9 @@ CONFIGURATION FILES
 -------------------
 compton could read from a configuration file if libconfig support is compiled in. If *--config* is not used, compton will seek for a configuration file in `$XDG_CONFIG_HOME/compton.conf` (`~/.config/compton.conf`, usually), then `~/.compton.conf`, then `compton.conf` under `$XDG_CONFIG_DIRS` (often `/etc/xdg/compton.conf`).
 
-compton uses general libconfig configuration file format. A sample configuration file is available as `compton.sample.conf` in the source tree. Most commandline switches each could be replaced with an option in configuration file, thus documented above. Window-type-specific settings are exposed only in configuration file and has the following format:
+compton uses general libconfig configuration file format. A sample configuration file is available as `compton.sample.conf` in the source tree. Most of commandline switches can be used as options in configuration file as well. For example, *--vsync* option documented above can be set in the configuration file using `vsync = `. Command line options will always overwrite the settings in the configuration file.
+
+Window-type-specific settings are exposed only in configuration file and has the following format:
 
 ------------
 wintypes:
@@ -430,10 +416,10 @@ $ compton -c --shadow-red 1 --shadow-green 1 --shadow-blue 1
 $ compton -c --shadow-exclude 'class_g = "wbar"'
 ------------
 
-* Enable OpenGL SGI_swap_control VSync with GLX backend:
+* Enable VSync with GLX backend:
 +
 ------------
-$ compton --backend glx --vsync opengl-swc
+$ compton --backend glx --vsync
 ------------
 
 BUGS

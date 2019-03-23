@@ -1,37 +1,40 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #include <string.h>
-#include <xcb/xcb_image.h>
 #include <xcb/render.h>
+#include <xcb/xcb_image.h>
 #include <xcb/xcb_renderutil.h>
 
-#include "backend.h"
-#include "backend_common.h"
-#include "kernel.h"
+#include "backend/backend.h"
+#include "backend/backend_common.h"
 #include "common.h"
+#include "kernel.h"
 #include "log.h"
+#include "win.h"
 #include "x.h"
 
 /**
  * Generate a 1x1 <code>Picture</code> of a particular color.
  */
-xcb_render_picture_t
-solid_picture(session_t *ps, bool argb, double a, double r, double g, double b) {
+xcb_render_picture_t solid_picture(xcb_connection_t *c, xcb_drawable_t d, bool argb,
+                                   double a, double r, double g, double b) {
 	xcb_pixmap_t pixmap;
 	xcb_render_picture_t picture;
 	xcb_render_create_picture_value_list_t pa;
 	xcb_render_color_t col;
 	xcb_rectangle_t rect;
 
-	pixmap = x_create_pixmap(ps, argb ? 32 : 8, ps->root, 1, 1);
+	pixmap = x_create_pixmap(c, argb ? 32 : 8, d, 1, 1);
 	if (!pixmap)
 		return XCB_NONE;
 
 	pa.repeat = 1;
 	picture = x_create_picture_with_standard_and_pixmap(
-	    ps, argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8, pixmap,
+	    c, argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8, pixmap,
 	    XCB_RENDER_CP_REPEAT, &pa);
 
 	if (!picture) {
-		xcb_free_pixmap(ps->c, pixmap);
+		xcb_free_pixmap(c, pixmap);
 		return XCB_NONE;
 	}
 
@@ -45,14 +48,14 @@ solid_picture(session_t *ps, bool argb, double a, double r, double g, double b) 
 	rect.width = 1;
 	rect.height = 1;
 
-	xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, picture, col, 1, &rect);
-	xcb_free_pixmap(ps->c, pixmap);
+	xcb_render_fill_rectangles(c, XCB_RENDER_PICT_OP_SRC, picture, col, 1, &rect);
+	xcb_free_pixmap(c, pixmap);
 
 	return picture;
 }
 
-xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel,
-                         double opacity, int width, int height) {
+xcb_image_t *
+make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, int height) {
 	/*
 	 * We classify shadows into 4 kinds of regions
 	 *    r = shadow radius
@@ -68,7 +71,10 @@ xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel,
 	 */
 	xcb_image_t *ximage;
 	const double *shadow_sum = kernel->rsum;
-	int d = kernel->size, r = d / 2;
+	assert(shadow_sum);
+	// We only support square kernels for shadow
+	assert(kernel->w == kernel->h);
+	int d = kernel->w, r = d / 2;
 	int swidth = width + r * 2, sheight = height + r * 2;
 
 	assert(d % 2 == 1);
@@ -142,7 +148,7 @@ xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel,
 
 	// Fill part 3
 	for (int y = r; y < height + r; y++) {
-		memset(data + sstride * y + r, 255, width);
+		memset(data + sstride * y + r, 255 * opacity, width);
 	}
 
 	// Part 1
@@ -178,25 +184,23 @@ xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel,
 /**
  * Generate shadow <code>Picture</code> for a window.
  */
-bool build_shadow(session_t *ps, double opacity, const int width, const int height,
-                  xcb_render_picture_t shadow_pixel, xcb_pixmap_t *pixmap,
-                  xcb_render_picture_t *pict) {
+bool build_shadow(xcb_connection_t *c, xcb_drawable_t d, double opacity, const int width,
+                  const int height, const conv *kernel, xcb_render_picture_t shadow_pixel,
+                  xcb_pixmap_t *pixmap, xcb_render_picture_t *pict) {
 	xcb_image_t *shadow_image = NULL;
 	xcb_pixmap_t shadow_pixmap = XCB_NONE, shadow_pixmap_argb = XCB_NONE;
 	xcb_render_picture_t shadow_picture = XCB_NONE, shadow_picture_argb = XCB_NONE;
 	xcb_gcontext_t gc = XCB_NONE;
 
-	shadow_image =
-	    make_shadow(ps->c, ps->gaussian_map, opacity, width, height);
+	shadow_image = make_shadow(c, kernel, opacity, width, height);
 	if (!shadow_image) {
 		log_error("Failed to make shadow");
 		return false;
 	}
 
-	shadow_pixmap =
-	    x_create_pixmap(ps, 8, ps->root, shadow_image->width, shadow_image->height);
+	shadow_pixmap = x_create_pixmap(c, 8, d, shadow_image->width, shadow_image->height);
 	shadow_pixmap_argb =
-	    x_create_pixmap(ps, 32, ps->root, shadow_image->width, shadow_image->height);
+	    x_create_pixmap(c, 32, d, shadow_image->width, shadow_image->height);
 
 	if (!shadow_pixmap || !shadow_pixmap_argb) {
 		log_error("Failed to create shadow pixmaps");
@@ -204,45 +208,75 @@ bool build_shadow(session_t *ps, double opacity, const int width, const int heig
 	}
 
 	shadow_picture = x_create_picture_with_standard_and_pixmap(
-	    ps, XCB_PICT_STANDARD_A_8, shadow_pixmap, 0, NULL);
+	    c, XCB_PICT_STANDARD_A_8, shadow_pixmap, 0, NULL);
 	shadow_picture_argb = x_create_picture_with_standard_and_pixmap(
-	    ps, XCB_PICT_STANDARD_ARGB_32, shadow_pixmap_argb, 0, NULL);
-	if (!shadow_picture || !shadow_picture_argb)
+	    c, XCB_PICT_STANDARD_ARGB_32, shadow_pixmap_argb, 0, NULL);
+	if (!shadow_picture || !shadow_picture_argb) {
 		goto shadow_picture_err;
+	}
 
-	gc = xcb_generate_id(ps->c);
-	xcb_create_gc(ps->c, gc, shadow_pixmap, 0, NULL);
+	gc = xcb_generate_id(c);
+	xcb_create_gc(c, gc, shadow_pixmap, 0, NULL);
 
-	xcb_image_put(ps->c, shadow_pixmap, gc, shadow_image, 0, 0, 0);
-	xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, shadow_pixel, shadow_picture,
+	xcb_image_put(c, shadow_pixmap, gc, shadow_image, 0, 0, 0);
+	xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, shadow_pixel, shadow_picture,
 	                     shadow_picture_argb, 0, 0, 0, 0, 0, 0, shadow_image->width,
 	                     shadow_image->height);
 
 	*pixmap = shadow_pixmap_argb;
 	*pict = shadow_picture_argb;
 
-	xcb_free_gc(ps->c, gc);
+	xcb_free_gc(c, gc);
 	xcb_image_destroy(shadow_image);
-	xcb_free_pixmap(ps->c, shadow_pixmap);
-	xcb_render_free_picture(ps->c, shadow_picture);
+	xcb_free_pixmap(c, shadow_pixmap);
+	xcb_render_free_picture(c, shadow_picture);
 
 	return true;
 
 shadow_picture_err:
-	if (shadow_image)
+	if (shadow_image) {
 		xcb_image_destroy(shadow_image);
-	if (shadow_pixmap)
-		xcb_free_pixmap(ps->c, shadow_pixmap);
-	if (shadow_pixmap_argb)
-		xcb_free_pixmap(ps->c, shadow_pixmap_argb);
-	if (shadow_picture)
-		xcb_render_free_picture(ps->c, shadow_picture);
-	if (shadow_picture_argb)
-		xcb_render_free_picture(ps->c, shadow_picture_argb);
-	if (gc)
-		xcb_free_gc(ps->c, gc);
+	}
+	if (shadow_pixmap) {
+		xcb_free_pixmap(c, shadow_pixmap);
+	}
+	if (shadow_pixmap_argb) {
+		xcb_free_pixmap(c, shadow_pixmap_argb);
+	}
+	if (shadow_picture) {
+		xcb_render_free_picture(c, shadow_picture);
+	}
+	if (shadow_picture_argb) {
+		xcb_render_free_picture(c, shadow_picture_argb);
+	}
+	if (gc) {
+		xcb_free_gc(c, gc);
+	}
 
 	return false;
 }
 
-// vim: set noet sw=8 ts=8 :
+void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
+                                    const conv *kernel, double r, double g, double b, double a) {
+	xcb_pixmap_t shadow_pixel = solid_picture(backend_data->c, backend_data->root,
+	                                          true, 1, r, g, b),
+	             shadow = XCB_NONE;
+	xcb_render_picture_t pict = XCB_NONE;
+
+	build_shadow(backend_data->c, backend_data->root, a, width, height, kernel,
+	             shadow_pixel, &shadow, &pict);
+
+	auto visual = x_get_visual_for_standard(backend_data->c, XCB_PICT_STANDARD_ARGB_32);
+	void *ret = backend_data->ops->bind_pixmap(
+	    backend_data, shadow, x_get_visual_info(backend_data->c, visual), true);
+	xcb_render_free_picture(backend_data->c, pict);
+	return ret;
+}
+
+bool default_is_win_transparent(void *backend_data, win *w, void *win_data) {
+	return w->mode != WMODE_SOLID;
+}
+
+bool default_is_frame_transparent(void *backend_data, win *w, void *win_data) {
+	return w->frame_opacity != 1;
+}

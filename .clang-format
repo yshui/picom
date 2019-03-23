@@ -22,8 +22,8 @@ PenaltyReturnTypeOnItsOwnLine: 0
 PenaltyBreakAssignment: 0
 PenaltyBreakBeforeFirstCallParameter: 1
 PenaltyBreakComment: 1
-PenaltyBreakString: 5
-PenaltyExcessCharacter: 1
+PenaltyBreakString: 36
+PenaltyExcessCharacter: 3
 PenaltyBreakFirstLessLess: 0
 PenaltyBreakTemplateDeclaration: 0
 BreakBeforeBinaryOperators: None
