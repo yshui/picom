@@ -354,6 +354,7 @@ static const struct option longopts[] = {
     {"dbe", no_argument, NULL, 272},
     {"paint-on-overlay", no_argument, NULL, 273},
     {"sw-opti", no_argument, NULL, 274},
+    {"vsync-aggressive", no_argument, NULL, 275},
     {"use-ewmh-active-win", no_argument, NULL, 276},
     {"respect-prop-shadow", no_argument, NULL, 277},
     {"unredir-if-possible", no_argument, NULL, 278},
