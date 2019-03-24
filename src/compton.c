@@ -24,8 +24,8 @@
 #include <xcb/sync.h>
 #include <xcb/xfixes.h>
 
-#include <test.h>
 #include <ev.h>
+#include <test.h>
 
 #include "common.h"
 #include "compiler.h"
@@ -605,12 +605,13 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 	rc_region_unref(&last_reg_ignore);
 
 	// If possible, unredirect all windows and stop painting
-	if (ps->o.redirected_force != UNSET)
+	if (ps->o.redirected_force != UNSET) {
 		unredir_possible = !ps->o.redirected_force;
-	else if (ps->o.unredir_if_possible && is_highest && !ps->redirected)
+	} else if (ps->o.unredir_if_possible && is_highest && !ps->redirected) {
 		// If there's no window to paint, and the screen isn't redirected,
 		// don't redirect it.
 		unredir_possible = true;
+	}
 	if (unredir_possible) {
 		if (ps->redirected) {
 			if (!ps->o.unredir_if_possible_delay || ps->tmout_unredir_hit)
@@ -623,8 +624,10 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 		}
 	} else {
 		ev_timer_stop(ps->loop, &ps->unredir_timer);
-		if (!redir_start(ps)) {
-			return NULL;
+		if (!ps->redirected) {
+			if (!redir_start(ps)) {
+				return NULL;
+			}
 		}
 	}
 
@@ -1315,46 +1318,45 @@ static bool init_overlay(session_t *ps) {
  * @return whether the operation succeeded or not
  */
 static bool redir_start(session_t *ps) {
-	if (!ps->redirected) {
-		log_debug("Screen redirected.");
+	assert(!ps->redirected);
+	log_debug("Redirecting the screen.");
 
-		// Map overlay window. Done firstly according to this:
-		// https://bugzilla.gnome.org/show_bug.cgi?id=597014
-		if (ps->overlay) {
-			xcb_map_window(ps->c, ps->overlay);
-		}
-
-		xcb_composite_redirect_subwindows(ps->c, ps->root,
-		                                  XCB_COMPOSITE_REDIRECT_MANUAL);
-
-		x_sync(ps->c);
-
-		if (!initialize_backend(ps)) {
-			return false;
-		}
-
-		if (ps->o.experimental_backends) {
-			ps->ndamage = ps->backend_data->ops->max_buffer_age;
-		} else {
-			ps->ndamage = maximum_buffer_age(ps);
-		}
-		ps->damage_ring = ccalloc(ps->ndamage, region_t);
-		ps->damage = ps->damage_ring + ps->ndamage - 1;
-
-		for (int i = 0; i < ps->ndamage; i++) {
-			pixman_region32_init(&ps->damage_ring[i]);
-		}
-
-		// Must call XSync() here
-		x_sync(ps->c);
-
-		ps->redirected = true;
-
-		root_damaged(ps);
-
-		// Repaint the whole screen
-		force_repaint(ps);
+	// Map overlay window. Done firstly according to this:
+	// https://bugzilla.gnome.org/show_bug.cgi?id=597014
+	if (ps->overlay) {
+		xcb_map_window(ps->c, ps->overlay);
 	}
+
+	xcb_composite_redirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
+
+	x_sync(ps->c);
+
+	if (!initialize_backend(ps)) {
+		return false;
+	}
+
+	if (ps->o.experimental_backends) {
+		ps->ndamage = ps->backend_data->ops->max_buffer_age;
+	} else {
+		ps->ndamage = maximum_buffer_age(ps);
+	}
+	ps->damage_ring = ccalloc(ps->ndamage, region_t);
+	ps->damage = ps->damage_ring + ps->ndamage - 1;
+
+	for (int i = 0; i < ps->ndamage; i++) {
+		pixman_region32_init(&ps->damage_ring[i]);
+	}
+
+	// Must call XSync() here
+	x_sync(ps->c);
+
+	ps->redirected = true;
+
+	root_damaged(ps);
+
+	// Repaint the whole screen
+	force_repaint(ps);
+	log_debug("Screen redirected.");
 	return true;
 }
 
@@ -1362,30 +1364,29 @@ static bool redir_start(session_t *ps) {
  * Unredirect all windows.
  */
 static void redir_stop(session_t *ps) {
-	if (ps->redirected) {
-		log_debug("Screen unredirected.");
+	assert(ps->redirected);
+	log_debug("Unredirecting the screen.");
 
-		destroy_backend(ps);
+	destroy_backend(ps);
 
-		xcb_composite_unredirect_subwindows(ps->c, ps->root,
-		                                    XCB_COMPOSITE_REDIRECT_MANUAL);
-		// Unmap overlay window
-		if (ps->overlay)
-			xcb_unmap_window(ps->c, ps->overlay);
+	xcb_composite_unredirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
+	// Unmap overlay window
+	if (ps->overlay)
+		xcb_unmap_window(ps->c, ps->overlay);
 
-		// Free the damage ring
-		for (int i = 0; i < ps->ndamage; ++i) {
-			pixman_region32_fini(&ps->damage_ring[i]);
-		}
-		ps->ndamage = 0;
-		free(ps->damage_ring);
-		ps->damage_ring = ps->damage = NULL;
-
-		// Must call XSync() here
-		x_sync(ps->c);
-
-		ps->redirected = false;
+	// Free the damage ring
+	for (int i = 0; i < ps->ndamage; ++i) {
+		pixman_region32_fini(&ps->damage_ring[i]);
 	}
+	ps->ndamage = 0;
+	free(ps->damage_ring);
+	ps->damage_ring = ps->damage = NULL;
+
+	// Must call XSync() here
+	x_sync(ps->c);
+
+	ps->redirected = false;
+	log_debug("Screen unredirected.");
 }
 
 // Handle queued events before we go to sleep
@@ -1443,14 +1444,27 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 
 	handle_root_flags(ps);
 
+	// TODO have a stripped down version of paint_preprocess that is used when screen
+	// is not redirected. its sole purpose should be to decide whether the screen
+	// should be redirected.
 	bool fade_running = false;
+	bool was_redirected = ps->redirected;
 	win *t = paint_preprocess(ps, &fade_running);
 	ps->tmout_unredir_hit = false;
 
+	if (!was_redirected && ps->redirected) {
+		// paint_preprocess redirected the screen, which might change the state of
+		// some of the windows (e.g. the window image might fail to bind, and the
+		// window would be put into an error state). so we rerun paint_preprocess
+		// here to make sure the rendering decision we make is up-to-date
+		log_debug("Re-run paint_preprocess");
+		t = paint_preprocess(ps, &fade_running);
+	}
+
 	// Start/stop fade timer depends on whether window are fading
-	if (!fade_running && ev_is_active(&ps->fade_timer))
+	if (!fade_running && ev_is_active(&ps->fade_timer)) {
 		ev_timer_stop(ps->loop, &ps->fade_timer);
-	else if (fade_running && !ev_is_active(&ps->fade_timer)) {
+	} else if (fade_running && !ev_is_active(&ps->fade_timer)) {
 		ev_timer_set(&ps->fade_timer, fade_timeout(ps), 0);
 		ev_timer_start(ps->loop, &ps->fade_timer);
 	}
@@ -2144,7 +2158,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
  * @param ps session to destroy
  */
 static void session_destroy(session_t *ps) {
-	redir_stop(ps);
+	if (ps->redirected) {
+		redir_stop(ps);
+	}
 
 	// Stop listening to events on root window
 	xcb_change_window_attributes(ps->c, ps->root, XCB_CW_EVENT_MASK,

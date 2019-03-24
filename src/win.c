@@ -196,7 +196,7 @@ _win_bind_image(session_t *ps, win *w, void **win_image, void **shadow_image) {
 	auto e = xcb_request_check(
 	    ps->c, xcb_composite_name_window_pixmap_checked(ps->c, w->id, pixmap));
 	if (e) {
-		log_error("Failed to get named pixmap");
+		log_error("Failed to get named pixmap for window %#010x(%s)", w->id, w->name);
 		free(e);
 		return false;
 	}
