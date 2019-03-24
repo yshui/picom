@@ -749,6 +749,7 @@ static void destroy_backend(session_t *ps) {
 /// Init the backend and bind all the window pixmap to backend images
 static bool initialize_backend(session_t *ps) {
 	if (ps->o.experimental_backends) {
+		assert(!ps->backend_data);
 		// Reinitialize win_data
 		ps->backend_data = backend_list[ps->o.backend]->init(ps);
 		ps->backend_data->ops = backend_list[ps->o.backend];
@@ -777,7 +778,7 @@ void configure_root(session_t *ps, int width, int height) {
 	log_info("Root configuration changed, new geometry: %dx%d", width, height);
 	// On root window changes
 	bool has_root_change = false;
-	if (ps->o.experimental_backends) {
+	if (ps->o.experimental_backends && ps->redirected) {
 		has_root_change = ps->backend_data->ops->root_change != NULL;
 		if (!has_root_change) {
 			// deinit/reinit backend and free up resources if the backend
@@ -808,7 +809,7 @@ void configure_root(session_t *ps, int width, int height) {
 		glx_on_root_change(ps);
 	}
 #endif
-	if (ps->o.experimental_backends) {
+	if (ps->o.experimental_backends && ps->redirected) {
 		if (has_root_change) {
 			ps->backend_data->ops->root_change(ps->backend_data, ps);
 		} else {
@@ -907,6 +908,10 @@ void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
 void root_damaged(session_t *ps) {
 	if (ps->root_tile_paint.pixmap) {
 		free_root_tile(ps);
+	}
+
+	if (!ps->redirected) {
+		return;
 	}
 
 	if (ps->o.experimental_backends) {
