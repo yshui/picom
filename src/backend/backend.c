@@ -98,6 +98,7 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 	// Whether this is beneficial is to be determined XXX
 	for (win *w = t; w; w = w->prev_trans) {
 		pixman_region32_subtract(&reg_visible, &ps->screen_reg, w->reg_ignore);
+		assert(!(w->flags & WIN_FLAGS_IMAGE_ERROR));
 
 		// The bounding shape of the window, in global/target coordinates
 		// reminder: bounding shape contains the WM frame
