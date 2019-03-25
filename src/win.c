@@ -1425,8 +1425,7 @@ static void finish_destroy_win(session_t *ps, win **_w) {
 	//      be true, and there is no need to invalid w->next->reg_ignore
 	//      when w is destroyed.
 	if (w->next) {
-		// should be `= w->reg_ignore_valid && w->next->reg_ignore_valid`,
-		// but keep it this way until we think about reg_ignore.
+		rc_region_unref(&w->next->reg_ignore);
 		w->next->reg_ignore_valid = false;
 	}
 
