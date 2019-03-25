@@ -487,7 +487,7 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 	rc_region_t *last_reg_ignore = rc_region_new();
 
 	bool unredir_possible = false;
-	// Trace whether it's the highest window to paint
+	// Track whether it's the highest window to paint
 	bool is_highest = true;
 	bool reg_ignore_valid = true;
 	for (win *w = ps->list; w; w = next) {
@@ -500,8 +500,9 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 		next = w->next;
 
 		// Destroy reg_ignore if some window above us invalidated it
-		if (!reg_ignore_valid)
+		if (!reg_ignore_valid) {
 			rc_region_unref(&w->reg_ignore);
+		}
 
 		// log_trace("%d %d %s", w->a.map_state, w->ever_damaged, w->name);
 
