@@ -1618,9 +1618,6 @@ void map_win(session_t *ps, win *w) {
 		return;
 	}
 
-	// XXX ???
-	assert(!win_is_focused_real(ps, w));
-
 	// XXX Can we assume map_state is always viewable?
 	w->a.map_state = XCB_MAP_STATE_VIEWABLE;
 
