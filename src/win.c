@@ -1658,9 +1658,6 @@ void map_win(session_t *ps, win *w) {
 	// is stale). There is basically no real way to prevent this, aside from grabbing
 	// the server.
 
-	// XXX ???
-	assert(!win_is_focused_real(ps, w));
-
 	// XXX Can we assume map_state is always viewable?
 	w->a.map_state = XCB_MAP_STATE_VIEWABLE;
 
