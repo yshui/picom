@@ -71,7 +71,7 @@ OPTIONS
 	Daemonize process. Fork to background after initialization. Causes issues with certain (badly-written) drivers.
 
 *--log-level*::
-	Set the log level. Possible values are "TRACE", "DEBUG", "INFO", "WARN", "ERROR", in increasing level of importance. Case doesn't matter.
+	Set the log level. Possible values are "TRACE", "DEBUG", "INFO", "WARN", "ERROR", in increasing level of importance. Case doesn't matter. If using the "TRACE" log level, it's better to log into a file using *--log-file*, since it can generate a huge stream of logs.
 
 *--log-file*::
 	Set the log file. If *--log-file* is never specified, logs will be written to stderr. Otherwise, logs will to written to the given file, though some of the early logs might still be written to the stderr. When setting this option from the config file, it is recommended to use an absolute path.
