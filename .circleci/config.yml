@@ -10,7 +10,7 @@ commands:
     parameters:
       build-config:
         type: string
-        default:
+        default: ""
       cc:
         type: string
         default: cc
@@ -89,7 +89,6 @@ jobs:
     steps:
       - build:
           cc: clang
-          build-config:
   clang_minimal:
     executor: e
     steps:
