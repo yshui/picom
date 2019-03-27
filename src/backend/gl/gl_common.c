@@ -181,9 +181,6 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 
 	bool dual_texture = false;
 
-	// It's required by legacy versions of OpenGL to enable texture target
-	// before specifying environment. Thanks to madsy for telling me.
-	glEnable(GL_TEXTURE_2D);
 	if (gd->win_shader.prog) {
 		glUseProgram(gd->win_shader.prog);
 		if (gd->win_shader.unifm_opacity >= 0) {
@@ -271,12 +268,10 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
 	glDisable(GL_COLOR_LOGIC_OP);
-	glDisable(GL_TEXTURE_2D);
 
 	if (dual_texture) {
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, 0);
-		glDisable(GL_TEXTURE_2D);
 		glActiveTexture(GL_TEXTURE0);
 	}
 
@@ -306,7 +301,6 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 
 	int curr = 0;
 	glReadBuffer(GL_BACK);
-	glEnable(GL_TEXTURE_2D);
 	glBindTexture(GL_TEXTURE_2D, gd->blur_texture[0]);
 	// Copy the area to be blurred into tmp buffer
 	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, extent->x1, dst_y, width, height);
@@ -402,7 +396,6 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 end:
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glBindTexture(GL_TEXTURE_2D, 0);
-	glDisable(GL_TEXTURE_2D);
 
 	gl_check_err();
 
@@ -737,7 +730,6 @@ GLuint gl_new_texture(GLenum target) {
 		return 0;
 	}
 
-	glEnable(target);
 	glBindTexture(target, texture);
 	glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
