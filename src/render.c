@@ -1039,15 +1039,6 @@ void paint_all(session_t *ps, win *const t, bool ignore_damage) {
 
 	// Free the paint region
 	pixman_region32_fini(&region);
-
-	// Check if fading is finished on all painted windows
-	{
-		win *pprev = NULL;
-		for (win *w = t; w; w = pprev) {
-			pprev = w->prev_trans;
-			win_check_fade_finished(ps, &w);
-		}
-	}
 }
 
 /**

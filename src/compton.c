@@ -595,8 +595,6 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 		reg_ignore_valid = reg_ignore_valid && w->reg_ignore_valid;
 		w->reg_ignore_valid = true;
 
-		win_check_fade_finished(ps, &w);
-
 		// Avoid setting w->to_paint if w is freed
 		if (w) {
 			w->to_paint = to_paint;
