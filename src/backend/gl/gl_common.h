@@ -61,6 +61,8 @@ struct gl_data {
 	GLuint blur_texture[2];
 	// Temporary fbo used for blurring
 	GLuint blur_fbo;
+
+	struct log_target *logger;
 };
 
 typedef struct {

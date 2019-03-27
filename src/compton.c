@@ -2004,10 +2004,10 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	free(config_file_to_free);
 
 	if (bkend_use_glx(ps) && !ps->o.experimental_backends) {
-		auto glx_logger = glx_string_marker_logger_new();
-		if (glx_logger) {
+		auto gl_logger = gl_string_marker_logger_new();
+		if (gl_logger) {
 			log_info("Enabling gl string marker");
-			log_add_target_tls(glx_logger);
+			log_add_target_tls(gl_logger);
 		}
 	}
 

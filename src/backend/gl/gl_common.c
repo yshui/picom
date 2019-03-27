@@ -658,6 +658,11 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	// textures are already set up.
 	gl_resize(gd, ps->root_width, ps->root_height);
 
+	gd->logger = gl_string_marker_logger_new();
+	if (gd->logger) {
+		log_add_target_tls(gd->logger);
+	}
+
 	return true;
 }
 
@@ -680,6 +685,11 @@ void gl_deinit(struct gl_data *gd) {
 	glDeleteTextures(gd->npasses > 1 ? 2 : 1, gd->blur_texture);
 	if (gd->npasses > 1) {
 		glDeleteFramebuffers(1, &gd->blur_fbo);
+	}
+
+	if (gd->logger) {
+		log_remove_target_tls(gd->logger);
+		gd->logger = NULL;
 	}
 
 	gl_check_err();
