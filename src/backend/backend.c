@@ -40,6 +40,8 @@ region_t get_damage(session_t *ps, bool all_damage) {
 	} else {
 		for (int i = 0; i < buffer_age; i++) {
 			const int curr = ((ps->damage - ps->damage_ring) + i) % ps->ndamage;
+			log_trace("damage index: %d, damage ring offset: %d", i, curr);
+			dump_region(&ps->damage_ring[curr]);
 			pixman_region32_union(&region, &region, &ps->damage_ring[curr]);
 		}
 		pixman_region32_intersect(&region, &region, &ps->screen_reg);
