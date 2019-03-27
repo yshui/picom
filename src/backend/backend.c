@@ -287,13 +287,6 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 	putchar('\n');
 	fflush(stdout);
 #endif
-
-	// Check if fading is finished on all painted windows
-	win *pprev = NULL;
-	for (win *w = t; w; w = pprev) {
-		pprev = w->prev_trans;
-		win_check_fade_finished(ps, &w);
-	}
 }
 
 // vim: set noet sw=8 ts=8 :
