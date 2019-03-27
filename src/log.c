@@ -327,23 +327,23 @@ struct log_target *stderr_logger_new(void) {
 #ifdef CONFIG_OPENGL
 /// An opengl logger that can be used for logging into opengl debugging tools,
 /// such as apitrace
-struct glx_string_marker_logger {
+struct gl_string_marker_logger {
 	struct log_target tgt;
-	void (*glx_string_marker)(GLsizei len, const char *);
+	void (*gl_string_marker)(GLsizei len, const char *);
 };
 
-void glx_string_marker_logger_write(struct log_target *tgt, const char *str, size_t len) {
-	auto g = (struct glx_string_marker_logger *)tgt;
-	g->glx_string_marker(len, str);
+void gl_string_marker_logger_write(struct log_target *tgt, const char *str, size_t len) {
+	auto g = (struct gl_string_marker_logger *)tgt;
+	g->gl_string_marker(len, str);
 }
 
-static const struct log_ops glx_string_marker_logger_ops = {
-    .write = glx_string_marker_logger_write,
+static const struct log_ops gl_string_marker_logger_ops = {
+    .write = gl_string_marker_logger_write,
     .writev = log_default_writev,
     .destroy = logger_trivial_destroy,
 };
 
-struct log_target *glx_string_marker_logger_new(void) {
+struct log_target *gl_string_marker_logger_new(void) {
 	if (!gl_has_extension("GL_GREMEDY_string_marker")) {
 		return NULL;
 	}
@@ -352,14 +352,14 @@ struct log_target *glx_string_marker_logger_new(void) {
 	if (!fnptr)
 		return NULL;
 
-	auto ret = cmalloc(struct glx_string_marker_logger);
-	ret->tgt.ops = &glx_string_marker_logger_ops;
-	ret->glx_string_marker = fnptr;
+	auto ret = cmalloc(struct gl_string_marker_logger);
+	ret->tgt.ops = &gl_string_marker_logger_ops;
+	ret->gl_string_marker = fnptr;
 	return &ret->tgt;
 }
 
 #else
-struct log_target *glx_string_marker_logger_new(void) {
+struct log_target *gl_string_marker_logger_new(void) {
 	return NULL;
 }
 #endif
