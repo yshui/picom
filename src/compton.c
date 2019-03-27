@@ -440,7 +440,7 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 		next = w->next;
 		const winmode_t mode_old = w->mode;
 		const bool was_painted = w->to_paint;
-		const opacity_t opacity_old = w->opacity;
+		const double opacity_old = w->opacity;
 
 		if (win_should_dim(ps, w) != w->dim) {
 			w->dim = win_should_dim(ps, w);
