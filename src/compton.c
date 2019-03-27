@@ -228,12 +228,10 @@ static bool run_fade(session_t *ps, win **_w, unsigned steps) {
 		w->opacity = w->opacity_tgt;
 	}
 	if (w->opacity == w->opacity_tgt) {
-		// We have reached target opacity, wrapping up.
-		// Note, we reach here after we have rendered the window with the target
-		// opacity at least once. If the window is destroyed because it is faded
-		// out, there is no need to add damage here.
+		// We have reached target opacity.
+		// We don't call win_check_fade_finished here because that could destroy
+		// the window, but we still need the damage info from this window
 		log_debug("Fading finished for window %#010x %s", w->id, w->name);
-		win_check_fade_finished(ps, _w);
 		return false;
 	}
 
@@ -454,6 +452,16 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 			*fade_running = true;
 		}
 
+		// Add window to damaged area if its opacity changes
+		// If was_painted == false, and to_paint is also false, we don't care
+		// If was_painted == false, but to_paint is true, damage will be added in
+		// the loop below
+		if (was_painted && w->opacity != opacity_old) {
+			add_damage_from_win(ps, w);
+		}
+
+		win_check_fade_finished(ps, &w);
+
 		if (!w) {
 			// the window might have been destroyed because fading finished
 			continue;
@@ -472,14 +480,6 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 		// SOLID mode
 		if (was_painted && w->mode != mode_old) {
 			w->reg_ignore_valid = false;
-		}
-
-		// Add window to damaged area if its opacity changes
-		// If was_painted == false, and to_paint is also false, we don't care
-		// If was_painted == false, but to_paint is true, damage will be added in
-		// the loop below
-		if (was_painted && w->opacity != opacity_old) {
-			add_damage_from_win(ps, w);
 		}
 	}
 
