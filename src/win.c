@@ -1577,6 +1577,7 @@ void win_skip_fading(session_t *ps, win **_w) {
 		assert(w->opacity_tgt == w->opacity);
 		return;
 	}
+	log_trace("Skipping fading process of window %#010x (%s)", w->id, w->name);
 	w->opacity = w->opacity_tgt;
 	win_check_fade_finished(ps, _w);
 }
@@ -1632,6 +1633,9 @@ void map_win(session_t *ps, win *w) {
 
 	if (w->state == WSTATE_UNMAPPING) {
 		win_skip_fading(ps, &w);
+		// We skipped the unmapping process, the window was rendered, now it is
+		// not anymore. So we need to mark then unmapping window as damaged.
+		add_damage_from_win(ps, w);
 		assert(w);
 	}
 
