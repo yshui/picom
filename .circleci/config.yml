@@ -3,6 +3,8 @@ executors:
     docker:
       - image: yshui/comptonci
     working_directory: "/tmp/workspace"
+    environment:
+      UBSAN_OPTIONS: "halt_on_error=1"
 
 version: 2.1
 commands:
