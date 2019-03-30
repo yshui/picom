@@ -54,14 +54,14 @@ safe_isnan(double a) {
 
 #define to_int_checked(val)                                                              \
 	({                                                                               \
-		auto tmp = (val);                                                        \
+		int64_t tmp = (val);                                                        \
 		assert(tmp >= INT_MIN && tmp <= INT_MAX);                                \
 		(int)tmp;                                                                \
 	})
 
 #define to_char_checked(val)                                                             \
 	({                                                                               \
-		auto tmp = (val);                                                        \
+		int64_t tmp = (val);                                                        \
 		assert(tmp >= CHAR_MIN && tmp <= CHAR_MAX);                              \
 		(char)tmp;                                                               \
 	})
@@ -75,7 +75,7 @@ safe_isnan(double a) {
 
 #define to_i16_checked(val)                                                              \
 	({                                                                               \
-		auto tmp = (val);                                                        \
+		int64_t tmp = (val);                                                        \
 		assert(tmp >= INT16_MIN && tmp <= INT16_MAX);                            \
 		(int16_t) tmp;                                                           \
 	})
