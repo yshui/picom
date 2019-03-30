@@ -16,10 +16,10 @@ typedef enum {
 
 /// A structure representing margins around a rectangle.
 typedef struct {
-	unsigned int top;
-	unsigned int left;
-	unsigned int bottom;
-	unsigned int right;
+	int top;
+	int left;
+	int bottom;
+	int right;
 } margin_t;
 
 typedef uint32_t opacity_t;
