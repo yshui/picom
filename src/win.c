@@ -110,8 +110,9 @@ static inline bool group_is_focused(session_t *ps, xcb_window_t leader) {
  * Get a rectangular region a window occupies, excluding shadow.
  */
 static void win_get_region_local(const win *w, region_t *res) {
+	assert(w->widthb >= 0 && w->heightb >= 0);
 	pixman_region32_fini(res);
-	pixman_region32_init_rect(res, 0, 0, w->widthb, w->heightb);
+	pixman_region32_init_rect(res, 0, 0, (uint)w->widthb, (uint)w->heightb);
 }
 
 /**
@@ -120,14 +121,15 @@ static void win_get_region_local(const win *w, region_t *res) {
 void win_get_region_noframe_local(const win *w, region_t *res) {
 	const margin_t extents = win_calc_frame_extents(w);
 
-	int x = extents.left;
-	int y = extents.top;
-	int width = max_i(w->g.width - extents.left - extents.right, 0);
-	int height = max_i(w->g.height - extents.top - extents.bottom, 0);
+	int x = (int)extents.left;
+	int y = (int)extents.top;
+	int width = max2(w->g.width - (int)(extents.left + extents.right), 0);
+	int height = max2(w->g.height - (int)(extents.top + extents.bottom), 0);
 
 	pixman_region32_fini(res);
-	if (width > 0 && height > 0)
-		pixman_region32_init_rect(res, x, y, width, height);
+	if (width > 0 && height > 0) {
+		pixman_region32_init_rect(res, x, y, (uint)width, (uint)height);
+	}
 }
 
 gen_by_val(win_get_region_noframe_local);
@@ -139,13 +141,13 @@ void win_get_region_frame_local(const win *w, region_t *res) {
 	    res,
 	    (rect_t[]){
 	        // top
-	        {.x1 = 0, .y1 = 0, .x2 = w->g.width, .y2 = extents.top},
+	        {.x1 = 0, .y1 = 0, .x2 = w->g.width, .y2 = (int)extents.top},
 	        // bottom
-	        {.x1 = 0, .y1 = w->g.height - extents.bottom, .x2 = w->g.width, .y2 = w->g.height},
+	        {.x1 = 0, .y1 = (int)(w->g.height - extents.bottom), .x2 = w->g.width, .y2 = w->g.height},
 	        // left
-	        {.x1 = 0, .y1 = 0, .x2 = extents.left, .y2 = w->g.height},
+	        {.x1 = 0, .y1 = 0, .x2 = (int)extents.left, .y2 = w->g.height},
 	        // right
-	        {.x1 = w->g.width - extents.right, .y1 = 0, .x2 = w->g.width, .y2 = w->g.height},
+	        {.x1 = (int)(w->g.width - extents.right), .y1 = 0, .x2 = w->g.width, .y2 = w->g.height},
 	    },
 	    4);
 
@@ -208,8 +210,9 @@ _win_bind_image(session_t *ps, win *w, void **win_image, void **shadow_image) {
 	}
 	if (w->shadow) {
 		*shadow_image = ps->backend_data->ops->render_shadow(
-		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map, ps->o.shadow_red,
-		    ps->o.shadow_green, ps->o.shadow_blue, ps->o.shadow_opacity);
+		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map,
+		    ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue,
+		    ps->o.shadow_opacity);
 		if (!*shadow_image) {
 			log_error("Failed to bind shadow image");
 			ps->backend_data->ops->release_image(ps->backend_data, *win_image);
@@ -249,10 +252,10 @@ static bool attr_pure win_has_rounded_corners(const win *w) {
 
 	// Determine the minimum width/height of a rectangle that could mark
 	// a window as having rounded corners
-	unsigned short minwidth =
-	    max_i(w->widthb * (1 - ROUNDED_PERCENT), w->widthb - ROUNDED_PIXELS);
-	unsigned short minheight =
-	    max_i(w->heightb * (1 - ROUNDED_PERCENT), w->heightb - ROUNDED_PIXELS);
+	auto minwidth =
+	    (uint16_t)max2(w->widthb * (1 - ROUNDED_PERCENT), w->widthb - ROUNDED_PIXELS);
+	auto minheight =
+	    (uint16_t)max2(w->heightb * (1 - ROUNDED_PERCENT), w->heightb - ROUNDED_PIXELS);
 
 	// Get the rectangles in the bounding region
 	int nrects = 0;
@@ -461,7 +464,7 @@ bool win_should_dim(session_t *ps, const win *w) {
 		return false;
 	}
 
-	if (ps->o.inactive_dim && !(w->focused)) {
+	if (ps->o.inactive_dim > 0 && !(w->focused)) {
 		return true;
 	} else {
 		return false;
@@ -644,7 +647,7 @@ void win_update_opacity_rule(session_t *ps, win *w) {
 	if (!is_set)
 		wid_rm_opacity_prop(ps, w->id);
 	else
-		wid_set_opacity_prop(ps, w->id, opacity * OPAQUE);
+		wid_set_opacity_prop(ps, w->id, (opacity_t)(opacity * OPAQUE));
 }
 
 /**
@@ -1241,12 +1244,14 @@ void win_set_focused(session_t *ps, win *w, bool focused) {
  */
 void win_extents(const win *w, region_t *res) {
 	pixman_region32_clear(res);
-	pixman_region32_union_rect(res, res, w->g.x, w->g.y, w->widthb, w->heightb);
+	pixman_region32_union_rect(res, res, w->g.x, w->g.y, (uint)w->widthb, (uint)w->heightb);
 
-	if (w->shadow)
+	if (w->shadow) {
+		assert(w->shadow_width >= 0 && w->shadow_height >= 0);
 		pixman_region32_union_rect(res, res, w->g.x + w->shadow_dx,
-		                           w->g.y + w->shadow_dy, w->shadow_width,
-		                           w->shadow_height);
+		                           w->g.y + w->shadow_dy, (uint)w->shadow_width,
+		                           (uint)w->shadow_height);
+	}
 }
 
 gen_by_val(win_extents);

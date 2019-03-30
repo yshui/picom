@@ -3,6 +3,7 @@
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -39,6 +40,22 @@ bool parse_long(const char *s, long *dest) {
 		return false;
 	}
 	*dest = val;
+	return true;
+}
+
+/**
+ * Parse an int  number.
+ */
+bool parse_int(const char *s, int *dest) {
+	long val;
+	if (!parse_long(s, &val)) {
+		return false;
+	}
+	if (val > INT_MAX || val < INT_MIN) {
+		log_error("Number exceeded int limits: %ld", val);
+		return false;
+	}
+	*dest = (int)val;
 	return true;
 }
 
@@ -82,11 +99,11 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 	if (src == (pc = parse_readnum(src, &val)))
 		goto err1;
 	src = pc;
-	width = val;
+	width = (int)val;
 	if (src == (pc = parse_readnum(src, &val)))
 		goto err1;
 	src = pc;
-	height = val;
+	height = (int)val;
 
 	// Validate matrix width and height
 	if (width <= 0 || height <= 0) {
@@ -102,7 +119,7 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 		         "rendering, and/or consume lots of memory");
 
 	// Allocate memory
-	conv *matrix = cvalloc(sizeof(conv) + width * height * sizeof(double));
+	conv *matrix = cvalloc(sizeof(conv) + (size_t)(width * height) * sizeof(double));
 
 	// Read elements
 	int skip = height / 2 * width + width / 2;
@@ -276,70 +293,76 @@ bool parse_blur_kern_lst(const char *src, conv **dest, int max, bool *hasneg) {
  */
 bool parse_geometry(session_t *ps, const char *src, region_t *dest) {
 	pixman_region32_clear(dest);
-	if (!src)
+	if (!src) {
 		return true;
-	if (!ps->root_width || !ps->root_height)
+	}
+	if (!ps->root_width || !ps->root_height) {
 		return true;
+	}
 
-	geometry_t geom = {.wid = ps->root_width, .hei = ps->root_height, .x = 0, .y = 0};
+	long x = 0, y = 0;
+	long width = ps->root_width, height = ps->root_height;
 	long val = 0L;
 	char *endptr = NULL;
 
 	src = skip_space(src);
-	if (!*src)
+	if (!*src) {
 		goto parse_geometry_end;
+	}
 
 	// Parse width
 	// Must be base 10, because "0x0..." may appear
-	if (!('+' == *src || '-' == *src)) {
+	if (*src != '+' && *src != '-') {
 		val = strtol(src, &endptr, 10);
 		assert(endptr);
 		if (src != endptr) {
-			geom.wid = val;
-			if (geom.wid < 0) {
+			if (val < 0) {
 				log_error("Invalid width: %s", src);
 				return false;
 			}
+			width = val;
 			src = endptr;
 		}
 		src = skip_space(src);
 	}
 
 	// Parse height
-	if ('x' == *src) {
+	if (*src == 'x') {
 		++src;
 		val = strtol(src, &endptr, 10);
 		assert(endptr);
 		if (src != endptr) {
-			geom.hei = val;
-			if (geom.hei < 0) {
+			if (val < 0) {
 				log_error("Invalid height: %s", src);
 				return false;
 			}
+			height = val;
 			src = endptr;
 		}
 		src = skip_space(src);
 	}
 
 	// Parse x
-	if ('+' == *src || '-' == *src) {
+	if (*src == '+' || *src == '-') {
 		val = strtol(src, &endptr, 10);
 		if (endptr && src != endptr) {
-			geom.x = val;
-			if (*src == '-')
-				geom.x += ps->root_width - geom.wid;
+			x = val;
+			if (*src == '-') {
+				x += ps->root_width - width;
+			}
 			src = endptr;
 		}
 		src = skip_space(src);
 	}
 
 	// Parse y
-	if ('+' == *src || '-' == *src) {
+	if (*src == '+' || *src == '-') {
 		val = strtol(src, &endptr, 10);
 		if (endptr && src != endptr) {
-			geom.y = val;
-			if (*src == '-')
-				geom.y += ps->root_height - geom.hei;
+			y = val;
+			if (*src == '-') {
+				y += ps->root_height - height;
+			}
 			src = endptr;
 		}
 		src = skip_space(src);
@@ -351,7 +374,16 @@ bool parse_geometry(session_t *ps, const char *src, region_t *dest) {
 	}
 
 parse_geometry_end:
-	pixman_region32_union_rect(dest, dest, geom.x, geom.y, geom.wid, geom.hei);
+	if (x < INT_MIN || x > INT_MAX || y < INT_MIN || y > INT_MAX) {
+		log_error("Geometry coordinates exceeded limits: %s", src);
+		return false;
+	}
+	if (width > UINT_MAX || height > UINT_MAX) {
+		// less than 0 is checked for earlier
+		log_error("Geometry size exceeded limits: %s", src);
+		return false;
+	}
+	pixman_region32_union_rect(dest, dest, (int)x, (int)y, (uint)width, (uint)height);
 	return true;
 }
 

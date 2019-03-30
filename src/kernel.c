@@ -14,20 +14,10 @@ double sum_kernel(const conv *map, int x, int y, int width, int height) {
 	double ret = 0;
 
 	// Compute sum of values which are "in range"
-	int xstart = x, xend = width + x;
-	if (xstart < 0) {
-		xstart = 0;
-	}
-	if (xend > map->w) {
-		xend = map->w;
-	}
-	int ystart = y, yend = height + y;
-	if (ystart < 0) {
-		ystart = 0;
-	}
-	if (yend > map->h) {
-		yend = map->h;
-	}
+	int xstart = normalize_i_range(x, 0, map->w),
+	    xend = normalize_i_range(width + x, 0, map->w);
+	int ystart = normalize_i_range(y, 0, map->h),
+	    yend = normalize_i_range(height + y, 0, map->h);
 	assert(yend >= ystart && xend >= xstart);
 
 	int d = map->w;
@@ -70,11 +60,11 @@ static double attr_const gaussian(double r, double x, double y) {
 
 conv *gaussian_kernel(double r) {
 	conv *c;
-	int size = r * 2 + 1;
+	int size = (int)r * 2 + 1;
 	int center = size / 2;
 	double t;
 
-	c = cvalloc(sizeof(conv) + size * size * sizeof(double));
+	c = cvalloc(sizeof(conv) + (size_t)(size * size) * sizeof(double));
 	c->w = c->h = size;
 	c->rsum = NULL;
 	t = 0.0;

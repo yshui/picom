@@ -483,7 +483,6 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	                                  "open a bug report.";
 	optind = 1;
 	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
-		long val = 0;
 		switch (o) {
 #define P_CASEBOOL(idx, option)                                                          \
 	case idx:                                                                        \
@@ -491,9 +490,15 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		break
 #define P_CASELONG(idx, option)                                                          \
 	case idx:                                                                        \
-		if (!parse_long(optarg, &val))                                           \
+		if (!parse_long(optarg, &opt->option)) {                                 \
 			exit(1);                                                         \
-		opt->option = val;                                                       \
+		}                                                                        \
+		break
+#define P_CASEINT(idx, option)                                                           \
+	case idx:                                                                        \
+		if (!parse_int(optarg, &opt->option)) {                                  \
+			exit(1);                                                         \
+		}                                                                        \
 		break
 
 		// clang-format off
@@ -511,7 +516,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 320:
 			// These options are handled by get_early_config()
 			break;
-		P_CASELONG('D', fade_delta);
+		P_CASEINT('D', fade_delta);
 		case 'I': opt->fade_in_step = normalize_d(atof(optarg)); break;
 		case 'O': opt->fade_out_step = normalize_d(atof(optarg)); break;
 		case 'c': shadow_enable = true; break;
@@ -535,12 +540,12 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'F':
 			fading_enable = true;
 			break;
-		P_CASELONG('r', shadow_radius);
+		P_CASEINT('r', shadow_radius);
 		case 'o':
 			opt->shadow_opacity = atof(optarg);
 			break;
-		P_CASELONG('l', shadow_offset_x);
-		P_CASELONG('t', shadow_offset_y);
+		P_CASEINT('l', shadow_offset_x);
+		P_CASEINT('t', shadow_offset_y);
 		case 'i':
 			opt->inactive_opacity = normalize_d(atof(optarg));
 			break;
@@ -587,7 +592,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(266, shadow_ignore_shaped);
 		P_CASEBOOL(267, detect_rounded_corners);
 		P_CASEBOOL(268, detect_client_opacity);
-		P_CASELONG(269, refresh_rate);
+		P_CASEINT(269, refresh_rate);
 		case 270:
 			if (optarg) {
 				opt->vsync = parse_vsync(optarg);
@@ -656,10 +661,10 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			log_error("--glx-copy-from-front %s", deprecation_message);
 			exit(1);
 			break;
-		P_CASELONG(293, benchmark);
+		P_CASEINT(293, benchmark);
 		case 294:
 			// --benchmark-wid
-			opt->benchmark_wid = strtol(optarg, NULL, 0);
+			opt->benchmark_wid = (xcb_window_t)strtol(optarg, NULL, 0);
 			break;
 		case 295:
 			log_error("--glx-use-copysubbuffermesa %s", deprecation_message);
@@ -706,7 +711,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			                         MAX_BLUR_PASS, &conv_kern_hasneg))
 				exit(1);
 			break;
-		P_CASELONG(302, resize_damage);
+		P_CASEINT(302, resize_damage);
 		case 303:
 			// --glx-use-gpushader4
 			log_warn("--glx-use-gpushader4 is deprecated since v6."
@@ -782,8 +787,8 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	}
 
 	// Range checking and option assignments
-	opt->fade_delta = max_i(opt->fade_delta, 1);
-	opt->shadow_radius = max_i(opt->shadow_radius, 0);
+	opt->fade_delta = max2(opt->fade_delta, 1);
+	opt->shadow_radius = max2(opt->shadow_radius, 0);
 	opt->shadow_red = normalize_d(opt->shadow_red);
 	opt->shadow_green = normalize_d(opt->shadow_green);
 	opt->shadow_blue = normalize_d(opt->shadow_blue);
@@ -802,7 +807,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	// Other variables determined by options
 
 	// Determine whether we need to track focus changes
-	if (opt->inactive_opacity != opt->active_opacity || opt->inactive_dim) {
+	if (opt->inactive_opacity != opt->active_opacity || opt->inactive_dim > 0) {
 		opt->track_focus = true;
 	}
 

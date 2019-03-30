@@ -44,7 +44,7 @@ struct _glx_data {
 	struct gl_data gl;
 	Display *display;
 	int screen;
-	int target_win;
+	xcb_window_t target_win;
 	int glx_event;
 	int glx_error;
 	GLXContext ctx;
@@ -70,7 +70,7 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 	                          GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
 	                          GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
 	                          GLX_X_RENDERABLE, true,
-	                          GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT, GLX_DONT_CARE,
+	                          GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT, (GLint)GLX_DONT_CARE,
 	                          GLX_BUFFER_SIZE, m.red_size + m.green_size +
 	                                           m.blue_size + m.alpha_size,
 	                          GLX_RED_SIZE, m.red_size,
@@ -117,7 +117,8 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 		int visual;
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_VISUAL_ID, &visual);
 		if (m.visual_depth != -1 &&
-		    x_get_visual_depth(XGetXCBConnection(dpy), visual) != m.visual_depth) {
+		    x_get_visual_depth(XGetXCBConnection(dpy), (xcb_visualid_t)visual) !=
+		        m.visual_depth) {
 			// Some driver might attach fbconfig to a GLX visual with a
 			// different depth.
 			//
@@ -347,6 +348,11 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 		return false;
 	}
 
+	if (fmt.visual_depth < 0) {
+		log_error("Pixmap %#010x with invalid depth %d", pixmap, fmt.visual_depth);
+		return false;
+	}
+
 	auto r = xcb_get_geometry_reply(base->c, xcb_get_geometry(base->c, pixmap), NULL);
 	if (!r) {
 		log_error("Invalid pixmap %#010x", pixmap);
@@ -400,7 +406,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	// Create texture
 	wd->texture.texture = gl_new_texture(GL_TEXTURE_2D);
 	wd->texture.opacity = 1;
-	wd->texture.depth = fmt.visual_depth;
+	wd->texture.depth = (unsigned int)fmt.visual_depth;
 	wd->texture.color_inverted = false;
 	wd->texture.dim = 0;
 	wd->texture.has_alpha = fmt.alpha_size != 0;
@@ -475,7 +481,7 @@ static inline bool glx_has_extension(Display *dpy, int screen, const char *ext) 
 		return false;
 	}
 
-	long inlen = strlen(ext);
+	auto inlen = strlen(ext);
 	const char *curr = glx_exts;
 	bool match = false;
 	while (curr && !match) {
@@ -483,9 +489,9 @@ static inline bool glx_has_extension(Display *dpy, int screen, const char *ext) 
 		if (!end) {
 			// Last extension string
 			match = strcmp(ext, curr) == 0;
-		} else if (end - curr == inlen) {
+		} else if (curr + inlen == end) {
 			// Length match, do match string
-			match = strncmp(ext, curr, end - curr) == 0;
+			match = strncmp(ext, curr, (unsigned long)(end - curr)) == 0;
 		}
 		curr = end ? end + 1 : NULL;
 	}

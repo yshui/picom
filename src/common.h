@@ -186,8 +186,8 @@ struct _glx_texture {
 	GLXPixmap glpixmap;
 	xcb_pixmap_t pixmap;
 	GLenum target;
-	unsigned width;
-	unsigned height;
+	int width;
+	int height;
 	bool y_inverted;
 };
 
@@ -366,7 +366,7 @@ typedef struct session {
 	/// Pre-generated alpha pictures.
 	xcb_render_picture_t *alpha_picts;
 	/// Time of last fading. In milliseconds.
-	unsigned long fade_time;
+	long fade_time;
 	/// Head pointer of the error ignore linked list.
 	ignore_t *ignore_head;
 	/// Pointer to the <code>next</code> member of tail element of the error
@@ -416,7 +416,7 @@ typedef struct session {
 
 	// === Software-optimization-related ===
 	/// Currently used refresh rate.
-	short refresh_rate;
+	int refresh_rate;
 	/// Interval between refresh in nanoseconds.
 	long refresh_intv;
 	/// Nanosecond offset of the first painting.
@@ -566,20 +566,20 @@ static inline int timeval_ms_cmp(struct timeval *ptv, unsigned long ms) {
 
 	// We use those if statement instead of a - expression because of possible
 	// truncation problem from long to int.
-	{
-		long sec = ms / MS_PER_SEC;
-		if (ptv->tv_sec > sec)
-			return 1;
-		if (ptv->tv_sec < sec)
-			return -1;
+	auto sec = (long)(ms / MS_PER_SEC);
+	if (ptv->tv_sec > sec) {
+		return 1;
+	}
+	if (ptv->tv_sec < sec) {
+		return -1;
 	}
 
-	{
-		long usec = ms % MS_PER_SEC * (US_PER_SEC / MS_PER_SEC);
-		if (ptv->tv_usec > usec)
-			return 1;
-		if (ptv->tv_usec < usec)
-			return -1;
+	auto usec = (long)(ms % MS_PER_SEC * (US_PER_SEC / MS_PER_SEC));
+	if (ptv->tv_usec > usec) {
+		return 1;
+	}
+	if (ptv->tv_usec < usec) {
+		return -1;
 	}
 
 	return 0;
@@ -712,7 +712,8 @@ _Noreturn static inline void die(const char *msg) {
  */
 static inline xcb_atom_t get_atom(session_t *ps, const char *atom_name) {
 	xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply(
-	    ps->c, xcb_intern_atom(ps->c, 0, strlen(atom_name), atom_name), NULL);
+	    ps->c,
+	    xcb_intern_atom(ps->c, 0, to_u16_checked(strlen(atom_name)), atom_name), NULL);
 
 	xcb_atom_t atom = XCB_NONE;
 	if (reply) {

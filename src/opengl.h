@@ -26,7 +26,7 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
-bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
                  GLfloat factor, const region_t *reg_tgt);
 
 bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, int dy,
@@ -46,8 +46,8 @@ bool glx_load_prog_main(session_t *ps, const char *vshader_str, const char *fsha
                         glx_prog_main_t *pprogram);
 #endif
 
-bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, unsigned width,
-                     unsigned height, bool repeat, const struct glx_fbconfig_info *);
+bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, int width,
+                     int height, bool repeat, const struct glx_fbconfig_info *);
 
 void glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
 

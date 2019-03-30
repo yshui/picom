@@ -41,9 +41,9 @@ typedef uint32_t cdbus_window_t;
 #define CDBUS_TYPE_WINDOW DBUS_TYPE_UINT32
 #define CDBUS_TYPE_WINDOW_STR DBUS_TYPE_UINT32_AS_STRING
 
-typedef uint16_t cdbus_enum_t;
-#define CDBUS_TYPE_ENUM DBUS_TYPE_UINT16
-#define CDBUS_TYPE_ENUM_STR DBUS_TYPE_UINT16_AS_STRING
+typedef uint32_t cdbus_enum_t;
+#define CDBUS_TYPE_ENUM DBUS_TYPE_UINT32
+#define CDBUS_TYPE_ENUM_STR DBUS_TYPE_UINT32_AS_STRING
 
 #define CDBUS_SERVICE_NAME "com.github.chjj.compton"
 #define CDBUS_INTERFACE_NAME CDBUS_SERVICE_NAME
@@ -611,6 +611,14 @@ static inline bool cdbus_reply_int32(session_t *ps, DBusMessage *srcmsg, int32_t
 }
 
 /**
+ * Send a reply with an int32 argument, cast from a long.
+ */
+static inline bool cdbus_reply_int32l(session_t *ps, DBusMessage *srcmsg, long val) {
+	int32_t tmp = (int32_t)val;
+	return cdbus_reply(ps, srcmsg, cdbus_apdarg_int32, &tmp);
+}
+
+/**
  * Send a reply with an uint32 argument.
  */
 static inline bool cdbus_reply_uint32(session_t *ps, DBusMessage *srcmsg, uint32_t val) {
@@ -786,12 +794,12 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_win_get_do(class_general, cdbus_reply_string);
 	cdbus_m_win_get_do(role, cdbus_reply_string);
 
-	cdbus_m_win_get_do(opacity, cdbus_reply_uint32);
-	cdbus_m_win_get_do(opacity_tgt, cdbus_reply_uint32);
+	cdbus_m_win_get_do(opacity, cdbus_reply_double);
+	cdbus_m_win_get_do(opacity_tgt, cdbus_reply_double);
 	cdbus_m_win_get_do(has_opacity_prop, cdbus_reply_bool);
 	cdbus_m_win_get_do(opacity_prop, cdbus_reply_uint32);
 	cdbus_m_win_get_do(opacity_is_set, cdbus_reply_bool);
-	cdbus_m_win_get_do(opacity_set, cdbus_reply_uint32);
+	cdbus_m_win_get_do(opacity_set, cdbus_reply_double);
 
 	cdbus_m_win_get_do(frame_opacity, cdbus_reply_double);
 	if (!strcmp("left_width", target)) {
@@ -986,7 +994,7 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 		return true;
 	}
 	cdbus_m_opts_get_do(unredir_if_possible, cdbus_reply_bool);
-	cdbus_m_opts_get_do(unredir_if_possible_delay, cdbus_reply_int32);
+	cdbus_m_opts_get_do(unredir_if_possible_delay, cdbus_reply_int32l);
 	cdbus_m_opts_get_do(redirected_force, cdbus_reply_enum);
 	cdbus_m_opts_get_do(stoppaint_force, cdbus_reply_enum);
 	cdbus_m_opts_get_do(logpath, cdbus_reply_string);
@@ -1010,8 +1018,8 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(xinerama_shadow_crop, cdbus_reply_bool);
 
 	cdbus_m_opts_get_do(fade_delta, cdbus_reply_int32);
-	cdbus_m_opts_get_do(fade_in_step, cdbus_reply_int32);
-	cdbus_m_opts_get_do(fade_out_step, cdbus_reply_int32);
+	cdbus_m_opts_get_do(fade_in_step, cdbus_reply_double);
+	cdbus_m_opts_get_do(fade_out_step, cdbus_reply_double);
 	cdbus_m_opts_get_do(no_fading_openclose, cdbus_reply_bool);
 
 	cdbus_m_opts_get_do(blur_background, cdbus_reply_bool);
@@ -1066,10 +1074,14 @@ static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 
 	// fade_delta
 	if (!strcmp("fade_delta", target)) {
-		int32_t val = 0.0;
-		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_INT32, &val))
+		int32_t val = 0;
+		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_INT32, &val)) {
 			return false;
-		ps->o.fade_delta = max_i(val, 1);
+		}
+		if (val <= 0) {
+			return false;
+		}
+		ps->o.fade_delta = max2(val, 1);
 		goto cdbus_process_opts_set_success;
 	}
 

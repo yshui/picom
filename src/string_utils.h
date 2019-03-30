@@ -4,6 +4,8 @@
 #include <ctype.h>
 #include <stddef.h>
 
+#include "compiler.h"
+
 #define mstrncmp(s1, s2) strncmp((s1), (s2), strlen(s1))
 
 char *mstrjoin(const char *src1, const char *src2);
@@ -26,7 +28,7 @@ static inline int uitostr(unsigned int n, char *buf) {
 
 	int pos = ret;
 	while (pos--) {
-		buf[pos] = n % 10 + '0';
+		buf[pos] = (char)(n % 10 + '0');
 		n /= 10;
 	}
 	return ret;
