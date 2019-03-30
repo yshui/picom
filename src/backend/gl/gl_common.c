@@ -119,14 +119,16 @@ GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_
 
 	{
 		GLuint shaders[2];
-		unsigned int count = 0;
-		if (vert_shader)
+		int count = 0;
+		if (vert_shader) {
 			shaders[count++] = vert_shader;
-		if (frag_shader)
+		}
+		if (frag_shader) {
 			shaders[count++] = frag_shader;
-		assert(count <= sizeof(shaders) / sizeof(shaders[0]));
-		if (count)
+		}
+		if (count) {
 			prog = gl_create_program(shaders, count);
+		}
 	}
 
 	if (vert_shader)
@@ -185,7 +187,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	if (gd->win_shader.prog) {
 		glUseProgram(gd->win_shader.prog);
 		if (gd->win_shader.unifm_opacity >= 0) {
-			glUniform1f(gd->win_shader.unifm_opacity, ptex->opacity);
+			glUniform1f(gd->win_shader.unifm_opacity, (float)ptex->opacity);
 		}
 		if (gd->win_shader.unifm_invert_color >= 0) {
 			glUniform1i(gd->win_shader.unifm_invert_color, ptex->color_inverted);
@@ -194,7 +196,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 			glUniform1i(gd->win_shader.unifm_tex, 0);
 		}
 		if (gd->win_shader.unifm_dim >= 0) {
-			glUniform1f(gd->win_shader.unifm_dim, ptex->dim);
+			glUniform1f(gd->win_shader.unifm_dim, (float)ptex->dim);
 		}
 	}
 
@@ -224,23 +226,23 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 
 		// Calculate texture coordinates
 		// (texture_x1, texture_y1), texture coord for the _bottom left_ corner
-		GLfloat texture_x1 = crect.x1 - dst_x;
-		GLfloat texture_y1 = crect.y2 - dst_y2;
-		GLfloat texture_x2 = texture_x1 + crect.x2 - crect.x1;
-		GLfloat texture_y2 = texture_y1 + crect.y1 - crect.y2;
+		auto texture_x1 = (GLfloat)(crect.x1 - dst_x);
+		auto texture_y1 = (GLfloat)(crect.y2 - dst_y2);
+		auto texture_x2 = texture_x1 + (GLfloat)(crect.x2 - crect.x1);
+		auto texture_y2 = texture_y1 + (GLfloat)(crect.y1 - crect.y2);
 
 		// X pixmaps might be Y inverted, invert the texture coordinates
 		if (ptex->y_inverted) {
-			texture_y1 = ptex->height - texture_y1;
-			texture_y2 = ptex->height - texture_y2;
+			texture_y1 = (GLfloat)ptex->height - texture_y1;
+			texture_y2 = (GLfloat)ptex->height - texture_y2;
 		}
 
 		// GL_TEXTURE_2D coordinates are normalized
 		// TODO use texelFetch
-		texture_x1 /= ptex->width;
-		texture_y1 /= ptex->height;
-		texture_x2 /= ptex->width;
-		texture_y2 /= ptex->height;
+		texture_x1 /= (GLfloat)ptex->width;
+		texture_y1 /= (GLfloat)ptex->height;
+		texture_x2 /= (GLfloat)ptex->width;
+		texture_y2 /= (GLfloat)ptex->height;
 
 		// Vertex coordinates
 		GLint vx1 = crect.x1;
@@ -333,11 +335,11 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 			// last pass, draw directly into the back buffer
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glDrawBuffer(GL_BACK);
-			glUniform1f(p->unifm_opacity, opacity);
+			glUniform1f(p->unifm_opacity, (float)opacity);
 		}
 
-		glUniform1f(p->unifm_offset_x, 1.0 / gd->width);
-		glUniform1f(p->unifm_offset_y, 1.0 / gd->height);
+		glUniform1f(p->unifm_offset_x, 1.0f / (GLfloat)gd->width);
+		glUniform1f(p->unifm_offset_y, 1.0f / (GLfloat)gd->height);
 
 		// XXX use multiple draw calls is probably going to be slow than
 		//     just simply blur the whole area.
@@ -354,29 +356,29 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 			crect.y2 = gd->height - crect.y2;
 
 			// Texture coordinates
-			GLfloat texture_x1 = (crect.x1 - extent->x1);
-			GLfloat texture_y1 = (crect.y2 - dst_y);
-			GLfloat texture_x2 = texture_x1 + (crect.x2 - crect.x1);
-			GLfloat texture_y2 = texture_y1 + (crect.y1 - crect.y2);
+			auto texture_x1 = (GLfloat)(crect.x1 - extent->x1);
+			auto texture_y1 = (GLfloat)(crect.y2 - dst_y);
+			auto texture_x2 = texture_x1 + (GLfloat)(crect.x2 - crect.x1);
+			auto texture_y2 = texture_y1 + (GLfloat)(crect.y1 - crect.y2);
 
-			texture_x1 /= gd->width;
-			texture_x2 /= gd->width;
-			texture_y1 /= gd->height;
-			texture_y2 /= gd->height;
+			texture_x1 /= (GLfloat)gd->width;
+			texture_x2 /= (GLfloat)gd->width;
+			texture_y1 /= (GLfloat)gd->height;
+			texture_y2 /= (GLfloat)gd->height;
 
 			// Vertex coordinates
 			// For passes before the last one, we are drawing into a buffer,
 			// so (dx, dy) from source maps to (0, 0)
-			GLfloat vx1 = crect.x1 - extent->x1;
-			GLfloat vy1 = crect.y2 - dst_y;
+			GLint vx1 = crect.x1 - extent->x1;
+			GLint vy1 = crect.y2 - dst_y;
 			if (i == gd->npasses - 1) {
 				// For last pass, we are drawing back to source, so we
 				// don't need to map
 				vx1 = crect.x1;
 				vy1 = crect.y2;
 			}
-			GLfloat vx2 = vx1 + (crect.x2 - crect.x1);
-			GLfloat vy2 = vy1 + (crect.y1 - crect.y2);
+			GLint vx2 = vx1 + (crect.x2 - crect.x1);
+			GLint vy2 = vy1 + (crect.y1 - crect.y2);
 
 			GLfloat texture_x[] = {texture_x1, texture_x2, texture_x2, texture_x1};
 			GLfloat texture_y[] = {texture_y1, texture_y1, texture_y2, texture_y2};
@@ -406,7 +408,7 @@ end:
 	return ret;
 }
 
-static GLuint glGetUniformLocationChecked(GLuint p, const char *name) {
+static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 	auto ret = glGetUniformLocation(p, name);
 	if (ret < 0) {
 		log_error("Failed to get location of uniform '%s'. compton might not "
@@ -470,13 +472,13 @@ void gl_fill(backend_t *base, double r, double g, double b, double a, const regi
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
 	struct gl_data *gd = (void *)base;
-	glColor4f(r, g, b, a);
+	glColor4d(r, g, b, a);
 	glBegin(GL_QUADS);
 	for (int i = 0; i < nrects; i++) {
-		glVertex2f(rect[i].x1, gd->height - rect[i].y2);
-		glVertex2f(rect[i].x2, gd->height - rect[i].y2);
-		glVertex2f(rect[i].x2, gd->height - rect[i].y1);
-		glVertex2f(rect[i].x1, gd->height - rect[i].y1);
+		glVertex2i(rect[i].x1, gd->height - rect[i].y2);
+		glVertex2i(rect[i].x2, gd->height - rect[i].y2);
+		glVertex2i(rect[i].x2, gd->height - rect[i].y1);
+		glVertex2i(rect[i].x1, gd->height - rect[i].y1);
 	}
 	glEnd();
 }
@@ -524,7 +526,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		// Build shader
 		int width = kern->w, height = kern->h;
 		int nele = width * height - 1;
-		size_t body_len = (strlen(shader_add) + 42) * nele;
+		size_t body_len = (strlen(shader_add) + 42) * (uint)nele;
 		char *shader_body = ccalloc(body_len, char);
 		char *pc = shader_body;
 
@@ -541,7 +543,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 					continue;
 				}
 				sum += val;
-				pc += snprintf(pc, body_len - (pc - shader_body),
+				pc += snprintf(pc, body_len - (ulong)(pc - shader_body),
 				               FRAG_SHADER_BLUR_ADD, val, k - width / 2,
 				               j - height / 2);
 				assert(pc < shader_body + body_len);
@@ -553,9 +555,10 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		                    strlen(shader_body) + 10 /* sum */ +
 		                    1 /* null terminator */;
 		char *shader_str = ccalloc(shader_len, char);
-		size_t real_shader_len = snprintf(
+		auto real_shader_len = snprintf(
 		    shader_str, shader_len, FRAG_SHADER_BLUR, extension, shader_body, sum);
-		assert(real_shader_len < shader_len);
+		assert(real_shader_len >= 0);
+		assert((size_t)real_shader_len < shader_len);
 		free(shader_body);
 
 		// Build program

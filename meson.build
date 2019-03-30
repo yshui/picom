@@ -46,8 +46,8 @@ endif
 
 add_global_arguments('-D_GNU_SOURCE', language: 'c')
 
-warns = [ 'all', 'extra', 'no-unused-parameter', 'nonnull', 'shadow',
-          'implicit-fallthrough', 'no-unknown-warning-option', 'no-missing-braces' ]
+warns = [ 'all', 'extra', 'no-unused-parameter', 'nonnull', 'shadow', 'no-type-limits',
+          'implicit-fallthrough', 'no-unknown-warning-option', 'no-missing-braces', 'conversion' ]
 foreach w : warns
 	if cc.has_argument('-W'+w)
 		add_global_arguments('-W'+w, language: 'c')

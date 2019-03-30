@@ -42,7 +42,8 @@ static inline rect_t from_x_rect(const xcb_rectangle_t *rect) {
 /// Returning an array that needs to be freed
 static inline rect_t *from_x_rects(int nrects, const xcb_rectangle_t *rects) {
 	rect_t *ret = ccalloc(nrects, rect_t);
-	for (int i = 0; i < nrects; i++)
+	for (int i = 0; i < nrects; i++) {
 		ret[i] = from_x_rect(rects + i);
+	}
 	return ret;
 }

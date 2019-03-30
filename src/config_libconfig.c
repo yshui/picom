@@ -295,7 +295,12 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --detect-client-opacity
 	lcfg_lookup_bool(&cfg, "detect-client-opacity", &opt->detect_client_opacity);
 	// --refresh-rate
-	config_lookup_int(&cfg, "refresh-rate", &opt->refresh_rate);
+	if (config_lookup_int(&cfg, "refresh-rate", &opt->refresh_rate)) {
+		if (opt->refresh_rate < 0) {
+			log_warn("Invalid refresh rate %d, fallback to 0", opt->refresh_rate);
+			opt->refresh_rate = 0;
+		}
+	}
 	// --vsync
 	if (config_lookup_string(&cfg, "vsync", &sval)) {
 		opt->vsync = parse_vsync(sval);
@@ -337,8 +342,13 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --unredir-if-possible
 	lcfg_lookup_bool(&cfg, "unredir-if-possible", &opt->unredir_if_possible);
 	// --unredir-if-possible-delay
-	if (config_lookup_int(&cfg, "unredir-if-possible-delay", &ival))
-		opt->unredir_if_possible_delay = ival;
+	if (config_lookup_int(&cfg, "unredir-if-possible-delay", &ival)) {
+		if (ival < 0) {
+			log_warn("Invalid unredir-if-possible-delay %d", ival);
+		} else {
+			opt->unredir_if_possible_delay = ival;
+		}
+	}
 	// --inactive-dim-fixed
 	lcfg_lookup_bool(&cfg, "inactive-dim-fixed", &opt->inactive_dim_fixed);
 	// --detect-transient

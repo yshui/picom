@@ -12,16 +12,17 @@
 typedef struct session session_t;
 typedef struct win win;
 typedef struct conv conv;
+typedef struct backend_base backend_t;
 
-bool build_shadow(xcb_connection_t *, xcb_drawable_t, double opacity, const int width,
-                  const int height, const conv *kernel, xcb_render_picture_t shadow_pixel,
+bool build_shadow(xcb_connection_t *, xcb_drawable_t, double opacity, int width,
+                  int height, const conv *kernel, xcb_render_picture_t shadow_pixel,
                   xcb_pixmap_t *pixmap, xcb_render_picture_t *pict);
 
 xcb_render_picture_t solid_picture(xcb_connection_t *, xcb_drawable_t, bool argb,
                                    double a, double r, double g, double b);
 
-xcb_image_t *
-make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, int height);
+xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel, double opacity,
+                         int width, int height);
 
 /// The default implementation of `is_win_transparent`, it simply looks at win::mode. So
 /// this is not suitable for backends that alter the content of windows
@@ -31,5 +32,6 @@ bool default_is_win_transparent(void *, win *, void *);
 /// caveat as `default_is_win_transparent` applies.
 bool default_is_frame_transparent(void *, win *, void *);
 
-void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
-                                    const conv *kernel, double r, double g, double b, double a);
+void *
+default_backend_render_shadow(backend_t *backend_data, int width, int height,
+                              const conv *kernel, double r, double g, double b, double a);

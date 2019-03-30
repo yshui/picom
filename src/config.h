@@ -97,7 +97,7 @@ typedef struct options_t {
 	/// when determining if a window could be unredirected.
 	c2_lptr_t *unredir_if_possible_blacklist;
 	/// Delay before unredirecting screen, in milliseconds.
-	unsigned long unredir_if_possible_delay;
+	long unredir_if_possible_delay;
 	/// Forced redirection setting through D-Bus.
 	switch_t redirected_force;
 	/// Whether to stop painting. Controlled through D-Bus.
@@ -155,7 +155,7 @@ typedef struct options_t {
 	/// How much to fade out in a single fading step.
 	double fade_out_step;
 	/// Fading time delta. In milliseconds.
-	unsigned long fade_delta;
+	int fade_delta;
 	/// Whether to disable fading on window open/close.
 	bool no_fading_openclose;
 	/// Whether to disable fading on ARGB managed destroyed windows.
@@ -227,10 +227,11 @@ typedef struct options_t {
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
-attr_warn_unused_result bool parse_long(const char *, long *);
-attr_warn_unused_result bool parse_blur_kern_lst(const char *, conv **, int, bool *hasneg);
-attr_warn_unused_result bool parse_geometry(session_t *, const char *, region_t *);
-attr_warn_unused_result bool parse_rule_opacity(c2_lptr_t **, const char *);
+bool must_use parse_long(const char *, long *);
+bool must_use parse_int(const char *, int *);
+bool must_use parse_blur_kern_lst(const char *, conv **, int, bool *hasneg);
+bool must_use parse_geometry(session_t *, const char *, region_t *);
+bool must_use parse_rule_opacity(c2_lptr_t **, const char *);
 
 /**
  * Add a pattern to a condition linked list.

@@ -95,3 +95,6 @@
 #else
 # define thread_local _Pragma("GCC error \"No thread local storage support\"") __error__
 #endif
+
+typedef unsigned long ulong;
+typedef unsigned int uint;
