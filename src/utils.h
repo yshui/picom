@@ -41,12 +41,13 @@ safe_isnan(double a) {
 		assert(false);                                                           \
 		abort();                                                                 \
 	} while (0)
+#define CHECK_EXPR(...) ((void)0)
 /// Same as assert, but evaluates the expression even in release builds
 #define CHECK(expr)                                                                      \
 	do {                                                                             \
-		__auto_type __tmp = (expr);                                              \
-		assert(__tmp);                                                           \
-		(void)__tmp;                                                             \
+		__auto_type _ = (expr);                                                  \
+		assert((CHECK_EXPR(expr), _));                                           \
+		(void)_;                                                                 \
 	} while (0)
 
 // Some macros for checked cast
