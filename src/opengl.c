@@ -323,44 +323,41 @@ bool glx_init_blur(session_t *ps) {
 			glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
 
 			// Build shader
-			{
-				int width = kern->w, height = kern->h;
-				int nele = width * height - 1;
-				unsigned int len =
-				    strlen(FRAG_SHADER_BLUR_PREFIX) +
-				    strlen(sampler_type) + strlen(extension) +
-				    (strlen(shader_add) + strlen(texture_func) + 42) * nele +
-				    strlen(FRAG_SHADER_BLUR_SUFFIX) +
-				    strlen(texture_func) + 12 + 1;
-				char *shader_str = ccalloc(len, char);
-				char *pc = shader_str;
-				sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
-				pc += strlen(pc);
-				assert(strlen(shader_str) < len);
+			int width = kern->w, height = kern->h;
+			int nele = width * height - 1;
+			assert(nele >= 0);
+			auto len =
+			    strlen(FRAG_SHADER_BLUR_PREFIX) + strlen(sampler_type) +
+			    strlen(extension) +
+			    (strlen(shader_add) + strlen(texture_func) + 42) * (uint)nele +
+			    strlen(FRAG_SHADER_BLUR_SUFFIX) + strlen(texture_func) + 12 + 1;
+			char *shader_str = ccalloc(len, char);
+			char *pc = shader_str;
+			sprintf(pc, FRAG_SHADER_BLUR_PREFIX, extension, sampler_type);
+			pc += strlen(pc);
+			assert(strlen(shader_str) < len);
 
-				double sum = 0.0;
-				for (int j = 0; j < height; ++j) {
-					for (int k = 0; k < width; ++k) {
-						if (height / 2 == j && width / 2 == k)
-							continue;
-						double val = kern->data[j * width + k];
-						if (val == 0) {
-							continue;
-						}
-						sum += val;
-						sprintf(pc, shader_add, val, texture_func,
-						        k - width / 2, j - height / 2);
-						pc += strlen(pc);
-						assert(strlen(shader_str) < len);
+			double sum = 0.0;
+			for (int j = 0; j < height; ++j) {
+				for (int k = 0; k < width; ++k) {
+					if (height / 2 == j && width / 2 == k)
+						continue;
+					double val = kern->data[j * width + k];
+					if (val == 0) {
+						continue;
 					}
+					sum += val;
+					sprintf(pc, shader_add, val, texture_func,
+					        k - width / 2, j - height / 2);
+					pc += strlen(pc);
+					assert(strlen(shader_str) < len);
 				}
-
-				sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
-				assert(strlen(shader_str) < len);
-				ppass->frag_shader =
-				    gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
-				free(shader_str);
 			}
+
+			sprintf(pc, FRAG_SHADER_BLUR_SUFFIX, texture_func, sum);
+			assert(strlen(shader_str) < len);
+			ppass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
+			free(shader_str);
 
 			if (!ppass->frag_shader) {
 				log_error("Failed to create fragment shader %d.", i);
@@ -443,8 +440,8 @@ bool glx_load_prog_main(session_t *ps, const char *vshader_str, const char *fsha
 /**
  * Bind a X pixmap to an OpenGL texture.
  */
-bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, unsigned width,
-                     unsigned height, bool repeat, const struct glx_fbconfig_info *fbcfg) {
+bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, int width,
+                     int height, bool repeat, const struct glx_fbconfig_info *fbcfg) {
 	if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID)
 		return true;
 
@@ -480,25 +477,27 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 	}
 
 	// Create GLX pixmap
-	unsigned depth = 0;
+	int depth = 0;
 	if (!ptex->glpixmap) {
 		need_release = false;
 
 		// Retrieve pixmap parameters, if they aren't provided
-		if (!(width && height)) {
-			Window rroot = None;
-			int rx = 0, ry = 0;
-			unsigned rbdwid = 0;
-			if (!XGetGeometry(ps->dpy, pixmap, &rroot, &rx, &ry, &width,
-			                  &height, &rbdwid, &depth)) {
+		if (!width || !height) {
+			auto r = xcb_get_geometry_reply(
+			    ps->c, xcb_get_geometry(ps->c, pixmap), NULL);
+			if (!r) {
 				log_error("Failed to query info of pixmap %#010x.", pixmap);
 				return false;
 			}
-			if (depth > OPENGL_MAX_DEPTH) {
+			if (r->depth > OPENGL_MAX_DEPTH) {
 				log_error("Requested depth %d higher than %d.", depth,
 				          OPENGL_MAX_DEPTH);
 				return false;
 			}
+			depth = r->depth;
+			width = r->width;
+			height = r->height;
+			free(r);
 		}
 
 		// Determine texture target, copied from compiz
@@ -522,7 +521,7 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 		    GLX_TEXTURE_FORMAT_EXT,
 		    fbcfg->texture_fmt,
 		    GLX_TEXTURE_TARGET_EXT,
-		    tex_tgt,
+		    (GLint)tex_tgt,
 		    0,
 		};
 
@@ -636,7 +635,8 @@ void glx_set_clip(session_t *ps, const region_t *reg) {
 	region_t reg_new;                                                                \
 	int nrects;                                                                      \
 	const rect_t *rects;                                                             \
-	pixman_region32_init_rect(&reg_new, dx, dy, width, height);                      \
+	assert(width >= 0 && height >= 0);                                               \
+	pixman_region32_init_rect(&reg_new, dx, dy, (uint)width, (uint)height);          \
 	pixman_region32_intersect(&reg_new, &reg_new, (region_t *)reg_tgt);              \
 	rects = pixman_region32_rectangles(&reg_new, &nrects);                           \
 	glBegin(GL_QUADS);                                                               \
@@ -704,13 +704,13 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 	    inc_x += XFIXED_TO_DOUBLE(kern[0]) / 2;
 	    inc_y += XFIXED_TO_DOUBLE(kern[1]) / 2;
 	  }
-	  inc_x = min_i(ps->o.resize_damage, inc_x);
-	  inc_y = min_i(ps->o.resize_damage, inc_y);
+	  inc_x = min2(ps->o.resize_damage, inc_x);
+	  inc_y = min2(ps->o.resize_damage, inc_y);
 
-	  mdx = max_i(dx - inc_x, 0);
-	  mdy = max_i(dy - inc_y, 0);
-	  int mdx2 = min_i(dx + width + inc_x, ps->root_width),
-	      mdy2 = min_i(dy + height + inc_y, ps->root_height);
+	  mdx = max2(dx - inc_x, 0);
+	  mdy = max2(dy - inc_y, 0);
+	  int mdx2 = min2(dx + width + inc_x, ps->root_width),
+	      mdy2 = min2(dy + height + inc_y, ps->root_height);
 	  mwidth = mdx2 - mdx;
 	  mheight = mdy2 - mdy;
 	}
@@ -763,9 +763,9 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 
 	// Texture scaling factor
 	GLfloat texfac_x = 1.0f, texfac_y = 1.0f;
-	if (GL_TEXTURE_2D == tex_tgt) {
-		texfac_x /= mwidth;
-		texfac_y /= mheight;
+	if (tex_tgt == GL_TEXTURE_2D) {
+		texfac_x /= (GLfloat)mwidth;
+		texfac_y /= (GLfloat)mheight;
 	}
 
 	// Paint it back
@@ -816,39 +816,37 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 		if (ppass->unifm_factor_center >= 0)
 			glUniform1f(ppass->unifm_factor_center, factor_center);
 
-		{
-			P_PAINTREG_START(crect) {
-				const GLfloat rx = (crect.x1 - mdx) * texfac_x;
-				const GLfloat ry = (mheight - (crect.y1 - mdy)) * texfac_y;
-				const GLfloat rxe = rx + (crect.x2 - crect.x1) * texfac_x;
-				const GLfloat rye = ry - (crect.y2 - crect.y1) * texfac_y;
-				GLfloat rdx = crect.x1 - mdx;
-				GLfloat rdy = mheight - crect.y1 + mdy;
-				if (last_pass) {
-					rdx = crect.x1;
-					rdy = ps->root_height - crect.y1;
-				}
-				GLfloat rdxe = rdx + (crect.x2 - crect.x1);
-				GLfloat rdye = rdy - (crect.y2 - crect.y1);
-
-				// log_trace("%f, %f, %f, %f -> %f, %f, %f, %f", rx, ry,
-				// rxe, rye, rdx,
-				//          rdy, rdxe, rdye);
-
-				glTexCoord2f(rx, ry);
-				glVertex3f(rdx, rdy, z);
-
-				glTexCoord2f(rxe, ry);
-				glVertex3f(rdxe, rdy, z);
-
-				glTexCoord2f(rxe, rye);
-				glVertex3f(rdxe, rdye, z);
-
-				glTexCoord2f(rx, rye);
-				glVertex3f(rdx, rdye, z);
+		P_PAINTREG_START(crect) {
+			auto rx = (GLfloat)(crect.x1 - mdx) * texfac_x;
+			auto ry = (GLfloat)(mheight - (crect.y1 - mdy)) * texfac_y;
+			auto rxe = rx + (GLfloat)(crect.x2 - crect.x1) * texfac_x;
+			auto rye = ry - (GLfloat)(crect.y2 - crect.y1) * texfac_y;
+			auto rdx = (GLfloat)(crect.x1 - mdx);
+			auto rdy = (GLfloat)(mheight - crect.y1 + mdy);
+			if (last_pass) {
+				rdx = (GLfloat)crect.x1;
+				rdy = (GLfloat)(ps->root_height - crect.y1);
 			}
-			P_PAINTREG_END();
+			auto rdxe = rdx + (GLfloat)(crect.x2 - crect.x1);
+			auto rdye = rdy - (GLfloat)(crect.y2 - crect.y1);
+
+			// log_trace("%f, %f, %f, %f -> %f, %f, %f, %f", rx, ry,
+			// rxe, rye, rdx,
+			//          rdy, rdxe, rdye);
+
+			glTexCoord2f(rx, ry);
+			glVertex3f(rdx, rdy, z);
+
+			glTexCoord2f(rxe, ry);
+			glVertex3f(rdxe, rdy, z);
+
+			glTexCoord2f(rxe, rye);
+			glVertex3f(rdxe, rdye, z);
+
+			glTexCoord2f(rx, rye);
+			glVertex3f(rdx, rdye, z);
 		}
+		P_PAINTREG_END();
 
 		glUseProgram(0);
 
@@ -880,7 +878,7 @@ glx_blur_dst_end:
 	return ret;
 }
 
-bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
                  GLfloat factor, const region_t *reg_tgt) {
 	// It's possible to dim in glx_render(), but it would be over-complicated
 	// considering all those mess in color negation and modulation
@@ -888,21 +886,19 @@ bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glColor4f(0.0f, 0.0f, 0.0f, factor);
 
-	{
-		P_PAINTREG_START(crect) {
-			// XXX what does all of these variables mean?
-			GLint rdx = crect.x1;
-			GLint rdy = ps->root_height - crect.y1;
-			GLint rdxe = rdx + (crect.x2 - crect.x1);
-			GLint rdye = rdy - (crect.y2 - crect.y1);
+	P_PAINTREG_START(crect) {
+		// XXX what does all of these variables mean?
+		GLint rdx = crect.x1;
+		GLint rdy = ps->root_height - crect.y1;
+		GLint rdxe = rdx + (crect.x2 - crect.x1);
+		GLint rdye = rdy - (crect.y2 - crect.y1);
 
-			glVertex3i(rdx, rdy, z);
-			glVertex3i(rdxe, rdy, z);
-			glVertex3i(rdxe, rdye, z);
-			glVertex3i(rdx, rdye, z);
-		}
-		P_PAINTREG_END();
+		glVertex3i(rdx, rdy, z);
+		glVertex3i(rdxe, rdy, z);
+		glVertex3i(rdxe, rdye, z);
+		glVertex3i(rdx, rdye, z);
 	}
+	P_PAINTREG_END();
 
 	glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
 	glDisable(GL_BLEND);
@@ -941,7 +937,7 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 		// This is all weird, but X Render is using premultiplied ARGB format, and
 		// we need to use those things to correct it. Thanks to derhass for help.
 		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-		glColor4f(opacity, opacity, opacity, opacity);
+		glColor4d(opacity, opacity, opacity, opacity);
 	}
 
 	if (!has_prog) {
@@ -1023,7 +1019,7 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 		assert(pprogram->prog);
 		glUseProgram(pprogram->prog);
 		if (pprogram->unifm_opacity >= 0)
-			glUniform1f(pprogram->unifm_opacity, opacity);
+			glUniform1f(pprogram->unifm_opacity, (float)opacity);
 		if (pprogram->unifm_invert_color >= 0)
 			glUniform1i(pprogram->unifm_invert_color, neg);
 		if (pprogram->unifm_tex >= 0)
@@ -1045,17 +1041,17 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 	{
 		P_PAINTREG_START(crect) {
 			// XXX explain these variables
-			GLfloat rx = (double)(crect.x1 - dx + x);
-			GLfloat ry = (double)(crect.y1 - dy + y);
-			GLfloat rxe = rx + (double)(crect.x2 - crect.x1);
-			GLfloat rye = ry + (double)(crect.y2 - crect.y1);
+			auto rx = (GLfloat)(crect.x1 - dx + x);
+			auto ry = (GLfloat)(crect.y1 - dy + y);
+			auto rxe = rx + (GLfloat)(crect.x2 - crect.x1);
+			auto rye = ry + (GLfloat)(crect.y2 - crect.y1);
 			// Rectangle textures have [0-w] [0-h] while 2D texture has [0-1]
 			// [0-1] Thanks to amonakov for pointing out!
 			if (GL_TEXTURE_2D == ptex->target) {
-				rx = rx / ptex->width;
-				ry = ry / ptex->height;
-				rxe = rxe / ptex->width;
-				rye = rye / ptex->height;
+				rx = rx / (GLfloat)ptex->width;
+				ry = ry / (GLfloat)ptex->height;
+				rxe = rxe / (GLfloat)ptex->width;
+				rye = rye / (GLfloat)ptex->height;
 			}
 			GLint rdx = crect.x1;
 			GLint rdy = ps->root_height - crect.y1;
@@ -1065,8 +1061,8 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 			// Invert Y if needed, this may not work as expected, though. I
 			// don't have such a FBConfig to test with.
 			if (!ptex->y_inverted) {
-				ry = 1.0 - ry;
-				rye = 1.0 - rye;
+				ry = 1.0f - ry;
+				rye = 1.0f - rye;
 			}
 
 			// log_trace("Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d", ri, rx,

@@ -150,11 +150,13 @@ attr_printf(4, 5) void log_printf(struct log *l, int level, const char *func,
 	va_list args;
 
 	va_start(args, fmt);
-	size_t blen = vasprintf(&buf, fmt, args);
+	int blen = vasprintf(&buf, fmt, args);
 	va_end(args);
 
-	if (!buf)
+	if (blen < 0 || !buf) {
+		free(buf);
 		return;
+	}
 
 	struct timespec ts;
 	timespec_get(&ts, TIME_UTC);
@@ -163,9 +165,10 @@ attr_printf(4, 5) void log_printf(struct log *l, int level, const char *func,
 	strftime(time_buf, sizeof time_buf, "%x %T", tm);
 
 	char *time = NULL;
-	size_t tlen = asprintf(&time, "%s.%03ld", time_buf, ts.tv_nsec / 1000000);
-	if (!time) {
+	int tlen = asprintf(&time, "%s.%03ld", time_buf, ts.tv_nsec / 1000000);
+	if (tlen < 0 || !time) {
 		free(buf);
+		free(time);
 		return;
 	}
 
@@ -190,7 +193,7 @@ attr_printf(4, 5) void log_printf(struct log *l, int level, const char *func,
 		head->ops->writev(
 		    head,
 		    (struct iovec[]){{.iov_base = "[ ", .iov_len = 2},
-		                     {.iov_base = time, .iov_len = tlen},
+		                     {.iov_base = time, .iov_len = (size_t)tlen},
 		                     {.iov_base = " ", .iov_len = 1},
 		                     {.iov_base = (void *)func, .iov_len = flen},
 		                     {.iov_base = " ", .iov_len = 1},
@@ -198,7 +201,7 @@ attr_printf(4, 5) void log_printf(struct log *l, int level, const char *func,
 		                     {.iov_base = (void *)log_level_str, .iov_len = llen},
 		                     {.iov_base = (void *)s, .iov_len = slen},
 		                     {.iov_base = " ] ", .iov_len = 3},
-		                     {.iov_base = buf, .iov_len = blen},
+		                     {.iov_base = buf, .iov_len = (size_t)blen},
 		                     {.iov_base = "\n", .iov_len = 1}},
 		    11);
 		head = head->next;
@@ -329,12 +332,12 @@ struct log_target *stderr_logger_new(void) {
 /// such as apitrace
 struct gl_string_marker_logger {
 	struct log_target tgt;
-	void (*gl_string_marker)(GLsizei len, const char *);
+	PFNGLSTRINGMARKERGREMEDYPROC gl_string_marker;
 };
 
 void gl_string_marker_logger_write(struct log_target *tgt, const char *str, size_t len) {
 	auto g = (struct gl_string_marker_logger *)tgt;
-	g->gl_string_marker(len, str);
+	g->gl_string_marker((GLsizei)len, str);
 }
 
 static const struct log_ops gl_string_marker_logger_ops = {

@@ -64,7 +64,7 @@ typedef struct _xrender_data {
 	/// Blur kernels converted to X format
 	xcb_render_fixed_t *x_blur_kern[MAX_BLUR_PASS];
 	/// Number of elements in each blur kernel
-	size_t x_blur_kern_size[MAX_BLUR_PASS];
+	int x_blur_kern_size[MAX_BLUR_PASS];
 
 	xcb_special_event_t *present_event;
 } xrender_data;
@@ -75,9 +75,9 @@ struct _xrender_image_data {
 	xcb_pixmap_t pixmap;
 	// A Picture links to the Pixmap
 	xcb_render_picture_t pict;
-	long width, height;
+	int width, height;
 	// The effective size of the image
-	long ewidth, eheight;
+	int ewidth, eheight;
 	bool has_alpha;
 	double opacity;
 	xcb_visualid_t visual;
@@ -89,7 +89,7 @@ static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
                     const region_t *reg_paint, const region_t *reg_visible) {
 	struct _xrender_data *xd = (void *)base;
 	struct _xrender_image_data *img = img_data;
-	int op = (img->has_alpha ? XCB_RENDER_PICT_OP_OVER : XCB_RENDER_PICT_OP_SRC);
+	uint8_t op = (img->has_alpha ? XCB_RENDER_PICT_OP_OVER : XCB_RENDER_PICT_OP_SRC);
 	auto alpha_pict = xd->alpha_pict[(int)(img->opacity * 255.0)];
 	region_t reg;
 	pixman_region32_init(&reg);
@@ -101,7 +101,8 @@ static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
 
 	x_set_picture_clip_region(base->c, xd->back[xd->curr_back], 0, 0, &reg);
 	xcb_render_composite(base->c, op, img->pict, alpha_pict, xd->back[xd->curr_back],
-	                     0, 0, 0, 0, dst_x, dst_y, img->ewidth, img->eheight);
+	                     0, 0, 0, 0, to_i16_checked(dst_x), to_i16_checked(dst_y),
+	                     to_u16_checked(img->ewidth), to_u16_checked(img->eheight));
 	pixman_region32_fini(&reg);
 }
 
@@ -113,13 +114,15 @@ fill(backend_t *base, double r, double g, double b, double a, const region_t *cl
 	// color is in X fixed point representation
 	xcb_render_fill_rectangles(
 	    base->c, XCB_RENDER_PICT_OP_OVER, xd->back[xd->curr_back],
-	    (xcb_render_color_t){
-	        .red = r * 0xffff, .green = g * 0xffff, .blue = b * 0xffff, .alpha = a * 0xffff},
+	    (xcb_render_color_t){.red = (uint16_t)(r * 0xffff),
+	                         .green = (uint16_t)(g * 0xffff),
+	                         .blue = (uint16_t)(b * 0xffff),
+	                         .alpha = (uint16_t)(a * 0xffff)},
 	    1,
-	    (xcb_rectangle_t[]){{.x = extent->x1,
-	                         .y = extent->y1,
-	                         .width = extent->x2 - extent->x1,
-	                         .height = extent->y2 - extent->y1}});
+	    (xcb_rectangle_t[]){{.x = to_i16_checked(extent->x1),
+	                         .y = to_i16_checked(extent->y1),
+	                         .width = to_u16_checked(extent->x2 - extent->x1),
+	                         .height = to_u16_checked(extent->y2 - extent->y1)}});
 }
 
 static bool blur(backend_t *backend_data, double opacity, const region_t *reg_blur,
@@ -135,9 +138,10 @@ static bool blur(backend_t *backend_data, double opacity, const region_t *reg_bl
 	}
 
 	const pixman_box32_t *extent = pixman_region32_extents(&reg_op);
-	const int height = extent->y2 - extent->y1;
-	const int width = extent->x2 - extent->x1;
-	int src_x = extent->x1, src_y = extent->y1;
+	const auto height = to_u16_checked(extent->y2 - extent->y1);
+	const auto width = to_u16_checked(extent->x2 - extent->x1);
+	auto src_x = to_i16_checked(extent->x1);
+	auto src_y = to_i16_checked(extent->y1);
 	static const char *filter0 = "Nearest";        // The "null" filter
 	static const char *filter = "convolution";
 
@@ -183,8 +187,9 @@ static bool blur(backend_t *backend_data, double opacity, const region_t *reg_bl
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
 		// TODO cache converted blur_kerns
-		xcb_render_set_picture_filter(c, src_pict, strlen(filter), filter,
-		                              xd->x_blur_kern_size[i], xd->x_blur_kern[i]);
+		xcb_render_set_picture_filter(
+		    c, src_pict, to_u16_checked(strlen(filter)), filter,
+		    to_u32_checked(xd->x_blur_kern_size[i]), xd->x_blur_kern[i]);
 
 		if (xd->x_blur_kern[i + 1] || i == 0) {
 			// This is not the last pass, or this is the first pass
@@ -199,7 +204,8 @@ static bool blur(backend_t *backend_data, double opacity, const region_t *reg_bl
 		}
 
 		// reset filter
-		xcb_render_set_picture_filter(c, src_pict, strlen(filter0), filter0, 0, NULL);
+		xcb_render_set_picture_filter(
+		    c, src_pict, to_u16_checked(strlen(filter0)), filter0, 0, NULL);
 
 		src_pict = tmp_picture[current];
 		dst_pict = tmp_picture[!current];
@@ -211,8 +217,9 @@ static bool blur(backend_t *backend_data, double opacity, const region_t *reg_bl
 	// There is only 1 pass
 	if (i == 1) {
 		xcb_render_composite(c, XCB_RENDER_PICT_OP_OVER, src_pict, alpha_pict,
-		                     xd->back[xd->curr_back], 0, 0, 0, 0, extent->x1,
-		                     extent->y1, width, height);
+		                     xd->back[xd->curr_back], 0, 0, 0, 0,
+		                     to_i16_checked(extent->x1),
+		                     to_i16_checked(extent->y1), width, height);
 	}
 
 	xcb_render_free_picture(c, tmp_picture[0]);
@@ -232,7 +239,7 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 	}
 
 	auto img = ccalloc(1, struct _xrender_image_data);
-	img->depth = fmt.visual_depth;
+	img->depth = (uint8_t)fmt.visual_depth;
 	img->width = img->ewidth = r->width;
 	img->height = img->eheight = r->height;
 	img->pixmap = pixmap;
@@ -328,7 +335,8 @@ static void present(backend_t *base) {
 		//      but that will require a different backend API
 		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC,
 		                     xd->back[xd->curr_back], XCB_NONE, xd->target, 0, 0,
-		                     0, 0, 0, 0, xd->target_width, xd->target_height);
+		                     0, 0, 0, 0, to_u16_checked(xd->target_width),
+		                     to_u16_checked(xd->target_height));
 		xd->buffer_age[xd->curr_back] = 1;
 	}
 }
@@ -358,6 +366,8 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 
 	pixman_region32_init(&reg);
 
+	const auto tmpw = to_u16_checked(img->width);
+	const auto tmph = to_u16_checked(img->height);
 	switch (op) {
 	case IMAGE_OP_INVERT_COLOR_ALL:
 		x_set_picture_clip_region(base->c, img->pict, 0, 0, reg_visible);
@@ -366,36 +376,35 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 			    x_create_picture_with_visual(base->c, base->root, img->width,
 			                                 img->height, img->visual, 0, NULL);
 			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC, img->pict,
-			                     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0,
-			                     img->width, img->height);
+			                     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 
 			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_DIFFERENCE,
 			                     xd->white_pixel, XCB_NONE, tmp_pict, 0, 0, 0,
-			                     0, 0, 0, img->width, img->height);
+			                     0, 0, 0, tmpw, tmph);
 			// We use an extra PictOpInReverse operation to get correct pixel
 			// alpha. There could be a better solution.
 			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_IN_REVERSE,
 			                     tmp_pict, XCB_NONE, img->pict, 0, 0, 0, 0, 0,
-			                     0, img->width, img->height);
+			                     0, tmpw, tmph);
 			xcb_render_free_picture(base->c, tmp_pict);
 		} else {
 			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_DIFFERENCE,
 			                     xd->white_pixel, XCB_NONE, img->pict, 0, 0,
-			                     0, 0, 0, 0, img->width, img->height);
+			                     0, 0, 0, 0, tmpw, tmph);
 		}
 		break;
 	case IMAGE_OP_DIM_ALL:
 		x_set_picture_clip_region(base->c, img->pict, 0, 0, reg_visible);
 
 		xcb_render_color_t color = {
-		    .red = 0, .green = 0, .blue = 0, .alpha = 0xffff * dargs[0]};
+		    .red = 0, .green = 0, .blue = 0, .alpha = (uint16_t)(0xffff * dargs[0])};
 
 		// Dim the actually content of window
 		xcb_rectangle_t rect = {
 		    .x = 0,
 		    .y = 0,
-		    .width = img->width,
-		    .height = img->height,
+		    .width = tmpw,
+		    .height = tmph,
 		};
 
 		xcb_render_fill_rectangles(base->c, XCB_RENDER_PICT_OP_OVER, img->pict,
@@ -415,7 +424,7 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 		auto alpha_pict = xd->alpha_pict[(int)(dargs[0] * 255)];
 		x_set_picture_clip_region(base->c, img->pict, 0, 0, &reg);
 		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_IN, img->pict, XCB_NONE,
-		                     alpha_pict, 0, 0, 0, 0, 0, 0, img->width, img->height);
+		                     alpha_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 		img->has_alpha = true;
 		break;
 	case IMAGE_OP_RESIZE_TILE:
@@ -454,10 +463,11 @@ static void *copy(backend_t *base, const void *image, const region_t *reg) {
 		return NULL;
 	}
 
-	auto alpha_pict =
+	xcb_render_picture_t alpha_pict =
 	    img->opacity == 1 ? XCB_NONE : xd->alpha_pict[(int)(img->opacity * 255)];
 	xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC, img->pict, alpha_pict,
-	                     new_img->pict, 0, 0, 0, 0, 0, 0, img->width, img->height);
+	                     new_img->pict, 0, 0, 0, 0, 0, 0, to_u16_checked(img->width),
+	                     to_u16_checked(img->height));
 	return new_img;
 }
 
@@ -526,7 +536,8 @@ backend_t *backend_xrender_init(session_t *ps) {
 	int pixmap_needed = xd->vsync ? 2 : 1;
 	for (int i = 0; i < pixmap_needed; i++) {
 		xd->back_pixmap[i] = x_create_pixmap(ps->c, pictfmt->depth, ps->root,
-		                                     ps->root_width, ps->root_height);
+		                                     to_u16_checked(ps->root_width),
+		                                     to_u16_checked(ps->root_height));
 		xd->back[i] = x_create_picture_with_pictfmt_and_pixmap(
 		    ps->c, pictfmt, xd->back_pixmap[i], 0, NULL);
 		xd->buffer_age[i] = -1;

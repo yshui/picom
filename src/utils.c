@@ -22,7 +22,7 @@ void report_allocation_failure(const char *func, const char *file, unsigned int 
 	    {.iov_base = "at ", .iov_len = 3},
 	    {.iov_base = (void *)file, .iov_len = strlen(file)},
 	    {.iov_base = ":", .iov_len = 1},
-	    {.iov_base = buf, .iov_len = llen},
+	    {.iov_base = buf, .iov_len = (size_t)llen},
 	    {.iov_base = (void *)msg2, .iov_len = sizeof(msg2) - 1},
 	};
 

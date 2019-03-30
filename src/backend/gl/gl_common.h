@@ -162,7 +162,7 @@ static inline bool gl_has_extension(const char *ext) {
 	}
 
 	for (int i = 0; i < nexts; i++) {
-		const char *exti = (const char *)glGetStringi(GL_EXTENSIONS, i);
+		const char *exti = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
 		if (strcmp(ext, exti) == 0)
 			return true;
 	}

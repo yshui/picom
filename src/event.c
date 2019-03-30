@@ -4,8 +4,8 @@
 #include <X11/Xlibint.h>
 #include <X11/extensions/sync.h>
 
-#include "compiler.h"
 #include "common.h"
+#include "compiler.h"
 #include "compton.h"
 #include "event.h"
 #include "utils.h"
@@ -93,7 +93,7 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 	}
 }
 
-static inline const char * ev_name(session_t *ps, xcb_generic_event_t *ev) {
+static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 	static char buf[128];
 	switch (ev->response_type & 0x7f) {
 		CASESTRRET(FocusIn);
@@ -363,7 +363,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// If frame extents property changes
-	if (ps->o.frame_opacity && ev->atom == ps->atom_frame_extents) {
+	if (ps->o.frame_opacity > 0 && ev->atom == ps->atom_frame_extents) {
 		win *w = find_toplevel(ps, ev->window);
 		if (w) {
 			win_update_frame_extents(ps, w, ev->window);
@@ -441,10 +441,10 @@ static inline void repair_win(session_t *ps, win *w) {
 		xcb_xfixes_region_t tmp = xcb_generate_id(ps->c);
 		xcb_xfixes_create_region(ps->c, tmp, 0, NULL);
 		set_ignore_cookie(ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, tmp));
-		xcb_xfixes_translate_region(ps->c, tmp, w->g.x + w->g.border_width,
-		                            w->g.y + w->g.border_width);
 		x_fetch_region(ps->c, tmp, &parts);
 		xcb_xfixes_destroy_region(ps->c, tmp);
+		pixman_region32_translate(&parts, w->g.x + w->g.border_width,
+		                          w->g.y + w->g.border_width);
 	}
 
 	w->ever_damaged = true;
