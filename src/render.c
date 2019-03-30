@@ -321,10 +321,10 @@ void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	} else {
 		// Painting parameters
 		const margin_t extents = win_calc_frame_extents(w);
-		const auto t = (int)extents.top;
-		const auto l = (int)extents.left;
-		const auto b = (int)extents.bottom;
-		const auto r = (int)extents.right;
+		const auto t = extents.top;
+		const auto l = extents.left;
+		const auto b = extents.bottom;
+		const auto r = extents.right;
 
 #define COMP_BDR(cx, cy, cwid, chei)                                                     \
 	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity * w->opacity,   \

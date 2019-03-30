@@ -121,10 +121,10 @@ static void win_get_region_local(const win *w, region_t *res) {
 void win_get_region_noframe_local(const win *w, region_t *res) {
 	const margin_t extents = win_calc_frame_extents(w);
 
-	int x = (int)extents.left;
-	int y = (int)extents.top;
-	int width = max2(w->g.width - (int)(extents.left + extents.right), 0);
-	int height = max2(w->g.height - (int)(extents.top + extents.bottom), 0);
+	int x = extents.left;
+	int y = extents.top;
+	int width = max2(w->g.width - (extents.left + extents.right), 0);
+	int height = max2(w->g.height - (extents.top + extents.bottom), 0);
 
 	pixman_region32_fini(res);
 	if (width > 0 && height > 0) {
@@ -141,13 +141,13 @@ void win_get_region_frame_local(const win *w, region_t *res) {
 	    res,
 	    (rect_t[]){
 	        // top
-	        {.x1 = 0, .y1 = 0, .x2 = w->g.width, .y2 = (int)extents.top},
+	        {.x1 = 0, .y1 = 0, .x2 = w->g.width, .y2 = extents.top},
 	        // bottom
-	        {.x1 = 0, .y1 = (int)(w->g.height - extents.bottom), .x2 = w->g.width, .y2 = w->g.height},
+	        {.x1 = 0, .y1 = w->g.height - extents.bottom, .x2 = w->g.width, .y2 = w->g.height},
 	        // left
-	        {.x1 = 0, .y1 = 0, .x2 = (int)extents.left, .y2 = w->g.height},
+	        {.x1 = 0, .y1 = 0, .x2 = extents.left, .y2 = w->g.height},
 	        // right
-	        {.x1 = (int)(w->g.width - extents.right), .y1 = 0, .x2 = w->g.width, .y2 = w->g.height},
+	        {.x1 = w->g.width - extents.right, .y1 = 0, .x2 = w->g.width, .y2 = w->g.height},
 	    },
 	    4);
 
@@ -1358,7 +1358,12 @@ void win_update_frame_extents(session_t *ps, win *w, xcb_window_t client) {
 	    wid_get_prop(ps, client, ps->atom_frame_extents, 4L, XCB_ATOM_CARDINAL, 32);
 
 	if (prop.nitems == 4) {
-		const uint32_t *const extents = prop.c32;
+		const int32_t extents[4] = {
+			to_int_checked(prop.c32[0]),
+			to_int_checked(prop.c32[1]),
+			to_int_checked(prop.c32[2]),
+			to_int_checked(prop.c32[3]),
+		};
 		const bool changed = w->frame_extents.left != extents[0] ||
 		                     w->frame_extents.right != extents[1] ||
 		                     w->frame_extents.top != extents[2] ||

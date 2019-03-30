@@ -803,19 +803,19 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 
 	cdbus_m_win_get_do(frame_opacity, cdbus_reply_double);
 	if (!strcmp("left_width", target)) {
-		cdbus_reply_uint32(ps, msg, w->frame_extents.left);
+		cdbus_reply_int32(ps, msg, w->frame_extents.left);
 		return true;
 	}
 	if (!strcmp("right_width", target)) {
-		cdbus_reply_uint32(ps, msg, w->frame_extents.right);
+		cdbus_reply_int32(ps, msg, w->frame_extents.right);
 		return true;
 	}
 	if (!strcmp("top_width", target)) {
-		cdbus_reply_uint32(ps, msg, w->frame_extents.top);
+		cdbus_reply_int32(ps, msg, w->frame_extents.top);
 		return true;
 	}
 	if (!strcmp("bottom_width", target)) {
-		cdbus_reply_uint32(ps, msg, w->frame_extents.bottom);
+		cdbus_reply_int32(ps, msg, w->frame_extents.bottom);
 		return true;
 	}
 
