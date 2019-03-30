@@ -27,7 +27,7 @@ __attribute__((optimize("-fno-fast-math")))
 #endif
 static inline bool
 safe_isnan(double a) {
-	return isnan(a);
+	return __builtin_isnan(a);
 }
 
 #define CASESTRRET(s)                                                                    \
