@@ -557,8 +557,8 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		char *shader_str = ccalloc(shader_len, char);
 		auto real_shader_len = snprintf(
 		    shader_str, shader_len, FRAG_SHADER_BLUR, extension, shader_body, sum);
-		assert(real_shader_len >= 0);
-		assert((size_t)real_shader_len < shader_len);
+		CHECK(real_shader_len >= 0);
+		CHECK((size_t)real_shader_len < shader_len);
 		free(shader_body);
 
 		// Build program
