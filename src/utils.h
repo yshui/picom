@@ -41,7 +41,6 @@ safe_isnan(double a) {
 		assert(false);                                                           \
 		abort();                                                                 \
 	} while (0)
-
 /// Same as assert, but evaluates the expression even in release builds
 #define CHECK(expr)                                                                      \
 	do {                                                                             \
@@ -51,17 +50,19 @@ safe_isnan(double a) {
 	} while (0)
 
 // Some macros for checked cast
+// Note these macros are not complete, as in, they won't work for every integer types. But
+// they are good enough for compton.
 
 #define to_int_checked(val)                                                              \
 	({                                                                               \
-		int64_t tmp = (val);                                                        \
+		int64_t tmp = (val);                                                     \
 		assert(tmp >= INT_MIN && tmp <= INT_MAX);                                \
 		(int)tmp;                                                                \
 	})
 
 #define to_char_checked(val)                                                             \
 	({                                                                               \
-		int64_t tmp = (val);                                                        \
+		int64_t tmp = (val);                                                     \
 		assert(tmp >= CHAR_MIN && tmp <= CHAR_MAX);                              \
 		(char)tmp;                                                               \
 	})
@@ -75,7 +76,7 @@ safe_isnan(double a) {
 
 #define to_i16_checked(val)                                                              \
 	({                                                                               \
-		int64_t tmp = (val);                                                        \
+		int64_t tmp = (val);                                                     \
 		assert(tmp >= INT16_MIN && tmp <= INT16_MAX);                            \
 		(int16_t) tmp;                                                           \
 	})
@@ -83,9 +84,9 @@ safe_isnan(double a) {
 #define to_u32_checked(val)                                                              \
 	({                                                                               \
 		auto tmp = (val);                                                        \
-		int64_t max = UINT32_MAX; /* silence clang tautological comparison       \
-		                             warning*/                                   \
-		assert(tmp >= 0 && tmp <= max);                                          \
+		int64_t max = UINT32_MAX; /* silence clang tautological                  \
+		                                         comparison warning*/            \
+		CHECK(tmp >= 0 && tmp <= max);                                           \
 		(uint32_t) tmp;                                                          \
 	})
 /**
