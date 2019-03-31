@@ -528,8 +528,24 @@ void win_update_prop_shadow(session_t *ps, win *w) {
 }
 
 void win_set_shadow(session_t *ps, win *w, bool shadow_new) {
-	if (w->shadow == shadow_new)
+	if (w->shadow == shadow_new) {
 		return;
+	}
+
+	log_debug("Updating shadow property of window %#010x (%s) to %d", w->id, w->name,
+	          shadow_new);
+	if (ps->o.experimental_backends && ps->redirected &&
+	    w->state != WSTATE_UNMAPPED && !(w->flags & WIN_FLAGS_IMAGE_ERROR)) {
+		assert(!w->shadow_image);
+		// Create shadow image
+		w->shadow_image = ps->backend_data->ops->render_shadow(
+		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map, ps->o.shadow_red,
+		    ps->o.shadow_green, ps->o.shadow_blue, ps->o.shadow_opacity);
+		if (!w->shadow_image) {
+			log_error("Failed to bind shadow image");
+			w->shadow_force = OFF;
+		}
+	}
 
 	region_t extents;
 	pixman_region32_init(&extents);
@@ -573,7 +589,7 @@ void win_determine_shadow(session_t *ps, win *w) {
 			log_debug("Shadow disabled by shadow-exclude");
 			shadow_new = false;
 		} else if (ps->o.shadow_ignore_shaped && w->bounding_shaped &&
-				!w->rounded_corners) {
+		           !w->rounded_corners) {
 			log_debug("Shadow disabled by shadow-ignore-shaped");
 			shadow_new = false;
 		} else if (ps->o.respect_prop_shadow && w->prop_shadow == 0) {
