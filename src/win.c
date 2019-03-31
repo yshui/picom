@@ -210,9 +210,8 @@ _win_bind_image(session_t *ps, win *w, void **win_image, void **shadow_image) {
 	}
 	if (w->shadow) {
 		*shadow_image = ps->backend_data->ops->render_shadow(
-		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map,
-		    ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue,
-		    ps->o.shadow_opacity);
+		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map, ps->o.shadow_red,
+		    ps->o.shadow_green, ps->o.shadow_blue, ps->o.shadow_opacity);
 		if (!*shadow_image) {
 			log_error("Failed to bind shadow image");
 			ps->backend_data->ops->release_image(ps->backend_data, *win_image);
@@ -542,8 +541,9 @@ void win_set_shadow(session_t *ps, win *w, bool shadow_new) {
 	// Shadow geometry currently doesn't change on shadow state change
 	// calc_shadow_geometry(ps, w);
 	// Mark the old extents as damaged if the shadow is removed
-	if (!w->shadow)
+	if (!w->shadow) {
 		add_damage(ps, &extents);
+	}
 
 	pixman_region32_clear(&extents);
 	// Mark the new extents as damaged if the shadow is added
@@ -559,16 +559,28 @@ void win_set_shadow(session_t *ps, win *w, bool shadow_new) {
  * on shadow state.
  */
 void win_determine_shadow(session_t *ps, win *w) {
+	log_debug("Determining shadow of window %#010x (%s)", w->id, w->name);
 	bool shadow_new = w->shadow;
 
-	if (UNSET != w->shadow_force)
+	if (w->shadow_force != UNSET) {
 		shadow_new = w->shadow_force;
-	else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
-		shadow_new = (ps->o.wintype_option[w->window_type].shadow &&
-		              !c2_match(ps, w, ps->o.shadow_blacklist, NULL) &&
-		              !(ps->o.shadow_ignore_shaped && w->bounding_shaped &&
-		                !w->rounded_corners) &&
-		              !(ps->o.respect_prop_shadow && 0 == w->prop_shadow));
+	} else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+		shadow_new = true;
+		if (!ps->o.wintype_option[w->window_type].shadow) {
+			log_debug("Shadow disabled by wintypes");
+			shadow_new = false;
+		} else if (c2_match(ps, w, ps->o.shadow_blacklist, NULL)) {
+			log_debug("Shadow disabled by shadow-exclude");
+			shadow_new = false;
+		} else if (ps->o.shadow_ignore_shaped && w->bounding_shaped &&
+				!w->rounded_corners) {
+			log_debug("Shadow disabled by shadow-ignore-shaped");
+			shadow_new = false;
+		} else if (ps->o.respect_prop_shadow && w->prop_shadow == 0) {
+			log_debug("Shadow disabled by shadow property");
+			shadow_new = false;
+		}
+	}
 
 	win_set_shadow(ps, w, shadow_new);
 }
@@ -1359,10 +1371,10 @@ void win_update_frame_extents(session_t *ps, win *w, xcb_window_t client) {
 
 	if (prop.nitems == 4) {
 		const int32_t extents[4] = {
-			to_int_checked(prop.c32[0]),
-			to_int_checked(prop.c32[1]),
-			to_int_checked(prop.c32[2]),
-			to_int_checked(prop.c32[3]),
+		    to_int_checked(prop.c32[0]),
+		    to_int_checked(prop.c32[1]),
+		    to_int_checked(prop.c32[2]),
+		    to_int_checked(prop.c32[3]),
 		};
 		const bool changed = w->frame_extents.left != extents[0] ||
 		                     w->frame_extents.right != extents[1] ||
