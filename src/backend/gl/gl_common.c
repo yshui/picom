@@ -256,7 +256,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		GLint vy[] = {vy1, vy1, vy2, vy2};
 
 		for (int i = 0; i < 4; i++) {
-			glVertexAttrib2f(gd->win_shader.in_texcoord, texture_x[i],
+			glVertexAttrib2f((GLuint)gd->win_shader.in_texcoord, texture_x[i],
 			                 texture_y[i]);
 			glVertex3i(vx[i], vy[i], 0);
 		}
@@ -381,7 +381,8 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 			GLint vy[] = {vy1, vy1, vy2, vy2};
 
 			for (int k = 0; k < 4; k++) {
-				glVertexAttrib2f(p->in_texcoord, texture_x[k], texture_y[k]);
+				glVertexAttrib2f((GLuint)p->in_texcoord, texture_x[k],
+				                 texture_y[k]);
 				glVertex3i(vx[k], vy[k], 0);
 			}
 		}
@@ -458,8 +459,10 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 	gd->width = width;
 
 	// Note: OpenGL matrices are column major
-	GLfloat projection_matrix[4][4] = {
-	    {2.0 / width, 0, 0, 0}, {0, 2.0 / height, 0, 0}, {0, 0, 0, 0}, {-1, -1, 0, 1}};
+	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)width, 0, 0, 0},
+	                                   {0, 2.0f / (GLfloat)height, 0, 0},
+	                                   {0, 0, 0, 0},
+	                                   {-1, -1, 0, 1}};
 
 	if (gd->npasses > 0) {
 		// Resize the temporary textures used for blur
@@ -577,8 +580,8 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		                    strlen(shader_body) + 10 /* sum */ +
 		                    1 /* null terminator */;
 		char *shader_str = ccalloc(shader_len, char);
-		auto real_shader_len = snprintf(
-		    shader_str, shader_len, FRAG_SHADER_BLUR, extension, shader_body, sum);
+		auto real_shader_len = snprintf(shader_str, shader_len, FRAG_SHADER_BLUR,
+		                                extension, shader_body, sum);
 		CHECK(real_shader_len >= 0);
 		CHECK((size_t)real_shader_len < shader_len);
 		free(shader_body);
