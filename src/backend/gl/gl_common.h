@@ -22,6 +22,7 @@ typedef struct {
 	GLint unifm_tex;
 	GLint unifm_dim;
 	GLint in_texcoord;
+	GLint coord_loc;
 } gl_win_shader_t;
 
 // Program and uniforms for blur shader
