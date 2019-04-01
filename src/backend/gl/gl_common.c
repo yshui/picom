@@ -299,6 +299,66 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 	// these should be arguments
 	bool ret = false;
 
+	int nrects;
+	const rect_t *rect = pixman_region32_rectangles((region_t *)reg_blur, &nrects);
+	if (!nrects) {
+		return true;
+	}
+
+	auto coord = ccalloc(nrects * 16, GLfloat);
+	auto indices = ccalloc(nrects * 6, GLuint);
+	for (int i = 0; i < nrects; i++) {
+		rect_t crect = rect[i];
+		// flip y axis, because the regions are in Xorg's coordinates,
+		// which is y-flipped from OpenGL's.
+		crect.y1 = gd->height - crect.y1;
+		crect.y2 = gd->height - crect.y2;
+
+		// Texture coordinates
+		auto texture_x1 = (GLfloat)(crect.x1 - extent->x1);
+		auto texture_y1 = (GLfloat)(crect.y2 - dst_y);
+		auto texture_x2 = texture_x1 + (GLfloat)(crect.x2 - crect.x1);
+		auto texture_y2 = texture_y1 + (GLfloat)(crect.y1 - crect.y2);
+
+		texture_x1 /= (GLfloat)gd->width;
+		texture_x2 /= (GLfloat)gd->width;
+		texture_y1 /= (GLfloat)gd->height;
+		texture_y2 /= (GLfloat)gd->height;
+
+		// Vertex coordinates
+		// For passes before the last one, we are drawing into a buffer,
+		// so (dx, dy) from source maps to (0, 0)
+		auto vx1 = (GLfloat)(crect.x1 - extent->x1);
+		auto vy1 = (GLfloat)(crect.y2 - dst_y);
+		auto vx2 = vx1 + (GLfloat)(crect.x2 - crect.x1);
+		auto vy2 = vy1 + (GLfloat)(crect.y1 - crect.y2);
+
+		memcpy(&coord[i * 16],
+		       (GLfloat[][2]){
+		           {vx1, vy1},
+		           {texture_x1, texture_y1},
+		           {vx2, vy1},
+		           {texture_x2, texture_y1},
+		           {vx2, vy2},
+		           {texture_x2, texture_y2},
+		           {vx1, vy2},
+		           {texture_x1, texture_y2},
+		       },
+		       sizeof(GLfloat[2]) * 8);
+
+		GLuint u = (GLuint)(i * 4);
+		memcpy(&indices[i * 6], (GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0},
+		       sizeof(GLuint) * 6);
+	}
+
+	GLuint bo[2];
+	glGenBuffers(2, bo);
+	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
+	             indices, GL_STATIC_DRAW);
+
 	int curr = 0;
 	glReadBuffer(GL_BACK);
 	glBindTexture(GL_TEXTURE_2D, gd->blur_texture[0]);
@@ -332,63 +392,30 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 			glDrawBuffer(GL_BACK);
 			glUniform1f(p->unifm_opacity, (float)opacity);
 		}
+		if (i == gd->npasses - 1) {
+			// For last pass, we are drawing back to source, so we need to
+			// translate the render region
+			glUniform2f(p->orig_loc, (GLfloat)extent->x1, (GLfloat)dst_y);
+		} else {
+			glUniform2f(p->orig_loc, 0, 0);
+		}
 
 		glUniform1f(p->unifm_offset_x, 1.0f / (GLfloat)gd->width);
 		glUniform1f(p->unifm_offset_y, 1.0f / (GLfloat)gd->height);
 
+		glEnableVertexAttribArray((GLuint)p->coord_loc);
+		glEnableVertexAttribArray((GLuint)p->in_texcoord);
+		glVertexAttribPointer((GLuint)p->coord_loc, 2, GL_FLOAT, GL_FALSE,
+		                      sizeof(GLfloat) * 4, NULL);
+		glVertexAttribPointer((GLuint)p->in_texcoord, 2, GL_FLOAT, GL_FALSE,
+		                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
+		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+		glDisableVertexAttribArray((GLuint)p->coord_loc);
+		glDisableVertexAttribArray((GLuint)p->in_texcoord);
+
 		// XXX use multiple draw calls is probably going to be slow than
 		//     just simply blur the whole area.
 
-		int nrects;
-		const rect_t *rect =
-		    pixman_region32_rectangles((region_t *)reg_blur, &nrects);
-		glBegin(GL_QUADS);
-		for (int j = 0; j < nrects; j++) {
-			rect_t crect = rect[j];
-			// flip y axis, because the regions are in Xorg's coordinates,
-			// which is y-flipped from OpenGL's.
-			crect.y1 = gd->height - crect.y1;
-			crect.y2 = gd->height - crect.y2;
-
-			// Texture coordinates
-			auto texture_x1 = (GLfloat)(crect.x1 - extent->x1);
-			auto texture_y1 = (GLfloat)(crect.y2 - dst_y);
-			auto texture_x2 = texture_x1 + (GLfloat)(crect.x2 - crect.x1);
-			auto texture_y2 = texture_y1 + (GLfloat)(crect.y1 - crect.y2);
-
-			texture_x1 /= (GLfloat)gd->width;
-			texture_x2 /= (GLfloat)gd->width;
-			texture_y1 /= (GLfloat)gd->height;
-			texture_y2 /= (GLfloat)gd->height;
-
-			// Vertex coordinates
-			// For passes before the last one, we are drawing into a buffer,
-			// so (dx, dy) from source maps to (0, 0)
-			GLint vx1 = crect.x1 - extent->x1;
-			GLint vy1 = crect.y2 - dst_y;
-			if (i == gd->npasses - 1) {
-				// For last pass, we are drawing back to source, so we
-				// don't need to map
-				vx1 = crect.x1;
-				vy1 = crect.y2;
-			}
-			GLint vx2 = vx1 + (crect.x2 - crect.x1);
-			GLint vy2 = vy1 + (crect.y1 - crect.y2);
-
-			GLfloat texture_x[] = {texture_x1, texture_x2, texture_x2, texture_x1};
-			GLfloat texture_y[] = {texture_y1, texture_y1, texture_y2, texture_y2};
-			GLint vx[] = {vx1, vx2, vx2, vx1};
-			GLint vy[] = {vy1, vy1, vy2, vy2};
-
-			for (int k = 0; k < 4; k++) {
-				glVertexAttrib2f((GLuint)p->in_texcoord, texture_x[k],
-				                 texture_y[k]);
-				glVertex3i(vx[k], vy[k], 0);
-			}
-		}
-		glEnd();
-
-		glUseProgram(0);
 		curr = !curr;
 	}
 
@@ -397,6 +424,12 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 end:
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glDeleteBuffers(2, bo);
+
+	free(indices);
+	free(coord);
 
 	gl_check_err();
 
@@ -416,10 +449,12 @@ static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 // clang-format off
 const char *vertex_shader = GLSL(130,
 	uniform mat4 projection;
+	uniform vec2 orig;
+	in vec2 coord;
 	in vec2 in_texcoord;
 	out vec2 texcoord;
 	void main() {
-		gl_Position = projection * gl_Vertex;
+		gl_Position = projection * vec4(coord + orig, 0, 1);
 		texcoord = in_texcoord;
 	}
 );
@@ -443,6 +478,10 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
 	ret->unifm_tex = glGetUniformLocationChecked(ret->prog, "tex");
 	ret->unifm_dim = glGetUniformLocationChecked(ret->prog, "dim");
 	ret->in_texcoord = glGetAttribLocation(ret->prog, "in_texcoord");
+
+	glUseProgram(ret->prog);
+	int orig_loc = glGetUniformLocation(ret->prog, "orig");
+	glUniform2f(orig_loc, 0, 0);
 
 	gl_check_err();
 
@@ -519,8 +558,7 @@ void gl_fill(backend_t *base, double r, double g, double b, double a, const regi
 	GLuint bo[2];
 	glGenBuffers(2, bo);
 	glUseProgram(gd->fill_shader.prog);
-	glUniform4f(gd->fill_shader.color_loc, (GLfloat)r, (GLfloat)g, (GLfloat)b,
-	            (GLfloat)a);
+	glUniform4f(gd->fill_shader.color_loc, (GLfloat)r, (GLfloat)g, (GLfloat)b, (GLfloat)a);
 	glEnableVertexAttribArray((GLuint)gd->fill_shader.in_coord_loc);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
@@ -649,7 +687,9 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		pass->unifm_offset_y =
 		    glGetUniformLocationChecked(pass->prog, "offset_y");
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
+		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->in_texcoord = glGetAttribLocation(pass->prog, "in_texcoord");
+		pass->coord_loc = glGetAttribLocation(pass->prog, "coord");
 	}
 	free(extension);
 
