@@ -30,6 +30,8 @@ typedef struct {
 	GLint unifm_offset_x;
 	GLint unifm_offset_y;
 	GLint unifm_opacity;
+	GLint orig_loc;
+	GLint coord_loc;
 	GLint in_texcoord;
 } gl_blur_shader_t;
 
