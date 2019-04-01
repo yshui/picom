@@ -489,7 +489,7 @@ static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 }
 
 // clang-format off
-const char *vertex_shader = GLSL(130,
+const char *vertex_shader = GLSL(330,
 	uniform mat4 projection;
 	uniform vec2 orig;
 	in vec2 coord;
@@ -577,14 +577,14 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 }
 
 // clang-format off
-static const char fill_frag[] = GLSL(120,
+static const char fill_frag[] = GLSL(330,
 	uniform vec4 color;
 	void main() {
 		gl_FragColor = color;
 	}
 );
 
-static const char fill_vert[] = GLSL(130,
+static const char fill_vert[] = GLSL(330,
 	in vec2 in_coord;
 	uniform mat4 projection;
 	void main() {
@@ -656,7 +656,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 	setlocale(LC_NUMERIC, "C");
 
 	// clang-format off
-	static const char *FRAG_SHADER_BLUR = GLSL(130,
+	static const char *FRAG_SHADER_BLUR = GLSL(330,
 		%s\n // other extension pragmas
 		uniform float offset_x;
 		uniform float offset_y;
@@ -774,7 +774,7 @@ err:
 }
 
 // clang-format off
-const char *win_shader_glsl = GLSL(130,
+const char *win_shader_glsl = GLSL(330,
 	uniform float opacity;
 	uniform float dim;
 	uniform bool invert_color;

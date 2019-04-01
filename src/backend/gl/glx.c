@@ -290,7 +290,9 @@ static backend_t *glx_init(session_t *ps) {
 		                                         GLX_CONTEXT_MAJOR_VERSION_ARB,
 		                                         3,
 		                                         GLX_CONTEXT_MINOR_VERSION_ARB,
-		                                         0,
+		                                         3,
+		                                         GLX_CONTEXT_PROFILE_MASK_ARB,
+		                                         GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
 		                                         0,
 		                                     });
 		free(cfg);
