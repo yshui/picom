@@ -271,6 +271,10 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		       sizeof(GLuint) * 6);
 	}
 
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
 	GLuint bo[2];
 	glGenBuffers(2, bo);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
@@ -288,6 +292,8 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 	glDisableVertexAttribArray((GLuint)gd->win_shader.coord_loc);
 	glDisableVertexAttribArray((GLuint)gd->win_shader.in_texcoord);
+	glBindVertexArray(0);
+	glDeleteVertexArrays(1, &vao);
 
 	// Cleanup
 	glBindTexture(GL_TEXTURE_2D, 0);
@@ -381,6 +387,10 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 		       sizeof(GLuint) * 6);
 	}
 
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
 	GLuint bo[2];
 	glGenBuffers(2, bo);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
@@ -457,6 +467,8 @@ end:
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glDeleteBuffers(2, bo);
+	glBindVertexArray(0);
+	glDeleteVertexArrays(1, &vao);
 
 	free(indices);
 	free(coord);
@@ -585,6 +597,11 @@ void gl_fill(backend_t *base, double r, double g, double b, double a, const regi
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
 	struct gl_data *gd = (void *)base;
+
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
 	GLuint bo[2];
 	glGenBuffers(2, bo);
 	glUseProgram(gd->fill_shader.prog);
@@ -619,6 +636,8 @@ void gl_fill(backend_t *base, double r, double g, double b, double a, const regi
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glDisableVertexAttribArray((GLuint)gd->fill_shader.in_coord_loc);
+	glBindVertexArray(0);
+	glDeleteVertexArrays(1, &vao);
 
 	glDeleteBuffers(2, bo);
 }
