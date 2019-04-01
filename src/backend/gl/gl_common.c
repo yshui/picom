@@ -174,6 +174,15 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		return;
 	}
 
+	// Painting
+	int nrects;
+	const rect_t *rects;
+	rects = pixman_region32_rectangles((region_t *)reg_tgt, &nrects);
+	if (!nrects) {
+		// Nothing to paint
+		return;
+	}
+
 	// dst_y is the top coordinate, in OpenGL, it is the upper bound of the y
 	// coordinate.
 	dst_y = gd->height - dst_y;
@@ -181,20 +190,19 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 
 	bool dual_texture = false;
 
-	if (gd->win_shader.prog) {
-		glUseProgram(gd->win_shader.prog);
-		if (gd->win_shader.unifm_opacity >= 0) {
-			glUniform1f(gd->win_shader.unifm_opacity, (float)ptex->opacity);
-		}
-		if (gd->win_shader.unifm_invert_color >= 0) {
-			glUniform1i(gd->win_shader.unifm_invert_color, ptex->color_inverted);
-		}
-		if (gd->win_shader.unifm_tex >= 0) {
-			glUniform1i(gd->win_shader.unifm_tex, 0);
-		}
-		if (gd->win_shader.unifm_dim >= 0) {
-			glUniform1f(gd->win_shader.unifm_dim, (float)ptex->dim);
-		}
+	assert(gd->win_shader.prog);
+	glUseProgram(gd->win_shader.prog);
+	if (gd->win_shader.unifm_opacity >= 0) {
+		glUniform1f(gd->win_shader.unifm_opacity, (float)ptex->opacity);
+	}
+	if (gd->win_shader.unifm_invert_color >= 0) {
+		glUniform1i(gd->win_shader.unifm_invert_color, ptex->color_inverted);
+	}
+	if (gd->win_shader.unifm_tex >= 0) {
+		glUniform1i(gd->win_shader.unifm_tex, 0);
+	}
+	if (gd->win_shader.unifm_dim >= 0) {
+		glUniform1f(gd->win_shader.unifm_dim, (float)ptex->dim);
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
@@ -207,17 +215,12 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		glBindTexture(GL_TEXTURE_2D, ptex->texture);
 		glActiveTexture(GL_TEXTURE0);
 	}
+	auto coord = ccalloc(nrects * 16, GLfloat);
+	auto indices = ccalloc(nrects * 6, GLuint);
 
-	// Painting
-	int nrects;
-
-	const rect_t *rects;
-	rects = pixman_region32_rectangles((region_t *)reg_tgt, &nrects);
-
-	glBegin(GL_QUADS);
-	for (int ri = 0; ri < nrects; ++ri) {
+	for (int i = 0; i < nrects; ++i) {
 		// Y-flip. Note after this, crect.y1 > crect.y2
-		rect_t crect = rects[ri];
+		rect_t crect = rects[i];
 		crect.y1 = gd->height - crect.y1;
 		crect.y2 = gd->height - crect.y2;
 
@@ -242,38 +245,65 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		texture_y2 /= (GLfloat)ptex->height;
 
 		// Vertex coordinates
-		GLint vx1 = crect.x1;
-		GLint vy1 = crect.y2;
-		GLint vx2 = crect.x2;
-		GLint vy2 = crect.y1;
+		auto vx1 = (GLfloat)crect.x1;
+		auto vy1 = (GLfloat)crect.y2;
+		auto vx2 = (GLfloat)crect.x2;
+		auto vy2 = (GLfloat)crect.y1;
 
 		// log_trace("Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d",
 		//          ri, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
 
-		GLfloat texture_x[] = {texture_x1, texture_x2, texture_x2, texture_x1};
-		GLfloat texture_y[] = {texture_y1, texture_y1, texture_y2, texture_y2};
-		GLint vx[] = {vx1, vx2, vx2, vx1};
-		GLint vy[] = {vy1, vy1, vy2, vy2};
+		memcpy(&coord[i * 16],
+		       (GLfloat[][2]){
+		           {vx1, vy1},
+		           {texture_x1, texture_y1},
+		           {vx2, vy1},
+		           {texture_x2, texture_y1},
+		           {vx2, vy2},
+		           {texture_x2, texture_y2},
+		           {vx1, vy2},
+		           {texture_x1, texture_y2},
+		       },
+		       sizeof(GLfloat[2]) * 8);
 
-		for (int i = 0; i < 4; i++) {
-			glVertexAttrib2f((GLuint)gd->win_shader.in_texcoord, texture_x[i],
-			                 texture_y[i]);
-			glVertex3i(vx[i], vy[i], 0);
-		}
+		GLuint u = (GLuint)(i * 4);
+		memcpy(&indices[i * 6], (GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0},
+		       sizeof(GLuint) * 6);
 	}
 
-	glEnd();
+	GLuint bo[2];
+	glGenBuffers(2, bo);
+	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
+	             indices, GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray((GLuint)gd->win_shader.coord_loc);
+	glEnableVertexAttribArray((GLuint)gd->win_shader.in_texcoord);
+	glVertexAttribPointer((GLuint)gd->win_shader.coord_loc, 2, GL_FLOAT, GL_FALSE,
+	                      sizeof(GLfloat) * 4, NULL);
+	glVertexAttribPointer((GLuint)gd->win_shader.in_texcoord, 2, GL_FLOAT, GL_FALSE,
+	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
+	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+	glDisableVertexAttribArray((GLuint)gd->win_shader.coord_loc);
+	glDisableVertexAttribArray((GLuint)gd->win_shader.in_texcoord);
 
 	// Cleanup
 	glBindTexture(GL_TEXTURE_2D, 0);
-	glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
-	glDisable(GL_COLOR_LOGIC_OP);
 
 	if (dual_texture) {
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, 0);
 		glActiveTexture(GL_TEXTURE0);
 	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glDeleteBuffers(2, bo);
+
+	free(indices);
+	free(coord);
 
 	glUseProgram(0);
 
