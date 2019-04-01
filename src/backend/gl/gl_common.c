@@ -422,7 +422,6 @@ const char *vertex_shader = GLSL(130,
 		gl_Position = projection * gl_Vertex;
 		texcoord = in_texcoord;
 	}
-
 );
 // clang-format on
 
@@ -489,22 +488,71 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 	int pml = glGetUniformLocationChecked(gd->win_shader.prog, "projection");
 	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 
+	glUseProgram(gd->fill_shader.prog);
+	pml = glGetUniformLocationChecked(gd->fill_shader.prog, "projection");
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+
 	gl_check_err();
 }
+
+// clang-format off
+static const char fill_frag[] = GLSL(120,
+	uniform vec4 color;
+	void main() {
+		gl_FragColor = color;
+	}
+);
+
+static const char fill_vert[] = GLSL(130,
+	in vec2 in_coord;
+	uniform mat4 projection;
+	void main() {
+		gl_Position = projection * vec4(in_coord, 0, 1);
+	}
+);
+// clang-format on
 
 void gl_fill(backend_t *base, double r, double g, double b, double a, const region_t *clip) {
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
 	struct gl_data *gd = (void *)base;
-	glColor4d(r, g, b, a);
-	glBegin(GL_QUADS);
+	GLuint bo[2];
+	glGenBuffers(2, bo);
+	glUseProgram(gd->fill_shader.prog);
+	glUniform4f(gd->fill_shader.color_loc, (GLfloat)r, (GLfloat)g, (GLfloat)b,
+	            (GLfloat)a);
+	glEnableVertexAttribArray((GLuint)gd->fill_shader.in_coord_loc);
+	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
+
+	auto coord = ccalloc(nrects * 8, GLint);
+	auto indices = ccalloc(nrects * 6, GLuint);
 	for (int i = 0; i < nrects; i++) {
-		glVertex2i(rect[i].x1, gd->height - rect[i].y2);
-		glVertex2i(rect[i].x2, gd->height - rect[i].y2);
-		glVertex2i(rect[i].x2, gd->height - rect[i].y1);
-		glVertex2i(rect[i].x1, gd->height - rect[i].y1);
+		memcpy(&coord[i * 8],
+		       (GLint[][2]){{rect[i].x1, gd->height - rect[i].y2},
+		                    {rect[i].x2, gd->height - rect[i].y2},
+		                    {rect[i].x2, gd->height - rect[i].y1},
+		                    {rect[i].x1, gd->height - rect[i].y1}},
+		       sizeof(GLint[2]) * 4);
+		indices[i * 6 + 0] = (GLuint)i * 4 + 0;
+		indices[i * 6 + 1] = (GLuint)i * 4 + 1;
+		indices[i * 6 + 2] = (GLuint)i * 4 + 2;
+		indices[i * 6 + 3] = (GLuint)i * 4 + 2;
+		indices[i * 6 + 4] = (GLuint)i * 4 + 3;
+		indices[i * 6 + 5] = (GLuint)i * 4 + 0;
 	}
-	glEnd();
+	glBufferData(GL_ARRAY_BUFFER, nrects * 8 * (long)sizeof(*coord), coord, GL_STREAM_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, nrects * 6 * (long)sizeof(*indices),
+	             indices, GL_STREAM_DRAW);
+
+	glVertexAttribPointer((GLuint)gd->fill_shader.in_coord_loc, 2, GL_INT, GL_FALSE,
+	                      sizeof(*coord) * 2, (void *)0);
+	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glDisableVertexAttribArray((GLuint)gd->fill_shader.in_coord_loc);
+
+	glDeleteBuffers(2, bo);
 }
 
 /**
@@ -683,6 +731,10 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	if (!gl_init_blur(gd, ps->o.blur_kerns)) {
 		return false;
 	}
+	gd->fill_shader.prog = gl_create_program_from_str(fill_vert, fill_frag);
+	gd->fill_shader.in_coord_loc =
+	    glGetAttribLocation(gd->fill_shader.prog, "in_coord");
+	gd->fill_shader.color_loc = glGetUniformLocation(gd->fill_shader.prog, "color");
 
 	// Set up the size of the viewport. We do this last because it expects the blur
 	// textures are already set up.

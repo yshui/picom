@@ -33,6 +33,12 @@ typedef struct {
 	GLint in_texcoord;
 } gl_blur_shader_t;
 
+typedef struct {
+	GLuint prog;
+	GLint in_coord_loc;
+	GLint color_loc;
+} gl_fill_shader_t;
+
 /// @brief Wrapper of a binded GLX texture.
 typedef struct gl_texture {
 	double opacity;
@@ -55,6 +61,7 @@ struct gl_data {
 	int height, width;
 	int npasses;
 	gl_win_shader_t win_shader;
+	gl_fill_shader_t fill_shader;
 	gl_blur_shader_t blur_shader[MAX_BLUR_PASS];
 
 	// Temporary textures used for blurring. They are always the same size as the
