@@ -25,6 +25,7 @@
 #include "render.h"
 #include "string_utils.h"
 #include "types.h"
+#include "uthash_extra.h"
 #include "utils.h"
 #include "x.h"
 
@@ -56,8 +57,9 @@
  * Clear leader cache of all windows.
  */
 static inline void clear_cache_win_leaders(session_t *ps) {
-	for (win *w = ps->list; w; w = w->next)
+	for (win *w = ps->window_stack; w; w = w->next) {
 		w->cache_leader = XCB_NONE;
+	}
 }
 
 static inline void wid_set_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t val) {
@@ -79,9 +81,11 @@ static inline void group_update_focused(session_t *ps, xcb_window_t leader) {
 	if (!leader)
 		return;
 
-	for (win *w = ps->list; w; w = w->next) {
-		if (win_get_leader(ps, w) == leader && w->state != WSTATE_DESTROYING)
+	HASH_ITER2(ps->windows, w) {
+		assert(w->state != WSTATE_DESTROYING);
+		if (win_get_leader(ps, w) == leader) {
 			win_update_focused(ps, w);
+		}
 	}
 
 	return;
@@ -97,10 +101,11 @@ static inline bool group_is_focused(session_t *ps, xcb_window_t leader) {
 	if (!leader)
 		return false;
 
-	for (win *w = ps->list; w; w = w->next) {
-		if (win_get_leader(ps, w) == leader && w->state != WSTATE_DESTROYING &&
-		    win_is_focused_real(ps, w))
+	HASH_ITER2(ps->windows, w) {
+		assert(w->state != WSTATE_DESTROYING);
+		if (win_get_leader(ps, w) == leader && win_is_focused_real(ps, w)) {
 			return true;
+		}
 	}
 
 	return false;
@@ -1022,15 +1027,16 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 	// Find window insertion point
 	win **p = NULL;
 	if (prev) {
-		for (p = &ps->list; *p; p = &(*p)->next) {
+		for (p = &ps->window_stack; *p; p = &(*p)->next) {
 			if ((*p)->id == prev && (*p)->state != WSTATE_DESTROYING)
 				break;
 		}
 	} else {
-		p = &ps->list;
+		p = &ps->window_stack;
 	}
 	new->next = *p;
 	*p = new;
+	HASH_ADD_INT(ps->windows, id, new);
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
@@ -1414,7 +1420,7 @@ void win_update_frame_extents(session_t *ps, win *w, xcb_window_t client) {
 }
 
 bool win_is_region_ignore_valid(session_t *ps, const win *w) {
-	for (win *i = ps->list; w; w = w->next) {
+	WIN_STACK_ITER(ps, i) {
 		if (i == w)
 			break;
 		if (!i->reg_ignore_valid)
@@ -1481,7 +1487,7 @@ static void finish_destroy_win(session_t *ps, win **_w) {
 	}
 
 	log_trace("Trying to destroy (%#010x)", w->id);
-	for (prev = &ps->list; *prev; prev = &(*prev)->next) {
+	for (prev = &ps->window_stack; *prev; prev = &(*prev)->next) {
 		if (w == *prev) {
 			log_trace("Found (%#010x \"%s\")", w->id, w->name);
 			*prev = w->next;
@@ -1495,7 +1501,7 @@ static void finish_destroy_win(session_t *ps, win **_w) {
 			// Drop w from all prev_trans to avoid accessing freed memory in
 			// repair_win()
 			// TODO there can only be one prev_trans pointing to w
-			for (win *w2 = ps->list; w2; w2 = w2->next) {
+			for (win *w2 = ps->window_stack; w2; w2 = w2->next) {
 				if (w == w2->prev_trans) {
 					w2->prev_trans = NULL;
 				}
@@ -1543,6 +1549,15 @@ void unmap_win(session_t *ps, win **_w, bool destroy) {
 	if (unlikely(w->state == target_state)) {
 		log_warn("%s a window twice", destroy ? "Destroying" : "Unmapping");
 		return;
+	}
+
+	if (destroy) {
+		// Delete destroyed window from the hash table, so future window with the
+		// same window id won't confuse us.
+		// Keep the window in the window stack, since we might still need to
+		// render it (fading out). Window will be removed from the stack when
+		// fading finishes.
+		HASH_DEL(ps->windows, w);
 	}
 
 	if (unlikely(w->state == WSTATE_UNMAPPED) || w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
@@ -1810,4 +1825,39 @@ void map_win_by_id(session_t *ps, xcb_window_t id) {
 	}
 
 	map_win(ps, w);
+}
+
+/**
+ * Find a window from window id in window linked list of the session.
+ */
+win *find_win(session_t *ps, xcb_window_t id) {
+	if (!id) {
+		return NULL;
+	}
+
+	win *w = NULL;
+	HASH_FIND_INT(ps->windows, &id, w);
+	assert(w == NULL || w->state != WSTATE_DESTROYING);
+	return w;
+}
+
+/**
+ * Find out the WM frame of a client window using existing data.
+ *
+ * @param id window ID
+ * @return struct win object of the found window, NULL if not found
+ */
+win *find_toplevel(session_t *ps, xcb_window_t id) {
+	if (!id) {
+		return NULL;
+	}
+
+	HASH_ITER2(ps->windows, w) {
+		assert(w->state != WSTATE_DESTROYING);
+		if (w->client_win == id) {
+			return w;
+		}
+	}
+
+	return NULL;
 }

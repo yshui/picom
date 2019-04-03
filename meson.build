@@ -31,6 +31,9 @@ if get_option('sanitize')
 	endif
 	add_global_arguments('-fsanitize='+','.join(sanitizers), language: 'c')
 	add_global_link_arguments('-fsanitize='+','.join(sanitizers), language: 'c')
+	if cc.has_argument('-fno-sanitize=unsigned-integer-overflow')
+		add_global_arguments('-fno-sanitize=unsigned-integer-overflow', language: 'c')
+	endif
 endif
 
 if get_option('modularize')

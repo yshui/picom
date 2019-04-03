@@ -43,6 +43,7 @@ Assuming you already have all the usual building tools installed (e.g. gcc, meso
 * libGL (optional, disable with the `-Dopengl=false` meson configure flag)
 * libpcre (optional, disable with the `-Dregex=false` meson configure flag)
 * libev
+* uthash
 
 To build the documents, you need `asciidoc`
 

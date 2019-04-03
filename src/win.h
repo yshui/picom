@@ -7,19 +7,24 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
+#include "uthash_extra.h"
+
 // FIXME shouldn't need this
 #ifdef CONFIG_OPENGL
 #include <GL/gl.h>
 #endif
 
+#include "backend/backend.h"
 #include "c2.h"
 #include "compiler.h"
 #include "region.h"
 #include "render.h"
 #include "types.h"
 #include "utils.h"
-#include "backend/backend.h"
 #include "x.h"
+
+#define WIN_STACK_ITER(ps, w)                                                            \
+	for (win *w = ps->window_stack, *next; w ? (next = w->next, true) : false; w = next)
 
 typedef struct session session_t;
 typedef struct _glx_texture glx_texture_t;
@@ -285,6 +290,7 @@ struct win {
 	/// Textures and FBO background blur use.
 	glx_blur_cache_t glx_blur_cache;
 #endif
+	UT_hash_handle hh;
 };
 
 void win_release_image(backend_t *base, win *w);
@@ -392,6 +398,8 @@ void win_ev_stop(session_t *ps, const win *w);
 /// Skip the current in progress fading of window,
 /// transition the window straight to its end state
 void win_skip_fading(session_t *ps, win **_w);
+win *find_win(session_t *ps, xcb_window_t id);
+win *find_toplevel(session_t *ps, xcb_window_t id);
 
 /**
  * Get the leader of a window.

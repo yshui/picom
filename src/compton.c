@@ -51,6 +51,7 @@
 #endif
 #include "event.h"
 #include "options.h"
+#include "uthash_extra.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -419,7 +420,7 @@ static void handle_root_flags(session_t *ps) {
 static win *paint_preprocess(session_t *ps, bool *fade_running) {
 	// XXX need better, more general name for `fade_running`. It really
 	// means if fade is still ongoing after the current frame is rendered
-	win *t = NULL, *next = NULL;
+	win *t = NULL;
 	*fade_running = false;
 
 	// Fading step calculation
@@ -436,8 +437,7 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 	ps->fade_time += steps * ps->o.fade_delta;
 
 	// First, let's process fading
-	for (win *w = ps->list; w; w = next) {
-		next = w->next;
+	WIN_STACK_ITER(ps, w) {
 		const winmode_t mode_old = w->mode;
 		const bool was_painted = w->to_paint;
 		const double opacity_old = w->opacity;
@@ -490,14 +490,11 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 	// Track whether it's the highest window to paint
 	bool is_highest = true;
 	bool reg_ignore_valid = true;
-	for (win *w = ps->list; w; w = next) {
+	WIN_STACK_ITER(ps, w) {
 		__label__ skip_window;
 		bool to_paint = true;
 		// w->to_paint remembers whether this window is painted last time
 		const bool was_painted = w->to_paint;
-
-		// In case calling the fade callback function destroys this window
-		next = w->next;
 
 		// Destroy reg_ignore if some window above us invalidated it
 		if (!reg_ignore_valid) {
@@ -672,7 +669,7 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 		win **prev = NULL, **prev_old = NULL;
 
 		bool found = false;
-		for (prev = &ps->list; *prev; prev = &(*prev)->next) {
+		for (prev = &ps->window_stack; *prev; prev = &(*prev)->next) {
 			if ((*prev)->id == new_above && (*prev)->state != WSTATE_DESTROYING) {
 				found = true;
 				break;
@@ -685,7 +682,7 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 			return;
 		}
 
-		for (prev_old = &ps->list; *prev_old; prev_old = &(*prev_old)->next) {
+		for (prev_old = &ps->window_stack; *prev_old; prev_old = &(*prev_old)->next) {
 			if ((*prev_old) == w) {
 				break;
 			}
@@ -713,8 +710,7 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 
 /// Free up all the images and deinit the backend
 static void destroy_backend(session_t *ps) {
-	for (win *w = ps->list, *next; w; w = next) {
-		next = w->next;
+	WIN_STACK_ITER(ps, w) {
 		// Wrapping up fading in progress
 		win_skip_fading(ps, &w);
 
@@ -760,7 +756,9 @@ static bool initialize_backend(session_t *ps) {
 			return false;
 		}
 
-		for (win *w = ps->list; w; w = w->next) {
+		// window_stack shouldn't include window that's not in the hash table at
+		// this point. Since there cannot be any fading windows.
+		HASH_ITER2(ps->windows, w) {
 			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 				if (!win_bind_image(ps, w)) {
 					w->flags |= WIN_FLAGS_IMAGE_ERROR;
@@ -800,8 +798,8 @@ void configure_root(session_t *ps, int width, int height) {
 	ps->damage = ps->damage_ring + ps->ndamage - 1;
 
 	// Invalidate reg_ignore from the top
-	rc_region_unref(&ps->list->reg_ignore);
-	ps->list->reg_ignore_valid = false;
+	rc_region_unref(&ps->window_stack->reg_ignore);
+	ps->window_stack->reg_ignore_valid = false;
 
 #ifdef CONFIG_OPENGL
 	// GLX root change callback
@@ -846,7 +844,6 @@ void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		restack_win(ps, w, ce->above_sibling);
 	} else {
 		restack_win(ps, w, ce->above_sibling);
-
 		bool factor_change = false;
 		win_extents(w, &damage);
 
@@ -897,7 +894,7 @@ void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
 		return;
 
 	if (ce->place == PlaceOnTop) {
-		new_above = ps->list->id;
+		new_above = ps->window_stack->id;
 	} else {
 		new_above = XCB_NONE;
 	}
@@ -1017,12 +1014,14 @@ void opts_init_track_focus(session_t *ps) {
 
 	if (!ps->o.use_ewmh_active_win) {
 		// Start listening to FocusChange events
-		for (win *w = ps->list; w; w = w->next)
-			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
+		HASH_ITER2(ps->windows, w) {
+			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 				xcb_change_window_attributes(
 				    ps->c, w->id, XCB_CW_EVENT_MASK,
 				    (const uint32_t[]){
 				        determine_evmask(ps, w->id, WIN_EVMODE_FRAME)});
+			}
+		}
 	}
 
 	// Recheck focus
@@ -1687,7 +1686,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .size_expose = 0,
 	    .n_expose = 0,
 
-	    .list = NULL,
+	    .windows = NULL,
 	    .active_win = NULL,
 	    .active_leader = XCB_NONE,
 
@@ -2125,15 +2124,15 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 			add_win(ps, children[i], i ? children[i - 1] : XCB_NONE);
 		}
 
-		for (win *i = ps->list; i; i = i->next) {
-			if (i->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				map_win(ps, i);
+		HASH_ITER2(ps->windows, w) {
+			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+				map_win(ps, w);
 			}
 		}
 
 		free(reply);
 		log_trace("Initial stack:");
-		for (win *c = ps->list; c; c = c->next) {
+		for (win *c = ps->window_stack; c; c = c->next) {
 			log_trace("%#010x \"%s\"", c->id, c->name);
 		}
 	}
@@ -2183,22 +2182,17 @@ static void session_destroy(session_t *ps) {
 #endif
 
 	// Free window linked list
-	{
-		win *next = NULL;
-		win *list = ps->list;
-		ps->list = NULL;
 
-		for (win *w = list; w; w = next) {
-			next = w->next;
-
-			if (w->state != WSTATE_DESTROYING) {
-				win_ev_stop(ps, w);
-			}
-
-			free_win_res(ps, w);
-			free(w);
+	WIN_STACK_ITER(ps, w) {
+		if (w->state != WSTATE_DESTROYING) {
+			win_ev_stop(ps, w);
+			HASH_DEL(ps->windows, w);
 		}
+
+		free_win_res(ps, w);
+		free(w);
 	}
+	ps->window_stack = NULL;
 
 	// Free blacklists
 	free_wincondlst(&ps->o.shadow_blacklist);
