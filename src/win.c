@@ -57,7 +57,7 @@
  * Clear leader cache of all windows.
  */
 static inline void clear_cache_win_leaders(session_t *ps) {
-	for (win *w = ps->window_stack; w; w = w->next) {
+	WIN_STACK_ITER(ps, w) {
 		w->cache_leader = XCB_NONE;
 	}
 }
@@ -1027,14 +1027,18 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 	// Find window insertion point
 	win **p = NULL;
 	if (prev) {
-		for (p = &ps->window_stack; *p; p = &(*p)->next) {
-			if ((*p)->id == prev && (*p)->state != WSTATE_DESTROYING)
-				break;
-		}
+		win *w = NULL;
+		HASH_FIND_INT(ps->windows, &prev, w);
+		assert(w);
+		p = w->prev;
 	} else {
 		p = &ps->window_stack;
 	}
 	new->next = *p;
+	if (new->next) {
+		new->next->prev = &new->next;
+	}
+	new->prev = p;
 	*p = new;
 	HASH_ADD_INT(ps->windows, id, new);
 
@@ -1466,7 +1470,6 @@ static void finish_unmap_win(session_t *ps, win **_w) {
 
 static void finish_destroy_win(session_t *ps, win **_w) {
 	win *w = *_w;
-	win **prev = NULL;
 
 	if (w->state != WSTATE_UNMAPPED) {
 		// Only UNMAPPED state has window resources freed, otherwise
@@ -1487,30 +1490,28 @@ static void finish_destroy_win(session_t *ps, win **_w) {
 	}
 
 	log_trace("Trying to destroy (%#010x)", w->id);
-	for (prev = &ps->window_stack; *prev; prev = &(*prev)->next) {
-		if (w == *prev) {
-			log_trace("Found (%#010x \"%s\")", w->id, w->name);
-			*prev = w->next;
+	*w->prev = w->next;
+	if (w->next) {
+		w->next->prev = w->prev;
+	}
 
-			if (w == ps->active_win) {
-				ps->active_win = NULL;
-			}
+	if (w == ps->active_win) {
+		ps->active_win = NULL;
+	}
 
-			free_win_res(ps, w);
+	free_win_res(ps, w);
 
-			// Drop w from all prev_trans to avoid accessing freed memory in
-			// repair_win()
-			// TODO there can only be one prev_trans pointing to w
-			for (win *w2 = ps->window_stack; w2; w2 = w2->next) {
-				if (w == w2->prev_trans) {
-					w2->prev_trans = NULL;
-				}
-			}
-			free(w);
-			*_w = NULL;
-			return;
+	// Drop w from all prev_trans to avoid accessing freed memory in
+	// repair_win()
+	// TODO there can only be one prev_trans pointing to w
+	WIN_STACK_ITER(ps, w2) {
+		if (w == w2->prev_trans) {
+			w2->prev_trans = NULL;
 		}
 	}
+	free(w);
+	*_w = NULL;
+	return;
 	log_warn("Destroyed window is not in window list");
 	assert(false);
 }
