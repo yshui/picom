@@ -26,6 +26,7 @@
 #include "types.h"
 #include "utils.h"
 #include "win.h"
+#include "uthash_extra.h"
 
 #include "dbus.h"
 
@@ -465,10 +466,9 @@ static bool cdbus_apdarg_string(session_t *ps, DBusMessage *msg, const void *dat
 static bool cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data) {
 	// Get the number of wids we are to include
 	unsigned count = 0;
-	for (win *w = ps->list; w; w = w->next) {
-		if (w->state != WSTATE_DESTROYING) {
-			++count;
-		}
+	HASH_ITER2(ps->windows, w) {
+		assert(w->state != WSTATE_DESTROYING);
+		++count;
 	}
 
 	if (!count) {
@@ -480,17 +480,13 @@ static bool cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data)
 	auto arr = ccalloc(count, cdbus_window_t);
 
 	// Build the array
-	{
-		cdbus_window_t *pcur = arr;
-		for (win *w = ps->list; w; w = w->next) {
-			if (w->state != WSTATE_DESTROYING) {
-				*pcur = w->id;
-				++pcur;
-				assert(pcur <= arr + count);
-			}
-		}
-		assert(pcur == arr + count);
+	cdbus_window_t *pcur = arr;
+	HASH_ITER2(ps->windows, w) {
+		assert(w->state != WSTATE_DESTROYING);
+		*pcur = w->id;
+		++pcur;
 	}
+	assert(pcur == arr + count);
 
 	// Append arguments
 	if (!dbus_message_append_args(msg, DBUS_TYPE_ARRAY, CDBUS_TYPE_WINDOW, &arr,

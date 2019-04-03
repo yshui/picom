@@ -23,6 +23,10 @@ foreach i : required_package
 	base_deps += [dependency(i, required: true)]
 endforeach
 
+if not cc.has_header('uthash.h')
+  error('Dependency uthash not found')
+endif
+
 deps = []
 
 if get_option('config_file')

@@ -49,6 +49,7 @@
 #include <xcb/sync.h>
 #include <xcb/xinerama.h>
 
+#include "uthash_extra.h"
 #ifdef CONFIG_OPENGL
 // libGL
 #include "backend/gl/glx.h"
@@ -389,8 +390,10 @@ typedef struct session {
 	int n_expose;
 
 	// === Window related ===
-	/// Linked list of all windows.
-	win *list;
+	/// A hash table of all windows.
+	win *windows;
+	/// Windows in their stacking order
+	win *window_stack;
 	/// Pointer to <code>win</code> of current active window. Used by
 	/// EWMH <code>_NET_ACTIVE_WINDOW</code> focus detection. In theory,
 	/// it's more reliable to store the window ID directly here, just in
@@ -730,43 +733,6 @@ static inline xcb_atom_t get_atom(session_t *ps, const char *atom_name) {
  */
 static inline xcb_window_t get_tgt_window(session_t *ps) {
 	return ps->overlay != XCB_NONE ? ps->overlay : ps->root;
-}
-
-/**
- * Find a window from window id in window linked list of the session.
- */
-static inline win *find_win(session_t *ps, xcb_window_t id) {
-	if (!id)
-		return NULL;
-
-	win *w;
-
-	for (w = ps->list; w; w = w->next) {
-		if (w->id == id && w->state != WSTATE_DESTROYING) {
-			return w;
-		}
-	}
-
-	return 0;
-}
-
-/**
- * Find out the WM frame of a client window using existing data.
- *
- * @param id window ID
- * @return struct win object of the found window, NULL if not found
- */
-static inline win *find_toplevel(session_t *ps, xcb_window_t id) {
-	if (!id)
-		return NULL;
-
-	for (win *w = ps->list; w; w = w->next) {
-		if (w->client_win == id && w->state != WSTATE_DESTROYING) {
-			return w;
-		}
-	}
-
-	return NULL;
 }
 
 /**
