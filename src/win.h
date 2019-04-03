@@ -137,6 +137,8 @@ struct win {
 	void *shadow_image;
 	/// Pointer to the next lower window in window stack.
 	win *next;
+	/// Pointer to a linked-list pointer that points to this window.
+	win **prev;
 	/// Pointer to the next higher window to paint.
 	win *prev_trans;
 	// TODO rethink reg_ignore
