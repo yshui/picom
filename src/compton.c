@@ -666,31 +666,27 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 			rc_region_unref(&w->next->reg_ignore);
 		}
 
-		win **prev = NULL, **prev_old = NULL;
+		win **prev = NULL, *tmp_w;
+		HASH_FIND_INT(ps->windows, &new_above, tmp_w);
 
-		bool found = false;
-		for (prev = &ps->window_stack; *prev; prev = &(*prev)->next) {
-			if ((*prev)->id == new_above && (*prev)->state != WSTATE_DESTROYING) {
-				found = true;
-				break;
-			}
-		}
-
-		if (new_above && !found) {
+		if (new_above && !tmp_w) {
 			log_error("(%#010x, %#010x): Failed to found new above window.",
 			          w->id, new_above);
 			return;
 		}
-
-		for (prev_old = &ps->window_stack; *prev_old; prev_old = &(*prev_old)->next) {
-			if ((*prev_old) == w) {
-				break;
-			}
+		prev = tmp_w->prev;
+		// Unlink from old position
+		*w->prev = w->next;
+		if (w->next) {
+			w->next->prev = w->prev;
 		}
-
-		*prev_old = w->next;
+		// Link to new position
 		w->next = *prev;
-		*prev = w;
+		if (w->next) {
+			w->next->prev = &w->next;
+		}
+		w->prev = prev;
+		*w->prev = w;
 
 		// add damage for this window
 		add_damage_from_win(ps, w);
@@ -2132,8 +2128,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 		free(reply);
 		log_trace("Initial stack:");
-		for (win *c = ps->window_stack; c; c = c->next) {
-			log_trace("%#010x \"%s\"", c->id, c->name);
+		WIN_STACK_ITER(ps, w) {
+			log_trace("%#010x \"%s\"", w->id, w->name);
 		}
 	}
 
