@@ -26,6 +26,7 @@
 #include "string_utils.h"
 #include "utils.h"
 #include "win.h"
+#include "uthash_extra.h"
 
 #include "opengl.h"
 
@@ -220,8 +221,9 @@ void glx_destroy(session_t *ps) {
 		return;
 
 	// Free all GLX resources of windows
-	for (win *w = ps->list; w; w = w->next)
+	WIN_STACK_ITER(ps, w) {
 		free_win_res_glx(ps, w);
+	}
 
 	// Free GLSL shaders/programs
 	for (int i = 0; i < MAX_BLUR_PASS; ++i) {
