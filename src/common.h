@@ -394,6 +394,9 @@ typedef struct session {
 	win *windows;
 	/// Windows in their stacking order
 	win *window_stack;
+	/// Pointer to the `next` field of the bottom most window,
+	/// or a pointer to `window_stack` when there is no window
+	win **window_stack_bottom;
 	/// Pointer to <code>win</code> of current active window. Used by
 	/// EWMH <code>_NET_ACTIVE_WINDOW</code> focus detection. In theory,
 	/// it's more reliable to store the window ID directly here, just in

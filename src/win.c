@@ -1040,6 +1040,9 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 	}
 	new->prev = p;
 	*p = new;
+	if (p == ps->window_stack_bottom) {
+		ps->window_stack_bottom = &new->next;
+	}
 	HASH_ADD_INT(ps->windows, id, new);
 
 #ifdef CONFIG_DBUS
@@ -1493,6 +1496,9 @@ static void finish_destroy_win(session_t *ps, win **_w) {
 	*w->prev = w->next;
 	if (w->next) {
 		w->next->prev = w->prev;
+	}
+	if (&w->next == ps->window_stack_bottom) {
+		ps->window_stack_bottom = w->prev;
 	}
 
 	if (w == ps->active_win) {
