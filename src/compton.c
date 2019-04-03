@@ -652,8 +652,10 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 
 	if (w->next) {
 		old_above = w->next->id;
+		assert(&w->next != ps->window_stack_bottom);
 	} else {
 		old_above = XCB_NONE;
+		assert(&w->next == ps->window_stack_bottom);
 	}
 	log_debug("Restack %#010x (%s), old_above: %#010x, new_above: %#010x", w->id,
 	          w->name, old_above, new_above);
@@ -674,19 +676,31 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 			          w->id, new_above);
 			return;
 		}
-		prev = tmp_w->prev;
+
 		// Unlink from old position
 		*w->prev = w->next;
 		if (w->next) {
 			w->next->prev = w->prev;
 		}
-		// Link to new position
-		w->next = *prev;
-		if (w->next) {
-			w->next->prev = &w->next;
+		if (ps->window_stack_bottom == &w->next) {
+			ps->window_stack_bottom = w->prev;
 		}
-		w->prev = prev;
-		*w->prev = w;
+
+		if (!new_above) {
+			*ps->window_stack_bottom = w;
+			w->prev = ps->window_stack_bottom;
+			ps->window_stack_bottom = &w->next;
+			w->next = NULL;
+		} else {
+			prev = tmp_w->prev;
+			// Link to new position
+			w->next = *prev;
+			if (w->next) {
+				w->next->prev = &w->next;
+			}
+			w->prev = prev;
+			*w->prev = w;
+		}
 
 		// add damage for this window
 		add_damage_from_win(ps, w);
@@ -1738,6 +1752,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 #ifdef CONFIG_DBUS
 	    .dbus_data = NULL,
 #endif
+	    .window_stack = NULL,
 	};
 
 	auto stderr_logger = stderr_logger_new();
@@ -1750,6 +1765,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// Allocate a session and copy default values into it
 	session_t *ps = cmalloc(session_t);
 	*ps = s_def;
+	ps->window_stack_bottom = &ps->window_stack;
 	ps->loop = EV_DEFAULT;
 	pixman_region32_init(&ps->screen_reg);
 
@@ -2189,6 +2205,7 @@ static void session_destroy(session_t *ps) {
 		free(w);
 	}
 	ps->window_stack = NULL;
+	ps->window_stack_bottom = &ps->window_stack;
 
 	// Free blacklists
 	free_wincondlst(&ps->o.shadow_blacklist);
