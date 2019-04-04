@@ -115,6 +115,18 @@ typedef enum win_flags {
 	WIN_FLAGS_IMAGE_ERROR = 2,
 } win_flags_t;
 
+/// An entry in the window stack. May or may not correspond to a window we know about.
+struct window_stack_entry {
+	/// The actual window correspond to this stack entry. NULL if we didn't know about
+	/// this window (e.g. an InputOnly window, or we haven't handled the window
+	/// creation yet)
+	struct win *win;
+	/// The window id. Might not be unique in the stack, because there might be
+	/// destroyed window still fading out in the stack.
+	xcb_window_t id;
+	struct list_node stack_neighbour;
+};
+
 /**
  * About coordinate systems
  *
