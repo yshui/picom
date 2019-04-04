@@ -221,7 +221,7 @@ void glx_destroy(session_t *ps) {
 		return;
 
 	// Free all GLX resources of windows
-	WIN_STACK_ITER(ps, w) {
+	list_foreach(win, w, &ps->window_stack, stack_neighbour) {
 		free_win_res_glx(ps, w);
 	}
 

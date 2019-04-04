@@ -28,6 +28,7 @@
 #include "uthash_extra.h"
 #include "utils.h"
 #include "x.h"
+#include "list.h"
 
 #ifdef CONFIG_DBUS
 #include "dbus.h"
@@ -57,7 +58,7 @@
  * Clear leader cache of all windows.
  */
 static inline void clear_cache_win_leaders(session_t *ps) {
-	WIN_STACK_ITER(ps, w) {
+	list_foreach(win, w, &ps->window_stack, stack_neighbour) {
 		w->cache_leader = XCB_NONE;
 	}
 }
@@ -918,7 +919,6 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 	    .invert_color_force = UNSET,
 
 	    // Initialized in this function
-	    .next = NULL,
 	    .id = XCB_NONE,
 	    .a = {0},
 	    .pictfmt = NULL,
@@ -1025,24 +1025,16 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 	}
 
 	// Find window insertion point
-	win **p = NULL;
+	struct list_node *p = NULL;
 	if (prev) {
 		win *w = NULL;
 		HASH_FIND_INT(ps->windows, &prev, w);
 		assert(w);
-		p = w->prev;
+		p = w->stack_neighbour.prev;
 	} else {
 		p = &ps->window_stack;
 	}
-	new->next = *p;
-	if (new->next) {
-		new->next->prev = &new->next;
-	}
-	new->prev = p;
-	*p = new;
-	if (p == ps->window_stack_bottom) {
-		ps->window_stack_bottom = &new->next;
-	}
+	list_insert_after(p, &new->stack_neighbour);
 	HASH_ADD_INT(ps->windows, id, new);
 
 #ifdef CONFIG_DBUS
@@ -1427,7 +1419,7 @@ void win_update_frame_extents(session_t *ps, win *w, xcb_window_t client) {
 }
 
 bool win_is_region_ignore_valid(session_t *ps, const win *w) {
-	WIN_STACK_ITER(ps, i) {
+	list_foreach(win, i, &ps->window_stack, stack_neighbour) {
 		if (i == w)
 			break;
 		if (!i->reg_ignore_valid)
@@ -1487,19 +1479,14 @@ static void finish_destroy_win(session_t *ps, win **_w) {
 	//      paint happened at least once, w->reg_ignore_valid would
 	//      be true, and there is no need to invalid w->next->reg_ignore
 	//      when w is destroyed.
-	if (w->next) {
-		rc_region_unref(&w->next->reg_ignore);
-		w->next->reg_ignore_valid = false;
+	if (!list_node_is_last(&ps->window_stack, &w->stack_neighbour)) {
+		auto next_w = list_next_entry(w, stack_neighbour);
+		rc_region_unref(&next_w->reg_ignore);
+		next_w->reg_ignore_valid = false;
 	}
 
 	log_trace("Trying to destroy (%#010x)", w->id);
-	*w->prev = w->next;
-	if (w->next) {
-		w->next->prev = w->prev;
-	}
-	if (&w->next == ps->window_stack_bottom) {
-		ps->window_stack_bottom = w->prev;
-	}
+	list_remove(&w->stack_neighbour);
 
 	if (w == ps->active_win) {
 		ps->active_win = NULL;
@@ -1510,7 +1497,7 @@ static void finish_destroy_win(session_t *ps, win **_w) {
 	// Drop w from all prev_trans to avoid accessing freed memory in
 	// repair_win()
 	// TODO there can only be one prev_trans pointing to w
-	WIN_STACK_ITER(ps, w2) {
+	list_foreach(win, w2, &ps->window_stack, stack_neighbour) {
 		if (w == w2->prev_trans) {
 			w2->prev_trans = NULL;
 		}
