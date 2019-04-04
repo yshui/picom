@@ -24,9 +24,10 @@
 #include "log.h"
 #include "string_utils.h"
 #include "types.h"
+#include "uthash_extra.h"
 #include "utils.h"
 #include "win.h"
-#include "uthash_extra.h"
+#include "list.h"
 
 #include "dbus.h"
 
@@ -760,7 +761,10 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 
 	// next
 	if (!strcmp("next", target)) {
-		cdbus_reply_wid(ps, msg, (w->next ? w->next->id : 0));
+		cdbus_reply_wid(ps, msg,
+		                (list_node_is_last(&ps->window_stack, &w->stack_neighbour)
+		                     ? 0
+		                     : list_next_entry(w, stack_neighbour)->id));
 		return true;
 	}
 

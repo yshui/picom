@@ -52,6 +52,7 @@
 #include "event.h"
 #include "options.h"
 #include "uthash_extra.h"
+#include "list.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -437,7 +438,7 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 	ps->fade_time += steps * ps->o.fade_delta;
 
 	// First, let's process fading
-	WIN_STACK_ITER(ps, w) {
+	list_foreach_safe(win, w, &ps->window_stack, stack_neighbour) {
 		const winmode_t mode_old = w->mode;
 		const bool was_painted = w->to_paint;
 		const double opacity_old = w->opacity;
@@ -490,7 +491,7 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 	// Track whether it's the highest window to paint
 	bool is_highest = true;
 	bool reg_ignore_valid = true;
-	WIN_STACK_ITER(ps, w) {
+	list_foreach(win, w, &ps->window_stack, stack_neighbour) {
 		__label__ skip_window;
 		bool to_paint = true;
 		// w->to_paint remembers whether this window is painted last time
@@ -650,12 +651,10 @@ static void rebuild_shadow_exclude_reg(session_t *ps) {
 static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 	xcb_window_t old_above;
 
-	if (w->next) {
-		old_above = w->next->id;
-		assert(&w->next != ps->window_stack_bottom);
+	if (!list_node_is_last(&ps->window_stack, &w->stack_neighbour)) {
+		old_above = list_next_entry(w, stack_neighbour)->id;
 	} else {
 		old_above = XCB_NONE;
-		assert(&w->next == ps->window_stack_bottom);
 	}
 	log_debug("Restack %#010x (%s), old_above: %#010x, new_above: %#010x", w->id,
 	          w->name, old_above, new_above);
@@ -663,44 +662,30 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 	if (old_above != new_above) {
 		w->reg_ignore_valid = false;
 		rc_region_unref(&w->reg_ignore);
-		if (w->next) {
-			w->next->reg_ignore_valid = false;
-			rc_region_unref(&w->next->reg_ignore);
+		if (!list_node_is_last(&ps->window_stack, &w->stack_neighbour)) {
+			auto next_w = list_next_entry(w, stack_neighbour);
+			next_w->reg_ignore_valid = false;
+			rc_region_unref(&next_w->reg_ignore);
 		}
 
-		win **prev = NULL, *tmp_w;
-		HASH_FIND_INT(ps->windows, &new_above, tmp_w);
-
-		if (new_above && !tmp_w) {
-			log_error("(%#010x, %#010x): Failed to found new above window.",
-			          w->id, new_above);
-			return;
-		}
-
-		// Unlink from old position
-		*w->prev = w->next;
-		if (w->next) {
-			w->next->prev = w->prev;
-		}
-		if (ps->window_stack_bottom == &w->next) {
-			ps->window_stack_bottom = w->prev;
-		}
-
+		struct list_node *new_next;
 		if (!new_above) {
-			*ps->window_stack_bottom = w;
-			w->prev = ps->window_stack_bottom;
-			ps->window_stack_bottom = &w->next;
-			w->next = NULL;
+			new_next = &ps->window_stack;
 		} else {
-			prev = tmp_w->prev;
-			// Link to new position
-			w->next = *prev;
-			if (w->next) {
-				w->next->prev = &w->next;
+			win *tmp_w = NULL;
+			HASH_FIND_INT(ps->windows, &new_above, tmp_w);
+
+			if (!tmp_w) {
+				log_error("(%#010x, %#010x): Failed to found new above "
+				          "window.",
+				          w->id, new_above);
+				return;
 			}
-			w->prev = prev;
-			*w->prev = w;
+
+			new_next = &tmp_w->stack_neighbour;
 		}
+
+		list_move_before(&w->stack_neighbour, new_next);
 
 		// add damage for this window
 		add_damage_from_win(ps, w);
@@ -720,7 +705,7 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 
 /// Free up all the images and deinit the backend
 static void destroy_backend(session_t *ps) {
-	WIN_STACK_ITER(ps, w) {
+	list_foreach_safe(win, w, &ps->window_stack, stack_neighbour) {
 		// Wrapping up fading in progress
 		win_skip_fading(ps, &w);
 
@@ -808,8 +793,11 @@ void configure_root(session_t *ps, int width, int height) {
 	ps->damage = ps->damage_ring + ps->ndamage - 1;
 
 	// Invalidate reg_ignore from the top
-	rc_region_unref(&ps->window_stack->reg_ignore);
-	ps->window_stack->reg_ignore_valid = false;
+	if (!list_is_empty(&ps->window_stack)) {
+		auto top_w = list_entry(ps->window_stack.next, win, stack_neighbour);
+		rc_region_unref(&top_w->reg_ignore);
+		top_w->reg_ignore_valid = false;
+	}
 
 #ifdef CONFIG_OPENGL
 	// GLX root change callback
@@ -904,7 +892,7 @@ void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
 		return;
 
 	if (ce->place == PlaceOnTop) {
-		new_above = ps->window_stack->id;
+		new_above = list_entry(ps->window_stack.next, win, stack_neighbour)->id;
 	} else {
 		new_above = XCB_NONE;
 	}
@@ -1752,7 +1740,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 #ifdef CONFIG_DBUS
 	    .dbus_data = NULL,
 #endif
-	    .window_stack = NULL,
 	};
 
 	auto stderr_logger = stderr_logger_new();
@@ -1765,7 +1752,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// Allocate a session and copy default values into it
 	session_t *ps = cmalloc(session_t);
 	*ps = s_def;
-	ps->window_stack_bottom = &ps->window_stack;
+	list_init_head(&ps->window_stack);
 	ps->loop = EV_DEFAULT;
 	pixman_region32_init(&ps->screen_reg);
 
@@ -2144,7 +2131,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 		free(reply);
 		log_trace("Initial stack:");
-		WIN_STACK_ITER(ps, w) {
+		list_foreach(win, w, &ps->window_stack, stack_neighbour) {
 			log_trace("%#010x \"%s\"", w->id, w->name);
 		}
 	}
@@ -2195,7 +2182,7 @@ static void session_destroy(session_t *ps) {
 
 	// Free window linked list
 
-	WIN_STACK_ITER(ps, w) {
+	list_foreach_safe(win, w, &ps->window_stack, stack_neighbour) {
 		if (w->state != WSTATE_DESTROYING) {
 			win_ev_stop(ps, w);
 			HASH_DEL(ps->windows, w);
@@ -2204,8 +2191,7 @@ static void session_destroy(session_t *ps) {
 		free_win_res(ps, w);
 		free(w);
 	}
-	ps->window_stack = NULL;
-	ps->window_stack_bottom = &ps->window_stack;
+	list_init_head(&ps->window_stack);
 
 	// Free blacklists
 	free_wincondlst(&ps->o.shadow_blacklist);

@@ -22,9 +22,7 @@
 #include "types.h"
 #include "utils.h"
 #include "x.h"
-
-#define WIN_STACK_ITER(ps, w)                                                            \
-	for (win *w = ps->window_stack, *next; w ? (next = w->next, true) : false; w = next)
+#include "list.h"
 
 typedef struct session session_t;
 typedef struct _glx_texture glx_texture_t;
@@ -131,14 +129,11 @@ typedef enum win_flags {
 /// Structure representing a top-level window compton manages.
 typedef struct win win;
 struct win {
+	struct list_node stack_neighbour;
 	/// backend data attached to this window. Only available when
 	/// `state` is not UNMAPPED
 	void *win_image;
 	void *shadow_image;
-	/// Pointer to the next lower window in window stack.
-	win *next;
-	/// Pointer to a linked-list pointer that points to this window.
-	win **prev;
 	/// Pointer to the next higher window to paint.
 	win *prev_trans;
 	// TODO rethink reg_ignore
