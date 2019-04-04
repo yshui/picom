@@ -271,11 +271,10 @@ bool parse_blur_kern_lst(const char *src, conv **dest, int max, bool *hasneg) {
 	}
 
 	if (i > 1) {
-		log_warn("You are seeing this message because your are using "
-		         "multipassblur. Please "
-		         "report an issue to us so we know multipass blur is actually "
-		         "been used. "
-		         "Otherwise it might be removed in future releases");
+		log_warn("You are seeing this message because you are using "
+		         "multipass blur. Please report an issue to us so we know "
+		         "multipass blur is actually been used. Otherwise it might be "
+		         "removed in future releases");
 	}
 
 	if (*pc) {
