@@ -438,7 +438,7 @@ static inline void repair_win(session_t *ps, win *w) {
 		set_ignore_cookie(
 		    ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, XCB_NONE));
 	} else {
-		xcb_xfixes_region_t tmp = xcb_generate_id(ps->c);
+		xcb_xfixes_region_t tmp = x_new_id(ps->c);
 		xcb_xfixes_create_region(ps->c, tmp, 0, NULL);
 		set_ignore_cookie(ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, tmp));
 		x_fetch_region(ps->c, tmp, &parts);

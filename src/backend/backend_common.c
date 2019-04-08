@@ -221,7 +221,7 @@ bool build_shadow(xcb_connection_t *c, xcb_drawable_t d, double opacity, const i
 		goto shadow_picture_err;
 	}
 
-	gc = xcb_generate_id(c);
+	gc = x_new_id(c);
 	xcb_create_gc(c, gc, shadow_pixmap, 0, NULL);
 
 	xcb_image_put(c, shadow_pixmap, gc, shadow_image, 0, 0, 0);

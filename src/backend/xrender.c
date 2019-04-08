@@ -510,7 +510,7 @@ backend_t *backend_xrender_init(session_t *ps) {
 
 	xd->vsync = ps->o.vsync;
 	if (ps->present_exists) {
-		auto eid = xcb_generate_id(ps->c);
+		auto eid = x_new_id(ps->c);
 		auto e =
 		    xcb_request_check(ps->c, xcb_present_select_input_checked(
 		                                 ps->c, eid, xd->target_win,

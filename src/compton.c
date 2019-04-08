@@ -1064,7 +1064,7 @@ void update_ewmh_active_win(session_t *ps) {
 static bool register_cm(session_t *ps) {
 	assert(!ps->reg_win);
 
-	ps->reg_win = xcb_generate_id(ps->c);
+	ps->reg_win = x_new_id(ps->c);
 	auto e = xcb_request_check(
 	    ps->c, xcb_create_window_checked(ps->c, XCB_COPY_FROM_PARENT, ps->reg_win, ps->root,
 	                                     0, 0, 1, 1, 0, XCB_NONE, ps->vis, 0, NULL));
@@ -1956,7 +1956,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	if (ps->o.xrender_sync_fence) {
-		ps->sync_fence = xcb_generate_id(ps->c);
+		ps->sync_fence = x_new_id(ps->c);
 		e = xcb_request_check(
 		    ps->c, xcb_sync_create_fence(ps->c, ps->root, ps->sync_fence, 0));
 		if (e) {

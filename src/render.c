@@ -240,7 +240,7 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
 void paint_one(session_t *ps, win *w, const region_t *reg_paint) {
 	// Fetch Pixmap
 	if (!w->paint.pixmap) {
-		w->paint.pixmap = xcb_generate_id(ps->c);
+		w->paint.pixmap = x_new_id(ps->c);
 		set_ignore_cookie(
 		    ps, xcb_composite_name_window_pixmap(ps->c, w->id, w->paint.pixmap));
 	}
@@ -537,7 +537,7 @@ static bool win_build_shadow(session_t *ps, win *w, double opacity) {
 	if (!shadow_picture || !shadow_picture_argb)
 		goto shadow_picture_err;
 
-	gc = xcb_generate_id(ps->c);
+	gc = x_new_id(ps->c);
 	xcb_create_gc(ps->c, gc, shadow_pixmap, 0, NULL);
 
 	xcb_image_put(ps->c, shadow_pixmap, gc, shadow_image, 0, 0, 0);

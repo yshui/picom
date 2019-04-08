@@ -200,7 +200,7 @@ void win_release_image(backend_t *base, win *w) {
 
 static inline bool
 _win_bind_image(session_t *ps, win *w, void **win_image, void **shadow_image) {
-	auto pixmap = xcb_generate_id(ps->c);
+	auto pixmap = x_new_id(ps->c);
 	auto e = xcb_request_check(
 	    ps->c, xcb_composite_name_window_pixmap_checked(ps->c, w->id, pixmap));
 	if (e) {
@@ -1011,7 +1011,7 @@ void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev) {
 
 	// Create Damage for window (if not Input Only)
 	if (new->a._class != XCB_WINDOW_CLASS_INPUT_ONLY) {
-		new->damage = xcb_generate_id(ps->c);
+		new->damage = x_new_id(ps->c);
 		xcb_generic_error_t *e = xcb_request_check(
 		    ps->c, xcb_damage_create_checked(ps->c, new->damage, id,
 		                                     XCB_DAMAGE_REPORT_LEVEL_NON_EMPTY));
