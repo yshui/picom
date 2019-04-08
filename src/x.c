@@ -196,7 +196,7 @@ x_create_picture_with_pictfmt_and_pixmap(xcb_connection_t *c,
 		}
 	}
 
-	xcb_render_picture_t tmp_picture = xcb_generate_id(c);
+	xcb_render_picture_t tmp_picture = x_new_id(c);
 	xcb_generic_error_t *e =
 	    xcb_request_check(c, xcb_render_create_picture_checked(
 	                             c, tmp_picture, pixmap, pictfmt->id, valuemask, buf));
@@ -410,7 +410,7 @@ void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t 
  */
 xcb_pixmap_t x_create_pixmap(xcb_connection_t *c, uint8_t depth, xcb_drawable_t drawable,
                              int width, int height) {
-	xcb_pixmap_t pix = xcb_generate_id(c);
+	xcb_pixmap_t pix = x_new_id(c);
 	xcb_void_cookie_t cookie = xcb_create_pixmap_checked(
 	    c, depth, pix, drawable, to_u16_checked(width), to_u16_checked(height));
 	xcb_generic_error_t *err = xcb_request_check(c, cookie);

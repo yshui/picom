@@ -61,6 +61,18 @@ struct xvisual_info {
 		r;                                                                       \
 	})
 
+/// Wraps x_new_id. abort the program if x_new_id returns error
+static inline uint32_t x_new_id(xcb_connection_t *c) {
+	auto ret = xcb_generate_id(c);
+	if (ret == (uint32_t)-1) {
+		log_fatal("We seems to have run of XIDs. This is either a bug in the X "
+		          "server, or a resource leakage in compton. Please open an "
+		          "issue about this problem. compton will die.");
+		abort();
+	}
+	return ret;
+}
+
 /**
  * Send a request to X server and get the reply to make sure all previous
  * requests are processed, and their replies received
@@ -203,7 +215,7 @@ bool x_fence_sync(xcb_connection_t *, xcb_sync_fence_t);
  * @param[inout] size size of the array pointed to by `ret`.
  */
 int x_picture_filter_from_conv(const conv *kernel, double center,
-                                    xcb_render_fixed_t **ret, size_t *size);
+                               xcb_render_fixed_t **ret, size_t *size);
 
 /// Generate a search criteria for fbconfig from a X visual.
 /// Returns {-1, -1, -1, -1, -1, -1} on failure
