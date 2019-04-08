@@ -24,9 +24,8 @@ struct list_node {
 #define list_prev_entry(ptr, node) list_entry((ptr)->node.prev, __typeof__(*(ptr)), node)
 
 /// Insert a new node between two adjacent nodes in the list
-static inline void
-__list_insert_between(struct list_node *restrict prev, struct list_node *restrict next,
-                      struct list_node *restrict new_) {
+static inline void __list_insert_between(struct list_node *prev, struct list_node *next,
+                                         struct list_node *new_) {
 	new_->prev = prev;
 	new_->next = next;
 	next->prev = new_;
@@ -34,14 +33,12 @@ __list_insert_between(struct list_node *restrict prev, struct list_node *restric
 }
 
 /// Insert a new node after `curr`
-static inline void
-list_insert_after(struct list_node *restrict curr, struct list_node *restrict new_) {
+static inline void list_insert_after(struct list_node *curr, struct list_node *new_) {
 	__list_insert_between(curr, curr->next, new_);
 }
 
 /// Insert a new node before `curr`
-static inline void
-list_insert_before(struct list_node *restrict curr, struct list_node *restrict new_) {
+static inline void list_insert_before(struct list_node *curr, struct list_node *new_) {
 	__list_insert_between(curr->prev, curr, new_);
 }
 
@@ -59,8 +56,7 @@ static inline void list_remove(struct list_node *to_remove) {
 }
 
 /// Move `to_move` so that it's before `new_next`
-static inline void
-list_move_before(struct list_node *restrict to_move, struct list_node *restrict new_next) {
+static inline void list_move_before(struct list_node *to_move, struct list_node *new_next) {
 	list_remove(to_move);
 	list_insert_before(new_next, to_move);
 }
