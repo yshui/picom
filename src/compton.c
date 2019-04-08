@@ -1084,9 +1084,9 @@ static bool register_cm(session_t *ps) {
 		XClassHint *h = XAllocClassHint();
 		if (h) {
 			h->res_name = "compton";
-			h->res_class = "xcompmgr";
+			h->res_class = "compton";
 		}
-		Xutf8SetWMProperties(ps->dpy, ps->reg_win, "xcompmgr", "xcompmgr", NULL,
+		Xutf8SetWMProperties(ps->dpy, ps->reg_win, "compton", "compton", NULL,
 		                     0, NULL, NULL, h);
 		cxfree(h);
 	}
