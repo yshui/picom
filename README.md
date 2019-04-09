@@ -54,10 +54,10 @@ $ meson --buildtype=release . build
 $ ninja -C build
 ```
 
-On FreeBSD, `ld` does not look by default in /usr/local/lib, and you will get errors about some libraries being not found.
-To fix that, prepend `LDFLAGS="-L/usr/local/lib"`:
+##### FreeBSD
+To help meson find libraries and headers under FreeBSD:
 ```bash
-$ LDFLAGS="-L/usr/local/lib" meson --buildtype=release . build
+$ CPPFLAGS=-I/usr/local/include LDFLAGS=-L/usr/local/lib meson --buildtype=release . build
 $ ninja -C build
 ```
 
