@@ -161,7 +161,7 @@ static inline void free_paint_glx(session_t *ps, paint_t *ppaint) {
 /**
  * Free GLX part of win.
  */
-static inline void free_win_res_glx(session_t *ps, win *w) {
+static inline void free_win_res_glx(session_t *ps, struct managed_win *w) {
 	free_paint_glx(ps, &w->paint);
 	free_paint_glx(ps, &w->shadow_paint);
 #ifdef CONFIG_OPENGL

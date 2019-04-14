@@ -42,9 +42,7 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode);
 
 xcb_window_t find_client_win(session_t *ps, xcb_window_t w);
 
-win *find_toplevel2(session_t *ps, xcb_window_t wid);
-
-win *recheck_focus(session_t *ps);
+struct managed_win *recheck_focus(session_t *ps);
 
 /// Handle configure event of a root window
 void configure_root(session_t *ps, int width, int height);

@@ -21,13 +21,13 @@
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
+#include "list.h"
 #include "log.h"
 #include "string_utils.h"
 #include "types.h"
 #include "uthash_extra.h"
 #include "utils.h"
 #include "win.h"
-#include "list.h"
 
 #include "dbus.h"
 
@@ -468,7 +468,7 @@ static bool cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data)
 	// Get the number of wids we are to include
 	unsigned count = 0;
 	HASH_ITER2(ps->windows, w) {
-		assert(w->state != WSTATE_DESTROYING);
+		assert(!w->destroyed);
 		++count;
 	}
 
@@ -483,7 +483,7 @@ static bool cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data)
 	// Build the array
 	cdbus_window_t *pcur = arr;
 	HASH_ITER2(ps->windows, w) {
-		assert(w->state != WSTATE_DESTROYING);
+		assert(!w->destroyed);
 		*pcur = w->id;
 		++pcur;
 	}
@@ -743,7 +743,7 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 		return false;
 	}
 
-	win *w = find_win(ps, wid);
+	auto w = find_managed_win(ps, wid);
 
 	if (!w) {
 		log_error("Window %#010x not found.", wid);
@@ -757,14 +757,16 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 		return true;                                                             \
 	}
 
-	cdbus_m_win_get_do(id, cdbus_reply_wid);
+	cdbus_m_win_get_do(base.id, cdbus_reply_wid);
 
 	// next
 	if (!strcmp("next", target)) {
-		cdbus_reply_wid(ps, msg,
-		                (list_node_is_last(&ps->window_stack, &w->stack_neighbour)
-		                     ? 0
-		                     : list_next_entry(w, stack_neighbour)->id));
+		cdbus_reply_wid(
+		    ps, msg,
+		    (list_node_is_last(&ps->window_stack, &w->base.stack_neighbour)
+		         ? 0
+		         : list_entry(w->base.stack_neighbour.next, struct win, stack_neighbour)
+		               ->id));
 		return true;
 	}
 
@@ -845,7 +847,7 @@ static bool cdbus_process_win_set(session_t *ps, DBusMessage *msg) {
 		return false;
 	}
 
-	win *w = find_win(ps, wid);
+	auto w = find_managed_win(ps, wid);
 
 	if (!w) {
 		log_error("Window %#010x not found.", wid);
@@ -922,15 +924,17 @@ static bool cdbus_process_find_win(session_t *ps, DBusMessage *msg) {
 		cdbus_window_t client = XCB_NONE;
 		if (!cdbus_msg_get_arg(msg, 1, CDBUS_TYPE_WINDOW, &client))
 			return false;
-		win *w = find_toplevel(ps, client);
-		if (w)
-			wid = w->id;
+		auto w = find_toplevel(ps, client);
+		if (w) {
+			wid = w->base.id;
+		}
 	}
 	// Find focused window
 	else if (!strcmp("focused", target)) {
-		win *w = find_focused(ps);
-		if (w)
-			wid = w->id;
+		auto w = find_focused(ps);
+		if (w) {
+			wid = w->base.id;
+		}
 	} else {
 		log_error(CDBUS_ERROR_BADTGT_S, target);
 		cdbus_reply_err(ps, msg, CDBUS_ERROR_BADTGT, CDBUS_ERROR_BADTGT_S, target);
@@ -1301,37 +1305,37 @@ static DBusHandlerResult cdbus_process(DBusConnection *c, DBusMessage *msg, void
 /** @name Core callbacks
  */
 ///@{
-void cdbus_ev_win_added(session_t *ps, win *w) {
+void cdbus_ev_win_added(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
 	if (cd->dbus_conn)
 		cdbus_signal_wid(ps, "win_added", w->id);
 }
 
-void cdbus_ev_win_destroyed(session_t *ps, win *w) {
+void cdbus_ev_win_destroyed(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
 	if (cd->dbus_conn)
 		cdbus_signal_wid(ps, "win_destroyed", w->id);
 }
 
-void cdbus_ev_win_mapped(session_t *ps, win *w) {
+void cdbus_ev_win_mapped(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
 	if (cd->dbus_conn)
 		cdbus_signal_wid(ps, "win_mapped", w->id);
 }
 
-void cdbus_ev_win_unmapped(session_t *ps, win *w) {
+void cdbus_ev_win_unmapped(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
 	if (cd->dbus_conn)
 		cdbus_signal_wid(ps, "win_unmapped", w->id);
 }
 
-void cdbus_ev_win_focusout(session_t *ps, win *w) {
+void cdbus_ev_win_focusout(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
 	if (cd->dbus_conn)
 		cdbus_signal_wid(ps, "win_focusout", w->id);
 }
 
-void cdbus_ev_win_focusin(session_t *ps, win *w) {
+void cdbus_ev_win_focusin(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
 	if (cd->dbus_conn)
 		cdbus_signal_wid(ps, "win_focusin", w->id);
