@@ -54,14 +54,22 @@ $ meson --buildtype=release . build
 $ ninja -C build
 ```
 
-On FreeBSD, `ld` does not look by default in /usr/local/lib, and you will get errors about some libraries being not found.
-To fix that, prepend `LDFLAGS="-L/usr/local/lib"`:
+Built binary can be found in `build/src`
+
+If you have libraries and/or headers installed at non-default location (e.g. under `/usr/local/`), you might need to tell meson about them, since meson doesn't look for dependencies there by default.
+
+You can do that by setting the `CPPFLAGS` and `LDFLAGS` environment variables when running `meson`. Like this:
+
 ```bash
-$ LDFLAGS="-L/usr/local/lib" meson --buildtype=release . build
-$ ninja -C build
+$ LDFLAGS="-L/path/to/libraries" CPPFLAGS="-I/path/to/headers" meson --buildtype=release . build
+
 ```
 
-Built binary can be found in `build/src`
+As an example, on FreeBSD, you might have to run meson with:
+```bash
+$ LDFLAGS="-L/usr/local/include" CPPFLAGS="-I/usr/local/include" meson --buildtype=release . build
+$ ninja -C build
+```
 
 ### To install
 
