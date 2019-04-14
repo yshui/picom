@@ -1,6 +1,10 @@
+libev = dependency('libev', required: false)
+if not libev.found()
+	libev = cc.find_library('ev')
+endif
 base_deps = [
 	cc.find_library('m'),
-	cc.find_library('ev'),
+	libev,
 	dependency('xcb', version: '>=1.9.2'),
 ]
 
