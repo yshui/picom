@@ -50,9 +50,9 @@
 #include "dbus.h"
 #endif
 #include "event.h"
+#include "list.h"
 #include "options.h"
 #include "uthash_extra.h"
-#include "list.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -520,6 +520,20 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 		// log_trace("%s %d %d %d", w->name, to_paint, w->opacity,
 		// w->paint_excluded);
 
+		if ((w->flags & WIN_FLAGS_STALE_IMAGE) != 0 &&
+		    (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0 && to_paint) {
+			// Image needs to be updated, update it.
+			w->flags &= ~WIN_FLAGS_STALE_IMAGE;
+			if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING) {
+				// Rebind image only when the window does have an image
+				// available
+				if (!win_try_rebind_image(ps, w)) {
+					w->flags |= WIN_FLAGS_IMAGE_ERROR;
+					to_paint = false;
+				}
+			}
+		}
+
 		// Add window to damaged area if its painting status changes
 		// or opacity changes
 		if (to_paint != was_painted) {
@@ -527,16 +541,18 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 			add_damage_from_win(ps, w);
 		}
 
-		// to_paint will never change afterward
-		if (!to_paint)
+		// to_paint will never change after this point
+		if (!to_paint) {
 			goto skip_window;
+		}
 
 		// Calculate shadow opacity
 		w->shadow_opacity = ps->o.shadow_opacity * w->opacity * ps->o.frame_opacity;
 
 		// Generate ignore region for painting to reduce GPU load
-		if (!w->reg_ignore)
+		if (!w->reg_ignore) {
 			w->reg_ignore = rc_region_ref(last_reg_ignore);
+		}
 
 		// If the window is solid, we add the window region to the
 		// ignored region
@@ -568,18 +584,6 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 				unredir_possible = true;
 		}
 
-		if ((w->flags & WIN_FLAGS_STALE_IMAGE) != 0 &&
-		    (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0) {
-			// Image needs to be updated
-			w->flags &= ~WIN_FLAGS_STALE_IMAGE;
-			if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING) {
-				// If this window doesn't have an image available, don't
-				// try to rebind it
-				if (!win_try_rebind_image(ps, w)) {
-					w->flags |= WIN_FLAGS_IMAGE_ERROR;
-				}
-			}
-		}
 		w->prev_trans = t;
 		t = w;
 
@@ -1086,8 +1090,8 @@ static bool register_cm(session_t *ps) {
 			h->res_name = "compton";
 			h->res_class = "compton";
 		}
-		Xutf8SetWMProperties(ps->dpy, ps->reg_win, "compton", "compton", NULL,
-		                     0, NULL, NULL, h);
+		Xutf8SetWMProperties(ps->dpy, ps->reg_win, "compton", "compton", NULL, 0,
+		                     NULL, NULL, h);
 		cxfree(h);
 	}
 
