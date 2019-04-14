@@ -66,6 +66,13 @@ static inline void list_init_head(struct list_node *head) {
 	head->next = head->prev = head;
 }
 
+/// Replace list node `old` with `n`
+static inline void list_replace(struct list_node *old, struct list_node *n) {
+	__list_insert_between(old->prev, old->next, n);
+	old->prev = (void *)-1;
+	old->next = (void *)-2;
+}
+
 /// Return true if head is the only node in the list. Under usual circumstances this means
 /// the list is empty
 static inline bool list_is_empty(const struct list_node *head) {
