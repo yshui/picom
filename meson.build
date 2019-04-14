@@ -49,6 +49,10 @@ endif
 
 add_global_arguments('-D_GNU_SOURCE', language: 'c')
 
+if cc.has_header('stdc-predef.h')
+	add_global_arguments('-DHAS_STDC_PREDEF_H', language: 'c')
+endif
+
 warns = [ 'all', 'extra', 'no-unused-parameter', 'nonnull', 'shadow', 'no-type-limits',
           'implicit-fallthrough', 'no-unknown-warning-option', 'no-missing-braces', 'conversion' ]
 foreach w : warns

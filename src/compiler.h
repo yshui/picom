@@ -2,7 +2,9 @@
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 
+#ifdef HAS_STDC_PREDEF_H
 #include <stdc-predef.h>
+#endif
 
 #define auto           __auto_type
 #define likely(x)      __builtin_expect(!!(x), 1)
