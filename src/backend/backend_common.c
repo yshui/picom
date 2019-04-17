@@ -279,11 +279,3 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 	xcb_render_free_picture(backend_data->c, pict);
 	return ret;
 }
-
-bool default_is_win_transparent(void *backend_data, win *w, void *win_data) {
-	return w->mode != WMODE_SOLID;
-}
-
-bool default_is_frame_transparent(void *backend_data, win *w, void *win_data) {
-	return w->frame_opacity != 1;
-}

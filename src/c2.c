@@ -310,7 +310,7 @@ static void attr_unused c2_dump(c2_ptr_t p);
 
 static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf);
 
-static bool c2_match_once(session_t *ps, const win *w, const c2_ptr_t cond);
+static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_ptr_t cond);
 
 /**
  * Parse a condition string.
@@ -1272,11 +1272,11 @@ static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf) {
  *
  * For internal use.
  */
-static inline void
-c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf, bool *pres, bool *perr) {
+static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w,
+                                      const c2_l_t *pleaf, bool *pres, bool *perr) {
 	assert(pleaf);
 
-	const xcb_window_t wid = (pleaf->tgt_onframe ? w->client_win : w->id);
+	const xcb_window_t wid = (pleaf->tgt_onframe ? w->client_win : w->base.id);
 
 	// Return if wid is missing
 	if (pleaf->predef == C2_L_PUNDEFINED && !wid) {
@@ -1468,7 +1468,7 @@ c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf, bool *pres,
  *
  * @return true if matched, false otherwise.
  */
-static bool c2_match_once(session_t *ps, const win *w, const c2_ptr_t cond) {
+static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_ptr_t cond) {
 	bool result = false;
 	bool error = true;
 
@@ -1542,7 +1542,7 @@ static bool c2_match_once(session_t *ps, const win *w, const c2_ptr_t cond) {
  * @param pdata a place to return the data
  * @return true if matched, false otherwise.
  */
-bool c2_match(session_t *ps, const win *w, const c2_lptr_t *condlst, void **pdata) {
+bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condlst, void **pdata) {
 	// Then go through the whole linked list
 	for (; condlst; condlst = condlst->next) {
 		if (c2_match_once(ps, w, condlst->ptr)) {

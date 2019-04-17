@@ -50,7 +50,7 @@ region_t get_damage(session_t *ps, bool all_damage) {
 }
 
 /// paint all windows
-void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
+void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	// All painting will be limited to the damage, if _some_ of
 	// the paints bleed out of the damage region, it will destroy
 	// part of the image we want to reuse
@@ -98,7 +98,7 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 	// on top of that window. This is used to reduce the number of pixels painted.
 	//
 	// Whether this is beneficial is to be determined XXX
-	for (win *w = t; w; w = w->prev_trans) {
+	for (auto w = t; w; w = w->prev_trans) {
 		pixman_region32_subtract(&reg_visible, &ps->screen_reg, w->reg_ignore);
 		assert(!(w->flags & WIN_FLAGS_IMAGE_ERROR));
 

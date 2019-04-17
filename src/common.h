@@ -391,7 +391,7 @@ typedef struct session {
 
 	// === Window related ===
 	/// A hash table of all windows.
-	win *windows;
+	struct win *windows;
 	/// Windows in their stacking order
 	struct list_node window_stack;
 	/// Pointer to <code>win</code> of current active window. Used by
@@ -399,7 +399,7 @@ typedef struct session {
 	/// it's more reliable to store the window ID directly here, just in
 	/// case the WM does something extraordinary, but caching the pointer
 	/// means another layer of complexity.
-	win *active_win;
+	struct managed_win *active_win;
 	/// Window ID of leader window of currently active window. Used for
 	/// subsidiary window detection.
 	xcb_window_t active_leader;
@@ -743,31 +743,19 @@ static inline bool bkend_use_glx(session_t *ps) {
 }
 
 /**
- * Check if a window is really focused.
- */
-static inline bool win_is_focused_real(session_t *ps, const win *w) {
-	return w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->active_win == w;
-}
-
-/**
  * Find out the currently focused window.
  *
  * @return struct win object of the found window, NULL if not found
  */
-static inline win *find_focused(session_t *ps) {
-	if (!ps->o.track_focus)
+static inline struct managed_win *find_focused(session_t *ps) {
+	if (!ps->o.track_focus) {
 		return NULL;
+	}
 
-	if (ps->active_win && win_is_focused_real(ps, ps->active_win))
+	if (ps->active_win && win_is_focused_real(ps, ps->active_win)) {
 		return ps->active_win;
+	}
 	return NULL;
-}
-
-/**
- * Check if a rectangle includes the whole screen.
- */
-static inline bool rect_is_fullscreen(session_t *ps, int x, int y, int wid, int hei) {
-	return (x <= 0 && y <= 0 && (x + wid) >= ps->root_width && (y + hei) >= ps->root_height);
 }
 
 static void set_ignore(session_t *ps, unsigned long sequence) {
@@ -789,23 +777,6 @@ static void set_ignore(session_t *ps, unsigned long sequence) {
  */
 static inline void set_ignore_cookie(session_t *ps, xcb_void_cookie_t cookie) {
 	set_ignore(ps, cookie.sequence);
-}
-
-/**
- * Check if a window is a fullscreen window.
- *
- * It's not using w->border_size for performance measures.
- */
-static inline bool win_is_fullscreen(session_t *ps, const win *w) {
-	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
-	       (!w->bounding_shaped || w->rounded_corners);
-}
-
-/**
- * Check if a window will be painted solid.
- */
-static inline bool win_is_solid(session_t *ps, const win *w) {
-	return WMODE_SOLID == w->mode && !ps->o.force_win_blend;
 }
 
 /**
@@ -864,13 +835,6 @@ void vsync_deinit(session_t *ps);
 /** @name DBus hooks
  */
 ///@{
-void win_set_shadow_force(session_t *ps, win *w, switch_t val);
-
-void win_set_fade_force(session_t *ps, win *w, switch_t val);
-
-void win_set_focused_force(session_t *ps, win *w, switch_t val);
-
-void win_set_invert_color_force(session_t *ps, win *w, switch_t val);
 
 void opts_init_track_focus(session_t *ps);
 
