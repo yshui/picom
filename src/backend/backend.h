@@ -11,7 +11,7 @@
 #include "x.h"
 
 typedef struct session session_t;
-typedef struct win win;
+struct managed_win;
 
 struct backend_operations;
 
@@ -48,7 +48,7 @@ struct backend_operations {
 	///    1) if ps->overlay is not XCB_NONE, use that
 	///    2) use ps->root otherwise
 	/// TODO make the target window a parameter
-	backend_t *(*init)(session_t *) attr_nonnull(1);
+	backend_t *(*init)(session_t *)attr_nonnull(1);
 	void (*deinit)(backend_t *backend_data) attr_nonnull(1);
 
 	/// Called when rendering will be stopped for an unknown amount of
@@ -92,7 +92,7 @@ struct backend_operations {
 
 	/// Fill rectangle of target, mostly for debug purposes, optional.
 	void (*fill)(backend_t *backend_data, double r, double g, double b, double a,
-		     const region_t *clip);
+	             const region_t *clip);
 
 	/// Blur a given region of the target.
 	bool (*blur)(backend_t *backend_data, double opacity, const region_t *reg_blur,
@@ -129,8 +129,7 @@ struct backend_operations {
 	//     want to break that assumption as for now. We need to reconsider this.
 
 	/// Free resources associated with an image data structure
-	void (*release_image)(backend_t *backend_data, void *img_data)
-	    attr_nonnull(1, 2);
+	void (*release_image)(backend_t *backend_data, void *img_data) attr_nonnull(1, 2);
 
 	// ===========        Query         ===========
 
@@ -179,12 +178,11 @@ struct backend_operations {
 	/// Let the backend hook into the event handling queue
 };
 
-typedef backend_t *(*backend_init_fn)(session_t *ps) attr_nonnull(1);
+typedef backend_t *(*backend_init_fn)(session_t *ps)attr_nonnull(1);
 
 extern struct backend_operations *backend_list[];
 
-bool default_is_win_transparent(void *, win *, void *);
-bool default_is_frame_transparent(void *, win *, void *);
-void paint_all_new(session_t *ps, win *const t, bool ignore_damage) attr_nonnull(1);
+void paint_all_new(session_t *ps, struct managed_win *const t, bool ignore_damage)
+    attr_nonnull(1);
 
 // vim: set noet sw=8 ts=8 :

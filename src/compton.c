@@ -154,11 +154,11 @@ void cxinerama_upd_scrs(session_t *ps) {
  *
  * XXX move to win.c
  */
-static inline win *find_win_all(session_t *ps, const xcb_window_t wid) {
+static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t wid) {
 	if (!wid || PointerRoot == wid || wid == ps->root || wid == ps->overlay)
 		return NULL;
 
-	win *w = find_win(ps, wid);
+	auto w = find_managed_win(ps, wid);
 	if (!w)
 		w = find_toplevel(ps, wid);
 	if (!w)
@@ -217,8 +217,8 @@ static double fade_timeout(session_t *ps) {
  * @param steps steps of fading
  * @return whether we are still in fading mode
  */
-static bool run_fade(session_t *ps, win **_w, long steps) {
-	win *w = *_w;
+static bool run_fade(session_t *ps, struct managed_win **_w, long steps) {
+	auto w = *_w;
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
 		// We are not fading
 		assert(w->opacity_tgt == w->opacity);
@@ -226,14 +226,14 @@ static bool run_fade(session_t *ps, win **_w, long steps) {
 	}
 
 	if (!win_should_fade(ps, w)) {
-		log_debug("Window %#010x %s doesn't need fading", w->id, w->name);
+		log_debug("Window %#010x %s doesn't need fading", w->base.id, w->name);
 		w->opacity = w->opacity_tgt;
 	}
 	if (w->opacity == w->opacity_tgt) {
 		// We have reached target opacity.
 		// We don't call win_check_fade_finished here because that could destroy
 		// the window, but we still need the damage info from this window
-		log_debug("Fading finished for window %#010x %s", w->id, w->name);
+		log_debug("Fading finished for window %#010x %s", w->base.id, w->name);
 		return false;
 	}
 
@@ -281,11 +281,11 @@ static int should_ignore(session_t *ps, unsigned long sequence) {
  */
 uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
 	uint32_t evmask = 0;
-	win *w = NULL;
+	struct managed_win *w = NULL;
 
 	// Check if it's a mapped frame window
 	if (WIN_EVMODE_FRAME == mode ||
-	    ((w = find_win(ps, wid)) && w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
+	    ((w = find_managed_win(ps, wid)) && w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
 		evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
 		if (ps->o.track_focus && !ps->o.use_ewmh_active_win)
 			evmask |= XCB_EVENT_MASK_FOCUS_CHANGE;
@@ -303,45 +303,13 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
 }
 
 /**
- * Find out the WM frame of a client window by querying X.
- *
- * @param ps current session
- * @param wid window ID
- * @return struct _win object of the found window, NULL if not found
- */
-win *find_toplevel2(session_t *ps, xcb_window_t wid) {
-	// TODO this should probably be an "update tree", then find_toplevel.
-	//      current approach is a bit more "racy"
-	win *w = NULL;
-
-	// We traverse through its ancestors to find out the frame
-	while (wid && wid != ps->root && !(w = find_win(ps, wid))) {
-		xcb_query_tree_reply_t *reply;
-
-		// xcb_query_tree probably fails if you run compton when X is somehow
-		// initializing (like add it in .xinitrc). In this case
-		// just leave it alone.
-		reply = xcb_query_tree_reply(ps->c, xcb_query_tree(ps->c, wid), NULL);
-		if (reply == NULL) {
-			break;
-		}
-
-		wid = reply->parent;
-
-		free(reply);
-	}
-
-	return w;
-}
-
-/**
  * Recheck currently focused window and set its <code>w->focused</code>
  * to true.
  *
  * @param ps current session
  * @return struct _win of currently focused window, NULL if not found
  */
-win *recheck_focus(session_t *ps) {
+struct managed_win *recheck_focus(session_t *ps) {
 	// Use EWMH _NET_ACTIVE_WINDOW if enabled
 	if (ps->o.use_ewmh_active_win) {
 		update_ewmh_active_win(ps);
@@ -359,10 +327,10 @@ win *recheck_focus(session_t *ps) {
 		free(reply);
 	}
 
-	win *w = find_win_all(ps, wid);
+	auto w = find_win_all(ps, wid);
 
 	log_trace("%#010" PRIx32 " (%#010lx \"%s\") focused.", wid,
-	          (w ? w->id : XCB_NONE), (w ? w->name : NULL));
+	          (w ? w->base.id : XCB_NONE), (w ? w->name : NULL));
 
 	// And we set the focus state here
 	if (w) {
@@ -418,10 +386,10 @@ static void handle_root_flags(session_t *ps) {
 	}
 }
 
-static win *paint_preprocess(session_t *ps, bool *fade_running) {
+static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 	// XXX need better, more general name for `fade_running`. It really
 	// means if fade is still ongoing after the current frame is rendered
-	win *t = NULL;
+	struct managed_win *bottom = NULL;
 	*fade_running = false;
 
 	// Fading step calculation
@@ -438,7 +406,7 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 	ps->fade_time += steps * ps->o.fade_delta;
 
 	// First, let's process fading
-	list_foreach_safe(win, w, &ps->window_stack, stack_neighbour) {
+	win_stack_foreach_managed_safe(w, &ps->window_stack) {
 		const winmode_t mode_old = w->mode;
 		const bool was_painted = w->to_paint;
 		const double opacity_old = w->opacity;
@@ -491,7 +459,7 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 	// Track whether it's the highest window to paint
 	bool is_highest = true;
 	bool reg_ignore_valid = true;
-	list_foreach(win, w, &ps->window_stack, stack_neighbour) {
+	win_stack_foreach_managed(w, &ps->window_stack) {
 		__label__ skip_window;
 		bool to_paint = true;
 		// w->to_paint remembers whether this window is painted last time
@@ -520,10 +488,10 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 		// log_trace("%s %d %d %d", w->name, to_paint, w->opacity,
 		// w->paint_excluded);
 
-		if ((w->flags & WIN_FLAGS_STALE_IMAGE) != 0 &&
+		if ((w->flags & WIN_FLAGS_IMAGE_STALE) != 0 &&
 		    (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0 && to_paint) {
 			// Image needs to be updated, update it.
-			w->flags &= ~WIN_FLAGS_STALE_IMAGE;
+			w->flags &= ~WIN_FLAGS_IMAGE_STALE;
 			if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING) {
 				// Rebind image only when the window does have an image
 				// available
@@ -584,8 +552,8 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 				unredir_possible = true;
 		}
 
-		w->prev_trans = t;
-		t = w;
+		w->prev_trans = bottom;
+		bottom = w;
 
 		// If the screen is not redirected and the window has redir_ignore set,
 		// this window should not cause the screen to become redirected
@@ -633,7 +601,7 @@ static win *paint_preprocess(session_t *ps, bool *fade_running) {
 		}
 	}
 
-	return t;
+	return bottom;
 }
 
 /**
@@ -652,7 +620,7 @@ static void rebuild_shadow_exclude_reg(session_t *ps) {
 		exit(1);
 }
 
-static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
+static void restack_win(session_t *ps, struct win *w, xcb_window_t new_above) {
 	xcb_window_t old_above;
 
 	if (!list_node_is_last(&ps->window_stack, &w->stack_neighbour)) {
@@ -661,13 +629,21 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 		old_above = XCB_NONE;
 	}
 	log_debug("Restack %#010x (%s), old_above: %#010x, new_above: %#010x", w->id,
-	          w->name, old_above, new_above);
+	          win_get_name_if_managed(w), old_above, new_above);
+
+	struct managed_win *mw = NULL;
+	if (w->managed) {
+		mw = (struct managed_win *)w;
+	}
 
 	if (old_above != new_above) {
-		w->reg_ignore_valid = false;
-		rc_region_unref(&w->reg_ignore);
-		if (!list_node_is_last(&ps->window_stack, &w->stack_neighbour)) {
-			auto next_w = list_next_entry(w, stack_neighbour);
+		if (mw) {
+			mw->reg_ignore_valid = false;
+			rc_region_unref(&mw->reg_ignore);
+		}
+
+		auto next_w = win_stack_find_next_managed(ps, &w->stack_neighbour);
+		if (next_w) {
 			next_w->reg_ignore_valid = false;
 			rc_region_unref(&next_w->reg_ignore);
 		}
@@ -676,7 +652,7 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 		if (!new_above) {
 			new_next = &ps->window_stack;
 		} else {
-			win *tmp_w = NULL;
+			struct win *tmp_w = NULL;
 			HASH_FIND_INT(ps->windows, &new_above, tmp_w);
 
 			if (!tmp_w) {
@@ -692,11 +668,13 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 		list_move_before(&w->stack_neighbour, new_next);
 
 		// add damage for this window
-		add_damage_from_win(ps, w);
+		if (mw) {
+			add_damage_from_win(ps, mw);
+		}
 
 #ifdef DEBUG_RESTACK
 		log_trace("Window stack modified. Current stack:");
-		for (win *c = ps->list; c; c = c->next) {
+		for (auto c = ps->list; c; c = c->next) {
 			const char *desc = "";
 			if (c->state == WSTATE_DESTROYING) {
 				desc = "(D) ";
@@ -709,7 +687,7 @@ static void restack_win(session_t *ps, win *w, xcb_window_t new_above) {
 
 /// Free up all the images and deinit the backend
 static void destroy_backend(session_t *ps) {
-	list_foreach_safe(win, w, &ps->window_stack, stack_neighbour) {
+	win_stack_foreach_managed_safe(w, &ps->window_stack) {
 		// Wrapping up fading in progress
 		win_skip_fading(ps, &w);
 
@@ -757,7 +735,11 @@ static bool initialize_backend(session_t *ps) {
 
 		// window_stack shouldn't include window that's not in the hash table at
 		// this point. Since there cannot be any fading windows.
-		HASH_ITER2(ps->windows, w) {
+		HASH_ITER2(ps->windows, _w) {
+			if (!_w->managed) {
+				continue;
+			}
+			auto w = (struct managed_win *)_w;
 			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 				if (!win_bind_image(ps, w)) {
 					w->flags |= WIN_FLAGS_IMAGE_ERROR;
@@ -797,8 +779,8 @@ void configure_root(session_t *ps, int width, int height) {
 	ps->damage = ps->damage_ring + ps->ndamage - 1;
 
 	// Invalidate reg_ignore from the top
-	if (!list_is_empty(&ps->window_stack)) {
-		auto top_w = list_entry(ps->window_stack.next, win, stack_neighbour);
+	auto top_w = win_stack_find_next_managed(ps, &ps->window_stack);
+	if (top_w) {
 		rc_region_unref(&top_w->reg_ignore);
 		top_w->reg_ignore_valid = false;
 	}
@@ -831,7 +813,7 @@ void configure_root(session_t *ps, int width, int height) {
 
 /// Handle configure event of a regular window
 void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
-	win *w = find_win(ps, ce->window);
+	auto w = find_managed_win(ps, ce->window);
 	region_t damage;
 	pixman_region32_init(&damage);
 
@@ -843,9 +825,9 @@ void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	    w->state == WSTATE_DESTROYING) {
 		// Only restack the window to make sure we can handle future restack
 		// notification correctly
-		restack_win(ps, w, ce->above_sibling);
+		restack_win(ps, &w->base, ce->above_sibling);
 	} else {
-		restack_win(ps, w, ce->above_sibling);
+		restack_win(ps, &w->base, ce->above_sibling);
 		bool factor_change = false;
 		win_extents(w, &damage);
 
@@ -889,14 +871,14 @@ void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 }
 
 void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
-	win *w = find_win(ps, ce->window);
+	auto w = find_win(ps, ce->window);
 	xcb_window_t new_above;
 
 	if (!w)
 		return;
 
 	if (ce->place == PlaceOnTop) {
-		new_above = list_entry(ps->window_stack.next, win, stack_neighbour)->id;
+		new_above = list_entry(ps->window_stack.next, struct win, stack_neighbour)->id;
 	} else {
 		new_above = XCB_NONE;
 	}
@@ -963,48 +945,6 @@ void force_repaint(session_t *ps) {
 ///@{
 
 /**
- * Set w->shadow_force of a window.
- */
-void win_set_shadow_force(session_t *ps, win *w, switch_t val) {
-	if (val != w->shadow_force) {
-		w->shadow_force = val;
-		win_determine_shadow(ps, w);
-		queue_redraw(ps);
-	}
-}
-
-/**
- * Set w->fade_force of a window.
- *
- * Doesn't affect fading already in progress
- */
-void win_set_fade_force(session_t *ps, win *w, switch_t val) {
-	w->fade_force = val;
-}
-
-/**
- * Set w->focused_force of a window.
- */
-void win_set_focused_force(session_t *ps, win *w, switch_t val) {
-	if (val != w->focused_force) {
-		w->focused_force = val;
-		win_update_focused(ps, w);
-		queue_redraw(ps);
-	}
-}
-
-/**
- * Set w->invert_color_force of a window.
- */
-void win_set_invert_color_force(session_t *ps, win *w, switch_t val) {
-	if (val != w->invert_color_force) {
-		w->invert_color_force = val;
-		win_determine_invert_color(ps, w);
-		queue_redraw(ps);
-	}
-}
-
-/**
  * Enable focus tracking.
  */
 void opts_init_track_focus(session_t *ps) {
@@ -1017,7 +957,11 @@ void opts_init_track_focus(session_t *ps) {
 	if (!ps->o.use_ewmh_active_win) {
 		// Start listening to FocusChange events
 		HASH_ITER2(ps->windows, w) {
-			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+			if (!w->managed) {
+				continue;
+			}
+			auto mw = (struct managed_win *)w;
+			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 				xcb_change_window_attributes(
 				    ps->c, w->id, XCB_CW_EVENT_MASK,
 				    (const uint32_t[]){
@@ -1053,11 +997,12 @@ void opts_set_no_fading_openclose(session_t *ps, bool newval) {
 void update_ewmh_active_win(session_t *ps) {
 	// Search for the window
 	xcb_window_t wid = wid_get_prop_window(ps, ps->root, ps->atom_ewmh_active_win);
-	win *w = find_win_all(ps, wid);
+	auto w = find_win_all(ps, wid);
 
 	// Mark the window focused. No need to unfocus the previous one.
-	if (w)
+	if (w) {
 		win_set_focused(ps, w, true);
+	}
 }
 
 // === Main ===
@@ -1437,12 +1382,12 @@ static void fade_timer_callback(EV_P_ ev_timer *w, int revents) {
 static void _draw_callback(EV_P_ session_t *ps, int revents) {
 	if (ps->o.benchmark) {
 		if (ps->o.benchmark_wid) {
-			win *wi = find_win(ps, ps->o.benchmark_wid);
-			if (!wi) {
+			auto w = find_managed_win(ps, ps->o.benchmark_wid);
+			if (!w) {
 				log_fatal("Couldn't find specified benchmark window.");
 				exit(1);
 			}
-			add_damage_from_win(ps, wi);
+			add_damage_from_win(ps, w);
 		} else {
 			force_repaint(ps);
 		}
@@ -1458,7 +1403,7 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 	// should be redirected.
 	bool fade_running = false;
 	bool was_redirected = ps->redirected;
-	win *t = paint_preprocess(ps, &fade_running);
+	auto bottom = paint_preprocess(ps, &fade_running);
 	ps->tmout_unredir_hit = false;
 
 	if (!was_redirected && ps->redirected) {
@@ -1467,7 +1412,7 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 		// window would be put into an error state). so we rerun paint_preprocess
 		// here to make sure the rendering decision we make is up-to-date
 		log_debug("Re-run paint_preprocess");
-		t = paint_preprocess(ps, &fade_running);
+		bottom = paint_preprocess(ps, &fade_running);
 	}
 
 	// Start/stop fade timer depends on whether window are fading
@@ -1482,9 +1427,9 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 	if (ps->redirected && ps->o.stoppaint_force != ON) {
 		static int paint = 0;
 		if (ps->o.experimental_backends) {
-			paint_all_new(ps, t, false);
+			paint_all_new(ps, bottom, false);
 		} else {
-			paint_all(ps, t, false);
+			paint_all(ps, bottom, false);
 		}
 
 		paint++;
@@ -2122,21 +2067,29 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 			children = NULL;
 			nchildren = 0;
 		}
+		free(reply);
 
 		for (int i = 0; i < nchildren; i++) {
-			add_win(ps, children[i], i ? children[i - 1] : XCB_NONE);
+			auto w =
+			    add_win_above(ps, children[i], i ? children[i - 1] : XCB_NONE);
+			fill_win(ps, w);
 		}
 
 		HASH_ITER2(ps->windows, w) {
-			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				map_win(ps, w);
+			assert(!w->is_new);
+			if (!w->managed) {
+				continue;
+			}
+			auto mw = (struct managed_win *)w;
+			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+				map_win(ps, mw);
 			}
 		}
 
-		free(reply);
 		log_trace("Initial stack:");
-		list_foreach(win, w, &ps->window_stack, stack_neighbour) {
-			log_trace("%#010x \"%s\"", w->id, w->name);
+		list_foreach(struct win, w, &ps->window_stack, stack_neighbour) {
+			log_trace("%#010x \"%s\"", w->id,
+			          w->managed ? ((struct managed_win *)w)->name : "(null)");
 		}
 	}
 
@@ -2186,13 +2139,16 @@ static void session_destroy(session_t *ps) {
 
 	// Free window linked list
 
-	list_foreach_safe(win, w, &ps->window_stack, stack_neighbour) {
-		if (w->state != WSTATE_DESTROYING) {
+	list_foreach_safe(struct win, w, &ps->window_stack, stack_neighbour) {
+		if (!w->destroyed) {
 			win_ev_stop(ps, w);
 			HASH_DEL(ps->windows, w);
 		}
 
-		free_win_res(ps, w);
+		if (w->managed) {
+			auto mw = (struct managed_win *)w;
+			free_win_res(ps, mw);
+		}
 		free(w);
 	}
 	list_init_head(&ps->window_stack);
