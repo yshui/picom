@@ -1578,8 +1578,8 @@ static void finish_destroy_win(session_t *ps, struct managed_win **_w) {
 	//      paint happened at least once, w->reg_ignore_valid would
 	//      be true, and there is no need to invalid w->next->reg_ignore
 	//      when w is destroyed.
-	if (!list_node_is_last(&ps->window_stack, &w->base.stack_neighbour)) {
-		auto next_w = list_next_entry(w, base.stack_neighbour);        // XXX
+	auto next_w = win_stack_find_next_managed(ps, &w->base.stack_neighbour);
+	if (next_w) {
 		rc_region_unref(&next_w->reg_ignore);
 		next_w->reg_ignore_valid = false;
 	}
