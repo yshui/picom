@@ -2067,13 +2067,13 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 			children = NULL;
 			nchildren = 0;
 		}
-		free(reply);
 
 		for (int i = 0; i < nchildren; i++) {
 			auto w =
 			    add_win_above(ps, children[i], i ? children[i - 1] : XCB_NONE);
 			fill_win(ps, w);
 		}
+		free(reply);
 
 		HASH_ITER2(ps->windows, w) {
 			assert(!w->is_new);
