@@ -1847,7 +1847,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		          "might not work");
 	}
 
-	ps->gaussian_map = gaussian_kernel(ps->o.shadow_radius);
+	ps->gaussian_map = gaussian_kernel_autodetect_deviation(ps->o.shadow_radius);
 	sum_kernel_preprocess(ps->gaussian_map);
 
 	rebuild_shadow_exclude_reg(ps);
