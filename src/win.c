@@ -213,7 +213,8 @@ _win_bind_image(session_t *ps, struct managed_win *w, void **win_image, void **s
 	auto e = xcb_request_check(
 	    ps->c, xcb_composite_name_window_pixmap_checked(ps->c, w->base.id, pixmap));
 	if (e) {
-		log_error("Failed to get named pixmap for window %#010x(%s)", w->base.id, w->name);
+		log_error("Failed to get named pixmap for window %#010x(%s)", w->base.id,
+		          w->name);
 		free(e);
 		return false;
 	}
@@ -547,8 +548,8 @@ void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new) {
 		return;
 	}
 
-	log_debug("Updating shadow property of window %#010x (%s) to %d", w->base.id, w->name,
-	          shadow_new);
+	log_debug("Updating shadow property of window %#010x (%s) to %d", w->base.id,
+	          w->name, shadow_new);
 	if (ps->o.experimental_backends && ps->redirected &&
 	    w->state != WSTATE_UNMAPPED && !(w->flags & WIN_FLAGS_IMAGE_ERROR)) {
 		assert(!w->shadow_image);
@@ -943,23 +944,11 @@ void free_win_res(session_t *ps, struct managed_win *w) {
 	free(w->role);
 }
 
-/// Insert a new window above window with id `below`, if there is no window, add to top
+/// Insert a new window after list_node `prev`
 /// New window will be in unmapped state
-struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below) {
-	struct win *w = NULL;
-	HASH_FIND_INT(ps->windows, &below, w);
-	if (!w && !list_is_empty(&ps->window_stack)) {
-		// `below` window is not found even if the window stack is not empty
-		return NULL;
-	}
-
+static struct win *add_win(session_t *ps, xcb_window_t id, struct list_node *prev) {
 	auto new_w = cmalloc(struct win);
-	if (list_is_empty(&ps->window_stack)) {
-		assert(w == NULL);
-		list_insert_after(&ps->window_stack, &new_w->stack_neighbour);
-	} else {
-		list_insert_before(&w->stack_neighbour, &new_w->stack_neighbour);
-	}
+	list_insert_after(prev, &new_w->stack_neighbour);
 	new_w->id = id;
 	new_w->managed = false;
 	new_w->is_new = true;
@@ -971,11 +960,26 @@ struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below) {
 
 /// Insert a new win entry at the top of the stack
 struct win *add_win_top(session_t *ps, xcb_window_t id) {
-	if (!list_is_empty(&ps->window_stack)) {
-		auto first = list_entry(ps->window_stack.next, struct win, stack_neighbour);
-		return add_win_above(ps, id, first->id);
+	return add_win(ps, id, &ps->window_stack);
+}
+
+/// Insert a new window above window with id `below`, if there is no window, add to top
+/// New window will be in unmapped state
+struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below) {
+	struct win *w = NULL;
+	HASH_FIND_INT(ps->windows, &below, w);
+	if (!w) {
+		if (!list_is_empty(&ps->window_stack)) {
+			// `below` window is not found even if the window stack is not
+			// empty
+			return NULL;
+		}
+		return add_win_top(ps, id);
 	} else {
-		return add_win_above(ps, id, 0);
+		// we found something from the hash table, so if the stack is empty,
+		// we are in an inconsistent state.
+		assert(!list_is_empty(&ps->window_stack));
+		return add_win(ps, id, w->stack_neighbour.prev);
 	}
 }
 
@@ -1075,8 +1079,7 @@ void fill_win(session_t *ps, struct win *w) {
 	}
 
 	log_debug("Adding window %#010x", w->id);
-	xcb_get_window_attributes_cookie_t acookie =
-	    xcb_get_window_attributes(ps->c, w->id);
+	xcb_get_window_attributes_cookie_t acookie = xcb_get_window_attributes(ps->c, w->id);
 	xcb_get_window_attributes_reply_t *a =
 	    xcb_get_window_attributes_reply(ps->c, acookie, NULL);
 	if (!a || a->map_state == XCB_MAP_STATE_UNVIEWABLE) {
@@ -1631,7 +1634,8 @@ void unmap_win(session_t *ps, struct managed_win **_w, bool destroy) {
 		return;
 	}
 
-	log_trace("Unmapping %#010x \"%s\", destroy = %d", w->base.id, (w ? w->name : NULL), destroy);
+	log_trace("Unmapping %#010x \"%s\", destroy = %d", w->base.id,
+	          (w ? w->name : NULL), destroy);
 
 	if (unlikely(w->state == WSTATE_DESTROYING && !destroy)) {
 		log_warn("Trying to undestroy a window?");
@@ -1858,8 +1862,8 @@ void map_win(session_t *ps, struct managed_win *w) {
 	w->state = WSTATE_MAPPING;
 	w->opacity_tgt = win_calc_opacity_target(ps, w);
 
-	log_debug("Window %#010x has opacity %f, opacity target is %f", w->base.id, w->opacity,
-	          w->opacity_tgt);
+	log_debug("Window %#010x has opacity %f, opacity target is %f", w->base.id,
+	          w->opacity, w->opacity_tgt);
 
 	win_determine_blur_background(ps, w);
 
