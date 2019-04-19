@@ -78,6 +78,7 @@
 
 // FIXME This list of includes should get shorter
 #include "backend/backend.h"
+#include "backend/driver.h"
 #include "compiler.h"
 #include "config.h"
 #include "kernel.h"
@@ -294,6 +295,7 @@ typedef struct session {
 	ev_signal int_signal;
 	/// backend data
 	backend_t *backend_data;
+	enum driver drivers;
 	/// libev mainloop
 	struct ev_loop *loop;
 

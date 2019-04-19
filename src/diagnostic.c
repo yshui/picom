@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <xcb/xcb.h>
 
+#include "backend/driver.h"
 #include "diagnostic.h"
 #include "config.h"
 #include "common.h"
@@ -21,6 +22,8 @@ void print_diagnostics(session_t *ps, const char *config_file) {
 	printf("* Fast Math: Yes\n");
 #endif
 	printf("* Config file used: %s\n", config_file ?: "None");
+	printf("\n### Drivers (inaccurate):\n\n");
+	print_drivers(ps->drivers);
 }
 
 // vim: set noet sw=8 ts=8 :

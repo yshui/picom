@@ -5,6 +5,7 @@
 
 #include <stdbool.h>
 
+#include "driver.h"
 #include "compiler.h"
 #include "kernel.h"
 #include "region.h"
@@ -176,6 +177,9 @@ struct backend_operations {
 
 	// ===========         Hooks        ============
 	/// Let the backend hook into the event handling queue
+	// ===========         Misc         ============
+	/// Return the driver that is been used by the backend
+	enum driver (*detect_driver)(backend_t *backend_data);
 };
 
 typedef backend_t *(*backend_init_fn)(session_t *ps)attr_nonnull(1);

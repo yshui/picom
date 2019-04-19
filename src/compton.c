@@ -1311,6 +1311,9 @@ static bool redir_start(session_t *ps) {
 
 	ps->redirected = true;
 
+	// Re-detect driver since we now have a backend
+	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);
+
 	root_damaged(ps);
 
 	// Repaint the whole screen
@@ -1984,6 +1987,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// Overlay must be initialized before double buffer, and before creation
 	// of OpenGL context.
 	init_overlay(ps);
+
+	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);
 
 	// Initialize filters, must be preceded by OpenGL context creation
 	if (!ps->o.experimental_backends && !init_render(ps)) {
