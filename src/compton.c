@@ -1380,6 +1380,12 @@ static void handle_new_windows(session_t *ps) {
 			auto mw = (struct managed_win *)new_w;
 			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 				map_win(ps, mw);
+
+				// This window might be damaged before we called fill_win
+				// and created the damage handle. And there is not way for
+				// us to find out. So just blindly mark it damaged
+				mw->ever_damaged = true;
+				add_damage_from_win(ps, mw);
 			}
 		}
 	}
