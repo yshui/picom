@@ -418,7 +418,7 @@ struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below);
 struct win *add_win_top(session_t *ps, xcb_window_t id);
 /// Query the Xorg for information about window `win`
 /// `win` pointer might become invalid after this function returns
-void fill_win(session_t *ps, struct win *win);
+struct win *fill_win(session_t *ps, struct win *win);
 /// Unmap or destroy a window
 void unmap_win(session_t *ps, struct managed_win **, bool destroy);
 /// Destroy an unmanaged window
