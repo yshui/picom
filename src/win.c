@@ -989,7 +989,8 @@ struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below) {
 
 /// Query the Xorg for information about window `win`
 /// `win` pointer might become invalid after this function returns
-void fill_win(session_t *ps, struct win *w) {
+/// Returns the pointer to the window, might be different from `w`
+struct win *fill_win(session_t *ps, struct win *w) {
 	static const struct managed_win win_def = {
 	    // No need to initialize. (or, you can think that
 	    // they are initialized right here).
@@ -1070,16 +1071,18 @@ void fill_win(session_t *ps, struct win *w) {
 	assert(!w->destroyed);
 	assert(w->is_new);
 
+	w->is_new = false;
+
 	// Reject overlay window and already added windows
 	if (w->id == ps->overlay) {
-		return;
+		return w;
 	}
 
 	auto duplicated_win = find_managed_win(ps, w->id);
 	if (duplicated_win) {
 		log_debug("Window %#010x (recorded name: %s) added multiple times", w->id,
 		          duplicated_win->name);
-		return;
+		return &duplicated_win->base;
 	}
 
 	log_debug("Adding window %#010x", w->id);
@@ -1093,14 +1096,13 @@ void fill_win(session_t *ps, struct win *w) {
 		// BTW, we don't care about Input Only windows, except for stacking
 		// proposes, so we need to keep track of them still.
 		free(a);
-		return;
+		return w;
 	}
 
 	if (a->_class == XCB_WINDOW_CLASS_INPUT_ONLY) {
 		// No need to manage this window, but we still keep it on the window stack
 		w->managed = false;
-		w->is_new = false;
-		return;
+		return w;
 	}
 
 	// Allocate and initialize the new win structure
@@ -1111,7 +1113,6 @@ void fill_win(session_t *ps, struct win *w) {
 	// by map_win
 	*new = win_def;
 	new->base = *w;
-	new->base.is_new = false;
 	new->base.managed = true;
 	new->a = *a;
 	pixman_region32_init(&new->bounding_shape);
@@ -1126,7 +1127,7 @@ void fill_win(session_t *ps, struct win *w) {
 	if (e) {
 		free(e);
 		free(new);
-		return;
+		return w;
 	}
 
 	new->pictfmt = x_get_pictform_for_visual(ps->c, new->a.visual);
@@ -1143,7 +1144,7 @@ void fill_win(session_t *ps, struct win *w) {
 		cdbus_ev_win_added(ps, &new->base);
 	}
 #endif
-	return;
+	return &new->base;
 }
 
 /**

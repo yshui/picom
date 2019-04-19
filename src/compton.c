@@ -1373,7 +1373,14 @@ static void handle_queued_x_events(EV_P_ ev_prepare *w, int revents) {
 static void handle_new_windows(session_t *ps) {
 	list_foreach_safe(struct win, w, &ps->window_stack, stack_neighbour) {
 		if (w->is_new) {
-			fill_win(ps, w);
+			auto new_w = fill_win(ps, w);
+			if (!new_w->managed) {
+				continue;
+			}
+			auto mw = (struct managed_win *)new_w;
+			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+				map_win(ps, mw);
+			}
 		}
 	}
 }
