@@ -2039,6 +2039,12 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	xcb_grab_server(ps->c);
 
+	// We are going to pull latest information from X server now, events sent by X
+	// earlier is irrelavant at this point.
+	// A better solution is probably grabbing the server from the very start. But I
+	// think there still could be race condition that mandates discarding the events.
+	x_discard_events(ps->c);
+
 	// Initialize DBus. We need to do this early, because add_win might call dbus
 	// functions
 	if (ps->o.dbus) {

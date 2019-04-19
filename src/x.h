@@ -110,6 +110,15 @@ static inline winprop_t wid_get_prop(const session_t *ps, xcb_window_t wid, xcb_
 	return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
 }
 
+/// Discard all X events in queue or in flight. Should only be used when the server is
+/// grabbed
+static inline void x_discard_events(xcb_connection_t *c) {
+	xcb_generic_event_t *e;
+	while ((e = xcb_poll_for_event(c))) {
+		free(e);
+	}
+}
+
 /**
  * Get the value of a type-<code>xcb_window_t</code> property of a window.
  *
