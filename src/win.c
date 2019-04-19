@@ -947,6 +947,10 @@ void free_win_res(session_t *ps, struct managed_win *w) {
 /// Insert a new window after list_node `prev`
 /// New window will be in unmapped state
 static struct win *add_win(session_t *ps, xcb_window_t id, struct list_node *prev) {
+	struct win *old_w = NULL;
+	HASH_FIND_INT(ps->windows, &id, old_w);
+	assert(old_w == NULL);
+
 	auto new_w = cmalloc(struct win);
 	list_insert_after(prev, &new_w->stack_neighbour);
 	new_w->id = id;
