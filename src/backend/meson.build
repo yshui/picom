@@ -1,5 +1,5 @@
 # enable xrender
-srcs += [ files('backend_common.c', 'xrender.c', 'backend.c') ]
+srcs += [ files('backend_common.c', 'xrender/xrender.c', 'backend.c') ]
 
 # enable opengl
 if get_option('opengl')
