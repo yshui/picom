@@ -184,9 +184,13 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 }
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
-	auto w = find_managed_win(ps, ev->window);
+	auto w = find_win(ps, ev->window);
 	if (w) {
-		unmap_win(ps, &w, true);
+		if (w->managed) {
+			unmap_win(ps, (struct managed_win **)&w, true);
+		} else {
+			destroy_unmanaged_win(ps, &w);
+		}
 	}
 }
 
@@ -217,8 +221,12 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	} else {
 		// otherwise, find and destroy the window first
 		auto w = find_win(ps, ev->window);
-		if (w && w->managed) {
-			unmap_win(ps, (struct managed_win **)&w, true);
+		if (w) {
+			if (w->managed) {
+				unmap_win(ps, (struct managed_win **)&w, true);
+			} else {
+				destroy_unmanaged_win(ps, &w);
+			}
 		}
 
 		// Reset event mask in case something wrong happens
