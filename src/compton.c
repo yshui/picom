@@ -2077,7 +2077,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_set_priority(&ps->event_check, EV_MINPRI);
 	ev_prepare_start(ps->loop, &ps->event_check);
 
-	xcb_grab_server(ps->c);
+	e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
+	if (e) {
+		log_fatal("Failed to grab X server");
+		goto err;
+	}
 
 	// We are going to pull latest information from X server now, events sent by X
 	// earlier is irrelavant at this point.
@@ -2156,6 +2160,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_remove_target_tls(stderr_logger);
 	}
 	return ps;
+err:
+	free(ps);
+	return NULL;
 }
 
 /**
