@@ -170,7 +170,7 @@ static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
 	assert(ev->parent == ps->root);
 	// TODO delay fill_win
-	fill_win(ps, add_win_top(ps, ev->window));
+	add_win_top(ps, ev->window);
 }
 
 static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
@@ -216,8 +216,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 
 	if (ev->parent == ps->root) {
 		// new window
-		// TODO delay fill_win
-		fill_win(ps, add_win_top(ps, ev->window));
+		add_win_top(ps, ev->window);
 	} else {
 		// otherwise, find and destroy the window first
 		auto w = find_win(ps, ev->window);

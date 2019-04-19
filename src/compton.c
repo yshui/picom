@@ -91,6 +91,11 @@ void set_root_flags(session_t *ps, uint64_t flags) {
 	ps->root_flags |= flags;
 }
 
+static inline void quit_compton(session_t *ps) {
+	ps->quit = true;
+	ev_break(ps->loop, EVBREAK_ALL);
+}
+
 /**
  * Free Xinerama screen info.
  *
@@ -1365,6 +1370,14 @@ static void handle_queued_x_events(EV_P_ ev_prepare *w, int revents) {
 	}
 }
 
+static void handle_new_windows(session_t *ps) {
+	list_foreach_safe(struct win, w, &ps->window_stack, stack_neighbour) {
+		if (w->is_new) {
+			fill_win(ps, w);
+		}
+	}
+}
+
 /**
  * Unredirection timeout callback.
  */
@@ -1380,6 +1393,26 @@ static void fade_timer_callback(EV_P_ ev_timer *w, int revents) {
 }
 
 static void _draw_callback(EV_P_ session_t *ps, int revents) {
+	auto e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
+	if (e) {
+		log_fatal("failed to grab x server");
+		x_print_error(e->full_sequence, e->major_code, e->minor_code, e->error_code);
+		return quit_compton(ps);
+	}
+
+	// Catching up with X server
+	handle_queued_x_events(ps->loop, &ps->event_check, 0);
+
+	// Call fill_win on new windows
+	handle_new_windows(ps);
+
+	e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
+	if (e) {
+		log_fatal("failed to ungrab x server");
+		x_print_error(e->full_sequence, e->major_code, e->minor_code, e->error_code);
+		return quit_compton(ps);
+	}
+
 	if (ps->o.benchmark) {
 		if (ps->o.benchmark_wid) {
 			auto w = find_managed_win(ps, ps->o.benchmark_wid);
