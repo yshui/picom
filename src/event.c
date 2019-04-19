@@ -156,13 +156,13 @@ static inline const char *attr_pure ev_focus_detail_name(xcb_focus_in_event_t *e
 }
 
 static inline void ev_focus_in(session_t *ps, xcb_focus_in_event_t *ev) {
-	log_trace("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
+	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
 	          ev_focus_detail_name(ev));
 	recheck_focus(ps);
 }
 
 static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
-	log_trace("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
+	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
 	          ev_focus_detail_name(ev));
 	recheck_focus(ps);
 }
@@ -174,7 +174,7 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 }
 
 static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
-	log_trace("{ send_event: %d, id: %#010x, above: %#010x, override_redirect: %d }",
+	log_debug("{ send_event: %d, id: %#010x, above: %#010x, override_redirect: %d }",
 	          ev->event, ev->window, ev->above_sibling, ev->override_redirect);
 	if (ev->window == ps->root) {
 		configure_root(ps, ev->width, ev->height);
@@ -211,7 +211,7 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 }
 
 static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
-	log_trace("{ new_parent: %#010x, override_redirect: %d }", ev->parent,
+	log_debug("{ new_parent: %#010x, override_redirect: %d }", ev->parent,
 	          ev->override_redirect);
 
 	if (ev->parent == ps->root) {
@@ -309,7 +309,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			name_len = xcb_get_atom_name_name_length(reply);
 		}
 
-		log_trace("{ atom = %.*s }", name_len, name);
+		log_debug("{ atom = %.*s }", name_len, name);
 		free(reply);
 	}
 
@@ -532,8 +532,11 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		discard_ignore(ps, ev->full_sequence);
 	}
 
+	xcb_window_t wid = ev_window(ps, ev);
 	if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
-		xcb_window_t wid = ev_window(ps, ev);
+		log_debug("event %10.10s serial %#010x window %#010x \"%s\"",
+		          ev_name(ps, ev), ev->full_sequence, wid, ev_window_name(ps, wid));
+	} else {
 		log_trace("event %10.10s serial %#010x window %#010x \"%s\"",
 		          ev_name(ps, ev), ev->full_sequence, wid, ev_window_name(ps, wid));
 	}
