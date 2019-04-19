@@ -1621,6 +1621,16 @@ static void finish_map_win(session_t *ps, struct managed_win **_w) {
 	w->state = WSTATE_MAPPED;
 }
 
+void destroy_unmanaged_win(session_t *ps, struct win **_w) {
+	auto w = *_w;
+	assert(!w->managed);
+	assert(!w->destroyed);
+	list_remove(&w->stack_neighbour);
+	HASH_DEL(ps->windows, w);
+	free(w);
+	*_w = NULL;
+}
+
 void unmap_win(session_t *ps, struct managed_win **_w, bool destroy) {
 	auto w = *_w;
 

@@ -421,6 +421,8 @@ struct win *add_win_top(session_t *ps, xcb_window_t id);
 void fill_win(session_t *ps, struct win *win);
 /// Unmap or destroy a window
 void unmap_win(session_t *ps, struct managed_win **, bool destroy);
+/// Destroy an unmanaged window
+void destroy_unmanaged_win(session_t *ps, struct win **w);
 
 void map_win(session_t *ps, struct managed_win *w);
 void map_win_by_id(session_t *ps, xcb_window_t id);
