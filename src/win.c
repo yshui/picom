@@ -193,6 +193,7 @@ void add_damage_from_win(session_t *ps, const struct managed_win *w) {
 
 /// Release the images attached to this window
 void win_release_image(backend_t *base, struct managed_win *w) {
+	log_debug("Releasing image of window %#010x (%s)", w->base.id, w->name);
 	assert(w->win_image || (w->flags & WIN_FLAGS_IMAGE_ERROR));
 	if (w->win_image) {
 		base->ops->release_image(base, w->win_image);
@@ -218,7 +219,7 @@ _win_bind_image(session_t *ps, struct managed_win *w, void **win_image, void **s
 		free(e);
 		return false;
 	}
-	log_trace("New named pixmap %#010x", pixmap);
+	log_trace("New named pixmap for %#010x (%s) : %#010x", w->base.id, w->name, pixmap);
 	*win_image = ps->backend_data->ops->bind_pixmap(
 	    ps->backend_data, pixmap, x_get_visual_info(ps->c, w->a.visual), true);
 	if (!*win_image) {

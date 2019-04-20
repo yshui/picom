@@ -502,7 +502,8 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		    (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0 && to_paint) {
 			// Image needs to be updated, update it.
 			w->flags &= ~WIN_FLAGS_IMAGE_STALE;
-			if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING) {
+			if (w->state != WSTATE_UNMAPPING &&
+			    w->state != WSTATE_DESTROYING && ps->redirected) {
 				// Rebind image only when the window does have an image
 				// available
 				if (!win_try_rebind_image(ps, w)) {
@@ -705,6 +706,7 @@ static void destroy_backend(session_t *ps) {
 		if (!w) {
 			continue;
 		}
+
 		if (ps->backend_data) {
 			if (w->state == WSTATE_MAPPED) {
 				win_release_image(ps->backend_data, w);
