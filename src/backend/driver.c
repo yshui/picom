@@ -37,7 +37,10 @@ enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_wind
 				continue;
 			}
 
-			auto name = xcb_randr_get_provider_info_name(r2);
+			auto name_len = xcb_randr_get_provider_info_name_length(r2);
+			assert(name_len >= 0);
+			auto name =
+			    strndup(xcb_randr_get_provider_info_name(r2), (size_t)name_len);
 			if (strcasestr(name, "modesetting") != NULL) {
 				ret |= DRIVER_MODESETTING;
 			} else if (strcasestr(name, "Radeon") != NULL) {
@@ -50,6 +53,7 @@ enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_wind
 			} else if (strcasestr(name, "Intel") != NULL) {
 				ret |= DRIVER_INTEL;
 			}
+			free(name);
 		}
 		free(r);
 	}

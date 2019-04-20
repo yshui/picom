@@ -24,7 +24,7 @@ enum driver {
 	DRIVER_MODESETTING = 64,
 };
 
-/// Return a list of drivers currently in use by the X server.
+/// Return a list of all drivers currently in use by the X server.
 /// Note, this is a best-effort test, so no guarantee all drivers will be detected.
 enum driver detect_driver(xcb_connection_t *, struct backend_base *, xcb_window_t);
 
