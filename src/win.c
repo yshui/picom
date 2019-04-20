@@ -550,7 +550,7 @@ void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new) {
 
 	log_debug("Updating shadow property of window %#010x (%s) to %d", w->base.id,
 	          w->name, shadow_new);
-	if (ps->o.experimental_backends && ps->redirected &&
+	if (ps->backend_data &&
 	    w->state != WSTATE_UNMAPPED && !(w->flags & WIN_FLAGS_IMAGE_ERROR)) {
 		assert(!w->shadow_image);
 		// Create shadow image
@@ -783,17 +783,15 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 	w->shadow_dy = ps->o.shadow_offset_y;
 	w->shadow_width = w->widthb + ps->o.shadow_radius * 2;
 	w->shadow_height = w->heightb + ps->o.shadow_radius * 2;
+
 	// Invalidate the shadow we built
-	if (ps->o.experimental_backends && ps->redirected) {
-		if (w->state == WSTATE_MAPPED || w->state == WSTATE_MAPPING ||
-		    w->state == WSTATE_FADING) {
-			w->flags |= WIN_FLAGS_IMAGE_STALE;
-		} else {
-			assert(w->state == WSTATE_UNMAPPED);
-		}
+	if (w->state == WSTATE_MAPPED || w->state == WSTATE_MAPPING ||
+	    w->state == WSTATE_FADING) {
+		w->flags |= WIN_FLAGS_IMAGE_STALE;
 	} else {
-		free_paint(ps, &w->shadow_paint);
+		assert(w->state == WSTATE_UNMAPPED);
 	}
+	free_paint(ps, &w->shadow_paint);
 }
 
 /**
@@ -1448,19 +1446,15 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 	}
 
 	// Window shape changed, we should free old wpaint and shadow pict
-	if (ps->o.experimental_backends) {
-		// log_trace("free out dated pict");
-		// Window shape changed, we should free win_data
-		if (ps->redirected && w->state != WSTATE_UNMAPPED) {
-			// Note we only do this when screen is redirected, because
-			// otherwise win_data is not valid
-			assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
-			w->flags |= WIN_FLAGS_IMAGE_STALE;
-		}
-	} else {
-		free_paint(ps, &w->paint);
-		free_paint(ps, &w->shadow_paint);
+	// log_trace("free out dated pict");
+	if (w->state != WSTATE_UNMAPPED) {
+		// Note we only do this when screen is redirected, because
+		// otherwise win_data is not valid
+		assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
+		w->flags |= WIN_FLAGS_IMAGE_STALE;
 	}
+	free_paint(ps, &w->paint);
+	free_paint(ps, &w->shadow_paint);
 
 	win_on_factor_change(ps, w);
 }
@@ -1557,15 +1551,12 @@ static void finish_unmap_win(session_t *ps, struct managed_win **_w) {
 	w->reg_ignore_valid = false;
 	w->state = WSTATE_UNMAPPED;
 
-	if (ps->o.experimental_backends) {
-		// We are in unmap_win, we definitely was viewable
-		if (ps->redirected) {
-			win_release_image(ps->backend_data, w);
-		}
-	} else {
-		free_paint(ps, &w->paint);
-		free_paint(ps, &w->shadow_paint);
+	// We are in unmap_win, this window definitely was viewable
+	if (ps->backend_data) {
+		win_release_image(ps->backend_data, w);
 	}
+	free_paint(ps, &w->paint);
+	free_paint(ps, &w->shadow_paint);
 
 	w->flags = 0;
 }
@@ -1898,7 +1889,7 @@ void map_win(session_t *ps, struct managed_win *w) {
 	w->flags &= ~WIN_FLAGS_IMAGE_STALE;
 
 	// Bind image after update_bounding_shape, so the shadow has the correct size.
-	if (ps->redirected && ps->o.experimental_backends) {
+	if (ps->backend_data) {
 		if (!win_bind_image(ps, w)) {
 			w->flags |= WIN_FLAGS_IMAGE_ERROR;
 		}
