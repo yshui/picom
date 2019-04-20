@@ -1577,8 +1577,7 @@ static void reset_enable(EV_P_ ev_signal *w, int revents) {
 static void exit_enable(EV_P_ ev_signal *w, int revents) {
 	session_t *ps = session_ptr(w, int_signal);
 	log_info("compton is quitting...");
-	ps->quit = true;
-	ev_break(ps->loop, EVBREAK_ALL);
+	quit_compton(ps);
 }
 
 /**

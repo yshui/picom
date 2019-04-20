@@ -262,6 +262,7 @@ static void release_image(backend_t *base, void *image) {
 	if (img->owned) {
 		xcb_free_pixmap(base->c, img->pixmap);
 	}
+	free(img);
 }
 
 static void deinit(backend_t *backend_data) {
