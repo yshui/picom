@@ -105,7 +105,7 @@ static inline void free_wincondlst(c2_lptr_t **pcondlst) {
 #ifndef CONFIG_OPENGL
 static inline void free_paint_glx(session_t *ps, paint_t *p) {
 }
-static inline void free_win_res_glx(session_t *ps, win *w) {
+static inline void free_win_res_glx(session_t *ps, struct managed_win *w) {
 }
 #endif
 
