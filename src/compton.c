@@ -475,6 +475,11 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			rc_region_unref(&w->reg_ignore);
 		}
 
+		// Clear flags if we are not using experimental backends
+		if (!ps->o.experimental_backends) {
+			w->flags = 0;
+		}
+
 		// log_trace("%d %d %s", w->a.map_state, w->ever_damaged, w->name);
 
 		// Give up if it's not damaged or invisible, or it's unmapped and its
@@ -700,7 +705,7 @@ static void destroy_backend(session_t *ps) {
 		if (!w) {
 			continue;
 		}
-		if (ps->o.experimental_backends) {
+		if (ps->backend_data) {
 			if (w->state == WSTATE_MAPPED) {
 				win_release_image(ps->backend_data, w);
 			} else {
@@ -712,12 +717,11 @@ static void destroy_backend(session_t *ps) {
 				                                     ps->root_image);
 				ps->root_image = NULL;
 			}
-		} else {
-			free_paint(ps, &w->paint);
 		}
+		free_paint(ps, &w->paint);
 	}
 
-	if (ps->o.experimental_backends) {
+	if (ps->backend_data) {
 		// deinit backend
 		ps->backend_data->ops->deinit(ps->backend_data);
 		ps->backend_data = NULL;
@@ -762,16 +766,19 @@ void configure_root(session_t *ps, int width, int height) {
 	log_info("Root configuration changed, new geometry: %dx%d", width, height);
 	// On root window changes
 	bool has_root_change = false;
-	if (ps->o.experimental_backends && ps->redirected) {
+	if (ps->o.experimental_backends) {
 		has_root_change = ps->backend_data->ops->root_change != NULL;
-		if (!has_root_change) {
-			// deinit/reinit backend and free up resources if the backend
-			// cannot handle root change
-			destroy_backend(ps);
-		}
 	} else {
-		free_paint(ps, &ps->tgt_buffer);
+		// Old backend can handle root change
+		has_root_change = true;
 	}
+
+	if (!has_root_change) {
+		// deinit/reinit backend and free up resources if the backend
+		// cannot handle root change
+		destroy_backend(ps);
+	}
+	free_paint(ps, &ps->tgt_buffer);
 
 	ps->root_width = width;
 	ps->root_height = height;
@@ -796,20 +803,21 @@ void configure_root(session_t *ps, int width, int height) {
 		glx_on_root_change(ps);
 	}
 #endif
-	if (ps->o.experimental_backends && ps->redirected) {
-		if (has_root_change) {
+	if (has_root_change) {
+		if (ps->backend_data != NULL) {
 			ps->backend_data->ops->root_change(ps->backend_data, ps);
-		} else {
-			if (!initialize_backend(ps)) {
-				log_fatal("Failed to re-initialize backend after root "
-				          "change, aborting...");
-				ps->quit = true;
-				// TODO only event handlers should request ev_break,
-				// otherwise it's too hard to keep track of what can break
-				// the event loop
-				ev_break(ps->loop, EVBREAK_ALL);
-				return;
-			}
+		}
+		// Old backend's root_change is not a specific function
+	} else {
+		if (!initialize_backend(ps)) {
+			log_fatal("Failed to re-initialize backend after root "
+			          "change, aborting...");
+			ps->quit = true;
+			// TODO only event handlers should request ev_break,
+			// otherwise it's too hard to keep track of what can break
+			// the event loop
+			ev_break(ps->loop, EVBREAK_ALL);
+			return;
 		}
 	}
 	force_repaint(ps);
@@ -900,7 +908,7 @@ void root_damaged(session_t *ps) {
 		return;
 	}
 
-	if (ps->o.experimental_backends) {
+	if (ps->backend_data) {
 		if (ps->root_image) {
 			ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
 		}
@@ -1295,6 +1303,7 @@ static bool redir_start(session_t *ps) {
 	}
 
 	if (ps->o.experimental_backends) {
+		assert(ps->backend_data);
 		ps->ndamage = ps->backend_data->ops->max_buffer_age;
 	} else {
 		ps->ndamage = maximum_buffer_age(ps);
