@@ -60,6 +60,8 @@ typedef struct gl_texture {
 
 struct gl_data {
 	backend_t base;
+	// If we are using proprietary NVIDIA driver
+	bool is_nvidia;
 	// Height and width of the viewport
 	int height, width;
 	int npasses;
