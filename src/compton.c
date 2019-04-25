@@ -480,7 +480,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			w->flags = 0;
 		}
 
-		// log_trace("%d %d %s", w->a.map_state, w->ever_damaged, w->name);
+		log_trace("%d %d %s", w->a.map_state, w->ever_damaged, w->name);
 
 		// Give up if it's not damaged or invisible, or it's unmapped and its
 		// pixmap is gone (for example due to a ConfigureNotify), or when it's
@@ -495,8 +495,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		if ((w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
 			to_paint = false;
 		}
-		// log_trace("%s %d %d %d", w->name, to_paint, w->opacity,
-		// w->paint_excluded);
+		log_trace("%s %d %f %d", w->name, to_paint, w->opacity, w->paint_excluded);
 
 		if ((w->flags & WIN_FLAGS_IMAGE_STALE) != 0 &&
 		    (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0 && to_paint) {
