@@ -828,7 +828,7 @@ void configure_root(session_t *ps, int width, int height) {
 
 /// Handle configure event of a regular window
 void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
-	auto w = find_managed_win(ps, ce->window);
+	auto w = find_win(ps, ce->window);
 	region_t damage;
 	pixman_region32_init(&damage);
 
@@ -836,45 +836,54 @@ void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		return;
 	}
 
-	if (w->state == WSTATE_UNMAPPED || w->state == WSTATE_UNMAPPING ||
-	    w->state == WSTATE_DESTROYING) {
+	if (!w->managed) {
+		restack_win(ps, w, ce->above_sibling);
+		return;
+	}
+
+	auto mw = (struct managed_win *)w;
+
+	if (mw->state == WSTATE_UNMAPPED || mw->state == WSTATE_UNMAPPING ||
+	    mw->state == WSTATE_DESTROYING) {
 		// Only restack the window to make sure we can handle future restack
 		// notification correctly
-		restack_win(ps, &w->base, ce->above_sibling);
+		restack_win(ps, w, ce->above_sibling);
 	} else {
-		restack_win(ps, &w->base, ce->above_sibling);
+		restack_win(ps, w, ce->above_sibling);
 		bool factor_change = false;
-		win_extents(w, &damage);
+		win_extents(mw, &damage);
 
 		// If window geometry change, free old extents
-		if (w->g.x != ce->x || w->g.y != ce->y || w->g.width != ce->width ||
-		    w->g.height != ce->height || w->g.border_width != ce->border_width)
+		if (mw->g.x != ce->x || mw->g.y != ce->y || mw->g.width != ce->width ||
+		    mw->g.height != ce->height || mw->g.border_width != ce->border_width)
+			{
 			factor_change = true;
+			}
 
-		w->g.x = ce->x;
-		w->g.y = ce->y;
+		mw->g.x = ce->x;
+		mw->g.y = ce->y;
 
-		if (w->g.width != ce->width || w->g.height != ce->height ||
-		    w->g.border_width != ce->border_width) {
-			log_trace("Window size changed, %dx%d -> %dx%d", w->g.width,
-			          w->g.height, ce->width, ce->height);
-			w->g.width = ce->width;
-			w->g.height = ce->height;
-			w->g.border_width = ce->border_width;
-			win_on_win_size_change(ps, w);
-			win_update_bounding_shape(ps, w);
+		if (mw->g.width != ce->width || mw->g.height != ce->height ||
+		    mw->g.border_width != ce->border_width) {
+			log_trace("Window size changed, %dx%d -> %dx%d", mw->g.width,
+			          mw->g.height, ce->width, ce->height);
+			mw->g.width = ce->width;
+			mw->g.height = ce->height;
+			mw->g.border_width = ce->border_width;
+			win_on_win_size_change(ps, mw);
+			win_update_bounding_shape(ps, mw);
 		}
 
 		region_t new_extents;
 		pixman_region32_init(&new_extents);
-		win_extents(w, &new_extents);
+		win_extents(mw, &new_extents);
 		pixman_region32_union(&damage, &damage, &new_extents);
 		pixman_region32_fini(&new_extents);
 
 		if (factor_change) {
-			win_on_factor_change(ps, w);
+			win_on_factor_change(ps, mw);
 			add_damage(ps, &damage);
-			win_update_screen(ps, w);
+			win_update_screen(ps, mw);
 		}
 	}
 
@@ -882,7 +891,7 @@ void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 	// override_redirect flag cannot be changed after window creation, as far
 	// as I know, so there's no point to re-match windows here.
-	w->a.override_redirect = ce->override_redirect;
+	mw->a.override_redirect = ce->override_redirect;
 }
 
 void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce) {
