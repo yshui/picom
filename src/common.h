@@ -378,9 +378,11 @@ typedef struct session {
 	// Cached blur convolution kernels.
 	xcb_render_fixed_t *blur_kerns_cache[MAX_BLUR_PASS];
 	/// Reset program after next paint.
-	bool reset;
+	bool reset:1;
 	/// If compton should quit
-	bool quit;
+	bool quit:1;
+	/// If new window has been added and not been handled
+	bool has_new_window:1;
 
 	// === Expose event related ===
 	/// Pointer to an array of <code>XRectangle</code>-s of exposed region.
