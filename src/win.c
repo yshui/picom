@@ -958,6 +958,7 @@ static struct win *add_win(session_t *ps, xcb_window_t id, struct list_node *pre
 	new_w->destroyed = false;
 
 	HASH_ADD_INT(ps->windows, id, new_w);
+	ps->has_new_window = true;
 	return new_w;
 }
 

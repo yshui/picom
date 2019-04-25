@@ -855,10 +855,9 @@ void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 		// If window geometry change, free old extents
 		if (mw->g.x != ce->x || mw->g.y != ce->y || mw->g.width != ce->width ||
-		    mw->g.height != ce->height || mw->g.border_width != ce->border_width)
-			{
+		    mw->g.height != ce->height || mw->g.border_width != ce->border_width) {
 			factor_change = true;
-			}
+		}
 
 		mw->g.x = ce->x;
 		mw->g.y = ce->y;
@@ -1412,6 +1411,7 @@ static void handle_new_windows(session_t *ps) {
 			}
 		}
 	}
+	ps->has_new_window = false;
 }
 
 /**
@@ -1429,24 +1429,31 @@ static void fade_timer_callback(EV_P_ ev_timer *w, int revents) {
 }
 
 static void _draw_callback(EV_P_ session_t *ps, int revents) {
-	auto e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
-	if (e) {
-		log_fatal("failed to grab x server");
-		x_print_error(e->full_sequence, e->major_code, e->minor_code, e->error_code);
-		return quit_compton(ps);
-	}
+	if (ps->has_new_window) {
+		log_debug("Delayed handling of new window events, entering critical "
+		          "section");
+		auto e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
+		if (e) {
+			log_fatal("failed to grab x server");
+			x_print_error(e->full_sequence, e->major_code, e->minor_code,
+			              e->error_code);
+			return quit_compton(ps);
+		}
 
-	// Catching up with X server
-	handle_queued_x_events(ps->loop, &ps->event_check, 0);
+		// Catching up with X server
+		handle_queued_x_events(ps->loop, &ps->event_check, 0);
 
-	// Call fill_win on new windows
-	handle_new_windows(ps);
+		// Call fill_win on new windows
+		handle_new_windows(ps);
 
-	e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
-	if (e) {
-		log_fatal("failed to ungrab x server");
-		x_print_error(e->full_sequence, e->major_code, e->minor_code, e->error_code);
-		return quit_compton(ps);
+		e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
+		if (e) {
+			log_fatal("failed to ungrab x server");
+			x_print_error(e->full_sequence, e->major_code, e->minor_code,
+			              e->error_code);
+			return quit_compton(ps);
+		}
+		log_debug("Exiting critical section");
 	}
 
 	if (ps->o.benchmark) {
