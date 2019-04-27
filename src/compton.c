@@ -2005,30 +2005,13 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 
 		for (int i = 0; i < nchildren; i++) {
-			auto w =
-			    add_win_above(ps, children[i], i ? children[i - 1] : XCB_NONE);
-			fill_win(ps, w);
+			add_win_above(ps, children[i], i ? children[i - 1] : XCB_NONE);
 		}
 		free(reply);
 
-		HASH_ITER2(ps->windows, w) {
-			assert(!w->is_new);
-			if (!w->managed) {
-				continue;
-			}
-			auto mw = (struct managed_win *)w;
-			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				map_win(ps, mw);
-				// This is a pre-existing window, we have no idea if it's
-				// ever damaged, so assume conservatively that it is.
-				mw->ever_damaged = true;
-			}
-		}
-
 		log_trace("Initial stack:");
 		list_foreach(struct win, w, &ps->window_stack, stack_neighbour) {
-			log_trace("%#010x \"%s\"", w->id,
-			          w->managed ? ((struct managed_win *)w)->name : "(null)");
+			log_trace("%#010x", w->id);
 		}
 	}
 
