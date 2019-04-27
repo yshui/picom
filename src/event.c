@@ -173,6 +173,73 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 	add_win_top(ps, ev->window);
 }
 
+/// Handle configure event of a regular window
+static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
+	auto w = find_win(ps, ce->window);
+	region_t damage;
+	pixman_region32_init(&damage);
+
+	if (!w) {
+		return;
+	}
+
+	if (!w->managed) {
+		restack_above(ps, w, ce->above_sibling);
+		return;
+	}
+
+	auto mw = (struct managed_win *)w;
+
+	if (mw->state == WSTATE_UNMAPPED || mw->state == WSTATE_UNMAPPING ||
+	    mw->state == WSTATE_DESTROYING) {
+		// Only restack the window to make sure we can handle future restack
+		// notification correctly
+		restack_above(ps, w, ce->above_sibling);
+	} else {
+		restack_above(ps, w, ce->above_sibling);
+		bool factor_change = false;
+		win_extents(mw, &damage);
+
+		// If window geometry change, free old extents
+		if (mw->g.x != ce->x || mw->g.y != ce->y || mw->g.width != ce->width ||
+		    mw->g.height != ce->height || mw->g.border_width != ce->border_width) {
+			factor_change = true;
+		}
+
+		mw->g.x = ce->x;
+		mw->g.y = ce->y;
+
+		if (mw->g.width != ce->width || mw->g.height != ce->height ||
+		    mw->g.border_width != ce->border_width) {
+			log_trace("Window size changed, %dx%d -> %dx%d", mw->g.width,
+			          mw->g.height, ce->width, ce->height);
+			mw->g.width = ce->width;
+			mw->g.height = ce->height;
+			mw->g.border_width = ce->border_width;
+			win_on_win_size_change(ps, mw);
+			win_update_bounding_shape(ps, mw);
+		}
+
+		region_t new_extents;
+		pixman_region32_init(&new_extents);
+		win_extents(mw, &new_extents);
+		pixman_region32_union(&damage, &damage, &new_extents);
+		pixman_region32_fini(&new_extents);
+
+		if (factor_change) {
+			win_on_factor_change(ps, mw);
+			add_damage(ps, &damage);
+			win_update_screen(ps, mw);
+		}
+	}
+
+	pixman_region32_fini(&damage);
+
+	// override_redirect flag cannot be changed after window creation, as far
+	// as I know, so there's no point to re-match windows here.
+	mw->a.override_redirect = ce->override_redirect;
+}
+
 static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
 	log_debug("{ send_event: %d, id: %#010x, above: %#010x, override_redirect: %d }",
 	          ev->event, ev->window, ev->above_sibling, ev->override_redirect);
@@ -215,8 +282,18 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	          ev->override_redirect);
 
 	if (ev->parent == ps->root) {
-		// new window
-		add_win_top(ps, ev->window);
+		// X will generate reparent notifiy even if the parent didn't actually
+		// change (i.e. reparent again to current parent). So we check if that's
+		// the case
+		auto w = find_win(ps, ev->window);
+		if (w) {
+			// This window has already been reparented to root before,
+			// so we don't need to create a new window for it, we just need to
+			// move it to the top
+			restack_top(ps, w);
+		} else {
+			add_win_top(ps, ev->window);
+		}
 	} else {
 		// otherwise, find and destroy the window first
 		auto w = find_win(ps, ev->window);
@@ -240,7 +317,8 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 			auto w_top = find_toplevel2(ps, ev->parent);
 			// If found, and the client window has not been determined, or its
 			// frame may not have a correct client, continue
-			if (w_top && (!w_top->client_win || w_top->client_win == w_top->base.id)) {
+			if (w_top &&
+			    (!w_top->client_win || w_top->client_win == w_top->base.id)) {
 				// If it has WM_STATE, mark it the client window
 				if (wid_has_prop(ps, ev->window, ps->atom_client)) {
 					w_top->wmwin = false;
@@ -261,7 +339,16 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 }
 
 static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {
-	circulate_win(ps, ev);
+	auto w = find_win(ps, ev->window);
+
+	if (!w)
+		return;
+
+	if (ev->place == PlaceOnTop) {
+		restack_top(ps, w);
+	} else {
+		restack_bottom(ps, w);
+	}
 }
 
 static inline void expose_root(session_t *ps, const rect_t *rects, int nrects) {
@@ -339,7 +426,8 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 
 			auto w_top = find_toplevel2(ps, ev->window);
 			// Initialize client_win as early as possible
-			if (w_top && (!w_top->client_win || w_top->client_win == w_top->base.id) &&
+			if (w_top &&
+			    (!w_top->client_win || w_top->client_win == w_top->base.id) &&
 			    wid_has_prop(ps, ev->window, ps->atom_client)) {
 				w_top->wmwin = false;
 				win_unmark_client(ps, w_top);
