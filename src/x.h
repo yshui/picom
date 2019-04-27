@@ -47,9 +47,20 @@ struct xvisual_info {
 	xcb_visualid_t visual;
 };
 
-#define XCB_SYNCED_VOID(func, c, ...)                                                    \
-	xcb_request_check(c, func##_checked(c, __VA_ARGS__));
-#define XCB_SYNCED(func, c, ...)                                                         \
+#define XCB_AWAIT_VOID(func, c, ...)                                                     \
+	({                                                                               \
+		bool success = true;                                                     \
+		__auto_type e = xcb_request_check(c, func##_checked(c, __VA_ARGS__));    \
+		if (e) {                                                                 \
+			x_print_error(e->sequence, e->major_code, e->minor_code,         \
+			              e->error_code);                                    \
+			free(e);                                                         \
+			success = false;                                                 \
+		}                                                                        \
+		success;                                                                 \
+	})
+
+#define XCB_AWAIT(func, c, ...)                                                          \
 	({                                                                               \
 		xcb_generic_error_t *e = NULL;                                           \
 		__auto_type r = func##_reply(c, func(c, __VA_ARGS__), &e);               \

@@ -1104,20 +1104,17 @@ static bool init_overlay(session_t *ps) {
 	if (ps->overlay) {
 		// Set window region of the overlay window, code stolen from
 		// compiz-0.8.8
-		xcb_generic_error_t *e;
-		e = XCB_SYNCED_VOID(xcb_shape_mask, ps->c, XCB_SHAPE_SO_SET,
-		                    XCB_SHAPE_SK_BOUNDING, ps->overlay, 0, 0, 0);
-		if (e) {
+		if (!XCB_AWAIT_VOID(xcb_shape_mask, ps->c, XCB_SHAPE_SO_SET,
+		                    XCB_SHAPE_SK_BOUNDING, ps->overlay, 0, 0, 0)) {
 			log_fatal("Failed to set the bounding shape of overlay, giving "
 			          "up.");
-			exit(1);
+			return false;
 		}
-		e = XCB_SYNCED_VOID(xcb_shape_rectangles, ps->c, XCB_SHAPE_SO_SET,
+		if (!XCB_AWAIT_VOID(xcb_shape_rectangles, ps->c, XCB_SHAPE_SO_SET,
 		                    XCB_SHAPE_SK_INPUT, XCB_CLIP_ORDERING_UNSORTED,
-		                    ps->overlay, 0, 0, 0, NULL);
-		if (e) {
+		                    ps->overlay, 0, 0, 0, NULL)) {
 			log_fatal("Failed to set the input shape of overlay, giving up.");
-			exit(1);
+			return false;
 		}
 
 		// Listen to Expose events on the overlay
@@ -1128,17 +1125,15 @@ static bool init_overlay(session_t *ps) {
 		// overlay
 		// root_damage = XDamageCreate(ps->dpy, root, XDamageReportNonEmpty);
 
-		// Unmap overlay, firstly. But this typically does not work because
-		// the window isn't created yet.
-		// xcb_unmap_window(c, ps->overlay);
-		// XFlush(ps->dpy);
+		// Unmap the overlay, we will map it when needed in redir_start
+		XCB_AWAIT_VOID(xcb_unmap_window, ps->c, ps->overlay);
 	} else {
 		log_error("Cannot get X Composite overlay window. Falling "
 		          "back to painting on root window.");
 	}
 	log_debug("overlay = %#010x", ps->overlay);
 
-	return ps->overlay;
+	return true;
 }
 
 /**
@@ -1850,7 +1845,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 			log_fatal("No XRandR extension. sw-opti, refresh-rate or "
 			          "xinerama-shadow-crop "
 			          "cannot be enabled.");
-			exit(1);
+			goto err;
 		}
 	}
 
@@ -1864,7 +1859,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Overlay must be initialized before double buffer, and before creation
 	// of OpenGL context.
-	init_overlay(ps);
+	if (!init_overlay(ps)) {
+		goto err;
+	}
 
 	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);
 
