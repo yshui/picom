@@ -61,6 +61,12 @@ static inline void list_move_before(struct list_node *to_move, struct list_node 
 	list_insert_before(new_next, to_move);
 }
 
+/// Move `to_move` so that it's after `new_prev`
+static inline void list_move_after(struct list_node *to_move, struct list_node *new_prev) {
+	list_remove(to_move);
+	list_insert_after(new_prev, to_move);
+}
+
 /// Initialize a list node that's intended to be the head node
 static inline void list_init_head(struct list_node *head) {
 	head->next = head->prev = head;

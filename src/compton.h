@@ -47,9 +47,6 @@ struct managed_win *recheck_focus(session_t *ps);
 /// Handle configure event of a root window
 void configure_root(session_t *ps, int width, int height);
 
-/// Handle configure event of a regular window
-void configure_win(session_t *ps, xcb_configure_notify_event_t *ce);
-
 void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce);
 
 void update_ewmh_active_win(session_t *ps);

@@ -551,8 +551,8 @@ void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new) {
 
 	log_debug("Updating shadow property of window %#010x (%s) to %d", w->base.id,
 	          w->name, shadow_new);
-	if (ps->backend_data &&
-	    w->state != WSTATE_UNMAPPED && !(w->flags & WIN_FLAGS_IMAGE_ERROR)) {
+	if (ps->backend_data && w->state != WSTATE_UNMAPPED &&
+	    !(w->flags & WIN_FLAGS_IMAGE_ERROR)) {
 		assert(!w->shadow_image);
 		// Create shadow image
 		w->shadow_image = ps->backend_data->ops->render_shadow(
@@ -946,6 +946,7 @@ void free_win_res(session_t *ps, struct managed_win *w) {
 /// Insert a new window after list_node `prev`
 /// New window will be in unmapped state
 static struct win *add_win(session_t *ps, xcb_window_t id, struct list_node *prev) {
+	log_debug("Adding window %#010x", id);
 	struct win *old_w = NULL;
 	HASH_FIND_INT(ps->windows, &id, old_w);
 	assert(old_w == NULL);
@@ -1085,7 +1086,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 		return &duplicated_win->base;
 	}
 
-	log_debug("Adding window %#010x", w->id);
+	log_debug("Managing window %#010x", w->id);
 	xcb_get_window_attributes_cookie_t acookie = xcb_get_window_attributes(ps->c, w->id);
 	xcb_get_window_attributes_reply_t *a =
 	    xcb_get_window_attributes_reply(ps->c, acookie, NULL);
@@ -1625,6 +1626,90 @@ void destroy_unmanaged_win(session_t *ps, struct win **_w) {
 	*_w = NULL;
 }
 
+/// Move window `w` so it's before `next` in the list
+static inline void restack_win(session_t *ps, struct win *w, struct list_node *next) {
+	struct managed_win *mw = NULL;
+	if (w->managed) {
+		mw = (struct managed_win *)w;
+	}
+
+	if (mw) {
+		// This invalidates all reg_ignore below the new stack position of `w`
+		mw->reg_ignore_valid = false;
+		rc_region_unref(&mw->reg_ignore);
+
+		// This invalidates all reg_ignore below the old stack position of `w`
+		auto next_w = win_stack_find_next_managed(ps, &w->stack_neighbour);
+		if (next_w) {
+			next_w->reg_ignore_valid = false;
+			rc_region_unref(&next_w->reg_ignore);
+		}
+	}
+
+	list_move_before(&w->stack_neighbour, next);
+
+	// add damage for this window
+	if (mw) {
+		add_damage_from_win(ps, mw);
+	}
+
+#ifdef DEBUG_RESTACK
+	log_trace("Window stack modified. Current stack:");
+	for (auto c = ps->list; c; c = c->next) {
+		const char *desc = "";
+		if (c->state == WSTATE_DESTROYING) {
+			desc = "(D) ";
+		}
+		log_trace("%#010x \"%s\" %s", c->id, c->name, desc);
+	}
+#endif
+}
+
+/// Move window `w` so it's right above `below`
+void restack_above(session_t *ps, struct win *w, xcb_window_t below) {
+	xcb_window_t old_below;
+
+	if (!list_node_is_last(&ps->window_stack, &w->stack_neighbour)) {
+		old_below = list_next_entry(w, stack_neighbour)->id;
+	} else {
+		old_below = XCB_NONE;
+	}
+	log_debug("Restack %#010x (%s), old_below: %#010x, new_below: %#010x", w->id,
+	          win_get_name_if_managed(w), old_below, below);
+
+	if (old_below != below) {
+		struct list_node *new_next;
+		if (!below) {
+			new_next = &ps->window_stack;
+		} else {
+			struct win *tmp_w = NULL;
+			HASH_FIND_INT(ps->windows, &below, tmp_w);
+
+			if (!tmp_w) {
+				log_error("(%#010x, %#010x): Failed to found new below "
+				          "window.", w->id, below);
+				return;
+			}
+
+			new_next = &tmp_w->stack_neighbour;
+		}
+		restack_win(ps, w, new_next);
+	}
+}
+
+void restack_bottom(session_t *ps, struct win *w) {
+	restack_above(ps, w, 0);
+}
+
+void restack_top(session_t *ps, struct win *w) {
+	log_debug("Restack %#010x (%s) to top", w->id, win_get_name_if_managed(w));
+	if (&w->stack_neighbour == ps->window_stack.next) {
+		// already at top
+		return;
+	}
+	restack_win(ps, w, ps->window_stack.next);
+}
+
 void unmap_win(session_t *ps, struct managed_win **_w, bool destroy) {
 	auto w = *_w;
 
@@ -1767,9 +1852,6 @@ void win_update_screen(session_t *ps, struct managed_win *w) {
 		}
 	}
 }
-
-// TODO remove this
-void configure_win(session_t *, xcb_configure_notify_event_t *);
 
 /// Map an already registered window
 void map_win(session_t *ps, struct managed_win *w) {
