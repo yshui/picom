@@ -218,8 +218,8 @@ static backend_t *glx_init(session_t *ps) {
 	bool success = false;
 	glxext_init(ps->dpy, ps->scr);
 	auto gd = ccalloc(1, struct _glx_data);
-	gd->gl.base.c = ps->c;
-	gd->gl.base.root = ps->root;
+	init_backend_base(&gd->gl.base, ps);
+
 	gd->display = ps->dpy;
 	gd->screen = ps->scr;
 	gd->target_win = ps->overlay != XCB_NONE ? ps->overlay : ps->root;

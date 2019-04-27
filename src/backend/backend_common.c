@@ -279,3 +279,11 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 	xcb_render_free_picture(backend_data->c, pict);
 	return ret;
 }
+
+void init_backend_base(struct backend_base *base, session_t *ps) {
+	base->c = ps->c;
+	base->loop = ps->loop;
+	base->root = ps->root;
+	base->busy = false;
+	base->ops = NULL;
+}
