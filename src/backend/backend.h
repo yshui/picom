@@ -5,8 +5,8 @@
 
 #include <stdbool.h>
 
-#include "driver.h"
 #include "compiler.h"
+#include "driver.h"
 #include "kernel.h"
 #include "region.h"
 #include "x.h"
@@ -14,14 +14,21 @@
 typedef struct session session_t;
 struct managed_win;
 
+struct ev_loop;
 struct backend_operations;
 
 typedef struct backend_base {
 	struct backend_operations *ops;
 	xcb_connection_t *c;
 	xcb_window_t root;
+	struct ev_loop *loop;
+
+	/// Whether the backend can accept new render request at the moment
+	bool busy;
 	// ...
 } backend_t;
+
+typedef void (*backend_ready_callback_t)(void *);
 
 enum image_operations {
 	// Invert the color of the entire image, `reg_op` ignored
@@ -177,6 +184,9 @@ struct backend_operations {
 
 	// ===========         Hooks        ============
 	/// Let the backend hook into the event handling queue
+	void (*set_ready_callback)(backend_t *, backend_ready_callback_t cb);
+	/// Called right after compton has handled its events.
+	void (*handle_events)(backend_t *);
 	// ===========         Misc         ============
 	/// Return the driver that is been used by the backend
 	enum driver (*detect_driver)(backend_t *backend_data);

@@ -474,9 +474,7 @@ static void *copy(backend_t *base, const void *image, const region_t *reg) {
 
 backend_t *backend_xrender_init(session_t *ps) {
 	auto xd = ccalloc(1, struct _xrender_data);
-
-	xd->base.c = ps->c;
-	xd->base.root = ps->root;
+	init_backend_base(&xd->base, ps);
 
 	for (int i = 0; i < 256; ++i) {
 		double o = (double)i / 255.0;

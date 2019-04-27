@@ -13,6 +13,7 @@ typedef struct session session_t;
 typedef struct win win;
 typedef struct conv conv;
 typedef struct backend_base backend_t;
+struct backend_operations;
 
 bool build_shadow(xcb_connection_t *, xcb_drawable_t, double opacity, int width,
                   int height, const conv *kernel, xcb_render_picture_t shadow_pixel,
@@ -35,3 +36,5 @@ bool default_is_frame_transparent(void *, win *, void *);
 void *
 default_backend_render_shadow(backend_t *backend_data, int width, int height,
                               const conv *kernel, double r, double g, double b, double a);
+
+void init_backend_base(struct backend_base *base, session_t *ps);
