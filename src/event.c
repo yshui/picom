@@ -169,7 +169,6 @@ static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
 	assert(ev->parent == ps->root);
-	// TODO delay fill_win
 	add_win_top(ps, ev->window);
 }
 
