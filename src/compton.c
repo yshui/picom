@@ -2019,6 +2019,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 			auto mw = (struct managed_win *)w;
 			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 				map_win(ps, mw);
+				// This is a pre-existing window, we have no idea if it's
+				// ever damaged, so assume conservatively that it is.
+				mw->ever_damaged = true;
 			}
 		}
 
