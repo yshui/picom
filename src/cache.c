@@ -16,16 +16,28 @@ struct cache {
 	struct cache_entry *entries;
 };
 
-void *cache_get(struct cache *c, const char *key) {
+void *cache_get(struct cache *c, const char *key, int *err) {
 	struct cache_entry *e;
 	HASH_FIND_STR(c->entries, key, e);
 	if (e) {
 		return e->value;
 	}
 
+	int tmperr;
+	if (!err) {
+		err = &tmperr;
+	}
+
+	*err = 0;
 	e = ccalloc(1, struct cache_entry);
 	e->key = strdup(key);
-	e->value = c->getter(c->user_data, key);
+	e->value = c->getter(c->user_data, key, err);
+	if (*err) {
+		free(e->key);
+		free(e);
+		return NULL;
+	}
+
 	HASH_ADD_STR(c->entries, key, e);
 	return e->value;
 }
