@@ -122,6 +122,7 @@
 
 // === Types ===
 typedef struct glx_fbconfig glx_fbconfig_t;
+struct atom;
 
 /// Structure representing needed window updates.
 typedef struct {
@@ -494,31 +495,7 @@ typedef struct session {
 	bool xrfilter_convolution_exists;
 
 	// === Atoms ===
-	/// Atom of property <code>_NET_WM_OPACITY</code>.
-	xcb_atom_t atom_opacity;
-	/// Atom of <code>_NET_FRAME_EXTENTS</code>.
-	xcb_atom_t atom_frame_extents;
-	/// Property atom to identify top-level frame window. Currently
-	/// <code>WM_STATE</code>.
-	xcb_atom_t atom_client;
-	/// Atom of property <code>WM_NAME</code>.
-	xcb_atom_t atom_name;
-	/// Atom of property <code>_NET_WM_NAME</code>.
-	xcb_atom_t atom_name_ewmh;
-	/// Atom of property <code>WM_CLASS</code>.
-	xcb_atom_t atom_class;
-	/// Atom of property <code>WM_WINDOW_ROLE</code>.
-	xcb_atom_t atom_role;
-	/// Atom of property <code>WM_TRANSIENT_FOR</code>.
-	xcb_atom_t atom_transient;
-	/// Atom of property <code>WM_CLIENT_LEADER</code>.
-	xcb_atom_t atom_client_leader;
-	/// Atom of property <code>_NET_ACTIVE_WINDOW</code>.
-	xcb_atom_t atom_ewmh_active_win;
-	/// Atom of property <code>_COMPTON_SHADOW</code>.
-	xcb_atom_t atom_compton_shadow;
-	/// Atom of property <code>_NET_WM_WINDOW_TYPE</code>.
-	xcb_atom_t atom_win_type;
+	struct atom *atoms;
 	/// Array of atoms of all possible window types.
 	xcb_atom_t atoms_wintypes[NUM_WINTYPES];
 	/// Linked list of additional atoms to track.
@@ -712,24 +689,6 @@ static inline void cxfree(void *data) {
 _Noreturn static inline void die(const char *msg) {
 	puts(msg);
 	exit(1);
-}
-
-/**
- * Wrapper of XInternAtom() for convenience.
- */
-static inline xcb_atom_t get_atom(session_t *ps, const char *atom_name) {
-	xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply(
-	    ps->c,
-	    xcb_intern_atom(ps->c, 0, to_u16_checked(strlen(atom_name)), atom_name), NULL);
-
-	xcb_atom_t atom = XCB_NONE;
-	if (reply) {
-		log_debug("Atom %s is %d", atom_name, reply->atom);
-		atom = reply->atom;
-		free(reply);
-	} else
-		die("Failed to intern atoms, bail out");
-	return atom;
 }
 
 /**

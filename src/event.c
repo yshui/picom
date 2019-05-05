@@ -4,6 +4,7 @@
 #include <X11/Xlibint.h>
 #include <X11/extensions/sync.h>
 
+#include "atom.h"
 #include "common.h"
 #include "compiler.h"
 #include "compton.h"
@@ -319,7 +320,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 			if (w_top &&
 			    (!w_top->client_win || w_top->client_win == w_top->base.id)) {
 				// If it has WM_STATE, mark it the client window
-				if (wid_has_prop(ps, ev->window, ps->atom_client)) {
+				if (wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
 					w_top->wmwin = false;
 					win_unmark_client(ps, w_top);
 					win_mark_client(ps, w_top, ev->window);
@@ -401,7 +402,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 
 	if (ps->root == ev->window) {
 		if (ps->o.track_focus && ps->o.use_ewmh_active_win &&
-		    ps->atom_ewmh_active_win == ev->atom) {
+		    ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
 			update_ewmh_active_win(ps);
 		} else {
 			// Destroy the root "image" if the wallpaper probably changed
@@ -415,7 +416,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// If WM_STATE changes
-	if (ev->atom == ps->atom_client) {
+	if (ev->atom == ps->atoms->aWM_STATE) {
 		// Check whether it could be a client window
 		if (!find_toplevel(ps, ev->window)) {
 			// Reset event mask anyway
@@ -427,7 +428,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			// Initialize client_win as early as possible
 			if (w_top &&
 			    (!w_top->client_win || w_top->client_win == w_top->base.id) &&
-			    wid_has_prop(ps, ev->window, ps->atom_client)) {
+			    wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
 				w_top->wmwin = false;
 				win_unmark_client(ps, w_top);
 				win_mark_client(ps, w_top, ev->window);
@@ -437,14 +438,14 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 
 	// If _NET_WM_WINDOW_TYPE changes... God knows why this would happen, but
 	// there are always some stupid applications. (#144)
-	if (ev->atom == ps->atom_win_type) {
+	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_TYPE) {
 		struct managed_win *w = NULL;
 		if ((w = find_toplevel(ps, ev->window)))
 			win_update_wintype(ps, w);
 	}
 
 	// If _NET_WM_OPACITY changes
-	if (ev->atom == ps->atom_opacity) {
+	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_OPACITY) {
 		auto w = find_managed_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
 		if (w) {
 			win_update_opacity_prop(ps, w);
@@ -459,7 +460,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// If frame extents property changes
-	if (ps->o.frame_opacity > 0 && ev->atom == ps->atom_frame_extents) {
+	if (ps->o.frame_opacity > 0 && ev->atom == ps->atoms->a_NET_FRAME_EXTENTS) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w) {
 			win_update_frame_extents(ps, w, ev->window);
@@ -469,7 +470,8 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// If name changes
-	if (ps->o.track_wdata && (ps->atom_name == ev->atom || ps->atom_name_ewmh == ev->atom)) {
+	if (ps->o.track_wdata &&
+	    (ps->atoms->aWM_NAME == ev->atom || ps->atoms->a_NET_WM_NAME == ev->atom)) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w && 1 == win_get_name(ps, w)) {
 			win_on_factor_change(ps, w);
@@ -477,7 +479,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// If class changes
-	if (ps->o.track_wdata && ps->atom_class == ev->atom) {
+	if (ps->o.track_wdata && ps->atoms->aWM_CLASS == ev->atom) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w) {
 			win_get_class(ps, w);
@@ -486,7 +488,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// If role changes
-	if (ps->o.track_wdata && ps->atom_role == ev->atom) {
+	if (ps->o.track_wdata && ps->atoms->aWM_WINDOW_ROLE== ev->atom) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w && 1 == win_get_role(ps, w)) {
 			win_on_factor_change(ps, w);
@@ -494,7 +496,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// If _COMPTON_SHADOW changes
-	if (ps->o.respect_prop_shadow && ps->atom_compton_shadow == ev->atom) {
+	if (ps->o.respect_prop_shadow && ps->atoms->a_COMPTON_SHADOW == ev->atom) {
 		auto w = find_managed_win(ps, ev->window);
 		if (w) {
 			win_update_prop_shadow(ps, w);
@@ -502,8 +504,8 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// If a leader property changes
-	if ((ps->o.detect_transient && ps->atom_transient == ev->atom) ||
-	    (ps->o.detect_client_leader && ps->atom_client_leader == ev->atom)) {
+	if ((ps->o.detect_transient && ps->atoms->aWM_TRANSIENT_FOR == ev->atom) ||
+	    (ps->o.detect_client_leader && ps->atoms->aWM_CLIENT_LEADER == ev->atom)) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w) {
 			win_update_leader(ps, w);

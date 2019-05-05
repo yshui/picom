@@ -40,6 +40,7 @@
 #include "utils.h"
 #include "win.h"
 #include "x.h"
+#include "atom.h"
 
 #include "c2.h"
 
@@ -983,7 +984,7 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 
 	// Get target atom if it's not a predefined one
 	if (pleaf->predef == C2_L_PUNDEFINED) {
-		pleaf->tgtatom = get_atom(ps, pleaf->tgt);
+		pleaf->tgtatom = get_atom(ps->atoms, pleaf->tgt);
 		if (!pleaf->tgtatom) {
 			log_error("Failed to get atom for target \"%s\".", pleaf->tgt);
 			return false;

@@ -14,6 +14,7 @@
 #include <xcb/xcb.h>
 #include <xcb/xcb_renderutil.h>
 
+#include "atom.h"
 #include "backend/backend.h"
 #include "c2.h"
 #include "common.h"
@@ -65,12 +66,12 @@ static inline void clear_cache_win_leaders(session_t *ps) {
 
 static inline void wid_set_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t val) {
 	const uint32_t v = val;
-	xcb_change_property(ps->c, XCB_PROP_MODE_REPLACE, wid, ps->atom_opacity,
-	                    XCB_ATOM_CARDINAL, 32, 1, &v);
+	xcb_change_property(ps->c, XCB_PROP_MODE_REPLACE, wid,
+	                    ps->atoms->a_NET_WM_WINDOW_OPACITY, XCB_ATOM_CARDINAL, 32, 1, &v);
 }
 
 static inline void wid_rm_opacity_prop(session_t *ps, xcb_window_t wid) {
-	xcb_delete_property(ps->c, wid, ps->atom_opacity);
+	xcb_delete_property(ps->c, wid, ps->atoms->a_NET_WM_WINDOW_OPACITY);
 }
 
 /**
@@ -297,7 +298,7 @@ int win_get_name(session_t *ps, struct managed_win *w) {
 	if (!w->client_win)
 		return 0;
 
-	if (!(wid_get_text_prop(ps, w->client_win, ps->atom_name_ewmh, &strlst, &nstr))) {
+	if (!(wid_get_text_prop(ps, w->client_win, ps->atoms->a_NET_WM_NAME, &strlst, &nstr))) {
 		log_trace("(%#010x): _NET_WM_NAME unset, falling back to WM_NAME.",
 		          w->client_win);
 
@@ -333,7 +334,7 @@ int win_get_role(session_t *ps, struct managed_win *w) {
 	char **strlst = NULL;
 	int nstr = 0;
 
-	if (!wid_get_text_prop(ps, w->client_win, ps->atom_role, &strlst, &nstr))
+	if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_WINDOW_ROLE, &strlst, &nstr))
 		return -1;
 
 	int ret = 0;
@@ -371,7 +372,8 @@ static inline bool win_bounding_shaped(const session_t *ps, xcb_window_t wid) {
 }
 
 static wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
-	winprop_t prop = wid_get_prop(ps, wid, ps->atom_win_type, 32L, XCB_ATOM_ATOM, 32);
+	winprop_t prop =
+	    wid_get_prop(ps, wid, ps->atoms->a_NET_WM_WINDOW_TYPE, 32L, XCB_ATOM_ATOM, 32);
 
 	for (unsigned i = 0; i < prop.nitems; ++i) {
 		for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
@@ -392,7 +394,8 @@ wid_get_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t def, opacity_t *
 	bool ret = false;
 	*out = def;
 
-	winprop_t prop = wid_get_prop(ps, wid, ps->atom_opacity, 1L, XCB_ATOM_CARDINAL, 32);
+	winprop_t prop = wid_get_prop(ps, wid, ps->atoms->a_NET_WM_WINDOW_OPACITY, 1L,
+	                              XCB_ATOM_CARDINAL, 32);
 
 	if (prop.nitems) {
 		*out = *prop.c32;
@@ -519,8 +522,8 @@ bool win_should_fade(session_t *ps, const struct managed_win *w) {
  * The property must be set on the outermost window, usually the WM frame.
  */
 void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w) {
-	winprop_t prop =
-	    wid_get_prop(ps, w->base.id, ps->atom_compton_shadow, 1, XCB_ATOM_CARDINAL, 32);
+	winprop_t prop = wid_get_prop(ps, w->base.id, ps->atoms->a_COMPTON_SHADOW, 1,
+	                              XCB_ATOM_CARDINAL, 32);
 
 	if (!prop.nitems) {
 		w->prop_shadow = -1;
@@ -809,7 +812,7 @@ void win_update_wintype(session_t *ps, struct managed_win *w) {
 	// _NET_WM_WINDOW_TYPE_NORMAL, otherwise as _NET_WM_WINDOW_TYPE_DIALOG.
 	if (WINTYPE_UNKNOWN == w->window_type) {
 		if (w->a.override_redirect ||
-		    !wid_has_prop(ps, w->client_win, ps->atom_transient))
+		    !wid_has_prop(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR))
 			w->window_type = WINTYPE_NORMAL;
 		else
 			w->window_type = WINTYPE_DIALOG;
@@ -1228,10 +1231,10 @@ void win_update_leader(session_t *ps, struct managed_win *w) {
 
 	// Read the leader properties
 	if (ps->o.detect_transient && !leader)
-		leader = wid_get_prop_window(ps, w->client_win, ps->atom_transient);
+		leader = wid_get_prop_window(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR);
 
 	if (ps->o.detect_client_leader && !leader)
-		leader = wid_get_prop_window(ps, w->client_win, ps->atom_client_leader);
+		leader = wid_get_prop_window(ps, w->client_win, ps->atoms->aWM_CLIENT_LEADER);
 
 	win_set_leader(ps, w, leader);
 
@@ -1284,7 +1287,7 @@ bool win_get_class(session_t *ps, struct managed_win *w) {
 	w->class_general = NULL;
 
 	// Retrieve the property string list
-	if (!wid_get_text_prop(ps, w->client_win, ps->atom_class, &strlst, &nstr))
+	if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_CLASS, &strlst, &nstr))
 		return false;
 
 	// Copy the strings if successful
@@ -1486,8 +1489,8 @@ void win_update_opacity_prop(session_t *ps, struct managed_win *w) {
  * Retrieve frame extents from a window.
  */
 void win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t client) {
-	winprop_t prop =
-	    wid_get_prop(ps, client, ps->atom_frame_extents, 4L, XCB_ATOM_CARDINAL, 32);
+	winprop_t prop = wid_get_prop(ps, client, ps->atoms->a_NET_FRAME_EXTENTS, 4L,
+	                              XCB_ATOM_CARDINAL, 32);
 
 	if (prop.nitems == 4) {
 		const int32_t extents[4] = {
@@ -1686,8 +1689,7 @@ void restack_above(session_t *ps, struct win *w, xcb_window_t below) {
 			HASH_FIND_INT(ps->windows, &below, tmp_w);
 
 			if (!tmp_w) {
-				log_error("(%#010x, %#010x): Failed to found new below "
-				          "window.", w->id, below);
+				log_error("Failed to found new below window %#010x.", below);
 				return;
 			}
 
