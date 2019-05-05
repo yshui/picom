@@ -49,6 +49,7 @@
 #ifdef CONFIG_DBUS
 #include "dbus.h"
 #endif
+#include "atom.h"
 #include "event.h"
 #include "list.h"
 #include "options.h"
@@ -350,7 +351,7 @@ struct managed_win *recheck_focus(session_t *ps) {
  * Look for the client window of a particular window.
  */
 xcb_window_t find_client_win(session_t *ps, xcb_window_t w) {
-	if (wid_has_prop(ps, w, ps->atom_client)) {
+	if (wid_has_prop(ps, w, ps->atoms->aWM_STATE)) {
 		return w;
 	}
 
@@ -871,7 +872,7 @@ void opts_set_no_fading_openclose(session_t *ps, bool newval) {
  */
 void update_ewmh_active_win(session_t *ps) {
 	// Search for the window
-	xcb_window_t wid = wid_get_prop_window(ps, ps->root, ps->atom_ewmh_active_win);
+	xcb_window_t wid = wid_get_prop_window(ps, ps->root, ps->atoms->a_NET_ACTIVE_WINDOW);
 	auto w = find_win_all(ps, wid);
 
 	// Mark the window focused. No need to unfocus the previous one.
@@ -919,12 +920,12 @@ static bool register_cm(session_t *ps) {
 	{
 		auto pid = getpid();
 		xcb_change_property(ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win,
-		                    get_atom(ps, "_NET_WM_PID"), XCB_ATOM_CARDINAL, 32, 1,
-		                    &pid);
+		                    ps->atoms->a_NET_WM_PID, XCB_ATOM_CARDINAL,
+		                    32, 1, &pid);
 	}
 
 	// Set COMPTON_VERSION
-	if (!wid_set_text_prop(ps, ps->reg_win, get_atom(ps, "COMPTON_VERSION"),
+	if (!wid_set_text_prop(ps, ps->reg_win, get_atom(ps->atoms, "COMPTON_VERSION"),
 	                       COMPTON_VERSION)) {
 		log_error("Failed to set COMPTON_VERSION.");
 	}
@@ -943,7 +944,7 @@ static bool register_cm(session_t *ps) {
 		auto buf = ccalloc(len, char);
 		snprintf(buf, len, REGISTER_PROP "%d", ps->scr);
 		buf[len - 1] = '\0';
-		atom = get_atom(ps, buf);
+		atom = get_atom(ps->atoms, buf);
 		free(buf);
 
 		xcb_get_selection_owner_reply_t *reply = xcb_get_selection_owner_reply(
@@ -978,43 +979,6 @@ static inline bool write_pid(session_t *ps) {
 	fclose(f);
 
 	return true;
-}
-
-/**
- * Fetch all required atoms and save them to a session.
- */
-static void init_atoms(session_t *ps) {
-	ps->atom_opacity = get_atom(ps, "_NET_WM_WINDOW_OPACITY");
-	ps->atom_frame_extents = get_atom(ps, "_NET_FRAME_EXTENTS");
-	ps->atom_client = get_atom(ps, "WM_STATE");
-	ps->atom_name = XCB_ATOM_WM_NAME;
-	ps->atom_name_ewmh = get_atom(ps, "_NET_WM_NAME");
-	ps->atom_class = XCB_ATOM_WM_CLASS;
-	ps->atom_role = get_atom(ps, "WM_WINDOW_ROLE");
-	ps->atom_transient = XCB_ATOM_WM_TRANSIENT_FOR;
-	ps->atom_client_leader = get_atom(ps, "WM_CLIENT_LEADER");
-	ps->atom_ewmh_active_win = get_atom(ps, "_NET_ACTIVE_WINDOW");
-	ps->atom_compton_shadow = get_atom(ps, "_COMPTON_SHADOW");
-
-	ps->atom_win_type = get_atom(ps, "_NET_WM_WINDOW_TYPE");
-	ps->atoms_wintypes[WINTYPE_UNKNOWN] = 0;
-	ps->atoms_wintypes[WINTYPE_DESKTOP] = get_atom(ps, "_NET_WM_WINDOW_TYPE_DESKTOP");
-	ps->atoms_wintypes[WINTYPE_DOCK] = get_atom(ps, "_NET_WM_WINDOW_TYPE_DOCK");
-	ps->atoms_wintypes[WINTYPE_TOOLBAR] = get_atom(ps, "_NET_WM_WINDOW_TYPE_TOOLBAR");
-	ps->atoms_wintypes[WINTYPE_MENU] = get_atom(ps, "_NET_WM_WINDOW_TYPE_MENU");
-	ps->atoms_wintypes[WINTYPE_UTILITY] = get_atom(ps, "_NET_WM_WINDOW_TYPE_UTILITY");
-	ps->atoms_wintypes[WINTYPE_SPLASH] = get_atom(ps, "_NET_WM_WINDOW_TYPE_SPLASH");
-	ps->atoms_wintypes[WINTYPE_DIALOG] = get_atom(ps, "_NET_WM_WINDOW_TYPE_DIALOG");
-	ps->atoms_wintypes[WINTYPE_NORMAL] = get_atom(ps, "_NET_WM_WINDOW_TYPE_NORMAL");
-	ps->atoms_wintypes[WINTYPE_DROPDOWN_MENU] =
-	    get_atom(ps, "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU");
-	ps->atoms_wintypes[WINTYPE_POPUP_MENU] =
-	    get_atom(ps, "_NET_WM_WINDOW_TYPE_POPUP_MENU");
-	ps->atoms_wintypes[WINTYPE_TOOLTIP] = get_atom(ps, "_NET_WM_WINDOW_TYPE_TOOLTIP");
-	ps->atoms_wintypes[WINTYPE_NOTIFY] =
-	    get_atom(ps, "_NET_WM_WINDOW_TYPE_NOTIFICATION");
-	ps->atoms_wintypes[WINTYPE_COMBO] = get_atom(ps, "_NET_WM_WINDOW_TYPE_COMBO");
-	ps->atoms_wintypes[WINTYPE_DND] = get_atom(ps, "_NET_WM_WINDOW_TYPE_DND");
 }
 
 /**
@@ -1594,17 +1558,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 #endif
 	    .xrfilter_convolution_exists = false,
 
-	    .atom_opacity = XCB_NONE,
-	    .atom_frame_extents = XCB_NONE,
-	    .atom_client = XCB_NONE,
-	    .atom_name = XCB_NONE,
-	    .atom_name_ewmh = XCB_NONE,
-	    .atom_class = XCB_NONE,
-	    .atom_role = XCB_NONE,
-	    .atom_transient = XCB_NONE,
-	    .atom_ewmh_active_win = XCB_NONE,
-	    .atom_compton_shadow = XCB_NONE,
-	    .atom_win_type = XCB_NONE,
 	    .atoms_wintypes = {0},
 	    .track_atom_lst = NULL,
 
@@ -1755,6 +1708,26 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 			          ps->o.logpath);
 		}
 	}
+
+	ps->atoms = init_atoms(ps->c);
+	ps->atoms_wintypes[WINTYPE_UNKNOWN] = 0;
+#define SET_WM_TYPE_ATOM(x)                                                              \
+	ps->atoms_wintypes[WINTYPE_##x] = ps->atoms->a_NET_WM_WINDOW_TYPE_##x
+	SET_WM_TYPE_ATOM(DESKTOP);
+	SET_WM_TYPE_ATOM(DOCK);
+	SET_WM_TYPE_ATOM(TOOLBAR);
+	SET_WM_TYPE_ATOM(MENU);
+	SET_WM_TYPE_ATOM(UTILITY);
+	SET_WM_TYPE_ATOM(SPLASH);
+	SET_WM_TYPE_ATOM(DIALOG);
+	SET_WM_TYPE_ATOM(NORMAL);
+	SET_WM_TYPE_ATOM(DROPDOWN_MENU);
+	SET_WM_TYPE_ATOM(POPUP_MENU);
+	SET_WM_TYPE_ATOM(TOOLTIP);
+	SET_WM_TYPE_ATOM(NOTIFICATION);
+	SET_WM_TYPE_ATOM(COMBO);
+	SET_WM_TYPE_ATOM(DND);
+#undef SET_WM_TYPE_ATOM
 
 	// Get needed atoms for c2 condition lists
 	if (!(c2_list_postprocess(ps, ps->o.unredir_if_possible_blacklist) &&
@@ -1909,8 +1882,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// Create registration window
 	if (!ps->reg_win && !register_cm(ps))
 		exit(1);
-
-	init_atoms(ps);
 
 	{
 		xcb_render_create_picture_value_list_t pa = {
@@ -2173,6 +2144,7 @@ static void session_destroy(session_t *ps) {
 	x_sync(ps->c);
 	ev_io_stop(ps->loop, &ps->xiow);
 	free_conv(ps->gaussian_map);
+	destroy_atoms(ps->atoms);
 
 #ifdef DEBUG_XRC
 	// Report about resource leakage

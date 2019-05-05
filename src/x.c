@@ -20,6 +20,7 @@
 #include "log.h"
 #include "region.h"
 #include "utils.h"
+#include "atom.h"
 #include "x.h"
 
 /**
@@ -456,7 +457,7 @@ xcb_pixmap_t x_get_root_back_pixmap(session_t *ps) {
 
 	// Get the values of background attributes
 	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(ps, background_props_str[p]);
+		xcb_atom_t prop_atom = get_atom(ps->atoms, background_props_str[p]);
 		winprop_t prop =
 		    wid_get_prop(ps, ps->root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
@@ -472,7 +473,7 @@ xcb_pixmap_t x_get_root_back_pixmap(session_t *ps) {
 
 bool x_is_root_back_pixmap_atom(session_t *ps, xcb_atom_t atom) {
 	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(ps, background_props_str[p]);
+		xcb_atom_t prop_atom = get_atom(ps->atoms, background_props_str[p]);
 		if (prop_atom == atom)
 			return true;
 	}
