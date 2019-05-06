@@ -3,6 +3,7 @@
 
 #include <X11/Xlibint.h>
 #include <X11/extensions/sync.h>
+#include <xcb/randr.h>
 
 #include "atom.h"
 #include "common.h"

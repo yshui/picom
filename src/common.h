@@ -29,24 +29,12 @@
 
 // For some special functions
 #include <assert.h>
-#include <ctype.h>
-#include <inttypes.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/time.h>
 #include <time.h>
 
 #include <ev.h>
 #include <pixman.h>
-#include <xcb/composite.h>
-#include <xcb/damage.h>
-#include <xcb/randr.h>
-#include <xcb/render.h>
-#include <xcb/shape.h>
-#include <xcb/sync.h>
-#include <xcb/xinerama.h>
 
 #include "uthash_extra.h"
 #ifdef CONFIG_OPENGL
@@ -77,12 +65,7 @@
 #include "win.h"
 #include "x.h"
 
-// === Constants ===
-
-#define ROUNDED_PERCENT 0.05
-#define ROUNDED_PIXELS 10
-
-#define SWOPTI_TOLERANCE 3000
+// === Constants ===0
 
 #define NS_PER_SEC 1000000000L
 #define US_PER_SEC 1000000L
@@ -98,6 +81,7 @@
 
 // === Types ===
 typedef struct glx_fbconfig glx_fbconfig_t;
+struct glx_session;
 struct atom;
 
 /// Structure representing needed window updates.
@@ -112,30 +96,6 @@ typedef struct _ignore {
 	struct _ignore *next;
 	unsigned long sequence;
 } ignore_t;
-
-enum wincond_target {
-	CONDTGT_NAME,
-	CONDTGT_CLASSI,
-	CONDTGT_CLASSG,
-	CONDTGT_ROLE,
-};
-
-enum wincond_type {
-	CONDTP_EXACT,
-	CONDTP_ANYWHERE,
-	CONDTP_FROMSTART,
-	CONDTP_WILDCARD,
-	CONDTP_REGEX_PCRE,
-};
-
-#define CONDF_IGNORECASE 0x0001
-
-/// @brief Possible swap methods.
-enum { SWAPM_BUFFER_AGE = -1,
-       SWAPM_UNDEFINED = 0,
-       SWAPM_COPY = 1,
-       SWAPM_EXCHANGE = 2,
-};
 
 typedef struct _glx_texture glx_texture_t;
 
@@ -204,24 +164,6 @@ typedef struct _latom {
 
 #define REG_DATA_INIT                                                                    \
 	{ NULL, 0 }
-
-#ifdef CONFIG_OPENGL
-/// Structure containing GLX-dependent data for a compton session.
-typedef struct {
-	// === OpenGL related ===
-	/// GLX context.
-	GLXContext context;
-	/// Whether we have GL_ARB_texture_non_power_of_two.
-	bool has_texture_non_power_of_two;
-	/// Current GLX Z value.
-	int z;
-	glx_blur_pass_t blur_passes[MAX_BLUR_PASS];
-} glx_session_t;
-
-#define CGLX_SESSION_INIT                                                                \
-	{ .context = NULL }
-
-#endif // CONFIG_OPENGL
 
 /// Structure containing all necessary data for a compton session.
 typedef struct session {
@@ -292,9 +234,9 @@ typedef struct session {
 	xcb_window_t reg_win;
 #ifdef CONFIG_OPENGL
 	/// Pointer to GLX data.
-	glx_session_t *psglx;
+	struct glx_session *psglx;
 	/// Custom GLX program used for painting window.
-	// XXX should be in glx_session_t
+	// XXX should be in struct glx_session
 	glx_prog_main_t glx_prog_win;
 #endif
 	/// Sync fence to sync draw operations
@@ -431,8 +373,6 @@ typedef struct session {
 #endif
 	/// Whether X Xinerama extension exists.
 	bool xinerama_exists;
-	/// Xinerama screen info.
-	xcb_xinerama_query_screens_reply_t *xinerama_scrs;
 	/// Xinerama screen regions.
 	region_t *xinerama_scr_regs;
 	/// Number of Xinerama screens.
@@ -460,14 +400,6 @@ typedef struct session {
 
 	int (*vsync_wait)(session_t *);
 } session_t;
-
-/// Temporary structure used for communication between
-/// <code>get_cfg()</code> and <code>parse_config()</code>.
-struct options_tmp {
-	bool no_dock_shadow;
-	bool no_dnd_shadow;
-	double menu_opacity;
-};
 
 /// Enumeration for window event hints.
 typedef enum { WIN_EVMODE_UNKNOWN, WIN_EVMODE_FRAME, WIN_EVMODE_CLIENT } win_evmode_t;

@@ -13,6 +13,7 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_renderutil.h>
+#include <xcb/xinerama.h>
 
 #include "atom.h"
 #include "backend/backend.h"
@@ -42,8 +43,10 @@
 
 #include "win.h"
 
-#define OPAQUE 0xffffffff
-#define WIN_GET_LEADER_MAX_RECURSION 20
+static const opacity_t OPAQUE = 0xffffffff;
+static const int WIN_GET_LEADER_MAX_RECURSION = 20;
+static const int ROUNDED_PIXELS = 1;
+static const double ROUNDED_PERCENT = 0.05;
 
 /// Generate a "return by value" function, from a function that returns the
 /// region via a region_t pointer argument.
@@ -1839,17 +1842,11 @@ void win_skip_fading(session_t *ps, struct managed_win **_w) {
 void win_update_screen(session_t *ps, struct managed_win *w) {
 	w->xinerama_scr = -1;
 
-	if (!ps->xinerama_scrs)
-		return;
-
-	xcb_xinerama_screen_info_t *scrs =
-	    xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
-	int length = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
-	for (int i = 0; i < length; i++) {
-		xcb_xinerama_screen_info_t *s = &scrs[i];
-		if (s->x_org <= w->g.x && s->y_org <= w->g.y &&
-		    s->x_org + s->width >= w->g.x + w->widthb &&
-		    s->y_org + s->height >= w->g.y + w->heightb) {
+	for (int i = 0; i < ps->xinerama_nscrs; i++) {
+		auto e = pixman_region32_extents(&ps->xinerama_scr_regs[i]);
+		if (e->x1 <= w->g.x && e->y1 <= w->g.y &&
+		    e->x2 >= w->g.x + w->widthb &&
+		    e->y2 >= w->g.y + w->heightb) {
 			w->xinerama_scr = i;
 			return;
 		}

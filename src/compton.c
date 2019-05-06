@@ -23,6 +23,7 @@
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xfixes.h>
+#include <xcb/xinerama.h>
 
 #include <ev.h>
 #include <test.h>
@@ -61,6 +62,8 @@
 		const __typeof__(((session_t *)0)->member) *__mptr = (ptr);              \
 		(session_t *)((char *)__mptr - offsetof(session_t, member));             \
 	})
+
+static const long SWOPTI_TOLERANCE = 3000;
 
 static bool must_use redir_start(session_t *ps);
 
@@ -108,8 +111,6 @@ static inline void free_xinerama_info(session_t *ps) {
 			pixman_region32_fini(&ps->xinerama_scr_regs[i]);
 		free(ps->xinerama_scr_regs);
 	}
-	free(ps->xinerama_scrs);
-	ps->xinerama_scrs = NULL;
 	ps->xinerama_nscrs = 0;
 }
 
@@ -138,14 +139,15 @@ void cxinerama_upd_scrs(session_t *ps) {
 	}
 	free(active);
 
-	ps->xinerama_scrs =
+	auto xinerama_scrs =
 	    xcb_xinerama_query_screens_reply(ps->c, xcb_xinerama_query_screens(ps->c), NULL);
-	if (!ps->xinerama_scrs)
+	if (!xinerama_scrs) {
 		return;
+	}
 
 	xcb_xinerama_screen_info_t *scrs =
-	    xcb_xinerama_query_screens_screen_info(ps->xinerama_scrs);
-	ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(ps->xinerama_scrs);
+	    xcb_xinerama_query_screens_screen_info(xinerama_scrs);
+	ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(xinerama_scrs);
 
 	ps->xinerama_scr_regs = ccalloc(ps->xinerama_nscrs, region_t);
 	for (int i = 0; i < ps->xinerama_nscrs; ++i) {
@@ -153,6 +155,7 @@ void cxinerama_upd_scrs(session_t *ps) {
 		pixman_region32_init_rect(&ps->xinerama_scr_regs[i], s->x_org, s->y_org,
 		                          s->width, s->height);
 	}
+	free(xinerama_scrs);
 }
 
 /**
