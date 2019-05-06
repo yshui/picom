@@ -100,11 +100,11 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 		*pnstr = 0;
 		if (*pstrlst)
 			XFreeStringList(*pstrlst);
-		cxfree(text_prop.value);
+		XFree(text_prop.value);
 		return false;
 	}
 
-	cxfree(text_prop.value);
+	XFree(text_prop.value);
 	return true;
 }
 

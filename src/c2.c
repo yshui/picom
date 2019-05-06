@@ -1455,7 +1455,7 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 		// Free the string after usage, if necessary
 		if (tgt_free) {
 			if (C2_L_TATOM == pleaf->type)
-				cxfree(tgt_free);
+				XFree(tgt_free);
 			else
 				free(tgt_free);
 		}

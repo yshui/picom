@@ -310,10 +310,10 @@ int win_get_name(session_t *ps, struct managed_win *w) {
 		    !nstr || !strlst) {
 			if (strlst)
 				XFreeStringList(strlst);
-			cxfree(text_prop.value);
+			XFree(text_prop.value);
 			return -1;
 		}
-		cxfree(text_prop.value);
+		XFree(text_prop.value);
 	}
 
 	int ret = 0;
