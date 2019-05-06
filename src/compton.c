@@ -1830,6 +1830,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	rebuild_screen_reg(ps);
 
+	// Create registration window
+	if (!ps->reg_win && !register_cm(ps)) {
+		exit(1);
+	}
+
 	// Overlay must be initialized before double buffer, and before creation
 	// of OpenGL context.
 	if (!init_overlay(ps)) {
@@ -1878,10 +1883,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		xcb_randr_select_input(ps->c, ps->root, XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
 
 	cxinerama_upd_scrs(ps);
-
-	// Create registration window
-	if (!ps->reg_win && !register_cm(ps))
-		exit(1);
 
 	{
 		xcb_render_create_picture_value_list_t pa = {
