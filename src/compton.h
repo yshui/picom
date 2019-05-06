@@ -113,7 +113,7 @@ static inline XTextProperty *make_text_prop(session_t *ps, char *str) {
 	XTextProperty *pprop = ccalloc(1, XTextProperty);
 
 	if (XmbTextListToTextProperty(ps->dpy, &str, 1, XStringStyle, pprop)) {
-		cxfree(pprop->value);
+		XFree(pprop->value);
 		free(pprop);
 		pprop = NULL;
 	}
@@ -133,8 +133,8 @@ wid_set_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop_atom, char *s
 	}
 
 	XSetTextProperty(ps->dpy, wid, pprop, prop_atom);
-	cxfree(pprop->value);
-	cxfree(pprop);
+	XFree(pprop->value);
+	XFree(pprop);
 
 	return true;
 }

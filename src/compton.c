@@ -913,7 +913,7 @@ static bool register_cm(session_t *ps) {
 		}
 		Xutf8SetWMProperties(ps->dpy, ps->reg_win, "compton", "compton", NULL, 0,
 		                     NULL, NULL, h);
-		cxfree(h);
+		XFree(h);
 	}
 
 	// Set _NET_WM_PID

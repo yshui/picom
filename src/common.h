@@ -539,16 +539,6 @@ static inline struct timespec get_time_timespec(void) {
 }
 
 /**
- * Wrapper of XFree() for convenience.
- *
- * Because a NULL pointer cannot be passed to XFree(), its man page says.
- */
-static inline void cxfree(void *data) {
-	if (data)
-		XFree(data);
-}
-
-/**
  * Return the painting target window.
  */
 static inline xcb_window_t get_tgt_window(session_t *ps) {

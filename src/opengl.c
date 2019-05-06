@@ -197,7 +197,7 @@ bool glx_init(session_t *ps, bool need_render) {
 	success = true;
 
 glx_init_end:
-	cxfree(pvis);
+	XFree(pvis);
 
 	if (!success)
 		glx_destroy(ps);
