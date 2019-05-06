@@ -160,7 +160,7 @@ static void gl_free_prog_main(gl_win_shader_t *pprogram) {
 void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
                 const region_t *reg_tgt, const region_t *reg_visible) {
 
-	gl_texture_t *ptex = image_data;
+	struct gl_image *ptex = image_data;
 	struct gl_data *gd = (void *)base;
 
 	// Until we start to use glClipControl, reg_tgt, dst_x and dst_y and
@@ -169,7 +169,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	// screen, with y axis pointing up; Xorg has the origin at the upper left of the
 	// screen, with y axis pointing down. We have to do some coordinate conversion in
 	// this function
-	if (!ptex || !ptex->texture) {
+	if (!ptex || !ptex->inner->texture) {
 		log_error("Missing texture.");
 		return;
 	}
@@ -186,7 +186,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	// dst_y is the top coordinate, in OpenGL, it is the upper bound of the y
 	// coordinate.
 	dst_y = gd->height - dst_y;
-	auto dst_y2 = dst_y - ptex->height;
+	auto dst_y2 = dst_y - ptex->inner->height;
 
 	bool dual_texture = false;
 
@@ -209,10 +209,10 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
 
 	// Bind texture
-	glBindTexture(GL_TEXTURE_2D, ptex->texture);
+	glBindTexture(GL_TEXTURE_2D, ptex->inner->texture);
 	if (dual_texture) {
 		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, ptex->texture);
+		glBindTexture(GL_TEXTURE_2D, ptex->inner->texture);
 		glActiveTexture(GL_TEXTURE0);
 	}
 	auto coord = ccalloc(nrects * 16, GLfloat);
@@ -232,17 +232,17 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		auto texture_y2 = texture_y1 + (GLfloat)(crect.y1 - crect.y2);
 
 		// X pixmaps might be Y inverted, invert the texture coordinates
-		if (ptex->y_inverted) {
-			texture_y1 = (GLfloat)ptex->height - texture_y1;
-			texture_y2 = (GLfloat)ptex->height - texture_y2;
+		if (ptex->inner->y_inverted) {
+			texture_y1 = (GLfloat)ptex->inner->height - texture_y1;
+			texture_y2 = (GLfloat)ptex->inner->height - texture_y2;
 		}
 
 		// GL_TEXTURE_2D coordinates are normalized
 		// TODO use texelFetch
-		texture_x1 /= (GLfloat)ptex->width;
-		texture_y1 /= (GLfloat)ptex->height;
-		texture_x2 /= (GLfloat)ptex->width;
-		texture_y2 /= (GLfloat)ptex->height;
+		texture_x1 /= (GLfloat)ptex->inner->width;
+		texture_y1 /= (GLfloat)ptex->inner->height;
+		texture_x2 /= (GLfloat)ptex->inner->width;
+		texture_y2 /= (GLfloat)ptex->inner->height;
 
 		// Vertex coordinates
 		auto vx1 = (GLfloat)crect.x1;
@@ -893,10 +893,17 @@ GLuint gl_new_texture(GLenum target) {
 	return texture;
 }
 
+/// Decouple `img` from the image it references, also applies all the lazy operations
+static inline void gl_image_decouple(struct gl_image *img) {
+	if (img->inner->refcount == 1) {
+		return;
+	}
+}
+
 /// stub for backend_operations::image_op
 bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
                  const region_t *reg_op, const region_t *reg_visible, void *arg) {
-	struct gl_texture *tex = image_data;
+	struct gl_image *tex = image_data;
 	int *iargs = arg;
 	switch (op) {
 	case IMAGE_OP_INVERT_COLOR_ALL: tex->color_inverted = true; break;
@@ -905,7 +912,7 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 		break;
 	case IMAGE_OP_APPLY_ALPHA_ALL: tex->opacity *= *(double *)arg; break;
 	case IMAGE_OP_APPLY_ALPHA:
-		// TODO
+		gl_image_decouple(tex);
 		log_warn("IMAGE_OP_APPLY_ALPHA not implemented yet");
 		break;
 	case IMAGE_OP_RESIZE_TILE:
@@ -919,6 +926,6 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 }
 
 bool gl_is_image_transparent(backend_t *base, void *image_data) {
-	gl_texture_t *img = image_data;
+	struct gl_image *img = image_data;
 	return img->has_alpha;
 }
