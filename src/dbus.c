@@ -752,7 +752,7 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	}
 
 #define cdbus_m_win_get_do(tgt, apdarg_func)                                             \
-	if (!strcmp(MSTR(tgt), target)) {                                                \
+	if (!strcmp(#tgt, target)) {                                                \
 		apdarg_func(ps, msg, w->tgt);                                            \
 		return true;                                                             \
 	}
@@ -957,13 +957,13 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 		return false;
 
 #define cdbus_m_opts_get_do(tgt, apdarg_func)                                            \
-	if (!strcmp(MSTR(tgt), target)) {                                                \
+	if (!strcmp(#tgt, target)) {                                                \
 		apdarg_func(ps, msg, ps->o.tgt);                                         \
 		return true;                                                             \
 	}
 
 #define cdbus_m_opts_get_stub(tgt, apdarg_func, ret)                                     \
-	if (!strcmp(MSTR(tgt), target)) {                                                \
+	if (!strcmp(#tgt, target)) {                                                \
 		apdarg_func(ps, msg, ret);                                               \
 		return true;                                                             \
 	}
@@ -1068,7 +1068,7 @@ static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 		return false;
 
 #define cdbus_m_opts_set_do(tgt, type, real_type)                                        \
-	if (!strcmp(MSTR(tgt), target)) {                                                \
+	if (!strcmp(#tgt, target)) {                                                \
 		real_type val;                                                           \
 		if (!cdbus_msg_get_arg(msg, 1, type, &val))                              \
 			return false;                                                    \

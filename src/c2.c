@@ -212,6 +212,26 @@ static const c2_predef_t C2_PREDEFS[] = {
 };
 
 /**
+ * Get the numeric property value from a win_prop_t.
+ */
+static inline long winprop_get_int(winprop_t prop) {
+	long tgt = 0;
+
+	if (!prop.nitems) {
+		return 0;
+	}
+
+	switch (prop.format) {
+	case 8: tgt = *(prop.p8); break;
+	case 16: tgt = *(prop.p16); break;
+	case 32: tgt = *(prop.p32); break;
+	default: assert(0); break;
+	}
+
+	return tgt;
+}
+
+/**
  * Compare next word in a string with another string.
  */
 static inline int strcmp_wd(const char *needle, const char *src) {

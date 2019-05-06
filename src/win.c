@@ -15,10 +15,10 @@
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xinerama.h>
 
+#include "common.h"
 #include "atom.h"
 #include "backend/backend.h"
 #include "c2.h"
-#include "common.h"
 #include "compiler.h"
 #include "compton.h"
 #include "config.h"

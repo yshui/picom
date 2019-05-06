@@ -29,6 +29,7 @@
 #include <test.h>
 
 #include "common.h"
+#include "config.h"
 #include "compiler.h"
 #include "compton.h"
 #include "err.h"
