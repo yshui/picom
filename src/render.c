@@ -15,6 +15,11 @@
 #ifdef CONFIG_OPENGL
 #include "backend/gl/glx.h"
 #include "opengl.h"
+
+#ifndef GLX_BACK_BUFFER_AGE_EXT
+#define GLX_BACK_BUFFER_AGE_EXT 0x20F4
+#endif
+
 #endif
 
 #include "compiler.h"
@@ -30,6 +35,10 @@
 
 #include "backend/backend_common.h"
 #include "render.h"
+
+#define XRFILTER_CONVOLUTION "convolution"
+#define XRFILTER_GAUSSIAN "gaussian"
+#define XRFILTER_BINOMIAL "binomial"
 
 /**
  * Bind texture in paint_t if we are using GLX backend.

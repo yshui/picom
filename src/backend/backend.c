@@ -277,17 +277,14 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	}
 
 #ifdef DEBUG_REPAINT
-	print_timestamp(ps);
 	struct timespec now = get_time_timespec();
 	struct timespec diff = {0};
 	timespec_subtract(&diff, &now, &last_paint);
-	printf("[ %5ld:%09ld ] ", diff.tv_sec, diff.tv_nsec);
+	log_trace("[ %5ld:%09ld ] ", diff.tv_sec, diff.tv_nsec);
 	last_paint = now;
-	printf("paint:");
+	log_trace("paint:");
 	for (win *w = t; w; w = w->prev_trans)
-		printf(" %#010lx", w->id);
-	putchar('\n');
-	fflush(stdout);
+		log_trace(" %#010lx", w->id);
 #endif
 }
 

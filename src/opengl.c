@@ -30,6 +30,10 @@
 
 #include "opengl.h"
 
+#ifndef GL_TEXTURE_RECTANGLE
+#define GL_TEXTURE_RECTANGLE 0x84F5
+#endif
+
 static inline XVisualInfo *get_visualinfo_from_visual(session_t *ps, xcb_visualid_t visual) {
 	XVisualInfo vreq = {.visualid = visual};
 	int nitems = 0;
