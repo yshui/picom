@@ -158,17 +158,10 @@ static void gl_free_prog_main(gl_win_shader_t *pprogram) {
  * @param reg_tgt     the clip region, in Xorg coordinate system
  * @param reg_visible ignored
  */
-static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target, int dst_x,
-                        int dst_y, GLfloat *coord, GLuint *indices, int nrects) {
+static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
+                        GLfloat *coord, GLuint *indices, int nrects) {
 
 	struct gl_data *gd = (void *)base;
-
-	// Until we start to use glClipControl, reg_tgt, dst_x and dst_y and
-	// in a different coordinate system than the one OpenGL uses.
-	// OpenGL window coordinate (or NDC) has the origin at the lower left of the
-	// screen, with y axis pointing up; Xorg has the origin at the upper left of the
-	// screen, with y axis pointing down. We have to do some coordinate conversion in
-	// this function
 	if (!img || !img->inner->texture) {
 		log_error("Missing texture.");
 		return;
@@ -247,28 +240,27 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target, in
 	return;
 }
 
-void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
-                const region_t *reg_tgt, const region_t *reg_visible) {
-	struct gl_data *gd = (void *)base;
-	struct gl_image *img = image_data;
-
-	// Painting
-	int nrects;
-	const rect_t *rects;
-	rects = pixman_region32_rectangles((region_t *)reg_tgt, &nrects);
-	if (!nrects) {
-		// Nothing to paint
-		return;
+/// Convert rectangles in X coordinates to OpenGL vertex and texture coordinates
+/// @param[in] nrects, rects   rectangles
+/// @param[in] dst_x, dst_y    origin of the OpenGL texture, affect the calculated texture
+///                            coordinates
+/// @param[in] width, height   size of the OpenGL texture
+/// @param[in] root_height     height of the back buffer
+/// @param[in] y_inverted      whether the texture is y inverted
+/// @param[out] coord, indices output
+static void x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y,
+                             int width, int height, int root_height, bool y_inverted,
+                             GLfloat *coord, GLuint *indices) {
+	dst_y = root_height - dst_y;
+	if (y_inverted) {
+		dst_y -= height;
 	}
 
-	auto coord = ccalloc(nrects * 16, GLfloat);
-	auto indices = ccalloc(nrects * 6, GLuint);
-	dst_y = gd->height - dst_y - img->inner->height;
-	for (int i = 0; i < nrects; ++i) {
+	for (int i = 0; i < nrects; i++) {
 		// Y-flip. Note after this, crect.y1 > crect.y2
 		rect_t crect = rects[i];
-		crect.y1 = gd->height - crect.y1;
-		crect.y2 = gd->height - crect.y2;
+		crect.y1 = root_height - crect.y1;
+		crect.y2 = root_height - crect.y2;
 
 		// Calculate texture coordinates
 		// (texture_x1, texture_y1), texture coord for the _bottom left_ corner
@@ -278,17 +270,17 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		auto texture_y2 = texture_y1 + (GLfloat)(crect.y1 - crect.y2);
 
 		// X pixmaps might be Y inverted, invert the texture coordinates
-		if (img->inner->y_inverted) {
-			texture_y1 = (GLfloat)img->inner->height - texture_y1;
-			texture_y2 = (GLfloat)img->inner->height - texture_y2;
+		if (y_inverted) {
+			texture_y1 = (GLfloat)height - texture_y1;
+			texture_y2 = (GLfloat)height - texture_y2;
 		}
 
 		// GL_TEXTURE_2D coordinates are normalized
 		// TODO use texelFetch
-		texture_x1 /= (GLfloat)img->inner->width;
-		texture_y1 /= (GLfloat)img->inner->height;
-		texture_x2 /= (GLfloat)img->inner->width;
-		texture_y2 /= (GLfloat)img->inner->height;
+		texture_x1 /= (GLfloat)width;
+		texture_y1 /= (GLfloat)height;
+		texture_x2 /= (GLfloat)width;
+		texture_y2 /= (GLfloat)height;
 
 		// Vertex coordinates
 		auto vx1 = (GLfloat)crect.x1;
@@ -316,7 +308,34 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		memcpy(&indices[i * 6], (GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0},
 		       sizeof(GLuint) * 6);
 	}
-	_gl_compose(base, img, 0, dst_x, dst_y, coord, indices, nrects);
+}
+
+void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
+                const region_t *reg_tgt, const region_t *reg_visible) {
+	struct gl_data *gd = (void *)base;
+	struct gl_image *img = image_data;
+
+	// Painting
+	int nrects;
+	const rect_t *rects;
+	rects = pixman_region32_rectangles((region_t *)reg_tgt, &nrects);
+	if (!nrects) {
+		// Nothing to paint
+		return;
+	}
+
+	// Until we start to use glClipControl, reg_tgt, dst_x and dst_y and
+	// in a different coordinate system than the one OpenGL uses.
+	// OpenGL window coordinate (or NDC) has the origin at the lower left of the
+	// screen, with y axis pointing up; Xorg has the origin at the upper left of the
+	// screen, with y axis pointing down. We have to do some coordinate conversion in
+	// this function
+
+	auto coord = ccalloc(nrects * 16, GLfloat);
+	auto indices = ccalloc(nrects * 6, GLuint);
+	x_rect_to_coords(nrects, rects, dst_x, dst_y, img->inner->width, img->inner->height,
+	                 gd->height, img->inner->y_inverted, coord, indices);
+	_gl_compose(base, img, 0, coord, indices, nrects);
 
 	free(indices);
 	free(coord);
@@ -340,56 +359,15 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 	bool ret = false;
 
 	int nrects;
-	const rect_t *rect = pixman_region32_rectangles((region_t *)reg_blur, &nrects);
+	const rect_t *rects = pixman_region32_rectangles((region_t *)reg_blur, &nrects);
 	if (!nrects) {
 		return true;
 	}
 
 	auto coord = ccalloc(nrects * 16, GLfloat);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	for (int i = 0; i < nrects; i++) {
-		rect_t crect = rect[i];
-		// flip y axis, because the regions are in Xorg's coordinates,
-		// which is y-flipped from OpenGL's.
-		crect.y1 = gd->height - crect.y1;
-		crect.y2 = gd->height - crect.y2;
-
-		// Texture coordinates
-		auto texture_x1 = (GLfloat)(crect.x1 - extent->x1);
-		auto texture_y1 = (GLfloat)(crect.y2 - dst_y);
-		auto texture_x2 = texture_x1 + (GLfloat)(crect.x2 - crect.x1);
-		auto texture_y2 = texture_y1 + (GLfloat)(crect.y1 - crect.y2);
-
-		texture_x1 /= (GLfloat)gd->width;
-		texture_x2 /= (GLfloat)gd->width;
-		texture_y1 /= (GLfloat)gd->height;
-		texture_y2 /= (GLfloat)gd->height;
-
-		// Vertex coordinates
-		// For passes before the last one, we are drawing into a buffer,
-		// so (dx, dy) from source maps to (0, 0)
-		auto vx1 = (GLfloat)(crect.x1 - extent->x1);
-		auto vy1 = (GLfloat)(crect.y2 - dst_y);
-		auto vx2 = vx1 + (GLfloat)(crect.x2 - crect.x1);
-		auto vy2 = vy1 + (GLfloat)(crect.y1 - crect.y2);
-
-		memcpy(&coord[i * 16],
-		       (GLfloat[][2]){
-		           {vx1, vy1},
-		           {texture_x1, texture_y1},
-		           {vx2, vy1},
-		           {texture_x2, texture_y1},
-		           {vx2, vy2},
-		           {texture_x2, texture_y2},
-		           {vx1, vy2},
-		           {texture_x1, texture_y2},
-		       },
-		       sizeof(GLfloat[2]) * 8);
-
-		GLuint u = (GLuint)(i * 4);
-		memcpy(&indices[i * 6], (GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0},
-		       sizeof(GLuint) * 6);
-	}
+	x_rect_to_coords(nrects, rects, extent->x1, extent->y2, gd->width, gd->height,
+			gd->height, false, coord, indices);
 
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
@@ -437,11 +415,11 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 			glUniform1f(p->unifm_opacity, (float)opacity);
 		}
 		if (i == gd->npasses - 1) {
-			// For last pass, we are drawing back to source, so we need to
-			// translate the render region
-			glUniform2f(p->orig_loc, (GLfloat)extent->x1, (GLfloat)dst_y);
-		} else {
 			glUniform2f(p->orig_loc, 0, 0);
+		} else {
+			// For other than last pass, we are drawing to a texture, we
+			// translate the render origin so we don't need a big texture
+			glUniform2f(p->orig_loc, -(GLfloat)extent->x1, -(GLfloat)dst_y);
 		}
 
 		glUniform1f(p->unifm_offset_x, 1.0f / (GLfloat)gd->width);
@@ -976,7 +954,7 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	};
 	// clang-format on
 
-	_gl_compose(base, img, fbo, 0, 0, coord, (GLuint[]){0, 1, 2, 2, 3, 0}, 1);
+	_gl_compose(base, img, fbo, coord, (GLuint[]){0, 1, 2, 2, 3, 0}, 1);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDeleteFramebuffers(1, &fbo);
 
@@ -987,6 +965,9 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	img->color_inverted = false;
 	img->dim = 0;
 	img->opacity = 1;
+}
+
+static void gl_image_apply_alpha(struct gl_image *img, const region_t *reg_op, double alpha) {
 }
 
 /// stub for backend_operations::image_op
@@ -1002,6 +983,7 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 	case IMAGE_OP_APPLY_ALPHA_ALL: tex->opacity *= *(double *)arg; break;
 	case IMAGE_OP_APPLY_ALPHA:
 		gl_image_decouple(base, tex);
+		gl_image_apply_alpha(tex, reg_op, *(double *)arg);
 		log_warn("IMAGE_OP_APPLY_ALPHA not implemented yet");
 		break;
 	case IMAGE_OP_RESIZE_TILE:
