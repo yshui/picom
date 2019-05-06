@@ -33,6 +33,7 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include <X11/Xlib.h>
 #include <ev.h>
 #include <pixman.h>
 
