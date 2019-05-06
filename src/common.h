@@ -38,7 +38,6 @@
 #include <sys/time.h>
 #include <time.h>
 
-#include <X11/Xlib.h>
 #include <ev.h>
 #include <pixman.h>
 #include <xcb/composite.h>
@@ -51,19 +50,7 @@
 
 #include "uthash_extra.h"
 #ifdef CONFIG_OPENGL
-// libGL
 #include "backend/gl/glx.h"
-
-// Workarounds for missing definitions in some broken GL drivers, thanks to
-// douglasp and consolers for reporting
-#ifndef GL_TEXTURE_RECTANGLE
-#define GL_TEXTURE_RECTANGLE 0x84F5
-#endif
-
-#ifndef GLX_BACK_BUFFER_AGE_EXT
-#define GLX_BACK_BUFFER_AGE_EXT 0x20F4
-#endif
-
 #endif
 
 // === Macros ===
@@ -92,25 +79,14 @@
 
 // === Constants ===
 
-/// @brief Length of generic buffers.
-#define BUF_LEN 80
-
 #define ROUNDED_PERCENT 0.05
 #define ROUNDED_PIXELS 10
 
-#define REGISTER_PROP "_NET_WM_CM_S"
-
-#define TIME_MS_MAX LONG_MAX
 #define SWOPTI_TOLERANCE 3000
-#define WIN_GET_LEADER_MAX_RECURSION 20
 
 #define NS_PER_SEC 1000000000L
 #define US_PER_SEC 1000000L
 #define MS_PER_SEC 1000
-
-#define XRFILTER_CONVOLUTION "convolution"
-#define XRFILTER_GAUSSIAN "gaussian"
-#define XRFILTER_BINOMIAL "binomial"
 
 /// @brief Maximum OpenGL FBConfig depth.
 #define OPENGL_MAX_DEPTH 32
@@ -171,16 +147,6 @@ typedef GLXContext (*f_glXCreateContextAttribsARB)(Display *dpy, GLXFBConfig con
 typedef void (*GLDEBUGPROC)(GLenum source, GLenum type, GLuint id, GLenum severity,
                             GLsizei length, const GLchar *message, GLvoid *userParam);
 typedef void (*f_DebugMessageCallback)(GLDEBUGPROC, void *userParam);
-#endif
-
-#ifdef CONFIG_OPENGL
-typedef GLsync (*f_FenceSync)(GLenum condition, GLbitfield flags);
-typedef GLboolean (*f_IsSync)(GLsync sync);
-typedef void (*f_DeleteSync)(GLsync sync);
-typedef GLenum (*f_ClientWaitSync)(GLsync sync, GLbitfield flags, GLuint64 timeout);
-typedef void (*f_WaitSync)(GLsync sync, GLbitfield flags, GLuint64 timeout);
-typedef GLsync (*f_ImportSyncEXT)(GLenum external_sync_type, GLintptr external_sync,
-                                  GLbitfield flags);
 #endif
 
 /// @brief Wrapper of a binded GLX texture.
@@ -247,29 +213,15 @@ typedef struct {
 	GLXContext context;
 	/// Whether we have GL_ARB_texture_non_power_of_two.
 	bool has_texture_non_power_of_two;
-	/// Pointer to the glFenceSync() function.
-	f_FenceSync glFenceSyncProc;
-	/// Pointer to the glIsSync() function.
-	f_IsSync glIsSyncProc;
-	/// Pointer to the glDeleteSync() function.
-	f_DeleteSync glDeleteSyncProc;
-	/// Pointer to the glClientWaitSync() function.
-	f_ClientWaitSync glClientWaitSyncProc;
-	/// Pointer to the glWaitSync() function.
-	f_WaitSync glWaitSyncProc;
-	/// Pointer to the glImportSyncEXT() function.
-	f_ImportSyncEXT glImportSyncEXT;
 	/// Current GLX Z value.
 	int z;
-#ifdef CONFIG_OPENGL
 	glx_blur_pass_t blur_passes[MAX_BLUR_PASS];
-#endif
 } glx_session_t;
 
 #define CGLX_SESSION_INIT                                                                \
 	{ .context = NULL }
 
-#endif
+#endif // CONFIG_OPENGL
 
 /// Structure containing all necessary data for a compton session.
 typedef struct session {
@@ -523,84 +475,9 @@ typedef enum { WIN_EVMODE_UNKNOWN, WIN_EVMODE_FRAME, WIN_EVMODE_CLIENT } win_evm
 extern const char *const WINTYPES[NUM_WINTYPES];
 extern session_t *ps_g;
 
-// == Debugging code ==
-static inline void print_timestamp(session_t *ps);
-
 void ev_xcb_error(session_t *ps, xcb_generic_error_t *err);
 
 // === Functions ===
-
-/**
- * Return whether a struct timeval value is empty.
- */
-static inline bool timeval_isempty(struct timeval *ptv) {
-	if (!ptv)
-		return false;
-
-	return ptv->tv_sec <= 0 && ptv->tv_usec <= 0;
-}
-
-/**
- * Compare a struct timeval with a time in milliseconds.
- *
- * @return > 0 if ptv > ms, 0 if ptv == 0, -1 if ptv < ms
- */
-static inline int timeval_ms_cmp(struct timeval *ptv, unsigned long ms) {
-	assert(ptv);
-
-	// We use those if statement instead of a - expression because of possible
-	// truncation problem from long to int.
-	auto sec = (long)(ms / MS_PER_SEC);
-	if (ptv->tv_sec > sec) {
-		return 1;
-	}
-	if (ptv->tv_sec < sec) {
-		return -1;
-	}
-
-	auto usec = (long)(ms % MS_PER_SEC * (US_PER_SEC / MS_PER_SEC));
-	if (ptv->tv_usec > usec) {
-		return 1;
-	}
-	if (ptv->tv_usec < usec) {
-		return -1;
-	}
-
-	return 0;
-}
-
-/**
- * Subtracting two struct timeval values.
- *
- * Taken from glibc manual.
- *
- * Subtract the `struct timeval' values X and Y,
- * storing the result in RESULT.
- * Return 1 if the difference is negative, otherwise 0.
- */
-static inline int
-timeval_subtract(struct timeval *result, struct timeval *x, struct timeval *y) {
-	/* Perform the carry for the later subtraction by updating y. */
-	if (x->tv_usec < y->tv_usec) {
-		long nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
-		y->tv_usec -= 1000000 * nsec;
-		y->tv_sec += nsec;
-	}
-
-	if (x->tv_usec - y->tv_usec > 1000000) {
-		long nsec = (x->tv_usec - y->tv_usec) / 1000000;
-		y->tv_usec += 1000000 * nsec;
-		y->tv_sec -= nsec;
-	}
-
-	/* Compute the time remaining to wait.
-	   tv_usec is certainly positive. */
-	result->tv_sec = x->tv_sec - y->tv_sec;
-	result->tv_usec = x->tv_usec - y->tv_usec;
-
-	/* Return 1 if result is negative. */
-	return x->tv_sec < y->tv_sec;
-}
 
 /**
  * Subtracting two struct timespec values.
@@ -662,21 +539,6 @@ static inline struct timespec get_time_timespec(void) {
 }
 
 /**
- * Print time passed since program starts execution.
- *
- * Used for debugging.
- */
-static inline void print_timestamp(session_t *ps) {
-	struct timeval tm, diff;
-
-	if (gettimeofday(&tm, NULL))
-		return;
-
-	timeval_subtract(&diff, &tm, &ps->time_start);
-	fprintf(stderr, "[ %5ld.%06ld ] ", diff.tv_sec, diff.tv_usec);
-}
-
-/**
  * Wrapper of XFree() for convenience.
  *
  * Because a NULL pointer cannot be passed to XFree(), its man page says.
@@ -684,11 +546,6 @@ static inline void print_timestamp(session_t *ps) {
 static inline void cxfree(void *data) {
 	if (data)
 		XFree(data);
-}
-
-_Noreturn static inline void die(const char *msg) {
-	puts(msg);
-	exit(1);
 }
 
 /**
@@ -786,10 +643,6 @@ static inline long winprop_get_int(winprop_t prop) {
 }
 
 void force_repaint(session_t *ps);
-
-bool vsync_init(session_t *ps);
-
-void vsync_deinit(session_t *ps);
 
 /** @name DBus handling
  */

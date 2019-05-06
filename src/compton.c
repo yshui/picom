@@ -932,18 +932,14 @@ static bool register_cm(session_t *ps) {
 
 	// Acquire X Selection _NET_WM_CM_S?
 	if (!ps->o.no_x_selection) {
-		unsigned len = strlen(REGISTER_PROP) + 2;
-		int s = ps->scr;
+		const char register_prop[] = "_NET_WM_CM_S";
 		xcb_atom_t atom;
 
-		while (s >= 10) {
-			++len;
-			s /= 10;
+		char *buf = NULL;
+		if (asprintf(&buf, "%s%d", register_prop, ps->scr) < 0) {
+			log_fatal("Failed to allocate memory");
+			return false;
 		}
-
-		auto buf = ccalloc(len, char);
-		snprintf(buf, len, REGISTER_PROP "%d", ps->scr);
-		buf[len - 1] = '\0';
 		atom = get_atom(ps->atoms, buf);
 		free(buf);
 

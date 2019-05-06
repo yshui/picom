@@ -43,6 +43,7 @@
 #include "win.h"
 
 #define OPAQUE 0xffffffff
+#define WIN_GET_LEADER_MAX_RECURSION 20
 
 /// Generate a "return by value" function, from a function that returns the
 /// region via a region_t pointer argument.
