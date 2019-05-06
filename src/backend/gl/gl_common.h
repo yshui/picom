@@ -42,21 +42,23 @@ typedef struct {
 	GLint color_loc;
 } gl_fill_shader_t;
 
+struct gl_texture {
+	int refcount;
+	GLuint texture;
+	int width, height;
+	bool y_inverted;
+	unsigned depth;
+};
+
 /// @brief Wrapper of a binded GLX texture.
-typedef struct gl_texture {
+typedef struct gl_image {
+	struct gl_texture *inner;
 	double opacity;
 	double dim;
-	int *refcount;
-	GLuint texture;
-	// The size of the backing texture
-	int width, height;
-	// The effective size of the texture
 	int ewidth, eheight;
-	unsigned depth;
-	bool y_inverted;
 	bool has_alpha;
 	bool color_inverted;
-} gl_texture_t;
+} gl_image_t;
 
 struct gl_data {
 	backend_t base;
