@@ -716,7 +716,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		auto kern = kernels[i];
 		// Build shader
 		int width = kern->w, height = kern->h;
-		int nele = width * height - 1;
+		int nele = width * height;
 		size_t body_len = (strlen(shader_add) + 42) * (uint)nele;
 		char *shader_body = ccalloc(body_len, char);
 		char *pc = shader_body;
