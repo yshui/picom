@@ -41,11 +41,6 @@
 #include "backend/gl/glx.h"
 #endif
 
-// === Macros ===
-
-#define MSTR_(s) #s
-#define MSTR(s) MSTR_(s)
-
 // X resource checker
 #ifdef DEBUG_XRC
 #include "xrescheck.h"
@@ -56,13 +51,9 @@
 #include "backend/driver.h"
 #include "compiler.h"
 #include "config.h"
-#include "kernel.h"
-#include "log.h"
 #include "region.h"
-#include "render.h"
 #include "types.h"
 #include "utils.h"
-#include "win.h"
 #include "x.h"
 
 // === Constants ===0
@@ -84,20 +75,10 @@ typedef struct glx_fbconfig glx_fbconfig_t;
 struct glx_session;
 struct atom;
 
-/// Structure representing needed window updates.
-typedef struct {
-	bool shadow : 1;
-	bool fade : 1;
-	bool focus : 1;
-	bool invert_color : 1;
-} win_upd_t;
-
 typedef struct _ignore {
 	struct _ignore *next;
 	unsigned long sequence;
 } ignore_t;
-
-typedef struct _glx_texture glx_texture_t;
 
 #ifdef CONFIG_OPENGL
 #ifdef DEBUG_GLX_DEBUG_CONTEXT
@@ -108,31 +89,6 @@ typedef void (*GLDEBUGPROC)(GLenum source, GLenum type, GLuint id, GLenum severi
                             GLsizei length, const GLchar *message, GLvoid *userParam);
 typedef void (*f_DebugMessageCallback)(GLDEBUGPROC, void *userParam);
 #endif
-
-/// @brief Wrapper of a binded GLX texture.
-struct _glx_texture {
-	GLuint texture;
-	GLXPixmap glpixmap;
-	xcb_pixmap_t pixmap;
-	GLenum target;
-	int width;
-	int height;
-	bool y_inverted;
-};
-
-#ifdef CONFIG_OPENGL
-typedef struct {
-	/// Fragment shader for blur.
-	GLuint frag_shader;
-	/// GLSL program for blur.
-	GLuint prog;
-	/// Location of uniform "offset_x" in blur GLSL program.
-	GLint unifm_offset_x;
-	/// Location of uniform "offset_y" in blur GLSL program.
-	GLint unifm_offset_y;
-	/// Location of uniform "factor_center" in blur GLSL program.
-	GLint unifm_factor_center;
-} glx_blur_pass_t;
 
 typedef struct glx_prog_main {
 	/// GLSL program.
@@ -148,7 +104,6 @@ typedef struct glx_prog_main {
 #define GLX_PROG_MAIN_INIT                                                               \
 	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
 
-#endif
 #else
 struct glx_prog_main {};
 #endif
@@ -161,9 +116,6 @@ typedef struct _latom {
 	xcb_atom_t atom;
 	struct _latom *next;
 } latom_t;
-
-#define REG_DATA_INIT                                                                    \
-	{ NULL, 0 }
 
 /// Structure containing all necessary data for a compton session.
 typedef struct session {
@@ -543,25 +495,6 @@ static inline bool wid_has_prop(const session_t *ps, xcb_window_t w, xcb_atom_t 
 		return true;
 	}
 	return false;
-}
-
-/**
- * Get the numeric property value from a win_prop_t.
- */
-static inline long winprop_get_int(winprop_t prop) {
-	long tgt = 0;
-
-	if (!prop.nitems)
-		return 0;
-
-	switch (prop.format) {
-	case 8: tgt = *(prop.p8); break;
-	case 16: tgt = *(prop.p16); break;
-	case 32: tgt = *(prop.p32); break;
-	default: assert(0); break;
-	}
-
-	return tgt;
 }
 
 void force_repaint(session_t *ps);

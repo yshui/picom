@@ -26,6 +26,19 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
+typedef struct {
+	/// Fragment shader for blur.
+	GLuint frag_shader;
+	/// GLSL program for blur.
+	GLuint prog;
+	/// Location of uniform "offset_x" in blur GLSL program.
+	GLint unifm_offset_x;
+	/// Location of uniform "offset_y" in blur GLSL program.
+	GLint unifm_offset_y;
+	/// Location of uniform "factor_center" in blur GLSL program.
+	GLint unifm_factor_center;
+} glx_blur_pass_t;
+
 /// Structure containing GLX-dependent data for a compton session.
 typedef struct glx_session {
 	// === OpenGL related ===
@@ -37,6 +50,17 @@ typedef struct glx_session {
 	int z;
 	glx_blur_pass_t blur_passes[MAX_BLUR_PASS];
 } glx_session_t;
+
+/// @brief Wrapper of a binded GLX texture.
+typedef struct _glx_texture {
+	GLuint texture;
+	GLXPixmap glpixmap;
+	xcb_pixmap_t pixmap;
+	GLenum target;
+	int width;
+	int height;
+	bool y_inverted;
+} glx_texture_t;
 
 #define CGLX_SESSION_INIT                                                                \
 	{ .context = NULL }
