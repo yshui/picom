@@ -152,15 +152,15 @@ static void gl_free_prog_main(gl_win_shader_t *pprogram) {
  * Render a region with texture data.
  *
  * @param ptex the texture
+ * @param target the framebuffer to render into
  * @param dst_x,dst_y the top left corner of region where this texture
- *                    should go. In Xorg coordinate system (important!).
- * @param reg_tgt     the clip region, also in Xorg coordinate system
+ *                    should go. In OpenGL coordinate system (important!).
+ * @param reg_tgt     the clip region, in Xorg coordinate system
  * @param reg_visible ignored
  */
-void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
-                const region_t *reg_tgt, const region_t *reg_visible) {
+static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target, int dst_x,
+                        int dst_y, GLfloat *coord, GLuint *indices, int nrects) {
 
-	struct gl_image *ptex = image_data;
 	struct gl_data *gd = (void *)base;
 
 	// Until we start to use glClipControl, reg_tgt, dst_x and dst_y and
@@ -169,10 +169,88 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	// screen, with y axis pointing up; Xorg has the origin at the upper left of the
 	// screen, with y axis pointing down. We have to do some coordinate conversion in
 	// this function
-	if (!ptex || !ptex->inner->texture) {
+	if (!img || !img->inner->texture) {
 		log_error("Missing texture.");
 		return;
 	}
+
+	bool dual_texture = false;
+
+	assert(gd->win_shader.prog);
+	glUseProgram(gd->win_shader.prog);
+	if (gd->win_shader.unifm_opacity >= 0) {
+		glUniform1f(gd->win_shader.unifm_opacity, (float)img->opacity);
+	}
+	if (gd->win_shader.unifm_invert_color >= 0) {
+		glUniform1i(gd->win_shader.unifm_invert_color, img->color_inverted);
+	}
+	if (gd->win_shader.unifm_tex >= 0) {
+		glUniform1i(gd->win_shader.unifm_tex, 0);
+	}
+	if (gd->win_shader.unifm_dim >= 0) {
+		glUniform1f(gd->win_shader.unifm_dim, (float)img->dim);
+	}
+
+	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
+	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
+
+	// Bind texture
+	glBindTexture(GL_TEXTURE_2D, img->inner->texture);
+	if (dual_texture) {
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, img->inner->texture);
+		glActiveTexture(GL_TEXTURE0);
+	}
+
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
+	GLuint bo[2];
+	glGenBuffers(2, bo);
+	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
+	             indices, GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray((GLuint)gd->win_shader.coord_loc);
+	glEnableVertexAttribArray((GLuint)gd->win_shader.in_texcoord);
+	glVertexAttribPointer((GLuint)gd->win_shader.coord_loc, 2, GL_FLOAT, GL_FALSE,
+	                      sizeof(GLfloat) * 4, NULL);
+	glVertexAttribPointer((GLuint)gd->win_shader.in_texcoord, 2, GL_FLOAT, GL_FALSE,
+	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+	glDisableVertexAttribArray((GLuint)gd->win_shader.coord_loc);
+	glDisableVertexAttribArray((GLuint)gd->win_shader.in_texcoord);
+	glBindVertexArray(0);
+	glDeleteVertexArrays(1, &vao);
+
+	// Cleanup
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	if (dual_texture) {
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glActiveTexture(GL_TEXTURE0);
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glDeleteBuffers(2, bo);
+
+	glUseProgram(0);
+
+	gl_check_err();
+
+	return;
+}
+
+void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
+                const region_t *reg_tgt, const region_t *reg_visible) {
+	struct gl_data *gd = (void *)base;
+	struct gl_image *img = image_data;
 
 	// Painting
 	int nrects;
@@ -183,41 +261,9 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		return;
 	}
 
-	// dst_y is the top coordinate, in OpenGL, it is the upper bound of the y
-	// coordinate.
-	dst_y = gd->height - dst_y;
-	auto dst_y2 = dst_y - ptex->inner->height;
-
-	bool dual_texture = false;
-
-	assert(gd->win_shader.prog);
-	glUseProgram(gd->win_shader.prog);
-	if (gd->win_shader.unifm_opacity >= 0) {
-		glUniform1f(gd->win_shader.unifm_opacity, (float)ptex->opacity);
-	}
-	if (gd->win_shader.unifm_invert_color >= 0) {
-		glUniform1i(gd->win_shader.unifm_invert_color, ptex->color_inverted);
-	}
-	if (gd->win_shader.unifm_tex >= 0) {
-		glUniform1i(gd->win_shader.unifm_tex, 0);
-	}
-	if (gd->win_shader.unifm_dim >= 0) {
-		glUniform1f(gd->win_shader.unifm_dim, (float)ptex->dim);
-	}
-
-	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
-	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
-
-	// Bind texture
-	glBindTexture(GL_TEXTURE_2D, ptex->inner->texture);
-	if (dual_texture) {
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, ptex->inner->texture);
-		glActiveTexture(GL_TEXTURE0);
-	}
 	auto coord = ccalloc(nrects * 16, GLfloat);
 	auto indices = ccalloc(nrects * 6, GLuint);
-
+	dst_y = gd->height - dst_y - img->inner->height;
 	for (int i = 0; i < nrects; ++i) {
 		// Y-flip. Note after this, crect.y1 > crect.y2
 		rect_t crect = rects[i];
@@ -227,22 +273,22 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		// Calculate texture coordinates
 		// (texture_x1, texture_y1), texture coord for the _bottom left_ corner
 		auto texture_x1 = (GLfloat)(crect.x1 - dst_x);
-		auto texture_y1 = (GLfloat)(crect.y2 - dst_y2);
+		auto texture_y1 = (GLfloat)(crect.y2 - dst_y);
 		auto texture_x2 = texture_x1 + (GLfloat)(crect.x2 - crect.x1);
 		auto texture_y2 = texture_y1 + (GLfloat)(crect.y1 - crect.y2);
 
 		// X pixmaps might be Y inverted, invert the texture coordinates
-		if (ptex->inner->y_inverted) {
-			texture_y1 = (GLfloat)ptex->inner->height - texture_y1;
-			texture_y2 = (GLfloat)ptex->inner->height - texture_y2;
+		if (img->inner->y_inverted) {
+			texture_y1 = (GLfloat)img->inner->height - texture_y1;
+			texture_y2 = (GLfloat)img->inner->height - texture_y2;
 		}
 
 		// GL_TEXTURE_2D coordinates are normalized
 		// TODO use texelFetch
-		texture_x1 /= (GLfloat)ptex->inner->width;
-		texture_y1 /= (GLfloat)ptex->inner->height;
-		texture_x2 /= (GLfloat)ptex->inner->width;
-		texture_y2 /= (GLfloat)ptex->inner->height;
+		texture_x1 /= (GLfloat)img->inner->width;
+		texture_y1 /= (GLfloat)img->inner->height;
+		texture_x2 /= (GLfloat)img->inner->width;
+		texture_y2 /= (GLfloat)img->inner->height;
 
 		// Vertex coordinates
 		auto vx1 = (GLfloat)crect.x1;
@@ -270,52 +316,10 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 		memcpy(&indices[i * 6], (GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0},
 		       sizeof(GLuint) * 6);
 	}
-
-	GLuint vao;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
-
-	GLuint bo[2];
-	glGenBuffers(2, bo);
-	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STATIC_DRAW);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
-	             indices, GL_STATIC_DRAW);
-
-	glEnableVertexAttribArray((GLuint)gd->win_shader.coord_loc);
-	glEnableVertexAttribArray((GLuint)gd->win_shader.in_texcoord);
-	glVertexAttribPointer((GLuint)gd->win_shader.coord_loc, 2, GL_FLOAT, GL_FALSE,
-	                      sizeof(GLfloat) * 4, NULL);
-	glVertexAttribPointer((GLuint)gd->win_shader.in_texcoord, 2, GL_FLOAT, GL_FALSE,
-	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
-	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
-	glDisableVertexAttribArray((GLuint)gd->win_shader.coord_loc);
-	glDisableVertexAttribArray((GLuint)gd->win_shader.in_texcoord);
-	glBindVertexArray(0);
-	glDeleteVertexArrays(1, &vao);
-
-	// Cleanup
-	glBindTexture(GL_TEXTURE_2D, 0);
-
-	if (dual_texture) {
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		glActiveTexture(GL_TEXTURE0);
-	}
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	glDeleteBuffers(2, bo);
+	_gl_compose(base, img, 0, dst_x, dst_y, coord, indices, nrects);
 
 	free(indices);
 	free(coord);
-
-	glUseProgram(0);
-
-	gl_check_err();
-
-	return;
 }
 
 /**
@@ -642,6 +646,33 @@ void gl_fill(backend_t *base, double r, double g, double b, double a, const regi
 	glDeleteBuffers(2, bo);
 }
 
+void gl_release_image(backend_t *base, void *image_data) {
+	struct gl_image *wd = image_data;
+	struct gl_data *gl = (void *)base;
+	wd->inner->refcount--;
+	assert(wd->inner->refcount >= 0);
+	if (wd->inner->refcount > 0) {
+		free(wd);
+		return;
+	}
+
+	gl->release_user_data(base, wd->inner);
+	assert(wd->inner->user_data == NULL);
+
+	glDeleteTextures(1, &wd->inner->texture);
+	free(wd->inner);
+	free(wd);
+	gl_check_err();
+}
+
+void *gl_copy(backend_t *base, const void *image_data, const region_t *reg_visible) {
+	const struct gl_image *img = image_data;
+	auto new_img = ccalloc(1, struct gl_image);
+	*new_img = *img;
+	new_img->inner->refcount++;
+	return new_img;
+}
+
 /**
  * Initialize GL blur filters.
  */
@@ -894,10 +925,68 @@ GLuint gl_new_texture(GLenum target) {
 }
 
 /// Decouple `img` from the image it references, also applies all the lazy operations
-static inline void gl_image_decouple(struct gl_image *img) {
+static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	if (img->inner->refcount == 1) {
 		return;
 	}
+
+	struct gl_data *gl = (void *)base;
+	auto new_tex = cmalloc(struct gl_texture);
+
+	glGenTextures(1, &new_tex->texture);
+	glBindTexture(GL_TEXTURE_2D, new_tex->texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img->inner->width, img->inner->height, 0,
+	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	new_tex->y_inverted = true;
+	new_tex->height = img->inner->height;
+	new_tex->width = img->inner->width;
+	new_tex->refcount = 1;
+	new_tex->user_data = gl->decouple_texture_user_data(base, img->inner->user_data);
+
+	GLuint fbo;
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       new_tex->texture, 0);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glClearColor(0, 0, 0, 0);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	// clang-format off
+	GLfloat coord[] = {
+		// top left
+		0, 0,                 // vertex coord
+		0, 0,                 // texture coord
+
+		// top right
+		(GLfloat)img->inner->width, 0, // vertex coord
+		1, 0,                 // texture coord
+
+		// bottom right
+		(GLfloat)img->inner->width, (GLfloat)img->inner->height,
+		1, 1,
+
+		// bottom left
+		0, (GLfloat)img->inner->height,
+		0, 1
+	};
+	// clang-format on
+
+	_gl_compose(base, img, fbo, 0, 0, coord, (GLuint[]){0, 1, 2, 2, 3, 0}, 1);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glDeleteFramebuffers(1, &fbo);
+
+	img->inner->refcount--;
+	img->inner = new_tex;
+
+	// Clear lazy operation flags
+	img->color_inverted = false;
+	img->dim = 0;
+	img->opacity = 1;
 }
 
 /// stub for backend_operations::image_op
@@ -912,7 +1001,7 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 		break;
 	case IMAGE_OP_APPLY_ALPHA_ALL: tex->opacity *= *(double *)arg; break;
 	case IMAGE_OP_APPLY_ALPHA:
-		gl_image_decouple(tex);
+		gl_image_decouple(base, tex);
 		log_warn("IMAGE_OP_APPLY_ALPHA not implemented yet");
 		break;
 	case IMAGE_OP_RESIZE_TILE:
