@@ -1,3 +1,6 @@
+#pragma once
+#include <stdlib.h>
+
 #include <xcb/xcb.h>
 
 #include "meta.h"
@@ -48,4 +51,5 @@ static inline xcb_atom_t get_atom(struct atom *a, const char *key) {
 
 static inline void destroy_atoms(struct atom *a) {
 	cache_free(a->c);
+	free(a);
 }
