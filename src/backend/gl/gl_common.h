@@ -47,7 +47,7 @@ struct gl_texture {
 	GLuint texture;
 	int width, height;
 	bool y_inverted;
-	unsigned depth;
+	void *user_data;
 };
 
 /// @brief Wrapper of a binded GLX texture.
@@ -77,6 +77,13 @@ struct gl_data {
 	GLuint blur_texture[2];
 	// Temporary fbo used for blurring
 	GLuint blur_fbo;
+
+	/// Called when an gl_texture is decoupled from the texture it refers. Returns
+	/// the decoupled user_data
+	void *(*decouple_texture_user_data)(backend_t *base, void *user_data);
+
+	/// Release the user data attached to a gl_texture
+	void (*release_user_data)(backend_t *base, struct gl_texture *);
 
 	struct log_target *logger;
 };
@@ -116,6 +123,10 @@ GLuint gl_new_texture(GLenum target);
 
 bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
                  const region_t *reg_op, const region_t *reg_visible, void *arg);
+
+void gl_release_image(backend_t *base, void *image_data);
+
+void *gl_copy(backend_t *base, const void *image_data, const region_t *reg_visible);
 
 bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
              const region_t *reg_visible);

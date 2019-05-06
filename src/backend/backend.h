@@ -42,7 +42,7 @@ enum image_operations {
 	IMAGE_OP_APPLY_ALPHA_ALL,
 	// Change the effective size of the image, without touching the backing image
 	// itself. When the image is used, the backing image should be tiled to fill its
-	// effective size. `reg_op` and `reg_visibile` is ignored. `arg` is two integers,
+	// effective size. `reg_op` and `reg_visible` is ignored. `arg` is two integers,
 	// width and height, in that order.
 	IMAGE_OP_RESIZE_TILE,
 };
@@ -80,6 +80,11 @@ struct backend_operations {
 
 	// ===========      Rendering      ============
 
+	// NOTE: general idea about reg_paint/reg_op vs reg_visible is that reg_visible is
+	// merely a hint. Ignoring reg_visible entirely don't affect the correctness of
+	// the operation performed. OTOH reg_paint/reg_op is part of the parameters of the
+	// operation, and must be honored in order to complete the operation correctly.
+
 	/// Called before when a new frame starts.
 	///
 	/// Optional
@@ -93,7 +98,7 @@ struct backend_operations {
 	 * @param image_data   the image to paint
 	 * @param dst_x, dst_y the top left corner of the image in the target
 	 * @param reg_paint    the clip region, in target coordinates
-	 * @param reg_visibile the visible region, in target coordinates
+	 * @param reg_visible the visible region, in target coordinates
 	 */
 	void (*compose)(backend_t *backend_data, void *image_data, int dst_x, int dst_y,
 	                const region_t *reg_paint, const region_t *reg_visible);
