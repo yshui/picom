@@ -26,6 +26,21 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
+/// Structure containing GLX-dependent data for a compton session.
+typedef struct glx_session {
+	// === OpenGL related ===
+	/// GLX context.
+	GLXContext context;
+	/// Whether we have GL_ARB_texture_non_power_of_two.
+	bool has_texture_non_power_of_two;
+	/// Current GLX Z value.
+	int z;
+	glx_blur_pass_t blur_passes[MAX_BLUR_PASS];
+} glx_session_t;
+
+#define CGLX_SESSION_INIT                                                                \
+	{ .context = NULL }
+
 bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
                  GLfloat factor, const region_t *reg_tgt);
 
