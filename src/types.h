@@ -22,6 +22,10 @@ typedef struct {
 	int right;
 } margin_t;
 
+struct color {
+	double red, green, blue, alpha;
+};
+
 typedef uint32_t opacity_t;
 
 #define MARGIN_INIT                                                                      \
