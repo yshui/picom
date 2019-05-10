@@ -979,7 +979,7 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
                                  const region_t *reg_op, double alpha) {
 	glBlendFunc(GL_ONE, GL_CONSTANT_COLOR);
-	glBlendColor(1, 1, 1, (GLclampf)alpha);
+	glBlendColor((GLclampf)alpha, (GLclampf)alpha, (GLclampf)alpha, (GLclampf)alpha);
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
