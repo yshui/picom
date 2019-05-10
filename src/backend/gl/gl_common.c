@@ -367,7 +367,7 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 	auto coord = ccalloc(nrects * 16, GLfloat);
 	auto indices = ccalloc(nrects * 6, GLuint);
 	x_rect_to_coords(nrects, rects, extent->x1, extent->y2, gd->width, gd->height,
-			gd->height, false, coord, indices);
+	                 gd->height, false, coord, indices);
 
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
@@ -575,7 +575,10 @@ static const char fill_vert[] = GLSL(330,
 );
 // clang-format on
 
-void gl_fill(backend_t *base, double r, double g, double b, double a, const region_t *clip) {
+/// Fill a given region in bound framebuffer.
+/// @param[in] y_inverted whether the y coordinates in `clip` should be inverted
+static void
+_gl_fill(backend_t *base, struct color c, const region_t *clip, int height, bool y_inverted) {
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
 	struct gl_data *gd = (void *)base;
@@ -587,7 +590,8 @@ void gl_fill(backend_t *base, double r, double g, double b, double a, const regi
 	GLuint bo[2];
 	glGenBuffers(2, bo);
 	glUseProgram(gd->fill_shader.prog);
-	glUniform4f(gd->fill_shader.color_loc, (GLfloat)r, (GLfloat)g, (GLfloat)b, (GLfloat)a);
+	glUniform4f(gd->fill_shader.color_loc, (GLfloat)c.red, (GLfloat)c.green,
+	            (GLfloat)c.blue, (GLfloat)c.alpha);
 	glEnableVertexAttribArray((GLuint)gd->fill_shader.in_coord_loc);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
@@ -595,11 +599,11 @@ void gl_fill(backend_t *base, double r, double g, double b, double a, const regi
 	auto coord = ccalloc(nrects * 8, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
 	for (int i = 0; i < nrects; i++) {
+		GLint y1 = y_inverted ? height - rect[i].y2 : rect[i].y1,
+		      y2 = y_inverted ? height - rect[i].y1 : rect[i].y2;
 		memcpy(&coord[i * 8],
-		       (GLint[][2]){{rect[i].x1, gd->height - rect[i].y2},
-		                    {rect[i].x2, gd->height - rect[i].y2},
-		                    {rect[i].x2, gd->height - rect[i].y1},
-		                    {rect[i].x1, gd->height - rect[i].y1}},
+		       (GLint[][2]){
+		           {rect[i].x1, y1}, {rect[i].x2, y1}, {rect[i].x2, y2}, {rect[i].x1, y2}},
 		       sizeof(GLint[2]) * 4);
 		indices[i * 6 + 0] = (GLuint)i * 4 + 0;
 		indices[i * 6 + 1] = (GLuint)i * 4 + 1;
@@ -622,6 +626,11 @@ void gl_fill(backend_t *base, double r, double g, double b, double a, const regi
 	glDeleteVertexArrays(1, &vao);
 
 	glDeleteBuffers(2, bo);
+}
+
+void gl_fill(backend_t *base, struct color c, const region_t *clip) {
+	struct gl_data *gd = (void *)base;
+	return _gl_fill(base, c, clip, gd->height, true);
 }
 
 void gl_release_image(backend_t *base, void *image_data) {
@@ -967,7 +976,20 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	img->opacity = 1;
 }
 
-static void gl_image_apply_alpha(struct gl_image *img, const region_t *reg_op, double alpha) {
+static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
+                                 const region_t *reg_op, double alpha) {
+	glBlendFunc(GL_ONE, GL_CONSTANT_COLOR);
+	glBlendColor(1, 1, 1, (GLclampf)alpha);
+	GLuint fbo;
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       img->inner->texture, 0);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, 0, false);
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glDeleteFramebuffers(1, &fbo);
 }
 
 /// stub for backend_operations::image_op
@@ -983,8 +1005,8 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 	case IMAGE_OP_APPLY_ALPHA_ALL: tex->opacity *= *(double *)arg; break;
 	case IMAGE_OP_APPLY_ALPHA:
 		gl_image_decouple(base, tex);
-		gl_image_apply_alpha(tex, reg_op, *(double *)arg);
-		log_warn("IMAGE_OP_APPLY_ALPHA not implemented yet");
+		assert(tex->inner->refcount == 1);
+		gl_image_apply_alpha(base, tex, reg_op, *(double *)arg);
 		break;
 	case IMAGE_OP_RESIZE_TILE:
 		// texture is already set to repeat, so nothing else we need to do
