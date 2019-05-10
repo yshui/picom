@@ -9,6 +9,7 @@
 #include "driver.h"
 #include "kernel.h"
 #include "region.h"
+#include "types.h"
 #include "x.h"
 
 typedef struct session session_t;
@@ -104,8 +105,7 @@ struct backend_operations {
 	                const region_t *reg_paint, const region_t *reg_visible);
 
 	/// Fill rectangle of target, mostly for debug purposes, optional.
-	void (*fill)(backend_t *backend_data, double r, double g, double b, double a,
-	             const region_t *clip);
+	void (*fill)(backend_t *backend_data, struct color, const region_t *clip);
 
 	/// Blur a given region of the target.
 	bool (*blur)(backend_t *backend_data, double opacity, const region_t *reg_blur,

@@ -259,7 +259,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 	if (ps->o.monitor_repaint) {
 		reg_damage = get_damage(ps, false);
-		ps->backend_data->ops->fill(ps->backend_data, 0.5, 0, 0, 0.5, &reg_damage);
+		ps->backend_data->ops->fill(ps->backend_data,
+		                            (struct color){0.5, 0, 0, 0.5}, &reg_damage);
 		pixman_region32_fini(&reg_damage);
 	}
 

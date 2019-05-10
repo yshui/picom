@@ -107,17 +107,17 @@ static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
 }
 
 static void
-fill(backend_t *base, double r, double g, double b, double a, const region_t *clip) {
+fill(backend_t *base, struct color c, const region_t *clip) {
 	struct _xrender_data *xd = (void *)base;
 	const rect_t *extent = pixman_region32_extents((region_t *)clip);
 	x_set_picture_clip_region(base->c, xd->back[xd->curr_back], 0, 0, clip);
 	// color is in X fixed point representation
 	xcb_render_fill_rectangles(
 	    base->c, XCB_RENDER_PICT_OP_OVER, xd->back[xd->curr_back],
-	    (xcb_render_color_t){.red = (uint16_t)(r * 0xffff),
-	                         .green = (uint16_t)(g * 0xffff),
-	                         .blue = (uint16_t)(b * 0xffff),
-	                         .alpha = (uint16_t)(a * 0xffff)},
+	    (xcb_render_color_t){.red = (uint16_t)(c.red * 0xffff),
+	                         .green = (uint16_t)(c.green * 0xffff),
+	                         .blue = (uint16_t)(c.blue * 0xffff),
+	                         .alpha = (uint16_t)(c.alpha * 0xffff)},
 	    1,
 	    (xcb_rectangle_t[]){{.x = to_i16_checked(extent->x1),
 	                         .y = to_i16_checked(extent->y1),
