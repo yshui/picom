@@ -676,13 +676,13 @@ static bool initialize_backend(session_t *ps) {
 		assert(!ps->backend_data);
 		// Reinitialize win_data
 		ps->backend_data = backend_list[ps->o.backend]->init(ps);
-		ps->backend_data->ops = backend_list[ps->o.backend];
 		if (!ps->backend_data) {
 			log_fatal("Failed to initialize backend, aborting...");
 			ps->quit = true;
 			ev_break(ps->loop, EVBREAK_ALL);
 			return false;
 		}
+		ps->backend_data->ops = backend_list[ps->o.backend];
 
 		// window_stack shouldn't include window that's not in the hash table at
 		// this point. Since there cannot be any fading windows.
