@@ -175,24 +175,26 @@ static inline void gl_check_err_(const char *func, int line) {
 	}
 }
 
+static inline void gl_clear_err(void) {
+	while (glGetError() != GL_NO_ERROR);
+}
+
 #define gl_check_err() gl_check_err_(__func__, __LINE__)
 
 /**
  * Check if a GLX extension exists.
  */
 static inline bool gl_has_extension(const char *ext) {
-	GLint nexts = 0;
-	glGetIntegerv(GL_NUM_EXTENSIONS, &nexts);
-	if (!nexts) {
-		log_error("Failed to get GL extension list.");
-		return false;
-	}
-
-	for (int i = 0; i < nexts; i++) {
+	for (int i = 0; ; i++) {
 		const char *exti = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
-		if (strcmp(ext, exti) == 0)
+		if (exti == 0) {
+			break;
+		}
+		if (strcmp(ext, exti) == 0) {
 			return true;
+		}
 	}
+	gl_clear_err();
 	log_info("Missing GL extension %s.", ext);
 	return false;
 }
