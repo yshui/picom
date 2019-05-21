@@ -422,10 +422,10 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 			break;
 		}
 
-		auto alpha_pict = xd->alpha_pict[(int)(dargs[0] * 255)];
+		auto alpha_pict = xd->alpha_pict[(int)((1-dargs[0]) * 255)];
 		x_set_picture_clip_region(base->c, img->pict, 0, 0, &reg);
-		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_IN, img->pict, XCB_NONE,
-		                     alpha_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
+		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_OUT_REVERSE, alpha_pict, XCB_NONE,
+		                     img->pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 		img->has_alpha = true;
 		break;
 	case IMAGE_OP_RESIZE_TILE:
