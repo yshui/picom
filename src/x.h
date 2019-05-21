@@ -244,3 +244,5 @@ struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual
 xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
 
 xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen);
+
+uint32_t attr_deprecated xcb_generate_id(xcb_connection_t *c);
