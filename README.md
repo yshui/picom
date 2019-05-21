@@ -103,6 +103,8 @@ You can look at the [Projects](https://github.com/yshui/compton/projects) page, 
 
 Even if you don't want to contribute code, you can still contribute by compiling and running this branch, and report any issue you can find.
 
+Contributions to the documents and wiki will also be appreciated.
+
 ## Contributors
 
 See [CONTRIBUTORS](CONTRIBUTORS)
