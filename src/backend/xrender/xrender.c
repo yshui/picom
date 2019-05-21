@@ -22,8 +22,6 @@
 #include "win.h"
 #include "x.h"
 
-#define auto __auto_type
-
 typedef struct _xrender_data {
 	backend_t base;
 	/// If vsync is enabled and supported by the current system
@@ -90,7 +88,7 @@ static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
 	struct _xrender_data *xd = (void *)base;
 	struct _xrender_image_data *img = img_data;
 	uint8_t op = (img->has_alpha ? XCB_RENDER_PICT_OP_OVER : XCB_RENDER_PICT_OP_SRC);
-	auto alpha_pict = xd->alpha_pict[(int)(img->opacity * 255.0)];
+	auto alpha_pict = xd->alpha_pict[(int)(img->opacity * MAX_ALPHA)];
 	region_t reg;
 	pixman_region32_init(&reg);
 	pixman_region32_intersect(&reg, (region_t *)reg_paint, (region_t *)reg_visible);
@@ -106,8 +104,7 @@ static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
 	pixman_region32_fini(&reg);
 }
 
-static void
-fill(backend_t *base, struct color c, const region_t *clip) {
+static void fill(backend_t *base, struct color c, const region_t *clip) {
 	struct _xrender_data *xd = (void *)base;
 	const rect_t *extent = pixman_region32_extents((region_t *)clip);
 	x_set_picture_clip_region(base->c, xd->back[xd->curr_back], 0, 0, clip);
@@ -170,7 +167,7 @@ static bool blur(backend_t *backend_data, double opacity, const region_t *reg_bl
 	// The multipass blur implemented here is not correct, but this is what old
 	// compton did anyway. XXX
 	xcb_render_picture_t src_pict = xd->back[xd->curr_back], dst_pict = tmp_picture[0];
-	auto alpha_pict = xd->alpha_pict[(int)(opacity * 255)];
+	auto alpha_pict = xd->alpha_pict[(int)(opacity * MAX_ALPHA)];
 	int current = 0;
 	x_set_picture_clip_region(c, src_pict, 0, 0, &reg_op);
 
@@ -380,10 +377,8 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 			                     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 
 			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_DIFFERENCE,
-			                     xd->white_pixel, XCB_NONE, tmp_pict, 0, 0, 0,
+			                     xd->white_pixel, XCB_NONE, img->pict, 0, 0, 0,
 			                     0, 0, 0, tmpw, tmph);
-			// We use an extra PictOpInReverse operation to get correct pixel
-			// alpha. There could be a better solution.
 			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_IN_REVERSE,
 			                     tmp_pict, XCB_NONE, img->pict, 0, 0, 0, 0, 0,
 			                     0, tmpw, tmph);
@@ -422,10 +417,10 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 			break;
 		}
 
-		auto alpha_pict = xd->alpha_pict[(int)((1-dargs[0]) * 255)];
+		auto alpha_pict = xd->alpha_pict[(int)((1 - dargs[0]) * MAX_ALPHA)];
 		x_set_picture_clip_region(base->c, img->pict, 0, 0, &reg);
-		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_OUT_REVERSE, alpha_pict, XCB_NONE,
-		                     img->pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
+		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_OUT_REVERSE, alpha_pict,
+		                     XCB_NONE, img->pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 		img->has_alpha = true;
 		break;
 	case IMAGE_OP_RESIZE_TILE:
@@ -465,7 +460,7 @@ static void *copy(backend_t *base, const void *image, const region_t *reg) {
 	}
 
 	xcb_render_picture_t alpha_pict =
-	    img->opacity == 1 ? XCB_NONE : xd->alpha_pict[(int)(img->opacity * 255)];
+	    img->opacity == 1 ? XCB_NONE : xd->alpha_pict[(int)(img->opacity * MAX_ALPHA)];
 	xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC, img->pict, alpha_pict,
 	                     new_img->pict, 0, 0, 0, 0, 0, 0, to_u16_checked(img->width),
 	                     to_u16_checked(img->height));
@@ -476,8 +471,8 @@ backend_t *backend_xrender_init(session_t *ps) {
 	auto xd = ccalloc(1, struct _xrender_data);
 	init_backend_base(&xd->base, ps);
 
-	for (int i = 0; i < 256; ++i) {
-		double o = (double)i / 255.0;
+	for (int i = 0; i <= MAX_ALPHA; ++i) {
+		double o = (double)i / (double)MAX_ALPHA;
 		xd->alpha_pict[i] = solid_picture(ps->c, ps->root, false, o, 0, 0, 0);
 		assert(xd->alpha_pict[i] != XCB_NONE);
 	}
