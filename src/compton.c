@@ -503,21 +503,6 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		// log_trace("%s %d %d %d", w->name, to_paint, w->opacity,
 		// w->paint_excluded);
 
-		if ((w->flags & WIN_FLAGS_IMAGE_STALE) != 0 &&
-		    (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0 && to_paint) {
-			// Image needs to be updated, update it.
-			w->flags &= ~WIN_FLAGS_IMAGE_STALE;
-			if (w->state != WSTATE_UNMAPPING &&
-			    w->state != WSTATE_DESTROYING && ps->redirected) {
-				// Rebind image only when the window does have an image
-				// available
-				if (!win_try_rebind_image(ps, w)) {
-					w->flags |= WIN_FLAGS_IMAGE_ERROR;
-					to_paint = false;
-				}
-			}
-		}
-
 		// Add window to damaged area if its painting status changes
 		// or opacity changes
 		if (to_paint != was_painted) {
@@ -1222,7 +1207,24 @@ static void handle_new_windows(session_t *ps) {
 			}
 		}
 	}
-	ps->has_new_window = false;
+}
+
+static void refresh_stale_images(session_t *ps) {
+	win_stack_foreach_managed(w, &ps->window_stack) {
+		if ((w->flags & WIN_FLAGS_IMAGE_STALE) != 0 &&
+		    (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0) {
+			// Image needs to be updated, update it.
+			w->flags &= ~WIN_FLAGS_IMAGE_STALE;
+			if (w->state != WSTATE_UNMAPPING &&
+			    w->state != WSTATE_DESTROYING && ps->redirected) {
+				// Rebind image only when the window does have an image
+				// available
+				if (!win_try_rebind_image(ps, w)) {
+					w->flags |= WIN_FLAGS_IMAGE_ERROR;
+				}
+			}
+		}
+	}
 }
 
 /**
@@ -1240,9 +1242,8 @@ static void fade_timer_callback(EV_P_ ev_timer *w, int revents) {
 }
 
 static void _draw_callback(EV_P_ session_t *ps, int revents) {
-	if (ps->has_new_window) {
-		log_debug("Delayed handling of new window events, entering critical "
-		          "section");
+	if (ps->pending_updates) {
+		log_debug("Delayed handling of events, entering critical section");
 		auto e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
 		if (e) {
 			log_fatal("failed to grab x server");
@@ -1257,6 +1258,9 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 		// Call fill_win on new windows
 		handle_new_windows(ps);
 
+		// Refresh pixmaps
+		refresh_stale_images(ps);
+
 		e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
 		if (e) {
 			log_fatal("failed to ungrab x server");
@@ -1264,6 +1268,8 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 			              e->error_code);
 			return quit_compton(ps);
 		}
+
+		ps->pending_updates = false;
 		log_debug("Exiting critical section");
 	}
 

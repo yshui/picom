@@ -229,8 +229,8 @@ typedef struct session {
 	bool reset:1;
 	/// If compton should quit
 	bool quit:1;
-	/// If new window has been added and not been handled
-	bool has_new_window:1;
+	/// Whether there are pending updates, like window creation, etc.
+	bool pending_updates:1;
 
 	// === Expose event related ===
 	/// Pointer to an array of <code>XRectangle</code>-s of exposed region.

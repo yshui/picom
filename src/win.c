@@ -796,6 +796,7 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_MAPPING ||
 	    w->state == WSTATE_FADING) {
 		w->flags |= WIN_FLAGS_IMAGE_STALE;
+		ps->pending_updates = true;
 	} else {
 		assert(w->state == WSTATE_UNMAPPED);
 	}
@@ -966,7 +967,7 @@ static struct win *add_win(session_t *ps, xcb_window_t id, struct list_node *pre
 	new_w->destroyed = false;
 
 	HASH_ADD_INT(ps->windows, id, new_w);
-	ps->has_new_window = true;
+	ps->pending_updates = true;
 	return new_w;
 }
 
@@ -1462,6 +1463,7 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 		// otherwise win_data is not valid
 		assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
 		w->flags |= WIN_FLAGS_IMAGE_STALE;
+		ps->pending_updates = true;
 	}
 	free_paint(ps, &w->paint);
 	free_paint(ps, &w->shadow_paint);
