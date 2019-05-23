@@ -43,7 +43,7 @@
 
 #include "win.h"
 
-static const opacity_t OPAQUE = 0xffffffff;
+#define OPAQUE (0xffffffff)
 static const int WIN_GET_LEADER_MAX_RECURSION = 20;
 static const int ROUNDED_PIXELS = 1;
 static const double ROUNDED_PERCENT = 0.05;
