@@ -1216,7 +1216,7 @@ static void refresh_stale_images(session_t *ps) {
 			// Image needs to be updated, update it.
 			w->flags &= ~WIN_FLAGS_IMAGE_STALE;
 			if (w->state != WSTATE_UNMAPPING &&
-			    w->state != WSTATE_DESTROYING && ps->redirected) {
+			    w->state != WSTATE_DESTROYING && ps->backend_data) {
 				// Rebind image only when the window does have an image
 				// available
 				if (!win_try_rebind_image(ps, w)) {
