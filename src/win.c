@@ -15,10 +15,10 @@
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xinerama.h>
 
-#include "common.h"
 #include "atom.h"
 #include "backend/backend.h"
 #include "c2.h"
+#include "common.h"
 #include "compiler.h"
 #include "compton.h"
 #include "config.h"
@@ -1356,12 +1356,6 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 #endif
 }
 
-static void win_unset_focused(session_t *ps, struct managed_win *w) {
-	if (w == ps->active_win) {
-		ps->active_win = NULL;
-	}
-}
-
 /**
  * Set real focused state of a window.
  */
@@ -1600,7 +1594,16 @@ static void finish_destroy_win(session_t *ps, struct managed_win **_w) {
 	log_trace("Trying to destroy (%#010x)", w->base.id);
 	list_remove(&w->base.stack_neighbour);
 
-	win_unset_focused(ps, w);
+	if (w == ps->active_win) {
+		// Usually, the window cannot be the focused at destruction. FocusOut
+		// should be generated before the window is destroyed.
+		// We do this check just to be completely sure we don't have dangling
+		// references.
+		log_debug("window %#010x (%s) is destroyed while being focused",
+		          w->base.id, w->name);
+		ps->active_win = NULL;
+	}
+
 	free_win_res(ps, w);
 
 	// Drop w from all prev_trans to avoid accessing freed memory in
@@ -1768,8 +1771,8 @@ void unmap_win(session_t *ps, struct managed_win **_w, bool destroy) {
 		return;
 	}
 
-	// Set focus out
-	win_unset_focused(ps, w);
+	// Note we don't update focused window here. This will either be
+	// triggered by subsequence Focus{In, Out} event, or by recheck_focus
 
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->state = target_state;
@@ -1845,8 +1848,7 @@ void win_update_screen(session_t *ps, struct managed_win *w) {
 
 	for (int i = 0; i < ps->xinerama_nscrs; i++) {
 		auto e = pixman_region32_extents(&ps->xinerama_scr_regs[i]);
-		if (e->x1 <= w->g.x && e->y1 <= w->g.y &&
-		    e->x2 >= w->g.x + w->widthb &&
+		if (e->x1 <= w->g.x && e->y1 <= w->g.y && e->x2 >= w->g.x + w->widthb &&
 		    e->y2 >= w->g.y + w->heightb) {
 			w->xinerama_scr = i;
 			return;
