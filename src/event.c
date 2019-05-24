@@ -160,13 +160,13 @@ static inline const char *attr_pure ev_focus_detail_name(xcb_focus_in_event_t *e
 static inline void ev_focus_in(session_t *ps, xcb_focus_in_event_t *ev) {
 	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
 	          ev_focus_detail_name(ev));
-	recheck_focus(ps);
+	ps->pending_updates = true;
 }
 
 static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
 	          ev_focus_detail_name(ev));
-	recheck_focus(ps);
+	ps->pending_updates = true;
 }
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
@@ -266,7 +266,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 	map_win_by_id(ps, ev->window);
 	// FocusIn/Out may be ignored when the window is unmapped, so we must
 	// recheck focus here
-	recheck_focus(ps);
+	ps->pending_updates = true; // to update focus
 }
 
 static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
@@ -402,7 +402,8 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	if (ps->root == ev->window) {
 		if (ps->o.use_ewmh_active_win &&
 		    ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
-			update_ewmh_active_win(ps);
+			// to update focus
+			ps->pending_updates = true;
 		} else {
 			// Destroy the root "image" if the wallpaper probably changed
 			if (x_is_root_back_pixmap_atom(ps, ev->atom)) {

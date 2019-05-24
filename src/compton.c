@@ -314,13 +314,30 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
 }
 
 /**
+ * Update current active window based on EWMH _NET_ACTIVE_WIN.
+ *
+ * Does not change anything if we fail to get the attribute or the window
+ * returned could not be found.
+ */
+void update_ewmh_active_win(session_t *ps) {
+	// Search for the window
+	xcb_window_t wid = wid_get_prop_window(ps, ps->root, ps->atoms->a_NET_ACTIVE_WINDOW);
+	auto w = find_win_all(ps, wid);
+
+	// Mark the window focused. No need to unfocus the previous one.
+	if (w) {
+		win_set_focused(ps, w);
+	}
+}
+
+/**
  * Recheck currently focused window and set its <code>w->focused</code>
  * to true.
  *
  * @param ps current session
  * @return struct _win of currently focused window, NULL if not found
  */
-void recheck_focus(session_t *ps) {
+static void recheck_focus(session_t *ps) {
 	// Use EWMH _NET_ACTIVE_WINDOW if enabled
 	if (ps->o.use_ewmh_active_win) {
 		update_ewmh_active_win(ps);
@@ -820,27 +837,6 @@ void opts_set_no_fading_openclose(session_t *ps, bool newval) {
 //!@}
 #endif
 
-// === Events ===
-
-/**
- * Update current active window based on EWMH _NET_ACTIVE_WIN.
- *
- * Does not change anything if we fail to get the attribute or the window
- * returned could not be found.
- */
-void update_ewmh_active_win(session_t *ps) {
-	// Search for the window
-	xcb_window_t wid = wid_get_prop_window(ps, ps->root, ps->atoms->a_NET_ACTIVE_WINDOW);
-	auto w = find_win_all(ps, wid);
-
-	// Mark the window focused. No need to unfocus the previous one.
-	if (w) {
-		win_set_focused(ps, w);
-	}
-}
-
-// === Main ===
-
 /**
  * Register a window as symbol, and initialize GLX context if wanted.
  */
@@ -1226,6 +1222,11 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 
 		// Call fill_win on new windows
 		handle_new_windows(ps);
+
+		auto r = xcb_get_input_focus_reply(ps->c, xcb_get_input_focus(ps->c), NULL);
+		if (!ps->active_win || (r && r->focus != ps->active_win->base.id)) {
+			recheck_focus(ps);
+		}
 
 		// Refresh pixmaps
 		refresh_stale_images(ps);
@@ -1961,7 +1962,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 	}
 
-	recheck_focus(ps);
+	ps->pending_updates = true;
 
 	e = xcb_request_check(ps->c, xcb_ungrab_server(ps->c));
 	if (e) {

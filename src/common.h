@@ -230,6 +230,8 @@ typedef struct session {
 	/// If compton should quit
 	bool quit:1;
 	/// Whether there are pending updates, like window creation, etc.
+	/// TODO use separate flags for dfferent kinds of updates so we don't
+	/// waste our time.
 	bool pending_updates:1;
 
 	// === Expose event related ===
