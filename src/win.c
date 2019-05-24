@@ -1369,9 +1369,13 @@ void win_set_focused(session_t *ps, struct managed_win *w) {
 		return;
 	}
 
+	auto old_active_win = ps->active_win;
 	ps->active_win = w;
 	assert(win_is_focused_real(ps, w));
 
+	if (old_active_win) {
+		win_on_focus_change(ps, old_active_win);
+	}
 	win_on_focus_change(ps, w);
 }
 
