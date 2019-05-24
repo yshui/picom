@@ -335,7 +335,7 @@ void win_set_invert_color_force(session_t *ps, struct managed_win *w, switch_t v
 /**
  * Set real focused state of a window.
  */
-void win_set_focused(session_t *ps, struct managed_win *w, bool focused);
+void win_set_focused(session_t *ps, struct managed_win *w);
 bool attr_pure win_should_fade(session_t *ps, const struct managed_win *w);
 void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w);
 void win_update_prop_shadow(session_t *ps, struct managed_win *w);

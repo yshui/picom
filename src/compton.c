@@ -344,7 +344,7 @@ void recheck_focus(session_t *ps) {
 
 	// And we set the focus state here
 	if (w) {
-		win_set_focused(ps, w, true);
+		win_set_focused(ps, w);
 		return;
 	}
 }
@@ -864,7 +864,7 @@ void update_ewmh_active_win(session_t *ps) {
 
 	// Mark the window focused. No need to unfocus the previous one.
 	if (w) {
-		win_set_focused(ps, w, true);
+		win_set_focused(ps, w);
 	}
 }
 

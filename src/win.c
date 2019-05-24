@@ -1356,25 +1356,27 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 #endif
 }
 
+static void win_unset_focused(session_t *ps, struct managed_win *w) {
+	if (w == ps->active_win) {
+		ps->active_win = NULL;
+	}
+}
+
 /**
  * Set real focused state of a window.
  */
-void win_set_focused(session_t *ps, struct managed_win *w, bool focused) {
+void win_set_focused(session_t *ps, struct managed_win *w) {
 	// Unmapped windows will have their focused state reset on map
-	if (w->a.map_state == XCB_MAP_STATE_UNMAPPED)
+	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
 		return;
+	}
 
-	if (win_is_focused_real(ps, w) == focused)
+	if (win_is_focused_real(ps, w)) {
 		return;
+	}
 
-	if (focused) {
-		if (ps->active_win)
-			win_set_focused(ps, ps->active_win, false);
-		ps->active_win = w;
-	} else if (w == ps->active_win)
-		ps->active_win = NULL;
-
-	assert(win_is_focused_real(ps, w) == focused);
+	ps->active_win = w;
+	assert(win_is_focused_real(ps, w));
 
 	win_on_focus_change(ps, w);
 }
@@ -1598,10 +1600,7 @@ static void finish_destroy_win(session_t *ps, struct managed_win **_w) {
 	log_trace("Trying to destroy (%#010x)", w->base.id);
 	list_remove(&w->base.stack_neighbour);
 
-	if (w == ps->active_win) {
-		ps->active_win = NULL;
-	}
-
+	win_unset_focused(ps, w);
 	free_win_res(ps, w);
 
 	// Drop w from all prev_trans to avoid accessing freed memory in
@@ -1770,7 +1769,7 @@ void unmap_win(session_t *ps, struct managed_win **_w, bool destroy) {
 	}
 
 	// Set focus out
-	win_set_focused(ps, w, false);
+	win_unset_focused(ps, w);
 
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->state = target_state;
