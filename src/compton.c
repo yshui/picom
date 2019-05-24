@@ -319,11 +319,11 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
  * @param ps current session
  * @return struct _win of currently focused window, NULL if not found
  */
-struct managed_win *recheck_focus(session_t *ps) {
+void recheck_focus(session_t *ps) {
 	// Use EWMH _NET_ACTIVE_WINDOW if enabled
 	if (ps->o.use_ewmh_active_win) {
 		update_ewmh_active_win(ps);
-		return ps->active_win;
+		return;
 	}
 
 	// Determine the currently focused window so we can apply appropriate
@@ -345,10 +345,8 @@ struct managed_win *recheck_focus(session_t *ps) {
 	// And we set the focus state here
 	if (w) {
 		win_set_focused(ps, w, true);
-		return w;
+		return;
 	}
-
-	return NULL;
 }
 
 /**
