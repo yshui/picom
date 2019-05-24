@@ -437,22 +437,6 @@ static inline bool bkend_use_glx(session_t *ps) {
 	return BKEND_GLX == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
 }
 
-/**
- * Find out the currently focused window.
- *
- * @return struct win object of the found window, NULL if not found
- */
-static inline struct managed_win *find_focused(session_t *ps) {
-	if (!ps->o.track_focus) {
-		return NULL;
-	}
-
-	if (ps->active_win && win_is_focused_real(ps, ps->active_win)) {
-		return ps->active_win;
-	}
-	return NULL;
-}
-
 static void set_ignore(session_t *ps, unsigned long sequence) {
 	if (ps->o.show_all_xerrors)
 		return;

@@ -931,9 +931,8 @@ static bool cdbus_process_find_win(session_t *ps, DBusMessage *msg) {
 	}
 	// Find focused window
 	else if (!strcmp("focused", target)) {
-		auto w = find_focused(ps);
-		if (w) {
-			wid = w->base.id;
+		if (ps->active_win && ps->active_win->state != WSTATE_UNMAPPED) {
+			wid = ps->active_win->base.id;
 		}
 	} else {
 		log_error(CDBUS_ERROR_BADTGT_S, target);
