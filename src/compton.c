@@ -297,8 +297,9 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
 	if (WIN_EVMODE_FRAME == mode ||
 	    ((w = find_managed_win(ps, wid)) && w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
 		evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
-		if (ps->o.track_focus && !ps->o.use_ewmh_active_win)
+		if (!ps->o.use_ewmh_active_win) {
 			evmask |= XCB_EVENT_MASK_FOCUS_CHANGE;
+		}
 	}
 
 	// Check if it's a mapped client window
@@ -806,36 +807,6 @@ void force_repaint(session_t *ps) {
 /** @name DBus hooks
  */
 ///@{
-
-/**
- * Enable focus tracking.
- */
-void opts_init_track_focus(session_t *ps) {
-	// Already tracking focus
-	if (ps->o.track_focus)
-		return;
-
-	ps->o.track_focus = true;
-
-	if (!ps->o.use_ewmh_active_win) {
-		// Start listening to FocusChange events
-		HASH_ITER2(ps->windows, w) {
-			if (!w->managed) {
-				continue;
-			}
-			auto mw = (struct managed_win *)w;
-			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				xcb_change_window_attributes(
-				    ps->c, w->id, XCB_CW_EVENT_MASK,
-				    (const uint32_t[]){
-				        determine_evmask(ps, w->id, WIN_EVMODE_FRAME)});
-			}
-		}
-	}
-
-	// Recheck focus
-	recheck_focus(ps);
-}
 
 /**
  * Set no_fading_openclose option.
@@ -1506,7 +1477,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	            .detect_transient = false,
 	            .detect_client_leader = false,
 
-	            .track_focus = false,
 	            .track_wdata = false,
 	            .track_leader = false,
 	        },
@@ -1991,9 +1961,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 	}
 
-	if (ps->o.track_focus) {
-		recheck_focus(ps);
-	}
+	recheck_focus(ps);
 
 	e = xcb_request_check(ps->c, xcb_ungrab_server(ps->c));
 	if (e) {

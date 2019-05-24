@@ -806,11 +806,6 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	// Other variables determined by options
 
-	// Determine whether we need to track focus changes
-	if (opt->inactive_opacity != opt->active_opacity || opt->inactive_dim > 0) {
-		opt->track_focus = true;
-	}
-
 	// Determine whether we track window grouping
 	if (opt->detect_transient || opt->detect_client_leader) {
 		opt->track_leader = true;

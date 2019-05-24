@@ -1042,7 +1042,7 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(use_damage, cdbus_reply_bool);
 #endif
 
-	cdbus_m_opts_get_do(track_focus, cdbus_reply_bool);
+	cdbus_m_opts_get_stub(track_focus, cdbus_reply_bool, true);
 	cdbus_m_opts_get_do(track_wdata, cdbus_reply_bool);
 	cdbus_m_opts_get_do(track_leader, cdbus_reply_bool);
 #undef cdbus_m_opts_get_do
@@ -1128,18 +1128,12 @@ static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 	}
 
 	// clear_shadow
-	if (!strcmp("clear_shadow", target))
+	if (!strcmp("clear_shadow", target)) {
 		goto cdbus_process_opts_set_success;
+	}
 
 	// track_focus
 	if (!strcmp("track_focus", target)) {
-		dbus_bool_t val = FALSE;
-		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_BOOLEAN, &val))
-			return false;
-		// You could enable this option, but never turn if off
-		if (val) {
-			opts_init_track_focus(ps);
-		}
 		goto cdbus_process_opts_set_success;
 	}
 

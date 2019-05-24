@@ -491,9 +491,6 @@ void force_repaint(session_t *ps);
 /** @name DBus hooks
  */
 ///@{
-
-void opts_init_track_focus(session_t *ps);
-
 void opts_set_no_fading_openclose(session_t *ps, bool newval);
 //!@}
 #endif

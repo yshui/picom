@@ -266,9 +266,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 	map_win_by_id(ps, ev->window);
 	// FocusIn/Out may be ignored when the window is unmapped, so we must
 	// recheck focus here
-	if (ps->o.track_focus) {
-		recheck_focus(ps);
-	}
+	recheck_focus(ps);
 }
 
 static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
@@ -402,7 +400,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	if (ps->root == ev->window) {
-		if (ps->o.track_focus && ps->o.use_ewmh_active_win &&
+		if (ps->o.use_ewmh_active_win &&
 		    ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
 			update_ewmh_active_win(ps);
 		} else {

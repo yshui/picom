@@ -217,8 +217,6 @@ typedef struct options_t {
 	bool detect_client_leader;
 
 	// === Calculated ===
-	/// Whether compton needs to track focus changes.
-	bool track_focus;
 	/// Whether compton needs to track window name and class.
 	bool track_wdata;
 	/// Whether compton needs to track window leaders.
