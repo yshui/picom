@@ -63,7 +63,7 @@ typedef struct _c2_lptr c2_lptr_t;
 #define MAX_BLUR_PASS 5
 
 /// Structure representing all options.
-typedef struct options_t {
+typedef struct options {
 	// === Debugging ===
 	bool monitor_repaint;
 	bool print_diagnostics;
