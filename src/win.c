@@ -709,7 +709,7 @@ void win_determine_blur_background(session_t *ps, struct managed_win *w) {
 	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
 		return;
 
-	bool blur_background_new = ps->o.blur_background &&
+	bool blur_background_new = ps->o.blur_method &&
 	                           !c2_match(ps, w, ps->o.blur_background_blacklist, NULL);
 
 	win_set_blur_background(ps, w, blur_background_new);

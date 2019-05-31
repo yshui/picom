@@ -630,7 +630,10 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(280, inactive_dim_fixed);
 		P_CASEBOOL(281, detect_transient);
 		P_CASEBOOL(282, detect_client_leader);
-		P_CASEBOOL(283, blur_background);
+		case 283:
+			// --blur_background
+			opt->blur_method = BLUR_METHOD_KERNEL;
+			break;
 		P_CASEBOOL(284, blur_background_frame);
 		P_CASEBOOL(285, blur_background_fixed);
 		P_CASEBOOL(286, dbus);
@@ -801,8 +804,9 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	set_default_winopts(opt, winopt_mask, shadow_enable, fading_enable);
 
 	// --blur-background-frame implies --blur-background
-	if (opt->blur_background_frame)
-		opt->blur_background = true;
+	if (opt->blur_background_frame && !opt->blur_method) {
+		opt->blur_method = BLUR_METHOD_KERNEL;
+	}
 
 	// Other variables determined by options
 
@@ -812,7 +816,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	}
 
 	// Fill default blur kernel
-	if (opt->blur_background && !opt->blur_kerns[0]) {
+	if (opt->blur_method == BLUR_METHOD_KERNEL && !opt->blur_kerns[0]) {
 		CHECK(parse_blur_kern_lst("3x3box", opt->blur_kerns, MAX_BLUR_PASS,
 		                          &conv_kern_hasneg));
 	}

@@ -36,6 +36,14 @@ enum backend {
 	NUM_BKEND,
 };
 
+enum blur_method {
+	BLUR_METHOD_NONE = 0,
+	BLUR_METHOD_KERNEL,
+	BLUR_METHOD_BOX,
+	BLUR_METHOD_GAUSSIAN,
+	BLUR_METHOD_INVALID,
+};
+
 typedef struct win_option_mask {
 	bool shadow : 1;
 	bool fade : 1;
@@ -180,8 +188,12 @@ typedef struct options {
 	bool detect_client_opacity;
 
 	// === Other window processing ===
-	/// Whether to blur background of semi-transparent / ARGB windows.
-	bool blur_background;
+	/// Blur method for background of semi-transparent windows
+	enum blur_method blur_method;
+	// Size of the blur kernel
+	int blur_radius;
+	// Standard deviation for the gaussian blur
+	double blur_deviation;
 	/// Whether to blur background when the window frame is not opaque.
 	/// Implies blur_background.
 	bool blur_background_frame;
@@ -230,6 +242,7 @@ bool must_use parse_int(const char *, int *);
 bool must_use parse_blur_kern_lst(const char *, conv **, int, bool *hasneg);
 bool must_use parse_geometry(session_t *, const char *, region_t *);
 bool must_use parse_rule_opacity(c2_lptr_t **, const char *);
+enum blur_method must_use parse_blur_method(const char *src);
 
 /**
  * Add a pattern to a condition linked list.

@@ -1025,7 +1025,7 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(fade_out_step, cdbus_reply_double);
 	cdbus_m_opts_get_do(no_fading_openclose, cdbus_reply_bool);
 
-	cdbus_m_opts_get_do(blur_background, cdbus_reply_bool);
+	cdbus_m_opts_get_do(blur_method, cdbus_reply_bool);
 	cdbus_m_opts_get_do(blur_background_frame, cdbus_reply_bool);
 	cdbus_m_opts_get_do(blur_background_fixed, cdbus_reply_bool);
 

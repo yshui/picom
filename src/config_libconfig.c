@@ -371,7 +371,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
 	                  "unredir-if-possible-exclude");
 	// --blur-background
-	lcfg_lookup_bool(&cfg, "blur-background", &opt->blur_background);
+	if (config_lookup_bool(&cfg, "blur-background", &ival) && ival) {
+		opt->blur_method = BLUR_METHOD_KERNEL;
+	}
 	// --blur-background-frame
 	lcfg_lookup_bool(&cfg, "blur-background-frame", &opt->blur_background_frame);
 	// --blur-background-fixed
@@ -443,6 +445,35 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	if (lcfg_lookup_bool(&cfg, "glx-copy-from-front", &bval) && bval) {
 		log_error("\"glx-copy-from-front\" %s", deprecation_message);
 		return ERR_PTR(-1);
+	}
+
+	config_setting_t *blur_cfg = config_lookup(&cfg, "blur");
+	// This is not a loop
+	if (blur_cfg) {
+		if (config_setting_lookup_string(blur_cfg, "method", &sval)) {
+			enum blur_method method = parse_blur_method(sval);
+			if (method >= BLUR_METHOD_INVALID) {
+				log_warn("Invalid blur method %s, ignoring.", sval);
+			} else {
+				opt->blur_method = method;
+			}
+		}
+
+		opt->blur_radius = -1;
+		config_setting_lookup_int(blur_cfg, "size", &opt->blur_radius);
+
+		if (config_setting_lookup_string(blur_cfg, "kernel", &sval)) {
+			struct conv *kerns[5];
+			if (!parse_blur_kern_lst(sval, kerns, MAX_BLUR_PASS,
+			                         conv_kern_hasneg)) {
+				log_warn("Failed to parse blur kernel: %s", sval);
+			} else {
+				memcpy(opt->blur_kerns, kerns, sizeof kerns);
+			}
+		}
+
+		opt->blur_deviation = 0.84089642;
+		config_setting_lookup_float(blur_cfg, "deviation", &opt->blur_deviation);
 	}
 
 	// Wintype settings

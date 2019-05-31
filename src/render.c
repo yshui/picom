@@ -1143,7 +1143,7 @@ bool init_render(session_t *ps) {
 	}
 
 	// Blur filter
-	if (ps->o.blur_background || ps->o.blur_background_frame) {
+	if (ps->o.blur_method || ps->o.blur_background_frame) {
 		bool ret = false;
 		if (ps->o.backend == BKEND_GLX) {
 #ifdef CONFIG_OPENGL

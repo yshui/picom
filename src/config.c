@@ -81,6 +81,19 @@ const char *parse_readnum(const char *src, double *dest) {
 	return pc;
 }
 
+enum blur_method parse_blur_method(const char *src) {
+	if (strcmp(src, "kernel") == 0) {
+		return BLUR_METHOD_KERNEL;
+	} else if (strcmp(src, "box") == 0) {
+		return BLUR_METHOD_BOX;
+	} else if (strcmp(src, "gaussian") == 0) {
+		return BLUR_METHOD_GAUSSIAN;
+	} else if (strcmp(src, "none") == 0) {
+		return BLUR_METHOD_NONE;
+	}
+	return BLUR_METHOD_INVALID;
+}
+
 /**
  * Parse a matrix.
  *
@@ -524,7 +537,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .frame_opacity = 1.0,
 	    .detect_client_opacity = false,
 
-	    .blur_background = false,
+	    .blur_method = BLUR_METHOD_NONE,
 	    .blur_background_frame = false,
 	    .blur_background_fixed = false,
 	    .blur_background_blacklist = NULL,
