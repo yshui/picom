@@ -169,6 +169,9 @@ OPTIONS
 *--detect-client-leader*::
 	Use 'WM_CLIENT_LEADER' to group windows, and consider windows in the same group focused at the same time. 'WM_TRANSIENT_FOR' has higher priority if *--detect-transient* is enabled, too.
 
+*--blur-method, --blur-size, --blur-deviation*::
+	Parameters for background blurring, see the *BLUR* section for more information.
+
 *--blur-background*::
 	Blur background of semi-transparent / ARGB windows. Bad in performance, with driver-dependent behavior. The name of the switch may change without prior notifications.
 
@@ -370,6 +373,34 @@ Following per window-type options are available: ::
 
   redir-ignore:::
     Controls whether this type of windows should cause screen to become redirected again after been unredirected. If you have *--unredir-if-possible* set, and doesn't want certain window to cause unnecessary screen redirection, you can set this to `true`.
+
+BLUR
+----
+You can configure how the window background is blurred using a 'blur' section in your configuration file. Here is an example:
+
+--------
+blur:
+{
+  method = "gaussian";
+  size = 10;
+  deviation = 5.0;
+};
+--------
+
+Available options of the 'blur' section are: ::
+
+  *method*:::
+    A string. Controls the blur method. Corresponds to the `--blur-method` command line option. Available choices are:
+      'none' to disable blurring; 'gaussian' for gaussian blur; 'box' for box blur; 'kernel' for convolution blur with a custom kernel.
+
+  *size*:::
+    An integer. The size of the blur kernel, required by 'gaussian' and 'box' blur methods. For the 'kernel' method, the size is included in the kernel. Corresponds to the `--blur-size` command line option.
+
+  *deviation*:::
+    A floating point number. The standard deviation for the 'gaussian' blur method. Corresponds to the `--blur-deviation` command line option.
+
+  *kernel*:::
+    A string. The kernel to use for the 'kernel' blur method, specified in the same format as the `--blur-kerns` option. Corresponds to the `--blur-kerns` command line option.
 
 SIGNALS
 -------
