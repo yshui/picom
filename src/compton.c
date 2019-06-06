@@ -2049,10 +2049,12 @@ static void session_destroy(session_t *ps) {
 		deinit_render(ps);
 	}
 
+#if CONFIG_OPENGL
 	if (glx_has_context(ps)) {
 		// GLX context created, but not for rendering
 		glx_destroy(ps);
 	}
+#endif
 
 	// Flush all events
 	x_sync(ps->c);
