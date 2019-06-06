@@ -2049,6 +2049,11 @@ static void session_destroy(session_t *ps) {
 		deinit_render(ps);
 	}
 
+	if (glx_has_context(ps)) {
+		// GLX context created, but not for rendering
+		glx_destroy(ps);
+	}
+
 	// Flush all events
 	x_sync(ps->c);
 	ev_io_stop(ps->loop, &ps->xiow);
