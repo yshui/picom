@@ -1221,7 +1221,9 @@ void deinit_render(session_t *ps) {
 
 #ifdef CONFIG_OPENGL
 	free(ps->root_tile_paint.fbcfg);
-	glx_destroy(ps);
+	if (bkend_use_glx(ps)) {
+		glx_destroy(ps);
+	}
 #endif
 }
 
