@@ -280,6 +280,54 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 	return ret;
 }
 
+static struct conv **
+generate_box_blur_kernel(int blur_size) {
+	int r = blur_size * 2 + 1;
+	assert(r > 0);
+	auto ret = ccalloc(3, struct conv *);
+	ret[0] = cvalloc(sizeof(struct conv) + sizeof(double) * (size_t)r);
+	ret[1] = cvalloc(sizeof(struct conv) + sizeof(double) * (size_t)r);
+	ret[0]->w = r; ret[0]->h = 1;
+	ret[1]->w = 1; ret[1]->h = r;
+	for (int i = 0; i < r; i++) {
+		ret[0]->data[i] = 1;
+		ret[1]->data[i] = 1;
+	}
+	return ret;
+}
+
+static struct conv **
+generate_gaussian_blur_kernel(int blur_size, double blur_deviation) {
+	int r = blur_size * 2 + 1;
+	assert(r > 0);
+	auto ret = ccalloc(3, struct conv *);
+	ret[0] = cvalloc(sizeof(struct conv) + sizeof(double) * (size_t)r);
+	ret[1] = cvalloc(sizeof(struct conv) + sizeof(double) * (size_t)r);
+	ret[0]->w = r; ret[0]->h = 1;
+	ret[1]->w = 1; ret[1]->h = r;
+	for (int i = 0; i < r; i++) {
+		ret[0]->data[i] = 1;
+		ret[1]->data[i] = 1;
+	}
+	return ret;
+}
+
+/// Generate blur kernels for gaussian and box blur methods. Generated kernel is not
+/// normalized, and the center element will always be 1.
+struct conv **
+generate_blur_kernel(enum blur_method method, int blur_size, double blur_deviation) {
+	assert(blur_size >= 0);
+	switch (method) {
+	case BLUR_METHOD_BOX:
+		return generate_box_blur_kernel(blur_size);
+	case BLUR_METHOD_GAUSSIAN:
+		return generate_gaussian_blur_kernel(blur_size, blur_deviation);
+	default:
+		break;
+	}
+	return NULL;
+}
+
 void init_backend_base(struct backend_base *base, session_t *ps) {
 	base->c = ps->c;
 	base->loop = ps->loop;
