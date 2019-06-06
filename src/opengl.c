@@ -24,9 +24,9 @@
 #include "log.h"
 #include "region.h"
 #include "string_utils.h"
+#include "uthash_extra.h"
 #include "utils.h"
 #include "win.h"
-#include "uthash_extra.h"
 
 #include "opengl.h"
 
@@ -89,7 +89,13 @@ bool glx_init(session_t *ps, bool need_render) {
 		ps->psglx = cmalloc(glx_session_t);
 		memcpy(ps->psglx, &CGLX_SESSION_DEF, sizeof(glx_session_t));
 
-		for (int i = 0; i < MAX_BLUR_PASS; ++i) {
+		int npasses;
+		for (npasses = 0; ps->o.blur_kerns[npasses]; npasses++)
+			;
+		// +1 for the zero terminator
+		ps->psglx->blur_passes = ccalloc(npasses + 1, glx_blur_pass_t);
+
+		for (int i = 0; ps->o.blur_kerns[i]; ++i) {
 			glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
 			ppass->unifm_factor_center = -1;
 			ppass->unifm_offset_x = -1;
@@ -230,13 +236,14 @@ void glx_destroy(session_t *ps) {
 	}
 
 	// Free GLSL shaders/programs
-	for (int i = 0; i < MAX_BLUR_PASS; ++i) {
+	for (int i = 0; ps->psglx->blur_passes[i].prog; ++i) {
 		glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
 		if (ppass->frag_shader)
 			glDeleteShader(ppass->frag_shader);
 		if (ppass->prog)
 			glDeleteProgram(ppass->prog);
 	}
+	free(ps->psglx->blur_passes);
 
 	glx_free_prog_main(ps, &ps->glx_prog_win);
 
@@ -324,7 +331,7 @@ bool glx_init_blur(session_t *ps) {
 			extension = strdup("");
 		}
 
-		for (int i = 0; i < MAX_BLUR_PASS && ps->o.blur_kerns[i]; ++i) {
+		for (int i = 0; ps->o.blur_kerns[i]; ++i) {
 			auto kern = ps->o.blur_kerns[i];
 			glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
 
@@ -783,7 +790,6 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 	bool last_pass = false;
 	for (int i = 0; !last_pass; ++i) {
 		last_pass = !ps->psglx->blur_passes[i + 1].prog;
-		assert(i < MAX_BLUR_PASS - 1);
 		const glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
 		assert(ppass->prog);
 

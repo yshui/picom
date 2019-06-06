@@ -64,12 +64,6 @@ typedef struct win_option {
 
 typedef struct _c2_lptr c2_lptr_t;
 
-// This macro is here because this is the maximum number
-// of blur passes options_t can hold, not a limitation of
-// rendering.
-/// @brief Maximum passes for blur.
-#define MAX_BLUR_PASS 5
-
 /// Structure representing all options.
 typedef struct options {
 	// === Debugging ===
@@ -203,7 +197,7 @@ typedef struct options {
 	/// Background blur blacklist. A linked list of conditions.
 	c2_lptr_t *blur_background_blacklist;
 	/// Blur convolution kernel.
-	conv *blur_kerns[MAX_BLUR_PASS];
+	struct conv **blur_kerns;
 	/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
 	double inactive_dim;
 	/// Whether to use fixed inactive dim opacity, instead of deciding
@@ -239,7 +233,7 @@ extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
 bool must_use parse_long(const char *, long *);
 bool must_use parse_int(const char *, int *);
-bool must_use parse_blur_kern_lst(const char *, conv **, int, bool *hasneg);
+struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg);
 bool must_use parse_geometry(session_t *, const char *, region_t *);
 bool must_use parse_rule_opacity(c2_lptr_t **, const char *);
 enum blur_method must_use parse_blur_method(const char *src);

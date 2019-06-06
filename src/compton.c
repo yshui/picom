@@ -2010,10 +2010,10 @@ static void session_destroy(session_t *ps) {
 
 	free(ps->o.write_pid_path);
 	free(ps->o.logpath);
-	for (int i = 0; i < MAX_BLUR_PASS; ++i) {
+	for (int i = 0; ps->o.blur_kerns[i]; ++i) {
 		free(ps->o.blur_kerns[i]);
-		free(ps->blur_kerns_cache[i]);
 	}
+	free(ps->o.blur_kerns);
 	free(ps->o.glx_fshader_win_str);
 	free_xinerama_info(ps);
 

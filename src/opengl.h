@@ -48,7 +48,7 @@ typedef struct glx_session {
 	bool has_texture_non_power_of_two;
 	/// Current GLX Z value.
 	int z;
-	glx_blur_pass_t blur_passes[MAX_BLUR_PASS];
+	glx_blur_pass_t *blur_passes;
 } glx_session_t;
 
 /// @brief Wrapper of a binded GLX texture.

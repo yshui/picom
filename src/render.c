@@ -618,7 +618,7 @@ win_paint_shadow(session_t *ps, struct managed_win *w, region_t *reg_paint) {
  */
 static bool xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t x,
                         int16_t y, uint16_t wid, uint16_t hei,
-                        xcb_render_fixed_t **blur_kerns, const region_t *reg_clip) {
+                        struct x_convolution_kernel **blur_kerns, const region_t *reg_clip) {
 	assert(blur_kerns[0]);
 
 	// Directly copying from tgt_buffer to it does not work, so we create a
@@ -636,8 +636,7 @@ static bool xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t 
 
 	xcb_render_picture_t src_pict = tgt_buffer, dst_pict = tmp_picture;
 	for (int i = 0; blur_kerns[i]; ++i) {
-		assert(i < MAX_BLUR_PASS - 1);
-		xcb_render_fixed_t *convolution_blur = blur_kerns[i];
+		xcb_render_fixed_t *convolution_blur = blur_kerns[i]->kernel;
 		// `x / 65536.0` converts from X fixed point to double
 		int kwid = (int)((double)convolution_blur[0] / 65536.0),
 		    khei = (int)((double)convolution_blur[1] / 65536.0);
@@ -675,8 +674,8 @@ static bool xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t 
  * Blur the background of a window.
  */
 static inline void
-win_blur_background(session_t *ps, struct managed_win *w,
-                    xcb_render_picture_t tgt_buffer, const region_t *reg_paint) {
+win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t tgt_buffer,
+                    const region_t *reg_paint) {
 	const int16_t x = w->g.x;
 	const int16_t y = w->g.y;
 	const auto wid = to_u16_checked(w->widthb);
@@ -694,30 +693,22 @@ win_blur_background(session_t *ps, struct managed_win *w,
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID: {
 		// Normalize blur kernels
-		for (int i = 0; i < MAX_BLUR_PASS; ++i) {
+		for (int i = 0; ps->o.blur_kerns[i]; ++i) {
 			// Note: `x * 65536` converts double `x` to a X fixed point
 			// representation. `x / 65536` is the other way.
 			auto kern_src = ps->o.blur_kerns[i];
-			xcb_render_fixed_t *kern_dst = ps->blur_kerns_cache[i];
-			assert(i < MAX_BLUR_PASS);
-			if (!kern_src) {
-				assert(!kern_dst);
-				break;
-			}
+			auto kern_dst = ps->blur_kerns_cache[i];
 
-			assert(!kern_dst || (kern_src->w == kern_dst[0] / 65536 &&
-			                     kern_src->h == kern_dst[1] / 65536));
+			assert(!kern_dst || (kern_src->w == kern_dst->kernel[0] / 65536 &&
+			                     kern_src->h == kern_dst->kernel[1] / 65536));
 
 			// Skip for fixed factor_center if the cache exists already
 			if (ps->o.blur_background_fixed && kern_dst) {
 				continue;
 			}
 
-			// If kern_dst is allocated, it's always allocated to the right
-			// size
-			size_t size = kern_dst ? (size_t)(kern_src->w * kern_src->h + 2) : 0;
-			x_picture_filter_from_conv(kern_src, factor_center, &kern_dst, &size);
-			ps->blur_kerns_cache[i] = kern_dst;
+			x_create_convolution_kernel(kern_src, factor_center,
+			                            &ps->blur_kerns_cache[i]);
 		}
 
 		// Minimize the region we try to blur, if the window itself is not
@@ -1143,7 +1134,13 @@ bool init_render(session_t *ps) {
 	}
 
 	// Blur filter
-	if (ps->o.blur_method || ps->o.blur_background_frame) {
+	if (ps->o.blur_method) {
+		int npasses;
+		for (npasses = 0; ps->o.blur_kerns[npasses]; npasses++)
+			;
+
+		// +1 for NULL terminator
+		ps->blur_kerns_cache = ccalloc(npasses+1, struct x_convolution_kernel *);
 		bool ret = false;
 		if (ps->o.backend == BKEND_GLX) {
 #ifdef CONFIG_OPENGL
@@ -1225,6 +1222,11 @@ void deinit_render(session_t *ps) {
 		glx_destroy(ps);
 	}
 #endif
+
+	for (int i = 0; ps->blur_kerns_cache[i]; i++) {
+		free(ps->blur_kerns_cache[i]);
+	}
+	free(ps->blur_kerns_cache);
 }
 
 // vim: set ts=8 sw=8 noet :
