@@ -2152,11 +2152,35 @@ static inline bool rect_is_fullscreen(const session_t *ps, int x, int y, int wid
 }
 
 /**
+ * Check if a window is fulscreen using EWMH
+ */
+static inline bool win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_window_t w) {
+	xcb_get_property_cookie_t prop = xcb_get_property(c, 0, w, a->a_NET_WM_STATE, XCB_ATOM_ATOM, 0, 12);
+	xcb_get_property_reply_t *reply = xcb_get_property_reply(c, prop, NULL);
+	if(!reply)
+		return false;
+
+	if(reply->length) {
+		xcb_atom_t *val = xcb_get_property_value(reply);
+		for(uint32_t i = 0; i < reply->length; i++) {
+			if(val[i] != a->a_NET_WM_STATE_FULLSCREEN)
+				continue;
+			free(reply);
+			return true;
+		}
+	}
+	free(reply);
+	return false;
+}
+
+/**
  * Check if a window is a fullscreen window.
  *
  * It's not using w->border_size for performance measures.
  */
 bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
+	if(win_is_fullscreen_xcb(ps->c, ps->atoms, w->client_win))
+		return true;
 	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
 	       (!w->bounding_shaped || w->rounded_corners);
 }
