@@ -69,7 +69,7 @@ struct gl_data {
 	int npasses;
 	gl_win_shader_t win_shader;
 	gl_fill_shader_t fill_shader;
-	gl_blur_shader_t blur_shader[MAX_BLUR_PASS];
+	gl_blur_shader_t *blur_shader;
 
 	// Temporary textures used for blurring. They are always the same size as the
 	// target, so they are always big enough without resizing.

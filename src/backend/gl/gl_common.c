@@ -388,7 +388,6 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, extent->x1, dst_y, width, height);
 
 	for (int i = 0; i < gd->npasses; ++i) {
-		assert(i < MAX_BLUR_PASS - 1);
 		const gl_blur_shader_t *p = &gd->blur_shader[i];
 		assert(p->prog);
 
@@ -668,6 +667,9 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 		return true;
 	}
 
+	for (gd->npasses = 0; kernels[gd->npasses]; gd->npasses++);
+	gd->blur_shader = ccalloc(gd->npasses, gl_blur_shader_t);
+
 	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
 	// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
 	// Thanks to hiciu for reporting.
@@ -698,8 +700,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 	const char *shader_add = FRAG_SHADER_BLUR_ADD;
 	char *extension = strdup("");
 
-	gl_blur_shader_t *passes = gd->blur_shader;
-	for (int i = 0; i < MAX_BLUR_PASS && kernels[i]; gd->npasses = ++i) {
+	for (int i = 0; kernels[i]; i++) {
 		auto kern = kernels[i];
 		// Build shader
 		int width = kern->w, height = kern->h;
@@ -728,7 +729,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 			}
 		}
 
-		auto pass = passes + i;
+		auto pass = gd->blur_shader + i;
 		size_t shader_len = strlen(FRAG_SHADER_BLUR) + strlen(extension) +
 		                    strlen(shader_body) + 10 /* sum */ +
 		                    1 /* null terminator */;
@@ -812,10 +813,6 @@ const char *win_shader_glsl = GLSL(330,
 
 bool gl_init(struct gl_data *gd, session_t *ps) {
 	// Initialize GLX data structure
-	for (int i = 0; i < MAX_BLUR_PASS; ++i) {
-		gd->blur_shader[i] = (gl_blur_shader_t){.prog = 0};
-	}
-
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
 
@@ -833,7 +830,6 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-	gd->npasses = 0;
 	gl_win_shader_from_string(vertex_shader, win_shader_glsl, &gd->win_shader);
 	if (!gl_init_blur(gd, ps->o.blur_kerns)) {
 		return false;
@@ -874,9 +870,10 @@ static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
 
 void gl_deinit(struct gl_data *gd) {
 	// Free GLSL shaders/programs
-	for (int i = 0; i < MAX_BLUR_PASS; ++i) {
+	for (int i = 0; i < gd->npasses; ++i) {
 		gl_free_blur_shader(&gd->blur_shader[i]);
 	}
+	free(gd->blur_shader);
 
 	gl_free_prog_main(&gd->win_shader);
 

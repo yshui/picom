@@ -710,9 +710,10 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 301:
 			// --blur-kern
-			if (!parse_blur_kern_lst(optarg, opt->blur_kerns,
-			                         MAX_BLUR_PASS, &conv_kern_hasneg))
+			opt->blur_kerns = parse_blur_kern_lst(optarg, &conv_kern_hasneg);
+			if (!opt->blur_kerns) {
 				exit(1);
+			}
 			break;
 		P_CASEINT(302, resize_damage);
 		case 303:
@@ -816,9 +817,10 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	}
 
 	// Fill default blur kernel
-	if (opt->blur_method == BLUR_METHOD_KERNEL && !opt->blur_kerns[0]) {
-		CHECK(parse_blur_kern_lst("3x3box", opt->blur_kerns, MAX_BLUR_PASS,
-		                          &conv_kern_hasneg));
+	if (opt->blur_method == BLUR_METHOD_KERNEL &&
+	    (!opt->blur_kerns || !opt->blur_kerns[0])) {
+		opt->blur_kerns = parse_blur_kern_lst("3x3box", &conv_kern_hasneg);
+		CHECK(opt->blur_kerns);
 	}
 
 	if (opt->resize_damage < 0) {

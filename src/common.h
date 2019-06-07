@@ -224,7 +224,7 @@ typedef struct session {
 	/// ignore linked list.
 	ignore_t **ignore_tail;
 	// Cached blur convolution kernels.
-	xcb_render_fixed_t *blur_kerns_cache[MAX_BLUR_PASS];
+	struct x_convolution_kernel **blur_kerns_cache;
 	/// Reset program after next paint.
 	bool reset:1;
 	/// If compton should quit

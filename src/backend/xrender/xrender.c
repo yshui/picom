@@ -60,9 +60,7 @@ typedef struct _xrender_data {
 	int target_width, target_height;
 
 	/// Blur kernels converted to X format
-	xcb_render_fixed_t *x_blur_kern[MAX_BLUR_PASS];
-	/// Number of elements in each blur kernel
-	int x_blur_kern_size[MAX_BLUR_PASS];
+	struct x_convolution_kernel **x_blur_kern;
 
 	xcb_special_event_t *present_event;
 } xrender_data;
@@ -178,15 +176,13 @@ static bool blur(backend_t *backend_data, double opacity, const region_t *reg_bl
 	//   back -(pass 1)-> tmp0 -(copy)-> target_buffer
 	int i;
 	for (i = 0; xd->x_blur_kern[i]; i++) {
-		assert(i < MAX_BLUR_PASS - 1);
-
 		// Copy from source picture to destination. The filter must
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
 		// TODO cache converted blur_kerns
 		xcb_render_set_picture_filter(
 		    c, src_pict, to_u16_checked(strlen(filter)), filter,
-		    to_u32_checked(xd->x_blur_kern_size[i]), xd->x_blur_kern[i]);
+		    to_u32_checked(xd->x_blur_kern[i]->size), xd->x_blur_kern[i]->kernel);
 
 		if (xd->x_blur_kern[i + 1] || i == 0) {
 			// This is not the last pass, or this is the first pass
@@ -276,6 +272,7 @@ static void deinit(backend_t *backend_data) {
 	for (int i = 0; xd->x_blur_kern[i]; i++) {
 		free(xd->x_blur_kern[i]);
 	}
+	free(xd->x_blur_kern);
 	if (xd->present_event) {
 		xcb_unregister_for_special_event(xd->base.c, xd->present_event);
 	}
@@ -377,8 +374,8 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 			                     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 
 			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_DIFFERENCE,
-			                     xd->white_pixel, XCB_NONE, img->pict, 0, 0, 0,
-			                     0, 0, 0, tmpw, tmph);
+			                     xd->white_pixel, XCB_NONE, img->pict, 0, 0,
+			                     0, 0, 0, 0, tmpw, tmph);
 			xcb_render_composite(base->c, XCB_RENDER_PICT_OP_IN_REVERSE,
 			                     tmp_pict, XCB_NONE, img->pict, 0, 0, 0, 0, 0,
 			                     0, tmpw, tmph);
@@ -549,10 +546,14 @@ backend_t *backend_xrender_init(session_t *ps) {
 		xd->root_pict = x_create_picture_with_visual_and_pixmap(
 		    ps->c, ps->vis, root_pixmap, 0, NULL);
 	}
+
+	int npasses = 0;
+	for (; ps->o.blur_kerns[npasses]; npasses++)
+		;
+	// +1 for null terminator
+	xd->x_blur_kern = ccalloc(npasses + 1, struct x_convolution_kernel *);
 	for (int i = 0; ps->o.blur_kerns[i]; i++) {
-		assert(i < MAX_BLUR_PASS - 1);
-		xd->x_blur_kern_size[i] = x_picture_filter_from_conv(
-		    ps->o.blur_kerns[i], 1, &xd->x_blur_kern[i], (size_t[]){0});
+		x_create_convolution_kernel(ps->o.blur_kerns[i], 1, &xd->x_blur_kern[i]);
 	}
 	return &xd->base;
 err:

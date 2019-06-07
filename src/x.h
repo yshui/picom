@@ -223,6 +223,12 @@ bool x_is_root_back_pixmap_atom(session_t *ps, xcb_atom_t atom);
 
 bool x_fence_sync(xcb_connection_t *, xcb_sync_fence_t);
 
+struct x_convolution_kernel {
+	int size;
+	int capacity;
+	xcb_render_fixed_t kernel[];
+};
+
 /**
  * Convert a struct conv to a X picture convolution filter, normalizing the kernel
  * in the process. Allow the caller to specify the element at the center of the kernel,
@@ -234,8 +240,8 @@ bool x_fence_sync(xcb_connection_t *, xcb_sync_fence_t);
  *                   will be allocated, and `*ret` will be updated.
  * @param[inout] size size of the array pointed to by `ret`.
  */
-int x_picture_filter_from_conv(const conv *kernel, double center,
-                               xcb_render_fixed_t **ret, size_t *size);
+void attr_nonnull(1, 3) x_create_convolution_kernel(const conv *kernel, double center,
+                                                    struct x_convolution_kernel **ret);
 
 /// Generate a search criteria for fbconfig from a X visual.
 /// Returns {-1, -1, -1, -1, -1, -1} on failure

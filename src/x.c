@@ -13,6 +13,7 @@
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xfixes.h>
 
+#include "atom.h"
 #include "backend/gl/glx.h"
 #include "common.h"
 #include "compiler.h"
@@ -20,7 +21,6 @@
 #include "log.h"
 #include "region.h"
 #include "utils.h"
-#include "atom.h"
 #include "x.h"
 
 /**
@@ -528,15 +528,23 @@ bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
  * @param[inout] size size of the array pointed to by `ret`, in number of elements
  * @return number of elements filled into `*ret`
  */
-int x_picture_filter_from_conv(const conv *kernel, double center,
-                               xcb_render_fixed_t **ret, size_t *size) {
-	if (*size < (size_t)(kernel->w * kernel->h + 2)) {
-		*size = (size_t)(kernel->w * kernel->h + 2);
-		*ret = crealloc(*ret, *size);
+void x_create_convolution_kernel(const conv *kernel, double center,
+                                 struct x_convolution_kernel **ret) {
+	assert(ret);
+	if (!*ret || (*ret)->capacity < kernel->w * kernel->h + 2) {
+		free(*ret);
+		*ret =
+		    cvalloc(sizeof(struct x_convolution_kernel) +
+		            (size_t)(kernel->w * kernel->h + 2) * sizeof(xcb_render_fixed_t));
+		(*ret)->capacity = kernel->w * kernel->h + 2;
 	}
-	auto buf = *ret;
+
+	(*ret)->size = kernel->w * kernel->h + 2;
+
+	auto buf = (*ret)->kernel;
 	buf[0] = DOUBLE_TO_XFIXED(kernel->w);
 	buf[1] = DOUBLE_TO_XFIXED(kernel->h);
+
 	double sum = center;
 	for (int i = 0; i < kernel->w * kernel->h; i++) {
 		sum += kernel->data[i];
@@ -551,7 +559,6 @@ int x_picture_filter_from_conv(const conv *kernel, double center,
 
 	buf[kernel->h / 2 * kernel->w + kernel->w / 2 + 2] =
 	    DOUBLE_TO_XFIXED(center * factor);
-	return kernel->w * kernel->h + 2;
 }
 
 /// Generate a search criteria for fbconfig from a X visual.
