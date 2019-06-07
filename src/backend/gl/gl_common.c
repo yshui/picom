@@ -662,12 +662,12 @@ void *gl_copy(backend_t *base, const void *image_data, const region_t *reg_visib
 /**
  * Initialize GL blur filters.
  */
-static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
-	if (!kernels[0]) {
+static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels, int nkernels) {
+	if (!nkernels) {
 		return true;
 	}
 
-	for (gd->npasses = 0; kernels[gd->npasses]; gd->npasses++);
+	gd->npasses = nkernels;
 	gd->blur_shader = ccalloc(gd->npasses, gl_blur_shader_t);
 
 	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
@@ -700,7 +700,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels) {
 	const char *shader_add = FRAG_SHADER_BLUR_ADD;
 	char *extension = strdup("");
 
-	for (int i = 0; kernels[i]; i++) {
+	for (int i = 0; i < nkernels; i++) {
 		auto kern = kernels[i];
 		// Build shader
 		int width = kern->w, height = kern->h;
@@ -831,7 +831,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
 	gl_win_shader_from_string(vertex_shader, win_shader_glsl, &gd->win_shader);
-	if (!gl_init_blur(gd, ps->o.blur_kerns)) {
+	if (!gl_init_blur(gd, ps->o.blur_kerns, ps->o.blur_kernel_count)) {
 		return false;
 	}
 	gd->fill_shader.prog = gl_create_program_from_str(fill_vert, fill_frag);

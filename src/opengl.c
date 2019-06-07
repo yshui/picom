@@ -89,13 +89,10 @@ bool glx_init(session_t *ps, bool need_render) {
 		ps->psglx = cmalloc(glx_session_t);
 		memcpy(ps->psglx, &CGLX_SESSION_DEF, sizeof(glx_session_t));
 
-		int npasses;
-		for (npasses = 0; ps->o.blur_kerns[npasses]; npasses++)
-			;
 		// +1 for the zero terminator
-		ps->psglx->blur_passes = ccalloc(npasses + 1, glx_blur_pass_t);
+		ps->psglx->blur_passes = ccalloc(ps->o.blur_kernel_count, glx_blur_pass_t);
 
-		for (int i = 0; ps->o.blur_kerns[i]; ++i) {
+		for (int i = 0; i < ps->o.blur_kernel_count; ++i) {
 			glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
 			ppass->unifm_factor_center = -1;
 			ppass->unifm_offset_x = -1;
@@ -236,7 +233,7 @@ void glx_destroy(session_t *ps) {
 	}
 
 	// Free GLSL shaders/programs
-	for (int i = 0; ps->psglx->blur_passes[i].prog; ++i) {
+	for (int i = 0; i < ps->o.blur_kernel_count; ++i) {
 		glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
 		if (ppass->frag_shader)
 			glDeleteShader(ppass->frag_shader);
@@ -277,10 +274,12 @@ void glx_on_root_change(session_t *ps) {
  * Initialize GLX blur filter.
  */
 bool glx_init_blur(session_t *ps) {
+	assert(ps->o.blur_kernel_count > 0);
+	assert(ps->o.blur_kerns);
 	assert(ps->o.blur_kerns[0]);
 
 	// Allocate PBO if more than one blur kernel is present
-	if (ps->o.blur_kerns[1]) {
+	if (ps->o.blur_kernel_count > 1) {
 		// Try to generate a framebuffer
 		GLuint fbo = 0;
 		glGenFramebuffers(1, &fbo);
@@ -331,7 +330,7 @@ bool glx_init_blur(session_t *ps) {
 			extension = strdup("");
 		}
 
-		for (int i = 0; ps->o.blur_kerns[i]; ++i) {
+		for (int i = 0; i < ps->o.blur_kernel_count; ++i) {
 			auto kern = ps->o.blur_kerns[i];
 			glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
 
@@ -695,7 +694,7 @@ static inline void glx_copy_region_to_tex(session_t *ps, GLenum tex_tgt, int bas
 bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
                   GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc) {
 	assert(ps->psglx->blur_passes[0].prog);
-	const bool more_passes = ps->psglx->blur_passes[1].prog;
+	const bool more_passes = ps->o.blur_kernel_count > 1;
 	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
 	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
 	bool ret = false;
@@ -788,8 +787,8 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 	}
 
 	bool last_pass = false;
-	for (int i = 0; !last_pass; ++i) {
-		last_pass = !ps->psglx->blur_passes[i + 1].prog;
+	for (int i = 0; i < ps->o.blur_kernel_count; ++i) {
+		last_pass = (i == ps->o.blur_kernel_count - 1);
 		const glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
 		assert(ppass->prog);
 

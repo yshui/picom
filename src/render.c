@@ -616,9 +616,10 @@ win_paint_shadow(session_t *ps, struct managed_win *w, region_t *reg_paint) {
  *
  * @return true if successful, false otherwise
  */
-static bool xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t x,
-                        int16_t y, uint16_t wid, uint16_t hei,
-                        struct x_convolution_kernel **blur_kerns, const region_t *reg_clip) {
+static bool xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t x, int16_t y,
+                        uint16_t wid, uint16_t hei, struct x_convolution_kernel **blur_kerns,
+                        int nkernels, const region_t *reg_clip) {
+	assert(blur_kerns);
 	assert(blur_kerns[0]);
 
 	// Directly copying from tgt_buffer to it does not work, so we create a
@@ -635,7 +636,7 @@ static bool xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t 
 		x_set_picture_clip_region(ps->c, tmp_picture, 0, 0, reg_clip);
 
 	xcb_render_picture_t src_pict = tgt_buffer, dst_pict = tmp_picture;
-	for (int i = 0; blur_kerns[i]; ++i) {
+	for (int i = 0; i < nkernels; ++i) {
 		xcb_render_fixed_t *convolution_blur = blur_kerns[i]->kernel;
 		// `x / 65536.0` converts from X fixed point to double
 		int kwid = (int)((double)convolution_blur[0] / 65536.0),
@@ -693,7 +694,7 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID: {
 		// Normalize blur kernels
-		for (int i = 0; ps->o.blur_kerns[i]; ++i) {
+		for (int i = 0; i < ps->o.blur_kernel_count; i++) {
 			// Note: `x * 65536` converts double `x` to a X fixed point
 			// representation. `x / 65536` is the other way.
 			auto kern_src = ps->o.blur_kerns[i];
@@ -724,7 +725,8 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 		}
 		// Translate global coordinates to local ones
 		pixman_region32_translate(&reg_blur, -x, -y);
-		xr_blur_dst(ps, tgt_buffer, x, y, wid, hei, ps->blur_kerns_cache, &reg_blur);
+		xr_blur_dst(ps, tgt_buffer, x, y, wid, hei, ps->blur_kerns_cache,
+		            ps->o.blur_kernel_count, &reg_blur);
 		pixman_region32_clear(&reg_blur);
 	} break;
 #ifdef CONFIG_OPENGL
@@ -1135,12 +1137,9 @@ bool init_render(session_t *ps) {
 
 	// Blur filter
 	if (ps->o.blur_method) {
-		int npasses;
-		for (npasses = 0; ps->o.blur_kerns[npasses]; npasses++)
-			;
+		ps->blur_kerns_cache =
+		    ccalloc(ps->o.blur_kernel_count, struct x_convolution_kernel *);
 
-		// +1 for NULL terminator
-		ps->blur_kerns_cache = ccalloc(npasses+1, struct x_convolution_kernel *);
 		bool ret = false;
 		if (ps->o.backend == BKEND_GLX) {
 #ifdef CONFIG_OPENGL
@@ -1223,7 +1222,7 @@ void deinit_render(session_t *ps) {
 	}
 #endif
 
-	for (int i = 0; ps->blur_kerns_cache[i]; i++) {
+	for (int i = 0; i < ps->o.blur_kernel_count; i++) {
 		free(ps->blur_kerns_cache[i]);
 	}
 	free(ps->blur_kerns_cache);

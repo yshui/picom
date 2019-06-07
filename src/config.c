@@ -196,7 +196,7 @@ err1:
  * @param[out] hasneg whether any of the kernels have negative values
  * @return            the kernels
  */
-struct conv **parse_blur_kern_lst(const char *src, bool *hasneg) {
+struct conv **parse_blur_kern_lst(const char *src, bool *hasneg, int *count) {
 	// TODO just return a predefined kernels, not parse predefined strings...
 	static const struct {
 		const char *name;
@@ -251,11 +251,12 @@ struct conv **parse_blur_kern_lst(const char *src, bool *hasneg) {
 	     "000000,"},
 	};
 
+	*count = 0;
 	*hasneg = false;
 	for (unsigned int i = 0;
 	     i < sizeof(CONV_KERN_PREDEF) / sizeof(CONV_KERN_PREDEF[0]); ++i) {
 		if (!strcmp(CONV_KERN_PREDEF[i].name, src))
-			return parse_blur_kern_lst(CONV_KERN_PREDEF[i].kern_str, hasneg);
+			return parse_blur_kern_lst(CONV_KERN_PREDEF[i].kern_str, hasneg, count);
 	}
 
 	int nkernels = 1;
@@ -265,7 +266,7 @@ struct conv **parse_blur_kern_lst(const char *src, bool *hasneg) {
 		}
 	}
 
-	struct conv **ret = ccalloc(nkernels+1, struct conv *); // +1 for NULL terminator
+	struct conv **ret = ccalloc(nkernels, struct conv *);
 
 	int i = 0;
 	const char *pc = src;
@@ -293,6 +294,8 @@ struct conv **parse_blur_kern_lst(const char *src, bool *hasneg) {
 		         "multipass blur is actually been used. Otherwise it might be "
 		         "removed in future releases");
 	}
+
+	*count = i;
 
 	return ret;
 }
@@ -541,6 +544,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .blur_background_fixed = false,
 	    .blur_background_blacklist = NULL,
 	    .blur_kerns = NULL,
+	    .blur_kernel_count = 0,
 	    .inactive_dim = 0.0,
 	    .inactive_dim_fixed = false,
 	    .invert_color_list = NULL,

@@ -2010,7 +2010,7 @@ static void session_destroy(session_t *ps) {
 
 	free(ps->o.write_pid_path);
 	free(ps->o.logpath);
-	for (int i = 0; ps->o.blur_kerns[i]; ++i) {
+	for (int i = 0; i < ps->o.blur_kernel_count; ++i) {
 		free(ps->o.blur_kerns[i]);
 	}
 	free(ps->o.blur_kerns);

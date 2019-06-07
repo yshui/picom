@@ -380,7 +380,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "blur-background-fixed", &opt->blur_background_fixed);
 	// --blur-kern
 	if (config_lookup_string(&cfg, "blur-kern", &sval)) {
-		opt->blur_kerns = parse_blur_kern_lst(sval, conv_kern_hasneg);
+		opt->blur_kerns =
+		    parse_blur_kern_lst(sval, conv_kern_hasneg, &opt->blur_kernel_count);
 		if (!opt->blur_kerns) {
 			log_fatal("Cannot parse \"blur-kern\"");
 			goto err;
@@ -464,7 +465,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		config_setting_lookup_int(blur_cfg, "size", &opt->blur_radius);
 
 		if (config_setting_lookup_string(blur_cfg, "kernel", &sval)) {
-			opt->blur_kerns = parse_blur_kern_lst(sval, conv_kern_hasneg);
+			opt->blur_kerns = parse_blur_kern_lst(sval, conv_kern_hasneg,
+			                                      &opt->blur_kernel_count);
 			if (!opt->blur_kerns) {
 				log_warn("Failed to parse blur kernel: %s", sval);
 			}
