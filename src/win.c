@@ -2179,7 +2179,7 @@ static inline bool win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom 
  * It's not using w->border_size for performance measures.
  */
 bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
-	if(win_is_fullscreen_xcb(ps->c, ps->atoms, w->client_win))
+	if(!ps->o.no_ewmh_fullscreen && win_is_fullscreen_xcb(ps->c, ps->atoms, w->client_win))
 		return true;
 	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
 	       (!w->bounding_shaped || w->rounded_corners);

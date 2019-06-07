@@ -224,6 +224,9 @@ typedef struct options {
 	bool track_wdata;
 	/// Whether compton needs to track window leaders.
 	bool track_leader;
+
+	// Don't use EWMH to detect fullscreen applications
+	bool no_ewmh_fullscreen;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
