@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 
+#include "config.h"
 #include "region.h"
 
 typedef struct session session_t;
@@ -22,8 +23,8 @@ bool build_shadow(xcb_connection_t *, xcb_drawable_t, double opacity, int width,
 xcb_render_picture_t solid_picture(xcb_connection_t *, xcb_drawable_t, bool argb,
                                    double a, double r, double g, double b);
 
-xcb_image_t *make_shadow(xcb_connection_t *c, const conv *kernel, double opacity,
-                         int width, int height);
+xcb_image_t *
+make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, int height);
 
 /// The default implementation of `is_win_transparent`, it simply looks at win::mode. So
 /// this is not suitable for backends that alter the content of windows
@@ -38,3 +39,6 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
                               const conv *kernel, double r, double g, double b, double a);
 
 void init_backend_base(struct backend_base *base, session_t *ps);
+
+struct conv **generate_blur_kernel(enum blur_method method, int blur_size,
+                                   double blur_deviation, int *kernel_count);
