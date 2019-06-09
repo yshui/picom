@@ -280,8 +280,9 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 	return ret;
 }
 
-static struct conv **generate_box_blur_kernel(int blur_size, int *kernel_count) {
-	int r = blur_size * 2 + 1;
+static struct conv **
+generate_box_blur_kernel(struct box_kernel_args *args, int *kernel_count) {
+	int r = args->size * 2 + 1;
 	assert(r > 0);
 	auto ret = ccalloc(2, struct conv *);
 	ret[0] = cvalloc(sizeof(struct conv) + sizeof(double) * (size_t)r);
@@ -299,8 +300,8 @@ static struct conv **generate_box_blur_kernel(int blur_size, int *kernel_count) 
 }
 
 static struct conv **
-generate_gaussian_blur_kernel(int blur_size, double blur_deviation, int *kernel_count) {
-	int r = blur_size * 2 + 1;
+generate_gaussian_blur_kernel(struct gaussian_kernel_args *args, int *kernel_count) {
+	int r = args->size * 2 + 1;
 	assert(r > 0);
 	auto ret = ccalloc(2, struct conv *);
 	ret[0] = cvalloc(sizeof(struct conv) + sizeof(double) * (size_t)r);
@@ -309,11 +310,11 @@ generate_gaussian_blur_kernel(int blur_size, double blur_deviation, int *kernel_
 	ret[0]->h = 1;
 	ret[1]->w = 1;
 	ret[1]->h = r;
-	for (int i = 0; i <= blur_size; i++) {
+	for (int i = 0; i <= args->size; i++) {
 		ret[0]->data[i] = ret[0]->data[r - i - 1] =
-		    1.0 / (sqrt(2.0 * M_PI) * blur_deviation) *
-		    exp(-(blur_size - i) * (blur_size - i) /
-		        (2 * blur_deviation * blur_deviation));
+		    1.0 / (sqrt(2.0 * M_PI) * args->deviation) *
+		    exp(-(args->size - i) * (args->size - i) /
+		        (2 * args->deviation * args->deviation));
 		ret[1]->data[i] = ret[1]->data[r - i - 1] = ret[0]->data[i];
 	}
 	*kernel_count = 2;
@@ -322,13 +323,11 @@ generate_gaussian_blur_kernel(int blur_size, double blur_deviation, int *kernel_
 
 /// Generate blur kernels for gaussian and box blur methods. Generated kernel is not
 /// normalized, and the center element will always be 1.
-struct conv **generate_blur_kernel(enum blur_method method, int blur_size,
-                                   double blur_deviation, int *kernel_count) {
-	assert(blur_size >= 0);
+struct conv **generate_blur_kernel(enum blur_method method, void *args, int *kernel_count) {
 	switch (method) {
-	case BLUR_METHOD_BOX: return generate_box_blur_kernel(blur_size, kernel_count);
+	case BLUR_METHOD_BOX: return generate_box_blur_kernel(args, kernel_count);
 	case BLUR_METHOD_GAUSSIAN:
-		return generate_gaussian_blur_kernel(blur_size, blur_deviation, kernel_count);
+		return generate_gaussian_blur_kernel(args, kernel_count);
 	default: break;
 	}
 	return NULL;

@@ -40,5 +40,4 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 
 void init_backend_base(struct backend_base *base, session_t *ps);
 
-struct conv **generate_blur_kernel(enum blur_method method, int blur_size,
-                                   double blur_deviation, int *kernel_count);
+struct conv **generate_blur_kernel(enum blur_method method, void *args, int *kernel_count);
