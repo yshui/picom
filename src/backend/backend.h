@@ -130,8 +130,9 @@ struct backend_operations {
 	void (*fill)(backend_t *backend_data, struct color, const region_t *clip);
 
 	/// Blur a given region of the target.
-	bool (*blur)(backend_t *backend_data, double opacity, const region_t *reg_blur,
-	             const region_t *reg_visible) attr_nonnull(1, 3, 4);
+	bool (*blur)(backend_t *backend_data, double opacity, void *blur_ctx,
+	             const region_t *reg_blur, const region_t *reg_visible)
+	    attr_nonnull(1, 3, 4, 5);
 
 	/// Present the back buffer onto the screen.
 	///
@@ -208,6 +209,10 @@ struct backend_operations {
 	/// Create another instance of the `image_data`. All `image_op` calls on the
 	/// returned image should not affect the original image
 	void *(*copy)(backend_t *base, const void *image_data, const region_t *reg_visible);
+
+	/// Create a blur context that can be used to call `blur`
+	void *(*create_blur_context)(backend_t *base, enum blur_method, void *args);
+	void (*destroy_blur_context)(backend_t *base, void *ctx);
 
 	// ===========         Hooks        ============
 	/// Let the backend hook into the event handling queue

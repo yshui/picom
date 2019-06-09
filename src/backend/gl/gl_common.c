@@ -17,11 +17,37 @@
 #include "string_utils.h"
 #include "utils.h"
 
-#include "backend/gl/gl_common.h"
 #include "backend/backend_common.h"
+#include "backend/gl/gl_common.h"
 
 #define GLSL(version, ...) "#version " #version "\n" #__VA_ARGS__
 #define QUOTE(...) #__VA_ARGS__
+
+struct gl_blur_context {
+	enum blur_method method;
+	gl_blur_shader_t *blur_shader;
+
+	// Temporary textures used for blurring. They are always the same size as the
+	// target, so they are always big enough without resizing.
+	// Turns out calling glTexImage to resize is expensive, so we avoid that.
+	GLuint blur_texture[2];
+	// Temporary fbo used for blurring
+	GLuint blur_fbo;
+
+	int texture_width, texture_height;
+
+	int npasses;
+};
+
+static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
+	auto ret = glGetUniformLocation(p, name);
+	if (ret < 0) {
+		log_error("Failed to get location of uniform '%s'. compton might not "
+		          "work correctly.",
+		          name);
+	}
+	return ret;
+}
 
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str) {
 	log_trace("===\n%s\n===", shader_str);
@@ -345,10 +371,44 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 /**
  * Blur contents in a particular region.
  */
-bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
+bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blur,
              const region_t *reg_visible) {
-	// Remainder: regions are in Xorg coordinates
+	struct gl_blur_context *bctx = ctx;
 	struct gl_data *gd = (void *)base;
+
+	if (gd->width != bctx->texture_width || gd->height != bctx->texture_height) {
+		// Resize the temporary textures used for blur in case the root
+		// size changed
+		glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[0]);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, gd->width, gd->height, 0,
+		             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		if (bctx->npasses > 1) {
+			glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[1]);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, gd->width, gd->height, 0,
+			             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		}
+
+		bctx->texture_width = gd->width;
+		bctx->texture_height = gd->height;
+
+		// XXX: do we need projection matrix for blur at all?
+		// Note: OpenGL matrices are column major
+		GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)gd->width, 0, 0, 0},
+		                                   {0, 2.0f / (GLfloat)gd->height, 0, 0},
+		                                   {0, 0, 0, 0},
+		                                   {-1, -1, 0, 1}};
+
+		// Update projection matrices in the blur shaders
+		for (int i = 0; i < bctx->npasses; i++) {
+			assert(bctx->blur_shader[i].prog);
+			glUseProgram(bctx->blur_shader[i].prog);
+			int pml = glGetUniformLocationChecked(bctx->blur_shader[i].prog,
+			                                      "projection");
+			glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+		}
+	}
+
+	// Remainder: regions are in Xorg coordinates
 	const rect_t *extent = pixman_region32_extents((region_t *)reg_blur);
 	int width = extent->x2 - extent->x1, height = extent->y2 - extent->y1;
 	int dst_y = gd->height - extent->y2;
@@ -356,9 +416,7 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 		return true;
 	}
 
-	// these should be arguments
 	bool ret = false;
-
 	int nrects;
 	const rect_t *rects = pixman_region32_rectangles((region_t *)reg_blur, &nrects);
 	if (!nrects) {
@@ -384,24 +442,24 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 
 	int curr = 0;
 	glReadBuffer(GL_BACK);
-	glBindTexture(GL_TEXTURE_2D, gd->blur_texture[0]);
+	glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[0]);
 	// Copy the area to be blurred into tmp buffer
 	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, extent->x1, dst_y, width, height);
 
-	for (int i = 0; i < gd->npasses; ++i) {
-		const gl_blur_shader_t *p = &gd->blur_shader[i];
+	for (int i = 0; i < bctx->npasses; ++i) {
+		const gl_blur_shader_t *p = &bctx->blur_shader[i];
 		assert(p->prog);
 
-		assert(gd->blur_texture[curr]);
-		glBindTexture(GL_TEXTURE_2D, gd->blur_texture[curr]);
+		assert(bctx->blur_texture[curr]);
+		glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[curr]);
 
 		glUseProgram(p->prog);
-		if (i < gd->npasses - 1) {
+		if (i < bctx->npasses - 1) {
 			// not last pass, draw into framebuffer
-			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->blur_fbo);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbo);
 
 			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-			                       GL_TEXTURE_2D, gd->blur_texture[!curr], 0);
+			                       GL_TEXTURE_2D, bctx->blur_texture[!curr], 0);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 				log_error("Framebuffer attachment failed.");
@@ -414,7 +472,7 @@ bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
 			glDrawBuffer(GL_BACK);
 			glUniform1f(p->unifm_opacity, (float)opacity);
 		}
-		if (i == gd->npasses - 1) {
+		if (i == bctx->npasses - 1) {
 			glUniform2f(p->orig_loc, 0, 0);
 		} else {
 			// For other than last pass, we are drawing to a texture, we
@@ -457,16 +515,6 @@ end:
 
 	gl_check_err();
 
-	return ret;
-}
-
-static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
-	auto ret = glGetUniformLocation(p, name);
-	if (ret < 0) {
-		log_error("Failed to get location of uniform '%s'. compton might not "
-		          "work correctly.",
-		          name);
-	}
 	return ret;
 }
 
@@ -520,32 +568,13 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 	gd->height = height;
 	gd->width = width;
 
+	// XXX: do we need projection matrix at all?
 	// Note: OpenGL matrices are column major
 	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)width, 0, 0, 0},
 	                                   {0, 2.0f / (GLfloat)height, 0, 0},
 	                                   {0, 0, 0, 0},
 	                                   {-1, -1, 0, 1}};
 
-	if (gd->npasses > 0) {
-		// Resize the temporary textures used for blur
-		glBindTexture(GL_TEXTURE_2D, gd->blur_texture[0]);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, gd->width, gd->height, 0,
-		             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-		if (gd->npasses > 1) {
-			glBindTexture(GL_TEXTURE_2D, gd->blur_texture[1]);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, gd->width, gd->height, 0,
-			             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-		}
-
-		// Update projection matrices in the blur shaders
-		for (int i = 0; i < gd->npasses; i++) {
-			assert(gd->blur_shader[i].prog);
-			glUseProgram(gd->blur_shader[i].prog);
-			int pml = glGetUniformLocationChecked(gd->blur_shader[i].prog,
-			                                      "projection");
-			glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-		}
-	}
 	// Update projection matrix in the win shader
 	glUseProgram(gd->win_shader.prog);
 	int pml = glGetUniformLocationChecked(gd->win_shader.prog, "projection");
@@ -660,16 +689,60 @@ void *gl_copy(backend_t *base, const void *image_data, const region_t *reg_visib
 	return new_img;
 }
 
+static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
+	if (shader->prog) {
+		glDeleteProgram(shader->prog);
+	}
+
+	shader->prog = 0;
+}
+
+void gl_destroy_blur_context(backend_t *base, void *ctx) {
+	struct gl_blur_context *bctx = ctx;
+	// Free GLSL shaders/programs
+	for (int i = 0; i < bctx->npasses; ++i) {
+		gl_free_blur_shader(&bctx->blur_shader[i]);
+	}
+	free(bctx->blur_shader);
+
+	glDeleteTextures(bctx->npasses > 1 ? 2 : 1, bctx->blur_texture);
+	if (bctx->npasses > 1) {
+		glDeleteFramebuffers(1, &bctx->blur_fbo);
+	}
+	free(bctx);
+
+	gl_check_err();
+}
+
 /**
  * Initialize GL blur filters.
  */
-static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels, int nkernels) {
-	if (!nkernels) {
-		return true;
+void *gl_create_blur_context(backend_t *base, enum blur_method method, void *args) {
+	bool success = true;
+	auto gd = (struct gl_data *)base;
+
+	struct conv **kernels;
+	auto ctx = cmalloc(struct gl_blur_context);
+
+	if (!method || method >= BLUR_METHOD_INVALID) {
+		ctx->method = BLUR_METHOD_NONE;
+		return ctx;
 	}
 
-	gd->npasses = nkernels;
-	gd->blur_shader = ccalloc(gd->npasses, gl_blur_shader_t);
+	ctx->method = BLUR_METHOD_KERNEL;
+	if (method == BLUR_METHOD_KERNEL) {
+		ctx->npasses = ((struct kernel_blur_args *)args)->kernel_count;
+		kernels = ((struct kernel_blur_args *)args)->kernels;
+	} else {
+		kernels = generate_blur_kernel(method, args, &ctx->npasses);
+	}
+
+	if (!ctx->npasses) {
+		ctx->method = BLUR_METHOD_NONE;
+		return ctx;
+	}
+
+	ctx->blur_shader = ccalloc(ctx->npasses, gl_blur_shader_t);
 
 	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
 	// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
@@ -701,7 +774,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels, int nke
 	const char *shader_add = FRAG_SHADER_BLUR_ADD;
 	char *extension = strdup("");
 
-	for (int i = 0; i < nkernels; i++) {
+	for (int i = 0; i < ctx->npasses; i++) {
 		auto kern = kernels[i];
 		// Build shader
 		int width = kern->w, height = kern->h;
@@ -726,7 +799,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels, int nke
 			}
 		}
 
-		auto pass = gd->blur_shader + i;
+		auto pass = ctx->blur_shader + i;
 		size_t shader_len = strlen(FRAG_SHADER_BLUR) + strlen(extension) +
 		                    strlen(shader_body) + 10 /* sum */ +
 		                    1 /* null terminator */;
@@ -742,7 +815,8 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels, int nke
 		free(shader_str);
 		if (!pass->prog) {
 			log_error("Failed to create GLSL program.");
-			goto err;
+			success = false;
+			goto out;
 		}
 		glBindFragDataLocation(pass->prog, 0, "out_color");
 
@@ -756,37 +830,46 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels, int nke
 		pass->in_texcoord = glGetAttribLocation(pass->prog, "in_texcoord");
 		pass->coord_loc = glGetAttribLocation(pass->prog, "coord");
 	}
-	free(extension);
 
 	// Texture size will be defined by gl_resize
-	glGenTextures(gd->npasses > 1 ? 2 : 1, gd->blur_texture);
-	glBindTexture(GL_TEXTURE_2D, gd->blur_texture[0]);
+	glGenTextures(ctx->npasses > 1 ? 2 : 1, ctx->blur_texture);
+	glBindTexture(GL_TEXTURE_2D, ctx->blur_texture[0]);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	if (gd->npasses > 1) {
-		glBindTexture(GL_TEXTURE_2D, gd->blur_texture[1]);
+	if (ctx->npasses > 1) {
+		glBindTexture(GL_TEXTURE_2D, ctx->blur_texture[1]);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		// Generate FBO and textures when needed
-		glGenFramebuffers(1, &gd->blur_fbo);
-		if (!gd->blur_fbo) {
+		glGenFramebuffers(1, &ctx->blur_fbo);
+		if (!ctx->blur_fbo) {
 			log_error("Failed to generate framebuffer object for blur");
-			return false;
+			success = false;
+			goto out;
 		}
 	}
 
+out:
+	if (method != BLUR_METHOD_KERNEL) {
+		// We generated the blur kernels, so we need to free them
+		for (int i = 0; i < ctx->npasses; i++) {
+			free(kernels[i]);
+		}
+		free(kernels);
+	}
+
+	if (!success) {
+		gl_destroy_blur_context(&gd->base, ctx);
+		ctx = NULL;
+	}
+
+	free(extension);
 	// Restore LC_NUMERIC
 	setlocale(LC_NUMERIC, lc_numeric_old);
 	free(lc_numeric_old);
 
 	gl_check_err();
-
-	return true;
-err:
-	free(extension);
-	setlocale(LC_NUMERIC, lc_numeric_old);
-	free(lc_numeric_old);
-	return false;
+	return ctx;
 }
 
 // clang-format off
@@ -828,9 +911,6 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
 	gl_win_shader_from_string(vertex_shader, win_shader_glsl, &gd->win_shader);
-	if (!gl_init_blur(gd, ps->o.blur_kerns, ps->o.blur_kernel_count)) {
-		return false;
-	}
 	gd->fill_shader.prog = gl_create_program_from_str(fill_vert, fill_frag);
 	gd->fill_shader.in_coord_loc =
 	    glGetAttribLocation(gd->fill_shader.prog, "in_coord");
@@ -857,27 +937,8 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	return true;
 }
 
-static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
-	if (shader->prog) {
-		glDeleteProgram(shader->prog);
-	}
-
-	shader->prog = 0;
-}
-
 void gl_deinit(struct gl_data *gd) {
-	// Free GLSL shaders/programs
-	for (int i = 0; i < gd->npasses; ++i) {
-		gl_free_blur_shader(&gd->blur_shader[i]);
-	}
-	free(gd->blur_shader);
-
 	gl_free_prog_main(&gd->win_shader);
-
-	glDeleteTextures(gd->npasses > 1 ? 2 : 1, gd->blur_texture);
-	if (gd->npasses > 1) {
-		glDeleteFramebuffers(1, &gd->blur_fbo);
-	}
 
 	if (gd->logger) {
 		log_remove_target_tls(gd->logger);

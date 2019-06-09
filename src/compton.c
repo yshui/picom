@@ -29,9 +29,9 @@
 #include <test.h>
 
 #include "common.h"
-#include "config.h"
 #include "compiler.h"
 #include "compton.h"
+#include "config.h"
 #include "err.h"
 #include "kernel.h"
 #ifdef CONFIG_OPENGL
@@ -666,9 +666,41 @@ static void destroy_backend(session_t *ps) {
 
 	if (ps->backend_data) {
 		// deinit backend
+		ps->backend_data->ops->destroy_blur_context(ps->backend_data,
+		                                            ps->backend_blur_context);
+		ps->backend_blur_context = NULL;
 		ps->backend_data->ops->deinit(ps->backend_data);
 		ps->backend_data = NULL;
 	}
+}
+
+static bool initialize_blur(session_t *ps) {
+	struct kernel_blur_args kargs;
+	struct gaussian_blur_args gargs;
+	struct box_blur_args bargs;
+
+	void *args = NULL;
+	switch (ps->o.blur_method) {
+	case BLUR_METHOD_BOX:
+		bargs.size = ps->o.blur_radius;
+		args = (void *)&bargs;
+		break;
+	case BLUR_METHOD_KERNEL:
+		kargs.kernel_count = ps->o.blur_kernel_count;
+		kargs.kernels = ps->o.blur_kerns;
+		args = (void *)&kargs;
+		break;
+	case BLUR_METHOD_GAUSSIAN:
+		gargs.size = ps->o.blur_radius;
+		gargs.deviation = ps->o.blur_deviation;
+		args = (void *)&gargs;
+		break;
+	default: return true;
+	}
+
+	ps->backend_blur_context = ps->backend_data->ops->create_blur_context(
+	    ps->backend_data, ps->o.blur_method, args);
+	return ps->backend_blur_context != NULL;
 }
 
 /// Init the backend and bind all the window pixmap to backend images
@@ -679,14 +711,20 @@ static bool initialize_backend(session_t *ps) {
 		ps->backend_data = backend_list[ps->o.backend]->init(ps);
 		if (!ps->backend_data) {
 			log_fatal("Failed to initialize backend, aborting...");
-			ps->quit = true;
-			ev_break(ps->loop, EVBREAK_ALL);
+			quit_compton(ps);
 			return false;
 		}
 		ps->backend_data->ops = backend_list[ps->o.backend];
 
-		// window_stack shouldn't include window that's not in the hash table at
-		// this point. Since there cannot be any fading windows.
+		if (!initialize_blur(ps)) {
+			log_fatal("Failed to prepare for background blur, aborting...");
+			quit_compton(ps);
+			return false;
+		}
+
+		// window_stack shouldn't include window that's
+		// not in the hash table at this point. Since
+		// there cannot be any fading windows.
 		HASH_ITER2(ps->windows, _w) {
 			if (!_w->managed) {
 				continue;
@@ -874,8 +912,7 @@ static bool register_cm(session_t *ps) {
 	{
 		auto pid = getpid();
 		xcb_change_property(ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win,
-		                    ps->atoms->a_NET_WM_PID, XCB_ATOM_CARDINAL,
-		                    32, 1, &pid);
+		                    ps->atoms->a_NET_WM_PID, XCB_ATOM_CARDINAL, 32, 1, &pid);
 	}
 
 	// Set COMPTON_VERSION

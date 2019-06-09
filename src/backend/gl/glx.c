@@ -472,6 +472,8 @@ struct backend_operations glx_ops = {
     .buffer_age = glx_buffer_age,
     .render_shadow = default_backend_render_shadow,
     .fill = gl_fill,
+    .create_blur_context = gl_create_blur_context,
+    .destroy_blur_context = gl_destroy_blur_context,
     .max_buffer_age = 5,        // Why?
 };
 

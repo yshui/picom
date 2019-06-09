@@ -174,6 +174,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				// We need to blur the bounding shape of the window
 				// (reg_paint = reg_bound \cap reg_damage)
 				ps->backend_data->ops->blur(ps->backend_data, w->opacity,
+				                            ps->backend_blur_context,
 				                            &reg_paint, &reg_visible);
 			} else if (frame_transparent && ps->o.blur_background_frame) {
 				// Window itself is solid, we only need to blur the frame
@@ -183,6 +184,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				// make sure reg_blur \in reg_damage
 				pixman_region32_intersect(&reg_blur, &reg_blur, &reg_damage);
 				ps->backend_data->ops->blur(ps->backend_data, w->opacity,
+				                            ps->backend_blur_context,
 				                            &reg_blur, &reg_visible);
 				pixman_region32_fini(&reg_blur);
 			}

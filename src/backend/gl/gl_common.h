@@ -66,17 +66,8 @@ struct gl_data {
 	bool is_nvidia;
 	// Height and width of the viewport
 	int height, width;
-	int npasses;
 	gl_win_shader_t win_shader;
 	gl_fill_shader_t fill_shader;
-	gl_blur_shader_t *blur_shader;
-
-	// Temporary textures used for blurring. They are always the same size as the
-	// target, so they are always big enough without resizing.
-	// Turns out calling glTexImage to resize is expensive, so we avoid that.
-	GLuint blur_texture[2];
-	// Temporary fbo used for blurring
-	GLuint blur_fbo;
 
 	/// Called when an gl_texture is decoupled from the texture it refers. Returns
 	/// the decoupled user_data
@@ -87,17 +78,6 @@ struct gl_data {
 
 	struct log_target *logger;
 };
-
-typedef struct {
-	/// Framebuffer used for blurring.
-	GLuint fbo;
-	/// Textures used for blurring.
-	GLuint textures[2];
-	/// Width of the textures.
-	int width;
-	/// Height of the textures.
-	int height;
-} gl_blur_cache_t;
 
 typedef struct session session_t;
 
@@ -128,8 +108,10 @@ void gl_release_image(backend_t *base, void *image_data);
 
 void *gl_copy(backend_t *base, const void *image_data, const region_t *reg_visible);
 
-bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
+bool gl_blur(backend_t *base, double opacity, void *, const region_t *reg_blur,
              const region_t *reg_visible);
+void *gl_create_blur_context(backend_t *base, enum blur_method, void *args);
+void gl_destroy_blur_context(backend_t *base, void *ctx);
 
 bool gl_is_image_transparent(backend_t *base, void *image_data);
 void gl_fill(backend_t *base, struct color, const region_t *clip);

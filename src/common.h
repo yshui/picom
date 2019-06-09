@@ -143,6 +143,9 @@ typedef struct session {
 	ev_signal int_signal;
 	/// backend data
 	backend_t *backend_data;
+	/// backend blur context
+	void *backend_blur_context;
+	/// graphic drivers used
 	enum driver drivers;
 	/// libev mainloop
 	struct ev_loop *loop;
