@@ -56,16 +56,16 @@ enum blur_method {
 	BLUR_METHOD_INVALID,
 };
 
-struct gaussian_kernel_args {
+struct gaussian_blur_args {
 	int size;
 	double deviation;
 };
 
-struct box_kernel_args {
+struct box_blur_args {
 	int size;
 };
 
-struct kernel_args {
+struct kernel_blur_args {
 	struct conv **kernels;
 	int kernel_count;
 };
@@ -226,4 +226,3 @@ extern struct backend_operations *backend_list[];
 void paint_all_new(session_t *ps, struct managed_win *const t, bool ignore_damage)
     attr_nonnull(1);
 
-// vim: set noet sw=8 ts=8 :

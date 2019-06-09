@@ -281,7 +281,7 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 }
 
 static struct conv **
-generate_box_blur_kernel(struct box_kernel_args *args, int *kernel_count) {
+generate_box_blur_kernel(struct box_blur_args *args, int *kernel_count) {
 	int r = args->size * 2 + 1;
 	assert(r > 0);
 	auto ret = ccalloc(2, struct conv *);
@@ -300,7 +300,7 @@ generate_box_blur_kernel(struct box_kernel_args *args, int *kernel_count) {
 }
 
 static struct conv **
-generate_gaussian_blur_kernel(struct gaussian_kernel_args *args, int *kernel_count) {
+generate_gaussian_blur_kernel(struct gaussian_blur_args *args, int *kernel_count) {
 	int r = args->size * 2 + 1;
 	assert(r > 0);
 	auto ret = ccalloc(2, struct conv *);
