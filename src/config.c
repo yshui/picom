@@ -139,7 +139,7 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 	for (int i = 0; i < width * height; ++i) {
 		// Ignore the center element
 		if (i == skip) {
-			matrix->data[i] = 0;
+			matrix->data[i] = 1;
 			continue;
 		}
 		if (src == (pc = parse_readnum(src, &val))) {

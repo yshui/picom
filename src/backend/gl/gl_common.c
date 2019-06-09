@@ -18,6 +18,7 @@
 #include "utils.h"
 
 #include "backend/gl/gl_common.h"
+#include "backend/backend_common.h"
 
 #define GLSL(version, ...) "#version " #version "\n" #__VA_ARGS__
 #define QUOTE(...) #__VA_ARGS__
@@ -713,11 +714,7 @@ static bool gl_init_blur(struct gl_data *gd, conv *const *const kernels, int nke
 		for (int j = 0; j < height; ++j) {
 			for (int k = 0; k < width; ++k) {
 				double val;
-				if (height / 2 == j && width / 2 == k) {
-					val = 1;
-				} else {
-					val = kern->data[j * width + k];
-				}
+				val = kern->data[j * width + k];
 				if (val == 0) {
 					continue;
 				}

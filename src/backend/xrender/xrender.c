@@ -183,9 +183,10 @@ static bool blur(backend_t *backend_data, double opacity, const region_t *reg_bl
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
 		// TODO cache converted blur_kerns
-		xcb_render_set_picture_filter(
-		    c, src_pict, to_u16_checked(strlen(filter)), filter,
-		    to_u32_checked(xd->x_blur_kernel[i]->size), xd->x_blur_kernel[i]->kernel);
+		xcb_render_set_picture_filter(c, src_pict, to_u16_checked(strlen(filter)),
+		                              filter,
+		                              to_u32_checked(xd->x_blur_kernel[i]->size),
+		                              xd->x_blur_kernel[i]->kernel);
 
 		if (i < xd->x_blur_kernel_count - 1 || i == 0) {
 			// This is not the last pass, or this is the first pass
@@ -552,7 +553,10 @@ backend_t *backend_xrender_init(session_t *ps) {
 
 	xd->x_blur_kernel = ccalloc(ps->o.blur_kernel_count, struct x_convolution_kernel *);
 	for (int i = 0; i < ps->o.blur_kernel_count; i++) {
-		x_create_convolution_kernel(ps->o.blur_kerns[i], 1, &xd->x_blur_kernel[i]);
+		int center = ps->o.blur_kerns[i]->h * ps->o.blur_kerns[i]->w / 2;
+		x_create_convolution_kernel(ps->o.blur_kerns[i],
+		                            ps->o.blur_kerns[i]->data[center],
+		                            &xd->x_blur_kernel[i]);
 	}
 	xd->x_blur_kernel_count = ps->o.blur_kernel_count;
 	return &xd->base;
