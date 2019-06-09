@@ -48,6 +48,28 @@ enum image_operations {
 	IMAGE_OP_RESIZE_TILE,
 };
 
+enum blur_method {
+	BLUR_METHOD_NONE = 0,
+	BLUR_METHOD_KERNEL,
+	BLUR_METHOD_BOX,
+	BLUR_METHOD_GAUSSIAN,
+	BLUR_METHOD_INVALID,
+};
+
+struct gaussian_kernel_args {
+	int size;
+	double deviation;
+};
+
+struct box_kernel_args {
+	int size;
+};
+
+struct kernel_args {
+	struct conv **kernels;
+	int kernel_count;
+};
+
 struct backend_operations {
 
 	// ===========    Initialization    ===========

@@ -19,6 +19,7 @@
 #include <libconfig.h>
 #endif
 
+#include "backend/backend.h"
 #include "compiler.h"
 #include "kernel.h"
 #include "log.h"
@@ -34,14 +35,6 @@ enum backend {
 	BKEND_GLX,
 	BKEND_XR_GLX_HYBRID,
 	NUM_BKEND,
-};
-
-enum blur_method {
-	BLUR_METHOD_NONE = 0,
-	BLUR_METHOD_KERNEL,
-	BLUR_METHOD_BOX,
-	BLUR_METHOD_GAUSSIAN,
-	BLUR_METHOD_INVALID,
 };
 
 typedef struct win_option_mask {
