@@ -666,9 +666,11 @@ static void destroy_backend(session_t *ps) {
 
 	if (ps->backend_data) {
 		// deinit backend
-		ps->backend_data->ops->destroy_blur_context(ps->backend_data,
-		                                            ps->backend_blur_context);
-		ps->backend_blur_context = NULL;
+		if (ps->backend_blur_context) {
+			ps->backend_data->ops->destroy_blur_context(
+			    ps->backend_data, ps->backend_blur_context);
+			ps->backend_blur_context = NULL;
+		}
 		ps->backend_data->ops->deinit(ps->backend_data);
 		ps->backend_data = NULL;
 	}
