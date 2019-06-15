@@ -747,31 +747,30 @@ static bool initialize_backend(session_t *ps) {
 /// Handle configure event of a root window
 void configure_root(session_t *ps, int width, int height) {
 	log_info("Root configuration changed, new geometry: %dx%d", width, height);
-	// On root window changes
 	bool has_root_change = false;
-	if (ps->o.experimental_backends) {
-		has_root_change = ps->backend_data->ops->root_change != NULL;
-	} else {
-		// Old backend can handle root change
-		has_root_change = true;
-	}
+	if (ps->redirected) {
+		// On root window changes
+		if (ps->o.experimental_backends) {
+			assert(ps->backend_data);
+			has_root_change = ps->backend_data->ops->root_change != NULL;
+		} else {
+			// Old backend can handle root change
+			has_root_change = true;
+		}
 
-	if (!has_root_change) {
-		// deinit/reinit backend and free up resources if the backend
-		// cannot handle root change
-		destroy_backend(ps);
+		if (!has_root_change) {
+			// deinit/reinit backend and free up resources if the backend
+			// cannot handle root change
+			destroy_backend(ps);
+		}
+		free_paint(ps, &ps->tgt_buffer);
 	}
-	free_paint(ps, &ps->tgt_buffer);
 
 	ps->root_width = width;
 	ps->root_height = height;
 
 	rebuild_screen_reg(ps);
 	rebuild_shadow_exclude_reg(ps);
-	for (int i = 0; i < ps->ndamage; i++) {
-		pixman_region32_clear(&ps->damage_ring[i]);
-	}
-	ps->damage = ps->damage_ring + ps->ndamage - 1;
 
 	// Invalidate reg_ignore from the top
 	auto top_w = win_stack_find_next_managed(ps, &ps->window_stack);
@@ -780,30 +779,36 @@ void configure_root(session_t *ps, int width, int height) {
 		top_w->reg_ignore_valid = false;
 	}
 
+	if (ps->redirected) {
+		for (int i = 0; i < ps->ndamage; i++) {
+			pixman_region32_clear(&ps->damage_ring[i]);
+		}
+		ps->damage = ps->damage_ring + ps->ndamage - 1;
 #ifdef CONFIG_OPENGL
-	// GLX root change callback
-	if (BKEND_GLX == ps->o.backend && !ps->o.experimental_backends) {
-		glx_on_root_change(ps);
-	}
+		// GLX root change callback
+		if (BKEND_GLX == ps->o.backend && !ps->o.experimental_backends) {
+			glx_on_root_change(ps);
+		}
 #endif
-	if (has_root_change) {
-		if (ps->backend_data != NULL) {
-			ps->backend_data->ops->root_change(ps->backend_data, ps);
+		if (has_root_change) {
+			if (ps->backend_data != NULL) {
+				ps->backend_data->ops->root_change(ps->backend_data, ps);
+			}
+			// Old backend's root_change is not a specific function
+		} else {
+			if (!initialize_backend(ps)) {
+				log_fatal("Failed to re-initialize backend after root "
+						"change, aborting...");
+				ps->quit = true;
+				// TODO only event handlers should request ev_break,
+				// otherwise it's too hard to keep track of what can break
+				// the event loop
+				ev_break(ps->loop, EVBREAK_ALL);
+				return;
+			}
 		}
-		// Old backend's root_change is not a specific function
-	} else {
-		if (!initialize_backend(ps)) {
-			log_fatal("Failed to re-initialize backend after root "
-			          "change, aborting...");
-			ps->quit = true;
-			// TODO only event handlers should request ev_break,
-			// otherwise it's too hard to keep track of what can break
-			// the event loop
-			ev_break(ps->loop, EVBREAK_ALL);
-			return;
-		}
+		force_repaint(ps);
 	}
-	force_repaint(ps);
 	return;
 }
 
