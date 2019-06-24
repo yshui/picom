@@ -23,6 +23,9 @@
 #define GLSL(version, ...) "#version " #version "\n" #__VA_ARGS__
 #define QUOTE(...) #__VA_ARGS__
 
+static const GLuint vert_coord_loc = 0;
+static const GLuint vert_in_texcoord_loc = 1;
+
 struct gl_blur_context {
 	enum blur_method method;
 	gl_blur_shader_t *blur_shader;
@@ -234,16 +237,16 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
 	             indices, GL_STATIC_DRAW);
 
-	glEnableVertexAttribArray((GLuint)gd->win_shader.coord_loc);
-	glEnableVertexAttribArray((GLuint)gd->win_shader.in_texcoord);
-	glVertexAttribPointer((GLuint)gd->win_shader.coord_loc, 2, GL_FLOAT, GL_FALSE,
+	glEnableVertexAttribArray(vert_coord_loc);
+	glEnableVertexAttribArray(vert_in_texcoord_loc);
+	glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE,
 	                      sizeof(GLfloat) * 4, NULL);
-	glVertexAttribPointer((GLuint)gd->win_shader.in_texcoord, 2, GL_FLOAT, GL_FALSE,
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
 	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
-	glDisableVertexAttribArray((GLuint)gd->win_shader.coord_loc);
-	glDisableVertexAttribArray((GLuint)gd->win_shader.in_texcoord);
+	glDisableVertexAttribArray(vert_coord_loc);
+	glDisableVertexAttribArray(vert_in_texcoord_loc);
 	glBindVertexArray(0);
 	glDeleteVertexArrays(1, &vao);
 
@@ -483,15 +486,15 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 		glUniform1f(p->unifm_offset_x, 1.0f / (GLfloat)gd->width);
 		glUniform1f(p->unifm_offset_y, 1.0f / (GLfloat)gd->height);
 
-		glEnableVertexAttribArray((GLuint)p->coord_loc);
-		glEnableVertexAttribArray((GLuint)p->in_texcoord);
-		glVertexAttribPointer((GLuint)p->coord_loc, 2, GL_FLOAT, GL_FALSE,
+		glEnableVertexAttribArray(vert_coord_loc);
+		glEnableVertexAttribArray(vert_in_texcoord_loc);
+		glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE,
 		                      sizeof(GLfloat) * 4, NULL);
-		glVertexAttribPointer((GLuint)p->in_texcoord, 2, GL_FLOAT, GL_FALSE,
+		glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
 		                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
 		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
-		glDisableVertexAttribArray((GLuint)p->coord_loc);
-		glDisableVertexAttribArray((GLuint)p->in_texcoord);
+		glDisableVertexAttribArray(vert_coord_loc);
+		glDisableVertexAttribArray(vert_in_texcoord_loc);
 
 		// XXX use multiple draw calls is probably going to be slow than
 		//     just simply blur the whole area.
@@ -522,8 +525,8 @@ end:
 const char *vertex_shader = GLSL(330,
 	uniform mat4 projection;
 	uniform vec2 orig;
-	in vec2 coord;
-	in vec2 in_texcoord;
+	layout(location = 0) in vec2 coord;
+	layout(location = 1) in vec2 in_texcoord;
 	out vec2 texcoord;
 	void main() {
 		gl_Position = projection * vec4(coord + orig, 0, 1);
@@ -549,7 +552,6 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
 	ret->unifm_invert_color = glGetUniformLocationChecked(ret->prog, "invert_color");
 	ret->unifm_tex = glGetUniformLocationChecked(ret->prog, "tex");
 	ret->unifm_dim = glGetUniformLocationChecked(ret->prog, "dim");
-	ret->in_texcoord = glGetAttribLocation(ret->prog, "in_texcoord");
 
 	glUseProgram(ret->prog);
 	int orig_loc = glGetUniformLocation(ret->prog, "orig");
@@ -596,7 +598,7 @@ static const char fill_frag[] = GLSL(330,
 );
 
 static const char fill_vert[] = GLSL(330,
-	in vec2 in_coord;
+	layout(location = 0) in vec2 in_coord;
 	uniform mat4 projection;
 	void main() {
 		gl_Position = projection * vec4(in_coord, 0, 1);
@@ -608,6 +610,7 @@ static const char fill_vert[] = GLSL(330,
 /// @param[in] y_inverted whether the y coordinates in `clip` should be inverted
 static void
 _gl_fill(backend_t *base, struct color c, const region_t *clip, int height, bool y_inverted) {
+	static const GLuint fill_vert_in_coord_loc = 0;
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
 	struct gl_data *gd = (void *)base;
@@ -621,7 +624,7 @@ _gl_fill(backend_t *base, struct color c, const region_t *clip, int height, bool
 	glUseProgram(gd->fill_shader.prog);
 	glUniform4f(gd->fill_shader.color_loc, (GLfloat)c.red, (GLfloat)c.green,
 	            (GLfloat)c.blue, (GLfloat)c.alpha);
-	glEnableVertexAttribArray((GLuint)gd->fill_shader.in_coord_loc);
+	glEnableVertexAttribArray(fill_vert_in_coord_loc);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
 
@@ -645,12 +648,12 @@ _gl_fill(backend_t *base, struct color c, const region_t *clip, int height, bool
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, nrects * 6 * (long)sizeof(*indices),
 	             indices, GL_STREAM_DRAW);
 
-	glVertexAttribPointer((GLuint)gd->fill_shader.in_coord_loc, 2, GL_INT, GL_FALSE,
+	glVertexAttribPointer(fill_vert_in_coord_loc, 2, GL_INT, GL_FALSE,
 	                      sizeof(*coord) * 2, (void *)0);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	glDisableVertexAttribArray((GLuint)gd->fill_shader.in_coord_loc);
+	glDisableVertexAttribArray(fill_vert_in_coord_loc);
 	glBindVertexArray(0);
 	glDeleteVertexArrays(1, &vao);
 
@@ -827,8 +830,6 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		    glGetUniformLocationChecked(pass->prog, "offset_y");
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
-		pass->in_texcoord = glGetAttribLocation(pass->prog, "in_texcoord");
-		pass->coord_loc = glGetAttribLocation(pass->prog, "coord");
 	}
 
 	// Texture size will be defined by gl_resize
@@ -912,8 +913,6 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 
 	gl_win_shader_from_string(vertex_shader, win_shader_glsl, &gd->win_shader);
 	gd->fill_shader.prog = gl_create_program_from_str(fill_vert, fill_frag);
-	gd->fill_shader.in_coord_loc =
-	    glGetAttribLocation(gd->fill_shader.prog, "in_coord");
 	gd->fill_shader.color_loc = glGetUniformLocation(gd->fill_shader.prog, "color");
 
 	// Set up the size of the viewport. We do this last because it expects the blur

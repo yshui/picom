@@ -21,8 +21,6 @@ typedef struct {
 	GLint unifm_invert_color;
 	GLint unifm_tex;
 	GLint unifm_dim;
-	GLint in_texcoord;
-	GLint coord_loc;
 } gl_win_shader_t;
 
 // Program and uniforms for blur shader
@@ -32,13 +30,10 @@ typedef struct {
 	GLint unifm_offset_y;
 	GLint unifm_opacity;
 	GLint orig_loc;
-	GLint coord_loc;
-	GLint in_texcoord;
 } gl_blur_shader_t;
 
 typedef struct {
 	GLuint prog;
-	GLint in_coord_loc;
 	GLint color_loc;
 } gl_fill_shader_t;
 
