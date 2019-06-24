@@ -66,7 +66,8 @@ test_h_dep = subproject('test.h').get_variable('test_h_dep')
 subdir('src')
 subdir('man')
 
-install_subdir('bin', install_dir: '')
+install_data(['bin/compton-convgen.py', 'bin/compton-trans'],
+             install_dir: get_option('bindir'))
 install_data('compton.desktop', install_dir: 'share/applications')
 install_data('media/icons/48x48/compton.png',
              install_dir: 'share/icons/hicolor/48x48/apps')
