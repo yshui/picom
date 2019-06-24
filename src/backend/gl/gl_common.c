@@ -239,8 +239,7 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
-	glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE,
-	                      sizeof(GLfloat) * 4, NULL);
+	glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 4, NULL);
 	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
 	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
@@ -442,6 +441,11 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STATIC_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
 	             indices, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(vert_coord_loc);
+	glEnableVertexAttribArray(vert_in_texcoord_loc);
+	glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 4, NULL);
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
+	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
 
 	int curr = 0;
 	glReadBuffer(GL_BACK);
@@ -485,16 +489,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 
 		glUniform1f(p->unifm_offset_x, 1.0f / (GLfloat)gd->width);
 		glUniform1f(p->unifm_offset_y, 1.0f / (GLfloat)gd->height);
-
-		glEnableVertexAttribArray(vert_coord_loc);
-		glEnableVertexAttribArray(vert_in_texcoord_loc);
-		glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE,
-		                      sizeof(GLfloat) * 4, NULL);
-		glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
-		                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
 		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
-		glDisableVertexAttribArray(vert_coord_loc);
-		glDisableVertexAttribArray(vert_in_texcoord_loc);
 
 		// XXX use multiple draw calls is probably going to be slow than
 		//     just simply blur the whole area.
