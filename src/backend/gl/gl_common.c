@@ -30,14 +30,17 @@ struct gl_blur_context {
 	enum blur_method method;
 	gl_blur_shader_t *blur_shader;
 
-	// Temporary textures used for blurring. They are always the same size as the
-	// target, so they are always big enough without resizing.
-	// Turns out calling glTexImage to resize is expensive, so we avoid that.
+	/// Temporary textures used for blurring. They are always the same size as the
+	/// target, so they are always big enough without resizing.
+	/// Turns out calling glTexImage to resize is expensive, so we avoid that.
 	GLuint blur_texture[2];
-	// Temporary fbo used for blurring
+	/// Temporary fbo used for blurring
 	GLuint blur_fbo;
 
 	int texture_width, texture_height;
+
+	/// How much do we need to resize the damaged region for blurring.
+	int resize_width, resize_height;
 
 	int npasses;
 };
@@ -378,64 +381,91 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	struct gl_blur_context *bctx = ctx;
 	struct gl_data *gd = (void *)base;
 
-	if (gd->width != bctx->texture_width || gd->height != bctx->texture_height) {
+	if (gd->width + bctx->resize_width * 2 != bctx->texture_width ||
+	    gd->height + bctx->resize_height * 2 != bctx->texture_height) {
 		// Resize the temporary textures used for blur in case the root
 		// size changed
+		bctx->texture_width = gd->width + bctx->resize_width * 2;
+		bctx->texture_height = gd->height + bctx->resize_height * 2;
+
 		glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[0]);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, gd->width, gd->height, 0,
-		             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bctx->texture_width,
+		             bctx->texture_height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 		if (bctx->npasses > 1) {
 			glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[1]);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, gd->width, gd->height, 0,
-			             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bctx->texture_width,
+			             bctx->texture_height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 		}
-
-		bctx->texture_width = gd->width;
-		bctx->texture_height = gd->height;
 
 		// XXX: do we need projection matrix for blur at all?
 		// Note: OpenGL matrices are column major
-		GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)gd->width, 0, 0, 0},
-		                                   {0, 2.0f / (GLfloat)gd->height, 0, 0},
-		                                   {0, 0, 0, 0},
-		                                   {-1, -1, 0, 1}};
+		GLfloat projection_matrix[4][4] = {
+		    {2.0f / (GLfloat)bctx->texture_width, 0, 0, 0},
+		    {0, 2.0f / (GLfloat)bctx->texture_height, 0, 0},
+		    {0, 0, 0, 0},
+		    {-1, -1, 0, 1}};
 
 		// Update projection matrices in the blur shaders
-		for (int i = 0; i < bctx->npasses; i++) {
+		for (int i = 0; i < bctx->npasses - 1; i++) {
 			assert(bctx->blur_shader[i].prog);
 			glUseProgram(bctx->blur_shader[i].prog);
 			int pml = glGetUniformLocationChecked(bctx->blur_shader[i].prog,
 			                                      "projection");
 			glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 		}
+
+		GLfloat projection_matrix2[4][4] = {{2.0f / (GLfloat)gd->width, 0, 0, 0},
+		                                    {0, 2.0f / (GLfloat)gd->height, 0, 0},
+		                                    {0, 0, 0, 0},
+		                                    {-1, -1, 0, 1}};
+		assert(bctx->blur_shader[bctx->npasses - 1].prog);
+		glUseProgram(bctx->blur_shader[bctx->npasses - 1].prog);
+		int pml = glGetUniformLocationChecked(
+		    bctx->blur_shader[bctx->npasses - 1].prog, "projection");
+		glUniformMatrix4fv(pml, 1, false, projection_matrix2[0]);
 	}
 
 	// Remainder: regions are in Xorg coordinates
-	const rect_t *extent = pixman_region32_extents((region_t *)reg_blur);
-	int width = extent->x2 - extent->x1, height = extent->y2 - extent->y1;
-	int dst_y = gd->height - extent->y2;
+	auto reg_blur_resized =
+	    resize_region(reg_blur, bctx->resize_width, bctx->resize_height);
+	const rect_t *extent = pixman_region32_extents((region_t *)reg_blur),
+	             *extent_resized = pixman_region32_extents(&reg_blur_resized);
+	int width = extent->x2 - extent->x1, height = extent->y2 - extent->y1,
+	    width_resized = extent_resized->x2 - extent_resized->x1,
+	    height_resized = extent_resized->y2 - extent_resized->y1;
+	int dst_y_resized_screen_coord = gd->height - extent_resized->y2,
+	    dst_y_resized_fb_coord = bctx->texture_height - extent_resized->y2;
 	if (width == 0 || height == 0) {
 		return true;
 	}
 
 	bool ret = false;
-	int nrects;
-	const rect_t *rects = pixman_region32_rectangles((region_t *)reg_blur, &nrects);
-	if (!nrects) {
+	int nrects, nrects_resized;
+	const rect_t *rects = pixman_region32_rectangles((region_t *)reg_blur, &nrects),
+	             *rects_resized =
+	                 pixman_region32_rectangles(&reg_blur_resized, &nrects_resized);
+	if (!nrects || !nrects_resized) {
 		return true;
 	}
 
 	auto coord = ccalloc(nrects * 16, GLfloat);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	x_rect_to_coords(nrects, rects, extent->x1, extent->y2, gd->width, gd->height,
-	                 gd->height, false, coord, indices);
+	x_rect_to_coords(nrects, rects, extent_resized->x1, extent_resized->y2,
+	                 bctx->texture_width, bctx->texture_height, gd->height, false,
+	                 coord, indices);
 
-	GLuint vao;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
+	auto coord_resized = ccalloc(nrects_resized * 16, GLfloat);
+	auto indices_resized = ccalloc(nrects_resized * 6, GLuint);
+	x_rect_to_coords(nrects_resized, rects_resized, extent_resized->x1,
+	                 extent_resized->y2, bctx->texture_width, bctx->texture_height,
+	                 bctx->texture_height, false, coord_resized, indices_resized);
 
-	GLuint bo[2];
-	glGenBuffers(2, bo);
+	GLuint vao[2];
+	glGenVertexArrays(2, vao);
+	GLuint bo[4];
+	glGenBuffers(4, bo);
+
+	glBindVertexArray(vao[0]);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
 	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STATIC_DRAW);
@@ -447,11 +477,29 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
 	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
 
+	glBindVertexArray(vao[1]);
+	glBindBuffer(GL_ARRAY_BUFFER, bo[2]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[3]);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord_resized) * nrects_resized * 16,
+	             coord_resized, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+	             (long)sizeof(*indices_resized) * nrects_resized * 6, indices_resized,
+	             GL_STATIC_DRAW);
+	glEnableVertexAttribArray(vert_coord_loc);
+	glEnableVertexAttribArray(vert_in_texcoord_loc);
+	glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 4, NULL);
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
+	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
+
 	int curr = 0;
 	glReadBuffer(GL_BACK);
 	glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[0]);
 	// Copy the area to be blurred into tmp buffer
-	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, extent->x1, dst_y, width, height);
+
+	int copy_tex_xoffset = 0, copy_tex_yoffset = 0, copy_tex_x = extent_resized->x1,
+	    copy_tex_y = dst_y_resized_screen_coord;
+	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, copy_tex_xoffset, copy_tex_yoffset,
+	                    copy_tex_x, copy_tex_y, width_resized, height_resized);
 
 	for (int i = 0; i < bctx->npasses; ++i) {
 		const gl_blur_shader_t *p = &bctx->blur_shader[i];
@@ -462,7 +510,8 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 
 		glUseProgram(p->prog);
 		if (i < bctx->npasses - 1) {
-			// not last pass, draw into framebuffer
+			// not last pass, draw into framebuffer, with resized regions
+			glBindVertexArray(vao[1]);
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbo);
 
 			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
@@ -473,22 +522,28 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 				goto end;
 			}
 			glUniform1f(p->unifm_opacity, 1.0);
+			// For other than last pass, we are drawing to a texture, we
+			// translate the render origin so we don't need a big texture
+			glUniform2f(p->orig_loc, -(GLfloat)extent_resized->x1,
+			            -(GLfloat)dst_y_resized_fb_coord);
+			glViewport(0, 0, bctx->texture_width, bctx->texture_height);
 		} else {
-			// last pass, draw directly into the back buffer
+			// last pass, draw directly into the back buffer, with origin
+			// regions
+			glBindVertexArray(vao[0]);
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glDrawBuffer(GL_BACK);
 			glUniform1f(p->unifm_opacity, (float)opacity);
-		}
-		if (i == bctx->npasses - 1) {
 			glUniform2f(p->orig_loc, 0, 0);
-		} else {
-			// For other than last pass, we are drawing to a texture, we
-			// translate the render origin so we don't need a big texture
-			glUniform2f(p->orig_loc, -(GLfloat)extent->x1, -(GLfloat)dst_y);
+			glViewport(0, 0, gd->width, gd->height);
 		}
 
-		glUniform1f(p->unifm_offset_x, 1.0f / (GLfloat)gd->width);
-		glUniform1f(p->unifm_offset_y, 1.0f / (GLfloat)gd->height);
+		if (p->unifm_offset_x >= 0) {
+			glUniform1f(p->unifm_offset_x, 1.0f / (GLfloat)bctx->texture_width);
+		}
+		if (p->unifm_offset_y >= 0) {
+			glUniform1f(p->unifm_offset_y, 1.0f / (GLfloat)bctx->texture_height);
+		}
 		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
 		// XXX use multiple draw calls is probably going to be slow than
@@ -504,9 +559,9 @@ end:
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	glDeleteBuffers(2, bo);
+	glDeleteBuffers(4, bo);
 	glBindVertexArray(0);
-	glDeleteVertexArrays(1, &vao);
+	glDeleteVertexArrays(2, vao);
 
 	free(indices);
 	free(coord);
@@ -720,7 +775,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	auto gd = (struct gl_data *)base;
 
 	struct conv **kernels;
-	auto ctx = cmalloc(struct gl_blur_context);
+	auto ctx = ccalloc(1, struct gl_blur_context);
 
 	if (!method || method >= BLUR_METHOD_INVALID) {
 		ctx->method = BLUR_METHOD_NONE;
@@ -825,6 +880,8 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		    glGetUniformLocationChecked(pass->prog, "offset_y");
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
+		ctx->resize_width += kern->w / 2;
+		ctx->resize_height += kern->h / 2;
 	}
 
 	// Texture size will be defined by gl_resize
