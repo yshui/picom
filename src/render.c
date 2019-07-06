@@ -740,37 +740,6 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 	}
 }
 
-/**
- * Resize a region.
- */
-static inline void resize_region(region_t *region, short mod) {
-	if (!mod || !region)
-		return;
-	// Loop through all rectangles
-	int nrects;
-	int nnewrects = 0;
-	pixman_box32_t *rects = pixman_region32_rectangles(region, &nrects);
-	auto newrects = ccalloc(nrects, pixman_box32_t);
-	for (int i = 0; i < nrects; i++) {
-		int x1 = rects[i].x1 - mod;
-		int y1 = rects[i].y1 - mod;
-		int x2 = rects[i].x2 + mod;
-		int y2 = rects[i].y2 + mod;
-		int wid = x2 - x1;
-		int hei = y2 - y1;
-		if (wid <= 0 || hei <= 0)
-			continue;
-		newrects[nnewrects] =
-		    (pixman_box32_t){.x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2};
-		++nnewrects;
-	}
-
-	pixman_region32_fini(region);
-	pixman_region32_init_rects(region, newrects, nnewrects);
-
-	free(newrects);
-}
-
 /// paint all windows
 /// region = ??
 /// region_real = the damage region
@@ -807,7 +776,7 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 #endif
 
 	if (ps->o.resize_damage > 0) {
-		resize_region(&region, (short)ps->o.resize_damage);
+		resize_region_in_place(&region, ps->o.resize_damage, ps->o.resize_damage);
 	}
 
 	// Remove the damaged area out of screen

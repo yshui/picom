@@ -47,3 +47,54 @@ static inline rect_t *from_x_rects(int nrects, const xcb_rectangle_t *rects) {
 	}
 	return ret;
 }
+
+/**
+ * Resize a region.
+ */
+static inline void _resize_region(const region_t *region, region_t *output, int dx,
+		int dy) {
+	if (!region || !output) {
+		return;
+	}
+	if (!dx && !dy) {
+		if (region != output) {
+			pixman_region32_copy(output, (region_t *)region);
+		}
+		return;
+	}
+	// Loop through all rectangles
+	int nrects;
+	int nnewrects = 0;
+	const rect_t *rects = pixman_region32_rectangles((region_t *)region, &nrects);
+	auto newrects = ccalloc(nrects, rect_t);
+	for (int i = 0; i < nrects; i++) {
+		int x1 = rects[i].x1 - dx;
+		int y1 = rects[i].y1 - dy;
+		int x2 = rects[i].x2 + dx;
+		int y2 = rects[i].y2 + dy;
+		int wid = x2 - x1;
+		int hei = y2 - y1;
+		if (wid <= 0 || hei <= 0) {
+			continue;
+		}
+		newrects[nnewrects] =
+		    (rect_t){.x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2};
+		++nnewrects;
+	}
+
+	pixman_region32_fini(output);
+	pixman_region32_init_rects(output, newrects, nnewrects);
+
+	free(newrects);
+}
+
+static inline region_t resize_region(const region_t *region, int dx, int dy) {
+	region_t ret;
+	pixman_region32_init(&ret);
+	_resize_region(region, &ret, dx, dy);
+	return ret;
+}
+
+static inline void resize_region_in_place(region_t *region, int dx, int dy) {
+	return _resize_region(region, region, dx, dy);
+}
