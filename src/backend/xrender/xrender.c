@@ -68,6 +68,8 @@ struct _xrender_blur_context {
 	/// Blur kernels converted to X format
 	struct x_convolution_kernel **x_blur_kernel;
 
+	int resize_width, resize_height;
+
 	/// Number of blur kernels
 	int x_blur_kernel_count;
 };
@@ -144,19 +146,22 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 		return true;
 	}
 
-	const pixman_box32_t *extent = pixman_region32_extents(&reg_op);
-	const auto height = to_u16_checked(extent->y2 - extent->y1);
-	const auto width = to_u16_checked(extent->x2 - extent->x1);
+	region_t reg_op_resized =
+	    resize_region(&reg_op, bctx->resize_width, bctx->resize_height);
+
+	const pixman_box32_t *extent_resized = pixman_region32_extents(&reg_op_resized);
+	const auto height_resized = to_u16_checked(extent_resized->y2 - extent_resized->y1);
+	const auto width_resized = to_u16_checked(extent_resized->x2 - extent_resized->x1);
 	static const char *filter0 = "Nearest";        // The "null" filter
 	static const char *filter = "convolution";
 
 	// Create a buffer for storing blurred picture, make it just big enough
 	// for the blur region
 	xcb_render_picture_t tmp_picture[2] = {
-	    x_create_picture_with_visual(xd->base.c, xd->base.root, width, height,
-	                                 xd->default_visual, 0, NULL),
-	    x_create_picture_with_visual(xd->base.c, xd->base.root, width, height,
-	                                 xd->default_visual, 0, NULL)};
+	    x_create_picture_with_visual(xd->base.c, xd->base.root, width_resized,
+	                                 height_resized, xd->default_visual, 0, NULL),
+	    x_create_picture_with_visual(xd->base.c, xd->base.root, width_resized,
+	                                 height_resized, xd->default_visual, 0, NULL)};
 
 	if (!tmp_picture[0] || !tmp_picture[1]) {
 		log_error("Failed to build intermediate Picture.");
@@ -166,18 +171,16 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 
 	region_t clip;
 	pixman_region32_init(&clip);
-	pixman_region32_copy(&clip, &reg_op);
-	pixman_region32_translate(&clip, -extent->x1, -extent->y1);
+	pixman_region32_copy(&clip, &reg_op_resized);
+	pixman_region32_translate(&clip, -extent_resized->x1, -extent_resized->y1);
 	x_set_picture_clip_region(c, tmp_picture[0], 0, 0, &clip);
 	x_set_picture_clip_region(c, tmp_picture[1], 0, 0, &clip);
 	pixman_region32_fini(&clip);
 
-	// The multipass blur implemented here is not correct, but this is what old
-	// compton did anyway. XXX
 	xcb_render_picture_t src_pict = xd->back[xd->curr_back], dst_pict = tmp_picture[0];
 	auto alpha_pict = xd->alpha_pict[(int)(opacity * MAX_ALPHA)];
 	int current = 0;
-	x_set_picture_clip_region(c, src_pict, 0, 0, &reg_op);
+	x_set_picture_clip_region(c, src_pict, 0, 0, &reg_op_resized);
 
 	// For more than 1 pass, we do:
 	//   back -(pass 1)-> tmp0 -(pass 2)-> tmp1 ...
@@ -189,7 +192,6 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 		// Copy from source picture to destination. The filter must
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
-		// TODO cache converted blur_kerns
 		xcb_render_set_picture_filter(c, src_pict, to_u16_checked(strlen(filter)),
 		                              filter,
 		                              to_u32_checked(bctx->x_blur_kernel[i]->size),
@@ -197,22 +199,26 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 
 		if (i == 0) {
 			// First pass, back buffer -> tmp picture
-			// (we do this even if this is also the last pass)
+			// (we do this even if this is also the last pass, because we
+			// cannot do back buffer -> back buffer)
 			xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
-			                     dst_pict, to_i16_checked(extent->x1),
-			                     to_i16_checked(extent->y1), 0, 0, 0, 0,
-			                     width, height);
+			                     dst_pict, to_i16_checked(extent_resized->x1),
+			                     to_i16_checked(extent_resized->y1), 0, 0, 0,
+			                     0, width_resized, height_resized);
 		} else if (i < bctx->x_blur_kernel_count - 1) {
 			// This is not the last pass or the first pass,
 			// tmp picture 1 -> tmp picture 2
-			xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
-			                     dst_pict, 0, 0, 0, 0, 0, 0, width, height);
+			xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, src_pict,
+			                     XCB_NONE, dst_pict, 0, 0, 0, 0, 0, 0,
+			                     width_resized, height_resized);
 		} else {
+			x_set_picture_clip_region(c, xd->back[xd->curr_back], 0, 0, &reg_op);
 			// This is the last pass, and we are doing more than 1 pass
 			xcb_render_composite(c, XCB_RENDER_PICT_OP_OVER, src_pict,
 			                     alpha_pict, xd->back[xd->curr_back], 0, 0, 0,
-			                     0, to_i16_checked(extent->x1),
-			                     to_i16_checked(extent->y1), width, height);
+			                     0, to_i16_checked(extent_resized->x1),
+			                     to_i16_checked(extent_resized->y1),
+			                     width_resized, height_resized);
 		}
 
 		// reset filter
@@ -226,10 +232,11 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 
 	// There is only 1 pass
 	if (i == 1) {
-		xcb_render_composite(c, XCB_RENDER_PICT_OP_OVER, src_pict, alpha_pict,
-		                     xd->back[xd->curr_back], 0, 0, 0, 0,
-		                     to_i16_checked(extent->x1),
-		                     to_i16_checked(extent->y1), width, height);
+		x_set_picture_clip_region(c, xd->back[xd->curr_back], 0, 0, &reg_op);
+		xcb_render_composite(
+		    c, XCB_RENDER_PICT_OP_OVER, src_pict, alpha_pict,
+		    xd->back[xd->curr_back], 0, 0, 0, 0, to_i16_checked(extent_resized->x1),
+		    to_i16_checked(extent_resized->y1), width_resized, height_resized);
 	}
 
 	xcb_render_free_picture(c, tmp_picture[0]);
@@ -478,7 +485,7 @@ static void *copy(backend_t *base, const void *image, const region_t *reg) {
 }
 
 void *create_blur_context(backend_t *base, enum blur_method method, void *args) {
-	auto ret = cmalloc(struct _xrender_blur_context);
+	auto ret = ccalloc(1, struct _xrender_blur_context);
 	if (!method || method >= BLUR_METHOD_INVALID) {
 		ret->method = BLUR_METHOD_NONE;
 		return ret;
@@ -499,6 +506,8 @@ void *create_blur_context(backend_t *base, enum blur_method method, void *args) 
 		int center = kernels[i]->h * kernels[i]->w / 2;
 		x_create_convolution_kernel(kernels[i], kernels[i]->data[center],
 		                            &ret->x_blur_kernel[i]);
+		ret->resize_width += kernels[i]->w / 2;
+		ret->resize_height += kernels[i]->h / 2;
 	}
 	ret->x_blur_kernel_count = kernel_count;
 
