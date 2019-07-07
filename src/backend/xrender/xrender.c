@@ -14,6 +14,7 @@
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
+#include "compton.h"
 #include "config.h"
 #include "kernel.h"
 #include "log.h"
@@ -532,18 +533,12 @@ backend_t *backend_xrender_init(session_t *ps) {
 	xd->black_pixel = solid_picture(ps->c, ps->root, true, 1, 0, 0, 0);
 	xd->white_pixel = solid_picture(ps->c, ps->root, true, 1, 1, 1, 1);
 
-	if (ps->overlay != XCB_NONE) {
-		xd->target = x_create_picture_with_visual_and_pixmap(
-		    ps->c, ps->vis, ps->overlay, 0, NULL);
-		xd->target_win = ps->overlay;
-	} else {
-		xcb_render_create_picture_value_list_t pa = {
-		    .subwindowmode = XCB_SUBWINDOW_MODE_INCLUDE_INFERIORS,
-		};
-		xd->target = x_create_picture_with_visual_and_pixmap(
-		    ps->c, ps->vis, ps->root, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
-		xd->target_win = ps->root;
-	}
+	xd->target_win = session_get_target_window(ps);
+	xcb_render_create_picture_value_list_t pa = {
+	    .subwindowmode = XCB_SUBWINDOW_MODE_INCLUDE_INFERIORS,
+	};
+	xd->target = x_create_picture_with_visual_and_pixmap(
+	    ps->c, ps->vis, xd->target_win, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
 
 	auto pictfmt = x_get_pictform_for_visual(ps->c, ps->vis);
 	if (!pictfmt) {

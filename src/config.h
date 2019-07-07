@@ -62,6 +62,8 @@ typedef struct options {
 	// === Debugging ===
 	bool monitor_repaint;
 	bool print_diagnostics;
+	/// Render to a separate window instead of taking over the screen
+	bool debug_mode;
 	// === General ===
 	/// Use the experimental new backends?
 	bool experimental_backends;
