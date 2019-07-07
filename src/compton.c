@@ -1834,7 +1834,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	rebuild_screen_reg(ps);
 
 	// Create registration window
-	if (!ps->reg_win && !register_cm(ps)) {
+	if (!ps->o.debug_mode && !register_cm(ps)) {
 		exit(1);
 	}
 
