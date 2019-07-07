@@ -459,6 +459,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	x_rect_to_coords(nrects_resized, rects_resized, extent_resized->x1,
 	                 extent_resized->y2, bctx->texture_width, bctx->texture_height,
 	                 bctx->texture_height, false, coord_resized, indices_resized);
+	pixman_region32_fini(&reg_blur_resized);
 
 	GLuint vao[2];
 	glGenVertexArrays(2, vao);
@@ -565,6 +566,8 @@ end:
 
 	free(indices);
 	free(coord);
+	free(indices_resized);
+	free(coord_resized);
 
 	gl_check_err();
 
