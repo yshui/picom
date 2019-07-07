@@ -513,6 +513,10 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			to_paint = false;
 		}
 
+		if (w->base.id == ps->debug_window || w->client_win == ps->debug_window) {
+			to_paint = false;
+		}
+
 		if ((w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
 			to_paint = false;
 		}
