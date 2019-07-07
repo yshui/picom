@@ -171,6 +171,8 @@ typedef struct session {
 	// Damage root_damage;
 	/// X Composite overlay window. Used if <code>--paint-on-overlay</code>.
 	xcb_window_t overlay;
+	/// The target window for debug mode
+	xcb_window_t debug_window;
 	/// Whether the root tile is filled by compton.
 	bool root_tile_fill;
 	/// Picture of the root window background.

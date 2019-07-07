@@ -308,9 +308,14 @@ static void usage(int ret) {
 	    "--benchmark-wid window-id\n"
 	    "  Specify window ID to repaint in benchmark mode. If omitted or is 0,\n"
 	    "  the whole screen is repainted.\n"
+	    "\n"
 	    "--monitor-repaint\n"
 	    "  Highlight the updated area of the screen. For debugging the xrender\n"
-	    "  backend only.\n";
+	    "  backend only.\n"
+	    "\n"
+	    "--debug-mode\n"
+	    "  Render into a separate window, and don't take over the screen. Useful\n"
+	    "  when you want to attach a debugger to compton\n";
 	FILE *f = (ret ? stderr : stdout);
 	fputs(usage_text, f);
 #undef WARNING_DISABLED
@@ -406,6 +411,7 @@ static const struct option longopts[] = {
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
+    {"debug-mode", no_argument, NULL, 802},
     // Must terminate with a NULL entry
     {NULL, 0, NULL, 0},
 };
@@ -777,6 +783,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801: opt->print_diagnostics = true; break;
+		P_CASEBOOL(802, debug_mode);
 		default: usage(1); break;
 #undef P_CASEBOOL
 		}

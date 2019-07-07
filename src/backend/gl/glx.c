@@ -25,6 +25,7 @@
 #include "backend/gl/gl_common.h"
 #include "backend/gl/glx.h"
 #include "common.h"
+#include "compton.h"
 #include "compiler.h"
 #include "config.h"
 #include "log.h"
@@ -221,7 +222,7 @@ static backend_t *glx_init(session_t *ps) {
 
 	gd->display = ps->dpy;
 	gd->screen = ps->scr;
-	gd->target_win = ps->overlay != XCB_NONE ? ps->overlay : ps->root;
+	gd->target_win = session_get_target_window(ps);
 
 	XVisualInfo *pvis = NULL;
 
@@ -310,10 +311,7 @@ static backend_t *glx_init(session_t *ps) {
 	}
 
 	// Attach GLX context
-	GLXDrawable tgt = ps->overlay;
-	if (!tgt) {
-		tgt = ps->root;
-	}
+	GLXDrawable tgt = gd->target_win;
 	if (!glXMakeCurrent(ps->dpy, tgt, gd->ctx)) {
 		log_error("Failed to attach GLX context.");
 		goto end;

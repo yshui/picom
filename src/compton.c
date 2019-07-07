@@ -513,6 +513,10 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			to_paint = false;
 		}
 
+		if (w->base.id == ps->debug_window || w->client_win == ps->debug_window) {
+			to_paint = false;
+		}
+
 		if ((w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
 			to_paint = false;
 		}
@@ -798,7 +802,7 @@ void configure_root(session_t *ps, int width, int height) {
 		} else {
 			if (!initialize_backend(ps)) {
 				log_fatal("Failed to re-initialize backend after root "
-						"change, aborting...");
+				          "change, aborting...");
 				ps->quit = true;
 				// TODO only event handlers should request ev_break,
 				// otherwise it's too hard to keep track of what can break
@@ -902,7 +906,9 @@ static bool register_cm(session_t *ps) {
 	// Unredirect the window if it's redirected, just in case
 	if (ps->redirected)
 		xcb_composite_unredirect_window(ps->c, ps->reg_win,
-		                                XCB_COMPOSITE_REDIRECT_MANUAL);
+		                                ps->o.debug_mode
+		                                    ? XCB_COMPOSITE_REDIRECT_AUTOMATIC
+		                                    : XCB_COMPOSITE_REDIRECT_MANUAL);
 
 	{
 		XClassHint *h = XAllocClassHint();
@@ -1094,6 +1100,45 @@ static bool init_overlay(session_t *ps) {
 	return true;
 }
 
+static bool init_debug_window(session_t *ps) {
+	xcb_colormap_t colormap = x_new_id(ps->c);
+	ps->debug_window = x_new_id(ps->c);
+
+	auto err = xcb_request_check(
+	    ps->c, xcb_create_colormap_checked(ps->c, XCB_COLORMAP_ALLOC_NONE, colormap,
+	                                       ps->root, ps->vis));
+	if (err) {
+		goto err_out;
+	}
+
+	err = xcb_request_check(
+	    ps->c, xcb_create_window_checked(ps->c, (uint8_t)ps->depth, ps->debug_window,
+	                                     ps->root, 0, 0, to_u16_checked(ps->root_width),
+	                                     to_u16_checked(ps->root_height), 0,
+	                                     XCB_WINDOW_CLASS_INPUT_OUTPUT, ps->vis,
+	                                     XCB_CW_COLORMAP, (uint32_t[]){colormap, 0}));
+	if (err) {
+		goto err_out;
+	}
+
+	err = xcb_request_check(ps->c, xcb_map_window(ps->c, ps->debug_window));
+	if (err) {
+		goto err_out;
+	}
+	return true;
+
+err_out:
+	free(err);
+	return false;
+}
+
+xcb_window_t session_get_target_window(session_t *ps) {
+	if (ps->o.debug_mode) {
+		return ps->debug_window;
+	}
+	return ps->overlay != XCB_NONE ? ps->overlay : ps->root;
+}
+
 /**
  * Redirect all windows.
  *
@@ -1109,7 +1154,9 @@ static bool redir_start(session_t *ps) {
 		xcb_map_window(ps->c, ps->overlay);
 	}
 
-	xcb_composite_redirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
+	xcb_composite_redirect_subwindows(ps->c, ps->root,
+	                                  ps->o.debug_mode ? XCB_COMPOSITE_REDIRECT_AUTOMATIC
+	                                                   : XCB_COMPOSITE_REDIRECT_MANUAL);
 
 	x_sync(ps->c);
 
@@ -1155,7 +1202,9 @@ static void redir_stop(session_t *ps) {
 
 	destroy_backend(ps);
 
-	xcb_composite_unredirect_subwindows(ps->c, ps->root, XCB_COMPOSITE_REDIRECT_MANUAL);
+	xcb_composite_unredirect_subwindows(ps->c, ps->root,
+	                                    ps->o.debug_mode ? XCB_COMPOSITE_REDIRECT_AUTOMATIC
+	                                                     : XCB_COMPOSITE_REDIRECT_MANUAL);
 	// Unmap overlay window
 	if (ps->overlay)
 		xcb_unmap_window(ps->c, ps->overlay);
@@ -1791,8 +1840,14 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Overlay must be initialized before double buffer, and before creation
 	// of OpenGL context.
-	if (!init_overlay(ps)) {
-		goto err;
+	if (!ps->o.debug_mode) {
+		if (!init_overlay(ps)) {
+			goto err;
+		}
+	} else {
+		if (!init_debug_window(ps)) {
+			goto err;
+		}
 	}
 
 	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);

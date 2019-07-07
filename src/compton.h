@@ -59,6 +59,8 @@ void discard_ignore(session_t *ps, unsigned long sequence);
 
 void set_root_flags(session_t *ps, uint64_t flags);
 
+xcb_window_t session_get_target_window(session_t *);
+
 /**
  * Set a <code>switch_t</code> array of all unset wintypes to true.
  */
