@@ -547,6 +547,9 @@ void x_create_convolution_kernel(const conv *kernel, double center,
 
 	double sum = center;
 	for (int i = 0; i < kernel->w * kernel->h; i++) {
+		if (i == kernel->w * kernel->h / 2) {
+			continue;
+		}
 		sum += kernel->data[i];
 	}
 
