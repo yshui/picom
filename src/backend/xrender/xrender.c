@@ -147,8 +147,6 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 	const pixman_box32_t *extent = pixman_region32_extents(&reg_op);
 	const auto height = to_u16_checked(extent->y2 - extent->y1);
 	const auto width = to_u16_checked(extent->x2 - extent->x1);
-	auto src_x = to_i16_checked(extent->x1);
-	auto src_y = to_i16_checked(extent->y1);
 	static const char *filter0 = "Nearest";        // The "null" filter
 	static const char *filter = "convolution";
 
@@ -169,7 +167,7 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 	region_t clip;
 	pixman_region32_init(&clip);
 	pixman_region32_copy(&clip, &reg_op);
-	pixman_region32_translate(&clip, -src_x, -src_y);
+	pixman_region32_translate(&clip, -extent->x1, -extent->y1);
 	x_set_picture_clip_region(c, tmp_picture[0], 0, 0, &clip);
 	x_set_picture_clip_region(c, tmp_picture[1], 0, 0, &clip);
 	pixman_region32_fini(&clip);
@@ -197,16 +195,24 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 		                              to_u32_checked(bctx->x_blur_kernel[i]->size),
 		                              bctx->x_blur_kernel[i]->kernel);
 
-		if (i < bctx->x_blur_kernel_count - 1 || i == 0) {
-			// This is not the last pass, or this is the first pass
-			xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, src_pict,
-			                     XCB_NONE, dst_pict, src_x, src_y, 0, 0, 0, 0,
+		if (i == 0) {
+			// First pass, back buffer -> tmp picture
+			// (we do this even if this is also the last pass)
+			xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
+			                     dst_pict, to_i16_checked(extent->x1),
+			                     to_i16_checked(extent->y1), 0, 0, 0, 0,
 			                     width, height);
+		} else if (i < bctx->x_blur_kernel_count - 1) {
+			// This is not the last pass or the first pass,
+			// tmp picture 1 -> tmp picture 2
+			xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
+			                     dst_pict, 0, 0, 0, 0, 0, 0, width, height);
 		} else {
-			// This is the last pass, and this is also not the first
+			// This is the last pass, and we are doing more than 1 pass
 			xcb_render_composite(c, XCB_RENDER_PICT_OP_OVER, src_pict,
 			                     alpha_pict, xd->back[xd->curr_back], 0, 0, 0,
-			                     0, src_x, src_y, width, height);
+			                     0, to_i16_checked(extent->x1),
+			                     to_i16_checked(extent->y1), width, height);
 		}
 
 		// reset filter
@@ -215,8 +221,6 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 
 		src_pict = tmp_picture[current];
 		dst_pict = tmp_picture[!current];
-		src_x = 0;
-		src_y = 0;
 		current = !current;
 	}
 
