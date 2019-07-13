@@ -162,16 +162,11 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		pixman_region32_intersect(&reg_paint, &reg_bound, &reg_damage);
 
 		// Blur window background
-		bool win_transparent = ps->backend_data->ops->is_image_transparent(
-		    ps->backend_data, w->win_image);
+		// TODO since the background might change the content of the window (e.g.
+		//      with shaders), we should consult the background whether the window
+		//      is transparent or not. for now we will just rely on the
+		//      force_win_blend option
 		auto real_win_mode = w->mode;
-		if (win_transparent && real_win_mode == WMODE_SOLID) {
-			// Compton core thought the window is opaque, but background thinks
-			// the window is transparent. Since the core doesn't have extra
-			// information to determine which part of the window is
-			// transparent, just assume the whole window is.
-			real_win_mode = WMODE_TRANS;
-		}
 
 		if (w->blur_background &&
 		    (ps->o.force_win_blend || real_win_mode == WMODE_TRANS ||
