@@ -715,7 +715,7 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 		// Minimize the region we try to blur, if the window itself is not
 		// opaque, only the frame is.
 		region_t reg_blur = win_get_bounding_shape_global_by_val(w);
-		if (win_is_solid(ps, w)) {
+		if (w->mode == WMODE_FRAME_TRANS && !ps->o.force_win_blend) {
 			region_t reg_noframe;
 			pixman_region32_init(&reg_noframe);
 			win_get_region_noframe_local(w, &reg_noframe);
@@ -895,8 +895,9 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			set_tgt_clip(ps, &reg_tmp);
 			// Blur window background
 			if (w->blur_background &&
-			    (!win_is_solid(ps, w) ||
-			     (ps->o.blur_background_frame && w->frame_opacity != 1)))
+			    (w->mode == WMODE_TRANS ||
+			     (ps->o.blur_background_frame && w->mode == WMODE_FRAME_TRANS) ||
+			     ps->o.force_win_blend))
 				win_blur_background(ps, w, ps->tgt_buffer.pict, &reg_tmp);
 
 			// Painting the window

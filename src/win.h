@@ -180,8 +180,10 @@ struct managed_win {
 	xcb_get_geometry_reply_t g;
 	/// Xinerama screen this window is on.
 	int xinerama_scr;
-	/// Window visual pict format;
+	/// Window visual pict format
 	const xcb_render_pictforminfo_t *pictfmt;
+	/// Client window visual pict format
+	const xcb_render_pictforminfo_t *client_pictfmt;
 	/// Window painting mode.
 	winmode_t mode;
 	/// Whether the window has been damaged at least once.
@@ -343,7 +345,6 @@ void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new);
 void win_determine_shadow(session_t *ps, struct managed_win *w);
 void win_set_invert_color(session_t *ps, struct managed_win *w, bool invert_color_new);
 void win_determine_invert_color(session_t *ps, struct managed_win *w);
-void win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_background_new);
 void win_determine_blur_background(session_t *ps, struct managed_win *w);
 void win_on_wtype_change(session_t *ps, struct managed_win *w);
 void win_on_factor_change(session_t *ps, struct managed_win *w);
@@ -466,10 +467,6 @@ struct managed_win *find_toplevel2(session_t *ps, xcb_window_t wid);
  */
 bool attr_pure win_is_fullscreen(const session_t *ps, const struct managed_win *w);
 
-/**
- * Check if a window will be painted solid.
- */
-bool attr_pure win_is_solid(const session_t *ps, const struct managed_win *w);
 /**
  * Check if a window is really focused.
  */

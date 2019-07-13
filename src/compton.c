@@ -567,10 +567,10 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		// fading is enabled, and could create inconsistency when the wallpaper
 		// is not correctly set.
 		if (ps->o.unredir_if_possible && is_highest) {
-			if (win_is_solid(ps, w) &&
-			    (w->frame_opacity == 1 || !win_has_frame(w)) &&
-			    win_is_fullscreen(ps, w) && !w->unredir_if_possible_excluded)
+			if (w->mode == WMODE_SOLID && !ps->o.force_win_blend &&
+			    win_is_fullscreen(ps, w) && !w->unredir_if_possible_excluded) {
 				unredir_possible = true;
+			}
 		}
 
 		w->prev_trans = bottom;

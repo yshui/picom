@@ -164,21 +164,35 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		// Blur window background
 		bool win_transparent = ps->backend_data->ops->is_image_transparent(
 		    ps->backend_data, w->win_image);
-		bool frame_transparent = w->frame_opacity != 1;
+		auto real_win_mode = w->mode;
+		if (win_transparent && real_win_mode == WMODE_SOLID) {
+			// Compton core thought the window is opaque, but background thinks
+			// the window is transparent. Since the core doesn't have extra
+			// information to determine which part of the window is
+			// transparent, just assume the whole window is.
+			real_win_mode = WMODE_TRANS;
+		}
+
 		if (w->blur_background &&
-		    (win_transparent || (ps->o.blur_background_frame && frame_transparent))) {
+		    (ps->o.force_win_blend || real_win_mode == WMODE_TRANS ||
+		     (ps->o.blur_background_frame && real_win_mode == WMODE_FRAME_TRANS))) {
 			// Minimize the region we try to blur, if the window
 			// itself is not opaque, only the frame is.
 			// TODO resize blur region to fix black line artifact
-			if (!win_is_solid(ps, w)) {
+			if (real_win_mode == WMODE_TRANS || ps->o.force_win_blend) {
 				// We need to blur the bounding shape of the window
 				// (reg_paint = reg_bound \cap reg_damage)
 				ps->backend_data->ops->blur(ps->backend_data, w->opacity,
 				                            ps->backend_blur_context,
 				                            &reg_paint, &reg_visible);
-			} else if (frame_transparent && ps->o.blur_background_frame) {
+			} else {
 				// Window itself is solid, we only need to blur the frame
 				// region
+
+				// Readability assertions
+				assert(ps->o.blur_background_frame);
+				assert(real_win_mode == WMODE_FRAME_TRANS);
+
 				auto reg_blur = win_get_region_frame_local_by_val(w);
 				pixman_region32_translate(&reg_blur, w->g.x, w->g.y);
 				// make sure reg_blur \in reg_damage

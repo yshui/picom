@@ -417,13 +417,36 @@ bool win_has_alpha(const struct managed_win *w) {
 	       w->pictfmt->direct.alpha_mask;
 }
 
+bool win_client_has_alpha(const struct managed_win *w) {
+	return w->client_pictfmt && w->client_pictfmt->type == XCB_RENDER_PICT_TYPE_DIRECT &&
+	       w->client_pictfmt->direct.alpha_mask;
+}
+
 winmode_t win_calc_mode(const struct managed_win *w) {
-	if (win_has_alpha(w) || w->opacity < 1.0) {
+	if (w->opacity < 1.0) {
 		return WMODE_TRANS;
 	}
-	if (w->frame_opacity != 1.0) {
+	if (w->frame_opacity != 1.0 && win_has_frame(w)) {
 		return WMODE_FRAME_TRANS;
 	}
+
+	if (win_has_alpha(w)) {
+		// The WM window has alpha
+		if (win_client_has_alpha(w)) {
+			// The client window also has alpha, the entire window is
+			// transparent
+			return WMODE_TRANS;
+		}
+		if (win_has_frame(w)) {
+			// The client window doesn't have alpha, but we have a WM frame
+			// window, which has alpha.
+			return WMODE_FRAME_TRANS;
+		}
+		// Although the WM window has alpha, the frame window has 0 size, so
+		// consider the window solid
+	}
+
+	//log_trace("Window %#010x(%s) is solid", w->client_win, w->name);
 	return WMODE_SOLID;
 }
 
@@ -690,16 +713,15 @@ void win_determine_invert_color(session_t *ps, struct managed_win *w) {
 	win_set_invert_color(ps, w, invert_color_new);
 }
 
-void win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_background_new) {
+static void win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_background_new) {
 	if (w->blur_background == blur_background_new)
 		return;
 
 	w->blur_background = blur_background_new;
 
-	// Only consider window damaged if it's previously painted with background
-	// blurred
-	if (!win_is_solid(ps, w) || (ps->o.blur_background_frame && w->frame_opacity != 1))
-		add_damage_from_win(ps, w);
+	// This damage might not be absolutely necessary (e.g. when the window is opaque),
+	// but blur_background changes should be rare, so this should be fine.
+	add_damage_from_win(ps, w);
 }
 
 /**
@@ -709,8 +731,8 @@ void win_determine_blur_background(session_t *ps, struct managed_win *w) {
 	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
 		return;
 
-	bool blur_background_new = ps->o.blur_method &&
-	                           !c2_match(ps, w, ps->o.blur_background_blacklist, NULL);
+	bool blur_background_new =
+	    ps->o.blur_method && !c2_match(ps, w, ps->o.blur_background_blacklist, NULL);
 
 	win_set_blur_background(ps, w, blur_background_new);
 }
@@ -873,6 +895,16 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 
 	// Update window focus state
 	win_update_focused(ps, w);
+
+	auto r = xcb_get_window_attributes_reply(
+	    ps->c, xcb_get_window_attributes(ps->c, w->client_win), NULL);
+	if (!r) {
+		log_error("Failed to get client window attributes");
+		return;
+	}
+
+	w->client_pictfmt = x_get_pictform_for_visual(ps->c, r->visual);
+	free(r);
 }
 
 /**
@@ -1029,6 +1061,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    // Initialized in this function
 	    .a = {0},
 	    .pictfmt = NULL,
+	    .client_pictfmt = NULL,
 	    .widthb = 0,
 	    .heightb = 0,
 	    .shadow_dx = 0,
@@ -1140,6 +1173,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	}
 
 	new->pictfmt = x_get_pictform_for_visual(ps->c, new->a.visual);
+	new->client_pictfmt = NULL;
 
 	list_replace(&w->stack_neighbour, &new->base.stack_neighbour);
 	struct win *replaced = NULL;
@@ -2125,13 +2159,6 @@ static inline bool rect_is_fullscreen(const session_t *ps, int x, int y, int wid
 bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
 	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
 	       (!w->bounding_shaped || w->rounded_corners);
-}
-
-/**
- * Check if a window will be painted solid.
- */
-bool win_is_solid(const session_t *ps, const struct managed_win *w) {
-	return WMODE_SOLID == w->mode && !ps->o.force_win_blend;
 }
 
 /**
