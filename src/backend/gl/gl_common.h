@@ -162,9 +162,11 @@ static inline void gl_clear_err(void) {
  * Check if a GLX extension exists.
  */
 static inline bool gl_has_extension(const char *ext) {
-	for (int i = 0; ; i++) {
+	int nexts = 0;
+	glGetIntegerv(GL_NUM_EXTENSIONS, &nexts);
+	for (int i = 0; i < nexts || !nexts; i++) {
 		const char *exti = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
-		if (exti == 0) {
+		if (exti == NULL) {
 			break;
 		}
 		if (strcmp(ext, exti) == 0) {
