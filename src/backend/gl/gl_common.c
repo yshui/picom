@@ -907,6 +907,12 @@ out:
 	return ctx;
 }
 
+void gl_get_blur_size(void *blur_context, int *width, int *height) {
+	struct gl_blur_context *ctx = blur_context;
+	*width = ctx->resize_width;
+	*height = ctx->resize_height;
+}
+
 // clang-format off
 const char *win_shader_glsl = GLSL(330,
 	uniform float opacity;

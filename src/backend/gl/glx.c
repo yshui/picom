@@ -472,6 +472,7 @@ struct backend_operations glx_ops = {
     .fill = gl_fill,
     .create_blur_context = gl_create_blur_context,
     .destroy_blur_context = gl_destroy_blur_context,
+    .get_blur_size = gl_get_blur_size,
     .max_buffer_age = 5,        // Why?
 };
 

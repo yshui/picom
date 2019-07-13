@@ -530,6 +530,12 @@ void destroy_blur_context(backend_t *base, void *ctx_) {
 	free(ctx);
 }
 
+void get_blur_size(void *blur_context, int *width, int *height) {
+	struct _xrender_blur_context *ctx = blur_context;
+	*width = ctx->resize_width;
+	*height = ctx->resize_height;
+}
+
 backend_t *backend_xrender_init(session_t *ps) {
 	auto xd = ccalloc(1, struct _xrender_data);
 	init_backend_base(&xd->base, ps);
@@ -632,6 +638,7 @@ struct backend_operations xrender_ops = {
     .copy = copy,
     .create_blur_context = create_blur_context,
     .destroy_blur_context = destroy_blur_context,
+    .get_blur_size = get_blur_size,
 };
 
 // vim: set noet sw=8 ts=8:

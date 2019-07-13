@@ -105,6 +105,7 @@ bool gl_blur(backend_t *base, double opacity, void *, const region_t *reg_blur,
              const region_t *reg_visible);
 void *gl_create_blur_context(backend_t *base, enum blur_method, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
+void gl_get_blur_size(void *blur_context, int *width, int *height);
 
 bool gl_is_image_transparent(backend_t *base, void *image_data);
 void gl_fill(backend_t *base, struct color, const region_t *clip);

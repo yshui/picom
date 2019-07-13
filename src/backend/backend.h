@@ -213,6 +213,7 @@ struct backend_operations {
 	/// Create a blur context that can be used to call `blur`
 	void *(*create_blur_context)(backend_t *base, enum blur_method, void *args);
 	void (*destroy_blur_context)(backend_t *base, void *ctx);
+	void (*get_blur_size)(void *blur_context, int *width, int *height);
 
 	// ===========         Hooks        ============
 	/// Let the backend hook into the event handling queue
