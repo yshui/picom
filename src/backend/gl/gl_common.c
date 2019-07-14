@@ -192,7 +192,7 @@ static void gl_free_prog_main(gl_win_shader_t *pprogram) {
  * @param reg_visible ignored
  */
 static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
-                        GLfloat *coord, GLuint *indices, int nrects) {
+                        GLint *coord, GLuint *indices, int nrects) {
 
 	struct gl_data *gd = (void *)base;
 	if (!img || !img->inner->texture) {
@@ -242,9 +242,9 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
-	glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 4, NULL);
-	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
-	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
+	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
+	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 	glDisableVertexAttribArray(vert_coord_loc);
@@ -282,7 +282,7 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 /// @param[out] coord, indices output
 static void x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y,
                              int width, int height, int root_height, bool y_inverted,
-                             GLfloat *coord, GLuint *indices) {
+                             GLint *coord, GLuint *indices) {
 	dst_y = root_height - dst_y;
 	if (y_inverted) {
 		dst_y -= height;
@@ -296,35 +296,27 @@ static void x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst
 
 		// Calculate texture coordinates
 		// (texture_x1, texture_y1), texture coord for the _bottom left_ corner
-		auto texture_x1 = (GLfloat)(crect.x1 - dst_x);
-		auto texture_y1 = (GLfloat)(crect.y2 - dst_y);
-		auto texture_x2 = texture_x1 + (GLfloat)(crect.x2 - crect.x1);
-		auto texture_y2 = texture_y1 + (GLfloat)(crect.y1 - crect.y2);
+		GLint texture_x1 = crect.x1 - dst_x, texture_y1 = crect.y2 - dst_y,
+		      texture_x2 = texture_x1 + (crect.x2 - crect.x1),
+		      texture_y2 = texture_y1 + (crect.y1 - crect.y2);
 
 		// X pixmaps might be Y inverted, invert the texture coordinates
 		if (y_inverted) {
-			texture_y1 = (GLfloat)height - texture_y1;
-			texture_y2 = (GLfloat)height - texture_y2;
+			texture_y1 = height - texture_y1;
+			texture_y2 = height - texture_y2;
 		}
 
-		// GL_TEXTURE_2D coordinates are normalized
-		// TODO use texelFetch
-		texture_x1 /= (GLfloat)width;
-		texture_y1 /= (GLfloat)height;
-		texture_x2 /= (GLfloat)width;
-		texture_y2 /= (GLfloat)height;
-
 		// Vertex coordinates
-		auto vx1 = (GLfloat)crect.x1;
-		auto vy1 = (GLfloat)crect.y2;
-		auto vx2 = (GLfloat)crect.x2;
-		auto vy2 = (GLfloat)crect.y1;
+		auto vx1 = crect.x1;
+		auto vy1 = crect.y2;
+		auto vx2 = crect.x2;
+		auto vy2 = crect.y1;
 
 		// log_trace("Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d",
 		//          ri, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
 
 		memcpy(&coord[i * 16],
-		       (GLfloat[][2]){
+		       (GLint[][2]){
 		           {vx1, vy1},
 		           {texture_x1, texture_y1},
 		           {vx2, vy1},
@@ -334,7 +326,7 @@ static void x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst
 		           {vx1, vy2},
 		           {texture_x1, texture_y2},
 		       },
-		       sizeof(GLfloat[2]) * 8);
+		       sizeof(GLint[2]) * 8);
 
 		GLuint u = (GLuint)(i * 4);
 		memcpy(&indices[i * 6], (GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0},
@@ -363,7 +355,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	// screen, with y axis pointing down. We have to do some coordinate conversion in
 	// this function
 
-	auto coord = ccalloc(nrects * 16, GLfloat);
+	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
 	x_rect_to_coords(nrects, rects, dst_x, dst_y, img->inner->width, img->inner->height,
 	                 gd->height, img->inner->y_inverted, coord, indices);
@@ -448,13 +440,13 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 		return true;
 	}
 
-	auto coord = ccalloc(nrects * 16, GLfloat);
+	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
 	x_rect_to_coords(nrects, rects, extent_resized->x1, extent_resized->y2,
 	                 bctx->texture_width, bctx->texture_height, gd->height, false,
 	                 coord, indices);
 
-	auto coord_resized = ccalloc(nrects_resized * 16, GLfloat);
+	auto coord_resized = ccalloc(nrects_resized * 16, GLint);
 	auto indices_resized = ccalloc(nrects_resized * 6, GLuint);
 	x_rect_to_coords(nrects_resized, rects_resized, extent_resized->x1,
 	                 extent_resized->y2, bctx->texture_width, bctx->texture_height,
@@ -474,9 +466,9 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	             indices, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
-	glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 4, NULL);
-	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
-	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
+	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
+	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLint) * 2));
 
 	glBindVertexArray(vao[1]);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[2]);
@@ -488,9 +480,9 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	             GL_STATIC_DRAW);
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
-	glVertexAttribPointer(vert_coord_loc, 2, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 4, NULL);
-	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_FLOAT, GL_FALSE,
-	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLfloat) * 2));
+	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
+	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLint) * 2));
 
 	int curr = 0;
 	glReadBuffer(GL_BACK);
@@ -539,12 +531,6 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 			glViewport(0, 0, gd->width, gd->height);
 		}
 
-		if (p->unifm_offset_x >= 0) {
-			glUniform1f(p->unifm_offset_x, 1.0f / (GLfloat)bctx->texture_width);
-		}
-		if (p->unifm_offset_y >= 0) {
-			glUniform1f(p->unifm_offset_y, 1.0f / (GLfloat)bctx->texture_height);
-		}
 		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
 		// XXX use multiple draw calls is probably going to be slow than
@@ -808,8 +794,6 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	// clang-format off
 	static const char *FRAG_SHADER_BLUR = GLSL(330,
 		%s\n // other extension pragmas
-		uniform float offset_x;
-		uniform float offset_y;
 		uniform sampler2D tex_scr;
 		uniform float opacity;
 		in vec2 texcoord;
@@ -822,8 +806,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	);
 	static const char *FRAG_SHADER_BLUR_ADD = QUOTE(
 		sum += float(%.7g) *
-		       texture2D(tex_scr, vec2(texcoord.x + offset_x * float(%d),
-		                               texcoord.y + offset_y * float(%d)));
+		       texelFetch(tex_scr, ivec2(texcoord + vec2(%d, %d)), 0);
 	);
 	// clang-format on
 
@@ -877,10 +860,6 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		glBindFragDataLocation(pass->prog, 0, "out_color");
 
 		// Get uniform addresses
-		pass->unifm_offset_x =
-		    glGetUniformLocationChecked(pass->prog, "offset_x");
-		pass->unifm_offset_y =
-		    glGetUniformLocationChecked(pass->prog, "offset_y");
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		ctx->resize_width += kern->w / 2;
@@ -937,7 +916,7 @@ const char *win_shader_glsl = GLSL(330,
 	uniform sampler2D tex;
 
 	void main() {
-		vec4 c = texture2D(tex, texcoord.xy);
+		vec4 c = texelFetch(tex, ivec2(texcoord), 0);
 		if (invert_color) {
 			c = vec4(c.aaa - c.rgb, c.a);
 		}
@@ -1053,22 +1032,22 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	// clang-format off
-	GLfloat coord[] = {
+	GLint coord[] = {
 		// top left
 		0, 0,                 // vertex coord
 		0, 0,                 // texture coord
 
 		// top right
-		(GLfloat)img->inner->width, 0, // vertex coord
-		1, 0,                 // texture coord
+		img->inner->width, 0, // vertex coord
+		img->inner->width, 0, // texture coord
 
 		// bottom right
-		(GLfloat)img->inner->width, (GLfloat)img->inner->height,
-		1, 1,
+		img->inner->width, img->inner->height,
+		img->inner->width, img->inner->height,
 
 		// bottom left
-		0, (GLfloat)img->inner->height,
-		0, 1
+		0, img->inner->height,
+		0, img->inner->height,
 	};
 	// clang-format on
 

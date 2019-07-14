@@ -26,8 +26,6 @@ typedef struct {
 // Program and uniforms for blur shader
 typedef struct {
 	GLuint prog;
-	GLint unifm_offset_x;
-	GLint unifm_offset_y;
 	GLint unifm_opacity;
 	GLint orig_loc;
 } gl_blur_shader_t;
