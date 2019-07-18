@@ -26,53 +26,51 @@ typedef struct {
 // Program and uniforms for blur shader
 typedef struct {
 	GLuint prog;
-	GLint unifm_offset_x;
-	GLint unifm_offset_y;
 	GLint unifm_opacity;
+	GLint orig_loc;
 } gl_blur_shader_t;
 
+typedef struct {
+	GLuint prog;
+	GLint color_loc;
+} gl_fill_shader_t;
+
+struct gl_texture {
+	int refcount;
+	GLuint texture;
+	int width, height;
+	bool y_inverted;
+	void *user_data;
+};
+
 /// @brief Wrapper of a binded GLX texture.
-typedef struct gl_texture {
+typedef struct gl_image {
+	struct gl_texture *inner;
 	double opacity;
 	double dim;
-	int *refcount;
-	GLuint texture;
-	// The size of the backing texture
-	int width, height;
-	// The effective size of the texture
 	int ewidth, eheight;
-	unsigned depth;
-	bool y_inverted;
 	bool has_alpha;
 	bool color_inverted;
-} gl_texture_t;
+} gl_image_t;
 
 struct gl_data {
 	backend_t base;
+	// If we are using proprietary NVIDIA driver
+	bool is_nvidia;
 	// Height and width of the viewport
 	int height, width;
-	int npasses;
 	gl_win_shader_t win_shader;
-	gl_blur_shader_t blur_shader[MAX_BLUR_PASS];
+	gl_fill_shader_t fill_shader;
 
-	// Temporary textures used for blurring. They are always the same size as the
-	// target, so they are always big enough without resizing.
-	// Turns out calling glTexImage to resize is expensive, so we avoid that.
-	GLuint blur_texture[2];
-	// Temporary fbo used for blurring
-	GLuint blur_fbo;
+	/// Called when an gl_texture is decoupled from the texture it refers. Returns
+	/// the decoupled user_data
+	void *(*decouple_texture_user_data)(backend_t *base, void *user_data);
+
+	/// Release the user data attached to a gl_texture
+	void (*release_user_data)(backend_t *base, struct gl_texture *);
+
+	struct log_target *logger;
 };
-
-typedef struct {
-	/// Framebuffer used for blurring.
-	GLuint fbo;
-	/// Textures used for blurring.
-	GLuint textures[2];
-	/// Width of the textures.
-	int width;
-	/// Height of the textures.
-	int height;
-} gl_blur_cache_t;
 
 typedef struct session session_t;
 
@@ -99,11 +97,17 @@ GLuint gl_new_texture(GLenum target);
 bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
                  const region_t *reg_op, const region_t *reg_visible, void *arg);
 
-bool gl_blur(backend_t *base, double opacity, const region_t *reg_blur,
+void gl_release_image(backend_t *base, void *image_data);
+
+void *gl_copy(backend_t *base, const void *image_data, const region_t *reg_visible);
+
+bool gl_blur(backend_t *base, double opacity, void *, const region_t *reg_blur,
              const region_t *reg_visible);
+void *gl_create_blur_context(backend_t *base, enum blur_method, void *args);
+void gl_destroy_blur_context(backend_t *base, void *ctx);
 
 bool gl_is_image_transparent(backend_t *base, void *image_data);
-void gl_fill(backend_t *base, double r, double g, double b, double a, const region_t *clip);
+void gl_fill(backend_t *base, struct color, const region_t *clip);
 
 static inline void gl_delete_texture(GLuint texture) {
 	glDeleteTextures(1, &texture);
@@ -146,24 +150,28 @@ static inline void gl_check_err_(const char *func, int line) {
 	}
 }
 
+static inline void gl_clear_err(void) {
+	while (glGetError() != GL_NO_ERROR);
+}
+
 #define gl_check_err() gl_check_err_(__func__, __LINE__)
 
 /**
  * Check if a GLX extension exists.
  */
 static inline bool gl_has_extension(const char *ext) {
-	GLint nexts = 0;
+	int nexts = 0;
 	glGetIntegerv(GL_NUM_EXTENSIONS, &nexts);
-	if (!nexts) {
-		log_error("Failed to get GL extension list.");
-		return false;
-	}
-
-	for (int i = 0; i < nexts; i++) {
-		const char *exti = (const char *)glGetStringi(GL_EXTENSIONS, i);
-		if (strcmp(ext, exti) == 0)
+	for (int i = 0; i < nexts || !nexts; i++) {
+		const char *exti = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+		if (exti == NULL) {
+			break;
+		}
+		if (strcmp(ext, exti) == 0) {
 			return true;
+		}
 	}
+	gl_clear_err();
 	log_info("Missing GL extension %s.", ext);
 	return false;
 }

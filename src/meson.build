@@ -1,12 +1,16 @@
+libev = dependency('libev', required: false)
+if not libev.found()
+	libev = cc.find_library('ev')
+endif
 base_deps = [
 	cc.find_library('m'),
-	cc.find_library('ev'),
+	libev,
 	dependency('xcb', version: '>=1.9.2'),
 ]
 
 srcs = [ files('compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
                'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
-               'options.c') ]
+               'options.c', 'event.c', 'cache.c', 'atom.c') ]
 compton_inc = include_directories('.')
 
 cflags = []
@@ -22,6 +26,10 @@ required_package = [
 foreach i : required_package
 	base_deps += [dependency(i, required: true)]
 endforeach
+
+if not cc.has_header('uthash.h')
+  error('Dependency uthash not found')
+endif
 
 deps = []
 
@@ -62,8 +70,16 @@ if get_option('xrescheck')
 	srcs += [ 'xrescheck.c' ]
 endif
 
+if get_option('unittest')
+	cflags += ['-DUNIT_TEST']
+endif
+
 subdir('backend')
 
-executable('compton', srcs, c_args: cflags,
-  dependencies: [ base_deps, deps ],
+compton = executable('compton', srcs, c_args: cflags,
+  dependencies: [ base_deps, deps, test_h_dep ],
   install: true, include_directories: compton_inc)
+
+if get_option('unittest')
+	test('compton unittest', compton, args: [ '--unittest' ])
+endif

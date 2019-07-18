@@ -7,13 +7,17 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
+#include "uthash_extra.h"
+
 // FIXME shouldn't need this
 #ifdef CONFIG_OPENGL
 #include <GL/gl.h>
 #endif
 
+#include "backend/backend.h"
 #include "c2.h"
 #include "compiler.h"
+#include "list.h"
 #include "region.h"
 #include "render.h"
 #include "types.h"
@@ -22,6 +26,13 @@
 
 typedef struct session session_t;
 typedef struct _glx_texture glx_texture_t;
+
+#define win_stack_foreach_managed(w, win_stack)                                          \
+	list_foreach(struct managed_win, w, win_stack, base.stack_neighbour) if (w->base.managed)
+
+#define win_stack_foreach_managed_safe(w, win_stack)                                     \
+	list_foreach_safe(struct managed_win, w, win_stack,                              \
+	                  base.stack_neighbour) if (w->base.managed)
 
 #ifdef CONFIG_OPENGL
 // FIXME this type should be in opengl.h
@@ -51,7 +62,7 @@ typedef enum {
 	WINTYPE_DROPDOWN_MENU,
 	WINTYPE_POPUP_MENU,
 	WINTYPE_TOOLTIP,
-	WINTYPE_NOTIFY,
+	WINTYPE_NOTIFICATION,
 	WINTYPE_COMBO,
 	WINTYPE_DND,
 	NUM_WINTYPES
@@ -104,6 +115,25 @@ typedef enum {
 	WSTATE_UNMAPPED,
 } winstate_t;
 
+enum win_flags {
+	/// win_image/shadow_image is out of date
+	WIN_FLAGS_IMAGE_STALE = 1,
+	/// there was an error trying to bind the images
+	WIN_FLAGS_IMAGE_ERROR = 2,
+};
+
+/// An entry in the window stack. May or may not correspond to a window we know about.
+struct window_stack_entry {
+	struct list_node stack_neighbour;
+	/// The actual window correspond to this stack entry. NULL if we didn't know about
+	/// this window (e.g. an InputOnly window, or we haven't handled the window
+	/// creation yet)
+	struct win *win;
+	/// The window id. Might not be unique in the stack, because there might be
+	/// destroyed window still fading out in the stack.
+	xcb_window_t id;
+};
+
 /**
  * About coordinate systems
  *
@@ -118,19 +148,30 @@ typedef enum {
 /// Structure representing a top-level window compton manages.
 typedef struct win win;
 struct win {
+	UT_hash_handle hh;
+	struct list_node stack_neighbour;
+	/// ID of the top-level frame window.
+	xcb_window_t id;
+	/// Whether the window is destroyed from Xorg's perspective
+	bool destroyed : 1;
+	/// True if we just received CreateNotify, and haven't queried X for any info
+	/// about the window
+	bool is_new : 1;
+	/// True if this window is managed, i.e. this struct is actually a `managed_win`.
+	/// Always false if `is_new` is true.
+	bool managed : 1;
+};
+struct managed_win {
+	struct win base;
 	/// backend data attached to this window. Only available when
 	/// `state` is not UNMAPPED
 	void *win_image;
 	void *shadow_image;
-	/// Pointer to the next lower window in window stack.
-	win *next;
 	/// Pointer to the next higher window to paint.
-	win *prev_trans;
+	struct managed_win *prev_trans;
 	// TODO rethink reg_ignore
 
 	// Core members
-	/// ID of the top-level frame window.
-	xcb_window_t id;
 	/// The "mapped state" of this window, doesn't necessary
 	/// match X mapped state, because of fading.
 	winstate_t state;
@@ -139,8 +180,10 @@ struct win {
 	xcb_get_geometry_reply_t g;
 	/// Xinerama screen this window is on.
 	int xinerama_scr;
-	/// Window visual pict format;
+	/// Window visual pict format
 	const xcb_render_pictforminfo_t *pictfmt;
+	/// Client window visual pict format
+	const xcb_render_pictforminfo_t *client_pictfmt;
 	/// Window painting mode.
 	winmode_t mode;
 	/// Whether the window has been damaged at least once.
@@ -157,9 +200,6 @@ struct win {
 	region_t bounding_shape;
 	/// Window flags. Definitions above.
 	int_fast16_t flags;
-	/// Whether there's a pending <code>ConfigureNotify</code> happening
-	/// when the window is unmapped.
-	bool need_configure;
 	/// Queued <code>ConfigureNotify</code> when the window is unmapped.
 	xcb_configure_notify_event_t queue_configure;
 	/// The region of screen that will be obscured when windows above is painted,
@@ -282,56 +322,64 @@ struct win {
 #endif
 };
 
-int win_get_name(session_t *ps, win *w);
-int win_get_role(session_t *ps, win *w);
-winmode_t attr_pure win_calc_mode(const win *w);
+void win_release_image(backend_t *base, struct managed_win *w);
+bool must_use win_bind_image(session_t *ps, struct managed_win *w);
+
+/// Attempt a rebind of window's images. If that failed, the original images are kept.
+bool must_use win_try_rebind_image(session_t *ps, struct managed_win *w);
+int win_get_name(session_t *ps, struct managed_win *w);
+int win_get_role(session_t *ps, struct managed_win *w);
+winmode_t attr_pure win_calc_mode(const struct managed_win *w);
+void win_set_shadow_force(session_t *ps, struct managed_win *w, switch_t val);
+void win_set_fade_force(session_t *ps, struct managed_win *w, switch_t val);
+void win_set_focused_force(session_t *ps, struct managed_win *w, switch_t val);
+void win_set_invert_color_force(session_t *ps, struct managed_win *w, switch_t val);
 /**
  * Set real focused state of a window.
  */
-void win_set_focused(session_t *ps, win *w, bool focused);
-bool attr_pure win_should_fade(session_t *ps, const win *w);
-void win_update_prop_shadow_raw(session_t *ps, win *w);
-void win_update_prop_shadow(session_t *ps, win *w);
-void win_set_shadow(session_t *ps, win *w, bool shadow_new);
-void win_determine_shadow(session_t *ps, win *w);
-void win_set_invert_color(session_t *ps, win *w, bool invert_color_new);
-void win_determine_invert_color(session_t *ps, win *w);
-void win_set_blur_background(session_t *ps, win *w, bool blur_background_new);
-void win_determine_blur_background(session_t *ps, win *w);
-void win_on_wtype_change(session_t *ps, win *w);
-void win_on_factor_change(session_t *ps, win *w);
+void win_set_focused(session_t *ps, struct managed_win *w);
+bool attr_pure win_should_fade(session_t *ps, const struct managed_win *w);
+void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w);
+void win_update_prop_shadow(session_t *ps, struct managed_win *w);
+void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new);
+void win_determine_shadow(session_t *ps, struct managed_win *w);
+void win_set_invert_color(session_t *ps, struct managed_win *w, bool invert_color_new);
+void win_determine_invert_color(session_t *ps, struct managed_win *w);
+void win_determine_blur_background(session_t *ps, struct managed_win *w);
+void win_on_wtype_change(session_t *ps, struct managed_win *w);
+void win_on_factor_change(session_t *ps, struct managed_win *w);
 /**
  * Update cache data in struct _win that depends on window size.
  */
-void win_on_win_size_change(session_t *ps, win *w);
-void win_update_wintype(session_t *ps, win *w);
-void win_mark_client(session_t *ps, win *w, xcb_window_t client);
-void win_unmark_client(session_t *ps, win *w);
-void win_recheck_client(session_t *ps, win *w);
-xcb_window_t win_get_leader_raw(session_t *ps, win *w, int recursions);
-bool win_get_class(session_t *ps, win *w);
-double attr_pure win_calc_opacity_target(session_t *ps, const win *w);
-bool attr_pure win_should_dim(session_t *ps, const win *w);
-void win_update_screen(session_t *, win *);
+void win_on_win_size_change(session_t *ps, struct managed_win *w);
+void win_update_wintype(session_t *ps, struct managed_win *w);
+void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client);
+void win_unmark_client(session_t *ps, struct managed_win *w);
+void win_recheck_client(session_t *ps, struct managed_win *w);
+xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int recursions);
+bool win_get_class(session_t *ps, struct managed_win *w);
+double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w);
+bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
+void win_update_screen(session_t *, struct managed_win *);
 /// Prepare window for fading because opacity target changed
-void win_start_fade(session_t *, win **);
+void win_start_fade(session_t *, struct managed_win **);
 /**
  * Reread opacity property of a window.
  */
-void win_update_opacity_prop(session_t *ps, win *w);
+void win_update_opacity_prop(session_t *ps, struct managed_win *w);
 /**
  * Update leader of a window.
  */
-void win_update_leader(session_t *ps, win *w);
+void win_update_leader(session_t *ps, struct managed_win *w);
 /**
  * Update focused state of a window.
  */
-void win_update_focused(session_t *ps, win *w);
+void win_update_focused(session_t *ps, struct managed_win *w);
 /**
  * Retrieve the bounding shape of a window.
  */
 // XXX was win_border_size
-void win_update_bounding_shape(session_t *ps, win *w);
+void win_update_bounding_shape(session_t *ps, struct managed_win *w);
 /**
  * Get a rectangular region in global coordinates a window (and possibly
  * its shadow) occupies.
@@ -339,69 +387,113 @@ void win_update_bounding_shape(session_t *ps, win *w);
  * Note w->shadow and shadow geometry must be correct before calling this
  * function.
  */
-void win_extents(const win *w, region_t *res);
-region_t win_extents_by_val(const win *w);
+void win_extents(const struct managed_win *w, region_t *res);
+region_t win_extents_by_val(const struct managed_win *w);
 /**
  * Add a window to damaged area.
  *
  * @param ps current session
  * @param w struct _win element representing the window
  */
-void add_damage_from_win(session_t *ps, win *w);
+void add_damage_from_win(session_t *ps, const struct managed_win *w);
 /**
  * Get a rectangular region a window occupies, excluding frame and shadow.
  *
  * Return region in global coordinates.
  */
-void win_get_region_noframe_local(const win *w, region_t *);
-region_t win_get_region_noframe_local_by_val(const win *w);
+void win_get_region_noframe_local(const struct managed_win *w, region_t *);
+region_t win_get_region_noframe_local_by_val(const struct managed_win *w);
 
 /// Get the region for the frame of the window
-void win_get_region_frame_local(const win *w, region_t *res);
+void win_get_region_frame_local(const struct managed_win *w, region_t *res);
 /// Get the region for the frame of the window, by value
-region_t win_get_region_frame_local_by_val(const win *w);
+region_t win_get_region_frame_local_by_val(const struct managed_win *w);
 /**
  * Retrieve frame extents from a window.
  */
-void win_update_frame_extents(session_t *ps, win *w, xcb_window_t client);
-void add_win(session_t *ps, xcb_window_t id, xcb_window_t prev);
+void win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t client);
+/// Insert a new window above window with id `below`, if there is no window, add to top
+/// New window will be in unmapped state
+struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below);
+/// Insert a new win entry at the top of the stack
+struct win *add_win_top(session_t *ps, xcb_window_t id);
+/// Query the Xorg for information about window `win`
+/// `win` pointer might become invalid after this function returns
+struct win *fill_win(session_t *ps, struct win *win);
+/// Move window `w` to be right above `below`
+void restack_above(session_t *ps, struct win *w, xcb_window_t below);
+/// Move window `w` to the bottom of the stack
+void restack_bottom(session_t *ps, struct win *w);
+/// Move window `w` to the top of the stack
+void restack_top(session_t *ps, struct win *w);
 /// Unmap or destroy a window
-void unmap_win(session_t *ps, win **, bool destroy);
+void unmap_win(session_t *ps, struct managed_win **, bool destroy);
+/// Destroy an unmanaged window
+void destroy_unmanaged_win(session_t *ps, struct win **w);
 
-void map_win(session_t *ps, win *w);
+void map_win(session_t *ps, struct managed_win *w);
 void map_win_by_id(session_t *ps, xcb_window_t id);
 
 /**
  * Execute fade callback of a window if fading finished.
  */
-void win_check_fade_finished(session_t *ps, win **_w);
+void win_check_fade_finished(session_t *ps, struct managed_win **_w);
 
 // Stop receiving events (except ConfigureNotify, XXX why?) from a window
-void win_ev_stop(session_t *ps, const win *w);
+void win_ev_stop(session_t *ps, const struct win *w);
 
 /// Skip the current in progress fading of window,
 /// transition the window straight to its end state
-void win_skip_fading(session_t *ps, win **_w);
+void win_skip_fading(session_t *ps, struct managed_win **_w);
+/**
+ * Find a managed window from window id in window linked list of the session.
+ */
+struct managed_win *find_managed_win(session_t *ps, xcb_window_t id);
+struct win *find_win(session_t *ps, xcb_window_t id);
+struct managed_win *find_toplevel(session_t *ps, xcb_window_t id);
+/**
+ * Find out the WM frame of a client window by querying X.
+ *
+ * @param ps current session
+ * @param wid window ID
+ * @return struct _win object of the found window, NULL if not found
+ */
+struct managed_win *find_toplevel2(session_t *ps, xcb_window_t wid);
 
+/**
+ * Check if a window is a fullscreen window.
+ *
+ * It's not using w->border_size for performance measures.
+ */
+bool attr_pure win_is_fullscreen(const session_t *ps, const struct managed_win *w);
+
+/**
+ * Check if a window is really focused.
+ */
+bool attr_pure win_is_focused_real(const session_t *ps, const struct managed_win *w);
 /**
  * Get the leader of a window.
  *
  * This function updates w->cache_leader if necessary.
  */
-static inline xcb_window_t win_get_leader(session_t *ps, win *w) {
+static inline xcb_window_t win_get_leader(session_t *ps, struct managed_win *w) {
 	return win_get_leader_raw(ps, w, 0);
 }
 
 /// check if window has ARGB visual
-bool attr_pure win_has_alpha(const win *w);
+bool attr_pure win_has_alpha(const struct managed_win *w);
 
 /// check if reg_ignore_valid is true for all windows above us
-bool attr_pure win_is_region_ignore_valid(session_t *ps, const win *w);
+bool attr_pure win_is_region_ignore_valid(session_t *ps, const struct managed_win *w);
+
+// Find the managed window immediately below `w` in the window stack
+struct managed_win *attr_pure win_stack_find_next_managed(const session_t *ps,
+                                                          const struct list_node *w);
 
 /// Free all resources in a struct win
-void free_win_res(session_t *ps, win *w);
+void free_win_res(session_t *ps, struct managed_win *w);
 
-static inline region_t win_get_bounding_shape_global_by_val(win *w) {
+static inline region_t win_get_bounding_shape_global_by_val(struct managed_win *w) {
 	region_t ret;
 	pixman_region32_init(&ret);
 	pixman_region32_copy(&ret, &w->bounding_shape);
@@ -413,19 +505,27 @@ static inline region_t win_get_bounding_shape_global_by_val(win *w) {
  * Calculate the extents of the frame of the given window based on EWMH
  * _NET_FRAME_EXTENTS and the X window border width.
  */
-static inline margin_t attr_pure win_calc_frame_extents(const win *w) {
+static inline margin_t attr_pure win_calc_frame_extents(const struct managed_win *w) {
 	margin_t result = w->frame_extents;
-	result.top = max_i(result.top, w->g.border_width);
-	result.left = max_i(result.left, w->g.border_width);
-	result.bottom = max_i(result.bottom, w->g.border_width);
-	result.right = max_i(result.right, w->g.border_width);
+	result.top = max2(result.top, w->g.border_width);
+	result.left = max2(result.left, w->g.border_width);
+	result.bottom = max2(result.bottom, w->g.border_width);
+	result.right = max2(result.right, w->g.border_width);
 	return result;
 }
 
 /**
  * Check whether a window has WM frames.
  */
-static inline bool attr_pure win_has_frame(const win *w) {
+static inline bool attr_pure win_has_frame(const struct managed_win *w) {
 	return w->g.border_width || w->frame_extents.top || w->frame_extents.left ||
 	       w->frame_extents.right || w->frame_extents.bottom;
+}
+
+static inline const char *win_get_name_if_managed(const struct win *w) {
+	if (!w->managed) {
+		return "(unmanaged)";
+	}
+	auto mw = (struct managed_win *)w;
+	return mw->name;
 }

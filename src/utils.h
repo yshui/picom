@@ -3,6 +3,7 @@
 #pragma once
 #include <assert.h>
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -10,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include <test.h>
 
 #include "compiler.h"
 
@@ -27,8 +30,11 @@ __attribute__((optimize("-fno-fast-math")))
 #endif
 static inline bool
 safe_isnan(double a) {
-	return isnan(a);
+	return __builtin_isnan(a);
 }
+
+#define CASESTRRET(s)                                                                    \
+	case s: return #s
 
 /// Same as assert false, but make sure we abort _even in release builds_.
 /// Silence compiler warning caused by release builds making some code paths reachable.
@@ -37,15 +43,55 @@ safe_isnan(double a) {
 		assert(false);                                                           \
 		abort();                                                                 \
 	} while (0)
-
+#define CHECK_EXPR(...) ((void)0)
 /// Same as assert, but evaluates the expression even in release builds
-#define CHECK(expr)                                                                     \
+#define CHECK(expr)                                                                      \
 	do {                                                                             \
-		__auto_type __tmp = (expr);                                              \
-		assert(__tmp);                                                           \
-		(void)__tmp;                                                             \
+		__auto_type _ = (expr);                                                  \
+		assert((CHECK_EXPR(expr), _));                                           \
+		(void)_;                                                                 \
 	} while (0)
 
+// Some macros for checked cast
+// Note these macros are not complete, as in, they won't work for every integer types. But
+// they are good enough for compton.
+
+#define to_int_checked(val)                                                              \
+	({                                                                               \
+		int64_t tmp = (val);                                                     \
+		assert(tmp >= INT_MIN && tmp <= INT_MAX);                                \
+		(int)tmp;                                                                \
+	})
+
+#define to_char_checked(val)                                                             \
+	({                                                                               \
+		int64_t tmp = (val);                                                     \
+		assert(tmp >= CHAR_MIN && tmp <= CHAR_MAX);                              \
+		(char)tmp;                                                               \
+	})
+
+#define to_u16_checked(val)                                                              \
+	({                                                                               \
+		auto tmp = (val);                                                        \
+		assert(tmp >= 0 && tmp <= UINT16_MAX);                                   \
+		(uint16_t) tmp;                                                          \
+	})
+
+#define to_i16_checked(val)                                                              \
+	({                                                                               \
+		int64_t tmp = (val);                                                     \
+		assert(tmp >= INT16_MIN && tmp <= INT16_MAX);                            \
+		(int16_t) tmp;                                                           \
+	})
+
+#define to_u32_checked(val)                                                              \
+	({                                                                               \
+		auto tmp = (val);                                                        \
+		int64_t max = UINT32_MAX; /* silence clang tautological                  \
+		                                         comparison warning*/            \
+		CHECK(tmp >= 0 && tmp <= max);                                           \
+		(uint32_t) tmp;                                                          \
+	})
 /**
  * Normalize an int value to a specific range.
  *
@@ -62,33 +108,11 @@ static inline int attr_const normalize_i_range(int i, int min, int max) {
 	return i;
 }
 
-/**
- * Select the larger integer of two.
- */
-static inline int attr_const max_i(int a, int b) {
-	return (a > b ? a : b);
-}
+#define min2(a, b) ((a) > (b) ? (b) : (a))
+#define max2(a, b) ((a) > (b) ? (a) : (b))
 
-/**
- * Select the smaller integer of two.
- */
-static inline int attr_const min_i(int a, int b) {
-	return (a > b ? b : a);
-}
-
-/**
- * Select the larger long integer of two.
- */
-static inline long attr_const max_l(long a, long b) {
-	return (a > b ? a : b);
-}
-
-/**
- * Select the smaller long integer of two.
- */
-static inline long attr_const min_l(long a, long b) {
-	return (a > b ? b : a);
-}
+/// clamp `val` into interval [min, max]
+#define clamp(val, min, max) max2(min2(val, max), min)
 
 static inline int attr_const popcountl(unsigned long a) {
 	return __builtin_popcountl(a);
@@ -144,11 +168,20 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 #define cvalloc(size) allocchk(malloc(size))
 
 /// @brief Wrapper of calloc().
-#define ccalloc(nmemb, type) ((type *)allocchk(calloc((nmemb), sizeof(type))))
+#define ccalloc(nmemb, type)                                                             \
+	({                                                                               \
+		auto tmp = (nmemb);                                                      \
+		assert(tmp >= 0);                                                        \
+		((type *)allocchk(calloc((size_t)tmp, sizeof(type))));                   \
+	})
 
 /// @brief Wrapper of ealloc().
-#define crealloc(ptr, nmemb)                                                             \
-	((__typeof__(ptr))allocchk(realloc((ptr), (nmemb) * sizeof(*(ptr)))))
+#define crealloc(ptr, nmemb)                                                               \
+	({                                                                                 \
+		auto tmp = (nmemb);                                                        \
+		assert(tmp >= 0);                                                          \
+		((__typeof__(ptr))allocchk(realloc((ptr), (size_t)tmp * sizeof(*(ptr))))); \
+	})
 
 /// RC_TYPE generates a reference counted type from `type`
 ///

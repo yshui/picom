@@ -39,7 +39,9 @@ region_t get_damage(session_t *ps, bool all_damage) {
 		pixman_region32_copy(&region, &ps->screen_reg);
 	} else {
 		for (int i = 0; i < buffer_age; i++) {
-			const int curr = ((ps->damage - ps->damage_ring) + i) % ps->ndamage;
+			auto curr = ((ps->damage - ps->damage_ring) + i) % ps->ndamage;
+			log_trace("damage index: %d, damage ring offset: %ld", i, curr);
+			dump_region(&ps->damage_ring[curr]);
 			pixman_region32_union(&region, &region, &ps->damage_ring[curr]);
 		}
 		pixman_region32_intersect(&region, &region, &ps->screen_reg);
@@ -48,7 +50,7 @@ region_t get_damage(session_t *ps, bool all_damage) {
 }
 
 /// paint all windows
-void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
+void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	// All painting will be limited to the damage, if _some_ of
 	// the paints bleed out of the damage region, it will destroy
 	// part of the image we want to reuse
@@ -96,8 +98,9 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 	// on top of that window. This is used to reduce the number of pixels painted.
 	//
 	// Whether this is beneficial is to be determined XXX
-	for (win *w = t; w; w = w->prev_trans) {
+	for (auto w = t; w; w = w->prev_trans) {
 		pixman_region32_subtract(&reg_visible, &ps->screen_reg, w->reg_ignore);
+		assert(!(w->flags & WIN_FLAGS_IMAGE_ERROR));
 
 		// The bounding shape of the window, in global/target coordinates
 		// reminder: bounding shape contains the WM frame
@@ -159,27 +162,38 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 		pixman_region32_intersect(&reg_paint, &reg_bound, &reg_damage);
 
 		// Blur window background
-		bool win_transparent = ps->backend_data->ops->is_image_transparent(
-		    ps->backend_data, w->win_image);
-		bool frame_transparent = w->frame_opacity != 1;
+		// TODO since the background might change the content of the window (e.g.
+		//      with shaders), we should consult the background whether the window
+		//      is transparent or not. for now we will just rely on the
+		//      force_win_blend option
+		auto real_win_mode = w->mode;
+
 		if (w->blur_background &&
-		    (win_transparent || (ps->o.blur_background_frame && frame_transparent))) {
+		    (ps->o.force_win_blend || real_win_mode == WMODE_TRANS ||
+		     (ps->o.blur_background_frame && real_win_mode == WMODE_FRAME_TRANS))) {
 			// Minimize the region we try to blur, if the window
 			// itself is not opaque, only the frame is.
 			// TODO resize blur region to fix black line artifact
-			if (!win_is_solid(ps, w)) {
+			if (real_win_mode == WMODE_TRANS || ps->o.force_win_blend) {
 				// We need to blur the bounding shape of the window
 				// (reg_paint = reg_bound \cap reg_damage)
 				ps->backend_data->ops->blur(ps->backend_data, w->opacity,
+				                            ps->backend_blur_context,
 				                            &reg_paint, &reg_visible);
-			} else if (frame_transparent && ps->o.blur_background_frame) {
+			} else {
 				// Window itself is solid, we only need to blur the frame
 				// region
+
+				// Readability assertions
+				assert(ps->o.blur_background_frame);
+				assert(real_win_mode == WMODE_FRAME_TRANS);
+
 				auto reg_blur = win_get_region_frame_local_by_val(w);
 				pixman_region32_translate(&reg_blur, w->g.x, w->g.y);
 				// make sure reg_blur \in reg_damage
 				pixman_region32_intersect(&reg_blur, &reg_blur, &reg_damage);
 				ps->backend_data->ops->blur(ps->backend_data, w->opacity,
+				                            ps->backend_blur_context,
 				                            &reg_blur, &reg_visible);
 				pixman_region32_fini(&reg_blur);
 			}
@@ -256,7 +270,8 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 
 	if (ps->o.monitor_repaint) {
 		reg_damage = get_damage(ps, false);
-		ps->backend_data->ops->fill(ps->backend_data, 0.5, 0, 0, 0.5, &reg_damage);
+		ps->backend_data->ops->fill(ps->backend_data,
+		                            (struct color){0.5, 0, 0, 0.5}, &reg_damage);
 		pixman_region32_fini(&reg_damage);
 	}
 
@@ -274,25 +289,15 @@ void paint_all_new(session_t *ps, win *const t, bool ignore_damage) {
 	}
 
 #ifdef DEBUG_REPAINT
-	print_timestamp(ps);
 	struct timespec now = get_time_timespec();
 	struct timespec diff = {0};
 	timespec_subtract(&diff, &now, &last_paint);
-	printf("[ %5ld:%09ld ] ", diff.tv_sec, diff.tv_nsec);
+	log_trace("[ %5ld:%09ld ] ", diff.tv_sec, diff.tv_nsec);
 	last_paint = now;
-	printf("paint:");
+	log_trace("paint:");
 	for (win *w = t; w; w = w->prev_trans)
-		printf(" %#010lx", w->id);
-	putchar('\n');
-	fflush(stdout);
+		log_trace(" %#010lx", w->id);
 #endif
-
-	// Check if fading is finished on all painted windows
-	win *pprev = NULL;
-	for (win *w = t; w; w = pprev) {
-		pprev = w->prev_trans;
-		win_check_fade_finished(ps, &w);
-	}
 }
 
 // vim: set noet sw=8 ts=8 :

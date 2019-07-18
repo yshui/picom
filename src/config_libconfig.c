@@ -295,7 +295,12 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --detect-client-opacity
 	lcfg_lookup_bool(&cfg, "detect-client-opacity", &opt->detect_client_opacity);
 	// --refresh-rate
-	config_lookup_int(&cfg, "refresh-rate", &opt->refresh_rate);
+	if (config_lookup_int(&cfg, "refresh-rate", &opt->refresh_rate)) {
+		if (opt->refresh_rate < 0) {
+			log_warn("Invalid refresh rate %d, fallback to 0", opt->refresh_rate);
+			opt->refresh_rate = 0;
+		}
+	}
 	// --vsync
 	if (config_lookup_string(&cfg, "vsync", &sval)) {
 		opt->vsync = parse_vsync(sval);
@@ -337,8 +342,13 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --unredir-if-possible
 	lcfg_lookup_bool(&cfg, "unredir-if-possible", &opt->unredir_if_possible);
 	// --unredir-if-possible-delay
-	if (config_lookup_int(&cfg, "unredir-if-possible-delay", &ival))
-		opt->unredir_if_possible_delay = ival;
+	if (config_lookup_int(&cfg, "unredir-if-possible-delay", &ival)) {
+		if (ival < 0) {
+			log_warn("Invalid unredir-if-possible-delay %d", ival);
+		} else {
+			opt->unredir_if_possible_delay = ival;
+		}
+	}
 	// --inactive-dim-fixed
 	lcfg_lookup_bool(&cfg, "inactive-dim-fixed", &opt->inactive_dim_fixed);
 	// --detect-transient
@@ -361,16 +371,21 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
 	                  "unredir-if-possible-exclude");
 	// --blur-background
-	lcfg_lookup_bool(&cfg, "blur-background", &opt->blur_background);
+	if (config_lookup_bool(&cfg, "blur-background", &ival) && ival) {
+		opt->blur_method = BLUR_METHOD_KERNEL;
+	}
 	// --blur-background-frame
 	lcfg_lookup_bool(&cfg, "blur-background-frame", &opt->blur_background_frame);
 	// --blur-background-fixed
 	lcfg_lookup_bool(&cfg, "blur-background-fixed", &opt->blur_background_fixed);
 	// --blur-kern
-	if (config_lookup_string(&cfg, "blur-kern", &sval) &&
-	    !parse_blur_kern_lst(sval, opt->blur_kerns, MAX_BLUR_PASS, conv_kern_hasneg)) {
-		log_fatal("Cannot parse \"blur-kern\"");
-		goto err;
+	if (config_lookup_string(&cfg, "blur-kern", &sval)) {
+		opt->blur_kerns =
+		    parse_blur_kern_lst(sval, conv_kern_hasneg, &opt->blur_kernel_count);
+		if (!opt->blur_kerns) {
+			log_fatal("Cannot parse \"blur-kern\"");
+			goto err;
+		}
 	}
 	// --resize-damage
 	config_lookup_int(&cfg, "resize-damage", &opt->resize_damage);
@@ -433,6 +448,32 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	if (lcfg_lookup_bool(&cfg, "glx-copy-from-front", &bval) && bval) {
 		log_error("\"glx-copy-from-front\" %s", deprecation_message);
 		return ERR_PTR(-1);
+	}
+
+	config_setting_t *blur_cfg = config_lookup(&cfg, "blur");
+	if (blur_cfg) {
+		if (config_setting_lookup_string(blur_cfg, "method", &sval)) {
+			enum blur_method method = parse_blur_method(sval);
+			if (method >= BLUR_METHOD_INVALID) {
+				log_warn("Invalid blur method %s, ignoring.", sval);
+			} else {
+				opt->blur_method = method;
+			}
+		}
+
+		opt->blur_radius = -1;
+		config_setting_lookup_int(blur_cfg, "size", &opt->blur_radius);
+
+		if (config_setting_lookup_string(blur_cfg, "kernel", &sval)) {
+			opt->blur_kerns = parse_blur_kern_lst(sval, conv_kern_hasneg,
+			                                      &opt->blur_kernel_count);
+			if (!opt->blur_kerns) {
+				log_warn("Failed to parse blur kernel: %s", sval);
+			}
+		}
+
+		opt->blur_deviation = 0.84089642;
+		config_setting_lookup_float(blur_cfg, "deviation", &opt->blur_deviation);
 	}
 
 	// Wintype settings

@@ -14,21 +14,17 @@ typedef enum {
 	UNSET
 } switch_t;
 
-/// Structure representing a X geometry.
-typedef struct {
-	int wid;
-	int hei;
-	int x;
-	int y;
-} geometry_t;
-
 /// A structure representing margins around a rectangle.
 typedef struct {
-	unsigned int top;
-	unsigned int left;
-	unsigned int bottom;
-	unsigned int right;
+	int top;
+	int left;
+	int bottom;
+	int right;
 } margin_t;
+
+struct color {
+	double red, green, blue, alpha;
+};
 
 typedef uint32_t opacity_t;
 

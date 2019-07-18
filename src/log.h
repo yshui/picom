@@ -89,6 +89,6 @@ static inline void log_deinit_tls(void) {
 attr_malloc struct log_target *stderr_logger_new(void);
 attr_malloc struct log_target *file_logger_new(const char *file);
 attr_malloc struct log_target *null_logger_new(void);
-attr_malloc struct log_target *glx_string_marker_logger_new(void);
+attr_malloc struct log_target *gl_string_marker_logger_new(void);
 
 // vim: set noet sw=8 ts=8:

@@ -25,6 +25,7 @@
 #include "backend/gl/gl_common.h"
 #include "backend/gl/glx.h"
 #include "common.h"
+#include "compton.h"
 #include "compiler.h"
 #include "config.h"
 #include "log.h"
@@ -33,8 +34,7 @@
 #include "win.h"
 #include "x.h"
 
-struct _glx_image_data {
-	gl_texture_t texture;
+struct _glx_pixmap {
 	GLXPixmap glpixmap;
 	xcb_pixmap_t pixmap;
 	bool owned;
@@ -44,7 +44,7 @@ struct _glx_data {
 	struct gl_data gl;
 	Display *display;
 	int screen;
-	int target_win;
+	xcb_window_t target_win;
 	int glx_event;
 	int glx_error;
 	GLXContext ctx;
@@ -70,7 +70,7 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 	                          GLX_DRAWABLE_TYPE, GLX_PIXMAP_BIT,
 	                          GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
 	                          GLX_X_RENDERABLE, true,
-	                          GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT, GLX_DONT_CARE,
+	                          GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT, (GLint)GLX_DONT_CARE,
 	                          GLX_BUFFER_SIZE, m.red_size + m.green_size +
 	                                           m.blue_size + m.alpha_size,
 	                          GLX_RED_SIZE, m.red_size,
@@ -117,7 +117,8 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 		int visual;
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_VISUAL_ID, &visual);
 		if (m.visual_depth != -1 &&
-		    x_get_visual_depth(XGetXCBConnection(dpy), visual) != m.visual_depth) {
+		    x_get_visual_depth(XGetXCBConnection(dpy), (xcb_visualid_t)visual) !=
+		        m.visual_depth) {
 			// Some driver might attach fbconfig to a GLX visual with a
 			// different depth.
 			//
@@ -159,38 +160,30 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 /**
  * Free a glx_texture_t.
  */
-void glx_release_image(backend_t *base, void *image_data) {
-	struct _glx_image_data *wd = image_data;
+static void glx_release_image(backend_t *base, struct gl_texture *tex) {
 	struct _glx_data *gd = (void *)base;
-	(*wd->texture.refcount)--;
-	if (*wd->texture.refcount != 0) {
-		free(wd);
-		return;
-	}
+
+	struct _glx_pixmap *p = tex->user_data;
 	// Release binding
-	if (wd->glpixmap && wd->texture.texture) {
-		glBindTexture(GL_TEXTURE_2D, wd->texture.texture);
-		glXReleaseTexImageEXT(gd->display, wd->glpixmap, GLX_FRONT_LEFT_EXT);
+	if (p->glpixmap && tex->texture) {
+		glBindTexture(GL_TEXTURE_2D, tex->texture);
+		glXReleaseTexImageEXT(gd->display, p->glpixmap, GLX_FRONT_LEFT_EXT);
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
 	// Free GLX Pixmap
-	if (wd->glpixmap) {
-		glXDestroyPixmap(gd->display, wd->glpixmap);
-		wd->glpixmap = 0;
+	if (p->glpixmap) {
+		glXDestroyPixmap(gd->display, p->glpixmap);
+		p->glpixmap = 0;
 	}
 
-	if (wd->owned) {
-		xcb_free_pixmap(base->c, wd->pixmap);
-		wd->pixmap = XCB_NONE;
+	if (p->owned) {
+		xcb_free_pixmap(base->c, p->pixmap);
+		p->pixmap = XCB_NONE;
 	}
 
-	glDeleteTextures(1, &wd->texture.texture);
-	free(wd->texture.refcount);
-
-	// Free structure itself
-	free(wd);
-	gl_check_err();
+	free(p);
+	tex->user_data = NULL;
 }
 
 /**
@@ -210,6 +203,14 @@ void glx_deinit(backend_t *base) {
 	free(gd);
 }
 
+static void *glx_decouple_user_data(backend_t * attr_unused base, void * attr_unused ud) {
+	auto ret = cmalloc(struct _glx_pixmap);
+	ret->owned = false;
+	ret->glpixmap = 0;
+	ret->pixmap = 0;
+	return ret;
+}
+
 /**
  * Initialize OpenGL.
  */
@@ -217,11 +218,11 @@ static backend_t *glx_init(session_t *ps) {
 	bool success = false;
 	glxext_init(ps->dpy, ps->scr);
 	auto gd = ccalloc(1, struct _glx_data);
-	gd->gl.base.c = ps->c;
-	gd->gl.base.root = ps->root;
+	init_backend_base(&gd->gl.base, ps);
+
 	gd->display = ps->dpy;
 	gd->screen = ps->scr;
-	gd->target_win = ps->overlay != XCB_NONE ? ps->overlay : ps->root;
+	gd->target_win = session_get_target_window(ps);
 
 	XVisualInfo *pvis = NULL;
 
@@ -289,7 +290,9 @@ static backend_t *glx_init(session_t *ps) {
 		                                         GLX_CONTEXT_MAJOR_VERSION_ARB,
 		                                         3,
 		                                         GLX_CONTEXT_MINOR_VERSION_ARB,
-		                                         0,
+		                                         3,
+		                                         GLX_CONTEXT_PROFILE_MASK_ARB,
+		                                         GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
 		                                         0,
 		                                     });
 		free(cfg);
@@ -308,10 +311,7 @@ static backend_t *glx_init(session_t *ps) {
 	}
 
 	// Attach GLX context
-	GLXDrawable tgt = ps->overlay;
-	if (!tgt) {
-		tgt = ps->root;
-	}
+	GLXDrawable tgt = gd->target_win;
 	if (!glXMakeCurrent(ps->dpy, tgt, gd->ctx)) {
 		log_error("Failed to attach GLX context.");
 		goto end;
@@ -321,6 +321,9 @@ static backend_t *glx_init(session_t *ps) {
 		log_error("Failed to setup OpenGL");
 		goto end;
 	}
+
+	gd->gl.decouple_texture_user_data = glx_decouple_user_data;
+	gd->gl.release_user_data = glx_release_image;
 
 	success = true;
 
@@ -340,10 +343,16 @@ end:
 static void *
 glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool owned) {
 	struct _glx_data *gd = (void *)base;
+	struct _glx_pixmap *glxpixmap = NULL;
 	// Retrieve pixmap parameters, if they aren't provided
 	if (fmt.visual_depth > OPENGL_MAX_DEPTH) {
 		log_error("Requested depth %d higher than max possible depth %d.",
 		          fmt.visual_depth, OPENGL_MAX_DEPTH);
+		return false;
+	}
+
+	if (fmt.visual_depth < 0) {
+		log_error("Pixmap %#010x with invalid depth %d", pixmap, fmt.visual_depth);
 		return false;
 	}
 
@@ -353,10 +362,11 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 		return NULL;
 	}
 
-	auto wd = ccalloc(1, struct _glx_image_data);
-	wd->pixmap = pixmap;
-	wd->texture.width = wd->texture.ewidth = r->width;
-	wd->texture.height = wd->texture.eheight = r->height;
+	log_trace("Binding pixmap %#010x", pixmap);
+	auto wd = ccalloc(1, struct gl_image);
+	wd->inner = ccalloc(1, struct gl_texture);
+	wd->inner->width = wd->ewidth = r->width;
+	wd->inner->height = wd->eheight = r->height;
 	free(r);
 
 	auto fbcfg = glx_find_fbconfig(gd->display, gd->screen, fmt);
@@ -374,7 +384,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	}
 
 	log_debug("depth %d, rgba %d", fmt.visual_depth,
-	          (fbcfg->texture_fmt = GLX_TEXTURE_FORMAT_RGBA_EXT));
+	          (fbcfg->texture_fmt == GLX_TEXTURE_FORMAT_RGBA_EXT));
 
 	GLint attrs[] = {
 	    GLX_TEXTURE_FORMAT_EXT,
@@ -384,36 +394,41 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	    0,
 	};
 
-	wd->texture.y_inverted = fbcfg->y_inverted;
+	wd->inner->y_inverted = fbcfg->y_inverted;
 
-	wd->glpixmap = glXCreatePixmap(gd->display, fbcfg->cfg, wd->pixmap, attrs);
+	glxpixmap = cmalloc(struct _glx_pixmap);
+	glxpixmap->pixmap = pixmap;
+	glxpixmap->glpixmap = glXCreatePixmap(gd->display, fbcfg->cfg, pixmap, attrs);
+	glxpixmap->owned = owned;
 	free(fbcfg);
 
-	if (!wd->glpixmap) {
+	if (!glxpixmap->glpixmap) {
 		log_error("Failed to create glpixmap for pixmap %#010x", pixmap);
 		goto err;
 	}
 
+	log_trace("GLXPixmap %#010lx", glxpixmap->glpixmap);
+
 	// Create texture
-	wd->texture.texture = gl_new_texture(GL_TEXTURE_2D);
-	wd->texture.opacity = 1;
-	wd->texture.depth = fmt.visual_depth;
-	wd->texture.color_inverted = false;
-	wd->texture.dim = 0;
-	wd->texture.has_alpha = fmt.alpha_size != 0;
-	wd->texture.refcount = ccalloc(1, int);
-	*wd->texture.refcount = 1;
-	wd->owned = owned;
-	glBindTexture(GL_TEXTURE_2D, wd->texture.texture);
-	glXBindTexImageEXT(gd->display, wd->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
+	wd->inner->user_data = glxpixmap;
+	wd->inner->texture = gl_new_texture(GL_TEXTURE_2D);
+	wd->opacity = 1;
+	wd->color_inverted = false;
+	wd->dim = 0;
+	wd->has_alpha = fmt.alpha_size != 0;
+	wd->inner->refcount = 1;
+	glBindTexture(GL_TEXTURE_2D, wd->inner->texture);
+	glXBindTexImageEXT(gd->display, glxpixmap->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	gl_check_err();
 	return wd;
 err:
-	if (wd->glpixmap) {
-		glXDestroyPixmap(gd->display, wd->glpixmap);
+	if (glxpixmap && glxpixmap->glpixmap) {
+		glXDestroyPixmap(gd->display, glxpixmap->glpixmap);
 	}
+	free(glxpixmap);
+
 	if (owned) {
 		xcb_free_pixmap(base->c, pixmap);
 	}
@@ -424,6 +439,10 @@ err:
 static void glx_present(backend_t *base) {
 	struct _glx_data *gd = (void *)base;
 	glXSwapBuffers(gd->display, gd->target_win);
+	// XXX there should be no need to block compton will wait for render to finish
+	if (!gd->gl.is_nvidia) {
+		glFinish();
+	}
 }
 
 static int glx_buffer_age(backend_t *base) {
@@ -437,28 +456,22 @@ static int glx_buffer_age(backend_t *base) {
 	return (int)val ?: -1;
 }
 
-static void *glx_copy(backend_t *base, const void *image_data, const region_t *reg_visible) {
-	const struct _glx_image_data *img = image_data;
-	auto new_img = ccalloc(1, struct _glx_image_data);
-	*new_img = *img;
-	(*new_img->texture.refcount)++;
-	return new_img;
-}
-
 struct backend_operations glx_ops = {
     .init = glx_init,
     .deinit = glx_deinit,
     .bind_pixmap = glx_bind_pixmap,
-    .release_image = glx_release_image,
+    .release_image = gl_release_image,
     .compose = gl_compose,
     .image_op = gl_image_op,
-    .copy = glx_copy,
+    .copy = gl_copy,
     .blur = gl_blur,
     .is_image_transparent = gl_is_image_transparent,
     .present = glx_present,
     .buffer_age = glx_buffer_age,
     .render_shadow = default_backend_render_shadow,
     .fill = gl_fill,
+    .create_blur_context = gl_create_blur_context,
+    .destroy_blur_context = gl_destroy_blur_context,
     .max_buffer_age = 5,        // Why?
 };
 
@@ -472,7 +485,7 @@ static inline bool glx_has_extension(Display *dpy, int screen, const char *ext) 
 		return false;
 	}
 
-	long inlen = strlen(ext);
+	auto inlen = strlen(ext);
 	const char *curr = glx_exts;
 	bool match = false;
 	while (curr && !match) {
@@ -480,9 +493,9 @@ static inline bool glx_has_extension(Display *dpy, int screen, const char *ext) 
 		if (!end) {
 			// Last extension string
 			match = strcmp(ext, curr) == 0;
-		} else if (end - curr == inlen) {
+		} else if (curr + inlen == end) {
 			// Length match, do match string
-			match = strncmp(ext, curr, end - curr) == 0;
+			match = strncmp(ext, curr, (unsigned long)(end - curr)) == 0;
 		}
 		curr = end ? end + 1 : NULL;
 	}

@@ -19,6 +19,7 @@
 #include <libconfig.h>
 #endif
 
+#include "backend/backend.h"
 #include "compiler.h"
 #include "kernel.h"
 #include "log.h"
@@ -56,17 +57,13 @@ typedef struct win_option {
 
 typedef struct _c2_lptr c2_lptr_t;
 
-// This macro is here because this is the maximum number
-// of blur passes options_t can hold, not a limitation of
-// rendering.
-/// @brief Maximum passes for blur.
-#define MAX_BLUR_PASS 5
-
 /// Structure representing all options.
-typedef struct options_t {
+typedef struct options {
 	// === Debugging ===
 	bool monitor_repaint;
 	bool print_diagnostics;
+	/// Render to a separate window instead of taking over the screen
+	bool debug_mode;
 	// === General ===
 	/// Use the experimental new backends?
 	bool experimental_backends;
@@ -97,7 +94,7 @@ typedef struct options_t {
 	/// when determining if a window could be unredirected.
 	c2_lptr_t *unredir_if_possible_blacklist;
 	/// Delay before unredirecting screen, in milliseconds.
-	unsigned long unredir_if_possible_delay;
+	long unredir_if_possible_delay;
 	/// Forced redirection setting through D-Bus.
 	switch_t redirected_force;
 	/// Whether to stop painting. Controlled through D-Bus.
@@ -155,7 +152,7 @@ typedef struct options_t {
 	/// How much to fade out in a single fading step.
 	double fade_out_step;
 	/// Fading time delta. In milliseconds.
-	unsigned long fade_delta;
+	int fade_delta;
 	/// Whether to disable fading on window open/close.
 	bool no_fading_openclose;
 	/// Whether to disable fading on ARGB managed destroyed windows.
@@ -180,8 +177,12 @@ typedef struct options_t {
 	bool detect_client_opacity;
 
 	// === Other window processing ===
-	/// Whether to blur background of semi-transparent / ARGB windows.
-	bool blur_background;
+	/// Blur method for background of semi-transparent windows
+	enum blur_method blur_method;
+	// Size of the blur kernel
+	int blur_radius;
+	// Standard deviation for the gaussian blur
+	double blur_deviation;
 	/// Whether to blur background when the window frame is not opaque.
 	/// Implies blur_background.
 	bool blur_background_frame;
@@ -191,7 +192,9 @@ typedef struct options_t {
 	/// Background blur blacklist. A linked list of conditions.
 	c2_lptr_t *blur_background_blacklist;
 	/// Blur convolution kernel.
-	conv *blur_kerns[MAX_BLUR_PASS];
+	struct conv **blur_kerns;
+	/// Number of convolution kernels
+	int blur_kernel_count;
 	/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
 	double inactive_dim;
 	/// Whether to use fixed inactive dim opacity, instead of deciding
@@ -217,8 +220,6 @@ typedef struct options_t {
 	bool detect_client_leader;
 
 	// === Calculated ===
-	/// Whether compton needs to track focus changes.
-	bool track_focus;
 	/// Whether compton needs to track window name and class.
 	bool track_wdata;
 	/// Whether compton needs to track window leaders.
@@ -227,10 +228,12 @@ typedef struct options_t {
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
-attr_warn_unused_result bool parse_long(const char *, long *);
-attr_warn_unused_result bool parse_blur_kern_lst(const char *, conv **, int, bool *hasneg);
-attr_warn_unused_result bool parse_geometry(session_t *, const char *, region_t *);
-attr_warn_unused_result bool parse_rule_opacity(c2_lptr_t **, const char *);
+bool must_use parse_long(const char *, long *);
+bool must_use parse_int(const char *, int *);
+struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg, int *count);
+bool must_use parse_geometry(session_t *, const char *, region_t *);
+bool must_use parse_rule_opacity(c2_lptr_t **, const char *);
+enum blur_method must_use parse_blur_method(const char *src);
 
 /**
  * Add a pattern to a condition linked list.
