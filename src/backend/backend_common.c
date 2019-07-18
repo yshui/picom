@@ -38,10 +38,10 @@ xcb_render_picture_t solid_picture(xcb_connection_t *c, xcb_drawable_t d, bool a
 		return XCB_NONE;
 	}
 
-	col.alpha = a * 0xffff;
-	col.red = r * 0xffff;
-	col.green = g * 0xffff;
-	col.blue = b * 0xffff;
+	col.alpha = (uint16_t)(a * 0xffff);
+	col.red = (uint16_t)(r * 0xffff);
+	col.green = (uint16_t)(g * 0xffff);
+	col.blue = (uint16_t)(b * 0xffff);
 
 	rect.x = 0;
 	rect.y = 0;
@@ -74,21 +74,22 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 	assert(shadow_sum);
 	// We only support square kernels for shadow
 	assert(kernel->w == kernel->h);
-	int d = kernel->w, r = d / 2;
+	int d = kernel->w;
+	int r = d / 2;
 	int swidth = width + r * 2, sheight = height + r * 2;
 
 	assert(d % 2 == 1);
 	assert(d > 0);
 
-	ximage = xcb_image_create_native(c, swidth, sheight, XCB_IMAGE_FORMAT_Z_PIXMAP, 8,
-	                                 0, 0, NULL);
+	ximage = xcb_image_create_native(c, to_u16_checked(swidth), to_u16_checked(sheight),
+	                                 XCB_IMAGE_FORMAT_Z_PIXMAP, 8, 0, 0, NULL);
 	if (!ximage) {
 		log_error("failed to create an X image");
 		return 0;
 	}
 
 	unsigned char *data = ximage->data;
-	uint32_t sstride = ximage->stride;
+	long sstride = ximage->stride;
 
 	// If the window body is smaller than the kernel, we do convolution directly
 	if (width < r * 2 && height < r * 2) {
@@ -96,13 +97,14 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 			for (int x = 0; x < swidth; x++) {
 				double sum = sum_kernel_normalized(
 				    kernel, d - x - 1, d - y - 1, width, height);
-				data[y * sstride + x] = sum * 255.0;
+				data[y * sstride + x] = (uint8_t)(sum * 255.0);
 			}
 		}
 		return ximage;
 	}
 
 	if (height < r * 2) {
+		// Implies width >= r * 2
 		// If the window height is smaller than the kernel, we divide
 		// the window like this:
 		// -r     r         width-r  width+r
@@ -114,14 +116,15 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 				double sum = sum_kernel_normalized(kernel, d - x - 1,
 				                                   d - y - 1, d, height) *
 				             255.0;
-				data[y * sstride + x] = sum;
-				data[y * sstride + swidth - x - 1] = sum;
+				data[y * sstride + x] = (uint8_t)sum;
+				data[y * sstride + swidth - x - 1] = (uint8_t)sum;
 			}
 		}
 		for (int y = 0; y < sheight; y++) {
 			double sum =
 			    sum_kernel_normalized(kernel, 0, d - y - 1, d, height) * 255.0;
-			memset(&data[y * sstride + r * 2], sum, width - 2 * r);
+			memset(&data[y * sstride + r * 2], (uint8_t)sum,
+			       (size_t)(width - 2 * r));
 		}
 		return ximage;
 	}
@@ -132,49 +135,52 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 				double sum = sum_kernel_normalized(kernel, d - x - 1,
 				                                   d - y - 1, width, d) *
 				             255.0;
-				data[y * sstride + x] = sum;
-				data[(sheight - y - 1) * sstride + x] = sum;
+				data[y * sstride + x] = (uint8_t)sum;
+				data[(sheight - y - 1) * sstride + x] = (uint8_t)sum;
 			}
 		}
 		for (int x = 0; x < swidth; x++) {
 			double sum =
 			    sum_kernel_normalized(kernel, d - x - 1, 0, width, d) * 255.0;
 			for (int y = r * 2; y < height; y++) {
-				data[y * sstride + x] = sum;
+				data[y * sstride + x] = (uint8_t)sum;
 			}
 		}
 		return ximage;
 	}
 
+	// Implies: width >= r * 2 && height >= r * 2
+
 	// Fill part 3
 	for (int y = r; y < height + r; y++) {
-		memset(data + sstride * y + r, 255 * opacity, width);
+		memset(data + sstride * y + r, (uint8_t)(255 * opacity), (size_t)width);
 	}
 
 	// Part 1
 	for (int y = 0; y < r * 2; y++) {
 		for (int x = 0; x < r * 2; x++) {
 			double tmpsum = shadow_sum[y * d + x] * opacity * 255.0;
-			data[y * sstride + x] = tmpsum;
-			data[(sheight - y - 1) * sstride + x] = tmpsum;
-			data[(sheight - y - 1) * sstride + (swidth - x - 1)] = tmpsum;
-			data[y * sstride + (swidth - x - 1)] = tmpsum;
+			data[y * sstride + x] = (uint8_t)tmpsum;
+			data[(sheight - y - 1) * sstride + x] = (uint8_t)tmpsum;
+			data[(sheight - y - 1) * sstride + (swidth - x - 1)] = (uint8_t)tmpsum;
+			data[y * sstride + (swidth - x - 1)] = (uint8_t)tmpsum;
 		}
 	}
 
 	// Part 2, top/bottom
 	for (int y = 0; y < r * 2; y++) {
 		double tmpsum = shadow_sum[d * y + d - 1] * opacity * 255.0;
-		memset(&data[y * sstride + r * 2], tmpsum, width - r * 2);
-		memset(&data[(sheight - y - 1) * sstride + r * 2], tmpsum, width - r * 2);
+		memset(&data[y * sstride + r * 2], (uint8_t)tmpsum, (size_t)(width - r * 2));
+		memset(&data[(sheight - y - 1) * sstride + r * 2], (uint8_t)tmpsum,
+		       (size_t)(width - r * 2));
 	}
 
 	// Part 2, left/right
 	for (int x = 0; x < r * 2; x++) {
 		double tmpsum = shadow_sum[d * (d - 1) + x] * opacity * 255.0;
 		for (int y = r * 2; y < height; y++) {
-			data[y * sstride + x] = tmpsum;
-			data[y * sstride + (swidth - x - 1)] = tmpsum;
+			data[y * sstride + x] = (uint8_t)tmpsum;
+			data[y * sstride + (swidth - x - 1)] = (uint8_t)tmpsum;
 		}
 	}
 
@@ -215,7 +221,7 @@ bool build_shadow(xcb_connection_t *c, xcb_drawable_t d, double opacity, const i
 		goto shadow_picture_err;
 	}
 
-	gc = xcb_generate_id(c);
+	gc = x_new_id(c);
 	xcb_create_gc(c, gc, shadow_pixmap, 0, NULL);
 
 	xcb_image_put(c, shadow_pixmap, gc, shadow_image, 0, 0, 0);
@@ -256,8 +262,9 @@ shadow_picture_err:
 	return false;
 }
 
-void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
-                                    const conv *kernel, double r, double g, double b, double a) {
+void *
+default_backend_render_shadow(backend_t *backend_data, int width, int height,
+                              const conv *kernel, double r, double g, double b, double a) {
 	xcb_pixmap_t shadow_pixel = solid_picture(backend_data->c, backend_data->root,
 	                                          true, 1, r, g, b),
 	             shadow = XCB_NONE;
@@ -273,10 +280,63 @@ void *default_backend_render_shadow(backend_t *backend_data, int width, int heig
 	return ret;
 }
 
-bool default_is_win_transparent(void *backend_data, win *w, void *win_data) {
-	return w->mode != WMODE_SOLID;
+static struct conv **
+generate_box_blur_kernel(struct box_blur_args *args, int *kernel_count) {
+	int r = args->size * 2 + 1;
+	assert(r > 0);
+	auto ret = ccalloc(2, struct conv *);
+	ret[0] = cvalloc(sizeof(struct conv) + sizeof(double) * (size_t)r);
+	ret[1] = cvalloc(sizeof(struct conv) + sizeof(double) * (size_t)r);
+	ret[0]->w = r;
+	ret[0]->h = 1;
+	ret[1]->w = 1;
+	ret[1]->h = r;
+	for (int i = 0; i < r; i++) {
+		ret[0]->data[i] = 1;
+		ret[1]->data[i] = 1;
+	}
+	*kernel_count = 2;
+	return ret;
 }
 
-bool default_is_frame_transparent(void *backend_data, win *w, void *win_data) {
-	return w->frame_opacity != 1;
+static struct conv **
+generate_gaussian_blur_kernel(struct gaussian_blur_args *args, int *kernel_count) {
+	int r = args->size * 2 + 1;
+	assert(r > 0);
+	auto ret = ccalloc(2, struct conv *);
+	ret[0] = cvalloc(sizeof(struct conv) + sizeof(double) * (size_t)r);
+	ret[1] = cvalloc(sizeof(struct conv) + sizeof(double) * (size_t)r);
+	ret[0]->w = r;
+	ret[0]->h = 1;
+	ret[1]->w = 1;
+	ret[1]->h = r;
+	for (int i = 0; i <= args->size; i++) {
+		ret[0]->data[i] = ret[0]->data[r - i - 1] =
+		    1.0 / (sqrt(2.0 * M_PI) * args->deviation) *
+		    exp(-(args->size - i) * (args->size - i) /
+		        (2 * args->deviation * args->deviation));
+		ret[1]->data[i] = ret[1]->data[r - i - 1] = ret[0]->data[i];
+	}
+	*kernel_count = 2;
+	return ret;
+}
+
+/// Generate blur kernels for gaussian and box blur methods. Generated kernel is not
+/// normalized, and the center element will always be 1.
+struct conv **generate_blur_kernel(enum blur_method method, void *args, int *kernel_count) {
+	switch (method) {
+	case BLUR_METHOD_BOX: return generate_box_blur_kernel(args, kernel_count);
+	case BLUR_METHOD_GAUSSIAN:
+		return generate_gaussian_blur_kernel(args, kernel_count);
+	default: break;
+	}
+	return NULL;
+}
+
+void init_backend_base(struct backend_base *base, session_t *ps) {
+	base->c = ps->c;
+	base->loop = ps->loop;
+	base->root = ps->root;
+	base->busy = false;
+	base->ops = NULL;
 }

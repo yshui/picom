@@ -25,6 +25,10 @@
 #include "win.h"
 #include "x.h"
 
+enum root_flags {
+	ROOT_FLAGS_SCREEN_CHANGE = 1
+};
+
 // == Functions ==
 // TODO move static inline functions that are only used in compton.c, into
 //      compton.c
@@ -34,11 +38,28 @@
 
 void add_damage(session_t *ps, const region_t *damage);
 
-long determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode);
+uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode);
 
 xcb_window_t find_client_win(session_t *ps, xcb_window_t w);
 
-win *find_toplevel2(session_t *ps, xcb_window_t wid);
+/// Handle configure event of a root window
+void configure_root(session_t *ps, int width, int height);
+
+void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce);
+
+void update_refresh_rate(session_t *ps);
+
+void root_damaged(session_t *ps);
+
+void cxinerama_upd_scrs(session_t *ps);
+
+void queue_redraw(session_t *ps);
+
+void discard_ignore(session_t *ps, unsigned long sequence);
+
+void set_root_flags(session_t *ps, uint64_t flags);
+
+xcb_window_t session_get_target_window(session_t *);
 
 /**
  * Set a <code>switch_t</code> array of all unset wintypes to true.
@@ -79,7 +100,7 @@ static inline void free_wincondlst(c2_lptr_t **pcondlst) {
 #ifndef CONFIG_OPENGL
 static inline void free_paint_glx(session_t *ps, paint_t *p) {
 }
-static inline void free_win_res_glx(session_t *ps, win *w) {
+static inline void free_win_res_glx(session_t *ps, struct managed_win *w) {
 }
 #endif
 
@@ -90,7 +111,7 @@ static inline XTextProperty *make_text_prop(session_t *ps, char *str) {
 	XTextProperty *pprop = ccalloc(1, XTextProperty);
 
 	if (XmbTextListToTextProperty(ps->dpy, &str, 1, XStringStyle, pprop)) {
-		cxfree(pprop->value);
+		XFree(pprop->value);
 		free(pprop);
 		pprop = NULL;
 	}
@@ -110,8 +131,8 @@ wid_set_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop_atom, char *s
 	}
 
 	XSetTextProperty(ps->dpy, wid, pprop, prop_atom);
-	cxfree(pprop->value);
-	cxfree(pprop);
+	XFree(pprop->value);
+	XFree(pprop);
 
 	return true;
 }
@@ -129,5 +150,3 @@ static inline void dump_drawable(session_t *ps, xcb_drawable_t drawable) {
 	          drawable, r->x, r->y, r->width, r->height, r->border_width, r->depth);
 	free(r);
 }
-
-// vim: set et sw=2 :

@@ -2,7 +2,9 @@
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 
+#ifdef HAS_STDC_PREDEF_H
 #include <stdc-predef.h>
+#endif
 
 #define auto           __auto_type
 #define likely(x)      __builtin_expect(!!(x), 1)
@@ -64,6 +66,12 @@
 # define attr_ret_nonnull
 #endif
 
+#if __has_attribute(deprecated)
+# define attr_deprecated __attribute__((deprecated))
+#else
+# define attr_deprecated
+#endif
+
 #if __has_attribute(malloc)
 # define attr_malloc __attribute__((malloc))
 #else
@@ -95,3 +103,6 @@
 #else
 # define thread_local _Pragma("GCC error \"No thread local storage support\"") __error__
 #endif
+
+typedef unsigned long ulong;
+typedef unsigned int uint;

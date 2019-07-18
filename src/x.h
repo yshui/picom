@@ -47,9 +47,20 @@ struct xvisual_info {
 	xcb_visualid_t visual;
 };
 
-#define XCB_SYNCED_VOID(func, c, ...)                                                    \
-	xcb_request_check(c, func##_checked(c, __VA_ARGS__));
-#define XCB_SYNCED(func, c, ...)                                                         \
+#define XCB_AWAIT_VOID(func, c, ...)                                                     \
+	({                                                                               \
+		bool success = true;                                                     \
+		__auto_type e = xcb_request_check(c, func##_checked(c, __VA_ARGS__));    \
+		if (e) {                                                                 \
+			x_print_error(e->sequence, e->major_code, e->minor_code,         \
+			              e->error_code);                                    \
+			free(e);                                                         \
+			success = false;                                                 \
+		}                                                                        \
+		success;                                                                 \
+	})
+
+#define XCB_AWAIT(func, c, ...)                                                          \
 	({                                                                               \
 		xcb_generic_error_t *e = NULL;                                           \
 		__auto_type r = func##_reply(c, func(c, __VA_ARGS__), &e);               \
@@ -60,6 +71,18 @@ struct xvisual_info {
 		}                                                                        \
 		r;                                                                       \
 	})
+
+/// Wraps x_new_id. abort the program if x_new_id returns error
+static inline uint32_t x_new_id(xcb_connection_t *c) {
+	auto ret = xcb_generate_id(c);
+	if (ret == (uint32_t)-1) {
+		log_fatal("We seems to have run of XIDs. This is either a bug in the X "
+		          "server, or a resource leakage in compton. Please open an "
+		          "issue about this problem. compton will die.");
+		abort();
+	}
+	return ret;
+}
 
 /**
  * Send a request to X server and get the reply to make sure all previous
@@ -88,14 +111,23 @@ static inline void x_sync(xcb_connection_t *c) {
  *    and number of items. A blank one on failure.
  */
 winprop_t wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
-                           long offset, long length, xcb_atom_t rtype, int rformat);
+                           int offset, int length, xcb_atom_t rtype, int rformat);
 
 /**
  * Wrapper of wid_get_prop_adv().
  */
 static inline winprop_t wid_get_prop(const session_t *ps, xcb_window_t wid, xcb_atom_t atom,
-                                     long length, xcb_atom_t rtype, int rformat) {
+                                     int length, xcb_atom_t rtype, int rformat) {
 	return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
+}
+
+/// Discard all X events in queue or in flight. Should only be used when the server is
+/// grabbed
+static inline void x_discard_events(xcb_connection_t *c) {
+	xcb_generic_event_t *e;
+	while ((e = xcb_poll_for_event(c))) {
+		free(e);
+	}
 }
 
 /**
@@ -118,19 +150,19 @@ int x_get_visual_depth(xcb_connection_t *, xcb_visualid_t);
 xcb_render_picture_t
 x_create_picture_with_pictfmt_and_pixmap(xcb_connection_t *,
                                          const xcb_render_pictforminfo_t *pictfmt,
-                                         xcb_pixmap_t pixmap, unsigned long valuemask,
+                                         xcb_pixmap_t pixmap, uint32_t valuemask,
                                          const xcb_render_create_picture_value_list_t *attr)
     attr_nonnull(1, 2);
 
 xcb_render_picture_t
 x_create_picture_with_visual_and_pixmap(xcb_connection_t *, xcb_visualid_t visual,
-                                        xcb_pixmap_t pixmap, unsigned long valuemask,
+                                        xcb_pixmap_t pixmap, uint32_t valuemask,
                                         const xcb_render_create_picture_value_list_t *attr)
     attr_nonnull(1);
 
 xcb_render_picture_t
 x_create_picture_with_standard_and_pixmap(xcb_connection_t *, xcb_pict_standard_t standard,
-                                          xcb_pixmap_t pixmap, unsigned long valuemask,
+                                          xcb_pixmap_t pixmap, uint32_t valuemask,
                                           const xcb_render_create_picture_value_list_t *attr)
     attr_nonnull(1);
 
@@ -138,22 +170,22 @@ x_create_picture_with_standard_and_pixmap(xcb_connection_t *, xcb_pict_standard_
  * Create an picture.
  */
 xcb_render_picture_t
-x_create_picture_with_pictfmt(xcb_connection_t *, xcb_drawable_t, int wid, int hei,
-                              const xcb_render_pictforminfo_t *pictfmt, unsigned long valuemask,
+x_create_picture_with_pictfmt(xcb_connection_t *, xcb_drawable_t, int w, int h,
+                              const xcb_render_pictforminfo_t *pictfmt, uint32_t valuemask,
                               const xcb_render_create_picture_value_list_t *attr)
     attr_nonnull(1, 5);
 
 xcb_render_picture_t
 x_create_picture_with_visual(xcb_connection_t *, xcb_drawable_t, int w, int h,
-                             xcb_visualid_t visual, unsigned long valuemask,
+                             xcb_visualid_t visual, uint32_t valuemask,
                              const xcb_render_create_picture_value_list_t *attr)
     attr_nonnull(1);
 
 /// Fetch a X region and store it in a pixman region
 bool x_fetch_region(xcb_connection_t *, xcb_xfixes_region_t r, region_t *res);
 
-void x_set_picture_clip_region(xcb_connection_t *, xcb_render_picture_t,
-                               int clip_x_origin, int clip_y_origin, const region_t *);
+void x_set_picture_clip_region(xcb_connection_t *, xcb_render_picture_t, int16_t clip_x_origin,
+                               int16_t clip_y_origin, const region_t *);
 
 void x_clear_picture_clip_region(xcb_connection_t *, xcb_render_picture_t pict);
 
@@ -162,10 +194,10 @@ void x_clear_picture_clip_region(xcb_connection_t *, xcb_render_picture_t pict);
  *
  * XXX consider making this error to string
  */
-void x_print_error(unsigned long serial, uint8_t major, uint8_t minor, uint8_t error_code);
+void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code);
 
 xcb_pixmap_t x_create_pixmap(xcb_connection_t *, uint8_t depth, xcb_drawable_t drawable,
-                             uint16_t width, uint16_t height);
+                             int width, int height);
 
 bool x_validate_pixmap(xcb_connection_t *, xcb_pixmap_t pxmap);
 
@@ -191,6 +223,12 @@ bool x_is_root_back_pixmap_atom(session_t *ps, xcb_atom_t atom);
 
 bool x_fence_sync(xcb_connection_t *, xcb_sync_fence_t);
 
+struct x_convolution_kernel {
+	int size;
+	int capacity;
+	xcb_render_fixed_t kernel[];
+};
+
 /**
  * Convert a struct conv to a X picture convolution filter, normalizing the kernel
  * in the process. Allow the caller to specify the element at the center of the kernel,
@@ -202,11 +240,15 @@ bool x_fence_sync(xcb_connection_t *, xcb_sync_fence_t);
  *                   will be allocated, and `*ret` will be updated.
  * @param[inout] size size of the array pointed to by `ret`.
  */
-size_t x_picture_filter_from_conv(const conv *kernel, double center,
-                                  xcb_render_fixed_t **ret, size_t *size);
+void attr_nonnull(1, 3) x_create_convolution_kernel(const conv *kernel, double center,
+                                                    struct x_convolution_kernel **ret);
 
 /// Generate a search criteria for fbconfig from a X visual.
 /// Returns {-1, -1, -1, -1, -1, -1} on failure
 struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual);
 
 xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
+
+xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen);
+
+uint32_t attr_deprecated xcb_generate_id(xcb_connection_t *c);

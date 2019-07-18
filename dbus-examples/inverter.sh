@@ -43,7 +43,6 @@ if [ -z "$1" -o "$1" = "selected" ]; then
   window=$(xwininfo -frame | sed -n 's/^xwininfo: Window id: \(0x[[:xdigit:]][[:xdigit:]]*\).*/\1/p') # Select window by mouse
 elif [ "$1" = "focused" ]; then
   # Ensure we are tracking focus
-  ${compton_dbus}opts_set string:track_focus boolean:true &
   window=$(${compton_dbus}find_win string:focused | $SED -n 's/^[[:space:]]*'${type_win}'[[:space:]]*\([[:digit:]]*\).*/\1/p') # Query compton for the active window
 elif echo "$1" | grep -Eiq '^([[:digit:]][[:digit:]]*|0x[[:xdigit:]][[:xdigit:]]*)$'; then
   window="$1" # Accept user-specified window-id if the format is correct

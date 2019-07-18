@@ -26,7 +26,46 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
-bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+typedef struct {
+	/// Fragment shader for blur.
+	GLuint frag_shader;
+	/// GLSL program for blur.
+	GLuint prog;
+	/// Location of uniform "offset_x" in blur GLSL program.
+	GLint unifm_offset_x;
+	/// Location of uniform "offset_y" in blur GLSL program.
+	GLint unifm_offset_y;
+	/// Location of uniform "factor_center" in blur GLSL program.
+	GLint unifm_factor_center;
+} glx_blur_pass_t;
+
+/// Structure containing GLX-dependent data for a compton session.
+typedef struct glx_session {
+	// === OpenGL related ===
+	/// GLX context.
+	GLXContext context;
+	/// Whether we have GL_ARB_texture_non_power_of_two.
+	bool has_texture_non_power_of_two;
+	/// Current GLX Z value.
+	int z;
+	glx_blur_pass_t *blur_passes;
+} glx_session_t;
+
+/// @brief Wrapper of a binded GLX texture.
+typedef struct _glx_texture {
+	GLuint texture;
+	GLXPixmap glpixmap;
+	xcb_pixmap_t pixmap;
+	GLenum target;
+	int width;
+	int height;
+	bool y_inverted;
+} glx_texture_t;
+
+#define CGLX_SESSION_INIT                                                                \
+	{ .context = NULL }
+
+bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
                  GLfloat factor, const region_t *reg_tgt);
 
 bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, int dy,
@@ -46,8 +85,8 @@ bool glx_load_prog_main(session_t *ps, const char *vshader_str, const char *fsha
                         glx_prog_main_t *pprogram);
 #endif
 
-bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, unsigned width,
-                     unsigned height, bool repeat, const struct glx_fbconfig_info *);
+bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, int width,
+                     int height, bool repeat, const struct glx_fbconfig_info *);
 
 void glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
 
@@ -161,7 +200,7 @@ static inline void free_paint_glx(session_t *ps, paint_t *ppaint) {
 /**
  * Free GLX part of win.
  */
-static inline void free_win_res_glx(session_t *ps, win *w) {
+static inline void free_win_res_glx(session_t *ps, struct managed_win *w) {
 	free_paint_glx(ps, &w->paint);
 	free_paint_glx(ps, &w->shadow_paint);
 #ifdef CONFIG_OPENGL

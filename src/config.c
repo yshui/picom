@@ -3,6 +3,7 @@
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -43,6 +44,22 @@ bool parse_long(const char *s, long *dest) {
 }
 
 /**
+ * Parse an int  number.
+ */
+bool parse_int(const char *s, int *dest) {
+	long val;
+	if (!parse_long(s, &val)) {
+		return false;
+	}
+	if (val > INT_MAX || val < INT_MIN) {
+		log_error("Number exceeded int limits: %ld", val);
+		return false;
+	}
+	*dest = (int)val;
+	return true;
+}
+
+/**
  * Parse a floating-point number in from a string,
  * also strips the trailing space and comma after the number.
  *
@@ -64,6 +81,19 @@ const char *parse_readnum(const char *src, double *dest) {
 	return pc;
 }
 
+enum blur_method parse_blur_method(const char *src) {
+	if (strcmp(src, "kernel") == 0) {
+		return BLUR_METHOD_KERNEL;
+	} else if (strcmp(src, "box") == 0) {
+		return BLUR_METHOD_BOX;
+	} else if (strcmp(src, "gaussian") == 0) {
+		return BLUR_METHOD_GAUSSIAN;
+	} else if (strcmp(src, "none") == 0) {
+		return BLUR_METHOD_NONE;
+	}
+	return BLUR_METHOD_INVALID;
+}
+
 /**
  * Parse a matrix.
  *
@@ -82,11 +112,11 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 	if (src == (pc = parse_readnum(src, &val)))
 		goto err1;
 	src = pc;
-	width = val;
+	width = (int)val;
 	if (src == (pc = parse_readnum(src, &val)))
 		goto err1;
 	src = pc;
-	height = val;
+	height = (int)val;
 
 	// Validate matrix width and height
 	if (width <= 0 || height <= 0) {
@@ -102,14 +132,14 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 		         "rendering, and/or consume lots of memory");
 
 	// Allocate memory
-	conv *matrix = cvalloc(sizeof(conv) + width * height * sizeof(double));
+	conv *matrix = cvalloc(sizeof(conv) + (size_t)(width * height) * sizeof(double));
 
 	// Read elements
 	int skip = height / 2 * width + width / 2;
 	for (int i = 0; i < width * height; ++i) {
 		// Ignore the center element
 		if (i == skip) {
-			matrix->data[i] = 0;
+			matrix->data[i] = 1;
 			continue;
 		}
 		if (src == (pc = parse_readnum(src, &val))) {
@@ -163,13 +193,10 @@ err1:
  * Parse a list of convolution kernels.
  *
  * @param[in]  src    string to parse
- * @param[out] dest   pointer to an array of kernels, must points to an array
- *                    of `max` elements.
- * @param[in]  max    maximum number of kernels supported
  * @param[out] hasneg whether any of the kernels have negative values
- * @return            if the `src` string is a valid kernel list string
+ * @return            the kernels
  */
-bool parse_blur_kern_lst(const char *src, conv **dest, int max, bool *hasneg) {
+struct conv **parse_blur_kern_lst(const char *src, bool *hasneg, int *count) {
 	// TODO just return a predefined kernels, not parse predefined strings...
 	static const struct {
 		const char *name;
@@ -224,49 +251,53 @@ bool parse_blur_kern_lst(const char *src, conv **dest, int max, bool *hasneg) {
 	     "000000,"},
 	};
 
+	*count = 0;
 	*hasneg = false;
 	for (unsigned int i = 0;
 	     i < sizeof(CONV_KERN_PREDEF) / sizeof(CONV_KERN_PREDEF[0]); ++i) {
 		if (!strcmp(CONV_KERN_PREDEF[i].name, src))
-			return parse_blur_kern_lst(CONV_KERN_PREDEF[i].kern_str, dest,
-			                           max, hasneg);
+			return parse_blur_kern_lst(CONV_KERN_PREDEF[i].kern_str, hasneg, count);
 	}
+
+	int nkernels = 1;
+	for (int i = 0; src[i]; i++) {
+		if (src[i] == ';') {
+			nkernels++;
+		}
+	}
+
+	struct conv **ret = ccalloc(nkernels, struct conv *);
 
 	int i = 0;
 	const char *pc = src;
 
-	// Free old kernels
-	for (i = 0; i < max; ++i) {
-		free(dest[i]);
-		dest[i] = NULL;
-	}
-
 	// Continue parsing until the end of source string
 	i = 0;
-	while (pc && *pc && i < max - 1) {
+	while (pc && *pc) {
 		bool tmp_hasneg;
-		dest[i] = parse_blur_kern(pc, &pc, &tmp_hasneg);
-		if (!dest[i]) {
-			return false;
+		assert(i < nkernels);
+		ret[i] = parse_blur_kern(pc, &pc, &tmp_hasneg);
+		if (!ret[i]) {
+			for (int j = 0; j < i; j++) {
+				free(ret[j]);
+			}
+			free(ret);
+			return NULL;
 		}
 		i++;
 		*hasneg |= tmp_hasneg;
 	}
 
 	if (i > 1) {
-		log_warn("You are seeing this message because your are using "
-		         "multipassblur. Please "
-		         "report an issue to us so we know multipass blur is actually "
-		         "been used. "
-		         "Otherwise it might be removed in future releases");
+		log_warn("You are seeing this message because you are using "
+		         "multipass blur. Please report an issue to us so we know "
+		         "multipass blur is actually been used. Otherwise it might be "
+		         "removed in future releases");
 	}
 
-	if (*pc) {
-		log_error("Too many blur kernels!");
-		return false;
-	}
+	*count = i;
 
-	return true;
+	return ret;
 }
 
 /**
@@ -276,70 +307,76 @@ bool parse_blur_kern_lst(const char *src, conv **dest, int max, bool *hasneg) {
  */
 bool parse_geometry(session_t *ps, const char *src, region_t *dest) {
 	pixman_region32_clear(dest);
-	if (!src)
+	if (!src) {
 		return true;
-	if (!ps->root_width || !ps->root_height)
+	}
+	if (!ps->root_width || !ps->root_height) {
 		return true;
+	}
 
-	geometry_t geom = {.wid = ps->root_width, .hei = ps->root_height, .x = 0, .y = 0};
+	long x = 0, y = 0;
+	long width = ps->root_width, height = ps->root_height;
 	long val = 0L;
 	char *endptr = NULL;
 
 	src = skip_space(src);
-	if (!*src)
+	if (!*src) {
 		goto parse_geometry_end;
+	}
 
 	// Parse width
 	// Must be base 10, because "0x0..." may appear
-	if (!('+' == *src || '-' == *src)) {
+	if (*src != '+' && *src != '-') {
 		val = strtol(src, &endptr, 10);
 		assert(endptr);
 		if (src != endptr) {
-			geom.wid = val;
-			if (geom.wid < 0) {
+			if (val < 0) {
 				log_error("Invalid width: %s", src);
 				return false;
 			}
+			width = val;
 			src = endptr;
 		}
 		src = skip_space(src);
 	}
 
 	// Parse height
-	if ('x' == *src) {
+	if (*src == 'x') {
 		++src;
 		val = strtol(src, &endptr, 10);
 		assert(endptr);
 		if (src != endptr) {
-			geom.hei = val;
-			if (geom.hei < 0) {
+			if (val < 0) {
 				log_error("Invalid height: %s", src);
 				return false;
 			}
+			height = val;
 			src = endptr;
 		}
 		src = skip_space(src);
 	}
 
 	// Parse x
-	if ('+' == *src || '-' == *src) {
+	if (*src == '+' || *src == '-') {
 		val = strtol(src, &endptr, 10);
 		if (endptr && src != endptr) {
-			geom.x = val;
-			if (*src == '-')
-				geom.x += ps->root_width - geom.wid;
+			x = val;
+			if (*src == '-') {
+				x += ps->root_width - width;
+			}
 			src = endptr;
 		}
 		src = skip_space(src);
 	}
 
 	// Parse y
-	if ('+' == *src || '-' == *src) {
+	if (*src == '+' || *src == '-') {
 		val = strtol(src, &endptr, 10);
 		if (endptr && src != endptr) {
-			geom.y = val;
-			if (*src == '-')
-				geom.y += ps->root_height - geom.hei;
+			y = val;
+			if (*src == '-') {
+				y += ps->root_height - height;
+			}
 			src = endptr;
 		}
 		src = skip_space(src);
@@ -351,7 +388,16 @@ bool parse_geometry(session_t *ps, const char *src, region_t *dest) {
 	}
 
 parse_geometry_end:
-	pixman_region32_union_rect(dest, dest, geom.x, geom.y, geom.wid, geom.hei);
+	if (x < INT_MIN || x > INT_MAX || y < INT_MIN || y > INT_MAX) {
+		log_error("Geometry coordinates exceeded limits: %s", src);
+		return false;
+	}
+	if (width > UINT_MAX || height > UINT_MAX) {
+		// less than 0 is checked for earlier
+		log_error("Geometry size exceeded limits: %s", src);
+		return false;
+	}
+	pixman_region32_union_rect(dest, dest, (int)x, (int)y, (uint)width, (uint)height);
 	return true;
 }
 
@@ -448,6 +494,71 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 
 char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
                    bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask) {
+	*opt = (struct options){
+	    .backend = BKEND_XRENDER,
+	    .glx_no_stencil = false,
+	    .mark_wmwin_focused = false,
+	    .mark_ovredir_focused = false,
+	    .detect_rounded_corners = false,
+	    .resize_damage = 0,
+	    .unredir_if_possible = false,
+	    .unredir_if_possible_blacklist = NULL,
+	    .unredir_if_possible_delay = 0,
+	    .redirected_force = UNSET,
+	    .stoppaint_force = UNSET,
+	    .dbus = false,
+	    .benchmark = 0,
+	    .benchmark_wid = XCB_NONE,
+	    .logpath = NULL,
+
+	    .refresh_rate = 0,
+	    .sw_opti = false,
+
+	    .shadow_red = 0.0,
+	    .shadow_green = 0.0,
+	    .shadow_blue = 0.0,
+	    .shadow_radius = 18,
+	    .shadow_offset_x = -15,
+	    .shadow_offset_y = -15,
+	    .shadow_opacity = .75,
+	    .shadow_blacklist = NULL,
+	    .shadow_ignore_shaped = false,
+	    .respect_prop_shadow = false,
+	    .xinerama_shadow_crop = false,
+
+	    .fade_in_step = 0.028,
+	    .fade_out_step = 0.03,
+	    .fade_delta = 10,
+	    .no_fading_openclose = false,
+	    .no_fading_destroyed_argb = false,
+	    .fade_blacklist = NULL,
+
+	    .inactive_opacity = 1.0,
+	    .inactive_opacity_override = false,
+	    .active_opacity = 1.0,
+	    .frame_opacity = 1.0,
+	    .detect_client_opacity = false,
+
+	    .blur_method = BLUR_METHOD_NONE,
+	    .blur_background_frame = false,
+	    .blur_background_fixed = false,
+	    .blur_background_blacklist = NULL,
+	    .blur_kerns = NULL,
+	    .blur_kernel_count = 0,
+	    .inactive_dim = 0.0,
+	    .inactive_dim_fixed = false,
+	    .invert_color_list = NULL,
+	    .opacity_rules = NULL,
+
+	    .use_ewmh_active_win = false,
+	    .focus_blacklist = NULL,
+	    .detect_transient = false,
+	    .detect_client_leader = false,
+
+	    .track_wdata = false,
+	    .track_leader = false,
+	};
+
 	char *ret = NULL;
 #ifdef CONFIG_LIBCONFIG
 	ret = parse_config_libconfig(opt, config_file, shadow_enable, fading_enable,

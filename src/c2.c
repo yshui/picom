@@ -40,6 +40,7 @@
 #include "utils.h"
 #include "win.h"
 #include "x.h"
+#include "atom.h"
 
 #include "c2.h"
 
@@ -106,8 +107,8 @@ struct _c2_l {
 	xcb_atom_t tgtatom;
 	bool tgt_onframe;
 	int index;
-	enum { C2_L_PUNDEFINED,
-	       C2_L_PID,
+	enum { C2_L_PUNDEFINED = -1,
+	       C2_L_PID = 0,
 	       C2_L_PX,
 	       C2_L_PY,
 	       C2_L_PX2,
@@ -211,6 +212,26 @@ static const c2_predef_t C2_PREDEFS[] = {
 };
 
 /**
+ * Get the numeric property value from a win_prop_t.
+ */
+static inline long winprop_get_int(winprop_t prop) {
+	long tgt = 0;
+
+	if (!prop.nitems) {
+		return 0;
+	}
+
+	switch (prop.format) {
+	case 8: tgt = *(prop.p8); break;
+	case 16: tgt = *(prop.p16); break;
+	case 32: tgt = *(prop.p32); break;
+	default: assert(0); break;
+	}
+
+	return tgt;
+}
+
+/**
  * Compare next word in a string with another string.
  */
 static inline int strcmp_wd(const char *needle, const char *src) {
@@ -310,7 +331,7 @@ static void attr_unused c2_dump(c2_ptr_t p);
 
 static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf);
 
-static bool c2_match_once(session_t *ps, const win *w, const c2_ptr_t cond);
+static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_ptr_t cond);
 
 /**
  * Parse a condition string.
@@ -554,42 +575,25 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 	}
 
 	// Copy target name out
-	unsigned tgtlen = 0;
+	int tgtlen = 0;
 	for (; pattern[offset] && (isalnum(pattern[offset]) || '_' == pattern[offset]);
 	     ++offset) {
 		++tgtlen;
 	}
-	if (!tgtlen)
+	if (!tgtlen) {
 		c2_error("Empty target.");
-	pleaf->tgt = strndup(&pattern[offset - tgtlen], tgtlen);
+	}
+	pleaf->tgt = strndup(&pattern[offset - tgtlen], (size_t)tgtlen);
 
 	// Check for predefined targets
-	for (unsigned i = 1; i < sizeof(C2_PREDEFS) / sizeof(C2_PREDEFS[0]); ++i) {
+	static const int npredefs = (int)(sizeof(C2_PREDEFS) / sizeof(C2_PREDEFS[0]));
+	for (int i = 0; i < npredefs; ++i) {
 		if (!strcmp(C2_PREDEFS[i].name, pleaf->tgt)) {
 			pleaf->predef = i;
 			pleaf->type = C2_PREDEFS[i].type;
 			pleaf->format = C2_PREDEFS[i].format;
 			break;
 		}
-	}
-
-	// Alias for predefined targets
-	if (!pleaf->predef) {
-#define TGTFILL(pdefid)                                                                  \
-	(pleaf->predef = pdefid, pleaf->type = C2_PREDEFS[pdefid].type,                  \
-	 pleaf->format = C2_PREDEFS[pdefid].format)
-
-		// if (!strcmp("WM_NAME", tgt) || !strcmp("_NET_WM_NAME", tgt))
-		//   TGTFILL(C2_L_PNAME);
-#undef TGTFILL
-
-		// Alias for custom properties
-#define TGTFILL(target, type, format)                                                    \
-	(pleaf->target = strdup(target), pleaf->type = type, pleaf->format = format)
-
-		// if (!strcmp("SOME_ALIAS"))
-		//   TGTFILL("ALIAS_TEXT", C2_L_TSTRING, 32);
-#undef TGTFILL
 	}
 
 	C2H_SKIP_SPACES();
@@ -607,27 +611,29 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 
 		C2H_SKIP_SPACES();
 
-		int index = -1;
+		long index = -1;
 		char *endptr = NULL;
 
 		index = strtol(pattern + offset, &endptr, 0);
 
-		if (!endptr || pattern + offset == endptr)
+		if (!endptr || pattern + offset == endptr) {
 			c2_error("No index number found after bracket.");
-
-		if (index < 0)
+		}
+		if (index < 0) {
 			c2_error("Index number invalid.");
-
-		if (pleaf->predef)
+		}
+		if (pleaf->predef != C2_L_PUNDEFINED) {
 			c2_error("Predefined targets can't have index.");
+		}
 
-		pleaf->index = index;
-		offset = endptr - pattern;
+		pleaf->index = to_int_checked(index);
+		offset = to_int_checked(endptr - pattern);
 
 		C2H_SKIP_SPACES();
 
-		if (']' != pattern[offset])
+		if (pattern[offset] != ']') {
 			c2_error("Index end marker not found.");
+		}
 
 		++offset;
 
@@ -641,43 +647,42 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 
 		// Look for format
 		bool hasformat = false;
-		int format = 0;
+		long format = 0;
 		{
 			char *endptr = NULL;
 			format = strtol(pattern + offset, &endptr, 0);
 			assert(endptr);
-			if ((hasformat = (endptr && endptr != pattern + offset)))
-				offset = endptr - pattern;
+			if ((hasformat = (endptr && endptr != pattern + offset))) {
+				offset = to_int_checked(endptr - pattern);
+			}
 			C2H_SKIP_SPACES();
 		}
 
 		// Look for type
 		enum c2_l_type type = C2_L_TUNDEFINED;
-		{
-			switch (pattern[offset]) {
-			case 'w': type = C2_L_TWINDOW; break;
-			case 'd': type = C2_L_TDRAWABLE; break;
-			case 'c': type = C2_L_TCARDINAL; break;
-			case 's': type = C2_L_TSTRING; break;
-			case 'a': type = C2_L_TATOM; break;
-			default: c2_error("Invalid type character.");
-			}
-
-			if (type) {
-				if (pleaf->predef) {
-					log_warn("Type specified for a default target "
-					         "will be ignored.");
-				} else {
-					if (pleaf->type && type != pleaf->type)
-						log_warn("Default type overridden on "
-						         "target.");
-					pleaf->type = type;
-				}
-			}
-
-			offset++;
-			C2H_SKIP_SPACES();
+		switch (pattern[offset]) {
+		case 'w': type = C2_L_TWINDOW; break;
+		case 'd': type = C2_L_TDRAWABLE; break;
+		case 'c': type = C2_L_TCARDINAL; break;
+		case 's': type = C2_L_TSTRING; break;
+		case 'a': type = C2_L_TATOM; break;
+		default: c2_error("Invalid type character.");
 		}
+
+		if (type) {
+			if (pleaf->predef != C2_L_PUNDEFINED) {
+				log_warn("Type specified for a default target "
+				         "will be ignored.");
+			} else {
+				if (pleaf->type && type != pleaf->type)
+					log_warn("Default type overridden on "
+					         "target.");
+				pleaf->type = type;
+			}
+		}
+
+		offset++;
+		C2H_SKIP_SPACES();
 
 		// Default format
 		if (!pleaf->format) {
@@ -692,20 +697,20 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 
 		// Write format
 		if (hasformat) {
-			if (pleaf->predef)
-				log_warn("Format \"%d\" specified on a default target "
+			if (pleaf->predef != C2_L_PUNDEFINED) {
+				log_warn("Format \"%ld\" specified on a default target "
 				         "will be ignored.",
 				         format);
-			else if (C2_L_TSTRING == pleaf->type)
-				log_warn("Format \"%d\" specified on a string target "
+			} else if (pleaf->type == C2_L_TSTRING) {
+				log_warn("Format \"%ld\" specified on a string target "
 				         "will be ignored.",
 				         format);
-			else {
+			} else {
 				if (pleaf->format && pleaf->format != format)
 					log_warn("Default format %d overridden on "
 					         "target.",
 					         pleaf->format);
-				pleaf->format = format;
+				pleaf->format = to_int_checked(format);
 			}
 		}
 	}
@@ -798,52 +803,51 @@ static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) 
 	c2_l_t *const pleaf = presult->l;
 
 	// Exists operator cannot have pattern
-	if (!pleaf->op)
+	if (!pleaf->op) {
 		return offset;
+	}
 
 	C2H_SKIP_SPACES();
 
 	char *endptr = NULL;
-	// Check for boolean patterns
 	if (!strcmp_wd("true", &pattern[offset])) {
 		pleaf->ptntype = C2_L_PTINT;
 		pleaf->ptnint = true;
-		offset += strlen("true");
+		offset += 4;        // length of "true";
 	} else if (!strcmp_wd("false", &pattern[offset])) {
 		pleaf->ptntype = C2_L_PTINT;
 		pleaf->ptnint = false;
-		offset += strlen("false");
-	}
-	// Check for integer patterns
-	else if (pleaf->ptnint = strtol(pattern + offset, &endptr, 0),
-	         pattern + offset != endptr) {
+		offset += 5;        // length of "false";
+	} else if (pleaf->ptnint = strtol(pattern + offset, &endptr, 0),
+	           pattern + offset != endptr) {
 		pleaf->ptntype = C2_L_PTINT;
-		offset = endptr - pattern;
+		offset = to_int_checked(endptr - pattern);
 		// Make sure we are stopping at the end of a word
-		if (isalnum(pattern[offset]))
+		if (isalnum(pattern[offset])) {
 			c2_error("Trailing characters after a numeric pattern.");
-	}
-	// Check for string patterns
-	else {
+		}
+	} else {
+		// Parse string patterns
 		bool raw = false;
 		char delim = '\0';
 
 		// String flags
-		if ('r' == tolower(pattern[offset])) {
+		if (tolower(pattern[offset]) == 'r') {
 			raw = true;
 			++offset;
 			C2H_SKIP_SPACES();
 		}
 
 		// Check for delimiters
-		if ('\"' == pattern[offset] || '\'' == pattern[offset]) {
+		if (pattern[offset] == '\"' || pattern[offset] == '\'') {
 			pleaf->ptntype = C2_L_PTSTRING;
 			delim = pattern[offset];
 			++offset;
 		}
 
-		if (C2_L_PTSTRING != pleaf->ptntype)
+		if (pleaf->ptntype != C2_L_PTSTRING) {
 			c2_error("Invalid pattern type.");
+		}
 
 		// Parse the string now
 		// We can't determine the length of the pattern, so we use the length
@@ -876,8 +880,7 @@ static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) 
 					if (pstr != &tstr[2] || val <= 0)
 						c2_error("Invalid octal/hex escape "
 						         "sequence.");
-					assert(val < 256 && val >= 0);
-					*(ptptnstr++) = val;
+					*(ptptnstr++) = to_char_checked(val);
 					offset += 2;
 					break;
 				}
@@ -929,10 +932,10 @@ fail:
  * Parse a condition with legacy syntax.
  */
 static int c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult) {
-	unsigned plen = strlen(pattern + offset);
-
-	if (plen < 4 || ':' != pattern[offset + 1] || !strchr(pattern + offset + 2, ':'))
+	if (strlen(pattern + offset) < 4 || pattern[offset + 1] != ':' ||
+	    !strchr(pattern + offset + 2, ':')) {
 		c2_error("Legacy parser: Invalid format.");
+	}
 
 	// Allocate memory for new leaf
 	auto pleaf = cmalloc(c2_l_t);
@@ -1000,8 +1003,8 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 	}
 
 	// Get target atom if it's not a predefined one
-	if (!pleaf->predef) {
-		pleaf->tgtatom = get_atom(ps, pleaf->tgt);
+	if (pleaf->predef == C2_L_PUNDEFINED) {
+		pleaf->tgtatom = get_atom(ps->atoms, pleaf->tgt);
 		if (!pleaf->tgtatom) {
 			log_error("Failed to get atom for target \"%s\".", pleaf->tgt);
 			return false;
@@ -1027,20 +1030,17 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 
 	// Enable specific tracking options in compton if needed by the condition
 	// TODO: Add track_leader
-	if (pleaf->predef) {
-		switch (pleaf->predef) {
-		case C2_L_PFOCUSED: ps->o.track_focus = true; break;
-		// case C2_L_PROUNDED: ps->o.detect_rounded_corners = true; break;
-		case C2_L_PNAME:
-		case C2_L_PCLASSG:
-		case C2_L_PCLASSI:
-		case C2_L_PROLE: ps->o.track_wdata = true; break;
-		default: break;
-		}
+	switch (pleaf->predef) {
+	// case C2_L_PROUNDED: ps->o.detect_rounded_corners = true; break;
+	case C2_L_PNAME:
+	case C2_L_PCLASSG:
+	case C2_L_PCLASSI:
+	case C2_L_PROLE: ps->o.track_wdata = true; break;
+	default: break;
 	}
 
 	// Warn about lower case characters in target name
-	if (!pleaf->predef) {
+	if (pleaf->predef == C2_L_PUNDEFINED) {
 		for (const char *pc = pleaf->tgt; *pc; ++pc) {
 			if (islower(*pc)) {
 				log_warn("Lowercase character in target name \"%s\".",
@@ -1160,10 +1160,11 @@ c2_lptr_t *c2_free_lptr(c2_lptr_t *lp) {
  * Get a string representation of a rule target.
  */
 static const char *c2h_dump_str_tgt(const c2_l_t *pleaf) {
-	if (pleaf->predef)
+	if (pleaf->predef != C2_L_PUNDEFINED) {
 		return C2_PREDEFS[pleaf->predef].name;
-	else
+	} else {
 		return pleaf->tgt;
+	}
 }
 
 /**
@@ -1291,15 +1292,16 @@ static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf) {
  *
  * For internal use.
  */
-static inline void
-c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf, bool *pres, bool *perr) {
+static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w,
+                                      const c2_l_t *pleaf, bool *pres, bool *perr) {
 	assert(pleaf);
 
-	const xcb_window_t wid = (pleaf->tgt_onframe ? w->client_win : w->id);
+	const xcb_window_t wid = (pleaf->tgt_onframe ? w->client_win : w->base.id);
 
 	// Return if wid is missing
-	if (!pleaf->predef && !wid)
+	if (pleaf->predef == C2_L_PUNDEFINED && !wid) {
 		return;
+	}
 
 	const int idx = (pleaf->index < 0 ? 0 : pleaf->index);
 
@@ -1310,7 +1312,7 @@ c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf, bool *pres,
 
 		// Get the value
 		// A predefined target
-		if (pleaf->predef) {
+		if (pleaf->predef != C2_L_PUNDEFINED) {
 			*perr = false;
 			switch (pleaf->predef) {
 			case C2_L_PID: tgt = wid; break;
@@ -1355,7 +1357,9 @@ c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf, bool *pres,
 
 		// Do comparison
 		switch (pleaf->op) {
-		case C2_L_OEXISTS: *pres = (pleaf->predef ? tgt : true); break;
+		case C2_L_OEXISTS:
+			*pres = (pleaf->predef != C2_L_PUNDEFINED ? tgt : true);
+			break;
 		case C2_L_OEQ: *pres = (tgt == pleaf->ptnint); break;
 		case C2_L_OGT: *pres = (tgt > pleaf->ptnint); break;
 		case C2_L_OGTEQ: *pres = (tgt >= pleaf->ptnint); break;
@@ -1373,7 +1377,7 @@ c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf, bool *pres,
 		char *tgt_free = NULL;
 
 		// A predefined target
-		if (pleaf->predef) {
+		if (pleaf->predef != C2_L_PUNDEFINED) {
 			switch (pleaf->predef) {
 			case C2_L_PWINDOWTYPE: tgt = WINTYPES[w->window_type]; break;
 			case C2_L_PNAME: tgt = w->name; break;
@@ -1382,20 +1386,19 @@ c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf, bool *pres,
 			case C2_L_PROLE: tgt = w->role; break;
 			default: assert(0); break;
 			}
-		}
-		// If it's an atom type property, convert atom to string
-		else if (C2_L_TATOM == pleaf->type) {
+		} else if (pleaf->type == C2_L_TATOM) {
+			// An atom type property, convert it to string
 			winprop_t prop =
 			    wid_get_prop_adv(ps, wid, pleaf->tgtatom, idx, 1L,
 			                     c2_get_atom_type(pleaf), pleaf->format);
-			xcb_atom_t atom = winprop_get_int(prop);
+			xcb_atom_t atom = (xcb_atom_t)winprop_get_int(prop);
 			if (atom) {
 				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
 				    ps->c, xcb_get_atom_name(ps->c, atom), NULL);
 				if (reply) {
-					tgt_free =
-					    strndup(xcb_get_atom_name_name(reply),
-					            xcb_get_atom_name_name_length(reply));
+					tgt_free = strndup(
+					    xcb_get_atom_name_name(reply),
+					    (size_t)xcb_get_atom_name_name_length(reply));
 					free(reply);
 				}
 			}
@@ -1403,9 +1406,8 @@ c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf, bool *pres,
 				tgt = tgt_free;
 			}
 			free_winprop(&prop);
-		}
-		// Otherwise, just fetch the string list
-		else {
+		} else {
+			// Not an atom type, just fetch the string list
 			char **strlst = NULL;
 			int nstr;
 			if (wid_get_text_prop(ps, wid, pleaf->tgtatom, &strlst, &nstr) &&
@@ -1456,8 +1458,10 @@ c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf, bool *pres,
 			} break;
 			case C2_L_MPCRE:
 #ifdef CONFIG_REGEX_PCRE
-				*pres = (pcre_exec(pleaf->regex_pcre, pleaf->regex_pcre_extra,
-				                   tgt, strlen(tgt), 0, 0, NULL, 0) >= 0);
+				assert(strlen(tgt) <= INT_MAX);
+				*pres =
+				    (pcre_exec(pleaf->regex_pcre, pleaf->regex_pcre_extra,
+				               tgt, (int)strlen(tgt), 0, 0, NULL, 0) >= 0);
 #else
 				assert(0);
 #endif
@@ -1470,7 +1474,7 @@ c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf, bool *pres,
 		// Free the string after usage, if necessary
 		if (tgt_free) {
 			if (C2_L_TATOM == pleaf->type)
-				cxfree(tgt_free);
+				XFree(tgt_free);
 			else
 				free(tgt_free);
 		}
@@ -1484,7 +1488,7 @@ c2_match_once_leaf(session_t *ps, const win *w, const c2_l_t *pleaf, bool *pres,
  *
  * @return true if matched, false otherwise.
  */
-static bool c2_match_once(session_t *ps, const win *w, const c2_ptr_t cond) {
+static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_ptr_t cond) {
 	bool result = false;
 	bool error = true;
 
@@ -1558,7 +1562,7 @@ static bool c2_match_once(session_t *ps, const win *w, const c2_ptr_t cond) {
  * @param pdata a place to return the data
  * @return true if matched, false otherwise.
  */
-bool c2_match(session_t *ps, const win *w, const c2_lptr_t *condlst, void **pdata) {
+bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condlst, void **pdata) {
 	// Then go through the whole linked list
 	for (; condlst; condlst = condlst->next) {
 		if (c2_match_once(ps, w, condlst->ptr)) {

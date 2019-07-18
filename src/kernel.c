@@ -6,6 +6,7 @@
 
 #include "compiler.h"
 #include "kernel.h"
+#include "log.h"
 #include "utils.h"
 
 /// Sum a region convolution kernel. Region is defined by a width x height rectangle whose
@@ -14,20 +15,10 @@ double sum_kernel(const conv *map, int x, int y, int width, int height) {
 	double ret = 0;
 
 	// Compute sum of values which are "in range"
-	int xstart = x, xend = width + x;
-	if (xstart < 0) {
-		xstart = 0;
-	}
-	if (xend > map->w) {
-		xend = map->w;
-	}
-	int ystart = y, yend = height + y;
-	if (ystart < 0) {
-		ystart = 0;
-	}
-	if (yend > map->h) {
-		yend = map->h;
-	}
+	int xstart = normalize_i_range(x, 0, map->w),
+	    xend = normalize_i_range(width + x, 0, map->w);
+	int ystart = normalize_i_range(y, 0, map->h),
+	    yend = normalize_i_range(height + y, 0, map->h);
 	assert(yend >= ystart && xend >= xstart);
 
 	int d = map->w;
@@ -59,7 +50,7 @@ double sum_kernel_normalized(const conv *map, int x, int y, int width, int heigh
 	return ret;
 }
 
-static double attr_const gaussian(double r, double x, double y) {
+static inline double attr_const gaussian(double r, double x, double y) {
 	// Formula can be found here:
 	// https://en.wikipedia.org/wiki/Gaussian_blur#Mathematics
 	// Except a special case for r == 0 to produce sharp shadows
@@ -68,13 +59,13 @@ static double attr_const gaussian(double r, double x, double y) {
 	return exp(-0.5 * (x * x + y * y) / (r * r)) / (2 * M_PI * r * r);
 }
 
-conv *gaussian_kernel(double r) {
+conv *gaussian_kernel(double r, int size) {
 	conv *c;
-	int size = r * 2 + 1;
 	int center = size / 2;
 	double t;
+	assert(size % 2 == 1);
 
-	c = cvalloc(sizeof(conv) + size * size * sizeof(double));
+	c = cvalloc(sizeof(conv) + (size_t)(size * size) * sizeof(double));
 	c->w = c->h = size;
 	c->rsum = NULL;
 	t = 0.0;
@@ -94,6 +85,51 @@ conv *gaussian_kernel(double r) {
 	}
 
 	return c;
+}
+
+/// Estimate the element of the sum of the first row in a gaussian kernel with standard
+/// deviation `r` and size `size`,
+static inline double estimate_first_row_sum(double size, double r) {
+	double factor = erf(size / r / sqrt(2));
+	double a = exp(-0.5 * size * size / (r * r)) / sqrt(2 * M_PI) / r;
+	return a / factor;
+}
+
+/// Pick a suitable gaussian kernel radius for a given kernel size. The returned radius
+/// is the maximum possible radius (<= size*2) that satisfies no sum of the rows in
+/// the kernel are less than `row_limit` (up to certain precision).
+static inline double gaussian_kernel_std_for_size(int size, double row_limit) {
+	assert(size > 0);
+	if (row_limit >= 1.0 / 2.0 / size) {
+		return size * 2;
+	}
+	double l = 0, r = size * 2;
+	while (r - l > 1e-2) {
+		double mid = (l + r) / 2.0;
+		double vmid = estimate_first_row_sum(size, mid);
+		if (vmid > row_limit) {
+			r = mid;
+		} else {
+			l = mid;
+		}
+	}
+	return (l + r) / 2.0;
+}
+
+/// Create a gaussian kernel with auto detected standard deviation. The choosen standard
+/// deviation tries to make sure the outer most pixels of the shadow are completely
+/// transparent, so the transition from shadow to the background is smooth.
+///
+/// @param[in] shadow_radius the radius of the shadow
+conv *gaussian_kernel_autodetect_deviation(int shadow_radius) {
+	assert(shadow_radius >= 0);
+	int size = shadow_radius * 2 + 1;
+
+	if (shadow_radius == 0) {
+		return gaussian_kernel(0, size);
+	}
+	double std = gaussian_kernel_std_for_size(shadow_radius, 1.0 / 256.0);
+	return gaussian_kernel(std, size);
 }
 
 /// preprocess kernels to make shadow generation faster

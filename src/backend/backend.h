@@ -6,21 +6,30 @@
 #include <stdbool.h>
 
 #include "compiler.h"
+#include "driver.h"
 #include "kernel.h"
 #include "region.h"
+#include "types.h"
 #include "x.h"
 
 typedef struct session session_t;
-typedef struct win win;
+struct managed_win;
 
+struct ev_loop;
 struct backend_operations;
 
 typedef struct backend_base {
 	struct backend_operations *ops;
 	xcb_connection_t *c;
 	xcb_window_t root;
+	struct ev_loop *loop;
+
+	/// Whether the backend can accept new render request at the moment
+	bool busy;
 	// ...
 } backend_t;
+
+typedef void (*backend_ready_callback_t)(void *);
 
 enum image_operations {
 	// Invert the color of the entire image, `reg_op` ignored
@@ -34,9 +43,31 @@ enum image_operations {
 	IMAGE_OP_APPLY_ALPHA_ALL,
 	// Change the effective size of the image, without touching the backing image
 	// itself. When the image is used, the backing image should be tiled to fill its
-	// effective size. `reg_op` and `reg_visibile` is ignored. `arg` is two integers,
+	// effective size. `reg_op` and `reg_visible` is ignored. `arg` is two integers,
 	// width and height, in that order.
 	IMAGE_OP_RESIZE_TILE,
+};
+
+enum blur_method {
+	BLUR_METHOD_NONE = 0,
+	BLUR_METHOD_KERNEL,
+	BLUR_METHOD_BOX,
+	BLUR_METHOD_GAUSSIAN,
+	BLUR_METHOD_INVALID,
+};
+
+struct gaussian_blur_args {
+	int size;
+	double deviation;
+};
+
+struct box_blur_args {
+	int size;
+};
+
+struct kernel_blur_args {
+	struct conv **kernels;
+	int kernel_count;
 };
 
 struct backend_operations {
@@ -48,7 +79,7 @@ struct backend_operations {
 	///    1) if ps->overlay is not XCB_NONE, use that
 	///    2) use ps->root otherwise
 	/// TODO make the target window a parameter
-	backend_t *(*init)(session_t *) attr_nonnull(1);
+	backend_t *(*init)(session_t *)attr_nonnull(1);
 	void (*deinit)(backend_t *backend_data) attr_nonnull(1);
 
 	/// Called when rendering will be stopped for an unknown amount of
@@ -72,6 +103,11 @@ struct backend_operations {
 
 	// ===========      Rendering      ============
 
+	// NOTE: general idea about reg_paint/reg_op vs reg_visible is that reg_visible is
+	// merely a hint. Ignoring reg_visible entirely don't affect the correctness of
+	// the operation performed. OTOH reg_paint/reg_op is part of the parameters of the
+	// operation, and must be honored in order to complete the operation correctly.
+
 	/// Called before when a new frame starts.
 	///
 	/// Optional
@@ -85,18 +121,18 @@ struct backend_operations {
 	 * @param image_data   the image to paint
 	 * @param dst_x, dst_y the top left corner of the image in the target
 	 * @param reg_paint    the clip region, in target coordinates
-	 * @param reg_visibile the visible region, in target coordinates
+	 * @param reg_visible the visible region, in target coordinates
 	 */
 	void (*compose)(backend_t *backend_data, void *image_data, int dst_x, int dst_y,
 	                const region_t *reg_paint, const region_t *reg_visible);
 
 	/// Fill rectangle of target, mostly for debug purposes, optional.
-	void (*fill)(backend_t *backend_data, double r, double g, double b, double a,
-		     const region_t *clip);
+	void (*fill)(backend_t *backend_data, struct color, const region_t *clip);
 
 	/// Blur a given region of the target.
-	bool (*blur)(backend_t *backend_data, double opacity, const region_t *reg_blur,
-	             const region_t *reg_visible) attr_nonnull(1, 3, 4);
+	bool (*blur)(backend_t *backend_data, double opacity, void *blur_ctx,
+	             const region_t *reg_blur, const region_t *reg_visible)
+	    attr_nonnull(1, 3, 4, 5);
 
 	/// Present the back buffer onto the screen.
 	///
@@ -129,8 +165,7 @@ struct backend_operations {
 	//     want to break that assumption as for now. We need to reconsider this.
 
 	/// Free resources associated with an image data structure
-	void (*release_image)(backend_t *backend_data, void *img_data)
-	    attr_nonnull(1, 2);
+	void (*release_image)(backend_t *backend_data, void *img_data) attr_nonnull(1, 2);
 
 	// ===========        Query         ===========
 
@@ -175,16 +210,24 @@ struct backend_operations {
 	/// returned image should not affect the original image
 	void *(*copy)(backend_t *base, const void *image_data, const region_t *reg_visible);
 
+	/// Create a blur context that can be used to call `blur`
+	void *(*create_blur_context)(backend_t *base, enum blur_method, void *args);
+	void (*destroy_blur_context)(backend_t *base, void *ctx);
+
 	// ===========         Hooks        ============
 	/// Let the backend hook into the event handling queue
+	void (*set_ready_callback)(backend_t *, backend_ready_callback_t cb);
+	/// Called right after compton has handled its events.
+	void (*handle_events)(backend_t *);
+	// ===========         Misc         ============
+	/// Return the driver that is been used by the backend
+	enum driver (*detect_driver)(backend_t *backend_data);
 };
 
-typedef backend_t *(*backend_init_fn)(session_t *ps) attr_nonnull(1);
+typedef backend_t *(*backend_init_fn)(session_t *ps)attr_nonnull(1);
 
 extern struct backend_operations *backend_list[];
 
-bool default_is_win_transparent(void *, win *, void *);
-bool default_is_frame_transparent(void *, win *, void *);
-void paint_all_new(session_t *ps, win *const t, bool ignore_damage) attr_nonnull(1);
+void paint_all_new(session_t *ps, struct managed_win *const t, bool ignore_damage)
+    attr_nonnull(1);
 
-// vim: set noet sw=8 ts=8 :
