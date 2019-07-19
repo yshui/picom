@@ -256,6 +256,9 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--benchmark-wid* 'WINDOW_ID'::
 	Specify window ID to repaint in benchmark mode. If omitted or is 0, the whole screen is repainted.
 
+*--no-ewmh-fullscreen*::
+	Do not use EWMH to detect fullscreen windows. Reverts to checking if a window is fullscreen based only on its size and coordinates.
+
 FORMAT OF CONDITIONS
 --------------------
 Some options accept a condition string to match certain windows. A condition string is formed by one or more conditions, joined by logical operators.

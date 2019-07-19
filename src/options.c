@@ -315,7 +315,11 @@ static void usage(int ret) {
 	    "\n"
 	    "--debug-mode\n"
 	    "  Render into a separate window, and don't take over the screen. Useful\n"
-	    "  when you want to attach a debugger to compton\n";
+	    "  when you want to attach a debugger to compton\n"
+	    "\n"
+	    "--no-ewmh-fullscreen\n"
+	    "  Do not use EWMH to detect fullscreen windows. Reverts to checking\n"
+	    "  if a window is fullscreen based only on its size and coordinates.\n";
 	FILE *f = (ret ? stderr : stdout);
 	fputs(usage_text, f);
 #undef WARNING_DISABLED
@@ -412,6 +416,7 @@ static const struct option longopts[] = {
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
     {"debug-mode", no_argument, NULL, 802},
+    {"no-ewmh-fullscreen", no_argument, NULL, 803},
     // Must terminate with a NULL entry
     {NULL, 0, NULL, 0},
 };
@@ -784,6 +789,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(800, monitor_repaint);
 		case 801: opt->print_diagnostics = true; break;
 		P_CASEBOOL(802, debug_mode);
+		P_CASEBOOL(803, no_ewmh_fullscreen);
 		default: usage(1); break;
 #undef P_CASEBOOL
 		}
