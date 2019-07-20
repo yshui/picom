@@ -77,7 +77,7 @@ endif
 subdir('backend')
 
 compton = executable('compton', srcs, c_args: cflags,
-  dependencies: [ base_deps, deps, test_h_dep ],
+  dependencies: [ base_deps, deps ],
   install: true, include_directories: compton_inc)
 
 if get_option('unittest')
