@@ -383,11 +383,9 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 		glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[0]);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bctx->texture_width,
 		             bctx->texture_height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-		if (bctx->npasses > 1) {
-			glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[1]);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bctx->texture_width,
-			             bctx->texture_height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-		}
+		glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[1]);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bctx->texture_width,
+		             bctx->texture_height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 
 		// XXX: do we need projection matrix for blur at all?
 		// Note: OpenGL matrices are column major
@@ -629,6 +627,14 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 }
 
 // clang-format off
+static const char dummy_frag[] = GLSL(330,
+	uniform sampler2D tex;
+	in vec2 texcoord;
+	void main() {
+		gl_FragColor = texelFetch(tex, ivec2(texcoord.xy), 0);
+	}
+);
+
 static const char fill_frag[] = GLSL(330,
 	uniform vec4 color;
 	void main() {
@@ -771,20 +777,21 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		return ctx;
 	}
 
+	int nkernels;
 	ctx->method = BLUR_METHOD_KERNEL;
 	if (method == BLUR_METHOD_KERNEL) {
-		ctx->npasses = ((struct kernel_blur_args *)args)->kernel_count;
+		nkernels = ((struct kernel_blur_args *)args)->kernel_count;
 		kernels = ((struct kernel_blur_args *)args)->kernels;
 	} else {
-		kernels = generate_blur_kernel(method, args, &ctx->npasses);
+		kernels = generate_blur_kernel(method, args, &nkernels);
 	}
 
-	if (!ctx->npasses) {
+	if (!nkernels) {
 		ctx->method = BLUR_METHOD_NONE;
 		return ctx;
 	}
 
-	ctx->blur_shader = ccalloc(ctx->npasses, gl_blur_shader_t);
+	ctx->blur_shader = ccalloc(max2(2, nkernels), gl_blur_shader_t);
 
 	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
 	// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
@@ -813,7 +820,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	const char *shader_add = FRAG_SHADER_BLUR_ADD;
 	char *extension = strdup("");
 
-	for (int i = 0; i < ctx->npasses; i++) {
+	for (int i = 0; i < nkernels; i++) {
 		auto kern = kernels[i];
 		// Build shader
 		int width = kern->w, height = kern->h;
@@ -866,28 +873,38 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		ctx->resize_height += kern->h / 2;
 	}
 
-	// Texture size will be defined by gl_resize
-	glGenTextures(ctx->npasses > 1 ? 2 : 1, ctx->blur_texture);
+	if (nkernels == 1) {
+		// Generate an extra null pass so we don't need special code path for
+		// the single pass case
+		auto pass = &ctx->blur_shader[1];
+		pass->prog = gl_create_program_from_str(vertex_shader, dummy_frag);
+		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
+		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
+		ctx->npasses = 2;
+	} else {
+		ctx->npasses = nkernels;
+	}
+
+	// Texture size will be defined by gl_blur
+	glGenTextures(2, ctx->blur_texture);
 	glBindTexture(GL_TEXTURE_2D, ctx->blur_texture[0]);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	if (ctx->npasses > 1) {
-		glBindTexture(GL_TEXTURE_2D, ctx->blur_texture[1]);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		// Generate FBO and textures when needed
-		glGenFramebuffers(1, &ctx->blur_fbo);
-		if (!ctx->blur_fbo) {
-			log_error("Failed to generate framebuffer object for blur");
-			success = false;
-			goto out;
-		}
+	glBindTexture(GL_TEXTURE_2D, ctx->blur_texture[1]);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	// Generate FBO and textures when needed
+	glGenFramebuffers(1, &ctx->blur_fbo);
+	if (!ctx->blur_fbo) {
+		log_error("Failed to generate framebuffer object for blur");
+		success = false;
+		goto out;
 	}
 
 out:
 	if (method != BLUR_METHOD_KERNEL) {
 		// We generated the blur kernels, so we need to free them
-		for (int i = 0; i < ctx->npasses; i++) {
+		for (int i = 0; i < nkernels; i++) {
 			free(kernels[i]);
 		}
 		free(kernels);
