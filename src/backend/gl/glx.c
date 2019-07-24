@@ -438,6 +438,7 @@ err:
 
 static void glx_present(backend_t *base) {
 	struct _glx_data *gd = (void *)base;
+	gl_present(base);
 	glXSwapBuffers(gd->display, gd->target_win);
 	// XXX there should be no need to block compton will wait for render to finish
 	if (!gd->gl.is_nvidia) {
