@@ -2147,6 +2147,11 @@ static void session_destroy(session_t *ps) {
 		ps->reg_win = XCB_NONE;
 	}
 
+	if (ps->debug_window) {
+		xcb_destroy_window(ps->c, ps->debug_window);
+		ps->debug_window = XCB_NONE;
+	}
+
 	if (ps->o.experimental_backends) {
 		// backend is deinitialized in redir_stop
 		assert(ps->backend_data == NULL);
