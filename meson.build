@@ -53,8 +53,11 @@ if cc.has_header('stdc-predef.h')
 	add_global_arguments('-DHAS_STDC_PREDEF_H', language: 'c')
 endif
 
-warns = [ 'all', 'extra', 'no-unused-parameter', 'nonnull', 'shadow', 'no-type-limits',
-          'implicit-fallthrough', 'no-unknown-warning-option', 'no-missing-braces', 'conversion' ]
+warns = [ 'all', 'cast-function-type', 'ignored-qualifiers', 'missing-parameter-type',
+          'nonnull', 'shadow', 'no-type-limits', 'old-style-declaration', 'override-init',
+          'sign-compare', 'type-limits', 'uninitialized', 'shift-negative-value',
+          'unused-but-set-parameter', 'unused-parameter', 'implicit-fallthrough',
+          'no-unknown-warning-option', 'no-missing-braces', 'conversion' ]
 foreach w : warns
 	if cc.has_argument('-W'+w)
 		add_global_arguments('-W'+w, language: 'c')
