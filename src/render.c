@@ -92,6 +92,15 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
 	if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))
 		return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei,
 		                       repeat, fbcfg);
+#else
+	(void)ps;
+	(void)ppaint;
+	(void)wid;
+	(void)hei;
+	(void)repeat;
+	(void)depth;
+	(void)visual;
+	(void)force;
 #endif
 	return true;
 }
@@ -203,6 +212,12 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, doubl
 #endif
 	default: assert(0);
 	}
+#ifndef CONFIG_OPENGL
+	(void)neg;
+	(void)ptex;
+	(void)reg_paint;
+	(void)pprogram;
+#endif
 }
 
 static inline void
@@ -738,6 +753,9 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 #endif
 	default: assert(0);
 	}
+#ifndef CONFIG_OPENGL
+	(void)reg_paint;
+#endif
 }
 
 /// paint all windows

@@ -25,9 +25,7 @@
 #include "win.h"
 #include "x.h"
 
-enum root_flags {
-	ROOT_FLAGS_SCREEN_CHANGE = 1
-};
+enum root_flags { ROOT_FLAGS_SCREEN_CHANGE = 1 };
 
 // == Functions ==
 // TODO move static inline functions that are only used in compton.c, into
@@ -100,9 +98,10 @@ static inline void free_wincondlst(c2_lptr_t **pcondlst) {
 }
 
 #ifndef CONFIG_OPENGL
-static inline void free_paint_glx(session_t *ps, paint_t *p) {
+static inline void free_paint_glx(session_t *ps attr_unused, paint_t *p attr_unused) {
 }
-static inline void free_win_res_glx(session_t *ps, struct managed_win *w) {
+static inline void
+free_win_res_glx(session_t *ps attr_unused, struct managed_win *w attr_unused) {
 }
 #endif
 
