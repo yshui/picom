@@ -1228,6 +1228,7 @@ cdbus_process(DBusConnection *c attr_unused, DBusMessage *msg, void *ud) {
 	dbus_message_is_method_call(msg, CDBUS_INTERFACE_NAME, method)
 
 	if (cdbus_m_ismethod("reset")) {
+		log_info("compton is resetting...");
 		ev_break(ps->loop, EVBREAK_ALL);
 		if (!dbus_message_get_no_reply(msg))
 			cdbus_reply_bool(ps, msg, true);
