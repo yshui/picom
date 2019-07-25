@@ -2253,14 +2253,14 @@ int main(int argc, char **argv) {
 
 	// Main loop
 	bool quit = false;
-	Display *dpy = XOpenDisplay(NULL);
-	if (!dpy) {
-		fprintf(stderr, "Can't open display.");
-		return 1;
-	}
-	XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
 
 	do {
+		Display *dpy = XOpenDisplay(NULL);
+		if (!dpy) {
+			fprintf(stderr, "Can't open display.");
+			return 1;
+		}
+		XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
 		ps_g = session_init(argc, argv, dpy, config_file, all_xerrors, need_fork);
 		if (!ps_g) {
 			log_fatal("Failed to create new compton session.");
@@ -2289,11 +2289,11 @@ int main(int argc, char **argv) {
 		session_destroy(ps_g);
 		free(ps_g);
 		ps_g = NULL;
+		if (dpy) {
+			XCloseDisplay(dpy);
+		}
 	} while (!quit);
 
-	if (dpy) {
-		XCloseDisplay(dpy);
-	}
 	free(config_file);
 
 	log_deinit_tls();
