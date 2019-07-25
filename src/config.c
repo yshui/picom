@@ -564,6 +564,12 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 #ifdef CONFIG_LIBCONFIG
 	ret = parse_config_libconfig(opt, config_file, shadow_enable, fading_enable,
 	                             hasneg, winopt_mask);
+#else
+	(void)config_file;
+	(void)shadow_enable;
+	(void)fading_enable;
+	(void)hasneg;
+	(void)winopt_mask;
 #endif
 	return ret;
 }
