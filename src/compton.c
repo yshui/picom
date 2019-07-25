@@ -660,13 +660,13 @@ static void destroy_backend(session_t *ps) {
 				assert(!w->win_image);
 				assert(!w->shadow_image);
 			}
-			if (ps->root_image) {
-				ps->backend_data->ops->release_image(ps->backend_data,
-				                                     ps->root_image);
-				ps->root_image = NULL;
-			}
 		}
 		free_paint(ps, &w->paint);
+	}
+
+	if (ps->backend_data && ps->root_image) {
+		ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+		ps->root_image = NULL;
 	}
 
 	if (ps->backend_data) {
