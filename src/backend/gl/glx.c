@@ -25,8 +25,8 @@
 #include "backend/gl/gl_common.h"
 #include "backend/gl/glx.h"
 #include "common.h"
-#include "compton.h"
 #include "compiler.h"
+#include "compton.h"
 #include "config.h"
 #include "log.h"
 #include "region.h"
@@ -203,7 +203,7 @@ void glx_deinit(backend_t *base) {
 	free(gd);
 }
 
-static void *glx_decouple_user_data(backend_t * attr_unused base, void * attr_unused ud) {
+static void *glx_decouple_user_data(backend_t *base attr_unused, void *ud attr_unused) {
 	auto ret = cmalloc(struct _glx_pixmap);
 	ret->owned = false;
 	ret->glpixmap = 0;

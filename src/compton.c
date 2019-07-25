@@ -96,7 +96,7 @@ void set_root_flags(session_t *ps, uint64_t flags) {
 	ps->root_flags |= flags;
 }
 
-static inline void quit_compton(session_t *ps) {
+void quit_compton(session_t *ps) {
 	ps->quit = true;
 	ev_break(ps->loop, EVBREAK_ALL);
 }
@@ -178,8 +178,9 @@ static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t
 
 void queue_redraw(session_t *ps) {
 	// If --benchmark is used, redraw is always queued
-	if (!ps->redraw_needed && !ps->o.benchmark)
+	if (!ps->redraw_needed && !ps->o.benchmark) {
 		ev_idle_start(ps->loop, &ps->draw_idle);
+	}
 	ps->redraw_needed = true;
 }
 
@@ -1225,7 +1226,7 @@ static void redir_stop(session_t *ps) {
 }
 
 // Handle queued events before we go to sleep
-static void handle_queued_x_events(EV_P_ ev_prepare *w, int revents) {
+static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents attr_unused) {
 	session_t *ps = session_ptr(w, event_check);
 	xcb_generic_event_t *ev;
 	while ((ev = xcb_poll_for_queued_event(ps->c))) {
@@ -1288,18 +1289,18 @@ static void refresh_stale_images(session_t *ps) {
 /**
  * Unredirection timeout callback.
  */
-static void tmout_unredir_callback(EV_P_ ev_timer *w, int revents) {
+static void tmout_unredir_callback(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
 	session_t *ps = session_ptr(w, unredir_timer);
 	ps->tmout_unredir_hit = true;
 	queue_redraw(ps);
 }
 
-static void fade_timer_callback(EV_P_ ev_timer *w, int revents) {
+static void fade_timer_callback(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
 	session_t *ps = session_ptr(w, fade_timer);
 	queue_redraw(ps);
 }
 
-static void _draw_callback(EV_P_ session_t *ps, int revents) {
+static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 	if (ps->pending_updates) {
 		log_debug("Delayed handling of events, entering critical section");
 		auto e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
@@ -1311,7 +1312,7 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 		}
 
 		// Catching up with X server
-		handle_queued_x_events(ps->loop, &ps->event_check, 0);
+		handle_queued_x_events(EV_A_ & ps->event_check, 0);
 
 		// Call fill_win on new windows
 		handle_new_windows(ps);
@@ -1373,10 +1374,10 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 
 	// Start/stop fade timer depends on whether window are fading
 	if (!fade_running && ev_is_active(&ps->fade_timer)) {
-		ev_timer_stop(ps->loop, &ps->fade_timer);
+		ev_timer_stop(EV_A_ & ps->fade_timer);
 	} else if (fade_running && !ev_is_active(&ps->fade_timer)) {
 		ev_timer_set(&ps->fade_timer, fade_timeout(ps), 0);
-		ev_timer_start(ps->loop, &ps->fade_timer);
+		ev_timer_start(EV_A_ & ps->fade_timer);
 	}
 
 	// If the screen is unredirected, free all_damage to stop painting
@@ -1408,8 +1409,9 @@ static void draw_callback(EV_P_ ev_idle *w, int revents) {
 	_draw_callback(EV_A_ ps, revents);
 
 	// Don't do painting non-stop unless we are in benchmark mode
-	if (!ps->o.benchmark)
-		ev_idle_stop(ps->loop, &ps->draw_idle);
+	if (!ps->o.benchmark) {
+		ev_idle_stop(EV_A_ & ps->draw_idle);
+	}
 }
 
 static void delayed_draw_timer_callback(EV_P_ ev_timer *w, int revents) {
@@ -1431,7 +1433,7 @@ static void delayed_draw_callback(EV_P_ ev_idle *w, int revents) {
 	double delay = swopti_handle_timeout(ps);
 	if (delay < 1e-6) {
 		if (!ps->o.benchmark) {
-			ev_idle_stop(ps->loop, &ps->draw_idle);
+			ev_idle_stop(EV_A_ & ps->draw_idle);
 		}
 		return _draw_callback(EV_A_ ps, revents);
 	}
@@ -1446,13 +1448,13 @@ static void delayed_draw_callback(EV_P_ ev_idle *w, int revents) {
 	// We do this anyway even if we are in benchmark mode. That means we will
 	// have to restart draw_idle after the draw actually happened when we are in
 	// benchmark mode.
-	ev_idle_stop(ps->loop, &ps->draw_idle);
+	ev_idle_stop(EV_A_ & ps->draw_idle);
 
 	ev_timer_set(&ps->delayed_draw_timer, delay, 0);
-	ev_timer_start(ps->loop, &ps->delayed_draw_timer);
+	ev_timer_start(EV_A_ & ps->delayed_draw_timer);
 }
 
-static void x_event_callback(EV_P_ ev_io *w, int revents) {
+static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused) {
 	session_t *ps = (session_t *)w;
 	xcb_generic_event_t *ev = xcb_poll_for_event(ps->c);
 	if (ev) {
@@ -1466,13 +1468,12 @@ static void x_event_callback(EV_P_ ev_io *w, int revents) {
  *
  * This will result in compton resetting itself after next paint.
  */
-static void reset_enable(EV_P_ ev_signal *w, int revents) {
-	session_t *ps = session_ptr(w, usr1_signal);
+static void reset_enable(EV_P_ ev_signal *w attr_unused, int revents attr_unused) {
 	log_info("compton is resetting...");
-	ev_break(ps->loop, EVBREAK_ALL);
+	ev_break(EV_A_ EVBREAK_ALL);
 }
 
-static void exit_enable(EV_P_ ev_signal *w, int revents) {
+static void exit_enable(EV_P attr_unused, ev_signal *w, int revents attr_unused) {
 	session_t *ps = session_ptr(w, int_signal);
 	log_info("compton is quitting...");
 	quit_compton(ps);

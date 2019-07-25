@@ -673,7 +673,7 @@ void win_set_invert_color_force(session_t *ps, struct managed_win *w, switch_t v
  *
  * Doesn't affect fading already in progress
  */
-void win_set_fade_force(session_t *ps, struct managed_win *w, switch_t val) {
+void win_set_fade_force(struct managed_win *w, switch_t val) {
 	w->fade_force = val;
 }
 
@@ -1659,7 +1659,7 @@ static void finish_destroy_win(session_t *ps, struct managed_win **_w) {
 	assert(false);
 }
 
-static void finish_map_win(session_t *ps, struct managed_win **_w) {
+static void finish_map_win(struct managed_win **_w) {
 	auto w = *_w;
 	w->in_openclose = false;
 	w->state = WSTATE_MAPPED;
@@ -1853,7 +1853,7 @@ void win_check_fade_finished(session_t *ps, struct managed_win **_w) {
 		switch (w->state) {
 		case WSTATE_UNMAPPING: return finish_unmap_win(ps, _w);
 		case WSTATE_DESTROYING: return finish_destroy_win(ps, _w);
-		case WSTATE_MAPPING: return finish_map_win(ps, _w);
+		case WSTATE_MAPPING: return finish_map_win(_w);
 		case WSTATE_FADING: w->state = WSTATE_MAPPED; break;
 		default: unreachable;
 		}

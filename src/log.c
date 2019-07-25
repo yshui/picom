@@ -225,13 +225,13 @@ struct log_target *null_logger_new(void) {
 	return &null_logger_target;
 }
 
-static void null_logger_write(struct log_target *attr_unused tgt,
-                              const char *attr_unused str, size_t attr_unused len) {
+static void null_logger_write(struct log_target *tgt attr_unused,
+                              const char *str attr_unused, size_t len attr_unused) {
 	return;
 }
 
-static void null_logger_writev(struct log_target *attr_unused tgt,
-                               const struct iovec *attr_unused vec, int attr_unused vcnt) {
+static void null_logger_writev(struct log_target *tgt attr_unused,
+                               const struct iovec *vec attr_unused, int vcnt attr_unused) {
 	return;
 }
 
@@ -247,25 +247,25 @@ struct file_logger {
 	struct log_ops ops;
 };
 
-void file_logger_write(struct log_target *tgt, const char *str, size_t len) {
+static void file_logger_write(struct log_target *tgt, const char *str, size_t len) {
 	auto f = (struct file_logger *)tgt;
 	fwrite(str, 1, len, f->f);
 }
 
-void file_logger_writev(struct log_target *tgt, const struct iovec *vec, int vcnt) {
+static void file_logger_writev(struct log_target *tgt, const struct iovec *vec, int vcnt) {
 	auto f = (struct file_logger *)tgt;
 	fflush(f->f);
 	writev(fileno(f->f), vec, vcnt);
 }
 
-void file_logger_destroy(struct log_target *tgt) {
+static void file_logger_destroy(struct log_target *tgt) {
 	auto f = (struct file_logger *)tgt;
 	fclose(f->f);
 	free(tgt);
 }
 
 #define ANSI(x) "\033[" x "m"
-const char *terminal_colorize_begin(enum log_level level) {
+static const char *terminal_colorize_begin(enum log_level level) {
 	switch (level) {
 	case LOG_LEVEL_TRACE: return ANSI("30;2");
 	case LOG_LEVEL_DEBUG: return ANSI("37;2");
@@ -277,7 +277,7 @@ const char *terminal_colorize_begin(enum log_level level) {
 	}
 }
 
-const char *terminal_colorize_end(enum log_level level) {
+static const char *terminal_colorize_end(enum log_level level attr_unused) {
 	return ANSI("0");
 }
 #undef PREFIX
@@ -335,7 +335,7 @@ struct gl_string_marker_logger {
 	PFNGLSTRINGMARKERGREMEDYPROC gl_string_marker;
 };
 
-void gl_string_marker_logger_write(struct log_target *tgt, const char *str, size_t len) {
+static void gl_string_marker_logger_write(struct log_target *tgt, const char *str, size_t len) {
 	auto g = (struct gl_string_marker_logger *)tgt;
 	g->gl_string_marker((GLsizei)len, str);
 }

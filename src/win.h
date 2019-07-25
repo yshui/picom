@@ -331,7 +331,7 @@ int win_get_name(session_t *ps, struct managed_win *w);
 int win_get_role(session_t *ps, struct managed_win *w);
 winmode_t attr_pure win_calc_mode(const struct managed_win *w);
 void win_set_shadow_force(session_t *ps, struct managed_win *w, switch_t val);
-void win_set_fade_force(session_t *ps, struct managed_win *w, switch_t val);
+void win_set_fade_force(struct managed_win *w, switch_t val);
 void win_set_focused_force(session_t *ps, struct managed_win *w, switch_t val);
 void win_set_invert_color_force(session_t *ps, struct managed_win *w, switch_t val);
 /**

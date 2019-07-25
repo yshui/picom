@@ -280,9 +280,9 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 /// @param[in] root_height     height of the back buffer
 /// @param[in] y_inverted      whether the texture is y inverted
 /// @param[out] coord, indices output
-static void x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y,
-                             int width, int height, int root_height, bool y_inverted,
-                             GLint *coord, GLuint *indices) {
+static void
+x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int height,
+                 int root_height, bool y_inverted, GLint *coord, GLuint *indices) {
 	dst_y = root_height - dst_y;
 	if (y_inverted) {
 		dst_y -= height;
@@ -334,8 +334,9 @@ static void x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst
 	}
 }
 
+// TODO: make use of reg_visible
 void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
-                const region_t *reg_tgt, const region_t *reg_visible) {
+                const region_t *reg_tgt, const region_t *reg_visible attr_unused) {
 	struct gl_data *gd = (void *)base;
 	struct gl_image *img = image_data;
 
@@ -357,8 +358,8 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 
 	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	x_rect_to_coords(nrects, rects, dst_x, dst_y, img->inner->width, img->inner->height,
-	                 gd->height, img->inner->y_inverted, coord, indices);
+	x_rect_to_coords(nrects, rects, dst_x, dst_y, img->inner->height, gd->height,
+	                 img->inner->y_inverted, coord, indices);
 	_gl_compose(base, img, 0, coord, indices, nrects);
 
 	free(indices);
@@ -369,7 +370,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
  * Blur contents in a particular region.
  */
 bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blur,
-             const region_t *reg_visible) {
+             const region_t *reg_visible attr_unused) {
 	struct gl_blur_context *bctx = ctx;
 	struct gl_data *gd = (void *)base;
 
@@ -441,14 +442,13 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
 	x_rect_to_coords(nrects, rects, extent_resized->x1, extent_resized->y2,
-	                 bctx->texture_width, bctx->texture_height, gd->height, false,
-	                 coord, indices);
+	                 bctx->texture_height, gd->height, false, coord, indices);
 
 	auto coord_resized = ccalloc(nrects_resized * 16, GLint);
 	auto indices_resized = ccalloc(nrects_resized * 6, GLuint);
 	x_rect_to_coords(nrects_resized, rects_resized, extent_resized->x1,
-	                 extent_resized->y2, bctx->texture_width, bctx->texture_height,
-	                 bctx->texture_height, false, coord_resized, indices_resized);
+	                 extent_resized->y2, bctx->texture_height, bctx->texture_height,
+	                 false, coord_resized, indices_resized);
 	pixman_region32_fini(&reg_blur_resized);
 
 	GLuint vao[2];
@@ -729,7 +729,8 @@ void gl_release_image(backend_t *base, void *image_data) {
 	gl_check_err();
 }
 
-void *gl_copy(backend_t *base, const void *image_data, const region_t *reg_visible) {
+void *gl_copy(backend_t *base attr_unused, const void *image_data,
+              const region_t *reg_visible attr_unused) {
 	const struct gl_image *img = image_data;
 	auto new_img = ccalloc(1, struct gl_image);
 	*new_img = *img;
@@ -745,7 +746,7 @@ static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
 	shader->prog = 0;
 }
 
-void gl_destroy_blur_context(backend_t *base, void *ctx) {
+void gl_destroy_blur_context(backend_t *base attr_unused, void *ctx) {
 	struct gl_blur_context *bctx = ctx;
 	// Free GLSL shaders/programs
 	for (int i = 0; i < bctx->npasses; ++i) {
@@ -1105,7 +1106,7 @@ static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
 
 /// stub for backend_operations::image_op
 bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
-                 const region_t *reg_op, const region_t *reg_visible, void *arg) {
+                 const region_t *reg_op, const region_t *reg_visible attr_unused, void *arg) {
 	struct gl_image *tex = image_data;
 	int *iargs = arg;
 	switch (op) {
@@ -1129,7 +1130,7 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 	return true;
 }
 
-bool gl_is_image_transparent(backend_t *base, void *image_data) {
+bool gl_is_image_transparent(backend_t *base attr_unused, void *image_data) {
 	struct gl_image *img = image_data;
 	return img->has_alpha;
 }

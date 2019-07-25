@@ -124,7 +124,7 @@ static bool vsync_opengl_swc_init(session_t *ps) {
 /**
  * Wait for next VSync, OpenGL method.
  */
-static int vsync_opengl_wait(session_t *ps) {
+static int vsync_opengl_wait(session_t *ps attr_unused) {
 	unsigned vblank_count = 0;
 
 	glXGetVideoSyncSGI(&vblank_count);

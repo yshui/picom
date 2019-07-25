@@ -81,7 +81,7 @@ void glx_on_root_change(session_t *ps);
 bool glx_init_blur(session_t *ps);
 
 #ifdef CONFIG_OPENGL
-bool glx_load_prog_main(session_t *ps, const char *vshader_str, const char *fshader_str,
+bool glx_load_prog_main(const char *vshader_str, const char *fshader_str,
                         glx_prog_main_t *pprogram);
 #endif
 
@@ -144,7 +144,7 @@ static inline void free_texture_r(session_t *ps, GLuint *ptexture) {
 /**
  * Free a GLX Framebuffer object.
  */
-static inline void free_glx_fbo(session_t *ps, GLuint *pfbo) {
+static inline void free_glx_fbo(GLuint *pfbo) {
 	if (*pfbo) {
 		glDeleteFramebuffers(1, pfbo);
 		*pfbo = 0;
@@ -166,7 +166,7 @@ static inline void free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
  * Free a glx_blur_cache_t
  */
 static inline void free_glx_bc(session_t *ps, glx_blur_cache_t *pbc) {
-	free_glx_fbo(ps, &pbc->fbo);
+	free_glx_fbo(&pbc->fbo);
 	free_glx_bc_resize(ps, pbc);
 }
 

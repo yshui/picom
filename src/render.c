@@ -1091,7 +1091,7 @@ bool init_render(session_t *ps) {
 	// Initialize window GL shader
 	if (BKEND_GLX == ps->o.backend && ps->o.glx_fshader_win_str) {
 #ifdef CONFIG_OPENGL
-		if (!glx_load_prog_main(ps, NULL, ps->o.glx_fshader_win_str, &ps->glx_prog_win))
+		if (!glx_load_prog_main(NULL, ps->o.glx_fshader_win_str, &ps->glx_prog_win))
 			return false;
 #else
 		log_error("GLSL supported not compiled in, can't load "

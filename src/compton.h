@@ -59,6 +59,8 @@ void discard_ignore(session_t *ps, unsigned long sequence);
 
 void set_root_flags(session_t *ps, uint64_t flags);
 
+void quit_compton(session_t *ps);
+
 xcb_window_t session_get_target_window(session_t *);
 
 /**

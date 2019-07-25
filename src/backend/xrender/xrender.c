@@ -361,7 +361,7 @@ static int buffer_age(backend_t *backend_data) {
 	return xd->buffer_age[xd->curr_back];
 }
 
-static bool is_image_transparent(backend_t *bd, void *image) {
+static bool is_image_transparent(backend_t *bd attr_unused, void *image) {
 	struct _xrender_image_data *img = image;
 	return img->has_alpha;
 }
@@ -484,7 +484,7 @@ static void *copy(backend_t *base, const void *image, const region_t *reg) {
 	return new_img;
 }
 
-void *create_blur_context(backend_t *base, enum blur_method method, void *args) {
+void *create_blur_context(backend_t *base attr_unused, enum blur_method method, void *args) {
 	auto ret = ccalloc(1, struct _xrender_blur_context);
 	if (!method || method >= BLUR_METHOD_INVALID) {
 		ret->method = BLUR_METHOD_NONE;
@@ -521,7 +521,7 @@ void *create_blur_context(backend_t *base, enum blur_method method, void *args) 
 	return ret;
 }
 
-void destroy_blur_context(backend_t *base, void *ctx_) {
+void destroy_blur_context(backend_t *base attr_unused, void *ctx_) {
 	struct _xrender_blur_context *ctx = ctx_;
 	for (int i = 0; i < ctx->x_blur_kernel_count; i++) {
 		free(ctx->x_blur_kernel[i]);
