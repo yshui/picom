@@ -575,6 +575,11 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		}
 
 		w->prev_trans = bottom;
+		if (bottom) {
+			w->stacking_rank = bottom->stacking_rank + 1;
+		} else {
+			w->stacking_rank = 0;
+		}
 		bottom = w;
 
 		// If the screen is not redirected and the window has redir_ignore set,

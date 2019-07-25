@@ -71,6 +71,32 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	static struct timespec last_paint = {0};
 #endif
 
+	region_t reg_paint;
+	assert(ps->o.blur_method != BLUR_METHOD_INVALID);
+	if (ps->o.blur_method != BLUR_METHOD_NONE && ps->backend_data->ops->get_blur_size) {
+		int blur_width, blur_height;
+		ps->backend_data->ops->get_blur_size(ps->backend_blur_context,
+		                                     &blur_width, &blur_height);
+		if (t) {
+			// The region of screen a given window influences will be smeared
+			// out by blur. With more windows on top of the given window, the
+			// influences region will be smeared out more.
+			//
+			// Instead of accurately calculate how much bigger the damage
+			// region will be because of blur, we assume the worst case here.
+			// That is, the damaged window is at the bottom of the stack, and
+			// all other windows have semi-transparent background
+			resize_region_in_place(&reg_damage, blur_width * t->stacking_rank,
+			                       blur_height * t->stacking_rank);
+			pixman_region32_intersect(&reg_damage, &reg_damage, &ps->screen_reg);
+		}
+		reg_paint = resize_region(&reg_damage, blur_width, blur_height);
+		pixman_region32_intersect(&reg_paint, &reg_paint, &ps->screen_reg);
+	} else {
+		pixman_region32_init(&reg_paint);
+		pixman_region32_copy(&reg_paint, &reg_damage);
+	}
+
 	// A hint to backend, the region that will be visible on screen
 	// backend can optimize based on this info
 	region_t reg_visible;
@@ -85,12 +111,12 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	// TODO Bind root pixmap
 
 	if (ps->backend_data->ops->prepare) {
-		ps->backend_data->ops->prepare(ps->backend_data, &reg_damage);
+		ps->backend_data->ops->prepare(ps->backend_data, &reg_paint);
 	}
 
 	if (ps->root_image) {
 		ps->backend_data->ops->compose(ps->backend_data, ps->root_image, 0, 0,
-		                               &reg_damage, &reg_visible);
+		                               &reg_paint, &reg_visible);
 	}
 
 	// Windows are sorted from bottom to top
@@ -109,9 +135,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		// Draw shadow on target
 		if (w->shadow) {
 			// Clip region for the shadow
-			// reg_shadow \in reg_damage
+			// reg_shadow \in reg_paint
 			auto reg_shadow = win_extents_by_val(w);
-			pixman_region32_intersect(&reg_shadow, &reg_shadow, &reg_damage);
+			pixman_region32_intersect(&reg_shadow, &reg_shadow, &reg_paint);
 			if (!ps->o.wintype_option[w->window_type].full_shadow) {
 				pixman_region32_subtract(&reg_shadow, &reg_shadow, &reg_bound);
 			}
@@ -156,10 +182,10 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		}
 
 		// The clip region for the current window, in global/target coordinates
-		// reg_paint \in reg_damage
-		region_t reg_paint;
-		pixman_region32_init(&reg_paint);
-		pixman_region32_intersect(&reg_paint, &reg_bound, &reg_damage);
+		// reg_paint_in_bound \in reg_paint
+		region_t reg_paint_in_bound;
+		pixman_region32_init(&reg_paint_in_bound);
+		pixman_region32_intersect(&reg_paint_in_bound, &reg_bound, &reg_paint);
 
 		// Blur window background
 		// TODO since the background might change the content of the window (e.g.
@@ -176,10 +202,10 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			// TODO resize blur region to fix black line artifact
 			if (real_win_mode == WMODE_TRANS || ps->o.force_win_blend) {
 				// We need to blur the bounding shape of the window
-				// (reg_paint = reg_bound \cap reg_damage)
-				ps->backend_data->ops->blur(ps->backend_data, w->opacity,
-				                            ps->backend_blur_context,
-				                            &reg_paint, &reg_visible);
+				// (reg_paint_in_bound = reg_bound \cap reg_paint)
+				ps->backend_data->ops->blur(
+				    ps->backend_data, w->opacity, ps->backend_blur_context,
+				    &reg_paint_in_bound, &reg_visible);
 			} else {
 				// Window itself is solid, we only need to blur the frame
 				// region
@@ -190,8 +216,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 				auto reg_blur = win_get_region_frame_local_by_val(w);
 				pixman_region32_translate(&reg_blur, w->g.x, w->g.y);
-				// make sure reg_blur \in reg_damage
-				pixman_region32_intersect(&reg_blur, &reg_blur, &reg_damage);
+				// make sure reg_blur \in reg_paint
+				pixman_region32_intersect(&reg_blur, &reg_blur, &reg_paint);
 				ps->backend_data->ops->blur(ps->backend_data, w->opacity,
 				                            ps->backend_blur_context,
 				                            &reg_blur, &reg_visible);
@@ -200,8 +226,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		}
 		// Draw window on target
 		if (!w->invert_color && !w->dim && w->frame_opacity == 1 && w->opacity == 1) {
-			ps->backend_data->ops->compose(ps->backend_data, w->win_image, w->g.x,
-			                               w->g.y, &reg_paint, &reg_visible);
+			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
+			                               w->g.x, w->g.y,
+			                               &reg_paint_in_bound, &reg_visible);
 		} else {
 			// For window image processing, we don't need to limit the process
 			// region to damage, since the window image data is independent
@@ -219,7 +246,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			// outside of the damage region won't be painted onto target
 			region_t reg_visible_local;
 			pixman_region32_init(&reg_visible_local);
-			pixman_region32_intersect(&reg_visible_local, &reg_visible, &reg_damage);
+			pixman_region32_intersect(&reg_visible_local, &reg_visible, &reg_paint);
 			pixman_region32_translate(&reg_visible_local, -w->g.x, -w->g.y);
 			// Data outside of the bounding shape won't be visible, but it is
 			// not necessary to limit the image operations to the bounding
@@ -228,7 +255,6 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			pixman_region32_intersect(&reg_visible_local, &reg_visible_local,
 			                          &reg_bound_local);
 
-			// A region covers the entire window
 			auto new_img = ps->backend_data->ops->copy(
 			    ps->backend_data, w->win_image, &reg_visible_local);
 			if (w->invert_color) {
@@ -258,21 +284,22 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    NULL, &reg_visible_local, (double[]){w->opacity});
 			}
 			ps->backend_data->ops->compose(ps->backend_data, new_img, w->g.x,
-			                               w->g.y, &reg_paint, &reg_visible);
+			                               w->g.y, &reg_paint_in_bound,
+			                               &reg_visible);
 			ps->backend_data->ops->release_image(ps->backend_data, new_img);
 			pixman_region32_fini(&reg_visible_local);
 			pixman_region32_fini(&reg_bound_local);
 		}
 		pixman_region32_fini(&reg_bound);
-		pixman_region32_fini(&reg_paint);
+		pixman_region32_fini(&reg_paint_in_bound);
 	}
-	pixman_region32_fini(&reg_damage);
+	pixman_region32_fini(&reg_paint);
 
 	if (ps->o.monitor_repaint) {
-		reg_damage = get_damage(ps, false);
-		ps->backend_data->ops->fill(ps->backend_data,
-		                            (struct color){0.5, 0, 0, 0.5}, &reg_damage);
-		pixman_region32_fini(&reg_damage);
+		auto reg_damage_debug = get_damage(ps, false);
+		ps->backend_data->ops->fill(
+		    ps->backend_data, (struct color){0.5, 0, 0, 0.5}, &reg_damage_debug);
+		pixman_region32_fini(&reg_damage_debug);
 	}
 
 	// Move the head of the damage ring
@@ -285,8 +312,10 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	if (ps->backend_data->ops->present) {
 		// Present the rendered scene
 		// Vsync is done here
-		ps->backend_data->ops->present(ps->backend_data, NULL);
+		ps->backend_data->ops->present(ps->backend_data, &reg_damage);
 	}
+
+	pixman_region32_fini(&reg_damage);
 
 #ifdef DEBUG_REPAINT
 	struct timespec now = get_time_timespec();
