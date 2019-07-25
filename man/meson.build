@@ -1,5 +1,5 @@
 mans = ['compton.1', 'compton-trans.1']
-if get_option('build_docs')
+if get_option('with_docs')
 	a2x = find_program('a2x')
 	foreach m : mans
 		custom_target(m, output: [m], input: [m+'.asciidoc'],
