@@ -114,8 +114,7 @@ struct backend_operations {
 	void (*prepare)(backend_t *backend_data, const region_t *reg_damage);
 
 	/**
-	 * Paint the content of an image onto the (possibly buffered)
-	 * target picture.
+	 * Paint the content of an image onto the back buffer
 	 *
 	 * @param backend_data the backend data
 	 * @param image_data   the image to paint
@@ -134,10 +133,11 @@ struct backend_operations {
 	             const region_t *reg_blur, const region_t *reg_visible)
 	    attr_nonnull(1, 3, 4, 5);
 
-	/// Present the back buffer onto the screen.
+	/// Present part of the back buffer onto the screen.
 	///
-	/// Optional if the screen is not buffered
-	void (*present)(backend_t *backend_data) attr_nonnull(1);
+	/// @param region part of the screen that should be updated. if NULL, update the
+	///               whole screen
+	void (*present)(backend_t *backend_data, const region_t *region) attr_nonnull(1);
 
 	/**
 	 * Bind a X pixmap to the backend's internal image data structure.

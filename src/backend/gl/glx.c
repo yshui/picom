@@ -436,7 +436,7 @@ err:
 	return NULL;
 }
 
-static void glx_present(backend_t *base) {
+static void glx_present(backend_t *base, const region_t *region attr_unused) {
 	struct _glx_data *gd = (void *)base;
 	gl_present(base);
 	glXSwapBuffers(gd->display, gd->target_win);

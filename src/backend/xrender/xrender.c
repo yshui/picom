@@ -301,7 +301,7 @@ static void deinit(backend_t *backend_data) {
 	free(xd);
 }
 
-static void present(backend_t *base) {
+static void present(backend_t *base, const region_t *region attr_unused) {
 	struct _xrender_data *xd = (void *)base;
 
 	if (xd->vsync) {

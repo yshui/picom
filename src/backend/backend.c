@@ -285,7 +285,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	if (ps->backend_data->ops->present) {
 		// Present the rendered scene
 		// Vsync is done here
-		ps->backend_data->ops->present(ps->backend_data);
+		ps->backend_data->ops->present(ps->backend_data, NULL);
 	}
 
 #ifdef DEBUG_REPAINT
