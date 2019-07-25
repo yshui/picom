@@ -2183,8 +2183,6 @@ static void session_destroy(session_t *ps) {
 	ev_prepare_stop(ps->loop, &ps->event_check);
 	ev_signal_stop(ps->loop, &ps->usr1_signal);
 	ev_signal_stop(ps->loop, &ps->int_signal);
-
-	log_deinit_tls();
 }
 
 /**
@@ -2296,6 +2294,8 @@ int main(int argc, char **argv) {
 		XCloseDisplay(dpy);
 	}
 	free(config_file);
+
+	log_deinit_tls();
 
 	return 0;
 }
