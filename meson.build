@@ -57,7 +57,7 @@ warns = [ 'all', 'cast-function-type', 'ignored-qualifiers', 'missing-parameter-
           'nonnull', 'shadow', 'no-type-limits', 'old-style-declaration', 'override-init',
           'sign-compare', 'type-limits', 'uninitialized', 'shift-negative-value',
           'unused-but-set-parameter', 'unused-parameter', 'implicit-fallthrough',
-          'no-unknown-warning-option', 'no-missing-braces', 'conversion' ]
+          'no-unknown-warning-option', 'no-missing-braces', 'conversion', 'empty-body' ]
 foreach w : warns
 	if cc.has_argument('-W'+w)
 		add_global_arguments('-W'+w, language: 'c')
