@@ -1516,7 +1516,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 #ifdef CONFIG_OPENGL
 	    .glx_prog_win = GLX_PROG_MAIN_INIT,
 #endif
-	    .time_start = {0, 0},
 	    .redirected = false,
 	    .alpha_picts = NULL,
 	    .fade_time = 0L,
@@ -1590,7 +1589,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	pixman_region32_init(&ps->screen_reg);
 
 	ps->ignore_tail = &ps->ignore_head;
-	gettimeofday(&ps->time_start, NULL);
 
 	ps->o.show_all_xerrors = all_xerrors;
 

@@ -209,8 +209,6 @@ typedef struct session {
 	bool tmout_unredir_hit;
 	/// Whether we need to redraw the screen
 	bool redraw_needed;
-	/// Program start time.
-	struct timeval time_start;
 	/// The region needs to painted on next paint.
 	region_t *damage;
 	/// The region damaged on the last paint.
@@ -230,8 +228,6 @@ typedef struct session {
 	ignore_t **ignore_tail;
 	// Cached blur convolution kernels.
 	struct x_convolution_kernel **blur_kerns_cache;
-	/// Reset program after next paint.
-	bool reset:1;
 	/// If compton should quit
 	bool quit:1;
 	/// Whether there are pending updates, like window creation, etc.
