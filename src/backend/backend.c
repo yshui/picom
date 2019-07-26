@@ -77,21 +77,29 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		int blur_width, blur_height;
 		ps->backend_data->ops->get_blur_size(ps->backend_blur_context,
 		                                     &blur_width, &blur_height);
+
+		// The region of screen a given window influences will be smeared
+		// out by blur. With more windows on top of the given window, the
+		// influences region will be smeared out more.
+		//
+		// Also, blurring requires data slightly outside the area that needs
+		// to be blurred. The more semi-transparent windows are stacked on top
+		// of each other, the larger the area will be.
+		//
+		// Instead of accurately calculate how much bigger the damage
+		// region will be because of blur, we assume the worst case here.
+		// That is, the damaged window is at the bottom of the stack, and
+		// all other windows have semi-transparent background
+		int resize_factor = 1;
 		if (t) {
-			// The region of screen a given window influences will be smeared
-			// out by blur. With more windows on top of the given window, the
-			// influences region will be smeared out more.
-			//
-			// Instead of accurately calculate how much bigger the damage
-			// region will be because of blur, we assume the worst case here.
-			// That is, the damaged window is at the bottom of the stack, and
-			// all other windows have semi-transparent background
-			resize_region_in_place(&reg_damage, blur_width * t->stacking_rank,
-			                       blur_height * t->stacking_rank);
-			pixman_region32_intersect(&reg_damage, &reg_damage, &ps->screen_reg);
+			resize_factor = t->stacking_rank;
 		}
-		reg_paint = resize_region(&reg_damage, blur_width, blur_height);
+		resize_region_in_place(&reg_damage, blur_width * resize_factor,
+		                       blur_height * resize_factor);
+		reg_paint = resize_region(&reg_damage, blur_width * resize_factor,
+		                          blur_height * resize_factor);
 		pixman_region32_intersect(&reg_paint, &reg_paint, &ps->screen_reg);
+		pixman_region32_intersect(&reg_damage, &reg_damage, &ps->screen_reg);
 	} else {
 		pixman_region32_init(&reg_paint);
 		pixman_region32_copy(&reg_paint, &reg_damage);
