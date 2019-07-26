@@ -466,7 +466,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
 	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
 	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
-	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLint) * 2));
+	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 
 	glBindVertexArray(vao[1]);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[2]);
@@ -480,7 +480,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
 	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
 	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
-	                      sizeof(GLfloat) * 4, (void *)(sizeof(GLint) * 2));
+	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 
 	int curr = 0;
 	glReadBuffer(GL_BACK);
