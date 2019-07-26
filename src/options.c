@@ -764,7 +764,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// --xrender-sync
 			log_warn("Please use --xrender-sync-fence instead of --xrender-sync");
 			opt->xrender_sync_fence = true;
- 			break;
+			break;
 		P_CASEBOOL(313, xrender_sync_fence);
 		P_CASEBOOL(315, no_fading_destroyed_argb);
 		P_CASEBOOL(316, force_win_blend);
@@ -800,7 +800,8 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	setlocale(LC_NUMERIC, lc_numeric_old);
 	free(lc_numeric_old);
 
-	if (opt->monitor_repaint && opt->backend != BKEND_XRENDER) {
+	if (opt->monitor_repaint && opt->backend != BKEND_XRENDER &&
+	    !opt->experimental_backends) {
 		log_warn("--monitor-repaint has no effect when backend is not xrender");
 	}
 

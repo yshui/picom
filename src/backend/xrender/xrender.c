@@ -461,6 +461,7 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 	return true;
 }
 
+// TODO: use copy-on-write
 static void *copy(backend_t *base, const void *image, const region_t *reg) {
 	const struct _xrender_image_data *img = image;
 	struct _xrender_data *xd = (void *)base;
