@@ -68,16 +68,6 @@ static inline void clear_cache_win_leaders(session_t *ps) {
 	}
 }
 
-static inline void wid_set_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t val) {
-	const uint32_t v = val;
-	xcb_change_property(ps->c, XCB_PROP_MODE_REPLACE, wid,
-	                    ps->atoms->a_NET_WM_WINDOW_OPACITY, XCB_ATOM_CARDINAL, 32, 1, &v);
-}
-
-static inline void wid_rm_opacity_prop(session_t *ps, xcb_window_t wid) {
-	xcb_delete_property(ps->c, wid, ps->atoms->a_NET_WM_WINDOW_OPACITY);
-}
-
 /**
  * Run win_update_focused() on all windows with the same leader window.
  *
@@ -483,6 +473,8 @@ double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
 	// Try obeying opacity property and window type opacity firstly
 	if (w->has_opacity_prop) {
 		opacity = ((double)w->opacity_prop) / OPAQUE;
+	} else if (w->opacity_is_set) {
+		opacity = w->opacity_set;
 	} else if (!safe_isnan(ps->o.wintype_option[w->window_type].opacity)) {
 		opacity = ps->o.wintype_option[w->window_type].opacity;
 	} else {
@@ -739,13 +731,11 @@ void win_determine_blur_background(session_t *ps, struct managed_win *w) {
 
 /**
  * Update window opacity according to opacity rules.
- *
- * TODO This override the window's opacity property, may not be
- *      a good idea.
  */
 void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
-	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
+	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
 		return;
+	}
 
 	double opacity = 1.0;
 	bool is_set = false;
@@ -755,16 +745,8 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
 		is_set = true;
 	}
 
-	if (is_set == w->opacity_is_set && opacity == w->opacity_set)
-		return;
-
 	w->opacity_set = opacity;
 	w->opacity_is_set = is_set;
-	if (!is_set) {
-		wid_rm_opacity_prop(ps, w->base.id);
-	} else {
-		wid_set_opacity_prop(ps, w->base.id, (opacity_t)(opacity * OPAQUE));
-	}
 }
 
 /**

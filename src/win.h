@@ -271,7 +271,7 @@ struct managed_win {
 	opacity_t opacity_prop;
 	/// true if opacity is set by some rules
 	bool opacity_is_set;
-	/// Last window opacity value we set.
+	/// Last window opacity value set by the rules.
 	double opacity_set;
 
 	// Fading-related members
