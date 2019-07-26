@@ -568,18 +568,6 @@ void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new) {
 
 	log_debug("Updating shadow property of window %#010x (%s) to %d", w->base.id,
 	          w->name, shadow_new);
-	if (ps->backend_data && w->state != WSTATE_UNMAPPED &&
-	    !(w->flags & WIN_FLAGS_IMAGE_ERROR)) {
-		assert(!w->shadow_image);
-		// Create shadow image
-		w->shadow_image = ps->backend_data->ops->render_shadow(
-		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map, ps->o.shadow_red,
-		    ps->o.shadow_green, ps->o.shadow_blue, ps->o.shadow_opacity);
-		if (!w->shadow_image) {
-			log_error("Failed to bind shadow image");
-			w->shadow_force = OFF;
-		}
-	}
 
 	region_t extents;
 	pixman_region32_init(&extents);
@@ -600,6 +588,19 @@ void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new) {
 	if (w->shadow) {
 		win_extents(w, &extents);
 		add_damage_from_win(ps, w);
+		if (ps->backend_data && w->state != WSTATE_UNMAPPED &&
+		    !(w->flags & WIN_FLAGS_IMAGE_ERROR)) {
+			assert(!w->shadow_image);
+			// Create shadow image
+			w->shadow_image = ps->backend_data->ops->render_shadow(
+			    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map,
+			    ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue,
+			    ps->o.shadow_opacity);
+			if (!w->shadow_image) {
+				log_error("Failed to bind shadow image");
+				w->shadow_force = OFF;
+			}
+		}
 	}
 	pixman_region32_fini(&extents);
 }
