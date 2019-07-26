@@ -169,6 +169,8 @@ struct managed_win {
 	void *shadow_image;
 	/// Pointer to the next higher window to paint.
 	struct managed_win *prev_trans;
+	/// Number of windows above this window
+	int stacking_rank;
 	// TODO rethink reg_ignore
 
 	// Core members

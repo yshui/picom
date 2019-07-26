@@ -254,6 +254,8 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 
 	// Cleanup
 	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glDrawBuffer(GL_BACK);
 
 	if (dual_texture) {
 		glActiveTexture(GL_TEXTURE1);
@@ -276,16 +278,16 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 /// @param[in] nrects, rects   rectangles
 /// @param[in] dst_x, dst_y    origin of the OpenGL texture, affect the calculated texture
 ///                            coordinates
-/// @param[in] width, height   size of the OpenGL texture
+/// @param[in] texture_height  height of the OpenGL texture
 /// @param[in] root_height     height of the back buffer
 /// @param[in] y_inverted      whether the texture is y inverted
 /// @param[out] coord, indices output
 static void
-x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int height,
+x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int texture_height,
                  int root_height, bool y_inverted, GLint *coord, GLuint *indices) {
 	dst_y = root_height - dst_y;
 	if (y_inverted) {
-		dst_y -= height;
+		dst_y -= texture_height;
 	}
 
 	for (int i = 0; i < nrects; i++) {
@@ -302,8 +304,8 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int heig
 
 		// X pixmaps might be Y inverted, invert the texture coordinates
 		if (y_inverted) {
-			texture_y1 = height - texture_y1;
-			texture_y2 = height - texture_y2;
+			texture_y1 = texture_height - texture_y1;
+			texture_y2 = texture_height - texture_y2;
 		}
 
 		// Vertex coordinates
@@ -360,7 +362,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 	auto indices = ccalloc(nrects * 6, GLuint);
 	x_rect_to_coords(nrects, rects, dst_x, dst_y, img->inner->height, gd->height,
 	                 img->inner->y_inverted, coord, indices);
-	_gl_compose(base, img, 0, coord, indices, nrects);
+	_gl_compose(base, img, gd->back_fbo, coord, indices, nrects);
 
 	free(indices);
 	free(coord);
@@ -421,9 +423,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	    resize_region(reg_blur, bctx->resize_width, bctx->resize_height);
 	const rect_t *extent = pixman_region32_extents((region_t *)reg_blur),
 	             *extent_resized = pixman_region32_extents(&reg_blur_resized);
-	int width = extent->x2 - extent->x1, height = extent->y2 - extent->y1,
-	    width_resized = extent_resized->x2 - extent_resized->x1,
-	    height_resized = extent_resized->y2 - extent_resized->y1;
+	int width = extent->x2 - extent->x1, height = extent->y2 - extent->y1;
 	int dst_y_resized_screen_coord = gd->height - extent_resized->y2,
 	    dst_y_resized_fb_coord = bctx->texture_height - extent_resized->y2;
 	if (width == 0 || height == 0) {
@@ -483,22 +483,27 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 
 	int curr = 0;
-	glReadBuffer(GL_BACK);
-	glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[0]);
-	// Copy the area to be blurred into tmp buffer
-
-	int copy_tex_xoffset = 0, copy_tex_yoffset = 0, copy_tex_x = extent_resized->x1,
-	    copy_tex_y = dst_y_resized_screen_coord;
-	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, copy_tex_xoffset, copy_tex_yoffset,
-	                    copy_tex_x, copy_tex_y, width_resized, height_resized);
-
 	for (int i = 0; i < bctx->npasses; ++i) {
 		const gl_blur_shader_t *p = &bctx->blur_shader[i];
 		assert(p->prog);
 
 		assert(bctx->blur_texture[curr]);
-		glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[curr]);
 
+		// The origin to use when sampling from the source texture
+		GLint texorig_x, texorig_y;
+		GLuint src_texture;
+
+		if (i == 0) {
+			texorig_x = extent_resized->x1;
+			texorig_y = dst_y_resized_screen_coord;
+			src_texture = gd->back_texture;
+		} else {
+			texorig_x = 0;
+			texorig_y = 0;
+			src_texture = bctx->blur_texture[curr];
+		}
+
+		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glUseProgram(p->prog);
 		if (i < bctx->npasses - 1) {
 			// not last pass, draw into framebuffer, with resized regions
@@ -522,13 +527,13 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 			// last pass, draw directly into the back buffer, with origin
 			// regions
 			glBindVertexArray(vao[0]);
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glDrawBuffer(GL_BACK);
+			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
 			glUniform1f(p->unifm_opacity, (float)opacity);
 			glUniform2f(p->orig_loc, 0, 0);
 			glViewport(0, 0, gd->width, gd->height);
 		}
 
+		glUniform2f(p->texorig_loc, (GLfloat)texorig_x, (GLfloat)texorig_y);
 		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
 		// XXX use multiple draw calls is probably going to be slow than
@@ -562,12 +567,13 @@ end:
 const char *vertex_shader = GLSL(330,
 	uniform mat4 projection;
 	uniform vec2 orig;
+	uniform vec2 texorig;
 	layout(location = 0) in vec2 coord;
 	layout(location = 1) in vec2 in_texcoord;
 	out vec2 texcoord;
 	void main() {
 		gl_Position = projection * vec4(coord + orig, 0, 1);
-		texcoord = in_texcoord;
+		texcoord = in_texcoord + texorig;
 	}
 );
 // clang-format on
@@ -623,6 +629,14 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 	pml = glGetUniformLocationChecked(gd->fill_shader.prog, "projection");
 	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 
+	glUseProgram(gd->present_prog);
+	pml = glGetUniformLocationChecked(gd->present_prog, "projection");
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+
+	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_BGR,
+	             GL_UNSIGNED_BYTE, NULL);
+
 	gl_check_err();
 }
 
@@ -653,8 +667,8 @@ static const char fill_vert[] = GLSL(330,
 
 /// Fill a given region in bound framebuffer.
 /// @param[in] y_inverted whether the y coordinates in `clip` should be inverted
-static void
-_gl_fill(backend_t *base, struct color c, const region_t *clip, int height, bool y_inverted) {
+static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLuint target,
+                     int height, bool y_inverted) {
 	static const GLuint fill_vert_in_coord_loc = 0;
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
@@ -695,7 +709,9 @@ _gl_fill(backend_t *base, struct color c, const region_t *clip, int height, bool
 
 	glVertexAttribPointer(fill_vert_in_coord_loc, 2, GL_INT, GL_FALSE,
 	                      sizeof(*coord) * 2, (void *)0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glDisableVertexAttribArray(fill_vert_in_coord_loc);
@@ -707,7 +723,7 @@ _gl_fill(backend_t *base, struct color c, const region_t *clip, int height, bool
 
 void gl_fill(backend_t *base, struct color c, const region_t *clip) {
 	struct gl_data *gd = (void *)base;
-	return _gl_fill(base, c, clip, gd->height, true);
+	return _gl_fill(base, c, clip, gd->back_fbo, gd->height, true);
 }
 
 void gl_release_image(backend_t *base, void *image_data) {
@@ -870,6 +886,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		// Get uniform addresses
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
+		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 		ctx->resize_width += kern->w / 2;
 		ctx->resize_height += kern->h / 2;
 	}
@@ -881,6 +898,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		pass->prog = gl_create_program_from_str(vertex_shader, dummy_frag);
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
+		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 		ctx->npasses = 2;
 	} else {
 		ctx->npasses = nkernels;
@@ -948,6 +966,16 @@ const char *win_shader_glsl = GLSL(330,
 		gl_FragColor = c;
 	}
 );
+
+const char *present_vertex_shader = GLSL(330,
+	uniform mat4 projection;
+	layout(location = 0) in vec2 coord;
+	out vec2 texcoord;
+	void main() {
+		gl_Position = projection * vec4(coord, 0, 1);
+		texcoord = coord;
+	}
+);
 // clang-format on
 
 bool gl_init(struct gl_data *gd, session_t *ps) {
@@ -969,13 +997,40 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
+	glGenFramebuffers(1, &gd->back_fbo);
+	glGenTextures(1, &gd->back_texture);
+	if (!gd->back_fbo || !gd->back_texture) {
+		log_error("Failed to generate a framebuffer object");
+		return false;
+	}
+
+	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
 	gl_win_shader_from_string(vertex_shader, win_shader_glsl, &gd->win_shader);
 	gd->fill_shader.prog = gl_create_program_from_str(fill_vert, fill_frag);
 	gd->fill_shader.color_loc = glGetUniformLocation(gd->fill_shader.prog, "color");
 
+	gd->present_prog = gl_create_program_from_str(present_vertex_shader, dummy_frag);
+	if (!gd->present_prog) {
+		log_error("Failed to create the present shader");
+		return false;
+	}
+	glUseProgram(gd->present_prog);
+	glUniform1i(glGetUniformLocationChecked(gd->present_prog, "tex"), 0);
+	glUseProgram(0);
+
 	// Set up the size of the viewport. We do this last because it expects the blur
 	// textures are already set up.
 	gl_resize(gd, ps->root_width, ps->root_height);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->back_fbo);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       gd->back_texture, 0);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
 	gd->logger = gl_string_marker_logger_new();
 	if (gd->logger) {
@@ -1098,10 +1153,62 @@ static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       img->inner->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, 0, false);
+	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, 0, 0, false);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDeleteFramebuffers(1, &fbo);
+}
+
+void gl_present(backend_t *base, const region_t *region) {
+	auto gd = (struct gl_data *)base;
+
+	int nrects;
+	const rect_t *rect = pixman_region32_rectangles((region_t *)region, &nrects);
+	auto coord = ccalloc(nrects * 8, GLint);
+	auto indices = ccalloc(nrects * 6, GLuint);
+	for (int i = 0; i < nrects; i++) {
+		// clang-format off
+		memcpy(&coord[i * 8],
+		       (GLint[]){rect[i].x1, gd->height - rect[i].y2,
+		                 rect[i].x2, gd->height - rect[i].y2,
+		                 rect[i].x2, gd->height - rect[i].y1,
+		                 rect[i].x1, gd->height - rect[i].y1},
+		       sizeof(GLint) * 8);
+		// clang-format on
+
+		GLuint u = (GLuint)(i * 4);
+		memcpy(&indices[i * 6], (GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0},
+		       sizeof(GLuint) * 6);
+	}
+
+	glUseProgram(gd->present_prog);
+	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
+
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
+	GLuint bo[2];
+	glGenBuffers(2, bo);
+	glEnableVertexAttribArray(vert_coord_loc);
+	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(GLint) * nrects * 8, coord, GL_STREAM_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(GLuint) * nrects * 6, indices,
+	             GL_STREAM_DRAW);
+
+	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE,
+	                      sizeof(GLint) * 2, NULL);
+	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
+	glDeleteBuffers(2, bo);
+	glDeleteVertexArrays(1, &vao);
+
+	free(coord);
+	free(indices);
 }
 
 /// stub for backend_operations::image_op
