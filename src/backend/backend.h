@@ -108,13 +108,22 @@ struct backend_operations {
 	// the operation performed. OTOH reg_paint/reg_op is part of the parameters of the
 	// operation, and must be honored in order to complete the operation correctly.
 
+	// NOTE: due to complications introduced by use-damage and blur, the rendering API
+	// is a bit weird. The idea is, `compose` and `blur` have to update a temporary
+	// buffer, because `blur` requires data from an area slightly larger than the area
+	// that will be visible. So the area outside the visible area has to be rendered,
+	// but we have to discard the result (because the result of blurring that area
+	// will be wrong). That's why we cannot render into the back buffer directly.
+	// After rendering is done, `present` is called to update a portion of the actual
+	// back buffer, then present it to the screen.
+
 	/// Called before when a new frame starts.
 	///
 	/// Optional
 	void (*prepare)(backend_t *backend_data, const region_t *reg_damage);
 
 	/**
-	 * Paint the content of an image onto the back buffer
+	 * Paint the content of an image onto the rendering buffer
 	 *
 	 * @param backend_data the backend data
 	 * @param image_data   the image to paint
@@ -125,15 +134,16 @@ struct backend_operations {
 	void (*compose)(backend_t *backend_data, void *image_data, int dst_x, int dst_y,
 	                const region_t *reg_paint, const region_t *reg_visible);
 
-	/// Fill rectangle of target, mostly for debug purposes, optional.
+	/// Fill rectangle of the rendering buffer, mostly for debug purposes, optional.
 	void (*fill)(backend_t *backend_data, struct color, const region_t *clip);
 
-	/// Blur a given region of the target.
+	/// Blur a given region of the rendering buffer.
 	bool (*blur)(backend_t *backend_data, double opacity, void *blur_ctx,
 	             const region_t *reg_blur, const region_t *reg_visible)
 	    attr_nonnull(1, 3, 4, 5);
 
-	/// Present part of the back buffer onto the screen.
+	/// Update part of the back buffer with the rendering buffer, then present the
+	/// back buffer onto the screen.
 	///
 	/// @param region part of the screen that should be updated. if NULL, update the
 	///               whole screen
@@ -157,12 +167,6 @@ struct backend_operations {
 	                       const conv *kernel, double r, double g, double b, double a);
 
 	// ============ Resource management ===========
-
-	// XXX Thoughts: calling release_image and render_* for every config notify
-	//     is wasteful, since there can be multiple such notifies per drawing.
-	//     But if we don't, it can mean there will be a state where is window is
-	//     mapped and visible, but there is no win_data attached to it. We don't
-	//     want to break that assumption as for now. We need to reconsider this.
 
 	/// Free resources associated with an image data structure
 	void (*release_image)(backend_t *backend_data, void *img_data) attr_nonnull(1, 2);
@@ -212,7 +216,9 @@ struct backend_operations {
 
 	/// Create a blur context that can be used to call `blur`
 	void *(*create_blur_context)(backend_t *base, enum blur_method, void *args);
+	/// Destroy a blur context
 	void (*destroy_blur_context)(backend_t *base, void *ctx);
+	/// Get how many pixels outside of the blur area is needed for blur
 	void (*get_blur_size)(void *blur_context, int *width, int *height);
 
 	// ===========         Hooks        ============
@@ -231,4 +237,3 @@ extern struct backend_operations *backend_list[];
 
 void paint_all_new(session_t *ps, struct managed_win *const t, bool ignore_damage)
     attr_nonnull(1);
-
