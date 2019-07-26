@@ -1159,13 +1159,27 @@ static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
 	glDeleteFramebuffers(1, &fbo);
 }
 
-void gl_present(backend_t *base) {
+void gl_present(backend_t *base, const region_t *region) {
 	auto gd = (struct gl_data *)base;
 
-	GLuint indices[] = {0, 1, 2, 2, 3, 0};
-	GLint coord[] = {
-	    0, 0, gd->width, 0, gd->width, gd->height, 0, gd->height,
-	};
+	int nrects;
+	const rect_t *rect = pixman_region32_rectangles((region_t *)region, &nrects);
+	auto coord = ccalloc(nrects * 8, GLint);
+	auto indices = ccalloc(nrects * 6, GLuint);
+	for (int i = 0; i < nrects; i++) {
+		// clang-format off
+		memcpy(&coord[i * 8],
+		       (GLint[]){rect[i].x1, gd->height - rect[i].y2,
+		                 rect[i].x2, gd->height - rect[i].y2,
+		                 rect[i].x2, gd->height - rect[i].y1,
+		                 rect[i].x1, gd->height - rect[i].y1},
+		       sizeof(GLint) * 8);
+		// clang-format on
+
+		GLuint u = (GLuint)(i * 4);
+		memcpy(&indices[i * 6], (GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0},
+		       sizeof(GLuint) * 6);
+	}
 
 	glUseProgram(gd->present_prog);
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
@@ -1179,18 +1193,22 @@ void gl_present(backend_t *base) {
 	glEnableVertexAttribArray(vert_coord_loc);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(coord), coord, GL_STREAM_DRAW);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(indices), indices, GL_STREAM_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(GLint) * nrects * 8, coord, GL_STREAM_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(GLuint) * nrects * 6, indices,
+	             GL_STREAM_DRAW);
 
-	glVertexAttribPointer(vert_coord_loc, 2, GL_UNSIGNED_INT, GL_FALSE,
-	                      sizeof(GLuint) * 2, NULL);
-	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
+	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE,
+	                      sizeof(GLint) * 2, NULL);
+	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 	glDeleteBuffers(2, bo);
 	glDeleteVertexArrays(1, &vao);
+
+	free(coord);
+	free(indices);
 }
 
 /// stub for backend_operations::image_op
