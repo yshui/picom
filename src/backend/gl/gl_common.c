@@ -719,6 +719,8 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	glDeleteVertexArrays(1, &vao);
 
 	glDeleteBuffers(2, bo);
+	free(indices);
+	free(coord);
 }
 
 void gl_fill(backend_t *base, struct color c, const region_t *clip) {
