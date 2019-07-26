@@ -207,12 +207,25 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		     (ps->o.blur_background_frame && real_win_mode == WMODE_FRAME_TRANS))) {
 			// Minimize the region we try to blur, if the window
 			// itself is not opaque, only the frame is.
-			// TODO resize blur region to fix black line artifact
+
+			double blur_opacity = 1;
+			if (w->state == WSTATE_MAPPING) {
+				// Gradually increase the blur intensity during
+				// fading in.
+				blur_opacity = w->opacity / w->opacity_target;
+			} else if (w->state == WSTATE_UNMAPPING ||
+			           w->state == WSTATE_DESTROYING) {
+				// Gradually decrease the blur intensity during
+				// fading out.
+				blur_opacity =
+				    w->opacity / win_calc_opacity_target(ps, w, true);
+			}
+
 			if (real_win_mode == WMODE_TRANS || ps->o.force_win_blend) {
 				// We need to blur the bounding shape of the window
 				// (reg_paint_in_bound = reg_bound \cap reg_paint)
 				ps->backend_data->ops->blur(
-				    ps->backend_data, w->opacity, ps->backend_blur_context,
+				    ps->backend_data, blur_opacity, ps->backend_blur_context,
 				    &reg_paint_in_bound, &reg_visible);
 			} else {
 				// Window itself is solid, we only need to blur the frame
@@ -226,7 +239,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				pixman_region32_translate(&reg_blur, w->g.x, w->g.y);
 				// make sure reg_blur \in reg_paint
 				pixman_region32_intersect(&reg_blur, &reg_blur, &reg_paint);
-				ps->backend_data->ops->blur(ps->backend_data, w->opacity,
+				ps->backend_data->ops->blur(ps->backend_data, blur_opacity,
 				                            ps->backend_blur_context,
 				                            &reg_blur, &reg_visible);
 				pixman_region32_fini(&reg_blur);

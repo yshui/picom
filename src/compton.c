@@ -232,15 +232,15 @@ static bool run_fade(session_t *ps, struct managed_win **_w, long steps) {
 	auto w = *_w;
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
 		// We are not fading
-		assert(w->opacity_tgt == w->opacity);
+		assert(w->opacity_target == w->opacity);
 		return false;
 	}
 
 	if (!win_should_fade(ps, w)) {
 		log_debug("Window %#010x %s doesn't need fading", w->base.id, w->name);
-		w->opacity = w->opacity_tgt;
+		w->opacity = w->opacity_target;
 	}
-	if (w->opacity == w->opacity_tgt) {
+	if (w->opacity == w->opacity_target) {
 		// We have reached target opacity.
 		// We don't call win_check_fade_finished here because that could destroy
 		// the window, but we still need the damage info from this window
@@ -249,16 +249,16 @@ static bool run_fade(session_t *ps, struct managed_win **_w, long steps) {
 	}
 
 	if (steps) {
-		if (w->opacity < w->opacity_tgt) {
+		if (w->opacity < w->opacity_target) {
 			w->opacity = clamp(w->opacity + ps->o.fade_in_step * (double)steps,
-			                   0.0, w->opacity_tgt);
+			                   0.0, w->opacity_target);
 		} else {
 			w->opacity = clamp(w->opacity - ps->o.fade_out_step * (double)steps,
-			                   w->opacity_tgt, 1);
+			                   w->opacity_target, 1);
 		}
 	}
 
-	// Note even if opacity == opacity_tgt here, we still want to run preprocess one
+	// Note even if opacity == opacity_target here, we still want to run preprocess one
 	// last time to finish state transition. So return true in that case too.
 	return true;
 }

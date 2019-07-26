@@ -455,7 +455,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 				// See the winstate_t transition table
 				w->state = WSTATE_FADING;
 			}
-			w->opacity_tgt = win_calc_opacity_target(ps, w);
+			w->opacity_target = win_calc_opacity_target(ps, w, false);
 		}
 	}
 

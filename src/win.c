@@ -436,38 +436,32 @@ winmode_t win_calc_mode(const struct managed_win *w) {
 		// consider the window solid
 	}
 
-	//log_trace("Window %#010x(%s) is solid", w->client_win, w->name);
+	// log_trace("Window %#010x(%s) is solid", w->client_win, w->name);
 	return WMODE_SOLID;
 }
 
 /**
  * Calculate and return the opacity target of a window.
  *
- * If window is inactive and inactive_opacity_override is set, the
- * priority is: (Simulates the old behavior)
+ * The priority of opacity settings are:
  *
- * inactive_opacity > _NET_WM_WINDOW_OPACITY (if not opaque)
- * > window type default opacity
+ * inactive_opacity_override (if set, and unfocused) > _NET_WM_WINDOW_OPACITY (if set) >
+ * opacity-rules (if matched) > window type default opacity > active/inactive opacity
  *
- * Otherwise:
- *
- * _NET_WM_WINDOW_OPACITY (if not opaque)
- * > window type default opacity (if not opaque)
- * > inactive_opacity
- *
- * @param ps current session
- * @param w struct _win object representing the window
+ * @param ps           current session
+ * @param w            struct _win object representing the window
+ * @param ignore_state whether window state should be ignored in opacity calculation
  *
  * @return target opacity
  */
-double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
+double win_calc_opacity_target(session_t *ps, const struct managed_win *w, bool ignore_state) {
 	double opacity = 1;
 
-	if (w->state == WSTATE_UNMAPPED) {
+	if (w->state == WSTATE_UNMAPPED && !ignore_state) {
 		// be consistent
 		return 0;
 	}
-	if (w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING) {
+	if ((w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING) && !ignore_state) {
 		return 0;
 	}
 	// Try obeying opacity property and window type opacity firstly
@@ -487,8 +481,9 @@ double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
 	}
 
 	// respect inactive override
-	if (ps->o.inactive_opacity_override && !w->focused)
+	if (ps->o.inactive_opacity_override && !w->focused) {
 		opacity = ps->o.inactive_opacity;
+	}
 
 	return opacity;
 }
@@ -705,7 +700,8 @@ void win_determine_invert_color(session_t *ps, struct managed_win *w) {
 	win_set_invert_color(ps, w, invert_color_new);
 }
 
-static void win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_background_new) {
+static void
+win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_background_new) {
 	if (w->blur_background == blur_background_new)
 		return;
 
@@ -1069,7 +1065,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .wmwin = false,
 	    .focused = false,
 	    .opacity = 0,
-	    .opacity_tgt = 0,
+	    .opacity_target = 0,
 	    .has_opacity_prop = false,
 	    .opacity_prop = OPAQUE,
 	    .opacity_is_set = false,
@@ -1201,12 +1197,10 @@ void win_update_focused(session_t *ps, struct managed_win *w) {
 	// Always recalculate the window target opacity, since some opacity-related
 	// options depend on the output value of win_is_focused_real() instead of
 	// w->focused
-	double opacity_tgt_old = w->opacity_tgt;
-	w->opacity_tgt = win_calc_opacity_target(ps, w);
-	if (opacity_tgt_old != w->opacity_tgt && w->state == WSTATE_MAPPED) {
+	auto opacity_target_old = w->opacity_target;
+	w->opacity_target = win_calc_opacity_target(ps, w, false);
+	if (opacity_target_old != w->opacity_target && w->state == WSTATE_MAPPED) {
 		// Only MAPPED can transition to FADING
-		assert(w->state != WSTATE_DESTROYING && w->state != WSTATE_UNMAPPING &&
-		       w->state != WSTATE_UNMAPPED);
 		w->state = WSTATE_FADING;
 	}
 }
@@ -1796,7 +1790,7 @@ void unmap_win(session_t *ps, struct managed_win **_w, bool destroy) {
 
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->state = target_state;
-	w->opacity_tgt = win_calc_opacity_target(ps, w);
+	w->opacity_target = win_calc_opacity_target(ps, w, false);
 
 	w->in_openclose = destroy;
 
@@ -1828,10 +1822,10 @@ void win_check_fade_finished(session_t *ps, struct managed_win **_w) {
 	auto w = *_w;
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
 		// No fading in progress
-		assert(w->opacity_tgt == w->opacity);
+		assert(w->opacity_target == w->opacity);
 		return;
 	}
-	if (w->opacity == w->opacity_tgt) {
+	if (w->opacity == w->opacity_target) {
 		switch (w->state) {
 		case WSTATE_UNMAPPING: return finish_unmap_win(ps, _w);
 		case WSTATE_DESTROYING: return finish_destroy_win(ps, _w);
@@ -1847,11 +1841,11 @@ void win_check_fade_finished(session_t *ps, struct managed_win **_w) {
 void win_skip_fading(session_t *ps, struct managed_win **_w) {
 	auto w = *_w;
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
-		assert(w->opacity_tgt == w->opacity);
+		assert(w->opacity_target == w->opacity);
 		return;
 	}
 	log_trace("Skipping fading process of window %#010x (%s)", w->base.id, w->name);
-	w->opacity = w->opacity_tgt;
+	w->opacity = w->opacity_target;
 	win_check_fade_finished(ps, _w);
 }
 
@@ -1973,10 +1967,10 @@ void map_win(session_t *ps, struct managed_win *w) {
 	// XXX We need to make sure that win_data is available
 	// iff `state` is MAPPED
 	w->state = WSTATE_MAPPING;
-	w->opacity_tgt = win_calc_opacity_target(ps, w);
+	w->opacity_target = win_calc_opacity_target(ps, w, false);
 
 	log_debug("Window %#010x has opacity %f, opacity target is %f", w->base.id,
-	          w->opacity, w->opacity_tgt);
+	          w->opacity, w->opacity_target);
 
 	win_determine_blur_background(ps, w);
 
@@ -2136,16 +2130,18 @@ static inline bool rect_is_fullscreen(const session_t *ps, int x, int y, int wid
 /**
  * Check if a window is fulscreen using EWMH
  */
-static inline bool win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_window_t w) {
-	xcb_get_property_cookie_t prop = xcb_get_property(c, 0, w, a->a_NET_WM_STATE, XCB_ATOM_ATOM, 0, 12);
+static inline bool
+win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_window_t w) {
+	xcb_get_property_cookie_t prop =
+	    xcb_get_property(c, 0, w, a->a_NET_WM_STATE, XCB_ATOM_ATOM, 0, 12);
 	xcb_get_property_reply_t *reply = xcb_get_property_reply(c, prop, NULL);
-	if(!reply)
+	if (!reply)
 		return false;
 
-	if(reply->length) {
+	if (reply->length) {
 		xcb_atom_t *val = xcb_get_property_value(reply);
-		for(uint32_t i = 0; i < reply->length; i++) {
-			if(val[i] != a->a_NET_WM_STATE_FULLSCREEN)
+		for (uint32_t i = 0; i < reply->length; i++) {
+			if (val[i] != a->a_NET_WM_STATE_FULLSCREEN)
 				continue;
 			free(reply);
 			return true;
@@ -2161,7 +2157,7 @@ static inline bool win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom 
  * It's not using w->border_size for performance measures.
  */
 bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
-	if(!ps->o.no_ewmh_fullscreen && win_is_fullscreen_xcb(ps->c, ps->atoms, w->client_win))
+	if (!ps->o.no_ewmh_fullscreen && win_is_fullscreen_xcb(ps->c, ps->atoms, w->client_win))
 		return true;
 	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
 	       (!w->bounding_shaped || w->rounded_corners);

@@ -263,7 +263,7 @@ struct managed_win {
 	/// Current window opacity.
 	double opacity;
 	/// Target window opacity.
-	double opacity_tgt;
+	double opacity_target;
 	/// true if window (or client window, for broken window managers
 	/// not transferring client window's _NET_WM_OPACITY value) has opacity prop
 	bool has_opacity_prop;
@@ -360,7 +360,23 @@ void win_unmark_client(session_t *ps, struct managed_win *w);
 void win_recheck_client(session_t *ps, struct managed_win *w);
 xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int recursions);
 bool win_get_class(session_t *ps, struct managed_win *w);
-double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w);
+
+/**
+ * Calculate and return the opacity target of a window.
+ *
+ * The priority of opacity settings are:
+ *
+ * inactive_opacity_override (if set, and unfocused) > _NET_WM_WINDOW_OPACITY (if set) >
+ * opacity-rules (if matched) > window type default opacity > active/inactive opacity
+ *
+ * @param ps           current session
+ * @param w            struct _win object representing the window
+ * @param ignore_state whether window state should be ignored in opacity calculation
+ *
+ * @return target opacity
+ */
+double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w,
+                                         bool ignore_state);
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 void win_update_screen(session_t *, struct managed_win *);
 /// Prepare window for fading because opacity target changed

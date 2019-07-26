@@ -800,7 +800,7 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_win_get_do(role, cdbus_reply_string);
 
 	cdbus_m_win_get_do(opacity, cdbus_reply_double);
-	cdbus_m_win_get_do(opacity_tgt, cdbus_reply_double);
+	cdbus_m_win_get_do(opacity_target, cdbus_reply_double);
 	cdbus_m_win_get_do(has_opacity_prop, cdbus_reply_bool);
 	cdbus_m_win_get_do(opacity_prop, cdbus_reply_uint32);
 	cdbus_m_win_get_do(opacity_is_set, cdbus_reply_bool);
