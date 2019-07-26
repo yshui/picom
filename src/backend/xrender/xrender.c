@@ -360,15 +360,16 @@ static void present(backend_t *base, const region_t *region) {
 		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC, xd->back[2],
 		                     XCB_NONE, xd->target, orig_x, orig_y, 0, 0, orig_x,
 		                     orig_y, region_width, region_height);
-
-		// Only the target picture really holds the screen content, and its
-		// content is always up to date. So buffer age is always 1.
-		xd->buffer_age[xd->curr_back] = 1;
 	}
 }
 
 static int buffer_age(backend_t *backend_data) {
 	struct _xrender_data *xd = (void *)backend_data;
+	if (!xd->vsync) {
+		// Only the target picture really holds the screen content, and its
+		// content is always up to date. So buffer age is always 1.
+		return 1;
+	}
 	return xd->buffer_age[xd->curr_back];
 }
 
