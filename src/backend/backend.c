@@ -140,55 +140,6 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		// reminder: bounding shape contains the WM frame
 		auto reg_bound = win_get_bounding_shape_global_by_val(w);
 
-		// Draw shadow on target
-		if (w->shadow) {
-			// Clip region for the shadow
-			// reg_shadow \in reg_paint
-			auto reg_shadow = win_extents_by_val(w);
-			pixman_region32_intersect(&reg_shadow, &reg_shadow, &reg_paint);
-			if (!ps->o.wintype_option[w->window_type].full_shadow) {
-				pixman_region32_subtract(&reg_shadow, &reg_shadow, &reg_bound);
-			}
-
-			// Mask out the region we don't want shadow on
-			if (pixman_region32_not_empty(&ps->shadow_exclude_reg)) {
-				pixman_region32_subtract(&reg_shadow, &reg_shadow,
-				                         &ps->shadow_exclude_reg);
-			}
-
-			if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
-			    w->xinerama_scr < ps->xinerama_nscrs) {
-				// There can be a window where number of screens is
-				// updated, but the screen number attached to the windows
-				// have not.
-				//
-				// Window screen number will be updated eventually, so
-				// here we just check to make sure we don't access out of
-				// bounds.
-				pixman_region32_intersect(
-				    &reg_shadow, &reg_shadow,
-				    &ps->xinerama_scr_regs[w->xinerama_scr]);
-			}
-
-			assert(w->shadow_image);
-			if (w->opacity == 1) {
-				ps->backend_data->ops->compose(
-				    ps->backend_data, w->shadow_image, w->g.x + w->shadow_dx,
-				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
-			} else {
-				auto new_img = ps->backend_data->ops->copy(
-				    ps->backend_data, w->shadow_image, &reg_visible);
-				ps->backend_data->ops->image_op(
-				    ps->backend_data, IMAGE_OP_APPLY_ALPHA_ALL, new_img,
-				    NULL, &reg_visible, (double[]){w->opacity});
-				ps->backend_data->ops->compose(
-				    ps->backend_data, new_img, w->g.x + w->shadow_dx,
-				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
-				ps->backend_data->ops->release_image(ps->backend_data, new_img);
-			}
-			pixman_region32_fini(&reg_shadow);
-		}
-
 		// The clip region for the current window, in global/target coordinates
 		// reg_paint_in_bound \in reg_paint
 		region_t reg_paint_in_bound;
@@ -245,6 +196,56 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				pixman_region32_fini(&reg_blur);
 			}
 		}
+
+		// Draw shadow on target
+		if (w->shadow) {
+			// Clip region for the shadow
+			// reg_shadow \in reg_paint
+			auto reg_shadow = win_extents_by_val(w);
+			pixman_region32_intersect(&reg_shadow, &reg_shadow, &reg_paint);
+			if (!ps->o.wintype_option[w->window_type].full_shadow) {
+				pixman_region32_subtract(&reg_shadow, &reg_shadow, &reg_bound);
+			}
+
+			// Mask out the region we don't want shadow on
+			if (pixman_region32_not_empty(&ps->shadow_exclude_reg)) {
+				pixman_region32_subtract(&reg_shadow, &reg_shadow,
+				                         &ps->shadow_exclude_reg);
+			}
+
+			if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
+			    w->xinerama_scr < ps->xinerama_nscrs) {
+				// There can be a window where number of screens is
+				// updated, but the screen number attached to the windows
+				// have not.
+				//
+				// Window screen number will be updated eventually, so
+				// here we just check to make sure we don't access out of
+				// bounds.
+				pixman_region32_intersect(
+				    &reg_shadow, &reg_shadow,
+				    &ps->xinerama_scr_regs[w->xinerama_scr]);
+			}
+
+			assert(w->shadow_image);
+			if (w->opacity == 1) {
+				ps->backend_data->ops->compose(
+				    ps->backend_data, w->shadow_image, w->g.x + w->shadow_dx,
+				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
+			} else {
+				auto new_img = ps->backend_data->ops->copy(
+				    ps->backend_data, w->shadow_image, &reg_visible);
+				ps->backend_data->ops->image_op(
+				    ps->backend_data, IMAGE_OP_APPLY_ALPHA_ALL, new_img,
+				    NULL, &reg_visible, (double[]){w->opacity});
+				ps->backend_data->ops->compose(
+				    ps->backend_data, new_img, w->g.x + w->shadow_dx,
+				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
+				ps->backend_data->ops->release_image(ps->backend_data, new_img);
+			}
+			pixman_region32_fini(&reg_shadow);
+		}
+
 		// Draw window on target
 		if (!w->invert_color && !w->dim && w->frame_opacity == 1 && w->opacity == 1) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
