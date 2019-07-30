@@ -153,6 +153,8 @@ typedef struct session {
 	// === Display related ===
 	/// Display in use.
 	Display *dpy;
+	/// Previous handler of X errors
+	XErrorHandler previous_xerror_handler;
 	/// Default screen.
 	int scr;
 	/// XCB connection.
