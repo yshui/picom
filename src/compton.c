@@ -1601,7 +1601,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	const xcb_query_extension_reply_t *ext_info;
 
-	XSetErrorHandler(xerror);
+	ps->previous_xerror_handler = XSetErrorHandler(xerror);
 
 	ps->scr = DefaultScreen(ps->dpy);
 
@@ -2182,6 +2182,8 @@ static void session_destroy(session_t *ps) {
 	// Report about resource leakage
 	xrc_report_xid();
 #endif
+
+	XSetErrorHandler(ps->previous_xerror_handler);
 
 	// Stop libev event handlers
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
