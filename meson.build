@@ -9,9 +9,9 @@ version = 'v'+meson.project_version()
 # use git describe if that's available
 git = find_program('git', required: false)
 if git.found()
-	gitv = run_command('git', 'describe')
+	gitv = run_command('git', 'rev-parse', '--short=5', 'HEAD')
 	if gitv.returncode() == 0
-		version = gitv.stdout().strip()
+		version = 'vgit-'+gitv.stdout().strip()
 	endif
 endif
 
