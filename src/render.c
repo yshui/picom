@@ -1216,10 +1216,12 @@ void deinit_render(session_t *ps) {
 	}
 #endif
 
-	for (int i = 0; i < ps->o.blur_kernel_count; i++) {
-		free(ps->blur_kerns_cache[i]);
+	if (ps->o.blur_method != BLUR_METHOD_NONE) {
+		for (int i = 0; i < ps->o.blur_kernel_count; i++) {
+			free(ps->blur_kerns_cache[i]);
+		}
+		free(ps->blur_kerns_cache);
 	}
-	free(ps->blur_kerns_cache);
 }
 
 // vim: set ts=8 sw=8 noet :
