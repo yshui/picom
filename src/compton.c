@@ -258,8 +258,8 @@ static bool run_fade(session_t *ps, struct managed_win **_w, long steps) {
 		}
 	}
 
-	// Note even if opacity == opacity_target here, we still want to run preprocess one
-	// last time to finish state transition. So return true in that case too.
+	// Note even if opacity == opacity_target here, we still want to run preprocess
+	// one last time to finish state transition. So return true in that case too.
 	return true;
 }
 
@@ -723,7 +723,13 @@ static bool initialize_backend(session_t *ps) {
 	if (ps->o.experimental_backends) {
 		assert(!ps->backend_data);
 		// Reinitialize win_data
-		ps->backend_data = backend_list[ps->o.backend]->init(ps);
+		if (backend_list[ps->o.backend]) {
+			ps->backend_data = backend_list[ps->o.backend]->init(ps);
+		} else {
+			log_error("Backend \"%s\" is not available as part of the "
+			          "experimental backends.",
+			          BACKEND_STRS[ps->o.backend]);
+		}
 		if (!ps->backend_data) {
 			log_fatal("Failed to initialize backend, aborting...");
 			quit_compton(ps);
