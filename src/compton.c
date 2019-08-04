@@ -1147,6 +1147,15 @@ xcb_window_t session_get_target_window(session_t *ps) {
 	return ps->overlay != XCB_NONE ? ps->overlay : ps->root;
 }
 
+static inline uint8_t session_redirection_mode(session_t *ps) {
+	if (ps->o.debug_mode || !backend_list[ps->o.backend]->present) {
+		// If the backend is not rendering to the screen, or if the backend
+		// doesn't render anything, we don't need to take over the screen.
+		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
+	}
+	return XCB_COMPOSITE_REDIRECT_MANUAL;
+}
+
 /**
  * Redirect all windows.
  *
@@ -1162,9 +1171,7 @@ static bool redir_start(session_t *ps) {
 		xcb_map_window(ps->c, ps->overlay);
 	}
 
-	xcb_composite_redirect_subwindows(ps->c, ps->root,
-	                                  ps->o.debug_mode ? XCB_COMPOSITE_REDIRECT_AUTOMATIC
-	                                                   : XCB_COMPOSITE_REDIRECT_MANUAL);
+	xcb_composite_redirect_subwindows(ps->c, ps->root, session_redirection_mode(ps));
 
 	x_sync(ps->c);
 
@@ -1210,9 +1217,7 @@ static void redir_stop(session_t *ps) {
 
 	destroy_backend(ps);
 
-	xcb_composite_unredirect_subwindows(ps->c, ps->root,
-	                                    ps->o.debug_mode ? XCB_COMPOSITE_REDIRECT_AUTOMATIC
-	                                                     : XCB_COMPOSITE_REDIRECT_MANUAL);
+	xcb_composite_unredirect_subwindows(ps->c, ps->root, session_redirection_mode(ps));
 	// Unmap overlay window
 	if (ps->overlay)
 		xcb_unmap_window(ps->c, ps->overlay);
@@ -1845,19 +1850,24 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	rebuild_screen_reg(ps);
 
 	// Create registration window
-	if (!ps->o.debug_mode && !register_cm(ps)) {
+	// If we are not taking over the screen, we don't need to register as a compositor
+	if (session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_MANUAL && !register_cm(ps)) {
 		exit(1);
 	}
 
-	// Overlay must be initialized before double buffer, and before creation
-	// of OpenGL context.
-	if (!ps->o.debug_mode) {
-		if (!init_overlay(ps)) {
-			goto err;
-		}
-	} else {
-		if (!init_debug_window(ps)) {
-			goto err;
+	// Target window must be initialized before the backend
+	//
+	// backend_operations::present == NULL means this backend doesn't need a target
+	// window
+	if (backend_list[ps->o.backend]->present != NULL) {
+		if (!ps->o.debug_mode) {
+			if (!init_overlay(ps)) {
+				goto err;
+			}
+		} else {
+			if (!init_debug_window(ps)) {
+				goto err;
+			}
 		}
 	}
 

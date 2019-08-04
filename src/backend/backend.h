@@ -71,7 +71,6 @@ struct kernel_blur_args {
 };
 
 struct backend_operations {
-
 	// ===========    Initialization    ===========
 
 	/// Initialize the backend, prepare for rendering to the target window.
@@ -83,7 +82,7 @@ struct backend_operations {
 	void (*deinit)(backend_t *backend_data) attr_nonnull(1);
 
 	/// Called when rendering will be stopped for an unknown amount of
-	/// time (e.g. screen is unredirected). Free some resources.
+	/// time (e.g. when screen is unredirected). Free some resources.
 	///
 	/// Optional, not yet used
 	void (*pause)(backend_t *backend_data, session_t *ps);
@@ -115,7 +114,8 @@ struct backend_operations {
 	// but we have to discard the result (because the result of blurring that area
 	// will be wrong). That's why we cannot render into the back buffer directly.
 	// After rendering is done, `present` is called to update a portion of the actual
-	// back buffer, then present it to the screen.
+	// back buffer, then present it to the target (or update the target directly,
+	// if not back buffered).
 
 	/// Called before when a new frame starts.
 	///
@@ -143,11 +143,13 @@ struct backend_operations {
 	    attr_nonnull(1, 3, 4, 5);
 
 	/// Update part of the back buffer with the rendering buffer, then present the
-	/// back buffer onto the screen.
+	/// back buffer onto the target window (if not back buffered, update part of the
+	/// target window directly).
 	///
-	/// @param region part of the screen that should be updated. if NULL, update the
-	///               whole screen
-	void (*present)(backend_t *backend_data, const region_t *region) attr_nonnull(1);
+	/// Optional, if NULL, indicates the backend doesn't have render output
+	///
+	/// @param region part of the target that should be updated
+	void (*present)(backend_t *backend_data, const region_t *region) attr_nonnull(1, 2);
 
 	/**
 	 * Bind a X pixmap to the backend's internal image data structure.
@@ -202,7 +204,7 @@ struct backend_operations {
 	 * @param reg_op       the clip region, define the part of the image to be
 	 *                     operated on.
 	 * @param reg_visible  define the part of the image that will eventually
-	 *                     be visible on screen. this is a hint to the backend
+	 *                     be visible on target. this is a hint to the backend
 	 *                     for optimization purposes.
 	 * @param args         extra arguments, operation specific
 	 * @return a new image data structure containing the result
@@ -230,8 +232,6 @@ struct backend_operations {
 	/// Return the driver that is been used by the backend
 	enum driver (*detect_driver)(backend_t *backend_data);
 };
-
-typedef backend_t *(*backend_init_fn)(session_t *ps)attr_nonnull(1);
 
 extern struct backend_operations *backend_list[];
 
