@@ -1087,6 +1087,10 @@ static bool init_alpha_picts(session_t *ps) {
 }
 
 bool init_render(session_t *ps) {
+	if (ps->o.backend == BKEND_DUMMY) {
+		return false;
+	}
+
 	// Initialize OpenGL as early as possible
 #ifdef CONFIG_OPENGL
 	glxext_init(ps->dpy, ps->scr);

@@ -225,8 +225,10 @@ struct backend_operations {
 
 	// ===========         Hooks        ============
 	/// Let the backend hook into the event handling queue
+	/// Not implemented yet
 	void (*set_ready_callback)(backend_t *, backend_ready_callback_t cb);
 	/// Called right after compton has handled its events.
+	/// Not implemented yet
 	void (*handle_events)(backend_t *);
 	// ===========         Misc         ============
 	/// Return the driver that is been used by the backend

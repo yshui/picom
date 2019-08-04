@@ -10,13 +10,14 @@
 #include "region.h"
 #include "win.h"
 
-extern struct backend_operations xrender_ops;
+extern struct backend_operations xrender_ops, dummy_ops;
 #ifdef CONFIG_OPENGL
 extern struct backend_operations glx_ops;
 #endif
 
 struct backend_operations *backend_list[NUM_BKEND] = {
     [BKEND_XRENDER] = &xrender_ops,
+    [BKEND_DUMMY] = &dummy_ops,
 #ifdef CONFIG_OPENGL
     [BKEND_GLX] = &glx_ops,
 #endif

@@ -80,10 +80,11 @@ const char *const WINTYPES[NUM_WINTYPES] = {
 };
 
 /// Names of backends.
-const char *const BACKEND_STRS[NUM_BKEND + 1] = {"xrender",              // BKEND_XRENDER
-                                                 "glx",                  // BKEND_GLX
-                                                 "xr_glx_hybrid",        // BKEND_XR_GLX_HYBRID
-                                                 NULL};
+const char *const BACKEND_STRS[] = {[BKEND_XRENDER] = "xrender",
+                                    [BKEND_GLX] = "glx",
+                                    [BKEND_XR_GLX_HYBRID] = "xr_glx_hybrid",
+                                    [BKEND_DUMMY] = "dummy",
+                                    NULL};
 
 // === Global variables ===
 
