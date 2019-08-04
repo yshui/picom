@@ -511,7 +511,8 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		if (!w->ever_damaged || w->g.x + w->g.width < 1 ||
 		    w->g.y + w->g.height < 1 || w->g.x >= ps->root_width ||
 		    w->g.y >= ps->root_height || w->state == WSTATE_UNMAPPED ||
-		    (double)w->opacity * MAX_ALPHA < 1 || w->paint_excluded) {
+		    ((double)w->opacity * MAX_ALPHA < 1 && !w->blur_background) ||
+		    w->paint_excluded) {
 			// TODO: for consistency, even a window has 0 opacity, we still
 			// probably need to blur its background, so to_paint shouldn't be
 			// false for them.

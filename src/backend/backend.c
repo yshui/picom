@@ -252,7 +252,10 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               w->g.x, w->g.y,
 			                               &reg_paint_in_bound, &reg_visible);
-		} else {
+		} else if (w->opacity * MAX_ALPHA >= 1){
+			// We don't need to paint the window body itself if it's
+			// completely transparent.
+
 			// For window image processing, we don't need to limit the process
 			// region to damage, since the window image data is independent
 			// from the target image data, which we want to protect.
