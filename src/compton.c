@@ -918,13 +918,6 @@ static bool register_cm(session_t *ps) {
 		return false;
 	}
 
-	// Unredirect the window if it's redirected, just in case
-	if (ps->redirected)
-		xcb_composite_unredirect_window(ps->c, ps->reg_win,
-		                                ps->o.debug_mode
-		                                    ? XCB_COMPOSITE_REDIRECT_AUTOMATIC
-		                                    : XCB_COMPOSITE_REDIRECT_MANUAL);
-
 	{
 		XClassHint *h = XAllocClassHint();
 		if (h) {
