@@ -740,6 +740,8 @@ static bool initialize_backend(session_t *ps) {
 
 		if (!initialize_blur(ps)) {
 			log_fatal("Failed to prepare for background blur, aborting...");
+			ps->backend_data->ops->deinit(ps->backend_data);
+			ps->backend_data = NULL;
 			quit_compton(ps);
 			return false;
 		}
