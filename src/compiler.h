@@ -106,3 +106,7 @@
 
 typedef unsigned long ulong;
 typedef unsigned int uint;
+
+static inline int popcount(uint x) {
+	return __builtin_popcount(x);
+}
