@@ -1328,6 +1328,8 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 			return quit_compton(ps);
 		}
 
+		ps->server_grabbed = true;
+
 		// Catching up with X server
 		handle_queued_x_events(EV_A_ & ps->event_check, 0);
 
@@ -1341,6 +1343,8 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 
 		// Refresh pixmaps
 		refresh_stale_images(ps);
+
+		ps->server_grabbed = false;
 
 		e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
 		if (e) {
@@ -1990,6 +1994,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		goto err;
 	}
 
+	ps->server_grabbed = true;
+
 	// We are going to pull latest information from X server now, events sent by X
 	// earlier is irrelavant at this point.
 	// A better solution is probably grabbing the server from the very start. But I
@@ -2000,11 +2006,12 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    xcb_query_tree_reply(ps->c, xcb_query_tree(ps->c, ps->root), NULL);
 
 	e = xcb_request_check(ps->c, xcb_ungrab_server(ps->c));
-
 	if (e) {
 		log_error("Failed to ungrab server");
 		free(e);
 	}
+
+	ps->server_grabbed = false;
 
 	if (query_tree_reply) {
 		xcb_window_t *children;

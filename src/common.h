@@ -158,6 +158,8 @@ typedef struct session {
 	struct ev_loop *loop;
 
 	// === Display related ===
+	/// Whether the X server is grabbed by us
+	bool server_grabbed;
 	/// Display in use.
 	Display *dpy;
 	/// Previous handler of X errors
