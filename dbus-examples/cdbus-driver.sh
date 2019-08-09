@@ -18,7 +18,7 @@ service="com.github.chjj.compton.${dpy}"
 interface='com.github.chjj.compton'
 object='/com/github/chjj/compton'
 type_win='uint32'
-type_enum='uint16'
+type_enum='uint32'
 
 # === DBus methods ===
 
@@ -44,11 +44,11 @@ dbus-send --print-reply --dest="$service" "$object" "${interface}.reset"
 
 # Undirect window
 sleep 3
-dbus-send --print-reply --dest="$service" "$object" "${interface}.opts_set" string:redirected_force uint16:0
+dbus-send --print-reply --dest="$service" "$object" "${interface}.opts_set" string:redirected_force "${type_enum}:0"
 
 # Revert back to auto
 sleep 3
-dbus-send --print-reply --dest="$service" "$object" "${interface}.opts_set" string:redirected_force uint16:2
+dbus-send --print-reply --dest="$service" "$object" "${interface}.opts_set" string:redirected_force "${type_enum}:2"
 
 # Force repaint
 dbus-send --print-reply --dest="$service" "$object" "${interface}.repaint"

@@ -34,7 +34,7 @@ service="com.github.chjj.compton.${dpy}"
 interface="com.github.chjj.compton"
 compton_dbus="dbus-send --print-reply --dest="${service}" / "${interface}"."
 type_win='uint32'
-type_enum='uint16'
+type_enum='uint32'
 
 # === Color Inversion ===
 
