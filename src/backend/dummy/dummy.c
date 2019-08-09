@@ -20,7 +20,12 @@ struct dummy_data {
 };
 
 struct backend_base *dummy_init(struct session *ps attr_unused) {
-	return (struct backend_base *)ccalloc(1, struct dummy_data);
+	auto ret = (struct backend_base *)ccalloc(1, struct dummy_data);
+	ret->c = ps->c;
+	ret->loop = ps->loop;
+	ret->root = ps->root;
+	ret->busy = false;
+	return ret;
 }
 
 void dummy_deinit(struct backend_base *data) {
