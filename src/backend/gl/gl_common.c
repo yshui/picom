@@ -8,6 +8,7 @@
 #include <string.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 
+#include "backend/backend.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
@@ -15,6 +16,7 @@
 #include "log.h"
 #include "region.h"
 #include "string_utils.h"
+#include "types.h"
 #include "utils.h"
 
 #include "backend/backend_common.h"

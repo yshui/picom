@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #include <string.h>
+#include <math.h>
 #include <xcb/render.h>
 #include <xcb/xcb_image.h>
 #include <xcb/xcb_renderutil.h>
@@ -9,6 +10,8 @@
 #include "backend/backend_common.h"
 #include "common.h"
 #include "kernel.h"
+#include "config.h"
+#include "utils.h"
 #include "log.h"
 #include "win.h"
 #include "x.h"

@@ -33,6 +33,7 @@
 #include "win.h"
 #include "x.h"
 
+#include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "render.h"
 

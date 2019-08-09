@@ -1,5 +1,6 @@
 #include <uthash.h>
 
+#include "compiler.h"
 #include "utils.h"
 #include "cache.h"
 

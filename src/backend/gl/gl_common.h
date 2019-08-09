@@ -7,7 +7,6 @@
 #include <string.h>
 
 #include "backend/backend.h"
-#include "config.h"
 #include "log.h"
 #include "region.h"
 

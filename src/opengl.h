@@ -19,6 +19,7 @@
 #include "win.h"
 
 #include <GL/gl.h>
+#include <GL/glx.h>
 #include <ctype.h>
 #include <locale.h>
 #include <stdlib.h>

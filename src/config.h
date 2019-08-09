@@ -19,13 +19,12 @@
 #include <libconfig.h>
 #endif
 
-#include "backend/backend.h"
 #include "compiler.h"
 #include "kernel.h"
 #include "log.h"
 #include "region.h"
+#include "win_defs.h"
 #include "types.h"
-#include "win.h"
 
 typedef struct session session_t;
 
@@ -55,6 +54,14 @@ typedef struct win_option {
 	bool redir_ignore;
 	double opacity;
 } win_option_t;
+
+enum blur_method {
+	BLUR_METHOD_NONE = 0,
+	BLUR_METHOD_KERNEL,
+	BLUR_METHOD_BOX,
+	BLUR_METHOD_GAUSSIAN,
+	BLUR_METHOD_INVALID,
+};
 
 typedef struct _c2_lptr c2_lptr_t;
 

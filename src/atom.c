@@ -1,8 +1,10 @@
+#include <string.h>
 #include <xcb/xcb.h>
 
 #include "atom.h"
 #include "common.h"
 #include "utils.h"
+#include "log.h"
 
 static inline void *atom_getter(void *ud, const char *atom_name, int *err) {
 	xcb_connection_t *c = ud;

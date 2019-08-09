@@ -5,6 +5,7 @@
 
 #include <stdbool.h>
 
+#include "config.h"
 #include "compiler.h"
 #include "driver.h"
 #include "kernel.h"
@@ -46,14 +47,6 @@ enum image_operations {
 	// effective size. `reg_op` and `reg_visible` is ignored. `arg` is two integers,
 	// width and height, in that order.
 	IMAGE_OP_RESIZE_TILE,
-};
-
-enum blur_method {
-	BLUR_METHOD_NONE = 0,
-	BLUR_METHOD_KERNEL,
-	BLUR_METHOD_BOX,
-	BLUR_METHOD_GAUSSIAN,
-	BLUR_METHOD_INVALID,
 };
 
 struct gaussian_blur_args {

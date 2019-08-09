@@ -8,6 +8,7 @@
 #include "config.h"
 #include "log.h"
 #include "region.h"
+#include "types.h"
 #include "win.h"
 
 extern struct backend_operations xrender_ops, dummy_ops;

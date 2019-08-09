@@ -36,6 +36,9 @@
 #include <X11/Xlib.h>
 #include <ev.h>
 #include <pixman.h>
+#include <xcb/xproto.h>
+#include <xcb/render.h>
+#include <xcb/sync.h>
 
 #include "uthash_extra.h"
 #ifdef CONFIG_OPENGL
@@ -55,6 +58,8 @@
 #include "region.h"
 #include "types.h"
 #include "utils.h"
+#include "list.h"
+#include "render.h"
 #include "x.h"
 
 // === Constants ===0
@@ -75,6 +80,7 @@
 typedef struct glx_fbconfig glx_fbconfig_t;
 struct glx_session;
 struct atom;
+struct conv;
 
 typedef struct _ignore {
 	struct _ignore *next;
@@ -269,7 +275,7 @@ typedef struct session {
 	/// 1x1 white Picture.
 	xcb_render_picture_t white_picture;
 	/// Gaussian map of shadow.
-	conv *gaussian_map;
+	struct conv *gaussian_map;
 	// for shadow precomputation
 	/// A region in which shadow is not painted on.
 	region_t shadow_exclude_reg;

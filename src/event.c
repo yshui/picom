@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2019, Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <stdio.h>
+
 #include <X11/Xlibint.h>
 #include <X11/extensions/sync.h>
 #include <xcb/randr.h>
+#include <xcb/damage.h>
 
 #include "atom.h"
 #include "common.h"
@@ -11,6 +14,11 @@
 #include "compton.h"
 #include "event.h"
 #include "utils.h"
+#include "region.h"
+#include "config.h"
+#include "x.h"
+#include "win.h"
+#include "log.h"
 
 /// Event handling with X is complicated. Handling events with other events possibly
 /// in-flight is no good. Because your internal state won't be up to date. Also, querying

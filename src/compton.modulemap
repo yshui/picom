@@ -63,6 +63,9 @@ module config {
 module xrescheck {
   header "xrescheck.h"
 }
+module cache {
+  header "cache.h"
+}
 module backend {
   module gl {
     module gl_common {

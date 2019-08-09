@@ -13,6 +13,7 @@
 #include "compiler.h"
 #include "kernel.h"
 #include "region.h"
+#include "log.h"
 
 typedef struct session session_t;
 

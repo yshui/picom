@@ -22,6 +22,7 @@
 #include "utils.h"
 #include "win.h"
 #include "x.h"
+#include "types.h"
 
 typedef struct _xrender_data {
 	backend_t base;

@@ -1,11 +1,17 @@
 #include <uthash.h>
 #include <xcb/xcb.h>
 
+#include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
 #include "compiler.h"
+#include "config.h"
+#include "log.h"
+#include "region.h"
+#include "types.h"
 #include "uthash_extra.h"
 #include "utils.h"
+#include "x.h"
 
 struct dummy_image {
 	xcb_pixmap_t pixmap;
@@ -132,7 +138,6 @@ void *dummy_create_blur_context(struct backend_base *base attr_unused,
 }
 
 void dummy_destroy_blur_context(struct backend_base *base attr_unused, void *ctx attr_unused) {
-
 }
 
 void dummy_get_blur_size(void *ctx attr_unused, int *width, int *height) {
