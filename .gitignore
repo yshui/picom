@@ -11,9 +11,13 @@ missing
 stamp-h1
 compton
 *.o
+*.d
 build/
 compile_commands.json
 build.ninja
+
+# ccls
+.ccls-cache
 
 # CMake files
 compton-*.deb
@@ -34,8 +38,8 @@ install_manifest.txt
 *~
 
 # Misc files
-/core
-/*.core
+core.*
+.gdb_history
 oprofile_data/
 compton.plist
 callgrind.out.*
