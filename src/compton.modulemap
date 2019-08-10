@@ -41,8 +41,12 @@ module opengl {
 module diagnostic {
   header "diagnostic.h"
 }
+module win_defs {
+  header "win_defs.h"
+}
 module win {
   header "win.h"
+  export win_defs
 }
 module log {
   header "log.h"

@@ -60,6 +60,7 @@
 #include "utils.h"
 #include "list.h"
 #include "render.h"
+#include "win_defs.h"
 #include "x.h"
 
 // === Constants ===0
