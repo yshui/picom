@@ -130,8 +130,6 @@ struct managed_win {
 	region_t bounding_shape;
 	/// Window flags. Definitions above.
 	int_fast16_t flags;
-	/// Queued <code>ConfigureNotify</code> when the window is unmapped.
-	xcb_configure_notify_event_t queue_configure;
 	/// The region of screen that will be obscured when windows above is painted,
 	/// in global coordinates.
 	/// We use this to reduce the pixels that needed to be paint when painting

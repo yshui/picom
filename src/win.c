@@ -1081,7 +1081,6 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .state = WSTATE_UNMAPPED,         // updated by window state changes
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
-	    .queue_configure = {},            // same as above
 	    .reg_ignore_valid = false,        // set to true when damaged
 	    .flags = 0,                       // updated by property/attributes/etc change
 
