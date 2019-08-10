@@ -1996,39 +1996,35 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// think there still could be race condition that mandates discarding the events.
 	x_discard_events(ps->c);
 
-	{
-		xcb_window_t *children;
-		int nchildren;
-
-		xcb_query_tree_reply_t *reply =
-		    xcb_query_tree_reply(ps->c, xcb_query_tree(ps->c, ps->root), NULL);
-
-		if (reply) {
-			children = xcb_query_tree_children(reply);
-			nchildren = xcb_query_tree_children_length(reply);
-		} else {
-			children = NULL;
-			nchildren = 0;
-		}
-
-		for (int i = 0; i < nchildren; i++) {
-			add_win_above(ps, children[i], i ? children[i - 1] : XCB_NONE);
-		}
-		free(reply);
-
-		log_trace("Initial stack:");
-		list_foreach(struct win, w, &ps->window_stack, stack_neighbour) {
-			log_trace("%#010x", w->id);
-		}
-	}
-
-	ps->pending_updates = true;
+	xcb_query_tree_reply_t *query_tree_reply =
+	    xcb_query_tree_reply(ps->c, xcb_query_tree(ps->c, ps->root), NULL);
 
 	e = xcb_request_check(ps->c, xcb_ungrab_server(ps->c));
+
 	if (e) {
 		log_error("Failed to ungrad server");
 		free(e);
 	}
+
+	if (query_tree_reply) {
+		xcb_window_t *children;
+		int nchildren;
+
+		children = xcb_query_tree_children(query_tree_reply);
+		nchildren = xcb_query_tree_children_length(query_tree_reply);
+
+		for (int i = 0; i < nchildren; i++) {
+			add_win_above(ps, children[i], i ? children[i - 1] : XCB_NONE);
+		}
+		free(query_tree_reply);
+	}
+
+	log_trace("Initial stack:");
+	list_foreach(struct win, w, &ps->window_stack, stack_neighbour) {
+		log_trace("%#010x", w->id);
+	}
+
+	ps->pending_updates = true;
 
 	write_pid(ps);
 
