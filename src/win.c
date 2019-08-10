@@ -68,6 +68,54 @@ static inline void clear_cache_win_leaders(session_t *ps) {
 	}
 }
 
+static xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int recursions);
+
+/**
+ * Get the leader of a window.
+ *
+ * This function updates w->cache_leader if necessary.
+ */
+static inline xcb_window_t win_get_leader(session_t *ps, struct managed_win *w) {
+	return win_get_leader_raw(ps, w, 0);
+}
+
+/**
+ * Update focused state of a window.
+ */
+static void win_update_focused(session_t *ps, struct managed_win *w) {
+	if (UNSET != w->focused_force) {
+		w->focused = w->focused_force;
+	} else {
+		w->focused = win_is_focused_real(ps, w);
+
+		// Use wintype_focus, and treat WM windows and override-redirected
+		// windows specially
+		if (ps->o.wintype_option[w->window_type].focus ||
+		    (ps->o.mark_wmwin_focused && w->wmwin) ||
+		    (ps->o.mark_ovredir_focused && w->base.id == w->client_win && !w->wmwin) ||
+		    (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
+		     c2_match(ps, w, ps->o.focus_blacklist, NULL)))
+			w->focused = true;
+
+		// If window grouping detection is enabled, mark the window active if
+		// its group is
+		if (ps->o.track_leader && ps->active_leader &&
+		    win_get_leader(ps, w) == ps->active_leader) {
+			w->focused = true;
+		}
+	}
+
+	// Always recalculate the window target opacity, since some opacity-related
+	// options depend on the output value of win_is_focused_real() instead of
+	// w->focused
+	auto opacity_target_old = w->opacity_target;
+	w->opacity_target = win_calc_opacity_target(ps, w, false);
+	if (opacity_target_old != w->opacity_target && w->state == WSTATE_MAPPED) {
+		// Only MAPPED can transition to FADING
+		w->state = WSTATE_FADING;
+	}
+}
+
 /**
  * Run win_update_focused() on all windows with the same leader window.
  *
@@ -89,6 +137,14 @@ static inline void group_update_focused(session_t *ps, xcb_window_t leader) {
 	}
 
 	return;
+}
+
+static inline const char *win_get_name_if_managed(const struct win *w) {
+	if (!w->managed) {
+		return "(unmanaged)";
+	}
+	auto mw = (struct managed_win *)w;
+	return mw->name;
 }
 
 /**
@@ -141,8 +197,6 @@ void win_get_region_noframe_local(const struct managed_win *w, region_t *res) {
 		pixman_region32_init_rect(res, x, y, (uint)width, (uint)height);
 	}
 }
-
-gen_by_val(win_get_region_noframe_local);
 
 void win_get_region_frame_local(const struct managed_win *w, region_t *res) {
 	const margin_t extents = win_calc_frame_extents(w);
@@ -548,20 +602,7 @@ void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w) {
 	free_winprop(&prop);
 }
 
-/**
- * Reread _COMPTON_SHADOW property from a window and update related
- * things.
- */
-void win_update_prop_shadow(session_t *ps, struct managed_win *w) {
-	long attr_shadow_old = w->prop_shadow;
-
-	win_update_prop_shadow_raw(ps, w);
-
-	if (w->prop_shadow != attr_shadow_old)
-		win_determine_shadow(ps, w);
-}
-
-void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new) {
+static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new) {
 	if (w->shadow == shadow_new) {
 		return;
 	}
@@ -609,7 +650,7 @@ void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new) {
  * Determine if a window should have shadow, and update things depending
  * on shadow state.
  */
-void win_determine_shadow(session_t *ps, struct managed_win *w) {
+static void win_determine_shadow(session_t *ps, struct managed_win *w) {
 	log_debug("Determining shadow of window %#010x (%s)", w->base.id, w->name);
 	bool shadow_new = w->shadow;
 
@@ -636,13 +677,40 @@ void win_determine_shadow(session_t *ps, struct managed_win *w) {
 	win_set_shadow(ps, w, shadow_new);
 }
 
-void win_set_invert_color(session_t *ps, struct managed_win *w, bool invert_color_new) {
+/**
+ * Reread _COMPTON_SHADOW property from a window and update related
+ * things.
+ */
+void win_update_prop_shadow(session_t *ps, struct managed_win *w) {
+	long attr_shadow_old = w->prop_shadow;
+
+	win_update_prop_shadow_raw(ps, w);
+
+	if (w->prop_shadow != attr_shadow_old)
+		win_determine_shadow(ps, w);
+}
+
+static void win_set_invert_color(session_t *ps, struct managed_win *w, bool invert_color_new) {
 	if (w->invert_color == invert_color_new)
 		return;
 
 	w->invert_color = invert_color_new;
 
 	add_damage_from_win(ps, w);
+}
+
+/**
+ * Determine if a window should have color inverted.
+ */
+static void win_determine_invert_color(session_t *ps, struct managed_win *w) {
+	bool invert_color_new = w->invert_color;
+
+	if (UNSET != w->invert_color_force)
+		invert_color_new = w->invert_color_force;
+	else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
+		invert_color_new = c2_match(ps, w, ps->o.invert_color_list, NULL);
+
+	win_set_invert_color(ps, w, invert_color_new);
 }
 
 /**
@@ -687,20 +755,6 @@ void win_set_shadow_force(session_t *ps, struct managed_win *w, switch_t val) {
 	}
 }
 
-/**
- * Determine if a window should have color inverted.
- */
-void win_determine_invert_color(session_t *ps, struct managed_win *w) {
-	bool invert_color_new = w->invert_color;
-
-	if (UNSET != w->invert_color_force)
-		invert_color_new = w->invert_color_force;
-	else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
-		invert_color_new = c2_match(ps, w, ps->o.invert_color_list, NULL);
-
-	win_set_invert_color(ps, w, invert_color_new);
-}
-
 static void
 win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_background_new) {
 	if (w->blur_background == blur_background_new)
@@ -716,7 +770,7 @@ win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_backgrou
 /**
  * Determine if a window should have background blurred.
  */
-void win_determine_blur_background(session_t *ps, struct managed_win *w) {
+static void win_determine_blur_background(session_t *ps, struct managed_win *w) {
 	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
 		return;
 
@@ -749,7 +803,7 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
 /**
  * Function to be called on window type changes.
  */
-void win_on_wtype_change(session_t *ps, struct managed_win *w) {
+static void win_on_wtype_change(session_t *ps, struct managed_win *w) {
 	win_determine_shadow(ps, w);
 	win_update_focused(ps, w);
 	if (ps->o.invert_color_list)
@@ -909,7 +963,7 @@ void win_unmark_client(session_t *ps, struct managed_win *w) {
  * @param ps current session
  * @param w struct _win of the parent window
  */
-void win_recheck_client(session_t *ps, struct managed_win *w) {
+static void win_recheck_client(session_t *ps, struct managed_win *w) {
 	// Initialize wmwin to false
 	w->wmwin = false;
 
@@ -1170,43 +1224,6 @@ struct win *fill_win(session_t *ps, struct win *w) {
 }
 
 /**
- * Update focused state of a window.
- */
-void win_update_focused(session_t *ps, struct managed_win *w) {
-	if (UNSET != w->focused_force) {
-		w->focused = w->focused_force;
-	} else {
-		w->focused = win_is_focused_real(ps, w);
-
-		// Use wintype_focus, and treat WM windows and override-redirected
-		// windows specially
-		if (ps->o.wintype_option[w->window_type].focus ||
-		    (ps->o.mark_wmwin_focused && w->wmwin) ||
-		    (ps->o.mark_ovredir_focused && w->base.id == w->client_win && !w->wmwin) ||
-		    (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
-		     c2_match(ps, w, ps->o.focus_blacklist, NULL)))
-			w->focused = true;
-
-		// If window grouping detection is enabled, mark the window active if
-		// its group is
-		if (ps->o.track_leader && ps->active_leader &&
-		    win_get_leader(ps, w) == ps->active_leader) {
-			w->focused = true;
-		}
-	}
-
-	// Always recalculate the window target opacity, since some opacity-related
-	// options depend on the output value of win_is_focused_real() instead of
-	// w->focused
-	auto opacity_target_old = w->opacity_target;
-	w->opacity_target = win_calc_opacity_target(ps, w, false);
-	if (opacity_target_old != w->opacity_target && w->state == WSTATE_MAPPED) {
-		// Only MAPPED can transition to FADING
-		w->state = WSTATE_FADING;
-	}
-}
-
-/**
  * Set leader of a window.
  */
 static inline void win_set_leader(session_t *ps, struct managed_win *w, xcb_window_t nleader) {
@@ -1261,7 +1278,7 @@ void win_update_leader(session_t *ps, struct managed_win *w) {
 /**
  * Internal function of win_get_leader().
  */
-xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int recursions) {
+static xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int recursions) {
 	// Rebuild the cache if needed
 	if (!w->cache_leader && (w->client_win || w->leader)) {
 		// Leader defaults to client window

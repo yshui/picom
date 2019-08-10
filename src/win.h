@@ -14,7 +14,6 @@
 #include <GL/gl.h>
 #endif
 
-#include "win_defs.h"
 #include "c2.h"
 #include "compiler.h"
 #include "list.h"
@@ -22,6 +21,7 @@
 #include "render.h"
 #include "types.h"
 #include "utils.h"
+#include "win_defs.h"
 #include "x.h"
 
 struct backend_base;
@@ -271,12 +271,6 @@ void win_set_focused(session_t *ps, struct managed_win *w);
 bool attr_pure win_should_fade(session_t *ps, const struct managed_win *w);
 void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w);
 void win_update_prop_shadow(session_t *ps, struct managed_win *w);
-void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new);
-void win_determine_shadow(session_t *ps, struct managed_win *w);
-void win_set_invert_color(session_t *ps, struct managed_win *w, bool invert_color_new);
-void win_determine_invert_color(session_t *ps, struct managed_win *w);
-void win_determine_blur_background(session_t *ps, struct managed_win *w);
-void win_on_wtype_change(session_t *ps, struct managed_win *w);
 void win_on_factor_change(session_t *ps, struct managed_win *w);
 /**
  * Update cache data in struct _win that depends on window size.
@@ -285,8 +279,6 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w);
 void win_update_wintype(session_t *ps, struct managed_win *w);
 void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client);
 void win_unmark_client(session_t *ps, struct managed_win *w);
-void win_recheck_client(session_t *ps, struct managed_win *w);
-xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int recursions);
 bool win_get_class(session_t *ps, struct managed_win *w);
 
 /**
@@ -307,8 +299,6 @@ double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win
                                          bool ignore_state);
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 void win_update_screen(session_t *, struct managed_win *);
-/// Prepare window for fading because opacity target changed
-void win_start_fade(session_t *, struct managed_win **);
 /**
  * Reread opacity property of a window.
  */
@@ -317,10 +307,6 @@ void win_update_opacity_prop(session_t *ps, struct managed_win *w);
  * Update leader of a window.
  */
 void win_update_leader(session_t *ps, struct managed_win *w);
-/**
- * Update focused state of a window.
- */
-void win_update_focused(session_t *ps, struct managed_win *w);
 /**
  * Retrieve the bounding shape of a window.
  */
@@ -348,7 +334,6 @@ void add_damage_from_win(session_t *ps, const struct managed_win *w);
  * Return region in global coordinates.
  */
 void win_get_region_noframe_local(const struct managed_win *w, region_t *);
-region_t win_get_region_noframe_local_by_val(const struct managed_win *w);
 
 /// Get the region for the frame of the window
 void win_get_region_frame_local(const struct managed_win *w, region_t *res);
@@ -417,14 +402,6 @@ bool attr_pure win_is_fullscreen(const session_t *ps, const struct managed_win *
  * Check if a window is really focused.
  */
 bool attr_pure win_is_focused_real(const session_t *ps, const struct managed_win *w);
-/**
- * Get the leader of a window.
- *
- * This function updates w->cache_leader if necessary.
- */
-static inline xcb_window_t win_get_leader(session_t *ps, struct managed_win *w) {
-	return win_get_leader_raw(ps, w, 0);
-}
 
 /// check if window has ARGB visual
 bool attr_pure win_has_alpha(const struct managed_win *w);
@@ -466,12 +443,4 @@ static inline margin_t attr_pure win_calc_frame_extents(const struct managed_win
 static inline bool attr_pure win_has_frame(const struct managed_win *w) {
 	return w->g.border_width || w->frame_extents.top || w->frame_extents.left ||
 	       w->frame_extents.right || w->frame_extents.bottom;
-}
-
-static inline const char *win_get_name_if_managed(const struct win *w) {
-	if (!w->managed) {
-		return "(unmanaged)";
-	}
-	auto mw = (struct managed_win *)w;
-	return mw->name;
 }
