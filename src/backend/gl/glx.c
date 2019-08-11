@@ -119,10 +119,12 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 		if (m.visual_depth != -1 &&
 		    x_get_visual_depth(XGetXCBConnection(dpy), (xcb_visualid_t)visual) !=
 		        m.visual_depth) {
-			// Some driver might attach fbconfig to a GLX visual with a
-			// different depth.
+			// FBConfig and the correspondent X Visual might not have the same
+			// depth. (e.g. 32 bit FBConfig with a 24 bit Visual). This is
+			// quite common, seen in both open source and proprietary drivers.
 			//
-			// (That makes total sense. - NVIDIA developers)
+			// If the FBConfig has a matching depth but its visual doesn't, we
+			// still cannot use it.
 			continue;
 		}
 
