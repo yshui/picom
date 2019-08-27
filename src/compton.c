@@ -2002,7 +2002,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	e = xcb_request_check(ps->c, xcb_ungrab_server(ps->c));
 
 	if (e) {
-		log_error("Failed to ungrad server");
+		log_error("Failed to ungrab server");
 		free(e);
 	}
 
