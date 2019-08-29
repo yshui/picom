@@ -472,6 +472,8 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			w->frame_opacity = 1.0;
 		}
 
+		w->corner_radius = ps->o.corner_radius;
+
 		// Update window mode
 		w->mode = win_calc_mode(w);
 
@@ -558,11 +560,10 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		    ps->o.transparent_clipping) {
 			// w->mode == WMODE_SOLID or WMODE_FRAME_TRANS
 			region_t *tmp = rc_region_new();
-			if (w->mode == WMODE_SOLID) {
-				*tmp = win_get_bounding_shape_global_by_val(w);
-			} else {
-				// w->mode == WMODE_FRAME_TRANS
-				win_get_region_noframe_local(w, tmp);
+			if (w->frame_opacity == 1)
+				*tmp = win_get_bounding_shape_global_by_val(w, false);
+			else {
+				win_get_region_noframe_local(w, tmp, false);
 				pixman_region32_intersect(tmp, tmp, &w->bounding_shape);
 				pixman_region32_translate(tmp, w->g.x, w->g.y);
 			}

@@ -167,6 +167,12 @@ x_create_picture_with_standard_and_pixmap(xcb_connection_t *, xcb_pict_standard_
                                           const xcb_render_create_picture_value_list_t *attr)
     attr_nonnull(1);
 
+xcb_render_picture_t
+x_create_picture_with_standard(xcb_connection_t *c, xcb_drawable_t d, int w, int h,
+                               xcb_pict_standard_t standard, uint32_t valuemask,
+                               const xcb_render_create_picture_value_list_t *attr)
+    attr_nonnull(1);
+
 /**
  * Create an picture.
  */
@@ -249,6 +255,9 @@ void attr_nonnull(1, 3) x_create_convolution_kernel(const conv *kernel, double c
 struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual);
 
 xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
+
+xcb_render_pictformat_t
+x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
 
 xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen);
 
