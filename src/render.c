@@ -316,7 +316,7 @@ paint_region(session_t *ps, const struct managed_win *w, int x, int y, int wid, 
 	const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
 	const bool neg = (w && w->invert_color);
 
-	render(ps, x, y, dx, dy, wid, hei, opacity, argb, neg, (w ? w->corner_radius : 0),
+	render(ps, x, y, dx, dy, wid, hei, opacity, argb, neg, (w && !win_is_fullscreen(ps, w) ? w->corner_radius : 0),
 	       pict, (w ? w->paint.ptex : ps->root_tile_paint.ptex), reg_paint,
 #ifdef CONFIG_OPENGL
 	       w ? &ps->glx_prog_win : NULL
