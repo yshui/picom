@@ -265,13 +265,13 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, doubl
 				n += make_rectangle(cr, cr, wid - 2 * cr, hei - 2 * cr,
 				                    traps + n);
 
-				xcb_render_trapezoids(
-				    ps->c, XCB_RENDER_PICT_OP_OVER, pict, p_tmp,
-				    x_get_pictfmt_for_standard(ps->c, argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8 ),
-				    to_i16_checked(cr), 0, n, traps);
+                xcb_render_trapezoids(
+                    ps->c, XCB_RENDER_PICT_OP_OVER, alpha_pict, p_tmp,
+                    x_get_pictfmt_for_standard(ps->c, XCB_PICT_STANDARD_ARGB_32),
+                    0, 0, n, traps);
 
 				xcb_render_composite(
-				    ps->c, XCB_RENDER_PICT_OP_OVER, p_tmp, alpha_pict,
+				    ps->c, XCB_RENDER_PICT_OP_OVER, pict, p_tmp,
 				    ps->tgt_buffer.pict, to_i16_checked(x), to_i16_checked(y),
 				    0, 0, to_i16_checked(dx), to_i16_checked(dy),
 				    to_u16_checked(wid), to_u16_checked(hei));
