@@ -267,7 +267,7 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, doubl
 
                 xcb_render_trapezoids(
                     ps->c, XCB_RENDER_PICT_OP_OVER, alpha_pict, p_tmp,
-                    x_get_pictfmt_for_standard(ps->c, argb ? XCB_PICT_STANDARD_ARGB_32 : XCB_PICT_STANDARD_A_8),
+                    x_get_pictfmt_for_standard(ps->c, XCB_PICT_STANDARD_A_8),
                     0, 0, n, traps);
 
 				xcb_render_composite(
