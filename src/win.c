@@ -1647,9 +1647,6 @@ static void finish_destroy_win(session_t *ps, struct managed_win **_w) {
 	}
 	free(w);
 	*_w = NULL;
-	return;
-	log_warn("Destroyed window is not in window list");
-	assert(false);
 }
 
 static void finish_map_win(struct managed_win **_w) {
