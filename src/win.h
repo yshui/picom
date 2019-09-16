@@ -356,9 +356,10 @@ void restack_bottom(session_t *ps, struct win *w);
 /// Move window `w` to the top of the stack
 void restack_top(session_t *ps, struct win *w);
 /// Unmap or destroy a window
-void unmap_win(session_t *ps, struct managed_win **, bool destroy);
-/// Destroy an unmanaged window
-void destroy_unmanaged_win(session_t *ps, struct win **w);
+/// @return whether the window is destroyed and freed
+bool must_use unmap_win(session_t *ps, struct managed_win *, bool destroy);
+/// Destroy and free an unmanaged window
+void destroy_unmanaged_win(session_t *ps, struct win *w);
 
 void map_win(session_t *ps, struct managed_win *w);
 void map_win_by_id(session_t *ps, xcb_window_t id);
@@ -366,14 +367,16 @@ void map_win_by_id(session_t *ps, xcb_window_t id);
 /**
  * Execute fade callback of a window if fading finished.
  */
-void win_check_fade_finished(session_t *ps, struct managed_win **_w);
+bool must_use win_check_fade_finished(session_t *ps, struct managed_win *w);
 
 // Stop receiving events (except ConfigureNotify, XXX why?) from a window
 void win_ev_stop(session_t *ps, const struct win *w);
 
 /// Skip the current in progress fading of window,
 /// transition the window straight to its end state
-void win_skip_fading(session_t *ps, struct managed_win **_w);
+///
+/// @return whether the window is destroyed and freed
+bool must_use win_skip_fading(session_t *ps, struct managed_win *w);
 /**
  * Find a managed window from window id in window linked list of the session.
  */

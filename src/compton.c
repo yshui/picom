@@ -11,8 +11,8 @@
 
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
-#include <X11/extensions/sync.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/sync.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -458,10 +458,8 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			add_damage_from_win(ps, w);
 		}
 
-		win_check_fade_finished(ps, &w);
-
-		if (!w) {
-			// the window might have been destroyed because fading finished
+		if (win_check_fade_finished(ps, w)) {
+			// the window has been destroyed because fading finished
 			continue;
 		}
 
@@ -657,10 +655,8 @@ static void rebuild_shadow_exclude_reg(session_t *ps) {
 static void destroy_backend(session_t *ps) {
 	win_stack_foreach_managed_safe(w, &ps->window_stack) {
 		// Wrapping up fading in progress
-		win_skip_fading(ps, &w);
-
-		// `w` might be freed by win_check_fade_finished
-		if (!w) {
+		if (win_skip_fading(ps, w)) {
+			// `w` is freed by win_skip_fading
 			continue;
 		}
 
@@ -1276,7 +1272,7 @@ static void handle_new_windows(session_t *ps) {
 				map_win(ps, mw);
 
 				// This window might be damaged before we called fill_win
-				// and created the damage handle. And there is not way for
+				// and created the damage handle. And there is no way for
 				// us to find out. So just blindly mark it damaged
 				mw->ever_damaged = true;
 				add_damage_from_win(ps, mw);
