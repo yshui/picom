@@ -5,20 +5,20 @@
 
 #include <X11/Xlibint.h>
 #include <X11/extensions/sync.h>
-#include <xcb/randr.h>
 #include <xcb/damage.h>
+#include <xcb/randr.h>
 
 #include "atom.h"
 #include "common.h"
 #include "compiler.h"
 #include "compton.h"
-#include "event.h"
-#include "utils.h"
-#include "region.h"
 #include "config.h"
-#include "x.h"
-#include "win.h"
+#include "event.h"
 #include "log.h"
+#include "region.h"
+#include "utils.h"
+#include "win.h"
+#include "x.h"
 
 /// Event handling with X is complicated. Handling events with other events possibly
 /// in-flight is no good. Because your internal state won't be up to date. Also, querying
@@ -274,7 +274,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 	map_win_by_id(ps, ev->window);
 	// FocusIn/Out may be ignored when the window is unmapped, so we must
 	// recheck focus here
-	ps->pending_updates = true; // to update focus
+	ps->pending_updates = true;        // to update focus
 }
 
 static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
@@ -409,8 +409,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	if (ps->root == ev->window) {
-		if (ps->o.use_ewmh_active_win &&
-		    ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
+		if (ps->o.use_ewmh_active_win && ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
 			// to update focus
 			ps->pending_updates = true;
 		} else {
@@ -497,7 +496,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// If role changes
-	if (ps->o.track_wdata && ps->atoms->aWM_WINDOW_ROLE== ev->atom) {
+	if (ps->o.track_wdata && ps->atoms->aWM_WINDOW_ROLE == ev->atom) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w && 1 == win_get_role(ps, w)) {
 			win_on_factor_change(ps, w);
