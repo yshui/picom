@@ -1301,7 +1301,7 @@ static void fade_timer_callback(EV_P attr_unused, ev_timer *w, int revents attr_
 	queue_redraw(ps);
 }
 
-static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
+static void handle_pending_updates(EV_P_ struct session *ps) {
 	if (ps->pending_updates) {
 		log_debug("Delayed handling of events, entering critical section");
 		auto e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
@@ -1325,10 +1325,11 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 			recheck_focus(ps);
 		}
 
-		// Refresh pixmaps
+		// Refresh pixmaps and shadows
 		refresh_stale_images(ps);
 
-		ps->server_grabbed = false;
+		// Handle screen changes
+		handle_root_flags(ps);
 
 		e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
 		if (e) {
@@ -1338,9 +1339,14 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 			return quit_compton(ps);
 		}
 
+		ps->server_grabbed = false;
 		ps->pending_updates = false;
-		log_debug("Exiting critical section");
+		log_debug("Exited critical section");
 	}
+}
+
+static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
+	handle_pending_updates(EV_A_ ps);
 
 	if (ps->o.benchmark) {
 		if (ps->o.benchmark_wid) {
@@ -1354,11 +1360,6 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 			force_repaint(ps);
 		}
 	}
-
-	// TODO xcb_grab_server
-	// TODO clean up event queue
-
-	handle_root_flags(ps);
 
 	// TODO have a stripped down version of paint_preprocess that is used when screen
 	// is not redirected. its sole purpose should be to decide whether the screen
