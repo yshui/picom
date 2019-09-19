@@ -2011,9 +2011,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		free(query_tree_reply);
 	}
 
-	log_trace("Initial stack:");
+	log_debug("Initial stack:");
 	list_foreach(struct win, w, &ps->window_stack, stack_neighbour) {
-		log_trace("%#010x", w->id);
+		log_debug("%#010x", w->id);
 	}
 
 	ps->pending_updates = true;

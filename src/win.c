@@ -1877,7 +1877,7 @@ bool win_skip_fading(session_t *ps, struct managed_win *w) {
 		assert(w->opacity_target == w->opacity);
 		return false;
 	}
-	log_trace("Skipping fading process of window %#010x (%s)", w->base.id, w->name);
+	log_debug("Skipping fading process of window %#010x (%s)", w->base.id, w->name);
 	w->opacity = w->opacity_target;
 	return win_check_fade_finished(ps, w);
 }
