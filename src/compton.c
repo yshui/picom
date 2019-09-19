@@ -1283,19 +1283,7 @@ static void handle_new_windows(session_t *ps) {
 
 static void refresh_stale_images(session_t *ps) {
 	win_stack_foreach_managed(w, &ps->window_stack) {
-		if ((w->flags & WIN_FLAGS_IMAGE_STALE) != 0 &&
-		    (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0) {
-			// Image needs to be updated, update it.
-			w->flags &= ~WIN_FLAGS_IMAGE_STALE;
-			if (w->state != WSTATE_UNMAPPING &&
-			    w->state != WSTATE_DESTROYING && ps->backend_data) {
-				// Rebind image only when the window does have an image
-				// available
-				if (!win_try_rebind_image(ps, w)) {
-					w->flags |= WIN_FLAGS_IMAGE_ERROR;
-				}
-			}
-		}
+		win_process_flags(ps, w);
 	}
 }
 

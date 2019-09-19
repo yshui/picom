@@ -301,6 +301,21 @@ bool win_try_rebind_image(session_t *ps, struct managed_win *w) {
 	return win_bind_image(ps, w);
 }
 
+void win_process_flags(struct session *ps, struct managed_win *w) {
+	if ((w->flags & WIN_FLAGS_IMAGE_STALE) != 0 && (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0) {
+		// Image needs to be updated, update it.
+		w->flags &= ~WIN_FLAGS_IMAGE_STALE;
+		if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING &&
+		    ps->backend_data) {
+			// Rebind image only when the window does have an image
+			// available
+			if (!win_try_rebind_image(ps, w)) {
+				w->flags |= WIN_FLAGS_IMAGE_ERROR;
+			}
+		}
+	}
+}
+
 /**
  * Check if a window has rounded corners.
  * XXX This is really dumb

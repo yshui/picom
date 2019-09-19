@@ -253,6 +253,9 @@ struct managed_win {
 void win_release_image(struct backend_base *base, struct managed_win *w);
 bool must_use win_bind_image(session_t *ps, struct managed_win *w);
 
+/// Process pending images flags on a window. Has to be called in X critical section
+void win_process_flags(session_t *ps, struct managed_win *w);
+
 /// Attempt a rebind of window's images. If that failed, the original images are kept.
 bool must_use win_try_rebind_image(session_t *ps, struct managed_win *w);
 int win_get_name(session_t *ps, struct managed_win *w);
