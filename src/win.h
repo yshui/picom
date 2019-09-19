@@ -365,7 +365,6 @@ bool must_use unmap_win(session_t *ps, struct managed_win *, bool destroy);
 void destroy_unmanaged_win(session_t *ps, struct win *w);
 
 void map_win(session_t *ps, struct managed_win *w);
-void map_win_by_id(session_t *ps, xcb_window_t id);
 
 /**
  * Execute fade callback of a window if fading finished.

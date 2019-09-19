@@ -2042,28 +2042,6 @@ void map_win(session_t *ps, struct managed_win *w) {
 	}
 }
 
-void map_win_by_id(session_t *ps, xcb_window_t id) {
-	// Unmap overlay window if it got mapped but we are currently not
-	// in redirected state.
-	if (ps->overlay && id == ps->overlay && !ps->redirected) {
-		log_debug("Overlay is mapped while we are not redirected");
-		auto e = xcb_request_check(ps->c, xcb_unmap_window(ps->c, ps->overlay));
-		if (e) {
-			log_error("Failed to unmap the overlay window");
-			free(e);
-		}
-		// We don't track the overlay window, so we can return
-		return;
-	}
-
-	auto w = find_managed_win(ps, id);
-	if (!w) {
-		return;
-	}
-
-	map_win(ps, w);
-}
-
 /**
  * Find a managed window from window id in window linked list of the session.
  */
