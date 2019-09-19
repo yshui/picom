@@ -241,78 +241,127 @@ void add_damage_from_win(session_t *ps, const struct managed_win *w) {
 }
 
 /// Release the images attached to this window
-void win_release_image(backend_t *base, struct managed_win *w) {
-	log_debug("Releasing image of window %#010x (%s)", w->base.id, w->name);
-	assert(w->win_image || (w->flags & WIN_FLAGS_IMAGE_ERROR));
+static inline void win_release_pixmap(backend_t *base, struct managed_win *w) {
+	log_debug("Releasing pixmap of window %#010x (%s)", w->base.id, w->name);
+	assert(w->win_image);
 	if (w->win_image) {
 		base->ops->release_image(base, w->win_image);
 		w->win_image = NULL;
+		w->flags |= WIN_FLAGS_PIXMAP_NONE;
 	}
-	if (w->shadow) {
-		assert(w->shadow_image || (w->flags & WIN_FLAGS_IMAGE_ERROR));
-		if (w->shadow_image) {
-			base->ops->release_image(base, w->shadow_image);
-			w->shadow_image = NULL;
-		}
+}
+static inline void win_release_shadow(backend_t *base, struct managed_win *w) {
+	log_debug("Releasing shadow of window %#010x (%s)", w->base.id, w->name);
+	assert(w->shadow_image);
+	if (w->shadow_image) {
+		base->ops->release_image(base, w->shadow_image);
+		w->shadow_image = NULL;
+		w->flags |= WIN_FLAGS_SHADOW_NONE;
 	}
 }
 
-static inline bool
-_win_bind_image(session_t *ps, struct managed_win *w, void **win_image, void **shadow_image) {
-	auto pixmap = x_new_id(ps->c);
+static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w) {
+	assert(!w->win_image);
+	auto pixmap = x_new_id(b->c);
 	auto e = xcb_request_check(
-	    ps->c, xcb_composite_name_window_pixmap_checked(ps->c, w->base.id, pixmap));
+	    b->c, xcb_composite_name_window_pixmap_checked(b->c, w->base.id, pixmap));
 	if (e) {
 		log_error("Failed to get named pixmap for window %#010x(%s)", w->base.id,
 		          w->name);
 		free(e);
 		return false;
 	}
-	log_trace("New named pixmap for %#010x (%s) : %#010x", w->base.id, w->name, pixmap);
-	*win_image = ps->backend_data->ops->bind_pixmap(
-	    ps->backend_data, pixmap, x_get_visual_info(ps->c, w->a.visual), true);
-	if (!*win_image) {
+	log_debug("New named pixmap for %#010x (%s) : %#010x", w->base.id, w->name, pixmap);
+	w->win_image =
+	    b->ops->bind_pixmap(b, pixmap, x_get_visual_info(b->c, w->a.visual), true);
+	if (!w->win_image) {
+		log_error("Failed to bind pixmap");
+		w->flags |= WIN_FLAGS_IMAGE_ERROR;
 		return false;
 	}
-	if (w->shadow) {
-		*shadow_image = ps->backend_data->ops->render_shadow(
-		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map, ps->o.shadow_red,
-		    ps->o.shadow_green, ps->o.shadow_blue, ps->o.shadow_opacity);
-		if (!*shadow_image) {
-			log_error("Failed to bind shadow image");
-			ps->backend_data->ops->release_image(ps->backend_data, *win_image);
-			*win_image = NULL;
-			return false;
-		}
-	}
+
+	w->flags &= ~WIN_FLAGS_PIXMAP_NONE;
 	return true;
 }
 
-bool win_bind_image(session_t *ps, struct managed_win *w) {
-	assert(!w->win_image && !w->shadow_image);
-	return _win_bind_image(ps, w, &w->win_image, &w->shadow_image);
+static inline bool win_bind_shadow(struct backend_base *b, struct managed_win *w,
+                                   struct color c, struct conv *kernel) {
+	assert(!w->shadow_image);
+	assert(w->shadow);
+	w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, kernel, c.red,
+	                                        c.green, c.blue, c.alpha);
+	if (!w->shadow_image) {
+		log_error("Failed to bind shadow image");
+		w->flags |= WIN_FLAGS_IMAGE_ERROR;
+		return false;
+	}
+
+	log_debug("New shadow for %#010x (%s)", w->base.id, w->name);
+	w->flags &= ~WIN_FLAGS_SHADOW_NONE;
+	return true;
 }
 
-bool win_try_rebind_image(session_t *ps, struct managed_win *w) {
-	log_trace("Freeing old window image");
-	// Must release first, otherwise breaks NVIDIA driver
-	win_release_image(ps->backend_data, w);
+void win_release_images(struct backend_base *backend, struct managed_win *w) {
+	// we don't want to consider what we should do if the image we want to release is
+	// stale (do we clear the stale flags or not?)
+	assert((w->flags & WIN_FLAGS_IMAGES_STALE) == 0);
 
-	return win_bind_image(ps, w);
+	if ((w->flags & WIN_FLAGS_PIXMAP_NONE) == 0) {
+		win_release_pixmap(backend, w);
+	}
+
+	if ((w->flags & WIN_FLAGS_SHADOW_NONE) == 0) {
+		win_release_shadow(backend, w);
+	}
 }
 
-void win_process_flags(struct session *ps, struct managed_win *w) {
-	if ((w->flags & WIN_FLAGS_IMAGE_STALE) != 0 && (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0) {
+void win_bind_image(struct backend_base *backend, struct managed_win *w, struct color c,
+                    struct conv *kernel) {
+	win_bind_pixmap(backend, w);
+	if (w->shadow) {
+		win_bind_shadow(backend, w, c, kernel);
+	}
+}
+
+void win_process_flags(session_t *ps, struct managed_win *w) {
+	if (!w->flags || (w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
+		return;
+	}
+
+	// Not a loop
+	while ((w->flags & WIN_FLAGS_IMAGES_STALE) != 0) {
 		// Image needs to be updated, update it.
-		w->flags &= ~WIN_FLAGS_IMAGE_STALE;
-		if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING &&
-		    ps->backend_data) {
-			// Rebind image only when the window does have an image
-			// available
-			if (!win_try_rebind_image(ps, w)) {
-				w->flags |= WIN_FLAGS_IMAGE_ERROR;
+		if (w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING ||
+		    !ps->backend_data) {
+			// Window is already gone, or we are using the legacy backend
+			// we cannot rebind image
+			break;
+		}
+
+		// Must release images first, otherwise breaks NVIDIA driver
+		if ((w->flags & WIN_FLAGS_PIXMAP_STALE) != 0) {
+			if ((w->flags & WIN_FLAGS_PIXMAP_NONE) == 0) {
+				win_release_pixmap(ps->backend_data, w);
+			}
+			win_bind_pixmap(ps->backend_data, w);
+		}
+
+		if ((w->flags & WIN_FLAGS_SHADOW_STALE) != 0) {
+			if ((w->flags & WIN_FLAGS_SHADOW_NONE) == 0) {
+				win_release_shadow(ps->backend_data, w);
+			}
+			if (w->shadow) {
+				win_bind_shadow(ps->backend_data, w,
+				                (struct color){.red = ps->o.shadow_red,
+				                               .green = ps->o.shadow_green,
+				                               .blue = ps->o.shadow_blue,
+				                               .alpha = ps->o.shadow_opacity},
+				                ps->gaussian_map);
 			}
 		}
+
+		// Flags are cleared here, loop always run only once
+		w->flags &= ~WIN_FLAGS_IMAGES_STALE;
 	}
 }
 
@@ -865,7 +914,7 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 	// Invalidate the shadow we built
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_MAPPING ||
 	    w->state == WSTATE_FADING) {
-		w->flags |= WIN_FLAGS_IMAGE_STALE;
+		w->flags |= WIN_FLAGS_IMAGES_STALE;
 		ps->pending_updates = true;
 	} else {
 		assert(w->state == WSTATE_UNMAPPED);
@@ -1097,7 +1146,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
 	    .reg_ignore_valid = false,        // set to true when damaged
-	    .flags = 0,                       // updated by property/attributes/etc change
+	    .flags = WIN_FLAGS_IMAGES_NONE,   // updated by property/attributes/etc change
 
 	    // Runtime variables, updated by dbus
 	    .fade_force = UNSET,
@@ -1504,7 +1553,7 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 		// Note we only do this when screen is redirected, because
 		// otherwise win_data is not valid
 		assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
-		w->flags |= WIN_FLAGS_IMAGE_STALE;
+		w->flags |= WIN_FLAGS_IMAGES_STALE;
 		ps->pending_updates = true;
 	}
 	free_paint(ps, &w->paint);
@@ -1608,12 +1657,13 @@ static void finish_unmap_win(session_t *ps, struct managed_win *w) {
 
 	// We are in unmap_win, this window definitely was viewable
 	if (ps->backend_data) {
-		win_release_image(ps->backend_data, w);
+		win_release_images(ps->backend_data, w);
 	}
 	free_paint(ps, &w->paint);
 	free_paint(ps, &w->shadow_paint);
 
-	w->flags = 0;
+	// Try again at binding images when the window is mapped next time
+	w->flags &= ~WIN_FLAGS_IMAGE_ERROR;
 }
 
 /// Finish the destruction of a window (e.g. after fading has finished).
@@ -1929,6 +1979,9 @@ void map_win(session_t *ps, struct managed_win *w) {
 		assert(w);
 	}
 
+	assert((w->flags & WIN_FLAGS_IMAGES_NONE) == WIN_FLAGS_IMAGES_NONE ||
+	       !ps->o.experimental_backends);
+
 	// We stopped processing window size change when we were unmapped, refresh the
 	// size of the window
 	xcb_get_geometry_cookie_t gcookie = xcb_get_geometry(ps->c, w->base.id);
@@ -2020,13 +2073,16 @@ void map_win(session_t *ps, struct managed_win *w) {
 	//
 	// Also because NVIDIA driver doesn't like seeing the same pixmap under different
 	// ids, so avoid naming the pixmap again when it didn't actually change.
-	w->flags &= ~WIN_FLAGS_IMAGE_STALE;
+	w->flags &= ~WIN_FLAGS_IMAGES_STALE;
 
 	// Bind image after update_bounding_shape, so the shadow has the correct size.
 	if (ps->backend_data) {
-		if (!win_bind_image(ps, w)) {
-			w->flags |= WIN_FLAGS_IMAGE_ERROR;
-		}
+		win_bind_image(ps->backend_data, w,
+		               (struct color){.red = ps->o.shadow_red,
+		                              .green = ps->o.shadow_green,
+		                              .blue = ps->o.shadow_blue,
+		                              .alpha = ps->o.shadow_opacity},
+		               ps->gaussian_map);
 	}
 
 #ifdef CONFIG_DBUS

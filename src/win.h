@@ -250,14 +250,14 @@ struct managed_win {
 #endif
 };
 
-void win_release_image(struct backend_base *base, struct managed_win *w);
-bool must_use win_bind_image(session_t *ps, struct managed_win *w);
-
 /// Process pending images flags on a window. Has to be called in X critical section
 void win_process_flags(session_t *ps, struct managed_win *w);
 
-/// Attempt a rebind of window's images. If that failed, the original images are kept.
-bool must_use win_try_rebind_image(session_t *ps, struct managed_win *w);
+/// Release images bound with a window, set the *_NONE flags on the window. Only to be
+/// used when de-initializing the backend outside of win.c
+void win_release_images(struct backend_base *base, struct managed_win *w);
+void win_bind_image(struct backend_base *backend, struct managed_win *w, struct color c,
+                    struct conv *kernel);
 int win_get_name(session_t *ps, struct managed_win *w);
 int win_get_role(session_t *ps, struct managed_win *w);
 winmode_t attr_pure win_calc_mode(const struct managed_win *w);

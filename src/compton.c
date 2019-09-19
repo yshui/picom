@@ -662,7 +662,7 @@ static void destroy_backend(session_t *ps) {
 
 		if (ps->backend_data) {
 			if (w->state == WSTATE_MAPPED) {
-				win_release_image(ps->backend_data, w);
+				win_release_images(ps->backend_data, w);
 			} else {
 				assert(!w->win_image);
 				assert(!w->shadow_image);
@@ -753,9 +753,12 @@ static bool initialize_backend(session_t *ps) {
 			}
 			auto w = (struct managed_win *)_w;
 			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				if (!win_bind_image(ps, w)) {
-					w->flags |= WIN_FLAGS_IMAGE_ERROR;
-				}
+				win_bind_image(ps->backend_data, w,
+				               (struct color){.red = ps->o.shadow_red,
+				                              .green = ps->o.shadow_green,
+				                              .blue = ps->o.shadow_blue,
+				                              .alpha = ps->o.shadow_opacity},
+				               ps->gaussian_map);
 			}
 		}
 	}
