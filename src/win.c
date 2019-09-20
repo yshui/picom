@@ -1976,6 +1976,7 @@ void win_update_screen(session_t *ps, struct managed_win *w) {
 
 /// Map an already registered window
 void map_win_start(session_t *ps, struct managed_win *w) {
+	assert(ps->server_grabbed);
 	assert(w);
 
 	// Don't care about window mapping if it's an InputOnly window
@@ -2003,6 +2004,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 		assert(w);
 	}
 
+	assert(w->state == WSTATE_UNMAPPED);
 	assert((w->flags & WIN_FLAGS_IMAGES_NONE) == WIN_FLAGS_IMAGES_NONE ||
 	       !ps->o.experimental_backends);
 

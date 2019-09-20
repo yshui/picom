@@ -1272,6 +1272,9 @@ static void handle_new_windows(session_t *ps) {
 			}
 			auto mw = (struct managed_win *)new_w;
 			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
+				// Have to map immediately instead of queue window update
+				// because we need the window's extent right now.
+				// We can do this because we are in the critical section.
 				map_win_start(ps, mw);
 
 				// This window might be damaged before we called fill_win
