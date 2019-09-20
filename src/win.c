@@ -1145,6 +1145,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	if (a->_class == XCB_WINDOW_CLASS_INPUT_ONLY) {
 		// No need to manage this window, but we still keep it on the window stack
 		w->managed = false;
+		free(a);
 		return w;
 	}
 
