@@ -55,6 +55,7 @@ enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_wind
 				ret |= DRIVER_INTEL;
 			}
 			free(name);
+			free(r2);
 		}
 		free(r);
 	}
