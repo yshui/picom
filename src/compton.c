@@ -752,13 +752,14 @@ static bool initialize_backend(session_t *ps) {
 				continue;
 			}
 			auto w = (struct managed_win *)_w;
-			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				win_bind_image(ps->backend_data, w,
-				               (struct color){.red = ps->o.shadow_red,
-				                              .green = ps->o.shadow_green,
-				                              .blue = ps->o.shadow_blue,
-				                              .alpha = ps->o.shadow_opacity},
-				               ps->gaussian_map);
+			assert(w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED);
+			if (w->state == WSTATE_MAPPED) {
+				// We need to reacquire image
+				log_debug("Marking window %#010x (%s) for update after "
+				          "redirection",
+				          w->base.id, w->name);
+				w->flags |= WIN_FLAGS_IMAGES_STALE;
+				ps->pending_updates = true;
 			}
 		}
 	}

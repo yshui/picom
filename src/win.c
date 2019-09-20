@@ -323,14 +323,6 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 	}
 }
 
-void win_bind_image(struct backend_base *backend, struct managed_win *w, struct color c,
-                    struct conv *kernel) {
-	win_bind_pixmap(backend, w);
-	if (w->shadow) {
-		win_bind_shadow(backend, w, c, kernel);
-	}
-}
-
 void win_process_flags(session_t *ps, struct managed_win *w) {
 	if (!w->flags || (w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
 		return;
@@ -701,18 +693,10 @@ static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new
 	if (w->shadow) {
 		win_extents(w, &extents);
 		add_damage_from_win(ps, w);
-		if (ps->backend_data && w->state != WSTATE_UNMAPPED &&
-		    !(w->flags & WIN_FLAGS_IMAGE_ERROR)) {
+		if (w->state != WSTATE_UNMAPPED) {
 			assert(!w->shadow_image);
-			// Create shadow image
-			w->shadow_image = ps->backend_data->ops->render_shadow(
-			    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map,
-			    ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue,
-			    ps->o.shadow_opacity);
-			if (!w->shadow_image) {
-				log_error("Failed to bind shadow image");
-				w->shadow_force = OFF;
-			}
+			// Delayed creation of shadow image
+			w->flags |= WIN_FLAGS_SHADOW_STALE;
 		}
 	}
 	pixman_region32_fini(&extents);
@@ -1668,7 +1652,11 @@ static void unmap_win_finish(session_t *ps, struct managed_win *w) {
 	// We are in unmap_win, this window definitely was viewable
 	if (ps->backend_data) {
 		win_release_images(ps->backend_data, w);
+	} else {
+		assert(!w->win_image);
+		assert(!w->shadow_image);
 	}
+
 	free_paint(ps, &w->paint);
 	free_paint(ps, &w->shadow_paint);
 
@@ -2095,24 +2083,12 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	// when the window is unmapped (XXX we shouldn't),
 	// so the shape of the window might have changed,
 	// update. (Issue #35)
+	//
+	// Also this sets the WIN_FLAGS_IMAGES_STALE flag so later in the critical section
+	// the window's image will be bound
 	win_update_bounding_shape(ps, w);
 
-	// Reset the STALE_IMAGE flag set by win_update_bounding_shape. Because we are
-	// just about to bind the image, no way that's stale.
-	//
-	// Also because NVIDIA driver doesn't like seeing the same pixmap under different
-	// ids, so avoid naming the pixmap again when it didn't actually change.
-	w->flags &= ~WIN_FLAGS_IMAGES_STALE;
-
-	// Bind image after update_bounding_shape, so the shadow has the correct size.
-	if (ps->backend_data) {
-		win_bind_image(ps->backend_data, w,
-		               (struct color){.red = ps->o.shadow_red,
-		                              .green = ps->o.shadow_green,
-		                              .blue = ps->o.shadow_blue,
-		                              .alpha = ps->o.shadow_opacity},
-		               ps->gaussian_map);
-	}
+	assert((w->flags & WIN_FLAGS_IMAGES_STALE) == WIN_FLAGS_IMAGES_STALE);
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
