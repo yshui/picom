@@ -253,6 +253,14 @@ struct managed_win {
 /// Process pending images flags on a window. Has to be called in X critical section
 void win_process_flags(session_t *ps, struct managed_win *w);
 
+/// Start the unmap of a window. We cannot unmap immediately since we might need to fade
+/// the window out.
+void unmap_win(struct session *, struct managed_win *);
+
+/// Start the destroying of a window. Windows cannot always be destroyed immediately
+/// because of fading and such.
+bool must_use destroy_win(session_t *ps, struct win *w);
+
 /// Release images bound with a window, set the *_NONE flags on the window. Only to be
 /// used when de-initializing the backend outside of win.c
 void win_release_images(struct backend_base *base, struct managed_win *w);
@@ -358,12 +366,6 @@ void restack_above(session_t *ps, struct win *w, xcb_window_t below);
 void restack_bottom(session_t *ps, struct win *w);
 /// Move window `w` to the top of the stack
 void restack_top(session_t *ps, struct win *w);
-/// Unmap or destroy a window
-/// @return whether the window is destroyed and freed
-bool must_use unmap_win(session_t *ps, struct managed_win *, bool destroy);
-/// Destroy and free an unmanaged window
-void destroy_unmanaged_win(session_t *ps, struct win *w);
-
 void map_win(session_t *ps, struct managed_win *w);
 
 /**

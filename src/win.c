@@ -1668,65 +1668,64 @@ static void finish_unmap_win(session_t *ps, struct managed_win *w) {
 
 /// Finish the destruction of a window (e.g. after fading has finished).
 /// Frees `w`
-static void finish_destroy_win(session_t *ps, struct managed_win *w) {
-	log_trace("Trying to finish destroying (%#010x)", w->base.id);
+static void finish_destroy_win(session_t *ps, struct win *w) {
+	log_trace("Trying to finish destroying (%#010x)", w->id);
 
-	if (w->state != WSTATE_UNMAPPED) {
-		// Only UNMAPPED state has window resources freed, otherwise
-		// we need to call finish_unmap_win to free them.
-		finish_unmap_win(ps, w);
-	}
+	auto next_w = win_stack_find_next_managed(ps, &w->stack_neighbour);
+	list_remove(&w->stack_neighbour);
 
-	// Invalidate reg_ignore of windows below this one
-	// TODO what if w->next is not mapped??
-	// TODO seriously figure out how reg_ignore behaves.
-	//      I think if `w` is unmapped, and destroyed after
-	//      paint happened at least once, w->reg_ignore_valid would
-	//      be true, and there is no need to invalid w->next->reg_ignore
-	//      when w is destroyed.
-	auto next_w = win_stack_find_next_managed(ps, &w->base.stack_neighbour);
-	if (next_w) {
-		rc_region_unref(&next_w->reg_ignore);
-		next_w->reg_ignore_valid = false;
-	}
+	if (w->managed) {
+		auto mw = (struct managed_win *)w;
 
-	log_trace("Trying to destroy (%#010x)", w->base.id);
-	list_remove(&w->base.stack_neighbour);
+		if (mw->state != WSTATE_UNMAPPED) {
+			// Only UNMAPPED state has window resources freed, otherwise
+			// we need to call unmap_win_finish to free them.
+			// XXX actually we unmap_win_finish only frees the rendering
+			//     resources, we still need to call free_win_res. will fix
+			//     later.
+			finish_unmap_win(ps, mw);
+		}
 
-	if (w == ps->active_win) {
-		// Usually, the window cannot be the focused at destruction. FocusOut
-		// should be generated before the window is destroyed.
-		// We do this check just to be completely sure we don't have dangling
-		// references.
-		log_debug("window %#010x (%s) is destroyed while being focused",
-		          w->base.id, w->name);
-		ps->active_win = NULL;
-	}
+		// Invalidate reg_ignore of windows below this one
+		// TODO what if next_w is not mapped??
+		// TODO seriously figure out how reg_ignore behaves.
+		//      I think if `w` is unmapped, and destroyed after
+		//      paint happened at least once, w->reg_ignore_valid would
+		//      be true, and there is no need to invalid w->next->reg_ignore
+		//      when w is destroyed.
+		if (next_w) {
+			rc_region_unref(&next_w->reg_ignore);
+			next_w->reg_ignore_valid = false;
+		}
 
-	free_win_res(ps, w);
+		if (mw == ps->active_win) {
+			// Usually, the window cannot be the focused at destruction.
+			// FocusOut should be generated before the window is destroyed. We
+			// do this check just to be completely sure we don't have dangling
+			// references.
+			log_debug("window %#010x (%s) is destroyed while being focused",
+			          w->id, mw->name);
+			ps->active_win = NULL;
+		}
 
-	// Drop w from all prev_trans to avoid accessing freed memory in
-	// repair_win()
-	// TODO there can only be one prev_trans pointing to w
-	win_stack_foreach_managed(w2, &ps->window_stack) {
-		if (w == w2->prev_trans) {
-			w2->prev_trans = NULL;
+		free_win_res(ps, mw);
+
+		// Drop w from all prev_trans to avoid accessing freed memory in
+		// repair_win()
+		// TODO there can only be one prev_trans pointing to w
+		win_stack_foreach_managed(w2, &ps->window_stack) {
+			if (mw == w2->prev_trans) {
+				w2->prev_trans = NULL;
+			}
 		}
 	}
+
 	free(w);
 }
 
 static void finish_map_win(struct managed_win *w) {
 	w->in_openclose = false;
 	w->state = WSTATE_MAPPED;
-}
-
-void destroy_unmanaged_win(session_t *ps, struct win *w) {
-	assert(!w->managed);
-	assert(!w->destroyed);
-	list_remove(&w->stack_neighbour);
-	HASH_DEL(ps->windows, w);
-	free(w);
 }
 
 /// Move window `w` so it's before `next` in the list
@@ -1812,86 +1811,93 @@ void restack_top(session_t *ps, struct win *w) {
 	restack_win(ps, w, ps->window_stack.next);
 }
 
-/// Unmap or destroy a window
-/// @return whether the window is destroyed and freed
-bool unmap_win(session_t *ps, struct managed_win *w, bool destroy) {
-	winstate_t target_state = destroy ? WSTATE_DESTROYING : WSTATE_UNMAPPING;
+/// Start destroying a window. Windows cannot always be destroyed immediately
+/// because of fading and such.
+///
+/// @return whether the window has finished destroying and is freed
+bool destroy_win(session_t *ps, struct win *w) {
+	auto mw = (struct managed_win *)w;
+	assert(w);
 
-	if (unlikely(!w)) {
-		return false;
+	log_debug("Destroying %#010x \"%s\", managed = %d", w->id,
+	          (w->managed ? mw->name : NULL), w->managed);
+
+	// Delete destroyed window from the hash table, even though the window might still
+	// be rendered for a while. We need to make sure future window with the same
+	// window id won't confuse us. Keep the window in the window stack if it's managed
+	// and mapped, since we might still need to render it (e.g. fading out). Window
+	// will be removed from the stack when it finishes destroying.
+	HASH_DEL(ps->windows, w);
+
+	if (!w->managed || mw->state == WSTATE_UNMAPPED) {
+		// Window is already unmapped, or is an unmanged window, just destroy it
+		finish_destroy_win(ps, w);
+		return true;
 	}
 
-	if (!destroy && w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
-		// We don't care about mapping / unmapping of Input Only windows.
-		// But we need to remember to destroy them, so future window with
-		// the same id won't be handled incorrectly.
-		// Issue #119 was caused by this.
-		return false;
+	if (w->managed) {
+		// Update state flags of a managed window
+		mw->state = WSTATE_DESTROYING;
+		mw->a.map_state = XCB_MAP_STATE_UNMAPPED;
+		mw->in_openclose = true;
 	}
 
-	log_trace("Unmapping %#010x \"%s\", destroy = %d", w->base.id,
-	          (w ? w->name : NULL), destroy);
+	// don't need win_ev_stop because the window is gone anyway
+#ifdef CONFIG_DBUS
+	// Send D-Bus signal
+	if (ps->o.dbus) {
+		cdbus_ev_win_destroyed(ps, w);
+	}
+#endif
 
-	if (unlikely(w->state == WSTATE_DESTROYING && !destroy)) {
+	if (!ps->redirected) {
+		// Skip transition if we are not rendering
+		return win_skip_fading(ps, mw);
+	}
+
+	return false;
+}
+
+void unmap_win(session_t *ps, struct managed_win *w) {
+	assert(w);
+	assert(w->base.managed);
+	assert(w->a._class != XCB_WINDOW_CLASS_INPUT_ONLY);
+
+	log_debug("Unmapping %#010x \"%s\"", w->base.id, w->name);
+
+	if (unlikely(w->state == WSTATE_DESTROYING)) {
 		log_warn("Trying to undestroy a window?");
 		assert(false);
 	}
 
-	// If the window is already in the state we want
-	if (unlikely(w->state == target_state)) {
-		log_warn("%s a window twice", destroy ? "Destroying" : "Unmapping");
-		return false;
-	}
-
-	if (destroy) {
-		// Delete destroyed window from the hash table, so future window with the
-		// same window id won't confuse us.
-		// Keep the window in the window stack, since we might still need to
-		// render it (fading out). Window will be removed from the stack when
-		// fading finishes.
-		HASH_DEL(ps->windows, &w->base);
-	}
-
-	if (unlikely(w->state == WSTATE_UNMAPPED) || w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
-		if (unlikely(!destroy)) {
-			log_warn("Unmapping an already unmapped window %#010x %s twice",
-			         w->base.id, w->name);
-			return false;
-		}
-		// Window is already unmapped, or is an Input Only window, just destroy it
-		finish_destroy_win(ps, w);
-		return true;
+	if (unlikely(w->state == WSTATE_UNMAPPING || w->state == WSTATE_UNMAPPED)) {
+		log_warn("Trying to unmapping an already unmapped window %#010x "
+		         "\"%s\"",
+		         w->base.id, w->name);
+		assert(false);
+		return;
 	}
 
 	// Note we don't update focused window here. This will either be
 	// triggered by subsequence Focus{In, Out} event, or by recheck_focus
 
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
-	w->state = target_state;
+	w->state = WSTATE_UNMAPPING;
 	w->opacity_target = win_calc_opacity_target(ps, w, false);
 
-	w->in_openclose = destroy;
-
 	// don't care about properties anymore
-	if (!destroy) {
-		win_ev_stop(ps, &w->base);
-	}
+	win_ev_stop(ps, &w->base);
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		if (destroy) {
-			cdbus_ev_win_destroyed(ps, &w->base);
-		} else {
-			cdbus_ev_win_unmapped(ps, &w->base);
-		}
+		cdbus_ev_win_unmapped(ps, &w->base);
 	}
 #endif
 
 	if (!ps->redirected) {
-		return win_skip_fading(ps, w);
+		CHECK(!win_skip_fading(ps, w));
 	}
-	return false;
 }
 
 /**
@@ -1908,7 +1914,7 @@ bool win_check_fade_finished(session_t *ps, struct managed_win *w) {
 	if (w->opacity == w->opacity_target) {
 		switch (w->state) {
 		case WSTATE_UNMAPPING: finish_unmap_win(ps, w); return false;
-		case WSTATE_DESTROYING: finish_destroy_win(ps, w); return true;
+		case WSTATE_DESTROYING: finish_destroy_win(ps, &w->base); return true;
 		case WSTATE_MAPPING: finish_map_win(w); return false;
 		case WSTATE_FADING: w->state = WSTATE_MAPPED; break;
 		default: unreachable;

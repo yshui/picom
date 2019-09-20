@@ -262,11 +262,7 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
 	auto w = find_win(ps, ev->window);
 	if (w) {
-		if (w->managed) {
-			auto _ attr_unused = unmap_win(ps, (struct managed_win *)w, true);
-		} else {
-			destroy_unmanaged_win(ps, w);
-		}
+		auto _ attr_unused = destroy_win(ps, w);
 	}
 }
 
@@ -299,7 +295,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
 	auto w = find_managed_win(ps, ev->window);
 	if (w) {
-		auto _ attr_unused = unmap_win(ps, w, false);
+		unmap_win(ps, w);
 	}
 }
 
@@ -322,13 +318,10 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		}
 	} else {
 		// otherwise, find and destroy the window first
-		auto w = find_win(ps, ev->window);
-		if (w) {
-			if (w->managed) {
-				auto _ attr_unused =
-				    unmap_win(ps, (struct managed_win *)w, true);
-			} else {
-				destroy_unmanaged_win(ps, w);
+		{
+			auto w = find_win(ps, ev->window);
+			if (w) {
+				auto _ attr_unused = destroy_win(ps, w);
 			}
 		}
 
