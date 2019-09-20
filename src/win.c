@@ -43,6 +43,14 @@
 
 #include "win.h"
 
+// TODO Make more window states internal
+struct managed_win_internal {
+	struct managed_win base;
+
+	/// A bit mask of unhandled window updates
+	uint_fast32_t pending_updates;
+};
+
 #define OPAQUE (0xffffffff)
 static const int WIN_GET_LEADER_MAX_RECURSION = 20;
 static const int ROUNDED_PIXELS = 1;
@@ -1244,7 +1252,9 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	}
 
 	// Allocate and initialize the new win structure
-	auto new = cmalloc(struct managed_win);
+	auto new_internal = cmalloc(struct managed_win_internal);
+	auto new = (struct managed_win *)new_internal;
+	new_internal->pending_updates = 0;
 
 	// Fill structure
 	// We only need to initialize the part that are not initialized
