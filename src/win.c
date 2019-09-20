@@ -1650,7 +1650,7 @@ void win_ev_stop(session_t *ps, const struct win *w) {
 
 /// Finish the unmapping of a window (e.g. after fading has finished).
 /// Doesn't free `w`
-static void finish_unmap_win(session_t *ps, struct managed_win *w) {
+static void unmap_win_finish(session_t *ps, struct managed_win *w) {
 	w->ever_damaged = false;
 	w->reg_ignore_valid = false;
 	w->state = WSTATE_UNMAPPED;
@@ -1668,7 +1668,7 @@ static void finish_unmap_win(session_t *ps, struct managed_win *w) {
 
 /// Finish the destruction of a window (e.g. after fading has finished).
 /// Frees `w`
-static void finish_destroy_win(session_t *ps, struct win *w) {
+static void destroy_win_finish(session_t *ps, struct win *w) {
 	log_trace("Trying to finish destroying (%#010x)", w->id);
 
 	auto next_w = win_stack_find_next_managed(ps, &w->stack_neighbour);
@@ -1683,7 +1683,7 @@ static void finish_destroy_win(session_t *ps, struct win *w) {
 			// XXX actually we unmap_win_finish only frees the rendering
 			//     resources, we still need to call free_win_res. will fix
 			//     later.
-			finish_unmap_win(ps, mw);
+			unmap_win_finish(ps, mw);
 		}
 
 		// Invalidate reg_ignore of windows below this one
@@ -1723,7 +1723,7 @@ static void finish_destroy_win(session_t *ps, struct win *w) {
 	free(w);
 }
 
-static void finish_map_win(struct managed_win *w) {
+static void map_win_finish(struct managed_win *w) {
 	w->in_openclose = false;
 	w->state = WSTATE_MAPPED;
 }
@@ -1815,7 +1815,7 @@ void restack_top(session_t *ps, struct win *w) {
 /// because of fading and such.
 ///
 /// @return whether the window has finished destroying and is freed
-bool destroy_win(session_t *ps, struct win *w) {
+bool destroy_win_start(session_t *ps, struct win *w) {
 	auto mw = (struct managed_win *)w;
 	assert(w);
 
@@ -1831,7 +1831,7 @@ bool destroy_win(session_t *ps, struct win *w) {
 
 	if (!w->managed || mw->state == WSTATE_UNMAPPED) {
 		// Window is already unmapped, or is an unmanged window, just destroy it
-		finish_destroy_win(ps, w);
+		destroy_win_finish(ps, w);
 		return true;
 	}
 
@@ -1858,7 +1858,7 @@ bool destroy_win(session_t *ps, struct win *w) {
 	return false;
 }
 
-void unmap_win(session_t *ps, struct managed_win *w) {
+void unmap_win_start(session_t *ps, struct managed_win *w) {
 	assert(w);
 	assert(w->base.managed);
 	assert(w->a._class != XCB_WINDOW_CLASS_INPUT_ONLY);
@@ -1913,9 +1913,9 @@ bool win_check_fade_finished(session_t *ps, struct managed_win *w) {
 	}
 	if (w->opacity == w->opacity_target) {
 		switch (w->state) {
-		case WSTATE_UNMAPPING: finish_unmap_win(ps, w); return false;
-		case WSTATE_DESTROYING: finish_destroy_win(ps, &w->base); return true;
-		case WSTATE_MAPPING: finish_map_win(w); return false;
+		case WSTATE_UNMAPPING: unmap_win_finish(ps, w); return false;
+		case WSTATE_DESTROYING: destroy_win_finish(ps, &w->base); return true;
+		case WSTATE_MAPPING: map_win_finish(w); return false;
 		case WSTATE_FADING: w->state = WSTATE_MAPPED; break;
 		default: unreachable;
 		}
@@ -1960,7 +1960,7 @@ void win_update_screen(session_t *ps, struct managed_win *w) {
 }
 
 /// Map an already registered window
-void map_win(session_t *ps, struct managed_win *w) {
+void map_win_start(session_t *ps, struct managed_win *w) {
 	assert(w);
 
 	// Don't care about window mapping if it's an InputOnly window
@@ -1980,7 +1980,10 @@ void map_win(session_t *ps, struct managed_win *w) {
 	if (w->state == WSTATE_UNMAPPING) {
 		CHECK(!win_skip_fading(ps, w));
 		// We skipped the unmapping process, the window was rendered, now it is
-		// not anymore. So we need to mark then unmapping window as damaged.
+		// not anymore. So we need to mark the then unmapping window as damaged.
+		//
+		// Solves problem when, for example, a window is unmapped then mapped in a
+		// different location
 		add_damage_from_win(ps, w);
 		assert(w);
 	}
@@ -2100,7 +2103,6 @@ void map_win(session_t *ps, struct managed_win *w) {
 
 	if (!ps->redirected) {
 		CHECK(!win_skip_fading(ps, w));
-		assert(w);
 	}
 }
 
