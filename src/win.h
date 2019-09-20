@@ -250,8 +250,12 @@ struct managed_win {
 #endif
 };
 
+/// Process pending updates on a window. Has to be called in X critical section
+void win_process_updates(struct session *ps, struct managed_win *_w);
 /// Process pending images flags on a window. Has to be called in X critical section
 void win_process_flags(session_t *ps, struct managed_win *w);
+/// Queue an update on a window. A series of sanity checks are performed
+void win_queue_update(struct managed_win *_w, enum win_update update);
 
 /// Start the unmap of a window. We cannot unmap immediately since we might need to fade
 /// the window out.
@@ -416,6 +420,9 @@ bool attr_pure win_has_alpha(const struct managed_win *w);
 
 /// check if reg_ignore_valid is true for all windows above us
 bool attr_pure win_is_region_ignore_valid(session_t *ps, const struct managed_win *w);
+
+/// Whether a given window is mapped on the X server side
+bool win_is_mapped_in_x(const struct managed_win *w);
 
 // Find the managed window immediately below `w` in the window stack
 struct managed_win *attr_pure win_stack_find_next_managed(const session_t *ps,

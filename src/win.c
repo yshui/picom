@@ -1869,6 +1869,7 @@ bool destroy_win_start(session_t *ps, struct win *w) {
 }
 
 void unmap_win_start(session_t *ps, struct managed_win *w) {
+	auto internal_w = (struct managed_win_internal *)w;
 	assert(w);
 	assert(w->base.managed);
 	assert(w->a._class != XCB_WINDOW_CLASS_INPUT_ONLY);
@@ -1881,10 +1882,14 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 	}
 
 	if (unlikely(w->state == WSTATE_UNMAPPING || w->state == WSTATE_UNMAPPED)) {
-		log_warn("Trying to unmapping an already unmapped window %#010x "
-		         "\"%s\"",
-		         w->base.id, w->name);
-		assert(false);
+		if (internal_w->pending_updates & WIN_UPDATE_MAP) {
+			internal_w->pending_updates &= ~(unsigned long)WIN_UPDATE_MAP;
+		} else {
+			log_warn("Trying to unmapping an already unmapped window %#010x "
+			         "\"%s\"",
+			         w->base.id, w->name);
+			assert(false);
+		}
 		return;
 	}
 
@@ -2079,7 +2084,10 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 
 	win_determine_blur_background(ps, w);
 
-	w->ever_damaged = false;
+	// Cannot set w->ever_damaged = false here, since window mapping could be
+	// delayed, so a damage event might have already arrived before this function
+	// is called. But this should be unnecessary in the first place, since
+	// ever_damaged is set to false in unmap_win_finish anyway.
 
 	// We stopped listening on ShapeNotify events
 	// when the window is unmapped (XXX we shouldn't),
@@ -2236,6 +2244,32 @@ win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_windo
 	return false;
 }
 
+/// Queue an update on a window. A series of sanity checks are performed
+void win_queue_update(struct managed_win *_w, enum win_update update) {
+	auto w = (struct managed_win_internal *)_w;
+	assert(popcount(update) == 1);
+
+	if (unlikely(_w->state == WSTATE_DESTROYING)) {
+		log_error("Updates queued on a destroyed window %#010x (%s)", _w->base.id,
+		          _w->name);
+		return;
+	}
+
+	w->pending_updates |= WIN_UPDATE_MAP;
+}
+
+/// Process pending updates on a window. Has to be called in X critical section
+void win_process_updates(struct session *ps, struct managed_win *_w) {
+	assert(ps->server_grabbed);
+	auto w = (struct managed_win_internal *)_w;
+
+	if (w->pending_updates & WIN_UPDATE_MAP) {
+		map_win_start(ps, _w);
+	}
+
+	w->pending_updates = 0;
+}
+
 /**
  * Check if a window is a fullscreen window.
  *
@@ -2266,4 +2300,11 @@ win_stack_find_next_managed(const session_t *ps, const struct list_node *i) {
 		i = &next->stack_neighbour;
 	}
 	return NULL;
+}
+
+/// Return whether this window is mapped on the X server side
+bool win_is_mapped_in_x(const struct managed_win *w) {
+	auto iw = (const struct managed_win_internal *)w;
+	return w->state == WSTATE_MAPPING || w->state == WSTATE_FADING ||
+	       w->state == WSTATE_MAPPED || (iw->pending_updates & WIN_UPDATE_MAP);
 }

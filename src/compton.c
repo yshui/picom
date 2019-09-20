@@ -1284,6 +1284,12 @@ static void handle_new_windows(session_t *ps) {
 	}
 }
 
+static void refresh_windows(session_t *ps) {
+	win_stack_foreach_managed_safe(w, &ps->window_stack) {
+		win_process_updates(ps, w);
+	}
+}
+
 static void refresh_stale_images(session_t *ps) {
 	win_stack_foreach_managed(w, &ps->window_stack) {
 		win_process_flags(ps, w);
@@ -1327,6 +1333,9 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		if (!ps->active_win || (r && r->focus != ps->active_win->base.id)) {
 			recheck_focus(ps);
 		}
+
+		// Process window updates
+		refresh_windows(ps);
 
 		// Refresh pixmaps and shadows
 		refresh_stale_images(ps);
@@ -1374,11 +1383,14 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 
 	if (!was_redirected && ps->redirected) {
 		// paint_preprocess redirected the screen, which might change the state of
-		// some of the windows (e.g. the window image might fail to bind, and the
-		// window would be put into an error state). so we rerun paint_preprocess
-		// here to make sure the rendering decision we make is up-to-date
-		log_debug("Re-run paint_preprocess");
-		bottom = paint_preprocess(ps, &fade_running);
+		// some of the windows (e.g. the window image might become stale).
+		// so we rerun _draw_callback to make sure the rendering decision we make
+		// is up-to-date, and all the new flags got handled.
+		//
+		// TODO This is not ideal, we should try to avoid setting window flags in
+		// paint_preprocess.
+		log_debug("Re-run _draw_callback");
+		return _draw_callback(EV_A_ ps, revents);
 	}
 
 	// Start/stop fade timer depends on whether window are fading

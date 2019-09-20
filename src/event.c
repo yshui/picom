@@ -546,8 +546,8 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 }
 
 static inline void repair_win(session_t *ps, struct managed_win *w) {
-	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
-		return;
+	// Only mapped window can receive damages
+	assert(win_is_mapped_in_x(w));
 
 	region_t parts;
 	pixman_region32_init(&parts);

@@ -27,6 +27,11 @@ typedef enum {
 	WMODE_SOLID,              // The window is opaque including the frame
 } winmode_t;
 
+/// Pending window updates
+enum win_update {
+	WIN_UPDATE_MAP = 1,
+};
+
 /// Transition table:
 /// (DESTROYED is when the win struct is destroyed and freed)
 /// ('o' means in all other cases)
