@@ -137,6 +137,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	for (auto w = t; w; w = w->prev_trans) {
 		pixman_region32_subtract(&reg_visible, &ps->screen_reg, w->reg_ignore);
 		assert(!(w->flags & WIN_FLAGS_IMAGE_ERROR));
+		assert(!(w->flags & WIN_FLAGS_PIXMAP_STALE));
+		assert(!(w->flags & WIN_FLAGS_PIXMAP_NONE));
 
 		// The bounding shape of the window, in global/target coordinates
 		// reminder: bounding shape contains the WM frame
@@ -201,6 +203,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 		// Draw shadow on target
 		if (w->shadow) {
+			assert(!(w->flags & WIN_FLAGS_SHADOW_NONE));
 			// Clip region for the shadow
 			// reg_shadow \in reg_paint
 			auto reg_shadow = win_extents_by_val(w);

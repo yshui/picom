@@ -43,6 +43,14 @@
 
 #include "win.h"
 
+// TODO Make more window states internal
+struct managed_win_internal {
+	struct managed_win base;
+
+	/// A bit mask of unhandled window updates
+	uint_fast32_t pending_updates;
+};
+
 #define OPAQUE (0xffffffff)
 static const int WIN_GET_LEADER_MAX_RECURSION = 20;
 static const int ROUNDED_PIXELS = 1;
@@ -241,64 +249,120 @@ void add_damage_from_win(session_t *ps, const struct managed_win *w) {
 }
 
 /// Release the images attached to this window
-void win_release_image(backend_t *base, struct managed_win *w) {
-	log_debug("Releasing image of window %#010x (%s)", w->base.id, w->name);
-	assert(w->win_image || (w->flags & WIN_FLAGS_IMAGE_ERROR));
+static inline void win_release_pixmap(backend_t *base, struct managed_win *w) {
+	log_debug("Releasing pixmap of window %#010x (%s)", w->base.id, w->name);
+	assert(w->win_image);
 	if (w->win_image) {
 		base->ops->release_image(base, w->win_image);
 		w->win_image = NULL;
+		w->flags |= WIN_FLAGS_PIXMAP_NONE;
 	}
-	if (w->shadow) {
-		assert(w->shadow_image || (w->flags & WIN_FLAGS_IMAGE_ERROR));
-		if (w->shadow_image) {
-			base->ops->release_image(base, w->shadow_image);
-			w->shadow_image = NULL;
-		}
+}
+static inline void win_release_shadow(backend_t *base, struct managed_win *w) {
+	log_debug("Releasing shadow of window %#010x (%s)", w->base.id, w->name);
+	assert(w->shadow_image);
+	if (w->shadow_image) {
+		base->ops->release_image(base, w->shadow_image);
+		w->shadow_image = NULL;
+		w->flags |= WIN_FLAGS_SHADOW_NONE;
 	}
 }
 
-static inline bool
-_win_bind_image(session_t *ps, struct managed_win *w, void **win_image, void **shadow_image) {
-	auto pixmap = x_new_id(ps->c);
+static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w) {
+	assert(!w->win_image);
+	auto pixmap = x_new_id(b->c);
 	auto e = xcb_request_check(
-	    ps->c, xcb_composite_name_window_pixmap_checked(ps->c, w->base.id, pixmap));
+	    b->c, xcb_composite_name_window_pixmap_checked(b->c, w->base.id, pixmap));
 	if (e) {
 		log_error("Failed to get named pixmap for window %#010x(%s)", w->base.id,
 		          w->name);
 		free(e);
 		return false;
 	}
-	log_trace("New named pixmap for %#010x (%s) : %#010x", w->base.id, w->name, pixmap);
-	*win_image = ps->backend_data->ops->bind_pixmap(
-	    ps->backend_data, pixmap, x_get_visual_info(ps->c, w->a.visual), true);
-	if (!*win_image) {
+	log_debug("New named pixmap for %#010x (%s) : %#010x", w->base.id, w->name, pixmap);
+	w->win_image =
+	    b->ops->bind_pixmap(b, pixmap, x_get_visual_info(b->c, w->a.visual), true);
+	if (!w->win_image) {
+		log_error("Failed to bind pixmap");
+		w->flags |= WIN_FLAGS_IMAGE_ERROR;
 		return false;
 	}
-	if (w->shadow) {
-		*shadow_image = ps->backend_data->ops->render_shadow(
-		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map, ps->o.shadow_red,
-		    ps->o.shadow_green, ps->o.shadow_blue, ps->o.shadow_opacity);
-		if (!*shadow_image) {
-			log_error("Failed to bind shadow image");
-			ps->backend_data->ops->release_image(ps->backend_data, *win_image);
-			*win_image = NULL;
-			return false;
-		}
-	}
+
+	w->flags &= ~WIN_FLAGS_PIXMAP_NONE;
 	return true;
 }
 
-bool win_bind_image(session_t *ps, struct managed_win *w) {
-	assert(!w->win_image && !w->shadow_image);
-	return _win_bind_image(ps, w, &w->win_image, &w->shadow_image);
+static inline bool win_bind_shadow(struct backend_base *b, struct managed_win *w,
+                                   struct color c, struct conv *kernel) {
+	assert(!w->shadow_image);
+	assert(w->shadow);
+	w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, kernel, c.red,
+	                                        c.green, c.blue, c.alpha);
+	if (!w->shadow_image) {
+		log_error("Failed to bind shadow image");
+		w->flags |= WIN_FLAGS_IMAGE_ERROR;
+		return false;
+	}
+
+	log_debug("New shadow for %#010x (%s)", w->base.id, w->name);
+	w->flags &= ~WIN_FLAGS_SHADOW_NONE;
+	return true;
 }
 
-bool win_try_rebind_image(session_t *ps, struct managed_win *w) {
-	log_trace("Freeing old window image");
-	// Must release first, otherwise breaks NVIDIA driver
-	win_release_image(ps->backend_data, w);
+void win_release_images(struct backend_base *backend, struct managed_win *w) {
+	// we don't want to consider what we should do if the image we want to release is
+	// stale (do we clear the stale flags or not?)
+	assert((w->flags & WIN_FLAGS_IMAGES_STALE) == 0);
 
-	return win_bind_image(ps, w);
+	if ((w->flags & WIN_FLAGS_PIXMAP_NONE) == 0) {
+		win_release_pixmap(backend, w);
+	}
+
+	if ((w->flags & WIN_FLAGS_SHADOW_NONE) == 0) {
+		win_release_shadow(backend, w);
+	}
+}
+
+void win_process_flags(session_t *ps, struct managed_win *w) {
+	if (!w->flags || (w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
+		return;
+	}
+
+	// Not a loop
+	while ((w->flags & WIN_FLAGS_IMAGES_STALE) != 0) {
+		// Image needs to be updated, update it.
+		if (w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING ||
+		    !ps->backend_data) {
+			// Window is already gone, or we are using the legacy backend
+			// we cannot rebind image
+			break;
+		}
+
+		// Must release images first, otherwise breaks NVIDIA driver
+		if ((w->flags & WIN_FLAGS_PIXMAP_STALE) != 0) {
+			if ((w->flags & WIN_FLAGS_PIXMAP_NONE) == 0) {
+				win_release_pixmap(ps->backend_data, w);
+			}
+			win_bind_pixmap(ps->backend_data, w);
+		}
+
+		if ((w->flags & WIN_FLAGS_SHADOW_STALE) != 0) {
+			if ((w->flags & WIN_FLAGS_SHADOW_NONE) == 0) {
+				win_release_shadow(ps->backend_data, w);
+			}
+			if (w->shadow) {
+				win_bind_shadow(ps->backend_data, w,
+				                (struct color){.red = ps->o.shadow_red,
+				                               .green = ps->o.shadow_green,
+				                               .blue = ps->o.shadow_blue,
+				                               .alpha = ps->o.shadow_opacity},
+				                ps->gaussian_map);
+			}
+		}
+
+		// Flags are cleared here, loop always run only once
+		w->flags &= ~WIN_FLAGS_IMAGES_STALE;
+	}
 }
 
 /**
@@ -629,18 +693,10 @@ static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new
 	if (w->shadow) {
 		win_extents(w, &extents);
 		add_damage_from_win(ps, w);
-		if (ps->backend_data && w->state != WSTATE_UNMAPPED &&
-		    !(w->flags & WIN_FLAGS_IMAGE_ERROR)) {
+		if (w->state != WSTATE_UNMAPPED) {
 			assert(!w->shadow_image);
-			// Create shadow image
-			w->shadow_image = ps->backend_data->ops->render_shadow(
-			    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map,
-			    ps->o.shadow_red, ps->o.shadow_green, ps->o.shadow_blue,
-			    ps->o.shadow_opacity);
-			if (!w->shadow_image) {
-				log_error("Failed to bind shadow image");
-				w->shadow_force = OFF;
-			}
+			// Delayed creation of shadow image
+			w->flags |= WIN_FLAGS_SHADOW_STALE;
 		}
 	}
 	pixman_region32_fini(&extents);
@@ -850,7 +906,7 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 	// Invalidate the shadow we built
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_MAPPING ||
 	    w->state == WSTATE_FADING) {
-		w->flags |= WIN_FLAGS_IMAGE_STALE;
+		w->flags |= WIN_FLAGS_IMAGES_STALE;
 		ps->pending_updates = true;
 	} else {
 		assert(w->state == WSTATE_UNMAPPED);
@@ -1082,7 +1138,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
 	    .reg_ignore_valid = false,        // set to true when damaged
-	    .flags = 0,                       // updated by property/attributes/etc change
+	    .flags = WIN_FLAGS_IMAGES_NONE,   // updated by property/attributes/etc change
 
 	    // Runtime variables, updated by dbus
 	    .fade_force = UNSET,
@@ -1180,7 +1236,9 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	}
 
 	// Allocate and initialize the new win structure
-	auto new = cmalloc(struct managed_win);
+	auto new_internal = cmalloc(struct managed_win_internal);
+	auto new = (struct managed_win *)new_internal;
+	new_internal->pending_updates = 0;
 
 	// Fill structure
 	// We only need to initialize the part that are not initialized
@@ -1489,7 +1547,7 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 		// Note we only do this when screen is redirected, because
 		// otherwise win_data is not valid
 		assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
-		w->flags |= WIN_FLAGS_IMAGE_STALE;
+		w->flags |= WIN_FLAGS_IMAGES_STALE;
 		ps->pending_updates = true;
 	}
 	free_paint(ps, &w->paint);
@@ -1586,82 +1644,86 @@ void win_ev_stop(session_t *ps, const struct win *w) {
 
 /// Finish the unmapping of a window (e.g. after fading has finished).
 /// Doesn't free `w`
-static void finish_unmap_win(session_t *ps, struct managed_win *w) {
+static void unmap_win_finish(session_t *ps, struct managed_win *w) {
 	w->ever_damaged = false;
 	w->reg_ignore_valid = false;
 	w->state = WSTATE_UNMAPPED;
 
 	// We are in unmap_win, this window definitely was viewable
 	if (ps->backend_data) {
-		win_release_image(ps->backend_data, w);
+		win_release_images(ps->backend_data, w);
+	} else {
+		assert(!w->win_image);
+		assert(!w->shadow_image);
 	}
+
 	free_paint(ps, &w->paint);
 	free_paint(ps, &w->shadow_paint);
 
-	w->flags = 0;
+	// Try again at binding images when the window is mapped next time
+	w->flags &= ~WIN_FLAGS_IMAGE_ERROR;
 }
 
 /// Finish the destruction of a window (e.g. after fading has finished).
 /// Frees `w`
-static void finish_destroy_win(session_t *ps, struct managed_win *w) {
-	log_trace("Trying to finish destroying (%#010x)", w->base.id);
+static void destroy_win_finish(session_t *ps, struct win *w) {
+	log_trace("Trying to finish destroying (%#010x)", w->id);
 
-	if (w->state != WSTATE_UNMAPPED) {
-		// Only UNMAPPED state has window resources freed, otherwise
-		// we need to call finish_unmap_win to free them.
-		finish_unmap_win(ps, w);
-	}
+	auto next_w = win_stack_find_next_managed(ps, &w->stack_neighbour);
+	list_remove(&w->stack_neighbour);
 
-	// Invalidate reg_ignore of windows below this one
-	// TODO what if w->next is not mapped??
-	// TODO seriously figure out how reg_ignore behaves.
-	//      I think if `w` is unmapped, and destroyed after
-	//      paint happened at least once, w->reg_ignore_valid would
-	//      be true, and there is no need to invalid w->next->reg_ignore
-	//      when w is destroyed.
-	auto next_w = win_stack_find_next_managed(ps, &w->base.stack_neighbour);
-	if (next_w) {
-		rc_region_unref(&next_w->reg_ignore);
-		next_w->reg_ignore_valid = false;
-	}
+	if (w->managed) {
+		auto mw = (struct managed_win *)w;
 
-	log_trace("Trying to destroy (%#010x)", w->base.id);
-	list_remove(&w->base.stack_neighbour);
+		if (mw->state != WSTATE_UNMAPPED) {
+			// Only UNMAPPED state has window resources freed, otherwise
+			// we need to call unmap_win_finish to free them.
+			// XXX actually we unmap_win_finish only frees the rendering
+			//     resources, we still need to call free_win_res. will fix
+			//     later.
+			unmap_win_finish(ps, mw);
+		}
 
-	if (w == ps->active_win) {
-		// Usually, the window cannot be the focused at destruction. FocusOut
-		// should be generated before the window is destroyed.
-		// We do this check just to be completely sure we don't have dangling
-		// references.
-		log_debug("window %#010x (%s) is destroyed while being focused",
-		          w->base.id, w->name);
-		ps->active_win = NULL;
-	}
+		// Invalidate reg_ignore of windows below this one
+		// TODO what if next_w is not mapped??
+		// TODO seriously figure out how reg_ignore behaves.
+		//      I think if `w` is unmapped, and destroyed after
+		//      paint happened at least once, w->reg_ignore_valid would
+		//      be true, and there is no need to invalid w->next->reg_ignore
+		//      when w is destroyed.
+		if (next_w) {
+			rc_region_unref(&next_w->reg_ignore);
+			next_w->reg_ignore_valid = false;
+		}
 
-	free_win_res(ps, w);
+		if (mw == ps->active_win) {
+			// Usually, the window cannot be the focused at destruction.
+			// FocusOut should be generated before the window is destroyed. We
+			// do this check just to be completely sure we don't have dangling
+			// references.
+			log_debug("window %#010x (%s) is destroyed while being focused",
+			          w->id, mw->name);
+			ps->active_win = NULL;
+		}
 
-	// Drop w from all prev_trans to avoid accessing freed memory in
-	// repair_win()
-	// TODO there can only be one prev_trans pointing to w
-	win_stack_foreach_managed(w2, &ps->window_stack) {
-		if (w == w2->prev_trans) {
-			w2->prev_trans = NULL;
+		free_win_res(ps, mw);
+
+		// Drop w from all prev_trans to avoid accessing freed memory in
+		// repair_win()
+		// TODO there can only be one prev_trans pointing to w
+		win_stack_foreach_managed(w2, &ps->window_stack) {
+			if (mw == w2->prev_trans) {
+				w2->prev_trans = NULL;
+			}
 		}
 	}
+
 	free(w);
 }
 
-static void finish_map_win(struct managed_win *w) {
+static void map_win_finish(struct managed_win *w) {
 	w->in_openclose = false;
 	w->state = WSTATE_MAPPED;
-}
-
-void destroy_unmanaged_win(session_t *ps, struct win *w) {
-	assert(!w->managed);
-	assert(!w->destroyed);
-	list_remove(&w->stack_neighbour);
-	HASH_DEL(ps->windows, w);
-	free(w);
 }
 
 /// Move window `w` so it's before `next` in the list
@@ -1747,86 +1809,98 @@ void restack_top(session_t *ps, struct win *w) {
 	restack_win(ps, w, ps->window_stack.next);
 }
 
-/// Unmap or destroy a window
-/// @return whether the window is destroyed and freed
-bool unmap_win(session_t *ps, struct managed_win *w, bool destroy) {
-	winstate_t target_state = destroy ? WSTATE_DESTROYING : WSTATE_UNMAPPING;
+/// Start destroying a window. Windows cannot always be destroyed immediately
+/// because of fading and such.
+///
+/// @return whether the window has finished destroying and is freed
+bool destroy_win_start(session_t *ps, struct win *w) {
+	auto mw = (struct managed_win *)w;
+	assert(w);
 
-	if (unlikely(!w)) {
-		return false;
+	log_debug("Destroying %#010x \"%s\", managed = %d", w->id,
+	          (w->managed ? mw->name : NULL), w->managed);
+
+	// Delete destroyed window from the hash table, even though the window might still
+	// be rendered for a while. We need to make sure future window with the same
+	// window id won't confuse us. Keep the window in the window stack if it's managed
+	// and mapped, since we might still need to render it (e.g. fading out). Window
+	// will be removed from the stack when it finishes destroying.
+	HASH_DEL(ps->windows, w);
+
+	if (!w->managed || mw->state == WSTATE_UNMAPPED) {
+		// Window is already unmapped, or is an unmanged window, just destroy it
+		destroy_win_finish(ps, w);
+		return true;
 	}
 
-	if (!destroy && w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
-		// We don't care about mapping / unmapping of Input Only windows.
-		// But we need to remember to destroy them, so future window with
-		// the same id won't be handled incorrectly.
-		// Issue #119 was caused by this.
-		return false;
+	if (w->managed) {
+		// Update state flags of a managed window
+		mw->state = WSTATE_DESTROYING;
+		mw->a.map_state = XCB_MAP_STATE_UNMAPPED;
+		mw->in_openclose = true;
 	}
 
-	log_trace("Unmapping %#010x \"%s\", destroy = %d", w->base.id,
-	          (w ? w->name : NULL), destroy);
+	// don't need win_ev_stop because the window is gone anyway
+#ifdef CONFIG_DBUS
+	// Send D-Bus signal
+	if (ps->o.dbus) {
+		cdbus_ev_win_destroyed(ps, w);
+	}
+#endif
 
-	if (unlikely(w->state == WSTATE_DESTROYING && !destroy)) {
+	if (!ps->redirected) {
+		// Skip transition if we are not rendering
+		return win_skip_fading(ps, mw);
+	}
+
+	return false;
+}
+
+void unmap_win_start(session_t *ps, struct managed_win *w) {
+	auto internal_w = (struct managed_win_internal *)w;
+	assert(w);
+	assert(w->base.managed);
+	assert(w->a._class != XCB_WINDOW_CLASS_INPUT_ONLY);
+
+	log_debug("Unmapping %#010x \"%s\"", w->base.id, w->name);
+
+	if (unlikely(w->state == WSTATE_DESTROYING)) {
 		log_warn("Trying to undestroy a window?");
 		assert(false);
 	}
 
-	// If the window is already in the state we want
-	if (unlikely(w->state == target_state)) {
-		log_warn("%s a window twice", destroy ? "Destroying" : "Unmapping");
-		return false;
-	}
-
-	if (destroy) {
-		// Delete destroyed window from the hash table, so future window with the
-		// same window id won't confuse us.
-		// Keep the window in the window stack, since we might still need to
-		// render it (fading out). Window will be removed from the stack when
-		// fading finishes.
-		HASH_DEL(ps->windows, &w->base);
-	}
-
-	if (unlikely(w->state == WSTATE_UNMAPPED) || w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
-		if (unlikely(!destroy)) {
-			log_warn("Unmapping an already unmapped window %#010x %s twice",
+	if (unlikely(w->state == WSTATE_UNMAPPING || w->state == WSTATE_UNMAPPED)) {
+		if (internal_w->pending_updates & WIN_UPDATE_MAP) {
+			internal_w->pending_updates &= ~(unsigned long)WIN_UPDATE_MAP;
+		} else {
+			log_warn("Trying to unmapping an already unmapped window %#010x "
+			         "\"%s\"",
 			         w->base.id, w->name);
-			return false;
+			assert(false);
 		}
-		// Window is already unmapped, or is an Input Only window, just destroy it
-		finish_destroy_win(ps, w);
-		return true;
+		return;
 	}
 
 	// Note we don't update focused window here. This will either be
 	// triggered by subsequence Focus{In, Out} event, or by recheck_focus
 
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
-	w->state = target_state;
+	w->state = WSTATE_UNMAPPING;
 	w->opacity_target = win_calc_opacity_target(ps, w, false);
 
-	w->in_openclose = destroy;
-
 	// don't care about properties anymore
-	if (!destroy) {
-		win_ev_stop(ps, &w->base);
-	}
+	win_ev_stop(ps, &w->base);
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		if (destroy) {
-			cdbus_ev_win_destroyed(ps, &w->base);
-		} else {
-			cdbus_ev_win_unmapped(ps, &w->base);
-		}
+		cdbus_ev_win_unmapped(ps, &w->base);
 	}
 #endif
 
 	if (!ps->redirected) {
-		return win_skip_fading(ps, w);
+		CHECK(!win_skip_fading(ps, w));
 	}
-	return false;
 }
 
 /**
@@ -1842,9 +1916,9 @@ bool win_check_fade_finished(session_t *ps, struct managed_win *w) {
 	}
 	if (w->opacity == w->opacity_target) {
 		switch (w->state) {
-		case WSTATE_UNMAPPING: finish_unmap_win(ps, w); return false;
-		case WSTATE_DESTROYING: finish_destroy_win(ps, w); return true;
-		case WSTATE_MAPPING: finish_map_win(w); return false;
+		case WSTATE_UNMAPPING: unmap_win_finish(ps, w); return false;
+		case WSTATE_DESTROYING: destroy_win_finish(ps, &w->base); return true;
+		case WSTATE_MAPPING: map_win_finish(w); return false;
 		case WSTATE_FADING: w->state = WSTATE_MAPPED; break;
 		default: unreachable;
 		}
@@ -1862,7 +1936,7 @@ bool win_skip_fading(session_t *ps, struct managed_win *w) {
 		assert(w->opacity_target == w->opacity);
 		return false;
 	}
-	log_trace("Skipping fading process of window %#010x (%s)", w->base.id, w->name);
+	log_debug("Skipping fading process of window %#010x (%s)", w->base.id, w->name);
 	w->opacity = w->opacity_target;
 	return win_check_fade_finished(ps, w);
 }
@@ -1889,7 +1963,8 @@ void win_update_screen(session_t *ps, struct managed_win *w) {
 }
 
 /// Map an already registered window
-void map_win(session_t *ps, struct managed_win *w) {
+void map_win_start(session_t *ps, struct managed_win *w) {
+	assert(ps->server_grabbed);
 	assert(w);
 
 	// Don't care about window mapping if it's an InputOnly window
@@ -1909,10 +1984,17 @@ void map_win(session_t *ps, struct managed_win *w) {
 	if (w->state == WSTATE_UNMAPPING) {
 		CHECK(!win_skip_fading(ps, w));
 		// We skipped the unmapping process, the window was rendered, now it is
-		// not anymore. So we need to mark then unmapping window as damaged.
+		// not anymore. So we need to mark the then unmapping window as damaged.
+		//
+		// Solves problem when, for example, a window is unmapped then mapped in a
+		// different location
 		add_damage_from_win(ps, w);
 		assert(w);
 	}
+
+	assert(w->state == WSTATE_UNMAPPED);
+	assert((w->flags & WIN_FLAGS_IMAGES_NONE) == WIN_FLAGS_IMAGES_NONE ||
+	       !ps->o.experimental_backends);
 
 	// We stopped processing window size change when we were unmapped, refresh the
 	// size of the window
@@ -1992,27 +2074,21 @@ void map_win(session_t *ps, struct managed_win *w) {
 
 	win_determine_blur_background(ps, w);
 
-	w->ever_damaged = false;
+	// Cannot set w->ever_damaged = false here, since window mapping could be
+	// delayed, so a damage event might have already arrived before this function
+	// is called. But this should be unnecessary in the first place, since
+	// ever_damaged is set to false in unmap_win_finish anyway.
 
 	// We stopped listening on ShapeNotify events
 	// when the window is unmapped (XXX we shouldn't),
 	// so the shape of the window might have changed,
 	// update. (Issue #35)
+	//
+	// Also this sets the WIN_FLAGS_IMAGES_STALE flag so later in the critical section
+	// the window's image will be bound
 	win_update_bounding_shape(ps, w);
 
-	// Reset the STALE_IMAGE flag set by win_update_bounding_shape. Because we are
-	// just about to bind the image, no way that's stale.
-	//
-	// Also because NVIDIA driver doesn't like seeing the same pixmap under different
-	// ids, so avoid naming the pixmap again when it didn't actually change.
-	w->flags &= ~WIN_FLAGS_IMAGE_STALE;
-
-	// Bind image after update_bounding_shape, so the shadow has the correct size.
-	if (ps->backend_data) {
-		if (!win_bind_image(ps, w)) {
-			w->flags |= WIN_FLAGS_IMAGE_ERROR;
-		}
-	}
+	assert((w->flags & WIN_FLAGS_IMAGES_STALE) == WIN_FLAGS_IMAGES_STALE);
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
@@ -2023,30 +2099,7 @@ void map_win(session_t *ps, struct managed_win *w) {
 
 	if (!ps->redirected) {
 		CHECK(!win_skip_fading(ps, w));
-		assert(w);
 	}
-}
-
-void map_win_by_id(session_t *ps, xcb_window_t id) {
-	// Unmap overlay window if it got mapped but we are currently not
-	// in redirected state.
-	if (ps->overlay && id == ps->overlay && !ps->redirected) {
-		log_debug("Overlay is mapped while we are not redirected");
-		auto e = xcb_request_check(ps->c, xcb_unmap_window(ps->c, ps->overlay));
-		if (e) {
-			log_error("Failed to unmap the overlay window");
-			free(e);
-		}
-		// We don't track the overlay window, so we can return
-		return;
-	}
-
-	auto w = find_managed_win(ps, id);
-	if (!w) {
-		return;
-	}
-
-	map_win(ps, w);
 }
 
 /**
@@ -2169,6 +2222,32 @@ win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_windo
 	return false;
 }
 
+/// Queue an update on a window. A series of sanity checks are performed
+void win_queue_update(struct managed_win *_w, enum win_update update) {
+	auto w = (struct managed_win_internal *)_w;
+	assert(popcount(update) == 1);
+
+	if (unlikely(_w->state == WSTATE_DESTROYING)) {
+		log_error("Updates queued on a destroyed window %#010x (%s)", _w->base.id,
+		          _w->name);
+		return;
+	}
+
+	w->pending_updates |= WIN_UPDATE_MAP;
+}
+
+/// Process pending updates on a window. Has to be called in X critical section
+void win_process_updates(struct session *ps, struct managed_win *_w) {
+	assert(ps->server_grabbed);
+	auto w = (struct managed_win_internal *)_w;
+
+	if (w->pending_updates & WIN_UPDATE_MAP) {
+		map_win_start(ps, _w);
+	}
+
+	w->pending_updates = 0;
+}
+
 /**
  * Check if a window is a fullscreen window.
  *
@@ -2199,4 +2278,11 @@ win_stack_find_next_managed(const session_t *ps, const struct list_node *i) {
 		i = &next->stack_neighbour;
 	}
 	return NULL;
+}
+
+/// Return whether this window is mapped on the X server side
+bool win_is_mapped_in_x(const struct managed_win *w) {
+	auto iw = (const struct managed_win_internal *)w;
+	return w->state == WSTATE_MAPPING || w->state == WSTATE_FADING ||
+	       w->state == WSTATE_MAPPED || (iw->pending_updates & WIN_UPDATE_MAP);
 }

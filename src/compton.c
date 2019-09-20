@@ -662,7 +662,7 @@ static void destroy_backend(session_t *ps) {
 
 		if (ps->backend_data) {
 			if (w->state == WSTATE_MAPPED) {
-				win_release_image(ps->backend_data, w);
+				win_release_images(ps->backend_data, w);
 			} else {
 				assert(!w->win_image);
 				assert(!w->shadow_image);
@@ -752,10 +752,14 @@ static bool initialize_backend(session_t *ps) {
 				continue;
 			}
 			auto w = (struct managed_win *)_w;
-			if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				if (!win_bind_image(ps, w)) {
-					w->flags |= WIN_FLAGS_IMAGE_ERROR;
-				}
+			assert(w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED);
+			if (w->state == WSTATE_MAPPED) {
+				// We need to reacquire image
+				log_debug("Marking window %#010x (%s) for update after "
+				          "redirection",
+				          w->base.id, w->name);
+				w->flags |= WIN_FLAGS_IMAGES_STALE;
+				ps->pending_updates = true;
 			}
 		}
 	}
@@ -1269,7 +1273,10 @@ static void handle_new_windows(session_t *ps) {
 			}
 			auto mw = (struct managed_win *)new_w;
 			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				map_win(ps, mw);
+				// Have to map immediately instead of queue window update
+				// because we need the window's extent right now.
+				// We can do this because we are in the critical section.
+				map_win_start(ps, mw);
 
 				// This window might be damaged before we called fill_win
 				// and created the damage handle. And there is no way for
@@ -1281,21 +1288,15 @@ static void handle_new_windows(session_t *ps) {
 	}
 }
 
+static void refresh_windows(session_t *ps) {
+	win_stack_foreach_managed_safe(w, &ps->window_stack) {
+		win_process_updates(ps, w);
+	}
+}
+
 static void refresh_stale_images(session_t *ps) {
 	win_stack_foreach_managed(w, &ps->window_stack) {
-		if ((w->flags & WIN_FLAGS_IMAGE_STALE) != 0 &&
-		    (w->flags & WIN_FLAGS_IMAGE_ERROR) == 0) {
-			// Image needs to be updated, update it.
-			w->flags &= ~WIN_FLAGS_IMAGE_STALE;
-			if (w->state != WSTATE_UNMAPPING &&
-			    w->state != WSTATE_DESTROYING && ps->backend_data) {
-				// Rebind image only when the window does have an image
-				// available
-				if (!win_try_rebind_image(ps, w)) {
-					w->flags |= WIN_FLAGS_IMAGE_ERROR;
-				}
-			}
-		}
+		win_process_flags(ps, w);
 	}
 }
 
@@ -1313,7 +1314,7 @@ static void fade_timer_callback(EV_P attr_unused, ev_timer *w, int revents attr_
 	queue_redraw(ps);
 }
 
-static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
+static void handle_pending_updates(EV_P_ struct session *ps) {
 	if (ps->pending_updates) {
 		log_debug("Delayed handling of events, entering critical section");
 		auto e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
@@ -1337,10 +1338,14 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 			recheck_focus(ps);
 		}
 
-		// Refresh pixmaps
+		// Process window updates
+		refresh_windows(ps);
+
+		// Refresh pixmaps and shadows
 		refresh_stale_images(ps);
 
-		ps->server_grabbed = false;
+		// Handle screen changes
+		handle_root_flags(ps);
 
 		e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
 		if (e) {
@@ -1350,9 +1355,14 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 			return quit_compton(ps);
 		}
 
+		ps->server_grabbed = false;
 		ps->pending_updates = false;
-		log_debug("Exiting critical section");
+		log_debug("Exited critical section");
 	}
+}
+
+static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
+	handle_pending_updates(EV_A_ ps);
 
 	if (ps->o.benchmark) {
 		if (ps->o.benchmark_wid) {
@@ -1367,11 +1377,6 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 		}
 	}
 
-	// TODO xcb_grab_server
-	// TODO clean up event queue
-
-	handle_root_flags(ps);
-
 	// TODO have a stripped down version of paint_preprocess that is used when screen
 	// is not redirected. its sole purpose should be to decide whether the screen
 	// should be redirected.
@@ -1382,11 +1387,14 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 
 	if (!was_redirected && ps->redirected) {
 		// paint_preprocess redirected the screen, which might change the state of
-		// some of the windows (e.g. the window image might fail to bind, and the
-		// window would be put into an error state). so we rerun paint_preprocess
-		// here to make sure the rendering decision we make is up-to-date
-		log_debug("Re-run paint_preprocess");
-		bottom = paint_preprocess(ps, &fade_running);
+		// some of the windows (e.g. the window image might become stale).
+		// so we rerun _draw_callback to make sure the rendering decision we make
+		// is up-to-date, and all the new flags got handled.
+		//
+		// TODO This is not ideal, we should try to avoid setting window flags in
+		// paint_preprocess.
+		log_debug("Re-run _draw_callback");
+		return _draw_callback(EV_A_ ps, revents);
 	}
 
 	// Start/stop fade timer depends on whether window are fading
@@ -2022,9 +2030,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		free(query_tree_reply);
 	}
 
-	log_trace("Initial stack:");
+	log_debug("Initial stack:");
 	list_foreach(struct win, w, &ps->window_stack, stack_neighbour) {
-		log_trace("%#010x", w->id);
+		log_debug("%#010x", w->id);
 	}
 
 	ps->pending_updates = true;

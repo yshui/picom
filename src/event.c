@@ -262,16 +262,31 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
 	auto w = find_win(ps, ev->window);
 	if (w) {
-		if (w->managed) {
-			auto _ attr_unused = unmap_win(ps, (struct managed_win *)w, true);
-		} else {
-			destroy_unmanaged_win(ps, w);
-		}
+		auto _ attr_unused = destroy_win_start(ps, w);
 	}
 }
 
 static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
-	map_win_by_id(ps, ev->window);
+	// Unmap overlay window if it got mapped but we are currently not
+	// in redirected state.
+	if (ps->overlay && ev->window == ps->overlay && !ps->redirected) {
+		log_debug("Overlay is mapped while we are not redirected");
+		auto e = xcb_request_check(ps->c, xcb_unmap_window(ps->c, ps->overlay));
+		if (e) {
+			log_error("Failed to unmap the overlay window");
+			free(e);
+		}
+		// We don't track the overlay window, so we can return
+		return;
+	}
+
+	auto w = find_managed_win(ps, ev->window);
+	if (!w) {
+		return;
+	}
+
+	win_queue_update(w, WIN_UPDATE_MAP);
+
 	// FocusIn/Out may be ignored when the window is unmapped, so we must
 	// recheck focus here
 	ps->pending_updates = true;        // to update focus
@@ -280,7 +295,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
 	auto w = find_managed_win(ps, ev->window);
 	if (w) {
-		auto _ attr_unused = unmap_win(ps, w, false);
+		unmap_win_start(ps, w);
 	}
 }
 
@@ -303,13 +318,10 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		}
 	} else {
 		// otherwise, find and destroy the window first
-		auto w = find_win(ps, ev->window);
-		if (w) {
-			if (w->managed) {
-				auto _ attr_unused =
-				    unmap_win(ps, (struct managed_win *)w, true);
-			} else {
-				destroy_unmanaged_win(ps, w);
+		{
+			auto w = find_win(ps, ev->window);
+			if (w) {
+				auto _ attr_unused = destroy_win_start(ps, w);
 			}
 		}
 
@@ -534,8 +546,8 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 }
 
 static inline void repair_win(session_t *ps, struct managed_win *w) {
-	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
-		return;
+	// Only mapped window can receive damages
+	assert(win_is_mapped_in_x(w));
 
 	region_t parts;
 	pixman_region32_init(&parts);

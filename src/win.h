@@ -250,11 +250,28 @@ struct managed_win {
 #endif
 };
 
-void win_release_image(struct backend_base *base, struct managed_win *w);
-bool must_use win_bind_image(session_t *ps, struct managed_win *w);
+/// Process pending updates on a window. Has to be called in X critical section
+void win_process_updates(struct session *ps, struct managed_win *_w);
+/// Process pending images flags on a window. Has to be called in X critical section
+void win_process_flags(session_t *ps, struct managed_win *w);
+/// Queue an update on a window. A series of sanity checks are performed
+void win_queue_update(struct managed_win *_w, enum win_update update);
 
-/// Attempt a rebind of window's images. If that failed, the original images are kept.
-bool must_use win_try_rebind_image(session_t *ps, struct managed_win *w);
+/// Start the unmap of a window. We cannot unmap immediately since we might need to fade
+/// the window out.
+void unmap_win_start(struct session *, struct managed_win *);
+
+/// Start the mapping of a window. We cannot map immediately since we might need to fade
+/// the window in.
+void map_win_start(struct session *, struct managed_win *);
+
+/// Start the destroying of a window. Windows cannot always be destroyed immediately
+/// because of fading and such.
+bool must_use destroy_win_start(session_t *ps, struct win *w);
+
+/// Release images bound with a window, set the *_NONE flags on the window. Only to be
+/// used when de-initializing the backend outside of win.c
+void win_release_images(struct backend_base *base, struct managed_win *w);
 int win_get_name(session_t *ps, struct managed_win *w);
 int win_get_role(session_t *ps, struct managed_win *w);
 winmode_t attr_pure win_calc_mode(const struct managed_win *w);
@@ -355,14 +372,6 @@ void restack_above(session_t *ps, struct win *w, xcb_window_t below);
 void restack_bottom(session_t *ps, struct win *w);
 /// Move window `w` to the top of the stack
 void restack_top(session_t *ps, struct win *w);
-/// Unmap or destroy a window
-/// @return whether the window is destroyed and freed
-bool must_use unmap_win(session_t *ps, struct managed_win *, bool destroy);
-/// Destroy and free an unmanaged window
-void destroy_unmanaged_win(session_t *ps, struct win *w);
-
-void map_win(session_t *ps, struct managed_win *w);
-void map_win_by_id(session_t *ps, xcb_window_t id);
 
 /**
  * Execute fade callback of a window if fading finished.
@@ -409,6 +418,9 @@ bool attr_pure win_has_alpha(const struct managed_win *w);
 
 /// check if reg_ignore_valid is true for all windows above us
 bool attr_pure win_is_region_ignore_valid(session_t *ps, const struct managed_win *w);
+
+/// Whether a given window is mapped on the X server side
+bool win_is_mapped_in_x(const struct managed_win *w);
 
 // Find the managed window immediately below `w` in the window stack
 struct managed_win *attr_pure win_stack_find_next_managed(const session_t *ps,
