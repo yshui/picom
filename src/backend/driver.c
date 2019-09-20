@@ -22,6 +22,7 @@ enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_wind
 		    c, xcb_randr_get_providers(c, window), NULL);
 		if (r == NULL) {
 			log_warn("Failed to get RANDR providers");
+			free(randr_version);
 			return 0;
 		}
 
@@ -57,6 +58,7 @@ enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_wind
 		}
 		free(r);
 	}
+	free(randr_version);
 
 	// If the backend supports driver detection, use that as well
 	if (backend_data && backend_data->ops->detect_driver) {
