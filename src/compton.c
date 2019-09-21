@@ -1333,6 +1333,9 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		// Call fill_win on new windows
 		handle_new_windows(ps);
 
+		// Process window updates
+		refresh_windows(ps);
+
 		{
 			auto r = xcb_get_input_focus_reply(ps->c, xcb_get_input_focus(ps->c), NULL);
 			if (!ps->active_win || (r && r->focus != ps->active_win->base.id)) {
@@ -1340,9 +1343,6 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 			}
 			free(r);
 		}
-
-		// Process window updates
-		refresh_windows(ps);
 
 		// Refresh pixmaps and shadows
 		refresh_stale_images(ps);
