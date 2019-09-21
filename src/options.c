@@ -770,9 +770,6 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(316, force_win_blend);
 		case 317:
 			opt->glx_fshader_win_str = strdup(optarg);
-			log_warn("--glx-fshader-win is being deprecated, and might be "
-			         "removed in the future. If you really need this "
-			         "feature, please report an issue to let us know");
 			break;
 		case 321: {
 			enum log_level tmp_level = string_to_log_level(optarg);
