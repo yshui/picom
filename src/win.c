@@ -324,6 +324,11 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 }
 
 void win_process_flags(session_t *ps, struct managed_win *w) {
+	// Make sure all pending window updates are processed before this. Making this
+	// assumption simplifies some checks (e.g. whether window is mapped)
+	auto iw = (struct managed_win_internal *)w;
+	assert(iw->pending_updates == 0);
+
 	if (!w->flags || (w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
 		return;
 	}
@@ -331,19 +336,25 @@ void win_process_flags(session_t *ps, struct managed_win *w) {
 	// Not a loop
 	while ((w->flags & WIN_FLAGS_IMAGES_STALE) != 0) {
 		// Image needs to be updated, update it.
-		if (w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING ||
-		    !ps->backend_data) {
-			// Window is already gone, or we are using the legacy backend
-			// we cannot rebind image
+		if (!ps->backend_data) {
+			// We are using legacy backend, nothing to do here.
 			break;
 		}
 
-		// Must release images first, otherwise breaks NVIDIA driver
 		if ((w->flags & WIN_FLAGS_PIXMAP_STALE) != 0) {
-			if ((w->flags & WIN_FLAGS_PIXMAP_NONE) == 0) {
-				win_release_pixmap(ps->backend_data, w);
+			// Check to make sure the window is still mapped, otherwise we
+			// won't be able to rebind pixmap after releasing it, yet we might
+			// still need the pixmap for rendering.
+			if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING) {
+				if ((w->flags & WIN_FLAGS_PIXMAP_NONE) == 0) {
+					// Must release images first, otherwise breaks
+					// NVIDIA driver
+					win_release_pixmap(ps->backend_data, w);
+				}
+				win_bind_pixmap(ps->backend_data, w);
+			} else {
+				assert(w->win_image);
 			}
-			win_bind_pixmap(ps->backend_data, w);
 		}
 
 		if ((w->flags & WIN_FLAGS_SHADOW_STALE) != 0) {
@@ -360,9 +371,12 @@ void win_process_flags(session_t *ps, struct managed_win *w) {
 			}
 		}
 
-		// Flags are cleared here, loop always run only once
-		w->flags &= ~WIN_FLAGS_IMAGES_STALE;
+		// break here, loop always run only once
+		break;
 	}
+
+	// Clear stale image flags
+	w->flags &= ~WIN_FLAGS_IMAGES_STALE;
 }
 
 /**
