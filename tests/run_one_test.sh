@@ -1,5 +1,5 @@
 #!/bin/sh
-set -x
+set -xe
 if [ -z $DISPLAY ]; then
 	exec xvfb-run -s "+extension composite" -a $0 $1 $2 $3
 fi
@@ -11,9 +11,9 @@ echo "Running test $2"
 compton_pid=$!
 $3
 
-kill -INT $compton_pid
-wait $compton_pid
+kill -INT $compton_pid || true
 cat log
 rm log
+wait $compton_pid
 
 
