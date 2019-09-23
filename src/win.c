@@ -697,6 +697,7 @@ static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new
 			assert(!w->shadow_image);
 			// Delayed creation of shadow image
 			w->flags |= WIN_FLAGS_SHADOW_STALE;
+			ps->pending_updates = true;
 		}
 	}
 	pixman_region32_fini(&extents);
