@@ -16,7 +16,7 @@
 struct dummy_image {
 	xcb_pixmap_t pixmap;
 	bool transparent;
-	int refcount;
+	int *refcount;
 	UT_hash_handle hh;
 };
 
@@ -39,22 +39,27 @@ void dummy_deinit(struct backend_base *data) {
 	HASH_ITER2(dummy->images, img) {
 		log_warn("Backend image for pixmap %#010x is not freed", img->pixmap);
 		HASH_DEL(dummy->images, img);
+		free(img->refcount);
 		free(img);
 	}
 	free(dummy);
 }
 
-void dummy_compose(struct backend_base *base, void *image, int dst_x attr_unused,
-                   int dst_y attr_unused, const region_t *reg_paint attr_unused,
-                   const region_t *reg_visible attr_unused) {
+static void dummy_check_image(struct backend_base *base, const struct dummy_image *img) {
 	auto dummy = (struct dummy_data *)base;
-	auto img = (struct dummy_image *)image;
-
 	struct dummy_image *tmp = NULL;
 	HASH_FIND_INT(dummy->images, &img->pixmap, tmp);
 	if (!tmp) {
-		log_warn("Composing with an invalid (possibly freed) image");
+		log_warn("Using an invalid (possibly freed) image");
+		assert(false);
 	}
+	assert(*tmp->refcount > 0);
+}
+
+void dummy_compose(struct backend_base *base, void *image, int dst_x attr_unused,
+                   int dst_y attr_unused, const region_t *reg_paint attr_unused,
+                   const region_t *reg_visible attr_unused) {
+	dummy_check_image(base, image);
 }
 
 void dummy_fill(struct backend_base *backend_data attr_unused, struct color c attr_unused,
@@ -73,14 +78,15 @@ void *dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
 	struct dummy_image *img = NULL;
 	HASH_FIND_INT(dummy->images, &pixmap, img);
 	if (img) {
-		img->refcount++;
+		(*img->refcount)++;
 		return img;
 	}
 
 	img = ccalloc(1, struct dummy_image);
 	img->pixmap = pixmap;
 	img->transparent = fmt.alpha_size != 0;
-	img->refcount = 1;
+	img->refcount = ccalloc(1, int);
+	*img->refcount = 1;
 
 	HASH_ADD_INT(dummy->images, pixmap, img);
 	return (void *)img;
@@ -89,22 +95,18 @@ void *dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
 void dummy_release_image(backend_t *base, void *image) {
 	auto dummy = (struct dummy_data *)base;
 	auto img = (struct dummy_image *)image;
-	assert(img->refcount > 0);
-	img->refcount--;
-	if (img->refcount == 0) {
+	assert(*img->refcount > 0);
+	(*img->refcount)--;
+	if (*img->refcount == 0) {
 		HASH_DEL(dummy->images, img);
+		free(img->refcount);
 		free(img);
 	}
 }
 
 bool dummy_is_image_transparent(struct backend_base *base, void *image) {
-	auto dummy = (struct dummy_data *)base;
 	auto img = (struct dummy_image *)image;
-	struct dummy_image *tmp = NULL;
-	HASH_FIND_INT(dummy->images, &img->pixmap, tmp);
-	if (!tmp) {
-		log_warn("Using an invalid (possibly freed) image");
-	}
+	dummy_check_image(base, img);
 	return img->transparent;
 }
 
@@ -112,23 +114,19 @@ int dummy_buffer_age(struct backend_base *base attr_unused) {
 	return 2;
 }
 
-bool dummy_image_op(struct backend_base *base attr_unused, enum image_operations op attr_unused,
-                    void *image attr_unused, const region_t *reg_op attr_unused,
+bool dummy_image_op(struct backend_base *base, enum image_operations op attr_unused,
+                    void *image, const region_t *reg_op attr_unused,
                     const region_t *reg_visible attr_unused, void *args attr_unused) {
+	dummy_check_image(base, image);
 	return true;
 }
 
 void *dummy_image_copy(struct backend_base *base, const void *image,
                        const region_t *reg_visible attr_unused) {
-	auto dummy = (struct dummy_data *)base;
-	auto img = (struct dummy_image *)image;
-	struct dummy_image *tmp = NULL;
-	HASH_FIND_INT(dummy->images, &img->pixmap, tmp);
-	if (!tmp) {
-		log_warn("Using an invalid (possibly freed) image");
-	}
-	img->refcount++;
-	return img;
+	auto img = (const struct dummy_image *)image;
+	dummy_check_image(base, img);
+	(*img->refcount)++;
+	return (void *)img;
 }
 
 void *dummy_create_blur_context(struct backend_base *base attr_unused,
