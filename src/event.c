@@ -65,11 +65,8 @@ static inline const char *ev_window_name(session_t *ps, xcb_window_t wid) {
 				w = find_toplevel(ps, wid);
 			}
 
-			if (w) {
-				win_get_name(ps, w);
-				if (w->name) {
-					name = w->name;
-				}
+			if (w && w->name) {
+				name = w->name;
 			}
 		}
 	}
