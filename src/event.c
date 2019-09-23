@@ -490,7 +490,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	if (ps->o.track_wdata &&
 	    (ps->atoms->aWM_NAME == ev->atom || ps->atoms->a_NET_WM_NAME == ev->atom)) {
 		auto w = find_toplevel(ps, ev->window);
-		if (w && 1 == win_get_name(ps, w)) {
+		if (w && win_update_name(ps, w) == 1) {
 			win_on_factor_change(ps, w);
 		}
 	}

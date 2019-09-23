@@ -402,7 +402,7 @@ static bool attr_pure win_has_rounded_corners(const struct managed_win *w) {
 	return false;
 }
 
-int win_get_name(session_t *ps, struct managed_win *w) {
+int win_update_name(session_t *ps, struct managed_win *w) {
 	XTextProperty text_prop = {NULL, XCB_NONE, 0, 0};
 	char **strlst = NULL;
 	int nstr = 0;
@@ -974,7 +974,7 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 
 	// Get window name and class if we are tracking them
 	if (ps->o.track_wdata) {
-		win_get_name(ps, w);
+		win_update_name(ps, w);
 		win_get_class(ps, w);
 		win_get_role(ps, w);
 	}
