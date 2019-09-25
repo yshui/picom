@@ -213,6 +213,22 @@ static void *glx_decouple_user_data(backend_t *base attr_unused, void *ud attr_u
 	return ret;
 }
 
+static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawable) {
+	bool vsync_enabled = false;
+	if (glxext.has_GLX_MESA_swap_control) {
+		vsync_enabled = (glXSwapIntervalMESA((uint)interval) == 0);
+	}
+	if (!vsync_enabled && glxext.has_GLX_SGI_swap_control) {
+		vsync_enabled = (glXSwapIntervalSGI(interval) == 0);
+	}
+	if (!vsync_enabled && glxext.has_GLX_EXT_swap_control) {
+		// glXSwapIntervalEXT doesn't return if it's successful
+		glXSwapIntervalEXT(dpy, drawable, interval);
+		vsync_enabled = true;
+	}
+	return vsync_enabled;
+}
+
 /**
  * Initialize OpenGL.
  */
@@ -326,6 +342,14 @@ static backend_t *glx_init(session_t *ps) {
 
 	gd->gl.decouple_texture_user_data = glx_decouple_user_data;
 	gd->gl.release_user_data = glx_release_image;
+
+	if (ps->o.vsync) {
+		if (!glx_set_swap_interval(1, ps->dpy, tgt)) {
+			log_error("Failed to enable vsync.");
+		}
+	} else {
+		glx_set_swap_interval(0, ps->dpy, tgt);
+	}
 
 	success = true;
 
