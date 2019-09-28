@@ -256,6 +256,9 @@ void win_process_updates(struct session *ps, struct managed_win *_w);
 void win_process_flags(session_t *ps, struct managed_win *w);
 /// Queue an update on a window. A series of sanity checks are performed
 void win_queue_update(struct managed_win *_w, enum win_update update);
+/// Bind a shadow to the window, with color `c` and shadow kernel `kernel`
+bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color c,
+                     struct conv *kernel);
 
 /// Start the unmap of a window. We cannot unmap immediately since we might need to fade
 /// the window out.

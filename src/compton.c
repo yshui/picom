@@ -758,7 +758,18 @@ static bool initialize_backend(session_t *ps) {
 				log_debug("Marking window %#010x (%s) for update after "
 				          "redirection",
 				          w->base.id, w->name);
-				w->flags |= WIN_FLAGS_IMAGES_STALE;
+				if (w->shadow) {
+					struct color c = {
+					    .red = ps->o.shadow_red,
+					    .green = ps->o.shadow_green,
+					    .blue = ps->o.shadow_blue,
+					    .alpha = ps->o.shadow_opacity,
+					};
+					win_bind_shadow(ps->backend_data, w, c,
+					                ps->gaussian_map);
+				}
+
+				w->flags |= WIN_FLAGS_PIXMAP_STALE;
 				ps->pending_updates = true;
 			}
 		}

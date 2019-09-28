@@ -292,8 +292,8 @@ static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w
 	return true;
 }
 
-static inline bool win_bind_shadow(struct backend_base *b, struct managed_win *w,
-                                   struct color c, struct conv *kernel) {
+bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color c,
+                     struct conv *kernel) {
 	assert(!w->shadow_image);
 	assert(w->shadow);
 	w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, kernel, c.red,
