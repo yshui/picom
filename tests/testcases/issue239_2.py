@@ -27,20 +27,23 @@ fs = "_NET_WM_STATE_FULLSCREEN"
 fs_atom = conn.core.InternAtom(False, len(fs), fs).reply().atom
 
 
-# Map the window
+# Map the window, causing screen to be redirected
 conn.core.MapWindowChecked(wid).check()
 
 time.sleep(0.5)
 
+# Set fullscreen property, causing screen to be unredirected
 conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, name_atom, atom_atom, 32, 1, [fs_atom]).check()
 
 time.sleep(0.5)
 
+# Clear fullscreen property, causing screen to be redirected
 conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, name_atom, atom_atom, 32, 0, []).check()
 
+# Do a round trip to X server so the compositor has a chance to start the rerun of _draw_callback
 conn.core.GetInputFocus().reply()
 
-# Unmap the window
+# Unmap the window, triggers the bug
 conn.core.UnmapWindowChecked(wid).check()
 
 time.sleep(0.5)
