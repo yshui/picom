@@ -1212,6 +1212,7 @@ static bool redirect_start(session_t *ps) {
 	x_sync(ps->c);
 
 	ps->redirected = true;
+	ps->first_frame = true;
 
 	// Re-detect driver since we now have a backend
 	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);
@@ -1378,6 +1379,20 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 	handle_pending_updates(EV_A_ ps);
 
+	if (ps->first_frame) {
+		// If we are still rendering the first frame, if some of the windows are
+		// unmapped/destroyed during the above handle_pending_updates() call, they
+		// won't have pixmap before we rendered it, causing us to crash.
+		// But we will only render them if they are in fading. So we just skip
+		// fading for all windows here.
+		//
+		// Using foreach_safe here since skipping fading can cause window to be
+		// freed if it's destroyed.
+		win_stack_foreach_managed_safe(w, &ps->window_stack) {
+			auto _ attr_unused = win_skip_fading(ps, w);
+		}
+	}
+
 	if (ps->o.benchmark) {
 		if (ps->o.benchmark_wid) {
 			auto w = find_managed_win(ps, ps->o.benchmark_wid);
@@ -1428,6 +1443,7 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 			paint_all(ps, bottom, false);
 		}
 
+		ps->first_frame = false;
 		paint++;
 		if (ps->o.benchmark && paint >= ps->o.benchmark)
 			exit(0);

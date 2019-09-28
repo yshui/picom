@@ -210,6 +210,8 @@ typedef struct session {
 #endif
 	/// Sync fence to sync draw operations
 	xcb_sync_fence_t sync_fence;
+	/// Whether we are rendering the first frame after screen is redirected
+	bool first_frame;
 
 	// === Operation related ===
 	/// Flags related to the root window
