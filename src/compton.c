@@ -67,9 +67,9 @@
 
 static const long SWOPTI_TOLERANCE = 3000;
 
-static bool must_use redir_start(session_t *ps);
+static bool must_use redirect_start(session_t *ps);
 
-static void redir_stop(session_t *ps);
+static void unredirect(session_t *ps);
 
 // === Global constants ===
 
@@ -614,9 +614,9 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 	}
 	if (unredir_possible) {
 		if (ps->redirected) {
-			if (!ps->o.unredir_if_possible_delay || ps->tmout_unredir_hit)
-				redir_stop(ps);
-			else if (!ev_is_active(&ps->unredir_timer)) {
+			if (!ps->o.unredir_if_possible_delay || ps->tmout_unredir_hit) {
+				unredirect(ps);
+			} else if (!ev_is_active(&ps->unredir_timer)) {
 				ev_timer_set(
 				    &ps->unredir_timer,
 				    (double)ps->o.unredir_if_possible_delay / 1000.0, 0);
@@ -626,7 +626,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 	} else {
 		ev_timer_stop(ps->loop, &ps->unredir_timer);
 		if (!ps->redirected) {
-			if (!redir_start(ps)) {
+			if (!redirect_start(ps)) {
 				return NULL;
 			}
 		}
@@ -1102,7 +1102,7 @@ static bool init_overlay(session_t *ps) {
 		// overlay
 		// root_damage = XDamageCreate(ps->dpy, root, XDamageReportNonEmpty);
 
-		// Unmap the overlay, we will map it when needed in redir_start
+		// Unmap the overlay, we will map it when needed in redirect_start
 		XCB_AWAIT_VOID(xcb_unmap_window, ps->c, ps->overlay);
 	} else {
 		log_error("Cannot get X Composite overlay window. Falling "
@@ -1166,7 +1166,7 @@ static inline uint8_t session_redirection_mode(session_t *ps) {
  *
  * @return whether the operation succeeded or not
  */
-static bool redir_start(session_t *ps) {
+static bool redirect_start(session_t *ps) {
 	assert(!ps->redirected);
 	log_debug("Redirecting the screen.");
 
@@ -1216,7 +1216,7 @@ static bool redir_start(session_t *ps) {
 /**
  * Unredirect all windows.
  */
-static void redir_stop(session_t *ps) {
+static void unredirect(session_t *ps) {
 	assert(ps->redirected);
 	log_debug("Unredirecting the screen.");
 
@@ -2062,7 +2062,7 @@ err:
  */
 static void session_destroy(session_t *ps) {
 	if (ps->redirected) {
-		redir_stop(ps);
+		unredirect(ps);
 	}
 
 	// Stop listening to events on root window
@@ -2183,7 +2183,7 @@ static void session_destroy(session_t *ps) {
 	}
 
 	if (ps->o.experimental_backends) {
-		// backend is deinitialized in redir_stop
+		// backend is deinitialized in unredirect()
 		assert(ps->backend_data == NULL);
 	} else {
 		deinit_render(ps);
