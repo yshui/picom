@@ -235,8 +235,8 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--glx-no-rebind-pixmap*::
 	GLX backend: Avoid rebinding pixmap on window damage. Probably could improve performance on rapid window content changes, but is known to break things on some drivers (LLVMpipe, xf86-video-intel, etc.). Recommended if it works.
 
-*--use-damage*::
-	Use the damage information to limit rendering to parts of the screen that has actually changed. Potentially improves the performance.
+*--no-use-damage*::
+	Disable the use of damage information. This cause the whole screen to be redrawn everytime, instead of the part of the screen has actually changed. Potentially degrades the performance, but might fix some artifacts.
 
 *--xrender-sync-fence*::
 	Use X Sync fence to sync clients' draw calls, to make sure all draw calls are finished before compton starts drawing. Needed on nvidia-drivers with GLX backend for some users.

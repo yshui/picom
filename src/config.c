@@ -513,6 +513,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 
 	    .refresh_rate = 0,
 	    .sw_opti = false,
+	    .use_damage = true,
 
 	    .shadow_red = 0.0,
 	    .shadow_green = 0.0,

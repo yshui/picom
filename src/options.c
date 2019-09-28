@@ -283,9 +283,11 @@ static void usage(int ret) {
 	    "  known to break things on some drivers (LLVMpipe, xf86-video-intel,\n"
 	    "  etc.).\n"
 	    "\n"
-	    "--use-damage\n"
-	    "  Use the damage information to limit rendering to parts of the screen\n"
-	    "  that has actually changed. Potentially improves the performance.\n"
+	    "--no-use-damage\n"
+	    "  Disable the use of damage information. This cause the whole screen to\n"
+	    "  be redrawn everytime, instead of the part of the screen that has\n"
+	    "  actually changed. Potentially degrades the performance, but might fix\n"
+	    "  some artifacts.\n"
 	    "\n"
 	    "--xrender-sync-fence\n"
 	    "  Additionally use X Sync fence to sync clients' draw calls. Needed\n"
@@ -412,6 +414,7 @@ static const struct option longopts[] = {
     {"log-level", required_argument, NULL, 321},
     {"log-file", required_argument, NULL, 322},
     {"use-damage", no_argument, NULL, 323},
+    {"no-use-damage", no_argument, NULL, 324},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -782,6 +785,9 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		}
 		P_CASEBOOL(319, no_x_selection);
 		P_CASEBOOL(323, use_damage);
+		case 324:
+			opt->use_damage = false;
+			break;
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801: opt->print_diagnostics = true; break;
