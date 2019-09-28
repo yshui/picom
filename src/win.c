@@ -345,16 +345,13 @@ void win_process_flags(session_t *ps, struct managed_win *w) {
 			// Check to make sure the window is still mapped, otherwise we
 			// won't be able to rebind pixmap after releasing it, yet we might
 			// still need the pixmap for rendering.
-			if (w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING) {
-				if ((w->flags & WIN_FLAGS_PIXMAP_NONE) == 0) {
-					// Must release images first, otherwise breaks
-					// NVIDIA driver
-					win_release_pixmap(ps->backend_data, w);
-				}
-				win_bind_pixmap(ps->backend_data, w);
-			} else {
-				assert(w->win_image);
+			assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
+			if ((w->flags & WIN_FLAGS_PIXMAP_NONE) == 0) {
+				// Must release images first, otherwise breaks
+				// NVIDIA driver
+				win_release_pixmap(ps->backend_data, w);
 			}
+			win_bind_pixmap(ps->backend_data, w);
 		}
 
 		if ((w->flags & WIN_FLAGS_SHADOW_STALE) != 0) {
@@ -1854,6 +1851,10 @@ bool destroy_win_start(session_t *ps, struct win *w) {
 		mw->state = WSTATE_DESTROYING;
 		mw->a.map_state = XCB_MAP_STATE_UNMAPPED;
 		mw->in_openclose = true;
+
+		// Clear PIXMAP_STALE flag, since the window is destroyed there is no
+		// pixmap available so STALE doesn't make sense.
+		mw->flags &= ~WIN_FLAGS_PIXMAP_STALE;
 	}
 
 	// don't need win_ev_stop because the window is gone anyway
@@ -1903,6 +1904,10 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->state = WSTATE_UNMAPPING;
 	w->opacity_target = win_calc_opacity_target(ps, w, false);
+
+	// Clear PIXMAP_STALE flag, since the window is unmapped there is no pixmap
+	// available so STALE doesn't make sense.
+	w->flags &= ~WIN_FLAGS_PIXMAP_STALE;
 
 	// don't care about properties anymore
 	win_ev_stop(ps, &w->base);
