@@ -4,8 +4,7 @@ if not libev.found()
 endif
 base_deps = [
 	cc.find_library('m'),
-	libev,
-	dependency('xcb', version: '>=1.9.2'),
+	libev
 ]
 
 srcs = [ files('compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
@@ -15,16 +14,21 @@ compton_inc = include_directories('.')
 
 cflags = []
 
-
-required_package = [
-	'x11', 'x11-xcb', 'xcb-renderutil',
-	'xcb-render', 'xcb-damage', 'xcb-randr', 'xcb-sync',
-	'xcb-composite', 'xcb-shape', 'xcb-image', 'xcb-xinerama',
-	'xcb-xfixes', 'xcb-present', 'xext', 'pixman-1'
+required_xcb_packages = [
+	'xcb-render', 'xcb-damage', 'xcb-randr', 'xcb-sync', 'xcb-composite',
+	'xcb-shape', 'xcb-xinerama', 'xcb-xfixes', 'xcb-present', 'xcb'
 ]
 
-foreach i : required_package
+required_packages = [
+	'x11', 'x11-xcb', 'xcb-renderutil', 'xcb-image', 'xext', 'pixman-1'
+]
+
+foreach i : required_packages
 	base_deps += [dependency(i, required: true)]
+endforeach
+
+foreach i : required_xcb_packages
+	base_deps += [dependency(i, version: '>=1.12.0', required: true)]
 endforeach
 
 if not cc.has_header('uthash.h')
