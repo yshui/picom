@@ -121,6 +121,9 @@ static void win_update_focused(session_t *ps, struct managed_win *w) {
 	if (opacity_target_old != w->opacity_target && w->state == WSTATE_MAPPED) {
 		// Only MAPPED can transition to FADING
 		w->state = WSTATE_FADING;
+		if (!ps->redirected) {
+			CHECK(!win_skip_fading(ps, w));
+		}
 	}
 }
 
