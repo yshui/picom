@@ -249,7 +249,7 @@ static inline int strcmp_wd(const char *needle, const char *src) {
 /**
  * Return whether a c2_ptr_t is empty.
  */
-static inline bool c2_ptr_isempty(const c2_ptr_t p) {
+static inline attr_unused bool c2_ptr_isempty(const c2_ptr_t p) {
 	return !(p.isbranch ? (bool)p.b : (bool)p.l);
 }
 

@@ -134,7 +134,7 @@ static inline bool ensure_glx_context(session_t *ps) {
 /**
  * Free a GLX texture.
  */
-static inline void free_texture_r(session_t *ps, GLuint *ptexture) {
+static inline void free_texture_r(session_t *ps attr_unused, GLuint *ptexture) {
 	if (*ptexture) {
 		assert(glx_has_context(ps));
 		glDeleteTextures(1, ptexture);

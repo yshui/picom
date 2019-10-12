@@ -329,8 +329,7 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 void win_process_flags(session_t *ps, struct managed_win *w) {
 	// Make sure all pending window updates are processed before this. Making this
 	// assumption simplifies some checks (e.g. whether window is mapped)
-	auto iw = (struct managed_win_internal *)w;
-	assert(iw->pending_updates == 0);
+	assert(((struct managed_win_internal *)w)->pending_updates == 0);
 
 	if (!w->flags || (w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
 		return;
@@ -2250,6 +2249,7 @@ win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_windo
 void win_queue_update(struct managed_win *_w, enum win_update update) {
 	auto w = (struct managed_win_internal *)_w;
 	assert(popcount(update) == 1);
+	assert(update == WIN_UPDATE_MAP);        // Currently the only supported update
 
 	if (unlikely(_w->state == WSTATE_DESTROYING)) {
 		log_error("Updates queued on a destroyed window %#010x (%s)", _w->base.id,
@@ -2257,7 +2257,7 @@ void win_queue_update(struct managed_win *_w, enum win_update update) {
 		return;
 	}
 
-	w->pending_updates |= WIN_UPDATE_MAP;
+	w->pending_updates |= update;
 }
 
 /// Process pending updates on a window. Has to be called in X critical section

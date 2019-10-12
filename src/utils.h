@@ -57,7 +57,7 @@ safe_isnan(double a) {
 /// being always true or false.
 #define ASSERT_IN_RANGE(var, lower, upper)                                               \
 	do {                                                                             \
-		auto __tmp = (var);                                                      \
+		auto __tmp attr_unused = (var);                                          \
 		_Pragma("GCC diagnostic push");                                          \
 		_Pragma("GCC diagnostic ignored \"-Wtype-limits\"");                     \
 		assert(__tmp >= lower);                                                  \
@@ -69,7 +69,7 @@ safe_isnan(double a) {
 /// being always true or false.
 #define ASSERT_GEQ(var, lower)                                                           \
 	do {                                                                             \
-		auto __tmp = (var);                                                      \
+		auto __tmp attr_unused = (var);                                          \
 		_Pragma("GCC diagnostic push");                                          \
 		_Pragma("GCC diagnostic ignored \"-Wtype-limits\"");                     \
 		assert(__tmp >= lower);                                                  \
@@ -111,7 +111,7 @@ safe_isnan(double a) {
 #define to_u32_checked(val)                                                              \
 	({                                                                               \
 		auto tmp = (val);                                                        \
-		int64_t max = UINT32_MAX; /* silence clang tautological                  \
+		int64_t max attr_unused = UINT32_MAX; /* silence clang tautological      \
 		                                         comparison warning*/            \
 		ASSERT_IN_RANGE(tmp, 0, max);                                            \
 		(uint32_t) tmp;                                                          \
