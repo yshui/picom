@@ -73,6 +73,17 @@ jobs:
     steps:
       - build:
           build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
+  release:
+    executor: e
+    steps:
+      - build:
+          build-config: --buildtype=release
+  release-clang:
+    executor: e
+    steps:
+      - build:
+          cc: clang
+          build-config: --buildtype=release
   nogl:
     executor: e
     steps:
