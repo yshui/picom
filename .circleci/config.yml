@@ -127,6 +127,8 @@ workflows:
       - clang_minimal
       - nogl
       - clang_nogl
+      - release
+      - release-clang
       - test:
           requires:
             - basic
