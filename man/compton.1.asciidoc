@@ -200,7 +200,7 @@ A 7x7 Gaussian blur kernel (sigma = 0.84089642) looks like:
 --blur-kern '7,7,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.001723,0.059106,0.493069,0.493069,0.059106,0.001723,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003'
 ----
 +
-May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box`, `3x3gaussian`, `5x5gaussian`, `7x7gaussian`, `9x9gaussian`, `11x11gaussian`. All Gaussian kernels are generated with sigma = 0.84089642 . You may use the accompanied `compton-convgen.py` to generate blur kernels.
+May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box`, `3x3gaussian`, `5x5gaussian`, `7x7gaussian`, `9x9gaussian`, `11x11gaussian`. All Gaussian kernels are generated with sigma = 0.84089642 . If you find yourself needing to generate custom blur kernels, you might want to try the new blur configuration supported by the experimental backends (See *BLUR* and *--experimental-backends*).
 
 *--blur-background-exclude* 'CONDITION'::
 	Exclude conditions for background blur.
