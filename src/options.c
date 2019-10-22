@@ -168,10 +168,6 @@ static void usage(int ret) {
 	    "  Use _NET_WM_ACTIVE_WINDOW on the root window to determine which\n"
 	    "  window is focused instead of using FocusIn/Out events.\n"
 	    "\n"
-	    "--respect-prop-shadow\n"
-	    "  Respect _COMPTON_SHADOW. This a prototype-level feature, which\n"
-	    "  you must not rely on.\n"
-	    "\n"
 	    "--unredir-if-possible\n"
 	    "  Unredirect all windows if a full-screen opaque window is\n"
 	    "  detected, to maximize performance for full-screen windows.\n"
@@ -635,7 +631,12 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			         " from the command line options");
 			break;
 		P_CASEBOOL(276, use_ewmh_active_win);
-		P_CASEBOOL(277, respect_prop_shadow);
+		case 277:
+			// --respect-prop-shadow
+			log_warn("--respect-prop-shadow option has been deprecated, its "
+			         "functionality will always be enabled. Please remove it "
+			         "from the command line options");
+			break;
 		P_CASEBOOL(278, unredir_if_possible);
 		case 279:
 			// --focus-exclude

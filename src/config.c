@@ -524,7 +524,6 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .shadow_opacity = .75,
 	    .shadow_blacklist = NULL,
 	    .shadow_ignore_shaped = false,
-	    .respect_prop_shadow = false,
 	    .xinerama_shadow_crop = false,
 
 	    .fade_in_step = 0.028,

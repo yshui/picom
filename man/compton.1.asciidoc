@@ -139,9 +139,6 @@ OPTIONS
 *--use-ewmh-active-win*::
 	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it.
 
-*--respect-prop-shadow*::
-	Respect '_COMPTON_SHADOW'. This a prototype-level feature, which you must not rely on.
-
 *--unredir-if-possible*::
 	Unredirect all windows if a full-screen opaque window is detected, to maximize performance for full-screen windows. Known to cause flickering when redirecting/unredirecting windows. *--paint-on-overlay* may make the flickering less obvious.
 

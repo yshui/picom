@@ -149,8 +149,6 @@ typedef struct options {
 	c2_lptr_t *shadow_blacklist;
 	/// Whether bounding-shaped window should be ignored.
 	bool shadow_ignore_shaped;
-	/// Whether to respect _COMPTON_SHADOW.
-	bool respect_prop_shadow;
 	/// Whether to crop shadow to the very Xinerama screen.
 	bool xinerama_shadow_crop;
 

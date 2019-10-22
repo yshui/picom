@@ -516,7 +516,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// If _COMPTON_SHADOW changes
-	if (ps->o.respect_prop_shadow && ps->atoms->a_COMPTON_SHADOW == ev->atom) {
+	if (ps->atoms->a_COMPTON_SHADOW == ev->atom) {
 		auto w = find_managed_win(ps, ev->window);
 		if (w) {
 			win_update_prop_shadow(ps, w);

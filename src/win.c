@@ -738,7 +738,7 @@ static void win_determine_shadow(session_t *ps, struct managed_win *w) {
 		           !w->rounded_corners) {
 			log_debug("Shadow disabled by shadow-ignore-shaped");
 			shadow_new = false;
-		} else if (ps->o.respect_prop_shadow && w->prop_shadow == 0) {
+		} else if (w->prop_shadow == 0) {
 			log_debug("Shadow disabled by shadow property");
 			shadow_new = false;
 		}
@@ -2080,9 +2080,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	win_update_opacity_prop(ps, w);
 
 	// Check for _COMPTON_SHADOW
-	if (ps->o.respect_prop_shadow) {
-		win_update_prop_shadow_raw(ps, w);
-	}
+	win_update_prop_shadow_raw(ps, w);
 
 	// Many things above could affect shadow
 	win_determine_shadow(ps, w);
