@@ -109,7 +109,7 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 }
 
 // A cache of pict formats. We assume they don't change during the lifetime
-// of compton
+// of this program
 static thread_local xcb_render_query_pict_formats_reply_t *g_pictfmts = NULL;
 
 static inline void x_get_server_pictfmts(xcb_connection_t *c) {
@@ -574,7 +574,7 @@ struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual
 		return (struct xvisual_info){-1, -1, -1, -1, -1, 0};
 	}
 	if (pictfmt->type != XCB_RENDER_PICT_TYPE_DIRECT) {
-		log_error("compton cannot handle non-DirectColor visuals. Report an "
+		log_error("We cannot handle non-DirectColor visuals. Report an "
 		          "issue if you see this error message.");
 		return (struct xvisual_info){-1, -1, -1, -1, -1, 0};
 	}

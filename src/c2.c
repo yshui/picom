@@ -1028,7 +1028,7 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 		}
 	}
 
-	// Enable specific tracking options in compton if needed by the condition
+	// Enable specific tracking options, if needed by the condition
 	// TODO: Add track_leader
 	switch (pleaf->predef) {
 	// case C2_L_PROUNDED: ps->o.detect_rounded_corners = true; break;

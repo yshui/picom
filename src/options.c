@@ -22,13 +22,12 @@
 /**
  * Print usage text.
  */
-static void usage(int ret) {
+static void usage(const char *argv0, int ret) {
 #define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
 	static const char *usage_text =
-	    "compton (" COMPTON_VERSION ")\n"
-	    "This is the maintenance fork of compton, please report\n"
-	    "bugs to https://github.com/yshui/compton\n\n"
-	    "usage: compton [options]\n"
+	    "picom (" COMPTON_VERSION ")\n"
+	    "Please report bugs to https://github.com/yshui/picom\n\n"
+	    "usage: %s [options]\n"
 	    "Options:\n"
 	    "\n"
 	    "-r radius\n"
@@ -151,7 +150,7 @@ static void usage(int ret) {
 	    "  windows.\n"
 	    "\n"
 	    "--refresh-rate val\n"
-	    "  Specify refresh rate of the screen. If not specified or 0, compton\n"
+	    "  Specify refresh rate of the screen. If not specified or 0, we\n"
 	    "  will try detecting this with X RandR extension.\n"
 	    "\n"
 	    "--vsync\n"
@@ -161,8 +160,7 @@ static void usage(int ret) {
 	    "  Painting on X Composite overlay window.\n"
 	    "\n"
 	    "--sw-opti\n"
-	    "  Limit compton to repaint at most once every 1 / refresh_rate\n"
-	    "  second to boost performance.\n"
+	    "  Limit repaint to at most once every 1 / refresh_rate second.\n"
 	    "\n"
 	    "--use-ewmh-active-win\n"
 	    "  Use _NET_WM_ACTIVE_WINDOW on the root window to determine which\n"
@@ -250,7 +248,7 @@ static void usage(int ret) {
 	    "\n"
 	    "--opacity-rule opacity:condition\n"
 	    "  Specify a list of opacity rules, in the format \"PERCENT:PATTERN\",\n"
-	    "  like \'50:name *= \"Firefox\"'. compton-trans is recommended over\n"
+	    "  like \'50:name *= \"Firefox\"'. picom-trans is recommended over\n"
 	    "  this. Note we do not distinguish 100% and unset, and we don't make\n"
 	    "  any guarantee about possible conflicts with other programs that set\n"
 	    "  _NET_WM_WINDOW_OPACITY on frame or client windows.\n"
@@ -315,9 +313,9 @@ static void usage(int ret) {
 	    "\n"
 	    "--debug-mode\n"
 	    "  Render into a separate window, and don't take over the screen. Useful\n"
-	    "  when you want to attach a debugger to compton\n";
+	    "  when you want to attach a debugger to picom\n";
 	FILE *f = (ret ? stderr : stdout);
-	fputs(usage_text, f);
+	fprintf(f, usage_text, argv0);
 #undef WARNING_DISABLED
 }
 
@@ -433,7 +431,7 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		if (o == 256) {
 			*config_file = strdup(optarg);
 		} else if (o == 'h') {
-			usage(0);
+			usage(argv[0], 0);
 			return true;
 
 		} else if (o == 'b') {
@@ -451,7 +449,7 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 320) {
 			log_warn("--no-name-pixmap will be ignored");
 		} else if (o == '?' || o == ':') {
-			usage(1);
+			usage(argv[0], 1);
 			*exit_code = 1;
 			return true;
 		}
@@ -460,7 +458,7 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 	// Check for abundant positional arguments
 	if (optind < argc) {
 		// log is not initialized here yet
-		fprintf(stderr, "compton doesn't accept positional arguments.\n");
+		fprintf(stderr, "picom doesn't accept positional arguments.\n");
 		*exit_code = 1;
 		return true;
 	}
@@ -511,7 +509,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		// Short options
 		case 318:
 		case 'h':
-			// These options should cause compton to exit early,
+			// These options should cause us to exit early,
 			// so assert(false) here
 			assert(false);
 			break;
@@ -612,7 +610,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 271:
 			// --alpha-step
-			log_warn("--alpha-step has been removed, compton now tries to "
+			log_warn("--alpha-step has been removed, we now tries to "
 			         "make use of all alpha values");
 			break;
 		case 272: log_warn("use of --dbe is deprecated"); break;
@@ -784,7 +782,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(800, monitor_repaint);
 		case 801: opt->print_diagnostics = true; break;
 		P_CASEBOOL(802, debug_mode);
-		default: usage(1); break;
+		default: usage(argv[0], 1); break;
 #undef P_CASEBOOL
 		}
 		// clang-format on

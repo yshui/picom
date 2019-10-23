@@ -8,7 +8,8 @@
 #include "atom.h"
 #include "common.h"
 #include "compiler.h"
-#include "compton.h"
+#include "picom.h"
+#include "config.h"
 #include "event.h"
 #include "utils.h"
 

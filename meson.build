@@ -1,4 +1,4 @@
-project('compton', 'c', version: '7',
+project('picom', 'c', version: '7',
         default_options: ['c_std=c11'])
 
 cc = meson.get_compiler('c')
@@ -43,7 +43,7 @@ if get_option('modularize')
 	add_global_arguments(['-fmodules',
 	                      '-fmodule-map-file='+
 	                      meson.current_source_dir()+
-	                      '/src/compton.modulemap'],
+	                      '/src/picom.modulemap'],
 	                     language: 'c')
 endif
 
@@ -66,10 +66,13 @@ test_h_dep = subproject('test.h').get_variable('test_h_dep')
 subdir('src')
 subdir('man')
 
-install_data(['bin/compton-convgen.py', 'bin/compton-trans'],
+install_data(['bin/compton-convgen.py', 'bin/picom-trans'],
              install_dir: get_option('bindir'))
 install_data('compton.desktop', install_dir: 'share/applications')
+install_data('picom.desktop', install_dir: 'share/applications')
 install_data('media/icons/48x48/compton.png',
              install_dir: 'share/icons/hicolor/48x48/apps')
 install_data('media/compton.svg',
              install_dir: 'share/icons/hicolor/scalable/apps')
+
+meson.add_install_script('meson/install.sh')

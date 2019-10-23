@@ -25,8 +25,8 @@
 #include "backend/gl/gl_common.h"
 #include "backend/gl/glx.h"
 #include "common.h"
-#include "compton.h"
 #include "compiler.h"
+#include "picom.h"
 #include "config.h"
 #include "log.h"
 #include "region.h"
@@ -109,7 +109,7 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BIND_TO_TEXTURE_RGB_EXT, &rgb);
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BIND_TO_TEXTURE_RGBA_EXT, &rgba);
 		if (!rgb && !rgba) {
-			log_info("FBConfig is neither RGBA nor RGB, compton cannot "
+			log_info("FBConfig is neither RGBA nor RGB, we cannot "
 			         "handle this setup.");
 			continue;
 		}
@@ -439,7 +439,7 @@ err:
 static void glx_present(backend_t *base) {
 	struct _glx_data *gd = (void *)base;
 	glXSwapBuffers(gd->display, gd->target_win);
-	// XXX there should be no need to block compton will wait for render to finish
+	// XXX there should be no need to block, the core should wait for render to finish
 	if (!gd->gl.is_nvidia) {
 		glFinish();
 	}
