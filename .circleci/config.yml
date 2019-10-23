@@ -54,10 +54,10 @@ jobs:
           command: ninja -vC build test
       - run:
           name: test config file parsing
-          command: xvfb-run -s "-screen 0 640x480x24" build/src/compton --config compton.sample.conf --vsync=none --diagnostics
+          command: xvfb-run -s "-screen 0 640x480x24" build/src/picom --config picom.sample.conf --no-vsync --diagnostics
       - run:
           name: run testsuite
-          command: tests/run_tests.sh build/src/compton
+          command: tests/run_tests.sh build/src/picom
       - run:
           name: generate coverage reports
           command: cd build; find -name '*.gcno' -exec gcov -pb {} +

@@ -31,10 +31,10 @@
 
 #include "common.h"
 #include "compiler.h"
-#include "compton.h"
 #include "config.h"
 #include "err.h"
 #include "kernel.h"
+#include "picom.h"
 #ifdef CONFIG_OPENGL
 #include "opengl.h"
 #endif
@@ -98,7 +98,7 @@ void set_root_flags(session_t *ps, uint64_t flags) {
 	ps->root_flags |= flags;
 }
 
-void quit_compton(session_t *ps) {
+void quit(session_t *ps) {
 	ps->quit = true;
 	ev_break(ps->loop, EVBREAK_ALL);
 }
@@ -731,7 +731,7 @@ static bool initialize_backend(session_t *ps) {
 		}
 		if (!ps->backend_data) {
 			log_fatal("Failed to initialize backend, aborting...");
-			quit_compton(ps);
+			quit(ps);
 			return false;
 		}
 		ps->backend_data->ops = backend_list[ps->o.backend];
@@ -740,7 +740,7 @@ static bool initialize_backend(session_t *ps) {
 			log_fatal("Failed to prepare for background blur, aborting...");
 			ps->backend_data->ops->deinit(ps->backend_data);
 			ps->backend_data = NULL;
-			quit_compton(ps);
+			quit(ps);
 			return false;
 		}
 
@@ -937,10 +937,10 @@ static bool register_cm(session_t *ps) {
 	{
 		XClassHint *h = XAllocClassHint();
 		if (h) {
-			h->res_name = "compton";
-			h->res_class = "compton";
+			h->res_name = "picom";
+			h->res_class = "picom";
 		}
-		Xutf8SetWMProperties(ps->dpy, ps->reg_win, "compton", "compton", NULL, 0,
+		Xutf8SetWMProperties(ps->dpy, ps->reg_win, "picom", "picom", NULL, 0,
 		                     NULL, NULL, h);
 		XFree(h);
 	}
@@ -1334,7 +1334,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 			log_fatal("failed to grab x server");
 			x_print_error(e->full_sequence, e->major_code, e->minor_code,
 			              e->error_code);
-			return quit_compton(ps);
+			return quit(ps);
 		}
 
 		ps->server_grabbed = true;
@@ -1349,7 +1349,8 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		refresh_windows(ps);
 
 		{
-			auto r = xcb_get_input_focus_reply(ps->c, xcb_get_input_focus(ps->c), NULL);
+			auto r = xcb_get_input_focus_reply(
+			    ps->c, xcb_get_input_focus(ps->c), NULL);
 			if (!ps->active_win || (r && r->focus != ps->active_win->base.id)) {
 				recheck_focus(ps);
 			}
@@ -1367,7 +1368,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 			log_fatal("failed to ungrab x server");
 			x_print_error(e->full_sequence, e->major_code, e->minor_code,
 			              e->error_code);
-			return quit_compton(ps);
+			return quit(ps);
 		}
 
 		ps->server_grabbed = false;
@@ -1521,17 +1522,17 @@ static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused
 /**
  * Turn on the program reset flag.
  *
- * This will result in compton resetting itself after next paint.
+ * This will result in the compostior resetting itself after next paint.
  */
 static void reset_enable(EV_P_ ev_signal *w attr_unused, int revents attr_unused) {
-	log_info("compton is resetting...");
+	log_info("picom is resetting...");
 	ev_break(EV_A_ EVBREAK_ALL);
 }
 
 static void exit_enable(EV_P attr_unused, ev_signal *w, int revents attr_unused) {
 	session_t *ps = session_ptr(w, int_signal);
-	log_info("compton is quitting...");
-	quit_compton(ps);
+	log_info("picom is quitting...");
+	quit(ps);
 }
 
 /**
@@ -1708,7 +1709,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 		if (!reply || (reply->major_version == 0 && reply->minor_version < 2)) {
 			log_fatal("Your X server doesn't have Composite >= 0.2 support, "
-			          "compton cannot run.");
+			          "we cannot proceed.");
 			exit(1);
 		}
 		free(reply);
@@ -1764,6 +1765,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 			log_error("Failed to setup log file %s, I will keep using stderr",
 			          ps->o.logpath);
 		}
+	}
+
+	if (strstr(argv[0], "compton")) {
+		log_warn("This compositor has been renamed to \"picom\", the \"compton\" "
+		         "binary will not be installed in the future.");
 	}
 
 	if (ps->o.debug_mode && !ps->o.experimental_backends) {
@@ -2322,7 +2328,7 @@ int main(int argc, char **argv) {
 		XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
 		ps_g = session_init(argc, argv, dpy, config_file, all_xerrors, need_fork);
 		if (!ps_g) {
-			log_fatal("Failed to create new compton session.");
+			log_fatal("Failed to create new session.");
 			return 1;
 		}
 		if (need_fork) {

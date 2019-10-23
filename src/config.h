@@ -28,7 +28,7 @@
 
 typedef struct session session_t;
 
-/// @brief Possible backends of compton.
+/// @brief Possible backends
 enum backend {
 	BKEND_XRENDER,
 	BKEND_GLX,
@@ -226,9 +226,9 @@ typedef struct options {
 	bool detect_client_leader;
 
 	// === Calculated ===
-	/// Whether compton needs to track window name and class.
+	/// Whether we need to track window name and class.
 	bool track_wdata;
-	/// Whether compton needs to track window leaders.
+	/// Whether we need to track window leaders.
 	bool track_leader;
 
 	// Don't use EWMH to detect fullscreen applications

@@ -73,7 +73,7 @@ struct window_stack_entry {
  *        considered part of the window.
  */
 
-/// Structure representing a top-level window compton manages.
+/// Structure representing a top-level managed window.
 typedef struct win win;
 struct win {
 	UT_hash_handle hh;

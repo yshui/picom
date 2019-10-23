@@ -40,7 +40,7 @@ typedef struct {
 	GLint unifm_factor_center;
 } glx_blur_pass_t;
 
-/// Structure containing GLX-dependent data for a compton session.
+/// Structure containing GLX-dependent data for a session.
 typedef struct glx_session {
 	// === OpenGL related ===
 	/// GLX context.

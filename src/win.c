@@ -20,7 +20,7 @@
 #include "c2.h"
 #include "common.h"
 #include "compiler.h"
-#include "compton.h"
+#include "picom.h"
 #include "config.h"
 #include "list.h"
 #include "log.h"
@@ -2053,7 +2053,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	    ps->c, w->base.id, XCB_CW_EVENT_MASK,
 	    (const uint32_t[]){determine_evmask(ps, w->base.id, WIN_EVMODE_FRAME)});
 
-	// Notify compton when the shape of a window changes
+	// Get notification when the shape of a window changes
 	if (ps->shape_exists) {
 		xcb_shape_select_input(ps->c, w->base.id, 1);
 	}
@@ -2193,7 +2193,7 @@ struct managed_win *find_toplevel2(session_t *ps, xcb_window_t wid) {
 	// Using find_win here because if we found a unmanaged window we know about, we
 	// can stop early.
 	while (wid && wid != ps->root && !(w = find_win(ps, wid))) {
-		// xcb_query_tree probably fails if you run compton when X is somehow
+		// xcb_query_tree probably fails if you run picom when X is somehow
 		// initializing (like add it in .xinitrc). In this case
 		// just leave it alone.
 		auto reply = xcb_query_tree_reply(ps->c, xcb_query_tree(ps->c, wid), NULL);
