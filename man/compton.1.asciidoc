@@ -130,8 +130,8 @@ OPTIONS
 *--refresh-rate* 'REFRESH_RATE'::
 	Specify refresh rate of the screen. If not specified or 0, compton will try detecting this with X RandR extension.
 
-*--vsync*::
-	Enable VSync.
+*--vsync*, *--no-vsync*::
+	Enable/disable VSync.
 
 *--sw-opti*::
 	Limit compton to repaint at most once every 1 / 'refresh_rate' second to boost performance. This should not be used with *--vsync* drm/opengl/opengl-oml as they essentially does *--sw-opti*'s job already, unless you wish to specify a lower refresh rate than the actual value.
@@ -166,7 +166,7 @@ OPTIONS
 *--detect-client-leader*::
 	Use 'WM_CLIENT_LEADER' to group windows, and consider windows in the same group focused at the same time. 'WM_TRANSIENT_FOR' has higher priority if *--detect-transient* is enabled, too.
 
-*--blur-method, --blur-size, --blur-deviation*::
+*--blur-method*, *--blur-size*, *--blur-deviation*::
 	Parameters for background blurring, see the *BLUR* section for more information.
 
 *--blur-background*::
