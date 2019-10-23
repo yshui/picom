@@ -28,8 +28,8 @@
 enum root_flags { ROOT_FLAGS_SCREEN_CHANGE = 1 };
 
 // == Functions ==
-// TODO move static inline functions that are only used in compton.c, into
-//      compton.c
+// TODO move static inline functions that are only used in picom.c, into
+//      picom.c
 
 // inline functions must be made static to compile correctly under clang:
 // http://clang.llvm.org/compatibility.html#inline
@@ -57,7 +57,7 @@ void discard_ignore(session_t *ps, unsigned long sequence);
 
 void set_root_flags(session_t *ps, uint64_t flags);
 
-void quit_compton(session_t *ps);
+void quit(session_t *ps);
 
 xcb_window_t session_get_target_window(session_t *);
 

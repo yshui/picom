@@ -1,23 +1,23 @@
-compton-trans(1)
+picom-trans(1)
 ================
 :doctype:     manpage
-:man source:  compton
-:man version: {compton-version}
+:man source:  picom
+:man version: {picom-version}
 :man manual:  User Commands
 
 NAME
 ----
-compton-trans - an opacity setter tool
+picom-trans - an opacity setter tool
 
 SYNOPSIS
 --------
 
-*compton-trans* [-w 'WINDOW_ID'] [-n 'WINDOW_NAME'] [-c] [-s] 'OPACITY'
+*picom-trans* [-w 'WINDOW_ID'] [-n 'WINDOW_NAME'] [-c] [-s] 'OPACITY'
 
 DESCRIPTION
 -----------
 
-*compton-trans* is a bash script that sets '_NET_WM_WINDOW_OPACITY' attribute of a window using standard X11 command-line utilities, including *xprop*(1) and *xwininfo*(1). It is similar to *transset*(1) or *transset-df*(1).
+*picom-trans* is a bash script that sets '_NET_WM_WINDOW_OPACITY' attribute of a window using standard X11 command-line utilities, including *xprop*(1) and *xwininfo*(1). It is similar to *transset*(1) or *transset-df*(1).
 
 OPTIONS
 -------
@@ -42,37 +42,37 @@ EXAMPLES
 * Set the opacity of the window with specific window ID to 75%:
 +
 ------------
-compton-trans -w "$WINDOWID" 75
+picom-trans -w "$WINDOWID" 75
 ------------
 
 * Set the opacity of the window with the name "urxvt" to 75%:
 +
 ------------
-compton-trans -n "urxvt" 75
+picom-trans -n "urxvt" 75
 ------------
 
 * Set current window to opacity of 75%:
 +
 ------------
-compton-trans -c 75
+picom-trans -c 75
 ------------
 
 * Select target window and set opacity to 75%:
 +
 ------------
-compton-trans -s 75
+picom-trans -s 75
 ------------
 
 * Increment opacity of current active window by 5%:
 +
 ------------
-compton-trans -c +5
+picom-trans -c +5
 ------------
 
 * Decrement opacity of current active window by 5%:
 +
 ------------
-compton-trans -c -- -5
+picom-trans -c -- -5
 ------------
 
 BUGS
@@ -81,4 +81,4 @@ Please submit bug reports to <https://github.com/yshui/compton>.
 
 SEE ALSO
 --------
-link:compton.1.html[*compton*(1)], *xprop*(1), *xwininfo*(1)
+link:picom.1.html[*picom*(1)], *xprop*(1), *xwininfo*(1)

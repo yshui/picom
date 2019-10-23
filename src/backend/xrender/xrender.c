@@ -14,7 +14,7 @@
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
-#include "compton.h"
+#include "picom.h"
 #include "config.h"
 #include "kernel.h"
 #include "log.h"

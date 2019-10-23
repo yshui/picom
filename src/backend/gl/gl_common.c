@@ -50,7 +50,7 @@ struct gl_blur_context {
 static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 	auto ret = glGetUniformLocation(p, name);
 	if (ret < 0) {
-		log_error("Failed to get location of uniform '%s'. compton might not "
+		log_error("Failed to get location of uniform '%s'. the compositor might not "
 		          "work correctly.",
 		          name);
 	}

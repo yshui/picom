@@ -7,10 +7,10 @@ base_deps = [
 	libev
 ]
 
-srcs = [ files('compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
+srcs = [ files('picom.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
                'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
                'options.c', 'event.c', 'cache.c', 'atom.c') ]
-compton_inc = include_directories('.')
+picom_inc = include_directories('.')
 
 cflags = []
 
@@ -80,10 +80,10 @@ endif
 
 subdir('backend')
 
-compton = executable('compton', srcs, c_args: cflags,
+picom = executable('picom', srcs, c_args: cflags,
   dependencies: [ base_deps, deps, test_h_dep ],
-  install: true, include_directories: compton_inc)
+  install: true, include_directories: picom_inc)
 
 if get_option('unittest')
-	test('compton unittest', compton, args: [ '--unittest' ])
+	test('picom unittest', picom, args: [ '--unittest' ])
 endif

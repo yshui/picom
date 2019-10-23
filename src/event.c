@@ -11,7 +11,7 @@
 #include "atom.h"
 #include "common.h"
 #include "compiler.h"
-#include "compton.h"
+#include "picom.h"
 #include "config.h"
 #include "event.h"
 #include "log.h"
@@ -633,7 +633,7 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 	// If we lose that one, we should exit.
 	log_fatal("Another composite manager started and took the _NET_WM_CM_Sn "
 	          "selection.");
-	quit_compton(ps);
+	quit(ps);
 }
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {

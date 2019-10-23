@@ -78,8 +78,8 @@ static inline uint32_t x_new_id(xcb_connection_t *c) {
 	auto ret = xcb_generate_id(c);
 	if (ret == (uint32_t)-1) {
 		log_fatal("We seems to have run of XIDs. This is either a bug in the X "
-		          "server, or a resource leakage in compton. Please open an "
-		          "issue about this problem. compton will die.");
+		          "server, or a resource leakage in the compositor. Please open an "
+		          "issue about this problem. The compositor will die.");
 		abort();
 	}
 	return ret;

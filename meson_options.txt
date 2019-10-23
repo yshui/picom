@@ -1,4 +1,4 @@
-option('sanitize', type: 'boolean', value: false, description: 'Compile compton with sanitizers')
+option('sanitize', type: 'boolean', value: false, description: 'Build with sanitizers enabled (deprecated)')
 option('config_file', type: 'boolean', value: true, description: 'Enable config file support')
 option('regex', type: 'boolean', value: true, description: 'Enable regex support in window conditions')
 

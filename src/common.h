@@ -125,7 +125,7 @@ typedef struct _latom {
 	struct _latom *next;
 } latom_t;
 
-/// Structure containing all necessary data for a compton session.
+/// Structure containing all necessary data for a session.
 typedef struct session {
 	// === Event handlers ===
 	/// ev_io for X connection
@@ -184,7 +184,7 @@ typedef struct session {
 	xcb_window_t overlay;
 	/// The target window for debug mode
 	xcb_window_t debug_window;
-	/// Whether the root tile is filled by compton.
+	/// Whether the root tile is filled by us.
 	bool root_tile_fill;
 	/// Picture of the root window background.
 	paint_t root_tile_paint;
@@ -241,7 +241,7 @@ typedef struct session {
 	ignore_t **ignore_tail;
 	// Cached blur convolution kernels.
 	struct x_convolution_kernel **blur_kerns_cache;
-	/// If compton should quit
+	/// If we should quit
 	bool quit:1;
 	/// Whether there are pending updates, like window creation, etc.
 	/// TODO use separate flags for dfferent kinds of updates so we don't
