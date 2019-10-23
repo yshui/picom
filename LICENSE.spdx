@@ -1,4 +1,4 @@
 SPDXVersion: SPDX-2.1
 DataLicense: CC0-1.0
-PackageName: compton
+PackageName: picom
 PackageLicenseDeclared: MPL-2.0 AND MIT

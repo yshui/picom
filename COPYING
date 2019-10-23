@@ -1,11 +1,11 @@
-compton - a compositor for X11
+picom - a compositor for X11
 
 Based on xcompmgr, originally written by Keith Packard, with modifications
 from several contributors (according to the xcompmgr man page): Matthew Allum,
 Eric Anholt, Dan Doel, Thomas Luebking, Matthew Hawn, Ely Levy, Phil Blundell,
 and Carl Worth. Menu transparency was implemented by Dana Jansens.
 
-Numerous contributions to compton from Richard Grenville.
+Numerous contributions to picom from Richard Grenville.
 
 See the CONTRIBUTORS file for a complete list of contributors
 

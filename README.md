@@ -23,6 +23,36 @@ To test the new backends, add the `--experimental-backends` flag to the command 
 
 To report issues with the new backends, please state explicitly you are using the new backends in your report.
 
+## Rename
+
+### Rational
+
+Since the inception of this fork, the existence of two compton repositories has caused some number of confusions. Mainly, people will report issues of this fork to the original compton, or report issues of the original compton here. Later, when distros started packaging this fork of compton, some wanted to differentiate the newer compton from the older version. They found themselves having no choice but to invent a name for this fork. This is less than ideal since this has the potential to cause more confusions among users.
+
+Therefore, we decided to move this fork to a new name. Personally, I consider this more than justified since this version of compton has gone through significant changes since it was forked.
+
+### The name
+
+The criteria for a good name were
+
+0. Being short, so it's easy to remember.
+1. Pronounceability, again, helps memorability
+2. Searchability, so when people searches the name, it's easy for them to find this repository.
+
+Of course, choosing a name is never easy, and there is no apparent way to objectively evaluate the names. Yet, we have to solve aforementioned problems as soon as possible.
+
+In the end, we picked `picom` (a portmanteau of `pico` and `composite`) as our new name. This name might not be perfect, but is what we will move forward with unless there's a compelling reason not to.
+
+### Migration
+
+Following the [deprecation process](https://github.com/yshui/compton/issues/114), migration to the new name will be broken into 3 steps:
+
+1. All mentions to `compton` will be updated to `picom` in the code base. `compton` will still be installed, but only as a symlink to `picom`. When `picom` is launched via the symlink, a warning message is printed, alerting the user to migrate. Similarly, the old configuration file names and dbus interface names will still be accepted but warned.
+2. 3 major releases after step 1, the warning messages will be prompted to error messages and `picom` will not start when launched via the symlink.
+3. 3 major releases after step 2, the symlink will be removed.
+
+The dbus interface and service names are unchanged, so no migration needed for that.
+
 ## Change Log
 
 See [Releases](https://github.com/yshui/compton/releases)
