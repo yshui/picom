@@ -551,11 +551,13 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		// If the window is solid, we add the window region to the
 		// ignored region
 		// Otherwise last_reg_ignore shouldn't change
-		if (w->mode == WMODE_SOLID && !ps->o.force_win_blend) {
+		if (w->mode != WMODE_TRANS && !ps->o.force_win_blend) {
+			// w->mode == WMODE_SOLID or WMODE_FRAME_TRANS
 			region_t *tmp = rc_region_new();
-			if (w->frame_opacity == 1)
+			if (w->mode == WMODE_SOLID) {
 				*tmp = win_get_bounding_shape_global_by_val(w);
-			else {
+			} else {
+				// w->mode == WMODE_FRAME_TRANS
 				win_get_region_noframe_local(w, tmp);
 				pixman_region32_intersect(tmp, tmp, &w->bounding_shape);
 				pixman_region32_translate(tmp, w->g.x, w->g.y);
