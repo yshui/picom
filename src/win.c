@@ -552,6 +552,11 @@ winmode_t win_calc_mode(const struct managed_win *w) {
 	}
 
 	if (win_has_alpha(w)) {
+		if (w->client_win == XCB_NONE) {
+			// This is a window not managed by the WM, and it has alpha,
+			// so it's transparent. No need to check WM frame.
+			return WMODE_TRANS;
+		}
 		// The WM window has alpha
 		if (win_client_has_alpha(w)) {
 			// The client window also has alpha, the entire window is
