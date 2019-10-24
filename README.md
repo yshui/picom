@@ -21,7 +21,7 @@ Currently new backends features better vsync with the xrender backend, improved 
 
 New backend features will only be implemented on the new backends from now on, and the old backends will eventually be phased out after the new backends stabilizes.
 
-To test the new backends, add the `--experimental-backends` flag to the command line you used to run compton. This flag is not available from the configuration file.
+To test the new backends, add the `--experimental-backends` flag to the command line you used to run picom. This flag is not available from the configuration file.
 
 To report issues with the new backends, please state explicitly you are using the new backends in your report.
 
@@ -47,7 +47,7 @@ In the end, we picked `picom` (a portmanteau of `pico` and `composite`) as our n
 
 ### Migration
 
-Following the [deprecation process](https://github.com/yshui/compton/issues/114), migration to the new name will be broken into 3 steps:
+Following the [deprecation process](https://github.com/yshui/picom/issues/114), migration to the new name will be broken into 3 steps:
 
 1. All mentions to `compton` will be updated to `picom` in the code base. `compton` will still be installed, but only as a symlink to `picom`. When `picom` is launched via the symlink, a warning message is printed, alerting the user to migrate. Similarly, the old configuration file names and dbus interface names will still be accepted but warned.
 2. 3 major releases after step 1, the warning messages will be prompted to error messages and `picom` will not start when launched via the symlink.
@@ -57,7 +57,7 @@ The dbus interface and service names are unchanged, so no migration needed for t
 
 ## Change Log
 
-See [Releases](https://github.com/yshui/compton/releases)
+See [Releases](https://github.com/yshui/picom/releases)
 
 ## Build
 
@@ -134,7 +134,7 @@ Default install prefix is `/usr/local`, you can change it with `meson configure 
 
 ### Code
 
-You can look at the [Projects](https://github.com/yshui/compton/projects) page, and see if there is anything interests you. Or you can take a look at the [Issues](https://github.com/yshui/compton/issues).
+You can look at the [Projects](https://github.com/yshui/picom/projects) page, and see if there is anything interests you. Or you can take a look at the [Issues](https://github.com/yshui/picom/issues).
 
 ### Non-code
 

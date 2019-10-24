@@ -77,7 +77,7 @@ picom-trans -c -- -5
 
 BUGS
 ----
-Please submit bug reports to <https://github.com/yshui/compton>.
+Please submit bug reports to <https://github.com/yshui/picom>.
 
 SEE ALSO
 --------

@@ -456,13 +456,13 @@ $ picom --backend glx --vsync
 
 BUGS
 ----
-Please submit bug reports to <https://github.com/yshui/compton>.
+Please submit bug reports to <https://github.com/yshui/picom>.
 
 Out dated information in this man page is considered a bug.
 
 RESOURCES
 ---------
-Homepage: <https://github.com/yshui/compton>
+Homepage: <https://github.com/yshui/picom>
 
 SEE ALSO
 --------
