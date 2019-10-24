@@ -852,6 +852,12 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	// Whether this is beneficial is to be determined XXX
 	for (auto w = t; w; w = w->prev_trans) {
 		region_t bshape = win_get_bounding_shape_global_by_val(w);
+		log_trace("Window %#010x (%s) has mode %d", w->base.id, w->name, w->mode);
+		if (w->reg_ignore) {
+			dump_region(w->reg_ignore);
+		} else {
+			log_trace("reg_ignore null");
+		}
 		// Painting shadow
 		if (w->shadow) {
 			// Lazy shadow building
