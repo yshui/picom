@@ -1,4 +1,4 @@
-Compton
+picom
 =======
 
 This is forked from the original Compton because that seems to have become unmaintained.
