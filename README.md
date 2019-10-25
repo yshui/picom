@@ -1,4 +1,4 @@
-Compton
+picom
 =======
 
 **This is a development branch, bug to be expected**
