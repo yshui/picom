@@ -75,6 +75,9 @@ struct xvisual_info {
 
 /// Wraps x_new_id. abort the program if x_new_id returns error
 static inline uint32_t x_new_id(xcb_connection_t *c) {
+	if (xcb_connection_has_error(c)) {
+		log_fatal("We had a connection error");
+	}
 	auto ret = xcb_generate_id(c);
 	if (ret == (uint32_t)-1) {
 		log_fatal("We seems to have run of XIDs. This is either a bug in the X "
