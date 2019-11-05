@@ -20,7 +20,14 @@ typedef struct {
 	GLint unifm_invert_color;
 	GLint unifm_tex;
 	GLint unifm_dim;
+	GLint unifm_brightness;
+	GLint unifm_max_brightness;
 } gl_win_shader_t;
+
+// Program and uniforms for brightness shader
+typedef struct {
+	GLuint prog;
+} gl_brightness_shader_t;
 
 // Program and uniforms for blur shader
 typedef struct {
@@ -60,6 +67,7 @@ struct gl_data {
 	// Height and width of the viewport
 	int height, width;
 	gl_win_shader_t win_shader;
+	gl_brightness_shader_t brightness_shader;
 	gl_fill_shader_t fill_shader;
 	GLuint back_texture, back_fbo;
 	GLuint present_prog;
