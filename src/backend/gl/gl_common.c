@@ -202,8 +202,6 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 		return;
 	}
 
-	bool dual_texture = false;
-
 	assert(gd->win_shader.prog);
 	glUseProgram(gd->win_shader.prog);
 	if (gd->win_shader.unifm_opacity >= 0) {
@@ -224,11 +222,6 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 
 	// Bind texture
 	glBindTexture(GL_TEXTURE_2D, img->inner->texture);
-	if (dual_texture) {
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, img->inner->texture);
-		glActiveTexture(GL_TEXTURE0);
-	}
 
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
@@ -258,12 +251,6 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDrawBuffer(GL_BACK);
-
-	if (dual_texture) {
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		glActiveTexture(GL_TEXTURE0);
-	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
