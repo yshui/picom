@@ -251,6 +251,13 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			pixman_region32_fini(&reg_shadow);
 		}
 
+		// Set max brightness
+		if (ps->o.max_brightness < 1.0) {
+			ps->backend_data->ops->image_op(
+			    ps->backend_data, IMAGE_OP_MAX_BRIGHTNESS, w->win_image,
+			    NULL, &reg_visible, &ps->o.max_brightness);
+		}
+
 		// Draw window on target
 		if (!w->invert_color && !w->dim && w->frame_opacity == 1 && w->opacity == 1) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,

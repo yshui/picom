@@ -47,6 +47,8 @@ enum image_operations {
 	// effective size. `reg_op` and `reg_visible` is ignored. `arg` is two integers,
 	// width and height, in that order.
 	IMAGE_OP_RESIZE_TILE,
+	// Limit how bright image can be
+	IMAGE_OP_MAX_BRIGHTNESS,
 };
 
 struct gaussian_blur_args {

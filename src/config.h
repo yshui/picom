@@ -210,6 +210,8 @@ typedef struct options {
 	c2_lptr_t *invert_color_list;
 	/// Rules to change window opacity.
 	c2_lptr_t *opacity_rules;
+	/// Limit window brightness
+	double max_brightness;
 
 	// === Focus related ===
 	/// Whether to try to detect WM windows and mark them as focused.

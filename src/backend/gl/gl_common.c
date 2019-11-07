@@ -361,7 +361,9 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 		return;
 	}
 
-	GLuint brightness = gl_average_texture_color(base, img);
+	GLuint brightness = 0;
+	if (img->max_brightness < 1.0)
+		brightness = gl_average_texture_color(base, img);
 
 	assert(gd->win_shader.prog);
 	glUseProgram(gd->win_shader.prog);
@@ -381,7 +383,7 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 		glUniform1i(gd->win_shader.unifm_brightness, 1);
 	}
 	if (gd->win_shader.unifm_max_brightness >= 0) {
-		glUniform1f(gd->win_shader.unifm_max_brightness, 0.5); //TODO: parameterize
+		glUniform1f(gd->win_shader.unifm_max_brightness, (float)img->max_brightness);
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
@@ -1435,6 +1437,9 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 		// texture is already set to repeat, so nothing else we need to do
 		tex->ewidth = iargs[0];
 		tex->eheight = iargs[1];
+		break;
+	case IMAGE_OP_MAX_BRIGHTNESS:
+		tex->max_brightness = *(double *)arg;
 		break;
 	}
 

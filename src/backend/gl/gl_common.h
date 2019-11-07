@@ -55,6 +55,7 @@ typedef struct gl_image {
 	struct gl_texture *inner;
 	double opacity;
 	double dim;
+	double max_brightness;
 	int ewidth, eheight;
 	bool has_alpha;
 	bool color_inverted;
