@@ -53,6 +53,16 @@ region_t get_damage(session_t *ps, bool all_damage) {
 
 /// paint all windows
 void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
+	if (ps->o.xrender_sync_fence || (ps->drivers & DRIVER_NVIDIA)) {
+		if (ps->xsync_exists && !x_fence_sync(ps->c, ps->sync_fence)) {
+			log_error("x_fence_sync failed, xrender-sync-fence will be "
+			          "disabled from now on.");
+			xcb_sync_destroy_fence(ps->c, ps->sync_fence);
+			ps->sync_fence = XCB_NONE;
+			ps->o.xrender_sync_fence = false;
+			ps->xsync_exists = false;
+		}
+	}
 	// All painting will be limited to the damage, if _some_ of
 	// the paints bleed out of the damage region, it will destroy
 	// part of the image we want to reuse
