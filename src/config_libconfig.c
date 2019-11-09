@@ -422,6 +422,13 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	// --use-damage
 	lcfg_lookup_bool(&cfg, "use-damage", &opt->use_damage);
+
+	// --max-brightness
+	if (config_lookup_float(&cfg, "max-brightness", &opt->max_brightness) && opt->use_damage) {
+		log_warn("max-brightness requires use-damage = false. Falling back to 1.0");
+		opt->max_brightness = 1.0;
+	}
+
 	// --glx-use-gpushader4
 	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival) && ival) {
 		log_warn("glx-use-gpushader4 is deprecated since v6, please remove it "

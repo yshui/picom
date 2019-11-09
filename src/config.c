@@ -549,6 +549,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .inactive_dim_fixed = false,
 	    .invert_color_list = NULL,
 	    .opacity_rules = NULL,
+	    .max_brightness = 1.0,
 
 	    .use_ewmh_active_win = false,
 	    .focus_blacklist = NULL,

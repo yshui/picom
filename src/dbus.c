@@ -1035,6 +1035,8 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(inactive_dim, cdbus_reply_double);
 	cdbus_m_opts_get_do(inactive_dim_fixed, cdbus_reply_bool);
 
+	cdbus_m_opts_get_do(max_brightness, cdbus_reply_double);
+
 	cdbus_m_opts_get_do(use_ewmh_active_win, cdbus_reply_bool);
 	cdbus_m_opts_get_do(detect_transient, cdbus_reply_bool);
 	cdbus_m_opts_get_do(detect_client_leader, cdbus_reply_bool);

@@ -390,6 +390,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 
 	log_trace("Binding pixmap %#010x", pixmap);
 	auto wd = ccalloc(1, struct gl_image);
+	wd->max_brightness = 1;
 	wd->inner = ccalloc(1, struct gl_texture);
 	wd->inner->width = wd->ewidth = r->width;
 	wd->inner->height = wd->eheight = r->height;

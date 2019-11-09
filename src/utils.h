@@ -261,4 +261,12 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 	void name##_ref(type *a);                                                        \
 	void name##_unref(type **a);
 
+
+///
+/// Calculates next closest power of two of 32bit integer n
+/// ref: https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+///
+int next_power_of_two(int n);
+
+
 // vim: set noet sw=8 ts=8 :

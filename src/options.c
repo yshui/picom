@@ -185,6 +185,11 @@ static void usage(const char *argv0, int ret) {
 	    "--inactive-dim-fixed\n"
 	    "  Use fixed inactive dim value.\n"
 	    "\n"
+	    "--max-brightness\n"
+	    "  Dims windows which average brightness is above this threshold.\n"
+	    "  Requires --no-use-damage.\n"
+	    "  Default: 1.0 or no dimming.\n"
+	    "\n"
 	    "--detect-transient\n"
 	    "  Use WM_TRANSIENT_FOR to group windows, and consider windows in\n"
 	    "  the same group focused at the same time.\n"
@@ -410,6 +415,7 @@ static const struct option longopts[] = {
     {"use-damage", no_argument, NULL, 323},
     {"no-use-damage", no_argument, NULL, 324},
     {"no-vsync", no_argument, NULL, 325},
+    {"max-brightness", required_argument, NULL, 326},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -791,6 +797,11 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 325:
 			opt->vsync = false;
 			break;
+
+		case 326:
+			opt->max_brightness = atof(optarg);
+			break;
+
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801: opt->print_diagnostics = true; break;
@@ -821,6 +832,12 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	opt->frame_opacity = normalize_d(opt->frame_opacity);
 	opt->shadow_opacity = normalize_d(opt->shadow_opacity);
 	opt->refresh_rate = normalize_i_range(opt->refresh_rate, 0, 300);
+
+	opt->max_brightness = normalize_d(opt->max_brightness);
+	if (opt->max_brightness < 1.0 && opt->use_damage) {
+		log_warn("--max-brightness requires --no-use-damage. Falling back to 1.0");
+		opt->max_brightness = 1.0;
+	}
 
 	// Apply default wintype options that are dependent on global options
 	set_default_winopts(opt, winopt_mask, shadow_enable, fading_enable);
