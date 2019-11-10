@@ -834,9 +834,18 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	opt->refresh_rate = normalize_i_range(opt->refresh_rate, 0, 300);
 
 	opt->max_brightness = normalize_d(opt->max_brightness);
-	if (opt->max_brightness < 1.0 && opt->use_damage) {
-		log_warn("--max-brightness requires --no-use-damage. Falling back to 1.0");
-		opt->max_brightness = 1.0;
+	if (opt->max_brightness < 1.0) {
+		if (opt->use_damage) {
+			log_warn("--max-brightness requires --no-use-damage. Falling "
+			         "back to 1.0");
+			opt->max_brightness = 1.0;
+		}
+
+		if (!opt->experimental_backends || opt->backend != BKEND_GLX) {
+			log_warn("--max-brightness requires the experimental glx "
+			         "backend. Falling back to 1.0");
+			opt->max_brightness = 1.0;
+		}
 	}
 
 	// Apply default wintype options that are dependent on global options
