@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 
+#include "backend/backend.h"
 #include "common.h"
 #include "config.h"
 #include "log.h"
@@ -480,7 +481,7 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 /**
  * Process arguments and configuration files.
  */
-void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
+bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
              bool fading_enable, bool conv_kern_hasneg, win_option_mask_t *winopt_mask) {
 
 	int o = 0, longopt_idx = -1;
@@ -822,6 +823,13 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		log_warn("--monitor-repaint has no effect when backend is not xrender");
 	}
 
+	if (opt->experimental_backends && !backend_list[opt->backend]) {
+		log_error("Backend \"%s\" is not available as part of the experimental "
+		          "backends.",
+		          BACKEND_STRS[opt->backend]);
+		return false;
+	}
+
 	// Range checking and option assignments
 	opt->fade_delta = max2(opt->fade_delta, 1);
 	opt->shadow_radius = max2(opt->shadow_radius, 0);
@@ -880,6 +888,8 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		log_warn("A convolution kernel with negative values may not work "
 		         "properly under X Render backend.");
 	}
+
+	return true;
 }
 
 // vim: set noet sw=8 ts=8 :
