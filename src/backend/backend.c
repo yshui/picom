@@ -10,6 +10,7 @@
 #include "region.h"
 #include "types.h"
 #include "win.h"
+#include "x.h"
 
 extern struct backend_operations xrender_ops, dummy_ops;
 #ifdef CONFIG_OPENGL
