@@ -9,7 +9,7 @@ base_deps = [
 
 srcs = [ files('picom.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
                'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
-               'options.c', 'event.c', 'cache.c', 'atom.c', 'file_watch.c') ]
+               'options.c', 'event.c', 'cache.c', 'atom.c') ]
 picom_inc = include_directories('.')
 
 cflags = []
@@ -67,6 +67,14 @@ if get_option('dbus')
 	cflags += ['-DCONFIG_DBUS']
 	deps += [dependency('dbus-1', required: true)]
 	srcs += [ 'dbus.c' ]
+endif
+
+if get_option('inotify')
+	cflags += ['-DCONFIG_INOTIFY']
+	if not (host_machine.system() == 'linux')
+		deps += [dependency('libinotify', required: true)]
+	endif
+	srcs += [ 'file_watch.c' ]
 endif
 
 if get_option('xrescheck')
