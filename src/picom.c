@@ -2294,7 +2294,16 @@ int main(int argc, char **argv) {
 	// Set locale so window names with special characters are interpreted
 	// correctly
 	setlocale(LC_ALL, "");
+
+	// Initialize logging system for early logging
 	log_init_tls();
+
+	{
+		auto stderr_logger = stderr_logger_new();
+		if (stderr_logger) {
+			log_add_target_tls(stderr_logger);
+		}
+	}
 
 	int exit_code;
 	char *config_file = NULL;
@@ -2340,7 +2349,7 @@ int main(int argc, char **argv) {
 	do {
 		Display *dpy = XOpenDisplay(NULL);
 		if (!dpy) {
-			fprintf(stderr, "Can't open display.");
+			log_fatal("Can't open display.");
 			ret_code = 1;
 			break;
 		}
