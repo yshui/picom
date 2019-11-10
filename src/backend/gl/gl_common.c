@@ -1163,7 +1163,10 @@ const char *win_shader_glsl = GLSL(330,
 		c = vec4(c.rgb * (1.0 - dim), c.a) * opacity;
 
 		vec3 rgb_brightness = texelFetch(brightness, ivec2(0, 0), 0).rgb;
-		float brightness = (rgb_brightness[0] + rgb_brightness[1] + rgb_brightness[2]) / 3;
+		// Ref: https://en.wikipedia.org/wiki/Relative_luminance
+		float brightness = rgb_brightness.r * 0.21 +
+		                   rgb_brightness.g * 0.72 +
+		                   rgb_brightness.b * 0.07;
 		if (brightness > max_brightness)
 			c.rgb = c.rgb * (max_brightness / brightness);
 
