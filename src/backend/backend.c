@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+#include <xcb/sync.h>
 #include <xcb/xcb.h>
 
 #include "backend/backend.h"
