@@ -1161,9 +1161,15 @@ xcb_window_t session_get_target_window(session_t *ps) {
 }
 
 static inline uint8_t session_redirection_mode(session_t *ps) {
-	if (ps->o.debug_mode || !backend_list[ps->o.backend]->present) {
-		// If the backend is not rendering to the screen, or if the backend
-		// doesn't render anything, we don't need to take over the screen.
+	if (ps->o.debug_mode) {
+		// If the backend is not rendering to the screen, we don't need to
+		// take over the screen.
+		assert(ps->o.experimental_backends);
+		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
+	}
+	if (ps->o.experimental_backends && !backend_list[ps->o.backend]->present) {
+		// if the backend doesn't render anything, we don't need to take over the
+		// screen.
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
 	}
 	return XCB_COMPOSITE_REDIRECT_MANUAL;
