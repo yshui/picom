@@ -1943,7 +1943,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	ps->file_watch_handle = file_watch_init(ps->loop);
-	if (ps->file_watch_handle) {
+	if (ps->file_watch_handle && config_file) {
 		file_watch_add(ps->file_watch_handle, config_file, config_file_change_cb, ps);
 	}
 
