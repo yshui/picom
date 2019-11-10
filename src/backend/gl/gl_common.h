@@ -47,6 +47,9 @@ struct gl_texture {
 	GLuint texture;
 	int width, height;
 	bool y_inverted;
+
+	// Textures for auxiliary uses.
+	GLuint auxiliary_texture[2];
 	void *user_data;
 };
 

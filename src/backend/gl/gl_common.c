@@ -50,8 +50,8 @@ struct gl_blur_context {
 static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 	auto ret = glGetUniformLocation(p, name);
 	if (ret < 0) {
-		log_error("Failed to get location of uniform '%s'. the compositor might not "
-		          "work correctly.",
+		log_error("Failed to get location of uniform '%s'. the compositor might "
+		          "not work correctly.",
 		          name);
 	}
 	return ret;
@@ -191,15 +191,15 @@ static void gl_free_prog_main(gl_win_shader_t *pprogram) {
  * we reuse the same two textures for render source and
  * destination simply by alterating between them.
  * Unfortunately on first iteration source_texture might
- * be read-only. In this case we will select auxilary_texture as
+ * be read-only. In this case we will select auxiliary_texture as
  * destination_texture in order not to touch that read-only source
  * texture in following render iteration.
  * Otherwise we simply will switch source and destination textures
  * between each other on each render iteration.
  */
-static GLuint _gl_average_texture_color(backend_t *base, GLuint source_texture,
-                                        GLuint destination_texture, GLuint auxilary_texture,
-                                        GLuint fbo, int width, int height) {
+static GLuint
+_gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destination_texture,
+                          GLuint auxiliary_texture, GLuint fbo, int width, int height) {
 	const int max_width = 1;
 	const int max_height = 1;
 	const int from_width = next_power_of_two(width);
@@ -209,28 +209,28 @@ static GLuint _gl_average_texture_color(backend_t *base, GLuint source_texture,
 
 	// Prepare coordinates
 	GLint coord[] = {
-		// top left
-		0, 0,                // vertex coord
-		0, 0,                // texture coord
+	    // top left
+	    0, 0,        // vertex coord
+	    0, 0,        // texture coord
 
-		// top right
-		to_width, 0,         // vertex coord
-		1, 0,                // texture coord
+	    // top right
+	    to_width, 0,        // vertex coord
+	    width, 0,           // texture coord
 
-		// bottom right
-		to_width, to_height, // vertex coord
-		1, 1,                // texture coord
+	    // bottom right
+	    to_width, to_height,        // vertex coord
+	    width, height,              // texture coord
 
-		// bottom left
-		0, to_height,        // vertex coord
-		0, 1,                // texture coord
+	    // bottom left
+	    0, to_height,        // vertex coord
+	    0, height,           // texture coord
 	};
 	glBufferSubData(GL_ARRAY_BUFFER, 0, (long)sizeof(*coord) * 16, coord);
 
 	// Prepare framebuffer for new render iteration
 	glBindTexture(GL_TEXTURE_2D, destination_texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, to_width, to_height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, destination_texture, 0);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       destination_texture, 0);
 
 	// Bind source texture as downscaling shader uniform input
 	glBindTexture(GL_TEXTURE_2D, source_texture);
@@ -242,10 +242,11 @@ static GLuint _gl_average_texture_color(backend_t *base, GLuint source_texture,
 	GLuint result;
 	if (to_width > max_width || to_height > max_height) {
 		GLuint new_source_texture = destination_texture;
-		GLuint new_destination_texture = auxilary_texture != 0 ? auxilary_texture : source_texture;
+		GLuint new_destination_texture =
+		    auxiliary_texture != 0 ? auxiliary_texture : source_texture;
 		result = _gl_average_texture_color(base, new_source_texture,
-		                                    new_destination_texture, 0,
-		                                    fbo, to_width, to_height);
+		                                   new_destination_texture, 0, fbo,
+		                                   to_width, to_height);
 	} else {
 		result = destination_texture;
 	}
@@ -257,7 +258,8 @@ static GLuint _gl_average_texture_color(backend_t *base, GLuint source_texture,
  * @brief Builds a 1x1 texture which has color corresponding to the average of all
  * pixels of img by recursively rendering into texture of quorter the size (half
  * width and half height).
- * Returned texture must be deleted by the caller (use glDeleteTextures).
+ * Returned texture must not be deleted, since it's owned by the gl_image. It will be
+ * deleted when the gl_image is released.
  */
 static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
 
@@ -265,16 +267,21 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
 
 	// Prepare textures which will be used for destination and source of rendering
 	// during downscaling.
-	GLuint textures[2] = {0};
-	const int texture_count = sizeof(textures)/sizeof(textures[0]);
-	glGenTextures(texture_count, textures);
-	glActiveTexture(GL_TEXTURE0);
-	for (int i = 0; i < texture_count; i++) {
-		glBindTexture(GL_TEXTURE_2D, textures[i]);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-		glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, (GLint []){0, 0, 0, 0});
+	const int texture_count = ARR_SIZE(img->inner->auxiliary_texture);
+	if (!img->inner->auxiliary_texture[0]) {
+		assert(!img->inner->auxiliary_texture[1]);
+		glGenTextures(texture_count, img->inner->auxiliary_texture);
+		glActiveTexture(GL_TEXTURE0);
+		for (int i = 0; i < texture_count; i++) {
+			glBindTexture(GL_TEXTURE_2D, img->inner->auxiliary_texture[i]);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+			glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR,
+			                 (GLint[]){0, 0, 0, 0});
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, img->inner->width,
+			             img->inner->height, 0, GL_BGR, GL_UNSIGNED_BYTE, NULL);
+		}
 	}
 
 	// Prepare framebuffer used for rendering and bind it
@@ -285,6 +292,8 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
 
 	// Enable shaders
 	glUseProgram(gd->brightness_shader.prog);
+	glUniform2f(glGetUniformLocationChecked(gd->brightness_shader.prog, "texsize"),
+	            (GLfloat)img->inner->width, (GLfloat)img->inner->height);
 
 	// Prepare vertex attributes
 	GLuint vao;
@@ -296,8 +305,7 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
-	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE,
-	                      sizeof(GLint) * 4, NULL);
+	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
 	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
 	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 
@@ -305,13 +313,13 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
 	GLint coord[16] = {0};
 	GLuint indices[] = {0, 1, 2, 2, 3, 0};
 	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 16, coord, GL_DYNAMIC_DRAW);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * 6, indices, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * 6, indices,
+	             GL_STATIC_DRAW);
 
 	// Do actual recursive render to 1x1 texture
-	GLuint result_texture = _gl_average_texture_color(base, img->inner->texture,
-	                                                   textures[0], textures[1],
-	                                                   fbo, img->inner->width,
-	                                                   img->inner->height);
+	GLuint result_texture = _gl_average_texture_color(
+	    base, img->inner->texture, img->inner->auxiliary_texture[0],
+	    img->inner->auxiliary_texture[1], fbo, img->inner->width, img->inner->height);
 
 	// Cleanup vertex attributes
 	glDisableVertexAttribArray(vert_coord_loc);
@@ -332,10 +340,6 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
 
 	// Cleanup render textures
 	glBindTexture(GL_TEXTURE_2D, 0);
-	for (int i = 0; i < texture_count; i++) {
-		if (result_texture != textures[i])
-			glDeleteTextures(1, &textures[i]);
-	}
 
 	gl_check_err();
 
@@ -362,8 +366,9 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	}
 
 	GLuint brightness = 0;
-	if (img->max_brightness < 1.0)
+	if (img->max_brightness < 1.0) {
 		brightness = gl_average_texture_color(base, img);
+	}
 
 	assert(gd->win_shader.prog);
 	glUseProgram(gd->win_shader.prog);
@@ -427,7 +432,6 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glDeleteBuffers(2, bo);
-	glDeleteTextures(1, &brightness);
 
 	glUseProgram(0);
 
@@ -758,7 +762,8 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
 	ret->unifm_tex = glGetUniformLocationChecked(ret->prog, "tex");
 	ret->unifm_dim = glGetUniformLocationChecked(ret->prog, "dim");
 	ret->unifm_brightness = glGetUniformLocationChecked(ret->prog, "brightness");
-	ret->unifm_max_brightness = glGetUniformLocationChecked(ret->prog, "max_brightness");
+	ret->unifm_max_brightness =
+	    glGetUniformLocationChecked(ret->prog, "max_brightness");
 
 	glUseProgram(ret->prog);
 	int orig_loc = glGetUniformLocation(ret->prog, "orig");
@@ -842,12 +847,13 @@ static const char interpolating_frag[] = GLSL(330,
 
 static const char interpolating_vert[] = GLSL(330,
 	uniform mat4 projection;
+	uniform vec2 texsize;
 	layout(location = 0) in vec2 in_coord;
 	layout(location = 1) in vec2 in_texcoord;
 	out vec2 texcoord;
 	void main() {
 		gl_Position = projection * vec4(in_coord, 0, 1);
-		texcoord = in_texcoord;
+		texcoord = in_texcoord / texsize;
 	}
 );
 // clang-format on
@@ -929,6 +935,7 @@ void gl_release_image(backend_t *base, void *image_data) {
 	assert(wd->inner->user_data == NULL);
 
 	glDeleteTextures(1, &wd->inner->texture);
+	glDeleteTextures(2, wd->inner->auxiliary_texture);
 	free(wd->inner);
 	free(wd);
 	gl_check_err();
@@ -1155,7 +1162,7 @@ const char *win_shader_glsl = GLSL(330,
 		}
 		c = vec4(c.rgb * (1.0 - dim), c.a) * opacity;
 
-		vec3 rgb_brightness = texture2D(brightness, vec2(0.5, 0.5), 0).rgb;
+		vec3 rgb_brightness = texelFetch(brightness, ivec2(0, 0), 0).rgb;
 		float brightness = (rgb_brightness[0] + rgb_brightness[1] + rgb_brightness[2]) / 3;
 		if (brightness > max_brightness)
 			c.rgb = c.rgb * (max_brightness / brightness);
@@ -1219,7 +1226,8 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUniform1i(glGetUniformLocationChecked(gd->present_prog, "tex"), 0);
 	glUseProgram(0);
 
-	gd->brightness_shader.prog = gl_create_program_from_str(interpolating_vert, interpolating_frag);
+	gd->brightness_shader.prog =
+	    gl_create_program_from_str(interpolating_vert, interpolating_frag);
 	if (!gd->brightness_shader.prog) {
 		log_error("Failed to create the brightness shader");
 		return false;
@@ -1403,8 +1411,7 @@ void gl_present(backend_t *base, const region_t *region) {
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(GLuint) * nrects * 6, indices,
 	             GL_STREAM_DRAW);
 
-	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE,
-	                      sizeof(GLint) * 2, NULL);
+	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 2, NULL);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1438,9 +1445,7 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 		tex->ewidth = iargs[0];
 		tex->eheight = iargs[1];
 		break;
-	case IMAGE_OP_MAX_BRIGHTNESS:
-		tex->max_brightness = *(double *)arg;
-		break;
+	case IMAGE_OP_MAX_BRIGHTNESS: tex->max_brightness = *(double *)arg; break;
 	}
 
 	return true;
