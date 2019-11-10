@@ -1773,11 +1773,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		         "binary will not be installed in the future.");
 	}
 
-	if (ps->o.debug_mode && !ps->o.experimental_backends) {
-		log_fatal("Debug mode only works with the experimental backends.");
-		return NULL;
-	}
-
 	ps->atoms = init_atoms(ps->c);
 	ps->atoms_wintypes[WINTYPE_UNKNOWN] = 0;
 #define SET_WM_TYPE_ATOM(x)                                                              \

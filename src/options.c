@@ -830,6 +830,11 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		return false;
 	}
 
+	if (opt->debug_mode && !opt->experimental_backends) {
+		log_error("Debug mode only works with the experimental backends.");
+		return false;
+	}
+
 	// Range checking and option assignments
 	opt->fade_delta = max2(opt->fade_delta, 1);
 	opt->shadow_radius = max2(opt->shadow_radius, 0);
