@@ -54,6 +54,7 @@
 #endif
 #include "atom.h"
 #include "event.h"
+#include "file_watch.h"
 #include "list.h"
 #include "options.h"
 #include "uthash_extra.h"
@@ -1538,6 +1539,11 @@ static void exit_enable(EV_P attr_unused, ev_signal *w, int revents attr_unused)
 	quit(ps);
 }
 
+static void config_file_change_cb(void *_ps) {
+	auto ps = (struct session *)_ps;
+	reset_enable(ps->loop, NULL, 0);
+}
+
 /**
  * Initialize a session.
  *
@@ -1935,6 +1941,12 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		free(config_file_to_free);
 		exit(0);
 	}
+
+	ps->file_watch_handle = file_watch_init(ps->loop);
+	if (ps->file_watch_handle) {
+		file_watch_add(ps->file_watch_handle, config_file, config_file_change_cb, ps);
+	}
+
 	free(config_file_to_free);
 
 	if (bkend_use_glx(ps) && !ps->o.experimental_backends) {
@@ -2099,6 +2111,9 @@ static void session_destroy(session_t *ps) {
 	if (ps->redirected) {
 		unredirect(ps);
 	}
+
+	file_watch_destroy(ps->loop, ps->file_watch_handle);
+	ps->file_watch_handle = NULL;
 
 	// Stop listening to events on root window
 	xcb_change_window_attributes(ps->c, ps->root, XCB_CW_EVENT_MASK,

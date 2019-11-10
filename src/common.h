@@ -154,6 +154,8 @@ typedef struct session {
 	void *backend_blur_context;
 	/// graphic drivers used
 	enum driver drivers;
+	/// file watch handle
+	void *file_watch_handle;
 	/// libev mainloop
 	struct ev_loop *loop;
 
