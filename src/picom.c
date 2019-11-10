@@ -2335,25 +2335,35 @@ int main(int argc, char **argv) {
 
 	// Main loop
 	bool quit = false;
+	int ret_code = 0;
 
 	do {
 		Display *dpy = XOpenDisplay(NULL);
 		if (!dpy) {
 			fprintf(stderr, "Can't open display.");
-			return 1;
+			ret_code = 1;
+			break;
 		}
 		XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
+
+		// Reinit logging system so we don't get leftovers from previous sessions
+		// or early logging.
+		log_deinit_tls();
+		log_init_tls();
+
 		ps_g = session_init(argc, argv, dpy, config_file, all_xerrors, need_fork);
 		if (!ps_g) {
 			log_fatal("Failed to create new session.");
-			return 1;
+			ret_code = 1;
+			break;
 		}
 		if (need_fork) {
 			// Finishing up daemonization
 			// Close files
 			if (fclose(stdout) || fclose(stderr) || fclose(stdin)) {
 				log_fatal("Failed to close standard input/output");
-				return 1;
+				ret_code = 1;
+				break;
 			}
 			// Make us the session and process group leader so we don't get
 			// killed when our parent die.
@@ -2380,5 +2390,5 @@ int main(int argc, char **argv) {
 
 	log_deinit_tls();
 
-	return 0;
+	return ret_code;
 }
