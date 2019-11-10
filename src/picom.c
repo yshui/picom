@@ -1909,8 +1909,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// Target window must be initialized before the backend
 	//
 	// backend_operations::present == NULL means this backend doesn't need a target
-	// window
-	if (backend_list[ps->o.backend]->present != NULL) {
+	// window; non experimental backends always need a target window
+	if (!ps->o.experimental_backends || backend_list[ps->o.backend]->present != NULL) {
 		if (!ps->o.debug_mode) {
 			if (!init_overlay(ps)) {
 				goto err;
