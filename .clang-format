@@ -18,6 +18,7 @@ AllowShortIfStatementsOnASingleLine: false
 AllowShortCaseLabelsOnASingleLine: true
 AllowShortFunctionsOnASingleLine: false
 IndentCaseLabels: false
+IndentPPDirectives: None
 PenaltyReturnTypeOnItsOwnLine: 0
 PenaltyBreakAssignment: 0
 PenaltyBreakBeforeFirstCallParameter: 1

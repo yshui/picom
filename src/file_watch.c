@@ -2,6 +2,13 @@
 #include <string.h>
 #ifdef HAS_INOTIFY
 #include <sys/inotify.h>
+#elif HAS_KQUEUE
+#include <sys/event.h>
+#include <sys/types.h>
+#undef EV_ERROR              // Avoid clashing with libev's EV_ERROR
+#include <fcntl.h>           // For O_RDONLY
+#include <sys/time.h>        // For struct timespec
+#include <unistd.h>          // For open
 #endif
 
 #include <ev.h>
@@ -26,7 +33,7 @@ struct file_watch_registry {
 	struct watched_file *reg;
 };
 
-static void file_watch_ev_cb(EV_P_ struct ev_io *w, int revent attr_unused) {
+static void file_watch_ev_cb(EV_P attr_unused, struct ev_io *w, int revent attr_unused) {
 	auto fwr = (struct file_watch_registry *)w;
 
 	while (true) {
@@ -42,6 +49,19 @@ static void file_watch_ev_cb(EV_P_ struct ev_io *w, int revent attr_unused) {
 			break;
 		}
 		wd = inotify_event.wd;
+#elif HAS_KQUEUE
+		struct kevent ev;
+		struct timespec timeout = {0};
+		int ret = kevent(fwr->w.fd, NULL, 0, &ev, 1, &timeout);
+		if (ret <= 0) {
+			if (ret < 0) {
+				log_error("Failed to get kevent: %s", strerror(errno));
+			}
+			break;
+		}
+		wd = (int)ev.ident;
+#else
+		assert(false);
 #endif
 
 		struct watched_file *wf = NULL;
@@ -63,6 +83,12 @@ void *file_watch_init(EV_P) {
 		log_error("inotify_init1 failed: %s", strerror(errno));
 		return NULL;
 	}
+#elif HAS_KQUEUE
+	fd = kqueue();
+	if (fd < 0) {
+		log_error("Failed to create kqueue: %s", strerror(errno));
+		return NULL;
+	}
 #else
 	log_info("No file watching support found on the host system.");
 	return NULL;
@@ -81,6 +107,12 @@ void file_watch_destroy(EV_P_ void *_fwr) {
 
 	HASH_ITER(hh, fwr->reg, i, tmp) {
 		HASH_DEL(fwr->reg, i);
+#ifdef HAS_KQUEUE
+		// kqueue watch descriptors are file descriptors of
+		// the files we are watching, so we need to close
+		// them
+		close(i->wd);
+#endif
 		free(i);
 	}
 
@@ -100,7 +132,39 @@ bool file_watch_add(void *_fwr, const char *filename, file_watch_cb_t cb, void *
 		log_error("Failed to watch file \"%s\": %s", filename, strerror(errno));
 		return false;
 	}
+#elif HAS_KQUEUE
+	wd = open(filename, O_RDONLY);
+	if (wd < 0) {
+		log_error("Cannot open file \"%s\" for watching: %s", filename,
+		          strerror(errno));
+		return false;
+	}
+
+	uint32_t fflags = NOTE_DELETE | NOTE_RENAME | NOTE_REVOKE | NOTE_ATTRIB;
+	// NOTE_CLOSE_WRITE is relatively new, so we cannot just use it
+#ifdef NOTE_CLOSE_WRITE
+	fflags |= NOTE_CLOSE_WRITE;
+#else
+	// NOTE_WRITE will receive notification more frequent than necessary, so is less
+	// preferrable
+	fflags |= NOTE_WRITE;
 #endif
+	struct kevent ev = {
+	    .ident = (unsigned int)wd,        // the wd < 0 case is checked above
+	    .filter = EVFILT_VNODE,
+	    .flags = EV_ADD | EV_CLEAR,
+	    .fflags = fflags,
+	    .data = 0,
+	    .udata = NULL,
+	};
+	if (kevent(fwr->w.fd, &ev, 1, NULL, 0, NULL) < 0) {
+		log_error("Failed to register kevent: %s", strerror(errno));
+		close(wd);
+		return false;
+	}
+#else
+	assert(false);
+#endif        // HAS_KQUEUE
 
 	auto w = ccalloc(1, struct watched_file);
 	w->wd = wd;
