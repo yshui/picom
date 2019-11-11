@@ -12,6 +12,7 @@
     defined(__NetBSD__) || defined(__OpenBSD__)
 #define USE_SYSCTL_FOR_ARGS 1
 #include <sys/sysctl.h>
+#include <sys/types.h>
 #include <unistd.h>        // getpid
 #endif
 
