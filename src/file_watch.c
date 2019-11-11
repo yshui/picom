@@ -3,8 +3,10 @@
 #ifdef HAS_INOTIFY
 #include <sys/inotify.h>
 #elif HAS_KQUEUE
-#include <sys/event.h>
+// clang-format off
 #include <sys/types.h>
+// clang-format on
+#include <sys/event.h>
 #undef EV_ERROR              // Avoid clashing with libev's EV_ERROR
 #include <fcntl.h>           // For O_RDONLY
 #include <sys/time.h>        // For struct timespec
