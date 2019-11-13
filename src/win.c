@@ -313,15 +313,18 @@ bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color
 }
 
 void win_release_images(struct backend_base *backend, struct managed_win *w) {
-	// we don't want to consider what we should do if the image we want to release is
+	// We don't want to decide what we should do if the image we want to release is
 	// stale (do we clear the stale flags or not?)
-	assert((w->flags & WIN_FLAGS_IMAGES_STALE) == 0);
+	// But if we are not releasing any images anyway, we don't care about the stale
+	// flags.
 
 	if ((w->flags & WIN_FLAGS_PIXMAP_NONE) == 0) {
+		assert((w->flags & WIN_FLAGS_PIXMAP_STALE) == 0);
 		win_release_pixmap(backend, w);
 	}
 
 	if ((w->flags & WIN_FLAGS_SHADOW_NONE) == 0) {
+		assert((w->flags & WIN_FLAGS_SHADOW_STALE) == 0);
 		win_release_shadow(backend, w);
 	}
 }
