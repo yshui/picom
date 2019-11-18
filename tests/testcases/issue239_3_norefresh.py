@@ -36,8 +36,6 @@ print("set new name")
 win_name = "NoShadow"
 conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, name_atom, str_type_atom, 8, len(win_name), win_name).check()
 
-time.sleep(0.5)
-
 # Set the Window name so it gets a shadow
 print("set new name")
 win_name = "YesShadow"
