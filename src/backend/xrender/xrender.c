@@ -37,11 +37,11 @@ typedef struct _xrender_data {
 	xcb_render_picture_t back[3];
 	/// The back buffer that is for temporary use
 	/// Age of each back buffer.
-	int buffer_age[2];
+	int buffer_age[3];
 	/// The back buffer we should be painting into
 	int curr_back;
 	/// The corresponding pixmap to the back buffer
-	xcb_pixmap_t back_pixmap[2];
+	xcb_pixmap_t back_pixmap[3];
 	/// The original root window content, usually the wallpaper.
 	/// We save it so we don't loss the wallpaper when we paint over
 	/// it.
