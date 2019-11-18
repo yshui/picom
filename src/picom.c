@@ -30,10 +30,10 @@
 
 #include "common.h"
 #include "compiler.h"
-#include "compton.h"
 #include "config.h"
 #include "err.h"
 #include "kernel.h"
+#include "picom.h"
 #ifdef CONFIG_OPENGL
 #include "opengl.h"
 #endif
@@ -913,10 +913,10 @@ static bool register_cm(session_t *ps) {
 	{
 		XClassHint *h = XAllocClassHint();
 		if (h) {
-			h->res_name = "compton";
-			h->res_class = "compton";
+			h->res_name = "picom";
+			h->res_class = "picom";
 		}
-		Xutf8SetWMProperties(ps->dpy, ps->reg_win, "compton", "compton", NULL, 0,
+		Xutf8SetWMProperties(ps->dpy, ps->reg_win, "picom", "picom", NULL, 0,
 		                     NULL, NULL, h);
 		XFree(h);
 	}
@@ -1317,7 +1317,8 @@ static void _draw_callback(EV_P_ session_t *ps, int revents) {
 		handle_new_windows(ps);
 
 		{
-			auto r = xcb_get_input_focus_reply(ps->c, xcb_get_input_focus(ps->c), NULL);
+			auto r = xcb_get_input_focus_reply(
+			    ps->c, xcb_get_input_focus(ps->c), NULL);
 			if (!ps->active_win || (r && r->focus != ps->active_win->base.id)) {
 				recheck_focus(ps);
 			}
@@ -1467,17 +1468,17 @@ static void x_event_callback(EV_P_ ev_io *w, int revents) {
 /**
  * Turn on the program reset flag.
  *
- * This will result in compton resetting itself after next paint.
+ * This will result in the compostior resetting itself after next paint.
  */
 static void reset_enable(EV_P_ ev_signal *w, int revents) {
 	session_t *ps = session_ptr(w, usr1_signal);
-	log_info("compton is resetting...");
+	log_info("picom is resetting...");
 	ev_break(ps->loop, EVBREAK_ALL);
 }
 
 static void exit_enable(EV_P_ ev_signal *w, int revents) {
 	session_t *ps = session_ptr(w, int_signal);
-	log_info("compton is quitting...");
+	log_info("picom is quitting...");
 	quit_compton(ps);
 }
 
@@ -1657,7 +1658,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 		if (!reply || (reply->major_version == 0 && reply->minor_version < 2)) {
 			log_fatal("Your X server doesn't have Composite >= 0.2 support, "
-			          "compton cannot run.");
+			          "we cannot proceed.");
 			exit(1);
 		}
 		free(reply);
@@ -1713,6 +1714,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 			log_error("Failed to setup log file %s, I will keep using stderr",
 			          ps->o.logpath);
 		}
+	}
+
+	if (strstr(argv[0], "compton")) {
+		log_warn("This compositor has been renamed to \"picom\", the \"compton\" "
+		         "binary will not be installed in the future.");
 	}
 
 	if (ps->o.debug_mode && !ps->o.experimental_backends) {
@@ -2267,7 +2273,7 @@ int main(int argc, char **argv) {
 	do {
 		ps_g = session_init(argc, argv, dpy, config_file, all_xerrors, need_fork);
 		if (!ps_g) {
-			log_fatal("Failed to create new compton session.");
+			log_fatal("Failed to create new session.");
 			return 1;
 		}
 		if (need_fork) {

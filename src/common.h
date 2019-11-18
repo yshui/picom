@@ -118,7 +118,7 @@ typedef struct _latom {
 	struct _latom *next;
 } latom_t;
 
-/// Structure containing all necessary data for a compton session.
+/// Structure containing all necessary data for a session.
 typedef struct session {
 	// === Event handlers ===
 	/// ev_io for X connection
@@ -175,7 +175,7 @@ typedef struct session {
 	xcb_window_t overlay;
 	/// The target window for debug mode
 	xcb_window_t debug_window;
-	/// Whether the root tile is filled by compton.
+	/// Whether the root tile is filled by us.
 	bool root_tile_fill;
 	/// Picture of the root window background.
 	paint_t root_tile_paint;

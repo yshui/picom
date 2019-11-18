@@ -54,7 +54,7 @@ safe_isnan(double a) {
 
 // Some macros for checked cast
 // Note these macros are not complete, as in, they won't work for every integer types. But
-// they are good enough for compton.
+// they are good enough for our use cases.
 
 #define to_int_checked(val)                                                              \
 	({                                                                               \

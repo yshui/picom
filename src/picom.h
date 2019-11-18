@@ -30,8 +30,8 @@ enum root_flags {
 };
 
 // == Functions ==
-// TODO move static inline functions that are only used in compton.c, into
-//      compton.c
+// TODO move static inline functions that are only used in picom.c, into
+//      picom.c
 
 // inline functions must be made static to compile correctly under clang:
 // http://clang.llvm.org/compatibility.html#inline
