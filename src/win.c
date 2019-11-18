@@ -707,6 +707,7 @@ static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new
 	// Mark the old extents as damaged if the shadow is removed
 	if (!w->shadow) {
 		add_damage(ps, &extents);
+		win_release_shadow(ps->backend_data, w);
 	}
 
 	pixman_region32_clear(&extents);
