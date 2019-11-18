@@ -45,7 +45,7 @@ In the end, we picked `picom` (a portmanteau of `pico` and `composite`) as our n
 
 ### Migration
 
-Following the [deprecation process](https://github.com/yshui/compton/issues/114), migration to the new name will be broken into 3 steps:
+Following the [deprecation process](https://github.com/yshui/picom/issues/114), migration to the new name will be broken into 3 steps:
 
 1. All mentions of `compton` will be updated to `picom` in the code base. `compton` will still be installed, but only as a symlink to `picom`. When `picom` is launched via the symlink, a warning message is printed, alerting the user to migrate. Similarly, the old configuration file names and dbus interface names will still be accepted but warned.
 2. 3 major releases after step 1, the warning messages will be prompted to error messages and `picom` will not start when launched via the symlink.
@@ -55,7 +55,7 @@ The dbus interface and service names are unchanged, so no migration needed for t
 
 ## Change Log
 
-See [Releases](https://github.com/yshui/compton/releases)
+See [Releases](https://github.com/yshui/picom/releases)
 
 ## Build
 
