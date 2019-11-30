@@ -85,6 +85,16 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	static struct timespec last_paint = {0};
 #endif
 
+	// <damage-note>
+	// If use_damage is enabled, we MUST make sure only the damaged regions of the
+	// screen are ever touched by the compositor. The reason is that at the beginning
+	// of each render, we clear the damaged regions with the wallpaper, and nothing
+	// else. If later during the render we changed anything outside the damaged
+	// region, that won't be cleared by the next render, and will thus accumulate.
+	// (e.g. if shadow is drawn outside the damaged region, it will become thicker and
+	// thicker over time.)
+
+	/// The adjusted damaged regions
 	region_t reg_paint;
 	assert(ps->o.blur_method != BLUR_METHOD_INVALID);
 	if (ps->o.blur_method != BLUR_METHOD_NONE && ps->backend_data->ops->get_blur_size) {
@@ -266,8 +276,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		// Set max brightness
 		if (ps->o.max_brightness < 1.0) {
 			ps->backend_data->ops->image_op(
-			    ps->backend_data, IMAGE_OP_MAX_BRIGHTNESS, w->win_image,
-			    NULL, &reg_visible, &ps->o.max_brightness);
+			    ps->backend_data, IMAGE_OP_MAX_BRIGHTNESS, w->win_image, NULL,
+			    &reg_visible, &ps->o.max_brightness);
 		}
 
 		// Draw window on target
@@ -275,13 +285,13 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               w->g.x, w->g.y,
 			                               &reg_paint_in_bound, &reg_visible);
-		} else if (w->opacity * MAX_ALPHA >= 1){
+		} else if (w->opacity * MAX_ALPHA >= 1) {
 			// We don't need to paint the window body itself if it's
 			// completely transparent.
 
-			// For window image processing, we don't need to limit the process
-			// region to damage, since the window image data is independent
-			// from the target image data, which we want to protect.
+			// For window image processing, we don't have to limit the process
+			// region to damage for correctness. (see <damager-note> for
+			// details)
 
 			// The bounding shape, in window local coordinates
 			region_t reg_bound_local;
