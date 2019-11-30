@@ -321,7 +321,11 @@ static void usage(const char *argv0, int ret) {
 	    "\n"
 	    "--no-ewmh-fullscreen\n"
 	    "  Do not use EWMH to detect fullscreen windows. Reverts to checking\n"
-	    "  if a window is fullscreen based only on its size and coordinates.\n";
+	    "  if a window is fullscreen based only on its size and coordinates.\n"
+	    "\n"
+	    "--transparent-clipping\n"
+	    "  Make transparent windows clip other windows like non-transparent windows\n"
+	    "  do, instead of blending on top of them\n";
 	FILE *f = (ret ? stderr : stdout);
 	fprintf(f, usage_text, argv0);
 #undef WARNING_DISABLED
@@ -417,6 +421,7 @@ static const struct option longopts[] = {
     {"no-use-damage", no_argument, NULL, 324},
     {"no-vsync", no_argument, NULL, 325},
     {"max-brightness", required_argument, NULL, 326},
+    {"transparent-clipping", no_argument, NULL, 327},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -802,6 +807,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 326:
 			opt->max_brightness = atof(optarg);
 			break;
+		P_CASEBOOL(327, transparent_clipping);
 
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
@@ -832,6 +838,12 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	if (opt->debug_mode && !opt->experimental_backends) {
 		log_error("Debug mode only works with the experimental backends.");
+		return false;
+	}
+
+	if (opt->transparent_clipping && !opt->experimental_backends) {
+		log_error("Transparent clipping only works with the experimental "
+		          "backends");
 		return false;
 	}
 

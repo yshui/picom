@@ -235,6 +235,10 @@ typedef struct options {
 
 	// Don't use EWMH to detect fullscreen applications
 	bool no_ewmh_fullscreen;
+
+	// Make transparent windows clip other windows, instead of blending on top of
+	// them
+	bool transparent_clipping;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];

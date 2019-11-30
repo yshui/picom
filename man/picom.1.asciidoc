@@ -259,6 +259,9 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--max-brightness*::
 	Dimming bright windows so their brightness doesn't exceed this set value. Brightness of a window is estimated by averaging all pixels in the window, so this could comes with a performance hit. Setting this to 1.0 disables this behaviour. Requires *--use-damage* to be disabled. (default: 1.0)
 
+*--transparent-clipping*::
+	Make transparent windows clip other windows like non-transparent windows do, instead of blending on top of them.
+
 FORMAT OF CONDITIONS
 --------------------
 Some options accept a condition string to match certain windows. A condition string is formed by one or more conditions, joined by logical operators.

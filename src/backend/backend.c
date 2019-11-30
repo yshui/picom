@@ -134,9 +134,13 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	region_t reg_visible;
 	pixman_region32_init(&reg_visible);
 	pixman_region32_copy(&reg_visible, &ps->screen_reg);
-	if (t) {
+	if (t && !ps->o.transparent_clipping) {
 		// Calculate the region upon which the root window (wallpaper) is to be
 		// painted based on the ignore region of the lowest window, if available
+		//
+		// NOTE If transparent_clipping is enabled, transparent windows are
+		// included in the reg_ignore, but we still want to have the wallpaper
+		// beneath them, so we don't use reg_ignore for wallpaper in that case.
 		pixman_region32_subtract(&reg_visible, &reg_visible, t->reg_ignore);
 	}
 
@@ -171,6 +175,17 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		region_t reg_paint_in_bound;
 		pixman_region32_init(&reg_paint_in_bound);
 		pixman_region32_intersect(&reg_paint_in_bound, &reg_bound, &reg_paint);
+		if (ps->o.transparent_clipping) {
+			// <transparent-clipping-note>
+			// If transparent_clipping is enabled, we need to be SURE that
+			// things are not drawn inside reg_ignore, because otherwise they
+			// will appear underneath transparent windows.
+			// So here we have make sure reg_paint_in_bound \in reg_visible
+			// There are a few other places below where this is needed as
+			// well.
+			pixman_region32_intersect(&reg_paint_in_bound,
+			                          &reg_paint_in_bound, &reg_visible);
+		}
 
 		// Blur window background
 		// TODO since the background might change the content of the window (e.g.
@@ -216,6 +231,11 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				pixman_region32_translate(&reg_blur, w->g.x, w->g.y);
 				// make sure reg_blur \in reg_paint
 				pixman_region32_intersect(&reg_blur, &reg_blur, &reg_paint);
+				if (ps->o.transparent_clipping) {
+					// ref: <transparent-clipping-note>
+					pixman_region32_intersect(&reg_blur, &reg_blur,
+					                          &reg_visible);
+				}
 				ps->backend_data->ops->blur(ps->backend_data, blur_opacity,
 				                            ps->backend_blur_context,
 				                            &reg_blur, &reg_visible);
@@ -252,6 +272,12 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				pixman_region32_intersect(
 				    &reg_shadow, &reg_shadow,
 				    &ps->xinerama_scr_regs[w->xinerama_scr]);
+			}
+
+			if (ps->o.transparent_clipping) {
+				// ref: <transparent-clipping-note>
+				pixman_region32_intersect(&reg_shadow, &reg_shadow,
+				                          &reg_visible);
 			}
 
 			assert(w->shadow_image);
