@@ -4,7 +4,7 @@
 
 if [ -z "`dbus-send --session --dest=org.freedesktop.DBus --type=method_call --print-reply /org/freedesktop/DBus org.freedesktop.DBus.ListNames | grep compton`" ]; then
   echo "compton DBus interface unavailable"
-  if [ -n "`pgrep compton`" ]; then
+  if [ -n "`pgrep picom`" ]; then
     echo "compton running without dbus interface"
     #killall compton & # Causes all windows to flicker away and come back ugly.
     #compton --dbus & # Causes all windows to flicker away and come back beautiful
