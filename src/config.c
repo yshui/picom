@@ -561,6 +561,8 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 
 	    .track_wdata = false,
 	    .track_leader = false,
+
+	    .rounded_corners_blacklist = NULL
 	};
 
 	char *ret = NULL;
