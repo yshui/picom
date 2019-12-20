@@ -626,13 +626,118 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 	return true;
 }
 
-bool gl_dual_kawase_blur(backend_t *base, double opacity attr_unused, void *ctx,
-                         const rect_t *extent attr_unused, const int nrects attr_unused,
-                         const GLuint vao[2] attr_unused) {
-	auto bctx attr_unused = (struct gl_blur_context *)ctx;
-	auto gd attr_unused = (struct gl_data *)base;
+bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_t *extent,
+                         const int nrects, const GLuint vao[2]) {
+	auto bctx = (struct gl_blur_context *)ctx;
+	auto gd = (struct gl_data *)base;
 
-	// TODO: Blur with dual_kawase shaders
+	int dst_y_screen_coord = gd->height - extent->y2,
+	    dst_y_fb_coord = bctx->fb_height - extent->y2;
+
+	int iterations = bctx->blur_texture_count;
+	int scale_factor = 1;
+
+	// Kawase downsample pass
+	const gl_blur_shader_t *down_pass = &bctx->blur_shader[0];
+	assert(down_pass->prog);
+	glUseProgram(down_pass->prog);
+
+	// Downsample always renders with resize offset
+	glUniform2f(down_pass->orig_loc, (GLfloat)bctx->resize_width,
+	            -(GLfloat)bctx->resize_height);
+
+	for (int i = 0; i < iterations; ++i) {
+		// Scale output width / height by half in each iteration
+		scale_factor <<= 1;
+
+		GLuint src_texture;
+		int tex_width, tex_height;
+		int texorig_x, texorig_y;
+
+		if (i == 0) {
+			// first pass: copy from back buffer
+			src_texture = gd->back_texture;
+			tex_width = gd->width;
+			tex_height = gd->height;
+
+			texorig_x = extent->x1;
+			texorig_y = dst_y_screen_coord;
+		} else {
+			// copy from previous pass
+			src_texture = bctx->blur_textures[i - 1];
+			auto src_size = bctx->texture_sizes[i - 1];
+			tex_width = src_size.width;
+			tex_height = src_size.height;
+
+			texorig_x = extent->x1 + bctx->resize_width;
+			texorig_y = dst_y_fb_coord - bctx->resize_height;
+		}
+
+		assert(src_texture);
+		assert(bctx->blur_fbos[i]);
+
+		glBindTexture(GL_TEXTURE_2D, src_texture);
+		glBindVertexArray(vao[1]);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i]);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
+		glUniform2f(down_pass->texorig_loc, (GLfloat)texorig_x, (GLfloat)texorig_y);
+		glUniform1f(down_pass->scale_loc, (GLfloat)scale_factor);
+
+		glUniform2f(down_pass->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
+		            1.0f / (GLfloat)tex_height);
+
+		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+	}
+
+	// Kawase upsample pass
+	const gl_blur_shader_t *up_pass = &bctx->blur_shader[1];
+	assert(up_pass->prog);
+	glUseProgram(up_pass->prog);
+
+	// Upsample always samples from textures with resize offset
+	glUniform2f(up_pass->texorig_loc, (GLfloat)(extent->x1 + bctx->resize_width),
+	            (GLfloat)(dst_y_fb_coord - bctx->resize_height));
+
+	for (int i = iterations - 1; i >= 0; --i) {
+		// Scale output width / height back by two in each iteration
+		scale_factor >>= 1;
+
+		const GLuint src_texture = bctx->blur_textures[i];
+		assert(src_texture);
+
+		// Calculate normalized half-width/-height of a src pixel
+		auto src_size = bctx->texture_sizes[i];
+		int tex_width = src_size.width;
+		int tex_height = src_size.height;
+
+		glBindTexture(GL_TEXTURE_2D, src_texture);
+		if (i > 0) {
+			assert(bctx->blur_fbos[i - 1]);
+
+			// not last pass, draw into next framebuffer
+			glBindVertexArray(vao[1]);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i - 1]);
+			glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
+			glUniform2f(up_pass->orig_loc, (GLfloat)bctx->resize_width,
+			            -(GLfloat)bctx->resize_height);
+			glUniform1f(up_pass->unifm_opacity, (GLfloat)1);
+		} else {
+			// last pass, draw directly into the back buffer
+			glBindVertexArray(vao[0]);
+			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
+
+			glUniform2f(up_pass->orig_loc, (GLfloat)0, (GLfloat)0);
+			glUniform1f(up_pass->unifm_opacity, (GLfloat)opacity);
+		}
+
+		glUniform1f(up_pass->scale_loc, (GLfloat)scale_factor);
+		glUniform2f(up_pass->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
+		            1.0f / (GLfloat)tex_height);
+
+		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+	}
 
 	return true;
 }
@@ -654,7 +759,10 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 		for (int i = 0; i < bctx->blur_texture_count; ++i) {
 			auto tex_size = bctx->texture_sizes + i;
 			if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {
-				// TODO: Use smaller textures for each iteration
+				// Use smaller textures for each iteration (quarter of the
+				// previous texture)
+				tex_size->width = 1 + ((bctx->fb_width - 1) >> (i + 1));
+				tex_size->height = 1 + ((bctx->fb_height - 1) >> (i + 1));
 			} else {
 				tex_size->width = bctx->fb_width;
 				tex_size->height = bctx->fb_height;
@@ -663,7 +771,22 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 			glBindTexture(GL_TEXTURE_2D, bctx->blur_textures[i]);
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tex_size->width,
 			             tex_size->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+
+			if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {
+				// Attach texture to FBO target
+				glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i]);
+				glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER,
+				                       GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+				                       bctx->blur_textures[i], 0);
+				if (glCheckFramebufferStatus(GL_FRAMEBUFFER) !=
+				    GL_FRAMEBUFFER_COMPLETE) {
+					log_error("Framebuffer attachment failed.");
+					glBindFramebuffer(GL_FRAMEBUFFER, 0);
+					return false;
+				}
+			}
 		}
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	}
 
 	// Remainder: regions are in Xorg coordinates
@@ -754,13 +877,14 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 // clang-format off
 const char *vertex_shader = GLSL(330,
 	uniform mat4 projection;
+	uniform float scale = 1.0;
 	uniform vec2 orig;
 	uniform vec2 texorig;
 	layout(location = 0) in vec2 coord;
 	layout(location = 1) in vec2 in_texcoord;
 	out vec2 texcoord;
 	void main() {
-		gl_Position = projection * vec4(coord + orig, 0, 1);
+		gl_Position = projection * vec4(coord + orig, 0, scale);
 		texcoord = in_texcoord + texorig;
 	}
 );
@@ -1193,17 +1317,164 @@ out:
 	return success;
 }
 
-bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection attr_unused,
-                                        enum blur_method method attr_unused,
-                                        void *args attr_unused) {
+bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
+                                        enum blur_method method, void *args) {
 	bool success = false;
 	auto ctx = (struct gl_blur_context *)blur_context;
 
-	// TODO: Create and initialize down and upsample shader
+	ctx->method = method;
 
-	log_warn("Blur method 'dual_kawase' is not yet implemented.");
-	ctx->method = BLUR_METHOD_NONE;
+	auto blur_params = generate_dual_kawase_params(args);
+
+	// Specify required textures and FBOs
+	ctx->blur_texture_count = blur_params->iterations;
+	ctx->blur_fbo_count = blur_params->iterations;
+
+	ctx->resize_width += blur_params->expand;
+	ctx->resize_height += blur_params->expand;
+
+	ctx->npasses = 2;
+	ctx->blur_shader = ccalloc(ctx->npasses, gl_blur_shader_t);
+
+	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
+	// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
+	// Thanks to hiciu for reporting.
+	setlocale(LC_NUMERIC, "C");
+
+	// Dual-kawase downsample shader / program
+	auto down_pass = ctx->blur_shader;
+	{
+		// clang-format off
+		static const char *FRAG_SHADER_DOWN = GLSL(330,
+			uniform sampler2D tex_src;
+			uniform float scale = 1.0;
+			uniform vec2 pixel_norm;
+			in vec2 texcoord;
+			out vec4 out_color;
+			void main() {
+				vec2 offset = %.7g * pixel_norm;
+				vec2 uv = texcoord * pixel_norm * (2.0 / scale);
+				vec4 sum = texture2D(tex_src, uv) * 4.0;
+				sum += texture2D(tex_src, uv - vec2(0.5, 0.5) * offset);
+				sum += texture2D(tex_src, uv + vec2(0.5, 0.5) * offset);
+				sum += texture2D(tex_src, uv + vec2(0.5, -0.5) * offset);
+				sum += texture2D(tex_src, uv - vec2(0.5, -0.5) * offset);
+				out_color = sum / 8.0;
+			}
+		);
+		// clang-format on
+
+		// Build shader
+		size_t shader_len =
+		    strlen(FRAG_SHADER_DOWN) + 10 /* offset */ + 1 /* null terminator */;
+		char *shader_str = ccalloc(shader_len, char);
+		auto real_shader_len =
+		    snprintf(shader_str, shader_len, FRAG_SHADER_DOWN, blur_params->offset);
+		CHECK(real_shader_len >= 0);
+		CHECK((size_t)real_shader_len < shader_len);
+
+		// Build program
+		down_pass->prog = gl_create_program_from_str(vertex_shader, shader_str);
+		free(shader_str);
+		if (!down_pass->prog) {
+			log_error("Failed to create GLSL program.");
+			success = false;
+			goto out;
+		}
+		glBindFragDataLocation(down_pass->prog, 0, "out_color");
+
+		// Get uniform addresses
+		down_pass->unifm_pixel_norm =
+		    glGetUniformLocationChecked(down_pass->prog, "pixel_norm");
+		down_pass->orig_loc =
+		    glGetUniformLocationChecked(down_pass->prog, "orig");
+		down_pass->texorig_loc =
+		    glGetUniformLocationChecked(down_pass->prog, "texorig");
+		down_pass->scale_loc =
+		    glGetUniformLocationChecked(down_pass->prog, "scale");
+
+		// Setup projection matrix
+		glUseProgram(down_pass->prog);
+		int pml = glGetUniformLocationChecked(down_pass->prog, "projection");
+		glUniformMatrix4fv(pml, 1, false, projection);
+		glUseProgram(0);
+	}
+
+	// Dual-kawase upsample shader / program
+	auto up_pass = ctx->blur_shader + 1;
+	{
+		// clang-format off
+		static const char *FRAG_SHADER_UP = GLSL(330,
+			uniform sampler2D tex_src;
+			uniform float scale = 1.0;
+			uniform vec2 pixel_norm;
+			uniform float opacity;
+			in vec2 texcoord;
+			out vec4 out_color;
+			void main() {
+				vec2 offset = %.7g * pixel_norm;
+				vec2 uv = texcoord * pixel_norm / (2 * scale);
+				vec4 sum = texture2D(tex_src, uv + vec2(-1.0, 0.0) * offset);
+				sum += texture2D(tex_src, uv + vec2(-0.5, 0.5) * offset) * 2.0;
+				sum += texture2D(tex_src, uv + vec2(0.0, 1.0) * offset);
+				sum += texture2D(tex_src, uv + vec2(0.5, 0.5) * offset) * 2.0;
+				sum += texture2D(tex_src, uv + vec2(1.0, 0.0) * offset);
+				sum += texture2D(tex_src, uv + vec2(0.5, -0.5) * offset) * 2.0;
+				sum += texture2D(tex_src, uv + vec2(0.0, -1.0) * offset);
+				sum += texture2D(tex_src, uv + vec2(-0.5, -0.5) * offset) * 2.0;
+				out_color = sum / 12.0 * opacity;
+			}
+		);
+		// clang-format on
+
+		// Build shader
+		size_t shader_len =
+		    strlen(FRAG_SHADER_UP) + 10 /* offset */ + 1 /* null terminator */;
+		char *shader_str = ccalloc(shader_len, char);
+		auto real_shader_len =
+		    snprintf(shader_str, shader_len, FRAG_SHADER_UP, blur_params->offset);
+		CHECK(real_shader_len >= 0);
+		CHECK((size_t)real_shader_len < shader_len);
+
+		// Build program
+		up_pass->prog = gl_create_program_from_str(vertex_shader, shader_str);
+		free(shader_str);
+		if (!up_pass->prog) {
+			log_error("Failed to create GLSL program.");
+			success = false;
+			goto out;
+		}
+		glBindFragDataLocation(up_pass->prog, 0, "out_color");
+
+		// Get uniform addresses
+		up_pass->unifm_pixel_norm =
+		    glGetUniformLocationChecked(up_pass->prog, "pixel_norm");
+		up_pass->unifm_opacity =
+		    glGetUniformLocationChecked(up_pass->prog, "opacity");
+		up_pass->orig_loc = glGetUniformLocationChecked(up_pass->prog, "orig");
+		up_pass->texorig_loc =
+		    glGetUniformLocationChecked(up_pass->prog, "texorig");
+		up_pass->scale_loc = glGetUniformLocationChecked(up_pass->prog, "scale");
+
+		// Setup projection matrix
+		glUseProgram(up_pass->prog);
+		int pml = glGetUniformLocationChecked(up_pass->prog, "projection");
+		glUniformMatrix4fv(pml, 1, false, projection);
+		glUseProgram(0);
+	}
+
 	success = true;
+out:
+	free(blur_params);
+
+	if (!success) {
+		ctx = NULL;
+	}
+
+	// Restore LC_NUMERIC
+	setlocale(LC_NUMERIC, lc_numeric_old);
+	free(lc_numeric_old);
+
 	return success;
 }
 
