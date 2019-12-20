@@ -16,6 +16,15 @@ typedef struct conv conv;
 typedef struct backend_base backend_t;
 struct backend_operations;
 
+struct dual_kawase_params {
+	/// Number of downsample passes
+	int iterations;
+	/// Pixel offset for down- and upsample
+	float offset;
+	/// Save area around blur target (@ref resize_width, @ref resize_height)
+	int expand;
+};
+
 bool build_shadow(xcb_connection_t *, xcb_drawable_t, double opacity, int width,
                   int height, const conv *kernel, xcb_render_picture_t shadow_pixel,
                   xcb_pixmap_t *pixmap, xcb_render_picture_t *pict);
@@ -41,3 +50,4 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 void init_backend_base(struct backend_base *base, session_t *ps);
 
 struct conv **generate_blur_kernel(enum blur_method method, void *args, int *kernel_count);
+struct dual_kawase_params *generate_dual_kawase_params(void *args);
