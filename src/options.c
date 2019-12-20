@@ -200,6 +200,18 @@ static void usage(const char *argv0, int ret) {
 	    "  the same group focused at the same time. WM_TRANSIENT_FOR has\n"
 	    "  higher priority if --detect-transient is enabled, too.\n"
 	    "\n"
+	    "--blur-method\n"
+	    "  The algorithm used for background bluring. Available choices are:\n"
+	    "  'none' to disable, 'gaussian', 'box' or 'kernel' for custom\n"
+	    "  convolution blur with --blur-kern.\n"
+	    "  Note: 'gaussian' and 'box' require --experimental-backends.\n"
+	    "\n"
+	    "--blur-size\n"
+	    "  The radius of the blur kernel for 'box' and 'gaussian' blur method.\n"
+	    "\n"
+	    "--blur-deviation\n"
+	    "  The standard deviation for the 'gaussian' blur method.\n"
+	    "\n"
 	    "--blur-background\n"
 	    "  Blur background of semi-transparent / ARGB windows. Bad in\n"
 	    "  performance. The switch name may change without prior\n"
@@ -422,6 +434,9 @@ static const struct option longopts[] = {
     {"no-vsync", no_argument, NULL, 325},
     {"max-brightness", required_argument, NULL, 326},
     {"transparent-clipping", no_argument, NULL, 327},
+    {"blur-method", required_argument, NULL, 328},
+    {"blur-size", required_argument, NULL, 329},
+    {"blur-deviation", required_argument, NULL, 330},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -808,6 +823,24 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->max_brightness = atof(optarg);
 			break;
 		P_CASEBOOL(327, transparent_clipping);
+		case 328: {
+			// --blur-method
+			enum blur_method method = parse_blur_method(optarg);
+			if (method >= BLUR_METHOD_INVALID) {
+				log_warn("Invalid blur method %s, ignoring.", optarg);
+			} else {
+				opt->blur_method = method;
+			}
+			break;
+		}
+		case 329:
+			// --blur-size
+			opt->blur_radius = atoi(optarg);
+			break;
+		case 330:
+			// --blur-deviation
+			opt->blur_deviation = atof(optarg);
+			break;
 
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
@@ -877,7 +910,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	set_default_winopts(opt, winopt_mask, shadow_enable, fading_enable);
 
 	// --blur-background-frame implies --blur-background
-	if (opt->blur_background_frame && !opt->blur_method) {
+	if (opt->blur_background_frame && opt->blur_method == BLUR_METHOD_NONE) {
 		opt->blur_method = BLUR_METHOD_KERNEL;
 	}
 

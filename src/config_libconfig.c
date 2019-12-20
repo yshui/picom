@@ -381,9 +381,24 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --unredir-if-possible-exclude
 	parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
 	                  "unredir-if-possible-exclude");
+	// --blur-method
+	if (config_lookup_string(&cfg, "blur-method", &sval)) {
+		enum blur_method method = parse_blur_method(sval);
+		if (method >= BLUR_METHOD_INVALID) {
+			log_fatal("Invalid blur method %s", sval);
+			goto err;
+		}
+		opt->blur_method = method;
+	}
+	// --blur-size
+	config_lookup_int(&cfg, "blur-size", &opt->blur_radius);
+	// --blur-deviation
+	config_lookup_float(&cfg, "blur-deviation", &opt->blur_deviation);
 	// --blur-background
 	if (config_lookup_bool(&cfg, "blur-background", &ival) && ival) {
-		opt->blur_method = BLUR_METHOD_KERNEL;
+		if (opt->blur_method == BLUR_METHOD_NONE) {
+			opt->blur_method = BLUR_METHOD_KERNEL;
+		}
 	}
 	// --blur-background-frame
 	lcfg_lookup_bool(&cfg, "blur-background-frame", &opt->blur_background_frame);
@@ -426,8 +441,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "use-damage", &opt->use_damage);
 
 	// --max-brightness
-	if (config_lookup_float(&cfg, "max-brightness", &opt->max_brightness) && opt->use_damage) {
-		log_warn("max-brightness requires use-damage = false. Falling back to 1.0");
+	if (config_lookup_float(&cfg, "max-brightness", &opt->max_brightness) &&
+	    opt->use_damage) {
+		log_warn("max-brightness requires use-damage = false. Falling back to "
+		         "1.0");
 		opt->max_brightness = 1.0;
 	}
 
@@ -479,7 +496,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 			}
 		}
 
-		opt->blur_radius = -1;
 		config_setting_lookup_int(blur_cfg, "size", &opt->blur_radius);
 
 		if (config_setting_lookup_string(blur_cfg, "kernel", &sval)) {
@@ -490,7 +506,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 			}
 		}
 
-		opt->blur_deviation = 0.84089642;
 		config_setting_lookup_float(blur_cfg, "deviation", &opt->blur_deviation);
 	}
 
