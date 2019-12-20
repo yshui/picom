@@ -32,14 +32,24 @@ struct gl_blur_context {
 	enum blur_method method;
 	gl_blur_shader_t *blur_shader;
 
-	/// Temporary textures used for blurring. They are always the same size as the
-	/// target, so they are always big enough without resizing.
-	/// Turns out calling glTexImage to resize is expensive, so we avoid that.
-	GLuint blur_texture[2];
-	/// Temporary fbo used for blurring
-	GLuint blur_fbo;
+	/// Temporary textures used for blurring
+	GLuint *blur_textures;
+	int blur_texture_count;
+	/// Temporary fbos used for blurring
+	GLuint *blur_fbos;
+	int blur_fbo_count;
 
-	int texture_width, texture_height;
+	/// Cached dimensions of each blur_texture. They are the same size as the target,
+	/// so they are always big enough without resizing.
+	/// Turns out calling glTexImage to resize is expensive, so we avoid that.
+	struct texture_size {
+		int width;
+		int height;
+	} * texture_sizes;
+
+	/// Cached dimensions of the offscreen framebuffer. It's the same size as the
+	/// target but is expanded in either direction by resize_width / resize_height.
+	int fb_width, fb_height;
 
 	/// How much do we need to resize the damaged region for blurring.
 	int resize_width, resize_height;
@@ -541,19 +551,22 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	struct gl_blur_context *bctx = ctx;
 	auto gd = (struct gl_data *)base;
 
-	if (gd->width + bctx->resize_width * 2 != bctx->texture_width ||
-	    gd->height + bctx->resize_height * 2 != bctx->texture_height) {
+	if (gd->width + bctx->resize_width * 2 != bctx->fb_width ||
+	    gd->height + bctx->resize_height * 2 != bctx->fb_height) {
 		// Resize the temporary textures used for blur in case the root
 		// size changed
-		bctx->texture_width = gd->width + bctx->resize_width * 2;
-		bctx->texture_height = gd->height + bctx->resize_height * 2;
+		bctx->fb_width = gd->width + bctx->resize_width * 2;
+		bctx->fb_height = gd->height + bctx->resize_height * 2;
 
-		glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[0]);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bctx->texture_width,
-		             bctx->texture_height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-		glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[1]);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bctx->texture_width,
-		             bctx->texture_height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		for (int i = 0; i < bctx->blur_texture_count; ++i) {
+			auto tex_size = bctx->texture_sizes + i;
+			tex_size->width = bctx->fb_width;
+			tex_size->height = bctx->fb_height;
+
+			glBindTexture(GL_TEXTURE_2D, bctx->blur_textures[i]);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tex_size->width,
+			             tex_size->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+		}
 	}
 
 	// Remainder: regions are in Xorg coordinates
@@ -563,7 +576,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	             *extent_resized = pixman_region32_extents(&reg_blur_resized);
 	int width = extent->x2 - extent->x1, height = extent->y2 - extent->y1;
 	int dst_y_resized_screen_coord = gd->height - extent_resized->y2,
-	    dst_y_resized_fb_coord = bctx->texture_height - extent_resized->y2;
+	    dst_y_resized_fb_coord = bctx->fb_height - extent_resized->y2;
 	if (width == 0 || height == 0) {
 		return true;
 	}
@@ -580,13 +593,13 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
 	x_rect_to_coords(nrects, rects, extent_resized->x1, extent_resized->y2,
-	                 bctx->texture_height, gd->height, false, coord, indices);
+	                 bctx->fb_height, gd->height, false, coord, indices);
 
 	auto coord_resized = ccalloc(nrects_resized * 16, GLint);
 	auto indices_resized = ccalloc(nrects_resized * 6, GLuint);
 	x_rect_to_coords(nrects_resized, rects_resized, extent_resized->x1,
-	                 extent_resized->y2, bctx->texture_height, bctx->texture_height,
-	                 false, coord_resized, indices_resized);
+	                 extent_resized->y2, bctx->fb_height, bctx->fb_height, false,
+	                 coord_resized, indices_resized);
 	pixman_region32_fini(&reg_blur_resized);
 
 	GLuint vao[2];
@@ -625,7 +638,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 		const gl_blur_shader_t *p = &bctx->blur_shader[i];
 		assert(p->prog);
 
-		assert(bctx->blur_texture[curr]);
+		assert(bctx->blur_textures[curr]);
 
 		// The origin to use when sampling from the source texture
 		GLint texorig_x, texorig_y;
@@ -635,15 +648,16 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 		if (i == 0) {
 			texorig_x = extent_resized->x1;
 			texorig_y = dst_y_resized_screen_coord;
+			src_texture = gd->back_texture;
 			tex_width = gd->width;
 			tex_height = gd->height;
-			src_texture = gd->back_texture;
 		} else {
 			texorig_x = 0;
 			texorig_y = 0;
-			tex_width = bctx->texture_width;
-			tex_height = bctx->texture_height;
-			src_texture = bctx->blur_texture[curr];
+			src_texture = bctx->blur_textures[curr];
+			auto src_size = bctx->texture_sizes[curr];
+			tex_width = src_size.width;
+			tex_height = src_size.height;
 		}
 
 		glBindTexture(GL_TEXTURE_2D, src_texture);
@@ -651,12 +665,15 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 		glUniform2f(p->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
 		            1.0f / (GLfloat)tex_height);
 		if (i < bctx->npasses - 1) {
+			assert(bctx->blur_fbos[0]);
+			assert(bctx->blur_textures[!curr]);
+
 			// not last pass, draw into framebuffer, with resized regions
 			glBindVertexArray(vao[1]);
-			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbo);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[0]);
 
 			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-			                       GL_TEXTURE_2D, bctx->blur_texture[!curr], 0);
+			                       GL_TEXTURE_2D, bctx->blur_textures[!curr], 0);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 				log_error("Framebuffer attachment failed.");
@@ -925,10 +942,21 @@ void gl_destroy_blur_context(backend_t *base attr_unused, void *ctx) {
 	}
 	free(bctx->blur_shader);
 
-	glDeleteTextures(bctx->npasses > 1 ? 2 : 1, bctx->blur_texture);
-	if (bctx->npasses > 1) {
-		glDeleteFramebuffers(1, &bctx->blur_fbo);
+	if (bctx->blur_texture_count && bctx->blur_textures) {
+		glDeleteTextures(bctx->blur_texture_count, bctx->blur_textures);
+		free(bctx->blur_textures);
 	}
+	if (bctx->blur_texture_count && bctx->texture_sizes) {
+		free(bctx->texture_sizes);
+	}
+	if (bctx->blur_fbo_count && bctx->blur_fbos) {
+		glDeleteFramebuffers(bctx->blur_fbo_count, bctx->blur_fbos);
+		free(bctx->blur_fbos);
+	}
+
+	bctx->blur_texture_count = 0;
+	bctx->blur_fbo_count = 0;
+
 	free(bctx);
 
 	gl_check_err();
@@ -1131,23 +1159,30 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	}
 
 	// Texture size will be defined by gl_blur
-	glGenTextures(2, ctx->blur_texture);
-	glBindTexture(GL_TEXTURE_2D, ctx->blur_texture[0]);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glBindTexture(GL_TEXTURE_2D, ctx->blur_texture[1]);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	ctx->blur_texture_count = 2;
+	ctx->blur_textures = ccalloc(ctx->blur_texture_count, GLuint);
+	ctx->texture_sizes = ccalloc(ctx->blur_texture_count, struct texture_size);
+	glGenTextures(ctx->blur_texture_count, ctx->blur_textures);
+
+	for (int i = 0; i < ctx->blur_texture_count; ++i) {
+		glBindTexture(GL_TEXTURE_2D, ctx->blur_textures[i]);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	}
+
 	// Generate FBO and textures when needed
-	glGenFramebuffers(1, &ctx->blur_fbo);
-	if (!ctx->blur_fbo) {
-		log_error("Failed to generate framebuffer object for blur");
-		success = false;
-		goto out;
+	ctx->blur_fbo_count = 1;
+	ctx->blur_fbos = ccalloc(ctx->blur_fbo_count, GLuint);
+	glGenFramebuffers(ctx->blur_fbo_count, ctx->blur_fbos);
+
+	for (int i = 0; i < ctx->blur_fbo_count; ++i) {
+		if (!ctx->blur_fbos[i]) {
+			log_error("Failed to generate framebuffer objects for blur");
+			success = false;
+			goto out;
+		}
 	}
 
 out:
