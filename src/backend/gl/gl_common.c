@@ -977,6 +977,12 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		return ctx;
 	}
 
+	if (method == BLUR_METHOD_DUAL_KAWASE) {
+		log_warn("Blur method 'dual_kawase' is not yet implemented.");
+		ctx->method = BLUR_METHOD_NONE;
+		return ctx;
+	}
+
 	int nkernels;
 	ctx->method = BLUR_METHOD_KERNEL;
 	if (method == BLUR_METHOD_KERNEL) {

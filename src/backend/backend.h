@@ -5,8 +5,8 @@
 
 #include <stdbool.h>
 
-#include "config.h"
 #include "compiler.h"
+#include "config.h"
 #include "driver.h"
 #include "kernel.h"
 #include "region.h"
@@ -63,6 +63,11 @@ struct box_blur_args {
 struct kernel_blur_args {
 	struct conv **kernels;
 	int kernel_count;
+};
+
+struct dual_kawase_blur_args {
+	int size;
+	int strength;
 };
 
 struct backend_operations {

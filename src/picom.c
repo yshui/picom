@@ -431,6 +431,7 @@ static bool initialize_blur(session_t *ps) {
 	struct kernel_blur_args kargs;
 	struct gaussian_blur_args gargs;
 	struct box_blur_args bargs;
+	struct dual_kawase_blur_args dkargs;
 
 	void *args = NULL;
 	switch (ps->o.blur_method) {
@@ -447,6 +448,11 @@ static bool initialize_blur(session_t *ps) {
 		gargs.size = ps->o.blur_radius;
 		gargs.deviation = ps->o.blur_deviation;
 		args = (void *)&gargs;
+		break;
+	case BLUR_METHOD_DUAL_KAWASE:
+		dkargs.size = ps->o.blur_radius;
+		dkargs.strength = ps->o.blur_strength;
+		args = (void *)&dkargs;
 		break;
 	default: return true;
 	}

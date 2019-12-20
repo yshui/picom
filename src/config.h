@@ -23,8 +23,8 @@
 #include "kernel.h"
 #include "log.h"
 #include "region.h"
-#include "win_defs.h"
 #include "types.h"
+#include "win_defs.h"
 
 typedef struct session session_t;
 
@@ -60,6 +60,7 @@ enum blur_method {
 	BLUR_METHOD_KERNEL,
 	BLUR_METHOD_BOX,
 	BLUR_METHOD_GAUSSIAN,
+	BLUR_METHOD_DUAL_KAWASE,
 	BLUR_METHOD_INVALID,
 };
 
@@ -189,6 +190,8 @@ typedef struct options {
 	int blur_radius;
 	// Standard deviation for the gaussian blur
 	double blur_deviation;
+	// Strength of the dual_kawase blur
+	int blur_strength;
 	/// Whether to blur background when the window frame is not opaque.
 	/// Implies blur_background.
 	bool blur_background_frame;
