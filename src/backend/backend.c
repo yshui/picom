@@ -204,16 +204,34 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			// itself is not opaque, only the frame is.
 
 			double blur_opacity = 1;
-			if (w->state == WSTATE_MAPPING) {
+			if (w->opacity < (1.0 / MAX_ALPHA)) {
+				// Hide blur for fully transparent windows.
+				blur_opacity = 0;
+			} else if (w->state == WSTATE_MAPPING) {
 				// Gradually increase the blur intensity during
 				// fading in.
+				assert(w->opacity <= w->opacity_target);
 				blur_opacity = w->opacity / w->opacity_target;
 			} else if (w->state == WSTATE_UNMAPPING ||
 			           w->state == WSTATE_DESTROYING) {
 				// Gradually decrease the blur intensity during
 				// fading out.
-				blur_opacity =
-				    w->opacity / win_calc_opacity_target(ps, w, true);
+				assert(w->opacity <= w->opacity_target_old);
+				blur_opacity = w->opacity / w->opacity_target_old;
+			} else if (w->state == WSTATE_FADING) {
+				if (w->opacity < w->opacity_target &&
+				    w->opacity_target_old < (1.0 / MAX_ALPHA)) {
+					// Gradually increase the blur intensity during
+					// fading in.
+					assert(w->opacity <= w->opacity_target);
+					blur_opacity = w->opacity / w->opacity_target;
+				} else if (w->opacity > w->opacity_target &&
+				           w->opacity_target < (1.0 / MAX_ALPHA)) {
+					// Gradually decrease the blur intensity during
+					// fading out.
+					assert(w->opacity <= w->opacity_target_old);
+					blur_opacity = w->opacity / w->opacity_target_old;
+				}
 			}
 			assert(blur_opacity >= 0 && blur_opacity <= 1);
 

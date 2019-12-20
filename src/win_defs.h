@@ -40,8 +40,8 @@ typedef enum {
 /// |  DESTROYING |    -    |    o     |   -   |  -    |   -    |  -     | Fading  |
 /// |             |         |          |       |       |        |        |finished |
 /// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |   MAPPING   | Window  |  Window  |   o   |  -    |   -    | Fading |    -    |
-/// |             |unmapped |destroyed |       |       |        |finished|         |
+/// |   MAPPING   | Window  |  Window  |   o   |Opacity|   -    | Fading |    -    |
+/// |             |unmapped |destroyed |       |change |        |finished|         |
 /// +-------------+---------+----------+-------+-------+--------+--------+---------+
 /// |    FADING   | Window  |  Window  |   -   |  o    |   -    | Fading |    -    |
 /// |             |unmapped |destroyed |       |       |        |finished|         |

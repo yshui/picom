@@ -912,18 +912,7 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 		w->unredir_if_possible_excluded =
 		    c2_match(ps, w, ps->o.unredir_if_possible_blacklist, NULL);
 
-	auto opacity_target_old = w->opacity_target;
-	w->opacity_target = win_calc_opacity_target(ps, w, false);
-	if (opacity_target_old != w->opacity_target && w->state == WSTATE_MAPPED) {
-		// Only MAPPED can transition to FADING
-		assert(w->opacity == opacity_target_old);
-		w->state = WSTATE_FADING;
-		log_debug("Window %#010x (%s) opactiy %f, opacity target %f", w->base.id,
-		          w->name, w->opacity, w->opacity_target);
-		if (!ps->redirected) {
-			CHECK(!win_skip_fading(ps, w));
-		}
-	}
+	win_update_opacity_target(ps, w);
 
 	w->reg_ignore_valid = false;
 }
@@ -1939,6 +1928,7 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->state = WSTATE_UNMAPPING;
+	w->opacity_target_old = fmax(w->opacity_target, w->opacity_target_old);
 	w->opacity_target = win_calc_opacity_target(ps, w, false);
 
 	// Clear PIXMAP_STALE flag, since the window is unmapped there is no pixmap
@@ -2123,6 +2113,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	// XXX We need to make sure that win_data is available
 	// iff `state` is MAPPED
 	w->state = WSTATE_MAPPING;
+	w->opacity_target_old = 0;
 	w->opacity_target = win_calc_opacity_target(ps, w, false);
 
 	log_debug("Window %#010x has opacity %f, opacity target is %f", w->base.id,
@@ -2152,6 +2143,60 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 		cdbus_ev_win_mapped(ps, &w->base);
 	}
 #endif
+
+	if (!ps->redirected) {
+		CHECK(!win_skip_fading(ps, w));
+	}
+}
+
+/**
+ * Update target window opacity depending on the current state.
+ */
+void win_update_opacity_target(session_t *ps, struct managed_win *w) {
+	auto opacity_target_old = w->opacity_target;
+	w->opacity_target = win_calc_opacity_target(ps, w, false);
+
+	if (opacity_target_old == w->opacity_target) {
+		return;
+	}
+
+	if (w->state == WSTATE_MAPPED) {
+		// Opacity target changed while MAPPED. Transition to FADING.
+		assert(w->opacity == opacity_target_old);
+		w->opacity_target_old = opacity_target_old;
+		w->state = WSTATE_FADING;
+		log_debug("Window %#010x (%s) opacity %f, opacity target %f, set "
+		          "old target %f",
+		          w->base.id, w->name, w->opacity, w->opacity_target,
+		          w->opacity_target_old);
+	} else if (w->state == WSTATE_MAPPING) {
+		// Opacity target changed while fading in.
+		if (w->opacity >= w->opacity_target) {
+			// Already reached new target opacity. Transition to
+			// FADING.
+			map_win_finish(w);
+			w->opacity_target_old = fmax(opacity_target_old, w->opacity);
+			w->state = WSTATE_FADING;
+			log_debug("Window %#010x (%s) opacity %f already reached "
+			          "new opacity target %f while mapping, set old "
+			          "target %f",
+			          w->base.id, w->name, w->opacity, w->opacity_target,
+			          w->opacity_target_old);
+		}
+	} else if (w->state == WSTATE_FADING) {
+		// Opacity target changed while FADING.
+		if ((w->opacity < opacity_target_old && w->opacity > w->opacity_target) ||
+		    (w->opacity > opacity_target_old && w->opacity < w->opacity_target)) {
+			// Changed while fading in and will fade out or while
+			// fading out and will fade in.
+			w->opacity_target_old = opacity_target_old;
+			log_debug("Window %#010x (%s) opacity %f already reached "
+			          "new opacity target %f while fading, set "
+			          "old target %f",
+			          w->base.id, w->name, w->opacity, w->opacity_target,
+			          w->opacity_target_old);
+		}
+	}
 
 	if (!ps->redirected) {
 		CHECK(!win_skip_fading(ps, w));

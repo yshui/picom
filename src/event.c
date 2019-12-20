@@ -482,14 +482,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			win_update_opacity_prop(ps, w);
 			// we cannot receive OPACITY change when window is destroyed
 			assert(w->state != WSTATE_DESTROYING);
-			w->opacity_target = win_calc_opacity_target(ps, w, false);
-			if (w->state == WSTATE_MAPPED) {
-				// See the winstate_t transition table
-				w->state = WSTATE_FADING;
-			}
-			if (!ps->redirected) {
-				CHECK(!win_skip_fading(ps, w));
-			}
+			win_update_opacity_target(ps, w);
 		}
 	}
 

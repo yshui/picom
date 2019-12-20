@@ -192,6 +192,8 @@ struct managed_win {
 	double opacity;
 	/// Target window opacity.
 	double opacity_target;
+	/// Previous window opacity.
+	double opacity_target_old;
 	/// true if window (or client window, for broken window managers
 	/// not transferring client window's _NET_WM_OPACITY value) has opacity prop
 	bool has_opacity_prop;
@@ -287,6 +289,7 @@ void win_set_focused(session_t *ps, struct managed_win *w);
 bool attr_pure win_should_fade(session_t *ps, const struct managed_win *w);
 void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w);
 void win_update_prop_shadow(session_t *ps, struct managed_win *w);
+void win_update_opacity_target(session_t *ps, struct managed_win *w);
 void win_on_factor_change(session_t *ps, struct managed_win *w);
 /**
  * Update cache data in struct _win that depends on window size.
