@@ -94,7 +94,11 @@
 # define unreachable do {} while(0)
 #endif
 
-#ifndef __STDC_NO_THREADS__
+#ifndef __has_include
+# define __has_include(x) 0
+#endif
+
+#if !defined(__STDC_NO_THREADS__) && __has_include(<threads.h>)
 # include <threads.h>
 #elif __STDC_VERSION__ >= 201112L
 # define thread_local _Thread_local
