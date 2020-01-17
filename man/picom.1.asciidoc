@@ -1,5 +1,5 @@
 picom(1)
-==========
+========
 :doctype:     manpage
 :man source:  picom
 :man version: {picom-version}
@@ -98,7 +98,7 @@ OPTIONS
 	Blue color value of shadow (0.0 - 1.0, defaults to 0).
 
 *--inactive-opacity-override*::
-	Let inactive opacity set by *-i* overrides the windows' '_NET_WM_OPACITY' values.
+	Let inactive opacity set by *-i* override the '_NET_WM_OPACITY' values of windows.
 
 *--active-opacity* 'OPACITY'::
 	Default opacity for active windows. (0.0 - 1.0, defaults to 1.0)
@@ -107,10 +107,10 @@ OPTIONS
 	Dim inactive windows. (0.0 - 1.0, defaults to 0.0)
 
 *--mark-wmwin-focused*::
-	Try to detect WM windows (a non-override-redirect window with no child that has `WM_STATE`) and mark them as active.
+	Try to detect WM windows (a non-override-redirect window with no child that has 'WM_STATE') and mark them as active.
 
 *--mark-ovredir-focused*::
-	Mark override-redirect windows that doesn't have a child window with `WM_STATE` focused.
+	Mark override-redirect windows that doesn't have a child window with 'WM_STATE' focused.
 
 *--no-fading-openclose*::
 	Do not fade on window open/close.
@@ -189,7 +189,7 @@ In other words, the matrix is formatted as a list of comma separated numbers. Th
 +
 The elements are finite floating point numbers. The decimal pointer has to be '.' (a period), scientific notation is not supported.
 +
-The element in the center will either be 1.0 or varying based on opacity, depending on whether you have `--blur-background-fixed`. Yet the automatic adjustment of blur factor may not work well with a custom blur kernel.
+The element in the center will either be 1.0 or varying based on opacity, depending on whether you have *--blur-background-fixed*. Yet the automatic adjustment of blur factor may not work well with a custom blur kernel.
 +
 A 7x7 Gaussian blur kernel (sigma = 0.84089642) looks like:
 +
@@ -203,7 +203,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Exclude conditions for background blur.
 
 *--resize-damage* 'INTEGER'::
-	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--use-damage*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use *--resize-damage* 1, with a 5x5 one you use *--resize-damage* 2, and so on). May or may not work with `--glx-no-stencil`. Shrinking doesn't function correctly.
+	Resize damaged region by a specific number of pixels. A positive value enlarges it while a negative one shrinks it. If the value is positive, those additional pixels will not be actually painted to screen, only used in blur calculation, and such. (Due to technical limitations, with *--use-damage*, those pixels will still be incorrectly painted to screen.) Primarily used to fix the line corruption issues of blur, in which case you should use the blur radius value here (e.g. with a 3x3 kernel, you should use `--resize-damage 1`, with a 5x5 one you use `--resize-damage 2`, and so on). May or may not work with *--glx-no-stencil*. Shrinking doesn't function correctly.
 
 *--invert-color-include* 'CONDITION'::
 	Specify a list of conditions of windows that should be painted with inverted color. Resource-hogging, and is not well tested.
@@ -222,8 +222,8 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 +
 --
 * `xrender` backend performs all rendering operations with X Render extension. It is what `xcompmgr` uses, and is generally a safe fallback when you encounter rendering artifacts or instability.
-* `glx` (OpenGL) backend performs all rendering operations with OpenGL. It is more friendly to some VSync methods, and has significantly superior performance on color inversion (`--invert-color-include`) or blur (`--blur-background`). It requires proper OpenGL 2.0 support from your driver and hardware. You may wish to look at the GLX performance optimization options below. `--xrender-sync-fence` might be needed on some systems to avoid delay in changes of screen contents.
-* `xr_glx_hybrid` backend renders the updated screen contents with X Render and presents it on the screen with GLX. It attempts to address the rendering issues some users encountered with GLX backend and enables the better VSync of GLX backends. `--vsync-use-glfinish` might fix some rendering issues with this backend.
+* `glx` (OpenGL) backend performs all rendering operations with OpenGL. It is more friendly to some VSync methods, and has significantly superior performance on color inversion (*--invert-color-include*) or blur (*--blur-background*). It requires proper OpenGL 2.0 support from your driver and hardware. You may wish to look at the GLX performance optimization options below. *--xrender-sync-fence* might be needed on some systems to avoid delay in changes of screen contents.
+* `xr_glx_hybrid` backend renders the updated screen contents with X Render and presents it on the screen with GLX. It attempts to address the rendering issues some users encountered with GLX backend and enables the better VSync of GLX backends. *--vsync-use-glfinish* might fix some rendering issues with this backend.
 --
 
 *--glx-no-stencil*::
@@ -396,18 +396,18 @@ blur:
 Available options of the 'blur' section are: ::
 
   *method*:::
-    A string. Controls the blur method. Corresponds to the `--blur-method` command line option. Available choices are:
+    A string. Controls the blur method. Corresponds to the *--blur-method* command line option. Available choices are:
       'none' to disable blurring; 'gaussian' for gaussian blur; 'box' for box blur; 'kernel' for convolution blur with a custom kernel.
     Note: 'gaussian' and 'box' blur methods are only supported by the experimental backends.
 
   *size*:::
-    An integer. The size of the blur kernel, required by 'gaussian' and 'box' blur methods. For the 'kernel' method, the size is included in the kernel. Corresponds to the `--blur-size` command line option.
+    An integer. The size of the blur kernel, required by 'gaussian' and 'box' blur methods. For the 'kernel' method, the size is included in the kernel. Corresponds to the *--blur-size* command line option.
 
   *deviation*:::
-    A floating point number. The standard deviation for the 'gaussian' blur method. Corresponds to the `--blur-deviation` command line option.
+    A floating point number. The standard deviation for the 'gaussian' blur method. Corresponds to the *--blur-deviation* command line option.
 
   *kernel*:::
-    A string. The kernel to use for the 'kernel' blur method, specified in the same format as the `--blur-kerns` option. Corresponds to the `--blur-kerns` command line option.
+    A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kerns* option. Corresponds to the *--blur-kerns* command line option.
 
 SIGNALS
 -------
