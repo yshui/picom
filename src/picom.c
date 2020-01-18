@@ -81,12 +81,14 @@ const char *const WINTYPES[NUM_WINTYPES] = {
     "popup_menu", "tooltip", "notify", "combo",   "dnd",
 };
 
+// clang-format off
 /// Names of backends.
 const char *const BACKEND_STRS[] = {[BKEND_XRENDER] = "xrender",
                                     [BKEND_GLX] = "glx",
                                     [BKEND_XR_GLX_HYBRID] = "xr_glx_hybrid",
                                     [BKEND_DUMMY] = "dummy",
                                     NULL};
+// clang-format on
 
 // === Global variables ===
 
@@ -580,6 +582,17 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			    win_is_fullscreen(ps, w) && !w->unredir_if_possible_excluded) {
 				unredir_possible = true;
 			}
+		}
+
+		// Unredirect screen if some window is requesting compositor bypass, even
+		// if that window is not on the top.
+		if (ps->o.unredir_if_possible && win_is_bypassing_compositor(ps, w) &&
+		    !w->unredir_if_possible_excluded) {
+			// Here we deviate from EWMH a bit. EWMH says we must not
+			// unredirect the screen if the window requesting bypassing would
+			// look different after unredirecting. Instead we always follow
+			// the request.
+			unredir_possible = true;
 		}
 
 		w->prev_trans = bottom;

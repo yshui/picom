@@ -331,6 +331,10 @@ void win_update_leader(session_t *ps, struct managed_win *w);
 // XXX was win_border_size
 void win_update_bounding_shape(session_t *ps, struct managed_win *w);
 /**
+ * Check if a window has BYPASS_COMPOSITOR property set
+ */
+bool win_is_bypassing_compositor(const session_t *ps, const struct managed_win *w);
+/**
  * Get a rectangular region in global coordinates a window (and possibly
  * its shadow) occupies.
  *

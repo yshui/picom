@@ -6,6 +6,7 @@
 #include "meta.h"
 #include "cache.h"
 
+// clang-format off
 // Splitted into 2 lists because of the limitation of our macros
 #define ATOM_LIST \
 	_NET_WM_WINDOW_OPACITY, \
@@ -36,7 +37,9 @@
 	_NET_WM_WINDOW_TYPE_COMBO, \
 	_NET_WM_WINDOW_TYPE_DND, \
 	_NET_WM_STATE, \
-	_NET_WM_STATE_FULLSCREEN
+	_NET_WM_STATE_FULLSCREEN, \
+	_NET_WM_BYPASS_COMPOSITOR
+// clang-format on
 
 #define ATOM_DEF(x) xcb_atom_t a##x
 

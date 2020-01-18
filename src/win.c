@@ -2251,6 +2251,8 @@ static inline bool rect_is_fullscreen(const session_t *ps, int x, int y, int wid
 
 /**
  * Check if a window is fulscreen using EWMH
+ *
+ * TODO cache this property
  */
 static inline bool
 win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_window_t w) {
@@ -2310,6 +2312,25 @@ bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
 		return true;
 	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
 	       (!w->bounding_shaped || w->rounded_corners);
+}
+
+/**
+ * Check if a window has BYPASS_COMPOSITOR property set
+ *
+ * TODO cache this property
+ */
+bool win_is_bypassing_compositor(const session_t *ps, const struct managed_win *w) {
+	bool ret = false;
+
+	auto prop = x_get_prop(ps, w->client_win, ps->atoms->a_NET_WM_BYPASS_COMPOSITOR,
+	                       1L, XCB_ATOM_CARDINAL, 32);
+
+	if (prop.nitems && *prop.c32 == 1) {
+		ret = true;
+	}
+
+	free_winprop(&prop);
+	return ret;
 }
 
 /**
