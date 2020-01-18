@@ -12,8 +12,8 @@
 
 #include "compiler.h"
 #include "kernel.h"
-#include "region.h"
 #include "log.h"
+#include "region.h"
 
 typedef struct session session_t;
 
@@ -78,8 +78,8 @@ static inline uint32_t x_new_id(xcb_connection_t *c) {
 	auto ret = xcb_generate_id(c);
 	if (ret == (uint32_t)-1) {
 		log_fatal("We seems to have run of XIDs. This is either a bug in the X "
-		          "server, or a resource leakage in the compositor. Please open an "
-		          "issue about this problem. The compositor will die.");
+		          "server, or a resource leakage in the compositor. Please open "
+		          "an issue about this problem. The compositor will die.");
 		abort();
 	}
 	return ret;
@@ -111,15 +111,15 @@ static inline void x_sync(xcb_connection_t *c) {
  * @return a <code>winprop_t</code> structure containing the attribute
  *    and number of items. A blank one on failure.
  */
-winprop_t wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
-                           int offset, int length, xcb_atom_t rtype, int rformat);
+winprop_t x_get_prop_with_offset(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
+                                 int offset, int length, xcb_atom_t rtype, int rformat);
 
 /**
  * Wrapper of wid_get_prop_adv().
  */
-static inline winprop_t wid_get_prop(const session_t *ps, xcb_window_t wid, xcb_atom_t atom,
-                                     int length, xcb_atom_t rtype, int rformat) {
-	return wid_get_prop_adv(ps, wid, atom, 0L, length, rtype, rformat);
+static inline winprop_t x_get_prop(const session_t *ps, xcb_window_t wid, xcb_atom_t atom,
+                                   int length, xcb_atom_t rtype, int rformat) {
+	return x_get_prop_with_offset(ps, wid, atom, 0L, length, rtype, rformat);
 }
 
 /// Discard all X events in queue or in flight. Should only be used when the server is

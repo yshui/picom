@@ -40,8 +40,8 @@
  * @return a <code>winprop_t</code> structure containing the attribute
  *    and number of items. A blank one on failure.
  */
-winprop_t wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
-                           int offset, int length, xcb_atom_t rtype, int rformat) {
+winprop_t x_get_prop_with_offset(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
+                                 int offset, int length, xcb_atom_t rtype, int rformat) {
 	xcb_get_property_reply_t *r = xcb_get_property_reply(
 	    ps->c,
 	    xcb_get_property(ps->c, 0, w, atom, rtype, to_u32_checked(offset),
@@ -75,7 +75,7 @@ winprop_t wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
 xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t aprop) {
 	// Get the attribute
 	xcb_window_t p = XCB_NONE;
-	winprop_t prop = wid_get_prop(ps, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
+	winprop_t prop = x_get_prop(ps, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
 
 	// Return it
 	if (prop.nitems) {
@@ -460,8 +460,7 @@ xcb_pixmap_t x_get_root_back_pixmap(session_t *ps) {
 	// Get the values of background attributes
 	for (int p = 0; background_props_str[p]; p++) {
 		xcb_atom_t prop_atom = get_atom(ps->atoms, background_props_str[p]);
-		winprop_t prop =
-		    wid_get_prop(ps, ps->root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
+		winprop_t prop = x_get_prop(ps, ps->root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
 			pixmap = (xcb_pixmap_t)*prop.p32;
 			free_winprop(&prop);

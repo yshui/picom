@@ -32,6 +32,7 @@
 #include <X11/Xlib.h>
 #include <xcb/xcb.h>
 
+#include "atom.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
@@ -40,7 +41,6 @@
 #include "utils.h"
 #include "win.h"
 #include "x.h"
-#include "atom.h"
 
 #include "c2.h"
 
@@ -1343,8 +1343,8 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 		// A raw window property
 		else {
 			winprop_t prop =
-			    wid_get_prop_adv(ps, wid, pleaf->tgtatom, idx, 1L,
-			                     c2_get_atom_type(pleaf), pleaf->format);
+			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, 1L,
+			                           c2_get_atom_type(pleaf), pleaf->format);
 			if (prop.nitems) {
 				*perr = false;
 				tgt = winprop_get_int(prop);
@@ -1389,8 +1389,8 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 		} else if (pleaf->type == C2_L_TATOM) {
 			// An atom type property, convert it to string
 			winprop_t prop =
-			    wid_get_prop_adv(ps, wid, pleaf->tgtatom, idx, 1L,
-			                     c2_get_atom_type(pleaf), pleaf->format);
+			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, 1L,
+			                           c2_get_atom_type(pleaf), pleaf->format);
 			xcb_atom_t atom = (xcb_atom_t)winprop_get_int(prop);
 			if (atom) {
 				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
@@ -1562,7 +1562,8 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
  * @param pdata a place to return the data
  * @return true if matched, false otherwise.
  */
-bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condlst, void **pdata) {
+bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condlst,
+              void **pdata) {
 	// Then go through the whole linked list
 	for (; condlst; condlst = condlst->next) {
 		if (c2_match_once(ps, w, condlst->ptr)) {
