@@ -20,10 +20,10 @@
 #include "c2.h"
 #include "common.h"
 #include "compiler.h"
-#include "picom.h"
 #include "config.h"
 #include "list.h"
 #include "log.h"
+#include "picom.h"
 #include "region.h"
 #include "render.h"
 #include "string_utils.h"
@@ -302,8 +302,11 @@ bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color
 	w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, kernel, c.red,
 	                                        c.green, c.blue, c.alpha);
 	if (!w->shadow_image) {
-		log_error("Failed to bind shadow image");
-		w->flags |= WIN_FLAGS_IMAGE_ERROR;
+		log_error("Failed to bind shadow image, shadow will be disabled for "
+		          "%#010x (%s)",
+		          w->base.id, w->name);
+		w->flags |= WIN_FLAGS_SHADOW_NONE;
+		w->shadow = false;
 		return false;
 	}
 
@@ -1182,7 +1185,8 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
 	    .reg_ignore_valid = false,        // set to true when damaged
-	    .flags = WIN_FLAGS_IMAGES_NONE,   // updated by property/attributes/etc change
+	    .flags = WIN_FLAGS_IMAGES_NONE,        // updated by property/attributes/etc
+	                                           // change
 
 	    // Runtime variables, updated by dbus
 	    .fade_force = UNSET,

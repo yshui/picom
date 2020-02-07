@@ -298,8 +298,10 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 	             shadow = XCB_NONE;
 	xcb_render_picture_t pict = XCB_NONE;
 
-	build_shadow(backend_data->c, backend_data->root, a, width, height, kernel,
-	             shadow_pixel, &shadow, &pict);
+	if (!build_shadow(backend_data->c, backend_data->root, a, width, height, kernel,
+	                  shadow_pixel, &shadow, &pict)) {
+		return NULL;
+	}
 
 	auto visual = x_get_visual_for_standard(backend_data->c, XCB_PICT_STANDARD_ARGB_32);
 	void *ret = backend_data->ops->bind_pixmap(
