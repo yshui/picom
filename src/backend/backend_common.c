@@ -247,7 +247,7 @@ bool build_shadow(xcb_connection_t *c, xcb_drawable_t d, double opacity, const i
 		}
 
 		uint32_t offset = row * shadow_image->stride / sizeof(*shadow_image->data);
-		xcb_put_image(c, shadow_image->format, shadow_pixmap, gc,
+		xcb_put_image(c, (uint8_t)shadow_image->format, shadow_pixmap, gc,
 		              shadow_image->width, batch_height, 0, to_i16_checked(row),
 		              0, shadow_image->depth, shadow_image->stride * batch_height,
 		              shadow_image->data + offset);
