@@ -599,12 +599,14 @@ winmode_t win_calc_mode(const struct managed_win *w) {
 double win_calc_opacity_target(session_t *ps, const struct managed_win *w, bool ignore_state) {
 	double opacity = 1;
 
-	if (w->state == WSTATE_UNMAPPED && !ignore_state) {
-		// be consistent
-		return 0;
-	}
-	if ((w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING) && !ignore_state) {
-		return 0;
+	if (!ignore_state) {
+		if (w->state == WSTATE_UNMAPPED) {
+			// be consistent
+			return 0;
+		}
+		if (w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING) {
+			return 0;
+		}
 	}
 	// Try obeying opacity property and window type opacity firstly
 	if (w->has_opacity_prop) {
@@ -626,6 +628,8 @@ double win_calc_opacity_target(session_t *ps, const struct managed_win *w, bool 
 	if (ps->o.inactive_opacity_override && !w->focused) {
 		opacity = ps->o.inactive_opacity;
 	}
+
+	pedantic_assert(opacity >= 0 && opacity <= 1);
 
 	return opacity;
 }

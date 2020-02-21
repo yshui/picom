@@ -204,14 +204,16 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			if (w->state == WSTATE_MAPPING) {
 				// Gradually increase the blur intensity during
 				// fading in.
-				blur_opacity = w->opacity / w->opacity_target;
+				blur_opacity = w->opacity * w->opacity_target;
 			} else if (w->state == WSTATE_UNMAPPING ||
 			           w->state == WSTATE_DESTROYING) {
 				// Gradually decrease the blur intensity during
 				// fading out.
 				blur_opacity =
-				    w->opacity / win_calc_opacity_target(ps, w, true);
+				    w->opacity * win_calc_opacity_target(ps, w, true);
 			}
+
+			pedantic_assert(blur_opacity >= 0 && blur_opacity <= 1);
 
 			if (real_win_mode == WMODE_TRANS || ps->o.force_win_blend) {
 				// We need to blur the bounding shape of the window

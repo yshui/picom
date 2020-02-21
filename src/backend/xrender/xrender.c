@@ -132,6 +132,8 @@ static void fill(backend_t *base, struct color c, const region_t *clip) {
 static bool blur(backend_t *backend_data, double opacity, void *ctx_,
                  const region_t *reg_blur, const region_t *reg_visible) {
 	struct _xrender_blur_context *bctx = ctx_;
+	assert(opacity >= 0.0 && opacity <= 1.0);
+
 	if (bctx->method == BLUR_METHOD_NONE) {
 		return true;
 	}

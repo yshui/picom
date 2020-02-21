@@ -76,6 +76,12 @@ safe_isnan(double a) {
 		_Pragma("GCC diagnostic pop");                                           \
 	} while (0)
 
+// For assertions that have been checked (Either by another assert somewhere
+// else in the code path or manually, or both) and should never fail currently
+// but that should still be checked for when people modify the code
+// Also useful for documenting intent
+#define pedantic_assert(expr) assert(expr)
+
 // Some macros for checked cast
 // Note these macros are not complete, as in, they won't work for every integer types. But
 // they are good enough for our use cases.

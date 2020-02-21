@@ -19,7 +19,7 @@ double sum_kernel(const conv *map, int x, int y, int width, int height) {
 	    xend = normalize_i_range(width + x, 0, map->w);
 	int ystart = normalize_i_range(y, 0, map->h),
 	    yend = normalize_i_range(height + y, 0, map->h);
-	assert(yend >= ystart && xend >= xstart);
+	pedantic_assert(yend >= ystart && xend >= xstart);
 
 	int d = map->w;
 	if (map->rsum) {
