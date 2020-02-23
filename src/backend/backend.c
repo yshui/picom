@@ -204,17 +204,20 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			if (w->state == WSTATE_MAPPING) {
 				// Gradually increase the blur intensity during
 				// fading in.
-				assert(w->opacity <= w->opacity_target);
-
-				blur_opacity = w->opacity / w->opacity_target;
+				if (w->opacity >= w->opacity_target) {
+					// Someone else beat us to it.
+					// Just change the opacity to what they want.
+					blur_opacity = w->opacity_target;
+				} else {
+					blur_opacity = w->opacity / w->opacity_target;
+				}
 			} else if (w->state == WSTATE_UNMAPPING ||
 			           w->state == WSTATE_DESTROYING) {
 				// Gradually decrease the blur intensity during
 				// fading out.
-				assert(w->opacity <= win_calc_opacity_target(ps, w, true));
-
-				blur_opacity =
-				    w->opacity / win_calc_opacity_target(ps, w, true);
+				double target_opacity = win_calc_opacity_target(ps, w,
+						true);
+				blur_opacity = w->opacity / target_opacity;
 			}
 
 			pedantic_assert(blur_opacity >= 0 && blur_opacity <= 1);
