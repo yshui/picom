@@ -38,8 +38,8 @@ endif
 deps = []
 
 if get_option('config_file')
-	deps += [dependency('libconfig', version: '>=1.4', required: true),
-	         dependency('libxdg-basedir', required: true)]
+	deps += [dependency('libconfig', version: '>=1.4', required: true)]
+
 	cflags += ['-DCONFIG_LIBCONFIG']
 	srcs += [ 'config_libconfig.c' ]
 endif

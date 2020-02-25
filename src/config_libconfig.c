@@ -6,7 +6,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <basedir_fs.h>
 #include <libconfig.h>
 #include <libgen.h>
 
@@ -35,6 +34,46 @@ static inline int lcfg_lookup_bool(const config_t *config, const char *path, boo
 		*value = ival;
 
 	return ret;
+}
+
+const char *xdgConfigHome(void) {
+	char *xdgh = getenv("XDG_CONFIG_HOME");
+	char *home = getenv("HOME");
+
+	if (!xdgh) {
+		if (!home) return NULL;
+
+		xdgh = cvalloc(strlen(home) + 8 + 1);
+
+		strcpy(xdgh, home);
+		strcat(xdgh, "/.config");
+	}
+
+	return xdgh;
+}
+
+const char * const * xdgConfigDirectories(void) {
+	char *dirs, *path, *xdgd = getenv("XDG_CONFIG_DIRS");
+	char **dir_list = {0};
+	unsigned int sep = 0;
+
+	if (!xdgd) xdgd = ":/etc/xdg:";
+
+	dirs = strdup(xdgd);
+	CHECK(dirs != NULL);
+	path = strtok(dirs, ":");
+
+	while (path) {
+		dir_list = realloc(dir_list, sizeof(char*) * ++sep);
+
+		CHECK(dir_list);
+
+		dir_list[sep-1] = path;
+
+		path = strtok(NULL, ":");
+	}
+
+	return (const char * const *)dir_list;
 }
 
 /// Search for config file under a base directory
@@ -78,7 +117,7 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 	}
 
 	// First search for config file in user config directory
-	auto config_home = xdgConfigHome(NULL);
+	auto config_home = xdgConfigHome();
 	auto ret = open_config_file_at(config_home, ppath);
 	free((void *)config_home);
 	if (ret) {
@@ -101,7 +140,7 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 	}
 
 	// Fall back to config file in system config directory
-	auto config_dirs = xdgConfigDirectories(NULL);
+	auto config_dirs = xdgConfigDirectories();
 	for (int i = 0; config_dirs[i]; i++) {
 		ret = open_config_file_at(config_dirs[i], ppath);
 		if (ret) {
