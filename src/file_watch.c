@@ -126,6 +126,18 @@ bool file_watch_add(void *_fwr, const char *filename, file_watch_cb_t cb, void *
 	log_debug("Adding \"%s\" to watched files", filename);
 	auto fwr = (struct file_watch_registry *)_fwr;
 	int wd = -1;
+
+	struct stat statbuf;
+	int ret = stat(filename, &statbuf);
+	if (ret < 0) {
+		log_error_errno("Failed to retrieve information about file \"%s\"", filename);
+		return false;
+	}
+	if (!S_ISREG(statbuf.st_mode)) {
+		log_info("\"%s\" is not a regular file, not watching it.", filename);
+		return false;
+	}
+
 #ifdef HAS_INOTIFY
 	wd = inotify_add_watch(fwr->w.fd, filename,
 	                       IN_CLOSE_WRITE | IN_MOVE_SELF | IN_DELETE_SELF);
