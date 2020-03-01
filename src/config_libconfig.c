@@ -36,7 +36,7 @@ static inline int lcfg_lookup_bool(const config_t *config, const char *path, boo
 	return ret;
 }
 
-const char *xdgConfigHome(void) {
+const char *xdg_config_home(void) {
 	char *xdgh = getenv("XDG_CONFIG_HOME");
 	char *home = getenv("HOME");
 
@@ -52,7 +52,7 @@ const char *xdgConfigHome(void) {
 	return xdgh;
 }
 
-char **xdgConfigDirectories(void) {
+char **xdg_config_dirs(void) {
 	char *xdgd = getenv("XDG_CONFIG_DIRS");
 	size_t count = 0;
 
@@ -100,20 +100,20 @@ TEST_CASE(xdg_config_dirs) {
 	}
 	unsetenv("XDG_CONFIG_DIRS");
 
-	auto result = xdgConfigDirectories();
+	auto result = xdg_config_dirs();
 	TEST_STREQUAL(result[0], "/etc/xdg");
 	TEST_EQUAL(result[1], NULL);
 	free(result);
 
 	setenv("XDG_CONFIG_DIRS", ".:.:/etc/xdg:.:/:", 1);
-	result = xdgConfigDirectories();
+	result = xdg_config_dirs();
 	TEST_STREQUAL(result[0], "/etc/xdg");
 	TEST_STREQUAL(result[1], "/");
 	TEST_EQUAL(result[2], NULL);
 	free(result);
 
 	setenv("XDG_CONFIG_DIRS", ":", 1);
-	result = xdgConfigDirectories();
+	result = xdg_config_dirs();
 	TEST_EQUAL(result[0], NULL);
 	free(result);
 
@@ -164,7 +164,7 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 	}
 
 	// First search for config file in user config directory
-	auto config_home = xdgConfigHome();
+	auto config_home = xdg_config_home();
 	auto ret = open_config_file_at(config_home, ppath);
 	free((void *)config_home);
 	if (ret) {
@@ -187,7 +187,7 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 	}
 
 	// Fall back to config file in system config directory
-	auto config_dirs = xdgConfigDirectories();
+	auto config_dirs = xdg_config_dirs();
 	for (int i = 0; config_dirs[i]; i++) {
 		ret = open_config_file_at(config_dirs[i], ppath);
 		if (ret) {
