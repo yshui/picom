@@ -66,7 +66,7 @@ const char * const * xdgConfigDirectories(void) {
 		}
 	}
 
-	// Store the string and the result pointers together so it can be
+	// Store the string and the result pointers together so they can be
 	// freed together
 	char **dir_list = cvalloc(sizeof(char *) * (count + 2) + strlen(xdgd) + 1);
 	auto dirs = strcpy((char *)dir_list + sizeof(char *) * (count + 2), xdgd);
@@ -79,7 +79,16 @@ const char * const * xdgConfigDirectories(void) {
 		path++;
 	}
 	dir_list[count] = path;
-	dir_list[count + 1] = NULL;
+
+	size_t fill = 0;
+	for (size_t i = 0; i <= count; i++) {
+		if (dir_list[i][0] == '/') {
+			dir_list[fill] = dir_list[i];
+			fill++;
+		}
+	}
+
+	dir_list[fill] = NULL;
 
 	return (const char * const *)dir_list;
 }
