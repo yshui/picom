@@ -52,7 +52,7 @@ const char *xdgConfigHome(void) {
 	return xdgh;
 }
 
-const char * const * xdgConfigDirectories(void) {
+char **xdgConfigDirectories(void) {
 	char *xdgd = getenv("XDG_CONFIG_DIRS");
 	size_t count = 0;
 
@@ -90,7 +90,37 @@ const char * const * xdgConfigDirectories(void) {
 
 	dir_list[fill] = NULL;
 
-	return (const char * const *)dir_list;
+	return dir_list;
+}
+
+TEST_CASE(xdg_config_dirs) {
+	auto old_var = getenv("XDG_CONFIG_DIRS");
+	if (old_var) {
+		old_var = strdup(old_var);
+	}
+	unsetenv("XDG_CONFIG_DIRS");
+
+	auto result = xdgConfigDirectories();
+	TEST_STREQUAL(result[0], "/etc/xdg");
+	TEST_EQUAL(result[1], NULL);
+	free(result);
+
+	setenv("XDG_CONFIG_DIRS", ".:.:/etc/xdg:.:/:", 1);
+	result = xdgConfigDirectories();
+	TEST_STREQUAL(result[0], "/etc/xdg");
+	TEST_STREQUAL(result[1], "/");
+	TEST_EQUAL(result[2], NULL);
+	free(result);
+
+	setenv("XDG_CONFIG_DIRS", ":", 1);
+	result = xdgConfigDirectories();
+	TEST_EQUAL(result[0], NULL);
+	free(result);
+
+	if (old_var) {
+		setenv("XDG_CONFIG_DIRS", old_var, 1);
+		free(old_var);
+	}
 }
 
 /// Search for config file under a base directory
@@ -161,11 +191,11 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 	for (int i = 0; config_dirs[i]; i++) {
 		ret = open_config_file_at(config_dirs[i], ppath);
 		if (ret) {
-			free((void *)config_dirs);
+			free(config_dirs);
 			return ret;
 		}
 	}
-	free((void *)config_dirs);
+	free(config_dirs);
 
 	return NULL;
 }
