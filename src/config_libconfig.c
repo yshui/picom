@@ -53,25 +53,33 @@ const char *xdgConfigHome(void) {
 }
 
 const char * const * xdgConfigDirectories(void) {
-	char *dirs, *path, *xdgd = getenv("XDG_CONFIG_DIRS");
-	char **dir_list = {0};
-	unsigned int sep = 0;
+	char *xdgd = getenv("XDG_CONFIG_DIRS");
+	size_t count = 0;
 
-	if (!xdgd) xdgd = ":/etc/xdg:";
-
-	dirs = strdup(xdgd);
-	CHECK(dirs != NULL);
-	path = strtok(dirs, ":");
-
-	while (path) {
-		dir_list = realloc(dir_list, sizeof(char*) * ++sep);
-
-		CHECK(dir_list);
-
-		dir_list[sep-1] = path;
-
-		path = strtok(NULL, ":");
+	if (!xdgd) {
+		xdgd = "/etc/xdg";
 	}
+
+	for (int i = 0; xdgd[i]; i++) {
+		if (xdgd[i] == ':') {
+			count++;
+		}
+	}
+
+	// Store the string and the result pointers together so it can be
+	// freed together
+	char **dir_list = cvalloc(sizeof(char *) * (count + 2) + strlen(xdgd) + 1);
+	auto dirs = strcpy((char *)dir_list + sizeof(char *) * (count + 2), xdgd);
+	auto path = dirs;
+
+	for (size_t i = 0; i < count; i++) {
+		dir_list[i] = path;
+		path = strchr(path, ':');
+		*path = '\0';
+		path++;
+	}
+	dir_list[count] = path;
+	dir_list[count + 1] = NULL;
 
 	return (const char * const *)dir_list;
 }
