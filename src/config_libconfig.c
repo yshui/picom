@@ -40,14 +40,13 @@ const char *xdg_config_home(void) {
 	char *xdgh = getenv("XDG_CONFIG_HOME");
 	char *home = getenv("HOME");
 
-	if (!xdgh) {
-		if (!home) return NULL;
+	if (xdgh) return strdup(xdgh);
+	if (!home) return NULL;
 
-		xdgh = cvalloc(strlen(home) + 8 + 1);
+	xdgh = cvalloc(strlen(home) + 8 + 1);
 
-		strcpy(xdgh, home);
-		strcat(xdgh, "/.config");
-	}
+	strcpy(xdgh, home);
+	strcat(xdgh, "/.config");
 
 	return xdgh;
 }
