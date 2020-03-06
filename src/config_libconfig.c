@@ -39,14 +39,19 @@ static inline int lcfg_lookup_bool(const config_t *config, const char *path, boo
 const char *xdg_config_home(void) {
 	char *xdgh = getenv("XDG_CONFIG_HOME");
 	char *home = getenv("HOME");
+	const char *default_dir = "/.config";
 
 	if (!xdgh) {
-		if (!home) return NULL;
+		if (!home) {
+			return NULL;
+		}
 
-		xdgh = cvalloc(strlen(home) + 8 + 1);
+		xdgh = cvalloc(strlen(home) + strlen(default_dir) + 1);
 
 		strcpy(xdgh, home);
-		strcat(xdgh, "/.config");
+		strcat(xdgh, default_dir);
+	} else {
+		xdgh = strdup(xdgh);
 	}
 
 	return xdgh;
