@@ -1092,7 +1092,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		// the single pass case
 		auto pass = &ctx->blur_shader[1];
 		pass->prog = gl_create_program_from_str(vertex_shader, dummy_frag);
-		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
+		pass->unifm_opacity = -1;
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 		ctx->npasses = 2;
