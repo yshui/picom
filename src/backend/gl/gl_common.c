@@ -50,9 +50,9 @@ struct gl_blur_context {
 static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 	auto ret = glGetUniformLocation(p, name);
 	if (ret < 0) {
-		log_error("Failed to get location of uniform '%s'. the compositor might "
-		          "not work correctly.",
-		          name);
+		log_info("Failed to get location of uniform '%s'. This is normal when "
+		         "using custom shaders.",
+		         name);
 	}
 	return ret;
 }
