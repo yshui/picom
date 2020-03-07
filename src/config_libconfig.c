@@ -250,6 +250,43 @@ parse_cfg_condlst_opct(options_t *opt, const config_t *pcfg, const char *name) {
 	}
 }
 
+static inline void parse_wintype_config(const config_t *cfg, const char *member_name,
+                                        win_option_t *o, win_option_mask_t *mask) {
+	char *str = mstrjoin("wintypes.", member_name);
+	const config_setting_t *setting = config_lookup(cfg, str);
+	free(str);
+
+	int ival = 0;
+	if (setting) {
+		if (config_setting_lookup_bool(setting, "shadow", &ival)) {
+			o->shadow = ival;
+			mask->shadow = true;
+		}
+		if (config_setting_lookup_bool(setting, "fade", &ival)) {
+			o->fade = ival;
+			mask->fade = true;
+		}
+		if (config_setting_lookup_bool(setting, "focus", &ival)) {
+			o->focus = ival;
+			mask->focus = true;
+		}
+		if (config_setting_lookup_bool(setting, "full-shadow", &ival)) {
+			o->full_shadow = ival;
+			mask->full_shadow = true;
+		}
+		if (config_setting_lookup_bool(setting, "redir-ignore", &ival)) {
+			o->redir_ignore = ival;
+			mask->redir_ignore = true;
+		}
+
+		double fval;
+		if (config_setting_lookup_float(setting, "opacity", &fval)) {
+			o->opacity = normalize_d(fval);
+			mask->opacity = true;
+		}
+	}
+}
+
 /**
  * Parse a configuration file from default location.
  *
@@ -604,41 +641,13 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 
 	// XXX ! Refactor all the wintype_* arrays into a struct
 	for (wintype_t i = 0; i < NUM_WINTYPES; ++i) {
-		char *str = mstrjoin("wintypes.", WINTYPES[i]);
-		config_setting_t *setting = config_lookup(&cfg, str);
-		free(str);
-
-		win_option_t *o = &opt->wintype_option[i];
-		win_option_mask_t *mask = &winopt_mask[i];
-		if (setting) {
-			if (config_setting_lookup_bool(setting, "shadow", &ival)) {
-				o->shadow = ival;
-				mask->shadow = true;
-			}
-			if (config_setting_lookup_bool(setting, "fade", &ival)) {
-				o->fade = ival;
-				mask->fade = true;
-			}
-			if (config_setting_lookup_bool(setting, "focus", &ival)) {
-				o->focus = ival;
-				mask->focus = true;
-			}
-			if (config_setting_lookup_bool(setting, "full-shadow", &ival)) {
-				o->full_shadow = ival;
-				mask->full_shadow = true;
-			}
-			if (config_setting_lookup_bool(setting, "redir-ignore", &ival)) {
-				o->redir_ignore = ival;
-				mask->redir_ignore = true;
-			}
-
-			double fval;
-			if (config_setting_lookup_float(setting, "opacity", &fval)) {
-				o->opacity = normalize_d(fval);
-				mask->opacity = true;
-			}
-		}
+		parse_wintype_config(&cfg, WINTYPES[i], &opt->wintype_option[i],
+		                     &winopt_mask[i]);
 	}
+
+	// Compatibility with the old name for notification windows.
+	parse_wintype_config(&cfg, "notify", &opt->wintype_option[WINTYPE_NOTIFICATION],
+	                     &winopt_mask[WINTYPE_NOTIFICATION]);
 
 	config_destroy(&cfg);
 	return path;

@@ -76,9 +76,9 @@ static void unredirect(session_t *ps);
 
 /// Name strings for window types.
 const char *const WINTYPES[NUM_WINTYPES] = {
-    "unknown",    "desktop", "dock",   "toolbar", "menu",
-    "utility",    "splash",  "dialog", "normal",  "dropdown_menu",
-    "popup_menu", "tooltip", "notify", "combo",   "dnd",
+    "unknown",    "desktop", "dock",         "toolbar", "menu",
+    "utility",    "splash",  "dialog",       "normal",  "dropdown_menu",
+    "popup_menu", "tooltip", "notification", "combo",   "dnd",
 };
 
 // clang-format off

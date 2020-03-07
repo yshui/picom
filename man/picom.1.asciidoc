@@ -361,7 +361,7 @@ wintypes:
 };
 ------------
 
-'WINDOW_TYPE' is one of the 15 window types defined in EWMH standard: "unknown", "desktop", "dock", "toolbar", "menu", "utility", "splash", "dialog", "normal", "dropdown_menu", "popup_menu", "tooltip", "notify", "combo", and "dnd".
+'WINDOW_TYPE' is one of the 15 window types defined in EWMH standard: "unknown", "desktop", "dock", "toolbar", "menu", "utility", "splash", "dialog", "normal", "dropdown_menu", "popup_menu", "tooltip", "notification", "combo", and "dnd".
 
 Following per window-type options are available: ::
 
