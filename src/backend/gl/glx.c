@@ -198,6 +198,7 @@ void glx_deinit(backend_t *base) {
 
 	// Destroy GLX context
 	if (gd->ctx) {
+		glXMakeCurrent(gd->display, None, NULL);
 		glXDestroyContext(gd->display, gd->ctx);
 		gd->ctx = 0;
 	}
