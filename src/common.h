@@ -107,10 +107,15 @@ typedef struct glx_prog_main {
 	GLint unifm_invert_color;
 	/// Location of uniform "tex" in window GLSL program.
 	GLint unifm_tex;
+	/// Location of uniform "time" in window GLSL program.
+	GLint unifm_time;
 } glx_prog_main_t;
 
 #define GLX_PROG_MAIN_INIT                                                               \
-	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
+	{                                                                                \
+		.prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1,                \
+		.unifm_tex = -1, .unifm_time = -1                                        \
+	}
 
 #else
 struct glx_prog_main {};
