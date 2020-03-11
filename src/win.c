@@ -553,9 +553,6 @@ winmode_t win_calc_mode(const struct managed_win *w) {
 	if (w->opacity < 1.0) {
 		return WMODE_TRANS;
 	}
-	if (w->frame_opacity != 1.0 && win_has_frame(w)) {
-		return WMODE_FRAME_TRANS;
-	}
 
 	if (win_has_alpha(w)) {
 		if (w->client_win == XCB_NONE) {
@@ -576,6 +573,10 @@ winmode_t win_calc_mode(const struct managed_win *w) {
 		}
 		// Although the WM window has alpha, the frame window has 0 size, so
 		// consider the window solid
+	}
+
+	if (w->frame_opacity != 1.0 && win_has_frame(w)) {
+		return WMODE_FRAME_TRANS;
 	}
 
 	// log_trace("Window %#010x(%s) is solid", w->client_win, w->name);
