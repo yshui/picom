@@ -930,9 +930,11 @@ void opts_set_no_fading_openclose(session_t *ps, bool newval) {
 #endif
 
 /**
- * Register a window as symbol, and initialize GLX context if wanted.
+ * Register us with the compositor selection (_NET_WM_CM_S)
+ *
+ * @return 0 if success, 1 if compositor already running, -1 if error.
  */
-static bool register_cm(session_t *ps) {
+static int register_cm(session_t *ps) {
 	assert(!ps->reg_win);
 
 	ps->reg_win = x_new_id(ps->c);
@@ -943,7 +945,7 @@ static bool register_cm(session_t *ps) {
 	if (e) {
 		log_fatal("Failed to create window.");
 		free(e);
-		return false;
+		return -1;
 	}
 
 	{
@@ -978,7 +980,7 @@ static bool register_cm(session_t *ps) {
 		char *buf = NULL;
 		if (asprintf(&buf, "%s%d", register_prop, ps->scr) < 0) {
 			log_fatal("Failed to allocate memory");
-			return false;
+			return -1;
 		}
 		atom = get_atom(ps->atoms, buf);
 		free(buf);
@@ -987,15 +989,15 @@ static bool register_cm(session_t *ps) {
 		    ps->c, xcb_get_selection_owner(ps->c, atom), NULL);
 
 		if (reply && reply->owner != XCB_NONE) {
+			// Another compositor already running
 			free(reply);
-			log_fatal("Another composite manager is already running");
-			return false;
+			return 1;
 		}
 		free(reply);
 		xcb_set_selection_owner(ps->c, ps->reg_win, atom, 0);
 	}
 
-	return true;
+	return 0;
 }
 
 /**
@@ -1175,7 +1177,7 @@ xcb_window_t session_get_target_window(session_t *ps) {
 	return ps->overlay != XCB_NONE ? ps->overlay : ps->root;
 }
 
-static inline uint8_t session_redirection_mode(session_t *ps) {
+uint8_t session_redirection_mode(session_t *ps) {
 	if (ps->o.debug_mode) {
 		// If the backend is not rendering to the screen, we don't need to
 		// take over the screen.
@@ -1920,27 +1922,61 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	rebuild_screen_reg(ps);
 
-	// Create registration window
-	// If we are not taking over the screen, we don't need to register as a compositor
-	if (session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_MANUAL && !register_cm(ps)) {
-		exit(1);
+	bool compositor_running = false;
+	if (session_redirection_mode(ps) == XCB_COMPOSITE_REDIRECT_MANUAL) {
+		// We are running in the manual redirection mode, meaning we are running
+		// as a proper compositor. So we need to register us as a compositor, etc.
+
+		// We are also here when --diagnostics is set. We want to be here because
+		// that gives us more diagnostic information.
+
+		// Create registration window
+		int ret = register_cm(ps);
+		if (ret == -1) {
+			exit(1);
+		}
+
+		compositor_running = ret == 1;
+		if (compositor_running) {
+			// Don't take the overlay when there is another compositor
+			// running, so we don't disrupt it.
+
+			// If we are printing diagnostic, we will continue a bit further
+			// to get more diagnostic information, otherwise we will exit.
+			if (!ps->o.print_diagnostics) {
+				log_fatal("Another composite manager is already running");
+				exit(1);
+			}
+		} else {
+			if (!init_overlay(ps)) {
+				goto err;
+			}
+		}
+	} else {
+		// We are here if we don't really function as a compositor, so we are not
+		// taking over the screen, and we don't need to register as a compositor
+
+		// If we are in debug mode, we need to create a window for rendering if
+		// the backend supports presenting.
+
+		// The old backends doesn't have a automatic redirection mode
+		log_info("The compositor is started in automatic redirection mode.");
+		assert(ps->o.experimental_backends);
+
+		if (backend_list[ps->o.backend]->present) {
+			// If the backend has `present`, we couldn't be in automatic
+			// redirection mode unless we are in debug mode.
+			assert(ps->o.debug_mode);
+			if (!init_debug_window(ps)) {
+				goto err;
+			}
+		}
 	}
 
 	// Target window must be initialized before the backend
 	//
 	// backend_operations::present == NULL means this backend doesn't need a target
 	// window; non experimental backends always need a target window
-	if (!ps->o.experimental_backends || backend_list[ps->o.backend]->present != NULL) {
-		if (!ps->o.debug_mode) {
-			if (!init_overlay(ps)) {
-				goto err;
-			}
-		} else {
-			if (!init_debug_window(ps)) {
-				goto err;
-			}
-		}
-	}
 
 	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);
 
@@ -1951,7 +1987,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	if (ps->o.print_diagnostics) {
-		print_diagnostics(ps, config_file);
+		print_diagnostics(ps, config_file, compositor_running);
 		free(config_file_to_free);
 		exit(0);
 	}

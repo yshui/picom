@@ -61,6 +61,8 @@ void quit(session_t *ps);
 
 xcb_window_t session_get_target_window(session_t *);
 
+uint8_t session_redirection_mode(session_t *ps);
+
 /**
  * Set a <code>switch_t</code> array of all unset wintypes to true.
  */
