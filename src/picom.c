@@ -500,11 +500,6 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			rc_region_unref(&w->reg_ignore);
 		}
 
-		// Clear flags if we are not using experimental backends
-		if (!ps->o.experimental_backends) {
-			w->flags = 0;
-		}
-
 		// log_trace("%d %d %s", w->a.map_state, w->ever_damaged, w->name);
 
 		// Give up if it's not damaged or invisible, or it's unmapped and its
