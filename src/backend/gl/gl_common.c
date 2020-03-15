@@ -1304,14 +1304,10 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	struct gl_data *gl = (void *)base;
 	auto new_tex = ccalloc(1, struct gl_texture);
 
-	glGenTextures(1, &new_tex->texture);
+	new_tex->texture = gl_new_texture(GL_TEXTURE_2D);
 	glBindTexture(GL_TEXTURE_2D, new_tex->texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img->inner->width, img->inner->height, 0,
 	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	new_tex->y_inverted = true;
 	new_tex->height = img->inner->height;
 	new_tex->width = img->inner->width;
