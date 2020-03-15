@@ -1302,7 +1302,7 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	}
 
 	struct gl_data *gl = (void *)base;
-	auto new_tex = cmalloc(struct gl_texture);
+	auto new_tex = ccalloc(1, struct gl_texture);
 
 	glGenTextures(1, &new_tex->texture);
 	glBindTexture(GL_TEXTURE_2D, new_tex->texture);
