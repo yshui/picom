@@ -1366,7 +1366,7 @@ static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       img->inner->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, 0, 0, false);
+	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, fbo, 0, false);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDeleteFramebuffers(1, &fbo);
