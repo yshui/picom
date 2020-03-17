@@ -211,24 +211,26 @@ void win_get_region_noframe_local(const struct managed_win *w, region_t *res) {
 
 void win_get_region_frame_local(const struct managed_win *w, region_t *res) {
 	const margin_t extents = win_calc_frame_extents(w);
+	auto outer_width = extents.left + extents.right + w->g.width;
+	auto outer_height = extents.top + extents.bottom + w->g.height;
 	pixman_region32_fini(res);
 	pixman_region32_init_rects(
 	    res,
 	    (rect_t[]){
 	        // top
-	        {.x1 = 0, .y1 = 0, .x2 = w->g.width, .y2 = extents.top},
+	        {.x1 = 0, .y1 = 0, .x2 = outer_width, .y2 = extents.top},
 	        // bottom
-	        {.x1 = 0, .y1 = w->g.height - extents.bottom, .x2 = w->g.width, .y2 = w->g.height},
+	        {.x1 = 0, .y1 = outer_height - extents.bottom, .x2 = outer_width, .y2 = outer_height},
 	        // left
-	        {.x1 = 0, .y1 = 0, .x2 = extents.left, .y2 = w->g.height},
+	        {.x1 = 0, .y1 = 0, .x2 = extents.left, .y2 = outer_height},
 	        // right
-	        {.x1 = w->g.width - extents.right, .y1 = 0, .x2 = w->g.width, .y2 = w->g.height},
+	        {.x1 = outer_width - extents.right, .y1 = 0, .x2 = outer_width, .y2 = outer_height},
 	    },
 	    4);
 
 	// limit the frame region to inside the window
 	region_t reg_win;
-	pixman_region32_init_rect(&reg_win, 0, 0, w->g.width, w->g.height);
+	pixman_region32_init_rects(&reg_win, (rect_t[]){0, 0, outer_width, outer_height}, 1);
 	pixman_region32_intersect(res, &reg_win, res);
 	pixman_region32_fini(&reg_win);
 }

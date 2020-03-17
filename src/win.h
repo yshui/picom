@@ -107,6 +107,8 @@ struct managed_win {
 	winstate_t state;
 	/// Window attributes.
 	xcb_get_window_attributes_reply_t a;
+	/// Reply of xcb_get_geometry, which returns the geometry of the window body,
+	/// excluding the window border.
 	xcb_get_geometry_reply_t g;
 	/// Xinerama screen this window is on.
 	int xinerama_scr;
