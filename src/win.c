@@ -909,36 +909,19 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
 }
 
 /**
- * Function to be called on window type changes.
- */
-static void win_on_wtype_change(session_t *ps, struct managed_win *w) {
-	win_determine_shadow(ps, w);
-	win_update_focused(ps, w);
-	if (ps->o.invert_color_list)
-		win_determine_invert_color(ps, w);
-	if (ps->o.opacity_rules)
-		win_update_opacity_rule(ps, w);
-}
-
-/**
  * Function to be called on window data changes.
  *
  * TODO need better name
  */
 void win_on_factor_change(session_t *ps, struct managed_win *w) {
-	if (ps->o.shadow_blacklist)
-		win_determine_shadow(ps, w);
-	if (ps->o.invert_color_list)
-		win_determine_invert_color(ps, w);
-	if (ps->o.focus_blacklist)
-		win_update_focused(ps, w);
-	if (ps->o.blur_background_blacklist)
-		win_determine_blur_background(ps, w);
-	if (ps->o.opacity_rules)
-		win_update_opacity_rule(ps, w);
-	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->o.paint_blacklist)
+	win_determine_shadow(ps, w);
+	win_determine_invert_color(ps, w);
+	win_update_focused(ps, w);
+	win_determine_blur_background(ps, w);
+	win_update_opacity_rule(ps, w);
+	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
 		w->paint_excluded = c2_match(ps, w, ps->o.paint_blacklist, NULL);
-	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->o.unredir_if_possible_blacklist)
+	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
 		w->unredir_if_possible_excluded =
 		    c2_match(ps, w, ps->o.unredir_if_possible_blacklist, NULL);
 	w->reg_ignore_valid = false;
@@ -987,7 +970,7 @@ void win_update_wintype(session_t *ps, struct managed_win *w) {
 	}
 
 	if (w->window_type != wtype_old)
-		win_on_wtype_change(ps, w);
+		win_on_factor_change(ps, w);
 }
 
 /**
