@@ -785,9 +785,8 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_win_get_do(window_type, cdbus_reply_enum);
 	cdbus_m_win_get_do(wmwin, cdbus_reply_bool);
 	cdbus_m_win_get_do(leader, cdbus_reply_wid);
-	// focused_real
-	if (!strcmp("focused_real", target)) {
-		cdbus_reply_bool(ps, msg, win_is_focused_real(ps, w));
+	if (!strcmp("focused_raw", target)) {
+		cdbus_reply_bool(ps, msg, win_is_focused_raw(ps, w));
 		return true;
 	}
 	cdbus_m_win_get_do(fade_force, cdbus_reply_enum);

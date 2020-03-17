@@ -418,9 +418,9 @@ struct managed_win *find_toplevel2(session_t *ps, xcb_window_t wid);
 bool attr_pure win_is_fullscreen(const session_t *ps, const struct managed_win *w);
 
 /**
- * Check if a window is really focused.
+ * Check if a window is focused, without using any focus rules or forced focus settings
  */
-bool attr_pure win_is_focused_real(const session_t *ps, const struct managed_win *w);
+bool attr_pure win_is_focused_raw(const session_t *ps, const struct managed_win *w);
 
 /// check if window has ARGB visual
 bool attr_pure win_has_alpha(const struct managed_win *w);
