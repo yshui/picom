@@ -207,6 +207,8 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
 	const int to_width = from_width > max_width ? from_width / 2 : from_width;
 	const int to_height = from_height > max_height ? from_height / 2 : from_height;
 
+	glViewport(0, 0, width, height);
+
 	// Prepare coordinates
 	GLint coord[] = {
 	    // top left
@@ -395,6 +397,7 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
 
 	// Bind texture
+	glViewport(0, 0, gd->width, gd->height);
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, brightness);
 	glActiveTexture(GL_TEXTURE0);
@@ -778,7 +781,6 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
  * Callback to run on root window size change.
  */
 void gl_resize(struct gl_data *gd, int width, int height) {
-	glViewport(0, 0, width, height);
 	gd->height = height;
 	gd->width = width;
 
@@ -1395,6 +1397,7 @@ void gl_present(backend_t *base, const region_t *region) {
 		       sizeof(GLuint) * 6);
 	}
 
+	glViewport(0, 0, gd->width, gd->height);
 	glUseProgram(gd->present_prog);
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
 
