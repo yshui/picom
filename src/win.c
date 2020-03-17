@@ -112,27 +112,14 @@ static void win_update_focused(session_t *ps, struct managed_win *w) {
 			w->focused = true;
 		}
 	}
-
-	// Always recalculate the window target opacity, since some opacity-related
-	// options depend on the output value of win_is_focused_raw() instead of
-	// w->focused
-	auto opacity_target_old = w->opacity_target;
-	w->opacity_target = win_calc_opacity_target(ps, w, false);
-	if (opacity_target_old != w->opacity_target && w->state == WSTATE_MAPPED) {
-		// Only MAPPED can transition to FADING
-		w->state = WSTATE_FADING;
-		if (!ps->redirected) {
-			CHECK(!win_skip_fading(ps, w));
-		}
-	}
 }
 
 /**
- * Run win_update_focused() on all windows with the same leader window.
+ * Run win_on_factor_change() on all windows with the same leader window.
  *
  * @param leader leader window ID
  */
-static inline void group_update_focused(session_t *ps, xcb_window_t leader) {
+static inline void group_on_factor_change(session_t *ps, xcb_window_t leader) {
 	if (!leader)
 		return;
 
@@ -143,7 +130,7 @@ static inline void group_update_focused(session_t *ps, xcb_window_t leader) {
 		}
 		auto mw = (struct managed_win *)w;
 		if (win_get_leader(ps, mw) == leader) {
-			win_update_focused(ps, mw);
+			win_on_factor_change(ps, mw);
 		}
 	}
 
@@ -847,7 +834,7 @@ void win_set_fade_force(struct managed_win *w, switch_t val) {
 void win_set_focused_force(session_t *ps, struct managed_win *w, switch_t val) {
 	if (val != w->focused_force) {
 		w->focused_force = val;
-		win_update_focused(ps, w);
+		win_on_factor_change(ps, w);
 		queue_redraw(ps);
 	}
 }
@@ -914,9 +901,12 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
  * TODO need better name
  */
 void win_on_factor_change(session_t *ps, struct managed_win *w) {
+	// Focus needs to be updated first, as other rules might depend on the focused
+	// state of the window
+	win_update_focused(ps, w);
+
 	win_determine_shadow(ps, w);
 	win_determine_invert_color(ps, w);
-	win_update_focused(ps, w);
 	win_determine_blur_background(ps, w);
 	win_update_opacity_rule(ps, w);
 	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
@@ -924,6 +914,17 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
 		w->unredir_if_possible_excluded =
 		    c2_match(ps, w, ps->o.unredir_if_possible_blacklist, NULL);
+
+	auto opacity_target_old = w->opacity_target;
+	w->opacity_target = win_calc_opacity_target(ps, w, false);
+	if (opacity_target_old != w->opacity_target && w->state == WSTATE_MAPPED) {
+		// Only MAPPED can transition to FADING
+		w->state = WSTATE_FADING;
+		if (!ps->redirected) {
+			CHECK(!win_skip_fading(ps, w));
+		}
+	}
+
 	w->reg_ignore_valid = false;
 }
 
@@ -1016,9 +1017,6 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 
 	// Update everything related to conditions
 	win_on_factor_change(ps, w);
-
-	// Update window focus state
-	win_update_focused(ps, w);
 
 	auto r = xcb_get_window_attributes_reply(
 	    ps->c, xcb_get_window_attributes(ps->c, w->client_win), NULL);
@@ -1337,12 +1335,8 @@ static inline void win_set_leader(session_t *ps, struct managed_win *w, xcb_wind
 		if (win_is_focused_raw(ps, w) && cache_leader_old != cache_leader) {
 			ps->active_leader = cache_leader;
 
-			group_update_focused(ps, cache_leader_old);
-			group_update_focused(ps, cache_leader);
-		}
-		// Otherwise, at most the window itself is affected
-		else {
-			win_update_focused(ps, w);
+			group_on_factor_change(ps, cache_leader_old);
+			group_on_factor_change(ps, cache_leader);
 		}
 
 		// Update everything related to conditions
@@ -1446,22 +1440,15 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 
 			ps->active_leader = leader;
 
-			group_update_focused(ps, active_leader_old);
-			group_update_focused(ps, leader);
+			group_on_factor_change(ps, active_leader_old);
+			group_on_factor_change(ps, leader);
 		}
 		// If the group get unfocused, remove it from active_leader
 		else if (!win_is_focused_raw(ps, w) && leader &&
 		         leader == ps->active_leader && !group_is_focused(ps, leader)) {
 			ps->active_leader = XCB_NONE;
-			group_update_focused(ps, leader);
+			group_on_factor_change(ps, leader);
 		}
-
-		// The window itself must be updated anyway
-		win_update_focused(ps, w);
-	}
-	// Otherwise, only update the window itself
-	else {
-		win_update_focused(ps, w);
 	}
 
 	// Update everything related to conditions
@@ -2094,6 +2081,8 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	assert(w->client_win);
 
 	log_debug("Window (%#010x) has type %s", w->base.id, WINTYPES[w->window_type]);
+
+	// TODO can we just replace calls below with win_on_factor_change?
 
 	// Update window focus state
 	win_update_focused(ps, w);
