@@ -731,13 +731,15 @@ static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new
 	// asserting the existence of the shadow image.
 	if (w->shadow) {
 		// Mark the new extents as damaged if the shadow is added
-		assert(!w->shadow_image || (w->flags & WIN_FLAGS_SHADOW_STALE));
+		assert(!w->shadow_image || (w->flags & WIN_FLAGS_SHADOW_STALE) ||
+		       !ps->o.experimental_backends);
 		pixman_region32_clear(&extents);
 		win_extents(w, &extents);
 		add_damage_from_win(ps, w);
 	} else {
 		// Mark the old extents as damaged if the shadow is removed
-		assert(w->shadow_image || (w->flags & WIN_FLAGS_SHADOW_STALE));
+		assert(w->shadow_image || (w->flags & WIN_FLAGS_SHADOW_STALE) ||
+		       !ps->o.experimental_backends);
 		add_damage(ps, &extents);
 	}
 
