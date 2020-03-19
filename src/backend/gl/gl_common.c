@@ -925,7 +925,7 @@ void gl_fill(backend_t *base, struct color c, const region_t *clip) {
 
 void gl_release_image(backend_t *base, void *image_data) {
 	struct gl_image *wd = image_data;
-	struct gl_data *gl = (void *)base;
+	struct gl_data *gd = (void *)base;
 	wd->inner->refcount--;
 	assert(wd->inner->refcount >= 0);
 	if (wd->inner->refcount > 0) {
@@ -933,7 +933,7 @@ void gl_release_image(backend_t *base, void *image_data) {
 		return;
 	}
 
-	gl->release_user_data(base, wd->inner);
+	gd->release_user_data(base, wd->inner);
 	assert(wd->inner->user_data == NULL);
 
 	glDeleteTextures(1, &wd->inner->texture);
@@ -982,7 +982,7 @@ void gl_destroy_blur_context(backend_t *base attr_unused, void *ctx) {
  */
 void *gl_create_blur_context(backend_t *base, enum blur_method method, void *args) {
 	bool success = true;
-	auto gd = (struct gl_data *)base;
+	struct gl_data *gd = (void *)base;
 
 	struct conv **kernels;
 	auto ctx = ccalloc(1, struct gl_blur_context);
@@ -1303,7 +1303,7 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 		return;
 	}
 
-	struct gl_data *gl = (void *)base;
+	struct gl_data *gd = (void *)base;
 	auto new_tex = ccalloc(1, struct gl_texture);
 
 	new_tex->texture = gl_new_texture(GL_TEXTURE_2D);
@@ -1314,7 +1314,7 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	new_tex->height = img->inner->height;
 	new_tex->width = img->inner->width;
 	new_tex->refcount = 1;
-	new_tex->user_data = gl->decouple_texture_user_data(base, img->inner->user_data);
+	new_tex->user_data = gd->decouple_texture_user_data(base, img->inner->user_data);
 
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
@@ -1376,7 +1376,7 @@ static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
 }
 
 void gl_present(backend_t *base, const region_t *region) {
-	auto gd = (struct gl_data *)base;
+	struct gl_data *gd = (void *)base;
 
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)region, &nrects);
