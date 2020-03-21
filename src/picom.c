@@ -1453,11 +1453,14 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 	// If the screen is unredirected, free all_damage to stop painting
 	if (ps->redirected && ps->o.stoppaint_force != ON) {
 		static int paint = 0;
+
+		log_trace("Render start, frame %d", paint);
 		if (ps->o.experimental_backends) {
 			paint_all_new(ps, bottom, false);
 		} else {
 			paint_all(ps, bottom, false);
 		}
+		log_trace("Render end");
 
 		ps->first_frame = false;
 		paint++;
