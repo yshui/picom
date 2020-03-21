@@ -391,11 +391,26 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 		glUniform1f(gd->win_shader.unifm_max_brightness, (float)img->max_brightness);
 	}
 
-	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
-	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
+	int width = img->inner->width;
+	int height = img->inner->height;
+	if (target == gd->back_fbo) {
+		// either back framebuffer is empty and we are drawing root texture to it,
+		// which is a common case and coule be treated as above, or back
+		// framebuffer already contains root texture and we are drawing window's
+		// texture onto it, which is special case and back framebuffer must have
+		// root texture's width and height
+		width = gd->width;
+		height = gd->height;
+	}
+
+	GLfloat lpm[4][4] = {{2.0f / (GLfloat)width, 0, 0, 0},
+	                     {0, 2.0f / (GLfloat)height, 0, 0},
+	                     {0, 0, 0, 0},
+	                     {-1, -1, 0, 1}};
+	int pml = glGetUniformLocationChecked(gd->win_shader.prog, "projection");
+	glUniformMatrix4fv(pml, 1, false, lpm[0]);
 
 	// Bind texture
-	glViewport(0, 0, gd->width, gd->height);
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, brightness);
 	glActiveTexture(GL_TEXTURE0);
@@ -419,6 +434,7 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
 	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+	glViewport(0, 0, width, height);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 	glDisableVertexAttribArray(vert_coord_loc);
 	glDisableVertexAttribArray(vert_in_texcoord_loc);
@@ -428,11 +444,18 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	// Cleanup
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glViewport(0, 0, gd->width, gd->height);
 	glDrawBuffer(GL_BACK);
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glDeleteBuffers(2, bo);
+
+	GLfloat gpm[4][4] = {{2.0f / (GLfloat)gd->width, 0, 0, 0},
+	                     {0, 2.0f / (GLfloat)gd->height, 0, 0},
+	                     {0, 0, 0, 0},
+	                     {-1, -1, 0, 1}};
+	glUniformMatrix4fv(pml, 1, false, gpm[0]);
 
 	glUseProgram(0);
 
@@ -861,7 +884,7 @@ static const char interpolating_vert[] = GLSL(330,
 /// Fill a given region in bound framebuffer.
 /// @param[in] y_inverted whether the y coordinates in `clip` should be inverted
 static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLuint target,
-                     int height, bool y_inverted) {
+                     int width, int height, bool y_inverted) {
 	static const GLuint fill_vert_in_coord_loc = 0;
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
@@ -876,6 +899,14 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	glUseProgram(gd->fill_shader.prog);
 	glUniform4f(gd->fill_shader.color_loc, (GLfloat)c.red, (GLfloat)c.green,
 	            (GLfloat)c.blue, (GLfloat)c.alpha);
+
+	GLfloat lpm[4][4] = {{2.0f / (GLfloat)width, 0, 0, 0},
+	                     {0, 2.0f / (GLfloat)height, 0, 0},
+	                     {0, 0, 0, 0},
+	                     {-1, -1, 0, 1}};
+	int pml = glGetUniformLocationChecked(gd->fill_shader.prog, "projection");
+	glUniformMatrix4fv(pml, 1, false, lpm[0]);
+
 	glEnableVertexAttribArray(fill_vert_in_coord_loc);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
@@ -903,22 +934,32 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	glVertexAttribPointer(fill_vert_in_coord_loc, 2, GL_INT, GL_FALSE,
 	                      sizeof(*coord) * 2, (void *)0);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+	glViewport(0, 0, width, height);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glViewport(0, 0, gd->width, gd->height);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glDisableVertexAttribArray(fill_vert_in_coord_loc);
 	glBindVertexArray(0);
 	glDeleteVertexArrays(1, &vao);
-
 	glDeleteBuffers(2, bo);
+
+	GLfloat gpm[4][4] = {{2.0f / (GLfloat)gd->width, 0, 0, 0},
+	                     {0, 2.0f / (GLfloat)gd->height, 0, 0},
+	                     {0, 0, 0, 0},
+	                     {-1, -1, 0, 1}};
+	glUniformMatrix4fv(pml, 1, false, gpm[0]);
+
+	glUseProgram(0);
+
 	free(indices);
 	free(coord);
 }
 
 void gl_fill(backend_t *base, struct color c, const region_t *clip) {
 	auto gd = (struct gl_data *)base;
-	return _gl_fill(base, c, clip, gd->back_fbo, gd->height, true);
+	return _gl_fill(base, c, clip, gd->back_fbo, gd->width, gd->height, true);
 }
 
 void gl_release_image(backend_t *base, void *image_data) {
@@ -1317,6 +1358,7 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glViewport(0, 0, new_tex->width, new_tex->height);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       new_tex->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -1345,6 +1387,7 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 
 	_gl_compose(base, img, fbo, coord, (GLuint[]){0, 1, 2, 2, 3, 0}, 1);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glViewport(0, 0, gd->width, gd->height);
 	glDeleteFramebuffers(1, &fbo);
 
 	img->inner->refcount--;
@@ -1358,18 +1401,23 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 
 static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
                                  const region_t *reg_op, double alpha) {
+	auto gd = (struct gl_data *)base;
+
 	// Result color = 0 (GL_ZERO) + alpha (GL_CONSTANT_ALPHA) * original color
 	glBlendFunc(GL_ZERO, GL_CONSTANT_ALPHA);
 	glBlendColor(0, 0, 0, (GLclampf)alpha);
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glViewport(0, 0, img->inner->width, img->inner->height);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       img->inner->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, fbo, 0, false);
+	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, fbo, img->inner->width,
+	         img->inner->height, false);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glViewport(0, 0, gd->width, gd->height);
 	glDeleteFramebuffers(1, &fbo);
 }
 
