@@ -264,8 +264,7 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
  * deleted when the gl_image is released.
  */
 static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
-
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 
 	// Prepare textures which will be used for destination and source of rendering
 	// during downscaling.
@@ -360,8 +359,7 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
  */
 static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
                         GLint *coord, GLuint *indices, int nrects) {
-
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 	if (!img || !img->inner->texture) {
 		log_error("Missing texture.");
 		return;
@@ -508,7 +506,7 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 // TODO: make use of reg_visible
 void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
                 const region_t *reg_tgt, const region_t *reg_visible attr_unused) {
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 	struct gl_image *img = image_data;
 
 	// Painting
@@ -543,7 +541,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blur,
              const region_t *reg_visible attr_unused) {
 	struct gl_blur_context *bctx = ctx;
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 
 	if (gd->width + bctx->resize_width * 2 != bctx->texture_width ||
 	    gd->height + bctx->resize_height * 2 != bctx->texture_height) {
@@ -867,7 +865,7 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	static const GLuint fill_vert_in_coord_loc = 0;
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
@@ -919,13 +917,13 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 }
 
 void gl_fill(backend_t *base, struct color c, const region_t *clip) {
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 	return _gl_fill(base, c, clip, gd->back_fbo, gd->height, true);
 }
 
 void gl_release_image(backend_t *base, void *image_data) {
 	struct gl_image *wd = image_data;
-	struct gl_data *gl = (void *)base;
+	auto gd = (struct gl_data *)base;
 	wd->inner->refcount--;
 	assert(wd->inner->refcount >= 0);
 	if (wd->inner->refcount > 0) {
@@ -933,7 +931,7 @@ void gl_release_image(backend_t *base, void *image_data) {
 		return;
 	}
 
-	gl->release_user_data(base, wd->inner);
+	gd->release_user_data(base, wd->inner);
 	assert(wd->inner->user_data == NULL);
 
 	glDeleteTextures(1, &wd->inner->texture);
@@ -1303,7 +1301,7 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 		return;
 	}
 
-	struct gl_data *gl = (void *)base;
+	auto gd = (struct gl_data *)base;
 	auto new_tex = ccalloc(1, struct gl_texture);
 
 	new_tex->texture = gl_new_texture(GL_TEXTURE_2D);
@@ -1314,7 +1312,7 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	new_tex->height = img->inner->height;
 	new_tex->width = img->inner->width;
 	new_tex->refcount = 1;
-	new_tex->user_data = gl->decouple_texture_user_data(base, img->inner->user_data);
+	new_tex->user_data = gd->decouple_texture_user_data(base, img->inner->user_data);
 
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
