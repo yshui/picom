@@ -1001,8 +1001,7 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 	win_update_wintype(ps, w);
 
 	// Get frame widths. The window is in damaged area already.
-	if (ps->o.frame_opacity != 1)
-		win_update_frame_extents(ps, w, client);
+	win_update_frame_extents(ps, w, client);
 
 	// Get window group
 	if (ps->o.track_leader)
