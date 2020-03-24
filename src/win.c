@@ -58,6 +58,17 @@ static const double ROUNDED_PERCENT = 0.05;
 
 /// Generate a "return by value" function, from a function that returns the
 /// region via a region_t pointer argument.
+/// Function signature has to be (win *, region_t *, bool)
+#define gen_by_val_corners(fun)                                                                  \
+	region_t fun##_by_val(const struct managed_win *w, bool include_corners) {                             \
+		region_t ret;                                                            \
+		pixman_region32_init(&ret);                                              \
+		fun(w, &ret, include_corners);                                                            \
+		return ret;                                                              \
+	}
+
+/// Generate a "return by value" function, from a function that returns the
+/// region via a region_t pointer argument.
 /// Function signature has to be (win *, region_t *)
 #define gen_by_val(fun)                                                                  \
 	region_t fun##_by_val(const struct managed_win *w) {                             \
@@ -110,6 +121,19 @@ static void win_update_focused(session_t *ps, struct managed_win *w) {
 		if (ps->o.track_leader && ps->active_leader &&
 		    win_get_leader(ps, w) == ps->active_leader) {
 			w->focused = true;
+		}
+	}
+
+	// Always recalculate the window target opacity, since some opacity-related
+	// options depend on the output value of win_is_focused_real() instead of
+	// w->focused
+	auto opacity_target_old = w->opacity_target;
+	w->opacity_target = win_calc_opacity_target(ps, w, false);
+	if (opacity_target_old != w->opacity_target && w->state == WSTATE_MAPPED) {
+		// Only MAPPED can transition to FADING
+		w->state = WSTATE_FADING;
+		if (!ps->redirected) {
+			CHECK(!win_skip_fading(ps, w));
 		}
 	}
 }
@@ -173,16 +197,18 @@ static inline bool group_is_focused(session_t *ps, xcb_window_t leader) {
 /**
  * Get a rectangular region a window occupies, excluding shadow.
  */
-static void win_get_region_local(const struct managed_win *w, region_t *res) {
+static void win_get_region_local(const struct managed_win *w, region_t *res, bool include_corners) {
 	assert(w->widthb >= 0 && w->heightb >= 0);
 	pixman_region32_fini(res);
 	pixman_region32_init_rect(res, 0, 0, (uint)w->widthb, (uint)w->heightb);
+
+	if(!include_corners) win_region_remove_corners(w, res);
 }
 
 /**
  * Get a rectangular region a window occupies, excluding frame and shadow.
  */
-void win_get_region_noframe_local(const struct managed_win *w, region_t *res) {
+void win_get_region_noframe_local(const struct managed_win *w, region_t *res, bool include_corners) {
 	const margin_t extents = win_calc_frame_extents(w);
 
 	int x = extents.left;
@@ -193,10 +219,11 @@ void win_get_region_noframe_local(const struct managed_win *w, region_t *res) {
 	pixman_region32_fini(res);
 	if (width > 0 && height > 0) {
 		pixman_region32_init_rect(res, x, y, (uint)width, (uint)height);
+		if(!include_corners) win_region_remove_corners(w, res);
 	}
 }
 
-void win_get_region_frame_local(const struct managed_win *w, region_t *res) {
+void win_get_region_frame_local(const struct managed_win *w, region_t *res, bool include_corners) {
 	const margin_t extents = win_calc_frame_extents(w);
 	auto outer_width = extents.left + extents.right + w->g.width;
 	auto outer_height = extents.top + extents.bottom + w->g.height;
@@ -219,10 +246,11 @@ void win_get_region_frame_local(const struct managed_win *w, region_t *res) {
 	region_t reg_win;
 	pixman_region32_init_rects(&reg_win, (rect_t[]){0, 0, outer_width, outer_height}, 1);
 	pixman_region32_intersect(res, &reg_win, res);
+	if(!include_corners) win_region_remove_corners(w, res);
 	pixman_region32_fini(&reg_win);
 }
 
-gen_by_val(win_get_region_frame_local);
+gen_by_val_corners(win_get_region_frame_local);
 
 /**
  * Add a window to damaged area.
@@ -1229,6 +1257,8 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    // Initialized during paint
 	    .paint = PAINT_INIT,
 	    .shadow_paint = PAINT_INIT,
+
+		.corner_radius = 0,
 	};
 
 	assert(!w->destroyed);
@@ -1518,7 +1548,7 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 
 	pixman_region32_clear(&w->bounding_shape);
 	// Start with the window rectangular region
-	win_get_region_local(w, &w->bounding_shape);
+	win_get_region_local(w, &w->bounding_shape, true);
 
 	// Only request for a bounding region if the window is shaped
 	// (while loop is used to avoid goto, not an actual loop)

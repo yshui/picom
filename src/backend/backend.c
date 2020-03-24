@@ -168,7 +168,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 		// The bounding shape of the window, in global/target coordinates
 		// reminder: bounding shape contains the WM frame
-		auto reg_bound = win_get_bounding_shape_global_by_val(w);
+		auto reg_bound = win_get_bounding_shape_global_by_val(w, true);
 
 		// The clip region for the current window, in global/target coordinates
 		// reg_paint_in_bound \in reg_paint
@@ -227,7 +227,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				assert(ps->o.blur_background_frame);
 				assert(real_win_mode == WMODE_FRAME_TRANS);
 
-				auto reg_blur = win_get_region_frame_local_by_val(w);
+				auto reg_blur = win_get_region_frame_local_by_val(w, true);
 				pixman_region32_translate(&reg_blur, w->g.x, w->g.y);
 				// make sure reg_blur \in reg_paint
 				pixman_region32_intersect(&reg_blur, &reg_blur, &reg_paint);
@@ -357,7 +357,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    &reg_visible_local, (double[]){dim_opacity});
 			}
 			if (w->frame_opacity != 1) {
-				auto reg_frame = win_get_region_frame_local_by_val(w);
+				auto reg_frame = win_get_region_frame_local_by_val(w, true);
 				ps->backend_data->ops->image_op(
 				    ps->backend_data, IMAGE_OP_APPLY_ALPHA, new_img, &reg_frame,
 				    &reg_visible_local, (double[]){w->frame_opacity});
