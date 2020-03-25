@@ -903,7 +903,7 @@ static inline void glx_copy_region_to_tex(session_t *ps, GLenum tex_tgt, int bas
  *
  * XXX seems to be way to complex for what it does
  */
-bool glx_generic_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+bool glx_conv_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
                   GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc) {
 	assert(ps->psglx->blur_passes[0].prog);
 	const bool more_passes = ps->o.blur_kernel_count > 1;
@@ -963,11 +963,11 @@ bool glx_generic_blur_dst(session_t *ps, int dx, int dy, int width, int height, 
 
 	if (!tex_scr || (more_passes && !tex_scr2)) {
 		log_error("Failed to allocate texture.");
-		goto glx_generic_blur_dst_end;
+		goto glx_conv_blur_dst_end;
 	}
 	if (more_passes && !fbo) {
 		log_error("Failed to allocate framebuffer.");
-		goto glx_generic_blur_dst_end;
+		goto glx_conv_blur_dst_end;
 	}
 
 	// Read destination pixels into a texture
@@ -1014,7 +1014,7 @@ bool glx_generic_blur_dst(session_t *ps, int dx, int dy, int width, int height, 
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 				log_error("Framebuffer attachment failed.");
-				goto glx_generic_blur_dst_end;
+				goto glx_conv_blur_dst_end;
 			}
 		} else {
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1083,7 +1083,7 @@ bool glx_generic_blur_dst(session_t *ps, int dx, int dy, int width, int height, 
 
 	ret = true;
 
-glx_generic_blur_dst_end:
+glx_conv_blur_dst_end:
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glBindTexture(tex_tgt, 0);
 	glDisable(tex_tgt);
@@ -1102,8 +1102,8 @@ glx_generic_blur_dst_end:
 }
 
 
-bool glx_blur_kawase_dst(session_t *ps, int dx, int dy, int width, int height, float z,
-                  GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc) {
+bool glx_kawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z attr_unused,
+                  GLfloat factor_center attr_unused, const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc) {
 	assert(ps->psglx->blur_passes[0].prog);
 	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
 	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
@@ -1111,9 +1111,6 @@ bool glx_blur_kawase_dst(session_t *ps, int dx, int dy, int width, int height, f
 
 	int iterations = ps->o.blur_strength.iterations;
 	float offset = ps->o.blur_strength.offset;
-
-	// Unused parameters warning supress
-	(void)z; (void)factor_center; (void)reg_tgt;
 
 	// Calculate copy region size
 	glx_blur_cache_t ibc = { .width = 0, .height = 0 };
@@ -1354,13 +1351,13 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   bool ret;
   switch (ps->o.blur_method) {
 	case BLUR_METHOD_DUAL_KAWASE:
-      ret = glx_blur_kawase_dst(ps, dx, dy, width, height, z,
+      ret = glx_kawase_blur_dst(ps, dx, dy, width, height, z,
 		factor_center, reg_tgt, pbc);
       break;
     case BLUR_METHOD_KERNEL:
 	case BLUR_METHOD_BOX:
 	case BLUR_METHOD_GAUSSIAN:
-      ret = glx_generic_blur_dst(ps, dx, dy, width, height, z,
+      ret = glx_conv_blur_dst(ps, dx, dy, width, height, z,
 		factor_center, reg_tgt, pbc);
       break;
     default:

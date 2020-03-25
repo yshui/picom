@@ -592,7 +592,8 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 			}
 
 			glUniform1f(p->unifm_opacity, 1.0);
-
+			// For other than last pass, we are drawing to a texture, we
+			// translate the render origin so we don't need a big texture
 			glUniform2f(p->orig_loc, (GLfloat)bctx->resize_width,
 			            -(GLfloat)bctx->resize_height);
 			glViewport(0, 0, bctx->fb_width, bctx->fb_height);
@@ -739,6 +740,13 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 			vp_height = tgt_size.height;
 
 			glUniform1f(up_pass->unifm_opacity, (GLfloat)1);
+
+			// For other than last pass, we are drawing to a texture, we
+			// translate the render origin so we don't need a big texture
+			//glUniform2f(up_pass->orig_loc, (GLfloat)bctx->resize_width,
+			//            -(GLfloat)bctx->resize_height);
+			//glViewport(0, 0, vp_width, vp_height);
+
 		} else {
 			// last pass, draw directly into the back buffer
 			glBindVertexArray(vao[0]);
@@ -757,6 +765,9 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 			vp_height = gd->height;
 
 			glUniform1f(up_pass->unifm_opacity, (GLfloat)opacity);
+
+			//glUniform2f(up_pass->orig_loc, 0, 0);
+			//glViewport(0, 0, vp_width, vp_height);
 		}
 
 		glUniform2f(up_pass->orig_loc, (GLfloat)orig_x, (GLfloat)orig_y);
