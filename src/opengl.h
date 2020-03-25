@@ -38,6 +38,12 @@ typedef struct {
 	GLint unifm_offset_y;
 	/// Location of uniform "factor_center" in blur GLSL program.
 	GLint unifm_factor_center;
+	/// Location of uniform "offset" in kawase-blur GLSL program.
+	GLint unifm_offset;
+	/// Location of uniform "halfpixel" in kawase-blur GLSL program.
+	GLint unifm_halfpixel;
+	/// Location of uniform "fulltex" in kawase-blur GLSL program.
+	GLint unifm_fulltex;
 } glx_blur_pass_t;
 
 /// Structure containing GLX-dependent data for a session.

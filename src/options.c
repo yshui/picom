@@ -218,6 +218,9 @@ static void usage(const char *argv0, int ret) {
 	    "--blur-deviation\n"
 	    "  The standard deviation for the 'gaussian' blur method.\n"
 	    "\n"
+		"--blur-strength\n"
+	    "  The strength of the kawase blur as an integer between 1 and 20. Defaults to 5.\n"
+	    "\n"
 	    "--blur-background\n"
 	    "  Blur background of semi-transparent / ARGB windows. Bad in\n"
 	    "  performance. The switch name may change without prior\n"
@@ -443,8 +446,9 @@ static const struct option longopts[] = {
     {"blur-method", required_argument, NULL, 328},
     {"blur-size", required_argument, NULL, 329},
     {"blur-deviation", required_argument, NULL, 330},
-	{"corner-radius", required_argument, NULL, 331},
-    {"rounded-corners-exclude", required_argument, NULL, 332},
+	{"blur-strength", required_argument, NULL, 331},
+	{"corner-radius", required_argument, NULL, 332},
+    {"rounded-corners-exclude", required_argument, NULL, 333},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -849,8 +853,12 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// --blur-deviation
 			opt->blur_deviation = atof(optarg);
 			break;
-		case 331: opt->corner_radius = atoi(optarg); break;
-        case 332: condlst_add(&opt->rounded_corners_blacklist, optarg); break;
+		case 331:
+			// --blur-strength
+			opt->blur_strength = parse_kawase_blur_strength(atoi(optarg));
+			break;
+		case 332: opt->corner_radius = atoi(optarg); break;
+        case 333: condlst_add(&opt->rounded_corners_blacklist, optarg); break;
 		
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
@@ -929,6 +937,12 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	// Determine whether we track window grouping
 	if (opt->detect_transient || opt->detect_client_leader) {
 		opt->track_leader = true;
+	}
+
+	// Blur method kawase is not compatible with the xrender backend
+	if (opt->backend != BKEND_GLX && opt->blur_method == BLUR_METHOD_KAWASE) {
+		log_warn("Blur method 'kawase' is incompatible with the XRender backend. Fall back to default.\n");
+		opt->blur_method = BLUR_METHOD_KERNEL;
 	}
 
 	// Fill default blur kernel

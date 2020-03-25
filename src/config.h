@@ -60,8 +60,14 @@ enum blur_method {
 	BLUR_METHOD_KERNEL,
 	BLUR_METHOD_BOX,
 	BLUR_METHOD_GAUSSIAN,
+	BLUR_METHOD_KAWASE,
 	BLUR_METHOD_INVALID,
 };
+
+typedef struct blur_strength {
+	int iterations;
+	float offset;
+} blur_strength_t;
 
 typedef struct _c2_lptr c2_lptr_t;
 
@@ -189,6 +195,8 @@ typedef struct options {
 	int blur_radius;
 	// Standard deviation for the gaussian blur
 	double blur_deviation;
+	/// Blur strength (for kawase blur)
+	blur_strength_t blur_strength;
 	/// Whether to blur background when the window frame is not opaque.
 	/// Implies blur_background.
 	bool blur_background_frame;
@@ -320,3 +328,41 @@ static inline bool parse_vsync(const char *str) {
 }
 
 // vim: set noet sw=8 ts=8 :
+
+/**
+ * Parse a blur_strength option argument.
+ */
+static inline attr_pure blur_strength_t
+parse_kawase_blur_strength(const int level) {
+  static const blur_strength_t values[20] = {
+    { .iterations = 1, .offset = 1.5 },     // 1
+    { .iterations = 1, .offset = 2.0 },     // 2
+    { .iterations = 2, .offset = 2.5 },     // 3
+    { .iterations = 2, .offset = 3.0 },     // 4
+    { .iterations = 3, .offset = 2.75 },    // 5
+    { .iterations = 3, .offset = 3.5 },     // 6
+    { .iterations = 3, .offset = 4.25 },    // 7
+    { .iterations = 3, .offset = 5.0 },     // 8
+    { .iterations = 4, .offset = 3.71429f }, // 9
+    { .iterations = 4, .offset = 4.42857f }, // 10
+    { .iterations = 4, .offset = 5.14286f }, // 11
+    { .iterations = 4, .offset = 5.85714f }, // 12
+    { .iterations = 4, .offset = 6.57143f }, // 13
+    { .iterations = 4, .offset = 7.28571f }, // 14
+    { .iterations = 4, .offset = 8.0 },     // 15
+    { .iterations = 5, .offset = 6.0 },     // 16
+    { .iterations = 5, .offset = 7.0 },     // 17
+    { .iterations = 5, .offset = 8.0 },     // 18
+    { .iterations = 5, .offset = 9.0 },     // 19
+    { .iterations = 5, .offset = 10.0 },    // 20
+  };
+
+  if (level < 1 || level > 20) {
+    log_error("(\"%d\"): Invalid blur_strength argument. Needs to be a number between 1 and 20. Will default to 5", level);
+    return values[5];
+  }
+
+  log_info("blur-strength: %d [.iter = %d, .offset = %f]", level, values[level - 1].iterations, values[level - 1].offset);
+
+  return values[level - 1];;
+}

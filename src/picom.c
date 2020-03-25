@@ -710,6 +710,7 @@ static void destroy_backend(session_t *ps) {
 static bool initialize_blur(session_t *ps) {
 	struct kernel_blur_args kargs;
 	struct gaussian_blur_args gargs;
+	struct kawase_blur_args wargs;
 	struct box_blur_args bargs;
 
 	void *args = NULL;
@@ -727,6 +728,12 @@ static bool initialize_blur(session_t *ps) {
 		gargs.size = ps->o.blur_radius;
 		gargs.deviation = ps->o.blur_deviation;
 		args = (void *)&gargs;
+		break;
+	case BLUR_METHOD_KAWASE:
+		wargs.size = ps->o.blur_radius;
+		wargs.deviation = ps->o.blur_deviation;
+		wargs.strength = ps->o.blur_strength;
+		args = (void *)&wargs;
 		break;
 	default: return true;
 	}

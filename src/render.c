@@ -1204,7 +1204,7 @@ bool init_render(session_t *ps) {
 	if (ps->o.backend == BKEND_DUMMY) {
 		return false;
 	}
-
+	
 	// Initialize OpenGL as early as possible
 #ifdef CONFIG_OPENGL
 	glxext_init(ps->dpy, ps->scr);
@@ -1242,13 +1242,13 @@ bool init_render(session_t *ps) {
 	}
 
 	// Blur filter
-	if (ps->o.blur_method && ps->o.blur_method != BLUR_METHOD_KERNEL) {
-		log_warn("Old backends only support blur method \"kernel\". Your blur "
+	if (ps->o.blur_method && ps->o.blur_method != BLUR_METHOD_KERNEL && ps->o.blur_method != BLUR_METHOD_KAWASE) {
+		log_warn("Old backends only support blur methods \"kernel|kawase\". Your blur "
 		         "setting will not be applied");
 		ps->o.blur_method = BLUR_METHOD_NONE;
 	}
 
-	if (ps->o.blur_method == BLUR_METHOD_KERNEL) {
+	if (ps->o.blur_method == BLUR_METHOD_KERNEL || ps->o.blur_method == BLUR_METHOD_KAWASE) {
 		ps->blur_kerns_cache =
 		    ccalloc(ps->o.blur_kernel_count, struct x_convolution_kernel *);
 

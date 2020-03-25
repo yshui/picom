@@ -450,6 +450,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	lcfg_lookup_bool(&cfg, "vsync", &opt->vsync);
 	// --backend
+	lcfg_lookup_bool(&cfg, "experimental-backends", &opt->experimental_backends);
 	if (config_lookup_string(&cfg, "backend", &sval)) {
 		opt->backend = parse_backend(sval);
 		if (opt->backend >= NUM_BKEND) {
@@ -526,6 +527,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	config_lookup_int(&cfg, "blur-size", &opt->blur_radius);
 	// --blur-deviation
 	config_lookup_float(&cfg, "blur-deviation", &opt->blur_deviation);
+	// --blur-strength
+	if (config_lookup_int(&cfg, "blur-strength", &ival) && ival) {
+		opt->blur_strength = parse_kawase_blur_strength(ival);
+	}
 	// --blur-background
 	if (config_lookup_bool(&cfg, "blur-background", &ival) && ival) {
 		if (opt->blur_method == BLUR_METHOD_NONE) {
@@ -639,6 +644,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		}
 
 		config_setting_lookup_float(blur_cfg, "deviation", &opt->blur_deviation);
+
+		if (config_setting_lookup_int(blur_cfg, "strength", &ival) && ival) {
+			opt->blur_strength = parse_kawase_blur_strength(ival);
+		}
 	}
 
 	// Wintype settings

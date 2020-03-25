@@ -88,6 +88,8 @@ enum blur_method parse_blur_method(const char *src) {
 		return BLUR_METHOD_BOX;
 	} else if (strcmp(src, "gaussian") == 0) {
 		return BLUR_METHOD_GAUSSIAN;
+	} else if (strcmp(src, "kawase") == 0) {
+		return BLUR_METHOD_KAWASE;
 	} else if (strcmp(src, "none") == 0) {
 		return BLUR_METHOD_NONE;
 	}
@@ -542,6 +544,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .blur_method = BLUR_METHOD_NONE,
 	    .blur_radius = 3,
 	    .blur_deviation = 0.84089642,
+		.blur_strength = { .iterations = 3, .offset = 2.75 },
 	    .blur_background_frame = false,
 	    .blur_background_fixed = false,
 	    .blur_background_blacklist = NULL,
