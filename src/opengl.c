@@ -90,10 +90,6 @@ bool glx_init(session_t *ps, bool need_render) {
 		ps->psglx = cmalloc(glx_session_t);
 		memcpy(ps->psglx, &CGLX_SESSION_DEF, sizeof(glx_session_t));
 
-		// override blur_kernel_count for kawase
-		if (ps->o.blur_method == BLUR_METHOD_KAWASE)
-			ps->o.blur_kernel_count = MAX_BLUR_PASS;
-
 		// +1 for the zero terminator
 		ps->psglx->blur_passes = ccalloc(ps->o.blur_kernel_count, glx_blur_pass_t);
 
@@ -425,8 +421,6 @@ bool glx_init_kawase_blur(session_t *ps) {
 	assert(ps->o.blur_kernel_count > 0);
 	assert(ps->o.blur_kerns);
 	assert(ps->o.blur_kerns[0]);
-
-	log_warn("glx_init_kawase_blur: blur_kernel_count2 = %d", ps->o.blur_kernel_count);
 
 	// Allocate PBO if more than one blur kernel is present
 	if (ps->o.blur_kernel_count > 1) {

@@ -954,6 +954,15 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		CHECK(opt->blur_kernel_count);
 	}
 
+	// override blur_kernel_count for kawase
+	if (opt->blur_method == BLUR_METHOD_KAWASE &&
+	    (!opt->blur_kerns || !opt->blur_kerns[0])) {
+		opt->blur_kernel_count = MAX_BLUR_PASS;
+		opt->blur_kerns = ccalloc(opt->blur_kernel_count, struct conv *);
+		CHECK(opt->blur_kerns);
+		CHECK(opt->blur_kernel_count);
+	}
+
 	if (opt->resize_damage < 0) {
 		log_warn("Negative --resize-damage will not work correctly.");
 	}
