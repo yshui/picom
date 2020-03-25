@@ -56,9 +56,8 @@ struct gaussian_blur_args {
 	double deviation;
 };
 
-struct kawase_blur_args {
+struct dual_kawase_blur_args {
 	int size;
-	double deviation;
 	blur_strength_t strength;
 };
 

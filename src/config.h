@@ -60,11 +60,12 @@ enum blur_method {
 	BLUR_METHOD_KERNEL,
 	BLUR_METHOD_BOX,
 	BLUR_METHOD_GAUSSIAN,
-	BLUR_METHOD_KAWASE,
+	BLUR_METHOD_DUAL_KAWASE,
 	BLUR_METHOD_INVALID,
 };
 
 typedef struct blur_strength {
+	int strength;
 	int iterations;
 	float offset;
 } blur_strength_t;
@@ -335,26 +336,26 @@ static inline bool parse_vsync(const char *str) {
 static inline attr_pure blur_strength_t
 parse_kawase_blur_strength(const int level) {
   static const blur_strength_t values[20] = {
-    { .iterations = 1, .offset = 1.5 },     // 1
-    { .iterations = 1, .offset = 2.0 },     // 2
-    { .iterations = 2, .offset = 2.5 },     // 3
-    { .iterations = 2, .offset = 3.0 },     // 4
-    { .iterations = 3, .offset = 2.75 },    // 5
-    { .iterations = 3, .offset = 3.5 },     // 6
-    { .iterations = 3, .offset = 4.25 },    // 7
-    { .iterations = 3, .offset = 5.0 },     // 8
-    { .iterations = 4, .offset = 3.71429f }, // 9
-    { .iterations = 4, .offset = 4.42857f }, // 10
-    { .iterations = 4, .offset = 5.14286f }, // 11
-    { .iterations = 4, .offset = 5.85714f }, // 12
-    { .iterations = 4, .offset = 6.57143f }, // 13
-    { .iterations = 4, .offset = 7.28571f }, // 14
-    { .iterations = 4, .offset = 8.0 },     // 15
-    { .iterations = 5, .offset = 6.0 },     // 16
-    { .iterations = 5, .offset = 7.0 },     // 17
-    { .iterations = 5, .offset = 8.0 },     // 18
-    { .iterations = 5, .offset = 9.0 },     // 19
-    { .iterations = 5, .offset = 10.0 },    // 20
+    { .strength =1,  .iterations = 1, .offset = 1.5 },      // 1
+    { .strength =2,  .iterations = 1, .offset = 2.0 },      // 2
+    { .strength =3,  .iterations = 2, .offset = 2.5 },      // 3
+    { .strength =4,  .iterations = 2, .offset = 3.0 },      // 4
+    { .strength =5,  .iterations = 3, .offset = 2.75 },     // 5
+    { .strength =6,  .iterations = 3, .offset = 3.5 },      // 6
+    { .strength =7,  .iterations = 3, .offset = 4.25 },     // 7
+    { .strength =8,  .iterations = 3, .offset = 5.0 },      // 8
+    { .strength =9,  .iterations = 4, .offset = 3.71429f }, // 9
+    { .strength =10, .iterations = 4, .offset = 4.42857f }, // 10
+    { .strength =11, .iterations = 4, .offset = 5.14286f }, // 11
+    { .strength =12, .iterations = 4, .offset = 5.85714f }, // 12
+    { .strength =13, .iterations = 4, .offset = 6.57143f }, // 13
+    { .strength =14, .iterations = 4, .offset = 7.28571f }, // 14
+    { .strength =15, .iterations = 4, .offset = 8.0 },      // 15
+    { .strength =16, .iterations = 5, .offset = 6.0 },      // 16
+    { .strength =17, .iterations = 5, .offset = 7.0 },      // 17
+    { .strength =18, .iterations = 5, .offset = 8.0 },      // 18
+    { .strength =19, .iterations = 5, .offset = 9.0 },      // 19
+    { .strength =20, .iterations = 5, .offset = 10.0 },     // 20
   };
 
   if (level < 1 || level > 20) {

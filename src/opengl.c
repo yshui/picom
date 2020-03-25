@@ -616,7 +616,7 @@ bool glx_init_kawase_blur(session_t *ps) {
 bool glx_init_blur(session_t *ps) {
 	
 	switch (ps->o.blur_method) {
-	case BLUR_METHOD_KAWASE:
+	case BLUR_METHOD_DUAL_KAWASE:
 		return glx_init_kawase_blur(ps);
 	case BLUR_METHOD_KERNEL:
 	case BLUR_METHOD_BOX:
@@ -1353,7 +1353,7 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 
   bool ret;
   switch (ps->o.blur_method) {
-	case BLUR_METHOD_KAWASE:
+	case BLUR_METHOD_DUAL_KAWASE:
       ret = glx_blur_kawase_dst(ps, dx, dy, width, height, z,
 		factor_center, reg_tgt, pbc);
       break;

@@ -940,7 +940,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	}
 
 	// Blur method kawase is not compatible with the xrender backend
-	if (opt->backend != BKEND_GLX && opt->blur_method == BLUR_METHOD_KAWASE) {
+	if (opt->backend != BKEND_GLX && opt->blur_method == BLUR_METHOD_DUAL_KAWASE) {
 		log_warn("Blur method 'kawase' is incompatible with the XRender backend. Fall back to default.\n");
 		opt->blur_method = BLUR_METHOD_KERNEL;
 	}
@@ -955,7 +955,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	}
 
 	// override blur_kernel_count for kawase
-	if (opt->blur_method == BLUR_METHOD_KAWASE &&
+	if (opt->blur_method == BLUR_METHOD_DUAL_KAWASE &&
 	    (!opt->blur_kerns || !opt->blur_kerns[0])) {
 		opt->blur_kernel_count = MAX_BLUR_PASS;
 		opt->blur_kerns = ccalloc(opt->blur_kernel_count, struct conv *);

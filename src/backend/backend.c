@@ -211,6 +211,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				// fading out.
 				blur_opacity =
 				    w->opacity / win_calc_opacity_target(ps, w, true);
+			} else if (!ps->o.blur_background_fixed) {
+				// Apply blur intensity depending on the window opacity.
+				blur_opacity = w->opacity;
 			}
 
 			if (real_win_mode == WMODE_TRANS || ps->o.force_win_blend) {

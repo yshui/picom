@@ -33,8 +33,11 @@ typedef struct {
 typedef struct {
 	GLuint prog;
 	GLint unifm_opacity;
+	GLint unifm_texture_size;
+	GLint unifm_halfpixel;
 	GLint orig_loc;
 	GLint texorig_loc;
+	GLint projection_loc;
 } gl_blur_shader_t;
 
 typedef struct {
