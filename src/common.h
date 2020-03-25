@@ -75,6 +75,9 @@
 /// @brief Maximum OpenGL buffer age.
 #define CGLX_MAX_BUFFER_AGE 5
 
+/// @brief Maximum passes for blur.
+#define MAX_BLUR_PASS 6
+
 // Window flags
 
 // === Types ===

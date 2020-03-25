@@ -42,7 +42,7 @@ typedef struct {
 	/// Framebuffer used for blurring.
 	GLuint fbo;
 	/// Textures used for blurring.
-	GLuint textures[2];
+	GLuint textures[MAX_BLUR_PASS];
 	/// Width of the textures.
 	int width;
 	/// Height of the textures.
