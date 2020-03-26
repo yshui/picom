@@ -145,7 +145,7 @@ static void compose(backend_t *base, struct managed_win *w, void *img_data, int 
 
 		x_set_picture_clip_region(base->c, xd->back[2], 0, 0, &reg);
 		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_OVER, img->pict, p_tmp, xd->back[2],
-							1, 1, 0, 0,
+							0, 0, 0, 0,
 							//0, 0, to_i16_checked(x), to_i16_checked(y),
 							to_i16_checked(dst_x), to_i16_checked(dst_y),
 							to_u16_checked(img->ewidth), to_u16_checked(img->eheight));
