@@ -512,7 +512,7 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 }
 
 // TODO: make use of reg_visible
-void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
+void gl_compose(backend_t *base, struct managed_win *w attr_unused, void *image_data, int dst_x, int dst_y,
                 const region_t *reg_tgt, const region_t *reg_visible attr_unused) {
 	auto gd = (struct gl_data *)base;
 	struct gl_image *img = image_data;

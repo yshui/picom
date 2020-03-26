@@ -101,7 +101,7 @@ GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_
 /**
  * @brief Render a region with texture data.
  */
-void gl_compose(backend_t *, void *ptex, int dst_x, int dst_y, const region_t *reg_tgt,
+void gl_compose(backend_t *, struct managed_win *, void *ptex, int dst_x, int dst_y, const region_t *reg_tgt,
                 const region_t *reg_visible);
 
 void gl_resize(struct gl_data *, int width, int height);

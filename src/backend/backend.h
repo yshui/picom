@@ -28,6 +28,9 @@ typedef struct backend_base {
 	/// Whether the backend can accept new render request at the moment
 	bool busy;
 	// ...
+
+	// Session data
+	session_t *ps;
 } backend_t;
 
 typedef void (*backend_ready_callback_t)(void *);
@@ -131,7 +134,7 @@ struct backend_operations {
 	 * @param reg_paint    the clip region, in target coordinates
 	 * @param reg_visible the visible region, in target coordinates
 	 */
-	void (*compose)(backend_t *backend_data, void *image_data, int dst_x, int dst_y,
+	void (*compose)(backend_t *backend_data, struct managed_win *const w, void *image_data, int dst_x, int dst_y,
 	                const region_t *reg_paint, const region_t *reg_visible);
 
 	/// Fill rectangle of the rendering buffer, mostly for debug purposes, optional.
