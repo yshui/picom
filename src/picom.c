@@ -472,7 +472,13 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			w->frame_opacity = 1.0;
 		}
 
-		w->corner_radius = ps->o.corner_radius;
+		// Don't round full screen windows & excluded windows
+		if ((w && win_is_fullscreen(ps, w)) || 
+			c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL)) {
+			w->corner_radius = 0;
+		} else {
+			w->corner_radius = ps->o.corner_radius;
+		}
 
 		// Update window mode
 		w->mode = win_calc_mode(w);

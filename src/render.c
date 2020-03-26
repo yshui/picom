@@ -255,6 +255,7 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
 		xcb_render_picture_t alpha_pict = ps->alpha_picts[alpha_step];
 		if (alpha_step != 0) {
 			if (cr) {
+				//log_warn("f(%d, %d) wh(%d %d) xy(%d %d) dxy(%d %d)", fullwid, fullhei, wid, hei, x, y, dx, dy);
 				xcb_render_picture_t p_tmp = x_create_picture_with_standard(
 				    ps->c, ps->root, fullwid, fullhei, XCB_PICT_STANDARD_ARGB_32, 0, 0);
 				xcb_render_color_t trans = {
@@ -269,12 +270,12 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
 				uint32_t max_ntraps = to_u32_checked(cr);
 				xcb_render_trapezoid_t traps[4 * max_ntraps + 5];
 
-                uint32_t n = make_rounded_window_shape(traps, max_ntraps, cr, fullwid, fullhei);
+				uint32_t n = make_rounded_window_shape(traps, max_ntraps, cr, fullwid, fullhei);
 
-                xcb_render_trapezoids(
-                    ps->c, XCB_RENDER_PICT_OP_OVER, alpha_pict, p_tmp,
-                    x_get_pictfmt_for_standard(ps->c, XCB_PICT_STANDARD_A_8),
-                    0, 0, n, traps);
+				xcb_render_trapezoids(
+					ps->c, XCB_RENDER_PICT_OP_OVER, alpha_pict, p_tmp,
+					x_get_pictfmt_for_standard(ps->c, XCB_PICT_STANDARD_A_8),
+					0, 0, n, traps);
 
 				xcb_render_composite(
 				    ps->c, XCB_RENDER_PICT_OP_OVER, pict, p_tmp,
@@ -324,8 +325,9 @@ paint_region(session_t *ps, const struct managed_win *w, int x, int y, int wid, 
 	const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
 	const bool neg = (w && w->invert_color);
 
-    render(ps, x, y, dx, dy, wid, hei, fullwid, fullhei, opacity, argb, neg, (w && !win_is_fullscreen(ps, w) && !c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL) ? w->corner_radius : 0),
-	       pict, (w ? w->paint.ptex : ps->root_tile_paint.ptex), reg_paint,
+	render(ps, x, y, dx, dy, wid, hei, fullwid, fullhei, opacity, argb, neg,
+			(w ? w->corner_radius : 0),
+			pict, (w ? w->paint.ptex : ps->root_tile_paint.ptex), reg_paint,
 #ifdef CONFIG_OPENGL
 	       w ? &ps->glx_prog_win : NULL
 #else
@@ -792,8 +794,7 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 	const int16_t y = w->g.y;
 	const auto wid = to_u16_checked(w->widthb);
 	const auto hei = to_u16_checked(w->heightb);
-    //TODO: This really needs refactoring into a function
-    const int cr = w && !win_is_fullscreen(ps, w) && !c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL) ? w->corner_radius : 0;
+	const int cr = (w ? w->corner_radius : 0);
 
 	double factor_center = 1.0;
 	// Adjust blur strength according to window opacity, to make it appear
