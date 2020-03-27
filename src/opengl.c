@@ -1511,6 +1511,7 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 	assert(ps->psglx->round_passes[0].prog);
 	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
 	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
+	const bool have_blend = glIsEnabled(GL_BLEND);
 	bool ret = false;
 
 	log_warn("dxy(%d, %d) wh(%d %d)", dx, dy, width, height);
@@ -1535,36 +1536,41 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 	if (!pbc->textures[0])
 		pbc->textures[0] = glx_gen_texture(tex_tgt, mwidth, mheight);
 	GLuint tex_scr = pbc->textures[0];
+	//if (!pbc->textures[1])
+	//	pbc->textures[1] = glx_gen_texture(tex_tgt, mwidth, mheight);
+	//GLuint tex_scr2 = pbc->textures[1];
 
 	pbc->width = mwidth;
 	pbc->height = mheight;
 
-	if (!pbc->fbo)
-		glGenFramebuffers(1, &pbc->fbo);
-	const GLuint fbo = pbc->fbo;
+	//if (!pbc->fbo)
+	//	glGenFramebuffers(1, &pbc->fbo);
+	//const GLuint fbo = pbc->fbo;
 
 	if (!tex_scr) {
 		log_error("Failed to allocate texture.");
 		goto glx_round_corners_dst_end;
 	}
-	if (!fbo) {
-		log_error("Failed to allocate framebuffer.");
-		goto glx_round_corners_dst_end;
-	}
-
-	// Enable alpha blend
-	glEnable(GL_BLEND);
-	//glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	//if (!fbo) {
+	//	log_error("Failed to allocate framebuffer.");
+	//	goto glx_round_corners_dst_end;
+	//}
 	
 	// Read destination pixels into a texture
 	glEnable(tex_tgt);
 	glBindTexture(tex_tgt, tex_scr);
 	glx_copy_region_to_tex(ps, tex_tgt, mdx, mdy, mdx, mdy, mwidth, mheight);
 
+	// Texture scaling factor
+	GLfloat texfac_x = 1.0f, texfac_y = 1.0f;
+	if (tex_tgt == GL_TEXTURE_2D) {
+		texfac_x /= (GLfloat)mwidth;
+		texfac_y /= (GLfloat)mheight;
+	}
+
 	// Paint it back
-	glDisable(GL_STENCIL_TEST);
-	glDisable(GL_SCISSOR_TEST);
+	//glDisable(GL_STENCIL_TEST);
+	//glDisable(GL_SCISSOR_TEST);
 
 	{
 		const glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
@@ -1580,6 +1586,13 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 		if (have_stencil)
 			glEnable(GL_STENCIL_TEST);
 
+		// Enable alpha blend
+		if (have_blend) {
+			//glEnable(GL_BLEND);
+			//glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+			//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		}
+
 		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 		glUseProgram(ppass->prog);
 		if (ppass->unifm_offset_x >= 0)
@@ -1588,12 +1601,16 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 			glUniform1f(ppass->unifm_offset_y, 0);
 
 		P_PAINTREG_START(crect) {
-			auto rx = (GLfloat)(crect.x1 - mdx);
-			auto ry = (GLfloat)(mheight - (crect.y1 - mdy));
-			auto rxe = rx + (GLfloat)(crect.x2 - crect.x1);
-			auto rye = ry - (GLfloat)(crect.y2 - crect.y1);
+			auto rx = (GLfloat)(crect.x1 - mdx) * texfac_x;
+			auto ry = (GLfloat)(mheight - (crect.y1 - mdy)) * texfac_y;
+			auto rxe = rx + (GLfloat)(crect.x2 - crect.x1) * texfac_x;
+			auto rye = ry - (GLfloat)(crect.y2 - crect.y1) * texfac_y;
 			auto rdx = (GLfloat)(crect.x1 - mdx);
 			auto rdy = (GLfloat)(mheight - crect.y1 + mdy);
+			{
+				rdx = (GLfloat)crect.x1;
+				rdy = (GLfloat)(ps->root_height - crect.y1);
+			}
 			auto rdxe = rdx + (GLfloat)(crect.x2 - crect.x1);
 			auto rdye = rdy - (GLfloat)(crect.y2 - crect.y1);
 
@@ -1627,7 +1644,7 @@ glx_round_corners_dst_end:
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glBindTexture(tex_tgt, 0);
 	glDisable(tex_tgt);
-	glDisable(GL_BLEND);
+	//glDisable(GL_BLEND);
 	if (have_scissors)
 		glEnable(GL_SCISSOR_TEST);
 	if (have_stencil)
