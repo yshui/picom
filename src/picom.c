@@ -848,6 +848,9 @@ void configure_root(session_t *ps, int width, int height) {
 				ev_break(ps->loop, EVBREAK_ALL);
 				return;
 			}
+
+			// Re-acquire the root pixmap.
+			root_damaged(ps);
 		}
 		force_repaint(ps);
 	}
