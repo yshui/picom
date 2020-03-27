@@ -1205,7 +1205,13 @@ static bool redirect_start(session_t *ps) {
 		xcb_map_window(ps->c, ps->overlay);
 	}
 
-	xcb_composite_redirect_subwindows(ps->c, ps->root, session_redirection_mode(ps));
+	bool success = XCB_AWAIT_VOID(xcb_composite_redirect_subwindows, ps->c, ps->root,
+	                              session_redirection_mode(ps));
+	if (!success) {
+		log_fatal("Another composite manager is already running "
+		          "(and does not handle _NET_WM_CM_Sn correctly)");
+		return false;
+	}
 
 	x_sync(ps->c);
 

@@ -334,12 +334,6 @@ void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t 
 	int o = 0;
 	const char *name = "Unknown";
 
-	if (major == ps->composite_opcode && minor == XCB_COMPOSITE_REDIRECT_SUBWINDOWS) {
-		log_fatal("Another composite manager is already running "
-		          "(and does not handle _NET_WM_CM_Sn correctly)");
-		exit(1);
-	}
-
 #define CASESTRRET2(s)                                                                   \
 	case s: name = #s; break
 

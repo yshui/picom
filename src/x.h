@@ -50,27 +50,27 @@ struct xvisual_info {
 
 #define XCB_AWAIT_VOID(func, c, ...)                                                     \
 	({                                                                               \
-		bool success = true;                                                     \
-		__auto_type e = xcb_request_check(c, func##_checked(c, __VA_ARGS__));    \
-		if (e) {                                                                 \
-			x_print_error(e->sequence, e->major_code, e->minor_code,         \
-			              e->error_code);                                    \
-			free(e);                                                         \
-			success = false;                                                 \
+		bool __success = true;                                                   \
+		__auto_type __e = xcb_request_check(c, func##_checked(c, __VA_ARGS__));  \
+		if (__e) {                                                               \
+			x_print_error(__e->sequence, __e->major_code, __e->minor_code,   \
+			              __e->error_code);                                  \
+			free(__e);                                                       \
+			__success = false;                                               \
 		}                                                                        \
-		success;                                                                 \
+		__success;                                                               \
 	})
 
 #define XCB_AWAIT(func, c, ...)                                                          \
 	({                                                                               \
-		xcb_generic_error_t *e = NULL;                                           \
-		__auto_type r = func##_reply(c, func(c, __VA_ARGS__), &e);               \
-		if (e) {                                                                 \
-			x_print_error(e->sequence, e->major_code, e->minor_code,         \
-			              e->error_code);                                    \
-			free(e);                                                         \
+		xcb_generic_error_t *__e = NULL;                                         \
+		__auto_type __r = func##_reply(c, func(c, __VA_ARGS__), &__e);           \
+		if (__e) {                                                               \
+			x_print_error(__e->sequence, __e->major_code, __e->minor_code,   \
+			              __e->error_code);                                  \
+			free(__e);                                                       \
 		}                                                                        \
-		r;                                                                       \
+		__r;                                                                     \
 	})
 
 /// Wraps x_new_id. abort the program if x_new_id returns error
