@@ -324,11 +324,13 @@ enum { XSyncBadCounter = 0,
 };
 
 /**
- * X11 error handler function.
+ * Convert a X11 error to string
  *
- * XXX consider making this error to string
+ * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
+ *         for multiple calls to this function,
  */
-void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
+static const char *
+_x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
 	session_t *const ps = ps_g;
 
 	int o = 0;
@@ -337,6 +339,7 @@ void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t 
 #define CASESTRRET2(s)                                                                   \
 	case s: name = #s; break
 
+	// TODO separate error code out from session_t
 	o = error_code - ps->xfixes_error;
 	switch (o) { CASESTRRET2(XCB_XFIXES_BAD_REGION); }
 
@@ -398,8 +401,27 @@ void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t 
 
 #undef CASESTRRET2
 
-	log_debug("X error %d %s request %d minor %d serial %lu", error_code, name, major,
-	          minor, serial);
+	thread_local static char buffer[256];
+	snprintf(buffer, sizeof(buffer), "X error %d %s request %d minor %d serial %lu",
+	         error_code, name, major, minor, serial);
+	return buffer;
+}
+
+/**
+ * Log a X11 error
+ */
+void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
+	log_debug("%s", _x_strerror(serial, major, minor, error_code));
+}
+
+/*
+ * Convert a xcb_generic_error_t to a string that describes the error
+ *
+ * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
+ *         for multiple calls to this function,
+ */
+const char *x_strerror(xcb_generic_error_t *e) {
+	return _x_strerror(e->full_sequence, e->major_code, e->minor_code, e->error_code);
 }
 
 /**

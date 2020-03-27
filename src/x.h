@@ -191,11 +191,17 @@ void x_set_picture_clip_region(xcb_connection_t *, xcb_render_picture_t, int16_t
 void x_clear_picture_clip_region(xcb_connection_t *, xcb_render_picture_t pict);
 
 /**
- * X11 error handler function.
- *
- * XXX consider making this error to string
+ * Log a X11 error
  */
 void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code);
+
+/*
+ * Convert a xcb_generic_error_t to a string that describes the error
+ *
+ * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
+ *         for multiple calls to this function,
+ */
+const char *x_strerror(xcb_generic_error_t *e);
 
 xcb_pixmap_t x_create_pixmap(xcb_connection_t *, uint8_t depth, xcb_drawable_t drawable,
                              int width, int height);
