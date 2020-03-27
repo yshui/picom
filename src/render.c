@@ -870,6 +870,39 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 #endif
 }
 
+/**
+ * Rounde the corners of a window.
+ * Applies a fragment shader to discard corners
+ * 
+ */
+static inline void
+win_round_corners(session_t *ps, struct managed_win *w, xcb_render_picture_t tgt_buffer attr_unused,
+                    const region_t *reg_paint) {
+	const int16_t x = w->g.x;
+	const int16_t y = w->g.y;
+	const auto wid = to_u16_checked(w->widthb);
+	const auto hei = to_u16_checked(w->heightb);
+
+	double factor_center = 1.0;
+
+	switch (ps->o.backend) {
+	case BKEND_XRENDER:
+	case BKEND_XR_GLX_HYBRID: {
+		// XRender method is implemented inside render()
+	} break;
+#ifdef CONFIG_OPENGL
+	case BKEND_GLX:
+		glx_round_corners_dst(ps, x, y, wid, hei, (float)ps->psglx->z - 0.5f,
+		             (float)factor_center, reg_paint, &w->glx_round_cache);
+		break;
+#endif
+	default: assert(0);
+	}
+#ifndef CONFIG_OPENGL
+	(void)reg_paint;
+#endif
+}
+
 /// paint all windows
 /// region = ??
 /// region_real = the damage region
@@ -1031,6 +1064,11 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			     (ps->o.blur_background_frame && w->mode == WMODE_FRAME_TRANS) ||
 			     ps->o.force_win_blend))
 				win_blur_background(ps, w, ps->tgt_buffer.pict, &reg_tmp);
+
+			// Rounde the corners
+			if (w->corner_radius > 0) {
+				win_round_corners(ps, w, ps->tgt_buffer.pict, &reg_tmp);
+			}
 
 			// Painting the window
 			paint_one(ps, w, &reg_tmp);
@@ -1284,6 +1322,14 @@ bool init_render(session_t *ps) {
 		                                    ps->o.shadow_green, ps->o.shadow_blue);
 		if (ps->cshadow_picture == XCB_NONE) {
 			log_error("Failed to create shadow picture.");
+			return false;
+		}
+	}
+
+	// Initialize our rounded corners fragment shader
+	if (ps->o.corner_radius > 0) {
+		if (!glx_init_rounded_corners(ps)) {
+			log_error("Failed to init rounded corners shader.");
 			return false;
 		}
 	}

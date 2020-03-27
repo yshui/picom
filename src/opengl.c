@@ -99,6 +99,13 @@ bool glx_init(session_t *ps, bool need_render) {
 			ppass->unifm_offset_x = -1;
 			ppass->unifm_offset_y = -1;
 		}
+
+		ps->psglx->round_passes = ccalloc(1, glx_round_pass_t);
+		{
+			glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
+			ppass->unifm_offset_x = -1;
+			ppass->unifm_offset_y = -1;
+		}
 	}
 
 	glx_session_t *psglx = ps->psglx;
@@ -243,6 +250,15 @@ void glx_destroy(session_t *ps) {
 	}
 	free(ps->psglx->blur_passes);
 
+	{
+		glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
+		if (ppass->frag_shader)
+			glDeleteShader(ppass->frag_shader);
+		if (ppass->prog)
+			glDeleteProgram(ppass->prog);
+		free(ps->psglx->round_passes);
+	}
+
 	glx_free_prog_main(&ps->glx_prog_win);
 
 	gl_check_err();
@@ -274,7 +290,7 @@ void glx_on_root_change(session_t *ps) {
 /**
  * Initialize GLX blur filter.
  */
-bool glx_init_generic_blur(session_t *ps) {
+bool glx_init_conv_blur(session_t *ps) {
 	assert(ps->o.blur_kernel_count > 0);
 	assert(ps->o.blur_kerns);
 	assert(ps->o.blur_kerns[0]);
@@ -621,10 +637,129 @@ bool glx_init_blur(session_t *ps) {
 	case BLUR_METHOD_KERNEL:
 	case BLUR_METHOD_BOX:
 	case BLUR_METHOD_GAUSSIAN:
-		return glx_init_generic_blur(ps);
+		return glx_init_conv_blur(ps);
 	default:
 		return false;
   }
+}
+
+/**
+ * Initialize GLX rounded corners filter.
+ */
+bool glx_init_rounded_corners(session_t *ps) {
+
+	log_warn("glx_init_rounded_corners: cr=%d", ps->o.corner_radius);
+
+	{
+		char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
+		// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
+		// Thanks to hiciu for reporting.
+		setlocale(LC_NUMERIC, "C");
+
+		static const char *FRAG_SHADER_PREFIX =
+			"#version 110\n"
+			"%s"  // extensions
+			"uniform float offset_x;\n"
+			"uniform float offset_y;\n"
+			"uniform %s tex_scr;\n" // sampler2D | sampler2DRect
+			"uniform vec2 tex_size;\n"
+			"//layout(location = 0) out vec4 out_color;\n"
+			"\n"
+			"void main()\n"
+			"{\n"
+			"\n";
+
+		// Fragment shader (round corners)
+		static const char *FRAG_SHADER_ROUND_CORNERS =
+			"  vec4 sum = vec4(offset_x, offset_y, 0.0, 0.0);\n"
+			"  //gl_FragColor = sum / 8.0;\n"
+			"\n"
+			"  //vec4 in_color = texture(tex_scr, gl_FragCoord.xy / tex_size);"
+			"  //gl_FragColor = in_color;\n"
+			"  //gl_FragColor.a = 0.5;\n"
+			"  gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
+			"}\n";
+
+		const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
+		const char *sampler_type = (use_texture_rect ? "sampler2DRect": "sampler2D");
+		const char *texture_func = (use_texture_rect ? "texture2DRect": "texture2D");
+		char *extension = NULL;
+		if (use_texture_rect) {
+			mstrextend(&extension, "#extension GL_ARB_texture_rectangle : "
+			                       "require\n");
+		}
+		if (!extension) {
+			extension = strdup("");
+		}
+
+    	// Build rounded corners shader
+		glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
+		{
+			auto len = strlen(FRAG_SHADER_PREFIX) + strlen(extension)
+						+ strlen(sampler_type) + strlen(texture_func)
+						+ strlen(FRAG_SHADER_ROUND_CORNERS) + 1;
+			char *shader_str = calloc(len, sizeof(char));
+			if (!shader_str) {
+				log_error("Failed to allocate %zd bytes for shader string.", len);
+				return false;
+			}
+
+			char *pc = shader_str;
+			sprintf(pc, FRAG_SHADER_PREFIX, extension, sampler_type, texture_func);
+			pc += strlen(pc);
+			assert(strlen(shader_str) < len);
+
+			sprintf(pc, FRAG_SHADER_ROUND_CORNERS);
+			assert(strlen(shader_str) < len);
+#ifdef DEBUG_GLX
+			log_debug("Generated rounded corners shader:\n%s\n", shader_str);
+#endif
+
+			log_warn("Generated rounded corners shader:\n%s\n", shader_str);
+			ppass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
+			free(shader_str);
+
+			if (!ppass->frag_shader) {
+				log_error("Failed to create rounded corners fragment shader.");
+				free(extension);
+				free(lc_numeric_old);
+				return false;
+			}
+
+			// Build program
+			ppass->prog = gl_create_program(&ppass->frag_shader, 1);
+			if (!ppass->prog) {
+				log_error("Failed to create GLSL program.");
+				free(extension);
+				free(lc_numeric_old);
+				return false;
+			}
+
+			// Get uniform addresses
+#define P_GET_UNIFM_LOC(name, target)												\
+	{																				\
+		ppass->target = glGetUniformLocation(ppass->prog, name);					\
+		if (ppass->target < 0) {													\
+			log_error("Failed to get location of rounded corners uniform '" name	\
+			          "'. Might be troublesome."									\
+			          );															\
+		} 																			\
+	}
+			P_GET_UNIFM_LOC("offset_x", unifm_offset_x);
+			P_GET_UNIFM_LOC("offset_y", unifm_offset_y);
+#undef P_GET_UNIFM_LOC
+		}
+
+		free(extension);
+
+		// Restore LC_NUMERIC
+		setlocale(LC_NUMERIC, lc_numeric_old);
+		free(lc_numeric_old);
+	}
+
+	gl_check_err();
+
+	return true;
 }
 
 /**
@@ -1368,6 +1503,143 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   gl_check_err();
 
   return ret;
+}
+
+bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width, int height, float z attr_unused,
+                  GLfloat factor_center attr_unused, const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc attr_unused) {
+
+	assert(ps->psglx->round_passes[0].prog);
+	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
+	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
+	bool ret = false;
+
+	log_warn("dxy(%d, %d) wh(%d %d)", dx, dy, width, height);
+
+	// Calculate copy region size
+	glx_blur_cache_t ibc = {.width = 0, .height = 0};
+	if (!pbc)
+		pbc = &ibc;
+
+	int mdx = dx, mdy = dy, mwidth = width, mheight = height;
+	// log_trace("%d, %d, %d, %d", mdx, mdy, mwidth, mheight);
+
+	GLenum tex_tgt = GL_TEXTURE_RECTANGLE;
+	if (ps->psglx->has_texture_non_power_of_two)
+		tex_tgt = GL_TEXTURE_2D;
+
+	// Free textures if size inconsistency discovered
+	if (mwidth != pbc->width || mheight != pbc->height)
+		free_glx_bc_resize(ps, pbc);
+
+	// Generate FBO and textures if needed
+	if (!pbc->textures[0])
+		pbc->textures[0] = glx_gen_texture(tex_tgt, mwidth, mheight);
+	GLuint tex_scr = pbc->textures[0];
+
+	pbc->width = mwidth;
+	pbc->height = mheight;
+
+	if (!pbc->fbo)
+		glGenFramebuffers(1, &pbc->fbo);
+	const GLuint fbo = pbc->fbo;
+
+	if (!tex_scr) {
+		log_error("Failed to allocate texture.");
+		goto glx_round_corners_dst_end;
+	}
+	if (!fbo) {
+		log_error("Failed to allocate framebuffer.");
+		goto glx_round_corners_dst_end;
+	}
+
+	// Enable alpha blend
+	glEnable(GL_BLEND);
+	//glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	
+	// Read destination pixels into a texture
+	glEnable(tex_tgt);
+	glBindTexture(tex_tgt, tex_scr);
+	glx_copy_region_to_tex(ps, tex_tgt, mdx, mdy, mdx, mdy, mwidth, mheight);
+
+	// Paint it back
+	glDisable(GL_STENCIL_TEST);
+	glDisable(GL_SCISSOR_TEST);
+
+	{
+		const glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
+		assert(ppass->prog);
+
+		assert(tex_scr);
+		glBindTexture(tex_tgt, tex_scr);
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glDrawBuffer(GL_BACK);
+		if (have_scissors)
+			glEnable(GL_SCISSOR_TEST);
+		if (have_stencil)
+			glEnable(GL_STENCIL_TEST);
+
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+		glUseProgram(ppass->prog);
+		if (ppass->unifm_offset_x >= 0)
+			glUniform1f(ppass->unifm_offset_x, 0);
+		if (ppass->unifm_offset_y >= 0)
+			glUniform1f(ppass->unifm_offset_y, 0);
+
+		P_PAINTREG_START(crect) {
+			auto rx = (GLfloat)(crect.x1 - mdx);
+			auto ry = (GLfloat)(mheight - (crect.y1 - mdy));
+			auto rxe = rx + (GLfloat)(crect.x2 - crect.x1);
+			auto rye = ry - (GLfloat)(crect.y2 - crect.y1);
+			auto rdx = (GLfloat)(crect.x1 - mdx);
+			auto rdy = (GLfloat)(mheight - crect.y1 + mdy);
+			auto rdxe = rdx + (GLfloat)(crect.x2 - crect.x1);
+			auto rdye = rdy - (GLfloat)(crect.y2 - crect.y1);
+
+#ifdef DEBUG_GLX
+			log_debug("Rounded corner Pass: %f, %f, %f, %f -> %f, %f, %f, %f", rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
+#endif
+
+			log_warn("Rounded corner Pass: %f, %f, %f, %f -> %f, %f, %f, %f",
+				rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
+
+			glTexCoord2f(rx, ry);
+			glVertex3f(rdx, rdy, z);
+
+			glTexCoord2f(rxe, ry);
+			glVertex3f(rdxe, rdy, z);
+
+			glTexCoord2f(rxe, rye);
+			glVertex3f(rdxe, rdye, z);
+
+			glTexCoord2f(rx, rye);
+			glVertex3f(rdx, rdye, z);
+		}
+		P_PAINTREG_END();
+
+		glUseProgram(0);
+	}
+
+	ret = true;
+
+glx_round_corners_dst_end:
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glBindTexture(tex_tgt, 0);
+	glDisable(tex_tgt);
+	glDisable(GL_BLEND);
+	if (have_scissors)
+		glEnable(GL_SCISSOR_TEST);
+	if (have_stencil)
+		glEnable(GL_STENCIL_TEST);
+
+	if (&ibc == pbc) {
+		free_glx_bc(ps, pbc);
+	}
+
+	gl_check_err();
+
+	return ret;
 }
 
 bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,

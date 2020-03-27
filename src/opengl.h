@@ -46,6 +46,17 @@ typedef struct {
 	GLint unifm_fulltex;
 } glx_blur_pass_t;
 
+typedef struct {
+	/// Fragment shader for rounded corners.
+	GLuint frag_shader;
+	/// GLSL program for rounded corners.
+	GLuint prog;
+	/// Location of uniform "offset_x" in blur GLSL program.
+	GLint unifm_offset_x;
+	/// Location of uniform "offset_y" in blur GLSL program.
+	GLint unifm_offset_y;
+} glx_round_pass_t;
+
 /// Structure containing GLX-dependent data for a session.
 typedef struct glx_session {
 	// === OpenGL related ===
@@ -56,6 +67,7 @@ typedef struct glx_session {
 	/// Current GLX Z value.
 	int z;
 	glx_blur_pass_t *blur_passes;
+	glx_round_pass_t *round_passes;
 } glx_session_t;
 
 /// @brief Wrapper of a binded GLX texture.
@@ -87,6 +99,8 @@ void glx_on_root_change(session_t *ps);
 
 bool glx_init_blur(session_t *ps);
 
+bool glx_init_rounded_corners(session_t *ps);
+
 #ifdef CONFIG_OPENGL
 bool glx_load_prog_main(const char *vshader_str, const char *fshader_str,
                         glx_prog_main_t *pprogram);
@@ -109,6 +123,9 @@ static inline bool glx_tex_binded(const glx_texture_t *ptex, xcb_pixmap_t pixmap
 void glx_set_clip(session_t *ps, const region_t *reg);
 
 bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+                  GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc);
+
+bool glx_round_corners_dst(session_t *ps, int dx, int dy, int width, int height, float z,
                   GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc);
 
 GLuint glx_create_shader(GLenum shader_type, const char *shader_str);
