@@ -121,7 +121,7 @@ static void compose(backend_t *base, struct managed_win *w, void *img_data, int 
 		const int fullhei = w ? w-> heightb : 0;
 		//const int fullwid = img->width;
 		//const int fullhei = img->height;
-		//log_warn("f(%d, %d) imge(%d %d) imgf(%d %d) sdw(%d %d) dst(%d %d)", fullwid, fullhei, img->ewidth, img->eheight, img->width, img->height, w->shadow_width, w->shadow_height, dst_x, dst_y);
+		//log_warn("f(%d, %d) imge(%d %d) imgf(%d %d) sdw(%d %d) dst(%d %d) s:%d b:%d", fullwid, fullhei, img->ewidth, img->eheight, img->width, img->height, w->shadow_width, w->shadow_height, dst_x, dst_y, w->shadow, w->g.border_width);
 		xcb_render_picture_t p_tmp = x_create_picture_with_standard(
 			ps->c, ps->root, fullwid, fullhei, XCB_PICT_STANDARD_ARGB_32, 0, 0);
 		xcb_render_color_t trans = {
