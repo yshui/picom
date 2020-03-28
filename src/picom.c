@@ -867,6 +867,9 @@ void configure_root(session_t *ps, int width, int height) {
 				ev_break(ps->loop, EVBREAK_ALL);
 				return;
 			}
+
+			// Re-acquire the root pixmap.
+			root_damaged(ps);
 		}
 		force_repaint(ps);
 	}
@@ -1221,7 +1224,13 @@ static bool redirect_start(session_t *ps) {
 		xcb_map_window(ps->c, ps->overlay);
 	}
 
-	xcb_composite_redirect_subwindows(ps->c, ps->root, session_redirection_mode(ps));
+	bool success = XCB_AWAIT_VOID(xcb_composite_redirect_subwindows, ps->c, ps->root,
+								session_redirection_mode(ps));
+	if (!success) {
+		log_fatal("Another composite manager is already running "
+		          "(and does not handle _NET_WM_CM_Sn correctly)");
+		return false;
+	}
 
 	x_sync(ps->c);
 
@@ -1365,9 +1374,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		log_debug("Delayed handling of events, entering critical section");
 		auto e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
 		if (e) {
-			log_fatal("failed to grab x server");
-			x_print_error(e->full_sequence, e->major_code, e->minor_code,
-			              e->error_code);
+			log_fatal_x_error(e, "failed to grab x server");		  
 			return quit(ps);
 		}
 
@@ -1399,9 +1406,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 
 		e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
 		if (e) {
-			log_fatal("failed to ungrab x server");
-			x_print_error(e->full_sequence, e->major_code, e->minor_code,
-			              e->error_code);
+			log_fatal_x_error(e, "failed to ungrab x server");
 			return quit(ps);
 		}
 
@@ -1711,8 +1716,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	                                  XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY |
 	                                  XCB_EVENT_MASK_PROPERTY_CHANGE}));
 	if (e) {
-		log_error("Failed to setup root window event mask");
-		free(e);
+		log_error_x_error(e, "Failed to setup root window event mask");
 	}
 
 	xcb_prefetch_extension_data(ps->c, &xcb_render_id);
@@ -1914,8 +1918,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		e = xcb_request_check(
 		    ps->c, xcb_sync_create_fence(ps->c, ps->root, ps->sync_fence, 0));
 		if (e) {
-			log_error("Failed to create a XSync fence. xrender-sync-fence "
-			          "will be disabled");
+			log_error_x_error(e, "Failed to create a XSync fence. "
+						"xrender-sync-fence will be disabled");
 			ps->o.xrender_sync_fence = false;
 			ps->sync_fence = XCB_NONE;
 			free(e);
@@ -2112,7 +2116,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
 	if (e) {
-		log_fatal("Failed to grab X server");
+		log_fatal_x_error(e, "Failed to grab X server");
 		goto err;
 	}
 
@@ -2129,7 +2133,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	e = xcb_request_check(ps->c, xcb_ungrab_server(ps->c));
 	if (e) {
-		log_error("Failed to ungrab server");
+		log_fatal_x_error(e, "Failed to ungrab server");
 		free(e);
 	}
 
