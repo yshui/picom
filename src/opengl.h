@@ -45,9 +45,19 @@ typedef struct {
 	GLuint frag_shader;
 	/// GLSL program for rounded corners.
 	GLuint prog;
-	/// Location of uniform "u_radius" in rounded-corners GLSL program.
+	/// Location of uniform "offset_x" in blur GLSL program.
+	GLint unifm_offset_x;
+	/// Location of uniform "offset_y" in blur GLSL program.
+	GLint unifm_offset_y;
+	/// Location of uniform "factor_center" in blur GLSL program.
+	GLint unifm_factor_center;
+	/// Location of uniform "radius" in rounded-corners GLSL program.
 	GLint unifm_radius;
-	/// Location of uniform "u_resolution" in rounded-corners GLSL program.
+	/// Location of uniform "coord" in rounded-corners GLSL program.
+	GLint unifm_coord;
+	/// Location of uniform "fulltex" in rounded-corners GLSL program.
+	GLint unifm_fulltex;
+	/// Location of uniform "resolution" in rounded-corners GLSL program.
 	GLint unifm_resolution;
 } glx_round_pass_t;
 
@@ -119,7 +129,7 @@ void glx_set_clip(session_t *ps, const region_t *reg);
 bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
                   GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc);
 
-bool glx_round_corners_dst(session_t *ps, int dx, int dy, int width, int height, float z,
+bool glx_round_corners_dst(session_t *ps, int dx, int dy, int width, int height, float z, float cr,
                   GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc);
 
 GLuint glx_create_shader(GLenum shader_type, const char *shader_str);
