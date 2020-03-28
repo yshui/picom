@@ -73,6 +73,11 @@ struct xvisual_info {
 		__r;                                                                     \
 	})
 
+#define log_error_x_error(e, fmt, ...)                                                   \
+	LOG(ERROR, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
+#define log_fatal_x_error(e, fmt, ...)                                                   \
+	LOG(FATAL, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
+
 /// Wraps x_new_id. abort the program if x_new_id returns error
 static inline uint32_t x_new_id(xcb_connection_t *c) {
 	auto ret = xcb_generate_id(c);
