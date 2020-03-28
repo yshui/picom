@@ -50,28 +50,33 @@ struct xvisual_info {
 
 #define XCB_AWAIT_VOID(func, c, ...)                                                     \
 	({                                                                               \
-		bool success = true;                                                     \
-		__auto_type e = xcb_request_check(c, func##_checked(c, __VA_ARGS__));    \
-		if (e) {                                                                 \
-			x_print_error(e->sequence, e->major_code, e->minor_code,         \
-			              e->error_code);                                    \
-			free(e);                                                         \
-			success = false;                                                 \
+		bool __success = true;                                                   \
+		__auto_type __e = xcb_request_check(c, func##_checked(c, __VA_ARGS__));  \
+		if (__e) {                                                               \
+			x_print_error(__e->sequence, __e->major_code, __e->minor_code,   \
+			              __e->error_code);                                  \
+			free(__e);                                                       \
+			__success = false;                                               \
 		}                                                                        \
-		success;                                                                 \
+		__success;                                                               \
 	})
 
 #define XCB_AWAIT(func, c, ...)                                                          \
 	({                                                                               \
-		xcb_generic_error_t *e = NULL;                                           \
-		__auto_type r = func##_reply(c, func(c, __VA_ARGS__), &e);               \
-		if (e) {                                                                 \
-			x_print_error(e->sequence, e->major_code, e->minor_code,         \
-			              e->error_code);                                    \
-			free(e);                                                         \
+		xcb_generic_error_t *__e = NULL;                                         \
+		__auto_type __r = func##_reply(c, func(c, __VA_ARGS__), &__e);           \
+		if (__e) {                                                               \
+			x_print_error(__e->sequence, __e->major_code, __e->minor_code,   \
+			              __e->error_code);                                  \
+			free(__e);                                                       \
 		}                                                                        \
-		r;                                                                       \
+		__r;                                                                     \
 	})
+
+#define log_error_x_error(e, fmt, ...)                                                   \
+	LOG(ERROR, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
+#define log_fatal_x_error(e, fmt, ...)                                                   \
+	LOG(FATAL, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
 
 /// Wraps x_new_id. abort the program if x_new_id returns error
 static inline uint32_t x_new_id(xcb_connection_t *c) {
@@ -197,11 +202,17 @@ void x_set_picture_clip_region(xcb_connection_t *, xcb_render_picture_t, int16_t
 void x_clear_picture_clip_region(xcb_connection_t *, xcb_render_picture_t pict);
 
 /**
- * X11 error handler function.
- *
- * XXX consider making this error to string
+ * Log a X11 error
  */
 void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code);
+
+/*
+ * Convert a xcb_generic_error_t to a string that describes the error
+ *
+ * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
+ *         for multiple calls to this function,
+ */
+const char *x_strerror(xcb_generic_error_t *e);
 
 xcb_pixmap_t x_create_pixmap(xcb_connection_t *, uint8_t depth, xcb_drawable_t drawable,
                              int width, int height);

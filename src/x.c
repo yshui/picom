@@ -214,8 +214,7 @@ x_create_picture_with_pictfmt_and_pixmap(xcb_connection_t *c,
 	                             c, tmp_picture, pixmap, pictfmt->id, valuemask, buf));
 	free(buf);
 	if (e) {
-		x_print_error(e->full_sequence, e->major_code, e->minor_code, e->error_code);
-		log_error("failed to create picture");
+		log_error_x_error(e, "failed to create picture");
 		return XCB_NONE;
 	}
 	return tmp_picture;
@@ -285,7 +284,7 @@ bool x_fetch_region(xcb_connection_t *c, xcb_xfixes_region_t r, pixman_region32_
 	xcb_xfixes_fetch_region_reply_t *xr =
 	    xcb_xfixes_fetch_region_reply(c, xcb_xfixes_fetch_region(c, r), &e);
 	if (!xr) {
-		log_error("Failed to fetch rectangles");
+		log_error_x_error(e, "Failed to fetch rectangles");
 		return false;
 	}
 
@@ -321,9 +320,10 @@ void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
 	xcb_generic_error_t *e = xcb_request_check(
 	    c, xcb_render_set_picture_clip_rectangles_checked(
 	           c, pict, clip_x_origin, clip_y_origin, to_u32_checked(nrects), xrects));
-	if (e)
-		log_error("Failed to set clip region");
-	free(e);
+	if (e) {
+		log_error_x_error(e, "Failed to set clip region");
+		free(e);
+	}
 	free(xrects);
 	return;
 }
@@ -332,9 +332,10 @@ void x_clear_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict)
 	xcb_render_change_picture_value_list_t v = {.clipmask = XCB_NONE};
 	xcb_generic_error_t *e = xcb_request_check(
 	    c, xcb_render_change_picture(c, pict, XCB_RENDER_CP_CLIP_MASK, &v));
-	if (e)
-		log_error("failed to clear clip region");
-	free(e);
+	if (e) {
+		log_error_x_error(e, "failed to clear clip region");
+		free(e);
+	}
 	return;
 }
 
@@ -344,25 +345,22 @@ enum { XSyncBadCounter = 0,
 };
 
 /**
- * X11 error handler function.
+ * Convert a X11 error to string
  *
- * XXX consider making this error to string
+ * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
+ *         for multiple calls to this function,
  */
-void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
+static const char *
+_x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
 	session_t *const ps = ps_g;
 
 	int o = 0;
 	const char *name = "Unknown";
 
-	if (major == ps->composite_opcode && minor == XCB_COMPOSITE_REDIRECT_SUBWINDOWS) {
-		log_fatal("Another composite manager is already running "
-		          "(and does not handle _NET_WM_CM_Sn correctly)");
-		exit(1);
-	}
-
 #define CASESTRRET2(s)                                                                   \
 	case s: name = #s; break
 
+	// TODO separate error code out from session_t
 	o = error_code - ps->xfixes_error;
 	switch (o) { CASESTRRET2(XCB_XFIXES_BAD_REGION); }
 
@@ -424,8 +422,27 @@ void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t 
 
 #undef CASESTRRET2
 
-	log_debug("X error %d %s request %d minor %d serial %lu", error_code, name, major,
-	          minor, serial);
+	thread_local static char buffer[256];
+	snprintf(buffer, sizeof(buffer), "X error %d %s request %d minor %d serial %lu",
+	         error_code, name, major, minor, serial);
+	return buffer;
+}
+
+/**
+ * Log a X11 error
+ */
+void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
+	log_debug("%s", _x_strerror(serial, major, minor, error_code));
+}
+
+/*
+ * Convert a xcb_generic_error_t to a string that describes the error
+ *
+ * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
+ *         for multiple calls to this function,
+ */
+const char *x_strerror(xcb_generic_error_t *e) {
+	return _x_strerror(e->full_sequence, e->major_code, e->minor_code, e->error_code);
 }
 
 /**
@@ -440,8 +457,7 @@ xcb_pixmap_t x_create_pixmap(xcb_connection_t *c, uint8_t depth, xcb_drawable_t 
 	if (err == NULL)
 		return pix;
 
-	log_error("Failed to create pixmap:");
-	x_print_error(err->sequence, err->major_code, err->minor_code, err->error_code);
+	log_error_x_error(err, "Failed to create pixmap");
 	free(err);
 	return XCB_NONE;
 }
@@ -512,25 +528,26 @@ bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
 
 	auto e = xcb_request_check(c, xcb_sync_trigger_fence_checked(c, f));
 	if (e) {
-		log_error("Failed to trigger the fence.");
-		free(e);
-		return false;
+		log_error_x_error(e, "Failed to trigger the fence");
+		goto err;
 	}
 
 	e = xcb_request_check(c, xcb_sync_await_fence_checked(c, 1, &f));
 	if (e) {
-		log_error("Failed to await on a fence.");
-		free(e);
-		return false;
+		log_error_x_error(e, "Failed to await on a fence");
+		goto err;
 	}
 
 	e = xcb_request_check(c, xcb_sync_reset_fence_checked(c, f));
 	if (e) {
-		log_error("Failed to reset the fence.");
-		free(e);
-		return false;
+		log_error_x_error(e, "Failed to reset the fence");
+		goto err;
 	}
 	return true;
+
+err:
+	free(e);
+	return false;
 }
 
 // xcb-render specific macros
