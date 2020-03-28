@@ -45,10 +45,10 @@ typedef struct {
 	GLuint frag_shader;
 	/// GLSL program for rounded corners.
 	GLuint prog;
-	/// Location of uniform "offset_x" in blur GLSL program.
-	GLint unifm_offset_x;
-	/// Location of uniform "offset_y" in blur GLSL program.
-	GLint unifm_offset_y;
+	/// Location of uniform "u_radius" in rounded-corners GLSL program.
+	GLint unifm_radius;
+	/// Location of uniform "u_resolution" in rounded-corners GLSL program.
+	GLint unifm_resolution;
 } glx_round_pass_t;
 
 /// Structure containing GLX-dependent data for a session.
