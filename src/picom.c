@@ -2096,7 +2096,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
 	if (e) {
-		log_fatal("Failed to grab X server");
+		log_fatal_x_error(e, "Failed to grab X server");
+		free(e);
 		goto err;
 	}
 
@@ -2113,8 +2114,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	e = xcb_request_check(ps->c, xcb_ungrab_server(ps->c));
 	if (e) {
-		log_error_x_error(e, "Failed to ungrab server");
+		log_fatal_x_error(e, "Failed to ungrab server");
 		free(e);
+		goto err;
 	}
 
 	ps->server_grabbed = false;
