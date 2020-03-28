@@ -102,9 +102,14 @@ bool glx_init(session_t *ps, bool need_render) {
 
 		ps->psglx->round_passes = ccalloc(1, glx_round_pass_t);
 		{
-			//glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
-			//ppass->unifm_radius = -1;
-			//ppass->unifm_resolution = -1;
+			glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
+			ppass->unifm_factor_center = -1;
+			ppass->unifm_offset_x = -1;
+			ppass->unifm_offset_y = -1;
+			ppass->unifm_radius = -1;
+			ppass->unifm_coord = -1;
+			ppass->unifm_fulltex = -1;
+			ppass->unifm_resolution = -1;
 		}
 	}
 
@@ -659,32 +664,40 @@ bool glx_init_rounded_corners(session_t *ps) {
 		static const char *FRAG_SHADER_PREFIX =
 			"#version 110\n"
 			"%s"  // extensions
+			"uniform float offset_x;\n"
+			"uniform float offset_y;\n"
+			"uniform float factor_center;\n"
 			"uniform float u_radius;\n"
+			"uniform vec2 u_coord;\n"
+			"uniform vec2 u_fulltex;\n"
 			"uniform vec2 u_resolution;\n"
 			"uniform %s tex_scr;\n" // sampler2D | sampler2DRect
 			"\n"
-			"// from http://www.iquilezles.org/www/articles/distfunctions/distfunctions.htm\n"
+			"// https://www.shadertoy.com/view/ldfSDj\n"
 			"float udRoundBox( vec2 p, vec2 b, float r )\n"
 			"{\n"
     		"  return length(max(abs(p)-b+r,0.0))-r;\n"
 			"}\n\n"
 			"void main()\n"
 			"{\n"
+			"  vec4 col = %s(tex_scr, vec2(gl_TexCoord[0].x + offset_x,"
+			" gl_TexCoord[0].y + offset_y)) * factor_center;\n"
 			"\n";
 
 		// Fragment shader (round corners)
 		static const char *FRAG_SHADER_ROUND_CORNERS =
-    		"  vec2 halfRes = 0.5 * u_resolution.xy;\n"
+			"  vec2 halfRes = 0.5 * u_fulltex.xy;\n"
+			"  vec2 coord = vec2(u_coord.x, u_resolution.y-u_fulltex.y-u_coord.y);\n"
 			"\n"
     		"  // compute box\n"
-    		"  float b = udRoundBox( gl_FragCoord.xy - halfRes, halfRes, u_radius );\n"
+			"  float b = udRoundBox( gl_FragCoord.xy - coord - halfRes, halfRes, u_radius );\n"
 			"\n"
    			"  // colorize (red / black )\n"
-			"  vec3 c = mix( vec3(1.0,0.0,0.0), vec3(0.0,1.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  vec3 c = mix( vec3(col.r,col.g,col.b), vec3(0.0,1.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  //vec4 c4 = mix( col, vec4(0.0,1.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"\n"
 			"  gl_FragColor = vec4( c, 1.0 );\n"
-			"\n"
-			"  //gl_FragColor.a = 0.5;\n"
+			"  //gl_FragColor = c4;\n"
 			"  //gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
 			"}\n";
 
@@ -713,7 +726,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 			}
 
 			char *pc = shader_str;
-			sprintf(pc, FRAG_SHADER_PREFIX, extension, sampler_type, texture_func);
+			sprintf(pc, FRAG_SHADER_PREFIX, extension, sampler_type, texture_func, texture_func);
 			pc += strlen(pc);
 			assert(strlen(shader_str) < len);
 
@@ -753,7 +766,12 @@ bool glx_init_rounded_corners(session_t *ps) {
 			          );															\
 		} 																			\
 	}
+			P_GET_UNIFM_LOC("factor_center", unifm_factor_center);
+			P_GET_UNIFM_LOC("offset_x", unifm_offset_x);
+			P_GET_UNIFM_LOC("offset_y", unifm_offset_y);
 			P_GET_UNIFM_LOC("u_radius", unifm_radius);
+			P_GET_UNIFM_LOC("u_coord", unifm_coord);
+			P_GET_UNIFM_LOC("u_fulltex", unifm_fulltex);
 			P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
 #undef P_GET_UNIFM_LOC
 		}
@@ -1513,7 +1531,7 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   return ret;
 }
 
-bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width, int height, float z attr_unused,
+bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width, int height, float z attr_unused, float cr,
                   GLfloat factor_center attr_unused, const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc attr_unused) {
 
 	assert(ps->psglx->round_passes[0].prog);
@@ -1522,7 +1540,7 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 	const bool have_blend = glIsEnabled(GL_BLEND);
 	bool ret = false;
 
-	log_warn("dxy(%d, %d) wh(%d %d)", dx, dy, width, height);
+	//log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d)", dx, dy, width, height, ps->root_width, ps->root_height);
 
 	// Calculate copy region size
 	glx_blur_cache_t ibc = {.width = 0, .height = 0};
@@ -1603,10 +1621,20 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 
 		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 		glUseProgram(ppass->prog);
+		if (ppass->unifm_offset_x >= 0)
+			glUniform1f(ppass->unifm_offset_x, texfac_x);
+		if (ppass->unifm_offset_y >= 0)
+			glUniform1f(ppass->unifm_offset_y, texfac_y);
+		if (ppass->unifm_factor_center >= 0)
+			glUniform1f(ppass->unifm_factor_center, factor_center);
 		if (ppass->unifm_radius >= 0)
-			glUniform1f(ppass->unifm_radius, (float)15.0f);
+			glUniform1f(ppass->unifm_radius, cr);
+		if (ppass->unifm_coord >= 0)
+			glUniform2f(ppass->unifm_coord, (float)dx, (float)dy);
+		if (ppass->unifm_fulltex >= 0)
+			glUniform2f(ppass->unifm_fulltex, (float)mwidth, (float)mheight);
 		if (ppass->unifm_resolution >= 0)
-			glUniform2f(ppass->unifm_resolution, (float)mwidth, (float)mheight);
+			glUniform2f(ppass->unifm_resolution, (float)ps->root_width, (float)ps->root_height);
 
 		P_PAINTREG_START(crect) {
 			auto rx = (GLfloat)(crect.x1 - mdx) * texfac_x;
@@ -1626,8 +1654,8 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 			log_debug("Rounded corner Pass: %f, %f, %f, %f -> %f, %f, %f, %f", rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
 #endif
 
-			log_warn("Rounded corner Pass: %f, %f, %f, %f -> %f, %f, %f, %f",
-				rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
+			//log_warn("Rounded corner Pass:  %f, %f, %f, %f, %f, %f -> %f, %f, %f, %f",
+			//	texfac_x, texfac_y, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
 
 			glTexCoord2f(rx, ry);
 			glVertex3f(rdx, rdy, z);

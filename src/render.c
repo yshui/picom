@@ -876,7 +876,7 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
  * 
  */
 static inline void
-win_round_corners(session_t *ps, struct managed_win *w, xcb_render_picture_t tgt_buffer attr_unused,
+win_round_corners(session_t *ps, struct managed_win *w, float cr, xcb_render_picture_t tgt_buffer attr_unused,
                     const region_t *reg_paint) {
 	const int16_t x = w->g.x;
 	const int16_t y = w->g.y;
@@ -892,7 +892,7 @@ win_round_corners(session_t *ps, struct managed_win *w, xcb_render_picture_t tgt
 	} break;
 #ifdef CONFIG_OPENGL
 	case BKEND_GLX:
-		glx_round_corners_dst(ps, x, y, wid, hei, (float)ps->psglx->z - 0.5f,
+		glx_round_corners_dst(ps, x, y, wid, hei, (float)ps->psglx->z - 0.5f, cr,
 		             (float)factor_center, reg_paint, &w->glx_round_cache);
 		break;
 #endif
@@ -1065,9 +1065,9 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			     ps->o.force_win_blend))
 				win_blur_background(ps, w, ps->tgt_buffer.pict, &reg_tmp);
 
-			// Rounde the corners
+			// Round the corners
 			if (w->corner_radius > 0) {
-				win_round_corners(ps, w, ps->tgt_buffer.pict, &reg_tmp);
+				win_round_corners(ps, w, (float)w->corner_radius, ps->tgt_buffer.pict, &reg_tmp);
 			}
 
 			// Painting the window
