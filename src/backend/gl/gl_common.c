@@ -1445,7 +1445,7 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, enum blur_method met
 				sum += texture2D(tex_src, uv + vec2(halfpixel.x, -halfpixel.y) * offset) * 2.0;
 				sum += texture2D(tex_src, uv + vec2(0.0, -halfpixel.y * 2.0) * offset);
 				sum += texture2D(tex_src, uv + vec2(-halfpixel.x, -halfpixel.y) * offset) * 2.0;
-				out_color = sum / 12.0 * opacity;
+				out_color = sum / 12.0;// * opacity;
 			}
 		);
 		// clang-format on
