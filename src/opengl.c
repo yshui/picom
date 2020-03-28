@@ -102,9 +102,9 @@ bool glx_init(session_t *ps, bool need_render) {
 
 		ps->psglx->round_passes = ccalloc(1, glx_round_pass_t);
 		{
-			glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
-			ppass->unifm_offset_x = -1;
-			ppass->unifm_offset_y = -1;
+			//glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
+			//ppass->unifm_radius = -1;
+			//ppass->unifm_resolution = -1;
 		}
 	}
 
@@ -659,25 +659,33 @@ bool glx_init_rounded_corners(session_t *ps) {
 		static const char *FRAG_SHADER_PREFIX =
 			"#version 110\n"
 			"%s"  // extensions
-			"uniform float offset_x;\n"
-			"uniform float offset_y;\n"
+			"uniform float u_radius;\n"
+			"uniform vec2 u_resolution;\n"
 			"uniform %s tex_scr;\n" // sampler2D | sampler2DRect
-			"uniform vec2 tex_size;\n"
-			"//layout(location = 0) out vec4 out_color;\n"
 			"\n"
+			"// from http://www.iquilezles.org/www/articles/distfunctions/distfunctions.htm\n"
+			"float udRoundBox( vec2 p, vec2 b, float r )\n"
+			"{\n"
+    		"  return length(max(abs(p)-b+r,0.0))-r;\n"
+			"}\n\n"
 			"void main()\n"
 			"{\n"
 			"\n";
 
 		// Fragment shader (round corners)
 		static const char *FRAG_SHADER_ROUND_CORNERS =
-			"  vec4 sum = vec4(offset_x, offset_y, 0.0, 0.0);\n"
-			"  //gl_FragColor = sum / 8.0;\n"
+    		"  vec2 halfRes = 0.5 * u_resolution.xy;\n"
 			"\n"
-			"  //vec4 in_color = texture(tex_scr, gl_FragCoord.xy / tex_size);"
-			"  //gl_FragColor = in_color;\n"
+    		"  // compute box\n"
+    		"  float b = udRoundBox( gl_FragCoord.xy - halfRes, halfRes, u_radius );\n"
+			"\n"
+   			"  // colorize (red / black )\n"
+			"  vec3 c = mix( vec3(1.0,0.0,0.0), vec3(0.0,1.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"\n"
+			"  gl_FragColor = vec4( c, 1.0 );\n"
+			"\n"
 			"  //gl_FragColor.a = 0.5;\n"
-			"  gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
+			"  //gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
 			"}\n";
 
 		const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
@@ -745,8 +753,8 @@ bool glx_init_rounded_corners(session_t *ps) {
 			          );															\
 		} 																			\
 	}
-			P_GET_UNIFM_LOC("offset_x", unifm_offset_x);
-			P_GET_UNIFM_LOC("offset_y", unifm_offset_y);
+			P_GET_UNIFM_LOC("u_radius", unifm_radius);
+			P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
 #undef P_GET_UNIFM_LOC
 		}
 
@@ -1588,17 +1596,17 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 
 		// Enable alpha blend
 		if (have_blend) {
-			//glEnable(GL_BLEND);
+			glEnable(GL_BLEND);
 			//glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-			//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		}
 
 		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 		glUseProgram(ppass->prog);
-		if (ppass->unifm_offset_x >= 0)
-			glUniform1f(ppass->unifm_offset_x, 0);
-		if (ppass->unifm_offset_y >= 0)
-			glUniform1f(ppass->unifm_offset_y, 0);
+		if (ppass->unifm_radius >= 0)
+			glUniform1f(ppass->unifm_radius, (float)15.0f);
+		if (ppass->unifm_resolution >= 0)
+			glUniform2f(ppass->unifm_resolution, (float)mwidth, (float)mheight);
 
 		P_PAINTREG_START(crect) {
 			auto rx = (GLfloat)(crect.x1 - mdx) * texfac_x;
@@ -1644,7 +1652,7 @@ glx_round_corners_dst_end:
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glBindTexture(tex_tgt, 0);
 	glDisable(tex_tgt);
-	//glDisable(GL_BLEND);
+	glDisable(GL_BLEND);
 	if (have_scissors)
 		glEnable(GL_SCISSOR_TEST);
 	if (have_stencil)
