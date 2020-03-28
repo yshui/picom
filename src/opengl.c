@@ -103,11 +103,9 @@ bool glx_init(session_t *ps, bool need_render) {
 		{
 			glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
 			ppass->unifm_factor_center = -1;
-			ppass->unifm_offset_x = -1;
-			ppass->unifm_offset_y = -1;
 			ppass->unifm_radius = -1;
-			ppass->unifm_coord = -1;
-			ppass->unifm_fulltex = -1;
+			ppass->unifm_texcoord = -1;
+			ppass->unifm_texsize = -1;
 			ppass->unifm_resolution = -1;
 		}
 	}
@@ -457,8 +455,8 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"uniform float offset_y;\n"
 			"uniform float factor_center;\n"
 			"uniform float u_radius;\n"
-			"uniform vec2 u_coord;\n"
-			"uniform vec2 u_fulltex;\n"
+			"uniform vec2 u_texcoord;\n"
+			"uniform vec2 u_texsize;\n"
 			"uniform vec2 u_resolution;\n"
 			"uniform %s tex_scr;\n" // sampler2D | sampler2DRect
 			"\n"
@@ -469,25 +467,25 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"}\n\n"
 			"void main()\n"
 			"{\n"
-			"  vec4 col = %s(tex_scr, vec2(gl_TexCoord[0].x + offset_x,"
-			" gl_TexCoord[0].y + offset_y)) * factor_center;\n"
+			"  vec4 col = %s(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * factor_center;\n"
 			"\n";
 
 		// Fragment shader (round corners)
 		static const char *FRAG_SHADER_ROUND_CORNERS =
-			"  vec2 halfRes = 0.5 * u_fulltex.xy;\n"
-			"  vec2 coord = vec2(u_coord.x, u_resolution.y-u_fulltex.y-u_coord.y);\n"
+			"  vec2 halfres = 0.5 * u_texsize.xy;\n"
+			"  vec2 coord = vec2(u_texcoord.x, u_resolution.y-u_texsize.y-u_texcoord.y);\n"
 			"\n"
     		"  // compute box\n"
-			"  float b = udRoundBox( gl_FragCoord.xy - coord - halfRes, halfRes, u_radius );\n"
+			"  float b = udRoundBox( gl_FragCoord.xy - coord - halfres, halfres, u_radius );\n"
 			"\n"
    			"  // colorize (red / black )\n"
-			"  vec3 c = mix( vec3(col.r,col.g,col.b), vec3(0.0,1.0,0.0), smoothstep(0.0,1.0,b) );\n"
-			"  //vec4 c4 = mix( col, vec4(0.0,1.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  //vec3 c = mix( vec3(col.r,col.g,col.b), vec3(0.0,1.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  vec4 c = mix( col, vec4(0.0,1.0,0.0,1.0), smoothstep(0.0,1.0,b) );\n"
 			"\n"
-			"  gl_FragColor = vec4( c, 1.0 );\n"
-			"  //gl_FragColor = c4;\n"
+			"  gl_FragColor = vec4( c );\n"
+			"  //gl_FragColor = vec4( c, 1.0 );\n"
 			"  //gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
+			"  //gl_FragColor = gl_Color;\n"
 			"}\n";
 
 		const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
@@ -556,11 +554,9 @@ bool glx_init_rounded_corners(session_t *ps) {
 		} 																			\
 	}
 			P_GET_UNIFM_LOC("factor_center", unifm_factor_center);
-			P_GET_UNIFM_LOC("offset_x", unifm_offset_x);
-			P_GET_UNIFM_LOC("offset_y", unifm_offset_y);
 			P_GET_UNIFM_LOC("u_radius", unifm_radius);
-			P_GET_UNIFM_LOC("u_coord", unifm_coord);
-			P_GET_UNIFM_LOC("u_fulltex", unifm_fulltex);
+			P_GET_UNIFM_LOC("u_texcoord", unifm_texcoord);
+			P_GET_UNIFM_LOC("u_texsize", unifm_texsize);
 			P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
 #undef P_GET_UNIFM_LOC
 		}
@@ -1134,24 +1130,20 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 		// Enable alpha blend
 		if (have_blend) {
 			glEnable(GL_BLEND);
-			//glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+			//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		}
 
 		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 		glUseProgram(ppass->prog);
-		if (ppass->unifm_offset_x >= 0)
-			glUniform1f(ppass->unifm_offset_x, texfac_x);
-		if (ppass->unifm_offset_y >= 0)
-			glUniform1f(ppass->unifm_offset_y, texfac_y);
 		if (ppass->unifm_factor_center >= 0)
 			glUniform1f(ppass->unifm_factor_center, factor_center);
 		if (ppass->unifm_radius >= 0)
 			glUniform1f(ppass->unifm_radius, cr);
-		if (ppass->unifm_coord >= 0)
-			glUniform2f(ppass->unifm_coord, (float)dx, (float)dy);
-		if (ppass->unifm_fulltex >= 0)
-			glUniform2f(ppass->unifm_fulltex, (float)mwidth, (float)mheight);
+		if (ppass->unifm_texcoord >= 0)
+			glUniform2f(ppass->unifm_texcoord, (float)dx, (float)dy);
+		if (ppass->unifm_texsize >= 0)
+			glUniform2f(ppass->unifm_texsize, (float)mwidth, (float)mheight);
 		if (ppass->unifm_resolution >= 0)
 			glUniform2f(ppass->unifm_resolution, (float)ps->root_width, (float)ps->root_height);
 
