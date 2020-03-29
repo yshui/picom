@@ -1046,8 +1046,6 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(use_damage, cdbus_reply_bool);
 #endif
 
-	cdbus_m_opts_get_stub(track_focus, cdbus_reply_bool, true);
-	cdbus_m_opts_get_do(track_leader, cdbus_reply_bool);
 #undef cdbus_m_opts_get_do
 #undef cdbus_m_opts_get_stub
 
