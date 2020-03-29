@@ -480,10 +480,12 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"\n"
    			"  // colorize (red / black )\n"
 			"  //vec3 c = mix( vec3(col.r,col.g,col.b), vec3(0.0,1.0,0.0), smoothstep(0.0,1.0,b) );\n"
-			"  vec4 c = mix( col, vec4(0.0,1.0,0.0,1.0), smoothstep(0.0,1.0,b) );\n"
+			"  vec4 c = mix( col, vec4(1.0,0.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  //vec4 c = mix( vec4(1.0,0.0,0.0,1.0), vec4(0.0,1.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"\n"
-			"  gl_FragColor = vec4( c );\n"
-			"  //gl_FragColor = vec4( c, 1.0 );\n"
+			"  //if ( c == vec4(0.0,1.0,0.0,0.0) ) discard; else gl_FragColor = vec4( c );\n"
+			"  //gl_FragColor = vec4( c );\n"
+			"  gl_FragColor = vec4( c.rgb, 0.0 );\n"
 			"  //gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
 			"  //gl_FragColor = gl_Color;\n"
 			"}\n";
@@ -1052,7 +1054,6 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 	assert(ps->psglx->round_passes[0].prog);
 	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
 	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
-	const bool have_blend = glIsEnabled(GL_BLEND);
 	bool ret = false;
 
 	//log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d)", dx, dy, width, height, ps->root_width, ps->root_height);
@@ -1127,12 +1128,13 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 		if (have_stencil)
 			glEnable(GL_STENCIL_TEST);
 
-		// Enable alpha blend
-		if (have_blend) {
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-			//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		}
+		// Control blending with src
+		glDisable(GL_BLEND);
+		//glEnable(GL_BLEND);
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		//glBlendFunc(GL_ONE, GL_ZERO);
+		//glColor4f(0.0f, 0.0f, 0.0f, 0.5f);
 
 		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 		glUseProgram(ppass->prog);
@@ -1182,6 +1184,28 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 		}
 		P_PAINTREG_END();
 
+		/*P_PAINTREG_START(crect) {
+			// XXX what does all of these variables mean?
+			GLint rdx = crect.x1;
+			GLint rdy = ps->root_height - crect.y1;
+			GLint rdxe = rdx + (crect.x2 - crect.x1);
+			GLint rdye = rdy - (crect.y2 - crect.y1);
+
+#ifdef DEBUG_GLX
+			log_debug("Rounded corner Pass: %d, %d, %.2f -> %d, %d, %d, %d", crect.x1, crect.y1, z, rdx, rdy, rdxe, rdye);
+#endif
+
+			log_warn("Rounded corner Pass: %d, %d, %.2f -> %d, %d, %d, %d",
+					crect.x1, crect.y1, z, rdx, rdy, rdxe, rdye);
+
+			glVertex3i(rdx, rdy, (int)z);
+			glVertex3i(rdxe, rdy, (int)z);
+			glVertex3i(rdxe, rdye, (int)z);
+			glVertex3i(rdx, rdye, (int)z);
+		}
+		P_PAINTREG_END();*/
+
+		glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
 		glUseProgram(0);
 	}
 
