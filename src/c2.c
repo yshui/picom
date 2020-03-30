@@ -1028,17 +1028,6 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 		}
 	}
 
-	// Enable specific tracking options, if needed by the condition
-	// TODO: Add track_leader
-	switch (pleaf->predef) {
-	// case C2_L_PROUNDED: ps->o.detect_rounded_corners = true; break;
-	case C2_L_PNAME:
-	case C2_L_PCLASSG:
-	case C2_L_PCLASSI:
-	case C2_L_PROLE: ps->o.track_wdata = true; break;
-	default: break;
-	}
-
 	// Warn about lower case characters in target name
 	if (pleaf->predef == C2_L_PUNDEFINED) {
 		for (const char *pc = pleaf->tgt; *pc; ++pc) {

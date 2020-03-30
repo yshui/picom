@@ -562,7 +562,6 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .detect_client_leader = false,
 	    .no_ewmh_fullscreen = false,
 
-	    .track_wdata = false,
 	    .track_leader = false,
 
 		.rounded_corners_blacklist = NULL
