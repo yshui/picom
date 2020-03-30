@@ -228,8 +228,6 @@ typedef struct options {
 	bool detect_client_leader;
 
 	// === Calculated ===
-	/// Whether we need to track window name and class.
-	bool track_wdata;
 	/// Whether we need to track window leaders.
 	bool track_leader;
 

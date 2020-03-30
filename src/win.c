@@ -1036,11 +1036,9 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 		win_update_leader(ps, w);
 
 	// Get window name and class if we are tracking them
-	if (ps->o.track_wdata) {
-		win_update_name(ps, w);
-		win_get_class(ps, w);
-		win_get_role(ps, w);
-	}
+	win_update_name(ps, w);
+	win_get_class(ps, w);
+	win_get_role(ps, w);
 
 	// Update everything related to conditions
 	win_on_factor_change(ps, w);

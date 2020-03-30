@@ -309,11 +309,9 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
 	}
 
 	// Check if it's a mapped client window
-	if (WIN_EVMODE_CLIENT == mode ||
+	if (mode == WIN_EVMODE_CLIENT ||
 	    ((w = find_toplevel(ps, wid)) && w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
-		if (ps->o.frame_opacity > 0 || ps->o.track_wdata || ps->track_atom_lst ||
-		    ps->o.detect_client_opacity)
-			evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
+		evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
 	}
 
 	return evmask;
