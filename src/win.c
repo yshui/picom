@@ -561,12 +561,16 @@ bool win_client_has_alpha(const struct managed_win *w) {
 	       w->client_pictfmt->direct.alpha_mask;
 }
 
-winmode_t win_calc_mode(const struct managed_win *w) {
+winmode_t win_calc_mode(session_t *ps, const struct managed_win *w) {
 	if (w->opacity < 1.0) {
 		return WMODE_TRANS;
 	}
 	if (w->frame_opacity != 1.0 && win_has_frame(w)) {
 		return WMODE_FRAME_TRANS;
+	}
+
+	if (ps->o.backend == BKEND_GLX && w->corner_radius > 0) {
+		return WMODE_TRANS;
 	}
 
 	if (win_has_alpha(w)) {
@@ -2106,7 +2110,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	}
 
 	// Update window mode here to check for ARGB windows
-	w->mode = win_calc_mode(w);
+	w->mode = win_calc_mode(ps, w);
 
 	// Detect client window here instead of in add_win() as the client
 	// window should have been prepared at this point
