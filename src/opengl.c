@@ -100,10 +100,9 @@ bool glx_init(session_t *ps, bool need_render) {
 			ppass->unifm_offset_y = -1;
 		}
 
-		ps->psglx->round_passes = ccalloc(1, glx_round_pass_t);
-		{
-			glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
-			ppass->unifm_factor_center = -1;
+		ps->psglx->round_passes = ccalloc(2, glx_round_pass_t);
+		for (int i = 0; i < 2; ++i) {
+			glx_round_pass_t *ppass = &ps->psglx->round_passes[i];
 			ppass->unifm_radius = -1;
 			ppass->unifm_texcoord = -1;
 			ppass->unifm_texsize = -1;
@@ -253,14 +252,14 @@ void glx_destroy(session_t *ps) {
 	}
 	free(ps->psglx->blur_passes);
 
-	{
-		glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
+	for (int i = 0; i < 2; ++i) {
+		glx_round_pass_t *ppass = &ps->psglx->round_passes[i];
 		if (ppass->frag_shader)
 			glDeleteShader(ppass->frag_shader);
 		if (ppass->prog)
 			glDeleteProgram(ppass->prog);
-		free(ps->psglx->round_passes);
 	}
+	free(ps->psglx->round_passes);
 
 	glx_free_prog_main(&ps->glx_prog_win);
 
@@ -646,6 +645,68 @@ bool glx_init_blur(session_t *ps) {
   }
 }
 
+static inline bool glx_init_frag_shader_corners(glx_round_pass_t *ppass,
+			const char *PREFIX_STR, const char* SHADER_STR,
+			const char *extension, const char *sampler_type, const char *texture_func) {
+
+	// Build rounded corners shader
+	{
+		auto len = strlen(PREFIX_STR) + strlen(extension)
+					+ strlen(sampler_type)*2 + strlen(texture_func)*2
+					+ strlen(SHADER_STR) + 1;
+		char *shader_str = calloc(len, sizeof(char));
+		if (!shader_str) {
+			log_error("Failed to allocate %zd bytes for shader string.", len);
+			return false;
+		}
+
+		char *pc = shader_str;
+		sprintf(pc, PREFIX_STR, extension, sampler_type, sampler_type, texture_func, texture_func);
+		pc += strlen(pc);
+		assert(strlen(shader_str) < len);
+
+		sprintf(pc, SHADER_STR);
+		assert(strlen(shader_str) < len);
+#ifdef DEBUG_GLX
+		log_debug("Generated rounded corners shader:\n%s\n", shader_str);
+#endif
+
+		log_warn("Generated rounded corners shader:\n%s\n", shader_str);
+		ppass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
+		free(shader_str);
+
+		if (!ppass->frag_shader) {
+			log_error("Failed to create rounded corners fragment shader.");
+			return false;
+		}
+
+		// Build program
+		ppass->prog = gl_create_program(&ppass->frag_shader, 1);
+		if (!ppass->prog) {
+			log_error("Failed to create GLSL program.");
+			return false;
+		}
+
+		// Get uniform addresses
+#define P_GET_UNIFM_LOC(name, target)											\
+{																				\
+	ppass->target = glGetUniformLocation(ppass->prog, name);					\
+	if (ppass->target < 0) {													\
+		log_error("Failed to get location of rounded corners uniform '" name	\
+					"'. Might be troublesome."									\
+					);															\
+	} 																			\
+}
+		P_GET_UNIFM_LOC("u_radius", unifm_radius);
+		P_GET_UNIFM_LOC("u_texcoord", unifm_texcoord);
+		P_GET_UNIFM_LOC("u_texsize", unifm_texsize);
+		P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
+#undef P_GET_UNIFM_LOC
+	}
+
+	return true;
+}
+
 /**
  * Initialize GLX rounded corners filter.
  */
@@ -662,14 +723,12 @@ bool glx_init_rounded_corners(session_t *ps) {
 		static const char *FRAG_SHADER_PREFIX =
 			"#version 110\n"
 			"%s"  // extensions
-			"uniform float offset_x;\n"
-			"uniform float offset_y;\n"
-			"uniform float factor_center;\n"
 			"uniform float u_radius;\n"
 			"uniform vec2 u_texcoord;\n"
 			"uniform vec2 u_texsize;\n"
 			"uniform vec2 u_resolution;\n"
 			"uniform %s tex_scr;\n" // sampler2D | sampler2DRect
+			"uniform %s tex_bg;\n" // sampler2D | sampler2DRect
 			"\n"
 			"// https://www.shadertoy.com/view/ldfSDj\n"
 			"float udRoundBox( vec2 p, vec2 b, float r )\n"
@@ -678,25 +737,24 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"}\n\n"
 			"void main()\n"
 			"{\n"
-			"  vec4 col = %s(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * factor_center;\n"
-			"  //vec4 col = vec4(1.0, 1.0, 1.0, 1.0);\n"
-			"\n";
-
-		// Fragment shader (round corners)
-		static const char *FRAG_SHADER_ROUND_CORNERS =
+			"  vec4 col_scr = %s(tex_scr, gl_TexCoord[0].st);\n"
+			"  vec4 col_bg = %s(tex_bg, gl_TexCoord[0].st);\n"
 			"  vec2 halfres = 0.5 * u_texsize.xy;\n"
 			"  vec2 coord = vec2(u_texcoord.x, u_resolution.y-u_texsize.y-u_texcoord.y);\n"
 			"\n"
     		"  // compute box\n"
 			"  float b = udRoundBox( gl_FragCoord.xy - coord - halfres, halfres, u_radius );\n"
-			"\n"
+			"\n";
+
+		// Fragment shader (round corners)
+		static const char *FRAG_SHADER_ROUND_CORNERS_PRE =
    			"  // colorize (red / black )\n"
 			"  //vec3 c = mix( vec3(col.r,col.g,col.b), vec3(0.0,1.0,0.0), smoothstep(0.0,1.0,b) );\n"
-			"  vec4 c = mix( col, vec4(1.0,0.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  vec4 c = mix( col_scr, vec4(0.0,0.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"  //vec4 c = mix( vec4(1.0,1.0,1.0,1.0), vec4(0.0,0.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"  //vec4 c = mix( vec4(1.0,0.0,0.0,0.0), vec4(0.0,1.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"\n"
-			"  //if ( c == vec4(0.0,1.0,0.0,0.0) ) discard; else\n"
+			"  //if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
 			"  gl_FragColor = vec4( c );\n"
 			"  //gl_FragColor = vec4( c.rgb, 0.0 );\n"
 			"  //gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
@@ -704,6 +762,19 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"  //gl_FragColor = vec4(0.99, 0.99, 0.99, 0.99);\n"
 			"  //gl_FragColor = gl_Color;\n"
 			"  //gl_FragColor = col;\n"
+			"}\n";
+			
+		// Fragment shader (round corners)
+		static const char *FRAG_SHADER_ROUND_CORNERS_POST =
+   			"  // colorize (red / black )\n"
+			"  //vec4 c = mix( vec4(0.0,0.0,0.0,0.0), vec4(1.0,1.0,1.0,1.0), smoothstep(0.0,1.0,b) );\n"
+			"  vec4 c = mix( vec4(1.0,1.0,1.0,1.0), vec4(0.0,0.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  //vec4 c = mix( vec4(1.0,0.0,0.0,1.0), vec4(0.0,1.0,0.0,1.0), smoothstep(0.0,1.0,b) );\n"
+			"\n"
+			"  //if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
+			"  //if ( c == vec4(1.0,1.0,1.0,1.0) ) discard; else\n"
+			"  gl_FragColor = vec4( c );\n"
+			"  //gl_FragColor = vec4(0.2, 0.2, 0.2, 0.2);\n"
 			"}\n";
 
 		const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
@@ -718,66 +789,27 @@ bool glx_init_rounded_corners(session_t *ps) {
 			extension = strdup("");
 		}
 
-    	// Build rounded corners shader
-		glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
-		{
-			auto len = strlen(FRAG_SHADER_PREFIX) + strlen(extension)
-						+ strlen(sampler_type) + strlen(texture_func)
-						+ strlen(FRAG_SHADER_ROUND_CORNERS) + 1;
-			char *shader_str = calloc(len, sizeof(char));
-			if (!shader_str) {
-				log_error("Failed to allocate %zd bytes for shader string.", len);
-				return false;
-			}
+		if (!glx_init_frag_shader_corners(&ps->psglx->round_passes[0],
+									FRAG_SHADER_PREFIX, FRAG_SHADER_ROUND_CORNERS_PRE,
+									extension, sampler_type, texture_func)) {
 
-			char *pc = shader_str;
-			sprintf(pc, FRAG_SHADER_PREFIX, extension, sampler_type, texture_func, texture_func);
-			pc += strlen(pc);
-			assert(strlen(shader_str) < len);
+										log_error("Failed to create rounded corners fragment shader PRE.");
+										setlocale(LC_NUMERIC, lc_numeric_old);
+										free(lc_numeric_old);
+										free(extension);
+										return false;
+									}
 
-			sprintf(pc, FRAG_SHADER_ROUND_CORNERS);
-			assert(strlen(shader_str) < len);
-#ifdef DEBUG_GLX
-			log_debug("Generated rounded corners shader:\n%s\n", shader_str);
-#endif
+		if (!glx_init_frag_shader_corners(&ps->psglx->round_passes[1],
+									FRAG_SHADER_PREFIX, FRAG_SHADER_ROUND_CORNERS_POST,
+									extension, sampler_type, texture_func)) {
 
-			log_warn("Generated rounded corners shader:\n%s\n", shader_str);
-			ppass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
-			free(shader_str);
-
-			if (!ppass->frag_shader) {
-				log_error("Failed to create rounded corners fragment shader.");
-				free(extension);
-				free(lc_numeric_old);
-				return false;
-			}
-
-			// Build program
-			ppass->prog = gl_create_program(&ppass->frag_shader, 1);
-			if (!ppass->prog) {
-				log_error("Failed to create GLSL program.");
-				free(extension);
-				free(lc_numeric_old);
-				return false;
-			}
-
-			// Get uniform addresses
-#define P_GET_UNIFM_LOC(name, target)												\
-	{																				\
-		ppass->target = glGetUniformLocation(ppass->prog, name);					\
-		if (ppass->target < 0) {													\
-			log_error("Failed to get location of rounded corners uniform '" name	\
-			          "'. Might be troublesome."									\
-			          );															\
-		} 																			\
-	}
-			P_GET_UNIFM_LOC("factor_center", unifm_factor_center);
-			P_GET_UNIFM_LOC("u_radius", unifm_radius);
-			P_GET_UNIFM_LOC("u_texcoord", unifm_texcoord);
-			P_GET_UNIFM_LOC("u_texsize", unifm_texsize);
-			P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
-#undef P_GET_UNIFM_LOC
-		}
+										log_error("Failed to create rounded corners fragment shader POST.");
+										setlocale(LC_NUMERIC, lc_numeric_old);
+										free(lc_numeric_old);
+										free(extension);
+										return false;
+									}
 
 		free(extension);
 
@@ -1534,11 +1566,22 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   return ret;
 }
 
-bool glx_round_corners_dst(session_t *ps, const glx_texture_t *ptex attr_unused,
-				int dx, int dy, int width, int height, float z, float cr,
-				GLfloat factor_center, const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc) {
+static void bind_sampler_to_unit_with_texture(GLuint prog, GLchar const * const sampler_name, GLuint texture_unit, GLenum tex_tgt, GLuint texture)
+{
+        glActiveTexture(GL_TEXTURE0 + texture_unit); 
+        glBindTexture(tex_tgt, texture);
+        GLint loc_sampler = glGetUniformLocation(prog, sampler_name);
+        glUniform1i(loc_sampler, (GLint)texture_unit);
+}
 
+
+bool glx_round_corners_dst(session_t *ps, const glx_texture_t *ptex attr_unused, int shader_idx,
+				int dx, int dy, int width, int height, float z, float cr,
+				const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc) {
+
+	assert(shader_idx >= 0 && shader_idx <= 1);
 	assert(ps->psglx->round_passes[0].prog);
+	assert(ps->psglx->round_passes[1].prog);
 	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
 	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
 	bool ret = false;
@@ -1566,12 +1609,6 @@ bool glx_round_corners_dst(session_t *ps, const glx_texture_t *ptex attr_unused,
 		pbc->textures[0] = glx_gen_texture(tex_tgt, mwidth, mheight);
 	GLuint tex_scr = pbc->textures[0];
 
-	// Adjustments calling from glx_render()
-	/*if (ptex) {
-		tex_tgt = ptex->target;
-		tex_scr = ptex->texture;
-	}*/
-
 	pbc->width = mwidth;
 	pbc->height = mheight;
 
@@ -1592,8 +1629,14 @@ bool glx_round_corners_dst(session_t *ps, const glx_texture_t *ptex attr_unused,
 		texfac_y /= (GLfloat)mheight;
 	}
 
+	// Paint it back
 	{
-		const glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
+		glDisable(GL_STENCIL_TEST);
+		glDisable(GL_SCISSOR_TEST);
+	}
+
+	{
+		const glx_round_pass_t *ppass = &ps->psglx->round_passes[shader_idx];
 		assert(ppass->prog);
 
 		assert(tex_scr);
@@ -1609,9 +1652,9 @@ bool glx_round_corners_dst(session_t *ps, const glx_texture_t *ptex attr_unused,
 
 		{
 			// Control blending with src
-			glDisable(GL_BLEND);
+			//glDisable(GL_BLEND);
 			//glEnable(GL_BLEND);
-			//glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+			//glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 			//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 			//glBlendFunc(GL_ZERO, GL_ONE);
 
@@ -1640,10 +1683,13 @@ bool glx_round_corners_dst(session_t *ps, const glx_texture_t *ptex attr_unused,
 		}
 
 
-		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+		//glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 		glUseProgram(ppass->prog);
-		if (ppass->unifm_factor_center >= 0)
-			glUniform1f(ppass->unifm_factor_center, factor_center);
+
+		bind_sampler_to_unit_with_texture(ppass->prog, "tex_scr", 0, tex_tgt, tex_scr);
+		//bind_sampler_to_unit_with_texture(ppass->prog, "tex_scr", 1, tex_tgt, pbc->textures[1]);
+		//if (ptex) { bind_sampler_to_unit_with_texture(ppass->prog, "tex_bg", 1, ptex->target, ptex->texture); }
+
 		if (ppass->unifm_radius >= 0)
 			glUniform1f(ppass->unifm_radius, cr);
 		if (ppass->unifm_texcoord >= 0)
@@ -1653,64 +1699,30 @@ bool glx_round_corners_dst(session_t *ps, const glx_texture_t *ptex attr_unused,
 		if (ppass->unifm_resolution >= 0)
 			glUniform2f(ppass->unifm_resolution, (float)ps->root_width, (float)ps->root_height);
 
-		/*P_PAINTREG_START(crect) {
-			auto rx = (GLfloat)(crect.x1 - mdx) * texfac_x;
-			auto ry = (GLfloat)(mheight - (crect.y1 - mdy)) * texfac_y;
-			auto rxe = rx + (GLfloat)(crect.x2 - crect.x1) * texfac_x;
-			auto rye = ry - (GLfloat)(crect.y2 - crect.y1) * texfac_y;
-			auto rdx = (GLfloat)(crect.x1 - mdx);
-			auto rdy = (GLfloat)(mheight - crect.y1 + mdy);
-			{
-				rdx = (GLfloat)crect.x1;
-				rdy = (GLfloat)(ps->root_height - crect.y1);
-			}
-			auto rdxe = rdx + (GLfloat)(crect.x2 - crect.x1);
-			auto rdye = rdy - (GLfloat)(crect.y2 - crect.y1);
-
-#ifdef DEBUG_GLX
-			log_debug("Rounded corner Pass: %f, %f, %f, %f -> %f, %f, %f, %f", rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
-#endif
-
-			//log_warn("Rounded corner Pass:  %f, %f, %f, %f, %f, %f -> %f, %f, %f, %f",
-			//	texfac_x, texfac_y, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
-
-			glTexCoord2f(rx, ry);
-			glVertex3f(rdx, rdy, z);
-
-			glTexCoord2f(rxe, ry);
-			glVertex3f(rdxe, rdy, z);
-
-			glTexCoord2f(rxe, rye);
-			glVertex3f(rdxe, rdye, z);
-
-			glTexCoord2f(rx, rye);
-			glVertex3f(rdx, rdye, z);
-		}
-		P_PAINTREG_END();*/
-
-		/*P_PAINTREG_START(crect) {
-			// XXX what does all of these variables mean?
-			auto rdx = (GLfloat)crect.x1;
-			auto rdy = (GLfloat)(ps->root_height - crect.y1);
-			auto rdxe = rdx + (GLfloat)(crect.x2 - crect.x1);
-			auto rdye = rdy - (GLfloat)(crect.y2 - crect.y1);
-
-#ifdef DEBUG_GLX
-			log_debug("Rounded corner Pass: %d, %d, %.2f -> %f, %f, %f, %f", crect.x1, crect.y1, z, rdx, rdy, rdxe, rdye);
-#endif
-
-			log_warn("Rounded corner Pass: %d, %d, %.2f -> %f, %f, %f, %f",
-					crect.x1, crect.y1, z, rdx, rdy, rdxe, rdye);
-
-			glVertex3f(rdx, rdy, z);
-			glVertex3f(rdxe, rdy, z);
-			glVertex3f(rdxe, rdye,z);
-			glVertex3f(rdx, rdye, z);
-		}
-		P_PAINTREG_END();*/
-
 		// Painting
-		{
+		/*if (shader_idx == 1) {
+			P_PAINTREG_START(crect) {
+				// XXX what does all of these variables mean?
+				auto rdx = (GLfloat)crect.x1;
+				auto rdy = (GLfloat)(ps->root_height - crect.y1);
+				auto rdxe = rdx + (GLfloat)(crect.x2 - crect.x1);
+				auto rdye = rdy - (GLfloat)(crect.y2 - crect.y1);
+
+#ifdef DEBUG_GLX
+				log_debug("Rounded corner Pass: %d, %d, %.2f -> %f, %f, %f, %f", crect.x1, crect.y1, z, rdx, rdy, rdxe, rdye);
+#endif
+
+				log_warn("Rounded corner Pass: %d, %d, %.2f -> %f, %f, %f, %f",
+						crect.x1, crect.y1, z, rdx, rdy, rdxe, rdye);
+
+				glVertex3f(rdx, rdy, z);
+				glVertex3f(rdxe, rdy, z);
+				glVertex3f(rdxe, rdye,z);
+				glVertex3f(rdx, rdye, z);
+			}
+			P_PAINTREG_END();
+
+		} else*/ {
 			P_PAINTREG_START(crect) {
 				// XXX explain these variables
 				auto rx = (GLfloat)(crect.x1 - dx);
@@ -1732,7 +1744,8 @@ bool glx_round_corners_dst(session_t *ps, const glx_texture_t *ptex attr_unused,
 
 				// Invert Y if needed, this may not work as expected, though. I
 				// don't have such a FBConfig to test with.
-				/*if (ptex && !ptex->y_inverted)*/ {
+				//if (ptex && !ptex->y_inverted) {
+				if (shader_idx == 0) {
 					ry = 1.0f - ry;
 					rye = 1.0f - rye;
 				}
@@ -1784,6 +1797,96 @@ glx_round_corners_dst_end:
 	return ret;
 }
 
+bool glx_round_corners_dst2(session_t *ps, const glx_texture_t *ptex, int shader_idx,
+				int dx, int dy, int width, int height, float z, float cr,
+				const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc attr_unused) {
+
+	assert(shader_idx >= 0 && shader_idx <= 1);
+	assert(ps->psglx->round_passes[0].prog);
+	assert(ps->psglx->round_passes[1].prog);
+	bool ret = false;
+
+	log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d) z(%.2f)", dx, dy, width, height, ps->root_width, ps->root_height, z);
+
+	{
+		const glx_round_pass_t *ppass = &ps->psglx->round_passes[shader_idx];
+		assert(ppass->prog);
+
+		glUseProgram(ppass->prog);
+
+		if (ppass->unifm_radius >= 0)
+			glUniform1f(ppass->unifm_radius, cr);
+		if (ppass->unifm_texcoord >= 0)
+			glUniform2f(ppass->unifm_texcoord, (float)dx, (float)dy);
+		if (ppass->unifm_texsize >= 0)
+			glUniform2f(ppass->unifm_texsize, (float)width, (float)height);
+		if (ppass->unifm_resolution >= 0)
+			glUniform2f(ppass->unifm_resolution, (float)ps->root_width, (float)ps->root_height);
+
+		// Painting
+		{
+			P_PAINTREG_START(crect) {
+				// XXX explain these variables
+				auto rx = (GLfloat)(crect.x1 - dx);
+				auto ry = (GLfloat)(crect.y1 - dy);
+				auto rxe = rx + (GLfloat)(crect.x2 - crect.x1);
+				auto rye = ry + (GLfloat)(crect.y2 - crect.y1);
+				// Rectangle textures have [0-w] [0-h] while 2D texture has [0-1]
+				// [0-1] Thanks to amonakov for pointing out!
+				if (GL_TEXTURE_2D == ptex->target) {
+					rx = rx / (GLfloat)width;
+					ry = ry / (GLfloat)height;
+					rxe = rxe / (GLfloat)width;
+					rye = rye / (GLfloat)height;
+				}
+				auto rdx = (GLfloat)crect.x1;
+				auto rdy = (GLfloat)(ps->root_height - crect.y1);
+				auto rdxe = (GLfloat)rdx + (GLfloat)(crect.x2 - crect.x1);
+				auto rdye = (GLfloat)rdy - (GLfloat)(crect.y2 - crect.y1);
+
+				// Invert Y if needed, this may not work as expected, though. I
+				// don't have such a FBConfig to test with.
+				//if (ptex && !ptex->y_inverted) {
+				if (shader_idx == 0) {
+					ry = 1.0f - ry;
+					rye = 1.0f - rye;
+				}
+
+				log_warn("Rect %d (i:%d): %f, %f, %f, %f -> %f, %f, %f, %f",
+					ri ,ptex ? ptex->y_inverted : -1, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
+
+				// log_trace("Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d", ri, rx,
+				// ry, rxe, rye,
+				//          rdx, rdy, rdxe, rdye);
+
+				glTexCoord2f(rx, ry);
+				glVertex3f(rdx, rdy, z);
+
+				glTexCoord2f(rxe, ry);
+				glVertex3f(rdxe, rdy, z);
+
+				glTexCoord2f(rxe, rye);
+				glVertex3f(rdxe, rdye, z);
+
+				glTexCoord2f(rx, rye);
+				glVertex3f(rdx, rdye, z);
+
+			}
+			P_PAINTREG_END();
+		}
+
+		glUseProgram(0);
+	}
+
+	ret = true;
+
+	//glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	gl_check_err();
+
+	return ret;
+}
+
 bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
                  GLfloat factor, const region_t *reg_tgt) {
 	// It's possible to dim in glx_render(), but it would be over-complicated
@@ -1817,7 +1920,7 @@ bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
 /**
  * @brief Render a region with texture data.
  */
-bool glx_render(session_t *ps, const struct managed_win *w attr_unused, const glx_texture_t *ptex,
+bool glx_render(session_t *ps, struct managed_win *w attr_unused, const glx_texture_t *ptex,
 				int x, int y, int dx, int dy, int width, int height, int z, double opacity, bool argb,
 				bool neg, int cr attr_unused, const region_t *reg_tgt, const glx_prog_main_t *pprogram) {
 	if (!ptex || !ptex->texture) {
@@ -1827,13 +1930,14 @@ bool glx_render(session_t *ps, const struct managed_win *w attr_unused, const gl
 
 	const bool has_prog = pprogram && pprogram->prog;
 	bool dual_texture = false;
+	GLuint tex_scr = ptex->texture;
 
 	// It's required by legacy versions of OpenGL to enable texture target
 	// before specifying environment. Thanks to madsy for telling me.
 	glEnable(ptex->target);
 
 	// Enable blending if needed
-	if (opacity < 1.0 || argb) {
+	if (opacity < 1.0 || argb || cr > 0) {
 
 		glEnable(GL_BLEND);
 
@@ -1843,7 +1947,18 @@ bool glx_render(session_t *ps, const struct managed_win *w attr_unused, const gl
 		// This is all weird, but X Render is using premultiplied ARGB format, and
 		// we need to use those things to correct it. Thanks to derhass for help.
 		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-		glColor4d(opacity, opacity, opacity, opacity);
+		if (cr == 0) {
+			glColor4d(opacity, opacity, opacity, opacity);
+		} else {
+			glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+			glx_round_corners_dst2(ps, ptex, 1, dx, dy, to_u16_checked(w->widthb), to_u16_checked(w->heightb),
+							(float)ps->psglx->z - 0.5f, (float)cr, reg_tgt, &w->glx_round_cache);
+			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+			//glDisable(GL_BLEND);
+			glColor4f(0.5f, 0.5f, 0.5f, 0.5f);
+			//glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+			//glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
+		}
 	}
 
 	if (!has_prog) {
@@ -1880,7 +1995,7 @@ bool glx_render(session_t *ps, const struct managed_win *w attr_unused, const gl
 				// Texture stage 1
 				glActiveTexture(GL_TEXTURE1);
 				glEnable(ptex->target);
-				glBindTexture(ptex->target, ptex->texture);
+				glBindTexture(ptex->target, tex_scr);
 
 				glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
 
@@ -1940,10 +2055,10 @@ bool glx_render(session_t *ps, const struct managed_win *w attr_unused, const gl
 	//          dx, dy, ptex->width, ptex->height, z);
 
 	// Bind texture
-	glBindTexture(ptex->target, ptex->texture);
+	glBindTexture(ptex->target, tex_scr);
 	if (dual_texture) {
 		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(ptex->target, ptex->texture);
+		glBindTexture(ptex->target, tex_scr);
 		glActiveTexture(GL_TEXTURE0);
 	}
 
@@ -1970,7 +2085,7 @@ bool glx_render(session_t *ps, const struct managed_win *w attr_unused, const gl
 
 			// Invert Y if needed, this may not work as expected, though. I
 			// don't have such a FBConfig to test with.
-			if (!ptex->y_inverted) {
+			if (!ptex->y_inverted || tex_scr != ptex->texture) {
 				ry = 1.0f - ry;
 				rye = 1.0f - rye;
 			}

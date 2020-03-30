@@ -245,7 +245,7 @@ uint32_t make_rounded_window_shape(xcb_render_trapezoid_t traps[], uint32_t max_
     return n;
 }
 
-void render(session_t *ps, const struct managed_win *w, int x, int y, int dx, int dy, int wid, int hei, int fullwid, int fullhei, double opacity,
+void render(session_t *ps, struct managed_win *w, int x, int y, int dx, int dy, int wid, int hei, int fullwid, int fullhei, double opacity,
             bool argb, bool neg, int cr, xcb_render_picture_t pict, glx_texture_t *ptex,
             const region_t *reg_paint, const glx_prog_main_t *pprogram) {
 	switch (ps->o.backend) {
@@ -314,7 +314,7 @@ void render(session_t *ps, const struct managed_win *w, int x, int y, int dx, in
 }
 
 static inline void
-paint_region(session_t *ps, const struct managed_win *w, int x, int y, int wid, int hei,
+paint_region(session_t *ps, struct managed_win *w, int x, int y, int wid, int hei,
              double opacity, const region_t *reg_paint, xcb_render_picture_t pict) {
 	const int dx = (w ? w->g.x : 0) + x;
 	const int dy = (w ? w->g.y : 0) + y;
@@ -360,14 +360,12 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
  * 
  */
 static inline void
-win_round_corners(session_t *ps, struct managed_win *w, float cr, xcb_render_picture_t tgt_buffer attr_unused,
-                    const region_t *reg_paint) {
+win_round_corners(session_t *ps, struct managed_win *w, int shader_idx, float cr,
+				xcb_render_picture_t tgt_buffer attr_unused, const region_t *reg_paint) {
 	const int16_t x = w->g.x;
 	const int16_t y = w->g.y;
 	const auto wid = to_u16_checked(w->widthb);
 	const auto hei = to_u16_checked(w->heightb);
-
-	double factor_center = 1.0;
 
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
@@ -376,8 +374,8 @@ win_round_corners(session_t *ps, struct managed_win *w, float cr, xcb_render_pic
 	} break;
 #ifdef CONFIG_OPENGL
 	case BKEND_GLX:
-		glx_round_corners_dst(ps, NULL, x, y, wid, hei, (float)ps->psglx->z - 0.5f, cr,
-		             (float)factor_center, reg_paint, &w->glx_round_cache);
+		glx_round_corners_dst(ps, (w ? w->paint.ptex : ps->root_tile_paint.ptex), shader_idx, x, y, wid, hei,
+							(float)ps->psglx->z - 0.5f, cr, reg_paint, &w->glx_round_cache);
 		break;
 #endif
 	default: assert(0);
@@ -581,10 +579,14 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 	}
 
 	// Round the corners
-	if (w->corner_radius > 0) {
+	/*const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
+	if (argb && w->corner_radius > 0) {
 		log_warn("x:%d y:%d w:%d h:%d", x, y, wid, hei);
-		win_round_corners(ps, w, (float)w->corner_radius, ps->tgt_buffer.pict, reg_paint);
-	}
+		//glEnable(GL_BLEND);
+		//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		win_round_corners(ps, w, 0, (float)w->corner_radius, ps->tgt_buffer.pict, reg_paint);
+		//glDisable(GL_BLEND);
+	}*/
 }
 
 extern const char *background_props_str[];
