@@ -679,6 +679,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"void main()\n"
 			"{\n"
 			"  vec4 col = %s(tex_scr, vec2(gl_TexCoord[0].x, gl_TexCoord[0].y)) * factor_center;\n"
+			"  //vec4 col = vec4(1.0, 1.0, 1.0, 1.0);\n"
 			"\n";
 
 		// Fragment shader (round corners)
@@ -692,13 +693,17 @@ bool glx_init_rounded_corners(session_t *ps) {
    			"  // colorize (red / black )\n"
 			"  //vec3 c = mix( vec3(col.r,col.g,col.b), vec3(0.0,1.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"  vec4 c = mix( col, vec4(1.0,0.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
-			"  //vec4 c = mix( vec4(1.0,0.0,0.0,1.0), vec4(0.0,1.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  //vec4 c = mix( vec4(1.0,1.0,1.0,1.0), vec4(0.0,0.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  //vec4 c = mix( vec4(1.0,0.0,0.0,0.0), vec4(0.0,1.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"\n"
-			"  //if ( c == vec4(0.0,1.0,0.0,0.0) ) discard; else gl_FragColor = vec4( c );\n"
-			"  //gl_FragColor = vec4( c );\n"
-			"  gl_FragColor = vec4( c.rgb, 0.0 );\n"
+			"  //if ( c == vec4(0.0,1.0,0.0,0.0) ) discard; else\n"
+			"  gl_FragColor = vec4( c );\n"
+			"  //gl_FragColor = vec4( c.rgb, 0.0 );\n"
 			"  //gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
+			"  //gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);\n"
+			"  //gl_FragColor = vec4(0.99, 0.99, 0.99, 0.99);\n"
 			"  //gl_FragColor = gl_Color;\n"
+			"  //gl_FragColor = col;\n"
 			"}\n";
 
 		const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
@@ -1529,15 +1534,16 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   return ret;
 }
 
-bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width, int height, float z attr_unused, float cr,
-                  GLfloat factor_center attr_unused, const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc attr_unused) {
+bool glx_round_corners_dst(session_t *ps, const glx_texture_t *ptex attr_unused,
+				int dx, int dy, int width, int height, float z, float cr,
+				GLfloat factor_center, const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc) {
 
 	assert(ps->psglx->round_passes[0].prog);
 	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
 	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
 	bool ret = false;
 
-	//log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d)", dx, dy, width, height, ps->root_width, ps->root_height);
+	log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d)", dx, dy, width, height, ps->root_width, ps->root_height);
 
 	// Calculate copy region size
 	glx_blur_cache_t ibc = {.width = 0, .height = 0};
@@ -1559,26 +1565,21 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 	if (!pbc->textures[0])
 		pbc->textures[0] = glx_gen_texture(tex_tgt, mwidth, mheight);
 	GLuint tex_scr = pbc->textures[0];
-	//if (!pbc->textures[1])
-	//	pbc->textures[1] = glx_gen_texture(tex_tgt, mwidth, mheight);
-	//GLuint tex_scr2 = pbc->textures[1];
+
+	// Adjustments calling from glx_render()
+	/*if (ptex) {
+		tex_tgt = ptex->target;
+		tex_scr = ptex->texture;
+	}*/
 
 	pbc->width = mwidth;
 	pbc->height = mheight;
-
-	//if (!pbc->fbo)
-	//	glGenFramebuffers(1, &pbc->fbo);
-	//const GLuint fbo = pbc->fbo;
 
 	if (!tex_scr) {
 		log_error("Failed to allocate texture.");
 		goto glx_round_corners_dst_end;
 	}
-	//if (!fbo) {
-	//	log_error("Failed to allocate framebuffer.");
-	//	goto glx_round_corners_dst_end;
-	//}
-	
+
 	// Read destination pixels into a texture
 	glEnable(tex_tgt);
 	glBindTexture(tex_tgt, tex_scr);
@@ -1590,10 +1591,6 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 		texfac_x /= (GLfloat)mwidth;
 		texfac_y /= (GLfloat)mheight;
 	}
-
-	// Paint it back
-	//glDisable(GL_STENCIL_TEST);
-	//glDisable(GL_SCISSOR_TEST);
 
 	{
 		const glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
@@ -1609,13 +1606,39 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 		if (have_stencil)
 			glEnable(GL_STENCIL_TEST);
 
-		// Control blending with src
-		glDisable(GL_BLEND);
-		//glEnable(GL_BLEND);
-		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-		//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		//glBlendFunc(GL_ONE, GL_ZERO);
-		//glColor4f(0.0f, 0.0f, 0.0f, 0.5f);
+
+		{
+			// Control blending with src
+			glDisable(GL_BLEND);
+			//glEnable(GL_BLEND);
+			//glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+			//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			//glBlendFunc(GL_ZERO, GL_ONE);
+
+			// Needed for handling opacity of ARGB texture
+			//glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+			// This is all weird, but X Render is using premultiplied ARGB format, and
+			// we need to use those things to correct it. Thanks to derhass for help.
+			//glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+			/*glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+
+			// Modulation with constant factor
+			glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
+			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
+			glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
+			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
+			glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
+
+			// Modulation with constant factor
+			glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
+			glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
+			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
+			glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);*/
+		}
+
 
 		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 		glUseProgram(ppass->prog);
@@ -1630,7 +1653,7 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 		if (ppass->unifm_resolution >= 0)
 			glUniform2f(ppass->unifm_resolution, (float)ps->root_width, (float)ps->root_height);
 
-		P_PAINTREG_START(crect) {
+		/*P_PAINTREG_START(crect) {
 			auto rx = (GLfloat)(crect.x1 - mdx) * texfac_x;
 			auto ry = (GLfloat)(mheight - (crect.y1 - mdy)) * texfac_y;
 			auto rxe = rx + (GLfloat)(crect.x2 - crect.x1) * texfac_x;
@@ -1663,30 +1686,80 @@ bool glx_round_corners_dst(session_t *ps attr_unused, int dx, int dy, int width,
 			glTexCoord2f(rx, rye);
 			glVertex3f(rdx, rdye, z);
 		}
-		P_PAINTREG_END();
+		P_PAINTREG_END();*/
 
 		/*P_PAINTREG_START(crect) {
 			// XXX what does all of these variables mean?
-			GLint rdx = crect.x1;
-			GLint rdy = ps->root_height - crect.y1;
-			GLint rdxe = rdx + (crect.x2 - crect.x1);
-			GLint rdye = rdy - (crect.y2 - crect.y1);
+			auto rdx = (GLfloat)crect.x1;
+			auto rdy = (GLfloat)(ps->root_height - crect.y1);
+			auto rdxe = rdx + (GLfloat)(crect.x2 - crect.x1);
+			auto rdye = rdy - (GLfloat)(crect.y2 - crect.y1);
 
 #ifdef DEBUG_GLX
-			log_debug("Rounded corner Pass: %d, %d, %.2f -> %d, %d, %d, %d", crect.x1, crect.y1, z, rdx, rdy, rdxe, rdye);
+			log_debug("Rounded corner Pass: %d, %d, %.2f -> %f, %f, %f, %f", crect.x1, crect.y1, z, rdx, rdy, rdxe, rdye);
 #endif
 
-			log_warn("Rounded corner Pass: %d, %d, %.2f -> %d, %d, %d, %d",
+			log_warn("Rounded corner Pass: %d, %d, %.2f -> %f, %f, %f, %f",
 					crect.x1, crect.y1, z, rdx, rdy, rdxe, rdye);
 
-			glVertex3i(rdx, rdy, (int)z);
-			glVertex3i(rdxe, rdy, (int)z);
-			glVertex3i(rdxe, rdye, (int)z);
-			glVertex3i(rdx, rdye, (int)z);
+			glVertex3f(rdx, rdy, z);
+			glVertex3f(rdxe, rdy, z);
+			glVertex3f(rdxe, rdye,z);
+			glVertex3f(rdx, rdye, z);
 		}
 		P_PAINTREG_END();*/
 
-		glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
+		// Painting
+		{
+			P_PAINTREG_START(crect) {
+				// XXX explain these variables
+				auto rx = (GLfloat)(crect.x1 - dx);
+				auto ry = (GLfloat)(crect.y1 - dy);
+				auto rxe = rx + (GLfloat)(crect.x2 - crect.x1);
+				auto rye = ry + (GLfloat)(crect.y2 - crect.y1);
+				// Rectangle textures have [0-w] [0-h] while 2D texture has [0-1]
+				// [0-1] Thanks to amonakov for pointing out!
+				if (GL_TEXTURE_2D == tex_tgt) {
+					rx = rx / (GLfloat)width;
+					ry = ry / (GLfloat)height;
+					rxe = rxe / (GLfloat)width;
+					rye = rye / (GLfloat)height;
+				}
+				auto rdx = (GLfloat)crect.x1;
+				auto rdy = (GLfloat)(ps->root_height - crect.y1);
+				auto rdxe = (GLfloat)rdx + (GLfloat)(crect.x2 - crect.x1);
+				auto rdye = (GLfloat)rdy - (GLfloat)(crect.y2 - crect.y1);
+
+				// Invert Y if needed, this may not work as expected, though. I
+				// don't have such a FBConfig to test with.
+				/*if (ptex && !ptex->y_inverted)*/ {
+					ry = 1.0f - ry;
+					rye = 1.0f - rye;
+				}
+
+				log_warn("Rect %d (i:%d): %f, %f, %f, %f -> %f, %f, %f, %f",
+					ri ,ptex ? ptex->y_inverted : -1, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
+
+				// log_trace("Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d", ri, rx,
+				// ry, rxe, rye,
+				//          rdx, rdy, rdxe, rdye);
+
+				glTexCoord2f(rx, ry);
+				glVertex3f(rdx, rdy, z);
+
+				glTexCoord2f(rxe, ry);
+				glVertex3f(rdxe, rdy, z);
+
+				glTexCoord2f(rxe, rye);
+				glVertex3f(rdxe, rdye, z);
+
+				glTexCoord2f(rx, rye);
+				glVertex3f(rdx, rdye, z);
+
+			}
+			P_PAINTREG_END();
+		}
+
 		glUseProgram(0);
 	}
 
@@ -1696,7 +1769,7 @@ glx_round_corners_dst_end:
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glBindTexture(tex_tgt, 0);
 	glDisable(tex_tgt);
-	glDisable(GL_BLEND);
+	//glDisable(GL_BLEND);
 	if (have_scissors)
 		glEnable(GL_SCISSOR_TEST);
 	if (have_stencil)
@@ -1744,9 +1817,9 @@ bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
 /**
  * @brief Render a region with texture data.
  */
-bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, int dy,
-                int width, int height, int z, double opacity, bool argb, bool neg,
-                const region_t *reg_tgt, const glx_prog_main_t *pprogram) {
+bool glx_render(session_t *ps, const struct managed_win *w attr_unused, const glx_texture_t *ptex,
+				int x, int y, int dx, int dy, int width, int height, int z, double opacity, bool argb,
+				bool neg, int cr attr_unused, const region_t *reg_tgt, const glx_prog_main_t *pprogram) {
 	if (!ptex || !ptex->texture) {
 		log_error("Missing texture.");
 		return false;

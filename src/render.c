@@ -245,7 +245,7 @@ uint32_t make_rounded_window_shape(xcb_render_trapezoid_t traps[], uint32_t max_
     return n;
 }
 
-void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int fullwid, int fullhei, double opacity,
+void render(session_t *ps, const struct managed_win *w, int x, int y, int dx, int dy, int wid, int hei, int fullwid, int fullhei, double opacity,
             bool argb, bool neg, int cr, xcb_render_picture_t pict, glx_texture_t *ptex,
             const region_t *reg_paint, const glx_prog_main_t *pprogram) {
 	switch (ps->o.backend) {
@@ -298,8 +298,8 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
 	}
 #ifdef CONFIG_OPENGL
 	case BKEND_GLX:
-		glx_render(ps, ptex, x, y, dx, dy, wid, hei, ps->psglx->z, opacity, argb,
-		           neg, reg_paint, pprogram);
+		glx_render(ps, w, ptex, x, y, dx, dy, wid, hei, ps->psglx->z, opacity, argb,
+		           neg, cr, reg_paint, pprogram);
 		ps->psglx->z += 1;
 		break;
 #endif
@@ -323,7 +323,7 @@ paint_region(session_t *ps, const struct managed_win *w, int x, int y, int wid, 
 	const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
 	const bool neg = (w && w->invert_color);
 
-	render(ps, x, y, dx, dy, wid, hei, fullwid, fullhei, opacity, argb, neg,
+	render(ps, w, x, y, dx, dy, wid, hei, fullwid, fullhei, opacity, argb, neg,
 			(w ? w->corner_radius : 0),
 			pict, (w ? w->paint.ptex : ps->root_tile_paint.ptex), reg_paint,
 #ifdef CONFIG_OPENGL
@@ -376,7 +376,7 @@ win_round_corners(session_t *ps, struct managed_win *w, float cr, xcb_render_pic
 	} break;
 #ifdef CONFIG_OPENGL
 	case BKEND_GLX:
-		glx_round_corners_dst(ps, x, y, wid, hei, (float)ps->psglx->z - 0.5f, cr,
+		glx_round_corners_dst(ps, NULL, x, y, wid, hei, (float)ps->psglx->z - 0.5f, cr,
 		             (float)factor_center, reg_paint, &w->glx_round_cache);
 		break;
 #endif
@@ -541,11 +541,6 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 	if (pict != w->paint.pict)
 		free_picture(ps->c, &pict);
 
-	// Round the corners
-	if (w->corner_radius > 0) {
-		win_round_corners(ps, w, (float)w->corner_radius, ps->tgt_buffer.pict, reg_paint);
-	}
-
 	// Dimming the window if needed
 	if (w->dim) {
 		double dim_opacity = ps->o.inactive_dim;
@@ -583,6 +578,12 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 #endif
 		default: assert(false);
 		}
+	}
+
+	// Round the corners
+	if (w->corner_radius > 0) {
+		log_warn("x:%d y:%d w:%d h:%d", x, y, wid, hei);
+		win_round_corners(ps, w, (float)w->corner_radius, ps->tgt_buffer.pict, reg_paint);
 	}
 }
 
@@ -745,7 +746,7 @@ win_paint_shadow(session_t *ps, struct managed_win *w, region_t *reg_paint) {
 		return;
 	}
 
-	render(ps, 0, 0, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy, w->shadow_width,
+	render(ps, w, 0, 0, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy, w->shadow_width,
 	       w->shadow_height, w->widthb, w->heightb, w->shadow_opacity, true, false, 0, w->shadow_paint.pict,
 	       w->shadow_paint.ptex, reg_paint, NULL);
 }
@@ -1160,8 +1161,8 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		else
 			glFlush();
 		glXWaitX();
-		glx_render(ps, ps->tgt_buffer.ptex, 0, 0, 0, 0, ps->root_width,
-		           ps->root_height, 0, 1.0, false, false, &region, NULL);
+		glx_render(ps, t, ps->tgt_buffer.ptex, 0, 0, 0, 0, ps->root_width,
+		           ps->root_height, 0, 1.0, false, false, 0, &region, NULL);
 		// falls through
 	case BKEND_GLX: glXSwapBuffers(ps->dpy, get_tgt_window(ps)); break;
 #endif
