@@ -337,36 +337,41 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 	int o = 0;
 	const char *name = "Unknown";
 
+#define CASESTRRET(s)                                                                    \
+	case s:                                                                          \
+		name = #s;                                                               \
+		break
+
 #define CASESTRRET2(s)                                                                   \
-	case s: name = #s; break
+	case XCB_##s: name = #s; break
 
 	// TODO separate error code out from session_t
 	o = error_code - ps->xfixes_error;
-	switch (o) { CASESTRRET2(XCB_XFIXES_BAD_REGION); }
+	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
 
 	o = error_code - ps->damage_error;
-	switch (o) { CASESTRRET2(XCB_DAMAGE_BAD_DAMAGE); }
+	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
 
 	o = error_code - ps->render_error;
 	switch (o) {
-		CASESTRRET2(XCB_RENDER_PICT_FORMAT);
-		CASESTRRET2(XCB_RENDER_PICTURE);
-		CASESTRRET2(XCB_RENDER_PICT_OP);
-		CASESTRRET2(XCB_RENDER_GLYPH_SET);
-		CASESTRRET2(XCB_RENDER_GLYPH);
+		CASESTRRET2(RENDER_PICT_FORMAT);
+		CASESTRRET2(RENDER_PICTURE);
+		CASESTRRET2(RENDER_PICT_OP);
+		CASESTRRET2(RENDER_GLYPH_SET);
+		CASESTRRET2(RENDER_GLYPH);
 	}
 
 #ifdef CONFIG_OPENGL
 	if (ps->glx_exists) {
 		o = error_code - ps->glx_error;
 		switch (o) {
-			CASESTRRET2(GLX_BAD_SCREEN);
-			CASESTRRET2(GLX_BAD_ATTRIBUTE);
-			CASESTRRET2(GLX_NO_EXTENSION);
-			CASESTRRET2(GLX_BAD_VISUAL);
-			CASESTRRET2(GLX_BAD_CONTEXT);
-			CASESTRRET2(GLX_BAD_VALUE);
-			CASESTRRET2(GLX_BAD_ENUM);
+			CASESTRRET(GLX_BAD_SCREEN);
+			CASESTRRET(GLX_BAD_ATTRIBUTE);
+			CASESTRRET(GLX_NO_EXTENSION);
+			CASESTRRET(GLX_BAD_VISUAL);
+			CASESTRRET(GLX_BAD_CONTEXT);
+			CASESTRRET(GLX_BAD_VALUE);
+			CASESTRRET(GLX_BAD_ENUM);
 		}
 	}
 #endif
@@ -374,32 +379,33 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 	if (ps->xsync_exists) {
 		o = error_code - ps->xsync_error;
 		switch (o) {
-			CASESTRRET2(XSyncBadCounter);
-			CASESTRRET2(XSyncBadAlarm);
-			CASESTRRET2(XSyncBadFence);
+			CASESTRRET(XSyncBadCounter);
+			CASESTRRET(XSyncBadAlarm);
+			CASESTRRET(XSyncBadFence);
 		}
 	}
 
 	switch (error_code) {
-		CASESTRRET2(BadAccess);
-		CASESTRRET2(BadAlloc);
-		CASESTRRET2(BadAtom);
-		CASESTRRET2(BadColor);
-		CASESTRRET2(BadCursor);
-		CASESTRRET2(BadDrawable);
-		CASESTRRET2(BadFont);
-		CASESTRRET2(BadGC);
-		CASESTRRET2(BadIDChoice);
-		CASESTRRET2(BadImplementation);
-		CASESTRRET2(BadLength);
-		CASESTRRET2(BadMatch);
-		CASESTRRET2(BadName);
-		CASESTRRET2(BadPixmap);
-		CASESTRRET2(BadRequest);
-		CASESTRRET2(BadValue);
-		CASESTRRET2(BadWindow);
+		CASESTRRET2(ACCESS);
+		CASESTRRET2(ALLOC);
+		CASESTRRET2(ATOM);
+		CASESTRRET2(COLORMAP);
+		CASESTRRET2(CURSOR);
+		CASESTRRET2(DRAWABLE);
+		CASESTRRET2(FONT);
+		CASESTRRET2(G_CONTEXT);
+		CASESTRRET2(ID_CHOICE);
+		CASESTRRET2(IMPLEMENTATION);
+		CASESTRRET2(LENGTH);
+		CASESTRRET2(MATCH);
+		CASESTRRET2(NAME);
+		CASESTRRET2(PIXMAP);
+		CASESTRRET2(REQUEST);
+		CASESTRRET2(VALUE);
+		CASESTRRET2(WINDOW);
 	}
 
+#undef CASESTRRET
 #undef CASESTRRET2
 
 	thread_local static char buffer[256];

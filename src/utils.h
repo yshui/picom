@@ -33,9 +33,6 @@ safe_isnan(double a) {
 	return __builtin_isnan(a);
 }
 
-#define CASESTRRET(s)                                                                    \
-	case s: return #s
-
 /// Same as assert(false), but make sure we abort _even in release builds_.
 /// Silence compiler warning caused by release builds making some code paths reachable.
 #define BUG()                                                                            \
