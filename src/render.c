@@ -1066,6 +1066,15 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 		if (pixman_region32_not_empty(&reg_tmp)) {
 			set_tgt_clip(ps, &reg_tmp);
+
+			// If rounded corners backup the region first
+			if (w->corner_radius > 0) {
+				const int16_t x = w->g.x;
+				const int16_t y = w->g.y;
+				const auto wid = to_u16_checked(w->widthb);
+				const auto hei = to_u16_checked(w->heightb);
+				glx_bind_texture(ps, &w->glx_texture_bg, x, y, wid, hei, false);
+			}
 			
 			// Blur window background
 			if (w->blur_background &&
@@ -1079,7 +1088,7 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 			// Round window corners
 			if (w->corner_radius > 0) {
-				win_round_corners(ps, w, (w ? w->paint.ptex : ps->root_tile_paint.ptex),
+				win_round_corners(ps, w, w->glx_texture_bg,
 							0, (float)w->corner_radius, ps->tgt_buffer.pict, &bshape_corners); }
 		}
 	}

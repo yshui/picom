@@ -540,7 +540,8 @@ bool glx_init_rounded_corners(session_t *ps) {
 		static const char *FRAG_SHADER_ROUND_CORNERS_PRE =
    			"  // colorize (red / black )\n"
 			"  //vec3 c = mix( vec3(col.r,col.g,col.b), vec3(0.0,1.0,0.0), smoothstep(0.0,1.0,b) );\n"
-			"  vec4 c = mix( col_scr, vec4(0.0,1.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  //vec4 c = mix( col_scr, vec4(0.0,1.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  vec4 c = mix( vec4(0.0,0.0,0.0,0.0), col_scr, smoothstep(0.0,1.0,b) );\n"
 			"  //vec4 c = mix( vec4(1.0,1.0,1.0,1.0), vec4(0.0,0.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"  //vec4 c = mix( vec4(1.0,0.0,0.0,0.0), vec4(0.0,1.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"\n"
@@ -646,6 +647,112 @@ bool glx_load_prog_main(const char *vshader_str, const char *fshader_str,
 
 	return true;
 }
+
+/**
+ * @brief Release binding of a texture.
+ */
+void glx_release_texture(session_t *ps attr_unused, glx_texture_t **pptex) {
+	glx_texture_t *ptex = *pptex;
+	// Release binding
+	if (ptex->texture) {
+		glBindTexture(ptex->target, 0);
+		glDeleteTextures(1, &ptex->texture);
+	}
+	*pptex = NULL;
+
+	gl_check_err();
+}
+
+/**
+ * Bind a X pixmap to an OpenGL texture.
+ */
+bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex,
+				int x, int y, int width attr_unused, int height attr_unused, bool repeat attr_unused) {
+	if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID)
+		return true;
+
+	glx_texture_t *ptex = *pptex;
+
+	log_warn("Copying xy(%d %d) wh(%d %d)", x, y, width, height);
+
+	// Release pixmap if parameters are inconsistent
+	if (ptex && ptex->texture &&
+		(ptex->width != width || ptex->height != height)) {
+		log_warn("Windows size changed old_wh(%d %d) new_wh(%d %d)", ptex->width, ptex->height, width, height);
+		glx_release_texture(ps, &ptex);
+	}
+
+	// Allocate structure
+	if (!ptex) {
+		static const glx_texture_t GLX_TEX_DEF = {
+		    .texture = 0,
+		    .glpixmap = 0,
+		    .pixmap = 0,
+		    .target = 0,
+		    .width = 0,
+		    .height = 0,
+		    .y_inverted = false,
+		};
+
+		ptex = cmalloc(glx_texture_t);
+		memcpy(ptex, &GLX_TEX_DEF, sizeof(glx_texture_t));
+		*pptex = ptex;
+
+		ptex->width = width;
+		ptex->height = height;
+		ptex->target = GL_TEXTURE_RECTANGLE;
+		if (ps->psglx->has_texture_non_power_of_two)
+			ptex->target = GL_TEXTURE_2D;
+	}
+
+	// Create texture
+	if (!ptex->texture) {
+		log_warn("Generating texture xy(%d %d) wh(%d %d)", x, y, width, height);
+		GLuint texture = 0;
+		glGenTextures(1, &texture);
+
+		if (texture) {
+			glEnable(ptex->target);
+			glBindTexture(ptex->target, texture);
+
+			glTexParameteri(ptex->target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(ptex->target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			if (repeat) {
+				glTexParameteri(ptex->target, GL_TEXTURE_WRAP_S, GL_REPEAT);
+				glTexParameteri(ptex->target, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			} else {
+				glTexParameteri(ptex->target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+				glTexParameteri(ptex->target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+			}
+
+			glTexImage2D(ptex->target, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+
+			glBindTexture(ptex->target, 0);
+			//glDisable(ptex->target);
+		}
+
+		ptex->texture = texture;
+	}
+	if (!ptex->texture) {
+		log_error("Failed to allocate texture.");
+		return false;
+	}
+
+	// Read destination pixels into a texture
+	glEnable(ptex->target);
+	glBindTexture(ptex->target, ptex->texture);
+	if (width > 0 && height > 0)
+		glCopyTexSubImage2D(ptex->target, 0, 0, 0, x, ps->root_height - y - height, width, height);
+
+	// Cleanup
+	glBindTexture(ptex->target, 0);
+	glDisable(ptex->target);
+
+	gl_check_err();
+
+	return true;
+}
+
 
 /**
  * Bind a X pixmap to an OpenGL texture.
@@ -1173,9 +1280,9 @@ bool glx_round_corners_dst0(session_t *ps, const glx_texture_t *ptex attr_unused
 
 
 		// Control blending with src
-		glDisable(GL_BLEND);
-		//glEnable(GL_BLEND);
-		//glBlendFunc(GL_ONE, GL_ZERO_MINUS_SRC_ALPHA);
+		//glDisable(GL_BLEND);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		//glBlendFunc(GL_ZERO, GL_SRC_ALPHA);
 
@@ -1183,9 +1290,11 @@ bool glx_round_corners_dst0(session_t *ps, const glx_texture_t *ptex attr_unused
 
 		glUseProgram(ppass->prog);
 
-		bind_sampler_to_unit_with_texture(ppass->prog, "tex_scr", 0, tex_tgt, tex_scr);
-		//log_warn("ptex:%p %d %d", ptex, ptex ? ptex->target : 0, ptex ? ptex->texture : 0);
-		//if (ptex) { bind_sampler_to_unit_with_texture(ppass->prog, "tex_bg", 1, ptex->target, ptex->texture); }
+		//bind_sampler_to_unit_with_texture(ppass->prog, "tex_scr", 0, tex_tgt, tex_scr);
+		if (ptex) {
+			log_warn("ptex: %p wh(%d %d) %d %d", ptex, ptex->width, ptex->height, ptex->target, ptex->texture);
+			bind_sampler_to_unit_with_texture(ppass->prog, "tex_bg", 0, ptex->target, ptex->texture);
+		}
 
 		if (ppass->unifm_radius >= 0)
 			glUniform1f(ppass->unifm_radius, cr);
