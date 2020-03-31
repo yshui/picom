@@ -747,10 +747,11 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"\n";
 
 		// Fragment shader (round corners)
+		// dst0 shader
 		static const char *FRAG_SHADER_ROUND_CORNERS_PRE =
    			"  // colorize (red / black )\n"
 			"  //vec3 c = mix( vec3(col.r,col.g,col.b), vec3(0.0,1.0,0.0), smoothstep(0.0,1.0,b) );\n"
-			"  vec4 c = mix( col_scr, vec4(0.0,0.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
+			"  vec4 c = mix( col_scr, vec4(0.0,1.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"  //vec4 c = mix( vec4(1.0,1.0,1.0,1.0), vec4(0.0,0.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"  //vec4 c = mix( vec4(1.0,0.0,0.0,0.0), vec4(0.0,1.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
 			"\n"
@@ -765,11 +766,12 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"}\n";
 			
 		// Fragment shader (round corners)
+		// dst1 shader
 		static const char *FRAG_SHADER_ROUND_CORNERS_POST =
    			"  // colorize (red / black )\n"
-			"  vec4 c = mix( vec4(0.0,0.0,0.0,0.0), vec4(1.0,1.0,1.0,1.0), smoothstep(0.0,1.0,b) );\n"
+			"  //vec4 c = mix( vec4(0.0,0.0,0.0,0.0), vec4(1.0,1.0,1.0,1.0), smoothstep(0.0,1.0,b) );\n"
 			"  //vec4 c = mix( vec4(1.0,1.0,1.0,1.0), vec4(0.0,0.0,0.0,0.0), smoothstep(0.0,1.0,b) );\n"
-			"  //vec4 c = mix( vec4(1.0,0.0,0.0,1.0), vec4(0.0,1.0,0.0,1.0), smoothstep(0.0,1.0,b) );\n"
+			"  vec4 c = mix( vec4(1.0,0.0,0.0,1.0), vec4(0.0,1.0,0.0,1.0), smoothstep(0.0,1.0,b) );\n"
 			"\n"
 			"  //if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
 			"  //if ( c == vec4(1.0,1.0,1.0,1.0) ) discard; else\n"
@@ -1649,44 +1651,20 @@ bool glx_round_corners_dst0(session_t *ps, const glx_texture_t *ptex attr_unused
 		if (have_stencil)
 			glEnable(GL_STENCIL_TEST);
 
-		{
-			// Control blending with src
-			//glDisable(GL_BLEND);
-			//glEnable(GL_BLEND);
-			//glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-			//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			//glBlendFunc(GL_ZERO, GL_ONE);
 
-			// Needed for handling opacity of ARGB texture
-			//glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+		// Control blending with src
+		glDisable(GL_BLEND);
+		//glEnable(GL_BLEND);
+		//glBlendFunc(GL_ONE, GL_ZERO_MINUS_SRC_ALPHA);
+		//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		//glBlendFunc(GL_ZERO, GL_SRC_ALPHA);
 
-			// This is all weird, but X Render is using premultiplied ARGB format, and
-			// we need to use those things to correct it. Thanks to derhass for help.
-			//glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
-			/*glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
-
-			// Modulation with constant factor
-			glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE);
-			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_TEXTURE);
-			glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_RGB, GL_ONE_MINUS_SRC_COLOR);
-			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_RGB, GL_PRIMARY_COLOR);
-			glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_RGB, GL_SRC_COLOR);
-
-			// Modulation with constant factor
-			glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
-			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
-			glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND0_ALPHA, GL_SRC_ALPHA);
-			glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
-			glTexEnvi(GL_TEXTURE_ENV, GL_OPERAND1_ALPHA, GL_SRC_ALPHA);*/
-		}
-
-
-		//glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 		glUseProgram(ppass->prog);
 
 		bind_sampler_to_unit_with_texture(ppass->prog, "tex_scr", 0, tex_tgt, tex_scr);
-		//bind_sampler_to_unit_with_texture(ppass->prog, "tex_scr", 1, tex_tgt, pbc->textures[1]);
+		//log_warn("ptex:%p %d %d", ptex, ptex ? ptex->target : 0, ptex ? ptex->texture : 0);
 		//if (ptex) { bind_sampler_to_unit_with_texture(ppass->prog, "tex_bg", 1, ptex->target, ptex->texture); }
 
 		if (ppass->unifm_radius >= 0)
@@ -1773,6 +1751,7 @@ bool glx_round_corners_dst0(session_t *ps, const glx_texture_t *ptex attr_unused
 		}
 
 		glUseProgram(0);
+		glDisable(GL_BLEND);
 	}
 
 	ret = true;
@@ -1781,7 +1760,6 @@ glx_round_corners_dst_end:
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glBindTexture(tex_tgt, 0);
 	glDisable(tex_tgt);
-	//glDisable(GL_BLEND);
 	if (have_scissors)
 		glEnable(GL_SCISSOR_TEST);
 	if (have_stencil)
