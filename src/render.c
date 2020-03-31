@@ -367,6 +367,8 @@ win_round_corners(session_t *ps, struct managed_win *w, int shader_idx, float cr
 	const auto wid = to_u16_checked(w->widthb);
 	const auto hei = to_u16_checked(w->heightb);
 
+	log_warn("x:%d y:%d w:%d h:%d", x, y, wid, hei);
+
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID: {
@@ -374,8 +376,13 @@ win_round_corners(session_t *ps, struct managed_win *w, int shader_idx, float cr
 	} break;
 #ifdef CONFIG_OPENGL
 	case BKEND_GLX:
-		glx_round_corners_dst(ps, (w ? w->paint.ptex : ps->root_tile_paint.ptex), shader_idx, x, y, wid, hei,
-							(float)ps->psglx->z - 0.5f, cr, reg_paint, &w->glx_round_cache);
+		if (shader_idx == 1) {
+			glx_round_corners_dst1(ps, (w ? w->paint.ptex : ps->root_tile_paint.ptex), shader_idx, x, y, wid, hei,
+								(float)ps->psglx->z - 0.5f, cr, reg_paint, &w->glx_round_cache);
+		} else {
+			glx_round_corners_dst0(ps, (w ? w->paint.ptex : ps->root_tile_paint.ptex), shader_idx, x, y, wid, hei,
+								(float)ps->psglx->z - 0.5f, cr, reg_paint, &w->glx_round_cache);
+		}
 		break;
 #endif
 	default: assert(0);
@@ -577,16 +584,6 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 		default: assert(false);
 		}
 	}
-
-	// Round the corners
-	/*const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
-	if (argb && w->corner_radius > 0) {
-		log_warn("x:%d y:%d w:%d h:%d", x, y, wid, hei);
-		//glEnable(GL_BLEND);
-		//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		win_round_corners(ps, w, 0, (float)w->corner_radius, ps->tgt_buffer.pict, reg_paint);
-		//glDisable(GL_BLEND);
-	}*/
 }
 
 extern const char *background_props_str[];
@@ -1005,6 +1002,11 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	for (auto w = t; w; w = w->prev_trans) {
 		region_t bshape_no_corners = win_get_bounding_shape_global_by_val(w, false);
 		region_t bshape_corners = win_get_bounding_shape_global_by_val(w, true);
+
+		// Round corners
+		//if (w->corner_radius > 0) {
+		//	win_round_corners(ps, w, 0, (float)w->corner_radius, ps->tgt_buffer.pict, &bshape_corners); }
+
 		// Painting shadow
 		if (w->shadow) {
 			// Lazy shadow building
@@ -1060,12 +1062,13 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		// Remember, reg_ignore is the union of all windows above the current
 		// window.
 		pixman_region32_subtract(&reg_tmp, &region, w->reg_ignore);
-		pixman_region32_intersect(&reg_tmp, &reg_tmp, &bshape_corners);
+		pixman_region32_intersect(&reg_tmp, &reg_tmp, &bshape_no_corners);
 		pixman_region32_fini(&bshape_corners);
 		pixman_region32_fini(&bshape_no_corners);
 
 		if (pixman_region32_not_empty(&reg_tmp)) {
 			set_tgt_clip(ps, &reg_tmp);
+			
 			// Blur window background
 			if (w->blur_background &&
 			    (w->mode == WMODE_TRANS ||
@@ -1075,6 +1078,9 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 			// Painting the window
 			paint_one(ps, w, &reg_tmp);
+
+			if (w->corner_radius > 0) {
+				win_round_corners(ps, w, 1, (float)w->corner_radius, ps->tgt_buffer.pict, &bshape_corners); }
 		}
 	}
 
