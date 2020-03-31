@@ -339,14 +339,12 @@ typedef struct session {
 	int randr_error;
 	/// Whether X Present extension exists.
 	bool present_exists;
-#ifdef CONFIG_OPENGL
 	/// Whether X GLX extension exists.
 	bool glx_exists;
 	/// Event base number for X GLX extension.
 	int glx_event;
 	/// Error base number for X GLX extension.
 	int glx_error;
-#endif
 	/// Whether X Xinerama extension exists.
 	bool xinerama_exists;
 	/// Xinerama screen regions.
