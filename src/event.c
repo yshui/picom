@@ -250,7 +250,7 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 	log_debug("{ send_event: %d, id: %#010x, above: %#010x, override_redirect: %d }",
 	          ev->event, ev->window, ev->above_sibling, ev->override_redirect);
 	if (ev->window == ps->root) {
-		configure_root(ps, ev->width, ev->height);
+		set_root_flags(ps, ROOT_FLAGS_CONFIGURED);
 	} else {
 		configure_win(ps, ev);
 	}
