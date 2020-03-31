@@ -1,6 +1,21 @@
 picom
 =======
 
+## Why another picom fork?
+
+TL;DR: rounded corners and dual_kawase blur on all backends.
+
+This fork contains:
+
+- Dual kawase blur method from [tryone144](https://github.com/tryone144/compton) as well as his new [feature/dual_kawase branch](https://github.com/tryone144/compton/tree/feature/dual_kawase) which implements the dual kawase blur method on the experimental glx backend.
+
+- Rounded corners code from [sdhand](https://github.com/sdhand/picom) which is also ported to the experimetnal XRender backend.
+
+- New code for rounded corners on the glx backend using GLSL frangment shader
+
+For more information read [my reddit post](https://www.reddit.com/r/unixporn/comments/fs8trg/oc_comptonpicom_fork_with_both_tryone144s_dual/)
+
+
 **This is a development branch, bugs to be expected**
 
 This is forked from the original Compton because it seems to have become unmaintained.
