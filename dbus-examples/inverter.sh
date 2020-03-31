@@ -6,14 +6,14 @@ stderr() {
   printf "\033[1;31m%s\n\033[0m" "$@" >&2
 }
 
-# === Verify `compton --dbus` status ===
+# === Verify `picom --dbus` status ===
 
 if [ -z "$(dbus-send --session --dest=org.freedesktop.DBus --type=method_call --print-reply /org/freedesktop/DBus org.freedesktop.DBus.ListNames | grep compton)" ]; then
   stderr "picom DBus interface unavailable"
   if [ -n "$(pgrep picom)" ]; then
     stderr "picom running without dbus interface"
     #killall picom & # Causes all windows to flicker away and come back ugly.
-    #compton --dbus & # Causes all windows to flicker away and come back beautiful
+    #picom --dbus & # Causes all windows to flicker away and come back beautiful
   else
     stderr "picom not running"
   fi
@@ -46,7 +46,7 @@ if [ -z "$1" -o "$1" = "selected" ]; then
   window=$(xwininfo -frame | sed -n 's/^xwininfo: Window id: \(0x[[:xdigit:]][[:xdigit:]]*\).*/\1/p') # Select window by mouse
 elif [ "$1" = "focused" ]; then
   # Ensure we are tracking focus
-  window=$(${picom_dbus}find_win string:focused | $SED -n 's/^[[:space:]]*'${type_win}'[[:space:]]*\([[:digit:]]*\).*/\1/p') # Query compton for the active window
+  window=$(${picom_dbus}find_win string:focused | $SED -n 's/^[[:space:]]*'${type_win}'[[:space:]]*\([[:digit:]]*\).*/\1/p') # Query picom for the active window
 elif echo "$1" | grep -Eiq '^([[:digit:]][[:digit:]]*|0x[[:xdigit:]][[:xdigit:]]*)$'; then
   window="$1" # Accept user-specified window-id if the format is correct
 else
