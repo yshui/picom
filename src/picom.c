@@ -19,6 +19,7 @@
 #include <string.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
+#include <xcb/glx.h>
 #include <xcb/present.h>
 #include <xcb/randr.h>
 #include <xcb/render.h>
@@ -1721,6 +1722,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	xcb_prefetch_extension_data(ps->c, &xcb_xinerama_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_present_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_sync_id);
+	xcb_prefetch_extension_data(ps->c, &xcb_glx_id);
 
 	ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
 	if (!ext_info || !ext_info->present) {
@@ -1775,6 +1777,13 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	xcb_discard_reply(ps->c, xcb_xfixes_query_version(ps->c, XCB_XFIXES_MAJOR_VERSION,
 	                                                  XCB_XFIXES_MINOR_VERSION)
 	                             .sequence);
+
+	ext_info = xcb_get_extension_data(ps->c, &xcb_glx_id);
+	if (ext_info && ext_info->present) {
+		ps->glx_exists = true;
+		ps->glx_error = ext_info->first_error;
+		ps->glx_event = ext_info->first_event;
+	}
 
 	// Parse configuration file
 	win_option_mask_t winopt_mask[NUM_WINTYPES] = {{0}};
