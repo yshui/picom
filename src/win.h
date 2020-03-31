@@ -253,6 +253,8 @@ struct managed_win {
 	/// Textures and FBO background blur use.
 	glx_blur_cache_t glx_blur_cache;
 	glx_blur_cache_t glx_round_cache;
+	/// Background texture of the window
+	glx_texture_t *glx_texture_bg;
 #endif
 };
 

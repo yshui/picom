@@ -115,6 +115,11 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 
 void glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
 
+bool glx_bind_texture(session_t *ps, glx_texture_t **pptex,
+					int x, int y, int width, int height, bool repeat);
+
+void glx_release_texture(session_t *ps attr_unused, glx_texture_t **ptex);
+
 void glx_paint_pre(session_t *ps, region_t *preg) attr_nonnull(1, 2);
 
 /**
@@ -238,6 +243,8 @@ static inline void free_win_res_glx(session_t *ps, struct managed_win *w) {
 	free_paint_glx(ps, &w->shadow_paint);
 #ifdef CONFIG_OPENGL
 	free_glx_bc(ps, &w->glx_blur_cache);
+	free_glx_bc(ps, &w->glx_round_cache);
+	free_texture(ps, &w->glx_texture_bg);
 	free(w->paint.fbcfg);
 #endif
 }
