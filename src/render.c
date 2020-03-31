@@ -369,7 +369,7 @@ win_round_corners(session_t *ps, struct managed_win *w, const glx_texture_t *pte
 	const auto wid = to_u16_checked(w->widthb);
 	const auto hei = to_u16_checked(w->heightb);
 
-	log_warn("x:%d y:%d w:%d h:%d", x, y, wid, hei);
+	//log_debug("x:%d y:%d w:%d h:%d", x, y, wid, hei);
 
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
@@ -1088,8 +1088,8 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 			// Round window corners
 			if (w->corner_radius > 0) {
-				win_round_corners(ps, w, w->glx_texture_bg,
-							0, (float)w->corner_radius, ps->tgt_buffer.pict, &bshape_corners); }
+				win_round_corners(ps, w, w->glx_texture_bg, 0,
+						(float)w->corner_radius, ps->tgt_buffer.pict, &bshape_corners); }
 		}
 	}
 

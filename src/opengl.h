@@ -112,7 +112,7 @@ void glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
 bool glx_bind_texture(session_t *ps, glx_texture_t **pptex,
 					int x, int y, int width, int height, bool repeat);
 
-void glx_release_texture(session_t *ps attr_unused, glx_texture_t **ptex);
+void glx_release_texture(session_t *ps, glx_texture_t **ptex);
 
 void glx_paint_pre(session_t *ps, region_t *preg) attr_nonnull(1, 2);
 
