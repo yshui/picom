@@ -3,6 +3,7 @@
 import xcffib.xproto as xproto
 import xcffib
 import time
+from common import set_window_name
 
 conn = xcffib.connect()
 setup = conn.get_setup()
@@ -17,14 +18,8 @@ print("Window id is ", hex(wid))
 # Create a window
 conn.core.CreateWindowChecked(depth, wid, root, 0, 0, 100, 100, 0, xproto.WindowClass.InputOutput, visual, 0, []).check()
 
-# Set Window name so it doesn't get a shadow
-name = "_NET_WM_NAME"
-name_atom = conn.core.InternAtom(True, len(name), name).reply().atom
-str_type = "STRING"
-str_type_atom = conn.core.InternAtom(True, len(str_type), str_type).reply().atom
-
-win_name = "YesShadow"
-conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, name_atom, str_type_atom, 8, len(win_name), win_name).check()
+# Set Window name so it gets a shadow
+set_window_name(conn, wid, "YesShadow")
 
 # Map the window
 print("mapping")
@@ -33,15 +28,13 @@ conn.core.MapWindowChecked(wid).check()
 time.sleep(0.5)
 
 print("set new name")
-win_name = "NoShadow"
-conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, name_atom, str_type_atom, 8, len(win_name), win_name).check()
+set_window_name(conn, wid, "NoShadow")
 
 time.sleep(0.5)
 
 # Set the Window name so it gets a shadow
 print("set new name")
-win_name = "YesShadow"
-conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, name_atom, str_type_atom, 8, len(win_name), win_name).check()
+set_window_name(conn, wid, "YesShadow")
 
 time.sleep(0.5)
 
