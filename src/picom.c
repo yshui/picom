@@ -99,6 +99,7 @@ session_t *ps_g = NULL;
 
 void set_root_flags(session_t *ps, uint64_t flags) {
 	ps->root_flags |= flags;
+	ps->pending_updates = true;
 }
 
 void quit(session_t *ps) {
