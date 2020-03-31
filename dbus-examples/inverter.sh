@@ -9,7 +9,7 @@ stderr() {
 # === Verify `compton --dbus` status ===
 
 if [ -z "$(dbus-send --session --dest=org.freedesktop.DBus --type=method_call --print-reply /org/freedesktop/DBus org.freedesktop.DBus.ListNames | grep compton)" ]; then
-  stderr "compton DBus interface unavailable"
+  stderr "picom DBus interface unavailable"
   if [ -n "$(pgrep picom)" ]; then
     stderr "picom running without dbus interface"
     #killall picom & # Causes all windows to flicker away and come back ugly.
