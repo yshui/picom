@@ -1652,11 +1652,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .randr_exists = 0,
 	    .randr_event = 0,
 	    .randr_error = 0,
-#ifdef CONFIG_OPENGL
 	    .glx_exists = false,
 	    .glx_event = 0,
 	    .glx_error = 0,
-#endif
 	    .xrfilter_convolution_exists = false,
 
 	    .atoms_wintypes = {0},

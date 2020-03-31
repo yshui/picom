@@ -7,6 +7,7 @@
 #include <pixman.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
+#include <xcb/glx.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
@@ -361,20 +362,25 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 		CASESTRRET2(RENDER_GLYPH);
 	}
 
-#ifdef CONFIG_OPENGL
 	if (ps->glx_exists) {
 		o = error_code - ps->glx_error;
 		switch (o) {
-			CASESTRRET(GLX_BAD_SCREEN);
-			CASESTRRET(GLX_BAD_ATTRIBUTE);
-			CASESTRRET(GLX_NO_EXTENSION);
-			CASESTRRET(GLX_BAD_VISUAL);
-			CASESTRRET(GLX_BAD_CONTEXT);
-			CASESTRRET(GLX_BAD_VALUE);
-			CASESTRRET(GLX_BAD_ENUM);
+			CASESTRRET2(GLX_BAD_CONTEXT);
+			CASESTRRET2(GLX_BAD_CONTEXT_STATE);
+			CASESTRRET2(GLX_BAD_DRAWABLE);
+			CASESTRRET2(GLX_BAD_PIXMAP);
+			CASESTRRET2(GLX_BAD_CONTEXT_TAG);
+			CASESTRRET2(GLX_BAD_CURRENT_WINDOW);
+			CASESTRRET2(GLX_BAD_RENDER_REQUEST);
+			CASESTRRET2(GLX_BAD_LARGE_REQUEST);
+			CASESTRRET2(GLX_UNSUPPORTED_PRIVATE_REQUEST);
+			CASESTRRET2(GLX_BAD_FB_CONFIG);
+			CASESTRRET2(GLX_BAD_PBUFFER);
+			CASESTRRET2(GLX_BAD_CURRENT_DRAWABLE);
+			CASESTRRET2(GLX_BAD_WINDOW);
+			CASESTRRET2(GLX_GLX_BAD_PROFILE_ARB);
 		}
 	}
-#endif
 
 	if (ps->xsync_exists) {
 		o = error_code - ps->xsync_error;
