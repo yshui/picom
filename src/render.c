@@ -1343,11 +1343,15 @@ bool init_render(session_t *ps) {
 	}
 
 	// Initialize our rounded corners fragment shader
-	if (ps->o.corner_radius > 0) {
+	if (ps->o.corner_radius > 0 && ps->o.backend == BKEND_GLX) {
+#ifdef CONFIG_OPENGL
 		if (!glx_init_rounded_corners(ps)) {
 			log_error("Failed to init rounded corners shader.");
 			return false;
 		}
+#else
+    assert(false);
+#endif
 	}
 	return true;
 }
