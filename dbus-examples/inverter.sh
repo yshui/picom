@@ -29,7 +29,7 @@ SED="${SED:-$(command -v gsed || printf 'sed')}"
 dpy=$(printf "$DISPLAY" | tr -c '[:alnum:]' _)
 
 if [ -z "$dpy" ]; then
-  echo "Cannot find display."
+  stderr "Cannot find display."
   exit 1
 fi
 
