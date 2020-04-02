@@ -57,6 +57,11 @@ typedef struct {
 	GLint unifm_borderc;
 	/// Location of uniform "resolution" in rounded-corners GLSL program.
 	GLint unifm_resolution;
+	/// Location of uniform "texture_scr" in rounded-corners GLSL program.
+	GLint unifm_tex_scr;
+	/// Location of uniform "texture_wnd" in rounded-corners GLSL program.
+	GLint unifm_tex_wnd;
+
 } glx_round_pass_t;
 
 /// Structure containing GLX-dependent data for a session.
