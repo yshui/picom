@@ -102,6 +102,7 @@ bool glx_init(session_t *ps, bool need_render) {
 		ppass->unifm_texcoord = -1;
 		ppass->unifm_texsize = -1;
 		ppass->unifm_borderw = -1;
+		ppass->unifm_borderc = -1;
 		ppass->unifm_resolution = -1;
 	}
 
@@ -448,7 +449,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 	    "%s"        // extensions
 	    "uniform float u_radius;\n"
 	    "uniform float u_borderw;\n"
-	    "uniform int u_is_focused;\n"
+	    "uniform vec4 u_borderc;\n"
 	    "uniform vec2 u_texcoord;\n"
 	    "uniform vec2 u_texsize;\n"
 	    "uniform vec2 u_resolution;\n"
@@ -459,23 +460,18 @@ bool glx_init_rounded_corners(session_t *ps) {
 	    "  vec2 d = abs(p) - b + vec2(r);\n"
 	    "  return min(max(d.x, d.y), 0.0) + length(max(d, 0.0)) - r;\n"
 	    "}\n\n"
-	    "// https://www.shadertoy.com/view/ldfSDj\n"
-	    "float udRoundBox( vec2 p, vec2 b, float r )\n"
-	    "{\n"
-	    "  return length(max(abs(p)-b+r,0.0))-r;\n"
-	    "}\n\n"
 	    "void main()\n"
 	    "{\n"
 	    "  vec2 coord = vec2(u_texcoord.x, "
 	    "u_resolution.y-u_texsize.y-u_texcoord.y);\n"
-	    "  vec4 u_v4SrcColor = %s(tex_scr, vec2(gl_TexCoord[0].st));\n"
+	    "  vec4 u_v4WndBgColor = %s(tex_scr, vec2(gl_TexCoord[0].st));\n"
 	    "  float u_fRadiusPx = u_radius;\n"
-	    "  float u_fHalfBorderThickness = 0.0;\n"
-	    "  vec4 u_v4BorderColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
+	    "  float u_fHalfBorderThickness = u_borderw / 2.0;\n"
+	    "  vec4 u_v4BorderColor = u_borderc;\n"
 	    "  vec4 u_v4FillColor = vec4(0.0, 0.0, 0.0, 0.0);\n"
 	    "  vec4 v4FromColor = u_v4BorderColor;	//Always the border "
 	    "color. If no border, this still should be set\n"
-	    "  vec4 v4ToColor = u_v4SrcColor;		//Outside color is the "
+	    "  vec4 v4ToColor = u_v4WndBgColor;		//Outside color is the "
 	    "background texture\n"
 	    "\n"
 	    "  vec2 u_v2HalfShapeSizePx = u_texsize/2.0 - "
@@ -493,7 +489,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 	    "  } else {\n"
 	    "    v4FromColor = u_v4FillColor;\n"
 	    "  }\n"
-	    "  float fBlendAmount = clamp(fDist + 0.5, 0.0, 1.0);\n"
+	    "  float fBlendAmount = smoothstep(-1.0, 1.0, fDist);\n"
 	    "  vec4 c = mix(v4FromColor, v4ToColor, fBlendAmount);\n"
 	    "\n"
 	    "  // final color\n"
@@ -553,7 +549,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 	P_GET_UNIFM_LOC("u_texcoord", unifm_texcoord);
 	P_GET_UNIFM_LOC("u_texsize", unifm_texsize);
 	P_GET_UNIFM_LOC("u_borderw", unifm_borderw);
-	P_GET_UNIFM_LOC("u_is_focused", unifm_is_focused);
+	P_GET_UNIFM_LOC("u_borderc", unifm_borderc);
 	P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
 #undef P_GET_UNIFM_LOC
 
@@ -642,7 +638,7 @@ bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex, int x, i
 
 	glx_texture_t *ptex = *pptex;
 
-	// log_trace("Copying xy(%d %d) wh(%d %d)", x, y, width, height);
+	// log_trace("Copying xy(%d %d) wh(%d %d) ptex(%p)", x, y, width, height, ptex);
 
 	// Release texture if parameters are inconsistent
 	if (ptex && ptex->texture && (ptex->width != width || ptex->height != height)) {
@@ -1103,9 +1099,56 @@ glx_blur_dst_end:
 	return ret;
 }
 
-bool glx_round_corners_dst(session_t *ps, struct managed_win *w, const glx_texture_t *ptex,
-                           int dx, int dy, int width, int height, float z, float cr,
-                           const region_t *reg_tgt attr_unused) {
+// TODO(bhagwan) this is a mess and needs a more consistent way of getting the border
+// pixel I tried looking for a notify event for XCB_CW_BORDER_PIXEL (in
+// xcb_create_window()) or a way to get the pixels from xcb_render_picture_t but the
+// documentation for the xcb_xrender extension is literaly non existent...
+//
+// NOTE(yshui) There is no consistent way to get the "border" color of a X window. From
+// the WM's perspective there are multiple ways to implement window borders. Using
+// glReadPixel is probably the most reliable way.
+void glx_read_border_pixel(int root_height, int root_width, int x, int y, int width,
+                           int height, float *ppixel) {
+	assert(ppixel);
+
+	// Reset the color so the shader doesn't use it
+	ppixel[0] = ppixel[1] = ppixel[2] = ppixel[3] = -1.0F;
+
+	// First try bottom left corner past the
+	// circle radius (after the rounded corner ends)
+	auto screen_x = x;
+	auto screen_y = root_height - height - y;
+
+	// X is out of bounds
+	// move to the right side
+	if (screen_x < 0) {
+		screen_x += width;
+	}
+
+	// Y is out of bounds
+	// move to to top part
+	if (screen_y < 0) {
+		screen_y += height;
+	}
+
+	// All corners are out of bounds, give up
+	if (screen_x < 0 || screen_y < 0 || screen_x >= root_width || screen_y >= root_height) {
+		return;
+	}
+
+	// Invert Y-axis so we can query border color from texture (0,0)
+	glReadPixels(screen_x, screen_y, 1, 1, GL_RGBA, GL_FLOAT, (void *)ppixel);
+
+	log_trace("xy(%d, %d), glxy(%d %d) wh(%d %d), border_col(%.2f, %.2f, %.2f, %.2f)",
+	          x, y, screen_x, screen_y, width, height, (float)ppixel[0],
+	          (float)ppixel[1], (float)ppixel[2], (float)ppixel[3]);
+
+	gl_check_err();
+}
+
+bool glx_round_corners_dst(session_t *ps, struct managed_win *w,
+                           const glx_texture_t *ptex, int dx, int dy, int width,
+                           int height, float z, float cr, const region_t *reg_tgt) {
 	assert(ps->psglx->round_passes->prog);
 	bool ret = false;
 
@@ -1115,6 +1158,11 @@ bool glx_round_corners_dst(session_t *ps, struct managed_win *w, const glx_textu
 
 	int mdx = dx, mdy = dy, mwidth = width, mheight = height;
 	log_trace("%d, %d, %d, %d", mdx, mdy, mwidth, mheight);
+
+	if (w->g.border_width > 0) {
+		glx_read_border_pixel(ps->root_height, ps->root_width, dx, dy, width,
+		                      height, &w->border_col[0]);
+	}
 
 	{
 		const glx_round_pass_t *ppass = ps->psglx->round_passes;
@@ -1144,10 +1192,13 @@ bool glx_round_corners_dst(session_t *ps, struct managed_win *w, const glx_textu
 			glUniform2f(ppass->unifm_texsize, (float)mwidth, (float)mheight);
 		}
 		if (ppass->unifm_borderw >= 0) {
-			glUniform1f(ppass->unifm_borderw, w->g.border_width);
+			// Don't render rounded border if we don't know the border color
+			glUniform1f(ppass->unifm_borderw,
+			            w->border_col[0] != -1. ? (GLfloat)w->g.border_width : 0);
 		}
-		if (ppass->unifm_is_focused >= 0) {
-			glUniform1i(ppass->unifm_is_focused, w->focused);
+		if (ppass->unifm_borderc >= 0) {
+			glUniform4f(ppass->unifm_borderc, w->border_col[0],
+			            w->border_col[1], w->border_col[2], w->border_col[3]);
 		}
 		if (ppass->unifm_resolution >= 0) {
 			glUniform2f(ppass->unifm_resolution, (float)ps->root_width,
@@ -1177,8 +1228,8 @@ bool glx_round_corners_dst(session_t *ps, struct managed_win *w, const glx_textu
 
 				// Invert Y if needed, this may not work as expected,
 				// though. I don't have such a FBConfig to test with.
-				ry = 1.0f - ry;
-				rye = 1.0f - rye;
+				ry = 1.0F - ry;
+				rye = 1.0F - rye;
 
 				// log_trace("Rect %d (i:%d): %f, %f, %f, %f -> %f, %f,
 				// %f, %f", 	ri ,ptex ? ptex->y_inverted : -1, rx, ry,

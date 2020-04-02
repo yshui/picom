@@ -1151,7 +1151,7 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				const auto hei = to_u16_checked(w->heightb);
 				glx_round_corners_dst(ps, w, w->glx_texture_bg, w->g.x,
 				                      w->g.y, wid, hei,
-				                      (float)ps->psglx->z - 0.5f,
+				                      (float)ps->psglx->z - 0.5F,
 				                      (float)w->corner_radius, &reg_tmp);
 			}
 #endif
