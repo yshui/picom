@@ -51,6 +51,10 @@ typedef struct {
 	GLint unifm_texcoord;
 	/// Location of uniform "texsize" in rounded-corners GLSL program.
 	GLint unifm_texsize;
+	/// Location of uniform "borderw" in rounded-corners GLSL program.
+	GLint unifm_borderw;
+	/// Location of uniform "is_focused" in rounded-corners GLSL program.
+	GLint unifm_is_focused;
 	/// Location of uniform "resolution" in rounded-corners GLSL program.
 	GLint unifm_resolution;
 } glx_round_pass_t;
@@ -128,11 +132,11 @@ void glx_set_clip(session_t *ps, const region_t *reg);
 bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
                   GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc);
 
-bool glx_round_corners_dst0(session_t *ps, const glx_texture_t *ptex, int shader_idx,
+bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_texture_t *ptex, int shader_idx,
 					int dx, int dy, int width, int height, float z, float cr,
 					const region_t *reg_tgt, glx_blur_cache_t *pbc);
 
-bool glx_round_corners_dst1(session_t *ps, const glx_texture_t *ptex, int shader_idx,
+bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_texture_t *ptex, int shader_idx,
 					int dx, int dy, int width, int height, float z, float cr,
 					const region_t *reg_tgt, glx_blur_cache_t *pbc);	  
 
