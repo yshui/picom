@@ -107,6 +107,7 @@ bool glx_init(session_t *ps, bool need_render) {
 			ppass->unifm_texcoord = -1;
 			ppass->unifm_texsize = -1;
 			ppass->unifm_borderw = -1;
+			ppass->unifm_borderc = -1;
 			ppass->unifm_resolution = -1;
 		}
 	}
@@ -701,7 +702,7 @@ static inline bool glx_init_frag_shader_corners(glx_round_pass_t *ppass,
 		P_GET_UNIFM_LOC("u_texcoord", unifm_texcoord);
 		P_GET_UNIFM_LOC("u_texsize", unifm_texsize);
 		P_GET_UNIFM_LOC("u_borderw", unifm_borderw);
-		P_GET_UNIFM_LOC("u_is_focused", unifm_is_focused);
+		P_GET_UNIFM_LOC("u_borderc", unifm_borderc);
 		P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
 #undef P_GET_UNIFM_LOC
 	}
@@ -725,7 +726,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"%s"  // extensions
 			"uniform float u_radius;\n"
 			"uniform float u_borderw;\n"
-			"uniform int u_is_focused;\n"
+			"uniform vec4 u_borderc;\n"
 			"uniform vec2 u_texcoord;\n"
 			"uniform vec2 u_texsize;\n"
 			"uniform vec2 u_resolution;\n"
@@ -757,7 +758,10 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"  vec4 v4FromColor = u_v4BorderColor;	//Always the border color. If no border, this still should be set\n"
 			"  vec4 v4ToColor = u_v4SrcColor;		//Outside color is the background texture\n"
 			"\n"
-			"  //if (u_is_focused > 0) u_fHalfBorderThickness = u_borderw / 2.0;\n"
+			"  /*if (u_borderw > 0.) {\n"
+			"    v4FromColor = u_borderc;\n"
+			"    u_fHalfBorderThickness = u_borderw / 2.0;\n"
+			"  }*/\n"
 			"  vec2 u_v2HalfShapeSizePx = u_texsize/2.0 - vec2(u_fHalfBorderThickness);\n"
 			"  vec2 v_v2CenteredPos = (gl_FragCoord.xy - u_texsize.xy / 2.0 - coord);\n"
 			"\n"
@@ -801,7 +805,10 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"  vec4 v4ToColor = vec4(0.0, 0.0, 1.0, 1.0); //Outside color\n"
 			"  //vec4 v4ToColor = u_v4SrcColor; //Outside color\n"
 			"\n"
-			"  if (u_is_focused > 0) u_fHalfBorderThickness = u_borderw / 2.0 * 4.02;\n"
+			"  /*if (u_borderw > 0.0f) {\n"
+			"    v4FromColor = u_borderc;\n"
+			"    u_fHalfBorderThickness = u_borderw / 2.0;\n"
+			"  }*/\n"
 			"  vec2 u_v2HalfShapeSizePx = u_texsize/2.0 - vec2(u_fHalfBorderThickness);\n"
 			"  vec2 v_v2CenteredPos = (gl_FragCoord.xy - u_texsize.xy / 2.0 - coord);\n"
 			"\n"
@@ -947,7 +954,7 @@ bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex,
 	// Release texture if parameters are inconsistent
 	if (ptex && ptex->texture &&
 		(ptex->width != width || ptex->height != height)) {
-		log_info("Windows size changed old_wh(%d %d) new_wh(%d %d)", ptex->width, ptex->height, width, height);
+		//log_info("Windows size changed old_wh(%d %d) new_wh(%d %d)", ptex->width, ptex->height, width, height);
 		glx_release_texture(ps, &ptex);
 	}
 
@@ -1751,9 +1758,17 @@ bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_text
 	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
 	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
 	bool ret = false;
+	
+	GLfloat border_col[4] = {0};
+	
+	if (w->g.border_width >= 1) {
+		glReadPixels(dx, dy+height, 1, 1, GL_RGBA, GL_FLOAT, (void*)&border_col[0]);
+		//log_warn("border_col(%.2f, %.2f, %.2f, %.2f)",
+		//	(float)border_col[0], (float)border_col[1], (float)border_col[2], (float)border_col[3]);
+	}
 
-	//log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d) b(%d), f(%d)",
-	//	dx, dy, width, height, ps->root_width, ps->root_height, w->g.border_width, w->focused);
+	//log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d) bw(%d)",
+	//	dx, dy, width, height, ps->root_width, ps->root_height, w->g.border_width);
 
 	// Calculate copy region size
 	glx_blur_cache_t ibc = {.width = 0, .height = 0};
@@ -1845,8 +1860,8 @@ bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_text
 			glUniform2f(ppass->unifm_texsize, (float)mwidth, (float)mheight);
 		if (ppass->unifm_borderw >= 0)
 			glUniform1f(ppass->unifm_borderw, w->g.border_width);
-		if (ppass->unifm_is_focused >= 0)
-			glUniform1i(ppass->unifm_is_focused, w->focused);
+		if (ppass->unifm_borderc >= 0)
+			glUniform4fv(ppass->unifm_borderc, 1, (GLfloat *)&border_col[0]);
 		if (ppass->unifm_resolution >= 0)
 			glUniform2f(ppass->unifm_resolution, (float)ps->root_width, (float)ps->root_height);
 
@@ -1931,6 +1946,12 @@ bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_text
 	assert(ps->psglx->round_passes[1].prog);
 	bool ret = false;
 
+	GLfloat border_col[4] = {0};
+	
+	if (w->g.border_width >= 1) {
+		glReadPixels(dx, dy+height, 1, 1, GL_RGBA, GL_FLOAT, (void*)&border_col[0]);
+	}
+
 	{
 		const glx_round_pass_t *ppass = &ps->psglx->round_passes[shader_idx];
 		assert(ppass->prog);
@@ -1954,8 +1975,8 @@ bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_text
 			glUniform2f(ppass->unifm_texsize, (float)width, (float)height);
 		if (ppass->unifm_borderw >= 0)
 			glUniform1f(ppass->unifm_borderw, w->g.border_width);
-		if (ppass->unifm_is_focused >= 0)
-			glUniform1i(ppass->unifm_is_focused, w->focused);
+		if (ppass->unifm_borderc >= 0)
+			glUniform4fv(ppass->unifm_borderc, 1, (GLfloat *)&border_col[0]);
 		if (ppass->unifm_resolution >= 0)
 			glUniform2f(ppass->unifm_resolution, (float)ps->root_width, (float)ps->root_height);
 
