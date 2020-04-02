@@ -102,7 +102,10 @@ bool glx_init(session_t *ps, bool need_render) {
 		ppass->unifm_texcoord = -1;
 		ppass->unifm_texsize = -1;
 		ppass->unifm_borderw = -1;
+		ppass->unifm_borderc = -1;
 		ppass->unifm_resolution = -1;
+		ppass->unifm_tex_scr = -1;
+		ppass->unifm_tex_wnd = -1;
 	}
 
 	glx_session_t *psglx = ps->psglx;
@@ -555,8 +558,13 @@ bool glx_init_rounded_corners(session_t *ps) {
 	P_GET_UNIFM_LOC("u_texcoord", unifm_texcoord);
 	P_GET_UNIFM_LOC("u_texsize", unifm_texsize);
 	P_GET_UNIFM_LOC("u_borderw", unifm_borderw);
-	P_GET_UNIFM_LOC("u_is_focused", unifm_is_focused);
+	P_GET_UNIFM_LOC("u_borderc", unifm_borderc);
 	P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
+	P_GET_UNIFM_LOC("tex_scr", unifm_tex_scr);
+	// We don't need this one anymore since we get
+	// the border color using glReadPixel
+	// uncomment if you need to use 'tex_wnd' in the shader
+	// P_GET_UNIFM_LOC("tex_wnd", unifm_tex_wnd);
 #undef P_GET_UNIFM_LOC
 
 	success = true;
@@ -1118,8 +1126,13 @@ bool glx_round_corners_dst(session_t *ps, struct managed_win *w, const glx_textu
 	int mdx = dx, mdy = dy, mwidth = width, mheight = height;
 	log_trace("%d, %d, %d, %d", mdx, mdy, mwidth, mheight);
 
+	if (w->g.border_width >= 1 /*&& w->border_col[0] == -1.0*/) {
+		glx_read_border_pixel(w, ps->root_height, dx, dy, width, height,
+		                      w->corner_radius, &w->border_col[0]);
+	}
+
 	{
-		const glx_round_pass_t *ppass = ps->psglx->round_passes;
+		const glx_round_pass_t *ppass = &ps->psglx->round_passes[0];
 		assert(ppass->prog);
 
 		glEnable(GL_BLEND);
@@ -1133,8 +1146,12 @@ bool glx_round_corners_dst(session_t *ps, struct managed_win *w, const glx_textu
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(ptex->target, ptex->texture);
-		GLint loc_sampler = glGetUniformLocation(ppass->prog, "tex_scr");
-		glUniform1i(loc_sampler, (GLint)0);
+
+		if (ppass->unifm_tex_scr >= 0)
+			glUniform1i(ppass->unifm_tex_scr, (GLint)0);
+		// We have no GL_TEXTURE1 here so just pass the default
+		if (ppass->unifm_tex_wnd >= 0)
+			glUniform1i(ppass->unifm_tex_wnd, (GLint)0);
 
 		if (ppass->unifm_radius >= 0) {
 			glUniform1f(ppass->unifm_radius, cr);

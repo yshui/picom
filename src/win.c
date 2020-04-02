@@ -1085,6 +1085,11 @@ static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) 
 	} else {
 		w->corner_radius = ps->o.corner_radius;
 		log_debug("Rounding corners for window %#010x", w->base.id);
+		// HACK: we reset this so we can query the color once
+		// we query the color in glx_round_corners_dst0 using glReadPixels
+		// w->border_col = { -1., -1, -1, -1 };
+		w->border_col[0] = w->border_col[1] = w->border_col[2] =
+		    w->border_col[3] = -1.0;
 	}
 }
 
