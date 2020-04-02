@@ -106,6 +106,7 @@ bool glx_init(session_t *ps, bool need_render) {
 			ppass->unifm_radius = -1;
 			ppass->unifm_texcoord = -1;
 			ppass->unifm_texsize = -1;
+			ppass->unifm_borderw = -1;
 			ppass->unifm_resolution = -1;
 		}
 	}
@@ -699,6 +700,8 @@ static inline bool glx_init_frag_shader_corners(glx_round_pass_t *ppass,
 		P_GET_UNIFM_LOC("u_radius", unifm_radius);
 		P_GET_UNIFM_LOC("u_texcoord", unifm_texcoord);
 		P_GET_UNIFM_LOC("u_texsize", unifm_texsize);
+		P_GET_UNIFM_LOC("u_borderw", unifm_borderw);
+		P_GET_UNIFM_LOC("u_is_focused", unifm_is_focused);
 		P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
 #undef P_GET_UNIFM_LOC
 	}
@@ -721,11 +724,18 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"#version 110\n"
 			"%s"  // extensions
 			"uniform float u_radius;\n"
+			"uniform float u_borderw;\n"
+			"uniform int u_is_focused;\n"
 			"uniform vec2 u_texcoord;\n"
 			"uniform vec2 u_texsize;\n"
 			"uniform vec2 u_resolution;\n"
 			"uniform %s tex_scr;\n" // sampler2D | sampler2DRect
 			"\n"
+			"// https://www.shadertoy.com/view/ltS3zW\n"
+			"float RectSDF(vec2 p, vec2 b, float r) {\n"
+			"  vec2 d = abs(p) - b + vec2(r);\n"
+			"  return min(max(d.x, d.y), 0.0) + length(max(d, 0.0)) - r;\n"
+			"}\n\n"
 			"// https://www.shadertoy.com/view/ldfSDj\n"
 			"float udRoundBox( vec2 p, vec2 b, float r )\n"
 			"{\n"
@@ -733,32 +743,96 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"}\n\n"
 			"void main()\n"
 			"{\n"
-			"  vec4 col_scr = %s(tex_scr, gl_TexCoord[0].st);\n"
-			"  vec2 halfres = 0.5 * u_texsize.xy;\n"
 			"  vec2 coord = vec2(u_texcoord.x, u_resolution.y-u_texsize.y-u_texcoord.y);\n"
-			"\n"
-    		"  // compute box\n"
-			"  float b = udRoundBox( gl_FragCoord.xy - coord - halfres, halfres, u_radius );\n"
+			"  vec4 u_v4SrcColor = %s(tex_scr, vec2(gl_TexCoord[0].st));\n"
 			"\n";
 
 		// Fragment shader (round corners)
 		// dst0 shader
-		static const char *FRAG_SHADER_ROUND_CORNERS_PRE =
+		static const char *FRAG_SHADER_ROUND_CORNERS_0 =
+			"  float u_fRadiusPx = u_radius;\n"
+			"  float u_fHalfBorderThickness = 0.0;\n"
+			"  vec4 u_v4BorderColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
+			"  vec4 u_v4FillColor = vec4(0.0, 0.0, 0.0, 0.0);\n"
+			"  vec4 v4FromColor = u_v4BorderColor;	//Always the border color. If no border, this still should be set\n"
+			"  vec4 v4ToColor = u_v4SrcColor;		//Outside color is the background texture\n"
+			"\n"
+			"  //if (u_is_focused > 0) u_fHalfBorderThickness = u_borderw / 2.0;\n"
+			"  vec2 u_v2HalfShapeSizePx = u_texsize/2.0 - vec2(u_fHalfBorderThickness);\n"
+			"  vec2 v_v2CenteredPos = (gl_FragCoord.xy - u_texsize.xy / 2.0 - coord);\n"
+			"\n"
+			"  float fDist = RectSDF(v_v2CenteredPos, u_v2HalfShapeSizePx, u_fRadiusPx - u_fHalfBorderThickness);\n"
+			"  if (u_fHalfBorderThickness > 0.0) {\n"
+			"    if (fDist < 0.0) {\n"
+			"      v4ToColor = u_v4FillColor;\n"
+			"    }\n"
+			"    fDist = abs(fDist) - u_fHalfBorderThickness;\n"
+			"  } else {\n"
+			"    v4FromColor = u_v4FillColor;\n"
+			"  }\n"
+			"  float fBlendAmount = smoothstep(-1.0, 1.0, fDist);\n"
+			"  vec4 c = mix(v4FromColor, v4ToColor, fBlendAmount);"
+			"\n"
+			"  // final color\n"
+			"  if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
+			"  gl_FragColor = c;\n"
+			"\n"
+			"  // OLD SHADER"
+    		"  // compute box\n"
+			"  /*vec2 halfres = 0.5 * vec2(u_texsize.x - 0.0, u_texsize.y - 0.0);\n"
+			"  float b = udRoundBox( gl_FragCoord.xy - coord - halfres, halfres - 0.0, u_radius + 0.0 );\n"
+			"\n"
    			"  // colorize (transparent mid / opaque corners )\n"
-			"  vec4 c = mix( vec4(0.0,0.0,0.0,0.0), col_scr, smoothstep(0.0,1.0,b) );\n"
+			"  c = mix( vec4(0.0,0.0,0.0,0.0), u_v4SrcColor, smoothstep(0.0,1.0,b) );\n"
 			"\n"
 			"  //if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
-			"  gl_FragColor = vec4( c );\n"
+			"  gl_FragColor = vec4( c );*/\n"
 			"}\n";
 			
 		// Fragment shader (round corners)
 		// dst1 shader
-		static const char *FRAG_SHADER_ROUND_CORNERS_POST =
+		static const char *FRAG_SHADER_ROUND_CORNERS_1 =
+			"  float u_fRadiusPx = u_radius;\n"
+			"  float u_fHalfBorderThickness = 10.0 /2.0;//0.0;\n"
+			"  vec4 u_v4BorderColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
+			"  vec4 u_v4FillColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
+			"  //vec4 u_v4FillColor = vec4(0.0, 0.0, 0.0, 0.0);\n"
+			"  vec4 v4FromColor = u_v4BorderColor; //Always the border color. If no border, this still should be set\n"
+			"  vec4 v4ToColor = vec4(0.0, 0.0, 1.0, 1.0); //Outside color\n"
+			"  //vec4 v4ToColor = u_v4SrcColor; //Outside color\n"
+			"\n"
+			"  if (u_is_focused > 0) u_fHalfBorderThickness = u_borderw / 2.0 * 4.02;\n"
+			"  vec2 u_v2HalfShapeSizePx = u_texsize/2.0 - vec2(u_fHalfBorderThickness);\n"
+			"  vec2 v_v2CenteredPos = (gl_FragCoord.xy - u_texsize.xy / 2.0 - coord);\n"
+			"\n"
+			"  float fDist = RectSDF(v_v2CenteredPos, u_v2HalfShapeSizePx, u_fRadiusPx - u_fHalfBorderThickness);\n"
+			"  if (u_fHalfBorderThickness > 0.0) {\n"
+			"    if (fDist < 0.0) {\n"
+			"      v4ToColor = u_v4FillColor;\n"
+			"    }\n"
+			"    fDist = abs(fDist) - u_fHalfBorderThickness;\n"
+			"  } else {\n"
+			"    v4FromColor = u_v4FillColor;\n"
+			"  }\n"
+			"  float fBlendAmount = smoothstep(-1.0, 1.0, fDist);\n"
+			"  vec4 c = mix(v4FromColor, v4ToColor, fBlendAmount);"
+			"\n"
+			"  // final color\n"
+			"  if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
+			"  gl_FragColor = c;\n"
+			"  //gl_FragColor = vec4(vec3(fBlendAmount), 1.0);\n"
+			"  //gl_FragColor = vec4(vec3(abs(dist) / (2.0 * corner)), 1.0);\n"
+			"\n\n"
+			"  // OLD SHADER"
+			"  // compute box\n"
+			"  /*vec2 halfres = 0.5 * vec2(u_texsize.x - 0.0, u_texsize.y - 0.0);\n"
+			"  float b = udRoundBox( gl_FragCoord.xy - coord - halfres, halfres - 0.0, u_radius + 0.0 );\n"
+			"\n"
    			"  // colorize (red / green )\n"
-			"  vec4 c = mix( vec4(1.0,0.0,0.0,1.0), vec4(0.0,1.0,0.0,1.0), smoothstep(0.0,1.0,b) );\n"
+			"  c = mix( vec4(0.0,1.0,0.0,1.0), vec4(0.0,0.0,1.0,1.0), smoothstep(0.0,1.0,b) );\n"
 			"\n"
 			"  //if ( c == vec4(1.0,1.0,1.0,1.0) ) discard; else\n"
-			"  gl_FragColor = vec4( c );\n"
+			"  gl_FragColor = vec4( c );*/\n"
 			"}\n";
 
 		const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
@@ -774,7 +848,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 		}
 
 		if (!glx_init_frag_shader_corners(&ps->psglx->round_passes[0],
-									FRAG_SHADER_PREFIX, FRAG_SHADER_ROUND_CORNERS_PRE,
+									FRAG_SHADER_PREFIX, FRAG_SHADER_ROUND_CORNERS_0,
 									extension, sampler_type, texture_func)) {
 
 										log_error("Failed to create rounded corners fragment shader PRE.");
@@ -785,7 +859,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 									}
 
 		if (!glx_init_frag_shader_corners(&ps->psglx->round_passes[1],
-									FRAG_SHADER_PREFIX, FRAG_SHADER_ROUND_CORNERS_POST,
+									FRAG_SHADER_PREFIX, FRAG_SHADER_ROUND_CORNERS_1,
 									extension, sampler_type, texture_func)) {
 
 										log_error("Failed to create rounded corners fragment shader POST.");
@@ -1667,7 +1741,7 @@ static void bind_sampler_to_unit_with_texture(GLuint prog, GLchar const * const 
 }
 
 
-bool glx_round_corners_dst0(session_t *ps, const glx_texture_t *ptex attr_unused, int shader_idx,
+bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_texture_t *ptex attr_unused, int shader_idx,
 				int dx, int dy, int width, int height, float z, float cr,
 				const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc) {
 
@@ -1678,7 +1752,8 @@ bool glx_round_corners_dst0(session_t *ps, const glx_texture_t *ptex attr_unused
 	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
 	bool ret = false;
 
-	//log_trace("dxy(%d, %d) wh(%d %d) rwh(%d %d)", dx, dy, width, height, ps->root_width, ps->root_height);
+	//log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d) b(%d), f(%d)",
+	//	dx, dy, width, height, ps->root_width, ps->root_height, w->g.border_width, w->focused);
 
 	// Calculate copy region size
 	glx_blur_cache_t ibc = {.width = 0, .height = 0};
@@ -1768,6 +1843,10 @@ bool glx_round_corners_dst0(session_t *ps, const glx_texture_t *ptex attr_unused
 			glUniform2f(ppass->unifm_texcoord, (float)dx, (float)dy);
 		if (ppass->unifm_texsize >= 0)
 			glUniform2f(ppass->unifm_texsize, (float)mwidth, (float)mheight);
+		if (ppass->unifm_borderw >= 0)
+			glUniform1f(ppass->unifm_borderw, w->g.border_width);
+		if (ppass->unifm_is_focused >= 0)
+			glUniform1i(ppass->unifm_is_focused, w->focused);
 		if (ppass->unifm_resolution >= 0)
 			glUniform2f(ppass->unifm_resolution, (float)ps->root_width, (float)ps->root_height);
 
@@ -1843,7 +1922,7 @@ glx_round_corners_dst_end:
 	return ret;
 }
 
-bool glx_round_corners_dst1(session_t *ps, const glx_texture_t *ptex, int shader_idx,
+bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_texture_t *ptex, int shader_idx,
 				int dx, int dy, int width, int height, float z, float cr,
 				const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc attr_unused) {
 
@@ -1861,12 +1940,22 @@ bool glx_round_corners_dst1(session_t *ps, const glx_texture_t *ptex, int shader
 
 		glUseProgram(ppass->prog);
 
+		// If caller specified a texture use it as source
+		if (ptex) {
+			log_debug("ptex: %p wh(%d %d) %d %d", ptex, ptex->width, ptex->height, ptex->target, ptex->texture);
+			bind_sampler_to_unit_with_texture(ppass->prog, "tex_scr", 0, ptex->target, ptex->texture);
+		}
+
 		if (ppass->unifm_radius >= 0)
 			glUniform1f(ppass->unifm_radius, cr);
 		if (ppass->unifm_texcoord >= 0)
 			glUniform2f(ppass->unifm_texcoord, (float)dx, (float)dy);
 		if (ppass->unifm_texsize >= 0)
 			glUniform2f(ppass->unifm_texsize, (float)width, (float)height);
+		if (ppass->unifm_borderw >= 0)
+			glUniform1f(ppass->unifm_borderw, w->g.border_width);
+		if (ppass->unifm_is_focused >= 0)
+			glUniform1i(ppass->unifm_is_focused, w->focused);
 		if (ppass->unifm_resolution >= 0)
 			glUniform2f(ppass->unifm_resolution, (float)ps->root_width, (float)ps->root_height);
 

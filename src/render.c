@@ -377,10 +377,10 @@ win_round_corners(session_t *ps, struct managed_win *w, const glx_texture_t *pte
 #ifdef CONFIG_OPENGL
 	case BKEND_GLX:
 		if (shader_idx == 1) {
-			glx_round_corners_dst1(ps, ptex, shader_idx, x, y, wid, hei,
+			glx_round_corners_dst1(ps, w, ptex, shader_idx, x, y, wid, hei,
 								(float)ps->psglx->z - 0.5f, cr, reg_paint, &w->glx_round_cache);
 		} else {
-			glx_round_corners_dst0(ps, ptex, shader_idx, x, y, wid, hei,
+			glx_round_corners_dst0(ps, w, ptex, shader_idx, x, y, wid, hei,
 								(float)ps->psglx->z - 0.5f, cr, reg_paint, &w->glx_round_cache);
 		}
 		break;
