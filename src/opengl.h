@@ -53,8 +53,8 @@ typedef struct {
 	GLint unifm_texsize;
 	/// Location of uniform "borderw" in rounded-corners GLSL program.
 	GLint unifm_borderw;
-	/// Location of uniform "is_focused" in rounded-corners GLSL program.
-	GLint unifm_is_focused;
+	/// Location of uniform "borderc" in rounded-corners GLSL program.
+	GLint unifm_borderc;
 	/// Location of uniform "resolution" in rounded-corners GLSL program.
 	GLint unifm_resolution;
 } glx_round_pass_t;
