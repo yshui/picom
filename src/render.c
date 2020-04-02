@@ -1177,7 +1177,7 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			if (w->corner_radius > 0) {
 				win_round_corners(ps, w, w->glx_texture_bg, 0,
 				                  (float)w->corner_radius,
-				                  ps->tgt_buffer.pict, &bshape_corners);
+				                  ps->tgt_buffer.pict, &reg_tmp);
 			}
 		}
 	}
