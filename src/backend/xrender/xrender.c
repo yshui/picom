@@ -286,6 +286,7 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 	xcb_render_free_picture(c, tmp_picture[0]);
 	xcb_render_free_picture(c, tmp_picture[1]);
 	pixman_region32_fini(&reg_op);
+    pixman_region32_fini(&reg_op_resized);
 	return true;
 }
 

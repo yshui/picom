@@ -454,6 +454,7 @@ static inline void win_region_remove_corners(const struct managed_win *w, region
         },
         4);
     pixman_region32_subtract(res, res, &corners);
+    pixman_region32_fini(&corners);
 }
 
 static inline region_t win_get_bounding_shape_global_by_val(struct managed_win *w, bool include_corners) {
