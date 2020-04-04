@@ -215,6 +215,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				blur_opacity =
 				    w->opacity / win_calc_opacity_target(ps, w, true);
 			}
+			assert(blur_opacity >= 0 && blur_opacity <= 1);
 
 			if (real_win_mode == WMODE_TRANS || ps->o.force_win_blend) {
 				// We need to blur the bounding shape of the window
