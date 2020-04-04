@@ -100,6 +100,9 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 	}
 }
 
+#define CASESTRRET(s)                                                                    \
+	case s: return #s;
+
 static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 	static char buf[128];
 	switch (ev->response_type & 0x7f) {
@@ -161,6 +164,8 @@ static inline const char *attr_pure ev_focus_detail_name(xcb_focus_in_event_t *e
 
 	return "Unknown";
 }
+
+#undef CASESTRRET
 
 static inline void ev_focus_in(session_t *ps, xcb_focus_in_event_t *ev) {
 	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
@@ -250,7 +255,7 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 	log_debug("{ send_event: %d, id: %#010x, above: %#010x, override_redirect: %d }",
 	          ev->event, ev->window, ev->above_sibling, ev->override_redirect);
 	if (ev->window == ps->root) {
-		configure_root(ps, ev->width, ev->height);
+		set_root_flags(ps, ROOT_FLAGS_CONFIGURED);
 	} else {
 		configure_win(ps, ev);
 	}

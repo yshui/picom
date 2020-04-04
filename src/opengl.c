@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
@@ -50,12 +51,8 @@ bool glx_init(session_t *ps, bool need_render) {
 
 	// Check for GLX extension
 	if (!ps->glx_exists) {
-		if (glXQueryExtension(ps->dpy, &ps->glx_event, &ps->glx_error))
-			ps->glx_exists = true;
-		else {
-			log_error("No GLX extension.");
-			goto glx_init_end;
-		}
+		log_error("No GLX extension.");
+		goto glx_init_end;
 	}
 
 	// Get XVisualInfo
@@ -678,6 +675,7 @@ bool glx_load_prog_main(const char *vshader_str, const char *fshader_str,
 	P_GET_UNIFM_LOC("opacity", unifm_opacity);
 	P_GET_UNIFM_LOC("invert_color", unifm_invert_color);
 	P_GET_UNIFM_LOC("tex", unifm_tex);
+	P_GET_UNIFM_LOC("time", unifm_time);
 #undef P_GET_UNIFM_LOC
 
 	gl_check_err();
@@ -1680,12 +1678,16 @@ bool glx_render(session_t *ps, struct managed_win *w attr_unused, const glx_text
 		// Programmable path
 		assert(pprogram->prog);
 		glUseProgram(pprogram->prog);
+		struct timespec ts;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
 		if (pprogram->unifm_opacity >= 0)
 			glUniform1f(pprogram->unifm_opacity, (float)opacity);
 		if (pprogram->unifm_invert_color >= 0)
 			glUniform1i(pprogram->unifm_invert_color, neg);
 		if (pprogram->unifm_tex >= 0)
 			glUniform1i(pprogram->unifm_tex, 0);
+		if (pprogram->unifm_time >= 0)
+			glUniform1f(pprogram->unifm_time, (float)ts.tv_sec * 1000.0f + (float)ts.tv_nsec / 1.0e6f);
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d", x, y, width, height,

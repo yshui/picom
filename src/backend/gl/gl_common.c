@@ -50,9 +50,9 @@ struct gl_blur_context {
 static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 	auto ret = glGetUniformLocation(p, name);
 	if (ret < 0) {
-		log_error("Failed to get location of uniform '%s'. the compositor might "
-		          "not work correctly.",
-		          name);
+		log_info("Failed to get location of uniform '%s'. This is normal when "
+		         "using custom shaders.",
+		         name);
 	}
 	return ret;
 }
@@ -207,6 +207,8 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
 	const int to_width = from_width > max_width ? from_width / 2 : from_width;
 	const int to_height = from_height > max_height ? from_height / 2 : from_height;
 
+	glViewport(0, 0, width, height);
+
 	// Prepare coordinates
 	GLint coord[] = {
 	    // top left
@@ -262,8 +264,7 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
  * deleted when the gl_image is released.
  */
 static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
-
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 
 	// Prepare textures which will be used for destination and source of rendering
 	// during downscaling.
@@ -358,8 +359,7 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
  */
 static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
                         GLint *coord, GLuint *indices, int nrects) {
-
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 	if (!img || !img->inner->texture) {
 		log_error("Missing texture.");
 		return;
@@ -395,6 +395,7 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
 
 	// Bind texture
+	glViewport(0, 0, gd->width, gd->height);
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, brightness);
 	glActiveTexture(GL_TEXTURE0);
@@ -505,7 +506,7 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 // TODO: make use of reg_visible
 void gl_compose(backend_t *base, struct managed_win *w attr_unused, void *image_data, int dst_x, int dst_y,
                 const region_t *reg_tgt, const region_t *reg_visible attr_unused) {
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 	struct gl_image *img = image_data;
 
 	// Painting
@@ -540,7 +541,7 @@ void gl_compose(backend_t *base, struct managed_win *w attr_unused, void *image_
 bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blur,
              const region_t *reg_visible attr_unused) {
 	struct gl_blur_context *bctx = ctx;
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 
 	if (gd->width + bctx->resize_width * 2 != bctx->texture_width ||
 	    gd->height + bctx->resize_height * 2 != bctx->texture_height) {
@@ -778,7 +779,6 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
  * Callback to run on root window size change.
  */
 void gl_resize(struct gl_data *gd, int width, int height) {
-	glViewport(0, 0, width, height);
 	gd->height = height;
 	gd->width = width;
 
@@ -865,7 +865,7 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	static const GLuint fill_vert_in_coord_loc = 0;
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
@@ -917,13 +917,13 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 }
 
 void gl_fill(backend_t *base, struct color c, const region_t *clip) {
-	struct gl_data *gd = (void *)base;
+	auto gd = (struct gl_data *)base;
 	return _gl_fill(base, c, clip, gd->back_fbo, gd->height, true);
 }
 
 void gl_release_image(backend_t *base, void *image_data) {
 	struct gl_image *wd = image_data;
-	struct gl_data *gl = (void *)base;
+	auto gd = (struct gl_data *)base;
 	wd->inner->refcount--;
 	assert(wd->inner->refcount >= 0);
 	if (wd->inner->refcount > 0) {
@@ -931,7 +931,7 @@ void gl_release_image(backend_t *base, void *image_data) {
 		return;
 	}
 
-	gl->release_user_data(base, wd->inner);
+	gd->release_user_data(base, wd->inner);
 	assert(wd->inner->user_data == NULL);
 
 	glDeleteTextures(1, &wd->inner->texture);
@@ -1092,7 +1092,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		// the single pass case
 		auto pass = &ctx->blur_shader[1];
 		pass->prog = gl_create_program_from_str(vertex_shader, dummy_frag);
-		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
+		pass->unifm_opacity = -1;
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 		ctx->npasses = 2;
@@ -1301,22 +1301,18 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 		return;
 	}
 
-	struct gl_data *gl = (void *)base;
-	auto new_tex = cmalloc(struct gl_texture);
+	auto gd = (struct gl_data *)base;
+	auto new_tex = ccalloc(1, struct gl_texture);
 
-	glGenTextures(1, &new_tex->texture);
+	new_tex->texture = gl_new_texture(GL_TEXTURE_2D);
 	glBindTexture(GL_TEXTURE_2D, new_tex->texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img->inner->width, img->inner->height, 0,
 	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	new_tex->y_inverted = true;
 	new_tex->height = img->inner->height;
 	new_tex->width = img->inner->width;
 	new_tex->refcount = 1;
-	new_tex->user_data = gl->decouple_texture_user_data(base, img->inner->user_data);
+	new_tex->user_data = gd->decouple_texture_user_data(base, img->inner->user_data);
 
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
@@ -1362,15 +1358,16 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 
 static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
                                  const region_t *reg_op, double alpha) {
-	glBlendFunc(GL_ONE, GL_CONSTANT_COLOR);
-	glBlendColor((GLclampf)alpha, (GLclampf)alpha, (GLclampf)alpha, (GLclampf)alpha);
+	// Result color = 0 (GL_ZERO) + alpha (GL_CONSTANT_ALPHA) * original color
+	glBlendFunc(GL_ZERO, GL_CONSTANT_ALPHA);
+	glBlendColor(0, 0, 0, (GLclampf)alpha);
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       img->inner->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, 0, 0, false);
+	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, fbo, 0, false);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDeleteFramebuffers(1, &fbo);
@@ -1398,6 +1395,7 @@ void gl_present(backend_t *base, const region_t *region) {
 		       sizeof(GLuint) * 6);
 	}
 
+	glViewport(0, 0, gd->width, gd->height);
 	glUseProgram(gd->present_prog);
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
 

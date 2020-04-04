@@ -45,8 +45,7 @@ static void file_watch_ev_cb(EV_P attr_unused, struct ev_io *w, int revent attr_
 		auto ret = read(w->fd, &inotify_event, sizeof(struct inotify_event));
 		if (ret < 0) {
 			if (errno != EAGAIN) {
-				log_error("Failed to read from inotify fd: %s",
-				          strerror(errno));
+				log_error_errno("Failed to read from inotify fd");
 			}
 			break;
 		}
@@ -57,7 +56,7 @@ static void file_watch_ev_cb(EV_P attr_unused, struct ev_io *w, int revent attr_
 		int ret = kevent(fwr->w.fd, NULL, 0, &ev, 1, &timeout);
 		if (ret <= 0) {
 			if (ret < 0) {
-				log_error("Failed to get kevent: %s", strerror(errno));
+				log_error_errno("Failed to get kevent");
 			}
 			break;
 		}
@@ -82,13 +81,13 @@ void *file_watch_init(EV_P) {
 #ifdef HAS_INOTIFY
 	fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 	if (fd < 0) {
-		log_error("inotify_init1 failed: %s", strerror(errno));
+		log_error_errno("inotify_init1 failed");
 		return NULL;
 	}
 #elif HAS_KQUEUE
 	fd = kqueue();
 	if (fd < 0) {
-		log_error("Failed to create kqueue: %s", strerror(errno));
+		log_error_errno("Failed to create kqueue");
 		return NULL;
 	}
 #else
@@ -127,18 +126,29 @@ bool file_watch_add(void *_fwr, const char *filename, file_watch_cb_t cb, void *
 	log_debug("Adding \"%s\" to watched files", filename);
 	auto fwr = (struct file_watch_registry *)_fwr;
 	int wd = -1;
+
+	struct stat statbuf;
+	int ret = stat(filename, &statbuf);
+	if (ret < 0) {
+		log_error_errno("Failed to retrieve information about file \"%s\"", filename);
+		return false;
+	}
+	if (!S_ISREG(statbuf.st_mode)) {
+		log_info("\"%s\" is not a regular file, not watching it.", filename);
+		return false;
+	}
+
 #ifdef HAS_INOTIFY
 	wd = inotify_add_watch(fwr->w.fd, filename,
 	                       IN_CLOSE_WRITE | IN_MOVE_SELF | IN_DELETE_SELF);
 	if (wd < 0) {
-		log_error("Failed to watch file \"%s\": %s", filename, strerror(errno));
+		log_error_errno("Failed to watch file \"%s\"", filename);
 		return false;
 	}
 #elif HAS_KQUEUE
 	wd = open(filename, O_RDONLY);
 	if (wd < 0) {
-		log_error("Cannot open file \"%s\" for watching: %s", filename,
-		          strerror(errno));
+		log_error_errno("Cannot open file \"%s\" for watching", filename);
 		return false;
 	}
 
@@ -160,7 +170,7 @@ bool file_watch_add(void *_fwr, const char *filename, file_watch_cb_t cb, void *
 	    .udata = NULL,
 	};
 	if (kevent(fwr->w.fd, &ev, 1, NULL, 0, NULL) < 0) {
-		log_error("Failed to register kevent: %s", strerror(errno));
+		log_error_errno("Failed to register kevent");
 		close(wd);
 		return false;
 	}

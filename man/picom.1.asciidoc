@@ -367,7 +367,7 @@ wintypes:
 };
 ------------
 
-'WINDOW_TYPE' is one of the 15 window types defined in EWMH standard: "unknown", "desktop", "dock", "toolbar", "menu", "utility", "splash", "dialog", "normal", "dropdown_menu", "popup_menu", "tooltip", "notify", "combo", and "dnd".
+'WINDOW_TYPE' is one of the 15 window types defined in EWMH standard: "unknown", "desktop", "dock", "toolbar", "menu", "utility", "splash", "dialog", "normal", "dropdown_menu", "popup_menu", "tooltip", "notification", "combo", and "dnd".
 
 Following per window-type options are available: ::
 
@@ -405,12 +405,13 @@ Available options of the 'blur' section are: ::
     A string. Controls the blur method. Corresponds to the *--blur-method* command line option. Available choices are:
       'none' to disable blurring; 'gaussian' for gaussian blur; 'box' for box blur; 'kernel' for convolution blur with a custom kernel.
     Note: 'gaussian' and 'box' blur methods are only supported by the experimental backends.
+    (default: none)
 
   *size*:::
-    An integer. The size of the blur kernel, required by 'gaussian' and 'box' blur methods. For the 'kernel' method, the size is included in the kernel. Corresponds to the *--blur-size* command line option.
+    An integer. The size of the blur kernel, required by 'gaussian' and 'box' blur methods. For the 'kernel' method, the size is included in the kernel. Corresponds to the *--blur-size* command line option (default: 3).
 
   *deviation*:::
-    A floating point number. The standard deviation for the 'gaussian' blur method. Corresponds to the *--blur-deviation* command line option.
+    A floating point number. The standard deviation for the 'gaussian' blur method. Corresponds to the *--blur-deviation* command line option (default: 0.84089642).
 
   *kernel*:::
     A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kerns* option. Corresponds to the *--blur-kerns* command line option.

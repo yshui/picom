@@ -153,6 +153,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	if (ps->root_image) {
 		ps->backend_data->ops->compose(ps->backend_data, t, ps->root_image, 0, 0,
 		                               &reg_paint, &reg_visible);
+	} else {
+		ps->backend_data->ops->fill(ps->backend_data, (struct color){0, 0, 0, 1},
+		                            &reg_paint);
 	}
 
 	// Windows are sorted from bottom to top

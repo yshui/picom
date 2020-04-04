@@ -3,13 +3,15 @@
 
 #include <stdio.h>
 #include <xcb/xcb.h>
+#include <xcb/composite.h>
 
 #include "backend/driver.h"
 #include "diagnostic.h"
 #include "config.h"
+#include "picom.h"
 #include "common.h"
 
-void print_diagnostics(session_t *ps, const char *config_file) {
+void print_diagnostics(session_t *ps, const char *config_file, bool compositor_running) {
 	printf("**Version:** " COMPTON_VERSION "\n");
 	//printf("**CFLAGS:** %s\n", "??");
 	printf("\n### Extensions:\n\n");
@@ -17,7 +19,16 @@ void print_diagnostics(session_t *ps, const char *config_file) {
 	printf("* XRandR: %s\n", ps->randr_exists ? "Yes" : "No");
 	printf("* Present: %s\n", ps->present_exists ? "Present" : "Not Present");
 	printf("\n### Misc:\n\n");
-	printf("* Use Overlay: %s\n", ps->overlay != XCB_NONE ? "Yes" : "No");
+	printf("* Use Overlay: %s", ps->overlay != XCB_NONE ? "Yes" : "No");
+	if (ps->overlay == XCB_NONE) {
+		if (compositor_running) {
+			printf(" (Another compositor is already running)\n");
+		} else if (session_redirection_mode(ps) != XCB_COMPOSITE_REDIRECT_MANUAL) {
+			printf(" (Not in manual redirection mode)\n");
+		} else {
+			printf("\n");
+		}
+	}
 #ifdef __FAST_MATH__
 	printf("* Fast Math: Yes\n");
 #endif

@@ -16,7 +16,7 @@ cflags = []
 
 required_xcb_packages = [
 	'xcb-render', 'xcb-damage', 'xcb-randr', 'xcb-sync', 'xcb-composite',
-	'xcb-shape', 'xcb-xinerama', 'xcb-xfixes', 'xcb-present', 'xcb'
+	'xcb-shape', 'xcb-xinerama', 'xcb-xfixes', 'xcb-present', 'xcb-glx', 'xcb'
 ]
 
 required_packages = [
@@ -38,8 +38,8 @@ endif
 deps = []
 
 if get_option('config_file')
-	deps += [dependency('libconfig', version: '>=1.4', required: true),
-	         dependency('libxdg-basedir', required: true)]
+	deps += [dependency('libconfig', version: '>=1.4', required: true)]
+
 	cflags += ['-DCONFIG_LIBCONFIG']
 	srcs += [ 'config_libconfig.c' ]
 endif

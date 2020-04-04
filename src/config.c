@@ -540,7 +540,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .detect_client_opacity = false,
 
 	    .blur_method = BLUR_METHOD_NONE,
-	    .blur_radius = -1,
+	    .blur_radius = 3,
 	    .blur_deviation = 0.84089642,
 	    .blur_background_frame = false,
 	    .blur_background_fixed = false,

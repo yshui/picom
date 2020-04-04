@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
-#include <string.h>
 #include <math.h>
+#include <string.h>
 #include <xcb/render.h>
 #include <xcb/xcb_image.h>
 #include <xcb/xcb_renderutil.h>
@@ -9,10 +9,10 @@
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
-#include "kernel.h"
 #include "config.h"
-#include "utils.h"
+#include "kernel.h"
 #include "log.h"
+#include "utils.h"
 #include "win.h"
 #include "x.h"
 
@@ -227,7 +227,32 @@ bool build_shadow(xcb_connection_t *c, xcb_drawable_t d, double opacity, const i
 	gc = x_new_id(c);
 	xcb_create_gc(c, gc, shadow_pixmap, 0, NULL);
 
-	xcb_image_put(c, shadow_pixmap, gc, shadow_image, 0, 0, 0);
+	// We need to make room for protocol metadata in the request. The metadata should
+	// be 24 bytes plus padding, let's be generous and give it 1kb
+	auto maximum_image_size = xcb_get_maximum_request_length(c) * 4 - 1024;
+	auto maximum_row =
+	    to_u16_checked(clamp(maximum_image_size / shadow_image->stride, 0, UINT16_MAX));
+	if (maximum_row <= 0) {
+		log_error("X server request size limit is too restrictive, or the shadow "
+		          "image is too wide for us to send a single row of the shadow "
+		          "image. Shadow size: %dx%d",
+		          width, height);
+		goto shadow_picture_err;
+	}
+
+	for (uint32_t row = 0; row < shadow_image->height; row += maximum_row) {
+		auto batch_height = maximum_row;
+		if (batch_height > shadow_image->height - row) {
+			batch_height = to_u16_checked(shadow_image->height - row);
+		}
+
+		uint32_t offset = row * shadow_image->stride / sizeof(*shadow_image->data);
+		xcb_put_image(c, (uint8_t)shadow_image->format, shadow_pixmap, gc,
+		              shadow_image->width, batch_height, 0, to_i16_checked(row),
+		              0, shadow_image->depth, shadow_image->stride * batch_height,
+		              shadow_image->data + offset);
+	}
+
 	xcb_render_composite(c, XCB_RENDER_PICT_OP_SRC, shadow_pixel, shadow_picture,
 	                     shadow_picture_argb, 0, 0, 0, 0, 0, 0, shadow_image->width,
 	                     shadow_image->height);
@@ -273,8 +298,10 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 	             shadow = XCB_NONE;
 	xcb_render_picture_t pict = XCB_NONE;
 
-	build_shadow(backend_data->c, backend_data->root, a, width, height, kernel,
-	             shadow_pixel, &shadow, &pict);
+	if (!build_shadow(backend_data->c, backend_data->root, a, width, height, kernel,
+	                  shadow_pixel, &shadow, &pict)) {
+		return NULL;
+	}
 
 	auto visual = x_get_visual_for_standard(backend_data->c, XCB_PICT_STANDARD_ARGB_32);
 	void *ret = backend_data->ops->bind_pixmap(
@@ -283,8 +310,7 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 	return ret;
 }
 
-static struct conv **
-generate_box_blur_kernel(struct box_blur_args *args, int *kernel_count) {
+static struct conv **generate_box_blur_kernel(struct box_blur_args *args, int *kernel_count) {
 	int r = args->size * 2 + 1;
 	assert(r > 0);
 	auto ret = ccalloc(2, struct conv *);

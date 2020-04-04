@@ -45,8 +45,6 @@ struct _glx_data {
 	Display *display;
 	int screen;
 	xcb_window_t target_win;
-	int glx_event;
-	int glx_error;
 	GLXContext ctx;
 };
 
@@ -198,6 +196,7 @@ void glx_deinit(backend_t *base) {
 
 	// Destroy GLX context
 	if (gd->ctx) {
+		glXMakeCurrent(gd->display, None, NULL);
 		glXDestroyContext(gd->display, gd->ctx);
 		gd->ctx = 0;
 	}
@@ -245,7 +244,7 @@ static backend_t *glx_init(session_t *ps) {
 	XVisualInfo *pvis = NULL;
 
 	// Check for GLX extension
-	if (!glXQueryExtension(ps->dpy, &gd->glx_event, &gd->glx_error)) {
+	if (!ps->glx_exists) {
 		log_error("No GLX extension.");
 		goto end;
 	}

@@ -107,10 +107,15 @@ typedef struct glx_prog_main {
 	GLint unifm_invert_color;
 	/// Location of uniform "tex" in window GLSL program.
 	GLint unifm_tex;
+	/// Location of uniform "time" in window GLSL program.
+	GLint unifm_time;
 } glx_prog_main_t;
 
 #define GLX_PROG_MAIN_INIT                                                               \
-	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
+	{                                                                                \
+		.prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1,                \
+		.unifm_tex = -1, .unifm_time = -1                                        \
+	}
 
 #else
 struct glx_prog_main {};
@@ -334,14 +339,12 @@ typedef struct session {
 	int randr_error;
 	/// Whether X Present extension exists.
 	bool present_exists;
-#ifdef CONFIG_OPENGL
 	/// Whether X GLX extension exists.
 	bool glx_exists;
 	/// Event base number for X GLX extension.
 	int glx_event;
 	/// Error base number for X GLX extension.
 	int glx_error;
-#endif
 	/// Whether X Xinerama extension exists.
 	bool xinerama_exists;
 	/// Xinerama screen regions.
