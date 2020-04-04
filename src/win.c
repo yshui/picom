@@ -895,6 +895,28 @@ static void win_determine_blur_background(session_t *ps, struct managed_win *w) 
 }
 
 /**
+ * Determine if a window should have rounded corners.
+ */
+static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) {
+	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE || ps->o.corner_radius == 0)
+		return;
+
+	// Don't round full screen windows & excluded windows
+	if ((w && win_is_fullscreen(ps, w)) || 
+		c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL)) {
+		w->corner_radius = 0;
+		//log_warn("xy(%d %d) wh(%d %d) will NOT round corners", w->g.x, w->g.y, w->widthb, w->heightb);
+	} else {
+		w->corner_radius = ps->o.corner_radius;
+		//log_warn("xy(%d %d) wh(%d %d) will round corners", w->g.x, w->g.y, w->widthb, w->heightb);
+		// HACK: we reset this so we can query the color once
+		// we query the color in glx_round_corners_dst0 using glReadPixels
+		//w->border_col = { -1., -1, -1, -1 };
+		w->border_col[0] = w->border_col[1] = w->border_col[2] = w->border_col[3] = -1.0;
+	}
+}
+
+/**
  * Update window opacity according to opacity rules.
  */
 void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
@@ -927,6 +949,7 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	win_determine_shadow(ps, w);
 	win_determine_invert_color(ps, w);
 	win_determine_blur_background(ps, w);
+	win_determine_rounded_corners(ps, w);
 	win_update_opacity_rule(ps, w);
 	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
 		w->paint_excluded = c2_match(ps, w, ps->o.paint_blacklist, NULL);
@@ -2123,6 +2146,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	          w->opacity, w->opacity_target);
 
 	win_determine_blur_background(ps, w);
+	win_determine_rounded_corners(ps, w);
 
 	// Cannot set w->ever_damaged = false here, since window mapping could be
 	// delayed, so a damage event might have already arrived before this function

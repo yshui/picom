@@ -461,7 +461,7 @@ static inline bool glx_init_frag_shader_corners(glx_round_pass_t *ppass,
 		log_debug("Generated rounded corners shader %d:\n%s\n", shader_idx, shader_str);
 #endif
 
-		log_info("Generated rounded corners shader %d:\n%s\n", shader_idx, shader_str);
+		//log_info("Generated rounded corners shader %d:\n%s\n", shader_idx, shader_str);
 
 		ppass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
 		free(shader_str);
@@ -495,7 +495,10 @@ static inline bool glx_init_frag_shader_corners(glx_round_pass_t *ppass,
 		P_GET_UNIFM_LOC("u_borderc", unifm_borderc);
 		P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
 		P_GET_UNIFM_LOC("tex_scr", unifm_tex_scr);
-		P_GET_UNIFM_LOC("tex_wnd", unifm_tex_wnd);
+		// We don't need this one anymore since we get
+		// the border color using glReadPixel
+		// uncomment if you need to use 'tex_wnd' in the shader
+		//P_GET_UNIFM_LOC("tex_wnd", unifm_tex_wnd);
 #undef P_GET_UNIFM_LOC
 	}
 
@@ -536,7 +539,8 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"  // Get the window_bg color (so we can \"erase\" corners) from the bg texture\n"
 			"  // and the border color from the mid x-axis of the target window (hacky...)\n"
 			"  vec4 u_v4WndBgColor = %s(tex_scr, vec2(gl_TexCoord[0].st));\n"
-			"  vec4 u_v4BorderColor = %s(tex_wnd, vec2(0, u_texsize.t/2.));\n"
+			"  //vec4 u_v4BorderColor = %s(tex_wnd, vec2(0, u_texsize.t/2.));\n"
+			"  vec4 u_v4BorderColor = u_borderc;\n"
 			"  vec4 u_v4FillColor = vec4(0.0, 0.0, 0.0, 0.0);  // Inside rect, transparent\n"
 			"  vec4 v4FromColor = u_v4BorderColor;	//Always the border color. If no border, this still should be set\n"
 			"  vec4 v4ToColor = u_v4WndBgColor;		//Outside corners color, we set it to background texture\n"
@@ -576,7 +580,8 @@ bool glx_init_rounded_corners(session_t *ps) {
 		// dst1 shader
 		static const char *FRAG_SHADER_ROUND_CORNERS_1 =
 			"  float u_fRadiusPx = u_radius + 25.0;\n"
-			"  float u_fHalfBorderThickness = 20.0 /2.0;\n"
+			"  float u_fHalfBorderThickness = u_borderw / 2.0;\n"
+			"  //float u_fHalfBorderThickness = 20.0 /2.0;\n"
 			"  //u_v4FillColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
 			"  //v4FromColor = u_v4BorderColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
 			"  //v4ToColor = vec4(0.0, 0.0, 1.0, 1.0); //Outside color\n"
@@ -1232,6 +1237,34 @@ glx_blur_dst_end:
 }
 
 
+bool glx_read_border_pixel(session_t *ps, struct managed_win *w, int x, int y, int width attr_unused, int height, float *ppixel)
+{
+	if (!ppixel) return false;
+
+	// First try bottom left corner
+	auto openglx = x;
+	auto opengly = ps->root_height-height-y;
+
+	// bottom left corner is out of bounds
+	// use top border line instead
+	if (openglx < 0 && opengly < 0) {
+		//openglx = x + width;
+		opengly += height-1;
+	}
+
+	// Invert Y-axis so we can query border color from texture (0,0)
+	glReadPixels((openglx < 0) ? 0 : openglx, (opengly < 0) ? 0 : opengly, 1, 1,
+				GL_RGBA, GL_FLOAT, (void*)&w->border_col[0]);
+
+	//log_warn("xy(%d, %d), glxy(%d %d) wh(%d %d), border_col(%.2f, %.2f, %.2f, %.2f)",
+	//	x, y, openglx, opengly, width, height,
+	//	(float)w->border_col[0], (float)w->border_col[1], (float)w->border_col[2], (float)w->border_col[3]);
+	
+	gl_check_err();
+	
+	return true;
+}
+
 bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_texture_t *ptex attr_unused, int shader_idx,
 				int dx, int dy, int width, int height, float z, float cr,
 				const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc) {
@@ -1242,17 +1275,13 @@ bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_text
 	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
 	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
 	bool ret = false;
-	
-	GLfloat border_col[4] = {0};
-	
-	if (w->g.border_width >= 1) {
-		glReadPixels(dx, dy+height, 1, 1, GL_RGBA, GL_FLOAT, (void*)&border_col[0]);
-		//log_warn("border_col(%.2f, %.2f, %.2f, %.2f)",
-		//	(float)border_col[0], (float)border_col[1], (float)border_col[2], (float)border_col[3]);
-	}
 
 	//log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d) bw(%d)",
 	//	dx, dy, width, height, ps->root_width, ps->root_height, w->g.border_width);
+
+	if (w->g.border_width >= 1 && w->border_col[0] == -1.0) {
+		glx_read_border_pixel(ps, w, dx, dy, width, height, &w->border_col[0]);
+	}
 
 	// Calculate copy region size
 	glx_blur_cache_t ibc = {.width = 0, .height = 0};
@@ -1350,9 +1379,9 @@ bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_text
 		if (ppass->unifm_texsize >= 0)
 			glUniform2f(ppass->unifm_texsize, (float)mwidth, (float)mheight);
 		if (ppass->unifm_borderw >= 0)
-			glUniform1f(ppass->unifm_borderw, w->g.border_width);
+			glUniform1f(ppass->unifm_borderw, (w->border_col[0] != -1.) ? w->g.border_width : 0);
 		if (ppass->unifm_borderc >= 0)
-			glUniform4fv(ppass->unifm_borderc, 1, (GLfloat *)&border_col[0]);
+			glUniform4fv(ppass->unifm_borderc, 1, (GLfloat *)&w->border_col[0]);
 		if (ppass->unifm_resolution >= 0)
 			glUniform2f(ppass->unifm_resolution, (float)ps->root_width, (float)ps->root_height);
 
@@ -1436,11 +1465,9 @@ bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_text
 	assert(ps->psglx->round_passes[0].prog);
 	assert(ps->psglx->round_passes[1].prog);
 	bool ret = false;
-
-	GLfloat border_col[4] = {0};
 	
-	if (w->g.border_width >= 1) {
-		glReadPixels(dx, dy+height, 1, 1, GL_RGBA, GL_FLOAT, (void*)&border_col[0]);
+	if (w->g.border_width >= 1 && w->border_col[0] == -1.0) {
+		glx_read_border_pixel(ps, w, dx, dy, width, height, &w->border_col[0]);
 	}
 
 	{
@@ -1471,9 +1498,9 @@ bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_text
 		if (ppass->unifm_texsize >= 0)
 			glUniform2f(ppass->unifm_texsize, (float)width, (float)height);
 		if (ppass->unifm_borderw >= 0)
-			glUniform1f(ppass->unifm_borderw, w->g.border_width);
+			glUniform1f(ppass->unifm_borderw, (w->border_col[0] != -1.) ? w->g.border_width : 0);
 		if (ppass->unifm_borderc >= 0)
-			glUniform4fv(ppass->unifm_borderc, 1, (GLfloat *)&border_col[0]);
+			glUniform4fv(ppass->unifm_borderc, 1, (GLfloat *)&w->border_col[0]);
 		if (ppass->unifm_resolution >= 0)
 			glUniform2f(ppass->unifm_resolution, (float)ps->root_width, (float)ps->root_height);
 
