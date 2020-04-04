@@ -774,7 +774,9 @@ win_paint_shadow(session_t *ps, struct managed_win *w, region_t *reg_paint) {
             const xcb_rectangle_t rect = {.x = 0, .y = 0, .width = to_u16_checked(w->widthb), .height = to_u16_checked(w->heightb)};
             xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, td, trans, 1, &rect);
 
-            xcb_render_trapezoids(ps->c, XCB_RENDER_PICT_OP_OVER, solid_picture(ps->c, ps->root, false, 1, 0, 0, 0), td, x_get_pictfmt_for_standard(ps->c, XCB_PICT_STANDARD_A_8), 0, 0, n, traps);
+            auto solid = solid_picture(ps->c, ps->root, false, 1, 0, 0, 0);
+            xcb_render_trapezoids(ps->c, XCB_RENDER_PICT_OP_OVER, solid, td, x_get_pictfmt_for_standard(ps->c, XCB_PICT_STANDARD_A_8), 0, 0, n, traps);
+            xcb_render_free_picture(ps->c, solid);
         }
 
     clip_t clip = { .pict = td, -(w->shadow_dx), .y = -(w->shadow_dy) };
@@ -909,7 +911,10 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
             const xcb_rectangle_t rect = {.x = 0, .y = 0, .width = to_u16_checked(wid), .height = to_u16_checked(hei)};
             xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, td, trans, 1, &rect);
 
-            xcb_render_trapezoids(ps->c, XCB_RENDER_PICT_OP_OVER, solid_picture(ps->c, ps->root, false, 1, 0, 0, 0), td, x_get_pictfmt_for_standard(ps->c, XCB_PICT_STANDARD_A_8), 0, 0, n, traps);
+            auto solid = solid_picture(ps->c, ps->root, false, 1, 0, 0, 0);
+
+            xcb_render_trapezoids(ps->c, XCB_RENDER_PICT_OP_OVER, solid, td, x_get_pictfmt_for_standard(ps->c, XCB_PICT_STANDARD_A_8), 0, 0, n, traps);
+            xcb_render_free_picture(ps->c, solid);
         }
 
 		// Minimize the region we try to blur, if the window itself is not
@@ -928,6 +933,9 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 		pixman_region32_translate(&reg_blur, -x, -y);
 		xr_blur_dst(ps, tgt_buffer, x, y, wid, hei, ps->blur_kerns_cache,
 		            ps->o.blur_kernel_count, &reg_blur, td);
+        if(td){
+            xcb_render_free_picture(ps->c, td);
+        }
 		pixman_region32_clear(&reg_blur);
 	} break;
 #ifdef CONFIG_OPENGL
