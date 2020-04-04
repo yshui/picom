@@ -247,7 +247,7 @@ uint32_t make_rounded_window_shape(xcb_render_trapezoid_t traps[], uint32_t max_
 
 void render(session_t *ps, struct managed_win *w, int x, int y, int dx, int dy, int wid, int hei, int fullwid, int fullhei, double opacity,
             bool argb, bool neg, int cr, xcb_render_picture_t pict, glx_texture_t *ptex,
-            const region_t *reg_paint, const glx_prog_main_t *pprogram) {
+            const region_t *reg_paint, const glx_prog_main_t *pprogram, clip_t *clip) {
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID: {
@@ -286,14 +286,30 @@ void render(session_t *ps, struct managed_win *w, int x, int y, int dx, int dy, 
 				xcb_render_free_picture(ps->c, p_tmp);
 
 			} else {
+                xcb_render_picture_t p_tmp = alpha_pict;
+                if(clip){
+                    p_tmp =  x_create_picture_with_standard(ps->c, ps->root, wid, hei, XCB_PICT_STANDARD_ARGB_32, 0, 0);
+
+                    xcb_render_color_t black = {.red = 255, .blue = 255, .green = 255, .alpha = 255};
+                    const xcb_rectangle_t rect = {.x = 0, .y = 0, .width = to_u16_checked(wid), .height = to_u16_checked(hei)};
+                    xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, p_tmp, black, 1, &rect);
+                    if(alpha_pict) {
+                        xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_SRC, alpha_pict, XCB_NONE, p_tmp, 0, 0, 0, 0, 0, 0, to_u16_checked(wid), to_u16_checked(hei));
+                    }
+                    xcb_render_composite(ps->c, XCB_RENDER_PICT_OP_OUT_REVERSE, clip->pict, XCB_NONE, p_tmp, 0, 0, 0, 0, to_i16_checked(clip->x),  to_i16_checked(clip->y), to_u16_checked(wid), to_u16_checked(hei));
+                }
 				uint8_t op =
-				    ((!argb && !alpha_pict) ? XCB_RENDER_PICT_OP_SRC
+				    ((!argb && !alpha_pict && !clip) ? XCB_RENDER_PICT_OP_SRC
 				                            : XCB_RENDER_PICT_OP_OVER);
+
 				xcb_render_composite(
-				    ps->c, op, pict, alpha_pict, ps->tgt_buffer.pict,
+				    ps->c, op, pict, p_tmp, ps->tgt_buffer.pict,
 				    to_i16_checked(x), to_i16_checked(y), 0, 0,
 				    to_i16_checked(dx), to_i16_checked(dy),
 				    to_u16_checked(wid), to_u16_checked(hei));
+                if(clip){
+                    xcb_render_free_picture(ps->c, p_tmp);
+                }
 			}
 		}
 		break;
@@ -333,7 +349,7 @@ paint_region(session_t *ps, struct managed_win *w, int x, int y, int wid, int he
 #else
 	       NULL
 #endif
-	);
+	, XCB_NONE);
 }
 
 /**
@@ -747,9 +763,27 @@ win_paint_shadow(session_t *ps, struct managed_win *w, region_t *reg_paint) {
 		return;
 	}
 
+    xcb_render_picture_t td = XCB_NONE;
+    if (w->corner_radius) {
+            uint32_t max_ntraps = to_u32_checked(w->corner_radius);
+            xcb_render_trapezoid_t traps[4 * max_ntraps + 5];
+            uint32_t n = make_rounded_window_shape(traps, max_ntraps, w->corner_radius, w->widthb, w->heightb);
+
+            td = x_create_picture_with_standard(ps->c, ps->root, w->widthb, w->heightb, XCB_PICT_STANDARD_ARGB_32, 0, 0);
+            xcb_render_color_t trans = {.red = 0, .blue = 0, .green = 0, .alpha = 0};
+            const xcb_rectangle_t rect = {.x = 0, .y = 0, .width = to_u16_checked(w->widthb), .height = to_u16_checked(w->heightb)};
+            xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, td, trans, 1, &rect);
+
+            xcb_render_trapezoids(ps->c, XCB_RENDER_PICT_OP_OVER, solid_picture(ps->c, ps->root, false, 1, 0, 0, 0), td, x_get_pictfmt_for_standard(ps->c, XCB_PICT_STANDARD_A_8), 0, 0, n, traps);
+        }
+
+    clip_t clip = { .pict = td, -(w->shadow_dx), .y = -(w->shadow_dy) };
 	render(ps, w, 0, 0, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy, w->shadow_width,
 	       w->shadow_height, w->widthb, w->heightb, w->shadow_opacity, true, false, 0, w->shadow_paint.pict,
-	       w->shadow_paint.ptex, reg_paint, NULL);
+	       w->shadow_paint.ptex, reg_paint, NULL, w->corner_radius ? &clip : NULL);
+    if(td){
+        xcb_render_free_picture(ps->c, td);
+    }
 }
 
 /**
