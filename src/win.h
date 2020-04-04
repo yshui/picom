@@ -204,6 +204,7 @@ struct managed_win {
 
 	/// Corner radius
 	int corner_radius;
+	float border_col[4];
 
 	// Fading-related members
 	/// Override value of window fade state. Set by D-Bus method calls.
