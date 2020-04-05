@@ -180,7 +180,7 @@ static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t
 	if (!w)
 		w = find_toplevel(ps, wid);
 	if (!w)
-		w = find_toplevel_nocache(ps, wid);
+		w = find_managed_window_or_parent(ps, wid);
 	return w;
 }
 

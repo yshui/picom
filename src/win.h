@@ -402,13 +402,13 @@ struct managed_win *find_managed_win(session_t *ps, xcb_window_t id);
 struct win *find_win(session_t *ps, xcb_window_t id);
 struct managed_win *find_toplevel(session_t *ps, xcb_window_t id);
 /**
- * Find out the WM frame of a client window by querying X.
+ * Find a managed window that is, or is a parent of `wid`.
  *
  * @param ps current session
  * @param wid window ID
  * @return struct _win object of the found window, NULL if not found
  */
-struct managed_win *find_toplevel_nocache(session_t *ps, xcb_window_t wid);
+struct managed_win *find_managed_window_or_parent(session_t *ps, xcb_window_t wid);
 
 /**
  * Check if a window is a fullscreen window.

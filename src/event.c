@@ -340,7 +340,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		// Firstly, check if it's a known client window
 		if (!w_top) {
 			// If not, look for its frame window
-			auto w_real_top = find_toplevel_nocache(ps, ev->parent);
+			auto w_real_top = find_managed_window_or_parent(ps, ev->parent);
 			// If found, and the client window has not been determined, or its
 			// frame may not have a correct client, continue
 			if (w_real_top && (!w_real_top->client_win ||
@@ -450,7 +450,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			                             (const uint32_t[]){determine_evmask(
 			                                 ps, ev->window, WIN_EVMODE_UNKNOWN)});
 
-			auto w_top = find_toplevel_nocache(ps, ev->window);
+			auto w_top = find_managed_window_or_parent(ps, ev->window);
 			// Initialize client_win as early as possible
 			if (w_top &&
 			    (!w_top->client_win || w_top->client_win == w_top->base.id) &&
