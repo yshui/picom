@@ -547,6 +547,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "glx-no-stencil", &opt->glx_no_stencil);
 	// --glx-no-rebind-pixmap
 	lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &opt->glx_no_rebind_pixmap);
+	lcfg_lookup_bool(&cfg, "force-win-blend", &opt->force_win_blend);
 	// --glx-swap-method
 	if (config_lookup_string(&cfg, "glx-swap-method", &sval)) {
 		char *endptr;
