@@ -441,8 +441,6 @@ bool glx_init_conv_blur(session_t *ps) {
 
 bool glx_init_kawase_blur(session_t *ps) {
 	assert(ps->o.blur_kernel_count > 0);
-	assert(ps->o.blur_kerns);
-	assert(ps->o.blur_kerns[0]);
 
 	// Allocate PBO if more than one blur kernel is present
 	if (ps->o.blur_kernel_count > 1) {
