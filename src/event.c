@@ -304,6 +304,10 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
 	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d",
 	          ev->window, ev->parent, ev->override_redirect);
+	auto w_top = find_toplevel(ps, ev->window);
+	if (w_top) {
+		win_unmark_client(ps, w_top);
+	}
 
 	if (ev->parent == ps->root) {
 		// X will generate reparent notifiy even if the parent didn't actually
@@ -334,18 +338,18 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 
 		// Check if the window is an undetected client window
 		// Firstly, check if it's a known client window
-		if (!find_toplevel(ps, ev->window)) {
+		if (!w_top) {
 			// If not, look for its frame window
-			auto w_top = find_toplevel_nocache(ps, ev->parent);
+			auto w_real_top = find_toplevel_nocache(ps, ev->parent);
 			// If found, and the client window has not been determined, or its
 			// frame may not have a correct client, continue
-			if (w_top &&
-			    (!w_top->client_win || w_top->client_win == w_top->base.id)) {
+			if (w_real_top && (!w_real_top->client_win ||
+			                   w_real_top->client_win == w_real_top->base.id)) {
 				// If it has WM_STATE, mark it the client window
 				if (wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
-					w_top->wmwin = false;
-					win_unmark_client(ps, w_top);
-					win_mark_client(ps, w_top, ev->window);
+					w_real_top->wmwin = false;
+					win_unmark_client(ps, w_real_top);
+					win_mark_client(ps, w_real_top, ev->window);
 				}
 				// Otherwise, watch for WM_STATE on it
 				else {
