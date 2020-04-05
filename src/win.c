@@ -579,18 +579,17 @@ winmode_t win_calc_mode(const struct managed_win *w) {
  *
  * @param ps           current session
  * @param w            struct _win object representing the window
- * @param ignore_state whether window state should be ignored in opacity calculation
  *
  * @return target opacity
  */
-double win_calc_opacity_target(session_t *ps, const struct managed_win *w, bool ignore_state) {
+double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
 	double opacity = 1;
 
-	if (w->state == WSTATE_UNMAPPED && !ignore_state) {
+	if (w->state == WSTATE_UNMAPPED) {
 		// be consistent
 		return 0;
 	}
-	if ((w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING) && !ignore_state) {
+	if (w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING) {
 		return 0;
 	}
 	// Try obeying opacity property and window type opacity firstly
@@ -1929,7 +1928,7 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->state = WSTATE_UNMAPPING;
 	w->opacity_target_old = fmax(w->opacity_target, w->opacity_target_old);
-	w->opacity_target = win_calc_opacity_target(ps, w, false);
+	w->opacity_target = win_calc_opacity_target(ps, w);
 
 	// Clear PIXMAP_STALE flag, since the window is unmapped there is no pixmap
 	// available so STALE doesn't make sense.
@@ -2114,7 +2113,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	// iff `state` is MAPPED
 	w->state = WSTATE_MAPPING;
 	w->opacity_target_old = 0;
-	w->opacity_target = win_calc_opacity_target(ps, w, false);
+	w->opacity_target = win_calc_opacity_target(ps, w);
 
 	log_debug("Window %#010x has opacity %f, opacity target is %f", w->base.id,
 	          w->opacity, w->opacity_target);
@@ -2154,7 +2153,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
  */
 void win_update_opacity_target(session_t *ps, struct managed_win *w) {
 	auto opacity_target_old = w->opacity_target;
-	w->opacity_target = win_calc_opacity_target(ps, w, false);
+	w->opacity_target = win_calc_opacity_target(ps, w);
 
 	if (opacity_target_old == w->opacity_target) {
 		return;

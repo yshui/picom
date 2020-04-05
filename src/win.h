@@ -310,12 +310,10 @@ bool win_get_class(session_t *ps, struct managed_win *w);
  *
  * @param ps           current session
  * @param w            struct _win object representing the window
- * @param ignore_state whether window state should be ignored in opacity calculation
  *
  * @return target opacity
  */
-double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w,
-                                         bool ignore_state);
+double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w);
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 void win_update_screen(session_t *, struct managed_win *);
 /**
