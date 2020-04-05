@@ -919,7 +919,10 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	w->opacity_target = win_calc_opacity_target(ps, w, false);
 	if (opacity_target_old != w->opacity_target && w->state == WSTATE_MAPPED) {
 		// Only MAPPED can transition to FADING
+		assert(w->opacity == opacity_target_old);
 		w->state = WSTATE_FADING;
+		log_debug("Window %#010x (%s) opactiy %f, opacity target %f", w->base.id,
+		          w->name, w->opacity, w->opacity_target);
 		if (!ps->redirected) {
 			CHECK(!win_skip_fading(ps, w));
 		}
