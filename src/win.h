@@ -408,7 +408,7 @@ struct managed_win *find_toplevel(session_t *ps, xcb_window_t id);
  * @param wid window ID
  * @return struct _win object of the found window, NULL if not found
  */
-struct managed_win *find_toplevel2(session_t *ps, xcb_window_t wid);
+struct managed_win *find_toplevel_nocache(session_t *ps, xcb_window_t wid);
 
 /**
  * Check if a window is a fullscreen window.

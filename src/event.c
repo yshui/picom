@@ -302,8 +302,8 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 }
 
 static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
-	log_debug("{ new_parent: %#010x, override_redirect: %d }", ev->parent,
-	          ev->override_redirect);
+	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d",
+	          ev->window, ev->parent, ev->override_redirect);
 
 	if (ev->parent == ps->root) {
 		// X will generate reparent notifiy even if the parent didn't actually
@@ -336,7 +336,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		// Firstly, check if it's a known client window
 		if (!find_toplevel(ps, ev->window)) {
 			// If not, look for its frame window
-			auto w_top = find_toplevel2(ps, ev->parent);
+			auto w_top = find_toplevel_nocache(ps, ev->parent);
 			// If found, and the client window has not been determined, or its
 			// frame may not have a correct client, continue
 			if (w_top &&
@@ -446,7 +446,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			                             (const uint32_t[]){determine_evmask(
 			                                 ps, ev->window, WIN_EVMODE_UNKNOWN)});
 
-			auto w_top = find_toplevel2(ps, ev->window);
+			auto w_top = find_toplevel_nocache(ps, ev->window);
 			// Initialize client_win as early as possible
 			if (w_top &&
 			    (!w_top->client_win || w_top->client_win == w_top->base.id) &&
