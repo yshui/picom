@@ -1718,19 +1718,42 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
   return ret;
 }
 
-bool glx_read_border_pixel(session_t *ps, struct managed_win *w, int x, int y, int width attr_unused, int height, float *ppixel)
+
+// TODO: this is a mess and needs a more consistent way of getting the border pixel
+// I tried looking for a notify event for XCB_CW_BORDER_PIXEL (in xcb_create_window())
+// or a way to get the pixels from xcb_render_picture_t but the documentation for 
+// the xcb_xrender extension is literaly non existent...
+bool glx_read_border_pixel(session_t *ps, struct managed_win *w, int x, int y,
+						int width attr_unused, int height, int cr, float *ppixel)
 {
 	if (!ppixel) return false;
 
-	// First try bottom left corner
-	auto openglx = x;
+	// First try bottom left corner past the
+	// circle radius (after the rounded corner ends)
+	auto openglx = x + cr*2;
 	auto opengly = ps->root_height-height-y;
+
+	// X is out of bounds
+	// move to the right side
+	if (openglx < 0)
+		openglx = x + width - cr;
+
+	// Y is out of bounds
+	// move to to top part
+	if (opengly < 0) {
+		opengly += height-1;
+	}
 
 	// bottom left corner is out of bounds
 	// use top border line instead
-	if (openglx < 0 && opengly < 0) {
-		//openglx = x + width;
-		opengly += height-1;
+	if (openglx < 0 || opengly < 0) {
+
+		//log_warn("OUT OF BOUNDS: xy(%d, %d), glxy(%d %d) wh(%d %d), border_col(%.2f, %.2f, %.2f, %.2f)",
+		//	x, y, openglx, opengly, width, height,
+		//	(float)w->border_col[0], (float)w->border_col[1], (float)w->border_col[2], (float)w->border_col[3]);
+
+		// Reset the color so the shader doesn't use it
+		w->border_col[0] = w->border_col[1] = w->border_col[2] = w->border_col[3] = -1.0;
 	}
 
 	// Invert Y-axis so we can query border color from texture (0,0)
@@ -1760,8 +1783,8 @@ bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_text
 	//log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d) bw(%d)",
 	//	dx, dy, width, height, ps->root_width, ps->root_height, w->g.border_width);
 
-	if (w->g.border_width >= 1 && w->border_col[0] == -1.0) {
-		glx_read_border_pixel(ps, w, dx, dy, width, height, &w->border_col[0]);
+	if (w->g.border_width >= 1 /*&& w->border_col[0] == -1.0*/) {
+		glx_read_border_pixel(ps, w, dx, dy, width, height, w->corner_radius, &w->border_col[0]);
 	}
 
 	// Calculate copy region size
@@ -1947,8 +1970,8 @@ bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_text
 	assert(ps->psglx->round_passes[1].prog);
 	bool ret = false;
 	
-	if (w->g.border_width >= 1 && w->border_col[0] == -1.0) {
-		glx_read_border_pixel(ps, w, dx, dy, width, height, &w->border_col[0]);
+	if (w->g.border_width >= 1 /*&& w->border_col[0] == -1.0*/) {
+		glx_read_border_pixel(ps, w, dx, dy, width, height, w->corner_radius, &w->border_col[0]);
 	}
 
 	{
