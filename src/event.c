@@ -274,7 +274,7 @@ static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *
 	if (w != NULL) {
 		auto _ attr_unused = destroy_win_start(ps, w);
 	} else if (mw != NULL) {
-		win_unmark_client(ps, mw);
+		win_recheck_client(ps, mw);
 	} else {
 		log_debug("Received a destroy notify from an unknown window, %#010x",
 		          ev->window);

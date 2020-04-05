@@ -1037,6 +1037,8 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
  */
 void win_unmark_client(session_t *ps, struct managed_win *w) {
 	xcb_window_t client = w->client_win;
+	log_debug("Detaching client window %#010x from frame %#010x (%s)", client,
+	          w->base.id, w->name);
 
 	w->client_win = XCB_NONE;
 
@@ -1052,7 +1054,7 @@ void win_unmark_client(session_t *ps, struct managed_win *w) {
  * @param ps current session
  * @param w struct _win of the parent window
  */
-static void win_recheck_client(session_t *ps, struct managed_win *w) {
+void win_recheck_client(session_t *ps, struct managed_win *w) {
 	// Initialize wmwin to false
 	w->wmwin = false;
 
@@ -1062,14 +1064,14 @@ static void win_recheck_client(session_t *ps, struct managed_win *w) {
 	// sets override-redirect flags on all frame windows.
 	xcb_window_t cw = find_client_win(ps, w->base.id);
 	if (cw) {
-		log_trace("(%#010x): client %#010x", w->base.id, cw);
+		log_debug("(%#010x): client %#010x", w->base.id, cw);
 	}
 	// Set a window's client window to itself if we couldn't find a
 	// client window
 	if (!cw) {
 		cw = w->base.id;
 		w->wmwin = !w->a.override_redirect;
-		log_trace("(%#010x): client self (%s)", w->base.id,
+		log_debug("(%#010x): client self (%s)", w->base.id,
 		          (w->wmwin ? "wmwin" : "override-redirected"));
 	}
 
