@@ -434,6 +434,9 @@ void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t 
  *         for multiple calls to this function,
  */
 const char *x_strerror(xcb_generic_error_t *e) {
+	if (!e) {
+		return "No error";
+	}
 	return _x_strerror(e->full_sequence, e->major_code, e->minor_code, e->error_code);
 }
 
