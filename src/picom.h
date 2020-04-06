@@ -42,8 +42,6 @@ void add_damage(session_t *ps, const region_t *damage);
 
 uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode);
 
-xcb_window_t find_client_win(session_t *ps, xcb_window_t w);
-
 void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce);
 
 void update_refresh_rate(session_t *ps);
