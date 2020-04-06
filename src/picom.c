@@ -303,9 +303,9 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
 	struct managed_win *w = NULL;
 
 	// Check if it's a mapped frame window
-	if (mode == WIN_EVMODE_FRAME ||
+	if (WIN_EVMODE_FRAME == mode ||
 	    ((w = find_managed_win(ps, wid)) && w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
-		evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
+		evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
 		if (!ps->o.use_ewmh_active_win) {
 			evmask |= XCB_EVENT_MASK_FOCUS_CHANGE;
 		}

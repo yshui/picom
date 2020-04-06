@@ -299,7 +299,6 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w);
 void win_update_wintype(session_t *ps, struct managed_win *w);
 void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client);
 void win_unmark_client(session_t *ps, struct managed_win *w);
-void win_recheck_client(session_t *ps, struct managed_win *w);
 bool win_get_class(session_t *ps, struct managed_win *w);
 
 /**
