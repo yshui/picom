@@ -46,9 +46,6 @@
 // TODO Make more window states internal
 struct managed_win_internal {
 	struct managed_win base;
-
-	/// A bit mask of unhandled window updates
-	uint_fast32_t pending_updates;
 };
 
 #define OPAQUE (0xffffffff)
@@ -247,6 +244,7 @@ static inline void win_release_pixmap(backend_t *base, struct managed_win *w) {
 	if (w->win_image) {
 		base->ops->release_image(base, w->win_image);
 		w->win_image = NULL;
+		// Bypassing win_set_flags, because `w` might have been destroyed
 		w->flags |= WIN_FLAGS_PIXMAP_NONE;
 	}
 }
@@ -256,6 +254,7 @@ static inline void win_release_shadow(backend_t *base, struct managed_win *w) {
 	if (w->shadow_image) {
 		base->ops->release_image(base, w->shadow_image);
 		w->shadow_image = NULL;
+		// Bypassing win_set_flags, because `w` might have been destroyed
 		w->flags |= WIN_FLAGS_SHADOW_NONE;
 	}
 }
@@ -276,11 +275,11 @@ static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w
 	    b->ops->bind_pixmap(b, pixmap, x_get_visual_info(b->c, w->a.visual), true);
 	if (!w->win_image) {
 		log_error("Failed to bind pixmap");
-		w->flags |= WIN_FLAGS_IMAGE_ERROR;
+		win_set_flags(w, WIN_FLAGS_IMAGE_ERROR);
 		return false;
 	}
 
-	w->flags &= ~WIN_FLAGS_PIXMAP_NONE;
+	win_clear_flags(w, WIN_FLAGS_PIXMAP_NONE);
 	return true;
 }
 
@@ -294,13 +293,13 @@ bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color
 		log_error("Failed to bind shadow image, shadow will be disabled for "
 		          "%#010x (%s)",
 		          w->base.id, w->name);
-		w->flags |= WIN_FLAGS_SHADOW_NONE;
+		win_set_flags(w, WIN_FLAGS_SHADOW_NONE);
 		w->shadow = false;
 		return false;
 	}
 
 	log_debug("New shadow for %#010x (%s)", w->base.id, w->name);
-	w->flags &= ~WIN_FLAGS_SHADOW_NONE;
+	win_clear_flags(w, WIN_FLAGS_SHADOW_NONE);
 	return true;
 }
 
@@ -310,40 +309,38 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 	// But if we are not releasing any images anyway, we don't care about the stale
 	// flags.
 
-	if ((w->flags & WIN_FLAGS_PIXMAP_NONE) == 0) {
-		assert((w->flags & WIN_FLAGS_PIXMAP_STALE) == 0);
+	if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
+		assert(!win_check_flags_all(w, WIN_FLAGS_PIXMAP_STALE));
 		win_release_pixmap(backend, w);
 	}
 
-	if ((w->flags & WIN_FLAGS_SHADOW_NONE) == 0) {
-		assert((w->flags & WIN_FLAGS_SHADOW_STALE) == 0);
+	if (!win_check_flags_all(w, WIN_FLAGS_SHADOW_NONE)) {
+		assert(!win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE));
 		win_release_shadow(backend, w);
 	}
 }
 
 void win_process_flags(session_t *ps, struct managed_win *w) {
-	// Make sure all pending window updates are processed before this. Making this
-	// assumption simplifies some checks (e.g. whether window is mapped)
-	assert(((struct managed_win_internal *)w)->pending_updates == 0);
-
-	if (!w->flags || (w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
-		return;
+	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
+		map_win_start(ps, w);
 	}
+	win_clear_flags(w, WIN_FLAGS_MAPPED);
 
 	// Not a loop
-	while ((w->flags & WIN_FLAGS_IMAGES_STALE) != 0) {
+	while (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE) &&
+	       !win_check_flags_all(w, WIN_FLAGS_IMAGE_ERROR)) {
 		// Image needs to be updated, update it.
 		if (!ps->backend_data) {
 			// We are using legacy backend, nothing to do here.
 			break;
 		}
 
-		if ((w->flags & WIN_FLAGS_PIXMAP_STALE) != 0) {
+		if (win_check_flags_all(w, WIN_FLAGS_PIXMAP_STALE)) {
 			// Check to make sure the window is still mapped, otherwise we
 			// won't be able to rebind pixmap after releasing it, yet we might
 			// still need the pixmap for rendering.
 			assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
-			if ((w->flags & WIN_FLAGS_PIXMAP_NONE) == 0) {
+			if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
 				// Must release images first, otherwise breaks
 				// NVIDIA driver
 				win_release_pixmap(ps->backend_data, w);
@@ -351,8 +348,8 @@ void win_process_flags(session_t *ps, struct managed_win *w) {
 			win_bind_pixmap(ps->backend_data, w);
 		}
 
-		if ((w->flags & WIN_FLAGS_SHADOW_STALE) != 0) {
-			if ((w->flags & WIN_FLAGS_SHADOW_NONE) == 0) {
+		if (win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE)) {
+			if (!win_check_flags_all(w, WIN_FLAGS_SHADOW_NONE)) {
 				win_release_shadow(ps->backend_data, w);
 			}
 			if (w->shadow) {
@@ -370,7 +367,7 @@ void win_process_flags(session_t *ps, struct managed_win *w) {
 	}
 
 	// Clear stale image flags
-	w->flags &= ~WIN_FLAGS_IMAGES_STALE;
+	win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
 }
 
 /**
@@ -694,7 +691,7 @@ static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new
 		w->shadow = shadow_new;
 		assert(!w->shadow_image);
 		assert(!w->win_image);
-		assert(w->flags & WIN_FLAGS_IMAGES_NONE);
+		assert(win_check_flags_all(w, WIN_FLAGS_IMAGES_NONE));
 		return;
 	}
 
@@ -720,14 +717,14 @@ static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new
 	// asserting the existence of the shadow image.
 	if (w->shadow) {
 		// Mark the new extents as damaged if the shadow is added
-		assert(!w->shadow_image || (w->flags & WIN_FLAGS_SHADOW_STALE) ||
+		assert(!w->shadow_image || win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE) ||
 		       !ps->o.experimental_backends);
 		pixman_region32_clear(&extents);
 		win_extents(w, &extents);
 		add_damage_from_win(ps, w);
 	} else {
 		// Mark the old extents as damaged if the shadow is removed
-		assert(w->shadow_image || (w->flags & WIN_FLAGS_SHADOW_STALE) ||
+		assert(w->shadow_image || win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE) ||
 		       !ps->o.experimental_backends);
 		add_damage(ps, &extents);
 	}
@@ -737,7 +734,7 @@ static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new
 	// Delayed update of shadow image
 	// By setting WIN_FLAGS_SHADOW_STALE, we ask win_process_flags to re-create or
 	// release the shaodw in based on whether w->shadow is set.
-	w->flags |= WIN_FLAGS_SHADOW_STALE;
+	win_set_flags(w, WIN_FLAGS_SHADOW_STALE);
 	ps->pending_updates = true;
 }
 
@@ -945,7 +942,7 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 	// Invalidate the shadow we built
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_MAPPING ||
 	    w->state == WSTATE_FADING) {
-		w->flags |= WIN_FLAGS_IMAGES_STALE;
+		win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
 		ps->pending_updates = true;
 	} else {
 		assert(w->state == WSTATE_UNMAPPED);
@@ -1301,7 +1298,6 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	// Allocate and initialize the new win structure
 	auto new_internal = cmalloc(struct managed_win_internal);
 	auto new = (struct managed_win *)new_internal;
-	new_internal->pending_updates = 0;
 
 	// Fill structure
 	// We only need to initialize the part that are not initialized
@@ -1599,7 +1595,7 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 		// Note we only do this when screen is redirected, because
 		// otherwise win_data is not valid
 		assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
-		w->flags |= WIN_FLAGS_IMAGES_STALE;
+		win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
 		ps->pending_updates = true;
 	}
 	free_paint(ps, &w->paint);
@@ -1713,7 +1709,7 @@ static void unmap_win_finish(session_t *ps, struct managed_win *w) {
 	free_paint(ps, &w->shadow_paint);
 
 	// Try again at binding images when the window is mapped next time
-	w->flags &= ~WIN_FLAGS_IMAGE_ERROR;
+	win_clear_flags(w, WIN_FLAGS_IMAGE_ERROR);
 }
 
 /// Finish the destruction of a window (e.g. after fading has finished).
@@ -1886,14 +1882,15 @@ bool destroy_win_start(session_t *ps, struct win *w) {
 	}
 
 	if (w->managed) {
+		// Clear PIXMAP_STALE flag, since the window is destroyed there is no
+		// pixmap available so STALE doesn't make sense.
+		// Do this before changing the window state to destroying
+		win_clear_flags(mw, WIN_FLAGS_PIXMAP_STALE);
+
 		// Update state flags of a managed window
 		mw->state = WSTATE_DESTROYING;
 		mw->a.map_state = XCB_MAP_STATE_UNMAPPED;
 		mw->in_openclose = true;
-
-		// Clear PIXMAP_STALE flag, since the window is destroyed there is no
-		// pixmap available so STALE doesn't make sense.
-		mw->flags &= ~WIN_FLAGS_PIXMAP_STALE;
 	}
 
 	// don't need win_ev_stop because the window is gone anyway
@@ -1913,7 +1910,6 @@ bool destroy_win_start(session_t *ps, struct win *w) {
 }
 
 void unmap_win_start(session_t *ps, struct managed_win *w) {
-	auto internal_w = (struct managed_win_internal *)w;
 	assert(w);
 	assert(w->base.managed);
 	assert(w->a._class != XCB_WINDOW_CLASS_INPUT_ONLY);
@@ -1926,8 +1922,9 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 	}
 
 	if (unlikely(w->state == WSTATE_UNMAPPING || w->state == WSTATE_UNMAPPED)) {
-		if (internal_w->pending_updates & WIN_UPDATE_MAP) {
-			internal_w->pending_updates &= ~(unsigned long)WIN_UPDATE_MAP;
+		if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
+			// Clear the pending map as this window is now unmapped
+			win_clear_flags(w, WIN_FLAGS_MAPPED);
 		} else {
 			log_warn("Trying to unmapping an already unmapped window %#010x "
 			         "\"%s\"",
@@ -1946,7 +1943,7 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 
 	// Clear PIXMAP_STALE flag, since the window is unmapped there is no pixmap
 	// available so STALE doesn't make sense.
-	w->flags &= ~WIN_FLAGS_PIXMAP_STALE;
+	win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 
 	// don't care about properties anymore
 	win_ev_stop(ps, &w->base);
@@ -2053,8 +2050,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	}
 
 	assert(w->state == WSTATE_UNMAPPED);
-	assert((w->flags & WIN_FLAGS_IMAGES_NONE) == WIN_FLAGS_IMAGES_NONE ||
-	       !ps->o.experimental_backends);
+	assert(win_check_flags_all(w, WIN_FLAGS_IMAGES_NONE) || !ps->o.experimental_backends);
 
 	// We stopped processing window size change when we were unmapped, refresh the
 	// size of the window
@@ -2148,7 +2144,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	// the window's image will be bound
 	win_update_bounding_shape(ps, w);
 
-	assert((w->flags & WIN_FLAGS_IMAGES_STALE) == WIN_FLAGS_IMAGES_STALE);
+	assert(win_check_flags_all(w, WIN_FLAGS_IMAGES_STALE));
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
@@ -2284,31 +2280,33 @@ win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_windo
 	return false;
 }
 
-/// Queue an update on a window. A series of sanity checks are performed
-void win_queue_update(struct managed_win *_w, enum win_update update) {
-	auto w = (struct managed_win_internal *)_w;
-	assert(popcount(update) == 1);
-	assert(update == WIN_UPDATE_MAP);        // Currently the only supported update
-
-	if (unlikely(_w->state == WSTATE_DESTROYING)) {
-		log_error("Updates queued on a destroyed window %#010x (%s)", _w->base.id,
-		          _w->name);
+/// Set flags on a window. Some sanity checks are performed
+void win_set_flags(struct managed_win *w, uint64_t flags) {
+	if (unlikely(w->state == WSTATE_DESTROYING)) {
+		log_error("Flags set on a destroyed window %#010x (%s)", w->base.id, w->name);
 		return;
 	}
 
-	w->pending_updates |= update;
+	w->flags |= flags;
 }
 
-/// Process pending updates on a window. Has to be called in X critical section
-void win_process_updates(struct session *ps, struct managed_win *_w) {
-	assert(ps->server_grabbed);
-	auto w = (struct managed_win_internal *)_w;
-
-	if (w->pending_updates & WIN_UPDATE_MAP) {
-		map_win_start(ps, _w);
+/// Clear flags on a window. Some sanity checks are performed
+void win_clear_flags(struct managed_win *w, uint64_t flags) {
+	if (unlikely(w->state == WSTATE_DESTROYING)) {
+		log_error("Flags cleared on a destroyed window %#010x (%s)", w->base.id,
+		          w->name);
+		return;
 	}
 
-	w->pending_updates = 0;
+	w->flags = w->flags & (~flags);
+}
+
+bool win_check_flags_any(struct managed_win *w, uint64_t flags) {
+	return (w->flags & flags) != 0;
+}
+
+bool win_check_flags_all(struct managed_win *w, uint64_t flags) {
+	return (w->flags & flags) == flags;
 }
 
 /**
@@ -2364,7 +2362,6 @@ win_stack_find_next_managed(const session_t *ps, const struct list_node *i) {
 
 /// Return whether this window is mapped on the X server side
 bool win_is_mapped_in_x(const struct managed_win *w) {
-	auto iw = (const struct managed_win_internal *)w;
 	return w->state == WSTATE_MAPPING || w->state == WSTATE_FADING ||
-	       w->state == WSTATE_MAPPED || (iw->pending_updates & WIN_UPDATE_MAP);
+	       w->state == WSTATE_MAPPED || (w->flags & WIN_FLAGS_MAPPED);
 }

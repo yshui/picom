@@ -1309,12 +1309,6 @@ static void handle_new_windows(session_t *ps) {
 }
 
 static void refresh_windows(session_t *ps) {
-	win_stack_foreach_managed_safe(w, &ps->window_stack) {
-		win_process_updates(ps, w);
-	}
-}
-
-static void refresh_stale_images(session_t *ps) {
 	win_stack_foreach_managed(w, &ps->window_stack) {
 		win_process_flags(ps, w);
 	}
@@ -1351,7 +1345,13 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		// Call fill_win on new windows
 		handle_new_windows(ps);
 
-		// Process window updates
+		// Handle screen changes
+		// This HAS TO be called before refresh_windows, as handle_root_flags
+		// could call configure_root, which will release images and mark them
+		// stale.
+		handle_root_flags(ps);
+
+		// Process window flags
 		refresh_windows(ps);
 
 		{
@@ -1362,15 +1362,6 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 			}
 			free(r);
 		}
-
-		// Handle screen changes
-		// This HAS TO be called before refresh_stale_images, as handle_root_flags
-		// could call configure_root, which will release images and mark them
-		// stale.
-		handle_root_flags(ps);
-
-		// Refresh pixmaps and shadows
-		refresh_stale_images(ps);
 
 		e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
 		if (e) {

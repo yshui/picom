@@ -131,7 +131,7 @@ struct managed_win {
 	/// See above about coordinate systems.
 	region_t bounding_shape;
 	/// Window flags. Definitions above.
-	int_fast16_t flags;
+	uint64_t flags;
 	/// The region of screen that will be obscured when windows above is painted,
 	/// in global coordinates.
 	/// We use this to reduce the pixels that needed to be paint when painting
@@ -252,12 +252,8 @@ struct managed_win {
 #endif
 };
 
-/// Process pending updates on a window. Has to be called in X critical section
-void win_process_updates(struct session *ps, struct managed_win *_w);
 /// Process pending images flags on a window. Has to be called in X critical section
 void win_process_flags(session_t *ps, struct managed_win *w);
-/// Queue an update on a window. A series of sanity checks are performed
-void win_queue_update(struct managed_win *_w, enum win_update update);
 /// Bind a shadow to the window, with color `c` and shadow kernel `kernel`
 bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color c,
                      struct conv *kernel);
@@ -434,6 +430,14 @@ bool win_is_mapped_in_x(const struct managed_win *w);
 // Find the managed window immediately below `w` in the window stack
 struct managed_win *attr_pure win_stack_find_next_managed(const session_t *ps,
                                                           const struct list_node *w);
+/// Set flags on a window. Some sanity checks are performed
+void win_set_flags(struct managed_win *w, uint64_t flags);
+/// Clear flags on a window. Some sanity checks are performed
+void win_clear_flags(struct managed_win *w, uint64_t flags);
+/// Returns true if any of the flags in `flags` is set
+bool win_check_flags_any(struct managed_win *w, uint64_t flags);
+/// Returns true if all of the flags in `flags` are set
+bool win_check_flags_all(struct managed_win *w, uint64_t flags);
 
 /// Free all resources in a struct win
 void free_win_res(session_t *ps, struct managed_win *w);

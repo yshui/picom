@@ -287,7 +287,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 		return;
 	}
 
-	win_queue_update(w, WIN_UPDATE_MAP);
+	win_set_flags(w, WIN_FLAGS_MAPPED);
 
 	// FocusIn/Out may be ignored when the window is unmapped, so we must
 	// recheck focus here
