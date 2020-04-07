@@ -187,6 +187,17 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			                          &reg_paint_in_bound, &reg_visible);
 		}
 
+		// Store the window background for rounded corners
+		// If rounded corners backup the region first
+		if (w->corner_radius > 0) {
+			const int16_t x = w->g.x;
+			const int16_t y = w->g.y;
+			const auto wid = to_u16_checked(w->widthb);
+			const auto hei = to_u16_checked(w->heightb);
+			ps->backend_data->ops->backup_bg_texture(ps->backend_data, w,
+							ps->backend_round_context, &reg_bound, x, y, wid, hei);
+		}
+
 		// Blur window background
 		// TODO since the background might change the content of the window (e.g.
 		//      with shaders), we should consult the background whether the window
@@ -378,6 +389,17 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			pixman_region32_fini(&reg_visible_local);
 			pixman_region32_fini(&reg_bound_local);
 		}
+
+		// Round the corners as last step after blur/shadow/dim/etc
+		if (w->corner_radius > 0.0) {
+			//auto reg_round = win_get_bounding_shape_global_by_val(w, true);
+			//pixman_region32_intersect(&reg_round, &reg_round, &reg_paint);
+			ps->backend_data->ops->round(ps->backend_data, w,
+											ps->backend_round_context,
+											&reg_bound, &reg_visible);
+			//pixman_region32_fini(&reg_round);
+		}
+
 		pixman_region32_fini(&reg_bound);
 		pixman_region32_fini(&reg_paint_in_bound);
 	}

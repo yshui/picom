@@ -160,6 +160,8 @@ typedef struct session {
 	backend_t *backend_data;
 	/// backend blur context
 	void *backend_blur_context;
+	/// round corners context
+	void *backend_round_context;
 	/// graphic drivers used
 	enum driver drivers;
 	/// file watch handle

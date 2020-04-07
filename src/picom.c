@@ -710,6 +710,11 @@ static void destroy_backend(session_t *ps) {
 			    ps->backend_data, ps->backend_blur_context);
 			ps->backend_blur_context = NULL;
 		}
+		if (ps->backend_round_context) {
+			ps->backend_data->ops->destroy_round_context(
+			    ps->backend_data, ps->backend_round_context);
+			ps->backend_round_context = NULL;
+		}
 		ps->backend_data->ops->deinit(ps->backend_data);
 		ps->backend_data = NULL;
 	}
@@ -750,6 +755,15 @@ static bool initialize_blur(session_t *ps) {
 	return ps->backend_blur_context != NULL;
 }
 
+static bool initialize_round_corners(session_t *ps) {
+	struct round_corners_args cargs;
+	cargs.corner_radius = ps->o.corner_radius;
+	cargs.round_borders = true;
+	ps->backend_round_context = ps->backend_data->ops->create_round_context(
+	    ps->backend_data, &cargs);
+	return ps->backend_round_context != NULL;
+}
+
 /// Init the backend and bind all the window pixmap to backend images
 static bool initialize_backend(session_t *ps) {
 	if (ps->o.experimental_backends) {
@@ -770,6 +784,11 @@ static bool initialize_backend(session_t *ps) {
 			ps->backend_data = NULL;
 			quit(ps);
 			return false;
+		}
+
+		if (!initialize_round_corners(ps)) {
+			log_fatal("Failed to prepare for rounded corners, will ignore...");
+			ps->o.corner_radius = 0;
 		}
 
 		// window_stack shouldn't include window that's

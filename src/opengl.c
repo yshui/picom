@@ -765,7 +765,6 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"  float u_fHalfBorderThickness = u_borderw / 2.0;\n"
 			"  //v4FromColor = u_v4BorderColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
 			"  //u_v4FillColor = vec4(0.0, 0.0, 0.0, 0.0);  // Inside rect color\n"
-			
 			"\n"
 			"  vec2 u_v2HalfShapeSizePx = u_texsize/2.0 - vec2(u_fHalfBorderThickness);\n"
 			"  vec2 v_v2CenteredPos = (gl_FragCoord.xy - u_texsize.xy / 2.0 - coord);\n"
@@ -783,14 +782,14 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"  vec4 c = mix(v4FromColor, v4ToColor, fBlendAmount);"
 			"\n"
 			"  // final color\n"
-			"  if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
+			"  //if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
 			"  gl_FragColor = c;\n"
 			"}\n";
 			
 		// Fragment shader (round corners)
 		// dst1 shader
 		static const char *FRAG_SHADER_ROUND_CORNERS_1 =
-			"  float u_fRadiusPx = u_radius + 25.0;\n"
+			"  float u_fRadiusPx = u_radius;\n"
 			"  float u_fHalfBorderThickness = u_borderw / 2.0;\n"
 			"  //float u_fHalfBorderThickness = 20.0 /2.0;\n"
 			"  //u_v4FillColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
@@ -813,7 +812,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 			"  vec4 c = mix(v4FromColor, v4ToColor, fBlendAmount);"
 			"\n"
 			"  // final color\n"
-			"  if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
+			"  //if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
 			"  gl_FragColor = c;\n"
 			"  //gl_FragColor = vec4(vec3(fBlendAmount), 1.0);\n"
 			"  //gl_FragColor = vec4(vec3(abs(dist) / (2.0 * corner)), 1.0);\n"
@@ -926,7 +925,7 @@ bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex,
 
 	glx_texture_t *ptex = *pptex;
 
-	//log_trace("Copying xy(%d %d) wh(%d %d)", x, y, width, height);
+	//log_trace("Copying xy(%d %d) wh(%d %d) ptex(%p)", x, y, width, height, ptex);
 
 	// Release texture if parameters are inconsistent
 	if (ptex && ptex->texture &&
@@ -1721,7 +1720,7 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 // I tried looking for a notify event for XCB_CW_BORDER_PIXEL (in xcb_create_window())
 // or a way to get the pixels from xcb_render_picture_t but the documentation for 
 // the xcb_xrender extension is literaly non existent...
-bool glx_read_border_pixel(session_t *ps, struct managed_win *w, int x, int y,
+bool glx_read_border_pixel(struct managed_win *w, int root_height, int x, int y,
 						int width attr_unused, int height, int cr, float *ppixel)
 {
 	if (!ppixel) return false;
@@ -1729,7 +1728,7 @@ bool glx_read_border_pixel(session_t *ps, struct managed_win *w, int x, int y,
 	// First try bottom left corner past the
 	// circle radius (after the rounded corner ends)
 	auto openglx = x + cr*2;
-	auto opengly = ps->root_height-height-y;
+	auto opengly = root_height-height-y;
 
 	// X is out of bounds
 	// move to the right side
@@ -1782,7 +1781,7 @@ bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_text
 	//	dx, dy, width, height, ps->root_width, ps->root_height, w->g.border_width);
 
 	if (w->g.border_width >= 1 /*&& w->border_col[0] == -1.0*/) {
-		glx_read_border_pixel(ps, w, dx, dy, width, height, w->corner_radius, &w->border_col[0]);
+		glx_read_border_pixel(w, ps->root_height, dx, dy, width, height, w->corner_radius, &w->border_col[0]);
 	}
 
 	// Calculate copy region size
@@ -1969,7 +1968,7 @@ bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_text
 	bool ret = false;
 	
 	if (w->g.border_width >= 1 /*&& w->border_col[0] == -1.0*/) {
-		glx_read_border_pixel(ps, w, dx, dy, width, height, w->corner_radius, &w->border_col[0]);
+		glx_read_border_pixel(w, ps->root_height, dx, dy, width, height, w->corner_radius, &w->border_col[0]);
 	}
 
 	{
