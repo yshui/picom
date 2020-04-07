@@ -393,7 +393,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		// Round the corners as last step after blur/shadow/dim/etc
 		if (w->corner_radius > 0.0) {
 			ps->backend_data->ops->round(ps->backend_data, w,
-						ps->backend_round_context, NULL,//w->win_image,
+						ps->backend_round_context, w->win_image,
 						&reg_bound, &reg_visible);
 		}
 

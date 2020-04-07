@@ -968,16 +968,6 @@ bool gl_round(backend_t *backend_data attr_unused, struct managed_win *w, void *
 	//	w->corner_radius, w->g.border_width, w->g.x, w->g.y,
 	//	w->widthb, w->heightb, img->inner->width, img->inner->height);
 
-	// TODO: move this function to gl_common.c
-	bool glx_read_border_pixel(struct managed_win *w, int root_height, int x, int y,
-							int width attr_unused, int height, int cr, float *ppixel);
-	
-	if (w->g.border_width > 0) {
-		const float yellow[4] = { 1.0, 1.0, 0.0, 1.0 };
-		memcpy(&w->border_col[0], yellow, sizeof(yellow));
-		//glx_read_border_pixel(w, gd->height, w->g.x, w->g.y, w->widthb, w->heightb, w->corner_radius, &w->border_col[0]);
-	}
-
 	int nrects;
 	const rect_t *rects;
 	rects = pixman_region32_rectangles((region_t *)reg_round, &nrects);
@@ -1046,9 +1036,7 @@ bool gl_round(backend_t *backend_data attr_unused, struct managed_win *w, void *
 	if (ppass->unifm_texsize)
 		glUniform2f(ppass->unifm_texsize, (float)w->widthb, (float)w->heightb);
 	if (ppass->unifm_borderw)
-		glUniform1f(ppass->unifm_borderw, (cctx->round_borders && w->border_col[0] != -1.) ? w->g.border_width : 0);
-	if (ppass->unifm_borderc)
-		glUniform4fv(ppass->unifm_borderc, 1, (GLfloat *)&w->border_col[0]);
+		glUniform1f(ppass->unifm_borderw, (cctx->round_borders) ? w->g.border_width : 0);
 	if (ppass->unifm_resolution)
 		glUniform2f(ppass->unifm_resolution, (float)gd->width, (float)gd->height);
 
@@ -1827,7 +1815,6 @@ void *gl_create_round_context(struct backend_base *base attr_unused, void *args 
 			uniform sampler2D tex_bg;
 			uniform float u_radius;
 			uniform float u_borderw;
-			uniform vec4 u_borderc;
 			uniform vec2 u_texcoord;
 			uniform vec2 u_texsize;
 			uniform vec2 u_resolution;
@@ -1841,7 +1828,7 @@ void *gl_create_round_context(struct backend_base *base attr_unused, void *args 
 			void main() {
 				vec2 coord = vec2(u_texcoord.x, u_resolution.y-u_texsize.y-u_texcoord.y);
 				vec4 u_v4WndBgColor = texelFetch(tex_bg, ivec2(gl_FragCoord.xy), 0);
-				vec4 u_v4BorderColor = u_borderc;
+				vec4 u_v4BorderColor = texelFetch(tex, ivec2(0, 0), 0);
 				vec4 u_v4FillColor = vec4(0.0, 0.0, 0.0, 0.0);  // Inside rect, transparent
 				vec4 v4FromColor = u_v4BorderColor;				// Always the border color. If no border, this still should be set
 				vec4 v4ToColor = u_v4WndBgColor;				// Outside corners color = background texture
@@ -1905,7 +1892,6 @@ void *gl_create_round_context(struct backend_base *base attr_unused, void *args 
 		pass->unifm_texcoord = glGetUniformLocationChecked(pass->prog, "u_texcoord");
 		pass->unifm_texsize = glGetUniformLocationChecked(pass->prog, "u_texsize");
 		pass->unifm_borderw = glGetUniformLocationChecked(pass->prog, "u_borderw");
-		pass->unifm_borderc = glGetUniformLocationChecked(pass->prog, "u_borderc");
 		pass->unifm_resolution = glGetUniformLocationChecked(pass->prog, "u_resolution");
 	}
 

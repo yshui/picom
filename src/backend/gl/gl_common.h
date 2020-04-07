@@ -47,7 +47,6 @@ typedef struct {
 	GLint unifm_texcoord;
 	GLint unifm_texsize;
 	GLint unifm_borderw;
-	GLint unifm_borderc;
 	GLint unifm_resolution;
 	GLint unifm_tex_bg;
 	GLint unifm_tex_wnd;
