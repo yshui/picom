@@ -139,12 +139,10 @@ void gl_get_blur_size(void *blur_context, int *width, int *height);
 
 
 bool gl_round(backend_t *backend_data, struct managed_win *w, void *ctx_,
-				const region_t *reg_round, const region_t *reg_visible);
+				void *image_data, const region_t *reg_round, const region_t *reg_visible);
 void *gl_create_round_context(backend_t *base, void *args);
 void gl_destroy_round_context(backend_t *base, void *ctx);
-bool gl_backup_bg_texture_fbo(backend_t *backend_data, struct managed_win *w,
-				void *ctx_, const region_t *reg_tgt, int x, int y, int width, int height);
-bool gl_backup_bg_texture_copy2D(backend_t *backend_data, struct managed_win *w,
+bool gl_store_back_texture(backend_t *backend_data, struct managed_win *w,
 				void *ctx_, const region_t *reg_tgt, int x, int y, int width, int height);
 
 bool gl_is_image_transparent(backend_t *base, void *image_data);

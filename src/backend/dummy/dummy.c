@@ -73,7 +73,7 @@ bool dummy_blur(struct backend_base *backend_data attr_unused, double opacity at
 }
 
 bool dummy_round(struct backend_base *backend_data attr_unused, struct managed_win *w attr_unused,
-                void *round_ctx attr_unused, const region_t *reg_round attr_unused,
+                void *ctx_ attr_unused, void *image_data attr_unused, const region_t *reg_round attr_unused,
                 const region_t *reg_visible attr_unused) {
 	return true;
 }
@@ -159,7 +159,7 @@ void dummy_get_blur_size(void *ctx attr_unused, int *width, int *height) {
 	*height = 5;
 }
 
-bool dummy_backup_bg_texture(backend_t *backend_data attr_unused, struct managed_win *w attr_unused,  void *ctx_ attr_unused,
+bool dummy_store_back_texture(backend_t *backend_data attr_unused, struct managed_win *w attr_unused,  void *ctx_ attr_unused,
 		const region_t *reg_tgt attr_unused, int x attr_unused, int y attr_unused, int width attr_unused, int height attr_unused) {
 	return true;
 }
@@ -185,6 +185,6 @@ struct backend_operations dummy_ops = {
     .create_round_context = dummy_create_round_context,
     .destroy_round_context = dummy_destroy_round_context,
     .get_blur_size = dummy_get_blur_size,
-    .backup_bg_texture = dummy_backup_bg_texture
+    .store_back_texture = dummy_store_back_texture
 
 };

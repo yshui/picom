@@ -396,7 +396,6 @@ struct dual_kawase_params *generate_dual_kawase_params(void *args) {
 	params->iterations = 0;
 	params->offset = 1.0f;
 
-	log_info("blur-strength: %d", blur_args->strength.strength);
 	if (blur_args->strength.strength <= 0 && blur_args->size) {
 		// approximate blur_strength with gaussian blur_radius
 		if (blur_args->size < 6) {

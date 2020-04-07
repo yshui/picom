@@ -505,7 +505,7 @@ struct backend_operations glx_ops = {
 	.create_round_context = gl_create_round_context,
     .destroy_round_context = gl_destroy_round_context,
     .get_blur_size = gl_get_blur_size,
-	.backup_bg_texture = gl_backup_bg_texture_fbo,
+	.store_back_texture = gl_store_back_texture,
     .max_buffer_age = 5,        // Why?
 };
 

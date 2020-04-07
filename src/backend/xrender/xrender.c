@@ -290,7 +290,7 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 }
 
 static bool x_round(struct backend_base *backend_data attr_unused, struct managed_win *w attr_unused,
-                void *blur_ctx attr_unused, const region_t *reg_blur attr_unused,
+                void *ctx_ attr_unused, void *image_data attr_unused, const region_t *reg_blur attr_unused,
                 const region_t *reg_visible attr_unused) {
 	
 	// dummy implementation, we already perform the rounding in compose
@@ -611,7 +611,7 @@ void get_blur_size(void *blur_context, int *width, int *height) {
 	*height = ctx->resize_height;
 }
 
-bool backup_bg_texture(backend_t *backend_data attr_unused, struct managed_win *w attr_unused,  void *ctx_ attr_unused,
+bool store_back_texture(backend_t *backend_data attr_unused, struct managed_win *w attr_unused,  void *ctx_ attr_unused,
 		const region_t *reg_tgt attr_unused, int x attr_unused, int y attr_unused, int width attr_unused, int height attr_unused) {
 	return true;
 }
@@ -731,7 +731,7 @@ struct backend_operations xrender_ops = {
 	.create_round_context = create_round_context,
     .destroy_round_context = destroy_round_context,
     .get_blur_size = get_blur_size,
-	.backup_bg_texture = backup_bg_texture
+	.store_back_texture = store_back_texture
 	
 };
 

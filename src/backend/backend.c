@@ -194,7 +194,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			const int16_t y = w->g.y;
 			const auto wid = to_u16_checked(w->widthb);
 			const auto hei = to_u16_checked(w->heightb);
-			ps->backend_data->ops->backup_bg_texture(ps->backend_data, w,
+			ps->backend_data->ops->store_back_texture(ps->backend_data, w,
 							ps->backend_round_context, &reg_bound, x, y, wid, hei);
 		}
 
@@ -392,12 +392,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 		// Round the corners as last step after blur/shadow/dim/etc
 		if (w->corner_radius > 0.0) {
-			//auto reg_round = win_get_bounding_shape_global_by_val(w, true);
-			//pixman_region32_intersect(&reg_round, &reg_round, &reg_paint);
 			ps->backend_data->ops->round(ps->backend_data, w,
-											ps->backend_round_context,
-											&reg_bound, &reg_visible);
-			//pixman_region32_fini(&reg_round);
+						ps->backend_round_context, NULL,//w->win_image,
+						&reg_bound, &reg_visible);
 		}
 
 		pixman_region32_fini(&reg_bound);

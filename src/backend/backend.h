@@ -152,8 +152,8 @@ struct backend_operations {
 
 	/// Round a given region of the rendering buffer.
 	bool (*round)(backend_t *backend_data, struct managed_win *w, void *round_ctx,
-	             const region_t *reg_round, const region_t *reg_visible)
-	    attr_nonnull(1, 2, 3, 4, 5);
+	             void *image_data, const region_t *reg_round, const region_t *reg_visible)
+	    attr_nonnull(1, 2, 3, 5, 6);
 
 	/// Update part of the back buffer with the rendering buffer, then present the
 	/// back buffer onto the target window (if not back buffered, update part of the
@@ -237,8 +237,8 @@ struct backend_operations {
 	void (*get_blur_size)(void *blur_context, int *width, int *height);
 
 	/// Backup our current window background so we can use it for "erasing" corners
-	bool (*backup_bg_texture)(backend_t *base, struct managed_win *w, void *ctx_,
-							const region_t *reg_tgt, int x, int y, int width, int height);
+	bool (*store_back_texture)(backend_t *base, struct managed_win *w, void *ctx_,
+						const region_t *reg_tgt, int x, int y, int width, int height);
 
 	/// Create a rounded corners context
 	void *(*create_round_context)(backend_t *base, void *args);
