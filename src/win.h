@@ -131,7 +131,7 @@ struct managed_win {
 	/// See above about coordinate systems.
 	region_t bounding_shape;
 	/// Window flags. Definitions above.
-	int_fast16_t flags;
+	uint64_t flags;
 	/// The region of screen that will be obscured when windows above is painted,
 	/// in global coordinates.
 	/// We use this to reduce the pixels that needed to be paint when painting
@@ -192,6 +192,8 @@ struct managed_win {
 	double opacity;
 	/// Target window opacity.
 	double opacity_target;
+	/// Previous window opacity.
+	double opacity_target_old;
 	/// true if window (or client window, for broken window managers
 	/// not transferring client window's _NET_WM_OPACITY value) has opacity prop
 	bool has_opacity_prop;
@@ -252,12 +254,8 @@ struct managed_win {
 #endif
 };
 
-/// Process pending updates on a window. Has to be called in X critical section
-void win_process_updates(struct session *ps, struct managed_win *_w);
 /// Process pending images flags on a window. Has to be called in X critical section
 void win_process_flags(session_t *ps, struct managed_win *w);
-/// Queue an update on a window. A series of sanity checks are performed
-void win_queue_update(struct managed_win *_w, enum win_update update);
 /// Bind a shadow to the window, with color `c` and shadow kernel `kernel`
 bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color c,
                      struct conv *kernel);
@@ -291,6 +289,7 @@ void win_set_focused(session_t *ps, struct managed_win *w);
 bool attr_pure win_should_fade(session_t *ps, const struct managed_win *w);
 void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w);
 void win_update_prop_shadow(session_t *ps, struct managed_win *w);
+void win_update_opacity_target(session_t *ps, struct managed_win *w);
 void win_on_factor_change(session_t *ps, struct managed_win *w);
 /**
  * Update cache data in struct _win that depends on window size.
@@ -311,12 +310,10 @@ bool win_get_class(session_t *ps, struct managed_win *w);
  *
  * @param ps           current session
  * @param w            struct _win object representing the window
- * @param ignore_state whether window state should be ignored in opacity calculation
  *
  * @return target opacity
  */
-double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w,
-                                         bool ignore_state);
+double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w);
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 void win_update_screen(session_t *, struct managed_win *);
 /**
@@ -434,6 +431,14 @@ bool win_is_mapped_in_x(const struct managed_win *w);
 // Find the managed window immediately below `w` in the window stack
 struct managed_win *attr_pure win_stack_find_next_managed(const session_t *ps,
                                                           const struct list_node *w);
+/// Set flags on a window. Some sanity checks are performed
+void win_set_flags(struct managed_win *w, uint64_t flags);
+/// Clear flags on a window. Some sanity checks are performed
+void win_clear_flags(struct managed_win *w, uint64_t flags);
+/// Returns true if any of the flags in `flags` is set
+bool win_check_flags_any(struct managed_win *w, uint64_t flags);
+/// Returns true if all of the flags in `flags` are set
+bool win_check_flags_all(struct managed_win *w, uint64_t flags);
 
 /// Free all resources in a struct win
 void free_win_res(session_t *ps, struct managed_win *w);

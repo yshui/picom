@@ -52,3 +52,5 @@ doxygen/
 /src/backtrace-symbols.[ch]
 /compton*.trace
 *.orig
+/tests/log
+/tests/testcases/__pycache__/
