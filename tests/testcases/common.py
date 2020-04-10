@@ -8,12 +8,12 @@ def set_window_name(conn, wid, name):
     prop_name = "_NET_WM_NAME"
     prop_name = conn.core.InternAtom(False, len(prop_name), prop_name).reply().atom
     str_type = "UTF8_STRING"
-    str_type = conn.core.InternAtom(True, len(str_type), str_type).reply().atom
+    str_type = conn.core.InternAtom(False, len(str_type), str_type).reply().atom
     conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, prop_name, str_type, 8, len(name), name).check()
     prop_name = "WM_NAME"
     prop_name = conn.core.InternAtom(False, len(prop_name), prop_name).reply().atom
     str_type = "STRING"
-    str_type = conn.core.InternAtom(True, len(str_type), str_type).reply().atom
+    str_type = conn.core.InternAtom(False, len(str_type), str_type).reply().atom
     conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, prop_name, str_type, 8, len(name), name).check()
 
 def set_window_class(conn, wid, name):
@@ -23,12 +23,12 @@ def set_window_class(conn, wid, name):
     prop_name = "WM_CLASS"
     prop_name = conn.core.InternAtom(False, len(prop_name), prop_name).reply().atom
     str_type = "STRING"
-    str_type = conn.core.InternAtom(True, len(str_type), str_type).reply().atom
+    str_type = conn.core.InternAtom(False, len(str_type), str_type).reply().atom
     conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, prop_name, str_type, 8, len(name), name).check()
 
 def find_picom_window(conn):
     prop_name = "WM_NAME"
-    prop_name = conn.core.InternAtom(True, len(prop_name), prop_name).reply().atom
+    prop_name = conn.core.InternAtom(False, len(prop_name), prop_name).reply().atom
     setup = conn.get_setup()
     root = setup.roots[0].root
     windows = conn.core.QueryTree(root).reply()
