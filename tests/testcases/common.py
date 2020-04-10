@@ -4,31 +4,28 @@ import xcffib
 import time
 import random
 import string
+
+def to_atom(conn, string):
+    return conn.core.InternAtom(False, len(string), string).reply().atom
+
 def set_window_name(conn, wid, name):
-    prop_name = "_NET_WM_NAME"
-    prop_name = conn.core.InternAtom(False, len(prop_name), prop_name).reply().atom
-    str_type = "UTF8_STRING"
-    str_type = conn.core.InternAtom(False, len(str_type), str_type).reply().atom
+    prop_name = to_atom(conn, "_NET_WM_NAME")
+    str_type = to_atom(conn, "UTF8_STRING")
     conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, prop_name, str_type, 8, len(name), name).check()
-    prop_name = "WM_NAME"
-    prop_name = conn.core.InternAtom(False, len(prop_name), prop_name).reply().atom
-    str_type = "STRING"
-    str_type = conn.core.InternAtom(False, len(str_type), str_type).reply().atom
+    prop_name = to_atom(conn, "WM_NAME")
+    str_type = to_atom(conn, "STRING")
     conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, prop_name, str_type, 8, len(name), name).check()
 
 def set_window_class(conn, wid, name):
     if not isinstance(name, bytearray):
         name = name.encode()
     name = name+b"\0"+name+b"\0"
-    prop_name = "WM_CLASS"
-    prop_name = conn.core.InternAtom(False, len(prop_name), prop_name).reply().atom
-    str_type = "STRING"
-    str_type = conn.core.InternAtom(False, len(str_type), str_type).reply().atom
+    prop_name = to_atom(conn, "WM_CLASS")
+    str_type = to_atom(conn, "STRING")
     conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, prop_name, str_type, 8, len(name), name).check()
 
 def find_picom_window(conn):
-    prop_name = "WM_NAME"
-    prop_name = conn.core.InternAtom(False, len(prop_name), prop_name).reply().atom
+    prop_name = to_atom(conn, "WM_NAME")
     setup = conn.get_setup()
     root = setup.roots[0].root
     windows = conn.core.QueryTree(root).reply()
