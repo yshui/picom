@@ -16,6 +16,10 @@ def set_window_name(conn, wid, name):
     str_type = to_atom(conn, "STRING")
     conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, prop_name, str_type, 8, len(name), name).check()
 
+def set_window_state(conn, wid, state):
+    prop_name = to_atom(conn, "WM_STATE")
+    conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, prop_name, prop_name, 32, 2, [state, 0]).check()
+
 def set_window_class(conn, wid, name):
     if not isinstance(name, bytearray):
         name = name.encode()
