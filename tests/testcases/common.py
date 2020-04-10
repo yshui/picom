@@ -1,5 +1,6 @@
 import xcffib.xproto as xproto
 import xcffib.randr as randr
+import xcffib
 import time
 import random
 import string
@@ -56,3 +57,19 @@ def trigger_root_configure(conn):
     rr.AddOutputModeChecked(output, mode).check()
     rr.SetCrtcConfig(reply.crtcs[0], reply.timestamp, reply.config_timestamp, 0, 0, mode, randr.Rotation.Rotate_0, 1, [output]).reply()
 
+def find_32bit_visual(conn):
+    setup = conn.get_setup()
+    render = conn(xcffib.render.key)
+    r = render.QueryPictFormats().reply()
+    pictfmt_ids = set()
+    for pictform in r.formats:
+        if (pictform.depth == 32 and
+            pictform.type == xcffib.render.PictType.Direct and
+            pictform.direct.alpha_mask != 0):
+            pictfmt_ids.add(pictform.id)
+    print(pictfmt_ids)
+    for screen in r.screens:
+        for depth in screen.depths:
+            for pv in depth.visuals:
+                if pv.format in pictfmt_ids:
+                    return pv.visual
