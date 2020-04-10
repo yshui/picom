@@ -180,8 +180,9 @@ static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 }
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
-	assert(ev->parent == ps->root);
-	add_win_top(ps, ev->window);
+	if (ev->parent == ps->root) {
+		add_win_top(ps, ev->window);
+	}
 }
 
 /// Handle configure event of a regular window
@@ -263,8 +264,21 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
 	auto w = find_win(ps, ev->window);
-	if (w) {
+	auto mw = find_toplevel(ps, ev->window);
+	if (mw && mw->client_win == mw->base.id) {
+		// We only want _real_ frame window
+		assert(&mw->base == w);
+		mw = NULL;
+	}
+	assert(w == NULL || mw == NULL);
+
+	if (w != NULL) {
 		auto _ attr_unused = destroy_win_start(ps, w);
+	} else if (mw != NULL) {
+		win_recheck_client(ps, mw);
+	} else {
+		log_debug("Received a destroy notify from an unknown window, %#010x",
+		          ev->window);
 	}
 }
 
