@@ -53,6 +53,8 @@ static const int WIN_GET_LEADER_MAX_RECURSION = 20;
 static const int ROUNDED_PIXELS = 1;
 static const double ROUNDED_PERCENT = 0.05;
 
+static void win_recheck_client(session_t *ps, struct managed_win *w);
+
 /// Generate a "return by value" function, from a function that returns the
 /// region via a region_t pointer argument.
 /// Function signature has to be (win *, region_t *)
@@ -323,8 +325,8 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 void win_process_flags(session_t *ps, struct managed_win *w) {
 	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
 		map_win_start(ps, w);
+		win_clear_flags(w, WIN_FLAGS_MAPPED);
 	}
-	win_clear_flags(w, WIN_FLAGS_MAPPED);
 
 	// Not a loop
 	while (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE) &&
@@ -367,7 +369,14 @@ void win_process_flags(session_t *ps, struct managed_win *w) {
 	}
 
 	// Clear stale image flags
-	win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
+	if (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE)) {
+		win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
+	}
+
+	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
+		win_recheck_client(ps, w);
+		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
+	}
 }
 
 /**
@@ -2326,6 +2335,7 @@ win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_windo
 
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags) {
+	log_debug("Set flags %lu to window %#010x (%s)", flags, w->base.id, w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
 		log_error("Flags set on a destroyed window %#010x (%s)", w->base.id, w->name);
 		return;
@@ -2336,6 +2346,7 @@ void win_set_flags(struct managed_win *w, uint64_t flags) {
 
 /// Clear flags on a window. Some sanity checks are performed
 void win_clear_flags(struct managed_win *w, uint64_t flags) {
+	log_debug("Clear flags %lu from window %#010x (%s)", flags, w->base.id, w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
 		log_error("Flags cleared on a destroyed window %#010x (%s)", w->base.id,
 		          w->name);
