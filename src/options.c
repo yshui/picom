@@ -787,9 +787,8 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(311, vsync_use_glfinish);
 		case 312:
 			// --xrender-sync
-			log_warn("Please use --xrender-sync-fence instead of --xrender-sync");
-			opt->xrender_sync_fence = true;
-			break;
+			log_error("Please use --xrender-sync-fence instead of --xrender-sync");
+			return false;
 		P_CASEBOOL(313, xrender_sync_fence);
 		P_CASEBOOL(315, no_fading_destroyed_argb);
 		P_CASEBOOL(316, force_win_blend);

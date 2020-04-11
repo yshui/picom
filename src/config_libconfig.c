@@ -585,8 +585,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	// --xrender-sync
 	if (config_lookup_bool(&cfg, "xrender-sync", &ival) && ival) {
-		log_warn("Please use xrender-sync-fence instead of xrender-sync.");
-		opt->xrender_sync_fence = true;
+		log_error("Please use xrender-sync-fence instead of xrender-sync.");
+		goto err;
 	}
 	// --xrender-sync-fence
 	lcfg_lookup_bool(&cfg, "xrender-sync-fence", &opt->xrender_sync_fence);
