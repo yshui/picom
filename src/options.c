@@ -481,7 +481,9 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 'S') {
 			log_warn("-S will be ignored");
 		} else if (o == 320) {
-			log_warn("--no-name-pixmap will be ignored");
+			log_error("--no-name-pixmap is no longer available");
+			*exit_code = 1;
+			return true;
 		} else if (o == '?' || o == ':') {
 			usage(argv[0], 1);
 			*exit_code = 1;
