@@ -598,20 +598,22 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		log_warn("\"paint-on-overlay\" has been removed as an option, and "
 		         "is enabled whenever possible");
 
-	if (config_lookup_float(&cfg, "alpha-step", &dval))
-		log_warn("\"alpha-step\" has been removed, compton now tries to make use"
-		         " of all alpha values");
+	if (config_lookup_float(&cfg, "alpha-step", &dval)) {
+		log_error("\"alpha-step\" has been removed, compton now tries to make use"
+		          " of all alpha values");
+		goto err;
+	}
 
 	const char *deprecation_message =
 	    "has been removed. If you encounter problems "
 	    "without this feature, please feel free to open a bug report";
 	if (lcfg_lookup_bool(&cfg, "glx-use-copysubbuffermesa", &bval) && bval) {
 		log_error("\"glx-use-copysubbuffermesa\" %s", deprecation_message);
-		return ERR_PTR(-1);
+		goto err;
 	}
 	if (lcfg_lookup_bool(&cfg, "glx-copy-from-front", &bval) && bval) {
 		log_error("\"glx-copy-from-front\" %s", deprecation_message);
-		return ERR_PTR(-1);
+		goto err;
 	}
 
 	config_setting_t *blur_cfg = config_lookup(&cfg, "blur");
