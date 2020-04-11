@@ -1078,6 +1078,7 @@ static xcb_window_t find_client_win(session_t *ps, xcb_window_t w) {
  * @param w struct _win of the parent window
  */
 void win_recheck_client(session_t *ps, struct managed_win *w) {
+	assert(ps->server_grabbed);
 	// Initialize wmwin to false
 	w->wmwin = false;
 
