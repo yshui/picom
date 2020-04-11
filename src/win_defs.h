@@ -81,6 +81,8 @@ enum win_flags {
 	WIN_FLAGS_SHADOW_STALE = 8,
 	/// shadow has not been generated
 	WIN_FLAGS_SHADOW_NONE = 16,
+	/// the client window needs to be updated
+	WIN_FLAGS_CLIENT_STALE = 32,
 	/// the window is mapped by X, we need to call map_win_start for it
 	WIN_FLAGS_MAPPED = 64,
 };

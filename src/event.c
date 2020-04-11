@@ -180,8 +180,9 @@ static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 }
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
-	assert(ev->parent == ps->root);
-	add_win_top(ps, ev->window);
+	if (ev->parent == ps->root) {
+		add_win_top(ps, ev->window);
+	}
 }
 
 /// Handle configure event of a regular window
@@ -263,8 +264,21 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
 	auto w = find_win(ps, ev->window);
-	if (w) {
+	auto mw = find_toplevel(ps, ev->window);
+	if (mw && mw->client_win == mw->base.id) {
+		// We only want _real_ frame window
+		assert(&mw->base == w);
+		mw = NULL;
+	}
+	assert(w == NULL || mw == NULL);
+
+	if (w != NULL) {
 		auto _ attr_unused = destroy_win_start(ps, w);
+	} else if (mw != NULL) {
+		win_recheck_client(ps, mw);
+	} else {
+		log_debug("Received a destroy notify from an unknown window, %#010x",
+		          ev->window);
 	}
 }
 
@@ -306,7 +320,8 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	          ev->window, ev->parent, ev->override_redirect);
 	auto w_top = find_toplevel(ps, ev->window);
 	if (w_top) {
-		win_unmark_client(ps, w_top);
+		win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
+		ps->pending_updates = true;
 	}
 
 	if (ev->parent == ps->root) {
@@ -336,28 +351,35 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		    ps->c, ev->window, XCB_CW_EVENT_MASK,
 		    (const uint32_t[]){determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN)});
 
-		// Check if the window is an undetected client window
-		// Firstly, check if it's a known client window
-		if (!w_top) {
-			// If not, look for its frame window
+		if (!wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
+			log_debug("Window %#010x doesn't have WM_STATE property, it is "
+			          "probably not a client window. But we will listen for "
+			          "property change in case it gains one.",
+			          ev->window);
+			xcb_change_window_attributes(
+			    ps->c, ev->window, XCB_CW_EVENT_MASK,
+			    (const uint32_t[]){determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) |
+			                       XCB_EVENT_MASK_PROPERTY_CHANGE});
+		} else {
 			auto w_real_top = find_managed_window_or_parent(ps, ev->parent);
-			// If found, and the client window has not been determined, or its
-			// frame may not have a correct client, continue
-			if (w_real_top && (!w_real_top->client_win ||
-			                   w_real_top->client_win == w_real_top->base.id)) {
-				// If it has WM_STATE, mark it the client window
-				if (wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
-					w_real_top->wmwin = false;
-					win_unmark_client(ps, w_real_top);
-					win_mark_client(ps, w_real_top, ev->window);
-				}
-				// Otherwise, watch for WM_STATE on it
+			if (w_real_top && w_real_top->state != WSTATE_UNMAPPED &&
+			    w_real_top->state != WSTATE_UNMAPPING) {
+				log_debug("Mark window %#010x (%s) as having a stale "
+				          "client",
+				          w_real_top->base.id, w_real_top->name);
+				win_set_flags(w_real_top, WIN_FLAGS_CLIENT_STALE);
+				ps->pending_updates = true;
+			} else {
+				if (!w_real_top)
+					log_debug("parent %#010x not found", ev->parent);
 				else {
-					xcb_change_window_attributes(
-					    ps->c, ev->window, XCB_CW_EVENT_MASK,
-					    (const uint32_t[]){
-					        determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) |
-					        XCB_EVENT_MASK_PROPERTY_CHANGE});
+					// Window is not currently mapped, unmark its
+					// client to trigger a client recheck when it is
+					// mapped later.
+					win_unmark_client(ps, w_real_top);
+					log_debug("parent %#010x (%s) is in state %d",
+					          w_real_top->base.id, w_real_top->name,
+					          w_real_top->state);
 				}
 			}
 		}
@@ -451,13 +473,11 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			                                 ps, ev->window, WIN_EVMODE_UNKNOWN)});
 
 			auto w_top = find_managed_window_or_parent(ps, ev->window);
-			// Initialize client_win as early as possible
-			if (w_top &&
-			    (!w_top->client_win || w_top->client_win == w_top->base.id) &&
-			    wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
-				w_top->wmwin = false;
-				win_unmark_client(ps, w_top);
-				win_mark_client(ps, w_top, ev->window);
+			// ev->window might have not been managed yet, in that case w_top
+			// would be NULL.
+			if (w_top) {
+				win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
+				ps->pending_updates = true;
 			}
 		}
 	}

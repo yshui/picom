@@ -323,8 +323,8 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 void win_process_flags(session_t *ps, struct managed_win *w) {
 	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
 		map_win_start(ps, w);
+		win_clear_flags(w, WIN_FLAGS_MAPPED);
 	}
-	win_clear_flags(w, WIN_FLAGS_MAPPED);
 
 	// Not a loop
 	while (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE) &&
@@ -367,7 +367,14 @@ void win_process_flags(session_t *ps, struct managed_win *w) {
 	}
 
 	// Clear stale image flags
-	win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
+	if (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE)) {
+		win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
+	}
+
+	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
+		win_recheck_client(ps, w);
+		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
+	}
 }
 
 /**
@@ -897,6 +904,7 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
  * TODO need better name
  */
 void win_on_factor_change(session_t *ps, struct managed_win *w) {
+	log_debug("Window %#010x (%s) factor change", w->base.id, w->name);
 	// Focus needs to be updated first, as other rules might depend on the focused
 	// state of the window
 	win_update_focused(ps, w);
@@ -904,6 +912,8 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	win_determine_shadow(ps, w);
 	win_determine_invert_color(ps, w);
 	win_determine_blur_background(ps, w);
+	w->mode = win_calc_mode(w);
+	log_debug("Window mode changed to %d", w->mode);
 	win_update_opacity_rule(ps, w);
 	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
 		w->paint_excluded = c2_match(ps, w, ps->o.paint_blacklist, NULL);
@@ -1022,6 +1032,8 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
  */
 void win_unmark_client(session_t *ps, struct managed_win *w) {
 	xcb_window_t client = w->client_win;
+	log_debug("Detaching client window %#010x from frame %#010x (%s)", client,
+	          w->base.id, w->name);
 
 	w->client_win = XCB_NONE;
 
@@ -1065,7 +1077,7 @@ static xcb_window_t find_client_win(session_t *ps, xcb_window_t w) {
  * @param ps current session
  * @param w struct _win of the parent window
  */
-static void win_recheck_client(session_t *ps, struct managed_win *w) {
+void win_recheck_client(session_t *ps, struct managed_win *w) {
 	// Initialize wmwin to false
 	w->wmwin = false;
 
@@ -1075,14 +1087,14 @@ static void win_recheck_client(session_t *ps, struct managed_win *w) {
 	// sets override-redirect flags on all frame windows.
 	xcb_window_t cw = find_client_win(ps, w->base.id);
 	if (cw) {
-		log_trace("(%#010x): client %#010x", w->base.id, cw);
+		log_debug("(%#010x): client %#010x", w->base.id, cw);
 	}
 	// Set a window's client window to itself if we couldn't find a
 	// client window
 	if (!cw) {
 		cw = w->base.id;
 		w->wmwin = !w->a.override_redirect;
-		log_trace("(%#010x): client self (%s)", w->base.id,
+		log_debug("(%#010x): client self (%s)", w->base.id,
 		          (w->wmwin ? "wmwin" : "override-redirected"));
 	}
 
@@ -2326,6 +2338,7 @@ win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_windo
 
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags) {
+	log_debug("Set flags %lu to window %#010x (%s)", flags, w->base.id, w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
 		log_error("Flags set on a destroyed window %#010x (%s)", w->base.id, w->name);
 		return;
@@ -2336,6 +2349,7 @@ void win_set_flags(struct managed_win *w, uint64_t flags) {
 
 /// Clear flags on a window. Some sanity checks are performed
 void win_clear_flags(struct managed_win *w, uint64_t flags) {
+	log_debug("Clear flags %lu from window %#010x (%s)", flags, w->base.id, w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
 		log_error("Flags cleared on a destroyed window %#010x (%s)", w->base.id,
 		          w->name);
