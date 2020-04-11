@@ -471,23 +471,21 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 'd') {
 			log_error("-d is removed, please use the DISPLAY "
 			          "environment variable");
-			*exit_code = 1;
-			return true;
+			goto err;
 		} else if (o == 314) {
 			*all_xerrors = true;
 		} else if (o == 318) {
 			printf("%s\n", COMPTON_VERSION);
 			return true;
 		} else if (o == 'S') {
-			log_warn("-S will be ignored");
+			log_error("-S is no longer available");
+			goto err;
 		} else if (o == 320) {
 			log_error("--no-name-pixmap is no longer available");
-			*exit_code = 1;
-			return true;
+			goto err;
 		} else if (o == '?' || o == ':') {
 			usage(argv[0], 1);
-			*exit_code = 1;
-			return true;
+			goto err;
 		}
 	}
 
@@ -495,11 +493,13 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 	if (optind < argc) {
 		// log is not initialized here yet
 		fprintf(stderr, "picom doesn't accept positional arguments.\n");
-		*exit_code = 1;
-		return true;
+		goto err;
 	}
 
 	return false;
+err:
+	*exit_code = 1;
+	return true;
 }
 
 /**
