@@ -277,6 +277,7 @@ static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *
 	} else if (mw != NULL) {
 		win_unmark_client(ps, mw);
 		win_set_flags(mw, WIN_FLAGS_CLIENT_STALE);
+		ps->pending_updates = true;
 	} else {
 		log_debug("Received a destroy notify from an unknown window, %#010x",
 		          ev->window);
