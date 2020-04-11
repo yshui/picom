@@ -1014,9 +1014,9 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 	win_on_factor_change(ps, w);
 
 	auto r = xcb_get_window_attributes_reply(
-	    ps->c, xcb_get_window_attributes(ps->c, w->client_win), NULL);
+	    ps->c, xcb_get_window_attributes(ps->c, w->client_win), &e);
 	if (!r) {
-		log_error("Failed to get client window attributes");
+		log_error_x_error(e, "Failed to get client window attributes");
 		return;
 	}
 
