@@ -343,7 +343,11 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		{
 			auto w = find_win(ps, ev->window);
 			if (w) {
-				auto _ attr_unused = destroy_win_start(ps, w);
+				auto ret = destroy_win_start(ps, w);
+				if (!ret && w->managed) {
+					auto mw = (struct managed_win *)w;
+					CHECK(win_skip_fading(ps, mw));
+				}
 			}
 		}
 
