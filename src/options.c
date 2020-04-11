@@ -648,7 +648,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			log_error("--alpha-step has been removed, we now tries to "
 			         "make use of all alpha values");
 			return false;
-		case 272: log_warn("use of --dbe is deprecated"); break;
+		case 272: log_error("use of --dbe is deprecated"); return false;
 		case 273:
 			log_error("--paint-on-overlay has been removed, the feature is enabled "
 			         "whenever possible");
