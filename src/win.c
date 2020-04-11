@@ -2351,8 +2351,8 @@ void win_set_flags(struct managed_win *w, uint64_t flags) {
 void win_clear_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Clear flags %lu from window %#010x (%s)", flags, w->base.id, w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
-		log_error("Flags cleared on a destroyed window %#010x (%s)", w->base.id,
-		          w->name);
+		log_warn("Flags cleared on a destroyed window %#010x (%s)", w->base.id,
+		         w->name);
 		return;
 	}
 
