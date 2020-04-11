@@ -469,8 +469,10 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 'b') {
 			*fork = true;
 		} else if (o == 'd') {
-			log_warn("-d will be ignored, please use the DISPLAY "
-			         "environment variable");
+			log_error("-d is removed, please use the DISPLAY "
+			          "environment variable");
+			*exit_code = 1;
+			return true;
 		} else if (o == 314) {
 			*all_xerrors = true;
 		} else if (o == 318) {
