@@ -650,9 +650,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			return false;
 		case 272: log_warn("use of --dbe is deprecated"); break;
 		case 273:
-			log_warn("--paint-on-overlay has been removed, and is enabled "
-			         "when possible");
-			break;
+			log_error("--paint-on-overlay has been removed, the feature is enabled "
+			         "whenever possible");
+			return false;
 		P_CASEBOOL(274, sw_opti);
 		case 275:
 			// --vsync-aggressive
