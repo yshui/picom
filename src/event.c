@@ -320,7 +320,8 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	          ev->window, ev->parent, ev->override_redirect);
 	auto w_top = find_toplevel(ps, ev->window);
 	if (w_top) {
-		win_unmark_client(ps, w_top);
+		win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
+		ps->pending_updates = true;
 	}
 
 	if (ev->parent == ps->root) {
