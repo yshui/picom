@@ -398,10 +398,8 @@ static const struct option longopts[] = {
     {"opengl", no_argument, NULL, 289},
     {"backend", required_argument, NULL, 290},
     {"glx-no-stencil", no_argument, NULL, 291},
-    {"glx-copy-from-front", no_argument, NULL, 292},
     {"benchmark", required_argument, NULL, 293},
     {"benchmark-wid", required_argument, NULL, 294},
-    {"glx-use-copysubbuffermesa", no_argument, NULL, 295},
     {"blur-background-exclude", required_argument, NULL, 296},
     {"active-opacity", required_argument, NULL, 297},
     {"glx-no-rebind-pixmap", no_argument, NULL, 298},
@@ -518,9 +516,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	// Parse commandline arguments. Range checking will be done later.
 
-	const char *deprecation_message = "has been removed. If you encounter problems "
-	                                  "without this feature, please feel free to "
-	                                  "open a bug report.";
+	const char *deprecation_message attr_unused =
+	    "has been removed. If you encounter problems "
+	    "without this feature, please feel free to "
+	    "open a bug report.";
 	optind = 1;
 	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
 		switch (o) {
@@ -705,18 +704,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 				exit(1);
 			break;
 		P_CASEBOOL(291, glx_no_stencil);
-		case 292:
-			log_error("--glx-copy-from-front %s", deprecation_message);
-			exit(1);
-			break;
 		P_CASEINT(293, benchmark);
 		case 294:
 			// --benchmark-wid
 			opt->benchmark_wid = (xcb_window_t)strtol(optarg, NULL, 0);
-			break;
-		case 295:
-			log_error("--glx-use-copysubbuffermesa %s", deprecation_message);
-			exit(1);
 			break;
 		case 296:
 			// --blur-background-exclude
