@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "targetArchitecture": "x64",
+            "name": "Debug with Meson",
+            "type": "cppdbg",
+            "request": "launch",
+            "cwd": "${workspaceRoot}",
+            "program": "${workspaceRoot}/build/src/picom",
+            "preLaunchTask": "build debug meson",
+            "stopAtEntry": false,
+            "launchCompleteCommand": "exec-run",
+            "linux": {
+                "MIMode": "gdb",
+                "miDebuggerPath": "/usr/bin/gdb"
+            },
+            "osx": {
+                "MIMode": "lldb"
+            },
+            "windows": {
+                "MIMode": "gdb",
+                "miDebuggerPath": "C:\\MinGw\\bin\\gdb.exe"
+            }
+        }
+    ]
+}
