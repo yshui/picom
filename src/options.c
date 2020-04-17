@@ -208,8 +208,8 @@ static void usage(const char *argv0, int ret) {
 	    "\n"
 	    "--blur-method\n"
 	    "  The algorithm used for background bluring. Available choices are:\n"
-	    "  'none' to disable, 'gaussian', 'box' or 'kernel' for custom\n"
-	    "  convolution blur with --blur-kern.\n"
+	    "  'none' to disable, 'dual_kawase', 'gaussian', 'box' or 'kernel'\n"
+	    "  for custom convolution blur with --blur-kern.\n"
 	    "  Note: 'gaussian' and 'box' require --experimental-backends.\n"
 	    "\n"
 	    "--blur-size\n"
@@ -219,6 +219,7 @@ static void usage(const char *argv0, int ret) {
 	    "  The standard deviation for the 'gaussian' blur method.\n"
 	    "\n"
 		"--blur-strength\n"
+		"  Only valid for '--blur-method dual_kawase'!\n"
 	    "  The strength of the kawase blur as an integer between 1 and 20. Defaults to 5.\n"
 	    "\n"
 	    "--blur-background\n"
@@ -236,6 +237,7 @@ static void usage(const char *argv0, int ret) {
 	    "  opacity.\n"
 	    "\n"
 	    "--blur-kern matrix\n"
+		"  Only valid for '--blur-method convolution'!\n"
 	    "  Specify the blur convolution kernel, with the following format:\n"
 	    "    WIDTH,HEIGHT,ELE1,ELE2,ELE3,ELE4,ELE5...\n"
 	    "  The element in the center must not be included, it will be forever\n"
@@ -940,7 +942,8 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	}
 
 	// Blur method kawase is not compatible with the xrender backend
-	if (opt->backend != BKEND_GLX && opt->blur_method == BLUR_METHOD_DUAL_KAWASE) {
+	if (opt->backend != BKEND_GLX && (opt->blur_method == BLUR_METHOD_DUAL_KAWASE
+									|| opt->blur_method == BLUR_METHOD_ALT_KAWASE)) {
 		log_warn("Blur method 'kawase' is incompatible with the XRender backend. Fall back to default.\n");
 		opt->blur_method = BLUR_METHOD_KERNEL;
 	}
@@ -955,7 +958,8 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	}
 
 	// override blur_kernel_count for kawase
-	if (opt->blur_method == BLUR_METHOD_DUAL_KAWASE) {
+	if (opt->blur_method == BLUR_METHOD_DUAL_KAWASE ||
+		opt->blur_method == BLUR_METHOD_ALT_KAWASE) {
 		opt->blur_kernel_count = MAX_BLUR_PASS;
 		opt->blur_kerns = ccalloc(opt->blur_kernel_count, struct conv *);
 		CHECK(opt->blur_kerns);

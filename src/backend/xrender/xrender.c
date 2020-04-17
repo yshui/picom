@@ -559,7 +559,7 @@ void *create_blur_context(backend_t *base attr_unused, enum blur_method method, 
 		return ret;
 	}
 
-	if (method == BLUR_METHOD_DUAL_KAWASE) {
+	if (method == BLUR_METHOD_DUAL_KAWASE || method == BLUR_METHOD_ALT_KAWASE) {
 		log_warn("Blur method 'kawase' is not compatible with the 'xrender' "
 				 "backend.");
 		ret->method = BLUR_METHOD_NONE;

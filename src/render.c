@@ -871,6 +871,7 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 	const auto hei = to_u16_checked(w->heightb);
 	const int cr = (w ? w->corner_radius : 0);
 
+	double opacity = 1.0;
 	double factor_center = 1.0;
 	// Adjust blur strength according to window opacity, to make it appear
 	// better during fading
@@ -936,7 +937,7 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 	case BKEND_GLX:
 		// TODO: Handle frame opacity
 		glx_blur_dst(ps, x, y, wid, hei, (float)ps->psglx->z - 0.5f,
-		             (float)factor_center, reg_paint, &w->glx_blur_cache);
+		             (float)opacity, reg_paint, &w->glx_blur_cache);
 		break;
 #endif
 	default: assert(0);
@@ -1334,13 +1335,15 @@ bool init_render(session_t *ps) {
 	}
 
 	// Blur filter
-	if (ps->o.blur_method && ps->o.blur_method != BLUR_METHOD_KERNEL && ps->o.blur_method != BLUR_METHOD_DUAL_KAWASE) {
+	if (ps->o.blur_method && ps->o.blur_method != BLUR_METHOD_KERNEL &&
+		ps->o.blur_method != BLUR_METHOD_DUAL_KAWASE && ps->o.blur_method != BLUR_METHOD_ALT_KAWASE) {
 		log_warn("Old backends only support blur methods \"kernel|kawase\". Your blur "
 		         "setting will not be applied");
 		ps->o.blur_method = BLUR_METHOD_NONE;
 	}
 
-	if (ps->o.blur_method == BLUR_METHOD_KERNEL || ps->o.blur_method == BLUR_METHOD_DUAL_KAWASE) {
+	if (ps->o.blur_method == BLUR_METHOD_KERNEL || ps->o.blur_method == BLUR_METHOD_DUAL_KAWASE
+												|| ps->o.blur_method == BLUR_METHOD_ALT_KAWASE) {
 		ps->blur_kerns_cache =
 		    ccalloc(ps->o.blur_kernel_count, struct x_convolution_kernel *);
 

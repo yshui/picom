@@ -742,6 +742,7 @@ static bool initialize_blur(session_t *ps) {
 		gargs.deviation = ps->o.blur_deviation;
 		args = (void *)&gargs;
 		break;
+	case BLUR_METHOD_ALT_KAWASE:
 	case BLUR_METHOD_DUAL_KAWASE:
 		dkargs.size = ps->o.blur_radius;
 		dkargs.strength = ps->o.blur_strength;

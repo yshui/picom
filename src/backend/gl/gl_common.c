@@ -809,7 +809,8 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 		bctx->fb_width = gd->width + bctx->resize_width * 2;
 		bctx->fb_height = gd->height + bctx->resize_height * 2;
 
-		if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {
+		if (bctx->method == BLUR_METHOD_DUAL_KAWASE ||
+			bctx->method == BLUR_METHOD_ALT_KAWASE) {
 			// Use smaller textures for each iteration
 			for (int i = 0; i < bctx->blur_texture_count; ++i) {
 				auto tex_size = bctx->texture_sizes + i;
@@ -931,7 +932,8 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
 	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 
-	if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {
+	if (bctx->method == BLUR_METHOD_DUAL_KAWASE ||
+		bctx->method == BLUR_METHOD_ALT_KAWASE) {
 		ret = gl_dual_kawase_blur(base, opacity, ctx, extent_resized, width,
 		                          height, nrects, vao);
 	} else {
@@ -1730,7 +1732,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		return ctx;
 	}
 
-	if (method == BLUR_METHOD_DUAL_KAWASE) {
+	if (method == BLUR_METHOD_DUAL_KAWASE || method == BLUR_METHOD_ALT_KAWASE) {
 		success = gl_create_dual_kawase_blur_context(ctx, method, args);
 	} else {
 		success = gl_create_kernel_blur_context(ctx, method, args);

@@ -40,13 +40,13 @@ typedef struct _glx_texture glx_texture_t;
 //       it is very unideal for it to be here
 typedef struct {
 	/// Framebuffer used for blurring.
-	GLuint fbo;
+	GLuint fbos[MAX_BLUR_PASS];
 	/// Textures used for blurring.
 	GLuint textures[MAX_BLUR_PASS];
 	/// Width of the textures.
-	int width;
+	int width[MAX_BLUR_PASS];
 	/// Height of the textures.
-	int height;
+	int height[MAX_BLUR_PASS];
 } glx_blur_cache_t;
 #endif
 
