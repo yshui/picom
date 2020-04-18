@@ -387,7 +387,7 @@ bool glx_init_conv_blur(session_t *ps) {
 			pc += strlen(pc);
 			assert(strlen(shader_str) < len);
 
-			double sum = 1.0;
+			double sum = 0.0;
 			for (int j = 0; j < height; ++j) {
 				for (int k = 0; k < width; ++k) {
 					if (height / 2 == j && width / 2 == k)

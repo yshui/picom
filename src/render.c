@@ -871,7 +871,6 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 	const auto hei = to_u16_checked(w->heightb);
 	const int cr = (w ? w->corner_radius : 0);
 
-	double opacity = 1.0;
 	double factor_center = 1.0;
 	// Adjust blur strength according to window opacity, to make it appear
 	// better during fading
@@ -937,7 +936,7 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 	case BKEND_GLX:
 		// TODO: Handle frame opacity
 		glx_blur_dst(ps, x, y, wid, hei, (float)ps->psglx->z - 0.5f,
-		             (float)opacity, reg_paint, &w->glx_blur_cache);
+		             (float)w->opacity, reg_paint, &w->glx_blur_cache);
 		break;
 #endif
 	default: assert(0);
