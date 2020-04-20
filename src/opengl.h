@@ -196,6 +196,7 @@ static inline void free_texture(session_t *ps, glx_texture_t **pptex) {
  */
 static inline void free_paint_glx(session_t *ps, paint_t *ppaint) {
 	free_texture(ps, &ppaint->ptex);
+	ppaint->fbcfg = NULL;
 }
 
 /**
