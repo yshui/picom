@@ -214,6 +214,7 @@ typedef struct session {
 	/// Custom GLX program used for painting window.
 	// XXX should be in struct glx_session
 	glx_prog_main_t glx_prog_win;
+	struct glx_fbconfig_info *argb_fbconfig;
 #endif
 	/// Sync fence to sync draw operations
 	xcb_sync_fence_t sync_fence;

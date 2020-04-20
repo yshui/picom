@@ -252,6 +252,7 @@ void glx_destroy(session_t *ps) {
 
 	free(ps->psglx);
 	ps->psglx = NULL;
+	ps->argb_fbconfig = NULL;
 }
 
 /**

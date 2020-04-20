@@ -48,15 +48,14 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
                                   bool repeat, int depth, xcb_visualid_t visual, bool force) {
 #ifdef CONFIG_OPENGL
 	// XXX This is a mess. But this will go away after the backend refactor.
-	static thread_local struct glx_fbconfig_info *argb_fbconfig = NULL;
 	if (!ppaint->pixmap)
 		return false;
 
 	struct glx_fbconfig_info *fbcfg;
 	if (!visual) {
 		assert(depth == 32);
-		if (!argb_fbconfig) {
-			argb_fbconfig =
+		if (!ps->argb_fbconfig) {
+			ps->argb_fbconfig =
 			    glx_find_fbconfig(ps->dpy, ps->scr,
 			                      (struct xvisual_info){.red_size = 8,
 			                                            .green_size = 8,
@@ -64,11 +63,11 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
 			                                            .alpha_size = 8,
 			                                            .visual_depth = 32});
 		}
-		if (!argb_fbconfig) {
+		if (!ps->argb_fbconfig) {
 			log_error("Failed to find appropriate FBConfig for 32 bit depth");
 			return false;
 		}
-		fbcfg = argb_fbconfig;
+		fbcfg = ps->argb_fbconfig;
 	} else {
 		auto m = x_get_visual_info(ps->c, visual);
 		if (m.visual_depth < 0) {
