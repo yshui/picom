@@ -245,6 +245,7 @@ void glx_destroy(session_t *ps) {
 
 	// Destroy GLX context
 	if (ps->psglx->context) {
+		glXMakeCurrent(ps->dpy, None, NULL);
 		glXDestroyContext(ps->dpy, ps->psglx->context);
 		ps->psglx->context = NULL;
 	}
