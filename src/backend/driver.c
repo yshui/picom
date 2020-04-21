@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+#include <stdlib.h>
+#include <string.h>
 
 #include <xcb/randr.h>
 #include <xcb/xcb.h>
@@ -7,6 +9,8 @@
 #include "backend/backend.h"
 #include "backend/driver.h"
 #include "common.h"
+#include "compiler.h"
+#include "log.h"
 
 enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_window_t window) {
 	enum driver ret = 0;
@@ -22,6 +26,7 @@ enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_wind
 		    c, xcb_randr_get_providers(c, window), NULL);
 		if (r == NULL) {
 			log_warn("Failed to get RANDR providers");
+			free(randr_version);
 			return 0;
 		}
 
@@ -54,9 +59,11 @@ enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_wind
 				ret |= DRIVER_INTEL;
 			}
 			free(name);
+			free(r2);
 		}
 		free(r);
 	}
+	free(randr_version);
 
 	// If the backend supports driver detection, use that as well
 	if (backend_data && backend_data->ops->detect_driver) {

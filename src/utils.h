@@ -33,10 +33,7 @@ safe_isnan(double a) {
 	return __builtin_isnan(a);
 }
 
-#define CASESTRRET(s)                                                                    \
-	case s: return #s
-
-/// Same as assert false, but make sure we abort _even in release builds_.
+/// Same as assert(false), but make sure we abort _even in release builds_.
 /// Silence compiler warning caused by release builds making some code paths reachable.
 #define BUG()                                                                            \
 	do {                                                                             \
@@ -47,49 +44,73 @@ safe_isnan(double a) {
 /// Same as assert, but evaluates the expression even in release builds
 #define CHECK(expr)                                                                      \
 	do {                                                                             \
-		__auto_type _ = (expr);                                                  \
+		auto _ = (expr);                                                         \
+		/* make sure the original expression appears in the assertion message */ \
 		assert((CHECK_EXPR(expr), _));                                           \
 		(void)_;                                                                 \
 	} while (0)
 
+/// Asserts that var is within [lower, upper]. Silence compiler warning about expressions
+/// being always true or false.
+#define ASSERT_IN_RANGE(var, lower, upper)                                               \
+	do {                                                                             \
+		auto __tmp attr_unused = (var);                                          \
+		_Pragma("GCC diagnostic push");                                          \
+		_Pragma("GCC diagnostic ignored \"-Wtype-limits\"");                     \
+		assert(__tmp >= lower);                                                  \
+		assert(__tmp <= upper);                                                  \
+		_Pragma("GCC diagnostic pop");                                           \
+	} while (0)
+
+/// Asserts that var >= lower. Silence compiler warning about expressions
+/// being always true or false.
+#define ASSERT_GEQ(var, lower)                                                           \
+	do {                                                                             \
+		auto __tmp attr_unused = (var);                                          \
+		_Pragma("GCC diagnostic push");                                          \
+		_Pragma("GCC diagnostic ignored \"-Wtype-limits\"");                     \
+		assert(__tmp >= lower);                                                  \
+		_Pragma("GCC diagnostic pop");                                           \
+	} while (0)
+
 // Some macros for checked cast
 // Note these macros are not complete, as in, they won't work for every integer types. But
-// they are good enough for compton.
+// they are good enough for our use cases.
 
 #define to_int_checked(val)                                                              \
 	({                                                                               \
 		int64_t tmp = (val);                                                     \
-		assert(tmp >= INT_MIN && tmp <= INT_MAX);                                \
+		ASSERT_IN_RANGE(tmp, INT_MIN, INT_MAX);                                  \
 		(int)tmp;                                                                \
 	})
 
 #define to_char_checked(val)                                                             \
 	({                                                                               \
 		int64_t tmp = (val);                                                     \
-		assert(tmp >= CHAR_MIN && tmp <= CHAR_MAX);                              \
+		ASSERT_IN_RANGE(tmp, CHAR_MIN, CHAR_MAX);                                \
 		(char)tmp;                                                               \
 	})
 
 #define to_u16_checked(val)                                                              \
 	({                                                                               \
 		auto tmp = (val);                                                        \
-		assert(tmp >= 0 && tmp <= UINT16_MAX);                                   \
+		ASSERT_IN_RANGE(tmp, 0, UINT16_MAX);                                     \
 		(uint16_t) tmp;                                                          \
 	})
 
 #define to_i16_checked(val)                                                              \
 	({                                                                               \
 		int64_t tmp = (val);                                                     \
-		assert(tmp >= INT16_MIN && tmp <= INT16_MAX);                            \
+		ASSERT_IN_RANGE(tmp, INT16_MIN, INT16_MAX);                              \
 		(int16_t) tmp;                                                           \
 	})
 
 #define to_u32_checked(val)                                                              \
 	({                                                                               \
 		auto tmp = (val);                                                        \
-		int64_t max = UINT32_MAX; /* silence clang tautological                  \
+		int64_t max attr_unused = UINT32_MAX; /* silence clang tautological      \
 		                                         comparison warning*/            \
-		CHECK(tmp >= 0 && tmp <= max);                                           \
+		ASSERT_IN_RANGE(tmp, 0, max);                                            \
 		(uint32_t) tmp;                                                          \
 	})
 /**
@@ -171,7 +192,7 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 #define ccalloc(nmemb, type)                                                             \
 	({                                                                               \
 		auto tmp = (nmemb);                                                      \
-		assert(tmp >= 0);                                                        \
+		ASSERT_GEQ(tmp, 0);                                                      \
 		((type *)allocchk(calloc((size_t)tmp, sizeof(type))));                   \
 	})
 
@@ -179,7 +200,7 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 #define crealloc(ptr, nmemb)                                                               \
 	({                                                                                 \
 		auto tmp = (nmemb);                                                        \
-		assert(tmp >= 0);                                                          \
+		ASSERT_GEQ(tmp, 0);                                                        \
 		((__typeof__(ptr))allocchk(realloc((ptr), (size_t)tmp * sizeof(*(ptr))))); \
 	})
 
@@ -236,5 +257,11 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 	type *name##_new(void);                                                          \
 	void name##_ref(type *a);                                                        \
 	void name##_unref(type **a);
+
+///
+/// Calculates next closest power of two of 32bit integer n
+/// ref: https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+///
+int next_power_of_two(int n);
 
 // vim: set noet sw=8 ts=8 :

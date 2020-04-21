@@ -33,12 +33,6 @@ commands:
       - run:
           name: build
           command: ninja -vC build
-  test-xvfb:
-    steps:
-      - run:
-          name: xxx
-          command: xvfb-run -s "-screen 0 640x480x24" glxinfo
-
 
 jobs:
   basic:
@@ -60,7 +54,10 @@ jobs:
           command: ninja -vC build test
       - run:
           name: test config file parsing
-          command: xvfb-run -s "-screen 0 640x480x24" build/src/compton --config compton.sample.conf --vsync=none --diagnostics
+          command: xvfb-run -s "-screen 0 640x480x24" build/src/picom --config picom.sample.conf --no-vsync --diagnostics
+      - run:
+          name: run testsuite
+          command: tests/run_tests.sh build/src/picom
       - run:
           name: generate coverage reports
           command: cd build; find -name '*.gcno' -exec gcov -pb {} +
@@ -76,6 +73,17 @@ jobs:
     steps:
       - build:
           build-config: -Dopengl=false -Ddbus=false -Dregex=false -Dconfig_file=false
+  release:
+    executor: e
+    steps:
+      - build:
+          build-config: --buildtype=release
+  release-clang:
+    executor: e
+    steps:
+      - build:
+          cc: clang
+          build-config: --buildtype=release
   nogl:
     executor: e
     steps:
@@ -119,9 +127,9 @@ workflows:
       - clang_minimal
       - nogl
       - clang_nogl
+      - release
+      - release-clang
       - test:
           requires:
             - basic
-#     - test-xvfb
-
 # vim: set sw=2 ts=8 et:

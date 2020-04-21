@@ -36,6 +36,9 @@
 #include <X11/Xlib.h>
 #include <ev.h>
 #include <pixman.h>
+#include <xcb/render.h>
+#include <xcb/sync.h>
+#include <xcb/xproto.h>
 
 #include "uthash_extra.h"
 #ifdef CONFIG_OPENGL
@@ -52,9 +55,12 @@
 #include "backend/driver.h"
 #include "compiler.h"
 #include "config.h"
+#include "list.h"
 #include "region.h"
+#include "render.h"
 #include "types.h"
 #include "utils.h"
+#include "win_defs.h"
 #include "x.h"
 
 // === Constants ===0
@@ -75,6 +81,7 @@
 typedef struct glx_fbconfig glx_fbconfig_t;
 struct glx_session;
 struct atom;
+struct conv;
 
 typedef struct _ignore {
 	struct _ignore *next;
@@ -100,10 +107,15 @@ typedef struct glx_prog_main {
 	GLint unifm_invert_color;
 	/// Location of uniform "tex" in window GLSL program.
 	GLint unifm_tex;
+	/// Location of uniform "time" in window GLSL program.
+	GLint unifm_time;
 } glx_prog_main_t;
 
 #define GLX_PROG_MAIN_INIT                                                               \
-	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
+	{                                                                                \
+		.prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1,                \
+		.unifm_tex = -1, .unifm_time = -1                                        \
+	}
 
 #else
 struct glx_prog_main {};
@@ -118,7 +130,7 @@ typedef struct _latom {
 	struct _latom *next;
 } latom_t;
 
-/// Structure containing all necessary data for a compton session.
+/// Structure containing all necessary data for a session.
 typedef struct session {
 	// === Event handlers ===
 	/// ev_io for X connection
@@ -147,12 +159,18 @@ typedef struct session {
 	void *backend_blur_context;
 	/// graphic drivers used
 	enum driver drivers;
+	/// file watch handle
+	void *file_watch_handle;
 	/// libev mainloop
 	struct ev_loop *loop;
 
 	// === Display related ===
+	/// Whether the X server is grabbed by us
+	bool server_grabbed;
 	/// Display in use.
 	Display *dpy;
+	/// Previous handler of X errors
+	XErrorHandler previous_xerror_handler;
 	/// Default screen.
 	int scr;
 	/// XCB connection.
@@ -173,7 +191,7 @@ typedef struct session {
 	xcb_window_t overlay;
 	/// The target window for debug mode
 	xcb_window_t debug_window;
-	/// Whether the root tile is filled by compton.
+	/// Whether the root tile is filled by us.
 	bool root_tile_fill;
 	/// Picture of the root window background.
 	paint_t root_tile_paint;
@@ -196,9 +214,12 @@ typedef struct session {
 	/// Custom GLX program used for painting window.
 	// XXX should be in struct glx_session
 	glx_prog_main_t glx_prog_win;
+	struct glx_fbconfig_info *argb_fbconfig;
 #endif
 	/// Sync fence to sync draw operations
 	xcb_sync_fence_t sync_fence;
+	/// Whether we are rendering the first frame after screen is redirected
+	bool first_frame;
 
 	// === Operation related ===
 	/// Flags related to the root window
@@ -209,8 +230,6 @@ typedef struct session {
 	bool tmout_unredir_hit;
 	/// Whether we need to redraw the screen
 	bool redraw_needed;
-	/// Program start time.
-	struct timeval time_start;
 	/// The region needs to painted on next paint.
 	region_t *damage;
 	/// The region damaged on the last paint.
@@ -230,9 +249,7 @@ typedef struct session {
 	ignore_t **ignore_tail;
 	// Cached blur convolution kernels.
 	struct x_convolution_kernel **blur_kerns_cache;
-	/// Reset program after next paint.
-	bool reset:1;
-	/// If compton should quit
+	/// If we should quit
 	bool quit:1;
 	/// Whether there are pending updates, like window creation, etc.
 	/// TODO use separate flags for dfferent kinds of updates so we don't
@@ -271,7 +288,7 @@ typedef struct session {
 	/// 1x1 white Picture.
 	xcb_render_picture_t white_picture;
 	/// Gaussian map of shadow.
-	conv *gaussian_map;
+	struct conv *gaussian_map;
 	// for shadow precomputation
 	/// A region in which shadow is not painted on.
 	region_t shadow_exclude_reg;
@@ -323,14 +340,12 @@ typedef struct session {
 	int randr_error;
 	/// Whether X Present extension exists.
 	bool present_exists;
-#ifdef CONFIG_OPENGL
 	/// Whether X GLX extension exists.
 	bool glx_exists;
 	/// Event base number for X GLX extension.
 	int glx_event;
 	/// Error base number for X GLX extension.
 	int glx_error;
-#endif
 	/// Whether X Xinerama extension exists.
 	bool xinerama_exists;
 	/// Xinerama screen regions.

@@ -20,10 +20,10 @@
 #include "c2.h"
 #include "common.h"
 #include "compiler.h"
-#include "compton.h"
 #include "config.h"
 #include "list.h"
 #include "log.h"
+#include "picom.h"
 #include "region.h"
 #include "render.h"
 #include "string_utils.h"
@@ -42,6 +42,11 @@
 #endif
 
 #include "win.h"
+
+// TODO Make more window states internal
+struct managed_win_internal {
+	struct managed_win base;
+};
 
 #define OPAQUE (0xffffffff)
 static const int WIN_GET_LEADER_MAX_RECURSION = 20;
@@ -68,22 +73,50 @@ static inline void clear_cache_win_leaders(session_t *ps) {
 	}
 }
 
-static inline void wid_set_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t val) {
-	const uint32_t v = val;
-	xcb_change_property(ps->c, XCB_PROP_MODE_REPLACE, wid,
-	                    ps->atoms->a_NET_WM_WINDOW_OPACITY, XCB_ATOM_CARDINAL, 32, 1, &v);
-}
+static xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int recursions);
 
-static inline void wid_rm_opacity_prop(session_t *ps, xcb_window_t wid) {
-	xcb_delete_property(ps->c, wid, ps->atoms->a_NET_WM_WINDOW_OPACITY);
+/**
+ * Get the leader of a window.
+ *
+ * This function updates w->cache_leader if necessary.
+ */
+static inline xcb_window_t win_get_leader(session_t *ps, struct managed_win *w) {
+	return win_get_leader_raw(ps, w, 0);
 }
 
 /**
- * Run win_update_focused() on all windows with the same leader window.
+ * Update focused state of a window.
+ */
+static void win_update_focused(session_t *ps, struct managed_win *w) {
+	if (UNSET != w->focused_force) {
+		w->focused = w->focused_force;
+	} else {
+		w->focused = win_is_focused_raw(ps, w);
+
+		// Use wintype_focus, and treat WM windows and override-redirected
+		// windows specially
+		if (ps->o.wintype_option[w->window_type].focus ||
+		    (ps->o.mark_wmwin_focused && w->wmwin) ||
+		    (ps->o.mark_ovredir_focused && w->base.id == w->client_win && !w->wmwin) ||
+		    (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
+		     c2_match(ps, w, ps->o.focus_blacklist, NULL)))
+			w->focused = true;
+
+		// If window grouping detection is enabled, mark the window active if
+		// its group is
+		if (ps->o.track_leader && ps->active_leader &&
+		    win_get_leader(ps, w) == ps->active_leader) {
+			w->focused = true;
+		}
+	}
+}
+
+/**
+ * Run win_on_factor_change() on all windows with the same leader window.
  *
  * @param leader leader window ID
  */
-static inline void group_update_focused(session_t *ps, xcb_window_t leader) {
+static inline void group_on_factor_change(session_t *ps, xcb_window_t leader) {
 	if (!leader)
 		return;
 
@@ -94,11 +127,19 @@ static inline void group_update_focused(session_t *ps, xcb_window_t leader) {
 		}
 		auto mw = (struct managed_win *)w;
 		if (win_get_leader(ps, mw) == leader) {
-			win_update_focused(ps, mw);
+			win_on_factor_change(ps, mw);
 		}
 	}
 
 	return;
+}
+
+static inline const char *win_get_name_if_managed(const struct win *w) {
+	if (!w->managed) {
+		return "(unmanaged)";
+	}
+	auto mw = (struct managed_win *)w;
+	return mw->name;
 }
 
 /**
@@ -118,7 +159,7 @@ static inline bool group_is_focused(session_t *ps, xcb_window_t leader) {
 			continue;
 		}
 		auto mw = (struct managed_win *)w;
-		if (win_get_leader(ps, mw) == leader && win_is_focused_real(ps, mw)) {
+		if (win_get_leader(ps, mw) == leader && win_is_focused_raw(ps, mw)) {
 			return true;
 		}
 	}
@@ -152,28 +193,28 @@ void win_get_region_noframe_local(const struct managed_win *w, region_t *res) {
 	}
 }
 
-gen_by_val(win_get_region_noframe_local);
-
 void win_get_region_frame_local(const struct managed_win *w, region_t *res) {
 	const margin_t extents = win_calc_frame_extents(w);
+	auto outer_width = extents.left + extents.right + w->g.width;
+	auto outer_height = extents.top + extents.bottom + w->g.height;
 	pixman_region32_fini(res);
 	pixman_region32_init_rects(
 	    res,
 	    (rect_t[]){
 	        // top
-	        {.x1 = 0, .y1 = 0, .x2 = w->g.width, .y2 = extents.top},
+	        {.x1 = 0, .y1 = 0, .x2 = outer_width, .y2 = extents.top},
 	        // bottom
-	        {.x1 = 0, .y1 = w->g.height - extents.bottom, .x2 = w->g.width, .y2 = w->g.height},
+	        {.x1 = 0, .y1 = outer_height - extents.bottom, .x2 = outer_width, .y2 = outer_height},
 	        // left
-	        {.x1 = 0, .y1 = 0, .x2 = extents.left, .y2 = w->g.height},
+	        {.x1 = 0, .y1 = 0, .x2 = extents.left, .y2 = outer_height},
 	        // right
-	        {.x1 = w->g.width - extents.right, .y1 = 0, .x2 = w->g.width, .y2 = w->g.height},
+	        {.x1 = outer_width - extents.right, .y1 = 0, .x2 = outer_width, .y2 = outer_height},
 	    },
 	    4);
 
 	// limit the frame region to inside the window
 	region_t reg_win;
-	pixman_region32_init_rect(&reg_win, 0, 0, w->g.width, w->g.height);
+	pixman_region32_init_rects(&reg_win, (rect_t[]){0, 0, outer_width, outer_height}, 1);
 	pixman_region32_intersect(res, &reg_win, res);
 	pixman_region32_fini(&reg_win);
 }
@@ -197,64 +238,143 @@ void add_damage_from_win(session_t *ps, const struct managed_win *w) {
 }
 
 /// Release the images attached to this window
-void win_release_image(backend_t *base, struct managed_win *w) {
-	log_debug("Releasing image of window %#010x (%s)", w->base.id, w->name);
-	assert(w->win_image || (w->flags & WIN_FLAGS_IMAGE_ERROR));
+static inline void win_release_pixmap(backend_t *base, struct managed_win *w) {
+	log_debug("Releasing pixmap of window %#010x (%s)", w->base.id, w->name);
+	assert(w->win_image);
 	if (w->win_image) {
 		base->ops->release_image(base, w->win_image);
 		w->win_image = NULL;
+		// Bypassing win_set_flags, because `w` might have been destroyed
+		w->flags |= WIN_FLAGS_PIXMAP_NONE;
 	}
-	if (w->shadow) {
-		assert(w->shadow_image || (w->flags & WIN_FLAGS_IMAGE_ERROR));
-		if (w->shadow_image) {
-			base->ops->release_image(base, w->shadow_image);
-			w->shadow_image = NULL;
-		}
+}
+static inline void win_release_shadow(backend_t *base, struct managed_win *w) {
+	log_debug("Releasing shadow of window %#010x (%s)", w->base.id, w->name);
+	assert(w->shadow_image);
+	if (w->shadow_image) {
+		base->ops->release_image(base, w->shadow_image);
+		w->shadow_image = NULL;
+		// Bypassing win_set_flags, because `w` might have been destroyed
+		w->flags |= WIN_FLAGS_SHADOW_NONE;
 	}
 }
 
-static inline bool
-_win_bind_image(session_t *ps, struct managed_win *w, void **win_image, void **shadow_image) {
-	auto pixmap = x_new_id(ps->c);
+static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w) {
+	assert(!w->win_image);
+	auto pixmap = x_new_id(b->c);
 	auto e = xcb_request_check(
-	    ps->c, xcb_composite_name_window_pixmap_checked(ps->c, w->base.id, pixmap));
+	    b->c, xcb_composite_name_window_pixmap_checked(b->c, w->base.id, pixmap));
 	if (e) {
 		log_error("Failed to get named pixmap for window %#010x(%s)", w->base.id,
 		          w->name);
 		free(e);
 		return false;
 	}
-	log_trace("New named pixmap for %#010x (%s) : %#010x", w->base.id, w->name, pixmap);
-	*win_image = ps->backend_data->ops->bind_pixmap(
-	    ps->backend_data, pixmap, x_get_visual_info(ps->c, w->a.visual), true);
-	if (!*win_image) {
+	log_debug("New named pixmap for %#010x (%s) : %#010x", w->base.id, w->name, pixmap);
+	w->win_image =
+	    b->ops->bind_pixmap(b, pixmap, x_get_visual_info(b->c, w->a.visual), true);
+	if (!w->win_image) {
+		log_error("Failed to bind pixmap");
+		win_set_flags(w, WIN_FLAGS_IMAGE_ERROR);
 		return false;
 	}
-	if (w->shadow) {
-		*shadow_image = ps->backend_data->ops->render_shadow(
-		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map, ps->o.shadow_red,
-		    ps->o.shadow_green, ps->o.shadow_blue, ps->o.shadow_opacity);
-		if (!*shadow_image) {
-			log_error("Failed to bind shadow image");
-			ps->backend_data->ops->release_image(ps->backend_data, *win_image);
-			*win_image = NULL;
-			return false;
-		}
-	}
+
+	win_clear_flags(w, WIN_FLAGS_PIXMAP_NONE);
 	return true;
 }
 
-bool win_bind_image(session_t *ps, struct managed_win *w) {
-	assert(!w->win_image && !w->shadow_image);
-	return _win_bind_image(ps, w, &w->win_image, &w->shadow_image);
+bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color c,
+                     struct conv *kernel) {
+	assert(!w->shadow_image);
+	assert(w->shadow);
+	w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, kernel, c.red,
+	                                        c.green, c.blue, c.alpha);
+	if (!w->shadow_image) {
+		log_error("Failed to bind shadow image, shadow will be disabled for "
+		          "%#010x (%s)",
+		          w->base.id, w->name);
+		win_set_flags(w, WIN_FLAGS_SHADOW_NONE);
+		w->shadow = false;
+		return false;
+	}
+
+	log_debug("New shadow for %#010x (%s)", w->base.id, w->name);
+	win_clear_flags(w, WIN_FLAGS_SHADOW_NONE);
+	return true;
 }
 
-bool win_try_rebind_image(session_t *ps, struct managed_win *w) {
-	log_trace("Freeing old window image");
-	// Must release first, otherwise breaks NVIDIA driver
-	win_release_image(ps->backend_data, w);
+void win_release_images(struct backend_base *backend, struct managed_win *w) {
+	// We don't want to decide what we should do if the image we want to release is
+	// stale (do we clear the stale flags or not?)
+	// But if we are not releasing any images anyway, we don't care about the stale
+	// flags.
 
-	return win_bind_image(ps, w);
+	if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
+		assert(!win_check_flags_all(w, WIN_FLAGS_PIXMAP_STALE));
+		win_release_pixmap(backend, w);
+	}
+
+	if (!win_check_flags_all(w, WIN_FLAGS_SHADOW_NONE)) {
+		assert(!win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE));
+		win_release_shadow(backend, w);
+	}
+}
+
+void win_process_flags(session_t *ps, struct managed_win *w) {
+	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
+		map_win_start(ps, w);
+		win_clear_flags(w, WIN_FLAGS_MAPPED);
+	}
+
+	// Not a loop
+	while (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE) &&
+	       !win_check_flags_all(w, WIN_FLAGS_IMAGE_ERROR)) {
+		// Image needs to be updated, update it.
+		if (!ps->backend_data) {
+			// We are using legacy backend, nothing to do here.
+			break;
+		}
+
+		if (win_check_flags_all(w, WIN_FLAGS_PIXMAP_STALE)) {
+			// Check to make sure the window is still mapped, otherwise we
+			// won't be able to rebind pixmap after releasing it, yet we might
+			// still need the pixmap for rendering.
+			assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
+			if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
+				// Must release images first, otherwise breaks
+				// NVIDIA driver
+				win_release_pixmap(ps->backend_data, w);
+			}
+			win_bind_pixmap(ps->backend_data, w);
+		}
+
+		if (win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE)) {
+			if (!win_check_flags_all(w, WIN_FLAGS_SHADOW_NONE)) {
+				win_release_shadow(ps->backend_data, w);
+			}
+			if (w->shadow) {
+				win_bind_shadow(ps->backend_data, w,
+				                (struct color){.red = ps->o.shadow_red,
+				                               .green = ps->o.shadow_green,
+				                               .blue = ps->o.shadow_blue,
+				                               .alpha = ps->o.shadow_opacity},
+				                ps->gaussian_map);
+			}
+		}
+
+		// break here, loop always run only once
+		break;
+	}
+
+	// Clear stale image flags
+	if (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE)) {
+		win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
+	}
+
+	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
+		win_recheck_client(ps, w);
+		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
+	}
 }
 
 /**
@@ -294,7 +414,7 @@ static bool attr_pure win_has_rounded_corners(const struct managed_win *w) {
 	return false;
 }
 
-int win_get_name(session_t *ps, struct managed_win *w) {
+int win_update_name(session_t *ps, struct managed_win *w) {
 	XTextProperty text_prop = {NULL, XCB_NONE, 0, 0};
 	char **strlst = NULL;
 	int nstr = 0;
@@ -377,7 +497,7 @@ static inline bool win_bounding_shaped(const session_t *ps, xcb_window_t wid) {
 
 static wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
 	winprop_t prop =
-	    wid_get_prop(ps, wid, ps->atoms->a_NET_WM_WINDOW_TYPE, 32L, XCB_ATOM_ATOM, 32);
+	    x_get_prop(ps, wid, ps->atoms->a_NET_WM_WINDOW_TYPE, 32L, XCB_ATOM_ATOM, 32);
 
 	for (unsigned i = 0; i < prop.nitems; ++i) {
 		for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
@@ -398,8 +518,8 @@ wid_get_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t def, opacity_t *
 	bool ret = false;
 	*out = def;
 
-	winprop_t prop = wid_get_prop(ps, wid, ps->atoms->a_NET_WM_WINDOW_OPACITY, 1L,
-	                              XCB_ATOM_CARDINAL, 32);
+	winprop_t prop = x_get_prop(ps, wid, ps->atoms->a_NET_WM_WINDOW_OPACITY, 1L,
+	                            XCB_ATOM_CARDINAL, 32);
 
 	if (prop.nitems) {
 		*out = *prop.c32;
@@ -426,11 +546,13 @@ winmode_t win_calc_mode(const struct managed_win *w) {
 	if (w->opacity < 1.0) {
 		return WMODE_TRANS;
 	}
-	if (w->frame_opacity != 1.0 && win_has_frame(w)) {
-		return WMODE_FRAME_TRANS;
-	}
 
 	if (win_has_alpha(w)) {
+		if (w->client_win == XCB_NONE) {
+			// This is a window not managed by the WM, and it has alpha,
+			// so it's transparent. No need to check WM frame.
+			return WMODE_TRANS;
+		}
 		// The WM window has alpha
 		if (win_client_has_alpha(w)) {
 			// The client window also has alpha, the entire window is
@@ -446,27 +568,24 @@ winmode_t win_calc_mode(const struct managed_win *w) {
 		// consider the window solid
 	}
 
-	//log_trace("Window %#010x(%s) is solid", w->client_win, w->name);
+	if (w->frame_opacity != 1.0 && win_has_frame(w)) {
+		return WMODE_FRAME_TRANS;
+	}
+
+	// log_trace("Window %#010x(%s) is solid", w->client_win, w->name);
 	return WMODE_SOLID;
 }
 
 /**
  * Calculate and return the opacity target of a window.
  *
- * If window is inactive and inactive_opacity_override is set, the
- * priority is: (Simulates the old behavior)
+ * The priority of opacity settings are:
  *
- * inactive_opacity > _NET_WM_WINDOW_OPACITY (if not opaque)
- * > window type default opacity
+ * inactive_opacity_override (if set, and unfocused) > _NET_WM_WINDOW_OPACITY (if set) >
+ * opacity-rules (if matched) > window type default opacity > active/inactive opacity
  *
- * Otherwise:
- *
- * _NET_WM_WINDOW_OPACITY (if not opaque)
- * > window type default opacity (if not opaque)
- * > inactive_opacity
- *
- * @param ps current session
- * @param w struct _win object representing the window
+ * @param ps           current session
+ * @param w            struct _win object representing the window
  *
  * @return target opacity
  */
@@ -483,11 +602,13 @@ double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
 	// Try obeying opacity property and window type opacity firstly
 	if (w->has_opacity_prop) {
 		opacity = ((double)w->opacity_prop) / OPAQUE;
+	} else if (w->opacity_is_set) {
+		opacity = w->opacity_set;
 	} else if (!safe_isnan(ps->o.wintype_option[w->window_type].opacity)) {
 		opacity = ps->o.wintype_option[w->window_type].opacity;
 	} else {
 		// Respect active_opacity only when the window is physically focused
-		if (win_is_focused_real(ps, w))
+		if (win_is_focused_raw(ps, w))
 			opacity = ps->o.active_opacity;
 		else if (!w->focused)
 			// Respect inactive_opacity in some cases
@@ -495,8 +616,9 @@ double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
 	}
 
 	// respect inactive override
-	if (ps->o.inactive_opacity_override && !w->focused)
+	if (ps->o.inactive_opacity_override && !w->focused) {
 		opacity = ps->o.inactive_opacity;
+	}
 
 	return opacity;
 }
@@ -549,8 +671,8 @@ bool win_should_fade(session_t *ps, const struct managed_win *w) {
  * The property must be set on the outermost window, usually the WM frame.
  */
 void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w) {
-	winprop_t prop = wid_get_prop(ps, w->base.id, ps->atoms->a_COMPTON_SHADOW, 1,
-	                              XCB_ATOM_CARDINAL, 32);
+	winprop_t prop = x_get_prop(ps, w->base.id, ps->atoms->a_COMPTON_SHADOW, 1,
+	                            XCB_ATOM_CARDINAL, 32);
 
 	if (!prop.nitems) {
 		w->prop_shadow = -1;
@@ -561,67 +683,72 @@ void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w) {
 	free_winprop(&prop);
 }
 
-/**
- * Reread _COMPTON_SHADOW property from a window and update related
- * things.
- */
-void win_update_prop_shadow(session_t *ps, struct managed_win *w) {
-	long attr_shadow_old = w->prop_shadow;
-
-	win_update_prop_shadow_raw(ps, w);
-
-	if (w->prop_shadow != attr_shadow_old)
-		win_determine_shadow(ps, w);
-}
-
-void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new) {
+static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new) {
 	if (w->shadow == shadow_new) {
 		return;
 	}
 
 	log_debug("Updating shadow property of window %#010x (%s) to %d", w->base.id,
 	          w->name, shadow_new);
-	if (ps->backend_data && w->state != WSTATE_UNMAPPED &&
-	    !(w->flags & WIN_FLAGS_IMAGE_ERROR)) {
+
+	if (w->state == WSTATE_UNMAPPED) {
+		// No need to add damage or update shadow
+		// Unmapped window shouldn't have any images
+		w->shadow = shadow_new;
 		assert(!w->shadow_image);
-		// Create shadow image
-		w->shadow_image = ps->backend_data->ops->render_shadow(
-		    ps->backend_data, w->widthb, w->heightb, ps->gaussian_map, ps->o.shadow_red,
-		    ps->o.shadow_green, ps->o.shadow_blue, ps->o.shadow_opacity);
-		if (!w->shadow_image) {
-			log_error("Failed to bind shadow image");
-			w->shadow_force = OFF;
-		}
+		assert(!w->win_image);
+		assert(win_check_flags_all(w, WIN_FLAGS_IMAGES_NONE));
+		return;
 	}
 
+	// Keep a copy of window extent before the shadow change. Will be used for
+	// calculation of damaged region
 	region_t extents;
 	pixman_region32_init(&extents);
 	win_extents(w, &extents);
 
+	// Apply the shadow change
 	w->shadow = shadow_new;
+
+	// Add damage for shadow change
 
 	// Window extents need update on shadow state change
 	// Shadow geometry currently doesn't change on shadow state change
 	// calc_shadow_geometry(ps, w);
-	// Mark the old extents as damaged if the shadow is removed
-	if (!w->shadow) {
+
+	// Note: because the release and creation of the shadow images are delayed. When
+	// multiple shadow changes happen in a row, without rendering phase between them,
+	// there could be a stale shadow image attached to the window even if w->shadow
+	// was previously false. And vice versa. So we check the STALE flag before
+	// asserting the existence of the shadow image.
+	if (w->shadow) {
+		// Mark the new extents as damaged if the shadow is added
+		assert(!w->shadow_image || win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE) ||
+		       !ps->o.experimental_backends);
+		pixman_region32_clear(&extents);
+		win_extents(w, &extents);
+		add_damage_from_win(ps, w);
+	} else {
+		// Mark the old extents as damaged if the shadow is removed
+		assert(w->shadow_image || win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE) ||
+		       !ps->o.experimental_backends);
 		add_damage(ps, &extents);
 	}
 
-	pixman_region32_clear(&extents);
-	// Mark the new extents as damaged if the shadow is added
-	if (w->shadow) {
-		win_extents(w, &extents);
-		add_damage_from_win(ps, w);
-	}
 	pixman_region32_fini(&extents);
+
+	// Delayed update of shadow image
+	// By setting WIN_FLAGS_SHADOW_STALE, we ask win_process_flags to re-create or
+	// release the shaodw in based on whether w->shadow is set.
+	win_set_flags(w, WIN_FLAGS_SHADOW_STALE);
+	ps->pending_updates = true;
 }
 
 /**
  * Determine if a window should have shadow, and update things depending
  * on shadow state.
  */
-void win_determine_shadow(session_t *ps, struct managed_win *w) {
+static void win_determine_shadow(session_t *ps, struct managed_win *w) {
 	log_debug("Determining shadow of window %#010x (%s)", w->base.id, w->name);
 	bool shadow_new = w->shadow;
 
@@ -639,7 +766,7 @@ void win_determine_shadow(session_t *ps, struct managed_win *w) {
 		           !w->rounded_corners) {
 			log_debug("Shadow disabled by shadow-ignore-shaped");
 			shadow_new = false;
-		} else if (ps->o.respect_prop_shadow && w->prop_shadow == 0) {
+		} else if (w->prop_shadow == 0) {
 			log_debug("Shadow disabled by shadow property");
 			shadow_new = false;
 		}
@@ -648,13 +775,40 @@ void win_determine_shadow(session_t *ps, struct managed_win *w) {
 	win_set_shadow(ps, w, shadow_new);
 }
 
-void win_set_invert_color(session_t *ps, struct managed_win *w, bool invert_color_new) {
+/**
+ * Reread _COMPTON_SHADOW property from a window and update related
+ * things.
+ */
+void win_update_prop_shadow(session_t *ps, struct managed_win *w) {
+	long attr_shadow_old = w->prop_shadow;
+
+	win_update_prop_shadow_raw(ps, w);
+
+	if (w->prop_shadow != attr_shadow_old)
+		win_determine_shadow(ps, w);
+}
+
+static void win_set_invert_color(session_t *ps, struct managed_win *w, bool invert_color_new) {
 	if (w->invert_color == invert_color_new)
 		return;
 
 	w->invert_color = invert_color_new;
 
 	add_damage_from_win(ps, w);
+}
+
+/**
+ * Determine if a window should have color inverted.
+ */
+static void win_determine_invert_color(session_t *ps, struct managed_win *w) {
+	bool invert_color_new = w->invert_color;
+
+	if (UNSET != w->invert_color_force)
+		invert_color_new = w->invert_color_force;
+	else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
+		invert_color_new = c2_match(ps, w, ps->o.invert_color_list, NULL);
+
+	win_set_invert_color(ps, w, invert_color_new);
 }
 
 /**
@@ -673,7 +827,7 @@ void win_set_invert_color_force(session_t *ps, struct managed_win *w, switch_t v
  *
  * Doesn't affect fading already in progress
  */
-void win_set_fade_force(session_t *ps, struct managed_win *w, switch_t val) {
+void win_set_fade_force(struct managed_win *w, switch_t val) {
 	w->fade_force = val;
 }
 
@@ -683,7 +837,7 @@ void win_set_fade_force(session_t *ps, struct managed_win *w, switch_t val) {
 void win_set_focused_force(session_t *ps, struct managed_win *w, switch_t val) {
 	if (val != w->focused_force) {
 		w->focused_force = val;
-		win_update_focused(ps, w);
+		win_on_factor_change(ps, w);
 		queue_redraw(ps);
 	}
 }
@@ -699,21 +853,8 @@ void win_set_shadow_force(session_t *ps, struct managed_win *w, switch_t val) {
 	}
 }
 
-/**
- * Determine if a window should have color inverted.
- */
-void win_determine_invert_color(session_t *ps, struct managed_win *w) {
-	bool invert_color_new = w->invert_color;
-
-	if (UNSET != w->invert_color_force)
-		invert_color_new = w->invert_color_force;
-	else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
-		invert_color_new = c2_match(ps, w, ps->o.invert_color_list, NULL);
-
-	win_set_invert_color(ps, w, invert_color_new);
-}
-
-static void win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_background_new) {
+static void
+win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_background_new) {
 	if (w->blur_background == blur_background_new)
 		return;
 
@@ -727,7 +868,7 @@ static void win_set_blur_background(session_t *ps, struct managed_win *w, bool b
 /**
  * Determine if a window should have background blurred.
  */
-void win_determine_blur_background(session_t *ps, struct managed_win *w) {
+static void win_determine_blur_background(session_t *ps, struct managed_win *w) {
 	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
 		return;
 
@@ -739,13 +880,11 @@ void win_determine_blur_background(session_t *ps, struct managed_win *w) {
 
 /**
  * Update window opacity according to opacity rules.
- *
- * TODO This override the window's opacity property, may not be
- *      a good idea.
  */
 void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
-	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
+	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
 		return;
+	}
 
 	double opacity = 1.0;
 	bool is_set = false;
@@ -755,28 +894,8 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
 		is_set = true;
 	}
 
-	if (is_set == w->opacity_is_set && opacity == w->opacity_set)
-		return;
-
 	w->opacity_set = opacity;
 	w->opacity_is_set = is_set;
-	if (!is_set) {
-		wid_rm_opacity_prop(ps, w->base.id);
-	} else {
-		wid_set_opacity_prop(ps, w->base.id, (opacity_t)(opacity * OPAQUE));
-	}
-}
-
-/**
- * Function to be called on window type changes.
- */
-void win_on_wtype_change(session_t *ps, struct managed_win *w) {
-	win_determine_shadow(ps, w);
-	win_update_focused(ps, w);
-	if (ps->o.invert_color_list)
-		win_determine_invert_color(ps, w);
-	if (ps->o.opacity_rules)
-		win_update_opacity_rule(ps, w);
 }
 
 /**
@@ -785,21 +904,25 @@ void win_on_wtype_change(session_t *ps, struct managed_win *w) {
  * TODO need better name
  */
 void win_on_factor_change(session_t *ps, struct managed_win *w) {
-	if (ps->o.shadow_blacklist)
-		win_determine_shadow(ps, w);
-	if (ps->o.invert_color_list)
-		win_determine_invert_color(ps, w);
-	if (ps->o.focus_blacklist)
-		win_update_focused(ps, w);
-	if (ps->o.blur_background_blacklist)
-		win_determine_blur_background(ps, w);
-	if (ps->o.opacity_rules)
-		win_update_opacity_rule(ps, w);
-	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->o.paint_blacklist)
+	log_debug("Window %#010x (%s) factor change", w->base.id, w->name);
+	// Focus needs to be updated first, as other rules might depend on the focused
+	// state of the window
+	win_update_focused(ps, w);
+
+	win_determine_shadow(ps, w);
+	win_determine_invert_color(ps, w);
+	win_determine_blur_background(ps, w);
+	w->mode = win_calc_mode(w);
+	log_debug("Window mode changed to %d", w->mode);
+	win_update_opacity_rule(ps, w);
+	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
 		w->paint_excluded = c2_match(ps, w, ps->o.paint_blacklist, NULL);
-	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->o.unredir_if_possible_blacklist)
+	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
 		w->unredir_if_possible_excluded =
 		    c2_match(ps, w, ps->o.unredir_if_possible_blacklist, NULL);
+
+	win_update_opacity_target(ps, w);
+
 	w->reg_ignore_valid = false;
 }
 
@@ -817,7 +940,7 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 	// Invalidate the shadow we built
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_MAPPING ||
 	    w->state == WSTATE_FADING) {
-		w->flags |= WIN_FLAGS_IMAGE_STALE;
+		win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
 		ps->pending_updates = true;
 	} else {
 		assert(w->state == WSTATE_UNMAPPED);
@@ -846,7 +969,7 @@ void win_update_wintype(session_t *ps, struct managed_win *w) {
 	}
 
 	if (w->window_type != wtype_old)
-		win_on_wtype_change(ps, w);
+		win_on_factor_change(ps, w);
 }
 
 /**
@@ -876,30 +999,24 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 	win_update_wintype(ps, w);
 
 	// Get frame widths. The window is in damaged area already.
-	if (ps->o.frame_opacity != 1)
-		win_update_frame_extents(ps, w, client);
+	win_update_frame_extents(ps, w, client);
 
 	// Get window group
 	if (ps->o.track_leader)
 		win_update_leader(ps, w);
 
 	// Get window name and class if we are tracking them
-	if (ps->o.track_wdata) {
-		win_get_name(ps, w);
-		win_get_class(ps, w);
-		win_get_role(ps, w);
-	}
+	win_update_name(ps, w);
+	win_get_class(ps, w);
+	win_get_role(ps, w);
 
 	// Update everything related to conditions
 	win_on_factor_change(ps, w);
 
-	// Update window focus state
-	win_update_focused(ps, w);
-
 	auto r = xcb_get_window_attributes_reply(
-	    ps->c, xcb_get_window_attributes(ps->c, w->client_win), NULL);
+	    ps->c, xcb_get_window_attributes(ps->c, w->client_win), &e);
 	if (!r) {
-		log_error("Failed to get client window attributes");
+		log_error_x_error(e, "Failed to get client window attributes");
 		return;
 	}
 
@@ -915,6 +1032,8 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
  */
 void win_unmark_client(session_t *ps, struct managed_win *w) {
 	xcb_window_t client = w->client_win;
+	log_debug("Detaching client window %#010x from frame %#010x (%s)", client,
+	          w->base.id, w->name);
 
 	w->client_win = XCB_NONE;
 
@@ -925,12 +1044,41 @@ void win_unmark_client(session_t *ps, struct managed_win *w) {
 }
 
 /**
+ * Look for the client window of a particular window.
+ */
+static xcb_window_t find_client_win(session_t *ps, xcb_window_t w) {
+	if (wid_has_prop(ps, w, ps->atoms->aWM_STATE)) {
+		return w;
+	}
+
+	xcb_query_tree_reply_t *reply =
+	    xcb_query_tree_reply(ps->c, xcb_query_tree(ps->c, w), NULL);
+	if (!reply)
+		return 0;
+
+	xcb_window_t *children = xcb_query_tree_children(reply);
+	int nchildren = xcb_query_tree_children_length(reply);
+	int i;
+	xcb_window_t ret = 0;
+
+	for (i = 0; i < nchildren; ++i) {
+		if ((ret = find_client_win(ps, children[i])))
+			break;
+	}
+
+	free(reply);
+
+	return ret;
+}
+
+/**
  * Recheck client window of a window.
  *
  * @param ps current session
  * @param w struct _win of the parent window
  */
 void win_recheck_client(session_t *ps, struct managed_win *w) {
+	assert(ps->server_grabbed);
 	// Initialize wmwin to false
 	w->wmwin = false;
 
@@ -940,14 +1088,14 @@ void win_recheck_client(session_t *ps, struct managed_win *w) {
 	// sets override-redirect flags on all frame windows.
 	xcb_window_t cw = find_client_win(ps, w->base.id);
 	if (cw) {
-		log_trace("(%#010x): client %#010x", w->base.id, cw);
+		log_debug("(%#010x): client %#010x", w->base.id, cw);
 	}
 	// Set a window's client window to itself if we couldn't find a
 	// client window
 	if (!cw) {
 		cw = w->base.id;
 		w->wmwin = !w->a.override_redirect;
-		log_trace("(%#010x): client self (%s)", w->base.id,
+		log_debug("(%#010x): client self (%s)", w->base.id,
 		          (w->wmwin ? "wmwin" : "override-redirected"));
 	}
 
@@ -1048,9 +1196,9 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .state = WSTATE_UNMAPPED,         // updated by window state changes
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
-	    .queue_configure = {},            // same as above
 	    .reg_ignore_valid = false,        // set to true when damaged
-	    .flags = 0,                       // updated by property/attributes/etc change
+	    .flags = WIN_FLAGS_IMAGES_NONE,        // updated by property/attributes/etc
+	                                           // change
 
 	    // Runtime variables, updated by dbus
 	    .fade_force = UNSET,
@@ -1087,7 +1235,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .wmwin = false,
 	    .focused = false,
 	    .opacity = 0,
-	    .opacity_tgt = 0,
+	    .opacity_target = 0,
 	    .has_opacity_prop = false,
 	    .opacity_prop = OPAQUE,
 	    .opacity_is_set = false,
@@ -1144,11 +1292,13 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	if (a->_class == XCB_WINDOW_CLASS_INPUT_ONLY) {
 		// No need to manage this window, but we still keep it on the window stack
 		w->managed = false;
+		free(a);
 		return w;
 	}
 
 	// Allocate and initialize the new win structure
-	auto new = cmalloc(struct managed_win);
+	auto new_internal = cmalloc(struct managed_win_internal);
+	auto new = (struct managed_win *)new_internal;
 
 	// Fill structure
 	// We only need to initialize the part that are not initialized
@@ -1191,45 +1341,6 @@ struct win *fill_win(session_t *ps, struct win *w) {
 }
 
 /**
- * Update focused state of a window.
- */
-void win_update_focused(session_t *ps, struct managed_win *w) {
-	if (UNSET != w->focused_force) {
-		w->focused = w->focused_force;
-	} else {
-		w->focused = win_is_focused_real(ps, w);
-
-		// Use wintype_focus, and treat WM windows and override-redirected
-		// windows specially
-		if (ps->o.wintype_option[w->window_type].focus ||
-		    (ps->o.mark_wmwin_focused && w->wmwin) ||
-		    (ps->o.mark_ovredir_focused && w->base.id == w->client_win && !w->wmwin) ||
-		    (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
-		     c2_match(ps, w, ps->o.focus_blacklist, NULL)))
-			w->focused = true;
-
-		// If window grouping detection is enabled, mark the window active if
-		// its group is
-		if (ps->o.track_leader && ps->active_leader &&
-		    win_get_leader(ps, w) == ps->active_leader) {
-			w->focused = true;
-		}
-	}
-
-	// Always recalculate the window target opacity, since some opacity-related
-	// options depend on the output value of win_is_focused_real() instead of
-	// w->focused
-	double opacity_tgt_old = w->opacity_tgt;
-	w->opacity_tgt = win_calc_opacity_target(ps, w);
-	if (opacity_tgt_old != w->opacity_tgt && w->state == WSTATE_MAPPED) {
-		// Only MAPPED can transition to FADING
-		assert(w->state != WSTATE_DESTROYING && w->state != WSTATE_UNMAPPING &&
-		       w->state != WSTATE_UNMAPPED);
-		w->state = WSTATE_FADING;
-	}
-}
-
-/**
  * Set leader of a window.
  */
 static inline void win_set_leader(session_t *ps, struct managed_win *w, xcb_window_t nleader) {
@@ -1246,15 +1357,11 @@ static inline void win_set_leader(session_t *ps, struct managed_win *w, xcb_wind
 		// Update the old and new window group and active_leader if the window
 		// could affect their state.
 		xcb_window_t cache_leader = win_get_leader(ps, w);
-		if (win_is_focused_real(ps, w) && cache_leader_old != cache_leader) {
+		if (win_is_focused_raw(ps, w) && cache_leader_old != cache_leader) {
 			ps->active_leader = cache_leader;
 
-			group_update_focused(ps, cache_leader_old);
-			group_update_focused(ps, cache_leader);
-		}
-		// Otherwise, at most the window itself is affected
-		else {
-			win_update_focused(ps, w);
+			group_on_factor_change(ps, cache_leader_old);
+			group_on_factor_change(ps, cache_leader);
 		}
 
 		// Update everything related to conditions
@@ -1284,7 +1391,7 @@ void win_update_leader(session_t *ps, struct managed_win *w) {
 /**
  * Internal function of win_get_leader().
  */
-xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int recursions) {
+static xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int recursions) {
 	// Rebuild the cache if needed
 	if (!w->cache_leader && (w->client_win || w->leader)) {
 		// Leader defaults to client window
@@ -1353,27 +1460,20 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 		xcb_window_t leader = win_get_leader(ps, w);
 
 		// If the window gets focused, replace the old active_leader
-		if (win_is_focused_real(ps, w) && leader != ps->active_leader) {
+		if (win_is_focused_raw(ps, w) && leader != ps->active_leader) {
 			xcb_window_t active_leader_old = ps->active_leader;
 
 			ps->active_leader = leader;
 
-			group_update_focused(ps, active_leader_old);
-			group_update_focused(ps, leader);
+			group_on_factor_change(ps, active_leader_old);
+			group_on_factor_change(ps, leader);
 		}
 		// If the group get unfocused, remove it from active_leader
-		else if (!win_is_focused_real(ps, w) && leader &&
+		else if (!win_is_focused_raw(ps, w) && leader &&
 		         leader == ps->active_leader && !group_is_focused(ps, leader)) {
 			ps->active_leader = XCB_NONE;
-			group_update_focused(ps, leader);
+			group_on_factor_change(ps, leader);
 		}
-
-		// The window itself must be updated anyway
-		win_update_focused(ps, w);
-	}
-	// Otherwise, only update the window itself
-	else {
-		win_update_focused(ps, w);
 	}
 
 	// Update everything related to conditions
@@ -1382,7 +1482,7 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		if (win_is_focused_real(ps, w))
+		if (win_is_focused_raw(ps, w))
 			cdbus_ev_win_focusin(ps, &w->base);
 		else
 			cdbus_ev_win_focusout(ps, &w->base);
@@ -1399,13 +1499,13 @@ void win_set_focused(session_t *ps, struct managed_win *w) {
 		return;
 	}
 
-	if (win_is_focused_real(ps, w)) {
+	if (win_is_focused_raw(ps, w)) {
 		return;
 	}
 
 	auto old_active_win = ps->active_win;
 	ps->active_win = w;
-	assert(win_is_focused_real(ps, w));
+	assert(win_is_focused_raw(ps, w));
 
 	if (old_active_win) {
 		win_on_focus_change(ps, old_active_win);
@@ -1496,7 +1596,7 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 		// Note we only do this when screen is redirected, because
 		// otherwise win_data is not valid
 		assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
-		w->flags |= WIN_FLAGS_IMAGE_STALE;
+		win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
 		ps->pending_updates = true;
 	}
 	free_paint(ps, &w->paint);
@@ -1529,8 +1629,8 @@ void win_update_opacity_prop(session_t *ps, struct managed_win *w) {
  * Retrieve frame extents from a window.
  */
 void win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t client) {
-	winprop_t prop = wid_get_prop(ps, client, ps->atoms->a_NET_FRAME_EXTENTS, 4L,
-	                              XCB_ATOM_CARDINAL, 32);
+	winprop_t prop = x_get_prop(ps, client, ps->atoms->a_NET_FRAME_EXTENTS, 4L,
+	                            XCB_ATOM_CARDINAL, 32);
 
 	if (prop.nitems == 4) {
 		const int32_t extents[4] = {
@@ -1591,88 +1691,88 @@ void win_ev_stop(session_t *ps, const struct win *w) {
 	}
 }
 
-static void finish_unmap_win(session_t *ps, struct managed_win **_w) {
-	auto w = *_w;
+/// Finish the unmapping of a window (e.g. after fading has finished).
+/// Doesn't free `w`
+static void unmap_win_finish(session_t *ps, struct managed_win *w) {
 	w->ever_damaged = false;
 	w->reg_ignore_valid = false;
 	w->state = WSTATE_UNMAPPED;
 
 	// We are in unmap_win, this window definitely was viewable
 	if (ps->backend_data) {
-		win_release_image(ps->backend_data, w);
+		win_release_images(ps->backend_data, w);
+	} else {
+		assert(!w->win_image);
+		assert(!w->shadow_image);
 	}
+
 	free_paint(ps, &w->paint);
 	free_paint(ps, &w->shadow_paint);
 
-	w->flags = 0;
+	// Try again at binding images when the window is mapped next time
+	win_clear_flags(w, WIN_FLAGS_IMAGE_ERROR);
 }
 
-static void finish_destroy_win(session_t *ps, struct managed_win **_w) {
-	auto w = *_w;
+/// Finish the destruction of a window (e.g. after fading has finished).
+/// Frees `w`
+static void destroy_win_finish(session_t *ps, struct win *w) {
+	log_trace("Trying to finish destroying (%#010x)", w->id);
 
-	if (w->state != WSTATE_UNMAPPED) {
-		// Only UNMAPPED state has window resources freed, otherwise
-		// we need to call finish_unmap_win to free them.
-		finish_unmap_win(ps, _w);
-	}
+	auto next_w = win_stack_find_next_managed(ps, &w->stack_neighbour);
+	list_remove(&w->stack_neighbour);
 
-	// Invalidate reg_ignore of windows below this one
-	// TODO what if w->next is not mapped??
-	// TODO seriously figure out how reg_ignore behaves.
-	//      I think if `w` is unmapped, and destroyed after
-	//      paint happened at least once, w->reg_ignore_valid would
-	//      be true, and there is no need to invalid w->next->reg_ignore
-	//      when w is destroyed.
-	auto next_w = win_stack_find_next_managed(ps, &w->base.stack_neighbour);
-	if (next_w) {
-		rc_region_unref(&next_w->reg_ignore);
-		next_w->reg_ignore_valid = false;
-	}
+	if (w->managed) {
+		auto mw = (struct managed_win *)w;
 
-	log_trace("Trying to destroy (%#010x)", w->base.id);
-	list_remove(&w->base.stack_neighbour);
+		if (mw->state != WSTATE_UNMAPPED) {
+			// Only UNMAPPED state has window resources freed, otherwise
+			// we need to call unmap_win_finish to free them.
+			// XXX actually we unmap_win_finish only frees the rendering
+			//     resources, we still need to call free_win_res. will fix
+			//     later.
+			unmap_win_finish(ps, mw);
+		}
 
-	if (w == ps->active_win) {
-		// Usually, the window cannot be the focused at destruction. FocusOut
-		// should be generated before the window is destroyed.
-		// We do this check just to be completely sure we don't have dangling
-		// references.
-		log_debug("window %#010x (%s) is destroyed while being focused",
-		          w->base.id, w->name);
-		ps->active_win = NULL;
-	}
+		// Invalidate reg_ignore of windows below this one
+		// TODO what if next_w is not mapped??
+		// TODO seriously figure out how reg_ignore behaves.
+		//      I think if `w` is unmapped, and destroyed after
+		//      paint happened at least once, w->reg_ignore_valid would
+		//      be true, and there is no need to invalid w->next->reg_ignore
+		//      when w is destroyed.
+		if (next_w) {
+			rc_region_unref(&next_w->reg_ignore);
+			next_w->reg_ignore_valid = false;
+		}
 
-	free_win_res(ps, w);
+		if (mw == ps->active_win) {
+			// Usually, the window cannot be the focused at destruction.
+			// FocusOut should be generated before the window is destroyed. We
+			// do this check just to be completely sure we don't have dangling
+			// references.
+			log_debug("window %#010x (%s) is destroyed while being focused",
+			          w->id, mw->name);
+			ps->active_win = NULL;
+		}
 
-	// Drop w from all prev_trans to avoid accessing freed memory in
-	// repair_win()
-	// TODO there can only be one prev_trans pointing to w
-	win_stack_foreach_managed(w2, &ps->window_stack) {
-		if (w == w2->prev_trans) {
-			w2->prev_trans = NULL;
+		free_win_res(ps, mw);
+
+		// Drop w from all prev_trans to avoid accessing freed memory in
+		// repair_win()
+		// TODO there can only be one prev_trans pointing to w
+		win_stack_foreach_managed(w2, &ps->window_stack) {
+			if (mw == w2->prev_trans) {
+				w2->prev_trans = NULL;
+			}
 		}
 	}
+
 	free(w);
-	*_w = NULL;
-	return;
-	log_warn("Destroyed window is not in window list");
-	assert(false);
 }
 
-static void finish_map_win(session_t *ps, struct managed_win **_w) {
-	auto w = *_w;
+static void map_win_finish(struct managed_win *w) {
 	w->in_openclose = false;
 	w->state = WSTATE_MAPPED;
-}
-
-void destroy_unmanaged_win(session_t *ps, struct win **_w) {
-	auto w = *_w;
-	assert(!w->managed);
-	assert(!w->destroyed);
-	list_remove(&w->stack_neighbour);
-	HASH_DEL(ps->windows, w);
-	free(w);
-	*_w = NULL;
 }
 
 /// Move window `w` so it's before `next` in the list
@@ -1758,54 +1858,80 @@ void restack_top(session_t *ps, struct win *w) {
 	restack_win(ps, w, ps->window_stack.next);
 }
 
-void unmap_win(session_t *ps, struct managed_win **_w, bool destroy) {
-	auto w = *_w;
+/// Start destroying a window. Windows cannot always be destroyed immediately
+/// because of fading and such.
+///
+/// @return whether the window has finished destroying and is freed
+bool destroy_win_start(session_t *ps, struct win *w) {
+	auto mw = (struct managed_win *)w;
+	assert(w);
 
-	winstate_t target_state = destroy ? WSTATE_DESTROYING : WSTATE_UNMAPPING;
+	log_debug("Destroying %#010x \"%s\", managed = %d", w->id,
+	          (w->managed ? mw->name : NULL), w->managed);
 
-	if (unlikely(!w)) {
-		return;
+	// Delete destroyed window from the hash table, even though the window might still
+	// be rendered for a while. We need to make sure future window with the same
+	// window id won't confuse us. Keep the window in the window stack if it's managed
+	// and mapped, since we might still need to render it (e.g. fading out). Window
+	// will be removed from the stack when it finishes destroying.
+	HASH_DEL(ps->windows, w);
+
+	if (!w->managed || mw->state == WSTATE_UNMAPPED) {
+		// Window is already unmapped, or is an unmanged window, just destroy it
+		destroy_win_finish(ps, w);
+		return true;
 	}
 
-	if (!destroy && w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
-		// We don't care about mapping / unmapping of Input Only windows.
-		// But we need to remember to destroy them, so future window with
-		// the same id won't be handled incorrectly.
-		// Issue #119 was caused by this.
-		return;
+	if (w->managed) {
+		// Clear PIXMAP_STALE flag, since the window is destroyed there is no
+		// pixmap available so STALE doesn't make sense.
+		// Do this before changing the window state to destroying
+		win_clear_flags(mw, WIN_FLAGS_PIXMAP_STALE);
+
+		// Update state flags of a managed window
+		mw->state = WSTATE_DESTROYING;
+		mw->a.map_state = XCB_MAP_STATE_UNMAPPED;
+		mw->in_openclose = true;
 	}
 
-	log_trace("Unmapping %#010x \"%s\", destroy = %d", w->base.id,
-	          (w ? w->name : NULL), destroy);
+	// don't need win_ev_stop because the window is gone anyway
+#ifdef CONFIG_DBUS
+	// Send D-Bus signal
+	if (ps->o.dbus) {
+		cdbus_ev_win_destroyed(ps, w);
+	}
+#endif
 
-	if (unlikely(w->state == WSTATE_DESTROYING && !destroy)) {
+	if (!ps->redirected) {
+		// Skip transition if we are not rendering
+		return win_skip_fading(ps, mw);
+	}
+
+	return false;
+}
+
+void unmap_win_start(session_t *ps, struct managed_win *w) {
+	assert(w);
+	assert(w->base.managed);
+	assert(w->a._class != XCB_WINDOW_CLASS_INPUT_ONLY);
+
+	log_debug("Unmapping %#010x \"%s\"", w->base.id, w->name);
+
+	if (unlikely(w->state == WSTATE_DESTROYING)) {
 		log_warn("Trying to undestroy a window?");
 		assert(false);
 	}
 
-	// If the window is already in the state we want
-	if (unlikely(w->state == target_state)) {
-		log_warn("%s a window twice", destroy ? "Destroying" : "Unmapping");
-		return;
-	}
-
-	if (destroy) {
-		// Delete destroyed window from the hash table, so future window with the
-		// same window id won't confuse us.
-		// Keep the window in the window stack, since we might still need to
-		// render it (fading out). Window will be removed from the stack when
-		// fading finishes.
-		HASH_DEL(ps->windows, &w->base);
-	}
-
-	if (unlikely(w->state == WSTATE_UNMAPPED) || w->a._class == XCB_WINDOW_CLASS_INPUT_ONLY) {
-		if (unlikely(!destroy)) {
-			log_warn("Unmapping an already unmapped window %#010x %s twice",
+	if (unlikely(w->state == WSTATE_UNMAPPING || w->state == WSTATE_UNMAPPED)) {
+		if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
+			// Clear the pending map as this window is now unmapped
+			win_clear_flags(w, WIN_FLAGS_MAPPED);
+		} else {
+			log_warn("Trying to unmapping an already unmapped window %#010x "
+			         "\"%s\"",
 			         w->base.id, w->name);
-			return;
+			assert(false);
 		}
-		// Window is already unmapped, or is an Input Only window, just destroy it
-		finish_destroy_win(ps, _w);
 		return;
 	}
 
@@ -1813,64 +1939,65 @@ void unmap_win(session_t *ps, struct managed_win **_w, bool destroy) {
 	// triggered by subsequence Focus{In, Out} event, or by recheck_focus
 
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
-	w->state = target_state;
-	w->opacity_tgt = win_calc_opacity_target(ps, w);
+	w->state = WSTATE_UNMAPPING;
+	w->opacity_target_old = fmax(w->opacity_target, w->opacity_target_old);
+	w->opacity_target = win_calc_opacity_target(ps, w);
 
-	w->in_openclose = destroy;
+	// Clear PIXMAP_STALE flag, since the window is unmapped there is no pixmap
+	// available so STALE doesn't make sense.
+	win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 
 	// don't care about properties anymore
-	if (!destroy) {
-		win_ev_stop(ps, &w->base);
-	}
+	win_ev_stop(ps, &w->base);
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		if (destroy) {
-			cdbus_ev_win_destroyed(ps, &w->base);
-		} else {
-			cdbus_ev_win_unmapped(ps, &w->base);
-		}
+		cdbus_ev_win_unmapped(ps, &w->base);
 	}
 #endif
 
 	if (!ps->redirected) {
-		win_skip_fading(ps, _w);
+		CHECK(!win_skip_fading(ps, w));
 	}
 }
 
 /**
  * Execute fade callback of a window if fading finished.
+ *
+ * @return whether the window is destroyed and freed
  */
-void win_check_fade_finished(session_t *ps, struct managed_win **_w) {
-	auto w = *_w;
+bool win_check_fade_finished(session_t *ps, struct managed_win *w) {
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
 		// No fading in progress
-		assert(w->opacity_tgt == w->opacity);
-		return;
+		assert(w->opacity_target == w->opacity);
+		return false;
 	}
-	if (w->opacity == w->opacity_tgt) {
+	if (w->opacity == w->opacity_target) {
 		switch (w->state) {
-		case WSTATE_UNMAPPING: return finish_unmap_win(ps, _w);
-		case WSTATE_DESTROYING: return finish_destroy_win(ps, _w);
-		case WSTATE_MAPPING: return finish_map_win(ps, _w);
+		case WSTATE_UNMAPPING: unmap_win_finish(ps, w); return false;
+		case WSTATE_DESTROYING: destroy_win_finish(ps, &w->base); return true;
+		case WSTATE_MAPPING: map_win_finish(w); return false;
 		case WSTATE_FADING: w->state = WSTATE_MAPPED; break;
 		default: unreachable;
 		}
 	}
+
+	return false;
 }
 
 /// Skip the current in progress fading of window,
 /// transition the window straight to its end state
-void win_skip_fading(session_t *ps, struct managed_win **_w) {
-	auto w = *_w;
+///
+/// @return whether the window is destroyed and freed
+bool win_skip_fading(session_t *ps, struct managed_win *w) {
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
-		assert(w->opacity_tgt == w->opacity);
-		return;
+		assert(w->opacity_target == w->opacity);
+		return false;
 	}
-	log_trace("Skipping fading process of window %#010x (%s)", w->base.id, w->name);
-	w->opacity = w->opacity_tgt;
-	win_check_fade_finished(ps, _w);
+	log_debug("Skipping fading process of window %#010x (%s)", w->base.id, w->name);
+	w->opacity = w->opacity_target;
+	return win_check_fade_finished(ps, w);
 }
 
 /**
@@ -1895,7 +2022,8 @@ void win_update_screen(session_t *ps, struct managed_win *w) {
 }
 
 /// Map an already registered window
-void map_win(session_t *ps, struct managed_win *w) {
+void map_win_start(session_t *ps, struct managed_win *w) {
+	assert(ps->server_grabbed);
 	assert(w);
 
 	// Don't care about window mapping if it's an InputOnly window
@@ -1913,12 +2041,18 @@ void map_win(session_t *ps, struct managed_win *w) {
 	}
 
 	if (w->state == WSTATE_UNMAPPING) {
-		win_skip_fading(ps, &w);
+		CHECK(!win_skip_fading(ps, w));
 		// We skipped the unmapping process, the window was rendered, now it is
-		// not anymore. So we need to mark then unmapping window as damaged.
+		// not anymore. So we need to mark the then unmapping window as damaged.
+		//
+		// Solves problem when, for example, a window is unmapped then mapped in a
+		// different location
 		add_damage_from_win(ps, w);
 		assert(w);
 	}
+
+	assert(w->state == WSTATE_UNMAPPED);
+	assert(win_check_flags_all(w, WIN_FLAGS_IMAGES_NONE) || !ps->o.experimental_backends);
 
 	// We stopped processing window size change when we were unmapped, refresh the
 	// size of the window
@@ -1954,7 +2088,7 @@ void map_win(session_t *ps, struct managed_win *w) {
 	    ps->c, w->base.id, XCB_CW_EVENT_MASK,
 	    (const uint32_t[]){determine_evmask(ps, w->base.id, WIN_EVMODE_FRAME)});
 
-	// Notify compton when the shape of a window changes
+	// Get notification when the shape of a window changes
 	if (ps->shape_exists) {
 		xcb_shape_select_input(ps->c, w->base.id, 1);
 	}
@@ -1974,6 +2108,8 @@ void map_win(session_t *ps, struct managed_win *w) {
 
 	log_debug("Window (%#010x) has type %s", w->base.id, WINTYPES[w->window_type]);
 
+	// TODO can we just replace calls below with win_on_factor_change?
+
 	// Update window focus state
 	win_update_focused(ps, w);
 
@@ -1981,9 +2117,7 @@ void map_win(session_t *ps, struct managed_win *w) {
 	win_update_opacity_prop(ps, w);
 
 	// Check for _COMPTON_SHADOW
-	if (ps->o.respect_prop_shadow) {
-		win_update_prop_shadow_raw(ps, w);
-	}
+	win_update_prop_shadow_raw(ps, w);
 
 	// Many things above could affect shadow
 	win_determine_shadow(ps, w);
@@ -1991,34 +2125,29 @@ void map_win(session_t *ps, struct managed_win *w) {
 	// XXX We need to make sure that win_data is available
 	// iff `state` is MAPPED
 	w->state = WSTATE_MAPPING;
-	w->opacity_tgt = win_calc_opacity_target(ps, w);
+	w->opacity_target_old = 0;
+	w->opacity_target = win_calc_opacity_target(ps, w);
 
 	log_debug("Window %#010x has opacity %f, opacity target is %f", w->base.id,
-	          w->opacity, w->opacity_tgt);
+	          w->opacity, w->opacity_target);
 
 	win_determine_blur_background(ps, w);
 
-	w->ever_damaged = false;
+	// Cannot set w->ever_damaged = false here, since window mapping could be
+	// delayed, so a damage event might have already arrived before this function
+	// is called. But this should be unnecessary in the first place, since
+	// ever_damaged is set to false in unmap_win_finish anyway.
 
 	// We stopped listening on ShapeNotify events
 	// when the window is unmapped (XXX we shouldn't),
 	// so the shape of the window might have changed,
 	// update. (Issue #35)
+	//
+	// Also this sets the WIN_FLAGS_IMAGES_STALE flag so later in the critical section
+	// the window's image will be bound
 	win_update_bounding_shape(ps, w);
 
-	// Reset the STALE_IMAGE flag set by win_update_bounding_shape. Because we are
-	// just about to bind the image, no way that's stale.
-	//
-	// Also because NVIDIA driver doesn't like seeing the same pixmap under different
-	// ids, so avoid naming the pixmap again when it didn't actually change.
-	w->flags &= ~WIN_FLAGS_IMAGE_STALE;
-
-	// Bind image after update_bounding_shape, so the shadow has the correct size.
-	if (ps->backend_data) {
-		if (!win_bind_image(ps, w)) {
-			w->flags |= WIN_FLAGS_IMAGE_ERROR;
-		}
-	}
+	assert(win_check_flags_all(w, WIN_FLAGS_IMAGES_STALE));
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
@@ -2028,31 +2157,62 @@ void map_win(session_t *ps, struct managed_win *w) {
 #endif
 
 	if (!ps->redirected) {
-		win_skip_fading(ps, &w);
-		assert(w);
+		CHECK(!win_skip_fading(ps, w));
 	}
 }
 
-void map_win_by_id(session_t *ps, xcb_window_t id) {
-	// Unmap overlay window if it got mapped but we are currently not
-	// in redirected state.
-	if (ps->overlay && id == ps->overlay && !ps->redirected) {
-		log_debug("Overlay is mapped while we are not redirected");
-		auto e = xcb_request_check(ps->c, xcb_unmap_window(ps->c, ps->overlay));
-		if (e) {
-			log_error("Failed to unmap the overlay window");
-			free(e);
+/**
+ * Update target window opacity depending on the current state.
+ */
+void win_update_opacity_target(session_t *ps, struct managed_win *w) {
+	auto opacity_target_old = w->opacity_target;
+	w->opacity_target = win_calc_opacity_target(ps, w);
+
+	if (opacity_target_old == w->opacity_target) {
+		return;
+	}
+
+	if (w->state == WSTATE_MAPPED) {
+		// Opacity target changed while MAPPED. Transition to FADING.
+		assert(w->opacity == opacity_target_old);
+		w->opacity_target_old = opacity_target_old;
+		w->state = WSTATE_FADING;
+		log_debug("Window %#010x (%s) opacity %f, opacity target %f, set "
+		          "old target %f",
+		          w->base.id, w->name, w->opacity, w->opacity_target,
+		          w->opacity_target_old);
+	} else if (w->state == WSTATE_MAPPING) {
+		// Opacity target changed while fading in.
+		if (w->opacity >= w->opacity_target) {
+			// Already reached new target opacity. Transition to
+			// FADING.
+			map_win_finish(w);
+			w->opacity_target_old = fmax(opacity_target_old, w->opacity);
+			w->state = WSTATE_FADING;
+			log_debug("Window %#010x (%s) opacity %f already reached "
+			          "new opacity target %f while mapping, set old "
+			          "target %f",
+			          w->base.id, w->name, w->opacity, w->opacity_target,
+			          w->opacity_target_old);
 		}
-		// We don't track the overlay window, so we can return
-		return;
+	} else if (w->state == WSTATE_FADING) {
+		// Opacity target changed while FADING.
+		if ((w->opacity < opacity_target_old && w->opacity > w->opacity_target) ||
+		    (w->opacity > opacity_target_old && w->opacity < w->opacity_target)) {
+			// Changed while fading in and will fade out or while
+			// fading out and will fade in.
+			w->opacity_target_old = opacity_target_old;
+			log_debug("Window %#010x (%s) opacity %f already reached "
+			          "new opacity target %f while fading, set "
+			          "old target %f",
+			          w->base.id, w->name, w->opacity, w->opacity_target,
+			          w->opacity_target_old);
+		}
 	}
 
-	auto w = find_managed_win(ps, id);
-	if (!w) {
-		return;
+	if (!ps->redirected) {
+		CHECK(!win_skip_fading(ps, w));
 	}
-
-	map_win(ps, w);
 }
 
 /**
@@ -2110,13 +2270,13 @@ struct managed_win *find_toplevel(session_t *ps, xcb_window_t id) {
 }
 
 /**
- * Find out the WM frame of a client window by querying X.
+ * Find a managed window that is, or is a parent of `wid`.
  *
  * @param ps current session
  * @param wid window ID
  * @return struct _win object of the found window, NULL if not found
  */
-struct managed_win *find_toplevel2(session_t *ps, xcb_window_t wid) {
+struct managed_win *find_managed_window_or_parent(session_t *ps, xcb_window_t wid) {
 	// TODO this should probably be an "update tree", then find_toplevel.
 	//      current approach is a bit more "racy"
 	struct win *w = NULL;
@@ -2125,7 +2285,7 @@ struct managed_win *find_toplevel2(session_t *ps, xcb_window_t wid) {
 	// Using find_win here because if we found a unmanaged window we know about, we
 	// can stop early.
 	while (wid && wid != ps->root && !(w = find_win(ps, wid))) {
-		// xcb_query_tree probably fails if you run compton when X is somehow
+		// xcb_query_tree probably fails if you run picom when X is somehow
 		// initializing (like add it in .xinitrc). In this case
 		// just leave it alone.
 		auto reply = xcb_query_tree_reply(ps->c, xcb_query_tree(ps->c, wid), NULL);
@@ -2152,19 +2312,97 @@ static inline bool rect_is_fullscreen(const session_t *ps, int x, int y, int wid
 }
 
 /**
+ * Check if a window is fulscreen using EWMH
+ *
+ * TODO cache this property
+ */
+static inline bool
+win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_window_t w) {
+	xcb_get_property_cookie_t prop =
+	    xcb_get_property(c, 0, w, a->a_NET_WM_STATE, XCB_ATOM_ATOM, 0, 12);
+	xcb_get_property_reply_t *reply = xcb_get_property_reply(c, prop, NULL);
+	if (!reply)
+		return false;
+
+	if (reply->length) {
+		xcb_atom_t *val = xcb_get_property_value(reply);
+		for (uint32_t i = 0; i < reply->length; i++) {
+			if (val[i] != a->a_NET_WM_STATE_FULLSCREEN)
+				continue;
+			free(reply);
+			return true;
+		}
+	}
+	free(reply);
+	return false;
+}
+
+/// Set flags on a window. Some sanity checks are performed
+void win_set_flags(struct managed_win *w, uint64_t flags) {
+	log_debug("Set flags %lu to window %#010x (%s)", flags, w->base.id, w->name);
+	if (unlikely(w->state == WSTATE_DESTROYING)) {
+		log_error("Flags set on a destroyed window %#010x (%s)", w->base.id, w->name);
+		return;
+	}
+
+	w->flags |= flags;
+}
+
+/// Clear flags on a window. Some sanity checks are performed
+void win_clear_flags(struct managed_win *w, uint64_t flags) {
+	log_debug("Clear flags %lu from window %#010x (%s)", flags, w->base.id, w->name);
+	if (unlikely(w->state == WSTATE_DESTROYING)) {
+		log_warn("Flags cleared on a destroyed window %#010x (%s)", w->base.id,
+		         w->name);
+		return;
+	}
+
+	w->flags = w->flags & (~flags);
+}
+
+bool win_check_flags_any(struct managed_win *w, uint64_t flags) {
+	return (w->flags & flags) != 0;
+}
+
+bool win_check_flags_all(struct managed_win *w, uint64_t flags) {
+	return (w->flags & flags) == flags;
+}
+
+/**
  * Check if a window is a fullscreen window.
  *
  * It's not using w->border_size for performance measures.
  */
 bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
+	if (!ps->o.no_ewmh_fullscreen && win_is_fullscreen_xcb(ps->c, ps->atoms, w->client_win))
+		return true;
 	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
 	       (!w->bounding_shaped || w->rounded_corners);
 }
 
 /**
- * Check if a window is really focused.
+ * Check if a window has BYPASS_COMPOSITOR property set
+ *
+ * TODO cache this property
  */
-bool win_is_focused_real(const session_t *ps, const struct managed_win *w) {
+bool win_is_bypassing_compositor(const session_t *ps, const struct managed_win *w) {
+	bool ret = false;
+
+	auto prop = x_get_prop(ps, w->client_win, ps->atoms->a_NET_WM_BYPASS_COMPOSITOR,
+	                       1L, XCB_ATOM_CARDINAL, 32);
+
+	if (prop.nitems && *prop.c32 == 1) {
+		ret = true;
+	}
+
+	free_winprop(&prop);
+	return ret;
+}
+
+/**
+ * Check if a window is focused, without using any focus rules or forced focus settings
+ */
+bool win_is_focused_raw(const session_t *ps, const struct managed_win *w) {
 	return w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->active_win == w;
 }
 
@@ -2179,4 +2417,10 @@ win_stack_find_next_managed(const session_t *ps, const struct list_node *i) {
 		i = &next->stack_neighbour;
 	}
 	return NULL;
+}
+
+/// Return whether this window is mapped on the X server side
+bool win_is_mapped_in_x(const struct managed_win *w) {
+	return w->state == WSTATE_MAPPING || w->state == WSTATE_FADING ||
+	       w->state == WSTATE_MAPPED || (w->flags & WIN_FLAGS_MAPPED);
 }

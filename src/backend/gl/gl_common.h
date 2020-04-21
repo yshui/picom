@@ -7,7 +7,6 @@
 #include <string.h>
 
 #include "backend/backend.h"
-#include "config.h"
 #include "log.h"
 #include "region.h"
 
@@ -21,13 +20,21 @@ typedef struct {
 	GLint unifm_invert_color;
 	GLint unifm_tex;
 	GLint unifm_dim;
+	GLint unifm_brightness;
+	GLint unifm_max_brightness;
 } gl_win_shader_t;
+
+// Program and uniforms for brightness shader
+typedef struct {
+	GLuint prog;
+} gl_brightness_shader_t;
 
 // Program and uniforms for blur shader
 typedef struct {
 	GLuint prog;
 	GLint unifm_opacity;
 	GLint orig_loc;
+	GLint texorig_loc;
 } gl_blur_shader_t;
 
 typedef struct {
@@ -40,6 +47,9 @@ struct gl_texture {
 	GLuint texture;
 	int width, height;
 	bool y_inverted;
+
+	// Textures for auxiliary uses.
+	GLuint auxiliary_texture[2];
 	void *user_data;
 };
 
@@ -48,6 +58,7 @@ typedef struct gl_image {
 	struct gl_texture *inner;
 	double opacity;
 	double dim;
+	double max_brightness;
 	int ewidth, eheight;
 	bool has_alpha;
 	bool color_inverted;
@@ -60,7 +71,10 @@ struct gl_data {
 	// Height and width of the viewport
 	int height, width;
 	gl_win_shader_t win_shader;
+	gl_brightness_shader_t brightness_shader;
 	gl_fill_shader_t fill_shader;
+	GLuint back_texture, back_fbo;
+	GLuint present_prog;
 
 	/// Called when an gl_texture is decoupled from the texture it refers. Returns
 	/// the decoupled user_data
@@ -105,9 +119,12 @@ bool gl_blur(backend_t *base, double opacity, void *, const region_t *reg_blur,
              const region_t *reg_visible);
 void *gl_create_blur_context(backend_t *base, enum blur_method, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
+void gl_get_blur_size(void *blur_context, int *width, int *height);
 
 bool gl_is_image_transparent(backend_t *base, void *image_data);
 void gl_fill(backend_t *base, struct color, const region_t *clip);
+
+void gl_present(backend_t *base, const region_t *);
 
 static inline void gl_delete_texture(GLuint texture) {
 	glDeleteTextures(1, &texture);

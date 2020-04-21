@@ -19,6 +19,7 @@
 #include "win.h"
 
 #include <GL/gl.h>
+#include <GL/glx.h>
 #include <ctype.h>
 #include <locale.h>
 #include <stdlib.h>
@@ -39,7 +40,7 @@ typedef struct {
 	GLint unifm_factor_center;
 } glx_blur_pass_t;
 
-/// Structure containing GLX-dependent data for a compton session.
+/// Structure containing GLX-dependent data for a session.
 typedef struct glx_session {
 	// === OpenGL related ===
 	/// GLX context.
@@ -81,7 +82,7 @@ void glx_on_root_change(session_t *ps);
 bool glx_init_blur(session_t *ps);
 
 #ifdef CONFIG_OPENGL
-bool glx_load_prog_main(session_t *ps, const char *vshader_str, const char *fshader_str,
+bool glx_load_prog_main(const char *vshader_str, const char *fshader_str,
                         glx_prog_main_t *pprogram);
 #endif
 
@@ -133,7 +134,7 @@ static inline bool ensure_glx_context(session_t *ps) {
 /**
  * Free a GLX texture.
  */
-static inline void free_texture_r(session_t *ps, GLuint *ptexture) {
+static inline void free_texture_r(session_t *ps attr_unused, GLuint *ptexture) {
 	if (*ptexture) {
 		assert(glx_has_context(ps));
 		glDeleteTextures(1, ptexture);
@@ -144,7 +145,7 @@ static inline void free_texture_r(session_t *ps, GLuint *ptexture) {
 /**
  * Free a GLX Framebuffer object.
  */
-static inline void free_glx_fbo(session_t *ps, GLuint *pfbo) {
+static inline void free_glx_fbo(GLuint *pfbo) {
 	if (*pfbo) {
 		glDeleteFramebuffers(1, pfbo);
 		*pfbo = 0;
@@ -166,7 +167,7 @@ static inline void free_glx_bc_resize(session_t *ps, glx_blur_cache_t *pbc) {
  * Free a glx_blur_cache_t
  */
 static inline void free_glx_bc(session_t *ps, glx_blur_cache_t *pbc) {
-	free_glx_fbo(ps, &pbc->fbo);
+	free_glx_fbo(&pbc->fbo);
 	free_glx_bc_resize(ps, pbc);
 }
 
@@ -195,6 +196,7 @@ static inline void free_texture(session_t *ps, glx_texture_t **pptex) {
  */
 static inline void free_paint_glx(session_t *ps, paint_t *ppaint) {
 	free_texture(ps, &ppaint->ptex);
+	ppaint->fbcfg = NULL;
 }
 
 /**

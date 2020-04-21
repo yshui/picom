@@ -25,10 +25,10 @@
 #include "backend/gl/gl_common.h"
 #include "backend/gl/glx.h"
 #include "common.h"
-#include "compton.h"
 #include "compiler.h"
 #include "config.h"
 #include "log.h"
+#include "picom.h"
 #include "region.h"
 #include "utils.h"
 #include "win.h"
@@ -45,8 +45,6 @@ struct _glx_data {
 	Display *display;
 	int screen;
 	xcb_window_t target_win;
-	int glx_event;
-	int glx_error;
 	GLXContext ctx;
 };
 
@@ -109,7 +107,7 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BIND_TO_TEXTURE_RGB_EXT, &rgb);
 		glXGetFBConfigAttribChecked(dpy, cfg[i], GLX_BIND_TO_TEXTURE_RGBA_EXT, &rgba);
 		if (!rgb && !rgba) {
-			log_info("FBConfig is neither RGBA nor RGB, compton cannot "
+			log_info("FBConfig is neither RGBA nor RGB, we cannot "
 			         "handle this setup.");
 			continue;
 		}
@@ -119,10 +117,12 @@ struct glx_fbconfig_info *glx_find_fbconfig(Display *dpy, int screen, struct xvi
 		if (m.visual_depth != -1 &&
 		    x_get_visual_depth(XGetXCBConnection(dpy), (xcb_visualid_t)visual) !=
 		        m.visual_depth) {
-			// Some driver might attach fbconfig to a GLX visual with a
-			// different depth.
+			// FBConfig and the correspondent X Visual might not have the same
+			// depth. (e.g. 32 bit FBConfig with a 24 bit Visual). This is
+			// quite common, seen in both open source and proprietary drivers.
 			//
-			// (That makes total sense. - NVIDIA developers)
+			// If the FBConfig has a matching depth but its visual doesn't, we
+			// still cannot use it.
 			continue;
 		}
 
@@ -196,6 +196,7 @@ void glx_deinit(backend_t *base) {
 
 	// Destroy GLX context
 	if (gd->ctx) {
+		glXMakeCurrent(gd->display, None, NULL);
 		glXDestroyContext(gd->display, gd->ctx);
 		gd->ctx = 0;
 	}
@@ -203,12 +204,28 @@ void glx_deinit(backend_t *base) {
 	free(gd);
 }
 
-static void *glx_decouple_user_data(backend_t * attr_unused base, void * attr_unused ud) {
+static void *glx_decouple_user_data(backend_t *base attr_unused, void *ud attr_unused) {
 	auto ret = cmalloc(struct _glx_pixmap);
 	ret->owned = false;
 	ret->glpixmap = 0;
 	ret->pixmap = 0;
 	return ret;
+}
+
+static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawable) {
+	bool vsync_enabled = false;
+	if (glxext.has_GLX_MESA_swap_control) {
+		vsync_enabled = (glXSwapIntervalMESA((uint)interval) == 0);
+	}
+	if (!vsync_enabled && glxext.has_GLX_SGI_swap_control) {
+		vsync_enabled = (glXSwapIntervalSGI(interval) == 0);
+	}
+	if (!vsync_enabled && glxext.has_GLX_EXT_swap_control) {
+		// glXSwapIntervalEXT doesn't return if it's successful
+		glXSwapIntervalEXT(dpy, drawable, interval);
+		vsync_enabled = true;
+	}
+	return vsync_enabled;
 }
 
 /**
@@ -227,7 +244,7 @@ static backend_t *glx_init(session_t *ps) {
 	XVisualInfo *pvis = NULL;
 
 	// Check for GLX extension
-	if (!glXQueryExtension(ps->dpy, &gd->glx_event, &gd->glx_error)) {
+	if (!ps->glx_exists) {
 		log_error("No GLX extension.");
 		goto end;
 	}
@@ -325,6 +342,14 @@ static backend_t *glx_init(session_t *ps) {
 	gd->gl.decouple_texture_user_data = glx_decouple_user_data;
 	gd->gl.release_user_data = glx_release_image;
 
+	if (ps->o.vsync) {
+		if (!glx_set_swap_interval(1, ps->dpy, tgt)) {
+			log_error("Failed to enable vsync.");
+		}
+	} else {
+		glx_set_swap_interval(0, ps->dpy, tgt);
+	}
+
 	success = true;
 
 end:
@@ -364,6 +389,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 
 	log_trace("Binding pixmap %#010x", pixmap);
 	auto wd = ccalloc(1, struct gl_image);
+	wd->max_brightness = 1;
 	wd->inner = ccalloc(1, struct gl_texture);
 	wd->inner->width = wd->ewidth = r->width;
 	wd->inner->height = wd->eheight = r->height;
@@ -436,10 +462,11 @@ err:
 	return NULL;
 }
 
-static void glx_present(backend_t *base) {
+static void glx_present(backend_t *base, const region_t *region attr_unused) {
 	struct _glx_data *gd = (void *)base;
+	gl_present(base, region);
 	glXSwapBuffers(gd->display, gd->target_win);
-	// XXX there should be no need to block compton will wait for render to finish
+	// XXX there should be no need to block, the core should wait for render to finish
 	if (!gd->gl.is_nvidia) {
 		glFinish();
 	}
@@ -472,6 +499,7 @@ struct backend_operations glx_ops = {
     .fill = gl_fill,
     .create_blur_context = gl_create_blur_context,
     .destroy_blur_context = gl_destroy_blur_context,
+    .get_blur_size = gl_get_blur_size,
     .max_buffer_age = 5,        // Why?
 };
 

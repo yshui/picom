@@ -26,12 +26,14 @@
 #include "x.h"
 
 enum root_flags {
-	ROOT_FLAGS_SCREEN_CHANGE = 1
+	ROOT_FLAGS_SCREEN_CHANGE = 1,        // Received RandR screen change notify, we
+	                                     // use this to track refresh rate changes
+	ROOT_FLAGS_CONFIGURED = 2        // Received configure notify on the root window
 };
 
 // == Functions ==
-// TODO move static inline functions that are only used in compton.c, into
-//      compton.c
+// TODO move static inline functions that are only used in picom.c, into
+//      picom.c
 
 // inline functions must be made static to compile correctly under clang:
 // http://clang.llvm.org/compatibility.html#inline
@@ -39,11 +41,6 @@ enum root_flags {
 void add_damage(session_t *ps, const region_t *damage);
 
 uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode);
-
-xcb_window_t find_client_win(session_t *ps, xcb_window_t w);
-
-/// Handle configure event of a root window
-void configure_root(session_t *ps, int width, int height);
 
 void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce);
 
@@ -59,7 +56,11 @@ void discard_ignore(session_t *ps, unsigned long sequence);
 
 void set_root_flags(session_t *ps, uint64_t flags);
 
+void quit(session_t *ps);
+
 xcb_window_t session_get_target_window(session_t *);
+
+uint8_t session_redirection_mode(session_t *ps);
 
 /**
  * Set a <code>switch_t</code> array of all unset wintypes to true.
@@ -98,9 +99,10 @@ static inline void free_wincondlst(c2_lptr_t **pcondlst) {
 }
 
 #ifndef CONFIG_OPENGL
-static inline void free_paint_glx(session_t *ps, paint_t *p) {
+static inline void free_paint_glx(session_t *ps attr_unused, paint_t *p attr_unused) {
 }
-static inline void free_win_res_glx(session_t *ps, struct managed_win *w) {
+static inline void
+free_win_res_glx(session_t *ps attr_unused, struct managed_win *w attr_unused) {
 }
 #endif
 

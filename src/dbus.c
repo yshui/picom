@@ -226,7 +226,8 @@ typedef struct ev_dbus_timer {
 /**
  * Callback for handling a D-Bus timeout.
  */
-static void cdbus_callback_handle_timeout(EV_P_ ev_timer *w, int revents) {
+static void
+cdbus_callback_handle_timeout(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
 	ev_dbus_timer *t = (void *)w;
 	dbus_timeout_handle(t->t);
 }
@@ -289,7 +290,7 @@ typedef struct ev_dbus_io {
 	DBusWatch *dw;
 } ev_dbus_io;
 
-void cdbus_io_callback(EV_P_ ev_io *w, int revents) {
+void cdbus_io_callback(EV_P attr_unused, ev_io *w, int revents) {
 	ev_dbus_io *dw = (void *)w;
 	DBusWatchFlags flags = 0;
 	if (revents & EV_READ)
@@ -368,7 +369,7 @@ static void cdbus_callback_watch_toggled(DBusWatch *watch, void *data) {
 /**
  * Callback to append a bool argument to a message.
  */
-static bool cdbus_apdarg_bool(session_t *ps, DBusMessage *msg, const void *data) {
+static bool cdbus_apdarg_bool(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
 	assert(data);
 
 	dbus_bool_t val = *(const bool *)data;
@@ -384,7 +385,7 @@ static bool cdbus_apdarg_bool(session_t *ps, DBusMessage *msg, const void *data)
 /**
  * Callback to append an int32 argument to a message.
  */
-static bool cdbus_apdarg_int32(session_t *ps, DBusMessage *msg, const void *data) {
+static bool cdbus_apdarg_int32(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
 	if (!dbus_message_append_args(msg, DBUS_TYPE_INT32, data, DBUS_TYPE_INVALID)) {
 		log_error("Failed to append argument.");
 		return false;
@@ -396,7 +397,8 @@ static bool cdbus_apdarg_int32(session_t *ps, DBusMessage *msg, const void *data
 /**
  * Callback to append an uint32 argument to a message.
  */
-static bool cdbus_apdarg_uint32(session_t *ps, DBusMessage *msg, const void *data) {
+static bool
+cdbus_apdarg_uint32(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
 	if (!dbus_message_append_args(msg, DBUS_TYPE_UINT32, data, DBUS_TYPE_INVALID)) {
 		log_error("Failed to append argument.");
 		return false;
@@ -408,7 +410,8 @@ static bool cdbus_apdarg_uint32(session_t *ps, DBusMessage *msg, const void *dat
 /**
  * Callback to append a double argument to a message.
  */
-static bool cdbus_apdarg_double(session_t *ps, DBusMessage *msg, const void *data) {
+static bool
+cdbus_apdarg_double(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
 	if (!dbus_message_append_args(msg, DBUS_TYPE_DOUBLE, data, DBUS_TYPE_INVALID)) {
 		log_error("Failed to append argument.");
 		return false;
@@ -420,7 +423,7 @@ static bool cdbus_apdarg_double(session_t *ps, DBusMessage *msg, const void *dat
 /**
  * Callback to append a Window argument to a message.
  */
-static bool cdbus_apdarg_wid(session_t *ps, DBusMessage *msg, const void *data) {
+static bool cdbus_apdarg_wid(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
 	assert(data);
 	cdbus_window_t val = *(const xcb_window_t *)data;
 
@@ -435,7 +438,7 @@ static bool cdbus_apdarg_wid(session_t *ps, DBusMessage *msg, const void *data) 
 /**
  * Callback to append an cdbus_enum_t argument to a message.
  */
-static bool cdbus_apdarg_enum(session_t *ps, DBusMessage *msg, const void *data) {
+static bool cdbus_apdarg_enum(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
 	assert(data);
 	if (!dbus_message_append_args(msg, CDBUS_TYPE_ENUM, data, DBUS_TYPE_INVALID)) {
 		log_error("Failed to append argument.");
@@ -448,7 +451,8 @@ static bool cdbus_apdarg_enum(session_t *ps, DBusMessage *msg, const void *data)
 /**
  * Callback to append a string argument to a message.
  */
-static bool cdbus_apdarg_string(session_t *ps, DBusMessage *msg, const void *data) {
+static bool
+cdbus_apdarg_string(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
 	const char *str = data;
 	if (!str)
 		str = "";
@@ -464,7 +468,7 @@ static bool cdbus_apdarg_string(session_t *ps, DBusMessage *msg, const void *dat
 /**
  * Callback to append all window IDs to a message.
  */
-static bool cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data) {
+static bool cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data attr_unused) {
 	// Get the number of wids we are to include
 	unsigned count = 0;
 	HASH_ITER2(ps->windows, w) {
@@ -752,7 +756,7 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	}
 
 #define cdbus_m_win_get_do(tgt, apdarg_func)                                             \
-	if (!strcmp(#tgt, target)) {                                                \
+	if (!strcmp(#tgt, target)) {                                                     \
 		apdarg_func(ps, msg, w->tgt);                                            \
 		return true;                                                             \
 	}
@@ -782,9 +786,8 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_win_get_do(window_type, cdbus_reply_enum);
 	cdbus_m_win_get_do(wmwin, cdbus_reply_bool);
 	cdbus_m_win_get_do(leader, cdbus_reply_wid);
-	// focused_real
-	if (!strcmp("focused_real", target)) {
-		cdbus_reply_bool(ps, msg, win_is_focused_real(ps, w));
+	if (!strcmp("focused_raw", target)) {
+		cdbus_reply_bool(ps, msg, win_is_focused_raw(ps, w));
 		return true;
 	}
 	cdbus_m_win_get_do(fade_force, cdbus_reply_enum);
@@ -797,7 +800,7 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_win_get_do(role, cdbus_reply_string);
 
 	cdbus_m_win_get_do(opacity, cdbus_reply_double);
-	cdbus_m_win_get_do(opacity_tgt, cdbus_reply_double);
+	cdbus_m_win_get_do(opacity_target, cdbus_reply_double);
 	cdbus_m_win_get_do(has_opacity_prop, cdbus_reply_bool);
 	cdbus_m_win_get_do(opacity_prop, cdbus_reply_uint32);
 	cdbus_m_win_get_do(opacity_is_set, cdbus_reply_bool);
@@ -876,7 +879,7 @@ static bool cdbus_process_win_set(session_t *ps, DBusMessage *msg) {
 		cdbus_enum_t val = UNSET;
 		if (!cdbus_msg_get_arg(msg, 2, CDBUS_TYPE_ENUM, &val))
 			return false;
-		win_set_fade_force(ps, w, val);
+		win_set_fade_force(w, val);
 		goto cdbus_process_win_set_success;
 	}
 
@@ -956,13 +959,13 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 		return false;
 
 #define cdbus_m_opts_get_do(tgt, apdarg_func)                                            \
-	if (!strcmp(#tgt, target)) {                                                \
+	if (!strcmp(#tgt, target)) {                                                     \
 		apdarg_func(ps, msg, ps->o.tgt);                                         \
 		return true;                                                             \
 	}
 
 #define cdbus_m_opts_get_stub(tgt, apdarg_func, ret)                                     \
-	if (!strcmp(#tgt, target)) {                                                \
+	if (!strcmp(#tgt, target)) {                                                     \
 		apdarg_func(ps, msg, ret);                                               \
 		return true;                                                             \
 	}
@@ -1032,19 +1035,18 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(inactive_dim, cdbus_reply_double);
 	cdbus_m_opts_get_do(inactive_dim_fixed, cdbus_reply_bool);
 
+	cdbus_m_opts_get_do(max_brightness, cdbus_reply_double);
+
 	cdbus_m_opts_get_do(use_ewmh_active_win, cdbus_reply_bool);
 	cdbus_m_opts_get_do(detect_transient, cdbus_reply_bool);
 	cdbus_m_opts_get_do(detect_client_leader, cdbus_reply_bool);
+	cdbus_m_opts_get_do(use_damage, cdbus_reply_bool);
 
 #ifdef CONFIG_OPENGL
 	cdbus_m_opts_get_do(glx_no_stencil, cdbus_reply_bool);
 	cdbus_m_opts_get_do(glx_no_rebind_pixmap, cdbus_reply_bool);
-	cdbus_m_opts_get_do(use_damage, cdbus_reply_bool);
 #endif
 
-	cdbus_m_opts_get_stub(track_focus, cdbus_reply_bool, true);
-	cdbus_m_opts_get_do(track_wdata, cdbus_reply_bool);
-	cdbus_m_opts_get_do(track_leader, cdbus_reply_bool);
 #undef cdbus_m_opts_get_do
 #undef cdbus_m_opts_get_stub
 
@@ -1067,7 +1069,7 @@ static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 		return false;
 
 #define cdbus_m_opts_set_do(tgt, type, real_type)                                        \
-	if (!strcmp(#tgt, target)) {                                                \
+	if (!strcmp(#tgt, target)) {                                                     \
 		real_type val;                                                           \
 		if (!cdbus_msg_get_arg(msg, 1, type, &val))                              \
 			return false;                                                    \
@@ -1216,7 +1218,8 @@ static bool cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
 /**
  * Process a message from D-Bus.
  */
-static DBusHandlerResult cdbus_process(DBusConnection *c, DBusMessage *msg, void *ud) {
+static DBusHandlerResult
+cdbus_process(DBusConnection *c attr_unused, DBusMessage *msg, void *ud) {
 	session_t *ps = ud;
 	bool handled = false;
 
@@ -1224,7 +1227,8 @@ static DBusHandlerResult cdbus_process(DBusConnection *c, DBusMessage *msg, void
 	dbus_message_is_method_call(msg, CDBUS_INTERFACE_NAME, method)
 
 	if (cdbus_m_ismethod("reset")) {
-		ps->reset = true;
+		log_info("picom is resetting...");
+		ev_break(ps->loop, EVBREAK_ALL);
 		if (!dbus_message_get_no_reply(msg))
 			cdbus_reply_bool(ps, msg, true);
 		handled = true;

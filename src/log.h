@@ -37,6 +37,8 @@ enum log_level {
 #define log_error(x, ...) LOG(ERROR, x, ##__VA_ARGS__)
 #define log_fatal(x, ...) LOG(FATAL, x, ##__VA_ARGS__)
 
+#define log_error_errno(x, ...) LOG(ERROR, x ": %s", ##__VA_ARGS__, strerror(errno))
+
 struct log;
 struct log_target;
 

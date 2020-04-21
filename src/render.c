@@ -33,6 +33,7 @@
 #include "win.h"
 #include "x.h"
 
+#include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "render.h"
 
@@ -47,15 +48,14 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
                                   bool repeat, int depth, xcb_visualid_t visual, bool force) {
 #ifdef CONFIG_OPENGL
 	// XXX This is a mess. But this will go away after the backend refactor.
-	static thread_local struct glx_fbconfig_info *argb_fbconfig = NULL;
 	if (!ppaint->pixmap)
 		return false;
 
 	struct glx_fbconfig_info *fbcfg;
 	if (!visual) {
 		assert(depth == 32);
-		if (!argb_fbconfig) {
-			argb_fbconfig =
+		if (!ps->argb_fbconfig) {
+			ps->argb_fbconfig =
 			    glx_find_fbconfig(ps->dpy, ps->scr,
 			                      (struct xvisual_info){.red_size = 8,
 			                                            .green_size = 8,
@@ -63,11 +63,11 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
 			                                            .alpha_size = 8,
 			                                            .visual_depth = 32});
 		}
-		if (!argb_fbconfig) {
+		if (!ps->argb_fbconfig) {
 			log_error("Failed to find appropriate FBConfig for 32 bit depth");
 			return false;
 		}
-		fbcfg = argb_fbconfig;
+		fbcfg = ps->argb_fbconfig;
 	} else {
 		auto m = x_get_visual_info(ps->c, visual);
 		if (m.visual_depth < 0) {
@@ -92,6 +92,15 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
 	if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap))
 		return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei,
 		                       repeat, fbcfg);
+#else
+	(void)ps;
+	(void)ppaint;
+	(void)wid;
+	(void)hei;
+	(void)repeat;
+	(void)depth;
+	(void)visual;
+	(void)force;
 #endif
 	return true;
 }
@@ -203,6 +212,12 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, doubl
 #endif
 	default: assert(0);
 	}
+#ifndef CONFIG_OPENGL
+	(void)neg;
+	(void)ptex;
+	(void)reg_paint;
+	(void)pprogram;
+#endif
 }
 
 static inline void
@@ -738,6 +753,9 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 #endif
 	default: assert(0);
 	}
+#ifndef CONFIG_OPENGL
+	(void)reg_paint;
+#endif
 }
 
 /// paint all windows
@@ -1069,6 +1087,10 @@ static bool init_alpha_picts(session_t *ps) {
 }
 
 bool init_render(session_t *ps) {
+	if (ps->o.backend == BKEND_DUMMY) {
+		return false;
+	}
+
 	// Initialize OpenGL as early as possible
 #ifdef CONFIG_OPENGL
 	glxext_init(ps->dpy, ps->scr);
@@ -1091,7 +1113,7 @@ bool init_render(session_t *ps) {
 	// Initialize window GL shader
 	if (BKEND_GLX == ps->o.backend && ps->o.glx_fshader_win_str) {
 #ifdef CONFIG_OPENGL
-		if (!glx_load_prog_main(ps, NULL, ps->o.glx_fshader_win_str, &ps->glx_prog_win))
+		if (!glx_load_prog_main(NULL, ps->o.glx_fshader_win_str, &ps->glx_prog_win))
 			return false;
 #else
 		log_error("GLSL supported not compiled in, can't load "
@@ -1198,10 +1220,12 @@ void deinit_render(session_t *ps) {
 	}
 #endif
 
-	for (int i = 0; i < ps->o.blur_kernel_count; i++) {
-		free(ps->blur_kerns_cache[i]);
+	if (ps->o.blur_method != BLUR_METHOD_NONE) {
+		for (int i = 0; i < ps->o.blur_kernel_count; i++) {
+			free(ps->blur_kerns_cache[i]);
+		}
+		free(ps->blur_kerns_cache);
 	}
-	free(ps->blur_kerns_cache);
 }
 
 // vim: set ts=8 sw=8 noet :

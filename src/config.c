@@ -513,6 +513,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 
 	    .refresh_rate = 0,
 	    .sw_opti = false,
+	    .use_damage = true,
 
 	    .shadow_red = 0.0,
 	    .shadow_green = 0.0,
@@ -523,7 +524,6 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .shadow_opacity = .75,
 	    .shadow_blacklist = NULL,
 	    .shadow_ignore_shaped = false,
-	    .respect_prop_shadow = false,
 	    .xinerama_shadow_crop = false,
 
 	    .fade_in_step = 0.028,
@@ -540,6 +540,8 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .detect_client_opacity = false,
 
 	    .blur_method = BLUR_METHOD_NONE,
+	    .blur_radius = 3,
+	    .blur_deviation = 0.84089642,
 	    .blur_background_frame = false,
 	    .blur_background_fixed = false,
 	    .blur_background_blacklist = NULL,
@@ -549,13 +551,14 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .inactive_dim_fixed = false,
 	    .invert_color_list = NULL,
 	    .opacity_rules = NULL,
+	    .max_brightness = 1.0,
 
 	    .use_ewmh_active_win = false,
 	    .focus_blacklist = NULL,
 	    .detect_transient = false,
 	    .detect_client_leader = false,
+	    .no_ewmh_fullscreen = false,
 
-	    .track_wdata = false,
 	    .track_leader = false,
 	};
 
@@ -563,6 +566,12 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 #ifdef CONFIG_LIBCONFIG
 	ret = parse_config_libconfig(opt, config_file, shadow_enable, fading_enable,
 	                             hasneg, winopt_mask);
+#else
+	(void)config_file;
+	(void)shadow_enable;
+	(void)fading_enable;
+	(void)hasneg;
+	(void)winopt_mask;
 #endif
 	return ret;
 }

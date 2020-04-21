@@ -1,0 +1,14 @@
+name: coding-style
+on: push
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 2
+    - uses: yshui/git-clang-format-lint@v1.10
+      with:
+        base: ${{ github.event.ref }}~1

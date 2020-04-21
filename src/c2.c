@@ -32,6 +32,7 @@
 #include <X11/Xlib.h>
 #include <xcb/xcb.h>
 
+#include "atom.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
@@ -40,7 +41,6 @@
 #include "utils.h"
 #include "win.h"
 #include "x.h"
-#include "atom.h"
 
 #include "c2.h"
 
@@ -249,7 +249,7 @@ static inline int strcmp_wd(const char *needle, const char *src) {
 /**
  * Return whether a c2_ptr_t is empty.
  */
-static inline bool c2_ptr_isempty(const c2_ptr_t p) {
+static inline attr_unused bool c2_ptr_isempty(const c2_ptr_t p) {
 	return !(p.isbranch ? (bool)p.b : (bool)p.l);
 }
 
@@ -1028,17 +1028,6 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 		}
 	}
 
-	// Enable specific tracking options in compton if needed by the condition
-	// TODO: Add track_leader
-	switch (pleaf->predef) {
-	// case C2_L_PROUNDED: ps->o.detect_rounded_corners = true; break;
-	case C2_L_PNAME:
-	case C2_L_PCLASSG:
-	case C2_L_PCLASSI:
-	case C2_L_PROLE: ps->o.track_wdata = true; break;
-	default: break;
-	}
-
 	// Warn about lower case characters in target name
 	if (pleaf->predef == C2_L_PUNDEFINED) {
 		for (const char *pc = pleaf->tgt; *pc; ++pc) {
@@ -1328,7 +1317,7 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			case C2_L_PFULLSCREEN: tgt = win_is_fullscreen(ps, w); break;
 			case C2_L_POVREDIR: tgt = w->a.override_redirect; break;
 			case C2_L_PARGB: tgt = win_has_alpha(w); break;
-			case C2_L_PFOCUSED: tgt = win_is_focused_real(ps, w); break;
+			case C2_L_PFOCUSED: tgt = win_is_focused_raw(ps, w); break;
 			case C2_L_PWMWIN: tgt = w->wmwin; break;
 			case C2_L_PBSHAPED: tgt = w->bounding_shaped; break;
 			case C2_L_PROUNDED: tgt = w->rounded_corners; break;
@@ -1343,8 +1332,8 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 		// A raw window property
 		else {
 			winprop_t prop =
-			    wid_get_prop_adv(ps, wid, pleaf->tgtatom, idx, 1L,
-			                     c2_get_atom_type(pleaf), pleaf->format);
+			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, 1L,
+			                           c2_get_atom_type(pleaf), pleaf->format);
 			if (prop.nitems) {
 				*perr = false;
 				tgt = winprop_get_int(prop);
@@ -1389,8 +1378,8 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 		} else if (pleaf->type == C2_L_TATOM) {
 			// An atom type property, convert it to string
 			winprop_t prop =
-			    wid_get_prop_adv(ps, wid, pleaf->tgtatom, idx, 1L,
-			                     c2_get_atom_type(pleaf), pleaf->format);
+			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, 1L,
+			                           c2_get_atom_type(pleaf), pleaf->format);
 			xcb_atom_t atom = (xcb_atom_t)winprop_get_int(prop);
 			if (atom) {
 				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
@@ -1562,7 +1551,8 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
  * @param pdata a place to return the data
  * @return true if matched, false otherwise.
  */
-bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condlst, void **pdata) {
+bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condlst,
+              void **pdata) {
 	// Then go through the whole linked list
 	for (; condlst; condlst = condlst->next) {
 		if (c2_match_once(ps, w, condlst->ptr)) {

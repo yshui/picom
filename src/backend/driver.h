@@ -9,6 +9,10 @@
 struct session;
 struct backend_base;
 
+// A list of known driver quirks:
+// *  NVIDIA driver doesn't like seeing the same pixmap under different
+//    ids, so avoid naming the pixmap again when it didn't actually change.
+
 /// A list of possible drivers.
 /// The driver situation is a bit complicated. There are two drivers we care about: the
 /// DDX, and the OpenGL driver. They are usually paired, but not always, since there is

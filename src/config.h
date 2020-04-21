@@ -19,21 +19,21 @@
 #include <libconfig.h>
 #endif
 
-#include "backend/backend.h"
 #include "compiler.h"
 #include "kernel.h"
 #include "log.h"
 #include "region.h"
 #include "types.h"
-#include "win.h"
+#include "win_defs.h"
 
 typedef struct session session_t;
 
-/// @brief Possible backends of compton.
+/// @brief Possible backends
 enum backend {
 	BKEND_XRENDER,
 	BKEND_GLX,
 	BKEND_XR_GLX_HYBRID,
+	BKEND_DUMMY,
 	NUM_BKEND,
 };
 
@@ -54,6 +54,14 @@ typedef struct win_option {
 	bool redir_ignore;
 	double opacity;
 } win_option_t;
+
+enum blur_method {
+	BLUR_METHOD_NONE = 0,
+	BLUR_METHOD_KERNEL,
+	BLUR_METHOD_BOX,
+	BLUR_METHOD_GAUSSIAN,
+	BLUR_METHOD_INVALID,
+};
 
 typedef struct _c2_lptr c2_lptr_t;
 
@@ -141,8 +149,6 @@ typedef struct options {
 	c2_lptr_t *shadow_blacklist;
 	/// Whether bounding-shaped window should be ignored.
 	bool shadow_ignore_shaped;
-	/// Whether to respect _COMPTON_SHADOW.
-	bool respect_prop_shadow;
 	/// Whether to crop shadow to the very Xinerama screen.
 	bool xinerama_shadow_crop;
 
@@ -204,6 +210,8 @@ typedef struct options {
 	c2_lptr_t *invert_color_list;
 	/// Rules to change window opacity.
 	c2_lptr_t *opacity_rules;
+	/// Limit window brightness
+	double max_brightness;
 
 	// === Focus related ===
 	/// Whether to try to detect WM windows and mark them as focused.
@@ -220,10 +228,15 @@ typedef struct options {
 	bool detect_client_leader;
 
 	// === Calculated ===
-	/// Whether compton needs to track window name and class.
-	bool track_wdata;
-	/// Whether compton needs to track window leaders.
+	/// Whether we need to track window leaders.
 	bool track_leader;
+
+	// Don't use EWMH to detect fullscreen applications
+	bool no_ewmh_fullscreen;
+
+	// Make transparent windows clip other windows, instead of blending on top of
+	// them
+	bool transparent_clipping;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];

@@ -6,7 +6,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <basedir_fs.h>
 #include <libconfig.h>
 #include <libgen.h>
 
@@ -37,9 +36,102 @@ static inline int lcfg_lookup_bool(const config_t *config, const char *path, boo
 	return ret;
 }
 
+const char *xdg_config_home(void) {
+	char *xdgh = getenv("XDG_CONFIG_HOME");
+	char *home = getenv("HOME");
+	const char *default_dir = "/.config";
+
+	if (!xdgh) {
+		if (!home) {
+			return NULL;
+		}
+
+		xdgh = cvalloc(strlen(home) + strlen(default_dir) + 1);
+
+		strcpy(xdgh, home);
+		strcat(xdgh, default_dir);
+	} else {
+		xdgh = strdup(xdgh);
+	}
+
+	return xdgh;
+}
+
+char **xdg_config_dirs(void) {
+	char *xdgd = getenv("XDG_CONFIG_DIRS");
+	size_t count = 0;
+
+	if (!xdgd) {
+		xdgd = "/etc/xdg";
+	}
+
+	for (int i = 0; xdgd[i]; i++) {
+		if (xdgd[i] == ':') {
+			count++;
+		}
+	}
+
+	// Store the string and the result pointers together so they can be
+	// freed together
+	char **dir_list = cvalloc(sizeof(char *) * (count + 2) + strlen(xdgd) + 1);
+	auto dirs = strcpy((char *)dir_list + sizeof(char *) * (count + 2), xdgd);
+	auto path = dirs;
+
+	for (size_t i = 0; i < count; i++) {
+		dir_list[i] = path;
+		path = strchr(path, ':');
+		*path = '\0';
+		path++;
+	}
+	dir_list[count] = path;
+
+	size_t fill = 0;
+	for (size_t i = 0; i <= count; i++) {
+		if (dir_list[i][0] == '/') {
+			dir_list[fill] = dir_list[i];
+			fill++;
+		}
+	}
+
+	dir_list[fill] = NULL;
+
+	return dir_list;
+}
+
+TEST_CASE(xdg_config_dirs) {
+	auto old_var = getenv("XDG_CONFIG_DIRS");
+	if (old_var) {
+		old_var = strdup(old_var);
+	}
+	unsetenv("XDG_CONFIG_DIRS");
+
+	auto result = xdg_config_dirs();
+	TEST_STREQUAL(result[0], "/etc/xdg");
+	TEST_EQUAL(result[1], NULL);
+	free(result);
+
+	setenv("XDG_CONFIG_DIRS", ".:.:/etc/xdg:.:/:", 1);
+	result = xdg_config_dirs();
+	TEST_STREQUAL(result[0], "/etc/xdg");
+	TEST_STREQUAL(result[1], "/");
+	TEST_EQUAL(result[2], NULL);
+	free(result);
+
+	setenv("XDG_CONFIG_DIRS", ":", 1);
+	result = xdg_config_dirs();
+	TEST_EQUAL(result[0], NULL);
+	free(result);
+
+	if (old_var) {
+		setenv("XDG_CONFIG_DIRS", old_var, 1);
+		free(old_var);
+	}
+}
+
 /// Search for config file under a base directory
 FILE *open_config_file_at(const char *base, char **out_path) {
-	static const char *config_paths[] = {"/compton.conf", "/compton/compton.conf"};
+	static const char *config_paths[] = {"/picom.conf", "/picom/picom.conf",
+	                                     "/compton.conf", "/compton/compton.conf"};
 	for (size_t i = 0; i < ARR_SIZE(config_paths); i++) {
 		char *path = mstrjoin(base, config_paths[i]);
 		FILE *ret = fopen(path, "r");
@@ -49,6 +141,12 @@ FILE *open_config_file_at(const char *base, char **out_path) {
 			free(path);
 		}
 		if (ret) {
+			if (strstr(config_paths[i], "compton")) {
+				log_warn("This compositor has been renamed to \"picom\", "
+				         "the old config file paths is deprecated. "
+				         "Please replace the \"compton\"s in the path "
+				         "with \"picom\"");
+			}
 			return ret;
 		}
 	}
@@ -71,7 +169,7 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 	}
 
 	// First search for config file in user config directory
-	auto config_home = xdgConfigHome(NULL);
+	auto config_home = xdg_config_home();
 	auto ret = open_config_file_at(config_home, ppath);
 	free((void *)config_home);
 	if (ret) {
@@ -94,15 +192,15 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 	}
 
 	// Fall back to config file in system config directory
-	auto config_dirs = xdgConfigDirectories(NULL);
+	auto config_dirs = xdg_config_dirs();
 	for (int i = 0; config_dirs[i]; i++) {
 		ret = open_config_file_at(config_dirs[i], ppath);
 		if (ret) {
-			free((void *)config_dirs);
+			free(config_dirs);
 			return ret;
 		}
 	}
-	free((void *)config_dirs);
+	free(config_dirs);
 
 	return NULL;
 }
@@ -148,6 +246,43 @@ parse_cfg_condlst_opct(options_t *opt, const config_t *pcfg, const char *name) {
 			if (!parse_rule_opacity(&opt->opacity_rules,
 			                        config_setting_get_string(setting)))
 				exit(1);
+		}
+	}
+}
+
+static inline void parse_wintype_config(const config_t *cfg, const char *member_name,
+                                        win_option_t *o, win_option_mask_t *mask) {
+	char *str = mstrjoin("wintypes.", member_name);
+	const config_setting_t *setting = config_lookup(cfg, str);
+	free(str);
+
+	int ival = 0;
+	if (setting) {
+		if (config_setting_lookup_bool(setting, "shadow", &ival)) {
+			o->shadow = ival;
+			mask->shadow = true;
+		}
+		if (config_setting_lookup_bool(setting, "fade", &ival)) {
+			o->fade = ival;
+			mask->fade = true;
+		}
+		if (config_setting_lookup_bool(setting, "focus", &ival)) {
+			o->focus = ival;
+			mask->focus = true;
+		}
+		if (config_setting_lookup_bool(setting, "full-shadow", &ival)) {
+			o->full_shadow = ival;
+			mask->full_shadow = true;
+		}
+		if (config_setting_lookup_bool(setting, "redir-ignore", &ival)) {
+			o->redir_ignore = ival;
+			mask->redir_ignore = true;
+		}
+
+		double fval;
+		if (config_setting_lookup_float(setting, "opacity", &fval)) {
+			o->opacity = normalize_d(fval);
+			mask->opacity = true;
 		}
 	}
 }
@@ -355,6 +490,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "detect-transient", &opt->detect_transient);
 	// --detect-client-leader
 	lcfg_lookup_bool(&cfg, "detect-client-leader", &opt->detect_client_leader);
+	// --no-ewmh-fullscreen
+	lcfg_lookup_bool(&cfg, "no-ewmh-fullscreen", &opt->no_ewmh_fullscreen);
+	// --transparent-clipping
+	lcfg_lookup_bool(&cfg, "transparent-clipping", &opt->transparent_clipping);
 	// --shadow-exclude
 	parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude");
 	// --fade-exclude
@@ -370,9 +509,24 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --unredir-if-possible-exclude
 	parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
 	                  "unredir-if-possible-exclude");
+	// --blur-method
+	if (config_lookup_string(&cfg, "blur-method", &sval)) {
+		enum blur_method method = parse_blur_method(sval);
+		if (method >= BLUR_METHOD_INVALID) {
+			log_fatal("Invalid blur method %s", sval);
+			goto err;
+		}
+		opt->blur_method = method;
+	}
+	// --blur-size
+	config_lookup_int(&cfg, "blur-size", &opt->blur_radius);
+	// --blur-deviation
+	config_lookup_float(&cfg, "blur-deviation", &opt->blur_deviation);
 	// --blur-background
 	if (config_lookup_bool(&cfg, "blur-background", &ival) && ival) {
-		opt->blur_method = BLUR_METHOD_KERNEL;
+		if (opt->blur_method == BLUR_METHOD_NONE) {
+			opt->blur_method = BLUR_METHOD_KERNEL;
+		}
 	}
 	// --blur-background-frame
 	lcfg_lookup_bool(&cfg, "blur-background-frame", &opt->blur_background_frame);
@@ -393,6 +547,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "glx-no-stencil", &opt->glx_no_stencil);
 	// --glx-no-rebind-pixmap
 	lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &opt->glx_no_rebind_pixmap);
+	lcfg_lookup_bool(&cfg, "force-win-blend", &opt->force_win_blend);
 	// --glx-swap-method
 	if (config_lookup_string(&cfg, "glx-swap-method", &sval)) {
 		char *endptr;
@@ -413,6 +568,15 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	// --use-damage
 	lcfg_lookup_bool(&cfg, "use-damage", &opt->use_damage);
+
+	// --max-brightness
+	if (config_lookup_float(&cfg, "max-brightness", &opt->max_brightness) &&
+	    opt->use_damage) {
+		log_warn("max-brightness requires use-damage = false. Falling back to "
+		         "1.0");
+		opt->max_brightness = 1.0;
+	}
+
 	// --glx-use-gpushader4
 	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival) && ival) {
 		log_warn("glx-use-gpushader4 is deprecated since v6, please remove it "
@@ -421,8 +585,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	// --xrender-sync
 	if (config_lookup_bool(&cfg, "xrender-sync", &ival) && ival) {
-		log_warn("Please use xrender-sync-fence instead of xrender-sync.");
-		opt->xrender_sync_fence = true;
+		log_error("Please use xrender-sync-fence instead of xrender-sync.");
+		goto err;
 	}
 	// --xrender-sync-fence
 	lcfg_lookup_bool(&cfg, "xrender-sync-fence", &opt->xrender_sync_fence);
@@ -430,25 +594,21 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
 		log_warn("\"clear-shadow\" is removed as an option, and is always"
 		         " enabled now. Consider removing it from your config file");
-	if (lcfg_lookup_bool(&cfg, "paint-on-overlay", &bval))
-		log_warn("\"paint-on-overlay\" has been removed as an option, and "
-		         "is enabled whenever possible");
+	if (lcfg_lookup_bool(&cfg, "paint-on-overlay", &bval)) {
+		log_error("\"paint-on-overlay\" has been removed as an option, and "
+		          "the feature is enabled whenever possible");
+		goto err;
+	}
 
-	if (config_lookup_float(&cfg, "alpha-step", &dval))
-		log_warn("\"alpha-step\" has been removed, compton now tries to make use"
-		         " of all alpha values");
+	if (config_lookup_float(&cfg, "alpha-step", &dval)) {
+		log_error("\"alpha-step\" has been removed, compton now tries to make use"
+		          " of all alpha values");
+		goto err;
+	}
 
-	const char *deprecation_message =
+	const char *deprecation_message attr_unused =
 	    "has been removed. If you encounter problems "
 	    "without this feature, please feel free to open a bug report";
-	if (lcfg_lookup_bool(&cfg, "glx-use-copysubbuffermesa", &bval) && bval) {
-		log_error("\"glx-use-copysubbuffermesa\" %s", deprecation_message);
-		return ERR_PTR(-1);
-	}
-	if (lcfg_lookup_bool(&cfg, "glx-copy-from-front", &bval) && bval) {
-		log_error("\"glx-copy-from-front\" %s", deprecation_message);
-		return ERR_PTR(-1);
-	}
 
 	config_setting_t *blur_cfg = config_lookup(&cfg, "blur");
 	if (blur_cfg) {
@@ -461,7 +621,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 			}
 		}
 
-		opt->blur_radius = -1;
 		config_setting_lookup_int(blur_cfg, "size", &opt->blur_radius);
 
 		if (config_setting_lookup_string(blur_cfg, "kernel", &sval)) {
@@ -472,7 +631,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 			}
 		}
 
-		opt->blur_deviation = 0.84089642;
 		config_setting_lookup_float(blur_cfg, "deviation", &opt->blur_deviation);
 	}
 
@@ -480,41 +638,13 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 
 	// XXX ! Refactor all the wintype_* arrays into a struct
 	for (wintype_t i = 0; i < NUM_WINTYPES; ++i) {
-		char *str = mstrjoin("wintypes.", WINTYPES[i]);
-		config_setting_t *setting = config_lookup(&cfg, str);
-		free(str);
-
-		win_option_t *o = &opt->wintype_option[i];
-		win_option_mask_t *mask = &winopt_mask[i];
-		if (setting) {
-			if (config_setting_lookup_bool(setting, "shadow", &ival)) {
-				o->shadow = ival;
-				mask->shadow = true;
-			}
-			if (config_setting_lookup_bool(setting, "fade", &ival)) {
-				o->fade = ival;
-				mask->fade = true;
-			}
-			if (config_setting_lookup_bool(setting, "focus", &ival)) {
-				o->focus = ival;
-				mask->focus = true;
-			}
-			if (config_setting_lookup_bool(setting, "full-shadow", &ival)) {
-				o->full_shadow = ival;
-				mask->full_shadow = true;
-			}
-			if (config_setting_lookup_bool(setting, "redir-ignore", &ival)) {
-				o->redir_ignore = ival;
-				mask->redir_ignore = true;
-			}
-
-			double fval;
-			if (config_setting_lookup_float(setting, "opacity", &fval)) {
-				o->opacity = normalize_d(fval);
-				mask->opacity = true;
-			}
-		}
+		parse_wintype_config(&cfg, WINTYPES[i], &opt->wintype_option[i],
+		                     &winopt_mask[i]);
 	}
+
+	// Compatibility with the old name for notification windows.
+	parse_wintype_config(&cfg, "notify", &opt->wintype_option[WINTYPE_NOTIFICATION],
+	                     &winopt_mask[WINTYPE_NOTIFICATION]);
 
 	config_destroy(&cfg);
 	return path;

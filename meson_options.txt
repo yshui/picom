@@ -1,4 +1,4 @@
-option('sanitize', type: 'boolean', value: false, description: 'Compile compton with sanitizers')
+option('sanitize', type: 'boolean', value: false, description: 'Build with sanitizers enabled (deprecated)')
 option('config_file', type: 'boolean', value: true, description: 'Enable config file support')
 option('regex', type: 'boolean', value: true, description: 'Enable regex support in window conditions')
 
@@ -9,7 +9,7 @@ option('dbus', type: 'boolean', value: true, description: 'Enable support for D-
 
 option('xrescheck', type: 'boolean', value: false, description: 'Enable X resource leak checker (for debug only)')
 
-option('build_docs', type: 'boolean', value: false, description: 'Build documentation and man pages')
+option('with_docs', type: 'boolean', value: false, description: 'Build documentation and man pages')
 
 option('modularize', type: 'boolean', value: false, description: 'Build with clang\'s module system')
 

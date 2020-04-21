@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
@@ -50,12 +51,8 @@ bool glx_init(session_t *ps, bool need_render) {
 
 	// Check for GLX extension
 	if (!ps->glx_exists) {
-		if (glXQueryExtension(ps->dpy, &ps->glx_event, &ps->glx_error))
-			ps->glx_exists = true;
-		else {
-			log_error("No GLX extension.");
-			goto glx_init_end;
-		}
+		log_error("No GLX extension.");
+		goto glx_init_end;
 	}
 
 	// Get XVisualInfo
@@ -208,7 +205,7 @@ glx_init_end:
 	return success;
 }
 
-static void glx_free_prog_main(session_t *ps, glx_prog_main_t *pprogram) {
+static void glx_free_prog_main(glx_prog_main_t *pprogram) {
 	if (!pprogram)
 		return;
 	if (pprogram->prog) {
@@ -242,18 +239,20 @@ void glx_destroy(session_t *ps) {
 	}
 	free(ps->psglx->blur_passes);
 
-	glx_free_prog_main(ps, &ps->glx_prog_win);
+	glx_free_prog_main(&ps->glx_prog_win);
 
 	gl_check_err();
 
 	// Destroy GLX context
 	if (ps->psglx->context) {
+		glXMakeCurrent(ps->dpy, None, NULL);
 		glXDestroyContext(ps->dpy, ps->psglx->context);
 		ps->psglx->context = NULL;
 	}
 
 	free(ps->psglx);
 	ps->psglx = NULL;
+	ps->argb_fbconfig = NULL;
 }
 
 /**
@@ -419,7 +418,7 @@ bool glx_init_blur(session_t *ps) {
 /**
  * Load a GLSL main program from shader strings.
  */
-bool glx_load_prog_main(session_t *ps, const char *vshader_str, const char *fshader_str,
+bool glx_load_prog_main(const char *vshader_str, const char *fshader_str,
                         glx_prog_main_t *pprogram) {
 	assert(pprogram);
 
@@ -442,6 +441,7 @@ bool glx_load_prog_main(session_t *ps, const char *vshader_str, const char *fsha
 	P_GET_UNIFM_LOC("opacity", unifm_opacity);
 	P_GET_UNIFM_LOC("invert_color", unifm_invert_color);
 	P_GET_UNIFM_LOC("tex", unifm_tex);
+	P_GET_UNIFM_LOC("time", unifm_time);
 #undef P_GET_UNIFM_LOC
 
 	gl_check_err();
@@ -662,7 +662,7 @@ void glx_set_clip(session_t *ps, const region_t *reg) {
                                                                                          \
 	pixman_region32_fini(&reg_new);
 
-static inline GLuint glx_gen_texture(session_t *ps, GLenum tex_tgt, int width, int height) {
+static inline GLuint glx_gen_texture(GLenum tex_tgt, int width, int height) {
 	GLuint tex = 0;
 	glGenTextures(1, &tex);
 	if (!tex)
@@ -738,10 +738,10 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 
 	// Generate FBO and textures if needed
 	if (!pbc->textures[0])
-		pbc->textures[0] = glx_gen_texture(ps, tex_tgt, mwidth, mheight);
+		pbc->textures[0] = glx_gen_texture(tex_tgt, mwidth, mheight);
 	GLuint tex_scr = pbc->textures[0];
 	if (more_passes && !pbc->textures[1])
-		pbc->textures[1] = glx_gen_texture(ps, tex_tgt, mwidth, mheight);
+		pbc->textures[1] = glx_gen_texture(tex_tgt, mwidth, mheight);
 	pbc->width = mwidth;
 	pbc->height = mheight;
 	GLuint tex_scr2 = pbc->textures[1];
@@ -1029,12 +1029,17 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 		// Programmable path
 		assert(pprogram->prog);
 		glUseProgram(pprogram->prog);
+		struct timespec ts;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
 		if (pprogram->unifm_opacity >= 0)
 			glUniform1f(pprogram->unifm_opacity, (float)opacity);
 		if (pprogram->unifm_invert_color >= 0)
 			glUniform1i(pprogram->unifm_invert_color, neg);
 		if (pprogram->unifm_tex >= 0)
 			glUniform1i(pprogram->unifm_tex, 0);
+		if (pprogram->unifm_time >= 0)
+			glUniform1f(pprogram->unifm_time, (float)ts.tv_sec * 1000.0f +
+			                                      (float)ts.tv_nsec / 1.0e6f);
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d", x, y, width, height,

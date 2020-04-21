@@ -4,27 +4,31 @@ if not libev.found()
 endif
 base_deps = [
 	cc.find_library('m'),
-	libev,
-	dependency('xcb', version: '>=1.9.2'),
+	libev
 ]
 
-srcs = [ files('compton.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
+srcs = [ files('picom.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
                'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
-               'options.c', 'event.c', 'cache.c', 'atom.c') ]
-compton_inc = include_directories('.')
+               'options.c', 'event.c', 'cache.c', 'atom.c', 'file_watch.c') ]
+picom_inc = include_directories('.')
 
 cflags = []
 
-
-required_package = [
-	'x11', 'x11-xcb', 'xcb-renderutil',
-	'xcb-render', 'xcb-damage', 'xcb-randr', 'xcb-sync',
-	'xcb-composite', 'xcb-shape', 'xcb-image', 'xcb-xinerama',
-	'xcb-xfixes', 'xcb-present', 'xext', 'pixman-1'
+required_xcb_packages = [
+	'xcb-render', 'xcb-damage', 'xcb-randr', 'xcb-sync', 'xcb-composite',
+	'xcb-shape', 'xcb-xinerama', 'xcb-xfixes', 'xcb-present', 'xcb-glx', 'xcb'
 ]
 
-foreach i : required_package
+required_packages = [
+	'x11', 'x11-xcb', 'xcb-renderutil', 'xcb-image', 'xext', 'pixman-1'
+]
+
+foreach i : required_packages
 	base_deps += [dependency(i, required: true)]
+endforeach
+
+foreach i : required_xcb_packages
+	base_deps += [dependency(i, version: '>=1.12.0', required: true)]
 endforeach
 
 if not cc.has_header('uthash.h')
@@ -34,8 +38,8 @@ endif
 deps = []
 
 if get_option('config_file')
-	deps += [dependency('libconfig', version: '>=1.4', required: true),
-	         dependency('libxdg-basedir', required: true)]
+	deps += [dependency('libconfig', version: '>=1.4', required: true)]
+
 	cflags += ['-DCONFIG_LIBCONFIG']
 	srcs += [ 'config_libconfig.c' ]
 endif
@@ -74,12 +78,20 @@ if get_option('unittest')
 	cflags += ['-DUNIT_TEST']
 endif
 
+host_system = host_machine.system()
+if host_system == 'linux'
+	cflags += ['-DHAS_INOTIFY']
+elif host_system == 'freebsd' or host_system == 'netbsd' or
+     host_system == 'dragonfly' or host_system == 'openbsd'
+	cflags += ['-DHAS_KQUEUE']
+endif
+
 subdir('backend')
 
-compton = executable('compton', srcs, c_args: cflags,
+picom = executable('picom', srcs, c_args: cflags,
   dependencies: [ base_deps, deps, test_h_dep ],
-  install: true, include_directories: compton_inc)
+  install: true, include_directories: picom_inc)
 
 if get_option('unittest')
-	test('compton unittest', compton, args: [ '--unittest' ])
+	test('picom unittest', picom, args: [ '--unittest' ])
 endif

@@ -7,6 +7,7 @@
 #include <pixman.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
+#include <xcb/glx.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
@@ -14,7 +15,9 @@
 #include <xcb/xfixes.h>
 
 #include "atom.h"
+#ifdef CONFIG_OPENGL
 #include "backend/gl/glx.h"
+#endif
 #include "common.h"
 #include "compiler.h"
 #include "kernel.h"
@@ -38,8 +41,8 @@
  * @return a <code>winprop_t</code> structure containing the attribute
  *    and number of items. A blank one on failure.
  */
-winprop_t wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
-                           int offset, int length, xcb_atom_t rtype, int rformat) {
+winprop_t x_get_prop_with_offset(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
+                                 int offset, int length, xcb_atom_t rtype, int rformat) {
 	xcb_get_property_reply_t *r = xcb_get_property_reply(
 	    ps->c,
 	    xcb_get_property(ps->c, 0, w, atom, rtype, to_u32_checked(offset),
@@ -73,7 +76,7 @@ winprop_t wid_get_prop_adv(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
 xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t aprop) {
 	// Get the attribute
 	xcb_window_t p = XCB_NONE;
-	winprop_t prop = wid_get_prop(ps, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
+	winprop_t prop = x_get_prop(ps, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
 
 	// Return it
 	if (prop.nitems) {
@@ -109,7 +112,7 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 }
 
 // A cache of pict formats. We assume they don't change during the lifetime
-// of compton
+// of this program
 static thread_local xcb_render_query_pict_formats_reply_t *g_pictfmts = NULL;
 
 static inline void x_get_server_pictfmts(xcb_connection_t *c) {
@@ -203,8 +206,7 @@ x_create_picture_with_pictfmt_and_pixmap(xcb_connection_t *c,
 	                             c, tmp_picture, pixmap, pictfmt->id, valuemask, buf));
 	free(buf);
 	if (e) {
-		x_print_error(e->full_sequence, e->major_code, e->minor_code, e->error_code);
-		log_error("failed to create picture");
+		log_error_x_error(e, "failed to create picture");
 		return XCB_NONE;
 	}
 	return tmp_picture;
@@ -263,7 +265,7 @@ bool x_fetch_region(xcb_connection_t *c, xcb_xfixes_region_t r, pixman_region32_
 	xcb_xfixes_fetch_region_reply_t *xr =
 	    xcb_xfixes_fetch_region_reply(c, xcb_xfixes_fetch_region(c, r), &e);
 	if (!xr) {
-		log_error("Failed to fetch rectangles");
+		log_error_x_error(e, "Failed to fetch rectangles");
 		return false;
 	}
 
@@ -299,9 +301,10 @@ void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
 	xcb_generic_error_t *e = xcb_request_check(
 	    c, xcb_render_set_picture_clip_rectangles_checked(
 	           c, pict, clip_x_origin, clip_y_origin, to_u32_checked(nrects), xrects));
-	if (e)
-		log_error("Failed to set clip region");
-	free(e);
+	if (e) {
+		log_error_x_error(e, "Failed to set clip region");
+		free(e);
+	}
 	free(xrects);
 	return;
 }
@@ -310,9 +313,10 @@ void x_clear_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict)
 	xcb_render_change_picture_value_list_t v = {.clipmask = XCB_NONE};
 	xcb_generic_error_t *e = xcb_request_check(
 	    c, xcb_render_change_picture(c, pict, XCB_RENDER_CP_CLIP_MASK, &v));
-	if (e)
-		log_error("failed to clear clip region");
-	free(e);
+	if (e) {
+		log_error_x_error(e, "failed to clear clip region");
+		free(e);
+	}
 	return;
 }
 
@@ -322,88 +326,118 @@ enum { XSyncBadCounter = 0,
 };
 
 /**
- * X11 error handler function.
+ * Convert a X11 error to string
  *
- * XXX consider making this error to string
+ * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
+ *         for multiple calls to this function,
  */
-void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
+static const char *
+_x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
 	session_t *const ps = ps_g;
 
 	int o = 0;
 	const char *name = "Unknown";
 
-	if (major == ps->composite_opcode && minor == XCB_COMPOSITE_REDIRECT_SUBWINDOWS) {
-		log_fatal("Another composite manager is already running "
-		          "(and does not handle _NET_WM_CM_Sn correctly)");
-		exit(1);
-	}
+#define CASESTRRET(s)                                                                    \
+	case s:                                                                          \
+		name = #s;                                                               \
+		break
 
 #define CASESTRRET2(s)                                                                   \
-	case s: name = #s; break
+	case XCB_##s: name = #s; break
 
+	// TODO separate error code out from session_t
 	o = error_code - ps->xfixes_error;
-	switch (o) { CASESTRRET2(XCB_XFIXES_BAD_REGION); }
+	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
 
 	o = error_code - ps->damage_error;
-	switch (o) { CASESTRRET2(XCB_DAMAGE_BAD_DAMAGE); }
+	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
 
 	o = error_code - ps->render_error;
 	switch (o) {
-		CASESTRRET2(XCB_RENDER_PICT_FORMAT);
-		CASESTRRET2(XCB_RENDER_PICTURE);
-		CASESTRRET2(XCB_RENDER_PICT_OP);
-		CASESTRRET2(XCB_RENDER_GLYPH_SET);
-		CASESTRRET2(XCB_RENDER_GLYPH);
+		CASESTRRET2(RENDER_PICT_FORMAT);
+		CASESTRRET2(RENDER_PICTURE);
+		CASESTRRET2(RENDER_PICT_OP);
+		CASESTRRET2(RENDER_GLYPH_SET);
+		CASESTRRET2(RENDER_GLYPH);
 	}
 
-#ifdef CONFIG_OPENGL
 	if (ps->glx_exists) {
 		o = error_code - ps->glx_error;
 		switch (o) {
-			CASESTRRET2(GLX_BAD_SCREEN);
-			CASESTRRET2(GLX_BAD_ATTRIBUTE);
-			CASESTRRET2(GLX_NO_EXTENSION);
-			CASESTRRET2(GLX_BAD_VISUAL);
 			CASESTRRET2(GLX_BAD_CONTEXT);
-			CASESTRRET2(GLX_BAD_VALUE);
-			CASESTRRET2(GLX_BAD_ENUM);
+			CASESTRRET2(GLX_BAD_CONTEXT_STATE);
+			CASESTRRET2(GLX_BAD_DRAWABLE);
+			CASESTRRET2(GLX_BAD_PIXMAP);
+			CASESTRRET2(GLX_BAD_CONTEXT_TAG);
+			CASESTRRET2(GLX_BAD_CURRENT_WINDOW);
+			CASESTRRET2(GLX_BAD_RENDER_REQUEST);
+			CASESTRRET2(GLX_BAD_LARGE_REQUEST);
+			CASESTRRET2(GLX_UNSUPPORTED_PRIVATE_REQUEST);
+			CASESTRRET2(GLX_BAD_FB_CONFIG);
+			CASESTRRET2(GLX_BAD_PBUFFER);
+			CASESTRRET2(GLX_BAD_CURRENT_DRAWABLE);
+			CASESTRRET2(GLX_BAD_WINDOW);
+			CASESTRRET2(GLX_GLX_BAD_PROFILE_ARB);
 		}
 	}
-#endif
 
 	if (ps->xsync_exists) {
 		o = error_code - ps->xsync_error;
 		switch (o) {
-			CASESTRRET2(XSyncBadCounter);
-			CASESTRRET2(XSyncBadAlarm);
-			CASESTRRET2(XSyncBadFence);
+			CASESTRRET(XSyncBadCounter);
+			CASESTRRET(XSyncBadAlarm);
+			CASESTRRET(XSyncBadFence);
 		}
 	}
 
 	switch (error_code) {
-		CASESTRRET2(BadAccess);
-		CASESTRRET2(BadAlloc);
-		CASESTRRET2(BadAtom);
-		CASESTRRET2(BadColor);
-		CASESTRRET2(BadCursor);
-		CASESTRRET2(BadDrawable);
-		CASESTRRET2(BadFont);
-		CASESTRRET2(BadGC);
-		CASESTRRET2(BadIDChoice);
-		CASESTRRET2(BadImplementation);
-		CASESTRRET2(BadLength);
-		CASESTRRET2(BadMatch);
-		CASESTRRET2(BadName);
-		CASESTRRET2(BadPixmap);
-		CASESTRRET2(BadRequest);
-		CASESTRRET2(BadValue);
-		CASESTRRET2(BadWindow);
+		CASESTRRET2(ACCESS);
+		CASESTRRET2(ALLOC);
+		CASESTRRET2(ATOM);
+		CASESTRRET2(COLORMAP);
+		CASESTRRET2(CURSOR);
+		CASESTRRET2(DRAWABLE);
+		CASESTRRET2(FONT);
+		CASESTRRET2(G_CONTEXT);
+		CASESTRRET2(ID_CHOICE);
+		CASESTRRET2(IMPLEMENTATION);
+		CASESTRRET2(LENGTH);
+		CASESTRRET2(MATCH);
+		CASESTRRET2(NAME);
+		CASESTRRET2(PIXMAP);
+		CASESTRRET2(REQUEST);
+		CASESTRRET2(VALUE);
+		CASESTRRET2(WINDOW);
 	}
 
+#undef CASESTRRET
 #undef CASESTRRET2
 
-	log_debug("X error %d %s request %d minor %d serial %lu", error_code, name, major,
-	          minor, serial);
+	thread_local static char buffer[256];
+	snprintf(buffer, sizeof(buffer), "X error %d %s request %d minor %d serial %lu",
+	         error_code, name, major, minor, serial);
+	return buffer;
+}
+
+/**
+ * Log a X11 error
+ */
+void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
+	log_debug("%s", _x_strerror(serial, major, minor, error_code));
+}
+
+/*
+ * Convert a xcb_generic_error_t to a string that describes the error
+ *
+ * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
+ *         for multiple calls to this function,
+ */
+const char *x_strerror(xcb_generic_error_t *e) {
+	if (!e) {
+		return "No error";
+	}
+	return _x_strerror(e->full_sequence, e->major_code, e->minor_code, e->error_code);
 }
 
 /**
@@ -418,8 +452,7 @@ xcb_pixmap_t x_create_pixmap(xcb_connection_t *c, uint8_t depth, xcb_drawable_t 
 	if (err == NULL)
 		return pix;
 
-	log_error("Failed to create pixmap:");
-	x_print_error(err->sequence, err->major_code, err->minor_code, err->error_code);
+	log_error_x_error(err, "Failed to create pixmap");
 	free(err);
 	return XCB_NONE;
 }
@@ -458,8 +491,7 @@ xcb_pixmap_t x_get_root_back_pixmap(session_t *ps) {
 	// Get the values of background attributes
 	for (int p = 0; background_props_str[p]; p++) {
 		xcb_atom_t prop_atom = get_atom(ps->atoms, background_props_str[p]);
-		winprop_t prop =
-		    wid_get_prop(ps, ps->root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
+		winprop_t prop = x_get_prop(ps, ps->root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
 			pixmap = (xcb_pixmap_t)*prop.p32;
 			free_winprop(&prop);
@@ -491,25 +523,26 @@ bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
 
 	auto e = xcb_request_check(c, xcb_sync_trigger_fence_checked(c, f));
 	if (e) {
-		log_error("Failed to trigger the fence.");
-		free(e);
-		return false;
+		log_error_x_error(e, "Failed to trigger the fence");
+		goto err;
 	}
 
 	e = xcb_request_check(c, xcb_sync_await_fence_checked(c, 1, &f));
 	if (e) {
-		log_error("Failed to await on a fence.");
-		free(e);
-		return false;
+		log_error_x_error(e, "Failed to await on a fence");
+		goto err;
 	}
 
 	e = xcb_request_check(c, xcb_sync_reset_fence_checked(c, f));
 	if (e) {
-		log_error("Failed to reset the fence.");
-		free(e);
-		return false;
+		log_error_x_error(e, "Failed to reset the fence");
+		goto err;
 	}
 	return true;
+
+err:
+	free(e);
+	return false;
 }
 
 // xcb-render specific macros
@@ -574,7 +607,7 @@ struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual
 		return (struct xvisual_info){-1, -1, -1, -1, -1, 0};
 	}
 	if (pictfmt->type != XCB_RENDER_PICT_TYPE_DIRECT) {
-		log_error("compton cannot handle non-DirectColor visuals. Report an "
+		log_error("We cannot handle non-DirectColor visuals. Report an "
 		          "issue if you see this error message.");
 		return (struct xvisual_info){-1, -1, -1, -1, -1, 0};
 	}

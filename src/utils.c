@@ -32,4 +32,19 @@ void report_allocation_failure(const char *func, const char *file, unsigned int 
 	unreachable;
 }
 
+///
+/// Calculates next closest power of two of 32bit integer n
+/// ref: https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+///
+int next_power_of_two(int n) {
+	n--;
+	n |= n >> 1;
+	n |= n >> 2;
+	n |= n >> 4;
+	n |= n >> 8;
+	n |= n >> 16;
+	n++;
+	return n;
+}
+
 // vim: set noet sw=8 ts=8 :

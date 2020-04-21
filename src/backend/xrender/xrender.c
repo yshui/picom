@@ -14,11 +14,12 @@
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
-#include "compton.h"
 #include "config.h"
 #include "kernel.h"
 #include "log.h"
+#include "picom.h"
 #include "region.h"
+#include "types.h"
 #include "utils.h"
 #include "win.h"
 #include "x.h"
@@ -28,20 +29,19 @@ typedef struct _xrender_data {
 	/// If vsync is enabled and supported by the current system
 	bool vsync;
 	xcb_visualid_t default_visual;
-	/// The idle fence for the present extension
-	xcb_sync_fence_t idle_fence;
-	/// The target window
+	/// Target window
 	xcb_window_t target_win;
-	/// The painting target, it is either the root or the overlay
+	/// Painting target, it is either the root or the overlay
 	xcb_render_picture_t target;
-	/// A back buffer
-	xcb_render_picture_t back[2];
-	/// Age of each back buffer
-	int buffer_age[2];
+	/// Back buffers. Double buffer, with 1 for temporary render use
+	xcb_render_picture_t back[3];
+	/// The back buffer that is for temporary use
+	/// Age of each back buffer.
+	int buffer_age[3];
 	/// The back buffer we should be painting into
 	int curr_back;
 	/// The corresponding pixmap to the back buffer
-	xcb_pixmap_t back_pixmap[2];
+	xcb_pixmap_t back_pixmap[3];
 	/// The original root window content, usually the wallpaper.
 	/// We save it so we don't loss the wallpaper when we paint over
 	/// it.
@@ -104,9 +104,9 @@ static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
 	// sure we get everything into the buffer
 	x_clear_picture_clip_region(base->c, img->pict);
 
-	x_set_picture_clip_region(base->c, xd->back[xd->curr_back], 0, 0, &reg);
-	xcb_render_composite(base->c, op, img->pict, alpha_pict, xd->back[xd->curr_back],
-	                     0, 0, 0, 0, to_i16_checked(dst_x), to_i16_checked(dst_y),
+	x_set_picture_clip_region(base->c, xd->back[2], 0, 0, &reg);
+	xcb_render_composite(base->c, op, img->pict, alpha_pict, xd->back[2], 0, 0, 0, 0,
+	                     to_i16_checked(dst_x), to_i16_checked(dst_y),
 	                     to_u16_checked(img->ewidth), to_u16_checked(img->eheight));
 	pixman_region32_fini(&reg);
 }
@@ -114,10 +114,10 @@ static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
 static void fill(backend_t *base, struct color c, const region_t *clip) {
 	struct _xrender_data *xd = (void *)base;
 	const rect_t *extent = pixman_region32_extents((region_t *)clip);
-	x_set_picture_clip_region(base->c, xd->back[xd->curr_back], 0, 0, clip);
+	x_set_picture_clip_region(base->c, xd->back[2], 0, 0, clip);
 	// color is in X fixed point representation
 	xcb_render_fill_rectangles(
-	    base->c, XCB_RENDER_PICT_OP_OVER, xd->back[xd->curr_back],
+	    base->c, XCB_RENDER_PICT_OP_OVER, xd->back[2],
 	    (xcb_render_color_t){.red = (uint16_t)(c.red * 0xffff),
 	                         .green = (uint16_t)(c.green * 0xffff),
 	                         .blue = (uint16_t)(c.blue * 0xffff),
@@ -177,7 +177,7 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 	x_set_picture_clip_region(c, tmp_picture[1], 0, 0, &clip);
 	pixman_region32_fini(&clip);
 
-	xcb_render_picture_t src_pict = xd->back[xd->curr_back], dst_pict = tmp_picture[0];
+	xcb_render_picture_t src_pict = xd->back[2], dst_pict = tmp_picture[0];
 	auto alpha_pict = xd->alpha_pict[(int)(opacity * MAX_ALPHA)];
 	int current = 0;
 	x_set_picture_clip_region(c, src_pict, 0, 0, &reg_op_resized);
@@ -212,11 +212,11 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 			                     XCB_NONE, dst_pict, 0, 0, 0, 0, 0, 0,
 			                     width_resized, height_resized);
 		} else {
-			x_set_picture_clip_region(c, xd->back[xd->curr_back], 0, 0, &reg_op);
+			x_set_picture_clip_region(c, xd->back[2], 0, 0, &reg_op);
 			// This is the last pass, and we are doing more than 1 pass
 			xcb_render_composite(c, XCB_RENDER_PICT_OP_OVER, src_pict,
-			                     alpha_pict, xd->back[xd->curr_back], 0, 0, 0,
-			                     0, to_i16_checked(extent_resized->x1),
+			                     alpha_pict, xd->back[2], 0, 0, 0, 0,
+			                     to_i16_checked(extent_resized->x1),
 			                     to_i16_checked(extent_resized->y1),
 			                     width_resized, height_resized);
 		}
@@ -232,10 +232,10 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 
 	// There is only 1 pass
 	if (i == 1) {
-		x_set_picture_clip_region(c, xd->back[xd->curr_back], 0, 0, &reg_op);
+		x_set_picture_clip_region(c, xd->back[2], 0, 0, &reg_op);
 		xcb_render_composite(
-		    c, XCB_RENDER_PICT_OP_OVER, src_pict, alpha_pict,
-		    xd->back[xd->curr_back], 0, 0, 0, 0, to_i16_checked(extent_resized->x1),
+		    c, XCB_RENDER_PICT_OP_OVER, src_pict, alpha_pict, xd->back[2], 0, 0,
+		    0, 0, to_i16_checked(extent_resized->x1),
 		    to_i16_checked(extent_resized->y1), width_resized, height_resized);
 	}
 
@@ -301,10 +301,25 @@ static void deinit(backend_t *backend_data) {
 	free(xd);
 }
 
-static void present(backend_t *base) {
+static void present(backend_t *base, const region_t *region) {
 	struct _xrender_data *xd = (void *)base;
+	const rect_t *extent = pixman_region32_extents((region_t *)region);
+	int16_t orig_x = to_i16_checked(extent->x1), orig_y = to_i16_checked(extent->y1);
+	uint16_t region_width = to_u16_checked(extent->x2 - extent->x1),
+	         region_height = to_u16_checked(extent->y2 - extent->y1);
+
+	// compose() sets clip region on the back buffer, so clear it first
+	x_clear_picture_clip_region(base->c, xd->back[xd->curr_back]);
+
+	// limit the region of update
+	x_set_picture_clip_region(base->c, xd->back[2], 0, 0, region);
 
 	if (xd->vsync) {
+		// Update the back buffer first, then present
+		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC, xd->back[2],
+		                     XCB_NONE, xd->back[xd->curr_back], orig_x, orig_y, 0,
+		                     0, orig_x, orig_y, region_width, region_height);
+
 		// Make sure we got reply from PresentPixmap before waiting for events,
 		// to avoid deadlock
 		auto e = xcb_request_check(
@@ -342,26 +357,24 @@ static void present(backend_t *base) {
 		}
 		free(pev);
 	} else {
-		// compose() sets clip region, so clear it first to make
-		// sure we update the whole screen.
-		x_clear_picture_clip_region(xd->base.c, xd->back[xd->curr_back]);
-
-		// TODO buffer-age-like optimization might be possible here.
-		//      but that will require a different backend API
-		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC,
-		                     xd->back[xd->curr_back], XCB_NONE, xd->target, 0, 0,
-		                     0, 0, 0, 0, to_u16_checked(xd->target_width),
-		                     to_u16_checked(xd->target_height));
-		xd->buffer_age[xd->curr_back] = 1;
+		// No vsync needed, draw into the target picture directly
+		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC, xd->back[2],
+		                     XCB_NONE, xd->target, orig_x, orig_y, 0, 0, orig_x,
+		                     orig_y, region_width, region_height);
 	}
 }
 
 static int buffer_age(backend_t *backend_data) {
 	struct _xrender_data *xd = (void *)backend_data;
+	if (!xd->vsync) {
+		// Only the target picture really holds the screen content, and its
+		// content is always up to date. So buffer age is always 1.
+		return 1;
+	}
 	return xd->buffer_age[xd->curr_back];
 }
 
-static bool is_image_transparent(backend_t *bd, void *image) {
+static bool is_image_transparent(backend_t *bd attr_unused, void *image) {
 	struct _xrender_image_data *img = image;
 	return img->has_alpha;
 }
@@ -445,11 +458,13 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 		img->eheight = iargs[1];
 		break;
 	case IMAGE_OP_APPLY_ALPHA_ALL: assert(false);
+	case IMAGE_OP_MAX_BRIGHTNESS: assert(false);
 	}
 	pixman_region32_fini(&reg);
 	return true;
 }
 
+// TODO: use copy-on-write
 static void *copy(backend_t *base, const void *image, const region_t *reg) {
 	const struct _xrender_image_data *img = image;
 	struct _xrender_data *xd = (void *)base;
@@ -484,7 +499,7 @@ static void *copy(backend_t *base, const void *image, const region_t *reg) {
 	return new_img;
 }
 
-void *create_blur_context(backend_t *base, enum blur_method method, void *args) {
+void *create_blur_context(backend_t *base attr_unused, enum blur_method method, void *args) {
 	auto ret = ccalloc(1, struct _xrender_blur_context);
 	if (!method || method >= BLUR_METHOD_INVALID) {
 		ret->method = BLUR_METHOD_NONE;
@@ -521,13 +536,19 @@ void *create_blur_context(backend_t *base, enum blur_method method, void *args) 
 	return ret;
 }
 
-void destroy_blur_context(backend_t *base, void *ctx_) {
+void destroy_blur_context(backend_t *base attr_unused, void *ctx_) {
 	struct _xrender_blur_context *ctx = ctx_;
 	for (int i = 0; i < ctx->x_blur_kernel_count; i++) {
 		free(ctx->x_blur_kernel[i]);
 	}
 	free(ctx->x_blur_kernel);
 	free(ctx);
+}
+
+void get_blur_size(void *blur_context, int *width, int *height) {
+	struct _xrender_blur_context *ctx = blur_context;
+	*width = ctx->resize_width;
+	*height = ctx->resize_height;
 }
 
 backend_t *backend_xrender_init(session_t *ps) {
@@ -583,9 +604,10 @@ backend_t *backend_xrender_init(session_t *ps) {
 		xd->vsync = false;
 	}
 
-	// We might need to do double buffering for vsync
-	int pixmap_needed = xd->vsync ? 2 : 1;
-	for (int i = 0; i < pixmap_needed; i++) {
+	// We might need to do double buffering for vsync, and buffer 0 and 1 are for
+	// double buffering.
+	int first_buffer_index = xd->vsync ? 0 : 2;
+	for (int i = first_buffer_index; i < 3; i++) {
 		xd->back_pixmap[i] = x_create_pixmap(ps->c, pictfmt->depth, ps->root,
 		                                     to_u16_checked(ps->root_width),
 		                                     to_u16_checked(ps->root_height));
@@ -632,6 +654,7 @@ struct backend_operations xrender_ops = {
     .copy = copy,
     .create_blur_context = create_blur_context,
     .destroy_blur_context = destroy_blur_context,
+    .get_blur_size = get_blur_size,
 };
 
 // vim: set noet sw=8 ts=8:

@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 
+#include "backend/backend.h"
 #include "common.h"
 #include "config.h"
 #include "log.h"
@@ -22,13 +23,12 @@
 /**
  * Print usage text.
  */
-static void usage(int ret) {
+static void usage(const char *argv0, int ret) {
 #define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
 	static const char *usage_text =
-	    "compton (" COMPTON_VERSION ")\n"
-	    "This is the maintenance fork of compton, please report\n"
-	    "bugs to https://github.com/yshui/compton\n\n"
-	    "usage: compton [options]\n"
+	    "picom (" COMPTON_VERSION ")\n"
+	    "Please report bugs to https://github.com/yshui/picom\n\n"
+	    "usage: %s [options]\n"
 	    "Options:\n"
 	    "\n"
 	    "-r radius\n"
@@ -151,7 +151,7 @@ static void usage(int ret) {
 	    "  windows.\n"
 	    "\n"
 	    "--refresh-rate val\n"
-	    "  Specify refresh rate of the screen. If not specified or 0, compton\n"
+	    "  Specify refresh rate of the screen. If not specified or 0, we\n"
 	    "  will try detecting this with X RandR extension.\n"
 	    "\n"
 	    "--vsync\n"
@@ -161,16 +161,11 @@ static void usage(int ret) {
 	    "  Painting on X Composite overlay window.\n"
 	    "\n"
 	    "--sw-opti\n"
-	    "  Limit compton to repaint at most once every 1 / refresh_rate\n"
-	    "  second to boost performance.\n"
+	    "  Limit repaint to at most once every 1 / refresh_rate second.\n"
 	    "\n"
 	    "--use-ewmh-active-win\n"
 	    "  Use _NET_WM_ACTIVE_WINDOW on the root window to determine which\n"
 	    "  window is focused instead of using FocusIn/Out events.\n"
-	    "\n"
-	    "--respect-prop-shadow\n"
-	    "  Respect _COMPTON_SHADOW. This a prototype-level feature, which\n"
-	    "  you must not rely on.\n"
 	    "\n"
 	    "--unredir-if-possible\n"
 	    "  Unredirect all windows if a full-screen opaque window is\n"
@@ -191,6 +186,11 @@ static void usage(int ret) {
 	    "--inactive-dim-fixed\n"
 	    "  Use fixed inactive dim value.\n"
 	    "\n"
+	    "--max-brightness\n"
+	    "  Dims windows which average brightness is above this threshold.\n"
+	    "  Requires --no-use-damage.\n"
+	    "  Default: 1.0 or no dimming.\n"
+	    "\n"
 	    "--detect-transient\n"
 	    "  Use WM_TRANSIENT_FOR to group windows, and consider windows in\n"
 	    "  the same group focused at the same time.\n"
@@ -199,6 +199,18 @@ static void usage(int ret) {
 	    "  Use WM_CLIENT_LEADER to group windows, and consider windows in\n"
 	    "  the same group focused at the same time. WM_TRANSIENT_FOR has\n"
 	    "  higher priority if --detect-transient is enabled, too.\n"
+	    "\n"
+	    "--blur-method\n"
+	    "  The algorithm used for background bluring. Available choices are:\n"
+	    "  'none' to disable, 'gaussian', 'box' or 'kernel' for custom\n"
+	    "  convolution blur with --blur-kern.\n"
+	    "  Note: 'gaussian' and 'box' require --experimental-backends.\n"
+	    "\n"
+	    "--blur-size\n"
+	    "  The radius of the blur kernel for 'box' and 'gaussian' blur method.\n"
+	    "\n"
+	    "--blur-deviation\n"
+	    "  The standard deviation for the 'gaussian' blur method.\n"
 	    "\n"
 	    "--blur-background\n"
 	    "  Blur background of semi-transparent / ARGB windows. Bad in\n"
@@ -250,8 +262,8 @@ static void usage(int ret) {
 	    "\n"
 	    "--opacity-rule opacity:condition\n"
 	    "  Specify a list of opacity rules, in the format \"PERCENT:PATTERN\",\n"
-	    "  like \'50:name *= \"Firefox\"'. compton-trans is recommended over\n"
-	    "  this. Note we do not distinguish 100% and unset, and we don't make\n"
+	    "  like \'50:name *= \"Firefox\"'. picom-trans is recommended over\n"
+	    "  this. Note we do not distinguish 100%% and unset, and we don't make\n"
 	    "  any guarantee about possible conflicts with other programs that set\n"
 	    "  _NET_WM_WINDOW_OPACITY on frame or client windows.\n"
 	    "\n"
@@ -274,7 +286,7 @@ static void usage(int ret) {
 	    "\n\n"
 	    "--glx-no-stencil\n"
 	    "  GLX backend: Avoid using stencil buffer. Might cause issues\n"
-	    "  when rendering transparent content. My tests show a 15% performance\n"
+	    "  when rendering transparent content. My tests show a 15%% performance\n"
 	    "  boost.\n"
 	    "\n"
 	    "--glx-no-rebind-pixmap\n"
@@ -283,9 +295,11 @@ static void usage(int ret) {
 	    "  known to break things on some drivers (LLVMpipe, xf86-video-intel,\n"
 	    "  etc.).\n"
 	    "\n"
-	    "--use-damage\n"
-	    "  Use the damage information to limit rendering to parts of the screen\n"
-	    "  that has actually changed. Potentially improves the performance.\n"
+	    "--no-use-damage\n"
+	    "  Disable the use of damage information. This cause the whole screen to\n"
+	    "  be redrawn everytime, instead of the part of the screen that has\n"
+	    "  actually changed. Potentially degrades the performance, but might fix\n"
+	    "  some artifacts.\n"
 	    "\n"
 	    "--xrender-sync-fence\n"
 	    "  Additionally use X Sync fence to sync clients' draw calls. Needed\n"
@@ -315,9 +329,17 @@ static void usage(int ret) {
 	    "\n"
 	    "--debug-mode\n"
 	    "  Render into a separate window, and don't take over the screen. Useful\n"
-	    "  when you want to attach a debugger to compton\n";
+	    "  when you want to attach a debugger to picom\n"
+	    "\n"
+	    "--no-ewmh-fullscreen\n"
+	    "  Do not use EWMH to detect fullscreen windows. Reverts to checking\n"
+	    "  if a window is fullscreen based only on its size and coordinates.\n"
+	    "\n"
+	    "--transparent-clipping\n"
+	    "  Make transparent windows clip other windows like non-transparent windows\n"
+	    "  do, instead of blending on top of them\n";
 	FILE *f = (ret ? stderr : stdout);
-	fputs(usage_text, f);
+	fprintf(f, usage_text, argv0);
 #undef WARNING_DISABLED
 }
 
@@ -376,10 +398,8 @@ static const struct option longopts[] = {
     {"opengl", no_argument, NULL, 289},
     {"backend", required_argument, NULL, 290},
     {"glx-no-stencil", no_argument, NULL, 291},
-    {"glx-copy-from-front", no_argument, NULL, 292},
     {"benchmark", required_argument, NULL, 293},
     {"benchmark-wid", required_argument, NULL, 294},
-    {"glx-use-copysubbuffermesa", no_argument, NULL, 295},
     {"blur-background-exclude", required_argument, NULL, 296},
     {"active-opacity", required_argument, NULL, 297},
     {"glx-no-rebind-pixmap", no_argument, NULL, 298},
@@ -408,10 +428,18 @@ static const struct option longopts[] = {
     {"log-level", required_argument, NULL, 321},
     {"log-file", required_argument, NULL, 322},
     {"use-damage", no_argument, NULL, 323},
+    {"no-use-damage", no_argument, NULL, 324},
+    {"no-vsync", no_argument, NULL, 325},
+    {"max-brightness", required_argument, NULL, 326},
+    {"transparent-clipping", no_argument, NULL, 327},
+    {"blur-method", required_argument, NULL, 328},
+    {"blur-size", required_argument, NULL, 329},
+    {"blur-deviation", required_argument, NULL, 330},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
     {"debug-mode", no_argument, NULL, 802},
+    {"no-ewmh-fullscreen", no_argument, NULL, 803},
     // Must terminate with a NULL entry
     {NULL, 0, NULL, 0},
 };
@@ -433,45 +461,49 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		if (o == 256) {
 			*config_file = strdup(optarg);
 		} else if (o == 'h') {
-			usage(0);
+			usage(argv[0], 0);
 			return true;
 
 		} else if (o == 'b') {
 			*fork = true;
 		} else if (o == 'd') {
-			log_warn("-d will be ignored, please use the DISPLAY "
-			         "environment variable");
+			log_error("-d is removed, please use the DISPLAY "
+			          "environment variable");
+			goto err;
 		} else if (o == 314) {
 			*all_xerrors = true;
 		} else if (o == 318) {
 			printf("%s\n", COMPTON_VERSION);
 			return true;
 		} else if (o == 'S') {
-			log_warn("-S will be ignored");
+			log_error("-S is no longer available");
+			goto err;
 		} else if (o == 320) {
-			log_warn("--no-name-pixmap will be ignored");
+			log_error("--no-name-pixmap is no longer available");
+			goto err;
 		} else if (o == '?' || o == ':') {
-			usage(1);
-			*exit_code = 1;
-			return true;
+			usage(argv[0], 1);
+			goto err;
 		}
 	}
 
 	// Check for abundant positional arguments
 	if (optind < argc) {
 		// log is not initialized here yet
-		fprintf(stderr, "compton doesn't accept positional arguments.\n");
-		*exit_code = 1;
-		return true;
+		fprintf(stderr, "picom doesn't accept positional arguments.\n");
+		goto err;
 	}
 
 	return false;
+err:
+	*exit_code = 1;
+	return true;
 }
 
 /**
  * Process arguments and configuration files.
  */
-void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
+bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
              bool fading_enable, bool conv_kern_hasneg, win_option_mask_t *winopt_mask) {
 
 	int o = 0, longopt_idx = -1;
@@ -484,9 +516,10 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	// Parse commandline arguments. Range checking will be done later.
 
-	const char *deprecation_message = "has been removed. If you encounter problems "
-	                                  "without this feature, please feel free to "
-	                                  "open a bug report.";
+	const char *deprecation_message attr_unused =
+	    "has been removed. If you encounter problems "
+	    "without this feature, please feel free to "
+	    "open a bug report.";
 	optind = 1;
 	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
 		switch (o) {
@@ -511,7 +544,7 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		// Short options
 		case 318:
 		case 'h':
-			// These options should cause compton to exit early,
+			// These options should cause us to exit early,
 			// so assert(false) here
 			assert(false);
 			break;
@@ -612,14 +645,14 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 271:
 			// --alpha-step
-			log_warn("--alpha-step has been removed, compton now tries to "
+			log_error("--alpha-step has been removed, we now tries to "
 			         "make use of all alpha values");
-			break;
-		case 272: log_warn("use of --dbe is deprecated"); break;
+			return false;
+		case 272: log_error("use of --dbe is deprecated"); return false;
 		case 273:
-			log_warn("--paint-on-overlay has been removed, and is enabled "
-			         "when possible");
-			break;
+			log_error("--paint-on-overlay has been removed, the feature is enabled "
+			         "whenever possible");
+			return false;
 		P_CASEBOOL(274, sw_opti);
 		case 275:
 			// --vsync-aggressive
@@ -627,7 +660,12 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			         " from the command line options");
 			break;
 		P_CASEBOOL(276, use_ewmh_active_win);
-		P_CASEBOOL(277, respect_prop_shadow);
+		case 277:
+			// --respect-prop-shadow
+			log_warn("--respect-prop-shadow option has been deprecated, its "
+			         "functionality will always be enabled. Please remove it "
+			         "from the command line options");
+			break;
 		P_CASEBOOL(278, unredir_if_possible);
 		case 279:
 			// --focus-exclude
@@ -666,18 +704,10 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 				exit(1);
 			break;
 		P_CASEBOOL(291, glx_no_stencil);
-		case 292:
-			log_error("--glx-copy-from-front %s", deprecation_message);
-			exit(1);
-			break;
 		P_CASEINT(293, benchmark);
 		case 294:
 			// --benchmark-wid
 			opt->benchmark_wid = (xcb_window_t)strtol(optarg, NULL, 0);
-			break;
-		case 295:
-			log_error("--glx-use-copysubbuffermesa %s", deprecation_message);
-			exit(1);
 			break;
 		case 296:
 			// --blur-background-exclude
@@ -757,17 +787,13 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(311, vsync_use_glfinish);
 		case 312:
 			// --xrender-sync
-			log_warn("Please use --xrender-sync-fence instead of --xrender-sync");
-			opt->xrender_sync_fence = true;
- 			break;
+			log_error("Please use --xrender-sync-fence instead of --xrender-sync");
+			return false;
 		P_CASEBOOL(313, xrender_sync_fence);
 		P_CASEBOOL(315, no_fading_destroyed_argb);
 		P_CASEBOOL(316, force_win_blend);
 		case 317:
 			opt->glx_fshader_win_str = strdup(optarg);
-			log_warn("--glx-fshader-win is being deprecated, and might be "
-			         "removed in the future. If you really need this "
-			         "feature, please report an issue to let us know");
 			break;
 		case 321: {
 			enum log_level tmp_level = string_to_log_level(optarg);
@@ -780,11 +806,42 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		}
 		P_CASEBOOL(319, no_x_selection);
 		P_CASEBOOL(323, use_damage);
+		case 324:
+			opt->use_damage = false;
+			break;
+		case 325:
+			opt->vsync = false;
+			break;
+
+		case 326:
+			opt->max_brightness = atof(optarg);
+			break;
+		P_CASEBOOL(327, transparent_clipping);
+		case 328: {
+			// --blur-method
+			enum blur_method method = parse_blur_method(optarg);
+			if (method >= BLUR_METHOD_INVALID) {
+				log_warn("Invalid blur method %s, ignoring.", optarg);
+			} else {
+				opt->blur_method = method;
+			}
+			break;
+		}
+		case 329:
+			// --blur-size
+			opt->blur_radius = atoi(optarg);
+			break;
+		case 330:
+			// --blur-deviation
+			opt->blur_deviation = atof(optarg);
+			break;
+
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801: opt->print_diagnostics = true; break;
 		P_CASEBOOL(802, debug_mode);
-		default: usage(1); break;
+		P_CASEBOOL(803, no_ewmh_fullscreen);
+		default: usage(argv[0], 1); break;
 #undef P_CASEBOOL
 		}
 		// clang-format on
@@ -794,8 +851,27 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	setlocale(LC_NUMERIC, lc_numeric_old);
 	free(lc_numeric_old);
 
-	if (opt->monitor_repaint && opt->backend != BKEND_XRENDER) {
+	if (opt->monitor_repaint && opt->backend != BKEND_XRENDER &&
+	    !opt->experimental_backends) {
 		log_warn("--monitor-repaint has no effect when backend is not xrender");
+	}
+
+	if (opt->experimental_backends && !backend_list[opt->backend]) {
+		log_error("Backend \"%s\" is not available as part of the experimental "
+		          "backends.",
+		          BACKEND_STRS[opt->backend]);
+		return false;
+	}
+
+	if (opt->debug_mode && !opt->experimental_backends) {
+		log_error("Debug mode only works with the experimental backends.");
+		return false;
+	}
+
+	if (opt->transparent_clipping && !opt->experimental_backends) {
+		log_error("Transparent clipping only works with the experimental "
+		          "backends");
+		return false;
 	}
 
 	// Range checking and option assignments
@@ -809,11 +885,26 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	opt->shadow_opacity = normalize_d(opt->shadow_opacity);
 	opt->refresh_rate = normalize_i_range(opt->refresh_rate, 0, 300);
 
+	opt->max_brightness = normalize_d(opt->max_brightness);
+	if (opt->max_brightness < 1.0) {
+		if (opt->use_damage) {
+			log_warn("--max-brightness requires --no-use-damage. Falling "
+			         "back to 1.0");
+			opt->max_brightness = 1.0;
+		}
+
+		if (!opt->experimental_backends || opt->backend != BKEND_GLX) {
+			log_warn("--max-brightness requires the experimental glx "
+			         "backend. Falling back to 1.0");
+			opt->max_brightness = 1.0;
+		}
+	}
+
 	// Apply default wintype options that are dependent on global options
 	set_default_winopts(opt, winopt_mask, shadow_enable, fading_enable);
 
 	// --blur-background-frame implies --blur-background
-	if (opt->blur_background_frame && !opt->blur_method) {
+	if (opt->blur_background_frame && opt->blur_method == BLUR_METHOD_NONE) {
 		opt->blur_method = BLUR_METHOD_KERNEL;
 	}
 
@@ -841,6 +932,8 @@ void get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		log_warn("A convolution kernel with negative values may not work "
 		         "properly under X Render backend.");
 	}
+
+	return true;
 }
 
 // vim: set noet sw=8 ts=8 :
