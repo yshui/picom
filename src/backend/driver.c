@@ -16,6 +16,7 @@
 void apply_driver_workarounds(struct session *ps, enum driver driver) {
 	if (driver & DRIVER_NVIDIA) {
 		setenv("__GL_YIELD", "usleep", true);
+		ps->o.xrender_sync_fence = true;
 	}
 }
 
