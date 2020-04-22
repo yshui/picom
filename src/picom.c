@@ -1872,23 +1872,24 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	ps->sync_fence = XCB_NONE;
-	if (!ps->xsync_exists && ps->o.xrender_sync_fence) {
-		log_error("XSync extension not found. No XSync fence sync is "
-		          "possible. (xrender-sync-fence can't be enabled)");
-		ps->o.xrender_sync_fence = false;
-	}
-
-	if (ps->o.xrender_sync_fence) {
+	if (ps->xsync_exists) {
 		ps->sync_fence = x_new_id(ps->c);
 		e = xcb_request_check(
 		    ps->c, xcb_sync_create_fence(ps->c, ps->root, ps->sync_fence, 0));
 		if (e) {
-			log_error_x_error(e, "Failed to create a XSync fence. "
-			                     "xrender-sync-fence will be disabled");
-			ps->o.xrender_sync_fence = false;
+			if (ps->o.xrender_sync_fence) {
+				log_error_x_error(e, "Failed to create a XSync fence. "
+				                     "xrender-sync-fence will be "
+				                     "disabled");
+				ps->o.xrender_sync_fence = false;
+			}
 			ps->sync_fence = XCB_NONE;
 			free(e);
 		}
+	} else if (ps->o.xrender_sync_fence) {
+		log_error("XSync extension not found. No XSync fence sync is "
+		          "possible. (xrender-sync-fence can't be enabled)");
+		ps->o.xrender_sync_fence = false;
 	}
 
 	// Query X RandR
