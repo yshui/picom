@@ -55,7 +55,7 @@ region_t get_damage(session_t *ps, bool all_damage) {
 
 /// paint all windows
 void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
-	if (ps->o.xrender_sync_fence || (ps->drivers & DRIVER_NVIDIA)) {
+	if (ps->o.xrender_sync_fence) {
 		if (ps->xsync_exists && !x_fence_sync(ps->c, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
 			          "disabled from now on.");
