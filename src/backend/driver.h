@@ -32,6 +32,9 @@ enum driver {
 /// Note, this is a best-effort test, so no guarantee all drivers will be detected.
 enum driver detect_driver(xcb_connection_t *, struct backend_base *, xcb_window_t);
 
+/// Apply driver specified global workarounds. It's safe to call this multiple times.
+void apply_driver_workarounds(enum driver);
+
 // Print driver names to stdout, for diagnostics
 static inline void print_drivers(enum driver drivers) {
 	if (drivers & DRIVER_AMDGPU) {

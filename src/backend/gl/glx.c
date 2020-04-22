@@ -466,10 +466,7 @@ static void glx_present(backend_t *base, const region_t *region attr_unused) {
 	struct _glx_data *gd = (void *)base;
 	gl_present(base, region);
 	glXSwapBuffers(gd->display, gd->target_win);
-	// XXX there should be no need to block, the core should wait for render to finish
-	if (!gd->gl.is_nvidia) {
-		glFinish();
-	}
+	glFinish();
 }
 
 static int glx_buffer_age(backend_t *base) {

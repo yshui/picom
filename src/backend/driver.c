@@ -12,6 +12,13 @@
 #include "compiler.h"
 #include "log.h"
 
+/// Apply driver specified global workarounds. It's safe to call this multiple times.
+void apply_driver_workarounds(enum driver driver) {
+	if (driver & DRIVER_NVIDIA) {
+		setenv("__GL_YIELD", "usleep", true);
+	}
+}
+
 enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_window_t window) {
 	enum driver ret = 0;
 	// First we try doing backend agnostic detection using RANDR
