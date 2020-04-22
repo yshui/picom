@@ -13,7 +13,7 @@
 #include "log.h"
 
 /// Apply driver specified global workarounds. It's safe to call this multiple times.
-void apply_driver_workarounds(enum driver driver) {
+void apply_driver_workarounds(struct session *ps, enum driver driver) {
 	if (driver & DRIVER_NVIDIA) {
 		setenv("__GL_YIELD", "usleep", true);
 	}

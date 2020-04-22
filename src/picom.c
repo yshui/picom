@@ -1224,7 +1224,7 @@ static bool redirect_start(session_t *ps) {
 
 	// Re-detect driver since we now have a backend
 	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);
-	apply_driver_workarounds(ps->drivers);
+	apply_driver_workarounds(ps, ps->drivers);
 
 	root_damaged(ps);
 
@@ -1960,13 +1960,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 	}
 
-	// Target window must be initialized before the backend
-	//
-	// backend_operations::present == NULL means this backend doesn't need a target
-	// window; non experimental backends always need a target window
-
 	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);
-	apply_driver_workarounds(ps->drivers);
+	apply_driver_workarounds(ps, ps->drivers);
 
 	// Initialize filters, must be preceded by OpenGL context creation
 	if (!ps->o.experimental_backends && !init_render(ps)) {
