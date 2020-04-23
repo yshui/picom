@@ -207,8 +207,6 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
 	const int to_width = from_width > max_width ? from_width / 2 : from_width;
 	const int to_height = from_height > max_height ? from_height / 2 : from_height;
 
-	glViewport(0, 0, width, height);
-
 	// Prepare coordinates
 	GLint coord[] = {
 	    // top left
@@ -238,6 +236,7 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
 	glBindTexture(GL_TEXTURE_2D, source_texture);
 
 	// Render into framebuffer
+	glViewport(0, 0, width, height);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
 
 	// Have we downscaled enough?
@@ -395,7 +394,6 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
 
 	// Bind texture
-	glViewport(0, 0, gd->width, gd->height);
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, brightness);
 	glActiveTexture(GL_TEXTURE0);
@@ -419,6 +417,7 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
 	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+	glViewport(0, 0, gd->vp_width, gd->vp_height);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 	glDisableVertexAttribArray(vert_coord_loc);
 	glDisableVertexAttribArray(vert_in_texcoord_loc);
@@ -556,33 +555,6 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 		glBindTexture(GL_TEXTURE_2D, bctx->blur_texture[1]);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, bctx->texture_width,
 		             bctx->texture_height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-
-		// XXX: do we need projection matrix for blur at all?
-		// Note: OpenGL matrices are column major
-		GLfloat projection_matrix[4][4] = {
-		    {2.0f / (GLfloat)bctx->texture_width, 0, 0, 0},
-		    {0, 2.0f / (GLfloat)bctx->texture_height, 0, 0},
-		    {0, 0, 0, 0},
-		    {-1, -1, 0, 1}};
-
-		// Update projection matrices in the blur shaders
-		for (int i = 0; i < bctx->npasses - 1; i++) {
-			assert(bctx->blur_shader[i].prog);
-			glUseProgram(bctx->blur_shader[i].prog);
-			int pml = glGetUniformLocationChecked(bctx->blur_shader[i].prog,
-			                                      "projection");
-			glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-		}
-
-		GLfloat projection_matrix2[4][4] = {{2.0f / (GLfloat)gd->width, 0, 0, 0},
-		                                    {0, 2.0f / (GLfloat)gd->height, 0, 0},
-		                                    {0, 0, 0, 0},
-		                                    {-1, -1, 0, 1}};
-		assert(bctx->blur_shader[bctx->npasses - 1].prog);
-		glUseProgram(bctx->blur_shader[bctx->npasses - 1].prog);
-		int pml = glGetUniformLocationChecked(
-		    bctx->blur_shader[bctx->npasses - 1].prog, "projection");
-		glUniformMatrix4fv(pml, 1, false, projection_matrix2[0]);
 	}
 
 	// Remainder: regions are in Xorg coordinates
@@ -689,7 +661,6 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 			// translate the render origin so we don't need a big texture
 			glUniform2f(p->orig_loc, -(GLfloat)extent_resized->x1,
 			            -(GLfloat)dst_y_resized_fb_coord);
-			glViewport(0, 0, bctx->texture_width, bctx->texture_height);
 		} else {
 			// last pass, draw directly into the back buffer, with origin
 			// regions
@@ -697,10 +668,10 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
 			glUniform1f(p->unifm_opacity, (float)opacity);
 			glUniform2f(p->orig_loc, 0, 0);
-			glViewport(0, 0, gd->width, gd->height);
 		}
 
 		glUniform2f(p->texorig_loc, (GLfloat)texorig_x, (GLfloat)texorig_y);
+		glViewport(0, 0, gd->vp_width, gd->vp_height);
 		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
 		// XXX use multiple draw calls is probably going to be slow than
@@ -782,29 +753,8 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 	gd->height = height;
 	gd->width = width;
 
-	// XXX: do we need projection matrix at all?
-	// Note: OpenGL matrices are column major
-	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)width, 0, 0, 0},
-	                                   {0, 2.0f / (GLfloat)height, 0, 0},
-	                                   {0, 0, 0, 0},
-	                                   {-1, -1, 0, 1}};
-
-	// Update projection matrix in the win shader
-	glUseProgram(gd->win_shader.prog);
-	int pml = glGetUniformLocationChecked(gd->win_shader.prog, "projection");
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-
-	glUseProgram(gd->fill_shader.prog);
-	pml = glGetUniformLocationChecked(gd->fill_shader.prog, "projection");
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-
-	glUseProgram(gd->present_prog);
-	pml = glGetUniformLocationChecked(gd->present_prog, "projection");
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-
-	glUseProgram(gd->brightness_shader.prog);
-	pml = glGetUniformLocationChecked(gd->brightness_shader.prog, "projection");
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	assert(gd->vp_width >= gd->width);
+	assert(gd->vp_height >= gd->height);
 
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_BGR,
@@ -903,7 +853,10 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	glVertexAttribPointer(fill_vert_in_coord_loc, 2, GL_INT, GL_FALSE,
 	                      sizeof(*coord) * 2, (void *)0);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+
+	glViewport(0, 0, gd->vp_width, gd->vp_height);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -1004,6 +957,14 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		return ctx;
 	}
 
+	// Set projection matrix to gl viewport dimensions so we can use screen
+	// coordinates for all vertices
+	// Note: OpenGL matrices are column major
+	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)gd->vp_width, 0, 0, 0},
+	                                   {0, 2.0f / (GLfloat)gd->vp_height, 0, 0},
+	                                   {0, 0, 0, 0},
+	                                   {-1, -1, 0, 1}};
+
 	ctx->blur_shader = ccalloc(max2(2, nkernels), gl_blur_shader_t);
 
 	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
@@ -1083,6 +1044,13 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
+
+		// Setup projection matrix
+		glUseProgram(pass->prog);
+		int pml = glGetUniformLocationChecked(pass->prog, "projection");
+		glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+		glUseProgram(0);
+
 		ctx->resize_width += kern->w / 2;
 		ctx->resize_height += kern->h / 2;
 	}
@@ -1095,6 +1063,13 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		pass->unifm_opacity = -1;
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
+
+		// Setup projection matrix
+		glUseProgram(pass->prog);
+		int pml = glGetUniformLocationChecked(pass->prog, "projection");
+		glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+		glUseProgram(0);
+
 		ctx->npasses = 2;
 	} else {
 		ctx->npasses = nkernels;
@@ -1200,7 +1175,17 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glStencilMask(0x1);
 	glStencilFunc(GL_EQUAL, 0x1, 0x1);
 
+	// Set gl viewport to the maximum supported size so we won't have to worry about
+	// it later on when the screen is resized. The corresponding projection matrix can
+	// be set now and won't have to be updated. Since fragments outside the target
+	// buffer are skipped anyways, this should have no impact on performance.
+	GLint viewport_dimensions[2];
+	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
+	gd->vp_height = viewport_dimensions[0];
+	gd->vp_width = viewport_dimensions[1];
+
 	// Clear screen
+	glViewport(0, 0, gd->vp_height, gd->vp_width);
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
@@ -1216,17 +1201,37 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
+	// Set projection matrix to gl viewport dimensions so we can use screen
+	// coordinates for all vertices
+	// Note: OpenGL matrices are column major
+	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)gd->vp_width, 0, 0, 0},
+	                                   {0, 2.0f / (GLfloat)gd->vp_height, 0, 0},
+	                                   {0, 0, 0, 0},
+	                                   {-1, -1, 0, 1}};
+
+	// Initialize shaders
 	gl_win_shader_from_string(vertex_shader, win_shader_glsl, &gd->win_shader);
+	int pml = glGetUniformLocationChecked(gd->win_shader.prog, "projection");
+	glUseProgram(gd->win_shader.prog);
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	glUseProgram(0);
+
 	gd->fill_shader.prog = gl_create_program_from_str(fill_vert, fill_frag);
 	gd->fill_shader.color_loc = glGetUniformLocation(gd->fill_shader.prog, "color");
+	pml = glGetUniformLocationChecked(gd->fill_shader.prog, "projection");
+	glUseProgram(gd->fill_shader.prog);
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	glUseProgram(0);
 
 	gd->present_prog = gl_create_program_from_str(present_vertex_shader, dummy_frag);
 	if (!gd->present_prog) {
 		log_error("Failed to create the present shader");
 		return false;
 	}
+	pml = glGetUniformLocationChecked(gd->present_prog, "projection");
 	glUseProgram(gd->present_prog);
 	glUniform1i(glGetUniformLocationChecked(gd->present_prog, "tex"), 0);
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 	glUseProgram(0);
 
 	gd->brightness_shader.prog =
@@ -1235,12 +1240,13 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 		log_error("Failed to create the brightness shader");
 		return false;
 	}
+	pml = glGetUniformLocationChecked(gd->brightness_shader.prog, "projection");
 	glUseProgram(gd->brightness_shader.prog);
 	glUniform1i(glGetUniformLocationChecked(gd->brightness_shader.prog, "tex"), 0);
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 	glUseProgram(0);
 
-	// Set up the size of the viewport. We do this last because it expects the blur
-	// textures are already set up.
+	// Set up the size of the back texture
 	gl_resize(gd, ps->root_width, ps->root_height);
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->back_fbo);
@@ -1320,6 +1326,8 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       new_tex->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
+	glViewport(0, 0, gd->vp_height, gd->vp_width);
 	glClearColor(0, 0, 0, 0);
 	glClear(GL_COLOR_BUFFER_BIT);
 
@@ -1395,7 +1403,6 @@ void gl_present(backend_t *base, const region_t *region) {
 		       sizeof(GLuint) * 6);
 	}
 
-	glViewport(0, 0, gd->width, gd->height);
 	glUseProgram(gd->present_prog);
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
 
@@ -1413,6 +1420,7 @@ void gl_present(backend_t *base, const region_t *region) {
 	             GL_STREAM_DRAW);
 
 	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 2, NULL);
+	glViewport(0, 0, gd->vp_width, gd->vp_height);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);

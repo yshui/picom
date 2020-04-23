@@ -68,8 +68,10 @@ struct gl_data {
 	backend_t base;
 	// If we are using proprietary NVIDIA driver
 	bool is_nvidia;
-	// Height and width of the viewport
+	// Height and width of the root window
 	int height, width;
+	// Height and width of the gl viewport
+	int vp_height, vp_width;
 	gl_win_shader_t win_shader;
 	gl_brightness_shader_t brightness_shader;
 	gl_fill_shader_t fill_shader;
