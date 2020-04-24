@@ -1038,7 +1038,7 @@ bool gl_round(backend_t *backend_data attr_unused, struct managed_win *w, void *
 	if (ppass->unifm_texsize)
 		glUniform2f(ppass->unifm_texsize, (float)w->widthb, (float)w->heightb);
 	if (ppass->unifm_borderw)
-		glUniform1f(ppass->unifm_borderw, (cctx->round_borders) ? w->g.border_width : 0);
+		glUniform1f(ppass->unifm_borderw, (w->round_borders) ? w->g.border_width : 0);
 	if (ppass->unifm_resolution)
 		glUniform2f(ppass->unifm_resolution, (float)gd->width, (float)gd->height);
 

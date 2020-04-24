@@ -673,7 +673,7 @@ glx_init_dualkawase_blur(session_t *ps) {
 	{
 		glx_blur_cache_t *pbc = &ps->psglx->blur_cache;
 		glGenFramebuffers(iterations, pbc->fbos);
-		if (!pbc->fbos) {
+		if (!pbc->fbos[0]) {
 			log_error("Failed to generate Framebuffer. Cannot do "
 					"multi-pass blur with GLX backend.");
 			return false;
@@ -1773,7 +1773,7 @@ glx_dualkawase_blur_dst(session_t *ps, int dx, int dy, int width, int height, fl
 		log_warn("Allocating blur_cache [iter:%d] for dxy(%d:%d) wh(%d:%d)", iterations, dx, dy, width, height);
 
 		glGenFramebuffers(iterations, psbc->fbos);
-		if (!psbc->fbos) {
+		if (!psbc->fbos[0]) {
 			log_error("Failed to generate Framebuffer. Cannot do "
 						"multi-pass blur with GLX backend.");
 			goto glx_dualkawase_blur_dst_end;
@@ -2442,7 +2442,7 @@ bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_text
 		if (ppass->unifm_texsize >= 0)
 			glUniform2f(ppass->unifm_texsize, (float)mwidth, (float)mheight);
 		if (ppass->unifm_borderw >= 0)
-			glUniform1f(ppass->unifm_borderw, (w->border_col[0] != -1.) ? w->g.border_width : 0);
+			glUniform1f(ppass->unifm_borderw, (w->round_borders && w->border_col[0] != -1.) ? w->g.border_width : 0);
 		if (ppass->unifm_borderc >= 0)
 			glUniform4fv(ppass->unifm_borderc, 1, (GLfloat *)&w->border_col[0]);
 		if (ppass->unifm_resolution >= 0)
@@ -2561,7 +2561,7 @@ bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_text
 		if (ppass->unifm_texsize >= 0)
 			glUniform2f(ppass->unifm_texsize, (float)width, (float)height);
 		if (ppass->unifm_borderw >= 0)
-			glUniform1f(ppass->unifm_borderw, (w->border_col[0] != -1.) ? w->g.border_width : 0);
+			glUniform1f(ppass->unifm_borderw, (w->round_borders && w->border_col[0] != -1.) ? w->g.border_width : 0);
 		if (ppass->unifm_borderc >= 0)
 			glUniform4fv(ppass->unifm_borderc, 1, (GLfloat *)&w->border_col[0]);
 		if (ppass->unifm_resolution >= 0)

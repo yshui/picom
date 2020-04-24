@@ -114,12 +114,18 @@ static void usage(const char *argv0, int ret) {
 	    "--active-opacity opacity\n"
 	    "  Default opacity for active windows. (0.0 - 1.0)\n"
 	    "\n"
-		"--corner-radius value\n"
-		"  Round the corners of windows. (defaults to 0)\n"
-		"\n"
-		"--rounded-corners-exclude condition\n"
-		"  Exclude conditions for rounded corners.\n"
-		"\n"
+            "--corner-radius value\n"
+            "  Round the corners of windows. (defaults to 0)\n"
+            "\n"
+            "--rounded-corners-exclude condition\n"
+            "  Exclude conditions for rounded corners.\n"
+            "\n"
+            "--round-borders value\n"
+            "  When rounding corners, round the borders of windows. (defaults to 1)\n"
+            "\n"
+            "--round-borders-exclude condition\n"
+            "  Exclude conditions for rounding borders.\n"
+            "\n"
 	    "--mark-wmwin-focused\n"
 	    "  Try to detect WM windows and mark them as active.\n"
 	    "\n"
@@ -448,9 +454,11 @@ static const struct option longopts[] = {
     {"blur-method", required_argument, NULL, 328},
     {"blur-size", required_argument, NULL, 329},
     {"blur-deviation", required_argument, NULL, 330},
-	{"blur-strength", required_argument, NULL, 331},
-	{"corner-radius", required_argument, NULL, 332},
+    {"blur-strength", required_argument, NULL, 331},
+    {"corner-radius", required_argument, NULL, 332},
     {"rounded-corners-exclude", required_argument, NULL, 333},
+    {"round-borders", required_argument, NULL, 334},
+    {"round-borders-exclude", required_argument, NULL, 335},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -860,7 +868,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->blur_strength = parse_kawase_blur_strength(atoi(optarg));
 			break;
 		case 332: opt->corner_radius = atoi(optarg); break;
-        case 333: condlst_add(&opt->rounded_corners_blacklist, optarg); break;
+		case 333: condlst_add(&opt->rounded_corners_blacklist, optarg); break;
+		case 334: opt->round_borders = atoi(optarg); break;
+		case 335: condlst_add(&opt->round_borders_blacklist, optarg); break;
 		
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
