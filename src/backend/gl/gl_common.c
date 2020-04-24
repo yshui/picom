@@ -200,6 +200,8 @@ static void gl_free_prog_main(gl_win_shader_t *pprogram) {
 static GLuint
 _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destination_texture,
                           GLuint auxiliary_texture, GLuint fbo, int width, int height) {
+	auto gd = (struct gl_data *)base;
+
 	const int max_width = 1;
 	const int max_height = 1;
 	const int from_width = next_power_of_two(width);
@@ -236,7 +238,7 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
 	glBindTexture(GL_TEXTURE_2D, source_texture);
 
 	// Render into framebuffer
-	glViewport(0, 0, width, height);
+	glViewport(0, 0, gd->vp_width, gd->vp_height);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
 
 	// Have we downscaled enough?
