@@ -748,11 +748,14 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
  * Callback to run on root window size change.
  */
 void gl_resize(struct gl_data *gd, int width, int height) {
+	GLint viewport_dimensions[2];
+	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
+
 	gd->height = height;
 	gd->width = width;
 
-	assert(gd->vp_width >= gd->width);
-	assert(gd->vp_height >= gd->height);
+	assert(viewport_dimensions[0] >= gd->width);
+	assert(viewport_dimensions[1] >= gd->height);
 
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_BGR,
@@ -956,8 +959,10 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	// Set projection matrix to gl viewport dimensions so we can use screen
 	// coordinates for all vertices
 	// Note: OpenGL matrices are column major
-	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)gd->vp_width, 0, 0, 0},
-	                                   {0, 2.0f / (GLfloat)gd->vp_height, 0, 0},
+	GLint viewport_dimensions[2];
+	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
+	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)viewport_dimensions[0], 0, 0, 0},
+	                                   {0, 2.0f / (GLfloat)viewport_dimensions[1], 0, 0},
 	                                   {0, 0, 0, 0},
 	                                   {-1, -1, 0, 1}};
 
@@ -1177,10 +1182,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	// buffer are skipped anyways, this should have no impact on performance.
 	GLint viewport_dimensions[2];
 	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
-	gd->vp_width = viewport_dimensions[0];
-	gd->vp_height = viewport_dimensions[1];
-
-	glViewport(0, 0, gd->vp_width, gd->vp_height);
+	glViewport(0, 0, viewport_dimensions[0], viewport_dimensions[1]);
 
 	// Clear screen
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1201,8 +1203,8 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	// Set projection matrix to gl viewport dimensions so we can use screen
 	// coordinates for all vertices
 	// Note: OpenGL matrices are column major
-	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)gd->vp_width, 0, 0, 0},
-	                                   {0, 2.0f / (GLfloat)gd->vp_height, 0, 0},
+	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)viewport_dimensions[0], 0, 0, 0},
+	                                   {0, 2.0f / (GLfloat)viewport_dimensions[1], 0, 0},
 	                                   {0, 0, 0, 0},
 	                                   {-1, -1, 0, 1}};
 
