@@ -236,7 +236,6 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
 	glBindTexture(GL_TEXTURE_2D, source_texture);
 
 	// Render into framebuffer
-	glViewport(0, 0, width, height);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
 
 	// Have we downscaled enough?
@@ -417,8 +416,8 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
 	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
-	glViewport(0, 0, gd->vp_width, gd->vp_height);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+
 	glDisableVertexAttribArray(vert_coord_loc);
 	glDisableVertexAttribArray(vert_in_texcoord_loc);
 	glBindVertexArray(0);
@@ -671,7 +670,6 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 		}
 
 		glUniform2f(p->texorig_loc, (GLfloat)texorig_x, (GLfloat)texorig_y);
-		glViewport(0, 0, gd->vp_width, gd->vp_height);
 		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
 		// XXX use multiple draw calls is probably going to be slow than
@@ -853,8 +851,6 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	glVertexAttribPointer(fill_vert_in_coord_loc, 2, GL_INT, GL_FALSE,
 	                      sizeof(*coord) * 2, (void *)0);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
-
-	glViewport(0, 0, gd->vp_width, gd->vp_height);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -1181,11 +1177,12 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	// buffer are skipped anyways, this should have no impact on performance.
 	GLint viewport_dimensions[2];
 	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
-	gd->vp_height = viewport_dimensions[0];
-	gd->vp_width = viewport_dimensions[1];
+	gd->vp_width = viewport_dimensions[0];
+	gd->vp_height = viewport_dimensions[1];
+
+	glViewport(0, 0, gd->vp_width, gd->vp_height);
 
 	// Clear screen
-	glViewport(0, 0, gd->vp_height, gd->vp_width);
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
@@ -1327,7 +1324,6 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	                       new_tex->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-	glViewport(0, 0, gd->vp_height, gd->vp_width);
 	glClearColor(0, 0, 0, 0);
 	glClear(GL_COLOR_BUFFER_BIT);
 
@@ -1420,7 +1416,6 @@ void gl_present(backend_t *base, const region_t *region) {
 	             GL_STREAM_DRAW);
 
 	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 2, NULL);
-	glViewport(0, 0, gd->vp_width, gd->vp_height);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
