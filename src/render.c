@@ -378,7 +378,7 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
  * 
  */
 static inline void
-win_round_corners(session_t *ps, struct managed_win *w, int shader_idx attr_unused, float cr attr_unused,
+win_round_corners(session_t *ps, struct managed_win *w attr_unused, int shader_idx attr_unused, float cr attr_unused,
 		xcb_render_picture_t tgt_buffer attr_unused, const region_t *reg_paint) {
 #ifdef CONFIG_OPENGL
 	const int16_t x = w->g.x;
