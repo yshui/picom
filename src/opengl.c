@@ -546,7 +546,7 @@ bool glx_init_kawase_blur(session_t *ps) {
 			pc += strlen(pc);
 			assert(strlen(shader_str) < len);
 
-			sprintf(pc, FRAG_SHADER_KAWASE_DOWN);
+			sprintf(pc, "%s", FRAG_SHADER_KAWASE_DOWN);
 			assert(strlen(shader_str) < len);
 #ifdef DEBUG_GLX
 			log_debug("Generated kawase downsample shader:\n%s\n", shader_str);
@@ -599,7 +599,7 @@ bool glx_init_kawase_blur(session_t *ps) {
 			pc += strlen(pc);
 			assert(strlen(shader_str) < len);
 
-			sprintf(pc, FRAG_SHADER_KAWASE_UP);
+			sprintf(pc, "%s", FRAG_SHADER_KAWASE_UP);
 			assert(strlen(shader_str) < len);
 #ifdef DEBUG_GLX
 			log_debug("Generated kawase upsample shader:\n%s\n", shader_str);
@@ -802,7 +802,7 @@ glx_init_dualkawase_blur(session_t *ps) {
       pc += strlen(pc);
       assert(strlen(shader_str) < len);
 
-      sprintf(pc, FRAG_SHADER_KAWASE_DOWN);
+      sprintf(pc, "%s", FRAG_SHADER_KAWASE_DOWN);
       assert(strlen(shader_str) < len);
       down_pass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
       free(shader_str);
@@ -847,7 +847,7 @@ glx_init_dualkawase_blur(session_t *ps) {
       pc += strlen(pc);
       assert(strlen(shader_str) < len);
 
-      sprintf(pc, FRAG_SHADER_KAWASE_UP);
+      sprintf(pc, "%s", FRAG_SHADER_KAWASE_UP);
       assert(strlen(shader_str) < len);
       up_pass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
       free(shader_str);
@@ -929,7 +929,7 @@ static inline bool glx_init_frag_shader_corners(glx_round_pass_t *ppass,
 		pc += strlen(pc);
 		assert(strlen(shader_str) < len);
 
-		sprintf(pc, SHADER_STR);
+		sprintf(pc, "%s", SHADER_STR);
 		assert(strlen(shader_str) < len);
 #ifdef DEBUG_GLX
 		log_debug("Generated rounded corners shader %d:\n%s\n", shader_idx, shader_str);

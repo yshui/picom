@@ -1873,7 +1873,7 @@ void *gl_create_round_context(struct backend_base *base attr_unused, void *args 
 		//const char* SHADER_STR = frag_passthrough;
 		size_t shader_len = strlen(SHADER_STR) + 1 /* null terminator */;
 		char *shader_str = ccalloc(shader_len, char);
-		auto real_shader_len = snprintf(shader_str, shader_len, SHADER_STR);
+		auto real_shader_len = snprintf(shader_str, shader_len, "%s", SHADER_STR);
 		CHECK(real_shader_len >= 0);
 		CHECK((size_t)real_shader_len < shader_len);
 

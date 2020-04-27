@@ -378,8 +378,9 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
  * 
  */
 static inline void
-win_round_corners(session_t *ps, struct managed_win *w, const glx_texture_t *ptex, int shader_idx,
-				float cr, xcb_render_picture_t tgt_buffer attr_unused, const region_t *reg_paint) {
+win_round_corners(session_t *ps, struct managed_win *w, int shader_idx attr_unused, float cr attr_unused,
+		xcb_render_picture_t tgt_buffer attr_unused, const region_t *reg_paint) {
+#ifdef CONFIG_OPENGL
 	const int16_t x = w->g.x;
 	const int16_t y = w->g.y;
 	const auto wid = to_u16_checked(w->widthb);
@@ -392,13 +393,12 @@ win_round_corners(session_t *ps, struct managed_win *w, const glx_texture_t *pte
 	case BKEND_XR_GLX_HYBRID: {
 		// XRender method is implemented inside render()
 	} break;
-#ifdef CONFIG_OPENGL
 	case BKEND_GLX:
 		if (shader_idx == 1) {
-			glx_round_corners_dst1(ps, w, ptex, shader_idx, x, y, wid, hei,
+			glx_round_corners_dst1(ps, w, w->glx_texture_bg, shader_idx, x, y, wid, hei,
 								(float)ps->psglx->z - 0.5f, cr, reg_paint, &w->glx_round_cache);
 		} else {
-			glx_round_corners_dst0(ps, w, ptex, shader_idx, x, y, wid, hei,
+			glx_round_corners_dst0(ps, w, w->glx_texture_bg, shader_idx, x, y, wid, hei,
 								(float)ps->psglx->z - 0.5f, cr, reg_paint, &w->glx_round_cache);
 		}
 		break;
@@ -1124,8 +1124,9 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 			// Round window corners
 			if (w->corner_radius > 0) {
-				win_round_corners(ps, w, w->glx_texture_bg, 1,
-						(float)w->corner_radius, ps->tgt_buffer.pict, &reg_tmp); }
+				win_round_corners(ps, w, 1, (float)w->corner_radius,
+						ps->tgt_buffer.pict, &reg_tmp);
+			}
 		}
 	}
 
