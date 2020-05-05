@@ -241,6 +241,10 @@ typedef struct options {
 	int corner_radius;
 	/// Rounded corners blacklist. A linked list of conditions.
 	c2_lptr_t *rounded_corners_blacklist;
+	/// Do we round the borders of rounded windows?
+	int round_borders;
+	/// Rounded borders blacklist. A linked list of conditions.
+	c2_lptr_t *round_borders_blacklist;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];

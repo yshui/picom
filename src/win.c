@@ -913,6 +913,11 @@ static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) 
 		// we query the color in glx_round_corners_dst0 using glReadPixels
 		//w->border_col = { -1., -1, -1, -1 };
 		w->border_col[0] = w->border_col[1] = w->border_col[2] = w->border_col[3] = -1.0;
+        if (w && c2_match(ps, w, ps->o.round_borders_blacklist, NULL)) {
+		    w->round_borders = 0;
+        } else {
+            w->round_borders = ps->o.round_borders;
+        }
 	}
 }
 
