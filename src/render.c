@@ -241,9 +241,9 @@ uint32_t make_rounded_window_shape(xcb_render_trapezoid_t traps[], uint32_t max_
 	return n;
 }
 
-void render(session_t *ps, struct managed_win *w, int x, int y, int dx, int dy, int wid,
-            int hei, int fullwid, int fullhei, double opacity, bool argb, bool neg,
-            int cr, xcb_render_picture_t pict, glx_texture_t *ptex,
+void render(session_t *ps, struct managed_win *w attr_unused, int x, int y, int dx,
+            int dy, int wid, int hei, int fullwid, int fullhei, double opacity, bool argb,
+            bool neg, int cr, xcb_render_picture_t pict, glx_texture_t *ptex,
             const region_t *reg_paint, const glx_prog_main_t *pprogram, clip_t *clip) {
 	switch (ps->o.backend) {
 	case BKEND_XRENDER:
