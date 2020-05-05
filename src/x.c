@@ -453,6 +453,7 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 		CASESTRRET2(RENDER_GLYPH);
 	}
 
+#ifdef CONFIG_OPENGL
 	if (ps->glx_exists) {
 		o = error_code - ps->glx_error;
 		switch (o) {
@@ -472,6 +473,7 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 			CASESTRRET2(GLX_GLX_BAD_PROFILE_ARB);
 		}
 	}
+#endif
 
 	if (ps->xsync_exists) {
 		o = error_code - ps->xsync_error;

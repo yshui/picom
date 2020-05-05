@@ -1861,9 +1861,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	ext_info = xcb_get_extension_data(ps->c, &xcb_glx_id);
 	if (ext_info && ext_info->present) {
+#if CONFIG_OPENGL
 		ps->glx_exists = true;
 		ps->glx_error = ext_info->first_error;
 		ps->glx_event = ext_info->first_event;
+#endif
 	}
 
 	// Parse configuration file

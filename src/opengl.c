@@ -1271,7 +1271,6 @@ bool glx_round_corners_dst(session_t *ps, struct managed_win *w, const glx_textu
                            const region_t *reg_tgt attr_unused,
                            glx_blur_cache_t *pbc attr_unused) {
 
-	assert(shader_idx >= 0 && shader_idx <= 1);
 	assert(ps->psglx->round_passes[0].prog);
 	assert(ps->psglx->round_passes[1].prog);
 	bool ret = false;
