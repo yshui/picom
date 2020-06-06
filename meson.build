@@ -70,11 +70,14 @@ subdir('src')
 subdir('man')
 
 install_data('bin/picom-trans', install_dir: get_option('bindir'))
-install_data('compton.desktop', install_dir: 'share/applications')
 install_data('picom.desktop', install_dir: 'share/applications')
-install_data('media/icons/48x48/compton.png',
-             install_dir: 'share/icons/hicolor/48x48/apps')
-install_data('media/compton.svg',
-             install_dir: 'share/icons/hicolor/scalable/apps')
 
-meson.add_install_script('meson/install.sh')
+if get_option('compton')
+	install_data('compton.desktop', install_dir: 'share/applications')
+	install_data('media/icons/48x48/compton.png',
+                     install_dir: 'share/icons/hicolor/48x48/apps')
+	install_data('media/compton.svg',
+                     install_dir: 'share/icons/hicolor/scalable/apps')
+
+	meson.add_install_script('meson/install.sh')
+endif
