@@ -629,20 +629,27 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 
 		// The origin to use when sampling from the source texture
 		GLint texorig_x, texorig_y;
+		GLint tex_width, tex_height;
 		GLuint src_texture;
 
 		if (i == 0) {
 			texorig_x = extent_resized->x1;
 			texorig_y = dst_y_resized_screen_coord;
+			tex_width = gd->width;
+			tex_height = gd->height;
 			src_texture = gd->back_texture;
 		} else {
 			texorig_x = 0;
 			texorig_y = 0;
+			tex_width = bctx->texture_width;
+			tex_height = bctx->texture_height;
 			src_texture = bctx->blur_texture[curr];
 		}
 
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glUseProgram(p->prog);
+		glUniform2f(p->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
+		            1.0f / (GLfloat)tex_height);
 		if (i < bctx->npasses - 1) {
 			// not last pass, draw into framebuffer, with resized regions
 			glBindVertexArray(vao[1]);
@@ -976,19 +983,20 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	// clang-format off
 	static const char *FRAG_SHADER_BLUR = GLSL(330,
 		%s\n // other extension pragmas
-		uniform sampler2D tex_scr;
+		uniform sampler2D tex_src;
+		uniform vec2 pixel_norm;
 		uniform float opacity;
 		in vec2 texcoord;
 		out vec4 out_color;
 		void main() {
+			vec2 uv = texcoord * pixel_norm;
 			vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);
 			%s //body of the convolution
 			out_color = sum / float(%.7g) * opacity;
 		}
 	);
 	static const char *FRAG_SHADER_BLUR_ADD = QUOTE(
-		sum += float(%.7g) *
-		       texelFetch(tex_scr, ivec2(texcoord + vec2(%d, %d)), 0);
+		sum += float(%.7g) * texture2D(tex_src, uv + pixel_norm * vec2(%d, %d));
 	);
 	// clang-format on
 
@@ -1042,6 +1050,8 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		glBindFragDataLocation(pass->prog, 0, "out_color");
 
 		// Get uniform addresses
+		pass->unifm_pixel_norm =
+		    glGetUniformLocationChecked(pass->prog, "pixel_norm");
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
@@ -1061,6 +1071,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		// the single pass case
 		auto pass = &ctx->blur_shader[1];
 		pass->prog = gl_create_program_from_str(vertex_shader, dummy_frag);
+		pass->unifm_pixel_norm = -1;
 		pass->unifm_opacity = -1;
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
@@ -1079,11 +1090,15 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	// Texture size will be defined by gl_blur
 	glGenTextures(2, ctx->blur_texture);
 	glBindTexture(GL_TEXTURE_2D, ctx->blur_texture[0]);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_2D, ctx->blur_texture[1]);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	// Generate FBO and textures when needed
 	glGenFramebuffers(1, &ctx->blur_fbo);
 	if (!ctx->blur_fbo) {
@@ -1196,8 +1211,10 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	}
 
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	// Set projection matrix to gl viewport dimensions so we can use screen
