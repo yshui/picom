@@ -996,7 +996,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		}
 	);
 	static const char *FRAG_SHADER_BLUR_ADD = QUOTE(
-		sum += float(%.7g) * texture2D(tex_src, uv + pixel_norm * vec2(%d, %d));
+		sum += float(%.7g) * texture2D(tex_src, uv + pixel_norm * vec2(%.7g, %.7g));
 	);
 	// clang-format on
 
@@ -1008,23 +1008,66 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		// Build shader
 		int width = kern->w, height = kern->h;
 		int nele = width * height;
+		// '%.7g' is at most 14 characters, inserted 3 times
 		size_t body_len = (strlen(shader_add) + 42) * (uint)nele;
 		char *shader_body = ccalloc(body_len, char);
 		char *pc = shader_body;
 
+		// Make use of the linear interpolation hardware by sampling 2 pixels with
+		// one texture access by sampling between both pixels based on their
+		// relative weight. Easiest done in a single dimension as 2D bilinear
+		// filtering would raise additional constraints on the kernels. Therefore
+		// only use interpolation along the larger dimension.
 		double sum = 0.0;
-		for (int j = 0; j < height; ++j) {
-			for (int k = 0; k < width; ++k) {
-				double val;
-				val = kern->data[j * width + k];
-				if (val == 0) {
-					continue;
+		if (width > height) {
+			// use interpolation in x dimension (width)
+			for (int j = 0; j < height; ++j) {
+				for (int k = 0; k < width; k += 2) {
+					double val1, val2;
+					val1 = kern->data[j * width + k];
+					val2 = (k + 1 < width)
+					           ? kern->data[j * width + k + 1]
+					           : 0;
+
+					double combined_weight = val1 + val2;
+					if (combined_weight == 0) {
+						continue;
+					}
+					sum += combined_weight;
+
+					double offset_x =
+					    k + (val2 / combined_weight) - (width / 2);
+					double offset_y = j - (height / 2);
+					pc += snprintf(
+					    pc, body_len - (ulong)(pc - shader_body),
+					    shader_add, combined_weight, offset_x, offset_y);
+					assert(pc < shader_body + body_len);
 				}
-				sum += val;
-				pc += snprintf(pc, body_len - (ulong)(pc - shader_body),
-				               FRAG_SHADER_BLUR_ADD, val, k - width / 2,
-				               j - height / 2);
-				assert(pc < shader_body + body_len);
+			}
+		} else {
+			// use interpolation in y dimension (height)
+			for (int j = 0; j < height; j += 2) {
+				for (int k = 0; k < width; ++k) {
+					double val1, val2;
+					val1 = kern->data[j * width + k];
+					val2 = (j + 1 < height)
+					           ? kern->data[(j + 1) * width + k]
+					           : 0;
+
+					double combined_weight = val1 + val2;
+					if (combined_weight == 0) {
+						continue;
+					}
+					sum += combined_weight;
+
+					double offset_x = k - (width / 2);
+					double offset_y =
+					    j + (val2 / combined_weight) - (height / 2);
+					pc += snprintf(
+					    pc, body_len - (ulong)(pc - shader_body),
+					    shader_add, combined_weight, offset_x, offset_y);
+					assert(pc < shader_body + body_len);
+				}
 			}
 		}
 
