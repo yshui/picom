@@ -525,8 +525,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 
 	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	if (!img)
-	{
+	if (!img) {
 		log_error("Invalid texture.");
 		return;
 	}
