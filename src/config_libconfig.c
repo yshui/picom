@@ -284,6 +284,18 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 			o->opacity = normalize_d(fval);
 			mask->opacity = true;
 		}
+
+		if (config_setting_lookup_int(setting, "corner-radius", &ival)) {
+			o->corner_radius = ival;
+			mask->corner_radius = true;
+            //log_warn("%s: corner-radius: %d", member_name, ival);
+		}
+        if (config_setting_lookup_int(setting, "round-borders", &ival)) {
+			o->round_borders = ival;
+			mask->round_borders = true;
+            //log_warn("%s: round_borders: %d", member_name, ival);
+		}
+
 	}
 }
 

@@ -911,7 +911,7 @@ static void win_determine_blur_background(session_t *ps, struct managed_win *w) 
  * Determine if a window should have rounded corners.
  */
 static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) {
-	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE || ps->o.corner_radius == 0)
+	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE /*|| ps->o.corner_radius == 0*/)
 		return;
 
 	// Don't round full screen windows & excluded windows
@@ -926,10 +926,22 @@ static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) 
 		// we query the color in glx_round_corners_dst0 using glReadPixels
 		//w->border_col = { -1., -1, -1, -1 };
 		w->border_col[0] = w->border_col[1] = w->border_col[2] = w->border_col[3] = -1.0;
+
+        // wintypes config section override
+	    if (!safe_isnan(ps->o.wintype_option[w->window_type].corner_radius)) {
+		    w->corner_radius = ps->o.wintype_option[w->window_type].corner_radius;
+            //log_warn("wintypes:corner_radius: %d", w->corner_radius);
+        }
+
         if (w && c2_match(ps, w, ps->o.round_borders_blacklist, NULL)) {
 		    w->round_borders = 0;
         } else {
             w->round_borders = ps->o.round_borders;
+            // wintypes config section override
+            if (!safe_isnan(ps->o.wintype_option[w->window_type].round_borders)) {
+                w->round_borders = ps->o.wintype_option[w->window_type].round_borders;
+                //log_warn("wintypes:round_borders: %d", w->round_borders);
+            }
         }
 	}
 }

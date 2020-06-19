@@ -44,6 +44,8 @@ typedef struct win_option_mask {
 	bool full_shadow : 1;
 	bool redir_ignore : 1;
 	bool opacity : 1;
+    bool corner_radius : 1;
+    bool round_borders : 1;
 } win_option_mask_t;
 
 typedef struct win_option {
@@ -53,6 +55,8 @@ typedef struct win_option {
 	bool full_shadow;
 	bool redir_ignore;
 	double opacity;
+    int corner_radius;
+    int round_borders;
 } win_option_t;
 
 enum blur_method {
