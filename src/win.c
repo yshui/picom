@@ -922,15 +922,17 @@ static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) 
 	} else {
 		w->corner_radius = ps->o.corner_radius;
 		//log_warn("xy(%d %d) wh(%d %d) will round corners", w->g.x, w->g.y, w->widthb, w->heightb);
+
 		// HACK: we reset this so we can query the color once
 		// we query the color in glx_round_corners_dst0 using glReadPixels
 		//w->border_col = { -1., -1, -1, -1 };
 		w->border_col[0] = w->border_col[1] = w->border_col[2] = w->border_col[3] = -1.0;
 
         // wintypes config section override
-	    if (!safe_isnan(ps->o.wintype_option[w->window_type].corner_radius)) {
+	    if (!safe_isnan(ps->o.wintype_option[w->window_type].corner_radius) &&
+            ps->o.wintype_option[w->window_type].corner_radius >= 0) {
 		    w->corner_radius = ps->o.wintype_option[w->window_type].corner_radius;
-            //log_warn("wintypes:corner_radius: %d", w->corner_radius);
+            //log_warn("xy(%d %d) wh(%d %d) wintypes:corner_radius: %d", w->g.x, w->g.y, w->widthb, w->heightb, w->corner_radius);
         }
 
         if (w && c2_match(ps, w, ps->o.round_borders_blacklist, NULL)) {
@@ -938,7 +940,8 @@ static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) 
         } else {
             w->round_borders = ps->o.round_borders;
             // wintypes config section override
-            if (!safe_isnan(ps->o.wintype_option[w->window_type].round_borders)) {
+            if (!safe_isnan(ps->o.wintype_option[w->window_type].round_borders) &&
+                ps->o.wintype_option[w->window_type].round_borders >= 0) {
                 w->round_borders = ps->o.wintype_option[w->window_type].round_borders;
                 //log_warn("wintypes:round_borders: %d", w->round_borders);
             }
