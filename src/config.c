@@ -515,6 +515,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .sw_opti = false,
 	    .use_damage = true,
 
+	    .shadow_hex = "#000000",
 	    .shadow_red = 0.0,
 	    .shadow_green = 0.0,
 	    .shadow_blue = 0.0,

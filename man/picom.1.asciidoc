@@ -151,6 +151,9 @@ OPTIONS
 *--shadow-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should have no shadow.
 
+*--shadow-hex* 'STRING'::
+  Color of shadow using hex string ('#000000')
+
 *--fade-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should not be faded.
 
