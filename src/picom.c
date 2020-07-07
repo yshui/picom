@@ -124,13 +124,15 @@ static inline void free_xinerama_info(session_t *ps) {
 }
 
 /**
- * Get current system clock in milliseconds.
+ * Get current system clock in 40micro second accuracy.
  */
 int64_t get_time_ms(void) {
 	struct timespec tp;
 	clock_gettime(CLOCK_MONOTONIC, &tp);
-	return (int64_t)tp.tv_sec * 1000 + (int64_t)tp.tv_nsec / 1000000;
+/*	return (int64_t)tp.tv_sec * 1000 + (int64_t)tp.tv_nsec / 1000000; //ultra high refresh */
+	return (int64_t)tp.tv_sec * 100 + (int64_t)tp.tv_nsec / 250000; //ultra high refresh
 }
+
 
 // XXX Move to x.c
 void cxinerama_upd_scrs(session_t *ps) {

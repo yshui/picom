@@ -1191,8 +1191,8 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .invert_color = false,
 	    .blur_background = false,
 
-        .oldX = -30000,
-        .oldY = -30000,
+        .oldX = -10000,
+        .oldY = -10000,
         .oldW = 0,
         .oldH = 0,
 
@@ -2088,8 +2088,8 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	w->a.map_state = XCB_MAP_STATE_VIEWABLE;
 
     if (!w->isOld) {
-        w->oldX = -10000;
-        w->oldY = -10000;
+        w->oldX = -1000;
+        w->oldY = -1000;
         w->oldW = 0;
         w->oldH = 0;
     }
