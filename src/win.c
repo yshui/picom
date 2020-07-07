@@ -1191,8 +1191,8 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .invert_color = false,
 	    .blur_background = false,
 
-        .oldX = -10000,
-        .oldY = -10000,
+        .oldX = -30000,
+        .oldY = -30000,
         .oldW = 0,
         .oldH = 0,
 

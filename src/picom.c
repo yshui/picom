@@ -677,7 +677,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 	}
 
     win_stack_foreach_managed(w, &ps->window_stack) {
-        bool posChanged = (w->oldX != -10000 && w->oldY != -10000 && w->oldW != 0 && w->oldH != 0)
+        bool posChanged = (w->oldX != -30000 && w->oldY != -30000 && w->oldW != 0 && w->oldH != 0)
             && (w->g.x != w->newX || w->g.y != w->newY || w->g.width != w->newW || w->g.height != w->newH);
 
         if (posChanged) {
