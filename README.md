@@ -1,6 +1,9 @@
 picom
 =======
 
+This is a forked version from Sandmark's picom branch, including Blackcapcoder's animation code inside. The animations here are further smoothed and time deltas reduced from 1ms to 40us for high refresh rates and buttery smooth transitions.
+
+----
 **This is a development branch, bugs to be expected**
 
 This is forked from the original Compton because it seems to have become unmaintained.
