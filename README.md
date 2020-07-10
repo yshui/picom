@@ -3,6 +3,21 @@ picom
 
 This is a forked version from Sandmark's picom branch, including Blackcapcoder's animation code inside. The animations here are further smoothed and time deltas reduced from 1ms to 40us for high refresh rates and buttery smooth transitions.
 
+You'll need to run it with the experimental backend with:
+
+`picom --experimental-backend`
+
+Your picom config can also now take advantage of some of the options that were previously implemented in blackcapcoder's compton version:
+- [x] * `transition-length`   length of animation in milliseconds  (default: 300)
+- [x] * `transition-pow-x`    animation easing on the x-axis (default: 0.1)
+- [x] * `transition-pow-y`    animation easing on the y-axis (default: 0.1)
+- [x] * `transition-pow-w`    animation easing on the window width  (default: 0.1)
+- [x] * `transition-pow-h`    animation easing on the window height (default: 0.1)
+- [x] * `size-transition`     whether to animate window size changes (default: true)
+- [ ] * `spawn-center-screen` whether to animate new windows from the center of the screen (default: false)
+- [ ] * `spawn-center`        whether to animate new windows from their own center (default: true)
+- [ ] * `no-scale-down`       Whether to animate down scaling (some programs handle this poorly) (default: false)
+
 ----
 **This is a development branch, bugs to be expected**
 
