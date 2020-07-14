@@ -114,6 +114,18 @@ static void usage(const char *argv0, int ret) {
 	    "--active-opacity opacity\n"
 	    "  Default opacity for active windows. (0.0 - 1.0)\n"
 	    "\n"
+            "--corner-radius value\n"
+            "  Round the corners of windows. (defaults to 0)\n"
+            "\n"
+            "--rounded-corners-exclude condition\n"
+            "  Exclude conditions for rounded corners.\n"
+            "\n"
+            "--round-borders value\n"
+            "  When rounding corners, round the borders of windows. (defaults to 1)\n"
+            "\n"
+            "--round-borders-exclude condition\n"
+            "  Exclude conditions for rounding borders.\n"
+            "\n"
 	    "--mark-wmwin-focused\n"
 	    "  Try to detect WM windows and mark them as active.\n"
 	    "\n"
@@ -202,8 +214,8 @@ static void usage(const char *argv0, int ret) {
 	    "\n"
 	    "--blur-method\n"
 	    "  The algorithm used for background bluring. Available choices are:\n"
-	    "  'none' to disable, 'gaussian', 'box' or 'kernel' for custom\n"
-	    "  convolution blur with --blur-kern.\n"
+	    "  'none' to disable, 'dual_kawase', 'gaussian', 'box' or 'kernel'\n"
+	    "  for custom convolution blur with --blur-kern.\n"
 	    "  Note: 'gaussian' and 'box' require --experimental-backends.\n"
 	    "\n"
 	    "--blur-size\n"
@@ -211,6 +223,10 @@ static void usage(const char *argv0, int ret) {
 	    "\n"
 	    "--blur-deviation\n"
 	    "  The standard deviation for the 'gaussian' blur method.\n"
+	    "\n"
+		"--blur-strength\n"
+		"  Only valid for '--blur-method dual_kawase'!\n"
+	    "  The strength of the kawase blur as an integer between 1 and 20. Defaults to 5.\n"
 	    "\n"
 	    "--blur-background\n"
 	    "  Blur background of semi-transparent / ARGB windows. Bad in\n"
@@ -227,6 +243,7 @@ static void usage(const char *argv0, int ret) {
 	    "  opacity.\n"
 	    "\n"
 	    "--blur-kern matrix\n"
+		"  Only valid for '--blur-method convolution'!\n"
 	    "  Specify the blur convolution kernel, with the following format:\n"
 	    "    WIDTH,HEIGHT,ELE1,ELE2,ELE3,ELE4,ELE5...\n"
 	    "  The element in the center must not be included, it will be forever\n"
@@ -398,8 +415,10 @@ static const struct option longopts[] = {
     {"opengl", no_argument, NULL, 289},
     {"backend", required_argument, NULL, 290},
     {"glx-no-stencil", no_argument, NULL, 291},
+    {"glx-copy-from-front", no_argument, NULL, 292},
     {"benchmark", required_argument, NULL, 293},
     {"benchmark-wid", required_argument, NULL, 294},
+    {"glx-use-copysubbuffermesa", no_argument, NULL, 295},
     {"blur-background-exclude", required_argument, NULL, 296},
     {"active-opacity", required_argument, NULL, 297},
     {"glx-no-rebind-pixmap", no_argument, NULL, 298},
@@ -435,6 +454,11 @@ static const struct option longopts[] = {
     {"blur-method", required_argument, NULL, 328},
     {"blur-size", required_argument, NULL, 329},
     {"blur-deviation", required_argument, NULL, 330},
+    {"blur-strength", required_argument, NULL, 331},
+    {"corner-radius", required_argument, NULL, 332},
+    {"rounded-corners-exclude", required_argument, NULL, 333},
+    {"round-borders", required_argument, NULL, 334},
+    {"round-borders-exclude", required_argument, NULL, 335},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -467,23 +491,21 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 'b') {
 			*fork = true;
 		} else if (o == 'd') {
-			log_error("-d is removed, please use the DISPLAY "
-			          "environment variable");
-			goto err;
+			log_warn("-d will be ignored, please use the DISPLAY "
+			         "environment variable");
 		} else if (o == 314) {
 			*all_xerrors = true;
 		} else if (o == 318) {
 			printf("%s\n", COMPTON_VERSION);
 			return true;
 		} else if (o == 'S') {
-			log_error("-S is no longer available");
-			goto err;
+			log_warn("-S will be ignored");
 		} else if (o == 320) {
-			log_error("--no-name-pixmap is no longer available");
-			goto err;
+			log_warn("--no-name-pixmap will be ignored");
 		} else if (o == '?' || o == ':') {
 			usage(argv[0], 1);
-			goto err;
+			*exit_code = 1;
+			return true;
 		}
 	}
 
@@ -491,13 +513,11 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 	if (optind < argc) {
 		// log is not initialized here yet
 		fprintf(stderr, "picom doesn't accept positional arguments.\n");
-		goto err;
+		*exit_code = 1;
+		return true;
 	}
 
 	return false;
-err:
-	*exit_code = 1;
-	return true;
 }
 
 /**
@@ -516,10 +536,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	// Parse commandline arguments. Range checking will be done later.
 
-	const char *deprecation_message attr_unused =
-	    "has been removed. If you encounter problems "
-	    "without this feature, please feel free to "
-	    "open a bug report.";
+	const char *deprecation_message = "has been removed. If you encounter problems "
+	                                  "without this feature, please feel free to "
+	                                  "open a bug report.";
 	optind = 1;
 	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
 		switch (o) {
@@ -645,14 +664,14 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 271:
 			// --alpha-step
-			log_error("--alpha-step has been removed, we now tries to "
+			log_warn("--alpha-step has been removed, we now tries to "
 			         "make use of all alpha values");
-			return false;
-		case 272: log_error("use of --dbe is deprecated"); return false;
+			break;
+		case 272: log_warn("use of --dbe is deprecated"); break;
 		case 273:
-			log_error("--paint-on-overlay has been removed, the feature is enabled "
-			         "whenever possible");
-			return false;
+			log_warn("--paint-on-overlay has been removed, and is enabled "
+			         "when possible");
+			break;
 		P_CASEBOOL(274, sw_opti);
 		case 275:
 			// --vsync-aggressive
@@ -704,10 +723,18 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 				exit(1);
 			break;
 		P_CASEBOOL(291, glx_no_stencil);
+		case 292:
+			log_error("--glx-copy-from-front %s", deprecation_message);
+			exit(1);
+			break;
 		P_CASEINT(293, benchmark);
 		case 294:
 			// --benchmark-wid
 			opt->benchmark_wid = (xcb_window_t)strtol(optarg, NULL, 0);
+			break;
+		case 295:
+			log_error("--glx-use-copysubbuffermesa %s", deprecation_message);
+			exit(1);
 			break;
 		case 296:
 			// --blur-background-exclude
@@ -787,8 +814,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(311, vsync_use_glfinish);
 		case 312:
 			// --xrender-sync
-			log_error("Please use --xrender-sync-fence instead of --xrender-sync");
-			return false;
+			log_warn("Please use --xrender-sync-fence instead of --xrender-sync");
+			opt->xrender_sync_fence = true;
+			break;
 		P_CASEBOOL(313, xrender_sync_fence);
 		P_CASEBOOL(315, no_fading_destroyed_argb);
 		P_CASEBOOL(316, force_win_blend);
@@ -835,7 +863,15 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// --blur-deviation
 			opt->blur_deviation = atof(optarg);
 			break;
-
+		case 331:
+			// --blur-strength
+			opt->blur_strength = parse_kawase_blur_strength(atoi(optarg));
+			break;
+		case 332: opt->corner_radius = atoi(optarg); break;
+		case 333: condlst_add(&opt->rounded_corners_blacklist, optarg); break;
+		case 334: opt->round_borders = atoi(optarg); break;
+		case 335: condlst_add(&opt->round_borders_blacklist, optarg); break;
+		
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801: opt->print_diagnostics = true; break;
@@ -915,11 +951,27 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		opt->track_leader = true;
 	}
 
+	// Blur method kawase is not compatible with the xrender backend
+	if (opt->backend != BKEND_GLX && (opt->blur_method == BLUR_METHOD_DUAL_KAWASE
+									|| opt->blur_method == BLUR_METHOD_ALT_KAWASE)) {
+		log_warn("Blur method 'kawase' is incompatible with the XRender backend. Fall back to default.\n");
+		opt->blur_method = BLUR_METHOD_KERNEL;
+	}
+
 	// Fill default blur kernel
 	if (opt->blur_method == BLUR_METHOD_KERNEL &&
 	    (!opt->blur_kerns || !opt->blur_kerns[0])) {
 		opt->blur_kerns = parse_blur_kern_lst("3x3box", &conv_kern_hasneg,
 		                                      &opt->blur_kernel_count);
+		CHECK(opt->blur_kerns);
+		CHECK(opt->blur_kernel_count);
+	}
+
+	// override blur_kernel_count for kawase
+	if (opt->blur_method == BLUR_METHOD_DUAL_KAWASE ||
+		opt->blur_method == BLUR_METHOD_ALT_KAWASE) {
+		opt->blur_kernel_count = MAX_BLUR_PASS;
+		opt->blur_kerns = ccalloc(opt->blur_kernel_count, struct conv *);
 		CHECK(opt->blur_kerns);
 		CHECK(opt->blur_kernel_count);
 	}

@@ -45,6 +45,8 @@ struct _glx_data {
 	Display *display;
 	int screen;
 	xcb_window_t target_win;
+	int glx_event;
+	int glx_error;
 	GLXContext ctx;
 };
 
@@ -244,7 +246,7 @@ static backend_t *glx_init(session_t *ps) {
 	XVisualInfo *pvis = NULL;
 
 	// Check for GLX extension
-	if (!ps->glx_exists) {
+	if (!glXQueryExtension(ps->dpy, &gd->glx_event, &gd->glx_error)) {
 		log_error("No GLX extension.");
 		goto end;
 	}
@@ -466,7 +468,10 @@ static void glx_present(backend_t *base, const region_t *region attr_unused) {
 	struct _glx_data *gd = (void *)base;
 	gl_present(base, region);
 	glXSwapBuffers(gd->display, gd->target_win);
-	glFinish();
+	// XXX there should be no need to block, the core should wait for render to finish
+	if (!gd->gl.is_nvidia) {
+		glFinish();
+	}
 }
 
 static int glx_buffer_age(backend_t *base) {
@@ -489,6 +494,7 @@ struct backend_operations glx_ops = {
     .image_op = gl_image_op,
     .copy = gl_copy,
     .blur = gl_blur,
+	.round = gl_round,
     .is_image_transparent = gl_is_image_transparent,
     .present = glx_present,
     .buffer_age = glx_buffer_age,
@@ -496,7 +502,10 @@ struct backend_operations glx_ops = {
     .fill = gl_fill,
     .create_blur_context = gl_create_blur_context,
     .destroy_blur_context = gl_destroy_blur_context,
+	.create_round_context = gl_create_round_context,
+    .destroy_round_context = gl_destroy_round_context,
     .get_blur_size = gl_get_blur_size,
+	.store_back_texture = gl_store_back_texture,
     .max_buffer_age = 5,        // Why?
 };
 

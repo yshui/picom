@@ -88,6 +88,11 @@ enum blur_method parse_blur_method(const char *src) {
 		return BLUR_METHOD_BOX;
 	} else if (strcmp(src, "gaussian") == 0) {
 		return BLUR_METHOD_GAUSSIAN;
+	} else if (strcmp(src, "kawase") == 0 || strcmp(src, "dual_kawase") == 0) {
+		return BLUR_METHOD_DUAL_KAWASE;
+	} else if (strcmp(src, "kawase_alt") == 0 || strcmp(src, "alt_kawase") == 0) {
+		// new code from tryone144's `improved_dbo` branch
+		return BLUR_METHOD_ALT_KAWASE;
 	} else if (strcmp(src, "none") == 0) {
 		return BLUR_METHOD_NONE;
 	}
@@ -489,6 +494,12 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 			// opacity logic is complicated, and needs an "unset" state
 			opt->wintype_option[i].opacity = NAN;
 		}
+		if (!mask[i].corner_radius) {
+			opt->wintype_option[i].corner_radius = -1;
+		}
+		if (!mask[i].round_borders) {
+			opt->wintype_option[i].round_borders = -1;
+		}
 	}
 }
 
@@ -497,15 +508,6 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	*opt = (struct options){
 	    .backend = BKEND_XRENDER,
 	    .glx_no_stencil = false,
-        .transition_length = 300,
-        .transition_pow_x = 0.1,
-        .transition_pow_y = 0.1,
-        .transition_pow_w = 0.1,
-        .transition_pow_h = 0.1,
-        .size_transition = true,
-        .no_scale_down = false,
-        .spawn_center_screen = false,
-        .spawn_center = true,
 	    .mark_wmwin_focused = false,
 	    .mark_ovredir_focused = false,
 	    .detect_rounded_corners = false,
@@ -519,6 +521,15 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .benchmark = 0,
 	    .benchmark_wid = XCB_NONE,
 	    .logpath = NULL,
+	    .transition_length = 300,
+	    .transition_pow_x = 0.1,
+	    .transition_pow_y = 0.1,
+	    .transition_pow_w = 0.1,
+	    .transition_pow_h = 0.1,
+	    .size_transition = true,
+	    .no_scale_down = false,
+	    .spawn_center_screen = false,
+	    .spawn_center = true,
 
 	    .refresh_rate = 0,
 	    .sw_opti = false,
@@ -551,6 +562,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .blur_method = BLUR_METHOD_NONE,
 	    .blur_radius = 3,
 	    .blur_deviation = 0.84089642,
+	    .blur_strength = {.strength = -1, .iterations = 3, .offset = 2.75, .expand = 50},
 	    .blur_background_frame = false,
 	    .blur_background_fixed = false,
 	    .blur_background_blacklist = NULL,
@@ -569,7 +581,9 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .no_ewmh_fullscreen = false,
 
 	    .track_leader = false,
-	};
+
+	    .rounded_corners_blacklist = NULL,
+	    .round_borders_blacklist = NULL};
 
 	char *ret = NULL;
 #ifdef CONFIG_LIBCONFIG

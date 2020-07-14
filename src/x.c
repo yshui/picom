@@ -7,7 +7,6 @@
 #include <pixman.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
-#include <xcb/glx.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
@@ -168,6 +167,15 @@ xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_
 	return x_get_visual_for_pictfmt(g_pictfmts, pictfmt->id);
 }
 
+xcb_render_pictformat_t
+x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std) {
+	x_get_server_pictfmts(c);
+
+	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, std);
+
+	return pictfmt->id;
+}
+
 int x_get_visual_depth(xcb_connection_t *c, xcb_visualid_t visual) {
 	auto setup = xcb_get_setup(c);
 	for (auto screen = xcb_setup_roots_iterator(setup); screen.rem;
@@ -229,6 +237,17 @@ x_create_picture_with_standard_and_pixmap(xcb_connection_t *c, xcb_pict_standard
 	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, standard);
 	assert(pictfmt);
 	return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, pixmap, valuemask, attr);
+}
+
+xcb_render_picture_t
+x_create_picture_with_standard(xcb_connection_t *c, xcb_drawable_t d, int w, int h,
+                               xcb_pict_standard_t standard, uint32_t valuemask,
+                               const xcb_render_create_picture_value_list_t *attr) {
+	x_get_server_pictfmts(c);
+
+	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, standard);
+	assert(pictfmt);
+	return x_create_picture_with_pictfmt(c, d, w, h, pictfmt, valuemask, attr);
 }
 
 /**
@@ -338,80 +357,69 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 	int o = 0;
 	const char *name = "Unknown";
 
-#define CASESTRRET(s)                                                                    \
-	case s:                                                                          \
-		name = #s;                                                               \
-		break
-
 #define CASESTRRET2(s)                                                                   \
-	case XCB_##s: name = #s; break
+	case s: name = #s; break
 
 	// TODO separate error code out from session_t
 	o = error_code - ps->xfixes_error;
-	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
+	switch (o) { CASESTRRET2(XCB_XFIXES_BAD_REGION); }
 
 	o = error_code - ps->damage_error;
-	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
+	switch (o) { CASESTRRET2(XCB_DAMAGE_BAD_DAMAGE); }
 
 	o = error_code - ps->render_error;
 	switch (o) {
-		CASESTRRET2(RENDER_PICT_FORMAT);
-		CASESTRRET2(RENDER_PICTURE);
-		CASESTRRET2(RENDER_PICT_OP);
-		CASESTRRET2(RENDER_GLYPH_SET);
-		CASESTRRET2(RENDER_GLYPH);
+		CASESTRRET2(XCB_RENDER_PICT_FORMAT);
+		CASESTRRET2(XCB_RENDER_PICTURE);
+		CASESTRRET2(XCB_RENDER_PICT_OP);
+		CASESTRRET2(XCB_RENDER_GLYPH_SET);
+		CASESTRRET2(XCB_RENDER_GLYPH);
 	}
 
+#ifdef CONFIG_OPENGL
 	if (ps->glx_exists) {
 		o = error_code - ps->glx_error;
 		switch (o) {
+			CASESTRRET2(GLX_BAD_SCREEN);
+			CASESTRRET2(GLX_BAD_ATTRIBUTE);
+			CASESTRRET2(GLX_NO_EXTENSION);
+			CASESTRRET2(GLX_BAD_VISUAL);
 			CASESTRRET2(GLX_BAD_CONTEXT);
-			CASESTRRET2(GLX_BAD_CONTEXT_STATE);
-			CASESTRRET2(GLX_BAD_DRAWABLE);
-			CASESTRRET2(GLX_BAD_PIXMAP);
-			CASESTRRET2(GLX_BAD_CONTEXT_TAG);
-			CASESTRRET2(GLX_BAD_CURRENT_WINDOW);
-			CASESTRRET2(GLX_BAD_RENDER_REQUEST);
-			CASESTRRET2(GLX_BAD_LARGE_REQUEST);
-			CASESTRRET2(GLX_UNSUPPORTED_PRIVATE_REQUEST);
-			CASESTRRET2(GLX_BAD_FB_CONFIG);
-			CASESTRRET2(GLX_BAD_PBUFFER);
-			CASESTRRET2(GLX_BAD_CURRENT_DRAWABLE);
-			CASESTRRET2(GLX_BAD_WINDOW);
-			CASESTRRET2(GLX_GLX_BAD_PROFILE_ARB);
+			CASESTRRET2(GLX_BAD_VALUE);
+			CASESTRRET2(GLX_BAD_ENUM);
 		}
 	}
+#endif
 
 	if (ps->xsync_exists) {
 		o = error_code - ps->xsync_error;
 		switch (o) {
-			CASESTRRET(XSyncBadCounter);
-			CASESTRRET(XSyncBadAlarm);
-			CASESTRRET(XSyncBadFence);
+			CASESTRRET2(XSyncBadCounter);
+			CASESTRRET2(XSyncBadAlarm);
+			CASESTRRET2(XSyncBadFence);
 		}
 	}
 
 	switch (error_code) {
-		CASESTRRET2(ACCESS);
-		CASESTRRET2(ALLOC);
-		CASESTRRET2(ATOM);
-		CASESTRRET2(COLORMAP);
-		CASESTRRET2(CURSOR);
-		CASESTRRET2(DRAWABLE);
-		CASESTRRET2(FONT);
-		CASESTRRET2(G_CONTEXT);
-		CASESTRRET2(ID_CHOICE);
-		CASESTRRET2(IMPLEMENTATION);
-		CASESTRRET2(LENGTH);
-		CASESTRRET2(MATCH);
-		CASESTRRET2(NAME);
-		CASESTRRET2(PIXMAP);
-		CASESTRRET2(REQUEST);
-		CASESTRRET2(VALUE);
-		CASESTRRET2(WINDOW);
+		CASESTRRET2(BadAccess);
+		CASESTRRET2(BadAlloc);
+		CASESTRRET2(BadAtom);
+		CASESTRRET2(BadColor);
+		CASESTRRET2(BadCursor);
+		CASESTRRET2(BadDrawable);
+		CASESTRRET2(BadFont);
+		CASESTRRET2(BadGC);
+		CASESTRRET2(BadIDChoice);
+		CASESTRRET2(BadImplementation);
+		CASESTRRET2(BadLength);
+		CASESTRRET2(BadMatch);
+		CASESTRRET2(BadName);
+		CASESTRRET2(BadPixmap);
+		CASESTRRET2(BadRequest);
+		CASESTRRET2(BadValue);
+		CASESTRRET2(BadWindow);
 	}
 
-#undef CASESTRRET
 #undef CASESTRRET2
 
 	thread_local static char buffer[256];
@@ -434,9 +442,6 @@ void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t 
  *         for multiple calls to this function,
  */
 const char *x_strerror(xcb_generic_error_t *e) {
-	if (!e) {
-		return "No error";
-	}
 	return _x_strerror(e->full_sequence, e->major_code, e->minor_code, e->error_code);
 }
 

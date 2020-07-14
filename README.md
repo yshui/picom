@@ -1,24 +1,21 @@
 picom
 =======
 
-This is a forked version from Sandmark's picom branch, including Blackcapcoder's animation code inside. The animations here are further smoothed and time deltas reduced from 1ms to 40us for high refresh rates and buttery smooth transitions.
+## Why another picom fork?
 
-You'll need to run it with the experimental backend with:
+TL;DR: rounded corners and dual_kawase blur on all backends.
 
-`picom --experimental-backend`
+This fork contains:
 
-Your picom config can also now take advantage of some of the options that were previously implemented in blackcapcoder's compton version:
-- [x] * `transition-length`   length of animation in milliseconds  (default: 300)
-- [x] * `transition-pow-x`    animation easing on the x-axis (default: 0.1)
-- [x] * `transition-pow-y`    animation easing on the y-axis (default: 0.1)
-- [x] * `transition-pow-w`    animation easing on the window width  (default: 0.1)
-- [x] * `transition-pow-h`    animation easing on the window height (default: 0.1)
-- [x] * `size-transition`     whether to animate window size changes (default: true)
-- [ ] * `spawn-center-screen` whether to animate new windows from the center of the screen (default: false)
-- [ ] * `spawn-center`        whether to animate new windows from their own center (default: true)
-- [ ] * `no-scale-down`       Whether to animate down scaling (some programs handle this poorly) (default: false)
+- Dual kawase blur method from [tryone144](https://github.com/tryone144/compton) as well as his new [feature/dual_kawase branch](https://github.com/tryone144/compton/tree/feature/dual_kawase) which implements the dual kawase blur method on the experimental glx backend.
 
-----
+- Rounded corners code from [sdhand](https://github.com/sdhand/picom) which is also ported to the experimetnal XRender backend.
+
+- New code for rounded corners on the glx backend using GLSL frangment shader
+
+For more information read [my reddit post](https://www.reddit.com/r/unixporn/comments/fs8trg/oc_comptonpicom_fork_with_both_tryone144s_dual/)
+
+
 **This is a development branch, bugs to be expected**
 
 This is forked from the original Compton because it seems to have become unmaintained.
@@ -98,7 +95,6 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * xcb-image
 * xcb-present
 * xcb-xinerama
-* xcb-glx
 * pixman
 * libdbus (optional, disable with the `-Ddbus=false` meson configure flag)
 * libconfig (optional, disable with the `-Dconfig_file=false` meson configure flag)
@@ -110,7 +106,7 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 On Debian based distributions (e.g. Ubuntu), the list of needed packages are
 
 ```
-libxext-dev libxcb1-dev libxcb-damage0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-randr0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-present-dev libxcb-xinerama0-dev libxcb-glx0-dev libpixman-1-dev libdbus-1-dev libconfig-dev libgl1-mesa-dev  libpcre2-dev  libevdev-dev uthash-dev libev-dev libx11-xcb-dev
+libxext-dev libxcb1-dev libxcb-damage0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-randr0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-present-dev libxcb-xinerama0-dev libpixman-1-dev libdbus-1-dev libconfig-dev libgl1-mesa-dev  libpcre2-dev  libevdev-dev uthash-dev libev-dev libx11-xcb-dev
 ```
 
 To build the documents, you need `asciidoc`

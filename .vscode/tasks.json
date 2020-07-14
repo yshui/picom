@@ -1,0 +1,25 @@
+{
+    "tasks": [
+        {
+            "label": "build debug meson",
+            "type": "shell",
+            "command": "meson build --buildtype=debug && ninja -C build",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "build release meson",
+            "type": "shell",
+            "command": "meson build --buildtype=release && ninja -C build",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ],
+    "version": "2.0.0"
+}

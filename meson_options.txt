@@ -9,8 +9,6 @@ option('dbus', type: 'boolean', value: true, description: 'Enable support for D-
 
 option('xrescheck', type: 'boolean', value: false, description: 'Enable X resource leak checker (for debug only)')
 
-option('compton', type: 'boolean', value: true, description: 'Install backwards compat with compton')
-
 option('with_docs', type: 'boolean', value: false, description: 'Build documentation and man pages')
 
 option('modularize', type: 'boolean', value: false, description: 'Build with clang\'s module system')

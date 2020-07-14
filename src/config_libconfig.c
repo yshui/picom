@@ -284,6 +284,17 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 			o->opacity = normalize_d(fval);
 			mask->opacity = true;
 		}
+
+		if (config_setting_lookup_int(setting, "corner-radius", &ival)) {
+			o->corner_radius = ival;
+			mask->corner_radius = true;
+			// log_warn("%s: corner-radius: %d", member_name, ival);
+		}
+		if (config_setting_lookup_int(setting, "round-borders", &ival)) {
+			o->round_borders = ival;
+			mask->round_borders = true;
+			// log_warn("%s: round_borders: %d", member_name, ival);
+		}
 	}
 }
 
@@ -353,29 +364,31 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// -O (fade_out_step)
 	if (config_lookup_float(&cfg, "fade-out-step", &dval))
 		opt->fade_out_step = normalize_d(dval);
-    // --transition-length
-    if (config_lookup_int(&cfg, "transition-length", &ival))
-      opt->transition_length = ival;
-    // --transition-pow-x
-    if (config_lookup_float(&cfg, "transition-pow-x", &dval))
-      opt->transition_pow_x = dval;
-    // --transition-pow-y
-    if (config_lookup_float(&cfg, "transition-pow-y", &dval))
-      opt->transition_pow_y = dval;
-    // --transition-pow-w
-    if (config_lookup_float(&cfg, "transition-pow-w", &dval))
-      opt->transition_pow_w = dval;
-    // --transition-pow-h
-    if (config_lookup_float(&cfg, "transition-pow-h", &dval))
-      opt->transition_pow_h = dval;
-    // --size-transition
-    lcfg_lookup_bool(&cfg, "size-transition", &opt->size_transition);
-    // --spawn-center-screen
-    lcfg_lookup_bool(&cfg, "spawn-center-screen", &opt->spawn_center_screen);
-    // --spawn-center
-    lcfg_lookup_bool(&cfg, "spawn-center", &opt->spawn_center);
-    // --no-scale-down
-    lcfg_lookup_bool(&cfg, "no-scale-down", &opt->no_scale_down);
+
+	// --transition-length
+	if (config_lookup_int(&cfg, "transition-length", &ival))
+		opt->transition_length = ival;
+	// --transition-pow-x
+	if (config_lookup_float(&cfg, "transition-pow-x", &dval))
+		opt->transition_pow_x = dval;
+	// --transition-pow-y
+	if (config_lookup_float(&cfg, "transition-pow-y", &dval))
+		opt->transition_pow_y = dval;
+	// --transition-pow-w
+	if (config_lookup_float(&cfg, "transition-pow-w", &dval))
+		opt->transition_pow_w = dval;
+	// --transition-pow-h
+	if (config_lookup_float(&cfg, "transition-pow-h", &dval))
+		opt->transition_pow_h = dval;
+	// --size-transition
+	lcfg_lookup_bool(&cfg, "size-transition", &opt->size_transition);
+	// --spawn-center-screen
+	lcfg_lookup_bool(&cfg, "spawn-center-screen", &opt->spawn_center_screen);
+	// --spawn-center
+	lcfg_lookup_bool(&cfg, "spawn-center", &opt->spawn_center);
+	// --no-scale-down
+	lcfg_lookup_bool(&cfg, "no-scale-down", &opt->no_scale_down);
+
 	// -r (shadow_radius)
 	config_lookup_int(&cfg, "shadow-radius", &opt->shadow_radius);
 	// -o (shadow_opacity)
@@ -390,6 +403,14 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --active_opacity
 	if (config_lookup_float(&cfg, "active-opacity", &dval))
 		opt->active_opacity = normalize_d(dval);
+	// --corner-radius
+	config_lookup_int(&cfg, "corner-radius", &opt->corner_radius);
+	// --rounded-corners-exclude
+	parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist, "rounded-corners-exclude");
+	// --round-borders
+	config_lookup_int(&cfg, "round-borders", &opt->round_borders);
+	// --round-borders-exclude
+	parse_cfg_condlst(&cfg, &opt->round_borders_blacklist, "round-borders-exclude");
 	// -e (frame_opacity)
 	config_lookup_float(&cfg, "frame-opacity", &opt->frame_opacity);
 	// -c (shadow_enable)
@@ -469,6 +490,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	lcfg_lookup_bool(&cfg, "vsync", &opt->vsync);
 	// --backend
+	lcfg_lookup_bool(&cfg, "experimental-backends", &opt->experimental_backends);
 	if (config_lookup_string(&cfg, "backend", &sval)) {
 		opt->backend = parse_backend(sval);
 		if (opt->backend >= NUM_BKEND) {
@@ -545,6 +567,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	config_lookup_int(&cfg, "blur-size", &opt->blur_radius);
 	// --blur-deviation
 	config_lookup_float(&cfg, "blur-deviation", &opt->blur_deviation);
+	// --blur-strength
+	if (config_lookup_int(&cfg, "blur-strength", &ival) && ival) {
+		opt->blur_strength = parse_kawase_blur_strength(ival);
+	}
 	// --blur-background
 	if (config_lookup_bool(&cfg, "blur-background", &ival) && ival) {
 		if (opt->blur_method == BLUR_METHOD_NONE) {
@@ -570,7 +596,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "glx-no-stencil", &opt->glx_no_stencil);
 	// --glx-no-rebind-pixmap
 	lcfg_lookup_bool(&cfg, "glx-no-rebind-pixmap", &opt->glx_no_rebind_pixmap);
-	lcfg_lookup_bool(&cfg, "force-win-blend", &opt->force_win_blend);
 	// --glx-swap-method
 	if (config_lookup_string(&cfg, "glx-swap-method", &sval)) {
 		char *endptr;
@@ -608,8 +633,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	// --xrender-sync
 	if (config_lookup_bool(&cfg, "xrender-sync", &ival) && ival) {
-		log_error("Please use xrender-sync-fence instead of xrender-sync.");
-		goto err;
+		log_warn("Please use xrender-sync-fence instead of xrender-sync.");
+		opt->xrender_sync_fence = true;
 	}
 	// --xrender-sync-fence
 	lcfg_lookup_bool(&cfg, "xrender-sync-fence", &opt->xrender_sync_fence);
@@ -617,21 +642,25 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
 		log_warn("\"clear-shadow\" is removed as an option, and is always"
 		         " enabled now. Consider removing it from your config file");
-	if (lcfg_lookup_bool(&cfg, "paint-on-overlay", &bval)) {
-		log_error("\"paint-on-overlay\" has been removed as an option, and "
-		          "the feature is enabled whenever possible");
-		goto err;
-	}
+	if (lcfg_lookup_bool(&cfg, "paint-on-overlay", &bval))
+		log_warn("\"paint-on-overlay\" has been removed as an option, and "
+		         "is enabled whenever possible");
 
-	if (config_lookup_float(&cfg, "alpha-step", &dval)) {
-		log_error("\"alpha-step\" has been removed, compton now tries to make use"
-		          " of all alpha values");
-		goto err;
-	}
+	if (config_lookup_float(&cfg, "alpha-step", &dval))
+		log_warn("\"alpha-step\" has been removed, compton now tries to make use"
+		         " of all alpha values");
 
-	const char *deprecation_message attr_unused =
+	const char *deprecation_message =
 	    "has been removed. If you encounter problems "
 	    "without this feature, please feel free to open a bug report";
+	if (lcfg_lookup_bool(&cfg, "glx-use-copysubbuffermesa", &bval) && bval) {
+		log_error("\"glx-use-copysubbuffermesa\" %s", deprecation_message);
+		return ERR_PTR(-1);
+	}
+	if (lcfg_lookup_bool(&cfg, "glx-copy-from-front", &bval) && bval) {
+		log_error("\"glx-copy-from-front\" %s", deprecation_message);
+		return ERR_PTR(-1);
+	}
 
 	config_setting_t *blur_cfg = config_lookup(&cfg, "blur");
 	if (blur_cfg) {
@@ -655,6 +684,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		}
 
 		config_setting_lookup_float(blur_cfg, "deviation", &opt->blur_deviation);
+
+		if (config_setting_lookup_int(blur_cfg, "strength", &ival) && ival) {
+			opt->blur_strength = parse_kawase_blur_strength(ival);
+		}
 	}
 
 	// Wintype settings

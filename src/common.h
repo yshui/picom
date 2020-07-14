@@ -75,6 +75,9 @@
 /// @brief Maximum OpenGL buffer age.
 #define CGLX_MAX_BUFFER_AGE 5
 
+/// @brief Maximum passes for blur.
+#define MAX_BLUR_PASS 6
+
 // Window flags
 
 // === Types ===
@@ -157,6 +160,8 @@ typedef struct session {
 	backend_t *backend_data;
 	/// backend blur context
 	void *backend_blur_context;
+	/// round corners context
+	void *backend_round_context;
 	/// graphic drivers used
 	enum driver drivers;
 	/// file watch handle
@@ -214,7 +219,6 @@ typedef struct session {
 	/// Custom GLX program used for painting window.
 	// XXX should be in struct glx_session
 	glx_prog_main_t glx_prog_win;
-	struct glx_fbconfig_info *argb_fbconfig;
 #endif
 	/// Sync fence to sync draw operations
 	xcb_sync_fence_t sync_fence;
@@ -340,12 +344,14 @@ typedef struct session {
 	int randr_error;
 	/// Whether X Present extension exists.
 	bool present_exists;
+#ifdef CONFIG_OPENGL
 	/// Whether X GLX extension exists.
 	bool glx_exists;
 	/// Event base number for X GLX extension.
 	int glx_event;
 	/// Error base number for X GLX extension.
 	int glx_error;
+#endif
 	/// Whether X Xinerama extension exists.
 	bool xinerama_exists;
 	/// Xinerama screen regions.
@@ -528,7 +534,8 @@ static inline void wintype_arr_enable(bool arr[]) {
 	}
 }
 
+
 /**
- * Get current system clock in 40 microseconds.
+ * Get current system clock in milliseconds.
  */
 int64_t get_time_ms(void);

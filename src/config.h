@@ -44,6 +44,8 @@ typedef struct win_option_mask {
 	bool full_shadow : 1;
 	bool redir_ignore : 1;
 	bool opacity : 1;
+    bool corner_radius : 1;
+    bool round_borders : 1;
 } win_option_mask_t;
 
 typedef struct win_option {
@@ -53,6 +55,8 @@ typedef struct win_option {
 	bool full_shadow;
 	bool redir_ignore;
 	double opacity;
+    int corner_radius;
+    int round_borders;
 } win_option_t;
 
 enum blur_method {
@@ -60,8 +64,17 @@ enum blur_method {
 	BLUR_METHOD_KERNEL,
 	BLUR_METHOD_BOX,
 	BLUR_METHOD_GAUSSIAN,
+	BLUR_METHOD_DUAL_KAWASE,
+	BLUR_METHOD_ALT_KAWASE,
 	BLUR_METHOD_INVALID,
 };
+
+typedef struct blur_strength {
+	int expand;
+	int strength;
+	int iterations;
+	float offset;
+} blur_strength_t;
 
 typedef struct _c2_lptr c2_lptr_t;
 
@@ -87,7 +100,7 @@ typedef struct options {
 	bool glx_no_stencil;
 	/// Whether to avoid rebinding pixmap on window damage.
 	bool glx_no_rebind_pixmap;
-	/// Length of window transitions
+        /// Length of window transitions
 	int transition_length;
 	/// For smoothing on the x-coordinate of window animations
 	float transition_pow_x;
@@ -207,6 +220,8 @@ typedef struct options {
 	int blur_radius;
 	// Standard deviation for the gaussian blur
 	double blur_deviation;
+	/// Blur strength (for kawase blur)
+	blur_strength_t blur_strength;
 	/// Whether to blur background when the window frame is not opaque.
 	/// Implies blur_background.
 	bool blur_background_frame;
@@ -255,6 +270,15 @@ typedef struct options {
 	// Make transparent windows clip other windows, instead of blending on top of
 	// them
 	bool transparent_clipping;
+
+	// === Rounded corners related ===
+	int corner_radius;
+	/// Rounded corners blacklist. A linked list of conditions.
+	c2_lptr_t *rounded_corners_blacklist;
+    /// Do we round the borders of rounded windows?
+	int round_borders;
+	/// Rounded borders blacklist. A linked list of conditions.
+	c2_lptr_t *round_borders_blacklist;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
@@ -331,3 +355,42 @@ static inline bool parse_vsync(const char *str) {
 }
 
 // vim: set noet sw=8 ts=8 :
+
+/**
+ * Parse a blur_strength option argument.
+ */
+static inline attr_pure blur_strength_t
+parse_kawase_blur_strength(const int level) {
+  static const blur_strength_t values[20] = {
+    { .expand = 10,  .strength =1,  .iterations = 1, .offset = 1.5 },      // 1
+    { .expand = 10,  .strength =2,  .iterations = 1, .offset = 2.0 },      // 2
+    { .expand = 20,  .strength =3,  .iterations = 2, .offset = 2.5 },      // 3
+    { .expand = 20,  .strength =4,  .iterations = 2, .offset = 3.0 },      // 4
+    { .expand = 50,  .strength =5,  .iterations = 3, .offset = 2.75 },     // 5
+    { .expand = 50,  .strength =6,  .iterations = 3, .offset = 3.5 },      // 6
+    { .expand = 50,  .strength =7,  .iterations = 3, .offset = 4.25 },     // 7
+    { .expand = 50,  .strength =8,  .iterations = 3, .offset = 5.0 },      // 8
+    { .expand = 150, .strength =9,  .iterations = 4, .offset = 3.71429f }, // 9
+    { .expand = 150, .strength =10, .iterations = 4, .offset = 4.42857f }, // 10
+    { .expand = 150, .strength =11, .iterations = 4, .offset = 5.14286f }, // 11
+    { .expand = 150, .strength =12, .iterations = 4, .offset = 5.85714f }, // 12
+    { .expand = 150, .strength =13, .iterations = 4, .offset = 6.57143f }, // 13
+    { .expand = 150, .strength =14, .iterations = 4, .offset = 7.28571f }, // 14
+    { .expand = 150, .strength =15, .iterations = 4, .offset = 8.0 },      // 15
+    { .expand = 400, .strength =16, .iterations = 5, .offset = 6.0 },      // 16
+    { .expand = 400, .strength =17, .iterations = 5, .offset = 7.0 },      // 17
+    { .expand = 400, .strength =18, .iterations = 5, .offset = 8.0 },      // 18
+    { .expand = 400, .strength =19, .iterations = 5, .offset = 9.0 },      // 19
+    { .expand = 400, .strength =20, .iterations = 5, .offset = 10.0 },     // 20
+  };
+
+  if (level < 1 || level > 20) {
+    log_error("(\"%d\"): Invalid blur_strength argument. Needs to be a number between 1 and 20. Will default to 5", level);
+    return values[5];
+  }
+
+  log_info("blur-strength: %d [.iter = %d, .offset = %f, .expand = %d]",
+  level, values[level - 1].iterations, values[level - 1].offset, values[level - 1].expand);
+
+  return values[level - 1];;
+}

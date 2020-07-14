@@ -55,7 +55,7 @@ region_t get_damage(session_t *ps, bool all_damage) {
 
 /// paint all windows
 void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
-	if (ps->o.xrender_sync_fence) {
+	if (ps->o.xrender_sync_fence || (ps->drivers & DRIVER_NVIDIA)) {
 		if (ps->xsync_exists && !x_fence_sync(ps->c, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
 			          "disabled from now on.");
@@ -151,11 +151,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	}
 
 	if (ps->root_image) {
-		ps->backend_data->ops->compose(ps->backend_data, ps->root_image, 0, 0,
+		ps->backend_data->ops->compose(ps->backend_data, t, ps->root_image, 0, 0,
 		                               &reg_paint, &reg_visible);
-	} else {
-		ps->backend_data->ops->fill(ps->backend_data, (struct color){0, 0, 0, 1},
-		                            &reg_paint);
 	}
 
 	// Windows are sorted from bottom to top
@@ -171,7 +168,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 		// The bounding shape of the window, in global/target coordinates
 		// reminder: bounding shape contains the WM frame
-		auto reg_bound = win_get_bounding_shape_global_by_val(w);
+		auto reg_bound = win_get_bounding_shape_global_by_val(w, true);
 
 		// The clip region for the current window, in global/target coordinates
 		// reg_paint_in_bound \in reg_paint
@@ -190,6 +187,17 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			                          &reg_paint_in_bound, &reg_visible);
 		}
 
+		// Store the window background for rounded corners
+		// If rounded corners backup the region first
+		if (w->corner_radius > 0) {
+			const int16_t x = w->g.x;
+			const int16_t y = w->g.y;
+			const auto wid = to_u16_checked(w->widthb);
+			const auto hei = to_u16_checked(w->heightb);
+			ps->backend_data->ops->store_back_texture(ps->backend_data, w,
+							ps->backend_round_context, &reg_bound, x, y, wid, hei);
+		}
+
 		// Blur window background
 		// TODO since the background might change the content of the window (e.g.
 		//      with shaders), we should consult the background whether the window
@@ -204,36 +212,20 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			// itself is not opaque, only the frame is.
 
 			double blur_opacity = 1;
-			if (w->opacity < (1.0 / MAX_ALPHA)) {
-				// Hide blur for fully transparent windows.
-				blur_opacity = 0;
-			} else if (w->state == WSTATE_MAPPING) {
+			if (w->state == WSTATE_MAPPING) {
 				// Gradually increase the blur intensity during
 				// fading in.
-				assert(w->opacity <= w->opacity_target);
 				blur_opacity = w->opacity / w->opacity_target;
 			} else if (w->state == WSTATE_UNMAPPING ||
 			           w->state == WSTATE_DESTROYING) {
 				// Gradually decrease the blur intensity during
 				// fading out.
-				assert(w->opacity <= w->opacity_target_old);
-				blur_opacity = w->opacity / w->opacity_target_old;
-			} else if (w->state == WSTATE_FADING) {
-				if (w->opacity < w->opacity_target &&
-				    w->opacity_target_old < (1.0 / MAX_ALPHA)) {
-					// Gradually increase the blur intensity during
-					// fading in.
-					assert(w->opacity <= w->opacity_target);
-					blur_opacity = w->opacity / w->opacity_target;
-				} else if (w->opacity > w->opacity_target &&
-				           w->opacity_target < (1.0 / MAX_ALPHA)) {
-					// Gradually decrease the blur intensity during
-					// fading out.
-					assert(w->opacity <= w->opacity_target_old);
-					blur_opacity = w->opacity / w->opacity_target_old;
-				}
+				blur_opacity =
+				    w->opacity / win_calc_opacity_target(ps, w, true);
+			} else if (!ps->o.blur_background_fixed) {
+				// Apply blur intensity depending on the window opacity.
+				blur_opacity = w->opacity;
 			}
-			assert(blur_opacity >= 0 && blur_opacity <= 1);
 
 			if (real_win_mode == WMODE_TRANS || ps->o.force_win_blend) {
 				// We need to blur the bounding shape of the window
@@ -249,7 +241,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				assert(ps->o.blur_background_frame);
 				assert(real_win_mode == WMODE_FRAME_TRANS);
 
-				auto reg_blur = win_get_region_frame_local_by_val(w);
+				auto reg_blur = win_get_region_frame_local_by_val(w, true);
 				pixman_region32_translate(&reg_blur, w->g.x, w->g.y);
 				// make sure reg_blur \in reg_paint
 				pixman_region32_intersect(&reg_blur, &reg_blur, &reg_paint);
@@ -305,7 +297,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			assert(w->shadow_image);
 			if (w->opacity == 1) {
 				ps->backend_data->ops->compose(
-				    ps->backend_data, w->shadow_image, w->g.x + w->shadow_dx,
+				    ps->backend_data, w, w->shadow_image, w->g.x + w->shadow_dx,
 				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
 			} else {
 				auto new_img = ps->backend_data->ops->copy(
@@ -314,7 +306,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    ps->backend_data, IMAGE_OP_APPLY_ALPHA_ALL, new_img,
 				    NULL, &reg_visible, (double[]){w->opacity});
 				ps->backend_data->ops->compose(
-				    ps->backend_data, new_img, w->g.x + w->shadow_dx,
+				    ps->backend_data, w, new_img, w->g.x + w->shadow_dx,
 				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
 				ps->backend_data->ops->release_image(ps->backend_data, new_img);
 			}
@@ -330,7 +322,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 		// Draw window on target
 		if (!w->invert_color && !w->dim && w->frame_opacity == 1 && w->opacity == 1) {
-			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
+			ps->backend_data->ops->compose(ps->backend_data, w, w->win_image,
 			                               w->g.x, w->g.y,
 			                               &reg_paint_in_bound, &reg_visible);
 		} else if (w->opacity * MAX_ALPHA >= 1) {
@@ -379,7 +371,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    &reg_visible_local, (double[]){dim_opacity});
 			}
 			if (w->frame_opacity != 1) {
-				auto reg_frame = win_get_region_frame_local_by_val(w);
+				auto reg_frame = win_get_region_frame_local_by_val(w, true);
 				ps->backend_data->ops->image_op(
 				    ps->backend_data, IMAGE_OP_APPLY_ALPHA, new_img, &reg_frame,
 				    &reg_visible_local, (double[]){w->frame_opacity});
@@ -390,13 +382,21 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    ps->backend_data, IMAGE_OP_APPLY_ALPHA_ALL, new_img,
 				    NULL, &reg_visible_local, (double[]){w->opacity});
 			}
-			ps->backend_data->ops->compose(ps->backend_data, new_img, w->g.x,
+			ps->backend_data->ops->compose(ps->backend_data, w, new_img, w->g.x,
 			                               w->g.y, &reg_paint_in_bound,
 			                               &reg_visible);
 			ps->backend_data->ops->release_image(ps->backend_data, new_img);
 			pixman_region32_fini(&reg_visible_local);
 			pixman_region32_fini(&reg_bound_local);
 		}
+
+		// Round the corners as last step after blur/shadow/dim/etc
+		if (w->corner_radius > 0.0) {
+			ps->backend_data->ops->round(ps->backend_data, w,
+						ps->backend_round_context, w->win_image,
+						&reg_bound, &reg_visible);
+		}
+
 		pixman_region32_fini(&reg_bound);
 		pixman_region32_fini(&reg_paint_in_bound);
 	}
