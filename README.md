@@ -87,12 +87,13 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * libGL (optional, disable with the `-Dopengl=false` meson configure flag)
 * libpcre (optional, disable with the `-Dregex=false` meson configure flag)
 * libev
+* libxdg-basedir
 * uthash
 
 On Debian based distributions (e.g. Ubuntu), the list of needed packages are
 
 ```
-libxext-dev libxcb1-dev libxcb-damage0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-randr0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-present-dev libxcb-xinerama0-dev libxcb-glx0-dev libpixman-1-dev libdbus-1-dev libconfig-dev libgl1-mesa-dev  libpcre2-dev  libevdev-dev uthash-dev libev-dev libx11-xcb-dev
+libxext-dev libxcb1-dev libxcb-damage0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-randr0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-present-dev libxcb-xinerama0-dev libxcb-glx0-dev libpixman-1-dev libdbus-1-dev libconfig-dev libgl1-mesa-dev  libpcre2-dev  libevdev-dev uthash-dev libev-dev libx11-xcb-dev libxdg-basedir-dev
 ```
 
 To build the documents, you need `asciidoc`
