@@ -21,8 +21,8 @@ Your picom config can also now take advantage of some of the options that were p
 - [ ] * `spawn-center`        whether to animate new windows from their own center (default: true)
 - [ ] * `no-scale-down`       Whether to animate down scaling (some programs handle this poorly) (default: false)
 
-----
-## Installation of this fork
+**Installation of this fork**
+
 [AUR](https://aur.archlinux.org/packages/picom-jonaburg-git) package
 
 OR
