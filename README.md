@@ -2,13 +2,6 @@ picom
 =======
 
 *new!* : You'll now also find tryone's dual_kawase blur for the new backend, as well as rounded corners from sdhand if they are so desired, merged from ibhagwan.
-If you're pulling my new updates, remember to build the binary again with ninja!
-
-```
-cd /path/to/this/picom
-git pull
-ninja -C build
-```
 
 ![](demo.gif)
 
@@ -27,6 +20,21 @@ Your picom config can also now take advantage of some of the options that were p
 - [ ] * `spawn-center-screen` whether to animate new windows from the center of the screen (default: false)
 - [ ] * `spawn-center`        whether to animate new windows from their own center (default: true)
 - [ ] * `no-scale-down`       Whether to animate down scaling (some programs handle this poorly) (default: false)
+
+----
+## Installation of this fork
+[AUR](https://aur.archlinux.org/packages/picom-jonaburg-git) package
+
+OR
+
+```bash
+git clone https://github.com/jonaburg/picom
+cd picom
+meson --buildtype=release . build
+ninja -C build
+# To install the binaries in /usr/local/bin (optional)
+sudo ninja -C build install
+```
 
 ----
 **This is a development branch, bugs to be expected**
