@@ -1,4 +1,5 @@
 # Maintainer: koraynilay <koray.fra@gmail.com>
+# This PKGBUILD is adapted from https://aur.archlinux.org/cgit/aur.git/tree/PKGBUILD?h=picom-tryone-git
 _gitfolder="picom"
 pkgname=picom-jonaburg-git
 pkgver=0.1
@@ -24,7 +25,6 @@ build() {
 }
 
 package() {
-	# this is adapted from tryone144's fork PKGBUILD
 	cd "${srcdir}/${_gitfolder}"
 	DESTDIR="$pkgdir/" ninja -C build install
 	
