@@ -459,6 +459,7 @@ static const struct option longopts[] = {
     {"rounded-corners-exclude", required_argument, NULL, 333},
     {"round-borders", required_argument, NULL, 334},
     {"round-borders-exclude", required_argument, NULL, 335},
+    {"round-borders-rule", required_argument, NULL, 336},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -871,7 +872,12 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 333: condlst_add(&opt->rounded_corners_blacklist, optarg); break;
 		case 334: opt->round_borders = atoi(optarg); break;
 		case 335: condlst_add(&opt->round_borders_blacklist, optarg); break;
-		
+		case 336:
+			// --round_borders_rule
+			if (!parse_rule_border(&opt->round_borders_rules, optarg))
+				exit(1);
+			break;
+
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801: opt->print_diagnostics = true; break;

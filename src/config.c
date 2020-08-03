@@ -437,6 +437,36 @@ bool parse_rule_opacity(c2_lptr_t **res, const char *src) {
 }
 
 /**
+ * Parse a list of border width rules.
+ */
+bool parse_rule_border(c2_lptr_t **res, const char *src) {
+	// Find opacity value
+	char *endptr = NULL;
+	long val = strtol(src, &endptr, 0);
+	if (!endptr || endptr == src) {
+		log_error("No border width specified: %s", src);
+		return false;
+	}
+	if (val > 100 || val < 0) {
+		log_error("Border width %ld invalid: %s", val, src);
+		return false;
+	}
+
+	// Skip over spaces
+	while (*endptr && isspace(*endptr))
+		++endptr;
+	if (':' != *endptr) {
+		log_error("Border width terminator not found: %s", src);
+		return false;
+	}
+	++endptr;
+
+	// Parse pattern
+	// I hope 1-100 is acceptable for (void *)
+	return c2_parse(res, endptr, (void *)val);
+}
+
+/**
  * Add a pattern to a condition linked list.
  */
 bool condlst_add(c2_lptr_t **pcondlst, const char *pattern) {
@@ -574,7 +604,8 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .track_leader = false,
 
 		.rounded_corners_blacklist = NULL,
-		.round_borders_blacklist = NULL
+		.round_borders_blacklist = NULL,
+		.round_borders_rules = NULL
 	};
 
 	char *ret = NULL;

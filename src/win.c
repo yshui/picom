@@ -935,6 +935,12 @@ static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) 
             //log_warn("xy(%d %d) wh(%d %d) wintypes:corner_radius: %d", w->g.x, w->g.y, w->widthb, w->heightb, w->corner_radius);
         }
 
+	    void *val = NULL;
+        if (w && c2_match(ps, w, ps->o.round_borders_rules, &val)) {
+            w->g.border_width = (uint16_t)((long)val);
+            //log_warn("xy(%d %d) wh(%d %d) border_width:rule:%d", w->g.x, w->g.y, w->widthb, w->heightb, w->g.border_width);
+        }
+
         if (w && c2_match(ps, w, ps->o.round_borders_blacklist, NULL)) {
 		    w->round_borders = 0;
         } else {

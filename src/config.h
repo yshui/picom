@@ -261,6 +261,8 @@ typedef struct options {
 	int round_borders;
 	/// Rounded borders blacklist. A linked list of conditions.
 	c2_lptr_t *round_borders_blacklist;
+	/// Rules to change window border width.
+	c2_lptr_t *round_borders_rules;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
@@ -270,6 +272,7 @@ bool must_use parse_int(const char *, int *);
 struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg, int *count);
 bool must_use parse_geometry(session_t *, const char *, region_t *);
 bool must_use parse_rule_opacity(c2_lptr_t **, const char *);
+bool must_use parse_rule_border(c2_lptr_t **, const char *);
 enum blur_method must_use parse_blur_method(const char *src);
 
 /**
