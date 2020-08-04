@@ -629,20 +629,27 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 
 		// The origin to use when sampling from the source texture
 		GLint texorig_x, texorig_y;
+		GLint tex_width, tex_height;
 		GLuint src_texture;
 
 		if (i == 0) {
 			texorig_x = extent_resized->x1;
 			texorig_y = dst_y_resized_screen_coord;
+			tex_width = gd->width;
+			tex_height = gd->height;
 			src_texture = gd->back_texture;
 		} else {
 			texorig_x = 0;
 			texorig_y = 0;
+			tex_width = bctx->texture_width;
+			tex_height = bctx->texture_height;
 			src_texture = bctx->blur_texture[curr];
 		}
 
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glUseProgram(p->prog);
+		glUniform2f(p->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
+		            1.0f / (GLfloat)tex_height);
 		if (i < bctx->npasses - 1) {
 			// not last pass, draw into framebuffer, with resized regions
 			glBindVertexArray(vao[1]);
@@ -976,19 +983,20 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	// clang-format off
 	static const char *FRAG_SHADER_BLUR = GLSL(330,
 		%s\n // other extension pragmas
-		uniform sampler2D tex_scr;
+		uniform sampler2D tex_src;
+		uniform vec2 pixel_norm;
 		uniform float opacity;
 		in vec2 texcoord;
 		out vec4 out_color;
 		void main() {
+			vec2 uv = texcoord * pixel_norm;
 			vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);
 			%s //body of the convolution
 			out_color = sum / float(%.7g) * opacity;
 		}
 	);
 	static const char *FRAG_SHADER_BLUR_ADD = QUOTE(
-		sum += float(%.7g) *
-		       texelFetch(tex_scr, ivec2(texcoord + vec2(%d, %d)), 0);
+		sum += float(%.7g) * texture2D(tex_src, uv + pixel_norm * vec2(%.7g, %.7g));
 	);
 	// clang-format on
 
@@ -1000,23 +1008,66 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		// Build shader
 		int width = kern->w, height = kern->h;
 		int nele = width * height;
+		// '%.7g' is at most 14 characters, inserted 3 times
 		size_t body_len = (strlen(shader_add) + 42) * (uint)nele;
 		char *shader_body = ccalloc(body_len, char);
 		char *pc = shader_body;
 
+		// Make use of the linear interpolation hardware by sampling 2 pixels with
+		// one texture access by sampling between both pixels based on their
+		// relative weight. Easiest done in a single dimension as 2D bilinear
+		// filtering would raise additional constraints on the kernels. Therefore
+		// only use interpolation along the larger dimension.
 		double sum = 0.0;
-		for (int j = 0; j < height; ++j) {
-			for (int k = 0; k < width; ++k) {
-				double val;
-				val = kern->data[j * width + k];
-				if (val == 0) {
-					continue;
+		if (width > height) {
+			// use interpolation in x dimension (width)
+			for (int j = 0; j < height; ++j) {
+				for (int k = 0; k < width; k += 2) {
+					double val1, val2;
+					val1 = kern->data[j * width + k];
+					val2 = (k + 1 < width)
+					           ? kern->data[j * width + k + 1]
+					           : 0;
+
+					double combined_weight = val1 + val2;
+					if (combined_weight == 0) {
+						continue;
+					}
+					sum += combined_weight;
+
+					double offset_x =
+					    k + (val2 / combined_weight) - (width / 2);
+					double offset_y = j - (height / 2);
+					pc += snprintf(
+					    pc, body_len - (ulong)(pc - shader_body),
+					    shader_add, combined_weight, offset_x, offset_y);
+					assert(pc < shader_body + body_len);
 				}
-				sum += val;
-				pc += snprintf(pc, body_len - (ulong)(pc - shader_body),
-				               FRAG_SHADER_BLUR_ADD, val, k - width / 2,
-				               j - height / 2);
-				assert(pc < shader_body + body_len);
+			}
+		} else {
+			// use interpolation in y dimension (height)
+			for (int j = 0; j < height; j += 2) {
+				for (int k = 0; k < width; ++k) {
+					double val1, val2;
+					val1 = kern->data[j * width + k];
+					val2 = (j + 1 < height)
+					           ? kern->data[(j + 1) * width + k]
+					           : 0;
+
+					double combined_weight = val1 + val2;
+					if (combined_weight == 0) {
+						continue;
+					}
+					sum += combined_weight;
+
+					double offset_x = k - (width / 2);
+					double offset_y =
+					    j + (val2 / combined_weight) - (height / 2);
+					pc += snprintf(
+					    pc, body_len - (ulong)(pc - shader_body),
+					    shader_add, combined_weight, offset_x, offset_y);
+					assert(pc < shader_body + body_len);
+				}
 			}
 		}
 
@@ -1042,6 +1093,8 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		glBindFragDataLocation(pass->prog, 0, "out_color");
 
 		// Get uniform addresses
+		pass->unifm_pixel_norm =
+		    glGetUniformLocationChecked(pass->prog, "pixel_norm");
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
@@ -1061,6 +1114,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 		// the single pass case
 		auto pass = &ctx->blur_shader[1];
 		pass->prog = gl_create_program_from_str(vertex_shader, dummy_frag);
+		pass->unifm_pixel_norm = -1;
 		pass->unifm_opacity = -1;
 		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
@@ -1079,11 +1133,15 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	// Texture size will be defined by gl_blur
 	glGenTextures(2, ctx->blur_texture);
 	glBindTexture(GL_TEXTURE_2D, ctx->blur_texture[0]);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_2D, ctx->blur_texture[1]);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	// Generate FBO and textures when needed
 	glGenFramebuffers(1, &ctx->blur_fbo);
 	if (!ctx->blur_fbo) {
@@ -1196,8 +1254,10 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	}
 
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	// Set projection matrix to gl viewport dimensions so we can use screen

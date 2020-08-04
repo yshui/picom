@@ -14,15 +14,15 @@
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
-#include "picom.h"
 #include "config.h"
 #include "kernel.h"
 #include "log.h"
+#include "picom.h"
 #include "region.h"
+#include "types.h"
 #include "utils.h"
 #include "win.h"
 #include "x.h"
-#include "types.h"
 
 typedef struct _xrender_data {
 	backend_t base;
@@ -157,11 +157,13 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 
 	// Create a buffer for storing blurred picture, make it just big enough
 	// for the blur region
+	const uint32_t pic_attrs_mask = XCB_RENDER_CP_REPEAT;
+	const xcb_render_create_picture_value_list_t pic_attrs = {.repeat = XCB_RENDER_REPEAT_PAD};
 	xcb_render_picture_t tmp_picture[2] = {
-	    x_create_picture_with_visual(xd->base.c, xd->base.root, width_resized,
-	                                 height_resized, xd->default_visual, 0, NULL),
-	    x_create_picture_with_visual(xd->base.c, xd->base.root, width_resized,
-	                                 height_resized, xd->default_visual, 0, NULL)};
+	    x_create_picture_with_visual(xd->base.c, xd->base.root, width_resized, height_resized,
+	                                 xd->default_visual, pic_attrs_mask, &pic_attrs),
+	    x_create_picture_with_visual(xd->base.c, xd->base.root, width_resized, height_resized,
+	                                 xd->default_visual, pic_attrs_mask, &pic_attrs)};
 
 	if (!tmp_picture[0] || !tmp_picture[1]) {
 		log_error("Failed to build intermediate Picture.");
@@ -611,8 +613,11 @@ backend_t *backend_xrender_init(session_t *ps) {
 		xd->back_pixmap[i] = x_create_pixmap(ps->c, pictfmt->depth, ps->root,
 		                                     to_u16_checked(ps->root_width),
 		                                     to_u16_checked(ps->root_height));
+		const uint32_t pic_attrs_mask = XCB_RENDER_CP_REPEAT;
+		const xcb_render_create_picture_value_list_t pic_attrs = {
+		    .repeat = XCB_RENDER_REPEAT_PAD};
 		xd->back[i] = x_create_picture_with_pictfmt_and_pixmap(
-		    ps->c, pictfmt, xd->back_pixmap[i], 0, NULL);
+		    ps->c, pictfmt, xd->back_pixmap[i], pic_attrs_mask, &pic_attrs);
 		xd->buffer_age[i] = -1;
 		if (xd->back_pixmap[i] == XCB_NONE || xd->back[i] == XCB_NONE) {
 			log_error("Cannot create pixmap for rendering");
