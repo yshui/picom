@@ -2342,7 +2342,7 @@ bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_text
 	//log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d) bw(%d)",
 	//	dx, dy, width, height, ps->root_width, ps->root_height, w->g.border_width);
 
-	if (w->g.border_width >= 1 /*&& w->border_col[0] == -1.0*/) {
+	if (w->g.border_width >= 1 || w->border_width > 0) {
 		glx_read_border_pixel(w, ps->root_height, dx, dy, width, height, w->corner_radius, &w->border_col[0]);
 	}
 
@@ -2442,7 +2442,7 @@ bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_text
 		if (ppass->unifm_texsize >= 0)
 			glUniform2f(ppass->unifm_texsize, (float)mwidth, (float)mheight);
 		if (ppass->unifm_borderw >= 0)
-			glUniform1f(ppass->unifm_borderw, (w->round_borders && w->border_col[0] != -1.) ? w->g.border_width : 0);
+			glUniform1f(ppass->unifm_borderw, (w->round_borders && w->border_col[0] != -1.) ? (w->border_width > 0 ? w->border_width : w->g.border_width) : 0);
 		if (ppass->unifm_borderc >= 0)
 			glUniform4fv(ppass->unifm_borderc, 1, (GLfloat *)&w->border_col[0]);
 		if (ppass->unifm_resolution >= 0)
@@ -2529,7 +2529,7 @@ bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_text
 	assert(ps->psglx->round_passes[1].prog);
 	bool ret = false;
 	
-	if (w->g.border_width >= 1 /*&& w->border_col[0] == -1.0*/) {
+	if (w->g.border_width >= 1 || w->border_width > 0) {
 		glx_read_border_pixel(w, ps->root_height, dx, dy, width, height, w->corner_radius, &w->border_col[0]);
 	}
 
@@ -2561,7 +2561,7 @@ bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_text
 		if (ppass->unifm_texsize >= 0)
 			glUniform2f(ppass->unifm_texsize, (float)width, (float)height);
 		if (ppass->unifm_borderw >= 0)
-			glUniform1f(ppass->unifm_borderw, (w->round_borders && w->border_col[0] != -1.) ? w->g.border_width : 0);
+			glUniform1f(ppass->unifm_borderw, (w->round_borders && w->border_col[0] != -1.) ? (w->border_width > 0 ? w->border_width : w->g.border_width) : 0);
 		if (ppass->unifm_borderc >= 0)
 			glUniform4fv(ppass->unifm_borderc, 1, (GLfloat *)&w->border_col[0]);
 		if (ppass->unifm_resolution >= 0)

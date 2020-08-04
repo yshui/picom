@@ -966,8 +966,8 @@ bool gl_round(backend_t *backend_data attr_unused, struct managed_win *w, void *
 	auto gd = (struct gl_data *)backend_data;
 	auto img = (struct gl_image*)image_data;
 
-	//log_warn("r(%d) b(%d), wxy(%d %d) wwh(%d %d) img(%d %d)",
-	//	w->corner_radius, w->g.border_width, w->g.x, w->g.y,
+	//log_warn("r(%d) b(%d) bo(%d), wxy(%d %d) wwh(%d %d) img(%d %d)",
+	//	w->corner_radius, w->g.border_width, w->border_width, w->g.x, w->g.y,
 	//	w->widthb, w->heightb, img->inner->width, img->inner->height);
 
 	int nrects;
@@ -1038,7 +1038,7 @@ bool gl_round(backend_t *backend_data attr_unused, struct managed_win *w, void *
 	if (ppass->unifm_texsize)
 		glUniform2f(ppass->unifm_texsize, (float)w->widthb, (float)w->heightb);
 	if (ppass->unifm_borderw)
-		glUniform1f(ppass->unifm_borderw, (w->round_borders) ? w->g.border_width : 0);
+		glUniform1f(ppass->unifm_borderw, (w->round_borders) ? (w->border_width > 0 ? w->border_width : w->g.border_width) : 0);
 	if (ppass->unifm_resolution)
 		glUniform2f(ppass->unifm_resolution, (float)gd->width, (float)gd->height);
 
