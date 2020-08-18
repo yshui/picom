@@ -425,8 +425,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	config_lookup_float(&cfg, "shadow-green", &opt->shadow_green);
 	// --shadow-blue
 	config_lookup_float(&cfg, "shadow-blue", &opt->shadow_blue);
-	// --shadow-hex
-	if (config_lookup_string(&cfg, "shadow-hex", &sval)) {
+	// --shadow-color
+	if (config_lookup_string(&cfg, "shadow-color", &sval)) {
 		struct color rgb;
 		rgb = hex_to_rgb(sval);
 		opt->shadow_red = rgb.red;

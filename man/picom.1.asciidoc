@@ -88,6 +88,9 @@ OPTIONS
 *--write-pid-path* 'PATH'::
 	Write process ID to a file.
 
+*--shadow-color* 'STRING'::
+	Color of shadow, as a hex string ('#000000')
+
 *--shadow-red* 'VALUE'::
 	Red color value of shadow (0.0 - 1.0, defaults to 0).
 
@@ -150,9 +153,6 @@ OPTIONS
 
 *--shadow-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should have no shadow.
-
-*--shadow-hex* 'STRING'::
-  Color of shadow using hex string ('#000000')
 
 *--fade-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should not be faded.
