@@ -140,7 +140,6 @@ typedef struct options {
 	// === Shadow ===
 	/// Red, green and blue tone of the shadow.
 	double shadow_red, shadow_green, shadow_blue;
-	char *shadow_color;
 	int shadow_radius;
 	int shadow_offset_x, shadow_offset_y;
 	double shadow_opacity;
