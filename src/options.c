@@ -96,6 +96,9 @@ static void usage(const char *argv0, int ret) {
 	    "--write-pid-path path\n"
 	    "  Write process ID to a file.\n"
 	    "\n"
+	    "--shadow-color color\n"
+	    "  Color of shadow, as a hex RGB string (defaults to #000000)\n"
+	    "\n"
 	    "--shadow-red value\n"
 	    "  Red color value of shadow (0.0 - 1.0, defaults to 0).\n"
 	    "\n"
@@ -435,6 +438,7 @@ static const struct option longopts[] = {
     {"blur-method", required_argument, NULL, 328},
     {"blur-size", required_argument, NULL, 329},
     {"blur-deviation", required_argument, NULL, 330},
+    {"shadow-color", required_argument, NULL, 331},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -603,6 +607,14 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		// Long options
 		case 256:
 			// --config
+			break;
+		case 331:;
+			// --shadow-color
+			struct color rgb;
+			rgb = hex_to_rgb(optarg);
+			opt->shadow_red = rgb.red;
+			opt->shadow_green = rgb.green;
+			opt->shadow_blue = rgb.blue;
 			break;
 		case 257:
 			// --shadow-red

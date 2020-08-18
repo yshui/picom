@@ -15,6 +15,7 @@
 #include <test.h>
 
 #include "compiler.h"
+#include "types.h"
 
 #define ARR_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
@@ -163,6 +164,21 @@ static inline double attr_const normalize_d_range(double d, double min, double m
  */
 static inline double attr_const normalize_d(double d) {
 	return normalize_d_range(d, 0.0, 1.0);
+}
+
+/**
+ * Convert a hex RGB string to RGB
+ */
+static inline struct color hex_to_rgb(const char *hex) {
+	struct color rgb;
+	// Ignore the # in front of the string
+	const char *sane_hex = hex + 1;
+	int hex_color = (int)strtol(sane_hex, NULL, 16);
+	rgb.red = (float)(hex_color >> 16) / 256;
+	rgb.green = (float)((hex_color & 0x00ff00) >> 8) / 256;
+	rgb.blue = (float)(hex_color & 0x0000ff) / 256;
+
+	return rgb;
 }
 
 attr_noret void
