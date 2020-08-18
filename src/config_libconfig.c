@@ -22,6 +22,21 @@
 #pragma GCC diagnostic error "-Wunused-parameter"
 
 /**
+ * Hex color to rgb
+ */
+struct color hex_to_rgb(const char *hex) {
+	struct color rgb;
+	// Ignore the # in front of the string
+	const char *sane_hex = hex + 1;
+	int hex_color = (int)strtol(sane_hex, NULL, 16);
+	rgb.red = (float)(hex_color >> 16) / 256;
+	rgb.green = (float)((hex_color & 0x00ff00) >> 8) / 256;
+	rgb.blue = (float)(hex_color & 0x0000ff) / 256;
+
+	return rgb;
+}
+
+/**
  * Wrapper of libconfig's <code>config_lookup_int</code>.
  *
  * So it takes a pointer to bool.
@@ -410,6 +425,14 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	config_lookup_float(&cfg, "shadow-green", &opt->shadow_green);
 	// --shadow-blue
 	config_lookup_float(&cfg, "shadow-blue", &opt->shadow_blue);
+	// --shadow-hex
+	if (config_lookup_string(&cfg, "shadow-hex", &sval)) {
+		struct color rgb;
+		rgb = hex_to_rgb(sval);
+		opt->shadow_red = rgb.red;
+		opt->shadow_green = rgb.green;
+		opt->shadow_blue = rgb.blue;
+	}
 	// --shadow-exclude-reg
 	if (config_lookup_string(&cfg, "shadow-exclude-reg", &sval))
 		opt->shadow_exclude_reg_str = strdup(sval);
