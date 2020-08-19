@@ -137,13 +137,9 @@ void glx_set_clip(session_t *ps, const region_t *reg);
 bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
                   GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc);
 
-bool glx_round_corners_dst0(session_t *ps, struct managed_win *w, const glx_texture_t *ptex,
-                            int shader_idx, int dx, int dy, int width, int height, float z,
-                            float cr, const region_t *reg_tgt, glx_blur_cache_t *pbc);
-
-bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_texture_t *ptex,
-                            int shader_idx, int dx, int dy, int width, int height, float z,
-                            float cr, const region_t *reg_tgt, glx_blur_cache_t *pbc);
+bool glx_round_corners_dst(session_t *ps, struct managed_win *w, const glx_texture_t *ptex,
+                           int dx, int dy, int width, int height, float z, float cr,
+                           const region_t *reg_tgt, glx_blur_cache_t *pbc);
 
 GLuint glx_create_shader(GLenum shader_type, const char *shader_str);
 

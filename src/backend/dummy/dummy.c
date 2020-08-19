@@ -73,6 +73,13 @@ bool dummy_blur(struct backend_base *backend_data attr_unused, double opacity at
 	return true;
 }
 
+bool dummy_round(struct backend_base *backend_data attr_unused,
+                 struct managed_win *w attr_unused, void *ctx_ attr_unused,
+                 void *image_data attr_unused, const region_t *reg_round attr_unused,
+                 const region_t *reg_visible attr_unused) {
+	return true;
+}
+
 void *dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
                         struct xvisual_info fmt, bool owned attr_unused) {
 	auto dummy = (struct dummy_data *)base;
@@ -139,11 +146,28 @@ void *dummy_create_blur_context(struct backend_base *base attr_unused,
 void dummy_destroy_blur_context(struct backend_base *base attr_unused, void *ctx attr_unused) {
 }
 
+void *
+dummy_create_round_context(struct backend_base *base attr_unused, void *args attr_unused) {
+	static int dummy_context;
+	return &dummy_context;
+}
+
+void dummy_destroy_round_context(struct backend_base *base attr_unused, void *ctx attr_unused) {
+}
+
 void dummy_get_blur_size(void *ctx attr_unused, int *width, int *height) {
 	// These numbers are arbitrary, to make sure the reisze_region code path is
 	// covered.
 	*width = 5;
 	*height = 5;
+}
+
+bool dummy_store_back_texture(backend_t *backend_data attr_unused,
+                              struct managed_win *w attr_unused, void *ctx_ attr_unused,
+                              const region_t *reg_tgt attr_unused, int x attr_unused,
+                              int y attr_unused, int width attr_unused,
+                              int height attr_unused) {
+	return true;
 }
 
 struct backend_operations dummy_ops = {
@@ -152,6 +176,7 @@ struct backend_operations dummy_ops = {
     .compose = dummy_compose,
     .fill = dummy_fill,
     .blur = dummy_blur,
+    .round = dummy_round,
     .bind_pixmap = dummy_bind_pixmap,
     .render_shadow = default_backend_render_shadow,
     .release_image = dummy_release_image,
@@ -163,6 +188,8 @@ struct backend_operations dummy_ops = {
     .copy = dummy_image_copy,
     .create_blur_context = dummy_create_blur_context,
     .destroy_blur_context = dummy_destroy_blur_context,
+    .create_round_context = dummy_create_round_context,
+    .destroy_round_context = dummy_destroy_round_context,
     .get_blur_size = dummy_get_blur_size,
-
+    .store_back_texture = dummy_store_back_texture
 };

@@ -109,6 +109,12 @@ OPTIONS
 *--rounded-corners-exclude* 'CONDITION'::
 	Exclude conditions for rounded corners.
 
+*--round-borders* 'VALUE'::
+	When rounding corners, Round the borders of windows. (defaults to 1).
+
+*--round-borders-exclude* 'CONDITION'::
+	Exclude conditions for rounding borders.
+
 *--mark-wmwin-focused*::
 	Try to detect WM windows (a non-override-redirect window with no child that has 'WM_STATE') and mark them as active.
 

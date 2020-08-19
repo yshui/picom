@@ -297,6 +297,16 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 	return true;
 }
 
+static bool
+x_round(struct backend_base *backend_data attr_unused, struct managed_win *w attr_unused,
+        void *ctx_ attr_unused, void *image_data attr_unused,
+        const region_t *reg_blur attr_unused, const region_t *reg_visible attr_unused) {
+
+	// dummy implementation, we already perform the rounding in compose
+	// TODO: should move the compose code here and call it from here
+	return true;
+}
+
 static void *
 bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool owned) {
 	xcb_generic_error_t *e;
@@ -611,6 +621,21 @@ void get_blur_size(void *blur_context, int *width, int *height) {
 	*height = ctx->resize_height;
 }
 
+bool store_back_texture(backend_t *backend_data attr_unused,
+                        struct managed_win *w attr_unused, void *ctx_ attr_unused,
+                        const region_t *reg_tgt attr_unused, int x attr_unused,
+                        int y attr_unused, int width attr_unused, int height attr_unused) {
+	return true;
+}
+
+void *create_round_context(struct backend_base *base attr_unused, void *args attr_unused) {
+	static int dummy_context;
+	return &dummy_context;
+}
+
+void destroy_round_context(struct backend_base *base attr_unused, void *ctx attr_unused) {
+}
+
 backend_t *backend_xrender_init(session_t *ps) {
 	auto xd = ccalloc(1, struct _xrender_data);
 	init_backend_base(&xd->base, ps);
@@ -701,6 +726,7 @@ struct backend_operations xrender_ops = {
     .init = backend_xrender_init,
     .deinit = deinit,
     .blur = blur,
+    .round = x_round,
     .present = present,
     .compose = compose,
     .fill = fill,
@@ -717,7 +743,10 @@ struct backend_operations xrender_ops = {
     .copy = copy,
     .create_blur_context = create_blur_context,
     .destroy_blur_context = destroy_blur_context,
+    .create_round_context = create_round_context,
+    .destroy_round_context = destroy_round_context,
     .get_blur_size = get_blur_size,
+    .store_back_texture = store_back_texture
 };
 
 // vim: set noet sw=8 ts=8:

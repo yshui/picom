@@ -206,6 +206,7 @@ struct managed_win {
 
 	/// Radius of rounded window corners
 	int corner_radius;
+	bool round_borders;
 	float border_col[4];
 
 	// Fading-related members
