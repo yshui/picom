@@ -149,7 +149,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	}
 
 	if (ps->root_image) {
-		ps->backend_data->ops->compose(ps->backend_data, ps->root_image, 0, 0,
+		ps->backend_data->ops->compose(ps->backend_data, t, ps->root_image, 0, 0,
 		                               &reg_paint, &reg_visible);
 	} else {
 		ps->backend_data->ops->fill(ps->backend_data, (struct color){0, 0, 0, 1},
@@ -303,7 +303,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			assert(w->shadow_image);
 			if (w->opacity == 1) {
 				ps->backend_data->ops->compose(
-				    ps->backend_data, w->shadow_image, w->g.x + w->shadow_dx,
+				    ps->backend_data, w, w->shadow_image, w->g.x + w->shadow_dx,
 				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
 			} else {
 				auto new_img = ps->backend_data->ops->copy(
@@ -312,7 +312,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    ps->backend_data, IMAGE_OP_APPLY_ALPHA_ALL, new_img,
 				    NULL, &reg_visible, (double[]){w->opacity});
 				ps->backend_data->ops->compose(
-				    ps->backend_data, new_img, w->g.x + w->shadow_dx,
+				    ps->backend_data, w, new_img, w->g.x + w->shadow_dx,
 				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
 				ps->backend_data->ops->release_image(ps->backend_data, new_img);
 			}
@@ -328,7 +328,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 		// Draw window on target
 		if (!w->invert_color && !w->dim && w->frame_opacity == 1 && w->opacity == 1) {
-			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
+			ps->backend_data->ops->compose(ps->backend_data, w, w->win_image,
 			                               w->g.x, w->g.y,
 			                               &reg_paint_in_bound, &reg_visible);
 		} else if (w->opacity * MAX_ALPHA >= 1) {
@@ -388,9 +388,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    ps->backend_data, IMAGE_OP_APPLY_ALPHA_ALL, new_img,
 				    NULL, &reg_visible_local, (double[]){w->opacity});
 			}
-			ps->backend_data->ops->compose(ps->backend_data, new_img, w->g.x,
-			                               w->g.y, &reg_paint_in_bound,
-			                               &reg_visible);
+			ps->backend_data->ops->compose(ps->backend_data, w, new_img,
+			                               w->g.x, w->g.y,
+			                               &reg_paint_in_bound, &reg_visible);
 			ps->backend_data->ops->release_image(ps->backend_data, new_img);
 			pixman_region32_fini(&reg_visible_local);
 			pixman_region32_fini(&reg_bound_local);

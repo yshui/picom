@@ -28,6 +28,9 @@ typedef struct backend_base {
 	/// Whether the backend can accept new render request at the moment
 	bool busy;
 	// ...
+
+	// Session data
+	session_t *ps;
 } backend_t;
 
 typedef void (*backend_ready_callback_t)(void *);

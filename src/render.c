@@ -254,6 +254,8 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
 		xcb_render_picture_t alpha_pict = ps->alpha_picts[alpha_step];
 		if (alpha_step != 0) {
 			if (cr) {
+				// log_warn("f(%d, %d) wh(%d %d) xy(%d %d) dxy(%d %d)",
+				// fullwid, fullhei, wid, hei, x, y, dx, dy);
 				xcb_render_picture_t p_tmp = x_create_picture_with_standard(
 				    ps->c, ps->root, fullwid, fullhei,
 				    XCB_PICT_STANDARD_ARGB_32, 0, 0);
