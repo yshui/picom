@@ -681,7 +681,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		}
 
 		// Update window mode
-		w->mode = win_calc_mode(w);
+		w->mode = win_calc_mode(ps, w);
 
 		// Destroy all reg_ignore above when frame opaque state changes on
 		// SOLID mode
