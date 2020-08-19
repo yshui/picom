@@ -185,6 +185,50 @@ void free_paint(session_t *ps, paint_t *ppaint) {
 	ppaint->pixmap = XCB_NONE;
 }
 
+uint32_t
+make_circle(int cx, int cy, int radius, uint32_t max_ntraps, xcb_render_trapezoid_t traps[]) {
+	uint32_t n = 0, k = 0;
+	int y1, y2;
+	double w;
+	while (k < max_ntraps) {
+		y1 = (int)(-radius * cos(M_PI * k / max_ntraps));
+		traps[n].top = (cy + y1) << 16;
+		traps[n].left.p1.y = (cy + y1) << 16;
+		traps[n].right.p1.y = (cy + y1) << 16;
+		w = sqrt(radius * radius - y1 * y1) * 65536;
+		traps[n].left.p1.x = (int)((cx << 16) - w);
+		traps[n].right.p1.x = (int)((cx << 16) + w);
+
+		do {
+			k++;
+			y2 = (int)(-radius * cos(M_PI * k / max_ntraps));
+		} while (y1 == y2);
+
+		traps[n].bottom = (cy + y2) << 16;
+		traps[n].left.p2.y = (cy + y2) << 16;
+		traps[n].right.p2.y = (cy + y2) << 16;
+		w = sqrt(radius * radius - y2 * y2) * 65536;
+		traps[n].left.p2.x = (int)((cx << 16) - w);
+		traps[n].right.p2.x = (int)((cx << 16) + w);
+		n++;
+	}
+	return n;
+}
+
+uint32_t make_rectangle(int x, int y, int wid, int hei, xcb_render_trapezoid_t traps[]) {
+	traps[0].top = y << 16;
+	traps[0].left.p1.y = y << 16;
+	traps[0].left.p1.x = x << 16;
+	traps[0].left.p2.y = (y + hei) << 16;
+	traps[0].left.p2.x = x << 16;
+	traps[0].bottom = (y + hei) << 16;
+	traps[0].right.p1.x = (x + wid) << 16;
+	traps[0].right.p1.y = y << 16;
+	traps[0].right.p2.x = (x + wid) << 16;
+	traps[0].right.p2.y = (y + hei) << 16;
+	return 1;
+}
+
 void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, double opacity,
             bool argb, bool neg, xcb_render_picture_t pict, glx_texture_t *ptex,
             const region_t *reg_paint, const glx_prog_main_t *pprogram) {
