@@ -168,6 +168,15 @@ xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_
 	return x_get_visual_for_pictfmt(g_pictfmts, pictfmt->id);
 }
 
+xcb_render_pictformat_t
+x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std) {
+	x_get_server_pictfmts(c);
+
+	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, std);
+
+	return pictfmt->id;
+}
+
 int x_get_visual_depth(xcb_connection_t *c, xcb_visualid_t visual) {
 	auto setup = xcb_get_setup(c);
 	for (auto screen = xcb_setup_roots_iterator(setup); screen.rem;
@@ -229,6 +238,17 @@ x_create_picture_with_standard_and_pixmap(xcb_connection_t *c, xcb_pict_standard
 	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, standard);
 	assert(pictfmt);
 	return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, pixmap, valuemask, attr);
+}
+
+xcb_render_picture_t
+x_create_picture_with_standard(xcb_connection_t *c, xcb_drawable_t d, int w, int h,
+                               xcb_pict_standard_t standard, uint32_t valuemask,
+                               const xcb_render_create_picture_value_list_t *attr) {
+	x_get_server_pictfmts(c);
+
+	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, standard);
+	assert(pictfmt);
+	return x_create_picture_with_pictfmt(c, d, w, h, pictfmt, valuemask, attr);
 }
 
 /**
