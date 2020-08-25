@@ -3,8 +3,11 @@
 
 #pragma once
 
+#include <stddef.h>
 #include <stdio.h>
 #include <xcb/xcb.h>
+
+#include "utils.h"
 
 struct session;
 struct backend_base;
@@ -19,13 +22,17 @@ struct backend_base;
 /// also the generic modesetting driver.
 /// This enum represents _both_ drivers.
 enum driver {
-	DRIVER_AMDGPU = 1, // AMDGPU for DDX, radeonsi for OpenGL
-	DRIVER_RADEON = 2, // ATI for DDX, mesa r600 for OpenGL
+	DRIVER_AMDGPU = 1,        // AMDGPU for DDX, radeonsi for OpenGL
+	DRIVER_RADEON = 2,        // ATI for DDX, mesa r600 for OpenGL
 	DRIVER_FGLRX = 4,
 	DRIVER_NVIDIA = 8,
 	DRIVER_NOUVEAU = 16,
 	DRIVER_INTEL = 32,
 	DRIVER_MODESETTING = 64,
+};
+
+static const char *driver_names[] = {
+    "AMDGPU", "Radeon", "fglrx", "NVIDIA", "nouveau", "Intel", "modesetting",
 };
 
 /// Return a list of all drivers currently in use by the X server.
@@ -37,26 +44,19 @@ void apply_driver_workarounds(struct session *ps, enum driver);
 
 // Print driver names to stdout, for diagnostics
 static inline void print_drivers(enum driver drivers) {
-	if (drivers & DRIVER_AMDGPU) {
-		printf("AMDGPU, ");
+	const char *seen_drivers[ARR_SIZE(driver_names)];
+	int driver_count = 0;
+	for (size_t i = 0; i < ARR_SIZE(driver_names); i++) {
+		if (drivers & (1ul << i)) {
+			seen_drivers[driver_count++] = driver_names[i];
+		}
 	}
-	if (drivers & DRIVER_RADEON) {
-		printf("Radeon, ");
+
+	if (driver_count > 0) {
+		printf("%s", seen_drivers[0]);
+		for (int i = 1; i < driver_count; i++) {
+			printf(", %s", seen_drivers[i]);
+		}
 	}
-	if (drivers & DRIVER_FGLRX) {
-		printf("fglrx, ");
-	}
-	if (drivers & DRIVER_NVIDIA) {
-		printf("NVIDIA, ");
-	}
-	if (drivers & DRIVER_NOUVEAU) {
-		printf("nouveau, ");
-	}
-	if (drivers & DRIVER_INTEL) {
-		printf("Intel, ");
-	}
-	if (drivers & DRIVER_MODESETTING) {
-		printf("modesetting, ");
-	}
-	printf("\b\b \n");
+	printf("\n");
 }
