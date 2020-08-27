@@ -254,8 +254,10 @@ struct managed_win {
 #endif
 };
 
-/// Process pending images flags on a window. Has to be called in X critical section
-void win_process_flags(session_t *ps, struct managed_win *w);
+/// Process pending updates/images flags on a window. Has to be called in X critical
+/// section
+void win_process_update_flags(session_t *ps, struct managed_win *w);
+void win_process_image_flags(session_t *ps, struct managed_win *w);
 /// Bind a shadow to the window, with color `c` and shadow kernel `kernel`
 bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color c,
                      struct conv *kernel);
