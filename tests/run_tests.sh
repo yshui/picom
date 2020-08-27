@@ -15,3 +15,4 @@ eval `dbus-launch --sh-syntax`
 ./run_one_test.sh $exe configs/issue314.conf testcases/issue314_2.py
 ./run_one_test.sh $exe configs/issue314.conf testcases/issue314_3.py
 ./run_one_test.sh $exe /dev/null testcases/issue299.py
+./run_one_test.sh $exe configs/issue465.conf testcases/issue465.py
