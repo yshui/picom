@@ -1310,7 +1310,13 @@ static void handle_new_windows(session_t *ps) {
 
 static void refresh_windows(session_t *ps) {
 	win_stack_foreach_managed(w, &ps->window_stack) {
-		win_process_flags(ps, w);
+		win_process_update_flags(ps, w);
+	}
+}
+
+static void refresh_images(session_t *ps) {
+	win_stack_foreach_managed(w, &ps->window_stack) {
+		win_process_image_flags(ps, w);
 	}
 }
 
@@ -1351,7 +1357,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		// stale.
 		handle_root_flags(ps);
 
-		// Process window flags
+		// Process window flags (window mapping)
 		refresh_windows(ps);
 
 		{
@@ -1362,6 +1368,9 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 			}
 			free(r);
 		}
+
+		// Process window flags (stale images)
+		refresh_images(ps);
 
 		e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
 		if (e) {

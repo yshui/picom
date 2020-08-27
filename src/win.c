@@ -320,11 +320,15 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 	}
 }
 
-void win_process_flags(session_t *ps, struct managed_win *w) {
+void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
 		map_win_start(ps, w);
 		win_clear_flags(w, WIN_FLAGS_MAPPED);
 	}
+}
+
+void win_process_image_flags(session_t *ps, struct managed_win *w) {
+	assert(!win_check_flags_all(w, WIN_FLAGS_MAPPED));
 
 	// Not a loop
 	while (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE) &&
