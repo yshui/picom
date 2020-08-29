@@ -267,9 +267,10 @@ static inline void c2_ptr_reset(c2_ptr_t *pp) {
 static inline c2_ptr_t c2h_comb_tree(c2_b_op_t op, c2_ptr_t p1, c2_ptr_t p2) {
 	c2_ptr_t p = {.isbranch = true, .b = cmalloc(c2_b_t)};
 
+	p.b->neg = false;
+	p.b->op = op;
 	p.b->opr1 = p1;
 	p.b->opr2 = p2;
-	p.b->op = op;
 
 	return p;
 }
@@ -369,6 +370,7 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
 #ifdef DEBUG_C2
 		log_trace("(\"%s\"): ", pattern);
 		c2_dump(plptr->ptr);
+		putchar('\n');
 #endif
 
 		return plptr;
@@ -1197,7 +1199,7 @@ static void c2_dump(c2_ptr_t p) {
 		}
 
 		c2_dump(pbranch->opr2);
-		printf(")");
+		printf(") ");
 	}
 	// For a leaf
 	else {
@@ -1507,8 +1509,9 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
 		}
 
 #ifdef DEBUG_WINMATCH
-		log_trace("(%#010lx): branch: result = %d, pattern = ", w->id, result);
+		log_trace("(%#010x): branch: result = %d, pattern = ", w->base.id, result);
 		c2_dump(cond);
+		putchar('\n');
 #endif
 	}
 	// Handle a leaf
@@ -1527,10 +1530,11 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
 		}
 
 #ifdef DEBUG_WINMATCH
-		log_trace("(%#010lx): leaf: result = %d, error = %d, "
-		          "client = %#010lx,  pattern = ",
-		          w->id, result, error, w->client_win);
+		log_trace("(%#010x): leaf: result = %d, error = %d, "
+		          "client = %#010x,  pattern = ",
+		          w->base.id, result, error, w->client_win);
 		c2_dump(cond);
+		putchar('\n');
 #endif
 	}
 
