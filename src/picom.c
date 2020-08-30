@@ -1377,7 +1377,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 	}
 }
 
-static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
+static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	handle_pending_updates(EV_A_ ps);
 
 	if (ps->first_frame) {
@@ -1424,7 +1424,7 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 		// TODO(yshui) This is not ideal, we should try to avoid setting window
 		// flags in paint_preprocess.
 		log_debug("Re-run _draw_callback");
-		return _draw_callback(EV_A_ ps, revents);
+		return draw_callback_impl(EV_A_ ps, revents);
 	}
 
 	// Start/stop fade timer depends on whether window are fading
@@ -1466,7 +1466,7 @@ static void draw_callback(EV_P_ ev_idle *w, int revents) {
 	// This function is not used if we are using --swopti
 	session_t *ps = session_ptr(w, draw_idle);
 
-	_draw_callback(EV_A_ ps, revents);
+	draw_callback_impl(EV_A_ ps, revents);
 
 	// Don't do painting non-stop unless we are in benchmark mode
 	if (!ps->o.benchmark) {
@@ -1476,7 +1476,7 @@ static void draw_callback(EV_P_ ev_idle *w, int revents) {
 
 static void delayed_draw_timer_callback(EV_P_ ev_timer *w, int revents) {
 	session_t *ps = session_ptr(w, delayed_draw_timer);
-	_draw_callback(EV_A_ ps, revents);
+	draw_callback_impl(EV_A_ ps, revents);
 
 	// We might have stopped the ev_idle in delayed_draw_callback,
 	// so we restart it if we are in benchmark mode
@@ -1495,7 +1495,7 @@ static void delayed_draw_callback(EV_P_ ev_idle *w, int revents) {
 		if (!ps->o.benchmark) {
 			ev_idle_stop(EV_A_ & ps->draw_idle);
 		}
-		return _draw_callback(EV_A_ ps, revents);
+		return draw_callback_impl(EV_A_ ps, revents);
 	}
 
 	// This is a little bit hacky. When we get to this point in code, we need
