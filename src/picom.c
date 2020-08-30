@@ -1742,6 +1742,12 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	                                                  XCB_XFIXES_MINOR_VERSION)
 	                             .sequence);
 
+	ps->damaged_region = x_new_id(ps->c);
+	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c, ps->damaged_region, 0, NULL)) {
+		log_fatal("Failed to create a XFixes region");
+		goto err;
+	}
+
 	ext_info = xcb_get_extension_data(ps->c, &xcb_glx_id);
 	if (ext_info && ext_info->present) {
 		ps->glx_exists = true;
@@ -2266,6 +2272,11 @@ static void session_destroy(session_t *ps) {
 	if (ps->debug_window) {
 		xcb_destroy_window(ps->c, ps->debug_window);
 		ps->debug_window = XCB_NONE;
+	}
+
+	if (ps->damaged_region != XCB_NONE) {
+		xcb_xfixes_destroy_region(ps->c, ps->damaged_region);
+		ps->damaged_region = XCB_NONE;
 	}
 
 	if (ps->o.experimental_backends) {

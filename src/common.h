@@ -230,6 +230,10 @@ typedef struct session {
 	bool tmout_unredir_hit;
 	/// Whether we need to redraw the screen
 	bool redraw_needed;
+
+	/// Cache a xfixes region so we don't need to allocate it everytime.
+	/// A workaround for yshui/picom#301
+	xcb_xfixes_region_t damaged_region;
 	/// The region needs to painted on next paint.
 	region_t *damage;
 	/// The region damaged on the last paint.

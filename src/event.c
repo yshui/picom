@@ -590,11 +590,9 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 		set_ignore_cookie(
 		    ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, XCB_NONE));
 	} else {
-		xcb_xfixes_region_t tmp = x_new_id(ps->c);
-		xcb_xfixes_create_region(ps->c, tmp, 0, NULL);
-		set_ignore_cookie(ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, tmp));
-		x_fetch_region(ps->c, tmp, &parts);
-		xcb_xfixes_destroy_region(ps->c, tmp);
+		set_ignore_cookie(
+		    ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, ps->damaged_region));
+		x_fetch_region(ps->c, ps->damaged_region, &parts);
 		pixman_region32_translate(&parts, w->g.x + w->g.border_width,
 		                          w->g.y + w->g.border_width);
 	}
