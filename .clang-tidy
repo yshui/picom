@@ -1,0 +1,16 @@
+Checks: >
+  readability-*,
+  performance-*,
+  modernize-*,
+  google-readability-todo,
+  cert-err34-c,
+  cert-flp30-c,
+  bugprone-*,
+  misc-misplaced-const,
+  misc-redundant-expression,
+  misc-static-assert,
+  -clang-analyzer-*,
+  -readability-isolate-declaration,
+  -readability-magic-numbers
+AnalyzeTemporaryDtors: false
+FormatStyle:     file
