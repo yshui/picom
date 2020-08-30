@@ -99,7 +99,7 @@ struct managed_win {
 	struct managed_win *prev_trans;
 	/// Number of windows above this window
 	int stacking_rank;
-	// TODO rethink reg_ignore
+	// TODO(yshui) rethink reg_ignore
 
 	// Core members
 	/// The "mapped state" of this window, doesn't necessary

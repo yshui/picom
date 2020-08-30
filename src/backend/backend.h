@@ -72,7 +72,7 @@ struct backend_operations {
 	/// Here is how you should choose target window:
 	///    1) if ps->overlay is not XCB_NONE, use that
 	///    2) use ps->root otherwise
-	/// TODO make the target window a parameter
+	// TODO(yshui) make the target window a parameter
 	backend_t *(*init)(session_t *)attr_nonnull(1);
 	void (*deinit)(backend_t *backend_data) attr_nonnull(1);
 

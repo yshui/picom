@@ -575,9 +575,9 @@ static void configure_root(session_t *ps) {
 				log_fatal("Failed to re-initialize backend after root "
 				          "change, aborting...");
 				ps->quit = true;
-				// TODO only event handlers should request ev_break,
-				// otherwise it's too hard to keep track of what can break
-				// the event loop
+				/* TODO(yshui) only event handlers should request
+				 * ev_break, otherwise it's too hard to keep track of what
+				 * can break the event loop */
 				ev_break(ps->loop, EVBREAK_ALL);
 				return;
 			}
@@ -704,9 +704,9 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		    w->g.y >= ps->root_height || w->state == WSTATE_UNMAPPED ||
 		    ((double)w->opacity * MAX_ALPHA < 1 && !w->blur_background) ||
 		    w->paint_excluded) {
-			// TODO: for consistency, even a window has 0 opacity, we still
-			// probably need to blur its background, so to_paint shouldn't be
-			// false for them.
+			/* TODO(yshui) for consistency, even a window has 0 opacity, we
+			 * still probably need to blur its background, so to_paint
+			 * shouldn't be false for them. */
 			to_paint = false;
 		}
 
@@ -1407,9 +1407,9 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 		}
 	}
 
-	// TODO have a stripped down version of paint_preprocess that is used when screen
-	// is not redirected. its sole purpose should be to decide whether the screen
-	// should be redirected.
+	/* TODO(yshui) Have a stripped down version of paint_preprocess that is used when
+	 * screen is not redirected. its sole purpose should be to decide whether the
+	 * screen should be redirected. */
 	bool fade_running = false;
 	bool was_redirected = ps->redirected;
 	auto bottom = paint_preprocess(ps, &fade_running);
@@ -1421,8 +1421,8 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 		// so we rerun _draw_callback to make sure the rendering decision we make
 		// is up-to-date, and all the new flags got handled.
 		//
-		// TODO This is not ideal, we should try to avoid setting window flags in
-		// paint_preprocess.
+		// TODO(yshui) This is not ideal, we should try to avoid setting window
+		// flags in paint_preprocess.
 		log_debug("Re-run _draw_callback");
 		return _draw_callback(EV_A_ ps, revents);
 	}
@@ -1456,7 +1456,8 @@ static void _draw_callback(EV_P_ session_t *ps, int revents attr_unused) {
 	if (!fade_running)
 		ps->fade_time = 0L;
 
-	// TODO xcb_ungrab_server
+	// TODO(yshui) Investigate how big the X critical section needs to be. There are
+	// suggestions that rendering should be in the critical section as well.
 
 	ps->redraw_needed = false;
 }

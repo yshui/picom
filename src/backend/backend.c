@@ -144,8 +144,6 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		pixman_region32_subtract(&reg_visible, &reg_visible, t->reg_ignore);
 	}
 
-	// TODO Bind root pixmap
-
 	if (ps->backend_data->ops->prepare) {
 		ps->backend_data->ops->prepare(ps->backend_data, &reg_paint);
 	}
@@ -191,10 +189,10 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		}
 
 		// Blur window background
-		// TODO since the background might change the content of the window (e.g.
-		//      with shaders), we should consult the background whether the window
-		//      is transparent or not. for now we will just rely on the
-		//      force_win_blend option
+		/* TODO(yshui) since the backend might change the content of the window
+		 * (e.g. with shaders), we should consult the backend whether the window
+		 * is transparent or not. for now we will just rely on the force_win_blend
+		 * option */
 		auto real_win_mode = w->mode;
 
 		if (w->blur_background &&

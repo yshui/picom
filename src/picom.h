@@ -32,11 +32,7 @@ enum root_flags {
 };
 
 // == Functions ==
-// TODO move static inline functions that are only used in picom.c, into
-//      picom.c
-
-// inline functions must be made static to compile correctly under clang:
-// http://clang.llvm.org/compatibility.html#inline
+// TODO(yshui) move static inline functions that are only used in picom.c, into picom.c
 
 void add_damage(session_t *ps, const region_t *damage);
 

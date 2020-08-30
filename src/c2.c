@@ -383,7 +383,7 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
 		goto fail;                                                                   \
 	} while (0)
 
-// TODO Not a very good macro
+// TODO(yshui) Not a very good macro, should probably be a function
 #define C2H_SKIP_SPACES()                                                                \
 	{                                                                                \
 		while (isspace(pattern[offset]))                                         \
@@ -1255,7 +1255,7 @@ static void c2_dump(c2_ptr_t p) {
 		switch (pleaf->ptntype) {
 		case C2_L_PTINT: printf("%ld", pleaf->ptnint); break;
 		case C2_L_PTSTRING:
-			// TODO: Escape string before printing out?
+			// TODO(yshui) Escape string before printing out?
 			printf("\"%s\"", pleaf->ptnstr);
 			break;
 		default: assert(0); break;

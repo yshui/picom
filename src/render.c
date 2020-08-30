@@ -790,7 +790,7 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 	} break;
 #ifdef CONFIG_OPENGL
 	case BKEND_GLX:
-		// TODO: Handle frame opacity
+		// TODO(compton) Handle frame opacity
 		glx_blur_dst(ps, x, y, wid, hei, (float)ps->psglx->z - 0.5f,
 		             (float)factor_center, reg_paint, &w->glx_blur_cache);
 		break;

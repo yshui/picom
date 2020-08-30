@@ -46,7 +46,8 @@
 /// When top half finished, we enter the render stage, where no server state should be
 /// queried. All rendering should be done with our internal knowledge of the server state.
 ///
-/// TODO the things described above
+
+// TODO(yshui) the things described above
 
 /**
  * Get a window's name from window ID.

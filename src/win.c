@@ -37,13 +37,13 @@
 #endif
 
 #ifdef CONFIG_OPENGL
-// TODO remove this include
+// TODO(yshui) Get rid of this include
 #include "opengl.h"
 #endif
 
 #include "win.h"
 
-// TODO Make more window states internal
+// TODO(yshui) Make more window states internal
 struct managed_win_internal {
 	struct managed_win base;
 };
@@ -901,7 +901,7 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
 /**
  * Function to be called on window data changes.
  *
- * TODO need better name
+ * TODO(yshui) need better name
  */
 void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	log_debug("Window %#010x (%s) factor change", w->base.id, w->name);
@@ -1734,12 +1734,12 @@ static void destroy_win_finish(session_t *ps, struct win *w) {
 		}
 
 		// Invalidate reg_ignore of windows below this one
-		// TODO what if next_w is not mapped??
-		// TODO seriously figure out how reg_ignore behaves.
-		//      I think if `w` is unmapped, and destroyed after
-		//      paint happened at least once, w->reg_ignore_valid would
-		//      be true, and there is no need to invalid w->next->reg_ignore
-		//      when w is destroyed.
+		// TODO(yshui) what if next_w is not mapped??
+		/* TODO(yshui) seriously figure out how reg_ignore behaves.
+		 * I think if `w` is unmapped, and destroyed after
+		 * paint happened at least once, w->reg_ignore_valid would
+		 * be true, and there is no need to invalid w->next->reg_ignore
+		 * when w is destroyed. */
 		if (next_w) {
 			rc_region_unref(&next_w->reg_ignore);
 			next_w->reg_ignore_valid = false;
@@ -1759,7 +1759,7 @@ static void destroy_win_finish(session_t *ps, struct win *w) {
 
 		// Drop w from all prev_trans to avoid accessing freed memory in
 		// repair_win()
-		// TODO there can only be one prev_trans pointing to w
+		// TODO(yshui) there can only be one prev_trans pointing to w
 		win_stack_foreach_managed(w2, &ps->window_stack) {
 			if (mw == w2->prev_trans) {
 				w2->prev_trans = NULL;
@@ -2005,8 +2005,8 @@ bool win_skip_fading(session_t *ps, struct managed_win *w) {
  *
  * Return an index >= 0, or -1 if not found.
  *
- * TODO move to x.c
- * TODO use xrandr
+ * TODO(yshui) move to x.c
+ * TODO(yshui) use xrandr
  */
 void win_update_screen(session_t *ps, struct managed_win *w) {
 	w->xinerama_scr = -1;
@@ -2108,7 +2108,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 
 	log_debug("Window (%#010x) has type %s", w->base.id, WINTYPES[w->window_type]);
 
-	// TODO can we just replace calls below with win_on_factor_change?
+	// TODO(yshui) can we just replace calls below with win_on_factor_change?
 
 	// Update window focus state
 	win_update_focused(ps, w);
@@ -2277,8 +2277,9 @@ struct managed_win *find_toplevel(session_t *ps, xcb_window_t id) {
  * @return struct _win object of the found window, NULL if not found
  */
 struct managed_win *find_managed_window_or_parent(session_t *ps, xcb_window_t wid) {
-	// TODO this should probably be an "update tree", then find_toplevel.
-	//      current approach is a bit more "racy"
+	// TODO(yshui) this should probably be an "update tree", then find_toplevel.
+	// current approach is a bit more "racy", as the server state might be ahead of
+	// our state
 	struct win *w = NULL;
 
 	// We traverse through its ancestors to find out the frame
@@ -2314,7 +2315,7 @@ static inline bool rect_is_fullscreen(const session_t *ps, int x, int y, int wid
 /**
  * Check if a window is fulscreen using EWMH
  *
- * TODO cache this property
+ * TODO(yshui) cache this property
  */
 static inline bool
 win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_window_t w) {
@@ -2383,7 +2384,7 @@ bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
 /**
  * Check if a window has BYPASS_COMPOSITOR property set
  *
- * TODO cache this property
+ * TODO(yshui) cache this property
  */
 bool win_is_bypassing_compositor(const session_t *ps, const struct managed_win *w) {
 	bool ret = false;

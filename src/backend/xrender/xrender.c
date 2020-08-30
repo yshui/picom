@@ -334,7 +334,7 @@ static void present(backend_t *base, const region_t *region) {
 			free(e);
 			return;
 		}
-		// TODO don't block wait for present completion
+		// TODO(yshui) don't block wait for present completion
 		xcb_present_generic_event_t *pev =
 		    (void *)xcb_wait_for_special_event(base->c, xd->present_event);
 		if (!pev) {
@@ -466,7 +466,7 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 	return true;
 }
 
-// TODO: use copy-on-write
+// TODO(yshui): use copy-on-write
 static void *copy(backend_t *base, const void *image, const region_t *reg) {
 	const struct _xrender_image_data *img = image;
 	struct _xrender_data *xd = (void *)base;

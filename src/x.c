@@ -366,7 +366,7 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 #define CASESTRRET2(s)                                                                   \
 	case XCB_##s: name = #s; break
 
-	// TODO separate error code out from session_t
+	// TODO(yshui) separate error code out from session_t
 	o = error_code - ps->xfixes_error;
 	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
 

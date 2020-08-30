@@ -233,6 +233,7 @@ bool build_shadow(xcb_connection_t *c, xcb_drawable_t d, double opacity, const i
 	auto maximum_row =
 	    to_u16_checked(clamp(maximum_image_size / shadow_image->stride, 0, UINT16_MAX));
 	if (maximum_row <= 0) {
+		// TODO(yshui) Upload image with XShm
 		log_error("X server request size limit is too restrictive, or the shadow "
 		          "image is too wide for us to send a single row of the shadow "
 		          "image. Shadow size: %dx%d",

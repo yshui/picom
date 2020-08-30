@@ -155,7 +155,7 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 	// Detect trailing characters
 	for (; *pc && *pc != ';'; pc++) {
 		if (!isspace(*pc) && *pc != ',') {
-			// TODO isspace is locale aware, be careful
+			// TODO(yshui) isspace is locale aware, be careful
 			log_error("Trailing characters in blur kernel string.");
 			goto err2;
 		}
@@ -197,7 +197,7 @@ err1:
  * @return            the kernels
  */
 struct conv **parse_blur_kern_lst(const char *src, bool *hasneg, int *count) {
-	// TODO just return a predefined kernels, not parse predefined strings...
+	// TODO(yshui) just return a predefined kernels, not parse predefined strings...
 	static const struct {
 		const char *name;
 		const char *kern_str;

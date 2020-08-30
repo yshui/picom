@@ -255,9 +255,9 @@ typedef struct session {
 	struct x_convolution_kernel **blur_kerns_cache;
 	/// If we should quit
 	bool quit:1;
+	// TODO(yshui) use separate flags for dfferent kinds of updates so we don't
+	// waste our time.
 	/// Whether there are pending updates, like window creation, etc.
-	/// TODO use separate flags for dfferent kinds of updates so we don't
-	/// waste our time.
 	bool pending_updates:1;
 
 	// === Expose event related ===
