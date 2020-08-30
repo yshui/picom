@@ -1085,7 +1085,7 @@ static bool init_overlay(session_t *ps) {
 	} else {
 		ps->overlay = XCB_NONE;
 	}
-	if (ps->overlay) {
+	if (ps->overlay != XCB_NONE) {
 		// Set window region of the overlay window, code stolen from
 		// compiz-0.8.8
 		if (!XCB_AWAIT_VOID(xcb_shape_mask, ps->c, XCB_SHAPE_SO_SET,
@@ -1185,7 +1185,7 @@ static bool redirect_start(session_t *ps) {
 
 	// Map overlay window. Done firstly according to this:
 	// https://bugzilla.gnome.org/show_bug.cgi?id=597014
-	if (ps->overlay) {
+	if (ps->overlay != XCB_NONE) {
 		xcb_map_window(ps->c, ps->overlay);
 	}
 
@@ -1245,8 +1245,9 @@ static void unredirect(session_t *ps) {
 
 	xcb_composite_unredirect_subwindows(ps->c, ps->root, session_redirection_mode(ps));
 	// Unmap overlay window
-	if (ps->overlay)
+	if (ps->overlay != XCB_NONE) {
 		xcb_unmap_window(ps->c, ps->overlay);
+	}
 
 	// Free the damage ring
 	for (int i = 0; i < ps->ndamage; ++i) {
@@ -2258,18 +2259,18 @@ static void session_destroy(session_t *ps) {
 		ps->overlay = XCB_NONE;
 	}
 
-	if (ps->sync_fence) {
+	if (ps->sync_fence != XCB_NONE) {
 		xcb_sync_destroy_fence(ps->c, ps->sync_fence);
 		ps->sync_fence = XCB_NONE;
 	}
 
 	// Free reg_win
-	if (ps->reg_win) {
+	if (ps->reg_win != XCB_NONE) {
 		xcb_destroy_window(ps->c, ps->reg_win);
 		ps->reg_win = XCB_NONE;
 	}
 
-	if (ps->debug_window) {
+	if (ps->debug_window != XCB_NONE) {
 		xcb_destroy_window(ps->c, ps->debug_window);
 		ps->debug_window = XCB_NONE;
 	}
