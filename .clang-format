@@ -5,12 +5,14 @@ BreakBeforeBraces: Attach
 #BreakStringLiterals: true
 IndentWidth: 8
 AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: true
 ColumnLimit: 90
 #ExperimentalAutoDetectBinPacking: true
 BinPackArguments: true
 BinPackParameters: true
 #ReflowComments: true
 AlignTrailingComments: true
+AlignConsecutiveMacros: true
 SpacesBeforeTrailingComments: 8
 SpaceBeforeAssignmentOperators: true
 SpaceBeforeParens: ControlStatements
@@ -18,7 +20,7 @@ AllowShortIfStatementsOnASingleLine: false
 AllowShortCaseLabelsOnASingleLine: true
 AllowShortFunctionsOnASingleLine: false
 IndentCaseLabels: false
-IndentPPDirectives: None
+IndentPPDirectives: AfterHash
 PenaltyReturnTypeOnItsOwnLine: 0
 PenaltyBreakAssignment: 0
 PenaltyBreakBeforeFirstCallParameter: 1

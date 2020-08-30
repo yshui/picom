@@ -37,7 +37,7 @@
 #include "kernel.h"
 #include "picom.h"
 #ifdef CONFIG_OPENGL
-#include "opengl.h"
+#	include "opengl.h"
 #endif
 #include "backend/backend.h"
 #include "c2.h"
@@ -51,7 +51,7 @@
 #include "win.h"
 #include "x.h"
 #ifdef CONFIG_DBUS
-#include "dbus.h"
+#	include "dbus.h"
 #endif
 #include "atom.h"
 #include "event.h"
@@ -82,14 +82,14 @@ const char *const WINTYPES[NUM_WINTYPES] = {
     "popup_menu", "tooltip", "notification", "combo",   "dnd",
 };
 
-// clang-format off
 /// Names of backends.
-const char *const BACKEND_STRS[] = {[BKEND_XRENDER] = "xrender",
-                                    [BKEND_GLX] = "glx",
-                                    [BKEND_XR_GLX_HYBRID] = "xr_glx_hybrid",
-                                    [BKEND_DUMMY] = "dummy",
-                                    NULL};
-// clang-format on
+const char *const BACKEND_STRS[] = {
+    [BKEND_XRENDER]       = "xrender",
+    [BKEND_GLX]           = "glx",
+    [BKEND_XR_GLX_HYBRID] = "xr_glx_hybrid",
+    [BKEND_DUMMY]         = "dummy",
+    NULL,
+};
 
 // === Global variables ===
 
@@ -299,7 +299,7 @@ static int should_ignore(session_t *ps, unsigned long sequence) {
  * Determine the event mask for a window.
  */
 uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
-	uint32_t evmask = 0;
+	uint32_t evmask       = 0;
 	struct managed_win *w = NULL;
 
 	// Check if it's a mapped frame window
@@ -329,7 +329,7 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
 void update_ewmh_active_win(session_t *ps) {
 	// Search for the window
 	xcb_window_t wid = wid_get_prop_window(ps, ps->root, ps->atoms->a_NET_ACTIVE_WINDOW);
-	auto w = find_win_all(ps, wid);
+	auto w           = find_win_all(ps, wid);
 
 	// Mark the window focused. No need to unfocus the previous one.
 	if (w) {
@@ -436,17 +436,17 @@ static bool initialize_blur(session_t *ps) {
 	switch (ps->o.blur_method) {
 	case BLUR_METHOD_BOX:
 		bargs.size = ps->o.blur_radius;
-		args = (void *)&bargs;
+		args       = (void *)&bargs;
 		break;
 	case BLUR_METHOD_KERNEL:
 		kargs.kernel_count = ps->o.blur_kernel_count;
-		kargs.kernels = ps->o.blur_kerns;
-		args = (void *)&kargs;
+		kargs.kernels      = ps->o.blur_kerns;
+		args               = (void *)&kargs;
 		break;
 	case BLUR_METHOD_GAUSSIAN:
-		gargs.size = ps->o.blur_radius;
+		gargs.size      = ps->o.blur_radius;
 		gargs.deviation = ps->o.blur_deviation;
-		args = (void *)&gargs;
+		args            = (void *)&gargs;
 		break;
 	default: return true;
 	}
@@ -494,9 +494,9 @@ static bool initialize_backend(session_t *ps) {
 				          w->base.id, w->name);
 				if (w->shadow) {
 					struct color c = {
-					    .red = ps->o.shadow_red,
+					    .red   = ps->o.shadow_red,
 					    .green = ps->o.shadow_green,
-					    .blue = ps->o.shadow_blue,
+					    .blue  = ps->o.shadow_blue,
 					    .alpha = ps->o.shadow_opacity,
 					};
 					win_bind_shadow(ps->backend_data, w, c,
@@ -541,7 +541,7 @@ static void configure_root(session_t *ps) {
 		free_paint(ps, &ps->tgt_buffer);
 	}
 
-	ps->root_width = r->width;
+	ps->root_width  = r->width;
 	ps->root_height = r->height;
 
 	rebuild_screen_reg(ps);
@@ -616,25 +616,25 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 	// XXX need better, more general name for `fade_running`. It really
 	// means if fade is still ongoing after the current frame is rendered
 	struct managed_win *bottom = NULL;
-	*fade_running = false;
+	*fade_running              = false;
 
 	// Fading step calculation
 	long steps = 0L;
-	auto now = get_time_ms();
+	auto now   = get_time_ms();
 	if (ps->fade_time) {
 		assert(now >= ps->fade_time);
 		steps = (now - ps->fade_time) / ps->o.fade_delta;
 	} else {
 		// Reset fade_time if unset
 		ps->fade_time = get_time_ms();
-		steps = 0L;
+		steps         = 0L;
 	}
 	ps->fade_time += steps * ps->o.fade_delta;
 
 	// First, let's process fading
 	win_stack_foreach_managed_safe(w, &ps->window_stack) {
 		const winmode_t mode_old = w->mode;
-		const bool was_painted = w->to_paint;
+		const bool was_painted   = w->to_paint;
 		const double opacity_old = w->opacity;
 
 		if (win_should_dim(ps, w) != w->dim) {
@@ -681,7 +681,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 
 	bool unredir_possible = false;
 	// Track whether it's the highest window to paint
-	bool is_highest = true;
+	bool is_highest       = true;
 	bool reg_ignore_valid = true;
 	win_stack_foreach_managed(w, &ps->window_stack) {
 		__label__ skip_window;
@@ -799,7 +799,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		}
 
 	skip_window:
-		reg_ignore_valid = reg_ignore_valid && w->reg_ignore_valid;
+		reg_ignore_valid    = reg_ignore_valid && w->reg_ignore_valid;
 		w->reg_ignore_valid = true;
 
 		// Avoid setting w->to_paint if w is freed
@@ -920,9 +920,9 @@ static int register_cm(session_t *ps) {
 	assert(!ps->reg_win);
 
 	ps->reg_win = x_new_id(ps->c);
-	auto e = xcb_request_check(
-	    ps->c, xcb_create_window_checked(ps->c, XCB_COPY_FROM_PARENT, ps->reg_win, ps->root,
-	                                     0, 0, 1, 1, 0, XCB_NONE, ps->vis, 0, NULL));
+	auto e      = xcb_request_check(
+            ps->c, xcb_create_window_checked(ps->c, XCB_COPY_FROM_PARENT, ps->reg_win, ps->root,
+                                             0, 0, 1, 1, 0, XCB_NONE, ps->vis, 0, NULL));
 
 	if (e) {
 		log_fatal("Failed to create window.");
@@ -933,7 +933,7 @@ static int register_cm(session_t *ps) {
 	{
 		XClassHint *h = XAllocClassHint();
 		if (h) {
-			h->res_name = "picom";
+			h->res_name  = "picom";
 			h->res_class = "picom";
 		}
 		Xutf8SetWMProperties(ps->dpy, ps->reg_win, "picom", "picom", NULL, 0,
@@ -1122,7 +1122,7 @@ static bool init_overlay(session_t *ps) {
 
 static bool init_debug_window(session_t *ps) {
 	xcb_colormap_t colormap = x_new_id(ps->c);
-	ps->debug_window = x_new_id(ps->c);
+	ps->debug_window        = x_new_id(ps->c);
 
 	auto err = xcb_request_check(
 	    ps->c, xcb_create_colormap_checked(ps->c, XCB_COLORMAP_ALLOC_NONE, colormap,
@@ -1210,7 +1210,7 @@ static bool redirect_start(session_t *ps) {
 		ps->ndamage = maximum_buffer_age(ps);
 	}
 	ps->damage_ring = ccalloc(ps->ndamage, region_t);
-	ps->damage = ps->damage_ring + ps->ndamage - 1;
+	ps->damage      = ps->damage_ring + ps->ndamage - 1;
 
 	for (int i = 0; i < ps->ndamage; i++) {
 		pixman_region32_init(&ps->damage_ring[i]);
@@ -1219,7 +1219,7 @@ static bool redirect_start(session_t *ps) {
 	// Must call XSync() here
 	x_sync(ps->c);
 
-	ps->redirected = true;
+	ps->redirected  = true;
 	ps->first_frame = true;
 
 	// Re-detect driver since we now have a backend
@@ -1320,7 +1320,7 @@ static void refresh_windows(session_t *ps) {
  * Unredirection timeout callback.
  */
 static void tmout_unredir_callback(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
-	session_t *ps = session_ptr(w, unredir_timer);
+	session_t *ps         = session_ptr(w, unredir_timer);
 	ps->tmout_unredir_hit = true;
 	queue_redraw(ps);
 }
@@ -1371,7 +1371,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 			return quit(ps);
 		}
 
-		ps->server_grabbed = false;
+		ps->server_grabbed  = false;
 		ps->pending_updates = false;
 		log_debug("Exited critical section");
 	}
@@ -1410,9 +1410,9 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	/* TODO(yshui) Have a stripped down version of paint_preprocess that is used when
 	 * screen is not redirected. its sole purpose should be to decide whether the
 	 * screen should be redirected. */
-	bool fade_running = false;
-	bool was_redirected = ps->redirected;
-	auto bottom = paint_preprocess(ps, &fade_running);
+	bool fade_running     = false;
+	bool was_redirected   = ps->redirected;
+	auto bottom           = paint_preprocess(ps, &fade_running);
 	ps->tmout_unredir_hit = false;
 
 	if (!was_redirected && ps->redirected) {
@@ -1515,7 +1515,7 @@ static void delayed_draw_callback(EV_P_ ev_idle *w, int revents) {
 }
 
 static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused) {
-	session_t *ps = (session_t *)w;
+	session_t *ps           = (session_t *)w;
 	xcb_generic_event_t *ev = xcb_poll_for_event(ps->c);
 	if (ev) {
 		ev_handle(ps, ev);
@@ -1558,70 +1558,70 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
                                const char *config_file, bool all_xerrors, bool fork) {
 	static const session_t s_def = {
 	    .backend_data = NULL,
-	    .dpy = NULL,
-	    .scr = 0,
-	    .c = NULL,
-	    .vis = 0,
-	    .depth = 0,
-	    .root = XCB_NONE,
-	    .root_height = 0,
-	    .root_width = 0,
+	    .dpy          = NULL,
+	    .scr          = 0,
+	    .c            = NULL,
+	    .vis          = 0,
+	    .depth        = 0,
+	    .root         = XCB_NONE,
+	    .root_height  = 0,
+	    .root_width   = 0,
 	    // .root_damage = XCB_NONE,
-	    .overlay = XCB_NONE,
-	    .root_tile_fill = false,
+	    .overlay         = XCB_NONE,
+	    .root_tile_fill  = false,
 	    .root_tile_paint = PAINT_INIT,
-	    .tgt_picture = XCB_NONE,
-	    .tgt_buffer = PAINT_INIT,
-	    .reg_win = XCB_NONE,
+	    .tgt_picture     = XCB_NONE,
+	    .tgt_buffer      = PAINT_INIT,
+	    .reg_win         = XCB_NONE,
 #ifdef CONFIG_OPENGL
 	    .glx_prog_win = GLX_PROG_MAIN_INIT,
 #endif
-	    .redirected = false,
+	    .redirected  = false,
 	    .alpha_picts = NULL,
-	    .fade_time = 0L,
+	    .fade_time   = 0L,
 	    .ignore_head = NULL,
 	    .ignore_tail = NULL,
-	    .quit = false,
+	    .quit        = false,
 
 	    .expose_rects = NULL,
-	    .size_expose = 0,
-	    .n_expose = 0,
+	    .size_expose  = 0,
+	    .n_expose     = 0,
 
-	    .windows = NULL,
-	    .active_win = NULL,
+	    .windows       = NULL,
+	    .active_win    = NULL,
 	    .active_leader = XCB_NONE,
 
-	    .black_picture = XCB_NONE,
+	    .black_picture   = XCB_NONE,
 	    .cshadow_picture = XCB_NONE,
-	    .white_picture = XCB_NONE,
-	    .gaussian_map = NULL,
+	    .white_picture   = XCB_NONE,
+	    .gaussian_map    = NULL,
 
-	    .refresh_rate = 0,
-	    .refresh_intv = 0UL,
+	    .refresh_rate    = 0,
+	    .refresh_intv    = 0UL,
 	    .paint_tm_offset = 0L,
 
 #ifdef CONFIG_VSYNC_DRM
 	    .drm_fd = -1,
 #endif
 
-	    .xfixes_event = 0,
-	    .xfixes_error = 0,
-	    .damage_event = 0,
-	    .damage_error = 0,
-	    .render_event = 0,
-	    .render_error = 0,
-	    .composite_event = 0,
-	    .composite_error = 0,
-	    .composite_opcode = 0,
-	    .shape_exists = false,
-	    .shape_event = 0,
-	    .shape_error = 0,
-	    .randr_exists = 0,
-	    .randr_event = 0,
-	    .randr_error = 0,
-	    .glx_exists = false,
-	    .glx_event = 0,
-	    .glx_error = 0,
+	    .xfixes_event                = 0,
+	    .xfixes_error                = 0,
+	    .damage_event                = 0,
+	    .damage_error                = 0,
+	    .render_event                = 0,
+	    .render_error                = 0,
+	    .composite_event             = 0,
+	    .composite_error             = 0,
+	    .composite_opcode            = 0,
+	    .shape_exists                = false,
+	    .shape_event                 = 0,
+	    .shape_error                 = 0,
+	    .randr_exists                = 0,
+	    .randr_event                 = 0,
+	    .randr_error                 = 0,
+	    .glx_exists                  = false,
+	    .glx_event                   = 0,
+	    .glx_error                   = 0,
 	    .xrfilter_convolution_exists = false,
 
 	    .atoms_wintypes = {0},
@@ -1641,7 +1641,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Allocate a session and copy default values into it
 	session_t *ps = cmalloc(session_t);
-	*ps = s_def;
+	*ps           = s_def;
 	list_init_head(&ps->window_stack);
 	ps->loop = EV_DEFAULT;
 	pixman_region32_init(&ps->screen_reg);
@@ -1652,7 +1652,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Use the same Display across reset, primarily for resource leak checking
 	ps->dpy = dpy;
-	ps->c = XGetXCBConnection(ps->dpy);
+	ps->c   = XGetXCBConnection(ps->dpy);
 
 	const xcb_query_extension_reply_t *ext_info;
 
@@ -1660,11 +1660,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	ps->scr = DefaultScreen(ps->dpy);
 
-	auto screen = x_screen_of_display(ps->c, ps->scr);
-	ps->vis = screen->root_visual;
-	ps->depth = screen->root_depth;
-	ps->root = screen->root;
-	ps->root_width = screen->width_in_pixels;
+	auto screen     = x_screen_of_display(ps->c, ps->scr);
+	ps->vis         = screen->root_visual;
+	ps->depth       = screen->root_depth;
+	ps->root        = screen->root;
+	ps->root_width  = screen->width_in_pixels;
 	ps->root_height = screen->height_in_pixels;
 
 	// Start listening to events on root earlier to catch all possible
@@ -1704,8 +1704,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		exit(1);
 	}
 	ps->composite_opcode = ext_info->major_opcode;
-	ps->composite_event = ext_info->first_event;
-	ps->composite_error = ext_info->first_error;
+	ps->composite_event  = ext_info->first_event;
+	ps->composite_error  = ext_info->first_error;
 
 	{
 		xcb_composite_query_version_reply_t *reply = xcb_composite_query_version_reply(
@@ -1753,8 +1753,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ext_info = xcb_get_extension_data(ps->c, &xcb_glx_id);
 	if (ext_info && ext_info->present) {
 		ps->glx_exists = true;
-		ps->glx_error = ext_info->first_error;
-		ps->glx_event = ext_info->first_event;
+		ps->glx_error  = ext_info->first_error;
+		ps->glx_event  = ext_info->first_event;
 	}
 
 	// Parse configuration file
@@ -1796,7 +1796,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		         "binary will not be installed in the future.");
 	}
 
-	ps->atoms = init_atoms(ps->c);
+	ps->atoms                           = init_atoms(ps->c);
 	ps->atoms_wintypes[WINTYPE_UNKNOWN] = 0;
 #define SET_WM_TYPE_ATOM(x)                                                              \
 	ps->atoms_wintypes[WINTYPE_##x] = ps->atoms->a_NET_WM_WINDOW_TYPE_##x
@@ -1837,16 +1837,16 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// Query X Shape
 	ext_info = xcb_get_extension_data(ps->c, &xcb_shape_id);
 	if (ext_info && ext_info->present) {
-		ps->shape_event = ext_info->first_event;
-		ps->shape_error = ext_info->first_error;
+		ps->shape_event  = ext_info->first_event;
+		ps->shape_error  = ext_info->first_error;
 		ps->shape_exists = true;
 	}
 
 	ext_info = xcb_get_extension_data(ps->c, &xcb_randr_id);
 	if (ext_info && ext_info->present) {
 		ps->randr_exists = true;
-		ps->randr_event = ext_info->first_event;
-		ps->randr_error = ext_info->first_error;
+		ps->randr_event  = ext_info->first_event;
+		ps->randr_error  = ext_info->first_error;
 	}
 
 	ext_info = xcb_get_extension_data(ps->c, &xcb_present_id);
@@ -1882,8 +1882,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->sync_fence = XCB_NONE;
 	if (ps->xsync_exists) {
 		ps->sync_fence = x_new_id(ps->c);
-		e = xcb_request_check(
-		    ps->c, xcb_sync_create_fence(ps->c, ps->root, ps->sync_fence, 0));
+		e              = xcb_request_check(
+                    ps->c, xcb_sync_create_fence(ps->c, ps->root, ps->sync_fence, 0));
 		if (e) {
 			if (ps->o.xrender_sync_fence) {
 				log_error_x_error(e, "Failed to create a XSync fence. "
@@ -1912,7 +1912,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Query X Xinerama extension
 	if (ps->o.xinerama_shadow_crop) {
-		ext_info = xcb_get_extension_data(ps->c, &xcb_xinerama_id);
+		ext_info            = xcb_get_extension_data(ps->c, &xcb_xinerama_id);
 		ps->xinerama_exists = ext_info && ext_info->present;
 	}
 
@@ -2115,7 +2115,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		xcb_window_t *children;
 		int nchildren;
 
-		children = xcb_query_tree_children(query_tree_reply);
+		children  = xcb_query_tree_children(query_tree_reply);
 		nchildren = xcb_query_tree_children_length(query_tree_reply);
 
 		for (int i = 0; i < nchildren; i++) {
@@ -2392,7 +2392,7 @@ int main(int argc, char **argv) {
 	}
 
 	// Main loop
-	bool quit = false;
+	bool quit    = false;
 	int ret_code = 0;
 
 	do {
