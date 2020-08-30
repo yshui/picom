@@ -136,9 +136,6 @@ OPTIONS
 *--vsync*, *--no-vsync*::
 	Enable/disable VSync.
 
-*--sw-opti*::
-	Limit picom to repaint at most once every 1 / 'refresh_rate' second to boost performance. This should not be used with *--vsync* drm/opengl/opengl-oml as they essentially does *--sw-opti*'s job already, unless you wish to specify a lower refresh rate than the actual value.
-
 *--use-ewmh-active-win*::
 	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it.
 
@@ -440,10 +437,10 @@ $ picom --config /dev/null
 $ picom -cCGf
 ------------
 
-* Same thing as above, plus making inactive windows 80% transparent, making frame 80% transparent, don't fade on window open/close, enable software optimization, and fork to background:
+* Same thing as above, plus making inactive windows 80% transparent, making frame 80% transparent, don't fade on window open/close, and fork to background:
 +
 ------------
-$ picom -bcCGf -i 0.8 -e 0.8 --no-fading-openclose --sw-opti
+$ picom -bcCGf -i 0.8 -e 0.8 --no-fading-openclose
 ------------
 
 * Draw white shadows:
