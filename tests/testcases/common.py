@@ -28,6 +28,11 @@ def set_window_class(conn, wid, name):
     str_type = to_atom(conn, "STRING")
     conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, prop_name, str_type, 8, len(name), name).check()
 
+def set_window_size(conn, wid, width, height):
+    value_mask = xproto.ConfigWindow.Width | xproto.ConfigWindow.Height
+    value_list = [width, height]
+    conn.core.ConfigureWindowChecked(wid, value_mask, value_list).check()
+
 def find_picom_window(conn):
     prop_name = to_atom(conn, "WM_NAME")
     setup = conn.get_setup()
