@@ -565,13 +565,13 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'O': opt->fade_out_step = normalize_d(atof(optarg)); break;
 		case 'c': shadow_enable = true; break;
 		case 'C':
-			winopt_mask[WINTYPE_DOCK].shadow = true;
-			opt->wintype_option[WINTYPE_DOCK].shadow = false;
-			break;
+			log_error("Option `--no-dock-shadow`/`-C` has been removed. Please"
+			          " use the wintype option `shadow` of `dock` instead.");
+			return false;
 		case 'G':
-			winopt_mask[WINTYPE_DND].shadow = true;
-			opt->wintype_option[WINTYPE_DND].shadow = false;
-			break;
+			log_error("Option `--no-dnd-shadow`/`-G` has been removed. Please "
+			          "use the wintype option `shadow` of `dnd` instead.");
+			return false;
 		case 'm':;
 			double tmp;
 			tmp = normalize_d(atof(optarg));
@@ -604,7 +604,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'a':
 		case 's':
 			log_error("-n, -a, and -s have been removed.");
-			break;
+			return false;
 		// Long options
 		case 256:
 			// --config

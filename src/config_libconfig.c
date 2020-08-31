@@ -374,17 +374,15 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		*shadow_enable = ival;
 	// -C (no_dock_shadow)
 	if (config_lookup_bool(&cfg, "no-dock-shadow", &ival)) {
-		log_warn("Option `no-dock-shadow` is deprecated, and will be removed."
-		         " Please use the wintype option `shadow` of `dock` instead.");
-		opt->wintype_option[WINTYPE_DOCK].shadow = false;
-		winopt_mask[WINTYPE_DOCK].shadow = true;
+		log_error("Option `no-dock-shadow` has been removed. Please use the "
+		          "wintype option `shadow` of `dock` instead.");
+		goto err;
 	}
 	// -G (no_dnd_shadow)
 	if (config_lookup_bool(&cfg, "no-dnd-shadow", &ival)) {
-		log_warn("Option `no-dnd-shadow` is deprecated, and will be removed."
-		         " Please use the wintype option `shadow` of `dnd` instead.");
-		opt->wintype_option[WINTYPE_DND].shadow = false;
-		winopt_mask[WINTYPE_DND].shadow = true;
+		log_error("Option `no-dnd-shadow` has been removed. Please use the "
+		          "wintype option `shadow` of `dnd` instead.");
+		goto err;
 	};
 	// -m (menu_opacity)
 	if (config_lookup_float(&cfg, "menu-opacity", &dval)) {
