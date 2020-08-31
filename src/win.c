@@ -2030,10 +2030,14 @@ bool destroy_win_start(session_t *ps, struct win *w) {
 	}
 
 	if (w->managed) {
-		// Clear PIXMAP_STALE flag, since the window is destroyed there is no
-		// pixmap available so STALE doesn't make sense.
+		// Clear IMAGES_STALE flags since the window is destroyed: Clear
+		// PIXMAP_STALE as there is no pixmap available anymore, so STALE doesn't
+		// make sense.
+		// XXX Clear SHADOW_STALE as setting/clearing flags on a destroyed window
+		// doesn't work leading to an inconsistent state where the shadow is
+		// refreshed but the flags are stuck in STALE.
 		// Do this before changing the window state to destroying
-		win_clear_flags(mw, WIN_FLAGS_PIXMAP_STALE);
+		win_clear_flags(mw, WIN_FLAGS_IMAGES_STALE);
 
 		// Update state flags of a managed window
 		mw->state = WSTATE_DESTROYING;
