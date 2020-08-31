@@ -166,7 +166,7 @@ OPTIONS
 *--detect-client-leader*::
 	Use 'WM_CLIENT_LEADER' to group windows, and consider windows in the same group focused at the same time. 'WM_TRANSIENT_FOR' has higher priority if *--detect-transient* is enabled, too.
 
-*--blur-method*, *--blur-size*, *--blur-deviation*::
+*--blur-method*, *--blur-size*, *--blur-deviation*, *--blur-strength*::
 	Parameters for background blurring, see the *BLUR* section for more information.
 
 *--blur-background*::
@@ -397,8 +397,8 @@ Available options of the 'blur' section are: ::
 
   *method*:::
     A string. Controls the blur method. Corresponds to the *--blur-method* command line option. Available choices are:
-      'none' to disable blurring; 'gaussian' for gaussian blur; 'box' for box blur; 'kernel' for convolution blur with a custom kernel.
-    Note: 'gaussian' and 'box' blur methods are only supported by the experimental backends.
+      'none' to disable blurring; 'gaussian' for gaussian blur; 'box' for box blur; 'kernel' for convolution blur with a custom kernel; 'dual_kawase' for dual-filter kawase blur.
+    Note: 'gaussian', 'box' and 'dual_kawase' blur methods are only supported by the experimental backends.
     (default: none)
 
   *size*:::
@@ -406,6 +406,9 @@ Available options of the 'blur' section are: ::
 
   *deviation*:::
     A floating point number. The standard deviation for the 'gaussian' blur method. Corresponds to the *--blur-deviation* command line option (default: 0.84089642).
+
+  *strength*:::
+    An integer in the range 0-20. The strength of the 'dual_kawase' blur method. Corresponds to the *--blur-strength* command line option. If set to zero, the value requested by *--blur-size* is approximated (default: 5).
 
   *kernel*:::
     A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kerns* option. Corresponds to the *--blur-kerns* command line option.

@@ -530,6 +530,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	config_lookup_int(&cfg, "blur-size", &opt->blur_radius);
 	// --blur-deviation
 	config_lookup_float(&cfg, "blur-deviation", &opt->blur_deviation);
+	// --blur-strength
+	config_lookup_int(&cfg, "blur-strength", &opt->blur_strength);
 	// --blur-background
 	if (config_lookup_bool(&cfg, "blur-background", &ival) && ival) {
 		if (opt->blur_method == BLUR_METHOD_NONE) {
@@ -640,6 +642,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		}
 
 		config_setting_lookup_float(blur_cfg, "deviation", &opt->blur_deviation);
+		config_setting_lookup_int(blur_cfg, "strength", &opt->blur_strength);
 	}
 
 	// Wintype settings

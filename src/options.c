@@ -212,6 +212,9 @@ static void usage(const char *argv0, int ret) {
 	    "--blur-deviation\n"
 	    "  The standard deviation for the 'gaussian' blur method.\n"
 	    "\n"
+	    "--blur-strength\n"
+	    "  The strength level of the 'dual_kawase' blur method.\n"
+	    "\n"
 	    "--blur-background\n"
 	    "  Blur background of semi-transparent / ARGB windows. Bad in\n"
 	    "  performance. The switch name may change without prior\n"
@@ -435,7 +438,8 @@ static const struct option longopts[] = {
     {"blur-method", required_argument, NULL, 328},
     {"blur-size", required_argument, NULL, 329},
     {"blur-deviation", required_argument, NULL, 330},
-    {"shadow-color", required_argument, NULL, 331},
+    {"blur-strength", required_argument, NULL, 331},
+    {"shadow-color", required_argument, NULL, 332},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -605,7 +609,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 256:
 			// --config
 			break;
-		case 331:;
+		case 332:;
 			// --shadow-color
 			struct color rgb;
 			rgb = hex_to_rgb(optarg);
@@ -844,6 +848,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// --blur-deviation
 			opt->blur_deviation = atof(optarg);
 			break;
+		case 331:
+			// --blur-strength
+			opt->blur_strength = atoi(optarg);
+			break;
 
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
@@ -931,6 +939,20 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		                                      &opt->blur_kernel_count);
 		CHECK(opt->blur_kerns);
 		CHECK(opt->blur_kernel_count);
+	}
+
+	// Sanitize parameters for dual-filter kawase blur
+	if (opt->blur_method == BLUR_METHOD_DUAL_KAWASE) {
+		if (opt->blur_strength <= 0 && opt->blur_radius > 500) {
+			log_warn("Blur radius >500 not supported by dual_kawase method, "
+			         "capping to 500.");
+			opt->blur_radius = 500;
+		}
+		if (opt->blur_strength > 20) {
+			log_warn("Blur strength >20 not supported by dual_kawase method, "
+			         "capping to 20.");
+			opt->blur_strength = 20;
+		}
 	}
 
 	if (opt->resize_damage < 0) {
