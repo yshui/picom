@@ -217,6 +217,8 @@ typedef struct options {
 	double max_brightness;
 	// Radius of rounded window corners
 	int corner_radius;
+	/// Rounded corners blacklist. A linked list of conditions.
+	c2_lptr_t *rounded_corners_blacklist;
 
 	// === Focus related ===
 	/// Whether to try to detect WM windows and mark them as focused.

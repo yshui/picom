@@ -501,6 +501,7 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 
 char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
                    bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask) {
+	// clang-format off
 	*opt = (struct options){
 	    .backend = BKEND_XRENDER,
 	    .glx_no_stencil = false,
@@ -568,7 +569,10 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .no_ewmh_fullscreen = false,
 
 	    .track_leader = false,
+
+	    .rounded_corners_blacklist = NULL
 	};
+	// clang-format on
 
 	char *ret = NULL;
 #ifdef CONFIG_LIBCONFIG

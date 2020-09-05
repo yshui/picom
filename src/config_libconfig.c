@@ -369,6 +369,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		opt->active_opacity = normalize_d(dval);
 	// --corner-radius
 	config_lookup_int(&cfg, "corner-radius", &opt->corner_radius);
+	// --rounded-corners-exclude
+	parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist, "rounded-corners-exclude");
 	// -e (frame_opacity)
 	config_lookup_float(&cfg, "frame-opacity", &opt->frame_opacity);
 	// -c (shadow_enable)
