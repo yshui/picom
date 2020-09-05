@@ -358,7 +358,7 @@ paint_region(session_t *ps, const struct managed_win *w, int x, int y, int wid, 
 	const bool neg = (w && w->invert_color);
 
 	render(ps, x, y, dx, dy, wid, hei, fullwid, fullhei, opacity, argb, neg,
-	       (w ? w->corner_radius : 0), pict,
+	       w ? w->corner_radius : 0, pict,
 	       (w ? w->paint.ptex : ps->root_tile_paint.ptex), reg_paint,
 #ifdef CONFIG_OPENGL
 	       w ? &ps->glx_prog_win : NULL
