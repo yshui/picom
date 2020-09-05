@@ -351,6 +351,7 @@ void add_damage_from_win(session_t *ps, const struct managed_win *w);
  * Return region in global coordinates.
  */
 void win_get_region_noframe_local(const struct managed_win *w, region_t *);
+void win_get_region_noframe_local_without_corners(const struct managed_win *w, region_t *);
 
 /// Get the region for the frame of the window
 void win_get_region_frame_local(const struct managed_win *w, region_t *res);
@@ -441,10 +442,38 @@ static inline attr_unused void win_set_property_stale(struct managed_win *w, xcb
 /// Free all resources in a struct win
 void free_win_res(session_t *ps, struct managed_win *w);
 
+static inline void win_region_remove_corners(const struct managed_win *w, region_t *res) {
+	region_t corners;
+	pixman_region32_init_rects(
+	    &corners,
+	    (rect_t[]){
+	        {.x1 = 0, .y1 = 0, .x2 = w->corner_radius, .y2 = w->corner_radius},
+	        {.x1 = 0, .y1 = w->heightb - w->corner_radius, .x2 = w->corner_radius, .y2 = w->heightb},
+	        {.x1 = w->widthb - w->corner_radius, .y1 = 0, .x2 = w->widthb, .y2 = w->corner_radius},
+	        {.x1 = w->widthb - w->corner_radius,
+	         .y1 = w->heightb - w->corner_radius,
+	         .x2 = w->widthb,
+	         .y2 = w->heightb},
+	    },
+	    4);
+	pixman_region32_subtract(res, res, &corners);
+	pixman_region32_fini(&corners);
+}
+
 static inline region_t attr_unused win_get_bounding_shape_global_by_val(struct managed_win *w) {
 	region_t ret;
 	pixman_region32_init(&ret);
 	pixman_region32_copy(&ret, &w->bounding_shape);
+	pixman_region32_translate(&ret, w->g.x, w->g.y);
+	return ret;
+}
+
+static inline region_t
+win_get_bounding_shape_global_without_corners_by_val(struct managed_win *w) {
+	region_t ret;
+	pixman_region32_init(&ret);
+	pixman_region32_copy(&ret, &w->bounding_shape);
+	win_region_remove_corners(w, &ret);
 	pixman_region32_translate(&ret, w->g.x, w->g.y);
 	return ret;
 }
