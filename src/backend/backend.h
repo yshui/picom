@@ -195,6 +195,13 @@ struct backend_operations {
 	int max_buffer_age;
 
 	// ===========    Post-processing   ============
+
+	/* TODO(yshui) Consider preserving the order of image ops.
+	 * Currently in both backends, the image ops are applied lazily when needed.
+	 * However neither backends preserve the order of image ops, they just applied all
+	 * pending lazy ops in a pre-determined fixed order, regardless in which order
+	 * they were originally applied. This might lead to inconsistencies.*/
+
 	/**
 	 * Manipulate an image
 	 *
