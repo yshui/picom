@@ -410,6 +410,7 @@ static inline void expose_root(session_t *ps, const rect_t *rects, int nrects) {
 	region_t region;
 	pixman_region32_init_rects(&region, rects, nrects);
 	add_damage(ps, &region);
+	pixman_region32_fini(&region);
 }
 
 static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
