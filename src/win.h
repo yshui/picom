@@ -204,6 +204,9 @@ struct managed_win {
 	/// Last window opacity value set by the rules.
 	double opacity_set;
 
+	/// Radius of rounded window corners
+	int corner_radius;
+
 	// Fading-related members
 	/// Override value of window fade state. Set by D-Bus method calls.
 	switch_t fade_force;

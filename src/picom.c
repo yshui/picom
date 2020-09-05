@@ -672,6 +672,8 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			w->frame_opacity = 1.0;
 		}
 
+		w->corner_radius = ps->o.corner_radius;
+
 		// Update window mode
 		w->mode = win_calc_mode(w);
 

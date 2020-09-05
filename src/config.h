@@ -215,6 +215,8 @@ typedef struct options {
 	c2_lptr_t *opacity_rules;
 	/// Limit window brightness
 	double max_brightness;
+	// Radius of rounded window corners
+	int corner_radius;
 
 	// === Focus related ===
 	/// Whether to try to detect WM windows and mark them as focused.
