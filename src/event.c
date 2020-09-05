@@ -646,14 +646,14 @@ static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) 
 	 * if we attempt to rebuild border_size
 	 */
 	// Mark the old border_size as damaged
-	region_t tmp = win_get_bounding_shape_global_by_val(w);
+	region_t tmp = win_get_bounding_shape_global_by_val(w, true);
 	add_damage(ps, &tmp);
 	pixman_region32_fini(&tmp);
 
 	win_update_bounding_shape(ps, w);
 
 	// Mark the new border_size as damaged
-	tmp = win_get_bounding_shape_global_by_val(w);
+	tmp = win_get_bounding_shape_global_by_val(w, true);
 	add_damage(ps, &tmp);
 	pixman_region32_fini(&tmp);
 
