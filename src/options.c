@@ -953,6 +953,11 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			         "capping to 20.");
 			opt->blur_strength = 20;
 		}
+		if (!opt->experimental_backends) {
+			log_warn("Dual-kawase blur is not implemented by the legacy "
+			         "backends, you must use the `experimental-backends` "
+			         "option`.");
+		}
 	}
 
 	if (opt->resize_damage < 0) {
