@@ -547,7 +547,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
  * Blur contents in a particular region.
  */
 bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *extent,
-                    const int nrects, const GLuint vao[2]) {
+                    const GLuint vao[2], const int vao_nelems[2]) {
 	auto bctx = (struct gl_blur_context *)ctx;
 	auto gd = (struct gl_data *)base;
 
@@ -585,12 +585,17 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 		glUseProgram(p->prog);
 		glUniform2f(p->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
 		            1.0f / (GLfloat)tex_height);
+
+		// The number of indices in the selected vertex array
+		GLsizei nelems;
+
 		if (i < bctx->npasses - 1) {
 			assert(bctx->blur_fbos[0]);
 			assert(bctx->blur_textures[!curr]);
 
 			// not last pass, draw into framebuffer, with resized regions
 			glBindVertexArray(vao[1]);
+			nelems = vao_nelems[1];
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[0]);
 
 			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
@@ -608,6 +613,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 			// last pass, draw directly into the back buffer, with origin
 			// regions
 			glBindVertexArray(vao[0]);
+			nelems = vao_nelems[0];
 			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
 
 			glUniform1f(p->unifm_opacity, (float)opacity);
@@ -615,7 +621,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 		}
 
 		glUniform2f(p->texorig_loc, (GLfloat)texorig_x, (GLfloat)texorig_y);
-		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+		glDrawElements(GL_TRIANGLES, nelems, GL_UNSIGNED_INT, NULL);
 
 		// XXX use multiple draw calls is probably going to be slow than
 		//     just simply blur the whole area.
@@ -627,7 +633,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 }
 
 bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_t *extent,
-                         const int nrects, const GLuint vao[2]) {
+                         const GLuint vao[2], const int vao_nelems[2]) {
 	auto bctx = (struct gl_blur_context *)ctx;
 	auto gd = (struct gl_data *)base;
 
@@ -678,6 +684,7 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glBindVertexArray(vao[1]);
+		auto nelems = vao_nelems[1];
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i]);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
@@ -687,7 +694,7 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 		glUniform2f(down_pass->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
 		            1.0f / (GLfloat)tex_height);
 
-		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+		glDrawElements(GL_TRIANGLES, nelems, GL_UNSIGNED_INT, NULL);
 	}
 
 	// Kawase upsample pass
@@ -711,12 +718,16 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 		int tex_width = src_size.width;
 		int tex_height = src_size.height;
 
+		// The number of indices in the selected vertex array
+		GLsizei nelems;
+
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		if (i > 0) {
 			assert(bctx->blur_fbos[i - 1]);
 
 			// not last pass, draw into next framebuffer
 			glBindVertexArray(vao[1]);
+			nelems = vao_nelems[1];
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i - 1]);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
@@ -726,6 +737,7 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 		} else {
 			// last pass, draw directly into the back buffer
 			glBindVertexArray(vao[0]);
+			nelems = vao_nelems[0];
 			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
 
 			glUniform2f(up_pass->orig_loc, (GLfloat)0, (GLfloat)0);
@@ -736,7 +748,7 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 		glUniform2f(up_pass->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
 		            1.0f / (GLfloat)tex_height);
 
-		glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+		glDrawElements(GL_TRIANGLES, nelems, GL_UNSIGNED_INT, NULL);
 	}
 
 	return true;
@@ -850,10 +862,12 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
 	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 
+	int vao_nelems[2] = {nrects * 6, nrects_resized * 6};
+
 	if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {
-		ret = gl_dual_kawase_blur(base, opacity, ctx, extent_resized, nrects, vao);
+		ret = gl_dual_kawase_blur(base, opacity, ctx, extent_resized, vao, vao_nelems);
 	} else {
-		ret = gl_kernel_blur(base, opacity, ctx, extent_resized, nrects, vao);
+		ret = gl_kernel_blur(base, opacity, ctx, extent_resized, vao, vao_nelems);
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
