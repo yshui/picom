@@ -328,8 +328,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 		// Draw window on target
 		// FIXME Don't like going beyond 80 char limit
-		if (!w->blur_foreground && !w->invert_color && !w->dim && w->frame_opacity == 1 
-			&& w->opacity == 1 && !(ps->o.inactive_blur && !w->focused)) {
+		if (!w->blur_foreground && !w->invert_color && !w->dim &&
+		    w->frame_opacity == 1 && w->opacity == 1 &&
+		    !(ps->o.inactive_blur && !w->focused)) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               w->g.x, w->g.y,
 			                               &reg_paint_in_bound, &reg_visible);
@@ -397,13 +398,13 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			pixman_region32_fini(&reg_visible_local);
 			pixman_region32_fini(&reg_bound_local);
 			// Blur window
-			if(ps->o.inactive_blur && !w->focused) {
+			if (ps->o.inactive_blur && !w->focused) {
 				assert(ps->o.blur_method != BLUR_METHOD_NONE);
 				// FIXME Think more about combining blur w/ opacity
 				// FIXME Don't hardcode opacity
-				// FIXME backend_blur_context is null, need to figure out what it does
 				//        - needs to be set when focus_mode set to true
-				//	  - don't blur background when foreground is getting blurred to speed it up
+				//	  - don't blur background when foreground is
+				//	    getting blurred to speed it up
 				double blur_opacity = 1;
 				ps->backend_data->ops->blur(
 				    ps->backend_data, blur_opacity, ps->backend_blur_context,
@@ -411,11 +412,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			}
 		}
 
-
 		pixman_region32_fini(&reg_bound);
 		pixman_region32_fini(&reg_paint_in_bound);
-
-
 	}
 	pixman_region32_fini(&reg_paint);
 
