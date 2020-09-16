@@ -2409,6 +2409,7 @@ int main(int argc, char **argv) {
 	// Main loop
 	bool quit = false;
 	int ret_code = 0;
+	char *pid_file = NULL;
 
 	do {
 		Display *dpy = XOpenDisplay(NULL);
@@ -2451,6 +2452,9 @@ int main(int argc, char **argv) {
 		}
 		session_run(ps_g);
 		quit = ps_g->quit;
+		if (quit && ps_g->o.write_pid_path) {
+			pid_file = strdup(ps_g->o.write_pid_path);
+		}
 		session_destroy(ps_g);
 		free(ps_g);
 		ps_g = NULL;
@@ -2460,6 +2464,10 @@ int main(int argc, char **argv) {
 	} while (!quit);
 
 	free(config_file);
+	if (pid_file) {
+		log_trace("remove pid file %s", pid_file);
+		unlink(pid_file);
+	}
 
 	log_deinit_tls();
 
