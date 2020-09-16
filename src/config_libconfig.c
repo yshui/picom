@@ -643,6 +643,15 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		config_setting_lookup_int(blur_cfg, "strength", &opt->blur_strength);
 	}
 
+	// --write-pid-path
+	if (config_lookup_string(&cfg, "write-pid-path", &sval)) {
+		if (*sval != '/') {
+			log_warn("The write-pid-path in your configuration file is not"
+			         " an absolute path");
+		}
+		opt->write_pid_path = strdup(sval);
+	}
+
 	// Wintype settings
 
 	// XXX ! Refactor all the wintype_* arrays into a struct

@@ -795,7 +795,11 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASELONG(309, unredir_if_possible_delay);
 		case 310:
 			// --write-pid-path
+			free(opt->write_pid_path);
 			opt->write_pid_path = strdup(optarg);
+			if (*opt->write_pid_path != '/') {
+				log_warn("--write-pid-path is not an absolute path");
+			}
 			break;
 		P_CASEBOOL(311, vsync_use_glfinish);
 		case 312:

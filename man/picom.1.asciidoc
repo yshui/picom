@@ -80,7 +80,7 @@ OPTIONS
 	Look for configuration file at the path. See *CONFIGURATION FILES* section below for where picom looks for a configuration file by default. Use `/dev/null` to avoid loading configuration file.
 
 *--write-pid-path* 'PATH'::
-	Write process ID to a file.
+	Write process ID to a file. it is recommended to use an absolute path.
 
 *--shadow-color* 'STRING'::
 	Color of shadow, as a hex string ('#000000')
