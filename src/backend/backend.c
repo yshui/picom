@@ -328,7 +328,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 		// Draw window on target
 		// FIXME Don't like going beyond 80 char limit
-		if (!w->blur_foreground && !w->invert_color && !w->dim && w->frame_opacity == 1 && w->opacity == 1) {
+		if (!w->blur_foreground && !w->invert_color && !w->dim && w->frame_opacity == 1 
+			&& w->opacity == 1 && !(ps->o.inactive_blur && !w->active)) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               w->g.x, w->g.y,
 			                               &reg_paint_in_bound, &reg_visible);
@@ -395,9 +396,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			ps->backend_data->ops->release_image(ps->backend_data, new_img);
 			pixman_region32_fini(&reg_visible_local);
 			pixman_region32_fini(&reg_bound_local);
-
 			// Blur window
-			if(w->blur_foreground) {
+			if(ps->o.inactive_blur && !w->focused) {
+				assert(ps->o.blur_method != BLUR_METHOD_NONE);
 				// FIXME Think more about combining blur w/ opacity
 				// FIXME Don't hardcode opacity
 				// FIXME backend_blur_context is null, need to figure out what it does
@@ -408,8 +409,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    ps->backend_data, blur_opacity, ps->backend_blur_context,
 				    &reg_paint_in_bound, &reg_visible);
 			}
-
 		}
+
 
 		pixman_region32_fini(&reg_bound);
 		pixman_region32_fini(&reg_paint_in_bound);
