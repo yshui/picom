@@ -329,7 +329,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		// Draw window on target
 		// FIXME Don't like going beyond 80 char limit
 		if (!w->blur_foreground && !w->invert_color && !w->dim && w->frame_opacity == 1 
-			&& w->opacity == 1 && !(ps->o.inactive_blur && !w->active)) {
+			&& w->opacity == 1 && !(ps->o.inactive_blur && !w->focused)) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               w->g.x, w->g.y,
 			                               &reg_paint_in_bound, &reg_visible);
