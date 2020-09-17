@@ -134,12 +134,13 @@ struct backend_operations {
 	 * Paint the content of an image onto the rendering buffer
 	 *
 	 * @param backend_data the backend data
+	 * @param w            the window to operate on
 	 * @param image_data   the image to paint
 	 * @param dst_x, dst_y the top left corner of the image in the target
 	 * @param reg_paint    the clip region, in target coordinates
 	 * @param reg_visible the visible region, in target coordinates
 	 */
-	void (*compose)(backend_t *backend_data, void *image_data, int dst_x, int dst_y,
+	void (*compose)(backend_t *backend_data, struct managed_win *w, void *image_data, int dst_x, int dst_y,
 	                const region_t *reg_paint, const region_t *reg_visible);
 
 	/// Fill rectangle of the rendering buffer, mostly for debug purposes, optional.
