@@ -2,7 +2,7 @@
 _gitfolder="picom"
 pkgname=picom-jonaburg-git
 pkgver=0.1
-pkgrel=3
+pkgrel=4
 pkgdesc="jonaburg's picom fork with tryone144's dual_kawase blur and ibhagwan's rounded corners, an X compositor (compton's fork)"
 arch=(i686 x86_64)
 url="https://github.com/jonaburg/picom"
