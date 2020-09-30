@@ -538,8 +538,3 @@ static inline void wintype_arr_enable(bool arr[]) {
  * Get current system clock in milliseconds.
  */
 int64_t get_time_ms(void);
-
-/**
- * Get current system clock in microseconds * 40.
- */
-int64_t get_time_40us(void);

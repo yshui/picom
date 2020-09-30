@@ -127,16 +127,7 @@ int64_t get_time_ms(void) {
 	struct timespec tp;
 	clock_gettime(CLOCK_MONOTONIC, &tp);
 	return (int64_t)tp.tv_sec * 1000 + (int64_t)tp.tv_nsec / 1000000;
-}
-
-/**
- * Get current system clock in microseconds * 40.
- */
-int64_t get_time_40us(void) {
-	struct timespec tp;
-	clock_gettime(CLOCK_MONOTONIC, &tp);
-	//	return (int64_t)tp.tv_sec * 1000 + (int64_t)tp.tv_nsec / 1000000;
-	return (int64_t)tp.tv_sec * 100 + (int64_t)tp.tv_nsec / 250000;
+	//	return (int64_t)tp.tv_sec * 100 + (int64_t)tp.tv_nsec / 250000;
 }
 
 // XXX Move to x.c
@@ -434,7 +425,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 
 	// Fading step calculation
 	long steps = 0L;
-	auto now = get_time_40us();
+	auto now = get_time_ms();
 	if (ps->fade_time) {
 		assert(now >= ps->fade_time);
 		steps = (now - ps->fade_time) / ps->o.fade_delta;
