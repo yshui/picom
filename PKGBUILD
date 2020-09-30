@@ -1,9 +1,8 @@
 # Maintainer: koraynilay <koray.fra@gmail.com>
-# This PKGBUILD is adapted from https://aur.archlinux.org/cgit/aur.git/tree/PKGBUILD?h=picom-tryone-git
 _gitfolder="picom"
 pkgname=picom-jonaburg-git
 pkgver=0.1
-pkgrel=1
+pkgrel=3
 pkgdesc="jonaburg's picom fork with tryone144's dual_kawase blur and ibhagwan's rounded corners, an X compositor (compton's fork)"
 arch=(i686 x86_64)
 url="https://github.com/jonaburg/picom"
@@ -25,6 +24,7 @@ build() {
 }
 
 package() {
+	# this is adapted from tryone144's fork PKGBUILD
 	cd "${srcdir}/${_gitfolder}"
 	DESTDIR="$pkgdir/" ninja -C build install
 	
