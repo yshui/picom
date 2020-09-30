@@ -95,6 +95,16 @@ bool glx_init(session_t *ps, bool need_render) {
 			ppass->unifm_offset_x = -1;
 			ppass->unifm_offset_y = -1;
 		}
+
+		ps->psglx->round_passes = ccalloc(2, glx_round_pass_t);
+		for (int i = 0; i < 2; ++i) {
+			glx_round_pass_t *ppass = &ps->psglx->round_passes[i];
+			ppass->unifm_radius = -1;
+			ppass->unifm_texcoord = -1;
+			ppass->unifm_texsize = -1;
+			ppass->unifm_borderw = -1;
+			ppass->unifm_resolution = -1;
+		}
 	}
 
 	glx_session_t *psglx = ps->psglx;
@@ -238,6 +248,15 @@ void glx_destroy(session_t *ps) {
 			glDeleteProgram(ppass->prog);
 	}
 	free(ps->psglx->blur_passes);
+
+	for (int i = 0; i < 2; ++i) {
+		glx_round_pass_t *ppass = &ps->psglx->round_passes[i];
+		if (ppass->frag_shader)
+			glDeleteShader(ppass->frag_shader);
+		if (ppass->prog)
+			glDeleteProgram(ppass->prog);
+	}
+	free(ps->psglx->round_passes);
 
 	glx_free_prog_main(&ps->glx_prog_win);
 
@@ -415,6 +434,261 @@ bool glx_init_blur(session_t *ps) {
 	return true;
 }
 
+static inline bool
+glx_init_frag_shader_corners(glx_round_pass_t *ppass, const char *PREFIX_STR,
+                             const char *SHADER_STR, const char *extension,
+                             const char *sampler_type, const char *texture_func) {
+
+	// Build rounded corners shader
+	{
+		auto len = strlen(PREFIX_STR) + strlen(extension) + strlen(sampler_type) +
+		           strlen(texture_func) + strlen(SHADER_STR) + 1;
+		char *shader_str = calloc(len, sizeof(char));
+		if (!shader_str) {
+			log_error("Failed to allocate %zd bytes for shader string.", len);
+			return false;
+		}
+
+		char *pc = shader_str;
+		sprintf(pc, PREFIX_STR, extension, sampler_type, texture_func);
+		pc += strlen(pc);
+		assert(strlen(shader_str) < len);
+
+		sprintf(pc, SHADER_STR);
+		assert(strlen(shader_str) < len);
+#ifdef DEBUG_GLX
+		log_debug("Generated rounded corners shader:\n%s\n", shader_str);
+#endif
+
+		ppass->frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, shader_str);
+		free(shader_str);
+
+		if (!ppass->frag_shader) {
+			log_error("Failed to create rounded corners fragment shader.");
+			return false;
+		}
+
+		// Build program
+		ppass->prog = gl_create_program(&ppass->frag_shader, 1);
+		if (!ppass->prog) {
+			log_error("Failed to create GLSL program.");
+			return false;
+		}
+
+		// Get uniform addresses
+#define P_GET_UNIFM_LOC(name, target)                                                    \
+	{                                                                                \
+		ppass->target = glGetUniformLocation(ppass->prog, name);                 \
+		if (ppass->target < 0) {                                                 \
+			log_error("Failed to get location of rounded corners uniform "   \
+			          "'" name "'. Might be troublesome.");                  \
+		}                                                                        \
+	}
+		P_GET_UNIFM_LOC("u_radius", unifm_radius);
+		P_GET_UNIFM_LOC("u_texcoord", unifm_texcoord);
+		P_GET_UNIFM_LOC("u_texsize", unifm_texsize);
+		P_GET_UNIFM_LOC("u_borderw", unifm_borderw);
+		P_GET_UNIFM_LOC("u_is_focused", unifm_is_focused);
+		P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
+#undef P_GET_UNIFM_LOC
+	}
+
+	return true;
+}
+
+/**
+ * Initialize GLX rounded corners filter.
+ */
+bool glx_init_rounded_corners(session_t *ps) {
+
+	{
+		char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
+		// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
+		// Thanks to hiciu for reporting.
+		setlocale(LC_NUMERIC, "C");
+
+		static const char *FRAG_SHADER_PREFIX =
+		    "#version 110\n"
+		    "%s"        // extensions
+		    "uniform float u_radius;\n"
+		    "uniform float u_borderw;\n"
+		    "uniform int u_is_focused;\n"
+		    "uniform vec2 u_texcoord;\n"
+		    "uniform vec2 u_texsize;\n"
+		    "uniform vec2 u_resolution;\n"
+		    "uniform %s tex_scr;\n"        // sampler2D | sampler2DRect
+		    "\n"
+		    "// https://www.shadertoy.com/view/ltS3zW\n"
+		    "float RectSDF(vec2 p, vec2 b, float r) {\n"
+		    "  vec2 d = abs(p) - b + vec2(r);\n"
+		    "  return min(max(d.x, d.y), 0.0) + length(max(d, 0.0)) - r;\n"
+		    "}\n\n"
+		    "// https://www.shadertoy.com/view/ldfSDj\n"
+		    "float udRoundBox( vec2 p, vec2 b, float r )\n"
+		    "{\n"
+		    "  return length(max(abs(p)-b+r,0.0))-r;\n"
+		    "}\n\n"
+		    "void main()\n"
+		    "{\n"
+		    "  vec2 coord = vec2(u_texcoord.x, "
+		    "u_resolution.y-u_texsize.y-u_texcoord.y);\n"
+		    "  vec4 u_v4SrcColor = %s(tex_scr, vec2(gl_TexCoord[0].st));\n"
+		    "\n";
+
+		// Fragment shader (round corners)
+		// dst0 shader
+		static const char *FRAG_SHADER_ROUND_CORNERS_0 =
+		    "  float u_fRadiusPx = u_radius;\n"
+		    "  float u_fHalfBorderThickness = 0.0;\n"
+		    "  vec4 u_v4BorderColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
+		    "  vec4 u_v4FillColor = vec4(0.0, 0.0, 0.0, 0.0);\n"
+		    "  vec4 v4FromColor = u_v4BorderColor;	//Always the border "
+		    "color. If no border, this still should be set\n"
+		    "  vec4 v4ToColor = u_v4SrcColor;		//Outside color is the "
+		    "background texture\n"
+		    "\n"
+		    "  //if (u_is_focused > 0) u_fHalfBorderThickness = u_borderw / "
+		    "2.0;\n"
+		    "  vec2 u_v2HalfShapeSizePx = u_texsize/2.0 - "
+		    "vec2(u_fHalfBorderThickness);\n"
+		    "  vec2 v_v2CenteredPos = (gl_FragCoord.xy - u_texsize.xy / 2.0 - "
+		    "coord);\n"
+		    "\n"
+		    "  float fDist = RectSDF(v_v2CenteredPos, u_v2HalfShapeSizePx, "
+		    "u_fRadiusPx - u_fHalfBorderThickness);\n"
+		    "  if (u_fHalfBorderThickness > 0.0) {\n"
+		    "    if (fDist < 0.0) {\n"
+		    "      v4ToColor = u_v4FillColor;\n"
+		    "    }\n"
+		    "    fDist = abs(fDist) - u_fHalfBorderThickness;\n"
+		    "  } else {\n"
+		    "    v4FromColor = u_v4FillColor;\n"
+		    "  }\n"
+		    "  float fBlendAmount = clamp(fDist + 0.5, 0, 1);\n"
+		    "  //vec4 c = fDist <= 0.0 ? v4FromColor : v4ToColor;\n"
+		    "  vec4 c = mix(v4FromColor, v4ToColor, fBlendAmount);\n"
+		    "\n"
+		    "  // final color\n"
+		    "  if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
+		    "  gl_FragColor = c;\n"
+		    "\n"
+		    "  // OLD SHADER"
+		    "  // compute box\n"
+		    "  /*vec2 halfres = 0.5 * vec2(u_texsize.x - 0.0, u_texsize.y - "
+		    "0.0);\n"
+		    "  float b = udRoundBox( gl_FragCoord.xy - coord - halfres, halfres "
+		    "- 0.0, u_radius + 0.0 );\n"
+		    "\n"
+		    "  // colorize (transparent mid / opaque corners )\n"
+		    "  c = mix( vec4(0.0,0.0,0.0,0.0), u_v4SrcColor, "
+		    "smoothstep(0.0,1.0,b) );\n"
+		    "\n"
+		    "  //if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
+		    "  gl_FragColor = vec4( c );*/\n"
+		    "}\n";
+
+		// Fragment shader (round corners)
+		// dst1 shader
+		static const char *FRAG_SHADER_ROUND_CORNERS_1 =
+		    "  float u_fRadiusPx = u_radius;\n"
+		    "  float u_fHalfBorderThickness = 10.0 /2.0;//0.0;\n"
+		    "  vec4 u_v4BorderColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
+		    "  vec4 u_v4FillColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
+		    "  //vec4 u_v4FillColor = vec4(0.0, 0.0, 0.0, 0.0);\n"
+		    "  vec4 v4FromColor = u_v4BorderColor; //Always the border color. If "
+		    "no border, this still should be set\n"
+		    "  vec4 v4ToColor = vec4(0.0, 0.0, 1.0, 1.0); //Outside color\n"
+		    "  //vec4 v4ToColor = u_v4SrcColor; //Outside color\n"
+		    "\n"
+		    "  if (u_is_focused > 0) u_fHalfBorderThickness = u_borderw / 2.0 * "
+		    "4.02;\n"
+		    "  vec2 u_v2HalfShapeSizePx = u_texsize/2.0 - "
+		    "vec2(u_fHalfBorderThickness);\n"
+		    "  vec2 v_v2CenteredPos = (gl_FragCoord.xy - u_texsize.xy / 2.0 - "
+		    "coord);\n"
+		    "\n"
+		    "  float fDist = RectSDF(v_v2CenteredPos, u_v2HalfShapeSizePx, "
+		    "u_fRadiusPx - u_fHalfBorderThickness);\n"
+		    "  if (u_fHalfBorderThickness > 0.0) {\n"
+		    "    if (fDist < 0.0) {\n"
+		    "      v4ToColor = u_v4FillColor;\n"
+		    "    }\n"
+		    "    fDist = abs(fDist) - u_fHalfBorderThickness;\n"
+		    "  } else {\n"
+		    "    v4FromColor = u_v4FillColor;\n"
+		    "  }\n"
+		    "  float fBlendAmount = clamp(fDist + 0.5, 0, 1);\n"
+		    "  vec4 c = mix(v4FromColor, v4ToColor, fBlendAmount);"
+		    "\n"
+		    "  // final color\n"
+		    "  if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else\n"
+		    "  gl_FragColor = c;\n"
+		    "  //gl_FragColor = vec4(vec3(fBlendAmount), 1.0);\n"
+		    "  //gl_FragColor = vec4(vec3(abs(dist) / (2.0 * corner)), 1.0);\n"
+		    "\n\n"
+		    "  // OLD SHADER"
+		    "  // compute box\n"
+		    "  /*vec2 halfres = 0.5 * vec2(u_texsize.x - 0.0, u_texsize.y - "
+		    "0.0);\n"
+		    "  float b = udRoundBox( gl_FragCoord.xy - coord - halfres, halfres "
+		    "- 0.0, u_radius + 0.0 );\n"
+		    "\n"
+		    "  // colorize (red / green )\n"
+		    "  c = mix( vec4(0.0,1.0,0.0,1.0), vec4(0.0,0.0,1.0,1.0), "
+		    "smoothstep(0.0,1.0,b) );\n"
+		    "\n"
+		    "  //if ( c == vec4(1.0,1.0,1.0,1.0) ) discard; else\n"
+		    "  gl_FragColor = vec4( c );*/\n"
+		    "}\n";
+
+		const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
+		const char *sampler_type = (use_texture_rect ? "sampler2DRect" : "sampler2D");
+		const char *texture_func = (use_texture_rect ? "texture2DRect" : "texture2D");
+		char *extension = NULL;
+		if (use_texture_rect) {
+			mstrextend(&extension, "#extension GL_ARB_texture_rectangle : "
+			                       "require\n");
+		}
+		if (!extension) {
+			extension = strdup("");
+		}
+
+		if (!glx_init_frag_shader_corners(
+		        &ps->psglx->round_passes[0], FRAG_SHADER_PREFIX,
+		        FRAG_SHADER_ROUND_CORNERS_0, extension, sampler_type, texture_func)) {
+
+			log_error("Failed to create rounded corners fragment shader "
+			          "PRE.");
+			setlocale(LC_NUMERIC, lc_numeric_old);
+			free(lc_numeric_old);
+			free(extension);
+			return false;
+		}
+
+		if (!glx_init_frag_shader_corners(
+		        &ps->psglx->round_passes[1], FRAG_SHADER_PREFIX,
+		        FRAG_SHADER_ROUND_CORNERS_1, extension, sampler_type, texture_func)) {
+
+			log_error("Failed to create rounded corners fragment shader "
+			          "POST.");
+			setlocale(LC_NUMERIC, lc_numeric_old);
+			free(lc_numeric_old);
+			free(extension);
+			return false;
+		}
+
+		free(extension);
+
+		// Restore LC_NUMERIC
+		setlocale(LC_NUMERIC, lc_numeric_old);
+		free(lc_numeric_old);
+	}
+
+	gl_check_err();
+
+	return true;
+}
+
 /**
  * Load a GLSL main program from shader strings.
  */
@@ -443,6 +717,118 @@ bool glx_load_prog_main(const char *vshader_str, const char *fshader_str,
 	P_GET_UNIFM_LOC("tex", unifm_tex);
 	P_GET_UNIFM_LOC("time", unifm_time);
 #undef P_GET_UNIFM_LOC
+
+	gl_check_err();
+
+	return true;
+}
+
+/**
+ * @brief Release binding of a texture.
+ */
+void glx_release_texture(session_t *ps attr_unused, glx_texture_t **pptex) {
+	glx_texture_t *ptex = *pptex;
+	// Release binding
+	if (ptex->texture) {
+		// log_info("Deleting texture wh(%d %d)", ptex->width, ptex->height);
+		glBindTexture(ptex->target, 0);
+		glDeleteTextures(1, &ptex->texture);
+	}
+	free(ptex);
+	*pptex = NULL;
+
+	gl_check_err();
+}
+
+/**
+ * Bind a X pixmap to an OpenGL texture.
+ */
+bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex, int x, int y,
+                      int width attr_unused, int height attr_unused, bool repeat attr_unused) {
+	if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID)
+		return true;
+
+	glx_texture_t *ptex = *pptex;
+
+	// log_trace("Copying xy(%d %d) wh(%d %d)", x, y, width, height);
+
+	// Release texture if parameters are inconsistent
+	if (ptex && ptex->texture && (ptex->width != width || ptex->height != height)) {
+		log_info("Windows size changed old_wh(%d %d) new_wh(%d %d)", ptex->width,
+		         ptex->height, width, height);
+		glx_release_texture(ps, &ptex);
+	}
+
+	// Allocate structure
+	if (!ptex) {
+		static const glx_texture_t GLX_TEX_DEF = {
+		    .texture = 0,
+		    .glpixmap = 0,
+		    .pixmap = 0,
+		    .target = 0,
+		    .width = 0,
+		    .height = 0,
+		    .y_inverted = false,
+		};
+
+		ptex = cmalloc(glx_texture_t);
+		memcpy(ptex, &GLX_TEX_DEF, sizeof(glx_texture_t));
+		*pptex = ptex;
+
+		ptex->width = width;
+		ptex->height = height;
+		ptex->target = GL_TEXTURE_RECTANGLE;
+		if (ps->psglx->has_texture_non_power_of_two)
+			ptex->target = GL_TEXTURE_2D;
+	}
+
+	// Create texture
+	if (!ptex->texture) {
+		// log_info("Generating texture for xy(%d %d) wh(%d %d)", x, y, width,
+		// height);
+		GLuint texture = 0;
+		glGenTextures(1, &texture);
+
+		if (texture) {
+			glEnable(ptex->target);
+			glBindTexture(ptex->target, texture);
+
+			glTexParameteri(ptex->target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(ptex->target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			if (repeat) {
+				glTexParameteri(ptex->target, GL_TEXTURE_WRAP_S, GL_REPEAT);
+				glTexParameteri(ptex->target, GL_TEXTURE_WRAP_T, GL_REPEAT);
+			} else {
+				glTexParameteri(ptex->target, GL_TEXTURE_WRAP_S,
+				                GL_CLAMP_TO_EDGE);
+				glTexParameteri(ptex->target, GL_TEXTURE_WRAP_T,
+				                GL_CLAMP_TO_EDGE);
+			}
+
+			glTexImage2D(ptex->target, 0, GL_RGB, width, height, 0, GL_RGB,
+			             GL_UNSIGNED_BYTE, NULL);
+
+			glBindTexture(ptex->target, 0);
+			// glDisable(ptex->target);
+		}
+
+		ptex->texture = texture;
+	}
+	if (!ptex->texture) {
+		log_error("Failed to allocate texture.");
+		return false;
+	}
+
+	// Read destination pixels into a texture
+	glEnable(ptex->target);
+	glBindTexture(ptex->target, ptex->texture);
+	if (width > 0 && height > 0)
+		glCopyTexSubImage2D(ptex->target, 0, 0, 0, x,
+		                    ps->root_height - y - height, width, height);
+
+	// Cleanup
+	glBindTexture(ptex->target, 0);
+	glDisable(ptex->target);
 
 	gl_check_err();
 
@@ -889,6 +1275,304 @@ glx_blur_dst_end:
 	return ret;
 }
 
+static void
+bind_sampler_to_unit_with_texture(GLuint prog, GLchar const *const sampler_name,
+                                  GLuint texture_unit, GLenum tex_tgt, GLuint texture) {
+	glActiveTexture(GL_TEXTURE0 + texture_unit);
+	glBindTexture(tex_tgt, texture);
+	GLint loc_sampler = glGetUniformLocation(prog, sampler_name);
+	glUniform1i(loc_sampler, (GLint)texture_unit);
+}
+
+bool glx_round_corners_dst0(session_t *ps, struct managed_win *w,
+                            const glx_texture_t *ptex attr_unused, int shader_idx, int dx,
+                            int dy, int width, int height, float z, float cr,
+                            const region_t *reg_tgt attr_unused, glx_blur_cache_t *pbc) {
+
+	assert(shader_idx >= 0 && shader_idx <= 1);
+	assert(ps->psglx->round_passes[0].prog);
+	assert(ps->psglx->round_passes[1].prog);
+	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
+	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
+	bool ret = false;
+
+	// log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d) b(%d), f(%d)",
+	//	dx, dy, width, height, ps->root_width, ps->root_height, w->g.border_width,
+	// w->focused);
+
+	// Calculate copy region size
+	glx_blur_cache_t ibc = {.width = 0, .height = 0};
+	if (!pbc)
+		pbc = &ibc;
+
+	int mdx = dx, mdy = dy, mwidth = width, mheight = height;
+	// log_trace("%d, %d, %d, %d", mdx, mdy, mwidth, mheight);
+
+	GLenum tex_tgt = GL_TEXTURE_RECTANGLE;
+	if (ps->psglx->has_texture_non_power_of_two)
+		tex_tgt = GL_TEXTURE_2D;
+
+	// Free textures if size inconsistency discovered
+	if (mwidth != pbc->width || mheight != pbc->height)
+		free_glx_bc_resize(ps, pbc);
+
+	// Generate FBO and textures if needed
+	if (!pbc->textures[0])
+		pbc->textures[0] = glx_gen_texture(tex_tgt, mwidth, mheight);
+	GLuint tex_scr = pbc->textures[0];
+
+	pbc->width = mwidth;
+	pbc->height = mheight;
+
+	if (!tex_scr) {
+		log_error("Failed to allocate texture.");
+		goto glx_round_corners_dst_end;
+	}
+
+	// Read destination pixels into a texture
+	glEnable(tex_tgt);
+	glBindTexture(tex_tgt, tex_scr);
+	glx_copy_region_to_tex(ps, tex_tgt, mdx, mdy, mdx, mdy, mwidth, mheight);
+
+	// Texture scaling factor
+	GLfloat texfac_x = 1.0f, texfac_y = 1.0f;
+	if (tex_tgt == GL_TEXTURE_2D) {
+		texfac_x /= (GLfloat)mwidth;
+		texfac_y /= (GLfloat)mheight;
+	}
+
+	// Paint it back
+	{
+		glDisable(GL_STENCIL_TEST);
+		glDisable(GL_SCISSOR_TEST);
+	}
+
+	{
+		const glx_round_pass_t *ppass = &ps->psglx->round_passes[shader_idx];
+		assert(ppass->prog);
+
+		assert(tex_scr);
+		glBindTexture(tex_tgt, tex_scr);
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glDrawBuffer(GL_BACK);
+		if (have_scissors)
+			glEnable(GL_SCISSOR_TEST);
+		if (have_stencil)
+			glEnable(GL_STENCIL_TEST);
+
+		// Our shader generates a transparent mid section
+		// with opaque corners copied from the background texture
+		// We must use blending to get the window pixesl to appear
+		// glDisable(GL_BLEND);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+
+		glUseProgram(ppass->prog);
+
+		// If caller specified a texture use it as source
+		if (ptex) {
+			log_debug("ptex: %p wh(%d %d) %d %d", ptex, ptex->width,
+			          ptex->height, ptex->target, ptex->texture);
+			bind_sampler_to_unit_with_texture(ppass->prog, "tex_scr", 0,
+			                                  ptex->target, ptex->texture);
+		} else {
+			bind_sampler_to_unit_with_texture(ppass->prog, "tex_scr", 0,
+			                                  tex_tgt, tex_scr);
+		}
+
+		if (ppass->unifm_radius >= 0)
+			glUniform1f(ppass->unifm_radius, cr);
+		if (ppass->unifm_texcoord >= 0)
+			glUniform2f(ppass->unifm_texcoord, (float)dx, (float)dy);
+		if (ppass->unifm_texsize >= 0)
+			glUniform2f(ppass->unifm_texsize, (float)mwidth, (float)mheight);
+		if (ppass->unifm_borderw >= 0)
+			glUniform1f(ppass->unifm_borderw, w->g.border_width);
+		if (ppass->unifm_is_focused >= 0)
+			glUniform1i(ppass->unifm_is_focused, w->focused);
+		if (ppass->unifm_resolution >= 0)
+			glUniform2f(ppass->unifm_resolution, (float)ps->root_width,
+			            (float)ps->root_height);
+
+		// Painting
+		{
+			P_PAINTREG_START(crect) {
+				// XXX explain these variables
+				auto rx = (GLfloat)(crect.x1 - dx);
+				auto ry = (GLfloat)(crect.y1 - dy);
+				auto rxe = rx + (GLfloat)(crect.x2 - crect.x1);
+				auto rye = ry + (GLfloat)(crect.y2 - crect.y1);
+				// Rectangle textures have [0-w] [0-h] while 2D texture
+				// has [0-1] [0-1] Thanks to amonakov for pointing out!
+				if (GL_TEXTURE_2D == tex_tgt) {
+					rx = rx / (GLfloat)width;
+					ry = ry / (GLfloat)height;
+					rxe = rxe / (GLfloat)width;
+					rye = rye / (GLfloat)height;
+				}
+				auto rdx = (GLfloat)crect.x1;
+				auto rdy = (GLfloat)(ps->root_height - crect.y1);
+				auto rdxe = (GLfloat)rdx + (GLfloat)(crect.x2 - crect.x1);
+				auto rdye = (GLfloat)rdy - (GLfloat)(crect.y2 - crect.y1);
+
+				// Invert Y if needed, this may not work as expected,
+				// though. I don't have such a FBConfig to test with.
+				// if (ptex && !ptex->y_inverted) {
+				if (shader_idx == 0) {
+					ry = 1.0f - ry;
+					rye = 1.0f - rye;
+				}
+
+				// log_trace("Rect %d (i:%d): %f, %f, %f, %f -> %f, %f,
+				// %f, %f", 	ri ,ptex ? ptex->y_inverted : -1, rx, ry,
+				// rxe,
+				// rye, rdx, rdy, rdxe, rdye);
+
+				glTexCoord2f(rx, ry);
+				glVertex3f(rdx, rdy, z);
+
+				glTexCoord2f(rxe, ry);
+				glVertex3f(rdxe, rdy, z);
+
+				glTexCoord2f(rxe, rye);
+				glVertex3f(rdxe, rdye, z);
+
+				glTexCoord2f(rx, rye);
+				glVertex3f(rdx, rdye, z);
+			}
+			P_PAINTREG_END();
+		}
+
+		glUseProgram(0);
+		glDisable(GL_BLEND);
+	}
+
+	ret = true;
+
+glx_round_corners_dst_end:
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glBindTexture(tex_tgt, 0);
+	glDisable(tex_tgt);
+	if (have_scissors)
+		glEnable(GL_SCISSOR_TEST);
+	if (have_stencil)
+		glEnable(GL_STENCIL_TEST);
+
+	if (&ibc == pbc) {
+		free_glx_bc(ps, pbc);
+	}
+
+	gl_check_err();
+
+	return ret;
+}
+
+bool glx_round_corners_dst1(session_t *ps, struct managed_win *w, const glx_texture_t *ptex,
+                            int shader_idx, int dx, int dy, int width, int height,
+                            float z, float cr, const region_t *reg_tgt attr_unused,
+                            glx_blur_cache_t *pbc attr_unused) {
+
+	assert(shader_idx >= 0 && shader_idx <= 1);
+	assert(ps->psglx->round_passes[0].prog);
+	assert(ps->psglx->round_passes[1].prog);
+	bool ret = false;
+
+	{
+		const glx_round_pass_t *ppass = &ps->psglx->round_passes[shader_idx];
+		assert(ppass->prog);
+
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+		glUseProgram(ppass->prog);
+
+		// If caller specified a texture use it as source
+		if (ptex) {
+			log_debug("ptex: %p wh(%d %d) %d %d", ptex, ptex->width,
+			          ptex->height, ptex->target, ptex->texture);
+			bind_sampler_to_unit_with_texture(ppass->prog, "tex_scr", 0,
+			                                  ptex->target, ptex->texture);
+		}
+
+		if (ppass->unifm_radius >= 0)
+			glUniform1f(ppass->unifm_radius, cr);
+		if (ppass->unifm_texcoord >= 0)
+			glUniform2f(ppass->unifm_texcoord, (float)dx, (float)dy);
+		if (ppass->unifm_texsize >= 0)
+			glUniform2f(ppass->unifm_texsize, (float)width, (float)height);
+		if (ppass->unifm_borderw >= 0)
+			glUniform1f(ppass->unifm_borderw, w->g.border_width);
+		if (ppass->unifm_is_focused >= 0)
+			glUniform1i(ppass->unifm_is_focused, w->focused);
+		if (ppass->unifm_resolution >= 0)
+			glUniform2f(ppass->unifm_resolution, (float)ps->root_width,
+			            (float)ps->root_height);
+
+		// Painting
+		{
+			P_PAINTREG_START(crect) {
+				// XXX explain these variables
+				auto rx = (GLfloat)(crect.x1 - dx);
+				auto ry = (GLfloat)(crect.y1 - dy);
+				auto rxe = rx + (GLfloat)(crect.x2 - crect.x1);
+				auto rye = ry + (GLfloat)(crect.y2 - crect.y1);
+				// Rectangle textures have [0-w] [0-h] while 2D texture
+				// has [0-1] [0-1] Thanks to amonakov for pointing out!
+				if (GL_TEXTURE_2D == ptex->target) {
+					rx = rx / (GLfloat)width;
+					ry = ry / (GLfloat)height;
+					rxe = rxe / (GLfloat)width;
+					rye = rye / (GLfloat)height;
+				}
+				auto rdx = (GLfloat)crect.x1;
+				auto rdy = (GLfloat)(ps->root_height - crect.y1);
+				auto rdxe = (GLfloat)rdx + (GLfloat)(crect.x2 - crect.x1);
+				auto rdye = (GLfloat)rdy - (GLfloat)(crect.y2 - crect.y1);
+
+				// Invert Y if needed, this may not work as expected,
+				// though. I don't have such a FBConfig to test with.
+				// if (ptex && !ptex->y_inverted) {
+				if (shader_idx == 0) {
+					ry = 1.0f - ry;
+					rye = 1.0f - rye;
+				}
+
+				// log_trace("Rect %d (i:%d): %f, %f, %f, %f -> %f, %f,
+				// %f, %f", 	ri ,ptex ? ptex->y_inverted : -1, rx, ry,
+				// rxe,
+				// rye, rdx, rdy, rdxe, rdye);
+
+				glTexCoord2f(rx, ry);
+				glVertex3f(rdx, rdy, z);
+
+				glTexCoord2f(rxe, ry);
+				glVertex3f(rdxe, rdy, z);
+
+				glTexCoord2f(rxe, rye);
+				glVertex3f(rdxe, rdye, z);
+
+				glTexCoord2f(rx, rye);
+				glVertex3f(rdx, rdye, z);
+			}
+			P_PAINTREG_END();
+		}
+
+		glUseProgram(0);
+		glDisable(GL_BLEND);
+	}
+
+	ret = true;
+
+	// glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	gl_check_err();
+
+	return ret;
+}
+
 bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
                  GLfloat factor, const region_t *reg_tgt) {
 	// It's possible to dim in glx_render(), but it would be over-complicated
@@ -922,8 +1606,9 @@ bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
 /**
  * @brief Render a region with texture data.
  */
-bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, int dy,
-                int width, int height, int z, double opacity, bool argb, bool neg,
+bool glx_render(session_t *ps, struct managed_win *w attr_unused,
+                const glx_texture_t *ptex, int x, int y, int dx, int dy, int width,
+                int height, int z, double opacity, bool argb, bool neg, int cr attr_unused,
                 const region_t *reg_tgt, const glx_prog_main_t *pprogram) {
 	if (!ptex || !ptex->texture) {
 		log_error("Missing texture.");
@@ -938,7 +1623,7 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 	glEnable(ptex->target);
 
 	// Enable blending if needed
-	if (opacity < 1.0 || argb) {
+	if (opacity < 1.0 || argb || cr > 0) {
 
 		glEnable(GL_BLEND);
 
