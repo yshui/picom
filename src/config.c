@@ -537,6 +537,8 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .shadow_ignore_shaped = false,
 	    .xinerama_shadow_crop = false,
 
+	    .corner_radius = 0,
+
 	    .fade_in_step = 0.028,
 	    .fade_out_step = 0.03,
 	    .fade_delta = 10,
