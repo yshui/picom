@@ -41,6 +41,7 @@ typedef struct win_option_mask {
 	bool shadow : 1;
 	bool fade : 1;
 	bool focus : 1;
+	bool blur_background : 1;
 	bool full_shadow : 1;
 	bool redir_ignore : 1;
 	bool opacity : 1;
@@ -50,6 +51,7 @@ typedef struct win_option {
 	bool shadow;
 	bool fade;
 	bool focus;
+	bool blur_background;
 	bool full_shadow;
 	bool redir_ignore;
 	double opacity;
@@ -271,7 +273,7 @@ parse_config_libconfig(options_t *, const char *config_file, bool *shadow_enable
 #endif
 
 void set_default_winopts(options_t *, win_option_mask_t *, bool shadow_enable,
-                         bool fading_enable);
+                         bool fading_enable, bool blur_enable);
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
 /// default values
 /// Outputs and returns:

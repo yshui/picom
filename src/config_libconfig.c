@@ -270,6 +270,10 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 			o->focus = ival;
 			mask->focus = true;
 		}
+		if (config_setting_lookup_bool(setting, "blur-background", &ival)) {
+			o->blur_background = ival;
+			mask->blur_background = true;
+		}
 		if (config_setting_lookup_bool(setting, "full-shadow", &ival)) {
 			o->full_shadow = ival;
 			mask->full_shadow = true;

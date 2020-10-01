@@ -452,7 +452,7 @@ bool condlst_add(c2_lptr_t **pcondlst, const char *pattern) {
 }
 
 void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_enable,
-                         bool fading_enable) {
+                         bool fading_enable, bool blur_enable) {
 	// Apply default wintype options.
 	if (!mask[WINTYPE_DESKTOP].shadow) {
 		// Desktop windows are always drawn without shadow by default.
@@ -481,6 +481,10 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 		if (!mask[i].focus) {
 			mask[i].focus = true;
 			opt->wintype_option[i].focus = true;
+		}
+		if (!mask[i].blur_background) {
+			mask[i].blur_background = true;
+			opt->wintype_option[i].blur_background = blur_enable;
 		}
 		if (!mask[i].full_shadow) {
 			mask[i].full_shadow = true;

@@ -351,7 +351,7 @@ Window-type-specific settings are exposed only in configuration file and has the
 ------------
 wintypes:
 {
-  WINDOW_TYPE = { fade = BOOL; shadow = BOOL; opacity = FLOAT; focus = BOOL; full-shadow = BOOL; redir-ignore = BOOL; };
+  WINDOW_TYPE = { fade = BOOL; shadow = BOOL; opacity = FLOAT; focus = BOOL; blur-background = BOOL; full-shadow = BOOL; redir-ignore = BOOL; };
 };
 ------------
 
@@ -367,6 +367,9 @@ Following per window-type options are available: ::
 
   focus:::
     Controls whether the window of this type is to be always considered focused. (By default, all window types except "normal" and "dialog" has this on.)
+
+  blur-background:::
+    Controls wether the window of this type will have its transparent background blurred.
 
   full-shadow:::
     Controls whether shadow is drawn under the parts of the window that you normally won't be able to see. Useful when the window has parts of it transparent, and you want shadows in those areas.

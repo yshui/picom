@@ -921,13 +921,14 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		}
 	}
 
-	// Apply default wintype options that are dependent on global options
-	set_default_winopts(opt, winopt_mask, shadow_enable, fading_enable);
-
 	// --blur-background-frame implies --blur-background
 	if (opt->blur_background_frame && opt->blur_method == BLUR_METHOD_NONE) {
 		opt->blur_method = BLUR_METHOD_KERNEL;
 	}
+
+	// Apply default wintype options that are dependent on global options
+	set_default_winopts(opt, winopt_mask, shadow_enable, fading_enable,
+	                    opt->blur_method != BLUR_METHOD_NONE);
 
 	// Other variables determined by options
 

@@ -873,11 +873,20 @@ win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_backgrou
  * Determine if a window should have background blurred.
  */
 static void win_determine_blur_background(session_t *ps, struct managed_win *w) {
+	log_debug("Determining blur-background of window %#010x (%s)", w->base.id, w->name);
 	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
 		return;
 
-	bool blur_background_new =
-	    ps->o.blur_method && !c2_match(ps, w, ps->o.blur_background_blacklist, NULL);
+	bool blur_background_new = ps->o.blur_method != BLUR_METHOD_NONE;
+	if (blur_background_new) {
+		if (!ps->o.wintype_option[w->window_type].blur_background) {
+			log_debug("Blur background disabled by wintypes");
+			blur_background_new = false;
+		} else if (c2_match(ps, w, ps->o.blur_background_blacklist, NULL)) {
+			log_debug("Blur background disabled by blur-background-exclude");
+			blur_background_new = false;
+		}
+	}
 
 	win_set_blur_background(ps, w, blur_background_new);
 }
