@@ -98,6 +98,10 @@
 # define __has_include(x) 0
 #endif
 
+#ifndef popcount
+#define popcount(x) __builtin_popcount(x)
+#endif
+
 #if !defined(__STDC_NO_THREADS__) && __has_include(<threads.h>)
 # include <threads.h>
 #elif __STDC_VERSION__ >= 201112L
@@ -110,7 +114,3 @@
 
 typedef unsigned long ulong;
 typedef unsigned int uint;
-
-static inline int popcount(uint x) {
-	return __builtin_popcount(x);
-}

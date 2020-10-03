@@ -136,9 +136,9 @@ static inline int attr_const normalize_i_range(int i, int min, int max) {
 /// clamp `val` into interval [min, max]
 #define clamp(val, min, max) max2(min2(val, max), min)
 
-static inline int attr_const popcountl(unsigned long a) {
-	return __builtin_popcountl(a);
-}
+#ifndef popcountl
+#define popcountl(x) __builtin_popcountl(x)
+#endif
 
 /**
  * Normalize a double value to a specific range.
