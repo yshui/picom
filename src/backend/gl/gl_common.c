@@ -506,7 +506,8 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 		       sizeof(GLint[2]) * 8);
 
 		GLuint u = (GLuint)(i * 4);
-		memcpy(&indices[i * 6], ((GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0}),
+		memcpy(&indices[i * 6],
+		       ((GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0}),
 		       sizeof(GLuint) * 6);
 	}
 }
@@ -1028,7 +1029,8 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 		      y2 = y_inverted ? height - rect[i].y1 : rect[i].y2;
 		memcpy(&coord[i * 8],
 		       ((GLint[][2]){
-		           {rect[i].x1, y1}, {rect[i].x2, y1}, {rect[i].x2, y2}, {rect[i].x1, y2}}),
+		           {rect[i].x1, y1}, {rect[i].x2, y1},
+		           {rect[i].x2, y2}, {rect[i].x1, y2}}),
 		       sizeof(GLint[2]) * 4);
 		indices[i * 6 + 0] = (GLuint)i * 4 + 0;
 		indices[i * 6 + 1] = (GLuint)i * 4 + 1;
@@ -1843,7 +1845,8 @@ void gl_present(backend_t *base, const region_t *region) {
 		// clang-format on
 
 		GLuint u = (GLuint)(i * 4);
-		memcpy(&indices[i * 6], ((GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0}),
+		memcpy(&indices[i * 6],
+                       ((GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0}),
 		       sizeof(GLuint) * 6);
 	}
 
