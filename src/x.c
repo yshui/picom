@@ -632,10 +632,10 @@ struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual
 		return (struct xvisual_info){-1, -1, -1, -1, -1, 0};
 	}
 
-	int red_size = popcountl(pictfmt->direct.red_mask),
-	    blue_size = popcountl(pictfmt->direct.blue_mask),
-	    green_size = popcountl(pictfmt->direct.green_mask),
-	    alpha_size = popcountl(pictfmt->direct.alpha_mask);
+	int red_size = popcntul(pictfmt->direct.red_mask),
+	    blue_size = popcntul(pictfmt->direct.blue_mask),
+	    green_size = popcntul(pictfmt->direct.green_mask),
+	    alpha_size = popcntul(pictfmt->direct.alpha_mask);
 
 	return (struct xvisual_info){
 	    .red_size = red_size,
