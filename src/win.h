@@ -209,7 +209,8 @@ struct managed_win {
 	/// Previous window opacity.
 	double opacity_target_old;
 	/// true if window (or client window, for broken window managers
-	/// not transferring client window's _NET_WM_WINDOW_OPACITY value) has opacity prop
+	/// not transferring client window's _NET_WM_WINDOW_OPACITY value) has opacity
+	/// prop
 	bool has_opacity_prop;
 	/// Cached value of opacity window attribute.
 	opacity_t opacity_prop;
@@ -269,6 +270,9 @@ struct managed_win {
 
 	/// Whether to blur window background.
 	bool blur_background;
+
+	/// The custom window shader to use when rendering.
+	struct shader_info *fg_shader;
 
 #ifdef CONFIG_OPENGL
 	/// Textures and FBO background blur use.
