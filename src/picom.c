@@ -955,9 +955,14 @@ static int register_cm(session_t *ps) {
 	}
 
 	// Set COMPTON_VERSION
-	if (!wid_set_text_prop(ps, ps->reg_win, get_atom(ps->atoms, "COMPTON_VERSION"),
-	                       COMPTON_VERSION)) {
-		log_error("Failed to set COMPTON_VERSION.");
+	e = xcb_request_check(
+	    ps->c, xcb_change_property_checked(
+	               ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win,
+	               get_atom(ps->atoms, "COMPTON_VERSION"), XCB_ATOM_STRING, 8,
+	               (uint32_t)strlen(COMPTON_VERSION), COMPTON_VERSION));
+	if (e) {
+		log_error_x_error(e, "Failed to set COMPTON_VERSION.");
+		free(e);
 	}
 
 	// Acquire X Selection _NET_WM_CM_S?

@@ -103,39 +103,6 @@ free_win_res_glx(session_t *ps attr_unused, struct managed_win *w attr_unused) {
 #endif
 
 /**
- * Create a XTextProperty of a single string.
- */
-static inline XTextProperty *make_text_prop(session_t *ps, char *str) {
-	XTextProperty *pprop = ccalloc(1, XTextProperty);
-
-	if (XmbTextListToTextProperty(ps->dpy, &str, 1, XStringStyle, pprop)) {
-		XFree(pprop->value);
-		free(pprop);
-		pprop = NULL;
-	}
-
-	return pprop;
-}
-
-/**
- * Set a single-string text property on a window.
- */
-static inline bool
-wid_set_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop_atom, char *str) {
-	XTextProperty *pprop = make_text_prop(ps, str);
-	if (!pprop) {
-		log_error("Failed to make text property: %s.", str);
-		return false;
-	}
-
-	XSetTextProperty(ps->dpy, wid, pprop, prop_atom);
-	XFree(pprop->value);
-	XFree(pprop);
-
-	return true;
-}
-
-/**
  * Dump an drawable's info.
  */
 static inline void dump_drawable(session_t *ps, xcb_drawable_t drawable) {
