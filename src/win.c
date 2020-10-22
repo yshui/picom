@@ -535,28 +535,20 @@ static bool attr_pure win_has_rounded_corners(const struct managed_win *w) {
 }
 
 int win_update_name(session_t *ps, struct managed_win *w) {
-	XTextProperty text_prop = {NULL, XCB_NONE, 0, 0};
 	char **strlst = NULL;
 	int nstr = 0;
 
-	if (!w->client_win)
+	if (!w->client_win) {
 		return 0;
+	}
 
 	if (!(wid_get_text_prop(ps, w->client_win, ps->atoms->a_NET_WM_NAME, &strlst, &nstr))) {
 		log_trace("(%#010x): _NET_WM_NAME unset, falling back to WM_NAME.",
 		          w->client_win);
 
-		if (!(XGetWMName(ps->dpy, w->client_win, &text_prop) && text_prop.value)) {
+		if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_NAME, &strlst, &nstr)) {
 			return -1;
 		}
-		if (Success != XmbTextPropertyToTextList(ps->dpy, &text_prop, &strlst, &nstr) ||
-		    !nstr || !strlst) {
-			if (strlst)
-				XFreeStringList(strlst);
-			XFree(text_prop.value);
-			return -1;
-		}
-		XFree(text_prop.value);
 	}
 
 	int ret = 0;
@@ -566,7 +558,7 @@ int win_update_name(session_t *ps, struct managed_win *w) {
 		w->name = strdup(strlst[0]);
 	}
 
-	XFreeStringList(strlst);
+	free(strlst);
 
 	log_trace("(%#010x): client = %#010x, name = \"%s\", "
 	          "ret = %d",
@@ -578,8 +570,9 @@ static int win_update_role(session_t *ps, struct managed_win *w) {
 	char **strlst = NULL;
 	int nstr = 0;
 
-	if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_WINDOW_ROLE, &strlst, &nstr))
+	if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_WINDOW_ROLE, &strlst, &nstr)) {
 		return -1;
+	}
 
 	int ret = 0;
 	if (!w->role || strcmp(w->role, strlst[0]) != 0) {
@@ -588,7 +581,7 @@ static int win_update_role(session_t *ps, struct managed_win *w) {
 		w->role = strdup(strlst[0]);
 	}
 
-	XFreeStringList(strlst);
+	free(strlst);
 
 	log_trace("(%#010x): client = %#010x, role = \"%s\", "
 	          "ret = %d",
@@ -1577,16 +1570,18 @@ bool win_update_class(session_t *ps, struct managed_win *w) {
 	w->class_general = NULL;
 
 	// Retrieve the property string list
-	if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_CLASS, &strlst, &nstr))
+	if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_CLASS, &strlst, &nstr)) {
 		return false;
+	}
 
 	// Copy the strings if successful
 	w->class_instance = strdup(strlst[0]);
 
-	if (nstr > 1)
+	if (nstr > 1) {
 		w->class_general = strdup(strlst[1]);
+	}
 
-	XFreeStringList(strlst);
+	free(strlst);
 
 	log_trace("(%#010x): client = %#010x, "
 	          "instance = \"%s\", general = \"%s\"",

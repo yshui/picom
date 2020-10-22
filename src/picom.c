@@ -13,6 +13,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/sync.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -918,7 +919,7 @@ void opts_set_no_fading_openclose(session_t *ps, bool newval) {
 #endif
 
 /**
- * Register us with the compositor selection (_NET_WM_CM_S)
+ * Setup window properties, then register us with the compositor selection (_NET_WM_CM_S)
  *
  * @return 0 if success, 1 if compositor already running, -1 if error.
  */
@@ -936,15 +937,56 @@ static int register_cm(session_t *ps) {
 		return -1;
 	}
 
-	{
-		XClassHint *h = XAllocClassHint();
-		if (h) {
-			h->res_name = "picom";
-			h->res_class = "picom";
+	const xcb_atom_t prop_atoms[] = {
+	    ps->atoms->aWM_NAME,
+	    ps->atoms->a_NET_WM_NAME,
+	    ps->atoms->aWM_ICON_NAME,
+	};
+
+	const bool prop_is_utf8[] = {false, true, false};
+
+	// Set names and classes
+	for (size_t i = 0; i < ARR_SIZE(prop_atoms); i++) {
+		e = xcb_request_check(
+		    ps->c, xcb_change_property_checked(
+		               ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win, prop_atoms[i],
+		               prop_is_utf8[i] ? ps->atoms->aUTF8_STRING : XCB_ATOM_STRING,
+		               8, strlen("picom"), "picom"));
+		if (e) {
+			log_error_x_error(e, "Failed to set window property %d",
+			                  prop_atoms[i]);
+			free(e);
 		}
-		Xutf8SetWMProperties(ps->dpy, ps->reg_win, "picom", "picom", NULL, 0,
-		                     NULL, NULL, h);
-		XFree(h);
+	}
+
+	const char picom_class[] = "picom\0picom";
+	e = xcb_request_check(
+	    ps->c, xcb_change_property_checked(ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win,
+	                                       ps->atoms->aWM_CLASS, XCB_ATOM_STRING, 8,
+	                                       ARR_SIZE(picom_class), picom_class));
+	if (e) {
+		log_error_x_error(e, "Failed to set the WM_CLASS property");
+		free(e);
+	}
+
+	// Set WM_CLIENT_MACHINE. As per EWMH, because we set _NET_WM_PID, we must also
+	// set WM_CLIENT_MACHINE.
+	{
+		char hostname[HOST_NAME_MAX];
+		if (gethostname(hostname, sizeof(hostname)) == 0) {
+			e = xcb_request_check(
+			    ps->c, xcb_change_property_checked(
+			               ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win,
+			               ps->atoms->aWM_CLIENT_MACHINE, XCB_ATOM_STRING, 8,
+			               (uint32_t)strlen(hostname), hostname));
+			if (e) {
+				log_error_x_error(e, "Failed to set the WM_CLIENT_MACHINE"
+				                     " property");
+				free(e);
+			}
+		} else {
+			log_error_errno("Failed to get hostname");
+		}
 	}
 
 	// Set _NET_WM_PID
@@ -997,8 +1039,9 @@ static int register_cm(session_t *ps) {
  * Write PID to a file.
  */
 static inline bool write_pid(session_t *ps) {
-	if (!ps->o.write_pid_path)
+	if (!ps->o.write_pid_path) {
 		return true;
+	}
 
 	FILE *f = fopen(ps->o.write_pid_path, "w");
 	if (unlikely(!f)) {

@@ -1054,7 +1054,7 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		glXWaitX();
 		glx_render(ps, ps->tgt_buffer.ptex, 0, 0, 0, 0, ps->root_width,
 		           ps->root_height, 0, 1.0, false, false, &region, NULL);
-		// falls through
+		fallthrough();
 	case BKEND_GLX: glXSwapBuffers(ps->dpy, get_tgt_window(ps)); break;
 #endif
 	default: assert(0);
