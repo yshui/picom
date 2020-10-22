@@ -53,6 +53,31 @@ static const int WIN_GET_LEADER_MAX_RECURSION = 20;
 static const int ROUNDED_PIXELS = 1;
 static const double ROUNDED_PERCENT = 0.05;
 
+/**
+ * Retrieve the <code>WM_CLASS</code> of a window and update its
+ * <code>win</code> structure.
+ */
+static bool win_update_class(session_t *ps, struct managed_win *w);
+static int win_update_role(session_t *ps, struct managed_win *w);
+static void win_update_wintype(session_t *ps, struct managed_win *w);
+static int win_update_name(session_t *ps, struct managed_win *w);
+/**
+ * Reread opacity property of a window.
+ */
+static void win_update_opacity_prop(session_t *ps, struct managed_win *w);
+static void win_update_opacity_target(session_t *ps, struct managed_win *w);
+/**
+ * Retrieve frame extents from a window.
+ */
+static void
+win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t client);
+static void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w);
+static void win_update_prop_shadow(session_t *ps, struct managed_win *w);
+/**
+ * Update leader of a window.
+ */
+static void win_update_leader(session_t *ps, struct managed_win *w);
+
 /// Generate a "return by value" function, from a function that returns the
 /// region via a region_t pointer argument.
 /// Function signature has to be (win *, region_t *)
@@ -320,10 +345,80 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 	}
 }
 
+/// Returns true if the `prop` property is stale, as well as clears the stale flag.
+static bool win_fetch_and_unset_property_stale(struct managed_win *w, xcb_atom_t prop);
+/// Returns true if any of the properties are stale, as well as clear all the stale flags.
+static bool win_check_and_clear_all_properties_stale(struct managed_win *w);
+
 void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
 		map_win_start(ps, w);
 		win_clear_flags(w, WIN_FLAGS_MAPPED);
+	}
+
+	// Check client first, because later property updates need accurate client window
+	// information
+	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
+		win_recheck_client(ps, w);
+		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
+	}
+
+	if (win_check_flags_all(w, WIN_FLAGS_PROPERTY_STALE)) {
+		bool factor_change = false;
+
+		if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_TYPE)) {
+			win_update_wintype(ps, w);
+		}
+
+		if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY)) {
+			win_update_opacity_prop(ps, w);
+			// we cannot receive OPACITY change when window has been destroyed
+			assert(w->state != WSTATE_DESTROYING);
+			win_update_opacity_target(ps, w);
+		}
+
+		if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_FRAME_EXTENTS)) {
+			win_update_frame_extents(ps, w, w->client_win);
+			add_damage_from_win(ps, w);
+		}
+
+		if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_NAME) ||
+		    win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_NAME)) {
+			if (win_update_name(ps, w) == 1) {
+				factor_change = true;
+			}
+		}
+
+		if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLASS)) {
+			if (win_update_class(ps, w)) {
+				factor_change = true;
+			}
+		}
+
+		if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_WINDOW_ROLE)) {
+			if (win_update_role(ps, w) == 1) {
+				factor_change = true;
+			}
+		}
+
+		if (win_fetch_and_unset_property_stale(w, ps->atoms->a_COMPTON_SHADOW)) {
+			win_update_prop_shadow(ps, w);
+		}
+
+		if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLIENT_LEADER) ||
+		    win_fetch_and_unset_property_stale(w, ps->atoms->aWM_TRANSIENT_FOR)) {
+			win_update_leader(ps, w);
+		}
+
+		if (win_check_and_clear_all_properties_stale(w)) {
+			// Some other flags we didn't explicitly check has changed, must
+			// have been a tracked atom for the custom rules
+			factor_change = true;
+		}
+
+		if (factor_change) {
+			win_on_factor_change(ps, w);
+		}
 	}
 }
 
@@ -373,11 +468,6 @@ void win_process_image_flags(session_t *ps, struct managed_win *w) {
 	// Clear stale image flags
 	if (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE)) {
 		win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
-	}
-
-	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
-		win_recheck_client(ps, w);
-		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
 	}
 }
 
@@ -458,7 +548,7 @@ int win_update_name(session_t *ps, struct managed_win *w) {
 	return ret;
 }
 
-int win_get_role(session_t *ps, struct managed_win *w) {
+static int win_update_role(session_t *ps, struct managed_win *w) {
 	char **strlst = NULL;
 	int nstr = 0;
 
@@ -788,8 +878,9 @@ void win_update_prop_shadow(session_t *ps, struct managed_win *w) {
 
 	win_update_prop_shadow_raw(ps, w);
 
-	if (w->prop_shadow != attr_shadow_old)
+	if (w->prop_shadow != attr_shadow_old) {
 		win_determine_shadow(ps, w);
+	}
 }
 
 static void win_set_invert_color(session_t *ps, struct managed_win *w, bool invert_color_new) {
@@ -1020,8 +1111,8 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 
 	// Get window name and class if we are tracking them
 	win_update_name(ps, w);
-	win_get_class(ps, w);
-	win_get_role(ps, w);
+	win_update_class(ps, w);
+	win_update_role(ps, w);
 
 	// Update everything related to conditions
 	win_on_factor_change(ps, w);
@@ -1142,6 +1233,10 @@ void free_win_res(session_t *ps, struct managed_win *w) {
 	free(w->class_instance);
 	free(w->class_general);
 	free(w->role);
+
+	free(w->stale_props);
+	w->stale_props = NULL;
+	w->stale_props_capacity = 0;
 }
 
 /// Insert a new window after list_node `prev`
@@ -1212,6 +1307,8 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .reg_ignore_valid = false,        // set to true when damaged
 	    .flags = WIN_FLAGS_IMAGES_NONE,        // updated by property/attributes/etc
 	                                           // change
+	    .stale_props = NULL,
+	    .stale_props_capacity = 0,
 
 	    // Runtime variables, updated by dbus
 	    .fade_force = UNSET,
@@ -1431,7 +1528,7 @@ static xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int
  * Retrieve the <code>WM_CLASS</code> of a window and update its
  * <code>win</code> structure.
  */
-bool win_get_class(session_t *ps, struct managed_win *w) {
+bool win_update_class(session_t *ps, struct managed_win *w) {
 	char **strlst = NULL;
 	int nstr = 0;
 
@@ -2372,6 +2469,44 @@ void win_clear_flags(struct managed_win *w, uint64_t flags) {
 	}
 
 	w->flags = w->flags & (~flags);
+}
+
+void win_set_property_stale(struct managed_win *w, xcb_atom_t prop) {
+	const auto bits_per_element = sizeof(*w->stale_props) * 8;
+	if (prop >= w->stale_props_capacity * bits_per_element) {
+		const auto new_size = prop / bits_per_element + 1;
+		w->stale_props = realloc(w->stale_props, new_size * sizeof(*w->stale_props));
+
+		// Clear the content of the newly allocated bytes
+		memset(w->stale_props + w->stale_props_capacity, 0,
+		       (new_size - w->stale_props_capacity) * sizeof(*w->stale_props));
+		w->stale_props_capacity = new_size;
+	}
+
+	w->stale_props[prop / bits_per_element] |= 1UL << (prop % bits_per_element);
+	win_set_flags(w, WIN_FLAGS_PROPERTY_STALE);
+}
+
+static bool win_check_and_clear_all_properties_stale(struct managed_win *w) {
+	bool ret = false;
+	for (size_t i = 0; i < w->stale_props_capacity; i++) {
+		ret = ret || (w->stale_props[i] != 0);
+		w->stale_props[i] = 0;
+	}
+	win_clear_flags(w, WIN_FLAGS_PROPERTY_STALE);
+	return ret;
+}
+
+static bool win_fetch_and_unset_property_stale(struct managed_win *w, xcb_atom_t prop) {
+	const auto bits_per_element = sizeof(*w->stale_props) * 8;
+	if (prop >= w->stale_props_capacity * bits_per_element) {
+		return false;
+	}
+
+	const auto mask = 1UL << (prop % bits_per_element);
+	bool ret = w->stale_props[prop / bits_per_element] & mask;
+	w->stale_props[prop / bits_per_element] &= ~mask;
+	return ret;
 }
 
 bool win_check_flags_any(struct managed_win *w, uint64_t flags) {

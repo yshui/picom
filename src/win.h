@@ -126,6 +126,10 @@ struct managed_win {
 	xcb_damage_damage_t damage;
 	/// Paint info of the window.
 	paint_t paint;
+	/// bitmap for properties which needs to be updated
+	uint64_t *stale_props;
+	/// number of uint64_ts that has been allocated for stale_props
+	uint64_t stale_props_capacity;
 
 	/// Bounding shape of the window. In local coordinates.
 	/// See above about coordinate systems.
@@ -277,8 +281,6 @@ bool must_use destroy_win_start(session_t *ps, struct win *w);
 /// Release images bound with a window, set the *_NONE flags on the window. Only to be
 /// used when de-initializing the backend outside of win.c
 void win_release_images(struct backend_base *base, struct managed_win *w);
-int win_update_name(session_t *ps, struct managed_win *w);
-int win_get_role(session_t *ps, struct managed_win *w);
 winmode_t attr_pure win_calc_mode(const struct managed_win *w);
 void win_set_shadow_force(session_t *ps, struct managed_win *w, switch_t val);
 void win_set_fade_force(struct managed_win *w, switch_t val);
@@ -289,19 +291,13 @@ void win_set_invert_color_force(session_t *ps, struct managed_win *w, switch_t v
  */
 void win_set_focused(session_t *ps, struct managed_win *w);
 bool attr_pure win_should_fade(session_t *ps, const struct managed_win *w);
-void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w);
-void win_update_prop_shadow(session_t *ps, struct managed_win *w);
-void win_update_opacity_target(session_t *ps, struct managed_win *w);
 void win_on_factor_change(session_t *ps, struct managed_win *w);
 /**
  * Update cache data in struct _win that depends on window size.
  */
 void win_on_win_size_change(session_t *ps, struct managed_win *w);
-void win_update_wintype(session_t *ps, struct managed_win *w);
-void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client);
 void win_unmark_client(session_t *ps, struct managed_win *w);
 void win_recheck_client(session_t *ps, struct managed_win *w);
-bool win_get_class(session_t *ps, struct managed_win *w);
 
 /**
  * Calculate and return the opacity target of a window.
@@ -319,14 +315,6 @@ bool win_get_class(session_t *ps, struct managed_win *w);
 double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w);
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 void win_update_screen(session_t *, struct managed_win *);
-/**
- * Reread opacity property of a window.
- */
-void win_update_opacity_prop(session_t *ps, struct managed_win *w);
-/**
- * Update leader of a window.
- */
-void win_update_leader(session_t *ps, struct managed_win *w);
 /**
  * Retrieve the bounding shape of a window.
  */
@@ -363,10 +351,6 @@ void win_get_region_noframe_local(const struct managed_win *w, region_t *);
 void win_get_region_frame_local(const struct managed_win *w, region_t *res);
 /// Get the region for the frame of the window, by value
 region_t win_get_region_frame_local_by_val(const struct managed_win *w);
-/**
- * Retrieve frame extents from a window.
- */
-void win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t client);
 /// Insert a new window above window with id `below`, if there is no window, add to top
 /// New window will be in unmapped state
 struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below);
@@ -442,6 +426,8 @@ void win_clear_flags(struct managed_win *w, uint64_t flags);
 bool win_check_flags_any(struct managed_win *w, uint64_t flags);
 /// Returns true if all of the flags in `flags` are set
 bool win_check_flags_all(struct managed_win *w, uint64_t flags);
+/// Mark a property as stale for a window
+void win_set_property_stale(struct managed_win *w, xcb_atom_t prop);
 
 /// Free all resources in a struct win
 void free_win_res(session_t *ps, struct managed_win *w);
