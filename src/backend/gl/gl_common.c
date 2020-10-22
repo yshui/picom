@@ -485,7 +485,7 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 		//          ri, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
 
 		memcpy(&coord[i * 16],
-		       (GLint[][2]){
+		       ((GLint[][2]){
 		           {vx1, vy1},
 		           {texture_x1, texture_y1},
 		           {vx2, vy1},
@@ -494,11 +494,12 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 		           {texture_x2, texture_y2},
 		           {vx1, vy2},
 		           {texture_x1, texture_y2},
-		       },
+		       }),
 		       sizeof(GLint[2]) * 8);
 
 		GLuint u = (GLuint)(i * 4);
-		memcpy(&indices[i * 6], (GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0},
+		memcpy(&indices[i * 6],
+		       ((GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0}),
 		       sizeof(GLuint) * 6);
 	}
 }
@@ -885,10 +886,13 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	for (int i = 0; i < nrects; i++) {
 		GLint y1 = y_inverted ? height - rect[i].y2 : rect[i].y1,
 		      y2 = y_inverted ? height - rect[i].y1 : rect[i].y2;
+		// clang-format off
 		memcpy(&coord[i * 8],
-		       (GLint[][2]){
-		           {rect[i].x1, y1}, {rect[i].x2, y1}, {rect[i].x2, y2}, {rect[i].x1, y2}},
+		       ((GLint[][2]){
+		           {rect[i].x1, y1}, {rect[i].x2, y1},
+		           {rect[i].x2, y2}, {rect[i].x1, y2}}),
 		       sizeof(GLint[2]) * 4);
+		// clang-format on
 		indices[i * 6 + 0] = (GLuint)i * 4 + 0;
 		indices[i * 6 + 1] = (GLuint)i * 4 + 1;
 		indices[i * 6 + 2] = (GLuint)i * 4 + 2;
@@ -1383,15 +1387,16 @@ void gl_present(backend_t *base, const region_t *region) {
 	for (int i = 0; i < nrects; i++) {
 		// clang-format off
 		memcpy(&coord[i * 8],
-		       (GLint[]){rect[i].x1, gd->height - rect[i].y2,
+		       ((GLint[]){rect[i].x1, gd->height - rect[i].y2,
 		                 rect[i].x2, gd->height - rect[i].y2,
 		                 rect[i].x2, gd->height - rect[i].y1,
-		                 rect[i].x1, gd->height - rect[i].y1},
+		                 rect[i].x1, gd->height - rect[i].y1}),
 		       sizeof(GLint) * 8);
 		// clang-format on
 
 		GLuint u = (GLuint)(i * 4);
-		memcpy(&indices[i * 6], (GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0},
+		memcpy(&indices[i * 6],
+		       ((GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0}),
 		       sizeof(GLuint) * 6);
 	}
 
