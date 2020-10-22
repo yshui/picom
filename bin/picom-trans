@@ -21,6 +21,8 @@
 #   $ picom-trans -c +5
 # Delete current window's opacity
 #   $ picom-trans -c --delete
+# Toggle current window's opacity between 90 and unset
+#   $ picom-trans -c --toggle 90
 # Reset all windows
 #   $ picom-trans --reset
 print_usage() {
@@ -35,6 +37,8 @@ print_usage() {
   echo "Actions:"
   echo "  -g, --get                 Print the target window's opacity."
   echo "  -d, --delete              Delete opacity of the target window."
+  echo "  -t, --toggle              Toggle the target window's opacity, i.e. set if not already set"
+  echo "                            and delete else."
   echo "  -r, --reset               Reset opacity for all windows."
   echo ""
   echo "Window Selection:"
@@ -87,10 +91,10 @@ while test $# -gt 0; do
   OPTIND=1
 
   # Read options
-  while getopts 'hscrdgn:w:o:-:' option "$@"; do
+  while getopts 'hscrtdgn:w:o:-:' option "$@"; do
     if test "$option" = '-'; then
       case "$OPTARG" in
-        help | select | current | reset | delete | get)
+        help | select | current | reset | toggle | delete | get)
           v=''
         ;;
         name | window | opacity)
@@ -117,6 +121,7 @@ while test $# -gt 0; do
         wprefix='-id'; window=$active
       ;;
       r) action='reset' ;;
+      t) action='toggle' ;;
       d) action='delete' ;;
       g) action='get' ;;
       n) wprefix='-name'; window=$OPTARG ;;
@@ -206,15 +211,17 @@ if test -z "$topmost"; then
   exit 1
 fi
 
+# Get current opacity.
+cur=$(xprop -id "$topmost" -notype _NET_WM_WINDOW_OPACITY \
+  | sed 's/^.*\b\([0-9]\+\).*$\|^.*$/\1/')
+
 # Remove the opacity property.
-if test x"$action" = x'delete'; then
+if test x"$action" = x'delete' -o \( x"$action" = x'toggle' -a -n "$cur" \); then
   xprop -id "$topmost" -remove _NET_WM_WINDOW_OPACITY
   exit 0
 fi
 
-# Get current opacity.
-cur=$(xprop -id "$topmost" -notype _NET_WM_WINDOW_OPACITY \
-  | sed 's/^.*\b\([0-9]\+\).*$\|^.*$/\1/')
+# Unset opacity equals fully opaque
 test -z "$cur" && cur=0xffffffff
 cur=$((cur * 100 / 0xffffffff))
 

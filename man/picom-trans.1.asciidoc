@@ -42,6 +42,9 @@ Print the target window's opacity instead of setting it.
 *-d*, *--delete*::
 Delete opacity of the target window instead of setting it.
 
+*-t*, *--toggle*::
+Toggle the target window's opacity: Set opacity if not already set, and delete if already set.
+
 *-r*, *--reset*::
 Reset opacity for all windows instead of setting it.
 
@@ -88,6 +91,12 @@ picom-trans -c -- -5
 +
 ------------
 picom-trans -c --delete
+------------
+
+* Toggle current window's opacity between 90 and unset
++
+------------
+picom-trans -c --toggle 90
 ------------
 
 * Reset all windows:
