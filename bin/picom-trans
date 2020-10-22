@@ -23,6 +23,26 @@
 #   $ picom-trans -c --delete
 # Reset all windows
 #   $ picom-trans --reset
+print_usage() {
+  echo "Usage: $0 [options] [+|-]opacity"
+  echo ""
+  echo "Options:"
+  echo "  -h, --help                Print this help message."
+  echo "  -o, --opacity OPACITY     Specify the new opacity value in range 1-100 for the window. If"
+  echo "                            prefixed with + or -, increment or decrement from the target"
+  echo "                            window’s current opacity."
+  echo ""
+  echo "Actions:"
+  echo "  -g, --get                 Print the target window's opacity."
+  echo "  -d, --delete              Delete opacity of the target window."
+  echo "  -r, --reset               Reset opacity for all windows."
+  echo ""
+  echo "Window Selection:"
+  echo "  -s, --select              Select target window with mouse cursor. (DEFAULT)"
+  echo "  -c, --current             Select the currently active window as target."
+  echo "  -n, --name WINDOW_NAME    Specify and try to match a window name."
+  echo "  -w, --window WINDOW_ID    Specify the window id of the target window."
+}
 
 case "$0" in
   *compton-trans*)  echo "Warning: compton has been renamed, please use picom-trans instead" >& 2;;
@@ -31,6 +51,11 @@ esac
 # "command" is a shell built-in, faster than "which"
 if test -z "$(command -v xprop)" -o -z "$(command -v xwininfo)"; then
   echo 'The command xwininfo or xprop is not available. They might reside in a package named xwininfo, xprop, x11-utils, xorg-xprop, or xorg-xwininfo.' >& 2
+  exit 1
+fi
+
+if test $# -eq 0; then
+  print_usage >& 2
   exit 1
 fi
 
@@ -62,10 +87,10 @@ while test $# -gt 0; do
   OPTIND=1
 
   # Read options
-  while getopts 'scrdgn:w:o:-:' option "$@"; do
+  while getopts 'hscrdgn:w:o:-:' option "$@"; do
     if test "$option" = '-'; then
       case "$OPTARG" in
-        select | current | reset | delete | get)
+        help | select | current | reset | delete | get)
           v=''
         ;;
         name | window | opacity)
@@ -84,6 +109,7 @@ while test $# -gt 0; do
       OPTARG=$v
     fi
     case "$option" in
+      h) print_usage; exit 0 ;;
       s) wprefix=''; window='' ;;
       c)
         active=$(xprop -root -notype _NET_ACTIVE_WINDOW \
