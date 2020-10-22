@@ -47,6 +47,7 @@
 #pragma GCC diagnostic error "-Wunused-parameter"
 
 #define C2_MAX_LEVELS 10
+#define C2_MAX_PROPERTIES 10
 
 typedef struct _c2_b c2_b_t;
 typedef struct _c2_l c2_l_t;
@@ -214,17 +215,17 @@ static const c2_predef_t C2_PREDEFS[] = {
 /**
  * Get the numeric property value from a win_prop_t.
  */
-static inline long winprop_get_int(winprop_t prop) {
+static inline long winprop_get_int(winprop_t prop, size_t index) {
 	long tgt = 0;
 
-	if (!prop.nitems) {
+	if (!prop.nitems || index >= prop.nitems) {
 		return 0;
 	}
 
 	switch (prop.format) {
-	case 8: tgt = *(prop.p8); break;
-	case 16: tgt = *(prop.p16); break;
-	case 32: tgt = *(prop.p32); break;
+	case 8: tgt = *(prop.p8 + index); break;
+	case 16: tgt = *(prop.p16 + index); break;
+	case 32: tgt = *(prop.p32 + index); break;
 	default: assert(0); break;
 	}
 
@@ -1300,11 +1301,13 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 	switch (pleaf->ptntype) {
 	// Deal with integer patterns
 	case C2_L_PTINT: {
-		long tgt = 0;
+		long targets[C2_MAX_PROPERTIES] = {0};
+		size_t ntargets = 0;
 
 		// Get the value
 		// A predefined target
 		if (pleaf->predef != C2_L_PUNDEFINED) {
+			long tgt = 0;
 			*perr = false;
 			switch (pleaf->predef) {
 			case C2_L_PID: tgt = wid; break;
@@ -1331,45 +1334,61 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 				assert(0);
 				break;
 			}
+			ntargets = 1;
+			targets[0] = tgt;
 		}
 		// A raw window property
 		else {
+			const int count = (pleaf->index < 0 ? C2_MAX_PROPERTIES : 1);
+			assert(count > 0);
 			winprop_t prop =
-			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, 1L,
+			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, count,
 			                           c2_get_atom_type(pleaf), pleaf->format);
-			if (prop.nitems) {
+
+			ntargets = min2(prop.nitems, (size_t)count);
+			if (ntargets > 0) {
 				*perr = false;
-				tgt = winprop_get_int(prop);
+				for (size_t i = 0; i < ntargets; ++i) {
+					targets[i] = winprop_get_int(prop, i);
+				}
 			}
 			free_winprop(&prop);
 		}
 
-		if (*perr)
+		if (*perr) {
 			return;
+		}
 
 		// Do comparison
-		switch (pleaf->op) {
-		case C2_L_OEXISTS:
-			*pres = (pleaf->predef != C2_L_PUNDEFINED ? tgt : true);
-			break;
-		case C2_L_OEQ: *pres = (tgt == pleaf->ptnint); break;
-		case C2_L_OGT: *pres = (tgt > pleaf->ptnint); break;
-		case C2_L_OGTEQ: *pres = (tgt >= pleaf->ptnint); break;
-		case C2_L_OLT: *pres = (tgt < pleaf->ptnint); break;
-		case C2_L_OLTEQ: *pres = (tgt <= pleaf->ptnint); break;
-		default:
-			*perr = true;
-			assert(0);
-			break;
+		bool res = false;
+		for (size_t i = 0; i < ntargets; ++i) {
+			long tgt = targets[i];
+			switch (pleaf->op) {
+			case C2_L_OEXISTS:
+				res = (pleaf->predef != C2_L_PUNDEFINED ? tgt : true);
+				break;
+			case C2_L_OEQ: res = (tgt == pleaf->ptnint); break;
+			case C2_L_OGT: res = (tgt > pleaf->ptnint); break;
+			case C2_L_OGTEQ: res = (tgt >= pleaf->ptnint); break;
+			case C2_L_OLT: res = (tgt < pleaf->ptnint); break;
+			case C2_L_OLTEQ: res = (tgt <= pleaf->ptnint); break;
+			default: *perr = true; assert(0);
+			}
+			if (res) {
+				break;
+			}
 		}
+		*pres = res;
 	} break;
 	// String patterns
 	case C2_L_PTSTRING: {
-		const char *tgt = NULL;
-		char *tgt_free = NULL;
+		const char *targets[C2_MAX_PROPERTIES] = {NULL};
+		char *targets_free[C2_MAX_PROPERTIES] = {NULL};
+		size_t ntargets = 0;
 
 		// A predefined target
 		if (pleaf->predef != C2_L_PUNDEFINED) {
+			const char *tgt = NULL;
 			switch (pleaf->predef) {
 			case C2_L_PWINDOWTYPE: tgt = WINTYPES[w->window_type]; break;
 			case C2_L_PNAME: tgt = w->name; break;
@@ -1378,95 +1397,128 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			case C2_L_PROLE: tgt = w->role; break;
 			default: assert(0); break;
 			}
-		} else if (pleaf->type == C2_L_TATOM) {
-			// An atom type property, convert it to string
+			ntargets = 1;
+			targets[0] = tgt;
+		}
+		// An atom type property, convert it to string
+		else if (pleaf->type == C2_L_TATOM) {
+			const int count = (pleaf->index < 0 ? C2_MAX_PROPERTIES : 1);
+			assert(count > 0);
 			winprop_t prop =
-			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, 1L,
+			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, count,
 			                           c2_get_atom_type(pleaf), pleaf->format);
-			xcb_atom_t atom = (xcb_atom_t)winprop_get_int(prop);
-			if (atom) {
-				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
-				    ps->c, xcb_get_atom_name(ps->c, atom), NULL);
-				if (reply) {
-					tgt_free = strndup(
-					    xcb_get_atom_name_name(reply),
-					    (size_t)xcb_get_atom_name_name_length(reply));
-					free(reply);
+
+			ntargets = min2(prop.nitems, (size_t)count);
+			for (size_t i = 0; i < ntargets; ++i) {
+				xcb_atom_t atom = (xcb_atom_t)winprop_get_int(prop, i);
+				if (atom) {
+					xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
+					    ps->c, xcb_get_atom_name(ps->c, atom), NULL);
+					if (reply) {
+						targets[i] = targets_free[i] = strndup(
+						    xcb_get_atom_name_name(reply),
+						    (size_t)xcb_get_atom_name_name_length(reply));
+						free(reply);
+					}
 				}
 			}
-			if (tgt_free) {
-				tgt = tgt_free;
-			}
 			free_winprop(&prop);
-		} else {
-			// Not an atom type, just fetch the string list
+		}
+		// Not an atom type, just fetch the string list
+		else {
 			char **strlst = NULL;
-			int nstr;
-			if (wid_get_text_prop(ps, wid, pleaf->tgtatom, &strlst, &nstr) &&
-			    nstr > idx) {
-				tgt_free = strdup(strlst[idx]);
-				tgt = tgt_free;
+			int nstr = 0;
+			if (wid_get_text_prop(ps, wid, pleaf->tgtatom, &strlst, &nstr)) {
+				if (pleaf->index < 0 && nstr > 0 && strlen(strlst[0]) > 0) {
+					ntargets = min2((size_t)nstr, C2_MAX_PROPERTIES);
+					for (size_t i = 0; i < ntargets; ++i) {
+						targets[i] = targets_free[i] =
+						    strdup(strlst[i]);
+					}
+				} else if (nstr > idx) {
+					ntargets = 1;
+					targets[0] = targets_free[0] = strdup(strlst[idx]);
+				}
 			}
 			if (strlst) {
 				free(strlst);
 			}
 		}
 
-		if (tgt) {
-			*perr = false;
-		} else {
+		if (ntargets == 0) {
 			return;
 		}
+		for (size_t i = 0; i < ntargets; ++i) {
+			if (!targets[i]) {
+				goto fail;
+			}
+		}
+		*perr = false;
 
 		// Actual matching
-		switch (pleaf->op) {
-		case C2_L_OEXISTS: *pres = true; break;
-		case C2_L_OEQ:
-			switch (pleaf->match) {
-			case C2_L_MEXACT:
-				if (pleaf->match_ignorecase)
-					*pres = !strcasecmp(tgt, pleaf->ptnstr);
-				else
-					*pres = !strcmp(tgt, pleaf->ptnstr);
-				break;
-			case C2_L_MCONTAINS:
-				if (pleaf->match_ignorecase)
-					*pres = strcasestr(tgt, pleaf->ptnstr);
-				else
-					*pres = strstr(tgt, pleaf->ptnstr);
-				break;
-			case C2_L_MSTART:
-				if (pleaf->match_ignorecase)
-					*pres = !strncasecmp(tgt, pleaf->ptnstr,
-					                     strlen(pleaf->ptnstr));
-				else
-					*pres = !strncmp(tgt, pleaf->ptnstr,
-					                 strlen(pleaf->ptnstr));
-				break;
-			case C2_L_MWILDCARD: {
-				int flags = 0;
-				if (pleaf->match_ignorecase)
-					flags |= FNM_CASEFOLD;
-				*pres = !fnmatch(pleaf->ptnstr, tgt, flags);
-			} break;
-			case C2_L_MPCRE:
+		bool res = false;
+		for (size_t i = 0; i < ntargets; ++i) {
+			const char *tgt = targets[i];
+			switch (pleaf->op) {
+			case C2_L_OEXISTS: res = true; break;
+			case C2_L_OEQ:
+				switch (pleaf->match) {
+				case C2_L_MEXACT:
+					if (pleaf->match_ignorecase) {
+						res = !strcasecmp(tgt, pleaf->ptnstr);
+					} else {
+						res = !strcmp(tgt, pleaf->ptnstr);
+					}
+					break;
+				case C2_L_MCONTAINS:
+					if (pleaf->match_ignorecase) {
+						res = strcasestr(tgt, pleaf->ptnstr);
+					} else {
+						res = strstr(tgt, pleaf->ptnstr);
+					}
+					break;
+				case C2_L_MSTART:
+					if (pleaf->match_ignorecase) {
+						res = !strncasecmp(tgt, pleaf->ptnstr,
+						                   strlen(pleaf->ptnstr));
+					} else {
+						res = !strncmp(tgt, pleaf->ptnstr,
+						               strlen(pleaf->ptnstr));
+					}
+					break;
+				case C2_L_MWILDCARD: {
+					int flags = 0;
+					if (pleaf->match_ignorecase) {
+						flags |= FNM_CASEFOLD;
+					}
+					res = !fnmatch(pleaf->ptnstr, tgt, flags);
+				} break;
+				case C2_L_MPCRE:
 #ifdef CONFIG_REGEX_PCRE
-				assert(strlen(tgt) <= INT_MAX);
-				*pres =
-				    (pcre_exec(pleaf->regex_pcre, pleaf->regex_pcre_extra,
-				               tgt, (int)strlen(tgt), 0, 0, NULL, 0) >= 0);
+					assert(strlen(tgt) <= INT_MAX);
+					res = (pcre_exec(pleaf->regex_pcre,
+					                 pleaf->regex_pcre_extra, tgt,
+					                 (int)strlen(tgt), 0, 0, NULL, 0) >= 0);
 #else
-				assert(0);
+					assert(0);
 #endif
+					break;
+				}
+				break;
+			default: *perr = true; assert(0);
+			}
+			if (res) {
 				break;
 			}
-			break;
-		default: *perr = true; assert(0);
 		}
+		*pres = res;
 
+	fail:
 		// Free the string after usage, if necessary
-		if (tgt_free) {
-			free(tgt_free);
+		for (size_t i = 0; i < ntargets; ++i) {
+			if (targets_free[i]) {
+				free(targets_free[i]);
+			}
 		}
 	} break;
 	default: assert(0); break;
