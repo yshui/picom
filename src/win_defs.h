@@ -85,6 +85,8 @@ enum win_flags {
 	WIN_FLAGS_CLIENT_STALE = 32,
 	/// the window is mapped by X, we need to call map_win_start for it
 	WIN_FLAGS_MAPPED = 64,
+	/// this window has properties which needs to be updated
+	WIN_FLAGS_PROPERTY_STALE = 128,
 };
 
 static const uint64_t WIN_FLAGS_IMAGES_STALE =

@@ -472,6 +472,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		return;
 	}
 
+	ps->pending_updates = true;
 	// If WM_STATE changes
 	if (ev->atom == ps->atoms->aWM_STATE) {
 		// Check whether it could be a client window
@@ -486,17 +487,18 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			// would be NULL.
 			if (w_top) {
 				win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
-				ps->pending_updates = true;
 			}
 		}
+		return;
 	}
 
 	// If _NET_WM_WINDOW_TYPE changes... God knows why this would happen, but
 	// there are always some stupid applications. (#144)
 	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_TYPE) {
 		struct managed_win *w = NULL;
-		if ((w = find_toplevel(ps, ev->window)))
-			win_update_wintype(ps, w);
+		if ((w = find_toplevel(ps, ev->window))) {
+			win_set_property_stale(w, ev->atom);
+		}
 	}
 
 	if (ev->atom == ps->atoms->a_NET_WM_BYPASS_COMPOSITOR) {
@@ -507,29 +509,22 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	// If _NET_WM_OPACITY changes
 	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_OPACITY) {
 		auto w = find_managed_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
-		if (w) {
-			win_update_opacity_prop(ps, w);
-			// we cannot receive OPACITY change when window is destroyed
-			assert(w->state != WSTATE_DESTROYING);
-			win_update_opacity_target(ps, w);
-		}
+		win_set_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY);
 	}
 
 	// If frame extents property changes
 	if (ps->o.frame_opacity > 0 && ev->atom == ps->atoms->a_NET_FRAME_EXTENTS) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w) {
-			win_update_frame_extents(ps, w, ev->window);
-			// If frame extents change, the window needs repaint
-			add_damage_from_win(ps, w);
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
 	// If name changes
 	if (ps->atoms->aWM_NAME == ev->atom || ps->atoms->a_NET_WM_NAME == ev->atom) {
 		auto w = find_toplevel(ps, ev->window);
-		if (w && win_update_name(ps, w) == 1) {
-			win_on_factor_change(ps, w);
+		if (w) {
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
@@ -537,16 +532,15 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	if (ps->atoms->aWM_CLASS == ev->atom) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w) {
-			win_get_class(ps, w);
-			win_on_factor_change(ps, w);
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
 	// If role changes
 	if (ps->atoms->aWM_WINDOW_ROLE == ev->atom) {
 		auto w = find_toplevel(ps, ev->window);
-		if (w && 1 == win_get_role(ps, w)) {
-			win_on_factor_change(ps, w);
+		if (w) {
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
@@ -554,7 +548,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	if (ps->atoms->a_COMPTON_SHADOW == ev->atom) {
 		auto w = find_managed_win(ps, ev->window);
 		if (w) {
-			win_update_prop_shadow(ps, w);
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
@@ -563,7 +557,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	    (ps->o.detect_client_leader && ps->atoms->aWM_CLIENT_LEADER == ev->atom)) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w) {
-			win_update_leader(ps, w);
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
@@ -571,10 +565,12 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	for (latom_t *platom = ps->track_atom_lst; platom; platom = platom->next) {
 		if (platom->atom == ev->atom) {
 			auto w = find_managed_win(ps, ev->window);
-			if (!w)
+			if (!w) {
 				w = find_toplevel(ps, ev->window);
-			if (w)
-				win_on_factor_change(ps, w);
+			}
+			if (w) {
+				win_set_property_stale(w, ev->atom);
+			}
 			break;
 		}
 	}
