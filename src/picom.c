@@ -1512,12 +1512,14 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 
 		ps->first_frame = false;
 		paint++;
-		if (ps->o.benchmark && paint >= ps->o.benchmark)
+		if (ps->o.benchmark && paint >= ps->o.benchmark) {
 			exit(0);
+		}
 	}
 
-	if (!fade_running)
+	if (!fade_running) {
 		ps->fade_time = 0L;
+	}
 
 	// TODO(yshui) Investigate how big the X critical section needs to be. There are
 	// suggestions that rendering should be in the critical section as well.

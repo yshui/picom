@@ -822,38 +822,43 @@ static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new
 	// Apply the shadow change
 	w->shadow = shadow_new;
 
-	// Add damage for shadow change
+	if (ps->redirected) {
+		// Add damage for shadow change
 
-	// Window extents need update on shadow state change
-	// Shadow geometry currently doesn't change on shadow state change
-	// calc_shadow_geometry(ps, w);
+		// Window extents need update on shadow state change
+		// Shadow geometry currently doesn't change on shadow state change
+		// calc_shadow_geometry(ps, w);
 
-	// Note: because the release and creation of the shadow images are delayed. When
-	// multiple shadow changes happen in a row, without rendering phase between them,
-	// there could be a stale shadow image attached to the window even if w->shadow
-	// was previously false. And vice versa. So we check the STALE flag before
-	// asserting the existence of the shadow image.
-	if (w->shadow) {
-		// Mark the new extents as damaged if the shadow is added
-		assert(!w->shadow_image || win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE) ||
-		       !ps->o.experimental_backends);
-		pixman_region32_clear(&extents);
-		win_extents(w, &extents);
-		add_damage_from_win(ps, w);
-	} else {
-		// Mark the old extents as damaged if the shadow is removed
-		assert(w->shadow_image || win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE) ||
-		       !ps->o.experimental_backends);
-		add_damage(ps, &extents);
+		// Note: because the release and creation of the shadow images are
+		// delayed. When multiple shadow changes happen in a row, without
+		// rendering phase between them, there could be a stale shadow image
+		// attached to the window even if w->shadow was previously false. And vice
+		// versa. So we check the STALE flag before asserting the existence of the
+		// shadow image.
+		if (w->shadow) {
+			// Mark the new extents as damaged if the shadow is added
+			assert(!w->shadow_image ||
+			       win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE) ||
+			       !ps->o.experimental_backends);
+			pixman_region32_clear(&extents);
+			win_extents(w, &extents);
+			add_damage_from_win(ps, w);
+		} else {
+			// Mark the old extents as damaged if the shadow is removed
+			assert(w->shadow_image ||
+			       win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE) ||
+			       !ps->o.experimental_backends);
+			add_damage(ps, &extents);
+		}
+
+		// Delayed update of shadow image
+		// By setting WIN_FLAGS_SHADOW_STALE, we ask win_process_flags to
+		// re-create or release the shaodw in based on whether w->shadow is set.
+		win_set_flags(w, WIN_FLAGS_SHADOW_STALE);
+		ps->pending_updates = true;
 	}
 
 	pixman_region32_fini(&extents);
-
-	// Delayed update of shadow image
-	// By setting WIN_FLAGS_SHADOW_STALE, we ask win_process_flags to re-create or
-	// release the shaodw in based on whether w->shadow is set.
-	win_set_flags(w, WIN_FLAGS_SHADOW_STALE);
-	ps->pending_updates = true;
 }
 
 /**
