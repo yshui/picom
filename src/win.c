@@ -758,11 +758,7 @@ bool win_should_fade(session_t *ps, const struct managed_win *w) {
 		// deprecated
 		return false;
 	}
-	// Ignore other possible causes of fading state changes after window
-	// gets unmapped
-	// if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
-	//}
-	if (c2_match(ps, w, ps->o.fade_blacklist, NULL)) {
+	if (w->fade_excluded) {
 		return false;
 	}
 	return ps->o.wintype_option[w->window_type].fade;
@@ -1030,11 +1026,15 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	w->mode = win_calc_mode(w);
 	log_debug("Window mode changed to %d", w->mode);
 	win_update_opacity_rule(ps, w);
-	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
+	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 		w->paint_excluded = c2_match(ps, w, ps->o.paint_blacklist, NULL);
-	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
+	}
+	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 		w->unredir_if_possible_excluded =
 		    c2_match(ps, w, ps->o.unredir_if_possible_blacklist, NULL);
+	}
+
+	w->fade_excluded = c2_match(ps, w, ps->o.fade_blacklist, NULL);
 
 	win_update_opacity_target(ps, w);
 
@@ -1083,8 +1083,9 @@ void win_update_wintype(session_t *ps, struct managed_win *w) {
 			w->window_type = WINTYPE_DIALOG;
 	}
 
-	if (w->window_type != wtype_old)
+	if (w->window_type != wtype_old) {
 		win_on_factor_change(ps, w);
+	}
 }
 
 /**
@@ -1099,8 +1100,9 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 
 	// If the window isn't mapped yet, stop here, as the function will be
 	// called in map_win()
-	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE)
+	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
 		return;
+	}
 
 	auto e = xcb_request_check(
 	    ps->c, xcb_change_window_attributes(
@@ -1117,8 +1119,9 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 	win_update_frame_extents(ps, w, client);
 
 	// Get window group
-	if (ps->o.track_leader)
+	if (ps->o.track_leader) {
 		win_update_leader(ps, w);
+	}
 
 	// Get window name and class if we are tracking them
 	win_update_name(ps, w);
@@ -1366,6 +1369,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .bounding_shape = {0},
 	    .rounded_corners = false,
 	    .paint_excluded = false,
+	    .fade_excluded = false,
 	    .unredir_if_possible_excluded = false,
 	    .prop_shadow = -1,
 	    // following 4 are set in win_mark_client
@@ -1497,11 +1501,13 @@ void win_update_leader(session_t *ps, struct managed_win *w) {
 	xcb_window_t leader = XCB_NONE;
 
 	// Read the leader properties
-	if (ps->o.detect_transient && !leader)
+	if (ps->o.detect_transient && !leader) {
 		leader = wid_get_prop_window(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR);
+	}
 
-	if (ps->o.detect_client_leader && !leader)
+	if (ps->o.detect_client_leader && !leader) {
 		leader = wid_get_prop_window(ps, w->client_win, ps->atoms->aWM_CLIENT_LEADER);
+	}
 
 	win_set_leader(ps, w, leader);
 
@@ -1603,10 +1609,11 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		if (win_is_focused_raw(ps, w))
+		if (win_is_focused_raw(ps, w)) {
 			cdbus_ev_win_focusin(ps, &w->base);
-		else
+		} else {
 			cdbus_ev_win_focusout(ps, &w->base);
+		}
 	}
 #endif
 }
@@ -1733,13 +1740,15 @@ void win_update_opacity_prop(session_t *ps, struct managed_win *w) {
 	// get frame opacity first
 	w->has_opacity_prop = wid_get_opacity_prop(ps, w->base.id, OPAQUE, &w->opacity_prop);
 
-	if (w->has_opacity_prop)
+	if (w->has_opacity_prop) {
 		// opacity found
 		return;
+	}
 
-	if (ps->o.detect_client_opacity && w->client_win && w->base.id == w->client_win)
+	if (ps->o.detect_client_opacity && w->client_win && w->base.id == w->client_win) {
 		// checking client opacity not allowed
 		return;
+	}
 
 	// get client opacity
 	w->has_opacity_prop =
@@ -1771,8 +1780,9 @@ void win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t
 
 		// If frame_opacity != 1, then frame of this window
 		// is not included in reg_ignore of underneath windows
-		if (ps->o.frame_opacity == 1 && changed)
+		if (ps->o.frame_opacity == 1 && changed) {
 			w->reg_ignore_valid = false;
+		}
 	}
 
 	log_trace("(%#010x): %d, %d, %d, %d", w->base.id, w->frame_extents.left,
@@ -1783,10 +1793,12 @@ void win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t
 
 bool win_is_region_ignore_valid(session_t *ps, const struct managed_win *w) {
 	win_stack_foreach_managed(i, &ps->window_stack) {
-		if (i == w)
+		if (i == w) {
 			break;
-		if (!i->reg_ignore_valid)
+		}
+		if (!i->reg_ignore_valid) {
 			return false;
+		}
 	}
 	return true;
 }
@@ -2443,14 +2455,16 @@ win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_windo
 	xcb_get_property_cookie_t prop =
 	    xcb_get_property(c, 0, w, a->a_NET_WM_STATE, XCB_ATOM_ATOM, 0, 12);
 	xcb_get_property_reply_t *reply = xcb_get_property_reply(c, prop, NULL);
-	if (!reply)
+	if (!reply) {
 		return false;
+	}
 
 	if (reply->length) {
 		xcb_atom_t *val = xcb_get_property_value(reply);
 		for (uint32_t i = 0; i < reply->length; i++) {
-			if (val[i] != a->a_NET_WM_STATE_FULLSCREEN)
+			if (val[i] != a->a_NET_WM_STATE_FULLSCREEN) {
 				continue;
+			}
 			free(reply);
 			return true;
 		}
@@ -2529,8 +2543,10 @@ bool win_check_flags_all(struct managed_win *w, uint64_t flags) {
  * It's not using w->border_size for performance measures.
  */
 bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
-	if (!ps->o.no_ewmh_fullscreen && win_is_fullscreen_xcb(ps->c, ps->atoms, w->client_win))
+	if (!ps->o.no_ewmh_fullscreen &&
+	    win_is_fullscreen_xcb(ps->c, ps->atoms, w->client_win)) {
 		return true;
+	}
 	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
 	       (!w->bounding_shaped || w->rounded_corners);
 }

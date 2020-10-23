@@ -211,6 +211,8 @@ struct managed_win {
 	// Fading-related members
 	/// Override value of window fade state. Set by D-Bus method calls.
 	switch_t fade_force;
+	/// Whether fading is excluded by the rules. Calculated.
+	bool fade_excluded;
 
 	// Frame-opacity-related members
 	/// Current window frame opacity. Affected by window opacity.
