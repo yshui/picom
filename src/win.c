@@ -2039,6 +2039,20 @@ bool destroy_win_start(session_t *ps, struct win *w) {
 		// Do this before changing the window state to destroying
 		win_clear_flags(mw, WIN_FLAGS_IMAGES_STALE);
 
+		// If size/shape/position information is stale, win_process_update_flags
+		// will update them and add the new window extents to damage. Since the
+		// window has been destroyed, we cannot get the complete information at
+		// this point, so we just add what we currently have to the damage.
+		if (win_check_flags_any(mw, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
+			add_damage_from_win(ps, mw);
+		}
+
+		// Clear some flags about stale window information. Because now the window
+		// is destroyed, we can't update them anyway.
+		win_clear_flags(mw, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE |
+		                        WIN_FLAGS_PROPERTY_STALE |
+		                        WIN_FLAGS_FACTOR_CHANGED | WIN_FLAGS_CLIENT_STALE);
+
 		// Update state flags of a managed window
 		mw->state = WSTATE_DESTROYING;
 		mw->a.map_state = XCB_MAP_STATE_UNMAPPED;
