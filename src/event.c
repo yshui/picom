@@ -189,8 +189,6 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 /// Handle configure event of a regular window
 static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	auto w = find_win(ps, ce->window);
-	region_t damage;
-	pixman_region32_init(&damage);
 
 	if (!w) {
 		return;
@@ -210,43 +208,46 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		restack_above(ps, w, ce->above_sibling);
 	} else {
 		restack_above(ps, w, ce->above_sibling);
-		bool factor_change = false;
-		win_extents(mw, &damage);
 
 		// If window geometry change, free old extents
 		if (mw->g.x != ce->x || mw->g.y != ce->y || mw->g.width != ce->width ||
 		    mw->g.height != ce->height || mw->g.border_width != ce->border_width) {
-			factor_change = true;
-		}
+			region_t damage, new_extents;
+			pixman_region32_init(&damage);
+			pixman_region32_init(&new_extents);
 
-		mw->g.x = ce->x;
-		mw->g.y = ce->y;
+			// Get the old window extents
+			win_extents(mw, &damage);
 
-		if (mw->g.width != ce->width || mw->g.height != ce->height ||
-		    mw->g.border_width != ce->border_width) {
-			log_trace("Window size changed, %dx%d -> %dx%d", mw->g.width,
-			          mw->g.height, ce->width, ce->height);
-			mw->g.width = ce->width;
-			mw->g.height = ce->height;
-			mw->g.border_width = ce->border_width;
-			win_on_win_size_change(ps, mw);
-			win_update_bounding_shape(ps, mw);
-		}
+			// Queue pending updates
+			win_set_flags(mw, WIN_FLAGS_FACTOR_CHANGED);
+			ps->pending_updates = true;
 
-		region_t new_extents;
-		pixman_region32_init(&new_extents);
-		win_extents(mw, &new_extents);
-		pixman_region32_union(&damage, &damage, &new_extents);
-		pixman_region32_fini(&new_extents);
+			mw->g.x = ce->x;
+			mw->g.y = ce->y;
 
-		if (factor_change) {
-			win_on_factor_change(ps, mw);
+			if (mw->g.width != ce->width || mw->g.height != ce->height ||
+			    mw->g.border_width != ce->border_width) {
+				log_trace("Window size changed, %dx%d -> %dx%d",
+				          mw->g.width, mw->g.height, ce->width, ce->height);
+				mw->g.width = ce->width;
+				mw->g.height = ce->height;
+				mw->g.border_width = ce->border_width;
+				win_set_flags(mw, WIN_FLAGS_SIZE_STALE);
+			}
+
+			win_extents(mw, &new_extents);
+			// Mark the union of the old and new extents as damaged
+			pixman_region32_union(&damage, &damage, &new_extents);
 			add_damage(ps, &damage);
-			win_update_screen(ps, mw);
+
+			pixman_region32_fini(&damage);
+			pixman_region32_fini(&new_extents);
+
+			// Recalculate which screen this window is on
+			win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, mw);
 		}
 	}
-
-	pixman_region32_fini(&damage);
 
 	// override_redirect flag cannot be changed after window creation, as far
 	// as I know, so there's no point to re-match windows here.

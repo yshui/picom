@@ -314,7 +314,7 @@ void win_recheck_client(session_t *ps, struct managed_win *w);
  */
 double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w);
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
-void win_update_screen(session_t *, struct managed_win *);
+void win_update_screen(int nscreens, region_t *screens, struct managed_win *w);
 /**
  * Retrieve the bounding shape of a window.
  */

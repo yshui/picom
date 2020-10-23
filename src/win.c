@@ -350,6 +350,60 @@ static bool win_fetch_and_unset_property_stale(struct managed_win *w, xcb_atom_t
 /// Returns true if any of the properties are stale, as well as clear all the stale flags.
 static bool win_check_and_clear_all_properties_stale(struct managed_win *w);
 
+/// Fetch new window properties from the X server, and run appropriate updates. Might set
+/// WIN_FLAGS_FACTOR_CHANGED
+static void win_update_properties(session_t *ps, struct managed_win *w) {
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_TYPE)) {
+		win_update_wintype(ps, w);
+	}
+
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY)) {
+		win_update_opacity_prop(ps, w);
+		// we cannot receive OPACITY change when window has been destroyed
+		assert(w->state != WSTATE_DESTROYING);
+		win_update_opacity_target(ps, w);
+	}
+
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_FRAME_EXTENTS)) {
+		win_update_frame_extents(ps, w, w->client_win);
+		add_damage_from_win(ps, w);
+	}
+
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_NAME) ||
+	    win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_NAME)) {
+		if (win_update_name(ps, w) == 1) {
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		}
+	}
+
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLASS)) {
+		if (win_update_class(ps, w)) {
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		}
+	}
+
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_WINDOW_ROLE)) {
+		if (win_update_role(ps, w) == 1) {
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		}
+	}
+
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_COMPTON_SHADOW)) {
+		win_update_prop_shadow(ps, w);
+	}
+
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLIENT_LEADER) ||
+	    win_fetch_and_unset_property_stale(w, ps->atoms->aWM_TRANSIENT_FOR)) {
+		win_update_leader(ps, w);
+	}
+
+	if (win_check_and_clear_all_properties_stale(w)) {
+		// Some other flags we didn't explicitly check has changed, must
+		// have been a tracked atom for the custom rules
+		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+	}
+}
+
 void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
 		map_win_start(ps, w);
@@ -363,62 +417,21 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
 	}
 
+	if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
+		win_on_win_size_change(ps, w);
+		win_update_bounding_shape(ps, w);
+		win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
+	}
+
 	if (win_check_flags_all(w, WIN_FLAGS_PROPERTY_STALE)) {
-		bool factor_change = false;
+		win_update_properties(ps, w);
+		win_clear_flags(w, WIN_FLAGS_PROPERTY_STALE);
+	}
 
-		if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_TYPE)) {
-			win_update_wintype(ps, w);
-		}
-
-		if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY)) {
-			win_update_opacity_prop(ps, w);
-			// we cannot receive OPACITY change when window has been destroyed
-			assert(w->state != WSTATE_DESTROYING);
-			win_update_opacity_target(ps, w);
-		}
-
-		if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_FRAME_EXTENTS)) {
-			win_update_frame_extents(ps, w, w->client_win);
-			add_damage_from_win(ps, w);
-		}
-
-		if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_NAME) ||
-		    win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_NAME)) {
-			if (win_update_name(ps, w) == 1) {
-				factor_change = true;
-			}
-		}
-
-		if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLASS)) {
-			if (win_update_class(ps, w)) {
-				factor_change = true;
-			}
-		}
-
-		if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_WINDOW_ROLE)) {
-			if (win_update_role(ps, w) == 1) {
-				factor_change = true;
-			}
-		}
-
-		if (win_fetch_and_unset_property_stale(w, ps->atoms->a_COMPTON_SHADOW)) {
-			win_update_prop_shadow(ps, w);
-		}
-
-		if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLIENT_LEADER) ||
-		    win_fetch_and_unset_property_stale(w, ps->atoms->aWM_TRANSIENT_FOR)) {
-			win_update_leader(ps, w);
-		}
-
-		if (win_check_and_clear_all_properties_stale(w)) {
-			// Some other flags we didn't explicitly check has changed, must
-			// have been a tracked atom for the custom rules
-			factor_change = true;
-		}
-
-		if (factor_change) {
-			win_on_factor_change(ps, w);
-		}
+	// Factor change flags could be set by previous stages, so must be handled last
+	if (win_check_flags_all(w, WIN_FLAGS_FACTOR_CHANGED)) {
+		win_on_factor_change(ps, w);
+		win_clear_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 	}
 }
 
@@ -884,8 +897,9 @@ void win_update_prop_shadow(session_t *ps, struct managed_win *w) {
 }
 
 static void win_set_invert_color(session_t *ps, struct managed_win *w, bool invert_color_new) {
-	if (w->invert_color == invert_color_new)
+	if (w->invert_color == invert_color_new) {
 		return;
+	}
 
 	w->invert_color = invert_color_new;
 
@@ -898,10 +912,11 @@ static void win_set_invert_color(session_t *ps, struct managed_win *w, bool inve
 static void win_determine_invert_color(session_t *ps, struct managed_win *w) {
 	bool invert_color_new = w->invert_color;
 
-	if (UNSET != w->invert_color_force)
+	if (UNSET != w->invert_color_force) {
 		invert_color_new = w->invert_color_force;
-	else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE)
+	} else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 		invert_color_new = c2_match(ps, w, ps->o.invert_color_list, NULL);
+	}
 
 	win_set_invert_color(ps, w, invert_color_new);
 }
@@ -2118,11 +2133,11 @@ bool win_skip_fading(session_t *ps, struct managed_win *w) {
  * TODO(yshui) move to x.c
  * TODO(yshui) use xrandr
  */
-void win_update_screen(session_t *ps, struct managed_win *w) {
+void win_update_screen(int nscreens, region_t *screens, struct managed_win *w) {
 	w->xinerama_scr = -1;
 
-	for (int i = 0; i < ps->xinerama_nscrs; i++) {
-		auto e = pixman_region32_extents(&ps->xinerama_scr_regs[i]);
+	for (int i = 0; i < nscreens; i++) {
+		auto e = pixman_region32_extents(&screens[i]);
 		if (e->x1 <= w->g.x && e->y1 <= w->g.y && e->x2 >= w->g.x + w->widthb &&
 		    e->y2 >= w->g.y + w->heightb) {
 			w->xinerama_scr = i;
@@ -2190,7 +2205,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	// XXX Can we assume map_state is always viewable?
 	w->a.map_state = XCB_MAP_STATE_VIEWABLE;
 
-	win_update_screen(ps, w);
+	win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, w);
 
 	// Set window event mask before reading properties so that no property
 	// changes are lost
