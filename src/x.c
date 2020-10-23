@@ -145,6 +145,17 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 		nstr += 1;
 	}
 
+	if (nstr == 0) {
+		// The property is set to an empty string, in that case, we return one
+		// string
+		char **strlst = malloc(sizeof(char *));
+		strlst[0] = "";
+		*pnstr = 1;
+		*pstrlst = strlst;
+		free(r);
+		return true;
+	}
+
 	// Allocate the pointers and the strings together
 	void *buf = NULL;
 	if (posix_memalign(&buf, alignof(char *), length + sizeof(char *) * nstr + 1) != 0) {

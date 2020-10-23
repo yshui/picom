@@ -543,10 +543,13 @@ int win_update_name(session_t *ps, struct managed_win *w) {
 	}
 
 	if (!(wid_get_text_prop(ps, w->client_win, ps->atoms->a_NET_WM_NAME, &strlst, &nstr))) {
-		log_trace("(%#010x): _NET_WM_NAME unset, falling back to WM_NAME.",
+		log_debug("(%#010x): _NET_WM_NAME unset, falling back to WM_NAME.",
 		          w->client_win);
 
 		if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_NAME, &strlst, &nstr)) {
+			log_debug("Unsetting window name for %#010x", w->client_win);
+			free(w->name);
+			w->name = NULL;
 			return -1;
 		}
 	}
@@ -560,7 +563,7 @@ int win_update_name(session_t *ps, struct managed_win *w) {
 
 	free(strlst);
 
-	log_trace("(%#010x): client = %#010x, name = \"%s\", "
+	log_debug("(%#010x): client = %#010x, name = \"%s\", "
 	          "ret = %d",
 	          w->base.id, w->client_win, w->name, ret);
 	return ret;
