@@ -6,6 +6,7 @@
 #include <stdc-predef.h>
 #endif
 
+// clang-format off
 #define auto           __auto_type
 #define likely(x)      __builtin_expect(!!(x), 1)
 #define unlikely(x)    __builtin_expect(!!(x), 0)
@@ -78,6 +79,12 @@
 # define attr_malloc
 #endif
 
+#if __has_attribute(fallthrough)
+# define fallthrough() __attribute__((fallthrough))
+#else
+# define fallthrough()
+#endif
+
 #if __STDC_VERSION__ >= 201112L
 # define attr_noret _Noreturn
 #else
@@ -107,6 +114,7 @@
 #else
 # define thread_local _Pragma("GCC error \"No thread local storage support\"") __error__
 #endif
+// clang-format on
 
 typedef unsigned long ulong;
 typedef unsigned int uint;

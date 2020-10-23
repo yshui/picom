@@ -14,3 +14,6 @@ Checks: >
   -readability-magic-numbers
 AnalyzeTemporaryDtors: false
 FormatStyle:     file
+CheckOptions:
+  - key: readability-magic-numbers.IgnoredIntegerValues
+    value: 4;8;16;24;32;1;2;3;4096

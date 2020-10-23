@@ -73,6 +73,8 @@ struct xvisual_info {
 		__r;                                                                     \
 	})
 
+#define log_debug_x_error(e, fmt, ...)                                                   \
+	LOG(DEBUG, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
 #define log_error_x_error(e, fmt, ...)                                                   \
 	LOG(ERROR, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
 #define log_fatal_x_error(e, fmt, ...)                                                   \
@@ -145,6 +147,10 @@ xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t apr
 
 /**
  * Get the value of a text property of a window.
+ *
+ * @param[out] pstrlst Out parameter for an array of strings, caller needs to free this
+ *                     array
+ * @param[out] pnstr   Number of strings in the array
  */
 bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char ***pstrlst,
                        int *pnstr);
