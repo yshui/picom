@@ -2517,6 +2517,7 @@ int main(int argc, char **argv) {
 	if (pid_file) {
 		log_trace("remove pid file %s", pid_file);
 		unlink(pid_file);
+		free(pid_file);
 	}
 
 	log_deinit_tls();

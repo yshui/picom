@@ -521,6 +521,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	// Parse commandline arguments. Range checking will be done later.
 
+	bool failed = false;
 	const char *deprecation_message attr_unused =
 	    "has been removed. If you encounter problems "
 	    "without this feature, please feel free to "
@@ -567,11 +568,11 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'C':
 			log_error("Option `--no-dock-shadow`/`-C` has been removed. Please"
 			          " use the wintype option `shadow` of `dock` instead.");
-			return false;
+			failed = true; break;
 		case 'G':
 			log_error("Option `--no-dnd-shadow`/`-G` has been removed. Please "
 			          "use the wintype option `shadow` of `dnd` instead.");
-			return false;
+			failed = true; break;
 		case 'm':;
 			double tmp;
 			tmp = normalize_d(atof(optarg));
@@ -604,7 +605,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'a':
 		case 's':
 			log_error("-n, -a, and -s have been removed.");
-			return false;
+			failed = true; break;
 		// Long options
 		case 256:
 			// --config
@@ -659,13 +660,15 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 271:
 			// --alpha-step
 			log_error("--alpha-step has been removed, we now tries to "
-			         "make use of all alpha values");
-			return false;
-		case 272: log_error("use of --dbe is deprecated"); return false;
+			          "make use of all alpha values");
+			failed = true; break;
+		case 272:
+			log_error("--dbe has been removed");
+			failed = true; break;
 		case 273:
 			log_error("--paint-on-overlay has been removed, the feature is enabled "
-			         "whenever possible");
-			return false;
+			          "whenever possible");
+			failed = true; break;
 		P_CASEBOOL(274, sw_opti);
 		case 275:
 			// --vsync-aggressive
@@ -805,7 +808,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 312:
 			// --xrender-sync
 			log_error("Please use --xrender-sync-fence instead of --xrender-sync");
-			return false;
+			failed = true; break;
 		P_CASEBOOL(313, xrender_sync_fence);
 		P_CASEBOOL(315, no_fading_destroyed_argb);
 		P_CASEBOOL(316, force_win_blend);
@@ -866,11 +869,20 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 #undef P_CASEBOOL
 		}
 		// clang-format on
+
+		if (failed) {
+			// Parsing this option has failed, break the loop
+			break;
+		}
 	}
 
 	// Restore LC_NUMERIC
 	setlocale(LC_NUMERIC, lc_numeric_old);
 	free(lc_numeric_old);
+
+	if (failed) {
+		return false;
+	}
 
 	if (opt->monitor_repaint && opt->backend != BKEND_XRENDER &&
 	    !opt->experimental_backends) {

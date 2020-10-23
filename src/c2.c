@@ -265,7 +265,8 @@ static inline void c2_ptr_reset(c2_ptr_t *pp) {
  * Combine two condition trees.
  */
 static inline c2_ptr_t c2h_comb_tree(c2_b_op_t op, c2_ptr_t p1, c2_ptr_t p2) {
-	c2_ptr_t p = {.isbranch = true, .b = cmalloc(c2_b_t)};
+	c2_ptr_t p = {.isbranch = true, .b = NULL};
+	p.b = cmalloc(c2_b_t);
 
 	p.b->neg = false;
 	p.b->op = op;
