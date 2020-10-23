@@ -255,6 +255,9 @@ gen_by_val(win_get_region_frame_local);
 void add_damage_from_win(session_t *ps, const struct managed_win *w) {
 	// XXX there was a cached extents region, investigate
 	//     if that's better
+
+	// TODO(yshui) use the bounding shape when the window is shaped, otherwise the
+	//             damage would be excessive
 	region_t extents;
 	pixman_region32_init(&extents);
 	win_extents(w, &extents);
@@ -1681,8 +1684,9 @@ gen_by_val(win_extents);
  * Mark the window shape as updated
  */
 void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
-	if (ps->shape_exists)
+	if (ps->shape_exists) {
 		w->bounding_shaped = win_bounding_shaped(ps, w->base.id);
+	}
 
 	pixman_region32_clear(&w->bounding_shape);
 	// Start with the window rectangular region
@@ -1700,8 +1704,9 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 		    ps->c,
 		    xcb_shape_get_rectangles(ps->c, w->base.id, XCB_SHAPE_SK_BOUNDING), NULL);
 
-		if (!r)
+		if (!r) {
 			break;
+		}
 
 		xcb_rectangle_t *xrects = xcb_shape_get_rectangles_rectangles(r);
 		int nrects = xcb_shape_get_rectangles_rectangles_length(r);

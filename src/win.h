@@ -434,7 +434,7 @@ void win_set_property_stale(struct managed_win *w, xcb_atom_t prop);
 /// Free all resources in a struct win
 void free_win_res(session_t *ps, struct managed_win *w);
 
-static inline region_t win_get_bounding_shape_global_by_val(struct managed_win *w) {
+static inline region_t attr_unused win_get_bounding_shape_global_by_val(struct managed_win *w) {
 	region_t ret;
 	pixman_region32_init(&ret);
 	pixman_region32_copy(&ret, &w->bounding_shape);
@@ -446,7 +446,7 @@ static inline region_t win_get_bounding_shape_global_by_val(struct managed_win *
  * Calculate the extents of the frame of the given window based on EWMH
  * _NET_FRAME_EXTENTS and the X window border width.
  */
-static inline margin_t attr_pure win_calc_frame_extents(const struct managed_win *w) {
+static inline margin_t attr_pure attr_unused win_calc_frame_extents(const struct managed_win *w) {
 	margin_t result = w->frame_extents;
 	result.top = max2(result.top, w->g.border_width);
 	result.left = max2(result.left, w->g.border_width);
@@ -458,7 +458,7 @@ static inline margin_t attr_pure win_calc_frame_extents(const struct managed_win
 /**
  * Check whether a window has WM frames.
  */
-static inline bool attr_pure win_has_frame(const struct managed_win *w) {
+static inline bool attr_pure attr_unused win_has_frame(const struct managed_win *w) {
 	return w->g.border_width || w->frame_extents.top || w->frame_extents.left ||
 	       w->frame_extents.right || w->frame_extents.bottom;
 }

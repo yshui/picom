@@ -653,19 +653,16 @@ static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) 
 	 * seemingly BadRegion errors would be triggered
 	 * if we attempt to rebuild border_size
 	 */
-	// Mark the old border_size as damaged
-	region_t tmp = win_get_bounding_shape_global_by_val(w);
-	add_damage(ps, &tmp);
-	pixman_region32_fini(&tmp);
-
-	win_update_bounding_shape(ps, w);
-
-	// Mark the new border_size as damaged
-	tmp = win_get_bounding_shape_global_by_val(w);
-	add_damage(ps, &tmp);
-	pixman_region32_fini(&tmp);
-
+	// Mark the old bounding shape as damaged
+	if (!win_check_flags_any(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
+		region_t tmp = win_get_bounding_shape_global_by_val(w);
+		add_damage(ps, &tmp);
+		pixman_region32_fini(&tmp);
+	}
 	w->reg_ignore_valid = false;
+
+	win_set_flags(w, WIN_FLAGS_SIZE_STALE);
+	ps->pending_updates = true;
 }
 
 static inline void
