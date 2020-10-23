@@ -89,8 +89,10 @@ enum win_flags {
 	WIN_FLAGS_PROPERTY_STALE = 128,
 	/// this window has an unhandled size/shape change
 	WIN_FLAGS_SIZE_STALE = 256,
+	/// this window has an unhandled position (i.e. x and y) change
+	WIN_FLAGS_POSITION_STALE = 512,
 	/// need better name for this, is set when some aspects of the window changed
-	WIN_FLAGS_FACTOR_CHANGED = 512,
+	WIN_FLAGS_FACTOR_CHANGED = 1024,
 };
 
 static const uint64_t WIN_FLAGS_IMAGES_STALE =

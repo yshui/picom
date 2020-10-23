@@ -400,6 +400,7 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 	win_clear_all_properties_stale(w);
 }
 
+/// Handle non-image flags. This phase might set IMAGES_STALE flags
 void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
 		map_win_start(ps, w);
@@ -413,10 +414,17 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
 	}
 
+	bool damaged = false;
 	if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 		win_on_win_size_change(ps, w);
 		win_update_bounding_shape(ps, w);
+		damaged = true;
 		win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
+	}
+
+	if (win_check_flags_all(w, WIN_FLAGS_POSITION_STALE)) {
+		damaged = true;
+		win_clear_flags(w, WIN_FLAGS_POSITION_STALE);
 	}
 
 	if (win_check_flags_all(w, WIN_FLAGS_PROPERTY_STALE)) {
@@ -428,6 +436,12 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	if (win_check_flags_all(w, WIN_FLAGS_FACTOR_CHANGED)) {
 		win_on_factor_change(ps, w);
 		win_clear_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+	}
+
+	// Add damage, has to be done last so the window has the latest geometry
+	// information.
+	if (damaged) {
+		add_damage_from_win(ps, w);
 	}
 }
 

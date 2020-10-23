@@ -212,19 +212,33 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		// If window geometry change, free old extents
 		if (mw->g.x != ce->x || mw->g.y != ce->y || mw->g.width != ce->width ||
 		    mw->g.height != ce->height || mw->g.border_width != ce->border_width) {
-			region_t damage, new_extents;
-			pixman_region32_init(&damage);
-			pixman_region32_init(&new_extents);
-
-			// Get the old window extents
-			win_extents(mw, &damage);
+			// We don't mark the old region as damaged if we have stale
+			// shape/size/position information. The old region should have
+			// already been add to damage when the information became stale.
+			if (!win_check_flags_any(
+			        mw, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
+				// Mark the old extents as damaged.
+				// The new extents will be marked damaged when processing
+				// window flags.
+				region_t damage;
+				pixman_region32_init(&damage);
+				win_extents(mw, &damage);
+				add_damage(ps, &damage);
+				pixman_region32_fini(&damage);
+			}
 
 			// Queue pending updates
 			win_set_flags(mw, WIN_FLAGS_FACTOR_CHANGED);
 			ps->pending_updates = true;
 
-			mw->g.x = ce->x;
-			mw->g.y = ce->y;
+			// At least one of the following if's is true
+			if (mw->g.x != ce->x || mw->g.y != ce->y) {
+				log_trace("Window position changed, %dx%d -> %dx%d",
+				          mw->g.x, mw->g.y, ce->x, ce->y);
+				mw->g.x = ce->x;
+				mw->g.y = ce->y;
+				win_set_flags(mw, WIN_FLAGS_POSITION_STALE);
+			}
 
 			if (mw->g.width != ce->width || mw->g.height != ce->height ||
 			    mw->g.border_width != ce->border_width) {
@@ -235,14 +249,6 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 				mw->g.border_width = ce->border_width;
 				win_set_flags(mw, WIN_FLAGS_SIZE_STALE);
 			}
-
-			win_extents(mw, &new_extents);
-			// Mark the union of the old and new extents as damaged
-			pixman_region32_union(&damage, &damage, &new_extents);
-			add_damage(ps, &damage);
-
-			pixman_region32_fini(&damage);
-			pixman_region32_fini(&new_extents);
 
 			// Recalculate which screen this window is on
 			win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, mw);
@@ -611,8 +617,9 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 	}
 
 	// Remove the part in the damage area that could be ignored
-	if (w->reg_ignore && win_is_region_ignore_valid(ps, w))
+	if (w->reg_ignore && win_is_region_ignore_valid(ps, w)) {
 		pixman_region32_subtract(&parts, &parts, w->reg_ignore);
+	}
 
 	add_damage(ps, &parts);
 	pixman_region32_fini(&parts);
