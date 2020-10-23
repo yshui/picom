@@ -18,14 +18,14 @@ atom_atom = conn.core.InternAtom(False, len(atom), atom).reply().atom
 fs = "_NET_WM_STATE_FULLSCREEN"
 fs_atom = conn.core.InternAtom(False, len(fs), fs).reply().atom
 
-# making sure disable shadow while screen is unredirected doesn't cause assertion failure
+# making sure disabling shadow while screen is unredirected doesn't cause assertion failure
 wid = conn.generate_id()
 print("Window id is ", hex(wid))
 
 # Create a window
 conn.core.CreateWindowChecked(depth, wid, root, 0, 0, 100, 100, 0, xproto.WindowClass.InputOutput, visual, 0, []).check()
 
-# Set Window name so it doesn't get a shadow
+# Set Window name so it does get a shadow
 set_window_name(conn, wid, "YesShadow")
 
 # Map the window
