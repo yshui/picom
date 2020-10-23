@@ -189,8 +189,6 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 /// Handle configure event of a regular window
 static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	auto w = find_win(ps, ce->window);
-	region_t damage;
-	pixman_region32_init(&damage);
 
 	if (!w) {
 		return;
@@ -210,43 +208,52 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		restack_above(ps, w, ce->above_sibling);
 	} else {
 		restack_above(ps, w, ce->above_sibling);
-		bool factor_change = false;
-		win_extents(mw, &damage);
 
 		// If window geometry change, free old extents
 		if (mw->g.x != ce->x || mw->g.y != ce->y || mw->g.width != ce->width ||
 		    mw->g.height != ce->height || mw->g.border_width != ce->border_width) {
-			factor_change = true;
-		}
+			// We don't mark the old region as damaged if we have stale
+			// shape/size/position information. The old region should have
+			// already been add to damage when the information became stale.
+			if (!win_check_flags_any(
+			        mw, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
+				// Mark the old extents as damaged.
+				// The new extents will be marked damaged when processing
+				// window flags.
+				region_t damage;
+				pixman_region32_init(&damage);
+				win_extents(mw, &damage);
+				add_damage(ps, &damage);
+				pixman_region32_fini(&damage);
+			}
 
-		mw->g.x = ce->x;
-		mw->g.y = ce->y;
+			// Queue pending updates
+			win_set_flags(mw, WIN_FLAGS_FACTOR_CHANGED);
+			ps->pending_updates = true;
 
-		if (mw->g.width != ce->width || mw->g.height != ce->height ||
-		    mw->g.border_width != ce->border_width) {
-			log_trace("Window size changed, %dx%d -> %dx%d", mw->g.width,
-			          mw->g.height, ce->width, ce->height);
-			mw->g.width = ce->width;
-			mw->g.height = ce->height;
-			mw->g.border_width = ce->border_width;
-			win_on_win_size_change(ps, mw);
-			win_update_bounding_shape(ps, mw);
-		}
+			// At least one of the following if's is true
+			if (mw->g.x != ce->x || mw->g.y != ce->y) {
+				log_trace("Window position changed, %dx%d -> %dx%d",
+				          mw->g.x, mw->g.y, ce->x, ce->y);
+				mw->g.x = ce->x;
+				mw->g.y = ce->y;
+				win_set_flags(mw, WIN_FLAGS_POSITION_STALE);
+			}
 
-		region_t new_extents;
-		pixman_region32_init(&new_extents);
-		win_extents(mw, &new_extents);
-		pixman_region32_union(&damage, &damage, &new_extents);
-		pixman_region32_fini(&new_extents);
+			if (mw->g.width != ce->width || mw->g.height != ce->height ||
+			    mw->g.border_width != ce->border_width) {
+				log_trace("Window size changed, %dx%d -> %dx%d",
+				          mw->g.width, mw->g.height, ce->width, ce->height);
+				mw->g.width = ce->width;
+				mw->g.height = ce->height;
+				mw->g.border_width = ce->border_width;
+				win_set_flags(mw, WIN_FLAGS_SIZE_STALE);
+			}
 
-		if (factor_change) {
-			win_on_factor_change(ps, mw);
-			add_damage(ps, &damage);
-			win_update_screen(ps, mw);
+			// Recalculate which screen this window is on
+			win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, mw);
 		}
 	}
-
-	pixman_region32_fini(&damage);
 
 	// override_redirect flag cannot be changed after window creation, as far
 	// as I know, so there's no point to re-match windows here.
@@ -569,7 +576,11 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 				w = find_toplevel(ps, ev->window);
 			}
 			if (w) {
-				win_set_property_stale(w, ev->atom);
+				// Set FACTOR_CHANGED so rules based on properties will be
+				// re-evaluated.
+				// Don't need to set property stale here, since that only
+				// concerns properties we explicitly check.
+				win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 			}
 			break;
 		}
@@ -606,8 +617,9 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 	}
 
 	// Remove the part in the damage area that could be ignored
-	if (w->reg_ignore && win_is_region_ignore_valid(ps, w))
+	if (w->reg_ignore && win_is_region_ignore_valid(ps, w)) {
 		pixman_region32_subtract(&parts, &parts, w->reg_ignore);
+	}
 
 	add_damage(ps, &parts);
 	pixman_region32_fini(&parts);
@@ -641,19 +653,16 @@ static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) 
 	 * seemingly BadRegion errors would be triggered
 	 * if we attempt to rebuild border_size
 	 */
-	// Mark the old border_size as damaged
-	region_t tmp = win_get_bounding_shape_global_by_val(w);
-	add_damage(ps, &tmp);
-	pixman_region32_fini(&tmp);
-
-	win_update_bounding_shape(ps, w);
-
-	// Mark the new border_size as damaged
-	tmp = win_get_bounding_shape_global_by_val(w);
-	add_damage(ps, &tmp);
-	pixman_region32_fini(&tmp);
-
+	// Mark the old bounding shape as damaged
+	if (!win_check_flags_any(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
+		region_t tmp = win_get_bounding_shape_global_by_val(w);
+		add_damage(ps, &tmp);
+		pixman_region32_fini(&tmp);
+	}
 	w->reg_ignore_valid = false;
+
+	win_set_flags(w, WIN_FLAGS_SIZE_STALE);
+	ps->pending_updates = true;
 }
 
 static inline void
