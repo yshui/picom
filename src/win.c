@@ -348,7 +348,7 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 /// Returns true if the `prop` property is stale, as well as clears the stale flag.
 static bool win_fetch_and_unset_property_stale(struct managed_win *w, xcb_atom_t prop);
 /// Returns true if any of the properties are stale, as well as clear all the stale flags.
-static bool win_check_and_clear_all_properties_stale(struct managed_win *w);
+static void win_clear_all_properties_stale(struct managed_win *w);
 
 /// Fetch new window properties from the X server, and run appropriate updates. Might set
 /// WIN_FLAGS_FACTOR_CHANGED
@@ -397,11 +397,7 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 		win_update_leader(ps, w);
 	}
 
-	if (win_check_and_clear_all_properties_stale(w)) {
-		// Some other flags we didn't explicitly check has changed, must
-		// have been a tracked atom for the custom rules
-		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
-	}
+	win_clear_all_properties_stale(w);
 }
 
 void win_process_update_flags(session_t *ps, struct managed_win *w) {
@@ -2502,14 +2498,9 @@ void win_set_property_stale(struct managed_win *w, xcb_atom_t prop) {
 	win_set_flags(w, WIN_FLAGS_PROPERTY_STALE);
 }
 
-static bool win_check_and_clear_all_properties_stale(struct managed_win *w) {
-	bool ret = false;
-	for (size_t i = 0; i < w->stale_props_capacity; i++) {
-		ret = ret || (w->stale_props[i] != 0);
-		w->stale_props[i] = 0;
-	}
+static void win_clear_all_properties_stale(struct managed_win *w) {
+	memset(w->stale_props, 0, w->stale_props_capacity * sizeof(*w->stale_props));
 	win_clear_flags(w, WIN_FLAGS_PROPERTY_STALE);
-	return ret;
 }
 
 static bool win_fetch_and_unset_property_stale(struct managed_win *w, xcb_atom_t prop) {
