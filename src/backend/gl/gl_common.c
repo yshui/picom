@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 
 #include "backend/backend.h"
@@ -415,6 +416,12 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 			border_width = 0;
 		}
 		glUniform1f(win_shader->uniform_border_width, (float)border_width);
+	}
+	if (win_shader->uniform_time >= 0) {
+		struct timespec ts;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		glUniform1f(win_shader->uniform_time,
+		            (float)ts.tv_sec * 1000.0f + (float)ts.tv_nsec / 1.0e6f);
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
@@ -916,6 +923,7 @@ static bool gl_win_shader_from_stringv(const char **vshader_strv,
 	bind_uniform(ret, max_brightness);
 	bind_uniform(ret, corner_radius);
 	bind_uniform(ret, border_width);
+	bind_uniform(ret, time);
 
 	gl_check_err();
 
