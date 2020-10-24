@@ -325,6 +325,11 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		map_win_start(ps, w);
 		win_clear_flags(w, WIN_FLAGS_MAPPED);
 	}
+
+	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
+		win_recheck_client(ps, w);
+		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
+	}
 }
 
 void win_process_image_flags(session_t *ps, struct managed_win *w) {
@@ -373,11 +378,6 @@ void win_process_image_flags(session_t *ps, struct managed_win *w) {
 	// Clear stale image flags
 	if (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE)) {
 		win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
-	}
-
-	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
-		win_recheck_client(ps, w);
-		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
 	}
 }
 
@@ -1890,7 +1890,7 @@ bool destroy_win_start(session_t *ps, struct win *w) {
 		// Clear PIXMAP_STALE flag, since the window is destroyed there is no
 		// pixmap available so STALE doesn't make sense.
 		// Do this before changing the window state to destroying
-		win_clear_flags(mw, WIN_FLAGS_PIXMAP_STALE);
+		win_clear_flags(mw, WIN_FLAGS_IMAGES_STALE);
 
 		// Update state flags of a managed window
 		mw->state = WSTATE_DESTROYING;
