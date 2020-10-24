@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
 
 #include "backend/backend.h"
@@ -408,6 +409,12 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	}
 	if (win_shader->unifm_max_brightness >= 0) {
 		glUniform1f(win_shader->unifm_max_brightness, (float)img->max_brightness);
+	}
+	if (win_shader->unifm_time >= 0) {
+		struct timespec ts;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		glUniform1f(win_shader->unifm_time,
+		            (float)ts.tv_sec * 1000.0f + (float)ts.tv_nsec / 1.0e6f);
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
@@ -936,6 +943,7 @@ static bool gl_win_shader_from_stringv(const char **vshader_strv,
 	ret->unifm_brightness = glGetUniformLocationChecked(ret->prog, "brightness");
 	ret->unifm_max_brightness =
 	    glGetUniformLocationChecked(ret->prog, "max_brightness");
+	ret->unifm_time = glGetUniformLocationChecked(ret->prog, "time");
 
 	glUseProgram(ret->prog);
 	int orig_loc = glGetUniformLocation(ret->prog, "orig");
