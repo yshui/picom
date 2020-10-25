@@ -13,6 +13,7 @@ packages:
   - libconfig
   - libglvnd
   - dbus
+  - pcre
 sources:
   - https://github.com/yshui/picom
 tasks:
