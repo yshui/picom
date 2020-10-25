@@ -118,7 +118,7 @@ $ LDFLAGS="-L/path/to/libraries" CPPFLAGS="-I/path/to/headers" meson --buildtype
 
 As an example, on FreeBSD, you might have to run meson with:
 ```bash
-$ LDFLAGS="-L/usr/local/include" CPPFLAGS="-I/usr/local/include" meson --buildtype=release . build
+$ LDFLAGS="-L/usr/local/lib" CPPFLAGS="-I/usr/local/include" meson --buildtype=release . build
 $ ninja -C build
 ```
 
