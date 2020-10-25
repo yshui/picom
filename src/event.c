@@ -516,7 +516,9 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	// If _NET_WM_OPACITY changes
 	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_OPACITY) {
 		auto w = find_managed_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
-		win_set_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY);
+		if (w) {
+			win_set_property_stale(w, ev->atom);
+		}
 	}
 
 	// If frame extents property changes
