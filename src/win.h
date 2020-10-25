@@ -166,6 +166,8 @@ struct managed_win {
 	xcb_window_t client_win;
 	/// Type of the window.
 	wintype_t window_type;
+	/// State of the window as described by the window manager in _NET_WM_STATE.
+	win_wmstate_t wm_state;
 	/// Whether it looks like a WM window. We consider a window WM window if
 	/// it does not have a decedent with WM_STATE and it is not override-
 	/// redirected itself.

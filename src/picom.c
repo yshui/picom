@@ -1687,6 +1687,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .xrfilter_convolution_exists = false,
 
 	    .atoms_wintypes = {0},
+	    .atoms_wmstates = {0},
 	    .track_atom_lst = NULL,
 
 #ifdef CONFIG_DBUS
@@ -1877,6 +1878,23 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	SET_WM_TYPE_ATOM(COMBO);
 	SET_WM_TYPE_ATOM(DND);
 #undef SET_WM_TYPE_ATOM
+	ps->atoms_wmstates[WMSTATE_UNKNOWN] = 0;
+#define SET_WM_STATE_ATOM(x)                                                             \
+	ps->atoms_wmstates[WMSTATE_##x] = ps->atoms->a_NET_WM_STATE_##x
+	SET_WM_STATE_ATOM(MODAL);
+	SET_WM_STATE_ATOM(STICKY);
+	SET_WM_STATE_ATOM(MAXIMIZED_VERT);
+	SET_WM_STATE_ATOM(MAXIMIZED_HORZ);
+	SET_WM_STATE_ATOM(SHADED);
+	SET_WM_STATE_ATOM(SKIP_TASKBAR);
+	SET_WM_STATE_ATOM(SKIP_PAGER);
+	SET_WM_STATE_ATOM(HIDDEN);
+	SET_WM_STATE_ATOM(FULLSCREEN);
+	SET_WM_STATE_ATOM(ABOVE);
+	SET_WM_STATE_ATOM(BELOW);
+	SET_WM_STATE_ATOM(DEMANDS_ATTENTION);
+	SET_WM_STATE_ATOM(FOCUSED);
+#undef SET_WM_STATE_ATOM
 
 	// Get needed atoms for c2 condition lists
 	if (!(c2_list_postprocess(ps, ps->o.unredir_if_possible_blacklist) &&

@@ -36,9 +36,9 @@
 #include <X11/Xlib.h>
 #include <ev.h>
 #include <pixman.h>
-#include <xcb/xproto.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
+#include <xcb/xproto.h>
 
 #include "uthash_extra.h"
 #ifdef CONFIG_OPENGL
@@ -55,11 +55,11 @@
 #include "backend/driver.h"
 #include "compiler.h"
 #include "config.h"
+#include "list.h"
 #include "region.h"
+#include "render.h"
 #include "types.h"
 #include "utils.h"
-#include "list.h"
-#include "render.h"
 #include "win_defs.h"
 #include "x.h"
 
@@ -254,11 +254,11 @@ typedef struct session {
 	// Cached blur convolution kernels.
 	struct x_convolution_kernel **blur_kerns_cache;
 	/// If we should quit
-	bool quit:1;
+	bool quit : 1;
 	// TODO(yshui) use separate flags for dfferent kinds of updates so we don't
 	// waste our time.
 	/// Whether there are pending updates, like window creation, etc.
-	bool pending_updates:1;
+	bool pending_updates : 1;
 
 	// === Expose event related ===
 	/// Pointer to an array of <code>XRectangle</code>-s of exposed region.
@@ -369,6 +369,8 @@ typedef struct session {
 	struct atom *atoms;
 	/// Array of atoms of all possible window types.
 	xcb_atom_t atoms_wintypes[NUM_WINTYPES];
+	/// Array of atoms of all possible window wm_states.
+	xcb_atom_t atoms_wmstates[NUM_WMSTATES];
 	/// Linked list of additional atoms to track.
 	latom_t *track_atom_lst;
 

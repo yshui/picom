@@ -61,6 +61,7 @@ static const double ROUNDED_PERCENT = 0.05;
 static bool win_update_class(session_t *ps, struct managed_win *w);
 static int win_update_role(session_t *ps, struct managed_win *w);
 static void win_update_wintype(session_t *ps, struct managed_win *w);
+static void win_update_wm_state(session_t *ps, struct managed_win *w);
 static int win_update_name(session_t *ps, struct managed_win *w);
 /**
  * Reread opacity property of a window.
@@ -362,6 +363,10 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 		win_update_wintype(ps, w);
 	}
 
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_STATE)) {
+		win_update_wm_state(ps, w);
+	}
+
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY)) {
 		win_update_opacity_prop(ps, w);
 		// we cannot receive OPACITY change when window has been destroyed
@@ -641,6 +646,23 @@ static wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
 	free_winprop(&prop);
 
 	return WINTYPE_UNKNOWN;
+}
+
+static win_wmstate_t wid_get_prop_wm_state(session_t *ps, xcb_window_t wid) {
+	winprop_t prop =
+	    x_get_prop(ps, wid, ps->atoms->a_NET_WM_STATE, 32L, XCB_ATOM_ATOM, 32);
+
+	win_wmstate_t wm_state = WMSTATE_UNKNOWN;
+	for (unsigned i = 0; i < prop.nitems; ++i) {
+		for (enum wm_state j = 1; j < NUM_WMSTATES; ++j) {
+			if (ps->atoms_wmstates[j] == (xcb_atom_t)prop.p32[i]) {
+				wm_state |= (1 << (j - 1));
+			}
+		}
+	}
+
+	free_winprop(&prop);
+	return wm_state;
 }
 
 static bool
@@ -1118,6 +1140,27 @@ void win_update_wintype(session_t *ps, struct managed_win *w) {
 }
 
 /**
+ * Update window wm_state.
+ */
+void win_update_wm_state(session_t *ps, struct managed_win *w) {
+	const win_wmstate_t wmstate_old = w->wm_state;
+
+	// Detect window wm_state here
+	w->wm_state = wid_get_prop_wm_state(ps, w->client_win);
+
+	if (w->wm_state != wmstate_old) {
+		win_on_factor_change(ps, w);
+	}
+}
+
+bool win_check_wm_state(const struct managed_win *w, enum wm_state state) {
+	if (state == WMSTATE_UNKNOWN) {
+		return false;
+	}
+	return (w->wm_state & (1 << (state - 1))) != 0;
+}
+
+/**
  * Mark a window as the client window of another.
  *
  * @param ps current session
@@ -1143,6 +1186,7 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 	}
 
 	win_update_wintype(ps, w);
+	win_update_wm_state(ps, w);
 
 	// Get frame widths. The window is in damaged area already.
 	win_update_frame_extents(ps, w, client);
@@ -1388,6 +1432,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .leader = XCB_NONE,
 	    .cache_leader = XCB_NONE,
 	    .window_type = WINTYPE_UNKNOWN,
+	    .wm_state = WMSTATE_UNKNOWN,
 	    .wmwin = false,
 	    .focused = false,
 	    .opacity = 0,
@@ -2478,34 +2523,6 @@ static inline bool rect_is_fullscreen(const session_t *ps, int x, int y, int wid
 	return (x <= 0 && y <= 0 && (x + wid) >= ps->root_width && (y + hei) >= ps->root_height);
 }
 
-/**
- * Check if a window is fulscreen using EWMH
- *
- * TODO(yshui) cache this property
- */
-static inline bool
-win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_window_t w) {
-	xcb_get_property_cookie_t prop =
-	    xcb_get_property(c, 0, w, a->a_NET_WM_STATE, XCB_ATOM_ATOM, 0, 12);
-	xcb_get_property_reply_t *reply = xcb_get_property_reply(c, prop, NULL);
-	if (!reply) {
-		return false;
-	}
-
-	if (reply->length) {
-		xcb_atom_t *val = xcb_get_property_value(reply);
-		for (uint32_t i = 0; i < reply->length; i++) {
-			if (val[i] != a->a_NET_WM_STATE_FULLSCREEN) {
-				continue;
-			}
-			free(reply);
-			return true;
-		}
-	}
-	free(reply);
-	return false;
-}
-
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
@@ -2591,8 +2608,7 @@ bool win_check_flags_all(struct managed_win *w, uint64_t flags) {
  * It's not using w->border_size for performance measures.
  */
 bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
-	if (!ps->o.no_ewmh_fullscreen &&
-	    win_is_fullscreen_xcb(ps->c, ps->atoms, w->client_win)) {
+	if (!ps->o.no_ewmh_fullscreen && win_check_wm_state(w, WMSTATE_FULLSCREEN)) {
 		return true;
 	}
 	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
