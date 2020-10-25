@@ -18,7 +18,6 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
 #include <xcb/glx.h>
@@ -973,10 +972,8 @@ static int register_cm(session_t *ps) {
 	// Set WM_CLIENT_MACHINE. As per EWMH, because we set _NET_WM_PID, we must also
 	// set WM_CLIENT_MACHINE.
 	{
-		const auto hostname_max = (unsigned long)sysconf(_SC_HOST_NAME_MAX);
-		char *hostname = malloc(hostname_max);
-
-		if (gethostname(hostname, hostname_max) == 0) {
+		char hostname[HOST_NAME_MAX];
+		if (gethostname(hostname, sizeof(hostname)) == 0) {
 			e = xcb_request_check(
 			    ps->c, xcb_change_property_checked(
 			               ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win,
@@ -990,8 +987,6 @@ static int register_cm(session_t *ps) {
 		} else {
 			log_error_errno("Failed to get hostname");
 		}
-
-		free(hostname);
 	}
 
 	// Set _NET_WM_PID
