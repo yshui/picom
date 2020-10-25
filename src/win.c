@@ -656,7 +656,7 @@ static win_wmstate_t wid_get_prop_wm_state(session_t *ps, xcb_window_t wid) {
 	for (unsigned i = 0; i < prop.nitems; ++i) {
 		for (enum wm_state j = 1; j < NUM_WMSTATES; ++j) {
 			if (ps->atoms_wmstates[j] == (xcb_atom_t)prop.p32[i]) {
-				wm_state |= (1 << (j - 1));
+				wm_state |= (win_wmstate_t)(1 << (j - 1));
 			}
 		}
 	}
@@ -1157,7 +1157,7 @@ bool win_check_wm_state(const struct managed_win *w, enum wm_state state) {
 	if (state == WMSTATE_UNKNOWN) {
 		return false;
 	}
-	return (w->wm_state & (1 << (state - 1))) != 0;
+	return (w->wm_state & (win_wmstate_t)(1 << (state - 1))) != 0;
 }
 
 /**

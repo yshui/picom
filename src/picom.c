@@ -84,6 +84,15 @@ const char *const WINTYPES[NUM_WINTYPES] = {
     "popup_menu", "tooltip", "notification", "combo",   "dnd",
 };
 
+/// Name string for window wm_states.
+const char *const WMSTATES[NUM_WMSTATES] = {
+    "unknown",           "modal",          "sticky",
+    "maximized_vert",    "maximized_horz", "shaded",
+    "skip_taskbar",      "skip_pager",     "hidden",
+    "fullscreen",        "above",          "below",
+    "demands_attention", "focused",
+};
+
 // clang-format off
 /// Names of backends.
 const char *const BACKEND_STRS[] = {[BKEND_XRENDER] = "xrender",

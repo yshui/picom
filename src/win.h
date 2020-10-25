@@ -410,6 +410,9 @@ bool attr_pure win_is_fullscreen(const session_t *ps, const struct managed_win *
  */
 bool attr_pure win_is_focused_raw(const session_t *ps, const struct managed_win *w);
 
+/// check if window has specific wm_state.
+bool attr_pure win_check_wm_state(const struct managed_win *w, enum wm_state state);
+
 /// check if window has ARGB visual
 bool attr_pure win_has_alpha(const struct managed_win *w);
 

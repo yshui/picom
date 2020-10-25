@@ -133,6 +133,7 @@ struct _c2_l {
 	       C2_L_PCLASSG,
 	       C2_L_PCLASSI,
 	       C2_L_PROLE,
+	       C2_L_PWMSTATE,
 	} predef;
 	enum c2_l_type {
 		C2_L_TUNDEFINED,
@@ -210,6 +211,7 @@ static const c2_predef_t C2_PREDEFS[] = {
     [C2_L_PCLASSG] = {"class_g", C2_L_TSTRING, 0},
     [C2_L_PCLASSI] = {"class_i", C2_L_TSTRING, 0},
     [C2_L_PROLE] = {"role", C2_L_TSTRING, 0},
+    [C2_L_PWMSTATE] = {"wm_state", C2_L_TSTRING, 0},
 };
 
 /**
@@ -1395,10 +1397,21 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			case C2_L_PCLASSG: tgt = w->class_general; break;
 			case C2_L_PCLASSI: tgt = w->class_instance; break;
 			case C2_L_PROLE: tgt = w->role; break;
+			case C2_L_PWMSTATE: {
+				ntargets = 0;
+				for (enum wm_state i = 1; i < NUM_WMSTATES; ++i) {
+					if (win_check_wm_state(w, i)) {
+						targets[ntargets++] = WMSTATES[i];
+					}
+				}
+				break;
+			}
 			default: assert(0); break;
 			}
-			ntargets = 1;
-			targets[0] = tgt;
+			if (tgt) {
+				ntargets = 1;
+				targets[0] = tgt;
+			}
 		}
 		// An atom type property, convert it to string
 		else if (pleaf->type == C2_L_TATOM) {
