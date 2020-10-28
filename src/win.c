@@ -4,6 +4,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -2515,7 +2516,7 @@ win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_windo
 
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags) {
-	log_debug("Set flags %lu to window %#010x (%s)", flags, w->base.id, w->name);
+	log_debug("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
 		log_error("Flags set on a destroyed window %#010x (%s)", w->base.id, w->name);
 		return;
@@ -2526,7 +2527,8 @@ void win_set_flags(struct managed_win *w, uint64_t flags) {
 
 /// Clear flags on a window. Some sanity checks are performed
 void win_clear_flags(struct managed_win *w, uint64_t flags) {
-	log_debug("Clear flags %lu from window %#010x (%s)", flags, w->base.id, w->name);
+	log_debug("Clear flags %" PRIu64 " from window %#010x (%s)", flags, w->base.id,
+	          w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
 		log_warn("Flags cleared on a destroyed window %#010x (%s)", w->base.id,
 		         w->name);
