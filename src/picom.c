@@ -101,7 +101,7 @@ const char *const BACKEND_STRS[] = {[BKEND_XRENDER] = "xrender",
 session_t *ps_g = NULL;
 
 void set_root_flags(session_t *ps, uint64_t flags) {
-	log_debug("Setting root flags: %lu", flags);
+	log_debug("Setting root flags: %" PRIu64, flags);
 	ps->root_flags |= flags;
 	ps->pending_updates = true;
 }
