@@ -240,7 +240,7 @@ void win_get_region_frame_local(const struct managed_win *w, region_t *res) {
 
 	// limit the frame region to inside the window
 	region_t reg_win;
-	pixman_region32_init_rects(&reg_win, (rect_t[]){0, 0, outer_width, outer_height}, 1);
+	pixman_region32_init_rects(&reg_win, (rect_t[]){{0, 0, outer_width, outer_height}}, 1);
 	pixman_region32_intersect(res, &reg_win, res);
 	pixman_region32_fini(&reg_win);
 }
