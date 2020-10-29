@@ -320,6 +320,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 
 	config_init(&cfg);
+#ifdef CONFIG_OPTION_ALLOW_OVERRIDES
+	config_set_options(&cfg, CONFIG_OPTION_ALLOW_OVERRIDES);
+#endif
 	{
 		// dirname() could modify the original string, thus we must pass a
 		// copy
