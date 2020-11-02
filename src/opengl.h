@@ -196,6 +196,9 @@ static inline void free_texture(session_t *ps, glx_texture_t **pptex) {
  */
 static inline void free_paint_glx(session_t *ps, paint_t *ppaint) {
 	free_texture(ps, &ppaint->ptex);
+#ifdef CONFIG_OPENGL
+	free(ppaint->fbcfg);
+#endif
 	ppaint->fbcfg = NULL;
 }
 
@@ -207,6 +210,5 @@ static inline void free_win_res_glx(session_t *ps, struct managed_win *w) {
 	free_paint_glx(ps, &w->shadow_paint);
 #ifdef CONFIG_OPENGL
 	free_glx_bc(ps, &w->glx_blur_cache);
-	free(w->paint.fbcfg);
 #endif
 }
