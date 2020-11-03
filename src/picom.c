@@ -2226,7 +2226,10 @@ static void session_destroy(session_t *ps) {
 		unredirect(ps);
 	}
 
+#ifdef CONFIG_OPENGL
 	free(ps->argb_fbconfig);
+	ps->argb_fbconfig = NULL;
+#endif
 
 	file_watch_destroy(ps->loop, ps->file_watch_handle);
 	ps->file_watch_handle = NULL;
