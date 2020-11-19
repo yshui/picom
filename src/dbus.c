@@ -129,7 +129,7 @@ bool cdbus_init(session_t *ps, const char *uniq) {
 		// underscore
 		char *tmp = service + strlen(CDBUS_SERVICE_NAME) + 1;
 		while (*tmp) {
-			if (!isalnum(*tmp)) {
+			if (!isalnum((unsigned char)*tmp)) {
 				*tmp = '_';
 			}
 			tmp++;
@@ -226,7 +226,8 @@ typedef struct ev_dbus_timer {
 /**
  * Callback for handling a D-Bus timeout.
  */
-static void cdbus_callback_handle_timeout(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
+static void
+cdbus_callback_handle_timeout(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
 	ev_dbus_timer *t = (void *)w;
 	dbus_timeout_handle(t->t);
 }

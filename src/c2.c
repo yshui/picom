@@ -240,7 +240,7 @@ static inline int strcmp_wd(const char *needle, const char *src) {
 		return ret;
 
 	char c = src[strlen(needle)];
-	if (isalnum(c) || '_' == c)
+	if (isalnum((unsigned char)c) || '_' == c)
 		return 1;
 	else
 		return 0;
@@ -387,7 +387,7 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
 // TODO(yshui) Not a very good macro, should probably be a function
 #define C2H_SKIP_SPACES()                                                                \
 	{                                                                                \
-		while (isspace(pattern[offset]))                                         \
+		while (isspace((unsigned char)pattern[offset]))                          \
 			++offset;                                                        \
 	}
 
@@ -431,7 +431,7 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 		assert(elei <= 2);
 
 		// Jump over spaces
-		if (isspace(pattern[offset]))
+		if (isspace((unsigned char)pattern[offset]))
 			continue;
 
 		// Handle end of group
@@ -579,7 +579,8 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 
 	// Copy target name out
 	int tgtlen = 0;
-	for (; pattern[offset] && (isalnum(pattern[offset]) || '_' == pattern[offset]);
+	for (; pattern[offset] &&
+	       (isalnum((unsigned char)pattern[offset]) || '_' == pattern[offset]);
 	     ++offset) {
 		++tgtlen;
 	}
@@ -826,7 +827,7 @@ static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) 
 		pleaf->ptntype = C2_L_PTINT;
 		offset = to_int_checked(endptr - pattern);
 		// Make sure we are stopping at the end of a word
-		if (isalnum(pattern[offset])) {
+		if (isalnum((unsigned char)pattern[offset])) {
 			c2_error("Trailing characters after a numeric pattern.");
 		}
 	} else {
@@ -835,7 +836,7 @@ static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) 
 		char delim = '\0';
 
 		// String flags
-		if (tolower(pattern[offset]) == 'r') {
+		if (tolower((unsigned char)pattern[offset]) == 'r') {
 			raw = true;
 			++offset;
 			C2H_SKIP_SPACES();
@@ -1034,7 +1035,7 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 	// Warn about lower case characters in target name
 	if (pleaf->predef == C2_L_PUNDEFINED) {
 		for (const char *pc = pleaf->tgt; *pc; ++pc) {
-			if (islower(*pc)) {
+			if (islower((unsigned char)*pc)) {
 				log_warn("Lowercase character in target name \"%s\".",
 				         pleaf->tgt);
 				break;
