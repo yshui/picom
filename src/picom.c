@@ -405,8 +405,12 @@ static void destroy_backend(session_t *ps) {
 			if (w->state == WSTATE_MAPPED) {
 				win_release_images(ps->backend_data, w);
 			} else {
+				// Unmapped windows could still have shadow images.
+				// And they might have image stale flags set by events.
 				assert(!w->win_image);
-				assert(!w->shadow_image);
+				win_clear_flags(
+				    w, WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_SHADOW_STALE);
+				win_release_images(ps->backend_data, w);
 			}
 		}
 		free_paint(ps, &w->paint);
@@ -495,25 +499,12 @@ static bool initialize_backend(session_t *ps) {
 			}
 			auto w = (struct managed_win *)_w;
 			assert(w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED);
-			if (w->state == WSTATE_MAPPED) {
-				// We need to reacquire image
-				log_debug("Marking window %#010x (%s) for update after "
-				          "redirection",
-				          w->base.id, w->name);
-				if (w->shadow) {
-					struct color c = {
-					    .red = ps->o.shadow_red,
-					    .green = ps->o.shadow_green,
-					    .blue = ps->o.shadow_blue,
-					    .alpha = ps->o.shadow_opacity,
-					};
-					win_bind_shadow(ps->backend_data, w, c,
-					                ps->gaussian_map);
-				}
-
-				w->flags |= WIN_FLAGS_PIXMAP_STALE;
-				ps->pending_updates = true;
-			}
+			// We need to reacquire image
+			log_debug("Marking window %#010x (%s) for update after "
+			          "redirection",
+			          w->base.id, w->name);
+			win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
+			ps->pending_updates = true;
 		}
 	}
 
