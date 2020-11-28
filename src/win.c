@@ -1082,14 +1082,13 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 	w->shadow_width = w->widthb + ps->o.shadow_radius * 2;
 	w->shadow_height = w->heightb + ps->o.shadow_radius * 2;
 
+	// We don't handle property updates of non-visible windows until they are mapped.
+	assert(w->state != WSTATE_UNMAPPED && w->state != WSTATE_DESTROYING &&
+	       w->state != WSTATE_UNMAPPING);
+
 	// Invalidate the shadow we built
-	if (w->state == WSTATE_MAPPED || w->state == WSTATE_MAPPING ||
-	    w->state == WSTATE_FADING) {
-		win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
-		ps->pending_updates = true;
-	} else {
-		assert(w->state == WSTATE_UNMAPPED);
-	}
+	win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
+	ps->pending_updates = true;
 	free_paint(ps, &w->shadow_paint);
 }
 
@@ -1744,6 +1743,10 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 		w->bounding_shaped = win_bounding_shaped(ps, w->base.id);
 	}
 
+	// We don't handle property updates of non-visible windows until they are mapped.
+	assert(w->state != WSTATE_UNMAPPED && w->state != WSTATE_DESTROYING &&
+	       w->state != WSTATE_UNMAPPING);
+
 	pixman_region32_clear(&w->bounding_shape);
 	// Start with the window rectangular region
 	win_get_region_local(w, &w->bounding_shape);
@@ -1795,13 +1798,9 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 
 	// Window shape changed, we should free old wpaint and shadow pict
 	// log_trace("free out dated pict");
-	if (w->state != WSTATE_UNMAPPED) {
-		// Note we only do this when screen is redirected, because
-		// otherwise win_data is not valid
-		assert(w->state != WSTATE_UNMAPPING && w->state != WSTATE_DESTROYING);
-		win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
-		ps->pending_updates = true;
-	}
+	win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
+	ps->pending_updates = true;
+
 	free_paint(ps, &w->paint);
 	free_paint(ps, &w->shadow_paint);
 
