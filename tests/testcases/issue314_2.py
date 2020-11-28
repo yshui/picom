@@ -3,7 +3,7 @@
 import xcffib.xproto as xproto
 import xcffib
 import time
-from common import set_window_name, trigger_root_configure
+from common import set_window_name
 
 conn = xcffib.connect()
 setup = conn.get_setup()

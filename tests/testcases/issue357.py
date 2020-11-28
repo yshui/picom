@@ -3,7 +3,7 @@
 import xcffib.xproto as xproto
 import xcffib
 import time
-from common import set_window_name, trigger_root_configure
+from common import set_window_name, trigger_root_configure, prepare_root_configure
 
 conn = xcffib.connect()
 setup = conn.get_setup()
@@ -25,7 +25,8 @@ print("mapping 1")
 conn.core.MapWindowChecked(wid).check()
 time.sleep(0.5)
 
-trigger_root_configure(conn)
+reply, mode, output = prepare_root_configure(conn)
+trigger_root_configure(conn, reply, mode, output).reply()
 
 # Destroy the windows
 conn.core.DestroyWindowChecked(wid).check()
