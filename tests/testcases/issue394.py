@@ -3,7 +3,7 @@
 import xcffib.xproto as xproto
 import xcffib
 import time
-from common import set_window_name, set_window_size
+from common import set_window_name, set_window_size_async
 
 conn = xcffib.connect()
 setup = conn.get_setup()
@@ -29,7 +29,7 @@ time.sleep(0.5)
 
 # Resize the window and destroy
 print("resize and destroy")
-set_window_size(conn, wid, 150, 150)
+set_window_size_async(conn, wid, 150, 150)
 conn.core.DestroyWindowChecked(wid).check()
 
 time.sleep(0.5)
