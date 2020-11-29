@@ -405,12 +405,15 @@ static void destroy_backend(session_t *ps) {
 			// Unmapped windows could still have shadow images, but not pixmap
 			// images
 			assert(!w->win_image || w->state != WSTATE_UNMAPPED);
-			// Windows can still have stale flags set. For mapped windows,
-			// this can happen when destroy_backend is called before the stale
-			// flags are handled (e.g. when destroy_backend is called in
-			// session_destroy, or configure_root); for unmapped windows, this
-			// is because their stale flags aren't handled until they are
-			// mapped.
+			if (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE) &&
+			    w->state == WSTATE_MAPPED) {
+				log_warn("Stale flags set for mapped window %#010x "
+				         "during backend destruction",
+				         w->base.id);
+				assert(false);
+			}
+			// Unmapped windows can still have stale flags set, because their
+			// stale flags aren't handled until they are mapped.
 			win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
 			win_release_images(ps->backend_data, w);
 		}
