@@ -428,8 +428,12 @@ void win_clear_flags(struct managed_win *w, uint64_t flags);
 bool win_check_flags_any(struct managed_win *w, uint64_t flags);
 /// Returns true if all of the flags in `flags` are set
 bool win_check_flags_all(struct managed_win *w, uint64_t flags);
-/// Mark a property as stale for a window
-void win_set_property_stale(struct managed_win *w, xcb_atom_t prop);
+/// Mark properties as stale for a window
+void win_set_properties_stale(struct managed_win *w, const xcb_atom_t *prop, int nprops);
+
+static inline attr_unused void win_set_property_stale(struct managed_win *w, xcb_atom_t prop) {
+	return win_set_properties_stale(w, (xcb_atom_t[]){prop}, 1);
+}
 
 /// Free all resources in a struct win
 void free_win_res(session_t *ps, struct managed_win *w);

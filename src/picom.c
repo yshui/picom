@@ -402,12 +402,20 @@ static void destroy_backend(session_t *ps) {
 		}
 
 		if (ps->backend_data) {
-			if (w->state == WSTATE_MAPPED) {
-				win_release_images(ps->backend_data, w);
-			} else {
-				assert(!w->win_image);
-				assert(!w->shadow_image);
+			// Unmapped windows could still have shadow images, but not pixmap
+			// images
+			assert(!w->win_image || w->state != WSTATE_UNMAPPED);
+			if (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE) &&
+			    w->state == WSTATE_MAPPED) {
+				log_warn("Stale flags set for mapped window %#010x "
+				         "during backend destruction",
+				         w->base.id);
+				assert(false);
 			}
+			// Unmapped windows can still have stale flags set, because their
+			// stale flags aren't handled until they are mapped.
+			win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
+			win_release_images(ps->backend_data, w);
 		}
 		free_paint(ps, &w->paint);
 	}
@@ -495,25 +503,12 @@ static bool initialize_backend(session_t *ps) {
 			}
 			auto w = (struct managed_win *)_w;
 			assert(w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED);
-			if (w->state == WSTATE_MAPPED) {
-				// We need to reacquire image
-				log_debug("Marking window %#010x (%s) for update after "
-				          "redirection",
-				          w->base.id, w->name);
-				if (w->shadow) {
-					struct color c = {
-					    .red = ps->o.shadow_red,
-					    .green = ps->o.shadow_green,
-					    .blue = ps->o.shadow_blue,
-					    .alpha = ps->o.shadow_opacity,
-					};
-					win_bind_shadow(ps->backend_data, w, c,
-					                ps->gaussian_map);
-				}
-
-				w->flags |= WIN_FLAGS_PIXMAP_STALE;
-				ps->pending_updates = true;
-			}
+			// We need to reacquire image
+			log_debug("Marking window %#010x (%s) for update after "
+			          "redirection",
+			          w->base.id, w->name);
+			win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
+			ps->pending_updates = true;
 		}
 	}
 
@@ -1354,10 +1349,7 @@ static void handle_new_windows(session_t *ps) {
 			}
 			auto mw = (struct managed_win *)new_w;
 			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-				// Have to map immediately instead of queue window update
-				// because we need the window's extent right now.
-				// We can do this because we are in the critical section.
-				map_win_start(ps, mw);
+				win_set_flags(mw, WIN_FLAGS_MAPPED);
 
 				// This window might be damaged before we called fill_win
 				// and created the damage handle. And there is no way for
