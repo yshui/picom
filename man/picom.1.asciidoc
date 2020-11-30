@@ -103,6 +103,12 @@ OPTIONS
 *--inactive-dim* 'VALUE'::
 	Dim inactive windows. (0.0 - 1.0, defaults to 0.0)
 
+*--corner-radius* 'VALUE'::
+	Sets the radius of rounded window corners. When > 0, the compositor will round the corners of windows. Does not interact well with *--transparent-clipping*. (defaults to 0).
+
+*--rounded-corners-exclude* 'CONDITION'::
+	Exclude conditions for rounded corners.
+
 *--mark-wmwin-focused*::
 	Try to detect WM windows (a non-override-redirect window with no child that has 'WM_STATE') and mark them as active.
 

@@ -751,10 +751,11 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 			// w->mode == WMODE_SOLID or WMODE_FRAME_TRANS
 			region_t *tmp = rc_region_new();
 			if (w->mode == WMODE_SOLID) {
-				*tmp = win_get_bounding_shape_global_by_val(w);
+				*tmp =
+				    win_get_bounding_shape_global_without_corners_by_val(w);
 			} else {
 				// w->mode == WMODE_FRAME_TRANS
-				win_get_region_noframe_local(w, tmp);
+				win_get_region_noframe_local_without_corners(w, tmp);
 				pixman_region32_intersect(tmp, tmp, &w->bounding_shape);
 				pixman_region32_translate(tmp, w->g.x, w->g.y);
 			}
@@ -1886,6 +1887,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	      c2_list_postprocess(ps, ps->o.blur_background_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.invert_color_list) &&
 	      c2_list_postprocess(ps, ps->o.opacity_rules) &&
+	      c2_list_postprocess(ps, ps->o.rounded_corners_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.focus_blacklist))) {
 		log_error("Post-processing of conditionals failed, some of your rules "
 		          "might not work");
@@ -2263,6 +2265,7 @@ static void session_destroy(session_t *ps) {
 	free_wincondlst(&ps->o.opacity_rules);
 	free_wincondlst(&ps->o.paint_blacklist);
 	free_wincondlst(&ps->o.unredir_if_possible_blacklist);
+	free_wincondlst(&ps->o.rounded_corners_blacklist);
 
 	// Free tracked atom list
 	{

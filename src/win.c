@@ -79,9 +79,19 @@ static void win_update_prop_shadow(session_t *ps, struct managed_win *w);
  */
 static void win_update_leader(session_t *ps, struct managed_win *w);
 
+/// Generate a "no corners" region function, from a function that returns the
+/// region via a region_t pointer argument. Corners of the window will be removed from
+/// the returned region.
+/// Function signature has to be (win *, region_t *)
+#define gen_without_corners(fun)                                                         \
+	void fun##_without_corners(const struct managed_win *w, region_t *res) {         \
+		fun(w, res);                                                             \
+		win_region_remove_corners(w, res);                                       \
+	}
+
 /// Generate a "return by value" function, from a function that returns the
 /// region via a region_t pointer argument.
-/// Function signature has to be (win *, region_t *)
+/// Function signature has to be (win *)
 #define gen_by_val(fun)                                                                  \
 	region_t fun##_by_val(const struct managed_win *w) {                             \
 		region_t ret;                                                            \
@@ -217,8 +227,12 @@ void win_get_region_noframe_local(const struct managed_win *w, region_t *res) {
 	pixman_region32_fini(res);
 	if (width > 0 && height > 0) {
 		pixman_region32_init_rect(res, x, y, (uint)width, (uint)height);
+	} else {
+		pixman_region32_init(res);
 	}
 }
+
+gen_without_corners(win_get_region_noframe_local);
 
 void win_get_region_frame_local(const struct managed_win *w, region_t *res) {
 	const margin_t extents = win_calc_frame_extents(w);
@@ -1020,6 +1034,26 @@ static void win_determine_blur_background(session_t *ps, struct managed_win *w) 
 }
 
 /**
+ * Determine if a window should have rounded corners.
+ */
+static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) {
+	if (ps->o.corner_radius == 0) {
+		w->corner_radius = 0;
+		return;
+	}
+
+	// Don't round full screen windows & excluded windows
+	if ((w && win_is_fullscreen(ps, w)) ||
+	    c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL)) {
+		w->corner_radius = 0;
+		log_debug("Not rounding corners for window %#010x", w->base.id);
+	} else {
+		w->corner_radius = ps->o.corner_radius;
+		log_debug("Rounding corners for window %#010x", w->base.id);
+	}
+}
+
+/**
  * Update window opacity according to opacity rules.
  */
 void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
@@ -1053,6 +1087,7 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	win_determine_shadow(ps, w);
 	win_determine_invert_color(ps, w);
 	win_determine_blur_background(ps, w);
+	win_determine_rounded_corners(ps, w);
 	w->mode = win_calc_mode(w);
 	log_debug("Window mode changed to %d", w->mode);
 	win_update_opacity_rule(ps, w);
@@ -1413,6 +1448,8 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    // Initialized during paint
 	    .paint = PAINT_INIT,
 	    .shadow_paint = PAINT_INIT,
+
+	    .corner_radius = 0,
 	};
 
 	assert(!w->destroyed);
