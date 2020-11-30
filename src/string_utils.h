@@ -37,7 +37,7 @@ static inline int uitostr(unsigned int n, char *buf) {
 static inline const char *skip_space_const(const char *src) {
 	if (!src)
 		return NULL;
-	while (*src && isspace(*src))
+	while (*src && isspace((unsigned char)*src))
 		src++;
 	return src;
 }
@@ -45,7 +45,7 @@ static inline const char *skip_space_const(const char *src) {
 static inline char *skip_space_mut(char *src) {
 	if (!src)
 		return NULL;
-	while (*src && isspace(*src))
+	while (*src && isspace((unsigned char)*src))
 		src++;
 	return src;
 }
