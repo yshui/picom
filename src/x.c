@@ -69,6 +69,25 @@ winprop_t x_get_prop_with_offset(const session_t *ps, xcb_window_t w, xcb_atom_t
 	    .ptr = NULL, .nitems = 0, .type = XCB_GET_PROPERTY_TYPE_ANY, .format = 0};
 }
 
+/// Get the type, format and size in bytes of a window's specific attribute.
+winprop_info_t x_get_prop_info(const session_t *ps, xcb_window_t w, xcb_atom_t atom) {
+	xcb_generic_error_t *e = NULL;
+	auto r = xcb_get_property_reply(
+	    ps->c, xcb_get_property(ps->c, 0, w, atom, XCB_ATOM_ANY, 0, 0), &e);
+	if (!r) {
+		log_debug_x_error(e, "Failed to get property info for window %#010x", w);
+		free(e);
+		return (winprop_info_t){
+		    .type = XCB_GET_PROPERTY_TYPE_ANY, .format = 0, .length = 0};
+	}
+
+	winprop_info_t winprop_info = {
+	    .type = r->type, .format = r->format, .length = r->bytes_after};
+	free(r);
+
+	return winprop_info;
+}
+
 /**
  * Get the value of a type-<code>xcb_window_t</code> property of a window.
  *
@@ -95,19 +114,10 @@ xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t apr
 bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char ***pstrlst,
                        int *pnstr) {
 	assert(ps->server_grabbed);
-	xcb_generic_error_t *e = NULL;
-	auto r = xcb_get_property_reply(
-	    ps->c, xcb_get_property(ps->c, 0, wid, prop, XCB_ATOM_ANY, 0, 0), &e);
-	if (!r) {
-		log_debug_x_error(e, "Failed to get window property for %#010x", wid);
-		free(e);
-		return false;
-	}
-
-	auto type = r->type;
-	auto format = r->format;
-	auto length = r->bytes_after;
-	free(r);
+	auto prop_info = x_get_prop_info(ps, wid, prop);
+	auto type = prop_info.type;
+	auto format = prop_info.format;
+	auto length = prop_info.length;
 
 	if (type == XCB_ATOM_NONE) {
 		return false;
@@ -126,8 +136,10 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 		return false;
 	}
 
-	r = xcb_get_property_reply(
-	    ps->c, xcb_get_property(ps->c, 0, wid, prop, type, 0, length), &e);
+	xcb_generic_error_t *e = NULL;
+	auto word_count = (length + 4 - 1) / 4;
+	auto r = xcb_get_property_reply(
+	    ps->c, xcb_get_property(ps->c, 0, wid, prop, type, 0, word_count), &e);
 	if (!r) {
 		log_debug_x_error(e, "Failed to get window property for %#010x", wid);
 		free(e);
