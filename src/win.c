@@ -121,6 +121,17 @@ static inline xcb_window_t win_get_leader(session_t *ps, struct managed_win *w) 
 }
 
 /**
+ * Whether the real content of the window is visible.
+ *
+ * A window is not considered "real" visible if it's fading out. Because in that case a
+ * cached version of the window is displayed.
+ */
+static inline bool attr_pure win_is_real_visible(const struct managed_win *w) {
+	return w->state == WSTATE_UNMAPPED || w->state == WSTATE_DESTROYING ||
+	       w->state == WSTATE_UNMAPPING;
+}
+
+/**
  * Update focused state of a window.
  */
 static void win_update_focused(session_t *ps, struct managed_win *w) {
@@ -154,8 +165,9 @@ static void win_update_focused(session_t *ps, struct managed_win *w) {
  * @param leader leader window ID
  */
 static inline void group_on_factor_change(session_t *ps, xcb_window_t leader) {
-	if (!leader)
+	if (!leader) {
 		return;
+	}
 
 	HASH_ITER2(ps->windows, w) {
 		assert(!w->destroyed);
@@ -167,8 +179,6 @@ static inline void group_on_factor_change(session_t *ps, xcb_window_t leader) {
 			win_on_factor_change(ps, mw);
 		}
 	}
-
-	return;
 }
 
 static inline const char *win_get_name_if_managed(const struct win *w) {
@@ -421,13 +431,16 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 
 /// Handle non-image flags. This phase might set IMAGES_STALE flags
 void win_process_update_flags(session_t *ps, struct managed_win *w) {
+	// Whether the window was visible before we process the mapped flag. i.e. is the
+	// window just mapped.
+	bool was_visible = win_is_real_visible(w);
+
 	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
 		map_win_start(ps, w);
 		win_clear_flags(w, WIN_FLAGS_MAPPED);
 	}
 
-	if (w->state == WSTATE_UNMAPPED || w->state == WSTATE_DESTROYING ||
-	    w->state == WSTATE_UNMAPPING) {
+	if (win_is_real_visible(w)) {
 		// Flags of invisible windows are processed when they are mapped
 		return;
 	}
@@ -440,6 +453,24 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	}
 
 	bool damaged = false;
+	if (win_check_flags_any(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
+		if (was_visible) {
+			// Mark the old extents of this window as damaged. The new extents
+			// will be marked damaged below, after the window extents are
+			// updated.
+			//
+			// If the window is just mapped, we don't need to mark the old
+			// extent as damaged. (It's possible that the window was in fading
+			// and is interrupted by being mapped. In that case, the fading
+			// window will be added to damage by map_win_start, so we don't
+			// need to do it here)
+			add_damage_from_win(ps, w);
+		}
+
+		// Update window geometry
+		w->g = w->pending_g;
+	}
+
 	if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 		win_on_win_size_change(ps, w);
 		win_update_bounding_shape(ps, w);
@@ -1513,7 +1544,14 @@ struct win *fill_win(session_t *ps, struct win *w) {
 		free(new);
 		return w;
 	}
-	new->g = *g;
+	new->pending_g = (struct win_geometry){
+	    .x = g->x,
+	    .y = g->y,
+	    .width = g->width,
+	    .height = g->height,
+	    .border_width = g->border_width,
+	};
+
 	free(g);
 
 	win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, new);

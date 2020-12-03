@@ -203,26 +203,14 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 	restack_above(ps, w, ce->above_sibling);
 
-	// If window geometry change, free old extents
-	if (mw->g.x != ce->x || mw->g.y != ce->y || mw->g.width != ce->width ||
-	    mw->g.height != ce->height || mw->g.border_width != ce->border_width) {
-		// We don't mark the old region as damaged if we have stale
-		// shape/size/position information. The old region should have
-		// already been add to damage when the information became stale.
-		if (!win_check_flags_any(mw, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
-			if (mw->state != WSTATE_UNMAPPED && mw->state != WSTATE_UNMAPPING &&
-			    mw->state != WSTATE_DESTROYING) {
-				// Mark the old extents as damaged. The new extents will
-				// be marked damaged when processing window flags.
-				// If the window is not mapped, we don't care
-				region_t damage;
-				pixman_region32_init(&damage);
-				win_extents(mw, &damage);
-				add_damage(ps, &damage);
-				pixman_region32_fini(&damage);
-			}
-		}
-
+	// We check against pending_g here, because there might have been multiple
+	// configure notifies in this cycle, or the window could receive multiple updates
+	// while it's unmapped.
+	bool position_changed = mw->pending_g.x != ce->x || mw->pending_g.y != ce->y;
+	bool size_changed = mw->pending_g.width != ce->width ||
+	                    mw->pending_g.height != ce->height ||
+	                    mw->pending_g.border_width != ce->border_width;
+	if (position_changed || size_changed) {
 		// Queue pending updates
 		win_set_flags(mw, WIN_FLAGS_FACTOR_CHANGED);
 		// TODO(yshui) don't set pending_updates if the window is not
@@ -230,21 +218,20 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		ps->pending_updates = true;
 
 		// At least one of the following if's is true
-		if (mw->g.x != ce->x || mw->g.y != ce->y) {
+		if (position_changed) {
 			log_trace("Window position changed, %dx%d -> %dx%d", mw->g.x,
 			          mw->g.y, ce->x, ce->y);
-			mw->g.x = ce->x;
-			mw->g.y = ce->y;
+			mw->pending_g.x = ce->x;
+			mw->pending_g.y = ce->y;
 			win_set_flags(mw, WIN_FLAGS_POSITION_STALE);
 		}
 
-		if (mw->g.width != ce->width || mw->g.height != ce->height ||
-		    mw->g.border_width != ce->border_width) {
+		if (size_changed) {
 			log_trace("Window size changed, %dx%d -> %dx%d", mw->g.width,
 			          mw->g.height, ce->width, ce->height);
-			mw->g.width = ce->width;
-			mw->g.height = ce->height;
-			mw->g.border_width = ce->border_width;
+			mw->pending_g.width = ce->width;
+			mw->pending_g.height = ce->height;
+			mw->pending_g.border_width = ce->border_width;
 			win_set_flags(mw, WIN_FLAGS_SIZE_STALE);
 		}
 

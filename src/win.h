@@ -89,6 +89,15 @@ struct win {
 	/// Always false if `is_new` is true.
 	bool managed : 1;
 };
+
+struct win_geometry {
+	int16_t x;
+	int16_t y;
+	uint16_t width;
+	uint16_t height;
+	uint16_t border_width;
+};
+
 struct managed_win {
 	struct win base;
 	/// backend data attached to this window. Only available when
@@ -107,9 +116,10 @@ struct managed_win {
 	winstate_t state;
 	/// Window attributes.
 	xcb_get_window_attributes_reply_t a;
-	/// Reply of xcb_get_geometry, which returns the geometry of the window body,
-	/// excluding the window border.
-	xcb_get_geometry_reply_t g;
+	/// The geometry of the window body, excluding the window border region.
+	struct win_geometry g;
+	/// Updated geometry received in events
+	struct win_geometry pending_g;
 	/// Xinerama screen this window is on.
 	int xinerama_scr;
 	/// Window visual pict format
