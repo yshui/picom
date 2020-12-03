@@ -590,7 +590,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 
 	// --max-brightness
 	if (config_lookup_float(&cfg, "max-brightness", &opt->max_brightness) &&
-	    opt->use_damage) {
+	    opt->use_damage && opt->max_brightness < 1) {
 		log_warn("max-brightness requires use-damage = false. Falling back to "
 		         "1.0");
 		opt->max_brightness = 1.0;
