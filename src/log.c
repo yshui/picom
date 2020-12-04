@@ -339,6 +339,10 @@ struct gl_string_marker_logger {
 static void
 gl_string_marker_logger_write(struct log_target *tgt, const char *str, size_t len) {
 	auto g = (struct gl_string_marker_logger *)tgt;
+	// strip newlines at the end of the string
+	while (len > 0 && str[len-1] == '\n') {
+		len--;
+	}
 	g->gl_string_marker((GLsizei)len, str);
 }
 
