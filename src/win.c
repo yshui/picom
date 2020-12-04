@@ -2262,7 +2262,13 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 	}
 #endif
 
-	if (!ps->redirected) {
+	if (!ps->redirected || !w->ever_damaged) {
+		// If we are not redirected, we skip fading because we aren't rendering
+		// anything anyway.
+		// If the window isn't ever damaged, it won't be painted either (see
+		// paint_preprocess), so we can skip fading. This is different from
+		// mapping, because a mapped window could receive damage while it's fading
+		// in, but an unmapped window couldn't while it's fading out.
 		CHECK(!win_skip_fading(ps, w));
 	}
 }
