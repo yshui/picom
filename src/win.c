@@ -127,8 +127,8 @@ static inline xcb_window_t win_get_leader(session_t *ps, struct managed_win *w) 
  * cached version of the window is displayed.
  */
 static inline bool attr_pure win_is_real_visible(const struct managed_win *w) {
-	return w->state == WSTATE_UNMAPPED || w->state == WSTATE_DESTROYING ||
-	       w->state == WSTATE_UNMAPPING;
+	return w->state != WSTATE_UNMAPPED && w->state != WSTATE_DESTROYING &&
+	       w->state != WSTATE_UNMAPPING;
 }
 
 /**
@@ -442,7 +442,7 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		win_clear_flags(w, WIN_FLAGS_MAPPED);
 	}
 
-	if (win_is_real_visible(w)) {
+	if (!win_is_real_visible(w)) {
 		// Flags of invisible windows are processed when they are mapped
 		return;
 	}
