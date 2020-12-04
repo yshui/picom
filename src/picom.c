@@ -713,7 +713,12 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		    unlikely(w->base.id == ps->debug_window ||
 		             w->client_win == ps->debug_window)) {
 			to_paint = false;
-		} else if (!w->ever_damaged) {
+		} else if (!w->ever_damaged && w->state != WSTATE_UNMAPPING &&
+		           w->state != WSTATE_DESTROYING) {
+			// Unmapping clears w->ever_damaged, but the fact that the window
+			// is fading out means it must have been damaged when it was still
+			// mapped (because unmap_win_start will skip fading if it wasn't),
+			// so we still need to paint it.
 			log_trace("Window %#010x (%s) will not be painted because it has "
 			          "not received any damages",
 			          w->base.id, w->name);

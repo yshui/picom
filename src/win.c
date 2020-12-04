@@ -1978,7 +1978,6 @@ void win_ev_stop(session_t *ps, const struct win *w) {
 /// Finish the unmapping of a window (e.g. after fading has finished).
 /// Doesn't free `w`
 static void unmap_win_finish(session_t *ps, struct managed_win *w) {
-	w->ever_damaged = false;
 	w->reg_ignore_valid = false;
 	w->state = WSTATE_UNMAPPED;
 
@@ -2233,6 +2232,8 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 		log_warn("Trying to undestroy a window?");
 		assert(false);
 	}
+
+	w->ever_damaged = false;
 
 	if (unlikely(w->state == WSTATE_UNMAPPING || w->state == WSTATE_UNMAPPED)) {
 		if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
