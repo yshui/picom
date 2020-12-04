@@ -434,6 +434,8 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	// Whether the window was visible before we process the mapped flag. i.e. is the
 	// window just mapped.
 	bool was_visible = win_is_real_visible(w);
+	log_debug("Processing flags for window %#010x (%s), was visible: %d", w->base.id,
+	          w->name, was_visible);
 
 	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
 		map_win_start(ps, w);

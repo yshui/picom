@@ -205,11 +205,15 @@ static inline void get_screen_region(session_t *ps, region_t *res) {
 
 void add_damage(session_t *ps, const region_t *damage) {
 	// Ignore damage when screen isn't redirected
-	if (!ps->redirected)
+	if (!ps->redirected) {
 		return;
+	}
 
-	if (!damage)
+	if (!damage) {
 		return;
+	}
+	log_trace("Adding damage: ");
+	dump_region(damage);
 	pixman_region32_union(ps->damage, ps->damage, (region_t *)damage);
 }
 
