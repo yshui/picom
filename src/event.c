@@ -592,6 +592,7 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 		                          w->g.y + w->g.border_width);
 	}
 
+	log_trace("Mark window %#010x (%s) as having received damage", w->base.id, w->name);
 	w->ever_damaged = true;
 	w->pixmap_damaged = true;
 

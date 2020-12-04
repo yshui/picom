@@ -263,6 +263,8 @@ static bool run_fade(session_t *ps, struct managed_win **_w, long steps) {
 	}
 
 	if (steps) {
+		log_trace("Window %#010x (%s) opacity was: %lf", w->base.id, w->name,
+		          w->opacity);
 		if (w->opacity < w->opacity_target) {
 			w->opacity = clamp(w->opacity + ps->o.fade_in_step * (double)steps,
 			                   0.0, w->opacity_target);
@@ -270,6 +272,7 @@ static bool run_fade(session_t *ps, struct managed_win **_w, long steps) {
 			w->opacity = clamp(w->opacity - ps->o.fade_out_step * (double)steps,
 			                   w->opacity_target, 1);
 		}
+		log_trace("... updated to: %lf", w->opacity);
 	}
 
 	// Note even if opacity == opacity_target here, we still want to run preprocess
@@ -706,22 +709,38 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		// Give up if it's not damaged or invisible, or it's unmapped and its
 		// pixmap is gone (for example due to a ConfigureNotify), or when it's
 		// excluded
-		if (!w->ever_damaged || w->g.x + w->g.width < 1 ||
-		    w->g.y + w->g.height < 1 || w->g.x >= ps->root_width ||
-		    w->g.y >= ps->root_height || w->state == WSTATE_UNMAPPED ||
-		    ((double)w->opacity * MAX_ALPHA < 1 && !w->blur_background) ||
-		    w->paint_excluded) {
+		if (w->state == WSTATE_UNMAPPED ||
+		    unlikely(w->base.id == ps->debug_window ||
+		             w->client_win == ps->debug_window)) {
+			to_paint = false;
+		} else if (!w->ever_damaged) {
+			log_trace("Window %#010x (%s) will not be painted because it has "
+			          "not received any damages",
+			          w->base.id, w->name);
+			to_paint = false;
+		} else if (unlikely(w->g.x + w->g.width < 1 || w->g.y + w->g.height < 1 ||
+		                    w->g.x >= ps->root_width || w->g.y >= ps->root_height)) {
+			log_trace("Window %#010x (%s) will not be painted because it is "
+			          "positioned outside of the screen",
+			          w->base.id, w->name);
+			to_paint = false;
+		} else if (unlikely((double)w->opacity * MAX_ALPHA < 1 && !w->blur_background)) {
 			/* TODO(yshui) for consistency, even a window has 0 opacity, we
 			 * still probably need to blur its background, so to_paint
 			 * shouldn't be false for them. */
+			log_trace("Window %#010x (%s) will not be painted because it has "
+			          "0 opacity",
+			          w->base.id, w->name);
 			to_paint = false;
-		}
-
-		if (w->base.id == ps->debug_window || w->client_win == ps->debug_window) {
+		} else if (w->paint_excluded) {
+			log_trace("Window %#010x (%s) will not be painted because it is "
+			          "excluded from painting",
+			          w->base.id, w->name);
 			to_paint = false;
-		}
-
-		if ((w->flags & WIN_FLAGS_IMAGE_ERROR) != 0) {
+		} else if (unlikely((w->flags & WIN_FLAGS_IMAGE_ERROR) != 0)) {
+			log_trace("Window %#010x (%s) will not be painted because it has "
+			          "image errors",
+			          w->base.id, w->name);
 			to_paint = false;
 		}
 		// log_trace("%s %d %d %d", w->name, to_paint, w->opacity,
@@ -738,6 +757,8 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		if (!to_paint) {
 			goto skip_window;
 		}
+
+		log_trace("Window %#010x (%s) will be painted", w->base.id, w->name);
 
 		// Calculate shadow opacity
 		w->shadow_opacity = ps->o.shadow_opacity * w->opacity * ps->o.frame_opacity;
