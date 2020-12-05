@@ -472,19 +472,19 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		// Update window geometry
 		w->g = w->pending_g;
 
+		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
+			win_on_win_size_change(ps, w);
+			win_update_bounding_shape(ps, w);
+			damaged = true;
+			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
+		}
+
+		if (win_check_flags_all(w, WIN_FLAGS_POSITION_STALE)) {
+			damaged = true;
+			win_clear_flags(w, WIN_FLAGS_POSITION_STALE);
+		}
+
 		win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, w);
-	}
-
-	if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
-		win_on_win_size_change(ps, w);
-		win_update_bounding_shape(ps, w);
-		damaged = true;
-		win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
-	}
-
-	if (win_check_flags_all(w, WIN_FLAGS_POSITION_STALE)) {
-		damaged = true;
-		win_clear_flags(w, WIN_FLAGS_POSITION_STALE);
 	}
 
 	if (win_check_flags_all(w, WIN_FLAGS_PROPERTY_STALE)) {
@@ -2327,12 +2327,15 @@ void win_update_screen(int nscreens, region_t *screens, struct managed_win *w) {
 		if (e->x1 <= w->g.x && e->y1 <= w->g.y && e->x2 >= w->g.x + w->widthb &&
 		    e->y2 >= w->g.y + w->heightb) {
 			w->xinerama_scr = i;
-			log_debug("Window %#010x (%s), %dx%d+%dx%d, is on screen %d",
-			          w->base.id, w->name, w->g.x, w->g.y, w->g.width,
-			          w->g.height, i);
+			log_debug("Window %#010x (%s), %dx%d+%dx%d, is on screen %d "
+			          "(%dx%d+%dx%d)",
+			          w->base.id, w->name, w->g.x, w->g.y, w->widthb, w->heightb,
+			          i, e->x1, e->y1, e->x2 - e->x1, e->y2 - e->y1);
 			return;
 		}
 	}
+	log_debug("Window %#010x (%s), %dx%d+%dx%d, is not contained by any screen",
+	          w->base.id, w->name, w->g.x, w->g.y, w->g.width, w->g.height);
 }
 
 /// Map an already registered window
