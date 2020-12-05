@@ -2327,6 +2327,9 @@ void win_update_screen(int nscreens, region_t *screens, struct managed_win *w) {
 		if (e->x1 <= w->g.x && e->y1 <= w->g.y && e->x2 >= w->g.x + w->widthb &&
 		    e->y2 >= w->g.y + w->heightb) {
 			w->xinerama_scr = i;
+			log_debug("Window %#010x (%s), %dx%d+%dx%d, is on screen %d",
+			          w->base.id, w->name, w->g.x, w->g.y, w->g.width,
+			          w->g.height, i);
 			return;
 		}
 	}
