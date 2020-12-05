@@ -1386,7 +1386,6 @@ static void handle_new_windows(session_t *ps) {
 				// and created the damage handle. And there is no way for
 				// us to find out. So just blindly mark it damaged
 				mw->ever_damaged = true;
-				add_damage_from_win(ps, mw);
 			}
 		}
 	}
