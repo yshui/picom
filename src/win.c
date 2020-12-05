@@ -471,6 +471,8 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 
 		// Update window geometry
 		w->g = w->pending_g;
+
+		win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, w);
 	}
 
 	if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
@@ -1555,8 +1557,6 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	};
 
 	free(g);
-
-	win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, new);
 
 	// Create Damage for window (if not Input Only)
 	new->damage = x_new_id(ps->c);
