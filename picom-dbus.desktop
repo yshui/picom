@@ -1,6 +1,7 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
+NoDisplay=true
 Name=picom (dbus)
 GenericName=X compositor (dbus)
 Comment=An X compositor with dbus backend enabled

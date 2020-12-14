@@ -1,6 +1,7 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
+NoDisplay=true
 Name=compton
 GenericName=X compositor
 Comment=An X compositor
