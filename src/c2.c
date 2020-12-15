@@ -159,7 +159,7 @@ struct _c2_l {
 	{                                                                                   \
 		.neg = false, .op = C2_L_OEXISTS, .match = C2_L_MEXACT,                     \
 		.match_ignorecase = false, .tgt = NULL, .tgtatom = 0, .tgt_onframe = false, \
-		.predef = C2_L_PUNDEFINED, .index = -1, .type = C2_L_TUNDEFINED,            \
+		.predef = C2_L_PUNDEFINED, .index = 0, .type = C2_L_TUNDEFINED,             \
 		.format = 0, .ptntype = C2_L_PTUNDEFINED, .ptnstr = NULL, .ptnint = 0,      \
 	}
 
@@ -214,17 +214,17 @@ static const c2_predef_t C2_PREDEFS[] = {
 /**
  * Get the numeric property value from a win_prop_t.
  */
-static inline long winprop_get_int(winprop_t prop) {
+static inline long winprop_get_int(winprop_t prop, size_t index) {
 	long tgt = 0;
 
-	if (!prop.nitems) {
+	if (!prop.nitems || index >= prop.nitems) {
 		return 0;
 	}
 
 	switch (prop.format) {
-	case 8: tgt = *(prop.p8); break;
-	case 16: tgt = *(prop.p16); break;
-	case 32: tgt = *(prop.p32); break;
+	case 8: tgt = *(prop.p8 + index); break;
+	case 16: tgt = *(prop.p16 + index); break;
+	case 32: tgt = *(prop.p32 + index); break;
 	default: assert(0); break;
 	}
 
@@ -611,23 +611,29 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 
 	// Parse index
 	if ('[' == pattern[offset]) {
+		if (pleaf->predef != C2_L_PUNDEFINED) {
+			c2_error("Predefined targets can't have index.");
+		}
+
 		offset++;
 
 		C2H_SKIP_SPACES();
 
 		long index = -1;
-		char *endptr = NULL;
+		const char *endptr = NULL;
 
-		index = strtol(pattern + offset, &endptr, 0);
+		if ('*' == pattern[offset]) {
+			index = -1;
+			endptr = pattern + offset + 1;
+		} else {
+			index = strtol(pattern + offset, (char **)&endptr, 0);
+			if (index < 0) {
+				c2_error("Index number invalid.");
+			}
+		}
 
 		if (!endptr || pattern + offset == endptr) {
 			c2_error("No index number found after bracket.");
-		}
-		if (index < 0) {
-			c2_error("Index number invalid.");
-		}
-		if (pleaf->predef != C2_L_PUNDEFINED) {
-			c2_error("Predefined targets can't have index.");
 		}
 
 		pleaf->index = to_int_checked(index);
@@ -678,9 +684,10 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 				log_warn("Type specified for a default target "
 				         "will be ignored.");
 			} else {
-				if (pleaf->type && type != pleaf->type)
+				if (pleaf->type && type != pleaf->type) {
 					log_warn("Default type overridden on "
 					         "target.");
+				}
 				pleaf->type = type;
 			}
 		}
@@ -710,23 +717,26 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 				         "will be ignored.",
 				         format);
 			} else {
-				if (pleaf->format && pleaf->format != format)
+				if (pleaf->format && pleaf->format != format) {
 					log_warn("Default format %d overridden on "
 					         "target.",
 					         pleaf->format);
+				}
 				pleaf->format = to_int_checked(format);
 			}
 		}
 	}
 
-	if (!pleaf->type)
+	if (!pleaf->type) {
 		c2_error("Target type cannot be determined.");
+	}
 
 	// if (!pleaf->predef && !pleaf->format && C2_L_TSTRING != pleaf->type)
 	//   c2_error("Target format cannot be determined.");
 
-	if (pleaf->format && 8 != pleaf->format && 16 != pleaf->format && 32 != pleaf->format)
+	if (pleaf->format && 8 != pleaf->format && 16 != pleaf->format && 32 != pleaf->format) {
 		c2_error("Invalid format.");
+	}
 
 	return offset;
 
@@ -1184,11 +1194,13 @@ static void c2_dump(c2_ptr_t p) {
 	if (p.isbranch) {
 		const c2_b_t *const pbranch = p.b;
 
-		if (!pbranch)
+		if (!pbranch) {
 			return;
+		}
 
-		if (pbranch->neg)
+		if (pbranch->neg) {
 			putchar('!');
+		}
 
 		printf("(");
 		c2_dump(pbranch->opr1);
@@ -1207,27 +1219,36 @@ static void c2_dump(c2_ptr_t p) {
 	else {
 		const c2_l_t *const pleaf = p.l;
 
-		if (!pleaf)
+		if (!pleaf) {
 			return;
+		}
 
-		if (C2_L_OEXISTS == pleaf->op && pleaf->neg)
+		if (C2_L_OEXISTS == pleaf->op && pleaf->neg) {
 			putchar('!');
+		}
 
 		// Print target name, type, and format
 		{
 			printf("%s", c2h_dump_str_tgt(pleaf));
-			if (pleaf->tgt_onframe)
+			if (pleaf->tgt_onframe) {
 				putchar('@');
-			if (pleaf->index >= 0)
-				printf("[%d]", pleaf->index);
+			}
+			if (pleaf->predef == C2_L_PUNDEFINED) {
+				if (pleaf->index < 0) {
+					printf("[*]");
+				} else {
+					printf("[%d]", pleaf->index);
+				}
+			}
 			printf(":%d%s", pleaf->format, c2h_dump_str_type(pleaf));
 		}
 
 		// Print operator
 		putchar(' ');
 
-		if (C2_L_OEXISTS != pleaf->op && pleaf->neg)
+		if (C2_L_OEXISTS != pleaf->op && pleaf->neg) {
 			putchar('!');
+		}
 
 		switch (pleaf->match) {
 		case C2_L_MEXACT: break;
@@ -1237,8 +1258,9 @@ static void c2_dump(c2_ptr_t p) {
 		case C2_L_MWILDCARD: putchar('%'); break;
 		}
 
-		if (pleaf->match_ignorecase)
+		if (pleaf->match_ignorecase) {
 			putchar('?');
+		}
 
 		switch (pleaf->op) {
 		case C2_L_OEXISTS: break;
@@ -1249,8 +1271,9 @@ static void c2_dump(c2_ptr_t p) {
 		case C2_L_OLTEQ: fputs("<=", stdout); break;
 		}
 
-		if (C2_L_OEXISTS == pleaf->op)
+		if (C2_L_OEXISTS == pleaf->op) {
 			return;
+		}
 
 		// Print pattern
 		putchar(' ');
@@ -1301,11 +1324,14 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 	switch (pleaf->ptntype) {
 	// Deal with integer patterns
 	case C2_L_PTINT: {
-		long tgt = 0;
+		long *targets = NULL;
+		long *targets_free = NULL;
+		size_t ntargets = 0;
 
 		// Get the value
 		// A predefined target
 		if (pleaf->predef != C2_L_PUNDEFINED) {
+			long tgt = 0;
 			*perr = false;
 			switch (pleaf->predef) {
 			case C2_L_PID: tgt = wid; break;
@@ -1332,45 +1358,73 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 				assert(0);
 				break;
 			}
+			ntargets = 1;
+			targets = &tgt;
 		}
 		// A raw window property
 		else {
+			int word_count = 1;
+			if (pleaf->index < 0) {
+				// Get length of property in 32-bit multiples
+				auto prop_info = x_get_prop_info(ps, wid, pleaf->tgtatom);
+				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
+			}
 			winprop_t prop =
-			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, 1L,
+			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, word_count,
 			                           c2_get_atom_type(pleaf), pleaf->format);
-			if (prop.nitems) {
+
+			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
+			if (ntargets > 0) {
+				targets = targets_free = ccalloc(ntargets, long);
 				*perr = false;
-				tgt = winprop_get_int(prop);
+				for (size_t i = 0; i < ntargets; ++i) {
+					targets[i] = winprop_get_int(prop, i);
+				}
 			}
 			free_winprop(&prop);
 		}
 
-		if (*perr)
-			return;
+		if (*perr) {
+			goto fail_int;
+		}
 
 		// Do comparison
-		switch (pleaf->op) {
-		case C2_L_OEXISTS:
-			*pres = (pleaf->predef != C2_L_PUNDEFINED ? tgt : true);
-			break;
-		case C2_L_OEQ: *pres = (tgt == pleaf->ptnint); break;
-		case C2_L_OGT: *pres = (tgt > pleaf->ptnint); break;
-		case C2_L_OGTEQ: *pres = (tgt >= pleaf->ptnint); break;
-		case C2_L_OLT: *pres = (tgt < pleaf->ptnint); break;
-		case C2_L_OLTEQ: *pres = (tgt <= pleaf->ptnint); break;
-		default:
-			*perr = true;
-			assert(0);
-			break;
+		bool res = false;
+		for (size_t i = 0; i < ntargets; ++i) {
+			long tgt = targets[i];
+			switch (pleaf->op) {
+			case C2_L_OEXISTS:
+				res = (pleaf->predef != C2_L_PUNDEFINED ? tgt : true);
+				break;
+			case C2_L_OEQ: res = (tgt == pleaf->ptnint); break;
+			case C2_L_OGT: res = (tgt > pleaf->ptnint); break;
+			case C2_L_OGTEQ: res = (tgt >= pleaf->ptnint); break;
+			case C2_L_OLT: res = (tgt < pleaf->ptnint); break;
+			case C2_L_OLTEQ: res = (tgt <= pleaf->ptnint); break;
+			default: *perr = true; assert(0);
+			}
+			if (res) {
+				break;
+			}
+		}
+		*pres = res;
+
+	fail_int:
+		// Free property values after usage, if necessary
+		if (targets_free) {
+			free(targets_free);
 		}
 	} break;
 	// String patterns
 	case C2_L_PTSTRING: {
-		const char *tgt = NULL;
-		char *tgt_free = NULL;
+		const char **targets = NULL;
+		const char **targets_free = NULL;
+		const char **targets_free_inner = NULL;
+		size_t ntargets = 0;
 
 		// A predefined target
 		if (pleaf->predef != C2_L_PUNDEFINED) {
+			const char *tgt = NULL;
 			switch (pleaf->predef) {
 			case C2_L_PWINDOWTYPE: tgt = WINTYPES[w->window_type]; break;
 			case C2_L_PNAME: tgt = w->name; break;
@@ -1379,95 +1433,138 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			case C2_L_PROLE: tgt = w->role; break;
 			default: assert(0); break;
 			}
-		} else if (pleaf->type == C2_L_TATOM) {
-			// An atom type property, convert it to string
+			ntargets = 1;
+			targets = &tgt;
+		}
+		// An atom type property, convert it to string
+		else if (pleaf->type == C2_L_TATOM) {
+			int word_count = 1;
+			if (pleaf->index < 0) {
+				// Get length of property in 32-bit multiples
+				auto prop_info = x_get_prop_info(ps, wid, pleaf->tgtatom);
+				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
+			}
 			winprop_t prop =
-			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, 1L,
+			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, word_count,
 			                           c2_get_atom_type(pleaf), pleaf->format);
-			xcb_atom_t atom = (xcb_atom_t)winprop_get_int(prop);
-			if (atom) {
-				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
-				    ps->c, xcb_get_atom_name(ps->c, atom), NULL);
-				if (reply) {
-					tgt_free = strndup(
-					    xcb_get_atom_name_name(reply),
-					    (size_t)xcb_get_atom_name_name_length(reply));
-					free(reply);
+
+			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
+			targets = targets_free = (const char **)ccalloc(2 * ntargets, char *);
+			targets_free_inner = targets + ntargets;
+
+			for (size_t i = 0; i < ntargets; ++i) {
+				xcb_atom_t atom = (xcb_atom_t)winprop_get_int(prop, i);
+				if (atom) {
+					xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
+					    ps->c, xcb_get_atom_name(ps->c, atom), NULL);
+					if (reply) {
+						targets[i] = targets_free_inner[i] = strndup(
+						    xcb_get_atom_name_name(reply),
+						    (size_t)xcb_get_atom_name_name_length(reply));
+						free(reply);
+					}
 				}
 			}
-			if (tgt_free) {
-				tgt = tgt_free;
-			}
 			free_winprop(&prop);
-		} else {
-			// Not an atom type, just fetch the string list
+		}
+		// Not an atom type, just fetch the string list
+		else {
 			char **strlst = NULL;
-			int nstr;
-			if (wid_get_text_prop(ps, wid, pleaf->tgtatom, &strlst, &nstr) &&
-			    nstr > idx) {
-				tgt_free = strdup(strlst[idx]);
-				tgt = tgt_free;
+			int nstr = 0;
+			if (wid_get_text_prop(ps, wid, pleaf->tgtatom, &strlst, &nstr)) {
+				if (pleaf->index < 0 && nstr > 0 && strlen(strlst[0]) > 0) {
+					ntargets = to_u32_checked(nstr);
+					targets = (const char **)strlst;
+				} else if (nstr > idx) {
+					ntargets = 1;
+					targets = (const char **)strlst + idx;
+				}
 			}
 			if (strlst) {
-				free(strlst);
+				targets_free = (const char **)strlst;
 			}
 		}
 
-		if (tgt) {
-			*perr = false;
-		} else {
-			return;
+		if (ntargets == 0) {
+			goto fail_str;
 		}
+		for (size_t i = 0; i < ntargets; ++i) {
+			if (!targets[i]) {
+				goto fail_str;
+			}
+		}
+		*perr = false;
 
 		// Actual matching
-		switch (pleaf->op) {
-		case C2_L_OEXISTS: *pres = true; break;
-		case C2_L_OEQ:
-			switch (pleaf->match) {
-			case C2_L_MEXACT:
-				if (pleaf->match_ignorecase)
-					*pres = !strcasecmp(tgt, pleaf->ptnstr);
-				else
-					*pres = !strcmp(tgt, pleaf->ptnstr);
-				break;
-			case C2_L_MCONTAINS:
-				if (pleaf->match_ignorecase)
-					*pres = strcasestr(tgt, pleaf->ptnstr);
-				else
-					*pres = strstr(tgt, pleaf->ptnstr);
-				break;
-			case C2_L_MSTART:
-				if (pleaf->match_ignorecase)
-					*pres = !strncasecmp(tgt, pleaf->ptnstr,
-					                     strlen(pleaf->ptnstr));
-				else
-					*pres = !strncmp(tgt, pleaf->ptnstr,
-					                 strlen(pleaf->ptnstr));
-				break;
-			case C2_L_MWILDCARD: {
-				int flags = 0;
-				if (pleaf->match_ignorecase)
-					flags |= FNM_CASEFOLD;
-				*pres = !fnmatch(pleaf->ptnstr, tgt, flags);
-			} break;
-			case C2_L_MPCRE:
+		bool res = false;
+		for (size_t i = 0; i < ntargets; ++i) {
+			const char *tgt = targets[i];
+			switch (pleaf->op) {
+			case C2_L_OEXISTS: res = true; break;
+			case C2_L_OEQ:
+				switch (pleaf->match) {
+				case C2_L_MEXACT:
+					if (pleaf->match_ignorecase) {
+						res = !strcasecmp(tgt, pleaf->ptnstr);
+					} else {
+						res = !strcmp(tgt, pleaf->ptnstr);
+					}
+					break;
+				case C2_L_MCONTAINS:
+					if (pleaf->match_ignorecase) {
+						res = strcasestr(tgt, pleaf->ptnstr);
+					} else {
+						res = strstr(tgt, pleaf->ptnstr);
+					}
+					break;
+				case C2_L_MSTART:
+					if (pleaf->match_ignorecase) {
+						res = !strncasecmp(tgt, pleaf->ptnstr,
+						                   strlen(pleaf->ptnstr));
+					} else {
+						res = !strncmp(tgt, pleaf->ptnstr,
+						               strlen(pleaf->ptnstr));
+					}
+					break;
+				case C2_L_MWILDCARD: {
+					int flags = 0;
+					if (pleaf->match_ignorecase) {
+						flags |= FNM_CASEFOLD;
+					}
+					res = !fnmatch(pleaf->ptnstr, tgt, flags);
+				} break;
+				case C2_L_MPCRE:
 #ifdef CONFIG_REGEX_PCRE
-				assert(strlen(tgt) <= INT_MAX);
-				*pres =
-				    (pcre_exec(pleaf->regex_pcre, pleaf->regex_pcre_extra,
-				               tgt, (int)strlen(tgt), 0, 0, NULL, 0) >= 0);
+					assert(strlen(tgt) <= INT_MAX);
+					res = (pcre_exec(pleaf->regex_pcre,
+					                 pleaf->regex_pcre_extra, tgt,
+					                 (int)strlen(tgt), 0, 0, NULL, 0) >= 0);
 #else
-				assert(0);
+					assert(0);
 #endif
+					break;
+				}
+				break;
+			default: *perr = true; assert(0);
+			}
+			if (res) {
 				break;
 			}
-			break;
-		default: *perr = true; assert(0);
 		}
+		*pres = res;
 
+	fail_str:
 		// Free the string after usage, if necessary
-		if (tgt_free) {
-			free(tgt_free);
+		if (targets_free_inner) {
+			for (size_t i = 0; i < ntargets; ++i) {
+				if (targets_free_inner[i]) {
+					free((void *)targets_free_inner[i]);
+				}
+			}
+		}
+		// Free property values after usage, if necessary
+		if (targets_free) {
+			free(targets_free);
 		}
 	} break;
 	default: assert(0); break;

@@ -33,6 +33,12 @@ typedef struct winprop {
 	xcb_get_property_reply_t *r;
 } winprop_t;
 
+typedef struct winprop_info {
+	xcb_atom_t type;
+	uint8_t format;
+	uint32_t length;
+} winprop_info_t;
+
 struct xvisual_info {
 	/// Bit depth of the red component
 	int red_size;
@@ -128,6 +134,9 @@ static inline winprop_t x_get_prop(const session_t *ps, xcb_window_t wid, xcb_at
                                    int length, xcb_atom_t rtype, int rformat) {
 	return x_get_prop_with_offset(ps, wid, atom, 0L, length, rtype, rformat);
 }
+
+/// Get the type, format and size in bytes of a window's specific attribute.
+winprop_info_t x_get_prop_info(const session_t *ps, xcb_window_t w, xcb_atom_t atom);
 
 /// Discard all X events in queue or in flight. Should only be used when the server is
 /// grabbed

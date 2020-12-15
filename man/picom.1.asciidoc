@@ -280,11 +280,11 @@ With greater-than/less-than operators it looks like:
 
 'NEGATION' (optional) is one or more exclamation marks;
 
-'TARGET' is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `x`, `y`, `x2` (x + widthb), `y2`, `width`, `height`, `widthb` (width + 2 * `border_width`), `heightb`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `bounding_shaped`, `rounded_corners` (requires *--detect-rounded-corners*), `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
+'TARGET' is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `x`, `y`, `x2` (`x` + `widthb`), `y2` (like `x2`), `width`, `height`, `widthb` (`width` + 2 * `border_width`), `heightb` (like `widthb`), `border_width`, `fullscreen`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `bounding_shaped`, `rounded_corners` (requires *--detect-rounded-corners*), `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
 
 'CLIENT/FRAME' is a single `@` if the window attribute should be be looked up on client window, nothing if on frame window;
 
-'INDEX' (optional) is the index number of the property to look up. For example, `[2]` means look at the third value in the property. Do not specify it for predefined targets.
+'INDEX' (optional) is the index number of the property to look up. For example, `[2]` means look at the third value in the property. If not specified, the first value (index `[0]`) is used implicitly. Use the special value `[*]` to perform matching against all available property values using logical OR. Do not specify it for predefined targets.
 
 'FORMAT' (optional) specifies the format of the property, 8, 16, or 32. On absence we use format X reports. Do not specify it for predefined or string targets.
 
@@ -313,6 +313,11 @@ Examples:
 	# If the window is a menu
 	window_type *= "menu"
 	_NET_WM_WINDOW_TYPE@:a *= "MENU"
+	# If the window is marked hidden: _NET_WM_STATE contains _NET_WM_STATE_HIDDEN
+	_NET_WM_STATE@[*]:a = "_NET_WM_STATE_HIDDEN"
+	# If the window is marked sticky: _NET_WM_STATE contains an atom that contains
+	# "sticky", ignore case
+	_NET_WM_STATE@[*]:a *?= "sticky"
 	# If the window name contains "Firefox", ignore case
 	name *?= "Firefox"
 	_NET_WM_NAME@:s *?= "Firefox"
