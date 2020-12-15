@@ -176,6 +176,8 @@ struct managed_win {
 	xcb_window_t client_win;
 	/// Type of the window.
 	wintype_t window_type;
+	/// State of the window as described by the window manager in _NET_WM_STATE.
+	win_wmstate_t wm_state;
 	/// Whether it looks like a WM window. We consider a window WM window if
 	/// it does not have a decedent with WM_STATE and it is not override-
 	/// redirected itself.
@@ -421,6 +423,9 @@ bool attr_pure win_is_fullscreen(const session_t *ps, const struct managed_win *
  * Check if a window is focused, without using any focus rules or forced focus settings
  */
 bool attr_pure win_is_focused_raw(const session_t *ps, const struct managed_win *w);
+
+/// check if window has specific wm_state.
+bool attr_pure win_check_wm_state(const struct managed_win *w, enum wm_state state);
 
 /// check if window has ARGB visual
 bool attr_pure win_has_alpha(const struct managed_win *w);
