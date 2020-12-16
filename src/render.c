@@ -192,40 +192,40 @@ make_circle(int cx, int cy, int radius, uint32_t max_ntraps, xcb_render_trapezoi
 	double w;
 	while (k < max_ntraps) {
 		y1 = (int)(-radius * cos(M_PI * k / max_ntraps));
-		traps[n].top = (cy + y1) << 16;
-		traps[n].left.p1.y = (cy + y1) << 16;
-		traps[n].right.p1.y = (cy + y1) << 16;
+		traps[n].top = (cy + y1) * 65536;
+		traps[n].left.p1.y = (cy + y1) * 65536;
+		traps[n].right.p1.y = (cy + y1) * 65536;
 		w = sqrt(radius * radius - y1 * y1) * 65536;
-		traps[n].left.p1.x = (int)((cx << 16) - w);
-		traps[n].right.p1.x = (int)((cx << 16) + w);
+		traps[n].left.p1.x = (int)((cx * 65536) - w);
+		traps[n].right.p1.x = (int)((cx * 65536) + w);
 
 		do {
 			k++;
 			y2 = (int)(-radius * cos(M_PI * k / max_ntraps));
 		} while (y1 == y2);
 
-		traps[n].bottom = (cy + y2) << 16;
-		traps[n].left.p2.y = (cy + y2) << 16;
-		traps[n].right.p2.y = (cy + y2) << 16;
+		traps[n].bottom = (cy + y2) * 65536;
+		traps[n].left.p2.y = (cy + y2) * 65536;
+		traps[n].right.p2.y = (cy + y2) * 65536;
 		w = sqrt(radius * radius - y2 * y2) * 65536;
-		traps[n].left.p2.x = (int)((cx << 16) - w);
-		traps[n].right.p2.x = (int)((cx << 16) + w);
+		traps[n].left.p2.x = (int)((cx * 65536) - w);
+		traps[n].right.p2.x = (int)((cx * 65536) + w);
 		n++;
 	}
 	return n;
 }
 
 uint32_t make_rectangle(int x, int y, int wid, int hei, xcb_render_trapezoid_t traps[]) {
-	traps[0].top = y << 16;
-	traps[0].left.p1.y = y << 16;
-	traps[0].left.p1.x = x << 16;
-	traps[0].left.p2.y = (y + hei) << 16;
-	traps[0].left.p2.x = x << 16;
-	traps[0].bottom = (y + hei) << 16;
-	traps[0].right.p1.x = (x + wid) << 16;
-	traps[0].right.p1.y = y << 16;
-	traps[0].right.p2.x = (x + wid) << 16;
-	traps[0].right.p2.y = (y + hei) << 16;
+	traps[0].top = y * 65536;
+	traps[0].left.p1.y = y * 65536;
+	traps[0].left.p1.x = x * 65536;
+	traps[0].left.p2.y = (y + hei) * 65536;
+	traps[0].left.p2.x = x * 65536;
+	traps[0].bottom = (y + hei) * 65536;
+	traps[0].right.p1.x = (x + wid) * 65536;
+	traps[0].right.p1.y = y * 65536;
+	traps[0].right.p2.x = (x + wid) * 65536;
+	traps[0].right.p2.y = (y + hei) * 65536;
 	return 1;
 }
 
