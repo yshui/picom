@@ -40,6 +40,25 @@ typedef struct {
 	GLint unifm_factor_center;
 } glx_blur_pass_t;
 
+typedef struct {
+	/// Fragment shader for rounded corners.
+	GLuint frag_shader;
+	/// GLSL program for rounded corners.
+	GLuint prog;
+	/// Location of uniform "radius" in rounded-corners GLSL program.
+	GLint unifm_radius;
+	/// Location of uniform "texcoord" in rounded-corners GLSL program.
+	GLint unifm_texcoord;
+	/// Location of uniform "texsize" in rounded-corners GLSL program.
+	GLint unifm_texsize;
+	/// Location of uniform "borderw" in rounded-corners GLSL program.
+	GLint unifm_borderw;
+	/// Location of uniform "is_focused" in rounded-corners GLSL program.
+	GLint unifm_is_focused;
+	/// Location of uniform "resolution" in rounded-corners GLSL program.
+	GLint unifm_resolution;
+} glx_round_pass_t;
+
 /// Structure containing GLX-dependent data for a session.
 typedef struct glx_session {
 	// === OpenGL related ===
@@ -50,6 +69,7 @@ typedef struct glx_session {
 	/// Current GLX Z value.
 	int z;
 	glx_blur_pass_t *blur_passes;
+	glx_round_pass_t *round_passes;
 } glx_session_t;
 
 /// @brief Wrapper of a binded GLX texture.
@@ -81,6 +101,8 @@ void glx_on_root_change(session_t *ps);
 
 bool glx_init_blur(session_t *ps);
 
+bool glx_init_rounded_corners(session_t *ps);
+
 #ifdef CONFIG_OPENGL
 bool glx_load_prog_main(const char *vshader_str, const char *fshader_str,
                         glx_prog_main_t *pprogram);
@@ -90,6 +112,8 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
                      int height, bool repeat, const struct glx_fbconfig_info *);
 
 void glx_release_pixmap(session_t *ps, glx_texture_t *ptex);
+
+bool glx_bind_texture(session_t *ps, glx_texture_t **pptex, int x, int y, int width, int height);
 
 void glx_paint_pre(session_t *ps, region_t *preg) attr_nonnull(1, 2);
 
@@ -104,6 +128,10 @@ void glx_set_clip(session_t *ps, const region_t *reg);
 
 bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
                   GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc);
+
+bool glx_round_corners_dst(session_t *ps, struct managed_win *w,
+                           const glx_texture_t *ptex, int dx, int dy, int width,
+                           int height, float z, float cr, const region_t *reg_tgt);
 
 GLuint glx_create_shader(GLenum shader_type, const char *shader_str);
 
@@ -178,8 +206,9 @@ static inline void free_texture(session_t *ps, glx_texture_t **pptex) {
 	glx_texture_t *ptex = *pptex;
 
 	// Quit if there's nothing
-	if (!ptex)
+	if (!ptex) {
 		return;
+	}
 
 	glx_release_pixmap(ps, ptex);
 
@@ -188,7 +217,6 @@ static inline void free_texture(session_t *ps, glx_texture_t **pptex) {
 	// Free structure itself
 	free(ptex);
 	*pptex = NULL;
-	assert(!*pptex);
 }
 
 /**
@@ -210,5 +238,6 @@ static inline void free_win_res_glx(session_t *ps, struct managed_win *w) {
 	free_paint_glx(ps, &w->shadow_paint);
 #ifdef CONFIG_OPENGL
 	free_glx_bc(ps, &w->glx_blur_cache);
+	free_texture(ps, &w->glx_texture_bg);
 #endif
 }
