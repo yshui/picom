@@ -1136,8 +1136,9 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			if (w->blur_background &&
 			    (w->mode == WMODE_TRANS ||
 			     (ps->o.blur_background_frame && w->mode == WMODE_FRAME_TRANS) ||
-			     ps->o.force_win_blend))
+			     ps->o.force_win_blend)) {
 				win_blur_background(ps, w, ps->tgt_buffer.pict, &reg_tmp);
+			}
 
 			// Painting the window
 			paint_one(ps, w, &reg_tmp);
@@ -1151,7 +1152,7 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				glx_round_corners_dst(ps, w, w->glx_texture_bg, w->g.x,
 				                      w->g.y, wid, hei,
 				                      (float)ps->psglx->z - 0.5f,
-				                      (float)w->corner_radius, reg_paint);
+				                      (float)w->corner_radius, &reg_tmp);
 			}
 #endif
 		}
