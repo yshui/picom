@@ -9,6 +9,8 @@ The current battle plan of this fork is to refactor it to make the code _possibl
 
 We also try to fix bugs.
 
+You can leave your feedbacks or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions).
+
 The original README can be found [here](README_orig.md)
 
 ## Call for testers
