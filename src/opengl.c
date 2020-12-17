@@ -451,34 +451,30 @@ bool glx_init_rounded_corners(session_t *ps) {
 	    "%s"        // extensions
 	    "uniform float u_radius;\n"
 	    "uniform float u_borderw;\n"
-	    "uniform int u_is_focused;\n"
+	    "uniform vec4 u_borderc;\n"
 	    "uniform vec2 u_texcoord;\n"
 	    "uniform vec2 u_texsize;\n"
 	    "uniform vec2 u_resolution;\n"
 	    "uniform %s tex_scr;\n"        // sampler2D | sampler2DRect
+	    "uniform %s tex_wnd;\n"        // sampler2D | sampler2DRect
 	    "\n"
 	    "// https://www.shadertoy.com/view/ltS3zW\n"
 	    "float RectSDF(vec2 p, vec2 b, float r) {\n"
 	    "  vec2 d = abs(p) - b + vec2(r);\n"
 	    "  return min(max(d.x, d.y), 0.0) + length(max(d, 0.0)) - r;\n"
 	    "}\n\n"
-	    "// https://www.shadertoy.com/view/ldfSDj\n"
-	    "float udRoundBox( vec2 p, vec2 b, float r )\n"
-	    "{\n"
-	    "  return length(max(abs(p)-b+r,0.0))-r;\n"
-	    "}\n\n"
 	    "void main()\n"
 	    "{\n"
 	    "  vec2 coord = vec2(u_texcoord.x, "
 	    "u_resolution.y-u_texsize.y-u_texcoord.y);\n"
-	    "  vec4 u_v4SrcColor = %s(tex_scr, vec2(gl_TexCoord[0].st));\n"
+	    "  vec4 u_v4WndBgColor = %s(tex_scr, vec2(gl_TexCoord[0].st));\n"
 	    "  float u_fRadiusPx = u_radius;\n"
-	    "  float u_fHalfBorderThickness = 0.0;\n"
-	    "  vec4 u_v4BorderColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
+	    "  float u_fHalfBorderThickness = u_borderw / 2.0;\n"
+	    "  vec4 u_v4BorderColor = u_borderc;\n"
 	    "  vec4 u_v4FillColor = vec4(0.0, 0.0, 0.0, 0.0);\n"
 	    "  vec4 v4FromColor = u_v4BorderColor;	//Always the border "
 	    "color. If no border, this still should be set\n"
-	    "  vec4 v4ToColor = u_v4SrcColor;		//Outside color is the "
+	    "  vec4 v4ToColor = u_v4WngBgColor;		//Outside color is the "
 	    "background texture\n"
 	    "\n"
 	    "  vec2 u_v2HalfShapeSizePx = u_texsize/2.0 - "
@@ -496,7 +492,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 	    "  } else {\n"
 	    "    v4FromColor = u_v4FillColor;\n"
 	    "  }\n"
-	    "  float fBlendAmount = clamp(fDist + 0.5, 0.0, 1.0);\n"
+	    "  float fBlendAmount = smoothstep(-1.0, 1.0, fDist);\n"
 	    "  vec4 c = mix(v4FromColor, v4ToColor, fBlendAmount);\n"
 	    "\n"
 	    "  // final color\n"
@@ -1215,10 +1211,8 @@ bool glx_round_corners_dst(session_t *ps, struct managed_win *w, const glx_textu
 			glUniform2f(ppass->unifm_texsize, (float)mwidth, (float)mheight);
 		}
 		if (ppass->unifm_borderw >= 0) {
-			glUniform1f(ppass->unifm_borderw, w->g.border_width);
-		}
-		if (ppass->unifm_is_focused >= 0) {
-			glUniform1i(ppass->unifm_is_focused, w->focused);
+			glUniform1f(ppass->unifm_borderw,
+			            w->border_col[0] != -1. ? w->g.border_width : 0);
 		}
 		if (ppass->unifm_resolution >= 0) {
 			glUniform2f(ppass->unifm_resolution, (float)ps->root_width,
