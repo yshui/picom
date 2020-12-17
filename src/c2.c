@@ -1330,36 +1330,40 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 
 		// Get the value
 		// A predefined target
+		long predef_target = 0;
 		if (pleaf->predef != C2_L_PUNDEFINED) {
-			long tgt = 0;
 			*perr = false;
 			switch (pleaf->predef) {
-			case C2_L_PID: tgt = wid; break;
-			case C2_L_PX: tgt = w->g.x; break;
-			case C2_L_PY: tgt = w->g.y; break;
-			case C2_L_PX2: tgt = w->g.x + w->widthb; break;
-			case C2_L_PY2: tgt = w->g.y + w->heightb; break;
-			case C2_L_PWIDTH: tgt = w->g.width; break;
-			case C2_L_PHEIGHT: tgt = w->g.height; break;
-			case C2_L_PWIDTHB: tgt = w->widthb; break;
-			case C2_L_PHEIGHTB: tgt = w->heightb; break;
-			case C2_L_PBDW: tgt = w->g.border_width; break;
-			case C2_L_PFULLSCREEN: tgt = win_is_fullscreen(ps, w); break;
-			case C2_L_POVREDIR: tgt = w->a.override_redirect; break;
-			case C2_L_PARGB: tgt = win_has_alpha(w); break;
-			case C2_L_PFOCUSED: tgt = win_is_focused_raw(ps, w); break;
-			case C2_L_PWMWIN: tgt = w->wmwin; break;
-			case C2_L_PBSHAPED: tgt = w->bounding_shaped; break;
-			case C2_L_PROUNDED: tgt = w->rounded_corners; break;
-			case C2_L_PCLIENT: tgt = w->client_win; break;
-			case C2_L_PLEADER: tgt = w->leader; break;
+			case C2_L_PID: predef_target = wid; break;
+			case C2_L_PX: predef_target = w->g.x; break;
+			case C2_L_PY: predef_target = w->g.y; break;
+			case C2_L_PX2: predef_target = w->g.x + w->widthb; break;
+			case C2_L_PY2: predef_target = w->g.y + w->heightb; break;
+			case C2_L_PWIDTH: predef_target = w->g.width; break;
+			case C2_L_PHEIGHT: predef_target = w->g.height; break;
+			case C2_L_PWIDTHB: predef_target = w->widthb; break;
+			case C2_L_PHEIGHTB: predef_target = w->heightb; break;
+			case C2_L_PBDW: predef_target = w->g.border_width; break;
+			case C2_L_PFULLSCREEN:
+				predef_target = win_is_fullscreen(ps, w);
+				break;
+			case C2_L_POVREDIR: predef_target = w->a.override_redirect; break;
+			case C2_L_PARGB: predef_target = win_has_alpha(w); break;
+			case C2_L_PFOCUSED:
+				predef_target = win_is_focused_raw(ps, w);
+				break;
+			case C2_L_PWMWIN: predef_target = w->wmwin; break;
+			case C2_L_PBSHAPED: predef_target = w->bounding_shaped; break;
+			case C2_L_PROUNDED: predef_target = w->rounded_corners; break;
+			case C2_L_PCLIENT: predef_target = w->client_win; break;
+			case C2_L_PLEADER: predef_target = w->leader; break;
 			default:
 				*perr = true;
 				assert(0);
 				break;
 			}
 			ntargets = 1;
-			targets = &tgt;
+			targets = &predef_target;
 		}
 		// A raw window property
 		else {
@@ -1423,18 +1427,20 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 		size_t ntargets = 0;
 
 		// A predefined target
+		const char *predef_target = NULL;
 		if (pleaf->predef != C2_L_PUNDEFINED) {
-			const char *tgt = NULL;
 			switch (pleaf->predef) {
-			case C2_L_PWINDOWTYPE: tgt = WINTYPES[w->window_type]; break;
-			case C2_L_PNAME: tgt = w->name; break;
-			case C2_L_PCLASSG: tgt = w->class_general; break;
-			case C2_L_PCLASSI: tgt = w->class_instance; break;
-			case C2_L_PROLE: tgt = w->role; break;
+			case C2_L_PWINDOWTYPE:
+				predef_target = WINTYPES[w->window_type];
+				break;
+			case C2_L_PNAME: predef_target = w->name; break;
+			case C2_L_PCLASSG: predef_target = w->class_general; break;
+			case C2_L_PCLASSI: predef_target = w->class_instance; break;
+			case C2_L_PROLE: predef_target = w->role; break;
 			default: assert(0); break;
 			}
 			ntargets = 1;
-			targets = &tgt;
+			targets = &predef_target;
 		}
 		// An atom type property, convert it to string
 		else if (pleaf->type == C2_L_TATOM) {
