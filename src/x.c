@@ -112,7 +112,7 @@ xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t apr
  * Get the value of a text property of a window.
  */
 bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char ***pstrlst,
-                       int *pnstr) {
+                       size_t *pnstr) {
 	assert(ps->server_grabbed);
 	auto prop_info = x_get_prop_info(ps, wid, prop);
 	auto type = prop_info.type;
@@ -160,7 +160,7 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 	if (nstr == 0) {
 		// The property is set to an empty string, in that case, we return one
 		// string
-		char **strlst = malloc(sizeof(char *));
+		char **strlst = cmalloc(char *);
 		strlst[0] = "";
 		*pnstr = 1;
 		*pstrlst = strlst;
@@ -187,7 +187,7 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 		nstr += 1;
 	}
 
-	*pnstr = to_int_checked(nstr);
+	*pnstr = nstr;
 	*pstrlst = ret;
 	free(r);
 	return true;

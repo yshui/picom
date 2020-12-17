@@ -50,6 +50,26 @@ typedef struct {
 } glx_blur_cache_t;
 #endif
 
+struct property_cache {
+	UT_hash_handle hh;
+	xcb_atom_t atom;
+	size_t nitems;
+	// XXX We can specify different types for the same atom given we have two rules.
+	// Not sure if this is desired behaviour, but it breaks the cache.
+	enum { PROP_CACHE_TUNDEFINED,
+	       PROP_CACHE_TINT,
+	       PROP_CACHE_TSTRING,
+	} type;
+	// TODO(tryone144): We should be fine with a simple (void *) to items and casting
+	// it to the proper type while rule-matching as the data-type should be fixed for
+	// any given atom.
+	union {
+		void *data;
+		long *integer;
+		char **string;
+	} items;
+};
+
 /// An entry in the window stack. May or may not correspond to a window we know about.
 struct window_stack_entry {
 	struct list_node stack_neighbour;
@@ -140,6 +160,8 @@ struct managed_win {
 	uint64_t *stale_props;
 	/// number of uint64_ts that has been allocated for stale_props
 	uint64_t stale_props_capacity;
+	/// Cached property-values for rule matching.
+	struct property_cache *cached_props;
 	/// Whether this window is marked fullscreen in _NET_WM_STATE. DO NOT USE
 	/// DIRECTLY! Query fullscreen state with `win_is_fullscreen`.
 	bool fullscreen;

@@ -162,7 +162,7 @@ xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t apr
  * @param[out] pnstr   Number of strings in the array
  */
 bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char ***pstrlst,
-                       int *pnstr);
+                       size_t *pnstr);
 
 const xcb_render_pictforminfo_t *
 x_get_pictform_for_visual(xcb_connection_t *, xcb_visualid_t);

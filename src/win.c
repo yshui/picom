@@ -376,6 +376,8 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 	}
 }
 
+/// Returns true if the `prop` property is stale
+static bool win_check_property_stale(struct managed_win *w, xcb_atom_t prop);
 /// Returns true if the `prop` property is stale, as well as clears the stale flag.
 static bool win_fetch_and_unset_property_stale(struct managed_win *w, xcb_atom_t prop);
 /// Returns true if any of the properties are stale, as well as clear all the stale flags.
@@ -384,6 +386,18 @@ static void win_clear_all_properties_stale(struct managed_win *w);
 /// Fetch new window properties from the X server, and run appropriate updates. Might set
 /// WIN_FLAGS_FACTOR_CHANGED
 static void win_update_properties(session_t *ps, struct managed_win *w) {
+	// Evict previously cached property values
+	struct property_cache *prop, *tmp_prop;
+	HASH_ITER(hh, w->cached_props, prop, tmp_prop) {
+		if (win_check_property_stale(w, prop->atom)) {
+			log_trace("Evict cached property %d for window %#010x",
+			          prop->atom, w->base.id);
+			HASH_DEL(w->cached_props, prop);
+			free(prop->items.data);
+			free(prop);
+		}
+	}
+
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_TYPE)) {
 		win_update_wintype(ps, w);
 	}
@@ -609,7 +623,7 @@ static bool attr_pure win_has_rounded_corners(const struct managed_win *w) {
 
 int win_update_name(session_t *ps, struct managed_win *w) {
 	char **strlst = NULL;
-	int nstr = 0;
+	size_t nstr = 0;
 
 	if (!w->client_win) {
 		return 0;
@@ -644,7 +658,7 @@ int win_update_name(session_t *ps, struct managed_win *w) {
 
 static int win_update_role(session_t *ps, struct managed_win *w) {
 	char **strlst = NULL;
-	int nstr = 0;
+	size_t nstr = 0;
 
 	if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_WINDOW_ROLE, &strlst, &nstr)) {
 		return -1;
@@ -1406,6 +1420,13 @@ void free_win_res(session_t *ps, struct managed_win *w) {
 	free(w->stale_props);
 	w->stale_props = NULL;
 	w->stale_props_capacity = 0;
+
+	struct property_cache *prop, *tmp_prop;
+	HASH_ITER(hh, w->cached_props, prop, tmp_prop) {
+		HASH_DEL(w->cached_props, prop);
+		free(prop->items.data);
+		free(prop);
+	}
 }
 
 /// Insert a new window after list_node `prev`
@@ -1478,6 +1499,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	                                           // change
 	    .stale_props = NULL,
 	    .stale_props_capacity = 0,
+	    .cached_props = NULL,
 
 	    // Runtime variables, updated by dbus
 	    .fade_force = UNSET,
@@ -1755,7 +1777,7 @@ static xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int
  */
 bool win_update_class(session_t *ps, struct managed_win *w) {
 	char **strlst = NULL;
-	int nstr = 0;
+	size_t nstr = 0;
 
 	// Can't do anything if there's no client window
 	if (!w->client_win)
@@ -2702,6 +2724,16 @@ void win_set_properties_stale(struct managed_win *w, const xcb_atom_t *props, in
 static void win_clear_all_properties_stale(struct managed_win *w) {
 	memset(w->stale_props, 0, w->stale_props_capacity * sizeof(*w->stale_props));
 	win_clear_flags(w, WIN_FLAGS_PROPERTY_STALE);
+}
+
+static bool win_check_property_stale(struct managed_win *w, xcb_atom_t prop) {
+	const auto bits_per_element = sizeof(*w->stale_props) * 8;
+	if (prop >= w->stale_props_capacity * bits_per_element) {
+		return false;
+	}
+
+	const auto mask = 1UL << (prop % bits_per_element);
+	return w->stale_props[prop / bits_per_element] & mask;
 }
 
 static bool win_fetch_and_unset_property_stale(struct managed_win *w, xcb_atom_t prop) {

@@ -12,6 +12,7 @@
 
 #include <ctype.h>
 #include <fnmatch.h>
+#include <stdalign.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -212,7 +213,7 @@ static const c2_predef_t C2_PREDEFS[] = {
 };
 
 /**
- * Get the numeric property value from a win_prop_t.
+ * Get the numeric property value from a winprop_t.
  */
 static inline long winprop_get_int(winprop_t prop, size_t index) {
 	long tgt = 0;
@@ -229,6 +230,68 @@ static inline long winprop_get_int(winprop_t prop, size_t index) {
 	}
 
 	return tgt;
+}
+
+/**
+ * Get the string representation of all atom values of a winprop_t.
+ *
+ * TODO(tryone144): Is this better off in x.c?
+ */
+static inline bool
+winprop_get_atoms(session_t *ps, const winprop_t prop, char ***pstrlst, size_t *pnstr) {
+	if (prop.nitems == 0) {
+		return false;
+	}
+
+	// Query atom names from the X server
+	auto name_cookies = ccalloc(prop.nitems, xcb_get_atom_name_cookie_t);
+	auto name_replies = ccalloc(prop.nitems, xcb_get_atom_name_reply_t *);
+	size_t cookie_count = 0;
+	size_t reply_count = 0;
+	size_t length = 0;
+
+	for (size_t i = 0; i < prop.nitems; ++i) {
+		auto atom = (xcb_atom_t)winprop_get_int(prop, i);
+		if (atom) {
+			name_cookies[cookie_count] = xcb_get_atom_name(ps->c, atom);
+			++cookie_count;
+		}
+	}
+	for (size_t i = 0; i < cookie_count; ++i) {
+		auto reply = xcb_get_atom_name_reply(ps->c, name_cookies[i], NULL);
+		if (reply) {
+			name_replies[reply_count] = reply;
+			++reply_count;
+			length += (size_t)xcb_get_atom_name_name_length(reply) + 1;
+		}
+	}
+
+	// Allocate the pointers and the strings together
+	size_t nstr = reply_count;
+	void *buf = NULL;
+	if (posix_memalign(&buf, alignof(char *), length + sizeof(char *) * nstr + 1) != 0) {
+		abort();
+	}
+
+	char **ret = buf;
+	char *strlst = buf + sizeof(char *) * nstr;
+	for (size_t i = 0; i < nstr; ++i) {
+		auto reply = name_replies[i];
+		auto len = (size_t)xcb_get_atom_name_name_length(reply);
+		memcpy(strlst, xcb_get_atom_name_name(reply), len);
+		strlst[len] = '\0';        // atom name reply is not null terminated
+		free(reply);
+
+		ret[i] = strlst;
+		strlst += len + 1;
+	}
+
+	free(name_cookies);
+	free(name_replies);
+
+	*pnstr = nstr;
+	*pstrlst = ret;
+	return true;
 }
 
 /**
@@ -333,7 +396,7 @@ static void attr_unused c2_dump(c2_ptr_t p);
 
 static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf);
 
-static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_ptr_t cond);
+static bool c2_match_once(session_t *ps, struct managed_win *w, const c2_ptr_t cond);
 
 /**
  * Parse a condition string.
@@ -1308,7 +1371,7 @@ static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf) {
  *
  * For internal use.
  */
-static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w,
+static inline void c2_match_once_leaf(session_t *ps, struct managed_win *w,
                                       const c2_l_t *pleaf, bool *pres, bool *perr) {
 	assert(pleaf);
 
@@ -1319,13 +1382,12 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 		return;
 	}
 
-	const int idx = (pleaf->index < 0 ? 0 : pleaf->index);
+	const unsigned int idx = (unsigned int)(pleaf->index < 0 ? 0 : pleaf->index);
 
 	switch (pleaf->ptntype) {
 	// Deal with integer patterns
 	case C2_L_PTINT: {
 		long *targets = NULL;
-		long *targets_free = NULL;
 		size_t ntargets = 0;
 
 		// Get the value
@@ -1367,30 +1429,52 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 		}
 		// A raw window property
 		else {
-			int word_count = 1;
-			if (pleaf->index < 0) {
+			struct property_cache *cached_prop;
+			HASH_FIND_INT(w->cached_props, &pleaf->tgtatom, cached_prop);
+
+			if (!cached_prop) {
+				cached_prop = ccalloc(1, struct property_cache);
+				cached_prop->atom = pleaf->tgtatom;
+				cached_prop->type = PROP_CACHE_TINT;
+				HASH_ADD_INT(w->cached_props, atom, cached_prop);
+				log_trace("Cache property %d for window %#010x",
+				          cached_prop->atom, wid);
+
 				// Get length of property in 32-bit multiples
 				auto prop_info = x_get_prop_info(ps, wid, pleaf->tgtatom);
-				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
-			}
-			winprop_t prop =
-			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, word_count,
-			                           c2_get_atom_type(pleaf), pleaf->format);
+				int word_count =
+				    to_int_checked((prop_info.length + 4 - 1) / 4);
+				winprop_t prop =
+				    x_get_prop(ps, wid, pleaf->tgtatom, word_count,
+				               c2_get_atom_type(pleaf), pleaf->format);
 
-			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
-			if (ntargets > 0) {
-				targets = targets_free = ccalloc(ntargets, long);
-				*perr = false;
-				for (size_t i = 0; i < ntargets; ++i) {
-					targets[i] = winprop_get_int(prop, i);
+				cached_prop->nitems = prop.nitems;
+				cached_prop->items.integer =
+				    ccalloc(cached_prop->nitems, long);
+				for (size_t i = 0; i < cached_prop->nitems; ++i) {
+					cached_prop->items.integer[i] =
+					    winprop_get_int(prop, i);
+				}
+				free_winprop(&prop);
+			} else {
+				log_trace("Use cached property %d for window %#010x",
+				          cached_prop->atom, wid);
+			}
+
+			assert(cached_prop->type == PROP_CACHE_TINT);
+			if (idx < cached_prop->nitems) {
+				ntargets = (pleaf->index < 0 ? cached_prop->nitems
+				                             : min2(cached_prop->nitems, 1));
+				if (ntargets > 0) {
+					targets = cached_prop->items.integer + idx;
 				}
 			}
-			free_winprop(&prop);
 		}
 
-		if (*perr) {
-			goto fail_int;
+		if (ntargets == 0) {
+			return;
 		}
+		*perr = false;
 
 		// Do comparison
 		bool res = false;
@@ -1412,18 +1496,10 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			}
 		}
 		*pres = res;
-
-	fail_int:
-		// Free property values after usage, if necessary
-		if (targets_free) {
-			free(targets_free);
-		}
 	} break;
 	// String patterns
 	case C2_L_PTSTRING: {
-		const char **targets = NULL;
-		const char **targets_free = NULL;
-		const char **targets_free_inner = NULL;
+		char **targets = NULL;
 		size_t ntargets = 0;
 
 		// A predefined target
@@ -1440,63 +1516,77 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			default: assert(0); break;
 			}
 			ntargets = 1;
-			targets = &predef_target;
-		}
-		// An atom type property, convert it to string
-		else if (pleaf->type == C2_L_TATOM) {
-			int word_count = 1;
-			if (pleaf->index < 0) {
-				// Get length of property in 32-bit multiples
-				auto prop_info = x_get_prop_info(ps, wid, pleaf->tgtatom);
-				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
-			}
-			winprop_t prop =
-			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, word_count,
-			                           c2_get_atom_type(pleaf), pleaf->format);
+			targets = (char **)&predef_target;
+		} else {
+			struct property_cache *cached_prop;
+			HASH_FIND_INT(w->cached_props, &pleaf->tgtatom, cached_prop);
 
-			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
-			targets = targets_free = (const char **)ccalloc(2 * ntargets, char *);
-			targets_free_inner = targets + ntargets;
+			if (!cached_prop) {
+				cached_prop = ccalloc(1, struct property_cache);
+				cached_prop->atom = pleaf->tgtatom;
+				cached_prop->type = PROP_CACHE_TSTRING;
+				HASH_ADD_INT(w->cached_props, atom, cached_prop);
+				log_trace("Cache property %d for window %#010x",
+				          cached_prop->atom, wid);
 
-			for (size_t i = 0; i < ntargets; ++i) {
-				xcb_atom_t atom = (xcb_atom_t)winprop_get_int(prop, i);
-				if (atom) {
-					xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
-					    ps->c, xcb_get_atom_name(ps->c, atom), NULL);
-					if (reply) {
-						targets[i] = targets_free_inner[i] = strndup(
-						    xcb_get_atom_name_name(reply),
-						    (size_t)xcb_get_atom_name_name_length(reply));
-						free(reply);
+				// An atom type property, convert it to string
+				if (pleaf->type == C2_L_TATOM) {
+					// Get length of property in 32-bit multiples
+					auto prop_info =
+					    x_get_prop_info(ps, wid, pleaf->tgtatom);
+					int word_count =
+					    to_int_checked((prop_info.length + 4 - 1) / 4);
+					winprop_t prop = x_get_prop(
+					    ps, wid, pleaf->tgtatom, word_count,
+					    c2_get_atom_type(pleaf), pleaf->format);
+
+					char **strlst = NULL;
+					size_t nstr = 0;
+					if (winprop_get_atoms(ps, prop, &strlst, &nstr)) {
+						if (nstr > 0 && strlen(strlst[0]) > 0) {
+							cached_prop->nitems = nstr;
+							cached_prop->items.string = strlst;
+						} else {
+							free(strlst);
+						}
+					}
+					free_winprop(&prop);
+				}
+				// Not an atom type, just fetch the string list
+				else {
+					char **strlst = NULL;
+					size_t nstr = 0;
+					if (wid_get_text_prop(ps, wid, pleaf->tgtatom,
+					                      &strlst, &nstr)) {
+						if (nstr > 0 && strlen(strlst[0]) > 0) {
+							cached_prop->nitems = nstr;
+							cached_prop->items.string = strlst;
+						} else {
+							free(strlst);
+						}
 					}
 				}
+			} else {
+				log_trace("Use cached property %d for window %#010x",
+				          cached_prop->atom, wid);
 			}
-			free_winprop(&prop);
-		}
-		// Not an atom type, just fetch the string list
-		else {
-			char **strlst = NULL;
-			int nstr = 0;
-			if (wid_get_text_prop(ps, wid, pleaf->tgtatom, &strlst, &nstr)) {
-				if (pleaf->index < 0 && nstr > 0 && strlen(strlst[0]) > 0) {
-					ntargets = to_u32_checked(nstr);
-					targets = (const char **)strlst;
-				} else if (nstr > idx) {
-					ntargets = 1;
-					targets = (const char **)strlst + idx;
+
+			assert(cached_prop->type == PROP_CACHE_TSTRING);
+			if (idx < cached_prop->nitems) {
+				ntargets = (pleaf->index < 0 ? cached_prop->nitems
+				                             : min2(cached_prop->nitems, 1));
+				if (ntargets > 0) {
+					targets = cached_prop->items.string + idx;
 				}
-			}
-			if (strlst) {
-				targets_free = (const char **)strlst;
 			}
 		}
 
-		if (ntargets == 0) {
-			goto fail_str;
+		if (ntargets == 0 || !targets) {
+			return;
 		}
 		for (size_t i = 0; i < ntargets; ++i) {
 			if (!targets[i]) {
-				goto fail_str;
+				return;
 			}
 		}
 		*perr = false;
@@ -1558,20 +1648,6 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			}
 		}
 		*pres = res;
-
-	fail_str:
-		// Free the string after usage, if necessary
-		if (targets_free_inner) {
-			for (size_t i = 0; i < ntargets; ++i) {
-				if (targets_free_inner[i]) {
-					free((void *)targets_free_inner[i]);
-				}
-			}
-		}
-		// Free property values after usage, if necessary
-		if (targets_free) {
-			free(targets_free);
-		}
 	} break;
 	default: assert(0); break;
 	}
@@ -1582,7 +1658,7 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
  *
  * @return true if matched, false otherwise.
  */
-static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_ptr_t cond) {
+static bool c2_match_once(session_t *ps, struct managed_win *w, const c2_ptr_t cond) {
 	bool result = false;
 	bool error = true;
 
@@ -1658,8 +1734,7 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
  * @param pdata a place to return the data
  * @return true if matched, false otherwise.
  */
-bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condlst,
-              void **pdata) {
+bool c2_match(session_t *ps, struct managed_win *w, const c2_lptr_t *condlst, void **pdata) {
 	assert(ps->server_grabbed);
 	// Then go through the whole linked list
 	for (; condlst; condlst = condlst->next) {
