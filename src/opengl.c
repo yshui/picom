@@ -652,7 +652,7 @@ bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex, int x, i
 
 	glx_texture_t *ptex = *pptex;
 
-	// log_trace("Copying xy(%d %d) wh(%d %d)", x, y, width, height);
+	// log_trace("Copying xy(%d %d) wh(%d %d) ptex(%p)", x, y, width, height, ptex);
 
 	// Release texture if parameters are inconsistent
 	if (ptex && ptex->texture && (ptex->width != width || ptex->height != height)) {
@@ -1111,6 +1111,58 @@ glx_blur_dst_end:
 	gl_check_err();
 
 	return ret;
+}
+
+// TODO: this is a mess and needs a more consistent way of getting the border pixel
+// I tried looking for a notify event for XCB_CW_BORDER_PIXEL (in xcb_create_window())
+// or a way to get the pixels from xcb_render_picture_t but the documentation for
+// the xcb_xrender extension is literaly non existent...
+bool glx_read_border_pixel(struct managed_win *w, int root_height, int x, int y,
+                           int width attr_unused, int height, int cr, float *ppixel) {
+	if (!ppixel)
+		return false;
+
+	// First try bottom left corner past the
+	// circle radius (after the rounded corner ends)
+	auto openglx = x + cr * 2;
+	auto opengly = root_height - height - y;
+
+	// X is out of bounds
+	// move to the right side
+	if (openglx < 0)
+		openglx = x + width - cr;
+
+	// Y is out of bounds
+	// move to to top part
+	if (opengly < 0) {
+		opengly += height - 1;
+	}
+
+	// bottom left corner is out of bounds
+	// use top border line instead
+	if (openglx < 0 || opengly < 0) {
+
+		// log_warn("OUT OF BOUNDS: xy(%d, %d), glxy(%d %d) wh(%d %d),
+		// border_col(%.2f, %.2f, %.2f, %.2f)", 	x, y, openglx, opengly, width,
+		//height, 	(float)w->border_col[0], (float)w->border_col[1],
+		//(float)w->border_col[2], (float)w->border_col[3]);
+
+		// Reset the color so the shader doesn't use it
+		w->border_col[0] = w->border_col[1] = w->border_col[2] =
+		    w->border_col[3] = -1.0;
+	}
+
+	// Invert Y-axis so we can query border color from texture (0,0)
+	glReadPixels((openglx < 0) ? 0 : openglx, (opengly < 0) ? 0 : opengly, 1, 1,
+	             GL_RGBA, GL_FLOAT, (void *)&w->border_col[0]);
+
+	// log_warn("xy(%d, %d), glxy(%d %d) wh(%d %d), border_col(%.2f, %.2f, %.2f,
+	// %.2f)", 	x, y, openglx, opengly, width, height, 	(float)w->border_col[0],
+	//(float)w->border_col[1], (float)w->border_col[2], (float)w->border_col[3]);
+
+	gl_check_err();
+
+	return true;
 }
 
 bool glx_round_corners_dst(session_t *ps, struct managed_win *w, const glx_texture_t *ptex,
