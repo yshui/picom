@@ -432,4 +432,5 @@ void init_backend_base(struct backend_base *base, session_t *ps) {
 	base->root = ps->root;
 	base->busy = false;
 	base->ops = NULL;
+	base->ps = ps;
 }

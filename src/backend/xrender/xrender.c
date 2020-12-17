@@ -90,8 +90,11 @@ struct _xrender_image_data {
 	bool owned;
 };
 
-static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
-                    const region_t *reg_paint, const region_t *reg_visible) {
+uint32_t make_rounded_window_shape(xcb_render_trapezoid_t traps[], uint32_t max_ntraps,
+                                   int cr, int wid, int hei);
+
+static void compose(backend_t *base, struct managed_win *w, void *img_data, int dst_x,
+                    int dst_y, const region_t *reg_paint, const region_t *reg_visible) {
 	struct _xrender_data *xd = (void *)base;
 	struct _xrender_image_data *img = img_data;
 	uint8_t op = (img->has_alpha ? XCB_RENDER_PICT_OP_OVER : XCB_RENDER_PICT_OP_SRC);
@@ -104,10 +107,55 @@ static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
 	// sure we get everything into the buffer
 	x_clear_picture_clip_region(base->c, img->pict);
 
-	x_set_picture_clip_region(base->c, xd->back[2], 0, 0, &reg);
-	xcb_render_composite(base->c, op, img->pict, alpha_pict, xd->back[2], 0, 0, 0, 0,
-	                     to_i16_checked(dst_x), to_i16_checked(dst_y),
-	                     to_u16_checked(img->ewidth), to_u16_checked(img->eheight));
+	// Are we rounding corners?
+	session_t *ps = base->ps;
+	int cr = (w ? w->corner_radius : 0);
+
+	if (cr == 0) {
+		x_set_picture_clip_region(base->c, xd->back[2], 0, 0, &reg);
+		xcb_render_composite(base->c, op, img->pict, alpha_pict, xd->back[2], 0,
+		                     0, 0, 0, to_i16_checked(dst_x),
+		                     to_i16_checked(dst_y), to_u16_checked(img->ewidth),
+		                     to_u16_checked(img->eheight));
+	} else {
+		// Rounded corners
+		const int fullwid = w ? w->widthb : 0;
+		const int fullhei = w ? w->heightb : 0;
+		// const int fullwid = img->width;
+		// const int fullhei = img->height;
+		// log_warn("f(%d, %d) imge(%d %d) imgf(%d %d) sdw(%d %d) dst(%d %d)",
+		// fullwid, fullhei, img->ewidth, img->eheight, img->width, img->height,
+		// w->shadow_width, w->shadow_height, dst_x, dst_y);
+		xcb_render_picture_t p_tmp = x_create_picture_with_standard(
+		    ps->c, ps->root, fullwid, fullhei, XCB_PICT_STANDARD_ARGB_32, 0, 0);
+		xcb_render_color_t trans = {.red = 0, .blue = 0, .green = 0, .alpha = 0};
+		const xcb_rectangle_t rect = {.x = 0,
+		                              .y = 0,
+		                              .width = to_u16_checked(fullwid),
+		                              .height = to_u16_checked(fullhei)};
+		xcb_render_fill_rectangles(ps->c, XCB_RENDER_PICT_OP_SRC, p_tmp, trans, 1,
+		                           &rect);
+
+		uint32_t max_ntraps = to_u32_checked(cr);
+		xcb_render_trapezoid_t traps[4 * max_ntraps + 5];
+
+		uint32_t n =
+		    make_rounded_window_shape(traps, max_ntraps, cr, fullwid, fullhei);
+
+		xcb_render_trapezoids(ps->c, XCB_RENDER_PICT_OP_OVER, alpha_pict, p_tmp,
+		                      x_get_pictfmt_for_standard(ps->c, XCB_PICT_STANDARD_A_8),
+		                      0, 0, n, traps);
+
+		x_set_picture_clip_region(base->c, xd->back[2], 0, 0, &reg);
+		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_OVER, img->pict, p_tmp,
+		                     xd->back[2], 0, 0, 0, 0,
+		                     // 0, 0, to_i16_checked(x), to_i16_checked(y),
+		                     to_i16_checked(dst_x), to_i16_checked(dst_y),
+		                     to_u16_checked(img->ewidth),
+		                     to_u16_checked(img->eheight));
+
+		xcb_render_free_picture(ps->c, p_tmp);
+	}
 	pixman_region32_fini(&reg);
 }
 
@@ -246,6 +294,16 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_,
 	xcb_render_free_picture(c, tmp_picture[1]);
 	pixman_region32_fini(&reg_op);
 	pixman_region32_fini(&reg_op_resized);
+	return true;
+}
+
+static bool
+x_round(struct backend_base *backend_data attr_unused, struct managed_win *w attr_unused,
+        void *ctx_ attr_unused, void *image_data attr_unused,
+        const region_t *reg_blur attr_unused, const region_t *reg_visible attr_unused) {
+
+	// dummy implementation, we already perform the rounding in compose
+	// TODO: should move the compose code here and call it from here
 	return true;
 }
 
@@ -563,6 +621,21 @@ void get_blur_size(void *blur_context, int *width, int *height) {
 	*height = ctx->resize_height;
 }
 
+bool store_back_texture(backend_t *backend_data attr_unused,
+                        struct managed_win *w attr_unused, void *ctx_ attr_unused,
+                        const region_t *reg_tgt attr_unused, int x attr_unused,
+                        int y attr_unused, int width attr_unused, int height attr_unused) {
+	return true;
+}
+
+void *create_round_context(struct backend_base *base attr_unused, void *args attr_unused) {
+	static int dummy_context;
+	return &dummy_context;
+}
+
+void destroy_round_context(struct backend_base *base attr_unused, void *ctx attr_unused) {
+}
+
 backend_t *backend_xrender_init(session_t *ps) {
 	auto xd = ccalloc(1, struct _xrender_data);
 	init_backend_base(&xd->base, ps);
@@ -653,6 +726,7 @@ struct backend_operations xrender_ops = {
     .init = backend_xrender_init,
     .deinit = deinit,
     .blur = blur,
+    .round = x_round,
     .present = present,
     .compose = compose,
     .fill = fill,
@@ -669,7 +743,10 @@ struct backend_operations xrender_ops = {
     .copy = copy,
     .create_blur_context = create_blur_context,
     .destroy_blur_context = destroy_blur_context,
+    .create_round_context = create_round_context,
+    .destroy_round_context = destroy_round_context,
     .get_blur_size = get_blur_size,
+    .store_back_texture = store_back_texture
 };
 
 // vim: set noet sw=8 ts=8:

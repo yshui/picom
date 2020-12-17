@@ -28,6 +28,9 @@ typedef struct backend_base {
 	/// Whether the backend can accept new render request at the moment
 	bool busy;
 	// ...
+
+	// Session data
+	session_t *ps;
 } backend_t;
 
 typedef void (*backend_ready_callback_t)(void *);
@@ -68,6 +71,11 @@ struct kernel_blur_args {
 struct dual_kawase_blur_args {
 	int size;
 	int strength;
+};
+
+struct round_corners_args {
+	int corner_radius;
+	bool round_borders;
 };
 
 struct backend_operations {
@@ -141,6 +149,11 @@ struct backend_operations {
 	bool (*blur)(backend_t *backend_data, double opacity, void *blur_ctx,
 	             const region_t *reg_blur, const region_t *reg_visible)
 	    attr_nonnull(1, 3, 4, 5);
+
+	/// Round a given region of the rendering buffer.
+	bool (*round)(backend_t *backend_data, struct managed_win *w, void *round_ctx,
+	              void *image_data, const region_t *reg_round,
+	              const region_t *reg_visible) attr_nonnull(1, 2, 3, 5, 6);
 
 	/// Update part of the back buffer with the rendering buffer, then present the
 	/// back buffer onto the target window (if not back buffered, update part of the
@@ -229,6 +242,16 @@ struct backend_operations {
 	void (*destroy_blur_context)(backend_t *base, void *ctx);
 	/// Get how many pixels outside of the blur area is needed for blur
 	void (*get_blur_size)(void *blur_context, int *width, int *height);
+
+	/// Backup our current window background so we can use it for "erasing" corners
+	bool (*store_back_texture)(backend_t *base, struct managed_win *w, void *ctx_,
+	                           const region_t *reg_tgt, int x, int y, int width,
+	                           int height);
+
+	/// Create a rounded corners context
+	void *(*create_round_context)(backend_t *base, void *args);
+	/// Destroy a rounded corners context
+	void (*destroy_round_context)(backend_t *base, void *ctx);
 
 	// ===========         Hooks        ============
 	/// Let the backend hook into the event handling queue

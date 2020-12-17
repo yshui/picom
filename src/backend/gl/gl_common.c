@@ -18,6 +18,7 @@
 #include "string_utils.h"
 #include "types.h"
 #include "utils.h"
+#include "win.h"
 
 #include "backend/backend_common.h"
 #include "backend/gl/gl_common.h"
@@ -55,6 +56,20 @@ struct gl_blur_context {
 	int resize_width, resize_height;
 
 	int npasses;
+};
+
+struct gl_round_context {
+	gl_round_shader_t *round_shader;
+	GLuint *bg_fbo;
+	GLuint *bg_tex;
+	/// Cached size of each blur_texture
+	struct tex_size {
+		int width;
+		int height;
+	} * tex_sizes;
+	int tex_count;
+	int fbo_count;
+	bool round_borders;
 };
 
 static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
@@ -889,6 +904,182 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 	return ret;
 }
 
+bool gl_round(backend_t *backend_data attr_unused, struct managed_win *w, void *ctx_,
+              void *image_data, const region_t *reg_round attr_unused,
+              const region_t *reg_visible attr_unused) {
+
+	struct gl_round_context *cctx = ctx_;
+	auto gd = (struct gl_data *)backend_data;
+	auto img = (struct gl_image *)image_data;
+
+	// log_warn("r(%d) b(%d), wxy(%d %d) wwh(%d %d) img(%d %d)",
+	//  w->corner_radius, w->g.border_width, w->g.x, w->g.y,
+	//  w->widthb, w->heightb, img->inner->width, img->inner->height);
+
+	int nrects;
+	const rect_t *rects;
+	rects = pixman_region32_rectangles((region_t *)reg_round, &nrects);
+	if (!nrects) {
+		// Nothing to paint
+		return false;
+	}
+
+	GLuint target = gd->back_fbo;
+	int dst_x = w->g.x;
+	int dst_y = w->g.y;
+
+	auto coord = ccalloc(nrects * 16, GLint);
+	auto indices = ccalloc(nrects * 6, GLuint);
+	x_rect_to_coords(nrects, rects, dst_x, dst_y, img ? img->inner->height : w->heightb,
+	                 gd->height, img ? img->inner->y_inverted : true, coord, indices);
+
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
+	GLuint bo[2];
+	glGenBuffers(2, bo);
+	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
+	             indices, GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray(vert_coord_loc);
+	glEnableVertexAttribArray(vert_in_texcoord_loc);
+	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
+	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
+
+	// XXX: do we need projection matrix at all?
+	// Note: OpenGL matrices are column major
+	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)gd->width, 0, 0, 0},
+	                                   {0, 2.0f / (GLfloat)gd->height, 0, 0},
+	                                   {0, 0, 0, 0},
+	                                   {-1, -1, 0, 1}};
+
+	// glDisable(GL_BLEND);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+	// Bind texture
+	glViewport(0, 0, gd->width, gd->height);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, cctx->bg_tex[0]);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, img ? img->inner->texture : gd->back_texture);
+
+	const gl_round_shader_t *ppass = &cctx->round_shader[0];
+	glUseProgram(ppass->prog);
+
+	if (ppass->projection_loc >= 0)
+		glUniformMatrix4fv(ppass->projection_loc, 1, false, projection_matrix[0]);
+	if (ppass->unifm_tex_bg >= 0)
+		glUniform1i(ppass->unifm_tex_bg, (GLint)1);
+	if (ppass->unifm_radius)
+		glUniform1f(ppass->unifm_radius, (float)w->corner_radius);
+	if (ppass->unifm_texcoord)
+		glUniform2f(ppass->unifm_texcoord, (float)w->g.x, (float)w->g.y);
+	if (ppass->unifm_texsize)
+		glUniform2f(ppass->unifm_texsize, (float)w->widthb, (float)w->heightb);
+	if (ppass->unifm_borderw)
+		glUniform1f(ppass->unifm_borderw, (w->round_borders) ? w->g.border_width : 0);
+	if (ppass->unifm_resolution)
+		glUniform2f(ppass->unifm_resolution, (float)gd->width, (float)gd->height);
+
+	// Draw
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
+	glDisableVertexAttribArray(vert_coord_loc);
+	glDisableVertexAttribArray(vert_in_texcoord_loc);
+	glBindVertexArray(0);
+	glDeleteVertexArrays(1, &vao);
+
+	// Cleanup
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glDrawBuffer(GL_BACK);
+	glEnable(GL_BLEND);
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glDeleteBuffers(2, bo);
+
+	glUseProgram(0);
+	gl_check_err();
+
+	free(indices);
+	free(coord);
+
+	return true;
+}
+
+// Assumes the two textures are the same dimensions
+static bool copyFrameBufferTexture(int width, int height, GLuint fboIn, GLuint textureIn,
+                                   GLuint fboOut, GLuint textureOut) {
+	bool ret = false;
+
+	// Bind input FBO + texture to a color attachment
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, fboIn);
+	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       textureIn, 0);
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		log_error("Source framebuffer attachment failed.");
+		goto out;
+	}
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+	// Bind destination FBO + texture to another color attachment
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fboOut);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D,
+	                       textureOut, 0);
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		log_error("Destination framebuffer attachment failed.");
+		goto out;
+	}
+	glDrawBuffer(GL_COLOR_ATTACHMENT1);
+
+	// specify source, destination drawing (sub)rectangles.
+	glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT,
+	                  GL_NEAREST);
+
+	ret = true;
+
+out:
+	// unbind the color attachments
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, 0, 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	gl_check_err();
+
+	return ret;
+}
+
+bool gl_store_back_texture(backend_t *backend_data attr_unused,
+                           struct managed_win *w attr_unused, void *ctx_ attr_unused,
+                           const region_t *reg_tgt attr_unused, int x attr_unused,
+                           int y attr_unused, int width attr_unused, int height attr_unused) {
+
+	struct gl_round_context *cctx = ctx_;
+	auto gd = (struct gl_data *)backend_data;
+
+	// log_info("Copying xy(%d %d) wh(%d %d)", x, y, width, height);
+
+	{
+		// Prepare our backup texture
+		glBindTexture(GL_TEXTURE_2D, cctx->bg_tex[0]);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, gd->width, gd->height, 0, GL_BGR,
+		             GL_UNSIGNED_BYTE, NULL);
+		glBindTexture(GL_TEXTURE_2D, 0);
+
+		copyFrameBufferTexture(gd->width, gd->height, gd->back_fbo,
+		                       gd->back_texture, cctx->bg_fbo[0], cctx->bg_tex[0]);
+	}
+
+	return true;
+}
+
 // clang-format off
 const char *vertex_shader = GLSL(330,
 	uniform mat4 projection;
@@ -1128,6 +1319,36 @@ void gl_destroy_blur_context(backend_t *base attr_unused, void *ctx) {
 	bctx->blur_fbo_count = 0;
 
 	free(bctx);
+
+	gl_check_err();
+}
+
+void gl_destroy_round_context(struct backend_base *base attr_unused, void *ctx attr_unused) {
+
+	struct gl_round_context *cctx = ctx;
+
+	if (cctx->round_shader && cctx->round_shader->prog) {
+		glDeleteProgram(cctx->round_shader->prog);
+		cctx->round_shader->prog = 0;
+		free(cctx->round_shader);
+	}
+
+	if (cctx->bg_tex) {
+		glDeleteTextures(cctx->tex_count, cctx->bg_tex);
+		free(cctx->bg_tex);
+	}
+	if (cctx->bg_fbo) {
+		glDeleteFramebuffers(cctx->fbo_count, cctx->bg_fbo);
+		free(cctx->bg_fbo);
+	}
+	if (cctx->tex_sizes) {
+		free(cctx->tex_sizes);
+	}
+
+	cctx->tex_count = 0;
+	cctx->fbo_count = 0;
+
+	free(cctx);
 
 	gl_check_err();
 }
@@ -1567,6 +1788,170 @@ void gl_get_blur_size(void *blur_context, int *width, int *height) {
 	auto ctx = (struct gl_blur_context *)blur_context;
 	*width = ctx->resize_width;
 	*height = ctx->resize_height;
+}
+
+void *gl_create_round_context(struct backend_base *base attr_unused, void *args attr_unused) {
+	bool success;
+	auto gd = (struct gl_data *)base;
+	auto ctx = ccalloc(1, struct gl_round_context);
+
+	struct round_corners_args *round_params = (struct round_corners_args *)args;
+
+	ctx->round_borders = round_params->round_borders;
+	ctx->round_shader = ccalloc(1, gl_round_shader_t);
+
+	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
+	// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
+	// Thanks to hiciu for reporting.
+	setlocale(LC_NUMERIC, "C");
+
+	// Dual-kawase downsample shader / program
+	auto pass = ctx->round_shader;
+	{
+		// TEST passthrough shader
+		/*static const char frag_passthrough[] = GLSL(330,
+		        uniform sampler2D tex;
+		        in vec2 texcoord;
+		        void main() {
+		                //gl_FragColor = texture2D(tex, texcoord);
+		                //gl_FragColor = vec4(texture2D(tex, vec2(texcoord.xy),
+		0).rgb, 1); gl_FragColor = texelFetch(tex, ivec2(texcoord.xy), 0);
+		                //gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+		        }
+		);*/
+
+		// dst0 shader from opengl.c
+		// clang-format off
+		static const char *FRAG_SHADER_ROUND_CORNERS = GLSL(330,
+			uniform sampler2D tex;
+			uniform sampler2D tex_bg;
+			uniform float u_radius;
+			uniform float u_borderw;
+			uniform vec2 u_texcoord;
+			uniform vec2 u_texsize;
+			uniform vec2 u_resolution;
+			in vec2 texcoord;
+			out vec4 out_color;
+			// https://www.shadertoy.com/view/ltS3zW
+			float RectSDF(vec2 p, vec2 b, float r) {
+			  vec2 d = abs(p) - b + vec2(r);
+			  return min(max(d.x, d.y), 0.0) + length(max(d, 0.0)) - r;
+			}
+			void main() {
+				vec2 coord = vec2(u_texcoord.x, u_resolution.y-u_texsize.y-u_texcoord.y);
+				vec4 u_v4WndBgColor = texelFetch(tex_bg, ivec2(gl_FragCoord.xy), 0);
+				vec4 u_v4BorderColor = texelFetch(tex, ivec2(0, 0), 0);
+				vec4 u_v4FillColor = vec4(0.0, 0.0, 0.0, 0.0);  // Inside rect, transparent
+				vec4 v4FromColor = u_v4BorderColor;				// Always the border color. If no border, this still should be set
+				vec4 v4ToColor = u_v4WndBgColor;				// Outside corners color = background texture
+				float u_fRadiusPx = u_radius;
+				float u_fHalfBorderThickness = u_borderw / 2.0;
+
+				// misc tests, uncomment for diff rect colors
+				//u_v4FillColor = texture2D(tex, texcoord/u_texsize);
+				//u_v4FillColor = texelFetch(tex, ivec2(texcoord.xy), 0);
+				//u_v4FillColor = vec4(0.0, 1.0, 0.0, 0.0);  // Inside rect color
+				//v4FromColor = u_v4BorderColor = vec4(1.0, 1.0, 0.0, 1.0);
+				//v4ToColor = vec4(0.0, 0.0, 1.0, 1.0); //Outside color
+
+				vec2 u_v2HalfShapeSizePx = u_texsize/2.0 - vec2(u_fHalfBorderThickness);
+				vec2 v_v2CenteredPos = (gl_FragCoord.xy - u_texsize.xy / 2.0 - coord);
+
+				float fDist = RectSDF(v_v2CenteredPos, u_v2HalfShapeSizePx, u_fRadiusPx - u_fHalfBorderThickness);
+				if (u_fHalfBorderThickness > 0.0) {
+					if (fDist < 0.0) {
+						v4ToColor = u_v4FillColor;
+					}
+					fDist = abs(fDist) - u_fHalfBorderThickness;
+				} else {
+					v4FromColor = u_v4FillColor;
+				}
+				float fBlendAmount = smoothstep(-1.0, 1.0, fDist);
+
+				// final color
+				vec4 c = mix(v4FromColor, v4ToColor, fBlendAmount);
+				// we don't use discard due to alleged worse perf
+				// instead we can use alpha blending
+				//if ( c == vec4(0.0,0.0,0.0,0.0) ) discard; else
+				out_color = c;
+			}
+		);
+		// clang-format on
+
+		// Build shader
+		const char *SHADER_STR = FRAG_SHADER_ROUND_CORNERS;
+		// const char* SHADER_STR = frag_passthrough;
+		size_t shader_len = strlen(SHADER_STR) + 1 /* null terminator */;
+		char *shader_str = ccalloc(shader_len, char);
+		auto real_shader_len = snprintf(shader_str, shader_len, "%s", SHADER_STR);
+		CHECK(real_shader_len >= 0);
+		CHECK((size_t)real_shader_len < shader_len);
+
+		// Build program
+		pass->prog = gl_create_program_from_str(vertex_shader, shader_str);
+		free(shader_str);
+		if (!pass->prog) {
+			log_error("Failed to create GLSL program.");
+			success = false;
+			goto out;
+		}
+		glBindFragDataLocation(pass->prog, 0, "out_color");
+
+		// Get uniform addresses
+		pass->projection_loc =
+		    glGetUniformLocationChecked(pass->prog, "projection");
+		pass->unifm_tex_bg = glGetUniformLocationChecked(pass->prog, "tex_bg");
+		pass->unifm_radius = glGetUniformLocationChecked(pass->prog, "u_radius");
+		pass->unifm_texcoord =
+		    glGetUniformLocationChecked(pass->prog, "u_texcoord");
+		pass->unifm_texsize =
+		    glGetUniformLocationChecked(pass->prog, "u_texsize");
+		pass->unifm_borderw =
+		    glGetUniformLocationChecked(pass->prog, "u_borderw");
+		pass->unifm_resolution =
+		    glGetUniformLocationChecked(pass->prog, "u_resolution");
+	}
+
+	// Texture size will be defined by gl_round
+	ctx->tex_count = 1;
+	ctx->bg_tex = ccalloc(ctx->tex_count, GLuint);
+	ctx->tex_sizes = ccalloc(ctx->tex_count, struct tex_size);
+	glGenTextures(ctx->tex_count, ctx->bg_tex);
+	for (int i = 0; i < ctx->tex_count; ++i) {
+		glBindTexture(GL_TEXTURE_2D, ctx->bg_tex[i]);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	}
+
+	// Generate FBO and textures when needed
+	ctx->fbo_count = 1;
+	ctx->bg_fbo = ccalloc(ctx->fbo_count, GLuint);
+	glGenFramebuffers(ctx->fbo_count, ctx->bg_fbo);
+	for (int i = 0; i < ctx->fbo_count; ++i) {
+		if (!ctx->bg_fbo[i]) {
+			log_error("Failed to generate framebuffer object for blur");
+			success = false;
+			goto out;
+		}
+	}
+
+	success = true;
+
+out:
+
+	// Restore LC_NUMERIC
+	setlocale(LC_NUMERIC, lc_numeric_old);
+	free(lc_numeric_old);
+
+	if (!success) {
+		gl_destroy_round_context(&gd->base, ctx);
+		ctx = NULL;
+	}
+
+	gl_check_err();
+	return ctx;
 }
 
 // clang-format off
