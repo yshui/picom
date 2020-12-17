@@ -520,9 +520,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 	           strlen(texture_func) + 1;
 	char *shader_str = ccalloc(len, char);
 
-	char *pc = shader_str;
-	sprintf(pc, FRAG_SHADER, extension, sampler_type, texture_func);
-	pc += strlen(pc);
+	sprintf(shader_str, FRAG_SHADER, extension, sampler_type, texture_func);
 	assert(strlen(shader_str) < len);
 
 	log_debug("Generated rounded corners shader:\n%s\n", shader_str);
