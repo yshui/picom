@@ -221,6 +221,10 @@ typedef struct options {
 	int corner_radius;
 	/// Rounded corners blacklist. A linked list of conditions.
 	c2_lptr_t *rounded_corners_blacklist;
+	/// Do we round the borders of rounded windows?
+	int round_borders;
+	/// Rounded borders blacklist. A linked list of conditions.
+	c2_lptr_t *round_borders_blacklist;
 
 	// === Focus related ===
 	/// Whether to try to detect WM windows and mark them as focused.

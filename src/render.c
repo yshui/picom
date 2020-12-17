@@ -395,13 +395,14 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
  *
  */
 static inline void
-win_round_corners(session_t *ps, struct managed_win *w, const glx_texture_t *ptex,
-                  int shader_idx, float cr, xcb_render_picture_t tgt_buffer attr_unused,
-                  const region_t *reg_paint) {
+win_round_corners(session_t *ps, struct managed_win *w attr_unused, float cr attr_unused,
+                  xcb_render_picture_t tgt_buffer attr_unused, const region_t *reg_paint) {
+#ifdef CONFIG_OPENGL
 	const int16_t x = w->g.x;
 	const int16_t y = w->g.y;
 	const auto wid = to_u16_checked(w->widthb);
 	const auto hei = to_u16_checked(w->heightb);
+#endif
 
 	// log_debug("x:%d y:%d w:%d h:%d", x, y, wid, hei);
 
@@ -412,15 +413,9 @@ win_round_corners(session_t *ps, struct managed_win *w, const glx_texture_t *pte
 	} break;
 #ifdef CONFIG_OPENGL
 	case BKEND_GLX:
-		if (shader_idx == 1) {
-			glx_round_corners_dst1(ps, w, ptex, shader_idx, x, y, wid, hei,
-			                       (float)ps->psglx->z - 0.5f, cr, reg_paint,
-			                       &w->glx_round_cache);
-		} else {
-			glx_round_corners_dst0(ps, w, ptex, shader_idx, x, y, wid, hei,
-			                       (float)ps->psglx->z - 0.5f, cr, reg_paint,
-			                       &w->glx_round_cache);
-		}
+		glx_round_corners_dst(ps, w, w->glx_texture_bg, x, y, wid, hei,
+		                      (float)ps->psglx->z - 0.5f, cr, reg_paint,
+		                      &w->glx_round_cache);
 		break;
 #endif
 	default: assert(0);
@@ -1154,6 +1149,7 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		if (pixman_region32_not_empty(&reg_tmp)) {
 			set_tgt_clip(ps, &reg_tmp);
 
+#ifdef CONFIG_OPENGL
 			// If rounded corners backup the region first
 			if (w->corner_radius > 0) {
 				const int16_t x = w->g.x;
@@ -1162,6 +1158,7 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				const auto hei = to_u16_checked(w->heightb);
 				glx_bind_texture(ps, &w->glx_texture_bg, x, y, wid, hei, false);
 			}
+#endif
 
 			// Blur window background
 			if (w->blur_background &&
@@ -1175,8 +1172,7 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 			// Round window corners
 			if (w->corner_radius > 0) {
-				win_round_corners(ps, w, w->glx_texture_bg, 0,
-				                  (float)w->corner_radius,
+				win_round_corners(ps, w, (float)w->corner_radius,
 				                  ps->tgt_buffer.pict, &reg_tmp);
 			}
 		}

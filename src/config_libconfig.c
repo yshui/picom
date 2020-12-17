@@ -378,6 +378,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	config_lookup_int(&cfg, "corner-radius", &opt->corner_radius);
 	// --rounded-corners-exclude
 	parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist, "rounded-corners-exclude");
+	// --round-borders
+	config_lookup_int(&cfg, "round-borders", &opt->round_borders);
+	// --round-borders-exclude
+	parse_cfg_condlst(&cfg, &opt->round_borders_blacklist, "round-borders-exclude");
 	// -e (frame_opacity)
 	config_lookup_float(&cfg, "frame-opacity", &opt->frame_opacity);
 	// -c (shadow_enable)
@@ -463,6 +467,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	lcfg_lookup_bool(&cfg, "vsync", &opt->vsync);
 	// --backend
+	lcfg_lookup_bool(&cfg, "experimental-backends", &opt->experimental_backends);
 	if (config_lookup_string(&cfg, "backend", &sval)) {
 		opt->backend = parse_backend(sval);
 		if (opt->backend >= NUM_BKEND) {
