@@ -390,7 +390,7 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 		win_update_opacity_prop(ps, w);
 		// we cannot receive OPACITY change when window has been destroyed
 		assert(w->state != WSTATE_DESTROYING);
-		win_update_opacity_target(ps, w);
+		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_FRAME_EXTENTS)) {
@@ -675,8 +675,8 @@ static inline bool win_bounding_shaped(const session_t *ps, xcb_window_t wid) {
 }
 
 static wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
-	winprop_t prop =
-	    x_get_prop(ps, wid, ps->atoms->a_NET_WM_WINDOW_TYPE, 32L, XCB_ATOM_ATOM, 32);
+	winprop_t prop = x_get_prop(ps, wid, ps->atoms->a_NET_WM_WINDOW_TYPE,
+	                            NUM_WINTYPES, XCB_ATOM_ATOM, 32);
 
 	for (unsigned i = 0; i < prop.nitems; ++i) {
 		for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
@@ -1183,7 +1183,7 @@ void win_update_wintype(session_t *ps, struct managed_win *w) {
 	}
 
 	if (w->window_type != wtype_old) {
-		win_on_factor_change(ps, w);
+		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 	}
 }
 
