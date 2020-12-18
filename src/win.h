@@ -140,6 +140,9 @@ struct managed_win {
 	uint64_t *stale_props;
 	/// number of uint64_ts that has been allocated for stale_props
 	uint64_t stale_props_capacity;
+	/// Whether this window is marked fullscreen in _NET_WM_STATE. DO NOT USE
+	/// DIRECTLY! Query fullscreen state with `win_is_fullscreen`.
+	bool fullscreen;
 
 	/// Bounding shape of the window. In local coordinates.
 	/// See above about coordinate systems.

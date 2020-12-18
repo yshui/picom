@@ -61,6 +61,7 @@ static const double ROUNDED_PERCENT = 0.05;
 static bool win_update_class(session_t *ps, struct managed_win *w);
 static int win_update_role(session_t *ps, struct managed_win *w);
 static void win_update_wintype(session_t *ps, struct managed_win *w);
+static void win_update_wmstate(session_t *ps, struct managed_win *w);
 static int win_update_name(session_t *ps, struct managed_win *w);
 /**
  * Reread opacity property of a window.
@@ -384,6 +385,10 @@ static void win_clear_all_properties_stale(struct managed_win *w);
 static void win_update_properties(session_t *ps, struct managed_win *w) {
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_TYPE)) {
 		win_update_wintype(ps, w);
+	}
+
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_STATE)) {
+		win_update_wmstate(ps, w);
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY)) {
@@ -1188,6 +1193,49 @@ void win_update_wintype(session_t *ps, struct managed_win *w) {
 }
 
 /**
+ * Update EWMH state of a window.
+ *
+ * For now we are only interested in _NET_WM_STATE_FULLSCREEN.
+ */
+void win_update_wmstate(session_t *ps, struct managed_win *w) {
+	auto prop_info = x_get_prop_info(ps, w->client_win, ps->atoms->a_NET_WM_STATE);
+	auto type = prop_info.type;
+	auto format = prop_info.format;
+	auto length = prop_info.length;
+
+	if (type != XCB_ATOM_ATOM) {
+		log_warn("_NET_WM_STATE property of window %#010x has unsupported type: "
+		         "%d",
+		         w->client_win, type);
+		return;
+	}
+	if (format != 32) {
+		log_warn("_NET_WM_STATE property of window %#010x has unsupported "
+		         "format: %d",
+		         w->client_win, format);
+		return;
+	}
+
+	auto word_count = (length + 4 - 1) / 4;
+	winprop_t prop = x_get_prop(ps, w->client_win, ps->atoms->a_NET_WM_STATE,
+	                            to_int_checked(word_count), type, format);
+
+	bool is_fullscreen = false;
+	for (size_t i = 0; i < prop.nitems; ++i) {
+		if ((xcb_atom_t)prop.p32[i] == ps->atoms->a_NET_WM_STATE_FULLSCREEN) {
+			is_fullscreen = true;
+			break;
+		}
+	}
+	free_winprop(&prop);
+
+	if (w->fullscreen != is_fullscreen) {
+		w->fullscreen = is_fullscreen;
+		win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+	}
+}
+
+/**
  * Mark a window as the client window of another.
  *
  * @param ps current session
@@ -1460,6 +1508,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .window_type = WINTYPE_UNKNOWN,
 	    .wmwin = false,
 	    .focused = false,
+	    .fullscreen = false,
 	    .opacity = 0,
 	    .opacity_target = 0,
 	    .has_opacity_prop = false,
@@ -2567,34 +2616,6 @@ static inline bool rect_is_fullscreen(const session_t *ps, int x, int y, int wid
 	return (x <= 0 && y <= 0 && (x + wid) >= ps->root_width && (y + hei) >= ps->root_height);
 }
 
-/**
- * Check if a window is fulscreen using EWMH
- *
- * TODO(yshui) cache this property
- */
-static inline bool
-win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_window_t w) {
-	xcb_get_property_cookie_t prop =
-	    xcb_get_property(c, 0, w, a->a_NET_WM_STATE, XCB_ATOM_ATOM, 0, 12);
-	xcb_get_property_reply_t *reply = xcb_get_property_reply(c, prop, NULL);
-	if (!reply) {
-		return false;
-	}
-
-	if (reply->length) {
-		xcb_atom_t *val = xcb_get_property_value(reply);
-		for (uint32_t i = 0; i < reply->length; i++) {
-			if (val[i] != a->a_NET_WM_STATE_FULLSCREEN) {
-				continue;
-			}
-			free(reply);
-			return true;
-		}
-	}
-	free(reply);
-	return false;
-}
-
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
@@ -2680,8 +2701,7 @@ bool win_check_flags_all(struct managed_win *w, uint64_t flags) {
  * It's not using w->border_size for performance measures.
  */
 bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
-	if (!ps->o.no_ewmh_fullscreen &&
-	    win_is_fullscreen_xcb(ps->c, ps->atoms, w->client_win)) {
+	if (!ps->o.no_ewmh_fullscreen && w->fullscreen) {
 		return true;
 	}
 	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&

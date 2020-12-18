@@ -492,6 +492,14 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		}
 	}
 
+	// If _NET_WM_STATE changes
+	if (ev->atom == ps->atoms->a_NET_WM_STATE) {
+		struct managed_win *w = NULL;
+		if ((w = find_toplevel(ps, ev->window))) {
+			win_set_property_stale(w, ev->atom);
+		}
+	}
+
 	if (ev->atom == ps->atoms->a_NET_WM_BYPASS_COMPOSITOR) {
 		// Unnecessay until we remove the queue_redraw in ev_handle
 		queue_redraw(ps);
