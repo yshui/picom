@@ -809,7 +809,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 
 		// Unredirect screen if some window is requesting compositor bypass, even
 		// if that window is not on the top.
-		if (ps->o.unredir_if_possible && win_is_bypassing_compositor(ps, w) &&
+		if (ps->o.unredir_if_possible && w->bypass_compositor &&
 		    !w->unredir_if_possible_excluded) {
 			// Here we deviate from EWMH a bit. EWMH says we must not
 			// unredirect the screen if the window requesting bypassing would

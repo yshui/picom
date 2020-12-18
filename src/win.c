@@ -68,6 +68,7 @@ static int win_update_name(session_t *ps, struct managed_win *w);
  */
 static void win_update_opacity_prop(session_t *ps, struct managed_win *w);
 static void win_update_opacity_target(session_t *ps, struct managed_win *w);
+static void win_update_bypass_compositor(session_t *ps, struct managed_win *w);
 /**
  * Retrieve frame extents from a window.
  */
@@ -389,6 +390,10 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_STATE)) {
 		win_update_wmstate(ps, w);
+	}
+
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_BYPASS_COMPOSITOR)) {
+		win_update_bypass_compositor(ps, w);
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY)) {
@@ -1509,6 +1514,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .wmwin = false,
 	    .focused = false,
 	    .fullscreen = false,
+	    .bypass_compositor = false,
 	    .opacity = 0,
 	    .opacity_target = 0,
 	    .has_opacity_prop = false,
@@ -1644,11 +1650,17 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	                       WIN_FLAGS_POSITION_STALE | WIN_FLAGS_PROPERTY_STALE |
 	                       WIN_FLAGS_FACTOR_CHANGED);
 	xcb_atom_t init_stale_props[] = {
-	    ps->atoms->a_NET_WM_WINDOW_TYPE, ps->atoms->a_NET_WM_WINDOW_OPACITY,
-	    ps->atoms->a_NET_FRAME_EXTENTS,  ps->atoms->aWM_NAME,
-	    ps->atoms->a_NET_WM_NAME,        ps->atoms->aWM_CLASS,
-	    ps->atoms->aWM_WINDOW_ROLE,      ps->atoms->a_COMPTON_SHADOW,
-	    ps->atoms->aWM_CLIENT_LEADER,    ps->atoms->aWM_TRANSIENT_FOR,
+	    ps->atoms->a_NET_WM_WINDOW_TYPE,
+	    ps->atoms->a_NET_WM_WINDOW_OPACITY,
+	    ps->atoms->a_NET_WM_BYPASS_COMPOSITOR,
+	    ps->atoms->a_NET_FRAME_EXTENTS,
+	    ps->atoms->aWM_NAME,
+	    ps->atoms->a_NET_WM_NAME,
+	    ps->atoms->aWM_CLASS,
+	    ps->atoms->aWM_WINDOW_ROLE,
+	    ps->atoms->a_COMPTON_SHADOW,
+	    ps->atoms->aWM_CLIENT_LEADER,
+	    ps->atoms->aWM_TRANSIENT_FOR,
 	};
 	win_set_properties_stale(new, init_stale_props, ARR_SIZE(init_stale_props));
 
@@ -1953,6 +1965,23 @@ void win_update_opacity_prop(session_t *ps, struct managed_win *w) {
 	// get client opacity
 	w->has_opacity_prop =
 	    wid_get_opacity_prop(ps, w->client_win, OPAQUE, &w->opacity_prop);
+}
+
+/**
+ * Update the _NET_WM_BYPASS_COMPOSITOR property of a window.
+ */
+void win_update_bypass_compositor(session_t *ps, struct managed_win *w) {
+	auto prop = x_get_prop(ps, w->client_win, ps->atoms->a_NET_WM_BYPASS_COMPOSITOR,
+	                       1L, XCB_ATOM_CARDINAL, 32);
+
+	// XXX EWMH says we must respect a value of 2 and not disable compositing.
+	if (prop.nitems && *prop.c32 == 1) {
+		w->bypass_compositor = true;
+	} else {
+		w->bypass_compositor = false;
+	}
+
+	free_winprop(&prop);
 }
 
 /**
@@ -2706,25 +2735,6 @@ bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
 	}
 	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
 	       (!w->bounding_shaped || w->rounded_corners);
-}
-
-/**
- * Check if a window has BYPASS_COMPOSITOR property set
- *
- * TODO(yshui) cache this property
- */
-bool win_is_bypassing_compositor(const session_t *ps, const struct managed_win *w) {
-	bool ret = false;
-
-	auto prop = x_get_prop(ps, w->client_win, ps->atoms->a_NET_WM_BYPASS_COMPOSITOR,
-	                       1L, XCB_ATOM_CARDINAL, 32);
-
-	if (prop.nitems && *prop.c32 == 1) {
-		ret = true;
-	}
-
-	free_winprop(&prop);
-	return ret;
 }
 
 /**

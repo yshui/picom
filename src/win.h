@@ -143,6 +143,9 @@ struct managed_win {
 	/// Whether this window is marked fullscreen in _NET_WM_STATE. DO NOT USE
 	/// DIRECTLY! Query fullscreen state with `win_is_fullscreen`.
 	bool fullscreen;
+	/// Whether this window has requested to bypass the compositor with
+	/// _NET_WM_BYPASS_COMPOSITOR.
+	bool bypass_compositor;
 
 	/// Bounding shape of the window. In local coordinates.
 	/// See above about coordinate systems.
