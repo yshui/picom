@@ -1914,12 +1914,18 @@ void win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t
 	                            XCB_ATOM_CARDINAL, 32);
 
 	if (prop.nitems == 4) {
-		const int32_t extents[4] = {
-		    to_int_checked(prop.c32[0]),
-		    to_int_checked(prop.c32[1]),
-		    to_int_checked(prop.c32[2]),
-		    to_int_checked(prop.c32[3]),
-		};
+		int extents[4];
+		for (int i = 0; i < 4; i++) {
+			if (prop.c32[i] > (uint32_t)INT_MAX) {
+				log_warn("Your window manager sets a absurd "
+				         "_NET_FRAME_EXTENTS value (%u), ignoring it.",
+				         prop.c32[i]);
+				memset(extents, 0, sizeof(extents));
+				break;
+			}
+			extents[i] = (int)prop.c32[i];
+		}
+
 		const bool changed = w->frame_extents.left != extents[0] ||
 		                     w->frame_extents.right != extents[1] ||
 		                     w->frame_extents.top != extents[2] ||
