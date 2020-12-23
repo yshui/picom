@@ -240,6 +240,8 @@ struct backend_operations {
 	// ===========         Misc         ============
 	/// Return the driver that is been used by the backend
 	enum driver (*detect_driver)(backend_t *backend_data);
+
+	void (*diagnostics)(backend_t *backend_data);
 };
 
 extern struct backend_operations *backend_list[];
