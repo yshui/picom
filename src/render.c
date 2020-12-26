@@ -595,7 +595,7 @@ static bool get_root_tile(session_t *ps) {
 	ps->root_tile_fill = false;
 
 	bool fill = false;
-	xcb_pixmap_t pixmap = x_get_root_back_pixmap(ps);
+	xcb_pixmap_t pixmap = x_get_root_back_pixmap(ps->c, ps->root, ps->atoms);
 
 	// Make sure the pixmap we got is valid
 	if (pixmap && !x_validate_pixmap(ps->c, pixmap))

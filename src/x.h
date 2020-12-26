@@ -16,6 +16,7 @@
 #include "region.h"
 
 typedef struct session session_t;
+struct atom;
 
 /// Structure representing Window property value.
 typedef struct winprop {
@@ -152,7 +153,7 @@ static inline void x_discard_events(xcb_connection_t *c) {
  *
  * @return the value if successful, 0 otherwise
  */
-xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t aprop);
+xcb_window_t wid_get_prop_window(xcb_connection_t *c, xcb_window_t wid, xcb_atom_t aprop);
 
 /**
  * Get the value of a text property of a window.
@@ -247,12 +248,14 @@ static inline void free_winprop(winprop_t *pprop) {
 	pprop->r = NULL;
 	pprop->nitems = 0;
 }
+
 /// Get the back pixmap of the root window
-xcb_pixmap_t x_get_root_back_pixmap(session_t *ps);
+xcb_pixmap_t
+x_get_root_back_pixmap(xcb_connection_t *c, xcb_window_t root, struct atom *atoms);
 
 /// Return true if the atom refers to a property name that is used for the
 /// root window background pixmap
-bool x_is_root_back_pixmap_atom(session_t *ps, xcb_atom_t atom);
+bool x_is_root_back_pixmap_atom(struct atom *atoms, xcb_atom_t atom);
 
 bool x_fence_sync(xcb_connection_t *, xcb_sync_fence_t);
 

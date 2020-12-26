@@ -636,7 +636,7 @@ backend_t *backend_xrender_init(session_t *ps) {
 	}
 	xd->curr_back = 0;
 
-	xcb_pixmap_t root_pixmap = x_get_root_back_pixmap(ps);
+	xcb_pixmap_t root_pixmap = x_get_root_back_pixmap(ps->c, ps->root, ps->atoms);
 	if (root_pixmap == XCB_NONE) {
 		xd->root_pict = solid_picture(ps->c, ps->root, false, 1, 0.5, 0.5, 0.5);
 	} else {

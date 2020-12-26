@@ -93,10 +93,10 @@ winprop_info_t x_get_prop_info(xcb_connection_t *c, xcb_window_t w, xcb_atom_t a
  *
  * @return the value if successful, 0 otherwise
  */
-xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t aprop) {
+xcb_window_t wid_get_prop_window(xcb_connection_t *c, xcb_window_t wid, xcb_atom_t aprop) {
 	// Get the attribute
 	xcb_window_t p = XCB_NONE;
-	winprop_t prop = x_get_prop(ps->c, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
+	winprop_t prop = x_get_prop(c, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
 
 	// Return it
 	if (prop.nitems) {
@@ -590,14 +590,14 @@ static const char *background_props_str[] = {
     0,
 };
 
-xcb_pixmap_t x_get_root_back_pixmap(session_t *ps) {
+xcb_pixmap_t
+x_get_root_back_pixmap(xcb_connection_t *c, xcb_window_t root, struct atom *atoms) {
 	xcb_pixmap_t pixmap = XCB_NONE;
 
 	// Get the values of background attributes
 	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(ps->atoms, background_props_str[p]);
-		winprop_t prop =
-		    x_get_prop(ps->c, ps->root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
+		xcb_atom_t prop_atom = get_atom(atoms, background_props_str[p]);
+		winprop_t prop = x_get_prop(c, root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
 			pixmap = (xcb_pixmap_t)*prop.p32;
 			free_winprop(&prop);
@@ -609,9 +609,9 @@ xcb_pixmap_t x_get_root_back_pixmap(session_t *ps) {
 	return pixmap;
 }
 
-bool x_is_root_back_pixmap_atom(session_t *ps, xcb_atom_t atom) {
+bool x_is_root_back_pixmap_atom(struct atom *atoms, xcb_atom_t atom) {
 	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(ps->atoms, background_props_str[p]);
+		xcb_atom_t prop_atom = get_atom(atoms, background_props_str[p]);
 		if (prop_atom == atom) {
 			return true;
 		}

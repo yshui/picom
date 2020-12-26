@@ -337,7 +337,8 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
  */
 void update_ewmh_active_win(session_t *ps) {
 	// Search for the window
-	xcb_window_t wid = wid_get_prop_window(ps, ps->root, ps->atoms->a_NET_ACTIVE_WINDOW);
+	xcb_window_t wid =
+	    wid_get_prop_window(ps->c, ps->root, ps->atoms->a_NET_ACTIVE_WINDOW);
 	auto w = find_win_all(ps, wid);
 
 	// Mark the window focused. No need to unfocus the previous one.
@@ -888,7 +889,7 @@ void root_damaged(session_t *ps) {
 		if (ps->root_image) {
 			ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
 		}
-		auto pixmap = x_get_root_back_pixmap(ps);
+		auto pixmap = x_get_root_back_pixmap(ps->c, ps->root, ps->atoms);
 		if (pixmap != XCB_NONE) {
 			ps->root_image = ps->backend_data->ops->bind_pixmap(
 			    ps->backend_data, pixmap, x_get_visual_info(ps->c, ps->vis), false);

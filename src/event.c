@@ -454,7 +454,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			ps->pending_updates = true;
 		} else {
 			// Destroy the root "image" if the wallpaper probably changed
-			if (x_is_root_back_pixmap_atom(ps, ev->atom)) {
+			if (x_is_root_back_pixmap_atom(ps->atoms, ev->atom)) {
 				root_damaged(ps);
 			}
 		}

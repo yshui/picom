@@ -1649,11 +1649,13 @@ void win_update_leader(session_t *ps, struct managed_win *w) {
 
 	// Read the leader properties
 	if (ps->o.detect_transient && !leader) {
-		leader = wid_get_prop_window(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR);
+		leader =
+		    wid_get_prop_window(ps->c, w->client_win, ps->atoms->aWM_TRANSIENT_FOR);
 	}
 
 	if (ps->o.detect_client_leader && !leader) {
-		leader = wid_get_prop_window(ps, w->client_win, ps->atoms->aWM_CLIENT_LEADER);
+		leader =
+		    wid_get_prop_window(ps->c, w->client_win, ps->atoms->aWM_CLIENT_LEADER);
 	}
 
 	win_set_leader(ps, w, leader);
