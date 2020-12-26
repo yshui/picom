@@ -676,7 +676,7 @@ static inline bool win_bounding_shaped(const session_t *ps, xcb_window_t wid) {
 
 static wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
 	winprop_t prop =
-	    x_get_prop(ps, wid, ps->atoms->a_NET_WM_WINDOW_TYPE, 32L, XCB_ATOM_ATOM, 32);
+	    x_get_prop(ps->c, wid, ps->atoms->a_NET_WM_WINDOW_TYPE, 32L, XCB_ATOM_ATOM, 32);
 
 	for (unsigned i = 0; i < prop.nitems; ++i) {
 		for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
@@ -697,7 +697,7 @@ wid_get_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t def, opacity_t *
 	bool ret = false;
 	*out = def;
 
-	winprop_t prop = x_get_prop(ps, wid, ps->atoms->a_NET_WM_WINDOW_OPACITY, 1L,
+	winprop_t prop = x_get_prop(ps->c, wid, ps->atoms->a_NET_WM_WINDOW_OPACITY, 1L,
 	                            XCB_ATOM_CARDINAL, 32);
 
 	if (prop.nitems) {
@@ -846,7 +846,7 @@ bool win_should_fade(session_t *ps, const struct managed_win *w) {
  * The property must be set on the outermost window, usually the WM frame.
  */
 void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w) {
-	winprop_t prop = x_get_prop(ps, w->base.id, ps->atoms->a_COMPTON_SHADOW, 1,
+	winprop_t prop = x_get_prop(ps->c, w->base.id, ps->atoms->a_COMPTON_SHADOW, 1,
 	                            XCB_ATOM_CARDINAL, 32);
 
 	if (!prop.nitems) {
@@ -1910,7 +1910,7 @@ void win_update_opacity_prop(session_t *ps, struct managed_win *w) {
  * Retrieve frame extents from a window.
  */
 void win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t client) {
-	winprop_t prop = x_get_prop(ps, client, ps->atoms->a_NET_FRAME_EXTENTS, 4L,
+	winprop_t prop = x_get_prop(ps->c, client, ps->atoms->a_NET_FRAME_EXTENTS, 4L,
 	                            XCB_ATOM_CARDINAL, 32);
 
 	if (prop.nitems == 4) {
@@ -2702,7 +2702,7 @@ bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
 bool win_is_bypassing_compositor(const session_t *ps, const struct managed_win *w) {
 	bool ret = false;
 
-	auto prop = x_get_prop(ps, w->client_win, ps->atoms->a_NET_WM_BYPASS_COMPOSITOR,
+	auto prop = x_get_prop(ps->c, w->client_win, ps->atoms->a_NET_WM_BYPASS_COMPOSITOR,
 	                       1L, XCB_ATOM_CARDINAL, 32);
 
 	if (prop.nitems && *prop.c32 == 1) {

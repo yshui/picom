@@ -124,19 +124,19 @@ static inline void x_sync(xcb_connection_t *c) {
  * @return a <code>winprop_t</code> structure containing the attribute
  *    and number of items. A blank one on failure.
  */
-winprop_t x_get_prop_with_offset(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
+winprop_t x_get_prop_with_offset(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom,
                                  int offset, int length, xcb_atom_t rtype, int rformat);
 
 /**
  * Wrapper of wid_get_prop_adv().
  */
-static inline winprop_t x_get_prop(const session_t *ps, xcb_window_t wid, xcb_atom_t atom,
+static inline winprop_t x_get_prop(xcb_connection_t *c, xcb_window_t wid, xcb_atom_t atom,
                                    int length, xcb_atom_t rtype, int rformat) {
-	return x_get_prop_with_offset(ps, wid, atom, 0L, length, rtype, rformat);
+	return x_get_prop_with_offset(c, wid, atom, 0L, length, rtype, rformat);
 }
 
 /// Get the type, format and size in bytes of a window's specific attribute.
-winprop_info_t x_get_prop_info(const session_t *ps, xcb_window_t w, xcb_atom_t atom);
+winprop_info_t x_get_prop_info(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom);
 
 /// Discard all X events in queue or in flight. Should only be used when the server is
 /// grabbed

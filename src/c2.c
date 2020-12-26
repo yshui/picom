@@ -1370,12 +1370,12 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			int word_count = 1;
 			if (pleaf->index < 0) {
 				// Get length of property in 32-bit multiples
-				auto prop_info = x_get_prop_info(ps, wid, pleaf->tgtatom);
+				auto prop_info = x_get_prop_info(ps->c, wid, pleaf->tgtatom);
 				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
 			}
-			winprop_t prop =
-			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, word_count,
-			                           c2_get_atom_type(pleaf), pleaf->format);
+			winprop_t prop = x_get_prop_with_offset(
+			    ps->c, wid, pleaf->tgtatom, idx, word_count,
+			    c2_get_atom_type(pleaf), pleaf->format);
 
 			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
 			if (ntargets > 0) {
@@ -1447,12 +1447,12 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			int word_count = 1;
 			if (pleaf->index < 0) {
 				// Get length of property in 32-bit multiples
-				auto prop_info = x_get_prop_info(ps, wid, pleaf->tgtatom);
+				auto prop_info = x_get_prop_info(ps->c, wid, pleaf->tgtatom);
 				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
 			}
-			winprop_t prop =
-			    x_get_prop_with_offset(ps, wid, pleaf->tgtatom, idx, word_count,
-			                           c2_get_atom_type(pleaf), pleaf->format);
+			winprop_t prop = x_get_prop_with_offset(
+			    ps->c, wid, pleaf->tgtatom, idx, word_count,
+			    c2_get_atom_type(pleaf), pleaf->format);
 
 			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
 			targets = targets_free = (const char **)ccalloc(2 * ntargets, char *);

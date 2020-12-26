@@ -42,11 +42,11 @@
  * @return a <code>winprop_t</code> structure containing the attribute
  *    and number of items. A blank one on failure.
  */
-winprop_t x_get_prop_with_offset(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
+winprop_t x_get_prop_with_offset(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom,
                                  int offset, int length, xcb_atom_t rtype, int rformat) {
 	xcb_get_property_reply_t *r = xcb_get_property_reply(
-	    ps->c,
-	    xcb_get_property(ps->c, 0, w, atom, rtype, to_u32_checked(offset),
+	    c,
+	    xcb_get_property(c, 0, w, atom, rtype, to_u32_checked(offset),
 	                     to_u32_checked(length)),
 	    NULL);
 
@@ -70,10 +70,10 @@ winprop_t x_get_prop_with_offset(const session_t *ps, xcb_window_t w, xcb_atom_t
 }
 
 /// Get the type, format and size in bytes of a window's specific attribute.
-winprop_info_t x_get_prop_info(const session_t *ps, xcb_window_t w, xcb_atom_t atom) {
+winprop_info_t x_get_prop_info(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom) {
 	xcb_generic_error_t *e = NULL;
 	auto r = xcb_get_property_reply(
-	    ps->c, xcb_get_property(ps->c, 0, w, atom, XCB_ATOM_ANY, 0, 0), &e);
+	    c, xcb_get_property(c, 0, w, atom, XCB_ATOM_ANY, 0, 0), &e);
 	if (!r) {
 		log_debug_x_error(e, "Failed to get property info for window %#010x", w);
 		free(e);
@@ -96,7 +96,7 @@ winprop_info_t x_get_prop_info(const session_t *ps, xcb_window_t w, xcb_atom_t a
 xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t aprop) {
 	// Get the attribute
 	xcb_window_t p = XCB_NONE;
-	winprop_t prop = x_get_prop(ps, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
+	winprop_t prop = x_get_prop(ps->c, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
 
 	// Return it
 	if (prop.nitems) {
@@ -114,7 +114,7 @@ xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t apr
 bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char ***pstrlst,
                        int *pnstr) {
 	assert(ps->server_grabbed);
-	auto prop_info = x_get_prop_info(ps, wid, prop);
+	auto prop_info = x_get_prop_info(ps->c, wid, prop);
 	auto type = prop_info.type;
 	auto format = prop_info.format;
 	auto length = prop_info.length;
@@ -423,9 +423,10 @@ void x_clear_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict)
 	}
 }
 
-enum { XSyncBadCounter = 0,
-       XSyncBadAlarm = 1,
-       XSyncBadFence = 2,
+enum {
+	XSyncBadCounter = 0,
+	XSyncBadAlarm = 1,
+	XSyncBadFence = 2,
 };
 
 /**
@@ -595,7 +596,8 @@ xcb_pixmap_t x_get_root_back_pixmap(session_t *ps) {
 	// Get the values of background attributes
 	for (int p = 0; background_props_str[p]; p++) {
 		xcb_atom_t prop_atom = get_atom(ps->atoms, background_props_str[p]);
-		winprop_t prop = x_get_prop(ps, ps->root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
+		winprop_t prop =
+		    x_get_prop(ps->c, ps->root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
 			pixmap = (xcb_pixmap_t)*prop.p32;
 			free_winprop(&prop);
