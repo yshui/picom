@@ -42,10 +42,6 @@ typedef struct _xrender_data {
 	int curr_back;
 	/// The corresponding pixmap to the back buffer
 	xcb_pixmap_t back_pixmap[3];
-	/// The original root window content, usually the wallpaper.
-	/// We save it so we don't loss the wallpaper when we paint over
-	/// it.
-	xcb_render_picture_t root_pict;
 	/// Pictures of pixel of different alpha value, used as a mask to
 	/// paint transparent images
 	xcb_render_picture_t alpha_pict[256];
@@ -294,7 +290,6 @@ static void deinit(backend_t *backend_data) {
 		xcb_render_free_picture(xd->base.c, xd->alpha_pict[i]);
 	}
 	xcb_render_free_picture(xd->base.c, xd->target);
-	xcb_render_free_picture(xd->base.c, xd->root_pict);
 	for (int i = 0; i < 2; i++) {
 		xcb_render_free_picture(xd->base.c, xd->back[i]);
 		xcb_free_pixmap(xd->base.c, xd->back_pixmap[i]);
@@ -636,13 +631,6 @@ backend_t *backend_xrender_init(session_t *ps) {
 	}
 	xd->curr_back = 0;
 
-	xcb_pixmap_t root_pixmap = x_get_root_back_pixmap(ps->c, ps->root, ps->atoms);
-	if (root_pixmap == XCB_NONE) {
-		xd->root_pict = solid_picture(ps->c, ps->root, false, 1, 0.5, 0.5, 0.5);
-	} else {
-		xd->root_pict = x_create_picture_with_visual_and_pixmap(
-		    ps->c, ps->vis, root_pixmap, 0, NULL);
-	}
 	return &xd->base;
 err:
 	deinit(&xd->base);
