@@ -91,10 +91,16 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * libev
 * uthash
 
-On Debian based distributions (e.g. Ubuntu), the list of needed packages are
+On Debian based distributions (e.g. Ubuntu), the needed packages are
 
 ```
 libxext-dev libxcb1-dev libxcb-damage0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-randr0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-present-dev libxcb-xinerama0-dev libxcb-glx0-dev libpixman-1-dev libdbus-1-dev libconfig-dev libgl1-mesa-dev libpcre2-dev libpcre3-dev libevdev-dev uthash-dev libev-dev libx11-xcb-dev
+```
+
+On Fedora, the needed packages are
+
+```
+dbus-devel gcc git libconfig-devel libdrm-devel libev-devel libX11-devel libX11-xcb libXext-devel libxcb-devel mesa-libGL-devel meson pcre-devel pixman-devel uthash-devel xcb-util-image-devel xcb-util-renderutil-devel xorg-x11-proto-devel
 ```
 
 To build the documents, you need `asciidoc`
