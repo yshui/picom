@@ -226,6 +226,46 @@ void parse_cfg_condlst(const config_t *pcfg, c2_lptr_t **pcondlst, const char *n
 }
 
 /**
+ * Parse a region list in configuration file.
+ */
+void parse_cfg_regions(const config_t *pcfg, region_list_str_t **list, const char *name) {
+	config_setting_t *setting = config_lookup(pcfg, name);
+
+	if (setting) {
+		// Parse an array of options
+		if (config_setting_is_array(setting)) {
+			int i = config_setting_length(setting);
+			// shadow_exclude_regions
+			while (i--) {
+				if (list) {
+					auto tmp = cmalloc(region_list_str_t);
+					tmp->next = *list;
+					auto str = config_setting_get_string_elem(setting, i);
+
+					tmp->reg = cvalloc(strlen(str));
+					tmp->reg = strncpy(tmp->reg, str, strlen(str));
+
+					*list = tmp;
+				}
+			}
+		}
+		// Treat it as a single pattern if it's a string
+		else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
+			if (list) {
+				auto tmp = cmalloc(region_list_str_t);
+				tmp->next = *list;
+				auto str = config_setting_get_string(setting);
+
+				tmp->reg = cvalloc(strlen(str));
+				tmp->reg = strncpy(tmp->reg, str, strlen(str));
+
+				*list = tmp;
+			}
+		}
+	}
+}
+
+/**
  * Parse an opacity rule list in configuration file.
  */
 static inline void
@@ -430,6 +470,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --shadow-exclude-reg
 	if (config_lookup_string(&cfg, "shadow-exclude-reg", &sval))
 		opt->shadow_exclude_reg_str = strdup(sval);
+	// --shadow-exclude-reg-list
+	parse_cfg_regions(&cfg, &opt->shadow_exclude_regions_str, "shadow-exclude-reg-list");
 	// --inactive-opacity-override
 	lcfg_lookup_bool(&cfg, "inactive-opacity-override", &opt->inactive_opacity_override);
 	// --inactive-dim

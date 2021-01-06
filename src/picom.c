@@ -398,6 +398,22 @@ static void rebuild_shadow_exclude_reg(session_t *ps) {
 	bool ret = parse_geometry(ps, ps->o.shadow_exclude_reg_str, &ps->shadow_exclude_reg);
 	if (!ret)
 		exit(1);
+
+	if (ps->o.shadow_exclude_regions_str) {
+		region_t reg_tmp;
+		pixman_region32_init(&reg_tmp);
+
+		auto regs = ps->o.shadow_exclude_regions_str;
+		while (regs) {
+			if (!parse_geometry(ps, regs->reg, &reg_tmp))
+				exit(1);
+
+			pixman_region32_union(&ps->shadow_exclude_reg,
+			                      &ps->shadow_exclude_reg, &reg_tmp);
+			regs = regs->next;
+		}
+		pixman_region32_fini(&reg_tmp);
+	}
 }
 
 /// Free up all the images and deinit the backend
@@ -2296,6 +2312,18 @@ static void session_destroy(session_t *ps) {
 	free_wincondlst(&ps->o.paint_blacklist);
 	free_wincondlst(&ps->o.unredir_if_possible_blacklist);
 	free_wincondlst(&ps->o.rounded_corners_blacklist);
+
+	// Free shadow exclude region list
+	{
+		region_list_str_t *next = NULL;
+		for (region_list_str_t *this = ps->o.shadow_exclude_regions_str; this;
+		     this = next) {
+			next = this->next;
+			free(this);
+		}
+
+		ps->o.shadow_exclude_regions_str = NULL;
+	}
 
 	// Free tracked atom list
 	{
