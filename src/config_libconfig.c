@@ -240,10 +240,11 @@ void parse_cfg_regions(const config_t *pcfg, region_list_str_t **list, const cha
 				if (list) {
 					auto tmp = cmalloc(region_list_str_t);
 					tmp->next = *list;
-					auto str = config_setting_get_string_elem(setting, i);
+					const auto str =
+					    config_setting_get_string_elem(setting, i);
 
 					tmp->reg = cvalloc(strlen(str));
-					tmp->reg = strncpy(tmp->reg, str, strlen(str));
+					tmp->reg = memcpy(tmp->reg, str, strlen(str));
 
 					*list = tmp;
 				}
@@ -254,10 +255,10 @@ void parse_cfg_regions(const config_t *pcfg, region_list_str_t **list, const cha
 			if (list) {
 				auto tmp = cmalloc(region_list_str_t);
 				tmp->next = *list;
-				auto str = config_setting_get_string(setting);
+				const auto str = config_setting_get_string(setting);
 
 				tmp->reg = cvalloc(strlen(str));
-				tmp->reg = strncpy(tmp->reg, str, strlen(str));
+				tmp->reg = memcpy(tmp->reg, str, strlen(str));
 
 				*list = tmp;
 			}
