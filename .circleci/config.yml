@@ -39,7 +39,7 @@ jobs:
     executor: e
     steps:
       - build:
-          build-config: -Dbuild_docs=true -Db_coverage=true
+          build-config: -Dwith_docs=true -Db_coverage=true
       - persist_to_workspace:
           root: .
           paths:
