@@ -2,6 +2,7 @@
 // Copyright (c) 2014 Richard Grenville <pyxlcy@gmail.com>
 #pragma once
 
+#include <xcb/composite.h>
 #include "common.h"
 #include "uthash.h"
 
