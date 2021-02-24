@@ -46,6 +46,7 @@ struct _glx_data {
 	int screen;
 	xcb_window_t target_win;
 	GLXContext ctx;
+	bool useGLFinish;
 };
 
 #define glXGetFBConfigAttribChecked(a, b, attr, c)                                       \
@@ -240,6 +241,7 @@ static backend_t *glx_init(session_t *ps) {
 	gd->display = ps->dpy;
 	gd->screen = ps->scr;
 	gd->target_win = session_get_target_window(ps);
+	gd->useGLFinish = ps->o.vsync_use_glfinish;
 
 	XVisualInfo *pvis = NULL;
 
@@ -466,7 +468,10 @@ static void glx_present(backend_t *base, const region_t *region attr_unused) {
 	struct _glx_data *gd = (void *)base;
 	gl_present(base, region);
 	glXSwapBuffers(gd->display, gd->target_win);
-	glFinish();
+
+	if (gd->useGLFinish) {
+		glFinish();
+	}
 }
 
 static int glx_buffer_age(backend_t *base) {
