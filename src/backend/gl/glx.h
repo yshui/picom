@@ -51,6 +51,7 @@ struct glxext_info {
 	bool has_GLX_OML_sync_control;
 	bool has_GLX_MESA_swap_control;
 	bool has_GLX_EXT_swap_control;
+	bool has_GLX_EXT_swap_control_tear;
 	bool has_GLX_EXT_texture_from_pixmap;
 	bool has_GLX_ARB_create_context;
 	bool has_GLX_EXT_buffer_age;

@@ -214,16 +214,15 @@ static void *glx_decouple_user_data(backend_t *base attr_unused, void *ud attr_u
 
 static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawable) {
 	bool vsync_enabled = false;
-	if (glxext.has_GLX_MESA_swap_control) {
-		vsync_enabled = (glXSwapIntervalMESA((uint)interval) == 0);
+	if (glxext.has_GLX_EXT_swap_control) {
+		glXSwapIntervalEXT(dpy, drawable, glxext.has_GLX_EXT_swap_control_tear ? -interval : interval);
+		vsync_enabled = (interval != 0); // glXSwapIntervalEXT doesn't return if it's successful
 	}
-	if (!vsync_enabled && glxext.has_GLX_SGI_swap_control) {
-		vsync_enabled = (glXSwapIntervalSGI(interval) == 0);
+	else if (glxext.has_GLX_MESA_swap_control && (glXSwapIntervalMESA((uint)interval) == 0)) {
+		vsync_enabled = (interval != 0);
 	}
-	if (!vsync_enabled && glxext.has_GLX_EXT_swap_control) {
-		// glXSwapIntervalEXT doesn't return if it's successful
-		glXSwapIntervalEXT(dpy, drawable, interval);
-		vsync_enabled = true;
+	else if (glxext.has_GLX_SGI_swap_control && (glXSwapIntervalSGI(interval) == 0)) {
+		vsync_enabled = (interval != 0);
 	}
 	return vsync_enabled;
 }
@@ -604,6 +603,7 @@ void glxext_init(Display *dpy, int screen) {
 	check_ext(GLX_OML_sync_control);
 	check_ext(GLX_MESA_swap_control);
 	check_ext(GLX_EXT_swap_control);
+	check_ext(GLX_EXT_swap_control_tear);
 	check_ext(GLX_EXT_texture_from_pixmap);
 	check_ext(GLX_ARB_create_context);
 	check_ext(GLX_EXT_buffer_age);
