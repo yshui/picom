@@ -231,7 +231,7 @@ static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawab
 			/* See: https://git.sailfishos.org/mer-core/libsdl/commit/771a34fc63f9dd6e2bbe65d17c18882e5c87a6be?view=parallel&w=1 */
 			glXSwapIntervalEXT(dpy, drawable, glx_get_swap_interval(interval, dpy, drawable));
 		}
-		glXSwapIntervalEXT(dpy, drawable, interval);
+		glXSwapIntervalEXT(dpy, drawable, glxext.has_GLX_EXT_swap_control_tear ? -interval : interval);
 		vsync_enabled = (interval != 0); // glXSwapIntervalEXT doesn't return if it's successful
 	}
 	else if (glxext.has_GLX_MESA_swap_control && (glXSwapIntervalMESA((uint)interval) == 0)) {
