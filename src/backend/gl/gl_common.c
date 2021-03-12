@@ -1710,13 +1710,12 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	}
 
 	const char *vendor = (const char *)glGetString(GL_VENDOR);
-	log_debug("GL_VENDOR = %s", vendor);
 	if (strcmp(vendor, "NVIDIA Corporation") == 0) {
-		log_info("GL vendor is NVIDIA, don't use glFinish");
 		gd->is_nvidia = true;
 	} else {
 		gd->is_nvidia = false;
 	}
+	log_info("GL_VENDOR = %s, use %s", vendor, gd->is_nvidia ? "glFlush" : "glFinish");
 
 	return true;
 }
