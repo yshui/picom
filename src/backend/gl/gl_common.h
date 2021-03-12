@@ -68,6 +68,8 @@ typedef struct gl_image {
 
 struct gl_data {
 	backend_t base;
+	// If we want to use glFlush/glFinish
+	bool use_glfinish;
 	// If we are using proprietary NVIDIA driver
 	bool is_nvidia;
 	// Height and width of the root window

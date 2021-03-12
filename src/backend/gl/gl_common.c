@@ -1715,7 +1715,11 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	} else {
 		gd->is_nvidia = false;
 	}
-	log_info("GL_VENDOR = %s, use %s", vendor, gd->is_nvidia ? "glFlush" : "glFinish");
+
+	gd->use_glfinish = ps->o.vsync_use_glfinish;
+	if(gd->use_glfinish) {
+		log_info("GL_VENDOR = %s, use %s", vendor, gd->is_nvidia ? "glFlush" : "glFinish");
+	}
 
 	return true;
 }

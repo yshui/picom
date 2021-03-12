@@ -481,10 +481,13 @@ static void glx_present(backend_t *base, const region_t *region attr_unused) {
 	struct _glx_data *gd = (void *)base;
 	gl_present(base, region);
 	glXSwapBuffers(gd->display, gd->target_win);
-	if (gd->gl.is_nvidia)
-		glFlush();
-	else
-		glFinish();
+	if(gd->gl.use_glfinish)
+	{
+		if (gd->gl.is_nvidia)
+			glFlush();
+		else
+			glFinish();
+	}
 }
 
 static int glx_buffer_age(backend_t *base) {
