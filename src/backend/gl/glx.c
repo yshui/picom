@@ -212,10 +212,26 @@ static void *glx_decouple_user_data(backend_t *base attr_unused, void *ud attr_u
 	return ret;
 }
 
-static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawable) {
+static int glx_get_swap_interval(int interval, Display *dpy, GLXDrawable drawable) {
+	if (glxext.has_GLX_EXT_swap_control) {
+		unsigned int val;
+		glXQueryDrawable(dpy, drawable, GLX_SWAP_INTERVAL_EXT, &val);
+		interval = glxext.has_GLX_EXT_swap_control_tear ? -((int)val) : (int)val;
+	}
+	else if(glxext.has_GLX_MESA_swap_control) {
+		interval = glXGetSwapIntervalMESA();
+	}
+	return interval;
+}
+
+static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawable, bool is_nvidia) {
 	bool vsync_enabled = false;
 	if (glxext.has_GLX_EXT_swap_control) {
-		glXSwapIntervalEXT(dpy, drawable, glxext.has_GLX_EXT_swap_control_tear ? -interval : interval);
+		if(is_nvidia) {
+			/* See: https://git.sailfishos.org/mer-core/libsdl/commit/771a34fc63f9dd6e2bbe65d17c18882e5c87a6be?view=parallel&w=1 */
+			glXSwapIntervalEXT(dpy, drawable, glx_get_swap_interval(interval, dpy, drawable));
+		}
+		glXSwapIntervalEXT(dpy, drawable, interval);
 		vsync_enabled = (interval != 0); // glXSwapIntervalEXT doesn't return if it's successful
 	}
 	else if (glxext.has_GLX_MESA_swap_control && (glXSwapIntervalMESA((uint)interval) == 0)) {
@@ -342,11 +358,11 @@ static backend_t *glx_init(session_t *ps) {
 	gd->gl.release_user_data = glx_release_image;
 
 	if (ps->o.vsync) {
-		if (!glx_set_swap_interval(1, ps->dpy, tgt)) {
+		if (!glx_set_swap_interval(1, ps->dpy, tgt, gd->gl.is_nvidia)) {
 			log_error("Failed to enable vsync.");
 		}
 	} else {
-		glx_set_swap_interval(0, ps->dpy, tgt);
+		glx_set_swap_interval(0, ps->dpy, tgt, gd->gl.is_nvidia);
 	}
 
 	success = true;
@@ -584,6 +600,7 @@ PFNGLXWAITFORMSCOMLPROC glXWaitForMscOML;
 PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT;
 PFNGLXSWAPINTERVALSGIPROC glXSwapIntervalSGI;
 PFNGLXSWAPINTERVALMESAPROC glXSwapIntervalMESA;
+PFNGLXGETSWAPINTERVALMESAPROC glXGetSwapIntervalMESA;
 PFNGLXBINDTEXIMAGEEXTPROC glXBindTexImageEXT;
 PFNGLXRELEASETEXIMAGEEXTPROC glXReleaseTexImageEXT;
 PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB;
@@ -622,7 +639,7 @@ void glxext_init(Display *dpy, int screen) {
 	if (!lookup(glXSwapIntervalEXT)) {
 		glxext.has_GLX_EXT_swap_control = false;
 	}
-	if (!lookup(glXSwapIntervalMESA)) {
+	if (!lookup(glXSwapIntervalMESA) || !lookup(glXGetSwapIntervalMESA)) {
 		glxext.has_GLX_MESA_swap_control = false;
 	}
 	if (!lookup(glXSwapIntervalSGI)) {
