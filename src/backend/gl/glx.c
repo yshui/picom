@@ -471,6 +471,8 @@ static void glx_present(backend_t *base, const region_t *region attr_unused) {
 
 	if (gd->useGLFinish) {
 		glFinish();
+	} else {
+		glFlush();
 	}
 }
 
