@@ -1,0 +1,32 @@
+name: Check new upstream commits
+
+on:
+  repository_dispatch:
+    types: [check_upstream]
+
+jobs:
+  sync_with_upstream:
+    runs-on: ubuntu-latest
+    name: Sync master with upstream latest
+
+    steps:
+    - name: Checkout master
+      uses: actions/checkout@v2
+      with:
+        ref: next
+
+    - name: Fetch upstream changes
+      id: sync
+      uses: ivanmilov/upstream_check_new_commits@v1
+      with:
+        upstream_repository: yshui/picom
+        upstream_branch: next
+        target_branch: next_upstream
+
+    - name: Notify if new commits
+      uses: ivanmilov/telegram_notify_action@v1
+      with:
+        api_key: ${{secrets.API_KEY}}
+        chat_id: ${{secrets.CHAT_ID}}
+        message: "New commit in upstream repo ${{github.repository}}"
+      if: ${{ steps.sync.outputs.has_new_commits == 'true' }}
