@@ -104,6 +104,7 @@ bool glx_init(session_t *ps, bool need_render) {
 		ppass->unifm_borderw = -1;
 		ppass->unifm_borderc = -1;
 		ppass->unifm_resolution = -1;
+		ppass->unifm_tex_scr = -1;
 	}
 
 	glx_session_t *psglx = ps->psglx;
@@ -551,6 +552,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 	P_GET_UNIFM_LOC("u_borderw", unifm_borderw);
 	P_GET_UNIFM_LOC("u_borderc", unifm_borderc);
 	P_GET_UNIFM_LOC("u_resolution", unifm_resolution);
+	P_GET_UNIFM_LOC("tex_scr", unifm_tex_scr);
 #undef P_GET_UNIFM_LOC
 
 	success = true;
@@ -1179,9 +1181,10 @@ bool glx_round_corners_dst(session_t *ps, struct managed_win *w,
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(ptex->target, ptex->texture);
-		GLint loc_sampler = glGetUniformLocation(ppass->prog, "tex_scr");
-		glUniform1i(loc_sampler, (GLint)0);
 
+		if (ppass->unifm_tex_scr >= 0) {
+			glUniform1i(ppass->unifm_tex_scr, (GLint)0);
+		}
 		if (ppass->unifm_radius >= 0) {
 			glUniform1f(ppass->unifm_radius, cr);
 		}
