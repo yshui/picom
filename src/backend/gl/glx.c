@@ -526,6 +526,7 @@ struct backend_operations glx_ops = {
     .release_image = gl_release_image,
     .compose = gl_compose,
     .image_op = gl_image_op,
+    .read_pixel = gl_read_pixel,
     .copy = gl_copy,
     .blur = gl_blur,
     .is_image_transparent = gl_is_image_transparent,

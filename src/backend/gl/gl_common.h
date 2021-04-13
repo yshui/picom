@@ -127,6 +127,7 @@ bool gl_is_image_transparent(backend_t *base, void *image_data);
 void gl_fill(backend_t *base, struct color, const region_t *clip);
 
 void gl_present(backend_t *base, const region_t *);
+bool gl_read_pixel(backend_t *base, void *image_data, int x, int y, struct color *output);
 
 static inline void gl_delete_texture(GLuint texture) {
 	glDeleteTextures(1, &texture);

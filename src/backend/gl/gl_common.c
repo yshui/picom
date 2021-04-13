@@ -1810,6 +1810,8 @@ static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
 	img->color_inverted = false;
 	img->dim = 0;
 	img->opacity = 1;
+
+	gl_check_err();
 }
 
 static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
@@ -1906,6 +1908,23 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 	}
 
 	return true;
+}
+
+bool gl_read_pixel(backend_t *base, void *image_data, int x, int y, struct color *output) {
+	struct gl_image *tex = image_data;
+	gl_image_decouple(base, tex);
+	assert(tex->inner->refcount == 1);
+	GLfloat color[4];
+	glReadPixels(x, tex->inner->y_inverted ? tex->inner->height - y : y, 1, 1,
+	             GL_RGBA, GL_FLOAT, color);
+	output->alpha = color[3];
+	output->red = color[0];
+	output->green = color[1];
+	output->blue = color[2];
+
+	bool ret = glGetError() == GL_NO_ERROR;
+	gl_clear_err();
+	return ret;
 }
 
 bool gl_is_image_transparent(backend_t *base attr_unused, void *image_data) {
