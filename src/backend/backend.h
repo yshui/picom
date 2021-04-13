@@ -129,7 +129,7 @@ struct backend_operations {
 	 * @param image_data   the image to paint
 	 * @param dst_x, dst_y the top left corner of the image in the target
 	 * @param reg_paint    the clip region, in target coordinates
-	 * @param reg_visible the visible region, in target coordinates
+	 * @param reg_visible  the visible region, in target coordinates
 	 */
 	void (*compose)(backend_t *backend_data, void *image_data, int dst_x, int dst_y,
 	                const region_t *reg_paint, const region_t *reg_visible);
@@ -218,6 +218,19 @@ struct backend_operations {
 	 */
 	bool (*image_op)(backend_t *backend_data, enum image_operations op, void *image_data,
 	                 const region_t *reg_op, const region_t *reg_visible, void *args);
+
+	/**
+	 * Read the color of the pixel at given position of the given image
+	 *
+	 * @param      backend_data backend_data
+	 * @param      image_data   an image data structure previously returned by the
+	 *                          backend. the image to read pixel from.
+	 * @param      x, y         coordinate of the pixel to read
+	 * @param[out] color        the color of the pixel
+	 * @return whether the operation is successful
+	 */
+	bool (*read_pixel)(backend_t *backend_data, void *image_data, int x, int y,
+	                   struct color *output);
 
 	/// Create another instance of the `image_data`. All `image_op` calls on the
 	/// returned image should not affect the original image
