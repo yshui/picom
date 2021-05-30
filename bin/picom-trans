@@ -79,7 +79,7 @@ v=
 
 # Workaround: replace '-5' with '~5' so as not to confuse getopts.
 for v in "$@"; do
-  shift && set -- "$@" "$(echo "$v" | sed 's/^-\([0-9]\+%\?\)$/~\1/')"
+  shift && set -- "$@" "$(echo "$v" | sed -E 's/^-([0-9]+%?)$/~\1/')"
 done
 
 # This takes into account the fact that getopts stops on
@@ -102,7 +102,7 @@ while test $# -gt 0; do
           OPTIND=$((OPTIND + 1))
         ;;
         name=* | window=* | opacity=*)
-          v=$(echo "$OPTARG" | sed 's/^[^=]\+=//')
+          v=$(echo "$OPTARG" | sed -E 's/^[^=]+=//')
         ;;
         *)
           echo "$0: illegal option $OPTARG" >& 2
@@ -137,10 +137,10 @@ while test $# -gt 0; do
 done
 
 # clean up opacity. xargs == a poor man's trim.
-opacity=$(echo "$opacity" | xargs | sed 's/%//g' | sed 's/^~\([0-9]\+\)$/-\1/')
+opacity=$(echo "$opacity" | xargs | sed 's/%//g' | sed -E 's/^~([0-9]+)$/-\1/')
 
 # Validate opacity value
-if test -z "$action" && ! echo "$opacity" | grep -q '^[+-]\?[0-9]\+$'; then
+if test -z "$action" && ! echo "$opacity" | grep -qE '^[+-]?[0-9]+$'; then
   echo "Invalid opacity specified: $opacity."
   exit 1
 fi
@@ -213,7 +213,7 @@ fi
 
 # Get current opacity.
 cur=$(xprop -id "$topmost" -notype _NET_WM_WINDOW_OPACITY \
-  | sed 's/^.*\b\([0-9]\+\).*$\|^.*$/\1/')
+  | sed -E 's/^_NET_WM_WINDOW_OPACITY = ([0-9]*)$|^.*$/\1/')
 
 # Remove the opacity property.
 if test x"$action" = x'delete' -o \( x"$action" = x'toggle' -a -n "$cur" \); then
