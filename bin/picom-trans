@@ -82,16 +82,15 @@ for v in "$@"; do
   shift && set -- "$@" "$(echo "$v" | sed -E 's/^-([0-9]+%?)$/~\1/')"
 done
 
-# This takes into account the fact that getopts stops on
-# any argument it doesn't recognize or errors on. This
-# allows for things like `picom-trans -5` as well
-# as `picom-trans -c +5 -s` (contrived example).
+# We make getopts stop on any argument it doesn't recognize
+# or errors on. This allows for things like `picom-trans -5`
+# as well as `picom-trans -c +5 -s` (contrived example).
 while test $# -gt 0; do
   # Reset option index
   OPTIND=1
 
   # Read options
-  while getopts 'hscrtdgn:w:o:-:' option "$@"; do
+  while getopts ':hscrtdgn:w:o:-:' option "$@"; do
     if test "$option" = '-'; then
       case "$OPTARG" in
         help | select | current | reset | toggle | delete | get)
@@ -127,7 +126,7 @@ while test $# -gt 0; do
       n) wprefix='-name'; window=$OPTARG ;;
       w) wprefix='-id'; window=$OPTARG ;;
       o) opacity=$OPTARG ;;
-      \?) exit 1 ;;
+      \?) break ;;
     esac
   done
 
