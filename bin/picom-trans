@@ -77,11 +77,6 @@ lineno=
 option=
 v=
 
-# Workaround: replace '-5' with '~5' so as not to confuse getopts.
-for v in "$@"; do
-  shift && set -- "$@" "$(echo "$v" | sed -E 's/^-([0-9]+%?)$/~\1/')"
-done
-
 # We make getopts stop on any argument it doesn't recognize
 # or errors on. This allows for things like `picom-trans -5`
 # as well as `picom-trans -c +5 -s` (contrived example).
@@ -136,7 +131,7 @@ while test $# -gt 0; do
 done
 
 # clean up opacity. xargs == a poor man's trim.
-opacity=$(echo "$opacity" | xargs | sed 's/%//g' | sed -E 's/^~([0-9]+)$/-\1/')
+opacity=$(echo "$opacity" | xargs | sed 's/%//g')
 
 # Validate opacity value
 if test -z "$action" && ! echo "$opacity" | grep -qE '^[+-]?[0-9]+$'; then
