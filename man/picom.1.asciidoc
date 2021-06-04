@@ -62,7 +62,7 @@ OPTIONS
 	Opacity of window titlebars and borders. (0.1 - 1.0, disabled by default)
 
 *-b*, *--daemon*::
-	Daemonize process. Fork to background after initialization. Causes issues with certain (badly-written) drivers.
+	Daemonize process. Fork to background after initialization. This option can only be set from the command line, setting this in the configuration file will have no effect.
 
 *--log-level*::
 	Set the log level. Possible values are "TRACE", "DEBUG", "INFO", "WARN", "ERROR", in increasing level of importance. Case doesn't matter. If using the "TRACE" log level, it's better to log into a file using *--log-file*, since it can generate a huge stream of logs.
