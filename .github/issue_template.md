@@ -14,14 +14,22 @@
 <!-- Tell us something about the desktop environment you are using, for example: i3-gaps, Gnome Shell, etc. -->
 
 ### picom version
-<!-- Put the output of `compton --version` or `picom --version` here. -->
-<!-- If you are running compton v4 or later, please also include the output of `compton --diagnostics` or `picom --diagnostics` -->
-<!-- Example: v1 -->
+<!-- Put the output of `picom --version` here. -->
+<!-- Example: v8.2 -->
+<details>
+<summary>Diagnostics</summary>
+
+<!-- Please also include the output of `picom --diagnostics` -->
+</details>
 
 ### Configuration:
+<details>
+    <summary>Configuration file</summary>
+
 ```
 // Paste your configuration here
 ```
+</details>
 
 ### Steps of reproduction
 <!--
