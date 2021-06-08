@@ -316,16 +316,21 @@ else
 fi
 
 
+# reset_opacity doesn't need $winid
+case $action in
+  (reset)   reset_opacity;;
+esac
+
+# Any other action needs $winid
+# NOTE: Do NOT change the order of winid= and winidtype= below
+#       the output of get_target_window_id depends on $winidtype
 winid=$(get_target_window_id)
 winidtype=-id
-
-
 case $action in
   (set)     set_opacity;;
   (get)     get_opacity;;
   (delete)  delete_opacity;;
   (toggle)  toggle_opacity;;
-  (reset)   reset_opacity;;
 esac
 
 
