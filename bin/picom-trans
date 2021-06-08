@@ -125,7 +125,8 @@ function parse_args
     esac
 
 
-    # Use getopts to catch any argument we might have missed
+    # Use getopts to catch any argument we might have missed.
+    # i.e. arguments like '-cg' or '-o80' or even '-co+15'
     OPTIND=1
     while getopts 'ho:gdtrscn:w:' OPTION "$@"
     do
