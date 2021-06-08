@@ -83,6 +83,13 @@ function parse_args
         shift && set -- "$ARG" "$@"
     esac
 
+    # If the argument still starts with --, it is an invalid argument
+    case "$1" in
+      (--*)
+        echo "$0: illegal option $1" >&2
+        exit 1
+    esac
+
     # Prepare for next iteration
     ARG="$1"
     shift && set -- "$@" "$ARG"
@@ -93,7 +100,7 @@ function parse_args
   while test $# -gt 0; do
     # 15 +15 -15 are opacity values
     # filter them out here, otherwise getopts will complain
-    if echo "$1" | grep -qE '^[+-]?[[:digit:]]+$'; then
+    if echo "$1" | grep -qE '^[+-]?[[:digit:]]+%?$'; then
       target_opacity=$1
       shift
       continue
@@ -112,7 +119,7 @@ function parse_args
         (s) winidtype=;         winid=;;
         (c) winidtype=-id;      winid="$(get_focused_window_id)";;
         (n) winidtype=-name;    winid="$OPTARG";;
-        (w) winidtype=-window;  winid="$OPTARG";;
+        (w) winidtype=-id;      winid="$OPTARG";;
         (\?) exit 1;;
       esac
       # If getopts goes to the second argument, stop
@@ -233,11 +240,14 @@ function reset_opacity  # Reset opacity of all windows
 
 function set_opacity
 { #{
-  if ! echo "$target_opacity" | grep -qE '^[+-]?[[:digit:]]+$'
+  if ! echo "$target_opacity" | grep -qE '^[+-]?[[:digit:]]+%?$'
   then
     echo "Invalid opacity specified: $target_opacity" >&2
     exit 1
   fi
+
+  # strip trailing '%' sign, if any
+  target_opacity="${target_opacity%%%}"
 
   current_opacity=$(get_current_opacity)
   echo "$target_opacity" | grep -qE '^[+-]' \
@@ -297,7 +307,7 @@ target_opacity=
 
 # If there's only one argument, and it's a valid opacity
 # then take it as target_opacity.  Else, parse all arguments.
-if test $# -eq 1 && echo "$1" | grep -qE '^[+-]?[[:digit:]]+$'
+if test $# -eq 1 && echo "$1" | grep -qE '^[+-]?[[:digit:]]+%?$'
 then
   target_opacity=$1
   shift
