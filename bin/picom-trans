@@ -105,6 +105,23 @@ function parse_args
         shift
         continue ;;
 
+      (--opacity=*)
+        target_opacity="$(echo "$1" | sed -E 's/^[^=]+=$//')"
+        shift
+        continue ;;
+
+      (--name=*)
+        winidtype=-name
+        winid="$(echo "$1" | sed -E 's/^[^=]+=$//')"
+        shift
+        continue ;;
+
+      (--window=*)
+        winidtype=-id
+        winid="$(echo "$1" | sed -E 's/^[^=]+=$//')"
+        shift
+        continue ;;
+
     esac
 
 
