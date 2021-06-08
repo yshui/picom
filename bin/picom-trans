@@ -54,8 +54,43 @@ function print_usage
 
 function parse_args
 { #{
-  while test $# -gt 0; do
 
+  # Iterate over every option and convert
+  # longopts (GNU) into POSIX-compatible opts
+  i=1       # because we start from "$1", not from "$0"
+  while [ $i -le $# ]
+  do
+    # Catch invalid options
+    case "$1" in
+      (--opacity=|--name=|--window=)
+        echo "Option $1 needs a value." >&2
+        exit 1
+    esac
+
+    # Separate  "--ARG=VAL"  into  "--ARG" "VAL"
+    case "$1" in
+      (--opacity=*|--name=*|--window=*)
+        ARG="$(echo "$1" | sed -E 's/(--[^=]+)=.*$/\1/')"
+        VAL="${1##${ARG}=}"
+        shift && set -- "$ARG" "$VAL" "$@"
+    esac
+
+    # Turn into short form
+    case "$1" in
+      (--help|--opacity|--get|--delete|--toggle|--reset|--select|--current|--name|--window)
+        ARG=${1#-}                      # remove one '-' from prefix
+        ARG="$(echo $ARG | cut -c -2)"  # get first two characters
+        shift && set -- "$ARG" "$@"
+    esac
+
+    # Prepare for next iteration
+    ARG="$1"
+    shift && set -- "$@" "$ARG"
+    i=$(( i + 1 ))
+  done
+
+
+  while test $# -gt 0; do
     # 15 +15 -15 are opacity values
     # filter them out here, otherwise getopts will complain
     if echo "$1" | grep -qE '^[+-]?[[:digit:]]+$'; then
@@ -64,28 +99,6 @@ function parse_args
       continue
     fi
 
-    # Convert longopts (GNU) into POSIX-compatible opts
-    case "$1" in
-      (--opacity=|--name=|--window=)
-        echo "Option $1 needs a value." >&2
-        exit 1
-        ;;
-      (--opacity=*|--name=*|--window=*)
-        # Separate  "--ARG=VAL"  into  "--ARG" "VAL"
-        ARG="$(echo "$1" | sed -E 's/--([^=]+)=.*$/\1/')"
-        VAL="${1##--${ARG}=}"
-        shift && set -- "$ARG" "$VAL" "$@"
-        ;;
-      (--help|--opacity|--get|--delete|--toggle|--reset|--select|--current|--name|--window)
-        # Turn into short form
-        ARG=${1#-}                      # remove one '-' from prefix
-        ARG="$(echo $ARG | cut -c -2)"  # get first two characters
-        shift && set -- "$ARG" "$@"
-        ;;
-    esac
-
-
-    # Parse opts
     OPTIND=1
     while getopts 'ho:gdtrscn:w:' OPTION "$@"
     do
