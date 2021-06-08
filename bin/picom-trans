@@ -242,7 +242,10 @@ function set_opacity
 { #{
   if ! echo "$target_opacity" | grep -qE '^[+-]?[[:digit:]]+%?$'
   then
-    echo "Invalid opacity specified: $target_opacity" >&2
+    if test -z "$target_opacity"
+    then echo "No opacity specified" >&2
+    else echo "Invalid opacity specified: $target_opacity" >&2
+    fi
     exit 1
   fi
 
