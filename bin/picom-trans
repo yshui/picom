@@ -64,69 +64,28 @@ function parse_args
       continue
     fi
 
+    # Convert longopts (GNU) into POSIX-compatible opts
     case "$1" in
-      (-h|--help) print_usage; exit 0;;
-      (-o|--opacity) target_opacity=$2; shift 2; continue;;
-
-      (-g|--get)    action=get;    shift; continue;;
-      (-d|--delete) action=delete; shift; continue;;
-      (-t|--toggle) action=toggle; shift; continue;;
-      (-r|--reset)  action=reset;  shift; continue;;
-
-      (-s|--select)
-        winidtype=
-        winid=
-        shift
-        continue ;;
-
-      (-c|--current)
-        winidtype=-id
-        winid="$(get_focused_window_id)"
-        shift
-        continue ;;
-
-      (-n|--name)
-        if test -z "$2"; then
-          echo "Option $1 requires an argument" >&2
-          exit 1
-        fi
-        winidtype=-name
-        winid="$2"
-        shift
-        continue ;;
-
-      (-w|--window)
-        if test -z "$2"; then
-          echo "Option $1 requires an argument" >&2
-          exit 1
-        fi
-        winidtype=-id
-        winid="$2"
-        shift
-        continue ;;
-
-      (--opacity=*)
-        target_opacity="$(echo "$1" | sed -E 's/^[^=]+=$//')"
-        shift
-        continue ;;
-
-      (--name=*)
-        winidtype=-name
-        winid="$(echo "$1" | sed -E 's/^[^=]+=$//')"
-        shift
-        continue ;;
-
-      (--window=*)
-        winidtype=-id
-        winid="$(echo "$1" | sed -E 's/^[^=]+=$//')"
-        shift
-        continue ;;
-
+      (--opacity=|--name=|--window=)
+        echo "Option $1 needs a value." >&2
+        exit 1
+        ;;
+      (--opacity=*|--name=*|--window=*)
+        # Separate  "--ARG=VAL"  into  "--ARG" "VAL"
+        ARG="$(echo "$1" | sed -E 's/--([^=]+)=.*$/\1/')"
+        VAL="${1##--${ARG}=}"
+        shift && set -- "$ARG" "$VAL" "$@"
+        ;;
+      (--help|--opacity|--get|--delete|--toggle|--reset|--select|--current|--name|--window)
+        # Turn into short form
+        ARG=${1#-}                      # remove one '-' from prefix
+        ARG="$(echo $ARG | cut -c -2)"  # get first two characters
+        shift && set -- "$ARG" "$@"
+        ;;
     esac
 
 
-    # Use getopts to catch any argument we might have missed.
-    # i.e. arguments like '-cg' or '-o80' or even '-co+15'
+    # Parse opts
     OPTIND=1
     while getopts 'ho:gdtrscn:w:' OPTION "$@"
     do
@@ -143,8 +102,8 @@ function parse_args
         (w) winidtype=-window;  winid="$OPTARG";;
         (\?) exit 1;;
       esac
-      # If getopts goes to the second argument, stop parsing with getopt
-      test $OPTIND -ge 3  && break
+      # If getopts goes to the second argument, stop
+      test $OPTIND -ge 3 && break
     done
     shift
   done
