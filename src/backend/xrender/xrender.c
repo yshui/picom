@@ -500,7 +500,8 @@ static void *copy(backend_t *base, const void *image, const region_t *reg) {
 	return new_img;
 }
 
-void *create_blur_context(backend_t *base attr_unused, enum blur_method method, void *args) {
+static void *
+create_blur_context(backend_t *base attr_unused, enum blur_method method, void *args) {
 	auto ret = ccalloc(1, struct _xrender_blur_context);
 	if (!method || method >= BLUR_METHOD_INVALID) {
 		ret->method = BLUR_METHOD_NONE;
@@ -543,7 +544,7 @@ void *create_blur_context(backend_t *base attr_unused, enum blur_method method, 
 	return ret;
 }
 
-void destroy_blur_context(backend_t *base attr_unused, void *ctx_) {
+static void destroy_blur_context(backend_t *base attr_unused, void *ctx_) {
 	struct _xrender_blur_context *ctx = ctx_;
 	for (int i = 0; i < ctx->x_blur_kernel_count; i++) {
 		free(ctx->x_blur_kernel[i]);
@@ -552,13 +553,13 @@ void destroy_blur_context(backend_t *base attr_unused, void *ctx_) {
 	free(ctx);
 }
 
-void get_blur_size(void *blur_context, int *width, int *height) {
+static void get_blur_size(void *blur_context, int *width, int *height) {
 	struct _xrender_blur_context *ctx = blur_context;
 	*width = ctx->resize_width;
 	*height = ctx->resize_height;
 }
 
-backend_t *backend_xrender_init(session_t *ps) {
+static backend_t *backend_xrender_init(session_t *ps) {
 	auto xd = ccalloc(1, struct _xrender_data);
 	init_backend_base(&xd->base, ps);
 
