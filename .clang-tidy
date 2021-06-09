@@ -16,4 +16,6 @@ AnalyzeTemporaryDtors: false
 FormatStyle:     file
 CheckOptions:
   - key: readability-magic-numbers.IgnoredIntegerValues
-    value: 4;8;16;24;32;1;2;3;4096;65536
+    value: 4;8;16;24;32;1;2;3;4096;65536;
+  - key: readability-magic-numbers.IgnoredFloatingPointValues
+    value: 255.0;
