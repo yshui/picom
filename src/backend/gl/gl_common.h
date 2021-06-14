@@ -44,8 +44,10 @@ typedef struct {
 	GLint color_loc;
 } gl_fill_shader_t;
 
+/// @brief Wrapper of a binded GLX texture.
 struct gl_texture {
 	int refcount;
+	bool has_alpha;
 	GLuint texture;
 	int width, height;
 	bool y_inverted;
@@ -54,17 +56,6 @@ struct gl_texture {
 	GLuint auxiliary_texture[2];
 	void *user_data;
 };
-
-/// @brief Wrapper of a binded GLX texture.
-typedef struct gl_image {
-	struct gl_texture *inner;
-	double opacity;
-	double dim;
-	double max_brightness;
-	int ewidth, eheight;
-	bool has_alpha;
-	bool color_inverted;
-} gl_image_t;
 
 struct gl_data {
 	backend_t base;
@@ -123,7 +114,6 @@ void *gl_create_blur_context(backend_t *base, enum blur_method, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
 void gl_get_blur_size(void *blur_context, int *width, int *height);
 
-bool gl_is_image_transparent(backend_t *base, void *image_data);
 void gl_fill(backend_t *base, struct color, const region_t *clip);
 
 void gl_present(backend_t *base, const region_t *);

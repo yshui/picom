@@ -121,6 +121,12 @@ bool dummy_image_op(struct backend_base *base, enum image_operations op attr_unu
 	return true;
 }
 
+bool dummy_set_image_property(struct backend_base *base, enum image_properties prop attr_unused,
+                              void *image, void *arg attr_unused) {
+	dummy_check_image(base, image);
+	return true;
+}
+
 void *dummy_clone_image(struct backend_base *base, const void *image,
                         const region_t *reg_visible attr_unused) {
 	auto img = (const struct dummy_image *)image;
@@ -160,6 +166,7 @@ struct backend_operations dummy_ops = {
 
     .image_op = dummy_image_op,
     .clone_image = dummy_clone_image,
+    .set_image_property = dummy_set_image_property,
     .create_blur_context = dummy_create_blur_context,
     .destroy_blur_context = dummy_destroy_blur_context,
     .get_blur_size = dummy_get_blur_size,

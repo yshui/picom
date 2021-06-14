@@ -426,6 +426,51 @@ struct dual_kawase_params *generate_dual_kawase_params(void *args) {
 	return params;
 }
 
+void *default_clone_image(backend_t *base attr_unused, const void *image_data,
+                          const region_t *reg_visible attr_unused) {
+	auto new_img = ccalloc(1, struct backend_image);
+	*new_img = *(struct backend_image *)image_data;
+	new_img->inner->refcount++;
+	return new_img;
+}
+
+bool default_set_image_property(backend_t *base attr_unused, enum image_properties op,
+                                void *image_data, void *arg) {
+	struct backend_image *tex = image_data;
+	int *iargs = arg;
+	bool *bargs = arg;
+	double *dargs = arg;
+	switch (op) {
+	case IMAGE_PROPERTY_INVERTED: tex->color_inverted = bargs[0]; break;
+	case IMAGE_PROPERTY_DIM_LEVEL: tex->dim = dargs[0]; break;
+	case IMAGE_PROPERTY_OPACITY: tex->opacity = dargs[0]; break;
+	case IMAGE_PROPERTY_EFFECTIVE_SIZE:
+		// texture is already set to repeat, so nothing else we need to do
+		tex->ewidth = iargs[0];
+		tex->eheight = iargs[1];
+		break;
+	case IMAGE_PROPERTY_MAX_BRIGHTNESS: tex->max_brightness = dargs[0]; break;
+	}
+
+	return true;
+}
+
+bool default_is_image_transparent(backend_t *base attr_unused, void *image_data) {
+	struct backend_image *img = image_data;
+	return img->opacity < 1 || img->inner->has_alpha;
+}
+
+struct backend_image *default_new_backend_image(int w, int h) {
+	auto ret = ccalloc(1, struct backend_image);
+	ret->opacity = 1;
+	ret->dim = 0;
+	ret->max_brightness = 1;
+	ret->eheight = h;
+	ret->ewidth = w;
+	ret->color_inverted = false;
+	return ret;
+}
+
 void init_backend_base(struct backend_base *base, session_t *ps) {
 	base->c = ps->c;
 	base->loop = ps->loop;

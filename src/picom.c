@@ -893,9 +893,9 @@ void root_damaged(session_t *ps) {
 		if (pixmap != XCB_NONE) {
 			ps->root_image = ps->backend_data->ops->bind_pixmap(
 			    ps->backend_data, pixmap, x_get_visual_info(ps->c, ps->vis), false);
-			ps->backend_data->ops->image_op(
-			    ps->backend_data, IMAGE_OP_RESIZE_TILE, ps->root_image, NULL,
-			    NULL, (int[]){ps->root_width, ps->root_height});
+			ps->backend_data->ops->set_image_property(
+			    ps->backend_data, IMAGE_PROPERTY_EFFECTIVE_SIZE,
+			    ps->root_image, (int[]){ps->root_width, ps->root_height});
 		}
 	}
 
