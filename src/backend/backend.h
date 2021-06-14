@@ -232,9 +232,11 @@ struct backend_operations {
 	bool (*read_pixel)(backend_t *backend_data, void *image_data, int x, int y,
 	                   struct color *output);
 
-	/// Create another instance of the `image_data`. All `image_op` calls on the
-	/// returned image should not affect the original image
-	void *(*copy)(backend_t *base, const void *image_data, const region_t *reg_visible);
+	/// Create another instance of the `image_data`. All `image_op` and
+	/// `image_set_property` calls on the returned image should not affect the
+	/// original image
+	void *(*clone_image)(backend_t *base, const void *image_data,
+	                     const region_t *reg_visible);
 
 	/// Create a blur context that can be used to call `blur`
 	void *(*create_blur_context)(backend_t *base, enum blur_method, void *args);

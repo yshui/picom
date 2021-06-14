@@ -1087,8 +1087,8 @@ void gl_release_image(backend_t *base, void *image_data) {
 	gl_check_err();
 }
 
-void *gl_copy(backend_t *base attr_unused, const void *image_data,
-              const region_t *reg_visible attr_unused) {
+void *gl_clone(backend_t *base attr_unused, const void *image_data,
+               const region_t *reg_visible attr_unused) {
 	const struct gl_image *img = image_data;
 	auto new_img = ccalloc(1, struct gl_image);
 	*new_img = *img;

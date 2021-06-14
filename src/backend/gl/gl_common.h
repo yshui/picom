@@ -115,7 +115,7 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 
 void gl_release_image(backend_t *base, void *image_data);
 
-void *gl_copy(backend_t *base, const void *image_data, const region_t *reg_visible);
+void *gl_clone(backend_t *base, const void *image_data, const region_t *reg_visible);
 
 bool gl_blur(backend_t *base, double opacity, void *, const region_t *reg_blur,
              const region_t *reg_visible);

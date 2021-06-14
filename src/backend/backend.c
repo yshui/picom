@@ -306,7 +306,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    ps->backend_data, w->shadow_image, w->g.x + w->shadow_dx,
 				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
 			} else {
-				auto new_img = ps->backend_data->ops->copy(
+				auto new_img = ps->backend_data->ops->clone_image(
 				    ps->backend_data, w->shadow_image, &reg_visible);
 				ps->backend_data->ops->image_op(
 				    ps->backend_data, IMAGE_OP_APPLY_ALPHA_ALL, new_img,
@@ -360,7 +360,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			pixman_region32_intersect(&reg_visible_local, &reg_visible_local,
 			                          &reg_bound_local);
 
-			auto new_img = ps->backend_data->ops->copy(
+			auto new_img = ps->backend_data->ops->clone_image(
 			    ps->backend_data, w->win_image, &reg_visible_local);
 			if (w->invert_color) {
 				ps->backend_data->ops->image_op(

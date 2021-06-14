@@ -466,7 +466,7 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 }
 
 // TODO(yshui): use copy-on-write
-static void *copy(backend_t *base, const void *image, const region_t *reg) {
+static void *clone_image(backend_t *base, const void *image, const region_t *reg) {
 	const struct _xrender_image_data *img = image;
 	struct _xrender_data *xd = (void *)base;
 	auto new_img = ccalloc(1, struct _xrender_image_data);
@@ -679,7 +679,7 @@ struct backend_operations xrender_ops = {
 
     .image_op = image_op,
     .read_pixel = read_pixel,
-    .copy = copy,
+    .clone_image = clone_image,
     .create_blur_context = create_blur_context,
     .destroy_blur_context = destroy_blur_context,
     .get_blur_size = get_blur_size,
