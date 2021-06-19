@@ -69,8 +69,12 @@ parse_args()
     # Catch invalid options
     case "$1" in
       (--opacity=|--name=|--window=)
-        echo "Option $1 needs a value." >&2
-        exit 1
+        echo "$EXE_NAME: option ${1%=} needs a value" >&2
+        exit 1;;
+      (--opacity|--name|--window)
+        test $i -eq $# \
+          && echo "$EXE_NAME: option $1 needs a value" >&2 \
+          && exit 1;;
     esac
 
     # Separate  "--ARG=VAL"  into  "--ARG" "VAL"
