@@ -527,36 +527,6 @@ static bool decouple_image(backend_t *base, struct backend_image *img, const reg
 	inner->refcount--;
 	return true;
 }
-static bool bake_image(backend_t *base, struct backend_image *img, const region_t *reg) {
-	struct _xrender_data *xd = (void *)base;
-	struct _xrender_image_data_inner *inner = (void *)img->inner;
-	assert(inner->visual != XCB_NONE);
-
-	if (!img->color_inverted && img->opacity == 1 && img->dim == 0) {
-		// Nothing to bake
-		return true;
-	}
-
-	log_trace("xrender: copying %#010x visual %#x", inner->pixmap, inner->visual);
-	auto inner2 =
-	    new_inner(base, inner->width, inner->height, inner->visual, inner->depth);
-	if (!inner2) {
-		return false;
-	}
-
-	inner2->has_alpha = (inner->has_alpha || img->opacity != 1);
-	compose_impl(xd, img, 0, 0, reg, NULL, inner2->pict);
-
-	img->opacity = 1;
-	img->inner = (struct backend_image_inner_base *)inner2;
-	img->dim = 0;
-	img->color_inverted = false;
-	inner->refcount--;
-	if (inner->refcount == 0) {
-		release_image_inner(base, inner);
-	}
-	return true;
-}
 
 static bool image_op(backend_t *base, enum image_operations op, void *image,
                      const region_t *reg_op, const region_t *reg_visible, void *arg) {
@@ -569,8 +539,6 @@ static bool image_op(backend_t *base, enum image_operations op, void *image,
 	pixman_region32_intersect(&reg, (region_t *)reg_op, (region_t *)reg_visible);
 
 	switch (op) {
-	case IMAGE_OP_BAKE_PROPERTIES: return bake_image(base, img, &reg);
-
 	case IMAGE_OP_APPLY_ALPHA:
 		assert(reg_op);
 

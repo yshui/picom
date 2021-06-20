@@ -1778,75 +1778,6 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	inner->refcount--;
 }
 
-/// Decouple `img` from the image it references, also applies all the lazy operations
-static inline void gl_image_bake(backend_t *base, struct backend_image *img) {
-	if (!img->color_inverted && img->opacity == 1 && img->max_brightness == 1 &&
-	    img->dim == 0) {
-		// Nothing to bake
-		return;
-	}
-	auto gd = (struct gl_data *)base;
-	auto new_tex = ccalloc(1, struct gl_texture);
-	auto inner = (struct gl_texture *)img->inner;
-
-	new_tex->texture = gl_new_texture(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, new_tex->texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, inner->width, inner->height, 0, GL_BGRA,
-	             GL_UNSIGNED_BYTE, NULL);
-	new_tex->y_inverted = true;
-	new_tex->height = inner->height;
-	new_tex->width = inner->width;
-	new_tex->refcount = 1;
-	new_tex->user_data = gd->decouple_texture_user_data(base, inner->user_data);
-
-	GLuint fbo;
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
-	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-	                       new_tex->texture, 0);
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-
-	glClearColor(0, 0, 0, 0);
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	// clang-format off
-	GLint coord[] = {
-		// top left
-		0, 0,                 // vertex coord
-		0, 0,                 // texture coord
-
-		// top right
-		inner->width, 0, // vertex coord
-		inner->width, 0, // texture coord
-
-		// bottom right
-		inner->width, inner->height,
-		inner->width, inner->height,
-
-		// bottom left
-		0, inner->height,
-		0, inner->height,
-	};
-	// clang-format on
-
-	_gl_compose(base, img, fbo, coord, (GLuint[]){0, 1, 2, 2, 3, 0}, 1);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-	glDeleteFramebuffers(1, &fbo);
-
-	inner->refcount--;
-	if (inner->refcount == 0) {
-		gl_release_image_inner(base, inner);
-	}
-	img->inner = (struct backend_image_inner_base *)new_tex;
-
-	// Clear lazy operation flags
-	img->color_inverted = false;
-	img->dim = 0;
-	img->opacity = 1;
-
-	gl_check_err();
-}
-
 static void gl_image_apply_alpha(backend_t *base, struct backend_image *img,
                                  const region_t *reg_op, double alpha) {
 	// Result color = 0 (GL_ZERO) + alpha (GL_CONSTANT_ALPHA) * original color
@@ -1926,7 +1857,6 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 		assert(tex->inner->refcount == 1);
 		gl_image_apply_alpha(base, tex, reg_op, *(double *)arg);
 		break;
-	case IMAGE_OP_BAKE_PROPERTIES: gl_image_bake(base, tex); break;
 	}
 
 	return true;

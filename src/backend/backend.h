@@ -57,9 +57,6 @@ enum image_properties {
 };
 
 enum image_operations {
-	// Apply the image properties, reset the image properties to their defaults
-	// afterwards.
-	IMAGE_OP_BAKE_PROPERTIES,
 	// Multiply the alpha channel by the argument
 	IMAGE_OP_APPLY_ALPHA,
 };
@@ -228,8 +225,7 @@ struct backend_operations {
 	                           void *image_data, void *args);
 
 	/**
-	 * Manipulate an image. Image properties are untouched by and have no effects on
-	 * operations other than BAKE.
+	 * Manipulate an image. Image properties are untouched.
 	 *
 	 * @param backend_data backend data
 	 * @param op           the operation to perform
@@ -247,7 +243,7 @@ struct backend_operations {
 
 	/**
 	 * Read the color of the pixel at given position of the given image. Image
-	 * properties have no effect. BAKE them first before reading the pixels.
+	 * properties have no effect.
 	 *
 	 * @param      backend_data backend_data
 	 * @param      image_data   an image data structure previously returned by the
