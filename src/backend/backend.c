@@ -306,11 +306,11 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    ps->backend_data, w->shadow_image, w->g.x + w->shadow_dx,
 				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
 			} else {
-				auto new_img = ps->backend_data->ops->copy(
+				auto new_img = ps->backend_data->ops->clone_image(
 				    ps->backend_data, w->shadow_image, &reg_visible);
-				ps->backend_data->ops->image_op(
-				    ps->backend_data, IMAGE_OP_APPLY_ALPHA_ALL, new_img,
-				    NULL, &reg_visible, (double[]){w->opacity});
+				ps->backend_data->ops->set_image_property(
+				    ps->backend_data, IMAGE_PROPERTY_OPACITY, new_img,
+				    &w->opacity);
 				ps->backend_data->ops->compose(
 				    ps->backend_data, new_img, w->g.x + w->shadow_dx,
 				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
@@ -321,9 +321,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 		// Set max brightness
 		if (ps->o.max_brightness < 1.0) {
-			ps->backend_data->ops->image_op(
-			    ps->backend_data, IMAGE_OP_MAX_BRIGHTNESS, w->win_image, NULL,
-			    &reg_visible, &ps->o.max_brightness);
+			ps->backend_data->ops->set_image_property(
+			    ps->backend_data, IMAGE_PROPERTY_MAX_BRIGHTNESS, w->win_image,
+			    &ps->o.max_brightness);
 		}
 
 		// Draw window on target
@@ -360,21 +360,20 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			pixman_region32_intersect(&reg_visible_local, &reg_visible_local,
 			                          &reg_bound_local);
 
-			auto new_img = ps->backend_data->ops->copy(
+			auto new_img = ps->backend_data->ops->clone_image(
 			    ps->backend_data, w->win_image, &reg_visible_local);
 			if (w->invert_color) {
-				ps->backend_data->ops->image_op(
-				    ps->backend_data, IMAGE_OP_INVERT_COLOR_ALL, new_img,
-				    NULL, &reg_visible_local, NULL);
+				ps->backend_data->ops->set_image_property(
+				    ps->backend_data, IMAGE_PROPERTY_INVERTED, new_img, NULL);
 			}
 			if (w->dim) {
 				double dim_opacity = ps->o.inactive_dim;
 				if (!ps->o.inactive_dim_fixed) {
 					dim_opacity *= w->opacity;
 				}
-				ps->backend_data->ops->image_op(
-				    ps->backend_data, IMAGE_OP_DIM_ALL, new_img, NULL,
-				    &reg_visible_local, (double[]){dim_opacity});
+				ps->backend_data->ops->set_image_property(
+				    ps->backend_data, IMAGE_PROPERTY_DIM_LEVEL, new_img,
+				    &dim_opacity);
 			}
 			if (w->frame_opacity != 1) {
 				auto reg_frame = win_get_region_frame_local_by_val(w);
@@ -384,9 +383,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				pixman_region32_fini(&reg_frame);
 			}
 			if (w->opacity != 1) {
-				ps->backend_data->ops->image_op(
-				    ps->backend_data, IMAGE_OP_APPLY_ALPHA_ALL, new_img,
-				    NULL, &reg_visible_local, (double[]){w->opacity});
+				ps->backend_data->ops->set_image_property(
+				    ps->backend_data, IMAGE_PROPERTY_OPACITY, new_img,
+				    &w->opacity);
 			}
 			ps->backend_data->ops->compose(ps->backend_data, new_img, w->g.x,
 			                               w->g.y, &reg_paint_in_bound,

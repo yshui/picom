@@ -271,25 +271,26 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
  * Returned texture must not be deleted, since it's owned by the gl_image. It will be
  * deleted when the gl_image is released.
  */
-static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
+static GLuint gl_average_texture_color(backend_t *base, struct backend_image *img) {
 	auto gd = (struct gl_data *)base;
+	auto inner = (struct gl_texture *)img;
 
 	// Prepare textures which will be used for destination and source of rendering
 	// during downscaling.
-	const int texture_count = ARR_SIZE(img->inner->auxiliary_texture);
-	if (!img->inner->auxiliary_texture[0]) {
-		assert(!img->inner->auxiliary_texture[1]);
-		glGenTextures(texture_count, img->inner->auxiliary_texture);
+	const int texture_count = ARR_SIZE(inner->auxiliary_texture);
+	if (!inner->auxiliary_texture[0]) {
+		assert(!inner->auxiliary_texture[1]);
+		glGenTextures(texture_count, inner->auxiliary_texture);
 		glActiveTexture(GL_TEXTURE0);
 		for (int i = 0; i < texture_count; i++) {
-			glBindTexture(GL_TEXTURE_2D, img->inner->auxiliary_texture[i]);
+			glBindTexture(GL_TEXTURE_2D, inner->auxiliary_texture[i]);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 			glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR,
 			                 (GLint[]){0, 0, 0, 0});
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, img->inner->width,
-			             img->inner->height, 0, GL_BGR, GL_UNSIGNED_BYTE, NULL);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, inner->width,
+			             inner->height, 0, GL_BGR, GL_UNSIGNED_BYTE, NULL);
 		}
 	}
 
@@ -302,7 +303,7 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
 	// Enable shaders
 	glUseProgram(gd->brightness_shader.prog);
 	glUniform2f(glGetUniformLocationChecked(gd->brightness_shader.prog, "texsize"),
-	            (GLfloat)img->inner->width, (GLfloat)img->inner->height);
+	            (GLfloat)inner->width, (GLfloat)inner->height);
 
 	// Prepare vertex attributes
 	GLuint vao;
@@ -327,8 +328,8 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
 
 	// Do actual recursive render to 1x1 texture
 	GLuint result_texture = _gl_average_texture_color(
-	    base, img->inner->texture, img->inner->auxiliary_texture[0],
-	    img->inner->auxiliary_texture[1], fbo, img->inner->width, img->inner->height);
+	    base, inner->texture, inner->auxiliary_texture[0],
+	    inner->auxiliary_texture[1], fbo, inner->width, inner->height);
 
 	// Cleanup vertex attributes
 	glDisableVertexAttribArray(vert_coord_loc);
@@ -365,10 +366,11 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_image *img) {
  * @param reg_tgt     the clip region, in Xorg coordinate system
  * @param reg_visible ignored
  */
-static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
+static void _gl_compose(backend_t *base, struct backend_image *img, GLuint target,
                         GLint *coord, GLuint *indices, int nrects) {
 	auto gd = (struct gl_data *)base;
-	if (!img || !img->inner->texture) {
+	auto inner = (struct gl_texture *)img->inner;
+	if (!img || !inner->texture) {
 		log_error("Missing texture.");
 		return;
 	}
@@ -406,7 +408,7 @@ static void _gl_compose(backend_t *base, struct gl_image *img, GLuint target,
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, brightness);
 	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, img->inner->texture);
+	glBindTexture(GL_TEXTURE_2D, inner->texture);
 
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
@@ -516,7 +518,8 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
                 const region_t *reg_tgt, const region_t *reg_visible attr_unused) {
 	auto gd = (struct gl_data *)base;
-	struct gl_image *img = image_data;
+	struct backend_image *img = image_data;
+	auto inner = (struct gl_texture *)img->inner;
 
 	// Painting
 	int nrects;
@@ -536,8 +539,8 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 
 	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	x_rect_to_coords(nrects, rects, dst_x, dst_y, img->inner->height, gd->height,
-	                 img->inner->y_inverted, coord, indices);
+	x_rect_to_coords(nrects, rects, dst_x, dst_y, inner->height, gd->height,
+	                 inner->y_inverted, coord, indices);
 	_gl_compose(base, img, gd->back_fbo, coord, indices, nrects);
 
 	free(indices);
@@ -1067,33 +1070,26 @@ void gl_fill(backend_t *base, struct color c, const region_t *clip) {
 	return _gl_fill(base, c, clip, gd->back_fbo, gd->height, true);
 }
 
-void gl_release_image(backend_t *base, void *image_data) {
-	struct gl_image *wd = image_data;
+static void gl_release_image_inner(backend_t *base, struct gl_texture *inner) {
 	auto gd = (struct gl_data *)base;
-	wd->inner->refcount--;
-	assert(wd->inner->refcount >= 0);
-	if (wd->inner->refcount > 0) {
-		free(wd);
-		return;
-	}
+	gd->release_user_data(base, inner);
+	assert(inner->user_data == NULL);
 
-	gd->release_user_data(base, wd->inner);
-	assert(wd->inner->user_data == NULL);
-
-	glDeleteTextures(1, &wd->inner->texture);
-	glDeleteTextures(2, wd->inner->auxiliary_texture);
-	free(wd->inner);
-	free(wd);
+	glDeleteTextures(1, &inner->texture);
+	glDeleteTextures(2, inner->auxiliary_texture);
+	free(inner);
 	gl_check_err();
 }
 
-void *gl_copy(backend_t *base attr_unused, const void *image_data,
-              const region_t *reg_visible attr_unused) {
-	const struct gl_image *img = image_data;
-	auto new_img = ccalloc(1, struct gl_image);
-	*new_img = *img;
-	new_img->inner->refcount++;
-	return new_img;
+void gl_release_image(backend_t *base, void *image_data) {
+	struct backend_image *wd = image_data;
+	auto inner = (struct gl_texture *)wd->inner;
+	inner->refcount--;
+	assert(inner->refcount >= 0);
+	if (inner->refcount == 0) {
+		gl_release_image_inner(base, inner);
+	}
+	free(wd);
 }
 
 static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
@@ -1750,80 +1746,49 @@ GLuint gl_new_texture(GLenum target) {
 	return texture;
 }
 
-/// Decouple `img` from the image it references, also applies all the lazy operations
-static inline void gl_image_decouple(backend_t *base, struct gl_image *img) {
+/// Actually duplicate a texture into a new one, if this texture is shared
+static inline void gl_image_decouple(backend_t *base, struct backend_image *img) {
 	if (img->inner->refcount == 1) {
 		return;
 	}
-
 	auto gd = (struct gl_data *)base;
+	auto inner = (struct gl_texture *)img->inner;
 	auto new_tex = ccalloc(1, struct gl_texture);
 
 	new_tex->texture = gl_new_texture(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, new_tex->texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img->inner->width, img->inner->height, 0,
-	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 	new_tex->y_inverted = true;
-	new_tex->height = img->inner->height;
-	new_tex->width = img->inner->width;
+	new_tex->height = inner->height;
+	new_tex->width = inner->width;
 	new_tex->refcount = 1;
-	new_tex->user_data = gd->decouple_texture_user_data(base, img->inner->user_data);
+	new_tex->user_data = gd->decouple_texture_user_data(base, inner->user_data);
 
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
-	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-	                       new_tex->texture, 0);
-	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-
-	glClearColor(0, 0, 0, 0);
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	// clang-format off
-	GLint coord[] = {
-		// top left
-		0, 0,                 // vertex coord
-		0, 0,                 // texture coord
-
-		// top right
-		img->inner->width, 0, // vertex coord
-		img->inner->width, 0, // texture coord
-
-		// bottom right
-		img->inner->width, img->inner->height,
-		img->inner->width, img->inner->height,
-
-		// bottom left
-		0, img->inner->height,
-		0, img->inner->height,
-	};
-	// clang-format on
-
-	_gl_compose(base, img, fbo, coord, (GLuint[]){0, 1, 2, 2, 3, 0}, 1);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       inner->texture, 0);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+	glBindTexture(GL_TEXTURE_2D, new_tex->texture);
+	glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 0, 0, new_tex->width, new_tex->height, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 	glDeleteFramebuffers(1, &fbo);
 
-	img->inner->refcount--;
-	img->inner = new_tex;
-
-	// Clear lazy operation flags
-	img->color_inverted = false;
-	img->dim = 0;
-	img->opacity = 1;
-
-	gl_check_err();
+	img->inner = (struct backend_image_inner_base *)new_tex;
+	inner->refcount--;
 }
 
-static void gl_image_apply_alpha(backend_t *base, struct gl_image *img,
+static void gl_image_apply_alpha(backend_t *base, struct backend_image *img,
                                  const region_t *reg_op, double alpha) {
 	// Result color = 0 (GL_ZERO) + alpha (GL_CONSTANT_ALPHA) * original color
+	auto inner = (struct gl_texture *)img->inner;
 	glBlendFunc(GL_ZERO, GL_CONSTANT_ALPHA);
 	glBlendColor(0, 0, 0, (GLclampf)alpha);
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-	                       img->inner->texture, 0);
+	                       inner->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, fbo, 0, false);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
@@ -1883,40 +1848,27 @@ void gl_present(backend_t *base, const region_t *region) {
 	free(indices);
 }
 
-/// stub for backend_operations::image_op
 bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
                  const region_t *reg_op, const region_t *reg_visible attr_unused, void *arg) {
-	struct gl_image *tex = image_data;
-	int *iargs = arg;
+	struct backend_image *tex = image_data;
 	switch (op) {
-	case IMAGE_OP_INVERT_COLOR_ALL: tex->color_inverted = true; break;
-	case IMAGE_OP_DIM_ALL:
-		tex->dim = 1.0 - (1.0 - tex->dim) * (1.0 - *(double *)arg);
-		break;
-	case IMAGE_OP_APPLY_ALPHA_ALL: tex->opacity *= *(double *)arg; break;
 	case IMAGE_OP_APPLY_ALPHA:
 		gl_image_decouple(base, tex);
 		assert(tex->inner->refcount == 1);
 		gl_image_apply_alpha(base, tex, reg_op, *(double *)arg);
 		break;
-	case IMAGE_OP_RESIZE_TILE:
-		// texture is already set to repeat, so nothing else we need to do
-		tex->ewidth = iargs[0];
-		tex->eheight = iargs[1];
-		break;
-	case IMAGE_OP_MAX_BRIGHTNESS: tex->max_brightness = *(double *)arg; break;
 	}
 
 	return true;
 }
 
-bool gl_read_pixel(backend_t *base, void *image_data, int x, int y, struct color *output) {
-	struct gl_image *tex = image_data;
-	gl_image_decouple(base, tex);
-	assert(tex->inner->refcount == 1);
+bool gl_read_pixel(backend_t *base attr_unused, void *image_data, int x, int y,
+                   struct color *output) {
+	struct backend_image *tex = image_data;
+	auto inner = (struct gl_texture *)tex->inner;
 	GLfloat color[4];
-	glReadPixels(x, tex->inner->y_inverted ? tex->inner->height - y : y, 1, 1,
-	             GL_RGBA, GL_FLOAT, color);
+	glReadPixels(x, inner->y_inverted ? inner->height - y : y, 1, 1, GL_RGBA,
+	             GL_FLOAT, color);
 	output->alpha = color[3];
 	output->red = color[0];
 	output->green = color[1];
@@ -1925,9 +1877,4 @@ bool gl_read_pixel(backend_t *base, void *image_data, int x, int y, struct color
 	bool ret = glGetError() == GL_NO_ERROR;
 	gl_clear_err();
 	return ret;
-}
-
-bool gl_is_image_transparent(backend_t *base attr_unused, void *image_data) {
-	struct gl_image *img = image_data;
-	return img->has_alpha;
 }

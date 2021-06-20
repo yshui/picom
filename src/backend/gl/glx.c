@@ -388,11 +388,12 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	}
 
 	log_trace("Binding pixmap %#010x", pixmap);
-	auto wd = ccalloc(1, struct gl_image);
+	auto wd = ccalloc(1, struct backend_image);
 	wd->max_brightness = 1;
-	wd->inner = ccalloc(1, struct gl_texture);
-	wd->inner->width = wd->ewidth = r->width;
-	wd->inner->height = wd->eheight = r->height;
+	auto inner = ccalloc(1, struct gl_texture);
+	inner->width = wd->ewidth = r->width;
+	inner->height = wd->eheight = r->height;
+	wd->inner = (struct backend_image_inner_base *)inner;
 	free(r);
 
 	auto fbcfg = glx_find_fbconfig(gd->display, gd->screen, fmt);
@@ -420,7 +421,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	    0,
 	};
 
-	wd->inner->y_inverted = fbcfg->y_inverted;
+	inner->y_inverted = fbcfg->y_inverted;
 
 	glxpixmap = cmalloc(struct _glx_pixmap);
 	glxpixmap->pixmap = pixmap;
@@ -436,14 +437,14 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	log_trace("GLXPixmap %#010lx", glxpixmap->glpixmap);
 
 	// Create texture
-	wd->inner->user_data = glxpixmap;
-	wd->inner->texture = gl_new_texture(GL_TEXTURE_2D);
+	inner->user_data = glxpixmap;
+	inner->texture = gl_new_texture(GL_TEXTURE_2D);
+	inner->has_alpha = fmt.alpha_size != 0;
 	wd->opacity = 1;
 	wd->color_inverted = false;
 	wd->dim = 0;
-	wd->has_alpha = fmt.alpha_size != 0;
 	wd->inner->refcount = 1;
-	glBindTexture(GL_TEXTURE_2D, wd->inner->texture);
+	glBindTexture(GL_TEXTURE_2D, inner->texture);
 	glXBindTexImageEXT(gd->display, glxpixmap->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -526,10 +527,11 @@ struct backend_operations glx_ops = {
     .release_image = gl_release_image,
     .compose = gl_compose,
     .image_op = gl_image_op,
+    .set_image_property = default_set_image_property,
     .read_pixel = gl_read_pixel,
-    .copy = gl_copy,
+    .clone_image = default_clone_image,
     .blur = gl_blur,
-    .is_image_transparent = gl_is_image_transparent,
+    .is_image_transparent = default_is_image_transparent,
     .present = glx_present,
     .buffer_age = glx_buffer_age,
     .render_shadow = default_backend_render_shadow,

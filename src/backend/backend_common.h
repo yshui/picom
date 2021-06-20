@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 
+#include "backend.h"
 #include "config.h"
 #include "region.h"
 
@@ -23,6 +24,22 @@ struct dual_kawase_params {
 	float offset;
 	/// Save area around blur target (@ref resize_width, @ref resize_height)
 	int expand;
+};
+
+struct backend_image_inner_base {
+	int refcount;
+	bool has_alpha;
+};
+
+struct backend_image {
+	// Backend dependent inner image data
+	struct backend_image_inner_base *inner;
+	double opacity;
+	double dim;
+	double max_brightness;
+	// Effective size of the image
+	int ewidth, eheight;
+	bool color_inverted;
 };
 
 bool build_shadow(xcb_connection_t *, xcb_drawable_t, double opacity, int width,
@@ -51,3 +68,9 @@ void init_backend_base(struct backend_base *base, session_t *ps);
 
 struct conv **generate_blur_kernel(enum blur_method method, void *args, int *kernel_count);
 struct dual_kawase_params *generate_dual_kawase_params(void *args);
+
+void *default_clone_image(backend_t *base, const void *image_data, const region_t *reg);
+bool default_is_image_transparent(backend_t *base attr_unused, void *image_data);
+bool default_set_image_property(backend_t *base attr_unused, enum image_properties op,
+                                void *image_data, void *arg);
+struct backend_image *default_new_backend_image(int w, int h);
