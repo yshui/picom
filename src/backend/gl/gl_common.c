@@ -273,7 +273,7 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
  */
 static GLuint gl_average_texture_color(backend_t *base, struct backend_image *img) {
 	auto gd = (struct gl_data *)base;
-	auto inner = (struct gl_texture *)img;
+	auto inner = (struct gl_texture *)img->inner;
 
 	// Prepare textures which will be used for destination and source of rendering
 	// during downscaling.
