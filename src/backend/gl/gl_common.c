@@ -241,6 +241,7 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
 	glBindTexture(GL_TEXTURE_2D, destination_texture);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       destination_texture, 0);
+	gl_check_fb_complete(GL_FRAMEBUFFER);
 
 	// Bind source texture as downscaling shader uniform input
 	glBindTexture(GL_TEXTURE_2D, source_texture);
@@ -605,8 +606,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
 			                       GL_TEXTURE_2D, bctx->blur_textures[!curr], 0);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-				log_error("Framebuffer attachment failed.");
+			if (!gl_check_fb_complete(GL_FRAMEBUFFER)) {
 				return false;
 			}
 
@@ -794,9 +794,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 				glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER,
 				                       GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 				                       bctx->blur_textures[i], 0);
-				if (glCheckFramebufferStatus(GL_FRAMEBUFFER) !=
-				    GL_FRAMEBUFFER_COMPLETE) {
-					log_error("Framebuffer attachment failed.");
+				if (!gl_check_fb_complete(GL_FRAMEBUFFER)) {
 					glBindFramebuffer(GL_FRAMEBUFFER, 0);
 					return false;
 				}
@@ -1063,6 +1061,8 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	glDeleteBuffers(2, bo);
 	free(indices);
 	free(coord);
+
+	gl_check_err();
 }
 
 void gl_fill(backend_t *base, struct color c, const region_t *clip) {
@@ -1698,6 +1698,9 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       gd->back_texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	if (!gl_check_fb_complete(GL_FRAMEBUFFER)) {
+		return false;
+	}
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
 	gd->logger = gl_string_marker_logger_new();
