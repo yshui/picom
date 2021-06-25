@@ -133,13 +133,13 @@ parse_args()
     #       followed by a ':'
     then
       OPACITY=$1
-      shift && set -- "-o" "$OPACITY" "$@"
+      shift && set -- "$@" "-o" "$OPACITY"
+      i=$(( i + 2 ))
+    else
+      ARG="$1"
+      shift && set -- "$@" "$ARG"
+      i=$(( i + 1 ))
     fi
-
-    # Prepare for next iteration
-    FIRST="$1"
-    shift && set -- "$@" "$FIRST"
-    i=$(( i + 1 ))
   done
 
 
