@@ -127,12 +127,7 @@ parse_args()
     #       the same as those in the getopts argument, minus those that are NOT
     #       followed by a ':'
     then
-      OPACITY=$1
-      shift && set -- "$@" "-o" "$OPACITY"
-      i=$(( i + 2 ))
-    else
-      ARG="$1"
-      shift && set -- "$@" "$ARG"
+      set -- "$@" "-o"
       i=$(( i + 1 ))
     fi
     #### [END] Prepend '-o' to  standalone opacity values ####
