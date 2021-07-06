@@ -512,8 +512,12 @@ static bool decouple_image(backend_t *base, struct backend_image *img, const reg
 		return true;
 	}
 	auto inner = (struct _xrender_image_data_inner *)img->inner;
-	auto inner2 =
-	    new_inner(base, inner->width, inner->height, inner->visual, inner->depth);
+	// Force new pixmap to a 32-bit ARGB visual to allow for transparent frames around
+	// non-transparent windows
+	auto visual = (inner->depth == 32)
+	                  ? inner->visual
+	                  : x_get_visual_for_standard(base->c, XCB_PICT_STANDARD_ARGB_32);
+	auto inner2 = new_inner(base, inner->width, inner->height, visual, 32);
 	if (!inner2) {
 		return false;
 	}
