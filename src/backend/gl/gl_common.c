@@ -241,6 +241,7 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
 	glBindTexture(GL_TEXTURE_2D, destination_texture);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       destination_texture, 0);
+	gl_check_fb_complete(GL_FRAMEBUFFER);
 
 	// Bind source texture as downscaling shader uniform input
 	glBindTexture(GL_TEXTURE_2D, source_texture);
@@ -605,8 +606,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
 			                       GL_TEXTURE_2D, bctx->blur_textures[!curr], 0);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-				log_error("Framebuffer attachment failed.");
+			if (!gl_check_fb_complete(GL_FRAMEBUFFER)) {
 				return false;
 			}
 
@@ -794,9 +794,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 				glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER,
 				                       GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 				                       bctx->blur_textures[i], 0);
-				if (glCheckFramebufferStatus(GL_FRAMEBUFFER) !=
-				    GL_FRAMEBUFFER_COMPLETE) {
-					log_error("Framebuffer attachment failed.");
+				if (!gl_check_fb_complete(GL_FRAMEBUFFER)) {
 					glBindFramebuffer(GL_FRAMEBUFFER, 0);
 					return false;
 				}
@@ -1063,6 +1061,8 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	glDeleteBuffers(2, bo);
 	free(indices);
 	free(coord);
+
+	gl_check_err();
 }
 
 void gl_fill(backend_t *base, struct color c, const region_t *clip) {
@@ -1698,6 +1698,9 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       gd->back_texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	if (!gl_check_fb_complete(GL_FRAMEBUFFER)) {
+		return false;
+	}
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
 	gd->logger = gl_string_marker_logger_new();
@@ -1762,17 +1765,83 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	new_tex->refcount = 1;
 	new_tex->user_data = gd->decouple_texture_user_data(base, inner->user_data);
 
+	glBindTexture(GL_TEXTURE_2D, new_tex->texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, new_tex->width, new_tex->height, 0,
+	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	assert(gd->present_prog);
+	glUseProgram(gd->present_prog);
+	glBindTexture(GL_TEXTURE_2D, inner->texture);
+
 	GLuint fbo;
 	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-	                       inner->texture, 0);
-	glReadBuffer(GL_COLOR_ATTACHMENT0);
-	glBindTexture(GL_TEXTURE_2D, new_tex->texture);
-	glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 0, 0, new_tex->width, new_tex->height, 0);
-	glBindTexture(GL_TEXTURE_2D, 0);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       new_tex->texture, 0);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	gl_check_fb_complete(GL_DRAW_FRAMEBUFFER);
+
+	glClearColor(0, 0, 0, 0);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	// clang-format off
+	GLint coord[] = {
+		// top left
+		0, 0,                 // vertex coord
+		0, 0,                 // texture coord
+
+		// top right
+		new_tex->width, 0, // vertex coord
+		new_tex->width, 0, // texture coord
+
+		// bottom right
+		new_tex->width, new_tex->height,
+		new_tex->width, new_tex->height,
+
+		// bottom left
+		0, new_tex->height,
+		0, new_tex->height,
+	};
+	// clang-format on
+	GLuint indices[] = {0, 1, 2, 2, 3, 0};
+
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
+	GLuint bo[2];
+	glGenBuffers(2, bo);
+	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 16, coord, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * 6, indices,
+	             GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray(vert_coord_loc);
+	glEnableVertexAttribArray(vert_in_texcoord_loc);
+	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
+	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
+
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
+
+	glDisableVertexAttribArray(vert_coord_loc);
+	glDisableVertexAttribArray(vert_in_texcoord_loc);
+	glBindVertexArray(0);
+	glDeleteVertexArrays(1, &vao);
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glDeleteBuffers(2, bo);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDeleteFramebuffers(1, &fbo);
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glUseProgram(0);
+
+	gl_check_err();
 
 	img->inner = (struct backend_image_inner_base *)new_tex;
 	inner->refcount--;

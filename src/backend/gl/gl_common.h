@@ -136,6 +136,14 @@ static inline const char *gl_get_err_str(GLenum err) {
 		CASESTRRET(GL_OUT_OF_MEMORY);
 		CASESTRRET(GL_STACK_UNDERFLOW);
 		CASESTRRET(GL_STACK_OVERFLOW);
+		CASESTRRET(GL_FRAMEBUFFER_UNDEFINED);
+		CASESTRRET(GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+		CASESTRRET(GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
+		CASESTRRET(GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER);
+		CASESTRRET(GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER);
+		CASESTRRET(GL_FRAMEBUFFER_UNSUPPORTED);
+		CASESTRRET(GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE);
+		CASESTRRET(GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS);
 	}
 	return NULL;
 }
@@ -166,6 +174,30 @@ static inline void gl_clear_err(void) {
 }
 
 #define gl_check_err() gl_check_err_(__func__, __LINE__)
+
+/**
+ * Check for GL framebuffer completeness.
+ */
+static inline bool gl_check_fb_complete_(const char *func, int line, GLenum fb) {
+	GLenum status = glCheckFramebufferStatus(fb);
+
+	if (status == GL_FRAMEBUFFER_COMPLETE) {
+		return true;
+	}
+
+	const char *stattext = gl_get_err_str(status);
+	if (stattext) {
+		log_printf(tls_logger, LOG_LEVEL_ERROR, func,
+		           "Framebuffer attachment failed at line %d: %s", line, stattext);
+	} else {
+		log_printf(tls_logger, LOG_LEVEL_ERROR, func,
+		           "Framebuffer attachment failed at line %d: %d", line, status);
+	}
+
+	return false;
+}
+
+#define gl_check_fb_complete(fb) gl_check_fb_complete_(__func__, __LINE__, (fb))
 
 /**
  * Check if a GLX extension exists.
