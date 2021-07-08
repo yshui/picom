@@ -206,7 +206,7 @@ get_target_window_id()
 
     # Find the highest ancestor of the target window
     winid="$(echo "$window_tree" \
-      | sed "/^\s*$wid/q;s/^     \(0x[[:xdigit:]]*\).*/\1/p" \
+      | sed -n "/^\s*$winid/q;s/^     \(0x[[:xdigit:]]*\).*/\1/p" \
       | tail -n 1)"
     if test -z "$winid"
     then
@@ -237,6 +237,8 @@ get_current_opacity()
   cur="$(xprop -id "$winid" -notype -f _NET_WM_WINDOW_OPACITY 32c '$0' _NET_WM_WINDOW_OPACITY)"
   cur="${cur#_NET_WM_WINDOW_OPACITY}"
   cur="${cur%:*}"
+  test -n "$cur" &&
+    cur=$(( cur * 100 / 0xffffffff ))
   echo "$cur"
 } #}}
 
@@ -245,8 +247,8 @@ get_current_opacity()
 get_opacity()
 { #{{
   cur="$(get_current_opacity)"
-  test -z "$cur" && cur=0xffffffff # Unset opacity means fully opaque
-  cur=$(( cur * 100 / 0xffffffff ))
+  test -z "$cur" && cur=100     # Unset opacity means fully opaque
+  echo "$cur"
   exit 0
 } #}}
 
