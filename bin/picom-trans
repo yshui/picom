@@ -260,8 +260,8 @@ delete_opacity()
 
 reset_opacity()  # Reset opacity of all windows
 { #{{
-  for wid in $(xwininfo -root -tree | sed -n 's/^     \(0x[[:xdigit:]]*\).*/\1/p')
-  do xprop -id "$wid" -remove _NET_WM_WINDOW_OPACITY 2>/dev/null
+  for winid in $(xwininfo -root -tree | sed -n 's/^     \(0x[[:xdigit:]]*\).*/\1/p')
+  do xprop -id "$winid" -remove _NET_WM_WINDOW_OPACITY 2>/dev/null
   done
   exit 0
 } #}}
