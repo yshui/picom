@@ -320,11 +320,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		}
 
 		// Set max brightness
-		if (ps->o.max_brightness < 1.0) {
-			ps->backend_data->ops->set_image_property(
-			    ps->backend_data, IMAGE_PROPERTY_MAX_BRIGHTNESS, w->win_image,
-			    &ps->o.max_brightness);
-		}
+		ps->backend_data->ops->set_image_property(
+		    ps->backend_data, IMAGE_PROPERTY_MAX_BRIGHTNESS, w->win_image,
+		    &ps->o.max_brightness);
 
 		// Draw window on target
 		if (!w->invert_color && !w->dim && w->frame_opacity == 1 && w->opacity == 1) {
