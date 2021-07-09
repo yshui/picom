@@ -1919,6 +1919,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (!(c2_list_postprocess(ps, ps->o.unredir_if_possible_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.paint_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.shadow_blacklist) &&
+	      c2_list_postprocess(ps, ps->o.shadow_clip_list) &&
 	      c2_list_postprocess(ps, ps->o.fade_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.blur_background_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.invert_color_list) &&
@@ -2294,6 +2295,7 @@ static void session_destroy(session_t *ps) {
 
 	// Free blacklists
 	free_wincondlst(&ps->o.shadow_blacklist);
+	free_wincondlst(&ps->o.shadow_clip_list);
 	free_wincondlst(&ps->o.fade_blacklist);
 	free_wincondlst(&ps->o.focus_blacklist);
 	free_wincondlst(&ps->o.invert_color_list);

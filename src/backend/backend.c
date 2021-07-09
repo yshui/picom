@@ -144,6 +144,10 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		pixman_region32_subtract(&reg_visible, &reg_visible, t->reg_ignore);
 	}
 
+	// Region on screen we don't want any shadows on
+	region_t reg_shadow_clip;
+	pixman_region32_init(&reg_shadow_clip);
+
 	if (ps->backend_data->ops->prepare) {
 		ps->backend_data->ops->prepare(ps->backend_data, &reg_paint);
 	}
@@ -279,6 +283,10 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				pixman_region32_subtract(&reg_shadow, &reg_shadow,
 				                         &ps->shadow_exclude_reg);
 			}
+			if (pixman_region32_not_empty(&reg_shadow_clip)) {
+				pixman_region32_subtract(&reg_shadow, &reg_shadow,
+				                         &reg_shadow_clip);
+			}
 
 			if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
 			    w->xinerama_scr < ps->xinerama_nscrs) {
@@ -339,6 +347,14 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			goto skip;
 		}
 
+		if (w->clip_shadow_above) {
+			// Add window bounds to shadow-clip region
+			pixman_region32_union(&reg_shadow_clip, &reg_shadow_clip, &reg_bound);
+		} else {
+			// Remove overlapping window bounds from shadow-clip region
+			pixman_region32_subtract(&reg_shadow_clip, &reg_shadow_clip, &reg_bound);
+		}
+
 		// Draw window on target
 		if (w->frame_opacity == 1) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
@@ -393,6 +409,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		pixman_region32_fini(&reg_paint_in_bound);
 	}
 	pixman_region32_fini(&reg_paint);
+	pixman_region32_fini(&reg_shadow_clip);
 
 	if (ps->o.monitor_repaint) {
 		const struct color DEBUG_COLOR = {0.5, 0, 0, 0.5};

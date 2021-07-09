@@ -151,6 +151,9 @@ OPTIONS
 *--shadow-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should have no shadow.
 
+*--clip-shadow-above* 'CONDITION'::
+	Specify a list of conditions of windows that should have no shadow painted over, such as a dock window.
+
 *--fade-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should not be faded.
 
@@ -362,7 +365,7 @@ Window-type-specific settings are exposed only in configuration file and has the
 ------------
 wintypes:
 {
-  WINDOW_TYPE = { fade = BOOL; shadow = BOOL; opacity = FLOAT; focus = BOOL; blur-background = BOOL; full-shadow = BOOL; redir-ignore = BOOL; };
+  WINDOW_TYPE = { fade = BOOL; shadow = BOOL; opacity = FLOAT; focus = BOOL; blur-background = BOOL; full-shadow = BOOL; clip-shadow-above = BOOL; redir-ignore = BOOL; };
 };
 ------------
 
@@ -384,6 +387,9 @@ Following per window-type options are available: ::
 
   full-shadow:::
     Controls whether shadow is drawn under the parts of the window that you normally won't be able to see. Useful when the window has parts of it transparent, and you want shadows in those areas.
+
+  clip-shadow-above:::
+    Controls wether shadows that would have been drawn above the window should be clipped. Useful for dock windows that should have no shadow painted on top.
 
   redir-ignore:::
     Controls whether this type of windows should cause screen to become redirected again after been unredirected. If you have *--unredir-if-possible* set, and doesn't want certain window to cause unnecessary screen redirection, you can set this to `true`.
