@@ -362,7 +362,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			    ps->backend_data, w->win_image, &reg_visible_local);
 			if (w->invert_color) {
 				ps->backend_data->ops->set_image_property(
-				    ps->backend_data, IMAGE_PROPERTY_INVERTED, new_img, NULL);
+				    ps->backend_data, IMAGE_PROPERTY_INVERTED, new_img,
+				    &w->invert_color);
 			}
 			if (w->dim) {
 				double dim_opacity = ps->o.inactive_dim;
