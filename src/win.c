@@ -470,7 +470,7 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		}
 
 		// Update window geometry and animation data
-		w->animation_should_start |= !w->animation_in_progress;
+		w->animation_should_start |= !w->animation_in_progress && !w->in_openclose;
 		w->animation_start_x = w->g.x;
 		w->animation_start_y = w->g.y;
 		w->animation_start_w = w->g.width;
@@ -1434,8 +1434,8 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	                                      // true here because window is just created
 	    .animation_start_x = 0,          // updated by window geometry changes
 	    .animation_start_y = 0,          // updated by window geometry changes
-	    .animation_start_w = 0,          // updated by window geometry changes
-	    .animation_start_h = 0,          // updated by window geometry changes
+	    .animation_start_w = 4,          // updated by window geometry changes
+	    .animation_start_h = 4,          // updated by window geometry changes
 	    .animation_end_x = 0,            // updated by window geometry changes
 	    .animation_end_y = 0,            // updated by window geometry changes
 	    .animation_end_w = 0,            // updated by window geometry changes
