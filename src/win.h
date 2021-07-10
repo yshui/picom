@@ -170,6 +170,21 @@ struct managed_win {
 	bool unredir_if_possible_excluded;
 	/// Whether this window is in open/close state.
 	bool in_openclose;
+        /// Animation start and end window positions&dimensions.
+	/// The idea is that these store what the animation should be, and at the start of
+	/// `paint_preprocess` we change the other members of this struct that relate to the
+	/// window's position or size. However, `g` is also used to get the new values for
+	/// `animation_{start,end}_{x,y}`, but only when `animation_in_progress`.
+	int animation_start_x, animation_start_y;
+	int animation_start_w, animation_start_h;
+	int animation_end_x,   animation_end_y;
+	int animation_end_w,   animation_end_h;
+	/// Whether the window is in the middle of an animation.
+	bool animation_in_progress;
+	/// Whether we should start a new animation.
+	bool animation_should_start;
+	/// When the window animation started.
+	long animation_start_time;
 
 	// Client window related members
 	/// ID of the top-level client window of the window.

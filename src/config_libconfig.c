@@ -515,6 +515,16 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude");
 	// --fade-exclude
 	parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude");
+	// --window-animations
+	lcfg_lookup_bool(&cfg, "window-animations", &opt->animations);
+	// --window-animation-duration
+	if (config_lookup_int(&cfg, "window-animation-duration", &ival)) {
+		if (ival < 0) {
+			log_warn("Invalid window-animation-duration %d", ival);
+		} else {
+			opt->animation_duration = ival;
+		}
+	}
 	// --focus-exclude
 	parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude");
 	// --invert-color-include

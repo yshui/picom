@@ -471,6 +471,7 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 
 		// Update window geometry
 		w->g = w->pending_g;
+		w->animation_should_start = true;
 
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(ps, w);
@@ -1423,6 +1424,17 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .state = WSTATE_UNMAPPED,         // updated by window state changes
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
+	    .animation_start_x = 0,          // updated by window geometry changes
+	    .animation_start_y = 0,          // updated by window geometry changes
+	    .animation_start_w = 0,          // updated by window geometry changes
+	    .animation_start_h = 0,          // updated by window geometry changes
+	    .animation_end_x = 0,            // updated by window geometry changes
+	    .animation_end_y = 0,            // updated by window geometry changes
+	    .animation_end_w = 0,            // updated by window geometry changes
+	    .animation_end_h = 0,            // updated by window geometry changes
+	    .animation_in_progress = false,  // updated by window animation code
+	    .animation_should_start = false, // updated by window animation code
+	    .animation_start_time = 0,       // updated by window animation code
 	    .reg_ignore_valid = false,        // set to true when damaged
 	    .flags = WIN_FLAGS_IMAGES_NONE,        // updated by property/attributes/etc
 	                                           // change

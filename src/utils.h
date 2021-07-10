@@ -137,6 +137,20 @@ static inline int attr_const normalize_i_range(int i, int min, int max) {
 #define clamp(val, min, max) max2(min2(val, max), min)
 
 /**
+ * Interpolate between two values, for animation.
+ *
+ * @param a double starting point
+ * @param b double ending point
+ * @param t double interpoland, ranging from 0 to 1
+ * @return interpolated value
+ */
+static inline double attr_const interpolate_animation(double a, double b, double t) {
+	// TODO(dccsillag): implement some interpolation with smoothing. Right now it's just linear
+	//                  interpolation.
+	return a + t*(b - a);
+}
+
+/**
  * Normalize a double value to a specific range.
  *
  * @param d double value to normalize

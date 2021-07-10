@@ -139,6 +139,8 @@ typedef struct session {
 	ev_timer unredir_timer;
 	/// Timer for fading
 	ev_timer fade_timer;
+	/// Timer for animations
+	ev_timer animation_timer;
 	/// Timer for delayed drawing, right now only used by
 	/// swopti
 	ev_timer delayed_draw_timer;
@@ -246,6 +248,8 @@ typedef struct session {
 	xcb_render_picture_t *alpha_picts;
 	/// Time of last fading. In milliseconds.
 	long fade_time;
+	/// Time of last window animation step. In milliseconds.
+	long animation_time;
 	/// Head pointer of the error ignore linked list.
 	ignore_t *ignore_head;
 	/// Pointer to the <code>next</code> member of tail element of the error

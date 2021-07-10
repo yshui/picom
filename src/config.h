@@ -169,6 +169,15 @@ typedef struct options {
 	/// Fading blacklist. A linked list of conditions.
 	c2_lptr_t *fade_blacklist;
 
+	// === Animations ===
+	/// Whether to do window animations
+	bool animations;
+	/// Animation duration, in milliseconds
+	long animation_duration;
+	/// TODO: smoothing/spring parameters
+	/// TODO: window animation blacklist
+	/// TODO: open/close animations
+
 	// === Opacity ===
 	/// Default opacity for inactive windows.
 	/// 32-bit integer with the format of _NET_WM_OPACITY.

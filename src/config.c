@@ -547,6 +547,9 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .no_fading_destroyed_argb = false,
 	    .fade_blacklist = NULL,
 
+	    .animations = false,
+	    .animation_duration = 500,
+
 	    .inactive_opacity = 1.0,
 	    .inactive_opacity_override = false,
 	    .active_opacity = 1.0,
