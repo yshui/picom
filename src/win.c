@@ -470,7 +470,7 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		}
 
 		// Update window geometry and animation data
-		w->animation_should_start = true;
+		w->animation_should_start |= !w->animation_in_progress;
 		w->animation_start_x = w->g.x;
 		w->animation_start_y = w->g.y;
 		w->animation_start_w = w->g.width;
