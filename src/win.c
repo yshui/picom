@@ -470,12 +470,15 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		}
 
 		// Update window geometry and animation data
-		// TODO(dccsillag): also consider size changes here, for animation.
 		w->animation_should_start = true;
 		w->animation_start_x = w->g.x;
 		w->animation_start_y = w->g.y;
+		w->animation_start_w = w->g.width;
+		w->animation_start_h = w->g.height;
 		w->animation_end_x = w->pending_g.x;
 		w->animation_end_y = w->pending_g.y;
+		w->animation_end_w = w->pending_g.width;
+		w->animation_end_h = w->pending_g.height;
 		w->g = w->pending_g;
 
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {

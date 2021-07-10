@@ -700,12 +700,14 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 				// Interpolate x, y, w, h
 				int x = (int)interpolate_animation(w->animation_start_x, w->animation_end_x, t);
 				int y = (int)interpolate_animation(w->animation_start_y, w->animation_end_y, t);
-				// TODO(dccsillag):
-				/* int w = (int)interpolate_animation(w->animation_start_w, w->animation_end_w, t); */
-				/* int h = (int)interpolate_animation(w->animation_start_h, w->animation_end_h, t); */
+				int width = (int)interpolate_animation(w->animation_start_w, w->animation_end_w, t);
+				int height = (int)interpolate_animation(w->animation_start_h, w->animation_end_h, t);
 
 				w->g.x = (short)x;
 				w->g.y = (short)y;
+				w->g.width = (unsigned short)width;
+				w->g.height = (unsigned short)height;
+				win_on_win_size_change(ps, w);
 
 				if (w->to_paint) add_damage_from_win(ps, w);
 				*animation_running = true;
