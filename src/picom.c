@@ -683,14 +683,9 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 		}
 		ps->animation_time += steps * delta;
 		win_stack_foreach_managed_safe(w, &ps->window_stack) {
-			// TODO(dccsillag): also consider size changes here.
 			if (w->animation_should_start) {
-				w->animation_in_progress = true;
-				w->animation_start_x = w->animation_end_x;
-				w->animation_start_y = w->animation_end_y;
-				w->animation_end_x = w->g.x;
-				w->animation_end_y = w->g.y;
 				w->animation_start_time = now;
+				w->animation_in_progress = true;
 				w->animation_should_start = false;
 			}
 
