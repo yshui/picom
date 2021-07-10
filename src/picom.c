@@ -703,12 +703,19 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 				int width = (int)interpolate_animation(w->animation_start_w, w->animation_end_w, t);
 				int height = (int)interpolate_animation(w->animation_start_h, w->animation_end_h, t);
 
+				// Mark past window position with damage
 				if (w->to_paint) add_damage_from_win(ps, w);
+
+				// Update window geometry
 				w->g.x = (short)x;
 				w->g.y = (short)y;
 				w->g.width = (unsigned short)width;
 				w->g.height = (unsigned short)height;
+
+				// Synchronize new window position, and add damage to it
 				win_on_win_size_change(ps, w);
+				/* win_update_bounding_shape(ps, w); */
+				win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 				if (w->to_paint) add_damage_from_win(ps, w);
 
 				*animation_running = true;
