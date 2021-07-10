@@ -691,31 +691,25 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 
 			if (w->animation_in_progress) {
 				auto delta_ms = now - w->animation_start_time;
-				// NOTE(dccsillag): maybe we should precalculate 1/ps->o.animation_duration.
 				double t = (double)delta_ms / (double)ps->o.animation_duration;
 				t = min2(t, 1.0);
 				if (t >= 1)
 					w->animation_in_progress = false;
 
-				// Interpolate x, y, w, h
-				int x = (int)interpolate_animation(w->animation_start_x, w->animation_end_x, t);
-				int y = (int)interpolate_animation(w->animation_start_y, w->animation_end_y, t);
-				int width = (int)interpolate_animation(w->animation_start_w, w->animation_end_w, t);
-				int height = (int)interpolate_animation(w->animation_start_h, w->animation_end_h, t);
-
 				// Mark past window position with damage
 				if (w->to_paint) add_damage_from_win(ps, w);
 
-				// Update window geometry
-				w->g.x = (short)x;
-				w->g.y = (short)y;
-				w->g.width = (unsigned short)width;
-				w->g.height = (unsigned short)height;
+				// Animate window geometry
+				w->g.x      = (short)         interpolate_animation(w->animation_start_x, w->animation_end_x, t);
+				w->g.y      = (short)         interpolate_animation(w->animation_start_y, w->animation_end_y, t);
+				w->g.width  = (unsigned short)interpolate_animation(w->animation_start_w, w->animation_end_w, t);
+				w->g.height = (unsigned short)interpolate_animation(w->animation_start_h, w->animation_end_h, t);
 
-				// Synchronize new window position, and add damage to it
+				// Submit window size change
 				win_on_win_size_change(ps, w);
-				/* win_update_bounding_shape(ps, w); */
 				win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
+
+				// Submit new window position, and add damage to it
 				if (w->to_paint) add_damage_from_win(ps, w);
 
 				*animation_running = true;
