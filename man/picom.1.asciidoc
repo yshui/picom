@@ -57,7 +57,8 @@ OPTIONS
 
 *--animations*::
 	Run animations for window geometry changes (movement and scaling).
-	We use spring-based animations, which are parametrized by *--animation-stiffness*, *--animation-dampening* and *--animation-window-mass*.
+	We use spring-based animations, which are parametrized by *--animation-stiffness*, *--animation-dampening* and *--animation-window-mass*. +
+	A useful resource for selecting animation parameters is https://react-spring-visualizer.com/, which allows you to interactively try out various parameters and see the resulting animation curve. Or you can just edit the values in the config file, which is automatically reloaded.
 
 *--animation-stiffness*::
 	Stiffness (a.k.a. tension) parameter for spring-based animation (default: 200.0).
