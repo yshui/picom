@@ -231,8 +231,8 @@ void win_get_region_noframe_local(const struct managed_win *w, region_t *res) {
 
 	int x = extents.left;
 	int y = extents.top;
-	int width = max2(w->g.width - (extents.left + extents.right), 0);
-	int height = max2(w->g.height - (extents.top + extents.bottom), 0);
+	int width = max2(w->widthb - (extents.left + extents.right), 0);
+	int height = max2(w->heightb - (extents.top + extents.bottom), 0);
 
 	pixman_region32_fini(res);
 	if (width > 0 && height > 0) {
@@ -246,8 +246,9 @@ gen_without_corners(win_get_region_noframe_local);
 
 void win_get_region_frame_local(const struct managed_win *w, region_t *res) {
 	const margin_t extents = win_calc_frame_extents(w);
-	auto outer_width = extents.left + extents.right + w->g.width;
-	auto outer_height = extents.top + extents.bottom + w->g.height;
+	auto outer_width = w->widthb;
+	auto outer_height = w->heightb;
+
 	pixman_region32_fini(res);
 	pixman_region32_init_rects(
 	    res,
