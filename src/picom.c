@@ -280,37 +280,6 @@ static bool run_fade(session_t *ps, struct managed_win **_w, long steps) {
 	return true;
 }
 
-// === Animations ===
-
-/**
- * Get the time delta of a window animation.
- *
- * In milliseconds.
- */
-static long animation_delta(session_t *ps) {
-	long delta = ps->o.animation_duration >> 7; // /128
-	delta = max2(delta, 1);
-	return delta;
-}
-
-/**
- * Get the time left before next window animation point.
- *
- * In milliseconds.
- */
-static double animation_timeout(session_t *ps) {
-	long double now = get_time_ms();
-	long delta = animation_delta(ps);
-	if (delta + ps->animation_time < now)
-		return 0;
-
-	auto diff = delta + ps->animation_time - now;
-
-	diff = clamp(diff, 0, delta * 2);
-
-	return (double)diff / 1000.0;
-}
-
 // === Error handling ===
 
 void discard_ignore(session_t *ps, unsigned long sequence) {
@@ -670,52 +639,81 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 	// IMPORTANT: These window animation steps must happen before any other [pre]processing.
 	//            This is because it changes the window's geometry.
 	if (ps->o.animations) {
-		// Animation step calculation
-		long steps = 0L;
-		long delta = animation_delta(ps);
-		if (ps->animation_time) {
-			assert(now >= ps->animation_time);
-			steps = (now - ps->animation_time) / delta;
-		} else {
-			// Reset animation_time if unset
-			ps->animation_time = get_time_ms();
-			steps = 0L;
-		}
-		ps->animation_time += steps * delta;
+		if (!ps->animation_time)
+			ps->animation_time = now;
+		double delta_secs = (double)(now - ps->animation_time) / 1000;
 		win_stack_foreach_managed_safe(w, &ps->window_stack) {
-			if (w->animation_should_start) {
-				w->animation_start_time = now;
-				w->animation_in_progress = true;
-				w->animation_should_start = false;
+			// Only animate mapped windows
+			if (!win_is_mapped_in_x(w))
+				continue;
+
+			if (fabs(w->animation_x - w->animation_dest_x) <= 0.5
+			 && fabs(w->animation_y - w->animation_dest_y) <= 0.5
+			 && fabs(w->animation_w - w->animation_dest_w) <= 0.5
+			 && fabs(w->animation_h - w->animation_dest_h) <= 0.5) {
+				w->animation_velocity_x = 0.0;
+				w->animation_velocity_y = 0.0;
+				w->animation_velocity_w = 0.0;
+				w->animation_velocity_h = 0.0;
+				continue;
 			}
 
-			if (w->animation_in_progress) {
-				auto delta_ms = now - w->animation_start_time;
-				double t = (double)delta_ms / (double)ps->o.animation_duration;
-				t = min2(t, 1.0);
-				if (t >= 1)
-					w->animation_in_progress = false;
+			double neg_displacement_x = w->animation_dest_x - w->animation_x;
+			double neg_displacement_y = w->animation_dest_y - w->animation_y;
+			double neg_displacement_w = w->animation_dest_w - w->animation_w;
+			double neg_displacement_h = w->animation_dest_h - w->animation_h;
+			double acceleration_x
+				= (ps->o.animation_stiffness*neg_displacement_x -
+				   ps->o.animation_dampening*w->animation_velocity_x)
+				  /ps->o.animation_window_mass;
+			double acceleration_y
+				= (ps->o.animation_stiffness*neg_displacement_y -
+				   ps->o.animation_dampening*w->animation_velocity_y)
+				  /ps->o.animation_window_mass;
+			double acceleration_w
+				= (ps->o.animation_stiffness*neg_displacement_w -
+				   ps->o.animation_dampening*w->animation_velocity_w)
+				  /ps->o.animation_window_mass;
+			double acceleration_h
+				= (ps->o.animation_stiffness*neg_displacement_h -
+				   ps->o.animation_dampening*w->animation_velocity_h)
+				  /ps->o.animation_window_mass;
+			w->animation_velocity_x += acceleration_x*delta_secs;
+			w->animation_velocity_y += acceleration_y*delta_secs;
+			w->animation_velocity_w += acceleration_w*delta_secs;
+			w->animation_velocity_h += acceleration_h*delta_secs;
 
-				// Mark past window position with damage
-				if (w->to_paint) add_damage_from_win(ps, w);
+			// Animate window geometry
+			w->animation_x += w->animation_velocity_x*delta_secs;
+			w->animation_y += w->animation_velocity_y*delta_secs;
+			w->animation_w += w->animation_velocity_w*delta_secs;
+			w->animation_h += w->animation_velocity_h*delta_secs;
 
-				// Animate window geometry
-				w->g.x      = (short)         interpolate_animation(w->animation_start_x, w->animation_end_x, t);
-				w->g.y      = (short)         interpolate_animation(w->animation_start_y, w->animation_end_y, t);
-				w->g.width  = (unsigned short)interpolate_animation(w->animation_start_w, w->animation_end_w, t);
-				w->g.height = (unsigned short)interpolate_animation(w->animation_start_h, w->animation_end_h, t);
+			// Now we are done doing the math; we just need to submit our changes.
 
-				// Submit window size change
-				win_on_win_size_change(ps, w);
-				win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
-
-				// Submit new window position, and add damage to it
-				if (w->to_paint) add_damage_from_win(ps, w);
-
-				*animation_running = true;
+			// Mark past window region with damage
+			if (w->to_paint) add_damage_from_win(ps, w);
+			// Submit new window geometry
+			w->g.x      = (int16_t) round(w->animation_x);
+			w->g.y      = (int16_t) round(w->animation_y);
+			w->g.width  = (uint16_t)round(w->animation_w);
+			w->g.height = (uint16_t)round(w->animation_h);
+			// Submit window size change
+			win_on_win_size_change(ps, w);
+			{
+				pixman_region32_clear(&w->bounding_shape);
+				pixman_region32_fini(&w->bounding_shape);
+				pixman_region32_init_rect(&w->bounding_shape,
+				                          0, 0, (uint)w->widthb, (uint)w->heightb);
 			}
+			win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
+			// Mark new window region with damage
+			if (w->to_paint) add_damage_from_win(ps, w);
+
+			*animation_running = true;
 		}
 		// Okay, now we can continue on to the rest of the [pre]processing.
+		ps->animation_time = now;
 	}
 
 	// Fading step calculation
@@ -1625,7 +1623,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	if (!animation_running && ev_is_active(&ps->animation_timer)) {
 		ev_timer_stop(EV_A_ & ps->animation_timer);
 	} else if (animation_running && !ev_is_active(&ps->animation_timer)) {
-		ev_timer_set(&ps->animation_timer, animation_timeout(ps), 0);
+		ev_timer_set(&ps->animation_timer, 0, 0);
 		ev_timer_start(EV_A_ & ps->animation_timer);
 	}
 

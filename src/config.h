@@ -172,9 +172,12 @@ typedef struct options {
 	// === Animations ===
 	/// Whether to do window animations
 	bool animations;
-	/// Animation duration, in milliseconds
-	long animation_duration;
-	/// TODO: smoothing/spring parameters
+	/// Spring stiffness for animation
+	double animation_stiffness;
+	/// Window mass for animation
+	double animation_window_mass;
+	/// Animation dampening
+	double animation_dampening;
 	/// TODO: window animation blacklist
 	/// TODO: open/close animations
 

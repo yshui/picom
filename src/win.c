@@ -469,17 +469,16 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			add_damage_from_win(ps, w);
 		}
 
-		// Update window geometry and animation data
-		w->animation_should_start |= !w->animation_in_progress && !w->in_openclose;
-		w->animation_start_x = w->g.x;
-		w->animation_start_y = w->g.y;
-		w->animation_start_w = w->g.width;
-		w->animation_start_h = w->g.height;
-		w->animation_end_x = w->pending_g.x;
-		w->animation_end_y = w->pending_g.y;
-		w->animation_end_w = w->pending_g.width;
-		w->animation_end_h = w->pending_g.height;
-		w->g = w->pending_g;
+		// Update window geometry
+		if (ps->o.animations && was_visible) {
+			w->animation_dest_x = w->pending_g.x;
+			w->animation_dest_y = w->pending_g.y;
+			w->animation_dest_w = w->pending_g.width;
+			w->animation_dest_h = w->pending_g.height;
+			w->g.border_width = w->pending_g.border_width;
+		} else {
+			w->g = w->pending_g;
+		}
 
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(ps, w);
@@ -1432,17 +1431,10 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .state = WSTATE_UNMAPPED,         // updated by window state changes
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
-	    .animation_start_x = 0,          // updated by window geometry changes
-	    .animation_start_y = 0,          // updated by window geometry changes
-	    .animation_start_w = 4,          // updated by window geometry changes
-	    .animation_start_h = 4,          // updated by window geometry changes
-	    .animation_end_x = 0,            // updated by window geometry changes
-	    .animation_end_y = 0,            // updated by window geometry changes
-	    .animation_end_w = 0,            // updated by window geometry changes
-	    .animation_end_h = 0,            // updated by window geometry changes
-	    .animation_in_progress = false,  // updated by window animation code
-	    .animation_should_start = false, // updated by window animation code
-	    .animation_start_time = 0,       // updated by window animation code
+	    .animation_velocity_x = 0.0,      // updated by window geometry changes
+	    .animation_velocity_y = 0.0,      // updated by window geometry changes
+	    .animation_velocity_w = 0.0,      // updated by window geometry changes
+	    .animation_velocity_h = 0.0,      // updated by window geometry changes
 	    .reg_ignore_valid = false,        // set to true when damaged
 	    .flags = WIN_FLAGS_IMAGES_NONE,        // updated by property/attributes/etc
 	                                           // change
@@ -1578,6 +1570,14 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .height = g->height,
 	    .border_width = g->border_width,
 	};
+	new->animation_x = g->x;
+	new->animation_y = g->y;
+	new->animation_w = g->width;
+	new->animation_h = g->height;
+	new->animation_dest_x = g->x;
+	new->animation_dest_y = g->y;
+	new->animation_dest_w = g->width;
+	new->animation_dest_h = g->height;
 
 	free(g);
 
