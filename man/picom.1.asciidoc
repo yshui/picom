@@ -55,6 +55,19 @@ OPTIONS
 *-F*::
 	Equals to *-f*. Deprecated.
 
+*--animations*::
+	Run animations for window geometry changes (movement and scaling).
+	We use spring-based animations, which are parametrized by *--animation-stiffness*, *--animation-dampening* and *--animation-window-mass*.
+
+*--animation-stiffness*::
+	Stiffness (a.k.a. tension) parameter for spring-based animation (default: 200.0).
+
+*--animation-dampening*::
+	Dampening (a.k.a. friction) parameter for spring-based animation (default: 25.0).
+
+*--animation-window-mass*::
+	Mass parameter for spring-based animation (default: 1.0).
+
 *-i*, *--inactive-opacity*='OPACITY'::
 	Opacity of inactive windows. (0.1 - 1.0, defaults to 1.0)
 
