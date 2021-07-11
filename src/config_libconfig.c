@@ -515,8 +515,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude");
 	// --fade-exclude
 	parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude");
-	// --window-animations
-	lcfg_lookup_bool(&cfg, "window-animations", &opt->animations);
+	// --animations
+	lcfg_lookup_bool(&cfg, "animations", &opt->animations);
 	// --animation-stiffness
 	config_lookup_float(&cfg, "animation-stiffness", &opt->animation_stiffness);
 	// --animation-window-mass
