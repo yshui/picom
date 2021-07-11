@@ -71,6 +71,18 @@ static void usage(const char *argv0, int ret) {
 	    "-F\n"
 	    "  Equals to -f. Deprecated.\n"
 	    "\n"
+	    "--animations\n"
+	    "  Run animations for window geometry changes (movement and scaling).\n"
+	    "\n"
+	    "--animation-stiffness\n"
+	    "  Stiffness (a.k.a. tension) parameter for animation (default: 200.0).\n"
+	    "\n"
+	    "--animation-dampening\n"
+	    "  Dampening (a.k.a. friction) parameter for animation (default: 25.0).\n"
+	    "\n"
+	    "--animation-window-mass\n"
+	    "  Mass parameter for animation (default: 1.0).\n"
+	    "\n"
 	    "-i opacity\n"
 	    "  Opacity of inactive windows. (0.1 - 1.0)\n"
 	    "\n"
@@ -454,6 +466,10 @@ static const struct option longopts[] = {
     {"diagnostics", no_argument, NULL, 801},
     {"debug-mode", no_argument, NULL, 802},
     {"no-ewmh-fullscreen", no_argument, NULL, 803},
+    {"animations", no_argument, NULL, 804},
+    {"animation-stiffness", required_argument, NULL, 805},
+    {"animation-dampening", required_argument, NULL, 806},
+    {"animation-window-mass", required_argument, NULL, 807},
     // Must terminate with a NULL entry
     {NULL, 0, NULL, 0},
 };
@@ -881,6 +897,19 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 801: opt->print_diagnostics = true; break;
 		P_CASEBOOL(802, debug_mode);
 		P_CASEBOOL(803, no_ewmh_fullscreen);
+		P_CASEBOOL(804, animations);
+		case 805:
+			// --animation-stiffness
+			opt->animation_stiffness = atof(optarg);
+			break;
+		case 806:
+			// --animation-dampening
+			opt->animation_dampening = atof(optarg);
+			break;
+		case 807:
+			// --animation-window-masss
+			opt->animation_window_mass = atof(optarg);
+			break;
 		default: usage(argv[0], 1); break;
 #undef P_CASEBOOL
 		}
