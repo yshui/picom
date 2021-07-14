@@ -1046,6 +1046,10 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		reg_paint = &region;
 	}
 
+	// Region on screen we don't want any shadows on
+	region_t reg_shadow_clip;
+	pixman_region32_init(&reg_shadow_clip);
+
 	set_tgt_clip(ps, reg_paint);
 	paint_root(ps, reg_paint);
 
@@ -1074,6 +1078,9 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			if (pixman_region32_not_empty(&ps->shadow_exclude_reg))
 				pixman_region32_subtract(&reg_tmp, &reg_tmp,
 				                         &ps->shadow_exclude_reg);
+			if (pixman_region32_not_empty(&reg_shadow_clip)) {
+				pixman_region32_subtract(&reg_tmp, &reg_tmp, &reg_shadow_clip);
+			}
 
 			// Might be worth while to crop the region to shadow
 			// border
@@ -1106,6 +1113,20 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			if (pixman_region32_not_empty(&reg_tmp)) {
 				set_tgt_clip(ps, &reg_tmp);
 				win_paint_shadow(ps, w, &reg_tmp);
+			}
+		}
+
+		// Only clip shadows above visible windows
+		if (w->opacity * MAX_ALPHA >= 1) {
+			if (w->clip_shadow_above) {
+				// Add window bounds to shadow-clip region
+				pixman_region32_union(&reg_shadow_clip, &reg_shadow_clip,
+				                      &bshape_corners);
+			} else {
+				// Remove overlapping window bounds from shadow-clip
+				// region
+				pixman_region32_subtract(
+				    &reg_shadow_clip, &reg_shadow_clip, &bshape_corners);
 			}
 		}
 
@@ -1160,6 +1181,7 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 	// Free up all temporary regions
 	pixman_region32_fini(&reg_tmp);
+	pixman_region32_fini(&reg_shadow_clip);
 
 	// Move the head of the damage ring
 	ps->damage = ps->damage - 1;

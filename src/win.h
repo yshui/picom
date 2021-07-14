@@ -254,6 +254,8 @@ struct managed_win {
 	/// The value of _COMPTON_SHADOW attribute of the window. Below 0 for
 	/// none.
 	long prop_shadow;
+	/// Do not paint shadow over this window.
+	bool clip_shadow_above;
 
 	// Dim-related members
 	/// Whether the window is to be dimmed.
