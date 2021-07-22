@@ -7,7 +7,7 @@
 #
 
 # Usage:
-#  $ picom-trans [options] [+|-]opacity
+#   $ picom-trans [options] [+|-]opacity
 # By window id
 #   $ picom-trans -w "$WINDOWID" 75
 # By name
@@ -31,6 +31,11 @@
 # Printing errormsgs from functions using "$0" prints the function name
 # instead of the executable name.
 EXE_NAME="$0"
+
+
+# Instead of printing the full path to this file (e.g. /usr/bin/picom-trans)
+# only print the base name (i.e. picom-trans)
+EXE_NAME="$(basename "$EXE_NAME")"
 
 
 print_usage()
@@ -111,21 +116,33 @@ parse_args()
     # into this -
     #     picom-trans -c -o +10 -s
     #
-    # NOTE: Don't touch arguments that are preceded by -n or -w
-    #       i.e. don't touch arguments that take a value.
-    # i.e. This -
+    # NOTE: Don't touch arguments that are preceded by -o, -w, or -n (i.e. the
+    # options that take a value.)
+    # e.g. This -
     #     picom-trans -w 75 -o 90
     # should NOT be turned into this -
     #     picom-trans -w -o 75 -o 90
+    # We ensure this by checking the "$#"th (i.e. the last) argument. If
+    # argument is an option that needs a value, we don't do anything to $1.
+    #
+    # NOTE: we are using printf because most echo implementations aren't
+    # POSIX-compliant. For example, according to POSIX.1-2017, echo doesn't
+    # support any options, so,
+    #   $ echo "-n"
+    # should output -
+    #   -n
+    # But it doesn't. It instead interprets the "-n" as the option -n, which,
+    # in most implementations, means that the trailing newline should not be
+    # printed.
     if echo "$1" | grep -qE '^[+-]?[[:digit:]]+%?$' && \
       ! eval "printf '%s' \"\${$#}\"" | grep -q '^-[hdtrgsc]*[own]$'
     # NOTE: eval "printf '%s' \"\${$#}\""  means 'print the last argument'
     # NOTE: The letters inside the first  square brackets (ie. hdtrgsc) are
     #       the same as those in the getopts argument, minus those that are
     #       followed by a ':'
-    # NOTE: The letters inside the second square brackets (ie. own)     are
-    #       the same as those in the getopts argument, minus those that are NOT
-    #       followed by a ':'
+    # NOTE: The letters inside the second square brackets (ie. own) are
+    #       the same as those in the getopts argument, minus those that are
+    #       NOT followed by a ':'
     then
       set -- "$@" "-o"
       i=$(( i + 1 ))
@@ -223,7 +240,6 @@ get_target_window_id()
   echo "$winid"
 } #}}
 
-
 get_focused_window_id()
 { #{{
   id="$(xprop -root -notype -f _NET_ACTIVE_WINDOW 32x '$0' _NET_ACTIVE_WINDOW)"
@@ -232,8 +248,8 @@ get_focused_window_id()
 
 get_current_opacity()
 { #{{
-  # Gets current opacity
-  # Doesn't ouput anything if opacity isn't set
+  # Gets current opacity in the range 0-100
+  # Doesn't output anything if opacity isn't set
   cur="$(xprop -id "$winid" -notype -f _NET_WM_WINDOW_OPACITY 32c '$0' _NET_WM_WINDOW_OPACITY)"
   cur="${cur#_NET_WM_WINDOW_OPACITY}"
   cur="${cur%:*}"
