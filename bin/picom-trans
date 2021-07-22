@@ -157,6 +157,9 @@ parse_args()
   done
 
 
+  # NOTE: DO NOT ATTEMPT TO USE "$OPTIND" INSIDE THE getopts LOOP
+  # - https://github.com/yshui/picom/pull/634#discussion_r654571535
+  # - https://www.mail-archive.com/austin-group-l%40opengroup.org/msg04112.html
   OPTIND=1
   while getopts 'ho:dtrgsn:w:c' OPTION
   do
