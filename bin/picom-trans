@@ -315,9 +315,12 @@ set_opacity()
 
 toggle_opacity()
 { #{{
+  # If opacity is currently set, unset it.
+  # If opacity is currently unset, set opacity to the supplied value. If no
+  # value is supplied, we default to 100%.
   if test -z "$(get_current_opacity)"
   then
-    test -z "$target_opacity" && target_opacity=100
+    test -n "$target_opacity" || target_opacity=100
     set_opacity
   else
     delete_opacity
