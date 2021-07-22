@@ -4,6 +4,7 @@
 # picom-trans
 # Copyright (c) 2021, Subhaditya Nath
 # Based on previous works of Christopher Jeffrey
+# Conforming to POSIX-1.2007
 #
 
 # Usage:
@@ -260,7 +261,6 @@ get_current_opacity()
     cur=$(( cur * 100 / 0xffffffff ))
   echo "$cur"
 } #}}
-
 
 
 get_opacity()
