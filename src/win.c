@@ -471,9 +471,10 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		}
 
 		// Update window geometry
-		if (ps->o.animations && was_visible) {
-			w->animation_dest_x = w->pending_g.x;
-			w->animation_dest_y = w->pending_g.y;
+		if (ps->o.animations) {
+			w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+			w->animation_dest_center_y =
+			    w->pending_g.y + w->pending_g.height * 0.5;
 			w->animation_dest_w = w->pending_g.width;
 			w->animation_dest_h = w->pending_g.height;
 			w->g.border_width = w->pending_g.border_width;
@@ -1428,15 +1429,15 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .blur_background = false,
 	    .reg_ignore = NULL,
 	    // The following ones are updated for other reasons
-	    .pixmap_damaged = false,          // updated by damage events
-	    .state = WSTATE_UNMAPPED,         // updated by window state changes
-	    .in_openclose = true,             // set to false after first map is done,
-	                                      // true here because window is just created
-	    .animation_velocity_x = 0.0,      // updated by window geometry changes
-	    .animation_velocity_y = 0.0,      // updated by window geometry changes
-	    .animation_velocity_w = 0.0,      // updated by window geometry changes
-	    .animation_velocity_h = 0.0,      // updated by window geometry changes
-	    .reg_ignore_valid = false,        // set to true when damaged
+	    .pixmap_damaged = false,         // updated by damage events
+	    .state = WSTATE_UNMAPPED,        // updated by window state changes
+	    .in_openclose = true,            // set to false after first map is done,
+	                                     // true here because window is just created
+	    .animation_velocity_x = 0.0,           // updated by window geometry changes
+	    .animation_velocity_y = 0.0,           // updated by window geometry changes
+	    .animation_velocity_w = 0.0,           // updated by window geometry changes
+	    .animation_velocity_h = 0.0,           // updated by window geometry changes
+	    .reg_ignore_valid = false,             // set to true when damaged
 	    .flags = WIN_FLAGS_IMAGES_NONE,        // updated by property/attributes/etc
 	                                           // change
 	    .stale_props = NULL,
@@ -1571,12 +1572,20 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .height = g->height,
 	    .border_width = g->border_width,
 	};
-	new->animation_x = g->x;
-	new->animation_y = g->y;
-	new->animation_w = g->width;
-	new->animation_h = g->height;
-	new->animation_dest_x = g->x;
-	new->animation_dest_y = g->y;
+
+	// Compute random point off screen
+	double angle = 2 * M_PI * ((double)rand() / RAND_MAX);
+	const double radius =
+	    sqrt(ps->root_width * ps->root_width + ps->root_height * ps->root_height);
+
+	// and init window to fly in from that point
+	new->animation_center_x = ps->root_width * 0.5 + radius *cos(angle);
+	new->animation_center_y = ps->root_height * 0.5 + radius *sin(angle);
+	new->animation_w = 0;
+	new->animation_h = 0;
+
+	new->animation_dest_center_x = g->x + g->width * 0.5;
+	new->animation_dest_center_y = g->y + g->height * 0.5;
 	new->animation_dest_w = g->width;
 	new->animation_dest_h = g->height;
 
