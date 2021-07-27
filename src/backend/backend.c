@@ -54,11 +54,9 @@ region_t get_damage(session_t *ps, bool all_damage) {
 }
 
 static void process_window_for_painting(session_t *ps, struct managed_win* w, void* win_image,
+					double additional_alpha,
 					region_t* reg_bound, region_t* reg_visible,
 					region_t* reg_paint, region_t* reg_paint_in_bound) {
-	// We don't need to paint the window body itself if it's
-	// completely transparent.
-
 	// For window image processing, we don't have to limit the process
 	// region to damage for correctness. (see <damager-note> for
 	// details)
@@ -106,10 +104,11 @@ static void process_window_for_painting(session_t *ps, struct managed_win* w, vo
 		    &reg_visible_local, (double[]){w->frame_opacity});
 		pixman_region32_fini(&reg_frame);
 	}
-	if (w->opacity != 1) {
+	double alpha = additional_alpha*w->opacity;
+	if (alpha < 1) {
 		ps->backend_data->ops->set_image_property(
 		    ps->backend_data, IMAGE_PROPERTY_OPACITY, new_img,
-		    &w->opacity);
+		    &alpha);
 	}
 	ps->backend_data->ops->compose(ps->backend_data, new_img, w->g.x,
 				       w->g.y, reg_paint_in_bound,
@@ -393,29 +392,28 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		}
 
 		// Draw window on target
-		if (w->animation_progress < 1.0) {
-			assert(w->old_win_image);
-			double alpha = 1.0 - w->animation_progress;
-			ps->backend_data->ops->set_image_property(ps->backend_data,
-								  IMAGE_PROPERTY_OPACITY,
-								  w->old_win_image,
-								  &alpha);
-		}
-		if (!w->invert_color && !w->dim && w->frame_opacity == 1 && w->opacity == 1) {
+		if (!w->invert_color && !w->dim && w->frame_opacity == 1 && w->opacity == 1
+		    && w->animation_progress >= 1.0) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               w->g.x, w->g.y,
 			                               &reg_paint_in_bound, &reg_visible);
-			if (w->animation_progress < 1.0) {
-				ps->backend_data->ops->compose(ps->backend_data, w->old_win_image,
-							       w->g.x, w->g.y,
-							       &reg_paint_in_bound, &reg_visible);
-			}
 		} else if (w->opacity * MAX_ALPHA >= 1) {
-			process_window_for_painting(ps, w, w->win_image,
-						    &reg_bound, &reg_visible,
-						    &reg_paint, &reg_paint_in_bound);
+			// We don't need to paint the window body itself if it's
+			// completely transparent.
+
 			if (w->animation_progress < 1.0) {
+				assert(w->old_win_image);
+				process_window_for_painting(ps, w, w->win_image,
+							    w->animation_progress,
+							    &reg_bound, &reg_visible,
+							    &reg_paint, &reg_paint_in_bound);
 				process_window_for_painting(ps, w, w->old_win_image,
+							    1.0 - w->animation_progress,
+							    &reg_bound, &reg_visible,
+							    &reg_paint, &reg_paint_in_bound);
+			} else {
+				process_window_for_painting(ps, w, w->win_image,
+							    1.0,
 							    &reg_bound, &reg_visible,
 							    &reg_paint, &reg_paint_in_bound);
 			}
