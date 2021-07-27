@@ -477,6 +477,16 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			w->animation_dest_w = w->pending_g.width;
 			w->animation_dest_h = w->pending_g.height;
 			w->g.border_width = w->pending_g.border_width;
+
+			w->animation_progress = 0.0;
+			double x_dist = w->animation_dest_x - w->g.x;
+			double y_dist = w->animation_dest_y - w->g.y;
+			w->animation_inv_og_distance = 1.0 / sqrt(x_dist*x_dist + y_dist*y_dist);
+
+			if (w->old_win_image)
+				ps->backend_data->ops->release_image(ps->backend_data, w->old_win_image);
+			w->old_win_image = ps->backend_data->ops->clone_image(ps->backend_data, w->win_image,
+									      &w->bounding_shape);
 		} else {
 			w->g = w->pending_g;
 		}
@@ -1432,10 +1442,12 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .state = WSTATE_UNMAPPED,         // updated by window state changes
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
-	    .animation_velocity_x = 0.0,      // updated by window geometry changes
-	    .animation_velocity_y = 0.0,      // updated by window geometry changes
-	    .animation_velocity_w = 0.0,      // updated by window geometry changes
-	    .animation_velocity_h = 0.0,      // updated by window geometry changes
+	    .animation_velocity_x      = 0.0, // updated by window geometry changes
+	    .animation_velocity_y      = 0.0, // updated by window geometry changes
+	    .animation_velocity_w      = 0.0, // updated by window geometry changes
+	    .animation_velocity_h      = 0.0, // updated by window geometry changes
+	    .animation_progress        = 1.0, // updated by window geometry changes
+	    .animation_inv_og_distance = NAN, // updated by window geometry changes
 	    .reg_ignore_valid = false,        // set to true when damaged
 	    .flags = WIN_FLAGS_IMAGES_NONE,        // updated by property/attributes/etc
 	                                           // change
@@ -1464,6 +1476,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    // have no meaning or have no use until the window
 	    // is mapped
 	    .win_image = NULL,
+	    .old_win_image = NULL,
 	    .shadow_image = NULL,
 	    .prev_trans = NULL,
 	    .shadow = false,

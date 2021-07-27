@@ -103,6 +103,7 @@ struct managed_win {
 	/// backend data attached to this window. Only available when
 	/// `state` is not UNMAPPED
 	void *win_image;
+	void *old_win_image; // Old window image for interpolating window contents during animations
 	void *shadow_image;
 	/// Pointer to the next higher window to paint.
 	struct managed_win *prev_trans;
@@ -178,6 +179,11 @@ struct managed_win {
 	/// Spring animation velocity
 	double animation_velocity_x, animation_velocity_y;
 	double animation_velocity_w, animation_velocity_h;
+	/// Track animation progress; goes from 0 to 1
+	double animation_progress;
+	/// Inverse of the window distance at the start of animation, for
+	/// tracking animation progress
+	double animation_inv_og_distance;
 
 	// Client window related members
 	/// ID of the top-level client window of the window.

@@ -655,6 +655,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 				w->animation_velocity_y = 0.0;
 				w->animation_velocity_w = 0.0;
 				w->animation_velocity_h = 0.0;
+				w->animation_progress = 1.0;
 				continue;
 			}
 
@@ -710,6 +711,10 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 			// Mark new window region with damage
 			if (w->to_paint) add_damage_from_win(ps, w);
 
+			double x_dist = w->animation_dest_x - w->g.x;
+			double y_dist = w->animation_dest_y - w->g.y;
+			w->animation_progress
+				= 1.0 - w->animation_inv_og_distance*sqrt(x_dist*x_dist + y_dist*y_dist);
 			*animation_running = true;
 		}
 		// Okay, now we can continue on to the rest of the [pre]processing.
