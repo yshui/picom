@@ -130,6 +130,19 @@ static inline int attr_const normalize_i_range(int i, int min, int max) {
 	return i;
 }
 
+/**
+ * Linearly interpolate from a range into another.
+ *
+ * @param  a,b   first range
+ * @param  c,d   second range
+ * @param  value value to interpolate, should be in range [a,b]
+ * @return interpolated value in range [c,d]
+ */
+static inline int attr_const lerp_range(int a, int b, int c, int d, int value) {
+	ASSERT_IN_RANGE(value, a, b);
+	return (d-c)*(value-a)/(b-a) + c;
+}
+
 #define min2(a, b) ((a) > (b) ? (b) : (a))
 #define max2(a, b) ((a) > (b) ? (a) : (b))
 

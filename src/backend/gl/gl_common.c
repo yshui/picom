@@ -519,7 +519,6 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 void gl_compose(backend_t *base, void *image_data,
 		int dst_x1, int dst_y1, int dst_x2, int dst_y2,
                 const region_t *reg_tgt, const region_t *reg_visible attr_unused) {
-	// TODO(dccsillag): use dst_{x,y}2
 	auto gd = (struct gl_data *)base;
 	struct backend_image *img = image_data;
 	auto inner = (struct gl_texture *)img->inner;
@@ -544,6 +543,13 @@ void gl_compose(backend_t *base, void *image_data,
 	auto indices = ccalloc(nrects * 6, GLuint);
 	x_rect_to_coords(nrects, rects, dst_x1, dst_y1, inner->height, gd->height,
 	                 inner->y_inverted, coord, indices);
+
+	// Interpolate the texture coordinates into the specified range
+	for (unsigned int i = 2; i < 16; i+=4) {
+		coord[i+0] = lerp_range(0, dst_x2 - dst_x1, 0, inner->width, coord[i+0]);
+		coord[i+1] = lerp_range(0, dst_y2 - dst_y1, 0, inner->height, coord[i+1]);
+	}
+
 	_gl_compose(base, img, gd->back_fbo, coord, indices, nrects);
 
 	free(indices);
