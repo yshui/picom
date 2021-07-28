@@ -178,6 +178,8 @@ typedef struct options {
 	double animation_window_mass;
 	/// Animation dampening
 	double animation_dampening;
+	/// Whether to clamp animations
+	bool animation_clamping;
 	/// TODO: window animation blacklist
 	/// TODO: open/close animations
 

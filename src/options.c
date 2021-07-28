@@ -83,6 +83,9 @@ static void usage(const char *argv0, int ret) {
 	    "--animation-window-mass\n"
 	    "  Mass parameter for animation (default: 1.0).\n"
 	    "\n"
+	    "--animation-clamping\n"
+	    "  Whether to clamp animations (default: true)\n"
+	    "\n"
 	    "-i opacity\n"
 	    "  Opacity of inactive windows. (0.1 - 1.0)\n"
 	    "\n"
@@ -470,6 +473,7 @@ static const struct option longopts[] = {
     {"animation-stiffness", required_argument, NULL, 805},
     {"animation-dampening", required_argument, NULL, 806},
     {"animation-window-mass", required_argument, NULL, 807},
+    {"animation-clamping", no_argument, NULL, 808},
     // Must terminate with a NULL entry
     {NULL, 0, NULL, 0},
 };
@@ -909,6 +913,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 807:
 			// --animation-window-masss
 			opt->animation_window_mass = atof(optarg);
+			break;
+		case 808:
+			// --animation-clamping
+			opt->animation_clamping = true;
 			break;
 		default: usage(argv[0], 1); break;
 #undef P_CASEBOOL

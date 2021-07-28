@@ -685,10 +685,30 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 			w->animation_velocity_h += acceleration_h*delta_secs;
 
 			// Animate window geometry
-			w->animation_x += w->animation_velocity_x*delta_secs;
-			w->animation_y += w->animation_velocity_y*delta_secs;
-			w->animation_w += w->animation_velocity_w*delta_secs;
-			w->animation_h += w->animation_velocity_h*delta_secs;
+			double new_animation_x = w->animation_x + w->animation_velocity_x*delta_secs;
+			double new_animation_y = w->animation_y + w->animation_velocity_y*delta_secs;
+			double new_animation_w = w->animation_w + w->animation_velocity_w*delta_secs;
+			double new_animation_h = w->animation_h + w->animation_velocity_h*delta_secs;
+
+			if (ps->o.animation_clamping) {
+				w->animation_x = clamp(new_animation_x,
+						       min2(w->animation_x, w->animation_dest_x),
+						       max2(w->animation_x, w->animation_dest_x));
+				w->animation_y = clamp(new_animation_y,
+						       min2(w->animation_y, w->animation_dest_y),
+						       max2(w->animation_y, w->animation_dest_y));
+				w->animation_w = clamp(new_animation_w,
+						       min2(w->animation_w, w->animation_dest_w),
+						       max2(w->animation_w, w->animation_dest_w));
+				w->animation_h = clamp(new_animation_h,
+						       min2(w->animation_h, w->animation_dest_h),
+						       max2(w->animation_h, w->animation_dest_h));
+			} else {
+				w->animation_x = new_animation_x;
+				w->animation_y = new_animation_y;
+				w->animation_w = new_animation_w;
+				w->animation_h = new_animation_h;
+			}
 
 			// Now we are done doing the math; we just need to submit our changes.
 

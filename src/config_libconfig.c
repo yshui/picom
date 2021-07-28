@@ -523,6 +523,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	config_lookup_float(&cfg, "animation-window-mass", &opt->animation_window_mass);
 	// --animation-dampening
 	config_lookup_float(&cfg, "animation-dampening", &opt->animation_dampening);
+	// --animation-clamping
+	lcfg_lookup_bool(&cfg, "animation-clamping", &opt->animation_clamping);
 	// --focus-exclude
 	parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude");
 	// --invert-color-include

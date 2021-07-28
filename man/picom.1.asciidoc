@@ -57,7 +57,7 @@ OPTIONS
 
 *--animations*::
 	Run animations for window geometry changes (movement and scaling).
-	We use spring-based animations, which are parametrized by *--animation-stiffness*, *--animation-dampening* and *--animation-window-mass*. +
+	We use spring-based animations, which are parametrized by *--animation-stiffness*, *--animation-dampening*, *--animation-window-mass* and *--animation-clamp*. +
 	A useful resource for selecting animation parameters is https://react-spring-visualizer.com/, which allows you to interactively try out various parameters and see the resulting animation curve. Or you can just edit the values in the config file, which is automatically reloaded.
 
 *--animation-stiffness*::
@@ -68,6 +68,9 @@ OPTIONS
 
 *--animation-window-mass*::
 	Mass parameter for spring-based animation (default: 1.0).
+
+*--animation-clamping*::
+	Whether to clamp animations (default: true).
 
 *-i*, *--inactive-opacity*='OPACITY'::
 	Opacity of inactive windows. (0.1 - 1.0, defaults to 1.0)
