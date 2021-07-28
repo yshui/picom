@@ -413,7 +413,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			if (w->animation_progress < 1.0) {
 				assert(w->old_win_image);
 				process_window_for_painting(ps, w, w->win_image,
-							    w->animation_progress,
+							    w->opacity >= 1 ? 1.0 : w->animation_progress,
 							    &reg_bound, &reg_visible,
 							    &reg_paint, &reg_paint_in_bound);
 				process_window_for_painting(ps, w, w->old_win_image,
