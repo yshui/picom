@@ -56,9 +56,9 @@ static void dummy_check_image(struct backend_base *base, const struct dummy_imag
 	assert(*tmp->refcount > 0);
 }
 
-void dummy_compose(struct backend_base *base, void *image, int dst_x attr_unused,
-                   int dst_y attr_unused, const region_t *reg_paint attr_unused,
-                   const region_t *reg_visible attr_unused) {
+void dummy_compose(struct backend_base *base, void *image, int dst_x1 attr_unused,
+                   int dst_y1 attr_unused, int dst_x2 attr_unused, int dst_y2 attr_unused,
+		   const region_t *reg_paint attr_unused, const region_t *reg_visible attr_unused) {
 	dummy_check_image(base, image);
 }
 

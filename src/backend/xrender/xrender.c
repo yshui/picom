@@ -196,10 +196,12 @@ static void compose_impl(struct _xrender_data *xd, const struct backend_image *i
 	pixman_region32_fini(&reg);
 }
 
-static void compose(backend_t *base, void *img_data, int dst_x, int dst_y,
+static void compose(backend_t *base, void *img_data,
+		    int dst_x1, int dst_y1, int dst_x2, int dst_y2,
                     const region_t *reg_paint, const region_t *reg_visible) {
+	// TODO(dccsillag): use dst_{x,y}2
 	struct _xrender_data *xd = (void *)base;
-	return compose_impl(xd, img_data, dst_x, dst_y, reg_paint, reg_visible, xd->back[2]);
+	return compose_impl(xd, img_data, dst_x1, dst_y1, reg_paint, reg_visible, xd->back[2]);
 }
 
 static void fill(backend_t *base, struct color c, const region_t *clip) {

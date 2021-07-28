@@ -70,6 +70,8 @@ struct conv **generate_blur_kernel(enum blur_method method, void *args, int *ker
 struct dual_kawase_params *generate_dual_kawase_params(void *args);
 
 void *default_clone_image(backend_t *base, const void *image_data, const region_t *reg);
+void *default_resize_image(backend_t *base, const void *image_data, uint16_t desired_width,
+			   uint16_t desired_height, const region_t *reg);
 bool default_is_image_transparent(backend_t *base attr_unused, void *image_data);
 bool default_set_image_property(backend_t *base attr_unused, enum image_properties op,
                                 void *image_data, void *arg);

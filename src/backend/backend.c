@@ -110,9 +110,10 @@ static void process_window_for_painting(session_t *ps, struct managed_win* w, vo
 		    ps->backend_data, IMAGE_PROPERTY_OPACITY, new_img,
 		    &alpha);
 	}
-	ps->backend_data->ops->compose(ps->backend_data, new_img, w->g.x,
-				       w->g.y, reg_paint_in_bound,
-				       reg_visible);
+	ps->backend_data->ops->compose(ps->backend_data, new_img,
+				       w->g.x, w->g.y,
+				       w->g.x + w->widthb, w->g.y + w->heightb,
+				       reg_paint_in_bound, reg_visible);
 	ps->backend_data->ops->release_image(ps->backend_data, new_img);
 	pixman_region32_fini(&reg_visible_local);
 	pixman_region32_fini(&reg_bound_local);
@@ -214,7 +215,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	}
 
 	if (ps->root_image) {
-		ps->backend_data->ops->compose(ps->backend_data, ps->root_image, 0, 0,
+		ps->backend_data->ops->compose(ps->backend_data, ps->root_image,
+					       0, 0, ps->root_width, ps->root_height,
 		                               &reg_paint, &reg_visible);
 	} else {
 		ps->backend_data->ops->fill(ps->backend_data, (struct color){0, 0, 0, 1},
@@ -368,8 +370,11 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			assert(w->shadow_image);
 			if (w->opacity == 1) {
 				ps->backend_data->ops->compose(
-				    ps->backend_data, w->shadow_image, w->g.x + w->shadow_dx,
-				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
+				    ps->backend_data, w->shadow_image,
+				    w->g.x + w->shadow_dx, w->g.y + w->shadow_dy,
+				    w->g.x + w->shadow_dx + w->shadow_width,
+				    w->g.y + w->shadow_dy + w->shadow_height,
+				    &reg_shadow, &reg_visible);
 			} else {
 				auto new_img = ps->backend_data->ops->clone_image(
 				    ps->backend_data, w->shadow_image, &reg_visible);
@@ -377,8 +382,11 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    ps->backend_data, IMAGE_PROPERTY_OPACITY, new_img,
 				    &w->opacity);
 				ps->backend_data->ops->compose(
-				    ps->backend_data, new_img, w->g.x + w->shadow_dx,
-				    w->g.y + w->shadow_dy, &reg_shadow, &reg_visible);
+				    ps->backend_data, new_img,
+				    w->g.x + w->shadow_dx, w->g.y + w->shadow_dy,
+				    w->g.x + w->shadow_dx + w->shadow_width,
+				    w->g.y + w->shadow_dy + w->shadow_height,
+				    &reg_shadow, &reg_visible);
 				ps->backend_data->ops->release_image(ps->backend_data, new_img);
 			}
 			pixman_region32_fini(&reg_shadow);
@@ -396,6 +404,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		    && w->animation_progress >= 1.0) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               w->g.x, w->g.y,
+						       w->g.x + w->widthb, w->g.y + w->heightb,
 			                               &reg_paint_in_bound, &reg_visible);
 		} else if (w->opacity * MAX_ALPHA >= 1) {
 			// We don't need to paint the window body itself if it's

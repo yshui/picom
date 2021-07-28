@@ -516,8 +516,10 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 }
 
 // TODO(yshui) make use of reg_visible
-void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
+void gl_compose(backend_t *base, void *image_data,
+		int dst_x1, int dst_y1, int dst_x2, int dst_y2,
                 const region_t *reg_tgt, const region_t *reg_visible attr_unused) {
+	// TODO(dccsillag): use dst_{x,y}2
 	auto gd = (struct gl_data *)base;
 	struct backend_image *img = image_data;
 	auto inner = (struct gl_texture *)img->inner;
@@ -540,7 +542,7 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 
 	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	x_rect_to_coords(nrects, rects, dst_x, dst_y, inner->height, gd->height,
+	x_rect_to_coords(nrects, rects, dst_x1, dst_y1, inner->height, gd->height,
 	                 inner->y_inverted, coord, indices);
 	_gl_compose(base, img, gd->back_fbo, coord, indices, nrects);
 
