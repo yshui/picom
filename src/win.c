@@ -2064,6 +2064,13 @@ static void unmap_win_finish(session_t *ps, struct managed_win *w) {
 		assert(!w->shadow_image);
 	}
 
+	// Force animation to completed position
+	w->animation_velocity_x = 0;
+	w->animation_velocity_y = 0;
+	w->animation_velocity_w = 0;
+	w->animation_velocity_h = 0;
+	w->animation_progress = 1.0;
+
 	free_paint(ps, &w->paint);
 	free_paint(ps, &w->shadow_paint);
 
