@@ -985,6 +985,12 @@ void win_update_prop_shadow(session_t *ps, struct managed_win *w) {
 	}
 }
 
+static void win_determine_clip_shadow_above(session_t *ps, struct managed_win *w) {
+	bool should_crop = (ps->o.wintype_option[w->window_type].clip_shadow_above ||
+	                    c2_match(ps, w, ps->o.shadow_clip_list, NULL));
+	w->clip_shadow_above = should_crop;
+}
+
 static void win_set_invert_color(session_t *ps, struct managed_win *w, bool invert_color_new) {
 	if (w->invert_color == invert_color_new) {
 		return;
@@ -1142,6 +1148,7 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	win_update_focused(ps, w);
 
 	win_determine_shadow(ps, w);
+	win_determine_clip_shadow_above(ps, w);
 	win_determine_invert_color(ps, w);
 	win_determine_blur_background(ps, w);
 	win_determine_rounded_corners(ps, w);
@@ -1480,6 +1487,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .shadow_image = NULL,
 	    .prev_trans = NULL,
 	    .shadow = false,
+	    .clip_shadow_above = false,
 	    .xinerama_scr = -1,
 	    .mode = WMODE_TRANS,
 	    .ever_damaged = false,

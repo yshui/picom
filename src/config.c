@@ -500,6 +500,10 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 			// opacity logic is complicated, and needs an "unset" state
 			opt->wintype_option[i].opacity = NAN;
 		}
+		if (!mask[i].clip_shadow_above) {
+			mask[i].clip_shadow_above = true;
+			opt->wintype_option[i].clip_shadow_above = false;
+		}
 	}
 }
 
@@ -537,6 +541,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .shadow_blacklist = NULL,
 	    .shadow_ignore_shaped = false,
 	    .xinerama_shadow_crop = false,
+	    .shadow_clip_list = NULL,
 
 	    .corner_radius = 0,
 

@@ -282,6 +282,10 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 			o->redir_ignore = ival;
 			mask->redir_ignore = true;
 		}
+		if (config_setting_lookup_bool(setting, "clip-shadow-above", &ival)) {
+			o->clip_shadow_above = ival;
+			mask->clip_shadow_above = true;
+		}
 
 		double fval;
 		if (config_setting_lookup_float(setting, "opacity", &fval)) {
@@ -513,6 +517,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "transparent-clipping", &opt->transparent_clipping);
 	// --shadow-exclude
 	parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude");
+	// --clip-shadow-above
+	parse_cfg_condlst(&cfg, &opt->shadow_clip_list, "clip-shadow-above");
 	// --fade-exclude
 	parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude");
 	// --animations

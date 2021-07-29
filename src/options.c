@@ -298,6 +298,10 @@ static void usage(const char *argv0, int ret) {
 	    "  Use --shadow-exclude-reg \'x10+0-0\', for example, if the 10 pixels\n"
 	    "  on the bottom of the screen should not have shadows painted on.\n"
 	    "\n"
+	    "--clip-shadow-above condition\n"
+	    "  Specify a list of conditions of windows to not paint a shadow over,\n"
+	    "  such as a dock window.\n"
+	    "\n"
 	    "--xinerama-shadow-crop\n"
 	    "  Crop shadow of a window fully on a particular Xinerama screen to the\n"
 	    "  screen.\n"
@@ -464,6 +468,7 @@ static const struct option longopts[] = {
     {"shadow-color", required_argument, NULL, 332},
     {"corner-radius", required_argument, NULL, 333},
     {"rounded-corners-exclude", required_argument, NULL, 334},
+    {"clip-shadow-above", required_argument, NULL, 335},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -813,7 +818,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			free(opt->shadow_exclude_reg_str);
 			opt->shadow_exclude_reg_str = strdup(optarg);
 			log_warn("--shadow-exclude-reg is deprecated. You are likely "
-			         "better off using --shadow-exclude anyway");
+			         "better off using --clip-shadow-above anyway");
 			break;
 		case 306:
 			// --paint-exclude
@@ -895,6 +900,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 334:
 			// --rounded-corners-exclude
 			condlst_add(&opt->rounded_corners_blacklist, optarg);
+			break;
+		case 335:
+			// --clip-shadow-above
+			condlst_add(&opt->shadow_clip_list, optarg);
 			break;
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
