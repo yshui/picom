@@ -486,8 +486,10 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			double y_dist = w->animation_dest_y - w->g.y;
 			w->animation_inv_og_distance = 1.0 / sqrt(x_dist*x_dist + y_dist*y_dist);
 
-			if (w->old_win_image)
+			if (w->old_win_image) {
 				ps->backend_data->ops->release_image(ps->backend_data, w->old_win_image);
+				w->old_win_image = NULL;
+			}
 			if (w->win_image)
 				w->old_win_image
 					= ps->backend_data->ops->clone_image(ps->backend_data,
