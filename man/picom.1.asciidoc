@@ -60,6 +60,9 @@ OPTIONS
 	We use spring-based animations, which are parametrized by *--animation-stiffness*, *--animation-dampening* and *--animation-window-mass*. +
 	A useful resource for selecting animation parameters is https://react-spring-visualizer.com/, which allows you to interactively try out various parameters and see the resulting animation curve. Or you can just edit the values in the config file, which is automatically reloaded.
 
+*--animation-for-open-window*::
+	Which animation to run when opening a window. Must be one of `none`, `fly-in` (default: none).
+
 *--animation-stiffness*::
 	Stiffness (a.k.a. tension) parameter for spring-based animation (default: 200.0).
 

@@ -1413,6 +1413,42 @@ struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below) {
 	}
 }
 
+static void init_animation(session_t *ps, struct managed_win *new, struct xcb_get_geometry_reply_t *g) {
+	switch (ps->o.animation_for_open_window) {
+		case OPEN_WINDOW_ANIMATION_NONE: // No animation
+                        new->animation_center_x = g->x + g->width*0.5;
+                        new->animation_center_y = g->y + g->height*0.5;
+                        new->animation_w = g->width;
+                        new->animation_h = g->height;
+                        new->animation_dest_center_x = g->x + g->width*0.5;
+                        new->animation_dest_center_y = g->y + g->height*0.5;
+                        new->animation_dest_w = g->width;
+                        new->animation_dest_h = g->height;
+			break;
+                case OPEN_WINDOW_ANIMATION_FLYIN: { // Fly-in from a random point outside the screen
+			// Compute random point off screen
+			double angle = 2 * M_PI * ((double)rand() / RAND_MAX);
+			const double radius =
+				sqrt(ps->root_width*ps->root_width + ps->root_height*ps->root_height);
+
+			// Set animation
+			new->animation_center_x = ps->root_width*0.5 + radius*cos(angle);
+			new->animation_center_y = ps->root_height*0.5 + radius*sin(angle);
+			new->animation_w = 0;
+			new->animation_h = 0;
+
+			new->animation_dest_center_x = g->x + g->width*0.5;
+			new->animation_dest_center_y = g->y + g->height*0.5;
+			new->animation_dest_w = g->width;
+			new->animation_dest_h = g->height;
+			break;
+		}
+		case OPEN_WINDOW_ANIMATION_INVALID:
+			assert(false);
+			break;
+	}
+}
+
 /// Query the Xorg for information about window `win`
 /// `win` pointer might become invalid after this function returns
 /// Returns the pointer to the window, might be different from `w`
@@ -1573,21 +1609,8 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .border_width = g->border_width,
 	};
 
-	// Compute random point off screen
-	double angle = 2 * M_PI * ((double)rand() / RAND_MAX);
-	const double radius =
-	    sqrt(ps->root_width * ps->root_width + ps->root_height * ps->root_height);
-
-	// and init window to fly in from that point
-	new->animation_center_x = ps->root_width * 0.5 + radius *cos(angle);
-	new->animation_center_y = ps->root_height * 0.5 + radius *sin(angle);
-	new->animation_w = 0;
-	new->animation_h = 0;
-
-	new->animation_dest_center_x = g->x + g->width * 0.5;
-	new->animation_dest_center_y = g->y + g->height * 0.5;
-	new->animation_dest_w = g->width;
-	new->animation_dest_h = g->height;
+	// And set window-open animation
+	init_animation(ps, new, g);
 
 	free(g);
 

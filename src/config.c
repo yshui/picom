@@ -503,6 +503,15 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 	}
 }
 
+enum open_window_animation parse_open_window_animation(const char *src) {
+	if (strcmp(src, "none") == 0) {
+		return OPEN_WINDOW_ANIMATION_NONE;
+	} else if (strcmp(src, "flyin") == 0) {
+		return OPEN_WINDOW_ANIMATION_FLYIN;
+	}
+	return OPEN_WINDOW_ANIMATION_INVALID;
+}
+
 char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
                    bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask) {
 	// clang-format off
@@ -548,6 +557,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .fade_blacklist = NULL,
 
 	    .animations = false,
+	    .animation_for_open_window = OPEN_WINDOW_ANIMATION_NONE,
 	    .animation_stiffness = 200.0,
 	    .animation_window_mass = 1.0,
 	    .animation_dampening = 25,
