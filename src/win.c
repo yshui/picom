@@ -471,7 +471,10 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		}
 
 		// Update window geometry
-		if (ps->o.animations && was_visible) {
+		if (ps->o.animations) {
+			if (!was_visible)
+				w->g = w->pending_g;
+
 			w->animation_dest_x = w->pending_g.x;
 			w->animation_dest_y = w->pending_g.y;
 			w->animation_dest_w = w->pending_g.width;
@@ -485,8 +488,11 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 
 			if (w->old_win_image)
 				ps->backend_data->ops->release_image(ps->backend_data, w->old_win_image);
-			w->old_win_image = ps->backend_data->ops->clone_image(ps->backend_data, w->win_image,
-									      &w->bounding_shape);
+			if (w->win_image)
+				w->old_win_image
+					= ps->backend_data->ops->clone_image(ps->backend_data,
+									     w->win_image,
+									     &w->bounding_shape);
 		} else {
 			w->g = w->pending_g;
 		}

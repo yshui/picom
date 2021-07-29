@@ -412,13 +412,14 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		}
 
 		// Draw window on target
-		if (w->frame_opacity == 1 && w->animation_progress >= 1.0) {
+		bool is_animating = 0 <= w->animation_progress && w->animation_progress < 1.0;
+		if (w->frame_opacity == 1 && !is_animating) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               w->g.x, w->g.y,
 						       w->g.x + w->widthb, w->g.y + w->heightb,
 			                               &reg_paint_in_bound, &reg_visible);
 		} else {
-			if (w->animation_progress < 1.0) {
+			if (is_animating) {
 				assert(w->old_win_image);
 				process_window_for_painting(ps, w, w->win_image,
 							    w->opacity >= 1 ? 1.0 : w->animation_progress,
