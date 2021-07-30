@@ -627,7 +627,8 @@ static void handle_root_flags(session_t *ps) {
 	}
 }
 
-static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
+static struct managed_win *
+paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 	// XXX need better, more general name for `fade_running`. It really
 	// means if fade is still ongoing after the current frame is rendered.
 	// Same goes for `animation_running`.
@@ -647,10 +648,10 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 			if (!win_is_mapped_in_x(w))
 				continue;
 
-			if (fabs(w->animation_x - w->animation_dest_x) <= 0.5
-			 && fabs(w->animation_y - w->animation_dest_y) <= 0.5
-			 && fabs(w->animation_w - w->animation_dest_w) <= 0.5
-			 && fabs(w->animation_h - w->animation_dest_h) <= 0.5) {
+			if (fabs(w->animation_center_x - w->animation_dest_center_x) <= 0.5 &&
+			    fabs(w->animation_center_y - w->animation_dest_center_y) <= 0.5 &&
+			    fabs(w->animation_w - w->animation_dest_w) <= 0.5 &&
+			    fabs(w->animation_h - w->animation_dest_h) <= 0.5) {
 				w->animation_velocity_x = 0.0;
 				w->animation_velocity_y = 0.0;
 				w->animation_velocity_w = 0.0;
@@ -660,8 +661,10 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 			}
 
 			if (0 <= w->animation_progress && w->animation_progress < 1.0) {
-				double neg_displacement_x = w->animation_dest_x - w->animation_x;
-				double neg_displacement_y = w->animation_dest_y - w->animation_y;
+				double neg_displacement_x
+					= w->animation_dest_center_x - w->animation_center_x;
+				double neg_displacement_y
+					= w->animation_dest_center_y - w->animation_center_y;
 				double neg_displacement_w = w->animation_dest_w - w->animation_w;
 				double neg_displacement_h = w->animation_dest_h - w->animation_h;
 				double acceleration_x
@@ -686,18 +689,18 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 				w->animation_velocity_h += acceleration_h*delta_secs;
 
 				// Animate window geometry
-				double new_animation_x = w->animation_x + w->animation_velocity_x*delta_secs;
-				double new_animation_y = w->animation_y + w->animation_velocity_y*delta_secs;
+				double new_animation_x = w->animation_center_x + w->animation_velocity_x*delta_secs;
+				double new_animation_y = w->animation_center_y + w->animation_velocity_y*delta_secs;
 				double new_animation_w = w->animation_w + w->animation_velocity_w*delta_secs;
 				double new_animation_h = w->animation_h + w->animation_velocity_h*delta_secs;
 
 				if (ps->o.animation_clamping) {
-					w->animation_x = clamp(new_animation_x,
-							       min2(w->animation_x, w->animation_dest_x),
-							       max2(w->animation_x, w->animation_dest_x));
-					w->animation_y = clamp(new_animation_y,
-							       min2(w->animation_y, w->animation_dest_y),
-							       max2(w->animation_y, w->animation_dest_y));
+					w->animation_center_x = clamp(new_animation_x,
+								      min2(w->animation_center_x, w->animation_dest_center_x),
+								      max2(w->animation_center_x, w->animation_dest_center_x));
+					w->animation_center_y = clamp(new_animation_y,
+								      min2(w->animation_center_y, w->animation_dest_center_y),
+								      max2(w->animation_center_y, w->animation_dest_center_y));
 					w->animation_w = clamp(new_animation_w,
 							       min2(w->animation_w, w->animation_dest_w),
 							       max2(w->animation_w, w->animation_dest_w));
@@ -705,14 +708,14 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 							       min2(w->animation_h, w->animation_dest_h),
 							       max2(w->animation_h, w->animation_dest_h));
 				} else {
-					w->animation_x = new_animation_x;
-					w->animation_y = new_animation_y;
+					w->animation_center_x = new_animation_x;
+					w->animation_center_y = new_animation_y;
 					w->animation_w = new_animation_w;
 					w->animation_h = new_animation_h;
 				}
 			} else {
-				w->animation_x = w->animation_dest_x;
-				w->animation_y = w->animation_dest_y;
+				w->animation_center_x = w->animation_dest_center_x;
+				w->animation_center_y = w->animation_dest_center_y;
 				w->animation_w = w->animation_dest_w;
 				w->animation_h = w->animation_dest_h;
 			}
@@ -720,26 +723,29 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running, b
 			// Now we are done doing the math; we just need to submit our changes.
 
 			// Mark past window region with damage
-			if (w->to_paint) add_damage_from_win(ps, w);
+			if (w->to_paint)
+				add_damage_from_win(ps, w);
 			// Submit new window geometry
-			w->g.x      = (int16_t) round(w->animation_x);
-			w->g.y      = (int16_t) round(w->animation_y);
-			w->g.width  = (uint16_t)round(w->animation_w);
+			w->g.x = (int16_t)round(w->animation_center_x - w->animation_w * 0.5);
+			w->g.y = (int16_t)round(w->animation_center_y - w->animation_h * 0.5);
+			w->g.width = (uint16_t)round(w->animation_w);
 			w->g.height = (uint16_t)round(w->animation_h);
+
 			// Submit window size change
 			win_on_win_size_change(ps, w);
 			{
 				pixman_region32_clear(&w->bounding_shape);
 				pixman_region32_fini(&w->bounding_shape);
-				pixman_region32_init_rect(&w->bounding_shape,
-				                          0, 0, (uint)w->widthb, (uint)w->heightb);
+				pixman_region32_init_rect(&w->bounding_shape, 0, 0,
+				                          (uint)w->widthb, (uint)w->heightb);
 			}
 			win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 			// Mark new window region with damage
-			if (w->to_paint) add_damage_from_win(ps, w);
+			if (w->to_paint)
+				add_damage_from_win(ps, w);
 
-			double x_dist = w->animation_dest_x - w->g.x;
-			double y_dist = w->animation_dest_y - w->g.y;
+			double x_dist = w->animation_dest_center_x - w->g.x - w->g.width*0.5;
+			double y_dist = w->animation_dest_center_y - w->g.y - w->g.height*0.5;
 			w->animation_progress
 				= 1.0 - w->animation_inv_og_distance*sqrt(x_dist*x_dist + y_dist*y_dist);
 			*animation_running = true;

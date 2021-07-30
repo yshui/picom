@@ -172,8 +172,8 @@ struct managed_win {
 	/// Whether this window is in open/close state.
 	bool in_openclose;
 	/// Current position and destination, for animation
-	double animation_x,      animation_y;
-	double animation_dest_x, animation_dest_y;
+	double animation_center_x,      animation_center_y;
+	double animation_dest_center_x, animation_dest_center_y;
 	double animation_w,      animation_h;
 	double animation_dest_w, animation_dest_h;
 	/// Spring animation velocity

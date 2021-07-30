@@ -74,6 +74,9 @@ static void usage(const char *argv0, int ret) {
 	    "--animations\n"
 	    "  Run animations for window geometry changes (movement and scaling).\n"
 	    "\n"
+	    "--animation-for-open-window\n"
+	    "  Which animation to run when opening a window. Must be one of `none`, `fly-in` (default: none).\n"
+	    "\n"
 	    "--animation-stiffness\n"
 	    "  Stiffness (a.k.a. tension) parameter for animation (default: 200.0).\n"
 	    "\n"
@@ -479,6 +482,7 @@ static const struct option longopts[] = {
     {"animation-dampening", required_argument, NULL, 806},
     {"animation-window-mass", required_argument, NULL, 807},
     {"animation-clamping", no_argument, NULL, 808},
+    {"animation-for-open-window", required_argument, NULL, 809},
     // Must terminate with a NULL entry
     {NULL, 0, NULL, 0},
 };
@@ -927,6 +931,16 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// --animation-clamping
 			opt->animation_clamping = true;
 			break;
+		case 809: {
+			// --animation-for-open-window
+			enum open_window_animation animation = parse_open_window_animation(optarg);
+			if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+				log_warn("Invalid open-window animation %s, ignoring.", optarg);
+			} else {
+				opt->animation_for_open_window = animation;
+			}
+			break;
+		}
 		default: usage(argv[0], 1); break;
 #undef P_CASEBOOL
 		}

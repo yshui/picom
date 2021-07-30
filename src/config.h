@@ -68,6 +68,12 @@ enum blur_method {
 	BLUR_METHOD_INVALID,
 };
 
+enum open_window_animation {
+	OPEN_WINDOW_ANIMATION_NONE = 0,
+	OPEN_WINDOW_ANIMATION_FLYIN,
+	OPEN_WINDOW_ANIMATION_INVALID,
+};
+
 typedef struct _c2_lptr c2_lptr_t;
 
 /// Structure representing all options.
@@ -176,6 +182,8 @@ typedef struct options {
 	// === Animations ===
 	/// Whether to do window animations
 	bool animations;
+	/// Which animation to run when opening a window
+	enum open_window_animation animation_for_open_window;
 	/// Spring stiffness for animation
 	double animation_stiffness;
 	/// Window mass for animation
@@ -274,6 +282,7 @@ struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg, int *coun
 bool must_use parse_geometry(session_t *, const char *, region_t *);
 bool must_use parse_rule_opacity(c2_lptr_t **, const char *);
 enum blur_method must_use parse_blur_method(const char *src);
+enum open_window_animation must_use parse_open_window_animation(const char *src);
 
 /**
  * Add a pattern to a condition linked list.
