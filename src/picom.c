@@ -121,6 +121,7 @@ static inline void free_xinerama_info(session_t *ps) {
 		for (int i = 0; i < ps->xinerama_nscrs; ++i)
 			pixman_region32_fini(&ps->xinerama_scr_regs[i]);
 		free(ps->xinerama_scr_regs);
+		ps->xinerama_scr_regs = NULL;
 	}
 	ps->xinerama_nscrs = 0;
 }
