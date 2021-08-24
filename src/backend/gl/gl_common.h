@@ -34,7 +34,6 @@ typedef struct {
 	GLuint prog;
 	GLint unifm_pixel_norm;
 	GLint unifm_opacity;
-	GLint orig_loc;
 	GLint texorig_loc;
 	GLint scale_loc;
 } gl_blur_shader_t;
