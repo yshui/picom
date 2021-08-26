@@ -649,18 +649,6 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			if (!win_is_mapped_in_x(w))
 				continue;
 
-			if (fabs(w->animation_center_x - w->animation_dest_center_x) <= 0.5 &&
-			    fabs(w->animation_center_y - w->animation_dest_center_y) <= 0.5 &&
-			    fabs(w->animation_w - w->animation_dest_w) <= 0.5 &&
-			    fabs(w->animation_h - w->animation_dest_h) <= 0.5) {
-				w->animation_velocity_x = 0.0;
-				w->animation_velocity_y = 0.0;
-				w->animation_velocity_w = 0.0;
-				w->animation_velocity_h = 0.0;
-				w->animation_progress = 1.0;
-				continue;
-			}
-
 			if (0 <= w->animation_progress && w->animation_progress < 1.0) {
 				double neg_displacement_x
 					= w->animation_dest_center_x - w->animation_center_x;
