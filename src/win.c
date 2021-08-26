@@ -438,6 +438,50 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 	win_clear_all_properties_stale(w);
 }
 
+static void init_animation(session_t *ps, struct managed_win *w) {
+	switch (ps->o.animation_for_open_window) {
+		case OPEN_WINDOW_ANIMATION_NONE: { // No animation
+			/* w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5; */
+			/* w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5; */
+			/* w->animation_dest_w = w->pending_g.width; */
+			/* w->animation_dest_h = w->pending_g.height; */
+
+			/* w->animation_center_x = w->pending_g.x + w->pending_g.width*0.5; */
+			/* w->animation_center_y = w->pending_g.y + w->pending_g.height*0.5; */
+			w->animation_center_x = 0;
+			w->animation_center_y = 0;
+			w->animation_w = w->pending_g.width;
+			w->animation_h = w->pending_g.height;
+			w->animation_dest_center_x = w->pending_g.x + w->pending_g.width*0.5;
+			w->animation_dest_center_y = w->pending_g.y + w->pending_g.height*0.5;
+			w->animation_dest_w = w->pending_g.width;
+			w->animation_dest_h = w->pending_g.height;
+			break;
+		}
+                case OPEN_WINDOW_ANIMATION_FLYIN: { // Fly-in from a random point outside the screen
+			// Compute random point off screen
+			double angle = 2 * M_PI * ((double)rand() / RAND_MAX);
+			const double radius =
+				sqrt(ps->root_width*ps->root_width + ps->root_height*ps->root_height);
+
+			// Set animation
+			w->animation_center_x = ps->root_width*0.5 + radius*cos(angle);
+			w->animation_center_y = ps->root_height*0.5 + radius*sin(angle);
+			w->animation_w = 0;
+			w->animation_h = 0;
+
+			w->animation_dest_center_x = w->pending_g.x + w->pending_g.width*0.5;
+			w->animation_dest_center_y = w->pending_g.y + w->pending_g.height*0.5;
+			w->animation_dest_w = w->pending_g.width;
+			w->animation_dest_h = w->pending_g.height;
+			break;
+		}
+		case OPEN_WINDOW_ANIMATION_INVALID:
+			assert(false);
+			break;
+	}
+}
+
 /// Handle non-image flags. This phase might set IMAGES_STALE flags
 void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	// Whether the window was visible before we process the mapped flag. i.e. is the
@@ -480,18 +524,26 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 
 		// Update window geometry
 		if (ps->o.animations) {
-			if (!was_visible)
-				w->g = w->pending_g;
+			if (!was_visible) {
+				// Set window-open animation
+				init_animation(ps, w);
 
-			w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
-			w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
-			w->animation_dest_w = w->pending_g.width;
-			w->animation_dest_h = w->pending_g.height;
+				w->g.x      = ( int16_t)round(w->animation_center_x - w->animation_w*0.5);
+				w->g.y      = ( int16_t)round(w->animation_center_y - w->animation_h*0.5);
+				w->g.width  = (uint16_t)round(w->animation_w);
+				w->g.height = (uint16_t)round(w->animation_h);
+			} else {
+				w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+				w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+				w->animation_dest_w = w->pending_g.width;
+				w->animation_dest_h = w->pending_g.height;
+			}
+
 			w->g.border_width = w->pending_g.border_width;
 
 			w->animation_progress = 0.0;
-			double x_dist = w->animation_dest_center_x - w->g.x - w->g.width*0.5;
-			double y_dist = w->animation_dest_center_y - w->g.y - w->g.height*0.5;
+			double x_dist = w->animation_dest_center_x - w->animation_center_x;
+			double y_dist = w->animation_dest_center_y - w->animation_center_y;
 			w->animation_inv_og_distance = 1.0 / sqrt(x_dist*x_dist + y_dist*y_dist);
 
 			if (w->old_win_image) {
@@ -1445,42 +1497,6 @@ struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below) {
 	}
 }
 
-static void init_animation(session_t *ps, struct managed_win *new, struct xcb_get_geometry_reply_t *g) {
-	switch (ps->o.animation_for_open_window) {
-		case OPEN_WINDOW_ANIMATION_NONE: // No animation
-                        new->animation_center_x = g->x + g->width*0.5;
-                        new->animation_center_y = g->y + g->height*0.5;
-                        new->animation_w = g->width;
-                        new->animation_h = g->height;
-                        new->animation_dest_center_x = g->x + g->width*0.5;
-                        new->animation_dest_center_y = g->y + g->height*0.5;
-                        new->animation_dest_w = g->width;
-                        new->animation_dest_h = g->height;
-			break;
-                case OPEN_WINDOW_ANIMATION_FLYIN: { // Fly-in from a random point outside the screen
-			// Compute random point off screen
-			double angle = 2 * M_PI * ((double)rand() / RAND_MAX);
-			const double radius =
-				sqrt(ps->root_width*ps->root_width + ps->root_height*ps->root_height);
-
-			// Set animation
-			new->animation_center_x = ps->root_width*0.5 + radius*cos(angle);
-			new->animation_center_y = ps->root_height*0.5 + radius*sin(angle);
-			new->animation_w = 0;
-			new->animation_h = 0;
-
-			new->animation_dest_center_x = g->x + g->width*0.5;
-			new->animation_dest_center_y = g->y + g->height*0.5;
-			new->animation_dest_w = g->width;
-			new->animation_dest_h = g->height;
-			break;
-		}
-		case OPEN_WINDOW_ANIMATION_INVALID:
-			assert(false);
-			break;
-	}
-}
-
 /// Query the Xorg for information about window `win`
 /// `win` pointer might become invalid after this function returns
 /// Returns the pointer to the window, might be different from `w`
@@ -1644,9 +1660,6 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .height = g->height,
 	    .border_width = g->border_width,
 	};
-
-	// And set window-open animation
-	init_animation(ps, new, g);
 
 	free(g);
 
