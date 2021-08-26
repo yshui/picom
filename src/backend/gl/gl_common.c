@@ -564,8 +564,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 	auto bctx = (struct gl_blur_context *)ctx;
 	auto gd = (struct gl_data *)base;
 
-	int dst_y_screen_coord = gd->height - extent->y2,
-	    dst_y_fb_coord = bctx->fb_height - extent->y2;
+	int dst_y_fb_coord = bctx->fb_height - extent->y2;
 
 	int curr = 0;
 	for (int i = 0; i < bctx->npasses; ++i) {
@@ -575,19 +574,15 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 		assert(bctx->blur_textures[curr]);
 
 		// The origin to use when sampling from the source texture
-		GLint texorig_x, texorig_y;
+		GLint texorig_x = extent->x1, texorig_y = dst_y_fb_coord;
 		GLint tex_width, tex_height;
 		GLuint src_texture;
 
 		if (i == 0) {
-			texorig_x = extent->x1;
-			texorig_y = dst_y_screen_coord;
 			src_texture = gd->back_texture;
 			tex_width = gd->width;
 			tex_height = gd->height;
 		} else {
-			texorig_x = extent->x1 + bctx->resize_width;
-			texorig_y = dst_y_fb_coord - bctx->resize_height;
 			src_texture = bctx->blur_textures[curr];
 			auto src_size = bctx->texture_sizes[curr];
 			tex_width = src_size.width;
@@ -619,8 +614,6 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 			}
 
 			glUniform1f(p->unifm_opacity, 1.0);
-			glUniform2f(p->orig_loc, (GLfloat)bctx->resize_width,
-			            -(GLfloat)bctx->resize_height);
 		} else {
 			// last pass, draw directly into the back buffer, with origin
 			// regions
@@ -629,7 +622,6 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
 
 			glUniform1f(p->unifm_opacity, (float)opacity);
-			glUniform2f(p->orig_loc, 0, 0);
 		}
 
 		glUniform2f(p->texorig_loc, (GLfloat)texorig_x, (GLfloat)texorig_y);
@@ -649,8 +641,7 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 	auto bctx = (struct gl_blur_context *)ctx;
 	auto gd = (struct gl_data *)base;
 
-	int dst_y_screen_coord = gd->height - extent->y2,
-	    dst_y_fb_coord = bctx->fb_height - extent->y2;
+	int dst_y_fb_coord = bctx->fb_height - extent->y2;
 
 	int iterations = bctx->blur_texture_count;
 	int scale_factor = 1;
@@ -660,9 +651,7 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 	assert(down_pass->prog);
 	glUseProgram(down_pass->prog);
 
-	// Downsample always renders with resize offset
-	glUniform2f(down_pass->orig_loc, (GLfloat)bctx->resize_width,
-	            -(GLfloat)bctx->resize_height);
+	glUniform2f(down_pass->texorig_loc, (GLfloat)extent->x1, (GLfloat)dst_y_fb_coord);
 
 	for (int i = 0; i < iterations; ++i) {
 		// Scale output width / height by half in each iteration
@@ -670,25 +659,18 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 
 		GLuint src_texture;
 		int tex_width, tex_height;
-		int texorig_x, texorig_y;
 
 		if (i == 0) {
 			// first pass: copy from back buffer
 			src_texture = gd->back_texture;
 			tex_width = gd->width;
 			tex_height = gd->height;
-
-			texorig_x = extent->x1;
-			texorig_y = dst_y_screen_coord;
 		} else {
 			// copy from previous pass
 			src_texture = bctx->blur_textures[i - 1];
 			auto src_size = bctx->texture_sizes[i - 1];
 			tex_width = src_size.width;
 			tex_height = src_size.height;
-
-			texorig_x = extent->x1 + bctx->resize_width;
-			texorig_y = dst_y_fb_coord - bctx->resize_height;
 		}
 
 		assert(src_texture);
@@ -700,7 +682,6 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i]);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-		glUniform2f(down_pass->texorig_loc, (GLfloat)texorig_x, (GLfloat)texorig_y);
 		glUniform1f(down_pass->scale_loc, (GLfloat)scale_factor);
 
 		glUniform2f(down_pass->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
@@ -714,9 +695,7 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 	assert(up_pass->prog);
 	glUseProgram(up_pass->prog);
 
-	// Upsample always samples from textures with resize offset
-	glUniform2f(up_pass->texorig_loc, (GLfloat)(extent->x1 + bctx->resize_width),
-	            (GLfloat)(dst_y_fb_coord - bctx->resize_height));
+	glUniform2f(up_pass->texorig_loc, (GLfloat)extent->x1, (GLfloat)dst_y_fb_coord);
 
 	for (int i = iterations - 1; i >= 0; --i) {
 		// Scale output width / height back by two in each iteration
@@ -743,8 +722,6 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i - 1]);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-			glUniform2f(up_pass->orig_loc, (GLfloat)bctx->resize_width,
-			            -(GLfloat)bctx->resize_height);
 			glUniform1f(up_pass->unifm_opacity, (GLfloat)1);
 		} else {
 			// last pass, draw directly into the back buffer
@@ -752,7 +729,6 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 			nelems = vao_nelems[0];
 			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
 
-			glUniform2f(up_pass->orig_loc, (GLfloat)0, (GLfloat)0);
 			glUniform1f(up_pass->unifm_opacity, (GLfloat)opacity);
 		}
 
@@ -773,12 +749,11 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 
 	bool ret = false;
 
-	if (gd->width + bctx->resize_width * 2 != bctx->fb_width ||
-	    gd->height + bctx->resize_height * 2 != bctx->fb_height) {
+	if (gd->width != bctx->fb_width || gd->height != bctx->fb_height) {
 		// Resize the temporary textures used for blur in case the root
 		// size changed
-		bctx->fb_width = gd->width + bctx->resize_width * 2;
-		bctx->fb_height = gd->height + bctx->resize_height * 2;
+		bctx->fb_width = gd->width;
+		bctx->fb_height = gd->height;
 
 		for (int i = 0; i < bctx->blur_texture_count; ++i) {
 			auto tex_size = bctx->texture_sizes + i;
@@ -902,13 +877,12 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 const char *vertex_shader = GLSL(330,
 	uniform mat4 projection;
 	uniform float scale = 1.0;
-	uniform vec2 orig;
 	uniform vec2 texorig;
 	layout(location = 0) in vec2 coord;
 	layout(location = 1) in vec2 in_texcoord;
 	out vec2 texcoord;
 	void main() {
-		gl_Position = projection * vec4(coord + orig, 0, scale);
+		gl_Position = projection * vec4(coord, 0, scale);
 		texcoord = in_texcoord + texorig;
 	}
 );
@@ -934,10 +908,6 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
 	ret->unifm_brightness = glGetUniformLocationChecked(ret->prog, "brightness");
 	ret->unifm_max_brightness =
 	    glGetUniformLocationChecked(ret->prog, "max_brightness");
-
-	glUseProgram(ret->prog);
-	int orig_loc = glGetUniformLocation(ret->prog, "orig");
-	glUniform2f(orig_loc, 0, 0);
 
 	gl_check_err();
 
@@ -1287,7 +1257,6 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		pass->unifm_pixel_norm =
 		    glGetUniformLocationChecked(pass->prog, "pixel_norm");
 		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
-		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 
 		// Setup projection matrix
@@ -1307,7 +1276,6 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		pass->prog = gl_create_program_from_str(vertex_shader, dummy_frag);
 		pass->unifm_pixel_norm = -1;
 		pass->unifm_opacity = -1;
-		pass->orig_loc = glGetUniformLocationChecked(pass->prog, "orig");
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 
 		// Setup projection matrix
@@ -1408,8 +1376,6 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 		// Get uniform addresses
 		down_pass->unifm_pixel_norm =
 		    glGetUniformLocationChecked(down_pass->prog, "pixel_norm");
-		down_pass->orig_loc =
-		    glGetUniformLocationChecked(down_pass->prog, "orig");
 		down_pass->texorig_loc =
 		    glGetUniformLocationChecked(down_pass->prog, "texorig");
 		down_pass->scale_loc =
@@ -1473,7 +1439,6 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 		    glGetUniformLocationChecked(up_pass->prog, "pixel_norm");
 		up_pass->unifm_opacity =
 		    glGetUniformLocationChecked(up_pass->prog, "opacity");
-		up_pass->orig_loc = glGetUniformLocationChecked(up_pass->prog, "orig");
 		up_pass->texorig_loc =
 		    glGetUniformLocationChecked(up_pass->prog, "texorig");
 		up_pass->scale_loc = glGetUniformLocationChecked(up_pass->prog, "scale");
