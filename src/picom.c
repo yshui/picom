@@ -649,7 +649,7 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			if (!win_is_mapped_in_x(w))
 				continue;
 
-			if (0 <= w->animation_progress && w->animation_progress < 1.0) {
+			if (w->animation_progress < 1.0) {
 				double neg_displacement_x
 					= w->animation_dest_center_x - w->animation_center_x;
 				double neg_displacement_y
@@ -733,8 +733,8 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			if (w->to_paint)
 				add_damage_from_win(ps, w);
 
-			double x_dist = w->animation_dest_center_x - w->g.x - w->g.width*0.5;
-			double y_dist = w->animation_dest_center_y - w->g.y - w->g.height*0.5;
+			double x_dist = w->animation_dest_center_x - w->animation_center_x;
+			double y_dist = w->animation_dest_center_y - w->animation_center_y;
 			w->animation_progress
 				= 1.0 - w->animation_inv_og_distance*sqrt(x_dist*x_dist + y_dist*y_dist);
 			*animation_running = true;
