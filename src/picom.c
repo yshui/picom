@@ -649,64 +649,57 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			if (!win_is_mapped_in_x(w))
 				continue;
 
-			if (w->animation_progress < 1.0) {
-				double neg_displacement_x
-					= w->animation_dest_center_x - w->animation_center_x;
-				double neg_displacement_y
-					= w->animation_dest_center_y - w->animation_center_y;
-				double neg_displacement_w = w->animation_dest_w - w->animation_w;
-				double neg_displacement_h = w->animation_dest_h - w->animation_h;
-				double acceleration_x
-					= (ps->o.animation_stiffness*neg_displacement_x -
-					   ps->o.animation_dampening*w->animation_velocity_x)
-					  /ps->o.animation_window_mass;
-				double acceleration_y
-					= (ps->o.animation_stiffness*neg_displacement_y -
-					   ps->o.animation_dampening*w->animation_velocity_y)
-					  /ps->o.animation_window_mass;
-				double acceleration_w
-					= (ps->o.animation_stiffness*neg_displacement_w -
-					   ps->o.animation_dampening*w->animation_velocity_w)
-					  /ps->o.animation_window_mass;
-				double acceleration_h
-					= (ps->o.animation_stiffness*neg_displacement_h -
-					   ps->o.animation_dampening*w->animation_velocity_h)
-					  /ps->o.animation_window_mass;
-				w->animation_velocity_x += acceleration_x*delta_secs;
-				w->animation_velocity_y += acceleration_y*delta_secs;
-				w->animation_velocity_w += acceleration_w*delta_secs;
-				w->animation_velocity_h += acceleration_h*delta_secs;
+			double neg_displacement_x
+				= w->animation_dest_center_x - w->animation_center_x;
+			double neg_displacement_y
+				= w->animation_dest_center_y - w->animation_center_y;
+			double neg_displacement_w = w->animation_dest_w - w->animation_w;
+			double neg_displacement_h = w->animation_dest_h - w->animation_h;
+			double acceleration_x
+				= (ps->o.animation_stiffness*neg_displacement_x -
+				   ps->o.animation_dampening*w->animation_velocity_x)
+				/ps->o.animation_window_mass;
+			double acceleration_y
+				= (ps->o.animation_stiffness*neg_displacement_y -
+				   ps->o.animation_dampening*w->animation_velocity_y)
+				/ps->o.animation_window_mass;
+			double acceleration_w
+				= (ps->o.animation_stiffness*neg_displacement_w -
+				   ps->o.animation_dampening*w->animation_velocity_w)
+				/ps->o.animation_window_mass;
+			double acceleration_h
+				= (ps->o.animation_stiffness*neg_displacement_h -
+				   ps->o.animation_dampening*w->animation_velocity_h)
+				/ps->o.animation_window_mass;
+			w->animation_velocity_x += acceleration_x*delta_secs;
+			w->animation_velocity_y += acceleration_y*delta_secs;
+			w->animation_velocity_w += acceleration_w*delta_secs;
+			w->animation_velocity_h += acceleration_h*delta_secs;
 
-				// Animate window geometry
-				double new_animation_x = w->animation_center_x + w->animation_velocity_x*delta_secs;
-				double new_animation_y = w->animation_center_y + w->animation_velocity_y*delta_secs;
-				double new_animation_w = w->animation_w + w->animation_velocity_w*delta_secs;
-				double new_animation_h = w->animation_h + w->animation_velocity_h*delta_secs;
+			// Animate window geometry
+			double new_animation_x = w->animation_center_x + w->animation_velocity_x*delta_secs;
+			double new_animation_y = w->animation_center_y + w->animation_velocity_y*delta_secs;
+			double new_animation_w = w->animation_w + w->animation_velocity_w*delta_secs;
+			double new_animation_h = w->animation_h + w->animation_velocity_h*delta_secs;
 
-				if (ps->o.animation_clamping) {
-					w->animation_center_x = clamp(new_animation_x,
-								      min2(w->animation_center_x, w->animation_dest_center_x),
-								      max2(w->animation_center_x, w->animation_dest_center_x));
-					w->animation_center_y = clamp(new_animation_y,
-								      min2(w->animation_center_y, w->animation_dest_center_y),
-								      max2(w->animation_center_y, w->animation_dest_center_y));
-					w->animation_w = clamp(new_animation_w,
-							       min2(w->animation_w, w->animation_dest_w),
-							       max2(w->animation_w, w->animation_dest_w));
-					w->animation_h = clamp(new_animation_h,
-							       min2(w->animation_h, w->animation_dest_h),
-							       max2(w->animation_h, w->animation_dest_h));
-				} else {
-					w->animation_center_x = new_animation_x;
-					w->animation_center_y = new_animation_y;
-					w->animation_w = new_animation_w;
-					w->animation_h = new_animation_h;
-				}
+			if (ps->o.animation_clamping) {
+				w->animation_center_x = clamp(new_animation_x,
+							      min2(w->animation_center_x, w->animation_dest_center_x),
+							      max2(w->animation_center_x, w->animation_dest_center_x));
+				w->animation_center_y = clamp(new_animation_y,
+							      min2(w->animation_center_y, w->animation_dest_center_y),
+							      max2(w->animation_center_y, w->animation_dest_center_y));
+				w->animation_w = clamp(new_animation_w,
+						       min2(w->animation_w, w->animation_dest_w),
+						       max2(w->animation_w, w->animation_dest_w));
+				w->animation_h = clamp(new_animation_h,
+						       min2(w->animation_h, w->animation_dest_h),
+						       max2(w->animation_h, w->animation_dest_h));
 			} else {
-				w->animation_center_x = w->animation_dest_center_x;
-				w->animation_center_y = w->animation_dest_center_y;
-				w->animation_w = w->animation_dest_w;
-				w->animation_h = w->animation_dest_h;
+				w->animation_center_x = new_animation_x;
+				w->animation_center_y = new_animation_y;
+				w->animation_w = new_animation_w;
+				w->animation_h = new_animation_h;
 			}
 
 			// Now we are done doing the math; we just need to submit our changes.
