@@ -446,10 +446,8 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 			/* w->animation_dest_w = w->pending_g.width; */
 			/* w->animation_dest_h = w->pending_g.height; */
 
-			/* w->animation_center_x = w->pending_g.x + w->pending_g.width*0.5; */
-			/* w->animation_center_y = w->pending_g.y + w->pending_g.height*0.5; */
-			w->animation_center_x = 0;
-			w->animation_center_y = 0;
+			w->animation_center_x = w->pending_g.x + w->pending_g.width*0.5;
+			w->animation_center_y = w->pending_g.y + w->pending_g.height*0.5;
 			w->animation_w = w->pending_g.width;
 			w->animation_h = w->pending_g.height;
 			w->animation_dest_center_x = w->pending_g.x + w->pending_g.width*0.5;
