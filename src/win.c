@@ -440,43 +440,44 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 
 static void init_animation(session_t *ps, struct managed_win *w) {
 	switch (ps->o.animation_for_open_window) {
-		case OPEN_WINDOW_ANIMATION_NONE: { // No animation
-			/* w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5; */
-			/* w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5; */
-			/* w->animation_dest_w = w->pending_g.width; */
-			/* w->animation_dest_h = w->pending_g.height; */
+	case OPEN_WINDOW_ANIMATION_NONE: {        // No animation
+		/* w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+		 */
+		/* w->animation_dest_center_y = w->pending_g.y + w->pending_g.height *
+		 * 0.5; */
+		/* w->animation_dest_w = w->pending_g.width; */
+		/* w->animation_dest_h = w->pending_g.height; */
 
-			w->animation_center_x = w->pending_g.x + w->pending_g.width*0.5;
-			w->animation_center_y = w->pending_g.y + w->pending_g.height*0.5;
-			w->animation_w = w->pending_g.width;
-			w->animation_h = w->pending_g.height;
-			w->animation_dest_center_x = w->pending_g.x + w->pending_g.width*0.5;
-			w->animation_dest_center_y = w->pending_g.y + w->pending_g.height*0.5;
-			w->animation_dest_w = w->pending_g.width;
-			w->animation_dest_h = w->pending_g.height;
-			break;
-		}
-                case OPEN_WINDOW_ANIMATION_FLYIN: { // Fly-in from a random point outside the screen
-			// Compute random point off screen
-			double angle = 2 * M_PI * ((double)rand() / RAND_MAX);
-			const double radius =
-				sqrt(ps->root_width*ps->root_width + ps->root_height*ps->root_height);
+		w->animation_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+		w->animation_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+		w->animation_w = w->pending_g.width;
+		w->animation_h = w->pending_g.height;
+		w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+		w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+		w->animation_dest_w = w->pending_g.width;
+		w->animation_dest_h = w->pending_g.height;
+		break;
+	}
+	case OPEN_WINDOW_ANIMATION_FLYIN: {        // Fly-in from a random point outside
+		                                   // the screen
+		// Compute random point off screen
+		double angle = 2 * M_PI * ((double)rand() / RAND_MAX);
+		const double radius =
+		    sqrt(ps->root_width * ps->root_width + ps->root_height * ps->root_height);
 
-			// Set animation
-			w->animation_center_x = ps->root_width*0.5 + radius*cos(angle);
-			w->animation_center_y = ps->root_height*0.5 + radius*sin(angle);
-			w->animation_w = 0;
-			w->animation_h = 0;
+		// Set animation
+		w->animation_center_x = ps->root_width * 0.5 + radius * cos(angle);
+		w->animation_center_y = ps->root_height * 0.5 + radius * sin(angle);
+		w->animation_w = 0;
+		w->animation_h = 0;
 
-			w->animation_dest_center_x = w->pending_g.x + w->pending_g.width*0.5;
-			w->animation_dest_center_y = w->pending_g.y + w->pending_g.height*0.5;
-			w->animation_dest_w = w->pending_g.width;
-			w->animation_dest_h = w->pending_g.height;
-			break;
-		}
-		case OPEN_WINDOW_ANIMATION_INVALID:
-			assert(false);
-			break;
+		w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+		w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+		w->animation_dest_w = w->pending_g.width;
+		w->animation_dest_h = w->pending_g.height;
+		break;
+	}
+	case OPEN_WINDOW_ANIMATION_INVALID: assert(false); break;
 	}
 }
 
@@ -526,13 +527,17 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 				// Set window-open animation
 				init_animation(ps, w);
 
-				w->g.x      = ( int16_t)round(w->animation_center_x - w->animation_w*0.5);
-				w->g.y      = ( int16_t)round(w->animation_center_y - w->animation_h*0.5);
-				w->g.width  = (uint16_t)round(w->animation_w);
+				w->g.x = (int16_t)round(w->animation_center_x -
+				                        w->animation_w * 0.5);
+				w->g.y = (int16_t)round(w->animation_center_y -
+				                        w->animation_h * 0.5);
+				w->g.width = (uint16_t)round(w->animation_w);
 				w->g.height = (uint16_t)round(w->animation_h);
 			} else {
-				w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
-				w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+				w->animation_dest_center_x =
+				    w->pending_g.x + w->pending_g.width * 0.5;
+				w->animation_dest_center_y =
+				    w->pending_g.y + w->pending_g.height * 0.5;
 				w->animation_dest_w = w->pending_g.width;
 				w->animation_dest_h = w->pending_g.height;
 			}
@@ -542,17 +547,17 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			w->animation_progress = 0.0;
 			double x_dist = w->animation_dest_center_x - w->animation_center_x;
 			double y_dist = w->animation_dest_center_y - w->animation_center_y;
-			w->animation_inv_og_distance = 1.0 / sqrt(x_dist*x_dist + y_dist*y_dist);
+			w->animation_inv_og_distance =
+			    1.0 / sqrt(x_dist * x_dist + y_dist * y_dist);
 
 			if (w->old_win_image) {
-				ps->backend_data->ops->release_image(ps->backend_data, w->old_win_image);
+				ps->backend_data->ops->release_image(ps->backend_data,
+				                                     w->old_win_image);
 				w->old_win_image = NULL;
 			}
 			if (w->win_image)
-				w->old_win_image
-					= ps->backend_data->ops->clone_image(ps->backend_data,
-									     w->win_image,
-									     &w->bounding_shape);
+				w->old_win_image = ps->backend_data->ops->clone_image(
+				    ps->backend_data, w->win_image, &w->bounding_shape);
 		} else {
 			w->g = w->pending_g;
 		}
@@ -1511,19 +1516,19 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .blur_background = false,
 	    .reg_ignore = NULL,
 	    // The following ones are updated for other reasons
-	    .pixmap_damaged = false,          // updated by damage events
-	    .state = WSTATE_UNMAPPED,         // updated by window state changes
-	    .in_openclose = true,             // set to false after first map is done,
-	                                      // true here because window is just created
-	    .animation_velocity_x      = 0.0, // updated by window geometry changes
-	    .animation_velocity_y      = 0.0, // updated by window geometry changes
-	    .animation_velocity_w      = 0.0, // updated by window geometry changes
-	    .animation_velocity_h      = 0.0, // updated by window geometry changes
-	    .animation_progress        = 1.0, // updated by window geometry changes
-	    .animation_inv_og_distance = NAN, // updated by window geometry changes
-	    .reg_ignore_valid = false,        // set to true when damaged
-	    .flags = WIN_FLAGS_IMAGES_NONE,        // updated by property/attributes/etc
-	                                           // change
+	    .pixmap_damaged = false,         // updated by damage events
+	    .state = WSTATE_UNMAPPED,        // updated by window state changes
+	    .in_openclose = true,            // set to false after first map is done,
+	                                     // true here because window is just created
+	    .animation_velocity_x = 0.0,             // updated by window geometry changes
+	    .animation_velocity_y = 0.0,             // updated by window geometry changes
+	    .animation_velocity_w = 0.0,             // updated by window geometry changes
+	    .animation_velocity_h = 0.0,             // updated by window geometry changes
+	    .animation_progress = 1.0,               // updated by window geometry changes
+	    .animation_inv_og_distance = NAN,        // updated by window geometry changes
+	    .reg_ignore_valid = false,               // set to true when damaged
+	    .flags = WIN_FLAGS_IMAGES_NONE,          // updated by property/attributes/etc
+	                                             // change
 	    .stale_props = NULL,
 	    .stale_props_capacity = 0,
 

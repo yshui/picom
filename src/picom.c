@@ -638,8 +638,8 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 	*animation_running = false;
 	auto now = get_time_ms();
 
-	// IMPORTANT: These window animation steps must happen before any other [pre]processing.
-	//            This is because it changes the window's geometry.
+	// IMPORTANT: These window animation steps must happen before any other
+	//            [pre]processing. This is because it changes the window's geometry.
 	if (ps->o.animations) {
 		if (!ps->animation_time)
 			ps->animation_time = now;
@@ -649,52 +649,60 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			if (!win_is_mapped_in_x(w))
 				continue;
 
-			double neg_displacement_x
-				= w->animation_dest_center_x - w->animation_center_x;
-			double neg_displacement_y
-				= w->animation_dest_center_y - w->animation_center_y;
+			double neg_displacement_x =
+			    w->animation_dest_center_x - w->animation_center_x;
+			double neg_displacement_y =
+			    w->animation_dest_center_y - w->animation_center_y;
 			double neg_displacement_w = w->animation_dest_w - w->animation_w;
 			double neg_displacement_h = w->animation_dest_h - w->animation_h;
-			double acceleration_x
-				= (ps->o.animation_stiffness*neg_displacement_x -
-				   ps->o.animation_dampening*w->animation_velocity_x)
-				/ps->o.animation_window_mass;
-			double acceleration_y
-				= (ps->o.animation_stiffness*neg_displacement_y -
-				   ps->o.animation_dampening*w->animation_velocity_y)
-				/ps->o.animation_window_mass;
-			double acceleration_w
-				= (ps->o.animation_stiffness*neg_displacement_w -
-				   ps->o.animation_dampening*w->animation_velocity_w)
-				/ps->o.animation_window_mass;
-			double acceleration_h
-				= (ps->o.animation_stiffness*neg_displacement_h -
-				   ps->o.animation_dampening*w->animation_velocity_h)
-				/ps->o.animation_window_mass;
-			w->animation_velocity_x += acceleration_x*delta_secs;
-			w->animation_velocity_y += acceleration_y*delta_secs;
-			w->animation_velocity_w += acceleration_w*delta_secs;
-			w->animation_velocity_h += acceleration_h*delta_secs;
+			double acceleration_x =
+			    (ps->o.animation_stiffness * neg_displacement_x -
+			     ps->o.animation_dampening * w->animation_velocity_x) /
+			    ps->o.animation_window_mass;
+			double acceleration_y =
+			    (ps->o.animation_stiffness * neg_displacement_y -
+			     ps->o.animation_dampening * w->animation_velocity_y) /
+			    ps->o.animation_window_mass;
+			double acceleration_w =
+			    (ps->o.animation_stiffness * neg_displacement_w -
+			     ps->o.animation_dampening * w->animation_velocity_w) /
+			    ps->o.animation_window_mass;
+			double acceleration_h =
+			    (ps->o.animation_stiffness * neg_displacement_h -
+			     ps->o.animation_dampening * w->animation_velocity_h) /
+			    ps->o.animation_window_mass;
+			w->animation_velocity_x += acceleration_x * delta_secs;
+			w->animation_velocity_y += acceleration_y * delta_secs;
+			w->animation_velocity_w += acceleration_w * delta_secs;
+			w->animation_velocity_h += acceleration_h * delta_secs;
 
 			// Animate window geometry
-			double new_animation_x = w->animation_center_x + w->animation_velocity_x*delta_secs;
-			double new_animation_y = w->animation_center_y + w->animation_velocity_y*delta_secs;
-			double new_animation_w = w->animation_w + w->animation_velocity_w*delta_secs;
-			double new_animation_h = w->animation_h + w->animation_velocity_h*delta_secs;
+			double new_animation_x =
+			    w->animation_center_x + w->animation_velocity_x * delta_secs;
+			double new_animation_y =
+			    w->animation_center_y + w->animation_velocity_y * delta_secs;
+			double new_animation_w =
+			    w->animation_w + w->animation_velocity_w * delta_secs;
+			double new_animation_h =
+			    w->animation_h + w->animation_velocity_h * delta_secs;
 
 			if (ps->o.animation_clamping) {
-				w->animation_center_x = clamp(new_animation_x,
-							      min2(w->animation_center_x, w->animation_dest_center_x),
-							      max2(w->animation_center_x, w->animation_dest_center_x));
-				w->animation_center_y = clamp(new_animation_y,
-							      min2(w->animation_center_y, w->animation_dest_center_y),
-							      max2(w->animation_center_y, w->animation_dest_center_y));
-				w->animation_w = clamp(new_animation_w,
-						       min2(w->animation_w, w->animation_dest_w),
-						       max2(w->animation_w, w->animation_dest_w));
-				w->animation_h = clamp(new_animation_h,
-						       min2(w->animation_h, w->animation_dest_h),
-						       max2(w->animation_h, w->animation_dest_h));
+				w->animation_center_x = clamp(
+				    new_animation_x,
+				    min2(w->animation_center_x, w->animation_dest_center_x),
+				    max2(w->animation_center_x, w->animation_dest_center_x));
+				w->animation_center_y = clamp(
+				    new_animation_y,
+				    min2(w->animation_center_y, w->animation_dest_center_y),
+				    max2(w->animation_center_y, w->animation_dest_center_y));
+				w->animation_w =
+				    clamp(new_animation_w,
+				          min2(w->animation_w, w->animation_dest_w),
+				          max2(w->animation_w, w->animation_dest_w));
+				w->animation_h =
+				    clamp(new_animation_h,
+				          min2(w->animation_h, w->animation_dest_h),
+				          max2(w->animation_h, w->animation_dest_h));
 			} else {
 				w->animation_center_x = new_animation_x;
 				w->animation_center_y = new_animation_y;
@@ -702,7 +710,8 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 				w->animation_h = new_animation_h;
 			}
 
-			// Now we are done doing the math; we just need to submit our changes (if there are any).
+			// Now we are done doing the math; we just need to submit our
+			// changes (if there are any).
 
 			struct win_geometry old_g = w->g;
 			w->g.x = (int16_t)round(w->animation_center_x - w->animation_w * 0.5);
@@ -711,7 +720,8 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			w->g.height = (uint16_t)round(w->animation_h);
 
 			bool position_changed = w->g.x != old_g.x || w->g.y != old_g.y;
-			bool size_changed = w->g.width != old_g.width || w->g.height != old_g.height;
+			bool size_changed =
+			    w->g.width != old_g.width || w->g.height != old_g.height;
 			bool geometry_changed = position_changed || size_changed;
 
 			// Mark past window region with damage
@@ -725,7 +735,7 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 				pixman_region32_clear(&w->bounding_shape);
 				pixman_region32_fini(&w->bounding_shape);
 				pixman_region32_init_rect(&w->bounding_shape, 0, 0,
-							  (uint)w->widthb, (uint)w->heightb);
+				                          (uint)w->widthb, (uint)w->heightb);
 
 				win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 				win_process_image_flags(ps, w);
@@ -736,8 +746,9 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 
 			double x_dist = w->animation_dest_center_x - w->animation_center_x;
 			double y_dist = w->animation_dest_center_y - w->animation_center_y;
-			w->animation_progress
-				= 1.0 - w->animation_inv_og_distance*sqrt(x_dist*x_dist + y_dist*y_dist);
+			w->animation_progress =
+			    1.0 - w->animation_inv_og_distance *
+			              sqrt(x_dist * x_dist + y_dist * y_dist);
 			*animation_running = true;
 		}
 		// Okay, now we can continue on to the rest of the [pre]processing.
