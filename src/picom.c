@@ -722,6 +722,7 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 				                          (uint)w->widthb, (uint)w->heightb);
 			}
 			win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
+			win_process_image_flags(ps, w);
 			// Mark new window region with damage
 			if (w->to_paint)
 				add_damage_from_win(ps, w);
