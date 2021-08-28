@@ -702,29 +702,36 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 				w->animation_h = new_animation_h;
 			}
 
-			// Now we are done doing the math; we just need to submit our changes.
+			// Now we are done doing the math; we just need to submit our changes (if there are any).
 
-			// Mark past window region with damage
-			if (w->to_paint)
-				add_damage_from_win(ps, w);
-			// Submit new window geometry
+			struct win_geometry old_g = w->g;
 			w->g.x = (int16_t)round(w->animation_center_x - w->animation_w * 0.5);
 			w->g.y = (int16_t)round(w->animation_center_y - w->animation_h * 0.5);
 			w->g.width = (uint16_t)round(w->animation_w);
 			w->g.height = (uint16_t)round(w->animation_h);
 
+			bool position_changed = w->g.x != old_g.x || w->g.y != old_g.y;
+			bool size_changed = w->g.width != old_g.width || w->g.height != old_g.height;
+			bool geometry_changed = position_changed || size_changed;
+
+			// Mark past window region with damage
+			if (w->to_paint && geometry_changed)
+				add_damage_from_win(ps, w);
+
 			// Submit window size change
-			win_on_win_size_change(ps, w);
-			{
+			if (size_changed) {
+				win_on_win_size_change(ps, w);
+
 				pixman_region32_clear(&w->bounding_shape);
 				pixman_region32_fini(&w->bounding_shape);
 				pixman_region32_init_rect(&w->bounding_shape, 0, 0,
-				                          (uint)w->widthb, (uint)w->heightb);
+							  (uint)w->widthb, (uint)w->heightb);
+
+				win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
+				win_process_image_flags(ps, w);
 			}
-			win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
-			win_process_image_flags(ps, w);
 			// Mark new window region with damage
-			if (w->to_paint)
+			if (w->to_paint && geometry_changed)
 				add_damage_from_win(ps, w);
 
 			double x_dist = w->animation_dest_center_x - w->animation_center_x;
