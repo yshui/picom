@@ -89,17 +89,18 @@ struct _xrender_image_data_inner {
 };
 
 static void compose_impl(struct _xrender_data *xd, const struct backend_image *img,
-                         int dst_x, int dst_y, const region_t *reg_paint,
-                         const region_t *reg_visible, xcb_render_picture_t result) {
+                         int dst_x1, int dst_y1, int dst_x2, int dst_y2,
+			 const region_t *reg_paint, const region_t *reg_visible,
+			 xcb_render_picture_t result) {
 	auto alpha_pict = xd->alpha_pict[(int)(img->opacity * MAX_ALPHA)];
 	auto inner = (struct _xrender_image_data_inner *)img->inner;
 	region_t reg;
 
 	bool has_alpha = inner->has_alpha || img->opacity != 1;
-	const auto tmpw = to_u16_checked(inner->width);
-	const auto tmph = to_u16_checked(inner->height);
-	const auto tmpew = to_u16_checked(img->ewidth);
-	const auto tmpeh = to_u16_checked(img->eheight);
+	const auto tmpw = to_u16_checked(dst_x2 - dst_x1);
+	const auto tmph = to_u16_checked(dst_y2 - dst_y1);
+	const auto tmpew = to_u16_checked(dst_x2 - dst_x1);
+	const auto tmpeh = to_u16_checked(dst_y2 - dst_y1);
 	const xcb_render_color_t dim_color = {
 	    .red = 0, .green = 0, .blue = 0, .alpha = (uint16_t)(0xffff * img->dim)};
 
@@ -110,6 +111,19 @@ static void compose_impl(struct _xrender_data *xd, const struct backend_image *i
 	pixman_region32_init(&reg);
 	pixman_region32_intersect(&reg, (region_t *)reg_paint, (region_t *)reg_visible);
 	x_set_picture_clip_region(xd->base.c, result, 0, 0, &reg);
+
+#define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t)(((double)(value)) * 65536))
+		{
+			const xcb_render_transform_t transform = {
+				DOUBLE_TO_XFIXED((double)img->ewidth / (double)tmpew), DOUBLE_TO_XFIXED(0.0), DOUBLE_TO_XFIXED(0.0),
+				DOUBLE_TO_XFIXED(0.0), DOUBLE_TO_XFIXED((double)img->eheight / (double)tmpeh), DOUBLE_TO_XFIXED(0.0),
+				DOUBLE_TO_XFIXED(0.0), DOUBLE_TO_XFIXED(0.0), DOUBLE_TO_XFIXED(1.0),
+			};
+			xcb_render_set_picture_transform(xd->base.c, inner->pict, transform);
+			xcb_render_set_picture_filter(xd->base.c, inner->pict, 8, "bilinear", 0, NULL);
+		}
+#undef DOUBLE_TO_XFIXED
+
 	if ((img->color_inverted || img->dim != 0) && has_alpha) {
 		// Apply image properties using a temporary image, because the source
 		// image is transparent. Otherwise the properties can be applied directly
@@ -119,17 +133,17 @@ static void compose_impl(struct _xrender_data *xd, const struct backend_image *i
 		                                 inner->height, inner->visual, 0, NULL);
 
 		// Set clip region translated to source coordinate
-		x_set_picture_clip_region(xd->base.c, tmp_pict, to_i16_checked(-dst_x),
-		                          to_i16_checked(-dst_y), &reg);
+		x_set_picture_clip_region(xd->base.c, tmp_pict, to_i16_checked(-dst_x1),
+		                          to_i16_checked(-dst_y1), &reg);
 		// Copy source -> tmp
-		xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_SRC, inner->pict,
+		xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_OVER, inner->pict,
 		                     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 		if (img->color_inverted) {
 			if (inner->has_alpha) {
 				auto tmp_pict2 = x_create_picture_with_visual(
 				    xd->base.c, xd->base.root, tmpw, tmph, inner->visual,
 				    0, NULL);
-				xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_SRC,
+				xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_OVER,
 				                     tmp_pict, XCB_NONE, tmp_pict2, 0, 0,
 				                     0, 0, 0, 0, tmpw, tmph);
 
@@ -160,30 +174,30 @@ static void compose_impl(struct _xrender_data *xd, const struct backend_image *i
 		}
 
 		xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_OVER, tmp_pict,
-		                     alpha_pict, result, 0, 0, 0, 0, to_i16_checked(dst_x),
-		                     to_i16_checked(dst_y), tmpew, tmpeh);
+		                     alpha_pict, result, 0, 0, 0, 0, to_i16_checked(dst_x1),
+		                     to_i16_checked(dst_y1), tmpew, tmpeh);
 		xcb_render_free_picture(xd->base.c, tmp_pict);
 	} else {
 		uint8_t op = (has_alpha ? XCB_RENDER_PICT_OP_OVER : XCB_RENDER_PICT_OP_SRC);
 
 		xcb_render_composite(xd->base.c, op, inner->pict, alpha_pict, result, 0,
-		                     0, 0, 0, to_i16_checked(dst_x),
-		                     to_i16_checked(dst_y), tmpew, tmpeh);
+		                     0, 0, 0, to_i16_checked(dst_x1),
+		                     to_i16_checked(dst_y1), tmpew, tmpeh);
 		if (img->dim != 0 || img->color_inverted) {
 			// Apply properties, if we reach here, then has_alpha == false
 			assert(!has_alpha);
 			if (img->color_inverted) {
 				xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_DIFFERENCE,
 				                     xd->white_pixel, XCB_NONE, result, 0,
-				                     0, 0, 0, to_i16_checked(dst_x),
-				                     to_i16_checked(dst_y), tmpew, tmpeh);
+				                     0, 0, 0, to_i16_checked(dst_x1),
+				                     to_i16_checked(dst_y1), tmpew, tmpeh);
 			}
 
 			if (img->dim != 0) {
 				// Dim the actually content of window
 				xcb_rectangle_t rect = {
-				    .x = to_i16_checked(dst_x),
-				    .y = to_i16_checked(dst_y),
+				    .x = to_i16_checked(dst_x1),
+				    .y = to_i16_checked(dst_y1),
 				    .width = tmpew,
 				    .height = tmpeh,
 				};
@@ -201,7 +215,7 @@ static void compose(backend_t *base, void *img_data,
                     const region_t *reg_paint, const region_t *reg_visible) {
 	// TODO(dccsillag): use dst_{x,y}2
 	struct _xrender_data *xd = (void *)base;
-	return compose_impl(xd, img_data, dst_x1, dst_y1, reg_paint, reg_visible, xd->back[2]);
+	return compose_impl(xd, img_data, dst_x1, dst_y1, dst_x2, dst_y2, reg_paint, reg_visible, xd->back[2]);
 }
 
 static void fill(backend_t *base, struct color c, const region_t *clip) {
