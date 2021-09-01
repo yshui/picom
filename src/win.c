@@ -440,26 +440,14 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 
 static void init_animation(session_t *ps, struct managed_win *w) {
 	switch (ps->o.animation_for_open_window) {
-	case OPEN_WINDOW_ANIMATION_NONE: {        // No animation
-		/* w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
-		 */
-		/* w->animation_dest_center_y = w->pending_g.y + w->pending_g.height *
-		 * 0.5; */
-		/* w->animation_dest_w = w->pending_g.width; */
-		/* w->animation_dest_h = w->pending_g.height; */
-
+	case OPEN_WINDOW_ANIMATION_NONE: { // No animation
 		w->animation_center_x = w->pending_g.x + w->pending_g.width * 0.5;
 		w->animation_center_y = w->pending_g.y + w->pending_g.height * 0.5;
 		w->animation_w = w->pending_g.width;
 		w->animation_h = w->pending_g.height;
-		w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
-		w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
-		w->animation_dest_w = w->pending_g.width;
-		w->animation_dest_h = w->pending_g.height;
 		break;
 	}
-	case OPEN_WINDOW_ANIMATION_FLYIN: {        // Fly-in from a random point outside
-		                                   // the screen
+	case OPEN_WINDOW_ANIMATION_FLYIN: { // Fly-in from a random point outside the screen
 		// Compute random point off screen
 		double angle = 2 * M_PI * ((double)rand() / RAND_MAX);
 		const double radius =
@@ -470,11 +458,6 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		w->animation_center_y = ps->root_height * 0.5 + radius * sin(angle);
 		w->animation_w = 0;
 		w->animation_h = 0;
-
-		w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
-		w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
-		w->animation_dest_w = w->pending_g.width;
-		w->animation_dest_h = w->pending_g.height;
 		break;
 	}
 	case OPEN_WINDOW_ANIMATION_INVALID: assert(false); break;
@@ -526,6 +509,10 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			if (!was_visible) {
 				// Set window-open animation
 				init_animation(ps, w);
+				w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+				w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+				w->animation_dest_w = w->pending_g.width;
+				w->animation_dest_h = w->pending_g.height;
 
 				w->g.x = (int16_t)round(w->animation_center_x -
 				                        w->animation_w * 0.5);
