@@ -120,7 +120,7 @@ static void compose_impl(struct _xrender_data *xd, const struct backend_image *i
 				DOUBLE_TO_XFIXED(0.0), DOUBLE_TO_XFIXED(0.0), DOUBLE_TO_XFIXED(1.0),
 			};
 			xcb_render_set_picture_transform(xd->base.c, inner->pict, transform);
-			xcb_render_set_picture_filter(xd->base.c, inner->pict, 8, "bilinear", 0, NULL);
+			xcb_render_set_picture_filter(xd->base.c, inner->pict, 7, "nearest", 0, NULL);
 		}
 #undef DOUBLE_TO_XFIXED
 
