@@ -75,6 +75,8 @@ OPTIONS
 *--animation-clamping*::
 	Whether to clamp animations (default: true).
 
+	**NOTE:** With clamping disabled, on very low performance conditions (e.g., over 100ms to render an animation frame), windows may diverge. If this is your case, it is strongly advised to keep clamping on, as it protects against that.
+
 *-i*, *--inactive-opacity*='OPACITY'::
 	Opacity of inactive windows. (0.1 - 1.0, defaults to 1.0)
 
