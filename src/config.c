@@ -512,6 +512,8 @@ enum open_window_animation parse_open_window_animation(const char *src) {
 		return OPEN_WINDOW_ANIMATION_NONE;
 	} else if (strcmp(src, "flyin") == 0) {
 		return OPEN_WINDOW_ANIMATION_FLYIN;
+	} else if (strcmp(src, "zoom") == 0) {
+		return OPEN_WINDOW_ANIMATION_ZOOM;
 	}
 	return OPEN_WINDOW_ANIMATION_INVALID;
 }

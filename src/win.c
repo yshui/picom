@@ -460,6 +460,13 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		w->animation_h = 0;
 		break;
 	}
+	case OPEN_WINDOW_ANIMATION_ZOOM: { // Zoom-in the image, without changing its location
+		w->animation_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+		w->animation_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+		w->animation_w = 0;
+		w->animation_h = 0;
+		break;
+	}
 	case OPEN_WINDOW_ANIMATION_INVALID: assert(false); break;
 	}
 }
