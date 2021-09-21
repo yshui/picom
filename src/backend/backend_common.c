@@ -100,7 +100,7 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 			for (int x = 0; x < swidth; x++) {
 				double sum = sum_kernel_normalized(
 				    kernel, d - x - 1, d - y - 1, width, height);
-				data[y * sstride + x] = (uint8_t)(sum * 255.0);
+				data[y * sstride + x] = (uint8_t)(sum * 255.0 * opacity);
 			}
 		}
 		return ximage;
@@ -118,14 +118,14 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 			for (int x = 0; x < r * 2; x++) {
 				double sum = sum_kernel_normalized(kernel, d - x - 1,
 				                                   d - y - 1, d, height) *
-				             255.0;
+				             255.0 * opacity;
 				data[y * sstride + x] = (uint8_t)sum;
 				data[y * sstride + swidth - x - 1] = (uint8_t)sum;
 			}
 		}
 		for (int y = 0; y < sheight; y++) {
-			double sum =
-			    sum_kernel_normalized(kernel, 0, d - y - 1, d, height) * 255.0;
+			double sum = sum_kernel_normalized(kernel, 0, d - y - 1, d, height) *
+			             255.0 * opacity;
 			memset(&data[y * sstride + r * 2], (uint8_t)sum,
 			       (size_t)(width - 2 * r));
 		}
@@ -137,14 +137,14 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 			for (int x = 0; x < swidth; x++) {
 				double sum = sum_kernel_normalized(kernel, d - x - 1,
 				                                   d - y - 1, width, d) *
-				             255.0;
+				             255.0 * opacity;
 				data[y * sstride + x] = (uint8_t)sum;
 				data[(sheight - y - 1) * sstride + x] = (uint8_t)sum;
 			}
 		}
 		for (int x = 0; x < swidth; x++) {
-			double sum =
-			    sum_kernel_normalized(kernel, d - x - 1, 0, width, d) * 255.0;
+			double sum = sum_kernel_normalized(kernel, d - x - 1, 0, width, d) *
+			             255.0 * opacity;
 			for (int y = r * 2; y < height; y++) {
 				data[y * sstride + x] = (uint8_t)sum;
 			}
