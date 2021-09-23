@@ -47,7 +47,10 @@ if get_option('modularize')
 	                     language: 'c')
 endif
 
+add_global_arguments('-O3', language: 'c')
 add_global_arguments('-D_GNU_SOURCE', language: 'c')
+add_global_arguments('-march=native', language: 'c')
+add_global_arguments('-mtune=native', language: 'c')
 
 if cc.has_header('stdc-predef.h')
 	add_global_arguments('-DHAS_STDC_PREDEF_H', language: 'c')
