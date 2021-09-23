@@ -714,19 +714,27 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			// changes (if there are any).
 
 			struct win_geometry old_g = w->g;
-			w->g.x = (int16_t)round(w->animation_center_x - w->animation_w * 0.5);
-			w->g.y = (int16_t)round(w->animation_center_y - w->animation_h * 0.5);
-			w->g.width = (uint16_t)round(w->animation_w);
-			w->g.height = (uint16_t)round(w->animation_h);
+			new_animation_x =
+				(int16_t)round(w->animation_center_x - w->animation_w * 0.5);
+			new_animation_y =
+				(int16_t)round(w->animation_center_y - w->animation_h * 0.5);
+			new_animation_w = (uint16_t)round(w->animation_w);
+			new_animation_h = (uint16_t)round(w->animation_h);
 
-			bool position_changed = w->g.x != old_g.x || w->g.y != old_g.y;
+			bool position_changed =
+				new_animation_x != old_g.x || new_animation_y != old_g.y;
 			bool size_changed =
-			    w->g.width != old_g.width || w->g.height != old_g.height;
+			    new_animation_w != old_g.width || new_animation_h != old_g.height;
 			bool geometry_changed = position_changed || size_changed;
 
 			// Mark past window region with damage
 			if (w->to_paint && geometry_changed)
 				add_damage_from_win(ps, w);
+
+			w->g.x = (int16_t)round(w->animation_center_x - w->animation_w * 0.5);
+			w->g.y = (int16_t)round(w->animation_center_y - w->animation_h * 0.5);
+			w->g.width = (uint16_t)round(w->animation_w);
+			w->g.height = (uint16_t)round(w->animation_h);
 
 			// Submit window size change
 			if (size_changed) {
