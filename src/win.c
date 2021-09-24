@@ -439,7 +439,22 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 }
 
 static void init_animation(session_t *ps, struct managed_win *w) {
-	switch (ps->o.animation_for_open_window) {
+	enum open_window_animation animation = ps->o.animation_for_open_window;
+
+	if (w->window_type != WINTYPE_TOOLTIP &&
+		wid_has_prop(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR))
+	{
+		animation = ps->o.animation_for_transient_window;
+	}
+
+	// WINTYPE_UTILITY is needed because Firefox uses that for it's menus
+	if (w->window_type == WINTYPE_MENU || w->window_type == WINTYPE_POPUP_MENU ||
+		w->window_type == WINTYPE_DROPDOWN_MENU || w->window_type == WINTYPE_UTILITY)
+	{
+		animation = ps->o.animation_for_menu_window;
+	}
+
+	switch (animation) {
 	case OPEN_WINDOW_ANIMATION_NONE: { // No animation
 		w->animation_center_x = w->pending_g.x + w->pending_g.width * 0.5;
 		w->animation_center_y = w->pending_g.y + w->pending_g.height * 0.5;
@@ -465,6 +480,34 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		w->animation_center_y = w->pending_g.y + w->pending_g.height * 0.5;
 		w->animation_w = 0;
 		w->animation_h = 0;
+		break;
+	}
+	case OPEN_WINDOW_ANIMATION_SLIDE_UP: { // Slide up the image, without changing its location
+		w->animation_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+		w->animation_center_y = w->pending_g.y + w->pending_g.height;
+		w->animation_w = w->pending_g.width;
+		w->animation_h = 0;
+		break;
+	}
+	case OPEN_WINDOW_ANIMATION_SLIDE_DOWN: { // Slide down the image, without changing its location
+		w->animation_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+		w->animation_center_y = w->pending_g.y;
+		w->animation_w = w->pending_g.width;
+		w->animation_h = 0;
+		break;
+	}
+	case OPEN_WINDOW_ANIMATION_SLIDE_LEFT: { // Slide left the image, without changing its location
+		w->animation_center_x = w->pending_g.x + w->pending_g.width;
+		w->animation_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+		w->animation_w = 0;
+		w->animation_h = w->pending_g.height;
+		break;
+	}
+	case OPEN_WINDOW_ANIMATION_SLIDE_RIGHT: { // Slide right the image, without changing its location
+		w->animation_center_x = w->pending_g.x;
+		w->animation_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+		w->animation_w = 0;
+		w->animation_h = w->pending_g.height;
 		break;
 	}
 	case OPEN_WINDOW_ANIMATION_INVALID: assert(false); break;

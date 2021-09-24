@@ -532,6 +532,24 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		}
 		opt->animation_for_open_window = animation;
 	}
+	// --animation-for-menu-window
+	if (config_lookup_string(&cfg, "animation-for-menu-window", &sval)) {
+		enum open_window_animation animation = parse_open_window_animation(sval);
+		if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+			log_fatal("Invalid open-window animation %s", sval);
+			goto err;
+		}
+		opt->animation_for_menu_window = animation;
+	}
+	// --animation-for-transient-window
+	if (config_lookup_string(&cfg, "animation-for-transient-window", &sval)) {
+		enum open_window_animation animation = parse_open_window_animation(sval);
+		if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+			log_fatal("Invalid open-window animation %s", sval);
+			goto err;
+		}
+		opt->animation_for_transient_window = animation;
+	}
 	// --animation-stiffness
 	config_lookup_float(&cfg, "animation-stiffness", &opt->animation_stiffness);
 	// --animation-window-mass

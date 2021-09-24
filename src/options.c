@@ -75,7 +75,22 @@ static void usage(const char *argv0, int ret) {
 	    "  Run animations for window geometry changes (movement and scaling).\n"
 	    "\n"
 	    "--animation-for-open-window\n"
-	    "  Which animation to run when opening a window. Must be one of `none`, `fly-in` (default: none).\n"
+	    "  Which animation to run when opening a window.\n"
+	    "  Must be one of `none`, `fly-in`, `zoom`,\n"
+	    "  `slide-down`, `slide-up`, `slide-left`, `slide-right`\n"
+	    "  (default: none).\n"
+	    "\n"
+	    "--animation-for-menu-window\n"
+	    "  Which animation to run when opening a menu window.\n"
+	    "  Must be one of `none`, `fly-in`, `zoom`,\n"
+	    "  `slide-down`, `slide-up`, `slide-left`, `slide-right`\n"
+	    "  (default: none).\n"
+	    "\n"
+	    "--animation-for-transient-window\n"
+	    "  Which animation to run when opening a transient window.\n"
+	    "  Must be one of `none`, `fly-in`, `zoom`,\n"
+	    "  `slide-down`, `slide-up`, `slide-left`, `slide-right`\n"
+	    "  (default: none).\n"
 	    "\n"
 	    "--animation-stiffness\n"
 	    "  Stiffness (a.k.a. tension) parameter for animation (default: 200.0).\n"
@@ -483,6 +498,8 @@ static const struct option longopts[] = {
     {"animation-window-mass", required_argument, NULL, 807},
     {"animation-clamping", no_argument, NULL, 808},
     {"animation-for-open-window", required_argument, NULL, 809},
+    {"animation-for-menu-window", required_argument, NULL, 810},
+    {"animation-for-transient-window", required_argument, NULL, 811},
     // Must terminate with a NULL entry
     {NULL, 0, NULL, 0},
 };

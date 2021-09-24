@@ -514,6 +514,14 @@ enum open_window_animation parse_open_window_animation(const char *src) {
 		return OPEN_WINDOW_ANIMATION_FLYIN;
 	} else if (strcmp(src, "zoom") == 0) {
 		return OPEN_WINDOW_ANIMATION_ZOOM;
+	} else if (strcmp(src, "slide-up") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_UP;
+	} else if (strcmp(src, "slide-down") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_DOWN;
+	} else if (strcmp(src, "slide-left") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_LEFT;
+	} else if (strcmp(src, "slide-right") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_RIGHT;
 	}
 	return OPEN_WINDOW_ANIMATION_INVALID;
 }
@@ -565,6 +573,8 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 
 	    .animations = false,
 	    .animation_for_open_window = OPEN_WINDOW_ANIMATION_NONE,
+	    .animation_for_menu_window = OPEN_WINDOW_ANIMATION_NONE,
+	    .animation_for_transient_window = OPEN_WINDOW_ANIMATION_NONE,
 	    .animation_stiffness = 200.0,
 	    .animation_window_mass = 1.0,
 	    .animation_dampening = 25,

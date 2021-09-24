@@ -72,6 +72,10 @@ enum open_window_animation {
 	OPEN_WINDOW_ANIMATION_NONE = 0,
 	OPEN_WINDOW_ANIMATION_FLYIN,
 	OPEN_WINDOW_ANIMATION_ZOOM,
+	OPEN_WINDOW_ANIMATION_SLIDE_UP,
+	OPEN_WINDOW_ANIMATION_SLIDE_DOWN,
+	OPEN_WINDOW_ANIMATION_SLIDE_LEFT,
+	OPEN_WINDOW_ANIMATION_SLIDE_RIGHT,
 	OPEN_WINDOW_ANIMATION_INVALID,
 };
 
@@ -185,6 +189,10 @@ typedef struct options {
 	bool animations;
 	/// Which animation to run when opening a window
 	enum open_window_animation animation_for_open_window;
+	/// Which animation to run when opening a menu window
+	enum open_window_animation animation_for_menu_window;
+	/// Which animation to run when opening a transient window
+	enum open_window_animation animation_for_transient_window;
 	/// Spring stiffness for animation
 	double animation_stiffness;
 	/// Window mass for animation
