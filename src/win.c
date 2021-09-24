@@ -2117,6 +2117,11 @@ static void unmap_win_finish(session_t *ps, struct managed_win *w) {
 
 	// Try again at binding images when the window is mapped next time
 	win_clear_flags(w, WIN_FLAGS_IMAGE_ERROR);
+
+	// Flag window so that it gets animated when it reapears 
+	// in case it wasn't destroyed
+	win_set_flags(w, WIN_FLAGS_POSITION_STALE);
+	win_set_flags(w, WIN_FLAGS_SIZE_STALE);
 }
 
 /// Finish the destruction of a window (e.g. after fading has finished).
