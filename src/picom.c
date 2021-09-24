@@ -646,8 +646,11 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 		double delta_secs = (double)(now - ps->animation_time) / 1000;
 		win_stack_foreach_managed_safe(w, &ps->window_stack) {
 			// Only animate mapped windows
-			if (!win_is_mapped_in_x(w))
+			if (isnan(w->animation_progress) || w->animation_progress == 1.0 ||
+				!win_is_mapped_in_x(w))
+			{
 				continue;
+			}
 
 			double neg_displacement_x =
 			    w->animation_dest_center_x - w->animation_center_x;
@@ -752,9 +755,12 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 
 			double x_dist = w->animation_dest_center_x - w->animation_center_x;
 			double y_dist = w->animation_dest_center_y - w->animation_center_y;
+			double w_dist = w->animation_dest_w - w->animation_w;
+			double h_dist = w->animation_dest_h - w->animation_h;
 			w->animation_progress =
 			    1.0 - w->animation_inv_og_distance *
-			              sqrt(x_dist * x_dist + y_dist * y_dist);
+			              sqrt(x_dist * x_dist + y_dist * y_dist +
+			                    w_dist * w_dist + h_dist * h_dist);
 			*animation_running = true;
 		}
 		// Okay, now we can continue on to the rest of the [pre]processing.
