@@ -761,10 +761,24 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			    1.0 - w->animation_inv_og_distance *
 			              sqrt(x_dist * x_dist + y_dist * y_dist +
 			                    w_dist * w_dist + h_dist * h_dist);
+
+			// Reset velocity if animation ended so that next animation
+			// doesn't start on the wrong location
+			if (w->animation_progress == 1) {
+				w->animation_velocity_x = 0.0;
+				w->animation_velocity_y = 0.0;
+				w->animation_velocity_w = 0.0;
+				w->animation_velocity_h = 0.0;
+			}
+
 			*animation_running = true;
 		}
 		// Okay, now we can continue on to the rest of the [pre]processing.
-		ps->animation_time = now;
+		// ... and we reset time in case there was no animation at all
+		if (animation_running)
+			ps->animation_time = now;
+		else
+			ps->animation_time = 0L;
 	}
 
 	// Fading step calculation
