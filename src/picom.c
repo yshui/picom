@@ -750,8 +750,10 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 				win_process_image_flags(ps, w);
 			}
 			// Mark new window region with damage
-			if (w->to_paint && geometry_changed)
+			if (w->to_paint && geometry_changed) {
 				add_damage_from_win(ps, w);
+				w->reg_ignore_valid = false;
+			}
 
 			double x_dist = w->animation_dest_center_x - w->animation_center_x;
 			double y_dist = w->animation_dest_center_y - w->animation_center_y;
