@@ -415,25 +415,37 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		bool is_animating = 0 <= w->animation_progress && w->animation_progress < 1.0;
 		if (w->frame_opacity == 1 && !is_animating) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
-			                               w->g.x, w->g.y,
-						       w->g.x + w->widthb, w->g.y + w->heightb,
-			                               &reg_paint_in_bound, &reg_visible);
+									w->g.x, w->g.y,
+									w->g.x + w->widthb, w->g.y + w->heightb,
+									&reg_paint_in_bound, &reg_visible);
 		} else {
 			if (is_animating && w->old_win_image) {
 				assert(w->old_win_image);
+
+				// We always set opacity to 1 here as w->opacity
+				// is alread used within the function itself
 				process_window_for_painting(ps, w, w->win_image,
-							    w->opacity >= 1 ? 1.0 : w->animation_progress,
-							    &reg_bound, &reg_visible,
-							    &reg_paint, &reg_paint_in_bound);
-				process_window_for_painting(ps, w, w->old_win_image,
-							    1.0 - w->animation_progress,
-							    &reg_bound, &reg_visible,
-							    &reg_paint, &reg_paint_in_bound);
+								1.0,
+								&reg_bound, &reg_visible,
+								&reg_paint, &reg_paint_in_bound);
+
+				// Only do this if size changes as otherwise moving 
+				// transparent windows will flicker and if you just
+				// move so slightly they will keep flickering
+				if (w->g.width != w->pending_g.width ||
+					w->g.height != w->pending_g.height)
+				{
+					process_window_for_painting(ps, w, w->old_win_image,
+									1.0 - w->animation_progress,
+									&reg_bound, &reg_visible,
+									&reg_paint, &reg_paint_in_bound);
+				}
+
 			} else {
 				process_window_for_painting(ps, w, w->win_image,
-							    1.0,
-							    &reg_bound, &reg_visible,
-							    &reg_paint, &reg_paint_in_bound);
+								w->animation_progress,
+								&reg_bound, &reg_visible,
+								&reg_paint, &reg_paint_in_bound);
 			}
 		}
 	skip:
