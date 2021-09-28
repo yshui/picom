@@ -670,6 +670,7 @@ void win_process_image_flags(session_t *ps, struct managed_win *w) {
 				// Must release images first, otherwise breaks
 				// NVIDIA driver
 				win_release_pixmap(ps->backend_data, w);
+				win_release_oldpixmap(ps->backend_data, w);
 			}
 			win_bind_pixmap(ps->backend_data, w);
 		}
