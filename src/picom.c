@@ -653,7 +653,7 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 	if (ps->o.animations && !ps->animation_time)
 		ps->animation_time = now;
 
-	double delta_secs = 0.01; //(double)(now - ps->animation_time) / 1000;
+	double delta_secs = (double)(now - ps->animation_time) / 1000;
 
 	// First, let's process fading
 	win_stack_foreach_managed_safe(w, &ps->window_stack) {
@@ -665,7 +665,7 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 		// [pre]processing. This is because it changes the window's geometry.
 		if (ps->o.animations && 
 			!isnan(w->animation_progress) && w->animation_progress != 1.0 &&
-			w->window_type != WINTYPE_TOOLBAR && win_is_mapped_in_x(w))
+			win_is_mapped_in_x(w))
 		{
 			double neg_displacement_x =
 				w->animation_dest_center_x - w->animation_center_x;
