@@ -559,17 +559,19 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			if (!was_visible) {
 				// Set window-open animation
 				init_animation(ps, w);
+
 				w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
 				w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
 				w->animation_dest_w = w->pending_g.width;
 				w->animation_dest_h = w->pending_g.height;
 
 				w->g.x = (int16_t)round(w->animation_center_x -
-				                        w->animation_w * 0.5);
+										w->animation_w * 0.5);
 				w->g.y = (int16_t)round(w->animation_center_y -
-				                        w->animation_h * 0.5);
+										w->animation_h * 0.5);
 				w->g.width = (uint16_t)round(w->animation_w);
 				w->g.height = (uint16_t)round(w->animation_h);
+
 			} else {
 				w->animation_dest_center_x =
 				    w->pending_g.x + w->pending_g.width * 0.5;
@@ -580,24 +582,27 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			}
 
 			w->g.border_width = w->pending_g.border_width;
-
 			w->animation_progress = 0.0;
+
 			double x_dist = w->animation_dest_center_x - w->animation_center_x;
 			double y_dist = w->animation_dest_center_y - w->animation_center_y;
 			double w_dist = w->animation_dest_w - w->animation_w;
 			double h_dist = w->animation_dest_h - w->animation_h;
 			w->animation_inv_og_distance =
-			    1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
-			                    w_dist * w_dist + h_dist * h_dist);
+				1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
+							w_dist * w_dist + h_dist * h_dist);
 
 			if (w->old_win_image) {
 				ps->backend_data->ops->release_image(ps->backend_data,
-				                                     w->old_win_image);
+														w->old_win_image);
 				w->old_win_image = NULL;
 			}
-			if (w->win_image)
+
+			if (w->win_image) {
 				w->old_win_image = ps->backend_data->ops->clone_image(
-				    ps->backend_data, w->win_image, &w->bounding_shape);
+					ps->backend_data, w->win_image, &w->bounding_shape);
+			}
+
 		} else {
 			w->g = w->pending_g;
 		}
