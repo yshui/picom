@@ -849,8 +849,6 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 
 	if (animation_running)
 		ps->animation_time = now;
-	else
-		ps->animation_time = 0L;
 
 	// Opacity will not change, from now on.
 	rc_region_t *last_reg_ignore = rc_region_new();
