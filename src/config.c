@@ -500,6 +500,10 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 			// opacity logic is complicated, and needs an "unset" state
 			opt->wintype_option[i].opacity = NAN;
 		}
+		if (!mask[i].animation) {
+			mask[i].animation = OPEN_WINDOW_ANIMATION_INVALID;
+			opt->wintype_option[i].animation = OPEN_WINDOW_ANIMATION_INVALID;
+		}
 		if (!mask[i].clip_shadow_above) {
 			mask[i].clip_shadow_above = true;
 			opt->wintype_option[i].clip_shadow_above = false;
@@ -573,7 +577,6 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 
 	    .animations = false,
 	    .animation_for_open_window = OPEN_WINDOW_ANIMATION_NONE,
-	    .animation_for_menu_window = OPEN_WINDOW_ANIMATION_NONE,
 	    .animation_for_transient_window = OPEN_WINDOW_ANIMATION_NONE,
 	    .animation_stiffness = 200.0,
 	    .animation_window_mass = 1.0,

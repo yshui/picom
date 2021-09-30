@@ -37,6 +37,17 @@ enum backend {
 	NUM_BKEND,
 };
 
+enum open_window_animation {
+	OPEN_WINDOW_ANIMATION_NONE = 0,
+	OPEN_WINDOW_ANIMATION_FLYIN,
+	OPEN_WINDOW_ANIMATION_ZOOM,
+	OPEN_WINDOW_ANIMATION_SLIDE_UP,
+	OPEN_WINDOW_ANIMATION_SLIDE_DOWN,
+	OPEN_WINDOW_ANIMATION_SLIDE_LEFT,
+	OPEN_WINDOW_ANIMATION_SLIDE_RIGHT,
+	OPEN_WINDOW_ANIMATION_INVALID,
+};
+
 typedef struct win_option_mask {
 	bool shadow : 1;
 	bool fade : 1;
@@ -46,6 +57,7 @@ typedef struct win_option_mask {
 	bool redir_ignore : 1;
 	bool opacity : 1;
 	bool clip_shadow_above : 1;
+	enum open_window_animation animation;
 } win_option_mask_t;
 
 typedef struct win_option {
@@ -57,6 +69,7 @@ typedef struct win_option {
 	bool redir_ignore;
 	double opacity;
 	bool clip_shadow_above;
+	enum open_window_animation animation;
 } win_option_t;
 
 enum blur_method {
@@ -66,17 +79,6 @@ enum blur_method {
 	BLUR_METHOD_GAUSSIAN,
 	BLUR_METHOD_DUAL_KAWASE,
 	BLUR_METHOD_INVALID,
-};
-
-enum open_window_animation {
-	OPEN_WINDOW_ANIMATION_NONE = 0,
-	OPEN_WINDOW_ANIMATION_FLYIN,
-	OPEN_WINDOW_ANIMATION_ZOOM,
-	OPEN_WINDOW_ANIMATION_SLIDE_UP,
-	OPEN_WINDOW_ANIMATION_SLIDE_DOWN,
-	OPEN_WINDOW_ANIMATION_SLIDE_LEFT,
-	OPEN_WINDOW_ANIMATION_SLIDE_RIGHT,
-	OPEN_WINDOW_ANIMATION_INVALID,
 };
 
 typedef struct _c2_lptr c2_lptr_t;
@@ -189,8 +191,6 @@ typedef struct options {
 	bool animations;
 	/// Which animation to run when opening a window
 	enum open_window_animation animation_for_open_window;
-	/// Which animation to run when opening a menu window
-	enum open_window_animation animation_for_menu_window;
 	/// Which animation to run when opening a transient window
 	enum open_window_animation animation_for_transient_window;
 	/// Spring stiffness for animation

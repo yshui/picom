@@ -80,12 +80,6 @@ static void usage(const char *argv0, int ret) {
 	    "  `slide-down`, `slide-up`, `slide-left`, `slide-right`\n"
 	    "  (default: none).\n"
 	    "\n"
-	    "--animation-for-menu-window\n"
-	    "  Which animation to run when opening a menu window.\n"
-	    "  Must be one of `none`, `fly-in`, `zoom`,\n"
-	    "  `slide-down`, `slide-up`, `slide-left`, `slide-right`\n"
-	    "  (default: none).\n"
-	    "\n"
 	    "--animation-for-transient-window\n"
 	    "  Which animation to run when opening a transient window.\n"
 	    "  Must be one of `none`, `fly-in`, `zoom`,\n"
@@ -498,8 +492,7 @@ static const struct option longopts[] = {
     {"animation-window-mass", required_argument, NULL, 807},
     {"animation-clamping", no_argument, NULL, 808},
     {"animation-for-open-window", required_argument, NULL, 809},
-    {"animation-for-menu-window", required_argument, NULL, 810},
-    {"animation-for-transient-window", required_argument, NULL, 811},
+    {"animation-for-transient-window", required_argument, NULL, 810},
     // Must terminate with a NULL entry
     {NULL, 0, NULL, 0},
 };
@@ -955,6 +948,16 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 				log_warn("Invalid open-window animation %s, ignoring.", optarg);
 			} else {
 				opt->animation_for_open_window = animation;
+			}
+			break;
+		}
+		case 810: {
+			// --animation-for-transient-window
+			enum open_window_animation animation = parse_open_window_animation(optarg);
+			if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+				log_warn("Invalid transient-window animation %s, ignoring.", optarg);
+			} else {
+				opt->animation_for_transient_window = animation;
 			}
 			break;
 		}

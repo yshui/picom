@@ -257,6 +257,8 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 	free(str);
 
 	int ival = 0;
+	const char *sval = NULL;
+
 	if (setting) {
 		if (config_setting_lookup_bool(setting, "shadow", &ival)) {
 			o->shadow = ival;
@@ -285,6 +287,14 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 		if (config_setting_lookup_bool(setting, "clip-shadow-above", &ival)) {
 			o->clip_shadow_above = ival;
 			mask->clip_shadow_above = true;
+		}
+		if (config_setting_lookup_string(setting, "animation", &sval)) {
+			enum open_window_animation animation = parse_open_window_animation(sval);
+			if (animation >= OPEN_WINDOW_ANIMATION_INVALID)
+				animation = OPEN_WINDOW_ANIMATION_NONE;
+
+			o->animation = animation;
+			mask->animation = OPEN_WINDOW_ANIMATION_INVALID;
 		}
 
 		double fval;
@@ -531,15 +541,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 			goto err;
 		}
 		opt->animation_for_open_window = animation;
-	}
-	// --animation-for-menu-window
-	if (config_lookup_string(&cfg, "animation-for-menu-window", &sval)) {
-		enum open_window_animation animation = parse_open_window_animation(sval);
-		if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
-			log_fatal("Invalid open-window animation %s", sval);
-			goto err;
-		}
-		opt->animation_for_menu_window = animation;
 	}
 	// --animation-for-transient-window
 	if (config_lookup_string(&cfg, "animation-for-transient-window", &sval)) {

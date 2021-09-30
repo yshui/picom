@@ -18,6 +18,7 @@
 
 #include "atom.h"
 #include "backend/backend.h"
+#include "backend/backend_common.h"
 #include "c2.h"
 #include "common.h"
 #include "compiler.h"
@@ -447,12 +448,8 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		animation = ps->o.animation_for_transient_window;
 	}
 
-	// WINTYPE_UTILITY is needed because Firefox uses that for it's menus
-	if (w->window_type == WINTYPE_MENU || w->window_type == WINTYPE_POPUP_MENU ||
-		w->window_type == WINTYPE_DROPDOWN_MENU || w->window_type == WINTYPE_UTILITY)
-	{
-		animation = ps->o.animation_for_menu_window;
-	}
+	if (ps->o.wintype_option[w->window_type].animation < OPEN_WINDOW_ANIMATION_INVALID)
+		animation = ps->o.wintype_option[w->window_type].animation;
 
 	switch (animation) {
 	case OPEN_WINDOW_ANIMATION_NONE: { // No animation
@@ -554,8 +551,12 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			add_damage_from_win(ps, w);
 		}
 
+		// Ignore animations all together if set to none on window type basis
+		if (ps->o.wintype_option[w->window_type].animation == 0) {
+			w->g = w->pending_g;
+
 		// Update window geometry
-		if (ps->o.animations) {
+		} else if (ps->o.animations) {
 			if (!was_visible) {
 				// Set window-open animation
 				init_animation(ps, w);

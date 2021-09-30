@@ -665,6 +665,7 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 		// [pre]processing. This is because it changes the window's geometry.
 		if (ps->o.animations && 
 			!isnan(w->animation_progress) && w->animation_progress != 1.0 &&
+			ps->o.wintype_option[w->window_type].animation != 0 &&
 			win_is_mapped_in_x(w))
 		{
 			double neg_displacement_x =
