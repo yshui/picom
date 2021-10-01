@@ -583,7 +583,6 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			}
 
 			w->g.border_width = w->pending_g.border_width;
-			w->animation_progress = 0.0;
 
 			double x_dist = w->animation_dest_center_x - w->animation_center_x;
 			double y_dist = w->animation_dest_center_y - w->animation_center_y;
@@ -596,16 +595,24 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			if (isinf(w->animation_inv_og_distance))
 				w->animation_inv_og_distance = 0;
 
-			if (w->old_win_image) {
-				ps->backend_data->ops->release_image(ps->backend_data,
+			// We only grab images if not within an animation process already
+			// otherwise images end up with black content overlayed on top
+			// for e.g. Firefox main menu
+			if (w->animation_progress == 1) {
+				if (w->old_win_image) {
+					ps->backend_data->ops->release_image(ps->backend_data,
 														w->old_win_image);
-				w->old_win_image = NULL;
+					w->old_win_image = NULL;
+				}
+
+				// We only grab
+				if (w->win_image) {
+					w->old_win_image = ps->backend_data->ops->clone_image(
+						ps->backend_data, w->win_image, &w->bounding_shape);
+				}
 			}
 
-			if (w->win_image) {
-				w->old_win_image = ps->backend_data->ops->clone_image(
-					ps->backend_data, w->win_image, &w->bounding_shape);
-			}
+			w->animation_progress = 0.0;
 
 		} else {
 			w->g = w->pending_g;
@@ -671,7 +678,6 @@ void win_process_image_flags(session_t *ps, struct managed_win *w) {
 				// Must release images first, otherwise breaks
 				// NVIDIA driver
 				win_release_pixmap(ps->backend_data, w);
-				win_release_oldpixmap(ps->backend_data, w);
 			}
 			win_bind_pixmap(ps->backend_data, w);
 		}
