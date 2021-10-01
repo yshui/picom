@@ -831,7 +831,7 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 				continue;
 			}
 
-			if (wid_has_prop(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR)) {
+			if (win_has_frame(w)) {
 				w->frame_opacity = ps->o.frame_opacity;
 			} else {
 				w->frame_opacity = 1.0;
