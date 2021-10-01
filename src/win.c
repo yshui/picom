@@ -595,10 +595,13 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			if (isinf(w->animation_inv_og_distance))
 				w->animation_inv_og_distance = 0;
 
-			// We only grab images if not within an animation process already
-			// otherwise images end up with black content overlayed on top
-			// for e.g. Firefox main menu
-			if (w->animation_progress == 1) {
+			// We only grab images if w->reg_ignore_valid is true as
+			// there's an ev_shape_notify() event fired quickly on new windows
+			// for e.g. in case of Firefox main menu and ev_shape_notify()
+			// sets the win_set_flags(w, WIN_FLAGS_SIZE_STALE); which
+			// brakes the new image captured and because this same event
+			// also sets w->reg_ignore_valid = false; too we check for it
+			if (w->reg_ignore_valid) {
 				if (w->old_win_image) {
 					ps->backend_data->ops->release_image(ps->backend_data,
 														w->old_win_image);
