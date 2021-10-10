@@ -579,8 +579,8 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 
 	// Copy target name out
 	int tgtlen = 0;
-	for (; pattern[offset] &&
-	       (isalnum((unsigned char)pattern[offset]) || '_' == pattern[offset]);
+	for (; pattern[offset] && (isalnum((unsigned char)pattern[offset]) ||
+	                           '_' == pattern[offset] || '.' == pattern[offset]);
 	     ++offset) {
 		++tgtlen;
 	}
