@@ -652,10 +652,6 @@ err:
 	return false;
 }
 
-// xcb-render specific macros
-#define XFIXED_TO_DOUBLE(value) (((double)(value)) / 65536)
-#define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t)(((double)(value)) * 65536))
-
 /**
  * Convert a struct conv to a X picture convolution filter, normalizing the kernel
  * in the process. Allow the caller to specify the element at the center of the kernel,
