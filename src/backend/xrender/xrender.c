@@ -91,16 +91,22 @@ struct _xrender_image_data_inner {
 struct xrender_image {
 	struct backend_image base;
 
-	// A triangulated rounded rectangle
-	xcb_render_pointfix_t *rounded_rectangle_triangles;
-	// Number of points in the above list of triangles
-	int triangle_count;
+	// A cached picture of a rounded rectangle. Xorg rasterizes shapes on CPU so it's
+	// exceedingly slow.
+	xcb_render_picture_t rounded_rectangle;
 };
 
 /// Make a picture of size width x height, which has a rounded rectangle of corner_radius
 /// rendered in it.
-xcb_render_pointfix_t *
-make_rounded_corner_points(int width, int height, int corner_radius, int *out_point_count) {
+xcb_render_picture_t
+make_rounded_corner_picture(xcb_connection_t *c, xcb_render_picture_t src,
+                            xcb_drawable_t root, int width, int height, int corner_radius) {
+	auto picture = x_create_picture_with_standard(c, root, width, height,
+	                                              XCB_PICT_STANDARD_ARGB_32, 0, NULL);
+	if (picture == XCB_NONE) {
+		return picture;
+	}
+
 	int inner_height = height - 2 * corner_radius;
 	int cap_height = corner_radius;
 	if (inner_height < 0) {
@@ -148,8 +154,12 @@ make_rounded_corner_points(int width, int height, int corner_radius, int *out_po
 		ADD_POINT(right, i);
 	}
 #undef ADD_POINT
-	*out_point_count = point_count;
-	return points;
+
+	XCB_AWAIT_VOID(xcb_render_tri_strip, c, XCB_RENDER_PICT_OP_SRC, src, picture,
+	               x_get_pictfmt_for_standard(c, XCB_PICT_STANDARD_A_8), 0, 0,
+	               (uint32_t)point_count, points);
+	free(points);
+	return picture;
 }
 
 static void compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, int dst_x,
@@ -175,10 +185,10 @@ static void compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, 
 	pixman_region32_init(&reg);
 	pixman_region32_intersect(&reg, (region_t *)reg_paint, (region_t *)reg_visible);
 	x_set_picture_clip_region(xd->base.c, result, 0, 0, &reg);
-	if (img->corner_radius != 0 && xrimg->rounded_rectangle_triangles == NULL) {
-		xrimg->rounded_rectangle_triangles = make_rounded_corner_points(
-		    inner->width, inner->height, (int)img->corner_radius,
-		    &xrimg->triangle_count);
+	if (img->corner_radius != 0 && xrimg->rounded_rectangle == XCB_NONE) {
+		xrimg->rounded_rectangle = make_rounded_corner_picture(
+		    xd->base.c, xd->white_pixel, xd->base.root, inner->width,
+		    inner->height, (int)img->corner_radius);
 	}
 	if (((img->color_inverted || img->dim != 0) && has_alpha) || img->corner_radius != 0) {
 		// Apply image properties using a temporary image, because the source
@@ -231,11 +241,9 @@ static void compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, 
 
 		if (img->corner_radius != 0) {
 			// Clip tmp_pict with a rounded rectangle
-			xcb_render_tri_strip(
-			    xd->base.c, XCB_RENDER_PICT_OP_IN_REVERSE, xd->white_pixel, tmp_pict,
-			    x_get_pictfmt_for_standard(xd->base.c, XCB_PICT_STANDARD_A_8),
-			    0, 0, (uint32_t)xrimg->triangle_count,
-			    xrimg->rounded_rectangle_triangles);
+			xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_IN_REVERSE,
+			                     xrimg->rounded_rectangle, XCB_NONE, tmp_pict,
+			                     0, 0, 0, 0, 0, 0, tmpw, tmph);
 		}
 
 		xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_OVER, tmp_pict,
@@ -444,8 +452,7 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 
 	img->base.inner = (struct backend_image_inner_base *)inner;
 	img->base.opacity = 1;
-	img->rounded_rectangle_triangles = NULL;
-	img->triangle_count = 0;
+	img->rounded_rectangle = XCB_NONE;
 	free(r);
 
 	if (inner->pict == XCB_NONE) {
@@ -464,9 +471,8 @@ static void release_image_inner(backend_t *base, struct _xrender_image_data_inne
 }
 static void release_image(backend_t *base, void *image) {
 	struct xrender_image *img = image;
-	free(img->rounded_rectangle_triangles);
-	img->triangle_count = 0;
-	img->base.inner->refcount--;
+	xcb_free_pixmap(base->c, img->rounded_rectangle);
+	img->rounded_rectangle = XCB_NONE;
 	if (img->base.inner->refcount == 0) {
 		release_image_inner(base, (void *)img->base.inner);
 	}
@@ -823,11 +829,10 @@ set_image_property(backend_t *base, enum image_properties op, void *image, void 
 	auto xrimg = (struct xrender_image *)image;
 	if (op == IMAGE_PROPERTY_CORNER_RADIUS &&
 	    ((double *)args)[0] != xrimg->base.corner_radius &&
-	    xrimg->rounded_rectangle_triangles != NULL) {
+	    xrimg->rounded_rectangle != XCB_NONE) {
 		// Free cached rounded rectangle if corner radius changed
-		free(xrimg->rounded_rectangle_triangles);
-		xrimg->triangle_count = 0;
-		xrimg->rounded_rectangle_triangles = NULL;
+		xcb_free_pixmap(base->c, xrimg->rounded_rectangle);
+		xrimg->rounded_rectangle = XCB_NONE;
 	}
 	return default_set_image_property(base, op, image, args);
 }
