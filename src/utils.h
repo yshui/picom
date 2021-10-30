@@ -14,6 +14,8 @@
 
 #include <test.h>
 
+#include <time.h>
+
 #include "compiler.h"
 #include "types.h"
 
@@ -277,5 +279,18 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 ///
 int next_power_of_two(int n);
 
+// Some versions of the Android libc do not have timespec_get(), use
+// clock_gettime() instead.
+#ifdef __ANDROID__
+
+#ifndef TIME_UTC
+#define TIME_UTC 1
+#endif
+
+static inline int timespec_get(struct timespec *ts, int base) {
+	assert(base == TIME_UTC);
+	return clock_gettime(CLOCK_REALTIME, ts);
+}
+#endif
 
 // vim: set noet sw=8 ts=8 :
