@@ -473,6 +473,7 @@ static void release_image(backend_t *base, void *image) {
 	struct xrender_image *img = image;
 	xcb_free_pixmap(base->c, img->rounded_rectangle);
 	img->rounded_rectangle = XCB_NONE;
+	img->base.inner->refcount -= 1;
 	if (img->base.inner->refcount == 0) {
 		release_image_inner(base, (void *)img->base.inner);
 	}
