@@ -1013,12 +1013,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		         "properly under X Render backend.");
 	}
 
-	if (opt->corner_radius > 0 && opt->experimental_backends) {
-		log_warn("Rounded corner is only supported on legacy backends, it "
-		         "will be disabled");
-		opt->corner_radius = 0;
-	}
-
 	return true;
 }
 

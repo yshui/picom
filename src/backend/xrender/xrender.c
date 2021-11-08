@@ -88,9 +88,84 @@ struct _xrender_image_data_inner {
 	bool owned;
 };
 
-static void compose_impl(struct _xrender_data *xd, const struct backend_image *img,
-                         int dst_x, int dst_y, const region_t *reg_paint,
+struct xrender_image {
+	struct backend_image base;
+
+	// A cached picture of a rounded rectangle. Xorg rasterizes shapes on CPU so it's
+	// exceedingly slow.
+	xcb_render_picture_t rounded_rectangle;
+};
+
+/// Make a picture of size width x height, which has a rounded rectangle of corner_radius
+/// rendered in it.
+xcb_render_picture_t
+make_rounded_corner_picture(xcb_connection_t *c, xcb_render_picture_t src,
+                            xcb_drawable_t root, int width, int height, int corner_radius) {
+	auto picture = x_create_picture_with_standard(c, root, width, height,
+	                                              XCB_PICT_STANDARD_ARGB_32, 0, NULL);
+	if (picture == XCB_NONE) {
+		return picture;
+	}
+
+	int inner_height = height - 2 * corner_radius;
+	int cap_height = corner_radius;
+	if (inner_height < 0) {
+		cap_height = height / 2;
+		inner_height = 0;
+	}
+	auto points = ccalloc(cap_height * 4 + 4, xcb_render_pointfix_t);
+	int point_count = 0;
+
+#define ADD_POINT(px, py)                                                                \
+	assert(point_count < cap_height * 4 + 4);                                        \
+	points[point_count].x = DOUBLE_TO_XFIXED(px);                                    \
+	points[point_count].y = DOUBLE_TO_XFIXED(py);                                    \
+	point_count += 1;
+
+	// The top cap
+	for (int i = 0; i <= cap_height; i++) {
+		double y = corner_radius - i;
+		double delta = sqrt(corner_radius * corner_radius - y * y);
+		double left = corner_radius - delta;
+		double right = width - corner_radius + delta;
+		if (left >= right) {
+			continue;
+		}
+		ADD_POINT(left, i);
+		ADD_POINT(right, i);
+	}
+
+	// The middle rectangle
+	if (inner_height > 0) {
+		ADD_POINT(0, cap_height + inner_height);
+		ADD_POINT(width, cap_height + inner_height);
+	}
+
+	// The bottom cap
+	for (int i = cap_height + inner_height + 1; i <= height; i++) {
+		double y = corner_radius - (height - i);
+		double delta = sqrt(corner_radius * corner_radius - y * y);
+		double left = corner_radius - delta;
+		double right = width - corner_radius + delta;
+		if (left >= right) {
+			break;
+		}
+		ADD_POINT(left, i);
+		ADD_POINT(right, i);
+	}
+#undef ADD_POINT
+
+	XCB_AWAIT_VOID(xcb_render_tri_strip, c, XCB_RENDER_PICT_OP_SRC, src, picture,
+	               x_get_pictfmt_for_standard(c, XCB_PICT_STANDARD_A_8), 0, 0,
+	               (uint32_t)point_count, points);
+	free(points);
+	return picture;
+}
+
+static void compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, int dst_x,
+                         int dst_y, const region_t *reg_paint,
                          const region_t *reg_visible, xcb_render_picture_t result) {
+	const struct backend_image *img = &xrimg->base;
 	auto alpha_pict = xd->alpha_pict[(int)(img->opacity * MAX_ALPHA)];
 	auto inner = (struct _xrender_image_data_inner *)img->inner;
 	region_t reg;
@@ -110,7 +185,12 @@ static void compose_impl(struct _xrender_data *xd, const struct backend_image *i
 	pixman_region32_init(&reg);
 	pixman_region32_intersect(&reg, (region_t *)reg_paint, (region_t *)reg_visible);
 	x_set_picture_clip_region(xd->base.c, result, 0, 0, &reg);
-	if ((img->color_inverted || img->dim != 0) && has_alpha) {
+	if (img->corner_radius != 0 && xrimg->rounded_rectangle == XCB_NONE) {
+		xrimg->rounded_rectangle = make_rounded_corner_picture(
+		    xd->base.c, xd->white_pixel, xd->base.root, inner->width,
+		    inner->height, (int)img->corner_radius);
+	}
+	if (((img->color_inverted || img->dim != 0) && has_alpha) || img->corner_radius != 0) {
 		// Apply image properties using a temporary image, because the source
 		// image is transparent. Otherwise the properties can be applied directly
 		// on the target image.
@@ -157,6 +237,13 @@ static void compose_impl(struct _xrender_data *xd, const struct backend_image *i
 
 			xcb_render_fill_rectangles(xd->base.c, XCB_RENDER_PICT_OP_OVER,
 			                           tmp_pict, dim_color, 1, &rect);
+		}
+
+		if (img->corner_radius != 0) {
+			// Clip tmp_pict with a rounded rectangle
+			xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_IN_REVERSE,
+			                     xrimg->rounded_rectangle, XCB_NONE, tmp_pict,
+			                     0, 0, 0, 0, 0, 0, tmpw, tmph);
 		}
 
 		xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_OVER, tmp_pict,
@@ -350,11 +437,11 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 		return NULL;
 	}
 
-	auto img = ccalloc(1, struct backend_image);
+	auto img = ccalloc(1, struct xrender_image);
 	auto inner = ccalloc(1, struct _xrender_image_data_inner);
 	inner->depth = (uint8_t)fmt.visual_depth;
-	inner->width = img->ewidth = r->width;
-	inner->height = img->eheight = r->height;
+	inner->width = img->base.ewidth = r->width;
+	inner->height = img->base.eheight = r->height;
 	inner->pixmap = pixmap;
 	inner->has_alpha = fmt.alpha_size != 0;
 	inner->pict =
@@ -363,8 +450,9 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 	inner->visual = fmt.visual;
 	inner->refcount = 1;
 
-	img->inner = (struct backend_image_inner_base *)inner;
-	img->opacity = 1;
+	img->base.inner = (struct backend_image_inner_base *)inner;
+	img->base.opacity = 1;
+	img->rounded_rectangle = XCB_NONE;
 	free(r);
 
 	if (inner->pict == XCB_NONE) {
@@ -382,10 +470,12 @@ static void release_image_inner(backend_t *base, struct _xrender_image_data_inne
 	free(inner);
 }
 static void release_image(backend_t *base, void *image) {
-	struct backend_image *img = image;
-	img->inner->refcount--;
-	if (img->inner->refcount == 0) {
-		release_image_inner(base, (void *)img->inner);
+	struct xrender_image *img = image;
+	xcb_free_pixmap(base->c, img->rounded_rectangle);
+	img->rounded_rectangle = XCB_NONE;
+	img->base.inner->refcount -= 1;
+	if (img->base.inner->refcount == 0) {
+		release_image_inner(base, (void *)img->base.inner);
 	}
 	free(img);
 }
@@ -735,6 +825,19 @@ err:
 	return NULL;
 }
 
+static bool
+set_image_property(backend_t *base, enum image_properties op, void *image, void *args) {
+	auto xrimg = (struct xrender_image *)image;
+	if (op == IMAGE_PROPERTY_CORNER_RADIUS &&
+	    ((double *)args)[0] != xrimg->base.corner_radius &&
+	    xrimg->rounded_rectangle != XCB_NONE) {
+		// Free cached rounded rectangle if corner radius changed
+		xcb_free_pixmap(base->c, xrimg->rounded_rectangle);
+		xrimg->rounded_rectangle = XCB_NONE;
+	}
+	return default_set_image_property(base, op, image, args);
+}
+
 struct backend_operations xrender_ops = {
     .init = backend_xrender_init,
     .deinit = deinit,
@@ -754,7 +857,7 @@ struct backend_operations xrender_ops = {
     .image_op = image_op,
     .read_pixel = read_pixel,
     .clone_image = default_clone_image,
-    .set_image_property = default_set_image_property,
+    .set_image_property = set_image_property,
     .create_blur_context = create_blur_context,
     .destroy_blur_context = destroy_blur_context,
     .get_blur_size = get_blur_size,
