@@ -709,7 +709,21 @@ static bool cdbus_msg_get_arg(DBusMessage *msg, int count, const int type, void 
 		}
 	}
 
-	if (type != dbus_message_iter_get_arg_type(&iter)) {
+    // Handle auto-generated bindings based on the introspection XML.
+    if (dbus_message_iter_get_arg_type(&iter) == DBUS_TYPE_VARIANT) {
+        DBusMessageIter sub = {};
+        dbus_message_iter_recurse(&iter, &sub);
+
+        if (dbus_message_iter_get_arg_type(&sub) != type) {
+            log_error("Argument has incorrect type.");
+            return false;
+        }
+
+        dbus_message_iter_get_basic(&sub, pdest);
+
+        return true;
+
+    } else if (type != dbus_message_iter_get_arg_type(&iter)) {
 		log_error("Argument has incorrect type.");
 		return false;
 	}
@@ -1206,6 +1220,26 @@ static bool cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
 	    "    </signal>\n"
 	    "    <method name='reset' />\n"
 	    "    <method name='repaint' />\n"
+	    "    <method name='list_win' />\n"
+	    "    <method name='win_get'>\n"
+	    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+	    "      <arg name='target' type='" DBUS_TYPE_STRING_AS_STRING "'/>\n"
+	    "    </method>\n"
+	    "    <method name='win_set'>\n"
+	    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+	    "      <arg name='target' type='" DBUS_TYPE_STRING_AS_STRING "'/>\n"
+	    "      <arg name='value' type='" DBUS_TYPE_VARIANT_AS_STRING "'/>\n"
+	    "    </method>\n"
+	    "    <method name='find_win'>\n"
+	    "      <arg name='target' type='" DBUS_TYPE_STRING_AS_STRING "'/>\n"
+	    "    </method>\n"
+	    "    <method name='opts_get'>\n"
+	    "      <arg name='target' type='" DBUS_TYPE_STRING_AS_STRING "'/>\n"
+	    "    </method>\n"
+	    "    <method name='opts_set'>\n"
+	    "      <arg name='target' type='" DBUS_TYPE_STRING_AS_STRING "'/>\n"
+	    "      <arg name='value' type='" DBUS_TYPE_VARIANT_AS_STRING "'/>\n"
+	    "    </method>\n"
 	    "  </interface>\n"
 	    "</node>\n";
 
