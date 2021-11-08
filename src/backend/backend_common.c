@@ -469,6 +469,7 @@ struct backend_image *default_new_backend_image(int w, int h) {
 	ret->eheight = h;
 	ret->ewidth = w;
 	ret->color_inverted = false;
+	ret->corner_radius = 0;
 	return ret;
 }
 
