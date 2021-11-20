@@ -88,23 +88,28 @@ struct _xrender_image_data_inner {
 	bool owned;
 };
 
+struct xrender_rounded_rectangle_cache {
+	int refcount;
+	// A cached picture of a rounded rectangle. Xorg rasterizes shapes on CPU so it's
+	// exceedingly slow.
+	xcb_render_picture_t p;
+};
+
 struct xrender_image {
 	struct backend_image base;
 
-	// A cached picture of a rounded rectangle. Xorg rasterizes shapes on CPU so it's
-	// exceedingly slow.
-	xcb_render_picture_t rounded_rectangle;
+	struct xrender_rounded_rectangle_cache *rounded_rectangle;
 };
 
 /// Make a picture of size width x height, which has a rounded rectangle of corner_radius
 /// rendered in it.
-xcb_render_picture_t
-make_rounded_corner_picture(xcb_connection_t *c, xcb_render_picture_t src,
-                            xcb_drawable_t root, int width, int height, int corner_radius) {
+struct xrender_rounded_rectangle_cache *
+make_rounded_corner_cache(xcb_connection_t *c, xcb_render_picture_t src,
+                          xcb_drawable_t root, int width, int height, int corner_radius) {
 	auto picture = x_create_picture_with_standard(c, root, width, height,
 	                                              XCB_PICT_STANDARD_ARGB_32, 0, NULL);
 	if (picture == XCB_NONE) {
-		return picture;
+		return NULL;
 	}
 
 	int inner_height = height - 2 * corner_radius;
@@ -159,7 +164,10 @@ make_rounded_corner_picture(xcb_connection_t *c, xcb_render_picture_t src,
 	               x_get_pictfmt_for_standard(c, XCB_PICT_STANDARD_A_8), 0, 0,
 	               (uint32_t)point_count, points);
 	free(points);
-	return picture;
+	auto ret = ccalloc(1, struct xrender_rounded_rectangle_cache);
+	ret->p = picture;
+	ret->refcount = 1;
+	return ret;
 }
 
 static void compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, int dst_x,
@@ -185,8 +193,8 @@ static void compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, 
 	pixman_region32_init(&reg);
 	pixman_region32_intersect(&reg, (region_t *)reg_paint, (region_t *)reg_visible);
 	x_set_picture_clip_region(xd->base.c, result, 0, 0, &reg);
-	if (img->corner_radius != 0 && xrimg->rounded_rectangle == XCB_NONE) {
-		xrimg->rounded_rectangle = make_rounded_corner_picture(
+	if (img->corner_radius != 0 && xrimg->rounded_rectangle == NULL) {
+		xrimg->rounded_rectangle = make_rounded_corner_cache(
 		    xd->base.c, xd->white_pixel, xd->base.root, inner->width,
 		    inner->height, (int)img->corner_radius);
 	}
@@ -239,11 +247,11 @@ static void compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, 
 			                           tmp_pict, dim_color, 1, &rect);
 		}
 
-		if (img->corner_radius != 0) {
+		if (img->corner_radius != 0 && xrimg->rounded_rectangle != NULL) {
 			// Clip tmp_pict with a rounded rectangle
 			xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_IN_REVERSE,
-			                     xrimg->rounded_rectangle, XCB_NONE, tmp_pict,
-			                     0, 0, 0, 0, 0, 0, tmpw, tmph);
+			                     xrimg->rounded_rectangle->p, XCB_NONE,
+			                     tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 		}
 
 		xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_OVER, tmp_pict,
@@ -452,7 +460,7 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 
 	img->base.inner = (struct backend_image_inner_base *)inner;
 	img->base.opacity = 1;
-	img->rounded_rectangle = XCB_NONE;
+	img->rounded_rectangle = NULL;
 	free(r);
 
 	if (inner->pict == XCB_NONE) {
@@ -469,10 +477,25 @@ static void release_image_inner(backend_t *base, struct _xrender_image_data_inne
 	}
 	free(inner);
 }
+
+static void
+release_rounded_corner_cache(backend_t *base, struct xrender_rounded_rectangle_cache *cache) {
+	if (!cache) {
+		return;
+	}
+
+	assert(cache->refcount > 0);
+	cache->refcount--;
+	if (cache->refcount == 0) {
+		xcb_free_pixmap(base->c, cache->p);
+		free(cache);
+	}
+}
+
 static void release_image(backend_t *base, void *image) {
 	struct xrender_image *img = image;
-	xcb_free_pixmap(base->c, img->rounded_rectangle);
-	img->rounded_rectangle = XCB_NONE;
+	release_rounded_corner_cache(base, img->rounded_rectangle);
+	img->rounded_rectangle = NULL;
 	img->base.inner->refcount -= 1;
 	if (img->base.inner->refcount == 0) {
 		release_image_inner(base, (void *)img->base.inner);
@@ -825,15 +848,25 @@ err:
 	return NULL;
 }
 
+void *clone_image(backend_t *base attr_unused, const void *image_data,
+                  const region_t *reg_visible attr_unused) {
+	auto new_img = ccalloc(1, struct xrender_image);
+	*new_img = *(struct xrender_image *)image_data;
+	new_img->base.inner->refcount++;
+	if (new_img->rounded_rectangle) {
+		new_img->rounded_rectangle->refcount++;
+	}
+	return new_img;
+}
+
 static bool
 set_image_property(backend_t *base, enum image_properties op, void *image, void *args) {
 	auto xrimg = (struct xrender_image *)image;
 	if (op == IMAGE_PROPERTY_CORNER_RADIUS &&
-	    ((double *)args)[0] != xrimg->base.corner_radius &&
-	    xrimg->rounded_rectangle != XCB_NONE) {
+	    ((double *)args)[0] != xrimg->base.corner_radius) {
 		// Free cached rounded rectangle if corner radius changed
-		xcb_free_pixmap(base->c, xrimg->rounded_rectangle);
-		xrimg->rounded_rectangle = XCB_NONE;
+		release_rounded_corner_cache(base, xrimg->rounded_rectangle);
+		xrimg->rounded_rectangle = NULL;
 	}
 	return default_set_image_property(base, op, image, args);
 }
@@ -856,7 +889,7 @@ struct backend_operations xrender_ops = {
 
     .image_op = image_op,
     .read_pixel = read_pixel,
-    .clone_image = default_clone_image,
+    .clone_image = clone_image,
     .set_image_property = set_image_property,
     .create_blur_context = create_blur_context,
     .destroy_blur_context = destroy_blur_context,
