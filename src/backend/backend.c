@@ -44,7 +44,7 @@ region_t get_damage(session_t *ps, bool all_damage) {
 	} else {
 		for (int i = 0; i < buffer_age; i++) {
 			auto curr = ((ps->damage - ps->damage_ring) + i) % ps->ndamage;
-			log_trace("damage index: %d, damage ring offset: %ld", i, curr);
+			log_trace("damage index: %d, damage ring offset: %td", i, curr);
 			dump_region(&ps->damage_ring[curr]);
 			pixman_region32_union(&region, &region, &ps->damage_ring[curr]);
 		}
