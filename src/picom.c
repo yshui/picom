@@ -243,7 +243,7 @@ static double fade_timeout(session_t *ps) {
  * @param steps steps of fading
  * @return whether we are still in fading mode
  */
-static bool run_fade(session_t *ps, struct managed_win **_w, long steps) {
+static bool run_fade(session_t *ps, struct managed_win **_w, long long steps) {
 	auto w = *_w;
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
 		// We are not fading
@@ -635,7 +635,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 	*fade_running = false;
 
 	// Fading step calculation
-	long steps = 0L;
+	long long steps = 0L;
 	auto now = get_time_ms();
 	if (ps->fade_time) {
 		assert(now >= ps->fade_time);
