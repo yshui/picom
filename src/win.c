@@ -1225,6 +1225,9 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 
 	w->fade_excluded = c2_match(ps, w, ps->o.fade_blacklist, NULL);
 
+	w->transparent_clipping_excluded =
+	    c2_match(ps, w, ps->o.transparent_clipping_blacklist, NULL);
+
 	win_update_opacity_target(ps, w);
 
 	w->reg_ignore_valid = false;
@@ -1567,6 +1570,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .rounded_corners = false,
 	    .paint_excluded = false,
 	    .fade_excluded = false,
+	    .transparent_clipping_excluded = false,
 	    .unredir_if_possible_excluded = false,
 	    .prop_shadow = -1,
 	    // following 4 are set in win_mark_client
