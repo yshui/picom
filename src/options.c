@@ -378,6 +378,11 @@ static void usage(const char *argv0, int ret) {
 	    "  Make transparent windows clip other windows like non-transparent windows\n"
 	    "  do, instead of blending on top of them\n"
 	    "\n"
+	    "--transparent-clipping-exclude condition\n"
+	    "  Specify a list of conditions of windows that should never have\n"
+	    "  transparent clipping applied. Useful for screenshot tools, where you\n"
+	    "  need to be able to see through transparent parts of the window.\n"
+	    "\n"
 	    "--window-shader-fg shader\n"
 	    "  Specify GLSL fragment shader path for rendering window contents. Does\n"
 	    "  not work when `--legacy-backends` is enabled.\n"
@@ -485,6 +490,7 @@ static const struct option longopts[] = {
     {"clip-shadow-above", required_argument, NULL, 335},
     {"window-shader-fg", required_argument, NULL, 336},
     {"window-shader-fg-rule", required_argument, NULL, 337},
+    {"transparent-clipping-exclude", required_argument, NULL, 338},
     {"legacy-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -859,6 +865,11 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			if (!parse_rule_window_shader(&opt->window_shader_fg_rules, optarg, cwd)) {
 				exit(1);
 			}
+			break;
+		}
+		case 338: {
+			// --transparent-clipping-exclude
+			condlst_add(&opt->transparent_clipping_blacklist, optarg);
 			break;
 		}
 		case 321: {
