@@ -1128,6 +1128,7 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	// Focus needs to be updated first, as other rules might depend on the focused
 	// state of the window
 	win_update_focused(ps, w);
+	c2_match(ps, w, ps->o.transition_rules, &w->transition_direction);
 
 	win_determine_shadow(ps, w);
 	win_determine_clip_shadow_above(ps, w);
@@ -1425,6 +1426,8 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .dim = false,
 	    .invert_color = false,
 	    .blur_background = false,
+		.transition_time = -1.0f,
+		.transition_direction = 0,
 	    .reg_ignore = NULL,
 	    // The following ones are updated for other reasons
 	    .pixmap_damaged = false,          // updated by damage events
@@ -1567,6 +1570,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .height = g->height,
 	    .border_width = g->border_width,
 	};
+	new->transition_direction = ps->o.transition_direction;
 
 	free(g);
 

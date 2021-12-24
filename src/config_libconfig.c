@@ -18,6 +18,7 @@
 #include "string_utils.h"
 #include "utils.h"
 #include "win.h"
+#include "timing_functions.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"
 
@@ -246,6 +247,97 @@ parse_cfg_condlst_opct(options_t *opt, const config_t *pcfg, const char *name) {
 			if (!parse_rule_opacity(&opt->opacity_rules,
 			                        config_setting_get_string(setting)))
 				exit(1);
+		}
+	}
+}
+
+enum transition_direction parse_transition_direction(const char* direction) {
+	static const char* names[] = {
+		"left",
+		"bottom",
+		"right",
+		"top",
+		"smart-x",
+		"smart-y",
+		"none"
+	};
+
+	for(unsigned int i=0; i < sizeof(names)/sizeof(char*); i++) {
+		if(strcmp(direction, names[i]) == 0) {
+			return i;
+		}
+	}
+
+	log_error("'%s' is not a valid transition direction.", direction);
+	return TRANSITIONDIR_NONE;
+}
+
+timing_function parse_timing_function(const char* timing_name) {
+	static const char* names[] = {
+		"sine", "cubic", "quint", "circ", "elastic",
+		"quad", "quart", "etpo", "back", "bounce"
+	};
+
+	static const char* prefixes[] = {
+		"in", "out", "in-out"
+	};
+
+	static timing_function functions[] = {
+		easeInSine, easeOutSine, easeInOutSine,
+		easeInCubic, easeOutCubic, easeInOutCubic,
+		easeInQuint, easeOutQuint, easeInOutQuint,
+		easeInCirc, easeOutCirc, easeInOutCirc,
+		easeInElastic, easeOutElastic, easeInOutElastic,
+		easeInQuad, easeOutQuad, easeInOutQuad,
+		easeInQuart, easeOutQuart, easeInOutQuart,
+		easeInEtpo, easeOutEtpo, easeInOutEtpo,
+		easeInBack, easeOutBack, easeInOutBack,
+		easeOutBounce, easeInBounce, easeInOutBounce
+	};
+
+	char buffer[64];
+	for(int i=0; i < sizeof(names)/sizeof(char*); i++) {
+		for(int p=0; p < 3; p++) {
+			snprintf(buffer, sizeof(buffer), "ease-%s-%s", prefixes[p], names[i]);
+
+			if(strcmp(buffer, timing_name) == 0) {
+				int function_index = (i * 3) + p;
+				return functions[function_index];
+			}
+		}
+	}
+
+	log_error("'%s' is not a valid transition timing function.", timing_name);
+	return NULL;
+}
+
+static inline void parse_cfg_condlst_trns(options_t *opt, const config_t *pcfg, const char *name) {
+	config_setting_t *setting = config_lookup(pcfg, name);
+	if (setting) {
+		int length = config_setting_length(setting);
+
+		for(int i=0; i < length; i++) {
+			const char* elem = config_setting_get_string_elem(setting, i);
+			
+			char rule[256];
+			int elem_index = 0;
+
+			for(int rule_index=0; elem_index < strlen(elem); elem_index++) {
+				char character = elem[elem_index];
+				if(character == ':') {
+					rule[rule_index] = '\0';
+					break;
+				}
+
+
+				if(!isspace(character)) {
+					rule[rule_index] = character;
+					rule_index++;
+				}
+			}
+
+			int direction = (int) parse_transition_direction(rule);
+			c2_parse(&opt->transition_rules, &elem[elem_index + 1], (void*)direction);
 		}
 	}
 }
@@ -669,6 +761,24 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		opt->write_pid_path = strdup(sval);
 	}
 
+	config_lookup_int(&cfg, "transition-offset", &opt->transition_offset);
+	config_lookup_float(&cfg, "transition-duration", &opt->transition_duration);
+
+	if(config_lookup_string(&cfg, "transition-direction", &sval)) {
+		int dir = parse_transition_direction(sval);
+		opt->transition_direction = dir;
+	}
+
+	if(config_lookup_string(&cfg, "transition-timing-function", &sval)) {
+		timing_function res = parse_timing_function(sval);
+
+		if(res == NULL)
+			res = easeOutCubic;
+
+		opt->transition_timing_function = res;
+	}
+
+	parse_cfg_condlst_trns(opt, &cfg, "transition-rule");
 	// Wintype settings
 
 	// XXX ! Refactor all the wintype_* arrays into a struct

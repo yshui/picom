@@ -61,6 +61,7 @@
 #include "list.h"
 #include "options.h"
 #include "uthash_extra.h"
+#include "timing_functions.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -690,6 +691,45 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		if (was_painted && w->mode != mode_old) {
 			w->reg_ignore_valid = false;
 		}
+
+		// Transition
+		if(w->transition_time >= 0.0f && w->transition_time <= 1.0f) {
+			// TODO: use refresh rate instead of using static 60 fps calculation
+            w->transition_time += (1.0f / 60.0f) / ps->o.transition_duration; 
+            double transition = ps->o.transition_timing_function(w->transition_time);
+            if(w->transition_time > 1.0f)
+                transition = 1.0f;
+
+			add_damage_from_win(ps, w);
+			unsigned int direction = w->transition_direction;
+
+			// Smart direction
+			if(direction > TRANSITIONDIR_TOP) {
+				bool wide_enough = w->g.width > 80 * ps->root_width / 100;
+				bool bigger_than_half = w->target_geometry.x > ps->root_width / 2;
+
+				/*
+					Not changing transition_direction cause 
+				   	window geometry may change between transitions
+				*/ 
+				direction = w->transition_direction - (bigger_than_half || wide_enough ? 4 : 2);
+			}
+
+			int8_t xy = direction % 2;
+			int16_t  xy_target = *( ((int16_t*) &w->target_geometry) + xy );
+			int16_t* xy_source = ((int16_t*) &w->g) + xy;
+
+			int start_location = xy_target + 
+				(direction % 3 == 0? -1: 1) * ps->o.transition_offset;
+
+            *xy_source = (int16_t) round(
+                transition * (xy_target - start_location) +
+                start_location
+            );
+
+            w->mode = WMODE_TRANS;
+            *fade_running = true;
+        }
 	}
 
 	// Opacity will not change, from now on.
@@ -1925,6 +1965,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	      c2_list_postprocess(ps, ps->o.blur_background_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.invert_color_list) &&
 	      c2_list_postprocess(ps, ps->o.opacity_rules) &&
+		  c2_list_postprocess(ps, ps->o.transition_rules) &&
 	      c2_list_postprocess(ps, ps->o.rounded_corners_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.focus_blacklist))) {
 		log_error("Post-processing of conditionals failed, some of your rules "
@@ -2302,6 +2343,7 @@ static void session_destroy(session_t *ps) {
 	free_wincondlst(&ps->o.invert_color_list);
 	free_wincondlst(&ps->o.blur_background_blacklist);
 	free_wincondlst(&ps->o.opacity_rules);
+	free_wincondlst(&ps->o.transition_rules);
 	free_wincondlst(&ps->o.paint_blacklist);
 	free_wincondlst(&ps->o.unredir_if_possible_blacklist);
 	free_wincondlst(&ps->o.rounded_corners_blacklist);

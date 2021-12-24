@@ -235,6 +235,15 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 			win_set_flags(mw, WIN_FLAGS_SIZE_STALE);
 		}
 
+		if(mw->transition_direction != TRANSITIONDIR_NONE) {
+			if(ce->x >= 0 && ce->x <= ps->root_width) {
+				mw->transition_time = 0.0f;
+				mw->target_geometry = mw->pending_g;
+			} else {
+				mw->transition_time = -1.0f;
+			}
+		}
+
 		// Recalculate which screen this window is on
 		win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, mw);
 	}

@@ -56,3 +56,4 @@ doxygen/
 *.orig
 /tests/log
 /tests/testcases/__pycache__/
+.vscode
