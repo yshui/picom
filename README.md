@@ -138,6 +138,12 @@ $ ninja -C build install
 
 Default install prefix is `/usr/local`, you can change it with `meson configure -Dprefix=<path> build`
 
+### Uninstall
+To uninstall picom after building from source go into the folder where you git-cloned picom and run:
+```bash
+ninja -C build uninstall
+```
+
 ## How to Contribute
 
 ### Code
