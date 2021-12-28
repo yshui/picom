@@ -1120,8 +1120,8 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
 
 void win_update_transition_rule(session_t *ps, struct managed_win *w) {
 	void* val;
-	if (c2_match(ps, w, ps->o.transition_rules, &val)) {
-		w->transition_direction = (unsigned int) val;
+	if (c2_match(ps, w, ps->o.transition_rules, (void*) &val)) {
+		w->transition_direction = (long) val;
 	}
 }
 

@@ -582,7 +582,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 
 	    .track_leader = false,
 
-		.transition_direction = -1,
+		.transition_direction = TRANSITIONDIR_NONE,
 		.transition_rules = NULL,
 		.transition_duration = 0,
 

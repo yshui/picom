@@ -296,7 +296,7 @@ timing_function parse_timing_function(const char* timing_name) {
 	};
 
 	char buffer[64];
-	for(int i=0; i < sizeof(names)/sizeof(char*); i++) {
+	for(int i=0; i < (int) (sizeof(names) / sizeof(char*)); i++) {
 		for(int p=0; p < 3; p++) {
 			snprintf(buffer, sizeof(buffer), "ease-%s-%s", prefixes[p], names[i]);
 
@@ -320,7 +320,7 @@ static inline void parse_cfg_condlst_trns(options_t *opt, const config_t *pcfg, 
 			const char* elem = config_setting_get_string_elem(setting, i);
 			
 			char rule[256];
-			int elem_index = 0;
+			size_t elem_index = 0;
 
 			for(int rule_index=0; elem_index < strlen(elem); elem_index++) {
 				char character = elem[elem_index];
@@ -336,8 +336,8 @@ static inline void parse_cfg_condlst_trns(options_t *opt, const config_t *pcfg, 
 				}
 			}
 
-			int direction = (int) parse_transition_direction(rule);
-			c2_parse(&opt->transition_rules, &elem[elem_index + 1], (void*)direction);
+			enum transition_direction direction = parse_transition_direction(rule);
+			c2_parse(&opt->transition_rules, &elem[elem_index + 1], (void*) direction);
 		}
 	}
 }
@@ -765,7 +765,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	config_lookup_float(&cfg, "transition-duration", &opt->transition_duration);
 
 	if(config_lookup_string(&cfg, "transition-direction", &sval)) {
-		int dir = parse_transition_direction(sval);
+		enum transition_direction dir = parse_transition_direction(sval);
 		opt->transition_direction = dir;
 	}
 
