@@ -693,7 +693,7 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		}
 
 		// Transition
-		if(w->transition_time >= 0.0f && w->transition_time <= 1.0f) {
+		if(w->transition_time >= 0.0f && w->transition_time <= 1.0f && w->transition_direction != TRANSITIONDIR_NONE) {
 			// TODO: use refresh rate instead of using static 60 fps calculation
             w->transition_time += (1.0f / 60.0f) / ps->o.transition_duration; 
             double transition = ps->o.transition_timing_function(w->transition_time);

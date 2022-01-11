@@ -1434,7 +1434,6 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .invert_color = false,
 	    .blur_background = false,
 		.transition_time = -1.0f,
-		.transition_direction = 0,
 	    .reg_ignore = NULL,
 	    // The following ones are updated for other reasons
 	    .pixmap_damaged = false,          // updated by damage events
