@@ -448,16 +448,16 @@ EXAMPLES
 $ picom --config /dev/null
 ------------
 
-* Run picom with client-side shadow and fading, disable shadow on dock windows and drag-and-drop windows:
+* Run picom with client-side shadow and fading:
 +
 ------------
-$ picom -cCGf
+$ picom -cf
 ------------
 
 * Same thing as above, plus making inactive windows 80% transparent, making frame 80% transparent, don't fade on window open/close, and fork to background:
 +
 ------------
-$ picom -bcCGf -i 0.8 -e 0.8 --no-fading-openclose
+$ picom -bcf -i 0.8 -e 0.8 --no-fading-openclose
 ------------
 
 * Draw white shadows:
