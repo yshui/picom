@@ -95,7 +95,7 @@ OPTIONS
 	Blue color value of shadow (0.0 - 1.0, defaults to 0).
 
 *--inactive-opacity-override*::
-	Let inactive opacity set by *-i* override the '_NET_WM_OPACITY' values of windows.
+	Let inactive opacity set by *-i* override the '_NET_WM_WINDOW_OPACITY' values of windows.
 
 *--active-opacity* 'OPACITY'::
 	Default opacity for active windows. (0.0 - 1.0, defaults to 1.0)
@@ -128,7 +128,7 @@ OPTIONS
 	Try to detect windows with rounded corners and don't consider them shaped windows. The accuracy is not very high, unfortunately.
 
 *--detect-client-opacity*::
-	Detect '_NET_WM_OPACITY' on client windows, useful for window managers not passing '_NET_WM_OPACITY' of client windows to frame windows.
+	Detect '_NET_WM_WINDOW_OPACITY' on client windows, useful for window managers not passing '_NET_WM_WINDOW_OPACITY' of client windows to frame windows.
 
 *--refresh-rate* 'REFRESH_RATE'::
 	Specify refresh rate of the screen. If not specified or 0, picom will try detecting this with X RandR extension.
