@@ -58,6 +58,9 @@ enum image_properties {
 	// Gives the image a rounded corner.
 	// 1 double, default: 0
 	IMAGE_PROPERTY_CORNER_RADIUS,
+	// Border color
+	// 1 struct color, default: black
+	IMAGE_PROPERTY_BORDER_COLOR,
 };
 
 enum image_operations {

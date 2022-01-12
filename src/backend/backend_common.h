@@ -41,6 +41,7 @@ struct backend_image {
 	// Effective size of the image
 	int ewidth, eheight;
 	bool color_inverted;
+	struct color border_color;
 };
 
 bool build_shadow(xcb_connection_t *, xcb_drawable_t, double opacity, int width,
