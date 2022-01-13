@@ -61,6 +61,9 @@ enum image_properties {
 	// Border color
 	// 1 struct color, default: black
 	IMAGE_PROPERTY_BORDER_COLOR,
+	// Border width
+	// 1 int, default: 0
+	IMAGE_PROPERTY_BORDER_WIDTH,
 };
 
 enum image_operations {

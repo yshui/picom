@@ -350,6 +350,17 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				ps->backend_data->ops->set_image_property(
 				    ps->backend_data, IMAGE_PROPERTY_BORDER_COLOR,
 				    w->win_image, &border_color);
+
+				int border_width = w->g.border_width;
+				if (border_width == 0) {
+					// Some WM has borders implemented as WM frames
+					border_width = min3(w->frame_extents.left,
+					                    w->frame_extents.right,
+					                    w->frame_extents.bottom);
+				}
+				ps->backend_data->ops->set_image_property(
+				    ps->backend_data, IMAGE_PROPERTY_BORDER_WIDTH,
+				    w->win_image, &border_width);
 			}
 		}
 

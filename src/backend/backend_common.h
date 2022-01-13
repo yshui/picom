@@ -42,6 +42,7 @@ struct backend_image {
 	int ewidth, eheight;
 	bool color_inverted;
 	struct color border_color;
+	int border_width;
 };
 
 bool build_shadow(xcb_connection_t *, xcb_drawable_t, double opacity, int width,
