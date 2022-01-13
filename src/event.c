@@ -186,6 +186,10 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 	}
 }
 
+static inline uint32_t distance(int x1, int x2, int y1, int y2) {
+	return (uint32_t) (abs(x2 - x1) + abs(y2 - y1));
+}
+
 /// Handle configure event of a regular window
 static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	auto w = find_win(ps, ce->window);
@@ -217,6 +221,13 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		// visible/mapped
 		ps->pending_updates = true;
 
+		static const uint32_t small_diff = 100;
+		bool small_move = position_changed && 
+			distance(mw->pending_g.x, ce->x, mw->pending_g.y, ce->y) < small_diff;
+		
+		bool small_resize = size_changed &&
+			distance(mw->pending_g.width, ce->width, mw->pending_g.height, ce->height) < small_diff;
+
 		// At least one of the following if's is true
 		if (position_changed) {
 			log_trace("Window position changed, %dx%d -> %dx%d", mw->g.x,
@@ -243,6 +254,9 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 				mw->transition_time = -1.0f;
 			}
 		}
+
+		if(mw->transition_time != -1.0f && (small_move || small_resize))
+			mw->transition_time = -1.0f;
 
 		// Recalculate which screen this window is on
 		win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, mw);
