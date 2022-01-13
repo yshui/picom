@@ -57,16 +57,6 @@ struct gl_blur_context {
 	int npasses;
 };
 
-static GLint glGetUniformLocationChecked(GLuint p, const char *name) {
-	auto ret = glGetUniformLocation(p, name);
-	if (ret < 0) {
-		log_info("Failed to get location of uniform '%s'. This is normal when "
-		         "using custom shaders.",
-		         name);
-	}
-	return ret;
-}
-
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str) {
 	log_trace("===\n%s\n===", shader_str);
 
@@ -383,26 +373,26 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 
 	assert(gd->win_shader.prog);
 	glUseProgram(gd->win_shader.prog);
-	if (gd->win_shader.unifm_opacity >= 0) {
-		glUniform1f(gd->win_shader.unifm_opacity, (float)img->opacity);
+	if (gd->win_shader.uniform_opacity >= 0) {
+		glUniform1f(gd->win_shader.uniform_opacity, (float)img->opacity);
 	}
-	if (gd->win_shader.unifm_invert_color >= 0) {
-		glUniform1i(gd->win_shader.unifm_invert_color, img->color_inverted);
+	if (gd->win_shader.uniform_invert_color >= 0) {
+		glUniform1i(gd->win_shader.uniform_invert_color, img->color_inverted);
 	}
-	if (gd->win_shader.unifm_tex >= 0) {
-		glUniform1i(gd->win_shader.unifm_tex, 0);
+	if (gd->win_shader.uniform_tex >= 0) {
+		glUniform1i(gd->win_shader.uniform_tex, 0);
 	}
-	if (gd->win_shader.unifm_dim >= 0) {
-		glUniform1f(gd->win_shader.unifm_dim, (float)img->dim);
+	if (gd->win_shader.uniform_dim >= 0) {
+		glUniform1f(gd->win_shader.uniform_dim, (float)img->dim);
 	}
-	if (gd->win_shader.unifm_brightness >= 0) {
-		glUniform1i(gd->win_shader.unifm_brightness, 1);
+	if (gd->win_shader.uniform_brightness >= 0) {
+		glUniform1i(gd->win_shader.uniform_brightness, 1);
 	}
-	if (gd->win_shader.unifm_max_brightness >= 0) {
-		glUniform1f(gd->win_shader.unifm_max_brightness, (float)img->max_brightness);
+	if (gd->win_shader.uniform_max_brightness >= 0) {
+		glUniform1f(gd->win_shader.uniform_max_brightness, (float)img->max_brightness);
 	}
-	if (gd->win_shader.unifm_corner_radius >= 0) {
-		glUniform1f(gd->win_shader.unifm_corner_radius, (float)img->corner_radius);
+	if (gd->win_shader.uniform_corner_radius >= 0) {
+		glUniform1f(gd->win_shader.uniform_corner_radius, (float)img->corner_radius);
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
@@ -586,7 +576,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glUseProgram(p->prog);
-		glUniform2f(p->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
+		glUniform2f(p->uniform_pixel_norm, 1.0f / (GLfloat)tex_width,
 		            1.0f / (GLfloat)tex_height);
 
 		// The number of indices in the selected vertex array
@@ -608,7 +598,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 				return false;
 			}
 
-			glUniform1f(p->unifm_opacity, 1.0);
+			glUniform1f(p->uniform_opacity, 1.0);
 		} else {
 			// last pass, draw directly into the back buffer, with origin
 			// regions
@@ -616,7 +606,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 			nelems = vao_nelems[0];
 			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
 
-			glUniform1f(p->unifm_opacity, (float)opacity);
+			glUniform1f(p->uniform_opacity, (float)opacity);
 		}
 
 		glUniform2f(p->texorig_loc, (GLfloat)texorig_x, (GLfloat)texorig_y);
@@ -679,7 +669,7 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 
 		glUniform1f(down_pass->scale_loc, (GLfloat)scale_factor);
 
-		glUniform2f(down_pass->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
+		glUniform2f(down_pass->uniform_pixel_norm, 1.0f / (GLfloat)tex_width,
 		            1.0f / (GLfloat)tex_height);
 
 		glDrawElements(GL_TRIANGLES, nelems, GL_UNSIGNED_INT, NULL);
@@ -717,18 +707,18 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i - 1]);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-			glUniform1f(up_pass->unifm_opacity, (GLfloat)1);
+			glUniform1f(up_pass->uniform_opacity, (GLfloat)1);
 		} else {
 			// last pass, draw directly into the back buffer
 			glBindVertexArray(vao[0]);
 			nelems = vao_nelems[0];
 			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
 
-			glUniform1f(up_pass->unifm_opacity, (GLfloat)opacity);
+			glUniform1f(up_pass->uniform_opacity, (GLfloat)opacity);
 		}
 
 		glUniform1f(up_pass->scale_loc, (GLfloat)scale_factor);
-		glUniform2f(up_pass->unifm_pixel_norm, 1.0f / (GLfloat)tex_width,
+		glUniform2f(up_pass->uniform_pixel_norm, 1.0f / (GLfloat)tex_width,
 		            1.0f / (GLfloat)tex_height);
 
 		glDrawElements(GL_TRIANGLES, nelems, GL_UNSIGNED_INT, NULL);
@@ -896,15 +886,13 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
 	}
 
 	// Get uniform addresses
-	ret->unifm_opacity = glGetUniformLocationChecked(ret->prog, "opacity");
-	ret->unifm_invert_color = glGetUniformLocationChecked(ret->prog, "invert_color");
-	ret->unifm_tex = glGetUniformLocationChecked(ret->prog, "tex");
-	ret->unifm_dim = glGetUniformLocationChecked(ret->prog, "dim");
-	ret->unifm_brightness = glGetUniformLocationChecked(ret->prog, "brightness");
-	ret->unifm_max_brightness =
-	    glGetUniformLocationChecked(ret->prog, "max_brightness");
-	ret->unifm_corner_radius =
-	    glGetUniformLocationChecked(ret->prog, "corner_radius");
+	bind_uniform(ret, opacity);
+	bind_uniform(ret, invert_color);
+	bind_uniform(ret, tex);
+	bind_uniform(ret, dim);
+	bind_uniform(ret, brightness);
+	bind_uniform(ret, max_brightness);
+	bind_uniform(ret, corner_radius);
 
 	gl_check_err();
 
@@ -1251,9 +1239,8 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		glBindFragDataLocation(pass->prog, 0, "out_color");
 
 		// Get uniform addresses
-		pass->unifm_pixel_norm =
-		    glGetUniformLocationChecked(pass->prog, "pixel_norm");
-		pass->unifm_opacity = glGetUniformLocationChecked(pass->prog, "opacity");
+		bind_uniform(pass, pixel_norm);
+		bind_uniform(pass, opacity);
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 
 		// Setup projection matrix
@@ -1271,8 +1258,8 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		// the single pass case
 		auto pass = &ctx->blur_shader[1];
 		pass->prog = gl_create_program_from_str(vertex_shader, dummy_frag);
-		pass->unifm_pixel_norm = -1;
-		pass->unifm_opacity = -1;
+		pass->uniform_pixel_norm = -1;
+		pass->uniform_opacity = -1;
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 
 		// Setup projection matrix
@@ -1371,8 +1358,7 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 		glBindFragDataLocation(down_pass->prog, 0, "out_color");
 
 		// Get uniform addresses
-		down_pass->unifm_pixel_norm =
-		    glGetUniformLocationChecked(down_pass->prog, "pixel_norm");
+		bind_uniform(down_pass, pixel_norm);
 		down_pass->texorig_loc =
 		    glGetUniformLocationChecked(down_pass->prog, "texorig");
 		down_pass->scale_loc =
@@ -1432,10 +1418,8 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 		glBindFragDataLocation(up_pass->prog, 0, "out_color");
 
 		// Get uniform addresses
-		up_pass->unifm_pixel_norm =
-		    glGetUniformLocationChecked(up_pass->prog, "pixel_norm");
-		up_pass->unifm_opacity =
-		    glGetUniformLocationChecked(up_pass->prog, "opacity");
+		bind_uniform(up_pass, pixel_norm);
+		bind_uniform(up_pass, opacity);
 		up_pass->texorig_loc =
 		    glGetUniformLocationChecked(up_pass->prog, "texorig");
 		up_pass->scale_loc = glGetUniformLocationChecked(up_pass->prog, "scale");
