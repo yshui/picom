@@ -1918,6 +1918,12 @@ bool gl_read_pixel(backend_t *base attr_unused, void *image_data, int x, int y,
                    struct color *output) {
 	struct backend_image *tex = image_data;
 	auto inner = (struct gl_texture *)tex->inner;
+	GLuint fbo;
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       inner->texture, 0);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
 	GLfloat color[4];
 	glReadPixels(x, inner->y_inverted ? inner->height - y : y, 1, 1, GL_RGBA,
 	             GL_FLOAT, color);
@@ -1925,6 +1931,9 @@ bool gl_read_pixel(backend_t *base attr_unused, void *image_data, int x, int y,
 	output->red = color[0];
 	output->green = color[1];
 	output->blue = color[2];
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glDeleteFramebuffers(1, &fbo);
 
 	bool ret = glGetError() == GL_NO_ERROR;
 	gl_clear_err();
