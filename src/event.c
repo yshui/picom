@@ -497,7 +497,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		queue_redraw(ps);
 	}
 
-	// If _NET_WM_OPACITY changes
+	// If _NET_WM_WINDOW_OPACITY changes
 	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_OPACITY) {
 		auto w = find_managed_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
 		if (w) {
