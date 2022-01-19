@@ -394,6 +394,13 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 	if (gd->win_shader.uniform_corner_radius >= 0) {
 		glUniform1f(gd->win_shader.uniform_corner_radius, (float)img->corner_radius);
 	}
+	if (gd->win_shader.uniform_border_width >= 0) {
+		glUniform1f(gd->win_shader.uniform_border_width, (float)img->border_width);
+	}
+	if (gd->win_shader.uniform_border_color >= 0) {
+		glUniform3f(gd->win_shader.uniform_border_color, (float)img->border_color.red,
+		            (float)img->border_color.green, (float)img->border_color.blue);
+	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
 	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
@@ -893,6 +900,8 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
 	bind_uniform(ret, brightness);
 	bind_uniform(ret, max_brightness);
 	bind_uniform(ret, corner_radius);
+	bind_uniform(ret, border_width);
+	bind_uniform(ret, border_color);
 
 	gl_check_err();
 
@@ -1524,6 +1533,8 @@ const char *win_shader_glsl = GLSL(330,
 	uniform float opacity;
 	uniform float dim;
 	uniform float corner_radius;
+	uniform float border_width;
+	uniform vec3 border_color;
 	uniform bool invert_color;
 	in vec2 texcoord;
 	uniform sampler2D tex;
@@ -1555,7 +1566,12 @@ const char *win_shader_glsl = GLSL(330,
 		vec2 inner_size = outer_size - vec2(corner_radius) * 2.0f;
 		float rect_distance = rectangle_sdf(texcoord - outer_size / 2.0f,
 		    inner_size / 2.0f) - corner_radius;
-		c *= 1.0f - clamp(rect_distance, 0.0f, 1.0f);
+		if (rect_distance > 0.0f) {
+			c = (1.0f - clamp(rect_distance, 0.0f, 1.0f)) * vec4(border_color, 1.0);
+		} else {
+			float factor = clamp(rect_distance + border_width, 0.0f, 1.0f);
+			c = (1.0f - factor) * c + factor * vec4(border_color, 1.0);
+		}
 
 		gl_FragColor = c;
 	}
