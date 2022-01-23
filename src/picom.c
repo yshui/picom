@@ -680,6 +680,51 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		if (was_painted && w->mode != mode_old) {
 			w->reg_ignore_valid = false;
 		}
+
+		// Transition
+		bool valid_trns_time = w->transition_time >= 0.0f && w->transition_time <= 1.0f;
+		if (w->transition_direction && valid_trns_time) {
+			double transition =
+			    ps->o.transition_timing_function(w->transition_time);
+
+			w->transition_time += ps->o.transition_step;
+			if (w->transition_time > 1.0f)
+				transition = 1.0f;
+
+			add_damage_from_win(ps, w);
+			unsigned int direction = w->transition_direction;
+
+			// Smart direction
+			if (direction == TRANSITION_DIR_SMART_X ||
+			    direction == TRANSITION_DIR_SMART_Y) {
+
+				bool wide_enough = w->g.width > 80 * ps->root_width / 100;
+				bool bigger_than_half =
+				    w->target_geometry.x > ps->root_width / 2;
+
+				/*
+				  Not changing transition_direction because
+				  smart calculation have to be calculated each time
+				*/
+				direction = w->transition_direction -
+				            ((bigger_than_half || wide_enough) ? 4 : 2);
+			}
+
+			// Determite we are working on x or y of window
+			int8_t xy = !(direction % 2);
+
+			int16_t xy_target = *(((int16_t *)&w->target_geometry) + xy);
+			int16_t *xy_source = ((int16_t *)&w->g) + xy;
+
+			int8_t sign = (direction - 1) % 3 ? 1 : -1;
+			int start_location = xy_target + sign * ps->o.transition_offset;
+
+			*xy_source = (int16_t)round(
+			    transition * (xy_target - start_location) + start_location);
+
+			w->mode = WMODE_TRANS;
+			*fade_running = true;
+		}
 	}
 
 	// Opacity will not change, from now on.

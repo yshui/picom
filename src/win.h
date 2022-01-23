@@ -270,6 +270,15 @@ struct managed_win {
 	/// Whether to blur window background.
 	bool blur_background;
 
+	/// Transition time that used as input in timing function
+	double transition_time;
+
+	/// Save new geometry for calculating transition
+	struct win_geometry target_geometry;
+
+	/// Transition direction of window
+	enum transition_direction transition_direction;
+
 #ifdef CONFIG_OPENGL
 	/// Textures and FBO background blur use.
 	glx_blur_cache_t glx_blur_cache;
