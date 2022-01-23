@@ -1219,6 +1219,9 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	// Focus needs to be updated first, as other rules might depend on the
 	// focused state of the window
 	win_update_focused(ps, w);
+	w->blur_foreground =
+	    ps->o.inactive_blur && !w->focused &&
+	    (!ps->o.inactive_blur_list || c2_match(ps, w, ps->o.inactive_blur_list, NULL));
 
 	win_determine_shadow(ps, w);
 	win_determine_clip_shadow_above(ps, w);
@@ -1237,10 +1240,6 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 		    c2_match(ps, w, ps->o.unredir_if_possible_blacklist, NULL);
 	}
 
-	if (ps->o.inactive_blur && !w->focused) {
-		w->blur_foreground = !ps->o.inactive_blur_list ||
-		    c2_match(ps, w, ps->o.inactive_blur_list, NULL);
-	}
 	w->fade_excluded = c2_match(ps, w, ps->o.fade_blacklist, NULL);
 
 	w->transparent_clipping_excluded =
