@@ -546,6 +546,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		if (opt->blur_method == BLUR_METHOD_NONE) {
 			opt->blur_method = BLUR_METHOD_BOX;
 		}
+		parse_cfg_condlst(&cfg, &opt->inactive_blur_list, "inactive-blur-include");
 	}
 	// --resize-damage
 	config_lookup_int(&cfg, "resize-damage", &opt->resize_damage);

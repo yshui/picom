@@ -433,8 +433,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		}
 
 		// Draw window on target
-		if (!w->blur_foreground && w->frame_opacity == 1 &&
-		    !(ps->o.inactive_blur && !w->focused)) {
+		if (!w->blur_foreground && w->frame_opacity == 1 && (
+		    !ps->o.inactive_blur || w->focused ||
+		    !c2_match(ps, w, ps->o.inactive_blur_list, NULL))) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               window_coord, NULL, window_coord,
 			                               &reg_paint_in_bound, &reg_visible);
@@ -483,7 +484,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			pixman_region32_fini(&reg_bound_local);
 
 			// Blur window
-			if (ps->o.inactive_blur && !w->focused) {
+			if (ps->o.inactive_blur && !w->focused &&
+			    c2_match(ps, w, ps->o.inactive_blur_list, NULL)) {
 				assert(ps->o.blur_method != BLUR_METHOD_NONE);
 				// FIXME Think more about combining blur w/ opacity
 				// FIXME Don't hardcode opacity

@@ -58,6 +58,9 @@ static const struct picom_option picom_options[] = {
     {"inactive-opacity-override"   , no_argument      , 260, NULL          , "Inactive opacity set by -i overrides value of _NET_WM_WINDOW_OPACITY."},
     {"inactive-dim"                , required_argument, 261, NULL          , "Dim inactive windows. (0.0 - 1.0, defaults to 0)"},
     {"inactive-blur"               , no_argument      , 341, NULL          , "Blur the foreground of inactive windows."},
+    {"inactive-blur-include"       , required_argument, 342, NULL          , "Conditions for windows that should be fully blurred when inactive."
+                                                                             "When --inactive-blur is enabled without an --inactive-blur-include"
+                                                                             "condition, the foreground of ALL inactive windows will be blurred."},
     {"mark-wmwin-focused"          , no_argument      , 262, NULL          , "Try to detect WM windows and mark them as active."},
     {"shadow-exclude"              , required_argument, 263, NULL          , "Exclude conditions for shadows."},
     {"mark-ovredir-focused"        , no_argument      , 264, NULL          , "Mark windows that have no WM frame as active."},
@@ -742,6 +745,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 341:
 			// --inactive-blur
 			opt->inactive_blur = true;
+			break;
+		case 342:
+			// --inactive-blur-include
+			condlst_add(&opt->inactive_blur_list, optarg);
 			break;
 		P_CASEBOOL(733, legacy_backends);
 		P_CASEBOOL(800, monitor_repaint);
