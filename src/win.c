@@ -1115,7 +1115,10 @@ static void win_determine_blur_background(session_t *ps, struct managed_win *w) 
 		return;
 	}
 
-	bool blur_background_new = ps->o.blur_method != BLUR_METHOD_NONE;
+	bool blur_background_new = false;
+	if (!w->blur_foreground) {
+		blur_background_new = ps->o.blur_method != BLUR_METHOD_NONE;
+	}
 	if (blur_background_new) {
 		if (!ps->o.wintype_option[w->window_type].blur_background) {
 			log_debug("Blur background disabled by wintypes");
