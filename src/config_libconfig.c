@@ -295,6 +295,20 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 	}
 }
 
+enum transition_direction parse_transition_direction(const char *direction) {
+	static const char *names[] = {"none", "left",    "bottom", "right",
+	                              "top",  "smart-x", "smart-y"};
+
+	for (unsigned int i = 0; i < sizeof(names) / sizeof(char *); i++) {
+		if (strcmp(direction, names[i]) == 0) {
+			return i;
+		}
+	}
+
+	log_error("'%s' is not a valid transition direction.", direction);
+	return TRANSITION_DIR_NONE;
+}
+
 /**
  * Parse a configuration file from default location.
  *
@@ -640,6 +654,18 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 			         " an absolute path");
 		}
 		opt->write_pid_path = strdup(sval);
+	}
+
+	// Transition
+	if (lcfg_lookup_bool(&cfg, "transition", &bval)) {
+		if (bval) {
+			config_lookup_int(&cfg, "transition-offset", &opt->transition_offset);
+			config_lookup_float(&cfg, "transition-step", &opt->transition_step);
+
+			if (config_lookup_string(&cfg, "transition-direction", &sval)) {
+				opt->transition_direction = parse_transition_direction(sval);
+			}
+		}
 	}
 
 	// Wintype settings

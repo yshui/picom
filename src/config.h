@@ -68,6 +68,18 @@ enum blur_method {
 	BLUR_METHOD_INVALID,
 };
 
+enum transition_direction {
+	TRANSITION_DIR_NONE = 0,
+	TRANSITION_DIR_LEFT,
+	TRANSITION_DIR_BOTTOM,
+	TRANSITION_DIR_RIGHT,
+	TRANSITION_DIR_TOP,
+	TRANSITION_DIR_SMART_X,
+	TRANSITION_DIR_SMART_Y,
+};
+
+typedef double (*timing_function)(double);
+
 typedef struct _c2_lptr c2_lptr_t;
 
 /// Structure representing all options.
@@ -246,6 +258,22 @@ typedef struct options {
 	// Make transparent windows clip other windows, instead of blending on top of
 	// them
 	bool transparent_clipping;
+
+	// === Transition ===
+	// How many pixels move window to make the first position in transition
+	int transition_offset;
+
+	// Direction of transition
+	enum transition_direction transition_direction;
+
+	// Rules to change window transition
+	c2_lptr_t *transition_rules;
+
+	// Function that calculate new position
+	timing_function transition_timing_function;
+
+	// Time between frames in transition
+	double transition_step;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
