@@ -356,7 +356,7 @@ static void usage(const char *argv0, int ret) {
 #undef WARNING_DISABLED
 }
 
-static const char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:hscnfFCaSzGb";
+static const char *shortopts = "D:I:O:r:o:m:l:t:i:e:hscnfFCazGb";
 static const struct option longopts[] = {
     {"help", no_argument, NULL, 'h'},
     {"config", required_argument, NULL, 256},
@@ -481,18 +481,11 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 
 		} else if (o == 'b') {
 			*fork = true;
-		} else if (o == 'd') {
-			log_error("-d is removed, please use the DISPLAY "
-			          "environment variable");
-			goto err;
 		} else if (o == 314) {
 			*all_xerrors = true;
 		} else if (o == 318) {
 			printf("%s\n", COMPTON_VERSION);
 			return true;
-		} else if (o == 'S') {
-			log_error("-S is no longer available");
-			goto err;
 		} else if (o == 320) {
 			log_error("--no-name-pixmap is no longer available");
 			goto err;
@@ -564,9 +557,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// so assert(false) here
 			assert(false);
 			break;
-		case 'd':
 		case 'b':
-		case 'S':
 		case 314:
 		case 320:
 			// These options are handled by get_early_config()
