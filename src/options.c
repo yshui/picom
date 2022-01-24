@@ -365,13 +365,11 @@ static const struct option longopts[] = {
     {"fade-delta", required_argument, NULL, 'D'},
     {"menu-opacity", required_argument, NULL, 'm'},
     {"shadow", no_argument, NULL, 'c'},
-    {"no-dock-shadow", no_argument, NULL, 'C'},
     {"clear-shadow", no_argument, NULL, 'z'},
     {"fading", no_argument, NULL, 'f'},
     {"inactive-opacity", required_argument, NULL, 'i'},
     {"frame-opacity", required_argument, NULL, 'e'},
     {"daemon", no_argument, NULL, 'b'},
-    {"no-dnd-shadow", no_argument, NULL, 'G'},
     {"shadow-red", required_argument, NULL, 257},
     {"shadow-green", required_argument, NULL, 258},
     {"shadow-blue", required_argument, NULL, 259},
@@ -557,14 +555,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'I': opt->fade_in_step = normalize_d(atof(optarg)); break;
 		case 'O': opt->fade_out_step = normalize_d(atof(optarg)); break;
 		case 'c': shadow_enable = true; break;
-		case 'C':
-			log_error("Option `--no-dock-shadow`/`-C` has been removed. Please"
-			          " use the wintype option `shadow` of `dock` instead.");
-			failed = true; break;
-		case 'G':
-			log_error("Option `--no-dnd-shadow`/`-G` has been removed. Please "
-			          "use the wintype option `shadow` of `dnd` instead.");
-			failed = true; break;
 		case 'm':;
 			double tmp;
 			tmp = normalize_d(atof(optarg));
