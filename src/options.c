@@ -167,9 +167,6 @@ static void usage(const char *argv0, int ret) {
 	    "--vsync\n"
 	    "  Enable VSync\n"
 	    "\n"
-	    "--paint-on-overlay\n"
-	    "  Painting on X Composite overlay window.\n"
-	    "\n"
 	    "--use-ewmh-active-win\n"
 	    "  Use _NET_WM_ACTIVE_WINDOW on the root window to determine which\n"
 	    "  window is focused instead of using FocusIn/Out events.\n"
@@ -394,8 +391,6 @@ static const struct option longopts[] = {
     {"refresh-rate", required_argument, NULL, 269},
     {"vsync", optional_argument, NULL, 270},
     {"alpha-step", required_argument, NULL, 271},
-    {"dbe", no_argument, NULL, 272},
-    {"paint-on-overlay", no_argument, NULL, 273},
     {"sw-opti", no_argument, NULL, 274},
     {"vsync-aggressive", no_argument, NULL, 275},
     {"use-ewmh-active-win", no_argument, NULL, 276},
@@ -677,13 +672,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// --alpha-step
 			log_error("--alpha-step has been removed, we now tries to "
 			          "make use of all alpha values");
-			failed = true; break;
-		case 272:
-			log_error("--dbe has been removed");
-			failed = true; break;
-		case 273:
-			log_error("--paint-on-overlay has been removed, the feature is enabled "
-			          "whenever possible");
 			failed = true; break;
 		case 274:
 			log_warn("--sw-opti has been deprecated, please remove it from the "

@@ -184,7 +184,7 @@ typedef struct session {
 	int root_width;
 	// Damage of root window.
 	// Damage root_damage;
-	/// X Composite overlay window. Used if <code>--paint-on-overlay</code>.
+	/// X Composite overlay window.
 	xcb_window_t overlay;
 	/// The target window for debug mode
 	xcb_window_t debug_window;

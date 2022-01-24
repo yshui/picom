@@ -624,11 +624,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
 		log_warn("\"clear-shadow\" is removed as an option, and is always"
 		         " enabled now. Consider removing it from your config file");
-	if (lcfg_lookup_bool(&cfg, "paint-on-overlay", &bval)) {
-		log_error("\"paint-on-overlay\" has been removed as an option, and "
-		          "the feature is enabled whenever possible");
-		goto err;
-	}
 
 	if (config_lookup_float(&cfg, "alpha-step", &dval)) {
 		log_error("\"alpha-step\" has been removed, compton now tries to make use"
