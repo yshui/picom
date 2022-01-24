@@ -492,7 +492,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		opt->logpath = strdup(sval);
 	}
 	// --sw-opti
-	lcfg_lookup_bool(&cfg, "sw-opti", &opt->sw_opti);
+	if (lcfg_lookup_bool(&cfg, "sw-opti", &bval)) {
+		log_warn("The sw-opti option has been deprecated, please remove it from "
+		         "your configuration file");
+	}
 	// --use-ewmh-active-win
 	lcfg_lookup_bool(&cfg, "use-ewmh-active-win", &opt->use_ewmh_active_win);
 	// --unredir-if-possible

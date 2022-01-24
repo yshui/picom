@@ -139,9 +139,6 @@ typedef struct session {
 	ev_timer unredir_timer;
 	/// Timer for fading
 	ev_timer fade_timer;
-	/// Timer for delayed drawing, right now only used by
-	/// swopti
-	ev_timer delayed_draw_timer;
 	/// Use an ev_idle callback for drawing
 	/// So we only start drawing when events are processed
 	ev_idle draw_idle;

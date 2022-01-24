@@ -685,7 +685,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			log_error("--paint-on-overlay has been removed, the feature is enabled "
 			          "whenever possible");
 			failed = true; break;
-		P_CASEBOOL(274, sw_opti);
+		case 274:
+			log_warn("--sw-opti has been deprecated, please remove it from the "
+			         "command line options");
+			break;
 		case 275:
 			// --vsync-aggressive
 			log_warn("--vsync-aggressive has been deprecated, please remove it"
