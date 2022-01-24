@@ -691,8 +691,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 275:
 			// --vsync-aggressive
-			log_warn("--vsync-aggressive has been deprecated, please remove it"
+			log_error("--vsync-aggressive has been removed, please remove it"
 			         " from the command line options");
+			failed = true;
 			break;
 		P_CASEBOOL(276, use_ewmh_active_win);
 		case 277:
