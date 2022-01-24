@@ -434,7 +434,6 @@ static const struct option longopts[] = {
     {"glx-fshader-win", required_argument, NULL, 317},
     {"version", no_argument, NULL, 318},
     {"no-x-selection", no_argument, NULL, 319},
-    {"no-name-pixmap", no_argument, NULL, 320},
     {"log-level", required_argument, NULL, 321},
     {"log-file", required_argument, NULL, 322},
     {"use-damage", no_argument, NULL, 323},
@@ -486,9 +485,6 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 318) {
 			printf("%s\n", COMPTON_VERSION);
 			return true;
-		} else if (o == 320) {
-			log_error("--no-name-pixmap is no longer available");
-			goto err;
 		} else if (o == '?' || o == ':') {
 			usage(argv[0], 1);
 			goto err;
