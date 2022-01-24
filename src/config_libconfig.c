@@ -625,12 +625,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		log_warn("\"clear-shadow\" is removed as an option, and is always"
 		         " enabled now. Consider removing it from your config file");
 
-	if (config_lookup_float(&cfg, "alpha-step", &dval)) {
-		log_error("\"alpha-step\" has been removed, compton now tries to make use"
-		          " of all alpha values");
-		goto err;
-	}
-
 	const char *deprecation_message attr_unused =
 	    "has been removed. If you encounter problems "
 	    "without this feature, please feel free to open a bug report";
