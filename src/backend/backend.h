@@ -58,6 +58,9 @@ enum image_properties {
 	// Gives the image a rounded corner.
 	// 1 double, default: 0
 	IMAGE_PROPERTY_CORNER_RADIUS,
+	// Border width
+	// 1 int, default: 0
+	IMAGE_PROPERTY_BORDER_WIDTH,
 };
 
 enum image_operations {
@@ -244,20 +247,6 @@ struct backend_operations {
 	 */
 	bool (*image_op)(backend_t *backend_data, enum image_operations op, void *image_data,
 	                 const region_t *reg_op, const region_t *reg_visible, void *args);
-
-	/**
-	 * Read the color of the pixel at given position of the given image. Image
-	 * properties have no effect.
-	 *
-	 * @param      backend_data backend_data
-	 * @param      image_data   an image data structure previously returned by the
-	 *                          backend. the image to read pixel from.
-	 * @param      x, y         coordinate of the pixel to read
-	 * @param[out] color        the color of the pixel
-	 * @return whether the operation is successful
-	 */
-	bool (*read_pixel)(backend_t *backend_data, void *image_data, int x, int y,
-	                   struct color *output);
 
 	/// Create another instance of the `image_data`. All `image_op` and
 	/// `set_image_property` calls on the returned image should not affect the

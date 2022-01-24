@@ -530,7 +530,6 @@ struct backend_operations glx_ops = {
     .compose = gl_compose,
     .image_op = gl_image_op,
     .set_image_property = default_set_image_property,
-    .read_pixel = gl_read_pixel,
     .clone_image = default_clone_image,
     .blur = gl_blur,
     .is_image_transparent = default_is_image_transparent,
