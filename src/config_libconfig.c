@@ -406,10 +406,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	};
 	// -m (menu_opacity)
 	if (config_lookup_float(&cfg, "menu-opacity", &dval)) {
-		log_warn("Option `menu-opacity` is deprecated, and will be "
-		         "removed.Please use the "
-		         "wintype option `opacity` of `popup_menu` and `dropdown_menu` "
-		         "instead.");
+		log_warn("Option `menu-opacity` is deprecated, and will be removed."
+		         "Please use the wintype option `opacity` of `popup_menu`"
+		         "and `dropdown_menu` instead.");
 		opt->wintype_option[WINTYPE_DROPDOWN_MENU].opacity = dval;
 		opt->wintype_option[WINTYPE_POPUP_MENU].opacity = dval;
 		winopt_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
@@ -495,8 +494,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	// --sw-opti
 	if (lcfg_lookup_bool(&cfg, "sw-opti", &bval)) {
-		log_warn("The sw-opti option has been deprecated, please remove it from "
-		         "your configuration file");
+		log_warn("The sw-opti %s", deprecation_message);
 	}
 	// --use-ewmh-active-win
 	lcfg_lookup_bool(&cfg, "use-ewmh-active-win", &opt->use_ewmh_active_win);
