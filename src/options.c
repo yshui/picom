@@ -160,10 +160,6 @@ static void usage(const char *argv0, int ret) {
 	    "  managers not passing _NET_WM_WINDOW_OPACITY of client windows to frame\n"
 	    "  windows.\n"
 	    "\n"
-	    "--refresh-rate val\n"
-	    "  Specify refresh rate of the screen. If not specified or 0, we\n"
-	    "  will try detecting this with X RandR extension.\n"
-	    "\n"
 	    "--vsync\n"
 	    "  Enable VSync\n"
 	    "\n"
@@ -641,7 +637,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(266, shadow_ignore_shaped);
 		P_CASEBOOL(267, detect_rounded_corners);
 		P_CASEBOOL(268, detect_client_opacity);
-		P_CASEINT(269, refresh_rate);
+		case 269:
+			log_warn("--refresh-rate has been deprecated, please remove it from"
+			         "your command line options");
+			break;
 		case 270:
 			if (optarg) {
 				opt->vsync = parse_vsync(optarg);
@@ -912,7 +911,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	opt->inactive_dim = normalize_d(opt->inactive_dim);
 	opt->frame_opacity = normalize_d(opt->frame_opacity);
 	opt->shadow_opacity = normalize_d(opt->shadow_opacity);
-	opt->refresh_rate = normalize_i_range(opt->refresh_rate, 0, 300);
 
 	opt->max_brightness = normalize_d(opt->max_brightness);
 	if (opt->max_brightness < 1.0) {

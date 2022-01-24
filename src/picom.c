@@ -1085,24 +1085,6 @@ static inline bool write_pid(session_t *ps) {
 }
 
 /**
- * Update refresh rate info with X Randr extension.
- */
-void update_refresh_rate(session_t *ps) {
-	xcb_randr_get_screen_info_reply_t *randr_info = xcb_randr_get_screen_info_reply(
-	    ps->c, xcb_randr_get_screen_info(ps->c, ps->root), NULL);
-
-	if (!randr_info)
-		return;
-	ps->refresh_rate = randr_info->rate;
-	free(randr_info);
-
-	if (ps->refresh_rate)
-		ps->refresh_intv = US_PER_SEC / ps->refresh_rate;
-	else
-		ps->refresh_intv = 0;
-}
-
-/**
  * Initialize X composite overlay window.
  */
 static bool init_overlay(session_t *ps) {
@@ -1591,9 +1573,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .cshadow_picture = XCB_NONE,
 	    .white_picture = XCB_NONE,
 	    .gaussian_map = NULL,
-
-	    .refresh_rate = 0,
-	    .refresh_intv = 0UL,
 
 #ifdef CONFIG_VSYNC_DRM
 	    .drm_fd = -1,

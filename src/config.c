@@ -527,7 +527,6 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .benchmark_wid = XCB_NONE,
 	    .logpath = NULL,
 
-	    .refresh_rate = 0,
 	    .use_damage = true,
 
 	    .shadow_red = 0.0,

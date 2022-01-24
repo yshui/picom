@@ -1005,7 +1005,7 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(stoppaint_force, cdbus_reply_enum);
 	cdbus_m_opts_get_do(logpath, cdbus_reply_string);
 
-	cdbus_m_opts_get_do(refresh_rate, cdbus_reply_int32);
+	cdbus_m_opts_get_stub(refresh_rate, cdbus_reply_int32, 0);
 	cdbus_m_opts_get_stub(sw_opti, cdbus_reply_bool, false);
 	cdbus_m_opts_get_do(vsync, cdbus_reply_bool);
 	if (!strcmp("backend", target)) {

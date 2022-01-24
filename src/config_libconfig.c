@@ -303,6 +303,11 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shadow_enable,
                              bool *fading_enable, bool *conv_kern_hasneg,
                              win_option_mask_t *winopt_mask) {
+
+	const char *deprecation_message =
+	    "option has been deprecated. Please remove it from your configuration file. "
+	    "If you encounter any problems without this feature, please feel free to "
+	    "open a bug report";
 	char *path = NULL;
 	FILE *f;
 	config_t cfg;
@@ -451,11 +456,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --detect-client-opacity
 	lcfg_lookup_bool(&cfg, "detect-client-opacity", &opt->detect_client_opacity);
 	// --refresh-rate
-	if (config_lookup_int(&cfg, "refresh-rate", &opt->refresh_rate)) {
-		if (opt->refresh_rate < 0) {
-			log_warn("Invalid refresh rate %d, fallback to 0", opt->refresh_rate);
-			opt->refresh_rate = 0;
-		}
+	if (config_lookup_int(&cfg, "refresh-rate", &ival)) {
+		log_warn("The refresh-rate %s", deprecation_message);
 	}
 	// --vsync
 	if (config_lookup_string(&cfg, "vsync", &sval)) {
@@ -619,10 +621,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
 		log_warn("\"clear-shadow\" is removed as an option, and is always"
 		         " enabled now. Consider removing it from your config file");
-
-	const char *deprecation_message attr_unused =
-	    "has been removed. If you encounter problems "
-	    "without this feature, please feel free to open a bug report";
 
 	config_setting_t *blur_cfg = config_lookup(&cfg, "blur");
 	if (blur_cfg) {

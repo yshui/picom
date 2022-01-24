@@ -295,10 +295,6 @@ typedef struct session {
 	region_t shadow_exclude_reg;
 
 	// === Software-optimization-related ===
-	/// Currently used refresh rate.
-	int refresh_rate;
-	/// Interval between refresh in nanoseconds.
-	long refresh_intv;
 	/// Nanosecond offset of the first painting.
 	long paint_tm_offset;
 
