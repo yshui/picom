@@ -37,7 +37,6 @@ typedef struct {
 	GLint uniform_max_brightness;
 	GLint uniform_corner_radius;
 	GLint uniform_border_width;
-	GLint uniform_border_color;
 } gl_win_shader_t;
 
 // Program and uniforms for brightness shader

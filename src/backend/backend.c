@@ -343,14 +343,6 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			    ps->backend_data, IMAGE_PROPERTY_CORNER_RADIUS, w->win_image,
 			    (double[]){w->corner_radius});
 			if (w->corner_radius) {
-				struct color border_color;
-				ps->backend_data->ops->read_pixel(
-				    ps->backend_data, w->win_image, 0, w->heightb,
-				    &border_color);
-				ps->backend_data->ops->set_image_property(
-				    ps->backend_data, IMAGE_PROPERTY_BORDER_COLOR,
-				    w->win_image, &border_color);
-
 				int border_width = w->g.border_width;
 				if (border_width == 0) {
 					// Some WM has borders implemented as WM frames

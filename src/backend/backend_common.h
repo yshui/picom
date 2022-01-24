@@ -41,7 +41,6 @@ struct backend_image {
 	// Effective size of the image
 	int ewidth, eheight;
 	bool color_inverted;
-	struct color border_color;
 	int border_width;
 };
 

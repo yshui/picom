@@ -397,10 +397,6 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 	if (gd->win_shader.uniform_border_width >= 0) {
 		glUniform1f(gd->win_shader.uniform_border_width, (float)img->border_width);
 	}
-	if (gd->win_shader.uniform_border_color >= 0) {
-		glUniform3f(gd->win_shader.uniform_border_color, (float)img->border_color.red,
-		            (float)img->border_color.green, (float)img->border_color.blue);
-	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
 	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
@@ -901,7 +897,6 @@ static int gl_win_shader_from_string(const char *vshader_str, const char *fshade
 	bind_uniform(ret, max_brightness);
 	bind_uniform(ret, corner_radius);
 	bind_uniform(ret, border_width);
-	bind_uniform(ret, border_color);
 
 	gl_check_err();
 
@@ -1534,7 +1529,6 @@ const char *win_shader_glsl = GLSL(330,
 	uniform float dim;
 	uniform float corner_radius;
 	uniform float border_width;
-	uniform vec3 border_color;
 	uniform bool invert_color;
 	in vec2 texcoord;
 	uniform sampler2D tex;
@@ -1549,6 +1543,7 @@ const char *win_shader_glsl = GLSL(330,
 
 	void main() {
 		vec4 c = texelFetch(tex, ivec2(texcoord), 0);
+		vec4 border_color = texture(tex, vec2(0.0, 0.5));
 		if (invert_color) {
 			c = vec4(c.aaa - c.rgb, c.a);
 		}
@@ -1567,10 +1562,10 @@ const char *win_shader_glsl = GLSL(330,
 		float rect_distance = rectangle_sdf(texcoord - outer_size / 2.0f,
 		    inner_size / 2.0f) - corner_radius;
 		if (rect_distance > 0.0f) {
-			c = (1.0f - clamp(rect_distance, 0.0f, 1.0f)) * vec4(border_color, 1.0);
+			c = (1.0f - clamp(rect_distance, 0.0f, 1.0f)) * border_color;
 		} else {
 			float factor = clamp(rect_distance + border_width, 0.0f, 1.0f);
-			c = (1.0f - factor) * c + factor * vec4(border_color, 1.0);
+			c = (1.0f - factor) * c + factor * border_color;
 		}
 
 		gl_FragColor = c;
@@ -1912,30 +1907,4 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 	}
 
 	return true;
-}
-
-bool gl_read_pixel(backend_t *base attr_unused, void *image_data, int x, int y,
-                   struct color *output) {
-	struct backend_image *tex = image_data;
-	auto inner = (struct gl_texture *)tex->inner;
-	GLuint fbo;
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-	                       inner->texture, 0);
-	glReadBuffer(GL_COLOR_ATTACHMENT0);
-	GLfloat color[4];
-	glReadPixels(x, inner->y_inverted ? inner->height - y : y, 1, 1, GL_RGBA,
-	             GL_FLOAT, color);
-	output->alpha = color[3];
-	output->red = color[0];
-	output->green = color[1];
-	output->blue = color[2];
-
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-	glDeleteFramebuffers(1, &fbo);
-
-	bool ret = glGetError() == GL_NO_ERROR;
-	gl_clear_err();
-	return ret;
 }
