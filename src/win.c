@@ -1118,6 +1118,14 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
 	w->opacity_is_set = is_set;
 }
 
+void win_update_transition_rule(session_t *ps, struct managed_win *w) {
+	void *val;
+	if (c2_match(ps, w, ps->o.transition_rules, &val)) {
+		// uses multiple casters to trick compiler to not give warnings
+		w->transition_direction = (unsigned int)(long)val;
+	}
+}
+
 /**
  * Function to be called on window data changes.
  *
@@ -1129,6 +1137,7 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	// state of the window
 	win_update_focused(ps, w);
 
+	win_update_transition_rule(ps, w);
 	win_determine_shadow(ps, w);
 	win_determine_clip_shadow_above(ps, w);
 	win_determine_invert_color(ps, w);

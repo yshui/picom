@@ -1849,6 +1849,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	      c2_list_postprocess(ps, ps->o.invert_color_list) &&
 	      c2_list_postprocess(ps, ps->o.opacity_rules) &&
 	      c2_list_postprocess(ps, ps->o.rounded_corners_blacklist) &&
+	      c2_list_postprocess(ps, ps->o.transition_rules) &&
 	      c2_list_postprocess(ps, ps->o.focus_blacklist))) {
 		log_error("Post-processing of conditionals failed, some of your rules "
 		          "might not work");
@@ -2219,6 +2220,7 @@ static void session_destroy(session_t *ps) {
 	free_wincondlst(&ps->o.paint_blacklist);
 	free_wincondlst(&ps->o.unredir_if_possible_blacklist);
 	free_wincondlst(&ps->o.rounded_corners_blacklist);
+	free_wincondlst(&ps->o.transition_rules);
 
 	// Free tracked atom list
 	{

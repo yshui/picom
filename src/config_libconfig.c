@@ -348,6 +348,37 @@ timing_function parse_timing_function(const char *timing_name) {
 	return NULL;
 }
 
+static inline void
+parse_cfg_condlst_trns(options_t *opt, const config_t *pcfg, const char *name) {
+	config_setting_t *setting = config_lookup(pcfg, name);
+	if (setting) {
+		int length = config_setting_length(setting);
+
+		for (int i = 0; i < length; i++) {
+			const char *elem = config_setting_get_string_elem(setting, i);
+
+			char rule[512];
+			unsigned long elem_index = 0;
+
+			for (int rule_index = 0; elem_index < strlen(elem); elem_index++) {
+				char character = elem[elem_index];
+				if (character == ':') {
+					rule[rule_index] = '\0';
+					break;
+				}
+
+				if (!isspace(character)) {
+					rule[rule_index] = character;
+					rule_index++;
+				}
+			}
+
+			int *direction = (int *)parse_transition_direction(rule);
+			c2_parse(&opt->transition_rules, &elem[elem_index + 1], direction);
+		}
+	}
+}
+
 /**
  * Parse a configuration file from default location.
  *
@@ -712,6 +743,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 					opt->transition_timing_function = res;
 				}
 			}
+
+			parse_cfg_condlst_trns(opt, &cfg, "transition-rule");
 		}
 	}
 
