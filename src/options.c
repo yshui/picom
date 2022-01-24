@@ -636,11 +636,11 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 270:
 			if (optarg) {
-				opt->vsync = parse_vsync(optarg);
-				log_warn("--vsync doesn't take argument anymore. \"%s\" "
-					 "is interpreted as \"%s\" for compatibility, but "
-					 "this will stop working soon",
-					 optarg, opt->vsync ? "true" : "false");
+				bool parsed_vsync = parse_vsync(optarg);
+				log_error("--vsync doesn't take argument anymore. \"%s\" "
+				          "should be changed to \"%s\"",
+				          optarg, parsed_vsync ? "true" : "false");
+				failed = true;
 			} else {
 				opt->vsync = true;
 			}
