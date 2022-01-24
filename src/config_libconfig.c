@@ -606,10 +606,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 
 	// --glx-use-gpushader4
-	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival) && ival) {
-		log_warn("glx-use-gpushader4 is deprecated since v6, please remove it "
-		         "from"
-		         "your config file");
+	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival)) {
+		log_error("glx-use-gpushader4 has been removed, please remove it "
+		          "from your config file");
+		goto err;
 	}
 	// --xrender-sync
 	if (config_lookup_bool(&cfg, "xrender-sync", &ival) && ival) {

@@ -790,8 +790,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEINT(302, resize_damage);
 		case 303:
 			// --glx-use-gpushader4
-			log_warn("--glx-use-gpushader4 is deprecated since v6."
+			log_error("--glx-use-gpushader4 has been removed."
 			         " Please remove it from command line options.");
+			failed = true;
 			break;
 		case 304:
 			// --opacity-rule
