@@ -580,6 +580,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	if (config_lookup_string(&cfg, "glx-swap-method", &sval)) {
 		char *endptr;
 		long val = strtol(sval, &endptr, 10);
+		bool should_remove = true;
 		if (*endptr || !(*sval)) {
 			// sval is not a number, or an empty string
 			val = -1;
@@ -587,12 +588,13 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		if (strcmp(sval, "undefined") != 0 && val != 0) {
 			// If not undefined, we will use damage and buffer-age to limit
 			// the rendering area.
-			opt->use_damage = true;
+			should_remove = false;
 		}
-		log_warn("glx-swap-method has been deprecated since v6, your setting "
-		         "\"%s\" should be %s.",
-		         sval,
-		         opt->use_damage ? "replaced by `use-damage = true`" : "removed");
+		log_error("glx-swap-method has been removed, your setting "
+		          "\"%s\" should be %s.",
+		          sval,
+		          !should_remove ? "replaced by `use-damage = true`" : "removed");
+		goto err;
 	}
 	// --use-damage
 	lcfg_lookup_bool(&cfg, "use-damage", &opt->use_damage);

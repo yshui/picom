@@ -766,14 +766,14 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			if (strcmp(optarg, "undefined") != 0 && tmpval != 0) {
 				// If not undefined, we will use damage and buffer-age to
 				// limit the rendering area.
-				opt->use_damage = true;
 				should_remove = false;
 			}
-			log_warn("--glx-swap-method has been deprecated, your setting "
+			log_error("--glx-swap-method has been removed, your setting "
 			         "\"%s\" should be %s.",
 			         optarg,
 			         !should_remove ? "replaced by `--use-damage`" :
 			                         "removed");
+			failed = true;
 			break;
 		}
 		case 300:
