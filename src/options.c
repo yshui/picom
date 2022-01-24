@@ -556,6 +556,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'O': opt->fade_out_step = normalize_d(atof(optarg)); break;
 		case 'c': shadow_enable = true; break;
 		case 'm':;
+			log_warn("--menu-opacity is deprecated, and will be removed."
+			         "Please use the wintype option `opacity` of `popup_menu`"
+			         "and `dropdown_menu` instead.");
 			double tmp;
 			tmp = normalize_d(atof(optarg));
 			winopt_mask[WINTYPE_DROPDOWN_MENU].opacity = true;

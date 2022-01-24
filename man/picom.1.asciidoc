@@ -43,9 +43,6 @@ OPTIONS
 *-D*, *--fade-delta*='MILLISECONDS'::
 	The time between steps in fade step, in milliseconds. (> 0, defaults to 10)
 
-*-m*, *--menu-opacity*='OPACITY'::
-	Default opacity for dropdown menus and popup menus. (0.0 - 1.0, defaults to 1.0)
-
 *-c*, *--shadow*::
 	Enabled client-side shadows on windows. Note desktop windows (windows with '_NET_WM_WINDOW_TYPE_DESKTOP') never get shadow, unless explicitly requested using the wintypes option.
 
