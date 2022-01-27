@@ -179,7 +179,9 @@ bool cdbus_init(session_t *ps, const char *uniq) {
 		dbus_error_free(&err);
 		goto fail;
 	}
-	dbus_connection_add_filter(cd->dbus_conn, cdbus_process, ps, NULL);
+	dbus_connection_register_object_path(
+	    cd->dbus_conn, CDBUS_OBJECT_NAME,
+	    (DBusObjectPathVTable[]){{NULL, cdbus_process}}, ps);
 	return true;
 fail:
 	ps->dbus_data = NULL;
