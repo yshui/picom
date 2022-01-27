@@ -139,9 +139,6 @@ typedef struct session {
 	ev_timer unredir_timer;
 	/// Timer for fading
 	ev_timer fade_timer;
-	/// Timer for delayed drawing, right now only used by
-	/// swopti
-	ev_timer delayed_draw_timer;
 	/// Use an ev_idle callback for drawing
 	/// So we only start drawing when events are processed
 	ev_idle draw_idle;
@@ -187,7 +184,7 @@ typedef struct session {
 	int root_width;
 	// Damage of root window.
 	// Damage root_damage;
-	/// X Composite overlay window. Used if <code>--paint-on-overlay</code>.
+	/// X Composite overlay window.
 	xcb_window_t overlay;
 	/// The target window for debug mode
 	xcb_window_t debug_window;
@@ -298,10 +295,6 @@ typedef struct session {
 	region_t shadow_exclude_reg;
 
 	// === Software-optimization-related ===
-	/// Currently used refresh rate.
-	int refresh_rate;
-	/// Interval between refresh in nanoseconds.
-	long refresh_intv;
 	/// Nanosecond offset of the first painting.
 	long paint_tm_offset;
 

@@ -160,15 +160,8 @@ static void usage(const char *argv0, int ret) {
 	    "  managers not passing _NET_WM_WINDOW_OPACITY of client windows to frame\n"
 	    "  windows.\n"
 	    "\n"
-	    "--refresh-rate val\n"
-	    "  Specify refresh rate of the screen. If not specified or 0, we\n"
-	    "  will try detecting this with X RandR extension.\n"
-	    "\n"
 	    "--vsync\n"
 	    "  Enable VSync\n"
-	    "\n"
-	    "--paint-on-overlay\n"
-	    "  Painting on X Composite overlay window.\n"
 	    "\n"
 	    "--use-ewmh-active-win\n"
 	    "  Use _NET_WM_ACTIVE_WINDOW on the root window to determine which\n"
@@ -359,7 +352,7 @@ static void usage(const char *argv0, int ret) {
 #undef WARNING_DISABLED
 }
 
-static const char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:hscnfFCaSzGb";
+static const char *shortopts = "D:I:O:r:o:m:l:t:i:e:hscnfFCazGb";
 static const struct option longopts[] = {
     {"help", no_argument, NULL, 'h'},
     {"config", required_argument, NULL, 256},
@@ -372,13 +365,11 @@ static const struct option longopts[] = {
     {"fade-delta", required_argument, NULL, 'D'},
     {"menu-opacity", required_argument, NULL, 'm'},
     {"shadow", no_argument, NULL, 'c'},
-    {"no-dock-shadow", no_argument, NULL, 'C'},
     {"clear-shadow", no_argument, NULL, 'z'},
     {"fading", no_argument, NULL, 'f'},
     {"inactive-opacity", required_argument, NULL, 'i'},
     {"frame-opacity", required_argument, NULL, 'e'},
     {"daemon", no_argument, NULL, 'b'},
-    {"no-dnd-shadow", no_argument, NULL, 'G'},
     {"shadow-red", required_argument, NULL, 257},
     {"shadow-green", required_argument, NULL, 258},
     {"shadow-blue", required_argument, NULL, 259},
@@ -393,9 +384,6 @@ static const struct option longopts[] = {
     {"detect-client-opacity", no_argument, NULL, 268},
     {"refresh-rate", required_argument, NULL, 269},
     {"vsync", optional_argument, NULL, 270},
-    {"alpha-step", required_argument, NULL, 271},
-    {"dbe", no_argument, NULL, 272},
-    {"paint-on-overlay", no_argument, NULL, 273},
     {"sw-opti", no_argument, NULL, 274},
     {"vsync-aggressive", no_argument, NULL, 275},
     {"use-ewmh-active-win", no_argument, NULL, 276},
@@ -432,7 +420,6 @@ static const struct option longopts[] = {
     {"unredir-if-possible-delay", required_argument, NULL, 309},
     {"write-pid-path", required_argument, NULL, 310},
     {"vsync-use-glfinish", no_argument, NULL, 311},
-    {"xrender-sync", no_argument, NULL, 312},
     {"xrender-sync-fence", no_argument, NULL, 313},
     {"show-all-xerrors", no_argument, NULL, 314},
     {"no-fading-destroyed-argb", no_argument, NULL, 315},
@@ -440,7 +427,6 @@ static const struct option longopts[] = {
     {"glx-fshader-win", required_argument, NULL, 317},
     {"version", no_argument, NULL, 318},
     {"no-x-selection", no_argument, NULL, 319},
-    {"no-name-pixmap", no_argument, NULL, 320},
     {"log-level", required_argument, NULL, 321},
     {"log-file", required_argument, NULL, 322},
     {"use-damage", no_argument, NULL, 323},
@@ -487,21 +473,11 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 
 		} else if (o == 'b') {
 			*fork = true;
-		} else if (o == 'd') {
-			log_error("-d is removed, please use the DISPLAY "
-			          "environment variable");
-			goto err;
 		} else if (o == 314) {
 			*all_xerrors = true;
 		} else if (o == 318) {
 			printf("%s\n", COMPTON_VERSION);
 			return true;
-		} else if (o == 'S') {
-			log_error("-S is no longer available");
-			goto err;
-		} else if (o == 320) {
-			log_error("--no-name-pixmap is no longer available");
-			goto err;
 		} else if (o == '?' || o == ':') {
 			usage(argv[0], 1);
 			goto err;
@@ -570,9 +546,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// so assert(false) here
 			assert(false);
 			break;
-		case 'd':
 		case 'b':
-		case 'S':
 		case 314:
 		case 320:
 			// These options are handled by get_early_config()
@@ -581,15 +555,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'I': opt->fade_in_step = normalize_d(atof(optarg)); break;
 		case 'O': opt->fade_out_step = normalize_d(atof(optarg)); break;
 		case 'c': shadow_enable = true; break;
-		case 'C':
-			log_error("Option `--no-dock-shadow`/`-C` has been removed. Please"
-			          " use the wintype option `shadow` of `dock` instead.");
-			failed = true; break;
-		case 'G':
-			log_error("Option `--no-dnd-shadow`/`-G` has been removed. Please "
-			          "use the wintype option `shadow` of `dnd` instead.");
-			failed = true; break;
 		case 'm':;
+			log_warn("--menu-opacity is deprecated, and will be removed."
+			         "Please use the wintype option `opacity` of `popup_menu`"
+			         "and `dropdown_menu` instead.");
 			double tmp;
 			tmp = normalize_d(atof(optarg));
 			winopt_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
@@ -661,35 +630,30 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(266, shadow_ignore_shaped);
 		P_CASEBOOL(267, detect_rounded_corners);
 		P_CASEBOOL(268, detect_client_opacity);
-		P_CASEINT(269, refresh_rate);
+		case 269:
+			log_warn("--refresh-rate has been deprecated, please remove it from"
+			         "your command line options");
+			break;
 		case 270:
 			if (optarg) {
-				opt->vsync = parse_vsync(optarg);
-				log_warn("--vsync doesn't take argument anymore. \"%s\" "
-					 "is interpreted as \"%s\" for compatibility, but "
-					 "this will stop working soon",
-					 optarg, opt->vsync ? "true" : "false");
+				bool parsed_vsync = parse_vsync(optarg);
+				log_error("--vsync doesn't take argument anymore. \"%s\" "
+				          "should be changed to \"%s\"",
+				          optarg, parsed_vsync ? "true" : "false");
+				failed = true;
 			} else {
 				opt->vsync = true;
 			}
 			break;
-		case 271:
-			// --alpha-step
-			log_error("--alpha-step has been removed, we now tries to "
-			          "make use of all alpha values");
-			failed = true; break;
-		case 272:
-			log_error("--dbe has been removed");
-			failed = true; break;
-		case 273:
-			log_error("--paint-on-overlay has been removed, the feature is enabled "
-			          "whenever possible");
-			failed = true; break;
-		P_CASEBOOL(274, sw_opti);
+		case 274:
+			log_warn("--sw-opti has been deprecated, please remove it from the "
+			         "command line options");
+			break;
 		case 275:
 			// --vsync-aggressive
-			log_warn("--vsync-aggressive has been deprecated, please remove it"
+			log_error("--vsync-aggressive has been removed, please remove it"
 			         " from the command line options");
+			failed = true;
 			break;
 		P_CASEBOOL(276, use_ewmh_active_win);
 		case 277:
@@ -762,14 +726,14 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			if (strcmp(optarg, "undefined") != 0 && tmpval != 0) {
 				// If not undefined, we will use damage and buffer-age to
 				// limit the rendering area.
-				opt->use_damage = true;
 				should_remove = false;
 			}
-			log_warn("--glx-swap-method has been deprecated, your setting "
+			log_error("--glx-swap-method has been removed, your setting "
 			         "\"%s\" should be %s.",
 			         optarg,
 			         !should_remove ? "replaced by `--use-damage`" :
 			                         "removed");
+			failed = true;
 			break;
 		}
 		case 300:
@@ -787,8 +751,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEINT(302, resize_damage);
 		case 303:
 			// --glx-use-gpushader4
-			log_warn("--glx-use-gpushader4 is deprecated since v6."
+			log_error("--glx-use-gpushader4 has been removed."
 			         " Please remove it from command line options.");
+			failed = true;
 			break;
 		case 304:
 			// --opacity-rule
@@ -821,10 +786,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			}
 			break;
 		P_CASEBOOL(311, vsync_use_glfinish);
-		case 312:
-			// --xrender-sync
-			log_error("Please use --xrender-sync-fence instead of --xrender-sync");
-			failed = true; break;
 		P_CASEBOOL(313, xrender_sync_fence);
 		P_CASEBOOL(315, no_fading_destroyed_argb);
 		P_CASEBOOL(316, force_win_blend);
@@ -943,7 +904,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	opt->inactive_dim = normalize_d(opt->inactive_dim);
 	opt->frame_opacity = normalize_d(opt->frame_opacity);
 	opt->shadow_opacity = normalize_d(opt->shadow_opacity);
-	opt->refresh_rate = normalize_i_range(opt->refresh_rate, 0, 300);
 
 	opt->max_brightness = normalize_d(opt->max_brightness);
 	if (opt->max_brightness < 1.0) {
