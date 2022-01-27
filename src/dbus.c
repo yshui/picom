@@ -73,6 +73,7 @@ typedef uint32_t cdbus_enum_t;
 	                           (srcmsg), (err_name), (err_format), ##__VA_ARGS__))
 
 static DBusHandlerResult cdbus_process(DBusConnection *conn, DBusMessage *m, void *);
+static DBusHandlerResult cdbus_process_windows(DBusConnection *c, DBusMessage *msg, void *ud);
 
 static dbus_bool_t cdbus_callback_add_timeout(DBusTimeout *timeout, void *data);
 
@@ -182,6 +183,9 @@ bool cdbus_init(session_t *ps, const char *uniq) {
 	dbus_connection_register_object_path(
 	    cd->dbus_conn, CDBUS_OBJECT_NAME,
 	    (DBusObjectPathVTable[]){{NULL, cdbus_process}}, ps);
+	dbus_connection_register_fallback(
+	    cd->dbus_conn, CDBUS_OBJECT_NAME "/windows",
+	    (DBusObjectPathVTable[]){{NULL, cdbus_process_windows}}, ps);
 	return true;
 fail:
 	ps->dbus_data = NULL;
@@ -464,6 +468,19 @@ cdbus_apdarg_string(session_t *ps attr_unused, DBusMessage *msg, const void *dat
 		return false;
 	}
 
+	return true;
+}
+
+static bool cdbus_append_empty_dict(session_t *ps attr_unused, DBusMessage *msg,
+                                    const void *data attr_unused) {
+	DBusMessageIter it, it2;
+	dbus_message_iter_init_append(msg, &it);
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY, "{sv}", &it2)) {
+		return false;
+	}
+	if (!dbus_message_iter_close_container(&it, &it2)) {
+		return false;
+	}
 	return true;
 }
 
@@ -1212,6 +1229,7 @@ static bool cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
 	    "    <method name='reset' />\n"
 	    "    <method name='repaint' />\n"
 	    "  </interface>\n"
+	    "  <node name='windows' />\n"
 	    "</node>\n";
 
 	cdbus_reply_string(ps, msg, str_introspect);
@@ -1219,6 +1237,80 @@ static bool cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
 	return true;
 }
 ///@}
+
+/**
+ * Process an D-Bus Introspect request, for /windows.
+ */
+static bool cdbus_process_windows_root_introspect(session_t *ps, DBusMessage *msg) {
+	static const char *str_introspect =
+	    "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection "
+	    "1.0//EN\"\n"
+	    " \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n"
+	    "<node>\n"
+	    "  <interface name='org.freedesktop.DBus.Introspectable'>\n"
+	    "    <method name='Introspect'>\n"
+	    "      <arg name='data' direction='out' type='s' />\n"
+	    "    </method>\n"
+	    "  </interface>\n";
+
+	char *ret = NULL;
+	mstrextend(&ret, str_introspect);
+
+	HASH_ITER2(ps->windows, w) {
+		assert(!w->destroyed);
+		if (!w->managed) {
+			continue;
+		}
+		char *tmp = NULL;
+		asprintf(&tmp, "<node name='%#010x'/>\n", w->id);
+		mstrextend(&ret, tmp);
+		free(tmp);
+	}
+	mstrextend(&ret, "</node>");
+
+	bool success = cdbus_reply_string(ps, msg, ret);
+	free(ret);
+	return success;
+}
+
+static bool cdbus_process_window_introspect(session_t *ps, DBusMessage *msg) {
+	// clang-format off
+	static const char *str_introspect =
+	    "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection "
+	    "1.0//EN\"\n"
+	    " \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n"
+	    "<node>\n"
+	    "  <interface name='org.freedesktop.DBus.Introspectable'>\n"
+	    "    <method name='Introspect'>\n"
+	    "      <arg name='data' direction='out' type='s' />\n"
+	    "    </method>\n"
+	    "  </interface>\n"
+	    "  <interface name='org.freedesktop.DBus.Properties'>\n"
+	    "    <method name='Get'>\n"
+	    "      <arg type='s' name='interface_name' direction='in'/>\n"
+	    "      <arg type='s' name='property_name' direction='in'/>\n"
+	    "      <arg type='v' name='value' direction='out'/>\n"
+	    "    </method>\n"
+	    "    <method name='GetAll'>\n"
+	    "      <arg type='s' name='interface_name' direction='in'/>\n"
+	    "      <arg type='a{sv}' name='properties' direction='out'/>\n"
+	    "    </method>\n"
+	    "    <method name='Set'>\n"
+	    "      <arg type='s' name='interface_name' direction='in'/>\n"
+	    "      <arg type='s' name='property_name' direction='in'/>\n"
+	    "      <arg type='v' name='value' direction='in'/>\n"
+	    "    </method>\n"
+	    "    <signal name='PropertiesChanged'>\n"
+	    "      <arg type='s' name='interface_name'/>\n"
+	    "      <arg type='a{sv}' name='changed_properties'/>\n"
+	    "      <arg type='as' name='invalidated_properties'/>\n"
+	    "    </signal>\n"
+	    "  </interface>\n"
+	    "</node>\n";
+	// clang-format on
+
+	return cdbus_reply_string(ps, msg, str_introspect);
+}
 
 /**
  * Process a message from D-Bus.
@@ -1301,6 +1393,72 @@ cdbus_process(DBusConnection *c attr_unused, DBusMessage *msg, void *ud) {
 		handled = true;
 	}
 
+	return handled ? DBUS_HANDLER_RESULT_HANDLED : DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
+/**
+ * Process a message from D-Bus, for /windows path.
+ */
+static DBusHandlerResult
+cdbus_process_windows(DBusConnection *c attr_unused, DBusMessage *msg, void *ud) {
+	session_t *ps = ud;
+	bool handled = false;
+	const char *path = dbus_message_get_path(msg);
+	const char *last_segment = strrchr(path, '/');
+	if (last_segment == NULL) {
+		if (DBUS_MESSAGE_TYPE_METHOD_CALL == dbus_message_get_type(msg) &&
+		    !dbus_message_get_no_reply(msg))
+			cdbus_reply_err(ps, msg, CDBUS_ERROR_BADMSG, CDBUS_ERROR_BADMSG_S);
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	bool is_root = strncmp(last_segment, "/windows", 8) == 0;
+	if (dbus_message_is_method_call(msg, "org.freedesktop.DBus.Introspectable",
+	                                "Introspect")) {
+		if (is_root) {
+			handled = cdbus_process_windows_root_introspect(ps, msg);
+		} else {
+			handled = cdbus_process_window_introspect(ps, msg);
+		}
+		goto finished;
+	}
+
+	if (!is_root) {
+		auto wid = (cdbus_window_t)strtol(last_segment + 1, NULL, 0);
+		if (dbus_message_is_method_call(msg, "org.freedesktop.DBus.Properties",
+		                                "GetAll")) {
+			handled = cdbus_reply(ps, msg, cdbus_append_empty_dict, NULL);
+			goto finished;
+
+		}
+	}
+
+	if (dbus_message_is_signal(msg, "org.freedesktop.DBus", "NameAcquired") ||
+	    dbus_message_is_signal(msg, "org.freedesktop.DBus", "NameLost")) {
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+
+	if (DBUS_MESSAGE_TYPE_ERROR == dbus_message_get_type(msg)) {
+		log_error("Error message of path \"%s\" "
+		          "interface \"%s\", member \"%s\", error \"%s\"",
+		          dbus_message_get_path(msg), dbus_message_get_interface(msg),
+		          dbus_message_get_member(msg), dbus_message_get_error_name(msg));
+	} else {
+		log_error("Illegal message of type \"%s\", path \"%s\" "
+		          "interface \"%s\", member \"%s\"",
+		          cdbus_repr_msgtype(msg), dbus_message_get_path(msg),
+		          dbus_message_get_interface(msg), dbus_message_get_member(msg));
+	}
+	if (DBUS_MESSAGE_TYPE_METHOD_CALL == dbus_message_get_type(msg) &&
+	    !dbus_message_get_no_reply(msg)) {
+		handled = cdbus_reply_err(ps, msg, CDBUS_ERROR_BADMSG, CDBUS_ERROR_BADMSG_S);
+	}
+
+finished:
+	if (!handled && dbus_message_get_type(msg) == DBUS_MESSAGE_TYPE_METHOD_CALL &&
+	    !dbus_message_get_no_reply(msg)) {
+		handled =
+		    cdbus_reply_err(ps, msg, CDBUS_ERROR_UNKNOWN, CDBUS_ERROR_UNKNOWN_S);
+	}
 	return handled ? DBUS_HANDLER_RESULT_HANDLED : DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
