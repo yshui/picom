@@ -72,6 +72,8 @@ typedef uint32_t cdbus_enum_t;
 	cdbus_reply_errm((ps), dbus_message_new_error_printf(                            \
 	                           (srcmsg), (err_name), (err_format), ##__VA_ARGS__))
 
+#define PICOM_WINDOW_INTERFACE "picom.Window"
+
 static DBusHandlerResult cdbus_process(DBusConnection *conn, DBusMessage *m, void *);
 static DBusHandlerResult cdbus_process_windows(DBusConnection *c, DBusMessage *msg, void *ud);
 
@@ -442,6 +444,55 @@ static bool cdbus_apdarg_wid(session_t *ps attr_unused, DBusMessage *msg, const 
 }
 
 /**
+ * Callback to append a Window argument to a message as a variant.
+ */
+static bool
+cdbus_append_wid_variant(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
+	assert(data);
+	cdbus_window_t val = *(const xcb_window_t *)data;
+
+	DBusMessageIter it, it2;
+	dbus_message_iter_init_append(msg, &it);
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_VARIANT,
+	                                      CDBUS_TYPE_WINDOW_STR, &it2)) {
+		return false;
+	}
+	if (!dbus_message_iter_append_basic(&it2, CDBUS_TYPE_WINDOW, &val)) {
+		log_error("Failed to append argument.");
+		return false;
+	}
+	if (!dbus_message_iter_close_container(&it, &it2)) {
+		return false;
+	}
+
+	return true;
+}
+/**
+ * Callback to append a bool argument to a message as a variant.
+ */
+static bool
+cdbus_append_bool_variant(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
+	assert(data);
+
+	dbus_bool_t val = *(const bool *)data;
+	DBusMessageIter it, it2;
+	dbus_message_iter_init_append(msg, &it);
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_VARIANT,
+	                                      DBUS_TYPE_BOOLEAN_AS_STRING, &it2)) {
+		return false;
+	}
+	if (!dbus_message_iter_append_basic(&it2, DBUS_TYPE_BOOLEAN, &val)) {
+		log_error("Failed to append argument.");
+		return false;
+	}
+	if (!dbus_message_iter_close_container(&it, &it2)) {
+		return false;
+	}
+
+	return true;
+}
+
+/**
  * Callback to append an cdbus_enum_t argument to a message.
  */
 static bool cdbus_apdarg_enum(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
@@ -747,6 +798,73 @@ static bool cdbus_msg_get_arg(DBusMessage *msg, int count, const int type, void 
  */
 static bool cdbus_process_list_win(session_t *ps, DBusMessage *msg) {
 	cdbus_reply(ps, msg, cdbus_apdarg_wids, NULL);
+
+	return true;
+}
+
+/**
+ * Process a win_get D-Bus request.
+ */
+static bool
+cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_t wid) {
+	const char *target = NULL;
+	const char *interface = NULL;
+	DBusError err = {};
+
+	if (!dbus_message_get_args(msg, &err, DBUS_TYPE_STRING, &interface,
+	                           DBUS_TYPE_STRING, &target, DBUS_TYPE_INVALID)) {
+		log_error("Failed to parse argument of \"Get\" (%s).", err.message);
+		dbus_error_free(&err);
+		return false;
+	}
+
+	if (strcmp(interface, PICOM_WINDOW_INTERFACE)) {
+		return false;
+	}
+
+	auto w = find_managed_win(ps, wid);
+
+	if (!w) {
+		log_error("Window %#010x not found.", wid);
+		cdbus_reply_err(ps, msg, CDBUS_ERROR_BADWIN, CDBUS_ERROR_BADWIN_S, wid);
+		return true;
+	}
+
+#define cdbus_m_win_get_do(tgt, apdarg_func)                                             \
+	if (!strcmp(#tgt, target)) {                                                     \
+		cdbus_reply(ps, msg, apdarg_func, &w->tgt);                              \
+		return true;                                                             \
+	}
+
+	if (!strcmp(target, "id")) {
+		cdbus_reply(ps, msg, cdbus_append_wid_variant, &w->base.id);
+		return true;
+	}
+
+	// next
+	if (!strcmp("next", target)) {
+		cdbus_window_t next_id = 0;
+		if (!list_node_is_last(&ps->window_stack, &w->base.stack_neighbour)) {
+			next_id = list_entry(w->base.stack_neighbour.next, struct win,
+			                     stack_neighbour)
+			              ->id;
+		}
+		cdbus_reply(ps, msg, cdbus_append_wid_variant, &next_id);
+		return true;
+	}
+
+	cdbus_m_win_get_do(client_win, cdbus_append_wid_variant);
+	cdbus_m_win_get_do(leader, cdbus_append_wid_variant);
+	if (!strcmp("focused_raw", target)) {
+		cdbus_reply(ps, msg, cdbus_append_bool_variant,
+		            (bool[]){win_is_focused_raw(ps, w)});
+		return true;
+	}
+
+#undef cdbus_m_win_get_do
+
+	log_error(CDBUS_ERROR_BADTGT_S, target);
+	cdbus_reply_err(ps, msg, CDBUS_ERROR_BADTGT, CDBUS_ERROR_BADTGT_S, target);
 
 	return true;
 }
@@ -1306,6 +1424,13 @@ static bool cdbus_process_window_introspect(session_t *ps, DBusMessage *msg) {
 	    "      <arg type='as' name='invalidated_properties'/>\n"
 	    "    </signal>\n"
 	    "  </interface>\n"
+	    "  <interface name='" PICOM_WINDOW_INTERFACE "'>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='leader' access='read'/>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='client_win' access='read'/>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='id' access='read'/>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='next' access='read'/>\n"
+	    "    <property type='b' name='focused_raw' access='read'/>\n"
+	    "  </interface>\n"
 	    "</node>\n";
 	// clang-format on
 
@@ -1428,7 +1553,11 @@ cdbus_process_windows(DBusConnection *c attr_unused, DBusMessage *msg, void *ud)
 		                                "GetAll")) {
 			handled = cdbus_reply(ps, msg, cdbus_append_empty_dict, NULL);
 			goto finished;
+		}
 
+		if (dbus_message_is_method_call(msg, "org.freedesktop.DBus.Properties", "Get")) {
+			handled = cdbus_process_window_property_get(ps, msg, wid);
+			goto finished;
 		}
 	}
 
