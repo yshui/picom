@@ -761,7 +761,10 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 		return true;                                                             \
 	}
 
-	cdbus_m_win_get_do(base.id, cdbus_reply_wid);
+	if (!strcmp(target, "id")) {
+		cdbus_reply_wid(ps, msg, w->base.id);
+		return true;
+	}
 
 	// next
 	if (!strcmp("next", target)) {
