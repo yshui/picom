@@ -467,6 +467,7 @@ cdbus_append_wid_variant(session_t *ps attr_unused, DBusMessage *msg, const void
 
 	return true;
 }
+
 /**
  * Callback to append a bool argument to a message as a variant.
  */
@@ -516,6 +517,33 @@ cdbus_apdarg_string(session_t *ps attr_unused, DBusMessage *msg, const void *dat
 
 	if (!dbus_message_append_args(msg, DBUS_TYPE_STRING, &str, DBUS_TYPE_INVALID)) {
 		log_error("Failed to append argument.");
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * Callback to append a string argument to a message as a variant.
+ */
+static bool
+cdbus_append_string_variant(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
+	const char *str = *(const char **)data;
+	if (!str) {
+		str = "";
+	}
+
+	DBusMessageIter it, it2;
+	dbus_message_iter_init_append(msg, &it);
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_VARIANT,
+	                                      DBUS_TYPE_STRING_AS_STRING, &it2)) {
+		return false;
+	}
+	if (!dbus_message_iter_append_basic(&it2, DBUS_TYPE_STRING, &str)) {
+		log_error("Failed to append argument.");
+		return false;
+	}
+	if (!dbus_message_iter_close_container(&it, &it2)) {
 		return false;
 	}
 
@@ -855,6 +883,7 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 
 	cdbus_m_win_get_do(client_win, cdbus_append_wid_variant);
 	cdbus_m_win_get_do(leader, cdbus_append_wid_variant);
+	cdbus_m_win_get_do(name, cdbus_append_string_variant);
 	if (!strcmp("focused_raw", target)) {
 		cdbus_reply(ps, msg, cdbus_append_bool_variant,
 		            (bool[]){win_is_focused_raw(ps, w)});
@@ -1430,6 +1459,7 @@ static bool cdbus_process_window_introspect(session_t *ps, DBusMessage *msg) {
 	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='id' access='read'/>\n"
 	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='next' access='read'/>\n"
 	    "    <property type='b' name='focused_raw' access='read'/>\n"
+	    "    <property type='s' name='name' access='read'/>\n"
 	    "  </interface>\n"
 	    "</node>\n";
 	// clang-format on
