@@ -858,25 +858,25 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 		return true;
 	}
 
-#define cdbus_m_win_get_do(tgt, apdarg_func)                                             \
+#define cdbus_m_win_get_do(tgt, member, apdarg_func)                                     \
 	if (!strcmp(#tgt, target)) {                                                     \
-		cdbus_reply(ps, msg, apdarg_func, &w->tgt);                              \
+		cdbus_reply(ps, msg, apdarg_func, &w->member);                           \
 		return true;                                                             \
 	}
 
-	if (!strcmp("mapped", target)) {
+	if (!strcmp("Mapped", target)) {
 		cdbus_reply(ps, msg, cdbus_append_bool_variant,
 		            (bool[]){win_is_mapped_in_x(w)});
 		return true;
 	}
 
-	if (!strcmp(target, "id")) {
+	if (!strcmp(target, "Id")) {
 		cdbus_reply(ps, msg, cdbus_append_wid_variant, &w->base.id);
 		return true;
 	}
 
 	// next
-	if (!strcmp("next", target)) {
+	if (!strcmp("Next", target)) {
 		cdbus_window_t next_id = 0;
 		if (!list_node_is_last(&ps->window_stack, &w->base.stack_neighbour)) {
 			next_id = list_entry(w->base.stack_neighbour.next, struct win,
@@ -887,10 +887,10 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 		return true;
 	}
 
-	cdbus_m_win_get_do(client_win, cdbus_append_wid_variant);
-	cdbus_m_win_get_do(leader, cdbus_append_wid_variant);
-	cdbus_m_win_get_do(name, cdbus_append_string_variant);
-	if (!strcmp("focused_raw", target)) {
+	cdbus_m_win_get_do(ClientWin, client_win, cdbus_append_wid_variant);
+	cdbus_m_win_get_do(Leader, leader, cdbus_append_wid_variant);
+	cdbus_m_win_get_do(Name, name, cdbus_append_string_variant);
+	if (!strcmp("RawFocused", target)) {
 		cdbus_reply(ps, msg, cdbus_append_bool_variant,
 		            (bool[]){win_is_focused_raw(ps, w)});
 		return true;
@@ -1460,13 +1460,13 @@ static bool cdbus_process_window_introspect(session_t *ps, DBusMessage *msg) {
 	    "    </signal>\n"
 	    "  </interface>\n"
 	    "  <interface name='" PICOM_WINDOW_INTERFACE "'>\n"
-	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='leader' access='read'/>\n"
-	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='client_win' access='read'/>\n"
-	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='id' access='read'/>\n"
-	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='next' access='read'/>\n"
-	    "    <property type='b' name='focused_raw' access='read'/>\n"
-	    "    <property type='b' name='mapped' access='read'/>\n"
-	    "    <property type='s' name='name' access='read'/>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='Leader' access='read'/>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='ClientWin' access='read'/>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='Id' access='read'/>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='Next' access='read'/>\n"
+	    "    <property type='b' name='RawFocused' access='read'/>\n"
+	    "    <property type='b' name='Mapped' access='read'/>\n"
+	    "    <property type='s' name='Name' access='read'/>\n"
 	    "  </interface>\n"
 	    "</node>\n";
 	// clang-format on
