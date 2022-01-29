@@ -864,6 +864,12 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 		return true;                                                             \
 	}
 
+	if (!strcmp("mapped", target)) {
+		cdbus_reply(ps, msg, cdbus_append_bool_variant,
+		            (bool[]){win_is_mapped_in_x(w)});
+		return true;
+	}
+
 	if (!strcmp(target, "id")) {
 		cdbus_reply(ps, msg, cdbus_append_wid_variant, &w->base.id);
 		return true;
@@ -1459,6 +1465,7 @@ static bool cdbus_process_window_introspect(session_t *ps, DBusMessage *msg) {
 	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='id' access='read'/>\n"
 	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='next' access='read'/>\n"
 	    "    <property type='b' name='focused_raw' access='read'/>\n"
+	    "    <property type='b' name='mapped' access='read'/>\n"
 	    "    <property type='s' name='name' access='read'/>\n"
 	    "  </interface>\n"
 	    "</node>\n";
