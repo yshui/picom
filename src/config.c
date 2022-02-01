@@ -582,7 +582,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .transition_offset = 20,
 	    .transition_direction = 0,
 	    .transition_step = 0.028,
-	    .transition_timing_function = NULL,
+	    .transition_timing_function = ease_out_cubic,
 
 	    .rounded_corners_blacklist = NULL
 	};

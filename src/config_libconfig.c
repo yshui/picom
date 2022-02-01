@@ -309,6 +309,45 @@ enum transition_direction parse_transition_direction(const char *direction) {
 	return TRANSITION_DIR_NONE;
 }
 
+timing_function parse_timing_function(const char *timing_name) {
+	// clang-format off
+	static const char *names[] = {
+		"sine", "cubic", "quint", "circ", "elastic",
+		"quad", "quart", "etpo", "back", "bounce"
+	};
+
+	static const char *prefixes[] = {"in", "out", "in-out"};
+
+	static timing_function functions[] = {
+		ease_in_sine   , ease_out_sine   , ease_in_out_sine   ,
+		ease_in_cubic  , ease_out_cubic  , ease_in_out_cubic  ,
+		ease_in_quint  , ease_out_quint  , ease_in_out_quint  ,
+		ease_in_circ   , ease_out_circ   , ease_in_out_circ   ,
+		ease_in_elastic, ease_out_elastic, ease_in_out_elastic,
+		ease_in_quad   , ease_out_quad   , ease_in_out_quad   ,
+		ease_in_quart  , ease_out_quart  , ease_in_out_quart  ,
+		ease_in_etpo   , ease_out_etpo   , ease_in_out_etpo   ,
+		ease_in_back   , ease_out_back   , ease_in_out_back   ,
+		ease_in_bounce , ease_out_bounce , ease_in_out_bounce ,
+	};
+	// clang-format on
+
+	char buffer[64];
+	for (unsigned int i = 0; i < sizeof(names) / sizeof(char *); i++) {
+		for (unsigned int p = 0; p < 3; p++) {
+			snprintf(buffer, sizeof(buffer), "ease-%s-%s", prefixes[p], names[i]);
+
+			if (strcmp(buffer, timing_name) == 0) {
+				unsigned int function_index = (i * 3) + p;
+				return functions[function_index];
+			}
+		}
+	}
+
+	log_error("'%s' is not a valid transition timing function.", timing_name);
+	return NULL;
+}
+
 /**
  * Parse a configuration file from default location.
  *
@@ -664,6 +703,14 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 
 			if (config_lookup_string(&cfg, "transition-direction", &sval)) {
 				opt->transition_direction = parse_transition_direction(sval);
+			}
+
+			if (config_lookup_string(&cfg, "transition-timing-function", &sval)) {
+				timing_function res = parse_timing_function(sval);
+
+				if (res != NULL) {
+					opt->transition_timing_function = res;
+				}
 			}
 		}
 	}
