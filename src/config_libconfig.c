@@ -303,6 +303,11 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shadow_enable,
                              bool *fading_enable, bool *conv_kern_hasneg,
                              win_option_mask_t *winopt_mask) {
+
+	const char *deprecation_message =
+	    "option has been deprecated. Please remove it from your configuration file. "
+	    "If you encounter any problems without this feature, please feel free to "
+	    "open a bug report";
 	char *path = NULL;
 	FILE *f;
 	config_t cfg;
@@ -387,24 +392,11 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// -c (shadow_enable)
 	if (config_lookup_bool(&cfg, "shadow", &ival))
 		*shadow_enable = ival;
-	// -C (no_dock_shadow)
-	if (config_lookup_bool(&cfg, "no-dock-shadow", &ival)) {
-		log_error("Option `no-dock-shadow` has been removed. Please use the "
-		          "wintype option `shadow` of `dock` instead.");
-		goto err;
-	}
-	// -G (no_dnd_shadow)
-	if (config_lookup_bool(&cfg, "no-dnd-shadow", &ival)) {
-		log_error("Option `no-dnd-shadow` has been removed. Please use the "
-		          "wintype option `shadow` of `dnd` instead.");
-		goto err;
-	};
 	// -m (menu_opacity)
 	if (config_lookup_float(&cfg, "menu-opacity", &dval)) {
-		log_warn("Option `menu-opacity` is deprecated, and will be "
-		         "removed.Please use the "
-		         "wintype option `opacity` of `popup_menu` and `dropdown_menu` "
-		         "instead.");
+		log_warn("Option `menu-opacity` is deprecated, and will be removed."
+		         "Please use the wintype option `opacity` of `popup_menu`"
+		         "and `dropdown_menu` instead.");
 		opt->wintype_option[WINTYPE_DROPDOWN_MENU].opacity = dval;
 		opt->wintype_option[WINTYPE_POPUP_MENU].opacity = dval;
 		winopt_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
@@ -451,19 +443,16 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --detect-client-opacity
 	lcfg_lookup_bool(&cfg, "detect-client-opacity", &opt->detect_client_opacity);
 	// --refresh-rate
-	if (config_lookup_int(&cfg, "refresh-rate", &opt->refresh_rate)) {
-		if (opt->refresh_rate < 0) {
-			log_warn("Invalid refresh rate %d, fallback to 0", opt->refresh_rate);
-			opt->refresh_rate = 0;
-		}
+	if (config_lookup_int(&cfg, "refresh-rate", &ival)) {
+		log_warn("The refresh-rate %s", deprecation_message);
 	}
 	// --vsync
 	if (config_lookup_string(&cfg, "vsync", &sval)) {
-		opt->vsync = parse_vsync(sval);
-		log_warn("vsync option will take a boolean from now on. \"%s\" is "
-		         "interpreted as \"%s\" for compatibility, but this will stop "
-		         "working soon",
-		         sval, opt->vsync ? "true" : "false");
+		bool parsed_vsync = parse_vsync(sval);
+		log_error("vsync option will take a boolean from now on. \"%s\" in "
+		          "your configuration should be changed to \"%s\"",
+		          sval, parsed_vsync ? "true" : "false");
+		goto err;
 	}
 	lcfg_lookup_bool(&cfg, "vsync", &opt->vsync);
 	// --backend
@@ -492,7 +481,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		opt->logpath = strdup(sval);
 	}
 	// --sw-opti
-	lcfg_lookup_bool(&cfg, "sw-opti", &opt->sw_opti);
+	if (lcfg_lookup_bool(&cfg, "sw-opti", &bval)) {
+		log_warn("The sw-opti %s", deprecation_message);
+	}
 	// --use-ewmh-active-win
 	lcfg_lookup_bool(&cfg, "use-ewmh-active-win", &opt->use_ewmh_active_win);
 	// --unredir-if-possible
@@ -596,6 +587,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	if (config_lookup_string(&cfg, "glx-swap-method", &sval)) {
 		char *endptr;
 		long val = strtol(sval, &endptr, 10);
+		bool should_remove = true;
 		if (*endptr || !(*sval)) {
 			// sval is not a number, or an empty string
 			val = -1;
@@ -603,12 +595,13 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		if (strcmp(sval, "undefined") != 0 && val != 0) {
 			// If not undefined, we will use damage and buffer-age to limit
 			// the rendering area.
-			opt->use_damage = true;
+			should_remove = false;
 		}
-		log_warn("glx-swap-method has been deprecated since v6, your setting "
-		         "\"%s\" should be %s.",
-		         sval,
-		         opt->use_damage ? "replaced by `use-damage = true`" : "removed");
+		log_error("glx-swap-method has been removed, your setting "
+		          "\"%s\" should be %s.",
+		          sval,
+		          !should_remove ? "replaced by `use-damage = true`" : "removed");
+		goto err;
 	}
 	// --use-damage
 	lcfg_lookup_bool(&cfg, "use-damage", &opt->use_damage);
@@ -622,14 +615,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 
 	// --glx-use-gpushader4
-	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival) && ival) {
-		log_warn("glx-use-gpushader4 is deprecated since v6, please remove it "
-		         "from"
-		         "your config file");
-	}
-	// --xrender-sync
-	if (config_lookup_bool(&cfg, "xrender-sync", &ival) && ival) {
-		log_error("Please use xrender-sync-fence instead of xrender-sync.");
+	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival)) {
+		log_error("glx-use-gpushader4 has been removed, please remove it "
+		          "from your config file");
 		goto err;
 	}
 	// --xrender-sync-fence
@@ -638,21 +626,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
 		log_warn("\"clear-shadow\" is removed as an option, and is always"
 		         " enabled now. Consider removing it from your config file");
-	if (lcfg_lookup_bool(&cfg, "paint-on-overlay", &bval)) {
-		log_error("\"paint-on-overlay\" has been removed as an option, and "
-		          "the feature is enabled whenever possible");
-		goto err;
-	}
-
-	if (config_lookup_float(&cfg, "alpha-step", &dval)) {
-		log_error("\"alpha-step\" has been removed, compton now tries to make use"
-		          " of all alpha values");
-		goto err;
-	}
-
-	const char *deprecation_message attr_unused =
-	    "has been removed. If you encounter problems "
-	    "without this feature, please feel free to open a bug report";
 
 	config_setting_t *blur_cfg = config_lookup(&cfg, "blur");
 	if (blur_cfg) {

@@ -137,10 +137,6 @@ typedef struct options {
 	win_option_t wintype_option[NUM_WINTYPES];
 
 	// === VSync & software optimization ===
-	/// User-specified refresh rate.
-	int refresh_rate;
-	/// Whether to enable refresh-rate-based software optimization.
-	bool sw_opti;
 	/// VSync method to use;
 	bool vsync;
 	/// Whether to use glFinish() instead of glFlush() for (possibly) better

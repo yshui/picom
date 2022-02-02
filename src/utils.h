@@ -147,6 +147,7 @@ static inline int attr_const lerp_range(int a, int b, int c, int d, int value) {
 
 #define min2(a, b) ((a) > (b) ? (b) : (a))
 #define max2(a, b) ((a) > (b) ? (a) : (b))
+#define min3(a, b, c) min2(a, min2(b, c))
 
 /// clamp `val` into interval [min, max]
 #define clamp(val, min, max) max2(min2(val, max), min)

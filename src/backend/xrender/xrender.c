@@ -760,30 +760,6 @@ static void get_blur_size(void *blur_context, int *width, int *height) {
 	*height = ctx->resize_height;
 }
 
-static bool
-read_pixel(backend_t *backend_data, void *image_data, int x, int y, struct color *output) {
-	auto xd = (struct _xrender_data *)backend_data;
-	auto img = (struct backend_image *)image_data;
-	auto inner = (struct _xrender_image_data_inner *)img->inner;
-
-	auto r = XCB_AWAIT(xcb_get_image, xd->base.c, XCB_IMAGE_FORMAT_XY_PIXMAP, inner->pixmap,
-	                   to_i16_checked(x), to_i16_checked(y), 1, 1, (uint32_t)-1L);
-
-	if (!r) {
-		return false;
-	}
-
-	// Color format seems to be BGRA8888, see glamor_format_for_pixmap from the
-	// Xserver codebase.
-	uint8_t *pixels = xcb_get_image_data(r);
-	output->blue = pixels[0] / 255.0;
-	output->green = pixels[1] / 255.0;
-	output->red = pixels[2] / 255.0;
-	output->alpha = pixels[3] / 255.0;
-
-	return true;
-}
-
 static backend_t *backend_xrender_init(session_t *ps) {
 	auto xd = ccalloc(1, struct _xrender_data);
 	init_backend_base(&xd->base, ps);
@@ -903,7 +879,6 @@ struct backend_operations xrender_ops = {
     .max_buffer_age = 2,
 
     .image_op = image_op,
-    .read_pixel = read_pixel,
     .clone_image = clone_image,
     .set_image_property = set_image_property,
     .create_blur_context = create_blur_context,
