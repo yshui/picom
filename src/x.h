@@ -87,6 +87,10 @@ struct xvisual_info {
 #define log_fatal_x_error(e, fmt, ...)                                                   \
 	LOG(FATAL, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
 
+// xcb-render specific macros
+#define XFIXED_TO_DOUBLE(value) (((double)(value)) / 65536)
+#define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t)(((double)(value)) * 65536))
+
 /// Wraps x_new_id. abort the program if x_new_id returns error
 static inline uint32_t x_new_id(xcb_connection_t *c) {
 	auto ret = xcb_generate_id(c);

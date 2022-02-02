@@ -127,7 +127,7 @@ static void usage(const char *argv0, int ret) {
 	    "  Blue color value of shadow (0.0 - 1.0, defaults to 0).\n"
 	    "\n"
 	    "--inactive-opacity-override\n"
-	    "  Inactive opacity set by -i overrides value of _NET_WM_OPACITY.\n"
+	    "  Inactive opacity set by -i overrides value of _NET_WM_WINDOW_OPACITY.\n"
 	    "\n"
 	    "--inactive-dim value\n"
 	    "  Dim inactive windows. (0.0 - 1.0, defaults to 0)\n"
@@ -174,8 +174,8 @@ static void usage(const char *argv0, int ret) {
 	    "  conditions.\n"
 	    "\n"
 	    "--detect-client-opacity\n"
-	    "  Detect _NET_WM_OPACITY on client windows, useful for window\n"
-	    "  managers not passing _NET_WM_OPACITY of client windows to frame\n"
+	    "  Detect _NET_WM_WINDOW_OPACITY on client windows, useful for window\n"
+	    "  managers not passing _NET_WM_WINDOW_OPACITY of client windows to frame\n"
 	    "  windows.\n"
 	    "\n"
 	    "--refresh-rate val\n"
@@ -222,8 +222,10 @@ static void usage(const char *argv0, int ret) {
 	    "\n"
 	    "--detect-client-leader\n"
 	    "  Use WM_CLIENT_LEADER to group windows, and consider windows in\n"
-	    "  the same group focused at the same time. WM_TRANSIENT_FOR has\n"
-	    "  higher priority if --detect-transient is enabled, too.\n"
+	    "  the same group focused at the same time. This usually means windows\n"
+	    "  from the same application will be considered focused or unfocused at\n"
+	    "  the same time. WM_TRANSIENT_FOR has higher priority if\n"
+	    "  --detect-transient is enabled, too.\n"
 	    "\n"
 	    "--blur-method\n"
 	    "  The algorithm used for background bluring. Available choices are:\n"
@@ -1060,12 +1062,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	if (opt->backend == BKEND_XRENDER && conv_kern_hasneg) {
 		log_warn("A convolution kernel with negative values may not work "
 		         "properly under X Render backend.");
-	}
-
-	if (opt->corner_radius > 0 && opt->experimental_backends) {
-		log_warn("Rounded corner is only supported on legacy backends, it "
-		         "will be disabled");
-		opt->corner_radius = 0;
 	}
 
 	return true;

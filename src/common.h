@@ -247,9 +247,9 @@ typedef struct session {
 	/// Pre-generated alpha pictures.
 	xcb_render_picture_t *alpha_picts;
 	/// Time of last fading. In milliseconds.
-	long fade_time;
+	long long fade_time;
 	/// Time of last window animation step. In milliseconds.
-	long animation_time;
+	long animation_time; // TODO(dccsillag) turn into `long long`, like fade_time
 	/// Head pointer of the error ignore linked list.
 	ignore_t *ignore_head;
 	/// Pointer to the <code>next</code> member of tail element of the error

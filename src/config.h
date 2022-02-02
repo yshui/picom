@@ -198,7 +198,7 @@ typedef struct options {
 
 	// === Opacity ===
 	/// Default opacity for inactive windows.
-	/// 32-bit integer with the format of _NET_WM_OPACITY.
+	/// 32-bit integer with the format of _NET_WM_WINDOW_OPACITY.
 	double inactive_opacity;
 	/// Default opacity for inactive windows.
 	double active_opacity;
@@ -208,8 +208,8 @@ typedef struct options {
 	/// Frame opacity. Relative to window opacity, also affects shadow
 	/// opacity.
 	double frame_opacity;
-	/// Whether to detect _NET_WM_OPACITY on client windows. Used on window
-	/// managers that don't pass _NET_WM_OPACITY to frame windows.
+	/// Whether to detect _NET_WM_WINDOW_OPACITY on client windows. Used on window
+	/// managers that don't pass _NET_WM_WINDOW_OPACITY to frame windows.
 	bool detect_client_opacity;
 
 	// === Other window processing ===

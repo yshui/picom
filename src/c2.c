@@ -579,8 +579,8 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 
 	// Copy target name out
 	int tgtlen = 0;
-	for (; pattern[offset] &&
-	       (isalnum((unsigned char)pattern[offset]) || '_' == pattern[offset]);
+	for (; pattern[offset] && (isalnum((unsigned char)pattern[offset]) ||
+	                           '_' == pattern[offset] || '.' == pattern[offset]);
 	     ++offset) {
 		++tgtlen;
 	}
@@ -1324,13 +1324,13 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 	switch (pleaf->ptntype) {
 	// Deal with integer patterns
 	case C2_L_PTINT: {
-		long *targets = NULL;
-		long *targets_free = NULL;
+		long long *targets = NULL;
+		long long *targets_free = NULL;
 		size_t ntargets = 0;
 
 		// Get the value
 		// A predefined target
-		long predef_target = 0;
+		long long predef_target = 0;
 		if (pleaf->predef != C2_L_PUNDEFINED) {
 			*perr = false;
 			switch (pleaf->predef) {
@@ -1379,7 +1379,7 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 
 			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
 			if (ntargets > 0) {
-				targets = targets_free = ccalloc(ntargets, long);
+				targets = targets_free = ccalloc(ntargets, long long);
 				*perr = false;
 				for (size_t i = 0; i < ntargets; ++i) {
 					targets[i] = winprop_get_int(prop, i);
@@ -1395,7 +1395,7 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 		// Do comparison
 		bool res = false;
 		for (size_t i = 0; i < ntargets; ++i) {
-			long tgt = targets[i];
+			long long tgt = targets[i];
 			switch (pleaf->op) {
 			case C2_L_OEXISTS:
 				res = (pleaf->predef != C2_L_PUNDEFINED ? tgt : true);
