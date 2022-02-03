@@ -439,7 +439,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		if (w->frame_opacity == 1 && !is_animating) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               w->g.x, w->g.y,
-						       w->g.x + w->widthb, w->g.y + w->heightb,
+			                               w->g.x + w->widthb, w->g.y + w->heightb,
 			                               &reg_paint_in_bound, &reg_visible);
 		} else {
 			if (is_animating && w->old_win_image) {
