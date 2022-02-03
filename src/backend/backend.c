@@ -398,6 +398,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			ps->backend_data->ops->set_image_property(
 			    ps->backend_data, IMAGE_PROPERTY_CORNER_RADIUS, w->win_image,
 			    (double[]){w->corner_radius});
+			ps->backend_data->ops->set_image_property(
+			    ps->backend_data, IMAGE_PROPERTY_CORNER_RADIUS, w->old_win_image,
+			    (double[]){w->corner_radius});
 			if (w->corner_radius) {
 				int border_width = w->g.border_width;
 				if (border_width == 0) {
@@ -409,6 +412,9 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				ps->backend_data->ops->set_image_property(
 				    ps->backend_data, IMAGE_PROPERTY_BORDER_WIDTH,
 				    w->win_image, &border_width);
+				ps->backend_data->ops->set_image_property(
+				    ps->backend_data, IMAGE_PROPERTY_BORDER_WIDTH,
+				    w->old_win_image, &border_width);
 			}
 		}
 
