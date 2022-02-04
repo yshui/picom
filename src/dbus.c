@@ -73,6 +73,7 @@ typedef uint32_t cdbus_enum_t;
 	                           (srcmsg), (err_name), (err_format), ##__VA_ARGS__))
 
 #define PICOM_WINDOW_INTERFACE "picom.Window"
+#define PICOM_COMPOSITOR_INTERFACE "picom.Compositor"
 
 static DBusHandlerResult cdbus_process(DBusConnection *conn, DBusMessage *m, void *);
 static DBusHandlerResult cdbus_process_windows(DBusConnection *c, DBusMessage *msg, void *ud);
@@ -613,14 +614,14 @@ static bool cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data 
  *        add an argument
  * @param data data pointer to pass to the function
  */
-static bool cdbus_signal(session_t *ps, const char *name,
+static bool cdbus_signal(session_t *ps, const char *interface, const char *name,
                          bool (*func)(session_t *ps, DBusMessage *msg, const void *data),
                          const void *data) {
 	struct cdbus_data *cd = ps->dbus_data;
 	DBusMessage *msg = NULL;
 
 	// Create a signal
-	msg = dbus_message_new_signal(CDBUS_OBJECT_NAME, CDBUS_INTERFACE_NAME, name);
+	msg = dbus_message_new_signal(CDBUS_OBJECT_NAME, interface, name);
 	if (!msg) {
 		log_error("Failed to create D-Bus signal.");
 		return false;
@@ -649,8 +650,9 @@ static bool cdbus_signal(session_t *ps, const char *name,
 /**
  * Send a signal with a Window ID as argument.
  */
-static inline bool cdbus_signal_wid(session_t *ps, const char *name, xcb_window_t wid) {
-	return cdbus_signal(ps, name, cdbus_apdarg_wid, &wid);
+static inline bool
+cdbus_signal_wid(session_t *ps, const char *interface, const char *name, xcb_window_t wid) {
+	return cdbus_signal(ps, interface, name, cdbus_apdarg_wid, &wid);
 }
 
 /**
@@ -1386,6 +1388,20 @@ static bool cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
 	    "    <method name='reset' />\n"
 	    "    <method name='repaint' />\n"
 	    "  </interface>\n"
+	    "  <interface name='" PICOM_COMPOSITOR_INTERFACE "'>\n"
+	    "    <signal name='WinAdded'>\n"
+	    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+	    "    </signal>\n"
+	    "    <signal name='WinDestroyed'>\n"
+	    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+	    "    </signal>\n"
+	    "    <signal name='WinMapped'>\n"
+	    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+	    "    </signal>\n"
+	    "    <signal name='WinUnmapped'>\n"
+	    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+	    "    </signal>\n"
+	    "  </interface>\n"
 	    "  <node name='windows' />\n"
 	    "</node>\n";
 
@@ -1638,37 +1654,47 @@ finished:
 ///@{
 void cdbus_ev_win_added(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_added", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_added", w->id);
+		cdbus_signal_wid(ps, PICOM_COMPOSITOR_INTERFACE, "WinAdded", w->id);
+	}
 }
 
 void cdbus_ev_win_destroyed(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_destroyed", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_destroyed", w->id);
+		cdbus_signal_wid(ps, PICOM_COMPOSITOR_INTERFACE, "WinDestroyed", w->id);
+	}
 }
 
 void cdbus_ev_win_mapped(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_mapped", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_mapped", w->id);
+		cdbus_signal_wid(ps, PICOM_COMPOSITOR_INTERFACE, "WinMapped", w->id);
+	}
 }
 
 void cdbus_ev_win_unmapped(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_unmapped", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_unmapped", w->id);
+		cdbus_signal_wid(ps, PICOM_COMPOSITOR_INTERFACE, "WinUnmapped", w->id);
+	}
 }
 
 void cdbus_ev_win_focusout(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_focusout", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_focusout", w->id);
+	}
 }
 
 void cdbus_ev_win_focusin(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_focusin", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_focusin", w->id);
+	}
 }
 //!@}
