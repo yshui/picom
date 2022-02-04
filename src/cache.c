@@ -17,6 +17,17 @@ struct cache {
 	struct cache_entry *entries;
 };
 
+void cache_set(struct cache *c, const char *key, void *data) {
+	struct cache_entry *e = NULL;
+	HASH_FIND_STR(c->entries, key, e);
+	CHECK(!e);
+
+	e = ccalloc(1, struct cache_entry);
+	e->key = strdup(key);
+	e->value = data;
+	HASH_ADD_STR(c->entries, key, e);
+}
+
 void *cache_get(struct cache *c, const char *key, int *err) {
 	struct cache_entry *e;
 	HASH_FIND_STR(c->entries, key, e);

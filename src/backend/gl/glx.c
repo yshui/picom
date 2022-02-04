@@ -388,11 +388,12 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	}
 
 	log_trace("Binding pixmap %#010x", pixmap);
-	auto wd = ccalloc(1, struct gl_image);
+	auto wd = ccalloc(1, struct backend_image);
 	wd->max_brightness = 1;
-	wd->inner = ccalloc(1, struct gl_texture);
-	wd->inner->width = wd->ewidth = r->width;
-	wd->inner->height = wd->eheight = r->height;
+	auto inner = ccalloc(1, struct gl_texture);
+	inner->width = wd->ewidth = r->width;
+	inner->height = wd->eheight = r->height;
+	wd->inner = (struct backend_image_inner_base *)inner;
 	free(r);
 
 	auto fbcfg = glx_find_fbconfig(gd->display, gd->screen, fmt);
@@ -420,7 +421,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	    0,
 	};
 
-	wd->inner->y_inverted = fbcfg->y_inverted;
+	inner->y_inverted = fbcfg->y_inverted;
 
 	glxpixmap = cmalloc(struct _glx_pixmap);
 	glxpixmap->pixmap = pixmap;
@@ -436,14 +437,14 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	log_trace("GLXPixmap %#010lx", glxpixmap->glpixmap);
 
 	// Create texture
-	wd->inner->user_data = glxpixmap;
-	wd->inner->texture = gl_new_texture(GL_TEXTURE_2D);
+	inner->user_data = glxpixmap;
+	inner->texture = gl_new_texture(GL_TEXTURE_2D);
+	inner->has_alpha = fmt.alpha_size != 0;
 	wd->opacity = 1;
 	wd->color_inverted = false;
 	wd->dim = 0;
-	wd->has_alpha = fmt.alpha_size != 0;
 	wd->inner->refcount = 1;
-	glBindTexture(GL_TEXTURE_2D, wd->inner->texture);
+	glBindTexture(GL_TEXTURE_2D, inner->texture);
 	glXBindTexImageEXT(gd->display, glxpixmap->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -466,7 +467,6 @@ static void glx_present(backend_t *base, const region_t *region attr_unused) {
 	struct _glx_data *gd = (void *)base;
 	gl_present(base, region);
 	glXSwapBuffers(gd->display, gd->target_win);
-	// XXX there should be no need to block, the core should wait for render to finish
 	if (!gd->gl.is_nvidia) {
 		glFinish();
 	}
@@ -483,6 +483,45 @@ static int glx_buffer_age(backend_t *base) {
 	return (int)val ?: -1;
 }
 
+static void glx_diagnostics(backend_t *base) {
+	struct _glx_data *gd = (void *)base;
+	bool warn_software_rendering = false;
+	const char *software_renderer_names[] = {"llvmpipe", "SWR", "softpipe"};
+	auto glx_vendor = glXGetClientString(gd->display, GLX_VENDOR);
+	printf("* Driver vendors:\n");
+	printf(" * GLX: %s\n", glx_vendor);
+	printf(" * GL: %s\n", glGetString(GL_VENDOR));
+
+	auto gl_renderer = (const char *)glGetString(GL_RENDERER);
+	printf("* GL renderer: %s\n", gl_renderer);
+	if (strcmp(glx_vendor, "Mesa Project and SGI")) {
+		for (size_t i = 0; i < ARR_SIZE(software_renderer_names); i++) {
+			if (strstr(gl_renderer, software_renderer_names[i]) != NULL) {
+				warn_software_rendering = true;
+				break;
+			}
+		}
+	}
+
+#ifdef GLX_MESA_query_renderer
+	if (glxext.has_GLX_MESA_query_renderer) {
+		unsigned int accelerated = 0;
+		glXQueryCurrentRendererIntegerMESA(GLX_RENDERER_ACCELERATED_MESA, &accelerated);
+		printf("* Accelerated: %d\n", accelerated);
+
+		// Trust GLX_MESA_query_renderer when it's available
+		warn_software_rendering = (accelerated == 0);
+	}
+#endif
+
+	if (warn_software_rendering) {
+		printf("\n(You are using a software renderer. Unless you are doing this\n"
+		       "intentionally, this means you don't have a graphics driver\n"
+		       "properly installed. Performance will suffer. Please fix this\n"
+		       "before reporting your issue.)\n");
+	}
+}
+
 struct backend_operations glx_ops = {
     .init = glx_init,
     .deinit = glx_deinit,
@@ -490,9 +529,10 @@ struct backend_operations glx_ops = {
     .release_image = gl_release_image,
     .compose = gl_compose,
     .image_op = gl_image_op,
-    .copy = gl_copy,
+    .set_image_property = default_set_image_property,
+    .clone_image = default_clone_image,
     .blur = gl_blur,
-    .is_image_transparent = gl_is_image_transparent,
+    .is_image_transparent = default_is_image_transparent,
     .present = glx_present,
     .buffer_age = glx_buffer_age,
     .render_shadow = default_backend_render_shadow,
@@ -500,6 +540,7 @@ struct backend_operations glx_ops = {
     .create_blur_context = gl_create_blur_context,
     .destroy_blur_context = gl_destroy_blur_context,
     .get_blur_size = gl_get_blur_size,
+    .diagnostics = glx_diagnostics,
     .max_buffer_age = 5,        // Why?
 };
 
@@ -549,6 +590,10 @@ PFNGLXBINDTEXIMAGEEXTPROC glXBindTexImageEXT;
 PFNGLXRELEASETEXIMAGEEXTPROC glXReleaseTexImageEXT;
 PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB;
 
+#ifdef GLX_MESA_query_renderer
+PFNGLXQUERYCURRENTRENDERERINTEGERMESAPROC glXQueryCurrentRendererIntegerMESA;
+#endif
+
 void glxext_init(Display *dpy, int screen) {
 	if (glxext.initialized) {
 		return;
@@ -563,6 +608,9 @@ void glxext_init(Display *dpy, int screen) {
 	check_ext(GLX_EXT_texture_from_pixmap);
 	check_ext(GLX_ARB_create_context);
 	check_ext(GLX_EXT_buffer_age);
+#ifdef GLX_MESA_query_renderer
+	check_ext(GLX_MESA_query_renderer);
+#endif
 #undef check_ext
 
 #define lookup(name) (name = (__typeof__(name))glXGetProcAddress((GLubyte *)#name))
@@ -590,5 +638,10 @@ void glxext_init(Display *dpy, int screen) {
 	if (!lookup(glXCreateContextAttribsARB)) {
 		glxext.has_GLX_ARB_create_context = false;
 	}
+#ifdef GLX_MESA_query_renderer
+	if (!lookup(glXQueryCurrentRendererIntegerMESA)) {
+		glxext.has_GLX_MESA_query_renderer = false;
+	}
+#endif
 #undef lookup
 }

@@ -8,6 +8,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - run: git fetch --depth=1 origin ${{ github.event.pull_request.base.sha }}
-    - uses: yshui/git-clang-format-lint@v1.10
+    - uses: yshui/git-clang-format-lint@v1.11
       with:
         base: ${{ github.event.pull_request.base.sha }}

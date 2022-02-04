@@ -1,0 +1,28 @@
+image: freebsd/latest
+packages:
+  - libev
+  - libXext
+  - libxcb
+  - meson
+  - pkgconf
+  - cmake
+  - xcb-util-renderutil
+  - xcb-util-image
+  - pixman
+  - uthash
+  - libconfig
+  - libglvnd
+  - dbus
+  - pcre
+sources:
+  - https://github.com/yshui/picom
+tasks:
+  - setup: |
+      cd picom
+      CPPFLAGS="-I/usr/local/include" meson -Dunittest=true build
+  - build: |
+      cd picom
+      ninja -C build
+  - unittest: |
+      cd picom
+      ninja -C build test

@@ -14,7 +14,10 @@
 
 #include <test.h>
 
+#include <time.h>
+
 #include "compiler.h"
+#include "types.h"
 
 #define ARR_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
@@ -131,13 +134,10 @@ static inline int attr_const normalize_i_range(int i, int min, int max) {
 
 #define min2(a, b) ((a) > (b) ? (b) : (a))
 #define max2(a, b) ((a) > (b) ? (a) : (b))
+#define min3(a, b, c) min2(a, min2(b, c))
 
 /// clamp `val` into interval [min, max]
 #define clamp(val, min, max) max2(min2(val, max), min)
-
-static inline int attr_const popcountl(unsigned long a) {
-	return __builtin_popcountl(a);
-}
 
 /**
  * Normalize a double value to a specific range.
@@ -163,6 +163,21 @@ static inline double attr_const normalize_d_range(double d, double min, double m
  */
 static inline double attr_const normalize_d(double d) {
 	return normalize_d_range(d, 0.0, 1.0);
+}
+
+/**
+ * Convert a hex RGB string to RGB
+ */
+static inline struct color hex_to_rgb(const char *hex) {
+	struct color rgb;
+	// Ignore the # in front of the string
+	const char *sane_hex = hex + 1;
+	int hex_color = (int)strtol(sane_hex, NULL, 16);
+	rgb.red = (float)(hex_color >> 16) / 256;
+	rgb.green = (float)((hex_color & 0x00ff00) >> 8) / 256;
+	rgb.blue = (float)(hex_color & 0x0000ff) / 256;
+
+	return rgb;
 }
 
 attr_noret void
@@ -258,10 +273,25 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 	void name##_ref(type *a);                                                        \
 	void name##_unref(type **a);
 
+
 ///
 /// Calculates next closest power of two of 32bit integer n
 /// ref: https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
 ///
 int next_power_of_two(int n);
+
+// Some versions of the Android libc do not have timespec_get(), use
+// clock_gettime() instead.
+#ifdef __ANDROID__
+
+#ifndef TIME_UTC
+#define TIME_UTC 1
+#endif
+
+static inline int timespec_get(struct timespec *ts, int base) {
+	assert(base == TIME_UTC);
+	return clock_gettime(CLOCK_REALTIME, ts);
+}
+#endif
 
 // vim: set noet sw=8 ts=8 :

@@ -10,8 +10,8 @@
 
 #ifdef CONFIG_OPENGL
 #include <GL/gl.h>
-#include "backend/gl/glx.h"
 #include "backend/gl/gl_common.h"
+#include "backend/gl/glx.h"
 #endif
 
 #include "compiler.h"
@@ -160,9 +160,10 @@ attr_printf(4, 5) void log_printf(struct log *l, int level, const char *func,
 
 	struct timespec ts;
 	timespec_get(&ts, TIME_UTC);
-	auto tm = localtime(&ts.tv_sec);
+	struct tm now;
+	localtime_r(&ts.tv_sec, &now);
 	char time_buf[100];
-	strftime(time_buf, sizeof time_buf, "%x %T", tm);
+	strftime(time_buf, sizeof time_buf, "%x %T", &now);
 
 	char *time = NULL;
 	int tlen = asprintf(&time, "%s.%03ld", time_buf, ts.tv_nsec / 1000000);
@@ -338,6 +339,10 @@ struct gl_string_marker_logger {
 static void
 gl_string_marker_logger_write(struct log_target *tgt, const char *str, size_t len) {
 	auto g = (struct gl_string_marker_logger *)tgt;
+	// strip newlines at the end of the string
+	while (len > 0 && str[len-1] == '\n') {
+		len--;
+	}
 	g->gl_string_marker((GLsizei)len, str);
 }
 

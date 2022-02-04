@@ -96,6 +96,9 @@ static void usage(const char *argv0, int ret) {
 	    "--write-pid-path path\n"
 	    "  Write process ID to a file.\n"
 	    "\n"
+	    "--shadow-color color\n"
+	    "  Color of shadow, as a hex RGB string (defaults to #000000)\n"
+	    "\n"
 	    "--shadow-red value\n"
 	    "  Red color value of shadow (0.0 - 1.0, defaults to 0).\n"
 	    "\n"
@@ -106,13 +109,20 @@ static void usage(const char *argv0, int ret) {
 	    "  Blue color value of shadow (0.0 - 1.0, defaults to 0).\n"
 	    "\n"
 	    "--inactive-opacity-override\n"
-	    "  Inactive opacity set by -i overrides value of _NET_WM_OPACITY.\n"
+	    "  Inactive opacity set by -i overrides value of _NET_WM_WINDOW_OPACITY.\n"
 	    "\n"
 	    "--inactive-dim value\n"
 	    "  Dim inactive windows. (0.0 - 1.0, defaults to 0)\n"
 	    "\n"
 	    "--active-opacity opacity\n"
 	    "  Default opacity for active windows. (0.0 - 1.0)\n"
+	    "\n"
+	    "--corner-radius value\n"
+	    "  Sets the radius of rounded window corners. When > 0, the compositor\n"
+	    "  will round the corners of windows. (defaults to 0).\n"
+	    "\n"
+	    "--rounded-corners-exclude condition\n"
+	    "  Exclude conditions for rounded corners.\n"
 	    "\n"
 	    "--mark-wmwin-focused\n"
 	    "  Try to detect WM windows and mark them as active.\n"
@@ -146,22 +156,12 @@ static void usage(const char *argv0, int ret) {
 	    "  conditions.\n"
 	    "\n"
 	    "--detect-client-opacity\n"
-	    "  Detect _NET_WM_OPACITY on client windows, useful for window\n"
-	    "  managers not passing _NET_WM_OPACITY of client windows to frame\n"
+	    "  Detect _NET_WM_WINDOW_OPACITY on client windows, useful for window\n"
+	    "  managers not passing _NET_WM_WINDOW_OPACITY of client windows to frame\n"
 	    "  windows.\n"
-	    "\n"
-	    "--refresh-rate val\n"
-	    "  Specify refresh rate of the screen. If not specified or 0, we\n"
-	    "  will try detecting this with X RandR extension.\n"
 	    "\n"
 	    "--vsync\n"
 	    "  Enable VSync\n"
-	    "\n"
-	    "--paint-on-overlay\n"
-	    "  Painting on X Composite overlay window.\n"
-	    "\n"
-	    "--sw-opti\n"
-	    "  Limit repaint to at most once every 1 / refresh_rate second.\n"
 	    "\n"
 	    "--use-ewmh-active-win\n"
 	    "  Use _NET_WM_ACTIVE_WINDOW on the root window to determine which\n"
@@ -197,8 +197,10 @@ static void usage(const char *argv0, int ret) {
 	    "\n"
 	    "--detect-client-leader\n"
 	    "  Use WM_CLIENT_LEADER to group windows, and consider windows in\n"
-	    "  the same group focused at the same time. WM_TRANSIENT_FOR has\n"
-	    "  higher priority if --detect-transient is enabled, too.\n"
+	    "  the same group focused at the same time. This usually means windows\n"
+	    "  from the same application will be considered focused or unfocused at\n"
+	    "  the same time. WM_TRANSIENT_FOR has higher priority if\n"
+	    "  --detect-transient is enabled, too.\n"
 	    "\n"
 	    "--blur-method\n"
 	    "  The algorithm used for background bluring. Available choices are:\n"
@@ -211,6 +213,9 @@ static void usage(const char *argv0, int ret) {
 	    "\n"
 	    "--blur-deviation\n"
 	    "  The standard deviation for the 'gaussian' blur method.\n"
+	    "\n"
+	    "--blur-strength\n"
+	    "  The strength level of the 'dual_kawase' blur method.\n"
 	    "\n"
 	    "--blur-background\n"
 	    "  Blur background of semi-transparent / ARGB windows. Bad in\n"
@@ -272,6 +277,10 @@ static void usage(const char *argv0, int ret) {
 	    "  should not be painted in, such as a dock window region.\n"
 	    "  Use --shadow-exclude-reg \'x10+0-0\', for example, if the 10 pixels\n"
 	    "  on the bottom of the screen should not have shadows painted on.\n"
+	    "\n"
+	    "--clip-shadow-above condition\n"
+	    "  Specify a list of conditions of windows to not paint a shadow over,\n"
+	    "  such as a dock window.\n"
 	    "\n"
 	    "--xinerama-shadow-crop\n"
 	    "  Crop shadow of a window fully on a particular Xinerama screen to the\n"
@@ -343,7 +352,7 @@ static void usage(const char *argv0, int ret) {
 #undef WARNING_DISABLED
 }
 
-static const char *shortopts = "D:I:O:d:r:o:m:l:t:i:e:hscnfFCaSzGb";
+static const char *shortopts = "D:I:O:r:o:m:l:t:i:e:hscnfFCazGb";
 static const struct option longopts[] = {
     {"help", no_argument, NULL, 'h'},
     {"config", required_argument, NULL, 256},
@@ -356,13 +365,11 @@ static const struct option longopts[] = {
     {"fade-delta", required_argument, NULL, 'D'},
     {"menu-opacity", required_argument, NULL, 'm'},
     {"shadow", no_argument, NULL, 'c'},
-    {"no-dock-shadow", no_argument, NULL, 'C'},
     {"clear-shadow", no_argument, NULL, 'z'},
     {"fading", no_argument, NULL, 'f'},
     {"inactive-opacity", required_argument, NULL, 'i'},
     {"frame-opacity", required_argument, NULL, 'e'},
     {"daemon", no_argument, NULL, 'b'},
-    {"no-dnd-shadow", no_argument, NULL, 'G'},
     {"shadow-red", required_argument, NULL, 257},
     {"shadow-green", required_argument, NULL, 258},
     {"shadow-blue", required_argument, NULL, 259},
@@ -377,9 +384,6 @@ static const struct option longopts[] = {
     {"detect-client-opacity", no_argument, NULL, 268},
     {"refresh-rate", required_argument, NULL, 269},
     {"vsync", optional_argument, NULL, 270},
-    {"alpha-step", required_argument, NULL, 271},
-    {"dbe", no_argument, NULL, 272},
-    {"paint-on-overlay", no_argument, NULL, 273},
     {"sw-opti", no_argument, NULL, 274},
     {"vsync-aggressive", no_argument, NULL, 275},
     {"use-ewmh-active-win", no_argument, NULL, 276},
@@ -416,7 +420,6 @@ static const struct option longopts[] = {
     {"unredir-if-possible-delay", required_argument, NULL, 309},
     {"write-pid-path", required_argument, NULL, 310},
     {"vsync-use-glfinish", no_argument, NULL, 311},
-    {"xrender-sync", no_argument, NULL, 312},
     {"xrender-sync-fence", no_argument, NULL, 313},
     {"show-all-xerrors", no_argument, NULL, 314},
     {"no-fading-destroyed-argb", no_argument, NULL, 315},
@@ -424,7 +427,6 @@ static const struct option longopts[] = {
     {"glx-fshader-win", required_argument, NULL, 317},
     {"version", no_argument, NULL, 318},
     {"no-x-selection", no_argument, NULL, 319},
-    {"no-name-pixmap", no_argument, NULL, 320},
     {"log-level", required_argument, NULL, 321},
     {"log-file", required_argument, NULL, 322},
     {"use-damage", no_argument, NULL, 323},
@@ -435,6 +437,11 @@ static const struct option longopts[] = {
     {"blur-method", required_argument, NULL, 328},
     {"blur-size", required_argument, NULL, 329},
     {"blur-deviation", required_argument, NULL, 330},
+    {"blur-strength", required_argument, NULL, 331},
+    {"shadow-color", required_argument, NULL, 332},
+    {"corner-radius", required_argument, NULL, 333},
+    {"rounded-corners-exclude", required_argument, NULL, 334},
+    {"clip-shadow-above", required_argument, NULL, 335},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -466,21 +473,11 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 
 		} else if (o == 'b') {
 			*fork = true;
-		} else if (o == 'd') {
-			log_error("-d is removed, please use the DISPLAY "
-			          "environment variable");
-			goto err;
 		} else if (o == 314) {
 			*all_xerrors = true;
 		} else if (o == 318) {
 			printf("%s\n", COMPTON_VERSION);
 			return true;
-		} else if (o == 'S') {
-			log_error("-S is no longer available");
-			goto err;
-		} else if (o == 320) {
-			log_error("--no-name-pixmap is no longer available");
-			goto err;
 		} else if (o == '?' || o == ':') {
 			usage(argv[0], 1);
 			goto err;
@@ -516,6 +513,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 
 	// Parse commandline arguments. Range checking will be done later.
 
+	bool failed = false;
 	const char *deprecation_message attr_unused =
 	    "has been removed. If you encounter problems "
 	    "without this feature, please feel free to "
@@ -548,9 +546,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// so assert(false) here
 			assert(false);
 			break;
-		case 'd':
 		case 'b':
-		case 'S':
 		case 314:
 		case 320:
 			// These options are handled by get_early_config()
@@ -559,15 +555,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'I': opt->fade_in_step = normalize_d(atof(optarg)); break;
 		case 'O': opt->fade_out_step = normalize_d(atof(optarg)); break;
 		case 'c': shadow_enable = true; break;
-		case 'C':
-			winopt_mask[WINTYPE_DOCK].shadow = true;
-			opt->wintype_option[WINTYPE_DOCK].shadow = false;
-			break;
-		case 'G':
-			winopt_mask[WINTYPE_DND].shadow = true;
-			opt->wintype_option[WINTYPE_DND].shadow = false;
-			break;
 		case 'm':;
+			log_warn("--menu-opacity is deprecated, and will be removed."
+			         "Please use the wintype option `opacity` of `popup_menu`"
+			         "and `dropdown_menu` instead.");
 			double tmp;
 			tmp = normalize_d(atof(optarg));
 			winopt_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
@@ -599,10 +590,18 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 'a':
 		case 's':
 			log_error("-n, -a, and -s have been removed.");
-			break;
+			failed = true; break;
 		// Long options
 		case 256:
 			// --config
+			break;
+		case 332:;
+			// --shadow-color
+			struct color rgb;
+			rgb = hex_to_rgb(optarg);
+			opt->shadow_red = rgb.red;
+			opt->shadow_green = rgb.green;
+			opt->shadow_blue = rgb.blue;
 			break;
 		case 257:
 			// --shadow-red
@@ -631,33 +630,30 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(266, shadow_ignore_shaped);
 		P_CASEBOOL(267, detect_rounded_corners);
 		P_CASEBOOL(268, detect_client_opacity);
-		P_CASEINT(269, refresh_rate);
+		case 269:
+			log_warn("--refresh-rate has been deprecated, please remove it from"
+			         "your command line options");
+			break;
 		case 270:
 			if (optarg) {
-				opt->vsync = parse_vsync(optarg);
-				log_warn("--vsync doesn't take argument anymore. \"%s\" "
-					 "is interpreted as \"%s\" for compatibility, but "
-					 "this will stop working soon",
-					 optarg, opt->vsync ? "true" : "false");
+				bool parsed_vsync = parse_vsync(optarg);
+				log_error("--vsync doesn't take argument anymore. \"%s\" "
+				          "should be changed to \"%s\"",
+				          optarg, parsed_vsync ? "true" : "false");
+				failed = true;
 			} else {
 				opt->vsync = true;
 			}
 			break;
-		case 271:
-			// --alpha-step
-			log_error("--alpha-step has been removed, we now tries to "
-			         "make use of all alpha values");
-			return false;
-		case 272: log_error("use of --dbe is deprecated"); return false;
-		case 273:
-			log_error("--paint-on-overlay has been removed, the feature is enabled "
-			         "whenever possible");
-			return false;
-		P_CASEBOOL(274, sw_opti);
+		case 274:
+			log_warn("--sw-opti has been deprecated, please remove it from the "
+			         "command line options");
+			break;
 		case 275:
 			// --vsync-aggressive
-			log_warn("--vsync-aggressive has been deprecated, please remove it"
+			log_error("--vsync-aggressive has been removed, please remove it"
 			         " from the command line options");
+			failed = true;
 			break;
 		P_CASEBOOL(276, use_ewmh_active_win);
 		case 277:
@@ -730,14 +726,14 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			if (strcmp(optarg, "undefined") != 0 && tmpval != 0) {
 				// If not undefined, we will use damage and buffer-age to
 				// limit the rendering area.
-				opt->use_damage = true;
 				should_remove = false;
 			}
-			log_warn("--glx-swap-method has been deprecated, your setting "
+			log_error("--glx-swap-method has been removed, your setting "
 			         "\"%s\" should be %s.",
 			         optarg,
 			         !should_remove ? "replaced by `--use-damage`" :
 			                         "removed");
+			failed = true;
 			break;
 		}
 		case 300:
@@ -755,8 +751,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEINT(302, resize_damage);
 		case 303:
 			// --glx-use-gpushader4
-			log_warn("--glx-use-gpushader4 is deprecated since v6."
+			log_error("--glx-use-gpushader4 has been removed."
 			         " Please remove it from command line options.");
+			failed = true;
 			break;
 		case 304:
 			// --opacity-rule
@@ -768,7 +765,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			free(opt->shadow_exclude_reg_str);
 			opt->shadow_exclude_reg_str = strdup(optarg);
 			log_warn("--shadow-exclude-reg is deprecated. You are likely "
-			         "better off using --shadow-exclude anyway");
+			         "better off using --clip-shadow-above anyway");
 			break;
 		case 306:
 			// --paint-exclude
@@ -782,13 +779,13 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASELONG(309, unredir_if_possible_delay);
 		case 310:
 			// --write-pid-path
+			free(opt->write_pid_path);
 			opt->write_pid_path = strdup(optarg);
+			if (*opt->write_pid_path != '/') {
+				log_warn("--write-pid-path is not an absolute path");
+			}
 			break;
 		P_CASEBOOL(311, vsync_use_glfinish);
-		case 312:
-			// --xrender-sync
-			log_error("Please use --xrender-sync-fence instead of --xrender-sync");
-			return false;
 		P_CASEBOOL(313, xrender_sync_fence);
 		P_CASEBOOL(315, no_fading_destroyed_argb);
 		P_CASEBOOL(316, force_win_blend);
@@ -835,7 +832,22 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// --blur-deviation
 			opt->blur_deviation = atof(optarg);
 			break;
-
+		case 331:
+			// --blur-strength
+			opt->blur_strength = atoi(optarg);
+			break;
+		case 333:
+			// --cornor-radius
+			opt->corner_radius = atoi(optarg);
+			break;
+		case 334:
+			// --rounded-corners-exclude
+			condlst_add(&opt->rounded_corners_blacklist, optarg);
+			break;
+		case 335:
+			// --clip-shadow-above
+			condlst_add(&opt->shadow_clip_list, optarg);
+			break;
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801: opt->print_diagnostics = true; break;
@@ -845,11 +857,20 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 #undef P_CASEBOOL
 		}
 		// clang-format on
+
+		if (failed) {
+			// Parsing this option has failed, break the loop
+			break;
+		}
 	}
 
 	// Restore LC_NUMERIC
 	setlocale(LC_NUMERIC, lc_numeric_old);
 	free(lc_numeric_old);
+
+	if (failed) {
+		return false;
+	}
 
 	if (opt->monitor_repaint && opt->backend != BKEND_XRENDER &&
 	    !opt->experimental_backends) {
@@ -883,7 +904,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	opt->inactive_dim = normalize_d(opt->inactive_dim);
 	opt->frame_opacity = normalize_d(opt->frame_opacity);
 	opt->shadow_opacity = normalize_d(opt->shadow_opacity);
-	opt->refresh_rate = normalize_i_range(opt->refresh_rate, 0, 300);
 
 	opt->max_brightness = normalize_d(opt->max_brightness);
 	if (opt->max_brightness < 1.0) {
@@ -900,13 +920,14 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		}
 	}
 
-	// Apply default wintype options that are dependent on global options
-	set_default_winopts(opt, winopt_mask, shadow_enable, fading_enable);
-
 	// --blur-background-frame implies --blur-background
 	if (opt->blur_background_frame && opt->blur_method == BLUR_METHOD_NONE) {
 		opt->blur_method = BLUR_METHOD_KERNEL;
 	}
+
+	// Apply default wintype options that are dependent on global options
+	set_default_winopts(opt, winopt_mask, shadow_enable, fading_enable,
+	                    opt->blur_method != BLUR_METHOD_NONE);
 
 	// Other variables determined by options
 
@@ -922,6 +943,25 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		                                      &opt->blur_kernel_count);
 		CHECK(opt->blur_kerns);
 		CHECK(opt->blur_kernel_count);
+	}
+
+	// Sanitize parameters for dual-filter kawase blur
+	if (opt->blur_method == BLUR_METHOD_DUAL_KAWASE) {
+		if (opt->blur_strength <= 0 && opt->blur_radius > 500) {
+			log_warn("Blur radius >500 not supported by dual_kawase method, "
+			         "capping to 500.");
+			opt->blur_radius = 500;
+		}
+		if (opt->blur_strength > 20) {
+			log_warn("Blur strength >20 not supported by dual_kawase method, "
+			         "capping to 20.");
+			opt->blur_strength = 20;
+		}
+		if (!opt->experimental_backends) {
+			log_warn("Dual-kawase blur is not implemented by the legacy "
+			         "backends, you must use the `experimental-backends` "
+			         "option.");
+		}
 	}
 
 	if (opt->resize_damage < 0) {

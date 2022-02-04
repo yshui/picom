@@ -46,7 +46,8 @@
 /// When top half finished, we enter the render stage, where no server state should be
 /// queried. All rendering should be done with our internal knowledge of the server state.
 ///
-/// TODO the things described above
+
+// TODO(yshui) the things described above
 
 /**
  * Get a window's name from window ID.
@@ -188,8 +189,6 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 /// Handle configure event of a regular window
 static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	auto w = find_win(ps, ce->window);
-	region_t damage;
-	pixman_region32_init(&damage);
 
 	if (!w) {
 		return;
@@ -202,50 +201,43 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 	auto mw = (struct managed_win *)w;
 
-	if (mw->state == WSTATE_UNMAPPED || mw->state == WSTATE_UNMAPPING ||
-	    mw->state == WSTATE_DESTROYING) {
-		// Only restack the window to make sure we can handle future restack
-		// notification correctly
-		restack_above(ps, w, ce->above_sibling);
-	} else {
-		restack_above(ps, w, ce->above_sibling);
-		bool factor_change = false;
-		win_extents(mw, &damage);
+	restack_above(ps, w, ce->above_sibling);
 
-		// If window geometry change, free old extents
-		if (mw->g.x != ce->x || mw->g.y != ce->y || mw->g.width != ce->width ||
-		    mw->g.height != ce->height || mw->g.border_width != ce->border_width) {
-			factor_change = true;
+	// We check against pending_g here, because there might have been multiple
+	// configure notifies in this cycle, or the window could receive multiple updates
+	// while it's unmapped.
+	bool position_changed = mw->pending_g.x != ce->x || mw->pending_g.y != ce->y;
+	bool size_changed = mw->pending_g.width != ce->width ||
+	                    mw->pending_g.height != ce->height ||
+	                    mw->pending_g.border_width != ce->border_width;
+	if (position_changed || size_changed) {
+		// Queue pending updates
+		win_set_flags(mw, WIN_FLAGS_FACTOR_CHANGED);
+		// TODO(yshui) don't set pending_updates if the window is not
+		// visible/mapped
+		ps->pending_updates = true;
+
+		// At least one of the following if's is true
+		if (position_changed) {
+			log_trace("Window position changed, %dx%d -> %dx%d", mw->g.x,
+			          mw->g.y, ce->x, ce->y);
+			mw->pending_g.x = ce->x;
+			mw->pending_g.y = ce->y;
+			win_set_flags(mw, WIN_FLAGS_POSITION_STALE);
 		}
 
-		mw->g.x = ce->x;
-		mw->g.y = ce->y;
-
-		if (mw->g.width != ce->width || mw->g.height != ce->height ||
-		    mw->g.border_width != ce->border_width) {
+		if (size_changed) {
 			log_trace("Window size changed, %dx%d -> %dx%d", mw->g.width,
 			          mw->g.height, ce->width, ce->height);
-			mw->g.width = ce->width;
-			mw->g.height = ce->height;
-			mw->g.border_width = ce->border_width;
-			win_on_win_size_change(ps, mw);
-			win_update_bounding_shape(ps, mw);
+			mw->pending_g.width = ce->width;
+			mw->pending_g.height = ce->height;
+			mw->pending_g.border_width = ce->border_width;
+			win_set_flags(mw, WIN_FLAGS_SIZE_STALE);
 		}
 
-		region_t new_extents;
-		pixman_region32_init(&new_extents);
-		win_extents(mw, &new_extents);
-		pixman_region32_union(&damage, &damage, &new_extents);
-		pixman_region32_fini(&new_extents);
-
-		if (factor_change) {
-			win_on_factor_change(ps, mw);
-			add_damage(ps, &damage);
-			win_update_screen(ps, mw);
-		}
+		// Recalculate which screen this window is on
+		win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, mw);
 	}
-
-	pixman_region32_fini(&damage);
 
 	// override_redirect flag cannot be changed after window creation, as far
 	// as I know, so there's no point to re-match windows here.
@@ -410,6 +402,7 @@ static inline void expose_root(session_t *ps, const rect_t *rects, int nrects) {
 	region_t region;
 	pixman_region32_init_rects(&region, rects, nrects);
 	add_damage(ps, &region);
+	pixman_region32_fini(&region);
 }
 
 static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
@@ -461,7 +454,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			ps->pending_updates = true;
 		} else {
 			// Destroy the root "image" if the wallpaper probably changed
-			if (x_is_root_back_pixmap_atom(ps, ev->atom)) {
+			if (x_is_root_back_pixmap_atom(ps->atoms, ev->atom)) {
 				root_damaged(ps);
 			}
 		}
@@ -470,6 +463,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		return;
 	}
 
+	ps->pending_updates = true;
 	// If WM_STATE changes
 	if (ev->atom == ps->atoms->aWM_STATE) {
 		// Check whether it could be a client window
@@ -484,17 +478,18 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			// would be NULL.
 			if (w_top) {
 				win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
-				ps->pending_updates = true;
 			}
 		}
+		return;
 	}
 
 	// If _NET_WM_WINDOW_TYPE changes... God knows why this would happen, but
 	// there are always some stupid applications. (#144)
 	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_TYPE) {
 		struct managed_win *w = NULL;
-		if ((w = find_toplevel(ps, ev->window)))
-			win_update_wintype(ps, w);
+		if ((w = find_toplevel(ps, ev->window))) {
+			win_set_property_stale(w, ev->atom);
+		}
 	}
 
 	if (ev->atom == ps->atoms->a_NET_WM_BYPASS_COMPOSITOR) {
@@ -502,32 +497,27 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		queue_redraw(ps);
 	}
 
-	// If _NET_WM_OPACITY changes
+	// If _NET_WM_WINDOW_OPACITY changes
 	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_OPACITY) {
 		auto w = find_managed_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
 		if (w) {
-			win_update_opacity_prop(ps, w);
-			// we cannot receive OPACITY change when window is destroyed
-			assert(w->state != WSTATE_DESTROYING);
-			win_update_opacity_target(ps, w);
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
 	// If frame extents property changes
-	if (ps->o.frame_opacity > 0 && ev->atom == ps->atoms->a_NET_FRAME_EXTENTS) {
+	if (ev->atom == ps->atoms->a_NET_FRAME_EXTENTS) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w) {
-			win_update_frame_extents(ps, w, ev->window);
-			// If frame extents change, the window needs repaint
-			add_damage_from_win(ps, w);
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
 	// If name changes
 	if (ps->atoms->aWM_NAME == ev->atom || ps->atoms->a_NET_WM_NAME == ev->atom) {
 		auto w = find_toplevel(ps, ev->window);
-		if (w && win_update_name(ps, w) == 1) {
-			win_on_factor_change(ps, w);
+		if (w) {
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
@@ -535,16 +525,15 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	if (ps->atoms->aWM_CLASS == ev->atom) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w) {
-			win_get_class(ps, w);
-			win_on_factor_change(ps, w);
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
 	// If role changes
 	if (ps->atoms->aWM_WINDOW_ROLE == ev->atom) {
 		auto w = find_toplevel(ps, ev->window);
-		if (w && 1 == win_get_role(ps, w)) {
-			win_on_factor_change(ps, w);
+		if (w) {
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
@@ -552,7 +541,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	if (ps->atoms->a_COMPTON_SHADOW == ev->atom) {
 		auto w = find_managed_win(ps, ev->window);
 		if (w) {
-			win_update_prop_shadow(ps, w);
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
@@ -561,7 +550,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	    (ps->o.detect_client_leader && ps->atoms->aWM_CLIENT_LEADER == ev->atom)) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w) {
-			win_update_leader(ps, w);
+			win_set_property_stale(w, ev->atom);
 		}
 	}
 
@@ -569,10 +558,16 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	for (latom_t *platom = ps->track_atom_lst; platom; platom = platom->next) {
 		if (platom->atom == ev->atom) {
 			auto w = find_managed_win(ps, ev->window);
-			if (!w)
+			if (!w) {
 				w = find_toplevel(ps, ev->window);
-			if (w)
-				win_on_factor_change(ps, w);
+			}
+			if (w) {
+				// Set FACTOR_CHANGED so rules based on properties will be
+				// re-evaluated.
+				// Don't need to set property stale here, since that only
+				// concerns properties we explicitly check.
+				win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+			}
 			break;
 		}
 	}
@@ -590,15 +585,14 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 		set_ignore_cookie(
 		    ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, XCB_NONE));
 	} else {
-		xcb_xfixes_region_t tmp = x_new_id(ps->c);
-		xcb_xfixes_create_region(ps->c, tmp, 0, NULL);
-		set_ignore_cookie(ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, tmp));
-		x_fetch_region(ps->c, tmp, &parts);
-		xcb_xfixes_destroy_region(ps->c, tmp);
+		set_ignore_cookie(
+		    ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, ps->damaged_region));
+		x_fetch_region(ps->c, ps->damaged_region, &parts);
 		pixman_region32_translate(&parts, w->g.x + w->g.border_width,
 		                          w->g.y + w->g.border_width);
 	}
 
+	log_trace("Mark window %#010x (%s) as having received damage", w->base.id, w->name);
 	w->ever_damaged = true;
 	w->pixmap_damaged = true;
 
@@ -610,8 +604,9 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 	}
 
 	// Remove the part in the damage area that could be ignored
-	if (w->reg_ignore && win_is_region_ignore_valid(ps, w))
+	if (w->reg_ignore && win_is_region_ignore_valid(ps, w)) {
 		pixman_region32_subtract(&parts, &parts, w->reg_ignore);
+	}
 
 	add_damage(ps, &parts);
 	pixman_region32_fini(&parts);
@@ -645,19 +640,16 @@ static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) 
 	 * seemingly BadRegion errors would be triggered
 	 * if we attempt to rebuild border_size
 	 */
-	// Mark the old border_size as damaged
-	region_t tmp = win_get_bounding_shape_global_by_val(w);
-	add_damage(ps, &tmp);
-	pixman_region32_fini(&tmp);
-
-	win_update_bounding_shape(ps, w);
-
-	// Mark the new border_size as damaged
-	tmp = win_get_bounding_shape_global_by_val(w);
-	add_damage(ps, &tmp);
-	pixman_region32_fini(&tmp);
-
+	// Mark the old bounding shape as damaged
+	if (!win_check_flags_any(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
+		region_t tmp = win_get_bounding_shape_global_by_val(w);
+		add_damage(ps, &tmp);
+		pixman_region32_fini(&tmp);
+	}
 	w->reg_ignore_valid = false;
+
+	win_set_flags(w, WIN_FLAGS_SIZE_STALE);
+	ps->pending_updates = true;
 }
 
 static inline void

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
+#include <stdalign.h>
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -41,11 +42,11 @@
  * @return a <code>winprop_t</code> structure containing the attribute
  *    and number of items. A blank one on failure.
  */
-winprop_t x_get_prop_with_offset(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
+winprop_t x_get_prop_with_offset(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom,
                                  int offset, int length, xcb_atom_t rtype, int rformat) {
 	xcb_get_property_reply_t *r = xcb_get_property_reply(
-	    ps->c,
-	    xcb_get_property(ps->c, 0, w, atom, rtype, to_u32_checked(offset),
+	    c,
+	    xcb_get_property(c, 0, w, atom, rtype, to_u32_checked(offset),
 	                     to_u32_checked(length)),
 	    NULL);
 
@@ -68,15 +69,34 @@ winprop_t x_get_prop_with_offset(const session_t *ps, xcb_window_t w, xcb_atom_t
 	    .ptr = NULL, .nitems = 0, .type = XCB_GET_PROPERTY_TYPE_ANY, .format = 0};
 }
 
+/// Get the type, format and size in bytes of a window's specific attribute.
+winprop_info_t x_get_prop_info(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom) {
+	xcb_generic_error_t *e = NULL;
+	auto r = xcb_get_property_reply(
+	    c, xcb_get_property(c, 0, w, atom, XCB_ATOM_ANY, 0, 0), &e);
+	if (!r) {
+		log_debug_x_error(e, "Failed to get property info for window %#010x", w);
+		free(e);
+		return (winprop_info_t){
+		    .type = XCB_GET_PROPERTY_TYPE_ANY, .format = 0, .length = 0};
+	}
+
+	winprop_info_t winprop_info = {
+	    .type = r->type, .format = r->format, .length = r->bytes_after};
+	free(r);
+
+	return winprop_info;
+}
+
 /**
  * Get the value of a type-<code>xcb_window_t</code> property of a window.
  *
  * @return the value if successful, 0 otherwise
  */
-xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t aprop) {
+xcb_window_t wid_get_prop_window(xcb_connection_t *c, xcb_window_t wid, xcb_atom_t aprop) {
 	// Get the attribute
 	xcb_window_t p = XCB_NONE;
-	winprop_t prop = x_get_prop(ps, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
+	winprop_t prop = x_get_prop(c, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
 
 	// Return it
 	if (prop.nitems) {
@@ -93,21 +113,83 @@ xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t apr
  */
 bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char ***pstrlst,
                        int *pnstr) {
-	XTextProperty text_prop = {NULL, XCB_NONE, 0, 0};
+	assert(ps->server_grabbed);
+	auto prop_info = x_get_prop_info(ps->c, wid, prop);
+	auto type = prop_info.type;
+	auto format = prop_info.format;
+	auto length = prop_info.length;
 
-	if (!(XGetTextProperty(ps->dpy, wid, &text_prop, prop) && text_prop.value))
-		return false;
-
-	if (Success != XmbTextPropertyToTextList(ps->dpy, &text_prop, pstrlst, pnstr) ||
-	    !*pnstr) {
-		*pnstr = 0;
-		if (*pstrlst)
-			XFreeStringList(*pstrlst);
-		XFree(text_prop.value);
+	if (type == XCB_ATOM_NONE) {
 		return false;
 	}
 
-	XFree(text_prop.value);
+	if (type != XCB_ATOM_STRING && type != ps->atoms->aUTF8_STRING &&
+	    type != ps->atoms->aC_STRING) {
+		log_warn("Text property %d of window %#010x has unsupported type: %d",
+		         prop, wid, type);
+		return false;
+	}
+
+	if (format != 8) {
+		log_warn("Text property %d of window %#010x has unexpected format: %d",
+		         prop, wid, format);
+		return false;
+	}
+
+	xcb_generic_error_t *e = NULL;
+	auto word_count = (length + 4 - 1) / 4;
+	auto r = xcb_get_property_reply(
+	    ps->c, xcb_get_property(ps->c, 0, wid, prop, type, 0, word_count), &e);
+	if (!r) {
+		log_debug_x_error(e, "Failed to get window property for %#010x", wid);
+		free(e);
+		return false;
+	}
+
+	assert(length == (uint32_t)xcb_get_property_value_length(r));
+
+	void *data = xcb_get_property_value(r);
+	unsigned int nstr = 0;
+	uint32_t current_offset = 0;
+	while (current_offset < length) {
+		current_offset +=
+		    (uint32_t)strnlen(data + current_offset, length - current_offset) + 1;
+		nstr += 1;
+	}
+
+	if (nstr == 0) {
+		// The property is set to an empty string, in that case, we return one
+		// string
+		char **strlst = malloc(sizeof(char *));
+		strlst[0] = "";
+		*pnstr = 1;
+		*pstrlst = strlst;
+		free(r);
+		return true;
+	}
+
+	// Allocate the pointers and the strings together
+	void *buf = NULL;
+	if (posix_memalign(&buf, alignof(char *), length + sizeof(char *) * nstr + 1) != 0) {
+		abort();
+	}
+
+	char *strlst = buf + sizeof(char *) * nstr;
+	memcpy(strlst, xcb_get_property_value(r), length);
+	strlst[length] = '\0';        // X strings aren't guaranteed to be null terminated
+
+	char **ret = buf;
+	current_offset = 0;
+	nstr = 0;
+	while (current_offset < length) {
+		ret[nstr] = strlst + current_offset;
+		current_offset += (uint32_t)strlen(strlst + current_offset) + 1;
+		nstr += 1;
+	}
+
+	*pnstr = to_int_checked(nstr);
+	*pstrlst = ret;
+	free(r);
 	return true;
 }
 
@@ -116,8 +198,9 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 static thread_local xcb_render_query_pict_formats_reply_t *g_pictfmts = NULL;
 
 static inline void x_get_server_pictfmts(xcb_connection_t *c) {
-	if (g_pictfmts)
+	if (g_pictfmts) {
 		return;
+	}
 	xcb_generic_error_t *e = NULL;
 	// Get window picture format
 	g_pictfmts =
@@ -166,6 +249,15 @@ xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_
 	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, std);
 
 	return x_get_visual_for_pictfmt(g_pictfmts, pictfmt->id);
+}
+
+xcb_render_pictformat_t
+x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std) {
+	x_get_server_pictfmts(c);
+
+	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, std);
+
+	return pictfmt->id;
 }
 
 int x_get_visual_depth(xcb_connection_t *c, xcb_visualid_t visual) {
@@ -231,6 +323,17 @@ x_create_picture_with_standard_and_pixmap(xcb_connection_t *c, xcb_pict_standard
 	return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, pixmap, valuemask, attr);
 }
 
+xcb_render_picture_t
+x_create_picture_with_standard(xcb_connection_t *c, xcb_drawable_t d, int w, int h,
+                               xcb_pict_standard_t standard, uint32_t valuemask,
+                               const xcb_render_create_picture_value_list_t *attr) {
+	x_get_server_pictfmts(c);
+
+	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, standard);
+	assert(pictfmt);
+	return x_create_picture_with_pictfmt(c, d, w, h, pictfmt, valuemask, attr);
+}
+
 /**
  * Create an picture.
  */
@@ -241,8 +344,9 @@ x_create_picture_with_pictfmt(xcb_connection_t *c, xcb_drawable_t d, int w, int 
 	uint8_t depth = pictfmt->depth;
 
 	xcb_pixmap_t tmp_pixmap = x_create_pixmap(c, depth, d, w, h);
-	if (!tmp_pixmap)
+	if (!tmp_pixmap) {
 		return XCB_NONE;
+	}
 
 	xcb_render_picture_t picture = x_create_picture_with_pictfmt_and_pixmap(
 	    c, pictfmt, tmp_pixmap, valuemask, attr);
@@ -290,13 +394,14 @@ void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
 	int nrects;
 	const rect_t *rects = pixman_region32_rectangles((region_t *)reg, &nrects);
 	auto xrects = ccalloc(nrects, xcb_rectangle_t);
-	for (int i = 0; i < nrects; i++)
+	for (int i = 0; i < nrects; i++) {
 		xrects[i] = (xcb_rectangle_t){
 		    .x = to_i16_checked(rects[i].x1),
 		    .y = to_i16_checked(rects[i].y1),
 		    .width = to_u16_checked(rects[i].x2 - rects[i].x1),
 		    .height = to_u16_checked(rects[i].y2 - rects[i].y1),
 		};
+	}
 
 	xcb_generic_error_t *e = xcb_request_check(
 	    c, xcb_render_set_picture_clip_rectangles_checked(
@@ -306,7 +411,6 @@ void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
 		free(e);
 	}
 	free(xrects);
-	return;
 }
 
 void x_clear_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict) {
@@ -317,12 +421,12 @@ void x_clear_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict)
 		log_error_x_error(e, "failed to clear clip region");
 		free(e);
 	}
-	return;
 }
 
-enum { XSyncBadCounter = 0,
-       XSyncBadAlarm = 1,
-       XSyncBadFence = 2,
+enum {
+	XSyncBadCounter = 0,
+	XSyncBadAlarm = 1,
+	XSyncBadFence = 2,
 };
 
 /**
@@ -346,7 +450,7 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 #define CASESTRRET2(s)                                                                   \
 	case XCB_##s: name = #s; break
 
-	// TODO separate error code out from session_t
+	// TODO(yshui) separate error code out from session_t
 	o = error_code - ps->xfixes_error;
 	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
 
@@ -449,8 +553,9 @@ xcb_pixmap_t x_create_pixmap(xcb_connection_t *c, uint8_t depth, xcb_drawable_t 
 	xcb_void_cookie_t cookie = xcb_create_pixmap_checked(
 	    c, depth, pix, drawable, to_u16_checked(width), to_u16_checked(height));
 	xcb_generic_error_t *err = xcb_request_check(c, cookie);
-	if (err == NULL)
+	if (err == NULL) {
 		return pix;
+	}
 
 	log_error_x_error(err, "Failed to create pixmap");
 	free(err);
@@ -485,13 +590,14 @@ static const char *background_props_str[] = {
     0,
 };
 
-xcb_pixmap_t x_get_root_back_pixmap(session_t *ps) {
+xcb_pixmap_t
+x_get_root_back_pixmap(xcb_connection_t *c, xcb_window_t root, struct atom *atoms) {
 	xcb_pixmap_t pixmap = XCB_NONE;
 
 	// Get the values of background attributes
 	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(ps->atoms, background_props_str[p]);
-		winprop_t prop = x_get_prop(ps, ps->root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
+		xcb_atom_t prop_atom = get_atom(atoms, background_props_str[p]);
+		winprop_t prop = x_get_prop(c, root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
 			pixmap = (xcb_pixmap_t)*prop.p32;
 			free_winprop(&prop);
@@ -503,11 +609,12 @@ xcb_pixmap_t x_get_root_back_pixmap(session_t *ps) {
 	return pixmap;
 }
 
-bool x_is_root_back_pixmap_atom(session_t *ps, xcb_atom_t atom) {
+bool x_is_root_back_pixmap_atom(struct atom *atoms, xcb_atom_t atom) {
 	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(ps->atoms, background_props_str[p]);
-		if (prop_atom == atom)
+		xcb_atom_t prop_atom = get_atom(atoms, background_props_str[p]);
+		if (prop_atom == atom) {
 			return true;
+		}
 	}
 	return false;
 }
@@ -544,10 +651,6 @@ err:
 	free(e);
 	return false;
 }
-
-// xcb-render specific macros
-#define XFIXED_TO_DOUBLE(value) (((double)(value)) / 65536)
-#define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t)(((double)(value)) * 65536))
 
 /**
  * Convert a struct conv to a X picture convolution filter, normalizing the kernel
@@ -612,10 +715,10 @@ struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual
 		return (struct xvisual_info){-1, -1, -1, -1, -1, 0};
 	}
 
-	int red_size = popcountl(pictfmt->direct.red_mask),
-	    blue_size = popcountl(pictfmt->direct.blue_mask),
-	    green_size = popcountl(pictfmt->direct.green_mask),
-	    alpha_size = popcountl(pictfmt->direct.alpha_mask);
+	int red_size = popcntul(pictfmt->direct.red_mask),
+	    blue_size = popcntul(pictfmt->direct.blue_mask),
+	    green_size = popcntul(pictfmt->direct.green_mask),
+	    alpha_size = popcntul(pictfmt->direct.alpha_mask);
 
 	return (struct xvisual_info){
 	    .red_size = red_size,
@@ -631,9 +734,11 @@ xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen) {
 	xcb_screen_iterator_t iter;
 
 	iter = xcb_setup_roots_iterator(xcb_get_setup(c));
-	for (; iter.rem; --screen, xcb_screen_next(&iter))
-		if (screen == 0)
+	for (; iter.rem; --screen, xcb_screen_next(&iter)) {
+		if (screen == 0) {
 			return iter.data;
+		}
+	}
 
 	return NULL;
 }

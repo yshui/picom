@@ -9,6 +9,6 @@ jobs:
     - uses: actions/checkout@v2
       with:
         fetch-depth: 2
-    - uses: yshui/git-clang-format-lint@v1.10
+    - uses: yshui/git-clang-format-lint@v1.12
       with:
         base: ${{ github.event.ref }}~1

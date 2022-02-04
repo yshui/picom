@@ -32,23 +32,40 @@ typedef struct backend_base {
 
 typedef void (*backend_ready_callback_t)(void *);
 
+// When image properties are actually applied to the image, they are applied in a
+// particular order:
+//
+// Color inversion -> Dimming -> Opacity multiply -> Limit maximum brightness
+// (Corner radius could be applied in any order)
+enum image_properties {
+	// Whether the color of the image is inverted
+	// 1 boolean, default: false
+	IMAGE_PROPERTY_INVERTED,
+	// How much the image is dimmed
+	// 1 double, default: 0
+	IMAGE_PROPERTY_DIM_LEVEL,
+	// Image opacity, i.e. an alpha value multiplied to the alpha channel
+	// 1 double, default: 1
+	IMAGE_PROPERTY_OPACITY,
+	// The effective size of the image, the image will be tiled to fit.
+	// 2 int, default: the actual size of the image
+	IMAGE_PROPERTY_EFFECTIVE_SIZE,
+	// Limit how bright image can be. The image brightness is estimated by averaging
+	// the pixels in the image, and dimming will be applied to scale the average
+	// brightness down to the max brightness value.
+	// 1 double, default: 1
+	IMAGE_PROPERTY_MAX_BRIGHTNESS,
+	// Gives the image a rounded corner.
+	// 1 double, default: 0
+	IMAGE_PROPERTY_CORNER_RADIUS,
+	// Border width
+	// 1 int, default: 0
+	IMAGE_PROPERTY_BORDER_WIDTH,
+};
+
 enum image_operations {
-	// Invert the color of the entire image, `reg_op` ignored
-	IMAGE_OP_INVERT_COLOR_ALL,
-	// Dim the entire image, argument is the percentage. `reg_op` ignored
-	IMAGE_OP_DIM_ALL,
 	// Multiply the alpha channel by the argument
 	IMAGE_OP_APPLY_ALPHA,
-	// Same as APPLY_ALPHA, but `reg_op` is ignored and the operation applies to the
-	// full image
-	IMAGE_OP_APPLY_ALPHA_ALL,
-	// Change the effective size of the image, without touching the backing image
-	// itself. When the image is used, the backing image should be tiled to fill its
-	// effective size. `reg_op` and `reg_visible` is ignored. `arg` is two integers,
-	// width and height, in that order.
-	IMAGE_OP_RESIZE_TILE,
-	// Limit how bright image can be
-	IMAGE_OP_MAX_BRIGHTNESS,
 };
 
 struct gaussian_blur_args {
@@ -65,6 +82,11 @@ struct kernel_blur_args {
 	int kernel_count;
 };
 
+struct dual_kawase_blur_args {
+	int size;
+	int strength;
+};
+
 struct backend_operations {
 	// ===========    Initialization    ===========
 
@@ -72,7 +94,7 @@ struct backend_operations {
 	/// Here is how you should choose target window:
 	///    1) if ps->overlay is not XCB_NONE, use that
 	///    2) use ps->root otherwise
-	/// TODO make the target window a parameter
+	// TODO(yshui) make the target window a parameter
 	backend_t *(*init)(session_t *)attr_nonnull(1);
 	void (*deinit)(backend_t *backend_data) attr_nonnull(1);
 
@@ -124,7 +146,7 @@ struct backend_operations {
 	 * @param image_data   the image to paint
 	 * @param dst_x, dst_y the top left corner of the image in the target
 	 * @param reg_paint    the clip region, in target coordinates
-	 * @param reg_visible the visible region, in target coordinates
+	 * @param reg_visible  the visible region, in target coordinates
 	 */
 	void (*compose)(backend_t *backend_data, void *image_data, int dst_x, int dst_y,
 	                const region_t *reg_paint, const region_t *reg_visible);
@@ -190,8 +212,27 @@ struct backend_operations {
 	int max_buffer_age;
 
 	// ===========    Post-processing   ============
+
+	/* TODO(yshui) Consider preserving the order of image ops.
+	 * Currently in both backends, the image ops are applied lazily when needed.
+	 * However neither backends preserve the order of image ops, they just applied all
+	 * pending lazy ops in a pre-determined fixed order, regardless in which order
+	 * they were originally applied. This might lead to inconsistencies.*/
+
 	/**
-	 * Manipulate an image
+	 * Change image properties
+	 *
+	 * @param backend_data backend data
+	 * @param prop         the property to change
+	 * @param image_data   an image data structure returned by the backend
+	 * @param args         property value
+	 * @return whether the operation is successful
+	 */
+	bool (*set_image_property)(backend_t *backend_data, enum image_properties prop,
+	                           void *image_data, void *args);
+
+	/**
+	 * Manipulate an image. Image properties are untouched.
 	 *
 	 * @param backend_data backend data
 	 * @param op           the operation to perform
@@ -202,14 +243,16 @@ struct backend_operations {
 	 *                     be visible on target. this is a hint to the backend
 	 *                     for optimization purposes.
 	 * @param args         extra arguments, operation specific
-	 * @return a new image data structure containing the result
+	 * @return whether the operation is successful
 	 */
 	bool (*image_op)(backend_t *backend_data, enum image_operations op, void *image_data,
 	                 const region_t *reg_op, const region_t *reg_visible, void *args);
 
-	/// Create another instance of the `image_data`. All `image_op` calls on the
-	/// returned image should not affect the original image
-	void *(*copy)(backend_t *base, const void *image_data, const region_t *reg_visible);
+	/// Create another instance of the `image_data`. All `image_op` and
+	/// `set_image_property` calls on the returned image should not affect the
+	/// original image
+	void *(*clone_image)(backend_t *base, const void *image_data,
+	                     const region_t *reg_visible);
 
 	/// Create a blur context that can be used to call `blur`
 	void *(*create_blur_context)(backend_t *base, enum blur_method, void *args);
@@ -228,6 +271,8 @@ struct backend_operations {
 	// ===========         Misc         ============
 	/// Return the driver that is been used by the backend
 	enum driver (*detect_driver)(backend_t *backend_data);
+
+	void (*diagnostics)(backend_t *backend_data);
 };
 
 extern struct backend_operations *backend_list[];

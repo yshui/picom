@@ -28,6 +28,11 @@ def set_window_class(conn, wid, name):
     str_type = to_atom(conn, "STRING")
     conn.core.ChangePropertyChecked(xproto.PropMode.Replace, wid, prop_name, str_type, 8, len(name), name).check()
 
+def set_window_size_async(conn, wid, width, height):
+    value_mask = xproto.ConfigWindow.Width | xproto.ConfigWindow.Height
+    value_list = [width, height]
+    return conn.core.ConfigureWindowChecked(wid, value_mask, value_list)
+
 def find_picom_window(conn):
     prop_name = to_atom(conn, "WM_NAME")
     setup = conn.get_setup()
@@ -40,7 +45,7 @@ def find_picom_window(conn):
         if name.value.buf() == b"picom":
             return w
 
-def trigger_root_configure(conn):
+def prepare_root_configure(conn):
     setup = conn.get_setup()
     root = setup.roots[0].root
     # Xorg sends root ConfigureNotify when we add a new mode to an output
@@ -56,7 +61,11 @@ def trigger_root_configure(conn):
     # our xvfb is setup to only have 1 output
     output = reply.outputs[0]
     rr.AddOutputModeChecked(output, mode).check()
-    rr.SetCrtcConfig(reply.crtcs[0], reply.timestamp, reply.config_timestamp, 0, 0, mode, randr.Rotation.Rotate_0, 1, [output]).reply()
+    return reply, mode, output
+
+def trigger_root_configure(conn, reply, mode, output):
+    rr = conn(randr.key)
+    return rr.SetCrtcConfig(reply.crtcs[0], reply.timestamp, reply.config_timestamp, 0, 0, mode, randr.Rotation.Rotate_0, 1, [output])
 
 def find_32bit_visual(conn):
     setup = conn.get_setup()

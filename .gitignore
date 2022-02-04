@@ -16,8 +16,10 @@ build/
 compile_commands.json
 build.ninja
 
-# ccls
+# language servers
 .ccls-cache
+.clangd
+.cache
 
 # CMake files
 compton-*.deb

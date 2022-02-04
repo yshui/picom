@@ -43,14 +43,8 @@ OPTIONS
 *-D*, *--fade-delta*='MILLISECONDS'::
 	The time between steps in fade step, in milliseconds. (> 0, defaults to 10)
 
-*-m*, *--menu-opacity*='OPACITY'::
-	Default opacity for dropdown menus and popup menus. (0.0 - 1.0, defaults to 1.0)
-
 *-c*, *--shadow*::
 	Enabled client-side shadows on windows. Note desktop windows (windows with '_NET_WM_WINDOW_TYPE_DESKTOP') never get shadow, unless explicitly requested using the wintypes option.
-
-*-C*, *--no-dock-shadow*::
-	Avoid drawing shadows on dock/panel windows. This option is deprecated, you should use the *wintypes* option in your config file instead.
 
 *-f*, *--fading*::
 	Fade windows in/out when opening/closing and when opacity changes, unless *--no-fading-openclose* is used.
@@ -64,11 +58,8 @@ OPTIONS
 *-e*, *--frame-opacity*='OPACITY'::
 	Opacity of window titlebars and borders. (0.1 - 1.0, disabled by default)
 
-*-G*, *--no-dnd-shadow*::
-	Don't draw shadows on drag-and-drop windows. This option is deprecated, you should use the *wintypes* option in your config file instead.
-
 *-b*, *--daemon*::
-	Daemonize process. Fork to background after initialization. Causes issues with certain (badly-written) drivers.
+	Daemonize process. Fork to background after initialization. This option can only be set from the command line, setting this in the configuration file will have no effect.
 
 *--log-level*::
 	Set the log level. Possible values are "TRACE", "DEBUG", "INFO", "WARN", "ERROR", in increasing level of importance. Case doesn't matter. If using the "TRACE" log level, it's better to log into a file using *--log-file*, since it can generate a huge stream of logs.
@@ -86,7 +77,10 @@ OPTIONS
 	Look for configuration file at the path. See *CONFIGURATION FILES* section below for where picom looks for a configuration file by default. Use `/dev/null` to avoid loading configuration file.
 
 *--write-pid-path* 'PATH'::
-	Write process ID to a file.
+	Write process ID to a file. it is recommended to use an absolute path.
+
+*--shadow-color* 'STRING'::
+	Color of shadow, as a hex string ('#000000')
 
 *--shadow-red* 'VALUE'::
 	Red color value of shadow (0.0 - 1.0, defaults to 0).
@@ -98,13 +92,19 @@ OPTIONS
 	Blue color value of shadow (0.0 - 1.0, defaults to 0).
 
 *--inactive-opacity-override*::
-	Let inactive opacity set by *-i* override the '_NET_WM_OPACITY' values of windows.
+	Let inactive opacity set by *-i* override the '_NET_WM_WINDOW_OPACITY' values of windows.
 
 *--active-opacity* 'OPACITY'::
 	Default opacity for active windows. (0.0 - 1.0, defaults to 1.0)
 
 *--inactive-dim* 'VALUE'::
 	Dim inactive windows. (0.0 - 1.0, defaults to 0.0)
+
+*--corner-radius* 'VALUE'::
+	Sets the radius of rounded window corners. When > 0, the compositor will round the corners of windows. Does not interact well with *--transparent-clipping*. (defaults to 0).
+
+*--rounded-corners-exclude* 'CONDITION'::
+	Exclude conditions for rounded corners.
 
 *--mark-wmwin-focused*::
 	Try to detect WM windows (a non-override-redirect window with no child that has 'WM_STATE') and mark them as active.
@@ -125,16 +125,10 @@ OPTIONS
 	Try to detect windows with rounded corners and don't consider them shaped windows. The accuracy is not very high, unfortunately.
 
 *--detect-client-opacity*::
-	Detect '_NET_WM_OPACITY' on client windows, useful for window managers not passing '_NET_WM_OPACITY' of client windows to frame windows.
-
-*--refresh-rate* 'REFRESH_RATE'::
-	Specify refresh rate of the screen. If not specified or 0, picom will try detecting this with X RandR extension.
+	Detect '_NET_WM_WINDOW_OPACITY' on client windows, useful for window managers not passing '_NET_WM_WINDOW_OPACITY' of client windows to frame windows.
 
 *--vsync*, *--no-vsync*::
 	Enable/disable VSync.
-
-*--sw-opti*::
-	Limit picom to repaint at most once every 1 / 'refresh_rate' second to boost performance. This should not be used with *--vsync* drm/opengl/opengl-oml as they essentially does *--sw-opti*'s job already, unless you wish to specify a lower refresh rate than the actual value.
 
 *--use-ewmh-active-win*::
 	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it.
@@ -151,6 +145,9 @@ OPTIONS
 *--shadow-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should have no shadow.
 
+*--clip-shadow-above* 'CONDITION'::
+	Specify a list of conditions of windows that should have no shadow painted over, such as a dock window.
+
 *--fade-exclude* 'CONDITION'::
 	Specify a list of conditions of windows that should not be faded.
 
@@ -164,9 +161,9 @@ OPTIONS
 	Use 'WM_TRANSIENT_FOR' to group windows, and consider windows in the same group focused at the same time.
 
 *--detect-client-leader*::
-	Use 'WM_CLIENT_LEADER' to group windows, and consider windows in the same group focused at the same time. 'WM_TRANSIENT_FOR' has higher priority if *--detect-transient* is enabled, too.
+	Use 'WM_CLIENT_LEADER' to group windows, and consider windows in the same group focused at the same time. This usually means windows from the same application will be considered focused or unfocused at the same time.'WM_TRANSIENT_FOR' has higher priority if *--detect-transient* is enabled, too.
 
-*--blur-method*, *--blur-size*, *--blur-deviation*::
+*--blur-method*, *--blur-size*, *--blur-deviation*, *--blur-strength*::
 	Parameters for background blurring, see the *BLUR* section for more information.
 
 *--blur-background*::
@@ -280,11 +277,11 @@ With greater-than/less-than operators it looks like:
 
 'NEGATION' (optional) is one or more exclamation marks;
 
-'TARGET' is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `x`, `y`, `x2` (x + widthb), `y2`, `width`, `height`, `widthb` (width + 2 * `border_width`), `heightb`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `bounding_shaped`, `rounded_corners` (requires *--detect-rounded-corners*), `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
+'TARGET' is either a predefined target name, or the name of a window property to match. Supported predefined targets are `id`, `x`, `y`, `x2` (`x` + `widthb`), `y2` (like `x2`), `width`, `height`, `widthb` (`width` + 2 * `border_width`), `heightb` (like `widthb`), `border_width`, `fullscreen`, `override_redirect`, `argb` (whether the window has an ARGB visual), `focused`, `wmwin` (whether the window looks like a WM window, i.e. has no child window with `WM_STATE` and is not override-redirected), `bounding_shaped`, `rounded_corners` (requires *--detect-rounded-corners*), `client` (ID of client window), `window_type` (window type in string), `leader` (ID of window leader), `name`, `class_g` (= `WM_CLASS[1]`), `class_i` (= `WM_CLASS[0]`), and `role`.
 
 'CLIENT/FRAME' is a single `@` if the window attribute should be be looked up on client window, nothing if on frame window;
 
-'INDEX' (optional) is the index number of the property to look up. For example, `[2]` means look at the third value in the property. Do not specify it for predefined targets.
+'INDEX' (optional) is the index number of the property to look up. For example, `[2]` means look at the third value in the property. If not specified, the first value (index `[0]`) is used implicitly. Use the special value `[*]` to perform matching against all available property values using logical OR. Do not specify it for predefined targets.
 
 'FORMAT' (optional) specifies the format of the property, 8, 16, or 32. On absence we use format X reports. Do not specify it for predefined or string targets.
 
@@ -313,6 +310,11 @@ Examples:
 	# If the window is a menu
 	window_type *= "menu"
 	_NET_WM_WINDOW_TYPE@:a *= "MENU"
+	# If the window is marked hidden: _NET_WM_STATE contains _NET_WM_STATE_HIDDEN
+	_NET_WM_STATE@[*]:a = "_NET_WM_STATE_HIDDEN"
+	# If the window is marked sticky: _NET_WM_STATE contains an atom that contains
+	# "sticky", ignore case
+	_NET_WM_STATE@[*]:a *?= "sticky"
 	# If the window name contains "Firefox", ignore case
 	name *?= "Firefox"
 	_NET_WM_NAME@:s *?= "Firefox"
@@ -357,7 +359,7 @@ Window-type-specific settings are exposed only in configuration file and has the
 ------------
 wintypes:
 {
-  WINDOW_TYPE = { fade = BOOL; shadow = BOOL; opacity = FLOAT; focus = BOOL; full-shadow = BOOL; redir-ignore = BOOL; };
+  WINDOW_TYPE = { fade = BOOL; shadow = BOOL; opacity = FLOAT; focus = BOOL; blur-background = BOOL; full-shadow = BOOL; clip-shadow-above = BOOL; redir-ignore = BOOL; };
 };
 ------------
 
@@ -374,8 +376,14 @@ Following per window-type options are available: ::
   focus:::
     Controls whether the window of this type is to be always considered focused. (By default, all window types except "normal" and "dialog" has this on.)
 
+  blur-background:::
+    Controls wether the window of this type will have its transparent background blurred.
+
   full-shadow:::
     Controls whether shadow is drawn under the parts of the window that you normally won't be able to see. Useful when the window has parts of it transparent, and you want shadows in those areas.
+
+  clip-shadow-above:::
+    Controls wether shadows that would have been drawn above the window should be clipped. Useful for dock windows that should have no shadow painted on top.
 
   redir-ignore:::
     Controls whether this type of windows should cause screen to become redirected again after been unredirected. If you have *--unredir-if-possible* set, and doesn't want certain window to cause unnecessary screen redirection, you can set this to `true`.
@@ -397,8 +405,8 @@ Available options of the 'blur' section are: ::
 
   *method*:::
     A string. Controls the blur method. Corresponds to the *--blur-method* command line option. Available choices are:
-      'none' to disable blurring; 'gaussian' for gaussian blur; 'box' for box blur; 'kernel' for convolution blur with a custom kernel.
-    Note: 'gaussian' and 'box' blur methods are only supported by the experimental backends.
+      'none' to disable blurring; 'gaussian' for gaussian blur; 'box' for box blur; 'kernel' for convolution blur with a custom kernel; 'dual_kawase' for dual-filter kawase blur.
+    Note: 'gaussian', 'box' and 'dual_kawase' blur methods are only supported by the experimental backends.
     (default: none)
 
   *size*:::
@@ -406,6 +414,9 @@ Available options of the 'blur' section are: ::
 
   *deviation*:::
     A floating point number. The standard deviation for the 'gaussian' blur method. Corresponds to the *--blur-deviation* command line option (default: 0.84089642).
+
+  *strength*:::
+    An integer in the range 0-20. The strength of the 'dual_kawase' blur method. Corresponds to the *--blur-strength* command line option. If set to zero, the value requested by *--blur-size* is approximated (default: 5).
 
   *kernel*:::
     A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kerns* option. Corresponds to the *--blur-kerns* command line option.
@@ -431,16 +442,16 @@ EXAMPLES
 $ picom --config /dev/null
 ------------
 
-* Run picom with client-side shadow and fading, disable shadow on dock windows and drag-and-drop windows:
+* Run picom with client-side shadow and fading:
 +
 ------------
-$ picom -cCGf
+$ picom -cf
 ------------
 
-* Same thing as above, plus making inactive windows 80% transparent, making frame 80% transparent, don't fade on window open/close, enable software optimization, and fork to background:
+* Same thing as above, plus making inactive windows 80% transparent, making frame 80% transparent, don't fade on window open/close, and fork to background:
 +
 ------------
-$ picom -bcCGf -i 0.8 -e 0.8 --no-fading-openclose --sw-opti
+$ picom -bcf -i 0.8 -e 0.8 --no-fading-openclose
 ------------
 
 * Draw white shadows:

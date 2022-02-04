@@ -33,7 +33,7 @@ bool parse_long(const char *s, long *dest) {
 		log_error("Invalid number: %s", s);
 		return false;
 	}
-	while (isspace(*endptr))
+	while (isspace((unsigned char)*endptr))
 		++endptr;
 	if (*endptr) {
 		log_error("Trailing characters: %s", s);
@@ -74,7 +74,7 @@ const char *parse_readnum(const char *src, double *dest) {
 		log_error("No number found: %s", src);
 		return src;
 	}
-	while (*pc && (isspace(*pc) || *pc == ',')) {
+	while (*pc && (isspace((unsigned char)*pc) || *pc == ',')) {
 		++pc;
 	}
 	*dest = val;
@@ -88,6 +88,13 @@ enum blur_method parse_blur_method(const char *src) {
 		return BLUR_METHOD_BOX;
 	} else if (strcmp(src, "gaussian") == 0) {
 		return BLUR_METHOD_GAUSSIAN;
+	} else if (strcmp(src, "dual_kawase") == 0) {
+		return BLUR_METHOD_DUAL_KAWASE;
+	} else if (strcmp(src, "kawase") == 0) {
+		log_warn("Blur method 'kawase' has been renamed to 'dual_kawase'. "
+		         "Interpreted as 'dual_kawase', but this will stop working "
+		         "soon.");
+		return BLUR_METHOD_DUAL_KAWASE;
 	} else if (strcmp(src, "none") == 0) {
 		return BLUR_METHOD_NONE;
 	}
@@ -154,8 +161,8 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 
 	// Detect trailing characters
 	for (; *pc && *pc != ';'; pc++) {
-		if (!isspace(*pc) && *pc != ',') {
-			// TODO isspace is locale aware, be careful
+		if (!isspace((unsigned char)*pc) && *pc != ',') {
+			// TODO(yshui) isspace is locale aware, be careful
 			log_error("Trailing characters in blur kernel string.");
 			goto err2;
 		}
@@ -164,7 +171,7 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 	// Jump over spaces after ';'
 	if (*pc == ';') {
 		pc++;
-		while (*pc && isspace(*pc)) {
+		while (*pc && isspace((unsigned char)*pc)) {
 			++pc;
 		}
 	}
@@ -197,7 +204,7 @@ err1:
  * @return            the kernels
  */
 struct conv **parse_blur_kern_lst(const char *src, bool *hasneg, int *count) {
-	// TODO just return a predefined kernels, not parse predefined strings...
+	// TODO(yshui) just return a predefined kernels, not parse predefined strings...
 	static const struct {
 		const char *name;
 		const char *kern_str;
@@ -418,7 +425,7 @@ bool parse_rule_opacity(c2_lptr_t **res, const char *src) {
 	}
 
 	// Skip over spaces
-	while (*endptr && isspace(*endptr))
+	while (*endptr && isspace((unsigned char)*endptr))
 		++endptr;
 	if (':' != *endptr) {
 		log_error("Opacity terminator not found: %s", src);
@@ -445,7 +452,7 @@ bool condlst_add(c2_lptr_t **pcondlst, const char *pattern) {
 }
 
 void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_enable,
-                         bool fading_enable) {
+                         bool fading_enable, bool blur_enable) {
 	// Apply default wintype options.
 	if (!mask[WINTYPE_DESKTOP].shadow) {
 		// Desktop windows are always drawn without shadow by default.
@@ -475,6 +482,10 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 			mask[i].focus = true;
 			opt->wintype_option[i].focus = true;
 		}
+		if (!mask[i].blur_background) {
+			mask[i].blur_background = true;
+			opt->wintype_option[i].blur_background = blur_enable;
+		}
 		if (!mask[i].full_shadow) {
 			mask[i].full_shadow = true;
 			opt->wintype_option[i].full_shadow = false;
@@ -489,11 +500,16 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 			// opacity logic is complicated, and needs an "unset" state
 			opt->wintype_option[i].opacity = NAN;
 		}
+		if (!mask[i].clip_shadow_above) {
+			mask[i].clip_shadow_above = true;
+			opt->wintype_option[i].clip_shadow_above = false;
+		}
 	}
 }
 
 char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
                    bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask) {
+	// clang-format off
 	*opt = (struct options){
 	    .backend = BKEND_XRENDER,
 	    .glx_no_stencil = false,
@@ -511,8 +527,6 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .benchmark_wid = XCB_NONE,
 	    .logpath = NULL,
 
-	    .refresh_rate = 0,
-	    .sw_opti = false,
 	    .use_damage = true,
 
 	    .shadow_red = 0.0,
@@ -525,6 +539,9 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .shadow_blacklist = NULL,
 	    .shadow_ignore_shaped = false,
 	    .xinerama_shadow_crop = false,
+	    .shadow_clip_list = NULL,
+
+	    .corner_radius = 0,
 
 	    .fade_in_step = 0.028,
 	    .fade_out_step = 0.03,
@@ -542,6 +559,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .blur_method = BLUR_METHOD_NONE,
 	    .blur_radius = 3,
 	    .blur_deviation = 0.84089642,
+	    .blur_strength = 5,
 	    .blur_background_frame = false,
 	    .blur_background_fixed = false,
 	    .blur_background_blacklist = NULL,
@@ -560,7 +578,10 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .no_ewmh_fullscreen = false,
 
 	    .track_leader = false,
+
+	    .rounded_corners_blacklist = NULL
 	};
+	// clang-format on
 
 	char *ret = NULL;
 #ifdef CONFIG_LIBCONFIG

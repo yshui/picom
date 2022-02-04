@@ -21,20 +21,32 @@ DESCRIPTION
 
 OPTIONS
 -------
-*-w* 'WINDOW_ID'::
+*-w*, *--window*='WINDOW_ID'::
 Specify the window id of the target window.
 
-*-n* 'WINDOW_NAME'::
+*-n*, *--name*='WINDOW_NAME'::
 Specify and try to match a window name.
 
-*-c*::
+*-c*, *--current*::
 Specify the currently active window as target. Only works if EWMH '_NET_ACTIVE_WINDOW' property exists on root window.
 
-*-s*::
+*-s*, *--select*::
 Select target window with mouse cursor. This is the default if no window has been specified.
 
-*-o* 'OPACITY'::
-Specify the new opacity value for the window. This value can be anywhere from 1-100. If it is prefixed with a plus or minus (+/-), this will increment or decrement from the target window's current opacity instead. 
+*-o*, *--opacity*='OPACITY'::
+Specify the new opacity value for the window. This value can be anywhere from 1-100. If it is prefixed with a plus or minus (+/-), this will increment or decrement from the target window's current opacity instead.
+
+*-g*, *--get*::
+Print the target window's opacity instead of setting it.
+
+*-d*, *--delete*::
+Delete opacity of the target window instead of setting it.
+
+*-t*, *--toggle*::
+Toggle the target window's opacity: Set opacity if not already set, and delete if already set.
+
+*-r*, *--reset*::
+Reset opacity for all windows instead of setting it.
 
 EXAMPLES
 --------
@@ -73,6 +85,24 @@ picom-trans -c +5
 +
 ------------
 picom-trans -c -- -5
+------------
+
+* Delete current window's opacity:
++
+------------
+picom-trans -c --delete
+------------
+
+* Toggle current window's opacity between 90 and unset
++
+------------
+picom-trans -c --toggle 90
+------------
+
+* Reset all windows:
++
+------------
+picom-trans --reset
 ------------
 
 BUGS

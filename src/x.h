@@ -16,6 +16,7 @@
 #include "region.h"
 
 typedef struct session session_t;
+struct atom;
 
 /// Structure representing Window property value.
 typedef struct winprop {
@@ -32,6 +33,12 @@ typedef struct winprop {
 
 	xcb_get_property_reply_t *r;
 } winprop_t;
+
+typedef struct winprop_info {
+	xcb_atom_t type;
+	uint8_t format;
+	uint32_t length;
+} winprop_info_t;
 
 struct xvisual_info {
 	/// Bit depth of the red component
@@ -73,10 +80,16 @@ struct xvisual_info {
 		__r;                                                                     \
 	})
 
+#define log_debug_x_error(e, fmt, ...)                                                   \
+	LOG(DEBUG, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
 #define log_error_x_error(e, fmt, ...)                                                   \
 	LOG(ERROR, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
 #define log_fatal_x_error(e, fmt, ...)                                                   \
 	LOG(FATAL, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
+
+// xcb-render specific macros
+#define XFIXED_TO_DOUBLE(value) (((double)(value)) / 65536)
+#define DOUBLE_TO_XFIXED(value) ((xcb_render_fixed_t)(((double)(value)) * 65536))
 
 /// Wraps x_new_id. abort the program if x_new_id returns error
 static inline uint32_t x_new_id(xcb_connection_t *c) {
@@ -116,16 +129,19 @@ static inline void x_sync(xcb_connection_t *c) {
  * @return a <code>winprop_t</code> structure containing the attribute
  *    and number of items. A blank one on failure.
  */
-winprop_t x_get_prop_with_offset(const session_t *ps, xcb_window_t w, xcb_atom_t atom,
+winprop_t x_get_prop_with_offset(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom,
                                  int offset, int length, xcb_atom_t rtype, int rformat);
 
 /**
  * Wrapper of wid_get_prop_adv().
  */
-static inline winprop_t x_get_prop(const session_t *ps, xcb_window_t wid, xcb_atom_t atom,
+static inline winprop_t x_get_prop(xcb_connection_t *c, xcb_window_t wid, xcb_atom_t atom,
                                    int length, xcb_atom_t rtype, int rformat) {
-	return x_get_prop_with_offset(ps, wid, atom, 0L, length, rtype, rformat);
+	return x_get_prop_with_offset(c, wid, atom, 0L, length, rtype, rformat);
 }
+
+/// Get the type, format and size in bytes of a window's specific attribute.
+winprop_info_t x_get_prop_info(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom);
 
 /// Discard all X events in queue or in flight. Should only be used when the server is
 /// grabbed
@@ -141,10 +157,14 @@ static inline void x_discard_events(xcb_connection_t *c) {
  *
  * @return the value if successful, 0 otherwise
  */
-xcb_window_t wid_get_prop_window(session_t *ps, xcb_window_t wid, xcb_atom_t aprop);
+xcb_window_t wid_get_prop_window(xcb_connection_t *c, xcb_window_t wid, xcb_atom_t aprop);
 
 /**
  * Get the value of a text property of a window.
+ *
+ * @param[out] pstrlst Out parameter for an array of strings, caller needs to free this
+ *                     array
+ * @param[out] pnstr   Number of strings in the array
  */
 bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char ***pstrlst,
                        int *pnstr);
@@ -170,6 +190,12 @@ xcb_render_picture_t
 x_create_picture_with_standard_and_pixmap(xcb_connection_t *, xcb_pict_standard_t standard,
                                           xcb_pixmap_t pixmap, uint32_t valuemask,
                                           const xcb_render_create_picture_value_list_t *attr)
+    attr_nonnull(1);
+
+xcb_render_picture_t
+x_create_picture_with_standard(xcb_connection_t *c, xcb_drawable_t d, int w, int h,
+                               xcb_pict_standard_t standard, uint32_t valuemask,
+                               const xcb_render_create_picture_value_list_t *attr)
     attr_nonnull(1);
 
 /**
@@ -226,12 +252,14 @@ static inline void free_winprop(winprop_t *pprop) {
 	pprop->r = NULL;
 	pprop->nitems = 0;
 }
+
 /// Get the back pixmap of the root window
-xcb_pixmap_t x_get_root_back_pixmap(session_t *ps);
+xcb_pixmap_t
+x_get_root_back_pixmap(xcb_connection_t *c, xcb_window_t root, struct atom *atoms);
 
 /// Return true if the atom refers to a property name that is used for the
 /// root window background pixmap
-bool x_is_root_back_pixmap_atom(session_t *ps, xcb_atom_t atom);
+bool x_is_root_back_pixmap_atom(struct atom *atoms, xcb_atom_t atom);
 
 bool x_fence_sync(xcb_connection_t *, xcb_sync_fence_t);
 
@@ -260,6 +288,9 @@ void attr_nonnull(1, 3) x_create_convolution_kernel(const conv *kernel, double c
 struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual);
 
 xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
+
+xcb_render_pictformat_t
+x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
 
 xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen);
 
