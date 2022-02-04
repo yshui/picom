@@ -890,6 +890,10 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 	cdbus_m_win_get_do(ClientWin, client_win, cdbus_append_wid_variant);
 	cdbus_m_win_get_do(Leader, leader, cdbus_append_wid_variant);
 	cdbus_m_win_get_do(Name, name, cdbus_append_string_variant);
+	if (!strcmp("Type", target)) {
+		cdbus_reply(ps, msg, cdbus_append_string_variant, &WINTYPES[w->window_type]);
+		return true;
+	}
 	if (!strcmp("RawFocused", target)) {
 		cdbus_reply(ps, msg, cdbus_append_bool_variant,
 		            (bool[]){win_is_focused_raw(ps, w)});
@@ -1467,6 +1471,7 @@ static bool cdbus_process_window_introspect(session_t *ps, DBusMessage *msg) {
 	    "    <property type='b' name='RawFocused' access='read'/>\n"
 	    "    <property type='b' name='Mapped' access='read'/>\n"
 	    "    <property type='s' name='Name' access='read'/>\n"
+	    "    <property type='s' name='Type' access='read'/>\n"
 	    "  </interface>\n"
 	    "</node>\n";
 	// clang-format on
