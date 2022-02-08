@@ -56,10 +56,22 @@ region_t get_damage(session_t *ps, bool all_damage) {
 void handle_device_reset(session_t *ps) {
 	log_error("Device reset detected");
 	// Wait for reset to complete
-	while (ps->backend_data->ops->device_status(ps->backend_data) != DEVICE_STATUS_NORMAL) {
-		log_error("Device is resetting...");
-		sleep(1);
-	}
+	// Although ideally the backend should return DEVICE_STATUS_NORMAL after a reset
+	// is completed, it's not always possible.
+	//
+	// According to ARB_robustness (emphasis mine):
+	//
+	//     "If a reset status other than NO_ERROR is returned and subsequent
+	//     calls return NO_ERROR, the context reset was encountered and
+	//     completed. If a reset status is repeatedly returned, the context **may**
+	//     be in the process of resetting."
+	//
+	//  Which means it may also not be in the process of resetting. For example on
+	//  AMDGPU devices, Mesa OpenGL always return CONTEXT_RESET after a reset has
+	//  started, completed or not.
+	//
+	//  So here we blindly wait 5 seconds and hope ourselves best of the luck.
+	sleep(5);
 
 	// Reset picom
 	log_info("Resetting picom after device reset");
