@@ -53,8 +53,25 @@ region_t get_damage(session_t *ps, bool all_damage) {
 	return region;
 }
 
+void handle_device_reset(session_t *ps) {
+	log_error("Device reset detected");
+	// Wait for reset to complete
+	while (ps->backend_data->ops->device_status(ps->backend_data) != DEVICE_STATUS_NORMAL) {
+		log_error("Device is resetting...");
+		sleep(1);
+	}
+
+	// Reset picom
+	log_info("Resetting picom after device reset");
+	ev_break(ps->loop, EVBREAK_ALL);
+}
+
 /// paint all windows
 void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
+	if (ps->backend_data->ops->device_status &&
+	    ps->backend_data->ops->device_status(ps->backend_data) != DEVICE_STATUS_NORMAL) {
+		return handle_device_reset(ps);
+	}
 	if (ps->o.xrender_sync_fence) {
 		if (ps->xsync_exists && !x_fence_sync(ps->c, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
