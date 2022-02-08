@@ -75,6 +75,8 @@ struct gl_data {
 	backend_t base;
 	// If we are using proprietary NVIDIA driver
 	bool is_nvidia;
+	// If ARB_robustness extension is present
+	bool has_robustness;
 	// Height and width of the root window
 	int height, width;
 	gl_win_shader_t win_shader;
@@ -132,6 +134,7 @@ void gl_fill(backend_t *base, struct color, const region_t *clip);
 
 void gl_present(backend_t *base, const region_t *);
 bool gl_read_pixel(backend_t *base, void *image_data, int x, int y, struct color *output);
+enum device_status gl_device_status(backend_t *base);
 
 static inline void gl_delete_texture(GLuint texture) {
 	glDeleteTextures(1, &texture);
