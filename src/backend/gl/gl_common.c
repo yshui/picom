@@ -1694,6 +1694,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	} else {
 		gd->is_nvidia = false;
 	}
+	gd->has_robustness = gl_has_extension("GL_ARB_robustness");
 
 	return true;
 }
@@ -1907,4 +1908,16 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 	}
 
 	return true;
+}
+
+enum device_status gl_device_status(backend_t *base) {
+	auto gd = (struct gl_data *)base;
+	if (!gd->has_robustness) {
+		return DEVICE_STATUS_NORMAL;
+	}
+	if (glGetGraphicsResetStatusARB() == GL_NO_ERROR) {
+		return DEVICE_STATUS_NORMAL;
+	} else {
+		return DEVICE_STATUS_RESETTING;
+	}
 }
