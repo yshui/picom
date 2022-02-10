@@ -395,7 +395,11 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 		glUniform1f(gd->win_shader.uniform_corner_radius, (float)img->corner_radius);
 	}
 	if (gd->win_shader.uniform_border_width >= 0) {
-		glUniform1f(gd->win_shader.uniform_border_width, (float)img->border_width);
+		auto border_width = img->border_width;
+		if (border_width > img->corner_radius) {
+			border_width = 0;
+		}
+		glUniform1f(gd->win_shader.uniform_border_width, (float)border_width);
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
