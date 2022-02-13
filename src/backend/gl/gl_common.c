@@ -1550,16 +1550,20 @@ const char *win_shader_glsl = GLSL(330,
 		vec4 border_color = texture(tex, vec2(0.0, 0.5));
 		if (invert_color) {
 			c = vec4(c.aaa - c.rgb, c.a);
+			border_color = vec4(border_color.aaa - border_color.rgb, border_color.a);
 		}
 		c = vec4(c.rgb * (1.0 - dim), c.a) * opacity;
+		border_color = vec4(border_color.rgb * (1.0 - dim), border_color.a) * opacity;
 
 		vec3 rgb_brightness = texelFetch(brightness, ivec2(0, 0), 0).rgb;
 		// Ref: https://en.wikipedia.org/wiki/Relative_luminance
 		float brightness = rgb_brightness.r * 0.21 +
 		                   rgb_brightness.g * 0.72 +
 		                   rgb_brightness.b * 0.07;
-		if (brightness > max_brightness)
+		if (brightness > max_brightness) {
 			c.rgb = c.rgb * (max_brightness / brightness);
+			border_color.rgb = border_color.rgb * (max_brightness / brightness);
+		}
 
 		// Rim color is the color of the outer rim of the window, if there is no
 		// border, it's the color of the window itself, otherwise it's the border.
