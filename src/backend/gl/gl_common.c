@@ -1565,12 +1565,17 @@ const char *win_shader_glsl = GLSL(330,
 			border_color.rgb = border_color.rgb * (max_brightness / brightness);
 		}
 
+		// Rim color is the color of the outer rim of the window, if there is no
+		// border, it's the color of the window itself, otherwise it's the border.
+		// Using mix() to avoid a branch here.
+		vec4 rim_color = mix(c, border_color, clamp(border_width, 0.0f, 1.0f));
+
 		vec2 outer_size = vec2(textureSize(tex, 0));
 		vec2 inner_size = outer_size - vec2(corner_radius) * 2.0f;
 		float rect_distance = rectangle_sdf(texcoord - outer_size / 2.0f,
 		    inner_size / 2.0f) - corner_radius;
 		if (rect_distance > 0.0f) {
-			c = (1.0f - clamp(rect_distance, 0.0f, 1.0f)) * border_color;
+			c = (1.0f - clamp(rect_distance, 0.0f, 1.0f)) * rim_color;
 		} else {
 			float factor = clamp(rect_distance + border_width, 0.0f, 1.0f);
 			c = (1.0f - factor) * c + factor * border_color;
