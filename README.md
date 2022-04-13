@@ -1,17 +1,11 @@
 picom
-=======
+=====
+
+__picom__ is a compositor for X, and a [fork of Compton](History.md).
 
 **This is a development branch, bugs to be expected**
 
-This is forked from the original Compton because it seems to have become unmaintained.
-
-The current battle plan of this fork is to refactor it to make the code _possible_ to maintain, so potential contributors won't be scared away when they take a look at the code.
-
-We also try to fix bugs.
-
-You can leave your feedbacks or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions).
-
-The original README can be found [here](README_orig.md)
+You can leave your feedback or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions).
 
 ## Call for testers
 
@@ -26,36 +20,6 @@ New backend features will only be implemented on the new backends from now on, a
 To test the new backends, add the `--experimental-backends` flag to the command you use to run picom. This flag is not available from the configuration file.
 
 To report issues with the new backends, please state explicitly you are using the new backends in your report.
-
-## Rename
-
-### Rationale
-
-Since the inception of this fork, the existence of two compton repositories has caused some number of confusions. Mainly, people will report issues of this fork to the original compton, or report issues of the original compton here. Later, when distros started packaging this fork of compton, some wanted to differentiate the newer compton from the older version. They found themselves having no choice but to invent a name for this fork. This is less than ideal since this has the potential to cause more confusions among users.
-
-Therefore, we decided to move this fork to a new name. Personally, I consider this more than justified since this version of compton has gone through significant changes since it was forked.
-
-### The name
-
-The criteria for a good name were
-
-0. Being short, so it's easy to remember.
-1. Pronounceability, again, helps memorability
-2. Searchability, so when people search the name, it's easy for them to find this repository.
-
-Of course, choosing a name is never easy, and there is no apparent way to objectively evaluate the names. Yet, we have to solve the aforementioned problems as soon as possible.
-
-In the end, we picked `picom` (a portmanteau of `pico` and `composite`) as our new name. This name might not be perfect, but is what we will move forward with unless there's a compelling reason not to.
-
-### Migration
-
-Following the [deprecation process](https://github.com/yshui/picom/issues/114), migration to the new name will be broken into 3 steps:
-
-1. All mentions of `compton` will be updated to `picom` in the code base. `compton` will still be installed, but only as a symlink to `picom`. When `picom` is launched via the symlink, a warning message is printed, alerting the user to migrate. Similarly, the old configuration file names and dbus interface names will still be accepted but warned.
-2. 3 major releases after step 1, the warning messages will be prompted to error messages and `picom` will not start when launched via the symlink.
-3. 3 major releases after step 2, the symlink will be removed.
-
-The dbus interface and service names are unchanged, so no migration needed for that.
 
 ## Change Log
 
@@ -153,3 +117,10 @@ Contributions to the documents and wiki will also be appreciated.
 ## Contributors
 
 See [CONTRIBUTORS](CONTRIBUTORS)
+
+The README for the [original Compton project](https://github.com/chjj/compton/) can be found [here](History.md#Compton).
+
+## Licensing
+
+picom is free software, made available under the [MIT](LICENSES/MIT) and [MPL-2.0](LICENSES/MPL-2.0) software
+licenses. See the individual source files for details.
