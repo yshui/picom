@@ -179,7 +179,9 @@ bool cdbus_init(session_t *ps, const char *uniq) {
 		dbus_error_free(&err);
 		goto fail;
 	}
-	dbus_connection_add_filter(cd->dbus_conn, cdbus_process, ps, NULL);
+	dbus_connection_register_object_path(
+	    cd->dbus_conn, CDBUS_OBJECT_NAME,
+	    (DBusObjectPathVTable[]){{NULL, cdbus_process}}, ps);
 	return true;
 fail:
 	ps->dbus_data = NULL;
@@ -761,7 +763,10 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 		return true;                                                             \
 	}
 
-	cdbus_m_win_get_do(base.id, cdbus_reply_wid);
+	if (!strcmp(target, "id")) {
+		cdbus_reply_wid(ps, msg, w->base.id);
+		return true;
+	}
 
 	// next
 	if (!strcmp("next", target)) {
@@ -1005,8 +1010,8 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(stoppaint_force, cdbus_reply_enum);
 	cdbus_m_opts_get_do(logpath, cdbus_reply_string);
 
-	cdbus_m_opts_get_do(refresh_rate, cdbus_reply_int32);
-	cdbus_m_opts_get_do(sw_opti, cdbus_reply_bool);
+	cdbus_m_opts_get_stub(refresh_rate, cdbus_reply_int32, 0);
+	cdbus_m_opts_get_stub(sw_opti, cdbus_reply_bool, false);
 	cdbus_m_opts_get_do(vsync, cdbus_reply_bool);
 	if (!strcmp("backend", target)) {
 		assert(ps->o.backend < sizeof(BACKEND_STRS) / sizeof(BACKEND_STRS[0]));

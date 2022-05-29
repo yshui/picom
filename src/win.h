@@ -140,7 +140,7 @@ struct managed_win {
 	/// bitmap for properties which needs to be updated
 	uint64_t *stale_props;
 	/// number of uint64_ts that has been allocated for stale_props
-	uint64_t stale_props_capacity;
+	size_t stale_props_capacity;
 
 	/// Bounding shape of the window. In local coordinates.
 	/// See above about coordinate systems.
@@ -223,7 +223,7 @@ struct managed_win {
 	/// Previous window opacity.
 	double opacity_target_old;
 	/// true if window (or client window, for broken window managers
-	/// not transferring client window's _NET_WM_OPACITY value) has opacity prop
+	/// not transferring client window's _NET_WM_WINDOW_OPACITY value) has opacity prop
 	bool has_opacity_prop;
 	/// Cached value of opacity window attribute.
 	opacity_t opacity_prop;
@@ -267,7 +267,7 @@ struct managed_win {
 	paint_t shadow_paint;
 	/// The value of _COMPTON_SHADOW attribute of the window. Below 0 for
 	/// none.
-	long prop_shadow;
+	long long prop_shadow;
 	/// Do not paint shadow over this window.
 	bool clip_shadow_above;
 

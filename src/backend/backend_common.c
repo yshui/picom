@@ -92,7 +92,7 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 	}
 
 	unsigned char *data = ximage->data;
-	long sstride = ximage->stride;
+	long long sstride = ximage->stride;
 
 	// If the window body is smaller than the kernel, we do convolution directly
 	if (width < r * 2 && height < r * 2) {
@@ -100,7 +100,7 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 			for (int x = 0; x < swidth; x++) {
 				double sum = sum_kernel_normalized(
 				    kernel, d - x - 1, d - y - 1, width, height);
-				data[y * sstride + x] = (uint8_t)(sum * 255.0);
+				data[y * sstride + x] = (uint8_t)(sum * 255.0 * opacity);
 			}
 		}
 		return ximage;
@@ -118,14 +118,14 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 			for (int x = 0; x < r * 2; x++) {
 				double sum = sum_kernel_normalized(kernel, d - x - 1,
 				                                   d - y - 1, d, height) *
-				             255.0;
+				             255.0 * opacity;
 				data[y * sstride + x] = (uint8_t)sum;
 				data[y * sstride + swidth - x - 1] = (uint8_t)sum;
 			}
 		}
 		for (int y = 0; y < sheight; y++) {
-			double sum =
-			    sum_kernel_normalized(kernel, 0, d - y - 1, d, height) * 255.0;
+			double sum = sum_kernel_normalized(kernel, 0, d - y - 1, d, height) *
+			             255.0 * opacity;
 			memset(&data[y * sstride + r * 2], (uint8_t)sum,
 			       (size_t)(width - 2 * r));
 		}
@@ -137,14 +137,14 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 			for (int x = 0; x < swidth; x++) {
 				double sum = sum_kernel_normalized(kernel, d - x - 1,
 				                                   d - y - 1, width, d) *
-				             255.0;
+				             255.0 * opacity;
 				data[y * sstride + x] = (uint8_t)sum;
 				data[(sheight - y - 1) * sstride + x] = (uint8_t)sum;
 			}
 		}
 		for (int x = 0; x < swidth; x++) {
-			double sum =
-			    sum_kernel_normalized(kernel, d - x - 1, 0, width, d) * 255.0;
+			double sum = sum_kernel_normalized(kernel, d - x - 1, 0, width, d) *
+			             255.0 * opacity;
 			for (int y = r * 2; y < height; y++) {
 				data[y * sstride + x] = (uint8_t)sum;
 			}
@@ -449,7 +449,9 @@ bool default_set_image_property(backend_t *base attr_unused, enum image_properti
 		tex->ewidth = iargs[0];
 		tex->eheight = iargs[1];
 		break;
+	case IMAGE_PROPERTY_CORNER_RADIUS: tex->corner_radius = dargs[0]; break;
 	case IMAGE_PROPERTY_MAX_BRIGHTNESS: tex->max_brightness = dargs[0]; break;
+	case IMAGE_PROPERTY_BORDER_WIDTH: tex->border_width = *(int *)arg; break;
 	}
 
 	return true;
@@ -468,6 +470,7 @@ struct backend_image *default_new_backend_image(int w, int h) {
 	ret->eheight = h;
 	ret->ewidth = w;
 	ret->color_inverted = false;
+	ret->corner_radius = 0;
 	return ret;
 }
 

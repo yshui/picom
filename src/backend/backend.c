@@ -44,7 +44,7 @@ region_t get_damage(session_t *ps, bool all_damage) {
 	} else {
 		for (int i = 0; i < buffer_age; i++) {
 			auto curr = ((ps->damage - ps->damage_ring) + i) % ps->ndamage;
-			log_trace("damage index: %d, damage ring offset: %ld", i, curr);
+			log_trace("damage index: %d, damage ring offset: %td", i, curr);
 			dump_region(&ps->damage_ring[curr]);
 			pixman_region32_union(&region, &region, &ps->damage_ring[curr]);
 		}
@@ -53,10 +53,10 @@ region_t get_damage(session_t *ps, bool all_damage) {
 	return region;
 }
 
-static void process_window_for_painting(session_t *ps, struct managed_win* w, void* win_image,
-					double additional_alpha,
-					region_t* reg_bound, region_t* reg_visible,
-					region_t* reg_paint, region_t* reg_paint_in_bound) {
+static void process_window_for_painting(session_t *ps, struct managed_win *w,
+                                        void *win_image, double additional_alpha,
+                                        region_t *reg_bound, region_t *reg_visible,
+                                        region_t *reg_paint, region_t *reg_paint_in_bound) {
 	// For window image processing, we don't have to limit the process
 	// region to damage for correctness. (see <damager-note> for
 	// details)
@@ -74,33 +74,30 @@ static void process_window_for_painting(session_t *ps, struct managed_win* w, vo
 		pixman_region32_translate(&reg_bound_local, -w->g.x, -w->g.y);
 
 		pixman_region32_init(&reg_visible_local);
-		pixman_region32_intersect(&reg_visible_local,
-					  reg_visible, reg_paint);
-		pixman_region32_translate(&reg_visible_local, -w->g.x,
-					  -w->g.y);
+		pixman_region32_intersect(&reg_visible_local, reg_visible, reg_paint);
+		pixman_region32_translate(&reg_visible_local, -w->g.x, -w->g.y);
 		// Data outside of the bounding shape won't be visible,
 		// but it is not necessary to limit the image operations
 		// to the bounding shape yet. So pass that as the visible
 		// region, not the clip region.
-		pixman_region32_intersect(
-		    &reg_visible_local, &reg_visible_local, &reg_bound_local);
+		pixman_region32_intersect(&reg_visible_local, &reg_visible_local,
+		                          &reg_bound_local);
 		pixman_region32_fini(&reg_bound_local);
 	}
 
-	auto new_img = ps->backend_data->ops->clone_image(
-	    ps->backend_data, win_image, &reg_visible_local);
+	auto new_img = ps->backend_data->ops->clone_image(ps->backend_data, win_image,
+	                                                  &reg_visible_local);
 	auto reg_frame = win_get_region_frame_local_by_val(w);
-	double alpha = additional_alpha*w->opacity;
+	double alpha = additional_alpha * w->opacity;
 	ps->backend_data->ops->set_image_property(
 	    ps->backend_data, IMAGE_PROPERTY_OPACITY, new_img, &alpha);
-	ps->backend_data->ops->image_op(
-	    ps->backend_data, IMAGE_OP_APPLY_ALPHA, new_img, &reg_frame,
-	    &reg_visible_local, (double[]){w->frame_opacity});
+	ps->backend_data->ops->image_op(ps->backend_data, IMAGE_OP_APPLY_ALPHA, new_img,
+	                                &reg_frame, &reg_visible_local,
+	                                (double[]){w->frame_opacity});
 	pixman_region32_fini(&reg_frame);
-	ps->backend_data->ops->compose(ps->backend_data, new_img,
-				       w->g.x, w->g.y,
-				       w->g.x + w->widthb, w->g.y + w->heightb,
-				       reg_paint_in_bound, reg_visible);
+	ps->backend_data->ops->compose(ps->backend_data, new_img, w->g.x, w->g.y,
+	                               w->g.x + w->widthb, w->g.y + w->heightb,
+	                               reg_paint_in_bound, reg_visible);
 	ps->backend_data->ops->release_image(ps->backend_data, new_img);
 	pixman_region32_fini(&reg_visible_local);
 }
@@ -205,8 +202,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	}
 
 	if (ps->root_image) {
-		ps->backend_data->ops->compose(ps->backend_data, ps->root_image,
-					       0, 0, ps->root_width, ps->root_height,
+		ps->backend_data->ops->compose(ps->backend_data, ps->root_image, 0, 0,
+		                               ps->root_width, ps->root_height,
 		                               &reg_paint, &reg_visible);
 	} else {
 		ps->backend_data->ops->fill(ps->backend_data, (struct color){0, 0, 0, 1},
@@ -366,11 +363,10 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			    ps->backend_data, IMAGE_PROPERTY_OPACITY, w->shadow_image,
 			    &w->opacity);
 			ps->backend_data->ops->compose(
-			    ps->backend_data, w->shadow_image,
-			    w->g.x + w->shadow_dx, w->g.y + w->shadow_dy,
-			    w->g.x + w->shadow_dx + w->shadow_width,
-			    w->g.y + w->shadow_dy + w->shadow_height,
-			    &reg_shadow, &reg_visible);
+			    ps->backend_data, w->shadow_image, w->g.x + w->shadow_dx,
+			    w->g.y + w->shadow_dy, w->g.x + w->shadow_dx + w->shadow_width,
+			    w->g.y + w->shadow_dy + w->shadow_height, &reg_shadow,
+			    &reg_visible);
 			pixman_region32_fini(&reg_shadow);
 		}
 
@@ -395,6 +391,32 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			    &dim_opacity);
 			ps->backend_data->ops->set_image_property(
 			    ps->backend_data, IMAGE_PROPERTY_OPACITY, w->win_image, &w->opacity);
+			ps->backend_data->ops->set_image_property(
+			    ps->backend_data, IMAGE_PROPERTY_CORNER_RADIUS, w->win_image,
+			    (double[]){w->corner_radius});
+			if (w->corner_radius) {
+				int border_width = w->g.border_width;
+				if (border_width == 0) {
+					// Some WM has borders implemented as WM frames
+					border_width = min3(w->frame_extents.left,
+					                    w->frame_extents.right,
+					                    w->frame_extents.bottom);
+				}
+				ps->backend_data->ops->set_image_property(
+				    ps->backend_data, IMAGE_PROPERTY_BORDER_WIDTH,
+				    w->win_image, &border_width);
+				if (w->old_win_image) {
+					// TODO(dccsillag): explain why the following is
+					// "necessary"
+					double zero = 0.0;
+					ps->backend_data->ops->set_image_property(
+					    ps->backend_data, IMAGE_PROPERTY_BORDER_WIDTH,
+					    w->old_win_image, &zero);
+					ps->backend_data->ops->set_image_property(
+					    ps->backend_data, IMAGE_PROPERTY_CORNER_RADIUS,
+					    w->old_win_image, &zero);
+				}
+			}
 		}
 
 		if (w->opacity * MAX_ALPHA < 1) {
@@ -429,7 +451,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				// Only animate opacity here if we are resizing
 				// a transparent window
 				process_window_for_painting(ps, w, w->win_image,
-								1,
+								w->opacity >= 1 ? 1.0 : w->animation_progress,
 								&reg_bound, &reg_visible,
 								&reg_paint, &reg_paint_in_bound);
 
@@ -442,12 +464,10 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 									&reg_bound, &reg_visible,
 									&reg_paint, &reg_paint_in_bound);
 				}
-
 			} else {
-				process_window_for_painting(ps, w, w->win_image,
-								1,
-								&reg_bound, &reg_visible,
-								&reg_paint, &reg_paint_in_bound);
+				process_window_for_painting(
+				    ps, w, w->win_image, 1.0, &reg_bound, &reg_visible,
+				    &reg_paint, &reg_paint_in_bound);
 			}
 		}
 	skip:

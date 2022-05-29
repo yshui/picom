@@ -14,6 +14,8 @@
 
 #include <test.h>
 
+#include <time.h>
+
 #include "compiler.h"
 #include "types.h"
 
@@ -145,6 +147,7 @@ static inline int attr_const lerp_range(int a, int b, int c, int d, int value) {
 
 #define min2(a, b) ((a) > (b) ? (b) : (a))
 #define max2(a, b) ((a) > (b) ? (a) : (b))
+#define min3(a, b, c) min2(a, min2(b, c))
 
 /// clamp `val` into interval [min, max]
 #define clamp(val, min, max) max2(min2(val, max), min)
@@ -290,5 +293,18 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 ///
 int next_power_of_two(int n);
 
+// Some versions of the Android libc do not have timespec_get(), use
+// clock_gettime() instead.
+#ifdef __ANDROID__
+
+#ifndef TIME_UTC
+#define TIME_UTC 1
+#endif
+
+static inline int timespec_get(struct timespec *ts, int base) {
+	assert(base == TIME_UTC);
+	return clock_gettime(CLOCK_REALTIME, ts);
+}
+#endif
 
 // vim: set noet sw=8 ts=8 :

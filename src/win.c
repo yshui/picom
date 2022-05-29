@@ -1106,7 +1106,7 @@ static void win_determine_shadow(session_t *ps, struct managed_win *w) {
  * things.
  */
 void win_update_prop_shadow(session_t *ps, struct managed_win *w) {
-	long attr_shadow_old = w->prop_shadow;
+	long long attr_shadow_old = w->prop_shadow;
 
 	win_update_prop_shadow_raw(ps, w);
 

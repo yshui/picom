@@ -43,9 +43,6 @@ OPTIONS
 *-D*, *--fade-delta*='MILLISECONDS'::
 	The time between steps in fade step, in milliseconds. (> 0, defaults to 10)
 
-*-m*, *--menu-opacity*='OPACITY'::
-	Default opacity for dropdown menus and popup menus. (0.0 - 1.0, defaults to 1.0)
-
 *-c*, *--shadow*::
 	Enabled client-side shadows on windows. Note desktop windows (windows with '_NET_WM_WINDOW_TYPE_DESKTOP') never get shadow, unless explicitly requested using the wintypes option.
 
@@ -117,7 +114,7 @@ OPTIONS
 	Blue color value of shadow (0.0 - 1.0, defaults to 0).
 
 *--inactive-opacity-override*::
-	Let inactive opacity set by *-i* override the '_NET_WM_OPACITY' values of windows.
+	Let inactive opacity set by *-i* override the '_NET_WM_WINDOW_OPACITY' values of windows.
 
 *--active-opacity* 'OPACITY'::
 	Default opacity for active windows. (0.0 - 1.0, defaults to 1.0)
@@ -150,10 +147,7 @@ OPTIONS
 	Try to detect windows with rounded corners and don't consider them shaped windows. The accuracy is not very high, unfortunately.
 
 *--detect-client-opacity*::
-	Detect '_NET_WM_OPACITY' on client windows, useful for window managers not passing '_NET_WM_OPACITY' of client windows to frame windows.
-
-*--refresh-rate* 'REFRESH_RATE'::
-	Specify refresh rate of the screen. If not specified or 0, picom will try detecting this with X RandR extension.
+	Detect '_NET_WM_WINDOW_OPACITY' on client windows, useful for window managers not passing '_NET_WM_WINDOW_OPACITY' of client windows to frame windows.
 
 *--vsync*, *--no-vsync*::
 	Enable/disable VSync.
@@ -189,7 +183,7 @@ OPTIONS
 	Use 'WM_TRANSIENT_FOR' to group windows, and consider windows in the same group focused at the same time.
 
 *--detect-client-leader*::
-	Use 'WM_CLIENT_LEADER' to group windows, and consider windows in the same group focused at the same time. 'WM_TRANSIENT_FOR' has higher priority if *--detect-transient* is enabled, too.
+	Use 'WM_CLIENT_LEADER' to group windows, and consider windows in the same group focused at the same time. This usually means windows from the same application will be considered focused or unfocused at the same time.'WM_TRANSIENT_FOR' has higher priority if *--detect-transient* is enabled, too.
 
 *--blur-method*, *--blur-size*, *--blur-deviation*, *--blur-strength*::
 	Parameters for background blurring, see the *BLUR* section for more information.
@@ -470,16 +464,16 @@ EXAMPLES
 $ picom --config /dev/null
 ------------
 
-* Run picom with client-side shadow and fading, disable shadow on dock windows and drag-and-drop windows:
+* Run picom with client-side shadow and fading:
 +
 ------------
-$ picom -cCGf
+$ picom -cf
 ------------
 
 * Same thing as above, plus making inactive windows 80% transparent, making frame 80% transparent, don't fade on window open/close, and fork to background:
 +
 ------------
-$ picom -bcCGf -i 0.8 -e 0.8 --no-fading-openclose
+$ picom -bcf -i 0.8 -e 0.8 --no-fading-openclose
 ------------
 
 * Draw white shadows:

@@ -143,10 +143,6 @@ typedef struct options {
 	win_option_t wintype_option[NUM_WINTYPES];
 
 	// === VSync & software optimization ===
-	/// User-specified refresh rate.
-	int refresh_rate;
-	/// Whether to enable refresh-rate-based software optimization.
-	bool sw_opti;
 	/// VSync method to use;
 	bool vsync;
 	/// Whether to use glFinish() instead of glFlush() for (possibly) better
@@ -206,7 +202,7 @@ typedef struct options {
 
 	// === Opacity ===
 	/// Default opacity for inactive windows.
-	/// 32-bit integer with the format of _NET_WM_OPACITY.
+	/// 32-bit integer with the format of _NET_WM_WINDOW_OPACITY.
 	double inactive_opacity;
 	/// Default opacity for inactive windows.
 	double active_opacity;
@@ -216,8 +212,8 @@ typedef struct options {
 	/// Frame opacity. Relative to window opacity, also affects shadow
 	/// opacity.
 	double frame_opacity;
-	/// Whether to detect _NET_WM_OPACITY on client windows. Used on window
-	/// managers that don't pass _NET_WM_OPACITY to frame windows.
+	/// Whether to detect _NET_WM_WINDOW_OPACITY on client windows. Used on window
+	/// managers that don't pass _NET_WM_WINDOW_OPACITY to frame windows.
 	bool detect_client_opacity;
 
 	// === Other window processing ===
