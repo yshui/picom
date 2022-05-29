@@ -32,6 +32,15 @@ typedef struct backend_base {
 
 typedef void (*backend_ready_callback_t)(void *);
 
+// This mimics OpenGL's ARB_robustness extension, which enables detection of GPU context
+// resets.
+// See: https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_robustness.txt, section
+// 2.6 "Graphics Reset Recovery".
+enum device_status {
+	DEVICE_STATUS_NORMAL,
+	DEVICE_STATUS_RESETTING,
+};
+
 // When image properties are actually applied to the image, they are applied in a
 // particular order:
 //
@@ -275,6 +284,8 @@ struct backend_operations {
 	enum driver (*detect_driver)(backend_t *backend_data);
 
 	void (*diagnostics)(backend_t *backend_data);
+
+	enum device_status (*device_status)(backend_t *backend_data);
 };
 
 extern struct backend_operations *backend_list[];

@@ -30,8 +30,9 @@ static inline int lcfg_lookup_bool(const config_t *config, const char *path, boo
 	int ival;
 
 	int ret = config_lookup_bool(config, path, &ival);
-	if (ret)
+	if (ret) {
 		*value = ival;
+	}
 
 	return ret;
 }
@@ -370,15 +371,21 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// Get options from the configuration file. We don't do range checking
 	// right now. It will be done later
 
+	// --dbus
+	lcfg_lookup_bool(&cfg, "dbus", &opt->dbus);
+
 	// -D (fade_delta)
-	if (config_lookup_int(&cfg, "fade-delta", &ival))
+	if (config_lookup_int(&cfg, "fade-delta", &ival)) {
 		opt->fade_delta = ival;
+	}
 	// -I (fade_in_step)
-	if (config_lookup_float(&cfg, "fade-in-step", &dval))
+	if (config_lookup_float(&cfg, "fade-in-step", &dval)) {
 		opt->fade_in_step = normalize_d(dval);
+	}
 	// -O (fade_out_step)
-	if (config_lookup_float(&cfg, "fade-out-step", &dval))
+	if (config_lookup_float(&cfg, "fade-out-step", &dval)) {
 		opt->fade_out_step = normalize_d(dval);
+	}
 	// -r (shadow_radius)
 	config_lookup_int(&cfg, "shadow-radius", &opt->shadow_radius);
 	// -o (shadow_opacity)
@@ -388,11 +395,13 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// -t (shadow_offset_y)
 	config_lookup_int(&cfg, "shadow-offset-y", &opt->shadow_offset_y);
 	// -i (inactive_opacity)
-	if (config_lookup_float(&cfg, "inactive-opacity", &dval))
+	if (config_lookup_float(&cfg, "inactive-opacity", &dval)) {
 		opt->inactive_opacity = normalize_d(dval);
+	}
 	// --active_opacity
-	if (config_lookup_float(&cfg, "active-opacity", &dval))
+	if (config_lookup_float(&cfg, "active-opacity", &dval)) {
 		opt->active_opacity = normalize_d(dval);
+	}
 	// --corner-radius
 	config_lookup_int(&cfg, "corner-radius", &opt->corner_radius);
 	// --rounded-corners-exclude
@@ -400,8 +409,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// -e (frame_opacity)
 	config_lookup_float(&cfg, "frame-opacity", &opt->frame_opacity);
 	// -c (shadow_enable)
-	if (config_lookup_bool(&cfg, "shadow", &ival))
-		*shadow_enable = ival;
+	lcfg_lookup_bool(&cfg, "shadow", shadow_enable);
 	// -m (menu_opacity)
 	if (config_lookup_float(&cfg, "menu-opacity", &dval)) {
 		log_warn("Option `menu-opacity` is deprecated, and will be removed."

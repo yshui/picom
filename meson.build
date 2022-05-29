@@ -1,4 +1,4 @@
-project('picom', 'c', version: '8',
+project('picom', 'c', version: '9',
         default_options: ['c_std=c11'])
 
 cc = meson.get_compiler('c')

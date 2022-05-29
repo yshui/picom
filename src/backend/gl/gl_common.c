@@ -395,7 +395,11 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 		glUniform1f(gd->win_shader.uniform_corner_radius, (float)img->corner_radius);
 	}
 	if (gd->win_shader.uniform_border_width >= 0) {
-		glUniform1f(gd->win_shader.uniform_border_width, (float)img->border_width);
+		auto border_width = img->border_width;
+		if (border_width > img->corner_radius) {
+			border_width = 0;
+		}
+		glUniform1f(gd->win_shader.uniform_border_width, (float)border_width);
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
@@ -1554,23 +1558,32 @@ const char *win_shader_glsl = GLSL(330,
 		vec4 border_color = texture(tex, vec2(0.0, 0.5));
 		if (invert_color) {
 			c = vec4(c.aaa - c.rgb, c.a);
+			border_color = vec4(border_color.aaa - border_color.rgb, border_color.a);
 		}
 		c = vec4(c.rgb * (1.0 - dim), c.a) * opacity;
+		border_color = vec4(border_color.rgb * (1.0 - dim), border_color.a) * opacity;
 
 		vec3 rgb_brightness = texelFetch(brightness, ivec2(0, 0), 0).rgb;
 		// Ref: https://en.wikipedia.org/wiki/Relative_luminance
 		float brightness = rgb_brightness.r * 0.21 +
 		                   rgb_brightness.g * 0.72 +
 		                   rgb_brightness.b * 0.07;
-		if (brightness > max_brightness)
+		if (brightness > max_brightness) {
 			c.rgb = c.rgb * (max_brightness / brightness);
+			border_color.rgb = border_color.rgb * (max_brightness / brightness);
+		}
+
+		// Rim color is the color of the outer rim of the window, if there is no
+		// border, it's the color of the window itself, otherwise it's the border.
+		// Using mix() to avoid a branch here.
+		vec4 rim_color = mix(c, border_color, clamp(border_width, 0.0f, 1.0f));
 
 		vec2 outer_size = vec2(textureSize(tex, 0));
 		vec2 inner_size = outer_size - vec2(corner_radius) * 2.0f;
 		float rect_distance = rectangle_sdf(texcoord - outer_size / 2.0f,
 		    inner_size / 2.0f) - corner_radius;
 		if (rect_distance > 0.0f) {
-			c = (1.0f - clamp(rect_distance, 0.0f, 1.0f)) * border_color;
+			c = (1.0f - clamp(rect_distance, 0.0f, 1.0f)) * rim_color;
 		} else {
 			float factor = clamp(rect_distance + border_width, 0.0f, 1.0f);
 			c = (1.0f - factor) * c + factor * border_color;
@@ -1702,6 +1715,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	} else {
 		gd->is_nvidia = false;
 	}
+	gd->has_robustness = gl_has_extension("GL_ARB_robustness");
 
 	return true;
 }
@@ -1915,4 +1929,16 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 	}
 
 	return true;
+}
+
+enum device_status gl_device_status(backend_t *base) {
+	auto gd = (struct gl_data *)base;
+	if (!gd->has_robustness) {
+		return DEVICE_STATUS_NORMAL;
+	}
+	if (glGetGraphicsResetStatusARB() == GL_NO_ERROR) {
+		return DEVICE_STATUS_NORMAL;
+	} else {
+		return DEVICE_STATUS_RESETTING;
+	}
 }
