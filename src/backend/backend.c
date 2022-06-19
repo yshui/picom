@@ -304,7 +304,13 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			auto reg_shadow = win_extents_by_val(w);
 			pixman_region32_intersect(&reg_shadow, &reg_shadow, &reg_paint);
 			if (!ps->o.wintype_option[w->window_type].full_shadow) {
-				pixman_region32_subtract(&reg_shadow, &reg_shadow, &reg_bound);
+				if (w->corner_radius > 0) {
+					auto reg_bound_no_corner = win_get_bounding_shape_global_without_corners_by_val(w);
+					pixman_region32_subtract(&reg_shadow, &reg_shadow, &reg_bound_no_corner);
+					pixman_region32_fini(&reg_bound_no_corner);
+				} else {
+					pixman_region32_subtract(&reg_shadow, &reg_shadow, &reg_bound);
+				}
 			}
 
 			// Mask out the region we don't want shadow on
