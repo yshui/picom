@@ -174,17 +174,18 @@ static void compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, 
                          int dst_y, const region_t *reg_paint,
                          const region_t *reg_visible, xcb_render_picture_t result) {
 	const struct backend_image *img = &xrimg->base;
-	auto alpha_pict = xd->alpha_pict[(int)(img->opacity * MAX_ALPHA)];
+
 	auto inner = (struct _xrender_image_data_inner *)img->inner;
 	region_t reg;
 
-	bool has_alpha = inner->has_alpha || img->opacity != 1;
 	const auto tmpw = to_u16_checked(inner->width);
 	const auto tmph = to_u16_checked(inner->height);
 	const auto tmpew = to_u16_checked(img->ewidth);
 	const auto tmpeh = to_u16_checked(img->eheight);
 	const xcb_render_color_t dim_color = {
 	    .red = 0, .green = 0, .blue = 0, .alpha = (uint16_t)(0xffff * img->dim)};
+	const xcb_render_color_t alpha_color = {
+	    .red = 0, .green = 0, .blue = 0, .alpha = (uint16_t)(0xffff * img->opacity)};
 
 	// Clip region of rendered_pict might be set during rendering, clear it to
 	// make sure we get everything into the buffer
@@ -193,101 +194,88 @@ static void compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, 
 	pixman_region32_init(&reg);
 	pixman_region32_intersect(&reg, (region_t *)reg_paint, (region_t *)reg_visible);
 	x_set_picture_clip_region(xd->base.c, result, 0, 0, &reg);
+
+	// Rectangle of the surface to render
+	xcb_rectangle_t rect = {
+	    .x = 0,
+	    .y = 0,
+	    .width = tmpw,
+	    .height = tmph,
+	};
+	
+	// Cache rounded rectangle surfaces
 	if (img->corner_radius != 0 && xrimg->rounded_rectangle == NULL) {
 		xrimg->rounded_rectangle = make_rounded_corner_cache(
 		    xd->base.c, xd->white_pixel, xd->base.root, inner->width,
 		    inner->height, (int)img->corner_radius);
 	}
-	if (((img->color_inverted || img->dim != 0) && has_alpha) || img->corner_radius != 0) {
-		// Apply image properties using a temporary image, because the source
-		// image is transparent. Otherwise the properties can be applied directly
-		// on the target image.
-		auto tmp_pict =
-		    x_create_picture_with_visual(xd->base.c, xd->base.root, inner->width,
-		                                 inner->height, inner->visual, 0, NULL);
 
-		// Set clip region translated to source coordinate
-		x_set_picture_clip_region(xd->base.c, tmp_pict, to_i16_checked(-dst_x),
-		                          to_i16_checked(-dst_y), &reg);
-		// Copy source -> tmp
-		xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_SRC, inner->pict,
-		                     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
-		if (img->color_inverted) {
-			if (inner->has_alpha) {
-				auto tmp_pict2 = x_create_picture_with_visual(
-				    xd->base.c, xd->base.root, tmpw, tmph, inner->visual,
-				    0, NULL);
-				xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_SRC,
-				                     tmp_pict, XCB_NONE, tmp_pict2, 0, 0,
-				                     0, 0, 0, 0, tmpw, tmph);
+	// Apply image properties using a temporary image, because the source
+	// image is transparent. Otherwise the properties can be applied directly
+	// on the target image.
+	auto tmp_pict =
+	    x_create_picture_with_visual(xd->base.c, xd->base.root, inner->width,
+					 inner->height, inner->visual, 0, NULL);
 
-				xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_DIFFERENCE,
-				                     xd->white_pixel, XCB_NONE, tmp_pict,
-				                     0, 0, 0, 0, 0, 0, tmpw, tmph);
-				xcb_render_composite(
-				    xd->base.c, XCB_RENDER_PICT_OP_IN_REVERSE, tmp_pict2,
-				    XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
-				xcb_render_free_picture(xd->base.c, tmp_pict2);
-			} else {
-				xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_DIFFERENCE,
-				                     xd->white_pixel, XCB_NONE, tmp_pict,
-				                     0, 0, 0, 0, 0, 0, tmpw, tmph);
-			}
-		}
-		if (img->dim != 0) {
-			// Dim the actually content of window
-			xcb_rectangle_t rect = {
-			    .x = 0,
-			    .y = 0,
-			    .width = tmpw,
-			    .height = tmph,
-			};
+	// Set clip region translated to source coordinate
+	x_set_picture_clip_region(xd->base.c, tmp_pict, to_i16_checked(-dst_x),
+				  to_i16_checked(-dst_y), &reg);
+	// Copy source -> tmp
+	xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_SRC, inner->pict,
+			     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 
-			xcb_render_fill_rectangles(xd->base.c, XCB_RENDER_PICT_OP_OVER,
-			                           tmp_pict, dim_color, 1, &rect);
-		}
+	if (img->color_inverted) {
+		if (inner->has_alpha) {
+			auto tmp_pict2 = x_create_picture_with_visual(
+			    xd->base.c, xd->base.root, tmpw, tmph, inner->visual,
+			    0, NULL);
+			xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_SRC,
+					     tmp_pict, XCB_NONE, tmp_pict2, 0, 0,
+					     0, 0, 0, 0, tmpw, tmph);
 
-		if (img->corner_radius != 0 && xrimg->rounded_rectangle != NULL) {
-			// Clip tmp_pict with a rounded rectangle
-			xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_IN_REVERSE,
-			                     xrimg->rounded_rectangle->p, XCB_NONE,
-			                     tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
-		}
-
-		xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_OVER, tmp_pict,
-		                     alpha_pict, result, 0, 0, 0, 0, to_i16_checked(dst_x),
-		                     to_i16_checked(dst_y), tmpew, tmpeh);
-		xcb_render_free_picture(xd->base.c, tmp_pict);
-	} else {
-		uint8_t op = (has_alpha ? XCB_RENDER_PICT_OP_OVER : XCB_RENDER_PICT_OP_SRC);
-
-		xcb_render_composite(xd->base.c, op, inner->pict, alpha_pict, result, 0,
-		                     0, 0, 0, to_i16_checked(dst_x),
-		                     to_i16_checked(dst_y), tmpew, tmpeh);
-		if (img->dim != 0 || img->color_inverted) {
-			// Apply properties, if we reach here, then has_alpha == false
-			assert(!has_alpha);
-			if (img->color_inverted) {
-				xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_DIFFERENCE,
-				                     xd->white_pixel, XCB_NONE, result, 0,
-				                     0, 0, 0, to_i16_checked(dst_x),
-				                     to_i16_checked(dst_y), tmpew, tmpeh);
-			}
-
-			if (img->dim != 0) {
-				// Dim the actually content of window
-				xcb_rectangle_t rect = {
-				    .x = to_i16_checked(dst_x),
-				    .y = to_i16_checked(dst_y),
-				    .width = tmpew,
-				    .height = tmpeh,
-				};
-
-				xcb_render_fill_rectangles(xd->base.c, XCB_RENDER_PICT_OP_OVER,
-				                           result, dim_color, 1, &rect);
-			}
+			xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_DIFFERENCE,
+					     xd->white_pixel, XCB_NONE, tmp_pict,
+					     0, 0, 0, 0, 0, 0, tmpw, tmph);
+			xcb_render_composite(
+			    xd->base.c, XCB_RENDER_PICT_OP_IN_REVERSE, tmp_pict2,
+			    XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
+			xcb_render_free_picture(xd->base.c, tmp_pict2);
+		} else {
+			xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_DIFFERENCE,
+					     xd->white_pixel, XCB_NONE, tmp_pict,
+					     0, 0, 0, 0, 0, 0, tmpw, tmph);
 		}
 	}
+
+	if (img->dim != 0) {
+		// Dim the actually content of window
+		xcb_render_fill_rectangles(xd->base.c, XCB_RENDER_PICT_OP_OVER,
+					   tmp_pict, dim_color, 1, &rect);
+	}
+
+	// Create alpha mask
+	auto alpha_mask = x_create_picture_with_standard(
+			    xd->base.c, xd->base.root, tmpw, tmph, XCB_PICT_STANDARD_ARGB_32,
+			    0, NULL);
+	xcb_render_fill_rectangles(xd->base.c, XCB_RENDER_PICT_OP_SRC,
+				   alpha_mask, alpha_color, 1, &rect);
+
+
+	if (img->corner_radius != 0 && xrimg->rounded_rectangle != NULL) {
+		// Clip alpha mask with a rounded rectangle
+		xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_IN_REVERSE,
+				     xrimg->rounded_rectangle->p, XCB_NONE,
+				     alpha_mask, 0, 0, 0, 0, 0, 0, tmpw, tmph);
+	}
+	
+	// Final rendering on the result
+	xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_OVER, tmp_pict,
+			     alpha_mask, result, 0, 0, 0, 0, to_i16_checked(dst_x),
+			     to_i16_checked(dst_y), tmpew, tmpeh);
+
+	xcb_render_free_picture(xd->base.c, tmp_pict);
+	xcb_render_free_picture(xd->base.c, alpha_mask);
+
 	pixman_region32_fini(&reg);
 }
 
