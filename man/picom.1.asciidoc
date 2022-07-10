@@ -377,13 +377,13 @@ Following per window-type options are available: ::
     Controls whether the window of this type is to be always considered focused. (By default, all window types except "normal" and "dialog" has this on.)
 
   blur-background:::
-    Controls wether the window of this type will have its transparent background blurred.
+    Controls whether the window of this type will have its transparent background blurred.
 
   full-shadow:::
     Controls whether shadow is drawn under the parts of the window that you normally won't be able to see. Useful when the window has parts of it transparent, and you want shadows in those areas.
 
   clip-shadow-above:::
-    Controls wether shadows that would have been drawn above the window should be clipped. Useful for dock windows that should have no shadow painted on top.
+    Controls whether shadows that would have been drawn above the window should be clipped. Useful for dock windows that should have no shadow painted on top.
 
   redir-ignore:::
     Controls whether this type of windows should cause screen to become redirected again after been unredirected. If you have *--unredir-if-possible* set, and doesn't want certain window to cause unnecessary screen redirection, you can set this to `true`.
