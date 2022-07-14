@@ -334,15 +334,14 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	config_set_options(&cfg, CONFIG_OPTION_ALLOW_OVERRIDES);
 #endif
 	{
-		// dirname() could modify the original string, thus we must pass a
-		// copy
-		char *path2 = strdup(path);
-		char *parent = dirname(path2);
+		char *abspath = realpath(path, NULL);
+		char *parent = dirname(abspath);        // path2 may be modified
 
-		if (parent)
+		if (parent) {
 			config_set_include_dir(&cfg, parent);
+		}
 
-		free(path2);
+		free(abspath);
 	}
 
 	{
