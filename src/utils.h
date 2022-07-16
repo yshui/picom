@@ -273,6 +273,15 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 	void name##_ref(type *a);                                                        \
 	void name##_unref(type **a);
 
+static inline void free_charpp(char **str) {
+	if (str) {
+		free(*str);
+		*str = NULL;
+	}
+}
+
+/// An allocated char* that is automatically freed when it goes out of scope.
+#define scoped_charp char *cleanup(free_charpp)
 
 ///
 /// Calculates next closest power of two of 32bit integer n
