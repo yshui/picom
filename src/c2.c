@@ -852,6 +852,10 @@ static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) 
 			C2H_SKIP_SPACES();
 		}
 
+		if (raw == true) {
+			log_warn("Raw string patterns has been deprecated. pos %d", offset);
+		}
+
 		// Check for delimiters
 		if (pattern[offset] == '\"' || pattern[offset] == '\'') {
 			pleaf->ptntype = C2_L_PTSTRING;
