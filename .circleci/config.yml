@@ -54,7 +54,7 @@ jobs:
           command: ninja -vC build test
       - run:
           name: test config file parsing
-          command: xvfb-run -s "-screen 0 640x480x24" build/src/picom --config picom.sample.conf --no-vsync --diagnostics
+          command: xvfb-run -s "-screen 0 640x480x24" build/src/picom --config tests/configs/parsing_test.conf --no-vsync --diagnostics
       - run:
           name: run testsuite
           command: tests/run_tests.sh build/src/picom
