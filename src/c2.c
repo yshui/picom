@@ -886,11 +886,10 @@ static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) 
 				case 'v': *(ptptnstr++) = '\v'; break;
 				case 'o':
 				case 'x': {
-					char *tstr = strndup(pattern + offset + 1, 2);
+					scoped_charp tstr = strndup(pattern + offset + 1, 2);
 					char *pstr = NULL;
 					long val = strtol(
 					    tstr, &pstr, ('o' == pattern[offset] ? 8 : 16));
-					free(tstr);
 					if (pstr != &tstr[2] || val <= 0)
 						c2_error("Invalid octal/hex escape "
 						         "sequence.");
