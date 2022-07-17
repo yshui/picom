@@ -547,6 +547,8 @@ struct backend_operations glx_ops = {
     .get_blur_size = gl_get_blur_size,
     .diagnostics = glx_diagnostics,
     .device_status = gl_device_status,
+    .create_shader = gl_create_window_shader,
+    .destroy_shader = gl_destroy_window_shader,
     .max_buffer_age = 5,        // Why?
 };
 

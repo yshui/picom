@@ -140,47 +140,56 @@ end:
 }
 
 /**
- * @brief Create a program from vertex and fragment shader strings.
+ * @brief Create a program from NULL-terminated arrays of vertex and fragment shader
+ * strings.
  */
-GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str) {
-	GLuint vert_shader = 0;
-	GLuint frag_shader = 0;
-	GLuint prog = 0;
+GLuint gl_create_program_from_strv(const char **vert_shaders, const char **frag_shaders) {
+	int vert_count, frag_count;
+	for (vert_count = 0; vert_shaders && vert_shaders[vert_count]; ++vert_count)
+		;
+	for (frag_count = 0; frag_shaders && frag_shaders[frag_count]; ++frag_count)
+		;
+	auto shaders = (GLuint *)ccalloc(vert_count + frag_count, GLuint);
 
-	if (vert_shader_str)
-		vert_shader = gl_create_shader(GL_VERTEX_SHADER, vert_shader_str);
-	if (frag_shader_str)
-		frag_shader = gl_create_shader(GL_FRAGMENT_SHADER, frag_shader_str);
-
-	{
-		GLuint shaders[2];
-		int count = 0;
-		if (vert_shader) {
-			shaders[count++] = vert_shader;
-		}
-		if (frag_shader) {
-			shaders[count++] = frag_shader;
-		}
-		if (count) {
-			prog = gl_create_program(shaders, count);
-		}
+	for (int i = 0; i < vert_count; ++i) {
+		shaders[i] = gl_create_shader(GL_VERTEX_SHADER, vert_shaders[i]);
 	}
+	for (int i = 0; i < frag_count; ++i) {
+		shaders[vert_count + i] =
+		    gl_create_shader(GL_FRAGMENT_SHADER, frag_shaders[i]);
+	}
+	GLuint prog = gl_create_program(shaders, vert_count + frag_count);
 
-	if (vert_shader)
-		glDeleteShader(vert_shader);
-	if (frag_shader)
-		glDeleteShader(frag_shader);
+	for (int i = 0; i < vert_count + frag_count; ++i) {
+		glDeleteShader(shaders[i]);
+	}
+	free(shaders);
 
 	return prog;
 }
 
-static void gl_free_prog_main(gl_win_shader_t *pprogram) {
-	if (!pprogram)
+/**
+ * @brief Create a program from vertex and fragment shader strings.
+ */
+GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str) {
+	const char *vert_shaders[2] = {vert_shader_str, NULL};
+	const char *frag_shaders[2] = {frag_shader_str, NULL};
+
+	return gl_create_program_from_strv(vert_shaders, frag_shaders);
+}
+
+void gl_destroy_window_shader(backend_t *backend_data attr_unused, void *shader) {
+	if (!shader) {
 		return;
+	}
+
+	auto pprogram = (gl_win_shader_t *)shader;
 	if (pprogram->prog) {
 		glDeleteProgram(pprogram->prog);
 		pprogram->prog = 0;
 	}
+
+	free(shader);
 }
 
 /*
@@ -371,35 +380,41 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 		brightness = gl_average_texture_color(base, img);
 	}
 
-	assert(gd->win_shader.prog);
-	glUseProgram(gd->win_shader.prog);
-	if (gd->win_shader.uniform_opacity >= 0) {
-		glUniform1f(gd->win_shader.uniform_opacity, (float)img->opacity);
+	auto win_shader = inner->shader;
+	if (!win_shader) {
+		win_shader = gd->default_shader;
 	}
-	if (gd->win_shader.uniform_invert_color >= 0) {
-		glUniform1i(gd->win_shader.uniform_invert_color, img->color_inverted);
+
+	assert(win_shader);
+	assert(win_shader->prog);
+	glUseProgram(win_shader->prog);
+	if (win_shader->uniform_opacity >= 0) {
+		glUniform1f(win_shader->uniform_opacity, (float)img->opacity);
 	}
-	if (gd->win_shader.uniform_tex >= 0) {
-		glUniform1i(gd->win_shader.uniform_tex, 0);
+	if (win_shader->uniform_invert_color >= 0) {
+		glUniform1i(win_shader->uniform_invert_color, img->color_inverted);
 	}
-	if (gd->win_shader.uniform_dim >= 0) {
-		glUniform1f(gd->win_shader.uniform_dim, (float)img->dim);
+	if (win_shader->uniform_tex >= 0) {
+		glUniform1i(win_shader->uniform_tex, 0);
 	}
-	if (gd->win_shader.uniform_brightness >= 0) {
-		glUniform1i(gd->win_shader.uniform_brightness, 1);
+	if (win_shader->uniform_dim >= 0) {
+		glUniform1f(win_shader->uniform_dim, (float)img->dim);
 	}
-	if (gd->win_shader.uniform_max_brightness >= 0) {
-		glUniform1f(gd->win_shader.uniform_max_brightness, (float)img->max_brightness);
+	if (win_shader->uniform_brightness >= 0) {
+		glUniform1i(win_shader->uniform_brightness, 1);
 	}
-	if (gd->win_shader.uniform_corner_radius >= 0) {
-		glUniform1f(gd->win_shader.uniform_corner_radius, (float)img->corner_radius);
+	if (win_shader->uniform_max_brightness >= 0) {
+		glUniform1f(win_shader->uniform_max_brightness, (float)img->max_brightness);
 	}
-	if (gd->win_shader.uniform_border_width >= 0) {
+	if (win_shader->uniform_corner_radius >= 0) {
+		glUniform1f(win_shader->uniform_corner_radius, (float)img->corner_radius);
+	}
+	if (win_shader->uniform_border_width >= 0) {
 		auto border_width = img->border_width;
 		if (border_width > img->corner_radius) {
 			border_width = 0;
 		}
-		glUniform1f(gd->win_shader.uniform_border_width, (float)border_width);
+		glUniform1f(win_shader->uniform_border_width, (float)border_width);
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
@@ -883,13 +898,13 @@ const char *vertex_shader = GLSL(330,
 /**
  * Load a GLSL main program from shader strings.
  */
-static int gl_win_shader_from_string(const char *vshader_str, const char *fshader_str,
-                                     gl_win_shader_t *ret) {
+static bool gl_win_shader_from_stringv(const char **vshader_strv,
+                                       const char **fshader_strv, gl_win_shader_t *ret) {
 	// Build program
-	ret->prog = gl_create_program_from_str(vshader_str, fshader_str);
+	ret->prog = gl_create_program_from_strv(vshader_strv, fshader_strv);
 	if (!ret->prog) {
 		log_error("Failed to create GLSL program.");
-		return -1;
+		return false;
 	}
 
 	// Get uniform addresses
@@ -1545,8 +1560,7 @@ const char *win_shader_glsl = GLSL(330,
 		return length(max(d, 0.0));
 	}
 
-	void main() {
-		vec4 c = texelFetch(tex, ivec2(texcoord), 0);
+	vec4 default_post_processing(vec4 c) {
 		vec4 border_color = texture(tex, vec2(0.0, 0.5));
 		if (invert_color) {
 			c = vec4(c.aaa - c.rgb, c.a);
@@ -1581,7 +1595,23 @@ const char *win_shader_glsl = GLSL(330,
 			c = (1.0f - factor) * c + factor * border_color;
 		}
 
-		gl_FragColor = c;
+		return c;
+	}
+
+	vec4 window_shader();
+
+	void main() {
+		gl_FragColor = window_shader();
+	}
+);
+
+const char *win_shader_default = GLSL(330,
+	in vec2 texcoord;
+	uniform sampler2D tex;
+	vec4 default_post_processing(vec4 c);
+	vec4 window_shader() {
+		vec4 c = texelFetch(tex, ivec2(texcoord), 0);
+		return default_post_processing(c);
 	}
 );
 
@@ -1595,6 +1625,36 @@ const char *present_vertex_shader = GLSL(330,
 	}
 );
 // clang-format on
+
+void *gl_create_window_shader(backend_t *backend_data attr_unused, const char *source) {
+	auto win_shader = (gl_win_shader_t *)ccalloc(1, gl_win_shader_t);
+
+	const char *vert_shaders[2] = {vertex_shader, NULL};
+	const char *frag_shaders[3] = {win_shader_glsl, source, NULL};
+
+	if (!gl_win_shader_from_stringv(vert_shaders, frag_shaders, win_shader)) {
+		free(win_shader);
+		return NULL;
+	}
+
+	GLint viewport_dimensions[2];
+	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
+
+	// Set projection matrix to gl viewport dimensions so we can use screen
+	// coordinates for all vertices
+	// Note: OpenGL matrices are column major
+	GLfloat projection_matrix[4][4] = {{2.0F / (GLfloat)viewport_dimensions[0], 0, 0, 0},
+	                                   {0, 2.0F / (GLfloat)viewport_dimensions[1], 0, 0},
+	                                   {0, 0, 0, 0},
+	                                   {-1, -1, 0, 1}};
+
+	int pml = glGetUniformLocationChecked(win_shader->prog, "projection");
+	glUseProgram(win_shader->prog);
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	glUseProgram(0);
+
+	return win_shader;
+}
 
 bool gl_init(struct gl_data *gd, session_t *ps) {
 	// Initialize GLX data structure
@@ -1637,24 +1697,24 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
+	// Initialize shaders
+	gd->default_shader = gl_create_window_shader(NULL, win_shader_default);
+	if (!gd->default_shader) {
+		log_error("Failed to create window shaders");
+		return false;
+	}
+
 	// Set projection matrix to gl viewport dimensions so we can use screen
 	// coordinates for all vertices
 	// Note: OpenGL matrices are column major
-	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)viewport_dimensions[0], 0, 0, 0},
-	                                   {0, 2.0f / (GLfloat)viewport_dimensions[1], 0, 0},
+	GLfloat projection_matrix[4][4] = {{2.0F / (GLfloat)viewport_dimensions[0], 0, 0, 0},
+	                                   {0, 2.0F / (GLfloat)viewport_dimensions[1], 0, 0},
 	                                   {0, 0, 0, 0},
 	                                   {-1, -1, 0, 1}};
 
-	// Initialize shaders
-	gl_win_shader_from_string(vertex_shader, win_shader_glsl, &gd->win_shader);
-	int pml = glGetUniformLocationChecked(gd->win_shader.prog, "projection");
-	glUseProgram(gd->win_shader.prog);
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-	glUseProgram(0);
-
 	gd->fill_shader.prog = gl_create_program_from_str(fill_vert, fill_frag);
 	gd->fill_shader.color_loc = glGetUniformLocation(gd->fill_shader.prog, "color");
-	pml = glGetUniformLocationChecked(gd->fill_shader.prog, "projection");
+	int pml = glGetUniformLocationChecked(gd->fill_shader.prog, "projection");
 	glUseProgram(gd->fill_shader.prog);
 	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 	glUseProgram(0);
@@ -1713,11 +1773,14 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 }
 
 void gl_deinit(struct gl_data *gd) {
-	gl_free_prog_main(&gd->win_shader);
-
 	if (gd->logger) {
 		log_remove_target_tls(gd->logger);
 		gd->logger = NULL;
+	}
+
+	if (gd->default_shader) {
+		gl_destroy_window_shader(&gd->base, gd->default_shader);
+		gd->default_shader = NULL;
 	}
 
 	gl_check_err();
