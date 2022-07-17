@@ -84,7 +84,7 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 			const char *part2 = " != " #b;                                   \
 			size_t len2 = len + strlen(part2) + 3;                           \
 			char *buf = malloc(len2);                                        \
-			snprintf(buf, len2, "\"%.*s\"%s", len, a, part2);                \
+			snprintf(buf, len2, "\"%.*s\"%s", (int)len, a, part2);           \
 			SET_FAILURE(buf, true);                                          \
 			return;                                                          \
 		}                                                                        \
