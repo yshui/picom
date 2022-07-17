@@ -74,7 +74,7 @@ GLuint gl_create_shader(GLenum shader_type, const char *shader_str) {
 	{
 		GLint status = GL_FALSE;
 		glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
-		if (GL_FALSE == status) {
+		if (status == GL_FALSE) {
 			GLint log_len = 0;
 			glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &log_len);
 			if (log_len) {
@@ -94,6 +94,7 @@ end:
 		glDeleteShader(shader);
 		shader = 0;
 	}
+	gl_check_err();
 
 	return shader;
 }
@@ -106,15 +107,16 @@ GLuint gl_create_program(const GLuint *const shaders, int nshaders) {
 		goto end;
 	}
 
-	for (int i = 0; i < nshaders; ++i)
+	for (int i = 0; i < nshaders; ++i) {
 		glAttachShader(program, shaders[i]);
+	}
 	glLinkProgram(program);
 
 	// Get program status
 	{
 		GLint status = GL_FALSE;
 		glGetProgramiv(program, GL_LINK_STATUS, &status);
-		if (GL_FALSE == status) {
+		if (status == GL_FALSE) {
 			GLint log_len = 0;
 			glGetProgramiv(program, GL_INFO_LOG_LENGTH, &log_len);
 			if (log_len) {
@@ -129,13 +131,15 @@ GLuint gl_create_program(const GLuint *const shaders, int nshaders) {
 
 end:
 	if (program) {
-		for (int i = 0; i < nshaders; ++i)
+		for (int i = 0; i < nshaders; ++i) {
 			glDetachShader(program, shaders[i]);
+		}
 	}
 	if (program && !success) {
 		glDeleteProgram(program);
 		program = 0;
 	}
+	gl_check_err();
 
 	return program;
 }
@@ -146,25 +150,37 @@ end:
  */
 GLuint gl_create_program_from_strv(const char **vert_shaders, const char **frag_shaders) {
 	int vert_count, frag_count;
-	for (vert_count = 0; vert_shaders && vert_shaders[vert_count]; ++vert_count)
-		;
-	for (frag_count = 0; frag_shaders && frag_shaders[frag_count]; ++frag_count)
-		;
-	auto shaders = (GLuint *)ccalloc(vert_count + frag_count, GLuint);
+	for (vert_count = 0; vert_shaders && vert_shaders[vert_count]; ++vert_count) {
+	}
+	for (frag_count = 0; frag_shaders && frag_shaders[frag_count]; ++frag_count) {
+	}
 
+	GLuint prog = 0;
+	auto shaders = (GLuint *)ccalloc(vert_count + frag_count, GLuint);
 	for (int i = 0; i < vert_count; ++i) {
 		shaders[i] = gl_create_shader(GL_VERTEX_SHADER, vert_shaders[i]);
+		if (shaders[i] == 0) {
+			goto out;
+		}
 	}
 	for (int i = 0; i < frag_count; ++i) {
 		shaders[vert_count + i] =
 		    gl_create_shader(GL_FRAGMENT_SHADER, frag_shaders[i]);
+		if (shaders[vert_count + i] == 0) {
+			goto out;
+		}
 	}
-	GLuint prog = gl_create_program(shaders, vert_count + frag_count);
 
+	prog = gl_create_program(shaders, vert_count + frag_count);
+
+out:
 	for (int i = 0; i < vert_count + frag_count; ++i) {
-		glDeleteShader(shaders[i]);
+		if (shaders[i] != 0) {
+			glDeleteShader(shaders[i]);
+		}
 	}
 	free(shaders);
+	gl_check_err();
 
 	return prog;
 }
@@ -189,6 +205,7 @@ void gl_destroy_window_shader(backend_t *backend_data attr_unused, void *shader)
 		glDeleteProgram(pprogram->prog);
 		pprogram->prog = 0;
 	}
+	gl_check_err();
 
 	free(shader);
 }
@@ -911,6 +928,7 @@ static bool gl_win_shader_from_stringv(const char **vshader_strv,
 	ret->prog = gl_create_program_from_strv(vshader_strv, fshader_strv);
 	if (!ret->prog) {
 		log_error("Failed to create GLSL program.");
+		gl_check_err();
 		return false;
 	}
 
