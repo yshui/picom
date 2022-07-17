@@ -78,6 +78,18 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 		}                                                                        \
 	} while (0)
 
+#define TEST_STRNEQUAL(a, b, len)                                                        \
+	do {                                                                             \
+		if (strncmp(a, b, len) != 0) {                                           \
+			const char *part2 = " != " #b;                                   \
+			size_t len2 = len + strlen(part2) + 3;                           \
+			char *buf = malloc(len2);                                        \
+			snprintf(buf, len2, "\"%.*s\"%s", len, a, part2);                \
+			SET_FAILURE(buf, true);                                          \
+			return;                                                          \
+		}                                                                        \
+	} while (0)
+
 #define TEST_CASE(_name)                                                                  \
 	static void __test_h_##_name(struct test_case_metadata *,                         \
 	                             struct test_file_metadata *);                        \
@@ -191,5 +203,9 @@ static inline void __attribute__((constructor(102))) run_tests(void) {
 #define TEST_STREQUAL(a, b)                                                              \
 	(void)(a);                                                                       \
 	(void)(b)
+#define TEST_STRNEQUAL(a, b, len)                                                        \
+	(void)(a);                                                                       \
+	(void)(b);                                                                       \
+	(void)(len)
 
 #endif
