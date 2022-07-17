@@ -1994,6 +1994,18 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 	return true;
 }
 
+bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
+                           void *image_data, void *args) {
+	if (prop != IMAGE_PROPERTY_CUSTOM_SHADER) {
+		return default_set_image_property(backend_data, prop, image_data, args);
+	}
+
+	struct backend_image *img = image_data;
+	auto inner = (struct gl_texture *)img->inner;
+	inner->shader = args;
+	return true;
+}
+
 enum device_status gl_device_status(backend_t *base) {
 	auto gd = (struct gl_data *)base;
 	if (!gd->has_robustness) {
