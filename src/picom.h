@@ -84,14 +84,6 @@ static inline bool array_wid_exists(const xcb_window_t *arr, int count, xcb_wind
 	return false;
 }
 
-/**
- * Destroy a condition list.
- */
-static inline void free_wincondlst(c2_lptr_t **pcondlst) {
-	while ((*pcondlst = c2_free_lptr(*pcondlst)))
-		continue;
-}
-
 #ifndef CONFIG_OPENGL
 static inline void free_paint_glx(session_t *ps attr_unused, paint_t *p attr_unused) {
 }

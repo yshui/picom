@@ -2164,16 +2164,16 @@ static void session_destroy(session_t *ps) {
 	list_init_head(&ps->window_stack);
 
 	// Free blacklists
-	free_wincondlst(&ps->o.shadow_blacklist);
-	free_wincondlst(&ps->o.shadow_clip_list);
-	free_wincondlst(&ps->o.fade_blacklist);
-	free_wincondlst(&ps->o.focus_blacklist);
-	free_wincondlst(&ps->o.invert_color_list);
-	free_wincondlst(&ps->o.blur_background_blacklist);
-	free_wincondlst(&ps->o.opacity_rules);
-	free_wincondlst(&ps->o.paint_blacklist);
-	free_wincondlst(&ps->o.unredir_if_possible_blacklist);
-	free_wincondlst(&ps->o.rounded_corners_blacklist);
+	c2_list_free(&ps->o.shadow_blacklist);
+	c2_list_free(&ps->o.shadow_clip_list);
+	c2_list_free(&ps->o.fade_blacklist);
+	c2_list_free(&ps->o.focus_blacklist);
+	c2_list_free(&ps->o.invert_color_list);
+	c2_list_free(&ps->o.blur_background_blacklist);
+	c2_list_free(&ps->o.opacity_rules);
+	c2_list_free(&ps->o.paint_blacklist);
+	c2_list_free(&ps->o.unredir_if_possible_blacklist);
+	c2_list_free(&ps->o.rounded_corners_blacklist);
 
 	// Free tracked atom list
 	{

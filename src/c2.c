@@ -1675,3 +1675,18 @@ bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condl
 
 	return false;
 }
+
+/// Iterate over all conditions in a condition linked list. Call the callback for each of
+/// the conditions. If the callback returns true, the iteration stops early.
+void c2_list_foreach(const c2_lptr_t *condlist, c2_list_foreach_cb_t cb, void *data) {
+	for (auto i = condlist; i; condlist = condlist->next) {
+		if (cb(i, data)) {
+			break;
+		}
+	}
+}
+
+/// Return user data stored in a condition.
+void *c2_list_get_data(const c2_lptr_t *condlist) {
+	return condlist->data;
+}
