@@ -25,6 +25,7 @@ struct test_failure {
 	const char *message;
 	const char *file;
 	int line;
+	bool owned;
 };
 
 struct test_case_metadata {
@@ -43,15 +44,16 @@ struct test_file_metadata {
 
 struct test_file_metadata __attribute__((weak)) * test_file_head;
 
-#define SET_FAILURE(_message)                                                             \
-	metadata->failure = (struct test_failure) {                                       \
-		.message = _message, .file = __FILE__, .line = __LINE__, .present = true, \
+#define SET_FAILURE(_message, _owned)                                                    \
+	metadata->failure = (struct test_failure) {                                      \
+		.message = _message, .file = __FILE__, .line = __LINE__,                 \
+		.present = true, .owned = _owned,                                        \
 	}
 
 #define TEST_EQUAL(a, b)                                                                 \
 	do {                                                                             \
 		if ((a) != (b)) {                                                        \
-			SET_FAILURE(#a " != " #b);                                       \
+			SET_FAILURE(#a " != " #b, false);                                \
 			return;                                                          \
 		}                                                                        \
 	} while (0)
@@ -59,7 +61,7 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 #define TEST_TRUE(a)                                                                     \
 	do {                                                                             \
 		if (!(a)) {                                                              \
-			SET_FAILURE(#a " is not true");                                  \
+			SET_FAILURE(#a " is not true", false);                           \
 			return;                                                          \
 		}                                                                        \
 	} while (0)
@@ -67,7 +69,11 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 #define TEST_STREQUAL(a, b)                                                              \
 	do {                                                                             \
 		if (strcmp(a, b) != 0) {                                                 \
-			SET_FAILURE(#a " != " #b);                                       \
+			const char *part2 = " != " #b;                                   \
+			size_t len = strlen(a) + strlen(part2) + 3;                      \
+			char *buf = malloc(len);                                         \
+			snprintf(buf, len, "\"%s\"%s", a, part2);                        \
+			SET_FAILURE(buf, true);                                          \
 			return;                                                          \
 		}                                                                        \
 	} while (0)
@@ -152,6 +158,10 @@ static inline void __attribute__((constructor(102))) run_tests(void) {
 			if (j->failure.present) {
 				fprintf(stderr, "failed (%s at %s:%d)\n", j->failure.message,
 				        j->failure.file, j->failure.line);
+				if (j->failure.owned) {
+					free((char *)j->failure.message);
+					j->failure.message = NULL;
+				}
 				failed++;
 			} else {
 				fprintf(stderr, "passed\n");
