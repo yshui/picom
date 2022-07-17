@@ -70,6 +70,9 @@ enum image_properties {
 	// Border width
 	// 1 int, default: 0
 	IMAGE_PROPERTY_BORDER_WIDTH,
+	// Custom shader for this window.
+	// 1 pointer to shader struct, default: NULL
+	IMAGE_PROPERTY_CUSTOM_SHADER,
 };
 
 enum image_operations {
