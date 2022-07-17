@@ -433,7 +433,8 @@ static void destroy_backend(session_t *ps) {
 
 	HASH_ITER2(ps->shaders, shader) {
 		if (shader->backend_shader != NULL) {
-			// Free the shader here.
+			ps->backend_data->ops->destroy_shader(ps->backend_data,
+			                                      shader->backend_shader);
 			shader->backend_shader = NULL;
 		}
 	}
@@ -506,10 +507,19 @@ static bool initialize_backend(session_t *ps) {
 
 		if (!initialize_blur(ps)) {
 			log_fatal("Failed to prepare for background blur, aborting...");
-			ps->backend_data->ops->deinit(ps->backend_data);
-			ps->backend_data = NULL;
-			quit(ps);
-			return false;
+			goto err;
+		}
+
+		// Create shaders
+		HASH_ITER2(ps->shaders, shader) {
+			assert(shader->backend_shader == NULL);
+			shader->backend_shader = ps->backend_data->ops->create_shader(
+			    ps->backend_data, shader->source);
+			if (shader->backend_shader == NULL) {
+				log_warn("Failed to create shader for shader file %s, "
+				         "this shader will not be used",
+				         shader->key);
+			}
 		}
 
 		// window_stack shouldn't include window that's
@@ -532,6 +542,11 @@ static bool initialize_backend(session_t *ps) {
 
 	// The old backends binds pixmap lazily, nothing to do here
 	return true;
+err:
+	ps->backend_data->ops->deinit(ps->backend_data);
+	ps->backend_data = NULL;
+	quit(ps);
+	return false;
 }
 
 /// Handle configure event of the root window
