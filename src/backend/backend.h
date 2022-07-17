@@ -199,6 +199,12 @@ struct backend_operations {
 	/// Free resources associated with an image data structure
 	void (*release_image)(backend_t *backend_data, void *img_data) attr_nonnull(1, 2);
 
+	/// Create a shader object from a shader source.
+	void *(*create_shader)(backend_t *backend_data, const char *source)attr_nonnull(1, 2);
+
+	/// Free a shader object.
+	void (*destroy_shader)(backend_t *backend_data, void *shader) attr_nonnull(1, 2);
+
 	// ===========        Query         ===========
 
 	/// Return if image is not completely opaque.
