@@ -1681,7 +1681,7 @@ bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condl
 ///
 /// Returns whether the iteration was stopped early.
 bool c2_list_foreach(const c2_lptr_t *condlist, c2_list_foreach_cb_t cb, void *data) {
-	for (auto i = condlist; i; condlist = condlist->next) {
+	for (auto i = condlist; i; i = i->next) {
 		if (cb(i, data)) {
 			return true;
 		}
