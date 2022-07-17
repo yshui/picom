@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2012-2014 Richard Grenville <pyxlcy@gmail.com>
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,98 +36,6 @@ static inline int lcfg_lookup_bool(const config_t *config, const char *path, boo
 	}
 
 	return ret;
-}
-
-const char *xdg_config_home(void) {
-	char *xdgh = getenv("XDG_CONFIG_HOME");
-	char *home = getenv("HOME");
-	const char *default_dir = "/.config";
-
-	if (!xdgh) {
-		if (!home) {
-			return NULL;
-		}
-
-		xdgh = cvalloc(strlen(home) + strlen(default_dir) + 1);
-
-		strcpy(xdgh, home);
-		strcat(xdgh, default_dir);
-	} else {
-		xdgh = strdup(xdgh);
-	}
-
-	return xdgh;
-}
-
-char **xdg_config_dirs(void) {
-	char *xdgd = getenv("XDG_CONFIG_DIRS");
-	size_t count = 0;
-
-	if (!xdgd) {
-		xdgd = "/etc/xdg";
-	}
-
-	for (int i = 0; xdgd[i]; i++) {
-		if (xdgd[i] == ':') {
-			count++;
-		}
-	}
-
-	// Store the string and the result pointers together so they can be
-	// freed together
-	char **dir_list = cvalloc(sizeof(char *) * (count + 2) + strlen(xdgd) + 1);
-	auto dirs = strcpy((char *)dir_list + sizeof(char *) * (count + 2), xdgd);
-	auto path = dirs;
-
-	for (size_t i = 0; i < count; i++) {
-		dir_list[i] = path;
-		path = strchr(path, ':');
-		*path = '\0';
-		path++;
-	}
-	dir_list[count] = path;
-
-	size_t fill = 0;
-	for (size_t i = 0; i <= count; i++) {
-		if (dir_list[i][0] == '/') {
-			dir_list[fill] = dir_list[i];
-			fill++;
-		}
-	}
-
-	dir_list[fill] = NULL;
-
-	return dir_list;
-}
-
-TEST_CASE(xdg_config_dirs) {
-	auto old_var = getenv("XDG_CONFIG_DIRS");
-	if (old_var) {
-		old_var = strdup(old_var);
-	}
-	unsetenv("XDG_CONFIG_DIRS");
-
-	auto result = xdg_config_dirs();
-	TEST_STREQUAL(result[0], "/etc/xdg");
-	TEST_EQUAL(result[1], NULL);
-	free(result);
-
-	setenv("XDG_CONFIG_DIRS", ".:.:/etc/xdg:.:/:", 1);
-	result = xdg_config_dirs();
-	TEST_STREQUAL(result[0], "/etc/xdg");
-	TEST_STREQUAL(result[1], "/");
-	TEST_EQUAL(result[2], NULL);
-	free(result);
-
-	setenv("XDG_CONFIG_DIRS", ":", 1);
-	result = xdg_config_dirs();
-	TEST_EQUAL(result[0], NULL);
-	free(result);
-
-	if (old_var) {
-		setenv("XDG_CONFIG_DIRS", old_var, 1);
-		free(old_var);
-	}
 }
 
 /// Search for config file under a base directory
@@ -247,6 +156,36 @@ parse_cfg_condlst_opct(options_t *opt, const config_t *pcfg, const char *name) {
 			if (!parse_rule_opacity(&opt->opacity_rules,
 			                        config_setting_get_string(setting)))
 				exit(1);
+		}
+	}
+}
+
+/**
+ * Parse a window shader rule list in configuration file.
+ */
+static inline void parse_cfg_condlst_shader(options_t *opt, const config_t *pcfg,
+                                            const char *name, const char *include_dir) {
+	config_setting_t *setting = config_lookup(pcfg, name);
+	if (setting) {
+		// Parse an array of options
+		if (config_setting_is_array(setting)) {
+			int i = config_setting_length(setting);
+			while (i--) {
+				if (!parse_rule_window_shader(
+				        &opt->window_shader_fg_rules,
+				        config_setting_get_string_elem(setting, i),
+				        include_dir)) {
+					exit(1);
+				}
+			}
+		}
+		// Treat it as a single pattern if it's a string
+		else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
+			if (!parse_rule_window_shader(&opt->window_shader_fg_rules,
+			                              config_setting_get_string(setting),
+			                              include_dir)) {
+				exit(1);
+			}
 		}
 	}
 }
@@ -601,6 +540,16 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		         "1.0");
 		opt->max_brightness = 1.0;
 	}
+
+	// --window-shader-fg
+	if (config_lookup_string(&cfg, "window-shader-fg", &sval)) {
+		opt->window_shader_fg =
+		    locate_auxiliary_file("shaders", sval, config_get_include_dir(&cfg));
+	}
+
+	// --window-shader-fg-rule
+	parse_cfg_condlst_shader(opt, &cfg, "window-shader-fg-rule",
+	                         config_get_include_dir(&cfg));
 
 	// --glx-use-gpushader4
 	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival)) {

@@ -236,7 +236,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Use X Sync fence to sync clients' draw calls, to make sure all draw calls are finished before picom starts drawing. Needed on nvidia-drivers with GLX backend for some users.
 
 *--glx-fshader-win* 'SHADER'::
-	GLX backend: Use specified GLSL fragment shader for rendering window contents. See `compton-default-fshader-win.glsl` and `compton-fake-transparency-fshader-win.glsl` in the source tree for examples.
+	GLX backend: Use specified GLSL fragment shader for rendering window contents. See `compton-default-fshader-win.glsl` and `compton-fake-transparency-fshader-win.glsl` in the source tree for examples. Doesn't work with `--experimental-backends` enabled.
 
 *--force-win-blend*::
 	Force all windows to be painted with blending. Useful if you have a *--glx-fshader-win* that could turn opaque pixels transparent.
@@ -258,6 +258,12 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 
 *--transparent-clipping*::
 	Make transparent windows clip other windows like non-transparent windows do, instead of blending on top of them.
+
+*--window-shader-fg* 'SHADER'::
+	Specify GLSL fragment shader path for rendering window contents. Only works when `--experimental-backends` is enabled.
+
+*--window-shader-fg-rule* 'SHADER':'CONDITION'::
+	Specify GLSL fragment shader path for rendering window contents using patterns. Pattern should be in the format of `SHADER:PATTERN`, similar to `--opacity-rule`. Leading and trailing whitespaces in `SHADER` will be trimmed. If `SHADER` is "default", then the default shader will be used for matching windows. (This also unfortunately means you can't use a shader file named "default"). Only works when `--experimental-backends` is enabled.
 
 FORMAT OF CONDITIONS
 --------------------

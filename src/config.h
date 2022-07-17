@@ -15,6 +15,8 @@
 #include <xcb/xcb.h>
 #include <xcb/xfixes.h>
 
+#include "uthash_extra.h"
+
 #ifdef CONFIG_LIBCONFIG
 #include <libconfig.h>
 #endif
@@ -206,6 +208,10 @@ typedef struct options {
 	struct conv **blur_kerns;
 	/// Number of convolution kernels
 	int blur_kernel_count;
+	/// Custom fragment shader for painting windows
+	char *window_shader_fg;
+	/// Rules to change custom fragment shader for painting windows.
+	c2_lptr_t *window_shader_fg_rules;
 	/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.
 	double inactive_dim;
 	/// Whether to use fixed inactive dim opacity, instead of deciding
@@ -255,6 +261,9 @@ bool must_use parse_int(const char *, int *);
 struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg, int *count);
 bool must_use parse_geometry(session_t *, const char *, region_t *);
 bool must_use parse_rule_opacity(c2_lptr_t **, const char *);
+bool must_use parse_rule_window_shader(c2_lptr_t **, const char *, const char *);
+char *must_use locate_auxiliary_file(const char *scope, const char *path,
+                                     const char *include_dir);
 enum blur_method must_use parse_blur_method(const char *src);
 
 /**
@@ -263,6 +272,9 @@ enum blur_method must_use parse_blur_method(const char *src);
 bool condlst_add(c2_lptr_t **, const char *);
 
 #ifdef CONFIG_LIBCONFIG
+const char *xdg_config_home(void);
+char **xdg_config_dirs(void);
+
 /// Parse a configuration file
 /// Returns the actually config_file name used, allocated on heap
 /// Outputs:

@@ -130,6 +130,13 @@ typedef struct _latom {
 	struct _latom *next;
 } latom_t;
 
+struct shader_info {
+	char *key;
+	char *source;
+	void *backend_shader;
+	UT_hash_handle hh;
+};
+
 /// Structure containing all necessary data for a session.
 typedef struct session {
 	// === Event handlers ===
@@ -150,6 +157,8 @@ typedef struct session {
 	ev_signal usr1_signal;
 	/// Signal handler for SIGINT
 	ev_signal int_signal;
+
+	// === Backend related ===
 	/// backend data
 	backend_t *backend_data;
 	/// backend blur context
@@ -160,6 +169,8 @@ typedef struct session {
 	void *file_watch_handle;
 	/// libev mainloop
 	struct ev_loop *loop;
+	/// Shaders
+	struct shader_info *shaders;
 
 	// === Display related ===
 	/// Whether the X server is grabbed by us

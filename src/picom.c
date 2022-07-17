@@ -431,6 +431,13 @@ static void destroy_backend(session_t *ps) {
 		free_paint(ps, &w->paint);
 	}
 
+	HASH_ITER2(ps->shaders, shader) {
+		if (shader->backend_shader != NULL) {
+			// Free the shader here.
+			shader->backend_shader = NULL;
+		}
+	}
+
 	if (ps->backend_data && ps->root_image) {
 		ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
 		ps->root_image = NULL;
@@ -1526,6 +1533,62 @@ static void config_file_change_cb(void *_ps) {
 	reset_enable(ps->loop, NULL, 0);
 }
 
+static bool load_shader_source(session_t *ps, const char *path) {
+	if (!path) {
+		// Using the default shader.
+		return false;
+	}
+
+	log_info("Loading shader source from %s", path);
+
+	struct shader_info *shader = NULL;
+	HASH_FIND_STR(ps->shaders, path, shader);
+	if (shader) {
+		log_debug("Shader already loaded, reusing");
+		return false;
+	}
+
+	shader = ccalloc(1, struct shader_info);
+	shader->key = strdup(path);
+	HASH_ADD_KEYPTR(hh, ps->shaders, shader->key, strlen(shader->key), shader);
+
+	FILE *f = fopen(path, "r");
+	if (!f) {
+		log_error("Failed to open custom shader file: %s", path);
+		goto err;
+	}
+	struct stat statbuf;
+	if (fstat(fileno(f), &statbuf) < 0) {
+		log_error("Failed to access custom shader file: %s", path);
+		goto err;
+	}
+
+	auto num_bytes = (size_t)statbuf.st_size;
+	shader->source = ccalloc(num_bytes + 1, char);
+	auto read_bytes = fread(shader->source, sizeof(char), num_bytes, f);
+	if (read_bytes < num_bytes || ferror(f)) {
+		// This is a difficult to hit error case, review thoroughly.
+		log_error("Failed to read custom shader at %s. (read %lu bytes, expected "
+		          "%lu bytes)",
+		          path, read_bytes, num_bytes);
+		goto err;
+	}
+	return false;
+err:
+	HASH_DEL(ps->shaders, shader);
+	if (f) {
+		fclose(f);
+	}
+	free(shader->source);
+	free(shader->key);
+	free(shader);
+	return true;
+}
+
+static bool load_shader_source_for_condition(const c2_lptr_t *cond, void *data) {
+	return load_shader_source(data, c2_list_get_data(cond));
+}
+
 /**
  * Initialize a session.
  *
@@ -1753,6 +1816,10 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		return NULL;
 	}
 
+	if (ps->o.window_shader_fg) {
+		log_debug("Default window shader: \"%s\"", ps->o.window_shader_fg);
+	}
+
 	if (ps->o.logpath) {
 		auto l = file_logger_new(ps->o.logpath);
 		if (l) {
@@ -1802,11 +1869,28 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	      c2_list_postprocess(ps, ps->o.fade_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.blur_background_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.invert_color_list) &&
+	      c2_list_postprocess(ps, ps->o.window_shader_fg_rules) &&
 	      c2_list_postprocess(ps, ps->o.opacity_rules) &&
 	      c2_list_postprocess(ps, ps->o.rounded_corners_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.focus_blacklist))) {
 		log_error("Post-processing of conditionals failed, some of your rules "
 		          "might not work");
+	}
+
+	// Load shader source file specified in the shader rules
+	if (c2_list_foreach(ps->o.window_shader_fg_rules, load_shader_source_for_condition, ps)) {
+		log_error("Failed to load shader source file for some of the window "
+		          "shader rules");
+	}
+	if (load_shader_source(ps, ps->o.window_shader_fg)) {
+		log_error("Failed to load window shader source file");
+	}
+
+	if (log_get_level_tls() <= LOG_LEVEL_DEBUG) {
+		HASH_ITER2(ps->shaders, shader) {
+			log_debug("Shader %s:", shader->key);
+			log_debug("%s", shader->source);
+		}
 	}
 
 	ps->gaussian_map = gaussian_kernel_autodetect_deviation(ps->o.shadow_radius);
@@ -2164,16 +2248,17 @@ static void session_destroy(session_t *ps) {
 	list_init_head(&ps->window_stack);
 
 	// Free blacklists
-	c2_list_free(&ps->o.shadow_blacklist);
-	c2_list_free(&ps->o.shadow_clip_list);
-	c2_list_free(&ps->o.fade_blacklist);
-	c2_list_free(&ps->o.focus_blacklist);
-	c2_list_free(&ps->o.invert_color_list);
-	c2_list_free(&ps->o.blur_background_blacklist);
-	c2_list_free(&ps->o.opacity_rules);
-	c2_list_free(&ps->o.paint_blacklist);
-	c2_list_free(&ps->o.unredir_if_possible_blacklist);
-	c2_list_free(&ps->o.rounded_corners_blacklist);
+	c2_list_free(&ps->o.shadow_blacklist, NULL);
+	c2_list_free(&ps->o.shadow_clip_list, NULL);
+	c2_list_free(&ps->o.fade_blacklist, NULL);
+	c2_list_free(&ps->o.focus_blacklist, NULL);
+	c2_list_free(&ps->o.invert_color_list, NULL);
+	c2_list_free(&ps->o.blur_background_blacklist, NULL);
+	c2_list_free(&ps->o.opacity_rules, NULL);
+	c2_list_free(&ps->o.paint_blacklist, NULL);
+	c2_list_free(&ps->o.unredir_if_possible_blacklist, NULL);
+	c2_list_free(&ps->o.rounded_corners_blacklist, NULL);
+	c2_list_free(&ps->o.window_shader_fg_rules, free);
 
 	// Free tracked atom list
 	{
@@ -2223,6 +2308,17 @@ static void session_destroy(session_t *ps) {
 	free(ps->o.blur_kerns);
 	free(ps->o.glx_fshader_win_str);
 	free_xinerama_info(ps);
+
+	// Release custom window shaders
+	free(ps->o.window_shader_fg);
+	struct shader_info *shader, *tmp;
+	HASH_ITER(hh, ps->shaders, shader, tmp) {
+		HASH_DEL(ps->shaders, shader);
+		assert(shader->backend_shader == NULL);
+		free(shader->source);
+		free(shader->key);
+		free(shader);
+	}
 
 #ifdef CONFIG_VSYNC_DRM
 	// Close file opened for DRM VSync
