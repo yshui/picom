@@ -27,7 +27,7 @@ bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condl
 
 bool c2_list_postprocess(session_t *ps, c2_lptr_t *list);
 typedef bool (*c2_list_foreach_cb_t)(const c2_lptr_t *cond, void *data);
-void c2_list_foreach(const c2_lptr_t *list, c2_list_foreach_cb_t cb, void *data);
+bool c2_list_foreach(const c2_lptr_t *list, c2_list_foreach_cb_t cb, void *data);
 /// Return user data stored in a condition.
 void *c2_list_get_data(const c2_lptr_t *condlist);
 
