@@ -329,8 +329,6 @@ Examples:
 	_NET_FRAME_EXTENTS@[2]:32c < 20 || !_NET_FRAME_EXTENTS@:32c
 	# The pattern here will be parsed as "dd4"
 	name = "\x64\x64\o64"
-	# The pattern here will be parsed as "\x64\x64\x64"
-	name = r"\x64\x64\o64"
 
 
 LEGACY FORMAT OF CONDITIONS
