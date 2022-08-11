@@ -519,6 +519,14 @@ static bool initialize_backend(session_t *ps) {
 				log_warn("Failed to create shader for shader file %s, "
 				         "this shader will not be used",
 				         shader->key);
+			} else {
+				if (ps->backend_data->ops->get_shader_attributes) {
+					shader->attributes =
+					    ps->backend_data->ops->get_shader_attributes(
+					        ps->backend_data, shader->backend_shader);
+				} else {
+					shader->attributes = 0;
+				}
 			}
 		}
 

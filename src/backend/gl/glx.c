@@ -549,6 +549,7 @@ struct backend_operations glx_ops = {
     .device_status = gl_device_status,
     .create_shader = gl_create_window_shader,
     .destroy_shader = gl_destroy_window_shader,
+    .get_shader_attributes = gl_get_shader_attributes,
     .max_buffer_age = 5,        // Why?
 };
 

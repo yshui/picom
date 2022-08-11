@@ -80,6 +80,12 @@ enum image_operations {
 	IMAGE_OP_APPLY_ALPHA,
 };
 
+enum shader_attributes {
+	// Whether the shader needs to be render regardless of whether the window is
+	// updated.
+	SHADER_ATTRIBUTE_ANIMATED = 1,
+};
+
 struct gaussian_blur_args {
 	int size;
 	double deviation;
@@ -203,12 +209,22 @@ struct backend_operations {
 	void (*release_image)(backend_t *backend_data, void *img_data) attr_nonnull(1, 2);
 
 	/// Create a shader object from a shader source.
+	///
+	/// Optional
 	void *(*create_shader)(backend_t *backend_data, const char *source)attr_nonnull(1, 2);
 
 	/// Free a shader object.
+	///
+	/// Required if create_shader is present.
 	void (*destroy_shader)(backend_t *backend_data, void *shader) attr_nonnull(1, 2);
 
 	// ===========        Query         ===========
+
+	/// Get the attributes of a shader.
+	///
+	/// Optional, Returns a bitmask of attributes, see `shader_attributes`.
+	uint64_t (*get_shader_attributes)(backend_t *backend_data, void *shader)
+	    attr_nonnull(1, 2);
 
 	/// Return if image is not completely opaque.
 	///

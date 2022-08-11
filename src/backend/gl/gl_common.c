@@ -1682,6 +1682,15 @@ void *gl_create_window_shader(backend_t *backend_data attr_unused, const char *s
 	return win_shader;
 }
 
+uint64_t gl_get_shader_attributes(backend_t *backend_data attr_unused, void *shader) {
+	auto win_shader = (gl_win_shader_t *)shader;
+	uint64_t ret = 0;
+	if (glGetUniformLocation(win_shader->prog, "time") >= 0) {
+		ret |= SHADER_ATTRIBUTE_ANIMATED;
+	}
+	return ret;
+}
+
 bool gl_init(struct gl_data *gd, session_t *ps) {
 	// Initialize GLX data structure
 	glDisable(GL_DEPTH_TEST);

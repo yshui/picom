@@ -134,6 +134,7 @@ struct shader_info {
 	char *key;
 	char *source;
 	void *backend_shader;
+	uint64_t attributes;
 	UT_hash_handle hh;
 };
 
