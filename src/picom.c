@@ -527,6 +527,8 @@ static bool initialize_backend(session_t *ps) {
 				} else {
 					shader->attributes = 0;
 				}
+				log_debug("Shader %s has attributes %ld", shader->key,
+				          shader->attributes);
 			}
 		}
 
@@ -648,11 +650,13 @@ static void handle_root_flags(session_t *ps) {
 	}
 }
 
-static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
+static struct managed_win *
+paint_preprocess(session_t *ps, bool *fade_running, bool *animation) {
 	// XXX need better, more general name for `fade_running`. It really
 	// means if fade is still ongoing after the current frame is rendered
 	struct managed_win *bottom = NULL;
 	*fade_running = false;
+	*animation = false;
 
 	// Fading step calculation
 	long long steps = 0L;
@@ -667,7 +671,9 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 	}
 	ps->fade_time += steps * ps->o.fade_delta;
 
-	// First, let's process fading
+	// First, let's process fading, and animated shaders
+	// TODO(yshui) check if a window is fully obscured, and if we don't need to
+	//             process fading or animation for it.
 	win_stack_foreach_managed_safe(w, &ps->window_stack) {
 		const winmode_t mode_old = w->mode;
 		const bool was_painted = w->to_paint;
@@ -676,6 +682,11 @@ static struct managed_win *paint_preprocess(session_t *ps, bool *fade_running) {
 		if (win_should_dim(ps, w) != w->dim) {
 			w->dim = win_should_dim(ps, w);
 			add_damage_from_win(ps, w);
+		}
+
+		if (w->fg_shader && (w->fg_shader->attributes & SHADER_ATTRIBUTE_ANIMATED)) {
+			add_damage_from_win(ps, w);
+			*animation = true;
 		}
 
 		// Run fading
@@ -1462,8 +1473,9 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	 * screen is not redirected. its sole purpose should be to decide whether the
 	 * screen should be redirected. */
 	bool fade_running = false;
+	bool animation = false;
 	bool was_redirected = ps->redirected;
-	auto bottom = paint_preprocess(ps, &fade_running);
+	auto bottom = paint_preprocess(ps, &fade_running, &animation);
 	ps->tmout_unredir_hit = false;
 
 	if (!was_redirected && ps->redirected) {
@@ -1512,7 +1524,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	// TODO(yshui) Investigate how big the X critical section needs to be. There are
 	// suggestions that rendering should be in the critical section as well.
 
-	ps->redraw_needed = false;
+	ps->redraw_needed = animation;
 }
 
 static void draw_callback(EV_P_ ev_idle *w, int revents) {
@@ -1520,8 +1532,9 @@ static void draw_callback(EV_P_ ev_idle *w, int revents) {
 
 	draw_callback_impl(EV_A_ ps, revents);
 
-	// Don't do painting non-stop unless we are in benchmark mode
-	if (!ps->o.benchmark) {
+	// Don't do painting non-stop unless we are in benchmark mode, or if
+	// draw_callback_impl thinks we should continue painting.
+	if (!ps->o.benchmark && !ps->redraw_needed) {
 		ev_idle_stop(EV_A_ & ps->draw_idle);
 	}
 }
