@@ -1,5 +1,5 @@
 project('picom', 'c', version: '9',
-        default_options: ['c_std=c11'])
+        default_options: ['c_std=c11', 'warning_level=1'])
 
 cc = meson.get_compiler('c')
 
@@ -9,7 +9,7 @@ version = 'v'+meson.project_version()
 # use git describe if that's available
 git = find_program('git', required: false)
 if git.found()
-	gitv = run_command('git', 'rev-parse', '--short=5', 'HEAD')
+	gitv = run_command('git', 'rev-parse', '--short=5', 'HEAD', check: false)
 	if gitv.returncode() == 0
 		version = 'vgit-'+gitv.stdout().strip()
 	endif
@@ -53,16 +53,18 @@ if cc.has_header('stdc-predef.h')
 	add_global_arguments('-DHAS_STDC_PREDEF_H', language: 'c')
 endif
 
-warns = [ 'all', 'cast-function-type', 'ignored-qualifiers', 'missing-parameter-type',
-          'nonnull', 'shadow', 'no-type-limits', 'old-style-declaration', 'override-init',
-          'sign-compare', 'type-limits', 'uninitialized', 'shift-negative-value',
-          'unused-but-set-parameter', 'unused-parameter', 'implicit-fallthrough',
-          'no-unknown-warning-option', 'no-missing-braces', 'conversion', 'empty-body' ]
-foreach w : warns
-	if cc.has_argument('-W'+w)
-		add_global_arguments('-W'+w, language: 'c')
-	endif
-endforeach
+if get_option('warning_level') != '0'
+  warns = [ 'cast-function-type', 'ignored-qualifiers', 'missing-parameter-type',
+            'nonnull', 'shadow', 'no-type-limits', 'old-style-declaration', 'override-init',
+            'sign-compare', 'type-limits', 'uninitialized', 'shift-negative-value',
+            'unused-but-set-parameter', 'unused-parameter', 'implicit-fallthrough',
+            'no-unknown-warning-option', 'no-missing-braces', 'conversion', 'empty-body' ]
+  foreach w : warns
+          if cc.has_argument('-W'+w)
+                  add_global_arguments('-W'+w, language: 'c')
+          endif
+  endforeach
+endif
 
 test_h_dep = subproject('test.h').get_variable('test_h_dep')
 
