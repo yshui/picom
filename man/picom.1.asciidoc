@@ -260,7 +260,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Make transparent windows clip other windows like non-transparent windows do, instead of blending on top of them.
 
 *--window-shader-fg* 'SHADER'::
-	Specify GLSL fragment shader path for rendering window contents. Only works when *--experimental-backends* is enabled. See section *SHADER INTERFACE* below for more details on the interface.
+	Specify GLSL fragment shader path for rendering window contents. Only works when *--experimental-backends* is enabled. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section *SHADER INTERFACE* below for more details on the interface.
 
 *--window-shader-fg-rule* 'SHADER':'CONDITION'::
 	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of 'SHADER:CONDITION', e.g. "shader.frag:name = \'window\'". Leading and trailing whitespaces in 'SHADER' will be trimmed. If 'SHADER' is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Only works when *--experimental-backends* is enabled.
