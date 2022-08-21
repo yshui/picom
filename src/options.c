@@ -354,9 +354,10 @@ static void usage(const char *argv0, int ret) {
 	    "\n"
 	    "--window-shader-fg-rule shader:condition\n"
 	    "  Specify GLSL fragment shader path for rendering window contents using\n"
-	    "  patterns. Pattern should be in the format of `SHADER PATH:PATTERN`,\n"
-	    "  similar to `--opacity-rule`. Only works when `--experimental-backends`\n"
-	    "  is enabled.\n";
+	    "  patterns. Pattern should be in the format of `SHADER_PATH:PATTERN`,\n"
+	    "  similar to `--opacity-rule`. `SHADER_PATH` can be \"default\", in which\n"
+	    "  case the default shader will be used. Only works when\n"
+	    "  `--experimental-backends` is enabled.\n";
 	FILE *f = (ret ? stderr : stdout);
 	fprintf(f, usage_text, argv0);
 #undef WARNING_DISABLED
