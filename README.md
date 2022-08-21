@@ -7,20 +7,6 @@ __picom__ is a compositor for X, and a [fork of Compton](History.md).
 
 You can leave your feedback or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions).
 
-## Call for testers
-
-### `--experimental-backends`
-
-This flag enables the refactored/partially rewritten backends.
-
-Currently, new backends feature better vsync with the xrender backend and improved input lag with the glx backend (for non-NVIDIA users). The performance should be on par with the old backends.
-
-New backend features will only be implemented on the new backends from now on, and the old backends will eventually be phased out after the new backends stabilize.
-
-To test the new backends, add the `--experimental-backends` flag to the command you use to run picom. This flag is not available from the configuration file.
-
-To report issues with the new backends, please state explicitly you are using the new backends in your report.
-
 ## Change Log
 
 See [Releases](https://github.com/yshui/picom/releases)

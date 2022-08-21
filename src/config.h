@@ -80,8 +80,8 @@ typedef struct options {
 	/// Render to a separate window instead of taking over the screen
 	bool debug_mode;
 	// === General ===
-	/// Use the experimental new backends?
-	bool experimental_backends;
+	/// Use the legacy backends?
+	bool legacy_backends;
 	/// Path to write PID to.
 	char *write_pid_path;
 	/// The backend in use.

@@ -67,8 +67,8 @@ OPTIONS
 *--log-file*::
 	Set the log file. If *--log-file* is never specified, logs will be written to stderr. Otherwise, logs will to written to the given file, though some of the early logs might still be written to the stderr. When setting this option from the config file, it is recommended to use an absolute path.
 
-*--experimental-backends*::
-	Use the new, reimplemented version of the backends. The new backends are HIGHLY UNSTABLE at this point, you have been warned. This option is not available in the config file.
+*--legacy-backends*::
+	Use the old version of the backends. This option can not be set from the config file.
 
 *--show-all-xerrors*::
 	Show all X errors (for debugging).
@@ -194,7 +194,7 @@ A 7x7 Gaussian blur kernel (sigma = 0.84089642) looks like:
 --blur-kern '7,7,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.001723,0.059106,0.493069,0.493069,0.059106,0.001723,0.000849,0.029143,0.243117,0.493069,0.243117,0.029143,0.000849,0.000102,0.003494,0.029143,0.059106,0.029143,0.003494,0.000102,0.000003,0.000102,0.000849,0.001723,0.000849,0.000102,0.000003'
 ----
 +
-May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box`, `3x3gaussian`, `5x5gaussian`, `7x7gaussian`, `9x9gaussian`, `11x11gaussian`. All Gaussian kernels are generated with sigma = 0.84089642 . If you find yourself needing to generate custom blur kernels, you might want to try the new blur configuration supported by the experimental backends (See *BLUR* and *--experimental-backends*).
+May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box`, `3x3gaussian`, `5x5gaussian`, `7x7gaussian`, `9x9gaussian`, `11x11gaussian`. All Gaussian kernels are generated with sigma = 0.84089642 . If you find yourself needing to generate custom blur kernels, you might want to try the new blur configuration (See *BLUR*).
 
 *--blur-background-exclude* 'CONDITION'::
 	Exclude conditions for background blur.
@@ -236,7 +236,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Use X Sync fence to sync clients' draw calls, to make sure all draw calls are finished before picom starts drawing. Needed on nvidia-drivers with GLX backend for some users.
 
 *--glx-fshader-win* 'SHADER'::
-	GLX backend: Use specified GLSL fragment shader for rendering window contents. See `compton-default-fshader-win.glsl` and `compton-fake-transparency-fshader-win.glsl` in the source tree for examples. Doesn't work with *--experimental-backends* enabled.
+	GLX backend: Use specified GLSL fragment shader for rendering window contents. See `compton-default-fshader-win.glsl` and `compton-fake-transparency-fshader-win.glsl` in the source tree for examples. Only works with *--legacy-backends* enabled.
 
 *--force-win-blend*::
 	Force all windows to be painted with blending. Useful if you have a *--glx-fshader-win* that could turn opaque pixels transparent.
@@ -260,10 +260,10 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	Make transparent windows clip other windows like non-transparent windows do, instead of blending on top of them.
 
 *--window-shader-fg* 'SHADER'::
-	Specify GLSL fragment shader path for rendering window contents. Only works when *--experimental-backends* is enabled. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section *SHADER INTERFACE* below for more details on the interface.
+	Specify GLSL fragment shader path for rendering window contents. Does not work when *--legacy-backends* is enabled. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section *SHADER INTERFACE* below for more details on the interface.
 
 *--window-shader-fg-rule* 'SHADER':'CONDITION'::
-	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of 'SHADER:CONDITION', e.g. "shader.frag:name = \'window\'". Leading and trailing whitespaces in 'SHADER' will be trimmed. If 'SHADER' is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Only works when *--experimental-backends* is enabled.
+	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of 'SHADER:CONDITION', e.g. "shader.frag:name = \'window\'". Leading and trailing whitespaces in 'SHADER' will be trimmed. If 'SHADER' is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Does not work when *--legacy-backends* is enabled.
 
 FORMAT OF CONDITIONS
 --------------------
@@ -355,7 +355,7 @@ This is the old condition format we once used. Support of this format might be r
 SHADER INTERFACE
 ----------------
 
-This secion describes the interface of a custom shader, how it is used by picom, and what parameters are passed by picom to the shader. This only applies to the new, experimental backends.
+This secion describes the interface of a custom shader, how it is used by picom, and what parameters are passed by picom to the shader. This does not apply to the legacy backends.
 
 A custom shader is a GLSL fragment shader program, which can be used to override the default way of how a window is rendered. If a custom shader is used, the default picom effects (e.g. dimming, color inversion, etc.) will no longer be automatically applied. It would be the custom shader's responsibility to apply these effects.
 
@@ -465,7 +465,7 @@ Available options of the 'blur' section are: ::
   *method*:::
     A string. Controls the blur method. Corresponds to the *--blur-method* command line option. Available choices are:
       'none' to disable blurring; 'gaussian' for gaussian blur; 'box' for box blur; 'kernel' for convolution blur with a custom kernel; 'dual_kawase' for dual-filter kawase blur.
-    Note: 'gaussian', 'box' and 'dual_kawase' blur methods are only supported by the experimental backends.
+    Note: 'gaussian', 'box' and 'dual_kawase' blur methods are not supported by the legacy backends.
     (default: none)
 
   *size*:::
