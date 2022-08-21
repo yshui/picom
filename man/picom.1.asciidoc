@@ -359,9 +359,9 @@ This secion describes the interface of a custom shader, how it is used by picom,
 
 A custom shader is a GLSL fragment shader program, which can be used to override the default way of how a window is rendered. If a custom shader is used, the default picom effects (e.g. dimming, color inversion, etc.) will no longer be automatically applied. It would be the custom shader's responsibility to apply these effects.
 
-The interface between picom and a custom shader is dependent on which backend is being used. The xrender backend doesn't support shader at all. Here we descibes the interface provided by the glx backend.
+The interface between picom and a custom shader is dependent on which backend is being used. The xrender backend doesn't support shader at all. Here we descibe the interface provided by the glx backend.
 
-The shader must defined a function, 'vec4 window_shader()', which would be the entry point of the shader. The returned 'vec4' will be used to set 'gl_FragColor'. A function, 'vec4 default_post_processing(vec4 c)', is provided from applying the default picom effects to input color 'c'.
+The shader must define a function, 'vec4 window_shader()', which would be the entry point of the shader. The returned 'vec4' will be used to set 'gl_FragColor'. A function, 'vec4 default_post_processing(vec4 c)', is provided for applying the default picom effects to input color 'c'.
 
 The following uniform/input variables are made available to the shader:
 
