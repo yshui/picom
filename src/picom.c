@@ -493,7 +493,7 @@ static bool initialize_blur(session_t *ps) {
 
 /// Init the backend and bind all the window pixmap to backend images
 static bool initialize_backend(session_t *ps) {
-	if (ps->o.experimental_backends) {
+	if (!ps->o.legacy_backends) {
 		assert(!ps->backend_data);
 		// Reinitialize win_data
 		assert(backend_list[ps->o.backend]);
@@ -571,7 +571,7 @@ static void configure_root(session_t *ps) {
 	bool has_root_change = false;
 	if (ps->redirected) {
 		// On root window changes
-		if (ps->o.experimental_backends) {
+		if (!ps->o.legacy_backends) {
 			assert(ps->backend_data);
 			has_root_change = ps->backend_data->ops->root_change != NULL;
 		} else {
@@ -607,7 +607,7 @@ static void configure_root(session_t *ps) {
 		ps->damage = ps->damage_ring + ps->ndamage - 1;
 #ifdef CONFIG_OPENGL
 		// GLX root change callback
-		if (BKEND_GLX == ps->o.backend && !ps->o.experimental_backends) {
+		if (BKEND_GLX == ps->o.backend && ps->o.legacy_backends) {
 			glx_on_root_change(ps);
 		}
 #endif
@@ -1220,10 +1220,10 @@ uint8_t session_redirection_mode(session_t *ps) {
 	if (ps->o.debug_mode) {
 		// If the backend is not rendering to the screen, we don't need to
 		// take over the screen.
-		assert(ps->o.experimental_backends);
+		assert(!ps->o.legacy_backends);
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
 	}
-	if (ps->o.experimental_backends && !backend_list[ps->o.backend]->present) {
+	if (!ps->o.legacy_backends && !backend_list[ps->o.backend]->present) {
 		// if the backend doesn't render anything, we don't need to take over the
 		// screen.
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
@@ -1260,7 +1260,7 @@ static bool redirect_start(session_t *ps) {
 		return false;
 	}
 
-	if (ps->o.experimental_backends) {
+	if (!ps->o.legacy_backends) {
 		assert(ps->backend_data);
 		ps->ndamage = ps->backend_data->ops->max_buffer_age;
 	} else {
@@ -1503,7 +1503,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		static int paint = 0;
 
 		log_trace("Render start, frame %d", paint);
-		if (ps->o.experimental_backends) {
+		if (!ps->o.legacy_backends) {
 			paint_all_new(ps, bottom, false);
 		} else {
 			paint_all(ps, bottom, false);
@@ -2056,7 +2056,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 		// The old backends doesn't have a automatic redirection mode
 		log_info("The compositor is started in automatic redirection mode.");
-		assert(ps->o.experimental_backends);
+		assert(!ps->o.legacy_backends);
 
 		if (backend_list[ps->o.backend]->present) {
 			// If the backend has `present`, we couldn't be in automatic
@@ -2072,7 +2072,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	apply_driver_workarounds(ps, ps->drivers);
 
 	// Initialize filters, must be preceded by OpenGL context creation
-	if (!ps->o.experimental_backends && !init_render(ps)) {
+	if (ps->o.legacy_backends && !init_render(ps)) {
 		log_fatal("Failed to initialize the backend");
 		exit(1);
 	}
@@ -2090,7 +2090,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	free(config_file_to_free);
 
-	if (bkend_use_glx(ps) && !ps->o.experimental_backends) {
+	if (bkend_use_glx(ps) && ps->o.legacy_backends) {
 		auto gl_logger = gl_string_marker_logger_new();
 		if (gl_logger) {
 			log_info("Enabling gl string marker");
@@ -2098,7 +2098,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 	}
 
-	if (ps->o.experimental_backends) {
+	if (!ps->o.legacy_backends) {
 		if (ps->o.monitor_repaint && !backend_list[ps->o.backend]->fill) {
 			log_warn("--monitor-repaint is not supported by the backend, "
 			         "disabling");
@@ -2391,7 +2391,7 @@ static void session_destroy(session_t *ps) {
 		ps->damaged_region = XCB_NONE;
 	}
 
-	if (ps->o.experimental_backends) {
+	if (!ps->o.legacy_backends) {
 		// backend is deinitialized in unredirect()
 		assert(ps->backend_data == NULL);
 	} else {

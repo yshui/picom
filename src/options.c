@@ -206,7 +206,7 @@ static void usage(const char *argv0, int ret) {
 	    "  The algorithm used for background bluring. Available choices are:\n"
 	    "  'none' to disable, 'gaussian', 'box' or 'kernel' for custom\n"
 	    "  convolution blur with --blur-kern.\n"
-	    "  Note: 'gaussian' and 'box' require --experimental-backends.\n"
+	    "  Note: 'gaussian' and 'box' is not supported by --legacy-backends.\n"
 	    "\n"
 	    "--blur-size\n"
 	    "  The radius of the blur kernel for 'box' and 'gaussian' blur method.\n"
@@ -349,15 +349,15 @@ static void usage(const char *argv0, int ret) {
 	    "  do, instead of blending on top of them\n"
 	    "\n"
 	    "--window-shader-fg shader\n"
-	    "  Specify GLSL fragment shader path for rendering window contents. Only\n"
-	    "  works when `--experimental-backends` is enabled.\n"
+	    "  Specify GLSL fragment shader path for rendering window contents. Does\n"
+	    "  not work when `--legacy-backends` is enabled.\n"
 	    "\n"
 	    "--window-shader-fg-rule shader:condition\n"
 	    "  Specify GLSL fragment shader path for rendering window contents using\n"
 	    "  patterns. Pattern should be in the format of `SHADER_PATH:PATTERN`,\n"
 	    "  similar to `--opacity-rule`. `SHADER_PATH` can be \"default\", in which\n"
-	    "  case the default shader will be used. Only works when\n"
-	    "  `--experimental-backends` is enabled.\n";
+	    "  case the default shader will be used. Does not work when\n"
+	    "  `--legacy-backends` is enabled.\n";
 	FILE *f = (ret ? stderr : stdout);
 	fprintf(f, usage_text, argv0);
 #undef WARNING_DISABLED
@@ -455,7 +455,7 @@ static const struct option longopts[] = {
     {"clip-shadow-above", required_argument, NULL, 335},
     {"window-shader-fg", required_argument, NULL, 336},
     {"window-shader-fg-rule", required_argument, NULL, 337},
-    {"experimental-backends", no_argument, NULL, 733},
+    {"legacy-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
     {"debug-mode", no_argument, NULL, 802},
@@ -874,7 +874,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// --clip-shadow-above
 			condlst_add(&opt->shadow_clip_list, optarg);
 			break;
-		P_CASEBOOL(733, experimental_backends);
+		P_CASEBOOL(733, legacy_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801:
 			opt->print_diagnostics = true;
@@ -900,38 +900,37 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		return false;
 	}
 
-	if (opt->monitor_repaint && opt->backend != BKEND_XRENDER &&
-	    !opt->experimental_backends) {
+	if (opt->monitor_repaint && opt->backend != BKEND_XRENDER && opt->legacy_backends) {
 		log_warn("--monitor-repaint has no effect when backend is not xrender");
 	}
 
-	if (opt->experimental_backends && !backend_list[opt->backend]) {
-		log_error("Backend \"%s\" is not available as part of the experimental "
+	if (!opt->legacy_backends && !backend_list[opt->backend]) {
+		log_error("Backend \"%s\" is only available as part of the legacy "
 		          "backends.",
 		          BACKEND_STRS[opt->backend]);
 		return false;
 	}
 
-	if (opt->debug_mode && !opt->experimental_backends) {
-		log_error("Debug mode only works with the experimental backends.");
+	if (opt->debug_mode && opt->legacy_backends) {
+		log_error("Debug mode does not work with the legacy backends.");
 		return false;
 	}
 
-	if (opt->transparent_clipping && !opt->experimental_backends) {
-		log_error("Transparent clipping only works with the experimental "
+	if (opt->transparent_clipping && opt->legacy_backends) {
+		log_error("Transparent clipping does not work with the legacy "
 		          "backends");
 		return false;
 	}
 
-	if (opt->glx_fshader_win_str && opt->experimental_backends) {
+	if (opt->glx_fshader_win_str && !opt->legacy_backends) {
 		log_warn("--glx-fshader-win has been replaced by "
-		         "\"--window-shader-fg\" for the experimental backends.");
+		         "\"--window-shader-fg\" for the new backends.");
 	}
 
 	if (opt->window_shader_fg || opt->window_shader_fg_rules) {
-		if (!opt->experimental_backends || opt->backend != BKEND_GLX) {
-			log_warn("The new window shader interface only works with the "
-			         "experimental glx backend.%s",
+		if (opt->legacy_backends || opt->backend != BKEND_GLX) {
+			log_warn("The new window shader interface does not work with the "
+			         "legacy glx backend.%s",
 			         (opt->backend == BKEND_GLX) ? " You may want to use "
 			                                       "\"--glx-fshader-win\" "
 			                                       "instead on the legacy "
@@ -960,8 +959,8 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->max_brightness = 1.0;
 		}
 
-		if (!opt->experimental_backends || opt->backend != BKEND_GLX) {
-			log_warn("--max-brightness requires the experimental glx "
+		if (opt->legacy_backends || opt->backend != BKEND_GLX) {
+			log_warn("--max-brightness requires the new glx "
 			         "backend. Falling back to 1.0");
 			opt->max_brightness = 1.0;
 		}
@@ -1004,10 +1003,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			         "capping to 20.");
 			opt->blur_strength = 20;
 		}
-		if (!opt->experimental_backends) {
+		if (opt->legacy_backends) {
 			log_warn("Dual-kawase blur is not implemented by the legacy "
-			         "backends, you must use the `experimental-backends` "
-			         "option.");
+			         "backends.");
 		}
 	}
 
