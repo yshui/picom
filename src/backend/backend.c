@@ -383,6 +383,10 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				    ps->backend_data, IMAGE_PROPERTY_BORDER_WIDTH,
 				    w->win_image, &border_width);
 			}
+
+			ps->backend_data->ops->set_image_property(
+			    ps->backend_data, IMAGE_PROPERTY_CUSTOM_SHADER, w->win_image,
+			    w->fg_shader ? (void *)w->fg_shader->backend_shader : NULL);
 		}
 
 		if (w->opacity * MAX_ALPHA < 1) {

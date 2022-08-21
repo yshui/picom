@@ -534,7 +534,7 @@ struct backend_operations glx_ops = {
     .release_image = gl_release_image,
     .compose = gl_compose,
     .image_op = gl_image_op,
-    .set_image_property = default_set_image_property,
+    .set_image_property = gl_set_image_property,
     .clone_image = default_clone_image,
     .blur = gl_blur,
     .is_image_transparent = default_is_image_transparent,
@@ -547,6 +547,9 @@ struct backend_operations glx_ops = {
     .get_blur_size = gl_get_blur_size,
     .diagnostics = glx_diagnostics,
     .device_status = gl_device_status,
+    .create_shader = gl_create_window_shader,
+    .destroy_shader = gl_destroy_window_shader,
+    .get_shader_attributes = gl_get_shader_attributes,
     .max_buffer_age = 5,        // Why?
 };
 

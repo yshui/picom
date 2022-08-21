@@ -1052,6 +1052,19 @@ win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_backgrou
 	add_damage_from_win(ps, w);
 }
 
+static void
+win_set_fg_shader(session_t *ps, struct managed_win *w, struct shader_info *shader_new) {
+	if (w->fg_shader == shader_new) {
+		return;
+	}
+
+	w->fg_shader = shader_new;
+
+	// A different shader might change how the window is drawn, these changes should
+	// be rare however, so this should be fine.
+	add_damage_from_win(ps, w);
+}
+
 /**
  * Determine if a window should have background blurred.
  */
@@ -1099,6 +1112,28 @@ static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) 
 }
 
 /**
+ * Determine custom window shader to use for a window.
+ */
+static void win_determine_fg_shader(session_t *ps, struct managed_win *w) {
+	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
+		return;
+	}
+
+	auto shader_new = ps->o.window_shader_fg;
+	void *val = NULL;
+	if (c2_match(ps, w, ps->o.window_shader_fg_rules, &val)) {
+		shader_new = val;
+	}
+
+	struct shader_info *shader = NULL;
+	if (shader_new) {
+		HASH_FIND_STR(ps->shaders, shader_new, shader);
+	}
+
+	win_set_fg_shader(ps, w, shader);
+}
+
+/**
  * Update window opacity according to opacity rules.
  */
 void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
@@ -1134,6 +1169,7 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	win_determine_invert_color(ps, w);
 	win_determine_blur_background(ps, w);
 	win_determine_rounded_corners(ps, w);
+	win_determine_fg_shader(ps, w);
 	w->mode = win_calc_mode(w);
 	log_debug("Window mode changed to %d", w->mode);
 	win_update_opacity_rule(ps, w);
@@ -1463,6 +1499,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .prev_trans = NULL,
 	    .shadow = false,
 	    .clip_shadow_above = false,
+	    .fg_shader = NULL,
 	    .xinerama_scr = -1,
 	    .mode = WMODE_TRANS,
 	    .ever_damaged = false,

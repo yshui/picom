@@ -346,7 +346,18 @@ static void usage(const char *argv0, int ret) {
 	    "\n"
 	    "--transparent-clipping\n"
 	    "  Make transparent windows clip other windows like non-transparent windows\n"
-	    "  do, instead of blending on top of them\n";
+	    "  do, instead of blending on top of them\n"
+	    "\n"
+	    "--window-shader-fg shader\n"
+	    "  Specify GLSL fragment shader path for rendering window contents. Only\n"
+	    "  works when `--experimental-backends` is enabled.\n"
+	    "\n"
+	    "--window-shader-fg-rule shader:condition\n"
+	    "  Specify GLSL fragment shader path for rendering window contents using\n"
+	    "  patterns. Pattern should be in the format of `SHADER_PATH:PATTERN`,\n"
+	    "  similar to `--opacity-rule`. `SHADER_PATH` can be \"default\", in which\n"
+	    "  case the default shader will be used. Only works when\n"
+	    "  `--experimental-backends` is enabled.\n";
 	FILE *f = (ret ? stderr : stdout);
 	fprintf(f, usage_text, argv0);
 #undef WARNING_DISABLED
@@ -442,6 +453,8 @@ static const struct option longopts[] = {
     {"corner-radius", required_argument, NULL, 333},
     {"rounded-corners-exclude", required_argument, NULL, 334},
     {"clip-shadow-above", required_argument, NULL, 335},
+    {"window-shader-fg", required_argument, NULL, 336},
+    {"window-shader-fg-rule", required_argument, NULL, 337},
     {"experimental-backends", no_argument, NULL, 733},
     {"monitor-repaint", no_argument, NULL, 800},
     {"diagnostics", no_argument, NULL, 801},
@@ -792,6 +805,24 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 317:
 			opt->glx_fshader_win_str = strdup(optarg);
 			break;
+		case 336: {
+			// --window-shader-fg
+			scoped_charp cwd = getcwd(NULL, 0);
+			opt->window_shader_fg =
+			    locate_auxiliary_file("shaders", optarg, cwd);
+			if (!opt->window_shader_fg) {
+				exit(1);
+			}
+			break;
+		}
+		case 337: {
+			// --window-shader-fg-rule
+			scoped_charp cwd = getcwd(NULL, 0);
+			if (!parse_rule_window_shader(&opt->window_shader_fg_rules, optarg, cwd)) {
+				exit(1);
+			}
+			break;
+		}
 		case 321: {
 			enum log_level tmp_level = string_to_log_level(optarg);
 			if (tmp_level == LOG_LEVEL_INVALID) {
@@ -803,13 +834,8 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		}
 		P_CASEBOOL(319, no_x_selection);
 		P_CASEBOOL(323, use_damage);
-		case 324:
-			opt->use_damage = false;
-			break;
-		case 325:
-			opt->vsync = false;
-			break;
-
+		case 324: opt->use_damage = false; break;
+		case 325: opt->vsync = false; break;
 		case 326:
 			opt->max_brightness = atof(optarg);
 			break;
@@ -850,7 +876,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		P_CASEBOOL(733, experimental_backends);
 		P_CASEBOOL(800, monitor_repaint);
-		case 801: opt->print_diagnostics = true; break;
+		case 801:
+			opt->print_diagnostics = true;
+			break;
 		P_CASEBOOL(802, debug_mode);
 		P_CASEBOOL(803, no_ewmh_fullscreen);
 		default: usage(argv[0], 1); break;
@@ -893,6 +921,25 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		log_error("Transparent clipping only works with the experimental "
 		          "backends");
 		return false;
+	}
+
+	if (opt->glx_fshader_win_str && opt->experimental_backends) {
+		log_warn("--glx-fshader-win has been replaced by "
+		         "\"--window-shader-fg\" for the experimental backends.");
+	}
+
+	if (opt->window_shader_fg || opt->window_shader_fg_rules) {
+		if (!opt->experimental_backends || opt->backend != BKEND_GLX) {
+			log_warn("The new window shader interface only works with the "
+			         "experimental glx backend.%s",
+			         (opt->backend == BKEND_GLX) ? " You may want to use "
+			                                       "\"--glx-fshader-win\" "
+			                                       "instead on the legacy "
+			                                       "glx backend."
+			                                     : "");
+			opt->window_shader_fg = NULL;
+			c2_list_free(&opt->window_shader_fg_rules, free);
+		}
 	}
 
 	// Range checking and option assignments

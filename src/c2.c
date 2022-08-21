@@ -1151,11 +1151,16 @@ static void c2_free(c2_ptr_t p) {
 /**
  * Free a condition tree in c2_lptr_t.
  */
-c2_lptr_t *c2_free_lptr(c2_lptr_t *lp) {
-	if (!lp)
+c2_lptr_t *c2_free_lptr(c2_lptr_t *lp, c2_userdata_free f) {
+	if (!lp) {
 		return NULL;
+	}
 
 	c2_lptr_t *pnext = lp->next;
+	if (f) {
+		f(lp->data);
+	}
+	lp->data = NULL;
 	c2_free(lp->ptr);
 	free(lp);
 

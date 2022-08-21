@@ -28,6 +28,8 @@ static inline GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 
 // Program and uniforms for window shader
 typedef struct {
+	UT_hash_handle hh;
+	uint32_t id;
 	GLuint prog;
 	GLint uniform_opacity;
 	GLint uniform_invert_color;
@@ -37,6 +39,7 @@ typedef struct {
 	GLint uniform_max_brightness;
 	GLint uniform_corner_radius;
 	GLint uniform_border_width;
+	GLint uniform_time;
 } gl_win_shader_t;
 
 // Program and uniforms for brightness shader
@@ -68,6 +71,7 @@ struct gl_texture {
 
 	// Textures for auxiliary uses.
 	GLuint auxiliary_texture[2];
+	gl_win_shader_t *shader;
 	void *user_data;
 };
 
@@ -79,7 +83,8 @@ struct gl_data {
 	bool has_robustness;
 	// Height and width of the root window
 	int height, width;
-	gl_win_shader_t win_shader;
+	// Hash-table of window shaders
+	gl_win_shader_t *default_shader;
 	gl_brightness_shader_t brightness_shader;
 	gl_fill_shader_t fill_shader;
 	GLuint back_texture, back_fbo;
@@ -103,12 +108,17 @@ typedef struct session session_t;
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str);
 GLuint gl_create_program(const GLuint *const shaders, int nshaders);
 GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str);
+void *gl_create_window_shader(backend_t *backend_data, const char *source);
+void gl_destroy_window_shader(backend_t *backend_data, void *shader);
+uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
+bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
+                           void *image_data, void *args);
 
 /**
  * @brief Render a region with texture data.
  */
-void gl_compose(backend_t *, void *ptex, int dst_x, int dst_y, const region_t *reg_tgt,
-                const region_t *reg_visible);
+void gl_compose(backend_t *, void *image_data, int dst_x, int dst_y,
+                const region_t *reg_tgt, const region_t *reg_visible);
 
 void gl_resize(struct gl_data *, int width, int height);
 
