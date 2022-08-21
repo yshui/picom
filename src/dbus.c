@@ -1153,7 +1153,7 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 
 	// version
 	if (!strcmp("version", target)) {
-		cdbus_reply_string(ps, msg, COMPTON_VERSION);
+		cdbus_reply_string(ps, msg, PICOM_VERSION);
 		return true;
 	}
 
