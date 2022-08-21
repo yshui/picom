@@ -26,7 +26,7 @@
 static void usage(const char *argv0, int ret) {
 #define WARNING_DISABLED " (DISABLED AT COMPILE TIME)"
 	static const char *usage_text =
-	    "picom (" COMPTON_VERSION ")\n"
+	    "picom (" PICOM_VERSION ")\n"
 	    "Please report bugs to https://github.com/yshui/picom\n\n"
 	    "usage: %s [options]\n"
 	    "Options:\n"
@@ -495,7 +495,7 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 		} else if (o == 314) {
 			*all_xerrors = true;
 		} else if (o == 318) {
-			printf("%s\n", COMPTON_VERSION);
+			printf("%s\n", PICOM_VERSION);
 			return true;
 		} else if (o == '?' || o == ':') {
 			usage(argv[0], 1);
