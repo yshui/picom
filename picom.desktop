@@ -9,5 +9,7 @@ Categories=Utility;
 Keywords=compositor;composite manager;window effects;transparency;opacity;
 TryExec=picom
 Exec=picom
+StartupNotify=false
+Terminal=false
 # Thanks to quequotion for providing this file!
 Icon=picom

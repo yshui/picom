@@ -73,6 +73,7 @@ subdir('man')
 
 install_data('bin/picom-trans', install_dir: get_option('bindir'))
 install_data('picom.desktop', install_dir: 'share/applications')
+install_data('picom.desktop', install_dir: get_option('sysconfdir') / 'xdg' / 'autostart')
 
 if get_option('compton')
 	install_data('compton.desktop', install_dir: 'share/applications')
