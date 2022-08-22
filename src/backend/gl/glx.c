@@ -499,7 +499,7 @@ static void glx_diagnostics(backend_t *base) {
 
 	auto gl_renderer = (const char *)glGetString(GL_RENDERER);
 	printf("* GL renderer: %s\n", gl_renderer);
-	if (strcmp(glx_vendor, "Mesa Project and SGI")) {
+	if (strcmp(glx_vendor, "Mesa Project and SGI") == 0) {
 		for (size_t i = 0; i < ARR_SIZE(software_renderer_names); i++) {
 			if (strstr(gl_renderer, software_renderer_names[i]) != NULL) {
 				warn_software_rendering = true;
