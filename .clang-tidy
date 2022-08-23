@@ -11,7 +11,9 @@ Checks: >
   misc-static-assert,
   -clang-analyzer-*,
   -readability-isolate-declaration,
-  -readability-magic-numbers
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -bugprone-easily-swappable-parameters
 AnalyzeTemporaryDtors: false
 FormatStyle:     file
 CheckOptions:
@@ -19,3 +21,7 @@ CheckOptions:
     value: 4;8;16;24;32;1;2;3;4096;65536;
   - key: readability-magic-numbers.IgnoredFloatingPointValues
     value: 255.0;1.0;
+  - key: readability-function-cognitive-complexity.IgnoreMacros
+    value: true
+  - key: readability-function-cognitive-complexity.DescribeBasicIncrements
+    value: true

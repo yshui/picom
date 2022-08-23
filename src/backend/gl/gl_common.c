@@ -622,8 +622,8 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glUseProgram(p->prog);
-		glUniform2f(p->uniform_pixel_norm, 1.0f / (GLfloat)tex_width,
-		            1.0f / (GLfloat)tex_height);
+		glUniform2f(p->uniform_pixel_norm, 1.0F / (GLfloat)tex_width,
+		            1.0F / (GLfloat)tex_height);
 
 		// The number of indices in the selected vertex array
 		GLsizei nelems;
@@ -644,7 +644,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 				return false;
 			}
 
-			glUniform1f(p->uniform_opacity, 1.0);
+			glUniform1f(p->uniform_opacity, 1.0F);
 		} else {
 			// last pass, draw directly into the back buffer, with origin
 			// regions
@@ -715,8 +715,8 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 
 		glUniform1f(down_pass->scale_loc, (GLfloat)scale_factor);
 
-		glUniform2f(down_pass->uniform_pixel_norm, 1.0f / (GLfloat)tex_width,
-		            1.0f / (GLfloat)tex_height);
+		glUniform2f(down_pass->uniform_pixel_norm, 1.0F / (GLfloat)tex_width,
+		            1.0F / (GLfloat)tex_height);
 
 		glDrawElements(GL_TRIANGLES, nelems, GL_UNSIGNED_INT, NULL);
 	}
@@ -764,8 +764,8 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 		}
 
 		glUniform1f(up_pass->scale_loc, (GLfloat)scale_factor);
-		glUniform2f(up_pass->uniform_pixel_norm, 1.0f / (GLfloat)tex_width,
-		            1.0f / (GLfloat)tex_height);
+		glUniform2f(up_pass->uniform_pixel_norm, 1.0F / (GLfloat)tex_width,
+		            1.0F / (GLfloat)tex_height);
 
 		glDrawElements(GL_TRIANGLES, nelems, GL_UNSIGNED_INT, NULL);
 	}
@@ -1511,8 +1511,8 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	// Note: OpenGL matrices are column major
 	GLint viewport_dimensions[2];
 	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
-	GLfloat projection_matrix[4][4] = {{2.0f / (GLfloat)viewport_dimensions[0], 0, 0, 0},
-	                                   {0, 2.0f / (GLfloat)viewport_dimensions[1], 0, 0},
+	GLfloat projection_matrix[4][4] = {{2.0F / (GLfloat)viewport_dimensions[0], 0, 0, 0},
+	                                   {0, 2.0F / (GLfloat)viewport_dimensions[1], 0, 0},
 	                                   {0, 0, 0, 0},
 	                                   {-1, -1, 0, 1}};
 
@@ -1715,7 +1715,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glViewport(0, 0, viewport_dimensions[0], viewport_dimensions[1]);
 
 	// Clear screen
-	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
 	glGenFramebuffers(1, &gd->back_fbo);
