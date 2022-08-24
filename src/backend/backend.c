@@ -204,6 +204,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		// The bounding shape of the window, in global/target coordinates
 		// reminder: bounding shape contains the WM frame
 		auto reg_bound = win_get_bounding_shape_global_by_val(w);
+		auto reg_bound_no_corner =
+		    win_get_bounding_shape_global_without_corners_by_val(w);
 		region_t reg_bound_local;
 		pixman_region32_init(&reg_bound_local);
 		pixman_region32_copy(&reg_bound_local, &reg_bound);
@@ -361,7 +363,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 			auto inverted_mask = NULL;
 			if (!ps->o.wintype_option[w->window_type].full_shadow) {
-				pixman_region32_subtract(&reg_shadow, &reg_shadow, &reg_bound);
+				pixman_region32_subtract(&reg_shadow, &reg_shadow,
+				                         &reg_bound_no_corner);
 				if (w->mask_image) {
 					inverted_mask = w->mask_image;
 					ps->backend_data->ops->set_image_property(
@@ -483,6 +486,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	skip:
 		pixman_region32_fini(&reg_bound);
 		pixman_region32_fini(&reg_bound_local);
+		pixman_region32_fini(&reg_bound_no_corner);
 		pixman_region32_fini(&reg_paint_in_bound);
 	}
 	pixman_region32_fini(&reg_paint);
