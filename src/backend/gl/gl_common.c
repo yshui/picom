@@ -1634,6 +1634,34 @@ void gl_get_blur_size(void *blur_context, int *width, int *height) {
 }
 
 // clang-format off
+const char *masking_glsl = GLSL(330,
+	uniform sampler2D mask_tex;
+	uniform vec2 mask_offset;
+	uniform float mask_corner_radius;
+	uniform bool mask_inverted;
+	in vec2 texcoord;
+	float mask_rectangle_sdf(vec2 point, vec2 half_size) {
+		vec2 d = abs(point) - half_size;
+		return length(max(d, 0.0));
+	}
+	float mask_factor() {
+		vec2 mask_size = textureSize(mask_tex, 0);
+		vec2 maskcoord = texcoord - mask_offset;
+		vec4 mask = texture2D(mask_tex, maskcoord / mask_size);
+		if (mask_corner_radius != 0) {
+			vec2 inner_size = mask_size - vec2(mask_corner_radius) * 2.0f;
+			float dist = mask_rectangle_sdf(maskcoord - mask_size / 2.0f,
+			    inner_size / 2.0f) - mask_corner_radius;
+			if (dist > 0.0f) {
+				mask.r = (1.0f - clamp(dist, 0.0f, 1.0f));
+			}
+		}
+		if (mask_inverted) {
+			mask.rgb = 1.0 - mask.rgb;
+		}
+		return mask.r;
+	}
+);
 const char *win_shader_glsl = GLSL(330,
 	uniform float opacity;
 	uniform float dim;
@@ -1644,11 +1672,6 @@ const char *win_shader_glsl = GLSL(330,
 	uniform sampler2D tex;
 	uniform sampler2D brightness;
 	uniform float max_brightness;
-
-	uniform sampler2D mask_tex;
-	uniform vec2 mask_offset;
-	uniform float mask_corner_radius;
-	uniform bool mask_inverted;
 	// Signed distance field for rectangle center at (0, 0), with size of
 	// half_size * 2
 	float rectangle_sdf(vec2 point, vec2 half_size) {
@@ -1695,23 +1718,10 @@ const char *win_shader_glsl = GLSL(330,
 	}
 
 	vec4 window_shader();
+	float mask_factor();
 
 	void main() {
-		vec2 mask_size = textureSize(mask_tex, 0);
-		vec2 maskcoord = texcoord - mask_offset;
-		vec4 mask = texture2D(mask_tex, maskcoord / mask_size);
-		if (mask_corner_radius != 0) {
-			vec2 inner_size = mask_size - vec2(mask_corner_radius) * 2.0f;
-			float dist = rectangle_sdf(maskcoord - mask_size / 2.0f,
-			    inner_size / 2.0f) - mask_corner_radius;
-			if (dist > 0.0f) {
-				mask.r = (1.0f - clamp(dist, 0.0f, 1.0f));
-			}
-		}
-		if (mask_inverted) {
-			mask.rgb = 1.0 - mask.rgb;
-		}
-		gl_FragColor = window_shader() * mask.r;
+		gl_FragColor = window_shader() * mask_factor();
 	}
 );
 
@@ -1740,7 +1750,7 @@ void *gl_create_window_shader(backend_t *backend_data attr_unused, const char *s
 	auto win_shader = (gl_win_shader_t *)ccalloc(1, gl_win_shader_t);
 
 	const char *vert_shaders[2] = {vertex_shader, NULL};
-	const char *frag_shaders[3] = {win_shader_glsl, source, NULL};
+	const char *frag_shaders[4] = {win_shader_glsl, masking_glsl, source, NULL};
 
 	if (!gl_win_shader_from_stringv(vert_shaders, frag_shaders, win_shader)) {
 		free(win_shader);
