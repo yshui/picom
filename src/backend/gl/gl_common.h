@@ -40,6 +40,11 @@ typedef struct {
 	GLint uniform_corner_radius;
 	GLint uniform_border_width;
 	GLint uniform_time;
+
+	GLint uniform_mask_tex;
+	GLint uniform_mask_offset;
+	GLint uniform_mask_corner_radius;
+	GLint uniform_mask_inverted;
 } gl_win_shader_t;
 
 // Program and uniforms for brightness shader
@@ -89,6 +94,8 @@ struct gl_data {
 	gl_fill_shader_t fill_shader;
 	GLuint back_texture, back_fbo;
 	GLuint present_prog;
+
+	GLuint default_mask_texture;
 
 	/// Called when an gl_texture is decoupled from the texture it refers. Returns
 	/// the decoupled user_data

@@ -387,10 +387,10 @@ static GLuint gl_average_texture_color(backend_t *base, struct backend_image *im
 static void _gl_compose(backend_t *base, struct backend_image *img, GLuint target,
                         struct backend_image *mask, coord_t mask_offset, GLint *coord,
                         GLuint *indices, int nrects) {
-	(void)mask;
-	(void)mask_offset;
 	auto gd = (struct gl_data *)base;
 	auto inner = (struct gl_texture *)img->inner;
+	auto mask_texture =
+	    mask ? ((struct gl_texture *)mask->inner)->texture : gd->default_mask_texture;
 	if (!img || !inner->texture) {
 		log_error("Missing texture.");
 		return;
@@ -443,6 +443,21 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 		glUniform1f(win_shader->uniform_time,
 		            (float)ts.tv_sec * 1000.0F + (float)ts.tv_nsec / 1.0e6F);
 	}
+
+	glUniform1i(win_shader->uniform_mask_tex, 2);
+	glUniform2f(win_shader->uniform_mask_offset, (float)mask_offset.x,
+	            (float)mask_offset.y);
+	if (mask != NULL) {
+		glUniform1i(win_shader->uniform_mask_inverted, mask->color_inverted);
+		glUniform1f(win_shader->uniform_mask_corner_radius,
+		            (GLfloat)mask->corner_radius);
+	} else {
+		glUniform1i(win_shader->uniform_mask_inverted, 0);
+		glUniform1f(win_shader->uniform_mask_corner_radius, 0);
+	}
+
+	glActiveTexture(GL_TEXTURE2);
+	glBindTexture(GL_TEXTURE_2D, mask_texture);
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
 	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
@@ -950,6 +965,11 @@ static bool gl_win_shader_from_stringv(const char **vshader_strv,
 	bind_uniform(ret, corner_radius);
 	bind_uniform(ret, border_width);
 	bind_uniform(ret, time);
+
+	bind_uniform(ret, mask_tex);
+	bind_uniform(ret, mask_offset);
+	bind_uniform(ret, mask_inverted);
+	bind_uniform(ret, mask_corner_radius);
 
 	gl_check_err();
 
@@ -1623,6 +1643,11 @@ const char *win_shader_glsl = GLSL(330,
 	uniform sampler2D tex;
 	uniform sampler2D brightness;
 	uniform float max_brightness;
+
+	uniform sampler2D mask_tex;
+	uniform vec2 mask_offset;
+	uniform float mask_corner_radius;
+	uniform bool mask_inverted;
 	// Signed distance field for rectangle center at (0, 0), with size of
 	// half_size * 2
 	float rectangle_sdf(vec2 point, vec2 half_size) {
@@ -1671,7 +1696,21 @@ const char *win_shader_glsl = GLSL(330,
 	vec4 window_shader();
 
 	void main() {
-		gl_FragColor = window_shader();
+		vec2 mask_size = textureSize(mask_tex, 0);
+		vec2 maskcoord = texcoord - mask_offset;
+		vec4 mask = texture2D(mask_tex, maskcoord / mask_size);
+		if (mask_corner_radius != 0) {
+			vec2 inner_size = mask_size - vec2(mask_corner_radius) * 2.0f;
+			float dist = rectangle_sdf(maskcoord - mask_size / 2.0f,
+			    inner_size / 2.0f) - mask_corner_radius;
+			if (dist > 0.0f) {
+				mask.r = (1.0f - clamp(dist, 0.0f, 1.0f));
+			}
+		}
+		if (mask_inverted) {
+			mask.rgb = 1.0 - mask.rgb;
+		}
+		gl_FragColor = window_shader() * mask.r;
 	}
 );
 
@@ -1774,6 +1813,17 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	gd->default_mask_texture = gl_new_texture(GL_TEXTURE_2D);
+	if (!gd->default_mask_texture) {
+		log_error("Failed to generate a default mask texture");
+		return false;
+	}
+
+	glBindTexture(GL_TEXTURE_2D, gd->default_mask_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, 1, 1, 0, GL_RED, GL_UNSIGNED_BYTE,
+	             (GLbyte[]){'\xff'});
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	// Initialize shaders
