@@ -30,6 +30,15 @@ typedef struct backend_base {
 	// ...
 } backend_t;
 
+typedef struct geometry {
+	int width;
+	int height;
+} geometry_t;
+
+typedef struct coord {
+	int x, y;
+} coord_t;
+
 typedef void (*backend_ready_callback_t)(void *);
 
 // This mimics OpenGL's ARB_robustness extension, which enables detection of GPU context
@@ -44,8 +53,8 @@ enum device_status {
 // When image properties are actually applied to the image, they are applied in a
 // particular order:
 //
-// Color inversion -> Dimming -> Opacity multiply -> Limit maximum brightness
-// (Corner radius could be applied in any order)
+// Corner radius -> Color inversion -> Dimming -> Opacity multiply -> Limit maximum
+// brightness
 enum image_properties {
 	// Whether the color of the image is inverted
 	// 1 boolean, default: false
@@ -158,16 +167,19 @@ struct backend_operations {
 	void (*prepare)(backend_t *backend_data, const region_t *reg_damage);
 
 	/**
-	 * Paint the content of an image onto the rendering buffer
+	 * Paint the content of an image onto the rendering buffer.
 	 *
 	 * @param backend_data the backend data
 	 * @param image_data   the image to paint
 	 * @param dst_x, dst_y the top left corner of the image in the target
+	 * @param mask         the mask image, the top left of the mask is aligned with
+	 *                     the top left of the image
 	 * @param reg_paint    the clip region, in target coordinates
 	 * @param reg_visible  the visible region, in target coordinates
 	 */
-	void (*compose)(backend_t *backend_data, void *image_data, int dst_x, int dst_y,
-	                const region_t *reg_paint, const region_t *reg_visible);
+	void (*compose)(backend_t *backend_data, void *image_data, coord_t image_dst,
+	                void *mask, coord_t mask_dst, const region_t *reg_paint,
+	                const region_t *reg_visible);
 
 	/// Fill rectangle of the rendering buffer, mostly for debug purposes, optional.
 	void (*fill)(backend_t *backend_data, struct color, const region_t *clip);
@@ -202,6 +214,18 @@ struct backend_operations {
 	/// Default implementation: default_backend_render_shadow
 	void *(*render_shadow)(backend_t *backend_data, int width, int height,
 	                       const conv *kernel, double r, double g, double b, double a);
+
+	/// Create a mask image from region `reg`. This region can be used to create
+	/// shadow, or used as a mask for composing. When used as a mask, it should mask
+	/// out everything that is not inside the region used to create it.
+	///
+	/// Image properties might be set on masks too, at least the INVERTED and
+	/// CORNER_RADIUS properties must be supported. Inversion should invert the inside
+	/// and outside of the mask. Corner radius should exclude the corners from the
+	/// mask. Corner radius should be applied before the inversion.
+	///
+	/// Required.
+	void *(*make_mask)(backend_t *backend_data, geometry_t size, const region_t *reg);
 
 	// ============ Resource management ===========
 

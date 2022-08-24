@@ -82,39 +82,39 @@ safe_isnan(double a) {
 
 #define to_int_checked(val)                                                              \
 	({                                                                               \
-		int64_t tmp = (val);                                                     \
-		ASSERT_IN_RANGE(tmp, INT_MIN, INT_MAX);                                  \
-		(int)tmp;                                                                \
+		int64_t __to_tmp = (val);                                                \
+		ASSERT_IN_RANGE(__to_tmp, INT_MIN, INT_MAX);                             \
+		(int)__to_tmp;                                                           \
 	})
 
 #define to_char_checked(val)                                                             \
 	({                                                                               \
-		int64_t tmp = (val);                                                     \
-		ASSERT_IN_RANGE(tmp, CHAR_MIN, CHAR_MAX);                                \
-		(char)tmp;                                                               \
+		int64_t __to_tmp = (val);                                                \
+		ASSERT_IN_RANGE(__to_tmp, CHAR_MIN, CHAR_MAX);                           \
+		(char)__to_tmp;                                                          \
 	})
 
 #define to_u16_checked(val)                                                              \
 	({                                                                               \
-		auto tmp = (val);                                                        \
-		ASSERT_IN_RANGE(tmp, 0, UINT16_MAX);                                     \
-		(uint16_t) tmp;                                                          \
+		auto __to_tmp = (val);                                                   \
+		ASSERT_IN_RANGE(__to_tmp, 0, UINT16_MAX);                                \
+		(uint16_t) __to_tmp;                                                     \
 	})
 
 #define to_i16_checked(val)                                                              \
 	({                                                                               \
-		int64_t tmp = (val);                                                     \
-		ASSERT_IN_RANGE(tmp, INT16_MIN, INT16_MAX);                              \
-		(int16_t) tmp;                                                           \
+		int64_t __to_tmp = (val);                                                \
+		ASSERT_IN_RANGE(__to_tmp, INT16_MIN, INT16_MAX);                         \
+		(int16_t) __to_tmp;                                                      \
 	})
 
 #define to_u32_checked(val)                                                              \
 	({                                                                               \
-		auto tmp = (val);                                                        \
+		auto __to_tmp = (val);                                                   \
 		int64_t max attr_unused = UINT32_MAX; /* silence clang tautological      \
 		                                         comparison warning*/            \
-		ASSERT_IN_RANGE(tmp, 0, max);                                            \
-		(uint32_t) tmp;                                                          \
+		ASSERT_IN_RANGE(__to_tmp, 0, max);                                       \
+		(uint32_t) __to_tmp;                                                     \
 	})
 /**
  * Normalize an int value to a specific range.

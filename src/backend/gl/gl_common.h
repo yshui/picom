@@ -117,8 +117,8 @@ bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
 /**
  * @brief Render a region with texture data.
  */
-void gl_compose(backend_t *, void *image_data, int dst_x, int dst_y,
-                const region_t *reg_tgt, const region_t *reg_visible);
+void gl_compose(backend_t *, void *image_data, coord_t image_dst, void *mask,
+                coord_t mask_dst, const region_t *reg_tgt, const region_t *reg_visible);
 
 void gl_resize(struct gl_data *, int width, int height);
 
@@ -131,6 +131,7 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
                  const region_t *reg_op, const region_t *reg_visible, void *arg);
 
 void gl_release_image(backend_t *base, void *image_data);
+void *gl_make_mask(backend_t *base, geometry_t size, const region_t *reg);
 
 void *gl_clone(backend_t *base, const void *image_data, const region_t *reg_visible);
 

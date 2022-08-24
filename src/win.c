@@ -314,6 +314,13 @@ static inline void win_release_shadow(backend_t *base, struct managed_win *w) {
 	}
 }
 
+static inline void win_release_mask(backend_t *base, struct managed_win *w) {
+	if (w->mask_image) {
+		base->ops->release_image(base, w->mask_image);
+		w->mask_image = NULL;
+	}
+}
+
 static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w) {
 	assert(!w->win_image);
 	auto pixmap = x_new_id(b->c);
@@ -373,6 +380,8 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 		assert(!win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE));
 		win_release_shadow(backend, w);
 	}
+
+	win_release_mask(backend, w);
 }
 
 /// Returns true if the `prop` property is stale, as well as clears the stale flag.
@@ -1205,6 +1214,7 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 
 	// Invalidate the shadow we built
 	win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
+	win_release_mask(ps->backend_data, w);
 	ps->pending_updates = true;
 	free_paint(ps, &w->shadow_paint);
 }
@@ -1496,6 +1506,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    // is mapped
 	    .win_image = NULL,
 	    .shadow_image = NULL,
+	    .mask_image = NULL,
 	    .prev_trans = NULL,
 	    .shadow = false,
 	    .clip_shadow_above = false,
@@ -1927,6 +1938,7 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 	// Window shape changed, we should free old wpaint and shadow pict
 	// log_trace("free out dated pict");
 	win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
+	win_release_mask(ps->backend_data, w);
 	ps->pending_updates = true;
 
 	free_paint(ps, &w->paint);

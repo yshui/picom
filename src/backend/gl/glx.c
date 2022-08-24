@@ -393,11 +393,10 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	}
 
 	log_trace("Binding pixmap %#010x", pixmap);
-	auto wd = ccalloc(1, struct backend_image);
-	wd->max_brightness = 1;
+	auto wd = default_new_backend_image(r->width, r->height);
 	auto inner = ccalloc(1, struct gl_texture);
-	inner->width = wd->ewidth = r->width;
-	inner->height = wd->eheight = r->height;
+	inner->width = r->width;
+	inner->height = r->height;
 	wd->inner = (struct backend_image_inner_base *)inner;
 	free(r);
 
@@ -445,9 +444,6 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	inner->user_data = glxpixmap;
 	inner->texture = gl_new_texture(GL_TEXTURE_2D);
 	inner->has_alpha = fmt.alpha_size != 0;
-	wd->opacity = 1;
-	wd->color_inverted = false;
-	wd->dim = 0;
 	wd->inner->refcount = 1;
 	glBindTexture(GL_TEXTURE_2D, inner->texture);
 	glXBindTexImageEXT(gd->display, glxpixmap->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
@@ -541,6 +537,7 @@ struct backend_operations glx_ops = {
     .present = glx_present,
     .buffer_age = glx_buffer_age,
     .render_shadow = default_backend_render_shadow,
+    .make_mask = gl_make_mask,
     .fill = gl_fill,
     .create_blur_context = gl_create_blur_context,
     .destroy_blur_context = gl_destroy_blur_context,
