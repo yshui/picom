@@ -75,7 +75,8 @@ void dummy_fill(struct backend_base *backend_data attr_unused, struct color c at
 }
 
 bool dummy_blur(struct backend_base *backend_data attr_unused, double opacity attr_unused,
-                void *blur_ctx attr_unused, const region_t *reg_blur attr_unused,
+                void *blur_ctx attr_unused, void *mask attr_unused,
+                coord_t mask_dst attr_unused, const region_t *reg_blur attr_unused,
                 const region_t *reg_visible attr_unused) {
 	return true;
 }

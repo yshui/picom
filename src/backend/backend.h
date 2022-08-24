@@ -185,9 +185,12 @@ struct backend_operations {
 	void (*fill)(backend_t *backend_data, struct color, const region_t *clip);
 
 	/// Blur a given region of the rendering buffer.
-	bool (*blur)(backend_t *backend_data, double opacity, void *blur_ctx,
-	             const region_t *reg_blur, const region_t *reg_visible)
-	    attr_nonnull(1, 3, 4, 5);
+	///
+	/// The blur is limited by `mask`. `mask_dst` specifies the top left corner of the
+	/// mask is.
+	bool (*blur)(backend_t *backend_data, double opacity, void *blur_ctx, void *mask,
+	             coord_t mask_dst, const region_t *reg_blur,
+	             const region_t *reg_visible) attr_nonnull(1, 3, 4, 6, 7);
 
 	/// Update part of the back buffer with the rendering buffer, then present the
 	/// back buffer onto the target window (if not back buffered, update part of the

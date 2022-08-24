@@ -246,6 +246,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		 * is transparent or not. for now we will just rely on the force_win_blend
 		 * option */
 		auto real_win_mode = w->mode;
+		coord_t window_coord = {.x = w->g.x, .y = w->g.y};
 
 		if (w->blur_background &&
 		    (ps->o.force_win_blend || real_win_mode == WMODE_TRANS ||
@@ -289,7 +290,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				// We need to blur the bounding shape of the window
 				// (reg_paint_in_bound = reg_bound \cap reg_paint)
 				ps->backend_data->ops->blur(
-				    ps->backend_data, blur_opacity, ps->backend_blur_context,
+				    ps->backend_data, blur_opacity,
+				    ps->backend_blur_context, w->mask_image, window_coord,
 				    &reg_paint_in_bound, &reg_visible);
 			} else {
 				// Window itself is solid, we only need to blur the frame
@@ -308,14 +310,13 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 					pixman_region32_intersect(&reg_blur, &reg_blur,
 					                          &reg_visible);
 				}
-				ps->backend_data->ops->blur(ps->backend_data, blur_opacity,
-				                            ps->backend_blur_context,
-				                            &reg_blur, &reg_visible);
+				ps->backend_data->ops->blur(
+				    ps->backend_data, blur_opacity, ps->backend_blur_context,
+				    w->mask_image, window_coord, &reg_blur, &reg_visible);
 				pixman_region32_fini(&reg_blur);
 			}
 		}
 
-		coord_t window_coord = {.x = w->g.x, .y = w->g.y};
 		// Draw shadow on target
 		if (w->shadow) {
 			assert(!(w->flags & WIN_FLAGS_SHADOW_NONE));

@@ -794,7 +794,8 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 	return true;
 }
 
-bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blur,
+bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask attr_unused,
+             coord_t mask_dst attr_unused, const region_t *reg_blur,
              const region_t *reg_visible attr_unused) {
 	auto bctx = (struct gl_blur_context *)ctx;
 	auto gd = (struct gl_data *)base;
