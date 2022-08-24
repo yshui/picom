@@ -59,6 +59,11 @@ typedef struct {
 	GLint uniform_opacity;
 	GLint texorig_loc;
 	GLint scale_loc;
+
+	GLint uniform_mask_tex;
+	GLint uniform_mask_offset;
+	GLint uniform_mask_corner_radius;
+	GLint uniform_mask_inverted;
 } gl_blur_shader_t;
 
 typedef struct {
