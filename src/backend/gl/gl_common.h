@@ -12,6 +12,7 @@
 
 #define CASESTRRET(s)                                                                    \
 	case s: return #s
+struct gl_blur_context;
 
 static inline GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 	auto ret = glGetUniformLocation(p, name);

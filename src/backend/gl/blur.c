@@ -38,12 +38,10 @@ struct gl_blur_context {
 /**
  * Blur contents in a particular region.
  */
-bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *extent,
+bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx, const rect_t *extent,
                     struct backend_image *mask, coord_t mask_dst, const GLuint vao[2],
-                    const int vao_nelems[2]) {
-	auto bctx = (struct gl_blur_context *)ctx;
-	auto gd = (struct gl_data *)base;
-
+                    const int vao_nelems[2], GLuint source_texture,
+                    geometry_t source_size, GLuint target_fbo, GLuint default_mask) {
 	int dst_y_fb_coord = bctx->fb_height - extent->y2;
 
 	int curr = 0;
@@ -59,9 +57,9 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 		GLuint src_texture;
 
 		if (i == 0) {
-			src_texture = gd->back_texture;
-			tex_width = gd->width;
-			tex_height = gd->height;
+			src_texture = source_texture;
+			tex_width = source_size.width;
+			tex_height = source_size.height;
 		} else {
 			src_texture = bctx->blur_textures[curr];
 			auto src_size = bctx->texture_sizes[curr];
@@ -76,7 +74,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 		            1.0F / (GLfloat)tex_height);
 
 		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, gd->default_mask_texture);
+		glBindTexture(GL_TEXTURE_2D, default_mask);
 
 		glUniform1i(p->uniform_mask_tex, 1);
 		glUniform2f(p->uniform_mask_offset, 0.0F, 0.0F);
@@ -119,7 +117,7 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 			}
 			glBindVertexArray(vao[0]);
 			nelems = vao_nelems[0];
-			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
+			glBindFramebuffer(GL_FRAMEBUFFER, target_fbo);
 
 			glUniform1f(p->uniform_opacity, (float)opacity);
 		}
@@ -136,12 +134,10 @@ bool gl_kernel_blur(backend_t *base, double opacity, void *ctx, const rect_t *ex
 	return true;
 }
 
-bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_t *extent,
-                         struct backend_image *mask, coord_t mask_dst,
-                         const GLuint vao[2], const int vao_nelems[2]) {
-	auto bctx = (struct gl_blur_context *)ctx;
-	auto gd = (struct gl_data *)base;
-
+bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rect_t *extent,
+                         struct backend_image *mask, coord_t mask_dst, const GLuint vao[2],
+                         const int vao_nelems[2], GLuint source_texture,
+                         geometry_t source_size, GLuint target_fbo, GLuint default_mask) {
 	int dst_y_fb_coord = bctx->fb_height - extent->y2;
 
 	int iterations = bctx->blur_texture_count;
@@ -163,9 +159,9 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 
 		if (i == 0) {
 			// first pass: copy from back buffer
-			src_texture = gd->back_texture;
-			tex_width = gd->width;
-			tex_height = gd->height;
+			src_texture = source_texture;
+			tex_width = source_size.width;
+			tex_height = source_size.height;
 		} else {
 			// copy from previous pass
 			src_texture = bctx->blur_textures[i - 1];
@@ -216,7 +212,7 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, gd->default_mask_texture);
+		glBindTexture(GL_TEXTURE_2D, default_mask);
 
 		glUniform1i(up_pass->uniform_mask_tex, 1);
 		glUniform2f(up_pass->uniform_mask_offset, 0.0F, 0.0F);
@@ -248,7 +244,7 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 			}
 			glBindVertexArray(vao[0]);
 			nelems = vao_nelems[0];
-			glBindFramebuffer(GL_FRAMEBUFFER, gd->back_fbo);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target_fbo);
 
 			glUniform1f(up_pass->uniform_opacity, (GLfloat)opacity);
 		}
@@ -263,18 +259,17 @@ bool gl_dual_kawase_blur(backend_t *base, double opacity, void *ctx, const rect_
 	return true;
 }
 
-bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mask_dst,
-             const region_t *reg_blur, const region_t *reg_visible attr_unused) {
-	auto bctx = (struct gl_blur_context *)ctx;
-	auto gd = (struct gl_data *)base;
-
+bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
+                  coord_t mask_dst, const region_t *reg_blur,
+                  const region_t *reg_visible attr_unused, GLuint source_texture,
+                  geometry_t source_size, GLuint target_fbo, GLuint default_mask) {
 	bool ret = false;
 
-	if (gd->width != bctx->fb_width || gd->height != bctx->fb_height) {
+	if (source_size.width != bctx->fb_width || source_size.height != bctx->fb_height) {
 		// Resize the temporary textures used for blur in case the root
 		// size changed
-		bctx->fb_width = gd->width;
-		bctx->fb_height = gd->height;
+		bctx->fb_width = source_size.width;
+		bctx->fb_height = source_size.height;
 
 		for (int i = 0; i < bctx->blur_texture_count; ++i) {
 			auto tex_size = bctx->texture_sizes + i;
@@ -329,7 +324,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mas
 	auto indices = ccalloc(nrects * 6, GLuint);
 	x_rect_to_coords(nrects, rects,
 	                 (coord_t){.x = extent_resized->x1, .y = extent_resized->y2},
-	                 bctx->fb_height, gd->height, false, coord, indices);
+	                 bctx->fb_height, source_size.height, false, coord, indices);
 
 	auto coord_resized = ccalloc(nrects_resized * 16, GLint);
 	auto indices_resized = ccalloc(nrects_resized * 6, GLuint);
@@ -373,11 +368,13 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mas
 	int vao_nelems[2] = {nrects * 6, nrects_resized * 6};
 
 	if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {
-		ret = gl_dual_kawase_blur(base, opacity, ctx, extent_resized, mask,
-		                          mask_dst, vao, vao_nelems);
+		ret = gl_dual_kawase_blur(opacity, bctx, extent_resized, mask, mask_dst,
+		                          vao, vao_nelems, source_texture, source_size,
+		                          target_fbo, default_mask);
 	} else {
-		ret = gl_kernel_blur(base, opacity, ctx, extent_resized, mask, mask_dst,
-		                     vao, vao_nelems);
+		ret = gl_kernel_blur(opacity, bctx, extent_resized, mask, mask_dst, vao,
+		                     vao_nelems, source_texture, source_size, target_fbo,
+		                     default_mask);
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -399,6 +396,16 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mas
 
 	gl_check_err();
 	return ret;
+}
+
+bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mask_dst,
+             const region_t *reg_blur, const region_t *reg_visible attr_unused) {
+	auto gd = (struct gl_data *)base;
+	auto bctx = (struct gl_blur_context *)ctx;
+	return gl_blur_impl(opacity, bctx, mask, mask_dst, reg_blur, reg_visible,
+	                    gd->back_texture,
+	                    (geometry_t){.width = gd->width, .height = gd->height},
+	                    gd->back_fbo, gd->default_mask_texture);
 }
 
 static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
