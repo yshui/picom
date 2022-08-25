@@ -133,7 +133,7 @@ conv *gaussian_kernel_autodetect_deviation(double shadow_radius) {
 	if (shadow_radius == 0) {
 		return gaussian_kernel(0, size);
 	}
-	double std = gaussian_kernel_std_for_size(shadow_radius, 1.0 / 256.0);
+	double std = gaussian_kernel_std_for_size(shadow_radius, 0.5 / 256.0);
 	return gaussian_kernel(std, size);
 }
 
