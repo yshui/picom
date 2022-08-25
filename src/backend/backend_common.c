@@ -311,6 +311,21 @@ void *default_backend_render_shadow(backend_t *backend_data, int width, int heig
 	return ret;
 }
 
+/// Implement render_shadow with shadow_from_mask
+void *
+backend_render_shadow_from_mask(backend_t *backend_data, int width, int height,
+                                struct backend_shadow_context *sctx, struct color color) {
+	region_t reg;
+	pixman_region32_init_rect(&reg, 0, 0, (unsigned int)width, (unsigned int)height);
+	void *mask = backend_data->ops->make_mask(
+	    backend_data, (geometry_t){.width = width, .height = height}, &reg);
+	pixman_region32_fini(&reg);
+
+	void *shadow = backend_data->ops->shadow_from_mask(backend_data, mask, sctx, color);
+	backend_data->ops->release_image(backend_data, mask);
+	return shadow;
+}
+
 struct backend_shadow_context *
 default_create_shadow_context(backend_t *backend_data attr_unused, double radius) {
 	auto ret =

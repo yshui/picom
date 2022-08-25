@@ -64,6 +64,11 @@ bool default_is_frame_transparent(void *, win *, void *);
 
 void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
                                     struct backend_shadow_context *sctx, struct color color);
+
+/// Implement `render_shadow` with `shadow_from_mask`.
+void *
+backend_render_shadow_from_mask(backend_t *backend_data, int width, int height,
+                                struct backend_shadow_context *sctx, struct color color);
 struct backend_shadow_context *
 default_create_shadow_context(backend_t *backend_data, double radius);
 
