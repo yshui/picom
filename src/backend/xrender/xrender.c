@@ -373,9 +373,8 @@ static void fill(backend_t *base, struct color c, const region_t *clip) {
 	                         .height = to_u16_checked(extent->y2 - extent->y1)}});
 }
 
-static bool
-blur(backend_t *backend_data, double opacity, void *ctx_, void *mask attr_unused,
-     coord_t mask_dst attr_unused, const region_t *reg_blur, const region_t *reg_visible) {
+static bool blur(backend_t *backend_data, double opacity, void *ctx_, void *mask,
+                 coord_t mask_dst, const region_t *reg_blur, const region_t *reg_visible) {
 	struct _xrender_blur_context *bctx = ctx_;
 	if (bctx->method == BLUR_METHOD_NONE) {
 		return true;
@@ -426,7 +425,12 @@ blur(backend_t *backend_data, double opacity, void *ctx_, void *mask attr_unused
 	pixman_region32_fini(&clip);
 
 	xcb_render_picture_t src_pict = xd->back[2], dst_pict = tmp_picture[0];
-	auto alpha_pict = xd->alpha_pict[(int)(opacity * MAX_ALPHA)];
+	auto mask_pict = xd->alpha_pict[(int)(opacity * MAX_ALPHA)];
+	bool mask_allocated = false;
+	if (mask != NULL) {
+		mask_pict = process_mask(xd, mask, opacity != 1.0 ? mask_pict : XCB_NONE,
+		                         &mask_allocated);
+	}
 	int current = 0;
 	x_set_picture_clip_region(c, src_pict, 0, 0, &reg_op_resized);
 
@@ -462,11 +466,12 @@ blur(backend_t *backend_data, double opacity, void *ctx_, void *mask attr_unused
 		} else {
 			x_set_picture_clip_region(c, xd->back[2], 0, 0, &reg_op);
 			// This is the last pass, and we are doing more than 1 pass
-			xcb_render_composite(c, XCB_RENDER_PICT_OP_OVER, src_pict,
-			                     alpha_pict, xd->back[2], 0, 0, 0, 0,
-			                     to_i16_checked(extent_resized->x1),
-			                     to_i16_checked(extent_resized->y1),
-			                     width_resized, height_resized);
+			xcb_render_composite(
+			    c, XCB_RENDER_PICT_OP_OVER, src_pict, mask_pict, xd->back[2],
+			    0, 0, to_i16_checked(extent_resized->x1 - mask_dst.x + 1),
+			    to_i16_checked(extent_resized->y1 - mask_dst.y + 1),
+			    to_i16_checked(extent_resized->x1),
+			    to_i16_checked(extent_resized->y1), width_resized, height_resized);
 		}
 
 		// reset filter
@@ -482,8 +487,10 @@ blur(backend_t *backend_data, double opacity, void *ctx_, void *mask attr_unused
 	if (i == 1) {
 		x_set_picture_clip_region(c, xd->back[2], 0, 0, &reg_op);
 		xcb_render_composite(
-		    c, XCB_RENDER_PICT_OP_OVER, src_pict, alpha_pict, xd->back[2], 0, 0,
-		    0, 0, to_i16_checked(extent_resized->x1),
+		    c, XCB_RENDER_PICT_OP_OVER, src_pict, mask_pict, xd->back[2], 0, 0,
+		    to_i16_checked(extent_resized->x1 - mask_dst.x + 1),
+		    to_i16_checked(extent_resized->y1 - mask_dst.y + 1),
+		    to_i16_checked(extent_resized->x1),
 		    to_i16_checked(extent_resized->y1), width_resized, height_resized);
 	}
 
