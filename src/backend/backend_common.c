@@ -291,16 +291,16 @@ shadow_picture_err:
 	return false;
 }
 
-void *
-default_backend_render_shadow(backend_t *backend_data, int width, int height,
-                              const conv *kernel, double r, double g, double b, double a) {
-	xcb_pixmap_t shadow_pixel = solid_picture(backend_data->c, backend_data->root,
-	                                          true, 1, r, g, b),
+void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
+                                    struct backend_shadow_context *sctx, struct color color) {
+	const conv *kernel = (void *)sctx;
+	xcb_pixmap_t shadow_pixel = solid_picture(backend_data->c, backend_data->root, true,
+	                                          1, color.red, color.green, color.blue),
 	             shadow = XCB_NONE;
 	xcb_render_picture_t pict = XCB_NONE;
 
-	if (!build_shadow(backend_data->c, backend_data->root, a, width, height, kernel,
-	                  shadow_pixel, &shadow, &pict)) {
+	if (!build_shadow(backend_data->c, backend_data->root, color.alpha, width, height,
+	                  kernel, shadow_pixel, &shadow, &pict)) {
 		return NULL;
 	}
 
@@ -309,6 +309,19 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 	    backend_data, shadow, x_get_visual_info(backend_data->c, visual), true);
 	xcb_render_free_picture(backend_data->c, pict);
 	return ret;
+}
+
+struct backend_shadow_context *
+default_create_shadow_context(backend_t *backend_data attr_unused, double radius) {
+	auto ret =
+	    (struct backend_shadow_context *)gaussian_kernel_autodetect_deviation(radius);
+	sum_kernel_preprocess((conv *)ret);
+	return ret;
+}
+
+void default_destroy_shadow_context(backend_t *backend_data attr_unused,
+                                    struct backend_shadow_context *sctx) {
+	free_conv((conv *)sctx);
 }
 
 static struct conv **generate_box_blur_kernel(struct box_blur_args *args, int *kernel_count) {

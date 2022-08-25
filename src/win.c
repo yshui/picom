@@ -346,11 +346,10 @@ static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w
 }
 
 bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color c,
-                     struct conv *kernel) {
+                     struct backend_shadow_context *sctx) {
 	assert(!w->shadow_image);
 	assert(w->shadow);
-	w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, kernel, c.red,
-	                                        c.green, c.blue, c.alpha);
+	w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, sctx, c);
 	if (!w->shadow_image) {
 		log_error("Failed to bind shadow image, shadow will be disabled for "
 		          "%#010x (%s)",
@@ -556,7 +555,7 @@ void win_process_image_flags(session_t *ps, struct managed_win *w) {
 				                               .green = ps->o.shadow_green,
 				                               .blue = ps->o.shadow_blue,
 				                               .alpha = ps->o.shadow_opacity},
-				                ps->gaussian_map);
+				                ps->shadow_context);
 			}
 		}
 

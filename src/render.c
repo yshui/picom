@@ -649,8 +649,9 @@ static bool get_root_tile(session_t *ps) {
 static void paint_root(session_t *ps, const region_t *reg_paint) {
 	// If there is no root tile pixmap, try getting one.
 	// If that fails, give up.
-	if (!ps->root_tile_paint.pixmap && !get_root_tile(ps))
+	if (!ps->root_tile_paint.pixmap && !get_root_tile(ps)) {
 		return;
+	}
 
 	paint_region(ps, NULL, 0, 0, ps->root_width, ps->root_height, 1.0, reg_paint,
 	             ps->root_tile_paint.pict);
@@ -669,7 +670,7 @@ static bool win_build_shadow(session_t *ps, struct managed_win *w, double opacit
 	xcb_render_picture_t shadow_picture = XCB_NONE, shadow_picture_argb = XCB_NONE;
 	xcb_gcontext_t gc = XCB_NONE;
 
-	shadow_image = make_shadow(ps->c, ps->gaussian_map, opacity, width, height);
+	shadow_image = make_shadow(ps->c, (conv *)ps->shadow_context, opacity, width, height);
 	if (!shadow_image) {
 		log_error("failed to make shadow");
 		return XCB_NONE;
@@ -689,8 +690,9 @@ static bool win_build_shadow(session_t *ps, struct managed_win *w, double opacit
 	    ps->c, XCB_PICT_STANDARD_A_8, shadow_pixmap, 0, NULL);
 	shadow_picture_argb = x_create_picture_with_standard_and_pixmap(
 	    ps->c, XCB_PICT_STANDARD_ARGB_32, shadow_pixmap_argb, 0, NULL);
-	if (!shadow_picture || !shadow_picture_argb)
+	if (!shadow_picture || !shadow_picture_argb) {
 		goto shadow_picture_err;
+	}
 
 	gc = x_new_id(ps->c);
 	xcb_create_gc(ps->c, gc, shadow_pixmap, 0, NULL);

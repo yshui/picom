@@ -451,6 +451,11 @@ static void destroy_backend(session_t *ps) {
 			    ps->backend_data, ps->backend_blur_context);
 			ps->backend_blur_context = NULL;
 		}
+		if (ps->shadow_context) {
+			ps->backend_data->ops->destroy_shadow_context(ps->backend_data,
+			                                              ps->shadow_context);
+			ps->shadow_context = NULL;
+		}
 		ps->backend_data->ops->deinit(ps->backend_data);
 		ps->backend_data = NULL;
 	}
@@ -504,6 +509,12 @@ static bool initialize_backend(session_t *ps) {
 			return false;
 		}
 		ps->backend_data->ops = backend_list[ps->o.backend];
+		ps->shadow_context = ps->backend_data->ops->create_shadow_context(
+		    ps->backend_data, ps->o.shadow_radius);
+		if (!ps->shadow_context) {
+			log_fatal("Failed to initialize shadow context, aborting...");
+			goto err;
+		}
 
 		if (!initialize_blur(ps)) {
 			log_fatal("Failed to prepare for background blur, aborting...");
@@ -553,6 +564,11 @@ static bool initialize_backend(session_t *ps) {
 	// The old backends binds pixmap lazily, nothing to do here
 	return true;
 err:
+	if (ps->shadow_context) {
+		ps->backend_data->ops->destroy_shadow_context(ps->backend_data,
+		                                              ps->shadow_context);
+		ps->shadow_context = NULL;
+	}
 	ps->backend_data->ops->deinit(ps->backend_data);
 	ps->backend_data = NULL;
 	quit(ps);
@@ -1675,7 +1691,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .black_picture = XCB_NONE,
 	    .cshadow_picture = XCB_NONE,
 	    .white_picture = XCB_NONE,
-	    .gaussian_map = NULL,
+	    .shadow_context = NULL,
 
 #ifdef CONFIG_VSYNC_DRM
 	    .drm_fd = -1,
@@ -1929,8 +1945,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 	}
 
-	ps->gaussian_map = gaussian_kernel_autodetect_deviation(ps->o.shadow_radius);
-	sum_kernel_preprocess(ps->gaussian_map);
+	if (ps->o.legacy_backends) {
+		ps->shadow_context =
+		    (void *)gaussian_kernel_autodetect_deviation(ps->o.shadow_radius);
+		sum_kernel_preprocess((conv *)ps->shadow_context);
+	}
 
 	rebuild_shadow_exclude_reg(ps);
 
@@ -2408,7 +2427,9 @@ static void session_destroy(session_t *ps) {
 	// Flush all events
 	x_sync(ps->c);
 	ev_io_stop(ps->loop, &ps->xiow);
-	free_conv(ps->gaussian_map);
+	if (ps->o.legacy_backends) {
+		free_conv((conv *)ps->shadow_context);
+	}
 	destroy_atoms(ps->atoms);
 
 #ifdef DEBUG_XRC
