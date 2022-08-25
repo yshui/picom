@@ -289,6 +289,7 @@ struct managed_win {
 /// section
 void win_process_update_flags(session_t *ps, struct managed_win *w);
 void win_process_image_flags(session_t *ps, struct managed_win *w);
+bool win_bind_mask(struct backend_base *b, struct managed_win *w);
 /// Bind a shadow to the window, with color `c` and shadow kernel `kernel`
 bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color c,
                      struct backend_shadow_context *kernel);

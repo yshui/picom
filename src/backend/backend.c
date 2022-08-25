@@ -206,21 +206,11 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		auto reg_bound = win_get_bounding_shape_global_by_val(w);
 		auto reg_bound_no_corner =
 		    win_get_bounding_shape_global_without_corners_by_val(w);
-		region_t reg_bound_local;
-		pixman_region32_init(&reg_bound_local);
-		pixman_region32_copy(&reg_bound_local, &reg_bound);
-		pixman_region32_translate(&reg_bound_local, -w->g.x, -w->g.y);
 
 		if (!w->mask_image) {
 			// TODO(yshui) only allocate a mask if the window is shaped or has
 			// rounded corners.
-			w->mask_image = ps->backend_data->ops->make_mask(
-			    ps->backend_data,
-			    (geometry_t){.width = w->g.width, .height = w->g.height},
-			    &reg_bound_local);
-			ps->backend_data->ops->set_image_property(
-			    ps->backend_data, IMAGE_PROPERTY_CORNER_RADIUS, w->mask_image,
-			    (double[]){w->corner_radius});
+			win_bind_mask(ps->backend_data, w);
 		}
 
 		// The clip region for the current window, in global/target coordinates
@@ -455,8 +445,12 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			// reg_visible as a hint. Since window image data outside of the
 			// damage region won't be painted onto target
 			region_t reg_visible_local;
+			region_t reg_bound_local;
 			{
 				// The bounding shape, in window local coordinates
+				pixman_region32_init(&reg_bound_local);
+				pixman_region32_copy(&reg_bound_local, &reg_bound);
+				pixman_region32_translate(&reg_bound_local, -w->g.x, -w->g.y);
 
 				pixman_region32_init(&reg_visible_local);
 				pixman_region32_intersect(&reg_visible_local,
@@ -483,10 +477,10 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			                               &reg_paint_in_bound, &reg_visible);
 			ps->backend_data->ops->release_image(ps->backend_data, new_img);
 			pixman_region32_fini(&reg_visible_local);
+			pixman_region32_fini(&reg_bound_local);
 		}
 	skip:
 		pixman_region32_fini(&reg_bound);
-		pixman_region32_fini(&reg_bound_local);
 		pixman_region32_fini(&reg_bound_no_corner);
 		pixman_region32_fini(&reg_paint_in_bound);
 	}
