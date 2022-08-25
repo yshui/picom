@@ -482,16 +482,16 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 /// @param[in] nrects, rects   rectangles
 /// @param[in] image_dst       origin of the OpenGL texture, affect the calculated texture
 ///                            coordinates
+/// @param[in] extend_height   height of the drawing extent
 /// @param[in] texture_height  height of the OpenGL texture
 /// @param[in] root_height     height of the back buffer
 /// @param[in] y_inverted      whether the texture is y inverted
 /// @param[out] coord, indices output
-void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst, int texture_height,
-                      int root_height, bool y_inverted, GLint *coord, GLuint *indices) {
+void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst,
+                      int extent_height, int texture_height, int root_height,
+                      bool y_inverted, GLint *coord, GLuint *indices) {
 	image_dst.y = root_height - image_dst.y;
-	if (y_inverted) {
-		image_dst.y -= texture_height;
-	}
+	image_dst.y -= extent_height;
 
 	for (int i = 0; i < nrects; i++) {
 		// Y-flip. Note after this, crect.y1 > crect.y2
@@ -568,8 +568,8 @@ void gl_compose(backend_t *base, void *image_data, coord_t image_dst, void *mask
 	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
 	coord_t mask_offset = {.x = mask_dst.x - image_dst.x, .y = mask_dst.y - image_dst.y};
-	x_rect_to_coords(nrects, rects, image_dst, inner->height, gd->height,
-	                 inner->y_inverted, coord, indices);
+	x_rect_to_coords(nrects, rects, image_dst, inner->height, inner->height,
+	                 gd->height, inner->y_inverted, coord, indices);
 	_gl_compose(base, img, gd->back_fbo, mask, mask_offset, coord, indices, nrects);
 
 	free(indices);
@@ -1157,7 +1157,6 @@ enum device_status gl_device_status(backend_t *base) {
 	}
 	if (glGetGraphicsResetStatusARB() == GL_NO_ERROR) {
 		return DEVICE_STATUS_NORMAL;
-	} else {
-		return DEVICE_STATUS_RESETTING;
 	}
+	return DEVICE_STATUS_RESETTING;
 }

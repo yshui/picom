@@ -118,8 +118,9 @@ typedef struct session session_t;
 #define GL_PROG_MAIN_INIT                                                                \
 	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
 
-void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst, int texture_height,
-                      int root_height, bool y_inverted, GLint *coord, GLuint *indices);
+void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst,
+                      int extent_height, int texture_height, int root_height,
+                      bool y_inverted, GLint *coord, GLuint *indices);
 
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str);
 GLuint gl_create_program(const GLuint *const shaders, int nshaders);

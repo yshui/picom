@@ -322,16 +322,17 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
 
 	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	x_rect_to_coords(nrects, rects,
-	                 (coord_t){.x = extent_resized->x1, .y = extent_resized->y2},
-	                 bctx->fb_height, source_size.height, false, coord, indices);
+	auto extent_height = extent_resized->y2 - extent_resized->y1;
+	x_rect_to_coords(
+	    nrects, rects, (coord_t){.x = extent_resized->x1, .y = extent_resized->y1},
+	    extent_height, bctx->fb_height, source_size.height, false, coord, indices);
 
 	auto coord_resized = ccalloc(nrects_resized * 16, GLint);
 	auto indices_resized = ccalloc(nrects_resized * 6, GLuint);
 	x_rect_to_coords(nrects_resized, rects_resized,
-	                 (coord_t){.x = extent_resized->x1, .y = extent_resized->y2},
-	                 bctx->fb_height, bctx->fb_height, false, coord_resized,
-	                 indices_resized);
+	                 (coord_t){.x = extent_resized->x1, .y = extent_resized->y1},
+	                 extent_height, bctx->fb_height, bctx->fb_height, false,
+	                 coord_resized, indices_resized);
 	pixman_region32_fini(&reg_blur_resized);
 
 	GLuint vao[2];
