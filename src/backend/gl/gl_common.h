@@ -117,9 +117,13 @@ typedef struct session session_t;
 #define GL_PROG_MAIN_INIT                                                                \
 	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
 
+void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst, int texture_height,
+                      int root_height, bool y_inverted, GLint *coord, GLuint *indices);
+
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str);
 GLuint gl_create_program(const GLuint *const shaders, int nshaders);
 GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str);
+GLuint gl_create_program_from_strv(const char **vert_shaders, const char **frag_shaders);
 void *gl_create_window_shader(backend_t *backend_data, const char *source);
 void gl_destroy_window_shader(backend_t *backend_data, void *shader);
 uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
@@ -258,3 +262,13 @@ static inline bool gl_has_extension(const char *ext) {
 	log_info("Missing GL extension %s.", ext);
 	return false;
 }
+
+static const GLuint vert_coord_loc = 0;
+static const GLuint vert_in_texcoord_loc = 1;
+
+#define GLSL(version, ...) "#version " #version "\n" #__VA_ARGS__
+#define QUOTE(...) #__VA_ARGS__
+
+extern const char vertex_shader[], copy_with_mask_frag[], masking_glsl[], dummy_frag[],
+    fill_frag[], fill_vert[], interpolating_frag[], interpolating_vert[],
+    win_shader_glsl[], win_shader_default[], present_vertex_shader[];
