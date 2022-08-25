@@ -174,4 +174,14 @@ const char vertex_shader[] = GLSL(330,
 		texcoord = in_texcoord + texorig;
 	}
 );
+const char shadow_colorization_frag[] = GLSL(330,
+	uniform vec4 color;
+	uniform sampler2D tex;
+	in vec2 texcoord;
+	out vec4 out_color;
+	void main() {
+		vec4 c = texelFetch(tex, ivec2(texcoord), 0);
+		out_color = c.r * color;
+	}
+);
 // clang-format on

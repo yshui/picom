@@ -881,6 +881,17 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 	glUseProgram(0);
 
+	gd->shadow_shader.prog =
+	    gl_create_program_from_str(present_vertex_shader, shadow_colorization_frag);
+	gd->shadow_shader.uniform_color =
+	    glGetUniformLocationChecked(gd->shadow_shader.prog, "color");
+	pml = glGetUniformLocationChecked(gd->shadow_shader.prog, "projection");
+	glUseProgram(gd->shadow_shader.prog);
+	glUniform1i(glGetUniformLocationChecked(gd->shadow_shader.prog, "tex"), 0);
+	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	glUseProgram(0);
+	glBindFragDataLocation(gd->shadow_shader.prog, 0, "out_color");
+
 	gd->brightness_shader.prog =
 	    gl_create_program_from_str(interpolating_vert, interpolating_frag);
 	if (!gd->brightness_shader.prog) {
@@ -919,6 +930,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 		gd->is_nvidia = false;
 	}
 	gd->has_robustness = gl_has_extension("GL_ARB_robustness");
+	gl_check_err();
 
 	return true;
 }
@@ -1148,6 +1160,163 @@ bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
 	auto inner = (struct gl_texture *)img->inner;
 	inner->shader = args;
 	return true;
+}
+
+struct gl_shadow_context {
+	double radius;
+	void *blur_context;
+};
+
+struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double radius) {
+	auto ctx = ccalloc(1, struct gl_shadow_context);
+	ctx->radius = radius;
+
+	struct dual_kawase_blur_args args = {
+	    .size = (int)radius,
+	    .strength = 0,
+	};
+	ctx->blur_context = gl_create_blur_context(base, BLUR_METHOD_DUAL_KAWASE, &args);
+	return (struct backend_shadow_context *)ctx;
+}
+
+void gl_destroy_shadow_context(backend_t *base attr_unused, struct backend_shadow_context *ctx) {
+	auto ctx_ = (struct gl_shadow_context *)ctx;
+	gl_destroy_blur_context(base, (struct backend_blur_context *)ctx_->blur_context);
+	free(ctx_);
+}
+
+void *gl_shadow_from_mask(backend_t *base, void *mask,
+                          struct backend_shadow_context *sctx, struct color color) {
+	log_debug("Create shadow from mask");
+	auto gd = (struct gl_data *)base;
+	auto img = (struct backend_image *)mask;
+	auto inner = (struct gl_texture *)img->inner;
+	auto gsctx = (struct gl_shadow_context *)sctx;
+	int radius = (int)gsctx->radius;
+
+	auto new_inner = ccalloc(1, struct gl_texture);
+	new_inner->width = inner->width + radius * 2;
+	new_inner->height = inner->height + radius * 2;
+	new_inner->texture = gl_new_texture(GL_TEXTURE_2D);
+	new_inner->has_alpha = inner->has_alpha;
+	new_inner->y_inverted = false;
+	auto new_img = default_new_backend_image(new_inner->width, new_inner->height);
+	new_img->inner = (struct backend_image_inner_base *)new_inner;
+	new_img->inner->refcount = 1;
+
+	// Render the mask to a texture, so inversion and corner radius can be
+	// applied.
+	auto source_texture = gl_new_texture(GL_TEXTURE_2D);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, source_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, new_inner->width, new_inner->height, 0,
+	             GL_RED, GL_UNSIGNED_BYTE, NULL);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	GLuint fbo;
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       source_texture, 0);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	if (img->color_inverted) {
+		// If the mask is inverted, clear the source_texture to white, so the
+		// "outside" of the mask would be correct
+		glClearColor(1, 1, 1, 1);
+	} else {
+		glClearColor(0, 0, 0, 1);
+	}
+	glClear(GL_COLOR_BUFFER_BIT);
+	{
+		// clang-format off
+		// interleaved vertex coordinates and texture coordinates
+		GLint coords[] = {radius               , radius                , 0           ,             0,
+				  radius + inner->width, radius                , inner->width,             0,
+				  radius + inner->width, radius + inner->height, inner->width, inner->height,
+				  radius               , radius + inner->height, 0           , inner->height,};
+		// clang-format on
+		GLuint indices[] = {0, 1, 2, 2, 3, 0};
+		_gl_compose(base, mask, fbo, NULL, (coord_t){0}, coords, indices, 1);
+	}
+
+	gl_check_err();
+
+	glActiveTexture(GL_TEXTURE0);
+	auto tmp_texture = gl_new_texture(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, tmp_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, new_inner->width, new_inner->height, 0,
+	             GL_RED, GL_UNSIGNED_BYTE, NULL);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       tmp_texture, 0);
+
+	region_t reg_blur;
+	pixman_region32_init_rect(&reg_blur, 0, 0, (unsigned int)new_inner->width,
+	                          (unsigned int)new_inner->height);
+	// gl_blur expects reg_blur to be in X coordinate system (i.e. y flipped), but we
+	// are covering the whole texture so we don't need to worry about that.
+	gl_blur_impl(1.0, gsctx->blur_context, NULL, (coord_t){0}, &reg_blur, NULL,
+	             source_texture,
+	             (geometry_t){.width = new_inner->width, .height = new_inner->height},
+	             fbo, gd->default_mask_texture);
+	pixman_region32_fini(&reg_blur);
+
+	// Colorize the shadow with color.
+	log_debug("Colorize shadow");
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, new_inner->texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, new_inner->width, new_inner->height, 0,
+	             GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       new_inner->texture, 0);
+	glClearColor(0, 0, 0, 0);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	glBindTexture(GL_TEXTURE_2D, tmp_texture);
+	glUseProgram(gd->shadow_shader.prog);
+	glUniform4f(gd->shadow_shader.uniform_color, (GLfloat)color.red,
+	            (GLfloat)color.green, (GLfloat)color.blue, (GLfloat)color.alpha);
+
+	// clang-format off
+	GLuint indices[] = {0, 1, 2, 2, 3, 0};
+	GLint coord[] = {0                , 0                ,
+	                 new_inner->width , 0                ,
+	                 new_inner->width , new_inner->height,
+	                 0                , new_inner->height,};
+	// clang-format on
+
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
+	GLuint bo[2];
+	glGenBuffers(2, bo);
+	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 8, coord, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * 6, indices,
+	             GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray(vert_coord_loc);
+	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 2, NULL);
+
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
+
+	glDisableVertexAttribArray(vert_coord_loc);
+	glBindVertexArray(0);
+	glDeleteVertexArrays(1, &vao);
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glDeleteBuffers(2, bo);
+
+	glDeleteTextures(1, (GLuint[]){source_texture, tmp_texture});
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glDeleteFramebuffers(1, &fbo);
+	gl_check_err();
+	return new_img;
 }
 
 enum device_status gl_device_status(backend_t *base) {
