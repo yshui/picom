@@ -207,9 +207,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		auto reg_bound_no_corner =
 		    win_get_bounding_shape_global_without_corners_by_val(w);
 
-		if (!w->mask_image) {
-			// TODO(yshui) only allocate a mask if the window is shaped or has
-			// rounded corners.
+		if (!w->mask_image && (w->bounding_shaped || w->corner_radius != 0)) {
 			win_bind_mask(ps->backend_data, w);
 		}
 
