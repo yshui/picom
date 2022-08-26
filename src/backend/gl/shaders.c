@@ -71,7 +71,7 @@ const char masking_glsl[] = GLSL(330,
 			float dist = mask_rectangle_sdf(maskcoord - mask_size / 2.0f,
 			    inner_size / 2.0f) - mask_corner_radius;
 			if (dist > 0.0f) {
-				mask.r = (1.0f - clamp(dist, 0.0f, 1.0f));
+				mask.r *= (1.0f - clamp(dist, 0.0f, 1.0f));
 			}
 		}
 		if (mask_inverted) {
