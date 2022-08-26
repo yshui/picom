@@ -351,6 +351,9 @@ static GLuint gl_average_texture_color(backend_t *base, struct backend_image *im
 static void _gl_compose(backend_t *base, struct backend_image *img, GLuint target,
                         struct backend_image *mask, coord_t mask_offset, GLint *coord,
                         GLuint *indices, int nrects) {
+	// FIXME(yshui) breaks when `mask` and `img` doesn't have the same y_inverted
+	//              value. but we don't ever hit this problem because all of our
+	//              images and masks are y_inverted.
 	auto gd = (struct gl_data *)base;
 	auto inner = (struct gl_texture *)img->inner;
 	auto mask_texture =
@@ -1199,7 +1202,7 @@ void *gl_shadow_from_mask(backend_t *base, void *mask,
 	new_inner->height = inner->height + radius * 2;
 	new_inner->texture = gl_new_texture(GL_TEXTURE_2D);
 	new_inner->has_alpha = inner->has_alpha;
-	new_inner->y_inverted = false;
+	new_inner->y_inverted = true;
 	auto new_img = default_new_backend_image(new_inner->width, new_inner->height);
 	new_img->inner = (struct backend_image_inner_base *)new_inner;
 	new_img->inner->refcount = 1;
