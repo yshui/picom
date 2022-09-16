@@ -16,6 +16,8 @@
 typedef struct session session_t;
 struct managed_win;
 
+struct backend_shadow_context;
+
 struct ev_loop;
 struct backend_operations;
 
@@ -213,10 +215,31 @@ struct backend_operations {
 	void *(*bind_pixmap)(backend_t *backend_data, xcb_pixmap_t pixmap,
 	                     struct xvisual_info fmt, bool owned);
 
-	/// Create a shadow image based on the parameters
+	/// Create a shadow context for rendering shadows with radius `radius`.
+	/// Default implementation: default_backend_create_shadow_context
+	struct backend_shadow_context *(*create_shadow_context)(backend_t *backend_data,
+	                                                        double radius);
+	/// Destroy a shadow context
+	/// Default implementation: default_backend_destroy_shadow_context
+	void (*destroy_shadow_context)(backend_t *backend_data,
+	                               struct backend_shadow_context *ctx);
+
+	/// Create a shadow image based on the parameters. Resulting image should have a
+	/// size of `width + radisu * 2` x `height + radius * 2`. Radius is set when the
+	/// shadow context is created.
 	/// Default implementation: default_backend_render_shadow
+	///
+	/// Required.
 	void *(*render_shadow)(backend_t *backend_data, int width, int height,
-	                       const conv *kernel, double r, double g, double b, double a);
+	                       struct backend_shadow_context *ctx, struct color color);
+
+	/// Create a shadow by blurring a mask. `size` is the size of the blur. The
+	/// backend can use whichever blur method is the fastest. The shadow produced
+	/// shoule be consistent with `render_shadow`.
+	///
+	/// Optional.
+	void *(*shadow_from_mask)(backend_t *backend_data, void *mask,
+	                          struct backend_shadow_context *ctx, struct color color);
 
 	/// Create a mask image from region `reg`. This region can be used to create
 	/// shadow, or used as a mask for composing. When used as a mask, it should mask

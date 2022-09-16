@@ -300,8 +300,8 @@ typedef struct session {
 	xcb_render_picture_t cshadow_picture;
 	/// 1x1 white Picture.
 	xcb_render_picture_t white_picture;
-	/// Gaussian map of shadow.
-	struct conv *gaussian_map;
+	/// Backend shadow context.
+	struct backend_shadow_context *shadow_context;
 	// for shadow precomputation
 	/// A region in which shadow is not painted on.
 	region_t shadow_exclude_reg;

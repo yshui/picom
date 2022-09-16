@@ -12,6 +12,7 @@
 
 #define CASESTRRET(s)                                                                    \
 	case s: return #s
+struct gl_blur_context;
 
 static inline GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 	auto ret = glGetUniformLocation(p, name);
@@ -51,6 +52,11 @@ typedef struct {
 typedef struct {
 	GLuint prog;
 } gl_brightness_shader_t;
+
+typedef struct {
+	GLuint prog;
+	GLint uniform_color;
+} gl_shadow_shader_t;
 
 // Program and uniforms for blur shader
 typedef struct {
@@ -97,6 +103,7 @@ struct gl_data {
 	gl_win_shader_t *default_shader;
 	gl_brightness_shader_t brightness_shader;
 	gl_fill_shader_t fill_shader;
+	gl_shadow_shader_t shadow_shader;
 	GLuint back_texture, back_fbo;
 	GLuint present_prog;
 
@@ -117,9 +124,14 @@ typedef struct session session_t;
 #define GL_PROG_MAIN_INIT                                                                \
 	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
 
+void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst,
+                      int extent_height, int texture_height, int root_height,
+                      bool y_inverted, GLint *coord, GLuint *indices);
+
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str);
 GLuint gl_create_program(const GLuint *const shaders, int nshaders);
 GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str);
+GLuint gl_create_program_from_strv(const char **vert_shaders, const char **frag_shaders);
 void *gl_create_window_shader(backend_t *backend_data, const char *source);
 void gl_destroy_window_shader(backend_t *backend_data, void *shader);
 uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
@@ -149,8 +161,16 @@ void *gl_clone(backend_t *base, const void *image_data, const region_t *reg_visi
 
 bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mask_dst,
              const region_t *reg_blur, const region_t *reg_visible);
+bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
+                  coord_t mask_dst, const region_t *reg_blur,
+                  const region_t *reg_visible attr_unused, GLuint source_texture,
+                  geometry_t source_size, GLuint target_fbo, GLuint default_mask);
 void *gl_create_blur_context(backend_t *base, enum blur_method, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
+struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double radius);
+void gl_destroy_shadow_context(backend_t *base attr_unused, struct backend_shadow_context *ctx);
+void *gl_shadow_from_mask(backend_t *base, void *mask,
+                          struct backend_shadow_context *sctx, struct color color);
 void gl_get_blur_size(void *blur_context, int *width, int *height);
 
 void gl_fill(backend_t *base, struct color, const region_t *clip);
@@ -258,3 +278,13 @@ static inline bool gl_has_extension(const char *ext) {
 	log_info("Missing GL extension %s.", ext);
 	return false;
 }
+
+static const GLuint vert_coord_loc = 0;
+static const GLuint vert_in_texcoord_loc = 1;
+
+#define GLSL(version, ...) "#version " #version "\n" #__VA_ARGS__
+#define QUOTE(...) #__VA_ARGS__
+
+extern const char vertex_shader[], copy_with_mask_frag[], masking_glsl[], dummy_frag[],
+    fill_frag[], fill_vert[], interpolating_frag[], interpolating_vert[], win_shader_glsl[],
+    win_shader_default[], present_vertex_shader[], shadow_colorization_frag[];

@@ -7,6 +7,8 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
+#include <backend/backend.h>
+
 #include "uthash_extra.h"
 
 // FIXME shouldn't need this
@@ -287,9 +289,10 @@ struct managed_win {
 /// section
 void win_process_update_flags(session_t *ps, struct managed_win *w);
 void win_process_image_flags(session_t *ps, struct managed_win *w);
+bool win_bind_mask(struct backend_base *b, struct managed_win *w);
 /// Bind a shadow to the window, with color `c` and shadow kernel `kernel`
 bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color c,
-                     struct conv *kernel);
+                     struct backend_shadow_context *kernel);
 
 /// Start the unmap of a window. We cannot unmap immediately since we might need to fade
 /// the window out.
