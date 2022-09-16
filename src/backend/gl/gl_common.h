@@ -59,6 +59,11 @@ typedef struct {
 	GLint uniform_opacity;
 	GLint texorig_loc;
 	GLint scale_loc;
+
+	GLint uniform_mask_tex;
+	GLint uniform_mask_offset;
+	GLint uniform_mask_corner_radius;
+	GLint uniform_mask_inverted;
 } gl_blur_shader_t;
 
 typedef struct {
@@ -142,8 +147,8 @@ void *gl_make_mask(backend_t *base, geometry_t size, const region_t *reg);
 
 void *gl_clone(backend_t *base, const void *image_data, const region_t *reg_visible);
 
-bool gl_blur(backend_t *base, double opacity, void *, const region_t *reg_blur,
-             const region_t *reg_visible);
+bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mask_dst,
+             const region_t *reg_blur, const region_t *reg_visible);
 void *gl_create_blur_context(backend_t *base, enum blur_method, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
 void gl_get_blur_size(void *blur_context, int *width, int *height);
