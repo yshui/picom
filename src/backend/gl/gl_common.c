@@ -385,9 +385,12 @@ static GLuint gl_average_texture_color(backend_t *base, struct backend_image *im
  * @param reg_visible ignored
  */
 static void _gl_compose(backend_t *base, struct backend_image *img, GLuint target,
-                        GLint *coord, GLuint *indices, int nrects) {
+                        struct backend_image *mask, coord_t mask_offset, GLint *coord,
+                        GLuint *indices, int nrects) {
 	auto gd = (struct gl_data *)base;
 	auto inner = (struct gl_texture *)img->inner;
+	auto mask_texture =
+	    mask ? ((struct gl_texture *)mask->inner)->texture : gd->default_mask_texture;
 	if (!img || !inner->texture) {
 		log_error("Missing texture.");
 		return;
@@ -438,8 +441,23 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 		struct timespec ts;
 		clock_gettime(CLOCK_MONOTONIC, &ts);
 		glUniform1f(win_shader->uniform_time,
-		            (float)ts.tv_sec * 1000.0f + (float)ts.tv_nsec / 1.0e6f);
+		            (float)ts.tv_sec * 1000.0F + (float)ts.tv_nsec / 1.0e6F);
 	}
+
+	glUniform1i(win_shader->uniform_mask_tex, 2);
+	glUniform2f(win_shader->uniform_mask_offset, (float)mask_offset.x,
+	            (float)mask_offset.y);
+	if (mask != NULL) {
+		glUniform1i(win_shader->uniform_mask_inverted, mask->color_inverted);
+		glUniform1f(win_shader->uniform_mask_corner_radius,
+		            (GLfloat)mask->corner_radius);
+	} else {
+		glUniform1i(win_shader->uniform_mask_inverted, 0);
+		glUniform1f(win_shader->uniform_mask_corner_radius, 0);
+	}
+
+	glActiveTexture(GL_TEXTURE2);
+	glBindTexture(GL_TEXTURE_2D, mask_texture);
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d\n",
 	//          x, y, width, height, dx, dy, ptex->width, ptex->height, z);
@@ -500,11 +518,11 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 /// @param[in] y_inverted      whether the texture is y inverted
 /// @param[out] coord, indices output
 static void
-x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int texture_height,
+x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst, int texture_height,
                  int root_height, bool y_inverted, GLint *coord, GLuint *indices) {
-	dst_y = root_height - dst_y;
+	image_dst.y = root_height - image_dst.y;
 	if (y_inverted) {
-		dst_y -= texture_height;
+		image_dst.y -= texture_height;
 	}
 
 	for (int i = 0; i < nrects; i++) {
@@ -515,7 +533,8 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 
 		// Calculate texture coordinates
 		// (texture_x1, texture_y1), texture coord for the _bottom left_ corner
-		GLint texture_x1 = crect.x1 - dst_x, texture_y1 = crect.y2 - dst_y,
+		GLint texture_x1 = crect.x1 - image_dst.x,
+		      texture_y1 = crect.y2 - image_dst.y,
 		      texture_x2 = texture_x1 + (crect.x2 - crect.x1),
 		      texture_y2 = texture_y1 + (crect.y1 - crect.y2);
 
@@ -555,8 +574,9 @@ x_rect_to_coords(int nrects, const rect_t *rects, int dst_x, int dst_y, int text
 }
 
 // TODO(yshui) make use of reg_visible
-void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
-                const region_t *reg_tgt, const region_t *reg_visible attr_unused) {
+void gl_compose(backend_t *base, void *image_data, coord_t image_dst, void *mask,
+                coord_t mask_dst, const region_t *reg_tgt,
+                const region_t *reg_visible attr_unused) {
 	auto gd = (struct gl_data *)base;
 	struct backend_image *img = image_data;
 	auto inner = (struct gl_texture *)img->inner;
@@ -579,9 +599,10 @@ void gl_compose(backend_t *base, void *image_data, int dst_x, int dst_y,
 
 	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	x_rect_to_coords(nrects, rects, dst_x, dst_y, inner->height, gd->height,
+	coord_t mask_offset = {.x = mask_dst.x - image_dst.x, .y = mask_dst.y - image_dst.y};
+	x_rect_to_coords(nrects, rects, image_dst, inner->height, gd->height,
 	                 inner->y_inverted, coord, indices);
-	_gl_compose(base, img, gd->back_fbo, coord, indices, nrects);
+	_gl_compose(base, img, gd->back_fbo, mask, mask_offset, coord, indices, nrects);
 
 	free(indices);
 	free(coord);
@@ -837,14 +858,16 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, const region_t *reg_blu
 
 	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	x_rect_to_coords(nrects, rects, extent_resized->x1, extent_resized->y2,
+	x_rect_to_coords(nrects, rects,
+	                 (coord_t){.x = extent_resized->x1, .y = extent_resized->y2},
 	                 bctx->fb_height, gd->height, false, coord, indices);
 
 	auto coord_resized = ccalloc(nrects_resized * 16, GLint);
 	auto indices_resized = ccalloc(nrects_resized * 6, GLuint);
-	x_rect_to_coords(nrects_resized, rects_resized, extent_resized->x1,
-	                 extent_resized->y2, bctx->fb_height, bctx->fb_height, false,
-	                 coord_resized, indices_resized);
+	x_rect_to_coords(nrects_resized, rects_resized,
+	                 (coord_t){.x = extent_resized->x1, .y = extent_resized->y2},
+	                 bctx->fb_height, bctx->fb_height, false, coord_resized,
+	                 indices_resized);
 	pixman_region32_fini(&reg_blur_resized);
 
 	GLuint vao[2];
@@ -942,6 +965,11 @@ static bool gl_win_shader_from_stringv(const char **vshader_strv,
 	bind_uniform(ret, corner_radius);
 	bind_uniform(ret, border_width);
 	bind_uniform(ret, time);
+
+	bind_uniform(ret, mask_tex);
+	bind_uniform(ret, mask_offset);
+	bind_uniform(ret, mask_inverted);
+	bind_uniform(ret, mask_corner_radius);
 
 	gl_check_err();
 
@@ -1082,9 +1110,45 @@ void gl_fill(backend_t *base, struct color c, const region_t *clip) {
 	return _gl_fill(base, c, clip, gd->back_fbo, gd->height, true);
 }
 
+void *gl_make_mask(backend_t *base, geometry_t size, const region_t *reg) {
+	auto tex = ccalloc(1, struct gl_texture);
+	auto img = default_new_backend_image(size.width, size.height);
+	tex->width = size.width;
+	tex->height = size.height;
+	tex->texture = gl_new_texture(GL_TEXTURE_2D);
+	tex->has_alpha = false;
+	tex->y_inverted = true;
+	img->inner = (struct backend_image_inner_base *)tex;
+	img->inner->refcount = 1;
+
+	glBindTexture(GL_TEXTURE_2D, tex->texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, size.width, size.height, 0, GL_RED,
+	             GL_UNSIGNED_BYTE, NULL);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	GLuint fbo;
+	glBlendFunc(GL_ONE, GL_ZERO);
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       tex->texture, 0);
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	glClearColor(0, 0, 0, 1);
+	glClear(GL_COLOR_BUFFER_BIT);
+	_gl_fill(base, (struct color){1, 1, 1, 1}, reg, fbo, size.height, false);
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glDeleteFramebuffers(1, &fbo);
+	return img;
+}
+
 static void gl_release_image_inner(backend_t *base, struct gl_texture *inner) {
 	auto gd = (struct gl_data *)base;
-	gd->release_user_data(base, inner);
+	if (inner->user_data) {
+		gd->release_user_data(base, inner);
+	}
 	assert(inner->user_data == NULL);
 
 	glDeleteTextures(1, &inner->texture);
@@ -1579,6 +1643,11 @@ const char *win_shader_glsl = GLSL(330,
 	uniform sampler2D tex;
 	uniform sampler2D brightness;
 	uniform float max_brightness;
+
+	uniform sampler2D mask_tex;
+	uniform vec2 mask_offset;
+	uniform float mask_corner_radius;
+	uniform bool mask_inverted;
 	// Signed distance field for rectangle center at (0, 0), with size of
 	// half_size * 2
 	float rectangle_sdf(vec2 point, vec2 half_size) {
@@ -1627,7 +1696,21 @@ const char *win_shader_glsl = GLSL(330,
 	vec4 window_shader();
 
 	void main() {
-		gl_FragColor = window_shader();
+		vec2 mask_size = textureSize(mask_tex, 0);
+		vec2 maskcoord = texcoord - mask_offset;
+		vec4 mask = texture2D(mask_tex, maskcoord / mask_size);
+		if (mask_corner_radius != 0) {
+			vec2 inner_size = mask_size - vec2(mask_corner_radius) * 2.0f;
+			float dist = rectangle_sdf(maskcoord - mask_size / 2.0f,
+			    inner_size / 2.0f) - mask_corner_radius;
+			if (dist > 0.0f) {
+				mask.r = (1.0f - clamp(dist, 0.0f, 1.0f));
+			}
+		}
+		if (mask_inverted) {
+			mask.rgb = 1.0 - mask.rgb;
+		}
+		gl_FragColor = window_shader() * mask.r;
 	}
 );
 
@@ -1730,6 +1813,17 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	gd->default_mask_texture = gl_new_texture(GL_TEXTURE_2D);
+	if (!gd->default_mask_texture) {
+		log_error("Failed to generate a default mask texture");
+		return false;
+	}
+
+	glBindTexture(GL_TEXTURE_2D, gd->default_mask_texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, 1, 1, 0, GL_RED, GL_UNSIGNED_BYTE,
+	             (GLbyte[]){'\xff'});
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	// Initialize shaders

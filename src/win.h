@@ -104,6 +104,7 @@ struct managed_win {
 	/// `state` is not UNMAPPED
 	void *win_image;
 	void *shadow_image;
+	void *mask_image;
 	/// Pointer to the next higher window to paint.
 	struct managed_win *prev_trans;
 	/// Number of windows above this window
