@@ -1174,11 +1174,11 @@ struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double 
 	auto ctx = ccalloc(1, struct gl_shadow_context);
 	ctx->radius = radius;
 
-	struct dual_kawase_blur_args args = {
+	struct gaussian_blur_args args = {
 	    .size = (int)radius,
-	    .strength = 0,
+	    .deviation = gaussian_kernel_std_for_size(radius, 0.5 / 256.0),
 	};
-	ctx->blur_context = gl_create_blur_context(base, BLUR_METHOD_DUAL_KAWASE, &args);
+	ctx->blur_context = gl_create_blur_context(base, BLUR_METHOD_GAUSSIAN, &args);
 	return (struct backend_shadow_context *)ctx;
 }
 

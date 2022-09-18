@@ -103,7 +103,7 @@ static inline double estimate_first_row_sum(double size, double r) {
 /// Pick a suitable gaussian kernel standard deviation for a given kernel size. The
 /// returned radius is the maximum possible radius (<= size*2) that satisfies no sum of
 /// the rows in the kernel are less than `row_limit` (up to certain precision).
-static inline double gaussian_kernel_std_for_size(double size, double row_limit) {
+double gaussian_kernel_std_for_size(double size, double row_limit) {
 	assert(size > 0);
 	if (row_limit >= 1.0 / 2.0 / size) {
 		return size * 2;
