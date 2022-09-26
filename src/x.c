@@ -628,6 +628,8 @@ bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
 	// prototype, we need only one fence per screen, but let's stay a bit
 	// cautious right now
 
+	struct timespec ts = {0};
+	clock_gettime(CLOCK_MONOTONIC, &ts);
 	auto e = xcb_request_check(c, xcb_sync_trigger_fence_checked(c, f));
 	if (e) {
 		log_error_x_error(e, "Failed to trigger the fence");
@@ -645,6 +647,10 @@ bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
 		log_error_x_error(e, "Failed to reset the fence");
 		goto err;
 	}
+	struct timespec ts2 = {0};
+	clock_gettime(CLOCK_MONOTONIC, &ts2);
+	log_warn("x_fence_sync: %lf ms", (double)(ts2.tv_sec - ts.tv_sec) +
+	                                     (double)(ts2.tv_nsec - ts.tv_nsec) / 1e9);
 	return true;
 
 err:
