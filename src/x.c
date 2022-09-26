@@ -649,8 +649,8 @@ bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
 	}
 	struct timespec ts2 = {0};
 	clock_gettime(CLOCK_MONOTONIC, &ts2);
-	log_warn("x_fence_sync: %lf ms", (double)(ts2.tv_sec - ts.tv_sec) +
-	                                     (double)(ts2.tv_nsec - ts.tv_nsec) / 1e9);
+	log_warn("x_fence_sync: %lf s", (double)(ts2.tv_sec - ts.tv_sec) +
+	                                    (double)(ts2.tv_nsec - ts.tv_nsec) / 1e9);
 	return true;
 
 err:
