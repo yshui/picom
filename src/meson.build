@@ -59,7 +59,7 @@ endif
 
 if get_option('opengl')
 	cflags += ['-DCONFIG_OPENGL', '-DGL_GLEXT_PROTOTYPES']
-	deps += [dependency('gl', required: true)]
+	deps += [dependency('gl', required: true), dependency('egl', required: true)]
 	srcs += [ 'opengl.c' ]
 endif
 

@@ -36,6 +36,7 @@ enum backend {
 	BKEND_GLX,
 	BKEND_XR_GLX_HYBRID,
 	BKEND_DUMMY,
+	BKEND_EGL,
 	NUM_BKEND,
 };
 
