@@ -904,6 +904,15 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		log_warn("--monitor-repaint has no effect when backend is not xrender");
 	}
 
+	if (opt->backend == BKEND_EGL) {
+		if (opt->legacy_backends) {
+			log_error("The egl backend is not supported with "
+			          "--legacy-backends");
+			return false;
+		}
+		log_warn("The egl backend is still experimental, use with care.");
+	}
+
 	if (!opt->legacy_backends && !backend_list[opt->backend]) {
 		log_error("Backend \"%s\" is only available as part of the legacy "
 		          "backends.",
