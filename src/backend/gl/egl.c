@@ -66,10 +66,20 @@ void egl_deinit(backend_t *base) {
 	gl_deinit(&gd->gl);
 
 	// Destroy GLX context
-	if (gd->ctx) {
+	if (gd->ctx != EGL_NO_CONTEXT) {
 		eglMakeCurrent(gd->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 		eglDestroyContext(gd->display, gd->ctx);
-		gd->ctx = 0;
+		gd->ctx = EGL_NO_CONTEXT;
+	}
+
+	if (gd->target_win != EGL_NO_SURFACE) {
+		eglDestroySurface(gd->display, gd->target_win);
+		gd->target_win = EGL_NO_SURFACE;
+	}
+
+	if (gd->display != EGL_NO_DISPLAY) {
+		eglTerminate(gd->display);
+		gd->display = EGL_NO_DISPLAY;
 	}
 
 	free(gd);
@@ -173,7 +183,7 @@ static backend_t *egl_init(session_t *ps) {
 	}
 
 	gd->ctx = eglCreateContext(gd->display, target_cfg, NULL, NULL);
-	if (!gd->ctx) {
+	if (gd->ctx == EGL_NO_CONTEXT) {
 		log_error("Failed to get GLX context.");
 		goto end;
 	}
