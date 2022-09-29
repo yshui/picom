@@ -88,6 +88,7 @@ const char *const BACKEND_STRS[] = {[BKEND_XRENDER] = "xrender",
                                     [BKEND_GLX] = "glx",
                                     [BKEND_XR_GLX_HYBRID] = "xr_glx_hybrid",
                                     [BKEND_DUMMY] = "dummy",
+                                    [BKEND_EGL] = "egl",
                                     NULL};
 // clang-format on
 

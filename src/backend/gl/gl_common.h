@@ -97,6 +97,8 @@ struct gl_data {
 	bool is_nvidia;
 	// If ARB_robustness extension is present
 	bool has_robustness;
+	// If EXT_EGL_image_storage extension is present
+	bool has_egl_image_storage;
 	// Height and width of the root window
 	int height, width;
 	// Hash-table of window shaders

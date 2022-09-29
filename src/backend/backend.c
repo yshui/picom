@@ -16,6 +16,7 @@
 extern struct backend_operations xrender_ops, dummy_ops;
 #ifdef CONFIG_OPENGL
 extern struct backend_operations glx_ops;
+extern struct backend_operations egl_ops;
 #endif
 
 struct backend_operations *backend_list[NUM_BKEND] = {
@@ -23,6 +24,7 @@ struct backend_operations *backend_list[NUM_BKEND] = {
     [BKEND_DUMMY] = &dummy_ops,
 #ifdef CONFIG_OPENGL
     [BKEND_GLX] = &glx_ops,
+    [BKEND_EGL] = &egl_ops,
 #endif
 };
 
