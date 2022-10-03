@@ -71,6 +71,36 @@ static void usage(const char *argv0, int ret) {
 	    "-F\n"
 	    "  Equals to -f. Deprecated.\n"
 	    "\n"
+	    "--animations\n"
+	    "  Run animations for window geometry changes (movement and scaling).\n"
+	    "\n"
+	    "--animation-for-open-window\n"
+	    "  Which animation to run when opening a window.\n"
+	    "  Must be one of `none`, `fly-in`, `zoom`,\n"
+	    "  `slide-down`, `slide-up`, `slide-left`, `slide-right`\n"
+	    "  (default: none).\n"
+	    "\n"
+	    "--animation-for-transient-window\n"
+	    "  Which animation to run when opening a transient window.\n"
+	    "  Must be one of `none`, `fly-in`, `zoom`,\n"
+	    "  `slide-down`, `slide-up`, `slide-left`, `slide-right`\n"
+	    "  (default: none).\n"
+	    "\n"
+	    "--animation-stiffness\n"
+	    "  Stiffness (a.k.a. tension) parameter for animation (default: 200.0).\n"
+	    "\n"
+	    "--animation-dampening\n"
+	    "  Dampening (a.k.a. friction) parameter for animation (default: 25.0).\n"
+	    "\n"
+	    "--animation-window-mass\n"
+	    "  Mass parameter for animation (default: 1.0).\n"
+	    "\n"
+	    "--animation-clamping\n"
+	    "  Whether to clamp animations (default: true)\n"
+	    "\n"
+	    "--animation-exclude condition\n"
+	    "  Exclude conditions for animation.\n"
+	    "\n"
 	    "-i opacity\n"
 	    "  Opacity of inactive windows. (0.1 - 1.0)\n"
 	    "\n"
@@ -466,6 +496,14 @@ static const struct option longopts[] = {
     {"diagnostics", no_argument, NULL, 801},
     {"debug-mode", no_argument, NULL, 802},
     {"no-ewmh-fullscreen", no_argument, NULL, 803},
+    {"animations", no_argument, NULL, 804},
+    {"animation-stiffness-in-tag", required_argument, NULL, 805},
+    {"animation-stiffness-tag-change", required_argument, NULL, 806},
+    {"animation-dampening", required_argument, NULL, 807},
+    {"animation-window-mass", required_argument, NULL, 808},
+    {"animation-clamping", no_argument, NULL, 809},
+    {"animation-for-open-window", required_argument, NULL, 810},
+    {"animation-for-transient-window", required_argument, NULL, 811},
     // Must terminate with a NULL entry
     {NULL, 0, NULL, 0},
 };
@@ -892,6 +930,52 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		P_CASEBOOL(802, debug_mode);
 		P_CASEBOOL(803, no_ewmh_fullscreen);
+		P_CASEBOOL(804, animations);
+		case 805:
+			// --animation-stiffness
+			opt->animation_stiffness = atof(optarg);
+			break;
+		case 806:
+			// --animation-stiffness-for-tags
+			opt->animation_stiffness_tag_change = atof(optarg);
+			break;
+		case 807:
+			// --animation-dampening
+			opt->animation_dampening = atof(optarg);
+			break;
+		case 808:
+			// --animation-window-masss
+			opt->animation_window_mass = atof(optarg);
+			break;
+		case 809:
+			// --animation-clamping
+			opt->animation_clamping = true;
+			break;
+		case 810: {
+			// --animation-for-open-window
+			enum open_window_animation animation = parse_open_window_animation(optarg);
+			if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+				log_warn("Invalid open-window animation %s, ignoring.", optarg);
+			} else {
+				opt->animation_for_open_window = animation;
+			}
+			break;
+		}
+		case 811: {
+			// --animation-for-transient-window
+			enum open_window_animation animation = parse_open_window_animation(optarg);
+			if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+				log_warn("Invalid transient-window animation %s, ignoring.", optarg);
+			} else {
+				opt->animation_for_transient_window = animation;
+			}
+			break;
+		}
+		case 812: {
+			// --animation-exclude
+			condlst_add(&opt->animation_blacklist, optarg);
+			break;
+		}
 		default: usage(argv[0], 1); break;
 #undef P_CASEBOOL
 		}
