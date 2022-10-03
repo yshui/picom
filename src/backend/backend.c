@@ -56,6 +56,58 @@ region_t get_damage(session_t *ps, bool all_damage) {
 	return region;
 }
 
+static void process_window_for_painting(session_t *ps, struct managed_win *w,
+                                        void *win_image, double additional_alpha,
+                                        region_t *reg_bound, region_t *reg_visible,
+                                        region_t *reg_paint, region_t *reg_paint_in_bound) {
+	// For window image processing, we don't have to limit the process
+	// region to damage for correctness. (see <damager-note> for
+	// details)
+
+	// The visible region, in window local coordinates Although we
+	// don't limit process region to damage, we provide that info in
+	// reg_visible as a hint. Since window image data outside of the
+	// damage region won't be painted onto target
+	coord_t window_coord = {.x = w->g.x, .y = w->g.y};
+	coord_t dest_coord = {.x = w->g.x + w->widthb, .y = w->g.y + w->heightb};
+
+	region_t reg_visible_local;
+	region_t reg_bound_local;
+	{
+		// The bounding shape, in window local coordinates
+		pixman_region32_init(&reg_bound_local);
+		pixman_region32_copy(&reg_bound_local, reg_bound);
+		pixman_region32_translate(&reg_bound_local, -w->g.x, -w->g.y);
+
+		pixman_region32_init(&reg_visible_local);
+		pixman_region32_intersect(&reg_visible_local, reg_visible, reg_paint);
+		pixman_region32_translate(&reg_visible_local, -w->g.x, -w->g.y);
+		// Data outside of the bounding shape won't be visible,
+		// but it is not necessary to limit the image operations
+		// to the bounding shape yet. So pass that as the visible
+		// region, not the clip region.
+		pixman_region32_intersect(&reg_visible_local, &reg_visible_local,
+		                          &reg_bound_local);
+	}
+
+	auto new_img = ps->backend_data->ops->clone_image(ps->backend_data, win_image,
+	                                                  &reg_visible_local);
+	auto reg_frame = win_get_region_frame_local_by_val(w);
+	double alpha = additional_alpha * w->opacity;
+	ps->backend_data->ops->set_image_property(
+	    ps->backend_data, IMAGE_PROPERTY_OPACITY, new_img, &alpha);
+	ps->backend_data->ops->image_op(ps->backend_data, IMAGE_OP_APPLY_ALPHA, new_img,
+	                                &reg_frame, &reg_visible_local,
+	                                (double[]){w->frame_opacity});
+	pixman_region32_fini(&reg_frame);
+	ps->backend_data->ops->compose(ps->backend_data, new_img,
+			       window_coord, NULL, dest_coord,
+			       reg_paint_in_bound, reg_visible, true);
+	ps->backend_data->ops->release_image(ps->backend_data, new_img);
+	pixman_region32_fini(&reg_visible_local);
+	pixman_region32_fini(&reg_bound_local);
+}
+
 void handle_device_reset(session_t *ps) {
 	log_error("Device reset detected");
 	// Wait for reset to complete
@@ -210,8 +262,8 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 
 	if (ps->root_image) {
 		ps->backend_data->ops->compose(ps->backend_data, ps->root_image,
-		                               (coord_t){0}, NULL, (coord_t){0},
-		                               &reg_paint, &reg_visible);
+		                               (coord_t){0}, NULL, (coord_t){.x = ps->root_width, .y = ps->root_height},
+		                               &reg_paint, &reg_visible, true);
 	} else {
 		ps->backend_data->ops->fill(ps->backend_data, (struct color){0, 0, 0, 1},
 		                            &reg_paint);
@@ -262,6 +314,7 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 		 * option */
 		auto real_win_mode = w->mode;
 		coord_t window_coord = {.x = w->g.x, .y = w->g.y};
+		coord_t dest_coord = {.x = w->g.x + w->widthb, .y = w->g.y + w->heightb};
 
 		if (w->blur_background &&
 		    (ps->o.force_win_blend || real_win_mode == WMODE_TRANS ||
@@ -399,7 +452,7 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 			}
 			ps->backend_data->ops->compose(
 			    ps->backend_data, w->shadow_image, shadow_coord,
-			    inverted_mask, window_coord, &reg_shadow, &reg_visible);
+			    inverted_mask, window_coord, &reg_shadow, &reg_visible, false);
 			if (inverted_mask) {
 				ps->backend_data->ops->set_image_property(
 				    ps->backend_data, IMAGE_PROPERTY_INVERTED,
@@ -443,6 +496,17 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 				ps->backend_data->ops->set_image_property(
 				    ps->backend_data, IMAGE_PROPERTY_BORDER_WIDTH,
 				    w->win_image, &border_width);
+				if (w->old_win_image) {
+					// TODO(dccsillag): explain why the following is
+					// "necessary"
+					double zero = 0.0;
+					ps->backend_data->ops->set_image_property(
+					    ps->backend_data, IMAGE_PROPERTY_BORDER_WIDTH,
+					    w->old_win_image, &zero);
+					ps->backend_data->ops->set_image_property(
+					    ps->backend_data, IMAGE_PROPERTY_CORNER_RADIUS,
+					    w->old_win_image, &zero);
+				}
 			}
 
 			ps->backend_data->ops->set_image_property(
@@ -465,53 +529,43 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 		}
 
 		// Draw window on target
-		if (w->frame_opacity == 1) {
+		bool is_animating = 0 <= w->animation_progress && w->animation_progress < 1.0;
+		if (w->frame_opacity == 1 && !is_animating) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
-			                               window_coord, NULL, window_coord,
-			                               &reg_paint_in_bound, &reg_visible);
+			                               window_coord, NULL, dest_coord,
+			                               &reg_paint_in_bound, &reg_visible, true);
 		} else {
-			// For window image processing, we don't have to limit the process
-			// region to damage for correctness. (see <damager-note> for
-			// details)
+			if (is_animating && w->old_win_image) {
+				bool is_focused = win_is_focused_raw(ps, w);
+				if (!is_focused && w->focused && w->opacity_is_set)
+					is_focused = true;
+				assert(w->old_win_image);
 
-			// The visible region, in window local coordinates Although we
-			// don't limit process region to damage, we provide that info in
-			// reg_visible as a hint. Since window image data outside of the
-			// damage region won't be painted onto target
-			region_t reg_visible_local;
-			region_t reg_bound_local;
-			{
-				// The bounding shape, in window local coordinates
-				pixman_region32_init(&reg_bound_local);
-				pixman_region32_copy(&reg_bound_local, &reg_bound);
-				pixman_region32_translate(&reg_bound_local, -w->g.x, -w->g.y);
+				bool resizing =
+					w->g.width != w->pending_g.width ||
+					w->g.height != w->pending_g.height;
 
-				pixman_region32_init(&reg_visible_local);
-				pixman_region32_intersect(&reg_visible_local,
-				                          &reg_visible, &reg_paint);
-				pixman_region32_translate(&reg_visible_local, -w->g.x,
-				                          -w->g.y);
-				// Data outside of the bounding shape won't be visible,
-				// but it is not necessary to limit the image operations
-				// to the bounding shape yet. So pass that as the visible
-				// region, not the clip region.
-				pixman_region32_intersect(
-				    &reg_visible_local, &reg_visible_local, &reg_bound_local);
+				// Only animate opacity here if we are resizing
+				// a transparent window
+				process_window_for_painting(ps, w, w->win_image,
+								is_focused ? 1.0 : w->opacity >= 1 ? 1.0 : w->animation_progress,
+								&reg_bound, &reg_visible,
+								&reg_paint, &reg_paint_in_bound);
+
+				// Only do this if size changes as otherwise moving
+				// transparent windows will flicker and if you just
+				// move so slightly they will keep flickering
+				if (resizing && (!is_focused || !w->opacity_is_set)) {
+					process_window_for_painting(ps, w, w->old_win_image,
+									1.0 - w->animation_progress,
+									&reg_bound, &reg_visible,
+									&reg_paint, &reg_paint_in_bound);
+				}
+			} else {
+				process_window_for_painting(
+				    ps, w, w->win_image, 1.0, &reg_bound, &reg_visible,
+				    &reg_paint, &reg_paint_in_bound);
 			}
-
-			auto new_img = ps->backend_data->ops->clone_image(
-			    ps->backend_data, w->win_image, &reg_visible_local);
-			auto reg_frame = win_get_region_frame_local_by_val(w);
-			ps->backend_data->ops->image_op(
-			    ps->backend_data, IMAGE_OP_APPLY_ALPHA, new_img, &reg_frame,
-			    &reg_visible_local, (double[]){w->frame_opacity});
-			pixman_region32_fini(&reg_frame);
-			ps->backend_data->ops->compose(ps->backend_data, new_img,
-			                               window_coord, NULL, window_coord,
-			                               &reg_paint_in_bound, &reg_visible);
-			ps->backend_data->ops->release_image(ps->backend_data, new_img);
-			pixman_region32_fini(&reg_visible_local);
-			pixman_region32_fini(&reg_bound_local);
 		}
 	skip:
 		pixman_region32_fini(&reg_bound);

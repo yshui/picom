@@ -906,79 +906,255 @@ static void handle_root_flags(session_t *ps) {
  *
  * @return whether the operation succeeded
  */
-static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
+static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running,
                              struct managed_win **out_bottom) {
 	// XXX need better, more general name for `fade_running`. It really
-	// means if fade is still ongoing after the current frame is rendered
+	// means if fade is still ongoing after the current frame is rendered.
+	// Same goes for `animation_running`.
 	struct managed_win *bottom = NULL;
+	auto now = get_time_ms();
 	*fade_running = false;
-	*animation = false;
+	*animation_running = false;
 	*out_bottom = NULL;
 
 	// Fading step calculation
 	long long steps = 0L;
-	auto now = get_time_ms();
 	if (ps->fade_time) {
 		assert(now >= ps->fade_time);
 		steps = (now - ps->fade_time) / ps->o.fade_delta;
 	} else {
 		// Reset fade_time if unset
-		ps->fade_time = get_time_ms();
+		ps->fade_time = now;
 		steps = 0L;
 	}
 	ps->fade_time += steps * ps->o.fade_delta;
 
-	// First, let's process fading, and animated shaders
-	// TODO(yshui) check if a window is fully obscured, and if we don't need to
-	//             process fading or animation for it.
+	if (ps->o.animations && !ps->animation_time)
+		ps->animation_time = now;
+
+	double delta_secs = (double)(now - ps->animation_time) / 1000;
+
+	// First, let's process fading
 	win_stack_foreach_managed_safe(w, &ps->window_stack) {
 		const winmode_t mode_old = w->mode;
 		const bool was_painted = w->to_paint;
 		const double opacity_old = w->opacity;
+
+		// IMPORTANT: These window animation steps must happen before any other
+		// [pre]processing. This is because it changes the window's geometry.
+		if (ps->o.animations &&
+			!isnan(w->animation_progress) && w->animation_progress != 1.0 &&
+			ps->o.wintype_option[w->window_type].animation != 0 &&
+			win_is_mapped_in_x(w))
+		{
+			double neg_displacement_x =
+				w->animation_dest_center_x - w->animation_center_x;
+			double neg_displacement_y =
+				w->animation_dest_center_y - w->animation_center_y;
+			double neg_displacement_w = w->animation_dest_w - w->animation_w;
+			double neg_displacement_h = w->animation_dest_h - w->animation_h;
+			double animation_stiffness = ps->o.animation_stiffness;
+			if (!(w->animation_is_tag & ANIM_IN_TAG)) {
+				if (w->animation_is_tag & ANIM_SLOW)
+				    animation_stiffness = ps->o.animation_stiffness_tag_change;
+				else if (w->animation_is_tag & ANIM_FAST)
+				    animation_stiffness = ps->o.animation_stiffness_tag_change * 1.5;
+			}
+			if (w->state == WSTATE_FADING && !(w->animation_is_tag & ANIM_FADE))
+				w->opacity_target = win_calc_opacity_target(ps, w);
+			double acceleration_x =
+				(animation_stiffness * neg_displacement_x -
+					ps->o.animation_dampening * w->animation_velocity_x) /
+				ps->o.animation_window_mass;
+			double acceleration_y =
+				(animation_stiffness * neg_displacement_y -
+					ps->o.animation_dampening * w->animation_velocity_y) /
+				ps->o.animation_window_mass;
+			double acceleration_w =
+				(animation_stiffness * neg_displacement_w -
+					ps->o.animation_dampening * w->animation_velocity_w) /
+				ps->o.animation_window_mass;
+			double acceleration_h =
+				(animation_stiffness * neg_displacement_h -
+					ps->o.animation_dampening * w->animation_velocity_h) /
+				ps->o.animation_window_mass;
+			w->animation_velocity_x += acceleration_x * delta_secs;
+			w->animation_velocity_y += acceleration_y * delta_secs;
+			w->animation_velocity_w += acceleration_w * delta_secs;
+			w->animation_velocity_h += acceleration_h * delta_secs;
+
+			// Animate window geometry
+			double new_animation_x =
+				w->animation_center_x + w->animation_velocity_x * delta_secs;
+			double new_animation_y =
+				w->animation_center_y + w->animation_velocity_y * delta_secs;
+			double new_animation_w =
+				w->animation_w + w->animation_velocity_w * delta_secs;
+			double new_animation_h =
+				w->animation_h + w->animation_velocity_h * delta_secs;
+
+			// Negative new width/height causes segfault and it can happen
+			// when clamping disabled and shading a window
+			if (new_animation_h < 0)
+				new_animation_h = 0;
+
+			if (new_animation_w < 0)
+				new_animation_w = 0;
+
+			if (ps->o.animation_clamping) {
+				w->animation_center_x = clamp(
+					new_animation_x,
+					min2(w->animation_center_x, w->animation_dest_center_x),
+					max2(w->animation_center_x, w->animation_dest_center_x));
+				w->animation_center_y = clamp(
+					new_animation_y,
+					min2(w->animation_center_y, w->animation_dest_center_y),
+					max2(w->animation_center_y, w->animation_dest_center_y));
+				w->animation_w =
+					clamp(new_animation_w,
+							min2(w->animation_w, w->animation_dest_w),
+							max2(w->animation_w, w->animation_dest_w));
+				w->animation_h =
+					clamp(new_animation_h,
+							min2(w->animation_h, w->animation_dest_h),
+				 			max2(w->animation_h, w->animation_dest_h));
+			} else {
+				w->animation_center_x = new_animation_x;
+				w->animation_center_y = new_animation_y;
+				w->animation_w = new_animation_w;
+				w->animation_h = new_animation_h;
+			}
+
+			// Now we are done doing the math; we just need to submit our
+			// changes (if there are any).
+
+			struct win_geometry old_g = w->g;
+			double old_animation_progress = w->animation_progress;
+			new_animation_x = round(w->animation_center_x - w->animation_w * 0.5);
+			new_animation_y = round(w->animation_center_y - w->animation_h * 0.5);
+			new_animation_w = round(w->animation_w);
+			new_animation_h = round(w->animation_h);
+
+			bool position_changed =
+				new_animation_x != old_g.x || new_animation_y != old_g.y;
+			bool size_changed =
+				new_animation_w != old_g.width || new_animation_h != old_g.height;
+			bool geometry_changed = position_changed || size_changed;
+
+			// Mark past window region with damage
+			if (was_painted && geometry_changed)
+				add_damage_from_win(ps, w);
+
+			double x_dist = w->animation_dest_center_x - w->animation_center_x;
+			double y_dist = w->animation_dest_center_y - w->animation_center_y;
+			double w_dist = w->animation_dest_w - w->animation_w;
+			double h_dist = w->animation_dest_h - w->animation_h;
+			w->animation_progress =
+				1.0 - w->animation_inv_og_distance *
+					sqrt(x_dist * x_dist + y_dist * y_dist +
+							w_dist * w_dist + h_dist * h_dist);
+
+			// When clamping disabled we don't want the overlayed image to
+			// fade in again because process is moving to negative value
+			if (w->animation_progress < old_animation_progress)
+				w->animation_progress = old_animation_progress;
+
+			w->g.x = (int16_t)new_animation_x;
+			w->g.y = (int16_t)new_animation_y;
+			w->g.width = (uint16_t)new_animation_w;
+			w->g.height = (uint16_t)new_animation_h;
+
+
+			if (w->animation_is_tag > ANIM_IN_TAG && (((w->animation_is_tag & ANIM_FADE) && w->opacity_target == w->opacity)  || ((w->g.width == 0 || w->g.height == 0) && (w->animation_dest_w == 0 || w->animation_dest_h == 0)))) {
+					w->g.x = w->pending_g.x;
+					w->g.y = w->pending_g.y;
+					if (ps->o.animation_for_next_tag < OPEN_WINDOW_ANIMATION_ZOOM) {
+						w->g.width = w->pending_g.width;
+						w->g.height = w->pending_g.height;
+					} else {
+						w->g.width = 0;
+						w->g.height = 0;
+					}
+				}
+
+			// Submit window size change
+			if (size_changed) {
+				win_on_win_size_change(ps, w);
+
+				pixman_region32_clear(&w->bounding_shape);
+				pixman_region32_fini(&w->bounding_shape);
+				pixman_region32_init_rect(&w->bounding_shape, 0, 0,
+				                          (uint)w->widthb, (uint)w->heightb);
+
+				if (w->state != WSTATE_UNMAPPED && w->state != WSTATE_DESTROYING && w->state != WSTATE_UNMAPPING) {
+					win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
+					win_process_image_flags(ps, w);
+				}
+			}
+			// Mark new window region with damage
+			if (was_painted && geometry_changed) {
+				add_damage_from_win(ps, w);
+				w->reg_ignore_valid = false;
+			}
+
+			// We can't check for 1 here as sometimes 1 = 0.999999999999999
+			// in case of floating numbers
+			if (w->animation_progress >= 0.999999999) {
+				w->animation_progress = 1;
+				w->animation_velocity_x = 0.0;
+				w->animation_velocity_y = 0.0;
+				w->animation_velocity_w = 0.0;
+				w->animation_velocity_h = 0.0;
+				w->opacity = win_calc_opacity_target(ps, w);
+			}
+			*animation_running = true;
+		}
 
 		if (win_should_dim(ps, w) != w->dim) {
 			w->dim = win_should_dim(ps, w);
 			add_damage_from_win(ps, w);
 		}
 
-		if (w->fg_shader && (w->fg_shader->attributes & SHADER_ATTRIBUTE_ANIMATED)) {
-			add_damage_from_win(ps, w);
-			*animation = true;
-		}
 
-		// Run fading
-		if (run_fade(ps, &w, steps)) {
-			*fade_running = true;
-		}
+		if (w->opacity != w->opacity_target) {
+			// Run fading
+			if (run_fade(ps, &w, steps)) {
+				*fade_running = true;
+			}
 
-		// Add window to damaged area if its opacity changes
-		// If was_painted == false, and to_paint is also false, we don't care
-		// If was_painted == false, but to_paint is true, damage will be added in
-		// the loop below
-		if (was_painted && w->opacity != opacity_old) {
-			add_damage_from_win(ps, w);
-		}
+			// Add window to damaged area if its opacity changes
+			// If was_painted == false, and to_paint is also false, we don't care
+			// If was_painted == false, but to_paint is true, damage will be added in
+			// the loop below
+			if (was_painted && w->opacity != opacity_old) {
+				add_damage_from_win(ps, w);
+			}
 
-		if (win_check_fade_finished(ps, w)) {
-			// the window has been destroyed because fading finished
-			continue;
-		}
 
-		if (win_has_frame(w)) {
-			w->frame_opacity = ps->o.frame_opacity;
-		} else {
-			w->frame_opacity = 1.0;
-		}
+			if (win_check_fade_finished(ps, w)) {
+				// the window has been destroyed because fading finished
+				continue;
+			}
 
-		// Update window mode
-		w->mode = win_calc_mode(w);
+			if (win_has_frame(w)) {
+				w->frame_opacity = ps->o.frame_opacity;
+			} else {
+				w->frame_opacity = 1.0;
+			}
 
-		// Destroy all reg_ignore above when frame opaque state changes on
-		// SOLID mode
-		if (was_painted && w->mode != mode_old) {
-			w->reg_ignore_valid = false;
+			// Update window mode
+			w->mode = win_calc_mode(w);
+
+			// Destroy all reg_ignore above when frame opaque state changes on
+			// SOLID mode
+			if (was_painted && w->mode != mode_old) {
+				w->reg_ignore_valid = false;
+			}
 		}
 	}
+
+	if (animation_running)
+		ps->animation_time = now;
 
 	// Opacity will not change, from now on.
 	rc_region_t *last_reg_ignore = rc_region_new();
@@ -1722,6 +1898,11 @@ static void fade_timer_callback(EV_P attr_unused, ev_timer *w, int revents attr_
 	queue_redraw(ps);
 }
 
+static void animation_timer_callback(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
+	session_t *ps = session_ptr(w, animation_timer);
+	queue_redraw(ps);
+}
+
 static void handle_pending_updates(EV_P_ struct session *ps) {
 	if (ps->pending_updates) {
 		log_debug("Delayed handling of events, entering critical section");
@@ -1827,10 +2008,10 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	 * screen is not redirected. its sole purpose should be to decide whether the
 	 * screen should be redirected. */
 	bool fade_running = false;
-	bool animation = false;
+	bool animation_running = false;
 	bool was_redirected = ps->redirected;
 	struct managed_win *bottom = NULL;
-	if (!paint_preprocess(ps, &fade_running, &animation, &bottom)) {
+	if (!paint_preprocess(ps, &fade_running, &animation_running, &bottom)) {
 		log_fatal("Pre-render preparation has failed, exiting...");
 		exit(1);
 	}
@@ -1855,6 +2036,13 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	} else if (fade_running && !ev_is_active(&ps->fade_timer)) {
 		ev_timer_set(&ps->fade_timer, fade_timeout(ps), 0);
 		ev_timer_start(EV_A_ & ps->fade_timer);
+	}
+	// Start/stop animation timer depends on whether windows are animating
+	if (!animation_running && ev_is_active(&ps->animation_timer)) {
+		ev_timer_stop(EV_A_ & ps->animation_timer);
+	} else if (animation_running && !ev_is_active(&ps->animation_timer)) {
+		ev_timer_set(&ps->animation_timer, 0, 0);
+		ev_timer_start(EV_A_ & ps->animation_timer);
 	}
 
 	int64_t after_preprocess_us;
@@ -1896,15 +2084,21 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	if (!fade_running) {
 		ps->fade_time = 0L;
 	}
+	if (!animation_running) {
+		ps->animation_time = 0L;
+	}
 
 	ps->render_queued = false;
+	if (!animation_running) {
+		ps->animation_time = 0L;
+	}
 
 	// TODO(yshui) Investigate how big the X critical section needs to be. There are
 	// suggestions that rendering should be in the critical section as well.
 
 	// Queue redraw if animation is running. This should be picked up by next present
 	// event.
-	if (animation) {
+	if (animation_running) {
 		queue_redraw(ps);
 	}
 	if (ps->vblank_scheduler) {
@@ -2043,6 +2237,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .redirected = false,
 	    .alpha_picts = NULL,
 	    .fade_time = 0L,
+	    .animation_time = 0L,
 	    .quit = false,
 
 	    .expose_rects = NULL,
@@ -2454,7 +2649,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Monitor screen changes if vsync_sw is enabled and we are using
 	// an auto-detected refresh rate, or when X RandR features are enabled
-	if (ps->randr_exists && ps->o.crop_shadow_to_monitor) {
+	if (ps->randr_exists) {
 		xcb_randr_select_input(ps->c.c, ps->c.screen_info->root,
 		                       XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
 		x_update_monitors(&ps->c, &ps->monitors);
@@ -2483,6 +2678,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_init(&ps->draw_timer, draw_callback);
 
 	ev_init(&ps->fade_timer, fade_timer_callback);
+	ev_init(&ps->animation_timer, animation_timer_callback);
+
 
 	// Set up SIGUSR1 signal handler to reset program
 	ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);
@@ -2727,6 +2924,7 @@ static void session_destroy(session_t *ps) {
 	// Stop libev event handlers
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
 	ev_timer_stop(ps->loop, &ps->fade_timer);
+	ev_timer_stop(ps->loop, &ps->animation_timer);
 	ev_timer_stop(ps->loop, &ps->draw_timer);
 	ev_prepare_stop(ps->loop, &ps->event_check);
 	ev_signal_stop(ps->loop, &ps->usr1_signal);

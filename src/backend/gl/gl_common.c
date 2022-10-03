@@ -420,7 +420,7 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 	}
 
 	glUniform1i(win_shader->uniform_mask_tex, 2);
-	glUniform2f(win_shader->uniform_mask_offset, (float)mask_offset.x,
+	glUniform2f(win_shader->uniform_mask_offset, (float)mask_offset.x ,
 	            (float)mask_offset.y);
 	if (mask != NULL) {
 		glUniform1i(win_shader->uniform_mask_inverted, mask->color_inverted);
@@ -502,6 +502,7 @@ void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst,
 	image_dst.y = root_height - image_dst.y;
 	image_dst.y -= extent_height;
 
+
 	for (int i = 0; i < nrects; i++) {
 		// Y-flip. Note after this, crect.y1 > crect.y2
 		rect_t crect = rects[i];
@@ -553,7 +554,7 @@ void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst,
 // TODO(yshui) make use of reg_visible
 void gl_compose(backend_t *base, image_handle image, coord_t image_dst,
                 image_handle mask_, coord_t mask_dst, const region_t *reg_tgt,
-                const region_t *reg_visible attr_unused) {
+                const region_t *reg_visible attr_unused, bool lerp) {
 	auto gd = (struct gl_data *)base;
 	auto img = (struct backend_image *)image;
 	auto mask = (struct backend_image *)mask_;
@@ -580,6 +581,14 @@ void gl_compose(backend_t *base, image_handle image, coord_t image_dst,
 	coord_t mask_offset = {.x = mask_dst.x - image_dst.x, .y = mask_dst.y - image_dst.y};
 	x_rect_to_coords(nrects, rects, image_dst, inner->height, inner->height,
 	                 gd->height, inner->y_inverted, coord, indices);
+
+	if (lerp) {
+		for (unsigned int i = 2; i < 16; i+=4) {
+			coord[i+0] = lerp_range(0, mask_offset.x, 0, inner->width, coord[i+0]);
+			coord[i+1] = lerp_range(0, mask_offset.y, 0, inner->height, coord[i+1]);
+		}
+	}
+
 	_gl_compose(base, img, gd->back_fbo, mask, mask_offset, coord, indices, nrects);
 
 	free(indices);

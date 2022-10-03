@@ -14,6 +14,7 @@
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
+#include "compiler.h"
 #include "config.h"
 #include "kernel.h"
 #include "log.h"
@@ -362,7 +363,7 @@ static void xrender_compose_impl(struct xrender_data *xd, struct xrender_image *
 
 static void
 xrender_compose(backend_t *base, image_handle image_, coord_t dst, image_handle mask_,
-                coord_t mask_dst, const region_t *reg_paint, const region_t *reg_visible) {
+                coord_t mask_dst, const region_t *reg_paint, const region_t *reg_visible, bool lerp attr_unused) {
 	auto xd = (struct xrender_data *)base;
 	auto image = (struct xrender_image *)image_;
 	auto mask = (struct xrender_image *)mask_;

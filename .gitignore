@@ -16,6 +16,7 @@ compton
 build/
 compile_commands.json
 build.ninja
+make.sh
 
 # language servers
 .ccls-cache
