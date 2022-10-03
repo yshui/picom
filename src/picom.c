@@ -1917,8 +1917,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .alpha_picts = NULL,
 	    .fade_time = 0L,
 	    .animation_time = 0L,
-	    .ignore_head = NULL,
-	    .ignore_tail = NULL,
+	    .pending_reply_head = NULL,
+	    .pending_reply_tail = NULL,
 	    .quit = false,
 
 	    .expose_rects = NULL,
@@ -2715,6 +2715,7 @@ static void session_destroy(session_t *ps) {
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
 	ev_timer_stop(ps->loop, &ps->fade_timer);
 	ev_timer_stop(ps->loop, &ps->animation_timer);
+	ev_timer_stop(ps->loop, &ps->dpms_check_timer);
 	ev_idle_stop(ps->loop, &ps->draw_idle);
 	ev_prepare_stop(ps->loop, &ps->event_check);
 	ev_signal_stop(ps->loop, &ps->usr1_signal);
