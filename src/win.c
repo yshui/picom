@@ -357,6 +357,8 @@ bool win_bind_mask(struct backend_base *b, struct managed_win *w) {
 	pixman_region32_translate(&reg_bound_local, -w->g.x, -w->g.y);
 	w->mask_image = b->ops->make_mask(
 	    b, (geometry_t){.width = w->g.width, .height = w->g.height}, &reg_bound_local);
+	pixman_region32_fini(&reg_bound_local);
+
 	if (!w->mask_image) {
 		return false;
 	}
