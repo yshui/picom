@@ -259,6 +259,9 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--transparent-clipping*::
 	Make transparent windows clip other windows like non-transparent windows do, instead of blending on top of them.
 
+*--transparent-clipping-exclude* 'CONDITION'::
+	Specify a list of conditions of windows that should never have transparent clipping applied. Useful for screenshot tools, where you need to be able to see through transparent parts of the window.
+
 *--window-shader-fg* 'SHADER'::
 	Specify GLSL fragment shader path for rendering window contents. Does not work when *--legacy-backends* is enabled. Shader is searched first relative to the directory the configuration file is in, then in the usual places for a configuration file. See section *SHADER INTERFACE* below for more details on the interface.
 

@@ -452,6 +452,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "no-ewmh-fullscreen", &opt->no_ewmh_fullscreen);
 	// --transparent-clipping
 	lcfg_lookup_bool(&cfg, "transparent-clipping", &opt->transparent_clipping);
+	// --transparent-clipping-exclude
+	parse_cfg_condlst(&cfg, &opt->transparent_clipping_blacklist,
+	                  "transparent-clipping-exclude");
 	// --shadow-exclude
 	parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude");
 	// --clip-shadow-above
