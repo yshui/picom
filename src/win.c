@@ -673,8 +673,17 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			add_damage_from_win(ps, w);
 		}
 
+
+
         // Determine if a window should animate
 		if (win_should_animate(ps, w)) {
+            if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
+                win_on_win_size_change(ps, w);
+                win_update_bounding_shape(ps, w);
+                damaged = true;
+                win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
+            }
+
             if (w->pending_g.y < 0 && w->g.y > 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
                 w->dwm_mask = ANIM_PREV_TAG;
             else if (w->pending_g.y > 0 && w->g.y < 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
@@ -746,12 +755,12 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			w->g = w->pending_g;
 		}
 
-		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
-			win_on_win_size_change(ps, w);
-			win_update_bounding_shape(ps, w);
-			damaged = true;
-			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
-		}
+        if (!win_should_animate(ps, w) && win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
+            win_on_win_size_change(ps, w);
+            win_update_bounding_shape(ps, w);
+            damaged = true;
+            win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
+        }
 
 		if (win_check_flags_all(w, WIN_FLAGS_POSITION_STALE)) {
 			damaged = true;
@@ -3027,6 +3036,10 @@ win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_windo
 void win_set_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
+        if (w->animation_progress != 1.0) {
+            // Return because animation will trigger some of the flags
+            return;
+        }
 		log_error("Flags set on a destroyed window %#010x (%s)", w->base.id, w->name);
 		return;
 	}
@@ -3039,6 +3052,10 @@ void win_clear_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Clear flags %" PRIu64 " from window %#010x (%s)", flags, w->base.id,
 	          w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
+        if (w->animation_progress != 1.0) {
+            // Return because animation will trigger some of the flags
+            return;
+        }
 		log_warn("Flags cleared on a destroyed window %#010x (%s)", w->base.id,
 		         w->name);
 		return;
