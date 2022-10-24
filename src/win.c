@@ -689,7 +689,7 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
             else if (w->pending_g.y > 0 && w->g.y < 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
                 w->dwm_mask = ANIM_NEXT_TAG;
 
-			if (!was_visible || w->dwm_mask || (w->window_type == WINTYPE_NOTIFICATION && w->state == WSTATE_MAPPING)) {
+			if (!was_visible || w->dwm_mask) {
 				// Set window-open animation
 				init_animation(ps, w);
 
