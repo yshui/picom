@@ -302,7 +302,7 @@ With greater-than/less-than operators it looks like:
 
 'OPERATOR' is one of `=` (equals), `<`, `>`, `<=`, `=>`, or nothing (exists). Exists operator checks whether a property exists on a window (but for predefined targets, exists means != 0 then).
 
-'PATTERN' is either an integer or a string enclosed by single or double quotes. Python-3-style escape sequences and raw string are supported in the string format.
+'PATTERN' is either an integer or a string enclosed by single or double quotes. Python-3-style escape sequences are supported in the string format.
 
 Supported logical operators are `&&` (and) and `||` (or). `&&` has higher precedence than `||`, left-to-right associativity. Use parentheses to change precedence.
 
