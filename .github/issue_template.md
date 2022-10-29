@@ -14,14 +14,22 @@
 <!-- Tell us something about the desktop environment you are using, for example: i3-gaps, Gnome Shell, etc. -->
 
 ### picom version
-<!-- Put the output of `compton --version` or `picom --version` here. -->
-<!-- If you are running compton v4 or later, please also include the output of `compton --diagnostics` or `picom --diagnostics` -->
-<!-- Example: v1 -->
+<!-- Put the output of `picom --version` here. -->
+<!-- Example: v8.2 -->
+<details>
+<summary>Diagnostics</summary>
+
+<!-- Please also include the output of `picom --diagnostics` -->
+</details>
 
 ### Configuration:
+<details>
+    <summary>Configuration file</summary>
+
 ```
 // Paste your configuration here
 ```
+</details>
 
 ### Steps of reproduction
 <!--
@@ -44,6 +52,12 @@
  -->
 
 <!-- Or, you can enable core dump, and upload the core file with the corresponding executable here. -->
+
+### OpenGL trace
+<!--
+    If you encounter visual glitches, i.e. things don't look how they supposed to look. It might be a good idea to follow the steps here:
+    https://github.com/yshui/picom/wiki/Reporting-issues#capture-a-trace , and upload the resulting trace here.
+-->
 
 ### Other details
 <!-- If your problem is visual, you are encouraged to record a short video when the problem occurs and link to it here. -->

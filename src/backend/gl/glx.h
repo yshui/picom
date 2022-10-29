@@ -54,6 +54,8 @@ struct glxext_info {
 	bool has_GLX_EXT_texture_from_pixmap;
 	bool has_GLX_ARB_create_context;
 	bool has_GLX_EXT_buffer_age;
+	bool has_GLX_MESA_query_renderer;
+	bool has_GLX_ARB_create_context_robustness;
 };
 
 extern struct glxext_info glxext;
@@ -68,5 +70,9 @@ extern PFNGLXSWAPINTERVALMESAPROC glXSwapIntervalMESA;
 extern PFNGLXBINDTEXIMAGEEXTPROC glXBindTexImageEXT;
 extern PFNGLXRELEASETEXIMAGEEXTPROC glXReleaseTexImageEXT;
 extern PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB;
+
+#ifdef GLX_MESA_query_renderer
+extern PFNGLXQUERYCURRENTRENDERERINTEGERMESAPROC glXQueryCurrentRendererIntegerMESA;
+#endif
 
 void glxext_init(Display *, int screen);

@@ -92,7 +92,7 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 	}
 
 	unsigned char *data = ximage->data;
-	long sstride = ximage->stride;
+	long long sstride = ximage->stride;
 
 	// If the window body is smaller than the kernel, we do convolution directly
 	if (width < r * 2 && height < r * 2) {
@@ -100,7 +100,7 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 			for (int x = 0; x < swidth; x++) {
 				double sum = sum_kernel_normalized(
 				    kernel, d - x - 1, d - y - 1, width, height);
-				data[y * sstride + x] = (uint8_t)(sum * 255.0);
+				data[y * sstride + x] = (uint8_t)(sum * 255.0 * opacity);
 			}
 		}
 		return ximage;
@@ -118,14 +118,14 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 			for (int x = 0; x < r * 2; x++) {
 				double sum = sum_kernel_normalized(kernel, d - x - 1,
 				                                   d - y - 1, d, height) *
-				             255.0;
+				             255.0 * opacity;
 				data[y * sstride + x] = (uint8_t)sum;
 				data[y * sstride + swidth - x - 1] = (uint8_t)sum;
 			}
 		}
 		for (int y = 0; y < sheight; y++) {
-			double sum =
-			    sum_kernel_normalized(kernel, 0, d - y - 1, d, height) * 255.0;
+			double sum = sum_kernel_normalized(kernel, 0, d - y - 1, d, height) *
+			             255.0 * opacity;
 			memset(&data[y * sstride + r * 2], (uint8_t)sum,
 			       (size_t)(width - 2 * r));
 		}
@@ -137,14 +137,14 @@ make_shadow(xcb_connection_t *c, const conv *kernel, double opacity, int width, 
 			for (int x = 0; x < swidth; x++) {
 				double sum = sum_kernel_normalized(kernel, d - x - 1,
 				                                   d - y - 1, width, d) *
-				             255.0;
+				             255.0 * opacity;
 				data[y * sstride + x] = (uint8_t)sum;
 				data[(sheight - y - 1) * sstride + x] = (uint8_t)sum;
 			}
 		}
 		for (int x = 0; x < swidth; x++) {
-			double sum =
-			    sum_kernel_normalized(kernel, d - x - 1, 0, width, d) * 255.0;
+			double sum = sum_kernel_normalized(kernel, d - x - 1, 0, width, d) *
+			             255.0 * opacity;
 			for (int y = r * 2; y < height; y++) {
 				data[y * sstride + x] = (uint8_t)sum;
 			}
@@ -233,6 +233,7 @@ bool build_shadow(xcb_connection_t *c, xcb_drawable_t d, double opacity, const i
 	auto maximum_row =
 	    to_u16_checked(clamp(maximum_image_size / shadow_image->stride, 0, UINT16_MAX));
 	if (maximum_row <= 0) {
+		// TODO(yshui) Upload image with XShm
 		log_error("X server request size limit is too restrictive, or the shadow "
 		          "image is too wide for us to send a single row of the shadow "
 		          "image. Shadow size: %dx%d",
@@ -290,16 +291,16 @@ shadow_picture_err:
 	return false;
 }
 
-void *
-default_backend_render_shadow(backend_t *backend_data, int width, int height,
-                              const conv *kernel, double r, double g, double b, double a) {
-	xcb_pixmap_t shadow_pixel = solid_picture(backend_data->c, backend_data->root,
-	                                          true, 1, r, g, b),
+void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
+                                    struct backend_shadow_context *sctx, struct color color) {
+	const conv *kernel = (void *)sctx;
+	xcb_pixmap_t shadow_pixel = solid_picture(backend_data->c, backend_data->root, true,
+	                                          1, color.red, color.green, color.blue),
 	             shadow = XCB_NONE;
 	xcb_render_picture_t pict = XCB_NONE;
 
-	if (!build_shadow(backend_data->c, backend_data->root, a, width, height, kernel,
-	                  shadow_pixel, &shadow, &pict)) {
+	if (!build_shadow(backend_data->c, backend_data->root, color.alpha, width, height,
+	                  kernel, shadow_pixel, &shadow, &pict)) {
 		return NULL;
 	}
 
@@ -308,6 +309,34 @@ default_backend_render_shadow(backend_t *backend_data, int width, int height,
 	    backend_data, shadow, x_get_visual_info(backend_data->c, visual), true);
 	xcb_render_free_picture(backend_data->c, pict);
 	return ret;
+}
+
+/// Implement render_shadow with shadow_from_mask
+void *
+backend_render_shadow_from_mask(backend_t *backend_data, int width, int height,
+                                struct backend_shadow_context *sctx, struct color color) {
+	region_t reg;
+	pixman_region32_init_rect(&reg, 0, 0, (unsigned int)width, (unsigned int)height);
+	void *mask = backend_data->ops->make_mask(
+	    backend_data, (geometry_t){.width = width, .height = height}, &reg);
+	pixman_region32_fini(&reg);
+
+	void *shadow = backend_data->ops->shadow_from_mask(backend_data, mask, sctx, color);
+	backend_data->ops->release_image(backend_data, mask);
+	return shadow;
+}
+
+struct backend_shadow_context *
+default_create_shadow_context(backend_t *backend_data attr_unused, double radius) {
+	auto ret =
+	    (struct backend_shadow_context *)gaussian_kernel_autodetect_deviation(radius);
+	sum_kernel_preprocess((conv *)ret);
+	return ret;
+}
+
+void default_destroy_shadow_context(backend_t *backend_data attr_unused,
+                                    struct backend_shadow_context *sctx) {
+	free_conv((conv *)sctx);
 }
 
 static struct conv **generate_box_blur_kernel(struct box_blur_args *args, int *kernel_count) {
@@ -360,6 +389,118 @@ struct conv **generate_blur_kernel(enum blur_method method, void *args, int *ker
 	default: break;
 	}
 	return NULL;
+}
+
+/// Generate kernel parameters for dual-kawase blur method. Falls back on approximating
+/// standard gauss radius if strength is zero or below.
+struct dual_kawase_params *generate_dual_kawase_params(void *args) {
+	struct dual_kawase_blur_args *blur_args = args;
+	static const struct {
+		int iterations;        /// Number of down- and upsample iterations
+		float offset;          /// Sample offset in half-pixels
+		int min_radius;        /// Approximate gauss-blur with at least this
+		                       /// radius and std-deviation
+	} strength_levels[20] = {
+	    {.iterations = 1, .offset = 1.25f, .min_radius = 1},          // LVL  1
+	    {.iterations = 1, .offset = 2.25f, .min_radius = 6},          // LVL  2
+	    {.iterations = 2, .offset = 2.00f, .min_radius = 11},         // LVL  3
+	    {.iterations = 2, .offset = 3.00f, .min_radius = 17},         // LVL  4
+	    {.iterations = 2, .offset = 4.25f, .min_radius = 24},         // LVL  5
+	    {.iterations = 3, .offset = 2.50f, .min_radius = 32},         // LVL  6
+	    {.iterations = 3, .offset = 3.25f, .min_radius = 40},         // LVL  7
+	    {.iterations = 3, .offset = 4.25f, .min_radius = 51},         // LVL  8
+	    {.iterations = 3, .offset = 5.50f, .min_radius = 67},         // LVL  9
+	    {.iterations = 4, .offset = 3.25f, .min_radius = 83},         // LVL 10
+	    {.iterations = 4, .offset = 4.00f, .min_radius = 101},        // LVL 11
+	    {.iterations = 4, .offset = 5.00f, .min_radius = 123},        // LVL 12
+	    {.iterations = 4, .offset = 6.00f, .min_radius = 148},        // LVL 13
+	    {.iterations = 4, .offset = 7.25f, .min_radius = 178},        // LVL 14
+	    {.iterations = 4, .offset = 8.25f, .min_radius = 208},        // LVL 15
+	    {.iterations = 5, .offset = 4.50f, .min_radius = 236},        // LVL 16
+	    {.iterations = 5, .offset = 5.25f, .min_radius = 269},        // LVL 17
+	    {.iterations = 5, .offset = 6.25f, .min_radius = 309},        // LVL 18
+	    {.iterations = 5, .offset = 7.25f, .min_radius = 357},        // LVL 19
+	    {.iterations = 5, .offset = 8.50f, .min_radius = 417},        // LVL 20
+	};
+
+	auto params = ccalloc(1, struct dual_kawase_params);
+	params->iterations = 0;
+	params->offset = 1.0f;
+
+	if (blur_args->strength <= 0 && blur_args->size) {
+		// find highest level that approximates blur-strength with the selected
+		// gaussian blur-radius
+		int lvl = 1;
+		while (strength_levels[lvl - 1].min_radius < blur_args->size && lvl < 20) {
+			++lvl;
+		}
+		blur_args->strength = lvl;
+	}
+	if (blur_args->strength <= 0) {
+		// default value
+		blur_args->strength = 5;
+	}
+
+	assert(blur_args->strength > 0 && blur_args->strength <= 20);
+	params->iterations = strength_levels[blur_args->strength - 1].iterations;
+	params->offset = strength_levels[blur_args->strength - 1].offset;
+
+	// Expand sample area to cover the smallest texture / highest selected iteration:
+	// - Smallest texture dimensions are halved `iterations`-times
+	// - Upsample needs pixels two-times `offset` away from the border
+	// - Plus one for interpolation differences
+	params->expand = (1 << params->iterations) * 2 * (int)ceil(params->offset) + 1;
+
+	return params;
+}
+
+void *default_clone_image(backend_t *base attr_unused, const void *image_data,
+                          const region_t *reg_visible attr_unused) {
+	auto new_img = ccalloc(1, struct backend_image);
+	*new_img = *(struct backend_image *)image_data;
+	new_img->inner->refcount++;
+	return new_img;
+}
+
+bool default_set_image_property(backend_t *base attr_unused, enum image_properties op,
+                                void *image_data, void *arg) {
+	struct backend_image *tex = image_data;
+	int *iargs = arg;
+	bool *bargs = arg;
+	double *dargs = arg;
+	switch (op) {
+	case IMAGE_PROPERTY_INVERTED: tex->color_inverted = bargs[0]; break;
+	case IMAGE_PROPERTY_DIM_LEVEL: tex->dim = dargs[0]; break;
+	case IMAGE_PROPERTY_OPACITY: tex->opacity = dargs[0]; break;
+	case IMAGE_PROPERTY_EFFECTIVE_SIZE:
+		// texture is already set to repeat, so nothing else we need to do
+		tex->ewidth = iargs[0];
+		tex->eheight = iargs[1];
+		break;
+	case IMAGE_PROPERTY_CORNER_RADIUS: tex->corner_radius = dargs[0]; break;
+	case IMAGE_PROPERTY_MAX_BRIGHTNESS: tex->max_brightness = dargs[0]; break;
+	case IMAGE_PROPERTY_BORDER_WIDTH: tex->border_width = *(int *)arg; break;
+	case IMAGE_PROPERTY_CUSTOM_SHADER: break;
+	}
+
+	return true;
+}
+
+bool default_is_image_transparent(backend_t *base attr_unused, void *image_data) {
+	struct backend_image *img = image_data;
+	return img->opacity < 1 || img->inner->has_alpha;
+}
+
+struct backend_image *default_new_backend_image(int w, int h) {
+	auto ret = ccalloc(1, struct backend_image);
+	ret->opacity = 1;
+	ret->dim = 0;
+	ret->max_brightness = 1;
+	ret->eheight = h;
+	ret->ewidth = w;
+	ret->color_inverted = false;
+	ret->corner_radius = 0;
+	return ret;
 }
 
 void init_backend_base(struct backend_base *base, session_t *ps) {

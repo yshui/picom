@@ -3,5 +3,5 @@ srcs += [ files('backend_common.c', 'xrender/xrender.c', 'dummy/dummy.c', 'backe
 
 # enable opengl
 if get_option('opengl')
-  srcs += [ files('gl/gl_common.c', 'gl/glx.c') ]
+  srcs += [ files('gl/gl_common.c', 'gl/glx.c', 'gl/blur.c', 'gl/shaders.c', 'gl/egl.c') ]
 endif

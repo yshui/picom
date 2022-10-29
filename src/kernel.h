@@ -22,12 +22,15 @@ double attr_pure sum_kernel_normalized(const conv *map, int x, int y, int width,
 /// `size`.
 conv *gaussian_kernel(double r, int size);
 
+/// Estimate the best standard deviation for a give kernel size.
+double gaussian_kernel_std_for_size(double size, double row_limit);
+
 /// Create a gaussian kernel with auto detected standard deviation. The choosen standard
 /// deviation tries to make sure the outer most pixels of the shadow are completely
 /// transparent.
 ///
 /// @param[in] shadow_radius the radius of the shadow
-conv *gaussian_kernel_autodetect_deviation(int shadow_radius);
+conv *gaussian_kernel_autodetect_deviation(double shadow_radius);
 
 /// preprocess kernels to make shadow generation faster
 /// shadow_sum[x*d+y] is the sum of the kernel from (0, 0) to (x, y), inclusive

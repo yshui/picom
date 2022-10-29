@@ -1,4 +1,37 @@
+# Picom History
+
+Picom was forked in 2016 from the original Compton because it seemed to have become unmaintained.
+
+The battle plan of the fork was to refactor it to make the code _possible_ to maintain, so potential contributors won't be scared away when they take a look at the code.
+
+And also to try to fix bugs.
+
+## Rename
+
+In 2019 the project name was changed from Compton to picom (git revision 8ddbeb and following).
+
+### Rationale
+
+Since the inception of this fork, the existence of two compton repositories has caused some number of confusions. Mainly, people will report issues of this fork to the original compton, or report issues of the original compton here. Later, when distros started packaging this fork of compton, some wanted to differentiate the newer compton from the older version. They found themselves having no choice but to invent a name for this fork. This is less than ideal since this has the potential to cause more confusions among users.
+
+Therefore, we decided to move this fork to a new name. Personally, I consider this more than justified since this version of compton has gone through significant changes since it was forked.
+
+### The name
+
+The criteria for a good name were
+
+0. Being short, so it's easy to remember.
+1. Pronounceability, again, helps memorability
+2. Searchability, so when people search the name, it's easy for them to find this repository.
+
+Of course, choosing a name is never easy, and there is no apparent way to objectively evaluate the names. Yet, we have to solve the aforementioned problems as soon as possible.
+
+In the end, we picked `picom` (a portmanteau of `pico` and `composite`) as our new name. This name might not be perfect, but is what we will move forward with unless there's a compelling reason not to.
+
+
 # Compton
+
+This is a copy of the README of the [original Compton project](https://github.com/chjj/compton/).
 
 [![Join the chat at https://gitter.im/chjj/compton](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/chjj/compton?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 

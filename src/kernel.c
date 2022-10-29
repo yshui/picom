@@ -90,15 +90,20 @@ conv *gaussian_kernel(double r, int size) {
 /// Estimate the element of the sum of the first row in a gaussian kernel with standard
 /// deviation `r` and size `size`,
 static inline double estimate_first_row_sum(double size, double r) {
+	// `factor` is integral of gaussian from -size to size
 	double factor = erf(size / r / sqrt(2));
+	// `a` is gaussian at (size, 0)
 	double a = exp(-0.5 * size * size / (r * r)) / sqrt(2 * M_PI) / r;
+	// The sum of the whole kernel is normalized to 1, i.e. each element is divided by
+	// factor sqaured. So the sum of the first row is a * factor / factor^2 = a /
+	// factor
 	return a / factor;
 }
 
-/// Pick a suitable gaussian kernel radius for a given kernel size. The returned radius
-/// is the maximum possible radius (<= size*2) that satisfies no sum of the rows in
-/// the kernel are less than `row_limit` (up to certain precision).
-static inline double gaussian_kernel_std_for_size(int size, double row_limit) {
+/// Pick a suitable gaussian kernel standard deviation for a given kernel size. The
+/// returned radius is the maximum possible radius (<= size*2) that satisfies no sum of
+/// the rows in the kernel are less than `row_limit` (up to certain precision).
+double gaussian_kernel_std_for_size(double size, double row_limit) {
 	assert(size > 0);
 	if (row_limit >= 1.0 / 2.0 / size) {
 		return size * 2;
@@ -121,14 +126,14 @@ static inline double gaussian_kernel_std_for_size(int size, double row_limit) {
 /// transparent, so the transition from shadow to the background is smooth.
 ///
 /// @param[in] shadow_radius the radius of the shadow
-conv *gaussian_kernel_autodetect_deviation(int shadow_radius) {
+conv *gaussian_kernel_autodetect_deviation(double shadow_radius) {
 	assert(shadow_radius >= 0);
-	int size = shadow_radius * 2 + 1;
+	int size = (int)(shadow_radius * 2 + 1);
 
 	if (shadow_radius == 0) {
 		return gaussian_kernel(0, size);
 	}
-	double std = gaussian_kernel_std_for_size(shadow_radius, 1.0 / 256.0);
+	double std = gaussian_kernel_std_for_size(shadow_radius, 0.5 / 256.0);
 	return gaussian_kernel(std, size);
 }
 

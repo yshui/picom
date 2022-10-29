@@ -1,9 +1,10 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
+NoDisplay=true
 Name=compton
 GenericName=X compositor
-Comment=A X compositor
+Comment=An X compositor
 Categories=Utility;
 Keywords=compositor;composite manager;window effects;transparency;opacity;
 TryExec=compton

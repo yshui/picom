@@ -3,12 +3,20 @@
 // Copyright (c) 2013 Richard Grenville <pyxlcy@gmail.com>
 
 #include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <xcb/render.h>        // for xcb_render_fixed_t, XXX
+
+#include <test.h>
 
 #include "c2.h"
 #include "common.h"
@@ -23,6 +31,98 @@
 
 #include "config.h"
 
+const char *xdg_config_home(void) {
+	char *xdgh = getenv("XDG_CONFIG_HOME");
+	char *home = getenv("HOME");
+	const char *default_dir = "/.config";
+
+	if (!xdgh) {
+		if (!home) {
+			return NULL;
+		}
+
+		xdgh = cvalloc(strlen(home) + strlen(default_dir) + 1);
+
+		strcpy(xdgh, home);
+		strcat(xdgh, default_dir);
+	} else {
+		xdgh = strdup(xdgh);
+	}
+
+	return xdgh;
+}
+
+char **xdg_config_dirs(void) {
+	char *xdgd = getenv("XDG_CONFIG_DIRS");
+	size_t count = 0;
+
+	if (!xdgd) {
+		xdgd = "/etc/xdg";
+	}
+
+	for (int i = 0; xdgd[i]; i++) {
+		if (xdgd[i] == ':') {
+			count++;
+		}
+	}
+
+	// Store the string and the result pointers together so they can be
+	// freed together
+	char **dir_list = cvalloc(sizeof(char *) * (count + 2) + strlen(xdgd) + 1);
+	auto dirs = strcpy((char *)dir_list + sizeof(char *) * (count + 2), xdgd);
+	auto path = dirs;
+
+	for (size_t i = 0; i < count; i++) {
+		dir_list[i] = path;
+		path = strchr(path, ':');
+		*path = '\0';
+		path++;
+	}
+	dir_list[count] = path;
+
+	size_t fill = 0;
+	for (size_t i = 0; i <= count; i++) {
+		if (dir_list[i][0] == '/') {
+			dir_list[fill] = dir_list[i];
+			fill++;
+		}
+	}
+
+	dir_list[fill] = NULL;
+
+	return dir_list;
+}
+
+TEST_CASE(xdg_config_dirs) {
+	auto old_var = getenv("XDG_CONFIG_DIRS");
+	if (old_var) {
+		old_var = strdup(old_var);
+	}
+	unsetenv("XDG_CONFIG_DIRS");
+
+	auto result = xdg_config_dirs();
+	TEST_STREQUAL(result[0], "/etc/xdg");
+	TEST_EQUAL(result[1], NULL);
+	free(result);
+
+	setenv("XDG_CONFIG_DIRS", ".:.:/etc/xdg:.:/:", 1);
+	result = xdg_config_dirs();
+	TEST_STREQUAL(result[0], "/etc/xdg");
+	TEST_STREQUAL(result[1], "/");
+	TEST_EQUAL(result[2], NULL);
+	free(result);
+
+	setenv("XDG_CONFIG_DIRS", ":", 1);
+	result = xdg_config_dirs();
+	TEST_EQUAL(result[0], NULL);
+	free(result);
+
+	if (old_var) {
+		setenv("XDG_CONFIG_DIRS", old_var, 1);
+		free(old_var);
+	}
+}
+
 /**
  * Parse a long number.
  */
@@ -33,7 +133,7 @@ bool parse_long(const char *s, long *dest) {
 		log_error("Invalid number: %s", s);
 		return false;
 	}
-	while (isspace(*endptr))
+	while (isspace((unsigned char)*endptr))
 		++endptr;
 	if (*endptr) {
 		log_error("Trailing characters: %s", s);
@@ -74,7 +174,7 @@ const char *parse_readnum(const char *src, double *dest) {
 		log_error("No number found: %s", src);
 		return src;
 	}
-	while (*pc && (isspace(*pc) || *pc == ',')) {
+	while (*pc && (isspace((unsigned char)*pc) || *pc == ',')) {
 		++pc;
 	}
 	*dest = val;
@@ -88,6 +188,13 @@ enum blur_method parse_blur_method(const char *src) {
 		return BLUR_METHOD_BOX;
 	} else if (strcmp(src, "gaussian") == 0) {
 		return BLUR_METHOD_GAUSSIAN;
+	} else if (strcmp(src, "dual_kawase") == 0) {
+		return BLUR_METHOD_DUAL_KAWASE;
+	} else if (strcmp(src, "kawase") == 0) {
+		log_warn("Blur method 'kawase' has been renamed to 'dual_kawase'. "
+		         "Interpreted as 'dual_kawase', but this will stop working "
+		         "soon.");
+		return BLUR_METHOD_DUAL_KAWASE;
 	} else if (strcmp(src, "none") == 0) {
 		return BLUR_METHOD_NONE;
 	}
@@ -154,8 +261,8 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 
 	// Detect trailing characters
 	for (; *pc && *pc != ';'; pc++) {
-		if (!isspace(*pc) && *pc != ',') {
-			// TODO isspace is locale aware, be careful
+		if (!isspace((unsigned char)*pc) && *pc != ',') {
+			// TODO(yshui) isspace is locale aware, be careful
 			log_error("Trailing characters in blur kernel string.");
 			goto err2;
 		}
@@ -164,7 +271,7 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 	// Jump over spaces after ';'
 	if (*pc == ';') {
 		pc++;
-		while (*pc && isspace(*pc)) {
+		while (*pc && isspace((unsigned char)*pc)) {
 			++pc;
 		}
 	}
@@ -197,7 +304,7 @@ err1:
  * @return            the kernels
  */
 struct conv **parse_blur_kern_lst(const char *src, bool *hasneg, int *count) {
-	// TODO just return a predefined kernels, not parse predefined strings...
+	// TODO(yshui) just return a predefined kernels, not parse predefined strings...
 	static const struct {
 		const char *name;
 		const char *kern_str;
@@ -418,7 +525,7 @@ bool parse_rule_opacity(c2_lptr_t **res, const char *src) {
 	}
 
 	// Skip over spaces
-	while (*endptr && isspace(*endptr))
+	while (*endptr && isspace((unsigned char)*endptr))
 		++endptr;
 	if (':' != *endptr) {
 		log_error("Opacity terminator not found: %s", src);
@@ -429,6 +536,114 @@ bool parse_rule_opacity(c2_lptr_t **res, const char *src) {
 	// Parse pattern
 	// I hope 1-100 is acceptable for (void *)
 	return c2_parse(res, endptr, (void *)val);
+}
+
+/// Search for auxiliary file under a base directory
+static char *locate_auxiliary_file_at(const char *base, const char *scope, const char *file) {
+	scoped_charp path = mstrjoin(base, scope);
+	mstrextend(&path, "/");
+	mstrextend(&path, file);
+	if (access(path, O_RDONLY) == 0) {
+		// Canonicalize path to avoid duplicates
+		char *abspath = realpath(path, NULL);
+		return abspath;
+	}
+	return NULL;
+}
+
+/**
+ * Get a path of an auxiliary file to read, could be a shader file, or any supplimenrary
+ * file.
+ *
+ * Follows the XDG specification to search for the shader file in configuration locations.
+ *
+ * The search order is:
+ *   1) If an absolute path is given, use it directly.
+ *   2) Search for the file directly under `include_dir`.
+ *   3) Search for the file in the XDG configuration directories, under path
+ *      /picom/<scope>/
+ */
+char *locate_auxiliary_file(const char *scope, const char *path, const char *include_dir) {
+	if (!path || strlen(path) == 0) {
+		return NULL;
+	}
+
+	// Filename is absolute path, so try to load from there
+	if (path[0] == '/') {
+		if (access(path, O_RDONLY) == 0) {
+			return realpath(path, NULL);
+		}
+	}
+
+	// First try to load file from the include directory (i.e. relative to the
+	// config file)
+	if (include_dir && strlen(include_dir)) {
+		char *ret = locate_auxiliary_file_at(include_dir, "", path);
+		if (ret) {
+			return ret;
+		}
+	}
+
+	// Fall back to searching in user config directory
+	scoped_charp picom_scope = mstrjoin("/picom/", scope);
+	scoped_charp config_home = (char *)xdg_config_home();
+	char *ret = locate_auxiliary_file_at(config_home, picom_scope, path);
+	if (ret) {
+		return ret;
+	}
+
+	// Fall back to searching in system config directory
+	auto config_dirs = xdg_config_dirs();
+	for (int i = 0; config_dirs[i]; i++) {
+		ret = locate_auxiliary_file_at(config_dirs[i], picom_scope, path);
+		if (ret) {
+			free(config_dirs);
+			return ret;
+		}
+	}
+	free(config_dirs);
+
+	return ret;
+}
+
+/**
+ * Parse a list of window shader rules.
+ */
+bool parse_rule_window_shader(c2_lptr_t **res, const char *src, const char *include_dir) {
+	if (!src) {
+		return false;
+	}
+
+	// Find custom shader terminator
+	const char *endptr = strchr(src, ':');
+	if (!endptr) {
+		log_error("Custom shader terminator not found: %s", src);
+		return false;
+	}
+
+	// Parse and create custom shader
+	scoped_charp untrimed_shader_source = strdup(src);
+	if (!untrimed_shader_source) {
+		return false;
+	}
+	auto source_end = strchr(untrimed_shader_source, ':');
+	*source_end = '\0';
+
+	size_t length;
+	char *tmp = (char *)trim_both(untrimed_shader_source, &length);
+	tmp[length] = '\0';
+	char *shader_source = NULL;
+
+	if (strcasecmp(tmp, "default") != 0) {
+		shader_source = locate_auxiliary_file("shaders", tmp, include_dir);
+		if (!shader_source) {
+			log_error("Custom shader file \"%s\" not found for rule: %s", tmp, src);
+			free(shader_source);
+			return false;
+		}
+	}
+
+	return c2_parse(res, ++endptr, (void *)shader_source);
 }
 
 /**
@@ -445,7 +660,7 @@ bool condlst_add(c2_lptr_t **pcondlst, const char *pattern) {
 }
 
 void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_enable,
-                         bool fading_enable) {
+                         bool fading_enable, bool blur_enable) {
 	// Apply default wintype options.
 	if (!mask[WINTYPE_DESKTOP].shadow) {
 		// Desktop windows are always drawn without shadow by default.
@@ -475,6 +690,10 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 			mask[i].focus = true;
 			opt->wintype_option[i].focus = true;
 		}
+		if (!mask[i].blur_background) {
+			mask[i].blur_background = true;
+			opt->wintype_option[i].blur_background = blur_enable;
+		}
 		if (!mask[i].full_shadow) {
 			mask[i].full_shadow = true;
 			opt->wintype_option[i].full_shadow = false;
@@ -489,13 +708,19 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 			// opacity logic is complicated, and needs an "unset" state
 			opt->wintype_option[i].opacity = NAN;
 		}
+		if (!mask[i].clip_shadow_above) {
+			mask[i].clip_shadow_above = true;
+			opt->wintype_option[i].clip_shadow_above = false;
+		}
 	}
 }
 
 char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
                    bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask) {
+	// clang-format off
 	*opt = (struct options){
 	    .backend = BKEND_XRENDER,
+	    .legacy_backends = false,
 	    .glx_no_stencil = false,
 	    .mark_wmwin_focused = false,
 	    .mark_ovredir_focused = false,
@@ -511,8 +736,6 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .benchmark_wid = XCB_NONE,
 	    .logpath = NULL,
 
-	    .refresh_rate = 0,
-	    .sw_opti = false,
 	    .use_damage = true,
 
 	    .shadow_red = 0.0,
@@ -525,6 +748,9 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .shadow_blacklist = NULL,
 	    .shadow_ignore_shaped = false,
 	    .xinerama_shadow_crop = false,
+	    .shadow_clip_list = NULL,
+
+	    .corner_radius = 0,
 
 	    .fade_in_step = 0.028,
 	    .fade_out_step = 0.03,
@@ -542,11 +768,14 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .blur_method = BLUR_METHOD_NONE,
 	    .blur_radius = 3,
 	    .blur_deviation = 0.84089642,
+	    .blur_strength = 5,
 	    .blur_background_frame = false,
 	    .blur_background_fixed = false,
 	    .blur_background_blacklist = NULL,
 	    .blur_kerns = NULL,
 	    .blur_kernel_count = 0,
+	    .window_shader_fg = NULL,
+	    .window_shader_fg_rules = NULL,
 	    .inactive_dim = 0.0,
 	    .inactive_dim_fixed = false,
 	    .invert_color_list = NULL,
@@ -560,7 +789,10 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .no_ewmh_fullscreen = false,
 
 	    .track_leader = false,
+
+	    .rounded_corners_blacklist = NULL
 	};
+	// clang-format on
 
 	char *ret = NULL;
 #ifdef CONFIG_LIBCONFIG

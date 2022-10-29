@@ -72,7 +72,11 @@ typedef uint32_t cdbus_enum_t;
 	cdbus_reply_errm((ps), dbus_message_new_error_printf(                            \
 	                           (srcmsg), (err_name), (err_format), ##__VA_ARGS__))
 
+#define PICOM_WINDOW_INTERFACE "picom.Window"
+#define PICOM_COMPOSITOR_INTERFACE "picom.Compositor"
+
 static DBusHandlerResult cdbus_process(DBusConnection *conn, DBusMessage *m, void *);
+static DBusHandlerResult cdbus_process_windows(DBusConnection *c, DBusMessage *msg, void *ud);
 
 static dbus_bool_t cdbus_callback_add_timeout(DBusTimeout *timeout, void *data);
 
@@ -129,7 +133,7 @@ bool cdbus_init(session_t *ps, const char *uniq) {
 		// underscore
 		char *tmp = service + strlen(CDBUS_SERVICE_NAME) + 1;
 		while (*tmp) {
-			if (!isalnum(*tmp)) {
+			if (!isalnum((unsigned char)*tmp)) {
 				*tmp = '_';
 			}
 			tmp++;
@@ -179,7 +183,12 @@ bool cdbus_init(session_t *ps, const char *uniq) {
 		dbus_error_free(&err);
 		goto fail;
 	}
-	dbus_connection_add_filter(cd->dbus_conn, cdbus_process, ps, NULL);
+	dbus_connection_register_object_path(
+	    cd->dbus_conn, CDBUS_OBJECT_NAME,
+	    (DBusObjectPathVTable[]){{NULL, cdbus_process}}, ps);
+	dbus_connection_register_fallback(
+	    cd->dbus_conn, CDBUS_OBJECT_NAME "/windows",
+	    (DBusObjectPathVTable[]){{NULL, cdbus_process_windows}}, ps);
 	return true;
 fail:
 	ps->dbus_data = NULL;
@@ -436,6 +445,56 @@ static bool cdbus_apdarg_wid(session_t *ps attr_unused, DBusMessage *msg, const 
 }
 
 /**
+ * Callback to append a Window argument to a message as a variant.
+ */
+static bool
+cdbus_append_wid_variant(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
+	assert(data);
+	cdbus_window_t val = *(const xcb_window_t *)data;
+
+	DBusMessageIter it, it2;
+	dbus_message_iter_init_append(msg, &it);
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_VARIANT,
+	                                      CDBUS_TYPE_WINDOW_STR, &it2)) {
+		return false;
+	}
+	if (!dbus_message_iter_append_basic(&it2, CDBUS_TYPE_WINDOW, &val)) {
+		log_error("Failed to append argument.");
+		return false;
+	}
+	if (!dbus_message_iter_close_container(&it, &it2)) {
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * Callback to append a bool argument to a message as a variant.
+ */
+static bool
+cdbus_append_bool_variant(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
+	assert(data);
+
+	dbus_bool_t val = *(const bool *)data;
+	DBusMessageIter it, it2;
+	dbus_message_iter_init_append(msg, &it);
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_VARIANT,
+	                                      DBUS_TYPE_BOOLEAN_AS_STRING, &it2)) {
+		return false;
+	}
+	if (!dbus_message_iter_append_basic(&it2, DBUS_TYPE_BOOLEAN, &val)) {
+		log_error("Failed to append argument.");
+		return false;
+	}
+	if (!dbus_message_iter_close_container(&it, &it2)) {
+		return false;
+	}
+
+	return true;
+}
+
+/**
  * Callback to append an cdbus_enum_t argument to a message.
  */
 static bool cdbus_apdarg_enum(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
@@ -462,6 +521,46 @@ cdbus_apdarg_string(session_t *ps attr_unused, DBusMessage *msg, const void *dat
 		return false;
 	}
 
+	return true;
+}
+
+/**
+ * Callback to append a string argument to a message as a variant.
+ */
+static bool
+cdbus_append_string_variant(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
+	const char *str = *(const char **)data;
+	if (!str) {
+		str = "";
+	}
+
+	DBusMessageIter it, it2;
+	dbus_message_iter_init_append(msg, &it);
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_VARIANT,
+	                                      DBUS_TYPE_STRING_AS_STRING, &it2)) {
+		return false;
+	}
+	if (!dbus_message_iter_append_basic(&it2, DBUS_TYPE_STRING, &str)) {
+		log_error("Failed to append argument.");
+		return false;
+	}
+	if (!dbus_message_iter_close_container(&it, &it2)) {
+		return false;
+	}
+
+	return true;
+}
+
+static bool cdbus_append_empty_dict(session_t *ps attr_unused, DBusMessage *msg,
+                                    const void *data attr_unused) {
+	DBusMessageIter it, it2;
+	dbus_message_iter_init_append(msg, &it);
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY, "{sv}", &it2)) {
+		return false;
+	}
+	if (!dbus_message_iter_close_container(&it, &it2)) {
+		return false;
+	}
 	return true;
 }
 
@@ -515,14 +614,14 @@ static bool cdbus_apdarg_wids(session_t *ps, DBusMessage *msg, const void *data 
  *        add an argument
  * @param data data pointer to pass to the function
  */
-static bool cdbus_signal(session_t *ps, const char *name,
+static bool cdbus_signal(session_t *ps, const char *interface, const char *name,
                          bool (*func)(session_t *ps, DBusMessage *msg, const void *data),
                          const void *data) {
 	struct cdbus_data *cd = ps->dbus_data;
 	DBusMessage *msg = NULL;
 
 	// Create a signal
-	msg = dbus_message_new_signal(CDBUS_OBJECT_NAME, CDBUS_INTERFACE_NAME, name);
+	msg = dbus_message_new_signal(CDBUS_OBJECT_NAME, interface, name);
 	if (!msg) {
 		log_error("Failed to create D-Bus signal.");
 		return false;
@@ -551,8 +650,9 @@ static bool cdbus_signal(session_t *ps, const char *name,
 /**
  * Send a signal with a Window ID as argument.
  */
-static inline bool cdbus_signal_wid(session_t *ps, const char *name, xcb_window_t wid) {
-	return cdbus_signal(ps, name, cdbus_apdarg_wid, &wid);
+static inline bool
+cdbus_signal_wid(session_t *ps, const char *interface, const char *name, xcb_window_t wid) {
+	return cdbus_signal(ps, interface, name, cdbus_apdarg_wid, &wid);
 }
 
 /**
@@ -735,6 +835,84 @@ static bool cdbus_process_list_win(session_t *ps, DBusMessage *msg) {
 /**
  * Process a win_get D-Bus request.
  */
+static bool
+cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_t wid) {
+	const char *target = NULL;
+	const char *interface = NULL;
+	DBusError err = {};
+
+	if (!dbus_message_get_args(msg, &err, DBUS_TYPE_STRING, &interface,
+	                           DBUS_TYPE_STRING, &target, DBUS_TYPE_INVALID)) {
+		log_error("Failed to parse argument of \"Get\" (%s).", err.message);
+		dbus_error_free(&err);
+		return false;
+	}
+
+	if (strcmp(interface, PICOM_WINDOW_INTERFACE)) {
+		return false;
+	}
+
+	auto w = find_managed_win(ps, wid);
+
+	if (!w) {
+		log_error("Window %#010x not found.", wid);
+		cdbus_reply_err(ps, msg, CDBUS_ERROR_BADWIN, CDBUS_ERROR_BADWIN_S, wid);
+		return true;
+	}
+
+#define cdbus_m_win_get_do(tgt, member, apdarg_func)                                     \
+	if (!strcmp(#tgt, target)) {                                                     \
+		cdbus_reply(ps, msg, apdarg_func, &w->member);                           \
+		return true;                                                             \
+	}
+
+	if (!strcmp("Mapped", target)) {
+		cdbus_reply(ps, msg, cdbus_append_bool_variant,
+		            (bool[]){win_is_mapped_in_x(w)});
+		return true;
+	}
+
+	if (!strcmp(target, "Id")) {
+		cdbus_reply(ps, msg, cdbus_append_wid_variant, &w->base.id);
+		return true;
+	}
+
+	// next
+	if (!strcmp("Next", target)) {
+		cdbus_window_t next_id = 0;
+		if (!list_node_is_last(&ps->window_stack, &w->base.stack_neighbour)) {
+			next_id = list_entry(w->base.stack_neighbour.next, struct win,
+			                     stack_neighbour)
+			              ->id;
+		}
+		cdbus_reply(ps, msg, cdbus_append_wid_variant, &next_id);
+		return true;
+	}
+
+	cdbus_m_win_get_do(ClientWin, client_win, cdbus_append_wid_variant);
+	cdbus_m_win_get_do(Leader, leader, cdbus_append_wid_variant);
+	cdbus_m_win_get_do(Name, name, cdbus_append_string_variant);
+	if (!strcmp("Type", target)) {
+		cdbus_reply(ps, msg, cdbus_append_string_variant, &WINTYPES[w->window_type]);
+		return true;
+	}
+	if (!strcmp("RawFocused", target)) {
+		cdbus_reply(ps, msg, cdbus_append_bool_variant,
+		            (bool[]){win_is_focused_raw(ps, w)});
+		return true;
+	}
+
+#undef cdbus_m_win_get_do
+
+	log_error(CDBUS_ERROR_BADTGT_S, target);
+	cdbus_reply_err(ps, msg, CDBUS_ERROR_BADTGT, CDBUS_ERROR_BADTGT_S, target);
+
+	return true;
+}
+
+/**
+ * Process a win_get D-Bus request.
+ */
 static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	cdbus_window_t wid = XCB_NONE;
 	const char *target = NULL;
@@ -761,7 +939,10 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 		return true;                                                             \
 	}
 
-	cdbus_m_win_get_do(base.id, cdbus_reply_wid);
+	if (!strcmp(target, "id")) {
+		cdbus_reply_wid(ps, msg, w->base.id);
+		return true;
+	}
 
 	// next
 	if (!strcmp("next", target)) {
@@ -972,7 +1153,7 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 
 	// version
 	if (!strcmp("version", target)) {
-		cdbus_reply_string(ps, msg, COMPTON_VERSION);
+		cdbus_reply_string(ps, msg, PICOM_VERSION);
 		return true;
 	}
 
@@ -1005,8 +1186,8 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(stoppaint_force, cdbus_reply_enum);
 	cdbus_m_opts_get_do(logpath, cdbus_reply_string);
 
-	cdbus_m_opts_get_do(refresh_rate, cdbus_reply_int32);
-	cdbus_m_opts_get_do(sw_opti, cdbus_reply_bool);
+	cdbus_m_opts_get_stub(refresh_rate, cdbus_reply_int32, 0);
+	cdbus_m_opts_get_stub(sw_opti, cdbus_reply_bool, false);
 	cdbus_m_opts_get_do(vsync, cdbus_reply_bool);
 	if (!strcmp("backend", target)) {
 		assert(ps->o.backend < sizeof(BACKEND_STRS) / sizeof(BACKEND_STRS[0]));
@@ -1207,6 +1388,21 @@ static bool cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
 	    "    <method name='reset' />\n"
 	    "    <method name='repaint' />\n"
 	    "  </interface>\n"
+	    "  <interface name='" PICOM_COMPOSITOR_INTERFACE "'>\n"
+	    "    <signal name='WinAdded'>\n"
+	    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+	    "    </signal>\n"
+	    "    <signal name='WinDestroyed'>\n"
+	    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+	    "    </signal>\n"
+	    "    <signal name='WinMapped'>\n"
+	    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+	    "    </signal>\n"
+	    "    <signal name='WinUnmapped'>\n"
+	    "      <arg name='wid' type='" CDBUS_TYPE_WINDOW_STR "'/>\n"
+	    "    </signal>\n"
+	    "  </interface>\n"
+	    "  <node name='windows' />\n"
 	    "</node>\n";
 
 	cdbus_reply_string(ps, msg, str_introspect);
@@ -1214,6 +1410,90 @@ static bool cdbus_process_introspect(session_t *ps, DBusMessage *msg) {
 	return true;
 }
 ///@}
+
+/**
+ * Process an D-Bus Introspect request, for /windows.
+ */
+static bool cdbus_process_windows_root_introspect(session_t *ps, DBusMessage *msg) {
+	static const char *str_introspect =
+	    "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection "
+	    "1.0//EN\"\n"
+	    " \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n"
+	    "<node>\n"
+	    "  <interface name='org.freedesktop.DBus.Introspectable'>\n"
+	    "    <method name='Introspect'>\n"
+	    "      <arg name='data' direction='out' type='s' />\n"
+	    "    </method>\n"
+	    "  </interface>\n";
+
+	char *ret = NULL;
+	mstrextend(&ret, str_introspect);
+
+	HASH_ITER2(ps->windows, w) {
+		assert(!w->destroyed);
+		if (!w->managed) {
+			continue;
+		}
+		char *tmp = NULL;
+		asprintf(&tmp, "<node name='%#010x'/>\n", w->id);
+		mstrextend(&ret, tmp);
+		free(tmp);
+	}
+	mstrextend(&ret, "</node>");
+
+	bool success = cdbus_reply_string(ps, msg, ret);
+	free(ret);
+	return success;
+}
+
+static bool cdbus_process_window_introspect(session_t *ps, DBusMessage *msg) {
+	// clang-format off
+	static const char *str_introspect =
+	    "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection "
+	    "1.0//EN\"\n"
+	    " \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n"
+	    "<node>\n"
+	    "  <interface name='org.freedesktop.DBus.Introspectable'>\n"
+	    "    <method name='Introspect'>\n"
+	    "      <arg name='data' direction='out' type='s' />\n"
+	    "    </method>\n"
+	    "  </interface>\n"
+	    "  <interface name='org.freedesktop.DBus.Properties'>\n"
+	    "    <method name='Get'>\n"
+	    "      <arg type='s' name='interface_name' direction='in'/>\n"
+	    "      <arg type='s' name='property_name' direction='in'/>\n"
+	    "      <arg type='v' name='value' direction='out'/>\n"
+	    "    </method>\n"
+	    "    <method name='GetAll'>\n"
+	    "      <arg type='s' name='interface_name' direction='in'/>\n"
+	    "      <arg type='a{sv}' name='properties' direction='out'/>\n"
+	    "    </method>\n"
+	    "    <method name='Set'>\n"
+	    "      <arg type='s' name='interface_name' direction='in'/>\n"
+	    "      <arg type='s' name='property_name' direction='in'/>\n"
+	    "      <arg type='v' name='value' direction='in'/>\n"
+	    "    </method>\n"
+	    "    <signal name='PropertiesChanged'>\n"
+	    "      <arg type='s' name='interface_name'/>\n"
+	    "      <arg type='a{sv}' name='changed_properties'/>\n"
+	    "      <arg type='as' name='invalidated_properties'/>\n"
+	    "    </signal>\n"
+	    "  </interface>\n"
+	    "  <interface name='" PICOM_WINDOW_INTERFACE "'>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='Leader' access='read'/>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='ClientWin' access='read'/>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='Id' access='read'/>\n"
+	    "    <property type='" CDBUS_TYPE_WINDOW_STR "' name='Next' access='read'/>\n"
+	    "    <property type='b' name='RawFocused' access='read'/>\n"
+	    "    <property type='b' name='Mapped' access='read'/>\n"
+	    "    <property type='s' name='Name' access='read'/>\n"
+	    "    <property type='s' name='Type' access='read'/>\n"
+	    "  </interface>\n"
+	    "</node>\n";
+	// clang-format on
+
+	return cdbus_reply_string(ps, msg, str_introspect);
+}
 
 /**
  * Process a message from D-Bus.
@@ -1299,42 +1579,122 @@ cdbus_process(DBusConnection *c attr_unused, DBusMessage *msg, void *ud) {
 	return handled ? DBUS_HANDLER_RESULT_HANDLED : DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
+/**
+ * Process a message from D-Bus, for /windows path.
+ */
+static DBusHandlerResult
+cdbus_process_windows(DBusConnection *c attr_unused, DBusMessage *msg, void *ud) {
+	session_t *ps = ud;
+	bool handled = false;
+	const char *path = dbus_message_get_path(msg);
+	const char *last_segment = strrchr(path, '/');
+	if (last_segment == NULL) {
+		if (DBUS_MESSAGE_TYPE_METHOD_CALL == dbus_message_get_type(msg) &&
+		    !dbus_message_get_no_reply(msg))
+			cdbus_reply_err(ps, msg, CDBUS_ERROR_BADMSG, CDBUS_ERROR_BADMSG_S);
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	bool is_root = strncmp(last_segment, "/windows", 8) == 0;
+	if (dbus_message_is_method_call(msg, "org.freedesktop.DBus.Introspectable",
+	                                "Introspect")) {
+		if (is_root) {
+			handled = cdbus_process_windows_root_introspect(ps, msg);
+		} else {
+			handled = cdbus_process_window_introspect(ps, msg);
+		}
+		goto finished;
+	}
+
+	if (!is_root) {
+		auto wid = (cdbus_window_t)strtol(last_segment + 1, NULL, 0);
+		if (dbus_message_is_method_call(msg, "org.freedesktop.DBus.Properties",
+		                                "GetAll")) {
+			handled = cdbus_reply(ps, msg, cdbus_append_empty_dict, NULL);
+			goto finished;
+		}
+
+		if (dbus_message_is_method_call(msg, "org.freedesktop.DBus.Properties", "Get")) {
+			handled = cdbus_process_window_property_get(ps, msg, wid);
+			goto finished;
+		}
+	}
+
+	if (dbus_message_is_signal(msg, "org.freedesktop.DBus", "NameAcquired") ||
+	    dbus_message_is_signal(msg, "org.freedesktop.DBus", "NameLost")) {
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+
+	if (DBUS_MESSAGE_TYPE_ERROR == dbus_message_get_type(msg)) {
+		log_error("Error message of path \"%s\" "
+		          "interface \"%s\", member \"%s\", error \"%s\"",
+		          dbus_message_get_path(msg), dbus_message_get_interface(msg),
+		          dbus_message_get_member(msg), dbus_message_get_error_name(msg));
+	} else {
+		log_error("Illegal message of type \"%s\", path \"%s\" "
+		          "interface \"%s\", member \"%s\"",
+		          cdbus_repr_msgtype(msg), dbus_message_get_path(msg),
+		          dbus_message_get_interface(msg), dbus_message_get_member(msg));
+	}
+	if (DBUS_MESSAGE_TYPE_METHOD_CALL == dbus_message_get_type(msg) &&
+	    !dbus_message_get_no_reply(msg)) {
+		handled = cdbus_reply_err(ps, msg, CDBUS_ERROR_BADMSG, CDBUS_ERROR_BADMSG_S);
+	}
+
+finished:
+	if (!handled && dbus_message_get_type(msg) == DBUS_MESSAGE_TYPE_METHOD_CALL &&
+	    !dbus_message_get_no_reply(msg)) {
+		handled =
+		    cdbus_reply_err(ps, msg, CDBUS_ERROR_UNKNOWN, CDBUS_ERROR_UNKNOWN_S);
+	}
+	return handled ? DBUS_HANDLER_RESULT_HANDLED : DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
 /** @name Core callbacks
  */
 ///@{
 void cdbus_ev_win_added(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_added", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_added", w->id);
+		cdbus_signal_wid(ps, PICOM_COMPOSITOR_INTERFACE, "WinAdded", w->id);
+	}
 }
 
 void cdbus_ev_win_destroyed(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_destroyed", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_destroyed", w->id);
+		cdbus_signal_wid(ps, PICOM_COMPOSITOR_INTERFACE, "WinDestroyed", w->id);
+	}
 }
 
 void cdbus_ev_win_mapped(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_mapped", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_mapped", w->id);
+		cdbus_signal_wid(ps, PICOM_COMPOSITOR_INTERFACE, "WinMapped", w->id);
+	}
 }
 
 void cdbus_ev_win_unmapped(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_unmapped", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_unmapped", w->id);
+		cdbus_signal_wid(ps, PICOM_COMPOSITOR_INTERFACE, "WinUnmapped", w->id);
+	}
 }
 
 void cdbus_ev_win_focusout(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_focusout", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_focusout", w->id);
+	}
 }
 
 void cdbus_ev_win_focusin(session_t *ps, struct win *w) {
 	struct cdbus_data *cd = ps->dbus_data;
-	if (cd->dbus_conn)
-		cdbus_signal_wid(ps, "win_focusin", w->id);
+	if (cd->dbus_conn) {
+		cdbus_signal_wid(ps, CDBUS_INTERFACE_NAME, "win_focusin", w->id);
+	}
 }
 //!@}

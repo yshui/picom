@@ -130,6 +130,14 @@ typedef struct _latom {
 	struct _latom *next;
 } latom_t;
 
+struct shader_info {
+	char *key;
+	char *source;
+	void *backend_shader;
+	uint64_t attributes;
+	UT_hash_handle hh;
+};
+
 /// Structure containing all necessary data for a session.
 typedef struct session {
 	// === Event handlers ===
@@ -139,9 +147,6 @@ typedef struct session {
 	ev_timer unredir_timer;
 	/// Timer for fading
 	ev_timer fade_timer;
-	/// Timer for delayed drawing, right now only used by
-	/// swopti
-	ev_timer delayed_draw_timer;
 	/// Use an ev_idle callback for drawing
 	/// So we only start drawing when events are processed
 	ev_idle draw_idle;
@@ -153,6 +158,8 @@ typedef struct session {
 	ev_signal usr1_signal;
 	/// Signal handler for SIGINT
 	ev_signal int_signal;
+
+	// === Backend related ===
 	/// backend data
 	backend_t *backend_data;
 	/// backend blur context
@@ -163,6 +170,8 @@ typedef struct session {
 	void *file_watch_handle;
 	/// libev mainloop
 	struct ev_loop *loop;
+	/// Shaders
+	struct shader_info *shaders;
 
 	// === Display related ===
 	/// Whether the X server is grabbed by us
@@ -187,7 +196,7 @@ typedef struct session {
 	int root_width;
 	// Damage of root window.
 	// Damage root_damage;
-	/// X Composite overlay window. Used if <code>--paint-on-overlay</code>.
+	/// X Composite overlay window.
 	xcb_window_t overlay;
 	/// The target window for debug mode
 	xcb_window_t debug_window;
@@ -230,6 +239,10 @@ typedef struct session {
 	bool tmout_unredir_hit;
 	/// Whether we need to redraw the screen
 	bool redraw_needed;
+
+	/// Cache a xfixes region so we don't need to allocate it everytime.
+	/// A workaround for yshui/picom#301
+	xcb_xfixes_region_t damaged_region;
 	/// The region needs to painted on next paint.
 	region_t *damage;
 	/// The region damaged on the last paint.
@@ -241,7 +254,7 @@ typedef struct session {
 	/// Pre-generated alpha pictures.
 	xcb_render_picture_t *alpha_picts;
 	/// Time of last fading. In milliseconds.
-	long fade_time;
+	long long fade_time;
 	/// Head pointer of the error ignore linked list.
 	ignore_t *ignore_head;
 	/// Pointer to the <code>next</code> member of tail element of the error
@@ -251,9 +264,9 @@ typedef struct session {
 	struct x_convolution_kernel **blur_kerns_cache;
 	/// If we should quit
 	bool quit:1;
+	// TODO(yshui) use separate flags for dfferent kinds of updates so we don't
+	// waste our time.
 	/// Whether there are pending updates, like window creation, etc.
-	/// TODO use separate flags for dfferent kinds of updates so we don't
-	/// waste our time.
 	bool pending_updates:1;
 
 	// === Expose event related ===
@@ -287,17 +300,13 @@ typedef struct session {
 	xcb_render_picture_t cshadow_picture;
 	/// 1x1 white Picture.
 	xcb_render_picture_t white_picture;
-	/// Gaussian map of shadow.
-	struct conv *gaussian_map;
+	/// Backend shadow context.
+	struct backend_shadow_context *shadow_context;
 	// for shadow precomputation
 	/// A region in which shadow is not painted on.
 	region_t shadow_exclude_reg;
 
 	// === Software-optimization-related ===
-	/// Currently used refresh rate.
-	int refresh_rate;
-	/// Interval between refresh in nanoseconds.
-	long refresh_intv;
 	/// Nanosecond offset of the first painting.
 	long paint_tm_offset;
 

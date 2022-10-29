@@ -59,7 +59,7 @@ endif
 
 if get_option('opengl')
 	cflags += ['-DCONFIG_OPENGL', '-DGL_GLEXT_PROTOTYPES']
-	deps += [dependency('gl', required: true)]
+	deps += [dependency('gl', required: true), dependency('egl', required: true)]
 	srcs += [ 'opengl.c' ]
 endif
 
@@ -81,8 +81,8 @@ endif
 host_system = host_machine.system()
 if host_system == 'linux'
 	cflags += ['-DHAS_INOTIFY']
-elif host_system == 'freebsd' or host_system == 'netbsd' or
-     host_system == 'dragonfly' or host_system == 'openbsd'
+elif (host_system == 'freebsd' or host_system == 'netbsd' or
+      host_system == 'dragonfly' or host_system == 'openbsd')
 	cflags += ['-DHAS_KQUEUE']
 endif
 
