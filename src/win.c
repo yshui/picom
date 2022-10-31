@@ -677,13 +677,7 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 
         // Determine if a window should animate
 		if (win_should_animate(ps, w)) {
-            if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
-                win_on_win_size_change(ps, w);
-                win_update_bounding_shape(ps, w);
-                damaged = true;
-                win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
-            }
-
+            win_update_bounding_shape(ps, w);
             if (w->pending_g.y < 0 && w->g.y > 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
                 w->dwm_mask = ANIM_PREV_TAG;
             else if (w->pending_g.y > 0 && w->g.y < 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
@@ -749,13 +743,12 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 				}
 			}
 
-			w->animation_progress = 0.0;
-
+            w->animation_progress = 0.0;
 		} else {
 			w->g = w->pending_g;
 		}
 
-        if (!win_should_animate(ps, w) && win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
+        if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
             win_on_win_size_change(ps, w);
             win_update_bounding_shape(ps, w);
             damaged = true;
