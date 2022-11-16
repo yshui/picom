@@ -150,7 +150,7 @@ typedef struct session {
 	/// Use an ev_idle callback for drawing
 	/// So we only start drawing when events are processed
 	ev_idle draw_idle;
-	/// Called everytime we have timeouts or new data on socket,
+	/// Called every time we have timeouts or new data on socket,
 	/// so we can be sure if xcb read from X socket at anytime during event
 	/// handling, we will not left any event unhandled in the queue
 	ev_prepare event_check;
@@ -240,7 +240,7 @@ typedef struct session {
 	/// Whether we need to redraw the screen
 	bool redraw_needed;
 
-	/// Cache a xfixes region so we don't need to allocate it everytime.
+	/// Cache a xfixes region so we don't need to allocate it every time.
 	/// A workaround for yshui/picom#301
 	xcb_xfixes_region_t damaged_region;
 	/// The region needs to painted on next paint.
