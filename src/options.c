@@ -139,7 +139,7 @@ static const struct picom_option picom_options[] = {
     {"log-file"                    , required_argument, 322, NULL          , "Path to the log file."},
     {"use-damage"                  , no_argument      , 323, NULL          , "Render only the damaged (changed) part of the screen"},
     {"no-use-damage"               , no_argument      , 324, NULL          , "Disable the use of damage information. This cause the whole screen to be"
-                                                                             "redrawn everytime, instead of the part of the screen that has actually "
+                                                                             "redrawn every time, instead of the part of the screen that has actually "
                                                                              "changed. Potentially degrades the performance, but might fix some artifacts."},
     {"no-vsync"                    , no_argument      , 325, NULL          , "Disable VSync"},
     {"max-brightness"              , required_argument, 326, NULL          , "Dims windows which average brightness is above this threshold. Requires "
