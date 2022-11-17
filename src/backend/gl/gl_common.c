@@ -1182,6 +1182,11 @@ struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double 
 		    .deviation = gaussian_kernel_std_for_size(radius, 0.5 / 256.0),
 		};
 		ctx->blur_context = gl_create_blur_context(base, BLUR_METHOD_GAUSSIAN, &args);
+		if (!ctx->blur_context) {
+			log_error("Failed to create shadow context");
+			free(ctx);
+			return NULL;
+		}
 	}
 	return (struct backend_shadow_context *)ctx;
 }
