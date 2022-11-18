@@ -539,8 +539,8 @@ static bool initialize_backend(session_t *ps) {
 				} else {
 					shader->attributes = 0;
 				}
-				log_debug("Shader %s has attributes %ld", shader->key,
-				          shader->attributes);
+				log_debug("Shader %s has attributes %" PRIu64,
+				          shader->key, shader->attributes);
 			}
 		}
 

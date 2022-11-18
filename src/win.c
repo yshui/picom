@@ -353,6 +353,7 @@ static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w
 }
 
 bool win_bind_mask(struct backend_base *b, struct managed_win *w) {
+	assert(!w->mask_image);
 	auto reg_bound_local = win_get_bounding_shape_global_by_val(w);
 	pixman_region32_translate(&reg_bound_local, -w->g.x, -w->g.y);
 	w->mask_image = b->ops->make_mask(

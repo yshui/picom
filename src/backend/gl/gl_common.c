@@ -1180,18 +1180,28 @@ struct gl_shadow_context {
 struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double radius) {
 	auto ctx = ccalloc(1, struct gl_shadow_context);
 	ctx->radius = radius;
+	ctx->blur_context = NULL;
 
-	struct gaussian_blur_args args = {
-	    .size = (int)radius,
-	    .deviation = gaussian_kernel_std_for_size(radius, 0.5 / 256.0),
-	};
-	ctx->blur_context = gl_create_blur_context(base, BLUR_METHOD_GAUSSIAN, &args);
+	if (radius > 0) {
+		struct gaussian_blur_args args = {
+		    .size = (int)radius,
+		    .deviation = gaussian_kernel_std_for_size(radius, 0.5 / 256.0),
+		};
+		ctx->blur_context = gl_create_blur_context(base, BLUR_METHOD_GAUSSIAN, &args);
+		if (!ctx->blur_context) {
+			log_error("Failed to create shadow context");
+			free(ctx);
+			return NULL;
+		}
+	}
 	return (struct backend_shadow_context *)ctx;
 }
 
 void gl_destroy_shadow_context(backend_t *base attr_unused, struct backend_shadow_context *ctx) {
 	auto ctx_ = (struct gl_shadow_context *)ctx;
-	gl_destroy_blur_context(base, (struct backend_blur_context *)ctx_->blur_context);
+	if (ctx_->blur_context) {
+		gl_destroy_blur_context(base, (struct backend_blur_context *)ctx_->blur_context);
+	}
 	free(ctx_);
 }
 
@@ -1252,27 +1262,32 @@ void *gl_shadow_from_mask(backend_t *base, void *mask,
 
 	gl_check_err();
 
-	glActiveTexture(GL_TEXTURE0);
-	auto tmp_texture = gl_new_texture(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, tmp_texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, new_inner->width, new_inner->height, 0,
-	             GL_RED, GL_UNSIGNED_BYTE, NULL);
-	glBindTexture(GL_TEXTURE_2D, 0);
+	auto tmp_texture = source_texture;
+	if (gsctx->blur_context != NULL) {
+		glActiveTexture(GL_TEXTURE0);
+		tmp_texture = gl_new_texture(GL_TEXTURE_2D);
+		glBindTexture(GL_TEXTURE_2D, tmp_texture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, new_inner->width,
+		             new_inner->height, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
+		glBindTexture(GL_TEXTURE_2D, 0);
 
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
-	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-	                       tmp_texture, 0);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+		glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+		                       GL_TEXTURE_2D, tmp_texture, 0);
 
-	region_t reg_blur;
-	pixman_region32_init_rect(&reg_blur, 0, 0, (unsigned int)new_inner->width,
-	                          (unsigned int)new_inner->height);
-	// gl_blur expects reg_blur to be in X coordinate system (i.e. y flipped), but we
-	// are covering the whole texture so we don't need to worry about that.
-	gl_blur_impl(1.0, gsctx->blur_context, NULL, (coord_t){0}, &reg_blur, NULL,
-	             source_texture,
-	             (geometry_t){.width = new_inner->width, .height = new_inner->height},
-	             fbo, gd->default_mask_texture);
-	pixman_region32_fini(&reg_blur);
+		region_t reg_blur;
+		pixman_region32_init_rect(&reg_blur, 0, 0, (unsigned int)new_inner->width,
+		                          (unsigned int)new_inner->height);
+		// gl_blur expects reg_blur to be in X coordinate system (i.e. y flipped),
+		// but we are covering the whole texture so we don't need to worry about
+		// that.
+		gl_blur_impl(
+		    1.0, gsctx->blur_context, NULL, (coord_t){0}, &reg_blur, NULL,
+		    source_texture,
+		    (geometry_t){.width = new_inner->width, .height = new_inner->height},
+		    fbo, gd->default_mask_texture);
+		pixman_region32_fini(&reg_blur);
+	}
 
 	// Colorize the shadow with color.
 	log_debug("Colorize shadow");
@@ -1324,7 +1339,10 @@ void *gl_shadow_from_mask(backend_t *base, void *mask,
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glDeleteBuffers(2, bo);
 
-	glDeleteTextures(1, (GLuint[]){source_texture, tmp_texture});
+	glDeleteTextures(1, (GLuint[]){source_texture});
+	if (tmp_texture != source_texture) {
+		glDeleteTextures(1, (GLuint[]){tmp_texture});
+	}
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDeleteFramebuffers(1, &fbo);
 	gl_check_err();
