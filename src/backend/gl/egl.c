@@ -36,6 +36,8 @@ struct egl_data {
 	EGLContext ctx;
 };
 
+static PFNGLEGLIMAGETARGETTEXSTORAGEEXTPROC glEGLImageTargetTexStorage = NULL;
+
 /**
  * Free a glx_texture_t.
  */
@@ -202,6 +204,14 @@ static backend_t *egl_init(session_t *ps) {
 		goto end;
 	}
 
+	glEGLImageTargetTexStorage =
+	    (PFNGLEGLIMAGETARGETTEXSTORAGEEXTPROC)eglGetProcAddress("glEGLImageTargetTexS"
+	                                                            "torageEXT");
+	if (glEGLImageTargetTexStorage == NULL) {
+		log_error("Failed to get glEGLImageTargetTexStorageEXT.");
+		goto end;
+	}
+
 	gd->gl.decouple_texture_user_data = egl_decouple_user_data;
 	gd->gl.release_user_data = egl_release_image;
 
@@ -270,7 +280,7 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	wd->dim = 0;
 	wd->inner->refcount = 1;
 	glBindTexture(GL_TEXTURE_2D, inner->texture);
-	glEGLImageTargetTexStorageEXT(GL_TEXTURE_2D, eglpixmap->image, NULL);
+	glEGLImageTargetTexStorage(GL_TEXTURE_2D, eglpixmap->image, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	gl_check_err();
