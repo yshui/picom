@@ -2426,6 +2426,7 @@ static void destroy_win_finish(session_t *ps, struct win *w) {
 			assert(mw->shadow_image != NULL);
 			win_release_shadow(ps->backend_data, mw);
 		}
+		win_release_mask(ps->backend_data, mw);
 
 		// Invalidate reg_ignore of windows below this one
 		// TODO(yshui) what if next_w is not mapped??
