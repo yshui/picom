@@ -37,6 +37,10 @@ struct egl_data {
 };
 
 static PFNGLEGLIMAGETARGETTEXSTORAGEEXTPROC glEGLImageTargetTexStorage = NULL;
+static PFNEGLCREATEIMAGEKHRPROC eglCreateImageProc = NULL;
+static PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageProc = NULL;
+static PFNEGLGETPLATFORMDISPLAYPROC eglGetPlatformDisplayProc = NULL;
+static PFNEGLCREATEPLATFORMWINDOWSURFACEPROC eglCreatePlatformWindowSurfaceProc = NULL;
 
 /**
  * Free a glx_texture_t.
@@ -46,7 +50,7 @@ static void egl_release_image(backend_t *base, struct gl_texture *tex) {
 	struct egl_pixmap *p = tex->user_data;
 	// Release binding
 	if (p->image != EGL_NO_IMAGE) {
-		eglDestroyImage(gd->display, p->image);
+		eglDestroyImageProc(gd->display, p->image);
 		p->image = EGL_NO_IMAGE;
 	}
 
@@ -103,6 +107,20 @@ static bool egl_set_swap_interval(int interval, EGLDisplay dpy) {
  * Initialize OpenGL.
  */
 static backend_t *egl_init(session_t *ps) {
+	bool success = false;
+
+#define get_proc(name, type)                                                             \
+	name##Proc = (type)eglGetProcAddress(#name);                                     \
+	if (!name##Proc) {                                                               \
+		log_error("Failed to get EGL function " #name);                          \
+		goto end;                                                                \
+	}
+	get_proc(eglCreateImage, PFNEGLCREATEIMAGEKHRPROC);
+	get_proc(eglDestroyImage, PFNEGLDESTROYIMAGEKHRPROC);
+	get_proc(eglGetPlatformDisplay, PFNEGLGETPLATFORMDISPLAYPROC);
+	get_proc(eglCreatePlatformWindowSurface, PFNEGLCREATEPLATFORMWINDOWSURFACEPROC);
+#undef get_proc
+
 	// Check if we have the X11 platform
 	const char *exts = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
 	if (strstr(exts, "EGL_EXT_platform_x11") == NULL) {
@@ -110,14 +128,13 @@ static backend_t *egl_init(session_t *ps) {
 		return NULL;
 	}
 
-	bool success = false;
 	auto gd = ccalloc(1, struct egl_data);
-	gd->display = eglGetPlatformDisplay(EGL_PLATFORM_X11_EXT, ps->dpy,
-	                                    (EGLAttrib[]){
-	                                        EGL_PLATFORM_X11_SCREEN_EXT,
-	                                        ps->scr,
-	                                        EGL_NONE,
-	                                    });
+	gd->display = eglGetPlatformDisplayProc(EGL_PLATFORM_X11_EXT, ps->dpy,
+	                                        (EGLAttrib[]){
+	                                            EGL_PLATFORM_X11_SCREEN_EXT,
+	                                            ps->scr,
+	                                            EGL_NONE,
+	                                        });
 	if (gd->display == EGL_NO_DISPLAY) {
 		log_error("Failed to get EGL display.");
 		goto end;
@@ -126,6 +143,11 @@ static backend_t *egl_init(session_t *ps) {
 	EGLint major, minor;
 	if (!eglInitialize(gd->display, &major, &minor)) {
 		log_error("Failed to initialize EGL.");
+		goto end;
+	}
+
+	if (major < 1 || (major == 1 && minor < 5)) {
+		log_error("EGL version too old, need at least 1.5.");
 		goto end;
 	}
 
@@ -172,7 +194,7 @@ static backend_t *egl_init(session_t *ps) {
 	EGLConfig target_cfg = cfgs[0];
 	free(cfgs);
 
-	gd->target_win = eglCreatePlatformWindowSurface(
+	gd->target_win = eglCreatePlatformWindowSurfaceProc(
 	    gd->display, target_cfg, (xcb_window_t[]){session_get_target_window(ps)}, NULL);
 	if (gd->target_win == EGL_NO_SURFACE) {
 		log_error("Failed to create EGL surface.");
@@ -260,8 +282,8 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 
 	eglpixmap = cmalloc(struct egl_pixmap);
 	eglpixmap->pixmap = pixmap;
-	eglpixmap->image = eglCreateImage(gd->display, gd->ctx, EGL_NATIVE_PIXMAP_KHR,
-	                                  (EGLClientBuffer)(uintptr_t)pixmap, NULL);
+	eglpixmap->image = eglCreateImageProc(gd->display, gd->ctx, EGL_NATIVE_PIXMAP_KHR,
+	                                      (EGLClientBuffer)(uintptr_t)pixmap, NULL);
 	eglpixmap->owned = owned;
 
 	if (eglpixmap->image == EGL_NO_IMAGE) {
@@ -287,7 +309,7 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	return wd;
 err:
 	if (eglpixmap && eglpixmap->image) {
-		eglDestroyImage(gd->display, eglpixmap->image);
+		eglDestroyImageProc(gd->display, eglpixmap->image);
 	}
 	free(eglpixmap);
 
