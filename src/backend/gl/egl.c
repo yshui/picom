@@ -108,6 +108,7 @@ static bool egl_set_swap_interval(int interval, EGLDisplay dpy) {
  */
 static backend_t *egl_init(session_t *ps) {
 	bool success = false;
+	struct egl_data *gd = NULL;
 
 #define get_proc(name, type)                                                             \
 	name##Proc = (type)eglGetProcAddress(#name);                                     \
@@ -128,7 +129,7 @@ static backend_t *egl_init(session_t *ps) {
 		return NULL;
 	}
 
-	auto gd = ccalloc(1, struct egl_data);
+	gd = ccalloc(1, struct egl_data);
 	gd->display = eglGetPlatformDisplayProc(EGL_PLATFORM_X11_EXT, ps->dpy,
 	                                        (EGLAttrib[]){
 	                                            EGL_PLATFORM_X11_SCREEN_EXT,
@@ -249,7 +250,9 @@ static backend_t *egl_init(session_t *ps) {
 
 end:
 	if (!success) {
-		egl_deinit(&gd->gl.base);
+		if (gd != NULL) {
+			egl_deinit(&gd->gl.base);
+		}
 		return NULL;
 	}
 
