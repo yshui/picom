@@ -628,13 +628,16 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 
 	gd->height = height;
 	gd->width = width;
+	GLint format = GL_RGB8;
+	if (gd->dithered_present) {
+		format = GL_RGB16;
+	}
 
 	assert(viewport_dimensions[0] >= gd->width);
 	assert(viewport_dimensions[1] >= gd->height);
 
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16, width, height, 0, GL_BGR,
-	             GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, GL_BGR, GL_UNSIGNED_BYTE, NULL);
 
 	gl_check_err();
 }
@@ -879,9 +882,16 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 	glUseProgram(0);
 
-	gd->present_prog =
-	    gl_create_program_from_strv((const char *[]){present_vertex_shader, NULL},
-	                                (const char *[]){present_frag, dither_glsl, NULL});
+	gd->dithered_present = ps->o.dithered_present;
+	if (gd->dithered_present) {
+		gd->present_prog = gl_create_program_from_strv(
+		    (const char *[]){present_vertex_shader, NULL},
+		    (const char *[]){present_frag, dither_glsl, NULL});
+	} else {
+		gd->present_prog = gl_create_program_from_strv(
+		    (const char *[]){present_vertex_shader, NULL},
+		    (const char *[]){dummy_frag, NULL});
+	}
 	if (!gd->present_prog) {
 		log_error("Failed to create the present shader");
 		return false;
@@ -1287,7 +1297,7 @@ void *gl_shadow_from_mask(backend_t *base, void *mask,
 		    1.0, gsctx->blur_context, NULL, (coord_t){0}, &reg_blur, NULL,
 		    source_texture,
 		    (geometry_t){.width = new_inner->width, .height = new_inner->height},
-		    fbo, gd->default_mask_texture);
+		    fbo, gd->default_mask_texture, gd->dithered_present);
 		pixman_region32_fini(&reg_blur);
 	}
 
