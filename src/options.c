@@ -168,6 +168,10 @@ static const struct picom_option picom_options[] = {
                                                                              "similar to --opacity-rule. SHADER_PATH can be \"default\", in which case "
                                                                              "the default shader will be used. Does not work when --legacy-backends is "
                                                                              "enabled. See man page for more details"},
+    // 338 is transparent-clipping-exclude
+    {"dithered-present"            , no_argument      , 339, NULL          , "Use higher precision during rendering, and apply dither when presenting the "
+                                                                             "rendered screen. Reduces banding artifacts, but might cause performance "
+                                                                             "degradation. Only works with OpenGL."},
     {"legacy-backends"             , no_argument      , 733, NULL          , "Use deprecated version of the backends."},
     {"monitor-repaint"             , no_argument      , 800, NULL          , "Highlight the updated area of the screen. For debugging."},
     {"diagnostics"                 , no_argument      , 801, NULL          , "Print diagnostic information"},
@@ -715,6 +719,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 335:
 			// --clip-shadow-above
 			condlst_add(&opt->shadow_clip_list, optarg);
+			break;
+		case 339:
+			// --dithered-present
+			opt->dithered_present = true;
 			break;
 		P_CASEBOOL(733, legacy_backends);
 		P_CASEBOOL(800, monitor_repaint);

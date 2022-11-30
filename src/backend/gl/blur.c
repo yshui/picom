@@ -259,10 +259,10 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 	return true;
 }
 
-bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
-                  coord_t mask_dst, const region_t *reg_blur,
-                  const region_t *reg_visible attr_unused, GLuint source_texture,
-                  geometry_t source_size, GLuint target_fbo, GLuint default_mask) {
+bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask, coord_t mask_dst,
+                  const region_t *reg_blur, const region_t *reg_visible attr_unused,
+                  GLuint source_texture, geometry_t source_size, GLuint target_fbo,
+                  GLuint default_mask, bool high_precision) {
 	bool ret = false;
 
 	if (source_size.width != bctx->fb_width || source_size.height != bctx->fb_height) {
@@ -284,7 +284,11 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
 			}
 
 			glBindTexture(GL_TEXTURE_2D, bctx->blur_textures[i]);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16, tex_size->width,
+			GLint format = GL_RGBA8;
+			if (high_precision) {
+				format = GL_RGBA16;
+			}
+			glTexImage2D(GL_TEXTURE_2D, 0, format, tex_size->width,
 			             tex_size->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 
 			if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {
@@ -406,7 +410,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mas
 	return gl_blur_impl(opacity, bctx, mask, mask_dst, reg_blur, reg_visible,
 	                    gd->back_texture,
 	                    (geometry_t){.width = gd->width, .height = gd->height},
-	                    gd->back_fbo, gd->default_mask_texture);
+	                    gd->back_fbo, gd->default_mask_texture, gd->dithered_present);
 }
 
 static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
