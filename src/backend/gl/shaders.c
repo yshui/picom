@@ -201,7 +201,9 @@ const char dither_glsl[] = GLSL(330,
 		return bayer32;
 	}
 	vec4 dither(vec4 c, vec2 coord) {
-		return vec4(c + bayer(coord) / 255.0);
+		vec4 residual = mod(c, 1.0 / 255.0);
+		vec4 dithered = vec4(greaterThan(residual, vec4(1e-4)));
+		return vec4(c + dithered * bayer(coord) / 255.0);
 	}
 );
 const char shadow_colorization_frag[] = GLSL(330,
