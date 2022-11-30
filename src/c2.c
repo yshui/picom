@@ -17,15 +17,8 @@
 
 // libpcre
 #ifdef CONFIG_REGEX_PCRE
-#include <pcre.h>
-
-// For compatibility with <libpcre-8.20
-#ifndef PCRE_STUDY_JIT_COMPILE
-#define PCRE_STUDY_JIT_COMPILE 0
-#define LPCRE_FREE_STUDY(extra) pcre_free(extra)
-#else
-#define LPCRE_FREE_STUDY(extra) pcre_free_study(extra)
-#endif
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h>
 
 #endif
 
@@ -89,49 +82,52 @@ struct _c2_b {
 /// Structure for leaf element in a window condition
 struct _c2_l {
 	bool neg : 1;
-	enum { C2_L_OEXISTS,
-	       C2_L_OEQ,
-	       C2_L_OGT,
-	       C2_L_OGTEQ,
-	       C2_L_OLT,
-	       C2_L_OLTEQ,
+	enum {
+		C2_L_OEXISTS,
+		C2_L_OEQ,
+		C2_L_OGT,
+		C2_L_OGTEQ,
+		C2_L_OLT,
+		C2_L_OLTEQ,
 	} op : 3;
-	enum { C2_L_MEXACT,
-	       C2_L_MSTART,
-	       C2_L_MCONTAINS,
-	       C2_L_MWILDCARD,
-	       C2_L_MPCRE,
+	enum {
+		C2_L_MEXACT,
+		C2_L_MSTART,
+		C2_L_MCONTAINS,
+		C2_L_MWILDCARD,
+		C2_L_MPCRE,
 	} match : 3;
 	bool match_ignorecase : 1;
 	char *tgt;
 	xcb_atom_t tgtatom;
 	bool tgt_onframe;
 	int index;
-	enum { C2_L_PUNDEFINED = -1,
-	       C2_L_PID = 0,
-	       C2_L_PX,
-	       C2_L_PY,
-	       C2_L_PX2,
-	       C2_L_PY2,
-	       C2_L_PWIDTH,
-	       C2_L_PHEIGHT,
-	       C2_L_PWIDTHB,
-	       C2_L_PHEIGHTB,
-	       C2_L_PBDW,
-	       C2_L_PFULLSCREEN,
-	       C2_L_POVREDIR,
-	       C2_L_PARGB,
-	       C2_L_PFOCUSED,
-	       C2_L_PWMWIN,
-	       C2_L_PBSHAPED,
-	       C2_L_PROUNDED,
-	       C2_L_PCLIENT,
-	       C2_L_PWINDOWTYPE,
-	       C2_L_PLEADER,
-	       C2_L_PNAME,
-	       C2_L_PCLASSG,
-	       C2_L_PCLASSI,
-	       C2_L_PROLE,
+	enum {
+		C2_L_PUNDEFINED = -1,
+		C2_L_PID = 0,
+		C2_L_PX,
+		C2_L_PY,
+		C2_L_PX2,
+		C2_L_PY2,
+		C2_L_PWIDTH,
+		C2_L_PHEIGHT,
+		C2_L_PWIDTHB,
+		C2_L_PHEIGHTB,
+		C2_L_PBDW,
+		C2_L_PFULLSCREEN,
+		C2_L_POVREDIR,
+		C2_L_PARGB,
+		C2_L_PFOCUSED,
+		C2_L_PWMWIN,
+		C2_L_PBSHAPED,
+		C2_L_PROUNDED,
+		C2_L_PCLIENT,
+		C2_L_PWINDOWTYPE,
+		C2_L_PLEADER,
+		C2_L_PNAME,
+		C2_L_PCLASSG,
+		C2_L_PCLASSI,
+		C2_L_PROLE,
 	} predef;
 	enum c2_l_type {
 		C2_L_TUNDEFINED,
@@ -142,15 +138,16 @@ struct _c2_l {
 		C2_L_TDRAWABLE,
 	} type;
 	int format;
-	enum { C2_L_PTUNDEFINED,
-	       C2_L_PTSTRING,
-	       C2_L_PTINT,
+	enum {
+		C2_L_PTUNDEFINED,
+		C2_L_PTSTRING,
+		C2_L_PTINT,
 	} ptntype;
 	char *ptnstr;
 	long ptnint;
 #ifdef CONFIG_REGEX_PCRE
-	pcre *regex_pcre;
-	pcre_extra *regex_pcre_extra;
+	pcre2_code *regex_pcre;
+	pcre2_match_data *regex_pcre_match;
 #endif
 };
 
@@ -1059,32 +1056,31 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 	// PCRE patterns
 	if (C2_L_PTSTRING == pleaf->ptntype && C2_L_MPCRE == pleaf->match) {
 #ifdef CONFIG_REGEX_PCRE
-		const char *error = NULL;
-		int erroffset = 0;
-		int options = 0;
+		int errorcode = 0;
+		PCRE2_SIZE erroffset = 0;
+		unsigned int options = 0;
 
 		// Ignore case flag
-		if (pleaf->match_ignorecase)
-			options |= PCRE_CASELESS;
+		if (pleaf->match_ignorecase) {
+			options |= PCRE2_CASELESS;
+		}
 
 		// Compile PCRE expression
 		pleaf->regex_pcre =
-		    pcre_compile(pleaf->ptnstr, options, &error, &erroffset, NULL);
-		if (!pleaf->regex_pcre) {
-			log_error("Pattern \"%s\": PCRE regular expression parsing "
+		    pcre2_compile((PCRE2_SPTR)pleaf->ptnstr, PCRE2_ZERO_TERMINATED,
+		                  options, &errorcode, &erroffset, NULL);
+		if (pleaf->regex_pcre == NULL) {
+			PCRE2_UCHAR buffer[256];
+			pcre2_get_error_message(errorcode, buffer, sizeof(buffer));
+			log_error("Pattern \"%s\": PCRE regular expression "
+			          "parsing "
 			          "failed on "
-			          "offset %d: %s",
-			          pleaf->ptnstr, erroffset, error);
+			          "offset %zu: %s",
+			          pleaf->ptnstr, erroffset, buffer);
 			return false;
 		}
-#ifdef CONFIG_REGEX_PCRE_JIT
-		pleaf->regex_pcre_extra =
-		    pcre_study(pleaf->regex_pcre, PCRE_STUDY_JIT_COMPILE, &error);
-		if (!pleaf->regex_pcre_extra) {
-			printf("Pattern \"%s\": PCRE regular expression study failed: %s",
-			       pleaf->ptnstr, error);
-		}
-#endif
+		pleaf->regex_pcre_match =
+		    pcre2_match_data_create_from_pattern(pleaf->regex_pcre, NULL);
 
 		// Free the target string
 		// free(pleaf->tgt);
@@ -1102,16 +1098,18 @@ static bool c2_tree_postprocess(session_t *ps, c2_ptr_t node) {
 	if (!node.isbranch) {
 		return c2_l_postprocess(ps, node.l);
 	}
-	if (!c2_tree_postprocess(ps, node.b->opr1))
+	if (!c2_tree_postprocess(ps, node.b->opr1)) {
 		return false;
+	}
 	return c2_tree_postprocess(ps, node.b->opr2);
 }
 
 bool c2_list_postprocess(session_t *ps, c2_lptr_t *list) {
 	c2_lptr_t *head = list;
 	while (head) {
-		if (!c2_tree_postprocess(ps, head->ptr))
+		if (!c2_tree_postprocess(ps, head->ptr)) {
 			return false;
+		}
 		head = head->next;
 	}
 	return true;
@@ -1124,8 +1122,9 @@ static void c2_free(c2_ptr_t p) {
 	if (p.isbranch) {
 		c2_b_t *const pbranch = p.b;
 
-		if (!pbranch)
+		if (!pbranch) {
 			return;
+		}
 
 		c2_free(pbranch->opr1);
 		c2_free(pbranch->opr2);
@@ -1135,14 +1134,15 @@ static void c2_free(c2_ptr_t p) {
 	else {
 		c2_l_t *const pleaf = p.l;
 
-		if (!pleaf)
+		if (!pleaf) {
 			return;
+		}
 
 		free(pleaf->tgt);
 		free(pleaf->ptnstr);
 #ifdef CONFIG_REGEX_PCRE
-		pcre_free(pleaf->regex_pcre);
-		LPCRE_FREE_STUDY(pleaf->regex_pcre_extra);
+		pcre2_code_free(pleaf->regex_pcre);
+		pcre2_match_data_free(pleaf->regex_pcre_match);
 #endif
 		free(pleaf);
 	}
@@ -1550,9 +1550,10 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 				case C2_L_MPCRE:
 #ifdef CONFIG_REGEX_PCRE
 					assert(strlen(tgt) <= INT_MAX);
-					res = (pcre_exec(pleaf->regex_pcre,
-					                 pleaf->regex_pcre_extra, tgt,
-					                 (int)strlen(tgt), 0, 0, NULL, 0) >= 0);
+					assert(pleaf->regex_pcre);
+					res = (pcre2_match(pleaf->regex_pcre, (PCRE2_SPTR)tgt,
+					                   strlen(tgt), 0, 0,
+					                   pleaf->regex_pcre_match, NULL) > 0);
 #else
 					assert(0);
 #endif
