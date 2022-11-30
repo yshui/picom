@@ -284,7 +284,7 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
 			}
 
 			glBindTexture(GL_TEXTURE_2D, bctx->blur_textures[i]);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tex_size->width,
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16, tex_size->width,
 			             tex_size->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 
 			if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {

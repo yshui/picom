@@ -633,7 +633,7 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 	assert(viewport_dimensions[1] >= gd->height);
 
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_BGR,
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16, width, height, 0, GL_BGR,
 	             GL_UNSIGNED_BYTE, NULL);
 
 	gl_check_err();
@@ -879,7 +879,9 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 	glUseProgram(0);
 
-	gd->present_prog = gl_create_program_from_str(present_vertex_shader, dummy_frag);
+	gd->present_prog =
+	    gl_create_program_from_strv((const char *[]){present_vertex_shader, NULL},
+	                                (const char *[]){present_frag, dither_glsl, NULL});
 	if (!gd->present_prog) {
 		log_error("Failed to create the present shader");
 		return false;
