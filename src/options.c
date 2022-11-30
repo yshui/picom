@@ -46,7 +46,7 @@ static const struct picom_option picom_options[] = {
     {"fade-delta"                  , required_argument, 'D', NULL          , "The time between steps in a fade in milliseconds. (default 10)"},
     {"menu-opacity"                , required_argument, 'm', NULL          , "The opacity for menus. (default 1.0)"},
     {"shadow"                      , no_argument      , 'c', NULL          , "Enabled client-side shadows on windows."},
-    {"clear-shadow"                , no_argument      , 'z', NULL          , "Don't dreaw shadow behind the window."},
+    {"clear-shadow"                , no_argument      , 'z', NULL          , "Don't draw shadow behind the window."},
     {"fading"                      , no_argument      , 'f', NULL          , "Fade windows in/out when opening/closing and when opacity changes, "
                                                                              "unless --no-fading-openclose is used."},
     {"inactive-opacity"            , required_argument, 'i', NULL          , "Opacity of inactive windows. (0.1 - 1.0)"},
