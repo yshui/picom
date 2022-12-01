@@ -622,16 +622,13 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 
 	gd->height = height;
 	gd->width = width;
-	GLint format = GL_RGB8;
-	if (gd->dithered_present) {
-		format = GL_RGB16;
-	}
 
 	assert(viewport_dimensions[0] >= gd->width);
 	assert(viewport_dimensions[1] >= gd->height);
 
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, GL_BGR, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, gd->back_format, width, height, 0, GL_BGR,
+	             GL_UNSIGNED_BYTE, NULL);
 
 	gl_check_err();
 }
@@ -919,14 +916,25 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 	glUseProgram(0);
 
-	// Set up the size of the back texture
-	gl_resize(gd, ps->root_width, ps->root_height);
-
+	// Set up the size and format of the back texture
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->back_fbo);
-	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-	                       gd->back_texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	if (!gl_check_fb_complete(GL_FRAMEBUFFER)) {
+	const GLint *format = (const GLint[]){GL_RGB8, GL_RGBA8};
+	if (gd->dithered_present) {
+		format = (const GLint[]){GL_RGB16, GL_RGBA16};
+	}
+	for (int i = 0; i < 2; i++) {
+		gd->back_format = format[i];
+		gl_resize(gd, ps->root_width, ps->root_height);
+
+		glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+		                       GL_TEXTURE_2D, gd->back_texture, 0);
+		if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+			log_info("Using back buffer format %#x", gd->back_format);
+			break;
+		}
+	}
+	if (!gl_check_fb_complete(GL_DRAW_FRAMEBUFFER)) {
 		return false;
 	}
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
