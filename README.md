@@ -89,15 +89,21 @@ Default install prefix is `/usr/local`, you can change it with `meson configure 
 
 ## How to Contribute
 
-### Code
+All contributions are welcome!
 
-You can look at the [Projects](https://github.com/yshui/picom/projects) page, and see if there is anything that interests you. Or you can take a look at the [Issues](https://github.com/yshui/picom/issues).
+New features you think should be included in picom, a fix for a bug you found - please open a PR!
 
-### Non-code
+You can take a look at the [Issues](https://github.com/yshui/picom/issues).
 
-Even if you don't want to contribute code, you can still contribute by compiling and running this branch, and report any issue you can find.
+Contributions to the documents and wiki are also appreciated.
 
-Contributions to the documents and wiki will also be appreciated.
+Even if you don't want to add anything to picom, you are still helping by compiling and running this branch, and report any issue you can find.
+
+### Become a Collaborator
+
+Becoming a collaborator of picom requires significant time commitment. You are expected to reply to issue reports, reviewing PRs, and sometimes fix bugs or implement new feature. You won't be able to push to the main branch directly, and all you code still has to go through code review.
+
+If this sounds good to you, feel free to contact me.
 
 ## Contributors
 
