@@ -107,6 +107,7 @@ struct gl_data {
 	gl_fill_shader_t fill_shader;
 	gl_shadow_shader_t shadow_shader;
 	GLuint back_texture, back_fbo;
+	GLint back_format;
 	GLuint present_prog;
 
 	bool dithered_present;
