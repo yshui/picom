@@ -925,10 +925,8 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	// Set up the size and format of the back texture
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->back_fbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	const GLint *format = (const GLint[]){GL_RGB8, GL_RGBA8};
-	if (gd->dithered_present) {
-		format = (const GLint[]){GL_RGB16, GL_RGBA16};
-	}
+	const GLint *format = gd->dithered_present ? (const GLint[]){GL_RGB16, GL_RGBA16}
+	                                           : (const GLint[]){GL_RGB8, GL_RGBA8};
 	for (int i = 0; i < 2; i++) {
 		gd->back_format = format[i];
 		gl_resize(gd, ps->root_width, ps->root_height);
