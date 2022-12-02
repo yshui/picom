@@ -481,7 +481,7 @@ Available options of the 'blur' section are: ::
     An integer in the range 0-20. The strength of the 'dual_kawase' blur method. Corresponds to the *--blur-strength* command line option. If set to zero, the value requested by *--blur-size* is approximated (default: 5).
 
   *kernel*:::
-    A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kerns* option. Corresponds to the *--blur-kerns* command line option.
+    A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kern* option. Corresponds to the *--blur-kern* command line option.
 
 SIGNALS
 -------
