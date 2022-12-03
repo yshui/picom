@@ -107,7 +107,10 @@ struct gl_data {
 	gl_fill_shader_t fill_shader;
 	gl_shadow_shader_t shadow_shader;
 	GLuint back_texture, back_fbo;
+	GLint back_format;
 	GLuint present_prog;
+
+	bool dithered_present;
 
 	GLuint default_mask_texture;
 
@@ -163,10 +166,10 @@ void *gl_clone(backend_t *base, const void *image_data, const region_t *reg_visi
 
 bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mask_dst,
              const region_t *reg_blur, const region_t *reg_visible);
-bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
-                  coord_t mask_dst, const region_t *reg_blur,
-                  const region_t *reg_visible attr_unused, GLuint source_texture,
-                  geometry_t source_size, GLuint target_fbo, GLuint default_mask);
+bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask, coord_t mask_dst,
+                  const region_t *reg_blur, const region_t *reg_visible attr_unused,
+                  GLuint source_texture, geometry_t source_size, GLuint target_fbo,
+                  GLuint default_mask, bool high_precision);
 void *gl_create_blur_context(backend_t *base, enum blur_method, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
 struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double radius);
@@ -288,5 +291,6 @@ static const GLuint vert_in_texcoord_loc = 1;
 #define QUOTE(...) #__VA_ARGS__
 
 extern const char vertex_shader[], copy_with_mask_frag[], masking_glsl[], dummy_frag[],
-    fill_frag[], fill_vert[], interpolating_frag[], interpolating_vert[], win_shader_glsl[],
-    win_shader_default[], present_vertex_shader[], shadow_colorization_frag[];
+    present_frag[], fill_frag[], fill_vert[], interpolating_frag[], interpolating_vert[],
+    win_shader_glsl[], win_shader_default[], present_vertex_shader[], dither_glsl[],
+    shadow_colorization_frag[];
