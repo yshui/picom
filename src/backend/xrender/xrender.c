@@ -858,6 +858,10 @@ static void get_blur_size(void *blur_context, int *width, int *height) {
 }
 
 static backend_t *backend_xrender_init(session_t *ps) {
+	if (ps->o.dithered_present) {
+		log_warn("\"dithered-present\" is not supported by the xrender backend.");
+	}
+
 	auto xd = ccalloc(1, struct _xrender_data);
 	init_backend_base(&xd->base, ps);
 

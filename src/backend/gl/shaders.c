@@ -9,6 +9,15 @@ const char dummy_frag[] = GLSL(330,
 	}
 );
 
+const char present_frag[] = GLSL(330,
+	uniform sampler2D tex;
+	in vec2 texcoord;
+	vec4 dither(vec4, vec2);
+	void main() {
+		gl_FragColor = dither(texelFetch(tex, ivec2(texcoord.xy), 0), texcoord);
+	}
+);
+
 const char copy_with_mask_frag[] = GLSL(330,
 	uniform sampler2D tex;
 	in vec2 texcoord;
@@ -172,6 +181,29 @@ const char vertex_shader[] = GLSL(330,
 	void main() {
 		gl_Position = projection * vec4(coord, 0, scale);
 		texcoord = in_texcoord + texorig;
+	}
+);
+const char dither_glsl[] = GLSL(330,
+	// Stolen from: https://www.shadertoy.com/view/7sfXDn
+	float bayer2(vec2 a) {
+		a = floor(a);
+		return fract(a.x / 2. + a.y * a.y * .75);
+	}
+	// 16 * 16 is 2^8, so in total we have equivalent of 16-bit
+	// color depth, should be enough?
+	float bayer(vec2 a16) {
+		vec2  a8 = a16 * .5;
+		vec2  a4 =  a8 * .5;
+		vec2  a2 =  a4 * .5;
+		float bayer32 = ((bayer2(a2) * .25 + bayer2( a4))
+		                             * .25 + bayer2( a8))
+		                             * .25 + bayer2(a16);
+		return bayer32;
+	}
+	vec4 dither(vec4 c, vec2 coord) {
+		vec4 residual = mod(c, 1.0 / 255.0);
+		vec4 dithered = vec4(greaterThan(residual, vec4(1e-4)));
+		return vec4(c + dithered * bayer(coord) / 255.0);
 	}
 );
 const char shadow_colorization_frag[] = GLSL(330,

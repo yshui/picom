@@ -268,6 +268,9 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--window-shader-fg-rule* 'SHADER':'CONDITION'::
 	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of 'SHADER:CONDITION', e.g. "shader.frag:name = \'window\'". Leading and trailing whitespaces in 'SHADER' will be trimmed. If 'SHADER' is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Does not work when *--legacy-backends* is enabled.
 
+*--dithered-present*
+	Use higher precision during rendering, and apply dither when presenting the rendered screen. Reduces banding artifacts, but might cause performance degradation. Only works with OpenGL.
+
 FORMAT OF CONDITIONS
 --------------------
 Some options accept a condition string to match certain windows. A condition string is formed by one or more conditions, joined by logical operators.
@@ -481,7 +484,7 @@ Available options of the 'blur' section are: ::
     An integer in the range 0-20. The strength of the 'dual_kawase' blur method. Corresponds to the *--blur-strength* command line option. If set to zero, the value requested by *--blur-size* is approximated (default: 5).
 
   *kernel*:::
-    A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kerns* option. Corresponds to the *--blur-kerns* command line option.
+    A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kern* option. Corresponds to the *--blur-kern* command line option.
 
 SIGNALS
 -------
