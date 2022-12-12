@@ -1524,9 +1524,9 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 
 		log_trace("Render start, frame %d", paint);
 		if (!ps->o.legacy_backends) {
-			paint_all_new(ps, bottom, false);
+			paint_all_new(ps, bottom);
 		} else {
-			paint_all(ps, bottom, false);
+			paint_all(ps, bottom);
 		}
 		log_trace("Render end");
 

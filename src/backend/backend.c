@@ -81,7 +81,7 @@ void handle_device_reset(session_t *ps) {
 }
 
 /// paint all windows
-void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
+void paint_all_new(session_t *ps, struct managed_win *t) {
 	if (ps->backend_data->ops->device_status &&
 	    ps->backend_data->ops->device_status(ps->backend_data) != DEVICE_STATUS_NORMAL) {
 		return handle_device_reset(ps);
@@ -100,12 +100,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	// the paints bleed out of the damage region, it will destroy
 	// part of the image we want to reuse
 	region_t reg_damage;
-	if (!ignore_damage) {
-		reg_damage = get_damage(ps, ps->o.monitor_repaint || !ps->o.use_damage);
-	} else {
-		pixman_region32_init(&reg_damage);
-		pixman_region32_copy(&reg_damage, &ps->screen_reg);
-	}
+	reg_damage = get_damage(ps, ps->o.monitor_repaint || !ps->o.use_damage);
 
 	if (!pixman_region32_not_empty(&reg_damage)) {
 		pixman_region32_fini(&reg_damage);
