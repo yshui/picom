@@ -289,6 +289,14 @@ static inline void free_charpp(char **str) {
 ///
 int next_power_of_two(int n);
 
+struct rolling_max;
+
+struct rolling_max *rolling_max_new(int window_size);
+void rolling_max_free(struct rolling_max *rm);
+void rolling_max_reset(struct rolling_max *rm);
+void rolling_max_push(struct rolling_max *rm, int val);
+int rolling_max_get_max(struct rolling_max *rm);
+
 // Some versions of the Android libc do not have timespec_get(), use
 // clock_gettime() instead.
 #ifdef __ANDROID__
