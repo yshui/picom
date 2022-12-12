@@ -363,5 +363,4 @@ struct backend_operations {
 
 extern struct backend_operations *backend_list[];
 
-void paint_all_new(session_t *ps, struct managed_win *const t, bool ignore_damage)
-    attr_nonnull(1);
+void paint_all_new(session_t *ps, struct managed_win *const t) attr_nonnull(1);
