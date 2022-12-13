@@ -311,6 +311,13 @@ void rolling_max_reset(struct rolling_max *rm);
 void rolling_max_push(struct rolling_max *rm, int val);
 int rolling_max_get_max(struct rolling_max *rm);
 
+struct rolling_avg;
+struct rolling_avg *rolling_avg_new(int window_size);
+void rolling_avg_free(struct rolling_avg *ra);
+void rolling_avg_reset(struct rolling_avg *ra);
+void rolling_avg_push(struct rolling_avg *ra, int val);
+double rolling_avg_get_avg(struct rolling_avg *ra);
+
 // Some versions of the Android libc do not have timespec_get(), use
 // clock_gettime() instead.
 #ifdef __ANDROID__
