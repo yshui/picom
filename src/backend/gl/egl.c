@@ -320,9 +320,6 @@ static void egl_present(backend_t *base, const region_t *region attr_unused) {
 	struct egl_data *gd = (void *)base;
 	gl_present(base, region);
 	eglSwapBuffers(gd->display, gd->target_win);
-	if (!gd->gl.is_nvidia) {
-		glFinish();
-	}
 }
 
 static int egl_buffer_age(backend_t *base) {

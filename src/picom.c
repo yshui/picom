@@ -156,23 +156,87 @@ static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t
 	return w;
 }
 
+/// How many seconds into the future should we start rendering the next frame.
+double next_frame_offset(session_t *ps) {
+	int render_time = rolling_max_get_max(ps->render_stats);
+	if (render_time < 0) {
+		// We don't have render time estimates, maybe there's no frame rendered
+		// yet, or the backend doesn't support render timing information,
+		// queue render immediately.
+		return 0;
+	}
+	int frame_time = (int)rolling_avg_get_avg(ps->frame_time);
+	auto next_msc = ps->last_msc + (uint64_t)frame_time;
+	auto deadline = next_msc - (uint64_t)render_time;
+
+	const uint64_t slack = 1000;
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	auto now_us = (uint64_t)now.tv_sec * 1000000 + (uint64_t)now.tv_nsec / 1000;
+	if (now_us + slack >= deadline) {
+		// We are already late, render immediately.
+		log_trace("Already late, rendering immediately, last_msc: %" PRIu64
+		          ", render_time: %d, frame_time: %d, now_us: %" PRIu64,
+		          ps->last_msc, render_time, frame_time, now_us);
+		return 0;
+	}
+	log_trace("Delay: %lf s, last_msc: %" PRIu64 ", render_time: %d, frame_time: %d, "
+	          "now_us: %" PRIu64 ", next_msc: %" PRIu64,
+	          (double)(deadline - now_us - slack) / 1000000.0, ps->last_msc,
+	          render_time, frame_time, now_us, next_msc);
+	return (double)(deadline - now_us - slack) / 1000000.0;
+}
+
+/// Update render stats. Return false if a frame is still being rendered.
+static bool update_render_stats(session_t *ps) {
+	if (!ps->first_frame && ps->redirected && ps->backend_data->ops->last_render_time) {
+		struct timespec render_time;
+		if (ps->backend_data->ops->last_render_time(ps->backend_data, &render_time)) {
+			int render_time_us =
+			    (int)(render_time.tv_sec * 1000000 + render_time.tv_nsec / 1000);
+			log_trace("Last render call took: %d us, "
+			          "rolling_max: %d us",
+			          render_time_us, rolling_max_get_max(ps->render_stats));
+			rolling_max_push(ps->render_stats, render_time_us);
+			return true;
+		}
+		return false;
+	}
+	return true;
+}
+
 void queue_redraw(session_t *ps) {
+	// Whether we have already rendered for the current frame.
+	// If frame pacing is not enabled, pretend this is false.
+	bool already_rendered = (ps->last_render > ps->last_msc) && ps->frame_pacing;
+	if (already_rendered) {
+		log_debug("Already rendered for the current frame, not queuing "
+		          "redraw");
+	}
 	// If --benchmark is used, redraw is always queued
-	if (!ps->redraw_needed && !ps->o.benchmark) {
-		if (!ps->first_frame && ps->redirected &&
-		    ps->backend_data->ops->last_render_time) {
-			struct timespec render_time;
-			if (ps->backend_data->ops->last_render_time(ps->backend_data,
-			                                            &render_time)) {
-				int render_time_us = (int)(render_time.tv_sec * 1000000 +
-				                           render_time.tv_nsec / 1000);
-				log_info(
-				    "Last render call took: %d us, rolling_max: %d us",
-				    render_time_us, rolling_max_get_max(ps->render_stats));
-				rolling_max_push(ps->render_stats, render_time_us);
+	if (!ps->redraw_needed && !ps->o.benchmark && !already_rendered) {
+		double delay = 0;
+		if (ps->frame_pacing) {
+			if (!update_render_stats(ps)) {
+				// A frame is still being rendered. This means we missed
+				// previous vblank. We shouldn't queue a new frame until
+				// the next vblank.
+				log_debug("A frame is still being rendered, not queueing "
+				          "redraw");
+				ps->redraw_needed = true;
+				return;
+			}
+			// Our loop can be blocked by frame present, which cause ev_now to
+			// drift away from the real time. We need to correct it.
+			delay = next_frame_offset(ps) + ev_now(ps->loop) - ev_time();
+			if (delay < 0) {
+				delay = 0;
 			}
 		}
-		ev_idle_start(ps->loop, &ps->draw_idle);
+		// Not doing frame pacing, just redraw immediately
+		ev_timer_set(&ps->draw_timer, delay, 0);
+		assert(!ev_is_active(&ps->draw_timer));
+		ev_timer_start(ps->loop, &ps->draw_timer);
 	}
 	ps->redraw_needed = true;
 }
@@ -1304,7 +1368,16 @@ static bool redirect_start(session_t *ps) {
 		pixman_region32_init(&ps->damage_ring[i]);
 	}
 
-	if (ps->present_exists) {
+	ps->frame_pacing = true;
+	if (ps->o.legacy_backends || ps->o.benchmark ||
+	    !ps->backend_data->ops->last_render_time) {
+		// Disable frame pacing if we are using a legacy backend or if we are in
+		// benchmark mode, or if the backend doesn't report render time
+		log_info("Disabling frame pacing.");
+		ps->frame_pacing = false;
+	}
+
+	if (ps->present_exists && ps->frame_pacing) {
 		ps->present_event_id = x_new_id(ps->c);
 		auto select_input = xcb_present_select_input(
 		    ps->c, ps->present_event_id, session_get_target_window(ps),
@@ -1316,10 +1389,17 @@ static bool redirect_start(session_t *ps) {
 		ps->present_event = xcb_register_for_special_xge(
 		    ps->c, &xcb_present_id, ps->present_event_id, NULL);
 
-		// Initialize rendering and frame timing statistics.
+		// Initialize rendering and frame timing statistics, and frame pacing
+		// states.
+		ps->last_msc_instant = 0;
 		ps->last_msc = 0;
 		ps->last_render = 0;
+		ps->target_msc = 0;
 		rolling_avg_reset(ps->frame_time);
+		rolling_max_reset(ps->render_stats);
+	} else if (ps->frame_pacing) {
+		log_error("Present extension is not supported, frame pacing disabled.");
+		ps->frame_pacing = false;
 	}
 
 	// Must call XSync() here
@@ -1383,6 +1463,7 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 	if (cne->kind != XCB_PRESENT_COMPLETE_KIND_NOTIFY_MSC) {
 		return;
 	}
+
 	if (cne->ust <= ps->last_msc) {
 		return;
 	}
@@ -1391,13 +1472,46 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 	                                     cne->msc + 1, 0, 0);
 	set_cant_fail_cookie(ps, cookie);
 
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	uint64_t now_usec = (uint64_t)(now.tv_sec * 1000000 + now.tv_nsec / 1000);
+	uint64_t drift;
+	if (cne->ust > now_usec) {
+		drift = cne->ust - now_usec;
+	} else {
+		drift = now_usec - cne->ust;
+	}
+
 	if (ps->last_msc != 0) {
 		int frame_time = (int)(cne->ust - ps->last_msc);
 		rolling_avg_push(ps->frame_time, frame_time);
-		log_trace("Frame time: %d us, rolling average: %lf us, msc: %" PRIu64,
-		          frame_time, rolling_avg_get_avg(ps->frame_time), cne->ust);
+		log_trace("Frame time: %d us, rolling average: %lf us, msc: %" PRIu64
+		          ", offset: %" PRIu64,
+		          frame_time, rolling_avg_get_avg(ps->frame_time), cne->ust, drift);
 	}
 	ps->last_msc = cne->ust;
+	if (drift > 1000000 && ps->frame_pacing) {
+		log_error("Temporal anomaly detected, frame pacing disabled. (Are we "
+		          "running inside a time namespace?), %" PRIu64 " %" PRIu64,
+		          now_usec, ps->last_msc);
+		ps->frame_pacing = false;
+		// We could have deferred a frame in queue_redraw() because of frame
+		// pacing. Unconditionally queue a frame for simplicity.
+		queue_redraw(ps);
+	}
+	if (ps->frame_pacing && ps->redraw_needed && !ev_is_active(&ps->draw_timer)) {
+		log_trace("Frame pacing: queueing redraw");
+		// We deferred a frame in queue_redraw() because of frame pacing. Schedule
+		// it now.
+		if (!update_render_stats(ps)) {
+			log_warn("A frame is still being rendered, not queueing redraw.");
+		} else {
+
+			ev_timer_set(&ps->draw_timer,
+			             next_frame_offset(ps) + ev_now(ps->loop) - ev_time(), 0);
+			ev_timer_start(ps->loop, &ps->draw_timer);
+		}
+	}
 }
 
 static void handle_present_events(session_t *ps) {
@@ -1613,6 +1727,12 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		}
 		log_trace("Render end");
 
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		uint64_t now_us =
+		    (uint64_t)now.tv_sec * 1000000ULL + (uint64_t)now.tv_nsec / 1000;
+		ps->last_render = now_us;
+
 		ps->first_frame = false;
 		paint++;
 		if (ps->o.benchmark && paint >= ps->o.benchmark) {
@@ -1627,18 +1747,21 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	// TODO(yshui) Investigate how big the X critical section needs to be. There are
 	// suggestions that rendering should be in the critical section as well.
 
+	// Queue redraw if animation is running. This should be picked up by next present
+	// event.
 	ps->redraw_needed = animation;
 }
 
-static void draw_callback(EV_P_ ev_idle *w, int revents) {
-	session_t *ps = session_ptr(w, draw_idle);
+static void draw_callback(EV_P_ ev_timer *w, int revents) {
+	session_t *ps = session_ptr(w, draw_timer);
 
 	draw_callback_impl(EV_A_ ps, revents);
+	ev_timer_stop(EV_A_ w);
 
-	// Don't do painting non-stop unless we are in benchmark mode, or if
-	// draw_callback_impl thinks we should continue painting.
-	if (!ps->o.benchmark && !ps->redraw_needed) {
-		ev_idle_stop(EV_A_ & ps->draw_idle);
+	// Immediately start next frame if we are in benchmark mode.
+	if (ps->o.benchmark) {
+		ev_timer_set(w, 0, 0);
+		ev_timer_start(EV_A_ w);
 	}
 }
 
@@ -2252,7 +2375,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_io_init(&ps->xiow, x_event_callback, ConnectionNumber(ps->dpy), EV_READ);
 	ev_io_start(ps->loop, &ps->xiow);
 	ev_init(&ps->unredir_timer, tmout_unredir_callback);
-	ev_idle_init(&ps->draw_idle, draw_callback);
+	ev_init(&ps->draw_timer, draw_callback);
 
 	ev_init(&ps->fade_timer, fade_timer_callback);
 
@@ -2550,7 +2673,7 @@ static void session_destroy(session_t *ps) {
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
 	ev_timer_stop(ps->loop, &ps->fade_timer);
 	ev_timer_stop(ps->loop, &ps->dpms_check_timer);
-	ev_idle_stop(ps->loop, &ps->draw_idle);
+	ev_timer_stop(ps->loop, &ps->draw_timer);
 	ev_prepare_stop(ps->loop, &ps->event_check);
 	ev_signal_stop(ps->loop, &ps->usr1_signal);
 	ev_signal_stop(ps->loop, &ps->int_signal);
@@ -2562,9 +2685,10 @@ static void session_destroy(session_t *ps) {
  * @param ps current session
  */
 static void session_run(session_t *ps) {
-	// In benchmark mode, we want draw_idle handler to always be active
+	// In benchmark mode, we want draw_timer handler to always be active
 	if (ps->o.benchmark) {
-		ev_idle_start(ps->loop, &ps->draw_idle);
+		ev_timer_set(&ps->draw_timer, 0, 0);
+		ev_timer_start(ps->loop, &ps->draw_timer);
 	} else {
 		// Let's draw our first frame!
 		queue_redraw(ps);

@@ -156,9 +156,8 @@ typedef struct session {
 	ev_timer unredir_timer;
 	/// Timer for fading
 	ev_timer fade_timer;
-	/// Use an ev_idle callback for drawing
-	/// So we only start drawing when events are processed
-	ev_idle draw_idle;
+	/// Use an ev_timer callback for drawing
+	ev_timer draw_timer;
 	/// Called every time we have timeouts or new data on socket,
 	/// so we can be sure if xcb read from X socket at anytime during event
 	/// handling, we will not left any event unhandled in the queue
@@ -247,6 +246,8 @@ typedef struct session {
 	uint64_t last_msc;
 	/// When did we render our last frame.
 	uint64_t last_render;
+	/// Whether we can perform frame pacing.
+	bool frame_pacing;
 
 	struct rolling_avg *frame_time;
 	struct rolling_max *render_stats;
