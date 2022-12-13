@@ -240,6 +240,15 @@ typedef struct session {
 	bool first_frame;
 	/// Whether screen has been turned off
 	bool screen_is_off;
+	/// Event context for X Present extension.
+	uint32_t present_event_id;
+	xcb_special_event_t *present_event;
+	/// Last MSC event, in useconds.
+	uint64_t last_msc;
+	/// When did we render our last frame.
+	uint64_t last_render;
+
+	struct rolling_avg *frame_time;
 
 	// === Operation related ===
 	/// Flags related to the root window
