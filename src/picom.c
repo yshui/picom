@@ -1342,6 +1342,24 @@ static bool redirect_start(session_t *ps) {
 		pixman_region32_init(&ps->damage_ring[i]);
 	}
 
+	if (ps->present_exists) {
+		ps->present_event_id = x_new_id(ps->c);
+		auto select_input = xcb_present_select_input(
+		    ps->c, ps->present_event_id, session_get_target_window(ps),
+		    XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY);
+		auto notify_msc =
+		    xcb_present_notify_msc(ps->c, session_get_target_window(ps), 0, 0, 1, 0);
+		set_cant_fail_cookie(ps, select_input);
+		set_cant_fail_cookie(ps, notify_msc);
+		ps->present_event = xcb_register_for_special_xge(
+		    ps->c, &xcb_present_id, ps->present_event_id, NULL);
+
+		// Initialize rendering and frame timing statistics.
+		ps->last_msc = 0;
+		ps->last_render = 0;
+		rolling_avg_reset(ps->frame_time);
+	}
+
 	// Must call XSync() here
 	x_sync(ps->c);
 
@@ -1383,6 +1401,14 @@ static void unredirect(session_t *ps) {
 	free(ps->damage_ring);
 	ps->damage_ring = ps->damage = NULL;
 
+	if (ps->present_event_id) {
+		xcb_present_select_input(ps->c, ps->present_event_id,
+		                         session_get_target_window(ps), 0);
+		ps->present_event_id = XCB_NONE;
+		xcb_unregister_for_special_event(ps->c, ps->present_event);
+		ps->present_event = NULL;
+	}
+
 	// Must call XSync() here
 	x_sync(ps->c);
 
@@ -1390,9 +1416,53 @@ static void unredirect(session_t *ps) {
 	log_debug("Screen unredirected.");
 }
 
+static void
+handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_t *cne) {
+	if (cne->kind != XCB_PRESENT_COMPLETE_KIND_NOTIFY_MSC) {
+		return;
+	}
+	if (cne->ust <= ps->last_msc) {
+		return;
+	}
+
+	auto cookie = xcb_present_notify_msc(ps->c, session_get_target_window(ps), 0,
+	                                     cne->msc + 1, 0, 0);
+	set_cant_fail_cookie(ps, cookie);
+
+	if (ps->last_msc != 0) {
+		int frame_time = (int)(cne->ust - ps->last_msc);
+		rolling_avg_push(ps->frame_time, frame_time);
+		log_trace("Frame time: %d us, rolling average: %lf us, msc: %" PRIu64,
+		          frame_time, rolling_avg_get_avg(ps->frame_time), cne->ust);
+	}
+	ps->last_msc = cne->ust;
+}
+
+static void handle_present_events(session_t *ps) {
+	if (!ps->present_event) {
+		return;
+	}
+	xcb_present_generic_event_t *ev;
+	while ((ev = (void *)xcb_poll_for_special_event(ps->c, ps->present_event))) {
+		if (ev->event != ps->present_event_id) {
+			// This event doesn't have the right event context, it's not meant
+			// for us.
+			goto next;
+		}
+
+		// We only subscribed to the complete notify event.
+		assert(ev->evtype == XCB_PRESENT_EVENT_COMPLETE_NOTIFY);
+		handle_present_complete_notify(ps, (void *)ev);
+	next:
+		free(ev);
+	}
+}
+
 // Handle queued events before we go to sleep
 static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents attr_unused) {
 	session_t *ps = session_ptr(w, event_check);
+	handle_present_events(ps);
+
 	xcb_generic_event_t *ev;
 	while ((ev = xcb_poll_for_queued_event(ps->c))) {
 		ev_handle(ps, ev);
@@ -1748,6 +1818,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .white_picture = XCB_NONE,
 	    .shadow_context = NULL,
 
+	    .last_msc = 0,
+
 #ifdef CONFIG_VSYNC_DRM
 	    .drm_fd = -1,
 #endif
@@ -1767,6 +1839,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .randr_exists = 0,
 	    .randr_event = 0,
 	    .randr_error = 0,
+	    .present_event_id = XCB_NONE,
 	    .glx_exists = false,
 	    .glx_event = 0,
 	    .glx_error = 0,
@@ -1793,6 +1866,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	list_init_head(&ps->window_stack);
 	ps->loop = EV_DEFAULT;
 	pixman_region32_init(&ps->screen_reg);
+
+	// TODO(yshui) investigate what's the best window size
+	ps->frame_time = rolling_avg_new(16);
 
 	ps->pending_reply_tail = &ps->pending_reply_head;
 
@@ -2437,6 +2513,8 @@ static void session_destroy(session_t *ps) {
 	free(ps->o.blur_kerns);
 	free(ps->o.glx_fshader_win_str);
 	free_xinerama_info(ps);
+
+	rolling_avg_destroy(ps->frame_time);
 
 	// Release custom window shaders
 	free(ps->o.window_shader_fg);
