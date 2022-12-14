@@ -297,7 +297,7 @@ void discard_ignore(session_t *ps, unsigned long sequence) {
 	}
 }
 
-static int should_ignore(session_t *ps, unsigned long sequence) {
+static int should_ignore(session_t *ps, uint32_t sequence) {
 	if (ps == NULL) {
 		// Do not ignore errors until the session has been initialized
 		return false;
@@ -1136,7 +1136,7 @@ void root_damaged(session_t *ps) {
  * Xlib error handler function.
  */
 static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
-	if (!should_ignore(ps_g, ev->serial)) {
+	if (!should_ignore(ps_g, (uint32_t)ev->serial)) {
 		x_print_error(ev->serial, ev->request_code, ev->minor_code, ev->error_code);
 	}
 	return 0;
@@ -1146,8 +1146,9 @@ static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
  * XCB error handler function.
  */
 void ev_xcb_error(session_t *ps, xcb_generic_error_t *err) {
-	if (!should_ignore(ps, err->sequence)) {
-		x_print_error(err->sequence, err->major_code, err->minor_code, err->error_code);
+	if (!should_ignore(ps, err->full_sequence)) {
+		x_print_error(err->full_sequence, err->major_code, err->minor_code,
+		              err->error_code);
 	}
 }
 
