@@ -27,7 +27,7 @@ void report_allocation_failure(const char *func, const char *file, unsigned int 
 	    {.iov_base = (void *)msg2, .iov_len = sizeof(msg2) - 1},
 	};
 
-	writev(STDERR_FILENO, v, ARR_SIZE(v));
+	ssize_t _ attr_unused = writev(STDERR_FILENO, v, ARR_SIZE(v));
 	abort();
 
 	unreachable;

@@ -256,7 +256,7 @@ static void file_logger_write(struct log_target *tgt, const char *str, size_t le
 static void file_logger_writev(struct log_target *tgt, const struct iovec *vec, int vcnt) {
 	auto f = (struct file_logger *)tgt;
 	fflush(f->f);
-	writev(fileno(f->f), vec, vcnt);
+	ssize_t _ attr_unused = writev(fileno(f->f), vec, vcnt);
 }
 
 static void file_logger_destroy(struct log_target *tgt) {
