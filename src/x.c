@@ -388,6 +388,38 @@ bool x_fetch_region(xcb_connection_t *c, xcb_xfixes_region_t r, pixman_region32_
 	return ret;
 }
 
+uint32_t x_create_region(xcb_connection_t *c, const region_t *reg) {
+	if (!reg) {
+		return XCB_NONE;
+	}
+
+	int nrects;
+	auto rects = pixman_region32_rectangles(reg, &nrects);
+	auto xrects = ccalloc(nrects, xcb_rectangle_t);
+	for (int i = 0; i < nrects; i++) {
+		xrects[i] =
+		    (xcb_rectangle_t){.x = to_i16_checked(rects[i].x1),
+		                      .y = to_i16_checked(rects[i].y1),
+		                      .width = to_u16_checked(rects[i].x2 - rects[i].x1),
+		                      .height = to_u16_checked(rects[i].y2 - rects[i].y1)};
+	}
+
+	xcb_xfixes_region_t ret = x_new_id(c);
+	bool success =
+	    XCB_AWAIT_VOID(xcb_xfixes_create_region, c, ret, to_u32_checked(nrects), xrects);
+	free(xrects);
+	if (!success) {
+		return XCB_NONE;
+	}
+	return ret;
+}
+
+void x_destroy_region(xcb_connection_t *c, xcb_xfixes_region_t r) {
+	if (r != XCB_NONE) {
+		xcb_xfixes_destroy_region(c, r);
+	}
+}
+
 void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
                                int16_t clip_x_origin, int16_t clip_y_origin,
                                const region_t *reg) {
