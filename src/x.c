@@ -562,8 +562,16 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 /**
  * Log a X11 error
  */
+void x_log_error(enum log_level level, unsigned long serial, uint8_t major,
+                 uint16_t minor, uint8_t error_code) {
+	if (unlikely(level >= log_get_level_tls())) {
+		log_printf(tls_logger, level, __func__, "%s",
+		           _x_strerror(serial, major, minor, error_code));
+	}
+}
+
 void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
-	log_debug("%s", _x_strerror(serial, major, minor, error_code));
+	x_log_error(LOG_LEVEL_DEBUG, serial, major, minor, error_code);
 }
 
 /*

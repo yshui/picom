@@ -282,14 +282,14 @@ static bool run_fade(session_t *ps, struct managed_win **_w, long long steps) {
 
 // === Error handling ===
 
-void discard_ignore(session_t *ps, unsigned long sequence) {
-	while (ps->ignore_head) {
-		if (sequence > ps->ignore_head->sequence) {
-			ignore_t *next = ps->ignore_head->next;
-			free(ps->ignore_head);
-			ps->ignore_head = next;
-			if (!ps->ignore_head) {
-				ps->ignore_tail = &ps->ignore_head;
+void discard_pending(session_t *ps, uint32_t sequence) {
+	while (ps->pending_reply_head) {
+		if (sequence > ps->pending_reply_head->sequence) {
+			auto next = ps->pending_reply_head->next;
+			free(ps->pending_reply_head);
+			ps->pending_reply_head = next;
+			if (!ps->pending_reply_head) {
+				ps->pending_reply_tail = &ps->pending_reply_head;
 			}
 		} else {
 			break;
@@ -297,13 +297,28 @@ void discard_ignore(session_t *ps, unsigned long sequence) {
 	}
 }
 
-static int should_ignore(session_t *ps, uint32_t sequence) {
+static void handle_error(session_t *ps, xcb_generic_error_t *ev) {
 	if (ps == NULL) {
 		// Do not ignore errors until the session has been initialized
-		return false;
+		return;
 	}
-	discard_ignore(ps, sequence);
-	return ps->ignore_head && ps->ignore_head->sequence == sequence;
+	discard_pending(ps, ev->full_sequence);
+	if (ps->pending_reply_head && ps->pending_reply_head->sequence == ev->full_sequence) {
+		if (ps->pending_reply_head->action != PENDING_REPLY_ACTION_IGNORE) {
+			x_log_error(LOG_LEVEL_ERROR, ev->full_sequence, ev->major_code,
+			            ev->minor_code, ev->error_code);
+		}
+		switch (ps->pending_reply_head->action) {
+		case PENDING_REPLY_ACTION_ABORT:
+			log_fatal("An unrecoverable X error occurred, aborting...");
+			abort();
+		case PENDING_REPLY_ACTION_DEBUG_ABORT: assert(false); break;
+		case PENDING_REPLY_ACTION_IGNORE: break;
+		}
+		return;
+	}
+	x_log_error(LOG_LEVEL_WARN, ev->full_sequence, ev->major_code, ev->minor_code,
+	            ev->error_code);
 }
 
 // === Windows ===
@@ -964,9 +979,13 @@ void root_damaged(session_t *ps) {
  * Xlib error handler function.
  */
 static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
-	if (!should_ignore(ps_g, (uint32_t)ev->serial)) {
-		x_print_error(ev->serial, ev->request_code, ev->minor_code, ev->error_code);
-	}
+	// Fake a xcb error, fill in just enough information
+	xcb_generic_error_t xcb_err;
+	xcb_err.full_sequence = (uint32_t)ev->serial;
+	xcb_err.major_code = ev->request_code;
+	xcb_err.minor_code = ev->minor_code;
+	xcb_err.error_code = ev->error_code;
+	handle_error(ps_g, &xcb_err);
 	return 0;
 }
 
@@ -974,10 +993,7 @@ static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
  * XCB error handler function.
  */
 void ev_xcb_error(session_t *ps, xcb_generic_error_t *err) {
-	if (!should_ignore(ps, err->full_sequence)) {
-		x_print_error(err->full_sequence, err->major_code, err->minor_code,
-		              err->error_code);
-	}
+	handle_error(ps, err);
 }
 
 /**
@@ -1678,8 +1694,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .redirected = false,
 	    .alpha_picts = NULL,
 	    .fade_time = 0L,
-	    .ignore_head = NULL,
-	    .ignore_tail = NULL,
+	    .pending_reply_head = NULL,
+	    .pending_reply_tail = NULL,
 	    .quit = false,
 
 	    .expose_rects = NULL,
@@ -1741,7 +1757,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->loop = EV_DEFAULT;
 	pixman_region32_init(&ps->screen_reg);
 
-	ps->ignore_tail = &ps->ignore_head;
+	ps->pending_reply_tail = &ps->pending_reply_head;
 
 	ps->o.show_all_xerrors = all_xerrors;
 
@@ -2330,26 +2346,28 @@ static void session_destroy(session_t *ps) {
 
 	// Free ignore linked list
 	{
-		ignore_t *next = NULL;
-		for (ignore_t *ign = ps->ignore_head; ign; ign = next) {
+		pending_reply_t *next = NULL;
+		for (auto ign = ps->pending_reply_head; ign; ign = next) {
 			next = ign->next;
 
 			free(ign);
 		}
 
 		// Reset head and tail
-		ps->ignore_head = NULL;
-		ps->ignore_tail = &ps->ignore_head;
+		ps->pending_reply_head = NULL;
+		ps->pending_reply_tail = &ps->pending_reply_head;
 	}
 
 	// Free tgt_{buffer,picture} and root_picture
-	if (ps->tgt_buffer.pict == ps->tgt_picture)
+	if (ps->tgt_buffer.pict == ps->tgt_picture) {
 		ps->tgt_buffer.pict = XCB_NONE;
+	}
 
-	if (ps->tgt_picture == ps->root_picture)
+	if (ps->tgt_picture == ps->root_picture) {
 		ps->tgt_picture = XCB_NONE;
-	else
+	} else {
 		free_picture(ps->c, &ps->tgt_picture);
+	}
 
 	free_picture(ps->c, &ps->root_picture);
 	free_paint(ps, &ps->tgt_buffer);

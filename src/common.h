@@ -36,9 +36,9 @@
 #include <X11/Xlib.h>
 #include <ev.h>
 #include <pixman.h>
-#include <xcb/xproto.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
+#include <xcb/xproto.h>
 
 #include "uthash_extra.h"
 #ifdef CONFIG_OPENGL
@@ -55,11 +55,11 @@
 #include "backend/driver.h"
 #include "compiler.h"
 #include "config.h"
+#include "list.h"
 #include "region.h"
+#include "render.h"
 #include "types.h"
 #include "utils.h"
-#include "list.h"
-#include "render.h"
 #include "win_defs.h"
 #include "x.h"
 
@@ -83,10 +83,17 @@ struct glx_session;
 struct atom;
 struct conv;
 
-typedef struct _ignore {
-	struct _ignore *next;
+enum pending_reply_action {
+	PENDING_REPLY_ACTION_IGNORE,
+	PENDING_REPLY_ACTION_ABORT,
+	PENDING_REPLY_ACTION_DEBUG_ABORT,
+};
+
+typedef struct pending_reply {
+	struct pending_reply *next;
 	unsigned long sequence;
-} ignore_t;
+	enum pending_reply_action action;
+} pending_reply_t;
 
 #ifdef CONFIG_OPENGL
 #ifdef DEBUG_GLX_DEBUG_CONTEXT
@@ -256,18 +263,18 @@ typedef struct session {
 	/// Time of last fading. In milliseconds.
 	long long fade_time;
 	/// Head pointer of the error ignore linked list.
-	ignore_t *ignore_head;
+	pending_reply_t *pending_reply_head;
 	/// Pointer to the <code>next</code> member of tail element of the error
 	/// ignore linked list.
-	ignore_t **ignore_tail;
+	pending_reply_t **pending_reply_tail;
 	// Cached blur convolution kernels.
 	struct x_convolution_kernel **blur_kerns_cache;
 	/// If we should quit
-	bool quit:1;
+	bool quit : 1;
 	// TODO(yshui) use separate flags for dfferent kinds of updates so we don't
 	// waste our time.
 	/// Whether there are pending updates, like window creation, etc.
-	bool pending_updates:1;
+	bool pending_updates : 1;
 
 	// === Expose event related ===
 	/// Pointer to an array of <code>XRectangle</code>-s of exposed region.
@@ -468,18 +475,21 @@ static inline bool bkend_use_glx(session_t *ps) {
 	return BKEND_GLX == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
 }
 
-static void set_ignore(session_t *ps, unsigned long sequence) {
-	if (ps->o.show_all_xerrors)
+static void set_ignore(session_t *ps, uint32_t sequence) {
+	if (ps->o.show_all_xerrors) {
 		return;
+	}
 
-	auto i = cmalloc(ignore_t);
-	if (!i)
-		return;
+	auto i = cmalloc(pending_reply_t);
+	if (!i) {
+		abort();
+	}
 
 	i->sequence = sequence;
 	i->next = 0;
-	*ps->ignore_tail = i;
-	ps->ignore_tail = &i->next;
+	i->action = PENDING_REPLY_ACTION_IGNORE;
+	*ps->pending_reply_tail = i;
+	ps->pending_reply_tail = &i->next;
 }
 
 /**

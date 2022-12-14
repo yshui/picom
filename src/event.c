@@ -665,7 +665,7 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	if ((ev->response_type & 0x7f) != KeymapNotify) {
-		discard_ignore(ps, ev->full_sequence);
+		discard_pending(ps, ev->full_sequence);
 	}
 
 	xcb_window_t wid = ev_window(ps, ev);

@@ -231,6 +231,8 @@ void x_clear_picture_clip_region(xcb_connection_t *, xcb_render_picture_t pict);
  * Log a X11 error
  */
 void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code);
+void x_log_error(enum log_level level, unsigned long serial, uint8_t major,
+                 uint16_t minor, uint8_t error_code);
 
 /*
  * Convert a xcb_generic_error_t to a string that describes the error
