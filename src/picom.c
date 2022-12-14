@@ -159,6 +159,19 @@ static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t
 void queue_redraw(session_t *ps) {
 	// If --benchmark is used, redraw is always queued
 	if (!ps->redraw_needed && !ps->o.benchmark) {
+		if (!ps->first_frame && ps->redirected &&
+		    ps->backend_data->ops->last_render_time) {
+			struct timespec render_time;
+			if (ps->backend_data->ops->last_render_time(ps->backend_data,
+			                                            &render_time)) {
+				int render_time_us = (int)(render_time.tv_sec * 1000000 +
+				                           render_time.tv_nsec / 1000);
+				log_info(
+				    "Last render call took: %d us, rolling_max: %d us",
+				    render_time_us, rolling_max_get_max(ps->render_stats));
+				rolling_max_push(ps->render_stats, render_time_us);
+			}
+		}
 		ev_idle_start(ps->loop, &ps->draw_idle);
 	}
 	ps->redraw_needed = true;
@@ -1817,6 +1830,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	pixman_region32_init(&ps->screen_reg);
 
 	// TODO(yshui) investigate what's the best window size
+	ps->render_stats = rolling_max_new(128);
 	ps->frame_time = rolling_avg_new(16);
 
 	ps->pending_reply_tail = &ps->pending_reply_head;
@@ -2455,6 +2469,7 @@ static void session_destroy(session_t *ps) {
 	x_free_randr_info(ps);
 
 	rolling_avg_destroy(ps->frame_time);
+	rolling_max_destroy(ps->render_stats);
 
 	// Release custom window shaders
 	free(ps->o.window_shader_fg);
