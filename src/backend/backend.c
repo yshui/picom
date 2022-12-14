@@ -145,6 +145,8 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		// region will be because of blur, we assume the worst case here.
 		// That is, the damaged window is at the bottom of the stack, and
 		// all other windows have semi-transparent background
+		//
+		// TODO(yshui): maybe we don't need to resize reg_damage, only reg_paint?
 		int resize_factor = 1;
 		if (t) {
 			resize_factor = t->stacking_rank;
