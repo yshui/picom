@@ -46,7 +46,7 @@ void cxinerama_upd_scrs(session_t *ps);
 
 void queue_redraw(session_t *ps);
 
-void discard_ignore(session_t *ps, unsigned long sequence);
+void discard_pending(session_t *ps, uint32_t sequence);
 
 void set_root_flags(session_t *ps, uint64_t flags);
 
