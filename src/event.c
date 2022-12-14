@@ -121,11 +121,13 @@ static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 		CASESTRRET(ClientMessage);
 	}
 
-	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type)
+	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
 		return "Damage";
+	}
 
-	if (ps->shape_exists && ev->response_type == ps->shape_event)
+	if (ps->shape_exists && ev->response_type == ps->shape_event) {
 		return "ShapeNotify";
+	}
 
 	if (ps->xsync_exists) {
 		int o = ev->response_type - ps->xsync_event;
@@ -704,8 +706,11 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		// missing sequence numbers.
 		//
 		// We only need the low 16 bits
+		uint16_t seq = ev->sequence;
 		ev->sequence = (uint16_t)(LastKnownRequestProcessed(ps->dpy) & 0xffff);
 		proc(ps->dpy, &dummy, (xEvent *)ev);
+		// Restore the sequence number
+		ev->sequence = seq;
 	}
 
 	// XXX redraw needs to be more fine grained
