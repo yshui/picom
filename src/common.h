@@ -475,11 +475,8 @@ static inline bool bkend_use_glx(session_t *ps) {
 	return BKEND_GLX == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
 }
 
-static void set_ignore(session_t *ps, uint32_t sequence) {
-	if (ps->o.show_all_xerrors) {
-		return;
-	}
-
+static void
+set_reply_action(session_t *ps, uint32_t sequence, enum pending_reply_action action) {
 	auto i = cmalloc(pending_reply_t);
 	if (!i) {
 		abort();
@@ -487,7 +484,7 @@ static void set_ignore(session_t *ps, uint32_t sequence) {
 
 	i->sequence = sequence;
 	i->next = 0;
-	i->action = PENDING_REPLY_ACTION_IGNORE;
+	i->action = action;
 	*ps->pending_reply_tail = i;
 	ps->pending_reply_tail = &i->next;
 }
@@ -496,7 +493,15 @@ static void set_ignore(session_t *ps, uint32_t sequence) {
  * Ignore X errors caused by given X request.
  */
 static inline void set_ignore_cookie(session_t *ps, xcb_void_cookie_t cookie) {
-	set_ignore(ps, cookie.sequence);
+	if (ps->o.show_all_xerrors) {
+		return;
+	}
+
+	set_reply_action(ps, cookie.sequence, PENDING_REPLY_ACTION_IGNORE);
+}
+
+static inline void set_cant_fail_cookie(session_t *ps, xcb_void_cookie_t cookie) {
+	set_reply_action(ps, cookie.sequence, PENDING_REPLY_ACTION_ABORT);
 }
 
 /**
