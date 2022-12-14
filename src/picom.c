@@ -2560,7 +2560,11 @@ int main(int argc, char **argv) {
 			// Notify the parent that we are done. This might cause the parent
 			// to quit, so only do this after setsid()
 			int tmp = 1;
-			write(pfds[1], &tmp, sizeof tmp);
+			if (write(pfds[1], &tmp, sizeof tmp) != sizeof tmp) {
+				log_fatal("Failed to notify parent process");
+				ret_code = 1;
+				break;
+			}
 			close(pfds[1]);
 			// We only do this once
 			need_fork = false;
