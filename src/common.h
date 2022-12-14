@@ -249,6 +249,7 @@ typedef struct session {
 	uint64_t last_render;
 
 	struct rolling_avg *frame_time;
+	struct rolling_max *render_stats;
 
 	// === Operation related ===
 	/// Flags related to the root window
