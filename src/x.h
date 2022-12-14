@@ -216,6 +216,12 @@ x_create_picture_with_visual(xcb_connection_t *, xcb_drawable_t, int w, int h,
 /// Fetch a X region and store it in a pixman region
 bool x_fetch_region(xcb_connection_t *, xcb_xfixes_region_t r, region_t *res);
 
+/// Create a X region from a pixman region
+uint32_t x_create_region(xcb_connection_t *c, const region_t *reg);
+
+/// Destroy a X region
+void x_destroy_region(xcb_connection_t *c, uint32_t region);
+
 void x_set_picture_clip_region(xcb_connection_t *, xcb_render_picture_t, int16_t clip_x_origin,
                                int16_t clip_y_origin, const region_t *);
 
