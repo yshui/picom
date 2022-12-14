@@ -394,7 +394,10 @@ uint32_t x_create_region(xcb_connection_t *c, const region_t *reg) {
 	}
 
 	int nrects;
-	auto rects = pixman_region32_rectangles(reg, &nrects);
+	// In older pixman versions, pixman_region32_rectangles doesn't take const
+	// region_t, instead of dealing with this version difference, just suppress the
+	// warning.
+	const pixman_box32_t *rects = pixman_region32_rectangles((region_t *)reg, &nrects);
 	auto xrects = ccalloc(nrects, xcb_rectangle_t);
 	for (int i = 0; i < nrects; i++) {
 		xrects[i] =
