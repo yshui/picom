@@ -16,7 +16,8 @@ cflags = []
 
 required_xcb_packages = [
 	'xcb-render', 'xcb-damage', 'xcb-randr', 'xcb-sync', 'xcb-composite',
-	'xcb-shape', 'xcb-xinerama', 'xcb-xfixes', 'xcb-present', 'xcb-glx', 'xcb'
+	'xcb-shape', 'xcb-xinerama', 'xcb-xfixes', 'xcb-present', 'xcb-glx', 
+	'xcb-dpms', 'xcb'
 ]
 
 required_packages = [
