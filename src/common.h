@@ -246,6 +246,9 @@ typedef struct session {
 	uint64_t last_msc_instant;
 	/// The last MSC number
 	uint64_t last_msc;
+	/// When the currently rendered frame will be displayed.
+	/// 0 means there is no pending frame.
+	uint64_t target_msc;
 	/// When did we render our last frame.
 	uint64_t last_render;
 	/// Whether we can perform frame pacing.
