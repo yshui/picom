@@ -157,86 +157,111 @@ static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t
 }
 
 /// How many seconds into the future should we start rendering the next frame.
-double next_frame_offset(session_t *ps) {
-	int render_time = rolling_max_get_max(ps->render_stats);
-	if (render_time < 0) {
-		// We don't have render time estimates, maybe there's no frame rendered
-		// yet, or the backend doesn't support render timing information,
-		// queue render immediately.
-		return 0;
+///
+/// Renders are scheduled like this:
+///
+/// 1. queue_redraw() registers the intention to render. redraw_needed is set to true to
+///    indicate what is on screen needs to be updated.
+/// 2. then, we need to figure out the best time to start rendering. first, we need to
+///    know when the next frame will be displayed on screen. we have this information from
+///    the Present extension: we know when was the last frame displayed, and we know the
+///    refresh rate. so we can calculate the next frame's display time. if our render time
+///    estimation shows we could miss that target, we push the target back one frame.
+/// 3. if there is already render completed for that target frame, or there is a render
+///    currently underway, we don't do anything, and wait for the next Present Complete
+///    Notify event to try to schedule again.
+/// 4. otherwise, we schedule a render for that target frame. we use past statistics about
+///    how long our renders took to figure out when to start rendering. we start rendering
+///    at the latest point of time possible to still hit the target frame.
+void schedule_render(session_t *ps) {
+	double delay_s = 0;
+	if (!ps->frame_pacing || !ps->redirected) {
+		// Not doing frame pacing, schedule a render immediately, if not already
+		// scheduled.
+		// If not redirected, we schedule immediately to have a chance to
+		// redirect. We won't have frame or render timing information anyway.
+		if (!ev_is_active(&ps->draw_timer)) {
+			// We don't know the msc, so we set it to 1, because 0 is a
+			// special value
+			ps->target_msc = 1;
+			goto schedule;
+		}
+		return;
 	}
-	int frame_time = (int)rolling_avg_get_avg(ps->frame_time);
-	auto next_msc = ps->last_msc_instant + (uint64_t)frame_time;
-	auto deadline = next_msc - (uint64_t)render_time;
+	struct timespec render_time;
+	bool completed =
+	    ps->backend_data->ops->last_render_time(ps->backend_data, &render_time);
+	if (!completed || ev_is_active(&ps->draw_timer)) {
+		// There is already a render underway (either just scheduled, or is
+		// rendered but awaiting completion), don't schedule another one.
+		if (ps->target_msc <= ps->last_msc) {
+			log_debug("Target frame %ld is in the past, but we are still "
+			          "rendering",
+			          ps->target_msc);
+			// We missed our target, push it back one frame
+			ps->target_msc = ps->last_msc + 1;
+		}
+		return;
+	}
+	if (ps->target_msc > ps->last_msc) {
+		// Render for the target frame is completed, and has yet to be displayed.
+		// Don't schedule another render.
+		return;
+	}
 
-	const uint64_t slack = 1000;
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	auto now_us = (uint64_t)now.tv_sec * 1000000 + (uint64_t)now.tv_nsec / 1000;
-	if (now_us + slack >= deadline) {
-		// We are already late, render immediately.
-		log_trace("Already late, rendering immediately, last_msc: %" PRIu64
-		          ", render_time: %d, frame_time: %d, now_us: %" PRIu64,
-		          ps->last_msc_instant, render_time, frame_time, now_us);
-		return 0;
-	}
-	log_trace("Delay: %lf s, last_msc: %" PRIu64 ", render_time: %d, frame_time: %d, "
-	          "now_us: %" PRIu64 ", next_msc: %" PRIu64,
-	          (double)(deadline - now_us - slack) / 1000000.0, ps->last_msc_instant,
-	          render_time, frame_time, now_us, next_msc);
-	return (double)(deadline - now_us - slack) / 1000000.0;
-}
 
-/// Update render stats. Return false if a frame is still being rendered.
-static bool update_render_stats(session_t *ps) {
-	if (!ps->first_frame && ps->redirected && ps->backend_data->ops->last_render_time) {
-		struct timespec render_time;
-		if (ps->backend_data->ops->last_render_time(ps->backend_data, &render_time)) {
-			int render_time_us =
-			    (int)(render_time.tv_sec * 1000000 + render_time.tv_nsec / 1000);
-			log_trace("Last render call took: %d us, "
-			          "rolling_max: %d us",
-			          render_time_us, rolling_max_get_max(ps->render_stats));
-			rolling_max_push(ps->render_stats, render_time_us);
-			return true;
-		}
-		return false;
+	int render_time_us =
+	    (int)(render_time.tv_sec * 1000000L + render_time.tv_nsec / 1000L);
+	if (ps->target_msc == ps->last_msc) {
+		// The frame has just been displayed, record its render time;
+		log_trace("Last render call took: %d us, rolling_max: %d us",
+		          render_time_us, rolling_max_get_max(ps->render_stats));
+		rolling_max_push(ps->render_stats, render_time_us);
+		ps->target_msc = 0;
 	}
-	return true;
+
+	// TODO(yshui): why 1500?
+	const int SLACK = 1500;
+	int render_time_estimate = rolling_max_get_max(ps->render_stats);
+	if (render_time_estimate < 0) {
+		// We don't have render time estimates, maybe there's no frame rendered
+		// yet, or the backend doesn't support render timing information,
+		// schedule render immediately.
+		ps->target_msc = ps->last_msc + 1;
+		goto schedule;
+	}
+	render_time_estimate += SLACK;
+
+	auto frame_time = (uint64_t)rolling_avg_get_avg(ps->frame_time);
+	auto minimal_target_us = now_us + (uint64_t)render_time_estimate;
+	auto frame_delay = (uint64_t)ceil(
+	    (double)(minimal_target_us - ps->last_msc_instant) / (double)frame_time);
+	auto deadline = ps->last_msc_instant + frame_delay * frame_time;
+
+	ps->target_msc = ps->last_msc + frame_delay;
+	auto delay = deadline - (uint64_t)render_time_estimate - now_us;
+	delay_s = (double)delay / 1000000.0;
+
+	log_trace("Delay: %lu us, last_msc: %" PRIu64 ", render_time: %d, frame_time: "
+	          "%" PRIu64 ", now_us: %" PRIu64 ", next_msc: %" PRIu64,
+	          delay, ps->last_msc_instant, render_time_estimate, frame_time, now_us,
+	          deadline);
+
+schedule:
+	assert(!ev_is_active(&ps->draw_timer));
+	ev_timer_set(&ps->draw_timer, delay_s, 0);
+	ev_timer_start(ps->loop, &ps->draw_timer);
 }
 
 void queue_redraw(session_t *ps) {
 	// Whether we have already rendered for the current frame.
 	// If frame pacing is not enabled, pretend this is false.
-	bool already_rendered = (ps->last_render > ps->last_msc_instant) && ps->frame_pacing;
-	if (already_rendered) {
-		log_debug("Already rendered for the current frame, not queuing "
-		          "redraw");
-	}
 	// If --benchmark is used, redraw is always queued
-	if (!ps->redraw_needed && !ps->o.benchmark && !already_rendered) {
-		double delay = 0;
-		if (ps->frame_pacing) {
-			if (!update_render_stats(ps)) {
-				// A frame is still being rendered. This means we missed
-				// previous vblank. We shouldn't queue a new frame until
-				// the next vblank.
-				log_debug("A frame is still being rendered, not queueing "
-				          "redraw");
-				ps->redraw_needed = true;
-				return;
-			}
-			// Our loop can be blocked by frame present, which cause ev_now to
-			// drift away from the real time. We need to correct it.
-			delay = next_frame_offset(ps) + ev_now(ps->loop) - ev_time();
-			if (delay < 0) {
-				delay = 0;
-			}
-		}
-		// Not doing frame pacing, just redraw immediately
-		ev_timer_set(&ps->draw_timer, delay, 0);
-		assert(!ev_is_active(&ps->draw_timer));
-		ev_timer_start(ps->loop, &ps->draw_timer);
+	if (!ps->redraw_needed && !ps->o.benchmark) {
+		schedule_render(ps);
 	}
 	ps->redraw_needed = true;
 }
@@ -1506,18 +1531,8 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 		// pacing. Unconditionally queue a frame for simplicity.
 		queue_redraw(ps);
 	}
-	if (ps->frame_pacing && ps->redraw_needed && !ev_is_active(&ps->draw_timer)) {
-		log_trace("Frame pacing: queueing redraw");
-		// We deferred a frame in queue_redraw() because of frame pacing. Schedule
-		// it now.
-		if (!update_render_stats(ps)) {
-			log_warn("A frame is still being rendered, not queueing redraw.");
-		} else {
-
-			ev_timer_set(&ps->draw_timer,
-			             next_frame_offset(ps) + ev_now(ps->loop) - ev_time(), 0);
-			ev_timer_start(ps->loop, &ps->draw_timer);
-		}
+	if (ps->frame_pacing && ps->redraw_needed) {
+		schedule_render(ps);
 	}
 }
 
