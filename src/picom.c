@@ -217,7 +217,7 @@ double next_frame_offset(session_t *ps) {
 		return 0;
 	}
 	int frame_time = (int)rolling_avg_get_avg(ps->frame_time);
-	auto next_msc = ps->last_msc + (uint64_t)frame_time;
+	auto next_msc = ps->last_msc_instant + (uint64_t)frame_time;
 	auto deadline = next_msc - (uint64_t)render_time;
 
 	const uint64_t slack = 1000;
@@ -228,12 +228,12 @@ double next_frame_offset(session_t *ps) {
 		// We are already late, render immediately.
 		log_trace("Already late, rendering immediately, last_msc: %" PRIu64
 		          ", render_time: %d, frame_time: %d, now_us: %" PRIu64,
-		          ps->last_msc, render_time, frame_time, now_us);
+		          ps->last_msc_instant, render_time, frame_time, now_us);
 		return 0;
 	}
 	log_trace("Delay: %lf s, last_msc: %" PRIu64 ", render_time: %d, frame_time: %d, "
 	          "now_us: %" PRIu64 ", next_msc: %" PRIu64,
-	          (double)(deadline - now_us - slack) / 1000000.0, ps->last_msc,
+	          (double)(deadline - now_us - slack) / 1000000.0, ps->last_msc_instant,
 	          render_time, frame_time, now_us, next_msc);
 	return (double)(deadline - now_us - slack) / 1000000.0;
 }
@@ -259,7 +259,7 @@ static bool update_render_stats(session_t *ps) {
 void queue_redraw(session_t *ps) {
 	// Whether we have already rendered for the current frame.
 	// If frame pacing is not enabled, pretend this is false.
-	bool already_rendered = (ps->last_render > ps->last_msc) && ps->frame_pacing;
+	bool already_rendered = (ps->last_render > ps->last_msc_instant) && ps->frame_pacing;
 	if (already_rendered) {
 		log_debug("Already rendered for the current frame, not queuing "
 		          "redraw");
@@ -1515,13 +1515,17 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 		return;
 	}
 
-	if (cne->ust <= ps->last_msc) {
-		return;
-	}
-
 	auto cookie = xcb_present_notify_msc(ps->c, session_get_target_window(ps), 0,
 	                                     cne->msc + 1, 0, 0);
 	set_cant_fail_cookie(ps, cookie);
+
+	if (cne->msc <= ps->last_msc || cne->ust == 0) {
+		// X sometimes sends duplicate/bogus MSC events, ignore them
+		//
+		// See:
+		// https://gitlab.freedesktop.org/xorg/xserver/-/issues/1418
+		return;
+	}
 
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
@@ -1533,18 +1537,21 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 		drift = now_usec - cne->ust;
 	}
 
-	if (ps->last_msc != 0) {
-		int frame_time = (int)(cne->ust - ps->last_msc);
+	if (ps->last_msc_instant != 0) {
+		auto frame_count = cne->msc - ps->last_msc;
+		int frame_time = (int)((cne->ust - ps->last_msc_instant) / frame_count);
 		rolling_avg_push(ps->frame_time, frame_time);
-		log_trace("Frame time: %d us, rolling average: %lf us, msc: %" PRIu64
-		          ", offset: %" PRIu64,
-		          frame_time, rolling_avg_get_avg(ps->frame_time), cne->ust, drift);
+		log_trace("Frame count %lu, frame time: %d us, rolling average: %lf us, "
+		          "msc: %" PRIu64 ", offset: %" PRIu64,
+		          frame_count, frame_time, rolling_avg_get_avg(ps->frame_time),
+		          cne->ust, drift);
 	}
-	ps->last_msc = cne->ust;
+	ps->last_msc_instant = cne->ust;
+	ps->last_msc = cne->msc;
 	if (drift > 1000000 && ps->frame_pacing) {
 		log_error("Temporal anomaly detected, frame pacing disabled. (Are we "
 		          "running inside a time namespace?), %" PRIu64 " %" PRIu64,
-		          now_usec, ps->last_msc);
+		          now_usec, ps->last_msc_instant);
 		ps->frame_pacing = false;
 		// We could have deferred a frame in queue_redraw() because of frame
 		// pacing. Unconditionally queue a frame for simplicity.
@@ -1567,6 +1574,7 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 
 static void handle_present_events(session_t *ps) {
 	if (!ps->present_event) {
+		// Screen not redirected
 		return;
 	}
 	xcb_present_generic_event_t *ev;

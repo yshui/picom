@@ -242,7 +242,9 @@ typedef struct session {
 	/// Event context for X Present extension.
 	uint32_t present_event_id;
 	xcb_special_event_t *present_event;
-	/// Last MSC event, in useconds.
+	/// When last MSC event happened, in useconds.
+	uint64_t last_msc_instant;
+	/// The last MSC number
 	uint64_t last_msc;
 	/// When did we render our last frame.
 	uint64_t last_render;
