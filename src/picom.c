@@ -1489,9 +1489,11 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 		return;
 	}
 
-	auto cookie = xcb_present_notify_msc(ps->c, session_get_target_window(ps), 0,
-	                                     cne->msc + 1, 0, 0);
-	set_cant_fail_cookie(ps, cookie);
+	if (ps->frame_pacing) {
+		auto cookie = xcb_present_notify_msc(ps->c, session_get_target_window(ps),
+		                                     0, cne->msc + 1, 0, 0);
+		set_cant_fail_cookie(ps, cookie);
+	}
 
 	if (cne->msc <= ps->last_msc || cne->ust == 0) {
 		// X sometimes sends duplicate/bogus MSC events, ignore them
