@@ -1569,22 +1569,21 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 		int frame_time = (int)((cne->ust - ps->last_msc_instant) / frame_count);
 		rolling_avg_push(ps->frame_time, frame_time);
 		log_trace("Frame count %lu, frame time: %d us, rolling average: %lf us, "
-		          "msc: %" PRIu64 ", offset: %" PRIu64,
+		          "msc: %" PRIu64 ", offset: %d us",
 		          frame_count, frame_time, rolling_avg_get_avg(ps->frame_time),
-		          cne->ust, drift);
-	}
-	ps->last_msc_instant = cne->ust;
-	ps->last_msc = cne->msc;
-	if (drift > 1000000 && ps->frame_pacing) {
+		          cne->ust, (int)drift);
+	} else if (drift > 1000000 && ps->frame_pacing) {
+		// This is the first MSC event we receive, let's check if the timestamps
+		// align with the monotonic clock. If not, disable frame pacing because we
+		// can't schedule frames reliably.
 		log_error("Temporal anomaly detected, frame pacing disabled. (Are we "
 		          "running inside a time namespace?), %" PRIu64 " %" PRIu64,
 		          now_usec, ps->last_msc_instant);
 		ps->frame_pacing = false;
-		// We could have deferred a frame in queue_redraw() because of frame
-		// pacing. Unconditionally queue a frame for simplicity.
-		queue_redraw(ps);
 	}
-	if (ps->frame_pacing && ps->redraw_needed) {
+	ps->last_msc_instant = cne->ust;
+	ps->last_msc = cne->msc;
+	if (ps->redraw_needed) {
 		schedule_render(ps);
 	}
 }
