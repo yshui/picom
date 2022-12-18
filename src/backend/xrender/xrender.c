@@ -594,13 +594,13 @@ static void present(backend_t *base, const region_t *region) {
 	uint16_t region_width = to_u16_checked(extent->x2 - extent->x1),
 	         region_height = to_u16_checked(extent->y2 - extent->y1);
 
-	// compose() sets clip region on the back buffer, so clear it first
-	x_clear_picture_clip_region(base->c, xd->back[xd->curr_back]);
-
 	// limit the region of update
 	x_set_picture_clip_region(base->c, xd->back[2], 0, 0, region);
 
 	if (xd->vsync) {
+		// compose() sets clip region on the back buffer, so clear it first
+		x_clear_picture_clip_region(base->c, xd->back[xd->curr_back]);
+
 		// Update the back buffer first, then present
 		xcb_render_composite(base->c, XCB_RENDER_PICT_OP_SRC, xd->back[2],
 		                     XCB_NONE, xd->back[xd->curr_back], orig_x, orig_y, 0,
