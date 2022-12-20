@@ -388,6 +388,41 @@ bool x_fetch_region(xcb_connection_t *c, xcb_xfixes_region_t r, pixman_region32_
 	return ret;
 }
 
+uint32_t x_create_region(xcb_connection_t *c, const region_t *reg) {
+	if (!reg) {
+		return XCB_NONE;
+	}
+
+	int nrects;
+	// In older pixman versions, pixman_region32_rectangles doesn't take const
+	// region_t, instead of dealing with this version difference, just suppress the
+	// warning.
+	const pixman_box32_t *rects = pixman_region32_rectangles((region_t *)reg, &nrects);
+	auto xrects = ccalloc(nrects, xcb_rectangle_t);
+	for (int i = 0; i < nrects; i++) {
+		xrects[i] =
+		    (xcb_rectangle_t){.x = to_i16_checked(rects[i].x1),
+		                      .y = to_i16_checked(rects[i].y1),
+		                      .width = to_u16_checked(rects[i].x2 - rects[i].x1),
+		                      .height = to_u16_checked(rects[i].y2 - rects[i].y1)};
+	}
+
+	xcb_xfixes_region_t ret = x_new_id(c);
+	bool success =
+	    XCB_AWAIT_VOID(xcb_xfixes_create_region, c, ret, to_u32_checked(nrects), xrects);
+	free(xrects);
+	if (!success) {
+		return XCB_NONE;
+	}
+	return ret;
+}
+
+void x_destroy_region(xcb_connection_t *c, xcb_xfixes_region_t r) {
+	if (r != XCB_NONE) {
+		xcb_xfixes_destroy_region(c, r);
+	}
+}
+
 void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
                                int16_t clip_x_origin, int16_t clip_y_origin,
                                const region_t *reg) {
@@ -414,9 +449,10 @@ void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
 }
 
 void x_clear_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict) {
+	assert(pict != XCB_NONE);
 	xcb_render_change_picture_value_list_t v = {.clipmask = XCB_NONE};
 	xcb_generic_error_t *e = xcb_request_check(
-	    c, xcb_render_change_picture(c, pict, XCB_RENDER_CP_CLIP_MASK, &v));
+	    c, xcb_render_change_picture_checked(c, pict, XCB_RENDER_CP_CLIP_MASK, &v));
 	if (e) {
 		log_error_x_error(e, "failed to clear clip region");
 		free(e);
@@ -527,8 +563,16 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 /**
  * Log a X11 error
  */
+void x_log_error(enum log_level level, unsigned long serial, uint8_t major,
+                 uint16_t minor, uint8_t error_code) {
+	if (unlikely(level >= log_get_level_tls())) {
+		log_printf(tls_logger, level, __func__, "%s",
+		           _x_strerror(serial, major, minor, error_code));
+	}
+}
+
 void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_code) {
-	log_debug("%s", _x_strerror(serial, major, minor, error_code));
+	x_log_error(LOG_LEVEL_DEBUG, serial, major, minor, error_code);
 }
 
 /*
