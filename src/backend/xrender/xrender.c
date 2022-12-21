@@ -576,9 +576,13 @@ static void deinit(backend_t *backend_data) {
 		xcb_render_free_picture(xd->base.c, xd->alpha_pict[i]);
 	}
 	xcb_render_free_picture(xd->base.c, xd->target);
-	for (int i = 0; i < 2; i++) {
-		xcb_render_free_picture(xd->base.c, xd->back[i]);
-		xcb_free_pixmap(xd->base.c, xd->back_pixmap[i]);
+	for (int i = 0; i < 3; i++) {
+		if (xd->back[i] != XCB_NONE) {
+			xcb_render_free_picture(xd->base.c, xd->back[i]);
+		}
+		if (xd->back_pixmap[i] != XCB_NONE) {
+			xcb_free_pixmap(xd->base.c, xd->back_pixmap[i]);
+		}
 	}
 	if (xd->present_event) {
 		xcb_unregister_for_special_event(xd->base.c, xd->present_event);
