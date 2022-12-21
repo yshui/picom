@@ -508,6 +508,7 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 	if (!r) {
 		log_error("Invalid pixmap: %#010x", pixmap);
 		x_print_error(e->full_sequence, e->major_code, e->minor_code, e->error_code);
+		free(e);
 		return NULL;
 	}
 
