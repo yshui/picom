@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
+#include <xcb/dpms.h>
 #include <xcb/glx.h>
 #include <xcb/present.h>
 #include <xcb/randr.h>
@@ -167,6 +168,26 @@ void cxinerama_upd_scrs(session_t *ps) {
 		                          s->width, s->height);
 	}
 	free(xinerama_scrs);
+}
+
+static inline bool dpms_screen_is_off(xcb_dpms_info_reply_t *info) {
+	// state is a bool indicating whether dpms is enabled
+	return info->state && (info->power_level != XCB_DPMS_DPMS_MODE_ON);
+}
+
+void check_dpms_status(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
+	auto ps = session_ptr(w, dpms_check_timer);
+	auto r = xcb_dpms_info_reply(ps->c, xcb_dpms_info(ps->c), NULL);
+	if (!r) {
+		log_fatal("Failed to query DPMS status.");
+		abort();
+	}
+	auto now_screen_is_off = dpms_screen_is_off(r);
+	if (ps->screen_is_off != now_screen_is_off) {
+		ps->screen_is_off = now_screen_is_off;
+		queue_redraw(ps);
+	}
+	free(r);
 }
 
 /**
@@ -919,6 +940,19 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation) {
 	} else if (ps->o.unredir_if_possible && is_highest && !ps->redirected) {
 		// If there's no window to paint, and the screen isn't redirected,
 		// don't redirect it.
+		unredir_possible = true;
+	} else if (ps->screen_is_off) {
+		// Screen is off, unredirect
+		// We do this unconditionally disregarding "unredir_if_possible"
+		// because it's important for correctness, because we need to
+		// workaround problems X server has around screen off.
+		//
+		// Known problems:
+		//   1. Sometimes OpenGL front buffer can lose content, and if we
+		//      are doing partial updates (i.e. use-damage = true), the
+		//      result will be wrong.
+		//   2. For frame pacing, X server sends bogus
+		//      PresentCompleteNotify events when screen is off.
 		unredir_possible = true;
 	}
 	if (unredir_possible) {
@@ -1800,6 +1834,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	xcb_prefetch_extension_data(ps->c, &xcb_present_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_sync_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_glx_id);
+	xcb_prefetch_extension_data(ps->c, &xcb_dpms_id);
 
 	ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
 	if (!ext_info || !ext_info->present) {
@@ -1866,6 +1901,21 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		ps->glx_exists = true;
 		ps->glx_error = ext_info->first_error;
 		ps->glx_event = ext_info->first_event;
+	}
+
+	ext_info = xcb_get_extension_data(ps->c, &xcb_dpms_id);
+	ps->dpms_exists = ext_info && ext_info->present;
+	if (ps->dpms_exists) {
+		auto r = xcb_dpms_info_reply(ps->c, xcb_dpms_info(ps->c), NULL);
+		if (!r) {
+			log_fatal("Failed to query DPMS info");
+			goto err;
+		}
+		ps->screen_is_off = dpms_screen_is_off(r);
+		// Check screen status every half second
+		ev_timer_init(&ps->dpms_check_timer, check_dpms_status, 0, 0.5);
+		ev_timer_start(ps->loop, &ps->dpms_check_timer);
+		free(r);
 	}
 
 	// Parse configuration file
@@ -2462,6 +2512,7 @@ static void session_destroy(session_t *ps) {
 	// Stop libev event handlers
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
 	ev_timer_stop(ps->loop, &ps->fade_timer);
+	ev_timer_stop(ps->loop, &ps->dpms_check_timer);
 	ev_idle_stop(ps->loop, &ps->draw_idle);
 	ev_prepare_stop(ps->loop, &ps->event_check);
 	ev_signal_stop(ps->loop, &ps->usr1_signal);
