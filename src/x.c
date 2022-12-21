@@ -299,6 +299,7 @@ x_create_picture_with_pictfmt_and_pixmap(xcb_connection_t *c,
 	free(buf);
 	if (e) {
 		log_error_x_error(e, "failed to create picture");
+		free(e);
 		return XCB_NONE;
 	}
 	return tmp_picture;
