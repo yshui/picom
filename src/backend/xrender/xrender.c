@@ -554,7 +554,7 @@ release_rounded_corner_cache(backend_t *base, struct xrender_rounded_rectangle_c
 	assert(cache->refcount > 0);
 	cache->refcount--;
 	if (cache->refcount == 0) {
-		xcb_free_pixmap(base->c, cache->p);
+		xcb_render_free_picture(base->c, cache->p);
 		free(cache);
 	}
 }
