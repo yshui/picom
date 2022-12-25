@@ -150,6 +150,8 @@ typedef struct session {
 	// === Event handlers ===
 	/// ev_io for X connection
 	ev_io xiow;
+	/// Timer for checking DPMS power level
+	ev_timer dpms_check_timer;
 	/// Timeout for delayed unredirection.
 	ev_timer unredir_timer;
 	/// Timer for fading
@@ -240,6 +242,8 @@ typedef struct session {
 	xcb_sync_fence_t sync_fence;
 	/// Whether we are rendering the first frame after screen is redirected
 	bool first_frame;
+	/// Whether screen has been turned off
+	bool screen_is_off;
 
 	// === Operation related ===
 	/// Flags related to the root window
@@ -348,6 +352,8 @@ typedef struct session {
 	int composite_error;
 	/// Major opcode for X Composite extension.
 	int composite_opcode;
+	/// Whether X DPMS extension exists
+	bool dpms_exists;
 	/// Whether X Shape extension exists.
 	bool shape_exists;
 	/// Event base number for X Shape extension.

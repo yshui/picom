@@ -265,13 +265,6 @@ compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, coord_t dst,
 		xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_SRC, inner->pict,
 		                     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 
-		if (img->corner_radius != 0 && xrimg->rounded_rectangle != NULL) {
-			// Clip tmp_pict with a rounded rectangle
-			xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_IN_REVERSE,
-			                     xrimg->rounded_rectangle->p, XCB_NONE,
-			                     tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
-		}
-
 		if (img->color_inverted) {
 			if (inner->has_alpha) {
 				auto tmp_pict2 = x_create_picture_with_visual(
@@ -294,6 +287,7 @@ compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, coord_t dst,
 				                     0, 0, 0, 0, 0, 0, tmpw, tmph);
 			}
 		}
+
 		if (img->dim != 0) {
 			// Dim the actually content of window
 			xcb_rectangle_t rect = {
@@ -305,6 +299,13 @@ compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, coord_t dst,
 
 			xcb_render_fill_rectangles(xd->base.c, XCB_RENDER_PICT_OP_OVER,
 			                           tmp_pict, dim_color, 1, &rect);
+		}
+
+		if (img->corner_radius != 0 && xrimg->rounded_rectangle != NULL) {
+			// Clip tmp_pict with a rounded rectangle
+			xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_IN_REVERSE,
+			                     xrimg->rounded_rectangle->p, XCB_NONE,
+			                     tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
 		}
 
 		xcb_render_composite(xd->base.c, XCB_RENDER_PICT_OP_OVER, tmp_pict,
@@ -508,6 +509,7 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 	if (!r) {
 		log_error("Invalid pixmap: %#010x", pixmap);
 		x_print_error(e->full_sequence, e->major_code, e->minor_code, e->error_code);
+		free(e);
 		return NULL;
 	}
 
@@ -553,7 +555,7 @@ release_rounded_corner_cache(backend_t *base, struct xrender_rounded_rectangle_c
 	assert(cache->refcount > 0);
 	cache->refcount--;
 	if (cache->refcount == 0) {
-		xcb_free_pixmap(base->c, cache->p);
+		xcb_render_free_picture(base->c, cache->p);
 		free(cache);
 	}
 }
@@ -575,9 +577,13 @@ static void deinit(backend_t *backend_data) {
 		xcb_render_free_picture(xd->base.c, xd->alpha_pict[i]);
 	}
 	xcb_render_free_picture(xd->base.c, xd->target);
-	for (int i = 0; i < 2; i++) {
-		xcb_render_free_picture(xd->base.c, xd->back[i]);
-		xcb_free_pixmap(xd->base.c, xd->back_pixmap[i]);
+	for (int i = 0; i < 3; i++) {
+		if (xd->back[i] != XCB_NONE) {
+			xcb_render_free_picture(xd->base.c, xd->back[i]);
+		}
+		if (xd->back_pixmap[i] != XCB_NONE) {
+			xcb_free_pixmap(xd->base.c, xd->back_pixmap[i]);
+		}
 	}
 	if (xd->present_event) {
 		xcb_unregister_for_special_event(xd->base.c, xd->present_event);
