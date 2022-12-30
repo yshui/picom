@@ -285,8 +285,9 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 
 	eglpixmap = cmalloc(struct egl_pixmap);
 	eglpixmap->pixmap = pixmap;
-	eglpixmap->image = eglCreateImageProc(gd->display, gd->ctx, EGL_NATIVE_PIXMAP_KHR,
-	                                      (EGLClientBuffer)(uintptr_t)pixmap, NULL);
+	eglpixmap->image =
+	    eglCreateImageProc(gd->display, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR,
+	                       (EGLClientBuffer)(uintptr_t)pixmap, NULL);
 	eglpixmap->owned = owned;
 
 	if (eglpixmap->image == EGL_NO_IMAGE) {
