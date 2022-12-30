@@ -1162,6 +1162,7 @@ void root_damaged(session_t *ps) {
 	if (ps->backend_data) {
 		if (ps->root_image) {
 			ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+			ps->root_image = NULL;
 		}
 		auto pixmap = x_get_root_back_pixmap(ps->c, ps->root, ps->atoms);
 		if (pixmap != XCB_NONE) {
