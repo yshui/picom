@@ -166,14 +166,9 @@ static backend_t *egl_init(session_t *ps) {
 		goto end;
 	}
 
-	int ncfgs = 0;
-	if (eglGetConfigs(gd->display, NULL, 0, &ncfgs) != EGL_TRUE) {
-		log_error("Failed to get EGL configs.");
-		goto end;
-	}
-
 	auto visual_info = x_get_visual_info(ps->c, ps->vis);
-	EGLConfig *cfgs = ccalloc(ncfgs, EGLConfig);
+	EGLConfig config = NULL;
+	int nconfigs = 1;
 	// clang-format off
 	if (eglChooseConfig(gd->display,
 	                    (EGLint[]){
@@ -186,17 +181,14 @@ static backend_t *egl_init(session_t *ps) {
 	                             EGL_STENCIL_SIZE, 1,
 	                             EGL_CONFIG_CAVEAT, EGL_NONE,
 	                             EGL_NONE,
-	                     }, cfgs, ncfgs, &ncfgs) != EGL_TRUE) {
+	                     }, &config, nconfigs, &nconfigs) != EGL_TRUE) {
 		log_error("Failed to choose EGL config for the root window.");
 		goto end;
 	}
 	// clang-format on
 
-	EGLConfig target_cfg = cfgs[0];
-	free(cfgs);
-
 	gd->target_win = eglCreatePlatformWindowSurfaceProc(
-	    gd->display, target_cfg, (xcb_window_t[]){session_get_target_window(ps)}, NULL);
+	    gd->display, config, (xcb_window_t[]){session_get_target_window(ps)}, NULL);
 	if (gd->target_win == EGL_NO_SURFACE) {
 		log_error("Failed to create EGL surface.");
 		goto end;
@@ -207,7 +199,7 @@ static backend_t *egl_init(session_t *ps) {
 		goto end;
 	}
 
-	gd->ctx = eglCreateContext(gd->display, target_cfg, NULL, NULL);
+	gd->ctx = eglCreateContext(gd->display, config, NULL, NULL);
 	if (gd->ctx == EGL_NO_CONTEXT) {
 		log_error("Failed to get GLX context.");
 		goto end;
