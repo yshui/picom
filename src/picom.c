@@ -1438,7 +1438,7 @@ static bool init_debug_window(session_t *ps) {
 		goto err_out;
 	}
 
-	err = xcb_request_check(ps->c, xcb_map_window(ps->c, ps->debug_window));
+	err = xcb_request_check(ps->c, xcb_map_window_checked(ps->c, ps->debug_window));
 	if (err) {
 		goto err_out;
 	}
@@ -2257,8 +2257,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->sync_fence = XCB_NONE;
 	if (ps->xsync_exists) {
 		ps->sync_fence = x_new_id(ps->c);
-		e = xcb_request_check(
-		    ps->c, xcb_sync_create_fence(ps->c, ps->root, ps->sync_fence, 0));
+		e = xcb_request_check(ps->c, xcb_sync_create_fence_checked(
+		                                 ps->c, ps->root, ps->sync_fence, 0));
 		if (e) {
 			if (ps->o.xrender_sync_fence) {
 				log_error_x_error(e, "Failed to create a XSync fence. "
@@ -2469,7 +2469,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	xcb_query_tree_reply_t *query_tree_reply =
 	    xcb_query_tree_reply(ps->c, xcb_query_tree(ps->c, ps->root), NULL);
 
-	e = xcb_request_check(ps->c, xcb_ungrab_server(ps->c));
+	e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
 	if (e) {
 		log_fatal_x_error(e, "Failed to ungrab server");
 		free(e);
