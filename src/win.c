@@ -1565,7 +1565,7 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 	}
 
 	auto e = xcb_request_check(
-	    ps->c, xcb_change_window_attributes(
+	    ps->c, xcb_change_window_attributes_checked(
 	               ps->c, client, XCB_CW_EVENT_MASK,
 	               (const uint32_t[]){determine_evmask(ps, client, WIN_EVMODE_CLIENT)}));
 	if (e) {
