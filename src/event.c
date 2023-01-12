@@ -283,7 +283,8 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 	// in redirected state.
 	if (ps->overlay && ev->window == ps->overlay && !ps->redirected) {
 		log_debug("Overlay is mapped while we are not redirected");
-		auto e = xcb_request_check(ps->c, xcb_unmap_window(ps->c, ps->overlay));
+		auto e =
+		    xcb_request_check(ps->c, xcb_unmap_window_checked(ps->c, ps->overlay));
 		if (e) {
 			log_error("Failed to unmap the overlay window");
 			free(e);
