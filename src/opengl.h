@@ -159,7 +159,7 @@ static inline bool ensure_glx_context(session_t *ps) {
 	if (!glx_has_context(ps))
 		glx_init(ps, false);
 
-	return ps->psglx->context;
+	return glx_has_context(ps);
 }
 
 /**

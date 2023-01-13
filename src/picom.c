@@ -1162,6 +1162,7 @@ void root_damaged(session_t *ps) {
 	if (ps->backend_data) {
 		if (ps->root_image) {
 			ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+			ps->root_image = NULL;
 		}
 		auto pixmap = x_get_root_back_pixmap(ps->c, ps->root, ps->atoms);
 		if (pixmap != XCB_NONE) {
@@ -1640,6 +1641,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		auto e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
 		if (e) {
 			log_fatal_x_error(e, "failed to grab x server");
+			free(e);
 			return quit(ps);
 		}
 
@@ -1675,6 +1677,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
 		if (e) {
 			log_fatal_x_error(e, "failed to ungrab x server");
+			free(e);
 			return quit(ps);
 		}
 
@@ -2009,6 +2012,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	                                  XCB_EVENT_MASK_PROPERTY_CHANGE}));
 	if (e) {
 		log_error_x_error(e, "Failed to setup root window event mask");
+		free(e);
 	}
 
 	xcb_prefetch_extension_data(ps->c, &xcb_render_id);
