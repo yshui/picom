@@ -384,8 +384,12 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "shadow-ignore-shaped", &opt->shadow_ignore_shaped);
 	// --detect-rounded-corners
 	lcfg_lookup_bool(&cfg, "detect-rounded-corners", &opt->detect_rounded_corners);
-	// --xinerama-shadow-crop
-	lcfg_lookup_bool(&cfg, "xinerama-shadow-crop", &opt->xinerama_shadow_crop);
+	// --crop-shadow-to-monitor
+	if (lcfg_lookup_bool(&cfg, "xinerama-shadow-crop", &opt->crop_shadow_to_monitor)) {
+		log_warn("xinerama-shadow-crop is deprecated. Use crop-shadow-to-monitor "
+		         "instead.");
+	}
+	lcfg_lookup_bool(&cfg, "crop-shadow-to-monitor", &opt->crop_shadow_to_monitor);
 	// --detect-client-opacity
 	lcfg_lookup_bool(&cfg, "detect-client-opacity", &opt->detect_client_opacity);
 	// --refresh-rate

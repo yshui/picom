@@ -368,12 +368,10 @@ typedef struct session {
 	int glx_event;
 	/// Error base number for X GLX extension.
 	int glx_error;
-	/// Whether X Xinerama extension exists.
-	bool xinerama_exists;
-	/// Xinerama screen regions.
-	region_t *xinerama_scr_regs;
-	/// Number of Xinerama screens.
-	int xinerama_nscrs;
+	/// Number of X RandR monitors.
+	int randr_nmonitors;
+	/// X RandR monitor regions.
+	region_t *randr_monitor_regs;
 	/// Whether X Sync extension exists.
 	bool xsync_exists;
 	/// Event base number for X Sync extension.

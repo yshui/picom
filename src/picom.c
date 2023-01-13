@@ -28,7 +28,6 @@
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xfixes.h>
-#include <xcb/xinerama.h>
 
 #include <ev.h>
 #include <test.h>
@@ -112,62 +111,12 @@ void quit(session_t *ps) {
 }
 
 /**
- * Free Xinerama screen info.
- *
- * XXX consider moving to x.c
- */
-static inline void free_xinerama_info(session_t *ps) {
-	if (ps->xinerama_scr_regs) {
-		for (int i = 0; i < ps->xinerama_nscrs; ++i)
-			pixman_region32_fini(&ps->xinerama_scr_regs[i]);
-		free(ps->xinerama_scr_regs);
-		ps->xinerama_scr_regs = NULL;
-	}
-	ps->xinerama_nscrs = 0;
-}
-
-/**
  * Get current system clock in milliseconds.
  */
 static inline int64_t get_time_ms(void) {
 	struct timespec tp;
 	clock_gettime(CLOCK_MONOTONIC, &tp);
 	return (int64_t)tp.tv_sec * 1000 + (int64_t)tp.tv_nsec / 1000000;
-}
-
-// XXX Move to x.c
-void cxinerama_upd_scrs(session_t *ps) {
-	// XXX Consider deprecating Xinerama, switch to RandR when necessary
-	free_xinerama_info(ps);
-
-	if (!ps->o.xinerama_shadow_crop || !ps->xinerama_exists)
-		return;
-
-	xcb_xinerama_is_active_reply_t *active =
-	    xcb_xinerama_is_active_reply(ps->c, xcb_xinerama_is_active(ps->c), NULL);
-	if (!active || !active->state) {
-		free(active);
-		return;
-	}
-	free(active);
-
-	auto xinerama_scrs =
-	    xcb_xinerama_query_screens_reply(ps->c, xcb_xinerama_query_screens(ps->c), NULL);
-	if (!xinerama_scrs) {
-		return;
-	}
-
-	xcb_xinerama_screen_info_t *scrs =
-	    xcb_xinerama_query_screens_screen_info(xinerama_scrs);
-	ps->xinerama_nscrs = xcb_xinerama_query_screens_screen_info_length(xinerama_scrs);
-
-	ps->xinerama_scr_regs = ccalloc(ps->xinerama_nscrs, region_t);
-	for (int i = 0; i < ps->xinerama_nscrs; ++i) {
-		const xcb_xinerama_screen_info_t *const s = &scrs[i];
-		pixman_region32_init_rect(&ps->xinerama_scr_regs[i], s->x_org, s->y_org,
-		                          s->width, s->height);
-	}
-	free(xinerama_scrs);
 }
 
 static inline bool dpms_screen_is_off(xcb_dpms_info_reply_t *info) {
@@ -691,8 +640,8 @@ static void configure_root(session_t *ps) {
 
 static void handle_root_flags(session_t *ps) {
 	if ((ps->root_flags & ROOT_FLAGS_SCREEN_CHANGE) != 0) {
-		if (ps->o.xinerama_shadow_crop) {
-			cxinerama_upd_scrs(ps);
+		if (ps->o.crop_shadow_to_monitor) {
+			x_update_randr_monitors(ps);
 		}
 		ps->root_flags &= ~(uint64_t)ROOT_FLAGS_SCREEN_CHANGE;
 	}
@@ -1834,7 +1783,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	xcb_prefetch_extension_data(ps->c, &xcb_shape_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_xfixes_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_randr_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_xinerama_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_present_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_sync_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_glx_id);
@@ -2092,18 +2040,10 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	// Query X RandR
-	if (ps->o.xinerama_shadow_crop) {
-		if (!ps->randr_exists) {
-			log_fatal("No XRandR extension. xinerama-shadow-crop cannot be "
-			          "enabled.");
-			goto err;
-		}
-	}
-
-	// Query X Xinerama extension
-	if (ps->o.xinerama_shadow_crop) {
-		ext_info = xcb_get_extension_data(ps->c, &xcb_xinerama_id);
-		ps->xinerama_exists = ext_info && ext_info->present;
+	if (ps->o.crop_shadow_to_monitor && !ps->randr_exists) {
+		log_fatal("No X RandR extension. crop-shadow-to-monitor cannot be "
+		          "enabled.");
+		goto err;
 	}
 
 	rebuild_screen_reg(ps);
@@ -2198,12 +2138,12 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	// Monitor screen changes if vsync_sw is enabled and we are using
-	// an auto-detected refresh rate, or when Xinerama features are enabled
-	if (ps->randr_exists && ps->o.xinerama_shadow_crop) {
+	// an auto-detected refresh rate, or when X RandR features are enabled
+	if (ps->randr_exists && ps->o.crop_shadow_to_monitor) {
 		xcb_randr_select_input(ps->c, ps->root, XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
 	}
 
-	cxinerama_upd_scrs(ps);
+	x_update_randr_monitors(ps);
 
 	{
 		xcb_render_create_picture_value_list_t pa = {
@@ -2436,7 +2376,7 @@ static void session_destroy(session_t *ps) {
 	}
 	free(ps->o.blur_kerns);
 	free(ps->o.glx_fshader_win_str);
-	free_xinerama_info(ps);
+	x_free_randr_info(ps);
 
 	// Release custom window shaders
 	free(ps->o.window_shader_fg);

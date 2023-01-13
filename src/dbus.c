@@ -1202,7 +1202,7 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_opts_get_do(shadow_offset_x, cdbus_reply_int32);
 	cdbus_m_opts_get_do(shadow_offset_y, cdbus_reply_int32);
 	cdbus_m_opts_get_do(shadow_opacity, cdbus_reply_double);
-	cdbus_m_opts_get_do(xinerama_shadow_crop, cdbus_reply_bool);
+	cdbus_m_opts_get_do(crop_shadow_to_monitor, cdbus_reply_bool);
 
 	cdbus_m_opts_get_do(fade_delta, cdbus_reply_int32);
 	cdbus_m_opts_get_do(fade_in_step, cdbus_reply_double);
