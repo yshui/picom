@@ -134,7 +134,13 @@ OPTIONS
 	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it.
 
 *--unredir-if-possible*::
-	Unredirect all windows if a full-screen opaque window is detected, to maximize performance for full-screen windows. Known to cause flickering when redirecting/unredirecting windows.
+	Unredirect all windows in some cases. Known to cause flickering when redirecting/unredirecting windows. Currently, unredirecting is triggered by following conditions:
+	    * If the top level window is taking up the entire screen. In multi-monitor setup, this means ALL monitors.
+	    * If there is no window.
+	    * If a window is fullscreen according to its WM hints. (can be disabled with *--no-ewmh-fullscreen*).
+	    * If a window requests to bypass the compositor ('_NET_WM_BYPASS_COMPOSITOR').
+	Windows are also unredirected unconditionally when monitors are powered off, regardless if *--unredir-if-possible* is set.
+
 
 *--unredir-if-possible-delay* 'MILLISECONDS'::
 	Delay before unredirecting the window, in milliseconds. Defaults to 0.
