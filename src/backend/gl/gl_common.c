@@ -385,6 +385,10 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 	if (win_shader->uniform_tex >= 0) {
 		glUniform1i(win_shader->uniform_tex, 0);
 	}
+	if (win_shader->uniform_effective_size >= 0) {
+		glUniform2f(win_shader->uniform_effective_size, (float)img->ewidth,
+		            (float)img->eheight);
+	}
 	if (win_shader->uniform_dim >= 0) {
 		glUniform1f(win_shader->uniform_dim, (float)img->dim);
 	}
@@ -596,6 +600,7 @@ static bool gl_win_shader_from_stringv(const char **vshader_strv,
 	bind_uniform(ret, opacity);
 	bind_uniform(ret, invert_color);
 	bind_uniform(ret, tex);
+	bind_uniform(ret, effective_size);
 	bind_uniform(ret, dim);
 	bind_uniform(ret, brightness);
 	bind_uniform(ret, max_brightness);
