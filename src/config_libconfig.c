@@ -233,7 +233,7 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 				animation = OPEN_WINDOW_ANIMATION_NONE;
 
 			o->animation = animation;
-			mask->animation = OPEN_WINDOW_ANIMATION_INVALID;
+			mask->animation = animation;
 		}
 
 		double fval;
