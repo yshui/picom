@@ -471,56 +471,63 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 }
 
 static void init_animation(session_t *ps, struct managed_win *w) {
-    CLEAR_MASK(w->animation_is_tag)
-    static double *anim_x, *anim_y, *anim_w, *anim_h;
-	enum open_window_animation animation = ps->o.animation_for_open_window;
+	CLEAR_MASK(w->animation_is_tag)
+	static double *anim_x, *anim_y, *anim_w, *anim_h;
+	enum open_window_animation animation;
+	if (ps->o.wintype_option[w->window_type].animation != OPEN_WINDOW_ANIMATION_INVALID
+		&& !w->dwm_mask) {
+		animation = ps->o.wintype_option[w->window_type].animation;
+	}
+	else
+		animation = ps->o.animation_for_open_window;
 
 	if (w->window_type != WINTYPE_TOOLTIP &&
 		wid_has_prop(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR)) {
 		animation = ps->o.animation_for_transient_window;
 	}
 
-    anim_x = &w->animation_center_x, anim_y = &w->animation_center_y;
-    anim_w = &w->animation_w, anim_h = &w->animation_h;
-        if (w->dwm_mask & ANIM_PREV_TAG) {
-            animation = ps->o.animation_for_prev_tag;
+	anim_x = &w->animation_center_x, anim_y = &w->animation_center_y;
+	anim_w = &w->animation_w, anim_h = &w->animation_h;
 
-            if (ps->o.enable_fading_prev_tag) {
-                w->opacity_target_old = fmax(w->opacity_target, w->opacity_target_old);
-                w->state = WSTATE_FADING;
-                w->animation_is_tag |= ANIM_FADE;
-            }
-            if (ps->o.animation_for_prev_tag >= OPEN_WINDOW_ANIMATION_ZOOM) {
-                w->animation_is_tag |= ANIM_FAST;
-                w->dwm_mask |= ANIM_SPECIAL_MINIMIZE;
-                goto revert;
-            }
-            w->animation_is_tag |= ANIM_SLOW;
+        if (w->dwm_mask & ANIM_PREV_TAG) {
+		animation = ps->o.animation_for_prev_tag;
+
+		if (ps->o.enable_fading_prev_tag) {
+		w->opacity_target_old = fmax(w->opacity_target, w->opacity_target_old);
+		w->state = WSTATE_FADING;
+		w->animation_is_tag |= ANIM_FADE;
+		}
+		if (ps->o.animation_for_prev_tag >= OPEN_WINDOW_ANIMATION_ZOOM) {
+		w->animation_is_tag |= ANIM_FAST;
+		w->dwm_mask |= ANIM_SPECIAL_MINIMIZE;
+		goto revert;
+		}
+		w->animation_is_tag |= ANIM_SLOW;
         } else if (w->dwm_mask & ANIM_NEXT_TAG) {
-            animation = ps->o.animation_for_next_tag;
-            w->animation_is_tag |= animation >= OPEN_WINDOW_ANIMATION_ZOOM ? ANIM_FAST : ANIM_SLOW;
-            if (ps->o.enable_fading_next_tag) {
-                w->opacity = 0.0;
-                w->state = WSTATE_FADING;
-            }
+		animation = ps->o.animation_for_next_tag;
+		w->animation_is_tag |= animation >= OPEN_WINDOW_ANIMATION_ZOOM ? ANIM_FAST : ANIM_SLOW;
+		if (ps->o.enable_fading_next_tag) {
+		w->opacity = 0.0;
+		w->state = WSTATE_FADING;
+		}
         } else if (w->dwm_mask & ANIM_UNMAP) {
-            animation = ps->o.animation_for_unmap_window;
-revert:
-            anim_x = &w->animation_dest_center_x, anim_y = &w->animation_dest_center_y;
-            anim_w = &w->animation_dest_w, anim_h = &w->animation_dest_h;
+		animation = ps->o.animation_for_unmap_window;
+		revert:
+		anim_x = &w->animation_dest_center_x, anim_y = &w->animation_dest_center_y;
+		anim_w = &w->animation_dest_w, anim_h = &w->animation_dest_h;
         }
 
+	double angle;
 	switch (animation) {
-	case OPEN_WINDOW_ANIMATION_NONE: { // No animation
+	case OPEN_WINDOW_ANIMATION_NONE:  // No animation
 		w->animation_center_x = w->pending_g.x + w->pending_g.width * 0.5;
 		w->animation_center_y = w->pending_g.y + w->pending_g.height * 0.5;
 		w->animation_w = w->pending_g.width;
 		w->animation_h = w->pending_g.height;
 		break;
-	}
-	case OPEN_WINDOW_ANIMATION_FLYIN: { // Fly-in from a random point outside the screen
+	case OPEN_WINDOW_ANIMATION_FLYIN: // Fly-in from a random point outside the screen
 		// Compute random point off screen
-		double angle = 2 * M_PI * ((double)rand() / RAND_MAX);
+		angle = 2 * M_PI * ((double)rand() / RAND_MAX);
 		const double radius =
 		    sqrt(ps->root_width * ps->root_width + ps->root_height * ps->root_height);
 
@@ -530,106 +537,93 @@ revert:
 		*anim_w  = 0;
 		*anim_h = 0;
 		break;
-	}
-	case OPEN_WINDOW_ANIMATION_SLIDE_UP: { // Slide up the image, without changing its location
+	case OPEN_WINDOW_ANIMATION_SLIDE_UP: // Slide up the image, without changing its location
 		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
 		*anim_y = w->pending_g.y + w->pending_g.height;
 		*anim_w = w->pending_g.width;
 		*anim_h = 0;
 		break;
-	}
-	case OPEN_WINDOW_ANIMATION_SLIDE_DOWN: { // Slide down the image, without changing its location
+	case OPEN_WINDOW_ANIMATION_SLIDE_DOWN:  // Slide down the image, without changing its location
 		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
 		*anim_y = w->pending_g.y;
 		*anim_w = w->pending_g.width;
 		*anim_h = 0;
 		break;
-	}
-	case OPEN_WINDOW_ANIMATION_SLIDE_LEFT: { // Slide left the image, without changing its location
+	case OPEN_WINDOW_ANIMATION_SLIDE_LEFT:  // Slide left the image, without changing its location
 		*anim_x = w->pending_g.x + w->pending_g.width;
 		*anim_y = w->pending_g.y + w->pending_g.height * 0.5;
 		*anim_w = 0;
 		*anim_h = w->pending_g.height;
 		break;
-	}
-	case OPEN_WINDOW_ANIMATION_SLIDE_RIGHT: { // Slide right the image, without changing its location
+	case OPEN_WINDOW_ANIMATION_SLIDE_RIGHT: // Slide right the image, without changing its location
 		*anim_x = w->pending_g.x;
 		*anim_y = w->pending_g.y + w->pending_g.height * 0.5;
 		*anim_w = 0;
 		*anim_h = w->pending_g.height;
 		break;
-	}
-    case OPEN_WINDOW_ANIMATION_SLIDE_IN: {
-        *anim_x = w->pending_g.x + w->pending_g.width * 0.5;
+	case OPEN_WINDOW_ANIMATION_SLIDE_IN:
+		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
 		*anim_y = w->pending_g.y + w->pending_g.height * 0.5;
 		*anim_w = w->pending_g.width;
 		*anim_h = w->pending_g.height;
-        break;
-    }
-    case OPEN_WINDOW_ANIMATION_SLIDE_IN_CENTER: {
-        *anim_x = ps->selmon_center_x;
+		break;
+	case OPEN_WINDOW_ANIMATION_SLIDE_IN_CENTER:
+		*anim_x = ps->selmon_center_x;
 		*anim_y = w->g.y + w->pending_g.height * 0.5;
 		*anim_w = w->pending_g.width;
 		*anim_h = w->pending_g.height;
-        break;
-    }
-    case OPEN_WINDOW_ANIMATION_SLIDE_OUT: {
-        w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
-        w->animation_dest_center_y = w->pending_g.y;
-		w->animation_dest_w = w->pending_g.width;
-		w->animation_dest_h = w->pending_g.height;
-        break;
-    }
-    case OPEN_WINDOW_ANIMATION_SLIDE_OUT_CENTER: {
-        w->animation_dest_center_x = ps->selmon_center_x;
+		break;
+	case OPEN_WINDOW_ANIMATION_SLIDE_OUT:
+		w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
 		w->animation_dest_center_y = w->pending_g.y;
 		w->animation_dest_w = w->pending_g.width;
 		w->animation_dest_h = w->pending_g.height;
-        break;
-    }
-	case OPEN_WINDOW_ANIMATION_ZOOM: { // Zoom-in the image, without changing its location
-        if (w->dwm_mask & ANIM_SPECIAL_MINIMIZE) {
-            *anim_x = w->g.x + w->g.width * 0.5;
-            *anim_y = w->g.y + w->g.height * 0.5;
-        } else {
-            *anim_x = w->pending_g.x + w->pending_g.width * 0.5;
-            *anim_y = w->pending_g.y + w->pending_g.height * 0.5;
-        }
+		break;
+	case OPEN_WINDOW_ANIMATION_SLIDE_OUT_CENTER:
+		w->animation_dest_center_x = ps->selmon_center_x;
+		w->animation_dest_center_y = w->pending_g.y;
+		w->animation_dest_w = w->pending_g.width;
+		w->animation_dest_h = w->pending_g.height;
+		break;
+	case OPEN_WINDOW_ANIMATION_ZOOM:  // Zoom-in the image, without changing its location
+		if (w->dwm_mask & ANIM_SPECIAL_MINIMIZE) {
+			*anim_x = w->g.x + w->g.width * 0.5;
+			*anim_y = w->g.y + w->g.height * 0.5;
+		} else {
+			*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
+			*anim_y = w->pending_g.y + w->pending_g.height * 0.5;
+		}
 		*anim_w = 0;
 		*anim_h = 0;
 		break;
-	}
-    case OPEN_WINDOW_ANIMATION_MINIMIZE: {
-        *anim_x = ps->selmon_center_x;
-        *anim_y = ps->selmon_center_y;
+	case OPEN_WINDOW_ANIMATION_MINIMIZE:
+		*anim_x = ps->selmon_center_x;
+		*anim_y = ps->selmon_center_y;
 		*anim_w = 0;
 		*anim_h = 0;
-        break;
-    }
-    case OPEN_WINDOW_ANIMATION_SQUEEZE: {
-        if (w->dwm_mask & ANIM_PREV_TAG) {
-            *anim_h = 0;
-        } else {
-            *anim_x = w->pending_g.x + w->pending_g.width * 0.5;
-            *anim_y = w->pending_g.y + w->pending_g.height * 0.5;
-            *anim_w = w->pending_g.width;
-            *anim_h = 0;
-        }
-        break;
-    }
-    case OPEN_WINDOW_ANIMATION_SQUEEZE_BOTTOM: {
-        if (w->dwm_mask & ANIM_PREV_TAG) {
-            *anim_y = w->g.y + w->g.height;
-            *anim_h = 0;
-        } else {
-            w->animation_center_x = w->pending_g.x + w->pending_g.width * 0.5;
-            w->animation_center_y = w->pending_g.y + w->pending_g.height;
-            w->animation_w = w->pending_g.width;
-            *anim_h = 0;
-            *anim_y = w->pending_g.y + w->pending_g.height;
-        }
-        break;
-   }
+		break;
+	case OPEN_WINDOW_ANIMATION_SQUEEZE:
+		if (w->dwm_mask & ANIM_PREV_TAG) {
+			*anim_h = 0;
+		} else {
+			*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
+			*anim_y = w->pending_g.y + w->pending_g.height * 0.5;
+			*anim_w = w->pending_g.width;
+			*anim_h = 0;
+		}
+		break;
+	case OPEN_WINDOW_ANIMATION_SQUEEZE_BOTTOM:
+		if (w->dwm_mask & ANIM_PREV_TAG) {
+			*anim_y = w->g.y + w->g.height;
+			*anim_h = 0;
+		} else {
+			w->animation_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+			w->animation_center_y = w->pending_g.y + w->pending_g.height;
+			w->animation_w = w->pending_g.width;
+			*anim_h = 0;
+			*anim_y = w->pending_g.y + w->pending_g.height;
+		}
+		break;
 	case OPEN_WINDOW_ANIMATION_INVALID: assert(false); break;
 	}
 }
@@ -674,34 +668,33 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			add_damage_from_win(ps, w);
 		}
 
-
-
         // Determine if a window should animate
 		if (win_should_animate(ps, w)) {
-            win_update_bounding_shape(ps, w);
-            if (w->pending_g.y < 0 && w->g.y > 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
-                w->dwm_mask = ANIM_PREV_TAG;
-            else if (w->pending_g.y > 0 && w->g.y < 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
-                w->dwm_mask = ANIM_NEXT_TAG;
+			win_update_bounding_shape(ps, w);
+			if (w->pending_g.y < 0 && w->g.y > 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
+			w->dwm_mask = ANIM_PREV_TAG;
+			else if (w->pending_g.y > 0 && w->g.y < 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
+			w->dwm_mask = ANIM_NEXT_TAG;
 
 			if (!was_visible || w->dwm_mask) {
+
 				// Set window-open animation
 				init_animation(ps, w);
+				if (!(w->dwm_mask & ANIM_SPECIAL_MINIMIZE)) {
+					w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+					w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+					w->animation_dest_w = w->pending_g.width;
+					w->animation_dest_h = w->pending_g.height;
+					w->g.x = (int16_t)round(w->animation_center_x -
+							    w->animation_w * 0.5);
+					w->g.y = (int16_t)round(w->animation_center_y -
+							    w->animation_h * 0.5);
+					w->g.width = (uint16_t)round(w->animation_w);
+					w->g.height = (uint16_t)round(w->animation_h);
+				}
 
-                if (!(w->dwm_mask & ANIM_SPECIAL_MINIMIZE)) {
-                    w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
-                    w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
-                    w->animation_dest_w = w->pending_g.width;
-                    w->animation_dest_h = w->pending_g.height;
-                    w->g.x = (int16_t)round(w->animation_center_x -
-                                            w->animation_w * 0.5);
-                    w->g.y = (int16_t)round(w->animation_center_y -
-                                            w->animation_h * 0.5);
-                    w->g.width = (uint16_t)round(w->animation_w);
-                    w->g.height = (uint16_t)round(w->animation_h);
-                }
 			} else {
-                w->animation_is_tag = ANIM_IN_TAG;
+				w->animation_is_tag = ANIM_IN_TAG;
 				w->animation_dest_center_x =
 				    w->pending_g.x + w->pending_g.width * 0.5;
 				w->animation_dest_center_y =
@@ -709,10 +702,9 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 				w->animation_dest_w = w->pending_g.width;
 				w->animation_dest_h = w->pending_g.height;
 			}
-            CLEAR_MASK(w->dwm_mask)
 
+			CLEAR_MASK(w->dwm_mask)
 			w->g.border_width = w->pending_g.border_width;
-
 			double x_dist = w->animation_dest_center_x - w->animation_center_x;
 			double y_dist = w->animation_dest_center_y - w->animation_center_y;
 			double w_dist = w->animation_dest_w - w->animation_w;
@@ -744,7 +736,7 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 				}
 			}
 
-            w->animation_progress = 0.0;
+		w->animation_progress = 0.0;
 		} else {
 			w->g = w->pending_g;
 		}
