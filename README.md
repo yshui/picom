@@ -82,6 +82,11 @@ $ ninja -C build
 
 ### To install
 
+#### AUR (arch)
+- picom-ftlabs-git
+Thanks to @Fxzzi for maintaining the package.
+
+
 ``` bash
 $ ninja -C build install
 ```
