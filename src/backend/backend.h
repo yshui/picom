@@ -181,7 +181,7 @@ struct backend_operations {
 	 */
 	void (*compose)(backend_t *backend_data, void *image_data, coord_t image_dst,
 	                void *mask, coord_t mask_dst, const region_t *reg_paint,
-	                const region_t *reg_visible);
+	                const region_t *reg_visible, bool lerp);
 
     void (*_compose)(backend_t *backend_data, void *image_data,
                 int dst_x1, int dst_y1, int dst_x2, int dst_y2,

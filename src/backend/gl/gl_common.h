@@ -147,7 +147,7 @@ bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
  * @brief Render a region with texture data.
  */
 void gl_compose(backend_t *, void *image_data, coord_t image_dst, void *mask,
-                coord_t mask_dst, const region_t *reg_tgt, const region_t *reg_visible);
+                coord_t mask_dst, const region_t *reg_tgt, const region_t *reg_visible, bool lerp);
 
 void gl_resize(struct gl_data *, int width, int height);
 

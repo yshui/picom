@@ -909,39 +909,38 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			add_damage_from_win(ps, w);
 		}
 
-		if (w->opacity != w->opacity_target) {
-			// Run fading
-			if (run_fade(ps, &w, steps)) {
-				*fade_running = true;
-			}
+		// Run fading
+		if (run_fade(ps, &w, steps)) {
+			*fade_running = true;
+		}
 
-			// Add window to damaged area if its opacity changes
-			// If was_painted == false, and to_paint is also false, we don't care
-			// If was_painted == false, but to_paint is true, damage will be added in
-			// the loop below
-			if (was_painted && w->opacity != opacity_old) {
-				add_damage_from_win(ps, w);
-			}
+		// Add window to damaged area if its opacity changes
+		// If was_painted == false, and to_paint is also false, we don't care
+		// If was_painted == false, but to_paint is true, damage will be added in
+		// the loop below
+		if (was_painted && w->opacity != opacity_old) {
+			add_damage_from_win(ps, w);
+		}
 
-			if (win_check_fade_finished(ps, w)) {
-				// the window has been destroyed because fading finished
-				continue;
-			}
 
-			if (win_has_frame(w)) {
-				w->frame_opacity = ps->o.frame_opacity;
-			} else {
-				w->frame_opacity = 1.0;
-			}
+		if (win_check_fade_finished(ps, w)) {
+			// the window has been destroyed because fading finished
+			continue;
+		}
 
-			// Update window mode
-			w->mode = win_calc_mode(w);
+		if (win_has_frame(w)) {
+			w->frame_opacity = ps->o.frame_opacity;
+		} else {
+			w->frame_opacity = 1.0;
+		}
 
-			// Destroy all reg_ignore above when frame opaque state changes on
-			// SOLID mode
-			if (was_painted && w->mode != mode_old) {
-				w->reg_ignore_valid = false;
-			}
+		// Update window mode
+		w->mode = win_calc_mode(w);
+
+		// Destroy all reg_ignore above when frame opaque state changes on
+		// SOLID mode
+		if (was_painted && w->mode != mode_old) {
+			w->reg_ignore_valid = false;
 		}
 	}
 

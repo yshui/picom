@@ -350,7 +350,7 @@ compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, coord_t dst,
 }
 
 static void compose(backend_t *base, void *img_data, coord_t dst, void *mask, coord_t mask_dst,
-                    const region_t *reg_paint, const region_t *reg_visible) {
+                    const region_t *reg_paint, const region_t *reg_visible, bool lerp attr_unused) {
 	struct _xrender_data *xd = (void *)base;
 	return compose_impl(xd, img_data, dst, mask, mask_dst, reg_paint, reg_visible,
 	                    xd->back[2]);
