@@ -71,9 +71,9 @@ static void process_window_for_painting(session_t *ps, struct managed_win *w,
 	coord_t dest_coord = {.x = w->g.x + w->widthb, .y = w->g.y + w->heightb};
 
 	region_t reg_visible_local;
+	region_t reg_bound_local;
 	{
 		// The bounding shape, in window local coordinates
-		region_t reg_bound_local;
 		pixman_region32_init(&reg_bound_local);
 		pixman_region32_copy(&reg_bound_local, reg_bound);
 		pixman_region32_translate(&reg_bound_local, -w->g.x, -w->g.y);
@@ -87,7 +87,6 @@ static void process_window_for_painting(session_t *ps, struct managed_win *w,
 		// region, not the clip region.
 		pixman_region32_intersect(&reg_visible_local, &reg_visible_local,
 		                          &reg_bound_local);
-		pixman_region32_fini(&reg_bound_local);
 	}
 
 	auto new_img = ps->backend_data->ops->clone_image(ps->backend_data, win_image,
@@ -102,9 +101,10 @@ static void process_window_for_painting(session_t *ps, struct managed_win *w,
 	pixman_region32_fini(&reg_frame);
 	ps->backend_data->ops->compose(ps->backend_data, new_img,
 			       window_coord, NULL, dest_coord,
-			       reg_paint_in_bound, reg_visible);
+			       reg_paint_in_bound, reg_visible, true);
 	ps->backend_data->ops->release_image(ps->backend_data, new_img);
 	pixman_region32_fini(&reg_visible_local);
+	pixman_region32_fini(&reg_bound_local);
 }
 
 void handle_device_reset(session_t *ps) {
@@ -240,7 +240,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	if (ps->root_image) {
 		ps->backend_data->ops->compose(ps->backend_data, ps->root_image,
 		                               (coord_t){0}, NULL, (coord_t){.x = ps->root_width, .y = ps->root_height},
-		                               &reg_paint, &reg_visible);
+		                               &reg_paint, &reg_visible, true);
 	} else {
 		ps->backend_data->ops->fill(ps->backend_data, (struct color){0, 0, 0, 1},
 		                            &reg_paint);
@@ -420,7 +420,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			}
 			ps->backend_data->ops->compose(
 			    ps->backend_data, w->shadow_image, shadow_coord,
-			    inverted_mask, window_coord, &reg_shadow, &reg_visible);
+			    inverted_mask, window_coord, &reg_shadow, &reg_visible, false);
 			if (inverted_mask) {
 				ps->backend_data->ops->set_image_property(
 				    ps->backend_data, IMAGE_PROPERTY_INVERTED,
@@ -501,7 +501,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		if (w->frame_opacity == 1 && !is_animating) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               window_coord, NULL, dest_coord,
-			                               &reg_paint_in_bound, &reg_visible);
+			                               &reg_paint_in_bound, &reg_visible, true);
 		} else {
 			if (is_animating && w->old_win_image) {
 				bool is_focused = win_is_focused_raw(ps, w);

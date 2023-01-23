@@ -64,7 +64,7 @@ static void dummy_check_image(struct backend_base *base, const struct dummy_imag
 void dummy_compose(struct backend_base *base, void *image, coord_t dst attr_unused,
                    void *mask attr_unused, coord_t mask_dst attr_unused,
                    const region_t *reg_paint attr_unused,
-                   const region_t *reg_visible attr_unused) {
+                   const region_t *reg_visible attr_unused, bool lerp attr_unused) {
 	auto dummy attr_unused = (struct dummy_data *)base;
 	dummy_check_image(base, image);
 	assert(mask == NULL || mask == &dummy->mask);
