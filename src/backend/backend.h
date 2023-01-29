@@ -192,7 +192,7 @@ struct backend_operations {
 	/// mask is.
 	bool (*blur)(backend_t *backend_data, double opacity, void *blur_ctx, void *mask,
 	             coord_t mask_dst, const region_t *reg_blur,
-	             const region_t *reg_visible) attr_nonnull(1, 3, 4, 6, 7);
+	             const region_t *reg_visible) attr_nonnull(1, 3, 6, 7);
 
 	/// Update part of the back buffer with the rendering buffer, then present the
 	/// back buffer onto the target window (if not back buffered, update part of the
