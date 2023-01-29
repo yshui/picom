@@ -755,7 +755,7 @@ struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual
 		return (struct xvisual_info){-1, -1, -1, -1, -1, 0};
 	}
 	if (pictfmt->type != XCB_RENDER_PICT_TYPE_DIRECT) {
-		log_error("We cannot handle non-DirectColor visuals. Report an "
+	log_error("We cannot handle non-DirectColor visuals. Report an "
 		          "issue if you see this error message.");
 		return (struct xvisual_info){-1, -1, -1, -1, -1, 0};
 	}
