@@ -237,8 +237,8 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 			win_set_flags(mw, WIN_FLAGS_SIZE_STALE);
 		}
 
-		// Recalculate which screen this window is on
-		win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, mw);
+		// Recalculate which monitor this window is on
+		win_update_monitor(ps->randr_nmonitors, ps->randr_monitor_regs, mw);
 	}
 
 	// override_redirect flag cannot be changed after window creation, as far

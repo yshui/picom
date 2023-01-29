@@ -302,4 +302,14 @@ x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
 
 xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen);
 
+/**
+ * X RandR-related functions.
+ *
+ * The x_update_randr_monitors function populates ps->randr_nmonitors and
+ * ps->randr_monitor_regs with the data X RandR provided and the
+ * x_free_randr_info function frees them.
+ */
+void x_update_randr_monitors(session_t *ps);
+void x_free_randr_info(session_t *ps);
+
 uint32_t attr_deprecated xcb_generate_id(xcb_connection_t *c);

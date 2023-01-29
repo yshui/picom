@@ -14,7 +14,6 @@
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_renderutil.h>
-#include <xcb/xinerama.h>
 
 #include "atom.h"
 #include "backend/backend.h"
@@ -517,7 +516,7 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			win_clear_flags(w, WIN_FLAGS_POSITION_STALE);
 		}
 
-		win_update_screen(ps->xinerama_nscrs, ps->xinerama_scr_regs, w);
+		win_update_monitor(ps->randr_nmonitors, ps->randr_monitor_regs, w);
 	}
 
 	if (win_check_flags_all(w, WIN_FLAGS_PROPERTY_STALE)) {
@@ -1550,7 +1549,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .shadow = false,
 	    .clip_shadow_above = false,
 	    .fg_shader = NULL,
-	    .xinerama_scr = -1,
+	    .randr_monitor = -1,
 	    .mode = WMODE_TRANS,
 	    .ever_damaged = false,
 	    .client_win = XCB_NONE,
@@ -2434,33 +2433,24 @@ bool win_skip_fading(session_t *ps, struct managed_win *w) {
 	return win_check_fade_finished(ps, w);
 }
 
-/**
- * Get the Xinerama screen a window is on.
- *
- * Return an index >= 0, or -1 if not found.
- *
- * TODO(yshui) move to x.c
- * TODO(yshui) use xrandr
- */
-void win_update_screen(int nscreens, region_t *screens, struct managed_win *w) {
-	w->xinerama_scr = -1;
-
-	for (int i = 0; i < nscreens; i++) {
-		auto e = pixman_region32_extents(&screens[i]);
-		if (e->x1 <= w->g.x && e->y1 <= w->g.y && e->x2 >= w->g.x + w->widthb &&
-		    e->y2 >= w->g.y + w->heightb) {
-			w->xinerama_scr = i;
-			log_debug("Window %#010x (%s), %dx%d+%dx%d, is on screen "
-			          "%d "
-			          "(%dx%d+%dx%d)",
-			          w->base.id, w->name, w->g.x, w->g.y, w->widthb, w->heightb,
-			          i, e->x1, e->y1, e->x2 - e->x1, e->y2 - e->y1);
+// TODO(absolutelynothelix): rename to x_update_win_(randr_?)monitor and move to
+// the x.c.
+void win_update_monitor(int nmons, region_t *mons, struct managed_win *mw) {
+	mw->randr_monitor = -1;
+	for (int i = 0; i < nmons; i++) {
+		auto e = pixman_region32_extents(&mons[i]);
+		if (e->x1 <= mw->g.x && e->y1 <= mw->g.y &&
+		    e->x2 >= mw->g.x + mw->widthb && e->y2 >= mw->g.y + mw->heightb) {
+			mw->randr_monitor = i;
+			log_debug("Window %#010x (%s), %dx%d+%dx%d, is entirely on the "
+			          "monitor %d (%dx%d+%dx%d)",
+			          mw->base.id, mw->name, mw->g.x, mw->g.y, mw->widthb,
+			          mw->heightb, i, e->x1, e->y1, e->x2 - e->x1, e->y2 - e->y1);
 			return;
 		}
 	}
-	log_debug("Window %#010x (%s), %dx%d+%dx%d, is not contained by any "
-	          "screen",
-	          w->base.id, w->name, w->g.x, w->g.y, w->g.width, w->g.height);
+	log_debug("Window %#010x (%s), %dx%d+%dx%d, is not entirely on any monitor",
+	          mw->base.id, mw->name, mw->g.x, mw->g.y, mw->widthb, mw->heightb);
 }
 
 /// Map an already registered window

@@ -72,6 +72,9 @@ static const struct picom_option picom_options[] = {
                                                                              "managers not passing _NET_WM_WINDOW_OPACITY of client windows to frame"},
     {"refresh-rate"                , required_argument, 269, NULL          , NULL},
     {"vsync"                       , optional_argument, 270, NULL          , "Enable VSync"},
+    {"crop-shadow-to-monitor"      , no_argument      , 271, NULL          , "Crop shadow of a window fully on a particular monitor to that monitor. "
+                                                                             "This is currently implemented using the X RandR extension"},
+    {"xinerama-shadow-crop"        , no_argument      , 272, NULL          , NULL},
     {"sw-opti"                     , no_argument      , 274, NULL          , NULL},
     {"vsync-aggressive"            , no_argument      , 275, NULL          , NULL},
     {"use-ewmh-active-win"         , no_argument      , 276, NULL          , "Use _NET_WM_ACTIVE_WINDOW on the root window to determine which window is "
@@ -119,7 +122,6 @@ static const struct picom_option picom_options[] = {
     {"opacity-rule"                , required_argument, 304, "OPACITY:COND", "Specify a list of opacity rules, see man page for more details"},
     {"shadow-exclude-reg"          , required_argument, 305, NULL          , NULL},
     {"paint-exclude"               , required_argument, 306, NULL          , NULL},
-    {"xinerama-shadow-crop"        , no_argument      , 307, NULL          , "Crop shadow of a window fully on a particular Xinerama screen to the screen."},
     {"unredir-if-possible-exclude" , required_argument, 308, "COND"        , "Conditions of windows that shouldn't be considered full-screen for "
                                                                              "unredirecting screen."},
     {"unredir-if-possible-delay"   , required_argument, 309, NULL,           "Delay before unredirecting the window, in milliseconds. Defaults to 0."},
@@ -485,8 +487,8 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(267, detect_rounded_corners);
 		P_CASEBOOL(268, detect_client_opacity);
 		case 269:
-			log_warn("--refresh-rate has been deprecated, please remove it from"
-			         "your command line options");
+			log_warn("--refresh-rate has been deprecated, please remove it "
+			         "from your command line options");
 			break;
 		case 270:
 			if (optarg) {
@@ -499,6 +501,12 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 				opt->vsync = true;
 			}
 			break;
+		P_CASEBOOL(271, crop_shadow_to_monitor);
+		case 272:
+			opt->crop_shadow_to_monitor = true;
+			log_warn("--xinerama-shadow-crop is deprecated. Use "
+			         "--crop-shadow-to-monitor instead.");
+			break;
 		case 274:
 			log_warn("--sw-opti has been deprecated, please remove it from the "
 			         "command line options");
@@ -506,7 +514,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 275:
 			// --vsync-aggressive
 			log_error("--vsync-aggressive has been removed, please remove it"
-			         " from the command line options");
+			          " from the command line options");
 			failed = true;
 			break;
 		P_CASEBOOL(276, use_ewmh_active_win);
@@ -625,7 +633,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// --paint-exclude
 			condlst_add(&opt->paint_blacklist, optarg);
 			break;
-		P_CASEBOOL(307, xinerama_shadow_crop);
 		case 308:
 			// --unredir-if-possible-exclude
 			condlst_add(&opt->unredir_if_possible_blacklist, optarg);

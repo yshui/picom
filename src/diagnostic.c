@@ -2,21 +2,21 @@
 // Copyright (c) 2018 Yuxuan Shui <yshuiv7@gmail.com>
 
 #include <stdio.h>
-#include <xcb/xcb.h>
 #include <xcb/composite.h>
+#include <xcb/xcb.h>
 
 #include "backend/driver.h"
-#include "diagnostic.h"
-#include "config.h"
-#include "picom.h"
 #include "common.h"
+#include "config.h"
+#include "diagnostic.h"
+#include "picom.h"
 
 void print_diagnostics(session_t *ps, const char *config_file, bool compositor_running) {
 	printf("**Version:** " PICOM_VERSION "\n");
-	//printf("**CFLAGS:** %s\n", "??");
+	// printf("**CFLAGS:** %s\n", "??");
 	printf("\n### Extensions:\n\n");
 	printf("* Shape: %s\n", ps->shape_exists ? "Yes" : "No");
-	printf("* XRandR: %s\n", ps->randr_exists ? "Yes" : "No");
+	printf("* RandR: %s\n", ps->randr_exists ? "Yes" : "No");
 	printf("* Present: %s\n", ps->present_exists ? "Present" : "Not Present");
 	printf("\n### Misc:\n\n");
 	printf("* Use Overlay: %s\n", ps->overlay != XCB_NONE ? "Yes" : "No");

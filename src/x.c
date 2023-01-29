@@ -9,6 +9,7 @@
 #include <xcb/composite.h>
 #include <xcb/damage.h>
 #include <xcb/glx.h>
+#include <xcb/randr.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
@@ -786,4 +787,41 @@ xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen) {
 	}
 
 	return NULL;
+}
+
+void x_update_randr_monitors(session_t *ps) {
+	x_free_randr_info(ps);
+
+	if (!ps->o.crop_shadow_to_monitor || !ps->randr_exists) {
+		return;
+	}
+
+	xcb_randr_get_monitors_reply_t *r = xcb_randr_get_monitors_reply(
+	    ps->c, xcb_randr_get_monitors(ps->c, ps->root, true), NULL);
+	if (!r) {
+		return;
+	}
+
+	ps->randr_nmonitors = xcb_randr_get_monitors_monitors_length(r);
+	ps->randr_monitor_regs = ccalloc(ps->randr_nmonitors, region_t);
+	xcb_randr_monitor_info_iterator_t monitor_info_it =
+	    xcb_randr_get_monitors_monitors_iterator(r);
+	for (int i = 0; monitor_info_it.rem; xcb_randr_monitor_info_next(&monitor_info_it)) {
+		xcb_randr_monitor_info_t *mi = monitor_info_it.data;
+		pixman_region32_init_rect(&ps->randr_monitor_regs[i++], mi->x, mi->y,
+		                          mi->width, mi->height);
+	}
+
+	free(r);
+}
+
+void x_free_randr_info(session_t *ps) {
+	if (ps->randr_monitor_regs) {
+		for (int i = 0; i < ps->randr_nmonitors; i++) {
+			pixman_region32_fini(&ps->randr_monitor_regs[i]);
+		}
+		free(ps->randr_monitor_regs);
+		ps->randr_monitor_regs = NULL;
+	}
+	ps->randr_nmonitors = 0;
 }
