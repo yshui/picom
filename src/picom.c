@@ -739,7 +739,7 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 		// IMPORTANT: These window animation steps must happen before any other
 		// [pre]processing. This is because it changes the window's geometry.
 		if (ps->o.animations &&
-			!isnan(w->animation_progress) && w->animation_progress != 1.0 &&
+			!isnan(w->animation_progress) && w->animation_progress <= 0.999999999 &&
 			ps->o.wintype_option[w->window_type].animation != 0 &&
 			win_is_mapped_in_x(w))
 		{
@@ -893,14 +893,14 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			// We can't check for 1 here as sometimes 1 = 0.999999999999999
 			// in case of floating numbers
 			if (w->animation_progress >= 0.999999999) {
+				win_process_update_flags(ps, w);
 				w->animation_progress = 1;
 				w->animation_velocity_x = 0.0;
 				w->animation_velocity_y = 0.0;
 				w->animation_velocity_w = 0.0;
 				w->animation_velocity_h = 0.0;
-                w->opacity = win_calc_opacity_target(ps, w);
+				w->opacity = win_calc_opacity_target(ps, w);
 			}
-
 			*animation_running = true;
 		}
 
@@ -2412,7 +2412,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_idle_init(&ps->draw_idle, draw_callback);
 
 	ev_init(&ps->fade_timer, fade_timer_callback);
-	ev_init(&ps->animation_timer, animation_timer_callback);
 
 	// Set up SIGUSR1 signal handler to reset program
 	ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);
@@ -2512,6 +2511,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
         }
         free_winprop(&prop);
     }
+	ev_init(&ps->animation_timer, animation_timer_callback);
 
 	if (fork && stderr_logger) {
 		// Remove the stderr logger if we will fork
