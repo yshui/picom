@@ -173,8 +173,8 @@ typedef struct options {
 	c2_lptr_t *shadow_blacklist;
 	/// Whether bounding-shaped window should be ignored.
 	bool shadow_ignore_shaped;
-	/// Whether to crop shadow to the very Xinerama screen.
-	bool xinerama_shadow_crop;
+	/// Whether to crop shadow to the very X RandR monitor.
+	bool crop_shadow_to_monitor;
 	/// Don't draw shadow over these windows. A linked list of conditions.
 	c2_lptr_t *shadow_clip_list;
 

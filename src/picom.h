@@ -42,8 +42,6 @@ void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce);
 
 void root_damaged(session_t *ps);
 
-void cxinerama_upd_scrs(session_t *ps);
-
 void queue_redraw(session_t *ps);
 
 void discard_pending(session_t *ps, uint32_t sequence);

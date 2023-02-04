@@ -380,18 +380,18 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				                         &reg_shadow_clip);
 			}
 
-			if (ps->o.xinerama_shadow_crop && w->xinerama_scr >= 0 &&
-			    w->xinerama_scr < ps->xinerama_nscrs) {
-				// There can be a window where number of screens is
-				// updated, but the screen number attached to the windows
+			if (ps->o.crop_shadow_to_monitor && w->randr_monitor >= 0 &&
+			    w->randr_monitor < ps->randr_nmonitors) {
+				// There can be a window where number of monitors is
+				// updated, but the monitor number attached to the window
 				// have not.
 				//
-				// Window screen number will be updated eventually, so
+				// Window monitor number will be updated eventually, so
 				// here we just check to make sure we don't access out of
 				// bounds.
 				pixman_region32_intersect(
 				    &reg_shadow, &reg_shadow,
-				    &ps->xinerama_scr_regs[w->xinerama_scr]);
+				    &ps->randr_monitor_regs[w->randr_monitor]);
 			}
 
 			if (ps->o.transparent_clipping) {
