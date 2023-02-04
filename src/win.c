@@ -471,6 +471,14 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 
 static void init_animation(session_t *ps, struct managed_win *w) {
 	CLEAR_MASK(w->animation_is_tag)
+	static int32_t randr_mon_center_x, randr_mon_center_y;
+	if (w->randr_monitor == -1) {
+		win_update_monitor(ps->randr_nmonitors, ps->randr_monitor_regs, w);
+		randr_mon_center_x = ps->root_width / 2, randr_mon_center_y = ps->root_height / 2;
+	} else {
+		auto e = pixman_region32_extents(&ps->randr_monitor_regs[w->randr_monitor]);
+		randr_mon_center_x = (e->x1 + e->x2) / 2, randr_mon_center_y = (e->y1 + e->y2) / 2;
+	}
 	static double *anim_x, *anim_y, *anim_w, *anim_h;
 	enum open_window_animation animation;
 	if (ps->o.wintype_option[w->window_type].animation != OPEN_WINDOW_ANIMATION_INVALID
@@ -484,6 +492,7 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		wid_has_prop(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR)) {
 		animation = ps->o.animation_for_transient_window;
 	}
+
 
 	anim_x = &w->animation_center_x, anim_y = &w->animation_center_y;
 	anim_w = &w->animation_w, anim_h = &w->animation_h;
@@ -531,9 +540,9 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		    sqrt(ps->root_width * ps->root_width + ps->root_height * ps->root_height);
 
 		// Set animation
-		*anim_x = ps->selmon_center_x + radius * cos(angle);
-		*anim_y = ps->selmon_center_y + radius * sin(angle);
-		*anim_w  = 0;
+		*anim_x = randr_mon_center_x + radius * cos(angle);
+		*anim_y = randr_mon_center_y + radius * sin(angle);
+		*anim_w = 0;
 		*anim_h = 0;
 		break;
 	case OPEN_WINDOW_ANIMATION_SLIDE_UP: // Slide up the image, without changing its location
@@ -567,7 +576,7 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		*anim_h = w->pending_g.height;
 		break;
 	case OPEN_WINDOW_ANIMATION_SLIDE_IN_CENTER:
-		*anim_x = ps->selmon_center_x;
+		*anim_x = randr_mon_center_x;
 		*anim_y = w->g.y + w->pending_g.height * 0.5;
 		*anim_w = w->pending_g.width;
 		*anim_h = w->pending_g.height;
@@ -579,7 +588,7 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		w->animation_dest_h = w->pending_g.height;
 		break;
 	case OPEN_WINDOW_ANIMATION_SLIDE_OUT_CENTER:
-		w->animation_dest_center_x = ps->selmon_center_x;
+		w->animation_dest_center_x = randr_mon_center_x;
 		w->animation_dest_center_y = w->pending_g.y;
 		w->animation_dest_w = w->pending_g.width;
 		w->animation_dest_h = w->pending_g.height;
@@ -596,8 +605,8 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		*anim_h = 0;
 		break;
 	case OPEN_WINDOW_ANIMATION_MINIMIZE:
-		*anim_x = ps->selmon_center_x;
-		*anim_y = ps->selmon_center_y;
+		*anim_x = randr_mon_center_x;
+		*anim_y = randr_mon_center_y;
 		*anim_w = 0;
 		*anim_h = 0;
 		break;

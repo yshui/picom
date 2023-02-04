@@ -2441,15 +2441,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	write_pid(ps);
 
-    // When picom starts, fetch monitor positions first. Because it won't fetch the data unless property changes.
-    if (!ps->selmon_center_x && !ps->selmon_center_y) {
-        winprop_t prop = x_get_prop(ps->c, ps->root, ps->atoms->a_NET_CURRENT_MON_CENTER, 2L, XCB_ATOM_CARDINAL, 32);
-        if (prop.nitems == 2) {
-            ps->selmon_center_x = prop.p32[0];
-            ps->selmon_center_y = prop.p32[1];
-        }
-        free_winprop(&prop);
-    }
 	ev_init(&ps->animation_timer, animation_timer_callback);
 
 	if (fork && stderr_logger) {
