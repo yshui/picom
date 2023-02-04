@@ -667,13 +667,15 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			add_damage_from_win(ps, w);
 		}
 
+
+
         // Determine if a window should animate
 		if (win_should_animate(ps, w)) {
 			win_update_bounding_shape(ps, w);
 			if (w->pending_g.y < 0 && w->g.y > 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
-			w->dwm_mask = ANIM_PREV_TAG;
+				w->dwm_mask = ANIM_PREV_TAG;
 			else if (w->pending_g.y > 0 && w->g.y < 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
-			w->dwm_mask = ANIM_NEXT_TAG;
+				w->dwm_mask = ANIM_NEXT_TAG;
 
 			if (!was_visible || w->dwm_mask) {
 
@@ -1464,8 +1466,10 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	// focused state of the window
 	win_update_focused(ps, w);
 
-	win_determine_shadow(ps, w);
-	win_determine_clip_shadow_above(ps, w);
+	if (w->animation_progress > 0.9999 || w->animation_progress < 0.0001) {
+		win_determine_shadow(ps, w);
+		win_determine_clip_shadow_above(ps, w);
+	}
 	win_determine_invert_color(ps, w);
 	win_determine_blur_background(ps, w);
 	win_determine_rounded_corners(ps, w);
@@ -1776,7 +1780,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .animation_velocity_y = 0.0,             // updated by window geometry changes
 	    .animation_velocity_w = 0.0,             // updated by window geometry changes
 	    .animation_velocity_h = 0.0,             // updated by window geometry changes
-	    .animation_progress = 1.0,               // updated by window geometry changes
+	    .animation_progress = 0.0,               // updated by window geometry changes
 	    .animation_inv_og_distance = NAN,        // updated by window geometry changes
 	    .reg_ignore_valid = false,               // set to true when damaged
 	    .flags = WIN_FLAGS_IMAGES_NONE,          // updated by property/attributes/etc
