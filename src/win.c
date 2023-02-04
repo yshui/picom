@@ -1466,7 +1466,7 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	// focused state of the window
 	win_update_focused(ps, w);
 
-	if (w->animation_progress > 0.9999 || w->animation_progress < 0.0001) {
+	if (w->animation_progress > 0.99999999 || (w->animation_progress == 0.0 && ps->animation_time != 0L)) {
 		win_determine_shadow(ps, w);
 		win_determine_clip_shadow_above(ps, w);
 	}
