@@ -792,7 +792,7 @@ xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen) {
 void x_update_randr_monitors(session_t *ps) {
 	x_free_randr_info(ps);
 
-	if (!ps->o.crop_shadow_to_monitor || !ps->randr_exists) {
+	if ((!ps->o.crop_shadow_to_monitor || !ps->o.animations) || !ps->randr_exists) {
 		return;
 	}
 

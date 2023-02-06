@@ -474,7 +474,12 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 	static int32_t randr_mon_center_x, randr_mon_center_y;
 	if (w->randr_monitor == -1) {
 		win_update_monitor(ps->randr_nmonitors, ps->randr_monitor_regs, w);
-		randr_mon_center_x = ps->root_width / 2, randr_mon_center_y = ps->root_height / 2;
+		if (w->randr_monitor != -1) {
+			auto e = pixman_region32_extents(&ps->randr_monitor_regs[w->randr_monitor]);
+			randr_mon_center_x = (e->x1 + e->x2) / 2, randr_mon_center_y = (e->y1 + e->y2) / 2;
+		} else {
+			randr_mon_center_x = ps->root_width / 2, randr_mon_center_y = ps->root_height / 2;
+		}
 	} else {
 		auto e = pixman_region32_extents(&ps->randr_monitor_regs[w->randr_monitor]);
 		randr_mon_center_x = (e->x1 + e->x2) / 2, randr_mon_center_y = (e->y1 + e->y2) / 2;
@@ -2751,7 +2756,6 @@ bool win_skip_fading(session_t *ps, struct managed_win *w) {
 // TODO(absolutelynothelix): rename to x_update_win_(randr_?)monitor and move to
 // the x.c.
 void win_update_monitor(int nmons, region_t *mons, struct managed_win *mw) {
-	mw->randr_monitor = -1;
 	for (int i = 0; i < nmons; i++) {
 		auto e = pixman_region32_extents(&mons[i]);
 		if (e->x1 <= mw->g.x && e->y1 <= mw->g.y &&
