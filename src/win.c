@@ -476,13 +476,13 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		win_update_monitor(ps->randr_nmonitors, ps->randr_monitor_regs, w);
 		if (w->randr_monitor != -1) {
 			auto e = pixman_region32_extents(&ps->randr_monitor_regs[w->randr_monitor]);
-			randr_mon_center_x = (e->x1 + e->x2) / 2, randr_mon_center_y = (e->y1 + e->y2) / 2;
+			randr_mon_center_x = (e->x2 - e->x1) / 2, randr_mon_center_y = (e->y2 + e->y1) / 2;
 		} else {
 			randr_mon_center_x = ps->root_width / 2, randr_mon_center_y = ps->root_height / 2;
 		}
 	} else {
 		auto e = pixman_region32_extents(&ps->randr_monitor_regs[w->randr_monitor]);
-		randr_mon_center_x = (e->x1 + e->x2) / 2, randr_mon_center_y = (e->y1 + e->y2) / 2;
+		randr_mon_center_x = (e->x2 - e->x1) / 2, randr_mon_center_y = (e->y2 - e->y1) / 2;
 	}
 	static double *anim_x, *anim_y, *anim_w, *anim_h;
 	enum open_window_animation animation;
@@ -2758,8 +2758,9 @@ bool win_skip_fading(session_t *ps, struct managed_win *w) {
 void win_update_monitor(int nmons, region_t *mons, struct managed_win *mw) {
 	for (int i = 0; i < nmons; i++) {
 		auto e = pixman_region32_extents(&mons[i]);
-		if (e->x1 <= mw->g.x && e->y1 <= mw->g.y &&
-		    e->x2 >= mw->g.x + mw->widthb && e->y2 >= mw->g.y + mw->heightb) {
+		// if (e->x1 <= mw->g.x && e->y1 <= mw->g.y &&
+		//     e->x2 >= mw->g.x + mw->widthb && e->y2 >= mw->g.y + mw->heightb) {
+		if (e->x1 <= mw->g.x && e->x2 >= mw->g.x + mw->widthb) {
 			mw->randr_monitor = i;
 			log_debug("Window %#010x (%s), %dx%d+%dx%d, is entirely on the "
 			          "monitor %d (%dx%d+%dx%d)",
@@ -2768,6 +2769,7 @@ void win_update_monitor(int nmons, region_t *mons, struct managed_win *mw) {
 			return;
 		}
 	}
+	mw->randr_monitor = -1;
 	log_debug("Window %#010x (%s), %dx%d+%dx%d, is not entirely on any monitor",
 	          mw->base.id, mw->name, mw->g.x, mw->g.y, mw->widthb, mw->heightb);
 }
