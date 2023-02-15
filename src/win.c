@@ -476,13 +476,13 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		win_update_monitor(ps->randr_nmonitors, ps->randr_monitor_regs, w);
 		if (w->randr_monitor != -1) {
 			auto e = pixman_region32_extents(&ps->randr_monitor_regs[w->randr_monitor]);
-			randr_mon_center_x = (e->x2 - e->x1) / 2, randr_mon_center_y = (e->y2 + e->y1) / 2;
+			randr_mon_center_x = (e->x2 + e->x1) / 2, randr_mon_center_y = (e->y2 + e->y1) / 2;
 		} else {
 			randr_mon_center_x = ps->root_width / 2, randr_mon_center_y = ps->root_height / 2;
 		}
 	} else {
 		auto e = pixman_region32_extents(&ps->randr_monitor_regs[w->randr_monitor]);
-		randr_mon_center_x = (e->x2 - e->x1) / 2, randr_mon_center_y = (e->y2 - e->y1) / 2;
+		randr_mon_center_x = (e->x2 + e->x1) / 2, randr_mon_center_y = (e->y2 + e->y1) / 2;
 	}
 	static double *anim_x, *anim_y, *anim_w, *anim_h;
 	enum open_window_animation animation;
