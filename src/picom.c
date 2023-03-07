@@ -133,6 +133,7 @@ void check_dpms_status(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
 	}
 	auto now_screen_is_off = dpms_screen_is_off(r);
 	if (ps->screen_is_off != now_screen_is_off) {
+		log_debug("Screen is now %s", now_screen_is_off ? "off" : "on");
 		ps->screen_is_off = now_screen_is_off;
 		queue_redraw(ps);
 	}
@@ -145,14 +146,17 @@ void check_dpms_status(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
  * XXX move to win.c
  */
 static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t wid) {
-	if (!wid || PointerRoot == wid || wid == ps->root || wid == ps->overlay)
+	if (!wid || PointerRoot == wid || wid == ps->root || wid == ps->overlay) {
 		return NULL;
+	}
 
 	auto w = find_managed_win(ps, wid);
-	if (!w)
+	if (!w) {
 		w = find_toplevel(ps, wid);
-	if (!w)
+	}
+	if (!w) {
 		w = find_managed_window_or_parent(ps, wid);
+	}
 	return w;
 }
 
@@ -244,6 +248,11 @@ void schedule_render(session_t *ps) {
 	ps->target_msc = ps->last_msc + frame_delay;
 	auto delay = deadline - (uint64_t)render_time_estimate - now_us;
 	delay_s = (double)delay / 1000000.0;
+	if (delay_s > 1) {
+		log_warn("Delay too long: %f s, render_time: %d us, frame_time: %" PRIu64
+		         " us, now_us: %" PRIu64 " us, next_msc: %" PRIu64 " us",
+		         delay_s, render_time_estimate, frame_time, now_us, deadline);
+	}
 
 	log_trace("Delay: %lu us, last_msc: %" PRIu64 ", render_time: %d, frame_time: "
 	          "%" PRIu64 ", now_us: %" PRIu64 ", next_msc: %" PRIu64,
@@ -257,6 +266,18 @@ schedule:
 }
 
 void queue_redraw(session_t *ps) {
+	if (ps->screen_is_off) {
+		// The screen is off, if there is a draw queued for the next frame (i.e.
+		// ps->redraw_needed == true), it won't be triggered until the screen is
+		// on again, because the abnormal Present events we will receive from the
+		// X server when the screen is off. Yet we need the draw_callback to be
+		// called as soon as possible so the screen can be unredirected.
+		// So here we unconditionally start the draw timer.
+		ev_timer_stop(ps->loop, &ps->draw_timer);
+		ev_timer_set(&ps->draw_timer, 0, 0);
+		ev_timer_start(ps->loop, &ps->draw_timer);
+		return;
+	}
 	// Whether we have already rendered for the current frame.
 	// If frame pacing is not enabled, pretend this is false.
 	// If --benchmark is used, redraw is always queued
