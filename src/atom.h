@@ -45,6 +45,11 @@
 	_NET_WM_BYPASS_COMPOSITOR, \
 	UTF8_STRING, \
 	C_STRING
+
+#define ATOM_LIST3 \
+	_NET_CURRENT_DESKTOP, \
+	_NET_WM_DESKTOP
+
 // clang-format on
 
 #define ATOM_DEF(x) xcb_atom_t a##x
@@ -53,6 +58,7 @@ struct atom {
 	struct cache *c;
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST1);
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST2);
+	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST3);
 };
 
 struct atom *init_atoms(xcb_connection_t *);

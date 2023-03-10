@@ -226,6 +226,16 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 			o->clip_shadow_above = ival;
 			mask->clip_shadow_above = true;
 		}
+		const char *sval = NULL;
+		if (config_setting_lookup_string(setting, "animation", &sval)) {
+			enum open_window_animation animation =
+			    parse_open_window_animation(sval);
+			if (animation >= OPEN_WINDOW_ANIMATION_INVALID)
+				animation = OPEN_WINDOW_ANIMATION_NONE;
+
+			o->animation = animation;
+			mask->animation = animation;
+		}
 
 		double fval;
 		if (config_setting_lookup_float(setting, "opacity", &fval)) {
@@ -438,6 +448,15 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "use-ewmh-active-win", &opt->use_ewmh_active_win);
 	// --unredir-if-possible
 	lcfg_lookup_bool(&cfg, "unredir-if-possible", &opt->unredir_if_possible);
+	// --animation-extra-desktops
+	if (config_lookup_int(&cfg, "animation-extra-desktops", &ival)) {
+		if (ival < 0) {
+			log_warn("Invalid animation-extra-desktops %d", ival);
+		} else {
+			opt->animation_extra_desktops = ival;
+		}
+	}
+
 	// --unredir-if-possible-delay
 	if (config_lookup_int(&cfg, "unredir-if-possible-delay", &ival)) {
 		if (ival < 0) {
@@ -467,6 +486,60 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	parse_cfg_condlst(&cfg, &opt->shadow_clip_list, "clip-shadow-above");
 	// --fade-exclude
 	parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude");
+	// --animations
+	lcfg_lookup_bool(&cfg, "animations", &opt->animations);
+	// --animation-for-open-window
+	if (config_lookup_string(&cfg, "animation-for-open-window", &sval)) {
+		enum open_window_animation animation = parse_open_window_animation(sval);
+		if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+			log_fatal("Invalid open-window animation %s", sval);
+			goto err;
+		}
+		opt->animation_for_open_window = animation;
+	}
+	// --animation-for-transient-window
+	if (config_lookup_string(&cfg, "animation-for-transient-window", &sval)) {
+		enum open_window_animation animation = parse_open_window_animation(sval);
+		if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+			log_fatal("Invalid open-window animation %s", sval);
+			goto err;
+		}
+		opt->animation_for_transient_window = animation;
+	}
+	// --animation-for-unmap-window
+	if (config_lookup_string(&cfg, "animation-for-unmap-window", &sval)) {
+		enum open_window_animation animation = parse_open_window_animation(sval);
+		if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+			log_fatal("Invalid unmap-window animation %s", sval);
+			goto err;
+		}
+		opt->animation_for_unmap_window = animation;
+	}
+	// --animation-for-next-tag
+	if (config_lookup_string(&cfg, "animation-for-tag-change", &sval)) {
+		enum open_window_animation animation = parse_open_window_animation(sval);
+		if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+			log_fatal("Invalid tag-change animation %s", sval);
+			goto err;
+		}
+		opt->animation_for_tag_change = animation;
+	}
+	// --animations-exclude
+	parse_cfg_condlst(&cfg, &opt->animation_blacklist, "animation-exclude");
+
+	// --animation-stiffness
+	config_lookup_float(&cfg, "animation-stiffness-in-tag", &opt->animation_stiffness);
+	// --animation-stiffness-tag-change
+	config_lookup_float(&cfg, "animation-stiffness-tag-change",
+	                    &opt->animation_stiffness_tag_change);
+	// --animation-window-mass
+	config_lookup_float(&cfg, "animation-window-mass", &opt->animation_window_mass);
+	// --animation-dampening
+	config_lookup_float(&cfg, "animation-dampening", &opt->animation_dampening);
+	// --animation-extra-desktops
+	config_lookup_int(&cfg, "animation-extra-desktops", &opt->animation_extra_desktops);
+	// --animation-clamping
+	lcfg_lookup_bool(&cfg, "animation-clamping", &opt->animation_clamping);
 	// --focus-exclude
 	parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude");
 	// --invert-color-include

@@ -708,11 +708,49 @@ void set_default_winopts(options_t *opt, win_option_mask_t *mask, bool shadow_en
 			// opacity logic is complicated, and needs an "unset" state
 			opt->wintype_option[i].opacity = NAN;
 		}
+		if (!mask[i].animation) {
+			mask[i].animation = OPEN_WINDOW_ANIMATION_INVALID;
+			opt->wintype_option[i].animation = OPEN_WINDOW_ANIMATION_INVALID;
+		}
 		if (!mask[i].clip_shadow_above) {
 			mask[i].clip_shadow_above = true;
 			opt->wintype_option[i].clip_shadow_above = false;
 		}
 	}
+}
+
+enum open_window_animation parse_open_window_animation(const char *src) {
+	if (strcmp(src, "none") == 0) {
+		return OPEN_WINDOW_ANIMATION_NONE;
+	} else if (strcmp(src, "fly-in") == 0) {
+		return OPEN_WINDOW_ANIMATION_FLYIN;
+	} else if (strcmp(src, "zoom") == 0) {
+		return OPEN_WINDOW_ANIMATION_ZOOM;
+	} else if (strcmp(src, "slide-up") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_UP;
+	} else if (strcmp(src, "slide-down") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_DOWN;
+	} else if (strcmp(src, "slide-left") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_LEFT;
+	} else if (strcmp(src, "slide-right") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_RIGHT;
+	} else if (strcmp(src, "slide-out") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_OUT;
+	} else if (strcmp(src, "slide-in") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_IN;
+	} else if (strcmp(src, "slide-out-center") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_OUT_CENTER;
+	} else if (strcmp(src, "slide-in-center") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_IN_CENTER;
+	} else if (strcmp(src, "minimize") == 0 || strcmp(src, "maximize") == 0) {
+		return OPEN_WINDOW_ANIMATION_MINIMIZE;
+	} else if (strcmp(src, "squeeze") == 0) {
+		return OPEN_WINDOW_ANIMATION_SQUEEZE;
+	} else if (strcmp(src, "squeeze-bottom") == 0) {
+		return OPEN_WINDOW_ANIMATION_SQUEEZE_BOTTOM;
+	}
+
+	return OPEN_WINDOW_ANIMATION_INVALID;
 }
 
 char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
@@ -759,6 +797,18 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .no_fading_destroyed_argb = false,
 	    .fade_blacklist = NULL,
 
+	    .animations = false,
+	    .animation_for_open_window = OPEN_WINDOW_ANIMATION_SLIDE_IN,
+	    .animation_for_transient_window = OPEN_WINDOW_ANIMATION_SLIDE_DOWN,
+	    .animation_for_unmap_window = OPEN_WINDOW_ANIMATION_SLIDE_OUT,
+	    .animation_for_tag_change = OPEN_WINDOW_ANIMATION_NONE,
+	    .animation_extra_desktops = 0,
+	    .animation_stiffness = 200.0,
+	    .animation_stiffness_tag_change = 200.0,
+	    .animation_window_mass = 1.0,
+	    .animation_dampening = 25,
+	    .animation_clamping = true,
+
 	    .inactive_opacity = 1.0,
 	    .inactive_opacity_override = false,
 	    .active_opacity = 1.0,
@@ -790,7 +840,8 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 
 	    .track_leader = false,
 
-	    .rounded_corners_blacklist = NULL
+	    .rounded_corners_blacklist = NULL,
+	    .animation_blacklist = NULL
 	};
 	// clang-format on
 

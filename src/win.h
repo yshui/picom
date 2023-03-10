@@ -100,11 +100,26 @@ struct win_geometry {
 	uint16_t border_width;
 };
 
+enum {
+	// animation modes (whole desk)
+	ANIM_DESK_SWITCH_LEFT = 1,
+	ANIM_DESK_SWITCH_RIGHT = (1<<1),
+	// animation_flags
+	ANIM_UNMAP = 1,
+	// in_desktop_animation
+	ANIM_IN_TAG = 1,
+	ANIM_SLOW = (1 << 1),
+	ANIM_FAST = (1 << 2),
+	ANIM_FADE = (1 << 3),
+};
+
 struct managed_win {
 	struct win base;
 	/// backend data attached to this window. Only available when
 	/// `state` is not UNMAPPED
 	void *win_image;
+	void *old_win_image;        // Old window image for interpolating window contents
+	                            // during animations
 	void *shadow_image;
 	void *mask_image;
 	/// Pointer to the next higher window to paint.
@@ -156,6 +171,8 @@ struct managed_win {
 	/// opacity state, window geometry, window mapped/unmapped state,
 	/// window mode of the windows above. DOES NOT INCLUDE the body of THIS WINDOW.
 	/// NULL means reg_ignore has not been calculated for this window.
+	/// 1 = tag prev  , 2 = tag next, 4 = unmap
+	uint32_t animation_flags;
 	rc_region_t *reg_ignore;
 	/// Whether the reg_ignore of all windows beneath this window are valid
 	bool reg_ignore_valid;
@@ -173,6 +190,24 @@ struct managed_win {
 	bool unredir_if_possible_excluded;
 	/// Whether this window is in open/close state.
 	bool in_openclose;
+	/// Current position and destination, for animation
+	double animation_center_x, animation_center_y;
+	double animation_dest_center_x, animation_dest_center_y;
+	double animation_w, animation_h;
+	double animation_dest_w, animation_dest_h;
+	/// Spring animation velocity
+	double animation_velocity_x, animation_velocity_y;
+	double animation_velocity_w, animation_velocity_h;
+	/// Track animation progress; goes from 0 to 1
+	double animation_progress;
+	/// Inverse of the window distance at the start of animation, for
+	/// tracking animation progress
+	double animation_inv_og_distance;
+	/// Animation info if it is a tag change & check if its changing window sizes
+	/// 0: no tag change
+	/// 1: normal tag change animation
+	/// 2: tag change animation that effects window size
+	uint16_t in_desktop_animation;
 
 	// Client window related members
 	/// ID of the top-level client window of the window.
@@ -451,6 +486,8 @@ bool attr_pure win_is_region_ignore_valid(session_t *ps, const struct managed_wi
 /// Whether a given window is mapped on the X server side
 bool win_is_mapped_in_x(const struct managed_win *w);
 
+int get_cardinal_prop(session_t *ps, xcb_window_t wid, const char *atom);
+
 // Find the managed window immediately below `w` in the window stack
 struct managed_win *attr_pure win_stack_find_next_managed(const session_t *ps,
                                                           const struct list_node *w);
@@ -464,6 +501,9 @@ bool win_check_flags_any(struct managed_win *w, uint64_t flags);
 bool win_check_flags_all(struct managed_win *w, uint64_t flags);
 /// Mark properties as stale for a window
 void win_set_properties_stale(struct managed_win *w, const xcb_atom_t *prop, int nprops);
+
+/// Determine if a window should animate
+bool attr_pure win_should_animate(session_t *ps, const struct managed_win *w);
 
 static inline attr_unused void win_set_property_stale(struct managed_win *w, xcb_atom_t prop) {
 	return win_set_properties_stale(w, (xcb_atom_t[]){prop}, 1);

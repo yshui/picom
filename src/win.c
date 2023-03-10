@@ -30,6 +30,7 @@
 #include "types.h"
 #include "uthash_extra.h"
 #include "utils.h"
+#include "win_defs.h"
 #include "x.h"
 
 #ifdef CONFIG_DBUS
@@ -180,6 +181,12 @@ static inline void group_on_factor_change(session_t *ps, xcb_window_t leader) {
 	}
 }
 
+static inline bool is_transient(session_t *ps, const struct managed_win *w) {
+	return (w->window_type < WINTYPE_NORMAL || w->window_type > WINTYPE_NORMAL) ||
+	       ((w->window_type != WINTYPE_TOOLTIP) &&
+	        wid_has_prop(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR));
+}
+
 static inline const char *win_get_name_if_managed(const struct win *w) {
 	if (!w->managed) {
 		return "(unmanaged)";
@@ -272,6 +279,8 @@ void win_get_region_frame_local(const struct managed_win *w, region_t *res) {
 
 gen_by_val(win_get_region_frame_local);
 
+bool get_mouse_position(session_t *ps, int16_t *x, int16_t *y);
+
 /**
  * Add a window to damaged area.
  *
@@ -300,6 +309,13 @@ static inline void win_release_pixmap(backend_t *base, struct managed_win *w) {
 		w->win_image = NULL;
 		// Bypassing win_set_flags, because `w` might have been destroyed
 		w->flags |= WIN_FLAGS_PIXMAP_NONE;
+	}
+}
+static inline void win_release_oldpixmap(backend_t *base, struct managed_win *w) {
+	log_debug("Releasing old_pixmap of window %#010x (%s)", w->base.id, w->name);
+	if (w->old_win_image) {
+		base->ops->release_image(base, w->old_win_image);
+		w->old_win_image = NULL;
 	}
 }
 static inline void win_release_shadow(backend_t *base, struct managed_win *w) {
@@ -394,6 +410,7 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 	if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
 		assert(!win_check_flags_all(w, WIN_FLAGS_PIXMAP_STALE));
 		win_release_pixmap(backend, w);
+		win_release_oldpixmap(backend, w);
 	}
 
 	if (!win_check_flags_all(w, WIN_FLAGS_SHADOW_NONE)) {
@@ -461,6 +478,203 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 	win_clear_all_properties_stale(w);
 }
 
+static void init_animation(session_t *ps, struct managed_win *w) {
+	CLEAR_MASK(w->in_desktop_animation)
+	static int32_t randr_mon_center_x, randr_mon_center_y;
+	if (w->randr_monitor == -1) {
+		win_update_monitor(ps->randr_nmonitors, ps->randr_monitor_regs, w);
+		if (w->randr_monitor != -1) {
+			auto e = pixman_region32_extents(
+			    &ps->randr_monitor_regs[w->randr_monitor]);
+			randr_mon_center_x = (e->x2 + e->x1) / 2, randr_mon_center_y =
+			                                              (e->y2 + e->y1) / 2;
+		} else {
+			randr_mon_center_x = ps->root_width / 2, randr_mon_center_y =
+			                                             ps->root_height / 2;
+		}
+	} else {
+		auto e = pixman_region32_extents(&ps->randr_monitor_regs[w->randr_monitor]);
+		randr_mon_center_x = (e->x2 + e->x1) / 2, randr_mon_center_y =
+		                                              (e->y2 + e->y1) / 2;
+	}
+	static double *anim_x, *anim_y, *anim_w, *anim_h;
+	enum open_window_animation animation;
+	bool transient_window = is_transient(ps, w);
+
+	if (w->in_desktop_animation) {
+		animation = OPEN_WINDOW_ANIMATION_NONE;
+	} else {
+		animation = ps->o.wintype_option[w->window_type].animation;
+	}
+
+	/* START OF ANIMATION CODE (make it optional) */
+
+	if (animation == OPEN_WINDOW_ANIMATION_INVALID) {
+		if (transient_window) {
+			int16_t mx, my;
+			animation = OPEN_WINDOW_ANIMATION_SLIDE_DOWN; //ps->o.animation_for_transient_window;
+			if (get_mouse_position(ps, &mx, &my)) {
+				if (my >= (randr_mon_center_y*2) - w->pending_g.height) {
+					animation = OPEN_WINDOW_ANIMATION_SLIDE_UP;
+				}
+			}
+		} else {
+			if (w->animation_flags & ANIM_UNMAP) {
+				animation = ps->o.animation_for_unmap_window;
+			} else {
+				animation = ps->o.animation_for_open_window;
+			}
+		}
+	}
+	 // set target pointer to destination instead
+	if (w->animation_flags & ANIM_UNMAP) {
+		anim_x = &w->animation_dest_center_x, anim_y = &w->animation_dest_center_y;
+		anim_w = &w->animation_dest_w, anim_h = &w->animation_dest_h;
+	} else {
+		anim_x = &w->animation_center_x, anim_y = &w->animation_center_y;
+		anim_w = &w->animation_w, anim_h = &w->animation_h;
+	}
+
+	const int desktop_count = get_cardinal_prop(ps, ps->root, "_NET_NUMBER_OF_DESKTOPS") - ps->o.animation_extra_desktops; 
+	int client_desktop_nr = get_cardinal_prop(ps, w->client_win, "_NET_WM_DESKTOP");
+
+	if (ps->o.animation_for_tag_change != OPEN_WINDOW_ANIMATION_NONE) {
+
+		if (client_desktop_nr >= 0 && !transient_window &&
+				w->window_type == WINTYPE_NORMAL && !w->in_desktop_animation) {
+			int desktop_nr = get_cardinal_prop(ps, ps->root, "_NET_CURRENT_DESKTOP");
+			if (!ps->animation_mode &&
+					(ps->previous_desk_nr != desktop_nr || client_desktop_nr != desktop_nr)) { // desktop changed
+
+				if (ps->previous_desk_nr != desktop_nr) {
+					ps->animation_mode |= (ps->previous_desk_nr < desktop_nr) ? ANIM_DESK_SWITCH_LEFT : ANIM_DESK_SWITCH_RIGHT;
+				} else {
+					ps->animation_mode |= (client_desktop_nr < desktop_nr) ? ANIM_DESK_SWITCH_LEFT : ANIM_DESK_SWITCH_RIGHT;
+				}
+
+				// make desks cyclic
+				if (ps->animation_mode & ANIM_DESK_SWITCH_RIGHT && desktop_nr == 0 && ps->previous_desk_nr == desktop_count-1) {
+					ps->animation_mode |= ANIM_DESK_SWITCH_LEFT;
+				} else if (ps->animation_mode & ANIM_DESK_SWITCH_LEFT && ps->previous_desk_nr == 0 && desktop_nr == desktop_count-1) {
+					ps->animation_mode |= ANIM_DESK_SWITCH_RIGHT;
+				}
+			}
+			ps->previous_desk_nr = desktop_nr;
+		}
+	}
+
+	if (!transient_window && ps->animation_mode && client_desktop_nr < desktop_count) {        // introspect that
+		if (ps->animation_mode & ANIM_DESK_SWITCH_LEFT) {
+			if (ps->o.animation_for_tag_change == OPEN_WINDOW_ANIMATION_SLIDE_LEFT) {
+				animation = (w->animation_flags & ANIM_UNMAP) ? OPEN_WINDOW_ANIMATION_SLIDE_RIGHT : OPEN_WINDOW_ANIMATION_SLIDE_LEFT;
+			} else {
+				animation = (w->animation_flags & ANIM_UNMAP) ? OPEN_WINDOW_ANIMATION_SLIDE_DOWN: OPEN_WINDOW_ANIMATION_SLIDE_UP;
+			}
+		} else {
+			if (ps->o.animation_for_tag_change == OPEN_WINDOW_ANIMATION_SLIDE_LEFT) {
+				animation = (w->animation_flags & ANIM_UNMAP) ? OPEN_WINDOW_ANIMATION_SLIDE_LEFT: OPEN_WINDOW_ANIMATION_SLIDE_RIGHT;
+			} else {
+				animation = (w->animation_flags & ANIM_UNMAP) ? OPEN_WINDOW_ANIMATION_SLIDE_UP: OPEN_WINDOW_ANIMATION_SLIDE_UP;
+			}
+		}
+	}
+	double angle;
+	switch (animation) {
+	case OPEN_WINDOW_ANIMATION_NONE:        // No animation
+		w->animation_center_x = w->pending_g.x + w->pending_g.width * 0.5;
+		w->animation_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+		w->animation_w = w->pending_g.width;
+		w->animation_h = w->pending_g.height;
+		break;
+	case OPEN_WINDOW_ANIMATION_FLYIN:        // Fly-in from a random point outside the
+	                                         // screen Compute random point off screen
+		angle = 2 * M_PI * ((double)rand() / RAND_MAX);
+		const double radius =
+		    sqrt(ps->root_width * ps->root_width + ps->root_height * ps->root_height);
+
+		// Set animation
+		*anim_x = randr_mon_center_x + radius * cos(angle);
+		*anim_y = randr_mon_center_y + radius * sin(angle);
+		*anim_w = 0;
+		*anim_h = 0;
+		break;
+	case OPEN_WINDOW_ANIMATION_SLIDE_UP:        // Slide up the image
+		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
+		*anim_y = w->pending_g.y + w->pending_g.height;
+		*anim_w = w->pending_g.width;
+		*anim_h = 0;
+		break;
+	case OPEN_WINDOW_ANIMATION_SLIDE_DOWN:        // Slide down the image
+		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
+		*anim_y = w->pending_g.y;
+		*anim_w = w->pending_g.width;
+		*anim_h = 0;
+		break;
+	case OPEN_WINDOW_ANIMATION_SLIDE_LEFT:        // Slide left the image
+		*anim_x = w->pending_g.x + w->pending_g.width * 0.5 + (randr_mon_center_x);
+		*anim_w = w->pending_g.width;
+		*anim_h = w->pending_g.height;
+		*anim_y = w->pending_g.y + w->pending_g.height * 0.5;
+		break;
+	case OPEN_WINDOW_ANIMATION_SLIDE_RIGHT:        // Slide right the image
+		*anim_x = w->pending_g.x + w->pending_g.width * 0.5 - (randr_mon_center_x);
+		*anim_w = w->pending_g.width;
+		*anim_h = w->pending_g.height;
+		*anim_y = w->pending_g.y + w->pending_g.height * 0.5;
+		break;
+	case OPEN_WINDOW_ANIMATION_SLIDE_IN:
+		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
+		*anim_w = w->pending_g.width;
+		*anim_h = w->pending_g.height;
+		*anim_y = w->pending_g.y;
+		break;
+	case OPEN_WINDOW_ANIMATION_SLIDE_IN_CENTER:
+		*anim_x = randr_mon_center_x;
+		*anim_y = w->g.y - (w->pending_g.height * 0.4);
+		*anim_w = w->pending_g.width;
+		*anim_h = w->pending_g.height;
+		break;
+	case OPEN_WINDOW_ANIMATION_SLIDE_OUT:
+		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
+		*anim_y = w->pending_g.y + w->heightb;
+		*anim_w = w->pending_g.width;
+		*anim_h = w->pending_g.height;
+		break;
+	case OPEN_WINDOW_ANIMATION_SLIDE_OUT_CENTER:
+		*anim_x = randr_mon_center_x;
+		*anim_y = w->pending_g.y;
+		*anim_w = w->pending_g.width;
+		*anim_h = w->pending_g.height;
+		break;
+	case OPEN_WINDOW_ANIMATION_ZOOM:        // Zoom-in the image, without changing its
+	                                        // location
+		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
+		*anim_y = w->pending_g.y + w->pending_g.height * 0.5;
+		*anim_w = 0;
+		*anim_h = 0;
+		break;
+	case OPEN_WINDOW_ANIMATION_MINIMIZE:
+		*anim_x = randr_mon_center_x;
+		*anim_y = randr_mon_center_y;
+		*anim_w = 0;
+		*anim_h = 0;
+		break;
+	case OPEN_WINDOW_ANIMATION_SQUEEZE:
+		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
+		*anim_y = w->pending_g.y + w->pending_g.height * 0.5;
+		*anim_w = w->pending_g.width;
+		*anim_h = 0;
+		break;
+	case OPEN_WINDOW_ANIMATION_SQUEEZE_BOTTOM:
+		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
+		*anim_y = w->pending_g.y + w->pending_g.height;
+		*anim_w = w->pending_g.width;
+		*anim_h = 0;
+		break;
+	case OPEN_WINDOW_ANIMATION_INVALID: assert(false); break;
+	}
+}
+
 /// Handle non-image flags. This phase might set IMAGES_STALE flags
 void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	// Whether the window was visible before we process the mapped flag. i.e.
@@ -501,8 +715,73 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			add_damage_from_win(ps, w);
 		}
 
-		// Update window geometry
+		// Determine if a window should animate
+		if (win_should_animate(ps, w)) {
+			win_update_bounding_shape(ps, w);
+			if (!was_visible || w->animation_flags) {
+				// Set window-open animation
+				init_animation(ps, w);
+
+				w->animation_dest_center_x =
+				    w->pending_g.x + w->pending_g.width * 0.5;
+				w->animation_dest_center_y =
+				    w->pending_g.y + w->pending_g.height * 0.5;
+				w->animation_dest_w = w->pending_g.width;
+				w->animation_dest_h = w->pending_g.height;
+				w->g.x = (int16_t)round(w->animation_center_x -
+				                        w->animation_w * 0.5);
+				w->g.y = (int16_t)round(w->animation_center_y -
+				                        w->animation_h * 0.5);
+				w->g.width = (uint16_t)round(w->animation_w);
+				w->g.height = (uint16_t)round(w->animation_h);
+
+			} else {
+				w->in_desktop_animation = ANIM_IN_TAG;
+				w->animation_dest_center_x =
+				    w->pending_g.x + w->pending_g.width * 0.5;
+				w->animation_dest_center_y =
+				    w->pending_g.y + w->pending_g.height * 0.5;
+				w->animation_dest_w = w->pending_g.width;
+				w->animation_dest_h = w->pending_g.height;
+			}
+
+			CLEAR_MASK(w->animation_flags)
+			w->g.border_width = w->pending_g.border_width;
+			double x_dist = w->animation_dest_center_x - w->animation_center_x;
+			double y_dist = w->animation_dest_center_y - w->animation_center_y;
+			double w_dist = w->animation_dest_w - w->animation_w;
+			double h_dist = w->animation_dest_h - w->animation_h;
+			w->animation_inv_og_distance =
+			    1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
+			               w_dist * w_dist + h_dist * h_dist);
+
+			if (isinf(w->animation_inv_og_distance))
+				w->animation_inv_og_distance = 0;
+
+			// We only grab images if w->reg_ignore_valid is true as
+			// there's an ev_shape_notify() event fired quickly on new windows
+			// for e.g. in case of Firefox main menu and ev_shape_notify()
+			// sets the win_set_flags(w, WIN_FLAGS_SIZE_STALE); which
+			// brakes the new image captured and because this same event
+			// also sets w->reg_ignore_valid = false; too we check for it
+			if (w->reg_ignore_valid) {
+				if (w->old_win_image) {
+					ps->backend_data->ops->release_image(
+					    ps->backend_data, w->old_win_image);
+					w->old_win_image = NULL;
+				}
+
+				// We only grab
+				if (w->win_image) {
+					w->old_win_image = ps->backend_data->ops->clone_image(
+					    ps->backend_data, w->win_image, &w->bounding_shape);
+				}
+			}
+
+			w->animation_progress = 0.0;
+		} else {
 		w->g = w->pending_g;
+		}
 
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(ps, w);
@@ -726,6 +1005,60 @@ static wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
 
 	return WINTYPE_UNKNOWN;
 }
+/* FIXME: I couldn't do it using the provided functions so it's direct xcb calls */
+winprop_t x_get_cardinal_prop(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom) {
+	xcb_get_property_cookie_t cookie =
+	    xcb_get_property(c, 0, w, atom, XCB_ATOM_CARDINAL, 0, 1);
+	xcb_get_property_reply_t *reply = xcb_get_property_reply(c, cookie, NULL);
+
+	if (reply && reply->format == 32 && reply->type == XCB_ATOM_CARDINAL &&
+	    xcb_get_property_value_length(reply) >= sizeof(uint32_t)) {
+		uint32_t *val = (uint32_t *)xcb_get_property_value(reply);
+		return (winprop_t){.ptr = val,
+		                   .nitems = 1,
+		                   .type = reply->type,
+		                   .format = reply->format,
+		                   .r = reply};
+	}
+
+	free(reply);
+	return (winprop_t){.ptr = NULL, .nitems = 0, .type = XCB_ATOM_NONE, .format = 0};
+}
+int get_cardinal_prop(session_t *ps, xcb_window_t wid, const char *atomName) {
+	int ret = -1;
+	xcb_intern_atom_cookie_t atom_cookie =
+	    xcb_intern_atom(ps->c, 0, strlen(atomName), atomName);
+	xcb_intern_atom_reply_t *atom_reply = xcb_intern_atom_reply(ps->c, atom_cookie, NULL);
+
+	if (atom_reply) {
+		xcb_atom_t atom = atom_reply->atom;
+		free(atom_reply);
+
+		// now use the atom to retrieve the property
+		winprop_t prop = x_get_cardinal_prop(ps->c, wid, atom);
+
+		if (prop.ptr) {
+			ret = *(int *)prop.ptr;
+		}
+
+		free_winprop(&prop);
+	}
+	return ret;
+}
+
+bool get_mouse_position(session_t *ps, int16_t *x, int16_t *y) {
+	xcb_query_pointer_cookie_t cookie = xcb_query_pointer(ps->c, ps->root);
+	xcb_query_pointer_reply_t *reply = xcb_query_pointer_reply(ps->c, cookie, NULL);
+	if (reply) {
+		*x = reply->root_x;
+		*y = reply->root_y;
+		free(reply);
+		return true;
+	}
+	return false;
+}
+
+/* End of xcb functions */
 
 static bool
 wid_get_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t def, opacity_t *out) {
@@ -814,6 +1147,10 @@ double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
 	if (w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING) {
 		return 0;
 	}
+	if ((w->state == WSTATE_FADING && (w->in_desktop_animation & ANIM_FADE))) {
+		return 0;
+	}
+
 	// Try obeying opacity property and window type opacity firstly
 	if (w->has_opacity_prop) {
 		opacity = ((double)w->opacity_prop) / OPAQUE;
@@ -876,6 +1213,24 @@ bool win_should_fade(session_t *ps, const struct managed_win *w) {
 		return false;
 	}
 	return ps->o.wintype_option[w->window_type].fade;
+}
+
+/**
+ * Determine if a window should animate.
+ */
+bool win_should_animate(session_t *ps, const struct managed_win *w) {
+	if (!ps->o.animations) {
+		return false;
+	}
+	if (ps->o.wintype_option[w->window_type].animation == 0) {
+		log_debug("Animation disabled by window_type");
+		return false;
+	}
+	if (c2_match(ps, w, ps->o.animation_blacklist, NULL)) {
+		log_debug("Animation disabled by animation_exclude");
+		return false;
+	}
+	return true;
 }
 
 /**
@@ -1206,8 +1561,11 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	// focused state of the window
 	win_update_focused(ps, w);
 
+	if (w->animation_progress > 0.99999999 ||
+	    (w->animation_progress == 0.0 && ps->animation_time != 0L)) {
 	win_determine_shadow(ps, w);
 	win_determine_clip_shadow_above(ps, w);
+	}
 	win_determine_invert_color(ps, w);
 	win_determine_blur_background(ps, w);
 	win_determine_rounded_corners(ps, w);
@@ -1514,9 +1872,14 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .state = WSTATE_UNMAPPED,         // updated by window state changes
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
+	    .animation_velocity_x = 0.0,             // updated by window geometry changes
+	    .animation_velocity_y = 0.0,             // updated by window geometry changes
+	    .animation_velocity_w = 0.0,             // updated by window geometry changes
+	    .animation_velocity_h = 0.0,             // updated by window geometry changes
+	    .animation_progress = 1.0,               // updated by window geometry changes
+	    .animation_inv_og_distance = NAN,        // updated by window geometry changes
 	    .reg_ignore_valid = false,        // set to true when damaged
-	    .flags = WIN_FLAGS_IMAGES_NONE,        // updated by
-	                                           // property/attributes/etc
+	    .flags = WIN_FLAGS_IMAGES_NONE,          // updated by property/attributes/etc
 	                                           // change
 	    .stale_props = NULL,
 	    .stale_props_capacity = 0,
@@ -1543,6 +1906,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    // have no meaning or have no use until the window
 	    // is mapped
 	    .win_image = NULL,
+	    .old_win_image = NULL,
 	    .shadow_image = NULL,
 	    .mask_image = NULL,
 	    .prev_trans = NULL,
@@ -2100,17 +2464,31 @@ static void unmap_win_finish(session_t *ps, struct managed_win *w) {
 		// Shadow image can be preserved.
 		if (!win_check_flags_all(w, WIN_FLAGS_PIXMAP_NONE)) {
 			win_release_pixmap(ps->backend_data, w);
+			win_release_oldpixmap(ps->backend_data, w);
 		}
 	} else {
 		assert(!w->win_image);
+		assert(!w->old_win_image);
 		assert(!w->shadow_image);
 	}
+
+	// Force animation to completed position
+	w->animation_velocity_x = 0;
+	w->animation_velocity_y = 0;
+	w->animation_velocity_w = 0;
+	w->animation_velocity_h = 0;
+	w->animation_progress = 1.0;
 
 	free_paint(ps, &w->paint);
 	free_paint(ps, &w->shadow_paint);
 
 	// Try again at binding images when the window is mapped next time
 	win_clear_flags(w, WIN_FLAGS_IMAGE_ERROR);
+
+	// Flag window so that it gets animated when it reapears
+	// in case it wasn't destroyed
+	win_set_flags(w, WIN_FLAGS_POSITION_STALE);
+	win_set_flags(w, WIN_FLAGS_SIZE_STALE);
 }
 
 /// Finish the destruction of a window (e.g. after fading has finished).
@@ -2343,6 +2721,7 @@ bool destroy_win_start(session_t *ps, struct win *w) {
 }
 
 void unmap_win_start(session_t *ps, struct managed_win *w) {
+	w->animation_flags |= ANIM_UNMAP;
 	assert(w);
 	assert(w->base.managed);
 	assert(w->a._class != XCB_WINDOW_CLASS_INPUT_ONLY);
@@ -2379,6 +2758,29 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 	w->opacity_target_old = fmax(w->opacity_target, w->opacity_target_old);
 	w->opacity_target = win_calc_opacity_target(ps, w);
 
+	if (ps->o.animations && ps->o.animation_for_unmap_window != OPEN_WINDOW_ANIMATION_NONE &&
+	    ps->o.wintype_option[w->window_type].animation) {
+		w->animation_flags = ANIM_UNMAP;
+		init_animation(ps, w);
+
+		double x_dist = w->animation_dest_center_x - w->animation_center_x;
+		double y_dist = w->animation_dest_center_y - w->animation_center_y;
+		double w_dist = w->animation_dest_w - w->animation_w;
+		double h_dist = w->animation_dest_h - w->animation_h;
+		w->animation_inv_og_distance = 1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
+		                                          w_dist * w_dist + h_dist * h_dist);
+
+		if (isinf(w->animation_inv_og_distance))
+			w->animation_inv_og_distance = 0;
+
+		w->animation_progress = 0.0;
+
+		if (w->old_win_image) {
+			ps->backend_data->ops->release_image(ps->backend_data, w->old_win_image);
+			w->old_win_image = NULL;
+		}
+	}
+
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
 	if (ps->o.dbus) {
@@ -2407,6 +2809,7 @@ bool win_check_fade_finished(session_t *ps, struct managed_win *w) {
 		return false;
 	}
 	if (w->opacity == w->opacity_target) {
+		ps->animation_mode = 0;
 		switch (w->state) {
 		case WSTATE_UNMAPPING: unmap_win_finish(ps, w); return false;
 		case WSTATE_DESTROYING: destroy_win_finish(ps, &w->base); return true;
@@ -2436,11 +2839,11 @@ bool win_skip_fading(session_t *ps, struct managed_win *w) {
 // TODO(absolutelynothelix): rename to x_update_win_(randr_?)monitor and move to
 // the x.c.
 void win_update_monitor(int nmons, region_t *mons, struct managed_win *mw) {
-	mw->randr_monitor = -1;
 	for (int i = 0; i < nmons; i++) {
 		auto e = pixman_region32_extents(&mons[i]);
-		if (e->x1 <= mw->g.x && e->y1 <= mw->g.y &&
-		    e->x2 >= mw->g.x + mw->widthb && e->y2 >= mw->g.y + mw->heightb) {
+		// if (e->x1 <= mw->g.x && e->y1 <= mw->g.y &&
+		//     e->x2 >= mw->g.x + mw->widthb && e->y2 >= mw->g.y + mw->heightb) {
+		if (e->x1 <= mw->g.x && e->x2 >= mw->g.x + mw->widthb) {
 			mw->randr_monitor = i;
 			log_debug("Window %#010x (%s), %dx%d+%dx%d, is entirely on the "
 			          "monitor %d (%dx%d+%dx%d)",
@@ -2449,6 +2852,7 @@ void win_update_monitor(int nmons, region_t *mons, struct managed_win *mw) {
 			return;
 		}
 	}
+	mw->randr_monitor = -1;
 	log_debug("Window %#010x (%s), %dx%d+%dx%d, is not entirely on any monitor",
 	          mw->base.id, mw->name, mw->g.x, mw->g.y, mw->widthb, mw->heightb);
 }
@@ -2457,6 +2861,7 @@ void win_update_monitor(int nmons, region_t *mons, struct managed_win *mw) {
 void map_win_start(session_t *ps, struct managed_win *w) {
 	assert(ps->server_grabbed);
 	assert(w);
+	w->animation_flags = 0;
 
 	// Don't care about window mapping if it's an InputOnly window
 	// Also, try avoiding mapping a window twice
@@ -2715,6 +3120,10 @@ win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_windo
 void win_set_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
+		if (w->animation_progress != 1.0) {
+			// Return because animation will trigger some of the flags
+			return;
+		}
 		log_error("Flags set on a destroyed window %#010x (%s)", w->base.id, w->name);
 		return;
 	}
@@ -2727,6 +3136,10 @@ void win_clear_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Clear flags %" PRIu64 " from window %#010x (%s)", flags, w->base.id,
 	          w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
+		if (w->animation_progress != 1.0) {
+			// Return because animation will trigger some of the flags
+			return;
+		}
 		log_warn("Flags cleared on a destroyed window %#010x (%s)", w->base.id,
 		         w->name);
 		return;
@@ -2847,5 +3260,6 @@ win_stack_find_next_managed(const session_t *ps, const struct list_node *i) {
 /// Return whether this window is mapped on the X server side
 bool win_is_mapped_in_x(const struct managed_win *w) {
 	return w->state == WSTATE_MAPPING || w->state == WSTATE_FADING ||
-	       w->state == WSTATE_MAPPED || (w->flags & WIN_FLAGS_MAPPED);
+	       w->state == WSTATE_MAPPED || w->state == WSTATE_DESTROYING ||
+	       (w->flags & WIN_FLAGS_MAPPED);
 }
