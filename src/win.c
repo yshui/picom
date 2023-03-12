@@ -1012,7 +1012,7 @@ winprop_t x_get_cardinal_prop(xcb_connection_t *c, xcb_window_t w, xcb_atom_t at
 	xcb_get_property_reply_t *reply = xcb_get_property_reply(c, cookie, NULL);
 
 	if (reply && reply->format == 32 && reply->type == XCB_ATOM_CARDINAL &&
-	    xcb_get_property_value_length(reply) >= sizeof(uint32_t)) {
+	    xcb_get_property_value_length(reply) >= (int)sizeof(uint32_t)) {
 		uint32_t *val = (uint32_t *)xcb_get_property_value(reply);
 		return (winprop_t){.ptr = val,
 		                   .nitems = 1,
@@ -1027,7 +1027,7 @@ winprop_t x_get_cardinal_prop(xcb_connection_t *c, xcb_window_t w, xcb_atom_t at
 int get_cardinal_prop(session_t *ps, xcb_window_t wid, const char *atomName) {
 	int ret = -1;
 	xcb_intern_atom_cookie_t atom_cookie =
-	    xcb_intern_atom(ps->c, 0, strlen(atomName), atomName);
+	    xcb_intern_atom(ps->c, 0, (uint16_t)strlen(atomName), atomName);
 	xcb_intern_atom_reply_t *atom_reply = xcb_intern_atom_reply(ps->c, atom_cookie, NULL);
 
 	if (atom_reply) {
