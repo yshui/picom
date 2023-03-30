@@ -211,10 +211,6 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		auto reg_bound_no_corner =
 		    win_get_bounding_shape_global_without_corners_by_val(w);
 
-		if (!w->mask_image && (w->bounding_shaped || w->corner_radius != 0)) {
-			win_bind_mask(ps->backend_data, w);
-		}
-
 		// The clip region for the current window, in global/target coordinates
 		// reg_paint_in_bound \in reg_paint
 		region_t reg_paint_in_bound;

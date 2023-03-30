@@ -314,9 +314,13 @@ static inline void win_release_shadow(backend_t *base, struct managed_win *w) {
 }
 
 static inline void win_release_mask(backend_t *base, struct managed_win *w) {
+	log_debug("Releasing mask of window %#010x (%s)", w->base.id, w->name);
+	assert(w->mask_image);
 	if (w->mask_image) {
 		base->ops->release_image(base, w->mask_image);
 		w->mask_image = NULL;
+		// Bypassing win_set_flags, because `w` might have been destroyed
+		w->flags |= WIN_FLAGS_MASK_NONE;
 	}
 }
 
@@ -346,6 +350,7 @@ static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w
 
 bool win_bind_mask(struct backend_base *b, struct managed_win *w) {
 	assert(!w->mask_image);
+	assert(w->corner_radius != 0 || w->bounding_shaped);
 	auto reg_bound_local = win_get_bounding_shape_global_by_val(w);
 	pixman_region32_translate(&reg_bound_local, -w->g.x, -w->g.y);
 	w->mask_image = b->ops->make_mask(
@@ -353,10 +358,13 @@ bool win_bind_mask(struct backend_base *b, struct managed_win *w) {
 	pixman_region32_fini(&reg_bound_local);
 
 	if (!w->mask_image) {
+		win_set_flags(w, WIN_FLAGS_MASK_NONE);
 		return false;
 	}
 	b->ops->set_image_property(b, IMAGE_PROPERTY_CORNER_RADIUS, w->mask_image,
 	                           (double[]){w->corner_radius});
+
+	win_clear_flags(w, WIN_FLAGS_MASK_NONE);
 	return true;
 }
 
@@ -364,17 +372,14 @@ bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color
                      struct backend_shadow_context *sctx) {
 	assert(!w->shadow_image);
 	assert(w->shadow);
-	if ((w->corner_radius == 0 && w->bounding_shaped == false) ||
-	    b->ops->shadow_from_mask == NULL) {
-		w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, sctx, c);
-	} else {
-		win_bind_mask(b, w);
+	if (w->mask_image && b->ops->shadow_from_mask) {
 		w->shadow_image = b->ops->shadow_from_mask(b, w->mask_image, sctx, c);
+	} else {
+		w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, sctx, c);
 	}
 	if (!w->shadow_image) {
 		log_error("Failed to bind shadow image, shadow will be disabled "
-		          "for "
-		          "%#010x (%s)",
+		          "for %#010x (%s)",
 		          w->base.id, w->name);
 		win_set_flags(w, WIN_FLAGS_SHADOW_NONE);
 		w->shadow = false;
@@ -401,7 +406,10 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 		win_release_shadow(backend, w);
 	}
 
-	win_release_mask(backend, w);
+	if (!win_check_flags_all(w, WIN_FLAGS_MASK_NONE)) {
+		assert(!win_check_flags_all(w, WIN_FLAGS_MASK_STALE));
+		win_release_mask(backend, w);
+	}
 }
 
 /// Returns true if the `prop` property is stale, as well as clears the stale
@@ -568,6 +576,15 @@ void win_process_image_flags(session_t *ps, struct managed_win *w) {
 				win_release_pixmap(ps->backend_data, w);
 			}
 			win_bind_pixmap(ps->backend_data, w);
+		}
+
+		if (win_check_flags_all(w, WIN_FLAGS_MASK_STALE)) {
+			if (!win_check_flags_all(w, WIN_FLAGS_MASK_NONE)) {
+				win_release_mask(ps->backend_data, w);
+			}
+			if (w->bounding_shaped || w->corner_radius != 0) {
+				win_bind_mask(ps->backend_data, w);
+			}
 		}
 
 		if (win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE)) {
@@ -1130,27 +1147,51 @@ static void win_determine_blur_background(session_t *ps, struct managed_win *w) 
 	win_set_blur_background(ps, w, blur_background_new);
 }
 
+static void
+win_set_corner_radius(session_t *ps, struct managed_win *w, int corner_radius_new) {
+	if (w->corner_radius == corner_radius_new) {
+		return;
+	}
+
+	log_debug("Update corner radius for window %#010x (%s) to %d", w->base.id,
+	          w->name, corner_radius_new);
+
+	// Apply the change
+	w->corner_radius = corner_radius_new;
+
+	// Initialize the border color to an invalid value
+	w->border_col[0] = w->border_col[1] = w->border_col[2] = w->border_col[3] = -1.0F;
+
+	if (ps->redirected) {
+		// Delayed update of shadow image
+		// By setting WIN_FLAGS_MASK_STALE, we ask win_process_flags to
+		// re-create or release the mask.
+		win_set_flags(w, WIN_FLAGS_MASK_STALE);
+	}
+}
+
 /**
  * Determine if a window should have rounded corners.
  */
 static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) {
 	if (ps->o.corner_radius == 0) {
-		w->corner_radius = 0;
+		win_set_corner_radius(ps, w, 0);
 		return;
 	}
 
+	log_debug("Determining corner radius of window %#010x (%s)", w->base.id, w->name);
+	int corner_radius_new = ps->o.corner_radius;
+
 	// Don't round full screen windows & excluded windows
-	if ((w && win_is_fullscreen(ps, w)) ||
-	    c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL)) {
-		w->corner_radius = 0;
-		log_debug("Not rounding corners for window %#010x", w->base.id);
-	} else {
-		w->corner_radius = ps->o.corner_radius;
-		log_debug("Rounding corners for window %#010x", w->base.id);
-		// Initialize the border color to an invalid value
-		w->border_col[0] = w->border_col[1] = w->border_col[2] =
-		    w->border_col[3] = -1.0F;
+	if (w && win_is_fullscreen(ps, w)) {
+		log_debug("Rounded corners disabled for fullscreen window");
+		corner_radius_new = 0;
+	} else if (c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL)) {
+		log_debug("Rounded corners disabled by rounded-corners-exclude");
+		corner_radius_new = 0;
 	}
+
+	win_set_corner_radius(ps, w, corner_radius_new);
 }
 
 /**
@@ -1249,9 +1290,8 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 	assert(w->state != WSTATE_UNMAPPED && w->state != WSTATE_DESTROYING &&
 	       w->state != WSTATE_UNMAPPING);
 
-	// Invalidate the shadow we built
+	// Invalidate the mask and shadow we built
 	win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
-	win_release_mask(ps->backend_data, w);
 	ps->pending_updates = true;
 	free_paint(ps, &w->shadow_paint);
 }
@@ -1978,10 +2018,9 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 		w->rounded_corners = win_has_rounded_corners(w);
 	}
 
-	// Window shape changed, we should free old wpaint and shadow pict
+	// Window shape changed, we should free old wpaint and mask and shadow pict
 	// log_trace("free out dated pict");
 	win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
-	win_release_mask(ps->backend_data, w);
 	ps->pending_updates = true;
 
 	free_paint(ps, &w->paint);
@@ -2139,7 +2178,11 @@ static void destroy_win_finish(session_t *ps, struct win *w) {
 			assert(mw->shadow_image != NULL);
 			win_release_shadow(ps->backend_data, mw);
 		}
-		win_release_mask(ps->backend_data, mw);
+		// Unmapping preserves the mask image, so free it here
+		if (!win_check_flags_all(mw, WIN_FLAGS_MASK_NONE)) {
+			assert(mw->mask_image != NULL);
+			win_release_mask(ps->backend_data, mw);
+		}
 
 		// Invalidate reg_ignore of windows below this one
 		// TODO(yshui) what if next_w is not mapped??

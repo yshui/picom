@@ -94,9 +94,14 @@ enum win_flags {
 	WIN_FLAGS_POSITION_STALE = 512,
 	/// need better name for this, is set when some aspects of the window changed
 	WIN_FLAGS_FACTOR_CHANGED = 1024,
+	/// mask is out of date, will be updated in win_process_flags
+	WIN_FLAGS_MASK_STALE = 2048,
+	/// mask has not been generated
+	WIN_FLAGS_MASK_NONE = 4096,
 };
 
 static const uint64_t WIN_FLAGS_IMAGES_STALE =
-    WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_SHADOW_STALE;
+    WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_MASK_STALE | WIN_FLAGS_SHADOW_STALE;
 
-#define WIN_FLAGS_IMAGES_NONE (WIN_FLAGS_PIXMAP_NONE | WIN_FLAGS_SHADOW_NONE)
+#define WIN_FLAGS_IMAGES_NONE                                                            \
+	(WIN_FLAGS_PIXMAP_NONE | WIN_FLAGS_MASK_NONE | WIN_FLAGS_SHADOW_NONE)
