@@ -103,6 +103,9 @@ OPTIONS
 *--corner-radius* 'VALUE'::
 	Sets the radius of rounded window corners. When > 0, the compositor will round the corners of windows. Does not interact well with *--transparent-clipping*. (defaults to 0).
 
+*--corner-radius-rules* 'RADIUS':'CONDITION'::
+	Specify a list of corner radius rules. Overrides the corner radii of matching windows. This option takes precedence over the *--rounded-corners-exclude* option, and also overrides the default exclusion of fullscreen windows. The condition has the same format as *--opacity-rule*.
+
 *--rounded-corners-exclude* 'CONDITION'::
 	Exclude conditions for rounded corners.
 
