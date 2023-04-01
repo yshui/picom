@@ -509,32 +509,37 @@ parse_geometry_end:
 }
 
 /**
- * Parse a list of opacity rules.
+ * Parse a list of window rules, prefixed with a number, separated by a ':'
  */
-bool parse_rule_opacity(c2_lptr_t **res, const char *src) {
-	// Find opacity value
+bool parse_numeric_window_rule(c2_lptr_t **res, const char *src, long min, long max) {
+	if (!src) {
+		return false;
+	}
+
+	// Find numeric value
 	char *endptr = NULL;
 	long val = strtol(src, &endptr, 0);
 	if (!endptr || endptr == src) {
-		log_error("No opacity specified: %s", src);
+		log_error("No number specified: %s", src);
 		return false;
 	}
-	if (val > 100 || val < 0) {
-		log_error("Opacity %ld invalid: %s", val, src);
+
+	if (val < min || val > max) {
+		log_error("Number not in range (%ld <= n <= %ld): %s", min, max, src);
 		return false;
 	}
 
 	// Skip over spaces
-	while (*endptr && isspace((unsigned char)*endptr))
+	while (*endptr && isspace((unsigned char)*endptr)) {
 		++endptr;
+	}
 	if (':' != *endptr) {
-		log_error("Opacity terminator not found: %s", src);
+		log_error("Number separator (':') not found: %s", src);
 		return false;
 	}
 	++endptr;
 
 	// Parse pattern
-	// I hope 1-100 is acceptable for (void *)
 	return c2_parse(res, endptr, (void *)val);
 }
 

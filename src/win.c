@@ -1413,13 +1413,24 @@ static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) 
 		return;
 	}
 
-	// Don't round full screen windows & excluded windows
-	if ((w && win_is_fullscreen(ps, w)) ||
-	    c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL)) {
+	void *radius_override = NULL;
+	if (c2_match(ps, w, ps->o.corner_radius_rules, &radius_override)) {
+		log_debug("Matched corner rule! %d", w->corner_radius);
+	}
+
+	// Don't round full screen windows & excluded windows,
+	// unless we find a corner override in corner_radius_rules
+	if (!radius_override && ((w && win_is_fullscreen(ps, w)) ||
+	                         c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL))) {
 		w->corner_radius = 0;
 		log_debug("Not rounding corners for window %#010x", w->base.id);
 	} else {
-		w->corner_radius = ps->o.corner_radius;
+		if (radius_override) {
+			w->corner_radius = (int)(long)radius_override;
+		} else {
+			w->corner_radius = ps->o.corner_radius;
+		}
+
 		log_debug("Rounding corners for window %#010x", w->base.id);
 		// Initialize the border color to an invalid value
 		w->border_col[0] = w->border_col[1] = w->border_col[2] =

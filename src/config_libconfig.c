@@ -136,6 +136,32 @@ void parse_cfg_condlst(const config_t *pcfg, c2_lptr_t **pcondlst, const char *n
 }
 
 /**
+ * Parse a window corner radius rule list in configuration file.
+ */
+static inline void
+parse_cfg_condlst_corner(options_t *opt, const config_t *pcfg, const char *name) {
+	config_setting_t *setting = config_lookup(pcfg, name);
+	if (setting) {
+		// Parse an array of options
+		if (config_setting_is_array(setting)) {
+			int i = config_setting_length(setting);
+			while (i--)
+				if (!parse_numeric_window_rule(
+				        &opt->corner_radius_rules,
+				        config_setting_get_string_elem(setting, i), 0, INT_MAX))
+					exit(1);
+		}
+		// Treat it as a single pattern if it's a string
+		else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
+			if (!parse_numeric_window_rule(&opt->corner_radius_rules,
+			                               config_setting_get_string(setting),
+			                               0, INT_MAX))
+				exit(1);
+		}
+	}
+}
+
+/**
  * Parse an opacity rule list in configuration file.
  */
 static inline void
@@ -146,15 +172,15 @@ parse_cfg_condlst_opct(options_t *opt, const config_t *pcfg, const char *name) {
 		if (config_setting_is_array(setting)) {
 			int i = config_setting_length(setting);
 			while (i--)
-				if (!parse_rule_opacity(
+				if (!parse_numeric_window_rule(
 				        &opt->opacity_rules,
-				        config_setting_get_string_elem(setting, i)))
+				        config_setting_get_string_elem(setting, i), 0, 100))
 					exit(1);
 		}
 		// Treat it as a single pattern if it's a string
 		else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
-			if (!parse_rule_opacity(&opt->opacity_rules,
-			                        config_setting_get_string(setting)))
+			if (!parse_numeric_window_rule(
+			        &opt->opacity_rules, config_setting_get_string(setting), 0, 100))
 				exit(1);
 		}
 	}
@@ -343,6 +369,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	config_lookup_int(&cfg, "corner-radius", &opt->corner_radius);
 	// --rounded-corners-exclude
 	parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist, "rounded-corners-exclude");
+	// --corner-radius-rules
+	parse_cfg_condlst_corner(opt, &cfg, "corner-radius-rules");
+
 	// -e (frame_opacity)
 	config_lookup_float(&cfg, "frame-opacity", &opt->frame_opacity);
 	// -c (shadow_enable)
