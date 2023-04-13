@@ -501,7 +501,7 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 	enum open_window_animation animation;
 	bool transient_window = is_transient(ps, w);
 
-	if (w->in_desktop_animation) {
+	if (w->in_desktop_animation || w->window_type == WINTYPE_DESKTOP) {
 		animation = OPEN_WINDOW_ANIMATION_NONE;
 	} else {
 		animation = ps->o.wintype_option[w->window_type].animation;
