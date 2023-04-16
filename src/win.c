@@ -1081,6 +1081,16 @@ void win_set_shadow_force(session_t *ps, struct managed_win *w, switch_t val) {
 }
 
 static void
+win_set_blur_foreground(session_t *ps, struct managed_win *w, bool blur_foreground_new) {
+	if (w->blur_foreground == blur_foreground_new)
+		return;
+
+	w->blur_foreground = blur_foreground_new;
+
+	add_damage_from_win(ps, w);
+}
+
+static void
 win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_background_new) {
 	if (w->blur_background == blur_background_new)
 		return;
@@ -1104,6 +1114,22 @@ win_set_fg_shader(session_t *ps, struct managed_win *w, struct shader_info *shad
 	// A different shader might change how the window is drawn, these changes
 	// should be rare however, so this should be fine.
 	add_damage_from_win(ps, w);
+}
+
+/**
+ * Determine whether a window's foreground should be blurred
+ */
+static void win_determine_blur_foreground(session_t *ps, struct managed_win *w) {
+	log_debug("Determining blur-foreground of window %#010x (%s)", w->base.id, w->name);
+	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
+		return;
+	}
+
+	bool blur_foreground_new =
+	    ps->o.inactive_blur && !w->focused &&
+	    (!ps->o.inactive_blur_list || c2_match(ps, w, ps->o.inactive_blur_list, NULL));
+
+	win_set_blur_foreground(ps, w, blur_foreground_new);
 }
 
 /**
@@ -1219,13 +1245,11 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	// Focus needs to be updated first, as other rules might depend on the
 	// focused state of the window
 	win_update_focused(ps, w);
-	w->blur_foreground =
-	    ps->o.inactive_blur && !w->focused &&
-	    (!ps->o.inactive_blur_list || c2_match(ps, w, ps->o.inactive_blur_list, NULL));
 
 	win_determine_shadow(ps, w);
 	win_determine_clip_shadow_above(ps, w);
 	win_determine_invert_color(ps, w);
+	win_determine_blur_foreground(ps, w);
 	win_determine_blur_background(ps, w);
 	win_determine_rounded_corners(ps, w);
 	win_determine_fg_shader(ps, w);
