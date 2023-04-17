@@ -507,6 +507,17 @@ static bool initialize_backend(session_t *ps) {
 			goto err;
 		}
 
+		if (ps->o.inactive_blur && ps->o.blur_method == BLUR_METHOD_NONE) {
+			log_info("No blur method set, defaulting to box for inactive blur");
+			struct box_blur_args bargs;
+			bargs.size = 3;
+			void *args = (void *)&bargs;
+			ps->backend_blur_fgcontext = ps->backend_data->ops->create_blur_context(
+			    ps->backend_data, BLUR_METHOD_BOX, args);
+		} else if (ps->o.inactive_blur) {
+			ps->backend_blur_fgcontext = ps->backend_blur_context;
+		}
+
 		// Create shaders
 		HASH_ITER2(ps->shaders, shader) {
 			assert(shader->backend_shader == NULL);

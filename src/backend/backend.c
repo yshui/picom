@@ -483,14 +483,13 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 
 			// Blur window
 			if (w->blur_foreground) {
-				assert(ps->o.blur_method != BLUR_METHOD_NONE);
 				// FIXME Think more about combining blur w/ opacity
 				// FIXME Don't hardcode opacity
 				//        - needs to be set when focus_mode set to true
 				double blur_opacity = 1;
 				ps->backend_data->ops->blur(
 				    ps->backend_data, blur_opacity,
-				    ps->backend_blur_context, w->mask_image, window_coord,
+				    ps->backend_blur_fgcontext, w->mask_image, window_coord,
 				    &reg_paint_in_bound, &reg_visible);
 			}
 		}

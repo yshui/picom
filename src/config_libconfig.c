@@ -543,9 +543,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	// --inactive-blur
 	if (lcfg_lookup_bool(&cfg, "inactive-blur", &opt->inactive_blur)) {
-		if (opt->blur_method == BLUR_METHOD_NONE) {
-			opt->blur_method = BLUR_METHOD_BOX;
-		}
 		parse_cfg_condlst(&cfg, &opt->inactive_blur_list, "inactive-blur-include");
 	}
 	// --resize-damage

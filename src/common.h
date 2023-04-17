@@ -173,6 +173,7 @@ typedef struct session {
 	backend_t *backend_data;
 	/// backend blur context
 	void *backend_blur_context;
+	void *backend_blur_fgcontext;
 	/// graphic drivers used
 	enum driver drivers;
 	/// file watch handle
