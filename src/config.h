@@ -213,8 +213,10 @@ typedef struct options {
 	char *window_shader_fg;
 	/// Rules to change custom fragment shader for painting windows.
 	c2_lptr_t *window_shader_fg_rules;
-	/// Whether to blur inactive windows
+	/// Whether to blur inactive window foregrounds
 	bool inactive_blur;
+	// Opacity of inactive foreground blurs
+	double inactive_blur_opacity;
 	/// List of windows that should be blurred out when inactive.
 	c2_lptr_t *inactive_blur_list;
 	/// How much to dim an inactive window. 0.0 - 1.0, 0 to disable.

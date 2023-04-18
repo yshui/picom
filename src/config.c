@@ -766,6 +766,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 
 	    .inactive_blur = false,
 	    .inactive_blur_list = NULL,
+	    .inactive_blur_opacity = 1.0,
 	    .inactive_dim = 0.0,
 	    .inactive_dim_fixed = false,
 	    .inactive_opacity = 1.0,
