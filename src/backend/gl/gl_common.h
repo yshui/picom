@@ -61,6 +61,7 @@ typedef struct {
 // Program and uniforms for blur shader
 typedef struct {
 	GLuint prog;
+<<<<<<< HEAD
 	GLint uniform_pixel_norm;
 	GLint uniform_opacity;
 	GLint texorig_loc;
@@ -70,7 +71,27 @@ typedef struct {
 	GLint uniform_mask_offset;
 	GLint uniform_mask_corner_radius;
 	GLint uniform_mask_inverted;
+=======
+	GLint unifm_opacity;
+	GLint unifm_texture_size;
+	GLint unifm_halfpixel;
+	GLint orig_loc;
+	GLint texorig_loc;
+	GLint projection_loc;
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 } gl_blur_shader_t;
+
+typedef struct {
+	GLuint prog;
+	GLint projection_loc;
+	GLint unifm_radius;
+	GLint unifm_texcoord;
+	GLint unifm_texsize;
+	GLint unifm_borderw;
+	GLint unifm_resolution;
+	GLint unifm_tex_bg;
+	GLint unifm_tex_wnd;
+} gl_round_shader_t;
 
 typedef struct {
 	GLuint prog;
@@ -95,11 +116,15 @@ struct gl_data {
 	backend_t base;
 	// If we are using proprietary NVIDIA driver
 	bool is_nvidia;
+<<<<<<< HEAD
 	// If ARB_robustness extension is present
 	bool has_robustness;
 	// If EXT_EGL_image_storage extension is present
 	bool has_egl_image_storage;
 	// Height and width of the root window
+=======
+	// Height and width of the viewport
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	int height, width;
 	// Hash-table of window shaders
 	gl_win_shader_t *default_shader;
@@ -146,8 +171,13 @@ bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
 /**
  * @brief Render a region with texture data.
  */
+<<<<<<< HEAD
 void gl_compose(backend_t *, void *image_data, coord_t image_dst, void *mask,
                 coord_t mask_dst, const region_t *reg_tgt, const region_t *reg_visible);
+=======
+void gl_compose(backend_t *, struct managed_win *, void *ptex, int dst_x, int dst_y, const region_t *reg_tgt,
+                const region_t *reg_visible);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 void gl_resize(struct gl_data *, int width, int height);
 
@@ -178,6 +208,18 @@ void *gl_shadow_from_mask(backend_t *base, void *mask,
                           struct backend_shadow_context *sctx, struct color color);
 void gl_get_blur_size(void *blur_context, int *width, int *height);
 
+<<<<<<< HEAD
+=======
+
+bool gl_round(backend_t *backend_data, struct managed_win *w, void *ctx_,
+				void *image_data, const region_t *reg_round, const region_t *reg_visible);
+void *gl_create_round_context(backend_t *base, void *args);
+void gl_destroy_round_context(backend_t *base, void *ctx);
+bool gl_store_back_texture(backend_t *backend_data, struct managed_win *w,
+				void *ctx_, const region_t *reg_tgt, int x, int y, int width, int height);
+
+bool gl_is_image_transparent(backend_t *base, void *image_data);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 void gl_fill(backend_t *base, struct color, const region_t *clip);
 
 void gl_present(backend_t *base, const region_t *);

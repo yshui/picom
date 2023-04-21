@@ -21,8 +21,11 @@
 #include <unistd.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
+<<<<<<< HEAD
 #include <xcb/dpms.h>
 #include <xcb/glx.h>
+=======
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 #include <xcb/present.h>
 #include <xcb/randr.h>
 #include <xcb/render.h>
@@ -100,9 +103,11 @@ const char *const BACKEND_STRS[] = {[BKEND_XRENDER] = "xrender",
 session_t *ps_g = NULL;
 
 void set_root_flags(session_t *ps, uint64_t flags) {
+<<<<<<< HEAD
 	log_debug("Setting root flags: %" PRIu64, flags);
+=======
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	ps->root_flags |= flags;
-	ps->pending_updates = true;
 }
 
 void quit(session_t *ps) {
@@ -113,10 +118,11 @@ void quit(session_t *ps) {
 /**
  * Get current system clock in milliseconds.
  */
-static inline int64_t get_time_ms(void) {
+int64_t get_time_ms(void) {
 	struct timespec tp;
 	clock_gettime(CLOCK_MONOTONIC, &tp);
 	return (int64_t)tp.tv_sec * 1000 + (int64_t)tp.tv_nsec / 1000000;
+	//	return (int64_t)tp.tv_sec * 100 + (int64_t)tp.tv_nsec / 250000;
 }
 
 static inline bool dpms_screen_is_off(xcb_dpms_info_reply_t *info) {
@@ -152,7 +158,7 @@ static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t
 	if (!w)
 		w = find_toplevel(ps, wid);
 	if (!w)
-		w = find_managed_window_or_parent(ps, wid);
+		w = find_toplevel2(ps, wid);
 	return w;
 }
 
@@ -301,9 +307,9 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
 	struct managed_win *w = NULL;
 
 	// Check if it's a mapped frame window
-	if (mode == WIN_EVMODE_FRAME ||
+	if (WIN_EVMODE_FRAME == mode ||
 	    ((w = find_managed_win(ps, wid)) && w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
-		evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
+		evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
 		if (!ps->o.use_ewmh_active_win) {
 			evmask |= XCB_EVENT_MASK_FOCUS_CHANGE;
 		}
@@ -374,8 +380,9 @@ static void recheck_focus(session_t *ps) {
 }
 
 /**
- * Rebuild cached <code>screen_reg</code>.
+ * Look for the client window of a particular window.
  */
+<<<<<<< HEAD
 static void rebuild_screen_reg(session_t *ps) {
 	get_screen_region(ps, &ps->screen_reg);
 }
@@ -636,6 +643,31 @@ static void configure_root(session_t *ps) {
 		force_repaint(ps);
 	}
 	return;
+=======
+xcb_window_t find_client_win(session_t *ps, xcb_window_t w) {
+	if (wid_has_prop(ps, w, ps->atoms->aWM_STATE)) {
+		return w;
+	}
+
+	xcb_query_tree_reply_t *reply =
+	    xcb_query_tree_reply(ps->c, xcb_query_tree(ps->c, w), NULL);
+	if (!reply)
+		return 0;
+
+	xcb_window_t *children = xcb_query_tree_children(reply);
+	int nchildren = xcb_query_tree_children_length(reply);
+	int i;
+	xcb_window_t ret = 0;
+
+	for (i = 0; i < nchildren; ++i) {
+		if ((ret = find_client_win(ps, children[i])))
+			break;
+	}
+
+	free(reply);
+
+	return ret;
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 }
 
 static void handle_root_flags(session_t *ps) {
@@ -644,11 +676,6 @@ static void handle_root_flags(session_t *ps) {
 			x_update_randr_monitors(ps);
 		}
 		ps->root_flags &= ~(uint64_t)ROOT_FLAGS_SCREEN_CHANGE;
-	}
-
-	if ((ps->root_flags & ROOT_FLAGS_CONFIGURED) != 0) {
-		configure_root(ps);
-		ps->root_flags &= ~(uint64_t)ROOT_FLAGS_CONFIGURED;
 	}
 }
 
@@ -715,14 +742,84 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation) {
 			w->frame_opacity = 1.0;
 		}
 
+		// The below moved to it's own function:
+		// `win_determine_rounded_corners` (win.c)
+		/*
+		// Don't round full screen windows & excluded windows
+		if ((w && win_is_fullscreen(ps, w)) ||
+		        c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL)) {
+		        w->corner_radius = 0;
+		} else {
+		        w->corner_radius = ps->o.corner_radius;
+		}
+		*/
+
 		// Update window mode
-		w->mode = win_calc_mode(w);
+		w->mode = win_calc_mode(ps, w);
 
 		// Destroy all reg_ignore above when frame opaque state changes on
 		// SOLID mode
 		if (was_painted && w->mode != mode_old) {
 			w->reg_ignore_valid = false;
 		}
+	}
+
+	win_stack_foreach_managed(w, &ps->window_stack) {
+		bool posChanged =
+		    (w->oldX != -10000 && w->oldY != -10000 && w->oldW != 0 && w->oldH != 0) &&
+		    (w->g.x != w->newX || w->g.y != w->newY || w->g.width != w->newW ||
+		     w->g.height != w->newH);
+
+		if (posChanged) {
+			float t = get_time_ms();
+			float moveDx = (t - w->moveTimeX) / ps->o.transition_length;
+			float moveDy = (t - w->moveTimeY) / ps->o.transition_length;
+			float moveDw = (t - w->moveTimeW) / ps->o.transition_length;
+			float moveDh = (t - w->moveTimeH) / ps->o.transition_length;
+			if (moveDx >= 1.0)
+				moveDx = 1.0;
+			if (moveDy >= 1.0)
+				moveDy = 1.0;
+			if (moveDw >= 1.0)
+				moveDw = 1.0;
+			if (moveDh >= 1.0)
+				moveDh = 1.0;
+
+			float q = pow(moveDx, ps->o.transition_pow_x);
+			float k = pow(moveDy, ps->o.transition_pow_y);
+			float g = pow(moveDw, ps->o.transition_pow_w);
+			float z = pow(moveDh, ps->o.transition_pow_h);
+
+			float x = (float)w->oldX * (1 - q) + (float)w->newX * q;
+			float y = (float)w->oldY * (1 - k) + (float)w->newY * k;
+			float W = (float)w->oldW * (1 - g) + (float)w->newW * g;
+			float h = (float)w->oldH * (1 - z) + (float)w->newH * z;
+
+			add_damage_from_win(ps, w);
+			w->g.x = (int)x;
+			w->g.y = (int)y;
+			if (ps->o.size_transition) {
+				w->g.width = (int)W;
+				w->g.height = (int)h;
+			}
+
+			/* w->to_paint = true; */
+			w->mode = WMODE_TRANS;
+			*fade_running = true;
+		}
+		// TODO
+		// if ((w->shadow && posChanged) || (ps->o.size_transition &&
+		// w->pixmap_damaged)) {
+		//    rc_region_unref(&w->extents);
+		//    rc_region_unref(&w->border_size);
+		//    w->extents = win_extents(ps, w);
+		//    calc_win_size(ps, w);
+
+		//    if (ps->shape_exists && ps->o.shadow_ignore_shaped
+		//            && ps->o.detect_rounded_corners && w->bounding_shaped)
+		//        win_update_shape(ps, w);
+		//}
+		/* add_damage_win(ps, w); */
 	}
 
 	// Opacity will not change, from now on.
@@ -741,6 +838,11 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation) {
 		// Destroy reg_ignore if some window above us invalidated it
 		if (!reg_ignore_valid) {
 			rc_region_unref(&w->reg_ignore);
+		}
+
+		// Clear flags if we are not using experimental backends
+		if (!ps->o.experimental_backends) {
+			w->flags = 0;
 		}
 
 		// log_trace("%d %d %s", w->a.map_state, w->ever_damaged, w->name);
@@ -820,11 +922,18 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation) {
 			// w->mode == WMODE_SOLID or WMODE_FRAME_TRANS
 			region_t *tmp = rc_region_new();
 			if (w->mode == WMODE_SOLID) {
+<<<<<<< HEAD
 				*tmp =
 				    win_get_bounding_shape_global_without_corners_by_val(w);
 			} else {
 				// w->mode == WMODE_FRAME_TRANS
 				win_get_region_noframe_local_without_corners(w, tmp);
+=======
+				*tmp = win_get_bounding_shape_global_by_val(w, false);
+			} else {
+				// w->mode == WMODE_FRAME_TRANS
+				win_get_region_noframe_local(w, tmp, false);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 				pixman_region32_intersect(tmp, tmp, &w->bounding_shape);
 				pixman_region32_translate(tmp, w->g.x, w->g.y);
 			}
@@ -925,6 +1034,243 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation) {
 	}
 
 	return bottom;
+}
+
+/**
+ * Rebuild cached <code>screen_reg</code>.
+ */
+static void rebuild_screen_reg(session_t *ps) {
+	get_screen_region(ps, &ps->screen_reg);
+}
+
+/**
+ * Rebuild <code>shadow_exclude_reg</code>.
+ */
+static void rebuild_shadow_exclude_reg(session_t *ps) {
+	bool ret = parse_geometry(ps, ps->o.shadow_exclude_reg_str, &ps->shadow_exclude_reg);
+	if (!ret)
+		exit(1);
+}
+
+/// Free up all the images and deinit the backend
+static void destroy_backend(session_t *ps) {
+	win_stack_foreach_managed_safe(w, &ps->window_stack) {
+		// Wrapping up fading in progress
+		if (win_skip_fading(ps, w)) {
+			// `w` is freed by win_skip_fading
+			continue;
+		}
+
+		if (ps->backend_data) {
+			if (w->state == WSTATE_MAPPED) {
+				win_release_images(ps->backend_data, w);
+			} else {
+				assert(!w->win_image);
+				assert(!w->shadow_image);
+			}
+		}
+		free_paint(ps, &w->paint);
+	}
+
+	if (ps->backend_data && ps->root_image) {
+		ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+		ps->root_image = NULL;
+	}
+
+	if (ps->backend_data) {
+		// deinit backend
+		if (ps->backend_blur_context) {
+			ps->backend_data->ops->destroy_blur_context(
+			    ps->backend_data, ps->backend_blur_context);
+			ps->backend_blur_context = NULL;
+		}
+		if (ps->backend_round_context) {
+			ps->backend_data->ops->destroy_round_context(
+			    ps->backend_data, ps->backend_round_context);
+			ps->backend_round_context = NULL;
+		}
+		ps->backend_data->ops->deinit(ps->backend_data);
+		ps->backend_data = NULL;
+	}
+}
+
+static bool initialize_blur(session_t *ps) {
+	struct kernel_blur_args kargs;
+	struct gaussian_blur_args gargs;
+	struct dual_kawase_blur_args dkargs;
+	struct box_blur_args bargs;
+
+	void *args = NULL;
+	switch (ps->o.blur_method) {
+	case BLUR_METHOD_BOX:
+		bargs.size = ps->o.blur_radius;
+		args = (void *)&bargs;
+		break;
+	case BLUR_METHOD_KERNEL:
+		kargs.kernel_count = ps->o.blur_kernel_count;
+		kargs.kernels = ps->o.blur_kerns;
+		args = (void *)&kargs;
+		break;
+	case BLUR_METHOD_GAUSSIAN:
+		gargs.size = ps->o.blur_radius;
+		gargs.deviation = ps->o.blur_deviation;
+		args = (void *)&gargs;
+		break;
+	case BLUR_METHOD_ALT_KAWASE:
+	case BLUR_METHOD_DUAL_KAWASE:
+		dkargs.size = ps->o.blur_radius;
+		dkargs.strength = ps->o.blur_strength;
+		args = (void *)&dkargs;
+		break;
+	default: return true;
+	}
+
+	ps->backend_blur_context = ps->backend_data->ops->create_blur_context(
+	    ps->backend_data, ps->o.blur_method, args);
+	return ps->backend_blur_context != NULL;
+}
+
+static bool initialize_round_corners(session_t *ps) {
+	struct round_corners_args cargs;
+	cargs.corner_radius = ps->o.corner_radius;
+	cargs.round_borders = ps->o.round_borders;
+	ps->backend_round_context =
+	    ps->backend_data->ops->create_round_context(ps->backend_data, &cargs);
+	return ps->backend_round_context != NULL;
+}
+
+/// Init the backend and bind all the window pixmap to backend images
+static bool initialize_backend(session_t *ps) {
+	if (ps->o.experimental_backends) {
+		assert(!ps->backend_data);
+		// Reinitialize win_data
+		assert(backend_list[ps->o.backend]);
+		ps->backend_data = backend_list[ps->o.backend]->init(ps);
+		if (!ps->backend_data) {
+			log_fatal("Failed to initialize backend, aborting...");
+			quit(ps);
+			return false;
+		}
+		ps->backend_data->ops = backend_list[ps->o.backend];
+
+		if (!initialize_blur(ps)) {
+			log_fatal("Failed to prepare for background blur, aborting...");
+			ps->backend_data->ops->deinit(ps->backend_data);
+			ps->backend_data = NULL;
+			quit(ps);
+			return false;
+		}
+
+		if (!initialize_round_corners(ps)) {
+			log_fatal("Failed to prepare for rounded corners, will "
+			          "ignore...");
+			ps->o.corner_radius = 0;
+		}
+
+		// window_stack shouldn't include window that's
+		// not in the hash table at this point. Since
+		// there cannot be any fading windows.
+		HASH_ITER2(ps->windows, _w) {
+			if (!_w->managed) {
+				continue;
+			}
+			auto w = (struct managed_win *)_w;
+			assert(w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED);
+			if (w->state == WSTATE_MAPPED) {
+				// We need to reacquire image
+				log_debug("Marking window %#010x (%s) for update after "
+				          "redirection",
+				          w->base.id, w->name);
+				if (w->shadow) {
+					struct color c = {
+					    .red = ps->o.shadow_red,
+					    .green = ps->o.shadow_green,
+					    .blue = ps->o.shadow_blue,
+					    .alpha = ps->o.shadow_opacity,
+					};
+					win_bind_shadow(ps->backend_data, w, c,
+					                ps->gaussian_map);
+				}
+
+				w->flags |= WIN_FLAGS_PIXMAP_STALE;
+				ps->pending_updates = true;
+			}
+		}
+	}
+
+	// The old backends binds pixmap lazily, nothing to do here
+	return true;
+}
+
+/// Handle configure event of a root window
+void configure_root(session_t *ps, int width, int height) {
+	log_info("Root configuration changed, new geometry: %dx%d", width, height);
+	bool has_root_change = false;
+	if (ps->redirected) {
+		// On root window changes
+		if (ps->o.experimental_backends) {
+			assert(ps->backend_data);
+			has_root_change = ps->backend_data->ops->root_change != NULL;
+		} else {
+			// Old backend can handle root change
+			has_root_change = true;
+		}
+
+		if (!has_root_change) {
+			// deinit/reinit backend and free up resources if the backend
+			// cannot handle root change
+			destroy_backend(ps);
+		}
+		free_paint(ps, &ps->tgt_buffer);
+	}
+
+	ps->root_width = width;
+	ps->root_height = height;
+
+	rebuild_screen_reg(ps);
+	rebuild_shadow_exclude_reg(ps);
+
+	// Invalidate reg_ignore from the top
+	auto top_w = win_stack_find_next_managed(ps, &ps->window_stack);
+	if (top_w) {
+		rc_region_unref(&top_w->reg_ignore);
+		top_w->reg_ignore_valid = false;
+	}
+
+	if (ps->redirected) {
+		for (int i = 0; i < ps->ndamage; i++) {
+			pixman_region32_clear(&ps->damage_ring[i]);
+		}
+		ps->damage = ps->damage_ring + ps->ndamage - 1;
+#ifdef CONFIG_OPENGL
+		// GLX root change callback
+		if (BKEND_GLX == ps->o.backend && !ps->o.experimental_backends) {
+			glx_on_root_change(ps);
+		}
+#endif
+		if (has_root_change) {
+			if (ps->backend_data != NULL) {
+				ps->backend_data->ops->root_change(ps->backend_data, ps);
+			}
+			// Old backend's root_change is not a specific function
+		} else {
+			if (!initialize_backend(ps)) {
+				log_fatal("Failed to re-initialize backend after root "
+				          "change, aborting...");
+				ps->quit = true;
+				// TODO only event handlers should request ev_break,
+				// otherwise it's too hard to keep track of what can break
+				// the event loop
+				ev_break(ps->loop, EVBREAK_ALL);
+				return;
+			}
+
+			// Re-acquire the root pixmap.
+			root_damaged(ps);
+		}
+		force_repaint(ps);
+	}
+	return;
 }
 
 void root_damaged(session_t *ps) {
@@ -1299,7 +1645,6 @@ static bool redirect_start(session_t *ps) {
 
 	// Re-detect driver since we now have a backend
 	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);
-	apply_driver_workarounds(ps, ps->drivers);
 
 	root_damaged(ps);
 
@@ -1382,6 +1727,12 @@ static void handle_new_windows(session_t *ps) {
 }
 
 static void refresh_windows(session_t *ps) {
+	win_stack_foreach_managed_safe(w, &ps->window_stack) {
+		win_process_updates(ps, w);
+	}
+}
+
+static void refresh_stale_images(session_t *ps) {
 	win_stack_foreach_managed(w, &ps->window_stack) {
 		win_process_update_flags(ps, w);
 	}
@@ -1425,6 +1776,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		// Call fill_win on new windows
 		handle_new_windows(ps);
 
+<<<<<<< HEAD
 		// Handle screen changes
 		// This HAS TO be called before refresh_windows, as handle_root_flags
 		// could call configure_root, which will release images and mark them
@@ -1432,6 +1784,9 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		handle_root_flags(ps);
 
 		// Process window flags (window mapping)
+=======
+		// Process window updates
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 		refresh_windows(ps);
 
 		{
@@ -1443,8 +1798,16 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 			free(r);
 		}
 
+<<<<<<< HEAD
 		// Process window flags (stale images)
 		refresh_images(ps);
+=======
+		// Refresh pixmaps and shadows
+		refresh_stale_images(ps);
+
+		// Handle screen changes
+		handle_root_flags(ps);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 		e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
 		if (e) {
@@ -1716,9 +2079,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .randr_exists = 0,
 	    .randr_event = 0,
 	    .randr_error = 0,
+#ifdef CONFIG_OPENGL
 	    .glx_exists = false,
 	    .glx_event = 0,
 	    .glx_error = 0,
+#endif
 	    .xrfilter_convolution_exists = false,
 
 	    .atoms_wintypes = {0},
@@ -1785,8 +2150,11 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	xcb_prefetch_extension_data(ps->c, &xcb_randr_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_present_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_sync_id);
+<<<<<<< HEAD
 	xcb_prefetch_extension_data(ps->c, &xcb_glx_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_dpms_id);
+=======
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 	ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
 	if (!ext_info || !ext_info->present) {
@@ -1842,6 +2210,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	                                                  XCB_XFIXES_MINOR_VERSION)
 	                             .sequence);
 
+<<<<<<< HEAD
 	ps->damaged_region = x_new_id(ps->c);
 	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c, ps->damaged_region, 0, NULL)) {
 		log_fatal("Failed to create a XFixes region");
@@ -1870,6 +2239,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		free(r);
 	}
 
+=======
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	// Parse configuration file
 	win_option_mask_t winopt_mask[NUM_WINTYPES] = {{0}};
 	bool shadow_enabled = false, fading_enable = false, hasneg = false;
@@ -1944,6 +2315,10 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	      c2_list_postprocess(ps, ps->o.window_shader_fg_rules) &&
 	      c2_list_postprocess(ps, ps->o.opacity_rules) &&
 	      c2_list_postprocess(ps, ps->o.rounded_corners_blacklist) &&
+<<<<<<< HEAD
+=======
+	      c2_list_postprocess(ps, ps->o.round_borders_blacklist) &&
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	      c2_list_postprocess(ps, ps->o.focus_blacklist))) {
 		log_error("Post-processing of conditionals failed, some of your rules "
 		          "might not work");
@@ -2019,24 +2394,23 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	ps->sync_fence = XCB_NONE;
-	if (ps->xsync_exists) {
+	if (!ps->xsync_exists && ps->o.xrender_sync_fence) {
+		log_error("XSync extension not found. No XSync fence sync is "
+		          "possible. (xrender-sync-fence can't be enabled)");
+		ps->o.xrender_sync_fence = false;
+	}
+
+	if (ps->o.xrender_sync_fence) {
 		ps->sync_fence = x_new_id(ps->c);
 		e = xcb_request_check(ps->c, xcb_sync_create_fence_checked(
 		                                 ps->c, ps->root, ps->sync_fence, 0));
 		if (e) {
-			if (ps->o.xrender_sync_fence) {
-				log_error_x_error(e, "Failed to create a XSync fence. "
-				                     "xrender-sync-fence will be "
-				                     "disabled");
-				ps->o.xrender_sync_fence = false;
-			}
+			log_error_x_error(e, "Failed to create a XSync fence. "
+			                     "xrender-sync-fence will be disabled");
+			ps->o.xrender_sync_fence = false;
 			ps->sync_fence = XCB_NONE;
 			free(e);
 		}
-	} else if (ps->o.xrender_sync_fence) {
-		log_error("XSync extension not found. No XSync fence sync is "
-		          "possible. (xrender-sync-fence can't be enabled)");
-		ps->o.xrender_sync_fence = false;
 	}
 
 	// Query X RandR
@@ -2099,8 +2473,12 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 	}
 
+	// Target window must be initialized before the backend
+	//
+	// backend_operations::present == NULL means this backend doesn't need a target
+	// window; non experimental backends always need a target window
+
 	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);
-	apply_driver_workarounds(ps, ps->drivers);
 
 	// Initialize filters, must be preceded by OpenGL context creation
 	if (ps->o.legacy_backends && !init_render(ps)) {
@@ -2209,7 +2587,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
 	if (e) {
 		log_fatal_x_error(e, "Failed to grab X server");
-		free(e);
 		goto err;
 	}
 
@@ -2228,7 +2605,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (e) {
 		log_fatal_x_error(e, "Failed to ungrab server");
 		free(e);
-		goto err;
 	}
 
 	ps->server_grabbed = false;
@@ -2315,6 +2691,7 @@ static void session_destroy(session_t *ps) {
 	list_init_head(&ps->window_stack);
 
 	// Free blacklists
+<<<<<<< HEAD
 	c2_list_free(&ps->o.shadow_blacklist, NULL);
 	c2_list_free(&ps->o.shadow_clip_list, NULL);
 	c2_list_free(&ps->o.fade_blacklist, NULL);
@@ -2326,6 +2703,18 @@ static void session_destroy(session_t *ps) {
 	c2_list_free(&ps->o.unredir_if_possible_blacklist, NULL);
 	c2_list_free(&ps->o.rounded_corners_blacklist, NULL);
 	c2_list_free(&ps->o.window_shader_fg_rules, free);
+=======
+	free_wincondlst(&ps->o.shadow_blacklist);
+	free_wincondlst(&ps->o.fade_blacklist);
+	free_wincondlst(&ps->o.focus_blacklist);
+	free_wincondlst(&ps->o.invert_color_list);
+	free_wincondlst(&ps->o.blur_background_blacklist);
+	free_wincondlst(&ps->o.opacity_rules);
+	free_wincondlst(&ps->o.paint_blacklist);
+	free_wincondlst(&ps->o.unredir_if_possible_blacklist);
+	free_wincondlst(&ps->o.rounded_corners_blacklist);
+	free_wincondlst(&ps->o.round_borders_blacklist);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 	// Free tracked atom list
 	{

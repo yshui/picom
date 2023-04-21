@@ -61,9 +61,14 @@ static void dummy_check_image(struct backend_base *base, const struct dummy_imag
 	assert(*tmp->refcount > 0);
 }
 
+<<<<<<< HEAD
 void dummy_compose(struct backend_base *base, void *image, coord_t dst attr_unused,
                    void *mask attr_unused, coord_t mask_dst attr_unused,
                    const region_t *reg_paint attr_unused,
+=======
+void dummy_compose(struct backend_base *base, struct managed_win *w attr_unused, void *image, int dst_x attr_unused,
+                   int dst_y attr_unused, const region_t *reg_paint attr_unused,
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
                    const region_t *reg_visible attr_unused) {
 	auto dummy attr_unused = (struct dummy_data *)base;
 	dummy_check_image(base, image);
@@ -77,6 +82,12 @@ void dummy_fill(struct backend_base *backend_data attr_unused, struct color c at
 bool dummy_blur(struct backend_base *backend_data attr_unused, double opacity attr_unused,
                 void *blur_ctx attr_unused, void *mask attr_unused,
                 coord_t mask_dst attr_unused, const region_t *reg_blur attr_unused,
+                const region_t *reg_visible attr_unused) {
+	return true;
+}
+
+bool dummy_round(struct backend_base *backend_data attr_unused, struct managed_win *w attr_unused,
+                void *ctx_ attr_unused, void *image_data attr_unused, const region_t *reg_round attr_unused,
                 const region_t *reg_visible attr_unused) {
 	return true;
 }
@@ -161,11 +172,24 @@ void *dummy_create_blur_context(struct backend_base *base attr_unused,
 void dummy_destroy_blur_context(struct backend_base *base attr_unused, void *ctx attr_unused) {
 }
 
+void *dummy_create_round_context(struct backend_base *base attr_unused, void *args attr_unused) {
+	static int dummy_context;
+	return &dummy_context;
+}
+
+void dummy_destroy_round_context(struct backend_base *base attr_unused, void *ctx attr_unused) {
+}
+
 void dummy_get_blur_size(void *ctx attr_unused, int *width, int *height) {
 	// These numbers are arbitrary, to make sure the reisze_region code path is
 	// covered.
 	*width = 5;
 	*height = 5;
+}
+
+bool dummy_store_back_texture(backend_t *backend_data attr_unused, struct managed_win *w attr_unused,  void *ctx_ attr_unused,
+		const region_t *reg_tgt attr_unused, int x attr_unused, int y attr_unused, int width attr_unused, int height attr_unused) {
+	return true;
 }
 
 struct backend_operations dummy_ops = {
@@ -174,6 +198,7 @@ struct backend_operations dummy_ops = {
     .compose = dummy_compose,
     .fill = dummy_fill,
     .blur = dummy_blur,
+    .round = dummy_round,
     .bind_pixmap = dummy_bind_pixmap,
     .create_shadow_context = default_create_shadow_context,
     .destroy_shadow_context = default_destroy_shadow_context,
@@ -189,6 +214,9 @@ struct backend_operations dummy_ops = {
     .set_image_property = dummy_set_image_property,
     .create_blur_context = dummy_create_blur_context,
     .destroy_blur_context = dummy_destroy_blur_context,
+    .create_round_context = dummy_create_round_context,
+    .destroy_round_context = dummy_destroy_round_context,
     .get_blur_size = dummy_get_blur_size,
+    .store_back_texture = dummy_store_back_texture
 
 };

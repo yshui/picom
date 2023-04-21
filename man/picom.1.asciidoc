@@ -101,14 +101,27 @@ OPTIONS
 	Dim inactive windows. (0.0 - 1.0, defaults to 0.0)
 
 *--corner-radius* 'VALUE'::
+<<<<<<< HEAD
 	Sets the radius of rounded window corners. When > 0, the compositor will round the corners of windows. Does not interact well with *--transparent-clipping*. (defaults to 0).
 
 *--corner-radius-rules* 'RADIUS':'CONDITION'::
 	Specify a list of corner radius rules. Overrides the corner radii of matching windows. This option takes precedence over the *--rounded-corners-exclude* option, and also overrides the default exclusion of fullscreen windows. The condition has the same format as *--opacity-rule*.
+=======
+	Round the corners of windows. (defaults to 0).
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 *--rounded-corners-exclude* 'CONDITION'::
 	Exclude conditions for rounded corners.
 
+<<<<<<< HEAD
+=======
+*--round-borders* 'VALUE'::
+	When rounding corners, Round the borders of windows. (defaults to 1).
+
+*--round-borders-exclude* 'CONDITION'::
+	Exclude conditions for rounding borders.
+
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 *--mark-wmwin-focused*::
 	Try to detect WM windows (a non-override-redirect window with no child that has 'WM_STATE') and mark them as active.
 
@@ -137,6 +150,7 @@ OPTIONS
 	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it.
 
 *--unredir-if-possible*::
+<<<<<<< HEAD
 	Unredirect all windows in some cases. Known to cause flickering when redirecting/unredirecting windows. Currently, unredirecting is triggered by following conditions:
 	    * If the top level window is taking up the entire screen. In multi-monitor setup, this means ALL monitors.
 	    * If there is no window.
@@ -144,6 +158,9 @@ OPTIONS
 	    * If a window requests to bypass the compositor ('_NET_WM_BYPASS_COMPOSITOR').
 	Windows are also unredirected unconditionally when monitors are powered off, regardless if *--unredir-if-possible* is set.
 
+=======
+	Unredirect all windows if a full-screen opaque window is detected, to maximize performance for full-screen windows. Known to cause flickering when redirecting/unredirecting windows. *--paint-on-overlay* may make the flickering less obvious.
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 *--unredir-if-possible-delay* 'MILLISECONDS'::
 	Delay before unredirecting the window, in milliseconds. Defaults to 0.
@@ -172,7 +189,11 @@ OPTIONS
 *--detect-client-leader*::
 	Use 'WM_CLIENT_LEADER' to group windows, and consider windows in the same group focused at the same time. This usually means windows from the same application will be considered focused or unfocused at the same time.'WM_TRANSIENT_FOR' has higher priority if *--detect-transient* is enabled, too.
 
+<<<<<<< HEAD
 *--blur-method*, *--blur-size*, *--blur-deviation*, *--blur-strength*::
+=======
+*--blur-method*, *--blur-size*, *--blur-deviation, *--blur-strength*::
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	Parameters for background blurring, see the *BLUR* section for more information.
 
 *--blur-background*::
@@ -490,7 +511,11 @@ Available options of the 'blur' section are: ::
     A floating point number. The standard deviation for the 'gaussian' blur method. Corresponds to the *--blur-deviation* command line option (default: 0.84089642).
 
   *strength*:::
+<<<<<<< HEAD
     An integer in the range 0-20. The strength of the 'dual_kawase' blur method. Corresponds to the *--blur-strength* command line option. If set to zero, the value requested by *--blur-size* is approximated (default: 5).
+=======
+    An integer in the range 1-20. The strength of the 'dual_kawase' blur method. Corresponds to the *--blur-strength* command line option. If not specified, the value requested by *--blur-size* is approximated.
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
   *kernel*:::
     A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kern* option. Corresponds to the *--blur-kern* command line option.

@@ -45,6 +45,8 @@ struct _glx_data {
 	Display *display;
 	int screen;
 	xcb_window_t target_win;
+	int glx_event;
+	int glx_error;
 	GLXContext ctx;
 };
 
@@ -244,7 +246,7 @@ static backend_t *glx_init(session_t *ps) {
 	XVisualInfo *pvis = NULL;
 
 	// Check for GLX extension
-	if (!ps->glx_exists) {
+	if (!glXQueryExtension(ps->dpy, &gd->glx_event, &gd->glx_error)) {
 		log_error("No GLX extension.");
 		goto end;
 	}
@@ -468,6 +470,10 @@ static void glx_present(backend_t *base, const region_t *region attr_unused) {
 	struct _glx_data *gd = (void *)base;
 	gl_present(base, region);
 	glXSwapBuffers(gd->display, gd->target_win);
+<<<<<<< HEAD
+=======
+	// XXX there should be no need to block, the core should wait for render to finish
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	if (!gd->gl.is_nvidia) {
 		glFinish();
 	}
@@ -533,7 +539,12 @@ struct backend_operations glx_ops = {
     .set_image_property = gl_set_image_property,
     .clone_image = default_clone_image,
     .blur = gl_blur,
+<<<<<<< HEAD
     .is_image_transparent = default_is_image_transparent,
+=======
+	.round = gl_round,
+    .is_image_transparent = gl_is_image_transparent,
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
     .present = glx_present,
     .buffer_age = glx_buffer_age,
     .create_shadow_context = gl_create_shadow_context,
@@ -544,12 +555,18 @@ struct backend_operations glx_ops = {
     .fill = gl_fill,
     .create_blur_context = gl_create_blur_context,
     .destroy_blur_context = gl_destroy_blur_context,
+	.create_round_context = gl_create_round_context,
+    .destroy_round_context = gl_destroy_round_context,
     .get_blur_size = gl_get_blur_size,
+<<<<<<< HEAD
     .diagnostics = glx_diagnostics,
     .device_status = gl_device_status,
     .create_shader = gl_create_window_shader,
     .destroy_shader = gl_destroy_window_shader,
     .get_shader_attributes = gl_get_shader_attributes,
+=======
+	.store_back_texture = gl_store_back_texture,
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
     .max_buffer_age = 5,        // Why?
 };
 

@@ -297,8 +297,12 @@ struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual
 
 xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
 
+<<<<<<< HEAD
 xcb_render_pictformat_t
 x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
+=======
+xcb_render_pictformat_t x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen);
 

@@ -7,7 +7,6 @@ if get_option('with_docs')
 		                        'picom-version='+version,
 		                        '--format', 'manpage', '@INPUT@', '-D',
 		                        meson.current_build_dir()],
-		              install: true,
-		              install_dir: join_paths(get_option('mandir'), 'man1'))
+		              install: true, install_dir: 'share/man/man1/')
 	endforeach
 endif

@@ -31,10 +31,16 @@ typedef struct clip {
 	int y;
 } clip_t;
 
+<<<<<<< HEAD
 void render(session_t *ps, int x, int y, int dx, int dy, int w, int h, int fullw,
             int fullh, double opacity, bool argb, bool neg, int cr,
             xcb_render_picture_t pict, glx_texture_t *ptex, const region_t *reg_paint,
             const glx_prog_main_t *pprogram, clip_t *clip);
+=======
+void render(session_t *ps, struct managed_win *, int x, int y, int dx, int dy, int w, int h, int fullw, int fullh, double opacity,
+            bool argb, bool neg, int cr, xcb_render_picture_t pict, glx_texture_t *ptex,
+            const region_t *reg_paint, const glx_prog_main_t *pprogram, clip_t *clip);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint);
 
 void paint_all(session_t *ps, struct managed_win *const t, bool ignore_damage);

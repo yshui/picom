@@ -7,7 +7,11 @@ fi
 echo "Running test $2"
 
 # TODO keep the log file, and parse it to see if test is successful
+<<<<<<< HEAD
 ($1 --dbus --backend dummy --log-level=debug --log-file=$PWD/log --config=$2) &
+=======
+($1 --experimental-backends --backend dummy --log-level=debug --log-file=$PWD/log --config=$2) &
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 main_pid=$!
 $3
 

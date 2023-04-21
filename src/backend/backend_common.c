@@ -394,6 +394,7 @@ struct conv **generate_blur_kernel(enum blur_method method, void *args, int *ker
 }
 
 /// Generate kernel parameters for dual-kawase blur method. Falls back on approximating
+<<<<<<< HEAD
 /// standard gauss radius if strength is zero or below.
 struct dual_kawase_params *generate_dual_kawase_params(void *args) {
 	struct dual_kawase_blur_args *blur_args = args;
@@ -423,12 +424,42 @@ struct dual_kawase_params *generate_dual_kawase_params(void *args) {
 	    {.iterations = 5, .offset = 6.25f, .min_radius = 309},        // LVL 18
 	    {.iterations = 5, .offset = 7.25f, .min_radius = 357},        // LVL 19
 	    {.iterations = 5, .offset = 8.50f, .min_radius = 417},        // LVL 20
+=======
+/// standard gauss radius if strength is not supplied
+struct dual_kawase_params *generate_dual_kawase_params(void *args) {
+	struct dual_kawase_blur_args *blur_args = args;
+	static const struct {
+		int iterations;
+		float offset;
+	} strength_levels[20] = {
+	    {.iterations = 1, .offset = 1.25f},        // LVL  1 => radius   4
+	    {.iterations = 1, .offset = 2.25f},        // LVL  2 => radius   7
+	    {.iterations = 2, .offset = 2.00f},        // LVL  3 => radius  14
+	    {.iterations = 2, .offset = 3.00f},        // LVL  4 => radius  20
+	    {.iterations = 2, .offset = 4.25f},        // LVL  5 => radius  28
+	    {.iterations = 3, .offset = 2.50f},        // LVL  6 => radius  35
+	    {.iterations = 3, .offset = 3.25f},        // LVL  7 => radius  45
+	    {.iterations = 3, .offset = 4.25f},        // LVL  8 => radius  57
+	    {.iterations = 3, .offset = 5.50f},        // LVL  9 => radius  74
+	    {.iterations = 4, .offset = 3.25f},        // LVL 10 => radius  91
+	    {.iterations = 4, .offset = 4.00f},        // LVL 11 => radius 110
+	    {.iterations = 4, .offset = 5.00f},        // LVL 12 => radius 135
+	    {.iterations = 4, .offset = 6.00f},        // LVL 13 => radius 161
+	    {.iterations = 4, .offset = 7.25f},        // LVL 14 => radius 195
+	    {.iterations = 4, .offset = 8.25f},        // LVL 15 => radius 221
+	    {.iterations = 5, .offset = 4.50f},        // LVL 16 => radius 250
+	    {.iterations = 5, .offset = 5.25f},        // LVL 17 => radius 287
+	    {.iterations = 5, .offset = 6.25f},        // LVL 18 => radius 330
+	    {.iterations = 5, .offset = 7.25f},        // LVL 19 => radius 383
+	    {.iterations = 5, .offset = 8.50f},        // LVL 20 => radius >450
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	};
 
 	auto params = ccalloc(1, struct dual_kawase_params);
 	params->iterations = 0;
 	params->offset = 1.0f;
 
+<<<<<<< HEAD
 	if (blur_args->strength <= 0 && blur_args->size) {
 		// find highest level that approximates blur-strength with the selected
 		// gaussian blur-radius
@@ -452,10 +483,70 @@ struct dual_kawase_params *generate_dual_kawase_params(void *args) {
 	// - Upsample needs pixels two-times `offset` away from the border
 	// - Plus one for interpolation differences
 	params->expand = (1 << params->iterations) * 2 * (int)ceil(params->offset) + 1;
+=======
+	if (blur_args->strength.strength <= 0 && blur_args->size) {
+		// approximate blur_strength with gaussian blur_radius
+		if (blur_args->size < 6) {
+			blur_args->strength.strength = 1;
+		} else if (blur_args->size < 11) {
+			blur_args->strength.strength = 2;
+		} else if (blur_args->size < 17) {
+			blur_args->strength.strength = 3;
+		} else if (blur_args->size < 24) {
+			blur_args->strength.strength = 4;
+		} else if (blur_args->size < 32) {
+			blur_args->strength.strength = 5;
+		} else if (blur_args->size < 40) {
+			blur_args->strength.strength = 6;
+		} else if (blur_args->size < 51) {
+			blur_args->strength.strength = 7;
+		} else if (blur_args->size < 67) {
+			blur_args->strength.strength = 8;
+		} else if (blur_args->size < 83) {
+			blur_args->strength.strength = 9;
+		} else if (blur_args->size < 101) {
+			blur_args->strength.strength = 10;
+		} else if (blur_args->size < 123) {
+			blur_args->strength.strength = 11;
+		} else if (blur_args->size < 148) {
+			blur_args->strength.strength = 12;
+		} else if (blur_args->size < 177) {
+			blur_args->strength.strength = 13;
+		} else if (blur_args->size < 208) {
+			blur_args->strength.strength = 14;
+		} else if (blur_args->size < 236) {
+			blur_args->strength.strength = 15;
+		} else if (blur_args->size < 269) {
+			blur_args->strength.strength = 16;
+		} else if (blur_args->size < 309) {
+			blur_args->strength.strength = 17;
+		} else if (blur_args->size < 357) {
+			blur_args->strength.strength = 18;
+		} else if (blur_args->size < 417) {
+			blur_args->strength.strength = 19;
+		} else {
+			blur_args->strength.strength = 20;
+		}
+	}
+
+	if (blur_args->strength.strength > 0) {
+		assert(blur_args->strength.strength <= 20);
+		params->iterations = strength_levels[blur_args->strength.strength - 1].iterations;
+		params->offset = strength_levels[blur_args->strength.strength - 1].offset;
+	}
+
+	params->expand = 2 * (int)exp2f((float)params->iterations) *
+	                     (256 - (int)(256.0f - params->offset)) +
+	                 1;
+
+	log_info("blur-strength: %d [.iter = %d, .offset = %f]",
+		blur_args->strength.strength, params->iterations, params->offset);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 	return params;
 }
 
+<<<<<<< HEAD
 void *default_clone_image(backend_t *base attr_unused, const void *image_data,
                           const region_t *reg_visible attr_unused) {
 	auto new_img = ccalloc(1, struct backend_image);
@@ -505,10 +596,13 @@ struct backend_image *default_new_backend_image(int w, int h) {
 	return ret;
 }
 
+=======
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 void init_backend_base(struct backend_base *base, session_t *ps) {
 	base->c = ps->c;
 	base->loop = ps->loop;
 	base->root = ps->root;
 	base->busy = false;
 	base->ops = NULL;
+	base->ps = ps;
 }

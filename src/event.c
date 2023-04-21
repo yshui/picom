@@ -101,9 +101,6 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 	}
 }
 
-#define CASESTRRET(s)                                                                    \
-	case s: return #s;
-
 static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 	static char buf[128];
 	switch (ev->response_type & 0x7f) {
@@ -168,8 +165,6 @@ static inline const char *attr_pure ev_focus_detail_name(xcb_focus_in_event_t *e
 	return "Unknown";
 }
 
-#undef CASESTRRET
-
 static inline void ev_focus_in(session_t *ps, xcb_focus_in_event_t *ev) {
 	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
 	          ev_focus_detail_name(ev));
@@ -183,9 +178,8 @@ static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 }
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
-	if (ev->parent == ps->root) {
-		add_win_top(ps, ev->window);
-	}
+	assert(ev->parent == ps->root);
+	add_win_top(ps, ev->window);
 }
 
 /// Handle configure event of a regular window
@@ -203,7 +197,136 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 	auto mw = (struct managed_win *)w;
 
+<<<<<<< HEAD
 	restack_above(ps, w, ce->above_sibling);
+=======
+	float t = get_time_ms();
+	if (mw->oldX == -10000 && mw->oldY == -10000 && mw->oldW == 0 && mw->oldH == 0) {
+		if (!mw->isOld) {
+			/* mw->isOld = true; */
+
+			if (ps->o.spawn_center_screen) {
+				mw->oldX = ps->root_width / 2;
+				mw->oldY = ps->root_height / 2;
+				mw->oldW = 1;
+				mw->oldH = 1;
+			} else if (ps->o.spawn_center) {
+				mw->oldX = ce->x + ce->width / 2;
+				mw->oldY = ce->y + ce->height / 2;
+				mw->oldW = 1;
+				mw->oldH = 1;
+			} else {
+				mw->oldX = ce->x;
+				mw->oldY = ce->y;
+				mw->oldW = ce->width;
+				mw->oldH = ce->height;
+			}
+		} else {
+			mw->oldX = ce->x;
+			mw->oldY = ce->y;
+			mw->oldW = ce->width;
+			mw->oldH = ce->height;
+		}
+
+		mw->newX = ce->x;
+		mw->newY = ce->y;
+		mw->newW = ce->width;
+		mw->newH = ce->height;
+		mw->moveTimeX = t;
+		mw->moveTimeY = t;
+		mw->moveTimeW = t;
+		mw->moveTimeH = t;
+	} else {
+		if (mw->newX == mw->g.x && mw->newY == mw->g.y) {
+			mw->oldX = mw->g.x;
+			mw->oldY = mw->g.y;
+			mw->oldW = mw->g.width;
+			mw->oldH = mw->g.height;
+			mw->moveTimeX = t;
+			mw->moveTimeY = t;
+			mw->moveTimeW = t;
+			mw->moveTimeH = t;
+		}
+		if (mw->newX != ce->x || mw->newY != ce->y || mw->newW != ce->width ||
+		    mw->newH != ce->height) {
+			float moveDx = ((float)t - mw->moveTimeX) / ps->o.transition_length;
+			float moveDy = ((float)t - mw->moveTimeY) / ps->o.transition_length;
+			float moveDw = ((float)t - mw->moveTimeW) / ps->o.transition_length;
+			float moveDh = ((float)t - mw->moveTimeH) / ps->o.transition_length;
+
+			if (mw->moveTimeX != 0.0 && moveDx < 1.0 && mw->oldX != mw->newX) {
+				float oldMoveDx = pow(
+				    (float)(mw->newX - mw->g.x) / (float)(mw->newX - ce->x),
+				    1 / ps->o.transition_pow_x);
+				float fakeT =
+				    (t - oldMoveDx * (float)ps->o.transition_length);
+				/* printf("X: %f,%f\n", fakeT, t); */
+				mw->moveTimeX = isnanf(fakeT) ? t : fakeT;
+			} else {
+				mw->moveTimeX = t;
+			}
+			if (mw->moveTimeY != 0.0 && moveDy < 1.0 && mw->oldY != mw->newY) {
+				float oldMoveDy = pow(
+				    (float)(mw->newY - mw->g.y) / (float)(mw->newY - ce->y),
+				    1 / ps->o.transition_pow_y);
+				float fakeT =
+				    (t - oldMoveDy * (float)ps->o.transition_length);
+				/* printf("Y: %f,%f\n", fakeT, t); */
+				mw->moveTimeY = isnanf(fakeT) ? t : fakeT;
+			} else {
+				mw->moveTimeY = t;
+			}
+			if (mw->moveTimeW != 0.0 && moveDw < 1.0 && mw->oldW != mw->newW) {
+				float oldMoveDw = pow((float)(mw->newW - mw->g.width) /
+				                          (float)(mw->newW - ce->width),
+				                      1 / ps->o.transition_pow_w);
+				float fakeT =
+				    (t - oldMoveDw * (float)ps->o.transition_length);
+				/* printf("Y: %f,%f\n", fakeT, t); */
+				mw->moveTimeW = isnanf(fakeT) ? t : fakeT;
+			} else {
+				mw->moveTimeW = t;
+			}
+			if (mw->moveTimeH != 0.0 && moveDh < 1.0 && mw->oldH != mw->newH) {
+				float oldMoveDh = pow((float)(mw->newH - mw->g.height) /
+				                          (float)(mw->newH - ce->height),
+				                      1 / ps->o.transition_pow_h);
+				float fakeT =
+				    (t - oldMoveDh * (float)ps->o.transition_length);
+				/* printf("Y: %f,%f\n", fakeT, t); */
+				mw->moveTimeH = isnanf(fakeT) ? t : fakeT;
+			} else {
+				mw->moveTimeH = t;
+			}
+
+			mw->oldX = mw->newX;
+			mw->oldY = mw->newY;
+			mw->oldW = mw->newW;
+			mw->oldH = mw->newH;
+			mw->newX = ce->x;
+			mw->newY = ce->y;
+			mw->newW = ce->width;
+			mw->newH = ce->height;
+
+			if (ps->o.no_scale_down && mw->newW < mw->oldW) {
+				mw->oldW = mw->newW;
+			}
+			if (ps->o.no_scale_down && mw->newH < mw->oldH) {
+				mw->oldH = mw->newH;
+			}
+		}
+	}
+
+	if (mw->state == WSTATE_UNMAPPED || mw->state == WSTATE_UNMAPPING ||
+	    mw->state == WSTATE_DESTROYING) {
+		// Only restack the window to make sure we can handle future restack
+		// notification correctly
+		restack_above(ps, w, ce->above_sibling);
+	} else {
+		restack_above(ps, w, ce->above_sibling);
+		bool factor_change = false;
+		win_extents(mw, &damage);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 	// We check against pending_g here, because there might have been multiple
 	// configure notifies in this cycle, or the window could receive multiple updates
@@ -228,7 +351,12 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 			win_set_flags(mw, WIN_FLAGS_POSITION_STALE);
 		}
 
+<<<<<<< HEAD
 		if (size_changed) {
+=======
+		if (mw->g.width != ce->width || mw->g.height != ce->height ||
+		    mw->g.border_width != ce->border_width) {
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 			log_trace("Window size changed, %dx%d -> %dx%d", mw->g.width,
 			          mw->g.height, ce->width, ce->height);
 			mw->pending_g.width = ce->width;
@@ -250,7 +378,7 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 	log_debug("{ send_event: %d, id: %#010x, above: %#010x, override_redirect: %d }",
 	          ev->event, ev->window, ev->above_sibling, ev->override_redirect);
 	if (ev->window == ps->root) {
-		set_root_flags(ps, ROOT_FLAGS_CONFIGURED);
+		configure_root(ps, ev->width, ev->height);
 	} else {
 		configure_win(ps, ev);
 	}
@@ -258,23 +386,8 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
 	auto w = find_win(ps, ev->window);
-	auto mw = find_toplevel(ps, ev->window);
-	if (mw && mw->client_win == mw->base.id) {
-		// We only want _real_ frame window
-		assert(&mw->base == w);
-		mw = NULL;
-	}
-	assert(w == NULL || mw == NULL);
-
-	if (w != NULL) {
+	if (w) {
 		auto _ attr_unused = destroy_win_start(ps, w);
-	} else if (mw != NULL) {
-		win_unmark_client(ps, mw);
-		win_set_flags(mw, WIN_FLAGS_CLIENT_STALE);
-		ps->pending_updates = true;
-	} else {
-		log_debug("Received a destroy notify from an unknown window, %#010x",
-		          ev->window);
 	}
 }
 
@@ -298,7 +411,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 		return;
 	}
 
-	win_set_flags(w, WIN_FLAGS_MAPPED);
+	win_queue_update(w, WIN_UPDATE_MAP);
 
 	// FocusIn/Out may be ignored when the window is unmapped, so we must
 	// recheck focus here
@@ -313,14 +426,8 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 }
 
 static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
-	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d",
-	          ev->window, ev->parent, ev->override_redirect);
-	auto w_top = find_toplevel(ps, ev->window);
-	if (w_top) {
-		win_unmark_client(ps, w_top);
-		win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
-		ps->pending_updates = true;
-	}
+	log_debug("{ new_parent: %#010x, override_redirect: %d }", ev->parent,
+	          ev->override_redirect);
 
 	if (ev->parent == ps->root) {
 		// X will generate reparent notifiy even if the parent didn't actually
@@ -340,11 +447,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		{
 			auto w = find_win(ps, ev->window);
 			if (w) {
-				auto ret = destroy_win_start(ps, w);
-				if (!ret && w->managed) {
-					auto mw = (struct managed_win *)w;
-					CHECK(win_skip_fading(ps, mw));
-				}
+				auto _ attr_unused = destroy_win_start(ps, w);
 			}
 		}
 
@@ -353,35 +456,28 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		    ps->c, ev->window, XCB_CW_EVENT_MASK,
 		    (const uint32_t[]){determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN)});
 
-		if (!wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
-			log_debug("Window %#010x doesn't have WM_STATE property, it is "
-			          "probably not a client window. But we will listen for "
-			          "property change in case it gains one.",
-			          ev->window);
-			xcb_change_window_attributes(
-			    ps->c, ev->window, XCB_CW_EVENT_MASK,
-			    (const uint32_t[]){determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) |
-			                       XCB_EVENT_MASK_PROPERTY_CHANGE});
-		} else {
-			auto w_real_top = find_managed_window_or_parent(ps, ev->parent);
-			if (w_real_top && w_real_top->state != WSTATE_UNMAPPED &&
-			    w_real_top->state != WSTATE_UNMAPPING) {
-				log_debug("Mark window %#010x (%s) as having a stale "
-				          "client",
-				          w_real_top->base.id, w_real_top->name);
-				win_set_flags(w_real_top, WIN_FLAGS_CLIENT_STALE);
-				ps->pending_updates = true;
-			} else {
-				if (!w_real_top)
-					log_debug("parent %#010x not found", ev->parent);
+		// Check if the window is an undetected client window
+		// Firstly, check if it's a known client window
+		if (!find_toplevel(ps, ev->window)) {
+			// If not, look for its frame window
+			auto w_top = find_toplevel2(ps, ev->parent);
+			// If found, and the client window has not been determined, or its
+			// frame may not have a correct client, continue
+			if (w_top &&
+			    (!w_top->client_win || w_top->client_win == w_top->base.id)) {
+				// If it has WM_STATE, mark it the client window
+				if (wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
+					w_top->wmwin = false;
+					win_unmark_client(ps, w_top);
+					win_mark_client(ps, w_top, ev->window);
+				}
+				// Otherwise, watch for WM_STATE on it
 				else {
-					// Window is not currently mapped, unmark its
-					// client to trigger a client recheck when it is
-					// mapped later.
-					win_unmark_client(ps, w_real_top);
-					log_debug("parent %#010x (%s) is in state %d",
-					          w_real_top->base.id, w_real_top->name,
-					          w_real_top->state);
+					xcb_change_window_attributes(
+					    ps->c, ev->window, XCB_CW_EVENT_MASK,
+					    (const uint32_t[]){
+					        determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) |
+					        XCB_EVENT_MASK_PROPERTY_CHANGE});
 				}
 			}
 		}
@@ -476,11 +572,22 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			                             (const uint32_t[]){determine_evmask(
 			                                 ps, ev->window, WIN_EVMODE_UNKNOWN)});
 
+<<<<<<< HEAD
 			auto w_top = find_managed_window_or_parent(ps, ev->window);
 			// ev->window might have not been managed yet, in that case w_top
 			// would be NULL.
 			if (w_top) {
 				win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
+=======
+			auto w_top = find_toplevel2(ps, ev->window);
+			// Initialize client_win as early as possible
+			if (w_top &&
+			    (!w_top->client_win || w_top->client_win == w_top->base.id) &&
+			    wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
+				w_top->wmwin = false;
+				win_unmark_client(ps, w_top);
+				win_mark_client(ps, w_top, ev->window);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 			}
 		}
 		return;
@@ -504,7 +611,21 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_OPACITY) {
 		auto w = find_managed_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
 		if (w) {
+<<<<<<< HEAD
 			win_set_property_stale(w, ev->atom);
+=======
+			win_update_opacity_prop(ps, w);
+			// we cannot receive OPACITY change when window is destroyed
+			assert(w->state != WSTATE_DESTROYING);
+			w->opacity_target = win_calc_opacity_target(ps, w, false);
+			if (w->state == WSTATE_MAPPED) {
+				// See the winstate_t transition table
+				w->state = WSTATE_FADING;
+			}
+			if (!ps->redirected) {
+				CHECK(!win_skip_fading(ps, w));
+			}
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 		}
 	}
 
@@ -643,12 +764,27 @@ static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) 
 	 * seemingly BadRegion errors would be triggered
 	 * if we attempt to rebuild border_size
 	 */
+<<<<<<< HEAD
 	// Mark the old bounding shape as damaged
 	if (!win_check_flags_any(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
 		region_t tmp = win_get_bounding_shape_global_by_val(w);
 		add_damage(ps, &tmp);
 		pixman_region32_fini(&tmp);
 	}
+=======
+	// Mark the old border_size as damaged
+	region_t tmp = win_get_bounding_shape_global_by_val(w, true);
+	add_damage(ps, &tmp);
+	pixman_region32_fini(&tmp);
+
+	win_update_bounding_shape(ps, w);
+
+	// Mark the new border_size as damaged
+	tmp = win_get_bounding_shape_global_by_val(w, true);
+	add_damage(ps, &tmp);
+	pixman_region32_fini(&tmp);
+
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	w->reg_ignore_valid = false;
 
 	win_set_flags(w, WIN_FLAGS_SIZE_STALE);

@@ -42,13 +42,13 @@ typedef struct _glx_texture glx_texture_t;
 //       it is very unideal for it to be here
 typedef struct {
 	/// Framebuffer used for blurring.
-	GLuint fbo;
+	GLuint fbos[MAX_BLUR_PASS];
 	/// Textures used for blurring.
-	GLuint textures[2];
+	GLuint textures[MAX_BLUR_PASS];
 	/// Width of the textures.
-	int width;
+	int width[MAX_BLUR_PASS];
 	/// Height of the textures.
-	int height;
+	int height[MAX_BLUR_PASS];
 } glx_blur_cache_t;
 #endif
 
@@ -148,7 +148,7 @@ struct managed_win {
 	/// See above about coordinate systems.
 	region_t bounding_shape;
 	/// Window flags. Definitions above.
-	uint64_t flags;
+	int_fast16_t flags;
 	/// The region of screen that will be obscured when windows above is painted,
 	/// in global coordinates.
 	/// We use this to reduce the pixels that needed to be paint when painting
@@ -209,8 +209,6 @@ struct managed_win {
 	double opacity;
 	/// Target window opacity.
 	double opacity_target;
-	/// Previous window opacity.
-	double opacity_target_old;
 	/// true if window (or client window, for broken window managers
 	/// not transferring client window's _NET_WM_WINDOW_OPACITY value) has opacity
 	/// prop
@@ -222,8 +220,14 @@ struct managed_win {
 	/// Last window opacity value set by the rules.
 	double opacity_set;
 
+<<<<<<< HEAD
 	/// Radius of rounded window corners
 	int corner_radius;
+=======
+	/// Corner radius
+	int corner_radius;
+	bool round_borders;
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	float border_col[4];
 
 	// Fading-related members
@@ -277,22 +281,45 @@ struct managed_win {
 	/// Whether to blur window background.
 	bool blur_background;
 
+<<<<<<< HEAD
 	/// The custom window shader to use when rendering.
 	struct shader_info *fg_shader;
+=======
+	/// Animation state
+        int oldX; int oldY; int oldW; int oldH;
+        int newX; int newY; int newW; int newH;
+        float moveTimeX; float moveTimeY;
+        float moveTimeW; float moveTimeH;
+        bool isOld;
+
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 #ifdef CONFIG_OPENGL
 	/// Textures and FBO background blur use.
 	glx_blur_cache_t glx_blur_cache;
+<<<<<<< HEAD
+=======
+	glx_blur_cache_t glx_round_cache;
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	/// Background texture of the window
 	glx_texture_t *glx_texture_bg;
 #endif
 };
 
+<<<<<<< HEAD
 /// Process pending updates/images flags on a window. Has to be called in X critical
 /// section
 void win_process_update_flags(session_t *ps, struct managed_win *w);
 void win_process_image_flags(session_t *ps, struct managed_win *w);
 bool win_bind_mask(struct backend_base *b, struct managed_win *w);
+=======
+/// Process pending updates on a window. Has to be called in X critical section
+void win_process_updates(struct session *ps, struct managed_win *_w);
+/// Process pending images flags on a window. Has to be called in X critical section
+void win_process_flags(session_t *ps, struct managed_win *w);
+/// Queue an update on a window. A series of sanity checks are performed
+void win_queue_update(struct managed_win *_w, enum win_update update);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 /// Bind a shadow to the window, with color `c` and shadow kernel `kernel`
 bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color c,
                      struct backend_shadow_context *kernel);
@@ -312,7 +339,13 @@ bool must_use destroy_win_start(session_t *ps, struct win *w);
 /// Release images bound with a window, set the *_NONE flags on the window. Only to be
 /// used when de-initializing the backend outside of win.c
 void win_release_images(struct backend_base *base, struct managed_win *w);
+<<<<<<< HEAD
 winmode_t attr_pure win_calc_mode(const struct managed_win *w);
+=======
+int win_update_name(session_t *ps, struct managed_win *w);
+int win_get_role(session_t *ps, struct managed_win *w);
+winmode_t attr_pure win_calc_mode(session_t *ps, const struct managed_win *w);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 void win_set_shadow_force(session_t *ps, struct managed_win *w, switch_t val);
 void win_set_fade_force(struct managed_win *w, switch_t val);
 void win_set_focused_force(session_t *ps, struct managed_win *w, switch_t val);
@@ -322,13 +355,22 @@ void win_set_invert_color_force(session_t *ps, struct managed_win *w, switch_t v
  */
 void win_set_focused(session_t *ps, struct managed_win *w);
 bool attr_pure win_should_fade(session_t *ps, const struct managed_win *w);
+<<<<<<< HEAD
+=======
+void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w);
+void win_update_prop_shadow(session_t *ps, struct managed_win *w);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 void win_on_factor_change(session_t *ps, struct managed_win *w);
 /**
  * Update cache data in struct _win that depends on window size.
  */
 void win_on_win_size_change(session_t *ps, struct managed_win *w);
 void win_unmark_client(session_t *ps, struct managed_win *w);
+<<<<<<< HEAD
 void win_recheck_client(session_t *ps, struct managed_win *w);
+=======
+bool win_get_class(session_t *ps, struct managed_win *w);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 /**
  * Calculate and return the opacity target of a window.
@@ -340,10 +382,12 @@ void win_recheck_client(session_t *ps, struct managed_win *w);
  *
  * @param ps           current session
  * @param w            struct _win object representing the window
+ * @param ignore_state whether window state should be ignored in opacity calculation
  *
  * @return target opacity
  */
-double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w);
+double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w,
+                                         bool ignore_state);
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 
 // TODO(absolutelynothelix): rename to x_update_win_(randr_?)monitor and move to
@@ -380,13 +424,25 @@ void add_damage_from_win(session_t *ps, const struct managed_win *w);
  *
  * Return region in global coordinates.
  */
+<<<<<<< HEAD
 void win_get_region_noframe_local(const struct managed_win *w, region_t *);
 void win_get_region_noframe_local_without_corners(const struct managed_win *w, region_t *);
+=======
+void win_get_region_noframe_local(const struct managed_win *w, region_t *, bool include_corners);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 /// Get the region for the frame of the window
-void win_get_region_frame_local(const struct managed_win *w, region_t *res);
+void win_get_region_frame_local(const struct managed_win *w, region_t *res, bool include_corners);
 /// Get the region for the frame of the window, by value
+<<<<<<< HEAD
 region_t win_get_region_frame_local_by_val(const struct managed_win *w);
+=======
+region_t win_get_region_frame_local_by_val(const struct managed_win *w, bool include_corners);
+/**
+ * Retrieve frame extents from a window.
+ */
+void win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t client);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 /// Insert a new window above window with id `below`, if there is no window, add to top
 /// New window will be in unmapped state
 struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below);
@@ -422,13 +478,13 @@ struct managed_win *find_managed_win(session_t *ps, xcb_window_t id);
 struct win *find_win(session_t *ps, xcb_window_t id);
 struct managed_win *find_toplevel(session_t *ps, xcb_window_t id);
 /**
- * Find a managed window that is, or is a parent of `wid`.
+ * Find out the WM frame of a client window by querying X.
  *
  * @param ps current session
  * @param wid window ID
  * @return struct _win object of the found window, NULL if not found
  */
-struct managed_win *find_managed_window_or_parent(session_t *ps, xcb_window_t wid);
+struct managed_win *find_toplevel2(session_t *ps, xcb_window_t wid);
 
 /**
  * Check if a window is a fullscreen window.
@@ -454,6 +510,7 @@ bool win_is_mapped_in_x(const struct managed_win *w);
 // Find the managed window immediately below `w` in the window stack
 struct managed_win *attr_pure win_stack_find_next_managed(const session_t *ps,
                                                           const struct list_node *w);
+<<<<<<< HEAD
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags);
 /// Clear flags on a window. Some sanity checks are performed
@@ -468,6 +525,8 @@ void win_set_properties_stale(struct managed_win *w, const xcb_atom_t *prop, int
 static inline attr_unused void win_set_property_stale(struct managed_win *w, xcb_atom_t prop) {
 	return win_set_properties_stale(w, (xcb_atom_t[]){prop}, 1);
 }
+=======
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 /// Free all resources in a struct win
 void free_win_res(session_t *ps, struct managed_win *w);
@@ -475,6 +534,7 @@ void free_win_res(session_t *ps, struct managed_win *w);
 static inline void win_region_remove_corners(const struct managed_win *w, region_t *res) {
 	region_t corners;
 	pixman_region32_init_rects(
+<<<<<<< HEAD
 	    &corners,
 	    (rect_t[]){
 	        {.x1 = 0, .y1 = 0, .x2 = w->corner_radius, .y2 = w->corner_radius},
@@ -491,9 +551,24 @@ static inline void win_region_remove_corners(const struct managed_win *w, region
 }
 
 static inline region_t attr_unused win_get_bounding_shape_global_by_val(struct managed_win *w) {
+=======
+		&corners,
+		(rect_t[]){
+			{.x1 = 0, .y1 = 0, .x2 = w->corner_radius, .y2 = w->corner_radius},
+			{.x1 = 0, .y1 = w->heightb-w->corner_radius, .x2 = w->corner_radius, .y2 = w->heightb},
+			{.x1 = w->widthb-w->corner_radius, .y1 = 0, .x2 = w->widthb, .y2 = w->corner_radius},
+			{.x1 = w->widthb-w->corner_radius, .y1 = w->heightb-w->corner_radius, .x2 = w->widthb, .y2 = w->heightb},
+		},
+		4);
+	pixman_region32_subtract(res, res, &corners);
+}
+
+static inline region_t win_get_bounding_shape_global_by_val(struct managed_win *w, bool include_corners) {
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	region_t ret;
 	pixman_region32_init(&ret);
 	pixman_region32_copy(&ret, &w->bounding_shape);
+	if(!include_corners) win_region_remove_corners(w, &ret);
 	pixman_region32_translate(&ret, w->g.x, w->g.y);
 	return ret;
 }

@@ -75,6 +75,9 @@
 /// @brief Maximum OpenGL buffer age.
 #define CGLX_MAX_BUFFER_AGE 5
 
+/// @brief Maximum passes for blur.
+#define MAX_BLUR_PASS 6
+
 // Window flags
 
 // === Types ===
@@ -173,6 +176,8 @@ typedef struct session {
 	backend_t *backend_data;
 	/// backend blur context
 	void *backend_blur_context;
+	/// round corners context
+	void *backend_round_context;
 	/// graphic drivers used
 	enum driver drivers;
 	/// file watch handle
@@ -232,7 +237,6 @@ typedef struct session {
 	/// Custom GLX program used for painting window.
 	// XXX should be in struct glx_session
 	glx_prog_main_t glx_prog_win;
-	struct glx_fbconfig_info *argb_fbconfig;
 #endif
 	/// Sync fence to sync draw operations
 	xcb_sync_fence_t sync_fence;
@@ -275,9 +279,15 @@ typedef struct session {
 	struct x_convolution_kernel **blur_kerns_cache;
 	/// If we should quit
 	bool quit : 1;
+<<<<<<< HEAD
 	// TODO(yshui) use separate flags for dfferent kinds of updates so we don't
 	// waste our time.
 	/// Whether there are pending updates, like window creation, etc.
+=======
+	/// Whether there are pending updates, like window creation, etc.
+	/// TODO use separate flags for dfferent kinds of updates so we don't
+	/// waste our time.
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	bool pending_updates : 1;
 
 	// === Expose event related ===
@@ -362,16 +372,27 @@ typedef struct session {
 	int randr_error;
 	/// Whether X Present extension exists.
 	bool present_exists;
+#ifdef CONFIG_OPENGL
 	/// Whether X GLX extension exists.
 	bool glx_exists;
 	/// Event base number for X GLX extension.
 	int glx_event;
 	/// Error base number for X GLX extension.
 	int glx_error;
+<<<<<<< HEAD
 	/// Number of X RandR monitors.
 	int randr_nmonitors;
 	/// X RandR monitor regions.
 	region_t *randr_monitor_regs;
+=======
+#endif
+	/// Whether X Xinerama extension exists.
+	bool xinerama_exists;
+	/// Xinerama screen regions.
+	region_t *xinerama_scr_regs;
+	/// Number of Xinerama screens.
+	int xinerama_nscrs;
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 	/// Whether X Sync extension exists.
 	bool xsync_exists;
 	/// Event base number for X Sync extension.
@@ -555,3 +576,8 @@ static inline void wintype_arr_enable(bool arr[]) {
 		arr[i] = true;
 	}
 }
+
+/**
+ * Get current system clock in milliseconds.
+ */
+int64_t get_time_ms(void);

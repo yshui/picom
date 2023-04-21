@@ -30,6 +30,9 @@ typedef struct backend_base {
 	/// Whether the backend can accept new render request at the moment
 	bool busy;
 	// ...
+
+	// Session data
+	session_t *ps;
 } backend_t;
 
 typedef struct geometry {
@@ -102,6 +105,11 @@ struct gaussian_blur_args {
 	double deviation;
 };
 
+struct dual_kawase_blur_args {
+	int size;
+	blur_strength_t strength;
+};
+
 struct box_blur_args {
 	int size;
 };
@@ -111,9 +119,15 @@ struct kernel_blur_args {
 	int kernel_count;
 };
 
+<<<<<<< HEAD
 struct dual_kawase_blur_args {
 	int size;
 	int strength;
+=======
+struct round_corners_args {
+	int corner_radius;
+	bool round_borders;
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 };
 
 struct backend_operations {
@@ -179,9 +193,14 @@ struct backend_operations {
 	 * @param reg_paint    the clip region, in target coordinates
 	 * @param reg_visible  the visible region, in target coordinates
 	 */
+<<<<<<< HEAD
 	void (*compose)(backend_t *backend_data, void *image_data, coord_t image_dst,
 	                void *mask, coord_t mask_dst, const region_t *reg_paint,
 	                const region_t *reg_visible);
+=======
+	void (*compose)(backend_t *backend_data, struct managed_win *const w, void *image_data, int dst_x, int dst_y,
+	                const region_t *reg_paint, const region_t *reg_visible);
+>>>>>>> e3c19cd7d1108d114552267f302548c113278d45
 
 	/// Fill rectangle of the rendering buffer, mostly for debug purposes, optional.
 	void (*fill)(backend_t *backend_data, struct color, const region_t *clip);
@@ -193,6 +212,11 @@ struct backend_operations {
 	bool (*blur)(backend_t *backend_data, double opacity, void *blur_ctx, void *mask,
 	             coord_t mask_dst, const region_t *reg_blur,
 	             const region_t *reg_visible) attr_nonnull(1, 3, 6, 7);
+
+	/// Round a given region of the rendering buffer.
+	bool (*round)(backend_t *backend_data, struct managed_win *w, void *round_ctx,
+	             void *image_data, const region_t *reg_round, const region_t *reg_visible)
+	    attr_nonnull(1, 2, 3, 5, 6);
 
 	/// Update part of the back buffer with the rendering buffer, then present the
 	/// back buffer onto the target window (if not back buffered, update part of the
@@ -344,6 +368,15 @@ struct backend_operations {
 	void (*destroy_blur_context)(backend_t *base, void *ctx);
 	/// Get how many pixels outside of the blur area is needed for blur
 	void (*get_blur_size)(void *blur_context, int *width, int *height);
+
+	/// Backup our current window background so we can use it for "erasing" corners
+	bool (*store_back_texture)(backend_t *base, struct managed_win *w, void *ctx_,
+						const region_t *reg_tgt, int x, int y, int width, int height);
+
+	/// Create a rounded corners context
+	void *(*create_round_context)(backend_t *base, void *args);
+	/// Destroy a rounded corners context
+	void (*destroy_round_context)(backend_t *base, void *ctx);
 
 	// ===========         Hooks        ============
 	/// Let the backend hook into the event handling queue
