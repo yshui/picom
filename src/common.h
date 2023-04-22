@@ -206,9 +206,6 @@ typedef struct session {
 	/// Width of root window.
 	int root_width;
 	// Damage of root window.
-	// Damage root_damage;
-    int selmon_center_x;
-    int selmon_center_y;
 	/// X Composite overlay window.
 	xcb_window_t overlay;
 	/// The target window for debug mode
@@ -294,6 +291,9 @@ typedef struct session {
 	int size_expose;
 	/// Index of the next free slot in <code>expose_rects</code>.
 	int n_expose;
+	/// Current desktop of display
+	uint32_t prev_desktop;
+	uint32_t cur_desktop;
 
 	// === Window related ===
 	/// A hash table of all windows.

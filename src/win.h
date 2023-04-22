@@ -125,6 +125,7 @@ struct managed_win {
 	struct managed_win *prev_trans;
 	/// Number of windows above this window
 	int stacking_rank;
+	uint32_t cur_desktop;
 	// TODO(yshui) rethink reg_ignore
 
 	// Core members
@@ -565,3 +566,5 @@ static inline bool attr_pure attr_unused win_has_frame(const struct managed_win 
 	return w->g.border_width || w->frame_extents.top || w->frame_extents.left ||
 	       w->frame_extents.right || w->frame_extents.bottom;
 }
+
+void win_update_prop_desktop(session_t *ps, struct managed_win *w);

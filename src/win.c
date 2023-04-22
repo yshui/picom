@@ -445,6 +445,10 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 		}
 	}
 
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_DESKTOP)) {
+		win_update_prop_desktop(ps, w);
+	}
+
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLASS)) {
 		if (win_update_class(ps, w)) {
 			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
@@ -686,10 +690,18 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
         // Determine if a window should animate
 		if (win_should_animate(ps, w)) {
 			win_update_bounding_shape(ps, w);
-			if (w->pending_g.y < 0 && w->g.y > 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
-				w->dwm_mask = ANIM_PREV_TAG;
-			else if (w->pending_g.y > 0 && w->g.y < 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
-				w->dwm_mask = ANIM_NEXT_TAG;
+			// if (w->pending_g.y < 0 && w->g.y > 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
+			// 	w->dwm_mask = ANIM_PREV_TAG;
+			// else if (w->pending_g.y > 0 && w->g.y < 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
+			// 	w->dwm_mask = ANIM_NEXT_TAG;
+			if (!w->a.override_redirect && ps->cur_desktop != ps->prev_desktop) {
+				if (w->cur_desktop == ps->cur_desktop) {
+					w->dwm_mask = ANIM_NEXT_TAG;
+				} else {
+					w->dwm_mask = ANIM_PREV_TAG;
+				}
+			}
+
 
 			if (!was_visible || w->dwm_mask) {
 
@@ -707,7 +719,6 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 					w->g.width = (uint16_t)round(w->animation_w);
 					w->g.height = (uint16_t)round(w->animation_h);
 				}
-
 			} else {
 				w->animation_is_tag = ANIM_IN_TAG;
 				w->animation_dest_center_x =
@@ -718,37 +729,37 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 				w->animation_dest_h = w->pending_g.height;
 			}
 
-			CLEAR_MASK(w->dwm_mask)
-			w->g.border_width = w->pending_g.border_width;
-			double x_dist = w->animation_dest_center_x - w->animation_center_x;
-			double y_dist = w->animation_dest_center_y - w->animation_center_y;
-			double w_dist = w->animation_dest_w - w->animation_w;
-			double h_dist = w->animation_dest_h - w->animation_h;
-			w->animation_inv_og_distance =
-				1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
-							w_dist * w_dist + h_dist * h_dist);
+				CLEAR_MASK(w->dwm_mask)
+				w->g.border_width = w->pending_g.border_width;
+				double x_dist = w->animation_dest_center_x - w->animation_center_x;
+				double y_dist = w->animation_dest_center_y - w->animation_center_y;
+				double w_dist = w->animation_dest_w - w->animation_w;
+				double h_dist = w->animation_dest_h - w->animation_h;
+				w->animation_inv_og_distance =
+					1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
+								w_dist * w_dist + h_dist * h_dist);
 
-			if (isinf(w->animation_inv_og_distance))
-				w->animation_inv_og_distance = 0;
+				if (isinf(w->animation_inv_og_distance))
+					w->animation_inv_og_distance = 0;
 
-			// We only grab images if w->reg_ignore_valid is true as
-			// there's an ev_shape_notify() event fired quickly on new windows
-			// for e.g. in case of Firefox main menu and ev_shape_notify()
-			// sets the win_set_flags(w, WIN_FLAGS_SIZE_STALE); which
-			// brakes the new image captured and because this same event
-			// also sets w->reg_ignore_valid = false; too we check for it
-			if (w->reg_ignore_valid) {
-				if (w->old_win_image) {
-					ps->backend_data->ops->release_image(ps->backend_data,
-														w->old_win_image);
-					w->old_win_image = NULL;
-				}
+				// We only grab images if w->reg_ignore_valid is true as
+				// there's an ev_shape_notify() event fired quickly on new windows
+				// for e.g. in case of Firefox main menu and ev_shape_notify()
+				// sets the win_set_flags(w, WIN_FLAGS_SIZE_STALE); which
+				// brakes the new image captured and because this same event
+				// also sets w->reg_ignore_valid = false; too we check for it
+				if (w->reg_ignore_valid) {
+					if (w->old_win_image) {
+						ps->backend_data->ops->release_image(ps->backend_data,
+										     w->old_win_image);
+						w->old_win_image = NULL;
+					}
 
-				// We only grab
-				if (w->win_image) {
-					w->old_win_image = ps->backend_data->ops->clone_image(
-						ps->backend_data, w->win_image, &w->bounding_shape);
-				}
+					// We only grab
+					if (w->win_image) {
+						w->old_win_image = ps->backend_data->ops->clone_image(
+							ps->backend_data, w->win_image, &w->bounding_shape);
+					}
 			}
 
 		w->animation_progress = 0.0;
@@ -1167,6 +1178,17 @@ void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w) {
 		w->prop_shadow = *prop.c32;
 	}
 
+	free_winprop(&prop);
+}
+
+void win_update_prop_desktop(session_t *ps, struct managed_win *w) {
+	winprop_t prop = x_get_prop(ps->c, w->base.id, ps->atoms->a_NET_WM_DESKTOP, 1,
+				    XCB_ATOM_CARDINAL, 32);
+	if (!prop.nitems) {
+		w->cur_desktop = w->cur_desktop;
+	} else {
+		w->cur_desktop = *prop.c32;
+	}
 	free_winprop(&prop);
 }
 
@@ -1994,6 +2016,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    ps->atoms->a_NET_WM_NAME,        ps->atoms->aWM_CLASS,
 	    ps->atoms->aWM_WINDOW_ROLE,      ps->atoms->a_COMPTON_SHADOW,
 	    ps->atoms->aWM_CLIENT_LEADER,    ps->atoms->aWM_TRANSIENT_FOR,
+	    ps->atoms->a_NET_WM_DESKTOP
 	};
 	win_set_properties_stale(new, init_stale_props, ARR_SIZE(init_stale_props));
 
@@ -2686,29 +2709,31 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 	w->opacity_target_old = fmax(w->opacity_target, w->opacity_target_old);
 	w->opacity_target = win_calc_opacity_target(ps, w);
 
-    if (ps->o.animations && ps->o.animation_for_unmap_window != OPEN_WINDOW_ANIMATION_NONE && ps->o.wintype_option[w->window_type].animation) {
-        w->dwm_mask = ANIM_UNMAP;
-        init_animation(ps, w);
+	if (ps->o.animations &&
+		ps->o.animation_for_unmap_window != OPEN_WINDOW_ANIMATION_NONE &&
+		ps->o.wintype_option[w->window_type].animation) {
+			w->dwm_mask = ANIM_UNMAP;
+			init_animation(ps, w);
 
-		double x_dist = w->animation_dest_center_x - w->animation_center_x;
-		double y_dist = w->animation_dest_center_y - w->animation_center_y;
-		double w_dist = w->animation_dest_w - w->animation_w;
-		double h_dist = w->animation_dest_h - w->animation_h;
-		w->animation_inv_og_distance =
-			1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
-						w_dist * w_dist + h_dist * h_dist);
+			double x_dist = w->animation_dest_center_x - w->animation_center_x;
+			double y_dist = w->animation_dest_center_y - w->animation_center_y;
+			double w_dist = w->animation_dest_w - w->animation_w;
+			double h_dist = w->animation_dest_h - w->animation_h;
+			w->animation_inv_og_distance =
+				1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
+							w_dist * w_dist + h_dist * h_dist);
 
-		if (isinf(w->animation_inv_og_distance))
-			w->animation_inv_og_distance = 0;
+			if (isinf(w->animation_inv_og_distance))
+				w->animation_inv_og_distance = 0;
 
-		w->animation_progress = 0.0;
+			w->animation_progress = 0.0;
 
-		if (w->old_win_image) {
-			ps->backend_data->ops->release_image(ps->backend_data,
-												w->old_win_image);
-			w->old_win_image = NULL;
-		}
-    }
+			if (w->old_win_image) {
+				ps->backend_data->ops->release_image(ps->backend_data,
+								     w->old_win_image);
+				w->old_win_image = NULL;
+			}
+	}
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
@@ -2771,7 +2796,7 @@ void win_update_monitor(int nmons, region_t *mons, struct managed_win *mw) {
 		auto e = pixman_region32_extents(&mons[i]);
 		// if (e->x1 <= mw->g.x && e->y1 <= mw->g.y &&
 		//     e->x2 >= mw->g.x + mw->widthb && e->y2 >= mw->g.y + mw->heightb) {
-		if (e->x1 <= mw->g.x && e->x2 >= mw->g.x + mw->widthb) {
+		if (e->x1 <= mw->pending_g.x && e->x2 >= mw->pending_g.x + mw->widthb) {
 			mw->randr_monitor = i;
 			log_debug("Window %#010x (%s), %dx%d+%dx%d, is entirely on the "
 			          "monitor %d (%dx%d+%dx%d)",

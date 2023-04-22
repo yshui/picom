@@ -453,6 +453,18 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 
 	if (ps->root == ev->window) {
 
+		if (ev->atom == ps->atoms->a_NET_CURRENT_DESKTOP) {
+			auto prop = x_get_prop(ps->c, ps->root, ps->atoms->a_NET_CURRENT_DESKTOP,
+							1L, XCB_ATOM_CARDINAL, 32);
+
+			if (prop.nitems) {
+				ps->prev_desktop = ps->cur_desktop;
+				ps->cur_desktop = *prop.c32;
+				if (!ps->prev_desktop)
+					ps->prev_desktop = ps->cur_desktop;
+			}
+		}
+
 		if (ps->o.use_ewmh_active_win && ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
 			// to update focus
 			ps->pending_updates = true;
