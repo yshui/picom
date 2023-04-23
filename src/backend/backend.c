@@ -87,13 +87,13 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		return handle_device_reset(ps);
 	}
 	if (ps->o.xrender_sync_fence) {
-		if (ps->xsync_exists && !x_fence_sync(ps->c, ps->sync_fence)) {
+		if (ps->has_sync && !x_fence_sync(ps->c, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
 			          "disabled from now on.");
 			xcb_sync_destroy_fence(ps->c, ps->sync_fence);
 			ps->sync_fence = XCB_NONE;
 			ps->o.xrender_sync_fence = false;
-			ps->xsync_exists = false;
+			ps->has_sync = false;
 		}
 	}
 	// All painting will be limited to the damage, if _some_ of

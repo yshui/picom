@@ -14,10 +14,12 @@
 #include <X11/Xutil.h>
 #include <X11/extensions/sync.h>
 #include <errno.h>
+#include <ev.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
+#include <test.h>
 #include <unistd.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
@@ -28,9 +30,6 @@
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xfixes.h>
-
-#include <ev.h>
-#include <test.h>
 
 #include "common.h"
 #include "compiler.h"
@@ -1677,6 +1676,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 #ifdef CONFIG_OPENGL
 	    .glx_prog_win = GLX_PROG_MAIN_INIT,
 #endif
+	    .sync_fence = XCB_NONE,
 	    .redirected = false,
 	    .alpha_picts = NULL,
 	    .fade_time = 0L,
@@ -1701,25 +1701,23 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .drm_fd = -1,
 #endif
 
-	    .xfixes_event = 0,
-	    .xfixes_error = 0,
 	    .damage_event = 0,
 	    .damage_error = 0,
-	    .render_event = 0,
-	    .render_error = 0,
-	    .composite_event = 0,
-	    .composite_error = 0,
-	    .composite_opcode = 0,
-	    .shape_exists = false,
-	    .shape_event = 0,
-	    .shape_error = 0,
-	    .randr_exists = 0,
-	    .randr_event = 0,
-	    .randr_error = 0,
-	    .glx_exists = false,
-	    .glx_event = 0,
+	    .has_glx = false,
 	    .glx_error = 0,
-	    .xrfilter_convolution_exists = false,
+	    .has_present = false,
+	    .has_randr = false,
+	    .randr_event = 0,
+	    .randr_nmonitors = 0,
+	    .randr_monitor_regs = NULL,
+	    .render_error = 0,
+	    .has_shape = false,
+	    .shape_event = 0,
+	    .has_sync = false,
+	    .sync_event = 0,
+	    .sync_error = 0,
+	    .fixes_error = 0,
+	    .has_convolution_xrfilter = false,
 
 	    .atoms_wintypes = {0},
 	    .track_atom_lst = NULL,
@@ -1751,8 +1749,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->dpy = dpy;
 	ps->c = XGetXCBConnection(ps->dpy);
 
-	const xcb_query_extension_reply_t *ext_info;
-
 	ps->previous_xerror_handler = XSetErrorHandler(xerror);
 
 	ps->scr = DefaultScreen(ps->dpy);
@@ -1775,99 +1771,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (e) {
 		log_error_x_error(e, "Failed to setup root window event mask");
 		free(e);
-	}
-
-	xcb_prefetch_extension_data(ps->c, &xcb_render_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_composite_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_damage_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_shape_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_xfixes_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_randr_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_present_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_sync_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_glx_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_dpms_id);
-
-	ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
-	if (!ext_info || !ext_info->present) {
-		log_fatal("No render extension");
-		exit(1);
-	}
-	ps->render_event = ext_info->first_event;
-	ps->render_error = ext_info->first_error;
-
-	ext_info = xcb_get_extension_data(ps->c, &xcb_composite_id);
-	if (!ext_info || !ext_info->present) {
-		log_fatal("No composite extension");
-		exit(1);
-	}
-	ps->composite_opcode = ext_info->major_opcode;
-	ps->composite_event = ext_info->first_event;
-	ps->composite_error = ext_info->first_error;
-
-	{
-		xcb_composite_query_version_reply_t *reply = xcb_composite_query_version_reply(
-		    ps->c,
-		    xcb_composite_query_version(ps->c, XCB_COMPOSITE_MAJOR_VERSION,
-		                                XCB_COMPOSITE_MINOR_VERSION),
-		    NULL);
-
-		if (!reply || (reply->major_version == 0 && reply->minor_version < 2)) {
-			log_fatal("Your X server doesn't have Composite >= 0.2 support, "
-			          "we cannot proceed.");
-			exit(1);
-		}
-		free(reply);
-	}
-
-	ext_info = xcb_get_extension_data(ps->c, &xcb_damage_id);
-	if (!ext_info || !ext_info->present) {
-		log_fatal("No damage extension");
-		exit(1);
-	}
-	ps->damage_event = ext_info->first_event;
-	ps->damage_error = ext_info->first_error;
-	xcb_discard_reply(ps->c, xcb_damage_query_version(ps->c, XCB_DAMAGE_MAJOR_VERSION,
-	                                                  XCB_DAMAGE_MINOR_VERSION)
-	                             .sequence);
-
-	ext_info = xcb_get_extension_data(ps->c, &xcb_xfixes_id);
-	if (!ext_info || !ext_info->present) {
-		log_fatal("No XFixes extension");
-		exit(1);
-	}
-	ps->xfixes_event = ext_info->first_event;
-	ps->xfixes_error = ext_info->first_error;
-	xcb_discard_reply(ps->c, xcb_xfixes_query_version(ps->c, XCB_XFIXES_MAJOR_VERSION,
-	                                                  XCB_XFIXES_MINOR_VERSION)
-	                             .sequence);
-
-	ps->damaged_region = x_new_id(ps->c);
-	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c, ps->damaged_region, 0, NULL)) {
-		log_fatal("Failed to create a XFixes region");
-		goto err;
-	}
-
-	ext_info = xcb_get_extension_data(ps->c, &xcb_glx_id);
-	if (ext_info && ext_info->present) {
-		ps->glx_exists = true;
-		ps->glx_error = ext_info->first_error;
-		ps->glx_event = ext_info->first_event;
-	}
-
-	ext_info = xcb_get_extension_data(ps->c, &xcb_dpms_id);
-	ps->dpms_exists = ext_info && ext_info->present;
-	if (ps->dpms_exists) {
-		auto r = xcb_dpms_info_reply(ps->c, xcb_dpms_info(ps->c), NULL);
-		if (!r) {
-			log_fatal("Failed to query DPMS info");
-			goto err;
-		}
-		ps->screen_is_off = dpms_screen_is_off(r);
-		// Check screen status every half second
-		ev_timer_init(&ps->dpms_check_timer, check_dpms_status, 0, 0.5);
-		ev_timer_start(ps->loop, &ps->dpms_check_timer);
-		free(r);
 	}
 
 	// Parse configuration file
@@ -1973,76 +1876,163 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	rebuild_shadow_exclude_reg(ps);
 
-	// Query X Shape
-	ext_info = xcb_get_extension_data(ps->c, &xcb_shape_id);
-	if (ext_info && ext_info->present) {
-		ps->shape_event = ext_info->first_event;
-		ps->shape_error = ext_info->first_error;
-		ps->shape_exists = true;
-	}
-
-	ext_info = xcb_get_extension_data(ps->c, &xcb_randr_id);
-	if (ext_info && ext_info->present) {
-		ps->randr_exists = true;
-		ps->randr_event = ext_info->first_event;
-		ps->randr_error = ext_info->first_error;
-	}
-
-	ext_info = xcb_get_extension_data(ps->c, &xcb_present_id);
-	if (ext_info && ext_info->present) {
-		auto r = xcb_present_query_version_reply(
+	// Query the X Composite extension
+	xcb_prefetch_extension_data(ps->c, &xcb_composite_id);
+	const xcb_query_extension_reply_t *ext_data =
+	    xcb_get_extension_data(ps->c, &xcb_composite_id);
+	if (ext_data && ext_data->present) {
+		xcb_composite_query_version_reply_t *r = xcb_composite_query_version_reply(
 		    ps->c,
-		    xcb_present_query_version(ps->c, XCB_PRESENT_MAJOR_VERSION,
-		                              XCB_PRESENT_MINOR_VERSION),
+		    xcb_composite_query_version(ps->c, XCB_COMPOSITE_MAJOR_VERSION,
+		                                XCB_COMPOSITE_MINOR_VERSION),
 		    NULL);
-		if (r) {
-			ps->present_exists = true;
-			free(r);
+		if (!r || (r->major_version == 0 && r->minor_version < 2)) {
+			log_fatal("The X server doesn't support the X Composite "
+			          "extension 0.2.");
+			goto err;
 		}
+		free(r);
+	} else {
+		log_fatal("No X Composite extension.");
+		goto err;
 	}
 
-	// Query X Sync
-	ext_info = xcb_get_extension_data(ps->c, &xcb_sync_id);
-	if (ext_info && ext_info->present) {
-		ps->xsync_error = ext_info->first_error;
-		ps->xsync_event = ext_info->first_event;
-		// Need X Sync 3.1 for fences
-		auto r = xcb_sync_initialize_reply(
+	// Query the X Damage extension
+	xcb_prefetch_extension_data(ps->c, &xcb_damage_id);
+	ext_data = xcb_get_extension_data(ps->c, &xcb_damage_id);
+	if (ext_data && ext_data->present) {
+		xcb_discard_reply(ps->c, xcb_damage_query_version(ps->c, XCB_DAMAGE_MAJOR_VERSION,
+		                                                  XCB_DAMAGE_MINOR_VERSION)
+		                             .sequence);
+		ps->damage_event = ext_data->first_event;
+		ps->damage_error = ext_data->first_error;
+	} else {
+		log_fatal("No X Damage extension.");
+		goto err;
+	}
+
+	// Query the X DPMS extension
+	xcb_prefetch_extension_data(ps->c, &xcb_dpms_id);
+	ext_data = xcb_get_extension_data(ps->c, &xcb_dpms_id);
+	if (ext_data && ext_data->present) {
+		xcb_dpms_info_reply_t *r =
+		    xcb_dpms_info_reply(ps->c, xcb_dpms_info(ps->c), NULL);
+		if (!r) {
+			log_fatal("Failed to get information about the current DPMS "
+			          "state of the display.");
+			goto err;
+		}
+		ps->screen_is_off = dpms_screen_is_off(r);
+		free(r);
+
+		// Check the DPMS status every half a second
+		ev_timer_init(&ps->dpms_check_timer, check_dpms_status, 0, 0.5);
+		ev_timer_start(ps->loop, &ps->dpms_check_timer);
+	}
+
+	// Query the X GLX extension
+	xcb_prefetch_extension_data(ps->c, &xcb_glx_id);
+	ext_data = xcb_get_extension_data(ps->c, &xcb_glx_id);
+	if (ext_data && ext_data->present) {
+		ps->has_glx = true;
+		ps->glx_error = ext_data->first_error;
+	}
+
+	// Query the X Present extension
+	xcb_prefetch_extension_data(ps->c, &xcb_present_id);
+	ext_data = xcb_get_extension_data(ps->c, &xcb_present_id);
+	if (ext_data && ext_data->present) {
+		ps->has_present = true;
+	}
+
+	// Query the X RandR extension
+	xcb_prefetch_extension_data(ps->c, &xcb_randr_id);
+	ext_data = xcb_get_extension_data(ps->c, &xcb_randr_id);
+	if (ext_data && ext_data->present) {
+		ps->has_randr = true;
+		ps->randr_event = ext_data->first_event;
+
+		if (ps->o.crop_shadow_to_monitor) {
+			xcb_randr_select_input(ps->c, ps->root,
+			                       XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
+		}
+		x_update_randr_monitors(ps);
+	} else if (ps->o.crop_shadow_to_monitor) {
+		log_fatal("No X RandR extension, the crop-shadow-to-monitor option can't "
+		          "be enabled.");
+		goto err;
+	}
+
+	// Query the X Render extension
+	xcb_prefetch_extension_data(ps->c, &xcb_render_id);
+	ext_data = xcb_get_extension_data(ps->c, &xcb_render_id);
+	if (ext_data && ext_data->present) {
+		ps->render_error = ext_data->first_error;
+	} else {
+		log_fatal("No X Render extension.");
+		goto err;
+	}
+
+	// Query the X Shape extension
+	xcb_prefetch_extension_data(ps->c, &xcb_shape_id);
+	ext_data = xcb_get_extension_data(ps->c, &xcb_shape_id);
+	if (ext_data && ext_data->present) {
+		ps->has_shape = true;
+		ps->shape_event = ext_data->first_event;
+	}
+
+	// Query the X Sync extension
+	xcb_prefetch_extension_data(ps->c, &xcb_sync_id);
+	ext_data = xcb_get_extension_data(ps->c, &xcb_sync_id);
+	if (ext_data && ext_data->present) {
+		// The X Sync extension 3.1 is required for fences
+		xcb_sync_initialize_reply_t *r = xcb_sync_initialize_reply(
 		    ps->c,
 		    xcb_sync_initialize(ps->c, XCB_SYNC_MAJOR_VERSION, XCB_SYNC_MINOR_VERSION),
 		    NULL);
-		if (r && (r->major_version > 3 ||
-		          (r->major_version == 3 && r->minor_version >= 1))) {
-			ps->xsync_exists = true;
+		if (r && ((r->major_version == 3 && r->minor_version >= 1) ||
+		          r->major_version > 3)) {
+			ps->has_sync = true;
+			ps->sync_event = ext_data->first_event;
+			ps->sync_error = ext_data->first_error;
 			free(r);
-		}
-	}
 
-	ps->sync_fence = XCB_NONE;
-	if (ps->xsync_exists) {
-		ps->sync_fence = x_new_id(ps->c);
-		e = xcb_request_check(ps->c, xcb_sync_create_fence_checked(
-		                                 ps->c, ps->root, ps->sync_fence, 0));
-		if (e) {
-			if (ps->o.xrender_sync_fence) {
-				log_error_x_error(e, "Failed to create a XSync fence. "
-				                     "xrender-sync-fence will be "
-				                     "disabled");
+			ps->sync_fence = x_new_id(ps->c);
+			e = xcb_request_check(
+			    ps->c, xcb_sync_create_fence_checked(ps->c, ps->root,
+			                                         ps->sync_fence, false));
+			if (e && ps->o.xrender_sync_fence) {
+				log_error_x_error(e, "Failed to create an X Sync fence, "
+				                     "the xrender-sync-fence option will "
+				                     "be disabled.");
 				ps->o.xrender_sync_fence = false;
+				ps->sync_fence = XCB_NONE;
+				free(e);
 			}
-			ps->sync_fence = XCB_NONE;
-			free(e);
 		}
 	} else if (ps->o.xrender_sync_fence) {
-		log_error("XSync extension not found. No XSync fence sync is "
-		          "possible. (xrender-sync-fence can't be enabled)");
+		log_warn("No X Sync extension, the xrender-sync-fence option can't be "
+		         "enabled.");
 		ps->o.xrender_sync_fence = false;
 	}
 
-	// Query X RandR
-	if (ps->o.crop_shadow_to_monitor && !ps->randr_exists) {
-		log_fatal("No X RandR extension. crop-shadow-to-monitor cannot be "
-		          "enabled.");
+	// Query the X Fixes extension
+	xcb_prefetch_extension_data(ps->c, &xcb_xfixes_id);
+	ext_data = xcb_get_extension_data(ps->c, &xcb_xfixes_id);
+	if (ext_data && ext_data->present) {
+		xcb_discard_reply(ps->c, xcb_xfixes_query_version(ps->c, XCB_XFIXES_MAJOR_VERSION,
+		                                                  XCB_XFIXES_MINOR_VERSION)
+		                             .sequence);
+		ps->fixes_error = ext_data->first_error;
+
+		ps->damaged_region = x_new_id(ps->c);
+		if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c, ps->damaged_region,
+		                    0, NULL)) {
+			log_fatal("Failed to create an X Fixes region.");
+			goto err;
+		}
+	} else {
+		log_fatal("No X Fixes extension.");
 		goto err;
 	}
 
@@ -2136,14 +2126,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 			ps->o.monitor_repaint = false;
 		}
 	}
-
-	// Monitor screen changes if vsync_sw is enabled and we are using
-	// an auto-detected refresh rate, or when X RandR features are enabled
-	if (ps->randr_exists && ps->o.crop_shadow_to_monitor) {
-		xcb_randr_select_input(ps->c, ps->root, XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
-	}
-
-	x_update_randr_monitors(ps);
 
 	{
 		xcb_render_create_picture_value_list_t pa = {

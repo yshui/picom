@@ -971,13 +971,13 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 /// region_real = the damage region
 void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	if (ps->o.xrender_sync_fence || (ps->drivers & DRIVER_NVIDIA)) {
-		if (ps->xsync_exists && !x_fence_sync(ps->c, ps->sync_fence)) {
+		if (ps->has_sync && !x_fence_sync(ps->c, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
 			          "disabled from now on.");
 			xcb_sync_destroy_fence(ps->c, ps->sync_fence);
 			ps->sync_fence = XCB_NONE;
 			ps->o.xrender_sync_fence = false;
-			ps->xsync_exists = false;
+			ps->has_sync = false;
 		}
 	}
 
@@ -1315,13 +1315,13 @@ static bool xr_init_blur(session_t *ps) {
 			// Check for the convolution filter
 			if (strlen(XRFILTER_CONVOLUTION) == len &&
 			    !memcmp(XRFILTER_CONVOLUTION, name, strlen(XRFILTER_CONVOLUTION)))
-				ps->xrfilter_convolution_exists = true;
+				ps->has_convolution_xrfilter = true;
 		}
 		free(pf);
 	}
 
 	// Turn features off if any required filter is not present
-	if (!ps->xrfilter_convolution_exists) {
+	if (!ps->has_convolution_xrfilter) {
 		log_error("Xrender convolution filter "
 		          "unsupported by your X server. "
 		          "Background blur is not possible.");
