@@ -1723,7 +1723,6 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		ps->fade_time = 0L;
 	}
 	if (!animation_running) {
-		ps->prev_desktop = ps->cur_desktop;
 		ps->animation_time = 0L;
 	}
 
@@ -1884,7 +1883,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .shadow_context = NULL,
 
 	    .cur_desktop = 0,
-	    .prev_desktop = 0,
 
 #ifdef CONFIG_VSYNC_DRM
 	    .drm_fd = -1,

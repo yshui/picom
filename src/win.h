@@ -171,8 +171,8 @@ struct managed_win {
 	/// opacity state, window geometry, window mapped/unmapped state,
 	/// window mode of the windows above. DOES NOT INCLUDE the body of THIS WINDOW.
 	/// NULL means reg_ignore has not been calculated for this window.
-    /// 1 = tag prev  , 2 = tag next, 4 = unmap
-    uint32_t dwm_mask;
+	/// 1 = tag prev  , 2 = tag next, 4 = unmap
+	uint32_t dwm_mask;
 	rc_region_t *reg_ignore;
 	/// Whether the reg_ignore of all windows beneath this window are valid
 	bool reg_ignore_valid;
@@ -203,11 +203,11 @@ struct managed_win {
 	/// Inverse of the window distance at the start of animation, for
 	/// tracking animation progress
 	double animation_inv_og_distance;
-    /// Animation info if it is a tag change & check if its changing window sizes
-    /// 0: no tag change
-    /// 1: normal tag change animation
-    /// 2: tag change animation that effects window size
-    uint16_t animation_is_tag;
+	/// Animation info if it is a tag change & check if its changing window sizes
+    	/// 0: no tag change
+    	/// 1: normal tag change animation
+    	/// 2: tag change animation that effects window size
+    	uint16_t animation_is_tag;
 
 	// Client window related members
 	/// ID of the top-level client window of the window.

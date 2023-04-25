@@ -292,7 +292,6 @@ typedef struct session {
 	/// Index of the next free slot in <code>expose_rects</code>.
 	int n_expose;
 	/// Current desktop of display
-	uint32_t prev_desktop;
 	uint32_t cur_desktop;
 
 	// === Window related ===

@@ -458,10 +458,19 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 							1L, XCB_ATOM_CARDINAL, 32);
 
 			if (prop.nitems) {
-				ps->prev_desktop = ps->cur_desktop;
-				ps->cur_desktop = *prop.c32;
-				if (!ps->prev_desktop)
-					ps->prev_desktop = ps->cur_desktop;
+				if (ps->cur_desktop != *prop.c32) {
+					win_stack_foreach_managed_safe(w, &ps->window_stack) {
+						if (w->a.override_redirect) {
+							continue;
+						}
+						if (w->cur_desktop & *prop.c32) {
+							w->dwm_mask = ANIM_NEXT_TAG;
+						} else if (w->cur_desktop & ps->cur_desktop) {
+							w->dwm_mask = ANIM_PREV_TAG;
+						}
+					}
+					ps->cur_desktop = *prop.c32;
+				}
 			}
 		}
 

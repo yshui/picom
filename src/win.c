@@ -694,14 +694,6 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			// 	w->dwm_mask = ANIM_PREV_TAG;
 			// else if (w->pending_g.y > 0 && w->g.y < 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
 			// 	w->dwm_mask = ANIM_NEXT_TAG;
-			if (!w->a.override_redirect && ps->cur_desktop != ps->prev_desktop) {
-				if (w->cur_desktop == ps->cur_desktop) {
-					w->dwm_mask = ANIM_NEXT_TAG;
-				} else {
-					w->dwm_mask = ANIM_PREV_TAG;
-				}
-			}
-
 
 			if (!was_visible || w->dwm_mask) {
 
