@@ -230,16 +230,16 @@ void schedule_render(session_t *ps) {
 	// TODO(yshui): why 1500?
 	const int SLACK = 1500;
 	int render_time_estimate = rolling_max_get_max(ps->render_stats);
-	if (render_time_estimate < 0) {
-		// We don't have render time estimates, maybe there's no frame rendered
-		// yet, or the backend doesn't support render timing information,
-		// schedule render immediately.
+	auto frame_time = (uint64_t)rolling_avg_get_avg(ps->frame_time);
+	if (render_time_estimate < 0 || frame_time == 0) {
+		// We don't have render time, and/or frame time estimates, maybe there's
+		// no frame rendered yet, or the backend doesn't support render timing
+		// information, schedule render immediately.
 		ps->target_msc = ps->last_msc + 1;
 		goto schedule;
 	}
 	render_time_estimate += SLACK;
 
-	auto frame_time = (uint64_t)rolling_avg_get_avg(ps->frame_time);
 	auto minimal_target_us = now_us + (uint64_t)render_time_estimate;
 	auto frame_delay = (uint64_t)ceil(
 	    (double)(minimal_target_us - ps->last_msc_instant) / (double)frame_time);
