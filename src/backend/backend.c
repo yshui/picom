@@ -240,7 +240,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		auto real_win_mode = w->mode;
 		coord_t window_coord = {.x = w->g.x, .y = w->g.y};
 
-		if (w->blur_background &&
+		if (w->blur_background && !w->blur_foreground &&
 		    (ps->o.force_win_blend || real_win_mode == WMODE_TRANS ||
 		     (ps->o.blur_background_frame && real_win_mode == WMODE_FRAME_TRANS))) {
 			// Minimize the region we try to blur, if the window
@@ -433,7 +433,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		}
 
 		// Draw window on target
-		if (w->frame_opacity == 1) {
+		if (!w->blur_foreground && w->frame_opacity == 1) {
 			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
 			                               window_coord, NULL, window_coord,
 			                               &reg_paint_in_bound, &reg_visible);
@@ -480,6 +480,14 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			ps->backend_data->ops->release_image(ps->backend_data, new_img);
 			pixman_region32_fini(&reg_visible_local);
 			pixman_region32_fini(&reg_bound_local);
+
+			// Blur window
+			if (w->blur_foreground) {
+				ps->backend_data->ops->blur(
+				    ps->backend_data, ps->o.inactive_blur_opacity,
+				    ps->backend_blur_fgcontext, w->mask_image, window_coord,
+				    &reg_paint_in_bound, &reg_visible);
+			}
 		}
 	skip:
 		pixman_region32_fini(&reg_bound);

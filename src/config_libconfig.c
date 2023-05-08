@@ -541,6 +541,11 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 			goto err;
 		}
 	}
+	// --inactive-blur
+	if (lcfg_lookup_bool(&cfg, "inactive-blur", &opt->inactive_blur)) {
+		parse_cfg_condlst(&cfg, &opt->inactive_blur_list, "inactive-blur-include");
+		config_lookup_float(&cfg, "inactive-blur-opacity", &opt->inactive_blur_opacity);
+	}
 	// --resize-damage
 	config_lookup_int(&cfg, "resize-damage", &opt->resize_damage);
 	// --glx-no-stencil

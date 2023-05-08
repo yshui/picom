@@ -277,6 +277,9 @@ struct managed_win {
 	/// Whether to blur window background.
 	bool blur_background;
 
+	/// Whether to blur window foreground.
+	bool blur_foreground;
+
 	/// The custom window shader to use when rendering.
 	struct shader_info *fg_shader;
 

@@ -507,6 +507,17 @@ static bool initialize_backend(session_t *ps) {
 			goto err;
 		}
 
+		if (ps->o.inactive_blur && ps->o.blur_method == BLUR_METHOD_NONE) {
+			log_info("No blur method set, defaulting to box for inactive blur");
+			struct box_blur_args bargs;
+			bargs.size = 3;
+			void *args = (void *)&bargs;
+			ps->backend_blur_fgcontext = ps->backend_data->ops->create_blur_context(
+			    ps->backend_data, BLUR_METHOD_BOX, args);
+		} else if (ps->o.inactive_blur) {
+			ps->backend_blur_fgcontext = ps->backend_blur_context;
+		}
+
 		// Create shaders
 		HASH_ITER2(ps->shaders, shader) {
 			assert(shader->backend_shader == NULL);
@@ -1940,6 +1951,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	      c2_list_postprocess(ps, ps->o.shadow_clip_list) &&
 	      c2_list_postprocess(ps, ps->o.fade_blacklist) &&
 	      c2_list_postprocess(ps, ps->o.blur_background_blacklist) &&
+	      c2_list_postprocess(ps, ps->o.inactive_blur_list) &&
 	      c2_list_postprocess(ps, ps->o.invert_color_list) &&
 	      c2_list_postprocess(ps, ps->o.window_shader_fg_rules) &&
 	      c2_list_postprocess(ps, ps->o.opacity_rules) &&
@@ -2319,6 +2331,7 @@ static void session_destroy(session_t *ps) {
 	c2_list_free(&ps->o.shadow_clip_list, NULL);
 	c2_list_free(&ps->o.fade_blacklist, NULL);
 	c2_list_free(&ps->o.focus_blacklist, NULL);
+	c2_list_free(&ps->o.inactive_blur_list, free);
 	c2_list_free(&ps->o.invert_color_list, NULL);
 	c2_list_free(&ps->o.blur_background_blacklist, NULL);
 	c2_list_free(&ps->o.opacity_rules, NULL);

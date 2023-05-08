@@ -1081,6 +1081,16 @@ void win_set_shadow_force(session_t *ps, struct managed_win *w, switch_t val) {
 }
 
 static void
+win_set_blur_foreground(session_t *ps, struct managed_win *w, bool blur_foreground_new) {
+	if (w->blur_foreground == blur_foreground_new)
+		return;
+
+	w->blur_foreground = blur_foreground_new;
+
+	add_damage_from_win(ps, w);
+}
+
+static void
 win_set_blur_background(session_t *ps, struct managed_win *w, bool blur_background_new) {
 	if (w->blur_background == blur_background_new)
 		return;
@@ -1107,6 +1117,22 @@ win_set_fg_shader(session_t *ps, struct managed_win *w, struct shader_info *shad
 }
 
 /**
+ * Determine whether a window's foreground should be blurred
+ */
+static void win_determine_blur_foreground(session_t *ps, struct managed_win *w) {
+	log_debug("Determining blur-foreground of window %#010x (%s)", w->base.id, w->name);
+	if (w->a.map_state != XCB_MAP_STATE_VIEWABLE) {
+		return;
+	}
+
+	bool blur_foreground_new =
+	    ps->o.inactive_blur && !w->focused &&
+	    (!ps->o.inactive_blur_list || c2_match(ps, w, ps->o.inactive_blur_list, NULL));
+
+	win_set_blur_foreground(ps, w, blur_foreground_new);
+}
+
+/**
  * Determine if a window should have background blurred.
  */
 static void win_determine_blur_background(session_t *ps, struct managed_win *w) {
@@ -1115,7 +1141,10 @@ static void win_determine_blur_background(session_t *ps, struct managed_win *w) 
 		return;
 	}
 
-	bool blur_background_new = ps->o.blur_method != BLUR_METHOD_NONE;
+	bool blur_background_new = false;
+	if (!w->blur_foreground) {
+		blur_background_new = ps->o.blur_method != BLUR_METHOD_NONE;
+	}
 	if (blur_background_new) {
 		if (!ps->o.wintype_option[w->window_type].blur_background) {
 			log_debug("Blur background disabled by wintypes");
@@ -1220,6 +1249,7 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	win_determine_shadow(ps, w);
 	win_determine_clip_shadow_above(ps, w);
 	win_determine_invert_color(ps, w);
+	win_determine_blur_foreground(ps, w);
 	win_determine_blur_background(ps, w);
 	win_determine_rounded_corners(ps, w);
 	win_determine_fg_shader(ps, w);

@@ -868,6 +868,8 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t x, int16_t y
 static inline void
 win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t tgt_buffer,
                     const region_t *reg_paint) {
+	assert(w->blur_foreground == false);
+
 	const int16_t x = w->g.x;
 	const int16_t y = w->g.y;
 	const auto wid = to_u16_checked(w->widthb);
@@ -1157,7 +1159,7 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 #endif
 
 			// Blur window background
-			if (w->blur_background &&
+			if (w->blur_background && !w->blur_foreground &&
 			    (w->mode == WMODE_TRANS ||
 			     (ps->o.blur_background_frame && w->mode == WMODE_FRAME_TRANS) ||
 			     ps->o.force_win_blend)) {
