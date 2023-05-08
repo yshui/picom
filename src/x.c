@@ -489,7 +489,7 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 	case XCB_##s: name = #s; break
 
 	// TODO(yshui) separate error code out from session_t
-	o = error_code - ps->xfixes_error;
+	o = error_code - ps->fixes_error;
 	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
 
 	o = error_code - ps->damage_error;
@@ -504,7 +504,7 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 		CASESTRRET2(RENDER_GLYPH);
 	}
 
-	if (ps->glx_exists) {
+	if (ps->has_glx) {
 		o = error_code - ps->glx_error;
 		switch (o) {
 			CASESTRRET2(GLX_BAD_CONTEXT);
@@ -524,8 +524,8 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 		}
 	}
 
-	if (ps->xsync_exists) {
-		o = error_code - ps->xsync_error;
+	if (ps->has_sync) {
+		o = error_code - ps->sync_error;
 		switch (o) {
 			CASESTRRET(XSyncBadCounter);
 			CASESTRRET(XSyncBadAlarm);
@@ -792,7 +792,7 @@ xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen) {
 void x_update_randr_monitors(session_t *ps) {
 	x_free_randr_info(ps);
 
-	if (!ps->o.crop_shadow_to_monitor || !ps->randr_exists) {
+	if (!ps->o.crop_shadow_to_monitor || !ps->has_randr) {
 		return;
 	}
 

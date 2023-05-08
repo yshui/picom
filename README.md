@@ -17,43 +17,43 @@ See [Releases](https://github.com/yshui/picom/releases)
 
 Assuming you already have all the usual building tools installed (e.g. gcc, python, meson, ninja, etc.), you still need:
 
+* libconfig (optional, use the `-Dconfig_file=false` meson configure flag to disable)
+* libdbus (optional, use the `-Ddbus=false` meson configure flag to disable)
+* libev
+* libgl, libegl (optional, use the `-Dopengl=false` meson configure flag to disable)
+* libpcre2 (optional, use the `-Dregex=false` meson configure flag to disable)
 * libx11
 * libx11-xcb
-* libXext
-* xproto
+* libxext
+* pixman
+* uthash
 * xcb
+* xcb-composite
 * xcb-damage
 * xcb-dpms
-* xcb-xfixes
-* xcb-shape
-* xcb-renderutil
-* xcb-render
-* xcb-randr
-* xcb-composite
+* xcb-glx
 * xcb-image
 * xcb-present
-* xcb-glx
-* pixman
-* libdbus (optional, disable with the `-Ddbus=false` meson configure flag)
-* libconfig (optional, disable with the `-Dconfig_file=false` meson configure flag)
-* libGL, libEGL (optional, disable with the `-Dopengl=false` meson configure flag)
-* libpcre2 (optional, disable with the `-Dregex=false` meson configure flag)
-* libev
-* uthash
+* xcb-randr
+* xcb-render
+* xcb-renderutil
+* xcb-shape
+* xcb-xfixes
+* xproto
 
-On Debian based distributions (e.g. Ubuntu), the needed packages are
+On Debian-based distributions (e.g. Ubuntu) the needed packages are:
 
 ```
-libxext-dev libxcb1-dev libxcb-damage0-dev libxcb-dpms0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-randr0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-present-dev libxcb-glx0-dev libpixman-1-dev libdbus-1-dev libconfig-dev libgl-dev libegl-dev libpcre2-dev libevdev-dev uthash-dev libev-dev libx11-xcb-dev meson
+libconfig-dev libdbus-1-dev libegl-dev libev-dev libevdev-dev libgl-dev libpcre2-dev libpixman-1-dev libx11-xcb-dev libxcb-composite0-dev libxcb-damage0-dev libxcb-dpms0-dev libxcb-glx0-dev libxcb-image0-dev libxcb-present-dev libxcb-randr0-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxcb1-dev libxext-dev meson uthash-dev
 ```
 
-On Fedora, the needed packages are
+On Fedora the needed packages are:
 
 ```
-dbus-devel gcc git libconfig-devel libdrm-devel libev-devel libX11-devel libX11-xcb libXext-devel libxcb-devel libGL-devel libEGL-devel meson pcre2-devel pixman-devel uthash-devel xcb-util-image-devel xcb-util-renderutil-devel xorg-x11-proto-devel
+dbus-devel gcc git libconfig-devel libdrm-devel libegl-devel libev-devel libgl-devel libx11-devel libx11-xcb libxcb-devel libxext-devel meson pcre2-devel pixman-devel uthash-devel xcb-util-image-devel xcb-util-renderutil-devel xorg-x11-proto-devel
 ```
 
-To build the documents, you need `asciidoc`
+To build the documentation you need asciidoc.
 
 ### To build
 

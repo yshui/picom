@@ -900,7 +900,7 @@ static backend_t *backend_xrender_init(session_t *ps) {
 	}
 
 	xd->vsync = ps->o.vsync;
-	if (ps->present_exists) {
+	if (ps->has_present) {
 		auto eid = x_new_id(ps->c);
 		auto e =
 		    xcb_request_check(ps->c, xcb_present_select_input_checked(

@@ -327,59 +327,41 @@ typedef struct session {
 	int drm_fd;
 #endif
 
-	// === X extension related ===
-	/// Event base number for X Fixes extension.
-	int xfixes_event;
-	/// Error base number for X Fixes extension.
-	int xfixes_error;
-	/// Event base number for X Damage extension.
+	// === X extensions related ===
+	/// Event base number of the X Damage extension.
 	int damage_event;
-	/// Error base number for X Damage extension.
+	/// Error base number of the X Damage extension.
 	int damage_error;
-	/// Event base number for X Render extension.
-	int render_event;
-	/// Error base number for X Render extension.
-	int render_error;
-	/// Event base number for X Composite extension.
-	int composite_event;
-	/// Error base number for X Composite extension.
-	int composite_error;
-	/// Major opcode for X Composite extension.
-	int composite_opcode;
-	/// Whether X DPMS extension exists
-	bool dpms_exists;
-	/// Whether X Shape extension exists.
-	bool shape_exists;
-	/// Event base number for X Shape extension.
-	int shape_event;
-	/// Error base number for X Shape extension.
-	int shape_error;
-	/// Whether X RandR extension exists.
-	bool randr_exists;
-	/// Event base number for X RandR extension.
-	int randr_event;
-	/// Error base number for X RandR extension.
-	int randr_error;
-	/// Whether X Present extension exists.
-	bool present_exists;
-	/// Whether X GLX extension exists.
-	bool glx_exists;
-	/// Event base number for X GLX extension.
-	int glx_event;
-	/// Error base number for X GLX extension.
+	/// If the X GLX extension available.
+	bool has_glx;
+	/// Error base number of the X GLX extension.
 	int glx_error;
+	/// If the X Present extension available.
+	bool has_present;
+	/// If the X RandR extension available.
+	bool has_randr;
+	/// Event base number of the X RandR extension.
+	int randr_event;
 	/// Number of X RandR monitors.
 	int randr_nmonitors;
-	/// X RandR monitor regions.
+	/// X RandR monitors regions.
 	region_t *randr_monitor_regs;
-	/// Whether X Sync extension exists.
-	bool xsync_exists;
-	/// Event base number for X Sync extension.
-	int xsync_event;
-	/// Error base number for X Sync extension.
-	int xsync_error;
-	/// Whether X Render convolution filter exists.
-	bool xrfilter_convolution_exists;
+	/// Error base number of the X Render extension.
+	int render_error;
+	/// If the X Shape extension available.
+	bool has_shape;
+	/// Event base number of the X Shape extension.
+	int shape_event;
+	/// If the X Sync extension available.
+	bool has_sync;
+	/// Event base number of the X Sync extension.
+	int sync_event;
+	/// Error base number of the X Sync extension.
+	int sync_error;
+	/// Error base number of the X Fixes extension.
+	int fixes_error;
+	/// If the X Render extension's convolution filter available.
+	bool has_convolution_xrfilter;
 
 	// === Atoms ===
 	struct atom *atoms;

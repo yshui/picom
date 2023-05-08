@@ -244,7 +244,7 @@ static backend_t *glx_init(session_t *ps) {
 	XVisualInfo *pvis = NULL;
 
 	// Check for GLX extension
-	if (!ps->glx_exists) {
+	if (!ps->has_glx) {
 		log_error("No GLX extension.");
 		goto end;
 	}

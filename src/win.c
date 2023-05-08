@@ -694,7 +694,7 @@ static int win_update_role(session_t *ps, struct managed_win *w) {
  * Check if a window is bounding-shaped.
  */
 static inline bool win_bounding_shaped(const session_t *ps, xcb_window_t wid) {
-	if (ps->shape_exists) {
+	if (ps->has_shape) {
 		xcb_shape_query_extents_reply_t *reply;
 		Bool bounding_shaped;
 
@@ -1688,7 +1688,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    (const uint32_t[]){determine_evmask(ps, new->base.id, WIN_EVMODE_FRAME)});
 
 	// Get notification when the shape of a window changes
-	if (ps->shape_exists) {
+	if (ps->has_shape) {
 		xcb_shape_select_input(ps->c, new->base.id, 1);
 	}
 
@@ -1931,7 +1931,7 @@ gen_by_val(win_extents);
  * Mark the window shape as updated
  */
 void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
-	if (ps->shape_exists) {
+	if (ps->has_shape) {
 		w->bounding_shaped = win_bounding_shaped(ps, w->base.id);
 	}
 
@@ -2094,7 +2094,7 @@ void win_ev_stop(session_t *ps, const struct win *w) {
 		                             (const uint32_t[]){0});
 	}
 
-	if (ps->shape_exists) {
+	if (ps->has_shape) {
 		xcb_shape_select_input(ps->c, w->id, 0);
 	}
 }
