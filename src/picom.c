@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <unistd.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
@@ -2553,6 +2554,31 @@ err:
 	free(ps);
 	return NULL;
 }
+void set_rr_scheduling(void) {
+	struct rlimit rlim;
+	if (getrlimit(RLIMIT_RTPRIO, &rlim) != 0) {
+		log_warn("Failed to get RLIMIT_RTPRIO, not setting real-time priority");
+		return;
+	}
+	int old_policy;
+	int ret;
+	struct sched_param param;
+
+	ret = pthread_getschedparam(pthread_self(), &old_policy, &param);
+	if (ret != 0) {
+		log_debug("Failed to get old scheduling priority");
+		return;
+	}
+
+	param.sched_priority = (int)rlim.rlim_cur;
+
+	ret = pthread_setschedparam(pthread_self(), SCHED_RR, &param);
+	if (ret != 0) {
+		log_info("Failed to set scheduling priority to %lu", rlim.rlim_cur);
+		return;
+	}
+	log_info("Set scheduling priority to %lu", rlim.rlim_cur);
+}
 
 /**
  * Destroy a session.
@@ -2760,6 +2786,7 @@ static void session_destroy(session_t *ps) {
  * @param ps current session
  */
 static void session_run(session_t *ps) {
+	set_rr_scheduling();
 	// In benchmark mode, we want draw_timer handler to always be active
 	if (ps->o.benchmark) {
 		ev_timer_set(&ps->draw_timer, 0, 0);
