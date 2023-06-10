@@ -1445,9 +1445,9 @@ static bool redirect_start(session_t *ps) {
 		pixman_region32_init(&ps->damage_ring[i]);
 	}
 
-	ps->frame_pacing = true;
-	if (ps->o.legacy_backends || ps->o.benchmark ||
-	    !ps->backend_data->ops->last_render_time) {
+	ps->frame_pacing = !ps->o.no_frame_pacing;
+	if ((ps->o.legacy_backends || ps->o.benchmark || !ps->backend_data->ops->last_render_time) &&
+	    ps->frame_pacing) {
 		// Disable frame pacing if we are using a legacy backend or if we are in
 		// benchmark mode, or if the backend doesn't report render time
 		log_info("Disabling frame pacing.");

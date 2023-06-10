@@ -176,6 +176,7 @@ static const struct picom_option picom_options[] = {
                                                                              "rendered screen. Reduces banding artifacts, but might cause performance "
                                                                              "degradation. Only works with OpenGL."},
     // 340 is corner-radius-rules
+    {"no-frame-pacing"             , no_argument      , 341, NULL          , "Disable frame pacing. This might increase the latency."},
     {"legacy-backends"             , no_argument      , 733, NULL          , "Use deprecated version of the backends."},
     {"monitor-repaint"             , no_argument      , 800, NULL          , "Highlight the updated area of the screen. For debugging."},
     {"diagnostics"                 , no_argument      , 801, NULL          , "Print diagnostic information"},
@@ -738,6 +739,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			// --dithered-present
 			opt->dithered_present = true;
 			break;
+		P_CASEBOOL(341, no_frame_pacing);
 		P_CASEBOOL(733, legacy_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801:

@@ -363,6 +363,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --corner-radius-rules
 	parse_cfg_condlst_corner(opt, &cfg, "corner-radius-rules");
 
+	// --no-frame-pacing
+	lcfg_lookup_bool(&cfg, "no-frame-pacing", &opt->no_frame_pacing);
+
 	// -e (frame_opacity)
 	config_lookup_float(&cfg, "frame-opacity", &opt->frame_opacity);
 	// -c (shadow_enable)
