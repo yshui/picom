@@ -1741,7 +1741,23 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 }
 
 static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
+	struct timespec now;
+	int64_t draw_callback_enter_us;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	draw_callback_enter_us = (now.tv_sec * 1000000LL + now.tv_nsec / 1000);
+	if (ps->next_render != 0) {
+		log_trace("Schedule delay: %" PRIi64 " us",
+		          draw_callback_enter_us - (int64_t)ps->next_render);
+	}
+
 	handle_pending_updates(EV_A_ ps);
+
+	int64_t after_handle_pending_updates_us;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	after_handle_pending_updates_us = (now.tv_sec * 1000000LL + now.tv_nsec / 1000);
+	log_trace("handle_pending_updates took: %" PRIi64 " us",
+	          after_handle_pending_updates_us - draw_callback_enter_us);
 
 	if (ps->first_frame) {
 		// If we are still rendering the first frame, if some of the windows are
@@ -1798,6 +1814,12 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		ev_timer_set(&ps->fade_timer, fade_timeout(ps), 0);
 		ev_timer_start(EV_A_ & ps->fade_timer);
 	}
+
+	int64_t after_preprocess_us;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	after_preprocess_us = (now.tv_sec * 1000000LL + now.tv_nsec / 1000);
+	log_trace("paint_preprocess took: %" PRIi64 " us",
+	          after_preprocess_us - after_handle_pending_updates_us);
 
 	// If the screen is unredirected, free all_damage to stop painting
 	if (ps->redirected && ps->o.stoppaint_force != ON) {
