@@ -176,6 +176,20 @@ void paint_all_new(session_t *ps, struct managed_win *t) {
 	region_t reg_shadow_clip;
 	pixman_region32_init(&reg_shadow_clip);
 
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	auto now_us = (uint64_t)(now.tv_sec * 1000000 + now.tv_nsec / 1000);
+	if (ps->next_render > 0) {
+		log_trace("Render schedule deviation: %ld us (%s) %ld %ld",
+		          labs((int64_t)now_us - (int64_t)ps->next_render),
+		          now_us < ps->next_render ? "early" : "late", now_us,
+		          ps->next_render);
+		ps->last_schedule_delay = 0;
+		if (now_us > ps->next_render) {
+			ps->last_schedule_delay = now_us - ps->next_render;
+		}
+	}
+
 	if (ps->backend_data->ops->prepare) {
 		ps->backend_data->ops->prepare(ps->backend_data, &reg_paint);
 	}

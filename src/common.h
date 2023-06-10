@@ -58,6 +58,7 @@
 #include "list.h"
 #include "region.h"
 #include "render.h"
+#include "statistics.h"
 #include "types.h"
 #include "utils.h"
 #include "win_defs.h"
@@ -249,13 +250,16 @@ typedef struct session {
 	/// When the currently rendered frame will be displayed.
 	/// 0 means there is no pending frame.
 	uint64_t target_msc;
-	/// When did we render our last frame.
-	uint64_t last_render;
+	/// The delay between when the last frame was scheduled to be rendered, and when
+	/// the render actually started.
+	uint64_t last_schedule_delay;
+	/// When do we want our next frame to start rendering.
+	uint64_t next_render;
 	/// Whether we can perform frame pacing.
 	bool frame_pacing;
 
-	struct rolling_avg *frame_time;
-	struct rolling_max *render_stats;
+	/// Render statistics
+	struct render_statistics render_stats;
 
 	// === Operation related ===
 	/// Flags related to the root window
