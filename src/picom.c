@@ -240,12 +240,15 @@ void schedule_render(session_t *ps, bool triggered_by_vblank) {
 	    (int)(render_time.tv_sec * 1000000L + render_time.tv_nsec / 1000L);
 	if (ps->target_msc == ps->last_msc) {
 		// The frame has just been displayed, record its render time;
-		log_trace("Last render call took: %d (gpu) + %d (cpu) us, "
-		          "last_msc: %" PRIu64,
-		          render_time_us, (int)ps->last_schedule_delay, ps->last_msc);
-		render_statistics_add_render_time_sample(
-		    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
+		if (ps->did_render) {
+			log_trace("Last render call took: %d (gpu) + %d (cpu) us, "
+			          "last_msc: %" PRIu64,
+			          render_time_us, (int)ps->last_schedule_delay, ps->last_msc);
+			render_statistics_add_render_time_sample(
+			    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
+		}
 		ps->target_msc = 0;
+		ps->did_render = false;
 		ps->last_schedule_delay = 0;
 	}
 

@@ -189,6 +189,7 @@ void paint_all_new(session_t *ps, struct managed_win *t) {
 			ps->last_schedule_delay = now_us - ps->next_render;
 		}
 	}
+	ps->did_render = true;
 
 	if (ps->backend_data->ops->prepare) {
 		ps->backend_data->ops->prepare(ps->backend_data, &reg_paint);

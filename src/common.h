@@ -255,6 +255,9 @@ typedef struct session {
 	uint64_t last_schedule_delay;
 	/// When do we want our next frame to start rendering.
 	uint64_t next_render;
+	/// Did we actually render the last frame. Sometimes redraw will be scheduled only
+	/// to find out nothing has changed. In which case this will be set to false.
+	bool did_render;
 	/// Whether we can perform frame pacing.
 	bool frame_pacing;
 
