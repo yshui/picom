@@ -1,11 +1,15 @@
 picom
 =====
 
+[![circleci](https://circleci.com/gh/yshui/picom.svg?style=shield)](https://circleci.com/gh/yshui/picom)
+[![codecov](https://codecov.io/gh/yshui/picom/branch/next/graph/badge.svg?token=NRSegi0Gze)](https://codecov.io/gh/yshui/picom)
+[![chat on discord](https://img.shields.io/discord/1106224720833159198?logo=discord)](https://discord.gg/uqmNX6dR)
+
 __picom__ is a compositor for X, and a [fork of Compton](History.md).
 
 **This is a development branch, bugs to be expected**
 
-You can leave your feedback or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions).
+You can leave your feedback or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions), or chat with other users on [discord](https://discord.gg/uqmNX6dR)!
 
 ## Change Log
 
