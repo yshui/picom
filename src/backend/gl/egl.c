@@ -42,6 +42,30 @@ static PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageProc = NULL;
 static PFNEGLGETPLATFORMDISPLAYPROC eglGetPlatformDisplayProc = NULL;
 static PFNEGLCREATEPLATFORMWINDOWSURFACEPROC eglCreatePlatformWindowSurfaceProc = NULL;
 
+const char *eglGetErrorString(EGLint error) {
+#define CASE_STR(value)                                                                  \
+	case value: return #value;
+	switch (error) {
+		CASE_STR(EGL_SUCCESS)
+		CASE_STR(EGL_NOT_INITIALIZED)
+		CASE_STR(EGL_BAD_ACCESS)
+		CASE_STR(EGL_BAD_ALLOC)
+		CASE_STR(EGL_BAD_ATTRIBUTE)
+		CASE_STR(EGL_BAD_CONTEXT)
+		CASE_STR(EGL_BAD_CONFIG)
+		CASE_STR(EGL_BAD_CURRENT_SURFACE)
+		CASE_STR(EGL_BAD_DISPLAY)
+		CASE_STR(EGL_BAD_SURFACE)
+		CASE_STR(EGL_BAD_MATCH)
+		CASE_STR(EGL_BAD_PARAMETER)
+		CASE_STR(EGL_BAD_NATIVE_PIXMAP)
+		CASE_STR(EGL_BAD_NATIVE_WINDOW)
+		CASE_STR(EGL_CONTEXT_LOST)
+	default: return "Unknown";
+	}
+#undef CASE_STR
+}
+
 /**
  * Free a glx_texture_t.
  */
@@ -283,7 +307,8 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	eglpixmap->owned = owned;
 
 	if (eglpixmap->image == EGL_NO_IMAGE) {
-		log_error("Failed to create eglpixmap for pixmap %#010x", pixmap);
+		log_error("Failed to create eglpixmap for pixmap %#010x: %s", pixmap,
+		          eglGetErrorString(eglGetError()));
 		goto err;
 	}
 
