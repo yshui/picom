@@ -162,7 +162,7 @@ void dummy_destroy_blur_context(struct backend_base *base attr_unused, void *ctx
 }
 
 void dummy_get_blur_size(void *ctx attr_unused, int *width, int *height) {
-	// These numbers are arbitrary, to make sure the reisze_region code path is
+	// These numbers are arbitrary, to make sure the resize_region code path is
 	// covered.
 	*width = 5;
 	*height = 5;
