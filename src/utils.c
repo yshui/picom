@@ -48,7 +48,43 @@ int next_power_of_two(int n) {
 	return n;
 }
 
-/// Track the rolling maximum of a stream of integers.
+void rolling_window_destroy(struct rolling_window *rw) {
+	free(rw->elem);
+	rw->elem = NULL;
+}
+
+void rolling_window_reset(struct rolling_window *rw) {
+	rw->nelem = 0;
+	rw->elem_head = 0;
+}
+
+void rolling_window_init(struct rolling_window *rw, int size) {
+	rw->elem = ccalloc(size, int);
+	rw->window_size = size;
+	rolling_window_reset(rw);
+}
+
+int rolling_window_pop_front(struct rolling_window *rw) {
+	assert(rw->nelem > 0);
+	auto ret = rw->elem[rw->elem_head];
+	rw->elem_head = (rw->elem_head + 1) % rw->window_size;
+	rw->nelem--;
+	return ret;
+}
+
+bool rolling_window_push_back(struct rolling_window *rw, int val, int *front) {
+	bool full = rw->nelem == rw->window_size;
+	if (full) {
+		*front = rolling_window_pop_front(rw);
+	}
+	rw->elem[(rw->elem_head + rw->nelem) % rw->window_size] = val;
+	rw->nelem++;
+	return full;
+}
+
+/// Track the maximum member of a FIFO queue of integers. Integers are pushed to the back
+/// and popped from the front, the maximum of the current members in the queue is
+/// tracked.
 struct rolling_max {
 	/// A priority queue holding the indices of the maximum element candidates.
 	/// The head of the queue is the index of the maximum element.
@@ -59,32 +95,26 @@ struct rolling_max {
 	/// it's called the "original" indices.
 	int *p;
 	int p_head, np;
-
-	/// The elemets
-	int *elem;
-	int elem_head, nelem;
-
-	int window_size;
+	/// The maximum number of in flight elements.
+	int capacity;
 };
 
 void rolling_max_destroy(struct rolling_max *rm) {
-	free(rm->elem);
 	free(rm->p);
 	free(rm);
 }
 
-struct rolling_max *rolling_max_new(int size) {
+struct rolling_max *rolling_max_new(int capacity) {
 	auto rm = ccalloc(1, struct rolling_max);
 	if (!rm) {
 		return NULL;
 	}
 
-	rm->p = ccalloc(size, int);
-	rm->elem = ccalloc(size, int);
-	rm->window_size = size;
-	if (!rm->p || !rm->elem) {
+	rm->p = ccalloc(capacity, int);
+	if (!rm->p) {
 		goto err;
 	}
+	rm->capacity = capacity;
 
 	return rm;
 
@@ -96,33 +126,21 @@ err:
 void rolling_max_reset(struct rolling_max *rm) {
 	rm->p_head = 0;
 	rm->np = 0;
-	rm->nelem = 0;
-	rm->elem_head = 0;
 }
 
-void rolling_max_push(struct rolling_max *rm, int val) {
-#define IDX(n) ((n) % rm->window_size)
-	if (rm->nelem == rm->window_size) {
-		auto old_head = rm->elem_head;
-		// Discard the oldest element.
-		// rm->elem.pop_front();
-		rm->nelem--;
-		rm->elem_head = IDX(rm->elem_head + 1);
-
-		// Remove discarded element from the priority queue too.
-		assert(rm->np);
-		if (rm->p[rm->p_head] == old_head) {
-			// rm->p.pop_front()
-			rm->p_head = IDX(rm->p_head + 1);
-			rm->np--;
-		}
+#define IDX(n) ((n) % rm->capacity)
+/// Remove the oldest element in the window. The caller must maintain the list of elements
+/// themselves, i.e. the behavior is undefined if `front` does not 1match the oldest
+/// element.
+void rolling_max_pop_front(struct rolling_max *rm, int front) {
+	if (rm->p[rm->p_head] == front) {
+		// rm->p.pop_front()
+		rm->p_head = IDX(rm->p_head + 1);
+		rm->np--;
 	}
+}
 
-	// Add the new element to the queue.
-	// rm->elem.push_back(val)
-	rm->elem[IDX(rm->elem_head + rm->nelem)] = val;
-	rm->nelem++;
-
+void rolling_max_push_back(struct rolling_max *rm, int val) {
 	// Update the prority queue.
 	// Remove all elements smaller than the new element from the queue. Because
 	// the new element will become the maximum element before them, and since they
@@ -130,7 +148,7 @@ void rolling_max_push(struct rolling_max *rm, int val) {
 	// element, so they will never become the maximum element.
 	while (rm->np) {
 		int p_tail = IDX(rm->p_head + rm->np - 1);
-		if (rm->elem[rm->p[p_tail]] > val) {
+		if (rm->p[p_tail] > val) {
 			break;
 		}
 		// rm->p.pop_back()
@@ -138,108 +156,119 @@ void rolling_max_push(struct rolling_max *rm, int val) {
 	}
 	// Add the new element to the end of the queue.
 	// rm->p.push_back(rm->start_index + rm->nelem - 1)
-	rm->p[IDX(rm->p_head + rm->np)] = IDX(rm->elem_head + rm->nelem - 1);
+	assert(rm->np < rm->capacity);
+	rm->p[IDX(rm->p_head + rm->np)] = val;
 	rm->np++;
-#undef IDX
 }
+#undef IDX
 
 int rolling_max_get_max(struct rolling_max *rm) {
 	if (rm->np == 0) {
 		return INT_MIN;
 	}
-	return rm->elem[rm->p[rm->p_head]];
+	return rm->p[rm->p_head];
 }
 
 TEST_CASE(rolling_max_test) {
 #define NELEM 15
+	struct rolling_window queue;
+	rolling_window_init(&queue, 3);
 	auto rm = rolling_max_new(3);
 	const int data[NELEM] = {1, 2, 3, 1, 4, 5, 2, 3, 6, 5, 4, 3, 2, 0, 0};
 	const int expected_max[NELEM] = {1, 2, 3, 3, 4, 5, 5, 5, 6, 6, 6, 5, 4, 3, 2};
 	int max[NELEM] = {0};
 	for (int i = 0; i < NELEM; i++) {
-		rolling_max_push(rm, data[i]);
+		int front;
+		bool full = rolling_window_push_back(&queue, data[i], &front);
+		if (full) {
+			rolling_max_pop_front(rm, front);
+		}
+		rolling_max_push_back(rm, data[i]);
 		max[i] = rolling_max_get_max(rm);
 	}
+	rolling_window_destroy(&queue);
+	rolling_max_destroy(rm);
 	TEST_TRUE(memcmp(max, expected_max, sizeof(max)) == 0);
 #undef NELEM
 }
 
-/// A rolling average of a stream of integers.
-struct rolling_avg {
-	/// The sum of the elements in the window.
-	int64_t sum;
+// Find the k-th smallest element in an array.
+int quickselect(int *elems, int nelem, int k) {
+	int l = 0, r = nelem;        // [l, r) is the range of candidates
+	while (l != r) {
+		int pivot = elems[l];
+		int i = l, j = r;
+		while (i < j) {
+			while (i < j && elems[--j] >= pivot) {
+			}
+			elems[i] = elems[j];
+			while (i < j && elems[++i] <= pivot) {
+			}
+			elems[j] = elems[i];
+		}
+		elems[i] = pivot;
 
-	/// The elements in the window.
-	int *elem;
-	int head, nelem;
+		if (i == k) {
+			break;
+		}
 
-	int window_size;
-};
-
-struct rolling_avg *rolling_avg_new(int size) {
-	auto rm = ccalloc(1, struct rolling_avg);
-	if (!rm) {
-		return NULL;
+		if (i < k) {
+			l = i + 1;
+		} else {
+			r = i;
+		}
 	}
-
-	rm->elem = ccalloc(size, int);
-	rm->window_size = size;
-	if (!rm->elem) {
-		free(rm);
-		return NULL;
-	}
-
-	return rm;
+	return elems[k];
 }
 
-void rolling_avg_destroy(struct rolling_avg *rm) {
-	free(rm->elem);
-	free(rm);
+void rolling_quantile_init(struct rolling_quantile *rq, int capacity, int mink, int maxk) {
+	*rq = (struct rolling_quantile){0};
+	rq->tmp_buffer = malloc(sizeof(int) * (size_t)capacity);
+	rq->capacity = capacity;
+	rq->min_target_rank = mink;
+	rq->max_target_rank = maxk;
 }
 
-void rolling_avg_reset(struct rolling_avg *ra) {
-	ra->sum = 0;
-	ra->nelem = 0;
-	ra->head = 0;
+void rolling_quantile_init_with_tolerance(struct rolling_quantile *rq, int window_size,
+                                          double target, double tolerance) {
+	rolling_quantile_init(rq, window_size, (int)((target - tolerance) * window_size),
+	                      (int)((target + tolerance) * window_size));
 }
 
-void rolling_avg_push(struct rolling_avg *ra, int val) {
-	if (ra->nelem == ra->window_size) {
-		// Discard the oldest element.
-		// rm->elem.pop_front();
-		ra->sum -= ra->elem[ra->head % ra->window_size];
-		ra->nelem--;
-		ra->head = (ra->head + 1) % ra->window_size;
+void rolling_quantile_reset(struct rolling_quantile *rq) {
+	rq->current_rank = 0;
+	rq->estimate = 0;
+}
+
+void rolling_quantile_destroy(struct rolling_quantile *rq) {
+	free(rq->tmp_buffer);
+}
+
+int rolling_quantile_estimate(struct rolling_quantile *rq, struct rolling_window *elements) {
+	if (rq->current_rank < rq->min_target_rank || rq->current_rank > rq->max_target_rank) {
+		if (elements->nelem != elements->window_size) {
+			return INT_MIN;
+		}
+		// Re-estimate the quantile.
+		assert(elements->nelem <= rq->capacity);
+		rolling_window_copy_to_array(elements, rq->tmp_buffer);
+		const int target_rank =
+		    rq->min_target_rank + (rq->max_target_rank - rq->min_target_rank) / 2;
+		rq->estimate = quickselect(rq->tmp_buffer, elements->nelem, target_rank);
+		rq->current_rank = target_rank;
 	}
-
-	// Add the new element to the queue.
-	// rm->elem.push_back(val)
-	ra->elem[(ra->head + ra->nelem) % ra->window_size] = val;
-	ra->sum += val;
-	ra->nelem++;
+	return rq->estimate;
 }
 
-double rolling_avg_get_avg(struct rolling_avg *ra) {
-	if (ra->nelem == 0) {
-		return 0;
+void rolling_quantile_push_back(struct rolling_quantile *rq, int x) {
+	if (x <= rq->estimate) {
+		rq->current_rank++;
 	}
-	return (double)ra->sum / (double)ra->nelem;
 }
 
-TEST_CASE(rolling_avg_test) {
-#define NELEM 15
-	auto rm = rolling_avg_new(3);
-	const int data[NELEM] = {1, 2, 3, 1, 4, 5, 2, 3, 6, 5, 4, 3, 2, 0, 0};
-	const double expected_avg[NELEM] = {
-	    1,          1.5,        2, 2, 8.0 / 3.0, 10.0 / 3.0, 11.0 / 3.0, 10.0 / 3.0,
-	    11.0 / 3.0, 14.0 / 3.0, 5, 4, 3,         5.0 / 3.0,  2.0 / 3.0};
-	double avg[NELEM] = {0};
-	for (int i = 0; i < NELEM; i++) {
-		rolling_avg_push(rm, data[i]);
-		avg[i] = rolling_avg_get_avg(rm);
-	}
-	for (int i = 0; i < NELEM; i++) {
-		TEST_EQUAL(avg[i], expected_avg[i]);
+void rolling_quantile_pop_front(struct rolling_quantile *rq, int x) {
+	if (x <= rq->estimate) {
+		rq->current_rank--;
 	}
 }
 

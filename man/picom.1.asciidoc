@@ -109,6 +109,9 @@ OPTIONS
 *--rounded-corners-exclude* 'CONDITION'::
 	Exclude conditions for rounded corners.
 
+*--no-frame-pacing*::
+	Disable vsync-aware frame pacing. By default, the compositor tries to make sure it only renders once per vblank interval, and also the render happens as late as possible to minimize the latency from updates to the screen. However this can sometimes cause stuttering, or even lowered frame rate. This option can be used to disable frame pacing.
+
 *--mark-wmwin-focused*::
 	Try to detect WM windows (a non-override-redirect window with no child that has 'WM_STATE') and mark them as active.
 

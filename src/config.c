@@ -742,6 +742,7 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	    .logpath = NULL,
 
 	    .use_damage = true,
+	    .no_frame_pacing = false,
 
 	    .shadow_red = 0.0,
 	    .shadow_green = 0.0,
