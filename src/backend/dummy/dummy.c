@@ -17,6 +17,7 @@ struct dummy_image {
 	xcb_pixmap_t pixmap;
 	bool transparent;
 	int *refcount;
+	bool owned;
 	UT_hash_handle hh;
 };
 
@@ -42,6 +43,9 @@ void dummy_deinit(struct backend_base *data) {
 		log_warn("Backend image for pixmap %#010x is not freed", img->pixmap);
 		HASH_DEL(dummy->images, img);
 		free(img->refcount);
+		if (img->owned) {
+			xcb_free_pixmap(data->c, img->pixmap);
+		}
 		free(img);
 	}
 	free(dummy);
@@ -82,7 +86,7 @@ bool dummy_blur(struct backend_base *backend_data attr_unused, double opacity at
 }
 
 void *dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
-                        struct xvisual_info fmt, bool owned attr_unused) {
+                        struct xvisual_info fmt, bool owned) {
 	auto dummy = (struct dummy_data *)base;
 	struct dummy_image *img = NULL;
 	HASH_FIND_INT(dummy->images, &pixmap, img);
@@ -96,6 +100,7 @@ void *dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
 	img->transparent = fmt.alpha_size != 0;
 	img->refcount = ccalloc(1, int);
 	*img->refcount = 1;
+	img->owned = owned;
 
 	HASH_ADD_INT(dummy->images, pixmap, img);
 	return (void *)img;
@@ -112,6 +117,9 @@ void dummy_release_image(backend_t *base, void *image) {
 	if (*img->refcount == 0) {
 		HASH_DEL(dummy->images, img);
 		free(img->refcount);
+		if (img->owned) {
+			xcb_free_pixmap(base->c, img->pixmap);
+		}
 		free(img);
 	}
 }
@@ -162,7 +170,7 @@ void dummy_destroy_blur_context(struct backend_base *base attr_unused, void *ctx
 }
 
 void dummy_get_blur_size(void *ctx attr_unused, int *width, int *height) {
-	// These numbers are arbitrary, to make sure the reisze_region code path is
+	// These numbers are arbitrary, to make sure the resize_region code path is
 	// covered.
 	*width = 5;
 	*height = 5;
