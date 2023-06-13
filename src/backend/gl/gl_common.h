@@ -188,10 +188,6 @@ void gl_present(backend_t *base, const region_t *);
 bool gl_read_pixel(backend_t *base, void *image_data, int x, int y, struct color *output);
 enum device_status gl_device_status(backend_t *base);
 
-static inline void gl_delete_texture(GLuint texture) {
-	glDeleteTextures(1, &texture);
-}
-
 /**
  * Get a textual representation of an OpenGL error.
  */
