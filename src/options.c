@@ -803,14 +803,13 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	}
 
 	if (opt->window_shader_fg || opt->window_shader_fg_rules) {
-		if (opt->legacy_backends || opt->backend != BKEND_GLX) {
-			log_warn("The new window shader interface does not work with the "
-			         "legacy glx backend.%s",
-			         (opt->backend == BKEND_GLX) ? " You may want to use "
-			                                       "\"--glx-fshader-win\" "
-			                                       "instead on the legacy "
-			                                       "glx backend."
-			                                     : "");
+		if (opt->backend == BKEND_XRENDER || opt->legacy_backends) {
+			log_warn(opt->backend == BKEND_XRENDER
+			             ? "Shader interface is not available for the "
+			               "xrender backend."
+			             : "The new shader interface is not available for "
+			               "the legacy glx backend. You may want to use "
+			               "--glx-fshader-win instead.");
 			opt->window_shader_fg = NULL;
 			c2_list_free(&opt->window_shader_fg_rules, free);
 		}
