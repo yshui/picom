@@ -9,7 +9,7 @@ __picom__ is a compositor for X, and a [fork of Compton](History.md).
 
 **This is a development branch, bugs to be expected**
 
-You can leave your feedback or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions), or chat with other users on [discord](https://discord.gg/uqmNX6dR)!
+You can leave your feedback or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions), or chat with other users on [discord](https://discord.gg/SY5JJzPgME)!
 
 ## Change Log
 
