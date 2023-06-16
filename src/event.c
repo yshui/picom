@@ -7,6 +7,7 @@
 #include <X11/extensions/sync.h>
 #include <xcb/damage.h>
 #include <xcb/randr.h>
+#include <xcb/xcb_event.h>
 
 #include "atom.h"
 #include "common.h"
@@ -106,7 +107,7 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 
 static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 	static char buf[128];
-	switch (ev->response_type & 0x7f) {
+	switch (XCB_EVENT_RESPONSE_TYPE(ev)) {
 		CASESTRRET(FocusIn);
 		CASESTRRET(FocusOut);
 		CASESTRRET(CreateNotify);
@@ -665,7 +666,7 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 }
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
-	if ((ev->response_type & 0x7f) != KeymapNotify) {
+	if (XCB_EVENT_RESPONSE_TYPE(ev) != KeymapNotify) {
 		discard_pending(ps, ev->full_sequence);
 	}
 
@@ -687,9 +688,10 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	// For even more details, see:
 	// https://bugs.freedesktop.org/show_bug.cgi?id=35945
 	// https://lists.freedesktop.org/archives/xcb/2011-November/007337.html
-	auto proc = XESetWireToEvent(ps->dpy, ev->response_type, 0);
+	auto response_type = XCB_EVENT_RESPONSE_TYPE(ev);
+	auto proc = XESetWireToEvent(ps->dpy, response_type, 0);
 	if (proc) {
-		XESetWireToEvent(ps->dpy, ev->response_type, proc);
+		XESetWireToEvent(ps->dpy, response_type, proc);
 		XEvent dummy;
 
 		// Stop Xlib from complaining about lost sequence numbers.
@@ -708,6 +710,7 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	// XXX redraw needs to be more fine grained
 	queue_redraw(ps);
 
+	// the events sent from SendEvent will be ignored
 	switch (ev->response_type) {
 	case FocusIn: ev_focus_in(ps, (xcb_focus_in_event_t *)ev); break;
 	case FocusOut: ev_focus_out(ps, (xcb_focus_out_event_t *)ev); break;

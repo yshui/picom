@@ -20,7 +20,7 @@ required_xcb_packages = [
 ]
 
 required_packages = [
-	'x11', 'x11-xcb', 'xcb-renderutil', 'xcb-image', 'xext', 'pixman-1'
+	'x11', 'x11-xcb', 'xcb-renderutil', 'xcb-image', 'xext', 'pixman-1', 'xcb-util'
 ]
 
 foreach i : required_packages
