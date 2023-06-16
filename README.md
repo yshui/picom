@@ -26,6 +26,7 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * libXext
 * xproto
 * xcb
+* xcb-util
 * xcb-damage
 * xcb-dpms
 * xcb-xfixes
