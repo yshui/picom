@@ -20,7 +20,7 @@ required_xcb_packages = [
 ]
 
 required_packages = [
-	'x11', 'x11-xcb', 'xcb-renderutil', 'xcb-image', 'xext', 'pixman-1'
+	'x11', 'x11-xcb', 'xcb-renderutil', 'xcb-image', 'xext', 'pixman-1', 'xcb-util'
 ]
 
 foreach i : required_packages
@@ -30,8 +30,6 @@ endforeach
 foreach i : required_xcb_packages
 	base_deps += [dependency(i, version: '>=1.12.0', required: true)]
 endforeach
-
-base_deps += [dependency('xcb-util', version: '>=0.4.0', required: true)]
 
 if not cc.has_header('uthash.h')
   error('Dependency uthash not found')
