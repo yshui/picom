@@ -520,8 +520,9 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 	inner->height = img->base.eheight = r->height;
 	inner->pixmap = pixmap;
 	inner->has_alpha = fmt.alpha_size != 0;
-	inner->pict =
-	    x_create_picture_with_visual_and_pixmap(base->c, fmt.visual, pixmap, 0, NULL);
+	xcb_render_create_picture_value_list_t pic_attrs = {.repeat = XCB_RENDER_REPEAT_NORMAL};
+	inner->pict = x_create_picture_with_visual_and_pixmap(
+	    base->c, fmt.visual, pixmap, XCB_RENDER_CP_REPEAT, &pic_attrs);
 	inner->owned = owned;
 	inner->visual = fmt.visual;
 	inner->refcount = 1;
