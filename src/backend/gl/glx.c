@@ -468,9 +468,6 @@ static void glx_present(backend_t *base, const region_t *region attr_unused) {
 	struct _glx_data *gd = (void *)base;
 	gl_present(base, region);
 	glXSwapBuffers(gd->display, gd->target_win);
-	if (!gd->gl.is_nvidia) {
-		glFinish();
-	}
 }
 
 static int glx_buffer_age(backend_t *base) {
@@ -528,6 +525,7 @@ struct backend_operations glx_ops = {
     .deinit = glx_deinit,
     .bind_pixmap = glx_bind_pixmap,
     .release_image = gl_release_image,
+    .prepare = gl_prepare,
     .compose = gl_compose,
     .image_op = gl_image_op,
     .set_image_property = gl_set_image_property,
@@ -536,6 +534,7 @@ struct backend_operations glx_ops = {
     .is_image_transparent = default_is_image_transparent,
     .present = glx_present,
     .buffer_age = glx_buffer_age,
+    .last_render_time = gl_last_render_time,
     .create_shadow_context = gl_create_shadow_context,
     .destroy_shadow_context = gl_destroy_shadow_context,
     .render_shadow = backend_render_shadow_from_mask,

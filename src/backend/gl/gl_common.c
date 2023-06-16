@@ -22,6 +22,11 @@
 #include "backend/backend_common.h"
 #include "backend/gl/gl_common.h"
 
+void gl_prepare(backend_t *base, const region_t *reg attr_unused) {
+	auto gd = (struct gl_data *)base;
+	glBeginQuery(GL_TIME_ELAPSED, gd->frame_timing[gd->current_frame_timing]);
+}
+
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str) {
 	log_trace("===\n%s\n===", shader_str);
 
@@ -800,6 +805,9 @@ uint64_t gl_get_shader_attributes(backend_t *backend_data attr_unused, void *sha
 }
 
 bool gl_init(struct gl_data *gd, session_t *ps) {
+	glGenQueries(2, gd->frame_timing);
+	gd->current_frame_timing = 0;
+
 	// Initialize GLX data structure
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
@@ -945,7 +953,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	const char *vendor = (const char *)glGetString(GL_VENDOR);
 	log_debug("GL_VENDOR = %s", vendor);
 	if (strcmp(vendor, "NVIDIA Corporation") == 0) {
-		log_info("GL vendor is NVIDIA, don't use glFinish");
+		log_info("GL vendor is NVIDIA, enable xrender sync fence.");
 		gd->is_nvidia = true;
 	} else {
 		gd->is_nvidia = false;
@@ -967,6 +975,9 @@ void gl_deinit(struct gl_data *gd) {
 		gl_destroy_window_shader(&gd->base, gd->default_shader);
 		gd->default_shader = NULL;
 	}
+
+	glDeleteTextures(1, &gd->default_mask_texture);
+	glDeleteTextures(1, &gd->back_texture);
 
 	gl_check_err();
 }
@@ -1154,8 +1165,31 @@ void gl_present(backend_t *base, const region_t *region) {
 	glDeleteBuffers(2, bo);
 	glDeleteVertexArrays(1, &vao);
 
+	glEndQuery(GL_TIME_ELAPSED);
+	gd->current_frame_timing ^= 1;
+
+	gl_check_err();
+
 	free(coord);
 	free(indices);
+}
+
+bool gl_last_render_time(backend_t *base, struct timespec *ts) {
+	auto gd = (struct gl_data *)base;
+	GLint available = 0;
+	glGetQueryObjectiv(gd->frame_timing[gd->current_frame_timing ^ 1],
+	                   GL_QUERY_RESULT_AVAILABLE, &available);
+	if (!available) {
+		return false;
+	}
+
+	GLuint64 time;
+	glGetQueryObjectui64v(gd->frame_timing[gd->current_frame_timing ^ 1],
+	                      GL_QUERY_RESULT, &time);
+	ts->tv_sec = (long)(time / 1000000000);
+	ts->tv_nsec = (long)(time % 1000000000);
+	gl_check_err();
+	return true;
 }
 
 bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,

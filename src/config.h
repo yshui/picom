@@ -140,6 +140,8 @@ typedef struct options {
 	bool vsync_use_glfinish;
 	/// Whether use damage information to help limit the area to paint
 	bool use_damage;
+	/// Disable frame pacing
+	bool no_frame_pacing;
 
 	// === Shadow ===
 	/// Red, green and blue tone of the shadow.
@@ -228,6 +230,8 @@ typedef struct options {
 	int corner_radius;
 	/// Rounded corners blacklist. A linked list of conditions.
 	c2_lptr_t *rounded_corners_blacklist;
+	/// Rounded corner rules. A linked list of conditions.
+	c2_lptr_t *corner_radius_rules;
 
 	// === Focus related ===
 	/// Whether to try to detect WM windows and mark them as focused.
@@ -266,7 +270,7 @@ bool must_use parse_long(const char *, long *);
 bool must_use parse_int(const char *, int *);
 struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg, int *count);
 bool must_use parse_geometry(session_t *, const char *, region_t *);
-bool must_use parse_rule_opacity(c2_lptr_t **, const char *);
+bool must_use parse_numeric_window_rule(c2_lptr_t **, const char *, long, long);
 bool must_use parse_rule_window_shader(c2_lptr_t **, const char *, const char *);
 char *must_use locate_auxiliary_file(const char *scope, const char *path,
                                      const char *include_dir);

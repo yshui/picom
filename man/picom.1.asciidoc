@@ -103,8 +103,14 @@ OPTIONS
 *--corner-radius* 'VALUE'::
 	Sets the radius of rounded window corners. When > 0, the compositor will round the corners of windows. Does not interact well with *--transparent-clipping*. (defaults to 0).
 
+*--corner-radius-rules* 'RADIUS':'CONDITION'::
+	Specify a list of corner radius rules. Overrides the corner radii of matching windows. This option takes precedence over the *--rounded-corners-exclude* option, and also overrides the default exclusion of fullscreen windows. The condition has the same format as *--opacity-rule*.
+
 *--rounded-corners-exclude* 'CONDITION'::
 	Exclude conditions for rounded corners.
+
+*--no-frame-pacing*::
+	Disable vsync-aware frame pacing. By default, the compositor tries to make sure it only renders once per vblank interval, and also the render happens as late as possible to minimize the latency from updates to the screen. However this can sometimes cause stuttering, or even lowered frame rate. This option can be used to disable frame pacing.
 
 *--mark-wmwin-focused*::
 	Try to detect WM windows (a non-override-redirect window with no child that has 'WM_STATE') and mark them as active.

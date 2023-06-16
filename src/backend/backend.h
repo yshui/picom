@@ -292,6 +292,14 @@ struct backend_operations {
 	/// Optional
 	int (*buffer_age)(backend_t *backend_data);
 
+	/// Get the render time of the last frame. If the render is still in progress,
+	/// returns false. The time is returned in `ts`. Frames are delimited by the
+	/// present() calls. i.e. after a present() call, last_render_time() should start
+	/// reporting the time of the just presen1ted frame.
+	///
+	/// Optional, if not available, the most conservative estimation will be used.
+	bool (*last_render_time)(backend_t *backend_data, struct timespec *ts);
+
 	/// The maximum number buffer_age might return.
 	int max_buffer_age;
 
@@ -363,5 +371,4 @@ struct backend_operations {
 
 extern struct backend_operations *backend_list[];
 
-void paint_all_new(session_t *ps, struct managed_win *const t, bool ignore_damage)
-    attr_nonnull(1);
+void paint_all_new(session_t *ps, struct managed_win *const t) attr_nonnull(1);

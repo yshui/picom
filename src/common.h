@@ -58,6 +58,7 @@
 #include "list.h"
 #include "region.h"
 #include "render.h"
+#include "statistics.h"
 #include "types.h"
 #include "utils.h"
 #include "win_defs.h"
@@ -156,9 +157,8 @@ typedef struct session {
 	ev_timer unredir_timer;
 	/// Timer for fading
 	ev_timer fade_timer;
-	/// Use an ev_idle callback for drawing
-	/// So we only start drawing when events are processed
-	ev_idle draw_idle;
+	/// Use an ev_timer callback for drawing
+	ev_timer draw_timer;
 	/// Called every time we have timeouts or new data on socket,
 	/// so we can be sure if xcb read from X socket at anytime during event
 	/// handling, we will not left any event unhandled in the queue
@@ -240,6 +240,29 @@ typedef struct session {
 	bool first_frame;
 	/// Whether screen has been turned off
 	bool screen_is_off;
+	/// Event context for X Present extension.
+	uint32_t present_event_id;
+	xcb_special_event_t *present_event;
+	/// When last MSC event happened, in useconds.
+	uint64_t last_msc_instant;
+	/// The last MSC number
+	uint64_t last_msc;
+	/// When the currently rendered frame will be displayed.
+	/// 0 means there is no pending frame.
+	uint64_t target_msc;
+	/// The delay between when the last frame was scheduled to be rendered, and when
+	/// the render actually started.
+	uint64_t last_schedule_delay;
+	/// When do we want our next frame to start rendering.
+	uint64_t next_render;
+	/// Did we actually render the last frame. Sometimes redraw will be scheduled only
+	/// to find out nothing has changed. In which case this will be set to false.
+	bool did_render;
+	/// Whether we can perform frame pacing.
+	bool frame_pacing;
+
+	/// Render statistics
+	struct render_statistics render_stats;
 
 	// === Operation related ===
 	/// Flags related to the root window

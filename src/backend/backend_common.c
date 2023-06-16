@@ -294,13 +294,14 @@ shadow_picture_err:
 void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
                                     struct backend_shadow_context *sctx, struct color color) {
 	const conv *kernel = (void *)sctx;
-	xcb_pixmap_t shadow_pixel = solid_picture(backend_data->c, backend_data->root, true,
-	                                          1, color.red, color.green, color.blue),
-	             shadow = XCB_NONE;
+	xcb_render_picture_t shadow_pixel = solid_picture(
+	    backend_data->c, backend_data->root, true, 1, color.red, color.green, color.blue);
+	xcb_pixmap_t shadow = XCB_NONE;
 	xcb_render_picture_t pict = XCB_NONE;
 
 	if (!build_shadow(backend_data->c, backend_data->root, color.alpha, width, height,
 	                  kernel, shadow_pixel, &shadow, &pict)) {
+		xcb_render_free_picture(backend_data->c, shadow_pixel);
 		return NULL;
 	}
 
@@ -308,6 +309,7 @@ void *default_backend_render_shadow(backend_t *backend_data, int width, int heig
 	void *ret = backend_data->ops->bind_pixmap(
 	    backend_data, shadow, x_get_visual_info(backend_data->c, visual), true);
 	xcb_render_free_picture(backend_data->c, pict);
+	xcb_render_free_picture(backend_data->c, shadow_pixel);
 	return ret;
 }
 

@@ -108,6 +108,8 @@ struct gl_data {
 	gl_shadow_shader_t shadow_shader;
 	GLuint back_texture, back_fbo;
 	GLint back_format;
+	GLuint frame_timing[2];
+	int current_frame_timing;
 	GLuint present_prog;
 
 	bool dithered_present;
@@ -129,6 +131,7 @@ typedef struct session session_t;
 #define GL_PROG_MAIN_INIT                                                                \
 	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
 
+void gl_prepare(backend_t *base, const region_t *reg);
 void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst,
                       int extent_height, int texture_height, int root_height,
                       bool y_inverted, GLint *coord, GLuint *indices);
@@ -142,6 +145,7 @@ void gl_destroy_window_shader(backend_t *backend_data, void *shader);
 uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
 bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
                            void *image_data, void *args);
+bool gl_last_render_time(backend_t *backend_data, struct timespec *time);
 
 /**
  * @brief Render a region with texture data.
@@ -183,10 +187,6 @@ void gl_fill(backend_t *base, struct color, const region_t *clip);
 void gl_present(backend_t *base, const region_t *);
 bool gl_read_pixel(backend_t *base, void *image_data, int x, int y, struct color *output);
 enum device_status gl_device_status(backend_t *base);
-
-static inline void gl_delete_texture(GLuint texture) {
-	glDeleteTextures(1, &texture);
-}
 
 /**
  * Get a textual representation of an OpenGL error.

@@ -16,8 +16,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <unistd.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
@@ -43,7 +45,6 @@
 #endif
 #include "backend/backend.h"
 #include "c2.h"
-#include "config.h"
 #include "diagnostic.h"
 #include "log.h"
 #include "region.h"
@@ -60,6 +61,7 @@
 #include "file_watch.h"
 #include "list.h"
 #include "options.h"
+#include "statistics.h"
 #include "uthash_extra.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
@@ -133,6 +135,7 @@ void check_dpms_status(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
 	}
 	auto now_screen_is_off = dpms_screen_is_off(r);
 	if (ps->screen_is_off != now_screen_is_off) {
+		log_debug("Screen is now %s", now_screen_is_off ? "off" : "on");
 		ps->screen_is_off = now_screen_is_off;
 		queue_redraw(ps);
 	}
@@ -145,21 +148,173 @@ void check_dpms_status(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
  * XXX move to win.c
  */
 static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t wid) {
-	if (!wid || PointerRoot == wid || wid == ps->root || wid == ps->overlay)
+	if (!wid || PointerRoot == wid || wid == ps->root || wid == ps->overlay) {
 		return NULL;
+	}
 
 	auto w = find_managed_win(ps, wid);
-	if (!w)
+	if (!w) {
 		w = find_toplevel(ps, wid);
-	if (!w)
+	}
+	if (!w) {
 		w = find_managed_window_or_parent(ps, wid);
+	}
 	return w;
 }
 
+/// How many seconds into the future should we start rendering the next frame.
+///
+/// Renders are scheduled like this:
+///
+/// 1. queue_redraw() registers the intention to render. redraw_needed is set to true to
+///    indicate what is on screen needs to be updated.
+/// 2. then, we need to figure out the best time to start rendering. first, we need to
+///    know when the next frame will be displayed on screen. we have this information from
+///    the Present extension: we know when was the last frame displayed, and we know the
+///    refresh rate. so we can calculate the next frame's display time. if our render time
+///    estimation shows we could miss that target, we push the target back one frame.
+/// 3. if there is already render completed for that target frame, or there is a render
+///    currently underway, we don't do anything, and wait for the next Present Complete
+///    Notify event to try to schedule again.
+/// 4. otherwise, we schedule a render for that target frame. we use past statistics about
+///    how long our renders took to figure out when to start rendering. we start rendering
+///    at the latest point of time possible to still hit the target frame.
+///
+/// The `triggered_by_timer` parameter is used to indicate whether this function is
+/// triggered by a steady timer, i.e. we are rendering for each vblank. The other case is
+/// when we stop rendering for a while because there is no changes on screen, then
+/// something changed and schedule_render is triggered by a DamageNotify. The idea is that
+/// when the schedule is triggered by a steady timer, schedule_render will be called at a
+/// predictable offset into each vblank.
+
+void schedule_render(session_t *ps, bool triggered_by_vblank) {
+	double delay_s = 0;
+	ps->next_render = 0;
+	if (!ps->frame_pacing || !ps->redirected) {
+		// Not doing frame pacing, schedule a render immediately, if not already
+		// scheduled.
+		// If not redirected, we schedule immediately to have a chance to
+		// redirect. We won't have frame or render timing information anyway.
+		if (!ev_is_active(&ps->draw_timer)) {
+			// We don't know the msc, so we set it to 1, because 0 is a
+			// special value
+			ps->target_msc = 1;
+			goto schedule;
+		}
+		return;
+	}
+	struct timespec render_time;
+	bool completed =
+	    ps->backend_data->ops->last_render_time(ps->backend_data, &render_time);
+	if (!completed || ev_is_active(&ps->draw_timer)) {
+		// There is already a render underway (either just scheduled, or is
+		// rendered but awaiting completion), don't schedule another one.
+		if (ps->target_msc <= ps->last_msc) {
+			log_debug("Target frame %ld is in the past, but we are still "
+			          "rendering",
+			          ps->target_msc);
+			// We missed our target, push it back one frame
+			ps->target_msc = ps->last_msc + 1;
+		}
+		log_trace("Still rendering for target frame %ld, not scheduling another "
+		          "render",
+		          ps->target_msc);
+		return;
+	}
+	if (ps->target_msc > ps->last_msc) {
+		// Render for the target frame is completed, but is yet to be displayed.
+		// Don't schedule another render.
+		log_trace("Target frame %ld is in the future, and we have already "
+		          "rendered, last msc: %d",
+		          ps->target_msc, (int)ps->last_msc);
+		return;
+	}
+
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	auto now_us = (uint64_t)now.tv_sec * 1000000 + (uint64_t)now.tv_nsec / 1000;
+	if (triggered_by_vblank) {
+		log_trace("vblank schedule delay: %ld us", now_us - ps->last_msc_instant);
+	}
+
+	int render_time_us =
+	    (int)(render_time.tv_sec * 1000000L + render_time.tv_nsec / 1000L);
+	if (ps->target_msc == ps->last_msc) {
+		// The frame has just been displayed, record its render time;
+		if (ps->did_render) {
+			log_trace("Last render call took: %d (gpu) + %d (cpu) us, "
+			          "last_msc: %" PRIu64,
+			          render_time_us, (int)ps->last_schedule_delay, ps->last_msc);
+			render_statistics_add_render_time_sample(
+			    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
+		}
+		ps->target_msc = 0;
+		ps->did_render = false;
+		ps->last_schedule_delay = 0;
+	}
+
+	unsigned int divisor = 0;
+	auto render_budget = render_statistics_get_budget(&ps->render_stats, &divisor);
+	auto frame_time = render_statistics_get_vblank_time(&ps->render_stats);
+	if (frame_time == 0) {
+		// We don't have enough data for render time estimates, maybe there's
+		// no frame rendered yet, or the backend doesn't support render timing
+		// information, schedule render immediately.
+		ps->target_msc = ps->last_msc + 1;
+		goto schedule;
+	}
+
+	const auto deadline = ps->last_msc_instant + (unsigned long)divisor * frame_time;
+	unsigned int available = 0;
+	if (deadline > now_us) {
+		available = (unsigned int)(deadline - now_us);
+	}
+
+	ps->target_msc = ps->last_msc + divisor;
+	if (available > render_budget) {
+		delay_s = (double)(available - render_budget) / 1000000.0;
+		ps->next_render = deadline - render_budget;
+	} else {
+		delay_s = 0;
+		ps->next_render = now_us;
+	}
+	if (delay_s > 1) {
+		log_warn("Delay too long: %f s, render_budget: %d us, frame_time: "
+		         "%" PRIu32 " us, now_us: %" PRIu64 " us, next_msc: %" PRIu64 " u"
+		         "s",
+		         delay_s, render_budget, frame_time, now_us, deadline);
+	}
+
+	log_trace("Delay: %.6lf s, last_msc: %" PRIu64 ", render_budget: %d, frame_time: "
+	          "%" PRIu32 ", now_us: %" PRIu64 ", next_msc: %" PRIu64 ", "
+	          "target_msc: %" PRIu64 ", divisor: %d",
+	          delay_s, ps->last_msc_instant, render_budget, frame_time, now_us,
+	          deadline, ps->target_msc, divisor);
+
+schedule:
+	assert(!ev_is_active(&ps->draw_timer));
+	ev_timer_set(&ps->draw_timer, delay_s, 0);
+	ev_timer_start(ps->loop, &ps->draw_timer);
+}
+
 void queue_redraw(session_t *ps) {
+	if (ps->screen_is_off) {
+		// The screen is off, if there is a draw queued for the next frame (i.e.
+		// ps->redraw_needed == true), it won't be triggered until the screen is
+		// on again, because the abnormal Present events we will receive from the
+		// X server when the screen is off. Yet we need the draw_callback to be
+		// called as soon as possible so the screen can be unredirected.
+		// So here we unconditionally start the draw timer.
+		ev_timer_stop(ps->loop, &ps->draw_timer);
+		ev_timer_set(&ps->draw_timer, 0, 0);
+		ev_timer_start(ps->loop, &ps->draw_timer);
+		return;
+	}
+	// Whether we have already rendered for the current frame.
+	// If frame pacing is not enabled, pretend this is false.
 	// If --benchmark is used, redraw is always queued
 	if (!ps->redraw_needed && !ps->o.benchmark) {
-		ev_idle_start(ps->loop, &ps->draw_idle);
+		schedule_render(ps, false);
 	}
 	ps->redraw_needed = true;
 }
@@ -635,7 +790,6 @@ static void configure_root(session_t *ps) {
 		}
 		force_repaint(ps);
 	}
-	return;
 }
 
 static void handle_root_flags(session_t *ps) {
@@ -1291,6 +1445,39 @@ static bool redirect_start(session_t *ps) {
 		pixman_region32_init(&ps->damage_ring[i]);
 	}
 
+	ps->frame_pacing = !ps->o.no_frame_pacing;
+	if ((ps->o.legacy_backends || ps->o.benchmark || !ps->backend_data->ops->last_render_time) &&
+	    ps->frame_pacing) {
+		// Disable frame pacing if we are using a legacy backend or if we are in
+		// benchmark mode, or if the backend doesn't report render time
+		log_info("Disabling frame pacing.");
+		ps->frame_pacing = false;
+	}
+
+	if (ps->present_exists && ps->frame_pacing) {
+		ps->present_event_id = x_new_id(ps->c);
+		auto select_input = xcb_present_select_input(
+		    ps->c, ps->present_event_id, session_get_target_window(ps),
+		    XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY);
+		auto notify_msc =
+		    xcb_present_notify_msc(ps->c, session_get_target_window(ps), 0, 0, 1, 0);
+		set_cant_fail_cookie(ps, select_input);
+		set_cant_fail_cookie(ps, notify_msc);
+		ps->present_event = xcb_register_for_special_xge(
+		    ps->c, &xcb_present_id, ps->present_event_id, NULL);
+
+		// Initialize rendering and frame timing statistics, and frame pacing
+		// states.
+		ps->last_msc_instant = 0;
+		ps->last_msc = 0;
+		ps->last_schedule_delay = 0;
+		ps->target_msc = 0;
+		render_statistics_reset(&ps->render_stats);
+	} else if (ps->frame_pacing) {
+		log_error("Present extension is not supported, frame pacing disabled.");
+		ps->frame_pacing = false;
+	}
+
 	// Must call XSync() here
 	x_sync(ps->c);
 
@@ -1332,6 +1519,14 @@ static void unredirect(session_t *ps) {
 	free(ps->damage_ring);
 	ps->damage_ring = ps->damage = NULL;
 
+	if (ps->present_event_id) {
+		xcb_present_select_input(ps->c, ps->present_event_id,
+		                         session_get_target_window(ps), 0);
+		ps->present_event_id = XCB_NONE;
+		xcb_unregister_for_special_event(ps->c, ps->present_event);
+		ps->present_event = NULL;
+	}
+
 	// Must call XSync() here
 	x_sync(ps->c);
 
@@ -1339,9 +1534,93 @@ static void unredirect(session_t *ps) {
 	log_debug("Screen unredirected.");
 }
 
+static void
+handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_t *cne) {
+	if (cne->kind != XCB_PRESENT_COMPLETE_KIND_NOTIFY_MSC) {
+		return;
+	}
+
+	bool event_is_invalid = false;
+	if (ps->frame_pacing) {
+		auto next_msc = cne->msc + 1;
+		if (cne->msc <= ps->last_msc || cne->ust == 0) {
+			// X sometimes sends duplicate/bogus MSC events, don't
+			// use the msc value. Also ignore these events.
+			//
+			// See:
+			// https://gitlab.freedesktop.org/xorg/xserver/-/issues/1418
+			next_msc = ps->last_msc + 1;
+			event_is_invalid = true;
+		}
+		auto cookie = xcb_present_notify_msc(ps->c, session_get_target_window(ps),
+		                                     0, next_msc, 0, 0);
+		set_cant_fail_cookie(ps, cookie);
+	}
+	if (event_is_invalid) {
+		return;
+	}
+
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	uint64_t now_usec = (uint64_t)(now.tv_sec * 1000000 + now.tv_nsec / 1000);
+	uint64_t drift;
+	if (cne->ust > now_usec) {
+		drift = cne->ust - now_usec;
+	} else {
+		drift = now_usec - cne->ust;
+	}
+
+	if (ps->last_msc_instant != 0) {
+		auto frame_count = cne->msc - ps->last_msc;
+		int frame_time = (int)((cne->ust - ps->last_msc_instant) / frame_count);
+		render_statistics_add_vblank_time_sample(&ps->render_stats, frame_time);
+		log_trace("Frame count %lu, frame time: %d us, rolling average: %u us, "
+		          "msc: %" PRIu64 ", offset: %d us",
+		          frame_count, frame_time,
+		          render_statistics_get_vblank_time(&ps->render_stats), cne->ust,
+		          (int)drift);
+	} else if (drift > 1000000 && ps->frame_pacing) {
+		// This is the first MSC event we receive, let's check if the timestamps
+		// align with the monotonic clock. If not, disable frame pacing because we
+		// can't schedule frames reliably.
+		log_error("Temporal anomaly detected, frame pacing disabled. (Are we "
+		          "running inside a time namespace?), %" PRIu64 " %" PRIu64,
+		          now_usec, ps->last_msc_instant);
+		ps->frame_pacing = false;
+	}
+	ps->last_msc_instant = cne->ust;
+	ps->last_msc = cne->msc;
+	if (ps->redraw_needed) {
+		schedule_render(ps, true);
+	}
+}
+
+static void handle_present_events(session_t *ps) {
+	if (!ps->present_event) {
+		// Screen not redirected
+		return;
+	}
+	xcb_present_generic_event_t *ev;
+	while ((ev = (void *)xcb_poll_for_special_event(ps->c, ps->present_event))) {
+		if (ev->event != ps->present_event_id) {
+			// This event doesn't have the right event context, it's not meant
+			// for us.
+			goto next;
+		}
+
+		// We only subscribed to the complete notify event.
+		assert(ev->evtype == XCB_PRESENT_EVENT_COMPLETE_NOTIFY);
+		handle_present_complete_notify(ps, (void *)ev);
+	next:
+		free(ev);
+	}
+}
+
 // Handle queued events before we go to sleep
 static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents attr_unused) {
 	session_t *ps = session_ptr(w, event_check);
+	handle_present_events(ps);
+
 	xcb_generic_event_t *ev;
 	while ((ev = xcb_poll_for_queued_event(ps->c))) {
 		ev_handle(ps, ev);
@@ -1403,6 +1682,8 @@ static void tmout_unredir_callback(EV_P attr_unused, ev_timer *w, int revents at
 }
 
 static void fade_timer_callback(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
+	// TODO(yshui): do we still need the fade timer? we queue redraw automatically in
+	// draw_callback_impl if animation is running.
 	session_t *ps = session_ptr(w, fade_timer);
 	queue_redraw(ps);
 }
@@ -1460,7 +1741,23 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 }
 
 static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
+	struct timespec now;
+	int64_t draw_callback_enter_us;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	draw_callback_enter_us = (now.tv_sec * 1000000LL + now.tv_nsec / 1000);
+	if (ps->next_render != 0) {
+		log_trace("Schedule delay: %" PRIi64 " us",
+		          draw_callback_enter_us - (int64_t)ps->next_render);
+	}
+
 	handle_pending_updates(EV_A_ ps);
+
+	int64_t after_handle_pending_updates_us;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	after_handle_pending_updates_us = (now.tv_sec * 1000000LL + now.tv_nsec / 1000);
+	log_trace("handle_pending_updates took: %" PRIi64 " us",
+	          after_handle_pending_updates_us - draw_callback_enter_us);
 
 	if (ps->first_frame) {
 		// If we are still rendering the first frame, if some of the windows are
@@ -1518,15 +1815,21 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		ev_timer_start(EV_A_ & ps->fade_timer);
 	}
 
+	int64_t after_preprocess_us;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	after_preprocess_us = (now.tv_sec * 1000000LL + now.tv_nsec / 1000);
+	log_trace("paint_preprocess took: %" PRIi64 " us",
+	          after_preprocess_us - after_handle_pending_updates_us);
+
 	// If the screen is unredirected, free all_damage to stop painting
 	if (ps->redirected && ps->o.stoppaint_force != ON) {
 		static int paint = 0;
 
 		log_trace("Render start, frame %d", paint);
 		if (!ps->o.legacy_backends) {
-			paint_all_new(ps, bottom, false);
+			paint_all_new(ps, bottom);
 		} else {
-			paint_all(ps, bottom, false);
+			paint_all(ps, bottom);
 		}
 		log_trace("Render end");
 
@@ -1544,18 +1847,21 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	// TODO(yshui) Investigate how big the X critical section needs to be. There are
 	// suggestions that rendering should be in the critical section as well.
 
+	// Queue redraw if animation is running. This should be picked up by next present
+	// event.
 	ps->redraw_needed = animation;
 }
 
-static void draw_callback(EV_P_ ev_idle *w, int revents) {
-	session_t *ps = session_ptr(w, draw_idle);
+static void draw_callback(EV_P_ ev_timer *w, int revents) {
+	session_t *ps = session_ptr(w, draw_timer);
 
 	draw_callback_impl(EV_A_ ps, revents);
+	ev_timer_stop(EV_A_ w);
 
-	// Don't do painting non-stop unless we are in benchmark mode, or if
-	// draw_callback_impl thinks we should continue painting.
-	if (!ps->o.benchmark && !ps->redraw_needed) {
-		ev_idle_stop(EV_A_ & ps->draw_idle);
+	// Immediately start next frame if we are in benchmark mode.
+	if (ps->o.benchmark) {
+		ev_timer_set(w, 0, 0);
+		ev_timer_start(EV_A_ w);
 	}
 }
 
@@ -1697,6 +2003,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .white_picture = XCB_NONE,
 	    .shadow_context = NULL,
 
+	    .last_msc = 0,
+
 #ifdef CONFIG_VSYNC_DRM
 	    .drm_fd = -1,
 #endif
@@ -1716,6 +2024,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .randr_exists = 0,
 	    .randr_event = 0,
 	    .randr_error = 0,
+	    .present_event_id = XCB_NONE,
 	    .glx_exists = false,
 	    .glx_event = 0,
 	    .glx_error = 0,
@@ -1742,6 +2051,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	list_init_head(&ps->window_stack);
 	ps->loop = EV_DEFAULT;
 	pixman_region32_init(&ps->screen_reg);
+
+	// TODO(yshui) investigate what's the best window size
+	render_statistics_init(&ps->render_stats, 128);
 
 	ps->pending_reply_tail = &ps->pending_reply_head;
 
@@ -2162,7 +2474,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_io_init(&ps->xiow, x_event_callback, ConnectionNumber(ps->dpy), EV_READ);
 	ev_io_start(ps->loop, &ps->xiow);
 	ev_init(&ps->unredir_timer, tmout_unredir_callback);
-	ev_idle_init(&ps->draw_idle, draw_callback);
+	ev_init(&ps->draw_timer, draw_callback);
 
 	ev_init(&ps->fade_timer, fade_timer_callback);
 
@@ -2263,6 +2575,31 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 err:
 	free(ps);
 	return NULL;
+}
+void set_rr_scheduling(void) {
+	struct rlimit rlim;
+	if (getrlimit(RLIMIT_RTPRIO, &rlim) != 0) {
+		log_warn("Failed to get RLIMIT_RTPRIO, not setting real-time priority");
+		return;
+	}
+	int old_policy;
+	int ret;
+	struct sched_param param;
+
+	ret = pthread_getschedparam(pthread_self(), &old_policy, &param);
+	if (ret != 0) {
+		log_debug("Failed to get old scheduling priority");
+		return;
+	}
+
+	param.sched_priority = (int)rlim.rlim_cur;
+
+	ret = pthread_setschedparam(pthread_self(), SCHED_RR, &param);
+	if (ret != 0) {
+		log_info("Failed to set scheduling priority to %lu", rlim.rlim_cur);
+		return;
+	}
+	log_info("Set scheduling priority to %lu", rlim.rlim_cur);
 }
 
 /**
@@ -2378,6 +2715,8 @@ static void session_destroy(session_t *ps) {
 	free(ps->o.glx_fshader_win_str);
 	x_free_randr_info(ps);
 
+	render_statistics_destroy(&ps->render_stats);
+
 	// Release custom window shaders
 	free(ps->o.window_shader_fg);
 	struct shader_info *shader, *tmp;
@@ -2457,7 +2796,7 @@ static void session_destroy(session_t *ps) {
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
 	ev_timer_stop(ps->loop, &ps->fade_timer);
 	ev_timer_stop(ps->loop, &ps->dpms_check_timer);
-	ev_idle_stop(ps->loop, &ps->draw_idle);
+	ev_timer_stop(ps->loop, &ps->draw_timer);
 	ev_prepare_stop(ps->loop, &ps->event_check);
 	ev_signal_stop(ps->loop, &ps->usr1_signal);
 	ev_signal_stop(ps->loop, &ps->int_signal);
@@ -2469,9 +2808,11 @@ static void session_destroy(session_t *ps) {
  * @param ps current session
  */
 static void session_run(session_t *ps) {
-	// In benchmark mode, we want draw_idle handler to always be active
+	set_rr_scheduling();
+	// In benchmark mode, we want draw_timer handler to always be active
 	if (ps->o.benchmark) {
-		ev_idle_start(ps->loop, &ps->draw_idle);
+		ev_timer_set(&ps->draw_timer, 0, 0);
+		ev_timer_start(ps->loop, &ps->draw_timer);
 	} else {
 		// Let's draw our first frame!
 		queue_redraw(ps);
