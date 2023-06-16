@@ -31,6 +31,8 @@ foreach i : required_xcb_packages
 	base_deps += [dependency(i, version: '>=1.12.0', required: true)]
 endforeach
 
+base_deps += [dependency('xcb-util', version: '>=0.4.0', required: true)]
+
 if not cc.has_header('uthash.h')
   error('Dependency uthash not found')
 endif

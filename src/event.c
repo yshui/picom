@@ -7,6 +7,7 @@
 #include <X11/extensions/sync.h>
 #include <xcb/damage.h>
 #include <xcb/randr.h>
+#include <xcb/xcb_event.h>
 
 #include "atom.h"
 #include "common.h"
@@ -687,9 +688,9 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	// For even more details, see:
 	// https://bugs.freedesktop.org/show_bug.cgi?id=35945
 	// https://lists.freedesktop.org/archives/xcb/2011-November/007337.html
-	auto proc = XESetWireToEvent(ps->dpy, ev->response_type, 0);
+	auto proc = XESetWireToEvent(ps->dpy, XCB_EVENT_RESPONSE_TYPE(ev), 0);
 	if (proc) {
-		XESetWireToEvent(ps->dpy, ev->response_type, proc);
+		XESetWireToEvent(ps->dpy, XCB_EVENT_RESPONSE_TYPE(ev), proc);
 		XEvent dummy;
 
 		// Stop Xlib from complaining about lost sequence numbers.
