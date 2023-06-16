@@ -7,6 +7,7 @@
 #include <X11/extensions/sync.h>
 #include <xcb/damage.h>
 #include <xcb/randr.h>
+#include <xcb/xcb_event.h>
 
 #include "atom.h"
 #include "common.h"
@@ -75,7 +76,8 @@ static inline const char *ev_window_name(session_t *ps, xcb_window_t wid) {
 }
 
 static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_t *ev) {
-	switch (ev->response_type) {
+	int response_type = XCB_EVENT_RESPONSE_TYPE(ev);
+	switch (response_type) {
 	case FocusIn:
 	case FocusOut: return ((xcb_focus_in_event_t *)ev)->event;
 	case CreateNotify: return ((xcb_create_notify_event_t *)ev)->window;
@@ -89,11 +91,11 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 	case PropertyNotify: return ((xcb_property_notify_event_t *)ev)->window;
 	case ClientMessage: return ((xcb_client_message_event_t *)ev)->window;
 	default:
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+		if (ps->damage_event + XCB_DAMAGE_NOTIFY == response_type) {
 			return ((xcb_damage_notify_event_t *)ev)->drawable;
 		}
 
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
+		if (ps->shape_exists && response_type == ps->shape_event) {
 			return ((xcb_shape_notify_event_t *)ev)->affected_window;
 		}
 
@@ -121,23 +123,23 @@ static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 		CASESTRRET(ClientMessage);
 	}
 
-	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+	if (ps->damage_event + XCB_DAMAGE_NOTIFY == XCB_EVENT_RESPONSE_TYPE(ev)) {
 		return "Damage";
 	}
 
-	if (ps->shape_exists && ev->response_type == ps->shape_event) {
+	if (ps->shape_exists && XCB_EVENT_RESPONSE_TYPE(ev) == ps->shape_event) {
 		return "ShapeNotify";
 	}
 
 	if (ps->xsync_exists) {
-		int o = ev->response_type - ps->xsync_event;
+		int o = XCB_EVENT_RESPONSE_TYPE(ev) - ps->xsync_event;
 		switch (o) {
 			CASESTRRET(XSyncCounterNotify);
 			CASESTRRET(XSyncAlarmNotify);
 		}
 	}
 
-	sprintf(buf, "Event %d", ev->response_type);
+	sprintf(buf, "Event %d", XCB_EVENT_RESPONSE_TYPE(ev));
 
 	return buf;
 }
@@ -665,12 +667,13 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 }
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
-	if ((ev->response_type & 0x7f) != KeymapNotify) {
+	auto response_type = XCB_EVENT_RESPONSE_TYPE(ev);
+	if (response_type != KeymapNotify) {
 		discard_pending(ps, ev->full_sequence);
 	}
 
 	xcb_window_t wid = ev_window(ps, ev);
-	if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
+	if (response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
 		log_debug("event %10.10s serial %#010x window %#010x \"%s\"",
 		          ev_name(ps, ev), ev->full_sequence, wid, ev_window_name(ps, wid));
 	} else {
@@ -687,9 +690,9 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	// For even more details, see:
 	// https://bugs.freedesktop.org/show_bug.cgi?id=35945
 	// https://lists.freedesktop.org/archives/xcb/2011-November/007337.html
-	auto proc = XESetWireToEvent(ps->dpy, ev->response_type, 0);
+	auto proc = XESetWireToEvent(ps->dpy, response_type, 0);
 	if (proc) {
-		XESetWireToEvent(ps->dpy, ev->response_type, proc);
+		XESetWireToEvent(ps->dpy, response_type, proc);
 		XEvent dummy;
 
 		// Stop Xlib from complaining about lost sequence numbers.
@@ -708,7 +711,7 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	// XXX redraw needs to be more fine grained
 	queue_redraw(ps);
 
-	switch (ev->response_type) {
+	switch (response_type) {
 	case FocusIn: ev_focus_in(ps, (xcb_focus_in_event_t *)ev); break;
 	case FocusOut: ev_focus_out(ps, (xcb_focus_out_event_t *)ev); break;
 	case CreateNotify: ev_create_notify(ps, (xcb_create_notify_event_t *)ev); break;
@@ -735,16 +738,16 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		break;
 	case 0: ev_xcb_error(ps, (xcb_generic_error_t *)ev); break;
 	default:
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
+		if (ps->shape_exists && response_type == ps->shape_event) {
 			ev_shape_notify(ps, (xcb_shape_notify_event_t *)ev);
 			break;
 		}
 		if (ps->randr_exists &&
-		    ev->response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
+		    response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
 			set_root_flags(ps, ROOT_FLAGS_SCREEN_CHANGE);
 			break;
 		}
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+		if (ps->damage_event + XCB_DAMAGE_NOTIFY == response_type) {
 			ev_damage_notify(ps, (xcb_damage_notify_event_t *)ev);
 			break;
 		}
