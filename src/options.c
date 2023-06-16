@@ -805,10 +805,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	if (opt->window_shader_fg || opt->window_shader_fg_rules) {
 		if (opt->backend == BKEND_XRENDER || opt->legacy_backends) {
 			log_warn(opt->backend == BKEND_XRENDER
-			             ? "Shader interface is not available for the "
-			               "xrender backend."
-			             : "The new shader interface is not available for "
-			               "the legacy glx backend. You may want to use "
+			             ? "Shader interface is not supported by the xrender "
+			               "backend."
+			             : "The new shader interface is not supported by the "
+			               "legacy glx backend. You may want to use "
 			               "--glx-fshader-win instead.");
 			opt->window_shader_fg = NULL;
 			c2_list_free(&opt->window_shader_fg_rules, free);
@@ -824,18 +824,16 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	opt->inactive_dim = normalize_d(opt->inactive_dim);
 	opt->frame_opacity = normalize_d(opt->frame_opacity);
 	opt->shadow_opacity = normalize_d(opt->shadow_opacity);
-
 	opt->max_brightness = normalize_d(opt->max_brightness);
 	if (opt->max_brightness < 1.0) {
-		if (opt->use_damage) {
-			log_warn("--max-brightness requires --no-use-damage. Falling "
-			         "back to 1.0");
+		if (opt->backend == BKEND_XRENDER || opt->legacy_backends) {
+			log_warn("--max-brightness is not supported by the %s backend. "
+			         "Falling back to 1.0.",
+			         opt->backend == BKEND_XRENDER ? "xrender" : "legacy glx");
 			opt->max_brightness = 1.0;
-		}
-
-		if (opt->legacy_backends || opt->backend != BKEND_GLX) {
-			log_warn("--max-brightness requires the new glx "
-			         "backend. Falling back to 1.0");
+		} else if (opt->use_damage) {
+			log_warn("--max-brightness requires --no-use-damage. Falling "
+			         "back to 1.0.");
 			opt->max_brightness = 1.0;
 		}
 	}
