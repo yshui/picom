@@ -368,7 +368,9 @@ bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color
 	    b->ops->shadow_from_mask == NULL) {
 		w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, sctx, c);
 	} else {
-		win_bind_mask(b, w);
+		if (!w->mask_image) {
+			win_bind_mask(b, w);
+		}
 		w->shadow_image = b->ops->shadow_from_mask(b, w->mask_image, sctx, c);
 	}
 	if (!w->shadow_image) {
