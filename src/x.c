@@ -628,22 +628,15 @@ bool x_validate_pixmap(xcb_connection_t *c, xcb_pixmap_t pixmap) {
 	free(r);
 	return ret;
 }
-/// Names of root window properties that could point to a pixmap of
-/// background.
-static const char *background_props_str[] = {
-    "_XROOTPMAP_ID",
-    "_XSETROOT_ID",
-    0,
-};
 
 xcb_pixmap_t
 x_get_root_back_pixmap(xcb_connection_t *c, xcb_window_t root, struct atom *atoms) {
 	xcb_pixmap_t pixmap = XCB_NONE;
 
-	// Get the values of background attributes
-	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(atoms, background_props_str[p]);
-		winprop_t prop = x_get_prop(c, root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
+	xcb_atom_t root_back_pixmap_atoms[] = {atoms->a_XROOTPMAP_ID, atoms->aESETROOT_PMAP_ID};
+	for (size_t i = 0; i < ARR_SIZE(root_back_pixmap_atoms); i++) {
+		winprop_t prop =
+		    x_get_prop(c, root, root_back_pixmap_atoms[i], 1, XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
 			pixmap = (xcb_pixmap_t)*prop.p32;
 			free_winprop(&prop);
