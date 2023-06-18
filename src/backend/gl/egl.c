@@ -67,7 +67,7 @@ const char *eglGetErrorString(EGLint error) {
 }
 
 /**
- * Free a glx_texture_t.
+ * Free a gl_texture_t.
  */
 static void egl_release_image(backend_t *base, struct gl_texture *tex) {
 	struct egl_data *gd = (void *)base;
@@ -88,14 +88,14 @@ static void egl_release_image(backend_t *base, struct gl_texture *tex) {
 }
 
 /**
- * Destroy GLX related resources.
+ * Destroy EGL related resources.
  */
 void egl_deinit(backend_t *base) {
 	struct egl_data *gd = (void *)base;
 
 	gl_deinit(&gd->gl);
 
-	// Destroy GLX context
+	// Destroy EGL context
 	if (gd->ctx != EGL_NO_CONTEXT) {
 		eglMakeCurrent(gd->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 		eglDestroyContext(gd->display, gd->ctx);
@@ -225,12 +225,12 @@ static backend_t *egl_init(session_t *ps) {
 
 	gd->ctx = eglCreateContext(gd->display, config, NULL, NULL);
 	if (gd->ctx == EGL_NO_CONTEXT) {
-		log_error("Failed to get GLX context.");
+		log_error("Failed to get EGL context.");
 		goto end;
 	}
 
 	if (!eglMakeCurrent(gd->display, gd->target_win, gd->target_win, gd->ctx)) {
-		log_error("Failed to attach GLX context.");
+		log_error("Failed to attach EGL context.");
 		goto end;
 	}
 
@@ -423,7 +423,7 @@ struct backend_operations egl_ops = {
 
 PFNEGLGETDISPLAYDRIVERNAMEPROC eglGetDisplayDriverName;
 /**
- * Check if a GLX extension exists.
+ * Check if a EGL extension exists.
  */
 static inline bool egl_has_extension(EGLDisplay dpy, const char *ext) {
 	const char *egl_exts = eglQueryString(dpy, EGL_EXTENSIONS);
