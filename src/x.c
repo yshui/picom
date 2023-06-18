@@ -628,22 +628,27 @@ bool x_validate_pixmap(xcb_connection_t *c, xcb_pixmap_t pixmap) {
 	free(r);
 	return ret;
 }
-/// Names of root window properties that could point to a pixmap of
-/// background.
-static const char *background_props_str[] = {
-    "_XROOTPMAP_ID",
-    "_XSETROOT_ID",
-    0,
-};
+
+/// We don't use the _XSETROOT_ID root window property as a source of the background
+/// pixmap because it most likely points to a dummy pixmap used to keep the colormap
+/// associated with the background pixmap alive but we listen for it's changes and update
+/// the background pixmap accordingly.
+///
+/// For details on the _XSETROOT_ID root window property and it's usage see:
+/// https://metacpan.org/pod/X11::Protocol::XSetRoot#_XSETROOT_ID
+/// https://gitlab.freedesktop.org/xorg/app/xsetroot/-/blob/435d35409768de7cbc2c47a6322192dd4b480545/xsetroot.c#L318-352
+/// https://github.com/ImageMagick/ImageMagick/blob/d04a47227637dbb3af9231b0107ccf9677bf985e/MagickCore/xwindow.c#L9203-L9260
+/// https://github.com/ImageMagick/ImageMagick/blob/d04a47227637dbb3af9231b0107ccf9677bf985e/MagickCore/xwindow.c#L1853-L1922
+/// https://www.fvwm.org/Archive/Manpages/fvwm-root.html
 
 xcb_pixmap_t
 x_get_root_back_pixmap(xcb_connection_t *c, xcb_window_t root, struct atom *atoms) {
 	xcb_pixmap_t pixmap = XCB_NONE;
 
-	// Get the values of background attributes
-	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(atoms, background_props_str[p]);
-		winprop_t prop = x_get_prop(c, root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
+	xcb_atom_t root_back_pixmap_atoms[] = {atoms->a_XROOTPMAP_ID, atoms->aESETROOT_PMAP_ID};
+	for (size_t i = 0; i < ARR_SIZE(root_back_pixmap_atoms); i++) {
+		winprop_t prop =
+		    x_get_prop(c, root, root_back_pixmap_atoms[i], 1, XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
 			pixmap = (xcb_pixmap_t)*prop.p32;
 			free_winprop(&prop);
@@ -656,13 +661,8 @@ x_get_root_back_pixmap(xcb_connection_t *c, xcb_window_t root, struct atom *atom
 }
 
 bool x_is_root_back_pixmap_atom(struct atom *atoms, xcb_atom_t atom) {
-	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(atoms, background_props_str[p]);
-		if (prop_atom == atom) {
-			return true;
-		}
-	}
-	return false;
+	return atom == atoms->a_XROOTPMAP_ID || atom == atoms->aESETROOT_PMAP_ID ||
+	       atom == atoms->a_XSETROOT_ID;
 }
 
 /**
