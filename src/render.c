@@ -583,8 +583,6 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 	}
 }
 
-extern const char *background_props_str[];
-
 static bool get_root_tile(session_t *ps) {
 	/*
 	if (ps->o.paint_on_overlay) {
