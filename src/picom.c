@@ -1562,13 +1562,8 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	uint64_t now_usec = (uint64_t)(now.tv_sec * 1000000 + now.tv_nsec / 1000);
-	uint64_t drift;
-	if (cne->ust > now_usec) {
-		drift = cne->ust - now_usec;
-	} else {
-		drift = now_usec - cne->ust;
-	}
+	auto now_us = (int64_t)(now.tv_sec * 1000000L + now.tv_nsec / 1000);
+	auto drift = iabs((int64_t)cne->ust - now_us);
 
 	if (ps->last_msc_instant != 0) {
 		auto frame_count = cne->msc - ps->last_msc;
@@ -1584,14 +1579,28 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 		// align with the monotonic clock. If not, disable frame pacing because we
 		// can't schedule frames reliably.
 		log_error("Temporal anomaly detected, frame pacing disabled. (Are we "
-		          "running inside a time namespace?), %" PRIu64 " %" PRIu64,
-		          now_usec, ps->last_msc_instant);
+		          "running inside a time namespace?), %" PRIi64 " %" PRIu64,
+		          now_us, ps->last_msc_instant);
 		ps->frame_pacing = false;
 	}
 	ps->last_msc_instant = cne->ust;
 	ps->last_msc = cne->msc;
 	if (ps->redraw_needed) {
-		schedule_render(ps, true);
+		if (now_us > (int64_t)cne->ust) {
+			schedule_render(ps, true);
+		} else {
+			// Wait until the end of the current vblank to call
+			// schedule_render. If we call schedule_render too early, it can
+			// mistakenly think the render missed the vblank, and doesn't
+			// schedule render for the next vblank, causing frame drops.
+			log_trace("The end of this vblank is %" PRIi64 " us into the "
+			          "future",
+			          (int64_t)cne->ust - now_us);
+			assert(!ev_is_active(&ps->vblank_timer));
+			ev_timer_set(&ps->vblank_timer,
+			             ((double)cne->ust - (double)now_us) / 1000000.0, 0);
+			ev_timer_start(ps->loop, &ps->vblank_timer);
+		}
 	}
 }
 
@@ -1863,6 +1872,13 @@ static void draw_callback(EV_P_ ev_timer *w, int revents) {
 		ev_timer_set(w, 0, 0);
 		ev_timer_start(EV_A_ w);
 	}
+}
+
+static void schedule_render_callback(EV_P_ ev_timer *w, int revents attr_unused) {
+	session_t *ps = session_ptr(w, vblank_timer);
+	ev_timer_stop(EV_A_ w);
+
+	schedule_render(ps, true);
 }
 
 static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused) {
@@ -2475,6 +2491,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_io_start(ps->loop, &ps->xiow);
 	ev_init(&ps->unredir_timer, tmout_unredir_callback);
 	ev_init(&ps->draw_timer, draw_callback);
+	ev_init(&ps->vblank_timer, schedule_render_callback);
 
 	ev_init(&ps->fade_timer, fade_timer_callback);
 
