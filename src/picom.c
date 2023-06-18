@@ -245,8 +245,9 @@ void schedule_render(session_t *ps, bool triggered_by_vblank) {
 			log_trace("Last render call took: %d (gpu) + %d (cpu) us, "
 			          "last_msc: %" PRIu64,
 			          render_time_us, (int)ps->last_schedule_delay, ps->last_msc);
-			render_statistics_add_render_time_sample(
-			    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
+			// render_statistics_add_render_time_sample(
+			//     &ps->render_stats, render_time_us +
+			//     (int)ps->last_schedule_delay);
 		}
 		ps->target_msc = 0;
 		ps->did_render = false;
@@ -279,13 +280,13 @@ void schedule_render(session_t *ps, bool triggered_by_vblank) {
 		ps->next_render = now_us;
 	}
 	if (delay_s > 1) {
-		log_warn("Delay too long: %f s, render_budget: %d us, frame_time: "
+		log_warn("Delay too long: %f s, render_budget: %u us, frame_time: "
 		         "%" PRIu32 " us, now_us: %" PRIu64 " us, next_msc: %" PRIu64 " u"
 		         "s",
 		         delay_s, render_budget, frame_time, now_us, deadline);
 	}
 
-	log_trace("Delay: %.6lf s, last_msc: %" PRIu64 ", render_budget: %d, frame_time: "
+	log_trace("Delay: %.6lf s, last_msc: %" PRIu64 ", render_budget: %u, frame_time: "
 	          "%" PRIu32 ", now_us: %" PRIu64 ", next_msc: %" PRIu64 ", "
 	          "target_msc: %" PRIu64 ", divisor: %d",
 	          delay_s, ps->last_msc_instant, render_budget, frame_time, now_us,
@@ -1563,18 +1564,18 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	auto now_us = (int64_t)(now.tv_sec * 1000000L + now.tv_nsec / 1000);
-	auto drift = iabs((int64_t)cne->ust - now_us);
+	auto drift = (int64_t)cne->ust - now_us;
 
 	if (ps->last_msc_instant != 0) {
 		auto frame_count = cne->msc - ps->last_msc;
 		int frame_time = (int)((cne->ust - ps->last_msc_instant) / frame_count);
 		render_statistics_add_vblank_time_sample(&ps->render_stats, frame_time);
 		log_trace("Frame count %lu, frame time: %d us, rolling average: %u us, "
-		          "msc: %" PRIu64 ", offset: %d us",
+		          "msc: %" PRIu64 ", offset: %" PRIi64 " us",
 		          frame_count, frame_time,
 		          render_statistics_get_vblank_time(&ps->render_stats), cne->ust,
-		          (int)drift);
-	} else if (drift > 1000000 && ps->frame_pacing) {
+		          drift);
+	} else if (iabs(drift) > 1000000 && ps->frame_pacing) {
 		// This is the first MSC event we receive, let's check if the timestamps
 		// align with the monotonic clock. If not, disable frame pacing because we
 		// can't schedule frames reliably.
