@@ -629,6 +629,18 @@ bool x_validate_pixmap(xcb_connection_t *c, xcb_pixmap_t pixmap) {
 	return ret;
 }
 
+/// We don't use the _XSETROOT_ID root window property as a source of the background
+/// pixmap because it most likely points to a dummy pixmap used to keep the colormap
+/// associated with the background pixmap alive but we listen for it's changes and update
+/// the background pixmap accordingly.
+///
+/// For details on the _XSETROOT_ID root window property and it's usage see:
+/// https://metacpan.org/pod/X11::Protocol::XSetRoot#_XSETROOT_ID
+/// https://gitlab.freedesktop.org/xorg/app/xsetroot/-/blob/435d35409768de7cbc2c47a6322192dd4b480545/xsetroot.c#L318-352
+/// https://github.com/ImageMagick/ImageMagick/blob/d04a47227637dbb3af9231b0107ccf9677bf985e/MagickCore/xwindow.c#L9203-L9260
+/// https://github.com/ImageMagick/ImageMagick/blob/d04a47227637dbb3af9231b0107ccf9677bf985e/MagickCore/xwindow.c#L1853-L1922
+/// https://www.fvwm.org/Archive/Manpages/fvwm-root.html
+
 xcb_pixmap_t
 x_get_root_back_pixmap(xcb_connection_t *c, xcb_window_t root, struct atom *atoms) {
 	xcb_pixmap_t pixmap = XCB_NONE;
