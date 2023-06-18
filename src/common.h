@@ -147,6 +147,8 @@ typedef struct session {
 	ev_timer fade_timer;
 	/// Use an ev_timer callback for drawing
 	ev_timer draw_timer;
+	/// Timer for the end of each vblanks. Used for calling schedule_render.
+	ev_timer vblank_timer;
 	/// Called every time we have timeouts or new data on socket,
 	/// so we can be sure if xcb read from X socket at anytime during event
 	/// handling, we will not left any event unhandled in the queue
