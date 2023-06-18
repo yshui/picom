@@ -656,13 +656,8 @@ x_get_root_back_pixmap(xcb_connection_t *c, xcb_window_t root, struct atom *atom
 }
 
 bool x_is_root_back_pixmap_atom(struct atom *atoms, xcb_atom_t atom) {
-	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(atoms, background_props_str[p]);
-		if (prop_atom == atom) {
-			return true;
-		}
-	}
-	return false;
+	return atom == atoms->a_XROOTPMAP_ID || atom == atoms->aESETROOT_PMAP_ID ||
+	       atom == atoms->a_XSETROOT_ID;
 }
 
 /**
