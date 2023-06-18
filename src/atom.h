@@ -3,8 +3,8 @@
 
 #include <xcb/xcb.h>
 
-#include "meta.h"
 #include "cache.h"
+#include "meta.h"
 
 // clang-format off
 // Splitted into 2 lists because of the limitation of our macros
@@ -23,7 +23,10 @@
 	WM_CLIENT_MACHINE, \
 	_NET_ACTIVE_WINDOW, \
 	_COMPTON_SHADOW, \
-	_NET_WM_WINDOW_TYPE
+	_NET_WM_WINDOW_TYPE, \
+	_XROOTPMAP_ID, \
+	ESETROOT_PMAP_ID, \
+	_XSETROOT_ID
 
 #define ATOM_LIST2 \
 	_NET_WM_WINDOW_TYPE_DESKTOP, \
