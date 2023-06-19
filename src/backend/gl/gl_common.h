@@ -77,7 +77,7 @@ typedef struct {
 	GLint color_loc;
 } gl_fill_shader_t;
 
-/// @brief Wrapper of a binded GLX texture.
+/// @brief Wrapper of a binded GL texture.
 struct gl_texture {
 	int refcount;
 	bool has_alpha;
@@ -214,7 +214,7 @@ static inline const char *gl_get_err_str(GLenum err) {
 }
 
 /**
- * Check for GLX error.
+ * Check for GL error.
  *
  * http://blog.nobel-joergensen.com/2013/01/29/debugging-opengl-using-glgeterror/
  */
@@ -225,10 +225,10 @@ static inline void gl_check_err_(const char *func, int line) {
 		const char *errtext = gl_get_err_str(err);
 		if (errtext) {
 			log_printf(tls_logger, LOG_LEVEL_ERROR, func,
-			           "GLX error at line %d: %s", line, errtext);
+			           "GL error at line %d: %s", line, errtext);
 		} else {
 			log_printf(tls_logger, LOG_LEVEL_ERROR, func,
-			           "GLX error at line %d: %d", line, err);
+			           "GL error at line %d: %d", line, err);
 		}
 	}
 }
@@ -265,7 +265,7 @@ static inline bool gl_check_fb_complete_(const char *func, int line, GLenum fb) 
 #define gl_check_fb_complete(fb) gl_check_fb_complete_(__func__, __LINE__, (fb))
 
 /**
- * Check if a GLX extension exists.
+ * Check if a GL extension exists.
  */
 static inline bool gl_has_extension(const char *ext) {
 	int nexts = 0;
