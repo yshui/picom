@@ -134,6 +134,17 @@ struct shader_info {
 	UT_hash_handle hh;
 };
 
+enum render_progress {
+	/// Render is finished and presented to the screen.
+	RENDER_IDLE = 0,
+	/// Rendering is queued, but not started yet.
+	RENDER_QUEUED,
+	/// Backend has been called, render commands have been issued.
+	RENDER_STARTED,
+	/// Backend reported render commands have been finished. (not actually used).
+	RENDER_FINISHED,
+};
+
 /// Structure containing all necessary data for a session.
 typedef struct session {
 	// === Event handlers ===
@@ -223,17 +234,11 @@ typedef struct session {
 	uint64_t last_msc_instant;
 	/// The last MSC number
 	uint64_t last_msc;
-	/// When the currently rendered frame will be displayed.
-	/// 0 means there is no pending frame.
-	uint64_t target_msc;
 	/// The delay between when the last frame was scheduled to be rendered, and when
 	/// the render actually started.
 	uint64_t last_schedule_delay;
 	/// When do we want our next frame to start rendering.
 	uint64_t next_render;
-	/// Did we actually render the last frame. Sometimes redraw will be scheduled only
-	/// to find out nothing has changed. In which case this will be set to false.
-	bool did_render;
 	/// Whether we can perform frame pacing.
 	bool frame_pacing;
 
@@ -247,7 +252,13 @@ typedef struct session {
 	options_t o;
 	/// Whether we have hit unredirection timeout.
 	bool tmout_unredir_hit;
-	/// Whether we need to redraw the screen
+	/// Rendering is currently in progress. This means we are in any stage of
+	/// rendering a frame. The render could be queued but not yet started, or it could
+	/// have finished but not yet presented.
+	enum render_progress render_in_progress;
+	/// Whether there are changes pending for the next render. A render is currently
+	/// in progress, otherwise we would have started a new render instead of setting
+	/// this flag.
 	bool redraw_needed;
 
 	/// Cache a xfixes region so we don't need to allocate it every time.

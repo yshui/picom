@@ -366,4 +366,8 @@ struct backend_operations {
 
 extern struct backend_operations *backend_list[];
 
-void paint_all_new(session_t *ps, struct managed_win *const t) attr_nonnull(1);
+/// paint all windows
+///
+/// Returns if any render command is issued. IOW if nothing on the screen has changed,
+/// this function will return false.
+bool paint_all_new(session_t *ps, struct managed_win *t) attr_nonnull(1);
