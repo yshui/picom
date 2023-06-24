@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <sched.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -2579,18 +2580,17 @@ err:
 void set_rr_scheduling(void) {
 	int priority = sched_get_priority_min(SCHED_RR);
 
-	int old_policy;
 	int ret;
 	struct sched_param param;
 
-	ret = pthread_getschedparam(pthread_self(), &old_policy, &param);
+	ret = sched_getparam(0, &param);
 	if (ret != 0) {
 		log_debug("Failed to get old scheduling priority");
 		return;
 	}
 
 	param.sched_priority = priority;
-	ret = pthread_setschedparam(pthread_self(), SCHED_RR, &param);
+	ret = sched_setscheduler(0, SCHED_RR, &param);
 	if (ret != 0) {
 		log_info("Failed to set real-time scheduling priority to %d. Consider "
 		         "giving picom the CAP_SYS_NICE capability",
