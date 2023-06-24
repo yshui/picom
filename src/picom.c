@@ -2577,11 +2577,8 @@ err:
 	return NULL;
 }
 void set_rr_scheduling(void) {
-	struct rlimit rlim;
-	if (getrlimit(RLIMIT_RTPRIO, &rlim) != 0) {
-		log_warn("Failed to get RLIMIT_RTPRIO, not setting real-time priority");
-		return;
-	}
+	int priority = sched_get_priority_min(SCHED_RR);
+
 	int old_policy;
 	int ret;
 	struct sched_param param;
@@ -2592,14 +2589,15 @@ void set_rr_scheduling(void) {
 		return;
 	}
 
-	param.sched_priority = (int)rlim.rlim_cur;
-
+	param.sched_priority = priority;
 	ret = pthread_setschedparam(pthread_self(), SCHED_RR, &param);
 	if (ret != 0) {
-		log_info("Failed to set scheduling priority to %lu", rlim.rlim_cur);
+		log_info("Failed to set real-time scheduling priority to %d. Consider "
+		         "giving picom the CAP_SYS_NICE capability",
+		         priority);
 		return;
 	}
-	log_info("Set scheduling priority to %lu", rlim.rlim_cur);
+	log_info("Set real-time scheduling priority to %d", priority);
 }
 
 /**
