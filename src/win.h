@@ -11,11 +11,6 @@
 
 #include "uthash_extra.h"
 
-// FIXME shouldn't need this
-#ifdef CONFIG_OPENGL
-#include <GL/gl.h>
-#endif
-
 #include "c2.h"
 #include "compiler.h"
 #include "list.h"
