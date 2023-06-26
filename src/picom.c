@@ -2577,6 +2577,14 @@ err:
 	free(ps);
 	return NULL;
 }
+
+/// Switch to real-time scheduling policy (SCHED_RR) if possible
+///
+/// Make picom realtime to reduce latency, and make rendering times more predictable to
+/// help pacing.
+///
+/// This requires the user to set up permissions for the real-time scheduling. e.g. by
+/// setting `ulimit -r`, or giving us the CAP_SYS_NICE capability.
 void set_rr_scheduling(void) {
 	int priority = sched_get_priority_min(SCHED_RR);
 
