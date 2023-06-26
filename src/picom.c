@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <sched.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -2576,30 +2577,35 @@ err:
 	free(ps);
 	return NULL;
 }
+
+/// Switch to real-time scheduling policy (SCHED_RR) if possible
+///
+/// Make picom realtime to reduce latency, and make rendering times more predictable to
+/// help pacing.
+///
+/// This requires the user to set up permissions for the real-time scheduling. e.g. by
+/// setting `ulimit -r`, or giving us the CAP_SYS_NICE capability.
 void set_rr_scheduling(void) {
-	struct rlimit rlim;
-	if (getrlimit(RLIMIT_RTPRIO, &rlim) != 0) {
-		log_warn("Failed to get RLIMIT_RTPRIO, not setting real-time priority");
-		return;
-	}
-	int old_policy;
+	int priority = sched_get_priority_min(SCHED_RR);
+
 	int ret;
 	struct sched_param param;
 
-	ret = pthread_getschedparam(pthread_self(), &old_policy, &param);
+	ret = sched_getparam(0, &param);
 	if (ret != 0) {
 		log_debug("Failed to get old scheduling priority");
 		return;
 	}
 
-	param.sched_priority = (int)rlim.rlim_cur;
-
-	ret = pthread_setschedparam(pthread_self(), SCHED_RR, &param);
+	param.sched_priority = priority;
+	ret = sched_setscheduler(0, SCHED_RR, &param);
 	if (ret != 0) {
-		log_info("Failed to set scheduling priority to %lu", rlim.rlim_cur);
+		log_info("Failed to set real-time scheduling priority to %d. Consider "
+		         "giving picom the CAP_SYS_NICE capability",
+		         priority);
 		return;
 	}
-	log_info("Set scheduling priority to %lu", rlim.rlim_cur);
+	log_info("Set real-time scheduling priority to %d", priority);
 }
 
 /**
