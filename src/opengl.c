@@ -50,10 +50,12 @@ bool glx_init(session_t *ps, bool need_render) {
 	XVisualInfo *pvis = NULL;
 
 	// Check for GLX extension
-	if (!ps->glx_exists) {
+	if (!glXQueryExtension(ps->dpy, &ps->glx_error, &ps->glx_event)) {
 		log_error("No GLX extension.");
 		goto glx_init_end;
 	}
+
+	ps->glx_exists = true;
 
 	// Get XVisualInfo
 	pvis = get_visualinfo_from_visual(ps, ps->vis);

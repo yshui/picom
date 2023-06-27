@@ -4,17 +4,19 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+#include <X11/Xmd.h>
 #include <X11/Xutil.h>
 #include <pixman.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
-#include <xcb/glx.h>
 #include <xcb/randr.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xfixes.h>
+
+#include <GL/glxproto.h>
 
 #include "atom.h"
 #ifdef CONFIG_OPENGL
@@ -507,20 +509,20 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 	if (ps->glx_exists) {
 		o = error_code - ps->glx_error;
 		switch (o) {
-			CASESTRRET2(GLX_BAD_CONTEXT);
-			CASESTRRET2(GLX_BAD_CONTEXT_STATE);
-			CASESTRRET2(GLX_BAD_DRAWABLE);
-			CASESTRRET2(GLX_BAD_PIXMAP);
-			CASESTRRET2(GLX_BAD_CONTEXT_TAG);
-			CASESTRRET2(GLX_BAD_CURRENT_WINDOW);
-			CASESTRRET2(GLX_BAD_RENDER_REQUEST);
-			CASESTRRET2(GLX_BAD_LARGE_REQUEST);
-			CASESTRRET2(GLX_UNSUPPORTED_PRIVATE_REQUEST);
-			CASESTRRET2(GLX_BAD_FB_CONFIG);
-			CASESTRRET2(GLX_BAD_PBUFFER);
-			CASESTRRET2(GLX_BAD_CURRENT_DRAWABLE);
-			CASESTRRET2(GLX_BAD_WINDOW);
-			CASESTRRET2(GLX_GLX_BAD_PROFILE_ARB);
+			CASESTRRET(GLXBadContext);
+			CASESTRRET(GLXBadContextState);
+			CASESTRRET(GLXBadDrawable);
+			CASESTRRET(GLXBadPixmap);
+			CASESTRRET(GLXBadContextTag);
+			CASESTRRET(GLXBadCurrentWindow);
+			CASESTRRET(GLXBadRenderRequest);
+			CASESTRRET(GLXBadLargeRequest);
+			CASESTRRET(GLXUnsupportedPrivateRequest);
+			CASESTRRET(GLXBadFBConfig);
+			CASESTRRET(GLXBadPbuffer);
+			CASESTRRET(GLXBadCurrentDrawable);
+			CASESTRRET(GLXBadWindow);
+			CASESTRRET(GLXBadProfileARB);
 		}
 	}
 

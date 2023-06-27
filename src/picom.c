@@ -25,7 +25,6 @@
 #include <xcb/composite.h>
 #include <xcb/damage.h>
 #include <xcb/dpms.h>
-#include <xcb/glx.h>
 #include <xcb/present.h>
 #include <xcb/randr.h>
 #include <xcb/render.h>
@@ -2098,7 +2097,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	xcb_prefetch_extension_data(ps->c, &xcb_randr_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_present_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_sync_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_glx_id);
 	xcb_prefetch_extension_data(ps->c, &xcb_dpms_id);
 
 	ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
@@ -2159,13 +2157,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c, ps->damaged_region, 0, NULL)) {
 		log_fatal("Failed to create a XFixes region");
 		goto err;
-	}
-
-	ext_info = xcb_get_extension_data(ps->c, &xcb_glx_id);
-	if (ext_info && ext_info->present) {
-		ps->glx_exists = true;
-		ps->glx_error = ext_info->first_error;
-		ps->glx_event = ext_info->first_event;
 	}
 
 	ext_info = xcb_get_extension_data(ps->c, &xcb_dpms_id);

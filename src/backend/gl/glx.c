@@ -244,10 +244,12 @@ static backend_t *glx_init(session_t *ps) {
 	XVisualInfo *pvis = NULL;
 
 	// Check for GLX extension
-	if (!ps->glx_exists) {
+	if (!glXQueryExtension(ps->dpy, &ps->glx_error, &ps->glx_event)) {
 		log_error("No GLX extension.");
 		goto end;
 	}
+
+	ps->glx_exists = true;
 
 	// Get XVisualInfo
 	int nitems = 0;
