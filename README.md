@@ -63,8 +63,7 @@ To build the documents, you need `asciidoc`
 ### To build
 
 ```bash
-$ git submodule update --init --recursive
-$ meson setup --buildtype=release . build
+$ meson setup --buildtype=release build
 $ ninja -C build
 ```
 
@@ -75,12 +74,12 @@ If you have libraries and/or headers installed at non-default location (e.g. und
 You can do that by setting the `CPPFLAGS` and `LDFLAGS` environment variables when running `meson`. Like this:
 
 ```bash
-$ LDFLAGS="-L/path/to/libraries" CPPFLAGS="-I/path/to/headers" meson setup --buildtype=release . build
+$ LDFLAGS="-L/path/to/libraries" CPPFLAGS="-I/path/to/headers" meson setup --buildtype=release build
 ```
 
 As an example, on FreeBSD, you might have to run meson with:
 ```bash
-$ LDFLAGS="-L/usr/local/lib" CPPFLAGS="-I/usr/local/include" meson setup --buildtype=release . build
+$ LDFLAGS="-L/usr/local/lib" CPPFLAGS="-I/usr/local/include" meson setup --buildtype=release build
 $ ninja -C build
 ```
 
