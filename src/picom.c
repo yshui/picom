@@ -129,7 +129,7 @@ static inline bool dpms_screen_is_off(xcb_dpms_info_reply_t *info) {
 
 void check_dpms_status(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
 	auto ps = session_ptr(w, dpms_check_timer);
-	auto r = xcb_dpms_info_reply(ps->c, xcb_dpms_info(ps->c), NULL);
+	auto r = xcb_dpms_info_reply(ps->c.c, xcb_dpms_info(ps->c.c), NULL);
 	if (!r) {
 		log_fatal("Failed to query DPMS status.");
 		abort();
@@ -149,7 +149,7 @@ void check_dpms_status(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
  * XXX move to win.c
  */
 static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t wid) {
-	if (!wid || PointerRoot == wid || wid == ps->root || wid == ps->overlay) {
+	if (!wid || PointerRoot == wid || wid == ps->c.screen_info->root || wid == ps->overlay) {
 		return NULL;
 	}
 
@@ -352,8 +352,9 @@ void add_damage(session_t *ps, const region_t *damage) {
  */
 static double fade_timeout(session_t *ps) {
 	auto now = get_time_ms();
-	if (ps->o.fade_delta + ps->fade_time < now)
+	if (ps->o.fade_delta + ps->fade_time < now) {
 		return 0;
+	}
 
 	auto diff = ps->o.fade_delta + ps->fade_time - now;
 
@@ -406,47 +407,6 @@ static bool run_fade(session_t *ps, struct managed_win **_w, long long steps) {
 	return true;
 }
 
-// === Error handling ===
-
-void discard_pending(session_t *ps, uint32_t sequence) {
-	while (ps->pending_reply_head) {
-		if (sequence > ps->pending_reply_head->sequence) {
-			auto next = ps->pending_reply_head->next;
-			free(ps->pending_reply_head);
-			ps->pending_reply_head = next;
-			if (!ps->pending_reply_head) {
-				ps->pending_reply_tail = &ps->pending_reply_head;
-			}
-		} else {
-			break;
-		}
-	}
-}
-
-static void handle_error(session_t *ps, xcb_generic_error_t *ev) {
-	if (ps == NULL) {
-		// Do not ignore errors until the session has been initialized
-		return;
-	}
-	discard_pending(ps, ev->full_sequence);
-	if (ps->pending_reply_head && ps->pending_reply_head->sequence == ev->full_sequence) {
-		if (ps->pending_reply_head->action != PENDING_REPLY_ACTION_IGNORE) {
-			x_log_error(LOG_LEVEL_ERROR, ev->full_sequence, ev->major_code,
-			            ev->minor_code, ev->error_code);
-		}
-		switch (ps->pending_reply_head->action) {
-		case PENDING_REPLY_ACTION_ABORT:
-			log_fatal("An unrecoverable X error occurred, aborting...");
-			abort();
-		case PENDING_REPLY_ACTION_DEBUG_ABORT: assert(false); break;
-		case PENDING_REPLY_ACTION_IGNORE: break;
-		}
-		return;
-	}
-	x_log_error(LOG_LEVEL_WARN, ev->full_sequence, ev->major_code, ev->minor_code,
-	            ev->error_code);
-}
-
 // === Windows ===
 
 /**
@@ -482,8 +442,8 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
  */
 void update_ewmh_active_win(session_t *ps) {
 	// Search for the window
-	xcb_window_t wid =
-	    wid_get_prop_window(ps->c, ps->root, ps->atoms->a_NET_ACTIVE_WINDOW);
+	xcb_window_t wid = wid_get_prop_window(&ps->c, ps->c.screen_info->root,
+	                                       ps->atoms->a_NET_ACTIVE_WINDOW);
 	auto w = find_win_all(ps, wid);
 
 	// Mark the window focused. No need to unfocus the previous one.
@@ -510,7 +470,7 @@ static void recheck_focus(session_t *ps) {
 	// opacity on it
 	xcb_window_t wid = XCB_NONE;
 	xcb_get_input_focus_reply_t *reply =
-	    xcb_get_input_focus_reply(ps->c, xcb_get_input_focus(ps->c), NULL);
+	    xcb_get_input_focus_reply(ps->c.c, xcb_get_input_focus(ps->c.c), NULL);
 
 	if (reply) {
 		wid = reply->focus;
@@ -719,7 +679,7 @@ err:
 
 /// Handle configure event of the root window
 static void configure_root(session_t *ps) {
-	auto r = XCB_AWAIT(xcb_get_geometry, ps->c, ps->root);
+	auto r = XCB_AWAIT(xcb_get_geometry, ps->c.c, ps->c.screen_info->root);
 	if (!r) {
 		log_fatal("Failed to fetch root geometry");
 		abort();
@@ -795,8 +755,8 @@ static void configure_root(session_t *ps) {
 
 static void handle_root_flags(session_t *ps) {
 	if ((ps->root_flags & ROOT_FLAGS_SCREEN_CHANGE) != 0) {
-		if (ps->o.crop_shadow_to_monitor) {
-			x_update_randr_monitors(ps);
+		if (ps->o.crop_shadow_to_monitor && ps->randr_exists) {
+			x_update_monitors(&ps->c, &ps->monitors);
 		}
 		ps->root_flags &= ~(uint64_t)ROOT_FLAGS_SCREEN_CHANGE;
 	}
@@ -1096,10 +1056,11 @@ void root_damaged(session_t *ps) {
 			ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
 			ps->root_image = NULL;
 		}
-		auto pixmap = x_get_root_back_pixmap(ps->c, ps->root, ps->atoms);
+		auto pixmap = x_get_root_back_pixmap(&ps->c, ps->atoms);
 		if (pixmap != XCB_NONE) {
 			ps->root_image = ps->backend_data->ops->bind_pixmap(
-			    ps->backend_data, pixmap, x_get_visual_info(ps->c, ps->vis), false);
+			    ps->backend_data, pixmap,
+			    x_get_visual_info(&ps->c, ps->c.screen_info->root_visual), false);
 			if (ps->root_image) {
 				ps->backend_data->ops->set_image_property(
 				    ps->backend_data, IMAGE_PROPERTY_EFFECTIVE_SIZE,
@@ -1112,27 +1073,6 @@ void root_damaged(session_t *ps) {
 
 	// Mark screen damaged
 	force_repaint(ps);
-}
-
-/**
- * Xlib error handler function.
- */
-static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
-	// Fake a xcb error, fill in just enough information
-	xcb_generic_error_t xcb_err;
-	xcb_err.full_sequence = (uint32_t)ev->serial;
-	xcb_err.major_code = ev->request_code;
-	xcb_err.minor_code = ev->minor_code;
-	xcb_err.error_code = ev->error_code;
-	handle_error(ps_g, &xcb_err);
-	return 0;
-}
-
-/**
- * XCB error handler function.
- */
-void ev_xcb_error(session_t *ps, xcb_generic_error_t *err) {
-	handle_error(ps, err);
 }
 
 /**
@@ -1169,10 +1109,11 @@ void opts_set_no_fading_openclose(session_t *ps, bool newval) {
 static int register_cm(session_t *ps) {
 	assert(!ps->reg_win);
 
-	ps->reg_win = x_new_id(ps->c);
+	ps->reg_win = x_new_id(&ps->c);
 	auto e = xcb_request_check(
-	    ps->c, xcb_create_window_checked(ps->c, XCB_COPY_FROM_PARENT, ps->reg_win, ps->root,
-	                                     0, 0, 1, 1, 0, XCB_NONE, ps->vis, 0, NULL));
+	    ps->c.c, xcb_create_window_checked(ps->c.c, XCB_COPY_FROM_PARENT, ps->reg_win,
+	                                       ps->c.screen_info->root, 0, 0, 1, 1, 0, XCB_NONE,
+	                                       ps->c.screen_info->root_visual, 0, NULL));
 
 	if (e) {
 		log_fatal("Failed to create window.");
@@ -1191,10 +1132,10 @@ static int register_cm(session_t *ps) {
 	// Set names and classes
 	for (size_t i = 0; i < ARR_SIZE(prop_atoms); i++) {
 		e = xcb_request_check(
-		    ps->c, xcb_change_property_checked(
-		               ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win, prop_atoms[i],
-		               prop_is_utf8[i] ? ps->atoms->aUTF8_STRING : XCB_ATOM_STRING,
-		               8, strlen("picom"), "picom"));
+		    ps->c.c, xcb_change_property_checked(
+		                 ps->c.c, XCB_PROP_MODE_REPLACE, ps->reg_win, prop_atoms[i],
+		                 prop_is_utf8[i] ? ps->atoms->aUTF8_STRING : XCB_ATOM_STRING,
+		                 8, strlen("picom"), "picom"));
 		if (e) {
 			log_error_x_error(e, "Failed to set window property %d",
 			                  prop_atoms[i]);
@@ -1204,9 +1145,9 @@ static int register_cm(session_t *ps) {
 
 	const char picom_class[] = "picom\0picom";
 	e = xcb_request_check(
-	    ps->c, xcb_change_property_checked(ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win,
-	                                       ps->atoms->aWM_CLASS, XCB_ATOM_STRING, 8,
-	                                       ARR_SIZE(picom_class), picom_class));
+	    ps->c.c, xcb_change_property_checked(ps->c.c, XCB_PROP_MODE_REPLACE, ps->reg_win,
+	                                         ps->atoms->aWM_CLASS, XCB_ATOM_STRING, 8,
+	                                         ARR_SIZE(picom_class), picom_class));
 	if (e) {
 		log_error_x_error(e, "Failed to set the WM_CLASS property");
 		free(e);
@@ -1220,10 +1161,10 @@ static int register_cm(session_t *ps) {
 
 		if (gethostname(hostname, hostname_max) == 0) {
 			e = xcb_request_check(
-			    ps->c, xcb_change_property_checked(
-			               ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win,
-			               ps->atoms->aWM_CLIENT_MACHINE, XCB_ATOM_STRING, 8,
-			               (uint32_t)strlen(hostname), hostname));
+			    ps->c.c, xcb_change_property_checked(
+			                 ps->c.c, XCB_PROP_MODE_REPLACE, ps->reg_win,
+			                 ps->atoms->aWM_CLIENT_MACHINE, XCB_ATOM_STRING,
+			                 8, (uint32_t)strlen(hostname), hostname));
 			if (e) {
 				log_error_x_error(e, "Failed to set the WM_CLIENT_MACHINE"
 				                     " property");
@@ -1239,16 +1180,16 @@ static int register_cm(session_t *ps) {
 	// Set _NET_WM_PID
 	{
 		auto pid = getpid();
-		xcb_change_property(ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win,
+		xcb_change_property(ps->c.c, XCB_PROP_MODE_REPLACE, ps->reg_win,
 		                    ps->atoms->a_NET_WM_PID, XCB_ATOM_CARDINAL, 32, 1, &pid);
 	}
 
 	// Set COMPTON_VERSION
 	e = xcb_request_check(
-	    ps->c, xcb_change_property_checked(
-	               ps->c, XCB_PROP_MODE_REPLACE, ps->reg_win,
-	               get_atom(ps->atoms, "COMPTON_VERSION"), XCB_ATOM_STRING, 8,
-	               (uint32_t)strlen(PICOM_VERSION), PICOM_VERSION));
+	    ps->c.c, xcb_change_property_checked(
+	                 ps->c.c, XCB_PROP_MODE_REPLACE, ps->reg_win,
+	                 get_atom(ps->atoms, "COMPTON_VERSION"), XCB_ATOM_STRING, 8,
+	                 (uint32_t)strlen(PICOM_VERSION), PICOM_VERSION));
 	if (e) {
 		log_error_x_error(e, "Failed to set COMPTON_VERSION.");
 		free(e);
@@ -1260,7 +1201,7 @@ static int register_cm(session_t *ps) {
 		xcb_atom_t atom;
 
 		char *buf = NULL;
-		if (asprintf(&buf, "%s%d", register_prop, ps->scr) < 0) {
+		if (asprintf(&buf, "%s%d", register_prop, ps->c.screen) < 0) {
 			log_fatal("Failed to allocate memory");
 			return -1;
 		}
@@ -1268,7 +1209,7 @@ static int register_cm(session_t *ps) {
 		free(buf);
 
 		xcb_get_selection_owner_reply_t *reply = xcb_get_selection_owner_reply(
-		    ps->c, xcb_get_selection_owner(ps->c, atom), NULL);
+		    ps->c.c, xcb_get_selection_owner(ps->c.c, atom), NULL);
 
 		if (reply && reply->owner != XCB_NONE) {
 			// Another compositor already running
@@ -1276,7 +1217,7 @@ static int register_cm(session_t *ps) {
 			return 1;
 		}
 		free(reply);
-		xcb_set_selection_owner(ps->c, ps->reg_win, atom, 0);
+		xcb_set_selection_owner(ps->c.c, ps->reg_win, atom, 0);
 	}
 
 	return 0;
@@ -1306,9 +1247,8 @@ static inline bool write_pid(session_t *ps) {
  * Initialize X composite overlay window.
  */
 static bool init_overlay(session_t *ps) {
-	xcb_composite_get_overlay_window_reply_t *reply =
-	    xcb_composite_get_overlay_window_reply(
-	        ps->c, xcb_composite_get_overlay_window(ps->c, ps->root), NULL);
+	xcb_composite_get_overlay_window_reply_t *reply = xcb_composite_get_overlay_window_reply(
+	    ps->c.c, xcb_composite_get_overlay_window(ps->c.c, ps->c.screen_info->root), NULL);
 	if (reply) {
 		ps->overlay = reply->overlay_win;
 		free(reply);
@@ -1318,13 +1258,13 @@ static bool init_overlay(session_t *ps) {
 	if (ps->overlay != XCB_NONE) {
 		// Set window region of the overlay window, code stolen from
 		// compiz-0.8.8
-		if (!XCB_AWAIT_VOID(xcb_shape_mask, ps->c, XCB_SHAPE_SO_SET,
+		if (!XCB_AWAIT_VOID(xcb_shape_mask, ps->c.c, XCB_SHAPE_SO_SET,
 		                    XCB_SHAPE_SK_BOUNDING, ps->overlay, 0, 0, 0)) {
 			log_fatal("Failed to set the bounding shape of overlay, giving "
 			          "up.");
 			return false;
 		}
-		if (!XCB_AWAIT_VOID(xcb_shape_rectangles, ps->c, XCB_SHAPE_SO_SET,
+		if (!XCB_AWAIT_VOID(xcb_shape_rectangles, ps->c.c, XCB_SHAPE_SO_SET,
 		                    XCB_SHAPE_SK_INPUT, XCB_CLIP_ORDERING_UNSORTED,
 		                    ps->overlay, 0, 0, 0, NULL)) {
 			log_fatal("Failed to set the input shape of overlay, giving up.");
@@ -1332,7 +1272,7 @@ static bool init_overlay(session_t *ps) {
 		}
 
 		// Listen to Expose events on the overlay
-		xcb_change_window_attributes(ps->c, ps->overlay, XCB_CW_EVENT_MASK,
+		xcb_change_window_attributes(ps->c.c, ps->overlay, XCB_CW_EVENT_MASK,
 		                             (const uint32_t[]){XCB_EVENT_MASK_EXPOSURE});
 
 		// Retrieve DamageNotify on root window if we are painting on an
@@ -1340,7 +1280,7 @@ static bool init_overlay(session_t *ps) {
 		// root_damage = XDamageCreate(ps->dpy, root, XDamageReportNonEmpty);
 
 		// Unmap the overlay, we will map it when needed in redirect_start
-		XCB_AWAIT_VOID(xcb_unmap_window, ps->c, ps->overlay);
+		XCB_AWAIT_VOID(xcb_unmap_window, ps->c.c, ps->overlay);
 	} else {
 		log_error("Cannot get X Composite overlay window. Falling "
 		          "back to painting on root window.");
@@ -1351,27 +1291,29 @@ static bool init_overlay(session_t *ps) {
 }
 
 static bool init_debug_window(session_t *ps) {
-	xcb_colormap_t colormap = x_new_id(ps->c);
-	ps->debug_window = x_new_id(ps->c);
+	xcb_colormap_t colormap = x_new_id(&ps->c);
+	ps->debug_window = x_new_id(&ps->c);
 
 	auto err = xcb_request_check(
-	    ps->c, xcb_create_colormap_checked(ps->c, XCB_COLORMAP_ALLOC_NONE, colormap,
-	                                       ps->root, ps->vis));
+	    ps->c.c, xcb_create_colormap_checked(ps->c.c, XCB_COLORMAP_ALLOC_NONE,
+	                                         colormap, ps->c.screen_info->root,
+	                                         ps->c.screen_info->root_visual));
 	if (err) {
 		goto err_out;
 	}
 
 	err = xcb_request_check(
-	    ps->c, xcb_create_window_checked(ps->c, (uint8_t)ps->depth, ps->debug_window,
-	                                     ps->root, 0, 0, to_u16_checked(ps->root_width),
-	                                     to_u16_checked(ps->root_height), 0,
-	                                     XCB_WINDOW_CLASS_INPUT_OUTPUT, ps->vis,
-	                                     XCB_CW_COLORMAP, (uint32_t[]){colormap, 0}));
+	    ps->c.c, xcb_create_window_checked(
+	                 ps->c.c, (uint8_t)ps->c.screen_info->root_depth,
+	                 ps->debug_window, ps->c.screen_info->root, 0, 0,
+	                 to_u16_checked(ps->root_width), to_u16_checked(ps->root_height),
+	                 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, ps->c.screen_info->root_visual,
+	                 XCB_CW_COLORMAP, (uint32_t[]){colormap, 0}));
 	if (err) {
 		goto err_out;
 	}
 
-	err = xcb_request_check(ps->c, xcb_map_window_checked(ps->c, ps->debug_window));
+	err = xcb_request_check(ps->c.c, xcb_map_window_checked(ps->c.c, ps->debug_window));
 	if (err) {
 		goto err_out;
 	}
@@ -1386,7 +1328,7 @@ xcb_window_t session_get_target_window(session_t *ps) {
 	if (ps->o.debug_mode) {
 		return ps->debug_window;
 	}
-	return ps->overlay != XCB_NONE ? ps->overlay : ps->root;
+	return ps->overlay != XCB_NONE ? ps->overlay : ps->c.screen_info->root;
 }
 
 uint8_t session_redirection_mode(session_t *ps) {
@@ -1416,18 +1358,18 @@ static bool redirect_start(session_t *ps) {
 	// Map overlay window. Done firstly according to this:
 	// https://bugzilla.gnome.org/show_bug.cgi?id=597014
 	if (ps->overlay != XCB_NONE) {
-		xcb_map_window(ps->c, ps->overlay);
+		xcb_map_window(ps->c.c, ps->overlay);
 	}
 
-	bool success = XCB_AWAIT_VOID(xcb_composite_redirect_subwindows, ps->c, ps->root,
-	                              session_redirection_mode(ps));
+	bool success = XCB_AWAIT_VOID(xcb_composite_redirect_subwindows, ps->c.c,
+	                              ps->c.screen_info->root, session_redirection_mode(ps));
 	if (!success) {
 		log_fatal("Another composite manager is already running "
 		          "(and does not handle _NET_WM_CM_Sn correctly)");
 		return false;
 	}
 
-	x_sync(ps->c);
+	x_sync(&ps->c);
 
 	if (!initialize_backend(ps)) {
 		return false;
@@ -1456,16 +1398,16 @@ static bool redirect_start(session_t *ps) {
 	}
 
 	if (ps->present_exists && ps->frame_pacing) {
-		ps->present_event_id = x_new_id(ps->c);
+		ps->present_event_id = x_new_id(&ps->c);
 		auto select_input = xcb_present_select_input(
-		    ps->c, ps->present_event_id, session_get_target_window(ps),
+		    ps->c.c, ps->present_event_id, session_get_target_window(ps),
 		    XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY);
-		auto notify_msc =
-		    xcb_present_notify_msc(ps->c, session_get_target_window(ps), 0, 0, 1, 0);
-		set_cant_fail_cookie(ps, select_input);
-		set_cant_fail_cookie(ps, notify_msc);
+		auto notify_msc = xcb_present_notify_msc(
+		    ps->c.c, session_get_target_window(ps), 0, 0, 1, 0);
+		set_cant_fail_cookie(&ps->c, select_input);
+		set_cant_fail_cookie(&ps->c, notify_msc);
 		ps->present_event = xcb_register_for_special_xge(
-		    ps->c, &xcb_present_id, ps->present_event_id, NULL);
+		    ps->c.c, &xcb_present_id, ps->present_event_id, NULL);
 
 		// Initialize rendering and frame timing statistics, and frame pacing
 		// states.
@@ -1480,13 +1422,13 @@ static bool redirect_start(session_t *ps) {
 	}
 
 	// Must call XSync() here
-	x_sync(ps->c);
+	x_sync(&ps->c);
 
 	ps->redirected = true;
 	ps->first_frame = true;
 
 	// Re-detect driver since we now have a backend
-	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);
+	ps->drivers = detect_driver(ps->c.c, ps->backend_data, ps->c.screen_info->root);
 	apply_driver_workarounds(ps, ps->drivers);
 
 	root_damaged(ps);
@@ -1506,10 +1448,11 @@ static void unredirect(session_t *ps) {
 
 	destroy_backend(ps);
 
-	xcb_composite_unredirect_subwindows(ps->c, ps->root, session_redirection_mode(ps));
+	xcb_composite_unredirect_subwindows(ps->c.c, ps->c.screen_info->root,
+	                                    session_redirection_mode(ps));
 	// Unmap overlay window
 	if (ps->overlay != XCB_NONE) {
-		xcb_unmap_window(ps->c, ps->overlay);
+		xcb_unmap_window(ps->c.c, ps->overlay);
 	}
 
 	// Free the damage ring
@@ -1521,15 +1464,15 @@ static void unredirect(session_t *ps) {
 	ps->damage_ring = ps->damage = NULL;
 
 	if (ps->present_event_id) {
-		xcb_present_select_input(ps->c, ps->present_event_id,
+		xcb_present_select_input(ps->c.c, ps->present_event_id,
 		                         session_get_target_window(ps), 0);
 		ps->present_event_id = XCB_NONE;
-		xcb_unregister_for_special_event(ps->c, ps->present_event);
+		xcb_unregister_for_special_event(ps->c.c, ps->present_event);
 		ps->present_event = NULL;
 	}
 
 	// Must call XSync() here
-	x_sync(ps->c);
+	x_sync(&ps->c);
 
 	ps->redirected = false;
 	log_debug("Screen unredirected.");
@@ -1553,9 +1496,9 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 			next_msc = ps->last_msc + 1;
 			event_is_invalid = true;
 		}
-		auto cookie = xcb_present_notify_msc(ps->c, session_get_target_window(ps),
-		                                     0, next_msc, 0, 0);
-		set_cant_fail_cookie(ps, cookie);
+		auto cookie = xcb_present_notify_msc(
+		    ps->c.c, session_get_target_window(ps), 0, next_msc, 0, 0);
+		set_cant_fail_cookie(&ps->c, cookie);
 	}
 	if (event_is_invalid) {
 		return;
@@ -1602,7 +1545,7 @@ static void handle_present_events(session_t *ps) {
 		return;
 	}
 	xcb_present_generic_event_t *ev;
-	while ((ev = (void *)xcb_poll_for_special_event(ps->c, ps->present_event))) {
+	while ((ev = (void *)xcb_poll_for_special_event(ps->c.c, ps->present_event))) {
 		if (ev->event != ps->present_event_id) {
 			// This event doesn't have the right event context, it's not meant
 			// for us.
@@ -1623,7 +1566,7 @@ static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents 
 	handle_present_events(ps);
 
 	xcb_generic_event_t *ev;
-	while ((ev = xcb_poll_for_queued_event(ps->c))) {
+	while ((ev = xcb_poll_for_queued_event(ps->c.c))) {
 		ev_handle(ps, ev);
 		free(ev);
 	};
@@ -1632,9 +1575,9 @@ static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents 
 	// for an indefinite amount of time.
 	// Use XFlush here too, we might still use some Xlib functions
 	// because OpenGL.
-	XFlush(ps->dpy);
-	xcb_flush(ps->c);
-	int err = xcb_connection_has_error(ps->c);
+	XFlush(ps->c.dpy);
+	xcb_flush(ps->c.c);
+	int err = xcb_connection_has_error(ps->c.c);
 	if (err) {
 		log_fatal("X11 server connection broke (error %d)", err);
 		exit(1);
@@ -1692,7 +1635,7 @@ static void fade_timer_callback(EV_P attr_unused, ev_timer *w, int revents attr_
 static void handle_pending_updates(EV_P_ struct session *ps) {
 	if (ps->pending_updates) {
 		log_debug("Delayed handling of events, entering critical section");
-		auto e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
+		auto e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
 		if (e) {
 			log_fatal_x_error(e, "failed to grab x server");
 			free(e);
@@ -1718,7 +1661,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 
 		{
 			auto r = xcb_get_input_focus_reply(
-			    ps->c, xcb_get_input_focus(ps->c), NULL);
+			    ps->c.c, xcb_get_input_focus(ps->c.c), NULL);
 			if (!ps->active_win || (r && r->focus != ps->active_win->base.id)) {
 				recheck_focus(ps);
 			}
@@ -1728,7 +1671,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		// Process window flags (stale images)
 		refresh_images(ps);
 
-		e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
+		e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
 		if (e) {
 			log_fatal_x_error(e, "failed to ungrab x server");
 			free(e);
@@ -1868,7 +1811,7 @@ static void draw_callback(EV_P_ ev_timer *w, int revents) {
 
 static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused) {
 	session_t *ps = (session_t *)w;
-	xcb_generic_event_t *ev = xcb_poll_for_event(ps->c);
+	xcb_generic_event_t *ev = xcb_poll_for_event(ps->c.c);
 	if (ev) {
 		ev_handle(ps, ev);
 		free(ev);
@@ -1966,12 +1909,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
                                const char *config_file, bool all_xerrors, bool fork) {
 	static const session_t s_def = {
 	    .backend_data = NULL,
-	    .dpy = NULL,
-	    .scr = 0,
-	    .c = NULL,
-	    .vis = 0,
-	    .depth = 0,
-	    .root = XCB_NONE,
 	    .root_height = 0,
 	    .root_width = 0,
 	    // .root_damage = XCB_NONE,
@@ -1987,8 +1924,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .redirected = false,
 	    .alpha_picts = NULL,
 	    .fade_time = 0L,
-	    .pending_reply_head = NULL,
-	    .pending_reply_tail = NULL,
 	    .quit = false,
 
 	    .expose_rects = NULL,
@@ -2056,52 +1991,42 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// TODO(yshui) investigate what's the best window size
 	render_statistics_init(&ps->render_stats, 128);
 
-	ps->pending_reply_tail = &ps->pending_reply_head;
-
 	ps->o.show_all_xerrors = all_xerrors;
 
 	// Use the same Display across reset, primarily for resource leak checking
-	ps->dpy = dpy;
-	ps->c = XGetXCBConnection(ps->dpy);
+	x_connection_init(&ps->c, dpy);
+	// We store width/height from screen_info instead using them directly because they
+	// can change, see configure_root().
+	ps->root_width = ps->c.screen_info->width_in_pixels;
+	ps->root_height = ps->c.screen_info->height_in_pixels;
 
 	const xcb_query_extension_reply_t *ext_info;
-
-	ps->previous_xerror_handler = XSetErrorHandler(xerror);
-
-	ps->scr = DefaultScreen(ps->dpy);
-
-	auto screen = x_screen_of_display(ps->c, ps->scr);
-	ps->vis = screen->root_visual;
-	ps->depth = screen->root_depth;
-	ps->root = screen->root;
-	ps->root_width = screen->width_in_pixels;
-	ps->root_height = screen->height_in_pixels;
 
 	// Start listening to events on root earlier to catch all possible
 	// root geometry changes
 	auto e = xcb_request_check(
-	    ps->c, xcb_change_window_attributes_checked(
-	               ps->c, ps->root, XCB_CW_EVENT_MASK,
-	               (const uint32_t[]){XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
-	                                  XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY |
-	                                  XCB_EVENT_MASK_PROPERTY_CHANGE}));
+	    ps->c.c, xcb_change_window_attributes_checked(
+	                 ps->c.c, ps->c.screen_info->root, XCB_CW_EVENT_MASK,
+	                 (const uint32_t[]){XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
+	                                    XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_STRUCTURE_NOTIFY |
+	                                    XCB_EVENT_MASK_PROPERTY_CHANGE}));
 	if (e) {
 		log_error_x_error(e, "Failed to setup root window event mask");
 		free(e);
 	}
 
-	xcb_prefetch_extension_data(ps->c, &xcb_render_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_composite_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_damage_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_shape_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_xfixes_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_randr_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_present_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_sync_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_glx_id);
-	xcb_prefetch_extension_data(ps->c, &xcb_dpms_id);
+	xcb_prefetch_extension_data(ps->c.c, &xcb_render_id);
+	xcb_prefetch_extension_data(ps->c.c, &xcb_composite_id);
+	xcb_prefetch_extension_data(ps->c.c, &xcb_damage_id);
+	xcb_prefetch_extension_data(ps->c.c, &xcb_shape_id);
+	xcb_prefetch_extension_data(ps->c.c, &xcb_xfixes_id);
+	xcb_prefetch_extension_data(ps->c.c, &xcb_randr_id);
+	xcb_prefetch_extension_data(ps->c.c, &xcb_present_id);
+	xcb_prefetch_extension_data(ps->c.c, &xcb_sync_id);
+	xcb_prefetch_extension_data(ps->c.c, &xcb_glx_id);
+	xcb_prefetch_extension_data(ps->c.c, &xcb_dpms_id);
 
-	ext_info = xcb_get_extension_data(ps->c, &xcb_render_id);
+	ext_info = xcb_get_extension_data(ps->c.c, &xcb_render_id);
 	if (!ext_info || !ext_info->present) {
 		log_fatal("No render extension");
 		exit(1);
@@ -2109,7 +2034,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->render_event = ext_info->first_event;
 	ps->render_error = ext_info->first_error;
 
-	ext_info = xcb_get_extension_data(ps->c, &xcb_composite_id);
+	ext_info = xcb_get_extension_data(ps->c.c, &xcb_composite_id);
 	if (!ext_info || !ext_info->present) {
 		log_fatal("No composite extension");
 		exit(1);
@@ -2120,8 +2045,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	{
 		xcb_composite_query_version_reply_t *reply = xcb_composite_query_version_reply(
-		    ps->c,
-		    xcb_composite_query_version(ps->c, XCB_COMPOSITE_MAJOR_VERSION,
+		    ps->c.c,
+		    xcb_composite_query_version(ps->c.c, XCB_COMPOSITE_MAJOR_VERSION,
 		                                XCB_COMPOSITE_MINOR_VERSION),
 		    NULL);
 
@@ -2133,45 +2058,45 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		free(reply);
 	}
 
-	ext_info = xcb_get_extension_data(ps->c, &xcb_damage_id);
+	ext_info = xcb_get_extension_data(ps->c.c, &xcb_damage_id);
 	if (!ext_info || !ext_info->present) {
 		log_fatal("No damage extension");
 		exit(1);
 	}
 	ps->damage_event = ext_info->first_event;
 	ps->damage_error = ext_info->first_error;
-	xcb_discard_reply(ps->c, xcb_damage_query_version(ps->c, XCB_DAMAGE_MAJOR_VERSION,
-	                                                  XCB_DAMAGE_MINOR_VERSION)
-	                             .sequence);
+	xcb_discard_reply(ps->c.c, xcb_damage_query_version(ps->c.c, XCB_DAMAGE_MAJOR_VERSION,
+	                                                    XCB_DAMAGE_MINOR_VERSION)
+	                               .sequence);
 
-	ext_info = xcb_get_extension_data(ps->c, &xcb_xfixes_id);
+	ext_info = xcb_get_extension_data(ps->c.c, &xcb_xfixes_id);
 	if (!ext_info || !ext_info->present) {
 		log_fatal("No XFixes extension");
 		exit(1);
 	}
 	ps->xfixes_event = ext_info->first_event;
 	ps->xfixes_error = ext_info->first_error;
-	xcb_discard_reply(ps->c, xcb_xfixes_query_version(ps->c, XCB_XFIXES_MAJOR_VERSION,
-	                                                  XCB_XFIXES_MINOR_VERSION)
-	                             .sequence);
+	xcb_discard_reply(ps->c.c, xcb_xfixes_query_version(ps->c.c, XCB_XFIXES_MAJOR_VERSION,
+	                                                    XCB_XFIXES_MINOR_VERSION)
+	                               .sequence);
 
-	ps->damaged_region = x_new_id(ps->c);
-	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c, ps->damaged_region, 0, NULL)) {
+	ps->damaged_region = x_new_id(&ps->c);
+	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c.c, ps->damaged_region, 0, NULL)) {
 		log_fatal("Failed to create a XFixes region");
 		goto err;
 	}
 
-	ext_info = xcb_get_extension_data(ps->c, &xcb_glx_id);
+	ext_info = xcb_get_extension_data(ps->c.c, &xcb_glx_id);
 	if (ext_info && ext_info->present) {
 		ps->glx_exists = true;
 		ps->glx_error = ext_info->first_error;
 		ps->glx_event = ext_info->first_event;
 	}
 
-	ext_info = xcb_get_extension_data(ps->c, &xcb_dpms_id);
+	ext_info = xcb_get_extension_data(ps->c.c, &xcb_dpms_id);
 	ps->dpms_exists = ext_info && ext_info->present;
 	if (ps->dpms_exists) {
-		auto r = xcb_dpms_info_reply(ps->c, xcb_dpms_info(ps->c), NULL);
+		auto r = xcb_dpms_info_reply(ps->c.c, xcb_dpms_info(ps->c.c), NULL);
 		if (!r) {
 			log_fatal("Failed to query DPMS info");
 			goto err;
@@ -2226,7 +2151,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		         "binary will not be installed in the future.");
 	}
 
-	ps->atoms = init_atoms(ps->c);
+	ps->atoms = init_atoms(ps->c.c);
 	ps->atoms_wintypes[WINTYPE_UNKNOWN] = 0;
 #define SET_WM_TYPE_ATOM(x)                                                              \
 	ps->atoms_wintypes[WINTYPE_##x] = ps->atoms->a_NET_WM_WINDOW_TYPE_##x
@@ -2287,25 +2212,25 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	rebuild_shadow_exclude_reg(ps);
 
 	// Query X Shape
-	ext_info = xcb_get_extension_data(ps->c, &xcb_shape_id);
+	ext_info = xcb_get_extension_data(ps->c.c, &xcb_shape_id);
 	if (ext_info && ext_info->present) {
 		ps->shape_event = ext_info->first_event;
 		ps->shape_error = ext_info->first_error;
 		ps->shape_exists = true;
 	}
 
-	ext_info = xcb_get_extension_data(ps->c, &xcb_randr_id);
+	ext_info = xcb_get_extension_data(ps->c.c, &xcb_randr_id);
 	if (ext_info && ext_info->present) {
 		ps->randr_exists = true;
 		ps->randr_event = ext_info->first_event;
 		ps->randr_error = ext_info->first_error;
 	}
 
-	ext_info = xcb_get_extension_data(ps->c, &xcb_present_id);
+	ext_info = xcb_get_extension_data(ps->c.c, &xcb_present_id);
 	if (ext_info && ext_info->present) {
 		auto r = xcb_present_query_version_reply(
-		    ps->c,
-		    xcb_present_query_version(ps->c, XCB_PRESENT_MAJOR_VERSION,
+		    ps->c.c,
+		    xcb_present_query_version(ps->c.c, XCB_PRESENT_MAJOR_VERSION,
 		                              XCB_PRESENT_MINOR_VERSION),
 		    NULL);
 		if (r) {
@@ -2315,14 +2240,14 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	// Query X Sync
-	ext_info = xcb_get_extension_data(ps->c, &xcb_sync_id);
+	ext_info = xcb_get_extension_data(ps->c.c, &xcb_sync_id);
 	if (ext_info && ext_info->present) {
 		ps->xsync_error = ext_info->first_error;
 		ps->xsync_event = ext_info->first_event;
 		// Need X Sync 3.1 for fences
 		auto r = xcb_sync_initialize_reply(
-		    ps->c,
-		    xcb_sync_initialize(ps->c, XCB_SYNC_MAJOR_VERSION, XCB_SYNC_MINOR_VERSION),
+		    ps->c.c,
+		    xcb_sync_initialize(ps->c.c, XCB_SYNC_MAJOR_VERSION, XCB_SYNC_MINOR_VERSION),
 		    NULL);
 		if (r && (r->major_version > 3 ||
 		          (r->major_version == 3 && r->minor_version >= 1))) {
@@ -2333,9 +2258,10 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	ps->sync_fence = XCB_NONE;
 	if (ps->xsync_exists) {
-		ps->sync_fence = x_new_id(ps->c);
-		e = xcb_request_check(ps->c, xcb_sync_create_fence_checked(
-		                                 ps->c, ps->root, ps->sync_fence, 0));
+		ps->sync_fence = x_new_id(&ps->c);
+		e = xcb_request_check(
+		    ps->c.c, xcb_sync_create_fence_checked(
+		                 ps->c.c, ps->c.screen_info->root, ps->sync_fence, 0));
 		if (e) {
 			if (ps->o.xrender_sync_fence) {
 				log_error_x_error(e, "Failed to create a XSync fence. "
@@ -2412,7 +2338,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 	}
 
-	ps->drivers = detect_driver(ps->c, ps->backend_data, ps->root);
+	ps->drivers = detect_driver(ps->c.c, ps->backend_data, ps->c.screen_info->root);
 	apply_driver_workarounds(ps, ps->drivers);
 
 	// Initialize filters, must be preceded by OpenGL context creation
@@ -2453,10 +2379,10 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// Monitor screen changes if vsync_sw is enabled and we are using
 	// an auto-detected refresh rate, or when X RandR features are enabled
 	if (ps->randr_exists && ps->o.crop_shadow_to_monitor) {
-		xcb_randr_select_input(ps->c, ps->root, XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
+		xcb_randr_select_input(ps->c.c, ps->c.screen_info->root,
+		                       XCB_RANDR_NOTIFY_MASK_SCREEN_CHANGE);
+		x_update_monitors(&ps->c, &ps->monitors);
 	}
-
-	x_update_randr_monitors(ps);
 
 	{
 		xcb_render_create_picture_value_list_t pa = {
@@ -2464,15 +2390,18 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		};
 
 		ps->root_picture = x_create_picture_with_visual_and_pixmap(
-		    ps->c, ps->vis, ps->root, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
+		    &ps->c, ps->c.screen_info->root_visual, ps->c.screen_info->root,
+		    XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
 		if (ps->overlay != XCB_NONE) {
 			ps->tgt_picture = x_create_picture_with_visual_and_pixmap(
-			    ps->c, ps->vis, ps->overlay, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
-		} else
+			    &ps->c, ps->c.screen_info->root_visual, ps->overlay,
+			    XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
+		} else {
 			ps->tgt_picture = ps->root_picture;
+		}
 	}
 
-	ev_io_init(&ps->xiow, x_event_callback, ConnectionNumber(ps->dpy), EV_READ);
+	ev_io_init(&ps->xiow, x_event_callback, ConnectionNumber(ps->c.dpy), EV_READ);
 	ev_io_start(ps->loop, &ps->xiow);
 	ev_init(&ps->unredir_timer, tmout_unredir_callback);
 	ev_init(&ps->draw_timer, draw_callback);
@@ -2509,7 +2438,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// functions
 	if (ps->o.dbus) {
 #ifdef CONFIG_DBUS
-		cdbus_init(ps, DisplayString(ps->dpy));
+		cdbus_init(ps, DisplayString(ps->c.dpy));
 		if (!ps->dbus_data) {
 			ps->o.dbus = false;
 		}
@@ -2519,7 +2448,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 #endif
 	}
 
-	e = xcb_request_check(ps->c, xcb_grab_server_checked(ps->c));
+	e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
 	if (e) {
 		log_fatal_x_error(e, "Failed to grab X server");
 		free(e);
@@ -2532,12 +2461,12 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// earlier is irrelavant at this point.
 	// A better solution is probably grabbing the server from the very start. But I
 	// think there still could be race condition that mandates discarding the events.
-	x_discard_events(ps->c);
+	x_discard_events(&ps->c);
 
-	xcb_query_tree_reply_t *query_tree_reply =
-	    xcb_query_tree_reply(ps->c, xcb_query_tree(ps->c, ps->root), NULL);
+	xcb_query_tree_reply_t *query_tree_reply = xcb_query_tree_reply(
+	    ps->c.c, xcb_query_tree(ps->c.c, ps->c.screen_info->root), NULL);
 
-	e = xcb_request_check(ps->c, xcb_ungrab_server_checked(ps->c));
+	e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
 	if (e) {
 		log_fatal_x_error(e, "Failed to ungrab server");
 		free(e);
@@ -2630,7 +2559,7 @@ static void session_destroy(session_t *ps) {
 	ps->file_watch_handle = NULL;
 
 	// Stop listening to events on root window
-	xcb_change_window_attributes(ps->c, ps->root, XCB_CW_EVENT_MASK,
+	xcb_change_window_attributes(ps->c.c, ps->c.screen_info->root, XCB_CW_EVENT_MASK,
 	                             (const uint32_t[]){0});
 
 #ifdef CONFIG_DBUS
@@ -2681,32 +2610,17 @@ static void session_destroy(session_t *ps) {
 		ps->track_atom_lst = NULL;
 	}
 
-	// Free ignore linked list
-	{
-		pending_reply_t *next = NULL;
-		for (auto ign = ps->pending_reply_head; ign; ign = next) {
-			next = ign->next;
-
-			free(ign);
-		}
-
-		// Reset head and tail
-		ps->pending_reply_head = NULL;
-		ps->pending_reply_tail = &ps->pending_reply_head;
-	}
-
 	// Free tgt_{buffer,picture} and root_picture
 	if (ps->tgt_buffer.pict == ps->tgt_picture) {
 		ps->tgt_buffer.pict = XCB_NONE;
 	}
 
-	if (ps->tgt_picture == ps->root_picture) {
-		ps->tgt_picture = XCB_NONE;
-	} else {
-		free_picture(ps->c, &ps->tgt_picture);
+	if (ps->tgt_picture != ps->root_picture) {
+		x_free_picture(&ps->c, ps->tgt_picture);
 	}
+	x_free_picture(&ps->c, ps->root_picture);
+	ps->tgt_picture = ps->root_picture = XCB_NONE;
 
-	free_picture(ps->c, &ps->root_picture);
 	free_paint(ps, &ps->tgt_buffer);
 
 	pixman_region32_fini(&ps->screen_reg);
@@ -2719,7 +2633,7 @@ static void session_destroy(session_t *ps) {
 	}
 	free(ps->o.blur_kerns);
 	free(ps->o.glx_fshader_win_str);
-	x_free_randr_info(ps);
+	x_free_monitor_info(&ps->monitors);
 
 	render_statistics_destroy(&ps->render_stats);
 
@@ -2744,28 +2658,28 @@ static void session_destroy(session_t *ps) {
 
 	// Release overlay window
 	if (ps->overlay) {
-		xcb_composite_release_overlay_window(ps->c, ps->overlay);
+		xcb_composite_release_overlay_window(ps->c.c, ps->overlay);
 		ps->overlay = XCB_NONE;
 	}
 
 	if (ps->sync_fence != XCB_NONE) {
-		xcb_sync_destroy_fence(ps->c, ps->sync_fence);
+		xcb_sync_destroy_fence(ps->c.c, ps->sync_fence);
 		ps->sync_fence = XCB_NONE;
 	}
 
 	// Free reg_win
 	if (ps->reg_win != XCB_NONE) {
-		xcb_destroy_window(ps->c, ps->reg_win);
+		xcb_destroy_window(ps->c.c, ps->reg_win);
 		ps->reg_win = XCB_NONE;
 	}
 
 	if (ps->debug_window != XCB_NONE) {
-		xcb_destroy_window(ps->c, ps->debug_window);
+		xcb_destroy_window(ps->c.c, ps->debug_window);
 		ps->debug_window = XCB_NONE;
 	}
 
 	if (ps->damaged_region != XCB_NONE) {
-		xcb_xfixes_destroy_region(ps->c, ps->damaged_region);
+		xcb_xfixes_destroy_region(ps->c.c, ps->damaged_region);
 		ps->damaged_region = XCB_NONE;
 	}
 
@@ -2784,7 +2698,7 @@ static void session_destroy(session_t *ps) {
 #endif
 
 	// Flush all events
-	x_sync(ps->c);
+	x_sync(&ps->c);
 	ev_io_stop(ps->loop, &ps->xiow);
 	if (ps->o.legacy_backends) {
 		free_conv((conv *)ps->shadow_context);
@@ -2796,8 +2710,6 @@ static void session_destroy(session_t *ps) {
 	xrc_report_xid();
 #endif
 
-	XSetErrorHandler(ps->previous_xerror_handler);
-
 	// Stop libev event handlers
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
 	ev_timer_stop(ps->loop, &ps->fade_timer);
@@ -2806,6 +2718,8 @@ static void session_destroy(session_t *ps) {
 	ev_prepare_stop(ps->loop, &ps->event_check);
 	ev_signal_stop(ps->loop, &ps->usr1_signal);
 	ev_signal_stop(ps->loop, &ps->int_signal);
+
+	free_x_connection(&ps->c);
 }
 
 /**
@@ -2872,10 +2786,9 @@ int main(int argc, char **argv) {
 				// Failed to read, the child has most likely died
 				// We can probably waitpid() here.
 				return 1;
-			} else {
-				// We are done
-				return 0;
 			}
+			// We are done
+			return 0;
 		}
 		// We are the child
 		close(pfds[0]);

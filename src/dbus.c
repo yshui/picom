@@ -1165,7 +1165,7 @@ static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 
 	// display
 	if (!strcmp("display", target)) {
-		cdbus_reply_string(ps, msg, DisplayString(ps->dpy));
+		cdbus_reply_string(ps, msg, DisplayString(ps->c.dpy));
 		return true;
 	}
 

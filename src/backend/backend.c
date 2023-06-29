@@ -91,10 +91,10 @@ void paint_all_new(session_t *ps, struct managed_win *t) {
 		return handle_device_reset(ps);
 	}
 	if (ps->o.xrender_sync_fence) {
-		if (ps->xsync_exists && !x_fence_sync(ps->c, ps->sync_fence)) {
+		if (ps->xsync_exists && !x_fence_sync(&ps->c, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
 			          "disabled from now on.");
-			xcb_sync_destroy_fence(ps->c, ps->sync_fence);
+			xcb_sync_destroy_fence(ps->c.c, ps->sync_fence);
 			ps->sync_fence = XCB_NONE;
 			ps->o.xrender_sync_fence = false;
 			ps->xsync_exists = false;
@@ -348,7 +348,7 @@ void paint_all_new(session_t *ps, struct managed_win *t) {
 			}
 
 			if (ps->o.crop_shadow_to_monitor && w->randr_monitor >= 0 &&
-			    w->randr_monitor < ps->randr_nmonitors) {
+			    w->randr_monitor < ps->monitors.count) {
 				// There can be a window where number of monitors is
 				// updated, but the monitor number attached to the window
 				// have not.
@@ -358,7 +358,7 @@ void paint_all_new(session_t *ps, struct managed_win *t) {
 				// bounds.
 				pixman_region32_intersect(
 				    &reg_shadow, &reg_shadow,
-				    &ps->randr_monitor_regs[w->randr_monitor]);
+				    &ps->monitors.regions[w->randr_monitor]);
 			}
 
 			if (ps->o.transparent_clipping) {

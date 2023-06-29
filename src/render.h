@@ -39,8 +39,6 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint);
 
 void paint_all(session_t *ps, struct managed_win *const t);
 
-void free_picture(xcb_connection_t *c, xcb_render_picture_t *p);
-
 void free_paint(session_t *ps, paint_t *ppaint);
 void free_root_tile(session_t *ps);
 

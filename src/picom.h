@@ -94,7 +94,7 @@ free_win_res_glx(session_t *ps attr_unused, struct managed_win *w attr_unused) {
  * Dump an drawable's info.
  */
 static inline void dump_drawable(session_t *ps, xcb_drawable_t drawable) {
-	auto r = xcb_get_geometry_reply(ps->c, xcb_get_geometry(ps->c, drawable), NULL);
+	auto r = xcb_get_geometry_reply(ps->c.c, xcb_get_geometry(ps->c.c, drawable), NULL);
 	if (!r) {
 		log_trace("Drawable %#010x: Failed", drawable);
 		return;

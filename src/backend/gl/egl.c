@@ -79,7 +79,7 @@ static void egl_release_image(backend_t *base, struct gl_texture *tex) {
 	}
 
 	if (p->owned) {
-		xcb_free_pixmap(base->c, p->pixmap);
+		xcb_free_pixmap(base->c->c, p->pixmap);
 		p->pixmap = XCB_NONE;
 	}
 
@@ -154,10 +154,10 @@ static backend_t *egl_init(session_t *ps) {
 	}
 
 	gd = ccalloc(1, struct egl_data);
-	gd->display = eglGetPlatformDisplayProc(EGL_PLATFORM_X11_EXT, ps->dpy,
+	gd->display = eglGetPlatformDisplayProc(EGL_PLATFORM_X11_EXT, ps->c.dpy,
 	                                        (EGLAttrib[]){
 	                                            EGL_PLATFORM_X11_SCREEN_EXT,
-	                                            ps->scr,
+	                                            ps->c.screen,
 	                                            EGL_NONE,
 	                                        });
 	if (gd->display == EGL_NO_DISPLAY) {
@@ -190,7 +190,7 @@ static backend_t *egl_init(session_t *ps) {
 		goto end;
 	}
 
-	auto visual_info = x_get_visual_info(ps->c, ps->vis);
+	auto visual_info = x_get_visual_info(&ps->c, ps->c.screen_info->root_visual);
 	EGLConfig config = NULL;
 	int nconfigs = 1;
 	// clang-format off
@@ -280,7 +280,8 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	struct egl_data *gd = (void *)base;
 	struct egl_pixmap *eglpixmap = NULL;
 
-	auto r = xcb_get_geometry_reply(base->c, xcb_get_geometry(base->c, pixmap), NULL);
+	auto r =
+	    xcb_get_geometry_reply(base->c->c, xcb_get_geometry(base->c->c, pixmap), NULL);
 	if (!r) {
 		log_error("Invalid pixmap %#010x", pixmap);
 		return NULL;
@@ -335,7 +336,7 @@ err:
 	free(eglpixmap);
 
 	if (owned) {
-		xcb_free_pixmap(base->c, pixmap);
+		xcb_free_pixmap(base->c->c, pixmap);
 	}
 	free(wd);
 	return NULL;

@@ -84,18 +84,6 @@ struct glx_session;
 struct atom;
 struct conv;
 
-enum pending_reply_action {
-	PENDING_REPLY_ACTION_IGNORE,
-	PENDING_REPLY_ACTION_ABORT,
-	PENDING_REPLY_ACTION_DEBUG_ABORT,
-};
-
-typedef struct pending_reply {
-	struct pending_reply *next;
-	unsigned long sequence;
-	enum pending_reply_action action;
-} pending_reply_t;
-
 #ifdef CONFIG_OPENGL
 #ifdef DEBUG_GLX_DEBUG_CONTEXT
 typedef GLXContext (*f_glXCreateContextAttribsARB)(Display *dpy, GLXFBConfig config,
@@ -183,28 +171,14 @@ typedef struct session {
 	struct shader_info *shaders;
 
 	// === Display related ===
+	/// X connection
+	struct x_connection c;
 	/// Whether the X server is grabbed by us
 	bool server_grabbed;
-	/// Display in use.
-	Display *dpy;
-	/// Previous handler of X errors
-	XErrorHandler previous_xerror_handler;
-	/// Default screen.
-	int scr;
-	/// XCB connection.
-	xcb_connection_t *c;
-	/// Default visual.
-	xcb_visualid_t vis;
-	/// Default depth.
-	int depth;
-	/// Root window.
-	xcb_window_t root;
-	/// Height of root window.
-	int root_height;
 	/// Width of root window.
 	int root_width;
-	// Damage of root window.
-	// Damage root_damage;
+	/// Height of root window.
+	int root_height;
 	/// X Composite overlay window.
 	xcb_window_t overlay;
 	/// The target window for debug mode
@@ -289,11 +263,6 @@ typedef struct session {
 	xcb_render_picture_t *alpha_picts;
 	/// Time of last fading. In milliseconds.
 	long long fade_time;
-	/// Head pointer of the error ignore linked list.
-	pending_reply_t *pending_reply_head;
-	/// Pointer to the <code>next</code> member of tail element of the error
-	/// ignore linked list.
-	pending_reply_t **pending_reply_tail;
 	// Cached blur convolution kernels.
 	struct x_convolution_kernel **blur_kerns_cache;
 	/// If we should quit
@@ -391,10 +360,8 @@ typedef struct session {
 	int glx_event;
 	/// Error base number for X GLX extension.
 	int glx_error;
-	/// Number of X RandR monitors.
-	int randr_nmonitors;
-	/// X RandR monitor regions.
-	region_t *randr_monitor_regs;
+	/// Information about monitors.
+	struct x_monitors monitors;
 	/// Whether X Sync extension exists.
 	bool xsync_exists;
 	/// Event base number for X Sync extension.
@@ -492,7 +459,7 @@ static inline struct timespec get_time_timespec(void) {
  * Return the painting target window.
  */
 static inline xcb_window_t get_tgt_window(session_t *ps) {
-	return ps->overlay != XCB_NONE ? ps->overlay : ps->root;
+	return ps->overlay != XCB_NONE ? ps->overlay : ps->c.screen_info->root;
 }
 
 /**
@@ -500,35 +467,6 @@ static inline xcb_window_t get_tgt_window(session_t *ps) {
  */
 static inline bool bkend_use_glx(session_t *ps) {
 	return BKEND_GLX == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
-}
-
-static void
-set_reply_action(session_t *ps, uint32_t sequence, enum pending_reply_action action) {
-	auto i = cmalloc(pending_reply_t);
-	if (!i) {
-		abort();
-	}
-
-	i->sequence = sequence;
-	i->next = 0;
-	i->action = action;
-	*ps->pending_reply_tail = i;
-	ps->pending_reply_tail = &i->next;
-}
-
-/**
- * Ignore X errors caused by given X request.
- */
-static inline void set_ignore_cookie(session_t *ps, xcb_void_cookie_t cookie) {
-	if (ps->o.show_all_xerrors) {
-		return;
-	}
-
-	set_reply_action(ps, cookie.sequence, PENDING_REPLY_ACTION_IGNORE);
-}
-
-static inline void set_cant_fail_cookie(session_t *ps, xcb_void_cookie_t cookie) {
-	set_reply_action(ps, cookie.sequence, PENDING_REPLY_ACTION_ABORT);
 }
 
 /**
@@ -541,7 +479,8 @@ static inline void set_cant_fail_cookie(session_t *ps, xcb_void_cookie_t cookie)
  */
 static inline bool wid_has_prop(const session_t *ps, xcb_window_t w, xcb_atom_t atom) {
 	auto r = xcb_get_property_reply(
-	    ps->c, xcb_get_property(ps->c, 0, w, atom, XCB_GET_PROPERTY_TYPE_ANY, 0, 0), NULL);
+	    ps->c.c,
+	    xcb_get_property(ps->c.c, 0, w, atom, XCB_GET_PROPERTY_TYPE_ANY, 0, 0), NULL);
 	if (!r) {
 		return false;
 	}
