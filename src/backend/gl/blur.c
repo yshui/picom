@@ -23,7 +23,7 @@ struct gl_blur_context {
 	struct texture_size {
 		int width;
 		int height;
-	} * texture_sizes;
+	} *texture_sizes;
 
 	/// Cached dimensions of the offscreen framebuffer. It's the same size as the
 	/// target but is expanded in either direction by resize_width / resize_height.
@@ -347,9 +347,9 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask, coor
 	glBindVertexArray(vao[0]);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
-	             indices, GL_STATIC_DRAW);
+	             indices, GL_STREAM_DRAW);
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
 	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
@@ -360,10 +360,10 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask, coor
 	glBindBuffer(GL_ARRAY_BUFFER, bo[2]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[3]);
 	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord_resized) * nrects_resized * 16,
-	             coord_resized, GL_STATIC_DRAW);
+	             coord_resized, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER,
 	             (long)sizeof(*indices_resized) * nrects_resized * 6, indices_resized,
-	             GL_STATIC_DRAW);
+	             GL_STREAM_DRAW);
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
 	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
