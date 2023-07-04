@@ -150,6 +150,9 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 
 	glUniform2f(down_pass->texorig_loc, (GLfloat)extent->x1, (GLfloat)dst_y_fb_coord);
 
+	glBindVertexArray(vao[1]);
+	int nelems = vao_nelems[1];
+
 	for (int i = 0; i < iterations; ++i) {
 		// Scale output width / height by half in each iteration
 		scale_factor <<= 1;
@@ -174,8 +177,6 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 		assert(bctx->blur_fbos[i]);
 
 		glBindTexture(GL_TEXTURE_2D, src_texture);
-		glBindVertexArray(vao[1]);
-		auto nelems = vao_nelems[1];
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i]);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
@@ -206,9 +207,6 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 		int tex_width = src_size.width;
 		int tex_height = src_size.height;
 
-		// The number of indices in the selected vertex array
-		GLsizei nelems;
-
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glActiveTexture(GL_TEXTURE1);
@@ -222,8 +220,6 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 			assert(bctx->blur_fbos[i - 1]);
 
 			// not last pass, draw into next framebuffer
-			glBindVertexArray(vao[1]);
-			nelems = vao_nelems[1];
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i - 1]);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
