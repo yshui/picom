@@ -195,6 +195,15 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 
 	glUniform2f(up_pass->texorig_loc, (GLfloat)extent->x1, (GLfloat)dst_y_fb_coord);
 
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, default_mask);
+
+	glUniform1i(up_pass->uniform_mask_tex, 1);
+	glUniform2f(up_pass->uniform_mask_offset, 0.0F, 0.0F);
+	glUniform1i(up_pass->uniform_mask_inverted, 0);
+	glUniform1f(up_pass->uniform_mask_corner_radius, 0.0F);
+	glUniform1f(up_pass->uniform_opacity, 1.0F);
+
 	for (int i = iterations - 1; i >= 0; --i) {
 		// Scale output width / height back by two in each iteration
 		scale_factor >>= 1;
@@ -209,21 +218,13 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, src_texture);
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, default_mask);
 
-		glUniform1i(up_pass->uniform_mask_tex, 1);
-		glUniform2f(up_pass->uniform_mask_offset, 0.0F, 0.0F);
-		glUniform1i(up_pass->uniform_mask_inverted, 0);
-		glUniform1f(up_pass->uniform_mask_corner_radius, 0.0F);
 		if (i > 0) {
 			assert(bctx->blur_fbos[i - 1]);
 
 			// not last pass, draw into next framebuffer
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i - 1]);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-
-			glUniform1f(up_pass->uniform_opacity, (GLfloat)1);
 		} else {
 			// last pass, draw directly into the back buffer
 			if (mask) {
