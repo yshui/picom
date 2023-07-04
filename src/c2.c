@@ -336,17 +336,19 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
  * Parse a condition string.
  */
 c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
-	if (!pattern)
+	if (!pattern) {
 		return NULL;
+	}
 
 	// Parse the pattern
 	c2_ptr_t result = C2_PTR_INIT;
 	int offset = -1;
 
-	if (strlen(pattern) >= 2 && ':' == pattern[1])
+	if (strlen(pattern) >= 2 && ':' == pattern[1]) {
 		offset = c2_parse_legacy(pattern, 0, &result);
-	else
+	} else {
 		offset = c2_parse_grp(pattern, 0, &result, 0);
+	}
 
 	if (offset < 0) {
 		c2_freep(&result);
@@ -395,11 +397,13 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
  */
 static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int level) {
 	// Check for recursion levels
-	if (level > C2_MAX_LEVELS)
+	if (level > C2_MAX_LEVELS) {
 		c2_error("Exceeded maximum recursion levels.");
+	}
 
-	if (!pattern)
+	if (!pattern) {
 		return -1;
+	}
 
 	// Expected end character
 	const char endchar = (offset ? ')' : '\0');
@@ -428,17 +432,20 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 		assert(elei <= 2);
 
 		// Jump over spaces
-		if (isspace((unsigned char)pattern[offset]))
+		if (isspace((unsigned char)pattern[offset])) {
 			continue;
+		}
 
 		// Handle end of group
-		if (')' == pattern[offset])
+		if (')' == pattern[offset]) {
 			break;
+		}
 
 		// Handle "!"
 		if ('!' == pattern[offset]) {
-			if (!next_expected)
+			if (!next_expected) {
 				c2_error("Unexpected \"!\".");
+			}
 
 			neg = !neg;
 			continue;
@@ -446,8 +453,9 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 
 		// Handle AND and OR
 		if ('&' == pattern[offset] || '|' == pattern[offset]) {
-			if (next_expected)
+			if (next_expected) {
 				c2_error("Unexpected logical operator.");
+			}
 
 			next_expected = true;
 			if (!mstrncmp("&&", pattern + offset)) {
@@ -456,15 +464,17 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 			} else if (!mstrncmp("||", pattern + offset)) {
 				ops[elei] = C2_B_OOR;
 				++offset;
-			} else
+			} else {
 				c2_error("Illegal logical operator.");
+			}
 
 			continue;
 		}
 
 		// Parsing an element
-		if (!next_expected)
+		if (!next_expected) {
 			c2_error("Unexpected expression.");
+		}
 
 		assert(!elei || ops[elei]);
 
@@ -491,21 +501,25 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 
 		// It's a subgroup if it starts with '('
 		if ('(' == pattern[offset]) {
-			if ((offset = c2_parse_grp(pattern, offset + 1, pele, level + 1)) < 0)
+			if ((offset = c2_parse_grp(pattern, offset + 1, pele, level + 1)) < 0) {
 				goto fail;
+			}
 		}
 		// Otherwise it's a leaf
 		else {
-			if ((offset = c2_parse_target(pattern, offset, pele)) < 0)
+			if ((offset = c2_parse_target(pattern, offset, pele)) < 0) {
 				goto fail;
+			}
 
 			assert(!pele->isbranch && !c2_ptr_isempty(*pele));
 
-			if ((offset = c2_parse_op(pattern, offset, pele)) < 0)
+			if ((offset = c2_parse_op(pattern, offset, pele)) < 0) {
 				goto fail;
+			}
 
-			if ((offset = c2_parse_pattern(pattern, offset, pele)) < 0)
+			if ((offset = c2_parse_pattern(pattern, offset, pele)) < 0) {
 				goto fail;
+			}
 		}
 		// Decrement offset -- we will increment it in loop update
 		--offset;
@@ -513,10 +527,11 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 		// Apply negation
 		if (neg) {
 			neg = false;
-			if (pele->isbranch)
+			if (pele->isbranch) {
 				pele->b->neg = !pele->b->neg;
-			else
+			} else {
 				pele->l->neg = !pele->l->neg;
+			}
 		}
 
 		next_expected = false;
@@ -525,10 +540,12 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 	}
 
 	// Wrong end character?
-	if (pattern[offset] && !endchar)
+	if (pattern[offset] && !endchar) {
 		c2_error("Expected end of string but found '%c'.", pattern[offset]);
-	if (!pattern[offset] && endchar)
+	}
+	if (!pattern[offset] && endchar) {
 		c2_error("Expected '%c' but found end of string.", endchar);
+	}
 
 	// Handle end of group
 	if (!elei) {
@@ -544,8 +561,9 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 
 	*presult = eles[0];
 
-	if (')' == pattern[offset])
+	if (')' == pattern[offset]) {
 		++offset;
+	}
 
 	return offset;
 
@@ -778,11 +796,11 @@ static int c2_parse_op(const char *pattern, int offset, c2_ptr_t *presult) {
 
 	// Parse operator
 	while ('=' == pattern[offset] || '>' == pattern[offset] || '<' == pattern[offset]) {
-		if ('=' == pattern[offset] && C2_L_OGT == pleaf->op)
+		if ('=' == pattern[offset] && C2_L_OGT == pleaf->op) {
 			pleaf->op = C2_L_OGTEQ;
-		else if ('=' == pattern[offset] && C2_L_OLT == pleaf->op)
+		} else if ('=' == pattern[offset] && C2_L_OLT == pleaf->op) {
 			pleaf->op = C2_L_OLTEQ;
-		else if (pleaf->op) {
+		} else if (pleaf->op) {
 			c2_error("Duplicate operator.");
 		} else {
 			switch (pattern[offset]) {
@@ -797,9 +815,10 @@ static int c2_parse_op(const char *pattern, int offset, c2_ptr_t *presult) {
 	}
 
 	// Check for problems
-	if (C2_L_OEQ != pleaf->op && (pleaf->match || pleaf->match_ignorecase))
+	if (C2_L_OEQ != pleaf->op && (pleaf->match || pleaf->match_ignorecase)) {
 		c2_error("Exists/greater-than/less-than operators cannot have a "
 		         "qualifier.");
+	}
 
 	return offset;
 
@@ -891,9 +910,10 @@ static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) 
 					char *pstr = NULL;
 					long val = strtol(
 					    tstr, &pstr, ('o' == pattern[offset] ? 8 : 16));
-					if (pstr != &tstr[2] || val <= 0)
+					if (pstr != &tstr[2] || val <= 0) {
 						c2_error("Invalid octal/hex escape "
 						         "sequence.");
+					}
 					*(ptptnstr++) = to_char_checked(val);
 					offset += 2;
 					break;
@@ -904,8 +924,9 @@ static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) 
 				*(ptptnstr++) = pattern[offset];
 			}
 		}
-		if (!pattern[offset])
+		if (!pattern[offset]) {
 			c2_error("Premature end of pattern string.");
+		}
 		++offset;
 		*ptptnstr = '\0';
 		pleaf->ptnstr = strdup(tptnstr);
@@ -914,27 +935,32 @@ static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) 
 
 	C2H_SKIP_SPACES();
 
-	if (!pleaf->ptntype)
+	if (!pleaf->ptntype) {
 		c2_error("Invalid pattern type.");
+	}
 
 	// Check if the type is correct
 	if (!(((C2_L_TSTRING == pleaf->type || C2_L_TATOM == pleaf->type) &&
 	       C2_L_PTSTRING == pleaf->ptntype) ||
 	      ((C2_L_TCARDINAL == pleaf->type || C2_L_TWINDOW == pleaf->type ||
 	        C2_L_TDRAWABLE == pleaf->type) &&
-	       C2_L_PTINT == pleaf->ptntype)))
+	       C2_L_PTINT == pleaf->ptntype))) {
 		c2_error("Pattern type incompatible with target type.");
+	}
 
-	if (C2_L_PTINT == pleaf->ptntype && pleaf->match)
+	if (C2_L_PTINT == pleaf->ptntype && pleaf->match) {
 		c2_error("Integer/boolean pattern cannot have operator qualifiers.");
+	}
 
-	if (C2_L_PTINT == pleaf->ptntype && pleaf->match_ignorecase)
+	if (C2_L_PTINT == pleaf->ptntype && pleaf->match_ignorecase) {
 		c2_error("Integer/boolean pattern cannot have flags.");
+	}
 
 	if (C2_L_PTSTRING == pleaf->ptntype &&
 	    (C2_L_OGT == pleaf->op || C2_L_OGTEQ == pleaf->op || C2_L_OLT == pleaf->op ||
-	     C2_L_OLTEQ == pleaf->op))
+	     C2_L_OLTEQ == pleaf->op)) {
 		c2_error("String pattern cannot have an arithmetic operator.");
+	}
 
 	return offset;
 
@@ -1173,9 +1199,8 @@ c2_lptr_t *c2_free_lptr(c2_lptr_t *lp, c2_userdata_free f) {
 static const char *c2h_dump_str_tgt(const c2_l_t *pleaf) {
 	if (pleaf->predef != C2_L_PUNDEFINED) {
 		return C2_PREDEFS[pleaf->predef].name;
-	} else {
-		return pleaf->tgt;
 	}
+	return pleaf->tgt;
 }
 
 /**
@@ -1378,11 +1403,11 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			int word_count = 1;
 			if (pleaf->index < 0) {
 				// Get length of property in 32-bit multiples
-				auto prop_info = x_get_prop_info(ps->c, wid, pleaf->tgtatom);
+				auto prop_info = x_get_prop_info(&ps->c, wid, pleaf->tgtatom);
 				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
 			}
 			winprop_t prop = x_get_prop_with_offset(
-			    ps->c, wid, pleaf->tgtatom, idx, word_count,
+			    &ps->c, wid, pleaf->tgtatom, idx, word_count,
 			    c2_get_atom_type(pleaf), pleaf->format);
 
 			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
@@ -1455,11 +1480,11 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			int word_count = 1;
 			if (pleaf->index < 0) {
 				// Get length of property in 32-bit multiples
-				auto prop_info = x_get_prop_info(ps->c, wid, pleaf->tgtatom);
+				auto prop_info = x_get_prop_info(&ps->c, wid, pleaf->tgtatom);
 				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
 			}
 			winprop_t prop = x_get_prop_with_offset(
-			    ps->c, wid, pleaf->tgtatom, idx, word_count,
+			    &ps->c, wid, pleaf->tgtatom, idx, word_count,
 			    c2_get_atom_type(pleaf), pleaf->format);
 
 			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
@@ -1470,7 +1495,7 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 				xcb_atom_t atom = (xcb_atom_t)winprop_get_int(prop, i);
 				if (atom) {
 					xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
-					    ps->c, xcb_get_atom_name(ps->c, atom), NULL);
+					    ps->c.c, xcb_get_atom_name(ps->c.c, atom), NULL);
 					if (reply) {
 						targets[i] = targets_free_inner[i] = strndup(
 						    xcb_get_atom_name_name(reply),
@@ -1599,8 +1624,9 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
 	if (cond.isbranch) {
 		const c2_b_t *pb = cond.b;
 
-		if (!pb)
+		if (!pb) {
 			return false;
+		}
 
 		error = false;
 
@@ -1630,8 +1656,9 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
 	else {
 		const c2_l_t *pleaf = cond.l;
 
-		if (!pleaf)
+		if (!pleaf) {
 			return false;
+		}
 
 		c2_match_once_leaf(ps, w, pleaf, &result, &error);
 
@@ -1651,11 +1678,13 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
 	}
 
 	// Postprocess the result
-	if (error)
+	if (error) {
 		result = false;
+	}
 
-	if (cond.isbranch ? cond.b->neg : cond.l->neg)
+	if (cond.isbranch ? cond.b->neg : cond.l->neg) {
 		result = !result;
+	}
 
 	return result;
 }
@@ -1673,8 +1702,9 @@ bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condl
 	// Then go through the whole linked list
 	for (; condlst; condlst = condlst->next) {
 		if (c2_match_once(ps, w, condlst->ptr)) {
-			if (pdata)
+			if (pdata) {
 				*pdata = condlst->data;
+			}
 			return true;
 		}
 	}

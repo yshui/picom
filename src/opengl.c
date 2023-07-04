@@ -39,7 +39,7 @@ static inline XVisualInfo *get_visualinfo_from_visual(session_t *ps, xcb_visuali
 	XVisualInfo vreq = {.visualid = visual};
 	int nitems = 0;
 
-	return XGetVisualInfo(ps->dpy, VisualIDMask, &vreq, &nitems);
+	return XGetVisualInfo(ps->c.dpy, VisualIDMask, &vreq, &nitems);
 }
 
 /**
@@ -56,7 +56,7 @@ bool glx_init(session_t *ps, bool need_render) {
 	}
 
 	// Get XVisualInfo
-	pvis = get_visualinfo_from_visual(ps, ps->vis);
+	pvis = get_visualinfo_from_visual(ps, ps->c.screen_info->root_visual);
 	if (!pvis) {
 		log_error("Failed to acquire XVisualInfo for current visual.");
 		goto glx_init_end;
@@ -65,12 +65,13 @@ bool glx_init(session_t *ps, bool need_render) {
 	// Ensure the visual is double-buffered
 	if (need_render) {
 		int value = 0;
-		if (Success != glXGetConfig(ps->dpy, pvis, GLX_USE_GL, &value) || !value) {
+		if (Success != glXGetConfig(ps->c.dpy, pvis, GLX_USE_GL, &value) || !value) {
 			log_error("Root visual is not a GL visual.");
 			goto glx_init_end;
 		}
 
-		if (Success != glXGetConfig(ps->dpy, pvis, GLX_DOUBLEBUFFER, &value) || !value) {
+		if (Success != glXGetConfig(ps->c.dpy, pvis, GLX_DOUBLEBUFFER, &value) ||
+		    !value) {
 			log_error("Root visual is not a double buffered GL visual.");
 			goto glx_init_end;
 		}
@@ -112,7 +113,7 @@ bool glx_init(session_t *ps, bool need_render) {
 	if (!psglx->context) {
 		// Get GLX context
 #ifndef DEBUG_GLX_DEBUG_CONTEXT
-		psglx->context = glXCreateContext(ps->dpy, pvis, None, GL_TRUE);
+		psglx->context = glXCreateContext(ps->c.dpy, pvis, None, GL_TRUE);
 #else
 		{
 			GLXFBConfig fbconfig = get_fbconfig_from_visualinfo(ps, pvis);
@@ -134,7 +135,7 @@ bool glx_init(session_t *ps, bool need_render) {
 			static const int attrib_list[] = {
 			    GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_DEBUG_BIT_ARB, None};
 			psglx->context = p_glXCreateContextAttribsARB(
-			    ps->dpy, fbconfig, NULL, GL_TRUE, attrib_list);
+			    ps->c.dpy, fbconfig, NULL, GL_TRUE, attrib_list);
 		}
 #endif
 
@@ -144,7 +145,7 @@ bool glx_init(session_t *ps, bool need_render) {
 		}
 
 		// Attach GLX context
-		if (!glXMakeCurrent(ps->dpy, get_tgt_window(ps), psglx->context)) {
+		if (!glXMakeCurrent(ps->c.dpy, get_tgt_window(ps), psglx->context)) {
 			log_error("Failed to attach GLX context.");
 			goto glx_init_end;
 		}
@@ -201,7 +202,7 @@ bool glx_init(session_t *ps, bool need_render) {
 		// Clear screen
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		// glXSwapBuffers(ps->dpy, get_tgt_window(ps));
+		// glXSwapBuffers(ps->c.dpy, get_tgt_window(ps));
 	}
 
 	success = true;
@@ -266,8 +267,8 @@ void glx_destroy(session_t *ps) {
 
 	// Destroy GLX context
 	if (ps->psglx->context) {
-		glXMakeCurrent(ps->dpy, None, NULL);
-		glXDestroyContext(ps->dpy, ps->psglx->context);
+		glXMakeCurrent(ps->c.dpy, None, NULL);
+		glXDestroyContext(ps->c.dpy, ps->psglx->context);
 		ps->psglx->context = NULL;
 	}
 
@@ -732,7 +733,7 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 		// Retrieve pixmap parameters, if they aren't provided
 		if (!width || !height) {
 			auto r = xcb_get_geometry_reply(
-			    ps->c, xcb_get_geometry(ps->c, pixmap), NULL);
+			    ps->c.c, xcb_get_geometry(ps->c.c, pixmap), NULL);
 			if (!r) {
 				log_error("Failed to query info of pixmap %#010x.", pixmap);
 				return false;
@@ -773,7 +774,7 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 		    0,
 		};
 
-		ptex->glpixmap = glXCreatePixmap(ps->dpy, fbcfg->cfg, pixmap, attrs);
+		ptex->glpixmap = glXCreatePixmap(ps->c.dpy, fbcfg->cfg, pixmap, attrs);
 		ptex->pixmap = pixmap;
 		ptex->target =
 		    (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
@@ -820,9 +821,9 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 	// The specification requires rebinding whenever the content changes...
 	// We can't follow this, too slow.
 	if (need_release)
-		glXReleaseTexImageEXT(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+		glXReleaseTexImageEXT(ps->c.dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
 
-	glXBindTexImageEXT(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
+	glXBindTexImageEXT(ps->c.dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
 
 	// Cleanup
 	glBindTexture(ptex->target, 0);
@@ -840,13 +841,13 @@ void glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
 	// Release binding
 	if (ptex->glpixmap && ptex->texture) {
 		glBindTexture(ptex->target, ptex->texture);
-		glXReleaseTexImageEXT(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+		glXReleaseTexImageEXT(ps->c.dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
 		glBindTexture(ptex->target, 0);
 	}
 
 	// Free GLX Pixmap
 	if (ptex->glpixmap) {
-		glXDestroyPixmap(ps->dpy, ptex->glpixmap);
+		glXDestroyPixmap(ps->c.dpy, ptex->glpixmap);
 		ptex->glpixmap = 0;
 	}
 

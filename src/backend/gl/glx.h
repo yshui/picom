@@ -41,8 +41,7 @@ struct glx_fbconfig_criteria {
 	int visual_depth;
 };
 
-struct glx_fbconfig_info *glx_find_fbconfig(Display *, int screen, struct xvisual_info);
-
+struct glx_fbconfig_info *glx_find_fbconfig(struct x_connection *, struct xvisual_info);
 
 struct glxext_info {
 	bool initialized;

@@ -23,8 +23,7 @@ struct backend_operations;
 
 typedef struct backend_base {
 	struct backend_operations *ops;
-	xcb_connection_t *c;
-	xcb_window_t root;
+	struct x_connection *c;
 	struct ev_loop *loop;
 
 	/// Whether the backend can accept new render request at the moment

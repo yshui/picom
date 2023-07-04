@@ -341,9 +341,7 @@ void win_recheck_client(session_t *ps, struct managed_win *w);
 double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w);
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 
-// TODO(absolutelynothelix): rename to x_update_win_(randr_?)monitor and move to
-// the x.h.
-void win_update_monitor(int nmons, region_t *mons, struct managed_win *mw);
+void win_update_monitor(struct x_monitors *monitors, struct managed_win *mw);
 
 /**
  * Retrieve the bounding shape of a window.
