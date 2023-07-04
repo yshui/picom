@@ -537,7 +537,7 @@ void x_clear_picture_clip_region(struct x_connection *c, xcb_render_picture_t pi
 void x_free_picture(struct x_connection *c, xcb_render_picture_t p) {
 	assert(p != XCB_NONE);
 	auto cookie = xcb_render_free_picture(c->c, p);
-	set_cant_fail_cookie(c, cookie);
+	set_debug_cant_fail_cookie(c, cookie);
 }
 
 enum {
