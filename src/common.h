@@ -150,8 +150,6 @@ typedef struct session {
 	// === Event handlers ===
 	/// ev_io for X connection
 	ev_io xiow;
-	/// Timer for checking DPMS power level
-	ev_timer dpms_check_timer;
 	/// Timeout for delayed unredirection.
 	ev_timer unredir_timer;
 	/// Timer for fading

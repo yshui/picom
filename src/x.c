@@ -9,6 +9,7 @@
 #include <pixman.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
+#include <xcb/dpms.h>
 #include <xcb/glx.h>
 #include <xcb/present.h>
 #include <xcb/randr.h>
@@ -787,6 +788,25 @@ void x_request_vblank_event(session_t *ps, uint64_t msc) {
 	    xcb_present_notify_msc(ps->c.c, session_get_target_window(ps), 0, msc, 0, 0);
 	set_cant_fail_cookie(&ps->c, cookie);
 	ps->vblank_event_requested = true;
+}
+
+static inline bool dpms_screen_is_off(xcb_dpms_info_reply_t *info) {
+	// state is a bool indicating whether dpms is enabled
+	return info->state && (info->power_level != XCB_DPMS_DPMS_MODE_ON);
+}
+
+void x_check_dpms_status(session_t *ps) {
+	auto r = xcb_dpms_info_reply(ps->c.c, xcb_dpms_info(ps->c.c), NULL);
+	if (!r) {
+		log_fatal("Failed to query DPMS status.");
+		abort();
+	}
+	auto now_screen_is_off = dpms_screen_is_off(r);
+	if (ps->screen_is_off != now_screen_is_off) {
+		log_debug("Screen is now %s", now_screen_is_off ? "off" : "on");
+		ps->screen_is_off = now_screen_is_off;
+	}
+	free(r);
 }
 
 /**
