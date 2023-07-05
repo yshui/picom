@@ -30,4 +30,6 @@ void render_statistics_add_render_time_sample(struct render_statistics *rs, int 
 unsigned int
 render_statistics_get_budget(struct render_statistics *rs, unsigned int *divisor);
 
+/// Return the measured vblank interval in microseconds. Returns 0 if not enough
+/// samples have been collected yet.
 unsigned int render_statistics_get_vblank_time(struct render_statistics *rs);

@@ -10,6 +10,7 @@
 #include <xcb/composite.h>
 #include <xcb/damage.h>
 #include <xcb/glx.h>
+#include <xcb/present.h>
 #include <xcb/randr.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
@@ -775,6 +776,17 @@ bool x_fence_sync(struct x_connection *c, xcb_sync_fence_t f) {
 err:
 	free(e);
 	return false;
+}
+
+void x_request_vblank_event(session_t *ps, uint64_t msc) {
+	if (ps->vblank_event_requested) {
+		return;
+	}
+
+	auto cookie =
+	    xcb_present_notify_msc(ps->c.c, session_get_target_window(ps), 0, msc, 0, 0);
+	set_cant_fail_cookie(&ps->c, cookie);
+	ps->vblank_event_requested = true;
 }
 
 /**

@@ -419,3 +419,6 @@ void x_update_monitors(struct x_connection *, struct x_monitors *);
 void x_free_monitor_info(struct x_monitors *);
 
 uint32_t attr_deprecated xcb_generate_id(xcb_connection_t *c);
+
+/// Ask X server to send us a notification for the next end of vblank.
+void x_request_vblank_event(session_t *ps, uint64_t msc);

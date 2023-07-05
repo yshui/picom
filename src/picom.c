@@ -258,6 +258,9 @@ void schedule_render(session_t *ps, bool triggered_by_vblank attr_unused) {
 schedule:
 	ps->render_in_progress = RENDER_QUEUED;
 	ps->redraw_needed = false;
+
+	x_request_vblank_event(ps, ps->last_msc + 1);
+
 	assert(!ev_is_active(&ps->draw_timer));
 	ev_timer_set(&ps->draw_timer, delay_s, 0);
 	ev_timer_start(ps->loop, &ps->draw_timer);
@@ -267,20 +270,43 @@ schedule:
 ///
 /// Check if previously queued render has finished, and record the time it took.
 void handle_end_of_vblank(session_t *ps) {
-	if (ps->render_in_progress != RENDER_STARTED) {
-		// We didn't start rendering for this vblank, nothing to do
+	if (ps->render_in_progress == RENDER_IDLE) {
+		// We didn't start rendering for this vblank, no render time to record.
+		// But if we don't have a vblank estimate, we will ask for one more vblank
+		// event, so we can collect more data and get an estimate sooner.
+		if (render_statistics_get_vblank_time(&ps->render_stats) == 0) {
+			x_request_vblank_event(ps, ps->last_msc + 1);
+		}
 		return;
 	}
 
-	// We shouldn't have scheduled a render if the previous render hasn't been
-	// presented yet.
-	assert(!ev_is_active(&ps->draw_timer));
-
+	// render_in_progress is either RENDER_STARTED or RENDER_QUEUED
 	struct timespec render_time;
-	bool completed =
-	    ps->backend_data->ops->last_render_time(ps->backend_data, &render_time);
+	bool completed;
+	if (ps->render_in_progress == RENDER_STARTED) {
+		completed =
+		    ps->backend_data->ops->last_render_time(ps->backend_data, &render_time);
+	} else {
+		completed = false;
+	}
+
+	// Do we want to be notified when the next vblank comes? First, if frame_pacing is
+	// disabled, we don't need vblank events; or if the screen is off, we cannot
+	// request vblank events. Otherwise, we need vblank events in these cases:
+	//   1) if we know we need to redraw for the next vblank.
+	//   2) previous render hasn't completed yet, so it will be presented during the
+	//      next vblank. we need to ask for an event for that.
+	//   3) if we don't have enough data for a vblank interval estimate, see above.
+	bool need_vblank_events =
+	    ps->frame_pacing && (ps->redraw_needed || !completed ||
+	                         render_statistics_get_vblank_time(&ps->render_stats) == 0);
+
+	if (need_vblank_events) {
+		x_request_vblank_event(ps, ps->last_msc + 1);
+	}
+
 	if (!completed) {
-		// Render hasn't completed yet, keep render_in_progress as RENDER_STARTED
+		// Render hasn't completed yet, keep render_in_progress unchanged.
 		log_debug("Last render did not complete during vblank, msc: %" PRIu64,
 		          ps->last_msc);
 		return;
@@ -1504,23 +1530,21 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 		return;
 	}
 
-	bool event_is_invalid = false;
-	if (ps->frame_pacing) {
-		auto next_msc = cne->msc + 1;
-		if (cne->msc <= ps->last_msc || cne->ust == 0) {
-			// X sometimes sends duplicate/bogus MSC events, don't
-			// use the msc value. Also ignore these events.
-			//
-			// See:
-			// https://gitlab.freedesktop.org/xorg/xserver/-/issues/1418
-			next_msc = ps->last_msc + 1;
-			event_is_invalid = true;
-		}
-		auto cookie = xcb_present_notify_msc(
-		    ps->c.c, session_get_target_window(ps), 0, next_msc, 0, 0);
-		set_cant_fail_cookie(&ps->c, cookie);
-	}
+	assert(ps->frame_pacing);
+	assert(ps->vblank_event_requested);
+	ps->vblank_event_requested = false;
+
+	// X sometimes sends duplicate/bogus MSC events, when screen has just been turned
+	// off. Don't use the msc value in these events. We treat this as not receiving a
+	// vblank event at all, and try to get a new one.
+	//
+	// See:
+	// https://gitlab.freedesktop.org/xorg/xserver/-/issues/1418
+	bool event_is_invalid = cne->msc <= ps->last_msc || cne->ust == 0;
 	if (event_is_invalid) {
+		log_debug("Invalid PresentCompleteNotify event, %" PRIu64 " %" PRIu64,
+		          cne->msc, cne->ust);
+		x_request_vblank_event(ps, ps->last_msc + 1);
 		return;
 	}
 
@@ -1529,23 +1553,38 @@ handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_
 	auto now_us = (int64_t)(now.tv_sec * 1000000L + now.tv_nsec / 1000);
 	auto drift = iabs((int64_t)cne->ust - now_us);
 
-	if (ps->last_msc_instant != 0) {
-		auto frame_count = cne->msc - ps->last_msc;
-		int frame_time = (int)((cne->ust - ps->last_msc_instant) / frame_count);
-		render_statistics_add_vblank_time_sample(&ps->render_stats, frame_time);
-		log_trace("Frame count %lu, frame time: %d us, rolling average: %u us, "
-		          "msc: %" PRIu64 ", offset: %d us",
-		          frame_count, frame_time,
-		          render_statistics_get_vblank_time(&ps->render_stats), cne->ust,
-		          (int)drift);
-	} else if (drift > 1000000 && ps->frame_pacing) {
+	if (ps->last_msc_instant == 0 && drift > 1000000) {
 		// This is the first MSC event we receive, let's check if the timestamps
 		// align with the monotonic clock. If not, disable frame pacing because we
 		// can't schedule frames reliably.
 		log_error("Temporal anomaly detected, frame pacing disabled. (Are we "
 		          "running inside a time namespace?), %" PRIi64 " %" PRIu64,
 		          now_us, ps->last_msc_instant);
+		if (ps->render_in_progress == RENDER_STARTED) {
+			// When frame_pacing is off, render_in_progress can't be
+			// RENDER_STARTED. See the comment on schedule_render().
+			ps->render_in_progress = RENDER_IDLE;
+		}
 		ps->frame_pacing = false;
+		return;
+	}
+
+	if (ps->last_msc_instant != 0) {
+		auto frame_count = cne->msc - ps->last_msc;
+		int frame_time = (int)((cne->ust - ps->last_msc_instant) / frame_count);
+		if (frame_count == 1 && !ps->screen_is_off) {
+			render_statistics_add_vblank_time_sample(&ps->render_stats, frame_time);
+			log_trace("Frame count %lu, frame time: %d us, rolling average: "
+			          "%u us, "
+			          "msc: %" PRIu64 ", offset: %d us",
+			          frame_count, frame_time,
+			          render_statistics_get_vblank_time(&ps->render_stats),
+			          cne->ust, (int)drift);
+		} else {
+			log_trace("Frame count %lu, frame time: %d us, msc: %" PRIu64
+			          ", offset: %d us, not adding sample.",
+			          frame_count, frame_time, cne->ust, (int)drift);
+		}
 	}
 	ps->last_msc_instant = cne->ust;
 	ps->last_msc = cne->msc;

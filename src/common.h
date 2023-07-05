@@ -227,6 +227,9 @@ typedef struct session {
 	bool first_frame;
 	/// Whether screen has been turned off
 	bool screen_is_off;
+	/// We asked X server to send us a event for the end of a vblank, and we haven't
+	/// received one yet.
+	bool vblank_event_requested;
 	/// Event context for X Present extension.
 	uint32_t present_event_id;
 	xcb_special_event_t *present_event;
