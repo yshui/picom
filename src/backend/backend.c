@@ -154,7 +154,7 @@ void paint_all_new(session_t *ps, struct managed_win *t) {
 		// TODO(yshui): maybe we don't need to resize reg_damage, only reg_paint?
 		int resize_factor = 1;
 		if (t) {
-			resize_factor = t->stacking_rank;
+			resize_factor = t->stacking_rank + 1;
 		}
 		resize_region_in_place(&reg_damage, blur_width * resize_factor,
 		                       blur_height * resize_factor);
