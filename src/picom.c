@@ -16,11 +16,13 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <math.h>
 #include <sched.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/resource.h>
+#include <time.h>
 #include <unistd.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
@@ -64,6 +66,7 @@
 #include "options.h"
 #include "statistics.h"
 #include "uthash_extra.h"
+#include "vblank.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -142,43 +145,158 @@ static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t
 	return w;
 }
 
+enum vblank_callback_action
+collect_vblank_interval_statistics(struct vblank_event *e, void *ud) {
+	auto ps = (session_t *)ud;
+	double vblank_interval = NAN;
+	assert(ps->frame_pacing);
+	assert(ps->vblank_scheduler);
+
+	// TODO(yshui): this naive method of estimating vblank interval does not handle
+	//              the variable refresh rate case very well. This includes the case
+	//              of a VRR enabled monitor; or a monitor that's turned off, in which
+	//              case the vblank events might slow down or stop all together.
+	//              I tried using DPMS to detect monitor power state, and stop adding
+	//              samples when the monitor is off, but I had a hard time to get it
+	//              working reliably, there are just too many corner cases.
+
+	// Don't add sample again if we already collected statistics for this vblank
+	if (ps->last_msc < e->msc) {
+		if (ps->last_msc_instant != 0) {
+			auto frame_count = e->msc - ps->last_msc;
+			auto frame_time =
+			    (int)((e->ust - ps->last_msc_instant) / frame_count);
+			if (frame_count == 1) {
+				render_statistics_add_vblank_time_sample(
+				    &ps->render_stats, frame_time);
+				log_trace("Frame count %lu, frame time: %d us, ust: "
+				          "%" PRIu64 "",
+				          frame_count, frame_time, e->ust);
+			} else {
+				log_trace("Frame count %lu, frame time: %d us, msc: "
+				          "%" PRIu64 ", not adding sample.",
+				          frame_count, frame_time, e->ust);
+			}
+		}
+		ps->last_msc_instant = e->ust;
+		ps->last_msc = e->msc;
+	} else if (ps->last_msc > e->msc) {
+		log_warn("PresentCompleteNotify msc is going backwards, last_msc: "
+		         "%" PRIu64 ", current msc: %" PRIu64,
+		         ps->last_msc, e->msc);
+	}
+
+	vblank_interval = render_statistics_get_vblank_time(&ps->render_stats);
+	log_trace("Vblank interval estimate: %f us", vblank_interval);
+	if (vblank_interval == 0) {
+		// We don't have enough data for vblank interval estimate, schedule
+		// another vblank event.
+		return VBLANK_CALLBACK_AGAIN;
+	}
+	return VBLANK_CALLBACK_DONE;
+}
+/// vblank callback scheduled by schedule_render.
+///
+/// Check if previously queued render has finished, and record the time it took.
+enum vblank_callback_action schedule_render_at_vblank(struct vblank_event *e, void *ud) {
+	auto ps = (session_t *)ud;
+	assert(ps->frame_pacing);
+	assert(ps->backend_busy);
+	assert(ps->render_queued);
+	assert(ps->vblank_scheduler);
+
+	collect_vblank_interval_statistics(e, ud);
+
+	struct timespec render_time;
+	bool completed =
+	    ps->backend_data->ops->last_render_time(ps->backend_data, &render_time);
+	if (!completed) {
+		// Render hasn't completed yet, we can't start another render.
+		// Check again at the next vblank.
+		log_debug("Last render did not complete during vblank, msc: "
+		          "%" PRIu64,
+		          ps->last_msc);
+		return VBLANK_CALLBACK_AGAIN;
+	}
+
+	// The frame has been finished and presented, record its render time.
+	int render_time_us =
+	    (int)(render_time.tv_sec * 1000000L + render_time.tv_nsec / 1000L);
+	render_statistics_add_render_time_sample(
+	    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
+	log_verbose("Last render call took: %d (gpu) + %d (cpu) us, "
+	            "last_msc: %" PRIu64,
+	            render_time_us, (int)ps->last_schedule_delay, ps->last_msc);
+	ps->last_schedule_delay = 0;
+	ps->backend_busy = false;
+
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	auto now_us = (uint64_t)now.tv_sec * 1000000 + (uint64_t)now.tv_nsec / 1000;
+	double delay_s = 0;
+	if (ps->next_render > now_us) {
+		delay_s = (double)(ps->next_render - now_us) / 1000000.0;
+	}
+	log_verbose("Prepare to start rendering: delay: %f s, next_render: %" PRIu64
+	            ", now_us: %" PRIu64,
+	            delay_s, ps->next_render, now_us);
+	assert(!ev_is_active(&ps->draw_timer));
+	ev_timer_set(&ps->draw_timer, delay_s, 0);
+	ev_timer_start(ps->loop, &ps->draw_timer);
+	return VBLANK_CALLBACK_DONE;
+}
+
 /// How many seconds into the future should we start rendering the next frame.
 ///
 /// Renders are scheduled like this:
 ///
-/// 1. queue_redraw() queues a new render by calling schedule_render, if there is no
-///    render currently scheduled. i.e. render_in_progress == RENDER_IDLE.
-/// 2. then, we need to figure out the best time to start rendering. first, we need to
-///    know when the current vblank will end. we have this information from the Present
-///    extension: we know when was the end of last vblank, and we know the refresh rate.
-///    so we can calculate the end of the current vblank. if our render time estimation
-///    shows we could miss that target, we push the target back an integer number of
-///    frames. and we calculate the end of the target vblank similarly.
-/// 3. We schedule a render for that target. we use past statistics about how long our
-///    renders took to figure out when to start rendering. we start rendering as late as
-///    possible, but not too late that we miss the target vblank. render_in_progress is
-///    set to RENDER_QUEUED.
-/// 4. draw_callback() is called at the schedule time. Backend APIs are called to issue
-///    render commands. render_in_progress is set to RENDER_STARTED.
-/// 5. PresentCompleteNotify is received, which gives us the actual time when the current
-///    vblank will end/ended. We schedule a call to handle_end_of_vblank at the
-///    appropriate time.
-/// 6. in handle_end_of_vblank, we check the backend to see if the render has finished. if
-///    not, render_in_progress is unchanged; otherwise, render_in_progress is set to
-///    RENDER_IDLE, and the next frame can be scheduled.
+/// 1. queue_redraw() queues a new render by calling schedule_render, if there
+///    is no render currently scheduled. i.e. render_queued == false.
+/// 2. then, we need to figure out the best time to start rendering. we need to
+///    at least know when the current vblank will start, as we can't start render
+///    before the current rendered frame is diplayed on screen. we have this
+///    information from the vblank scheduler, it will notify us when that happens.
+///    we might also want to delay the rendering even further to reduce latency,
+///    this is discussed below, in FUTURE WORKS.
+/// 3. we schedule a render for that target point in time.
+/// 4. draw_callback() is called at the schedule time (i.e. when scheduled
+///    vblank event is delivered). Backend APIs are called to issue render
+///    commands. render_queued is set to false, and backend_busy is set to true.
 ///
-/// This is what happens when frame_pacing is true. Otherwise render_in_progress is
-/// either QUEUED or IDLE, and queue_redraw will always schedule a render to be started
-/// immediately. PresentCompleteNotify will not be received, and handle_end_of_vblank will
-/// not be called.
+/// There is a small caveat in step 2. As a vblank event being delivered
+/// doesn't necessarily mean the frame has been displayed on screen. If a frame
+/// takes too long to render, it might miss the current vblank, and will be
+/// displayed on screen during one of the subsequent vblanks. So in
+/// schedule_render_at_vblank, we ask the backend to see if it has finished
+/// rendering. if not, render_queued is unchanged, and another vblank is
+/// scheduled; otherwise, draw_callback_impl will be scheduled to be call at
+/// an appropriate time.
 ///
-/// The `triggered_by_timer` parameter is used to indicate whether this function is
-/// triggered by a steady timer, i.e. we are rendering for each vblank. The other case is
-/// when we stop rendering for a while because there is no changes on screen, then
-/// something changed and schedule_render is triggered by a DamageNotify. The idea is that
-/// when the schedule is triggered by a steady timer, schedule_render will be called at a
-/// predictable offset into each vblank.
-
+/// All of the above is what happens when frame_pacing is true. Otherwise
+/// render_in_progress is either QUEUED or IDLE, and queue_redraw will always
+/// schedule a render to be started immediately. PresentCompleteNotify will not
+/// be received, and handle_end_of_vblank will not be called.
+///
+/// The `triggered_by_timer` parameter is used to indicate whether this function
+/// is triggered by a steady timer, i.e. we are rendering for each vblank. The
+/// other case is when we stop rendering for a while because there is no changes
+/// on screen, then something changed and schedule_render is triggered by a
+/// DamageNotify. The idea is that when the schedule is triggered by a steady
+/// timer, schedule_render will be called at a predictable offset into each
+/// vblank.
+///
+/// # FUTURE WORKS
+///
+/// As discussed in step 2 above, we might want to delay the rendering even
+/// further. If we know the time it takes to render a frame, and the interval
+/// between vblanks, we can try to schedule the render to start at a point in
+/// time that's closer to the next vblank. We should be able to get this
+/// information by doing statistics on the render time of previous frames, which
+/// is available from the backends; and the interval between vblank events,
+/// which is available from the vblank scheduler.
+///
+/// The code that does this is already implemented below, but disabled by
+/// default. There are several problems with it, see bug #1072.
 void schedule_render(session_t *ps, bool triggered_by_vblank attr_unused) {
 	// By default, we want to schedule render immediately, later in this function we
 	// might adjust that and move the render later, based on render timing statistics.
@@ -228,97 +346,38 @@ void schedule_render(session_t *ps, bool triggered_by_vblank attr_unused) {
 		         delay_s, render_budget, frame_time, now_us, deadline);
 	}
 
-	log_trace("Delay: %.6lf s, last_msc: %" PRIu64 ", render_budget: %d, frame_time: "
-	          "%" PRIu32 ", now_us: %" PRIu64 ", next_msc: %" PRIu64 ", "
-	          "divisor: %d",
-	          delay_s, ps->last_msc_instant, render_budget, frame_time, now_us,
-	          deadline, divisor);
+	log_verbose("Delay: %.6lf s, last_msc: %" PRIu64 ", render_budget: %d, "
+	            "frame_time: "
+	            "%" PRIu32 ", now_us: %" PRIu64 ", next_msc: %" PRIu64 ", "
+	            "divisor: %d",
+	            delay_s, ps->last_msc_instant, render_budget, frame_time, now_us,
+	            deadline, divisor);
 
 schedule:
-	ps->render_in_progress = RENDER_QUEUED;
-	ps->redraw_needed = false;
-
-	x_request_vblank_event(ps, ps->last_msc + 1);
-
-	assert(!ev_is_active(&ps->draw_timer));
-	ev_timer_set(&ps->draw_timer, delay_s, 0);
-	ev_timer_start(ps->loop, &ps->draw_timer);
-}
-
-/// Called after a vblank has ended
-///
-/// Check if previously queued render has finished, and record the time it took.
-void handle_end_of_vblank(session_t *ps) {
-	if (ps->render_in_progress == RENDER_IDLE) {
-		// We didn't start rendering for this vblank, no render time to record.
-		// But if we don't have a vblank estimate, we will ask for one more vblank
-		// event, so we can collect more data and get an estimate sooner.
-		if (render_statistics_get_vblank_time(&ps->render_stats) == 0) {
-			x_request_vblank_event(ps, ps->last_msc + 1);
-		}
-		return;
-	}
-
-	// render_in_progress is either RENDER_STARTED or RENDER_QUEUED
-	struct timespec render_time;
-	bool completed;
-	if (ps->render_in_progress == RENDER_STARTED) {
-		completed =
-		    ps->backend_data->ops->last_render_time(ps->backend_data, &render_time);
+	ps->render_queued = true;
+	// If the backend is not busy, we just need to schedule the render at the
+	// specified time; otherwise we need to wait for vblank events.
+	if (!ps->backend_busy) {
+		assert(!ev_is_active(&ps->draw_timer));
+		ev_timer_set(&ps->draw_timer, delay_s, 0);
+		ev_timer_start(ps->loop, &ps->draw_timer);
 	} else {
-		completed = false;
-	}
-
-	// Do we want to be notified when the next vblank comes? First, if frame_pacing is
-	// disabled, we don't need vblank events; or if the screen is off, we cannot
-	// request vblank events. Otherwise, we need vblank events in these cases:
-	//   1) if we know we need to redraw for the next vblank.
-	//   2) previous render hasn't completed yet, so it will be presented during the
-	//      next vblank. we need to ask for an event for that.
-	//   3) if we don't have enough data for a vblank interval estimate, see above.
-	bool need_vblank_events =
-	    ps->frame_pacing && (ps->redraw_needed || !completed ||
-	                         render_statistics_get_vblank_time(&ps->render_stats) == 0);
-
-	if (need_vblank_events) {
-		x_request_vblank_event(ps, ps->last_msc + 1);
-	}
-
-	if (!completed) {
-		// Render hasn't completed yet, keep render_in_progress unchanged.
-		log_debug("Last render did not complete during vblank, msc: %" PRIu64,
-		          ps->last_msc);
-		return;
-	}
-
-	int render_time_us =
-	    (int)(render_time.tv_sec * 1000000L + render_time.tv_nsec / 1000L);
-	// The frame has been finished and presented, record its render time.
-	log_trace("Last render call took: %d (gpu) + %d (cpu) us, "
-	          "last_msc: %" PRIu64,
-	          render_time_us, (int)ps->last_schedule_delay, ps->last_msc);
-	render_statistics_add_render_time_sample(
-	    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
-	ps->last_schedule_delay = 0;
-	ps->render_in_progress = RENDER_IDLE;
-
-	if (ps->redraw_needed) {
-		schedule_render(ps, true);
+		// We should never set backend_busy to true unless frame_pacing is
+		// enabled.
+		assert(ps->vblank_scheduler);
+		if (!vblank_scheduler_schedule(ps->vblank_scheduler,
+		                               schedule_render_at_vblank, ps)) {
+			// TODO(yshui): handle error here
+			abort();
+		}
 	}
 }
 
 void queue_redraw(session_t *ps) {
-	// Whether we have already rendered for the current frame.
-	// If frame pacing is not enabled, pretend this is false.
-	// If --benchmark is used, redraw is always queued
-	if (ps->render_in_progress == RENDER_IDLE && !ps->o.benchmark) {
-		schedule_render(ps, false);
-	} else if (ps->render_in_progress > RENDER_QUEUED) {
-		// render_in_progress > RENDER_QUEUED means we have already issued the
-		// render commands, so a new render must be scheduled to reflect new
-		// changes. Otherwise the queued render will include1 the new changes.
-		ps->redraw_needed = true;
+	if (ps->render_queued) {
+		return;
 	}
+	schedule_render(ps, false);
 }
 
 /**
@@ -1395,23 +1454,19 @@ static bool redirect_start(session_t *ps) {
 	}
 
 	if (ps->present_exists && ps->frame_pacing) {
-		ps->present_event_id = x_new_id(&ps->c);
-		auto select_input = xcb_present_select_input(
-		    ps->c.c, ps->present_event_id, session_get_target_window(ps),
-		    XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY);
-		auto notify_msc = xcb_present_notify_msc(
-		    ps->c.c, session_get_target_window(ps), 0, 0, 1, 0);
-		set_cant_fail_cookie(&ps->c, select_input);
-		set_cant_fail_cookie(&ps->c, notify_msc);
-		ps->present_event = xcb_register_for_special_xge(
-		    ps->c.c, &xcb_present_id, ps->present_event_id, NULL);
-
 		// Initialize rendering and frame timing statistics, and frame pacing
 		// states.
 		ps->last_msc_instant = 0;
 		ps->last_msc = 0;
 		ps->last_schedule_delay = 0;
 		render_statistics_reset(&ps->render_stats);
+		ps->vblank_scheduler =
+		    vblank_scheduler_new(ps->loop, &ps->c, session_get_target_window(ps));
+		if (!ps->vblank_scheduler) {
+			return false;
+		}
+		vblank_scheduler_schedule(ps->vblank_scheduler,
+		                          collect_vblank_interval_statistics, ps);
 	} else if (ps->frame_pacing) {
 		log_error("Present extension is not supported, frame pacing disabled.");
 		ps->frame_pacing = false;
@@ -1459,12 +1514,9 @@ static void unredirect(session_t *ps) {
 	free(ps->damage_ring);
 	ps->damage_ring = ps->damage = NULL;
 
-	if (ps->present_event_id) {
-		xcb_present_select_input(ps->c.c, ps->present_event_id,
-		                         session_get_target_window(ps), 0);
-		ps->present_event_id = XCB_NONE;
-		xcb_unregister_for_special_event(ps->c.c, ps->present_event);
-		ps->present_event = NULL;
+	if (ps->vblank_scheduler) {
+		vblank_scheduler_free(ps->vblank_scheduler);
+		ps->vblank_scheduler = NULL;
 	}
 
 	// Must call XSync() here
@@ -1474,122 +1526,12 @@ static void unredirect(session_t *ps) {
 	log_debug("Screen unredirected.");
 }
 
-/// Handle PresentCompleteNotify events
-///
-/// Record the MSC value and their timestamps, and schedule handle_end_of_vblank() at the
-/// correct time.
-static void
-handle_present_complete_notify(session_t *ps, xcb_present_complete_notify_event_t *cne) {
-	if (cne->kind != XCB_PRESENT_COMPLETE_KIND_NOTIFY_MSC) {
-		return;
-	}
-
-	assert(ps->frame_pacing);
-	assert(ps->vblank_event_requested);
-	ps->vblank_event_requested = false;
-
-	// X sometimes sends duplicate/bogus MSC events, when screen has just been turned
-	// off. Don't use the msc value in these events. We treat this as not receiving a
-	// vblank event at all, and try to get a new one.
-	//
-	// See:
-	// https://gitlab.freedesktop.org/xorg/xserver/-/issues/1418
-	bool event_is_invalid = cne->msc <= ps->last_msc || cne->ust == 0;
-	if (event_is_invalid) {
-		log_debug("Invalid PresentCompleteNotify event, %" PRIu64 " %" PRIu64,
-		          cne->msc, cne->ust);
-		x_request_vblank_event(ps, ps->last_msc + 1);
-		return;
-	}
-
-	struct timespec now;
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	auto now_us = (int64_t)(now.tv_sec * 1000000L + now.tv_nsec / 1000);
-	auto drift = iabs((int64_t)cne->ust - now_us);
-
-	if (ps->last_msc_instant == 0 && drift > 1000000) {
-		// This is the first MSC event we receive, let's check if the timestamps
-		// align with the monotonic clock. If not, disable frame pacing because we
-		// can't schedule frames reliably.
-		log_error("Temporal anomaly detected, frame pacing disabled. (Are we "
-		          "running inside a time namespace?), %" PRIi64 " %" PRIu64,
-		          now_us, ps->last_msc_instant);
-		if (ps->render_in_progress == RENDER_STARTED) {
-			// When frame_pacing is off, render_in_progress can't be
-			// RENDER_STARTED. See the comment on schedule_render().
-			ps->render_in_progress = RENDER_IDLE;
-		}
-		ps->frame_pacing = false;
-		return;
-	}
-
-	x_check_dpms_status(ps);
-
-	if (ps->last_msc_instant != 0) {
-		auto frame_count = cne->msc - ps->last_msc;
-		int frame_time = (int)((cne->ust - ps->last_msc_instant) / frame_count);
-		if (frame_count == 1 && !ps->screen_is_off) {
-			render_statistics_add_vblank_time_sample(&ps->render_stats, frame_time);
-			log_trace("Frame count %lu, frame time: %d us, rolling average: "
-			          "%u us, "
-			          "msc: %" PRIu64 ", offset: %d us",
-			          frame_count, frame_time,
-			          render_statistics_get_vblank_time(&ps->render_stats),
-			          cne->ust, (int)drift);
-		} else {
-			log_trace("Frame count %lu, frame time: %d us, msc: %" PRIu64
-			          ", offset: %d us, not adding sample.",
-			          frame_count, frame_time, cne->ust, (int)drift);
-		}
-	}
-	ps->last_msc_instant = cne->ust;
-	ps->last_msc = cne->msc;
-	// Note we can't update ps->render_in_progress here because of this present
-	// complete notify, as we don't know if the render finished before the end of
-	// vblank or not. We schedule a call to handle_end_of_vblank() to figure out if we
-	// are still rendering, and update ps->render_in_progress accordingly.
-	if (now_us > (int64_t)cne->ust) {
-		handle_end_of_vblank(ps);
-	} else {
-		// Wait until the end of the current vblank to call
-		// handle_end_of_vblank. If we call it too early, it can
-		// mistakenly think the render missed the vblank, and doesn't
-		// schedule render for the next vblank, causing frame drops.
-		log_trace("The end of this vblank is %" PRIi64 " us into the "
-		          "future",
-		          (int64_t)cne->ust - now_us);
-		assert(!ev_is_active(&ps->vblank_timer));
-		ev_timer_set(&ps->vblank_timer,
-		             ((double)cne->ust - (double)now_us) / 1000000.0, 0);
-		ev_timer_start(ps->loop, &ps->vblank_timer);
-	}
-}
-
-static void handle_present_events(session_t *ps) {
-	if (!ps->present_event) {
-		// Screen not redirected
-		return;
-	}
-	xcb_present_generic_event_t *ev;
-	while ((ev = (void *)xcb_poll_for_special_event(ps->c.c, ps->present_event))) {
-		if (ev->event != ps->present_event_id) {
-			// This event doesn't have the right event context, it's not meant
-			// for us.
-			goto next;
-		}
-
-		// We only subscribed to the complete notify event.
-		assert(ev->evtype == XCB_PRESENT_EVENT_COMPLETE_NOTIFY);
-		handle_present_complete_notify(ps, (void *)ev);
-	next:
-		free(ev);
-	}
-}
-
 // Handle queued events before we go to sleep
 static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents attr_unused) {
 	session_t *ps = session_ptr(w, event_check);
-	handle_present_events(ps);
+	if (ps->vblank_scheduler) {
+		vblank_handle_x_events(ps->vblank_scheduler);
+	}
 
 	xcb_generic_event_t *ev;
 	while ((ev = xcb_poll_for_queued_event(ps->c.c))) {
@@ -1711,6 +1653,9 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 }
 
 static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
+	assert(!ps->backend_busy);
+	assert(ps->render_queued);
+
 	struct timespec now;
 	int64_t draw_callback_enter_us;
 	clock_gettime(CLOCK_MONOTONIC, &now);
@@ -1801,13 +1746,13 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	if (ps->redirected && ps->o.stoppaint_force != ON) {
 		static int paint = 0;
 
-		log_trace("Render start, frame %d", paint);
+		log_verbose("Render start, frame %d", paint);
 		if (!ps->o.legacy_backends) {
 			did_render = paint_all_new(ps, bottom);
 		} else {
 			paint_all(ps, bottom);
 		}
-		log_trace("Render end");
+		log_verbose("Render end");
 
 		ps->first_frame = false;
 		paint++;
@@ -1816,30 +1761,30 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		}
 	}
 
-	if (ps->frame_pacing && did_render) {
-		ps->render_in_progress = RENDER_STARTED;
-	} else {
-		// With frame pacing, we set render_in_progress to RENDER_IDLE after the
-		// end of vblank. Without frame pacing, we won't be receiving vblank
-		// events, so we set render_in_progress to RENDER_IDLE here, right after
-		// we issue the render commands.
-		// The other case is if we decided there is no change to render, in that
-		// case no render command is issued, so we also set render_in_progress to
-		// RENDER_IDLE.
-		ps->render_in_progress = RENDER_IDLE;
-	}
+	// With frame pacing, we set backend_busy to true after the end of
+	// vblank. Without frame pacing, we won't be receiving vblank events, so
+	// we set backend_busy to false here, right after we issue the render
+	// commands.
+	// The other case is if we decided there is no change to render, in that
+	// case no render command is issued, so we also set backend_busy to
+	// false.
+	ps->backend_busy = (ps->frame_pacing && did_render);
 	ps->next_render = 0;
 
 	if (!fade_running) {
 		ps->fade_time = 0L;
 	}
 
+	ps->render_queued = false;
+
 	// TODO(yshui) Investigate how big the X critical section needs to be. There are
 	// suggestions that rendering should be in the critical section as well.
 
 	// Queue redraw if animation is running. This should be picked up by next present
 	// event.
-	ps->redraw_needed = animation;
+	if (animation) {
+		queue_redraw(ps);
+	}
 }
 
 static void draw_callback(EV_P_ ev_timer *w, int revents) {
@@ -1853,13 +1798,6 @@ static void draw_callback(EV_P_ ev_timer *w, int revents) {
 		ev_timer_set(w, 0, 0);
 		ev_timer_start(EV_A_ w);
 	}
-}
-
-static void vblank_callback(EV_P_ ev_timer *w, int revents attr_unused) {
-	session_t *ps = session_ptr(w, vblank_timer);
-	ev_timer_stop(EV_A_ w);
-
-	handle_end_of_vblank(ps);
 }
 
 static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused) {
@@ -2013,7 +1951,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .randr_exists = 0,
 	    .randr_event = 0,
 	    .randr_error = 0,
-	    .present_event_id = XCB_NONE,
 	    .glx_exists = false,
 	    .glx_event = 0,
 	    .glx_error = 0,
@@ -2450,7 +2387,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_io_start(ps->loop, &ps->xiow);
 	ev_init(&ps->unredir_timer, tmout_unredir_callback);
 	ev_init(&ps->draw_timer, draw_callback);
-	ev_init(&ps->vblank_timer, vblank_callback);
 
 	ev_init(&ps->fade_timer, fade_timer_callback);
 

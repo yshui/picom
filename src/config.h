@@ -73,6 +73,16 @@ enum blur_method {
 
 typedef struct _c2_lptr c2_lptr_t;
 
+enum vblank_scheduler_type {
+	/// X Present extension based vblank events
+	VBLANK_SCHEDULER_PRESENT,
+	/// GLX_SGI_video_sync based vblank events
+	VBLANK_SCHEDULER_SGI_VIDEO_SYNC,
+	/// An invalid scheduler, served as a scheduler count, and
+	/// as a sentinel value.
+	LAST_VBLANK_SCHEDULER,
+};
+
 /// Internal, private options for debugging and development use.
 struct debug_options {
 

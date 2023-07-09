@@ -134,17 +134,6 @@ struct shader_info {
 	UT_hash_handle hh;
 };
 
-enum render_progress {
-	/// Render is finished and presented to the screen.
-	RENDER_IDLE = 0,
-	/// Rendering is queued, but not started yet.
-	RENDER_QUEUED,
-	/// Backend has been called, render commands have been issued.
-	RENDER_STARTED,
-	/// Backend reported render commands have been finished. (not actually used).
-	RENDER_FINISHED,
-};
-
 /// Structure containing all necessary data for a session.
 typedef struct session {
 	// === Event handlers ===
@@ -156,8 +145,6 @@ typedef struct session {
 	ev_timer fade_timer;
 	/// Use an ev_timer callback for drawing
 	ev_timer draw_timer;
-	/// Timer for the end of each vblanks. Used for calling schedule_render.
-	ev_timer vblank_timer;
 	/// Called every time we have timeouts or new data on socket,
 	/// so we can be sure if xcb read from X socket at anytime during event
 	/// handling, we will not left any event unhandled in the queue
@@ -225,12 +212,6 @@ typedef struct session {
 	bool first_frame;
 	/// Whether screen has been turned off
 	bool screen_is_off;
-	/// We asked X server to send us a event for the end of a vblank, and we haven't
-	/// received one yet.
-	bool vblank_event_requested;
-	/// Event context for X Present extension.
-	uint32_t present_event_id;
-	xcb_special_event_t *present_event;
 	/// When last MSC event happened, in useconds.
 	uint64_t last_msc_instant;
 	/// The last MSC number
@@ -242,6 +223,8 @@ typedef struct session {
 	uint64_t next_render;
 	/// Whether we can perform frame pacing.
 	bool frame_pacing;
+	/// Vblank event scheduler
+	struct vblank_scheduler *vblank_scheduler;
 
 	/// Render statistics
 	struct render_statistics render_stats;
@@ -253,14 +236,18 @@ typedef struct session {
 	options_t o;
 	/// Whether we have hit unredirection timeout.
 	bool tmout_unredir_hit;
-	/// Rendering is currently in progress. This means we are in any stage of
-	/// rendering a frame. The render could be queued but not yet started, or it could
-	/// have finished but not yet presented.
-	enum render_progress render_in_progress;
-	/// Whether there are changes pending for the next render. A render is currently
-	/// in progress, otherwise we would have started a new render instead of setting
-	/// this flag.
-	bool redraw_needed;
+	/// If the backend is busy. This means two things:
+	/// Either the backend is currently rendering a frame, or a frame has been
+	/// rendered but has yet to be presented. In either case, we should not start
+	/// another render right now. As if we start issuing rendering commands now, we
+	/// will have to wait for either the the current render to finish, or the current
+	/// back buffer to be become available again. In either case, we will be wasting
+	/// time.
+	bool backend_busy;
+	/// Whether a render is queued. This generally means there are pending updates
+	/// to the screen that's neither included in the current render, nor on the
+	/// screen.
+	bool render_queued;
 
 	/// Cache a xfixes region so we don't need to allocate it every time.
 	/// A workaround for yshui/picom#301

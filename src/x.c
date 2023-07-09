@@ -779,15 +779,10 @@ err:
 	return false;
 }
 
-void x_request_vblank_event(session_t *ps, uint64_t msc) {
-	if (ps->vblank_event_requested) {
-		return;
-	}
-
+void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_t msc) {
 	auto cookie =
-	    xcb_present_notify_msc(ps->c.c, session_get_target_window(ps), 0, msc, 0, 0);
-	set_cant_fail_cookie(&ps->c, cookie);
-	ps->vblank_event_requested = true;
+	    xcb_present_notify_msc(c->c, window, 0, msc, 0, 0);
+	set_cant_fail_cookie(c, cookie);
 }
 
 static inline bool dpms_screen_is_off(xcb_dpms_info_reply_t *info) {
@@ -795,18 +790,19 @@ static inline bool dpms_screen_is_off(xcb_dpms_info_reply_t *info) {
 	return info->state && (info->power_level != XCB_DPMS_DPMS_MODE_ON);
 }
 
-void x_check_dpms_status(session_t *ps) {
-	auto r = xcb_dpms_info_reply(ps->c.c, xcb_dpms_info(ps->c.c), NULL);
+bool x_check_dpms_status(struct x_connection *c, bool *screen_is_off) {
+	auto r = xcb_dpms_info_reply(c->c, xcb_dpms_info(c->c), NULL);
 	if (!r) {
-		log_fatal("Failed to query DPMS status.");
-		abort();
+		log_error("Failed to query DPMS status.");
+		return false;
 	}
 	auto now_screen_is_off = dpms_screen_is_off(r);
-	if (ps->screen_is_off != now_screen_is_off) {
+	if (*screen_is_off != now_screen_is_off) {
 		log_debug("Screen is now %s", now_screen_is_off ? "off" : "on");
-		ps->screen_is_off = now_screen_is_off;
+		*screen_is_off = now_screen_is_off;
 	}
 	free(r);
+	return true;
 }
 
 /**
