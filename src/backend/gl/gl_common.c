@@ -482,8 +482,6 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 	glUseProgram(0);
 
 	gl_check_err();
-
-	return;
 }
 
 /// Convert rectangles in X coordinates to OpenGL vertex and texture coordinates
