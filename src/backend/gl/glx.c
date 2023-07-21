@@ -615,7 +615,7 @@ void glxext_init(Display *dpy, int screen) {
 #endif
 #undef check_ext
 
-#define lookup(name) (name = (__typeof__(name))glXGetProcAddress((GLubyte *)#name))
+#define lookup(name) ((name) = (__typeof__(name))glXGetProcAddress((GLubyte *)#name))
 	// Checking if the returned function pointer is NULL is not really necessary,
 	// or maybe not even useful, since glXGetProcAddress might always return
 	// something. We are doing it just for completeness' sake.
