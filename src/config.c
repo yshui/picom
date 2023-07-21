@@ -133,8 +133,9 @@ bool parse_long(const char *s, long *dest) {
 		log_error("Invalid number: %s", s);
 		return false;
 	}
-	while (isspace((unsigned char)*endptr))
+	while (isspace((unsigned char)*endptr)) {
 		++endptr;
+	}
 	if (*endptr) {
 		log_error("Trailing characters: %s", s);
 		return false;
@@ -216,12 +217,14 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 
 	// Get matrix width and height
 	double val = 0.0;
-	if (src == (pc = parse_readnum(src, &val)))
+	if (src == (pc = parse_readnum(src, &val))) {
 		goto err1;
+	}
 	src = pc;
 	width = (int)val;
-	if (src == (pc = parse_readnum(src, &val)))
+	if (src == (pc = parse_readnum(src, &val))) {
 		goto err1;
+	}
 	src = pc;
 	height = (int)val;
 
@@ -234,9 +237,10 @@ conv *parse_blur_kern(const char *src, const char **endptr, bool *hasneg) {
 		log_error("Blur kernel width/height must be odd.");
 		goto err1;
 	}
-	if (width > 16 || height > 16)
+	if (width > 16 || height > 16) {
 		log_warn("Blur kernel width/height too large, may slow down"
 		         "rendering, and/or consume lots of memory");
+	}
 
 	// Allocate memory
 	conv *matrix = cvalloc(sizeof(conv) + (size_t)(width * height) * sizeof(double));
@@ -362,8 +366,9 @@ struct conv **parse_blur_kern_lst(const char *src, bool *hasneg, int *count) {
 	*hasneg = false;
 	for (unsigned int i = 0;
 	     i < sizeof(CONV_KERN_PREDEF) / sizeof(CONV_KERN_PREDEF[0]); ++i) {
-		if (!strcmp(CONV_KERN_PREDEF[i].name, src))
+		if (!strcmp(CONV_KERN_PREDEF[i].name, src)) {
 			return parse_blur_kern_lst(CONV_KERN_PREDEF[i].kern_str, hasneg, count);
+		}
 	}
 
 	int nkernels = 1;
@@ -655,11 +660,13 @@ bool parse_rule_window_shader(c2_lptr_t **res, const char *src, const char *incl
  * Add a pattern to a condition linked list.
  */
 bool condlst_add(c2_lptr_t **pcondlst, const char *pattern) {
-	if (!pattern)
+	if (!pattern) {
 		return false;
+	}
 
-	if (!c2_parse(pcondlst, pattern, NULL))
+	if (!c2_parse(pcondlst, pattern, NULL)) {
 		exit(1);
+	}
 
 	return true;
 }
