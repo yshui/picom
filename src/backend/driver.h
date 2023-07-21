@@ -47,7 +47,7 @@ static inline void print_drivers(enum driver drivers) {
 	const char *seen_drivers[ARR_SIZE(driver_names)];
 	int driver_count = 0;
 	for (size_t i = 0; i < ARR_SIZE(driver_names); i++) {
-		if (drivers & (1ul << i)) {
+		if (drivers & (1UL << i)) {
 			seen_drivers[driver_count++] = driver_names[i];
 		}
 	}

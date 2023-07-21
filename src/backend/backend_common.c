@@ -405,31 +405,31 @@ struct dual_kawase_params *generate_dual_kawase_params(void *args) {
 		int min_radius;        /// Approximate gauss-blur with at least this
 		                       /// radius and std-deviation
 	} strength_levels[20] = {
-	    {.iterations = 1, .offset = 1.25f, .min_radius = 1},          // LVL  1
-	    {.iterations = 1, .offset = 2.25f, .min_radius = 6},          // LVL  2
-	    {.iterations = 2, .offset = 2.00f, .min_radius = 11},         // LVL  3
-	    {.iterations = 2, .offset = 3.00f, .min_radius = 17},         // LVL  4
-	    {.iterations = 2, .offset = 4.25f, .min_radius = 24},         // LVL  5
-	    {.iterations = 3, .offset = 2.50f, .min_radius = 32},         // LVL  6
-	    {.iterations = 3, .offset = 3.25f, .min_radius = 40},         // LVL  7
-	    {.iterations = 3, .offset = 4.25f, .min_radius = 51},         // LVL  8
-	    {.iterations = 3, .offset = 5.50f, .min_radius = 67},         // LVL  9
-	    {.iterations = 4, .offset = 3.25f, .min_radius = 83},         // LVL 10
-	    {.iterations = 4, .offset = 4.00f, .min_radius = 101},        // LVL 11
-	    {.iterations = 4, .offset = 5.00f, .min_radius = 123},        // LVL 12
-	    {.iterations = 4, .offset = 6.00f, .min_radius = 148},        // LVL 13
-	    {.iterations = 4, .offset = 7.25f, .min_radius = 178},        // LVL 14
-	    {.iterations = 4, .offset = 8.25f, .min_radius = 208},        // LVL 15
-	    {.iterations = 5, .offset = 4.50f, .min_radius = 236},        // LVL 16
-	    {.iterations = 5, .offset = 5.25f, .min_radius = 269},        // LVL 17
-	    {.iterations = 5, .offset = 6.25f, .min_radius = 309},        // LVL 18
-	    {.iterations = 5, .offset = 7.25f, .min_radius = 357},        // LVL 19
-	    {.iterations = 5, .offset = 8.50f, .min_radius = 417},        // LVL 20
+	    {.iterations = 1, .offset = 1.25F, .min_radius = 1},          // LVL  1
+	    {.iterations = 1, .offset = 2.25F, .min_radius = 6},          // LVL  2
+	    {.iterations = 2, .offset = 2.00F, .min_radius = 11},         // LVL  3
+	    {.iterations = 2, .offset = 3.00F, .min_radius = 17},         // LVL  4
+	    {.iterations = 2, .offset = 4.25F, .min_radius = 24},         // LVL  5
+	    {.iterations = 3, .offset = 2.50F, .min_radius = 32},         // LVL  6
+	    {.iterations = 3, .offset = 3.25F, .min_radius = 40},         // LVL  7
+	    {.iterations = 3, .offset = 4.25F, .min_radius = 51},         // LVL  8
+	    {.iterations = 3, .offset = 5.50F, .min_radius = 67},         // LVL  9
+	    {.iterations = 4, .offset = 3.25F, .min_radius = 83},         // LVL 10
+	    {.iterations = 4, .offset = 4.00F, .min_radius = 101},        // LVL 11
+	    {.iterations = 4, .offset = 5.00F, .min_radius = 123},        // LVL 12
+	    {.iterations = 4, .offset = 6.00F, .min_radius = 148},        // LVL 13
+	    {.iterations = 4, .offset = 7.25F, .min_radius = 178},        // LVL 14
+	    {.iterations = 4, .offset = 8.25F, .min_radius = 208},        // LVL 15
+	    {.iterations = 5, .offset = 4.50F, .min_radius = 236},        // LVL 16
+	    {.iterations = 5, .offset = 5.25F, .min_radius = 269},        // LVL 17
+	    {.iterations = 5, .offset = 6.25F, .min_radius = 309},        // LVL 18
+	    {.iterations = 5, .offset = 7.25F, .min_radius = 357},        // LVL 19
+	    {.iterations = 5, .offset = 8.50F, .min_radius = 417},        // LVL 20
 	};
 
 	auto params = ccalloc(1, struct dual_kawase_params);
 	params->iterations = 0;
-	params->offset = 1.0f;
+	params->offset = 1.0F;
 
 	if (blur_args->strength <= 0 && blur_args->size) {
 		// find highest level that approximates blur-strength with the selected
@@ -453,7 +453,7 @@ struct dual_kawase_params *generate_dual_kawase_params(void *args) {
 	// - Smallest texture dimensions are halved `iterations`-times
 	// - Upsample needs pixels two-times `offset` away from the border
 	// - Plus one for interpolation differences
-	params->expand = (1 << params->iterations) * 2 * (int)ceil(params->offset) + 1;
+	params->expand = (1 << params->iterations) * 2 * (int)ceilf(params->offset) + 1;
 
 	return params;
 }
