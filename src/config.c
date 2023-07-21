@@ -191,11 +191,6 @@ enum blur_method parse_blur_method(const char *src) {
 		return BLUR_METHOD_GAUSSIAN;
 	} else if (strcmp(src, "dual_kawase") == 0) {
 		return BLUR_METHOD_DUAL_KAWASE;
-	} else if (strcmp(src, "kawase") == 0) {
-		log_warn("Blur method 'kawase' has been renamed to 'dual_kawase'. "
-		         "Interpreted as 'dual_kawase', but this will stop working "
-		         "soon.");
-		return BLUR_METHOD_DUAL_KAWASE;
 	} else if (strcmp(src, "none") == 0) {
 		return BLUR_METHOD_NONE;
 	}
