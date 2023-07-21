@@ -73,8 +73,9 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 
 	if (cpath) {
 		FILE *ret = fopen(cpath, "r");
-		if (ret && ppath)
+		if (ret && ppath) {
 			*ppath = strdup(cpath);
+		}
 		return ret;
 	}
 
@@ -124,9 +125,10 @@ void parse_cfg_condlst(const config_t *pcfg, c2_lptr_t **pcondlst, const char *n
 		// Parse an array of options
 		if (config_setting_is_array(setting)) {
 			int i = config_setting_length(setting);
-			while (i--)
+			while (i--) {
 				condlst_add(pcondlst,
 				            config_setting_get_string_elem(setting, i));
+			}
 		}
 		// Treat it as a single pattern if it's a string
 		else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
@@ -145,18 +147,22 @@ parse_cfg_condlst_corner(options_t *opt, const config_t *pcfg, const char *name)
 		// Parse an array of options
 		if (config_setting_is_array(setting)) {
 			int i = config_setting_length(setting);
-			while (i--)
+			while (i--) {
 				if (!parse_numeric_window_rule(
 				        &opt->corner_radius_rules,
-				        config_setting_get_string_elem(setting, i), 0, INT_MAX))
+				        config_setting_get_string_elem(setting, i), 0,
+				        INT_MAX)) {
 					exit(1);
+				}
+			}
 		}
 		// Treat it as a single pattern if it's a string
 		else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
 			if (!parse_numeric_window_rule(&opt->corner_radius_rules,
 			                               config_setting_get_string(setting),
-			                               0, INT_MAX))
+			                               0, INT_MAX)) {
 				exit(1);
+			}
 		}
 	}
 }
@@ -171,17 +177,21 @@ parse_cfg_condlst_opct(options_t *opt, const config_t *pcfg, const char *name) {
 		// Parse an array of options
 		if (config_setting_is_array(setting)) {
 			int i = config_setting_length(setting);
-			while (i--)
+			while (i--) {
 				if (!parse_numeric_window_rule(
 				        &opt->opacity_rules,
-				        config_setting_get_string_elem(setting, i), 0, 100))
+				        config_setting_get_string_elem(setting, i), 0, 100)) {
 					exit(1);
+				}
+			}
 		}
 		// Treat it as a single pattern if it's a string
 		else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
-			if (!parse_numeric_window_rule(
-			        &opt->opacity_rules, config_setting_get_string(setting), 0, 100))
+			if (!parse_numeric_window_rule(&opt->opacity_rules,
+			                               config_setting_get_string(setting),
+			                               0, 100)) {
 				exit(1);
+			}
 		}
 	}
 }
@@ -381,8 +391,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		winopt_mask[WINTYPE_POPUP_MENU].opacity = true;
 	}
 	// -f (fading_enable)
-	if (config_lookup_bool(&cfg, "fading", &ival))
+	if (config_lookup_bool(&cfg, "fading", &ival)) {
 		*fading_enable = ival;
+	}
 	// --no-fading-open-close
 	lcfg_lookup_bool(&cfg, "no-fading-openclose", &opt->no_fading_openclose);
 	// --no-fading-destroyed-argb
@@ -402,8 +413,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		opt->shadow_blue = rgb.blue;
 	}
 	// --shadow-exclude-reg
-	if (config_lookup_string(&cfg, "shadow-exclude-reg", &sval))
+	if (config_lookup_string(&cfg, "shadow-exclude-reg", &sval)) {
 		opt->shadow_exclude_reg_str = strdup(sval);
+	}
 	// --inactive-opacity-override
 	lcfg_lookup_bool(&cfg, "inactive-opacity-override", &opt->inactive_opacity_override);
 	// --inactive-dim
@@ -601,9 +613,10 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --xrender-sync-fence
 	lcfg_lookup_bool(&cfg, "xrender-sync-fence", &opt->xrender_sync_fence);
 
-	if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval))
+	if (lcfg_lookup_bool(&cfg, "clear-shadow", &bval)) {
 		log_warn("\"clear-shadow\" is removed as an option, and is always"
 		         " enabled now. Consider removing it from your config file");
+	}
 
 	config_setting_t *blur_cfg = config_lookup(&cfg, "blur");
 	if (blur_cfg) {
