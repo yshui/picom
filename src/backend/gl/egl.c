@@ -211,8 +211,8 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 	}
 	// clang-format on
 
-	gd->target_win = eglCreatePlatformWindowSurfaceProc(
-	    gd->display, config, (xcb_window_t[]){target}, NULL);
+	gd->target_win =
+	    eglCreatePlatformWindowSurfaceProc(gd->display, config, &target, NULL);
 	if (gd->target_win == EGL_NO_SURFACE) {
 		log_error("Failed to create EGL surface.");
 		goto end;
