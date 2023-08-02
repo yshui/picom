@@ -896,12 +896,6 @@ static backend_t *backend_xrender_init(session_t *ps) {
 	    &ps->c, ps->c.screen_info->root_visual, xd->target_win,
 	    XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
 
-	auto pictfmt = x_get_pictform_for_visual(&ps->c, ps->c.screen_info->root_visual);
-	if (!pictfmt) {
-		log_fatal("Default visual is invalid");
-		abort();
-	}
-
 	xd->vsync = ps->o.vsync;
 	if (ps->present_exists) {
 		auto eid = x_new_id(&ps->c);
@@ -930,14 +924,15 @@ static backend_t *backend_xrender_init(session_t *ps) {
 	// double buffering.
 	int first_buffer_index = xd->vsync ? 0 : 2;
 	for (int i = first_buffer_index; i < 3; i++) {
-		xd->back_pixmap[i] =
-		    x_create_pixmap(&ps->c, pictfmt->depth, to_u16_checked(ps->root_width),
-		                    to_u16_checked(ps->root_height));
+		xd->back_pixmap[i] = x_create_pixmap(&ps->c, ps->c.screen_info->root_depth,
+		                                     to_u16_checked(ps->root_width),
+		                                     to_u16_checked(ps->root_height));
 		const uint32_t pic_attrs_mask = XCB_RENDER_CP_REPEAT;
 		const xcb_render_create_picture_value_list_t pic_attrs = {
 		    .repeat = XCB_RENDER_REPEAT_PAD};
-		xd->back[i] = x_create_picture_with_pictfmt_and_pixmap(
-		    &ps->c, pictfmt, xd->back_pixmap[i], pic_attrs_mask, &pic_attrs);
+		xd->back[i] = x_create_picture_with_visual_and_pixmap(
+		    &ps->c, ps->c.screen_info->root_visual, xd->back_pixmap[i],
+		    pic_attrs_mask, &pic_attrs);
 		xd->buffer_age[i] = -1;
 		if (xd->back_pixmap[i] == XCB_NONE || xd->back[i] == XCB_NONE) {
 			log_error("Cannot create pixmap for rendering");
