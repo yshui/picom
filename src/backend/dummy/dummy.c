@@ -28,8 +28,7 @@ struct dummy_data {
 	struct backend_image mask;
 };
 
-struct backend_base *
-dummy_init(struct session *ps attr_unused, xcb_window_t target attr_unused) {
+struct backend_base *dummy_init(session_t *ps attr_unused, xcb_window_t target attr_unused) {
 	auto ret = (struct backend_base *)ccalloc(1, struct dummy_data);
 	ret->c = &ps->c;
 	ret->loop = ps->loop;
