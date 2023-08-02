@@ -119,11 +119,7 @@ struct backend_operations {
 	// ===========    Initialization    ===========
 
 	/// Initialize the backend, prepare for rendering to the target window.
-	/// Here is how you should choose target window:
-	///    1) if ps->overlay is not XCB_NONE, use that
-	///    2) use ps->root otherwise
-	// TODO(yshui) make the target window a parameter
-	backend_t *(*init)(session_t *)attr_nonnull(1);
+	backend_t *(*init)(session_t *, xcb_window_t)attr_nonnull(1);
 	void (*deinit)(backend_t *backend_data) attr_nonnull(1);
 
 	/// Called when rendering will be stopped for an unknown amount of

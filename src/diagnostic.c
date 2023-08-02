@@ -39,7 +39,7 @@ void print_diagnostics(session_t *ps, const char *config_file, bool compositor_r
 	for (int i = 0; i < NUM_BKEND; i++) {
 		if (backend_list[i] && backend_list[i]->diagnostics) {
 			printf("\n### Backend: %s\n\n", BACKEND_STRS[i]);
-			auto data = backend_list[i]->init(ps);
+			auto data = backend_list[i]->init(ps, session_get_target_window(ps));
 			if (!data) {
 				printf(" Cannot initialize this backend\n");
 			} else {

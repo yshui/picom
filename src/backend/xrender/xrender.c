@@ -869,7 +869,7 @@ static void get_blur_size(void *blur_context, int *width, int *height) {
 	*height = ctx->resize_height;
 }
 
-static backend_t *backend_xrender_init(session_t *ps) {
+static backend_t *backend_xrender_init(session_t *ps, xcb_window_t target) {
 	if (ps->o.dithered_present) {
 		log_warn("\"dithered-present\" is not supported by the xrender backend.");
 	}
@@ -888,7 +888,7 @@ static backend_t *backend_xrender_init(session_t *ps) {
 	xd->black_pixel = solid_picture(&ps->c, true, 1, 0, 0, 0);
 	xd->white_pixel = solid_picture(&ps->c, true, 1, 1, 1, 1);
 
-	xd->target_win = session_get_target_window(ps);
+	xd->target_win = target;
 	xcb_render_create_picture_value_list_t pa = {
 	    .subwindowmode = XCB_SUBWINDOW_MODE_INCLUDE_INFERIORS,
 	};
