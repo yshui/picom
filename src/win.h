@@ -11,11 +11,6 @@
 
 #include "uthash_extra.h"
 
-// FIXME shouldn't need this
-#ifdef CONFIG_OPENGL
-#include <GL/gl.h>
-#endif
-
 #include "c2.h"
 #include "compiler.h"
 #include "list.h"
@@ -203,11 +198,12 @@ struct managed_win {
 	/// Inverse of the window distance at the start of animation, for
 	/// tracking animation progress
 	double animation_inv_og_distance;
+
 	/// Animation info if it is a tag change & check if its changing window sizes
-    	/// 0: no tag change
-    	/// 1: normal tag change animation
-    	/// 2: tag change animation that effects window size
-    	uint16_t animation_is_tag;
+    /// 0: no tag change
+    /// 1: normal tag change animation
+    /// 2: tag change animation that effects window size
+    int animation_is_tag;
 
 	// Client window related members
 	/// ID of the top-level client window of the window.
@@ -381,9 +377,7 @@ void win_recheck_client(session_t *ps, struct managed_win *w);
 double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w);
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 
-// TODO(absolutelynothelix): rename to x_update_win_(randr_?)monitor and move to
-// the x.h.
-void win_update_monitor(int nmons, region_t *mons, struct managed_win *mw);
+void win_update_monitor(struct x_monitors *monitors, struct managed_win *mw);
 
 /**
  * Retrieve the bounding shape of a window.

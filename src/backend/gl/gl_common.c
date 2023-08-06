@@ -22,6 +22,11 @@
 #include "backend/backend_common.h"
 #include "backend/gl/gl_common.h"
 
+void gl_prepare(backend_t *base, const region_t *reg attr_unused) {
+	auto gd = (struct gl_data *)base;
+	glBeginQuery(GL_TIME_ELAPSED, gd->frame_timing[gd->current_frame_timing]);
+}
+
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str) {
 	log_trace("===\n%s\n===", shader_str);
 
@@ -304,9 +309,9 @@ static GLuint gl_average_texture_color(backend_t *base, struct backend_image *im
 	// Allocate buffers for render input
 	GLint coord[16] = {0};
 	GLuint indices[] = {0, 1, 2, 2, 3, 0};
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 16, coord, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 16, coord, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * 6, indices,
-	             GL_STATIC_DRAW);
+	             GL_STREAM_DRAW);
 
 	// Do actual recursive render to 1x1 texture
 	GLuint result_texture = _gl_average_texture_color(
@@ -443,9 +448,9 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 	glGenBuffers(2, bo);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
-	             indices, GL_STATIC_DRAW);
+	             indices, GL_STREAM_DRAW);
 
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
@@ -477,8 +482,6 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 	glUseProgram(0);
 
 	gl_check_err();
-
-	return;
 }
 
 /// Convert rectangles in X coordinates to OpenGL vertex and texture coordinates
@@ -809,7 +812,10 @@ uint64_t gl_get_shader_attributes(backend_t *backend_data attr_unused, void *sha
 }
 
 bool gl_init(struct gl_data *gd, session_t *ps) {
-	// Initialize GLX data structure
+	glGenQueries(2, gd->frame_timing);
+	gd->current_frame_timing = 0;
+
+	// Initialize GL data structure
 	glDisable(GL_DEPTH_TEST);
 	glDepthMask(GL_FALSE);
 
@@ -954,7 +960,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	const char *vendor = (const char *)glGetString(GL_VENDOR);
 	log_debug("GL_VENDOR = %s", vendor);
 	if (strcmp(vendor, "NVIDIA Corporation") == 0) {
-		log_info("GL vendor is NVIDIA, don't use glFinish");
+		log_info("GL vendor is NVIDIA, enable xrender sync fence.");
 		gd->is_nvidia = true;
 	} else {
 		gd->is_nvidia = false;
@@ -976,6 +982,9 @@ void gl_deinit(struct gl_data *gd) {
 		gl_destroy_window_shader(&gd->base, gd->default_shader);
 		gd->default_shader = NULL;
 	}
+
+	glDeleteTextures(1, &gd->default_mask_texture);
+	glDeleteTextures(1, &gd->back_texture);
 
 	gl_check_err();
 }
@@ -1063,9 +1072,9 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	glGenBuffers(2, bo);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 16, coord, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 16, coord, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * 6, indices,
-	             GL_STATIC_DRAW);
+	             GL_STREAM_DRAW);
 
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
@@ -1163,8 +1172,31 @@ void gl_present(backend_t *base, const region_t *region) {
 	glDeleteBuffers(2, bo);
 	glDeleteVertexArrays(1, &vao);
 
+	glEndQuery(GL_TIME_ELAPSED);
+	gd->current_frame_timing ^= 1;
+
+	gl_check_err();
+
 	free(coord);
 	free(indices);
+}
+
+bool gl_last_render_time(backend_t *base, struct timespec *ts) {
+	auto gd = (struct gl_data *)base;
+	GLint available = 0;
+	glGetQueryObjectiv(gd->frame_timing[gd->current_frame_timing ^ 1],
+	                   GL_QUERY_RESULT_AVAILABLE, &available);
+	if (!available) {
+		return false;
+	}
+
+	GLuint64 time;
+	glGetQueryObjectui64v(gd->frame_timing[gd->current_frame_timing ^ 1],
+	                      GL_QUERY_RESULT, &time);
+	ts->tv_sec = (long)(time / 1000000000);
+	ts->tv_nsec = (long)(time % 1000000000);
+	gl_check_err();
+	return true;
 }
 
 bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
@@ -1343,9 +1375,9 @@ void *gl_shadow_from_mask(backend_t *base, void *mask,
 	glGenBuffers(2, bo);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 8, coord, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 8, coord, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * 6, indices,
-	             GL_STATIC_DRAW);
+	             GL_STREAM_DRAW);
 
 	glEnableVertexAttribArray(vert_coord_loc);
 	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 2, NULL);

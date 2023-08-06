@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+#include <X11/Xlib-xcb.h>
 #include <X11/Xutil.h>
 #include <pixman.h>
 #include <xcb/composite.h>
@@ -28,6 +29,72 @@
 #include "utils.h"
 #include "x.h"
 
+// === Error handling ===
+
+/**
+ * Xlib error handler function.
+ */
+static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
+	if (!ps_g) {
+		// Do not ignore errors until the session has been initialized
+		return 0;
+	}
+
+	// Fake a xcb error, fill in just enough information
+	xcb_generic_error_t xcb_err;
+	xcb_err.full_sequence = (uint32_t)ev->serial;
+	xcb_err.major_code = ev->request_code;
+	xcb_err.minor_code = ev->minor_code;
+	xcb_err.error_code = ev->error_code;
+	x_handle_error(&ps_g->c, &xcb_err);
+	return 0;
+}
+
+void x_discard_pending(struct x_connection *c, uint32_t sequence) {
+	while (c->pending_reply_head && sequence > c->pending_reply_head->sequence) {
+		auto next = c->pending_reply_head->next;
+		free(c->pending_reply_head);
+		c->pending_reply_head = next;
+	}
+	if (!c->pending_reply_head) {
+		c->pending_reply_tail = &c->pending_reply_head;
+	}
+}
+
+void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev) {
+	x_discard_pending(c, ev->full_sequence);
+	if (c->pending_reply_head && c->pending_reply_head->sequence == ev->full_sequence) {
+		if (c->pending_reply_head->action != PENDING_REPLY_ACTION_IGNORE) {
+			x_log_error(LOG_LEVEL_ERROR, ev->full_sequence, ev->major_code,
+			            ev->minor_code, ev->error_code);
+		}
+		switch (c->pending_reply_head->action) {
+		case PENDING_REPLY_ACTION_ABORT:
+			log_fatal("An unrecoverable X error occurred, aborting...");
+			abort();
+		case PENDING_REPLY_ACTION_DEBUG_ABORT: assert(false); break;
+		case PENDING_REPLY_ACTION_IGNORE: break;
+		}
+		return;
+	}
+	x_log_error(LOG_LEVEL_WARN, ev->full_sequence, ev->major_code, ev->minor_code,
+	            ev->error_code);
+}
+
+/// Initialize x_connection struct from an Xlib Display.
+///
+/// Note this function doesn't take ownership of the Display, the caller is still
+/// responsible for closing it after `free_x_connection` is called.
+void x_connection_init(struct x_connection *c, Display *dpy) {
+	c->dpy = dpy;
+	c->c = XGetXCBConnection(dpy);
+	c->pending_reply_tail = &c->pending_reply_head;
+	c->previous_xerror_handler = XSetErrorHandler(xerror);
+
+	c->screen = DefaultScreen(dpy);
+	c->screen_info = x_screen_of_display(c, c->screen);
+}
+
 /**
  * Get a specific attribute of a window.
  *
@@ -43,11 +110,11 @@
  * @return a <code>winprop_t</code> structure containing the attribute
  *    and number of items. A blank one on failure.
  */
-winprop_t x_get_prop_with_offset(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom,
+winprop_t x_get_prop_with_offset(const struct x_connection *c, xcb_window_t w, xcb_atom_t atom,
                                  int offset, int length, xcb_atom_t rtype, int rformat) {
 	xcb_get_property_reply_t *r = xcb_get_property_reply(
-	    c,
-	    xcb_get_property(c, 0, w, atom, rtype, to_u32_checked(offset),
+	    c->c,
+	    xcb_get_property(c->c, 0, w, atom, rtype, to_u32_checked(offset),
 	                     to_u32_checked(length)),
 	    NULL);
 
@@ -71,10 +138,10 @@ winprop_t x_get_prop_with_offset(xcb_connection_t *c, xcb_window_t w, xcb_atom_t
 }
 
 /// Get the type, format and size in bytes of a window's specific attribute.
-winprop_info_t x_get_prop_info(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom) {
+winprop_info_t x_get_prop_info(const struct x_connection *c, xcb_window_t w, xcb_atom_t atom) {
 	xcb_generic_error_t *e = NULL;
 	auto r = xcb_get_property_reply(
-	    c, xcb_get_property(c, 0, w, atom, XCB_ATOM_ANY, 0, 0), &e);
+	    c->c, xcb_get_property(c->c, 0, w, atom, XCB_ATOM_ANY, 0, 0), &e);
 	if (!r) {
 		log_debug_x_error(e, "Failed to get property info for window %#010x", w);
 		free(e);
@@ -94,7 +161,7 @@ winprop_info_t x_get_prop_info(xcb_connection_t *c, xcb_window_t w, xcb_atom_t a
  *
  * @return the value if successful, 0 otherwise
  */
-xcb_window_t wid_get_prop_window(xcb_connection_t *c, xcb_window_t wid, xcb_atom_t aprop) {
+xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid, xcb_atom_t aprop) {
 	// Get the attribute
 	xcb_window_t p = XCB_NONE;
 	winprop_t prop = x_get_prop(c, wid, aprop, 1L, XCB_ATOM_WINDOW, 32);
@@ -115,7 +182,7 @@ xcb_window_t wid_get_prop_window(xcb_connection_t *c, xcb_window_t wid, xcb_atom
 bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char ***pstrlst,
                        int *pnstr) {
 	assert(ps->server_grabbed);
-	auto prop_info = x_get_prop_info(ps->c, wid, prop);
+	auto prop_info = x_get_prop_info(&ps->c, wid, prop);
 	auto type = prop_info.type;
 	auto format = prop_info.format;
 	auto length = prop_info.length;
@@ -140,7 +207,7 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 	xcb_generic_error_t *e = NULL;
 	auto word_count = (length + 4 - 1) / 4;
 	auto r = xcb_get_property_reply(
-	    ps->c, xcb_get_property(ps->c, 0, wid, prop, type, 0, word_count), &e);
+	    ps->c.c, xcb_get_property(ps->c.c, 0, wid, prop, type, 0, word_count), &e);
 	if (!r) {
 		log_debug_x_error(e, "Failed to get window property for %#010x", wid);
 		free(e);
@@ -198,14 +265,14 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 // of this program
 static thread_local xcb_render_query_pict_formats_reply_t *g_pictfmts = NULL;
 
-static inline void x_get_server_pictfmts(xcb_connection_t *c) {
+static inline void x_get_server_pictfmts(struct x_connection *c) {
 	if (g_pictfmts) {
 		return;
 	}
 	xcb_generic_error_t *e = NULL;
 	// Get window picture format
-	g_pictfmts =
-	    xcb_render_query_pict_formats_reply(c, xcb_render_query_pict_formats(c), &e);
+	g_pictfmts = xcb_render_query_pict_formats_reply(
+	    c->c, xcb_render_query_pict_formats(c->c), &e);
 	if (e || !g_pictfmts) {
 		log_fatal("failed to get pict formats\n");
 		abort();
@@ -213,7 +280,7 @@ static inline void x_get_server_pictfmts(xcb_connection_t *c) {
 }
 
 const xcb_render_pictforminfo_t *
-x_get_pictform_for_visual(xcb_connection_t *c, xcb_visualid_t visual) {
+x_get_pictform_for_visual(struct x_connection *c, xcb_visualid_t visual) {
 	x_get_server_pictfmts(c);
 
 	xcb_render_pictvisual_t *pv = xcb_render_util_find_visual_format(g_pictfmts, visual);
@@ -244,7 +311,7 @@ static xcb_visualid_t attr_pure x_get_visual_for_pictfmt(xcb_render_query_pict_f
 	return XCB_NONE;
 }
 
-xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_t std) {
+xcb_visualid_t x_get_visual_for_standard(struct x_connection *c, xcb_pict_standard_t std) {
 	x_get_server_pictfmts(c);
 
 	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, std);
@@ -253,7 +320,7 @@ xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_
 }
 
 xcb_render_pictformat_t
-x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std) {
+x_get_pictfmt_for_standard(struct x_connection *c, xcb_pict_standard_t std) {
 	x_get_server_pictfmts(c);
 
 	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, std);
@@ -261,8 +328,8 @@ x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std) {
 	return pictfmt->id;
 }
 
-int x_get_visual_depth(xcb_connection_t *c, xcb_visualid_t visual) {
-	auto setup = xcb_get_setup(c);
+int x_get_visual_depth(struct x_connection *c, xcb_visualid_t visual) {
+	auto setup = xcb_get_setup(c->c);
 	for (auto screen = xcb_setup_roots_iterator(setup); screen.rem;
 	     xcb_screen_next(&screen)) {
 		for (auto depth = xcb_screen_allowed_depths_iterator(screen.data);
@@ -280,7 +347,7 @@ int x_get_visual_depth(xcb_connection_t *c, xcb_visualid_t visual) {
 }
 
 xcb_render_picture_t
-x_create_picture_with_pictfmt_and_pixmap(xcb_connection_t *c,
+x_create_picture_with_pictfmt_and_pixmap(struct x_connection *c,
                                          const xcb_render_pictforminfo_t *pictfmt,
                                          xcb_pixmap_t pixmap, uint32_t valuemask,
                                          const xcb_render_create_picture_value_list_t *attr) {
@@ -294,9 +361,9 @@ x_create_picture_with_pictfmt_and_pixmap(xcb_connection_t *c,
 	}
 
 	xcb_render_picture_t tmp_picture = x_new_id(c);
-	xcb_generic_error_t *e =
-	    xcb_request_check(c, xcb_render_create_picture_checked(
-	                             c, tmp_picture, pixmap, pictfmt->id, valuemask, buf));
+	xcb_generic_error_t *e = xcb_request_check(
+	    c->c, xcb_render_create_picture_checked(c->c, tmp_picture, pixmap,
+	                                            pictfmt->id, valuemask, buf));
 	free(buf);
 	if (e) {
 		log_error_x_error(e, "failed to create picture");
@@ -307,7 +374,7 @@ x_create_picture_with_pictfmt_and_pixmap(xcb_connection_t *c,
 }
 
 xcb_render_picture_t
-x_create_picture_with_visual_and_pixmap(xcb_connection_t *c, xcb_visualid_t visual,
+x_create_picture_with_visual_and_pixmap(struct x_connection *c, xcb_visualid_t visual,
                                         xcb_pixmap_t pixmap, uint32_t valuemask,
                                         const xcb_render_create_picture_value_list_t *attr) {
 	const xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(c, visual);
@@ -315,7 +382,7 @@ x_create_picture_with_visual_and_pixmap(xcb_connection_t *c, xcb_visualid_t visu
 }
 
 xcb_render_picture_t
-x_create_picture_with_standard_and_pixmap(xcb_connection_t *c, xcb_pict_standard_t standard,
+x_create_picture_with_standard_and_pixmap(struct x_connection *c, xcb_pict_standard_t standard,
                                           xcb_pixmap_t pixmap, uint32_t valuemask,
                                           const xcb_render_create_picture_value_list_t *attr) {
 	x_get_server_pictfmts(c);
@@ -326,26 +393,26 @@ x_create_picture_with_standard_and_pixmap(xcb_connection_t *c, xcb_pict_standard
 }
 
 xcb_render_picture_t
-x_create_picture_with_standard(xcb_connection_t *c, xcb_drawable_t d, int w, int h,
+x_create_picture_with_standard(struct x_connection *c, int w, int h,
                                xcb_pict_standard_t standard, uint32_t valuemask,
                                const xcb_render_create_picture_value_list_t *attr) {
 	x_get_server_pictfmts(c);
 
 	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, standard);
 	assert(pictfmt);
-	return x_create_picture_with_pictfmt(c, d, w, h, pictfmt, valuemask, attr);
+	return x_create_picture_with_pictfmt(c, w, h, pictfmt, valuemask, attr);
 }
 
 /**
  * Create an picture.
  */
 xcb_render_picture_t
-x_create_picture_with_pictfmt(xcb_connection_t *c, xcb_drawable_t d, int w, int h,
+x_create_picture_with_pictfmt(struct x_connection *c, int w, int h,
                               const xcb_render_pictforminfo_t *pictfmt, uint32_t valuemask,
                               const xcb_render_create_picture_value_list_t *attr) {
 	uint8_t depth = pictfmt->depth;
 
-	xcb_pixmap_t tmp_pixmap = x_create_pixmap(c, depth, d, w, h);
+	xcb_pixmap_t tmp_pixmap = x_create_pixmap(c, depth, w, h);
 	if (!tmp_pixmap) {
 		return XCB_NONE;
 	}
@@ -353,23 +420,23 @@ x_create_picture_with_pictfmt(xcb_connection_t *c, xcb_drawable_t d, int w, int 
 	xcb_render_picture_t picture = x_create_picture_with_pictfmt_and_pixmap(
 	    c, pictfmt, tmp_pixmap, valuemask, attr);
 
-	xcb_free_pixmap(c, tmp_pixmap);
+	set_cant_fail_cookie(c, xcb_free_pixmap(c->c, tmp_pixmap));
 
 	return picture;
 }
 
 xcb_render_picture_t
-x_create_picture_with_visual(xcb_connection_t *c, xcb_drawable_t d, int w, int h,
-                             xcb_visualid_t visual, uint32_t valuemask,
+x_create_picture_with_visual(struct x_connection *c, int w, int h, xcb_visualid_t visual,
+                             uint32_t valuemask,
                              const xcb_render_create_picture_value_list_t *attr) {
 	auto pictfmt = x_get_pictform_for_visual(c, visual);
-	return x_create_picture_with_pictfmt(c, d, w, h, pictfmt, valuemask, attr);
+	return x_create_picture_with_pictfmt(c, w, h, pictfmt, valuemask, attr);
 }
 
-bool x_fetch_region(xcb_connection_t *c, xcb_xfixes_region_t r, pixman_region32_t *res) {
+bool x_fetch_region(struct x_connection *c, xcb_xfixes_region_t r, pixman_region32_t *res) {
 	xcb_generic_error_t *e = NULL;
 	xcb_xfixes_fetch_region_reply_t *xr =
-	    xcb_xfixes_fetch_region_reply(c, xcb_xfixes_fetch_region(c, r), &e);
+	    xcb_xfixes_fetch_region_reply(c->c, xcb_xfixes_fetch_region(c->c, r), &e);
 	if (!xr) {
 		log_error_x_error(e, "Failed to fetch rectangles");
 		return false;
@@ -390,7 +457,7 @@ bool x_fetch_region(xcb_connection_t *c, xcb_xfixes_region_t r, pixman_region32_
 	return ret;
 }
 
-uint32_t x_create_region(xcb_connection_t *c, const region_t *reg) {
+uint32_t x_create_region(struct x_connection *c, const region_t *reg) {
 	if (!reg) {
 		return XCB_NONE;
 	}
@@ -410,8 +477,8 @@ uint32_t x_create_region(xcb_connection_t *c, const region_t *reg) {
 	}
 
 	xcb_xfixes_region_t ret = x_new_id(c);
-	bool success =
-	    XCB_AWAIT_VOID(xcb_xfixes_create_region, c, ret, to_u32_checked(nrects), xrects);
+	bool success = XCB_AWAIT_VOID(xcb_xfixes_create_region, c->c, ret,
+	                              to_u32_checked(nrects), xrects);
 	free(xrects);
 	if (!success) {
 		return XCB_NONE;
@@ -419,13 +486,13 @@ uint32_t x_create_region(xcb_connection_t *c, const region_t *reg) {
 	return ret;
 }
 
-void x_destroy_region(xcb_connection_t *c, xcb_xfixes_region_t r) {
+void x_destroy_region(struct x_connection *c, xcb_xfixes_region_t r) {
 	if (r != XCB_NONE) {
-		xcb_xfixes_destroy_region(c, r);
+		set_debug_cant_fail_cookie(c, xcb_xfixes_destroy_region(c->c, r));
 	}
 }
 
-void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
+void x_set_picture_clip_region(struct x_connection *c, xcb_render_picture_t pict,
                                int16_t clip_x_origin, int16_t clip_y_origin,
                                const region_t *reg) {
 	int nrects;
@@ -440,9 +507,10 @@ void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
 		};
 	}
 
-	xcb_generic_error_t *e = xcb_request_check(
-	    c, xcb_render_set_picture_clip_rectangles_checked(
-	           c, pict, clip_x_origin, clip_y_origin, to_u32_checked(nrects), xrects));
+	xcb_generic_error_t *e =
+	    xcb_request_check(c->c, xcb_render_set_picture_clip_rectangles_checked(
+	                                c->c, pict, clip_x_origin, clip_y_origin,
+	                                to_u32_checked(nrects), xrects));
 	if (e) {
 		log_error_x_error(e, "Failed to set clip region");
 		free(e);
@@ -450,15 +518,26 @@ void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
 	free(xrects);
 }
 
-void x_clear_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict) {
+void x_clear_picture_clip_region(struct x_connection *c, xcb_render_picture_t pict) {
 	assert(pict != XCB_NONE);
 	xcb_render_change_picture_value_list_t v = {.clipmask = XCB_NONE};
 	xcb_generic_error_t *e = xcb_request_check(
-	    c, xcb_render_change_picture_checked(c, pict, XCB_RENDER_CP_CLIP_MASK, &v));
+	    c->c, xcb_render_change_picture_checked(c->c, pict, XCB_RENDER_CP_CLIP_MASK, &v));
 	if (e) {
 		log_error_x_error(e, "failed to clear clip region");
 		free(e);
 	}
+}
+
+/**
+ * Destroy a <code>Picture</code>.
+ *
+ * Picture must be valid.
+ */
+void x_free_picture(struct x_connection *c, xcb_render_picture_t p) {
+	assert(p != XCB_NONE);
+	auto cookie = xcb_render_free_picture(c->c, p);
+	set_debug_cant_fail_cookie(c, cookie);
 }
 
 enum {
@@ -593,12 +672,12 @@ const char *x_strerror(xcb_generic_error_t *e) {
 /**
  * Create a pixmap and check that creation succeeded.
  */
-xcb_pixmap_t x_create_pixmap(xcb_connection_t *c, uint8_t depth, xcb_drawable_t drawable,
-                             int width, int height) {
+xcb_pixmap_t x_create_pixmap(struct x_connection *c, uint8_t depth, int width, int height) {
 	xcb_pixmap_t pix = x_new_id(c);
-	xcb_void_cookie_t cookie = xcb_create_pixmap_checked(
-	    c, depth, pix, drawable, to_u16_checked(width), to_u16_checked(height));
-	xcb_generic_error_t *err = xcb_request_check(c, cookie);
+	xcb_void_cookie_t cookie =
+	    xcb_create_pixmap_checked(c->c, depth, pix, c->screen_info->root,
+	                              to_u16_checked(width), to_u16_checked(height));
+	xcb_generic_error_t *err = xcb_request_check(c->c, cookie);
 	if (err == NULL) {
 		return pix;
 	}
@@ -614,12 +693,12 @@ xcb_pixmap_t x_create_pixmap(xcb_connection_t *c, uint8_t depth, xcb_drawable_t 
  * Detect whether the pixmap is valid with XGetGeometry. Well, maybe there
  * are better ways.
  */
-bool x_validate_pixmap(xcb_connection_t *c, xcb_pixmap_t pixmap) {
+bool x_validate_pixmap(struct x_connection *c, xcb_pixmap_t pixmap) {
 	if (pixmap == XCB_NONE) {
 		return false;
 	}
 
-	auto r = xcb_get_geometry_reply(c, xcb_get_geometry(c, pixmap), NULL);
+	auto r = xcb_get_geometry_reply(c->c, xcb_get_geometry(c->c, pixmap), NULL);
 	if (!r) {
 		return false;
 	}
@@ -628,22 +707,27 @@ bool x_validate_pixmap(xcb_connection_t *c, xcb_pixmap_t pixmap) {
 	free(r);
 	return ret;
 }
-/// Names of root window properties that could point to a pixmap of
-/// background.
-static const char *background_props_str[] = {
-    "_XROOTPMAP_ID",
-    "_XSETROOT_ID",
-    0,
-};
 
-xcb_pixmap_t
-x_get_root_back_pixmap(xcb_connection_t *c, xcb_window_t root, struct atom *atoms) {
+/// We don't use the _XSETROOT_ID root window property as a source of the background
+/// pixmap because it most likely points to a dummy pixmap used to keep the colormap
+/// associated with the background pixmap alive but we listen for it's changes and update
+/// the background pixmap accordingly.
+///
+/// For details on the _XSETROOT_ID root window property and it's usage see:
+/// https://metacpan.org/pod/X11::Protocol::XSetRoot#_XSETROOT_ID
+/// https://gitlab.freedesktop.org/xorg/app/xsetroot/-/blob/435d35409768de7cbc2c47a6322192dd4b480545/xsetroot.c#L318-352
+/// https://github.com/ImageMagick/ImageMagick/blob/d04a47227637dbb3af9231b0107ccf9677bf985e/MagickCore/xwindow.c#L9203-L9260
+/// https://github.com/ImageMagick/ImageMagick/blob/d04a47227637dbb3af9231b0107ccf9677bf985e/MagickCore/xwindow.c#L1853-L1922
+/// https://www.fvwm.org/Archive/Manpages/fvwm-root.html
+
+xcb_pixmap_t x_get_root_back_pixmap(struct x_connection *c, struct atom *atoms) {
 	xcb_pixmap_t pixmap = XCB_NONE;
 
-	// Get the values of background attributes
-	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(atoms, background_props_str[p]);
-		winprop_t prop = x_get_prop(c, root, prop_atom, 1, XCB_ATOM_PIXMAP, 32);
+	xcb_atom_t root_back_pixmap_atoms[] = {atoms->a_XROOTPMAP_ID, atoms->aESETROOT_PMAP_ID};
+	for (size_t i = 0; i < ARR_SIZE(root_back_pixmap_atoms); i++) {
+		winprop_t prop =
+		    x_get_prop(c, c->screen_info->root, root_back_pixmap_atoms[i], 1,
+		               XCB_ATOM_PIXMAP, 32);
 		if (prop.nitems) {
 			pixmap = (xcb_pixmap_t)*prop.p32;
 			free_winprop(&prop);
@@ -656,37 +740,32 @@ x_get_root_back_pixmap(xcb_connection_t *c, xcb_window_t root, struct atom *atom
 }
 
 bool x_is_root_back_pixmap_atom(struct atom *atoms, xcb_atom_t atom) {
-	for (int p = 0; background_props_str[p]; p++) {
-		xcb_atom_t prop_atom = get_atom(atoms, background_props_str[p]);
-		if (prop_atom == atom) {
-			return true;
-		}
-	}
-	return false;
+	return atom == atoms->a_XROOTPMAP_ID || atom == atoms->aESETROOT_PMAP_ID ||
+	       atom == atoms->a_XSETROOT_ID;
 }
 
 /**
  * Synchronizes a X Render drawable to ensure all pending painting requests
  * are completed.
  */
-bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
+bool x_fence_sync(struct x_connection *c, xcb_sync_fence_t f) {
 	// TODO(richardgv): If everybody just follows the rules stated in X Sync
 	// prototype, we need only one fence per screen, but let's stay a bit
 	// cautious right now
 
-	auto e = xcb_request_check(c, xcb_sync_trigger_fence_checked(c, f));
+	auto e = xcb_request_check(c->c, xcb_sync_trigger_fence_checked(c->c, f));
 	if (e) {
 		log_error_x_error(e, "Failed to trigger the fence");
 		goto err;
 	}
 
-	e = xcb_request_check(c, xcb_sync_await_fence_checked(c, 1, &f));
+	e = xcb_request_check(c->c, xcb_sync_await_fence_checked(c->c, 1, &f));
 	if (e) {
 		log_error_x_error(e, "Failed to await on a fence");
 		goto err;
 	}
 
-	e = xcb_request_check(c, xcb_sync_reset_fence_checked(c, f));
+	e = xcb_request_check(c->c, xcb_sync_reset_fence_checked(c->c, f));
 	if (e) {
 		log_error_x_error(e, "Failed to reset the fence");
 		goto err;
@@ -748,7 +827,7 @@ void x_create_convolution_kernel(const conv *kernel, double center,
 
 /// Generate a search criteria for fbconfig from a X visual.
 /// Returns {-1, -1, -1, -1, -1, 0} on failure
-struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual) {
+struct xvisual_info x_get_visual_info(struct x_connection *c, xcb_visualid_t visual) {
 	auto pictfmt = x_get_pictform_for_visual(c, visual);
 	auto depth = x_get_visual_depth(c, visual);
 	if (!pictfmt || depth == -1) {
@@ -776,10 +855,10 @@ struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual
 	};
 }
 
-xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen) {
+xcb_screen_t *x_screen_of_display(struct x_connection *c, int screen) {
 	xcb_screen_iterator_t iter;
 
-	iter = xcb_setup_roots_iterator(xcb_get_setup(c));
+	iter = xcb_setup_roots_iterator(xcb_get_setup(c->c));
 	for (; iter.rem; --screen, xcb_screen_next(&iter)) {
 		if (screen == 0) {
 			return iter.data;
@@ -789,39 +868,34 @@ xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen) {
 	return NULL;
 }
 
-void x_update_randr_monitors(session_t *ps) {
-	x_free_randr_info(ps);
-
-	if (!(ps->o.crop_shadow_to_monitor || ps->o.animations) || !ps->randr_exists) {
-		return;
-	}
+void x_update_monitors(struct x_connection *c, struct x_monitors *m) {
+	x_free_monitor_info(m);
 
 	xcb_randr_get_monitors_reply_t *r = xcb_randr_get_monitors_reply(
-	    ps->c, xcb_randr_get_monitors(ps->c, ps->root, true), NULL);
+	    c->c, xcb_randr_get_monitors(c->c, c->screen_info->root, true), NULL);
 	if (!r) {
 		return;
 	}
 
-	ps->randr_nmonitors = xcb_randr_get_monitors_monitors_length(r);
-	ps->randr_monitor_regs = ccalloc(ps->randr_nmonitors, region_t);
+	m->count = xcb_randr_get_monitors_monitors_length(r);
+	m->regions = ccalloc(m->count, region_t);
 	xcb_randr_monitor_info_iterator_t monitor_info_it =
 	    xcb_randr_get_monitors_monitors_iterator(r);
 	for (int i = 0; monitor_info_it.rem; xcb_randr_monitor_info_next(&monitor_info_it)) {
 		xcb_randr_monitor_info_t *mi = monitor_info_it.data;
-		pixman_region32_init_rect(&ps->randr_monitor_regs[i++], mi->x, mi->y,
-		                          mi->width, mi->height);
+		pixman_region32_init_rect(&m->regions[i++], mi->x, mi->y, mi->width, mi->height);
 	}
 
 	free(r);
 }
 
-void x_free_randr_info(session_t *ps) {
-	if (ps->randr_monitor_regs) {
-		for (int i = 0; i < ps->randr_nmonitors; i++) {
-			pixman_region32_fini(&ps->randr_monitor_regs[i]);
+void x_free_monitor_info(struct x_monitors *m) {
+	if (m->regions) {
+		for (int i = 0; i < m->count; i++) {
+			pixman_region32_fini(&m->regions[i]);
 		}
-		free(ps->randr_monitor_regs);
-		ps->randr_monitor_regs = NULL;
+		free(m->regions);
+		m->regions = NULL;
 	}
-	ps->randr_nmonitors = 0;
+	m->count = 0;
 }

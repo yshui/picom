@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
+#include <inttypes.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
 
@@ -133,31 +134,35 @@ void handle_device_reset(session_t *ps) {
 }
 
 /// paint all windows
-void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
+void paint_all_new(session_t *ps, struct managed_win *t) {
+	struct timespec now = get_time_timespec();
+	auto paint_all_start_us =
+	    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
 	if (ps->backend_data->ops->device_status &&
 	    ps->backend_data->ops->device_status(ps->backend_data) != DEVICE_STATUS_NORMAL) {
 		return handle_device_reset(ps);
 	}
 	if (ps->o.xrender_sync_fence) {
-		if (ps->xsync_exists && !x_fence_sync(ps->c, ps->sync_fence)) {
+		if (ps->xsync_exists && !x_fence_sync(&ps->c, ps->sync_fence)) {
 			log_error("x_fence_sync failed, xrender-sync-fence will be "
 			          "disabled from now on.");
-			xcb_sync_destroy_fence(ps->c, ps->sync_fence);
+			xcb_sync_destroy_fence(ps->c.c, ps->sync_fence);
 			ps->sync_fence = XCB_NONE;
 			ps->o.xrender_sync_fence = false;
 			ps->xsync_exists = false;
 		}
 	}
+
+	now = get_time_timespec();
+	auto after_sync_fence_us =
+	    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
+	log_trace("Time spent on sync fence: %" PRIu64 " us",
+	          after_sync_fence_us - paint_all_start_us);
 	// All painting will be limited to the damage, if _some_ of
 	// the paints bleed out of the damage region, it will destroy
 	// part of the image we want to reuse
 	region_t reg_damage;
-	if (!ignore_damage) {
-		reg_damage = get_damage(ps, ps->o.monitor_repaint || !ps->o.use_damage);
-	} else {
-		pixman_region32_init(&reg_damage);
-		pixman_region32_copy(&reg_damage, &ps->screen_reg);
-	}
+	reg_damage = get_damage(ps, ps->o.monitor_repaint || !ps->o.use_damage);
 
 	if (!pixman_region32_not_empty(&reg_damage)) {
 		pixman_region32_fini(&reg_damage);
@@ -201,7 +206,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 		// TODO(yshui): maybe we don't need to resize reg_damage, only reg_paint?
 		int resize_factor = 1;
 		if (t) {
-			resize_factor = t->stacking_rank;
+			resize_factor = t->stacking_rank + 1;
 		}
 		resize_region_in_place(&reg_damage, blur_width * resize_factor,
 		                       blur_height * resize_factor);
@@ -232,6 +237,21 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 	// Region on screen we don't want any shadows on
 	region_t reg_shadow_clip;
 	pixman_region32_init(&reg_shadow_clip);
+
+	now = get_time_timespec();
+	auto after_damage_us = (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
+	log_trace("Getting damage took %" PRIu64 " us", after_damage_us - after_sync_fence_us);
+	if (ps->next_render > 0) {
+		log_trace("Render schedule deviation: %ld us (%s) %" PRIu64 " %ld",
+		          labs((long)after_damage_us - (long)ps->next_render),
+		          after_damage_us < ps->next_render ? "early" : "late",
+		          after_damage_us, ps->next_render);
+		ps->last_schedule_delay = 0;
+		if (after_damage_us > ps->next_render) {
+			ps->last_schedule_delay = after_damage_us - ps->next_render;
+		}
+	}
+	ps->did_render = true;
 
 	if (ps->backend_data->ops->prepare) {
 		ps->backend_data->ops->prepare(ps->backend_data, &reg_paint);
@@ -381,7 +401,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 			}
 
 			if (ps->o.crop_shadow_to_monitor && w->randr_monitor >= 0 &&
-			    w->randr_monitor < ps->randr_nmonitors) {
+			    w->randr_monitor < ps->monitors.count) {
 				// There can be a window where number of monitors is
 				// updated, but the monitor number attached to the window
 				// have not.
@@ -391,7 +411,7 @@ void paint_all_new(session_t *ps, struct managed_win *t, bool ignore_damage) {
 				// bounds.
 				pixman_region32_intersect(
 				    &reg_shadow, &reg_shadow,
-				    &ps->randr_monitor_regs[w->randr_monitor]);
+				    &ps->monitors.regions[w->randr_monitor]);
 			}
 
 			if (ps->o.transparent_clipping) {

@@ -17,6 +17,7 @@
 #include <time.h>
 
 #include "compiler.h"
+#include "log.h"
 #include "types.h"
 
 #define ARR_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
@@ -303,20 +304,97 @@ static inline void free_charpp(char **str) {
 ///
 int next_power_of_two(int n);
 
+struct rolling_window {
+	int *elem;
+	int elem_head, nelem;
+	int window_size;
+};
+
+void rolling_window_destroy(struct rolling_window *rw);
+void rolling_window_reset(struct rolling_window *rw);
+void rolling_window_init(struct rolling_window *rw, int size);
+int rolling_window_pop_front(struct rolling_window *rw);
+bool rolling_window_push_back(struct rolling_window *rw, int val, int *front);
+
+/// Copy the contents of the rolling window to an array. The array is assumed to
+/// have enough space to hold the contents of the rolling window.
+static inline void attr_unused rolling_window_copy_to_array(struct rolling_window *rw,
+                                                            int *arr) {
+	// The length from head to the end of the array
+	auto head_len = (size_t)(rw->window_size - rw->elem_head);
+	if (head_len >= (size_t)rw->nelem) {
+		memcpy(arr, rw->elem + rw->elem_head, sizeof(int) * (size_t)rw->nelem);
+	} else {
+		auto tail_len = (size_t)((size_t)rw->nelem - head_len);
+		memcpy(arr, rw->elem + rw->elem_head, sizeof(int) * head_len);
+		memcpy(arr + head_len, rw->elem, sizeof(int) * tail_len);
+	}
+}
+
 struct rolling_max;
 
-struct rolling_max *rolling_max_new(int window_size);
-void rolling_max_free(struct rolling_max *rm);
+struct rolling_max *rolling_max_new(int capacity);
+void rolling_max_destroy(struct rolling_max *rm);
 void rolling_max_reset(struct rolling_max *rm);
-void rolling_max_push(struct rolling_max *rm, int val);
+void rolling_max_pop_front(struct rolling_max *rm, int front);
+void rolling_max_push_back(struct rolling_max *rm, int val);
 int rolling_max_get_max(struct rolling_max *rm);
 
-struct rolling_avg;
-struct rolling_avg *rolling_avg_new(int window_size);
-void rolling_avg_free(struct rolling_avg *ra);
-void rolling_avg_reset(struct rolling_avg *ra);
-void rolling_avg_push(struct rolling_avg *ra, int val);
-double rolling_avg_get_avg(struct rolling_avg *ra);
+/// Estimate the mean and variance of random variable X using Welford's online
+/// algorithm.
+struct cumulative_mean_and_var {
+	double mean;
+	double m2;
+	unsigned int n;
+};
+
+static inline attr_unused void
+cumulative_mean_and_var_init(struct cumulative_mean_and_var *cmv) {
+	*cmv = (struct cumulative_mean_and_var){0};
+}
+
+static inline attr_unused void
+cumulative_mean_and_var_update(struct cumulative_mean_and_var *cmv, double x) {
+	if (cmv->n == UINT_MAX) {
+		// We have too many elements, let's keep the mean and variance.
+		return;
+	}
+	cmv->n++;
+	double delta = x - cmv->mean;
+	cmv->mean += delta / (double)cmv->n;
+	cmv->m2 += delta * (x - cmv->mean);
+}
+
+static inline attr_unused double
+cumulative_mean_and_var_get_var(struct cumulative_mean_and_var *cmv) {
+	if (cmv->n < 2) {
+		return 0;
+	}
+	return cmv->m2 / (double)(cmv->n - 1);
+}
+
+// Find the k-th smallest element in an array.
+int quickselect(int *elems, int nelem, int k);
+
+/// A naive quantile estimator.
+///
+/// Estimates the N-th percentile of a random variable X in a sliding window.
+struct rolling_quantile {
+	int current_rank;
+	int min_target_rank, max_target_rank;
+	int estimate;
+	int capacity;
+	int *tmp_buffer;
+};
+
+void rolling_quantile_init(struct rolling_quantile *rq, int capacity, int mink, int maxk);
+void rolling_quantile_init_with_tolerance(struct rolling_quantile *rq, int window_size,
+                                          double target, double tolerance);
+void rolling_quantile_reset(struct rolling_quantile *rq);
+void rolling_quantile_destroy(struct rolling_quantile *rq);
+int rolling_quantile_estimate(struct rolling_quantile *rq, struct rolling_window *elements);
+void rolling_quantile_push_back(struct rolling_quantile *rq, int x);
+void rolling_quantile_pop_front(struct rolling_quantile *rq, int x);
 
 // Some versions of the Android libc do not have timespec_get(), use
 // clock_gettime() instead.

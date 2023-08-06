@@ -1,11 +1,15 @@
 picom
 =====
 
+[![circleci](https://circleci.com/gh/yshui/picom.svg?style=shield)](https://circleci.com/gh/yshui/picom)
+[![codecov](https://codecov.io/gh/yshui/picom/branch/next/graph/badge.svg?token=NRSegi0Gze)](https://codecov.io/gh/yshui/picom)
+[![chat on discord](https://img.shields.io/discord/1106224720833159198?logo=discord)](https://discord.gg/uqmNX6dR)
+
 __picom__ is a compositor for X, and a [fork of Compton](History.md).
 
 **This is a development branch, bugs to be expected**
 
-You can leave your feedback or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions).
+You can leave your feedback or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions), or chat with other users on [discord](https://discord.gg/SY5JJzPgME)!
 
 ## Change Log
 
@@ -22,6 +26,7 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * libXext
 * xproto
 * xcb
+* xcb-util
 * xcb-damage
 * xcb-dpms
 * xcb-xfixes
@@ -44,7 +49,7 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 On Debian based distributions (e.g. Ubuntu), the needed packages are
 
 ```
-libxext-dev libxcb1-dev libxcb-damage0-dev libxcb-dpms0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-randr0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-present-dev libxcb-glx0-dev libpixman-1-dev libdbus-1-dev libconfig-dev libgl-dev libegl-dev libpcre2-dev libevdev-dev uthash-dev libev-dev libx11-xcb-dev meson
+libconfig-dev libdbus-1-dev libegl-dev libev-dev libgl-dev libpcre2-dev libpixman-1-dev libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-damage0-dev libxcb-dpms0-dev libxcb-glx0-dev libxcb-image0-dev libxcb-present-dev libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-util-dev libxcb-xfixes0-dev libxext-dev meson ninja-build uthash-dev
 ```
 
 On Fedora, the needed packages are
@@ -58,8 +63,7 @@ To build the documents, you need `asciidoc`
 ### To build
 
 ```bash
-$ git submodule update --init --recursive
-$ meson setup --buildtype=release . build
+$ meson setup --buildtype=release build
 $ ninja -C build
 ```
 
@@ -70,12 +74,12 @@ If you have libraries and/or headers installed at non-default location (e.g. und
 You can do that by setting the `CPPFLAGS` and `LDFLAGS` environment variables when running `meson`. Like this:
 
 ```bash
-$ LDFLAGS="-L/path/to/libraries" CPPFLAGS="-I/path/to/headers" meson setup --buildtype=release . build
+$ LDFLAGS="-L/path/to/libraries" CPPFLAGS="-I/path/to/headers" meson setup --buildtype=release build
 ```
 
 As an example, on FreeBSD, you might have to run meson with:
 ```bash
-$ LDFLAGS="-L/usr/local/lib" CPPFLAGS="-I/usr/local/include" meson setup --buildtype=release . build
+$ LDFLAGS="-L/usr/local/lib" CPPFLAGS="-I/usr/local/include" meson setup --buildtype=release build
 $ ninja -C build
 ```
 

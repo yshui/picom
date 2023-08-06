@@ -58,6 +58,7 @@
 #include "list.h"
 #include "region.h"
 #include "render.h"
+#include "statistics.h"
 #include "types.h"
 #include "utils.h"
 #include "win_defs.h"
@@ -82,18 +83,6 @@ typedef struct glx_fbconfig glx_fbconfig_t;
 struct glx_session;
 struct atom;
 struct conv;
-
-enum pending_reply_action {
-	PENDING_REPLY_ACTION_IGNORE,
-	PENDING_REPLY_ACTION_ABORT,
-	PENDING_REPLY_ACTION_DEBUG_ABORT,
-};
-
-typedef struct pending_reply {
-	struct pending_reply *next;
-	unsigned long sequence;
-	enum pending_reply_action action;
-} pending_reply_t;
 
 #ifdef CONFIG_OPENGL
 #ifdef DEBUG_GLX_DEBUG_CONTEXT
@@ -158,9 +147,8 @@ typedef struct session {
 	ev_timer fade_timer;
 	/// Timer for animations
 	ev_timer animation_timer;
-	/// Use an ev_idle callback for drawing
-	/// So we only start drawing when events are processed
-	ev_idle draw_idle;
+	/// Use an ev_timer callback for drawing
+	ev_timer draw_timer;
 	/// Called every time we have timeouts or new data on socket,
 	/// so we can be sure if xcb read from X socket at anytime during event
 	/// handling, we will not left any event unhandled in the queue
@@ -185,27 +173,14 @@ typedef struct session {
 	struct shader_info *shaders;
 
 	// === Display related ===
+	/// X connection
+	struct x_connection c;
 	/// Whether the X server is grabbed by us
 	bool server_grabbed;
-	/// Display in use.
-	Display *dpy;
-	/// Previous handler of X errors
-	XErrorHandler previous_xerror_handler;
-	/// Default screen.
-	int scr;
-	/// XCB connection.
-	xcb_connection_t *c;
-	/// Default visual.
-	xcb_visualid_t vis;
-	/// Default depth.
-	int depth;
-	/// Root window.
-	xcb_window_t root;
-	/// Height of root window.
-	int root_height;
 	/// Width of root window.
 	int root_width;
-	// Damage of root window.
+	/// Height of root window.
+	int root_height;
 	/// X Composite overlay window.
 	xcb_window_t overlay;
 	/// The target window for debug mode
@@ -241,6 +216,29 @@ typedef struct session {
 	bool first_frame;
 	/// Whether screen has been turned off
 	bool screen_is_off;
+	/// Event context for X Present extension.
+	uint32_t present_event_id;
+	xcb_special_event_t *present_event;
+	/// When last MSC event happened, in useconds.
+	uint64_t last_msc_instant;
+	/// The last MSC number
+	uint64_t last_msc;
+	/// When the currently rendered frame will be displayed.
+	/// 0 means there is no pending frame.
+	uint64_t target_msc;
+	/// The delay between when the last frame was scheduled to be rendered, and when
+	/// the render actually started.
+	uint64_t last_schedule_delay;
+	/// When do we want our next frame to start rendering.
+	uint64_t next_render;
+	/// Did we actually render the last frame. Sometimes redraw will be scheduled only
+	/// to find out nothing has changed. In which case this will be set to false.
+	bool did_render;
+	/// Whether we can perform frame pacing.
+	bool frame_pacing;
+
+	/// Render statistics
+	struct render_statistics render_stats;
 
 	// === Operation related ===
 	/// Flags related to the root window
@@ -269,11 +267,6 @@ typedef struct session {
 	long long fade_time;
 	/// Time of last window animation step. In milliseconds.
 	long animation_time; // TODO(dccsillag) turn into `long long`, like fade_time
-	/// Head pointer of the error ignore linked list.
-	pending_reply_t *pending_reply_head;
-	/// Pointer to the <code>next</code> member of tail element of the error
-	/// ignore linked list.
-	pending_reply_t **pending_reply_tail;
 	// Cached blur convolution kernels.
 	struct x_convolution_kernel **blur_kerns_cache;
 	/// If we should quit
@@ -373,10 +366,8 @@ typedef struct session {
 	int glx_event;
 	/// Error base number for X GLX extension.
 	int glx_error;
-	/// Number of X RandR monitors.
-	int randr_nmonitors;
-	/// X RandR monitor regions.
-	region_t *randr_monitor_regs;
+	/// Information about monitors.
+	struct x_monitors monitors;
 	/// Whether X Sync extension exists.
 	bool xsync_exists;
 	/// Event base number for X Sync extension.
@@ -474,7 +465,7 @@ static inline struct timespec get_time_timespec(void) {
  * Return the painting target window.
  */
 static inline xcb_window_t get_tgt_window(session_t *ps) {
-	return ps->overlay != XCB_NONE ? ps->overlay : ps->root;
+	return ps->overlay != XCB_NONE ? ps->overlay : ps->c.screen_info->root;
 }
 
 /**
@@ -482,35 +473,6 @@ static inline xcb_window_t get_tgt_window(session_t *ps) {
  */
 static inline bool bkend_use_glx(session_t *ps) {
 	return BKEND_GLX == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
-}
-
-static void
-set_reply_action(session_t *ps, uint32_t sequence, enum pending_reply_action action) {
-	auto i = cmalloc(pending_reply_t);
-	if (!i) {
-		abort();
-	}
-
-	i->sequence = sequence;
-	i->next = 0;
-	i->action = action;
-	*ps->pending_reply_tail = i;
-	ps->pending_reply_tail = &i->next;
-}
-
-/**
- * Ignore X errors caused by given X request.
- */
-static inline void set_ignore_cookie(session_t *ps, xcb_void_cookie_t cookie) {
-	if (ps->o.show_all_xerrors) {
-		return;
-	}
-
-	set_reply_action(ps, cookie.sequence, PENDING_REPLY_ACTION_IGNORE);
-}
-
-static inline void set_cant_fail_cookie(session_t *ps, xcb_void_cookie_t cookie) {
-	set_reply_action(ps, cookie.sequence, PENDING_REPLY_ACTION_ABORT);
 }
 
 /**
@@ -523,7 +485,8 @@ static inline void set_cant_fail_cookie(session_t *ps, xcb_void_cookie_t cookie)
  */
 static inline bool wid_has_prop(const session_t *ps, xcb_window_t w, xcb_atom_t atom) {
 	auto r = xcb_get_property_reply(
-	    ps->c, xcb_get_property(ps->c, 0, w, atom, XCB_GET_PROPERTY_TYPE_ANY, 0, 0), NULL);
+	    ps->c.c,
+	    xcb_get_property(ps->c.c, 0, w, atom, XCB_GET_PROPERTY_TYPE_ANY, 0, 0), NULL);
 	if (!r) {
 		return false;
 	}

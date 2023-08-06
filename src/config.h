@@ -160,6 +160,8 @@ typedef struct options {
 	bool vsync_use_glfinish;
 	/// Whether use damage information to help limit the area to paint
 	bool use_damage;
+	/// Disable frame pacing
+	bool no_frame_pacing;
 
 	// === Shadow ===
 	/// Red, green and blue tone of the shadow.
