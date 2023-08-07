@@ -747,20 +747,20 @@ enum open_window_animation parse_open_window_animation(const char *src) {
 	} else if (strcmp(src, "slide-right") == 0) {
 		return OPEN_WINDOW_ANIMATION_SLIDE_RIGHT;
 	} else if (strcmp(src, "slide-out") == 0) {
-        return OPEN_WINDOW_ANIMATION_SLIDE_OUT;
-        } else if (strcmp(src, "slide-in") == 0) {
-        return OPEN_WINDOW_ANIMATION_SLIDE_IN;
-        } else if (strcmp(src, "slide-out-center") == 0) {
-            return OPEN_WINDOW_ANIMATION_SLIDE_OUT_CENTER;
-        } else if (strcmp(src, "slide-in-center") == 0) {
-            return OPEN_WINDOW_ANIMATION_SLIDE_IN_CENTER;
-        } else if (strcmp(src, "minimize") == 0 || strcmp(src, "maximize") == 0) {
-            return OPEN_WINDOW_ANIMATION_MINIMIZE;
-        } else if (strcmp(src, "squeeze") == 0) {
-            return OPEN_WINDOW_ANIMATION_SQUEEZE;
-        } else if (strcmp(src, "squeeze-bottom") == 0) {
-            return OPEN_WINDOW_ANIMATION_SQUEEZE_BOTTOM;
-        }
+		return OPEN_WINDOW_ANIMATION_SLIDE_OUT;
+	} else if (strcmp(src, "slide-in") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_IN;
+	} else if (strcmp(src, "slide-out-center") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_OUT_CENTER;
+	} else if (strcmp(src, "slide-in-center") == 0) {
+		return OPEN_WINDOW_ANIMATION_SLIDE_IN_CENTER;
+	} else if (strcmp(src, "minimize") == 0 || strcmp(src, "maximize") == 0) {
+		return OPEN_WINDOW_ANIMATION_MINIMIZE;
+	} else if (strcmp(src, "squeeze") == 0) {
+		return OPEN_WINDOW_ANIMATION_SQUEEZE;
+	} else if (strcmp(src, "squeeze-bottom") == 0) {
+		return OPEN_WINDOW_ANIMATION_SQUEEZE_BOTTOM;
+	}
 
 	return OPEN_WINDOW_ANIMATION_INVALID;
 }

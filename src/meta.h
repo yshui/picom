@@ -36,36 +36,66 @@
 
 #define LIST_APPLY_000000(fn, sep, ...)
 #define LIST_APPLY_000001(fn, sep, x, ...) fn(x)
-#define LIST_APPLY_000010(fn, sep, x, ...) fn(x) sep() LIST_APPLY_000001(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_000011(fn, sep, x, ...) fn(x) sep() LIST_APPLY_000010(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_000100(fn, sep, x, ...) fn(x) sep() LIST_APPLY_000011(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_000101(fn, sep, x, ...) fn(x) sep() LIST_APPLY_000100(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_000110(fn, sep, x, ...) fn(x) sep() LIST_APPLY_000101(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_000111(fn, sep, x, ...) fn(x) sep() LIST_APPLY_000110(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_001000(fn, sep, x, ...) fn(x) sep() LIST_APPLY_000111(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_001001(fn, sep, x, ...) fn(x) sep() LIST_APPLY_001000(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_001010(fn, sep, x, ...) fn(x) sep() LIST_APPLY_001001(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_001011(fn, sep, x, ...) fn(x) sep() LIST_APPLY_001010(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_001100(fn, sep, x, ...) fn(x) sep() LIST_APPLY_001011(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_001101(fn, sep, x, ...) fn(x) sep() LIST_APPLY_001100(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_001110(fn, sep, x, ...) fn(x) sep() LIST_APPLY_001101(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_001111(fn, sep, x, ...) fn(x) sep() LIST_APPLY_001110(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_010000(fn, sep, x, ...) fn(x) sep() LIST_APPLY_001111(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_010001(fn, sep, x, ...) fn(x) sep() LIST_APPLY_010000(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_010010(fn, sep, x, ...) fn(x) sep() LIST_APPLY_010001(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_010011(fn, sep, x, ...) fn(x) sep() LIST_APPLY_010010(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_010100(fn, sep, x, ...) fn(x) sep() LIST_APPLY_010011(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_010101(fn, sep, x, ...) fn(x) sep() LIST_APPLY_010100(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_010110(fn, sep, x, ...) fn(x) sep() LIST_APPLY_010101(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_010111(fn, sep, x, ...) fn(x) sep() LIST_APPLY_010110(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_011000(fn, sep, x, ...) fn(x) sep() LIST_APPLY_010111(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_011001(fn, sep, x, ...) fn(x) sep() LIST_APPLY_011000(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_011010(fn, sep, x, ...) fn(x) sep() LIST_APPLY_011001(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_011011(fn, sep, x, ...) fn(x) sep() LIST_APPLY_011010(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_011100(fn, sep, x, ...) fn(x) sep() LIST_APPLY_011011(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_011101(fn, sep, x, ...) fn(x) sep() LIST_APPLY_011100(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_011110(fn, sep, x, ...) fn(x) sep() LIST_APPLY_011101(fn, sep, __VA_ARGS__)
-#define LIST_APPLY_011111(fn, sep, x, ...) fn(x) sep() LIST_APPLY_011110(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_000010(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_000001(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_000011(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_000010(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_000100(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_000011(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_000101(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_000100(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_000110(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_000101(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_000111(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_000110(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_001000(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_000111(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_001001(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_001000(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_001010(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_001001(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_001011(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_001010(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_001100(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_001011(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_001101(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_001100(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_001110(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_001101(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_001111(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_001110(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_010000(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_001111(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_010001(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_010000(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_010010(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_010001(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_010011(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_010010(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_010100(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_010011(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_010101(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_010100(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_010110(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_010101(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_010111(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_010110(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_011000(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_010111(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_011001(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_011000(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_011010(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_011001(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_011011(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_011010(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_011100(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_011011(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_011101(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_011100(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_011110(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_011101(fn, sep, __VA_ARGS__)
+#define LIST_APPLY_011111(fn, sep, x, ...)                                               \
+	fn(x) sep() LIST_APPLY_011110(fn, sep, __VA_ARGS__)
 #define LIST_APPLY_(N, fn, sep, ...) CONCAT(LIST_APPLY_, N)(fn, sep, __VA_ARGS__)
 #define LIST_APPLY(fn, sep, ...)                                                         \
 	LIST_APPLY_(VA_ARGS_LENGTH(__VA_ARGS__), fn, sep, __VA_ARGS__)

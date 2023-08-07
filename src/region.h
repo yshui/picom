@@ -51,8 +51,7 @@ static inline rect_t *from_x_rects(int nrects, const xcb_rectangle_t *rects) {
 /**
  * Resize a region.
  */
-static inline void _resize_region(const region_t *region, region_t *output, int dx,
-		int dy) {
+static inline void _resize_region(const region_t *region, region_t *output, int dx, int dy) {
 	if (!region || !output) {
 		return;
 	}
@@ -77,8 +76,7 @@ static inline void _resize_region(const region_t *region, region_t *output, int 
 		if (wid <= 0 || hei <= 0) {
 			continue;
 		}
-		newrects[nnewrects] =
-		    (rect_t){.x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2};
+		newrects[nnewrects] = (rect_t){.x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2};
 		++nnewrects;
 	}
 

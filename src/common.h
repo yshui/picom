@@ -266,7 +266,8 @@ typedef struct session {
 	/// Time of last fading. In milliseconds.
 	long long fade_time;
 	/// Time of last window animation step. In milliseconds.
-	long animation_time; // TODO(dccsillag) turn into `long long`, like fade_time
+	long animation_time;        // TODO(dccsillag) turn into `long long`, like
+	                            // fade_time
 	// Cached blur convolution kernels.
 	struct x_convolution_kernel **blur_kerns_cache;
 	/// If we should quit

@@ -802,42 +802,43 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 
 		// IMPORTANT: These window animation steps must happen before any other
 		// [pre]processing. This is because it changes the window's geometry.
-		if (ps->o.animations &&
-			!isnan(w->animation_progress) && w->animation_progress <= 0.999999999 &&
-			ps->o.wintype_option[w->window_type].animation != 0 &&
-			win_is_mapped_in_x(w))
-		{
+		if (ps->o.animations && !isnan(w->animation_progress) &&
+		    w->animation_progress <= 0.999999999 &&
+		    ps->o.wintype_option[w->window_type].animation != 0 &&
+		    win_is_mapped_in_x(w)) {
 			double neg_displacement_x =
-				w->animation_dest_center_x - w->animation_center_x;
+			    w->animation_dest_center_x - w->animation_center_x;
 			double neg_displacement_y =
-				w->animation_dest_center_y - w->animation_center_y;
+			    w->animation_dest_center_y - w->animation_center_y;
 			double neg_displacement_w = w->animation_dest_w - w->animation_w;
 			double neg_displacement_h = w->animation_dest_h - w->animation_h;
-		    double animation_stiffness = ps->o.animation_stiffness;
-		    if (!(w->animation_is_tag & ANIM_IN_TAG)) {
-			if (w->animation_is_tag & ANIM_SLOW)
-			    animation_stiffness = ps->o.animation_stiffness_tag_change;
-			else if (w->animation_is_tag & ANIM_FAST)
-			    animation_stiffness = ps->o.animation_stiffness_tag_change * 1.5;
-		    }
-            if (w->state == WSTATE_FADING && !(w->animation_is_tag & ANIM_FADE))
-                w->opacity_target = win_calc_opacity_target(ps, w);
+			double animation_stiffness = ps->o.animation_stiffness;
+			if (!(w->animation_is_tag & ANIM_IN_TAG)) {
+				if (w->animation_is_tag & ANIM_SLOW)
+					animation_stiffness =
+					    ps->o.animation_stiffness_tag_change;
+				else if (w->animation_is_tag & ANIM_FAST)
+					animation_stiffness =
+					    ps->o.animation_stiffness_tag_change * 1.5;
+			}
+			if (w->state == WSTATE_FADING && !(w->animation_is_tag & ANIM_FADE))
+				w->opacity_target = win_calc_opacity_target(ps, w);
 			double acceleration_x =
-				(animation_stiffness * neg_displacement_x -
-					ps->o.animation_dampening * w->animation_velocity_x) /
-				ps->o.animation_window_mass;
+			    (animation_stiffness * neg_displacement_x -
+			     ps->o.animation_dampening * w->animation_velocity_x) /
+			    ps->o.animation_window_mass;
 			double acceleration_y =
-				(animation_stiffness * neg_displacement_y -
-					ps->o.animation_dampening * w->animation_velocity_y) /
-				ps->o.animation_window_mass;
+			    (animation_stiffness * neg_displacement_y -
+			     ps->o.animation_dampening * w->animation_velocity_y) /
+			    ps->o.animation_window_mass;
 			double acceleration_w =
-				(animation_stiffness * neg_displacement_w -
-					ps->o.animation_dampening * w->animation_velocity_w) /
-				ps->o.animation_window_mass;
+			    (animation_stiffness * neg_displacement_w -
+			     ps->o.animation_dampening * w->animation_velocity_w) /
+			    ps->o.animation_window_mass;
 			double acceleration_h =
-				(animation_stiffness * neg_displacement_h -
-					ps->o.animation_dampening * w->animation_velocity_h) /
-				ps->o.animation_window_mass;
+			    (animation_stiffness * neg_displacement_h -
+			     ps->o.animation_dampening * w->animation_velocity_h) /
+			    ps->o.animation_window_mass;
 			w->animation_velocity_x += acceleration_x * delta_secs;
 			w->animation_velocity_y += acceleration_y * delta_secs;
 			w->animation_velocity_w += acceleration_w * delta_secs;
@@ -845,13 +846,13 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 
 			// Animate window geometry
 			double new_animation_x =
-				w->animation_center_x + w->animation_velocity_x * delta_secs;
+			    w->animation_center_x + w->animation_velocity_x * delta_secs;
 			double new_animation_y =
-				w->animation_center_y + w->animation_velocity_y * delta_secs;
+			    w->animation_center_y + w->animation_velocity_y * delta_secs;
 			double new_animation_w =
-				w->animation_w + w->animation_velocity_w * delta_secs;
+			    w->animation_w + w->animation_velocity_w * delta_secs;
 			double new_animation_h =
-				w->animation_h + w->animation_velocity_h * delta_secs;
+			    w->animation_h + w->animation_velocity_h * delta_secs;
 
 			// Negative new width/height causes segfault and it can happen
 			// when clamping disabled and shading a window
@@ -863,21 +864,21 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 
 			if (ps->o.animation_clamping) {
 				w->animation_center_x = clamp(
-					new_animation_x,
-					min2(w->animation_center_x, w->animation_dest_center_x),
-					max2(w->animation_center_x, w->animation_dest_center_x));
+				    new_animation_x,
+				    min2(w->animation_center_x, w->animation_dest_center_x),
+				    max2(w->animation_center_x, w->animation_dest_center_x));
 				w->animation_center_y = clamp(
-					new_animation_y,
-					min2(w->animation_center_y, w->animation_dest_center_y),
-					max2(w->animation_center_y, w->animation_dest_center_y));
+				    new_animation_y,
+				    min2(w->animation_center_y, w->animation_dest_center_y),
+				    max2(w->animation_center_y, w->animation_dest_center_y));
 				w->animation_w =
-					clamp(new_animation_w,
-							min2(w->animation_w, w->animation_dest_w),
-							max2(w->animation_w, w->animation_dest_w));
+				    clamp(new_animation_w,
+				          min2(w->animation_w, w->animation_dest_w),
+				          max2(w->animation_w, w->animation_dest_w));
 				w->animation_h =
-					clamp(new_animation_h,
-							min2(w->animation_h, w->animation_dest_h),
-				 			max2(w->animation_h, w->animation_dest_h));
+				    clamp(new_animation_h,
+				          min2(w->animation_h, w->animation_dest_h),
+				          max2(w->animation_h, w->animation_dest_h));
 			} else {
 				w->animation_center_x = new_animation_x;
 				w->animation_center_y = new_animation_y;
@@ -896,9 +897,9 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			new_animation_h = round(w->animation_h);
 
 			bool position_changed =
-				new_animation_x != old_g.x || new_animation_y != old_g.y;
-			bool size_changed =
-				new_animation_w != old_g.width || new_animation_h != old_g.height;
+			    new_animation_x != old_g.x || new_animation_y != old_g.y;
+			bool size_changed = new_animation_w != old_g.width ||
+			                    new_animation_h != old_g.height;
 			bool geometry_changed = position_changed || size_changed;
 
 			// Mark past window region with damage
@@ -910,9 +911,9 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			double w_dist = w->animation_dest_w - w->animation_w;
 			double h_dist = w->animation_dest_h - w->animation_h;
 			w->animation_progress =
-				1.0 - w->animation_inv_og_distance *
-					sqrt(x_dist * x_dist + y_dist * y_dist +
-							w_dist * w_dist + h_dist * h_dist);
+			    1.0 - w->animation_inv_og_distance *
+			              sqrt(x_dist * x_dist + y_dist * y_dist +
+			                   w_dist * w_dist + h_dist * h_dist);
 
 			// When clamping disabled we don't want the overlayed image to
 			// fade in again because process is moving to negative value
@@ -924,17 +925,20 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 			w->g.width = (uint16_t)new_animation_w;
 			w->g.height = (uint16_t)new_animation_h;
 
-            if (w->animation_is_tag > ANIM_IN_TAG && (((w->animation_is_tag & ANIM_FADE) && w->opacity_target == w->opacity)  || ((w->g.width == 0 || w->g.height == 0) && (w->animation_dest_w == 0 || w->animation_dest_h == 0)))) {
-                w->g.x = w->pending_g.x;
-                w->g.y = w->pending_g.y;
-                if (ps->o.animation_for_next_tag < OPEN_WINDOW_ANIMATION_ZOOM) {
-                    w->g.width = w->pending_g.width;
-                    w->g.height = w->pending_g.height;
-                } else {
-                    w->g.width = 0;
-                    w->g.height = 0;
-                }
-            }
+			if (w->animation_is_tag > ANIM_IN_TAG &&
+			    (((w->animation_is_tag & ANIM_FADE) && w->opacity_target == w->opacity) ||
+			     ((w->g.width == 0 || w->g.height == 0) &&
+			      (w->animation_dest_w == 0 || w->animation_dest_h == 0)))) {
+				w->g.x = w->pending_g.x;
+				w->g.y = w->pending_g.y;
+				if (ps->o.animation_for_next_tag < OPEN_WINDOW_ANIMATION_ZOOM) {
+					w->g.width = w->pending_g.width;
+					w->g.height = w->pending_g.height;
+				} else {
+					w->g.width = 0;
+					w->g.height = 0;
+				}
+			}
 
 			// Submit window size change
 			if (size_changed) {
@@ -984,7 +988,6 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation_running) {
 		if (was_painted && w->opacity != opacity_old) {
 			add_damage_from_win(ps, w);
 		}
-
 
 		if (win_check_fade_finished(ps, w)) {
 			// the window has been destroyed because fading finished

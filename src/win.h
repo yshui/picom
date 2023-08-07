@@ -96,16 +96,16 @@ struct win_geometry {
 };
 
 enum {
-    // dwm_mask
-    ANIM_PREV_TAG = 1,
-    ANIM_NEXT_TAG = (1 << 1),
-    ANIM_UNMAP = (1 << 2),
-    ANIM_SPECIAL_MINIMIZE = (1 << 3),
-    // animation_is_tag
-    ANIM_IN_TAG = 1,
-    ANIM_SLOW = (1 << 1),
-    ANIM_FAST = (1 << 2),
-    ANIM_FADE = (1 << 3),
+	// dwm_mask
+	ANIM_PREV_TAG = 1,
+	ANIM_NEXT_TAG = (1 << 1),
+	ANIM_UNMAP = (1 << 2),
+	ANIM_SPECIAL_MINIMIZE = (1 << 3),
+	// animation_is_tag
+	ANIM_IN_TAG = 1,
+	ANIM_SLOW = (1 << 1),
+	ANIM_FAST = (1 << 2),
+	ANIM_FADE = (1 << 3),
 };
 
 struct managed_win {
@@ -113,7 +113,8 @@ struct managed_win {
 	/// backend data attached to this window. Only available when
 	/// `state` is not UNMAPPED
 	void *win_image;
-	void *old_win_image; // Old window image for interpolating window contents during animations
+	void *old_win_image;        // Old window image for interpolating window contents
+	                            // during animations
 	void *shadow_image;
 	void *mask_image;
 	/// Pointer to the next higher window to paint.
@@ -186,9 +187,9 @@ struct managed_win {
 	/// Whether this window is in open/close state.
 	bool in_openclose;
 	/// Current position and destination, for animation
-	double animation_center_x,      animation_center_y;
+	double animation_center_x, animation_center_y;
 	double animation_dest_center_x, animation_dest_center_y;
-	double animation_w,      animation_h;
+	double animation_w, animation_h;
 	double animation_dest_w, animation_dest_h;
 	/// Spring animation velocity
 	double animation_velocity_x, animation_velocity_y;
@@ -200,10 +201,10 @@ struct managed_win {
 	double animation_inv_og_distance;
 
 	/// Animation info if it is a tag change & check if its changing window sizes
-    /// 0: no tag change
-    /// 1: normal tag change animation
-    /// 2: tag change animation that effects window size
-    int animation_is_tag;
+	/// 0: no tag change
+	/// 1: normal tag change animation
+	/// 2: tag change animation that effects window size
+	int animation_is_tag;
 
 	// Client window related members
 	/// ID of the top-level client window of the window.

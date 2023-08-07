@@ -262,9 +262,10 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 			o->clip_shadow_above = ival;
 			mask->clip_shadow_above = true;
 		}
-        const char *sval = NULL;
+		const char *sval = NULL;
 		if (config_setting_lookup_string(setting, "animation", &sval)) {
-			enum open_window_animation animation = parse_open_window_animation(sval);
+			enum open_window_animation animation =
+			    parse_open_window_animation(sval);
 			if (animation >= OPEN_WINDOW_ANIMATION_INVALID)
 				animation = OPEN_WINDOW_ANIMATION_NONE;
 
@@ -573,7 +574,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --animation-stiffness
 	config_lookup_float(&cfg, "animation-stiffness-in-tag", &opt->animation_stiffness);
 	// --animation-stiffness-tag-change
-	config_lookup_float(&cfg, "animation-stiffness-tag-change", &opt->animation_stiffness_tag_change);
+	config_lookup_float(&cfg, "animation-stiffness-tag-change",
+	                    &opt->animation_stiffness_tag_change);
 	// --enable-fading-next-tag
 	lcfg_lookup_bool(&cfg, "enable-fading-next-tag", &opt->enable_fading_next_tag);
 	// --enable-fading-next-tag

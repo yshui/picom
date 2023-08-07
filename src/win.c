@@ -376,7 +376,8 @@ bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color
 		w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, sctx, c);
 	} else {
 		if (!w->mask_image) {
-			// It's possible we already allocated a mask because of background blur
+			// It's possible we already allocated a mask because of background
+			// blur
 			win_bind_mask(b, w);
 		}
 		w->shadow_image = b->ops->shadow_from_mask(b, w->mask_image, sctx, c);
@@ -497,18 +498,16 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 	}
 	static double *anim_x, *anim_y, *anim_w, *anim_h;
 	enum open_window_animation animation;
-	if (ps->o.wintype_option[w->window_type].animation != OPEN_WINDOW_ANIMATION_INVALID
-		&& !w->dwm_mask) {
+	if (ps->o.wintype_option[w->window_type].animation != OPEN_WINDOW_ANIMATION_INVALID &&
+	    !w->dwm_mask) {
 		animation = ps->o.wintype_option[w->window_type].animation;
-	}
-	else
+	} else
 		animation = ps->o.animation_for_open_window;
 
 	if (w->window_type != WINTYPE_TOOLTIP &&
-		wid_has_prop(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR)) {
+	    wid_has_prop(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR)) {
 		animation = ps->o.animation_for_transient_window;
 	}
-
 
 	anim_x = &w->animation_center_x, anim_y = &w->animation_center_y;
 	anim_w = &w->animation_w, anim_h = &w->animation_h;
@@ -530,7 +529,8 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		w->animation_is_tag |= ANIM_SLOW;
 	} else if (w->dwm_mask & ANIM_NEXT_TAG) {
 		animation = ps->o.animation_for_next_tag;
-		w->animation_is_tag |= animation >= OPEN_WINDOW_ANIMATION_ZOOM ? ANIM_FAST : ANIM_SLOW;
+		w->animation_is_tag |=
+		    animation >= OPEN_WINDOW_ANIMATION_ZOOM ? ANIM_FAST : ANIM_SLOW;
 		if (ps->o.enable_fading_next_tag) {
 			w->opacity = 0.0;
 			w->state = WSTATE_FADING;
@@ -545,13 +545,14 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 
 	double angle;
 	switch (animation) {
-	case OPEN_WINDOW_ANIMATION_NONE:  // No animation
+	case OPEN_WINDOW_ANIMATION_NONE:        // No animation
 		w->animation_center_x = w->pending_g.x + w->pending_g.width * 0.5;
 		w->animation_center_y = w->pending_g.y + w->pending_g.height * 0.5;
 		w->animation_w = w->pending_g.width;
 		w->animation_h = w->pending_g.height;
 		break;
-	case OPEN_WINDOW_ANIMATION_FLYIN: // Fly-in from a random point outside the screen
+	case OPEN_WINDOW_ANIMATION_FLYIN:        // Fly-in from a random point outside the
+	                                         // screen
 		// Compute random point off screen
 		angle = 2 * M_PI * ((double)rand() / RAND_MAX);
 		const double radius =
@@ -563,25 +564,29 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		*anim_w = 0;
 		*anim_h = 0;
 		break;
-	case OPEN_WINDOW_ANIMATION_SLIDE_UP: // Slide up the image, without changing its location
+	case OPEN_WINDOW_ANIMATION_SLIDE_UP:        // Slide up the image, without
+	                                            // changing its location
 		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
 		*anim_y = w->pending_g.y + w->pending_g.height;
 		*anim_w = w->pending_g.width;
 		*anim_h = 0;
 		break;
-	case OPEN_WINDOW_ANIMATION_SLIDE_DOWN:  // Slide down the image, without changing its location
+	case OPEN_WINDOW_ANIMATION_SLIDE_DOWN:        // Slide down the image, without
+	                                              // changing its location
 		*anim_x = w->pending_g.x + w->pending_g.width * 0.5;
 		*anim_y = w->pending_g.y;
 		*anim_w = w->pending_g.width;
 		*anim_h = 0;
 		break;
-	case OPEN_WINDOW_ANIMATION_SLIDE_LEFT:  // Slide left the image, without changing its location
+	case OPEN_WINDOW_ANIMATION_SLIDE_LEFT:        // Slide left the image, without
+	                                              // changing its location
 		*anim_x = w->pending_g.x + w->pending_g.width;
 		*anim_y = w->pending_g.y + w->pending_g.height * 0.5;
 		*anim_w = 0;
 		*anim_h = w->pending_g.height;
 		break;
-	case OPEN_WINDOW_ANIMATION_SLIDE_RIGHT: // Slide right the image, without changing its location
+	case OPEN_WINDOW_ANIMATION_SLIDE_RIGHT:        // Slide right the image, without
+	                                               // changing its location
 		*anim_x = w->pending_g.x;
 		*anim_y = w->pending_g.y + w->pending_g.height * 0.5;
 		*anim_w = 0;
@@ -611,7 +616,8 @@ static void init_animation(session_t *ps, struct managed_win *w) {
 		w->animation_dest_w = w->pending_g.width;
 		w->animation_dest_h = w->pending_g.height;
 		break;
-	case OPEN_WINDOW_ANIMATION_ZOOM:  // Zoom-in the image, without changing its location
+	case OPEN_WINDOW_ANIMATION_ZOOM:        // Zoom-in the image, without changing its
+	                                        // location
 		if (w->dwm_mask & ANIM_SPECIAL_MINIMIZE) {
 			*anim_x = w->g.x + w->g.width * 0.5;
 			*anim_y = w->g.y + w->g.height * 0.5;
@@ -694,29 +700,29 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			add_damage_from_win(ps, w);
 		}
 
-
-
-        // Determine if a window should animate
+		// Determine if a window should animate
 		if (win_should_animate(ps, w)) {
 			win_update_bounding_shape(ps, w);
-			// if (w->pending_g.y < 0 && w->g.y > 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
-			// 	w->dwm_mask = ANIM_PREV_TAG;
-			// else if (w->pending_g.y > 0 && w->g.y < 0 && abs(w->pending_g.y - w->g.y) >= w->pending_g.height)
-			// 	w->dwm_mask = ANIM_NEXT_TAG;
+			// if (w->pending_g.y < 0 && w->g.y > 0 && abs(w->pending_g.y -
+			// w->g.y) >= w->pending_g.height) 	w->dwm_mask = ANIM_PREV_TAG;
+			// else if (w->pending_g.y > 0 && w->g.y < 0 && abs(w->pending_g.y
+			// - w->g.y) >= w->pending_g.height) 	w->dwm_mask = ANIM_NEXT_TAG;
 
 			if (!was_visible || w->dwm_mask) {
 
 				// Set window-open animation
 				init_animation(ps, w);
 				if (!(w->dwm_mask & ANIM_SPECIAL_MINIMIZE)) {
-					w->animation_dest_center_x = w->pending_g.x + w->pending_g.width * 0.5;
-					w->animation_dest_center_y = w->pending_g.y + w->pending_g.height * 0.5;
+					w->animation_dest_center_x =
+					    w->pending_g.x + w->pending_g.width * 0.5;
+					w->animation_dest_center_y =
+					    w->pending_g.y + w->pending_g.height * 0.5;
 					w->animation_dest_w = w->pending_g.width;
 					w->animation_dest_h = w->pending_g.height;
 					w->g.x = (int16_t)round(w->animation_center_x -
-							    w->animation_w * 0.5);
+					                        w->animation_w * 0.5);
 					w->g.y = (int16_t)round(w->animation_center_y -
-							    w->animation_h * 0.5);
+					                        w->animation_h * 0.5);
 					w->g.width = (uint16_t)round(w->animation_w);
 					w->g.height = (uint16_t)round(w->animation_h);
 				}
@@ -730,50 +736,50 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 				w->animation_dest_h = w->pending_g.height;
 			}
 
-				CLEAR_MASK(w->dwm_mask)
-				w->g.border_width = w->pending_g.border_width;
-				double x_dist = w->animation_dest_center_x - w->animation_center_x;
-				double y_dist = w->animation_dest_center_y - w->animation_center_y;
-				double w_dist = w->animation_dest_w - w->animation_w;
-				double h_dist = w->animation_dest_h - w->animation_h;
-				w->animation_inv_og_distance =
-					1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
-								w_dist * w_dist + h_dist * h_dist);
+			CLEAR_MASK(w->dwm_mask)
+			w->g.border_width = w->pending_g.border_width;
+			double x_dist = w->animation_dest_center_x - w->animation_center_x;
+			double y_dist = w->animation_dest_center_y - w->animation_center_y;
+			double w_dist = w->animation_dest_w - w->animation_w;
+			double h_dist = w->animation_dest_h - w->animation_h;
+			w->animation_inv_og_distance =
+			    1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
+			               w_dist * w_dist + h_dist * h_dist);
 
-				if (isinf(w->animation_inv_og_distance))
-					w->animation_inv_og_distance = 0;
+			if (isinf(w->animation_inv_og_distance))
+				w->animation_inv_og_distance = 0;
 
-				// We only grab images if w->reg_ignore_valid is true as
-				// there's an ev_shape_notify() event fired quickly on new windows
-				// for e.g. in case of Firefox main menu and ev_shape_notify()
-				// sets the win_set_flags(w, WIN_FLAGS_SIZE_STALE); which
-				// brakes the new image captured and because this same event
-				// also sets w->reg_ignore_valid = false; too we check for it
-				if (w->reg_ignore_valid) {
-					if (w->old_win_image) {
-						ps->backend_data->ops->release_image(ps->backend_data,
-										     w->old_win_image);
-						w->old_win_image = NULL;
-					}
+			// We only grab images if w->reg_ignore_valid is true as
+			// there's an ev_shape_notify() event fired quickly on new windows
+			// for e.g. in case of Firefox main menu and ev_shape_notify()
+			// sets the win_set_flags(w, WIN_FLAGS_SIZE_STALE); which
+			// brakes the new image captured and because this same event
+			// also sets w->reg_ignore_valid = false; too we check for it
+			if (w->reg_ignore_valid) {
+				if (w->old_win_image) {
+					ps->backend_data->ops->release_image(
+					    ps->backend_data, w->old_win_image);
+					w->old_win_image = NULL;
+				}
 
-					// We only grab
-					if (w->win_image) {
-						w->old_win_image = ps->backend_data->ops->clone_image(
-							ps->backend_data, w->win_image, &w->bounding_shape);
-					}
+				// We only grab
+				if (w->win_image) {
+					w->old_win_image = ps->backend_data->ops->clone_image(
+					    ps->backend_data, w->win_image, &w->bounding_shape);
+				}
 			}
 
-		w->animation_progress = 0.0;
+			w->animation_progress = 0.0;
 		} else {
 			w->g = w->pending_g;
 		}
 
-        if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
-            win_on_win_size_change(ps, w);
-            win_update_bounding_shape(ps, w);
-            damaged = true;
-            win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
-        }
+		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
+			win_on_win_size_change(ps, w);
+			win_update_bounding_shape(ps, w);
+			damaged = true;
+			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
+		}
 
 		if (win_check_flags_all(w, WIN_FLAGS_POSITION_STALE)) {
 			damaged = true;
@@ -1078,9 +1084,9 @@ double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
 	if (w->state == WSTATE_UNMAPPING || w->state == WSTATE_DESTROYING) {
 		return 0;
 	}
-    if ((w->state == WSTATE_FADING && (w->animation_is_tag & ANIM_FADE))) {
-        return 0;
-    }
+	if ((w->state == WSTATE_FADING && (w->animation_is_tag & ANIM_FADE))) {
+		return 0;
+	}
 
 	// Try obeying opacity property and window type opacity firstly
 	if (w->has_opacity_prop) {
@@ -1150,18 +1156,18 @@ bool win_should_fade(session_t *ps, const struct managed_win *w) {
  * Determine if a window should animate.
  */
 bool win_should_animate(session_t *ps, const struct managed_win *w) {
-    if (!ps->o.animations) {
-        return false;
-    }
-    if (ps->o.wintype_option[w->window_type].animation == 0) {
-        log_debug("Animation disabled by window_type");
-        return false;
-    }
-    if (c2_match(ps, w, ps->o.animation_blacklist, NULL)) {
-        log_debug("Animation disabled by animation_exclude");
-        return false;
-    }
-    return true;
+	if (!ps->o.animations) {
+		return false;
+	}
+	if (ps->o.wintype_option[w->window_type].animation == 0) {
+		log_debug("Animation disabled by window_type");
+		return false;
+	}
+	if (c2_match(ps, w, ps->o.animation_blacklist, NULL)) {
+		log_debug("Animation disabled by animation_exclude");
+		return false;
+	}
+	return true;
 }
 
 /**
@@ -1515,7 +1521,8 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	// focused state of the window
 	win_update_focused(ps, w);
 
-	if (w->animation_progress > 0.99999999 || (w->animation_progress == 0.0 && ps->animation_time != 0L)) {
+	if (w->animation_progress > 0.99999999 ||
+	    (w->animation_progress == 0.0 && ps->animation_time != 0L)) {
 		win_determine_shadow(ps, w);
 		win_determine_clip_shadow_above(ps, w);
 	}
@@ -2020,8 +2027,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    ps->atoms->a_NET_WM_NAME,        ps->atoms->aWM_CLASS,
 	    ps->atoms->aWM_WINDOW_ROLE,      ps->atoms->a_COMPTON_SHADOW,
 	    ps->atoms->aWM_CLIENT_LEADER,    ps->atoms->aWM_TRANSIENT_FOR,
-	    ps->atoms->a_NET_WM_DESKTOP
-	};
+	    ps->atoms->a_NET_WM_DESKTOP};
 	win_set_properties_stale(new, init_stale_props, ARR_SIZE(init_stale_props));
 
 #ifdef CONFIG_DBUS
@@ -2717,30 +2723,27 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 	w->opacity_target_old = fmax(w->opacity_target, w->opacity_target_old);
 	w->opacity_target = win_calc_opacity_target(ps, w);
 
-	if (ps->o.animations &&
-		ps->o.animation_for_unmap_window != OPEN_WINDOW_ANIMATION_NONE &&
-		ps->o.wintype_option[w->window_type].animation) {
-			w->dwm_mask = ANIM_UNMAP;
-			init_animation(ps, w);
+	if (ps->o.animations && ps->o.animation_for_unmap_window != OPEN_WINDOW_ANIMATION_NONE &&
+	    ps->o.wintype_option[w->window_type].animation) {
+		w->dwm_mask = ANIM_UNMAP;
+		init_animation(ps, w);
 
-			double x_dist = w->animation_dest_center_x - w->animation_center_x;
-			double y_dist = w->animation_dest_center_y - w->animation_center_y;
-			double w_dist = w->animation_dest_w - w->animation_w;
-			double h_dist = w->animation_dest_h - w->animation_h;
-			w->animation_inv_og_distance =
-				1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
-							w_dist * w_dist + h_dist * h_dist);
+		double x_dist = w->animation_dest_center_x - w->animation_center_x;
+		double y_dist = w->animation_dest_center_y - w->animation_center_y;
+		double w_dist = w->animation_dest_w - w->animation_w;
+		double h_dist = w->animation_dest_h - w->animation_h;
+		w->animation_inv_og_distance = 1.0 / sqrt(x_dist * x_dist + y_dist * y_dist +
+		                                          w_dist * w_dist + h_dist * h_dist);
 
-			if (isinf(w->animation_inv_og_distance))
-				w->animation_inv_og_distance = 0;
+		if (isinf(w->animation_inv_og_distance))
+			w->animation_inv_og_distance = 0;
 
-			w->animation_progress = 0.0;
+		w->animation_progress = 0.0;
 
-			if (w->old_win_image) {
-				ps->backend_data->ops->release_image(ps->backend_data,
-								     w->old_win_image);
-				w->old_win_image = NULL;
-			}
+		if (w->old_win_image) {
+			ps->backend_data->ops->release_image(ps->backend_data, w->old_win_image);
+			w->old_win_image = NULL;
+		}
 	}
 
 #ifdef CONFIG_DBUS
@@ -3082,10 +3085,10 @@ win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_windo
 void win_set_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
-        if (w->animation_progress != 1.0) {
-            // Return because animation will trigger some of the flags
-            return;
-        }
+		if (w->animation_progress != 1.0) {
+			// Return because animation will trigger some of the flags
+			return;
+		}
 		log_error("Flags set on a destroyed window %#010x (%s)", w->base.id, w->name);
 		return;
 	}
@@ -3098,10 +3101,10 @@ void win_clear_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Clear flags %" PRIu64 " from window %#010x (%s)", flags, w->base.id,
 	          w->name);
 	if (unlikely(w->state == WSTATE_DESTROYING)) {
-        if (w->animation_progress != 1.0) {
-            // Return because animation will trigger some of the flags
-            return;
-        }
+		if (w->animation_progress != 1.0) {
+			// Return because animation will trigger some of the flags
+			return;
+		}
 		log_warn("Flags cleared on a destroyed window %#010x (%s)", w->base.id,
 		         w->name);
 		return;
@@ -3222,5 +3225,6 @@ win_stack_find_next_managed(const session_t *ps, const struct list_node *w) {
 /// Return whether this window is mapped on the X server side
 bool win_is_mapped_in_x(const struct managed_win *w) {
 	return w->state == WSTATE_MAPPING || w->state == WSTATE_FADING ||
-	       w->state == WSTATE_MAPPED || w->state == WSTATE_DESTROYING || (w->flags & WIN_FLAGS_MAPPED);
+	       w->state == WSTATE_MAPPED || w->state == WSTATE_DESTROYING ||
+	       (w->flags & WIN_FLAGS_MAPPED);
 }
