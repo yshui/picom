@@ -23,9 +23,10 @@ static inline void dump_region(const region_t *x) {
 	int nrects;
 	const rect_t *rects = pixman_region32_rectangles((region_t *)x, &nrects);
 	log_trace("nrects: %d", nrects);
-	for (int i = 0; i < nrects; i++)
+	for (int i = 0; i < nrects; i++) {
 		log_trace("(%d, %d) - (%d, %d)", rects[i].x1, rects[i].y1, rects[i].x2,
 		          rects[i].y2);
+	}
 }
 
 /// Convert one xcb rectangle to our rectangle type
@@ -51,8 +52,7 @@ static inline rect_t *from_x_rects(int nrects, const xcb_rectangle_t *rects) {
 /**
  * Resize a region.
  */
-static inline void _resize_region(const region_t *region, region_t *output, int dx,
-		int dy) {
+static inline void _resize_region(const region_t *region, region_t *output, int dx, int dy) {
 	if (!region || !output) {
 		return;
 	}
@@ -77,8 +77,7 @@ static inline void _resize_region(const region_t *region, region_t *output, int 
 		if (wid <= 0 || hei <= 0) {
 			continue;
 		}
-		newrects[nnewrects] =
-		    (rect_t){.x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2};
+		newrects[nnewrects] = (rect_t){.x1 = x1, .x2 = x2, .y1 = y1, .y2 = y2};
 		++nnewrects;
 	}
 
