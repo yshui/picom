@@ -501,8 +501,9 @@ static void rebuild_screen_reg(session_t *ps) {
  */
 static void rebuild_shadow_exclude_reg(session_t *ps) {
 	bool ret = parse_geometry(ps, ps->o.shadow_exclude_reg_str, &ps->shadow_exclude_reg);
-	if (!ret)
+	if (!ret) {
 		exit(1);
+	}
 }
 
 /// Free up all the images and deinit the backend

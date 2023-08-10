@@ -60,9 +60,11 @@ uint8_t session_redirection_mode(session_t *ps);
 static inline void wintype_arr_enable_unset(switch_t arr[]) {
 	wintype_t i;
 
-	for (i = 0; i < NUM_WINTYPES; ++i)
-		if (UNSET == arr[i])
+	for (i = 0; i < NUM_WINTYPES; ++i) {
+		if (UNSET == arr[i]) {
 			arr[i] = ON;
+		}
+	}
 }
 
 /**
