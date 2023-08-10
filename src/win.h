@@ -26,11 +26,12 @@ typedef struct session session_t;
 typedef struct _glx_texture glx_texture_t;
 
 #define win_stack_foreach_managed(w, win_stack)                                          \
-	list_foreach(struct managed_win, w, win_stack, base.stack_neighbour) if (w->base.managed)
+	list_foreach(struct managed_win, w, win_stack,                                   \
+	             base.stack_neighbour) if ((w)->base.managed)
 
 #define win_stack_foreach_managed_safe(w, win_stack)                                     \
 	list_foreach_safe(struct managed_win, w, win_stack,                              \
-	                  base.stack_neighbour) if (w->base.managed)
+	                  base.stack_neighbour) if ((w)->base.managed)
 
 #ifdef CONFIG_OPENGL
 // FIXME this type should be in opengl.h
