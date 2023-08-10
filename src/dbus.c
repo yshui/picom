@@ -253,8 +253,9 @@ static dbus_bool_t cdbus_callback_add_timeout(DBusTimeout *timeout, void *data) 
 	t->t = timeout;
 	dbus_timeout_set_data(timeout, t, NULL);
 
-	if (dbus_timeout_get_enabled(timeout))
+	if (dbus_timeout_get_enabled(timeout)) {
 		ev_timer_start(ps->loop, &t->w);
+	}
 
 	return true;
 }
@@ -302,10 +303,12 @@ typedef struct ev_dbus_io {
 void cdbus_io_callback(EV_P attr_unused, ev_io *w, int revents) {
 	ev_dbus_io *dw = (void *)w;
 	DBusWatchFlags flags = 0;
-	if (revents & EV_READ)
+	if (revents & EV_READ) {
 		flags |= DBUS_WATCH_READABLE;
-	if (revents & EV_WRITE)
+	}
+	if (revents & EV_WRITE) {
 		flags |= DBUS_WATCH_WRITABLE;
+	}
 	dbus_watch_handle(dw->dw, flags);
 	while (dbus_connection_dispatch(dw->cd->dbus_conn) != DBUS_DISPATCH_COMPLETE)
 		;
@@ -317,10 +320,12 @@ void cdbus_io_callback(EV_P attr_unused, ev_io *w, int revents) {
 static inline int cdbus_get_watch_cond(DBusWatch *watch) {
 	const unsigned flags = dbus_watch_get_flags(watch);
 	int condition = 0;
-	if (flags & DBUS_WATCH_READABLE)
+	if (flags & DBUS_WATCH_READABLE) {
 		condition |= EV_READ;
-	if (flags & DBUS_WATCH_WRITABLE)
+	}
+	if (flags & DBUS_WATCH_WRITABLE) {
 		condition |= EV_WRITE;
+	}
 
 	return condition;
 }
@@ -338,8 +343,9 @@ static dbus_bool_t cdbus_callback_add_watch(DBusWatch *watch, void *data) {
 	           cdbus_get_watch_cond(watch));
 
 	// Leave disabled watches alone
-	if (dbus_watch_get_enabled(watch))
+	if (dbus_watch_get_enabled(watch)) {
 		ev_io_start(ps->loop, &w->w);
+	}
 
 	dbus_watch_set_data(watch, w, NULL);
 
@@ -363,10 +369,11 @@ static void cdbus_callback_remove_watch(DBusWatch *watch, void *data) {
 static void cdbus_callback_watch_toggled(DBusWatch *watch, void *data) {
 	session_t *ps = data;
 	ev_io *w = dbus_watch_get_data(watch);
-	if (dbus_watch_get_enabled(watch))
+	if (dbus_watch_get_enabled(watch)) {
 		ev_io_start(ps->loop, w);
-	else
+	} else {
 		ev_io_stop(ps->loop, w);
+	}
 }
 
 ///@}
@@ -513,8 +520,9 @@ static bool cdbus_apdarg_enum(session_t *ps attr_unused, DBusMessage *msg, const
 static bool
 cdbus_apdarg_string(session_t *ps attr_unused, DBusMessage *msg, const void *data) {
 	const char *str = data;
-	if (!str)
+	if (!str) {
 		str = "";
+	}
 
 	if (!dbus_message_append_args(msg, DBUS_TYPE_STRING, &str, DBUS_TYPE_INVALID)) {
 		log_error("Failed to append argument.");
@@ -1050,32 +1058,36 @@ static bool cdbus_process_win_set(session_t *ps, DBusMessage *msg) {
 
 	if (!strcmp("shadow_force", target)) {
 		cdbus_enum_t val = UNSET;
-		if (!cdbus_msg_get_arg(msg, 2, CDBUS_TYPE_ENUM, &val))
+		if (!cdbus_msg_get_arg(msg, 2, CDBUS_TYPE_ENUM, &val)) {
 			return false;
+		}
 		win_set_shadow_force(ps, w, val);
 		goto cdbus_process_win_set_success;
 	}
 
 	if (!strcmp("fade_force", target)) {
 		cdbus_enum_t val = UNSET;
-		if (!cdbus_msg_get_arg(msg, 2, CDBUS_TYPE_ENUM, &val))
+		if (!cdbus_msg_get_arg(msg, 2, CDBUS_TYPE_ENUM, &val)) {
 			return false;
+		}
 		win_set_fade_force(w, val);
 		goto cdbus_process_win_set_success;
 	}
 
 	if (!strcmp("focused_force", target)) {
 		cdbus_enum_t val = UNSET;
-		if (!cdbus_msg_get_arg(msg, 2, CDBUS_TYPE_ENUM, &val))
+		if (!cdbus_msg_get_arg(msg, 2, CDBUS_TYPE_ENUM, &val)) {
 			return false;
+		}
 		win_set_focused_force(ps, w, val);
 		goto cdbus_process_win_set_success;
 	}
 
 	if (!strcmp("invert_color_force", target)) {
 		cdbus_enum_t val = UNSET;
-		if (!cdbus_msg_get_arg(msg, 2, CDBUS_TYPE_ENUM, &val))
+		if (!cdbus_msg_get_arg(msg, 2, CDBUS_TYPE_ENUM, &val)) {
 			return false;
+		}
 		win_set_invert_color_force(ps, w, val);
 		goto cdbus_process_win_set_success;
 	}
@@ -1087,8 +1099,9 @@ static bool cdbus_process_win_set(session_t *ps, DBusMessage *msg) {
 	return true;
 
 cdbus_process_win_set_success:
-	if (!dbus_message_get_no_reply(msg))
+	if (!dbus_message_get_no_reply(msg)) {
 		cdbus_reply_bool(ps, msg, true);
+	}
 	return true;
 }
 
@@ -1098,16 +1111,18 @@ cdbus_process_win_set_success:
 static bool cdbus_process_find_win(session_t *ps, DBusMessage *msg) {
 	const char *target = NULL;
 
-	if (!cdbus_msg_get_arg(msg, 0, DBUS_TYPE_STRING, &target))
+	if (!cdbus_msg_get_arg(msg, 0, DBUS_TYPE_STRING, &target)) {
 		return false;
+	}
 
 	xcb_window_t wid = XCB_NONE;
 
 	// Find window by client window
 	if (!strcmp("client", target)) {
 		cdbus_window_t client = XCB_NONE;
-		if (!cdbus_msg_get_arg(msg, 1, CDBUS_TYPE_WINDOW, &client))
+		if (!cdbus_msg_get_arg(msg, 1, CDBUS_TYPE_WINDOW, &client)) {
 			return false;
+		}
 		auto w = find_toplevel(ps, client);
 		if (w) {
 			wid = w->base.id;
@@ -1136,8 +1151,9 @@ static bool cdbus_process_find_win(session_t *ps, DBusMessage *msg) {
 static bool cdbus_process_opts_get(session_t *ps, DBusMessage *msg) {
 	const char *target = NULL;
 
-	if (!cdbus_msg_get_arg(msg, 0, DBUS_TYPE_STRING, &target))
+	if (!cdbus_msg_get_arg(msg, 0, DBUS_TYPE_STRING, &target)) {
 		return false;
+	}
 
 #define cdbus_m_opts_get_do(tgt, apdarg_func)                                            \
 	if (!strcmp(#tgt, target)) {                                                     \
@@ -1246,8 +1262,9 @@ void queue_redraw(session_t *ps);
 static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 	const char *target = NULL;
 
-	if (!cdbus_msg_get_arg(msg, 0, DBUS_TYPE_STRING, &target))
+	if (!cdbus_msg_get_arg(msg, 0, DBUS_TYPE_STRING, &target)) {
 		return false;
+	}
 
 #define cdbus_m_opts_set_do(tgt, type, real_type)                                        \
 	if (!strcmp(#tgt, target)) {                                                     \
@@ -1274,8 +1291,9 @@ static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 	// fade_in_step
 	if (!strcmp("fade_in_step", target)) {
 		double val = 0.0;
-		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_DOUBLE, &val))
+		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_DOUBLE, &val)) {
 			return false;
+		}
 		ps->o.fade_in_step = normalize_d(val);
 		goto cdbus_process_opts_set_success;
 	}
@@ -1283,8 +1301,9 @@ static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 	// fade_out_step
 	if (!strcmp("fade_out_step", target)) {
 		double val = 0.0;
-		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_DOUBLE, &val))
+		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_DOUBLE, &val)) {
 			return false;
+		}
 		ps->o.fade_out_step = normalize_d(val);
 		goto cdbus_process_opts_set_success;
 	}
@@ -1292,8 +1311,9 @@ static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 	// no_fading_openclose
 	if (!strcmp("no_fading_openclose", target)) {
 		dbus_bool_t val = FALSE;
-		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_BOOLEAN, &val))
+		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_BOOLEAN, &val)) {
 			return false;
+		}
 		opts_set_no_fading_openclose(ps, val);
 		goto cdbus_process_opts_set_success;
 	}
@@ -1301,8 +1321,9 @@ static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 	// unredir_if_possible
 	if (!strcmp("unredir_if_possible", target)) {
 		dbus_bool_t val = FALSE;
-		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_BOOLEAN, &val))
+		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_BOOLEAN, &val)) {
 			return false;
+		}
 		if (ps->o.unredir_if_possible != val) {
 			ps->o.unredir_if_possible = val;
 			queue_redraw(ps);
@@ -1323,8 +1344,9 @@ static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 	// redirected_force
 	if (!strcmp("redirected_force", target)) {
 		cdbus_enum_t val = UNSET;
-		if (!cdbus_msg_get_arg(msg, 1, CDBUS_TYPE_ENUM, &val))
+		if (!cdbus_msg_get_arg(msg, 1, CDBUS_TYPE_ENUM, &val)) {
 			return false;
+		}
 		ps->o.redirected_force = val;
 		force_repaint(ps);
 		goto cdbus_process_opts_set_success;
@@ -1341,8 +1363,9 @@ static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 	return true;
 
 cdbus_process_opts_set_success:
-	if (!dbus_message_get_no_reply(msg))
+	if (!dbus_message_get_no_reply(msg)) {
 		cdbus_reply_bool(ps, msg, true);
+	}
 	return true;
 }
 
@@ -1512,13 +1535,15 @@ cdbus_process(DBusConnection *c attr_unused, DBusMessage *msg, void *ud) {
 	if (cdbus_m_ismethod("reset")) {
 		log_info("picom is resetting...");
 		ev_break(ps->loop, EVBREAK_ALL);
-		if (!dbus_message_get_no_reply(msg))
+		if (!dbus_message_get_no_reply(msg)) {
 			cdbus_reply_bool(ps, msg, true);
+		}
 		handled = true;
 	} else if (cdbus_m_ismethod("repaint")) {
 		force_repaint(ps);
-		if (!dbus_message_get_no_reply(msg))
+		if (!dbus_message_get_no_reply(msg)) {
 			cdbus_reply_bool(ps, msg, true);
+		}
 		handled = true;
 	} else if (cdbus_m_ismethod("list_win")) {
 		handled = cdbus_process_list_win(ps, msg);
@@ -1566,8 +1591,9 @@ cdbus_process(DBusConnection *c attr_unused, DBusMessage *msg, void *ud) {
 			          dbus_message_get_member(msg));
 		}
 		if (DBUS_MESSAGE_TYPE_METHOD_CALL == dbus_message_get_type(msg) &&
-		    !dbus_message_get_no_reply(msg))
+		    !dbus_message_get_no_reply(msg)) {
 			cdbus_reply_err(ps, msg, CDBUS_ERROR_BADMSG, CDBUS_ERROR_BADMSG_S);
+		}
 		handled = true;
 	}
 
@@ -1593,8 +1619,9 @@ cdbus_process_windows(DBusConnection *c attr_unused, DBusMessage *msg, void *ud)
 	const char *last_segment = strrchr(path, '/');
 	if (last_segment == NULL) {
 		if (DBUS_MESSAGE_TYPE_METHOD_CALL == dbus_message_get_type(msg) &&
-		    !dbus_message_get_no_reply(msg))
+		    !dbus_message_get_no_reply(msg)) {
 			cdbus_reply_err(ps, msg, CDBUS_ERROR_BADMSG, CDBUS_ERROR_BADMSG_S);
+		}
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 	bool is_root = strncmp(last_segment, "/windows", 8) == 0;
