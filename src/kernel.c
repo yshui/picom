@@ -54,8 +54,9 @@ static inline double attr_const gaussian(double r, double x, double y) {
 	// Formula can be found here:
 	// https://en.wikipedia.org/wiki/Gaussian_blur#Mathematics
 	// Except a special case for r == 0 to produce sharp shadows
-	if (r == 0)
+	if (r == 0) {
 		return 1;
+	}
 	return exp(-0.5 * (x * x + y * y) / (r * r)) / (2 * M_PI * r * r);
 }
 
