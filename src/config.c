@@ -183,20 +183,19 @@ const char *parse_readnum(const char *src, double *dest) {
 }
 
 enum blur_method parse_blur_method(const char *src) {
+	if (strcmp(src, "box") == 0) {
+		return BLUR_METHOD_BOX;
+	}
+	if (strcmp(src, "dual_kawase") == 0) {
+		return BLUR_METHOD_DUAL_KAWASE;
+	}
+	if (strcmp(src, "gaussian") == 0) {
+		return BLUR_METHOD_GAUSSIAN;
+	}
 	if (strcmp(src, "kernel") == 0) {
 		return BLUR_METHOD_KERNEL;
-	} else if (strcmp(src, "box") == 0) {
-		return BLUR_METHOD_BOX;
-	} else if (strcmp(src, "gaussian") == 0) {
-		return BLUR_METHOD_GAUSSIAN;
-	} else if (strcmp(src, "dual_kawase") == 0) {
-		return BLUR_METHOD_DUAL_KAWASE;
-	} else if (strcmp(src, "kawase") == 0) {
-		log_warn("Blur method 'kawase' has been renamed to 'dual_kawase'. "
-		         "Interpreted as 'dual_kawase', but this will stop working "
-		         "soon.");
-		return BLUR_METHOD_DUAL_KAWASE;
-	} else if (strcmp(src, "none") == 0) {
+	}
+	if (strcmp(src, "none") == 0) {
 		return BLUR_METHOD_NONE;
 	}
 	return BLUR_METHOD_INVALID;
