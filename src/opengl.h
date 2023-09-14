@@ -156,8 +156,9 @@ static inline bool glx_has_context(session_t *ps) {
  */
 static inline bool ensure_glx_context(session_t *ps) {
 	// Create GLX context
-	if (!glx_has_context(ps))
+	if (!glx_has_context(ps)) {
 		glx_init(ps, false);
+	}
 
 	return glx_has_context(ps);
 }
