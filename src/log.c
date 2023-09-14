@@ -78,16 +78,21 @@ static attr_const const char *log_level_to_string(enum log_level level) {
 }
 
 enum log_level string_to_log_level(const char *str) {
-	if (strcasecmp(str, "TRACE") == 0)
+	if (strcasecmp(str, "TRACE") == 0) {
 		return LOG_LEVEL_TRACE;
-	else if (strcasecmp(str, "DEBUG") == 0)
+	}
+	if (strcasecmp(str, "DEBUG") == 0) {
 		return LOG_LEVEL_DEBUG;
-	else if (strcasecmp(str, "INFO") == 0)
+	}
+	if (strcasecmp(str, "INFO") == 0) {
 		return LOG_LEVEL_INFO;
-	else if (strcasecmp(str, "WARN") == 0)
+	}
+	if (strcasecmp(str, "WARN") == 0) {
 		return LOG_LEVEL_WARN;
-	else if (strcasecmp(str, "ERROR") == 0)
+	}
+	if (strcasecmp(str, "ERROR") == 0) {
 		return LOG_LEVEL_ERROR;
+	}
 	return LOG_LEVEL_INVALID;
 }
 
@@ -143,8 +148,9 @@ enum log_level log_get_level(const struct log *l) {
 attr_printf(4, 5) void log_printf(struct log *l, int level, const char *func,
                                   const char *fmt, ...) {
 	assert(level <= LOG_LEVEL_FATAL && level >= 0);
-	if (level < l->log_level)
+	if (level < l->log_level) {
 		return;
+	}
 
 	char *buf = NULL;
 	va_list args;
@@ -340,7 +346,7 @@ static void
 gl_string_marker_logger_write(struct log_target *tgt, const char *str, size_t len) {
 	auto g = (struct gl_string_marker_logger *)tgt;
 	// strip newlines at the end of the string
-	while (len > 0 && str[len-1] == '\n') {
+	while (len > 0 && str[len - 1] == '\n') {
 		len--;
 	}
 	g->gl_string_marker((GLsizei)len, str);
@@ -358,8 +364,9 @@ struct log_target *gl_string_marker_logger_new(void) {
 	}
 
 	void *fnptr = glXGetProcAddress((GLubyte *)"glStringMarkerGREMEDY");
-	if (!fnptr)
+	if (!fnptr) {
 		return NULL;
+	}
 
 	auto ret = cmalloc(struct gl_string_marker_logger);
 	ret->tgt.ops = &gl_string_marker_logger_ops;
