@@ -233,14 +233,16 @@ static inline long winprop_get_int(winprop_t prop, size_t index) {
  */
 static inline int strcmp_wd(const char *needle, const char *src) {
 	int ret = mstrncmp(needle, src);
-	if (ret)
+	if (ret) {
 		return ret;
+	}
 
 	char c = src[strlen(needle)];
-	if (isalnum((unsigned char)c) || '_' == c)
+	if (isalnum((unsigned char)c) || '_' == c) {
 		return 1;
-	else
-		return 0;
+	}
+
+	return 0;
 }
 
 /**
@@ -254,8 +256,9 @@ static inline attr_unused bool c2_ptr_isempty(const c2_ptr_t p) {
  * Reset a c2_ptr_t.
  */
 static inline void c2_ptr_reset(c2_ptr_t *pp) {
-	if (pp)
+	if (pp) {
 		memcpy(pp, &C2_PTR_NULL, sizeof(c2_ptr_t));
+	}
 }
 
 /**
@@ -988,7 +991,7 @@ static int c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult) {
 
 	// Determine the pattern target
 #define TGTFILL(pdefid)                                                                  \
-	(pleaf->predef = pdefid, pleaf->type = C2_PREDEFS[pdefid].type,                  \
+	(pleaf->predef = (pdefid), pleaf->type = C2_PREDEFS[pdefid].type,                \
 	 pleaf->format = C2_PREDEFS[pdefid].format)
 	switch (pattern[offset]) {
 	case 'n': TGTFILL(C2_L_PNAME); break;
