@@ -3,7 +3,7 @@ picom
 
 [![circleci](https://circleci.com/gh/yshui/picom.svg?style=shield)](https://circleci.com/gh/yshui/picom)
 [![codecov](https://codecov.io/gh/yshui/picom/branch/next/graph/badge.svg?token=NRSegi0Gze)](https://codecov.io/gh/yshui/picom)
-[![chat on discord](https://img.shields.io/discord/1106224720833159198?logo=discord)](https://discord.gg/uqmNX6dR)
+[![chat on discord](https://img.shields.io/discord/1106224720833159198?logo=discord)](https://discord.gg/SY5JJzPgME)
 
 __picom__ is a compositor for X, and a [fork of Compton](History.md).
 
