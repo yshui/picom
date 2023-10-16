@@ -497,6 +497,9 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_, void *mask
 		    to_i16_checked(extent_resized->y1), width_resized, height_resized);
 	}
 
+	if (mask_allocated) {
+		x_free_picture(c, mask_pict);
+	}
 	x_free_picture(c, tmp_picture[0]);
 	x_free_picture(c, tmp_picture[1]);
 	pixman_region32_fini(&reg_op);
