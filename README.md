@@ -49,13 +49,37 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 On Debian based distributions (e.g. Ubuntu), the needed packages are
 
 ```
-libconfig-dev libdbus-1-dev libegl-dev libev-dev libgl-dev libpcre2-dev libpixman-1-dev libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-damage0-dev libxcb-dpms0-dev libxcb-glx0-dev libxcb-image0-dev libxcb-present-dev libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-util-dev libxcb-xfixes0-dev libxext-dev meson ninja-build uthash-dev
+git gcc meson ninja-build build-essential libconfig-dev libdbus-1-dev libegl-dev libev-dev libgl-dev libpcre2-dev libpixman-1-dev libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-damage0-dev libxcb-dpms0-dev libxcb-glx0-dev libxcb-image0-dev libxcb-present-dev libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-util-dev libxcb-xfixes0-dev libxext-dev uthash-dev
 ```
 
 On Fedora, the needed packages are
 
 ```
-dbus-devel gcc git libconfig-devel libdrm-devel libev-devel libX11-devel libX11-xcb libXext-devel libxcb-devel libGL-devel libEGL-devel meson pcre2-devel pixman-devel uthash-devel xcb-util-image-devel xcb-util-renderutil-devel xorg-x11-proto-devel
+git gcc meson ninja-build dbus-devel libconfig-devel libdrm-devel libev-devel libX11-devel libX11-xcb libXext-devel libxcb-devel libGL-devel libEGL-devel pcre2-devel pixman-devel uthash-devel xcb-util-image-devel xcb-util-renderutil-devel xorg-x11-proto-devel
+```
+
+For binutils and kernel/C standard libraries use
+
+```bash
+$ dnf groupinstall "Development Tools" "Development Libraries"
+```
+
+Or for Fedora version older than 32 use
+
+```bash
+$ dnf groupinstall @development-tools @development-libraries
+```
+
+On Arch based distibutions, the needed packages are
+
+```bash
+git gcc meson ninja base-devel libconfig dbus mesa libev pcre2 pixman libxext
+```
+
+uthash is a AUR package, it can be install with e.g.
+
+```bash
+$ yay -S uthash
 ```
 
 To build the documents, you need `asciidoc`
