@@ -1347,8 +1347,11 @@ void *gl_shadow_from_mask(backend_t *base, void *mask,
 
 	glBindTexture(GL_TEXTURE_2D, tmp_texture);
 	glUseProgram(gd->shadow_shader.prog);
-	glUniform4f(gd->shadow_shader.uniform_color, (GLfloat)color.red,
-	            (GLfloat)color.green, (GLfloat)color.blue, (GLfloat)color.alpha);
+	// The shadow color is converted to the premultiplied format to respect the
+	// globally set glBlendFunc and thus get the correct and expected result.
+	glUniform4f(gd->shadow_shader.uniform_color, (GLfloat)(color.red * color.alpha),
+	            (GLfloat)(color.green * color.alpha),
+	            (GLfloat)(color.blue * color.alpha), (GLfloat)color.alpha);
 
 	// clang-format off
 	GLuint indices[] = {0, 1, 2, 2, 3, 0};
