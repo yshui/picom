@@ -227,13 +227,13 @@ static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawab
 /**
  * Initialize OpenGL.
  */
-static backend_t *glx_init(session_t *ps) {
+static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 	bool success = false;
 	glxext_init(ps->c.dpy, ps->c.screen);
 	auto gd = ccalloc(1, struct _glx_data);
 	init_backend_base(&gd->gl.base, ps);
 
-	gd->target_win = session_get_target_window(ps);
+	gd->target_win = target;
 
 	XVisualInfo *pvis = NULL;
 

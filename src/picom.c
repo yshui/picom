@@ -605,7 +605,8 @@ static bool initialize_backend(session_t *ps) {
 		assert(!ps->backend_data);
 		// Reinitialize win_data
 		assert(backend_list[ps->o.backend]);
-		ps->backend_data = backend_list[ps->o.backend]->init(ps);
+		ps->backend_data =
+		    backend_list[ps->o.backend]->init(ps, session_get_target_window(ps));
 		if (!ps->backend_data) {
 			log_fatal("Failed to initialize backend, aborting...");
 			quit(ps);

@@ -130,7 +130,7 @@ static bool egl_set_swap_interval(int interval, EGLDisplay dpy) {
 /**
  * Initialize OpenGL.
  */
-static backend_t *egl_init(session_t *ps) {
+static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 	bool success = false;
 	struct egl_data *gd = NULL;
 
@@ -211,8 +211,8 @@ static backend_t *egl_init(session_t *ps) {
 	}
 	// clang-format on
 
-	gd->target_win = eglCreatePlatformWindowSurfaceProc(
-	    gd->display, config, (xcb_window_t[]){session_get_target_window(ps)}, NULL);
+	gd->target_win =
+	    eglCreatePlatformWindowSurfaceProc(gd->display, config, &target, NULL);
 	if (gd->target_win == EGL_NO_SURFACE) {
 		log_error("Failed to create EGL surface.");
 		goto end;
