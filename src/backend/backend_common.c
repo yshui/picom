@@ -293,8 +293,8 @@ shadow_picture_err:
 	return false;
 }
 
-void *default_backend_render_shadow(backend_t *backend_data, int width, int height,
-                                    struct backend_shadow_context *sctx, struct color color) {
+void *default_render_shadow(backend_t *backend_data, int width, int height,
+                            struct backend_shadow_context *sctx, struct color color) {
 	const conv *kernel = (void *)sctx;
 	xcb_render_picture_t shadow_pixel =
 	    solid_picture(backend_data->c, true, 1, color.red, color.green, color.blue);
