@@ -265,7 +265,7 @@ void schedule_render(session_t *ps, bool triggered_by_vblank) {
 		goto schedule;
 	}
 
-	const auto deadline = ps->last_msc_instant + (unsigned long)divisor * frame_time;
+	auto const deadline = ps->last_msc_instant + (unsigned long)divisor * frame_time;
 	unsigned int available = 0;
 	if (deadline > now_us) {
 		available = (unsigned int)(deadline - now_us);
@@ -1158,7 +1158,7 @@ static int register_cm(session_t *ps) {
 	// Set WM_CLIENT_MACHINE. As per EWMH, because we set _NET_WM_PID, we must also
 	// set WM_CLIENT_MACHINE.
 	{
-		const auto hostname_max = (unsigned long)sysconf(_SC_HOST_NAME_MAX);
+		auto const hostname_max = (unsigned long)sysconf(_SC_HOST_NAME_MAX);
 		char *hostname = malloc(hostname_max);
 
 		if (gethostname(hostname, hostname_max) == 0) {

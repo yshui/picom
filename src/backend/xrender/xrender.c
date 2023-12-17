@@ -176,8 +176,8 @@ static xcb_render_picture_t process_mask(struct _xrender_data *xd, struct xrende
 		*allocated = false;
 		return inner->pict;
 	}
-	const auto tmpw = to_u16_checked(inner->width);
-	const auto tmph = to_u16_checked(inner->height);
+	auto const tmpw = to_u16_checked(inner->width);
+	auto const tmph = to_u16_checked(inner->height);
 	*allocated = true;
 	x_clear_picture_clip_region(xd->base.c, inner->pict);
 	auto ret = x_create_picture_with_visual(
@@ -226,13 +226,13 @@ compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, coord_t dst,
 	region_t reg;
 
 	bool has_alpha = inner->has_alpha || img->opacity != 1;
-	const auto tmpw = to_u16_checked(inner->width);
-	const auto tmph = to_u16_checked(inner->height);
-	const auto tmpew = to_u16_checked(img->ewidth);
-	const auto tmpeh = to_u16_checked(img->eheight);
+	auto const tmpw = to_u16_checked(inner->width);
+	auto const tmph = to_u16_checked(inner->height);
+	auto const tmpew = to_u16_checked(img->ewidth);
+	auto const tmpeh = to_u16_checked(img->eheight);
 	// Remember: the mask has a 1-pixel border
-	const auto mask_dst_x = to_i16_checked(dst.x - mask_dst.x + 1);
-	const auto mask_dst_y = to_i16_checked(dst.y - mask_dst.y + 1);
+	auto const mask_dst_x = to_i16_checked(dst.x - mask_dst.x + 1);
+	auto const mask_dst_y = to_i16_checked(dst.y - mask_dst.y + 1);
 	const xcb_render_color_t dim_color = {
 	    .red = 0, .green = 0, .blue = 0, .alpha = (uint16_t)(0xffff * img->dim)};
 
@@ -395,8 +395,8 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_, void *mask
 	    resize_region(&reg_op, bctx->resize_width, bctx->resize_height);
 
 	const pixman_box32_t *extent_resized = pixman_region32_extents(&reg_op_resized);
-	const auto height_resized = to_u16_checked(extent_resized->y2 - extent_resized->y1);
-	const auto width_resized = to_u16_checked(extent_resized->x2 - extent_resized->x1);
+	auto const height_resized = to_u16_checked(extent_resized->y2 - extent_resized->y1);
+	auto const width_resized = to_u16_checked(extent_resized->x2 - extent_resized->x1);
 	static const char *filter0 = "Nearest";        // The "null" filter
 	static const char *filter = "convolution";
 

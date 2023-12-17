@@ -2758,7 +2758,7 @@ void win_clear_flags(struct managed_win *w, uint64_t flags) {
 }
 
 void win_set_properties_stale(struct managed_win *w, const xcb_atom_t *props, int nprops) {
-	const auto bits_per_element = sizeof(*w->stale_props) * 8;
+	auto const bits_per_element = sizeof(*w->stale_props) * 8;
 	size_t new_capacity = w->stale_props_capacity;
 
 	// Calculate the new capacity of the properties array
@@ -2793,12 +2793,12 @@ static void win_clear_all_properties_stale(struct managed_win *w) {
 }
 
 static bool win_fetch_and_unset_property_stale(struct managed_win *w, xcb_atom_t prop) {
-	const auto bits_per_element = sizeof(*w->stale_props) * 8;
+	auto const bits_per_element = sizeof(*w->stale_props) * 8;
 	if (prop >= w->stale_props_capacity * bits_per_element) {
 		return false;
 	}
 
-	const auto mask = 1UL << (prop % bits_per_element);
+	auto const mask = 1UL << (prop % bits_per_element);
 	bool ret = w->stale_props[prop / bits_per_element] & mask;
 	w->stale_props[prop / bits_per_element] &= ~mask;
 	return ret;

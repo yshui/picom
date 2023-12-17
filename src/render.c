@@ -474,10 +474,10 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 	} else {
 		// Painting parameters
 		const margin_t extents = win_calc_frame_extents(w);
-		const auto t = extents.top;
-		const auto l = extents.left;
-		const auto b = extents.bottom;
-		const auto r = extents.right;
+		auto const t = extents.top;
+		auto const l = extents.left;
+		auto const b = extents.bottom;
+		auto const r = extents.right;
 
 #define COMP_BDR(cx, cy, cwid, chei)                                                     \
 	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity * w->opacity,   \
@@ -888,8 +888,8 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
                     const region_t *reg_paint) {
 	const int16_t x = w->g.x;
 	const int16_t y = w->g.y;
-	const auto wid = to_u16_checked(w->widthb);
-	const auto hei = to_u16_checked(w->heightb);
+	auto const wid = to_u16_checked(w->widthb);
+	auto const hei = to_u16_checked(w->heightb);
 	const int cr = w ? w->corner_radius : 0;
 
 	double factor_center = 1.0;
@@ -1174,8 +1174,8 @@ void paint_all(session_t *ps, struct managed_win *t) {
 			if (w->corner_radius > 0 && ps->o.backend == BKEND_GLX) {
 				const int16_t x = w->g.x;
 				const int16_t y = w->g.y;
-				const auto wid = to_u16_checked(w->widthb);
-				const auto hei = to_u16_checked(w->heightb);
+				auto const wid = to_u16_checked(w->widthb);
+				auto const hei = to_u16_checked(w->heightb);
 				glx_bind_texture(ps, &w->glx_texture_bg, x, y, wid, hei);
 			}
 #endif
@@ -1195,8 +1195,8 @@ void paint_all(session_t *ps, struct managed_win *t) {
 			// Rounded corners for XRender is implemented inside render()
 			// Round window corners
 			if (w->corner_radius > 0 && ps->o.backend == BKEND_GLX) {
-				const auto wid = to_u16_checked(w->widthb);
-				const auto hei = to_u16_checked(w->heightb);
+				auto const wid = to_u16_checked(w->widthb);
+				auto const hei = to_u16_checked(w->heightb);
 				glx_round_corners_dst(ps, w, w->glx_texture_bg, w->g.x,
 				                      w->g.y, wid, hei,
 				                      (float)ps->psglx->z - 0.5F,
