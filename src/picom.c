@@ -769,13 +769,19 @@ static void handle_root_flags(session_t *ps) {
 	}
 }
 
-static struct managed_win *
-paint_preprocess(session_t *ps, bool *fade_running, bool *animation) {
+/**
+ * Go through the window stack and calculate some parameters for rendering.
+ *
+ * @return whether the operation succeeded
+ */
+static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
+                             struct managed_win **out_bottom) {
 	// XXX need better, more general name for `fade_running`. It really
 	// means if fade is still ongoing after the current frame is rendered
 	struct managed_win *bottom = NULL;
 	*fade_running = false;
 	*animation = false;
+	*out_bottom = NULL;
 
 	// Fading step calculation
 	long long steps = 0L;
@@ -1036,12 +1042,13 @@ paint_preprocess(session_t *ps, bool *fade_running, bool *animation) {
 		ev_timer_stop(ps->loop, &ps->unredir_timer);
 		if (!ps->redirected) {
 			if (!redirect_start(ps)) {
-				return NULL;
+				return false;
 			}
 		}
 	}
 
-	return bottom;
+	*out_bottom = bottom;
+	return true;
 }
 
 void root_damaged(session_t *ps) {
@@ -1738,13 +1745,13 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	bool fade_running = false;
 	bool animation = false;
 	bool was_redirected = ps->redirected;
-	auto bottom = paint_preprocess(ps, &fade_running, &animation);
-	ps->tmout_unredir_hit = false;
-
-	if (!bottom) {
+	struct managed_win *bottom = NULL;
+	if (!paint_preprocess(ps, &fade_running, &animation, &bottom)) {
 		log_fatal("Pre-render preparation has failed, exiting...");
 		exit(1);
 	}
+
+	ps->tmout_unredir_hit = false;
 
 	if (!was_redirected && ps->redirected) {
 		// paint_preprocess redirected the screen, which might change the state of
