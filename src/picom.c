@@ -1741,6 +1741,11 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	auto bottom = paint_preprocess(ps, &fade_running, &animation);
 	ps->tmout_unredir_hit = false;
 
+	if (!bottom) {
+		log_fatal("Pre-render preparation has failed, exiting...");
+		exit(1);
+	}
+
 	if (!was_redirected && ps->redirected) {
 		// paint_preprocess redirected the screen, which might change the state of
 		// some of the windows (e.g. the window image might become stale).
