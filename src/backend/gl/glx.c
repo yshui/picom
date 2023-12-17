@@ -371,12 +371,12 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	if (fmt.visual_depth > OPENGL_MAX_DEPTH) {
 		log_error("Requested depth %d higher than max possible depth %d.",
 		          fmt.visual_depth, OPENGL_MAX_DEPTH);
-		return false;
+		return NULL;
 	}
 
 	if (fmt.visual_depth < 0) {
 		log_error("Pixmap %#010x with invalid depth %d", pixmap, fmt.visual_depth);
-		return false;
+		return NULL;
 	}
 
 	auto r =
