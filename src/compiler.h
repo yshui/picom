@@ -101,10 +101,12 @@
 # endif
 #endif
 
-#if defined(__GNUC__) || defined(__clang__)
-# define unreachable __builtin_unreachable()
-#else
-# define unreachable do {} while(0)
+#ifndef unreachable
+# if defined(__GNUC__) || defined(__clang__)
+#  define unreachable() __builtin_unreachable()
+# else
+#  define unreachable() do {} while(0)
+# endif
 #endif
 
 #ifndef __has_include

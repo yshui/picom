@@ -30,7 +30,7 @@ void report_allocation_failure(const char *func, const char *file, unsigned int 
 	ssize_t _ attr_unused = writev(STDERR_FILENO, v, ARR_SIZE(v));
 	abort();
 
-	unreachable;
+	unreachable();
 }
 
 ///

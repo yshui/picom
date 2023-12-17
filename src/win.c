@@ -2433,7 +2433,7 @@ bool win_check_fade_finished(session_t *ps, struct managed_win *w) {
 		case WSTATE_DESTROYING: destroy_win_finish(ps, &w->base); return true;
 		case WSTATE_MAPPING: map_win_finish(w); return false;
 		case WSTATE_FADING: w->state = WSTATE_MAPPED; break;
-		default: unreachable;
+		default: unreachable();
 		}
 	}
 

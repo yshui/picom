@@ -1336,7 +1336,7 @@ static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf) {
 	case C2_L_TDRAWABLE: return XCB_ATOM_DRAWABLE;
 	default: assert(0); break;
 	}
-	unreachable;
+	unreachable();
 }
 
 /**
