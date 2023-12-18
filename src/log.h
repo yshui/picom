@@ -9,11 +9,19 @@
 
 enum log_level {
 	LOG_LEVEL_INVALID = -1,
+	/// Very noisy debug messages, many lines per frame.
 	LOG_LEVEL_TRACE = 0,
+	/// Frequent debug messages, a few lines per frame.
+	LOG_LEVEL_VERBOSE,
+	/// Less frequent debug messages.
 	LOG_LEVEL_DEBUG,
+	/// Informational messages.
 	LOG_LEVEL_INFO,
+	/// Warnings.
 	LOG_LEVEL_WARN,
+	/// Errors.
 	LOG_LEVEL_ERROR,
+	/// Fatal errors.
 	LOG_LEVEL_FATAL,
 };
 
@@ -31,6 +39,7 @@ enum log_level {
 		}                                                                              \
 	} while (0)
 #define log_trace(x, ...) LOG_UNLIKELY(TRACE, x, ##__VA_ARGS__)
+#define log_verbose(x, ...) LOG_UNLIKELY(VERBOSE, x, ##__VA_ARGS__)
 #define log_debug(x, ...) LOG_UNLIKELY(DEBUG, x, ##__VA_ARGS__)
 #define log_info(x, ...) LOG(INFO, x, ##__VA_ARGS__)
 #define log_warn(x, ...) LOG(WARN, x, ##__VA_ARGS__)
