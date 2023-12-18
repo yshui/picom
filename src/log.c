@@ -68,6 +68,7 @@ log_default_writev(struct log_target *tgt, const struct iovec *vec, int vcnt) {
 static attr_const const char *log_level_to_string(enum log_level level) {
 	switch (level) {
 	case LOG_LEVEL_TRACE: return "TRACE";
+	case LOG_LEVEL_VERBOSE: return "VERBOSE";
 	case LOG_LEVEL_DEBUG: return "DEBUG";
 	case LOG_LEVEL_INFO: return "INFO";
 	case LOG_LEVEL_WARN: return "WARN";
@@ -80,6 +81,9 @@ static attr_const const char *log_level_to_string(enum log_level level) {
 enum log_level string_to_log_level(const char *str) {
 	if (strcasecmp(str, "TRACE") == 0) {
 		return LOG_LEVEL_TRACE;
+	}
+	if (strcasecmp(str, "VERBOSE") == 0) {
+		return LOG_LEVEL_VERBOSE;
 	}
 	if (strcasecmp(str, "DEBUG") == 0) {
 		return LOG_LEVEL_DEBUG;
@@ -234,12 +238,10 @@ struct log_target *null_logger_new(void) {
 
 static void null_logger_write(struct log_target *tgt attr_unused,
                               const char *str attr_unused, size_t len attr_unused) {
-	return;
 }
 
 static void null_logger_writev(struct log_target *tgt attr_unused,
                                const struct iovec *vec attr_unused, int vcnt attr_unused) {
-	return;
 }
 
 static const struct log_ops null_logger_ops = {
