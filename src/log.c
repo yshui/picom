@@ -277,6 +277,7 @@ static void file_logger_destroy(struct log_target *tgt) {
 static const char *terminal_colorize_begin(enum log_level level) {
 	switch (level) {
 	case LOG_LEVEL_TRACE: return ANSI("30;2");
+	case LOG_LEVEL_VERBOSE:
 	case LOG_LEVEL_DEBUG: return ANSI("37;2");
 	case LOG_LEVEL_INFO: return ANSI("92");
 	case LOG_LEVEL_WARN: return ANSI("33");
