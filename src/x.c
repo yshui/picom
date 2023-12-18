@@ -780,8 +780,7 @@ err:
 }
 
 void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_t msc) {
-	auto cookie =
-	    xcb_present_notify_msc(c->c, window, 0, msc, 0, 0);
+	auto cookie = xcb_present_notify_msc(c->c, window, 0, msc, 1, 0);
 	set_cant_fail_cookie(c, cookie);
 }
 
