@@ -73,6 +73,11 @@ enum blur_method {
 
 typedef struct _c2_lptr c2_lptr_t;
 
+/// Internal, private options for debugging and development use.
+struct debug_options {
+
+};
+
 /// Structure representing all options.
 typedef struct options {
 	// === Debugging ===
@@ -262,6 +267,8 @@ typedef struct options {
 	c2_lptr_t *transparent_clipping_blacklist;
 
 	bool dithered_present;
+
+	struct debug_options debug_options;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];

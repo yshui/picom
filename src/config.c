@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -615,6 +616,72 @@ char *locate_auxiliary_file(const char *scope, const char *path, const char *inc
 	return ret;
 }
 
+struct debug_options_entry {
+	const char *name;
+	const char **choices;
+	size_t offset;
+};
+
+static const struct debug_options_entry debug_options_entries[] = {
+
+};
+
+void parse_debug_option_single(char *setting, struct debug_options *debug_options) {
+	char *equal = strchr(setting, '=');
+	size_t name_len = equal ? (size_t)(equal - setting) : strlen(setting);
+	for (size_t i = 0; i < ARR_SIZE(debug_options_entries); i++) {
+		if (strncmp(setting, debug_options_entries[i].name, name_len) != 0) {
+			continue;
+		}
+		if (debug_options_entries[i].name[name_len] != '\0') {
+			continue;
+		}
+		auto value = (int *)((void *)debug_options + debug_options_entries[i].offset);
+		if (equal) {
+			const char *const arg = equal + 1;
+			if (debug_options_entries[i].choices != NULL) {
+				for (size_t j = 0; debug_options_entries[i].choices[j]; j++) {
+					if (strcmp(arg, debug_options_entries[i].choices[j]) ==
+					    0) {
+						*value = (int)j;
+						return;
+					}
+				}
+			}
+			if (!parse_int(arg, value)) {
+				log_error("Invalid value for debug option %s: %s, it "
+				          "will be ignored.",
+				          debug_options_entries[i].name, arg);
+			}
+		} else if (debug_options_entries[i].choices == NULL) {
+			*value = 1;
+		} else {
+			log_error(
+			    "Missing value for debug option %s, it will be ignored.", setting);
+		}
+		return;
+	}
+	log_error("Invalid debug option: %s", setting);
+}
+
+/// Parse debug options from environment variable `PICOM_DEBUG`.
+void parse_debug_options(struct debug_options *debug_options) {
+	const char *debug = getenv("PICOM_DEBUG");
+	const struct debug_options default_debug_options = {};
+
+	*debug_options = default_debug_options;
+	if (!debug) {
+		return;
+	}
+
+	scoped_charp debug_copy = strdup(debug);
+	char *tmp, *needle = strtok_r(debug_copy, ";", &tmp);
+	while (needle) {
+		parse_debug_option_single(needle, debug_options);
+		needle = strtok_r(NULL, ";", &tmp);
+	}
+}
+
 /**
  * Parse a list of window shader rules.
  */
@@ -817,5 +884,6 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	(void)hasneg;
 	(void)winopt_mask;
 #endif
+	parse_debug_options(&opt->debug_options);
 	return ret;
 }
