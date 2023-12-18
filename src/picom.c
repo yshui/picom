@@ -342,29 +342,39 @@ void schedule_render(session_t *ps, bool triggered_by_vblank attr_unused) {
 	ps->next_render = now_us;
 
 	if (!ps->frame_pacing || !ps->redirected) {
-		// If not doing frame pacing, schedule a render immediately unless it's
-		// already scheduled; if not redirected, we schedule immediately to have a
-		// chance to redirect. We won't have frame or render timing information
+		// If not doing frame pacing, schedule a render immediately; if
+		// not redirected, we schedule immediately to have a chance to
+		// redirect. We won't have frame or render timing information
 		// anyway.
-		if (!ev_is_active(&ps->draw_timer)) {
-			goto schedule;
-		}
-		return;
+		assert(!ev_is_active(&ps->draw_timer));
+		goto schedule;
 	}
 
 	// if ps->o.debug_options.smart_frame_pacing is false, we won't have any render
 	// time or vblank interval estimates, so we would naturally fallback to schedule
 	// render immediately.
-	auto render_budget = render_statistics_get_budget(&ps->render_stats, &divisor);
+	auto render_budget = render_statistics_get_budget(&ps->render_stats);
 	auto frame_time = render_statistics_get_vblank_time(&ps->render_stats);
 	if (frame_time == 0) {
 		// We don't have enough data for render time estimates, maybe there's
 		// no frame rendered yet, or the backend doesn't support render timing
 		// information, schedule render immediately.
+		log_verbose("Not enough data for render time estimates.");
 		goto schedule;
 	}
 
-	auto const deadline = ps->last_msc_instant + (unsigned long)divisor * frame_time;
+	if (render_budget >= frame_time) {
+		// If the estimated render time is already longer than the estimated
+		// vblank interval, there is no way we can make it. Instead of always
+		// dropping frames, we try desperately to catch up and schedule a
+		// render immediately.
+		log_verbose("Render budget: %u us >= frame time: %" PRIu32 " us",
+		            render_budget, frame_time);
+		goto schedule;
+	}
+
+	auto target_frame = (now_us + render_budget - ps->last_msc_instant) / frame_time + 1;
+	auto const deadline = ps->last_msc_instant + target_frame * frame_time;
 	unsigned int available = 0;
 	if (deadline > now_us) {
 		available = (unsigned int)(deadline - now_us);
@@ -407,17 +417,7 @@ void queue_redraw(session_t *ps) {
 		return;
 	}
 	ps->render_queued = true;
-	if (ps->o.debug_options.smart_frame_pacing && ps->vblank_scheduler) {
-		// Make we schedule_render call is synced with vblank events.
-		// See the comment on schedule_render for more details.
-		if (!vblank_scheduler_schedule(ps->vblank_scheduler,
-		                               reschedule_render_at_vblank, ps)) {
-			// TODO(yshui): handle error here
-			abort();
-		}
-	} else {
-		schedule_render(ps, false);
-	}
+	schedule_render(ps, false);
 }
 
 /**

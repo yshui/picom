@@ -55,26 +55,15 @@ void render_statistics_add_render_time_sample(struct render_statistics *rs, int 
 /// A `divisor` is also returned, indicating the target framerate. The divisor is
 /// the number of vblanks we should wait between each frame. A divisor of 1 means
 /// full framerate, 2 means half framerate, etc.
-unsigned int
-render_statistics_get_budget(struct render_statistics *rs, unsigned int *divisor) {
+unsigned int render_statistics_get_budget(struct render_statistics *rs) {
 	if (rs->render_times.nelem < rs->render_times.window_size) {
 		// No valid render time estimates yet. Assume maximum budget.
-		*divisor = 1;
 		return UINT_MAX;
 	}
 
 	// N-th percentile of render times, see render_statistics_init for N.
 	auto render_time_percentile =
 	    rolling_quantile_estimate(&rs->render_time_quantile, &rs->render_times);
-	auto vblank_time_us = render_statistics_get_vblank_time(rs);
-	if (vblank_time_us == 0) {
-		// We don't have a good estimate of the vblank time yet, so we
-		// assume we can finish in one vblank.
-		*divisor = 1;
-	} else {
-		*divisor =
-		    (unsigned int)(render_time_percentile / rs->vblank_time_us.mean + 1);
-	}
 	return (unsigned int)render_time_percentile;
 }
 
