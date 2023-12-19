@@ -1493,6 +1493,10 @@ static bool redirect_start(session_t *ps) {
 		ps->frame_pacing = false;
 	}
 
+	// Re-detect driver since we now have a backend
+	ps->drivers = detect_driver(ps->c.c, ps->backend_data, ps->c.screen_info->root);
+	apply_driver_workarounds(ps, ps->drivers);
+
 	if (ps->present_exists && ps->frame_pacing) {
 		// Initialize rendering and frame timing statistics, and frame pacing
 		// states.
@@ -1500,11 +1504,13 @@ static bool redirect_start(session_t *ps) {
 		ps->last_msc = 0;
 		ps->last_schedule_delay = 0;
 		render_statistics_reset(&ps->render_stats);
-		enum vblank_scheduler_type scheduler_type = VBLANK_SCHEDULER_PRESENT;
+		enum vblank_scheduler_type scheduler_type =
+		    choose_vblank_scheduler(ps->drivers);
 		if (ps->o.debug_options.force_vblank_scheduler != LAST_VBLANK_SCHEDULER) {
 			scheduler_type =
 			    (enum vblank_scheduler_type)ps->o.debug_options.force_vblank_scheduler;
 		}
+		log_info("Using vblank scheduler: %s.", vblank_scheduler_str[scheduler_type]);
 		ps->vblank_scheduler = vblank_scheduler_new(
 		    ps->loop, &ps->c, session_get_target_window(ps), scheduler_type);
 		if (!ps->vblank_scheduler) {
@@ -1522,10 +1528,6 @@ static bool redirect_start(session_t *ps) {
 
 	ps->redirected = true;
 	ps->first_frame = true;
-
-	// Re-detect driver since we now have a backend
-	ps->drivers = detect_driver(ps->c.c, ps->backend_data, ps->c.screen_info->root);
-	apply_driver_workarounds(ps, ps->drivers);
 
 	root_damaged(ps);
 
