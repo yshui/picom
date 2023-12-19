@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -623,7 +624,9 @@ struct debug_options_entry {
 };
 
 static const struct debug_options_entry debug_options_entries[] = {
-
+    "smart_frame_pacing",
+    NULL,
+    offsetof(struct debug_options, smart_frame_pacing),
 };
 
 void parse_debug_option_single(char *setting, struct debug_options *debug_options) {

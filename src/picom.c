@@ -152,6 +152,12 @@ collect_vblank_interval_statistics(struct vblank_event *e, void *ud) {
 	assert(ps->frame_pacing);
 	assert(ps->vblank_scheduler);
 
+	if (!ps->o.debug_options.smart_frame_pacing) {
+		// We don't need to collect statistics if we are not doing smart frame
+		// pacing.
+		return VBLANK_CALLBACK_DONE;
+	}
+
 	// TODO(yshui): this naive method of estimating vblank interval does not handle
 	//              the variable refresh rate case very well. This includes the case
 	//              of a VRR enabled monitor; or a monitor that's turned off, in which
@@ -220,13 +226,15 @@ enum vblank_callback_action schedule_render_at_vblank(struct vblank_event *e, vo
 	}
 
 	// The frame has been finished and presented, record its render time.
-	int render_time_us =
-	    (int)(render_time.tv_sec * 1000000L + render_time.tv_nsec / 1000L);
-	render_statistics_add_render_time_sample(
-	    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
-	log_verbose("Last render call took: %d (gpu) + %d (cpu) us, "
-	            "last_msc: %" PRIu64,
-	            render_time_us, (int)ps->last_schedule_delay, ps->last_msc);
+	if (ps->o.debug_options.smart_frame_pacing) {
+		int render_time_us =
+		    (int)(render_time.tv_sec * 1000000L + render_time.tv_nsec / 1000L);
+		render_statistics_add_render_time_sample(
+		    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
+		log_verbose("Last render call took: %d (gpu) + %d (cpu) us, "
+		            "last_msc: %" PRIu64,
+		            render_time_us, (int)ps->last_schedule_delay, ps->last_msc);
+	}
 	ps->last_schedule_delay = 0;
 	ps->backend_busy = false;
 
@@ -319,6 +327,9 @@ void schedule_render(session_t *ps, bool triggered_by_vblank attr_unused) {
 		return;
 	}
 
+	// if ps->o.debug_options.smart_frame_pacing is false, we won't have any render
+	// time or vblank interval estimates, so we would naturally fallback to schedule
+	// render immediately.
 	auto render_budget = render_statistics_get_budget(&ps->render_stats, &divisor);
 	auto frame_time = render_statistics_get_vblank_time(&ps->render_stats);
 	if (frame_time == 0) {
