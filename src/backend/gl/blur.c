@@ -604,9 +604,9 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		bind_uniform(pass, mask_offset);
 		bind_uniform(pass, mask_inverted);
 		bind_uniform(pass, mask_corner_radius);
-		log_info("Uniform locations: %d %d %d %d %d", pass->uniform_mask_tex,
-		         pass->uniform_mask_offset, pass->uniform_mask_inverted,
-		         pass->uniform_mask_corner_radius, pass->uniform_opacity);
+		log_debug("Uniform locations: %d %d %d %d %d", pass->uniform_mask_tex,
+		          pass->uniform_mask_offset, pass->uniform_mask_inverted,
+		          pass->uniform_mask_corner_radius, pass->uniform_opacity);
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 
 		// Setup projection matrix
