@@ -201,56 +201,50 @@ collect_vblank_interval_statistics(struct vblank_event *e, void *ud) {
 	}
 	return VBLANK_CALLBACK_DONE;
 }
-/// vblank callback scheduled by schedule_render.
+
+void schedule_render(session_t *ps, bool triggered_by_vblank);
+
+/// vblank callback scheduled by schedule_render, when a render is ongoing.
 ///
-/// Check if previously queued render has finished, and record the time it took.
-enum vblank_callback_action schedule_render_at_vblank(struct vblank_event *e, void *ud) {
+/// Check if previously queued render has finished, and reschedule render if it has.
+enum vblank_callback_action reschedule_render_at_vblank(struct vblank_event *e, void *ud) {
 	auto ps = (session_t *)ud;
 	assert(ps->frame_pacing);
-	assert(ps->backend_busy);
 	assert(ps->render_queued);
 	assert(ps->vblank_scheduler);
 
+	log_verbose("Rescheduling render at vblank, msc: %" PRIu64, e->msc);
+
 	collect_vblank_interval_statistics(e, ud);
 
-	struct timespec render_time;
-	bool completed =
-	    ps->backend_data->ops->last_render_time(ps->backend_data, &render_time);
-	if (!completed) {
-		// Render hasn't completed yet, we can't start another render.
-		// Check again at the next vblank.
-		log_debug("Last render did not complete during vblank, msc: "
-		          "%" PRIu64,
-		          ps->last_msc);
-		return VBLANK_CALLBACK_AGAIN;
+	if (ps->backend_busy) {
+		struct timespec render_time;
+		bool completed =
+		    ps->backend_data->ops->last_render_time(ps->backend_data, &render_time);
+		if (!completed) {
+			// Render hasn't completed yet, we can't start another render.
+			// Check again at the next vblank.
+			log_debug("Last render did not complete during vblank, msc: "
+			          "%" PRIu64,
+			          ps->last_msc);
+			return VBLANK_CALLBACK_AGAIN;
+		}
+
+		// The frame has been finished and presented, record its render time.
+		if (ps->o.debug_options.smart_frame_pacing) {
+			int render_time_us = (int)(render_time.tv_sec * 1000000L +
+			                           render_time.tv_nsec / 1000L);
+			render_statistics_add_render_time_sample(
+			    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
+			log_verbose("Last render call took: %d (gpu) + %d (cpu) us, "
+			            "last_msc: %" PRIu64,
+			            render_time_us, (int)ps->last_schedule_delay,
+			            ps->last_msc);
+		}
+		ps->backend_busy = false;
 	}
 
-	// The frame has been finished and presented, record its render time.
-	if (ps->o.debug_options.smart_frame_pacing) {
-		int render_time_us =
-		    (int)(render_time.tv_sec * 1000000L + render_time.tv_nsec / 1000L);
-		render_statistics_add_render_time_sample(
-		    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
-		log_verbose("Last render call took: %d (gpu) + %d (cpu) us, "
-		            "last_msc: %" PRIu64,
-		            render_time_us, (int)ps->last_schedule_delay, ps->last_msc);
-	}
-	ps->last_schedule_delay = 0;
-	ps->backend_busy = false;
-
-	struct timespec now;
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	auto now_us = (uint64_t)now.tv_sec * 1000000 + (uint64_t)now.tv_nsec / 1000;
-	double delay_s = 0;
-	if (ps->next_render > now_us) {
-		delay_s = (double)(ps->next_render - now_us) / 1000000.0;
-	}
-	log_verbose("Prepare to start rendering: delay: %f s, next_render: %" PRIu64
-	            ", now_us: %" PRIu64,
-	            delay_s, ps->next_render, now_us);
-	assert(!ev_is_active(&ps->draw_timer));
-	ev_timer_set(&ps->draw_timer, delay_s, 0);
-	ev_timer_start(ps->loop, &ps->draw_timer);
+	schedule_render(ps, false);
 	return VBLANK_CALLBACK_DONE;
 }
 
@@ -261,7 +255,7 @@ enum vblank_callback_action schedule_render_at_vblank(struct vblank_event *e, vo
 /// 1. queue_redraw() queues a new render by calling schedule_render, if there
 ///    is no render currently scheduled. i.e. render_queued == false.
 /// 2. then, we need to figure out the best time to start rendering. we need to
-///    at least know when the current vblank will start, as we can't start render
+///    at least know when the next vblank will start, as we can't start render
 ///    before the current rendered frame is diplayed on screen. we have this
 ///    information from the vblank scheduler, it will notify us when that happens.
 ///    we might also want to delay the rendering even further to reduce latency,
@@ -271,14 +265,20 @@ enum vblank_callback_action schedule_render_at_vblank(struct vblank_event *e, vo
 ///    vblank event is delivered). Backend APIs are called to issue render
 ///    commands. render_queued is set to false, and backend_busy is set to true.
 ///
-/// There is a small caveat in step 2. As a vblank event being delivered
+/// There are some considerations in step 2:
+///
+/// First of all, a vblank event being delivered
 /// doesn't necessarily mean the frame has been displayed on screen. If a frame
 /// takes too long to render, it might miss the current vblank, and will be
 /// displayed on screen during one of the subsequent vblanks. So in
 /// schedule_render_at_vblank, we ask the backend to see if it has finished
 /// rendering. if not, render_queued is unchanged, and another vblank is
 /// scheduled; otherwise, draw_callback_impl will be scheduled to be call at
-/// an appropriate time.
+/// an appropriate time. Second, we might not have rendered for the previous vblank,
+/// in which case the last vblank event we received could be many frames in the past,
+/// so we can't make scheduling decisions based on that. So we always schedule
+/// a vblank event when render is queued, and make scheduling decisions when the
+/// event is delivered.
 ///
 /// All of the above is what happens when frame_pacing is true. Otherwise
 /// render_in_progress is either QUEUED or IDLE, and queue_redraw will always
@@ -306,6 +306,21 @@ enum vblank_callback_action schedule_render_at_vblank(struct vblank_event *e, vo
 /// The code that does this is already implemented below, but disabled by
 /// default. There are several problems with it, see bug #1072.
 void schedule_render(session_t *ps, bool triggered_by_vblank attr_unused) {
+	// If the backend is busy, we will try again at the next vblank.
+	if (ps->backend_busy) {
+		// We should never have set backend_busy to true unless frame_pacing is
+		// enabled.
+		assert(ps->vblank_scheduler);
+		assert(ps->frame_pacing);
+		log_verbose("Backend busy, will reschedule render at next vblank.");
+		if (!vblank_scheduler_schedule(ps->vblank_scheduler,
+		                               reschedule_render_at_vblank, ps)) {
+			// TODO(yshui): handle error here
+			abort();
+		}
+		return;
+	}
+
 	// By default, we want to schedule render immediately, later in this function we
 	// might adjust that and move the render later, based on render timing statistics.
 	double delay_s = 0;
@@ -358,37 +373,41 @@ void schedule_render(session_t *ps, bool triggered_by_vblank attr_unused) {
 	}
 
 	log_verbose("Delay: %.6lf s, last_msc: %" PRIu64 ", render_budget: %d, "
-	            "frame_time: "
-	            "%" PRIu32 ", now_us: %" PRIu64 ", next_msc: %" PRIu64 ", "
-	            "divisor: %d",
+	            "frame_time: %" PRIu32 ", now_us: %" PRIu64 ", next_render: %" PRIu64
+	            ", next_msc: %" PRIu64 ", divisor: "
+	            "%d",
 	            delay_s, ps->last_msc_instant, render_budget, frame_time, now_us,
-	            deadline, divisor);
+	            ps->next_render, deadline, divisor);
 
 schedule:
-	ps->render_queued = true;
 	// If the backend is not busy, we just need to schedule the render at the
-	// specified time; otherwise we need to wait for vblank events.
-	if (!ps->backend_busy) {
-		assert(!ev_is_active(&ps->draw_timer));
-		ev_timer_set(&ps->draw_timer, delay_s, 0);
-		ev_timer_start(ps->loop, &ps->draw_timer);
-	} else {
-		// We should never set backend_busy to true unless frame_pacing is
-		// enabled.
-		assert(ps->vblank_scheduler);
-		if (!vblank_scheduler_schedule(ps->vblank_scheduler,
-		                               schedule_render_at_vblank, ps)) {
-			// TODO(yshui): handle error here
-			abort();
-		}
-	}
+	// specified time; otherwise we need to wait for the next vblank event and
+	// reschedule.
+	ps->last_schedule_delay = 0;
+	assert(!ev_is_active(&ps->draw_timer));
+	ev_timer_set(&ps->draw_timer, delay_s, 0);
+	ev_timer_start(ps->loop, &ps->draw_timer);
 }
 
 void queue_redraw(session_t *ps) {
+	log_verbose("Queue redraw, render_queued: %d, backend_busy: %d",
+	            ps->render_queued, ps->backend_busy);
+
 	if (ps->render_queued) {
 		return;
 	}
-	schedule_render(ps, false);
+	ps->render_queued = true;
+	if (ps->o.debug_options.smart_frame_pacing && ps->vblank_scheduler) {
+		// Make we schedule_render call is synced with vblank events.
+		// See the comment on schedule_render for more details.
+		if (!vblank_scheduler_schedule(ps->vblank_scheduler,
+		                               reschedule_render_at_vblank, ps)) {
+			// TODO(yshui): handle error here
+			abort();
+		}
+	} else {
+		schedule_render(ps, false);
+	}
 }
 
 /**
