@@ -1500,9 +1500,13 @@ static bool redirect_start(session_t *ps) {
 		ps->last_msc = 0;
 		ps->last_schedule_delay = 0;
 		render_statistics_reset(&ps->render_stats);
-		ps->vblank_scheduler =
-		    vblank_scheduler_new(ps->loop, &ps->c, session_get_target_window(ps),
-		                         VBLANK_SCHEDULER_PRESENT);
+		enum vblank_scheduler_type scheduler_type = VBLANK_SCHEDULER_PRESENT;
+		if (ps->o.debug_options.force_vblank_scheduler != LAST_VBLANK_SCHEDULER) {
+			scheduler_type =
+			    (enum vblank_scheduler_type)ps->o.debug_options.force_vblank_scheduler;
+		}
+		ps->vblank_scheduler = vblank_scheduler_new(
+		    ps->loop, &ps->c, session_get_target_window(ps), scheduler_type);
 		if (!ps->vblank_scheduler) {
 			return false;
 		}

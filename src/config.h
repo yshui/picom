@@ -83,11 +83,15 @@ enum vblank_scheduler_type {
 	LAST_VBLANK_SCHEDULER,
 };
 
+extern const char *vblank_scheduler_str[];
+
 /// Internal, private options for debugging and development use.
 struct debug_options {
 	/// Try to reduce frame latency by using vblank interval and render time
 	/// estimates. Right now it's not working well across drivers.
 	int smart_frame_pacing;
+	/// Override the vblank scheduler chosen by the compositor.
+	int force_vblank_scheduler;
 };
 
 /// Structure representing all options.
