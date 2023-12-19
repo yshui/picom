@@ -250,10 +250,16 @@ compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, coord_t dst,
 	}
 	if (((img->color_inverted || img->dim != 0) && has_alpha) || img->corner_radius != 0) {
 		// Apply image properties using a temporary image, because the source
-		// image is transparent. Otherwise the properties can be applied directly
-		// on the target image.
+		// image is transparent or will get transparent corners. Otherwise the
+		// properties can be applied directly on the target image.
+		// Also force a 32-bit ARGB visual for transparent corners, otherwise the
+		// corners become black.
+		auto visual =
+		    (img->corner_radius != 0 && inner->depth != 32)
+		        ? x_get_visual_for_standard(xd->base.c, XCB_PICT_STANDARD_ARGB_32)
+		        : inner->visual;
 		auto tmp_pict = x_create_picture_with_visual(
-		    xd->base.c, inner->width, inner->height, inner->visual, 0, NULL);
+		    xd->base.c, inner->width, inner->height, visual, 0, NULL);
 
 		// Set clip region translated to source coordinate
 		x_set_picture_clip_region(xd->base.c, tmp_pict, to_i16_checked(-dst.x),
