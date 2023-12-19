@@ -145,6 +145,38 @@ static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t
 	return w;
 }
 
+enum vblank_callback_action check_render_finish(struct vblank_event *e attr_unused, void *ud) {
+	auto ps = (session_t *)ud;
+	if (!ps->backend_busy) {
+		return VBLANK_CALLBACK_DONE;
+	}
+
+	struct timespec render_time;
+	bool completed =
+	    ps->backend_data->ops->last_render_time(ps->backend_data, &render_time);
+	if (!completed) {
+		// Render hasn't completed yet, we can't start another render.
+		// Check again at the next vblank.
+		log_debug("Last render did not complete during vblank, msc: "
+		          "%" PRIu64,
+		          ps->last_msc);
+		return VBLANK_CALLBACK_AGAIN;
+	}
+
+	// The frame has been finished and presented, record its render time.
+	if (ps->o.debug_options.smart_frame_pacing) {
+		int render_time_us =
+		    (int)(render_time.tv_sec * 1000000L + render_time.tv_nsec / 1000L);
+		render_statistics_add_render_time_sample(
+		    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
+		log_verbose("Last render call took: %d (gpu) + %d (cpu) us, "
+		            "last_msc: %" PRIu64,
+		            render_time_us, (int)ps->last_schedule_delay, ps->last_msc);
+	}
+	ps->backend_busy = false;
+	return VBLANK_CALLBACK_DONE;
+}
+
 enum vblank_callback_action
 collect_vblank_interval_statistics(struct vblank_event *e, void *ud) {
 	auto ps = (session_t *)ud;
@@ -216,32 +248,10 @@ enum vblank_callback_action reschedule_render_at_vblank(struct vblank_event *e, 
 	log_verbose("Rescheduling render at vblank, msc: %" PRIu64, e->msc);
 
 	collect_vblank_interval_statistics(e, ud);
+	check_render_finish(e, ud);
 
 	if (ps->backend_busy) {
-		struct timespec render_time;
-		bool completed =
-		    ps->backend_data->ops->last_render_time(ps->backend_data, &render_time);
-		if (!completed) {
-			// Render hasn't completed yet, we can't start another render.
-			// Check again at the next vblank.
-			log_debug("Last render did not complete during vblank, msc: "
-			          "%" PRIu64,
-			          ps->last_msc);
-			return VBLANK_CALLBACK_AGAIN;
-		}
-
-		// The frame has been finished and presented, record its render time.
-		if (ps->o.debug_options.smart_frame_pacing) {
-			int render_time_us = (int)(render_time.tv_sec * 1000000L +
-			                           render_time.tv_nsec / 1000L);
-			render_statistics_add_render_time_sample(
-			    &ps->render_stats, render_time_us + (int)ps->last_schedule_delay);
-			log_verbose("Last render call took: %d (gpu) + %d (cpu) us, "
-			            "last_msc: %" PRIu64,
-			            render_time_us, (int)ps->last_schedule_delay,
-			            ps->last_msc);
-		}
-		ps->backend_busy = false;
+		return VBLANK_CALLBACK_AGAIN;
 	}
 
 	schedule_render(ps, false);
@@ -1814,6 +1824,12 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 	// event.
 	if (animation) {
 		queue_redraw(ps);
+	}
+	if (ps->vblank_scheduler) {
+		// Even if we might not want to render during next vblank, we want to keep
+		// `backend_busy` up to date, so when the next render comes, we can
+		// immediately know if we can render.
+		vblank_scheduler_schedule(ps->vblank_scheduler, check_render_finish, ps);
 	}
 }
 
