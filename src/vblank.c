@@ -18,11 +18,19 @@ struct vblank_closure {
 	void *user_data;
 };
 
+#define VBLANK_WIND_DOWN 4
+
 struct vblank_scheduler {
 	struct x_connection *c;
 	size_t callback_capacity, callback_count;
 	struct vblank_closure *callbacks;
 	struct ev_loop *loop;
+	/// Request extra vblank events even when no callbacks are scheduled.
+	/// This is because when callbacks are scheduled too close to a vblank,
+	/// we might send PresentNotifyMsc request too late and miss the vblank event.
+	/// So we request extra vblank events right after the last vblank event
+	/// to make sure this doesn't happen.
+	unsigned int wind_down;
 	xcb_window_t target_window;
 	enum vblank_scheduler_type type;
 	bool vblank_event_requested;
@@ -178,7 +186,7 @@ static void vblank_scheduler_schedule_internal(struct vblank_scheduler *self) {
 
 bool vblank_scheduler_schedule(struct vblank_scheduler *self,
                                vblank_callback_t vblank_callback, void *user_data) {
-	if (self->callback_count == 0) {
+	if (self->callback_count == 0 && self->wind_down == 0) {
 		vblank_scheduler_schedule_internal(self);
 	}
 	if (self->callback_count == self->callback_capacity) {
@@ -204,6 +212,11 @@ vblank_scheduler_invoke_callbacks(struct vblank_scheduler *self, struct vblank_e
 	// callbacks might be added during callback invocation, so we need to
 	// copy the callback_count.
 	size_t count = self->callback_count, write_head = 0;
+	if (count == 0) {
+		self->wind_down--;
+	} else {
+		self->wind_down = VBLANK_WIND_DOWN;
+	}
 	for (size_t i = 0; i < count; i++) {
 		auto action = self->callbacks[i].fn(event, self->callbacks[i].user_data);
 		switch (action) {
@@ -222,7 +235,7 @@ vblank_scheduler_invoke_callbacks(struct vblank_scheduler *self, struct vblank_e
 	assert(count == self->callback_count && "callbacks should not be added when "
 	                                        "callbacks are being invoked.");
 	self->callback_count = write_head;
-	if (self->callback_count) {
+	if (self->callback_count || self->wind_down) {
 		vblank_scheduler_schedule_internal(self);
 	}
 }
