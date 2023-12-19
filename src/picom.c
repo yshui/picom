@@ -2139,8 +2139,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ext_info = xcb_get_extension_data(ps->c.c, &xcb_dpms_id);
 	ps->dpms_exists = ext_info && ext_info->present;
 	if (!ps->dpms_exists) {
-		log_fatal("No DPMS extension");
-		exit(1);
+		log_warn("No DPMS extension");
 	}
 
 	// Parse configuration file
