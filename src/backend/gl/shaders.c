@@ -97,6 +97,7 @@ const char win_shader_glsl[] = GLSL(330,
 	uniform bool invert_color;
 	in vec2 texcoord;
 	uniform sampler2D tex;
+	uniform vec2 effective_size;
 	uniform sampler2D brightness;
 	uniform float max_brightness;
 	// Signed distance field for rectangle center at (0, 0), with size of
@@ -130,7 +131,7 @@ const char win_shader_glsl[] = GLSL(330,
 		// Using mix() to avoid a branch here.
 		vec4 rim_color = mix(c, border_color, clamp(border_width, 0.0f, 1.0f));
 
-		vec2 outer_size = vec2(textureSize(tex, 0));
+		vec2 outer_size = effective_size;
 		vec2 inner_size = outer_size - vec2(corner_radius) * 2.0f;
 		float rect_distance = rectangle_sdf(texcoord - outer_size / 2.0f,
 		    inner_size / 2.0f) - corner_radius;
@@ -157,7 +158,8 @@ const char win_shader_default[] = GLSL(330,
 	uniform sampler2D tex;
 	vec4 default_post_processing(vec4 c);
 	vec4 window_shader() {
-		vec4 c = texelFetch(tex, ivec2(texcoord), 0);
+		vec2 texsize = textureSize(tex, 0);
+		vec4 c = texture2D(tex, texcoord / texsize, 0);
 		return default_post_processing(c);
 	}
 );

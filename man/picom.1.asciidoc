@@ -393,6 +393,7 @@ uniform float corner_radius;  // corner radius of the window (pixels)
 uniform float border_width;   // estimated border width of the window (pixels)
 uniform bool invert_color;    // whether to invert the color of the window
 uniform sampler2D tex;        // texture of the window
+uniform vec2 effective_size;  // effective dimensions of the texture (repeats pixels if larger than tex)
 uniform sampler2D brightness; // estimated brightness of the window, 1x1 texture
 uniform float max_brightness; // configured maximum brightness of the window (0.0 - 1.0)
 uniform float time;           // time in milliseconds, counting from an unspecified starting point
@@ -418,7 +419,8 @@ vec4 default_post_processing(vec4 c);
 // 1) fetch the specified pixel
 // 2) apply default post-processing
 vec4 window_shader() {
-    vec4 c = texelFetch(tex, ivec2(texcoord), 0);
+    vec2 texsize = textureSize(tex, 0);
+    vec4 c = texture2D(tex, texcoord / texsize, 0);
     return default_post_processing(c);
 }
 ----

@@ -35,6 +35,7 @@ typedef struct {
 	GLint uniform_opacity;
 	GLint uniform_invert_color;
 	GLint uniform_tex;
+	GLint uniform_effective_size;
 	GLint uniform_dim;
 	GLint uniform_brightness;
 	GLint uniform_max_brightness;
