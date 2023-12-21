@@ -81,17 +81,19 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 
 	// First search for config file in user config directory
 	auto config_home = xdg_config_home();
-	auto ret = open_config_file_at(config_home, ppath);
-	free((void *)config_home);
-	if (ret) {
-		return ret;
+	if (config_home) {
+		auto ret = open_config_file_at(config_home, ppath);
+		free((void *)config_home);
+		if (ret) {
+			return ret;
+		}
 	}
 
 	// Fall back to legacy config file in user home directory
 	const char *home = getenv("HOME");
 	if (home && strlen(home)) {
 		auto path = mstrjoin(home, config_filename_legacy);
-		ret = fopen(path, "r");
+		auto ret = fopen(path, "r");
 		if (ret && ppath) {
 			*ppath = path;
 		} else {
@@ -105,7 +107,7 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 	// Fall back to config file in system config directory
 	auto config_dirs = xdg_config_dirs();
 	for (int i = 0; config_dirs[i]; i++) {
-		ret = open_config_file_at(config_dirs[i], ppath);
+		auto ret = open_config_file_at(config_dirs[i], ppath);
 		if (ret) {
 			free(config_dirs);
 			return ret;
