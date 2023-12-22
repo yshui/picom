@@ -596,15 +596,17 @@ char *locate_auxiliary_file(const char *scope, const char *path, const char *inc
 	// Fall back to searching in user config directory
 	scoped_charp picom_scope = mstrjoin("/picom/", scope);
 	scoped_charp config_home = (char *)xdg_config_home();
-	char *ret = locate_auxiliary_file_at(config_home, picom_scope, path);
-	if (ret) {
-		return ret;
+	if (config_home) {
+		char *ret = locate_auxiliary_file_at(config_home, picom_scope, path);
+		if (ret) {
+			return ret;
+		}
 	}
 
 	// Fall back to searching in system config directory
 	auto config_dirs = xdg_config_dirs();
 	for (int i = 0; config_dirs[i]; i++) {
-		ret = locate_auxiliary_file_at(config_dirs[i], picom_scope, path);
+		char *ret = locate_auxiliary_file_at(config_dirs[i], picom_scope, path);
 		if (ret) {
 			free(config_dirs);
 			return ret;
@@ -612,7 +614,7 @@ char *locate_auxiliary_file(const char *scope, const char *path, const char *inc
 	}
 	free(config_dirs);
 
-	return ret;
+	return NULL;
 }
 
 /**
