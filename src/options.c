@@ -306,7 +306,7 @@ static void usage(const char *argv0, int ret) {
 	}
 }
 
-static const char *shortopts = "D:I:O:r:o:m:l:t:i:e:hscnfFCazGb";
+static const char *shortopts = "D:I:O:r:o:m:l:t:i:e:hscnfCazGb";
 
 /// Get config options that are needed to parse the rest of the options
 /// Return true if we should quit
@@ -426,7 +426,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->wintype_option[WINTYPE_DROPDOWN_MENU].opacity = tmp;
 			break;
 		case 'f':
-		case 'F':
 			fading_enable = true;
 			break;
 		P_CASEINT('r', shadow_radius);

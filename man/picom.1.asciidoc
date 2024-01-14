@@ -49,9 +49,6 @@ OPTIONS
 *-f*, *--fading*::
 	Fade windows in/out when opening/closing and when opacity changes, unless *--no-fading-openclose* is used.
 
-*-F*::
-	Equals to *-f*. Deprecated.
-
 *-i*, *--inactive-opacity*='OPACITY'::
 	Opacity of inactive windows. (0.1 - 1.0, defaults to 1.0)
 
