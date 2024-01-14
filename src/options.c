@@ -523,9 +523,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(276, use_ewmh_active_win);
 		case 277:
 			// --respect-prop-shadow
-			log_warn("--respect-prop-shadow option has been deprecated, its "
+			log_error("--respect-prop-shadow option has been deprecated, its "
 			         "functionality will always be enabled. Please remove it "
 			         "from the command line options");
+			failed = true;
 			break;
 		P_CASEBOOL(278, unredir_if_possible);
 		case 279:
