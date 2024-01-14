@@ -82,13 +82,17 @@ void handle_device_reset(session_t *ps) {
 }
 
 /// paint all windows
-void paint_all_new(session_t *ps, struct managed_win *t) {
+///
+/// Returns if any render command is issued. IOW if nothing on the screen has changed,
+/// this function will return false.
+bool paint_all_new(session_t *ps, struct managed_win *const t) {
 	struct timespec now = get_time_timespec();
 	auto paint_all_start_us =
 	    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
 	if (ps->backend_data->ops->device_status &&
 	    ps->backend_data->ops->device_status(ps->backend_data) != DEVICE_STATUS_NORMAL) {
-		return handle_device_reset(ps);
+		handle_device_reset(ps);
+		return false;
 	}
 	if (ps->o.xrender_sync_fence) {
 		if (ps->xsync_exists && !x_fence_sync(&ps->c, ps->sync_fence)) {
@@ -114,7 +118,7 @@ void paint_all_new(session_t *ps, struct managed_win *t) {
 
 	if (!pixman_region32_not_empty(&reg_damage)) {
 		pixman_region32_fini(&reg_damage);
-		return;
+		return false;
 	}
 
 #ifdef DEBUG_REPAINT
@@ -190,16 +194,15 @@ void paint_all_new(session_t *ps, struct managed_win *t) {
 	auto after_damage_us = (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
 	log_trace("Getting damage took %" PRIu64 " us", after_damage_us - after_sync_fence_us);
 	if (ps->next_render > 0) {
-		log_trace("Render schedule deviation: %ld us (%s) %" PRIu64 " %ld",
-		          labs((long)after_damage_us - (long)ps->next_render),
-		          after_damage_us < ps->next_render ? "early" : "late",
-		          after_damage_us, ps->next_render);
+		log_verbose("Render schedule deviation: %ld us (%s) %" PRIu64 " %ld",
+		            labs((long)after_damage_us - (long)ps->next_render),
+		            after_damage_us < ps->next_render ? "early" : "late",
+		            after_damage_us, ps->next_render);
 		ps->last_schedule_delay = 0;
 		if (after_damage_us > ps->next_render) {
 			ps->last_schedule_delay = after_damage_us - ps->next_render;
 		}
 	}
-	ps->did_render = true;
 
 	if (ps->backend_data->ops->prepare) {
 		ps->backend_data->ops->prepare(ps->backend_data, &reg_paint);
@@ -219,7 +222,7 @@ void paint_all_new(session_t *ps, struct managed_win *t) {
 	// on top of that window. This is used to reduce the number of pixels painted.
 	//
 	// Whether this is beneficial is to be determined XXX
-	for (auto w = t; w; w = w->prev_trans) {
+	for (struct managed_win *w = t; w; w = w->prev_trans) {
 		pixman_region32_subtract(&reg_visible, &ps->screen_reg, w->reg_ignore);
 		assert(!(w->flags & WIN_FLAGS_IMAGE_ERROR));
 		assert(!(w->flags & WIN_FLAGS_PIXMAP_STALE));
@@ -541,6 +544,7 @@ void paint_all_new(session_t *ps, struct managed_win *t) {
 	for (win *w = t; w; w = w->prev_trans)
 		log_trace(" %#010lx", w->id);
 #endif
+	return true;
 }
 
 // vim: set noet sw=8 ts=8 :

@@ -139,8 +139,6 @@ typedef struct session {
 	// === Event handlers ===
 	/// ev_io for X connection
 	ev_io xiow;
-	/// Timer for checking DPMS power level
-	ev_timer dpms_check_timer;
 	/// Timeout for delayed unredirection.
 	ev_timer unredir_timer;
 	/// Timer for fading
@@ -214,26 +212,19 @@ typedef struct session {
 	bool first_frame;
 	/// Whether screen has been turned off
 	bool screen_is_off;
-	/// Event context for X Present extension.
-	uint32_t present_event_id;
-	xcb_special_event_t *present_event;
 	/// When last MSC event happened, in useconds.
 	uint64_t last_msc_instant;
 	/// The last MSC number
 	uint64_t last_msc;
-	/// When the currently rendered frame will be displayed.
-	/// 0 means there is no pending frame.
-	uint64_t target_msc;
 	/// The delay between when the last frame was scheduled to be rendered, and when
 	/// the render actually started.
 	uint64_t last_schedule_delay;
 	/// When do we want our next frame to start rendering.
 	uint64_t next_render;
-	/// Did we actually render the last frame. Sometimes redraw will be scheduled only
-	/// to find out nothing has changed. In which case this will be set to false.
-	bool did_render;
 	/// Whether we can perform frame pacing.
 	bool frame_pacing;
+	/// Vblank event scheduler
+	struct vblank_scheduler *vblank_scheduler;
 
 	/// Render statistics
 	struct render_statistics render_stats;
@@ -245,8 +236,18 @@ typedef struct session {
 	options_t o;
 	/// Whether we have hit unredirection timeout.
 	bool tmout_unredir_hit;
-	/// Whether we need to redraw the screen
-	bool redraw_needed;
+	/// If the backend is busy. This means two things:
+	/// Either the backend is currently rendering a frame, or a frame has been
+	/// rendered but has yet to be presented. In either case, we should not start
+	/// another render right now. As if we start issuing rendering commands now, we
+	/// will have to wait for either the the current render to finish, or the current
+	/// back buffer to be become available again. In either case, we will be wasting
+	/// time.
+	bool backend_busy;
+	/// Whether a render is queued. This generally means there are pending updates
+	/// to the screen that's neither included in the current render, nor on the
+	/// screen.
+	bool render_queued;
 
 	/// Cache a xfixes region so we don't need to allocate it every time.
 	/// A workaround for yshui/picom#301

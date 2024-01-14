@@ -9,7 +9,9 @@
 #include <pixman.h>
 #include <xcb/composite.h>
 #include <xcb/damage.h>
+#include <xcb/dpms.h>
 #include <xcb/glx.h>
+#include <xcb/present.h>
 #include <xcb/randr.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
@@ -775,6 +777,31 @@ bool x_fence_sync(struct x_connection *c, xcb_sync_fence_t f) {
 err:
 	free(e);
 	return false;
+}
+
+void x_request_vblank_event(struct x_connection *c, xcb_window_t window, uint64_t msc) {
+	auto cookie = xcb_present_notify_msc(c->c, window, 0, msc, 1, 0);
+	set_cant_fail_cookie(c, cookie);
+}
+
+static inline bool dpms_screen_is_off(xcb_dpms_info_reply_t *info) {
+	// state is a bool indicating whether dpms is enabled
+	return info->state && (info->power_level != XCB_DPMS_DPMS_MODE_ON);
+}
+
+bool x_check_dpms_status(struct x_connection *c, bool *screen_is_off) {
+	auto r = xcb_dpms_info_reply(c->c, xcb_dpms_info(c->c), NULL);
+	if (!r) {
+		log_error("Failed to query DPMS status.");
+		return false;
+	}
+	auto now_screen_is_off = dpms_screen_is_off(r);
+	if (*screen_is_off != now_screen_is_off) {
+		log_debug("Screen is now %s", now_screen_is_off ? "off" : "on");
+		*screen_is_off = now_screen_is_off;
+	}
+	free(r);
+	return true;
 }
 
 /**

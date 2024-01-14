@@ -9,7 +9,8 @@ base_deps = [
 
 srcs = [ files('picom.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
                'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
-               'options.c', 'event.c', 'cache.c', 'atom.c', 'file_watch.c', 'statistics.c') ]
+               'options.c', 'event.c', 'cache.c', 'atom.c', 'file_watch.c', 'statistics.c',
+               'vblank.c') ]
 picom_inc = include_directories('.')
 
 cflags = []
@@ -58,7 +59,7 @@ endif
 
 if get_option('opengl')
 	cflags += ['-DCONFIG_OPENGL', '-DGL_GLEXT_PROTOTYPES']
-	deps += [dependency('gl', required: true), dependency('egl', required: true)]
+	deps += [dependency('gl', required: true), dependency('egl', required: true), dependency('threads', required:true)]
 	srcs += [ 'opengl.c' ]
 endif
 

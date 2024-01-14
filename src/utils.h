@@ -125,14 +125,22 @@ safe_isnan(double a) {
  * @param max maximum value
  * @return normalized value
  */
-static inline int attr_const normalize_i_range(int i, int min, int max) {
-	if (i > max)
+static inline int attr_const attr_unused normalize_i_range(int i, int min, int max) {
+	if (i > max) {
 		return max;
-	if (i < min)
+	}
+	if (i < min) {
 		return min;
+	}
 	return i;
 }
 
+/// Generic integer abs()
+#define iabs(val)                                                                        \
+	({                                                                               \
+		__auto_type __tmp = (val);                                               \
+		__tmp > 0 ? __tmp : -__tmp;                                              \
+	})
 #define min2(a, b) ((a) > (b) ? (b) : (a))
 #define max2(a, b) ((a) > (b) ? (a) : (b))
 #define min3(a, b, c) min2(a, min2(b, c))
@@ -149,10 +157,12 @@ static inline int attr_const normalize_i_range(int i, int min, int max) {
  * @return normalized value
  */
 static inline double attr_const normalize_d_range(double d, double min, double max) {
-	if (d > max)
+	if (d > max) {
 		return max;
-	if (d < min)
+	}
+	if (d < min) {
 		return min;
+	}
 	return d;
 }
 
@@ -162,7 +172,7 @@ static inline double attr_const normalize_d_range(double d, double min, double m
  * @param d double value to normalize
  * @return normalized value
  */
-static inline double attr_const normalize_d(double d) {
+static inline double attr_const attr_unused normalize_d(double d) {
 	return normalize_d_range(d, 0.0, 1.0);
 }
 
