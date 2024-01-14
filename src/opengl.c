@@ -39,7 +39,7 @@ static inline XVisualInfo *get_visualinfo_from_visual(session_t *ps, xcb_visuali
 	XVisualInfo vreq = {.visualid = visual};
 	int nitems = 0;
 
-	return XGetVisualInfo(ps->dpy, VisualIDMask, &vreq, &nitems);
+	return XGetVisualInfo(ps->c.dpy, VisualIDMask, &vreq, &nitems);
 }
 
 /**
@@ -56,7 +56,7 @@ bool glx_init(session_t *ps, bool need_render) {
 	}
 
 	// Get XVisualInfo
-	pvis = get_visualinfo_from_visual(ps, ps->vis);
+	pvis = get_visualinfo_from_visual(ps, ps->c.screen_info->root_visual);
 	if (!pvis) {
 		log_error("Failed to acquire XVisualInfo for current visual.");
 		goto glx_init_end;
@@ -65,20 +65,22 @@ bool glx_init(session_t *ps, bool need_render) {
 	// Ensure the visual is double-buffered
 	if (need_render) {
 		int value = 0;
-		if (Success != glXGetConfig(ps->dpy, pvis, GLX_USE_GL, &value) || !value) {
+		if (Success != glXGetConfig(ps->c.dpy, pvis, GLX_USE_GL, &value) || !value) {
 			log_error("Root visual is not a GL visual.");
 			goto glx_init_end;
 		}
 
-		if (Success != glXGetConfig(ps->dpy, pvis, GLX_DOUBLEBUFFER, &value) || !value) {
+		if (Success != glXGetConfig(ps->c.dpy, pvis, GLX_DOUBLEBUFFER, &value) ||
+		    !value) {
 			log_error("Root visual is not a double buffered GL visual.");
 			goto glx_init_end;
 		}
 	}
 
 	// Ensure GLX_EXT_texture_from_pixmap exists
-	if (need_render && !glxext.has_GLX_EXT_texture_from_pixmap)
+	if (need_render && !glxext.has_GLX_EXT_texture_from_pixmap) {
 		goto glx_init_end;
+	}
 
 	// Initialize GLX data structure
 	if (!ps->psglx) {
@@ -112,7 +114,7 @@ bool glx_init(session_t *ps, bool need_render) {
 	if (!psglx->context) {
 		// Get GLX context
 #ifndef DEBUG_GLX_DEBUG_CONTEXT
-		psglx->context = glXCreateContext(ps->dpy, pvis, None, GL_TRUE);
+		psglx->context = glXCreateContext(ps->c.dpy, pvis, None, GL_TRUE);
 #else
 		{
 			GLXFBConfig fbconfig = get_fbconfig_from_visualinfo(ps, pvis);
@@ -134,7 +136,7 @@ bool glx_init(session_t *ps, bool need_render) {
 			static const int attrib_list[] = {
 			    GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_DEBUG_BIT_ARB, None};
 			psglx->context = p_glXCreateContextAttribsARB(
-			    ps->dpy, fbconfig, NULL, GL_TRUE, attrib_list);
+			    ps->c.dpy, fbconfig, NULL, GL_TRUE, attrib_list);
 		}
 #endif
 
@@ -144,7 +146,7 @@ bool glx_init(session_t *ps, bool need_render) {
 		}
 
 		// Attach GLX context
-		if (!glXMakeCurrent(ps->dpy, get_tgt_window(ps), psglx->context)) {
+		if (!glXMakeCurrent(ps->c.dpy, get_tgt_window(ps), psglx->context)) {
 			log_error("Failed to attach GLX context.");
 			goto glx_init_end;
 		}
@@ -177,9 +179,10 @@ bool glx_init(session_t *ps, bool need_render) {
 
 	// Check GL_ARB_texture_non_power_of_two, requires a GLX context and
 	// must precede FBConfig fetching
-	if (need_render)
+	if (need_render) {
 		psglx->has_texture_non_power_of_two =
 		    gl_has_extension("GL_ARB_texture_non_power_of_two");
+	}
 
 	// Render preparations
 	if (need_render) {
@@ -199,9 +202,9 @@ bool glx_init(session_t *ps, bool need_render) {
 		}
 
 		// Clear screen
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
 		// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		// glXSwapBuffers(ps->dpy, get_tgt_window(ps));
+		// glXSwapBuffers(ps->c.dpy, get_tgt_window(ps));
 	}
 
 	success = true;
@@ -209,15 +212,17 @@ bool glx_init(session_t *ps, bool need_render) {
 glx_init_end:
 	XFree(pvis);
 
-	if (!success)
+	if (!success) {
 		glx_destroy(ps);
+	}
 
 	return success;
 }
 
 static void glx_free_prog_main(glx_prog_main_t *pprogram) {
-	if (!pprogram)
+	if (!pprogram) {
 		return;
+	}
 	if (pprogram->prog) {
 		glDeleteProgram(pprogram->prog);
 		pprogram->prog = 0;
@@ -231,8 +236,9 @@ static void glx_free_prog_main(glx_prog_main_t *pprogram) {
  * Destroy GLX related resources.
  */
 void glx_destroy(session_t *ps) {
-	if (!ps->psglx)
+	if (!ps->psglx) {
 		return;
+	}
 
 	// Free all GLX resources of windows
 	win_stack_foreach_managed(w, &ps->window_stack) {
@@ -266,8 +272,8 @@ void glx_destroy(session_t *ps) {
 
 	// Destroy GLX context
 	if (ps->psglx->context) {
-		glXMakeCurrent(ps->dpy, None, NULL);
-		glXDestroyContext(ps->dpy, ps->psglx->context);
+		glXMakeCurrent(ps->c.dpy, None, NULL);
+		glXDestroyContext(ps->c.dpy, ps->psglx->context);
 		ps->psglx->context = NULL;
 	}
 
@@ -372,8 +378,9 @@ bool glx_init_blur(session_t *ps) {
 			double sum = 0.0;
 			for (int j = 0; j < height; ++j) {
 				for (int k = 0; k < width; ++k) {
-					if (height / 2 == j && width / 2 == k)
+					if (height / 2 == j && width / 2 == k) {
 						continue;
+					}
 					double val = kern->data[j * width + k];
 					if (val == 0) {
 						continue;
@@ -690,8 +697,9 @@ bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex, int x, i
  */
 bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, int width,
                      int height, bool repeat, const struct glx_fbconfig_info *fbcfg) {
-	if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID)
+	if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID) {
 		return true;
+	}
 
 	if (!pixmap) {
 		log_error("Binding to an empty pixmap %#010x. This can't work.", pixmap);
@@ -732,7 +740,7 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 		// Retrieve pixmap parameters, if they aren't provided
 		if (!width || !height) {
 			auto r = xcb_get_geometry_reply(
-			    ps->c, xcb_get_geometry(ps->c, pixmap), NULL);
+			    ps->c.c, xcb_get_geometry(ps->c.c, pixmap), NULL);
 			if (!r) {
 				log_error("Failed to query info of pixmap %#010x.", pixmap);
 				return false;
@@ -753,14 +761,15 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 		// pixmap-specific parameters, and this may change in the future
 		GLenum tex_tgt = 0;
 		if (GLX_TEXTURE_2D_BIT_EXT & fbcfg->texture_tgts &&
-		    ps->psglx->has_texture_non_power_of_two)
+		    ps->psglx->has_texture_non_power_of_two) {
 			tex_tgt = GLX_TEXTURE_2D_EXT;
-		else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & fbcfg->texture_tgts)
+		} else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & fbcfg->texture_tgts) {
 			tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
-		else if (!(GLX_TEXTURE_2D_BIT_EXT & fbcfg->texture_tgts))
+		} else if (!(GLX_TEXTURE_2D_BIT_EXT & fbcfg->texture_tgts)) {
 			tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
-		else
+		} else {
 			tex_tgt = GLX_TEXTURE_2D_EXT;
+		}
 
 		log_debug("depth %d, tgt %#x, rgba %d", depth, tex_tgt,
 		          (GLX_TEXTURE_FORMAT_RGBA_EXT == fbcfg->texture_fmt));
@@ -773,7 +782,7 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 		    0,
 		};
 
-		ptex->glpixmap = glXCreatePixmap(ps->dpy, fbcfg->cfg, pixmap, attrs);
+		ptex->glpixmap = glXCreatePixmap(ps->c.dpy, fbcfg->cfg, pixmap, attrs);
 		ptex->pixmap = pixmap;
 		ptex->target =
 		    (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
@@ -819,10 +828,11 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 
 	// The specification requires rebinding whenever the content changes...
 	// We can't follow this, too slow.
-	if (need_release)
-		glXReleaseTexImageEXT(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+	if (need_release) {
+		glXReleaseTexImageEXT(ps->c.dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+	}
 
-	glXBindTexImageEXT(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
+	glXBindTexImageEXT(ps->c.dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
 
 	// Cleanup
 	glBindTexture(ptex->target, 0);
@@ -840,13 +850,13 @@ void glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
 	// Release binding
 	if (ptex->glpixmap && ptex->texture) {
 		glBindTexture(ptex->target, ptex->texture);
-		glXReleaseTexImageEXT(ps->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+		glXReleaseTexImageEXT(ps->c.dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
 		glBindTexture(ptex->target, 0);
 	}
 
 	// Free GLX Pixmap
 	if (ptex->glpixmap) {
-		glXDestroyPixmap(ps->dpy, ptex->glpixmap);
+		glXDestroyPixmap(ps->c.dpy, ptex->glpixmap);
 		ptex->glpixmap = 0;
 	}
 
@@ -858,14 +868,16 @@ void glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
  */
 void glx_set_clip(session_t *ps, const region_t *reg) {
 	// Quit if we aren't using stencils
-	if (ps->o.glx_no_stencil)
+	if (ps->o.glx_no_stencil) {
 		return;
+	}
 
 	glDisable(GL_STENCIL_TEST);
 	glDisable(GL_SCISSOR_TEST);
 
-	if (!reg)
+	if (!reg) {
 		return;
+	}
 
 	int nrects;
 	const rect_t *rects = pixman_region32_rectangles((region_t *)reg, &nrects);
@@ -913,8 +925,9 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 
 	// Calculate copy region size
 	glx_blur_cache_t ibc = {.width = 0, .height = 0};
-	if (!pbc)
+	if (!pbc) {
 		pbc = &ibc;
+	}
 
 	int mdx = dx, mdy = dy, mwidth = width, mheight = height;
 	// log_trace("%d, %d, %d, %d", mdx, mdy, mwidth, mheight);
@@ -941,24 +954,29 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 	*/
 
 	GLenum tex_tgt = GL_TEXTURE_RECTANGLE;
-	if (ps->psglx->has_texture_non_power_of_two)
+	if (ps->psglx->has_texture_non_power_of_two) {
 		tex_tgt = GL_TEXTURE_2D;
+	}
 
 	// Free textures if size inconsistency discovered
-	if (mwidth != pbc->width || mheight != pbc->height)
+	if (mwidth != pbc->width || mheight != pbc->height) {
 		free_glx_bc_resize(ps, pbc);
+	}
 
 	// Generate FBO and textures if needed
-	if (!pbc->textures[0])
+	if (!pbc->textures[0]) {
 		pbc->textures[0] = glx_gen_texture(tex_tgt, mwidth, mheight);
+	}
 	GLuint tex_scr = pbc->textures[0];
-	if (more_passes && !pbc->textures[1])
+	if (more_passes && !pbc->textures[1]) {
 		pbc->textures[1] = glx_gen_texture(tex_tgt, mwidth, mheight);
+	}
 	pbc->width = mwidth;
 	pbc->height = mheight;
 	GLuint tex_scr2 = pbc->textures[1];
-	if (more_passes && !pbc->fbo)
+	if (more_passes && !pbc->fbo) {
 		glGenFramebuffers(1, &pbc->fbo);
+	}
 	const GLuint fbo = pbc->fbo;
 
 	if (!tex_scr || (more_passes && !tex_scr2)) {
@@ -986,7 +1004,7 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 	} */
 
 	// Texture scaling factor
-	GLfloat texfac_x = 1.0f, texfac_y = 1.0f;
+	GLfloat texfac_x = 1.0F, texfac_y = 1.0F;
 	if (tex_tgt == GL_TEXTURE_2D) {
 		texfac_x /= (GLfloat)mwidth;
 		texfac_y /= (GLfloat)mheight;
@@ -1019,10 +1037,12 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 		} else {
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glDrawBuffer(GL_BACK);
-			if (have_scissors)
+			if (have_scissors) {
 				glEnable(GL_SCISSOR_TEST);
-			if (have_stencil)
+			}
+			if (have_stencil) {
 				glEnable(GL_STENCIL_TEST);
+			}
 		}
 
 		// Color negation for testing...
@@ -1032,12 +1052,15 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 
 		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 		glUseProgram(ppass->prog);
-		if (ppass->unifm_offset_x >= 0)
+		if (ppass->unifm_offset_x >= 0) {
 			glUniform1f(ppass->unifm_offset_x, texfac_x);
-		if (ppass->unifm_offset_y >= 0)
+		}
+		if (ppass->unifm_offset_y >= 0) {
 			glUniform1f(ppass->unifm_offset_y, texfac_y);
-		if (ppass->unifm_factor_center >= 0)
+		}
+		if (ppass->unifm_factor_center >= 0) {
 			glUniform1f(ppass->unifm_factor_center, factor_center);
+		}
 
 		P_PAINTREG_START(crect) {
 			auto rx = (GLfloat)(crect.x1 - mdx) * texfac_x;
@@ -1087,10 +1110,12 @@ glx_blur_dst_end:
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glBindTexture(tex_tgt, 0);
 	glDisable(tex_tgt);
-	if (have_scissors)
+	if (have_scissors) {
 		glEnable(GL_SCISSOR_TEST);
-	if (have_stencil)
+	}
+	if (have_stencil) {
 		glEnable(GL_STENCIL_TEST);
+	}
 
 	if (&ibc == pbc) {
 		free_glx_bc(ps, pbc);
@@ -1275,7 +1300,7 @@ bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
 	// considering all those mess in color negation and modulation
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	glColor4f(0.0f, 0.0f, 0.0f, factor);
+	glColor4f(0.0F, 0.0F, 0.0F, factor);
 
 	P_PAINTREG_START(crect) {
 		// XXX what does all of these variables mean?
@@ -1291,7 +1316,7 @@ bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
 	}
 	P_PAINTREG_END();
 
-	glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
+	glColor4f(0.0F, 0.0F, 0.0F, 0.0F);
 	glDisable(GL_BLEND);
 
 	gl_check_err();
@@ -1411,15 +1436,19 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 		glUseProgram(pprogram->prog);
 		struct timespec ts;
 		clock_gettime(CLOCK_MONOTONIC, &ts);
-		if (pprogram->unifm_opacity >= 0)
+		if (pprogram->unifm_opacity >= 0) {
 			glUniform1f(pprogram->unifm_opacity, (float)opacity);
-		if (pprogram->unifm_invert_color >= 0)
+		}
+		if (pprogram->unifm_invert_color >= 0) {
 			glUniform1i(pprogram->unifm_invert_color, neg);
-		if (pprogram->unifm_tex >= 0)
+		}
+		if (pprogram->unifm_tex >= 0) {
 			glUniform1i(pprogram->unifm_tex, 0);
-		if (pprogram->unifm_time >= 0)
-			glUniform1f(pprogram->unifm_time, (float)ts.tv_sec * 1000.0f +
-			                                      (float)ts.tv_nsec / 1.0e6f);
+		}
+		if (pprogram->unifm_time >= 0) {
+			glUniform1f(pprogram->unifm_time, (float)ts.tv_sec * 1000.0F +
+			                                      (float)ts.tv_nsec / 1.0e6F);
+		}
 	}
 
 	// log_trace("Draw: %d, %d, %d, %d -> %d, %d (%d, %d) z %d", x, y, width, height,
@@ -1459,8 +1488,8 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 			// Invert Y if needed, this may not work as expected, though. I
 			// don't have such a FBConfig to test with.
 			if (!ptex->y_inverted) {
-				ry = 1.0f - ry;
-				rye = 1.0f - rye;
+				ry = 1.0F - ry;
+				rye = 1.0F - rye;
 			}
 
 			// log_trace("Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d", ri, rx,
@@ -1492,7 +1521,7 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 
 	// Cleanup
 	glBindTexture(ptex->target, 0);
-	glColor4f(0.0f, 0.0f, 0.0f, 0.0f);
+	glColor4f(0.0F, 0.0F, 0.0F, 0.0F);
 	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 	glDisable(GL_BLEND);
 	glDisable(GL_COLOR_LOGIC_OP);
@@ -1505,8 +1534,9 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 		glActiveTexture(GL_TEXTURE0);
 	}
 
-	if (has_prog)
+	if (has_prog) {
 		glUseProgram(0);
+	}
 
 	gl_check_err();
 

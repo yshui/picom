@@ -15,10 +15,15 @@
 /// Apply driver specified global workarounds. It's safe to call this multiple times.
 void apply_driver_workarounds(struct session *ps, enum driver driver) {
 	if (driver & DRIVER_NVIDIA) {
-		// setenv("__GL_YIELD", "usleep", true);
-		setenv("__GL_MaxFramesAllowed", "1", true);
 		ps->o.xrender_sync_fence = true;
 	}
+}
+
+enum vblank_scheduler_type choose_vblank_scheduler(enum driver driver) {
+	if (driver & DRIVER_NVIDIA) {
+		return VBLANK_SCHEDULER_SGI_VIDEO_SYNC;
+	}
+	return VBLANK_SCHEDULER_PRESENT;
 }
 
 enum driver detect_driver(xcb_connection_t *c, backend_t *backend_data, xcb_window_t window) {

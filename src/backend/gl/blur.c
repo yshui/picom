@@ -150,6 +150,9 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 
 	glUniform2f(down_pass->texorig_loc, (GLfloat)extent->x1, (GLfloat)dst_y_fb_coord);
 
+	glBindVertexArray(vao[1]);
+	int nelems = vao_nelems[1];
+
 	for (int i = 0; i < iterations; ++i) {
 		// Scale output width / height by half in each iteration
 		scale_factor <<= 1;
@@ -174,8 +177,6 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 		assert(bctx->blur_fbos[i]);
 
 		glBindTexture(GL_TEXTURE_2D, src_texture);
-		glBindVertexArray(vao[1]);
-		auto nelems = vao_nelems[1];
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i]);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
@@ -194,6 +195,15 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 
 	glUniform2f(up_pass->texorig_loc, (GLfloat)extent->x1, (GLfloat)dst_y_fb_coord);
 
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, default_mask);
+
+	glUniform1i(up_pass->uniform_mask_tex, 1);
+	glUniform2f(up_pass->uniform_mask_offset, 0.0F, 0.0F);
+	glUniform1i(up_pass->uniform_mask_inverted, 0);
+	glUniform1f(up_pass->uniform_mask_corner_radius, 0.0F);
+	glUniform1f(up_pass->uniform_opacity, 1.0F);
+
 	for (int i = iterations - 1; i >= 0; --i) {
 		// Scale output width / height back by two in each iteration
 		scale_factor >>= 1;
@@ -206,28 +216,15 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 		int tex_width = src_size.width;
 		int tex_height = src_size.height;
 
-		// The number of indices in the selected vertex array
-		GLsizei nelems;
-
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, src_texture);
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, default_mask);
 
-		glUniform1i(up_pass->uniform_mask_tex, 1);
-		glUniform2f(up_pass->uniform_mask_offset, 0.0F, 0.0F);
-		glUniform1i(up_pass->uniform_mask_inverted, 0);
-		glUniform1f(up_pass->uniform_mask_corner_radius, 0.0F);
 		if (i > 0) {
 			assert(bctx->blur_fbos[i - 1]);
 
 			// not last pass, draw into next framebuffer
-			glBindVertexArray(vao[1]);
-			nelems = vao_nelems[1];
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i - 1]);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
-
-			glUniform1f(up_pass->uniform_opacity, (GLfloat)1);
 		} else {
 			// last pass, draw directly into the back buffer
 			if (mask) {
@@ -259,10 +256,10 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 	return true;
 }
 
-bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
-                  coord_t mask_dst, const region_t *reg_blur,
-                  const region_t *reg_visible attr_unused, GLuint source_texture,
-                  geometry_t source_size, GLuint target_fbo, GLuint default_mask) {
+bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask, coord_t mask_dst,
+                  const region_t *reg_blur, const region_t *reg_visible attr_unused,
+                  GLuint source_texture, geometry_t source_size, GLuint target_fbo,
+                  GLuint default_mask, bool high_precision) {
 	bool ret = false;
 
 	if (source_size.width != bctx->fb_width || source_size.height != bctx->fb_height) {
@@ -284,7 +281,11 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
 			}
 
 			glBindTexture(GL_TEXTURE_2D, bctx->blur_textures[i]);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tex_size->width,
+			GLint format = GL_RGBA8;
+			if (high_precision) {
+				format = GL_RGBA16;
+			}
+			glTexImage2D(GL_TEXTURE_2D, 0, format, tex_size->width,
 			             tex_size->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 
 			if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {
@@ -343,9 +344,9 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
 	glBindVertexArray(vao[0]);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
-	             indices, GL_STATIC_DRAW);
+	             indices, GL_STREAM_DRAW);
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
 	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
@@ -356,10 +357,10 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
 	glBindBuffer(GL_ARRAY_BUFFER, bo[2]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[3]);
 	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord_resized) * nrects_resized * 16,
-	             coord_resized, GL_STATIC_DRAW);
+	             coord_resized, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER,
 	             (long)sizeof(*indices_resized) * nrects_resized * 6, indices_resized,
-	             GL_STATIC_DRAW);
+	             GL_STREAM_DRAW);
 	glEnableVertexAttribArray(vert_coord_loc);
 	glEnableVertexAttribArray(vert_in_texcoord_loc);
 	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
@@ -406,7 +407,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mas
 	return gl_blur_impl(opacity, bctx, mask, mask_dst, reg_blur, reg_visible,
 	                    gd->back_texture,
 	                    (geometry_t){.width = gd->width, .height = gd->height},
-	                    gd->back_fbo, gd->default_mask_texture);
+	                    gd->back_fbo, gd->default_mask_texture, gd->dithered_present);
 }
 
 static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
@@ -603,9 +604,9 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		bind_uniform(pass, mask_offset);
 		bind_uniform(pass, mask_inverted);
 		bind_uniform(pass, mask_corner_radius);
-		log_info("Uniform locations: %d %d %d %d %d", pass->uniform_mask_tex,
-		         pass->uniform_mask_offset, pass->uniform_mask_inverted,
-		         pass->uniform_mask_corner_radius, pass->uniform_opacity);
+		log_debug("Uniform locations: %d %d %d %d %d", pass->uniform_mask_tex,
+		          pass->uniform_mask_offset, pass->uniform_mask_inverted,
+		          pass->uniform_mask_corner_radius, pass->uniform_opacity);
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 
 		// Setup projection matrix

@@ -9,6 +9,15 @@ const char dummy_frag[] = GLSL(330,
 	}
 );
 
+const char present_frag[] = GLSL(330,
+	uniform sampler2D tex;
+	in vec2 texcoord;
+	vec4 dither(vec4, vec2);
+	void main() {
+		gl_FragColor = dither(texelFetch(tex, ivec2(texcoord.xy), 0), texcoord);
+	}
+);
+
 const char copy_with_mask_frag[] = GLSL(330,
 	uniform sampler2D tex;
 	in vec2 texcoord;
@@ -88,6 +97,7 @@ const char win_shader_glsl[] = GLSL(330,
 	uniform bool invert_color;
 	in vec2 texcoord;
 	uniform sampler2D tex;
+	uniform vec2 effective_size;
 	uniform sampler2D brightness;
 	uniform float max_brightness;
 	// Signed distance field for rectangle center at (0, 0), with size of
@@ -121,7 +131,7 @@ const char win_shader_glsl[] = GLSL(330,
 		// Using mix() to avoid a branch here.
 		vec4 rim_color = mix(c, border_color, clamp(border_width, 0.0f, 1.0f));
 
-		vec2 outer_size = vec2(textureSize(tex, 0));
+		vec2 outer_size = effective_size;
 		vec2 inner_size = outer_size - vec2(corner_radius) * 2.0f;
 		float rect_distance = rectangle_sdf(texcoord - outer_size / 2.0f,
 		    inner_size / 2.0f) - corner_radius;
@@ -148,7 +158,8 @@ const char win_shader_default[] = GLSL(330,
 	uniform sampler2D tex;
 	vec4 default_post_processing(vec4 c);
 	vec4 window_shader() {
-		vec4 c = texelFetch(tex, ivec2(texcoord), 0);
+		vec2 texsize = textureSize(tex, 0);
+		vec4 c = texture2D(tex, texcoord / texsize, 0);
 		return default_post_processing(c);
 	}
 );
@@ -172,6 +183,30 @@ const char vertex_shader[] = GLSL(330,
 	void main() {
 		gl_Position = projection * vec4(coord, 0, scale);
 		texcoord = in_texcoord + texorig;
+	}
+);
+const char dither_glsl[] = GLSL(330,
+	// Stolen from: https://www.shadertoy.com/view/7sfXDn
+	float bayer2(vec2 a) {
+		a = floor(a);
+		return fract(a.x / 2. + a.y * a.y * .75);
+	}
+	// 16 * 16 is 2^8, so in total we have equivalent of 16-bit
+	// color depth, should be enough?
+	float bayer(vec2 a16) {
+		vec2  a8 = a16 * .5;
+		vec2  a4 =  a8 * .5;
+		vec2  a2 =  a4 * .5;
+		float bayer32 = ((bayer2(a2) * .25 + bayer2( a4))
+		                             * .25 + bayer2( a8))
+		                             * .25 + bayer2(a16);
+		return bayer32;
+	}
+	vec4 dither(vec4 c, vec2 coord) {
+		vec4 residual = mod(c, 1.0 / 255.0);
+		residual = min(residual, vec4(1.0 / 255.0) - residual);
+		vec4 dithered = vec4(greaterThan(residual, vec4(1.0 / 65535.0)));
+		return vec4(c + dithered * bayer(coord) / 255.0);
 	}
 );
 const char shadow_colorization_frag[] = GLSL(330,

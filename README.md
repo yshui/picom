@@ -1,9 +1,13 @@
 picom
 =====
 
+[![circleci](https://circleci.com/gh/yshui/picom.svg?style=shield)](https://circleci.com/gh/yshui/picom)
+[![codecov](https://codecov.io/gh/yshui/picom/branch/next/graph/badge.svg?token=NRSegi0Gze)](https://codecov.io/gh/yshui/picom)
+[![chat on discord](https://img.shields.io/discord/1106224720833159198?logo=discord)](https://discord.gg/SY5JJzPgME)
+
 __picom__ is a compositor for X, and a [fork of Compton](History.md).
 
-You can leave your feedback or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions).
+You can leave your feedback or thoughts in the [discussion tab](https://github.com/yshui/picom/discussions), or chat with other users on [discord](https://discord.gg/SY5JJzPgME)!
 
 ## Change Log
 
@@ -20,7 +24,9 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * libXext
 * xproto
 * xcb
+* xcb-util
 * xcb-damage
+* xcb-dpms
 * xcb-xfixes
 * xcb-shape
 * xcb-renderutil
@@ -29,26 +35,25 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * xcb-composite
 * xcb-image
 * xcb-present
-* xcb-xinerama
 * xcb-glx
 * pixman
 * libdbus (optional, disable with the `-Ddbus=false` meson configure flag)
 * libconfig (optional, disable with the `-Dconfig_file=false` meson configure flag)
 * libGL, libEGL (optional, disable with the `-Dopengl=false` meson configure flag)
-* libpcre (optional, disable with the `-Dregex=false` meson configure flag)
+* libpcre2 (optional, disable with the `-Dregex=false` meson configure flag)
 * libev
 * uthash
 
 On Debian based distributions (e.g. Ubuntu), the needed packages are
 
 ```
-libxext-dev libxcb1-dev libxcb-damage0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-randr0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-present-dev libxcb-xinerama0-dev libxcb-glx0-dev libpixman-1-dev libdbus-1-dev libconfig-dev libgl-dev libegl-dev libpcre2-dev libpcre3-dev libevdev-dev uthash-dev libev-dev libx11-xcb-dev meson
+libconfig-dev libdbus-1-dev libegl-dev libev-dev libgl-dev libpcre2-dev libpixman-1-dev libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-damage0-dev libxcb-dpms0-dev libxcb-glx0-dev libxcb-image0-dev libxcb-present-dev libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-util-dev libxcb-xfixes0-dev libxext-dev meson ninja-build uthash-dev
 ```
 
 On Fedora, the needed packages are
 
 ```
-dbus-devel gcc git libconfig-devel libdrm-devel libev-devel libX11-devel libX11-xcb libXext-devel libxcb-devel libGL-devel libEGL-devel meson pcre-devel pixman-devel uthash-devel xcb-util-image-devel xcb-util-renderutil-devel xorg-x11-proto-devel
+dbus-devel gcc git libconfig-devel libdrm-devel libev-devel libX11-devel libX11-xcb libXext-devel libxcb-devel libGL-devel libEGL-devel meson pcre2-devel pixman-devel uthash-devel xcb-util-image-devel xcb-util-renderutil-devel xorg-x11-proto-devel
 ```
 
 To build the documents, you need `asciidoc`
@@ -56,8 +61,7 @@ To build the documents, you need `asciidoc`
 ### To build
 
 ```bash
-$ git submodule update --init --recursive
-$ meson --buildtype=release . build
+$ meson setup --buildtype=release build
 $ ninja -C build
 ```
 
@@ -68,13 +72,12 @@ If you have libraries and/or headers installed at non-default location (e.g. und
 You can do that by setting the `CPPFLAGS` and `LDFLAGS` environment variables when running `meson`. Like this:
 
 ```bash
-$ LDFLAGS="-L/path/to/libraries" CPPFLAGS="-I/path/to/headers" meson --buildtype=release . build
-
+$ LDFLAGS="-L/path/to/libraries" CPPFLAGS="-I/path/to/headers" meson setup --buildtype=release build
 ```
 
 As an example, on FreeBSD, you might have to run meson with:
 ```bash
-$ LDFLAGS="-L/usr/local/lib" CPPFLAGS="-I/usr/local/include" meson --buildtype=release . build
+$ LDFLAGS="-L/usr/local/lib" CPPFLAGS="-I/usr/local/include" meson setup --buildtype=release build
 $ ninja -C build
 ```
 
@@ -88,15 +91,21 @@ Default install prefix is `/usr/local`, you can change it with `meson configure 
 
 ## How to Contribute
 
-### Code
+All contributions are welcome!
 
-You can look at the [Projects](https://github.com/yshui/picom/projects) page, and see if there is anything that interests you. Or you can take a look at the [Issues](https://github.com/yshui/picom/issues).
+New features you think should be included in picom, a fix for a bug you found - please open a PR!
 
-### Non-code
+You can take a look at the [Issues](https://github.com/yshui/picom/issues).
 
-Even if you don't want to contribute code, you can still contribute by compiling and running this branch, and report any issue you can find.
+Contributions to the documents and wiki are also appreciated.
 
-Contributions to the documents and wiki will also be appreciated.
+Even if you don't want to add anything to picom, you are still helping by compiling and running this branch, and report any issue you can find.
+
+### Become a Collaborator
+
+Becoming a collaborator of picom requires significant time commitment. You are expected to reply to issue reports, reviewing PRs, and sometimes fix bugs or implement new feature. You won't be able to push to the main branch directly, and all you code still has to go through code review.
+
+If this sounds good to you, feel free to contact me.
 
 ## Contributors
 

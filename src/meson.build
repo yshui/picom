@@ -9,18 +9,21 @@ base_deps = [
 
 srcs = [ files('picom.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
                'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
-               'options.c', 'event.c', 'cache.c', 'atom.c', 'file_watch.c') ]
+               'options.c', 'event.c', 'cache.c', 'atom.c', 'file_watch.c', 'statistics.c',
+               'vblank.c') ]
 picom_inc = include_directories('.')
 
 cflags = []
 
 required_xcb_packages = [
-	'xcb-render', 'xcb-damage', 'xcb-randr', 'xcb-sync', 'xcb-composite',
-	'xcb-shape', 'xcb-xinerama', 'xcb-xfixes', 'xcb-present', 'xcb-glx', 'xcb'
+	'xcb', 'xcb-composite', 'xcb-damage', 'xcb-dpms', 'xcb-glx', 'xcb-present',
+	'xcb-randr', 'xcb-render', 'xcb-shape', 'xcb-sync', 'xcb-xfixes'
 ]
 
+# Some XCB packages are here because their versioning differs (see check below).
 required_packages = [
-	'x11', 'x11-xcb', 'xcb-renderutil', 'xcb-image', 'xext', 'pixman-1'
+	'pixman-1', 'x11', 'x11-xcb', 'xcb-image', 'xcb-renderutil', 'xcb-util',
+	'xext'
 ]
 
 foreach i : required_packages
@@ -44,11 +47,8 @@ if get_option('config_file')
 	srcs += [ 'config_libconfig.c' ]
 endif
 if get_option('regex')
-	pcre = dependency('libpcre', required: true)
+	pcre = dependency('libpcre2-8', required: true)
 	cflags += ['-DCONFIG_REGEX_PCRE']
-	if pcre.version().version_compare('>=8.20')
-		cflags += ['-DCONFIG_REGEX_PCRE_JIT']
-	endif
 	deps += [pcre]
 endif
 
@@ -59,7 +59,7 @@ endif
 
 if get_option('opengl')
 	cflags += ['-DCONFIG_OPENGL', '-DGL_GLEXT_PROTOTYPES']
-	deps += [dependency('gl', required: true), dependency('egl', required: true)]
+	deps += [dependency('gl', required: true), dependency('egl', required: true), dependency('threads', required:true)]
 	srcs += [ 'opengl.c' ]
 endif
 

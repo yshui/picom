@@ -103,8 +103,14 @@ OPTIONS
 *--corner-radius* 'VALUE'::
 	Sets the radius of rounded window corners. When > 0, the compositor will round the corners of windows. Does not interact well with *--transparent-clipping*. (defaults to 0).
 
+*--corner-radius-rules* 'RADIUS':'CONDITION'::
+	Specify a list of corner radius rules. Overrides the corner radii of matching windows. This option takes precedence over the *--rounded-corners-exclude* option, and also overrides the default exclusion of fullscreen windows. The condition has the same format as *--opacity-rule*.
+
 *--rounded-corners-exclude* 'CONDITION'::
 	Exclude conditions for rounded corners.
+
+*--no-frame-pacing*::
+	Disable vsync-aware frame pacing. By default, the compositor tries to make sure it only renders once per vblank interval, and also the render happens as late as possible to minimize the latency from updates to the screen. However this can sometimes cause stuttering, or even lowered frame rate. This option can be used to disable frame pacing.
 
 *--mark-wmwin-focused*::
 	Try to detect WM windows (a non-override-redirect window with no child that has 'WM_STATE') and mark them as active.
@@ -134,7 +140,13 @@ OPTIONS
 	Use EWMH '_NET_ACTIVE_WINDOW' to determine currently focused window, rather than listening to 'FocusIn'/'FocusOut' event. Might have more accuracy, provided that the WM supports it.
 
 *--unredir-if-possible*::
-	Unredirect all windows if a full-screen opaque window is detected, to maximize performance for full-screen windows. Known to cause flickering when redirecting/unredirecting windows.
+	Unredirect all windows in some cases. Known to cause flickering when redirecting/unredirecting windows. Currently, unredirecting is triggered by following conditions:
+	    * If the top level window is taking up the entire screen. In multi-monitor setup, this means ALL monitors.
+	    * If there is no window.
+	    * If a window is fullscreen according to its WM hints. (can be disabled with *--no-ewmh-fullscreen*).
+	    * If a window requests to bypass the compositor ('_NET_WM_BYPASS_COMPOSITOR').
+	Windows are also unredirected unconditionally when monitors are powered off, regardless if *--unredir-if-possible* is set.
+
 
 *--unredir-if-possible-delay* 'MILLISECONDS'::
 	Delay before unredirecting the window, in milliseconds. Defaults to 0.
@@ -211,8 +223,8 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--shadow-exclude-reg* 'GEOMETRY'::
 	Specify a X geometry that describes the region in which shadow should not be painted in, such as a dock window region.  Use `--shadow-exclude-reg x10+0-0`, for example, if the 10 pixels on the bottom of the screen should not have shadows painted on.
 
-*--xinerama-shadow-crop*::
-	Crop shadow of a window fully on a particular Xinerama screen to the screen.
+*--crop-shadow-to-monitor*::
+	Crop shadow of a window fully on a particular monitor to that monitor. This is currently implemented using the X RandR extension.
 
 *--backend* 'BACKEND'::
 	Specify the backend to use: `xrender`, `glx`, or `xr_glx_hybrid`. `xrender` is the default one.
@@ -230,7 +242,7 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 	GLX backend: Avoid rebinding pixmap on window damage. Probably could improve performance on rapid window content changes, but is known to break things on some drivers (LLVMpipe, xf86-video-intel, etc.). Recommended if it works.
 
 *--no-use-damage*::
-	Disable the use of damage information. This cause the whole screen to be redrawn everytime, instead of the part of the screen has actually changed. Potentially degrades the performance, but might fix some artifacts.
+	Disable the use of damage information. This cause the whole screen to be redrawn every time, instead of the part of the screen has actually changed. Potentially degrades the performance, but might fix some artifacts.
 
 *--xrender-sync-fence*::
 	Use X Sync fence to sync clients' draw calls, to make sure all draw calls are finished before picom starts drawing. Needed on nvidia-drivers with GLX backend for some users.
@@ -267,6 +279,9 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 
 *--window-shader-fg-rule* 'SHADER':'CONDITION'::
 	Specify GLSL fragment shader path for rendering window contents using patterns. Similar to *--opacity-rule*, arguments should be in the format of 'SHADER:CONDITION', e.g. "shader.frag:name = \'window\'". Leading and trailing whitespaces in 'SHADER' will be trimmed. If 'SHADER' is "default", then the default shader will be used for the matching windows. (This also unfortunately means you can't use a shader file named "default"). Does not work when *--legacy-backends* is enabled.
+
+*--dithered-present*
+	Use higher precision during rendering, and apply dither when presenting the rendered screen. Reduces banding artifacts, but might cause performance degradation. Only works with OpenGL.
 
 FORMAT OF CONDITIONS
 --------------------
@@ -378,6 +393,7 @@ uniform float corner_radius;  // corner radius of the window (pixels)
 uniform float border_width;   // estimated border width of the window (pixels)
 uniform bool invert_color;    // whether to invert the color of the window
 uniform sampler2D tex;        // texture of the window
+uniform vec2 effective_size;  // effective dimensions of the texture (repeats pixels if larger than tex)
 uniform sampler2D brightness; // estimated brightness of the window, 1x1 texture
 uniform float max_brightness; // configured maximum brightness of the window (0.0 - 1.0)
 uniform float time;           // time in milliseconds, counting from an unspecified starting point
@@ -403,7 +419,8 @@ vec4 default_post_processing(vec4 c);
 // 1) fetch the specified pixel
 // 2) apply default post-processing
 vec4 window_shader() {
-    vec4 c = texelFetch(tex, ivec2(texcoord), 0);
+    vec2 texsize = textureSize(tex, 0);
+    vec4 c = texture2D(tex, texcoord / texsize, 0);
     return default_post_processing(c);
 }
 ----
@@ -481,7 +498,7 @@ Available options of the 'blur' section are: ::
     An integer in the range 0-20. The strength of the 'dual_kawase' blur method. Corresponds to the *--blur-strength* command line option. If set to zero, the value requested by *--blur-size* is approximated (default: 5).
 
   *kernel*:::
-    A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kerns* option. Corresponds to the *--blur-kerns* command line option.
+    A string. The kernel to use for the 'kernel' blur method, specified in the same format as the *--blur-kern* option. Corresponds to the *--blur-kern* command line option.
 
 SIGNALS
 -------

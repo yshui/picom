@@ -42,11 +42,9 @@ void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce);
 
 void root_damaged(session_t *ps);
 
-void cxinerama_upd_scrs(session_t *ps);
-
 void queue_redraw(session_t *ps);
 
-void discard_ignore(session_t *ps, unsigned long sequence);
+void discard_pending(session_t *ps, uint32_t sequence);
 
 void set_root_flags(session_t *ps, uint64_t flags);
 
@@ -62,9 +60,11 @@ uint8_t session_redirection_mode(session_t *ps);
 static inline void wintype_arr_enable_unset(switch_t arr[]) {
 	wintype_t i;
 
-	for (i = 0; i < NUM_WINTYPES; ++i)
-		if (UNSET == arr[i])
+	for (i = 0; i < NUM_WINTYPES; ++i) {
+		if (UNSET == arr[i]) {
 			arr[i] = ON;
+		}
+	}
 }
 
 /**
@@ -96,7 +96,7 @@ free_win_res_glx(session_t *ps attr_unused, struct managed_win *w attr_unused) {
  * Dump an drawable's info.
  */
 static inline void dump_drawable(session_t *ps, xcb_drawable_t drawable) {
-	auto r = xcb_get_geometry_reply(ps->c, xcb_get_geometry(ps->c, drawable), NULL);
+	auto r = xcb_get_geometry_reply(ps->c.c, xcb_get_geometry(ps->c.c, drawable), NULL);
 	if (!r) {
 		log_trace("Drawable %#010x: Failed", drawable);
 		return;

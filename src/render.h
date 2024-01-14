@@ -37,9 +37,7 @@ void render(session_t *ps, int x, int y, int dx, int dy, int w, int h, int fullw
             const glx_prog_main_t *pprogram, clip_t *clip);
 void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint);
 
-void paint_all(session_t *ps, struct managed_win *const t, bool ignore_damage);
-
-void free_picture(xcb_connection_t *c, xcb_render_picture_t *p);
+void paint_all(session_t *ps, struct managed_win *const t);
 
 void free_paint(session_t *ps, paint_t *ppaint);
 void free_root_tile(session_t *ps);

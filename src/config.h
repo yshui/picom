@@ -73,6 +73,27 @@ enum blur_method {
 
 typedef struct _c2_lptr c2_lptr_t;
 
+enum vblank_scheduler_type {
+	/// X Present extension based vblank events
+	VBLANK_SCHEDULER_PRESENT,
+	/// GLX_SGI_video_sync based vblank events
+	VBLANK_SCHEDULER_SGI_VIDEO_SYNC,
+	/// An invalid scheduler, served as a scheduler count, and
+	/// as a sentinel value.
+	LAST_VBLANK_SCHEDULER,
+};
+
+extern const char *vblank_scheduler_str[];
+
+/// Internal, private options for debugging and development use.
+struct debug_options {
+	/// Try to reduce frame latency by using vblank interval and render time
+	/// estimates. Right now it's not working well across drivers.
+	int smart_frame_pacing;
+	/// Override the vblank scheduler chosen by the compositor.
+	int force_vblank_scheduler;
+};
+
 /// Structure representing all options.
 typedef struct options {
 	// === Debugging ===
@@ -140,6 +161,8 @@ typedef struct options {
 	bool vsync_use_glfinish;
 	/// Whether use damage information to help limit the area to paint
 	bool use_damage;
+	/// Disable frame pacing
+	bool no_frame_pacing;
 
 	// === Shadow ===
 	/// Red, green and blue tone of the shadow.
@@ -153,8 +176,8 @@ typedef struct options {
 	c2_lptr_t *shadow_blacklist;
 	/// Whether bounding-shaped window should be ignored.
 	bool shadow_ignore_shaped;
-	/// Whether to crop shadow to the very Xinerama screen.
-	bool xinerama_shadow_crop;
+	/// Whether to crop shadow to the very X RandR monitor.
+	bool crop_shadow_to_monitor;
 	/// Don't draw shadow over these windows. A linked list of conditions.
 	c2_lptr_t *shadow_clip_list;
 
@@ -228,6 +251,8 @@ typedef struct options {
 	int corner_radius;
 	/// Rounded corners blacklist. A linked list of conditions.
 	c2_lptr_t *rounded_corners_blacklist;
+	/// Rounded corner rules. A linked list of conditions.
+	c2_lptr_t *corner_radius_rules;
 
 	// === Focus related ===
 	/// Whether to try to detect WM windows and mark them as focused.
@@ -256,6 +281,10 @@ typedef struct options {
 	/// A list of conditions of windows to which transparent clipping
 	/// should not apply
 	c2_lptr_t *transparent_clipping_blacklist;
+
+	bool dithered_present;
+
+	struct debug_options debug_options;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
@@ -264,7 +293,7 @@ bool must_use parse_long(const char *, long *);
 bool must_use parse_int(const char *, int *);
 struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg, int *count);
 bool must_use parse_geometry(session_t *, const char *, region_t *);
-bool must_use parse_rule_opacity(c2_lptr_t **, const char *);
+bool must_use parse_numeric_window_rule(c2_lptr_t **, const char *, long, long);
 bool must_use parse_rule_window_shader(c2_lptr_t **, const char *, const char *);
 char *must_use locate_auxiliary_file(const char *scope, const char *path,
                                      const char *include_dir);

@@ -11,11 +11,6 @@
 
 #include "uthash_extra.h"
 
-// FIXME shouldn't need this
-#ifdef CONFIG_OPENGL
-#include <GL/gl.h>
-#endif
-
 #include "c2.h"
 #include "compiler.h"
 #include "list.h"
@@ -31,11 +26,12 @@ typedef struct session session_t;
 typedef struct _glx_texture glx_texture_t;
 
 #define win_stack_foreach_managed(w, win_stack)                                          \
-	list_foreach(struct managed_win, w, win_stack, base.stack_neighbour) if (w->base.managed)
+	list_foreach(struct managed_win, w, win_stack,                                   \
+	             base.stack_neighbour) if ((w)->base.managed)
 
 #define win_stack_foreach_managed_safe(w, win_stack)                                     \
 	list_foreach_safe(struct managed_win, w, win_stack,                              \
-	                  base.stack_neighbour) if (w->base.managed)
+	                  base.stack_neighbour) if ((w)->base.managed)
 
 #ifdef CONFIG_OPENGL
 // FIXME this type should be in opengl.h
@@ -123,8 +119,8 @@ struct managed_win {
 	struct win_geometry g;
 	/// Updated geometry received in events
 	struct win_geometry pending_g;
-	/// Xinerama screen this window is on.
-	int xinerama_scr;
+	/// X RandR monitor this window is on.
+	int randr_monitor;
 	/// Window visual pict format
 	const xcb_render_pictforminfo_t *pictfmt;
 	/// Client window visual pict format
@@ -345,7 +341,9 @@ void win_recheck_client(session_t *ps, struct managed_win *w);
  */
 double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w);
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
-void win_update_screen(int nscreens, region_t *screens, struct managed_win *w);
+
+void win_update_monitor(struct x_monitors *monitors, struct managed_win *mw);
+
 /**
  * Retrieve the bounding shape of a window.
  */

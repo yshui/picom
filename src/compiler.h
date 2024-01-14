@@ -7,7 +7,9 @@
 #endif
 
 // clang-format off
+#if __STDC_VERSION__ <= 201710L
 #define auto           __auto_type
+#endif
 #define likely(x)      __builtin_expect(!!(x), 1)
 #define unlikely(x)    __builtin_expect(!!(x), 0)
 #define likely_if(x)   if (likely(x))
@@ -101,10 +103,12 @@
 # endif
 #endif
 
-#if defined(__GNUC__) || defined(__clang__)
-# define unreachable __builtin_unreachable()
-#else
-# define unreachable do {} while(0)
+#ifndef unreachable
+# if defined(__GNUC__) || defined(__clang__)
+#  define unreachable() __builtin_unreachable()
+# else
+#  define unreachable() do {} while(0)
+# endif
 #endif
 
 #ifndef __has_include

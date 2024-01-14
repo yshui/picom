@@ -35,6 +35,7 @@ typedef struct {
 	GLint uniform_opacity;
 	GLint uniform_invert_color;
 	GLint uniform_tex;
+	GLint uniform_effective_size;
 	GLint uniform_dim;
 	GLint uniform_brightness;
 	GLint uniform_max_brightness;
@@ -77,7 +78,7 @@ typedef struct {
 	GLint color_loc;
 } gl_fill_shader_t;
 
-/// @brief Wrapper of a binded GLX texture.
+/// @brief Wrapper of a binded GL texture.
 struct gl_texture {
 	int refcount;
 	bool has_alpha;
@@ -107,7 +108,12 @@ struct gl_data {
 	gl_fill_shader_t fill_shader;
 	gl_shadow_shader_t shadow_shader;
 	GLuint back_texture, back_fbo;
+	GLint back_format;
+	GLuint frame_timing[2];
+	int current_frame_timing;
 	GLuint present_prog;
+
+	bool dithered_present;
 
 	GLuint default_mask_texture;
 
@@ -126,6 +132,7 @@ typedef struct session session_t;
 #define GL_PROG_MAIN_INIT                                                                \
 	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
 
+void gl_prepare(backend_t *base, const region_t *reg);
 void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst,
                       int extent_height, int texture_height, int root_height,
                       bool y_inverted, GLint *coord, GLuint *indices);
@@ -139,6 +146,7 @@ void gl_destroy_window_shader(backend_t *backend_data, void *shader);
 uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
 bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
                            void *image_data, void *args);
+bool gl_last_render_time(backend_t *backend_data, struct timespec *time);
 
 /**
  * @brief Render a region with texture data.
@@ -163,10 +171,10 @@ void *gl_clone(backend_t *base, const void *image_data, const region_t *reg_visi
 
 bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mask_dst,
              const region_t *reg_blur, const region_t *reg_visible);
-bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask,
-                  coord_t mask_dst, const region_t *reg_blur,
-                  const region_t *reg_visible attr_unused, GLuint source_texture,
-                  geometry_t source_size, GLuint target_fbo, GLuint default_mask);
+bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask, coord_t mask_dst,
+                  const region_t *reg_blur, const region_t *reg_visible attr_unused,
+                  GLuint source_texture, geometry_t source_size, GLuint target_fbo,
+                  GLuint default_mask, bool high_precision);
 void *gl_create_blur_context(backend_t *base, enum blur_method, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
 struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double radius);
@@ -180,10 +188,6 @@ void gl_fill(backend_t *base, struct color, const region_t *clip);
 void gl_present(backend_t *base, const region_t *);
 bool gl_read_pixel(backend_t *base, void *image_data, int x, int y, struct color *output);
 enum device_status gl_device_status(backend_t *base);
-
-static inline void gl_delete_texture(GLuint texture) {
-	glDeleteTextures(1, &texture);
-}
 
 /**
  * Get a textual representation of an OpenGL error.
@@ -211,7 +215,7 @@ static inline const char *gl_get_err_str(GLenum err) {
 }
 
 /**
- * Check for GLX error.
+ * Check for GL error.
  *
  * http://blog.nobel-joergensen.com/2013/01/29/debugging-opengl-using-glgeterror/
  */
@@ -222,10 +226,10 @@ static inline void gl_check_err_(const char *func, int line) {
 		const char *errtext = gl_get_err_str(err);
 		if (errtext) {
 			log_printf(tls_logger, LOG_LEVEL_ERROR, func,
-			           "GLX error at line %d: %s", line, errtext);
+			           "GL error at line %d: %s", line, errtext);
 		} else {
 			log_printf(tls_logger, LOG_LEVEL_ERROR, func,
-			           "GLX error at line %d: %d", line, err);
+			           "GL error at line %d: %d", line, err);
 		}
 	}
 }
@@ -262,7 +266,7 @@ static inline bool gl_check_fb_complete_(const char *func, int line, GLenum fb) 
 #define gl_check_fb_complete(fb) gl_check_fb_complete_(__func__, __LINE__, (fb))
 
 /**
- * Check if a GLX extension exists.
+ * Check if a GL extension exists.
  */
 static inline bool gl_has_extension(const char *ext) {
 	int nexts = 0;
@@ -288,5 +292,6 @@ static const GLuint vert_in_texcoord_loc = 1;
 #define QUOTE(...) #__VA_ARGS__
 
 extern const char vertex_shader[], copy_with_mask_frag[], masking_glsl[], dummy_frag[],
-    fill_frag[], fill_vert[], interpolating_frag[], interpolating_vert[], win_shader_glsl[],
-    win_shader_default[], present_vertex_shader[], shadow_colorization_frag[];
+    present_frag[], fill_frag[], fill_vert[], interpolating_frag[], interpolating_vert[],
+    win_shader_glsl[], win_shader_default[], present_vertex_shader[], dither_glsl[],
+    shadow_colorization_frag[];
