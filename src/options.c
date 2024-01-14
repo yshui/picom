@@ -510,8 +510,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			         "--crop-shadow-to-monitor instead.");
 			break;
 		case 274:
-			log_warn("--sw-opti has been deprecated, please remove it from the "
+			log_error("--sw-opti has been deprecated, please remove it from the "
 			         "command line options");
+			failed = true;
 			break;
 		case 275:
 			// --vsync-aggressive

@@ -478,7 +478,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	// --sw-opti
 	if (lcfg_lookup_bool(&cfg, "sw-opti", &bval)) {
-		log_warn("The sw-opti %s", deprecation_message);
+		log_error("The sw-opti %s", deprecation_message);
+		goto err;
 	}
 	// --use-ewmh-active-win
 	lcfg_lookup_bool(&cfg, "use-ewmh-active-win", &opt->use_ewmh_active_win);
