@@ -222,6 +222,8 @@ collect_vblank_interval_statistics(struct vblank_event *e, void *ud) {
 		log_warn("PresentCompleteNotify msc is going backwards, last_msc: "
 		         "%" PRIu64 ", current msc: %" PRIu64,
 		         ps->last_msc, e->msc);
+		ps->last_msc_instant = 0;
+		ps->last_msc = 0;
 	}
 
 	vblank_interval = render_statistics_get_vblank_time(&ps->render_stats);
