@@ -19,6 +19,7 @@
 ## Build changes
 
 * Dependency `pcre` has been replaced by `pcre2`.
+* New dependency `xcb-util`.
 * `xinerama` is no longer used.
 
 ## Deprecations
