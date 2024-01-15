@@ -1,3 +1,10 @@
+# Unreleased
+
+## Deprecations
+
+* Uses of `--sw-opti`, and `--respect-prop-shadow` are now hard errors.
+* `-F` has been removed completely. It was deprecated before the picom fork.
+
 # v11-rc1 (2024-Jan-14)
 
 ## Notable features

@@ -306,7 +306,7 @@ static void usage(const char *argv0, int ret) {
 	}
 }
 
-static const char *shortopts = "D:I:O:r:o:m:l:t:i:e:hscnfFCazGb";
+static const char *shortopts = "D:I:O:r:o:m:l:t:i:e:hscnfCazGb";
 
 /// Get config options that are needed to parse the rest of the options
 /// Return true if we should quit
@@ -426,7 +426,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->wintype_option[WINTYPE_DROPDOWN_MENU].opacity = tmp;
 			break;
 		case 'f':
-		case 'F':
 			fading_enable = true;
 			break;
 		P_CASEINT('r', shadow_radius);
@@ -511,8 +510,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			         "--crop-shadow-to-monitor instead.");
 			break;
 		case 274:
-			log_warn("--sw-opti has been deprecated, please remove it from the "
+			log_error("--sw-opti has been deprecated, please remove it from the "
 			         "command line options");
+			failed = true;
 			break;
 		case 275:
 			// --vsync-aggressive
@@ -523,9 +523,10 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(276, use_ewmh_active_win);
 		case 277:
 			// --respect-prop-shadow
-			log_warn("--respect-prop-shadow option has been deprecated, its "
+			log_error("--respect-prop-shadow option has been deprecated, its "
 			         "functionality will always be enabled. Please remove it "
 			         "from the command line options");
+			failed = true;
 			break;
 		P_CASEBOOL(278, unredir_if_possible);
 		case 279:
