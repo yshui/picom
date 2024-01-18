@@ -28,6 +28,7 @@
 * Dependency `pcre` has been replaced by `pcre2`.
 * New dependency `xcb-util`.
 * `xinerama` is no longer used.
+* `picom` now tries to give itself a real-time scheduling priority. Please consider giving `picom` the `CAP_SYS_NICE` capacity when packaging it.
 
 ## Deprecations
 
