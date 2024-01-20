@@ -1,5 +1,11 @@
 # Unreleased
 
+# v11 (2024-Jan-20)
+
+## Build changes
+
+* Due to some caveats discovered related to setting the `CAP_SYS_NICE` capability, it is now recommended to **NOT** set this capability for picom.
+
 ## Deprecations
 
 * Uses of `--sw-opti`, and `--respect-prop-shadow` are now hard errors.
@@ -28,7 +34,7 @@
 * Dependency `pcre` has been replaced by `pcre2`.
 * New dependency `xcb-util`.
 * `xinerama` is no longer used.
-* `picom` now tries to give itself a real-time scheduling priority. Please consider giving `picom` the `CAP_SYS_NICE` capacity when packaging it.
+* `picom` now tries to give itself a real-time scheduling priority. ~~Please consider giving `picom` the `CAP_SYS_NICE` capability when packaging it.~~
 
 ## Deprecations
 
