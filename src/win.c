@@ -2339,6 +2339,13 @@ bool destroy_win_start(session_t *ps, struct win *w) {
 			add_damage_from_win(ps, mw);
 		}
 
+		if (win_check_flags_all(mw, WIN_FLAGS_CLIENT_STALE)) {
+			mw->client_win = mw->base.id;
+			mw->wmwin = !mw->a.override_redirect;
+			log_debug("(%#010x): client self (%s)", mw->base.id,
+			          (mw->wmwin ? "wmwin" : "override-redirected"));
+		}
+
 		// Clear some flags about stale window information. Because now
 		// the window is destroyed, we can't update them anyway.
 		win_clear_flags(mw, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE |

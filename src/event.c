@@ -270,11 +270,6 @@ static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *
 	if (w != NULL) {
 		auto _ attr_unused = destroy_win_start(ps, w);
 	} else if (mw != NULL) {
-		// XXX the hope here is the WM will destroy the frame window
-		// quickly after the client window is destroyed. Otherwise a
-		// frame window without a client window would linger around. Who
-		// knows what kind of bugs it could cause. This has caused at
-		// least one: #704
 		win_unmark_client(ps, mw);
 		win_set_flags(mw, WIN_FLAGS_CLIENT_STALE);
 		ps->pending_updates = true;
