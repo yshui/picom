@@ -470,8 +470,8 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	// Whether the window was visible before we process the mapped flag. i.e.
 	// is the window just mapped.
 	bool was_visible = win_is_real_visible(w);
-	log_trace("Processing flags for window %#010x (%s), was visible: %d", w->base.id,
-	          w->name, was_visible);
+	log_trace("Processing flags for window %#010x (%s), was visible: %d, flags: %#lx",
+	          w->base.id, w->name, was_visible, w->flags);
 
 	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
 		map_win_start(ps, w);
@@ -1253,6 +1253,10 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
  * Update cache data in struct _win that depends on window size.
  */
 void win_on_win_size_change(session_t *ps, struct managed_win *w) {
+	log_trace("Window %#010x (%s) size changed, was %dx%d, now %dx%d", w->base.id,
+	          w->name, w->widthb, w->heightb, w->g.width + w->g.border_width * 2,
+	          w->g.height + w->g.border_width * 2);
+
 	w->widthb = w->g.width + w->g.border_width * 2;
 	w->heightb = w->g.height + w->g.border_width * 2;
 	w->shadow_dx = ps->o.shadow_offset_x;
