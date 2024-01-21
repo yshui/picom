@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 /*
- * Compton - a compositor for X11
+ * picom - a compositor for X11
  *
+ * Based on `compton` - Copyright (c) 2011-2013, Christopher Jeffrey
  * Based on `xcompmgr` - Copyright (c) 2003, Keith Packard
  *
- * Copyright (c) 2011-2013, Christopher Jeffrey
+ * Copyright (c) 2019-2023, Yuxuan Shui
+ *
  * See LICENSE-mit for more information.
  *
  */
