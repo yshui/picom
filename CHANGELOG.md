@@ -1,5 +1,9 @@
 # Unreleased
 
+## Bug fixes
+
+* Fix missing fading on window close for some window managers. (#704)
+
 # v11 (2024-Jan-20)
 
 ## Build changes
