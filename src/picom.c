@@ -980,8 +980,9 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		if (w->state == WSTATE_UNMAPPED) {
 			log_trace("|- is unmapped");
 			to_paint = false;
-		} else if (unlikely(w->base.id == ps->debug_window ||
-		                    w->client_win == ps->debug_window)) {
+		} else if (unlikely(ps->debug_window != XCB_NONE) &&
+		           (w->base.id == ps->debug_window ||
+		            w->client_win == ps->debug_window)) {
 			log_trace("|- is the debug window");
 			to_paint = false;
 		} else if (!w->ever_damaged && w->state != WSTATE_UNMAPPING &&
