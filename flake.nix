@@ -24,11 +24,16 @@
     overlays = [ overlay ];
   in rec {
     inherit overlay overlays;
-    defaultPackage = pkgs.picom;
+    defaultPackage = pkgs.picom.overrideAttrs {
+      version = "11";
+      src = ./.;
+    };
     devShell = defaultPackage.overrideAttrs {
       buildInputs = defaultPackage.buildInputs ++ [
-        pkgs.clang-tools
+        pkgs.clang-tools_17
+        pkgs.llvmPackages_17.clang-unwrapped.python
       ];
+      hardeningDisable = [ "fortify" ];
     };
   });
 }
