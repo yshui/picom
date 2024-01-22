@@ -973,9 +973,11 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		// Give up if it's not damaged or invisible, or it's unmapped and its
 		// pixmap is gone (for example due to a ConfigureNotify), or when it's
 		// excluded
-		if (w->state == WSTATE_UNMAPPED ||
-		    unlikely(w->base.id == ps->debug_window ||
-		             w->client_win == ps->debug_window)) {
+		if (w->state == WSTATE_UNMAPPED) {
+			to_paint = false;
+		} else if (unlikely(ps->debug_window != XCB_NONE) &&
+		           (w->base.id == ps->debug_window ||
+		            w->client_win == ps->debug_window)) {
 			to_paint = false;
 		} else if (!w->ever_damaged && w->state != WSTATE_UNMAPPING &&
 		           w->state != WSTATE_DESTROYING) {
