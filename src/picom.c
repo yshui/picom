@@ -2567,9 +2567,7 @@ void set_rr_scheduling(void) {
 	param.sched_priority = priority;
 	ret = sched_setscheduler(0, SCHED_RR, &param);
 	if (ret != 0) {
-		log_info("Failed to set real-time scheduling priority to %d. Consider "
-		         "giving picom the CAP_SYS_NICE capability",
-		         priority);
+		log_info("Failed to set real-time scheduling priority to %d.", priority);
 		return;
 	}
 	log_info("Set real-time scheduling priority to %d", priority);
