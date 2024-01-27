@@ -28,6 +28,7 @@
     devShell = defaultPackage.overrideAttrs {
       buildInputs = defaultPackage.buildInputs ++ [
         pkgs.clang-tools
+        pkgs.llvmPackages_14.clang-unwrapped.python
       ];
     };
   });
