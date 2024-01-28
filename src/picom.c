@@ -68,6 +68,7 @@
 #include "file_watch.h"
 #include "list.h"
 #include "options.h"
+#include "rtkit.h"
 #include "statistics.h"
 #include "uthash_extra.h"
 #include "vblank.h"
@@ -2613,12 +2614,17 @@ err:
 void set_rr_scheduling(void) {
 	int priority = sched_get_priority_min(SCHED_RR);
 
-	int ret;
+	if (rtkit_make_realtime(0, priority)) {
+		log_info("Set realtime priority to %d with rtkit.", priority);
+		return;
+	}
+
+	// Fallback to use pthread_setschedparam
 	struct sched_param param;
 	int old_policy;
-	ret = pthread_getschedparam(pthread_self(), &old_policy, &param);
+	int ret = pthread_getschedparam(pthread_self(), &old_policy, &param);
 	if (ret != 0) {
-		log_debug("Failed to get old scheduling priority");
+		log_info("Couldn't get old scheduling priority.");
 		return;
 	}
 
@@ -2626,14 +2632,11 @@ void set_rr_scheduling(void) {
 
 	ret = pthread_setschedparam(pthread_self(), SCHED_RR, &param);
 	if (ret != 0) {
-		log_info("Failed to set real-time scheduling priority to %d. Consider "
-		         "giving picom the CAP_SYS_NICE capability or equivalent "
-		         "support.",
-		         priority);
+		log_info("Couldn't set real-time scheduling priority to %d.", priority);
 		return;
 	}
 
-	log_info("Set real-time scheduling priority to %d", priority);
+	log_info("Set real-time scheduling priority to %d.", priority);
 }
 
 /**

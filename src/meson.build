@@ -66,7 +66,7 @@ endif
 if get_option('dbus')
 	cflags += ['-DCONFIG_DBUS']
 	deps += [dependency('dbus-1', required: true)]
-	srcs += [ 'dbus.c' ]
+	srcs += [ 'dbus.c', 'rtkit.c' ]
 endif
 
 if get_option('xrescheck')
