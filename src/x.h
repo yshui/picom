@@ -321,6 +321,9 @@ x_create_picture_with_visual(struct x_connection *, int w, int h, xcb_visualid_t
 /// Fetch a X region and store it in a pixman region
 bool x_fetch_region(struct x_connection *, xcb_xfixes_region_t r, region_t *res);
 
+/// Set an X region to a pixman region
+bool x_set_region(struct x_connection *c, xcb_xfixes_region_t dst, const region_t *src);
+
 /// Create a X region from a pixman region
 uint32_t x_create_region(struct x_connection *c, const region_t *reg);
 
