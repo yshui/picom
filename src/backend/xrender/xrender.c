@@ -56,6 +56,10 @@ typedef struct _xrender_data {
 	int target_width, target_height;
 
 	xcb_special_event_t *present_event;
+
+	/// Cache an X region to avoid creating and destroying it every frame. A
+	/// workaround for yshui/picom#1166.
+	xcb_xfixes_region_t present_region;
 } xrender_data;
 
 struct _xrender_blur_context {
@@ -597,6 +601,7 @@ static void deinit(backend_t *backend_data) {
 			xcb_free_pixmap(xd->base.c->c, xd->back_pixmap[i]);
 		}
 	}
+	x_destroy_region(xd->base.c, xd->present_region);
 	if (xd->present_event) {
 		xcb_unregister_for_special_event(xd->base.c->c, xd->present_event);
 	}
@@ -624,16 +629,15 @@ static void present(backend_t *base, const region_t *region) {
 		                     XCB_NONE, xd->back[xd->curr_back], orig_x, orig_y, 0,
 		                     0, orig_x, orig_y, region_width, region_height);
 
-		auto xregion = x_create_region(base->c, region);
-
 		// Make sure we got reply from PresentPixmap before waiting for events,
 		// to avoid deadlock
 		auto e = xcb_request_check(
-		    base->c->c, xcb_present_pixmap_checked(
-		                    xd->base.c->c, xd->target_win,
-		                    xd->back_pixmap[xd->curr_back], 0, XCB_NONE, xregion, 0,
-		                    0, XCB_NONE, XCB_NONE, XCB_NONE, 0, 0, 0, 0, 0, NULL));
-		x_destroy_region(base->c, xregion);
+		    base->c->c,
+		    xcb_present_pixmap_checked(
+		        base->c->c, xd->target_win, xd->back_pixmap[xd->curr_back], 0, XCB_NONE,
+		        x_set_region(base->c, xd->present_region, region) ? xd->present_region
+		                                                          : XCB_NONE,
+		        0, 0, XCB_NONE, XCB_NONE, XCB_NONE, 0, 0, 0, 0, 0, NULL));
 		if (e) {
 			log_error("Failed to present pixmap");
 			free(e);
@@ -927,6 +931,10 @@ static backend_t *backend_xrender_init(session_t *ps, xcb_window_t target) {
 		}
 	} else {
 		xd->vsync = false;
+	}
+
+	if (xd->vsync) {
+		xd->present_region = x_create_region(&ps->c, &ps->screen_reg);
 	}
 
 	// We might need to do double buffering for vsync, and buffer 0 and 1 are for
