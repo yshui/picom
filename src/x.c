@@ -459,6 +459,34 @@ bool x_fetch_region(struct x_connection *c, xcb_xfixes_region_t r, pixman_region
 	return ret;
 }
 
+bool x_set_region(struct x_connection *c, xcb_xfixes_region_t dst, const region_t *src) {
+	if (!src || dst == XCB_NONE) {
+		return false;
+	}
+
+	int32_t nrects = 0;
+	const rect_t *rects = pixman_region32_rectangles((region_t *)src, &nrects);
+	if (!rects || nrects < 1) {
+		return false;
+	}
+
+	xcb_rectangle_t *xrects = ccalloc(nrects, xcb_rectangle_t);
+	for (int32_t i = 0; i < nrects; i++) {
+		xrects[i] =
+		    (xcb_rectangle_t){.x = to_i16_checked(rects[i].x1),
+		                      .y = to_i16_checked(rects[i].y1),
+		                      .width = to_u16_checked(rects[i].x2 - rects[i].x1),
+		                      .height = to_u16_checked(rects[i].y2 - rects[i].y1)};
+	}
+
+	bool success =
+	    XCB_AWAIT_VOID(xcb_xfixes_set_region, c->c, dst, to_u32_checked(nrects), xrects);
+
+	free(xrects);
+
+	return success;
+}
+
 uint32_t x_create_region(struct x_connection *c, const region_t *reg) {
 	if (!reg) {
 		return XCB_NONE;
