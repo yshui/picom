@@ -23,6 +23,10 @@
 * Fix window shader not having an effect when frame opacity is enabled (#1174)
 * Fix binding root pixmap in case of depth mismatch (#984)
 
+## Dependency changes
+
+* picom now optionally depends on `rtkit` at runtime to give itself realtime scheduling priority.
+
 # v11.1 (2024-Jan-28)
 
 ## Bug fixes
