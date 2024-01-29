@@ -1139,14 +1139,14 @@ static void win_determine_blur_background(session_t *ps, struct managed_win *w) 
  * Determine if a window should have rounded corners.
  */
 static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) {
-	if (ps->o.corner_radius == 0) {
-		w->corner_radius = 0;
-		return;
-	}
-
 	void *radius_override = NULL;
 	if (c2_match(ps, w, ps->o.corner_radius_rules, &radius_override)) {
 		log_debug("Matched corner rule! %d", w->corner_radius);
+	}
+
+	if (ps->o.corner_radius == 0 && !radius_override) {
+		w->corner_radius = 0;
+		return;
 	}
 
 	// Don't round full screen windows & excluded windows,
