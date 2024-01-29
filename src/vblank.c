@@ -18,7 +18,6 @@
 #include <X11/Xutil.h>
 #include <pthread.h>
 
-#include "backend/gl/glx.h"
 #endif
 
 #include "compiler.h"
@@ -95,6 +94,8 @@ struct sgi_video_sync_thread_args {
 	pthread_mutex_t start_mtx;
 	pthread_cond_t start_cnd;
 };
+
+static PFNGLXWAITVIDEOSYNCSGIPROC glXWaitVideoSyncSGI;
 
 static bool check_sgi_video_sync_extension(Display *dpy, int screen) {
 	const char *glx_ext = glXQueryExtensionsString(dpy, screen);
