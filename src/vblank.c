@@ -64,7 +64,7 @@ struct vblank_scheduler_ops {
 	size_t size;
 	void (*init)(struct vblank_scheduler *self);
 	void (*deinit)(struct vblank_scheduler *self);
-	void (*schedule)(struct vblank_scheduler *self);
+	bool (*schedule)(struct vblank_scheduler *self);
 	bool (*handle_x_events)(struct vblank_scheduler *self);
 };
 
@@ -240,7 +240,7 @@ cleanup:
 	return NULL;
 }
 
-static void sgi_video_sync_scheduler_schedule(struct vblank_scheduler *base) {
+static bool sgi_video_sync_scheduler_schedule(struct vblank_scheduler *base) {
 	auto self = (struct sgi_video_sync_vblank_scheduler *)base;
 	log_verbose("Requesting vblank event for msc %d", self->last_msc + 1);
 	pthread_mutex_lock(&self->vblank_requested_mtx);
@@ -248,6 +248,7 @@ static void sgi_video_sync_scheduler_schedule(struct vblank_scheduler *base) {
 	base->vblank_event_requested = true;
 	pthread_cond_signal(&self->vblank_requested_cnd);
 	pthread_mutex_unlock(&self->vblank_requested_mtx);
+	return true;
 }
 
 static void
@@ -309,13 +310,14 @@ static void sgi_video_sync_scheduler_deinit(struct vblank_scheduler *base) {
 }
 #endif
 
-static void present_vblank_scheduler_schedule(struct vblank_scheduler *base) {
+static bool present_vblank_scheduler_schedule(struct vblank_scheduler *base) {
 	auto self = (struct present_vblank_scheduler *)base;
 	log_verbose("Requesting vblank event for window 0x%08x, msc %" PRIu64,
 	            base->target_window, self->last_msc + 1);
 	assert(!base->vblank_event_requested);
 	x_request_vblank_event(base->c, base->target_window, self->last_msc + 1);
 	base->vblank_event_requested = true;
+	return true;
 }
 
 static void present_vblank_callback(EV_P attr_unused, ev_timer *w, int attr_unused revents) {
@@ -440,17 +442,19 @@ static const struct vblank_scheduler_ops vblank_scheduler_ops[LAST_VBLANK_SCHEDU
 #endif
 };
 
-static void vblank_scheduler_schedule_internal(struct vblank_scheduler *self) {
+static bool vblank_scheduler_schedule_internal(struct vblank_scheduler *self) {
 	assert(self->type < LAST_VBLANK_SCHEDULER);
 	auto fn = vblank_scheduler_ops[self->type].schedule;
 	assert(fn != NULL);
-	fn(self);
+	return fn(self);
 }
 
 bool vblank_scheduler_schedule(struct vblank_scheduler *self,
                                vblank_callback_t vblank_callback, void *user_data) {
 	if (self->callback_count == 0 && self->wind_down == 0) {
-		vblank_scheduler_schedule_internal(self);
+		if (!vblank_scheduler_schedule_internal(self)) {
+			return false;
+		}
 	}
 	if (self->callback_count == self->callback_capacity) {
 		size_t new_capacity =
