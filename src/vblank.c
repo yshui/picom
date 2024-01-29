@@ -62,7 +62,7 @@ struct present_vblank_scheduler {
 
 struct vblank_scheduler_ops {
 	size_t size;
-	void (*init)(struct vblank_scheduler *self);
+	bool (*init)(struct vblank_scheduler *self);
 	void (*deinit)(struct vblank_scheduler *self);
 	bool (*schedule)(struct vblank_scheduler *self);
 	bool (*handle_x_events)(struct vblank_scheduler *self);
@@ -263,12 +263,13 @@ sgi_video_sync_scheduler_callback(EV_P attr_unused, ev_async *w, int attr_unused
 	vblank_scheduler_invoke_callbacks(&sched->base, &event);
 }
 
-static void sgi_video_sync_scheduler_init(struct vblank_scheduler *base) {
+static bool sgi_video_sync_scheduler_init(struct vblank_scheduler *base) {
 	auto self = (struct sgi_video_sync_vblank_scheduler *)base;
 	auto args = (struct sgi_video_sync_thread_args){
 	    .self = self,
 	    .start_status = -1,
 	};
+	bool succeeded = true;
 	pthread_mutex_init(&args.start_mtx, NULL);
 	pthread_cond_init(&args.start_cnd, NULL);
 
@@ -288,11 +289,13 @@ static void sgi_video_sync_scheduler_init(struct vblank_scheduler *base) {
 	if (args.start_status != 0) {
 		log_fatal("Failed to start sgi_video_sync_thread, error code: %d",
 		          args.start_status);
-		abort();
+		succeeded = false;
+	} else {
+		log_info("Started sgi_video_sync_thread");
 	}
 	pthread_mutex_destroy(&args.start_mtx);
 	pthread_cond_destroy(&args.start_cnd);
-	log_info("Started sgi_video_sync_thread");
+	return succeeded;
 }
 
 static void sgi_video_sync_scheduler_deinit(struct vblank_scheduler *base) {
@@ -330,7 +333,7 @@ static void present_vblank_callback(EV_P attr_unused, ev_timer *w, int attr_unus
 	vblank_scheduler_invoke_callbacks(&sched->base, &event);
 }
 
-static void present_vblank_scheduler_init(struct vblank_scheduler *base) {
+static bool present_vblank_scheduler_init(struct vblank_scheduler *base) {
 	auto self = (struct present_vblank_scheduler *)base;
 	base->type = VBLANK_SCHEDULER_PRESENT;
 	ev_timer_init(&self->callback_timer, present_vblank_callback, 0, 0);
@@ -342,6 +345,7 @@ static void present_vblank_scheduler_init(struct vblank_scheduler *base) {
 	set_cant_fail_cookie(base->c, select_input);
 	self->event =
 	    xcb_register_for_special_xge(base->c->c, &xcb_present_id, self->event_id, NULL);
+	return true;
 }
 
 static void present_vblank_scheduler_deinit(struct vblank_scheduler *base) {
