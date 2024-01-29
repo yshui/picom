@@ -19,7 +19,7 @@ void apply_driver_workarounds(struct session *ps, enum driver driver) {
 	}
 }
 
-enum vblank_scheduler_type choose_vblank_scheduler(enum driver driver) {
+enum vblank_scheduler_type choose_vblank_scheduler(enum driver driver attr_unused) {
 	enum vblank_scheduler_type type = VBLANK_SCHEDULER_PRESENT;
 #ifdef CONFIG_OPENGL
 	if (driver & DRIVER_NVIDIA) {
