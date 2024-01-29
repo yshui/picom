@@ -1,5 +1,6 @@
 # Build files
 .deps
+.direnv
 aclocal.m4
 autom4te.cache
 config.log
