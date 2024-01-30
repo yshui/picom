@@ -1,6 +1,6 @@
 # Unreleased
 
-## Bug fixes
+## New features
 
 * Allow `corner-radius-rules` to override `corner-radius = 0`. Previously setting corner radius to 0 globally disables rounded corners. (#1170)
 
