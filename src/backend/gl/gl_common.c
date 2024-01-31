@@ -185,7 +185,7 @@ void gl_destroy_window_shader(backend_t *backend_data attr_unused, void *shader)
  * @note In order to reduce number of textures which needs to be
  * allocated and deleted during this recursive render
  * we reuse the same two textures for render source and
- * destination simply by alterating between them.
+ * destination simply by alternating between them.
  * Unfortunately on first iteration source_texture might
  * be read-only. In this case we will select auxiliary_texture as
  * destination_texture in order not to touch that read-only source
@@ -253,7 +253,7 @@ _gl_average_texture_color(backend_t *base, GLuint source_texture, GLuint destina
 
 /*
  * @brief Builds a 1x1 texture which has color corresponding to the average of all
- * pixels of img by recursively rendering into texture of quorter the size (half
+ * pixels of img by recursively rendering into texture of quarter the size (half
  * width and half height).
  * Returned texture must not be deleted, since it's owned by the gl_image. It will be
  * deleted when the gl_image is released.

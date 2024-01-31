@@ -78,7 +78,7 @@ typedef struct {
 	GLint color_loc;
 } gl_fill_shader_t;
 
-/// @brief Wrapper of a binded GL texture.
+/// @brief Wrapper of a bound GL texture.
 struct gl_texture {
 	int refcount;
 	bool has_alpha;

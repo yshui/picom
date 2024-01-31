@@ -222,7 +222,7 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 		((type *)allocchk(calloc((size_t)tmp, sizeof(type))));                   \
 	})
 
-/// @brief Wrapper of ealloc().
+/// @brief Wrapper of realloc().
 #define crealloc(ptr, nmemb)                                                               \
 	({                                                                                 \
 		auto tmp = (nmemb);                                                        \

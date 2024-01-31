@@ -204,7 +204,7 @@ struct backend_operations {
 	 * @param backend_data backend data
 	 * @param pixmap X pixmap to bind
 	 * @param fmt information of the pixmap's visual
-	 * @param owned whether the ownership of the pixmap is transfered to the backend
+	 * @param owned whether the ownership of the pixmap is transferred to the backend
 	 * @return backend internal data structure bound with this pixmap
 	 */
 	void *(*bind_pixmap)(backend_t *backend_data, xcb_pixmap_t pixmap,
@@ -220,7 +220,7 @@ struct backend_operations {
 	                               struct backend_shadow_context *ctx);
 
 	/// Create a shadow image based on the parameters. Resulting image should have a
-	/// size of `width + radisu * 2` x `height + radius * 2`. Radius is set when the
+	/// size of `width + radius * 2` x `height + radius * 2`. Radius is set when the
 	/// shadow context is created.
 	/// Default implementation: default_render_shadow
 	///
@@ -279,9 +279,9 @@ struct backend_operations {
 	bool (*is_image_transparent)(backend_t *backend_data, void *image_data)
 	    attr_nonnull(1, 2);
 
-	/// Get the age of the buffer content we are currently rendering ontop
+	/// Get the age of the buffer content we are currently rendering on top
 	/// of. The buffer that has just been `present`ed has a buffer age of 1.
-	/// Everytime `present` is called, buffers get older. Return -1 if the
+	/// Every time `present` is called, buffers get older. Return -1 if the
 	/// buffer is empty.
 	///
 	/// Optional
@@ -290,7 +290,7 @@ struct backend_operations {
 	/// Get the render time of the last frame. If the render is still in progress,
 	/// returns false. The time is returned in `ts`. Frames are delimited by the
 	/// present() calls. i.e. after a present() call, last_render_time() should start
-	/// reporting the time of the just presen1ted frame.
+	/// reporting the time of the just presented frame.
 	///
 	/// Optional, if not available, the most conservative estimation will be used.
 	bool (*last_render_time)(backend_t *backend_data, struct timespec *ts);

@@ -89,7 +89,7 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
 		fbcfg = ppaint->fbcfg;
 	}
 
-	if (force || !glx_tex_binded(ppaint->ptex, ppaint->pixmap)) {
+	if (force || !glx_tex_bound(ppaint->ptex, ppaint->pixmap)) {
 		return glx_bind_pixmap(ps, &ppaint->ptex, ppaint->pixmap, wid, hei,
 		                       repeat, fbcfg);
 	}
@@ -378,7 +378,7 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
 	}
 
 #ifdef CONFIG_OPENGL
-	if (BKEND_GLX == ps->o.backend && !glx_tex_binded(ppaint->ptex, XCB_NONE)) {
+	if (BKEND_GLX == ps->o.backend && !glx_tex_bound(ppaint->ptex, XCB_NONE)) {
 		return false;
 	}
 #endif

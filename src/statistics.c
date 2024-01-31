@@ -51,10 +51,6 @@ void render_statistics_add_render_time_sample(struct render_statistics *rs, int 
 }
 
 /// How much time budget we should give to the backend for rendering, in microseconds.
-///
-/// A `divisor` is also returned, indicating the target framerate. The divisor is
-/// the number of vblanks we should wait between each frame. A divisor of 1 means
-/// full framerate, 2 means half framerate, etc.
 unsigned int render_statistics_get_budget(struct render_statistics *rs) {
 	if (rs->render_times.nelem < rs->render_times.window_size) {
 		// No valid render time estimates yet. Assume maximum budget.

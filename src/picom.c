@@ -270,7 +270,7 @@ enum vblank_callback_action reschedule_render_at_vblank(struct vblank_event *e, 
 ///    is no render currently scheduled. i.e. render_queued == false.
 /// 2. then, we need to figure out the best time to start rendering. we need to
 ///    at least know when the next vblank will start, as we can't start render
-///    before the current rendered frame is diplayed on screen. we have this
+///    before the current rendered frame is displayed on screen. we have this
 ///    information from the vblank scheduler, it will notify us when that happens.
 ///    we might also want to delay the rendering even further to reduce latency,
 ///    this is discussed below, in FUTURE WORKS.
@@ -1869,7 +1869,7 @@ static void x_event_callback(EV_P attr_unused, ev_io *w, int revents attr_unused
 /**
  * Turn on the program reset flag.
  *
- * This will result in the compostior resetting itself after next paint.
+ * This will result in the compositor resetting itself after next paint.
  */
 static void reset_enable(EV_P_ ev_signal *w attr_unused, int revents attr_unused) {
 	log_info("picom is resetting...");
@@ -1946,11 +1946,11 @@ static bool load_shader_source_for_condition(const c2_lptr_t *cond, void *data) 
 /**
  * Initialize a session.
  *
- * @param argc number of commandline arguments
- * @param argv commandline arguments
+ * @param argc number of command line arguments
+ * @param argv command line arguments
  * @param dpy  the X Display
  * @param config_file the path to the config file
- * @param all_xerros whether we should report all X errors
+ * @param all_xerrors whether we should report all X errors
  * @param fork whether we will fork after initialization
  */
 static session_t *session_init(int argc, char **argv, Display *dpy,
@@ -2496,7 +2496,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->server_grabbed = true;
 
 	// We are going to pull latest information from X server now, events sent by X
-	// earlier is irrelavant at this point.
+	// earlier is irrelevant at this point.
 	// A better solution is probably grabbing the server from the very start. But I
 	// think there still could be race condition that mandates discarding the events.
 	x_discard_events(&ps->c);

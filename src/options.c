@@ -316,9 +316,9 @@ bool get_early_config(int argc, char *const *argv, char **config_file, bool *all
 
 	int o = 0, longopt_idx = -1;
 
-	// Pre-parse the commandline arguments to check for --config and invalid
+	// Pre-parse the command line arguments to check for --config and invalid
 	// switches
-	// Must reset optind to 0 here in case we reread the commandline
+	// Must reset optind to 0 here in case we reread the command line
 	// arguments
 	optind = 1;
 	*config_file = NULL;
@@ -370,7 +370,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	// instead of commas in atof().
 	setlocale(LC_NUMERIC, "C");
 
-	// Parse commandline arguments. Range checking will be done later.
+	// Parse command line arguments. Range checking will be done later.
 
 	bool failed = false;
 	const char *deprecation_message attr_unused =
@@ -722,7 +722,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->blur_strength = atoi(optarg);
 			break;
 		case 333:
-			// --cornor-radius
+			// --corner-radius
 			opt->corner_radius = atoi(optarg);
 			break;
 		case 334:

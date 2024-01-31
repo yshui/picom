@@ -563,7 +563,7 @@ static char *locate_auxiliary_file_at(const char *base, const char *scope, const
 }
 
 /**
- * Get a path of an auxiliary file to read, could be a shader file, or any supplimenrary
+ * Get a path of an auxiliary file to read, could be a shader file, or any supplementary
  * file.
  *
  * Follows the XDG specification to search for the shader file in configuration locations.

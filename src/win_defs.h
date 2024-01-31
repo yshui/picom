@@ -68,7 +68,7 @@ typedef enum {
 } winstate_t;
 
 enum win_flags {
-	// Note: *_NONE flags are mostly redudant and meant for detecting logical errors
+	// Note: *_NONE flags are mostly redundant and meant for detecting logical errors
 	// in the code
 
 	/// pixmap is out of date, will be update in win_process_flags

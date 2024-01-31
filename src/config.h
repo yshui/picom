@@ -311,7 +311,7 @@ char **xdg_config_dirs(void);
 /// Parse a configuration file
 /// Returns the actually config_file name used, allocated on heap
 /// Outputs:
-///   shadow_enable = whether shaodw is enabled globally
+///   shadow_enable = whether shadow is enabled globally
 ///   fading_enable = whether fading is enabled globally
 ///   win_option_mask = whether option overrides for specific window type is set for given
 ///                     options

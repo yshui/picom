@@ -29,7 +29,7 @@
 /// made the query when those events were already in the queue. so the reply you got is
 /// more up-to-date than the events). Also, handling events when other client are making
 /// concurrent requests is not good. Because the server states are changing without you
-/// knowning them. This is super racy, and can cause lots of potential problems.
+/// knowing them. This is super racy, and can cause lots of potential problems.
 ///
 /// All of above mandates we do these things:
 ///    1. Grab server when handling events
@@ -324,7 +324,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	}
 
 	if (ev->parent == ps->c.screen_info->root) {
-		// X will generate reparent notifiy even if the parent didn't actually
+		// X will generate reparent notify even if the parent didn't actually
 		// change (i.e. reparent again to current parent). So we check if that's
 		// the case
 		auto w = find_win(ps, ev->window);
@@ -465,7 +465,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 			}
 		}
 
-		// Unconcerned about any other proprties on root window
+		// Unconcerned about any other properties on root window
 		return;
 	}
 
@@ -499,7 +499,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	if (ev->atom == ps->atoms->a_NET_WM_BYPASS_COMPOSITOR) {
-		// Unnecessay until we remove the queue_redraw in ev_handle
+		// Unnecessary until we remove the queue_redraw in ev_handle
 		queue_redraw(ps);
 	}
 

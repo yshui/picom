@@ -1129,7 +1129,7 @@ glx_blur_dst_end:
 // TODO(bhagwan) this is a mess and needs a more consistent way of getting the border
 // pixel I tried looking for a notify event for XCB_CW_BORDER_PIXEL (in
 // xcb_create_window()) or a way to get the pixels from xcb_render_picture_t but the
-// documentation for the xcb_xrender extension is literaly non existent...
+// documentation for the xcb_xrender extension is literally non existent...
 //
 // NOTE(yshui) There is no consistent way to get the "border" color of a X window. From
 // the WM's perspective there are multiple ways to implement window borders. Using

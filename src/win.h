@@ -244,13 +244,13 @@ struct managed_win {
 	switch_t shadow_force;
 	/// Opacity of the shadow. Affected by window opacity and frame opacity.
 	double shadow_opacity;
-	/// X offset of shadow. Affected by commandline argument.
+	/// X offset of shadow. Affected by command line argument.
 	int shadow_dx;
-	/// Y offset of shadow. Affected by commandline argument.
+	/// Y offset of shadow. Affected by command line argument.
 	int shadow_dy;
-	/// Width of shadow. Affected by window size and commandline argument.
+	/// Width of shadow. Affected by window size and command line argument.
 	int shadow_width;
-	/// Height of shadow. Affected by window size and commandline argument.
+	/// Height of shadow. Affected by window size and command line argument.
 	int shadow_height;
 	/// Picture to render shadow. Affected by window size.
 	paint_t shadow_paint;

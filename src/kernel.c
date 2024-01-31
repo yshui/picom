@@ -96,7 +96,7 @@ static inline double estimate_first_row_sum(double size, double r) {
 	// `a` is gaussian at (size, 0)
 	double a = exp(-0.5 * size * size / (r * r)) / sqrt(2 * M_PI) / r;
 	// The sum of the whole kernel is normalized to 1, i.e. each element is divided by
-	// factor sqaured. So the sum of the first row is a * factor / factor^2 = a /
+	// factor squared. So the sum of the first row is a * factor / factor^2 = a /
 	// factor
 	return a / factor;
 }
