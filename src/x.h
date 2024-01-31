@@ -408,6 +408,8 @@ struct xvisual_info x_get_visual_info(struct x_connection *c, xcb_visualid_t vis
 
 xcb_visualid_t x_get_visual_for_standard(struct x_connection *c, xcb_pict_standard_t std);
 
+xcb_visualid_t x_get_visual_for_depth(struct x_connection *c, uint8_t depth);
+
 xcb_render_pictformat_t
 x_get_pictfmt_for_standard(struct x_connection *c, xcb_pict_standard_t std);
 
