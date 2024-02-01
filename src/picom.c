@@ -1158,14 +1158,43 @@ void root_damaged(session_t *ps) {
 		}
 		auto pixmap = x_get_root_back_pixmap(&ps->c, ps->atoms);
 		if (pixmap != XCB_NONE) {
+			xcb_get_geometry_reply_t *r = xcb_get_geometry_reply(
+			    ps->c.c, xcb_get_geometry(ps->c.c, pixmap), NULL);
+			if (!r) {
+				goto err;
+			}
+
+			// We used to assume that pixmaps pointed by the root background
+			// pixmap atoms are owned by the root window and have the same
+			// depth and hence the same visual that we can use to bind them.
+			// However, some applications break this assumption, e.g. the
+			// Xfce's desktop manager xfdesktop that sets the _XROOTPMAP_ID
+			// atom to a pixmap owned by it that seems to always have 32 bpp
+			// depth when the common root window's depth is 24 bpp. So use the
+			// root window's visual only if the root background pixmap's depth
+			// matches the root window's depth. Otherwise, find a suitable
+			// visual for the root background pixmap's depth and use it.
+			//
+			// We can't obtain a suitable visual for the root background
+			// pixmap the same way as the win_bind_pixmap function because it
+			// requires a window and we have only a pixmap. We also can't not
+			// bind the root background pixmap in case of depth mismatch
+			// because some options rely on it's content, e.g.
+			// transparent-clipping.
+			xcb_visualid_t visual =
+			    r->depth == ps->c.screen_info->root_depth
+			        ? ps->c.screen_info->root_visual
+			        : x_get_visual_for_depth(&ps->c, r->depth);
+			free(r);
+
 			ps->root_image = ps->backend_data->ops->bind_pixmap(
-			    ps->backend_data, pixmap,
-			    x_get_visual_info(&ps->c, ps->c.screen_info->root_visual), false);
+			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual), false);
 			if (ps->root_image) {
 				ps->backend_data->ops->set_image_property(
 				    ps->backend_data, IMAGE_PROPERTY_EFFECTIVE_SIZE,
 				    ps->root_image, (int[]){ps->root_width, ps->root_height});
 			} else {
+			err:
 				log_error("Failed to bind root back pixmap");
 			}
 		}
