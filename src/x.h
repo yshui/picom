@@ -359,8 +359,6 @@ const char *x_strerror(xcb_generic_error_t *e);
 
 xcb_pixmap_t x_create_pixmap(struct x_connection *, uint8_t depth, int width, int height);
 
-bool x_validate_pixmap(struct x_connection *, xcb_pixmap_t pxmap);
-
 /**
  * Free a <code>winprop_t</code>.
  *
