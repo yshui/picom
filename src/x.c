@@ -704,27 +704,6 @@ xcb_pixmap_t x_create_pixmap(struct x_connection *c, uint8_t depth, int width, i
 	return XCB_NONE;
 }
 
-/**
- * Validate a pixmap.
- *
- * Detect whether the pixmap is valid with XGetGeometry. Well, maybe there
- * are better ways.
- */
-bool x_validate_pixmap(struct x_connection *c, xcb_pixmap_t pixmap) {
-	if (pixmap == XCB_NONE) {
-		return false;
-	}
-
-	auto r = xcb_get_geometry_reply(c->c, xcb_get_geometry(c->c, pixmap), NULL);
-	if (!r) {
-		return false;
-	}
-
-	bool ret = r->width && r->height;
-	free(r);
-	return ret;
-}
-
 /// We don't use the _XSETROOT_ID root window property as a source of the background
 /// pixmap because it most likely points to a dummy pixmap used to keep the colormap
 /// associated with the background pixmap alive but we listen for it's changes and update
