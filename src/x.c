@@ -321,6 +321,21 @@ xcb_visualid_t x_get_visual_for_standard(struct x_connection *c, xcb_pict_standa
 	return x_get_visual_for_pictfmt(g_pictfmts, pictfmt->id);
 }
 
+xcb_visualid_t x_get_visual_for_depth(struct x_connection *c, uint8_t depth) {
+	xcb_screen_iterator_t screen_it = xcb_setup_roots_iterator(xcb_get_setup(c->c));
+	for (; screen_it.rem; xcb_screen_next(&screen_it)) {
+		xcb_depth_iterator_t depth_it =
+		    xcb_screen_allowed_depths_iterator(screen_it.data);
+		for (; depth_it.rem; xcb_depth_next(&depth_it)) {
+			if (depth_it.data->depth == depth) {
+				return xcb_depth_visuals_iterator(depth_it.data).data->visual_id;
+			}
+		}
+	}
+
+	return XCB_NONE;
+}
+
 xcb_render_pictformat_t
 x_get_pictfmt_for_standard(struct x_connection *c, xcb_pict_standard_t std) {
 	x_get_server_pictfmts(c);
@@ -687,27 +702,6 @@ xcb_pixmap_t x_create_pixmap(struct x_connection *c, uint8_t depth, int width, i
 	log_error_x_error(err, "Failed to create pixmap");
 	free(err);
 	return XCB_NONE;
-}
-
-/**
- * Validate a pixmap.
- *
- * Detect whether the pixmap is valid with XGetGeometry. Well, maybe there
- * are better ways.
- */
-bool x_validate_pixmap(struct x_connection *c, xcb_pixmap_t pixmap) {
-	if (pixmap == XCB_NONE) {
-		return false;
-	}
-
-	auto r = xcb_get_geometry_reply(c->c, xcb_get_geometry(c->c, pixmap), NULL);
-	if (!r) {
-		return false;
-	}
-
-	bool ret = r->width && r->height;
-	free(r);
-	return ret;
 }
 
 /// We don't use the _XSETROOT_ID root window property as a source of the background

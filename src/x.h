@@ -356,8 +356,6 @@ const char *x_strerror(xcb_generic_error_t *e);
 
 xcb_pixmap_t x_create_pixmap(struct x_connection *, uint8_t depth, int width, int height);
 
-bool x_validate_pixmap(struct x_connection *, xcb_pixmap_t pxmap);
-
 /**
  * Free a <code>winprop_t</code>.
  *
@@ -407,6 +405,8 @@ void attr_nonnull(1, 3) x_create_convolution_kernel(const conv *kernel, double c
 struct xvisual_info x_get_visual_info(struct x_connection *c, xcb_visualid_t visual);
 
 xcb_visualid_t x_get_visual_for_standard(struct x_connection *c, xcb_pict_standard_t std);
+
+xcb_visualid_t x_get_visual_for_depth(struct x_connection *c, uint8_t depth);
 
 xcb_render_pictformat_t
 x_get_pictfmt_for_standard(struct x_connection *c, xcb_pict_standard_t std);
