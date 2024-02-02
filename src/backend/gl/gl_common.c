@@ -1013,9 +1013,11 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	auto new_tex = ccalloc(1, struct gl_texture);
 
 	new_tex->texture = gl_new_texture(GL_TEXTURE_2D);
-	new_tex->y_inverted = true;
+	new_tex->y_inverted = inner->y_inverted;
+	new_tex->has_alpha = inner->has_alpha;
 	new_tex->height = inner->height;
 	new_tex->width = inner->width;
+	new_tex->shader = inner->shader;
 	new_tex->refcount = 1;
 	new_tex->user_data = gd->decouple_texture_user_data(base, inner->user_data);
 
