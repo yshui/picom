@@ -48,8 +48,14 @@
 /// When top half finished, we enter the render stage, where no server state should be
 /// queried. All rendering should be done with our internal knowledge of the server state.
 ///
+/// P.S. There is another reason to avoid sending any request to the server as much as
+/// possible. To make sure requests are sent, flushes are needed. And `xcb_flush`/`XFlush`
+/// functions may read more events from the server into their queues. This is
+/// undesirable, see the comments on `handle_queued_x_events` in picom.c for more details.
 
-// TODO(yshui) the things described above
+// TODO(yshui) the things described above. This is mostly done, maybe some of
+//             the functions here is still making unnecessary queries, we need
+//             to do some auditing to be sure.
 
 /**
  * Get a window's name from window ID.
@@ -590,7 +596,7 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 	// to make sure the X server receives the DamageSubtract request, hence the
 	// `xcb_request_check` here.
 	// Otherwise, we fetch the damage regions. That means we will receive a reply
-	// from the X server, which implies it has received our request.
+	// from the X server, which implies it has received our DamageSubtract request.
 	if (!w->ever_damaged) {
 		auto e = xcb_request_check(
 		    ps->c.c, xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE, XCB_NONE));
