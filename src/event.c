@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2019, Yuxuan Shui <yshuiv7@gmail.com>
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include <X11/Xlibint.h>
@@ -350,19 +351,14 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		}
 
 		// Reset event mask in case something wrong happens
-		xcb_change_window_attributes(
-		    ps->c.c, ev->window, XCB_CW_EVENT_MASK,
-		    (const uint32_t[]){determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN)});
+		uint32_t evmask = determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN);
 
 		if (!wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
 			log_debug("Window %#010x doesn't have WM_STATE property, it is "
 			          "probably not a client window. But we will listen for "
 			          "property change in case it gains one.",
 			          ev->window);
-			xcb_change_window_attributes(
-			    ps->c.c, ev->window, XCB_CW_EVENT_MASK,
-			    (const uint32_t[]){determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN) |
-			                       XCB_EVENT_MASK_PROPERTY_CHANGE});
+			evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
 		} else {
 			auto w_real_top = find_managed_window_or_parent(ps, ev->parent);
 			if (w_real_top && w_real_top->state != WSTATE_UNMAPPED &&
@@ -386,6 +382,8 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 				}
 			}
 		}
+		XCB_AWAIT_VOID(xcb_change_window_attributes, ps->c.c, ev->window,
+		               XCB_CW_EVENT_MASK, (const uint32_t[]){evmask});
 	}
 }
 
