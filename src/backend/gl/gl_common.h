@@ -29,8 +29,6 @@ static inline GLint glGetUniformLocationChecked(GLuint p, const char *name) {
 
 // Program and uniforms for window shader
 typedef struct {
-	UT_hash_handle hh;
-	uint32_t id;
 	GLuint prog;
 	GLint uniform_opacity;
 	GLint uniform_invert_color;
