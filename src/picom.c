@@ -1609,9 +1609,32 @@ static void unredirect(session_t *ps) {
 	log_debug("Screen unredirected.");
 }
 
-// Handle queued events before we go to sleep
+/// Handle queued events before we go to sleep.
+///
+/// This function is called by ev_prepare watcher, which is called just before
+/// the event loop goes to sleep. X damage events are incremental, which means
+/// if we don't handle the ones X server already sent us, we won't get new ones.
+/// And if we don't get new ones, we won't render, i.e. we would freeze. libxcb
+/// keeps an internal queue of events, so we have to be 100% sure no events are
+/// left in that queue before we go to sleep.
 static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents attr_unused) {
 	session_t *ps = session_ptr(w, event_check);
+	// Flush because if we go into sleep when there is still requests in the
+	// outgoing buffer, they will not be sent for an indefinite amount of
+	// time. Use XFlush here too, we might still use some Xlib functions
+	// because OpenGL.
+	//
+	// Also note, after we have flushed here, we won't flush again in this
+	// function before going into sleep. This is because `xcb_flush`/`XFlush`
+	// may _read_ more events from the server (yes, this is ridiculous, I
+	// know). And we can't have that, see the comments above this function.
+	//
+	// This means if functions called ev_handle need to send some events,
+	// they need to carefully make sure those events are flushed, one way or
+	// another.
+	XFlush(ps->c.dpy);
+	xcb_flush(ps->c.c);
+
 	if (ps->vblank_scheduler) {
 		vblank_handle_x_events(ps->vblank_scheduler);
 	}
@@ -1621,13 +1644,6 @@ static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents 
 		ev_handle(ps, ev);
 		free(ev);
 	};
-	// Flush because if we go into sleep when there is still
-	// requests in the outgoing buffer, they will not be sent
-	// for an indefinite amount of time.
-	// Use XFlush here too, we might still use some Xlib functions
-	// because OpenGL.
-	XFlush(ps->c.dpy);
-	xcb_flush(ps->c.c);
 	int err = xcb_connection_has_error(ps->c.c);
 	if (err) {
 		log_fatal("X11 server connection broke (error %d)", err);
