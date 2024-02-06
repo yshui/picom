@@ -473,9 +473,10 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		// Check whether it could be a client window
 		if (!find_toplevel(ps, ev->window)) {
 			// Reset event mask anyway
-			xcb_change_window_attributes(ps->c.c, ev->window, XCB_CW_EVENT_MASK,
-			                             (const uint32_t[]){determine_evmask(
-			                                 ps, ev->window, WIN_EVMODE_UNKNOWN)});
+			const uint32_t evmask =
+			    determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN);
+			XCB_AWAIT_VOID(xcb_change_window_attributes, ps->c.c, ev->window,
+			               XCB_CW_EVENT_MASK, (const uint32_t[]){evmask});
 
 			auto w_top = find_managed_window_or_parent(ps, ev->window);
 			// ev->window might have not been managed yet, in that case w_top
@@ -490,8 +491,8 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	// If _NET_WM_WINDOW_TYPE changes... God knows why this would happen, but
 	// there are always some stupid applications. (#144)
 	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_TYPE) {
-		struct managed_win *w = NULL;
-		if ((w = find_toplevel(ps, ev->window))) {
+		struct managed_win *w = find_toplevel(ps, ev->window);
+		if (w) {
 			win_set_property_stale(w, ev->atom);
 		}
 	}
