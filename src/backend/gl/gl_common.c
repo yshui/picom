@@ -885,24 +885,35 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUseProgram(0);
 
 	gd->dithered_present = ps->o.dithered_present;
+	gd->dummy_prog =
+	    gl_create_program_from_strv((const char *[]){present_vertex_shader, NULL},
+	                                (const char *[]){dummy_frag, NULL});
+	if (!gd->dummy_prog) {
+		log_error("Failed to create the dummy shader");
+		return false;
+	}
 	if (gd->dithered_present) {
 		gd->present_prog = gl_create_program_from_strv(
 		    (const char *[]){present_vertex_shader, NULL},
 		    (const char *[]){present_frag, dither_glsl, NULL});
 	} else {
-		gd->present_prog = gl_create_program_from_strv(
-		    (const char *[]){present_vertex_shader, NULL},
-		    (const char *[]){dummy_frag, NULL});
+		gd->present_prog = gd->dummy_prog;
 	}
 	if (!gd->present_prog) {
 		log_error("Failed to create the present shader");
 		return false;
 	}
-	pml = glGetUniformLocationChecked(gd->present_prog, "projection");
-	glUseProgram(gd->present_prog);
-	glUniform1i(glGetUniformLocationChecked(gd->present_prog, "tex"), 0);
+
+	pml = glGetUniformLocationChecked(gd->dummy_prog, "projection");
+	glUseProgram(gd->dummy_prog);
+	glUniform1i(glGetUniformLocationChecked(gd->dummy_prog, "tex"), 0);
 	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-	glUseProgram(0);
+	if (gd->present_prog != gd->dummy_prog) {
+		pml = glGetUniformLocationChecked(gd->present_prog, "projection");
+		glUseProgram(gd->present_prog);
+		glUniform1i(glGetUniformLocationChecked(gd->present_prog, "tex"), 0);
+		glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	}
 
 	gd->shadow_shader.prog =
 	    gl_create_program_from_str(present_vertex_shader, shadow_colorization_frag);
@@ -912,7 +923,6 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUseProgram(gd->shadow_shader.prog);
 	glUniform1i(glGetUniformLocationChecked(gd->shadow_shader.prog, "tex"), 0);
 	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
-	glUseProgram(0);
 	glBindFragDataLocation(gd->shadow_shader.prog, 0, "out_color");
 
 	gd->brightness_shader.prog =
@@ -925,6 +935,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUseProgram(gd->brightness_shader.prog);
 	glUniform1i(glGetUniformLocationChecked(gd->brightness_shader.prog, "tex"), 0);
 	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+
 	glUseProgram(0);
 
 	// Set up the size and format of the back texture
@@ -1013,9 +1024,11 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	auto new_tex = ccalloc(1, struct gl_texture);
 
 	new_tex->texture = gl_new_texture(GL_TEXTURE_2D);
-	new_tex->y_inverted = true;
+	new_tex->y_inverted = inner->y_inverted;
+	new_tex->has_alpha = inner->has_alpha;
 	new_tex->height = inner->height;
 	new_tex->width = inner->width;
+	new_tex->shader = inner->shader;
 	new_tex->refcount = 1;
 	new_tex->user_data = gd->decouple_texture_user_data(base, inner->user_data);
 
@@ -1024,8 +1037,7 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
-	assert(gd->present_prog);
-	glUseProgram(gd->present_prog);
+	glUseProgram(gd->dummy_prog);
 	glBindTexture(GL_TEXTURE_2D, inner->texture);
 
 	GLuint fbo;

@@ -335,9 +335,10 @@ struct backend_operations {
 	bool (*image_op)(backend_t *backend_data, enum image_operations op, void *image_data,
 	                 const region_t *reg_op, const region_t *reg_visible, void *args);
 
-	/// Create another instance of the `image_data`. All `image_op` and
-	/// `set_image_property` calls on the returned image should not affect the
-	/// original image
+	/// Create another instance of the `image_data`. The newly created image
+	/// inherits its content and all image properties from the image being
+	/// cloned. All `image_op` and `set_image_property` calls on the
+	/// returned image should not affect the original image.
 	void *(*clone_image)(backend_t *base, const void *image_data,
 	                     const region_t *reg_visible);
 

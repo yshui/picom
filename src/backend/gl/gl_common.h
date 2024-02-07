@@ -110,6 +110,7 @@ struct gl_data {
 	GLuint frame_timing[2];
 	int current_frame_timing;
 	GLuint present_prog;
+	GLuint dummy_prog;
 
 	bool dithered_present;
 
