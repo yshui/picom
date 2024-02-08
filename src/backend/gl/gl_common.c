@@ -989,9 +989,24 @@ void gl_deinit(struct gl_data *gd) {
 		gl_destroy_window_shader(&gd->base, gd->default_shader);
 		gd->default_shader = NULL;
 	}
+	glDeleteProgram(gd->dummy_prog);
+	if (gd->present_prog != gd->dummy_prog) {
+		glDeleteProgram(gd->present_prog);
+	}
+	gd->dummy_prog = 0;
+	gd->present_prog = 0;
+
+	glDeleteProgram(gd->fill_shader.prog);
+	glDeleteProgram(gd->brightness_shader.prog);
+	glDeleteProgram(gd->shadow_shader.prog);
+	gd->fill_shader.prog = 0;
+	gd->brightness_shader.prog = 0;
+	gd->shadow_shader.prog = 0;
 
 	glDeleteTextures(1, &gd->default_mask_texture);
 	glDeleteTextures(1, &gd->back_texture);
+
+	glDeleteQueries(2, gd->frame_timing);
 
 	gl_check_err();
 }
