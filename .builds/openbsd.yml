@@ -8,7 +8,7 @@ packages:
   - uthash
   - libconfig
   - dbus
-  - pcre
+  - pcre2
 sources:
   - https://github.com/yshui/picom
 tasks:
