@@ -1,0 +1,23 @@
+image: openbsd/latest
+packages:
+  - libev
+  - xcb
+  - meson
+  - pkgconf
+  - cmake
+  - uthash
+  - libconfig
+  - dbus
+  - pcre2
+sources:
+  - https://github.com/yshui/picom
+tasks:
+  - setup: |
+      cd picom
+      CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib" meson -Dunittest=true build
+  - build: |
+      cd picom
+      ninja -C build
+  - unittest: |
+      cd picom
+      ninja -C build test
