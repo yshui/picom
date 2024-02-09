@@ -86,6 +86,10 @@ elif (host_system == 'freebsd' or host_system == 'netbsd' or
 	cflags += ['-DHAS_KQUEUE']
 endif
 
+if host_system == 'openbsd'
+	deps += [dependency('threads', required: true)]
+endif
+
 subdir('backend')
 
 picom = executable('picom', srcs, c_args: cflags,
