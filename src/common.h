@@ -57,7 +57,6 @@
 #include "config.h"
 #include "list.h"
 #include "region.h"
-#include "render.h"
 #include "statistics.h"
 #include "types.h"
 #include "utils.h"
@@ -183,8 +182,6 @@ typedef struct session {
 	xcb_window_t debug_window;
 	/// Whether the root tile is filled by us.
 	bool root_tile_fill;
-	/// Picture of the root window background.
-	paint_t root_tile_paint;
 	/// The backend data the root pixmap bound to
 	image_handle root_image;
 	/// A region of the size of the screen.
@@ -194,8 +191,6 @@ typedef struct session {
 	xcb_render_picture_t root_picture;
 	/// A Picture acting as the painting target.
 	xcb_render_picture_t tgt_picture;
-	/// Temporary buffer to paint to before sending to display.
-	paint_t tgt_buffer;
 	/// Window ID of the window we register as a symbol.
 	xcb_window_t reg_win;
 #ifdef CONFIG_OPENGL
@@ -315,12 +310,6 @@ typedef struct session {
 	// === Software-optimization-related ===
 	/// Nanosecond offset of the first painting.
 	long paint_tm_offset;
-
-#ifdef CONFIG_VSYNC_DRM
-	// === DRM VSync related ===
-	/// File descriptor of DRI device file. Used for DRM VSync.
-	int drm_fd;
-#endif
 
 	// === X extension related ===
 	/// Event base number for X Fixes extension.

@@ -7,8 +7,8 @@ base_deps = [
 	libev
 ]
 
-srcs = [ files('picom.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.c',
-               'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
+srcs = [ files('picom.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'utils.c',
+               'diagnostic.c', 'string_utils.c', 'kernel.c', 'log.c',
                'options.c', 'event.c', 'cache.c', 'atom.c', 'file_watch.c', 'statistics.c',
                'vblank.c') ]
 picom_inc = include_directories('.')
@@ -52,15 +52,9 @@ if get_option('regex')
 	deps += [pcre]
 endif
 
-if get_option('vsync_drm')
-	cflags += ['-DCONFIG_VSYNC_DRM']
-	deps += [dependency('libdrm', required: true)]
-endif
-
 if get_option('opengl')
 	cflags += ['-DCONFIG_OPENGL']
 	deps += [dependency('epoxy', required: true)]
-	srcs += [ 'opengl.c' ]
 endif
 
 if get_option('dbus')

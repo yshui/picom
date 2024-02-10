@@ -19,7 +19,6 @@
 #include "config.h"
 #include "log.h"        // XXX clean up
 #include "region.h"
-#include "render.h"
 #include "types.h"
 #include "utils.h"
 #include "win.h"
@@ -83,14 +82,6 @@ static inline bool array_wid_exists(const xcb_window_t *arr, int count, xcb_wind
 
 	return false;
 }
-
-#ifndef CONFIG_OPENGL
-static inline void free_paint_glx(session_t *ps attr_unused, paint_t *p attr_unused) {
-}
-static inline void
-free_win_res_glx(session_t *ps attr_unused, struct managed_win *w attr_unused) {
-}
-#endif
 
 /**
  * Dump an drawable's info.
