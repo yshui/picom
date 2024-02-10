@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <math.h>
+#include <pthread.h>
 #include <sched.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -35,9 +36,6 @@
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xfixes.h>
-#ifdef __OpenBSD__
-#include <pthread.h>
-#endif
 
 #include <ev.h>
 #include <test.h>
@@ -2590,14 +2588,8 @@ void set_rr_scheduling(void) {
 
 	int ret;
 	struct sched_param param;
-
-#ifndef __OpenBSD__
-	ret = sched_getparam(0, &param);
-#else
 	int old_policy;
 	ret = pthread_getschedparam(pthread_self(), &old_policy, &param);
-#endif
-
 	if (ret != 0) {
 		log_debug("Failed to get old scheduling priority");
 		return;
@@ -2605,12 +2597,7 @@ void set_rr_scheduling(void) {
 
 	param.sched_priority = priority;
 
-#ifndef __OpenBSD__
-	ret = sched_setscheduler(0, SCHED_RR, &param);
-#else
 	ret = pthread_setschedparam(pthread_self(), SCHED_RR, &param);
-#endif
-
 	if (ret != 0) {
 		log_info("Failed to set real-time scheduling priority to %d. Consider "
 		         "giving picom the CAP_SYS_NICE capability or equivalent "
@@ -2618,6 +2605,7 @@ void set_rr_scheduling(void) {
 		         priority);
 		return;
 	}
+
 	log_info("Set real-time scheduling priority to %d", priority);
 }
 

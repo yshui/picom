@@ -23,7 +23,7 @@ required_xcb_packages = [
 # Some XCB packages are here because their versioning differs (see check below).
 required_packages = [
 	'pixman-1', 'x11', 'x11-xcb', 'xcb-image', 'xcb-renderutil', 'xcb-util',
-	'xext'
+	'xext', 'threads',
 ]
 
 foreach i : required_packages
@@ -59,7 +59,7 @@ endif
 
 if get_option('opengl')
 	cflags += ['-DCONFIG_OPENGL', '-DGL_GLEXT_PROTOTYPES']
-	deps += [dependency('gl', required: true), dependency('egl', required: true), dependency('threads', required:true)]
+	deps += [dependency('gl', required: true), dependency('egl', required: true)]
 	srcs += [ 'opengl.c' ]
 endif
 
@@ -84,10 +84,6 @@ if host_system == 'linux'
 elif (host_system == 'freebsd' or host_system == 'netbsd' or
       host_system == 'dragonfly' or host_system == 'openbsd')
 	cflags += ['-DHAS_KQUEUE']
-endif
-
-if host_system == 'openbsd'
-	deps += [dependency('threads', required: true)]
 endif
 
 subdir('backend')
