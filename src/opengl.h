@@ -18,9 +18,9 @@
 #include "render.h"
 #include "win.h"
 
-#include <GL/gl.h>
-#include <GL/glx.h>
 #include <ctype.h>
+#include <epoxy/gl.h>
+#include <epoxy/glx.h>
 #include <locale.h>
 #include <stdlib.h>
 #include <string.h>

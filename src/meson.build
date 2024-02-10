@@ -58,8 +58,8 @@ if get_option('vsync_drm')
 endif
 
 if get_option('opengl')
-	cflags += ['-DCONFIG_OPENGL', '-DGL_GLEXT_PROTOTYPES']
-	deps += [dependency('gl', required: true), dependency('egl', required: true), dependency('threads', required:true)]
+	cflags += ['-DCONFIG_OPENGL']
+	deps += [dependency('epoxy', required: true), dependency('threads', required:true)]
 	srcs += [ 'opengl.c' ]
 endif
 
