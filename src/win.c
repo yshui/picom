@@ -309,12 +309,10 @@ static inline void win_release_pixmap(backend_t *base, struct managed_win *w) {
 }
 static inline void win_release_shadow(backend_t *base, struct managed_win *w) {
 	log_debug("Releasing shadow of window %#010x (%s)", w->base.id, w->name);
-	assert(w->shadow_image);
 	if (w->shadow_image) {
+		assert(w->shadow);
 		base->ops->release_image(base, w->shadow_image);
 		w->shadow_image = NULL;
-		// Bypassing win_set_flags, because `w` might have been destroyed
-		w->flags |= WIN_FLAGS_SHADOW_NONE;
 	}
 }
 
@@ -385,13 +383,11 @@ bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color
 		          "for "
 		          "%#010x (%s)",
 		          w->base.id, w->name);
-		win_set_flags(w, WIN_FLAGS_SHADOW_NONE);
 		w->shadow = false;
 		return false;
 	}
 
 	log_debug("New shadow for %#010x (%s)", w->base.id, w->name);
-	win_clear_flags(w, WIN_FLAGS_SHADOW_NONE);
 	return true;
 }
 
@@ -405,11 +401,7 @@ void win_release_images(struct backend_base *backend, struct managed_win *w) {
 		win_release_pixmap(backend, w);
 	}
 
-	if (!win_check_flags_all(w, WIN_FLAGS_SHADOW_NONE)) {
-		assert(!win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE));
-		win_release_shadow(backend, w);
-	}
-
+	win_release_shadow(backend, w);
 	win_release_mask(backend, w);
 }
 
@@ -567,7 +559,7 @@ void win_process_image_flags(session_t *ps, struct managed_win *w) {
 	}
 
 	// Not a loop
-	while (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE) &&
+	while (win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE) &&
 	       !win_check_flags_all(w, WIN_FLAGS_IMAGE_ERROR)) {
 		// Image needs to be updated, update it.
 		if (!ps->backend_data) {
@@ -589,27 +581,13 @@ void win_process_image_flags(session_t *ps, struct managed_win *w) {
 			win_bind_pixmap(ps->backend_data, w);
 		}
 
-		if (win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE)) {
-			if (!win_check_flags_all(w, WIN_FLAGS_SHADOW_NONE)) {
-				win_release_shadow(ps->backend_data, w);
-			}
-			if (w->shadow) {
-				win_bind_shadow(ps->backend_data, w,
-				                (struct color){.red = ps->o.shadow_red,
-				                               .green = ps->o.shadow_green,
-				                               .blue = ps->o.shadow_blue,
-				                               .alpha = ps->o.shadow_opacity},
-				                ps->shadow_context);
-			}
-		}
-
 		// break here, loop always run only once
 		break;
 	}
 
 	// Clear stale image flags
-	if (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE)) {
-		win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
+	if (win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE)) {
+		win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 	}
 }
 
@@ -937,49 +915,31 @@ static void win_set_shadow(session_t *ps, struct managed_win *w, bool shadow_new
 	pixman_region32_init(&extents);
 	win_extents(w, &extents);
 
-	// Apply the shadow change
-	w->shadow = shadow_new;
-
 	if (ps->redirected) {
 		// Add damage for shadow change
 
 		// Window extents need update on shadow state change
 		// Shadow geometry currently doesn't change on shadow state change
 		// calc_shadow_geometry(ps, w);
-
-		// Note: because the release and creation of the shadow images are
-		// delayed. When multiple shadow changes happen in a row, without
-		// rendering phase between them, there could be a stale shadow
-		// image attached to the window even if w->shadow was previously
-		// false. And vice versa. So we check the STALE flag before
-		// asserting the existence of the shadow image.
-		if (w->shadow) {
+		if (shadow_new) {
 			// Mark the new extents as damaged if the shadow is added
-			assert(!w->shadow_image ||
-			       win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE) ||
-			       ps->o.legacy_backends);
+			assert(!w->shadow_image);
 			pixman_region32_clear(&extents);
 			win_extents(w, &extents);
 			add_damage_from_win(ps, w);
 		} else {
 			// Mark the old extents as damaged if the shadow is
 			// removed
-			assert(w->shadow_image ||
-			       win_check_flags_all(w, WIN_FLAGS_SHADOW_STALE) ||
-			       ps->o.legacy_backends);
 			add_damage(ps, &extents);
+			win_release_shadow(ps->backend_data, w);
 		}
-
-		// Delayed update of shadow image
-		// By setting WIN_FLAGS_SHADOW_STALE, we ask win_process_flags to
-		// re-create or release the shadow in based on whether w->shadow
-		// is set.
-		win_set_flags(w, WIN_FLAGS_SHADOW_STALE);
 
 		// Only set pending_updates if we are redirected. Otherwise change
 		// of a shadow won't have influence on whether we should redirect.
 		ps->pending_updates = true;
 	}
+
+	w->shadow = shadow_new;
 
 	pixman_region32_fini(&extents);
 }
@@ -1313,8 +1273,9 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 	       w->state != WSTATE_UNMAPPING);
 
 	// Invalidate the shadow we built
-	win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
+	win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
 	win_release_mask(ps->backend_data, w);
+	win_release_shadow(ps->backend_data, w);
 	ps->pending_updates = true;
 	free_paint(ps, &w->shadow_paint);
 }
@@ -1578,7 +1539,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .in_openclose = true,             // set to false after first map is done,
 	                                      // true here because window is just created
 	    .reg_ignore_valid = false,        // set to true when damaged
-	    .flags = WIN_FLAGS_IMAGES_NONE,        // updated by
+	    .flags = WIN_FLAGS_PIXMAP_NONE,        // updated by
 	                                           // property/attributes/etc
 	                                           // change
 	    .stale_props = NULL,
@@ -2053,8 +2014,9 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 
 	// Window shape changed, we should free old wpaint and shadow pict
 	// log_trace("free out dated pict");
-	win_set_flags(w, WIN_FLAGS_IMAGES_STALE | WIN_FLAGS_FACTOR_CHANGED);
+	win_set_flags(w, WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_FACTOR_CHANGED);
 	win_release_mask(ps->backend_data, w);
+	win_release_shadow(ps->backend_data, w);
 	ps->pending_updates = true;
 
 	free_paint(ps, &w->paint);
@@ -2205,11 +2167,8 @@ static void destroy_win_finish(session_t *ps, struct win *w) {
 			unmap_win_finish(ps, mw);
 		}
 
-		// Unmapping preserves the shadow image, so free it here
-		if (!win_check_flags_all(mw, WIN_FLAGS_SHADOW_NONE)) {
-			assert(mw->shadow_image != NULL);
-			win_release_shadow(ps->backend_data, mw);
-		}
+		// Unmapping might preserve the shadow image, so free it here
+		win_release_shadow(ps->backend_data, mw);
 		win_release_mask(ps->backend_data, mw);
 
 		// Invalidate reg_ignore of windows below this one
@@ -2374,7 +2333,7 @@ bool destroy_win_start(session_t *ps, struct win *w) {
 		// window doesn't work leading to an inconsistent state where the
 		// shadow is refreshed but the flags are stuck in STALE. Do this
 		// before changing the window state to destroying
-		win_clear_flags(mw, WIN_FLAGS_IMAGES_STALE);
+		win_clear_flags(mw, WIN_FLAGS_PIXMAP_STALE);
 
 		// If size/shape/position information is stale,
 		// win_process_update_flags will update them and add the new

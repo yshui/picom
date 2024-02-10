@@ -628,7 +628,7 @@ static void destroy_backend(session_t *ps) {
 			// Unmapped windows could still have shadow images, but not pixmap
 			// images
 			assert(!w->win_image || w->state != WSTATE_UNMAPPED);
-			if (win_check_flags_any(w, WIN_FLAGS_IMAGES_STALE) &&
+			if (win_check_flags_any(w, WIN_FLAGS_PIXMAP_STALE) &&
 			    w->state == WSTATE_MAPPED) {
 				log_warn("Stale flags set for mapped window %#010x "
 				         "during backend destruction",
@@ -637,7 +637,7 @@ static void destroy_backend(session_t *ps) {
 			}
 			// Unmapped windows can still have stale flags set, because their
 			// stale flags aren't handled until they are mapped.
-			win_clear_flags(w, WIN_FLAGS_IMAGES_STALE);
+			win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 			win_release_images(ps->backend_data, w);
 		}
 		free_paint(ps, &w->paint);
@@ -769,7 +769,7 @@ static bool initialize_backend(session_t *ps) {
 			log_debug("Marking window %#010x (%s) for update after "
 			          "redirection",
 			          w->base.id, w->name);
-			win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
+			win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
 			ps->pending_updates = true;
 		}
 	}

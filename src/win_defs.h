@@ -77,10 +77,6 @@ enum win_flags {
 	WIN_FLAGS_PIXMAP_NONE = 2,
 	/// there was an error trying to bind the images
 	WIN_FLAGS_IMAGE_ERROR = 4,
-	/// shadow is out of date, will be updated in win_process_flags
-	WIN_FLAGS_SHADOW_STALE = 8,
-	/// shadow has not been generated
-	WIN_FLAGS_SHADOW_NONE = 16,
 	/// the client window needs to be updated
 	WIN_FLAGS_CLIENT_STALE = 32,
 	/// the window is mapped by X, we need to call map_win_start for it
@@ -95,8 +91,3 @@ enum win_flags {
 	/// need better name for this, is set when some aspects of the window changed
 	WIN_FLAGS_FACTOR_CHANGED = 1024,
 };
-
-static const uint64_t WIN_FLAGS_IMAGES_STALE =
-    WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_SHADOW_STALE;
-
-#define WIN_FLAGS_IMAGES_NONE (WIN_FLAGS_PIXMAP_NONE | WIN_FLAGS_SHADOW_NONE)
