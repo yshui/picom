@@ -293,8 +293,8 @@ shadow_picture_err:
 	return false;
 }
 
-void *default_render_shadow(backend_t *backend_data, int width, int height,
-                            struct backend_shadow_context *sctx, struct color color) {
+image_handle default_render_shadow(backend_t *backend_data, int width, int height,
+                                   struct backend_shadow_context *sctx, struct color color) {
 	const conv *kernel = (void *)sctx;
 	xcb_render_picture_t shadow_pixel =
 	    solid_picture(backend_data->c, true, 1, color.red, color.green, color.blue);
@@ -308,7 +308,7 @@ void *default_render_shadow(backend_t *backend_data, int width, int height,
 	}
 
 	auto visual = x_get_visual_for_standard(backend_data->c, XCB_PICT_STANDARD_ARGB_32);
-	void *ret = backend_data->ops->bind_pixmap(
+	auto ret = backend_data->ops->bind_pixmap(
 	    backend_data, shadow, x_get_visual_info(backend_data->c, visual), true);
 	x_free_picture(backend_data->c, pict);
 	x_free_picture(backend_data->c, shadow_pixel);
@@ -316,16 +316,16 @@ void *default_render_shadow(backend_t *backend_data, int width, int height,
 }
 
 /// Implement render_shadow with shadow_from_mask
-void *
+image_handle
 backend_render_shadow_from_mask(backend_t *backend_data, int width, int height,
                                 struct backend_shadow_context *sctx, struct color color) {
 	region_t reg;
 	pixman_region32_init_rect(&reg, 0, 0, (unsigned int)width, (unsigned int)height);
-	void *mask = backend_data->ops->make_mask(
+	auto mask = backend_data->ops->make_mask(
 	    backend_data, (geometry_t){.width = width, .height = height}, &reg);
 	pixman_region32_fini(&reg);
 
-	void *shadow = backend_data->ops->shadow_from_mask(backend_data, mask, sctx, color);
+	auto shadow = backend_data->ops->shadow_from_mask(backend_data, mask, sctx, color);
 	backend_data->ops->release_image(backend_data, mask);
 	return shadow;
 }
@@ -458,17 +458,17 @@ struct dual_kawase_params *generate_dual_kawase_params(void *args) {
 	return params;
 }
 
-void *default_clone_image(backend_t *base attr_unused, const void *image_data,
-                          const region_t *reg_visible attr_unused) {
+image_handle default_clone_image(backend_t *base attr_unused, image_handle image,
+                                 const region_t *reg_visible attr_unused) {
 	auto new_img = ccalloc(1, struct backend_image);
-	*new_img = *(struct backend_image *)image_data;
+	*new_img = *(struct backend_image *)image;
 	new_img->inner->refcount++;
-	return new_img;
+	return (image_handle)new_img;
 }
 
 bool default_set_image_property(backend_t *base attr_unused, enum image_properties op,
-                                void *image_data, void *arg) {
-	struct backend_image *tex = image_data;
+                                image_handle image, void *arg) {
+	auto tex = (struct backend_image *)image;
 	int *iargs = arg;
 	bool *bargs = arg;
 	double *dargs = arg;
@@ -490,8 +490,8 @@ bool default_set_image_property(backend_t *base attr_unused, enum image_properti
 	return true;
 }
 
-bool default_is_image_transparent(backend_t *base attr_unused, void *image_data) {
-	struct backend_image *img = image_data;
+bool default_is_image_transparent(backend_t *base attr_unused, image_handle image) {
+	auto img = (struct backend_image *)image;
 	return img->opacity < 1 || img->inner->has_alpha;
 }
 

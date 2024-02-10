@@ -256,10 +256,11 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 	return true;
 }
 
-bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask, coord_t mask_dst,
-                  const region_t *reg_blur, const region_t *reg_visible attr_unused,
-                  GLuint source_texture, geometry_t source_size, GLuint target_fbo,
-                  GLuint default_mask, bool high_precision) {
+bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
+                  struct backend_image *mask, coord_t mask_dst, const region_t *reg_blur,
+                  const region_t *reg_visible attr_unused, GLuint source_texture,
+                  geometry_t source_size, GLuint target_fbo, GLuint default_mask,
+                  bool high_precision) {
 	bool ret = false;
 
 	if (source_size.width != bctx->fb_width || source_size.height != bctx->fb_height) {
@@ -400,12 +401,12 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask, coor
 	return ret;
 }
 
-bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mask_dst,
+bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask, coord_t mask_dst,
              const region_t *reg_blur, const region_t *reg_visible attr_unused) {
 	auto gd = (struct gl_data *)base;
 	auto bctx = (struct gl_blur_context *)ctx;
-	return gl_blur_impl(opacity, bctx, mask, mask_dst, reg_blur, reg_visible,
-	                    gd->back_texture,
+	return gl_blur_impl(opacity, bctx, (struct backend_image *)mask, mask_dst,
+	                    reg_blur, reg_visible, gd->back_texture,
 	                    (geometry_t){.width = gd->width, .height = gd->height},
 	                    gd->back_fbo, gd->default_mask_texture, gd->dithered_present);
 }

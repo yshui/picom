@@ -551,11 +551,12 @@ void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst,
 }
 
 // TODO(yshui) make use of reg_visible
-void gl_compose(backend_t *base, void *image_data, coord_t image_dst, void *mask,
-                coord_t mask_dst, const region_t *reg_tgt,
+void gl_compose(backend_t *base, image_handle image, coord_t image_dst,
+                image_handle mask_, coord_t mask_dst, const region_t *reg_tgt,
                 const region_t *reg_visible attr_unused) {
 	auto gd = (struct gl_data *)base;
-	struct backend_image *img = image_data;
+	auto img = (struct backend_image *)image;
+	auto mask = (struct backend_image *)mask_;
 	auto inner = (struct gl_texture *)img->inner;
 
 	// Painting
@@ -709,7 +710,7 @@ void gl_fill(backend_t *base, struct color c, const region_t *clip) {
 	return _gl_fill(base, c, clip, gd->back_fbo, gd->height, true);
 }
 
-void *gl_make_mask(backend_t *base, geometry_t size, const region_t *reg) {
+image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg) {
 	auto tex = ccalloc(1, struct gl_texture);
 	auto img = default_new_backend_image(size.width, size.height);
 	tex->width = size.width;
@@ -740,7 +741,7 @@ void *gl_make_mask(backend_t *base, geometry_t size, const region_t *reg) {
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDeleteFramebuffers(1, &fbo);
-	return img;
+	return (image_handle)img;
 }
 
 static void gl_release_image_inner(backend_t *base, struct gl_texture *inner) {
@@ -756,8 +757,8 @@ static void gl_release_image_inner(backend_t *base, struct gl_texture *inner) {
 	gl_check_err();
 }
 
-void gl_release_image(backend_t *base, void *image_data) {
-	struct backend_image *wd = image_data;
+void gl_release_image(backend_t *base, image_handle image) {
+	auto wd = (struct backend_image *)image;
 	auto inner = (struct gl_texture *)wd->inner;
 	inner->refcount--;
 	assert(inner->refcount >= 0);
@@ -1221,9 +1222,9 @@ bool gl_last_render_time(backend_t *base, struct timespec *ts) {
 	return true;
 }
 
-bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
+bool gl_image_op(backend_t *base, enum image_operations op, image_handle image,
                  const region_t *reg_op, const region_t *reg_visible attr_unused, void *arg) {
-	struct backend_image *tex = image_data;
+	auto tex = (struct backend_image *)image;
 	switch (op) {
 	case IMAGE_OP_APPLY_ALPHA:
 		gl_image_decouple(base, tex);
@@ -1236,12 +1237,12 @@ bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
 }
 
 bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
-                           void *image_data, void *args) {
+                           image_handle image, void *args) {
 	if (prop != IMAGE_PROPERTY_CUSTOM_SHADER) {
-		return default_set_image_property(backend_data, prop, image_data, args);
+		return default_set_image_property(backend_data, prop, image, args);
 	}
 
-	struct backend_image *img = image_data;
+	auto img = (struct backend_image *)image;
 	auto inner = (struct gl_texture *)img->inner;
 	inner->shader = args;
 	return true;
@@ -1280,12 +1281,12 @@ void gl_destroy_shadow_context(backend_t *base attr_unused, struct backend_shado
 	free(ctx_);
 }
 
-void *gl_shadow_from_mask(backend_t *base, void *mask,
-                          struct backend_shadow_context *sctx, struct color color) {
+image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
+                                 struct backend_shadow_context *sctx, struct color color) {
 	log_debug("Create shadow from mask");
 	auto gd = (struct gl_data *)base;
-	auto img = (struct backend_image *)mask;
-	auto inner = (struct gl_texture *)img->inner;
+	auto mask = (struct backend_image *)mask_;
+	auto inner = (struct gl_texture *)mask->inner;
 	auto gsctx = (struct gl_shadow_context *)sctx;
 	int radius = (int)gsctx->radius;
 
@@ -1315,7 +1316,7 @@ void *gl_shadow_from_mask(backend_t *base, void *mask,
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       source_texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	if (img->color_inverted) {
+	if (mask->color_inverted) {
 		// If the mask is inverted, clear the source_texture to white, so the
 		// "outside" of the mask would be correct
 		glClearColor(1, 1, 1, 1);
@@ -1424,7 +1425,7 @@ void *gl_shadow_from_mask(backend_t *base, void *mask,
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDeleteFramebuffers(1, &fbo);
 	gl_check_err();
-	return new_img;
+	return (image_handle)new_img;
 }
 
 enum device_status gl_device_status(backend_t *base) {

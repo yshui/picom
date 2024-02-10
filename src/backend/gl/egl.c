@@ -249,7 +249,7 @@ end:
 	return &gd->gl.base;
 }
 
-static void *
+static image_handle
 egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool owned) {
 	struct egl_data *gd = (void *)base;
 	struct egl_pixmap *eglpixmap = NULL;
@@ -301,7 +301,7 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	gl_check_err();
-	return wd;
+	return (image_handle)wd;
 err:
 	if (eglpixmap && eglpixmap->image) {
 		eglDestroyImage(gd->display, eglpixmap->image);
