@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 #ifdef CONFIG_OPENGL
-#include <GL/gl.h>
+#include <epoxy/gl.h>
 #include "backend/gl/gl_common.h"
 #include "backend/gl/glx.h"
 #endif
@@ -338,21 +338,14 @@ struct log_target *stderr_logger_new(void) {
 }
 
 #ifdef CONFIG_OPENGL
-/// An opengl logger that can be used for logging into opengl debugging tools,
-/// such as apitrace
-struct gl_string_marker_logger {
-	struct log_target tgt;
-	PFNGLSTRINGMARKERGREMEDYPROC gl_string_marker;
-};
 
-static void
-gl_string_marker_logger_write(struct log_target *tgt, const char *str, size_t len) {
-	auto g = (struct gl_string_marker_logger *)tgt;
+static void gl_string_marker_logger_write(struct log_target *tgt attr_unused,
+                                          const char *str, size_t len) {
 	// strip newlines at the end of the string
 	while (len > 0 && str[len - 1] == '\n') {
 		len--;
 	}
-	g->gl_string_marker((GLsizei)len, str);
+	glStringMarkerGREMEDY((GLsizei)len, str);
 }
 
 static const struct log_ops gl_string_marker_logger_ops = {
@@ -361,20 +354,16 @@ static const struct log_ops gl_string_marker_logger_ops = {
     .destroy = logger_trivial_destroy,
 };
 
+/// Create an opengl logger that can be used for logging into opengl debugging tools,
+/// such as apitrace
 struct log_target *gl_string_marker_logger_new(void) {
 	if (!gl_has_extension("GL_GREMEDY_string_marker")) {
 		return NULL;
 	}
 
-	void *fnptr = glXGetProcAddress((GLubyte *)"glStringMarkerGREMEDY");
-	if (!fnptr) {
-		return NULL;
-	}
-
-	auto ret = cmalloc(struct gl_string_marker_logger);
-	ret->tgt.ops = &gl_string_marker_logger_ops;
-	ret->gl_string_marker = fnptr;
-	return &ret->tgt;
+	auto ret = cmalloc(struct log_target);
+	ret->ops = &gl_string_marker_logger_ops;
+	return ret;
 }
 
 #else

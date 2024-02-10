@@ -580,16 +580,6 @@ static inline bool glx_has_extension(Display *dpy, int screen, const char *ext) 
 }
 
 struct glxext_info glxext = {0};
-PFNGLXGETVIDEOSYNCSGIPROC glXGetVideoSyncSGI;
-PFNGLXWAITVIDEOSYNCSGIPROC glXWaitVideoSyncSGI;
-PFNGLXGETSYNCVALUESOMLPROC glXGetSyncValuesOML;
-PFNGLXWAITFORMSCOMLPROC glXWaitForMscOML;
-PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT;
-PFNGLXSWAPINTERVALSGIPROC glXSwapIntervalSGI;
-PFNGLXSWAPINTERVALMESAPROC glXSwapIntervalMESA;
-PFNGLXBINDTEXIMAGEEXTPROC glXBindTexImageEXT;
-PFNGLXRELEASETEXIMAGEEXTPROC glXReleaseTexImageEXT;
-PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB;
 
 #ifdef GLX_MESA_query_renderer
 PFNGLXQUERYCURRENTRENDERERINTEGERMESAPROC glXQueryCurrentRendererIntegerMESA;
@@ -614,36 +604,4 @@ void glxext_init(Display *dpy, int screen) {
 	check_ext(GLX_MESA_query_renderer);
 #endif
 #undef check_ext
-
-#define lookup(name) ((name) = (__typeof__(name))glXGetProcAddress((GLubyte *)#name))
-	// Checking if the returned function pointer is NULL is not really necessary,
-	// or maybe not even useful, since glXGetProcAddress might always return
-	// something. We are doing it just for completeness' sake.
-	if (!lookup(glXGetVideoSyncSGI) || !lookup(glXWaitVideoSyncSGI)) {
-		glxext.has_GLX_SGI_video_sync = false;
-	}
-	if (!lookup(glXSwapIntervalEXT)) {
-		glxext.has_GLX_EXT_swap_control = false;
-	}
-	if (!lookup(glXSwapIntervalMESA)) {
-		glxext.has_GLX_MESA_swap_control = false;
-	}
-	if (!lookup(glXSwapIntervalSGI)) {
-		glxext.has_GLX_SGI_swap_control = false;
-	}
-	if (!lookup(glXWaitForMscOML) || !lookup(glXGetSyncValuesOML)) {
-		glxext.has_GLX_OML_sync_control = false;
-	}
-	if (!lookup(glXBindTexImageEXT) || !lookup(glXReleaseTexImageEXT)) {
-		glxext.has_GLX_EXT_texture_from_pixmap = false;
-	}
-	if (!lookup(glXCreateContextAttribsARB)) {
-		glxext.has_GLX_ARB_create_context = false;
-	}
-#ifdef GLX_MESA_query_renderer
-	if (!lookup(glXQueryCurrentRendererIntegerMESA)) {
-		glxext.has_GLX_MESA_query_renderer = false;
-	}
-#endif
-#undef lookup
 }

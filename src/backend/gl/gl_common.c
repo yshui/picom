@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
-#include <GL/gl.h>
-#include <GL/glext.h>
+#include <epoxy/gl.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>

@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <GL/gl.h>
-#include <GL/glext.h>
+#include <epoxy/egl.h>
+#include <epoxy/gl.h>
 #include <stdbool.h>
 #include <xcb/render.h>
 #include <xcb/xcb.h>
@@ -23,9 +21,5 @@ struct eglext_info {
 };
 
 extern struct eglext_info eglext;
-
-#ifdef EGL_MESA_query_driver
-extern PFNEGLGETDISPLAYDRIVERNAMEPROC eglGetDisplayDriverName;
-#endif
 
 void eglext_init(EGLDisplay);
