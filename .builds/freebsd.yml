@@ -12,6 +12,7 @@ packages:
   - uthash
   - libconfig
   - libglvnd
+  - libepoxy
   - dbus
   - pcre
 sources:

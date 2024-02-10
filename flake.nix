@@ -24,12 +24,22 @@
     overlays = [ overlay ];
   in rec {
     inherit overlay overlays;
-    defaultPackage = pkgs.picom;
+    defaultPackage = pkgs.picom.overrideAttrs (o: {
+      version = "11";
+      src = ./.;
+      buildInputs = o.buildInputs ++ [ pkgs.libepoxy ];
+    });
     devShell = defaultPackage.overrideAttrs {
-      buildInputs = defaultPackage.buildInputs ++ [
-        pkgs.clang-tools
-        pkgs.llvmPackages_14.clang-unwrapped.python
-      ];
+      buildInputs = defaultPackage.buildInputs ++ (with pkgs; [
+        clang-tools_17
+        llvmPackages_17.clang-unwrapped.python
+      ]);
+      hardeningDisable = [ "fortify" ];
+      shellHook = ''
+        # Workaround a NixOS limitation on sanitizers:
+        # See: https://github.com/NixOS/nixpkgs/issues/287763
+        export LD_LIBRARY_PATH+=":/run/opengl-driver/lib"
+      '';
     };
   });
 }
