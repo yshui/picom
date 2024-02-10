@@ -395,40 +395,6 @@ struct backend_operations egl_ops = {
     .max_buffer_age = 5,        // Why?
 };
 
-/**
- * Check if a EGL extension exists.
- */
-static inline bool egl_has_extension(EGLDisplay dpy, const char *ext) {
-	const char *egl_exts = eglQueryString(dpy, EGL_EXTENSIONS);
-	if (!egl_exts) {
-		log_error("Failed get EGL extension list.");
-		return false;
-	}
-
-	auto inlen = strlen(ext);
-	const char *curr = egl_exts;
-	bool match = false;
-	while (curr && !match) {
-		const char *end = strchr(curr, ' ');
-		if (!end) {
-			// Last extension string
-			match = strcmp(ext, curr) == 0;
-		} else if (curr + inlen == end) {
-			// Length match, do match string
-			match = strncmp(ext, curr, (unsigned long)(end - curr)) == 0;
-		}
-		curr = end ? end + 1 : NULL;
-	}
-
-	if (!match) {
-		log_info("Missing EGL extension %s.", ext);
-	} else {
-		log_info("Found EGL extension %s.", ext);
-	}
-
-	return match;
-}
-
 struct eglext_info eglext = {0};
 
 void eglext_init(EGLDisplay dpy) {
@@ -436,7 +402,10 @@ void eglext_init(EGLDisplay dpy) {
 		return;
 	}
 	eglext.initialized = true;
-#define check_ext(name) eglext.has_##name = egl_has_extension(dpy, #name)
+#define check_ext(name)                                                                  \
+	eglext.has_##name = epoxy_has_egl_extension(dpy, #name);                         \
+	log_info("Extension " #name " - %s", eglext.has_##name ? "present" : "absent")
+
 	check_ext(EGL_EXT_buffer_age);
 	check_ext(EGL_EXT_create_context_robustness);
 	check_ext(EGL_KHR_image_pixmap);

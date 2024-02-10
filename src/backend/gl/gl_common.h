@@ -263,26 +263,6 @@ static inline bool gl_check_fb_complete_(const char *func, int line, GLenum fb) 
 
 #define gl_check_fb_complete(fb) gl_check_fb_complete_(__func__, __LINE__, (fb))
 
-/**
- * Check if a GL extension exists.
- */
-static inline bool gl_has_extension(const char *ext) {
-	int nexts = 0;
-	glGetIntegerv(GL_NUM_EXTENSIONS, &nexts);
-	for (int i = 0; i < nexts || !nexts; i++) {
-		const char *exti = (const char *)glGetStringi(GL_EXTENSIONS, (GLuint)i);
-		if (exti == NULL) {
-			break;
-		}
-		if (strcmp(ext, exti) == 0) {
-			return true;
-		}
-	}
-	gl_clear_err();
-	log_info("Missing GL extension %s.", ext);
-	return false;
-}
-
 static const GLuint vert_coord_loc = 0;
 static const GLuint vert_in_texcoord_loc = 1;
 

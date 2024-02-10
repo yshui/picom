@@ -357,7 +357,7 @@ static const struct log_ops gl_string_marker_logger_ops = {
 /// Create an opengl logger that can be used for logging into opengl debugging tools,
 /// such as apitrace
 struct log_target *gl_string_marker_logger_new(void) {
-	if (!gl_has_extension("GL_GREMEDY_string_marker")) {
+	if (!epoxy_has_gl_extension("GL_GREMEDY_string_marker")) {
 		return NULL;
 	}
 
