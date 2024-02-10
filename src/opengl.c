@@ -279,7 +279,7 @@ void glx_destroy(session_t *ps) {
 
 	free(ps->psglx);
 	ps->psglx = NULL;
-	ps->argb_fbconfig = NULL;
+	ps->argb_fbconfig = (struct glx_fbconfig_info){0};
 }
 
 /**

@@ -19,7 +19,8 @@ struct glx_fbconfig_info {
 	int y_inverted;
 };
 
-struct glx_fbconfig_info *glx_find_fbconfig(struct x_connection *, struct xvisual_info);
+bool glx_find_fbconfig(struct x_connection *c, struct xvisual_info m,
+                       struct glx_fbconfig_info *info);
 
 struct glxext_info {
 	bool initialized;

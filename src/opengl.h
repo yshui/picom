@@ -228,10 +228,7 @@ static inline void free_texture(session_t *ps, glx_texture_t **pptex) {
  */
 static inline void free_paint_glx(session_t *ps, paint_t *ppaint) {
 	free_texture(ps, &ppaint->ptex);
-#ifdef CONFIG_OPENGL
-	free(ppaint->fbcfg);
-#endif
-	ppaint->fbcfg = NULL;
+	ppaint->fbcfg = (struct glx_fbconfig_info){0};
 }
 
 /**

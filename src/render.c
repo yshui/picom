@@ -55,19 +55,20 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
 	struct glx_fbconfig_info *fbcfg;
 	if (!visual) {
 		assert(depth == 32);
-		if (!ps->argb_fbconfig) {
-			ps->argb_fbconfig = glx_find_fbconfig(
-			    &ps->c, (struct xvisual_info){.red_size = 8,
-			                                  .green_size = 8,
-			                                  .blue_size = 8,
-			                                  .alpha_size = 8,
-			                                  .visual_depth = 32});
+		if (!ps->argb_fbconfig.cfg) {
+			glx_find_fbconfig(&ps->c,
+			                  (struct xvisual_info){.red_size = 8,
+			                                        .green_size = 8,
+			                                        .blue_size = 8,
+			                                        .alpha_size = 8,
+			                                        .visual_depth = 32},
+			                  &ps->argb_fbconfig);
 		}
-		if (!ps->argb_fbconfig) {
+		if (!ps->argb_fbconfig.cfg) {
 			log_error("Failed to find appropriate FBConfig for 32 bit depth");
 			return false;
 		}
-		fbcfg = ps->argb_fbconfig;
+		fbcfg = &ps->argb_fbconfig;
 	} else {
 		auto m = x_get_visual_info(&ps->c, visual);
 		if (m.visual_depth < 0) {
@@ -79,14 +80,14 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
 			return false;
 		}
 
-		if (!ppaint->fbcfg) {
-			ppaint->fbcfg = glx_find_fbconfig(&ps->c, m);
+		if (!ppaint->fbcfg.cfg) {
+			glx_find_fbconfig(&ps->c, m, &ppaint->fbcfg);
 		}
-		if (!ppaint->fbcfg) {
+		if (!ppaint->fbcfg.cfg) {
 			log_error("Failed to find appropriate FBConfig for X pixmap");
 			return false;
 		}
-		fbcfg = ppaint->fbcfg;
+		fbcfg = &ppaint->fbcfg;
 	}
 
 	if (force || !glx_tex_bound(ppaint->ptex, ppaint->pixmap)) {
@@ -1528,7 +1529,7 @@ void deinit_render(session_t *ps) {
 	free_root_tile(ps);
 
 #ifdef CONFIG_OPENGL
-	free(ps->root_tile_paint.fbcfg);
+	ps->root_tile_paint.fbcfg = (struct glx_fbconfig_info){0};
 	if (bkend_use_glx(ps)) {
 		glx_destroy(ps);
 	}

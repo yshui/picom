@@ -54,9 +54,12 @@ struct _glx_data {
 		}                                                                        \
 	} while (0)
 
-struct glx_fbconfig_info *glx_find_fbconfig(struct x_connection *c, struct xvisual_info m) {
+bool glx_find_fbconfig(struct x_connection *c, struct xvisual_info m,
+                       struct glx_fbconfig_info *info) {
 	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth %d", m.red_size,
 	          m.blue_size, m.green_size, m.alpha_size, m.visual_depth);
+
+	info->cfg = NULL;
 
 	int ncfg;
 	// clang-format off
@@ -143,16 +146,13 @@ struct glx_fbconfig_info *glx_find_fbconfig(struct x_connection *c, struct xvisu
 		min_cost = depthbuf + stencil + bufsize * (doublebuf + 1);
 	}
 	free(cfg);
-	if (!found) {
-		return NULL;
+	if (found) {
+		info->cfg = ret;
+		info->texture_tgts = texture_tgts;
+		info->texture_fmt = texture_fmt;
+		info->y_inverted = y_inverted;
 	}
-
-	auto info = cmalloc(struct glx_fbconfig_info);
-	info->cfg = ret;
-	info->texture_tgts = texture_tgts;
-	info->texture_fmt = texture_fmt;
-	info->y_inverted = y_inverted;
-	return info;
+	return found;
 }
 
 /**
@@ -394,8 +394,8 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	wd->inner = (struct backend_image_inner_base *)inner;
 	free(r);
 
-	auto fbcfg = glx_find_fbconfig(base->c, fmt);
-	if (!fbcfg) {
+	struct glx_fbconfig_info fbcfg;
+	if (!glx_find_fbconfig(base->c, fmt, &fbcfg)) {
 		log_error("Couldn't find FBConfig with requested visual %x", fmt.visual);
 		goto err;
 	}
@@ -403,29 +403,28 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	// Choose a suitable texture target for our pixmap.
 	// Refer to GLX_EXT_texture_om_pixmap spec to see what are the mean
 	// of the bits in texture_tgts
-	if (!(fbcfg->texture_tgts & GLX_TEXTURE_2D_BIT_EXT)) {
+	if (!(fbcfg.texture_tgts & GLX_TEXTURE_2D_BIT_EXT)) {
 		log_error("Cannot bind pixmap to GL_TEXTURE_2D, giving up");
 		goto err;
 	}
 
 	log_debug("depth %d, rgba %d", fmt.visual_depth,
-	          (fbcfg->texture_fmt == GLX_TEXTURE_FORMAT_RGBA_EXT));
+	          (fbcfg.texture_fmt == GLX_TEXTURE_FORMAT_RGBA_EXT));
 
 	GLint attrs[] = {
 	    GLX_TEXTURE_FORMAT_EXT,
-	    fbcfg->texture_fmt,
+	    fbcfg.texture_fmt,
 	    GLX_TEXTURE_TARGET_EXT,
 	    GLX_TEXTURE_2D_EXT,
 	    0,
 	};
 
-	inner->y_inverted = fbcfg->y_inverted;
+	inner->y_inverted = fbcfg.y_inverted;
 
 	glxpixmap = cmalloc(struct _glx_pixmap);
 	glxpixmap->pixmap = pixmap;
-	glxpixmap->glpixmap = glXCreatePixmap(base->c->dpy, fbcfg->cfg, pixmap, attrs);
+	glxpixmap->glpixmap = glXCreatePixmap(base->c->dpy, fbcfg.cfg, pixmap, attrs);
 	glxpixmap->owned = owned;
-	free(fbcfg);
 
 	if (!glxpixmap->glpixmap) {
 		log_error("Failed to create glpixmap for pixmap %#010x", pixmap);
