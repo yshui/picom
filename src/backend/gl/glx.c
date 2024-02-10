@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <uthash.h>
 #include <xcb/composite.h>
 #include <xcb/xcb.h>
 
@@ -44,6 +45,13 @@ struct _glx_data {
 	struct gl_data gl;
 	xcb_window_t target_win;
 	GLXContext ctx;
+	struct glx_fbconfig_cache *cached_fbconfigs;
+};
+
+struct glx_fbconfig_cache {
+	UT_hash_handle hh;
+	struct xvisual_info visual_info;
+	struct glx_fbconfig_info info;
 };
 
 #define glXGetFBConfigAttribChecked(a, b, attr, c)                                       \
@@ -56,8 +64,8 @@ struct _glx_data {
 
 bool glx_find_fbconfig(struct x_connection *c, struct xvisual_info m,
                        struct glx_fbconfig_info *info) {
-	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth %d", m.red_size,
-	          m.blue_size, m.green_size, m.alpha_size, m.visual_depth);
+	log_debug("Looking for FBConfig for RGBA%d%d%d%d, depth: %d, visual id: %#x", m.red_size,
+	          m.blue_size, m.green_size, m.alpha_size, m.visual_depth, m.visual);
 
 	info->cfg = NULL;
 
@@ -195,6 +203,12 @@ void glx_deinit(backend_t *base) {
 		glXMakeCurrent(base->c->dpy, None, NULL);
 		glXDestroyContext(base->c->dpy, gd->ctx);
 		gd->ctx = 0;
+	}
+
+	struct glx_fbconfig_cache *cached_fbconfig = NULL, *tmp = NULL;
+	HASH_ITER(hh, gd->cached_fbconfigs, cached_fbconfig, tmp) {
+		HASH_DEL(gd->cached_fbconfigs, cached_fbconfig);
+		free(cached_fbconfig);
 	}
 
 	free(gd);
@@ -367,6 +381,7 @@ end:
 static void *
 glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool owned) {
 	struct _glx_pixmap *glxpixmap = NULL;
+	auto gd = (struct _glx_data *)base;
 	// Retrieve pixmap parameters, if they aren't provided
 	if (fmt.visual_depth > OPENGL_MAX_DEPTH) {
 		log_error("Requested depth %d higher than max possible depth %d.",
@@ -394,36 +409,51 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	wd->inner = (struct backend_image_inner_base *)inner;
 	free(r);
 
-	struct glx_fbconfig_info fbcfg;
-	if (!glx_find_fbconfig(base->c, fmt, &fbcfg)) {
-		log_error("Couldn't find FBConfig with requested visual %x", fmt.visual);
-		goto err;
+	struct glx_fbconfig_cache *cached_fbconfig = NULL;
+	HASH_FIND(hh, gd->cached_fbconfigs, &fmt, sizeof(fmt), cached_fbconfig);
+	if (!cached_fbconfig) {
+		struct glx_fbconfig_info fbconfig;
+		if (!glx_find_fbconfig(base->c, fmt, &fbconfig)) {
+			log_error("Couldn't find FBConfig with requested visual %#x",
+			          fmt.visual);
+			goto err;
+		}
+		cached_fbconfig = cmalloc(struct glx_fbconfig_cache);
+		cached_fbconfig->visual_info = fmt;
+		cached_fbconfig->info = fbconfig;
+		HASH_ADD(hh, gd->cached_fbconfigs, visual_info, sizeof(fmt), cached_fbconfig);
+	} else {
+		log_debug("Found cached FBConfig for RGBA%d%d%d%d, depth: %d, visual id: "
+		          "%#x",
+		          fmt.red_size, fmt.blue_size, fmt.green_size, fmt.alpha_size,
+		          fmt.visual_depth, fmt.visual);
 	}
+	struct glx_fbconfig_info *fbconfig = &cached_fbconfig->info;
 
 	// Choose a suitable texture target for our pixmap.
 	// Refer to GLX_EXT_texture_om_pixmap spec to see what are the mean
 	// of the bits in texture_tgts
-	if (!(fbcfg.texture_tgts & GLX_TEXTURE_2D_BIT_EXT)) {
+	if (!(fbconfig->texture_tgts & GLX_TEXTURE_2D_BIT_EXT)) {
 		log_error("Cannot bind pixmap to GL_TEXTURE_2D, giving up");
 		goto err;
 	}
 
 	log_debug("depth %d, rgba %d", fmt.visual_depth,
-	          (fbcfg.texture_fmt == GLX_TEXTURE_FORMAT_RGBA_EXT));
+	          (fbconfig->texture_fmt == GLX_TEXTURE_FORMAT_RGBA_EXT));
 
 	GLint attrs[] = {
 	    GLX_TEXTURE_FORMAT_EXT,
-	    fbcfg.texture_fmt,
+	    fbconfig->texture_fmt,
 	    GLX_TEXTURE_TARGET_EXT,
 	    GLX_TEXTURE_2D_EXT,
 	    0,
 	};
 
-	inner->y_inverted = fbcfg.y_inverted;
+	inner->y_inverted = fbconfig->y_inverted;
 
 	glxpixmap = cmalloc(struct _glx_pixmap);
 	glxpixmap->pixmap = pixmap;
-	glxpixmap->glpixmap = glXCreatePixmap(base->c->dpy, fbcfg.cfg, pixmap, attrs);
+	glxpixmap->glpixmap = glXCreatePixmap(base->c->dpy, fbconfig->cfg, pixmap, attrs);
 	glxpixmap->owned = owned;
 
 	if (!glxpixmap->glpixmap) {
