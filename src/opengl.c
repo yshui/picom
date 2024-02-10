@@ -181,7 +181,7 @@ bool glx_init(session_t *ps, bool need_render) {
 	// must precede FBConfig fetching
 	if (need_render) {
 		psglx->has_texture_non_power_of_two =
-		    gl_has_extension("GL_ARB_texture_non_power_of_two");
+		    epoxy_has_gl_extension("GL_ARB_texture_non_power_of_two");
 	}
 
 	// Render preparations
