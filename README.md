@@ -41,7 +41,7 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * pixman
 * libdbus (optional, disable with the `-Ddbus=false` meson configure flag)
 * libconfig (optional, disable with the `-Dconfig_file=false` meson configure flag)
-* libGL, libEGL (optional, disable with the `-Dopengl=false` meson configure flag)
+* libGL, libEGL, libepoxy (optional, disable with the `-Dopengl=false` meson configure flag)
 * libpcre2 (optional, disable with the `-Dregex=false` meson configure flag)
 * libev
 * uthash
@@ -49,13 +49,13 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 On Debian based distributions (e.g. Ubuntu), the needed packages are
 
 ```
-libconfig-dev libdbus-1-dev libegl-dev libev-dev libgl-dev libpcre2-dev libpixman-1-dev libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-damage0-dev libxcb-dpms0-dev libxcb-glx0-dev libxcb-image0-dev libxcb-present-dev libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-util-dev libxcb-xfixes0-dev libxext-dev meson ninja-build uthash-dev
+libconfig-dev libdbus-1-dev libegl-dev libev-dev libgl-dev libepoxy-dev libpcre2-dev libpixman-1-dev libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-damage0-dev libxcb-dpms0-dev libxcb-glx0-dev libxcb-image0-dev libxcb-present-dev libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-util-dev libxcb-xfixes0-dev libxext-dev meson ninja-build uthash-dev
 ```
 
 On Fedora, the needed packages are
 
 ```
-dbus-devel gcc git libconfig-devel libdrm-devel libev-devel libX11-devel libX11-xcb libXext-devel libxcb-devel libGL-devel libEGL-devel meson pcre2-devel pixman-devel uthash-devel xcb-util-image-devel xcb-util-renderutil-devel xorg-x11-proto-devel xcb-util-devel
+dbus-devel gcc git libconfig-devel libdrm-devel libev-devel libX11-devel libX11-xcb libXext-devel libxcb-devel libGL-devel libEGL-devel libepoxy-devel meson pcre2-devel pixman-devel uthash-devel xcb-util-image-devel xcb-util-renderutil-devel xorg-x11-proto-devel xcb-util-devel
 ```
 
 To build the documents, you need `asciidoc`
