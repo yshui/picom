@@ -12,6 +12,7 @@
 
 * Workaround a NVIDIA problem that causes high CPU usage after suspend/resume (#1172, #1168)
 * Fix building on OpenBSD (#1189, #1188)
+* Fix occasional freezes (#1040, #1145, #1166)
 
 # v11.1 (2024-Jan-28)
 
