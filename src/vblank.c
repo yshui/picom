@@ -11,11 +11,11 @@
 
 #ifdef CONFIG_OPENGL
 // Enable sgi_video_sync_vblank_scheduler
-#include <GL/glx.h>
 #include <X11/X.h>
 #include <X11/Xlib-xcb.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <epoxy/glx.h>
 #include <pthread.h>
 
 #endif
@@ -96,8 +96,6 @@ struct sgi_video_sync_thread_args {
 	pthread_cond_t start_cnd;
 };
 
-static PFNGLXWAITVIDEOSYNCSGIPROC glXWaitVideoSyncSGI;
-
 static bool check_sgi_video_sync_extension(Display *dpy, int screen) {
 	const char *glx_ext = glXQueryExtensionsString(dpy, screen);
 	const char *needle = "GLX_SGI_video_sync";
@@ -112,11 +110,6 @@ static bool check_sgi_video_sync_extension(Display *dpy, int screen) {
 		return false;
 	}
 
-	glXWaitVideoSyncSGI = (PFNGLXWAITVIDEOSYNCSGIPROC)(void *)glXGetProcAddress(
-	    (const GLubyte *)"glXWaitVideoSyncSGI");
-	if (!glXWaitVideoSyncSGI) {
-		return false;
-	}
 	return true;
 }
 

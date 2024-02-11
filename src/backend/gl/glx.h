@@ -1,17 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
-#include <stdbool.h>
-// Older version of glx.h defines function prototypes for these extensions...
-// Rename them to avoid conflicts
-#define glXSwapIntervalMESA glXSwapIntervalMESA_
-#define glXBindTexImageEXT glXBindTexImageEXT_
-#define glXReleaseTexImageEXT glXReleaseTexImageEXT
-#include <GL/glx.h>
-#undef glXSwapIntervalMESA
-#undef glXBindTexImageEXT
-#undef glXReleaseTexImageEXT
 #include <X11/Xlib.h>
+#include <epoxy/glx.h>
+#include <stdbool.h>
 #include <xcb/render.h>
 #include <xcb/xcb.h>
 
@@ -58,20 +50,5 @@ struct glxext_info {
 };
 
 extern struct glxext_info glxext;
-
-extern PFNGLXGETVIDEOSYNCSGIPROC glXGetVideoSyncSGI;
-extern PFNGLXWAITVIDEOSYNCSGIPROC glXWaitVideoSyncSGI;
-extern PFNGLXGETSYNCVALUESOMLPROC glXGetSyncValuesOML;
-extern PFNGLXWAITFORMSCOMLPROC glXWaitForMscOML;
-extern PFNGLXSWAPINTERVALEXTPROC glXSwapIntervalEXT;
-extern PFNGLXSWAPINTERVALSGIPROC glXSwapIntervalSGI;
-extern PFNGLXSWAPINTERVALMESAPROC glXSwapIntervalMESA;
-extern PFNGLXBINDTEXIMAGEEXTPROC glXBindTexImageEXT;
-extern PFNGLXRELEASETEXIMAGEEXTPROC glXReleaseTexImageEXT;
-extern PFNGLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB;
-
-#ifdef GLX_MESA_query_renderer
-extern PFNGLXQUERYCURRENTRENDERERINTEGERMESAPROC glXQueryCurrentRendererIntegerMESA;
-#endif
 
 void glxext_init(Display *, int screen);

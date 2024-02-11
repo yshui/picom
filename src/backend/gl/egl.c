@@ -36,12 +36,6 @@ struct egl_data {
 	EGLContext ctx;
 };
 
-static PFNGLEGLIMAGETARGETTEXSTORAGEEXTPROC glEGLImageTargetTexStorage = NULL;
-static PFNEGLCREATEIMAGEKHRPROC eglCreateImageProc = NULL;
-static PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageProc = NULL;
-static PFNEGLGETPLATFORMDISPLAYPROC eglGetPlatformDisplayProc = NULL;
-static PFNEGLCREATEPLATFORMWINDOWSURFACEPROC eglCreatePlatformWindowSurfaceProc = NULL;
-
 const char *eglGetErrorString(EGLint error) {
 #define CASE_STR(value)                                                                  \
 	case value: return #value;
@@ -74,7 +68,7 @@ static void egl_release_image(backend_t *base, struct gl_texture *tex) {
 	struct egl_pixmap *p = tex->user_data;
 	// Release binding
 	if (p->image != EGL_NO_IMAGE) {
-		eglDestroyImageProc(gd->display, p->image);
+		eglDestroyImage(gd->display, p->image);
 		p->image = EGL_NO_IMAGE;
 	}
 
@@ -134,18 +128,6 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 	bool success = false;
 	struct egl_data *gd = NULL;
 
-#define get_proc(name, type)                                                             \
-	name##Proc = (type)eglGetProcAddress(#name);                                     \
-	if (!name##Proc) {                                                               \
-		log_error("Failed to get EGL function " #name);                          \
-		goto end;                                                                \
-	}
-	get_proc(eglCreateImage, PFNEGLCREATEIMAGEKHRPROC);
-	get_proc(eglDestroyImage, PFNEGLDESTROYIMAGEKHRPROC);
-	get_proc(eglGetPlatformDisplay, PFNEGLGETPLATFORMDISPLAYPROC);
-	get_proc(eglCreatePlatformWindowSurface, PFNEGLCREATEPLATFORMWINDOWSURFACEPROC);
-#undef get_proc
-
 	// Check if we have the X11 platform
 	const char *exts = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
 	if (strstr(exts, "EGL_EXT_platform_x11") == NULL) {
@@ -154,12 +136,12 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 	}
 
 	gd = ccalloc(1, struct egl_data);
-	gd->display = eglGetPlatformDisplayProc(EGL_PLATFORM_X11_EXT, ps->c.dpy,
-	                                        (EGLAttrib[]){
-	                                            EGL_PLATFORM_X11_SCREEN_EXT,
-	                                            ps->c.screen,
-	                                            EGL_NONE,
-	                                        });
+	gd->display = eglGetPlatformDisplayEXT(EGL_PLATFORM_X11_EXT, ps->c.dpy,
+	                                       (EGLint[]){
+	                                           EGL_PLATFORM_X11_SCREEN_EXT,
+	                                           ps->c.screen,
+	                                           EGL_NONE,
+	                                       });
 	if (gd->display == EGL_NO_DISPLAY) {
 		log_error("Failed to get EGL display.");
 		goto end;
@@ -212,7 +194,7 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 	// clang-format on
 
 	gd->target_win =
-	    eglCreatePlatformWindowSurfaceProc(gd->display, config, &target, NULL);
+	    eglCreatePlatformWindowSurfaceEXT(gd->display, config, &target, NULL);
 	if (gd->target_win == EGL_NO_SURFACE) {
 		log_error("Failed to create EGL surface.");
 		goto end;
@@ -240,14 +222,6 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 	}
 	if (!gd->gl.has_egl_image_storage) {
 		log_error("GL_EXT_EGL_image_storage extension not available.");
-		goto end;
-	}
-
-	glEGLImageTargetTexStorage =
-	    (PFNGLEGLIMAGETARGETTEXSTORAGEEXTPROC)eglGetProcAddress("glEGLImageTargetTexS"
-	                                                            "torageEXT");
-	if (glEGLImageTargetTexStorage == NULL) {
-		log_error("Failed to get glEGLImageTargetTexStorageEXT.");
 		goto end;
 	}
 
@@ -302,9 +276,8 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 
 	eglpixmap = cmalloc(struct egl_pixmap);
 	eglpixmap->pixmap = pixmap;
-	eglpixmap->image =
-	    eglCreateImageProc(gd->display, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR,
-	                       (EGLClientBuffer)(uintptr_t)pixmap, NULL);
+	eglpixmap->image = eglCreateImage(gd->display, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR,
+	                                  (EGLClientBuffer)(uintptr_t)pixmap, NULL);
 	eglpixmap->owned = owned;
 
 	if (eglpixmap->image == EGL_NO_IMAGE) {
@@ -324,14 +297,14 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	wd->dim = 0;
 	wd->inner->refcount = 1;
 	glBindTexture(GL_TEXTURE_2D, inner->texture);
-	glEGLImageTargetTexStorage(GL_TEXTURE_2D, eglpixmap->image, NULL);
+	glEGLImageTargetTexStorageEXT(GL_TEXTURE_2D, eglpixmap->image, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	gl_check_err();
 	return wd;
 err:
 	if (eglpixmap && eglpixmap->image) {
-		eglDestroyImageProc(gd->display, eglpixmap->image);
+		eglDestroyImage(gd->display, eglpixmap->image);
 	}
 	free(eglpixmap);
 
@@ -422,41 +395,6 @@ struct backend_operations egl_ops = {
     .max_buffer_age = 5,        // Why?
 };
 
-PFNEGLGETDISPLAYDRIVERNAMEPROC eglGetDisplayDriverName;
-/**
- * Check if a EGL extension exists.
- */
-static inline bool egl_has_extension(EGLDisplay dpy, const char *ext) {
-	const char *egl_exts = eglQueryString(dpy, EGL_EXTENSIONS);
-	if (!egl_exts) {
-		log_error("Failed get EGL extension list.");
-		return false;
-	}
-
-	auto inlen = strlen(ext);
-	const char *curr = egl_exts;
-	bool match = false;
-	while (curr && !match) {
-		const char *end = strchr(curr, ' ');
-		if (!end) {
-			// Last extension string
-			match = strcmp(ext, curr) == 0;
-		} else if (curr + inlen == end) {
-			// Length match, do match string
-			match = strncmp(ext, curr, (unsigned long)(end - curr)) == 0;
-		}
-		curr = end ? end + 1 : NULL;
-	}
-
-	if (!match) {
-		log_info("Missing EGL extension %s.", ext);
-	} else {
-		log_info("Found EGL extension %s.", ext);
-	}
-
-	return match;
-}
-
 struct eglext_info eglext = {0};
 
 void eglext_init(EGLDisplay dpy) {
@@ -464,7 +402,10 @@ void eglext_init(EGLDisplay dpy) {
 		return;
 	}
 	eglext.initialized = true;
-#define check_ext(name) eglext.has_##name = egl_has_extension(dpy, #name)
+#define check_ext(name)                                                                  \
+	eglext.has_##name = epoxy_has_egl_extension(dpy, #name);                         \
+	log_info("Extension " #name " - %s", eglext.has_##name ? "present" : "absent")
+
 	check_ext(EGL_EXT_buffer_age);
 	check_ext(EGL_EXT_create_context_robustness);
 	check_ext(EGL_KHR_image_pixmap);
@@ -472,16 +413,4 @@ void eglext_init(EGLDisplay dpy) {
 	check_ext(EGL_MESA_query_driver);
 #endif
 #undef check_ext
-
-	// Checking if the returned function pointer is NULL is not really necessary,
-	// or maybe not even useful, since eglGetProcAddress might always return
-	// something. We are doing it just for completeness' sake.
-
-#ifdef EGL_MESA_query_driver
-	eglGetDisplayDriverName =
-	    (PFNEGLGETDISPLAYDRIVERNAMEPROC)eglGetProcAddress("eglGetDisplayDriverName");
-	if (!eglGetDisplayDriverName) {
-		eglext.has_EGL_MESA_query_driver = false;
-	}
-#endif
 }

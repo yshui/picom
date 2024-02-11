@@ -4,9 +4,14 @@
 
 * Allow `corner-radius-rules` to override `corner-radius = 0`. Previously setting corner radius to 0 globally disables rounded corners. (#1170)
 
+## Build changes
+
+* `picom` now depends on `libepoxy` for OpenGL symbol management.
+
 ## Bug fixes
 
 * Workaround a NVIDIA problem that causes high CPU usage after suspend/resume (#1172, #1168)
+* Fix building on OpenBSD (#1189, #1188)
 
 # v11.1 (2024-Jan-28)
 
