@@ -1,0 +1,13 @@
+[package]
+name = "picom-tracer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+libbpf-rs = { version = "0.22.1", default-features = false, features = ["novendor"] }
+object = "0.32.2"
+
+[build-dependencies]
+libbpf-cargo = { version = "0.22.1", default-features = false, features = ["novendor"] }

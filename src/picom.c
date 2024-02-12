@@ -1989,6 +1989,17 @@ static bool load_shader_source_for_condition(const c2_lptr_t *cond, void *data) 
 	return load_shader_source(data, c2_list_get_data(cond));
 }
 
+#ifndef NDEBUG
+#define probe __attribute__((noinline)) void
+probe xcb_connection_probe(xcb_connection_t *conn) {
+	__asm__ volatile("" : : "r"(conn));
+}
+#undef probe
+#else
+static inline void xcb_connection_probe(xcb_connection_t *conn attr_unused) {
+}
+#endif
+
 /**
  * Initialize a session.
  *
@@ -2088,6 +2099,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	// Use the same Display across reset, primarily for resource leak checking
 	x_connection_init(&ps->c, dpy);
+	xcb_connection_probe(ps->c.c);
 	// We store width/height from screen_info instead using them directly because they
 	// can change, see configure_root().
 	ps->root_width = ps->c.screen_info->width_in_pixels;
