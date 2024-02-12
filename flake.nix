@@ -33,6 +33,7 @@
       buildInputs = defaultPackage.buildInputs ++ (with pkgs; [
         clang-tools_17
         llvmPackages_17.clang-unwrapped.python
+        libunwind
       ]);
       hardeningDisable = [ "fortify" ];
       shellHook = ''
