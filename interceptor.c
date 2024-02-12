@@ -22,7 +22,7 @@ void backtrace() {
 
 	int n = 0;
 	size_t buffer_offset = 0;
-	while (unw_step(&cursor)) {
+	while (unw_step(&cursor) && n < 10) {
 		unw_word_t ip, sp, off;
 
 		unw_get_reg(&cursor, UNW_REG_IP, &ip);
