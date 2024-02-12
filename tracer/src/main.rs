@@ -38,7 +38,7 @@ fn main() {
             eprintln!("{} {}", tag, String::from_utf8_lossy(s));
         }
     }
-    let runpath = runpath.unwrap();
+    let runpath = runpath.unwrap_or(b"/usr/lib".to_vec());
     let libc_name = libc_name.unwrap();
     let libc_name = std::ffi::OsStr::from_bytes(&libc_name);
     let mut libc_path = None;
