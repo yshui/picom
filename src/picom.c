@@ -2070,7 +2070,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .xrfilter_convolution_exists = false,
 
 	    .atoms_wintypes = {0},
-	    .track_atom_lst = NULL,
 
 #ifdef CONFIG_DBUS
 	    .dbus_data = NULL,
@@ -2265,19 +2264,21 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	SET_WM_TYPE_ATOM(DND);
 #undef SET_WM_TYPE_ATOM
 
+	ps->c2_state = c2_state_new(ps->atoms);
+
 	// Get needed atoms for c2 condition lists
-	if (!(c2_list_postprocess(ps, ps->o.unredir_if_possible_blacklist) &&
-	      c2_list_postprocess(ps, ps->o.paint_blacklist) &&
-	      c2_list_postprocess(ps, ps->o.shadow_blacklist) &&
-	      c2_list_postprocess(ps, ps->o.shadow_clip_list) &&
-	      c2_list_postprocess(ps, ps->o.fade_blacklist) &&
-	      c2_list_postprocess(ps, ps->o.blur_background_blacklist) &&
-	      c2_list_postprocess(ps, ps->o.invert_color_list) &&
-	      c2_list_postprocess(ps, ps->o.window_shader_fg_rules) &&
-	      c2_list_postprocess(ps, ps->o.opacity_rules) &&
-	      c2_list_postprocess(ps, ps->o.rounded_corners_blacklist) &&
-	      c2_list_postprocess(ps, ps->o.corner_radius_rules) &&
-	      c2_list_postprocess(ps, ps->o.focus_blacklist))) {
+	if (!(c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.unredir_if_possible_blacklist) &&
+	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.paint_blacklist) &&
+	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.shadow_blacklist) &&
+	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.shadow_clip_list) &&
+	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.fade_blacklist) &&
+	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.blur_background_blacklist) &&
+	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.invert_color_list) &&
+	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.window_shader_fg_rules) &&
+	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.opacity_rules) &&
+	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.rounded_corners_blacklist) &&
+	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.corner_radius_rules) &&
+	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.focus_blacklist))) {
 		log_error("Post-processing of conditionals failed, some of your rules "
 		          "might not work");
 	}
@@ -2659,17 +2660,7 @@ static void session_destroy(session_t *ps) {
 	c2_list_free(&ps->o.rounded_corners_blacklist, NULL);
 	c2_list_free(&ps->o.corner_radius_rules, NULL);
 	c2_list_free(&ps->o.window_shader_fg_rules, free);
-
-	// Free tracked atom list
-	{
-		latom_t *next = NULL;
-		for (latom_t *this = ps->track_atom_lst; this; this = next) {
-			next = this->next;
-			free(this);
-		}
-
-		ps->track_atom_lst = NULL;
-	}
+	c2_state_free(ps->c2_state);
 
 	// Free tgt_{buffer,picture} and root_picture
 	if (ps->tgt_buffer.pict == ps->tgt_picture) {

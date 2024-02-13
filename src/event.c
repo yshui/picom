@@ -11,6 +11,7 @@
 #include <xcb/xcb_event.h>
 
 #include "atom.h"
+#include "c2.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
@@ -573,20 +574,17 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// Check for other atoms we are tracking
-	for (latom_t *platom = ps->track_atom_lst; platom; platom = platom->next) {
-		if (platom->atom == ev->atom) {
-			auto w = find_managed_win(ps, ev->window);
-			if (!w) {
-				w = find_toplevel(ps, ev->window);
-			}
-			if (w) {
-				// Set FACTOR_CHANGED so rules based on properties will be
-				// re-evaluated.
-				// Don't need to set property stale here, since that only
-				// concerns properties we explicitly check.
-				win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
-			}
-			break;
+	if (c2_state_is_property_tracked(ps->c2_state, ev->atom)) {
+		auto w = find_managed_win(ps, ev->window);
+		if (!w) {
+			w = find_toplevel(ps, ev->window);
+		}
+		if (w) {
+			// Set FACTOR_CHANGED so rules based on properties will be
+			// re-evaluated.
+			// Don't need to set property stale here, since that only
+			// concerns properties we explicitly check.
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 		}
 	}
 }

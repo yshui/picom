@@ -234,6 +234,8 @@ typedef struct session {
 	uint64_t root_flags;
 	/// Program options.
 	options_t o;
+	/// State object for c2.
+	struct c2_state *c2_state;
 	/// Whether we have hit unredirection timeout.
 	bool tmout_unredir_hit;
 	/// If the backend is busy. This means two things:
@@ -376,8 +378,6 @@ typedef struct session {
 	struct atom *atoms;
 	/// Array of atoms of all possible window types.
 	xcb_atom_t atoms_wintypes[NUM_WINTYPES];
-	/// Linked list of additional atoms to track.
-	latom_t *track_atom_lst;
 
 #ifdef CONFIG_DBUS
 	// === DBus related ===
