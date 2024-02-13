@@ -14,6 +14,7 @@
 #include <fnmatch.h>
 #include <stdio.h>
 #include <string.h>
+#include <uthash.h>
 
 // libpcre
 #ifdef CONFIG_REGEX_PCRE
@@ -52,6 +53,16 @@ typedef struct {
 		c2_l_t *l;
 	};
 } c2_ptr_t;
+
+struct c2_tracked_property {
+	UT_hash_handle hh;
+	xcb_atom_t property;
+};
+
+struct c2_state {
+	struct c2_tracked_property *tracked_properties;
+	struct atom *atoms;
+};
 
 /// Initializer for c2_ptr_t.
 #define C2_PTR_INIT                                                                      \
@@ -1039,7 +1050,7 @@ fail:
 /**
  * Do postprocessing on a condition leaf.
  */
-static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
+static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t *pleaf) {
 	// Give a pattern type to a leaf with exists operator, if needed
 	if (C2_L_OEXISTS == pleaf->op && !pleaf->ptntype) {
 		pleaf->ptntype = (C2_L_TSTRING == pleaf->type ? C2_L_PTSTRING : C2_L_PTINT);
@@ -1047,27 +1058,21 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 
 	// Get target atom if it's not a predefined one
 	if (pleaf->predef == C2_L_PUNDEFINED) {
-		pleaf->tgtatom = get_atom(ps->atoms, pleaf->tgt, ps->c.c);
+		pleaf->tgtatom = get_atom(state->atoms, pleaf->tgt, c);
 		if (!pleaf->tgtatom) {
 			log_error("Failed to get atom for target \"%s\".", pleaf->tgt);
 			return false;
 		}
 	}
 
-	// Insert target Atom into atom track list
+	// Insert target atom into tracked property name list
 	if (pleaf->tgtatom) {
-		bool found = false;
-		for (latom_t *platom = ps->track_atom_lst; platom; platom = platom->next) {
-			if (pleaf->tgtatom == platom->atom) {
-				found = true;
-				break;
-			}
-		}
-		if (!found) {
-			auto pnew = cmalloc(latom_t);
-			pnew->next = ps->track_atom_lst;
-			pnew->atom = pleaf->tgtatom;
-			ps->track_atom_lst = pnew;
+		struct c2_tracked_property *property;
+		HASH_FIND_INT(state->tracked_properties, &pleaf->tgtatom, property);
+		if (property == NULL) {
+			property = cmalloc(struct c2_tracked_property);
+			property->property = pleaf->tgtatom;
+			HASH_ADD_INT(state->tracked_properties, property, property);
 		}
 	}
 
@@ -1123,20 +1128,19 @@ static bool c2_l_postprocess(session_t *ps, c2_l_t *pleaf) {
 	return true;
 }
 
-static bool c2_tree_postprocess(session_t *ps, c2_ptr_t node) {
+static bool c2_tree_postprocess(struct c2_state *state, xcb_connection_t *c, c2_ptr_t node) {
 	if (!node.isbranch) {
-		return c2_l_postprocess(ps, node.l);
+		return c2_l_postprocess(state, c, node.l);
 	}
-	if (!c2_tree_postprocess(ps, node.b->opr1)) {
-		return false;
-	}
-	return c2_tree_postprocess(ps, node.b->opr2);
+
+	return c2_tree_postprocess(state, c, node.b->opr1) &&
+	       c2_tree_postprocess(state, c, node.b->opr2);
 }
 
-bool c2_list_postprocess(session_t *ps, c2_lptr_t *list) {
+bool c2_list_postprocess(struct c2_state *state, xcb_connection_t *c, c2_lptr_t *list) {
 	c2_lptr_t *head = list;
 	while (head) {
-		if (!c2_tree_postprocess(ps, head->ptr)) {
+		if (!c2_tree_postprocess(state, c, head->ptr)) {
 			return false;
 		}
 		head = head->next;
@@ -1728,4 +1732,25 @@ bool c2_list_foreach(const c2_lptr_t *condlist, c2_list_foreach_cb_t cb, void *d
 /// Return user data stored in a condition.
 void *c2_list_get_data(const c2_lptr_t *condlist) {
 	return condlist->data;
+}
+
+struct c2_state *c2_state_new(struct atom *atoms) {
+	auto ret = ccalloc(1, struct c2_state);
+	ret->atoms = atoms;
+	return ret;
+}
+
+void c2_state_free(struct c2_state *state) {
+	struct c2_tracked_property *property, *tmp;
+	HASH_ITER(hh, state->tracked_properties, property, tmp) {
+		HASH_DEL(state->tracked_properties, property);
+		free(property);
+	}
+	free(state);
+}
+
+bool c2_is_property_tracked(struct c2_state *state, xcb_atom_t property) {
+	struct c2_tracked_property *p;
+	HASH_FIND_INT(state->tracked_properties, &property, p);
+	return p != NULL;
 }
