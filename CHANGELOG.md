@@ -4,6 +4,8 @@
 
 * Allow `corner-radius-rules` to override `corner-radius = 0`. Previously setting corner radius to 0 globally disables rounded corners. (#1170)
 
+# v11.2 (2024-Feb-13)
+
 ## Build changes
 
 * `picom` now depends on `libepoxy` for OpenGL symbol management.
@@ -13,6 +15,9 @@
 * Workaround a NVIDIA problem that causes high CPU usage after suspend/resume (#1172, #1168)
 * Fix building on OpenBSD (#1189, #1188)
 * Fix occasional freezes (#1040, #1145, #1166)
+* Fix `corner-radius-rules` not applying sometimes (#1177)
+* Fix window shader not having an effect when frame opacity is enabled (#1174)
+* Fix binding root pixmap in case of depth mismatch (#984)
 
 # v11.1 (2024-Jan-28)
 
