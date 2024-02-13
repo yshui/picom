@@ -105,9 +105,9 @@
 
 #ifndef unreachable
 # if defined(__GNUC__) || defined(__clang__)
-#  define unreachable() __builtin_unreachable()
+#  define unreachable() assert(false); __builtin_unreachable()
 # else
-#  define unreachable() do {} while(0)
+#  define unreachable() assert(false); do {} while(0)
 # endif
 #endif
 
