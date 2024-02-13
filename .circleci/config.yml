@@ -29,7 +29,7 @@ commands:
             - ".git"
       - run:
           name: config
-          command: CC=<< parameters.cc >> meson << parameters.build-config >> -Dunittest=true --werror . build
+          command: CC=<< parameters.cc >> meson setup << parameters.build-config >> -Dunittest=true --werror . build
       - run:
           name: build
           command: ninja -vC build
