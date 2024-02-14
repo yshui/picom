@@ -520,6 +520,9 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		// Update window geometry
 		w->g = w->pending_g;
 
+		// Whether a window is fullscreen changes based on its geometry
+		win_update_is_fullscreen(ps, w);
+
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(ps, w);
 			win_update_bounding_shape(ps, w);
@@ -1187,7 +1190,7 @@ static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) 
 
 	// Don't round full screen windows & excluded windows,
 	// unless we find a corner override in corner_radius_rules
-	if (!radius_override && ((w && win_is_fullscreen(ps, w)) ||
+	if (!radius_override && ((w && w->is_fullscreen) ||
 	                         c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL))) {
 		w->corner_radius = 0;
 		log_debug("Not rounding corners for window %#010x", w->base.id);
@@ -1254,9 +1257,10 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
  */
 void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	log_debug("Window %#010x (%s) factor change", w->base.id, w->name);
-	// Focus needs to be updated first, as other rules might depend on the
-	// focused state of the window
+	// Focus and is_fullscreen needs to be updated first, as other rules might depend
+	// on the focused state of the window
 	win_update_focused(ps, w);
+	win_update_is_fullscreen(ps, w);
 
 	win_determine_shadow(ps, w);
 	win_determine_clip_shadow_above(ps, w);
@@ -2746,13 +2750,6 @@ struct managed_win *find_managed_window_or_parent(session_t *ps, xcb_window_t wi
 	return (struct managed_win *)w;
 }
 
-/**
- * Check if a rectangle includes the whole screen.
- */
-static inline bool rect_is_fullscreen(const session_t *ps, int x, int y, int wid, int hei) {
-	return (x <= 0 && y <= 0 && (x + wid) >= ps->root_width && (y + hei) >= ps->root_height);
-}
-
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
@@ -2837,12 +2834,15 @@ bool win_check_flags_all(struct managed_win *w, uint64_t flags) {
  *
  * It's not using w->border_size for performance measures.
  */
-bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
+void win_update_is_fullscreen(const session_t *ps, struct managed_win *w) {
 	if (!ps->o.no_ewmh_fullscreen && w->is_ewmh_fullscreen) {
-		return true;
+		w->is_fullscreen = true;
+		return;
 	}
-	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
-	       (!w->bounding_shaped || w->rounded_corners);
+	w->is_fullscreen = w->g.x <= 0 && w->g.y <= 0 &&
+	                   (w->g.x + w->widthb) >= ps->root_width &&
+	                   (w->g.y + w->heightb) >= ps->root_height &&
+	                   (!w->bounding_shaped || w->rounded_corners);
 }
 
 /**
