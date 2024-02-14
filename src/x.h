@@ -27,6 +27,7 @@ typedef struct winprop {
 		int16_t *p16;
 		int32_t *p32;
 		uint32_t *c32;        // 32bit cardinal
+		xcb_atom_t *atom;
 	};
 	unsigned long nitems;
 	xcb_atom_t type;
