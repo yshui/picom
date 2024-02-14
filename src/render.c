@@ -624,7 +624,7 @@ static bool get_root_tile(session_t *ps) {
 	} else {
 		visual = r->depth == ps->c.screen_info->root_depth
 		             ? ps->c.screen_info->root_visual
-		             : x_get_visual_for_depth(&ps->c, r->depth);
+		             : x_get_visual_for_depth(ps->c.screen_info, r->depth);
 		free(r);
 	}
 

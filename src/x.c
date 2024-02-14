@@ -322,15 +322,11 @@ xcb_visualid_t x_get_visual_for_standard(struct x_connection *c, xcb_pict_standa
 	return x_get_visual_for_pictfmt(g_pictfmts, pictfmt->id);
 }
 
-xcb_visualid_t x_get_visual_for_depth(struct x_connection *c, uint8_t depth) {
-	xcb_screen_iterator_t screen_it = xcb_setup_roots_iterator(xcb_get_setup(c->c));
-	for (; screen_it.rem; xcb_screen_next(&screen_it)) {
-		xcb_depth_iterator_t depth_it =
-		    xcb_screen_allowed_depths_iterator(screen_it.data);
-		for (; depth_it.rem; xcb_depth_next(&depth_it)) {
-			if (depth_it.data->depth == depth) {
-				return xcb_depth_visuals_iterator(depth_it.data).data->visual_id;
-			}
+xcb_visualid_t x_get_visual_for_depth(xcb_screen_t *screen, uint8_t depth) {
+	xcb_depth_iterator_t depth_it = xcb_screen_allowed_depths_iterator(screen);
+	for (; depth_it.rem; xcb_depth_next(&depth_it)) {
+		if (depth_it.data->depth == depth) {
+			return xcb_depth_visuals_iterator(depth_it.data).data->visual_id;
 		}
 	}
 
