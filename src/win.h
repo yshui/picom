@@ -199,6 +199,8 @@ struct managed_win {
 	char *class_general;
 	/// <code>WM_WINDOW_ROLE</code> value of the window.
 	char *role;
+	/// Whether the window sets the EWMH fullscreen property.
+	bool is_ewmh_fullscreen;
 
 	// Opacity-related members
 	/// Current window opacity.
