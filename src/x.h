@@ -265,7 +265,6 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 
 const xcb_render_pictforminfo_t *
 x_get_pictform_for_visual(struct x_connection *, xcb_visualid_t);
-int x_get_visual_depth(struct x_connection *, xcb_visualid_t);
 
 xcb_render_picture_t
 x_create_picture_with_pictfmt_and_pixmap(struct x_connection *,
