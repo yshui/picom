@@ -1509,7 +1509,8 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 		else {
 			char **strlst = NULL;
 			int nstr = 0;
-			if (wid_get_text_prop(ps, wid, pleaf->tgtatom, &strlst, &nstr)) {
+			if (wid_get_text_prop(&ps->c, ps->atoms, wid, pleaf->tgtatom,
+			                      &strlst, &nstr)) {
 				if (pleaf->index < 0 && nstr > 0 && strlen(strlst[0]) > 0) {
 					ntargets = to_u32_checked(nstr);
 					targets = (const char **)strlst;

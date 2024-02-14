@@ -261,8 +261,8 @@ xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid, xcb_a
  *                     array
  * @param[out] pnstr   Number of strings in the array
  */
-bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char ***pstrlst,
-                       int *pnstr);
+bool wid_get_text_prop(struct x_connection *c, struct atom *atoms, xcb_window_t wid,
+                       xcb_atom_t prop, char ***pstrlst, int *pnstr);
 
 const xcb_render_pictforminfo_t *
 x_get_pictform_for_visual(struct x_connection *, xcb_visualid_t);

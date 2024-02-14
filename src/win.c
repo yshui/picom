@@ -658,12 +658,14 @@ int win_update_name(session_t *ps, struct managed_win *w) {
 		return 0;
 	}
 
-	if (!(wid_get_text_prop(ps, w->client_win, ps->atoms->a_NET_WM_NAME, &strlst, &nstr))) {
+	if (!(wid_get_text_prop(&ps->c, ps->atoms, w->client_win,
+	                        ps->atoms->a_NET_WM_NAME, &strlst, &nstr))) {
 		log_debug("(%#010x): _NET_WM_NAME unset, falling back to "
 		          "WM_NAME.",
 		          w->client_win);
 
-		if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_NAME, &strlst, &nstr)) {
+		if (!wid_get_text_prop(&ps->c, ps->atoms, w->client_win,
+		                       ps->atoms->aWM_NAME, &strlst, &nstr)) {
 			log_debug("Unsetting window name for %#010x", w->client_win);
 			free(w->name);
 			w->name = NULL;
@@ -690,7 +692,8 @@ static int win_update_role(session_t *ps, struct managed_win *w) {
 	char **strlst = NULL;
 	int nstr = 0;
 
-	if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_WINDOW_ROLE, &strlst, &nstr)) {
+	if (!wid_get_text_prop(&ps->c, ps->atoms, w->client_win,
+	                       ps->atoms->aWM_WINDOW_ROLE, &strlst, &nstr)) {
 		return -1;
 	}
 
@@ -1876,7 +1879,8 @@ bool win_update_class(session_t *ps, struct managed_win *w) {
 	w->class_general = NULL;
 
 	// Retrieve the property string list
-	if (!wid_get_text_prop(ps, w->client_win, ps->atoms->aWM_CLASS, &strlst, &nstr)) {
+	if (!wid_get_text_prop(&ps->c, ps->atoms, w->client_win, ps->atoms->aWM_CLASS,
+	                       &strlst, &nstr)) {
 		return false;
 	}
 

@@ -182,10 +182,9 @@ xcb_window_t wid_get_prop_window(struct x_connection *c, xcb_window_t wid, xcb_a
 /**
  * Get the value of a text property of a window.
  */
-bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char ***pstrlst,
-                       int *pnstr) {
-	assert(ps->server_grabbed);
-	auto prop_info = x_get_prop_info(&ps->c, wid, prop);
+bool wid_get_text_prop(struct x_connection *c, struct atom *atoms, xcb_window_t wid,
+                       xcb_atom_t prop, char ***pstrlst, int *pnstr) {
+	auto prop_info = x_get_prop_info(c, wid, prop);
 	auto type = prop_info.type;
 	auto format = prop_info.format;
 	auto length = prop_info.length;
@@ -194,8 +193,7 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 		return false;
 	}
 
-	if (type != XCB_ATOM_STRING && type != ps->atoms->aUTF8_STRING &&
-	    type != ps->atoms->aC_STRING) {
+	if (type != XCB_ATOM_STRING && type != atoms->aUTF8_STRING && type != atoms->aC_STRING) {
 		log_warn("Text property %d of window %#010x has unsupported type: %d",
 		         prop, wid, type);
 		return false;
@@ -210,7 +208,7 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 	xcb_generic_error_t *e = NULL;
 	auto word_count = (length + 4 - 1) / 4;
 	auto r = xcb_get_property_reply(
-	    ps->c.c, xcb_get_property(ps->c.c, 0, wid, prop, type, 0, word_count), &e);
+	    c->c, xcb_get_property(c->c, 0, wid, prop, type, 0, word_count), &e);
 	if (!r) {
 		log_debug_x_error(e, "Failed to get window property for %#010x", wid);
 		free(e);
