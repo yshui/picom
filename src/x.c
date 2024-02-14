@@ -16,6 +16,7 @@
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_aux.h>
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xfixes.h>
 
@@ -94,7 +95,7 @@ void x_connection_init(struct x_connection *c, Display *dpy) {
 	c->previous_xerror_handler = XSetErrorHandler(xerror);
 
 	c->screen = DefaultScreen(dpy);
-	c->screen_info = x_screen_of_display(c, c->screen);
+	c->screen_info = xcb_aux_get_screen(c->c, c->screen);
 }
 
 /**
@@ -902,19 +903,6 @@ struct xvisual_info x_get_visual_info(struct x_connection *c, xcb_visualid_t vis
 	    .visual_depth = depth,
 	    .visual = visual,
 	};
-}
-
-xcb_screen_t *x_screen_of_display(struct x_connection *c, int screen) {
-	xcb_screen_iterator_t iter;
-
-	iter = xcb_setup_roots_iterator(xcb_get_setup(c->c));
-	for (; iter.rem; --screen, xcb_screen_next(&iter)) {
-		if (screen == 0) {
-			return iter.data;
-		}
-	}
-
-	return NULL;
 }
 
 void x_update_monitors(struct x_connection *c, struct x_monitors *m) {
