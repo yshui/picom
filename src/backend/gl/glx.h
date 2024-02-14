@@ -19,21 +19,8 @@ struct glx_fbconfig_info {
 	int y_inverted;
 };
 
-/// The search criteria for glx_find_fbconfig
-struct glx_fbconfig_criteria {
-	/// Bit width of the red component
-	int red_size;
-	/// Bit width of the green component
-	int green_size;
-	/// Bit width of the blue component
-	int blue_size;
-	/// Bit width of the alpha component
-	int alpha_size;
-	/// The depth of X visual
-	int visual_depth;
-};
-
-struct glx_fbconfig_info *glx_find_fbconfig(struct x_connection *, struct xvisual_info);
+bool glx_find_fbconfig(struct x_connection *c, struct xvisual_info m,
+                       struct glx_fbconfig_info *info);
 
 struct glxext_info {
 	bool initialized;

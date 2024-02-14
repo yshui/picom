@@ -21,7 +21,7 @@ typedef struct paint {
 	xcb_render_picture_t pict;
 	glx_texture_t *ptex;
 #ifdef CONFIG_OPENGL
-	struct glx_fbconfig_info *fbcfg;
+	struct glx_fbconfig_info fbcfg;
 #endif
 } paint_t;
 
