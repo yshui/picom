@@ -199,6 +199,12 @@ struct managed_win {
 	char *class_general;
 	/// <code>WM_WINDOW_ROLE</code> value of the window.
 	char *role;
+	/// Whether the window sets the EWMH fullscreen property.
+	bool is_ewmh_fullscreen;
+	/// Whether the window should be considered fullscreen. Based on
+	/// `is_ewmh_fullscreen`, or the windows spatial relation with the
+	/// root window. Which one is used is determined by user configuration.
+	bool is_fullscreen;
 
 	// Opacity-related members
 	/// Current window opacity.
@@ -349,6 +355,8 @@ void win_update_monitor(struct x_monitors *monitors, struct managed_win *mw);
  */
 // XXX was win_border_size
 void win_update_bounding_shape(session_t *ps, struct managed_win *w);
+/// Recheck if a window is fullscreen
+void win_update_is_fullscreen(const session_t *ps, struct managed_win *w);
 /**
  * Check if a window has BYPASS_COMPOSITOR property set
  */
@@ -423,13 +431,6 @@ struct managed_win *find_toplevel(session_t *ps, xcb_window_t id);
  * @return struct _win object of the found window, NULL if not found
  */
 struct managed_win *find_managed_window_or_parent(session_t *ps, xcb_window_t wid);
-
-/**
- * Check if a window is a fullscreen window.
- *
- * It's not using w->border_size for performance measures.
- */
-bool attr_pure win_is_fullscreen(const session_t *ps, const struct managed_win *w);
 
 /**
  * Check if a window is focused, without using any focus rules or forced focus settings

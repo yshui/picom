@@ -74,6 +74,11 @@ win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t clie
 static void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w);
 static void win_update_prop_shadow(session_t *ps, struct managed_win *w);
 /**
+ * Update window EWMH fullscreen state.
+ */
+bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms,
+                                struct managed_win *w);
+/**
  * Update leader of a window.
  */
 static void win_update_leader(session_t *ps, struct managed_win *w);
@@ -457,6 +462,12 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 		win_update_prop_shadow(ps, w);
 	}
 
+	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_STATE)) {
+		if (win_update_prop_fullscreen(&ps->c, ps->atoms, w)) {
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		}
+	}
+
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLIENT_LEADER) ||
 	    win_fetch_and_unset_property_stale(w, ps->atoms->aWM_TRANSIENT_FOR)) {
 		win_update_leader(ps, w);
@@ -508,6 +519,9 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 
 		// Update window geometry
 		w->g = w->pending_g;
+
+		// Whether a window is fullscreen changes based on its geometry
+		win_update_is_fullscreen(ps, w);
 
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(ps, w);
@@ -1012,6 +1026,30 @@ void win_update_prop_shadow(session_t *ps, struct managed_win *w) {
 	}
 }
 
+/**
+ * Update window EWMH fullscreen state.
+ */
+bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms,
+                                struct managed_win *w) {
+	auto prop = x_get_prop(c, w->client_win, atoms->a_NET_WM_STATE, 12, XCB_ATOM_ATOM, 0);
+	if (!prop.nitems) {
+		return false;
+	}
+
+	bool is_fullscreen = false;
+	for (uint32_t i = 0; i < prop.nitems; i++) {
+		if (prop.atom[i] == atoms->a_NET_WM_STATE_FULLSCREEN) {
+			is_fullscreen = true;
+			break;
+		}
+	}
+	free_winprop(&prop);
+
+	bool changed = w->is_ewmh_fullscreen != is_fullscreen;
+	w->is_ewmh_fullscreen = is_fullscreen;
+	return changed;
+}
+
 static void win_determine_clip_shadow_above(session_t *ps, struct managed_win *w) {
 	bool should_crop = (ps->o.wintype_option[w->window_type].clip_shadow_above ||
 	                    c2_match(ps, w, ps->o.shadow_clip_list, NULL));
@@ -1152,7 +1190,7 @@ static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) 
 
 	// Don't round full screen windows & excluded windows,
 	// unless we find a corner override in corner_radius_rules
-	if (!radius_override && ((w && win_is_fullscreen(ps, w)) ||
+	if (!radius_override && ((w && w->is_fullscreen) ||
 	                         c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL))) {
 		w->corner_radius = 0;
 		log_debug("Not rounding corners for window %#010x", w->base.id);
@@ -1219,9 +1257,10 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
  */
 void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	log_debug("Window %#010x (%s) factor change", w->base.id, w->name);
-	// Focus needs to be updated first, as other rules might depend on the
-	// focused state of the window
+	// Focus and is_fullscreen needs to be updated first, as other rules might depend
+	// on the focused state of the window
 	win_update_focused(ps, w);
+	win_update_is_fullscreen(ps, w);
 
 	win_determine_shadow(ps, w);
 	win_determine_clip_shadow_above(ps, w);
@@ -1723,6 +1762,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    ps->atoms->a_NET_WM_NAME,        ps->atoms->aWM_CLASS,
 	    ps->atoms->aWM_WINDOW_ROLE,      ps->atoms->a_COMPTON_SHADOW,
 	    ps->atoms->aWM_CLIENT_LEADER,    ps->atoms->aWM_TRANSIENT_FOR,
+	    ps->atoms->a_NET_WM_STATE,
 	};
 	win_set_properties_stale(new, init_stale_props, ARR_SIZE(init_stale_props));
 
@@ -2710,41 +2750,6 @@ struct managed_win *find_managed_window_or_parent(session_t *ps, xcb_window_t wi
 	return (struct managed_win *)w;
 }
 
-/**
- * Check if a rectangle includes the whole screen.
- */
-static inline bool rect_is_fullscreen(const session_t *ps, int x, int y, int wid, int hei) {
-	return (x <= 0 && y <= 0 && (x + wid) >= ps->root_width && (y + hei) >= ps->root_height);
-}
-
-/**
- * Check if a window is full-screen using EWMH
- *
- * TODO(yshui) cache this property
- */
-static inline bool
-win_is_fullscreen_xcb(xcb_connection_t *c, const struct atom *a, const xcb_window_t w) {
-	xcb_get_property_cookie_t prop =
-	    xcb_get_property(c, 0, w, a->a_NET_WM_STATE, XCB_ATOM_ATOM, 0, 12);
-	xcb_get_property_reply_t *reply = xcb_get_property_reply(c, prop, NULL);
-	if (!reply) {
-		return false;
-	}
-
-	if (reply->length) {
-		xcb_atom_t *val = xcb_get_property_value(reply);
-		for (uint32_t i = 0; i < reply->length; i++) {
-			if (val[i] != a->a_NET_WM_STATE_FULLSCREEN) {
-				continue;
-			}
-			free(reply);
-			return true;
-		}
-	}
-	free(reply);
-	return false;
-}
-
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
@@ -2829,13 +2834,15 @@ bool win_check_flags_all(struct managed_win *w, uint64_t flags) {
  *
  * It's not using w->border_size for performance measures.
  */
-bool win_is_fullscreen(const session_t *ps, const struct managed_win *w) {
-	if (!ps->o.no_ewmh_fullscreen &&
-	    win_is_fullscreen_xcb(ps->c.c, ps->atoms, w->client_win)) {
-		return true;
+void win_update_is_fullscreen(const session_t *ps, struct managed_win *w) {
+	if (!ps->o.no_ewmh_fullscreen && w->is_ewmh_fullscreen) {
+		w->is_fullscreen = true;
+		return;
 	}
-	return rect_is_fullscreen(ps, w->g.x, w->g.y, w->widthb, w->heightb) &&
-	       (!w->bounding_shaped || w->rounded_corners);
+	w->is_fullscreen = w->g.x <= 0 && w->g.y <= 0 &&
+	                   (w->g.x + w->widthb) >= ps->root_width &&
+	                   (w->g.y + w->heightb) >= ps->root_height &&
+	                   (!w->bounding_shaped || w->rounded_corners);
 }
 
 /**

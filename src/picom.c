@@ -791,6 +791,8 @@ err:
 
 /// Handle configure event of the root window
 static void configure_root(session_t *ps) {
+	// TODO(yshui) re-initializing backend should be done outside of the
+	// critical section. Probably set a flag and do it in draw_callback_impl.
 	auto r = XCB_AWAIT(xcb_get_geometry, ps->c.c, ps->c.screen_info->root);
 	if (!r) {
 		log_fatal("Failed to fetch root geometry");
@@ -828,6 +830,13 @@ static void configure_root(session_t *ps) {
 	if (top_w) {
 		rc_region_unref(&top_w->reg_ignore);
 		top_w->reg_ignore_valid = false;
+	}
+
+	// Whether a window is fullscreen depends on the new screen
+	// size. So we need to refresh the fullscreen state of all
+	// windows.
+	win_stack_foreach_managed(w, &ps->window_stack) {
+		win_update_is_fullscreen(ps, w);
 	}
 
 	if (ps->redirected) {
@@ -1072,7 +1081,7 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		// is not correctly set.
 		if (ps->o.unredir_if_possible && is_highest) {
 			if (w->mode == WMODE_SOLID && !ps->o.force_win_blend &&
-			    win_is_fullscreen(ps, w) && !w->unredir_if_possible_excluded) {
+			    w->is_fullscreen && !w->unredir_if_possible_excluded) {
 				unredir_possible = true;
 			}
 		}

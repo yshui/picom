@@ -565,6 +565,13 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		}
 	}
 
+	if (!ps->o.no_ewmh_fullscreen && ev->atom == ps->atoms->a_NET_WM_STATE) {
+		auto w = find_toplevel(ps, ev->window);
+		if (w) {
+			win_set_property_stale(w, ev->atom);
+		}
+	}
+
 	// Check for other atoms we are tracking
 	for (latom_t *platom = ps->track_atom_lst; platom; platom = platom->next) {
 		if (platom->atom == ev->atom) {
