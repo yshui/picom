@@ -14,7 +14,6 @@
 #include <fnmatch.h>
 #include <stdio.h>
 #include <string.h>
-#include <threads.h>
 #include <uthash.h>
 
 // libpcre
@@ -33,6 +32,7 @@
 #include "config.h"
 #include "log.h"
 #include "string_utils.h"
+#include "test.h"
 #include "utils.h"
 #include "win.h"
 #include "x.h"
@@ -327,6 +327,8 @@ static int c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult);
 
 static void c2_free(c2_ptr_t p);
 
+static size_t c2_condition_to_str(c2_ptr_t p, char *output, size_t len);
+
 /**
  * Wrapper of c2_free().
  */
@@ -388,6 +390,82 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
 
 		return plptr;
 	}
+}
+
+TEST_CASE(c2_parse) {
+	log_init_tls();
+
+	char str[1024];
+	c2_lptr_t *cond = c2_parse(NULL, "name = \"xterm\"", NULL);
+	TEST_NOTEQUAL(cond, NULL);
+	TEST_TRUE(!cond->ptr.isbranch);
+	TEST_NOTEQUAL(cond->ptr.l, NULL);
+	TEST_EQUAL(cond->ptr.l->op, C2_L_OEQ);
+	TEST_EQUAL(cond->ptr.l->ptntype, C2_L_PTSTRING);
+	TEST_STREQUAL(cond->ptr.l->ptnstr, "xterm");
+
+	size_t len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	TEST_STREQUAL3(str, "name:0s = \"xterm\"", len);
+	c2_list_free(&cond, NULL);
+
+	cond = c2_parse(NULL, "_GTK_FRAME_EXTENTS@:c", NULL);
+	TEST_NOTEQUAL(cond, NULL);
+	TEST_TRUE(!cond->ptr.isbranch);
+	TEST_NOTEQUAL(cond->ptr.l, NULL);
+	TEST_EQUAL(cond->ptr.l->op, C2_L_OEXISTS);
+	TEST_EQUAL(cond->ptr.l->match, C2_L_MEXACT);
+	TEST_EQUAL(cond->ptr.l->predef, C2_L_PUNDEFINED);
+	TEST_EQUAL(cond->ptr.l->type, C2_L_TCARDINAL);
+	TEST_TRUE(cond->ptr.l->tgt_onframe);
+	TEST_NOTEQUAL(cond->ptr.l->tgt, NULL);
+	TEST_STREQUAL(cond->ptr.l->tgt, "_GTK_FRAME_EXTENTS");
+
+	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	TEST_STREQUAL3(str, "_GTK_FRAME_EXTENTS@[0]:0c", len);
+	c2_list_free(&cond, NULL);
+
+	cond = c2_parse(NULL, "name = \"xterm\" && class_g *= \"XTerm\"", NULL);
+	TEST_NOTEQUAL(cond, NULL);
+	TEST_TRUE(cond->ptr.isbranch);
+	TEST_NOTEQUAL(cond->ptr.b, NULL);
+	TEST_EQUAL(cond->ptr.b->op, C2_B_OAND);
+	TEST_NOTEQUAL(cond->ptr.b->opr1.l, NULL);
+	TEST_NOTEQUAL(cond->ptr.b->opr2.l, NULL);
+	TEST_EQUAL(cond->ptr.b->opr1.l->op, C2_L_OEQ);
+	TEST_EQUAL(cond->ptr.b->opr1.l->match, C2_L_MEXACT);
+	TEST_EQUAL(cond->ptr.b->opr1.l->ptntype, C2_L_PTSTRING);
+	TEST_EQUAL(cond->ptr.b->opr2.l->op, C2_L_OEQ);
+	TEST_EQUAL(cond->ptr.b->opr2.l->match, C2_L_MCONTAINS);
+	TEST_EQUAL(cond->ptr.b->opr2.l->ptntype, C2_L_PTSTRING);
+	TEST_STREQUAL(cond->ptr.b->opr1.l->tgt, "name");
+	TEST_EQUAL(cond->ptr.b->opr1.l->predef, C2_L_PNAME);
+	TEST_STREQUAL(cond->ptr.b->opr2.l->tgt, "class_g");
+	TEST_EQUAL(cond->ptr.b->opr2.l->predef, C2_L_PCLASSG);
+
+	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	TEST_STREQUAL3(str, "(name:0s = \"xterm\" && class_g:0s *= \"XTerm\")", len);
+	c2_list_free(&cond, NULL);
+
+	cond = c2_parse(NULL, "_NET_WM_STATE[1]:32a *='_NET_WM_STATE_HIDDEN'", NULL);
+	TEST_EQUAL(cond->ptr.l->index, 1);
+	TEST_EQUAL(cond->ptr.l->format, 32);
+	TEST_EQUAL(cond->ptr.l->type, C2_L_TATOM);
+	TEST_STREQUAL(cond->ptr.l->tgt, "_NET_WM_STATE");
+	TEST_STREQUAL(cond->ptr.l->ptnstr, "_NET_WM_STATE_HIDDEN");
+
+	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	TEST_STREQUAL3(str, "_NET_WM_STATE[1]:32a *= \"_NET_WM_STATE_HIDDEN\"", len);
+	c2_list_free(&cond, NULL);
+
+	cond = c2_parse(NULL, "_NET_WM_STATE[*]:32a*='_NET_WM_STATE_HIDDEN'", NULL);
+	TEST_EQUAL(cond->ptr.l->index, -1);
+
+	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	TEST_STREQUAL3(str, "_NET_WM_STATE[*]:32a *= \"_NET_WM_STATE_HIDDEN\"", len);
+	c2_list_free(&cond, NULL);
+
+	cond = c2_parse(NULL, "_NET_WM_STATE = '_NET_WM_STATE_HIDDEN'", NULL);
+	TEST_EQUAL(cond, NULL);
 }
 
 #define c2_error(format, ...)                                                                \
