@@ -4,6 +4,10 @@
 
 * Allow `corner-radius-rules` to override `corner-radius = 0`. Previously setting corner radius to 0 globally disables rounded corners. (#1170)
 
+## Notable changes
+
+* Marginally improve performance when resizing/opening/closing windows. (#1190)
+
 # v11.2 (2024-Feb-13)
 
 ## Build changes
