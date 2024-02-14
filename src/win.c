@@ -2046,14 +2046,12 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 
 	// Window shape changed, we should free old wpaint and shadow pict
 	// log_trace("free out dated pict");
-	win_set_flags(w, WIN_FLAGS_IMAGES_STALE);
+	win_set_flags(w, WIN_FLAGS_IMAGES_STALE | WIN_FLAGS_FACTOR_CHANGED);
 	win_release_mask(ps->backend_data, w);
 	ps->pending_updates = true;
 
 	free_paint(ps, &w->paint);
 	free_paint(ps, &w->shadow_paint);
-
-	win_on_factor_change(ps, w);
 }
 
 /**
