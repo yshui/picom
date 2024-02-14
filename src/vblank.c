@@ -327,7 +327,7 @@ sgi_video_sync_scheduler_callback(EV_P attr_unused, ev_async *w, int attr_unused
 	};
 	sched->base.vblank_event_requested = false;
 	sched->last_msc = msc;
-	log_verbose("Received vblank event for msc %lu", event.msc);
+	log_verbose("Received vblank event for msc %" PRIu64, event.msc);
 	vblank_scheduler_invoke_callbacks(&sched->base, &event);
 }
 #endif
@@ -411,7 +411,7 @@ static void handle_present_complete_notify(struct present_vblank_scheduler *self
 	auto now_us = (unsigned long)(now.tv_sec * 1000000L + now.tv_nsec / 1000);
 	double delay_sec = 0.0;
 	if (now_us < cne->ust) {
-		log_trace("The end of this vblank is %lu us into the "
+		log_trace("The end of this vblank is %" PRIu64 " us into the "
 		          "future",
 		          cne->ust - now_us);
 		delay_sec = (double)(cne->ust - now_us) / 1000000.0;

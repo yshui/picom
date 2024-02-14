@@ -210,11 +210,13 @@ collect_vblank_interval_statistics(struct vblank_event *e, void *ud) {
 			if (frame_count == 1) {
 				render_statistics_add_vblank_time_sample(
 				    &ps->render_stats, frame_time);
-				log_trace("Frame count %lu, frame time: %d us, ust: "
-				          "%" PRIu64 "",
+				log_trace("Frame count %" PRIu64 ", frame time: %d us, "
+				          "ust: "
+				          "%" PRIu64,
 				          frame_count, frame_time, e->ust);
 			} else {
-				log_trace("Frame count %lu, frame time: %d us, msc: "
+				log_trace("Frame count %" PRIu64 ", frame time: %d us, "
+				          "msc: "
 				          "%" PRIu64 ", not adding sample.",
 				          frame_count, frame_time, e->ust);
 			}

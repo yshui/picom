@@ -20,7 +20,7 @@ sources:
 tasks:
   - setup: |
       cd picom
-      CPPFLAGS="-I/usr/local/include" meson -Dunittest=true build
+      CPPFLAGS="-I/usr/local/include" meson setup -Dunittest=true build
   - build: |
       cd picom
       ninja -C build

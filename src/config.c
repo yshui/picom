@@ -43,10 +43,7 @@ const char *xdg_config_home(void) {
 			return NULL;
 		}
 
-		xdgh = cvalloc(strlen(home) + strlen(default_dir) + 1);
-
-		strcpy(xdgh, home);
-		strcat(xdgh, default_dir);
+		xdgh = mstrjoin(home, default_dir);
 	} else {
 		xdgh = strdup(xdgh);
 	}
