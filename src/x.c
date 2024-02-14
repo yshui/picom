@@ -16,6 +16,7 @@
 #include <xcb/render.h>
 #include <xcb/sync.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_aux.h>
 #include <xcb/xcb_renderutil.h>
 #include <xcb/xfixes.h>
 
@@ -94,7 +95,7 @@ void x_connection_init(struct x_connection *c, Display *dpy) {
 	c->previous_xerror_handler = XSetErrorHandler(xerror);
 
 	c->screen = DefaultScreen(dpy);
-	c->screen_info = x_screen_of_display(c, c->screen);
+	c->screen_info = xcb_aux_get_screen(c->c, c->screen);
 }
 
 /**
@@ -321,15 +322,11 @@ xcb_visualid_t x_get_visual_for_standard(struct x_connection *c, xcb_pict_standa
 	return x_get_visual_for_pictfmt(g_pictfmts, pictfmt->id);
 }
 
-xcb_visualid_t x_get_visual_for_depth(struct x_connection *c, uint8_t depth) {
-	xcb_screen_iterator_t screen_it = xcb_setup_roots_iterator(xcb_get_setup(c->c));
-	for (; screen_it.rem; xcb_screen_next(&screen_it)) {
-		xcb_depth_iterator_t depth_it =
-		    xcb_screen_allowed_depths_iterator(screen_it.data);
-		for (; depth_it.rem; xcb_depth_next(&depth_it)) {
-			if (depth_it.data->depth == depth) {
-				return xcb_depth_visuals_iterator(depth_it.data).data->visual_id;
-			}
+xcb_visualid_t x_get_visual_for_depth(xcb_screen_t *screen, uint8_t depth) {
+	xcb_depth_iterator_t depth_it = xcb_screen_allowed_depths_iterator(screen);
+	for (; depth_it.rem; xcb_depth_next(&depth_it)) {
+		if (depth_it.data->depth == depth) {
+			return xcb_depth_visuals_iterator(depth_it.data).data->visual_id;
 		}
 	}
 
@@ -343,24 +340,6 @@ x_get_pictfmt_for_standard(struct x_connection *c, xcb_pict_standard_t std) {
 	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, std);
 
 	return pictfmt->id;
-}
-
-int x_get_visual_depth(struct x_connection *c, xcb_visualid_t visual) {
-	auto setup = xcb_get_setup(c->c);
-	for (auto screen = xcb_setup_roots_iterator(setup); screen.rem;
-	     xcb_screen_next(&screen)) {
-		for (auto depth = xcb_screen_allowed_depths_iterator(screen.data);
-		     depth.rem; xcb_depth_next(&depth)) {
-			const int len = xcb_depth_visuals_length(depth.data);
-			const xcb_visualtype_t *visuals = xcb_depth_visuals(depth.data);
-			for (int i = 0; i < len; i++) {
-				if (visual == visuals[i].visual_id) {
-					return depth.data->depth;
-				}
-			}
-		}
-	}
-	return -1;
 }
 
 xcb_render_picture_t
@@ -605,9 +584,7 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 	const char *name = "Unknown";
 
 #define CASESTRRET(s)                                                                    \
-	case s:                                                                          \
-		name = #s;                                                               \
-		break
+	case s: name = #s; break
 
 #define CASESTRRET2(s)                                                                   \
 	case XCB_##s: name = #s; break
@@ -878,8 +855,8 @@ void x_create_convolution_kernel(const conv *kernel, double center,
 /// Returns {-1, -1, -1, -1, -1, 0} on failure
 struct xvisual_info x_get_visual_info(struct x_connection *c, xcb_visualid_t visual) {
 	auto pictfmt = x_get_pictform_for_visual(c, visual);
-	auto depth = x_get_visual_depth(c, visual);
-	if (!pictfmt || depth == -1) {
+	auto depth = xcb_aux_get_depth_of_visual(c->screen_info, visual);
+	if (!pictfmt || depth == 0) {
 		log_error("Invalid visual %#03x", visual);
 		return (struct xvisual_info){-1, -1, -1, -1, -1, 0};
 	}
@@ -902,19 +879,6 @@ struct xvisual_info x_get_visual_info(struct x_connection *c, xcb_visualid_t vis
 	    .visual_depth = depth,
 	    .visual = visual,
 	};
-}
-
-xcb_screen_t *x_screen_of_display(struct x_connection *c, int screen) {
-	xcb_screen_iterator_t iter;
-
-	iter = xcb_setup_roots_iterator(xcb_get_setup(c->c));
-	for (; iter.rem; --screen, xcb_screen_next(&iter)) {
-		if (screen == 0) {
-			return iter.data;
-		}
-	}
-
-	return NULL;
 }
 
 void x_update_monitors(struct x_connection *c, struct x_monitors *m) {

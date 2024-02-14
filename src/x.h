@@ -208,17 +208,6 @@ void x_discard_pending(struct x_connection *c, uint32_t sequence);
 void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev);
 
 /**
- * Send a request to X server and get the reply to make sure all previous
- * requests are processed, and their replies received
- *
- * xcb_get_input_focus is used here because it is the same request used by
- * libX11
- */
-static inline void x_sync(struct x_connection *c) {
-	free(xcb_get_input_focus_reply(c->c, xcb_get_input_focus(c->c), NULL));
-}
-
-/**
  * Get a specific attribute of a window.
  *
  * Returns a blank structure if the returned type and format does not
@@ -276,7 +265,6 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 
 const xcb_render_pictforminfo_t *
 x_get_pictform_for_visual(struct x_connection *, xcb_visualid_t);
-int x_get_visual_depth(struct x_connection *, xcb_visualid_t);
 
 xcb_render_picture_t
 x_create_picture_with_pictfmt_and_pixmap(struct x_connection *,
@@ -409,12 +397,10 @@ struct xvisual_info x_get_visual_info(struct x_connection *c, xcb_visualid_t vis
 
 xcb_visualid_t x_get_visual_for_standard(struct x_connection *c, xcb_pict_standard_t std);
 
-xcb_visualid_t x_get_visual_for_depth(struct x_connection *c, uint8_t depth);
+xcb_visualid_t x_get_visual_for_depth(xcb_screen_t *screen, uint8_t depth);
 
 xcb_render_pictformat_t
 x_get_pictfmt_for_standard(struct x_connection *c, xcb_pict_standard_t std);
-
-xcb_screen_t *x_screen_of_display(struct x_connection *c, int screen);
 
 /// Populates a `struct x_monitors` with the current monitor configuration.
 void x_update_monitors(struct x_connection *, struct x_monitors *);

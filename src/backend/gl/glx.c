@@ -19,6 +19,7 @@
 #include <string.h>
 #include <xcb/composite.h>
 #include <xcb/xcb.h>
+#include <xcb/xcb_aux.h>
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
@@ -114,7 +115,8 @@ struct glx_fbconfig_info *glx_find_fbconfig(struct x_connection *c, struct xvisu
 		int visual;
 		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_VISUAL_ID, &visual);
 		if (m.visual_depth != -1 &&
-		    x_get_visual_depth(c, (xcb_visualid_t)visual) != m.visual_depth) {
+		    xcb_aux_get_depth_of_visual(c->screen_info, (xcb_visualid_t)visual) !=
+		        m.visual_depth) {
 			// FBConfig and the correspondent X Visual might not have the same
 			// depth. (e.g. 32 bit FBConfig with a 24 bit Visual). This is
 			// quite common, seen in both open source and proprietary drivers.

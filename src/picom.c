@@ -35,6 +35,7 @@
 #include <xcb/randr.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
+#include <xcb/xcb_aux.h>
 #include <xcb/xfixes.h>
 
 #include <ev.h>
@@ -1187,7 +1188,7 @@ void root_damaged(session_t *ps) {
 			xcb_visualid_t visual =
 			    r->depth == ps->c.screen_info->root_depth
 			        ? ps->c.screen_info->root_visual
-			        : x_get_visual_for_depth(&ps->c, r->depth);
+			        : x_get_visual_for_depth(ps->c.screen_info, r->depth);
 			free(r);
 
 			ps->root_image = ps->backend_data->ops->bind_pixmap(
@@ -1501,7 +1502,7 @@ static bool redirect_start(session_t *ps) {
 		return false;
 	}
 
-	x_sync(&ps->c);
+	xcb_aux_sync(ps->c.c);
 
 	if (!initialize_backend(ps)) {
 		return false;
@@ -1560,7 +1561,7 @@ static bool redirect_start(session_t *ps) {
 	}
 
 	// Must call XSync() here
-	x_sync(&ps->c);
+	xcb_aux_sync(ps->c.c);
 
 	ps->redirected = true;
 	ps->first_frame = true;
@@ -1603,7 +1604,7 @@ static void unredirect(session_t *ps) {
 	}
 
 	// Must call XSync() here
-	x_sync(&ps->c);
+	xcb_aux_sync(ps->c.c);
 
 	ps->redirected = false;
 	log_debug("Screen unredirected.");
@@ -2789,7 +2790,7 @@ static void session_destroy(session_t *ps) {
 #endif
 
 	// Flush all events
-	x_sync(&ps->c);
+	xcb_aux_sync(ps->c.c);
 	ev_io_stop(ps->loop, &ps->xiow);
 	if (ps->o.legacy_backends) {
 		free_conv((conv *)ps->shadow_context);
