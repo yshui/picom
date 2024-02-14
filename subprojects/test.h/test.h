@@ -58,6 +58,14 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 		}                                                                        \
 	} while (0)
 
+#define TEST_NOTEQUAL(a, b)                                                              \
+	do {                                                                             \
+		if ((a) == (b)) {                                                        \
+			SET_FAILURE(#a " == " #b, false);                                \
+			return;                                                          \
+		}                                                                        \
+	} while (0)
+
 #define TEST_TRUE(a)                                                                     \
 	do {                                                                             \
 		if (!(a)) {                                                              \
@@ -69,11 +77,13 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 #define TEST_STREQUAL(a, b)                                                              \
 	do {                                                                             \
 		if (strcmp(a, b) != 0) {                                                 \
-			const char *part2 = " != " #b;                                   \
-			size_t len = strlen(a) + strlen(part2) + 3;                      \
-			char *buf = malloc(len);                                         \
-			snprintf(buf, len, "\"%s\"%s", a, part2);                        \
-			SET_FAILURE(buf, true);                                          \
+			const char *test_strequal__part2 = " != " #b;                    \
+			size_t test_strequal__len =                                      \
+			    strlen(a) + strlen(test_strequal__part2) + 3;                \
+			char *test_strequal__buf = malloc(test_strequal__len);           \
+			snprintf(test_strequal__buf, test_strequal__len, "\"%s\"%s", a,  \
+			         test_strequal__part2);                                  \
+			SET_FAILURE(test_strequal__buf, true);                           \
 			return;                                                          \
 		}                                                                        \
 	} while (0)
@@ -81,11 +91,27 @@ struct test_file_metadata __attribute__((weak)) * test_file_head;
 #define TEST_STRNEQUAL(a, b, len)                                                        \
 	do {                                                                             \
 		if (strncmp(a, b, len) != 0) {                                           \
-			const char *part2 = " != " #b;                                   \
-			size_t len2 = len + strlen(part2) + 3;                           \
-			char *buf = malloc(len2);                                        \
-			snprintf(buf, len2, "\"%.*s\"%s", (int)len, a, part2);           \
-			SET_FAILURE(buf, true);                                          \
+			const char *test_strnequal__part2 = " != " #b;                   \
+			size_t test_strnequal__len2 =                                    \
+			    len + strlen(test_strnequal__part2) + 3;                     \
+			char *test_strnequal__buf = malloc(test_strnequal__len2);        \
+			snprintf(test_strnequal__buf, test_strnequal__len2,              \
+			         "\"%.*s\"%s", (int)len, a, test_strnequal__part2);      \
+			SET_FAILURE(test_strnequal__buf, true);                          \
+			return;                                                          \
+		}                                                                        \
+	} while (0)
+
+#define TEST_STREQUAL3(str, expected, len)                                               \
+	do {                                                                             \
+		if (len != strlen(expected) || strncmp(str, expected, len) != 0) {       \
+			const char *test_strequal3__part2 = " != " #expected;            \
+			size_t test_strequal3__len2 =                                    \
+			    len + strlen(test_strequal3__part2) + 3;                     \
+			char *test_strequal3__buf = malloc(test_strequal3__len2);        \
+			snprintf(test_strequal3__buf, test_strequal3__len2,              \
+			         "\"%.*s\"%s", (int)len, str, test_strequal3__part2);    \
+			SET_FAILURE(test_strequal3__buf, true);                          \
 			return;                                                          \
 		}                                                                        \
 	} while (0)
@@ -199,6 +225,9 @@ static inline void __attribute__((constructor(102))) run_tests(void) {
 #define TEST_EQUAL(a, b)                                                                 \
 	(void)(a);                                                                       \
 	(void)(b)
+#define TEST_NOTEQUAL(a, b)                                                              \
+	(void)(a);                                                                       \
+	(void)(b)
 #define TEST_TRUE(a) (void)(a)
 #define TEST_STREQUAL(a, b)                                                              \
 	(void)(a);                                                                       \
@@ -207,5 +236,8 @@ static inline void __attribute__((constructor(102))) run_tests(void) {
 	(void)(a);                                                                       \
 	(void)(b);                                                                       \
 	(void)(len)
-
+#define TEST_STREQUAL3(str, expected, len)                                               \
+	(void)(str);                                                                     \
+	(void)(expected);                                                                \
+	(void)(len)
 #endif
