@@ -14,6 +14,7 @@
 #include <fnmatch.h>
 #include <stdio.h>
 #include <string.h>
+#include <threads.h>
 #include <uthash.h>
 
 // libpcre
@@ -339,8 +340,6 @@ static inline void c2_freep(c2_ptr_t *pp) {
 static const char *c2h_dump_str_tgt(const c2_l_t *pleaf);
 
 static const char *c2h_dump_str_type(const c2_l_t *pleaf);
-
-static void attr_unused c2_dump(c2_ptr_t p);
 
 static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf);
 
@@ -1227,105 +1226,182 @@ static const char *c2h_dump_str_type(const c2_l_t *pleaf) {
 }
 
 /**
- * Dump a condition tree.
+ * Dump a condition tree to string. Return the number of characters that
+ * would have been written if the buffer had been large enough, excluding
+ * the null terminator.
+ * null terminator will not be written to the output.
  */
-static void c2_dump(c2_ptr_t p) {
-	// For a branch
+static size_t c2_condition_to_str(c2_ptr_t p, char *output, size_t len) {
+#define push_char(c)                                                                     \
+	if (offset < len)                                                                \
+		output[offset] = (c);                                                    \
+	offset++
+#define push_str(str)                                                                    \
+	do {                                                                             \
+		if (offset < len) {                                                      \
+			size_t slen = strlen(str);                                       \
+			if (offset + slen > len)                                         \
+				slen = len - offset;                                     \
+			memcpy(output + offset, str, slen);                              \
+		}                                                                        \
+		offset += strlen(str);                                                   \
+	} while (false)
+	size_t offset = 0;
 	if (p.isbranch) {
+		// Branch, i.e. logical operators &&, ||, XOR
 		const c2_b_t *const pbranch = p.b;
 
 		if (!pbranch) {
-			return;
+			return 0;
 		}
 
 		if (pbranch->neg) {
-			putchar('!');
+			push_char('!');
 		}
 
-		printf("(");
-		c2_dump(pbranch->opr1);
+		push_char('(');
+		if (len > offset) {
+			offset += c2_condition_to_str(pbranch->opr1, output + offset,
+			                              len - offset);
+		} else {
+			offset += c2_condition_to_str(pbranch->opr1, NULL, 0);
+		}
 
 		switch (pbranch->op) {
-		case C2_B_OAND: printf(" && "); break;
-		case C2_B_OOR: printf(" || "); break;
-		case C2_B_OXOR: printf(" XOR "); break;
+		case C2_B_OAND: push_str(" && "); break;
+		case C2_B_OOR: push_str(" || "); break;
+		case C2_B_OXOR: push_str(" XOR "); break;
 		default: assert(0); break;
 		}
 
-		c2_dump(pbranch->opr2);
-		printf(") ");
-	}
-	// For a leaf
-	else {
+		if (len > offset) {
+			offset += c2_condition_to_str(pbranch->opr2, output + offset,
+			                              len - offset);
+		} else {
+			offset += c2_condition_to_str(pbranch->opr2, NULL, 0);
+		}
+		push_str(")");
+	} else {
+		// Leaf node
 		const c2_l_t *const pleaf = p.l;
+		char number[128];
 
 		if (!pleaf) {
-			return;
+			return 0;
 		}
 
 		if (C2_L_OEXISTS == pleaf->op && pleaf->neg) {
-			putchar('!');
+			push_char('!');
 		}
 
 		// Print target name, type, and format
-		{
-			printf("%s", c2h_dump_str_tgt(pleaf));
-			if (pleaf->tgt_onframe) {
-				putchar('@');
+		const char *target_str = c2h_dump_str_tgt(pleaf);
+		push_str(target_str);
+		if (pleaf->tgt_onframe) {
+			push_char('@');
+		}
+		if (pleaf->predef == C2_L_PUNDEFINED) {
+			if (pleaf->index < 0) {
+				push_str("[*]");
+			} else {
+				sprintf(number, "[%d]", pleaf->index);
+				push_str(number);
 			}
-			if (pleaf->predef == C2_L_PUNDEFINED) {
-				if (pleaf->index < 0) {
-					printf("[*]");
-				} else {
-					printf("[%d]", pleaf->index);
-				}
-			}
-			printf(":%d%s", pleaf->format, c2h_dump_str_type(pleaf));
+		}
+
+		const char *type_str = c2h_dump_str_type(pleaf);
+		push_char(':');
+		sprintf(number, "%d", pleaf->format);
+		push_str(number);
+		push_str(type_str);
+
+		if (C2_L_OEXISTS == pleaf->op) {
+			return offset;
 		}
 
 		// Print operator
-		putchar(' ');
+		push_char(' ');
 
 		if (C2_L_OEXISTS != pleaf->op && pleaf->neg) {
-			putchar('!');
+			push_char('!');
 		}
 
 		switch (pleaf->match) {
 		case C2_L_MEXACT: break;
-		case C2_L_MCONTAINS: putchar('*'); break;
-		case C2_L_MSTART: putchar('^'); break;
-		case C2_L_MPCRE: putchar('~'); break;
-		case C2_L_MWILDCARD: putchar('%'); break;
+		case C2_L_MCONTAINS: push_char('*'); break;
+		case C2_L_MSTART: push_char('^'); break;
+		case C2_L_MPCRE: push_char('~'); break;
+		case C2_L_MWILDCARD: push_char('%'); break;
 		}
 
 		if (pleaf->match_ignorecase) {
-			putchar('?');
+			push_char('?');
 		}
 
 		switch (pleaf->op) {
 		case C2_L_OEXISTS: break;
-		case C2_L_OEQ: fputs("=", stdout); break;
-		case C2_L_OGT: fputs(">", stdout); break;
-		case C2_L_OGTEQ: fputs(">=", stdout); break;
-		case C2_L_OLT: fputs("<", stdout); break;
-		case C2_L_OLTEQ: fputs("<=", stdout); break;
-		}
-
-		if (C2_L_OEXISTS == pleaf->op) {
-			return;
+		case C2_L_OEQ: push_str("="); break;
+		case C2_L_OGT: push_str(">"); break;
+		case C2_L_OGTEQ: push_str(">="); break;
+		case C2_L_OLT: push_str("<"); break;
+		case C2_L_OLTEQ: push_str("<="); break;
 		}
 
 		// Print pattern
-		putchar(' ');
+		push_char(' ');
 		switch (pleaf->ptntype) {
-		case C2_L_PTINT: printf("%ld", pleaf->ptnint); break;
+		case C2_L_PTINT:
+			sprintf(number, "%ld", pleaf->ptnint);
+			push_str(number);
+			break;
 		case C2_L_PTSTRING:
 			// TODO(yshui) Escape string before printing out?
-			printf("\"%s\"", pleaf->ptnstr);
+			push_char('"');
+			for (int i = 0; pleaf->ptnstr[i]; i++) {
+				switch (pleaf->ptnstr[i]) {
+				case '\\': push_str("\\\\"); break;
+				case '"': push_str("\\\""); break;
+				case '\a': push_str("\\a"); break;
+				case '\b': push_str("\\b"); break;
+				case '\f': push_str("\\f"); break;
+				case '\r': push_str("\\r"); break;
+				case '\v': push_str("\\v"); break;
+				case '\t': push_str("\\t"); break;
+				case '\n': push_str("\\n"); break;
+				default:
+					if (isprint(pleaf->ptnstr[i])) {
+						push_char(pleaf->ptnstr[i]);
+					} else {
+						sprintf(number, "\\x%02x",
+						        (unsigned char)pleaf->ptnstr[i]);
+						push_str(number);
+					}
+					break;
+				}
+			}
+			push_char('"');
 			break;
 		default: assert(0); break;
 		}
 	}
+#undef push_char
+#undef push_str
+	return offset;
+}
+
+/// Wrapper of c2_condition_to_str which uses an internal static buffer, and
+/// returns a nul terminated string. The returned string is only valid until the
+/// next call to this function, and should not be freed.
+static const char *c2_condition_to_str2(c2_ptr_t ptr) {
+	static thread_local char buf[4096];
+	auto len = c2_condition_to_str(ptr, buf, sizeof(buf));
+	if (len >= sizeof(buf)) {
+		// Resulting string is too long, clobber the last character with a nul.
+		buf[sizeof(buf) - 1] = '\0';
+	} else {
+		buf[len] = '\0';
+	}
+	return buf;
 }
 
 /**
@@ -1650,14 +1726,10 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
 		default: error = true; assert(0);
 		}
 
-#ifdef DEBUG_WINMATCH
-		log_trace("(%#010x): branch: result = %d, pattern = ", w->base.id, result);
-		c2_dump(cond);
-		putchar('\n');
-#endif
-	}
-	// Handle a leaf
-	else {
+		log_debug("(%#010x): branch: result = %d, pattern = %s", w->base.id,
+		          result, c2_condition_to_str2(cond));
+	} else {
+		// A leaf
 		const c2_l_t *pleaf = cond.l;
 
 		if (!pleaf) {
@@ -1672,13 +1744,9 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
 			error = false;
 		}
 
-#ifdef DEBUG_WINMATCH
-		log_trace("(%#010x): leaf: result = %d, error = %d, "
-		          "client = %#010x,  pattern = ",
-		          w->base.id, result, error, w->client_win);
-		c2_dump(cond);
-		putchar('\n');
-#endif
+		log_debug("(%#010x): leaf: result = %d, client = %#010x,  "
+		          "pattern = %s",
+		          w->base.id, result, w->client_win, c2_condition_to_str2(cond));
 	}
 
 	// Postprocess the result
