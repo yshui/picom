@@ -6,6 +6,7 @@
 #include <xcb/composite.h>
 #include <xcb/render.h>
 #include <xcb/sync.h>
+#include <xcb/xcb_aux.h>
 #include <xcb/xcb_image.h>
 #include <xcb/xcb_renderutil.h>
 
@@ -1229,7 +1230,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 	if (ps->o.vsync) {
 		// Make sure all previous requests are processed to achieve best
 		// effect
-		x_sync(&ps->c);
+		xcb_aux_sync(ps->c.c);
 #ifdef CONFIG_OPENGL
 		if (glx_has_context(ps)) {
 			if (ps->o.vsync_use_glfinish) {
@@ -1288,7 +1289,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 		break;
 #ifdef CONFIG_OPENGL
 	case BKEND_XR_GLX_HYBRID:
-		x_sync(&ps->c);
+		xcb_aux_sync(ps->c.c);
 		if (ps->o.vsync_use_glfinish) {
 			glFinish();
 		} else {
@@ -1313,7 +1314,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 	default: assert(0);
 	}
 
-	x_sync(&ps->c);
+	xcb_aux_sync(ps->c.c);
 
 #ifdef CONFIG_OPENGL
 	if (glx_has_context(ps)) {

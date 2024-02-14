@@ -208,17 +208,6 @@ void x_discard_pending(struct x_connection *c, uint32_t sequence);
 void x_handle_error(struct x_connection *c, xcb_generic_error_t *ev);
 
 /**
- * Send a request to X server and get the reply to make sure all previous
- * requests are processed, and their replies received
- *
- * xcb_get_input_focus is used here because it is the same request used by
- * libX11
- */
-static inline void x_sync(struct x_connection *c) {
-	free(xcb_get_input_focus_reply(c->c, xcb_get_input_focus(c->c), NULL));
-}
-
-/**
  * Get a specific attribute of a window.
  *
  * Returns a blank structure if the returned type and format does not
