@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "backend/backend.h"
+#include "backend/backend_common.h"
 #include "log.h"
 #include "region.h"
 
@@ -143,13 +144,13 @@ void *gl_create_window_shader(backend_t *backend_data, const char *source);
 void gl_destroy_window_shader(backend_t *backend_data, void *shader);
 uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
 bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
-                           void *image_data, void *args);
+                           image_handle image, void *args);
 bool gl_last_render_time(backend_t *backend_data, struct timespec *time);
 
 /**
  * @brief Render a region with texture data.
  */
-void gl_compose(backend_t *, void *image_data, coord_t image_dst, void *mask,
+void gl_compose(backend_t *, image_handle image, coord_t image_dst, image_handle mask,
                 coord_t mask_dst, const region_t *reg_tgt, const region_t *reg_visible);
 
 void gl_resize(struct gl_data *, int width, int height);
@@ -159,32 +160,32 @@ void gl_deinit(struct gl_data *gd);
 
 GLuint gl_new_texture(GLenum target);
 
-bool gl_image_op(backend_t *base, enum image_operations op, void *image_data,
+bool gl_image_op(backend_t *base, enum image_operations op, image_handle image,
                  const region_t *reg_op, const region_t *reg_visible, void *arg);
 
-void gl_release_image(backend_t *base, void *image_data);
-void *gl_make_mask(backend_t *base, geometry_t size, const region_t *reg);
+void gl_release_image(backend_t *base, image_handle image);
+image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg);
 
-void *gl_clone(backend_t *base, const void *image_data, const region_t *reg_visible);
+image_handle gl_clone(backend_t *base, image_handle image, const region_t *reg_visible);
 
-bool gl_blur(backend_t *base, double opacity, void *ctx, void *mask, coord_t mask_dst,
-             const region_t *reg_blur, const region_t *reg_visible);
-bool gl_blur_impl(double opacity, struct gl_blur_context *bctx, void *mask, coord_t mask_dst,
-                  const region_t *reg_blur, const region_t *reg_visible attr_unused,
-                  GLuint source_texture, geometry_t source_size, GLuint target_fbo,
-                  GLuint default_mask, bool high_precision);
+bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask,
+             coord_t mask_dst, const region_t *reg_blur, const region_t *reg_visible);
+bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
+                  struct backend_image *mask, coord_t mask_dst, const region_t *reg_blur,
+                  const region_t *reg_visible attr_unused, GLuint source_texture,
+                  geometry_t source_size, GLuint target_fbo, GLuint default_mask,
+                  bool high_precision);
 void *gl_create_blur_context(backend_t *base, enum blur_method, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
 struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double radius);
 void gl_destroy_shadow_context(backend_t *base attr_unused, struct backend_shadow_context *ctx);
-void *gl_shadow_from_mask(backend_t *base, void *mask,
-                          struct backend_shadow_context *sctx, struct color color);
+image_handle gl_shadow_from_mask(backend_t *base, image_handle mask,
+                                 struct backend_shadow_context *sctx, struct color color);
 void gl_get_blur_size(void *blur_context, int *width, int *height);
 
 void gl_fill(backend_t *base, struct color, const region_t *clip);
 
 void gl_present(backend_t *base, const region_t *);
-bool gl_read_pixel(backend_t *base, void *image_data, int x, int y, struct color *output);
 enum device_status gl_device_status(backend_t *base);
 
 /**

@@ -186,7 +186,7 @@ typedef struct session {
 	/// Picture of the root window background.
 	paint_t root_tile_paint;
 	/// The backend data the root pixmap bound to
-	void *root_image;
+	image_handle root_image;
 	/// A region of the size of the screen.
 	region_t screen_reg;
 	/// Picture of root window. Destination of painting in no-DBE painting

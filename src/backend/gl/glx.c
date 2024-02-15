@@ -380,7 +380,7 @@ end:
 	return &gd->gl.base;
 }
 
-static void *
+static image_handle
 glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool owned) {
 	struct _glx_pixmap *glxpixmap = NULL;
 	auto gd = (struct _glx_data *)base;
@@ -475,7 +475,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	gl_check_err();
-	return wd;
+	return (image_handle)wd;
 err:
 	if (glxpixmap && glxpixmap->glpixmap) {
 		glXDestroyPixmap(base->c->dpy, glxpixmap->glpixmap);

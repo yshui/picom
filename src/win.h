@@ -100,9 +100,9 @@ struct managed_win {
 	struct win base;
 	/// backend data attached to this window. Only available when
 	/// `state` is not UNMAPPED
-	void *win_image;
-	void *shadow_image;
-	void *mask_image;
+	image_handle win_image;
+	image_handle shadow_image;
+	image_handle mask_image;
 	/// Pointer to the next higher window to paint.
 	struct managed_win *prev_trans;
 	/// Number of windows above this window
