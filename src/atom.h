@@ -61,7 +61,7 @@ struct atom {
 struct atom *init_atoms(xcb_connection_t *);
 
 static inline xcb_atom_t get_atom(struct atom *a, const char *key) {
-	return (xcb_atom_t)(intptr_t)cache_get(a->c, key, NULL);
+	return (xcb_atom_t)(intptr_t)cache_get_or_fetch(a->c, key, NULL);
 }
 
 static inline void destroy_atoms(struct atom *a) {

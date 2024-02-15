@@ -17,20 +17,19 @@ struct cache {
 	struct cache_entry *entries;
 };
 
-void cache_set(struct cache *c, const char *key, void *data) {
-	struct cache_entry *e = NULL;
-	HASH_FIND_STR(c->entries, key, e);
-	CHECK(!e);
-
-	e = ccalloc(1, struct cache_entry);
-	e->key = strdup(key);
-	e->value = data;
-	HASH_ADD_STR(c->entries, key, e);
-}
-
-void *cache_get(struct cache *c, const char *key, int *err) {
+static inline struct cache_entry *cache_get_entry(struct cache *c, const char *key) {
 	struct cache_entry *e;
 	HASH_FIND_STR(c->entries, key, e);
+	return e;
+}
+
+void *cache_get(struct cache *c, const char *key) {
+	struct cache_entry *e = cache_get_entry(c, key);
+	return e ? e->value : NULL;
+}
+
+void *cache_get_or_fetch(struct cache *c, const char *key, int *err) {
+	struct cache_entry *e = cache_get_entry(c, key);
 	if (e) {
 		return e->value;
 	}
@@ -54,7 +53,7 @@ void *cache_get(struct cache *c, const char *key, int *err) {
 	return e->value;
 }
 
-static inline void _cache_invalidate(struct cache *c, struct cache_entry *e) {
+static inline void cache_invalidate_impl(struct cache *c, struct cache_entry *e) {
 	if (c->free) {
 		c->free(c->user_data, e->value);
 	}
@@ -68,14 +67,14 @@ void cache_invalidate(struct cache *c, const char *key) {
 	HASH_FIND_STR(c->entries, key, e);
 
 	if (e) {
-		_cache_invalidate(c, e);
+		cache_invalidate_impl(c, e);
 	}
 }
 
 void cache_invalidate_all(struct cache *c) {
 	struct cache_entry *e, *tmpe;
 	HASH_ITER(hh, c->entries, e, tmpe) {
-		_cache_invalidate(c, e);
+		cache_invalidate_impl(c, e);
 	}
 }
 

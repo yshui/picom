@@ -29,7 +29,8 @@ static inline void *atom_getter(void *ud, const char *atom_name, int *err) {
 struct atom *init_atoms(xcb_connection_t *c) {
 	auto atoms = ccalloc(1, struct atom);
 	atoms->c = new_cache((void *)c, atom_getter, NULL);
-#define ATOM_GET(x) atoms->a##x = (xcb_atom_t)(intptr_t)cache_get(atoms->c, #x, NULL)
+#define ATOM_GET(x)                                                                      \
+	atoms->a##x = (xcb_atom_t)(intptr_t)cache_get_or_fetch(atoms->c, #x, NULL)
 	LIST_APPLY(ATOM_GET, SEP_COLON, ATOM_LIST1);
 	LIST_APPLY(ATOM_GET, SEP_COLON, ATOM_LIST2);
 #undef ATOM_GET
