@@ -117,6 +117,20 @@ safe_isnan(double a) {
 		ASSERT_IN_RANGE(__to_tmp, 0, max);                                       \
 		(uint32_t) __to_tmp;                                                     \
 	})
+
+/**
+ * container_of - cast a member of a structure out to the containing structure
+ * @ptr:	the pointer to the member.
+ * @type:	the type of the container struct this is embedded in.
+ * @member:	the name of the member within the struct.
+ *
+ */
+#define container_of(ptr, type, member)                                                  \
+	({                                                                               \
+		const __typeof__(((type *)0)->member) *__mptr = (ptr);                   \
+		(type *)((char *)__mptr - offsetof(type, member));                       \
+	})
+
 /**
  * Normalize an int value to a specific range.
  *
