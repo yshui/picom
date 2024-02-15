@@ -13,7 +13,7 @@
       picom = super.picom.overrideAttrs (oldAttrs: rec {
         pname = "picom";
         buildInputs = [
-          self.pcre2 self.xorg.xcbutil
+          self.pcre2 self.xorg.xcbutil self.libepoxy
         ] ++ self.lib.remove self.xorg.libXinerama (
           self.lib.remove self.pcre oldAttrs.buildInputs
         );
