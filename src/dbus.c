@@ -906,7 +906,7 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 	}
 	if (!strcmp("RawFocused", target)) {
 		cdbus_reply(ps, msg, cdbus_append_bool_variant,
-		            (bool[]){win_is_focused_raw(ps, w)});
+		            (bool[]){win_is_focused_raw(w)});
 		return true;
 	}
 
@@ -976,7 +976,7 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_win_get_do(wmwin, cdbus_reply_bool);
 	cdbus_m_win_get_do(leader, cdbus_reply_wid);
 	if (!strcmp("focused_raw", target)) {
-		cdbus_reply_bool(ps, msg, win_is_focused_raw(ps, w));
+		cdbus_reply_bool(ps, msg, win_is_focused_raw(w));
 		return true;
 	}
 	cdbus_m_win_get_do(fade_force, cdbus_reply_enum);
