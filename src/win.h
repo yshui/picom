@@ -205,6 +205,8 @@ struct managed_win {
 	/// `is_ewmh_fullscreen`, or the windows spatial relation with the
 	/// root window. Which one is used is determined by user configuration.
 	bool is_fullscreen;
+	/// Whether the window is the EWMH active window.
+	bool is_ewmh_focused;
 
 	// Opacity-related members
 	/// Current window opacity.
@@ -435,7 +437,7 @@ struct managed_win *find_managed_window_or_parent(session_t *ps, xcb_window_t wi
 /**
  * Check if a window is focused, without using any focus rules or forced focus settings
  */
-bool attr_pure win_is_focused_raw(const session_t *ps, const struct managed_win *w);
+bool attr_pure win_is_focused_raw(const struct managed_win *w);
 
 /// check if window has ARGB visual
 bool attr_pure win_has_alpha(const struct managed_win *w);

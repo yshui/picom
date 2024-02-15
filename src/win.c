@@ -139,10 +139,10 @@ static inline bool attr_pure win_is_real_visible(const struct managed_win *w) {
  * Update focused state of a window.
  */
 static void win_update_focused(session_t *ps, struct managed_win *w) {
-	if (UNSET != w->focused_force) {
+	if (w->focused_force != UNSET) {
 		w->focused = w->focused_force;
 	} else {
-		w->focused = win_is_focused_raw(ps, w);
+		w->focused = win_is_focused_raw(w);
 
 		// Use wintype_focus, and treat WM windows and override-redirected
 		// windows specially
@@ -210,7 +210,7 @@ static inline bool group_is_focused(session_t *ps, xcb_window_t leader) {
 			continue;
 		}
 		auto mw = (struct managed_win *)w;
-		if (win_get_leader(ps, mw) == leader && win_is_focused_raw(ps, mw)) {
+		if (win_get_leader(ps, mw) == leader && win_is_focused_raw(mw)) {
 			return true;
 		}
 	}
@@ -843,7 +843,7 @@ double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
 	} else {
 		// Respect active_opacity only when the window is physically
 		// focused
-		if (win_is_focused_raw(ps, w)) {
+		if (win_is_focused_raw(w)) {
 			opacity = ps->o.active_opacity;
 		} else if (!w->focused) {
 			// Respect inactive_opacity in some cases
@@ -1792,7 +1792,7 @@ static inline void win_set_leader(session_t *ps, struct managed_win *w, xcb_wind
 		// Update the old and new window group and active_leader if the
 		// window could affect their state.
 		xcb_window_t cache_leader = win_get_leader(ps, w);
-		if (win_is_focused_raw(ps, w) && cache_leader_old != cache_leader) {
+		if (win_is_focused_raw(w) && cache_leader_old != cache_leader) {
 			ps->active_leader = cache_leader;
 
 			group_on_factor_change(ps, cache_leader_old);
@@ -1905,7 +1905,7 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 		xcb_window_t leader = win_get_leader(ps, w);
 
 		// If the window gets focused, replace the old active_leader
-		if (win_is_focused_raw(ps, w) && leader != ps->active_leader) {
+		if (win_is_focused_raw(w) && leader != ps->active_leader) {
 			xcb_window_t active_leader_old = ps->active_leader;
 
 			ps->active_leader = leader;
@@ -1914,7 +1914,7 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 			group_on_factor_change(ps, leader);
 		}
 		// If the group get unfocused, remove it from active_leader
-		else if (!win_is_focused_raw(ps, w) && leader &&
+		else if (!win_is_focused_raw(w) && leader &&
 		         leader == ps->active_leader && !group_is_focused(ps, leader)) {
 			ps->active_leader = XCB_NONE;
 			group_on_factor_change(ps, leader);
@@ -1927,7 +1927,7 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		if (win_is_focused_raw(ps, w)) {
+		if (win_is_focused_raw(w)) {
 			cdbus_ev_win_focusin(ps, &w->base);
 		} else {
 			cdbus_ev_win_focusout(ps, &w->base);
@@ -1945,15 +1945,18 @@ void win_set_focused(session_t *ps, struct managed_win *w) {
 		return;
 	}
 
-	if (win_is_focused_raw(ps, w)) {
+	if (w->is_ewmh_focused) {
+		assert(ps->active_win == w);
 		return;
 	}
 
 	auto old_active_win = ps->active_win;
 	ps->active_win = w;
-	assert(win_is_focused_raw(ps, w));
+	w->is_ewmh_focused = true;
 
 	if (old_active_win) {
+		assert(old_active_win->is_ewmh_focused);
+		old_active_win->is_ewmh_focused = false;
 		win_on_focus_change(ps, old_active_win);
 	}
 	win_on_focus_change(ps, w);
@@ -2866,8 +2869,8 @@ bool win_is_bypassing_compositor(const session_t *ps, const struct managed_win *
  * Check if a window is focused, without using any focus rules or forced focus
  * settings
  */
-bool win_is_focused_raw(const session_t *ps, const struct managed_win *w) {
-	return w->a.map_state == XCB_MAP_STATE_VIEWABLE && ps->active_win == w;
+bool win_is_focused_raw(const struct managed_win *w) {
+	return w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_ewmh_focused;
 }
 
 // Find the managed window immediately below `i` in the window stack

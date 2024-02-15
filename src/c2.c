@@ -1383,9 +1383,7 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			case C2_L_PFULLSCREEN: predef_target = w->is_fullscreen; break;
 			case C2_L_POVREDIR: predef_target = w->a.override_redirect; break;
 			case C2_L_PARGB: predef_target = win_has_alpha(w); break;
-			case C2_L_PFOCUSED:
-				predef_target = win_is_focused_raw(ps, w);
-				break;
+			case C2_L_PFOCUSED: predef_target = win_is_focused_raw(w); break;
 			case C2_L_PWMWIN: predef_target = w->wmwin; break;
 			case C2_L_PBSHAPED: predef_target = w->bounding_shaped; break;
 			case C2_L_PROUNDED: predef_target = w->rounded_corners; break;
