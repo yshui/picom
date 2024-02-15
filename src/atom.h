@@ -65,6 +65,10 @@ static inline xcb_atom_t get_atom(struct atom *a, const char *key) {
 	return (xcb_atom_t)(intptr_t)cache_get_or_fetch(a->c, key, NULL);
 }
 
+static inline xcb_atom_t get_atom_cached(struct atom *a, const char *key) {
+	return (xcb_atom_t)(intptr_t)cache_get(a->c, key);
+}
+
 static inline void destroy_atoms(struct atom *a) {
 	cache_free(a->c);
 	free(a);
