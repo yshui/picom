@@ -8,6 +8,11 @@
 #include "log.h"
 #include "utils.h"
 
+struct atom_entry {
+	struct cache_handle entry;
+	xcb_atom_t atom;
+};
+
 static inline int atom_getter(struct cache *cache attr_unused, const char *atom_name,
                               struct cache_handle **value, void *user_data) {
 	xcb_connection_t *c = user_data;
@@ -43,6 +48,10 @@ xcb_atom_t get_atom(struct atom *a, const char *key, xcb_connection_t *c) {
 		return XCB_NONE;
 	}
 	return cache_entry(entry, struct atom_entry, entry)->atom;
+}
+
+xcb_atom_t get_atom_cached(struct atom *a, const char *key) {
+	return cache_entry(cache_get(&a->c, key), struct atom_entry, entry)->atom;
 }
 
 /**

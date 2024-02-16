@@ -1,10 +1,7 @@
 #pragma once
-#include <stdlib.h>
-
 #include <xcb/xcb.h>
 
 #include "cache.h"
-#include "log.h"
 #include "meta.h"
 
 // clang-format off
@@ -54,15 +51,11 @@
 
 #define ATOM_DEF(x) xcb_atom_t a##x
 
+struct atom_entry;
 struct atom {
 	struct cache c;
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST1);
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST2);
-};
-
-struct atom_entry {
-	struct cache_handle entry;
-	xcb_atom_t atom;
 };
 
 /// Create a new atom object with a xcb connection. `struct atom` does not hold
@@ -70,8 +63,6 @@ struct atom_entry {
 struct atom *init_atoms(xcb_connection_t *c);
 
 xcb_atom_t get_atom(struct atom *a, const char *key, xcb_connection_t *c);
-static inline xcb_atom_t get_atom_cached(struct atom *a, const char *key) {
-	return cache_entry(cache_get(&a->c, key), struct atom_entry, entry)->atom;
-}
+xcb_atom_t get_atom_cached(struct atom *a, const char *key);
 
 void destroy_atoms(struct atom *a);
