@@ -486,6 +486,18 @@ TEST_CASE(c2_parse) {
 
 	cond = c2_parse(NULL, "_NET_WM_STATE = '_NET_WM_STATE_HIDDEN'", NULL);
 	TEST_EQUAL(cond, NULL);
+
+	cond = c2_parse(NULL, "1A:\n1111111111111ar1", NULL);
+	TEST_EQUAL(cond, NULL);
+
+	cond = c2_parse(NULL, "N [4444444444444: \n", NULL);
+	TEST_EQUAL(cond, NULL);
+
+	cond = c2_parse(NULL, " x:a=\"b\377\\xCCCCC", NULL);
+	TEST_EQUAL(cond, NULL);
+
+	cond = c2_parse(NULL, "!!!!!!!((((((!(((((,", NULL);
+	TEST_EQUAL(cond, NULL);
 }
 
 #define c2_error(format, ...)                                                                \
@@ -507,11 +519,6 @@ TEST_CASE(c2_parse) {
  * @return offset of next character in string
  */
 static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int level) {
-	// Check for recursion levels
-	if (level > C2_MAX_LEVELS) {
-		c2_error("Exceeded maximum recursion levels.");
-	}
-
 	if (!pattern) {
 		return -1;
 	}
@@ -537,6 +544,11 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 	// Whether we are expecting an element immediately, is true at first, or
 	// after encountering a logical operator
 	bool next_expected = true;
+
+	// Check for recursion levels
+	if (level > C2_MAX_LEVELS) {
+		c2_error("Exceeded maximum recursion levels.");
+	}
 
 	// Parse the pattern character-by-character
 	for (; pattern[offset]; ++offset) {
@@ -761,8 +773,11 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 		if (!endptr || pattern + offset == endptr) {
 			c2_error("No index number found after bracket.");
 		}
+		if (index > INT_MAX) {
+			c2_error("Index %ld too large.", index);
+		}
 
-		pleaf->index = to_int_checked(index);
+		pleaf->index = (int)index;
 		offset = to_int_checked(endptr - pattern);
 
 		C2H_SKIP_SPACES();
@@ -848,7 +863,10 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 					         "target.",
 					         pleaf->format);
 				}
-				pleaf->format = to_int_checked(format);
+				if (format != 8 && format != 16 && format != 32) {
+					c2_error("Invalid format %ld.", format);
+				}
+				pleaf->format = (int)format;
 			}
 		}
 	}
@@ -1025,7 +1043,11 @@ static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) 
 						c2_error("Invalid octal/hex escape "
 						         "sequence.");
 					}
-					*(ptptnstr++) = to_char_checked(val);
+					if (val > 127) {
+						c2_error("Octal/hex escape sequence out "
+						         "of ASCII range.");
+					}
+					*(ptptnstr++) = (char)val;
 					offset += 2;
 					break;
 				}
