@@ -1,4 +1,5 @@
 #include <string.h>
+#include <uthash.h>
 #include <xcb/xcb.h>
 
 #include "atom.h"
@@ -10,12 +11,14 @@
 
 struct atom_entry {
 	struct cache_handle entry;
+	UT_hash_handle hh;
 	xcb_atom_t atom;
 };
 
-static inline int atom_getter(struct cache *cache attr_unused, const char *atom_name,
+static inline int atom_getter(struct cache *cache, const char *atom_name,
                               struct cache_handle **value, void *user_data) {
 	xcb_connection_t *c = user_data;
+	auto atoms = container_of(cache, struct atom, c);
 	xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply(
 	    c, xcb_intern_atom(c, 0, to_u16_checked(strlen(atom_name)), atom_name), NULL);
 
@@ -31,13 +34,25 @@ static inline int atom_getter(struct cache *cache attr_unused, const char *atom_
 
 	struct atom_entry *entry = ccalloc(1, struct atom_entry);
 	entry->atom = atom;
+	HASH_ADD_INT(atoms->atom_to_name, atom, entry);
 	*value = &entry->entry;
 	return 0;
 }
 
-static inline void
-atom_entry_free(struct cache *cache attr_unused, struct cache_handle *handle) {
-	struct atom_entry *entry = cache_entry(handle, struct atom_entry, entry);
+static inline int
+known_atom_getter(struct cache *cache attr_unused, const char *atom_name attr_unused,
+                  struct cache_handle **value, void *user_data) {
+	auto atom = *(xcb_atom_t *)user_data;
+	struct atom_entry *entry = ccalloc(1, struct atom_entry);
+	entry->atom = atom;
+	*value = &entry->entry;
+	return 0;
+}
+
+static inline void atom_entry_free(struct cache *cache, struct cache_handle *handle) {
+	auto entry = cache_entry(handle, struct atom_entry, entry);
+	auto atoms = container_of(cache, struct atom, c);
+	HASH_DEL(atoms->atom_to_name, entry);
 	free(entry);
 }
 
@@ -52,6 +67,33 @@ xcb_atom_t get_atom(struct atom *a, const char *key, xcb_connection_t *c) {
 
 xcb_atom_t get_atom_cached(struct atom *a, const char *key) {
 	return cache_entry(cache_get(&a->c, key), struct atom_entry, entry)->atom;
+}
+
+const char *get_atom_name(struct atom *a, xcb_atom_t atom, xcb_connection_t *c) {
+	struct atom_entry *entry = NULL;
+	HASH_FIND(hh, a->atom_to_name, &atom, sizeof(xcb_atom_t), entry);
+	if (!entry) {
+		auto r = xcb_get_atom_name_reply(c, xcb_get_atom_name(c, atom), NULL);
+		if (!r) {
+			log_error("Failed to get atom name");
+			return NULL;
+		}
+		char *atom_name = xcb_get_atom_name_name(r);
+		struct cache_handle *handle = NULL;
+		cache_get_or_fetch(&a->c, atom_name, &handle, &atom, known_atom_getter);
+		entry = cache_entry(handle, struct atom_entry, entry);
+	}
+	HASH_ADD_INT(a->atom_to_name, atom, entry);
+	return entry->entry.key;
+}
+
+const char *get_atom_name_cached(struct atom *a, xcb_atom_t atom) {
+	struct atom_entry *entry = NULL;
+	HASH_FIND(hh, a->atom_to_name, &atom, sizeof(xcb_atom_t), entry);
+	if (!entry) {
+		return NULL;
+	}
+	return entry->entry.key;
 }
 
 /**

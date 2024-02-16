@@ -54,6 +54,7 @@
 struct atom_entry;
 struct atom {
 	struct cache c;
+	struct atom_entry *atom_to_name;
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST1);
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST2);
 };
@@ -64,5 +65,7 @@ struct atom *init_atoms(xcb_connection_t *c);
 
 xcb_atom_t get_atom(struct atom *a, const char *key, xcb_connection_t *c);
 xcb_atom_t get_atom_cached(struct atom *a, const char *key);
+const char *get_atom_name(struct atom *a, xcb_atom_t, xcb_connection_t *c);
+const char *get_atom_name_cached(struct atom *a, xcb_atom_t atom);
 
 void destroy_atoms(struct atom *a);
