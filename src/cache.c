@@ -35,15 +35,6 @@ cache_invalidate_impl(struct cache *c, struct cache_handle *e, cache_free_t free
 	}
 }
 
-void cache_invalidate(struct cache *c, const char *key, cache_free_t free_fn) {
-	struct cache_handle *e;
-	HASH_FIND_STR(c->entries, key, e);
-
-	if (e) {
-		cache_invalidate_impl(c, e, free_fn);
-	}
-}
-
 void cache_invalidate_all(struct cache *c, cache_free_t free_fn) {
 	struct cache_handle *e, *tmpe;
 	HASH_ITER(hh, c->entries, e, tmpe) {

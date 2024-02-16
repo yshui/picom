@@ -38,9 +38,6 @@ int cache_get_or_fetch(struct cache *, const char *key, struct cache_handle **va
 /// returned.
 struct cache_handle *cache_get(struct cache *, const char *key);
 
-/// Invalidate a value in the cache.
-void cache_invalidate(struct cache *, const char *key, cache_free_t free_fn);
-
 /// Invalidate all values in the cache. After this call, `struct cache` holds no allocated
 /// memory, and can be discarded.
 void cache_invalidate_all(struct cache *, cache_free_t free_fn);
