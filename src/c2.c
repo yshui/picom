@@ -59,6 +59,7 @@ typedef struct {
 struct c2_tracked_property {
 	UT_hash_handle hh;
 	xcb_atom_t property;
+	bool is_string;
 };
 
 struct c2_state {
@@ -96,12 +97,13 @@ struct _c2_b {
 struct _c2_l {
 	bool neg : 1;
 	enum {
-		C2_L_OEXISTS,
+		C2_L_OEXISTS = 0,
 		C2_L_OEQ,
 		C2_L_OGT,
 		C2_L_OGTEQ,
 		C2_L_OLT,
 		C2_L_OLTEQ,
+		C2_L_OFALSE,        // Always false, for annulled conditions
 	} op : 3;
 	enum {
 		C2_L_MEXACT,
@@ -1151,6 +1153,23 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 			property = cmalloc(struct c2_tracked_property);
 			property->property = pleaf->tgtatom;
 			HASH_ADD_INT(state->tracked_properties, property, property);
+			property->is_string = pleaf->type == C2_L_TSTRING;
+		} else {
+			if (property->is_string != (pleaf->type == C2_L_TSTRING)) {
+				char buf[256];
+				size_t len = c2_condition_to_str(
+				    (c2_ptr_t){.isbranch = false, .l = pleaf}, buf,
+				    sizeof(buf));
+				len = min2(sizeof(buf), len);
+				log_error("Type mismatch for property \"%s\", %s a "
+				          "string, now %s. Offending rule is: %.*s, it "
+				          "will be disabled.",
+				          pleaf->tgt, property->is_string ? "was" : "wasn't",
+				          pleaf->type == C2_L_TSTRING ? "is" : "isn't",
+				          (int)len, buf);
+				pleaf->op = C2_L_OFALSE;
+				return false;
+			}
 		}
 	}
 
@@ -1193,10 +1212,6 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 		}
 		pleaf->regex_pcre_match =
 		    pcre2_match_data_create_from_pattern(pleaf->regex_pcre, NULL);
-
-		// Free the target string
-		// free(pleaf->tgt);
-		// pleaf->tgt = NULL;
 #else
 		log_error("PCRE regular expression support not compiled in.");
 		return false;
@@ -1373,6 +1388,11 @@ static size_t c2_condition_to_str(c2_ptr_t p, char *output, size_t len) {
 			push_char('!');
 		}
 
+		if (pleaf->op == C2_L_OFALSE) {
+			push_str("(annulled)");
+			return offset;
+		}
+
 		// Print target name, type, and format
 		const char *target_str = c2h_dump_str_tgt(pleaf);
 		push_str(target_str);
@@ -1418,6 +1438,7 @@ static size_t c2_condition_to_str(c2_ptr_t p, char *output, size_t len) {
 		}
 
 		switch (pleaf->op) {
+		case C2_L_OFALSE: unreachable();
 		case C2_L_OEXISTS: break;
 		case C2_L_OEQ: push_str("="); break;
 		case C2_L_OGT: push_str(">"); break;
@@ -1719,6 +1740,10 @@ c2_match_once_leaf(session_t *ps, const struct managed_win *w, const c2_l_t *lea
 		log_error("Window ID missing.");
 		assert(false);
 		return false;
+	}
+
+	if (leaf->op == C2_L_OFALSE) {
+		return leaf->neg;
 	}
 
 	switch (leaf->ptntype) {
