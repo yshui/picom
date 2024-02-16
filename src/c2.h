@@ -33,7 +33,7 @@ c2_lptr_t *c2_free_lptr(c2_lptr_t *lp, c2_userdata_free f);
 struct c2_state *c2_state_new(struct atom *atoms);
 void c2_state_free(struct c2_state *state);
 /// Returns true if value of the property is used in any condition.
-bool c2_is_property_tracked(struct c2_state *state, xcb_atom_t property);
+bool c2_state_is_property_tracked(struct c2_state *state, xcb_atom_t property);
 
 bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condlst,
               void **pdata);

@@ -574,7 +574,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// Check for other atoms we are tracking
-	if (c2_is_property_tracked(ps->c2_state, ev->atom)) {
+	if (c2_state_is_property_tracked(ps->c2_state, ev->atom)) {
 		auto w = find_managed_win(ps, ev->window);
 		if (!w) {
 			w = find_toplevel(ps, ev->window);
