@@ -154,6 +154,10 @@ struct _c2_l {
 	xcb_atom_t tgtatom;
 	bool tgt_onframe;
 	int index;
+	// TODO(yshui) translate some of the pre-defined targets to
+	//             generic window properties. e.g. `name = "xterm"`
+	//             should be translated to:
+	//               "WM_NAME = 'xterm' || _NET_WM_NAME = 'xterm'"
 	enum {
 		C2_L_PUNDEFINED = -1,
 		C2_L_PID = 0,
