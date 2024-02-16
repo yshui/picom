@@ -95,3 +95,13 @@ picom = executable('picom', srcs, c_args: cflags,
 if get_option('unittest')
 	test('picom unittest', picom, args: [ '--unittest' ])
 endif
+
+if cc.has_argument('-fsanitize=fuzzer')
+  c2_fuzz = executable('c2_fuzz', srcs + ['fuzzer/c2.c'],
+	c_args: cflags + ['-fsanitize=fuzzer', '-Dmain=__main__'],
+	link_args: ['-fsanitize=fuzzer'],
+	dependencies: [ base_deps, deps, test_h_dep ],
+	build_by_default: false,
+	install: false, include_directories: picom_inc
+  )
+endif
