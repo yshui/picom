@@ -575,11 +575,15 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 
 	// Check for other atoms we are tracking
 	if (c2_state_is_property_tracked(ps->c2_state, ev->atom)) {
+		bool change_is_on_frame = true;
 		auto w = find_managed_win(ps, ev->window);
 		if (!w) {
 			w = find_toplevel(ps, ev->window);
+			change_is_on_frame = false;
 		}
 		if (w) {
+			c2_window_state_mark_dirty(ps->c2_state, &w->c2_state, ev->atom,
+			                           change_is_on_frame);
 			// Set FACTOR_CHANGED so rules based on properties will be
 			// re-evaluated.
 			// Don't need to set property stale here, since that only

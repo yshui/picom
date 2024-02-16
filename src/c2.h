@@ -18,6 +18,12 @@
 typedef struct _c2_lptr c2_lptr_t;
 typedef struct session session_t;
 struct c2_state;
+/// Per-window state used for c2 condition matching.
+struct c2_window_state {
+	/// An array of window properties. Exact how many
+	/// properties there are is stored inside `struct c2_state`.
+	struct c2_property_value *values;
+};
 struct atom;
 struct managed_win;
 
@@ -34,6 +40,14 @@ struct c2_state *c2_state_new(struct atom *atoms);
 void c2_state_free(struct c2_state *state);
 /// Returns true if value of the property is used in any condition.
 bool c2_state_is_property_tracked(struct c2_state *state, xcb_atom_t property);
+void c2_window_state_init(const struct c2_state *state, struct c2_window_state *window_state);
+void c2_window_state_destroy(const struct c2_state *state, struct c2_window_state *window_state);
+void c2_window_state_mark_dirty(const struct c2_state *state,
+                                struct c2_window_state *window_state, xcb_atom_t property,
+                                bool is_on_frame);
+void c2_window_state_update(struct c2_state *state, struct c2_window_state *window_state,
+                            xcb_connection_t *c, xcb_window_t client_win,
+                            xcb_window_t frame_win);
 
 bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condlst,
               void **pdata);

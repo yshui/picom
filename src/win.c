@@ -1220,6 +1220,7 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
  */
 void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	log_debug("Window %#010x (%s) factor change", w->base.id, w->name);
+	c2_window_state_update(ps->c2_state, &w->c2_state, ps->c.c, w->client_win, w->base.id);
 	// Focus and is_fullscreen needs to be updated first, as other rules might depend
 	// on the focused state of the window
 	win_update_focused(ps, w);
@@ -1472,6 +1473,7 @@ void free_win_res(session_t *ps, struct managed_win *w) {
 	free(w->stale_props);
 	w->stale_props = NULL;
 	w->stale_props_capacity = 0;
+	c2_window_state_destroy(ps->c2_state, &w->c2_state);
 }
 
 /// Insert a new window after list_node `prev`
@@ -1729,6 +1731,7 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    ps->atoms->a_NET_WM_STATE,
 	};
 	win_set_properties_stale(new, init_stale_props, ARR_SIZE(init_stale_props));
+	c2_window_state_init(ps->c2_state, &new->c2_state);
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
