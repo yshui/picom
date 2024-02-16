@@ -4,6 +4,7 @@
 #include <xcb/xcb.h>
 
 #include "cache.h"
+#include "log.h"
 #include "meta.h"
 
 // clang-format off
@@ -54,22 +55,23 @@
 #define ATOM_DEF(x) xcb_atom_t a##x
 
 struct atom {
-	struct cache *c;
+	struct cache c;
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST1);
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST2);
 };
 
-struct atom *init_atoms(xcb_connection_t *);
+struct atom_entry {
+	struct cache_handle entry;
+	xcb_atom_t atom;
+};
 
-static inline xcb_atom_t get_atom(struct atom *a, const char *key) {
-	return (xcb_atom_t)(intptr_t)cache_get_or_fetch(a->c, key, NULL);
-}
+/// Create a new atom object with a xcb connection. `struct atom` does not hold
+/// a reference to the connection.
+struct atom *init_atoms(xcb_connection_t *c);
 
+xcb_atom_t get_atom(struct atom *a, const char *key, xcb_connection_t *c);
 static inline xcb_atom_t get_atom_cached(struct atom *a, const char *key) {
-	return (xcb_atom_t)(intptr_t)cache_get(a->c, key);
+	return cache_entry(cache_get(&a->c, key), struct atom_entry, entry)->atom;
 }
 
-static inline void destroy_atoms(struct atom *a) {
-	cache_free(a->c);
-	free(a);
-}
+void destroy_atoms(struct atom *a);

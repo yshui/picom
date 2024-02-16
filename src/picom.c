@@ -1346,7 +1346,7 @@ static int register_cm(session_t *ps) {
 			log_fatal("Failed to allocate memory");
 			return -1;
 		}
-		atom = get_atom(ps->atoms, buf);
+		atom = get_atom(ps->atoms, buf, ps->c.c);
 		free(buf);
 
 		xcb_get_selection_owner_reply_t *reply = xcb_get_selection_owner_reply(
