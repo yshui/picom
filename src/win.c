@@ -150,7 +150,7 @@ static void win_update_focused(session_t *ps, struct managed_win *w) {
 		    (ps->o.mark_wmwin_focused && w->wmwin) ||
 		    (ps->o.mark_ovredir_focused && w->base.id == w->client_win && !w->wmwin) ||
 		    (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
-		     c2_match(ps, w, ps->o.focus_blacklist, NULL))) {
+		     c2_match(ps->c2_state, w, ps->o.focus_blacklist, NULL))) {
 			w->focused = true;
 		}
 
@@ -999,7 +999,7 @@ static void win_determine_shadow(session_t *ps, struct managed_win *w) {
 		if (!ps->o.wintype_option[w->window_type].shadow) {
 			log_debug("Shadow disabled by wintypes");
 			shadow_new = false;
-		} else if (c2_match(ps, w, ps->o.shadow_blacklist, NULL)) {
+		} else if (c2_match(ps->c2_state, w, ps->o.shadow_blacklist, NULL)) {
 			log_debug("Shadow disabled by shadow-exclude");
 			shadow_new = false;
 		} else if (ps->o.shadow_ignore_shaped && w->bounding_shaped &&
@@ -1055,7 +1055,7 @@ bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms
 
 static void win_determine_clip_shadow_above(session_t *ps, struct managed_win *w) {
 	bool should_crop = (ps->o.wintype_option[w->window_type].clip_shadow_above ||
-	                    c2_match(ps, w, ps->o.shadow_clip_list, NULL));
+	                    c2_match(ps->c2_state, w, ps->o.shadow_clip_list, NULL));
 	w->clip_shadow_above = should_crop;
 }
 
@@ -1078,7 +1078,7 @@ static void win_determine_invert_color(session_t *ps, struct managed_win *w) {
 	if (UNSET != w->invert_color_force) {
 		invert_color_new = w->invert_color_force;
 	} else if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-		invert_color_new = c2_match(ps, w, ps->o.invert_color_list, NULL);
+		invert_color_new = c2_match(ps->c2_state, w, ps->o.invert_color_list, NULL);
 	}
 
 	win_set_invert_color(ps, w, invert_color_new);
@@ -1167,7 +1167,7 @@ static void win_determine_blur_background(session_t *ps, struct managed_win *w) 
 		if (!ps->o.wintype_option[w->window_type].blur_background) {
 			log_debug("Blur background disabled by wintypes");
 			blur_background_new = false;
-		} else if (c2_match(ps, w, ps->o.blur_background_blacklist, NULL)) {
+		} else if (c2_match(ps->c2_state, w, ps->o.blur_background_blacklist, NULL)) {
 			log_debug("Blur background disabled by "
 			          "blur-background-exclude");
 			blur_background_new = false;
@@ -1182,7 +1182,7 @@ static void win_determine_blur_background(session_t *ps, struct managed_win *w) 
  */
 static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) {
 	void *radius_override = NULL;
-	if (c2_match(ps, w, ps->o.corner_radius_rules, &radius_override)) {
+	if (c2_match(ps->c2_state, w, ps->o.corner_radius_rules, &radius_override)) {
 		log_debug("Matched corner rule! %d", w->corner_radius);
 	}
 
@@ -1193,8 +1193,9 @@ static void win_determine_rounded_corners(session_t *ps, struct managed_win *w) 
 
 	// Don't round full screen windows & excluded windows,
 	// unless we find a corner override in corner_radius_rules
-	if (!radius_override && ((w && w->is_fullscreen) ||
-	                         c2_match(ps, w, ps->o.rounded_corners_blacklist, NULL))) {
+	if (!radius_override &&
+	    ((w && w->is_fullscreen) ||
+	     c2_match(ps->c2_state, w, ps->o.rounded_corners_blacklist, NULL))) {
 		w->corner_radius = 0;
 		log_debug("Not rounding corners for window %#010x", w->base.id);
 	} else {
@@ -1221,7 +1222,7 @@ static void win_determine_fg_shader(session_t *ps, struct managed_win *w) {
 
 	auto shader_new = ps->o.window_shader_fg;
 	void *val = NULL;
-	if (c2_match(ps, w, ps->o.window_shader_fg_rules, &val)) {
+	if (c2_match(ps->c2_state, w, ps->o.window_shader_fg_rules, &val)) {
 		shader_new = val;
 	}
 
@@ -1244,7 +1245,7 @@ void win_update_opacity_rule(session_t *ps, struct managed_win *w) {
 	double opacity = 1.0;
 	bool is_set = false;
 	void *val = NULL;
-	if (c2_match(ps, w, ps->o.opacity_rules, &val)) {
+	if (c2_match(ps->c2_state, w, ps->o.opacity_rules, &val)) {
 		opacity = ((double)(long)val) / 100.0;
 		is_set = true;
 	}
@@ -1276,17 +1277,17 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	log_debug("Window mode changed to %d", w->mode);
 	win_update_opacity_rule(ps, w);
 	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
-		w->paint_excluded = c2_match(ps, w, ps->o.paint_blacklist, NULL);
+		w->paint_excluded = c2_match(ps->c2_state, w, ps->o.paint_blacklist, NULL);
 	}
 	if (w->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 		w->unredir_if_possible_excluded =
-		    c2_match(ps, w, ps->o.unredir_if_possible_blacklist, NULL);
+		    c2_match(ps->c2_state, w, ps->o.unredir_if_possible_blacklist, NULL);
 	}
 
-	w->fade_excluded = c2_match(ps, w, ps->o.fade_blacklist, NULL);
+	w->fade_excluded = c2_match(ps->c2_state, w, ps->o.fade_blacklist, NULL);
 
 	w->transparent_clipping_excluded =
-	    c2_match(ps, w, ps->o.transparent_clipping_blacklist, NULL);
+	    c2_match(ps->c2_state, w, ps->o.transparent_clipping_blacklist, NULL);
 
 	win_update_opacity_target(ps, w);
 

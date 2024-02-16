@@ -150,6 +150,7 @@ struct _c2_l {
 	} match : 3;
 	bool match_ignorecase : 1;
 	char *tgt;
+	unsigned int target_id;
 	xcb_atom_t tgtatom;
 	bool tgt_onframe;
 	int index;
@@ -260,26 +261,6 @@ static const c2_predef_t C2_PREDEFS[] = {
 };
 
 /**
- * Get the numeric property value from a win_prop_t.
- */
-static inline long winprop_get_int(winprop_t prop, size_t index) {
-	long tgt = 0;
-
-	if (!prop.nitems || index >= prop.nitems) {
-		return 0;
-	}
-
-	switch (prop.format) {
-	case 8: tgt = *(prop.p8 + index); break;
-	case 16: tgt = *(prop.p16 + index); break;
-	case 32: tgt = *(prop.p32 + index); break;
-	default: assert(0); break;
-	}
-
-	return tgt;
-}
-
-/**
  * Compare next word in a string with another string.
  */
 static inline int strcmp_wd(const char *needle, const char *src) {
@@ -381,10 +362,6 @@ static inline void c2_freep(c2_ptr_t *pp) {
 static const char *c2h_dump_str_tgt(const c2_l_t *pleaf);
 
 static const char *c2h_dump_str_type(const c2_l_t *pleaf);
-
-static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf);
-
-static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_ptr_t cond);
 
 /**
  * Parse a condition string.
@@ -1217,6 +1194,7 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 				property->max_indices = pleaf->index;
 			}
 		}
+		pleaf->target_id = property->id;
 	}
 
 	// Warn about lower case characters in target name
@@ -1371,7 +1349,7 @@ static const char *c2h_dump_str_type(const c2_l_t *pleaf) {
  * the null terminator.
  * null terminator will not be written to the output.
  */
-static size_t c2_condition_to_str(c2_ptr_t p, char *output, size_t len) {
+static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
 #define push_char(c)                                                                     \
 	if (offset < len)                                                                \
 		output[offset] = (c);                                                    \
@@ -1514,32 +1492,49 @@ static size_t c2_condition_to_str(c2_ptr_t p, char *output, size_t len) {
 	return offset;
 }
 
-/**
- * Get the type atom of a condition.
- */
-static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf) {
-	switch (pleaf->type) {
-	case C2_L_TCARDINAL: return XCB_ATOM_CARDINAL;
-	case C2_L_TWINDOW: return XCB_ATOM_WINDOW;
-	case C2_L_TSTRING: return XCB_ATOM_STRING;
-	case C2_L_TATOM: return XCB_ATOM_ATOM;
-	case C2_L_TDRAWABLE: return XCB_ATOM_DRAWABLE;
-	default: assert(0); break;
+/// Like `c2_condition_to_str`, but uses a internal static buffer, and adds a
+/// nul byte to the end of the string. The returned string is only valid until
+/// the next call to this function, and shouldn't be freed.
+static const char *c2_condition_to_str2(const c2_ptr_t ptr) {
+	static thread_local char buf[4096];
+	size_t len = c2_condition_to_str(ptr, buf, sizeof(buf));
+	if (len >= sizeof(buf)) {
+		buf[sizeof(buf) - 1] = '\0';
+	} else {
+		buf[len] = '\0';
 	}
-	unreachable();
+	return buf;
 }
 
-static bool
-c2_match_once_leaf_int(session_t *ps, const struct managed_win *w, const c2_l_t *leaf) {
-	long long *targets = NULL;
-	long long *targets_free = NULL;
-	size_t ntargets = 0;
+static inline bool c2_int_op(const c2_l_t *leaf, size_t ntargets, const int64_t *targets) {
+	for (size_t i = 0; i < ntargets; ++i) {
+		long long tgt = targets[i];
+		bool matches;
+		switch (leaf->op) {
+		case C2_L_OEXISTS:
+			matches = (leaf->predef != C2_L_PUNDEFINED ? tgt : true);
+			break;
+		case C2_L_OEQ: matches = (tgt == leaf->ptnint); break;
+		case C2_L_OGT: matches = (tgt > leaf->ptnint); break;
+		case C2_L_OGTEQ: matches = (tgt >= leaf->ptnint); break;
+		case C2_L_OLT: matches = (tgt < leaf->ptnint); break;
+		case C2_L_OLTEQ: matches = (tgt <= leaf->ptnint); break;
+		case C2_L_OFALSE: unreachable();
+		}
+		if (matches) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool c2_match_once_leaf_int(const struct managed_win *w, const c2_l_t *leaf) {
 	const xcb_window_t wid = (leaf->tgt_onframe ? w->client_win : w->base.id);
 
 	// Get the value
-	// A predefined target
-	long long predef_target = 0;
 	if (leaf->predef != C2_L_PUNDEFINED) {
+		// A predefined target
+		int64_t predef_target = 0;
 		switch (leaf->predef) {
 		case C2_L_PID: predef_target = wid; break;
 		case C2_L_PX: predef_target = w->g.x; break;
@@ -1565,58 +1560,41 @@ c2_match_once_leaf_int(session_t *ps, const struct managed_win *w, const c2_l_t 
 			assert(false);
 			return false;
 		}
-		ntargets = 1;
-		targets = &predef_target;
+		return c2_int_op(leaf, 1, &predef_target);
+	}
+
+	// A raw window property
+	auto values = &w->c2_state.values[leaf->target_id];
+	assert(!values->needs_update);
+	if (!values->valid) {
+		log_verbose("Property %s not found on window %#010x (%s)", leaf->tgt,
+		            w->client_win, w->name);
+		return false;
+	}
+
+	int64_t *targets = NULL;
+	size_t ntargets = 0;
+	if (leaf->index < 0) {
+		if (values->length > ARR_SIZE(values->numbers)) {
+			targets = values->array;
+		} else {
+			targets = values->numbers;
+		}
+		ntargets = values->length;
 	} else {
-		// A raw window property
-		int word_count = 1;
-		int offset = leaf->index;
-		if (leaf->index < 0) {
-			// index < 0 means match any index
-			// Get length of property in 32-bit multiples
-			auto prop_info = x_get_prop_info(&ps->c, wid, leaf->tgtatom);
-			word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
-			offset = 0;
+		if ((size_t)leaf->index >= values->length) {
+			// index is out of bounds
+			return false;
 		}
-		winprop_t prop =
-		    x_get_prop_with_offset(&ps->c, wid, leaf->tgtatom, offset, word_count,
-		                           c2_get_atom_type(leaf), leaf->format);
-
-		ntargets = (leaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
-		if (ntargets > 0) {
-			targets = targets_free = ccalloc(ntargets, long long);
-			for (size_t i = 0; i < ntargets; ++i) {
-				targets[i] = winprop_get_int(prop, i);
-			}
+		if (values->length > ARR_SIZE(values->numbers)) {
+			targets = &values->array[leaf->index];
+		} else {
+			targets = &values->numbers[leaf->index];
 		}
-		free_winprop(&prop);
+		ntargets = 1;
 	}
 
-	// Do comparison
-	bool matches = false;
-	for (size_t i = 0; i < ntargets; ++i) {
-		long long tgt = targets[i];
-		switch (leaf->op) {
-		case C2_L_OEXISTS:
-			matches = (leaf->predef != C2_L_PUNDEFINED ? tgt : true);
-			break;
-		case C2_L_OEQ: matches = (tgt == leaf->ptnint); break;
-		case C2_L_OGT: matches = (tgt > leaf->ptnint); break;
-		case C2_L_OGTEQ: matches = (tgt >= leaf->ptnint); break;
-		case C2_L_OLT: matches = (tgt < leaf->ptnint); break;
-		case C2_L_OLTEQ: matches = (tgt <= leaf->ptnint); break;
-		default: log_error("Unknown operator %d.", leaf->op); assert(false);
-		}
-		if (matches) {
-			break;
-		}
-	}
-
-	// Free property values after usage, if necessary
-	if (targets_free) {
-		free(targets_free);
-	}
-	return matches;
+	return c2_int_op(leaf, ntargets, targets);
 }
 
 static bool c2_string_op(const c2_l_t *leaf, const char *target) {
@@ -1662,14 +1640,8 @@ static bool c2_string_op(const c2_l_t *leaf, const char *target) {
 	unreachable();
 }
 
-static bool
-c2_match_once_leaf_string(session_t *ps, const struct managed_win *w, const c2_l_t *leaf) {
-
-	const char **targets = NULL;
-	const char **targets_free = NULL;
-	const char **targets_free_inner = NULL;
-	size_t ntargets = 0;
-	const xcb_window_t wid = (leaf->tgt_onframe ? w->client_win : w->base.id);
+static bool c2_match_once_leaf_string(struct atom *atoms, const struct managed_win *w,
+                                      const c2_l_t *leaf) {
 
 	// A predefined target
 	const char *predef_target = NULL;
@@ -1680,94 +1652,72 @@ c2_match_once_leaf_string(session_t *ps, const struct managed_win *w, const c2_l
 		case C2_L_PCLASSG: predef_target = w->class_general; break;
 		case C2_L_PCLASSI: predef_target = w->class_instance; break;
 		case C2_L_PROLE: predef_target = w->role; break;
-		default: assert(0); break;
+		default: unreachable();
 		}
-		ntargets = 1;
-		targets = &predef_target;
-	} else if (leaf->type == C2_L_TATOM) {
-		// An atom type property, convert it to string
-		int word_count = 1;
-		int offset = leaf->index;
+		if (!predef_target) {
+			return false;
+		}
+		log_verbose("Matching against predefined target %s", predef_target);
+		return c2_string_op(leaf, predef_target);
+	}
+
+	auto values = &w->c2_state.values[leaf->target_id];
+	assert(!values->needs_update);
+	if (!values->valid) {
+		log_verbose("Property %s not found on window %#010x (%s)", leaf->tgt,
+		            w->client_win, w->name);
+		return false;
+	}
+
+	if (leaf->type == C2_L_TATOM) {
+		size_t ntargets = 0;
+		int64_t *targets;
 		if (leaf->index < 0) {
-			// index < 0 means match any index
-			// Get length of property in 32-bit multiples
-			auto prop_info = x_get_prop_info(&ps->c, wid, leaf->tgtatom);
-			word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
-			offset = 0;
+			ntargets = values->length;
+			if (ntargets > ARR_SIZE(w->c2_state.values->numbers)) {
+				targets = values->array;
+			} else {
+				targets = values->numbers;
+			}
+		} else {
+			ntargets = 1;
+			targets = &values->numbers[leaf->index];
 		}
-		winprop_t prop =
-		    x_get_prop_with_offset(&ps->c, wid, leaf->tgtatom, offset, word_count,
-		                           c2_get_atom_type(leaf), leaf->format);
-
-		ntargets = (leaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
-		targets = targets_free = (const char **)ccalloc(2 * ntargets, char *);
-		targets_free_inner = targets + ntargets;
 
 		for (size_t i = 0; i < ntargets; ++i) {
-			xcb_atom_t atom = (xcb_atom_t)winprop_get_int(prop, i);
-			if (atom) {
-				xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
-				    ps->c.c, xcb_get_atom_name(ps->c.c, atom), NULL);
-				if (reply) {
-					targets[i] = targets_free_inner[i] = strndup(
-					    xcb_get_atom_name_name(reply),
-					    (size_t)xcb_get_atom_name_name_length(reply));
-					free(reply);
-				}
+			auto atom = (xcb_atom_t)targets[i];
+			const char *atom_name = get_atom_name_cached(atoms, atom);
+			log_verbose("(%zu/%zu) Atom %u is %s", i, ntargets, atom, atom_name);
+			assert(atom_name != NULL);
+			if (atom_name && c2_string_op(leaf, atom_name)) {
+				return true;
 			}
 		}
-		free_winprop(&prop);
-	} else {
-		// Not an atom type, just fetch the string list
-		char **strlst = NULL;
-		int nstr = 0;
-		int index = max2(0, leaf->index);
-		if (wid_get_text_prop(&ps->c, ps->atoms, wid, leaf->tgtatom, &strlst, &nstr)) {
-			if (leaf->index < 0 && nstr > 0 && strlen(strlst[0]) > 0) {
-				ntargets = to_u32_checked(nstr);
-				targets = (const char **)strlst;
-			} else if (nstr > index) {
-				ntargets = 1;
-				targets = (const char **)strlst + index;
+		return false;
+	}
+
+	// Not an atom type, value is a list of nul separated strings
+	if (leaf->index < 0) {
+		size_t offset = 0;
+		while (offset < values->length) {
+			if (c2_string_op(leaf, values->string + offset)) {
+				return true;
 			}
+			offset += strlen(values->string + offset) + 1;
 		}
-		if (strlst) {
-			targets_free = (const char **)strlst;
-		}
+		return false;
 	}
-
-	bool matches = false;
-	if (ntargets == 0) {
-		goto fail;
+	size_t offset = 0;
+	int index = leaf->index;
+	while (offset < values->length && index != 0) {
+		offset += strlen(values->string + offset) + 1;
+		index -= 1;
 	}
-	for (size_t i = 0; i < ntargets; ++i) {
-		if (!targets[i]) {
-			goto fail;
-		}
+	if (index != 0 || values->length == 0) {
+		// index is out of bounds
+		return false;
 	}
-
-	// Actual matching
-	for (size_t i = 0; i < ntargets; ++i) {
-		if (c2_string_op(leaf, targets[i])) {
-			matches = true;
-			break;
-		}
-	}
-
-fail:
-	// Free the string after usage, if necessary
-	if (targets_free_inner) {
-		for (size_t i = 0; i < ntargets; ++i) {
-			if (targets_free_inner[i]) {
-				free((void *)targets_free_inner[i]);
-			}
-		}
-	}
-	// Free property values after usage, if necessary
-	if (targets_free) {
-		free(targets_free);
-	}
-	return matches;
+	return c2_string_op(leaf, values->string + offset);
 }
 
 /**
@@ -1776,7 +1726,7 @@ fail:
  * For internal use.
  */
 static inline bool
-c2_match_once_leaf(session_t *ps, const struct managed_win *w, const c2_l_t *leaf) {
+c2_match_once_leaf(struct c2_state *state, const struct managed_win *w, const c2_l_t *leaf) {
 	assert(leaf);
 
 	const xcb_window_t wid = (leaf->tgt_onframe ? w->client_win : w->base.id);
@@ -1789,14 +1739,18 @@ c2_match_once_leaf(session_t *ps, const struct managed_win *w, const c2_l_t *lea
 	}
 
 	if (leaf->op == C2_L_OFALSE) {
-		return leaf->neg;
+		log_debug("Condition is annulled.");
+		return false;
 	}
+
+	log_verbose("Matching window %#010x (%s) against condition %s", wid, w->name,
+	            c2_condition_to_str2((c2_ptr_t){.l = (c2_l_t *)leaf, .isbranch = false}));
 
 	switch (leaf->ptntype) {
 	// Deal with integer patterns
-	case C2_L_PTINT: return c2_match_once_leaf_int(ps, w, leaf);
+	case C2_L_PTINT: return c2_match_once_leaf_int(w, leaf);
 	// String patterns
-	case C2_L_PTSTRING: return c2_match_once_leaf_string(ps, w, leaf);
+	case C2_L_PTSTRING: return c2_match_once_leaf_string(state->atoms, w, leaf);
 	default:
 		log_error("Unknown pattern type %d.", leaf->ptntype);
 		assert(false);
@@ -1809,7 +1763,8 @@ c2_match_once_leaf(session_t *ps, const struct managed_win *w, const c2_l_t *lea
  *
  * @return true if matched, false otherwise.
  */
-static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_ptr_t cond) {
+static bool
+c2_match_once(struct c2_state *state, const struct managed_win *w, const c2_ptr_t cond) {
 	bool result = false;
 	char condition_str[1024];
 
@@ -1821,18 +1776,21 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
 			return false;
 		}
 
+		log_verbose("Matching window %#010x (%s) against condition %s",
+		            w->base.id, w->name, c2_condition_to_str2(cond));
+
 		switch (pb->op) {
 		case C2_B_OAND:
-			result = (c2_match_once(ps, w, pb->opr1) &&
-			          c2_match_once(ps, w, pb->opr2));
+			result = (c2_match_once(state, w, pb->opr1) &&
+			          c2_match_once(state, w, pb->opr2));
 			break;
 		case C2_B_OOR:
-			result = (c2_match_once(ps, w, pb->opr1) ||
-			          c2_match_once(ps, w, pb->opr2));
+			result = (c2_match_once(state, w, pb->opr1) ||
+			          c2_match_once(state, w, pb->opr2));
 			break;
 		case C2_B_OXOR:
-			result = (c2_match_once(ps, w, pb->opr1) !=
-			          c2_match_once(ps, w, pb->opr2));
+			result = (c2_match_once(state, w, pb->opr1) !=
+			          c2_match_once(state, w, pb->opr2));
 			break;
 		default:
 			log_error("Unknown boolean operator %d.", pb->op);
@@ -1855,7 +1813,7 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
 			return false;
 		}
 
-		result = c2_match_once_leaf(ps, w, pleaf);
+		result = c2_match_once_leaf(state, w, pleaf);
 
 		if (unlikely(log_get_level_tls() <= LOG_LEVEL_TRACE)) {
 			size_t len =
@@ -1882,12 +1840,11 @@ static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_p
  * @param pdata a place to return the data
  * @return true if matched, false otherwise.
  */
-bool c2_match(session_t *ps, const struct managed_win *w, const c2_lptr_t *condlst,
-              void **pdata) {
-	assert(ps->server_grabbed);
+bool c2_match(struct c2_state *state, const struct managed_win *w,
+              const c2_lptr_t *condlst, void **pdata) {
 	// Then go through the whole linked list
 	for (; condlst; condlst = condlst->next) {
-		if (c2_match_once(ps, w, condlst->ptr)) {
+		if (c2_match_once(state, w, condlst->ptr)) {
 			if (pdata) {
 				*pdata = condlst->data;
 			}
