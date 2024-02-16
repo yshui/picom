@@ -55,7 +55,6 @@
 #define ATOM_DEF(x) xcb_atom_t a##x
 
 struct atom {
-	xcb_connection_t *conn;
 	struct cache c;
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST1);
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST2);
@@ -66,20 +65,11 @@ struct atom_entry {
 	xcb_atom_t atom;
 };
 
-/// Create a new atom object with a xcb connection, note that this atom object will hold a
-/// reference to the connection, so the caller must keep the connection alive until the
-/// atom object is destroyed.
-struct atom *init_atoms(xcb_connection_t *);
+/// Create a new atom object with a xcb connection. `struct atom` does not hold
+/// a reference to the connection.
+struct atom *init_atoms(xcb_connection_t *c);
 
-static inline xcb_atom_t get_atom(struct atom *a, const char *key) {
-	struct cache_handle *entry = NULL;
-	if (cache_get_or_fetch(&a->c, key, &entry) < 0) {
-		log_error("Failed to get atom %s", key);
-		return XCB_NONE;
-	}
-	return cache_entry(entry, struct atom_entry, entry)->atom;
-}
-
+xcb_atom_t get_atom(struct atom *a, const char *key, xcb_connection_t *c);
 static inline xcb_atom_t get_atom_cached(struct atom *a, const char *key) {
 	return cache_entry(cache_get(&a->c, key), struct atom_entry, entry)->atom;
 }

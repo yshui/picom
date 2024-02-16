@@ -12,27 +12,27 @@ struct cache_handle;
 /// Should return 0 if the value is fetched successfully, and a negative number if the
 /// value cannot be fetched. Getter doesn't need to initialize fields of `struct
 /// cache_handle`.
-typedef int (*cache_getter_t)(struct cache *, const char *key, struct cache_handle **value);
+typedef int (*cache_getter_t)(struct cache *, const char *key,
+                              struct cache_handle **value, void *user_data);
 typedef void (*cache_free_t)(struct cache *, struct cache_handle *value);
 
 struct cache {
-	cache_getter_t getter;
 	struct cache_handle *entries;
 };
+
+static const struct cache CACHE_INIT = {NULL};
 
 struct cache_handle {
 	char *key;
 	UT_hash_handle hh;
 };
 
-/// Initialize a cache with `getter`
-void cache_init(struct cache *cache, cache_getter_t getter);
-
 /// Get a value from the cache. If the value doesn't present in the cache yet, the
 /// getter will be called, and the returned value will be stored into the cache.
 /// Returns 0 if the value is already present in the cache, 1 if the value is fetched
 /// successfully, and a negative number if the value cannot be fetched.
-int cache_get_or_fetch(struct cache *, const char *key, struct cache_handle **value);
+int cache_get_or_fetch(struct cache *, const char *key, struct cache_handle **value,
+                       void *user_data, cache_getter_t getter);
 
 /// Get a value from the cache. If the value doesn't present in the cache, NULL will be
 /// returned.

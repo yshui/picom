@@ -8,13 +8,14 @@ struct cache_handle *cache_get(struct cache *c, const char *key) {
 	return e;
 }
 
-int cache_get_or_fetch(struct cache *c, const char *key, struct cache_handle **value) {
+int cache_get_or_fetch(struct cache *c, const char *key, struct cache_handle **value,
+                       void *user_data, cache_getter_t getter) {
 	*value = cache_get(c, key);
 	if (*value) {
 		return 0;
 	}
 
-	int err = c->getter(c, key, value);
+	int err = getter(c, key, value, user_data);
 	assert(err <= 0);
 	if (err < 0) {
 		return err;
@@ -48,9 +49,4 @@ void cache_invalidate_all(struct cache *c, cache_free_t free_fn) {
 	HASH_ITER(hh, c->entries, e, tmpe) {
 		cache_invalidate_impl(c, e, free_fn);
 	}
-}
-
-void cache_init(struct cache *cache, cache_getter_t getter) {
-	cache->getter = getter;
-	cache->entries = NULL;
 }
