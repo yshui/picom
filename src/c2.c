@@ -55,9 +55,17 @@ typedef struct {
 	};
 } c2_ptr_t;
 
+struct c2_tracked_property_key {
+	xcb_atom_t property;
+	bool is_on_frame;
+	char padding[3];
+};
+static_assert(sizeof(struct c2_tracked_property_key) == 8, "Padding bytes in "
+                                                           "c2_tracked_property_key");
+
 struct c2_tracked_property {
 	UT_hash_handle hh;
-	xcb_atom_t property;
+	struct c2_tracked_property_key key;
 	bool is_string;
 };
 
@@ -1121,11 +1129,16 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 	// Insert target atom into tracked property name list
 	if (pleaf->tgtatom) {
 		struct c2_tracked_property *property;
-		HASH_FIND_INT(state->tracked_properties, &pleaf->tgtatom, property);
+		struct c2_tracked_property_key key = {
+		    .property = pleaf->tgtatom,
+		    .is_on_frame = pleaf->tgt_onframe,
+		};
+		HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), property);
 		if (property == NULL) {
 			property = cmalloc(struct c2_tracked_property);
-			property->property = pleaf->tgtatom;
-			HASH_ADD_INT(state->tracked_properties, property, property);
+			property->key = key;
+			HASH_ADD_KEYPTR(hh, state->tracked_properties, &property->key,
+			                sizeof(property->key), property);
 			property->is_string = pleaf->type == C2_L_TSTRING;
 		} else {
 			if (property->is_string != (pleaf->type == C2_L_TSTRING)) {
@@ -1879,6 +1892,15 @@ void c2_state_free(struct c2_state *state) {
 
 bool c2_state_is_property_tracked(struct c2_state *state, xcb_atom_t property) {
 	struct c2_tracked_property *p;
-	HASH_FIND_INT(state->tracked_properties, &property, p);
+	struct c2_tracked_property_key key = {
+	    .property = property,
+	    .is_on_frame = true,
+	};
+	HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), p);
+	if (p != NULL) {
+		return true;
+	}
+	key.is_on_frame = false;
+	HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), p);
 	return p != NULL;
 }
