@@ -406,6 +406,7 @@ void rolling_quantile_destroy(struct rolling_quantile *rq);
 int rolling_quantile_estimate(struct rolling_quantile *rq, struct rolling_window *elements);
 void rolling_quantile_push_back(struct rolling_quantile *rq, int x);
 void rolling_quantile_pop_front(struct rolling_quantile *rq, int x);
+void set_rr_scheduling(void);
 
 // Some versions of the Android libc do not have timespec_get(), use
 // clock_gettime() instead.

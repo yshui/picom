@@ -19,7 +19,6 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <math.h>
-#include <pthread.h>
 #include <sched.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -68,7 +67,6 @@
 #include "file_watch.h"
 #include "list.h"
 #include "options.h"
-#include "rtkit.h"
 #include "statistics.h"
 #include "uthash_extra.h"
 #include "vblank.h"
@@ -2602,41 +2600,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 err:
 	free(ps);
 	return NULL;
-}
-
-/// Switch to real-time scheduling policy (SCHED_RR) if possible
-///
-/// Make picom realtime to reduce latency, and make rendering times more predictable to
-/// help pacing.
-///
-/// This requires the user to set up permissions for the real-time scheduling. e.g. by
-/// setting `ulimit -r`, or giving us the CAP_SYS_NICE capability.
-void set_rr_scheduling(void) {
-	int priority = sched_get_priority_min(SCHED_RR);
-
-	if (rtkit_make_realtime(0, priority)) {
-		log_info("Set realtime priority to %d with rtkit.", priority);
-		return;
-	}
-
-	// Fallback to use pthread_setschedparam
-	struct sched_param param;
-	int old_policy;
-	int ret = pthread_getschedparam(pthread_self(), &old_policy, &param);
-	if (ret != 0) {
-		log_info("Couldn't get old scheduling priority.");
-		return;
-	}
-
-	param.sched_priority = priority;
-
-	ret = pthread_setschedparam(pthread_self(), SCHED_RR, &param);
-	if (ret != 0) {
-		log_info("Couldn't set real-time scheduling priority to %d.", priority);
-		return;
-	}
-
-	log_info("Set real-time scheduling priority to %d.", priority);
 }
 
 /**
