@@ -286,15 +286,15 @@ Some options accept a condition string to match certain windows. A condition str
 
 A condition with "exists" operator looks like this:
 
-	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <TYPE>
+	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>]
 
 With equals operator it looks like:
 
-	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <TYPE> <NEGATION> <OP QUALIFIER> <MATCH TYPE> = <PATTERN>
+	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] <NEGATION> <OP QUALIFIER> <MATCH TYPE> = <PATTERN>
 
 With greater-than/less-than operators it looks like:
 
-	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <TYPE> <NEGATION> <OPERATOR> <PATTERN>
+	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] <NEGATION> <OPERATOR> <PATTERN>
 
 'NEGATION' (optional) is one or more exclamation marks;
 
@@ -303,8 +303,6 @@ With greater-than/less-than operators it looks like:
 'CLIENT/FRAME' is a single `@` if the window attribute should be be looked up on client window, nothing if on frame window;
 
 'INDEX' (optional) is the index number of the property to look up. For example, `[2]` means look at the third value in the property. If not specified, the first value (index `[0]`) is used implicitly. Use the special value `[*]` to perform matching against all available property values using logical OR. Do not specify it for predefined targets.
-
-'TYPE' is a single character representing the type of the property to match for: `c` for 'CARDINAL', `a` for 'ATOM', `w` for 'WINDOW', `d` for 'DRAWABLE', `s` for 'STRING' (and any other string types, such as 'UTF8_STRING'). Do not specify it for predefined targets.
 
 'OP QUALIFIER' (optional), applicable only for equals operator, could be `?` (ignore-case).
 
@@ -328,24 +326,24 @@ Examples:
 	override_redirect != 1
 	# If the window is a menu
 	window_type *= "menu"
-	_NET_WM_WINDOW_TYPE@:a *= "MENU"
+	_NET_WM_WINDOW_TYPE@ *= "MENU"
 	# If the window is marked hidden: _NET_WM_STATE contains _NET_WM_STATE_HIDDEN
-	_NET_WM_STATE@[*]:a = "_NET_WM_STATE_HIDDEN"
+	_NET_WM_STATE@[*] = "_NET_WM_STATE_HIDDEN"
 	# If the window is marked sticky: _NET_WM_STATE contains an atom that contains
 	# "sticky", ignore case
-	_NET_WM_STATE@[*]:a *?= "sticky"
+	_NET_WM_STATE@[*] *?= "sticky"
 	# If the window name contains "Firefox", ignore case
 	name *?= "Firefox"
-	_NET_WM_NAME@:s *?= "Firefox"
+	_NET_WM_NAME@ *?= "Firefox"
 	# If the window name ends with "Firefox"
 	name %= "*Firefox"
 	name ~= "Firefox$"
 	# If the window has a property _COMPTON_SHADOW with value 0, type CARDINAL,
 	# format 32, value 0, on its frame window
-	_COMPTON_SHADOW:32c = 0
+	_COMPTON_SHADOW = 0
 	# If the third value of _NET_FRAME_EXTENTS is less than 20, or there's no
 	# _NET_FRAME_EXTENTS property on client window
-	_NET_FRAME_EXTENTS@[2]:32c < 20 || !_NET_FRAME_EXTENTS@:32c
+	_NET_FRAME_EXTENTS@[2] < 20 || !_NET_FRAME_EXTENTS@
 	# The pattern here will be parsed as "dd4"
 	name = "\x64\x64\o64"
 
