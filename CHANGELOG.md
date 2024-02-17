@@ -7,6 +7,7 @@
 ## Notable changes
 
 * Marginally improve performance when resizing/opening/closing windows. (#1190)
+* Format specifiers are no longer used in rules. Format specifier is the number you put after the colon (':') in rules, e.g. the `32` in `"_GTK_FRAME_EXTENTS@:32c"`. Now this information is ignored and the property is matched regardless of format.
 
 ## Dependency changes
 

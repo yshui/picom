@@ -286,15 +286,15 @@ Some options accept a condition string to match certain windows. A condition str
 
 A condition with "exists" operator looks like this:
 
-	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <FORMAT> <TYPE>
+	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <TYPE>
 
 With equals operator it looks like:
 
-	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <FORMAT> <TYPE> <NEGATION> <OP QUALIFIER> <MATCH TYPE> = <PATTERN>
+	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <TYPE> <NEGATION> <OP QUALIFIER> <MATCH TYPE> = <PATTERN>
 
 With greater-than/less-than operators it looks like:
 
-	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <FORMAT> <TYPE> <NEGATION> <OPERATOR> <PATTERN>
+	<NEGATION> <TARGET> <CLIENT/FRAME> [<INDEX>] : <TYPE> <NEGATION> <OPERATOR> <PATTERN>
 
 'NEGATION' (optional) is one or more exclamation marks;
 
@@ -303,8 +303,6 @@ With greater-than/less-than operators it looks like:
 'CLIENT/FRAME' is a single `@` if the window attribute should be be looked up on client window, nothing if on frame window;
 
 'INDEX' (optional) is the index number of the property to look up. For example, `[2]` means look at the third value in the property. If not specified, the first value (index `[0]`) is used implicitly. Use the special value `[*]` to perform matching against all available property values using logical OR. Do not specify it for predefined targets.
-
-'FORMAT' (optional) specifies the format of the property, 8, 16, or 32. On absence we use format X reports. Do not specify it for predefined or string targets.
 
 'TYPE' is a single character representing the type of the property to match for: `c` for 'CARDINAL', `a` for 'ATOM', `w` for 'WINDOW', `d` for 'DRAWABLE', `s` for 'STRING' (and any other string types, such as 'UTF8_STRING'). Do not specify it for predefined targets.
 

@@ -149,7 +149,6 @@ struct _c2_l {
 		C2_L_TATOM,
 		C2_L_TDRAWABLE,
 	} type;
-	int format;
 	enum {
 		C2_L_PTUNDEFINED,
 		C2_L_PTSTRING,
@@ -169,7 +168,7 @@ struct _c2_l {
 		.neg = false, .op = C2_L_OEXISTS, .match = C2_L_MEXACT,                     \
 		.match_ignorecase = false, .tgt = NULL, .tgtatom = 0, .tgt_onframe = false, \
 		.predef = C2_L_PUNDEFINED, .index = 0, .type = C2_L_TUNDEFINED,             \
-		.format = 0, .ptntype = C2_L_PTUNDEFINED, .ptnstr = NULL, .ptnint = 0,      \
+		.ptntype = C2_L_PTUNDEFINED, .ptnstr = NULL, .ptnint = 0,                   \
 	}
 
 static const c2_l_t leaf_def = C2_L_INIT;
@@ -189,35 +188,34 @@ struct _c2_lptr {
 typedef struct {
 	const char *name;
 	enum c2_l_type type;
-	int format;
 } c2_predef_t;
 
 // Predefined targets.
 static const c2_predef_t C2_PREDEFS[] = {
-    [C2_L_PID] = {"id", C2_L_TCARDINAL, 0},
-    [C2_L_PX] = {"x", C2_L_TCARDINAL, 0},
-    [C2_L_PY] = {"y", C2_L_TCARDINAL, 0},
-    [C2_L_PX2] = {"x2", C2_L_TCARDINAL, 0},
-    [C2_L_PY2] = {"y2", C2_L_TCARDINAL, 0},
-    [C2_L_PWIDTH] = {"width", C2_L_TCARDINAL, 0},
-    [C2_L_PHEIGHT] = {"height", C2_L_TCARDINAL, 0},
-    [C2_L_PWIDTHB] = {"widthb", C2_L_TCARDINAL, 0},
-    [C2_L_PHEIGHTB] = {"heightb", C2_L_TCARDINAL, 0},
-    [C2_L_PBDW] = {"border_width", C2_L_TCARDINAL, 0},
-    [C2_L_PFULLSCREEN] = {"fullscreen", C2_L_TCARDINAL, 0},
-    [C2_L_POVREDIR] = {"override_redirect", C2_L_TCARDINAL, 0},
-    [C2_L_PARGB] = {"argb", C2_L_TCARDINAL, 0},
-    [C2_L_PFOCUSED] = {"focused", C2_L_TCARDINAL, 0},
-    [C2_L_PWMWIN] = {"wmwin", C2_L_TCARDINAL, 0},
-    [C2_L_PBSHAPED] = {"bounding_shaped", C2_L_TCARDINAL, 0},
-    [C2_L_PROUNDED] = {"rounded_corners", C2_L_TCARDINAL, 0},
-    [C2_L_PCLIENT] = {"client", C2_L_TWINDOW, 0},
-    [C2_L_PWINDOWTYPE] = {"window_type", C2_L_TSTRING, 0},
-    [C2_L_PLEADER] = {"leader", C2_L_TWINDOW, 0},
-    [C2_L_PNAME] = {"name", C2_L_TSTRING, 0},
-    [C2_L_PCLASSG] = {"class_g", C2_L_TSTRING, 0},
-    [C2_L_PCLASSI] = {"class_i", C2_L_TSTRING, 0},
-    [C2_L_PROLE] = {"role", C2_L_TSTRING, 0},
+    [C2_L_PID] = {"id", C2_L_TCARDINAL},
+    [C2_L_PX] = {"x", C2_L_TCARDINAL},
+    [C2_L_PY] = {"y", C2_L_TCARDINAL},
+    [C2_L_PX2] = {"x2", C2_L_TCARDINAL},
+    [C2_L_PY2] = {"y2", C2_L_TCARDINAL},
+    [C2_L_PWIDTH] = {"width", C2_L_TCARDINAL},
+    [C2_L_PHEIGHT] = {"height", C2_L_TCARDINAL},
+    [C2_L_PWIDTHB] = {"widthb", C2_L_TCARDINAL},
+    [C2_L_PHEIGHTB] = {"heightb", C2_L_TCARDINAL},
+    [C2_L_PBDW] = {"border_width", C2_L_TCARDINAL},
+    [C2_L_PFULLSCREEN] = {"fullscreen", C2_L_TCARDINAL},
+    [C2_L_POVREDIR] = {"override_redirect", C2_L_TCARDINAL},
+    [C2_L_PARGB] = {"argb", C2_L_TCARDINAL},
+    [C2_L_PFOCUSED] = {"focused", C2_L_TCARDINAL},
+    [C2_L_PWMWIN] = {"wmwin", C2_L_TCARDINAL},
+    [C2_L_PBSHAPED] = {"bounding_shaped", C2_L_TCARDINAL},
+    [C2_L_PROUNDED] = {"rounded_corners", C2_L_TCARDINAL},
+    [C2_L_PCLIENT] = {"client", C2_L_TWINDOW},
+    [C2_L_PWINDOWTYPE] = {"window_type", C2_L_TSTRING},
+    [C2_L_PLEADER] = {"leader", C2_L_TWINDOW},
+    [C2_L_PNAME] = {"name", C2_L_TSTRING},
+    [C2_L_PCLASSG] = {"class_g", C2_L_TSTRING},
+    [C2_L_PCLASSI] = {"class_i", C2_L_TSTRING},
+    [C2_L_PROLE] = {"role", C2_L_TSTRING},
 };
 
 /**
@@ -405,7 +403,7 @@ TEST_CASE(c2_parse) {
 	TEST_STREQUAL(cond->ptr.l->ptnstr, "xterm");
 
 	size_t len = c2_condition_to_str(cond->ptr, str, sizeof(str));
-	TEST_STREQUAL3(str, "name:0s = \"xterm\"", len);
+	TEST_STREQUAL3(str, "name:s = \"xterm\"", len);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_GTK_FRAME_EXTENTS@:c", NULL);
@@ -421,7 +419,7 @@ TEST_CASE(c2_parse) {
 	TEST_STREQUAL(cond->ptr.l->tgt, "_GTK_FRAME_EXTENTS");
 
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
-	TEST_STREQUAL3(str, "_GTK_FRAME_EXTENTS@[0]:0c", len);
+	TEST_STREQUAL3(str, "_GTK_FRAME_EXTENTS@[0]:c", len);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "name = \"xterm\" && class_g *= \"XTerm\"", NULL);
@@ -443,25 +441,30 @@ TEST_CASE(c2_parse) {
 	TEST_EQUAL(cond->ptr.b->opr2.l->predef, C2_L_PCLASSG);
 
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
-	TEST_STREQUAL3(str, "(name:0s = \"xterm\" && class_g:0s *= \"XTerm\")", len);
+	TEST_STREQUAL3(str, "(name:s = \"xterm\" && class_g:s *= \"XTerm\")", len);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_NET_WM_STATE[1]:32a *='_NET_WM_STATE_HIDDEN'", NULL);
 	TEST_EQUAL(cond->ptr.l->index, 1);
-	TEST_EQUAL(cond->ptr.l->format, 32);
 	TEST_EQUAL(cond->ptr.l->type, C2_L_TATOM);
 	TEST_STREQUAL(cond->ptr.l->tgt, "_NET_WM_STATE");
 	TEST_STREQUAL(cond->ptr.l->ptnstr, "_NET_WM_STATE_HIDDEN");
 
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
-	TEST_STREQUAL3(str, "_NET_WM_STATE[1]:32a *= \"_NET_WM_STATE_HIDDEN\"", len);
+	TEST_STREQUAL3(str, "_NET_WM_STATE[1]:a *= \"_NET_WM_STATE_HIDDEN\"", len);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_NET_WM_STATE[*]:32a*='_NET_WM_STATE_HIDDEN'", NULL);
 	TEST_EQUAL(cond->ptr.l->index, -1);
 
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
-	TEST_STREQUAL3(str, "_NET_WM_STATE[*]:32a *= \"_NET_WM_STATE_HIDDEN\"", len);
+	TEST_STREQUAL3(str, "_NET_WM_STATE[*]:a *= \"_NET_WM_STATE_HIDDEN\"", len);
+	c2_list_free(&cond, NULL);
+
+	cond = c2_parse(NULL, "!class_i:0s", NULL);
+	TEST_NOTEQUAL(cond, NULL);
+	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
+	TEST_STREQUAL3(str, "!class_i:s", len);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_NET_WM_STATE = '_NET_WM_STATE_HIDDEN'", NULL);
@@ -701,7 +704,6 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 		if (!strcmp(C2_PREDEFS[i].name, pleaf->tgt)) {
 			pleaf->predef = i;
 			pleaf->type = C2_PREDEFS[i].type;
-			pleaf->format = C2_PREDEFS[i].format;
 			break;
 		}
 	}
@@ -801,47 +803,19 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 		offset++;
 		C2H_SKIP_SPACES();
 
-		// Default format
-		if (!pleaf->format) {
-			switch (pleaf->type) {
-			case C2_L_TWINDOW:
-			case C2_L_TDRAWABLE:
-			case C2_L_TATOM: pleaf->format = 32; break;
-			case C2_L_TSTRING: pleaf->format = 8; break;
-			default: break;
-			}
-		}
-
 		// Write format
 		if (hasformat) {
-			if (pleaf->predef != C2_L_PUNDEFINED) {
-				log_warn("Format \"%ld\" specified on a default target "
-				         "will be ignored.",
-				         format);
-			} else if (pleaf->type == C2_L_TSTRING) {
-				log_warn("Format \"%ld\" specified on a string target "
-				         "will be ignored.",
-				         format);
-			} else {
-				if (pleaf->format && pleaf->format != format) {
-					log_warn("Default format %d overridden on "
-					         "target.",
-					         pleaf->format);
-				}
-				pleaf->format = to_int_checked(format);
+			log_warn("Format \"%ld\" specified on target \"%s\" will be "
+			         "ignored.",
+			         format, pleaf->tgt);
+			if (format && format != 8 && format != 16 && format != 32) {
+				c2_error("Invalid format %ld.", format);
 			}
 		}
 	}
 
 	if (!pleaf->type) {
 		c2_error("Target type cannot be determined.");
-	}
-
-	// if (!pleaf->predef && !pleaf->format && C2_L_TSTRING != pleaf->type)
-	//   c2_error("Target format cannot be determined.");
-
-	if (pleaf->format && 8 != pleaf->format && 16 != pleaf->format && 32 != pleaf->format) {
-		c2_error("Invalid format.");
 	}
 
 	return offset;
@@ -1079,8 +1053,8 @@ static int c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult) {
 
 	// Determine the pattern target
 #define TGTFILL(pdefid)                                                                  \
-	(pleaf->predef = (pdefid), pleaf->type = C2_PREDEFS[pdefid].type,                \
-	 pleaf->format = C2_PREDEFS[pdefid].format)
+	pleaf->predef = (pdefid);                                                        \
+	pleaf->type = C2_PREDEFS[pdefid].type;
 	switch (pattern[offset]) {
 	case 'n': TGTFILL(C2_L_PNAME); break;
 	case 'i': TGTFILL(C2_L_PCLASSI); break;
@@ -1389,8 +1363,6 @@ static size_t c2_condition_to_str(c2_ptr_t p, char *output, size_t len) {
 
 		const char *type_str = c2h_dump_str_type(pleaf);
 		push_char(':');
-		sprintf(number, "%d", pleaf->format);
-		push_str(number);
 		push_str(type_str);
 
 		if (C2_L_OEXISTS == pleaf->op) {
@@ -1563,9 +1535,9 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 				auto prop_info = x_get_prop_info(&ps->c, wid, pleaf->tgtatom);
 				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
 			}
-			winprop_t prop = x_get_prop_with_offset(
-			    &ps->c, wid, pleaf->tgtatom, idx, word_count,
-			    c2_get_atom_type(pleaf), pleaf->format);
+			winprop_t prop =
+			    x_get_prop_with_offset(&ps->c, wid, pleaf->tgtatom, idx,
+			                           word_count, c2_get_atom_type(pleaf), 0);
 
 			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
 			if (ntargets > 0) {
@@ -1640,9 +1612,9 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 				auto prop_info = x_get_prop_info(&ps->c, wid, pleaf->tgtatom);
 				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
 			}
-			winprop_t prop = x_get_prop_with_offset(
-			    &ps->c, wid, pleaf->tgtatom, idx, word_count,
-			    c2_get_atom_type(pleaf), pleaf->format);
+			winprop_t prop =
+			    x_get_prop_with_offset(&ps->c, wid, pleaf->tgtatom, idx,
+			                           word_count, c2_get_atom_type(pleaf), 0);
 
 			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
 			targets = targets_free = (const char **)ccalloc(2 * ntargets, char *);
