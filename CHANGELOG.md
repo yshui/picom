@@ -8,6 +8,10 @@
 
 * Marginally improve performance when resizing/opening/closing windows. (#1190)
 
+## Dependency changes
+
+* picom now optionally depends on `rtkit` at runtime to give itself realtime scheduling priority.
+
 # v11.2 (2024-Feb-13)
 
 ## Build changes
@@ -22,10 +26,6 @@
 * Fix `corner-radius-rules` not applying sometimes (#1177)
 * Fix window shader not having an effect when frame opacity is enabled (#1174)
 * Fix binding root pixmap in case of depth mismatch (#984)
-
-## Dependency changes
-
-* picom now optionally depends on `rtkit` at runtime to give itself realtime scheduling priority.
 
 # v11.1 (2024-Jan-28)
 
