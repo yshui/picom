@@ -53,8 +53,6 @@
 
 struct atom_entry;
 struct atom {
-	struct cache c;
-	struct atom_entry *atom_to_name;
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST1);
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST2);
 };
