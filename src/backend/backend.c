@@ -334,7 +334,14 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 
 		// Draw shadow on target
 		if (w->shadow) {
-			assert(!(w->flags & WIN_FLAGS_SHADOW_NONE));
+			if (w->shadow_image == NULL) {
+				struct color shadow_color = {.red = ps->o.shadow_red,
+				                             .green = ps->o.shadow_green,
+				                             .blue = ps->o.shadow_blue,
+				                             .alpha = ps->o.shadow_opacity};
+				win_bind_shadow(ps->backend_data, w, shadow_color,
+				                ps->shadow_context);
+			}
 			// Clip region for the shadow
 			// reg_shadow \in reg_paint
 			auto reg_shadow = win_extents_by_val(w);
