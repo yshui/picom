@@ -58,6 +58,7 @@ typedef struct {
 struct c2_tracked_property {
 	UT_hash_handle hh;
 	xcb_atom_t property;
+	bool is_string;
 };
 
 struct c2_state {
@@ -95,7 +96,7 @@ struct _c2_b {
 struct _c2_l {
 	bool neg : 1;
 	enum {
-		C2_L_OEXISTS,
+		C2_L_OEXISTS = 0,
 		C2_L_OEQ,
 		C2_L_OGT,
 		C2_L_OGTEQ,
@@ -326,6 +327,7 @@ static int c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult);
 static void c2_free(c2_ptr_t p);
 
 static size_t c2_condition_to_str(c2_ptr_t p, char *output, size_t len);
+static const char *c2_condition_to_str2(c2_ptr_t ptr);
 
 /**
  * Wrapper of c2_free().
@@ -1124,6 +1126,18 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 			property = cmalloc(struct c2_tracked_property);
 			property->property = pleaf->tgtatom;
 			HASH_ADD_INT(state->tracked_properties, property, property);
+			property->is_string = pleaf->type == C2_L_TSTRING;
+		} else {
+			if (property->is_string != (pleaf->type == C2_L_TSTRING)) {
+				log_error("Type mismatch for property \"%s\", %s a "
+				          "string, now %s. Offending rule is: %s, it "
+				          "will be disabled.",
+				          pleaf->tgt, property->is_string ? "was" : "wasn't",
+				          pleaf->type == C2_L_TSTRING ? "is" : "isn't",
+				          c2_condition_to_str2(
+				              (c2_ptr_t){.isbranch = false, .l = pleaf}));
+				return false;
+			}
 		}
 	}
 
@@ -1166,10 +1180,6 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 		}
 		pleaf->regex_pcre_match =
 		    pcre2_match_data_create_from_pattern(pleaf->regex_pcre, NULL);
-
-		// Free the target string
-		// free(pleaf->tgt);
-		// pleaf->tgt = NULL;
 #else
 		log_error("PCRE regular expression support not compiled in.");
 		return false;
