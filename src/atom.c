@@ -157,12 +157,12 @@ mock_atom_name_getter(xcb_atom_t atom attr_unused, xcb_connection_t *c attr_unus
 	abort();
 }
 
-struct atom *init_mock_atoms(xcb_connection_t *c) {
+struct atom *init_mock_atoms(void) {
 	auto atoms = ccalloc(1, struct atom_impl);
 	atoms->c = CACHE_INIT;
 	atoms->getter = mock_atom_getter;
 	atoms->name_getter = mock_atom_name_getter;
-#define ATOM_GET(x) atoms->base.a##x = get_atom(&atoms->base, #x, c)
+#define ATOM_GET(x) atoms->base.a##x = get_atom(&atoms->base, #x, NULL)
 	LIST_APPLY(ATOM_GET, SEP_COLON, ATOM_LIST1);
 	LIST_APPLY(ATOM_GET, SEP_COLON, ATOM_LIST2);
 #undef ATOM_GET
@@ -171,7 +171,7 @@ struct atom *init_mock_atoms(xcb_connection_t *c) {
 
 #else
 
-struct atom *init_mock_atoms(xcb_connection_t *c) {
+struct atom *init_mock_atoms(void) {
 	abort();
 }
 

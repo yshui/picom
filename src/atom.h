@@ -72,4 +72,4 @@ void destroy_atoms(struct atom *a);
 /// secutive integers as atoms, starting from 1. Calling get_atom_name with atoms
 /// previously seen will result in the string that was used to create the atom; if
 /// the atom was never returned by get_atom, it will abort.
-struct atom *init_mock_atoms(xcb_connection_t *c);
+struct atom *init_mock_atoms(void);
