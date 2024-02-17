@@ -29,6 +29,7 @@ struct managed_win;
 
 typedef void (*c2_userdata_free)(void *);
 c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data);
+const char *c2_lptr_to_str(const c2_lptr_t *ptr);
 
 c2_lptr_t *c2_free_lptr(c2_lptr_t *lp, c2_userdata_free f);
 

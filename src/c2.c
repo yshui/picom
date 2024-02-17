@@ -1521,6 +1521,10 @@ static const char *c2_condition_to_str2(const c2_ptr_t ptr) {
 	return buf;
 }
 
+const char *c2_lptr_to_str(const c2_lptr_t *ptr) {
+	return c2_condition_to_str2(ptr->ptr);
+}
+
 static inline bool c2_int_op(const c2_l_t *leaf, size_t ntargets, const int64_t *targets) {
 	for (size_t i = 0; i < ntargets; ++i) {
 		long long tgt = targets[i];
