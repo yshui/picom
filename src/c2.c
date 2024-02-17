@@ -406,9 +406,12 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
 
 TEST_CASE(c2_parse) {
 	log_init_tls();
+	// log_add_target_tls(stderr_logger_new());
 
 	char str[1024];
 	c2_lptr_t *cond = c2_parse(NULL, "name = \"xterm\"", NULL);
+	struct atom *atoms = init_mock_atoms();
+	struct c2_state *state = c2_state_new(atoms);
 	TEST_NOTEQUAL(cond, NULL);
 	TEST_TRUE(!cond->ptr.isbranch);
 	TEST_NOTEQUAL(cond->ptr.l, NULL);
@@ -419,13 +422,14 @@ TEST_CASE(c2_parse) {
 	size_t len = c2_condition_to_str(cond->ptr, str, sizeof(str));
 	TEST_STREQUAL3(str, "name = \"xterm\"", len);
 
-	struct c2_state state = {
-	    .atoms = NULL,
-	};
 	struct managed_win test_win = {
 	    .name = "xterm",
 	};
-	TEST_TRUE(c2_match(&state, &test_win, cond, NULL));
+	TEST_TRUE(c2_match(state, &test_win, cond, NULL));
+	c2_list_postprocess(state, NULL, cond);
+	TEST_EQUAL(HASH_COUNT(state->tracked_properties), 0);
+	c2_state_free(state);
+	destroy_atoms(atoms);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_GTK_FRAME_EXTENTS@:c", NULL);
@@ -438,6 +442,18 @@ TEST_CASE(c2_parse) {
 	TEST_TRUE(cond->ptr.l->tgt_onframe);
 	TEST_NOTEQUAL(cond->ptr.l->tgt, NULL);
 	TEST_STREQUAL(cond->ptr.l->tgt, "_GTK_FRAME_EXTENTS");
+
+	atoms = init_mock_atoms();
+	state = c2_state_new(atoms);
+	c2_list_postprocess(state, NULL, cond);
+	TEST_EQUAL(HASH_COUNT(state->tracked_properties), 1);
+	HASH_ITER2(state->tracked_properties, prop) {
+		TEST_EQUAL(prop->key.property,
+		           get_atom_with_nul(state->atoms, "_GTK_FRAME_EXTENTS", NULL));
+		TEST_EQUAL(prop->max_indices, 0);
+	}
+	c2_state_free(state);
+	destroy_atoms(atoms);
 
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
 	TEST_STREQUAL3(str, "_GTK_FRAME_EXTENTS@[0]", len);
@@ -461,13 +477,17 @@ TEST_CASE(c2_parse) {
 	TEST_STREQUAL(cond->ptr.b->opr2.l->tgt, "class_g");
 	TEST_EQUAL(cond->ptr.b->opr2.l->predef, C2_L_PCLASSG);
 
+	atoms = init_mock_atoms();
+	state = c2_state_new(atoms);
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
 	TEST_STREQUAL3(str, "(name = \"xterm\" && class_g *= \"XTerm\")", len);
 	test_win.class_general = "XTerm";
-	TEST_TRUE(c2_match(&state, &test_win, cond, NULL));
+	TEST_TRUE(c2_match(state, &test_win, cond, NULL));
 	test_win.class_general = "asdf";
-	TEST_TRUE(!c2_match(&state, &test_win, cond, NULL));
+	TEST_TRUE(!c2_match(state, &test_win, cond, NULL));
 	c2_list_free(&cond, NULL);
+	c2_state_free(state);
+	destroy_atoms(atoms);
 
 	cond = c2_parse(NULL, "_NET_WM_STATE[1]:32a *='_NET_WM_STATE_HIDDEN'", NULL);
 	TEST_EQUAL(cond->ptr.l->index, 1);
