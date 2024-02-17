@@ -183,6 +183,8 @@ static void *sgi_video_sync_thread(void *data) {
 		goto start_failed;
 	}
 
+	log_init_tls();
+	set_rr_scheduling();
 	pthread_mutex_lock(&args->start_mtx);
 	args->start_status = 0;
 	pthread_cond_signal(&args->start_cnd);
