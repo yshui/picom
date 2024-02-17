@@ -138,3 +138,41 @@ void destroy_atoms(struct atom *a) {
 	cache_invalidate_all(&atoms->c, atom_entry_free);
 	free(a);
 }
+
+#ifdef UNIT_TEST
+
+static inline int mock_atom_getter(struct cache *cache, const char *atom_name attr_unused,
+                                   struct cache_handle **value, void *user_data attr_unused) {
+	auto atoms = container_of(cache, struct atom_impl, c);
+	xcb_atom_t atom = (xcb_atom_t)HASH_COUNT(atoms->atom_to_name) + 1;
+	struct atom_entry *entry = ccalloc(1, struct atom_entry);
+	entry->atom = atom;
+	HASH_ADD_INT(atoms->atom_to_name, atom, entry);
+	*value = &entry->entry;
+	return 0;
+}
+
+static inline char *
+mock_atom_name_getter(xcb_atom_t atom attr_unused, xcb_connection_t *c attr_unused) {
+	abort();
+}
+
+struct atom *init_mock_atoms(xcb_connection_t *c) {
+	auto atoms = ccalloc(1, struct atom_impl);
+	atoms->c = CACHE_INIT;
+	atoms->getter = mock_atom_getter;
+	atoms->name_getter = mock_atom_name_getter;
+#define ATOM_GET(x) atoms->base.a##x = get_atom(&atoms->base, #x, c)
+	LIST_APPLY(ATOM_GET, SEP_COLON, ATOM_LIST1);
+	LIST_APPLY(ATOM_GET, SEP_COLON, ATOM_LIST2);
+#undef ATOM_GET
+	return &atoms->base;
+}
+
+#else
+
+struct atom *init_mock_atoms(xcb_connection_t *c) {
+	abort();
+}
+
+#endif
