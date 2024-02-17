@@ -1476,7 +1476,27 @@ static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
 		case C2_L_PTSTRING:
 			// TODO(yshui) Escape string before printing out?
 			push_char('"');
-			push_str(pleaf->ptnstr);
+			for (int i = 0; pleaf->ptnstr[i]; i++) {
+				switch (pleaf->ptnstr[i]) {
+				case '\\': push_str("\\\\"); break;
+				case '"': push_str("\\\""); break;
+				case '\a': push_str("\\a"); break;
+				case '\b': push_str("\\b"); break;
+				case '\f': push_str("\\f"); break;
+				case '\r': push_str("\\r"); break;
+				case '\v': push_str("\\v"); break;
+				case '\t': push_str("\\t"); break;
+				case '\n': push_str("\\n"); break;
+				default:
+					if (isalnum(pleaf->ptnstr[i])) {
+						push_char(pleaf->ptnstr[i]);
+					} else {
+						sprintf(number, "\\x%02x", pleaf->ptnstr[i]);
+						push_str(number);
+					}
+					break;
+				}
+			}
 			push_char('"');
 			break;
 		default: assert(0); break;
