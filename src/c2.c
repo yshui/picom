@@ -412,9 +412,12 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
 
 TEST_CASE(c2_parse) {
 	log_init_tls();
+	// log_add_target_tls(stderr_logger_new());
 
 	char str[1024];
 	c2_lptr_t *cond = c2_parse(NULL, "name = \"xterm\"", NULL);
+	struct atom *atoms = init_mock_atoms();
+	struct c2_state *state = c2_state_new(atoms);
 	TEST_NOTEQUAL(cond, NULL);
 	TEST_TRUE(!cond->ptr.isbranch);
 	TEST_NOTEQUAL(cond->ptr.l, NULL);
@@ -424,6 +427,11 @@ TEST_CASE(c2_parse) {
 
 	size_t len = c2_condition_to_str(cond->ptr, str, sizeof(str));
 	TEST_STREQUAL3(str, "name:s = \"xterm\"", len);
+
+	c2_list_postprocess(state, NULL, cond);
+	TEST_EQUAL(HASH_COUNT(state->tracked_properties), 0);
+	c2_state_free(state);
+	destroy_atoms(atoms);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_GTK_FRAME_EXTENTS@:c", NULL);
