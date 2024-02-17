@@ -1488,7 +1488,7 @@ static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
 				case '\t': push_str("\\t"); break;
 				case '\n': push_str("\\n"); break;
 				default:
-					if (isalnum(pleaf->ptnstr[i])) {
+					if (isprint(pleaf->ptnstr[i])) {
 						push_char(pleaf->ptnstr[i]);
 					} else {
 						sprintf(number, "\\x%02x", pleaf->ptnstr[i]);
