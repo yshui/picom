@@ -118,19 +118,19 @@ static void *sgi_video_sync_thread(void *data) {
 	auto self = args->self;
 	Display *dpy = XOpenDisplay(NULL);
 	int error_code = 0;
+	GLXContext ctx = NULL;
+	GLXDrawable drawable = None;
+	Window root = DefaultRootWindow(dpy), dummy = None;
 	if (!dpy) {
 		error_code = 1;
 		goto start_failed;
 	}
-	Window root = DefaultRootWindow(dpy), dummy = None;
 	int screen = DefaultScreen(dpy);
 	int ncfg = 0;
 	GLXFBConfig *cfg_ = glXChooseFBConfig(
 	    dpy, screen,
 	    (int[]){GLX_RENDER_TYPE, GLX_RGBA_BIT, GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT, 0},
 	    &ncfg);
-	GLXContext ctx = NULL;
-	GLXDrawable drawable = None;
 
 	if (!cfg_) {
 		error_code = 2;
