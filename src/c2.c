@@ -66,7 +66,6 @@ static_assert(sizeof(struct c2_tracked_property_key) == 8, "Padding bytes in "
 struct c2_tracked_property {
 	UT_hash_handle hh;
 	struct c2_tracked_property_key key;
-	bool is_string;
 };
 
 struct c2_state {
@@ -150,14 +149,6 @@ struct _c2_l {
 		C2_L_PCLASSI,
 		C2_L_PROLE,
 	} predef;
-	enum c2_l_type {
-		C2_L_TUNDEFINED,
-		C2_L_TSTRING,
-		C2_L_TCARDINAL,
-		C2_L_TWINDOW,
-		C2_L_TATOM,
-		C2_L_TDRAWABLE,
-	} type;
 	enum {
 		C2_L_PTUNDEFINED,
 		C2_L_PTSTRING,
@@ -172,12 +163,12 @@ struct _c2_l {
 };
 
 /// Initializer for c2_l_t.
-#define C2_L_INIT                                                                           \
-	{                                                                                   \
-		.neg = false, .op = C2_L_OEXISTS, .match = C2_L_MEXACT,                     \
-		.match_ignorecase = false, .tgt = NULL, .tgtatom = 0, .tgt_onframe = false, \
-		.predef = C2_L_PUNDEFINED, .index = 0, .type = C2_L_TUNDEFINED,             \
-		.ptntype = C2_L_PTUNDEFINED, .ptnstr = NULL, .ptnint = 0,                   \
+#define C2_L_INIT                                                                        \
+	{                                                                                \
+		.neg = false, .op = C2_L_OEXISTS, .match = C2_L_MEXACT,                  \
+		.match_ignorecase = false, .tgt = NULL, .tgtatom = 0,                    \
+		.tgt_onframe = false, .predef = C2_L_PUNDEFINED, .index = 0,             \
+		.ptntype = C2_L_PTUNDEFINED, .ptnstr = NULL, .ptnint = 0,                \
 	}
 
 static const c2_l_t leaf_def = C2_L_INIT;
@@ -196,35 +187,34 @@ struct _c2_lptr {
 /// Structure representing a predefined target.
 typedef struct {
 	const char *name;
-	enum c2_l_type type;
 } c2_predef_t;
 
 // Predefined targets.
-static const c2_predef_t C2_PREDEFS[] = {
-    [C2_L_PID] = {"id", C2_L_TCARDINAL},
-    [C2_L_PX] = {"x", C2_L_TCARDINAL},
-    [C2_L_PY] = {"y", C2_L_TCARDINAL},
-    [C2_L_PX2] = {"x2", C2_L_TCARDINAL},
-    [C2_L_PY2] = {"y2", C2_L_TCARDINAL},
-    [C2_L_PWIDTH] = {"width", C2_L_TCARDINAL},
-    [C2_L_PHEIGHT] = {"height", C2_L_TCARDINAL},
-    [C2_L_PWIDTHB] = {"widthb", C2_L_TCARDINAL},
-    [C2_L_PHEIGHTB] = {"heightb", C2_L_TCARDINAL},
-    [C2_L_PBDW] = {"border_width", C2_L_TCARDINAL},
-    [C2_L_PFULLSCREEN] = {"fullscreen", C2_L_TCARDINAL},
-    [C2_L_POVREDIR] = {"override_redirect", C2_L_TCARDINAL},
-    [C2_L_PARGB] = {"argb", C2_L_TCARDINAL},
-    [C2_L_PFOCUSED] = {"focused", C2_L_TCARDINAL},
-    [C2_L_PWMWIN] = {"wmwin", C2_L_TCARDINAL},
-    [C2_L_PBSHAPED] = {"bounding_shaped", C2_L_TCARDINAL},
-    [C2_L_PROUNDED] = {"rounded_corners", C2_L_TCARDINAL},
-    [C2_L_PCLIENT] = {"client", C2_L_TWINDOW},
-    [C2_L_PWINDOWTYPE] = {"window_type", C2_L_TSTRING},
-    [C2_L_PLEADER] = {"leader", C2_L_TWINDOW},
-    [C2_L_PNAME] = {"name", C2_L_TSTRING},
-    [C2_L_PCLASSG] = {"class_g", C2_L_TSTRING},
-    [C2_L_PCLASSI] = {"class_i", C2_L_TSTRING},
-    [C2_L_PROLE] = {"role", C2_L_TSTRING},
+static const char *C2_PREDEFS[] = {
+    [C2_L_PID] = "id",
+    [C2_L_PX] = "x",
+    [C2_L_PY] = "y",
+    [C2_L_PX2] = "x2",
+    [C2_L_PY2] = "y2",
+    [C2_L_PWIDTH] = "width",
+    [C2_L_PHEIGHT] = "height",
+    [C2_L_PWIDTHB] = "widthb",
+    [C2_L_PHEIGHTB] = "heightb",
+    [C2_L_PBDW] = "border_width",
+    [C2_L_PFULLSCREEN] = "fullscreen",
+    [C2_L_POVREDIR] = "override_redirect",
+    [C2_L_PARGB] = "argb",
+    [C2_L_PFOCUSED] = "focused",
+    [C2_L_PWMWIN] = "wmwin",
+    [C2_L_PBSHAPED] = "bounding_shaped",
+    [C2_L_PROUNDED] = "rounded_corners",
+    [C2_L_PCLIENT] = "client",
+    [C2_L_PWINDOWTYPE] = "window_type",
+    [C2_L_PLEADER] = "leader",
+    [C2_L_PNAME] = "name",
+    [C2_L_PCLASSG] = "class_g",
+    [C2_L_PCLASSI] = "class_i",
+    [C2_L_PROLE] = "role",
 };
 
 /**
@@ -349,11 +339,7 @@ static inline void c2_freep(c2_ptr_t *pp) {
 
 static const char *c2h_dump_str_tgt(const c2_l_t *pleaf);
 
-static const char *c2h_dump_str_type(const c2_l_t *pleaf);
-
-static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf);
-
-static bool c2_match_once(session_t *ps, const struct managed_win *w, const c2_ptr_t cond);
+static bool c2_match_once(session_t *ps, const struct managed_win *w, c2_ptr_t cond);
 
 /**
  * Parse a condition string.
@@ -413,7 +399,7 @@ TEST_CASE(c2_parse) {
 	TEST_STREQUAL(cond->ptr.l->ptnstr, "xterm");
 
 	size_t len = c2_condition_to_str(cond->ptr, str, sizeof(str));
-	TEST_STREQUAL3(str, "name:s = \"xterm\"", len);
+	TEST_STREQUAL3(str, "name = \"xterm\"", len);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_GTK_FRAME_EXTENTS@:c", NULL);
@@ -423,13 +409,12 @@ TEST_CASE(c2_parse) {
 	TEST_EQUAL(cond->ptr.l->op, C2_L_OEXISTS);
 	TEST_EQUAL(cond->ptr.l->match, C2_L_MEXACT);
 	TEST_EQUAL(cond->ptr.l->predef, C2_L_PUNDEFINED);
-	TEST_EQUAL(cond->ptr.l->type, C2_L_TCARDINAL);
 	TEST_TRUE(cond->ptr.l->tgt_onframe);
 	TEST_NOTEQUAL(cond->ptr.l->tgt, NULL);
 	TEST_STREQUAL(cond->ptr.l->tgt, "_GTK_FRAME_EXTENTS");
 
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
-	TEST_STREQUAL3(str, "_GTK_FRAME_EXTENTS@[0]:c", len);
+	TEST_STREQUAL3(str, "_GTK_FRAME_EXTENTS@[0]", len);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "name = \"xterm\" && class_g *= \"XTerm\"", NULL);
@@ -451,34 +436,33 @@ TEST_CASE(c2_parse) {
 	TEST_EQUAL(cond->ptr.b->opr2.l->predef, C2_L_PCLASSG);
 
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
-	TEST_STREQUAL3(str, "(name:s = \"xterm\" && class_g:s *= \"XTerm\")", len);
+	TEST_STREQUAL3(str, "(name = \"xterm\" && class_g *= \"XTerm\")", len);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_NET_WM_STATE[1]:32a *='_NET_WM_STATE_HIDDEN'", NULL);
 	TEST_EQUAL(cond->ptr.l->index, 1);
-	TEST_EQUAL(cond->ptr.l->type, C2_L_TATOM);
 	TEST_STREQUAL(cond->ptr.l->tgt, "_NET_WM_STATE");
 	TEST_STREQUAL(cond->ptr.l->ptnstr, "_NET_WM_STATE_HIDDEN");
 
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
-	TEST_STREQUAL3(str, "_NET_WM_STATE[1]:a *= \"_NET_WM_STATE_HIDDEN\"", len);
+	TEST_STREQUAL3(str, "_NET_WM_STATE[1] *= \"_NET_WM_STATE_HIDDEN\"", len);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_NET_WM_STATE[*]:32a*='_NET_WM_STATE_HIDDEN'", NULL);
 	TEST_EQUAL(cond->ptr.l->index, -1);
 
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
-	TEST_STREQUAL3(str, "_NET_WM_STATE[*]:a *= \"_NET_WM_STATE_HIDDEN\"", len);
+	TEST_STREQUAL3(str, "_NET_WM_STATE[*] *= \"_NET_WM_STATE_HIDDEN\"", len);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "!class_i:0s", NULL);
 	TEST_NOTEQUAL(cond, NULL);
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
-	TEST_STREQUAL3(str, "!class_i:s", len);
+	TEST_STREQUAL3(str, "!class_i", len);
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_NET_WM_STATE = '_NET_WM_STATE_HIDDEN'", NULL);
-	TEST_EQUAL(cond, NULL);
+	TEST_NOTEQUAL(cond, NULL);
 
 	cond = c2_parse(NULL, "1A:\n1111111111111ar1", NULL);
 	TEST_EQUAL(cond, NULL);
@@ -492,8 +476,8 @@ TEST_CASE(c2_parse) {
 	cond = c2_parse(NULL, "!!!!!!!((((((!(((((,", NULL);
 	TEST_EQUAL(cond, NULL);
 
-	const char *rule = "(((role:s = \"\\\\tg^\\n\\n[\\t\" && role:s ~?= \"\") && "
-	                   "role:s ~?= \"\\n\\n\\n\\b\\n^\\n*0bon\") && role:s ~?= "
+	const char *rule = "(((role = \"\\\\tg^\\n\\n[\\t\" && role ~?= \"\") && "
+	                   "role ~?= \"\\n\\n\\n\\b\\n^\\n*0bon\") && role ~?= "
 	                   "\"\\n\\n\\x8a\\b\\n^\\n*0\\n[\\n[\\n\\n\\b\\n\")";
 	cond = c2_parse(NULL, rule, NULL);
 	TEST_NOTEQUAL(cond, NULL);
@@ -732,9 +716,8 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 	// Check for predefined targets
 	static const int npredefs = (int)(sizeof(C2_PREDEFS) / sizeof(C2_PREDEFS[0]));
 	for (int i = 0; i < npredefs; ++i) {
-		if (!strcmp(C2_PREDEFS[i].name, pleaf->tgt)) {
+		if (!strcmp(C2_PREDEFS[i], pleaf->tgt)) {
 			pleaf->predef = i;
-			pleaf->type = C2_PREDEFS[i].type;
 			break;
 		}
 	}
@@ -800,39 +783,27 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 		// Look for format
 		bool hasformat = false;
 		long format = 0;
-		{
-			char *endptr = NULL;
-			format = strtol(pattern + offset, &endptr, 0);
-			assert(endptr);
-			if ((hasformat = (endptr && endptr != pattern + offset))) {
-				offset = to_int_checked(endptr - pattern);
-			}
-			C2H_SKIP_SPACES();
+		char *endptr = NULL;
+		format = strtol(pattern + offset, &endptr, 0);
+		assert(endptr);
+		hasformat = endptr && endptr != pattern + offset;
+		if (hasformat) {
+			offset = to_int_checked(endptr - pattern);
 		}
+		C2H_SKIP_SPACES();
 
 		// Look for type
-		enum c2_l_type type = C2_L_TUNDEFINED;
 		switch (pattern[offset]) {
-		case 'w': type = C2_L_TWINDOW; break;
-		case 'd': type = C2_L_TDRAWABLE; break;
-		case 'c': type = C2_L_TCARDINAL; break;
-		case 's': type = C2_L_TSTRING; break;
-		case 'a': type = C2_L_TATOM; break;
+		case 'w':
+		case 'd':
+		case 'c':
+		case 's':
+		case 'a': break;
 		default: c2_error("Invalid type character.");
 		}
 
-		if (type) {
-			if (pleaf->predef != C2_L_PUNDEFINED) {
-				log_warn("Type specified for a default target "
-				         "will be ignored.");
-			} else {
-				if (pleaf->type && type != pleaf->type) {
-					log_warn("Default type overridden on "
-					         "target.");
-				}
-				pleaf->type = type;
-			}
-		}
+		log_warn("Type \"%c\" specified on target \"%s\" will be ignored.",
+		         pattern[offset], pleaf->tgt);
 
 		offset++;
 		C2H_SKIP_SPACES();
@@ -847,11 +818,6 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 			}
 		}
 	}
-
-	if (!pleaf->type) {
-		c2_error("Target type cannot be determined.");
-	}
-
 	return offset;
 
 fail:
@@ -1046,21 +1012,14 @@ static int c2_parse_pattern(const char *pattern, int offset, c2_ptr_t *presult) 
 		c2_error("Invalid pattern type.");
 	}
 
-	// Check if the type is correct
-	if (!(((C2_L_TSTRING == pleaf->type || C2_L_TATOM == pleaf->type) &&
-	       C2_L_PTSTRING == pleaf->ptntype) ||
-	      ((C2_L_TCARDINAL == pleaf->type || C2_L_TWINDOW == pleaf->type ||
-	        C2_L_TDRAWABLE == pleaf->type) &&
-	       C2_L_PTINT == pleaf->ptntype))) {
-		c2_error("Pattern type incompatible with target type.");
-	}
-
-	if (C2_L_PTINT == pleaf->ptntype && pleaf->match) {
-		c2_error("Integer/boolean pattern cannot have operator qualifiers.");
-	}
-
-	if (C2_L_PTINT == pleaf->ptntype && pleaf->match_ignorecase) {
-		c2_error("Integer/boolean pattern cannot have flags.");
+	if (pleaf->ptntype == C2_L_PTINT) {
+		if (pleaf->match) {
+			c2_error("Integer/boolean pattern cannot have operator "
+			         "qualifiers.");
+		}
+		if (pleaf->match_ignorecase) {
+			c2_error("Integer/boolean pattern cannot have flags.");
+		}
 	}
 
 	if (C2_L_PTSTRING == pleaf->ptntype &&
@@ -1089,22 +1048,17 @@ static int c2_parse_legacy(const char *pattern, int offset, c2_ptr_t *presult) {
 	presult->isbranch = false;
 	presult->l = pleaf;
 	memcpy(pleaf, &leaf_def, sizeof(c2_l_t));
-	pleaf->type = C2_L_TSTRING;
 	pleaf->op = C2_L_OEQ;
 	pleaf->ptntype = C2_L_PTSTRING;
 
 	// Determine the pattern target
-#define TGTFILL(pdefid)                                                                  \
-	pleaf->predef = (pdefid);                                                        \
-	pleaf->type = C2_PREDEFS[pdefid].type;
 	switch (pattern[offset]) {
-	case 'n': TGTFILL(C2_L_PNAME); break;
-	case 'i': TGTFILL(C2_L_PCLASSI); break;
-	case 'g': TGTFILL(C2_L_PCLASSG); break;
-	case 'r': TGTFILL(C2_L_PROLE); break;
+	case 'n': pleaf->predef = C2_L_PNAME; break;
+	case 'i': pleaf->predef = C2_L_PCLASSI; break;
+	case 'g': pleaf->predef = C2_L_PCLASSG; break;
+	case 'r': pleaf->predef = C2_L_PROLE; break;
 	default: c2_error("Target \"%c\" invalid.\n", pattern[offset]);
 	}
-#undef TGTFILL
 
 	offset += 2;
 
@@ -1144,11 +1098,6 @@ fail:
  * Do postprocessing on a condition leaf.
  */
 static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t *pleaf) {
-	// Give a pattern type to a leaf with exists operator, if needed
-	if (C2_L_OEXISTS == pleaf->op && !pleaf->ptntype) {
-		pleaf->ptntype = (C2_L_TSTRING == pleaf->type ? C2_L_PTSTRING : C2_L_PTINT);
-	}
-
 	// Get target atom if it's not a predefined one
 	if (pleaf->predef == C2_L_PUNDEFINED) {
 		pleaf->tgtatom = get_atom_with_nul(state->atoms, pleaf->tgt, c);
@@ -1171,18 +1120,6 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 			property->key = key;
 			HASH_ADD_KEYPTR(hh, state->tracked_properties, &property->key,
 			                sizeof(property->key), property);
-			property->is_string = pleaf->type == C2_L_TSTRING;
-		} else {
-			if (property->is_string != (pleaf->type == C2_L_TSTRING)) {
-				log_error("Type mismatch for property \"%s\", %s a "
-				          "string, now %s. Offending rule is: %s, it "
-				          "will be disabled.",
-				          pleaf->tgt, property->is_string ? "was" : "wasn't",
-				          pleaf->type == C2_L_TSTRING ? "is" : "isn't",
-				          c2_condition_to_str2(
-				              (c2_ptr_t){.isbranch = false, .l = pleaf}));
-				return false;
-			}
 		}
 	}
 
@@ -1311,25 +1248,9 @@ c2_lptr_t *c2_free_lptr(c2_lptr_t *lp, c2_userdata_free f) {
  */
 static const char *c2h_dump_str_tgt(const c2_l_t *pleaf) {
 	if (pleaf->predef != C2_L_PUNDEFINED) {
-		return C2_PREDEFS[pleaf->predef].name;
+		return C2_PREDEFS[pleaf->predef];
 	}
 	return pleaf->tgt;
-}
-
-/**
- * Get a string representation of a target.
- */
-static const char *c2h_dump_str_type(const c2_l_t *pleaf) {
-	switch (pleaf->type) {
-	case C2_L_TWINDOW: return "w";
-	case C2_L_TDRAWABLE: return "d";
-	case C2_L_TCARDINAL: return "c";
-	case C2_L_TSTRING: return "s";
-	case C2_L_TATOM: return "a";
-	case C2_L_TUNDEFINED: break;
-	}
-
-	return NULL;
 }
 
 /**
@@ -1415,10 +1336,6 @@ static size_t c2_condition_to_str(c2_ptr_t p, char *output, size_t len) {
 				push_str(number);
 			}
 		}
-
-		const char *type_str = c2h_dump_str_type(pleaf);
-		push_char(':');
-		push_str(type_str);
 
 		if (C2_L_OEXISTS == pleaf->op) {
 			return offset;
@@ -1510,21 +1427,6 @@ static const char *c2_condition_to_str2(c2_ptr_t ptr) {
 }
 
 /**
- * Get the type atom of a condition.
- */
-static xcb_atom_t c2_get_atom_type(const c2_l_t *pleaf) {
-	switch (pleaf->type) {
-	case C2_L_TCARDINAL: return XCB_ATOM_CARDINAL;
-	case C2_L_TWINDOW: return XCB_ATOM_WINDOW;
-	case C2_L_TSTRING: return XCB_ATOM_STRING;
-	case C2_L_TATOM: return XCB_ATOM_ATOM;
-	case C2_L_TDRAWABLE: return XCB_ATOM_DRAWABLE;
-	default: assert(0); break;
-	}
-	unreachable();
-}
-
-/**
  * Match a window against a single leaf window condition.
  *
  * For internal use.
@@ -1541,8 +1443,17 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 	}
 
 	const int idx = (pleaf->index < 0 ? 0 : pleaf->index);
+	auto type = pleaf->ptntype;
+	if (type == C2_L_PTUNDEFINED) {
+		auto prop_info = x_get_prop_info(&ps->c, wid, pleaf->tgtatom);
+		if (x_is_type_string(ps->atoms, prop_info.type)) {
+			type = C2_L_PTSTRING;
+		} else {
+			type = C2_L_PTINT;
+		}
+	}
 
-	switch (pleaf->ptntype) {
+	switch (type) {
 	// Deal with integer patterns
 	case C2_L_PTINT: {
 		long long *targets = NULL;
@@ -1590,9 +1501,8 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 				auto prop_info = x_get_prop_info(&ps->c, wid, pleaf->tgtatom);
 				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
 			}
-			winprop_t prop =
-			    x_get_prop_with_offset(&ps->c, wid, pleaf->tgtatom, idx,
-			                           word_count, c2_get_atom_type(pleaf), 0);
+			winprop_t prop = x_get_prop_with_offset(
+			    &ps->c, wid, pleaf->tgtatom, idx, word_count, 0, 0);
 
 			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
 			if (ntargets > 0) {
@@ -1642,6 +1552,10 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 		const char **targets_free = NULL;
 		const char **targets_free_inner = NULL;
 		size_t ntargets = 0;
+		winprop_info_t prop_info = {0};
+		if (pleaf->predef == C2_L_PUNDEFINED) {
+			prop_info = x_get_prop_info(&ps->c, wid, pleaf->tgtatom);
+		}
 
 		// A predefined target
 		const char *predef_target = NULL;
@@ -1658,18 +1572,15 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			}
 			ntargets = 1;
 			targets = &predef_target;
-		}
-		// An atom type property, convert it to string
-		else if (pleaf->type == C2_L_TATOM) {
+		} else if (prop_info.type == XCB_ATOM_ATOM) {
+			// An atom type property, convert it to string
 			int word_count = 1;
 			if (pleaf->index < 0) {
 				// Get length of property in 32-bit multiples
-				auto prop_info = x_get_prop_info(&ps->c, wid, pleaf->tgtatom);
 				word_count = to_int_checked((prop_info.length + 4 - 1) / 4);
 			}
-			winprop_t prop =
-			    x_get_prop_with_offset(&ps->c, wid, pleaf->tgtatom, idx,
-			                           word_count, c2_get_atom_type(pleaf), 0);
+			winprop_t prop = x_get_prop_with_offset(
+			    &ps->c, wid, pleaf->tgtatom, idx, word_count, XCB_ATOM_ATOM, 0);
 
 			ntargets = (pleaf->index < 0 ? prop.nitems : min2(prop.nitems, 1));
 			targets = targets_free = (const char **)ccalloc(2 * ntargets, char *);
@@ -1689,9 +1600,8 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 				}
 			}
 			free_winprop(&prop);
-		}
-		// Not an atom type, just fetch the string list
-		else {
+		} else {
+			// Not an atom type, just fetch the string list
 			char **strlst = NULL;
 			int nstr = 0;
 			if (wid_get_text_prop(&ps->c, ps->atoms, wid, pleaf->tgtatom,
@@ -1792,7 +1702,7 @@ static inline void c2_match_once_leaf(session_t *ps, const struct managed_win *w
 			free(targets_free);
 		}
 	} break;
-	default: assert(0); break;
+	default: unreachable();
 	}
 }
 

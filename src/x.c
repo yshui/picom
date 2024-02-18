@@ -193,7 +193,7 @@ bool wid_get_text_prop(struct x_connection *c, struct atom *atoms, xcb_window_t 
 		return false;
 	}
 
-	if (type != XCB_ATOM_STRING && type != atoms->aUTF8_STRING && type != atoms->aC_STRING) {
+	if (!x_is_type_string(atoms, type)) {
 		log_warn("Text property %d of window %#010x has unsupported type: %d",
 		         prop, wid, type);
 		return false;
