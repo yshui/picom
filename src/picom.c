@@ -2791,10 +2791,16 @@ static void session_run(session_t *ps) {
 	ev_run(ps->loop, 0);
 }
 
+#ifdef CONFIG_FUZZER
+#define PICOM_MAIN(...) no_main(__VA_ARGS__)
+#else
+#define PICOM_MAIN(...) main(__VA_ARGS__)
+#endif
+
 /**
  * The function that everybody knows.
  */
-int main(int argc, char **argv) {
+int PICOM_MAIN(int argc, char **argv) {
 	// Set locale so window names with special characters are interpreted
 	// correctly
 	setlocale(LC_ALL, "");

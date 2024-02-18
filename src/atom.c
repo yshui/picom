@@ -134,3 +134,29 @@ void destroy_atoms(struct atom *a) {
 	assert(atoms->atom_to_name == NULL);
 	free(a);
 }
+
+#if defined(UNIT_TEST) || defined(CONFIG_FUZZER)
+
+static inline int mock_atom_getter(struct cache *cache, const char *atom_name attr_unused,
+                                   size_t atom_len attr_unused, struct cache_handle **value,
+                                   void *user_data attr_unused) {
+	auto atoms = container_of(cache, struct atom_impl, c);
+	xcb_atom_t atom = (xcb_atom_t)HASH_COUNT(atoms->atom_to_name) + 1;
+	struct atom_entry *entry = ccalloc(1, struct atom_entry);
+	entry->atom = atom;
+	HASH_ADD_INT(atoms->atom_to_name, atom, entry);
+	*value = &entry->entry;
+	return 0;
+}
+
+struct atom *init_mock_atoms(void) {
+	return init_atoms_impl(NULL, mock_atom_getter);
+}
+
+#else
+
+struct atom *init_mock_atoms(void) {
+	abort();
+}
+
+#endif
