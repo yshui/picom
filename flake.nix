@@ -43,19 +43,20 @@
         overlays
         ;
       defaultPackage = pkgs.picom;
-      devShell = defaultPackage.overrideAttrs {
-        buildInputs =
-          defaultPackage.buildInputs
-          ++ (with pkgs; [
-            clang-tools_17
-            llvmPackages_17.clang-unwrapped.python
-          ]);
+      devShells.default = defaultPackage.overrideAttrs (o: {
+        nativeBuildInputs = o.nativeBuildInputs ++ (with pkgs; [
+          clang-tools_17
+          llvmPackages_17.clang-unwrapped.python
+        ]);
         hardeningDisable = ["fortify"];
         shellHook = ''
           # Workaround a NixOS limitation on sanitizers:
           # See: https://github.com/NixOS/nixpkgs/issues/287763
           export LD_LIBRARY_PATH+=":/run/opengl-driver/lib"
         '';
+      });
+      devShells.useClang = devShells.default.override {
+        inherit (pkgs.llvmPackages_17) stdenv;
       };
     });
 }
