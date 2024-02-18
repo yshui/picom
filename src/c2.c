@@ -418,6 +418,14 @@ TEST_CASE(c2_parse) {
 
 	size_t len = c2_condition_to_str(cond->ptr, str, sizeof(str));
 	TEST_STREQUAL3(str, "name = \"xterm\"", len);
+
+	struct c2_state state = {
+	    .atoms = NULL,
+	};
+	struct managed_win test_win = {
+	    .name = "xterm",
+	};
+	TEST_TRUE(c2_match(&state, &test_win, cond, NULL));
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_GTK_FRAME_EXTENTS@:c", NULL);
@@ -455,6 +463,10 @@ TEST_CASE(c2_parse) {
 
 	len = c2_condition_to_str(cond->ptr, str, sizeof(str));
 	TEST_STREQUAL3(str, "(name = \"xterm\" && class_g *= \"XTerm\")", len);
+	test_win.class_general = "XTerm";
+	TEST_TRUE(c2_match(&state, &test_win, cond, NULL));
+	test_win.class_general = "asdf";
+	TEST_TRUE(!c2_match(&state, &test_win, cond, NULL));
 	c2_list_free(&cond, NULL);
 
 	cond = c2_parse(NULL, "_NET_WM_STATE[1]:32a *='_NET_WM_STATE_HIDDEN'", NULL);
