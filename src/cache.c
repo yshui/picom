@@ -21,7 +21,7 @@ int cache_get_or_fetch(struct cache *c, const char *key, size_t keylen,
 		return err;
 	}
 	// Add a NUL terminator to make things easier
-	(*value)->key = cvalloc(keylen + 1);
+	(*value)->key = ccalloc(keylen + 1, char);
 	memcpy((*value)->key, key, keylen);
 
 	HASH_ADD_KEYPTR(hh, c->entries, (*value)->key, keylen, *value);
