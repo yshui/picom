@@ -44,6 +44,17 @@ safe_isnan(double a) {
 		assert(false);                                                           \
 		abort();                                                                 \
 	} while (0)
+/// Abort the program is `expr` is true. This is similar to assert, but it is not disabled
+/// in release builds.
+#define BUG_ON(expr)                                                                     \
+	do {                                                                             \
+		bool __bug_on_tmp = (expr);                                              \
+		assert(__bug_on_tmp && "original expr: " #expr);                         \
+		if (!__bug_on_tmp) {                                                     \
+			fprintf(stderr, "BUG_ON: check \"%s\" failed \n", #expr);        \
+			abort();                                                         \
+		}                                                                        \
+	} while (0)
 #define CHECK_EXPR(...) ((void)0)
 /// Same as assert, but evaluates the expression even in release builds
 #define CHECK(expr)                                                                      \
