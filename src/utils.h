@@ -49,9 +49,9 @@ safe_isnan(double a) {
 #define BUG_ON(expr)                                                                     \
 	do {                                                                             \
 		bool __bug_on_tmp = (expr);                                              \
-		assert(__bug_on_tmp && "original expr: " #expr);                         \
-		if (!__bug_on_tmp) {                                                     \
-			fprintf(stderr, "BUG_ON: check \"%s\" failed \n", #expr);        \
+		assert(!__bug_on_tmp && "Original expr: " #expr);                        \
+		if (__bug_on_tmp) {                                                      \
+			fprintf(stderr, "BUG_ON: \"%s\"\n", #expr);                      \
 			abort();                                                         \
 		}                                                                        \
 	} while (0)
