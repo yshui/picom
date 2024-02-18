@@ -1151,7 +1151,7 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 
 	// Get target atom if it's not a predefined one
 	if (pleaf->predef == C2_L_PUNDEFINED) {
-		pleaf->tgtatom = get_atom(state->atoms, pleaf->tgt, c);
+		pleaf->tgtatom = get_atom_with_nul(state->atoms, pleaf->tgt, c);
 		if (!pleaf->tgtatom) {
 			log_error("Failed to get atom for target \"%s\".", pleaf->tgt);
 			return false;

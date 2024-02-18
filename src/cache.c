@@ -2,27 +2,29 @@
 
 #include "cache.h"
 
-struct cache_handle *cache_get(struct cache *c, const char *key) {
+struct cache_handle *cache_get(struct cache *c, const char *key, size_t keylen) {
 	struct cache_handle *e;
-	HASH_FIND_STR(c->entries, key, e);
+	HASH_FIND(hh, c->entries, key, keylen, e);
 	return e;
 }
 
-int cache_get_or_fetch(struct cache *c, const char *key, struct cache_handle **value,
-                       void *user_data, cache_getter_t getter) {
-	*value = cache_get(c, key);
+int cache_get_or_fetch(struct cache *c, const char *key, size_t keylen,
+                       struct cache_handle **value, void *user_data, cache_getter_t getter) {
+	*value = cache_get(c, key, keylen);
 	if (*value) {
 		return 0;
 	}
 
-	int err = getter(c, key, value, user_data);
+	int err = getter(c, key, keylen, value, user_data);
 	assert(err <= 0);
 	if (err < 0) {
 		return err;
 	}
-	(*value)->key = strdup(key);
+	// Add a NUL terminator to make things easier
+	(*value)->key = cvalloc(keylen + 1);
+	memcpy((*value)->key, key, keylen);
 
-	HASH_ADD_STR(c->entries, key, *value);
+	HASH_ADD_KEYPTR(hh, c->entries, (*value)->key, keylen, *value);
 	return 1;
 }
 

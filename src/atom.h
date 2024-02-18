@@ -62,7 +62,14 @@ struct atom {
 /// a reference to the connection.
 struct atom *init_atoms(xcb_connection_t *c);
 
-xcb_atom_t get_atom(struct atom *a, const char *key, xcb_connection_t *c);
-xcb_atom_t get_atom_cached(struct atom *a, const char *key);
+xcb_atom_t get_atom(struct atom *a, const char *key, size_t keylen, xcb_connection_t *c);
+static inline xcb_atom_t
+get_atom_with_nul(struct atom *a, const char *key, xcb_connection_t *c) {
+	return get_atom(a, key, strlen(key), c);
+}
+xcb_atom_t get_atom_cached(struct atom *a, const char *key, size_t keylen);
+static inline xcb_atom_t get_atom_cached_with_nul(struct atom *a, const char *key) {
+	return get_atom_cached(a, key, strlen(key));
+}
 
 void destroy_atoms(struct atom *a);
