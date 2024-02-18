@@ -802,7 +802,8 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 		default: c2_error("Invalid type character.");
 		}
 
-		log_warn("Type \"%c\" specified on target \"%s\" will be ignored.",
+		log_warn("Type specifier is deprecated. Type \"%c\" specified on target "
+		         "\"%s\" will be ignored, you can remove it.",
 		         pattern[offset], pleaf->tgt);
 
 		offset++;
@@ -810,8 +811,9 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 
 		// Write format
 		if (hasformat) {
-			log_warn("Format \"%ld\" specified on target \"%s\" will be "
-			         "ignored.",
+			log_warn("Format specifier is deprecated. Format \"%ld\" "
+			         "specified on target \"%s\" will be ignored, you can "
+			         "remove it.",
 			         format, pleaf->tgt);
 			if (format && format != 8 && format != 16 && format != 32) {
 				c2_error("Invalid format %ld.", format);
