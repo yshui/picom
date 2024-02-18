@@ -30,6 +30,9 @@
           src = git-ignore-nix.lib.gitignoreSource ./.;
         });
       };
+      python = pkgs.python3.withPackages (ps: with ps; [
+        xcffib pip
+      ]);
 
       pkgs = import nixpkgs {
         inherit system overlays;
@@ -47,6 +50,7 @@
         nativeBuildInputs = o.nativeBuildInputs ++ (with pkgs; [
           clang-tools_17
           llvmPackages_17.clang-unwrapped.python
+          python
         ]);
         hardeningDisable = ["fortify"];
         shellHook = ''
