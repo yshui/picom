@@ -153,7 +153,7 @@ static const struct picom_option picom_options[] = {
                                                                              "need to be able to see through transparent parts of the window."},
     {"blur-method"                 , required_argument, 328, NULL          , "The algorithm used for background bluring. Available choices are: 'none' to "
                                                                              "disable, 'gaussian', 'box' or 'kernel' for custom convolution blur with "
-                                                                             "--blur-kern. Note: 'gaussian' and 'box' is not supported by --legacy-backends."},
+                                                                             "--blur-kern."},
     {"blur-size"                   , required_argument, 329, NULL          , "The radius of the blur kernel for 'box' and 'gaussian' blur method."},
     {"blur-deviation"              , required_argument, 330, NULL          , "The standard deviation for the 'gaussian' blur method."},
     {"blur-strength"               , required_argument, 331, NULL          , "The strength level of the 'dual_kawase' blur method."},
@@ -164,20 +164,18 @@ static const struct picom_option picom_options[] = {
     {"corner-radius-rules"         , required_argument, 340, "RADIUS:COND" , "Window rules for specific rounded corner radii."},
     {"clip-shadow-above"           , required_argument, 335, NULL          , "Specify a list of conditions of windows to not paint a shadow over, such "
                                                                              "as a dock window."},
-    {"window-shader-fg"            , required_argument, 336, "PATH"        , "Specify GLSL fragment shader path for rendering window contents. Does not"
-                                                                             " work when `--legacy-backends` is enabled. See man page for more details."},
+    {"window-shader-fg"            , required_argument, 336, "PATH"        , "Specify GLSL fragment shader path for rendering window contents. "
+                                                                                  "See man page for more details."},
     {"window-shader-fg-rule"       , required_argument, 337, "PATH:COND"   , "Specify GLSL fragment shader path for rendering window contents using "
                                                                              "patterns. Pattern should be in the format of SHADER_PATH:PATTERN, "
                                                                              "similar to --opacity-rule. SHADER_PATH can be \"default\", in which case "
-                                                                             "the default shader will be used. Does not work when --legacy-backends is "
-                                                                             "enabled. See man page for more details"},
+                                                                             "the default shader will be used. See man page for more details"},
     // 338 is transparent-clipping-exclude
     {"dithered-present"            , no_argument      , 339, NULL          , "Use higher precision during rendering, and apply dither when presenting the "
                                                                              "rendered screen. Reduces banding artifacts, but might cause performance "
                                                                              "degradation. Only works with OpenGL."},
     // 340 is corner-radius-rules
     {"no-frame-pacing"             , no_argument      , 341, NULL          , "Disable frame pacing. This might increase the latency."},
-    {"legacy-backends"             , no_argument      , 733, NULL          , "Use deprecated version of the backends."},
     {"monitor-repaint"             , no_argument      , 800, NULL          , "Highlight the updated area of the screen. For debugging."},
     {"diagnostics"                 , no_argument      , 801, NULL          , "Print diagnostic information"},
     {"debug-mode"                  , no_argument      , 802, NULL          , "Render into a separate window, and don't take over the screen. Useful when "
@@ -381,9 +379,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
 		switch (o) {
 #define P_CASEBOOL(idx, option)                                                          \
-	case idx:                                                                        \
-		opt->option = true;                                                      \
-		break
+	case idx: opt->option = true; break
 #define P_CASELONG(idx, option)                                                          \
 	case idx:                                                                        \
 		if (!parse_long(optarg, &opt->option)) {                                 \
@@ -744,7 +740,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			opt->dithered_present = true;
 			break;
 		P_CASEBOOL(341, no_frame_pacing);
-		P_CASEBOOL(733, legacy_backends);
 		P_CASEBOOL(800, monitor_repaint);
 		case 801:
 			opt->print_diagnostics = true;
@@ -770,53 +765,22 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		return false;
 	}
 
-	if (opt->monitor_repaint && opt->backend != BKEND_XRENDER && opt->legacy_backends) {
-		log_warn("--monitor-repaint has no effect when backend is not xrender");
-	}
-
 	if (opt->backend == BKEND_EGL) {
-		if (opt->legacy_backends) {
-			log_error("The egl backend is not supported with "
-			          "--legacy-backends");
-			return false;
-		}
 		log_warn("The egl backend is still experimental, use with care.");
 	}
 
-	if (!opt->legacy_backends && !backend_list[opt->backend]) {
+	if (!backend_list[opt->backend]) {
 		log_error("Backend \"%s\" is only available as part of the legacy "
-		          "backends.",
+		          "backends, which has been removed.",
 		          BACKEND_STRS[opt->backend]);
 		return false;
 	}
 
-	if (opt->debug_mode && opt->legacy_backends) {
-		log_error("Debug mode does not work with the legacy backends.");
-		return false;
-	}
-
-	if (opt->transparent_clipping && opt->legacy_backends) {
-		log_error("Transparent clipping does not work with the legacy "
-		          "backends");
-		return false;
-	}
-
-	if (opt->glx_fshader_win_str && !opt->legacy_backends) {
-		log_warn("--glx-fshader-win has been replaced by "
-		         "\"--window-shader-fg\" for the new backends.");
-	}
-
-	if (opt->window_shader_fg || opt->window_shader_fg_rules) {
-		if (opt->backend == BKEND_XRENDER || opt->legacy_backends) {
-			log_warn(opt->backend == BKEND_XRENDER
-			             ? "Shader interface is not supported by the xrender "
-			               "backend."
-			             : "The new shader interface is not supported by the "
-			               "legacy glx backend. You may want to use "
-			               "--glx-fshader-win instead.");
-			opt->window_shader_fg = NULL;
-			c2_list_free(&opt->window_shader_fg_rules, free);
-		}
+	if ((opt->window_shader_fg || opt->window_shader_fg_rules) &&
+	    opt->backend == BKEND_XRENDER) {
+		log_warn("Shader interface is not supported by the xrender backend.");
+		opt->window_shader_fg = NULL;
+		c2_list_free(&opt->window_shader_fg_rules, free);
 	}
 
 	// Range checking and option assignments
@@ -830,7 +794,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	opt->shadow_opacity = normalize_d(opt->shadow_opacity);
 	opt->max_brightness = normalize_d(opt->max_brightness);
 	if (opt->max_brightness < 1.0) {
-		if (opt->backend == BKEND_XRENDER || opt->legacy_backends) {
+		if (opt->backend == BKEND_XRENDER) {
 			log_warn("--max-brightness is not supported by the %s backend. "
 			         "Falling back to 1.0.",
 			         opt->backend == BKEND_XRENDER ? "xrender" : "legacy glx");
@@ -878,10 +842,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			log_warn("Blur strength >20 not supported by dual_kawase method, "
 			         "capping to 20.");
 			opt->blur_strength = 20;
-		}
-		if (opt->legacy_backends) {
-			log_warn("Dual-kawase blur is not implemented by the legacy "
-			         "backends.");
 		}
 	}
 

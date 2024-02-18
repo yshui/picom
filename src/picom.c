@@ -40,21 +40,17 @@
 #include <ev.h>
 #include <test.h>
 
+#include "backend/backend.h"
+#include "c2.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
+#include "diagnostic.h"
 #include "err.h"
 #include "kernel.h"
-#include "picom.h"
-#ifdef CONFIG_OPENGL
-#include "opengl.h"
-#endif
-#include "backend/backend.h"
-#include "c2.h"
-#include "diagnostic.h"
 #include "log.h"
+#include "picom.h"
 #include "region.h"
-#include "render.h"
 #include "types.h"
 #include "utils.h"
 #include "win.h"
@@ -640,7 +636,6 @@ static void destroy_backend(session_t *ps) {
 			win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
 			win_release_images(ps->backend_data, w);
 		}
-		free_paint(ps, &w->paint);
 	}
 
 	HASH_ITER2(ps->shaders, shader) {
@@ -710,71 +705,68 @@ static bool initialize_blur(session_t *ps) {
 
 /// Init the backend and bind all the window pixmap to backend images
 static bool initialize_backend(session_t *ps) {
-	if (!ps->o.legacy_backends) {
-		assert(!ps->backend_data);
-		// Reinitialize win_data
-		assert(backend_list[ps->o.backend]);
-		ps->backend_data =
-		    backend_list[ps->o.backend]->init(ps, session_get_target_window(ps));
-		if (!ps->backend_data) {
-			log_fatal("Failed to initialize backend, aborting...");
-			quit(ps);
-			return false;
-		}
-		ps->backend_data->ops = backend_list[ps->o.backend];
-		ps->shadow_context = ps->backend_data->ops->create_shadow_context(
-		    ps->backend_data, ps->o.shadow_radius);
-		if (!ps->shadow_context) {
-			log_fatal("Failed to initialize shadow context, aborting...");
-			goto err;
-		}
+	assert(!ps->backend_data);
+	// Reinitialize win_data
+	assert(backend_list[ps->o.backend]);
+	ps->backend_data =
+	    backend_list[ps->o.backend]->init(ps, session_get_target_window(ps));
+	if (!ps->backend_data) {
+		log_fatal("Failed to initialize backend, aborting...");
+		quit(ps);
+		return false;
+	}
+	ps->backend_data->ops = backend_list[ps->o.backend];
+	ps->shadow_context = ps->backend_data->ops->create_shadow_context(
+	    ps->backend_data, ps->o.shadow_radius);
+	if (!ps->shadow_context) {
+		log_fatal("Failed to initialize shadow context, aborting...");
+		goto err;
+	}
 
-		if (!initialize_blur(ps)) {
-			log_fatal("Failed to prepare for background blur, aborting...");
-			goto err;
-		}
+	if (!initialize_blur(ps)) {
+		log_fatal("Failed to prepare for background blur, aborting...");
+		goto err;
+	}
 
-		// Create shaders
-		HASH_ITER2(ps->shaders, shader) {
-			assert(shader->backend_shader == NULL);
-			shader->backend_shader = ps->backend_data->ops->create_shader(
-			    ps->backend_data, shader->source);
-			if (shader->backend_shader == NULL) {
-				log_warn("Failed to create shader for shader file %s, "
-				         "this shader will not be used",
-				         shader->key);
+	// Create shaders
+	HASH_ITER2(ps->shaders, shader) {
+		assert(shader->backend_shader == NULL);
+		shader->backend_shader =
+		    ps->backend_data->ops->create_shader(ps->backend_data, shader->source);
+		if (shader->backend_shader == NULL) {
+			log_warn("Failed to create shader for shader file %s, "
+			         "this shader will not be used",
+			         shader->key);
+		} else {
+			if (ps->backend_data->ops->get_shader_attributes) {
+				shader->attributes =
+				    ps->backend_data->ops->get_shader_attributes(
+				        ps->backend_data, shader->backend_shader);
 			} else {
-				if (ps->backend_data->ops->get_shader_attributes) {
-					shader->attributes =
-					    ps->backend_data->ops->get_shader_attributes(
-					        ps->backend_data, shader->backend_shader);
-				} else {
-					shader->attributes = 0;
-				}
-				log_debug("Shader %s has attributes %" PRIu64,
-				          shader->key, shader->attributes);
+				shader->attributes = 0;
 			}
-		}
-
-		// window_stack shouldn't include window that's
-		// not in the hash table at this point. Since
-		// there cannot be any fading windows.
-		HASH_ITER2(ps->windows, _w) {
-			if (!_w->managed) {
-				continue;
-			}
-			auto w = (struct managed_win *)_w;
-			assert(w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED);
-			// We need to reacquire image
-			log_debug("Marking window %#010x (%s) for update after "
-			          "redirection",
-			          w->base.id, w->name);
-			win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
-			ps->pending_updates = true;
+			log_debug("Shader %s has attributes %" PRIu64, shader->key,
+			          shader->attributes);
 		}
 	}
 
-	// The old backends binds pixmap lazily, nothing to do here
+	// window_stack shouldn't include window that's
+	// not in the hash table at this point. Since
+	// there cannot be any fading windows.
+	HASH_ITER2(ps->windows, _w) {
+		if (!_w->managed) {
+			continue;
+		}
+		auto w = (struct managed_win *)_w;
+		assert(w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED);
+		// We need to reacquire image
+		log_debug("Marking window %#010x (%s) for update after "
+		          "redirection",
+		          w->base.id, w->name);
+		win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
+		ps->pending_updates = true;
+	}
+
 	return true;
 err:
 	if (ps->shadow_context) {
@@ -802,20 +794,14 @@ static void configure_root(session_t *ps) {
 	bool has_root_change = false;
 	if (ps->redirected) {
 		// On root window changes
-		if (!ps->o.legacy_backends) {
-			assert(ps->backend_data);
-			has_root_change = ps->backend_data->ops->root_change != NULL;
-		} else {
-			// Old backend can handle root change
-			has_root_change = true;
-		}
+		assert(ps->backend_data);
+		has_root_change = ps->backend_data->ops->root_change != NULL;
 
 		if (!has_root_change) {
 			// deinit/reinit backend and free up resources if the backend
 			// cannot handle root change
 			destroy_backend(ps);
 		}
-		free_paint(ps, &ps->tgt_buffer);
 	}
 
 	ps->root_width = r->width;
@@ -843,12 +829,6 @@ static void configure_root(session_t *ps) {
 			pixman_region32_clear(&ps->damage_ring[i]);
 		}
 		ps->damage = ps->damage_ring + ps->ndamage - 1;
-#ifdef CONFIG_OPENGL
-		// GLX root change callback
-		if (BKEND_GLX == ps->o.backend && ps->o.legacy_backends) {
-			glx_on_root_change(ps);
-		}
-#endif
 		if (has_root_change) {
 			if (ps->backend_data != NULL) {
 				ps->backend_data->ops->root_change(ps->backend_data, ps);
@@ -1155,10 +1135,6 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 }
 
 void root_damaged(session_t *ps) {
-	if (ps->root_tile_paint.pixmap) {
-		free_root_tile(ps);
-	}
-
 	if (!ps->redirected) {
 		return;
 	}
@@ -1475,10 +1451,9 @@ uint8_t session_redirection_mode(session_t *ps) {
 	if (ps->o.debug_mode) {
 		// If the backend is not rendering to the screen, we don't need to
 		// take over the screen.
-		assert(!ps->o.legacy_backends);
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
 	}
-	if (!ps->o.legacy_backends && !backend_list[ps->o.backend]->present) {
+	if (!backend_list[ps->o.backend]->present) {
 		// if the backend doesn't render anything, we don't need to take over the
 		// screen.
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
@@ -1515,12 +1490,8 @@ static bool redirect_start(session_t *ps) {
 		return false;
 	}
 
-	if (!ps->o.legacy_backends) {
-		assert(ps->backend_data);
-		ps->ndamage = ps->backend_data->ops->max_buffer_age;
-	} else {
-		ps->ndamage = maximum_buffer_age(ps);
-	}
+	assert(ps->backend_data);
+	ps->ndamage = ps->backend_data->ops->max_buffer_age;
 	ps->damage_ring = ccalloc(ps->ndamage, region_t);
 	ps->damage = ps->damage_ring + ps->ndamage - 1;
 
@@ -1529,8 +1500,7 @@ static bool redirect_start(session_t *ps) {
 	}
 
 	ps->frame_pacing = !ps->o.no_frame_pacing && ps->o.vsync;
-	if ((ps->o.legacy_backends || ps->o.benchmark || !ps->backend_data->ops->last_render_time) &&
-	    ps->frame_pacing) {
+	if ((ps->o.benchmark || !ps->backend_data->ops->last_render_time) && ps->frame_pacing) {
 		// Disable frame pacing if we are using a legacy backend or if we are in
 		// benchmark mode, or if the backend doesn't report render time
 		log_info("Disabling frame pacing.");
@@ -1854,11 +1824,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		static int paint = 0;
 
 		log_verbose("Render start, frame %d", paint);
-		if (!ps->o.legacy_backends) {
-			did_render = paint_all_new(ps, bottom);
-		} else {
-			paint_all(ps, bottom);
-		}
+		did_render = paint_all_new(ps, bottom);
 		log_verbose("Render end");
 
 		ps->first_frame = false;
@@ -2018,9 +1984,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    // .root_damage = XCB_NONE,
 	    .overlay = XCB_NONE,
 	    .root_tile_fill = false,
-	    .root_tile_paint = PAINT_INIT,
 	    .tgt_picture = XCB_NONE,
-	    .tgt_buffer = PAINT_INIT,
 	    .reg_win = XCB_NONE,
 #ifdef CONFIG_OPENGL
 	    .glx_prog_win = GLX_PROG_MAIN_INIT,
@@ -2044,10 +2008,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .shadow_context = NULL,
 
 	    .last_msc = 0,
-
-#ifdef CONFIG_VSYNC_DRM
-	    .drm_fd = -1,
-#endif
 
 	    .xfixes_event = 0,
 	    .xfixes_error = 0,
@@ -2299,12 +2259,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		}
 	}
 
-	if (ps->o.legacy_backends) {
-		ps->shadow_context =
-		    (void *)gaussian_kernel_autodetect_deviation(ps->o.shadow_radius);
-		sum_kernel_preprocess((conv *)ps->shadow_context);
-	}
-
 	rebuild_shadow_exclude_reg(ps);
 
 	// Query X Shape
@@ -2422,7 +2376,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 		// The old backends doesn't have a automatic redirection mode
 		log_info("The compositor is started in automatic redirection mode.");
-		assert(!ps->o.legacy_backends);
 
 		if (backend_list[ps->o.backend]->present) {
 			// If the backend has `present`, we couldn't be in automatic
@@ -2437,12 +2390,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->drivers = detect_driver(ps->c.c, ps->backend_data, ps->c.screen_info->root);
 	apply_driver_workarounds(ps, ps->drivers);
 
-	// Initialize filters, must be preceded by OpenGL context creation
-	if (ps->o.legacy_backends && !init_render(ps)) {
-		log_fatal("Failed to initialize the backend");
-		exit(1);
-	}
-
 	if (ps->o.print_diagnostics) {
 		print_diagnostics(ps, config_file, compositor_running);
 		free(config_file_to_free);
@@ -2456,20 +2403,10 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 
 	free(config_file_to_free);
 
-	if (bkend_use_glx(ps) && ps->o.legacy_backends) {
-		auto gl_logger = gl_string_marker_logger_new();
-		if (gl_logger) {
-			log_info("Enabling gl string marker");
-			log_add_target_tls(gl_logger);
-		}
-	}
-
-	if (!ps->o.legacy_backends) {
-		if (ps->o.monitor_repaint && !backend_list[ps->o.backend]->fill) {
-			log_warn("--monitor-repaint is not supported by the backend, "
-			         "disabling");
-			ps->o.monitor_repaint = false;
-		}
+	if (ps->o.monitor_repaint && !backend_list[ps->o.backend]->fill) {
+		log_warn("--monitor-repaint is not supported by the backend, "
+		         "disabling");
+		ps->o.monitor_repaint = false;
 	}
 
 	// Monitor screen changes if vsync_sw is enabled and we are using
@@ -2662,18 +2599,11 @@ static void session_destroy(session_t *ps) {
 	c2_list_free(&ps->o.window_shader_fg_rules, free);
 	c2_state_free(ps->c2_state);
 
-	// Free tgt_{buffer,picture} and root_picture
-	if (ps->tgt_buffer.pict == ps->tgt_picture) {
-		ps->tgt_buffer.pict = XCB_NONE;
-	}
-
 	if (ps->tgt_picture != ps->root_picture) {
 		x_free_picture(&ps->c, ps->tgt_picture);
 	}
 	x_free_picture(&ps->c, ps->root_picture);
 	ps->tgt_picture = ps->root_picture = XCB_NONE;
-
-	free_paint(ps, &ps->tgt_buffer);
 
 	pixman_region32_fini(&ps->screen_reg);
 	free(ps->expose_rects);
@@ -2699,14 +2629,6 @@ static void session_destroy(session_t *ps) {
 		free(shader->key);
 		free(shader);
 	}
-
-#ifdef CONFIG_VSYNC_DRM
-	// Close file opened for DRM VSync
-	if (ps->drm_fd >= 0) {
-		close(ps->drm_fd);
-		ps->drm_fd = -1;
-	}
-#endif
 
 	// Release overlay window
 	if (ps->overlay) {
@@ -2735,26 +2657,12 @@ static void session_destroy(session_t *ps) {
 		ps->damaged_region = XCB_NONE;
 	}
 
-	if (!ps->o.legacy_backends) {
-		// backend is deinitialized in unredirect()
-		assert(ps->backend_data == NULL);
-	} else {
-		deinit_render(ps);
-	}
-
-#if CONFIG_OPENGL
-	if (glx_has_context(ps)) {
-		// GLX context created, but not for rendering
-		glx_destroy(ps);
-	}
-#endif
+	// backend is deinitialized in unredirect()
+	assert(ps->backend_data == NULL);
 
 	// Flush all events
 	xcb_aux_sync(ps->c.c);
 	ev_io_stop(ps->loop, &ps->xiow);
-	if (ps->o.legacy_backends) {
-		free_conv((conv *)ps->shadow_context);
-	}
 	destroy_atoms(ps->atoms);
 
 #ifdef DEBUG_XRC

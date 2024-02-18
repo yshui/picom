@@ -808,7 +808,6 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	// clang-format off
 	*opt = (struct options){
 	    .backend = BKEND_XRENDER,
-	    .legacy_backends = false,
 	    .glx_no_stencil = false,
 	    .mark_wmwin_focused = false,
 	    .mark_ovredir_focused = false,
