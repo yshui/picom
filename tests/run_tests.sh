@@ -20,3 +20,4 @@ eval `dbus-launch --sh-syntax`
 ./run_one_test.sh $exe configs/clear_shadow_unredirected.conf testcases/redirect_when_unmapped_window_has_shadow.py
 ./run_one_test.sh $exe configs/issue394.conf testcases/issue394.py
 ./run_one_test.sh $exe configs/issue239.conf testcases/issue525.py
+./run_one_test.sh $exe configs/pull1091.conf testcases/pull1091.py
