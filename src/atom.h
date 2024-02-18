@@ -53,7 +53,6 @@
 
 struct atom_entry;
 struct atom {
-	struct cache c;
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST1);
 	LIST_APPLY(ATOM_DEF, SEP_COLON, ATOM_LIST2);
 };
@@ -71,5 +70,13 @@ xcb_atom_t get_atom_cached(struct atom *a, const char *key, size_t keylen);
 static inline xcb_atom_t get_atom_cached_with_nul(struct atom *a, const char *key) {
 	return get_atom_cached(a, key, strlen(key));
 }
+const char *get_atom_name(struct atom *a, xcb_atom_t, xcb_connection_t *c);
+const char *get_atom_name_cached(struct atom *a, xcb_atom_t atom);
 
 void destroy_atoms(struct atom *a);
+
+/// A mock atom object for unit testing. Successive calls to get_atom will return
+/// secutive integers as atoms, starting from 1. Calling get_atom_name with atoms
+/// previously seen will result in the string that was used to create the atom; if
+/// the atom was never returned by get_atom, it will abort.
+struct atom *init_mock_atoms(void);

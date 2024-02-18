@@ -98,7 +98,7 @@ endif
 
 if cc.has_argument('-fsanitize=fuzzer')
   c2_fuzz = executable('c2_fuzz', srcs + ['fuzzer/c2.c'],
-	c_args: cflags + ['-fsanitize=fuzzer', '-Dmain=__main__'],
+	c_args: cflags + ['-fsanitize=fuzzer', '-DCONFIG_FUZZER'],
 	link_args: ['-fsanitize=fuzzer'],
 	dependencies: [ base_deps, deps, test_h_dep ],
 	build_by_default: false,
