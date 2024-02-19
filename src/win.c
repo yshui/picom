@@ -73,7 +73,8 @@ static void win_update_opacity_target(session_t *ps, struct managed_win *w);
  * Retrieve frame extents from a window.
  */
 static void
-win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t client);
+win_update_frame_extents(struct x_connection *c, struct atom *atoms,
+                         struct managed_win *w, xcb_window_t client, double frame_opacity);
 static void win_update_prop_shadow_raw(struct x_connection *c, struct atom *atoms,
                                        struct managed_win *w);
 static bool
@@ -464,7 +465,8 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_FRAME_EXTENTS)) {
-		win_update_frame_extents(ps, w, w->client_win);
+		win_update_frame_extents(&ps->c, ps->atoms, w, w->client_win,
+		                         ps->o.frame_opacity);
 		add_damage_from_win(ps, w);
 	}
 
@@ -1378,7 +1380,7 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 	win_update_wintype(&ps->c, ps->atoms, w);
 
 	// Get frame widths. The window is in damaged area already.
-	win_update_frame_extents(ps, w, client);
+	win_update_frame_extents(&ps->c, ps->atoms, w, client, ps->o.frame_opacity);
 
 	// Get window group
 	if (ps->o.track_leader) {
@@ -2066,9 +2068,11 @@ void win_update_opacity_prop(struct x_connection *c, struct atom *atoms,
 /**
  * Retrieve frame extents from a window.
  */
-void win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t client) {
-	winprop_t prop = x_get_prop(&ps->c, client, ps->atoms->a_NET_FRAME_EXTENTS, 4L,
-	                            XCB_ATOM_CARDINAL, 32);
+void win_update_frame_extents(struct x_connection *c, struct atom *atoms,
+                              struct managed_win *w, xcb_window_t client,
+                              double frame_opacity) {
+	winprop_t prop =
+	    x_get_prop(c, client, atoms->a_NET_FRAME_EXTENTS, 4L, XCB_ATOM_CARDINAL, 32);
 
 	if (prop.nitems == 4) {
 		int extents[4];
@@ -2095,7 +2099,7 @@ void win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t
 
 		// If frame_opacity != 1, then frame of this window
 		// is not included in reg_ignore of underneath windows
-		if (ps->o.frame_opacity == 1 && changed) {
+		if (frame_opacity == 1 && changed) {
 			w->reg_ignore_valid = false;
 		}
 	}
