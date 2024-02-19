@@ -75,7 +75,11 @@ xcb_atom_t get_atom(struct atom *a, const char *key, size_t keylen, xcb_connecti
 
 xcb_atom_t get_atom_cached(struct atom *a, const char *key, size_t keylen) {
 	auto atoms = container_of(a, struct atom_impl, base);
-	return cache_entry(cache_get(&atoms->c, key, keylen), struct atom_entry, entry)->atom;
+	auto entry = cache_get(&atoms->c, key, keylen);
+	if (!entry) {
+		return XCB_NONE;
+	}
+	return cache_entry(entry, struct atom_entry, entry)->atom;
 }
 
 const char *get_atom_name(struct atom *a, xcb_atom_t atom, xcb_connection_t *c) {
