@@ -93,7 +93,8 @@ win_get_leader_property(struct x_connection *c, struct atom *atoms, xcb_window_t
 static xcb_window_t win_get_client_window(struct x_connection *c, struct atom *atoms,
                                           const struct managed_win *w);
 static void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client);
-static void win_on_win_size_change(session_t *ps, struct managed_win *w);
+static void win_on_win_size_change(struct managed_win *w, int shadow_offset_x,
+                                   int shadow_offset_y, int shadow_radius);
 
 /// Generate a "no corners" region function, from a function that returns the
 /// region via a region_t pointer argument. Corners of the window will be removed from
@@ -571,7 +572,8 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		win_update_is_fullscreen(ps, w);
 
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
-			win_on_win_size_change(ps, w);
+			win_on_win_size_change(w, ps->o.shadow_offset_x,
+			                       ps->o.shadow_offset_y, ps->o.shadow_radius);
 			win_update_bounding_shape(ps, w);
 			damaged = true;
 			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
@@ -1314,17 +1316,18 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 /**
  * Update cache data in struct _win that depends on window size.
  */
-static void win_on_win_size_change(session_t *ps, struct managed_win *w) {
+static void win_on_win_size_change(struct managed_win *w, int shadow_offset_x,
+                                   int shadow_offset_y, int shadow_radius) {
 	log_trace("Window %#010x (%s) size changed, was %dx%d, now %dx%d", w->base.id,
 	          w->name, w->widthb, w->heightb, w->g.width + w->g.border_width * 2,
 	          w->g.height + w->g.border_width * 2);
 
 	w->widthb = w->g.width + w->g.border_width * 2;
 	w->heightb = w->g.height + w->g.border_width * 2;
-	w->shadow_dx = ps->o.shadow_offset_x;
-	w->shadow_dy = ps->o.shadow_offset_y;
-	w->shadow_width = w->widthb + ps->o.shadow_radius * 2;
-	w->shadow_height = w->heightb + ps->o.shadow_radius * 2;
+	w->shadow_dx = shadow_offset_x;
+	w->shadow_dy = shadow_offset_y;
+	w->shadow_width = w->widthb + shadow_radius * 2;
+	w->shadow_height = w->heightb + shadow_radius * 2;
 
 	// We don't handle property updates of non-visible windows until they are
 	// mapped.
