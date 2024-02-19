@@ -60,7 +60,8 @@ static const double ROUNDED_PERCENT = 0.05;
 static bool
 win_update_class(struct x_connection *c, struct atom *atoms, struct managed_win *w);
 static int win_update_role(struct x_connection *c, struct atom *atoms, struct managed_win *w);
-static void win_update_wintype(session_t *ps, struct managed_win *w);
+static bool
+win_update_wintype(struct x_connection *c, struct atom *atoms, struct managed_win *w);
 static int win_update_name(struct x_connection *c, struct atom *atoms, struct managed_win *w);
 /**
  * Reread opacity property of a window.
@@ -418,7 +419,9 @@ static void win_clear_all_properties_stale(struct managed_win *w);
 /// Might set WIN_FLAGS_FACTOR_CHANGED
 static void win_update_properties(session_t *ps, struct managed_win *w) {
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_TYPE)) {
-		win_update_wintype(ps, w);
+		if (win_update_wintype(&ps->c, ps->atoms, w)) {
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		}
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY)) {
@@ -709,13 +712,15 @@ static inline bool win_bounding_shaped(const session_t *ps, xcb_window_t wid) {
 	return false;
 }
 
-static wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
+static wintype_t
+wid_get_prop_wintype(struct x_connection *c, struct atom *atoms, xcb_window_t wid) {
 	winprop_t prop =
-	    x_get_prop(&ps->c, wid, ps->atoms->a_NET_WM_WINDOW_TYPE, 32L, XCB_ATOM_ATOM, 32);
+	    x_get_prop(c, wid, atoms->a_NET_WM_WINDOW_TYPE, 32L, XCB_ATOM_ATOM, 32);
 
 	for (unsigned i = 0; i < prop.nitems; ++i) {
 		for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
-			if (ps->atoms_wintypes[j] == (xcb_atom_t)prop.p32[i]) {
+			if (get_atom_cached(atoms, WINTYPES[j], strlen(WINTYPES[j])) ==
+			    (xcb_atom_t)prop.p32[i]) {
 				free_winprop(&prop);
 				return j;
 			}
@@ -1286,27 +1291,26 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 /**
  * Update window type.
  */
-void win_update_wintype(session_t *ps, struct managed_win *w) {
+static bool
+win_update_wintype(struct x_connection *c, struct atom *atoms, struct managed_win *w) {
 	const wintype_t wtype_old = w->window_type;
 
 	// Detect window type here
-	w->window_type = wid_get_prop_wintype(ps, w->client_win);
+	w->window_type = wid_get_prop_wintype(c, atoms, w->client_win);
 
 	// Conform to EWMH standard, if _NET_WM_WINDOW_TYPE is not present, take
 	// override-redirect windows or windows without WM_TRANSIENT_FOR as
 	// _NET_WM_WINDOW_TYPE_NORMAL, otherwise as _NET_WM_WINDOW_TYPE_DIALOG.
 	if (WINTYPE_UNKNOWN == w->window_type) {
 		if (w->a.override_redirect ||
-		    !wid_has_prop(ps, w->client_win, ps->atoms->aWM_TRANSIENT_FOR)) {
+		    !wid_has_prop(c->c, w->client_win, atoms->aWM_TRANSIENT_FOR)) {
 			w->window_type = WINTYPE_NORMAL;
 		} else {
 			w->window_type = WINTYPE_DIALOG;
 		}
 	}
 
-	if (w->window_type != wtype_old) {
-		win_on_factor_change(ps, w);
-	}
+	return w->window_type != wtype_old;
 }
 
 /**
@@ -1334,7 +1338,7 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 		free(e);
 	}
 
-	win_update_wintype(ps, w);
+	win_update_wintype(&ps->c, ps->atoms, w);
 
 	// Get frame widths. The window is in damaged area already.
 	win_update_frame_extents(ps, w, client);
@@ -1386,7 +1390,7 @@ void win_unmark_client(session_t *ps, struct managed_win *w) {
  * Look for the client window of a particular window.
  */
 static xcb_window_t find_client_win(session_t *ps, xcb_window_t w) {
-	if (wid_has_prop(ps, w, ps->atoms->aWM_STATE)) {
+	if (wid_has_prop(ps->c.c, w, ps->atoms->aWM_STATE)) {
 		return w;
 	}
 

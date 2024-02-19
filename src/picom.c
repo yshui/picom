@@ -85,10 +85,22 @@ static void unredirect(session_t *ps);
 // === Global constants ===
 
 /// Name strings for window types.
-const char *const WINTYPES[NUM_WINTYPES] = {
-    "unknown",    "desktop", "dock",         "toolbar", "menu",
-    "utility",    "splash",  "dialog",       "normal",  "dropdown_menu",
-    "popup_menu", "tooltip", "notification", "combo",   "dnd",
+const char *const WINTYPES[] = {
+    [WINTYPE_UNKNOWN] = "unknown",
+    [WINTYPE_DESKTOP] = "desktop",
+    [WINTYPE_DOCK] = "dock",
+    [WINTYPE_TOOLBAR] = "toolbar",
+    [WINTYPE_MENU] = "menu",
+    [WINTYPE_UTILITY] = "utility",
+    [WINTYPE_SPLASH] = "splash",
+    [WINTYPE_DIALOG] = "dialog",
+    [WINTYPE_NORMAL] = "normal",
+    [WINTYPE_DROPDOWN_MENU] = "dropdown_menu",
+    [WINTYPE_POPUP_MENU] = "popup_menu",
+    [WINTYPE_TOOLTIP] = "tooltip",
+    [WINTYPE_NOTIFICATION] = "notification",
+    [WINTYPE_COMBO] = "combo",
+    [WINTYPE_DND] = "dnd",
 };
 
 // clang-format off
@@ -2066,8 +2078,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .glx_error = 0,
 	    .xrfilter_convolution_exists = false,
 
-	    .atoms_wintypes = {0},
-
 #ifdef CONFIG_DBUS
 	    .dbus_data = NULL,
 #endif
@@ -2242,25 +2252,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	ps->atoms = init_atoms(ps->c.c);
-	ps->atoms_wintypes[WINTYPE_UNKNOWN] = 0;
-#define SET_WM_TYPE_ATOM(x)                                                              \
-	ps->atoms_wintypes[WINTYPE_##x] = ps->atoms->a_NET_WM_WINDOW_TYPE_##x
-	SET_WM_TYPE_ATOM(DESKTOP);
-	SET_WM_TYPE_ATOM(DOCK);
-	SET_WM_TYPE_ATOM(TOOLBAR);
-	SET_WM_TYPE_ATOM(MENU);
-	SET_WM_TYPE_ATOM(UTILITY);
-	SET_WM_TYPE_ATOM(SPLASH);
-	SET_WM_TYPE_ATOM(DIALOG);
-	SET_WM_TYPE_ATOM(NORMAL);
-	SET_WM_TYPE_ATOM(DROPDOWN_MENU);
-	SET_WM_TYPE_ATOM(POPUP_MENU);
-	SET_WM_TYPE_ATOM(TOOLTIP);
-	SET_WM_TYPE_ATOM(NOTIFICATION);
-	SET_WM_TYPE_ATOM(COMBO);
-	SET_WM_TYPE_ATOM(DND);
-#undef SET_WM_TYPE_ATOM
-
 	ps->c2_state = c2_state_new(ps->atoms);
 
 	// Get needed atoms for c2 condition lists

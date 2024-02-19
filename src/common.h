@@ -376,8 +376,6 @@ typedef struct session {
 
 	// === Atoms ===
 	struct atom *atoms;
-	/// Array of atoms of all possible window types.
-	xcb_atom_t atoms_wintypes[NUM_WINTYPES];
 
 #ifdef CONFIG_DBUS
 	// === DBus related ===
@@ -478,10 +476,9 @@ static inline bool bkend_use_glx(session_t *ps) {
  * @param atom atom of property to check
  * @return true if it has the attribute, false otherwise
  */
-static inline bool wid_has_prop(const session_t *ps, xcb_window_t w, xcb_atom_t atom) {
+static inline bool wid_has_prop(xcb_connection_t *c, xcb_window_t w, xcb_atom_t atom) {
 	auto r = xcb_get_property_reply(
-	    ps->c.c,
-	    xcb_get_property(ps->c.c, 0, w, atom, XCB_GET_PROPERTY_TYPE_ANY, 0, 0), NULL);
+	    c, xcb_get_property(c, 0, w, atom, XCB_GET_PROPERTY_TYPE_ANY, 0, 0), NULL);
 	if (!r) {
 		return false;
 	}

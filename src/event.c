@@ -360,7 +360,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		// Reset event mask in case something wrong happens
 		uint32_t evmask = determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN);
 
-		if (!wid_has_prop(ps, ev->window, ps->atoms->aWM_STATE)) {
+		if (!wid_has_prop(ps->c.c, ev->window, ps->atoms->aWM_STATE)) {
 			log_debug("Window %#010x doesn't have WM_STATE property, it is "
 			          "probably not a client window. But we will listen for "
 			          "property change in case it gains one.",
