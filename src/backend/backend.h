@@ -137,10 +137,9 @@ struct backend_operations {
 	/// Optional, not yet used
 	void (*resume)(backend_t *backend_data, session_t *ps);
 
-	/// Called when root property changed, returns the new
-	/// backend_data. Even if the backend_data changed, all
-	/// the existing image data returned by this backend should
-	/// remain valid.
+	/// Called when root window size changed. All existing image data ever
+	/// returned by this backend should remain valid after this call
+	/// returns.
 	///
 	/// Optional
 	void (*root_change)(backend_t *backend_data, session_t *ps);
