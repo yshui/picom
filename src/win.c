@@ -57,10 +57,11 @@ static const double ROUNDED_PERCENT = 0.05;
  * Retrieve the <code>WM_CLASS</code> of a window and update its
  * <code>win</code> structure.
  */
-static bool win_update_class(session_t *ps, struct managed_win *w);
-static int win_update_role(session_t *ps, struct managed_win *w);
+static bool
+win_update_class(struct x_connection *c, struct atom *atoms, struct managed_win *w);
+static int win_update_role(struct x_connection *c, struct atom *atoms, struct managed_win *w);
 static void win_update_wintype(session_t *ps, struct managed_win *w);
-static int win_update_name(session_t *ps, struct managed_win *w);
+static int win_update_name(struct x_connection *c, struct atom *atoms, struct managed_win *w);
 /**
  * Reread opacity property of a window.
  */
@@ -71,7 +72,8 @@ static void win_update_opacity_target(session_t *ps, struct managed_win *w);
  */
 static void
 win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t client);
-static void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w);
+static void win_update_prop_shadow_raw(struct x_connection *c, struct atom *atoms,
+                                       struct managed_win *w);
 static void win_update_prop_shadow(session_t *ps, struct managed_win *w);
 /**
  * Update window EWMH fullscreen state.
@@ -433,19 +435,19 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_NAME) ||
 	    win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_NAME)) {
-		if (win_update_name(ps, w) == 1) {
+		if (win_update_name(&ps->c, ps->atoms, w) == 1) {
 			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 		}
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLASS)) {
-		if (win_update_class(ps, w)) {
+		if (win_update_class(&ps->c, ps->atoms, w)) {
 			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 		}
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_WINDOW_ROLE)) {
-		if (win_update_role(ps, w) == 1) {
+		if (win_update_role(&ps->c, ps->atoms, w) == 1) {
 			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
 		}
 	}
@@ -628,7 +630,7 @@ static bool attr_pure win_has_rounded_corners(const struct managed_win *w) {
 	return false;
 }
 
-int win_update_name(session_t *ps, struct managed_win *w) {
+int win_update_name(struct x_connection *c, struct atom *atoms, struct managed_win *w) {
 	char **strlst = NULL;
 	int nstr = 0;
 
@@ -636,14 +638,13 @@ int win_update_name(session_t *ps, struct managed_win *w) {
 		return 0;
 	}
 
-	if (!(wid_get_text_prop(&ps->c, ps->atoms, w->client_win,
-	                        ps->atoms->a_NET_WM_NAME, &strlst, &nstr))) {
+	if (!(wid_get_text_prop(c, atoms, w->client_win, atoms->a_NET_WM_NAME, &strlst, &nstr))) {
 		log_debug("(%#010x): _NET_WM_NAME unset, falling back to "
 		          "WM_NAME.",
 		          w->client_win);
 
-		if (!wid_get_text_prop(&ps->c, ps->atoms, w->client_win,
-		                       ps->atoms->aWM_NAME, &strlst, &nstr)) {
+		if (!wid_get_text_prop(c, atoms, w->client_win, atoms->aWM_NAME, &strlst,
+		                       &nstr)) {
 			log_debug("Unsetting window name for %#010x", w->client_win);
 			free(w->name);
 			w->name = NULL;
@@ -666,12 +667,11 @@ int win_update_name(session_t *ps, struct managed_win *w) {
 	return ret;
 }
 
-static int win_update_role(session_t *ps, struct managed_win *w) {
+static int win_update_role(struct x_connection *c, struct atom *atoms, struct managed_win *w) {
 	char **strlst = NULL;
 	int nstr = 0;
 
-	if (!wid_get_text_prop(&ps->c, ps->atoms, w->client_win,
-	                       ps->atoms->aWM_WINDOW_ROLE, &strlst, &nstr)) {
+	if (!wid_get_text_prop(c, atoms, w->client_win, atoms->aWM_WINDOW_ROLE, &strlst, &nstr)) {
 		return -1;
 	}
 
@@ -727,13 +727,13 @@ static wintype_t wid_get_prop_wintype(session_t *ps, xcb_window_t wid) {
 	return WINTYPE_UNKNOWN;
 }
 
-static bool
-wid_get_opacity_prop(session_t *ps, xcb_window_t wid, opacity_t def, opacity_t *out) {
+static bool wid_get_opacity_prop(struct x_connection *c, struct atom *atoms,
+                                 xcb_window_t wid, opacity_t def, opacity_t *out) {
 	bool ret = false;
 	*out = def;
 
-	winprop_t prop = x_get_prop(&ps->c, wid, ps->atoms->a_NET_WM_WINDOW_OPACITY, 1L,
-	                            XCB_ATOM_CARDINAL, 32);
+	winprop_t prop =
+	    x_get_prop(c, wid, atoms->a_NET_WM_WINDOW_OPACITY, 1L, XCB_ATOM_CARDINAL, 32);
 
 	if (prop.nitems) {
 		*out = *prop.c32;
@@ -883,9 +883,10 @@ bool win_should_fade(session_t *ps, const struct managed_win *w) {
  *
  * The property must be set on the outermost window, usually the WM frame.
  */
-void win_update_prop_shadow_raw(session_t *ps, struct managed_win *w) {
-	winprop_t prop = x_get_prop(&ps->c, w->base.id, ps->atoms->a_COMPTON_SHADOW, 1,
-	                            XCB_ATOM_CARDINAL, 32);
+void win_update_prop_shadow_raw(struct x_connection *c, struct atom *atoms,
+                                struct managed_win *w) {
+	winprop_t prop =
+	    x_get_prop(c, w->base.id, atoms->a_COMPTON_SHADOW, 1, XCB_ATOM_CARDINAL, 32);
 
 	if (!prop.nitems) {
 		w->prop_shadow = -1;
@@ -982,7 +983,7 @@ static void win_determine_shadow(session_t *ps, struct managed_win *w) {
 void win_update_prop_shadow(session_t *ps, struct managed_win *w) {
 	long long attr_shadow_old = w->prop_shadow;
 
-	win_update_prop_shadow_raw(ps, w);
+	win_update_prop_shadow_raw(&ps->c, ps->atoms, w);
 
 	if (w->prop_shadow != attr_shadow_old) {
 		win_determine_shadow(ps, w);
@@ -1344,9 +1345,9 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 	}
 
 	// Get window name and class if we are tracking them
-	win_update_name(ps, w);
-	win_update_class(ps, w);
-	win_update_role(ps, w);
+	win_update_name(&ps->c, ps->atoms, w);
+	win_update_class(&ps->c, ps->atoms, w);
+	win_update_role(&ps->c, ps->atoms, w);
 
 	// Update everything related to conditions
 	win_on_factor_change(ps, w);
@@ -1828,7 +1829,8 @@ static xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int
  * Retrieve the <code>WM_CLASS</code> of a window and update its
  * <code>win</code> structure.
  */
-bool win_update_class(session_t *ps, struct managed_win *w) {
+static bool
+win_update_class(struct x_connection *c, struct atom *atoms, struct managed_win *w) {
 	char **strlst = NULL;
 	int nstr = 0;
 
@@ -1844,8 +1846,7 @@ bool win_update_class(session_t *ps, struct managed_win *w) {
 	w->class_general = NULL;
 
 	// Retrieve the property string list
-	if (!wid_get_text_prop(&ps->c, ps->atoms, w->client_win, ps->atoms->aWM_CLASS,
-	                       &strlst, &nstr)) {
+	if (!wid_get_text_prop(c, atoms, w->client_win, atoms->aWM_CLASS, &strlst, &nstr)) {
 		return false;
 	}
 
@@ -2032,7 +2033,8 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
  */
 void win_update_opacity_prop(session_t *ps, struct managed_win *w) {
 	// get frame opacity first
-	w->has_opacity_prop = wid_get_opacity_prop(ps, w->base.id, OPAQUE, &w->opacity_prop);
+	w->has_opacity_prop =
+	    wid_get_opacity_prop(&ps->c, ps->atoms, w->base.id, OPAQUE, &w->opacity_prop);
 
 	if (w->has_opacity_prop) {
 		// opacity found
@@ -2046,7 +2048,7 @@ void win_update_opacity_prop(session_t *ps, struct managed_win *w) {
 
 	// get client opacity
 	w->has_opacity_prop =
-	    wid_get_opacity_prop(ps, w->client_win, OPAQUE, &w->opacity_prop);
+	    wid_get_opacity_prop(&ps->c, ps->atoms, w->client_win, OPAQUE, &w->opacity_prop);
 }
 
 /**
