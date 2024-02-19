@@ -745,20 +745,14 @@ static int win_update_role(struct x_connection *c, struct atom *atoms, struct ma
 /**
  * Check if a window is bounding-shaped.
  */
-static inline bool win_bounding_shaped(const session_t *ps, xcb_window_t wid) {
-	if (ps->shape_exists) {
-		xcb_shape_query_extents_reply_t *reply;
-		Bool bounding_shaped;
+static inline bool win_bounding_shaped(struct x_connection *c, xcb_window_t wid) {
+	xcb_shape_query_extents_reply_t *reply;
+	bool bounding_shaped;
+	reply = xcb_shape_query_extents_reply(c->c, xcb_shape_query_extents(c->c, wid), NULL);
+	bounding_shaped = reply && reply->bounding_shaped;
+	free(reply);
 
-		reply = xcb_shape_query_extents_reply(
-		    ps->c.c, xcb_shape_query_extents(ps->c.c, wid), NULL);
-		bounding_shaped = reply && reply->bounding_shaped;
-		free(reply);
-
-		return bounding_shaped;
-	}
-
-	return false;
+	return bounding_shaped;
 }
 
 static wintype_t
@@ -1970,7 +1964,7 @@ gen_by_val(win_extents);
  */
 void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 	if (ps->shape_exists) {
-		w->bounding_shaped = win_bounding_shaped(ps, w->base.id);
+		w->bounding_shaped = win_bounding_shaped(&ps->c, w->base.id);
 	}
 
 	// We don't handle property updates of non-visible windows until they are
