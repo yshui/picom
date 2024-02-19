@@ -95,6 +95,8 @@ static xcb_window_t win_get_client_window(struct x_connection *c, struct atom *a
 static void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client);
 static void win_on_win_size_change(struct managed_win *w, int shadow_offset_x,
                                    int shadow_offset_y, int shadow_radius);
+static void win_update_bounding_shape(struct x_connection *c, struct managed_win *w,
+                                      bool shape_exists, bool detect_rounded_corners);
 
 /// Generate a "no corners" region function, from a function that returns the
 /// region via a region_t pointer argument. Corners of the window will be removed from
@@ -574,7 +576,8 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 		if (win_check_flags_all(w, WIN_FLAGS_SIZE_STALE)) {
 			win_on_win_size_change(w, ps->o.shadow_offset_x,
 			                       ps->o.shadow_offset_y, ps->o.shadow_radius);
-			win_update_bounding_shape(ps, w);
+			win_update_bounding_shape(&ps->c, w, ps->shape_exists,
+			                          ps->o.detect_rounded_corners);
 			damaged = true;
 			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
 
@@ -1969,11 +1972,8 @@ gen_by_val(win_extents);
  *
  * Mark the window shape as updated
  */
-void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
-	if (ps->shape_exists) {
-		w->bounding_shaped = win_bounding_shaped(&ps->c, w->base.id);
-	}
-
+static void win_update_bounding_shape(struct x_connection *c, struct managed_win *w,
+                                      bool shape_exists, bool detect_rounded_corners) {
 	// We don't handle property updates of non-visible windows until they are
 	// mapped.
 	assert(w->state != WSTATE_UNMAPPED && w->state != WSTATE_DESTROYING &&
@@ -1982,6 +1982,10 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 	pixman_region32_clear(&w->bounding_shape);
 	// Start with the window rectangular region
 	win_get_region_local(w, &w->bounding_shape);
+
+	if (shape_exists) {
+		w->bounding_shaped = win_bounding_shaped(c, w->base.id);
+	}
 
 	// Only request for a bounding region if the window is shaped
 	// (while loop is used to avoid goto, not an actual loop)
@@ -1992,8 +1996,7 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 		 */
 
 		xcb_shape_get_rectangles_reply_t *r = xcb_shape_get_rectangles_reply(
-		    ps->c.c,
-		    xcb_shape_get_rectangles(ps->c.c, w->base.id, XCB_SHAPE_SK_BOUNDING),
+		    c->c, xcb_shape_get_rectangles(c->c, w->base.id, XCB_SHAPE_SK_BOUNDING),
 		    NULL);
 
 		if (!r) {
@@ -2025,7 +2028,7 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 		break;
 	}
 
-	if (w->bounding_shaped && ps->o.detect_rounded_corners) {
+	if (w->bounding_shaped && detect_rounded_corners) {
 		w->rounded_corners = win_has_rounded_corners(w);
 	}
 }

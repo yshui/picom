@@ -345,11 +345,6 @@ bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 
 void win_update_monitor(struct x_monitors *monitors, struct managed_win *mw);
 
-/**
- * Retrieve the bounding shape of a window.
- */
-// XXX was win_border_size
-void win_update_bounding_shape(session_t *ps, struct managed_win *w);
 /// Recheck if a window is fullscreen
 void win_update_is_fullscreen(const session_t *ps, struct managed_win *w);
 /**
