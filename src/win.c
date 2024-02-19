@@ -66,7 +66,8 @@ static int win_update_name(struct x_connection *c, struct atom *atoms, struct ma
 /**
  * Reread opacity property of a window.
  */
-static void win_update_opacity_prop(session_t *ps, struct managed_win *w);
+static void win_update_opacity_prop(struct x_connection *c, struct atom *atoms,
+                                    struct managed_win *w, bool detect_client_opacity);
 static void win_update_opacity_target(session_t *ps, struct managed_win *w);
 /**
  * Retrieve frame extents from a window.
@@ -455,7 +456,7 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY)) {
-		win_update_opacity_prop(ps, w);
+		win_update_opacity_prop(&ps->c, ps->atoms, w, ps->o.detect_client_opacity);
 		// we cannot receive OPACITY change when window has been destroyed
 		assert(w->state != WSTATE_DESTROYING);
 		win_update_opacity_target(ps, w);
@@ -2044,24 +2045,25 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 /**
  * Reread opacity property of a window.
  */
-void win_update_opacity_prop(session_t *ps, struct managed_win *w) {
+void win_update_opacity_prop(struct x_connection *c, struct atom *atoms,
+                             struct managed_win *w, bool detect_client_opacity) {
 	// get frame opacity first
 	w->has_opacity_prop =
-	    wid_get_opacity_prop(&ps->c, ps->atoms, w->base.id, OPAQUE, &w->opacity_prop);
+	    wid_get_opacity_prop(c, atoms, w->base.id, OPAQUE, &w->opacity_prop);
 
 	if (w->has_opacity_prop) {
 		// opacity found
 		return;
 	}
 
-	if (ps->o.detect_client_opacity && w->client_win && w->base.id == w->client_win) {
+	if (detect_client_opacity && w->client_win && w->base.id == w->client_win) {
 		// checking client opacity not allowed
 		return;
 	}
 
 	// get client opacity
 	w->has_opacity_prop =
-	    wid_get_opacity_prop(&ps->c, ps->atoms, w->client_win, OPAQUE, &w->opacity_prop);
+	    wid_get_opacity_prop(c, atoms, w->client_win, OPAQUE, &w->opacity_prop);
 }
 
 /**
