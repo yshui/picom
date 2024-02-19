@@ -90,6 +90,9 @@ bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms
 static xcb_window_t
 win_get_leader_property(struct x_connection *c, struct atom *atoms, xcb_window_t wid,
                         bool detect_transient, bool detect_client_leader);
+static xcb_window_t win_get_client_window(struct x_connection *c, struct atom *atoms,
+                                          const struct managed_win *w);
+static void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client);
 
 /// Generate a "no corners" region function, from a function that returns the
 /// region via a region_t pointer argument. Corners of the window will be removed from
@@ -537,7 +540,11 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	// Check client first, because later property updates need accurate client
 	// window information
 	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
-		win_recheck_client(ps, w);
+		auto client_win = win_get_client_window(&ps->c, ps->atoms, w);
+		if (w->client_win && w->client_win != client_win) {
+			win_unmark_client(ps, w);
+		}
+		win_mark_client(ps, w, client_win);
 		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
 	}
 
@@ -1359,7 +1366,7 @@ win_update_wintype(struct x_connection *c, struct atom *atoms, struct managed_wi
  * @param w struct _win of the parent window
  * @param client window ID of the client window
  */
-void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) {
+static void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) {
 	w->client_win = client;
 
 	// If the window isn't mapped yet, stop here, as the function will be
@@ -1433,13 +1440,14 @@ void win_unmark_client(session_t *ps, struct managed_win *w) {
 /**
  * Look for the client window of a particular window.
  */
-static xcb_window_t find_client_win(session_t *ps, xcb_window_t w) {
-	if (wid_has_prop(ps->c.c, w, ps->atoms->aWM_STATE)) {
+static xcb_window_t
+find_client_win(struct x_connection *c, struct atom *atoms, xcb_window_t w) {
+	if (wid_has_prop(c->c, w, atoms->aWM_STATE)) {
 		return w;
 	}
 
 	xcb_query_tree_reply_t *reply =
-	    xcb_query_tree_reply(ps->c.c, xcb_query_tree(ps->c.c, w), NULL);
+	    xcb_query_tree_reply(c->c, xcb_query_tree(c->c, w), NULL);
 	if (!reply) {
 		return 0;
 	}
@@ -1450,48 +1458,38 @@ static xcb_window_t find_client_win(session_t *ps, xcb_window_t w) {
 	xcb_window_t ret = 0;
 
 	for (i = 0; i < nchildren; ++i) {
-		if ((ret = find_client_win(ps, children[i]))) {
+		ret = find_client_win(c, atoms, children[i]);
+		if (ret) {
 			break;
 		}
 	}
 
 	free(reply);
-
 	return ret;
 }
 
 /**
- * Recheck client window of a window.
+ * Get client window of a window.
  *
  * @param ps current session
  * @param w struct _win of the parent window
  */
-void win_recheck_client(session_t *ps, struct managed_win *w) {
-	assert(ps->server_grabbed);
-
-	// Look for the client window
-
+static xcb_window_t win_get_client_window(struct x_connection *c, struct atom *atoms,
+                                          const struct managed_win *w) {
 	// Always recursively look for a window with WM_STATE, as Fluxbox
 	// sets override-redirect flags on all frame windows.
-	xcb_window_t cw = find_client_win(ps, w->base.id);
+	xcb_window_t cw = find_client_win(c, atoms, w->base.id);
 	if (cw) {
 		log_debug("(%#010x): client %#010x", w->base.id, cw);
-	}
-	// Set a window's client window to itself if we couldn't find a
-	// client window
-	if (!cw) {
+	} else {
+		// Set a window's client window to itself if we couldn't find a
+		// client window
 		cw = w->base.id;
 		log_debug("(%#010x): client self (%s)", w->base.id,
 		          (w->a.override_redirect ? "override-redirected" : "wmwin"));
 	}
 
-	// Unmark the old one
-	if (w->client_win && w->client_win != cw) {
-		win_unmark_client(ps, w);
-	}
-
-	// Mark the new one
-	win_mark_client(ps, w, cw);
+	return cw;
 }
 
 /**

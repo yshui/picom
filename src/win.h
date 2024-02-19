@@ -330,7 +330,6 @@ void win_on_factor_change(session_t *ps, struct managed_win *w);
  */
 void win_on_win_size_change(session_t *ps, struct managed_win *w);
 void win_unmark_client(session_t *ps, struct managed_win *w);
-void win_recheck_client(session_t *ps, struct managed_win *w);
 
 /**
  * Calculate and return the opacity target of a window.
