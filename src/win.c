@@ -75,7 +75,8 @@ static void
 win_update_frame_extents(session_t *ps, struct managed_win *w, xcb_window_t client);
 static void win_update_prop_shadow_raw(struct x_connection *c, struct atom *atoms,
                                        struct managed_win *w);
-static void win_update_prop_shadow(session_t *ps, struct managed_win *w);
+static bool
+win_update_prop_shadow(struct x_connection *c, struct atom *atoms, struct managed_win *w);
 /**
  * Update window EWMH fullscreen state.
  */
@@ -415,6 +416,10 @@ static bool win_fetch_and_unset_property_stale(struct managed_win *w, xcb_atom_t
 /// stale flags.
 static void win_clear_all_properties_stale(struct managed_win *w);
 
+// TODO(yshui) make WIN_FLAGS_FACTOR_CHANGED more fine-grained, or find a better
+// alternative
+//             way to do all this.
+
 /// Fetch new window properties from the X server, and run appropriate updates.
 /// Might set WIN_FLAGS_FACTOR_CHANGED
 static void win_update_properties(session_t *ps, struct managed_win *w) {
@@ -456,7 +461,9 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_COMPTON_SHADOW)) {
-		win_update_prop_shadow(ps, w);
+		if (win_update_prop_shadow(&ps->c, ps->atoms, w)) {
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		}
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_STATE)) {
@@ -985,14 +992,11 @@ static void win_determine_shadow(session_t *ps, struct managed_win *w) {
  * Reread _COMPTON_SHADOW property from a window and update related
  * things.
  */
-void win_update_prop_shadow(session_t *ps, struct managed_win *w) {
+static bool
+win_update_prop_shadow(struct x_connection *c, struct atom *atoms, struct managed_win *w) {
 	long long attr_shadow_old = w->prop_shadow;
-
-	win_update_prop_shadow_raw(&ps->c, ps->atoms, w);
-
-	if (w->prop_shadow != attr_shadow_old) {
-		win_determine_shadow(ps, w);
-	}
+	win_update_prop_shadow_raw(c, atoms, w);
+	return w->prop_shadow != attr_shadow_old;
 }
 
 /**
