@@ -60,7 +60,7 @@ typedef struct {
 
 struct c2_tracked_property_key {
 	xcb_atom_t property;
-	bool is_on_frame;
+	bool is_on_client;
 	char padding[3];
 };
 static_assert(sizeof(struct c2_tracked_property_key) == 8, "Padding bytes in "
@@ -156,7 +156,7 @@ struct _c2_l {
 	char *tgt;
 	unsigned int target_id;
 	xcb_atom_t tgtatom;
-	bool tgt_onframe;
+	bool target_on_client;
 	int index;
 	// TODO(yshui) translate some of the pre-defined targets to
 	//             generic window properties. e.g. `name = "xterm"`
@@ -207,7 +207,7 @@ struct _c2_l {
 	{                                                                                \
 		.neg = false, .op = C2_L_OEXISTS, .match = C2_L_MEXACT,                  \
 		.match_ignorecase = false, .tgt = NULL, .tgtatom = 0,                    \
-		.tgt_onframe = false, .predef = C2_L_PUNDEFINED, .index = 0,             \
+		.target_on_client = false, .predef = C2_L_PUNDEFINED, .index = 0,        \
 		.ptntype = C2_L_PTUNDEFINED, .ptnstr = NULL, .ptnint = 0,                \
 	}
 
@@ -439,7 +439,7 @@ TEST_CASE(c2_parse) {
 	TEST_EQUAL(cond->ptr.l->op, C2_L_OEXISTS);
 	TEST_EQUAL(cond->ptr.l->match, C2_L_MEXACT);
 	TEST_EQUAL(cond->ptr.l->predef, C2_L_PUNDEFINED);
-	TEST_TRUE(cond->ptr.l->tgt_onframe);
+	TEST_TRUE(cond->ptr.l->target_on_client);
 	TEST_NOTEQUAL(cond->ptr.l->tgt, NULL);
 	TEST_STREQUAL(cond->ptr.l->tgt, "_GTK_FRAME_EXTENTS");
 
@@ -776,7 +776,7 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 
 	// Parse target-on-frame flag
 	if ('@' == pattern[offset]) {
-		pleaf->tgt_onframe = true;
+		pleaf->target_on_client = true;
 		++offset;
 		C2H_SKIP_SPACES();
 	}
@@ -1164,7 +1164,7 @@ static bool c2_l_postprocess(struct c2_state *state, xcb_connection_t *c, c2_l_t
 		struct c2_tracked_property *property;
 		struct c2_tracked_property_key key = {
 		    .property = pleaf->tgtatom,
-		    .is_on_frame = pleaf->tgt_onframe,
+		    .is_on_client = pleaf->target_on_client,
 		};
 		HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), property);
 		if (property == NULL) {
@@ -1382,7 +1382,7 @@ static size_t c2_condition_to_str(const c2_ptr_t p, char *output, size_t len) {
 		// Print target name, type, and format
 		const char *target_str = c2h_dump_str_tgt(pleaf);
 		push_str(target_str);
-		if (pleaf->tgt_onframe) {
+		if (pleaf->target_on_client) {
 			push_char('@');
 		}
 		if (pleaf->predef == C2_L_PUNDEFINED) {
@@ -1515,7 +1515,7 @@ static inline bool c2_int_op(const c2_l_t *leaf, int64_t target) {
 }
 
 static bool c2_match_once_leaf_int(const struct managed_win *w, const c2_l_t *leaf) {
-	const xcb_window_t wid = (leaf->tgt_onframe ? w->client_win : w->base.id);
+	const xcb_window_t wid = (leaf->target_on_client ? w->client_win : w->base.id);
 
 	// Get the value
 	if (leaf->predef != C2_L_PUNDEFINED) {
@@ -1696,7 +1696,7 @@ static inline bool
 c2_match_once_leaf(struct c2_state *state, const struct managed_win *w, const c2_l_t *leaf) {
 	assert(leaf);
 
-	const xcb_window_t wid = (leaf->tgt_onframe ? w->client_win : w->base.id);
+	const xcb_window_t wid = (leaf->target_on_client ? w->client_win : w->base.id);
 
 	// Return if wid is missing
 	if (leaf->predef == C2_L_PUNDEFINED && !wid) {
@@ -1870,11 +1870,11 @@ void c2_window_state_destroy(const struct c2_state *state,
 
 void c2_window_state_mark_dirty(const struct c2_state *state,
                                 struct c2_window_state *window_state, xcb_atom_t property,
-                                bool is_on_frame) {
+                                bool is_on_client) {
 	struct c2_tracked_property *p;
 	struct c2_tracked_property_key key = {
 	    .property = property,
-	    .is_on_frame = is_on_frame,
+	    .is_on_client = is_on_client,
 	};
 	HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), p);
 	if (p) {
@@ -1980,7 +1980,7 @@ static void c2_window_state_update_from_replies(struct c2_state *state,
 		if (!window_state->values[p->id].needs_update) {
 			continue;
 		}
-		xcb_window_t window = p->key.is_on_frame ? frame_win : client_win;
+		xcb_window_t window = p->key.is_on_client ? client_win : frame_win;
 		xcb_get_property_reply_t *reply =
 		    xcb_get_property_reply(c, state->cookies[p->id], NULL);
 		if (!reply) {
@@ -2049,7 +2049,7 @@ void c2_window_state_update(struct c2_state *state, struct c2_window_state *wind
 			length = (uint32_t)p->max_indices + 1;
 		}
 
-		xcb_window_t window = p->key.is_on_frame ? frame_win : client_win;
+		xcb_window_t window = p->key.is_on_client ? client_win : frame_win;
 		// xcb_get_property long_length is in units of 4-byte,
 		// so use `ceil(length / 4)`. same below.
 		state->cookies[p->id] = xcb_get_property(
@@ -2068,13 +2068,13 @@ bool c2_state_is_property_tracked(struct c2_state *state, xcb_atom_t property) {
 	struct c2_tracked_property *p;
 	struct c2_tracked_property_key key = {
 	    .property = property,
-	    .is_on_frame = true,
+	    .is_on_client = true,
 	};
 	HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), p);
 	if (p != NULL) {
 		return true;
 	}
-	key.is_on_frame = false;
+	key.is_on_client = false;
 	HASH_FIND(hh, state->tracked_properties, &key, sizeof(key), p);
 	return p != NULL;
 }

@@ -44,7 +44,7 @@ void c2_window_state_init(const struct c2_state *state, struct c2_window_state *
 void c2_window_state_destroy(const struct c2_state *state, struct c2_window_state *window_state);
 void c2_window_state_mark_dirty(const struct c2_state *state,
                                 struct c2_window_state *window_state, xcb_atom_t property,
-                                bool is_on_frame);
+                                bool is_on_client);
 void c2_window_state_update(struct c2_state *state, struct c2_window_state *window_state,
                             xcb_connection_t *c, xcb_window_t client_win,
                             xcb_window_t frame_win);
