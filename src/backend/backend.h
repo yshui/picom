@@ -143,7 +143,7 @@ struct backend_operations {
 	/// remain valid.
 	///
 	/// Optional
-	void *(*root_change)(backend_t *backend_data, session_t *ps);
+	void (*root_change)(backend_t *backend_data, session_t *ps);
 
 	// ===========      Rendering      ============
 
