@@ -229,32 +229,43 @@ typedef struct {
 	const char *name;
 } c2_predef_t;
 
+// clang-format off
 // Predefined targets.
-static const char *C2_PREDEFS[] = {
-    [C2_L_PID] = "id",
-    [C2_L_PX] = "x",
-    [C2_L_PY] = "y",
-    [C2_L_PX2] = "x2",
-    [C2_L_PY2] = "y2",
-    [C2_L_PWIDTH] = "width",
-    [C2_L_PHEIGHT] = "height",
-    [C2_L_PWIDTHB] = "widthb",
-    [C2_L_PHEIGHTB] = "heightb",
-    [C2_L_PBDW] = "border_width",
-    [C2_L_PFULLSCREEN] = "fullscreen",
-    [C2_L_POVREDIR] = "override_redirect",
-    [C2_L_PARGB] = "argb",
-    [C2_L_PFOCUSED] = "focused",
-    [C2_L_PWMWIN] = "wmwin",
-    [C2_L_PBSHAPED] = "bounding_shaped",
-    [C2_L_PROUNDED] = "rounded_corners",
-    [C2_L_PCLIENT] = "client",
-    [C2_L_PWINDOWTYPE] = "window_type",
-    [C2_L_PLEADER] = "leader",
-    [C2_L_PNAME] = "name",
-    [C2_L_PCLASSG] = "class_g",
-    [C2_L_PCLASSI] = "class_i",
-    [C2_L_PROLE] = "role",
+static struct {
+	const char *name;
+	bool is_string;
+} C2_PREDEFS[] = {
+    [C2_L_PID]         = { "id", false, },
+    [C2_L_PX]          = { "x", false, },
+    [C2_L_PY]          = { "y", false, },
+    [C2_L_PX2]         = { "x2", false, },
+    [C2_L_PY2]         = { "y2", false, },
+    [C2_L_PWIDTH]      = { "width", false, },
+    [C2_L_PHEIGHT]     = { "height", false, },
+    [C2_L_PWIDTHB]     = { "widthb", false, },
+    [C2_L_PHEIGHTB]    = { "heightb", false, },
+    [C2_L_PBDW]        = { "border_width", false, },
+    [C2_L_PFULLSCREEN] = { "fullscreen", false, },
+    [C2_L_POVREDIR]    = { "override_redirect", false, },
+    [C2_L_PARGB]       = { "argb", false, },
+    [C2_L_PFOCUSED]    = { "focused", false, },
+    [C2_L_PWMWIN]      = { "wmwin", false, },
+    [C2_L_PBSHAPED]    = { "bounding_shaped", false, },
+    [C2_L_PROUNDED]    = { "rounded_corners", false, },
+    [C2_L_PCLIENT]     = { "client", false, },
+    [C2_L_PWINDOWTYPE] = { "window_type", true, },
+    [C2_L_PLEADER]     = { "leader", false, },
+    [C2_L_PNAME]       = { "name", true, },
+    [C2_L_PCLASSG]     = { "class_g", true, },
+    [C2_L_PCLASSI]     = { "class_i", true, },
+    [C2_L_PROLE]       = { "role", true, },
+};
+// clang-format on
+
+static const char *const c2_pattern_type_names[] = {
+    [C2_L_PTUNDEFINED] = "undefined",
+    [C2_L_PTSTRING] = "string",
+    [C2_L_PTINT] = "number",
 };
 
 /**
@@ -431,6 +442,15 @@ TEST_CASE(c2_parse) {
 	c2_state_free(state);
 	destroy_atoms(atoms);
 	c2_list_free(&cond, NULL);
+
+	cond = c2_parse(NULL, "argb", NULL);
+	TEST_NOTEQUAL(cond, NULL);
+	TEST_TRUE(!cond->ptr.isbranch);
+	TEST_EQUAL(cond->ptr.l->ptntype, C2_L_PTINT);
+	c2_list_free(&cond, NULL);
+
+	cond = c2_parse(NULL, "argb = 'b'", NULL);
+	TEST_EQUAL(cond, NULL);
 
 	cond = c2_parse(NULL, "_GTK_FRAME_EXTENTS@:c", NULL);
 	TEST_NOTEQUAL(cond, NULL);
@@ -679,6 +699,21 @@ static int c2_parse_grp(const char *pattern, int offset, c2_ptr_t *presult, int 
 			if ((offset = c2_parse_pattern(pattern, offset, pele)) < 0) {
 				goto fail;
 			}
+
+			if (pele->l->predef != C2_L_PUNDEFINED) {
+				typeof(pele->l->ptntype) predef_type =
+				    C2_PREDEFS[pele->l->predef].is_string ? C2_L_PTSTRING
+				                                          : C2_L_PTINT;
+				if (pele->l->op == C2_L_OEXISTS) {
+					pele->l->ptntype = predef_type;
+				} else if (pele->l->ptntype != predef_type) {
+					c2_error("Predefined target %s is a %s, but you "
+					         "are comparing it with a %s",
+					         C2_PREDEFS[pele->l->predef].name,
+					         c2_pattern_type_names[predef_type],
+					         c2_pattern_type_names[pele->l->ptntype]);
+				}
+			}
 		}
 		// Decrement offset -- we will increment it in loop update
 		--offset;
@@ -766,7 +801,7 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 	// Check for predefined targets
 	static const int npredefs = (int)(sizeof(C2_PREDEFS) / sizeof(C2_PREDEFS[0]));
 	for (int i = 0; i < npredefs; ++i) {
-		if (!strcmp(C2_PREDEFS[i], pleaf->tgt)) {
+		if (!strcmp(C2_PREDEFS[i].name, pleaf->tgt)) {
 			pleaf->predef = i;
 			break;
 		}
@@ -774,7 +809,7 @@ static int c2_parse_target(const char *pattern, int offset, c2_ptr_t *presult) {
 
 	C2H_SKIP_SPACES();
 
-	// Parse target-on-frame flag
+	// Parse target-on-client flag
 	if ('@' == pattern[offset]) {
 		pleaf->target_on_client = true;
 		++offset;
@@ -1305,7 +1340,7 @@ c2_lptr_t *c2_free_lptr(c2_lptr_t *lp, c2_userdata_free f) {
  */
 static const char *c2h_dump_str_tgt(const c2_l_t *pleaf) {
 	if (pleaf->predef != C2_L_PUNDEFINED) {
-		return C2_PREDEFS[pleaf->predef];
+		return C2_PREDEFS[pleaf->predef].name;
 	}
 	return pleaf->tgt;
 }
