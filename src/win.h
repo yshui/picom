@@ -175,10 +175,6 @@ struct managed_win {
 	xcb_window_t client_win;
 	/// Type of the window.
 	wintype_t window_type;
-	/// Whether it looks like a WM window. We consider a window WM window if
-	/// it does not have a decedent with WM_STATE and it is not override-
-	/// redirected itself.
-	bool wmwin;
 	/// Leader window ID of the window.
 	xcb_window_t leader;
 	/// Cached topmost window ID of the window.
@@ -443,6 +439,13 @@ bool attr_pure win_is_focused_raw(const struct managed_win *w);
 
 /// check if window has ARGB visual
 bool attr_pure win_has_alpha(const struct managed_win *w);
+
+/// Whether it looks like a WM window. We consider a window WM window if
+/// it does not have a decedent with WM_STATE and it is not override-
+/// redirected itself.
+static inline bool attr_pure win_is_wmwin(const struct managed_win *w) {
+	return w->base.id == w->client_win && !w->a.override_redirect;
+}
 
 /// check if reg_ignore_valid is true for all windows above us
 bool attr_pure win_is_region_ignore_valid(session_t *ps, const struct managed_win *w);

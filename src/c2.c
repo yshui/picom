@@ -1571,7 +1571,7 @@ static bool c2_match_once_leaf_int(const struct managed_win *w, const c2_l_t *le
 		case C2_L_POVREDIR: predef_target = w->a.override_redirect; break;
 		case C2_L_PARGB: predef_target = win_has_alpha(w); break;
 		case C2_L_PFOCUSED: predef_target = win_is_focused_raw(w); break;
-		case C2_L_PWMWIN: predef_target = w->wmwin; break;
+		case C2_L_PWMWIN: predef_target = win_is_wmwin(w); break;
 		case C2_L_PBSHAPED: predef_target = w->bounding_shaped; break;
 		case C2_L_PROUNDED: predef_target = w->rounded_corners; break;
 		case C2_L_PCLIENT: predef_target = w->client_win; break;

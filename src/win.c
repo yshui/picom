@@ -149,13 +149,14 @@ static void win_update_focused(session_t *ps, struct managed_win *w) {
 	if (w->focused_force != UNSET) {
 		w->focused = w->focused_force;
 	} else {
+		bool is_wmwin = win_is_wmwin(w);
 		w->focused = win_is_focused_raw(w);
 
 		// Use wintype_focus, and treat WM windows and override-redirected
 		// windows specially
 		if (ps->o.wintype_option[w->window_type].focus ||
-		    (ps->o.mark_wmwin_focused && w->wmwin) ||
-		    (ps->o.mark_ovredir_focused && w->base.id == w->client_win && !w->wmwin) ||
+		    (ps->o.mark_wmwin_focused && is_wmwin) ||
+		    (ps->o.mark_ovredir_focused && w->base.id == w->client_win && !is_wmwin) ||
 		    (w->a.map_state == XCB_MAP_STATE_VIEWABLE &&
 		     c2_match(ps->c2_state, w, ps->o.focus_blacklist, NULL))) {
 			w->focused = true;
@@ -1465,8 +1466,6 @@ static xcb_window_t find_client_win(session_t *ps, xcb_window_t w) {
  */
 void win_recheck_client(session_t *ps, struct managed_win *w) {
 	assert(ps->server_grabbed);
-	// Initialize wmwin to false
-	w->wmwin = false;
 
 	// Look for the client window
 
@@ -1480,9 +1479,8 @@ void win_recheck_client(session_t *ps, struct managed_win *w) {
 	// client window
 	if (!cw) {
 		cw = w->base.id;
-		w->wmwin = !w->a.override_redirect;
 		log_debug("(%#010x): client self (%s)", w->base.id,
-		          (w->wmwin ? "wmwin" : "override-redirected"));
+		          (w->a.override_redirect ? "override-redirected" : "wmwin"));
 	}
 
 	// Unmark the old one
@@ -1629,7 +1627,6 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	    .leader = XCB_NONE,
 	    .cache_leader = XCB_NONE,
 	    .window_type = WINTYPE_UNKNOWN,
-	    .wmwin = false,
 	    .focused = false,
 	    .opacity = 0,
 	    .opacity_target = 0,
@@ -2367,9 +2364,8 @@ bool destroy_win_start(session_t *ps, struct win *w) {
 
 		if (win_check_flags_all(mw, WIN_FLAGS_CLIENT_STALE)) {
 			mw->client_win = mw->base.id;
-			mw->wmwin = !mw->a.override_redirect;
 			log_debug("(%#010x): client self (%s)", mw->base.id,
-			          (mw->wmwin ? "wmwin" : "override-redirected"));
+			          (mw->a.override_redirect ? "override-redirected" : "wmwin"));
 		}
 
 		// Clear some flags about stale window information. Because now
