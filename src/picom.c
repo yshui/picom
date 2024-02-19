@@ -2258,21 +2258,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->c2_state = c2_state_new(ps->atoms);
 
 	// Get needed atoms for c2 condition lists
-	if (!(c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.unredir_if_possible_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.paint_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.shadow_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.shadow_clip_list) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.fade_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.blur_background_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.invert_color_list) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.window_shader_fg_rules) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.opacity_rules) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.rounded_corners_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.corner_radius_rules) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.focus_blacklist))) {
-		log_error("Post-processing of conditionals failed, some of your rules "
-		          "might not work");
-	}
+	options_postprocess_c2_lists(ps->c2_state, &ps->c, &ps->o);
 
 	// Load shader source file specified in the shader rules
 	if (c2_list_foreach(ps->o.window_shader_fg_rules, load_shader_source_for_condition, ps)) {
