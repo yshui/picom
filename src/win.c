@@ -93,6 +93,7 @@ win_get_leader_property(struct x_connection *c, struct atom *atoms, xcb_window_t
 static xcb_window_t win_get_client_window(struct x_connection *c, struct atom *atoms,
                                           const struct managed_win *w);
 static void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client);
+static void win_on_win_size_change(session_t *ps, struct managed_win *w);
 
 /// Generate a "no corners" region function, from a function that returns the
 /// region via a region_t pointer argument. Corners of the window will be removed from
@@ -574,6 +575,16 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			win_update_bounding_shape(ps, w);
 			damaged = true;
 			win_clear_flags(w, WIN_FLAGS_SIZE_STALE);
+
+			// Window shape/size changed, invalidate the images we built
+			// log_trace("free out dated pict");
+			win_set_flags(w, WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_FACTOR_CHANGED);
+
+			win_release_mask(ps->backend_data, w);
+			win_release_shadow(ps->backend_data, w);
+			ps->pending_updates = true;
+			free_paint(ps, &w->paint);
+			free_paint(ps, &w->shadow_paint);
 		}
 
 		if (win_check_flags_all(w, WIN_FLAGS_POSITION_STALE)) {
@@ -1303,7 +1314,7 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 /**
  * Update cache data in struct _win that depends on window size.
  */
-void win_on_win_size_change(session_t *ps, struct managed_win *w) {
+static void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 	log_trace("Window %#010x (%s) size changed, was %dx%d, now %dx%d", w->base.id,
 	          w->name, w->widthb, w->heightb, w->g.width + w->g.border_width * 2,
 	          w->g.height + w->g.border_width * 2);
@@ -1319,13 +1330,6 @@ void win_on_win_size_change(session_t *ps, struct managed_win *w) {
 	// mapped.
 	assert(w->state != WSTATE_UNMAPPED && w->state != WSTATE_DESTROYING &&
 	       w->state != WSTATE_UNMAPPING);
-
-	// Invalidate the shadow we built
-	win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
-	win_release_mask(ps->backend_data, w);
-	win_release_shadow(ps->backend_data, w);
-	ps->pending_updates = true;
-	free_paint(ps, &w->shadow_paint);
 }
 
 /**
@@ -2021,16 +2025,6 @@ void win_update_bounding_shape(session_t *ps, struct managed_win *w) {
 	if (w->bounding_shaped && ps->o.detect_rounded_corners) {
 		w->rounded_corners = win_has_rounded_corners(w);
 	}
-
-	// Window shape changed, we should free old wpaint and shadow pict
-	// log_trace("free out dated pict");
-	win_set_flags(w, WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_FACTOR_CHANGED);
-	win_release_mask(ps->backend_data, w);
-	win_release_shadow(ps->backend_data, w);
-	ps->pending_updates = true;
-
-	free_paint(ps, &w->paint);
-	free_paint(ps, &w->shadow_paint);
 }
 
 /**

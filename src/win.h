@@ -325,10 +325,6 @@ void win_set_invert_color_force(session_t *ps, struct managed_win *w, switch_t v
 void win_set_focused(session_t *ps, struct managed_win *w);
 bool attr_pure win_should_fade(session_t *ps, const struct managed_win *w);
 void win_on_factor_change(session_t *ps, struct managed_win *w);
-/**
- * Update cache data in struct _win that depends on window size.
- */
-void win_on_win_size_change(session_t *ps, struct managed_win *w);
 void win_unmark_client(session_t *ps, struct managed_win *w);
 
 /**
