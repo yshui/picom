@@ -85,7 +85,9 @@ bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms
 /**
  * Update leader of a window.
  */
-static void win_update_leader(session_t *ps, struct managed_win *w);
+static xcb_window_t
+win_get_leader_property(struct x_connection *c, struct atom *atoms, xcb_window_t wid,
+                        bool detect_transient, bool detect_client_leader);
 
 /// Generate a "no corners" region function, from a function that returns the
 /// region via a region_t pointer argument. Corners of the window will be removed from
@@ -220,6 +222,29 @@ static inline bool group_is_focused(session_t *ps, xcb_window_t leader) {
 	}
 
 	return false;
+}
+
+/**
+ * Set leader of a window.
+ */
+static inline void win_set_leader(session_t *ps, struct managed_win *w, xcb_window_t nleader) {
+	xcb_window_t cache_leader_old = win_get_leader(ps, w);
+
+	w->leader = nleader;
+
+	// Forcefully do this to deal with the case when a child window
+	// gets mapped before parent, or when the window is a waypoint
+	clear_cache_win_leaders(ps);
+
+	// Update the old and new window group and active_leader if the
+	// window could affect their state.
+	xcb_window_t cache_leader = win_get_leader(ps, w);
+	if (win_is_focused_raw(w) && cache_leader_old != cache_leader) {
+		ps->active_leader = cache_leader;
+
+		group_on_factor_change(ps, cache_leader_old);
+		group_on_factor_change(ps, cache_leader);
+	}
 }
 
 /**
@@ -474,7 +499,13 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->aWM_CLIENT_LEADER) ||
 	    win_fetch_and_unset_property_stale(w, ps->atoms->aWM_TRANSIENT_FOR)) {
-		win_update_leader(ps, w);
+		auto new_leader = win_get_leader_property(&ps->c, ps->atoms, w->client_win,
+		                                          ps->o.detect_transient,
+		                                          ps->o.detect_client_leader);
+		if (w->leader != new_leader) {
+			win_set_leader(ps, w, new_leader);
+			win_set_flags(w, WIN_FLAGS_FACTOR_CHANGED);
+		}
 	}
 
 	win_clear_all_properties_stale(w);
@@ -1349,7 +1380,12 @@ void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client) 
 
 	// Get window group
 	if (ps->o.track_leader) {
-		win_update_leader(ps, w);
+		auto new_leader = win_get_leader_property(&ps->c, ps->atoms, w->client_win,
+		                                          ps->o.detect_transient,
+		                                          ps->o.detect_client_leader);
+		if (w->leader != new_leader) {
+			win_set_leader(ps, w, new_leader);
+		}
 	}
 
 	// Get window name and class if we are tracking them
@@ -1753,55 +1789,24 @@ struct win *fill_win(session_t *ps, struct win *w) {
 }
 
 /**
- * Set leader of a window.
- */
-static inline void win_set_leader(session_t *ps, struct managed_win *w, xcb_window_t nleader) {
-	// If the leader changes
-	if (w->leader != nleader) {
-		xcb_window_t cache_leader_old = win_get_leader(ps, w);
-
-		w->leader = nleader;
-
-		// Forcefully do this to deal with the case when a child window
-		// gets mapped before parent, or when the window is a waypoint
-		clear_cache_win_leaders(ps);
-
-		// Update the old and new window group and active_leader if the
-		// window could affect their state.
-		xcb_window_t cache_leader = win_get_leader(ps, w);
-		if (win_is_focused_raw(w) && cache_leader_old != cache_leader) {
-			ps->active_leader = cache_leader;
-
-			group_on_factor_change(ps, cache_leader_old);
-			group_on_factor_change(ps, cache_leader);
-		}
-
-		// Update everything related to conditions
-		win_on_factor_change(ps, w);
-	}
-}
-
-/**
  * Update leader of a window.
  */
-void win_update_leader(session_t *ps, struct managed_win *w) {
+static xcb_window_t
+win_get_leader_property(struct x_connection *c, struct atom *atoms, xcb_window_t wid,
+                        bool detect_transient, bool detect_client_leader) {
 	xcb_window_t leader = XCB_NONE;
 
 	// Read the leader properties
-	if (ps->o.detect_transient && !leader) {
-		leader =
-		    wid_get_prop_window(&ps->c, w->client_win, ps->atoms->aWM_TRANSIENT_FOR);
+	if (detect_transient) {
+		leader = wid_get_prop_window(c, wid, atoms->aWM_TRANSIENT_FOR);
 	}
 
-	if (ps->o.detect_client_leader && !leader) {
-		leader =
-		    wid_get_prop_window(&ps->c, w->client_win, ps->atoms->aWM_CLIENT_LEADER);
+	if (detect_client_leader && leader == XCB_NONE) {
+		leader = wid_get_prop_window(c, wid, atoms->aWM_CLIENT_LEADER);
 	}
 
-	win_set_leader(ps, w, leader);
-
-	log_trace("(%#010x): client %#010x, leader %#010x, cache %#010x", w->base.id,
-	          w->client_win, w->leader, win_get_leader(ps, w));
+	log_trace("window %#010x: leader %#010x", wid, leader);
+	return leader;
 }
 
 /**
