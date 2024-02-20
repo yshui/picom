@@ -1518,6 +1518,10 @@ static const char *c2_condition_to_str2(c2_ptr_t ptr) {
 	return buf;
 }
 
+const char *c2_lptr_to_str(const c2_lptr_t *ptr) {
+	return c2_condition_to_str2(ptr->ptr);
+}
+
 /// Get the list of target number values from a struct c2_property_value
 static inline const int64_t *
 c2_values_get_number_targets(const struct c2_property_value *values, int index, size_t *n) {

@@ -3,6 +3,28 @@
 ## New features
 
 * Allow `corner-radius-rules` to override `corner-radius = 0`. Previously setting corner radius to 0 globally disables rounded corners. (#1170)
+* New `picom-inspect` tool, which lets you test out your picom rules. Sample output:
+
+  ```
+  ...
+  Checking rounded-corners-exclude:
+      window_type = "dock" ... not matched
+      window_type = "desktop" ... not matched
+      window_type *= "menu" ... not matched
+      fullscreen = 1 ... not matched
+  Checking opacity-rule:
+      _NET_WM_STATE@[0] *= "_NET_WM_STATE_HIDDEN" ... not matched
+  Checking corner-radius-rule:
+      class_g = "Alacritty" ... matched/10
+
+  Here are some rule(s) that match this window:
+      name = '[0.2.1] ./picom-inspect: ~/p/picom(./picom-inspect: ~/p/picom)*'
+      class_i = 'Alacritty'
+      class_g = 'Alacritty'
+      window_type = 'normal'
+      ! fullscreen
+      border_width = 0
+  ```
 
 ## Notable changes
 

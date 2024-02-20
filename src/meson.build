@@ -44,7 +44,7 @@ if get_option('config_file')
 	deps += [dependency('libconfig', version: '>=1.4', required: true)]
 
 	cflags += ['-DCONFIG_LIBCONFIG']
-	srcs += [ 'config_libconfig.c' ]
+	srcs += [ 'config_libconfig.c', 'inspect.c' ]
 endif
 if get_option('regex')
 	pcre = dependency('libpcre2-8', required: true)
@@ -94,6 +94,10 @@ picom = executable('picom', srcs, c_args: cflags,
 
 if get_option('unittest')
 	test('picom unittest', picom, args: [ '--unittest' ])
+endif
+
+if get_option('config_file')
+	install_symlink('picom-inspect', install_dir: 'bin', pointing_to: 'picom')
 endif
 
 if cc.has_argument('-fsanitize=fuzzer')

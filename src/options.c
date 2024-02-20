@@ -19,6 +19,7 @@
 #include "options.h"
 #include "utils.h"
 #include "win.h"
+#include "x.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"
 
@@ -381,9 +382,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	while (-1 != (o = getopt_long(argc, argv, shortopts, longopts, &longopt_idx))) {
 		switch (o) {
 #define P_CASEBOOL(idx, option)                                                          \
-	case idx:                                                                        \
-		opt->option = true;                                                      \
-		break
+	case idx: opt->option = true; break
 #define P_CASELONG(idx, option)                                                          \
 	case idx:                                                                        \
 		if (!parse_long(optarg, &opt->option)) {                                 \
@@ -895,6 +894,50 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	}
 
 	return true;
+}
+
+void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c,
+                                  struct options *option) {
+	if (!(c2_list_postprocess(state, c->c, option->unredir_if_possible_blacklist) &&
+	      c2_list_postprocess(state, c->c, option->paint_blacklist) &&
+	      c2_list_postprocess(state, c->c, option->shadow_blacklist) &&
+	      c2_list_postprocess(state, c->c, option->shadow_clip_list) &&
+	      c2_list_postprocess(state, c->c, option->fade_blacklist) &&
+	      c2_list_postprocess(state, c->c, option->blur_background_blacklist) &&
+	      c2_list_postprocess(state, c->c, option->invert_color_list) &&
+	      c2_list_postprocess(state, c->c, option->window_shader_fg_rules) &&
+	      c2_list_postprocess(state, c->c, option->opacity_rules) &&
+	      c2_list_postprocess(state, c->c, option->rounded_corners_blacklist) &&
+	      c2_list_postprocess(state, c->c, option->corner_radius_rules) &&
+	      c2_list_postprocess(state, c->c, option->focus_blacklist))) {
+		log_error("Post-processing of conditionals failed, some of your rules "
+		          "might not work");
+	}
+}
+
+void options_destroy(struct options *options) {
+	// Free blacklists
+	c2_list_free(&options->shadow_blacklist, NULL);
+	c2_list_free(&options->shadow_clip_list, NULL);
+	c2_list_free(&options->fade_blacklist, NULL);
+	c2_list_free(&options->focus_blacklist, NULL);
+	c2_list_free(&options->invert_color_list, NULL);
+	c2_list_free(&options->blur_background_blacklist, NULL);
+	c2_list_free(&options->opacity_rules, NULL);
+	c2_list_free(&options->paint_blacklist, NULL);
+	c2_list_free(&options->unredir_if_possible_blacklist, NULL);
+	c2_list_free(&options->rounded_corners_blacklist, NULL);
+	c2_list_free(&options->corner_radius_rules, NULL);
+	c2_list_free(&options->window_shader_fg_rules, free);
+
+	free(options->write_pid_path);
+	free(options->logpath);
+
+	for (int i = 0; i < options->blur_kernel_count; ++i) {
+		free(options->blur_kerns[i]);
+	}
+	free(options->blur_kerns);
+	free(options->glx_fshader_win_str);
 }
 
 // vim: set noet sw=8 ts=8 :

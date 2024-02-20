@@ -556,4 +556,4 @@ Homepage: <https://github.com/yshui/picom>
 
 SEE ALSO
 --------
-*xcompmgr*(1), link:picom-trans.html[*picom-trans*(1)]
+*xcompmgr*(1), link:picom-inspect.html[*picom-inspect*(1)], link:picom-trans.html[*picom-trans*(1)]

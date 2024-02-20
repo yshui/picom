@@ -457,6 +457,29 @@ bool win_check_flags_all(struct managed_win *w, uint64_t flags);
 /// Mark properties as stale for a window
 void win_set_properties_stale(struct managed_win *w, const xcb_atom_t *prop, int nprops);
 
+xcb_window_t win_get_client_window(struct x_connection *c, struct atom *atoms,
+                                   const struct managed_win *w);
+bool win_update_wintype(struct x_connection *c, struct atom *atoms, struct managed_win *w);
+/**
+ * Retrieve frame extents from a window.
+ */
+void win_update_frame_extents(struct x_connection *c, struct atom *atoms,
+                              struct managed_win *w, xcb_window_t client,
+                              double frame_opacity);
+/**
+ * Retrieve the <code>WM_CLASS</code> of a window and update its
+ * <code>win</code> structure.
+ */
+bool win_update_class(struct x_connection *c, struct atom *atoms, struct managed_win *w);
+int win_update_role(struct x_connection *c, struct atom *atoms, struct managed_win *w);
+int win_update_name(struct x_connection *c, struct atom *atoms, struct managed_win *w);
+void win_on_win_size_change(struct managed_win *w, int shadow_offset_x,
+                            int shadow_offset_y, int shadow_radius);
+void win_update_bounding_shape(struct x_connection *c, struct managed_win *w,
+                               bool shape_exists, bool detect_rounded_corners);
+bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms,
+                                struct managed_win *w);
+
 static inline attr_unused void win_set_property_stale(struct managed_win *w, xcb_atom_t prop) {
 	return win_set_properties_stale(w, (xcb_atom_t[]){prop}, 1);
 }

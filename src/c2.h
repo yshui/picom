@@ -57,6 +57,9 @@ typedef bool (*c2_list_foreach_cb_t)(const c2_lptr_t *cond, void *data);
 bool c2_list_foreach(const c2_lptr_t *list, c2_list_foreach_cb_t cb, void *data);
 /// Return user data stored in a condition.
 void *c2_list_get_data(const c2_lptr_t *condlist);
+/// Convert a c2_lptr_t to string. The returned string is only valid until the
+/// next call to this function, and should not be freed.
+const char *c2_lptr_to_str(const c2_lptr_t *);
 
 /**
  * Destroy a condition list.

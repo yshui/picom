@@ -54,27 +54,11 @@ static const int ROUNDED_PIXELS = 1;
 static const double ROUNDED_PERCENT = 0.05;
 
 /**
- * Retrieve the <code>WM_CLASS</code> of a window and update its
- * <code>win</code> structure.
- */
-static bool
-win_update_class(struct x_connection *c, struct atom *atoms, struct managed_win *w);
-static int win_update_role(struct x_connection *c, struct atom *atoms, struct managed_win *w);
-static bool
-win_update_wintype(struct x_connection *c, struct atom *atoms, struct managed_win *w);
-static int win_update_name(struct x_connection *c, struct atom *atoms, struct managed_win *w);
-/**
  * Reread opacity property of a window.
  */
 static void win_update_opacity_prop(struct x_connection *c, struct atom *atoms,
                                     struct managed_win *w, bool detect_client_opacity);
 static void win_update_opacity_target(session_t *ps, struct managed_win *w);
-/**
- * Retrieve frame extents from a window.
- */
-static void
-win_update_frame_extents(struct x_connection *c, struct atom *atoms,
-                         struct managed_win *w, xcb_window_t client, double frame_opacity);
 static void win_update_prop_shadow_raw(struct x_connection *c, struct atom *atoms,
                                        struct managed_win *w);
 static bool
@@ -90,13 +74,7 @@ bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms
 static xcb_window_t
 win_get_leader_property(struct x_connection *c, struct atom *atoms, xcb_window_t wid,
                         bool detect_transient, bool detect_client_leader);
-static xcb_window_t win_get_client_window(struct x_connection *c, struct atom *atoms,
-                                          const struct managed_win *w);
 static void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t client);
-static void win_on_win_size_change(struct managed_win *w, int shadow_offset_x,
-                                   int shadow_offset_y, int shadow_radius);
-static void win_update_bounding_shape(struct x_connection *c, struct managed_win *w,
-                                      bool shape_exists, bool detect_rounded_corners);
 
 /// Generate a "no corners" region function, from a function that returns the
 /// region via a region_t pointer argument. Corners of the window will be removed from
@@ -735,7 +713,7 @@ int win_update_name(struct x_connection *c, struct atom *atoms, struct managed_w
 	return ret;
 }
 
-static int win_update_role(struct x_connection *c, struct atom *atoms, struct managed_win *w) {
+int win_update_role(struct x_connection *c, struct atom *atoms, struct managed_win *w) {
 	char **strlst = NULL;
 	int nstr = 0;
 
@@ -1319,8 +1297,8 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 /**
  * Update cache data in struct _win that depends on window size.
  */
-static void win_on_win_size_change(struct managed_win *w, int shadow_offset_x,
-                                   int shadow_offset_y, int shadow_radius) {
+void win_on_win_size_change(struct managed_win *w, int shadow_offset_x,
+                            int shadow_offset_y, int shadow_radius) {
 	log_trace("Window %#010x (%s) size changed, was %dx%d, now %dx%d", w->base.id,
 	          w->name, w->widthb, w->heightb, w->g.width + w->g.border_width * 2,
 	          w->g.height + w->g.border_width * 2);
@@ -1341,8 +1319,7 @@ static void win_on_win_size_change(struct managed_win *w, int shadow_offset_x,
 /**
  * Update window type.
  */
-static bool
-win_update_wintype(struct x_connection *c, struct atom *atoms, struct managed_win *w) {
+bool win_update_wintype(struct x_connection *c, struct atom *atoms, struct managed_win *w) {
 	const wintype_t wtype_old = w->window_type;
 
 	// Detect window type here
@@ -1478,8 +1455,8 @@ find_client_win(struct x_connection *c, struct atom *atoms, xcb_window_t w) {
  * @param ps current session
  * @param w struct _win of the parent window
  */
-static xcb_window_t win_get_client_window(struct x_connection *c, struct atom *atoms,
-                                          const struct managed_win *w) {
+xcb_window_t win_get_client_window(struct x_connection *c, struct atom *atoms,
+                                   const struct managed_win *w) {
 	// Always recursively look for a window with WM_STATE, as Fluxbox
 	// sets override-redirect flags on all frame windows.
 	xcb_window_t cw = find_client_win(c, atoms, w->base.id);
@@ -1844,8 +1821,7 @@ static xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int
  * Retrieve the <code>WM_CLASS</code> of a window and update its
  * <code>win</code> structure.
  */
-static bool
-win_update_class(struct x_connection *c, struct atom *atoms, struct managed_win *w) {
+bool win_update_class(struct x_connection *c, struct atom *atoms, struct managed_win *w) {
 	char **strlst = NULL;
 	int nstr = 0;
 
@@ -1972,8 +1948,8 @@ gen_by_val(win_extents);
  *
  * Mark the window shape as updated
  */
-static void win_update_bounding_shape(struct x_connection *c, struct managed_win *w,
-                                      bool shape_exists, bool detect_rounded_corners) {
+void win_update_bounding_shape(struct x_connection *c, struct managed_win *w,
+                               bool shape_exists, bool detect_rounded_corners) {
 	// We don't handle property updates of non-visible windows until they are
 	// mapped.
 	assert(w->state != WSTATE_UNMAPPED && w->state != WSTATE_DESTROYING &&

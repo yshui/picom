@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <libgen.h>
 #include <math.h>
 #include <sched.h>
 #include <stddef.h>
@@ -44,6 +45,7 @@
 #include "compiler.h"
 #include "config.h"
 #include "err.h"
+#include "inspect.h"
 #include "kernel.h"
 #include "picom.h"
 #include "win_defs.h"
@@ -2258,21 +2260,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ps->c2_state = c2_state_new(ps->atoms);
 
 	// Get needed atoms for c2 condition lists
-	if (!(c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.unredir_if_possible_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.paint_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.shadow_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.shadow_clip_list) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.fade_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.blur_background_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.invert_color_list) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.window_shader_fg_rules) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.opacity_rules) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.rounded_corners_blacklist) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.corner_radius_rules) &&
-	      c2_list_postprocess(ps->c2_state, ps->c.c, ps->o.focus_blacklist))) {
-		log_error("Post-processing of conditionals failed, some of your rules "
-		          "might not work");
-	}
+	options_postprocess_c2_lists(ps->c2_state, &ps->c, &ps->o);
 
 	// Load shader source file specified in the shader rules
 	if (c2_list_foreach(ps->o.window_shader_fg_rules, load_shader_source_for_condition, ps)) {
@@ -2639,18 +2627,7 @@ static void session_destroy(session_t *ps) {
 	list_init_head(&ps->window_stack);
 
 	// Free blacklists
-	c2_list_free(&ps->o.shadow_blacklist, NULL);
-	c2_list_free(&ps->o.shadow_clip_list, NULL);
-	c2_list_free(&ps->o.fade_blacklist, NULL);
-	c2_list_free(&ps->o.focus_blacklist, NULL);
-	c2_list_free(&ps->o.invert_color_list, NULL);
-	c2_list_free(&ps->o.blur_background_blacklist, NULL);
-	c2_list_free(&ps->o.opacity_rules, NULL);
-	c2_list_free(&ps->o.paint_blacklist, NULL);
-	c2_list_free(&ps->o.unredir_if_possible_blacklist, NULL);
-	c2_list_free(&ps->o.rounded_corners_blacklist, NULL);
-	c2_list_free(&ps->o.corner_radius_rules, NULL);
-	c2_list_free(&ps->o.window_shader_fg_rules, free);
+	options_destroy(&ps->o);
 	c2_state_free(ps->c2_state);
 
 	// Free tgt_{buffer,picture} and root_picture
@@ -2669,13 +2646,6 @@ static void session_destroy(session_t *ps) {
 	pixman_region32_fini(&ps->screen_reg);
 	free(ps->expose_rects);
 
-	free(ps->o.write_pid_path);
-	free(ps->o.logpath);
-	for (int i = 0; i < ps->o.blur_kernel_count; ++i) {
-		free(ps->o.blur_kerns[i]);
-	}
-	free(ps->o.blur_kerns);
-	free(ps->o.glx_fshader_win_str);
 	x_free_monitor_info(&ps->monitors);
 
 	render_statistics_destroy(&ps->render_stats);
@@ -2811,6 +2781,11 @@ int PICOM_MAIN(int argc, char **argv) {
 	bool all_xerrors = false, need_fork = false;
 	if (get_early_config(argc, argv, &config_file, &all_xerrors, &need_fork, &exit_code)) {
 		return exit_code;
+	}
+
+	char *exe_name = basename(argv[0]);
+	if (strcmp(exe_name, "picom-inspect") == 0) {
+		return inspect_main(argc, argv, config_file);
 	}
 
 	int pfds[2];
