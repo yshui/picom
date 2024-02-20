@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <libgen.h>
 #include <math.h>
 #include <sched.h>
 #include <stddef.h>
@@ -44,6 +45,7 @@
 #include "compiler.h"
 #include "config.h"
 #include "err.h"
+#include "inspect.h"
 #include "kernel.h"
 #include "picom.h"
 #include "win_defs.h"
@@ -2779,6 +2781,11 @@ int PICOM_MAIN(int argc, char **argv) {
 	bool all_xerrors = false, need_fork = false;
 	if (get_early_config(argc, argv, &config_file, &all_xerrors, &need_fork, &exit_code)) {
 		return exit_code;
+	}
+
+	char *exe_name = basename(argv[0]);
+	if (strcmp(exe_name, "picom-inspect") == 0) {
+		return inspect_main(argc, argv, config_file);
 	}
 
 	int pfds[2];
