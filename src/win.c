@@ -778,7 +778,7 @@ wid_get_prop_wintype(struct x_connection *c, struct atom *atoms, xcb_window_t wi
 
 	for (unsigned i = 0; i < prop.nitems; ++i) {
 		for (wintype_t j = 1; j < NUM_WINTYPES; ++j) {
-			if (get_atom_with_nul(atoms, WINTYPES[j], c->c) ==
+			if (get_atom_with_nul(atoms, WINTYPES[j].atom, c->c) ==
 			    (xcb_atom_t)prop.p32[i]) {
 				free_winprop(&prop);
 				return j;
@@ -2549,7 +2549,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	// Update window mode here to check for ARGB windows
 	w->mode = win_calc_mode(w);
 
-	log_debug("Window (%#010x) has type %s", w->base.id, WINTYPES[w->window_type]);
+	log_debug("Window (%#010x) has type %s", w->base.id, WINTYPES[w->window_type].name);
 
 	// XXX We need to make sure that win_data is available
 	// iff `state` is MAPPED

@@ -387,8 +387,11 @@ typedef struct session {
 
 /// Enumeration for window event hints.
 typedef enum { WIN_EVMODE_UNKNOWN, WIN_EVMODE_FRAME, WIN_EVMODE_CLIENT } win_evmode_t;
-
-extern const char *const WINTYPES[NUM_WINTYPES];
+struct wintype_info {
+	const char *name;
+	const char *atom;
+};
+extern const struct wintype_info WINTYPES[NUM_WINTYPES];
 extern session_t *ps_g;
 
 void ev_xcb_error(session_t *ps, xcb_generic_error_t *err);

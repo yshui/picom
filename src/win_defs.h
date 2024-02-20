@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 typedef enum {
-	WINTYPE_UNKNOWN,
+	WINTYPE_UNKNOWN = 0,
 	WINTYPE_DESKTOP,
 	WINTYPE_DOCK,
 	WINTYPE_TOOLBAR,

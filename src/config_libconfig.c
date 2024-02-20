@@ -659,7 +659,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 
 	// XXX ! Refactor all the wintype_* arrays into a struct
 	for (wintype_t i = 0; i < NUM_WINTYPES; ++i) {
-		parse_wintype_config(&cfg, WINTYPES[i], &opt->wintype_option[i],
+		parse_wintype_config(&cfg, WINTYPES[i].name, &opt->wintype_option[i],
 		                     &winopt_mask[i]);
 	}
 

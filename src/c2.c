@@ -1655,7 +1655,9 @@ static bool c2_match_once_leaf_string(struct atom *atoms, const struct managed_w
 	const char *predef_target = NULL;
 	if (leaf->predef != C2_L_PUNDEFINED) {
 		switch (leaf->predef) {
-		case C2_L_PWINDOWTYPE: predef_target = WINTYPES[w->window_type]; break;
+		case C2_L_PWINDOWTYPE:
+			predef_target = WINTYPES[w->window_type].name;
+			break;
 		case C2_L_PNAME: predef_target = w->name; break;
 		case C2_L_PCLASSG: predef_target = w->class_general; break;
 		case C2_L_PCLASSI: predef_target = w->class_instance; break;

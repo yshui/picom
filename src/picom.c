@@ -46,6 +46,7 @@
 #include "err.h"
 #include "kernel.h"
 #include "picom.h"
+#include "win_defs.h"
 #ifdef CONFIG_OPENGL
 #include "opengl.h"
 #endif
@@ -85,22 +86,24 @@ static void unredirect(session_t *ps);
 // === Global constants ===
 
 /// Name strings for window types.
-const char *const WINTYPES[] = {
-    [WINTYPE_UNKNOWN] = "unknown",
-    [WINTYPE_DESKTOP] = "desktop",
-    [WINTYPE_DOCK] = "dock",
-    [WINTYPE_TOOLBAR] = "toolbar",
-    [WINTYPE_MENU] = "menu",
-    [WINTYPE_UTILITY] = "utility",
-    [WINTYPE_SPLASH] = "splash",
-    [WINTYPE_DIALOG] = "dialog",
-    [WINTYPE_NORMAL] = "normal",
-    [WINTYPE_DROPDOWN_MENU] = "dropdown_menu",
-    [WINTYPE_POPUP_MENU] = "popup_menu",
-    [WINTYPE_TOOLTIP] = "tooltip",
-    [WINTYPE_NOTIFICATION] = "notification",
-    [WINTYPE_COMBO] = "combo",
-    [WINTYPE_DND] = "dnd",
+const struct wintype_info WINTYPES[] = {
+    [WINTYPE_UNKNOWN] = {"unknown", NULL},
+#define X(name, type) [WINTYPE_##type] = {#name, "_NET_WM_WINDOW_TYPE_" #type}
+    X(desktop, DESKTOP),
+    X(dock, DOCK),
+    X(toolbar, TOOLBAR),
+    X(menu, MENU),
+    X(utility, UTILITY),
+    X(splash, SPLASH),
+    X(dialog, DIALOG),
+    X(normal, NORMAL),
+    X(dropdown_menu, DROPDOWN_MENU),
+    X(popup_menu, POPUP_MENU),
+    X(tooltip, TOOLTIP),
+    X(notification, NOTIFICATION),
+    X(combo, COMBO),
+    X(dnd, DND),
+#undef X
 };
 
 // clang-format off
