@@ -621,6 +621,11 @@ static bool gl_win_shader_from_stringv(const char **vshader_strv,
 	return true;
 }
 
+void gl_root_change(backend_t *base, session_t *ps) {
+	auto gd = (struct gl_data *)base;
+	gl_resize(gd, ps->root_width, ps->root_height);
+}
+
 /**
  * Callback to run on root window size change.
  */

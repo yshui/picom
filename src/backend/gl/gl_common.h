@@ -153,6 +153,8 @@ bool gl_last_render_time(backend_t *backend_data, struct timespec *time);
 void gl_compose(backend_t *, image_handle image, coord_t image_dst, image_handle mask,
                 coord_t mask_dst, const region_t *reg_tgt, const region_t *reg_visible);
 
+void gl_root_change(backend_t *base, session_t *);
+
 void gl_resize(struct gl_data *, int width, int height);
 
 bool gl_init(struct gl_data *gd, session_t *);

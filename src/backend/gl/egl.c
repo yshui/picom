@@ -366,6 +366,7 @@ static void egl_diagnostics(backend_t *base) {
 struct backend_operations egl_ops = {
     .init = egl_init,
     .deinit = egl_deinit,
+    .root_change = gl_root_change,
     .bind_pixmap = egl_bind_pixmap,
     .release_image = gl_release_image,
     .prepare = gl_prepare,

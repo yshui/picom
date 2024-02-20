@@ -547,6 +547,7 @@ static void glx_diagnostics(backend_t *base) {
 struct backend_operations glx_ops = {
     .init = glx_init,
     .deinit = glx_deinit,
+    .root_change = gl_root_change,
     .bind_pixmap = glx_bind_pixmap,
     .release_image = gl_release_image,
     .prepare = gl_prepare,
