@@ -35,5 +35,6 @@ bool must_use get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_e
                       win_option_mask_t *winopt_mask);
 void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c,
                                   struct options *option);
+void options_destroy(struct options *options);
 
 // vim: set noet sw=8 ts=8:

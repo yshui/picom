@@ -2625,18 +2625,7 @@ static void session_destroy(session_t *ps) {
 	list_init_head(&ps->window_stack);
 
 	// Free blacklists
-	c2_list_free(&ps->o.shadow_blacklist, NULL);
-	c2_list_free(&ps->o.shadow_clip_list, NULL);
-	c2_list_free(&ps->o.fade_blacklist, NULL);
-	c2_list_free(&ps->o.focus_blacklist, NULL);
-	c2_list_free(&ps->o.invert_color_list, NULL);
-	c2_list_free(&ps->o.blur_background_blacklist, NULL);
-	c2_list_free(&ps->o.opacity_rules, NULL);
-	c2_list_free(&ps->o.paint_blacklist, NULL);
-	c2_list_free(&ps->o.unredir_if_possible_blacklist, NULL);
-	c2_list_free(&ps->o.rounded_corners_blacklist, NULL);
-	c2_list_free(&ps->o.corner_radius_rules, NULL);
-	c2_list_free(&ps->o.window_shader_fg_rules, free);
+	options_destroy(&ps->o);
 	c2_state_free(ps->c2_state);
 
 	// Free tgt_{buffer,picture} and root_picture
@@ -2655,13 +2644,6 @@ static void session_destroy(session_t *ps) {
 	pixman_region32_fini(&ps->screen_reg);
 	free(ps->expose_rects);
 
-	free(ps->o.write_pid_path);
-	free(ps->o.logpath);
-	for (int i = 0; i < ps->o.blur_kernel_count; ++i) {
-		free(ps->o.blur_kerns[i]);
-	}
-	free(ps->o.blur_kerns);
-	free(ps->o.glx_fshader_win_str);
 	x_free_monitor_info(&ps->monitors);
 
 	render_statistics_destroy(&ps->render_stats);

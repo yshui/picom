@@ -915,4 +915,29 @@ void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c
 	}
 }
 
+void options_destroy(struct options *options) {
+	// Free blacklists
+	c2_list_free(&options->shadow_blacklist, NULL);
+	c2_list_free(&options->shadow_clip_list, NULL);
+	c2_list_free(&options->fade_blacklist, NULL);
+	c2_list_free(&options->focus_blacklist, NULL);
+	c2_list_free(&options->invert_color_list, NULL);
+	c2_list_free(&options->blur_background_blacklist, NULL);
+	c2_list_free(&options->opacity_rules, NULL);
+	c2_list_free(&options->paint_blacklist, NULL);
+	c2_list_free(&options->unredir_if_possible_blacklist, NULL);
+	c2_list_free(&options->rounded_corners_blacklist, NULL);
+	c2_list_free(&options->corner_radius_rules, NULL);
+	c2_list_free(&options->window_shader_fg_rules, free);
+
+	free(options->write_pid_path);
+	free(options->logpath);
+
+	for (int i = 0; i < options->blur_kernel_count; ++i) {
+		free(options->blur_kerns[i]);
+	}
+	free(options->blur_kerns);
+	free(options->glx_fshader_win_str);
+}
+
 // vim: set noet sw=8 ts=8 :
