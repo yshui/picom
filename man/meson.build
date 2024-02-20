@@ -1,4 +1,4 @@
-mans = ['picom.1', 'picom-trans.1']
+mans = ['picom.1', 'picom-inspect.1', 'picom-trans.1']
 if get_option('with_docs')
 	a2x = find_program('a2x')
 	foreach m : mans
