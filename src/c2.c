@@ -1748,7 +1748,7 @@ c2_match_once_leaf(struct c2_state *state, const struct managed_win *w, const c2
 	log_verbose("Matching window %#010x (%s) against condition %s", wid, w->name,
 	            c2_condition_to_str2((c2_ptr_t){.l = (c2_l_t *)leaf, .isbranch = false}));
 
-	auto pattern_type = leaf->ptntype;
+	unsigned int pattern_type = leaf->ptntype;
 	if (pattern_type == C2_L_PTUNDEFINED) {
 		auto values = &w->c2_state.values[leaf->target_id];
 		if (values->type == C2_PROPERTY_TYPE_STRING) {
