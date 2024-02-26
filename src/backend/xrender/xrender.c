@@ -361,7 +361,7 @@ compose_impl(struct xrender_data *xd, struct xrender_image *xrimg, coord_t dst,
 
 static void compose(backend_t *base, image_handle image_, coord_t dst, image_handle mask_,
                     coord_t mask_dst, const region_t *reg_paint, const region_t *reg_visible) {
-	struct xrender_data *xd = (void *)base;
+	auto xd = (struct xrender_data *)base;
 	auto image = (struct xrender_image *)image_;
 	auto mask = (struct xrender_image *)mask_;
 	return compose_impl(xd, image, dst, mask, mask_dst, reg_paint, reg_visible,
@@ -369,7 +369,7 @@ static void compose(backend_t *base, image_handle image_, coord_t dst, image_han
 }
 
 static void fill(backend_t *base, struct color c, const region_t *clip) {
-	struct xrender_data *xd = (void *)base;
+	auto xd = (struct xrender_data *)base;
 	const rect_t *extent = pixman_region32_extents((region_t *)clip);
 	x_set_picture_clip_region(base->c, xd->back[2], 0, 0, clip);
 	// color is in X fixed point representation
@@ -394,7 +394,7 @@ static bool blur(backend_t *backend_data, double opacity, void *ctx_, image_hand
 		return true;
 	}
 
-	struct xrender_data *xd = (void *)backend_data;
+	auto xd = (struct xrender_data *)backend_data;
 	auto c = xd->base.c;
 	region_t reg_op;
 	pixman_region32_init(&reg_op);
@@ -591,7 +591,7 @@ static void release_image(backend_t *base, image_handle image) {
 }
 
 static void deinit(backend_t *backend_data) {
-	struct xrender_data *xd = (void *)backend_data;
+	auto xd = (struct xrender_data *)backend_data;
 	for (int i = 0; i < 256; i++) {
 		x_free_picture(xd->base.c, xd->alpha_pict[i]);
 	}
@@ -614,7 +614,7 @@ static void deinit(backend_t *backend_data) {
 }
 
 static void present(backend_t *base, const region_t *region) {
-	struct xrender_data *xd = (void *)base;
+	auto xd = (struct xrender_data *)base;
 	const rect_t *extent = pixman_region32_extents((region_t *)region);
 	int16_t orig_x = to_i16_checked(extent->x1), orig_y = to_i16_checked(extent->y1);
 	uint16_t region_width = to_u16_checked(extent->x2 - extent->x1),
@@ -647,8 +647,8 @@ static void present(backend_t *base, const region_t *region) {
 			return;
 		}
 		// TODO(yshui) don't block wait for present completion
-		xcb_present_generic_event_t *pev =
-		    (void *)xcb_wait_for_special_event(base->c->c, xd->present_event);
+		auto pev = (xcb_present_generic_event_t *)xcb_wait_for_special_event(
+		    base->c->c, xd->present_event);
 		if (!pev) {
 			// We don't know what happened, maybe X died
 			// But reset buffer age, so in case we do recover, we will
@@ -657,7 +657,7 @@ static void present(backend_t *base, const region_t *region) {
 			return;
 		}
 		assert(pev->evtype == XCB_PRESENT_COMPLETE_NOTIFY);
-		xcb_present_complete_notify_event_t *pcev = (void *)pev;
+		auto pcev = (xcb_present_complete_notify_event_t *)pev;
 		// log_trace("Present complete: %d %ld", pcev->mode, pcev->msc);
 		xd->buffer_age[xd->curr_back] = 1;
 
@@ -679,7 +679,7 @@ static void present(backend_t *base, const region_t *region) {
 }
 
 static int buffer_age(backend_t *backend_data) {
-	struct xrender_data *xd = (void *)backend_data;
+	auto xd = (struct xrender_data *)backend_data;
 	if (!xd->vsync) {
 		// Only the target picture really holds the screen content, and its
 		// content is always up to date. So buffer age is always 1.
@@ -715,7 +715,7 @@ new_inner(backend_t *base, int w, int h, xcb_visualid_t visual, uint8_t depth) {
 }
 
 static image_handle make_mask(backend_t *base, geometry_t size, const region_t *reg) {
-	struct xrender_data *xd = (void *)base;
+	auto xd = (struct xrender_data *)base;
 	// Give the mask a 1 pixel wide border to emulate the clamp to border behavior of
 	// OpenGL textures.
 	auto w16 = to_u16_checked(size.width + 2);
@@ -787,7 +787,7 @@ static bool decouple_image(backend_t *base, struct backend_image *img, const reg
 
 static bool image_op(backend_t *base, enum image_operations op, image_handle image,
                      const region_t *reg_op, const region_t *reg_visible, void *arg) {
-	struct xrender_data *xd = (void *)base;
+	auto xd = (struct xrender_data *)base;
 	auto img = (struct backend_image *)image;
 	region_t reg;
 	double *dargs = arg;
