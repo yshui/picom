@@ -24,7 +24,7 @@
 #include "win.h"
 #include "x.h"
 
-typedef struct _xrender_data {
+typedef struct xrender_data {
 	backend_t base;
 	/// If vsync is enabled and supported by the current system
 	bool vsync;
@@ -62,7 +62,7 @@ typedef struct _xrender_data {
 	xcb_xfixes_region_t present_region;
 } xrender_data;
 
-struct _xrender_blur_context {
+struct xrender_blur_context {
 	enum blur_method method;
 	/// Blur kernels converted to X format
 	struct x_convolution_kernel **x_blur_kernel;
@@ -73,7 +73,7 @@ struct _xrender_blur_context {
 	int x_blur_kernel_count;
 };
 
-struct _xrender_image_data_inner {
+struct xrender_image_data_inner {
 	// struct backend_image_inner_base
 	int refcount;
 	bool has_alpha;
@@ -173,9 +173,9 @@ make_rounded_corner_cache(struct x_connection *c, xcb_render_picture_t src, int 
 	return ret;
 }
 
-static xcb_render_picture_t process_mask(struct _xrender_data *xd, struct xrender_image *mask,
+static xcb_render_picture_t process_mask(struct xrender_data *xd, struct xrender_image *mask,
                                          xcb_render_picture_t alpha_pict, bool *allocated) {
-	auto inner = (struct _xrender_image_data_inner *)mask->base.inner;
+	auto inner = (struct xrender_image_data_inner *)mask->base.inner;
 	if (!mask->base.color_inverted && mask->base.corner_radius == 0) {
 		*allocated = false;
 		return inner->pict;
@@ -216,7 +216,7 @@ static xcb_render_picture_t process_mask(struct _xrender_data *xd, struct xrende
 }
 
 static void
-compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, coord_t dst,
+compose_impl(struct xrender_data *xd, struct xrender_image *xrimg, coord_t dst,
              struct xrender_image *mask, coord_t mask_dst, const region_t *reg_paint,
              const region_t *reg_visible, xcb_render_picture_t result) {
 	const struct backend_image *img = &xrimg->base;
@@ -226,7 +226,7 @@ compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, coord_t dst,
 		mask_pict = process_mask(
 		    xd, mask, img->opacity < 1.0 ? mask_pict : XCB_NONE, &mask_allocated);
 	}
-	auto inner = (struct _xrender_image_data_inner *)img->inner;
+	auto inner = (struct xrender_image_data_inner *)img->inner;
 	region_t reg;
 
 	bool has_alpha = inner->has_alpha || img->opacity != 1;
@@ -361,7 +361,7 @@ compose_impl(struct _xrender_data *xd, struct xrender_image *xrimg, coord_t dst,
 
 static void compose(backend_t *base, image_handle image_, coord_t dst, image_handle mask_,
                     coord_t mask_dst, const region_t *reg_paint, const region_t *reg_visible) {
-	struct _xrender_data *xd = (void *)base;
+	struct xrender_data *xd = (void *)base;
 	auto image = (struct xrender_image *)image_;
 	auto mask = (struct xrender_image *)mask_;
 	return compose_impl(xd, image, dst, mask, mask_dst, reg_paint, reg_visible,
@@ -369,7 +369,7 @@ static void compose(backend_t *base, image_handle image_, coord_t dst, image_han
 }
 
 static void fill(backend_t *base, struct color c, const region_t *clip) {
-	struct _xrender_data *xd = (void *)base;
+	struct xrender_data *xd = (void *)base;
 	const rect_t *extent = pixman_region32_extents((region_t *)clip);
 	x_set_picture_clip_region(base->c, xd->back[2], 0, 0, clip);
 	// color is in X fixed point representation
@@ -388,13 +388,13 @@ static void fill(backend_t *base, struct color c, const region_t *clip) {
 
 static bool blur(backend_t *backend_data, double opacity, void *ctx_, image_handle mask_,
                  coord_t mask_dst, const region_t *reg_blur, const region_t *reg_visible) {
-	auto bctx = (struct _xrender_blur_context *)ctx_;
+	auto bctx = (struct xrender_blur_context *)ctx_;
 	auto mask = (struct xrender_image *)mask_;
 	if (bctx->method == BLUR_METHOD_NONE) {
 		return true;
 	}
 
-	struct _xrender_data *xd = (void *)backend_data;
+	struct xrender_data *xd = (void *)backend_data;
 	auto c = xd->base.c;
 	region_t reg_op;
 	pixman_region32_init(&reg_op);
@@ -532,7 +532,7 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 	}
 
 	auto img = ccalloc(1, struct xrender_image);
-	auto inner = ccalloc(1, struct _xrender_image_data_inner);
+	auto inner = ccalloc(1, struct xrender_image_data_inner);
 	inner->depth = (uint8_t)fmt.visual_depth;
 	inner->width = img->base.ewidth = r->width;
 	inner->height = img->base.eheight = r->height;
@@ -557,7 +557,7 @@ bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool 
 	}
 	return (image_handle)img;
 }
-static void release_image_inner(backend_t *base, struct _xrender_image_data_inner *inner) {
+static void release_image_inner(backend_t *base, struct xrender_image_data_inner *inner) {
 	x_free_picture(base->c, inner->pict);
 	if (inner->owned) {
 		xcb_free_pixmap(base->c->c, inner->pixmap);
@@ -585,13 +585,13 @@ static void release_image(backend_t *base, image_handle image) {
 	img->rounded_rectangle = NULL;
 	img->base.inner->refcount -= 1;
 	if (img->base.inner->refcount == 0) {
-		release_image_inner(base, (struct _xrender_image_data_inner *)img->base.inner);
+		release_image_inner(base, (struct xrender_image_data_inner *)img->base.inner);
 	}
 	free(img);
 }
 
 static void deinit(backend_t *backend_data) {
-	struct _xrender_data *xd = (void *)backend_data;
+	struct xrender_data *xd = (void *)backend_data;
 	for (int i = 0; i < 256; i++) {
 		x_free_picture(xd->base.c, xd->alpha_pict[i]);
 	}
@@ -614,7 +614,7 @@ static void deinit(backend_t *backend_data) {
 }
 
 static void present(backend_t *base, const region_t *region) {
-	struct _xrender_data *xd = (void *)base;
+	struct xrender_data *xd = (void *)base;
 	const rect_t *extent = pixman_region32_extents((region_t *)region);
 	int16_t orig_x = to_i16_checked(extent->x1), orig_y = to_i16_checked(extent->y1);
 	uint16_t region_width = to_u16_checked(extent->x2 - extent->x1),
@@ -679,7 +679,7 @@ static void present(backend_t *base, const region_t *region) {
 }
 
 static int buffer_age(backend_t *backend_data) {
-	struct _xrender_data *xd = (void *)backend_data;
+	struct xrender_data *xd = (void *)backend_data;
 	if (!xd->vsync) {
 		// Only the target picture really holds the screen content, and its
 		// content is always up to date. So buffer age is always 1.
@@ -688,9 +688,9 @@ static int buffer_age(backend_t *backend_data) {
 	return xd->buffer_age[xd->curr_back];
 }
 
-static struct _xrender_image_data_inner *
+static struct xrender_image_data_inner *
 new_inner(backend_t *base, int w, int h, xcb_visualid_t visual, uint8_t depth) {
-	auto new_inner = ccalloc(1, struct _xrender_image_data_inner);
+	auto new_inner = ccalloc(1, struct xrender_image_data_inner);
 	new_inner->pixmap = x_create_pixmap(base->c, depth, w, h);
 	if (new_inner->pixmap == XCB_NONE) {
 		log_error("Failed to create pixmap for copy");
@@ -715,7 +715,7 @@ new_inner(backend_t *base, int w, int h, xcb_visualid_t visual, uint8_t depth) {
 }
 
 static image_handle make_mask(backend_t *base, geometry_t size, const region_t *reg) {
-	struct _xrender_data *xd = (void *)base;
+	struct xrender_data *xd = (void *)base;
 	// Give the mask a 1 pixel wide border to emulate the clamp to border behavior of
 	// OpenGL textures.
 	auto w16 = to_u16_checked(size.width + 2);
@@ -764,7 +764,7 @@ static bool decouple_image(backend_t *base, struct backend_image *img, const reg
 	if (img->inner->refcount == 1) {
 		return true;
 	}
-	auto inner = (struct _xrender_image_data_inner *)img->inner;
+	auto inner = (struct xrender_image_data_inner *)img->inner;
 	// Force new pixmap to a 32-bit ARGB visual to allow for transparent frames around
 	// non-transparent windows
 	auto visual = (inner->depth == 32)
@@ -787,7 +787,7 @@ static bool decouple_image(backend_t *base, struct backend_image *img, const reg
 
 static bool image_op(backend_t *base, enum image_operations op, image_handle image,
                      const region_t *reg_op, const region_t *reg_visible, void *arg) {
-	struct _xrender_data *xd = (void *)base;
+	struct xrender_data *xd = (void *)base;
 	auto img = (struct backend_image *)image;
 	region_t reg;
 	double *dargs = arg;
@@ -812,7 +812,7 @@ static bool image_op(backend_t *base, enum image_operations op, image_handle ima
 			return false;
 		}
 
-		auto inner = (struct _xrender_image_data_inner *)img->inner;
+		auto inner = (struct xrender_image_data_inner *)img->inner;
 		auto alpha_pict = xd->alpha_pict[(int)((1 - dargs[0]) * MAX_ALPHA)];
 		x_set_picture_clip_region(base->c, inner->pict, 0, 0, &reg);
 		xcb_render_composite(base->c->c, XCB_RENDER_PICT_OP_OUT_REVERSE,
@@ -828,7 +828,7 @@ static bool image_op(backend_t *base, enum image_operations op, image_handle ima
 
 static void *
 create_blur_context(backend_t *base attr_unused, enum blur_method method, void *args) {
-	auto ret = ccalloc(1, struct _xrender_blur_context);
+	auto ret = ccalloc(1, struct xrender_blur_context);
 	if (!method || method >= BLUR_METHOD_INVALID) {
 		ret->method = BLUR_METHOD_NONE;
 		return ret;
@@ -871,7 +871,7 @@ create_blur_context(backend_t *base attr_unused, enum blur_method method, void *
 }
 
 static void destroy_blur_context(backend_t *base attr_unused, void *ctx_) {
-	struct _xrender_blur_context *ctx = ctx_;
+	struct xrender_blur_context *ctx = ctx_;
 	for (int i = 0; i < ctx->x_blur_kernel_count; i++) {
 		free(ctx->x_blur_kernel[i]);
 	}
@@ -880,7 +880,7 @@ static void destroy_blur_context(backend_t *base attr_unused, void *ctx_) {
 }
 
 static void get_blur_size(void *blur_context, int *width, int *height) {
-	struct _xrender_blur_context *ctx = blur_context;
+	struct xrender_blur_context *ctx = blur_context;
 	*width = ctx->resize_width;
 	*height = ctx->resize_height;
 }
@@ -890,7 +890,7 @@ static backend_t *backend_xrender_init(session_t *ps, xcb_window_t target) {
 		log_warn("\"dithered-present\" is not supported by the xrender backend.");
 	}
 
-	auto xd = ccalloc(1, struct _xrender_data);
+	auto xd = ccalloc(1, struct xrender_data);
 	init_backend_base(&xd->base, ps);
 
 	for (int i = 0; i <= MAX_ALPHA; ++i) {
