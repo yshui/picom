@@ -191,7 +191,9 @@ bool rtkit_make_realtime(long thread, int priority) {
 	}
 	new_rlim = old_rlim;
 	new_rlim.rlim_cur = min3(new_rlim.rlim_max, (rlim_t)rttime_usec_max, 100000);        // 100ms
-	new_rlim.rlim_max = new_rlim.rlim_cur;
+	new_rlim.rlim_max = (rlim_t)rttime_usec_max;
+	log_info("Setting RLIMIT_RTTIME to: hard: %lld, soft: %lld",
+	         (long long)new_rlim.rlim_max, (long long)new_rlim.rlim_cur);
 	if (setrlimit(RLIMIT_RTTIME, &new_rlim) != 0) {
 		log_debug("Couldn't set RLIMIT_RTTIME.");
 		return false;

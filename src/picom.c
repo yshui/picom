@@ -1952,6 +1952,12 @@ static void exit_enable(EV_P attr_unused, ev_signal *w, int revents attr_unused)
 	quit(ps);
 }
 
+static void
+handle_xcpu_signal(EV_P attr_unused, ev_signal *w attr_unused, int revents attr_unused) {
+	log_info("Received XCPU signal, aborting...");
+	abort();
+}
+
 static void config_file_change_cb(void *_ps) {
 	auto ps = (struct session *)_ps;
 	reset_enable(ps->loop, NULL, 0);
@@ -2486,8 +2492,10 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// Set up SIGUSR1 signal handler to reset program
 	ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);
 	ev_signal_init(&ps->int_signal, exit_enable, SIGINT);
+	ev_signal_init(&ps->xcpu_signal, handle_xcpu_signal, SIGXCPU);
 	ev_signal_start(ps->loop, &ps->usr1_signal);
 	ev_signal_start(ps->loop, &ps->int_signal);
+	ev_signal_start(ps->loop, &ps->xcpu_signal);
 
 	// xcb can read multiple events from the socket when a request with reply is
 	// made.

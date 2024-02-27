@@ -153,6 +153,8 @@ typedef struct session {
 	ev_signal usr1_signal;
 	/// Signal handler for SIGINT
 	ev_signal int_signal;
+	/// Signal handler for SIGXCPU
+	ev_signal xcpu_signal;
 
 	// === Backend related ===
 	/// backend data
