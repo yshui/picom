@@ -608,7 +608,8 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 	// from the X server, which implies it has received our DamageSubtract request.
 	if (!w->ever_damaged) {
 		auto e = xcb_request_check(
-		    ps->c.c, xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE, XCB_NONE));
+		    ps->c.c,
+		    xcb_damage_subtract_checked(ps->c.c, w->damage, XCB_NONE, XCB_NONE));
 		if (e) {
 			if (ps->o.show_all_xerrors) {
 				x_print_error(e->sequence, e->major_code, e->minor_code,
