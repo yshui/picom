@@ -332,16 +332,18 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 			}
 		}
 
+		// The win_bind_shadow function must be called before checking if a window
+		// has shadow enabled because it disables shadow for a window on failure.
+		if (w->shadow && !w->shadow_image) {
+			struct color shadow_color = {.red = ps->o.shadow_red,
+			                             .green = ps->o.shadow_green,
+			                             .blue = ps->o.shadow_blue,
+			                             .alpha = ps->o.shadow_opacity};
+			win_bind_shadow(ps->backend_data, w, shadow_color, ps->shadow_context);
+		}
+
 		// Draw shadow on target
 		if (w->shadow) {
-			if (w->shadow_image == NULL) {
-				struct color shadow_color = {.red = ps->o.shadow_red,
-				                             .green = ps->o.shadow_green,
-				                             .blue = ps->o.shadow_blue,
-				                             .alpha = ps->o.shadow_opacity};
-				win_bind_shadow(ps->backend_data, w, shadow_color,
-				                ps->shadow_context);
-			}
 			// Clip region for the shadow
 			// reg_shadow \in reg_paint
 			auto reg_shadow = win_extents_by_val(w);
