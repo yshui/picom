@@ -47,6 +47,7 @@ struct vblank_scheduler {
 	xcb_window_t target_window;
 	enum vblank_scheduler_type type;
 	bool vblank_event_requested;
+	bool use_realtime_scheduling;
 };
 
 struct present_vblank_scheduler {
@@ -92,6 +93,7 @@ struct sgi_video_sync_vblank_scheduler {
 struct sgi_video_sync_thread_args {
 	struct sgi_video_sync_vblank_scheduler *self;
 	int start_status;
+	bool use_realtime_scheduling;
 	pthread_mutex_t start_mtx;
 	pthread_cond_t start_cnd;
 };
@@ -184,7 +186,11 @@ static void *sgi_video_sync_thread(void *data) {
 	}
 
 	log_init_tls();
-	set_rr_scheduling();
+
+	if (args->use_realtime_scheduling) {
+		set_rr_scheduling();
+	}
+
 	pthread_mutex_lock(&args->start_mtx);
 	args->start_status = 0;
 	pthread_cond_signal(&args->start_cnd);
@@ -258,6 +264,7 @@ static bool sgi_video_sync_scheduler_init(struct vblank_scheduler *base) {
 	auto args = (struct sgi_video_sync_thread_args){
 	    .self = self,
 	    .start_status = -1,
+	    .use_realtime_scheduling = base->use_realtime_scheduling,
 	};
 	bool succeeded = true;
 	pthread_mutex_init(&args.start_mtx, NULL);
@@ -543,8 +550,8 @@ void vblank_scheduler_free(struct vblank_scheduler *self) {
 }
 
 struct vblank_scheduler *
-vblank_scheduler_new(struct ev_loop *loop, struct x_connection *c,
-                     xcb_window_t target_window, enum vblank_scheduler_type type) {
+vblank_scheduler_new(struct ev_loop *loop, struct x_connection *c, xcb_window_t target_window,
+                     enum vblank_scheduler_type type, bool use_realtime_scheduling) {
 	size_t object_size = vblank_scheduler_ops[type].size;
 	auto init_fn = vblank_scheduler_ops[type].init;
 	if (!object_size || !init_fn) {
@@ -557,6 +564,7 @@ vblank_scheduler_new(struct ev_loop *loop, struct x_connection *c,
 	self->target_window = target_window;
 	self->c = c;
 	self->loop = loop;
+	self->use_realtime_scheduling = use_realtime_scheduling;
 	init_fn(self);
 	return self;
 }

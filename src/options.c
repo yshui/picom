@@ -185,6 +185,8 @@ static const struct picom_option picom_options[] = {
                                                                              "you want to attach a debugger to picom"},
     {"no-ewmh-fullscreen"          , no_argument      , 803, NULL          , "Do not use EWMH to detect fullscreen windows. Reverts to checking if a "
                                                                              "window is fullscreen based only on its size and coordinates."},
+    {"realtime"                    , no_argument      , 804, NULL          , "Enable realtime scheduling. This might reduce latency, but might also cause "
+                                                                             "other issues. Disable this if you see the compositor being killed."},
 };
 // clang-format on
 
@@ -750,6 +752,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		P_CASEBOOL(802, debug_mode);
 		P_CASEBOOL(803, no_ewmh_fullscreen);
+		P_CASEBOOL(804, use_realtime_scheduling);
 		default: usage(argv[0], 1); break;
 #undef P_CASEBOOL
 		}

@@ -282,6 +282,12 @@ void rolling_quantile_pop_front(struct rolling_quantile *rq, int x) {
 /// This requires the user to set up permissions for the real-time scheduling. e.g. by
 /// setting `ulimit -r`, or giving us the CAP_SYS_NICE capability.
 void set_rr_scheduling(void) {
+	static thread_local bool already_tried = false;
+	if (already_tried) {
+		return;
+	}
+	already_tried = true;
+
 	int priority = sched_get_priority_min(SCHED_RR);
 
 	if (rtkit_make_realtime(0, priority)) {

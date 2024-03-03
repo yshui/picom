@@ -1569,8 +1569,9 @@ static bool redirect_start(session_t *ps) {
 			    (enum vblank_scheduler_type)ps->o.debug_options.force_vblank_scheduler;
 		}
 		log_info("Using vblank scheduler: %s.", vblank_scheduler_str[scheduler_type]);
-		ps->vblank_scheduler = vblank_scheduler_new(
-		    ps->loop, &ps->c, session_get_target_window(ps), scheduler_type);
+		ps->vblank_scheduler =
+		    vblank_scheduler_new(ps->loop, &ps->c, session_get_target_window(ps),
+		                         scheduler_type, ps->o.use_realtime_scheduling);
 		if (!ps->vblank_scheduler) {
 			return false;
 		}
@@ -2740,7 +2741,10 @@ static void session_destroy(session_t *ps) {
  * @param ps current session
  */
 static void session_run(session_t *ps) {
-	set_rr_scheduling();
+	if (ps->o.use_realtime_scheduling) {
+		set_rr_scheduling();
+	}
+
 	// In benchmark mode, we want draw_timer handler to always be active
 	if (ps->o.benchmark) {
 		ev_timer_set(&ps->draw_timer, 0, 0);

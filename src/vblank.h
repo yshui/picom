@@ -40,8 +40,8 @@ typedef enum vblank_callback_action (*vblank_callback_t)(struct vblank_event *ev
 bool vblank_scheduler_schedule(struct vblank_scheduler *self, vblank_callback_t cb,
                                void *user_data);
 struct vblank_scheduler *
-vblank_scheduler_new(struct ev_loop *loop, struct x_connection *c,
-                     xcb_window_t target_window, enum vblank_scheduler_type type);
+vblank_scheduler_new(struct ev_loop *loop, struct x_connection *c, xcb_window_t target_window,
+                     enum vblank_scheduler_type type, bool use_realtime_scheduling);
 void vblank_scheduler_free(struct vblank_scheduler *);
 
 bool vblank_handle_x_events(struct vblank_scheduler *self);
