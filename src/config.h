@@ -152,6 +152,8 @@ typedef struct options {
 	bool no_x_selection;
 	/// Window type option override.
 	win_option_t wintype_option[NUM_WINTYPES];
+	/// Whether to set realtime scheduling policy for the compositor process.
+	bool use_realtime_scheduling;
 
 	// === VSync & software optimization ===
 	/// VSync method to use;
