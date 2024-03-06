@@ -31,6 +31,10 @@
 * Marginally improve performance when resizing/opening/closing windows. (#1190)
 * Type and format specifiers are no longer used in rules. These specifiers are what you put after the colon (':') in rules, e.g. the `:32c` in `"_GTK_FRAME_EXTENTS@:32c"`. Now this information is ignored and the property is matched regardless of format or type.
 
+## Bug fixes
+
+* Fix ghosting artifacts that sometimes occur when window manager is restarted (#1081)
+
 ## Dependency changes
 
 * picom now optionally depends on `rtkit` at runtime to give itself realtime scheduling priority.
