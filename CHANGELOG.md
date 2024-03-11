@@ -34,6 +34,7 @@
 ## Bug fixes
 
 * Fix ghosting artifacts that sometimes occur when window manager is restarted (#1081)
+* Fix a bug where rounded corner is disabled after making a window fullscreen and back (#1216)
 
 ## Dependency changes
 
