@@ -1035,10 +1035,6 @@ win_update_prop_shadow(struct x_connection *c, struct atom *atoms, struct manage
 bool win_update_prop_fullscreen(struct x_connection *c, const struct atom *atoms,
                                 struct managed_win *w) {
 	auto prop = x_get_prop(c, w->client_win, atoms->a_NET_WM_STATE, 12, XCB_ATOM_ATOM, 0);
-	if (!prop.nitems) {
-		return false;
-	}
-
 	bool is_fullscreen = false;
 	for (uint32_t i = 0; i < prop.nitems; i++) {
 		if (prop.atom[i] == atoms->a_NET_WM_STATE_FULLSCREEN) {
