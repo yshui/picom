@@ -503,9 +503,23 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 
 /// Handle non-image flags. This phase might set IMAGES_STALE flags
 void win_process_update_flags(session_t *ps, struct managed_win *w) {
-	// Whether the window was visible before we process the mapped flag. i.e.
-	// is the window just mapped.
-	bool was_visible = win_is_real_visible(w);
+	// The window can have 3 different states of visibility:
+	//   1. The window is mapped and visible.
+	//   2. The window is unmapped and not visible.
+	//   3. The window is unmapped or destroyed, but still visible (fading out).
+	// (note the window cannot be in destroyed state in this function)
+	//
+	// `was_visible` captures (1) and (3) before the MAPPED flag is processed.
+	// `win_is_real_visible` captures (1) only. Only window with (1) has a
+	// pixmap.
+	//
+	// It is important that `was_visible` tracks (1) and (3). Because we do not
+	// process window flags for unmapped windows, so an window fading out won't
+	// move even if the underlying unmapped window is moved. When the window is
+	// mapped again when it's still fading out, it should have the same effect
+	// as a mapped window being moved, meaning we have to add both the previous
+	// and the new window extents to damage.
+	bool was_visible = win_is_real_visible(w) || w->state == WSTATE_UNMAPPING;
 	log_trace("Processing flags for window %#010x (%s), was visible: %d, flags: "
 	          "%#" PRIx64,
 	          w->base.id, w->name, was_visible, w->flags);
@@ -516,7 +530,8 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	}
 
 	if (!win_is_real_visible(w)) {
-		// Flags of invisible windows are processed when they are mapped
+		// Window is not mapped, so we ignore all its changes until it's mapped
+		// again.
 		return;
 	}
 
@@ -537,12 +552,6 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 			// Mark the old extents of this window as damaged. The new
 			// extents will be marked damaged below, after the window
 			// extents are updated.
-			//
-			// If the window is just mapped, we don't need to mark the
-			// old extent as damaged. (It's possible that the window
-			// was in fading and is interrupted by being mapped. In
-			// that case, the fading window will be added to damage by
-			// map_win_start, so we don't need to do it here)
 			add_damage_from_win(ps, w);
 		}
 
@@ -2498,20 +2507,6 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 		log_warn("Mapping an already mapped window");
 		return;
 	}
-
-	if (w->state == WSTATE_UNMAPPING) {
-		CHECK(!win_skip_fading(ps, w));
-		// We skipped the unmapping process, the window was rendered, now
-		// it is not anymore. So we need to mark the then unmapping window
-		// as damaged.
-		//
-		// Solves problem when, for example, a window is unmapped then
-		// mapped in a different location
-		add_damage_from_win(ps, w);
-		assert(w);
-	}
-
-	assert(w->state == WSTATE_UNMAPPED);
 
 	// Rant: window size could change after we queried its geometry here and
 	// before we get its pixmap. Later, when we get back to the event
