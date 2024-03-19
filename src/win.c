@@ -27,6 +27,7 @@
 #include "region.h"
 #include "render.h"
 #include "string_utils.h"
+#include "transition.h"
 #include "types.h"
 #include "uthash_extra.h"
 #include "utils.h"
@@ -799,7 +800,7 @@ bool win_client_has_alpha(const struct managed_win *w) {
 }
 
 winmode_t win_calc_mode(const struct managed_win *w) {
-	if (w->opacity < 1.0) {
+	if (animatable_get(&w->opacity) < 1.0) {
 		return WMODE_TRANS;
 	}
 
@@ -846,7 +847,7 @@ winmode_t win_calc_mode(const struct managed_win *w) {
  *
  * @return target opacity
  */
-double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
+static double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
 	double opacity = 1;
 
 	if (w->state == WSTATE_UNMAPPED) {
@@ -880,6 +881,21 @@ double win_calc_opacity_target(session_t *ps, const struct managed_win *w) {
 	}
 
 	return opacity;
+}
+
+/// Call `animatable_set_target` on the opacity of a window, with appropriate
+/// target opacity and duration.
+///
+/// @return duration of the fade
+static inline unsigned int win_start_fade(session_t *ps, struct managed_win *w) {
+	double current_opacity = animatable_get(&w->opacity),
+	       target_opacity = win_calc_opacity_target(ps, w);
+	double step_size =
+	    target_opacity > current_opacity ? ps->o.fade_in_step : ps->o.fade_out_step;
+	unsigned int duration =
+	    (unsigned int)(fabs(target_opacity - current_opacity) / step_size);
+	animatable_set_target(&w->opacity, target_opacity, duration);
+	return duration;
 }
 
 /**
@@ -1605,8 +1621,6 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	    .cache_leader = XCB_NONE,
 	    .window_type = WINTYPE_UNKNOWN,
 	    .focused = false,
-	    .opacity = 0,
-	    .opacity_target = 0,
 	    .has_opacity_prop = false,
 	    .opacity_prop = OPAQUE,
 	    .opacity_is_set = false,
@@ -1685,6 +1699,8 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	new->base = *w;
 	new->base.managed = true;
 	new->a = *a;
+	new->opacity = animatable_new(0, linear_interpolator, NULL);
+	new->blur_opacity = animatable_new(0, linear_interpolator, NULL);
 	pixman_region32_init(&new->bounding_shape);
 
 	free(a);
@@ -2386,8 +2402,8 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->state = WSTATE_UNMAPPING;
-	w->opacity_target_old = fmax(w->opacity_target, w->opacity_target_old);
-	w->opacity_target = win_calc_opacity_target(ps, w);
+	auto duration = win_start_fade(ps, w);
+	animatable_set_target(&w->blur_opacity, 0, duration);
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
@@ -2410,13 +2426,13 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
  *
  * @return whether the window is destroyed and freed
  */
-bool win_check_fade_finished(session_t *ps, struct managed_win *w) {
+bool win_maybe_finalize_fading(session_t *ps, struct managed_win *w) {
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
 		// No fading in progress
-		assert(w->opacity_target == w->opacity);
+		assert(!animatable_is_animating(&w->opacity));
 		return false;
 	}
-	if (w->opacity == w->opacity_target) {
+	if (!animatable_is_animating(&w->opacity)) {
 		switch (w->state) {
 		case WSTATE_UNMAPPING: unmap_win_finish(ps, w); return false;
 		case WSTATE_DESTROYING: destroy_win_finish(ps, &w->base); return true;
@@ -2435,12 +2451,13 @@ bool win_check_fade_finished(session_t *ps, struct managed_win *w) {
 /// @return whether the window is destroyed and freed
 bool win_skip_fading(session_t *ps, struct managed_win *w) {
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
-		assert(w->opacity_target == w->opacity);
+		assert(!animatable_is_animating(&w->opacity));
 		return false;
 	}
 	log_debug("Skipping fading process of window %#010x (%s)", w->base.id, w->name);
-	w->opacity = w->opacity_target;
-	return win_check_fade_finished(ps, w);
+	animatable_early_stop(&w->opacity);
+	animatable_early_stop(&w->blur_opacity);
+	return win_maybe_finalize_fading(ps, w);
 }
 
 // TODO(absolutelynothelix): rename to x_update_win_(randr_?)monitor and move to
@@ -2514,11 +2531,11 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	// XXX We need to make sure that win_data is available
 	// iff `state` is MAPPED
 	w->state = WSTATE_MAPPING;
-	w->opacity_target_old = 0;
-	w->opacity_target = win_calc_opacity_target(ps, w);
+	auto duration = win_start_fade(ps, w);
+	animatable_set_target(&w->blur_opacity, 1, duration);
 
 	log_debug("Window %#010x has opacity %f, opacity target is %f", w->base.id,
-	          w->opacity, w->opacity_target);
+	          animatable_get(&w->opacity), w->opacity.target);
 
 	// Cannot set w->ever_damaged = false here, since window mapping could be
 	// delayed, so a damage event might have already arrived before this
@@ -2546,49 +2563,25 @@ void map_win_start(session_t *ps, struct managed_win *w) {
  * Update target window opacity depending on the current state.
  */
 void win_update_opacity_target(session_t *ps, struct managed_win *w) {
-	auto opacity_target_old = w->opacity_target;
-	w->opacity_target = win_calc_opacity_target(ps, w);
+	auto duration = win_start_fade(ps, w);
 
-	if (opacity_target_old == w->opacity_target) {
+	if (!animatable_is_animating(&w->opacity)) {
 		return;
 	}
 
+	log_debug("Window %#010x (%s) opacity %f, opacity target %f, start %f", w->base.id,
+	          w->name, animatable_get(&w->opacity), w->opacity.target, w->opacity.start);
 	if (w->state == WSTATE_MAPPED) {
 		// Opacity target changed while MAPPED. Transition to FADING.
-		assert(w->opacity == opacity_target_old);
-		w->opacity_target_old = opacity_target_old;
 		w->state = WSTATE_FADING;
-		log_debug("Window %#010x (%s) opacity %f, opacity target %f, set "
-		          "old target %f",
-		          w->base.id, w->name, w->opacity, w->opacity_target,
-		          w->opacity_target_old);
 	} else if (w->state == WSTATE_MAPPING) {
-		// Opacity target changed while fading in.
-		if (w->opacity >= w->opacity_target) {
-			// Already reached new target opacity. Transition to
-			// FADING.
-			map_win_finish(w);
-			w->opacity_target_old = fmax(opacity_target_old, w->opacity);
-			w->state = WSTATE_FADING;
-			log_debug("Window %#010x (%s) opacity %f already reached "
-			          "new opacity target %f while mapping, set old "
-			          "target %f",
-			          w->base.id, w->name, w->opacity, w->opacity_target,
-			          w->opacity_target_old);
-		}
+		// Opacity target changed while fading in, keep the blur_opacity
+		// in lock step with the opacity
+		animatable_set_target(&w->blur_opacity, w->blur_opacity.target, duration);
+		log_debug("Opacity changed while fading in");
 	} else if (w->state == WSTATE_FADING) {
 		// Opacity target changed while FADING.
-		if ((w->opacity < opacity_target_old && w->opacity > w->opacity_target) ||
-		    (w->opacity > opacity_target_old && w->opacity < w->opacity_target)) {
-			// Changed while fading in and will fade out or while
-			// fading out and will fade in.
-			w->opacity_target_old = opacity_target_old;
-			log_debug("Window %#010x (%s) opacity %f already reached "
-			          "new opacity target %f while fading, set "
-			          "old target %f",
-			          w->base.id, w->name, w->opacity, w->opacity_target,
-			          w->opacity_target_old);
-		}
+		log_debug("Opacity changed while already fading");
 	}
 
 	if (!ps->redirected) {

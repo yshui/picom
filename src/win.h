@@ -16,6 +16,7 @@
 #include "list.h"
 #include "region.h"
 #include "render.h"
+#include "transition.h"
 #include "types.h"
 #include "utils.h"
 #include "win_defs.h"
@@ -205,12 +206,12 @@ struct managed_win {
 	bool is_ewmh_focused;
 
 	// Opacity-related members
-	/// Current window opacity.
-	double opacity;
-	/// Target window opacity.
-	double opacity_target;
-	/// Previous window opacity.
-	double opacity_target_old;
+	/// Window opacity
+	struct animatable opacity;
+	/// Opacity of the window's background blur
+	/// Used to gracefully fade in/out the window, otherwise the blur
+	/// would be at full/zero intensity immediately which will be jarring.
+	struct animatable blur_opacity;
 	/// true if window (or client window, for broken window managers
 	/// not transferring client window's _NET_WM_WINDOW_OPACITY value) has opacity
 	/// prop
@@ -327,20 +328,6 @@ bool attr_pure win_should_fade(session_t *ps, const struct managed_win *w);
 void win_on_factor_change(session_t *ps, struct managed_win *w);
 void win_unmark_client(session_t *ps, struct managed_win *w);
 
-/**
- * Calculate and return the opacity target of a window.
- *
- * The priority of opacity settings are:
- *
- * inactive_opacity_override (if set, and unfocused) > _NET_WM_WINDOW_OPACITY (if set) >
- * opacity-rules (if matched) > window type default opacity > active/inactive opacity
- *
- * @param ps           current session
- * @param w            struct _win object representing the window
- *
- * @return target opacity
- */
-double attr_pure win_calc_opacity_target(session_t *ps, const struct managed_win *w);
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 
 void win_update_monitor(struct x_monitors *monitors, struct managed_win *mw);
@@ -397,7 +384,7 @@ void restack_top(session_t *ps, struct win *w);
 /**
  * Execute fade callback of a window if fading finished.
  */
-bool must_use win_check_fade_finished(session_t *ps, struct managed_win *w);
+bool must_use win_maybe_finalize_fading(session_t *ps, struct managed_win *w);
 
 // Stop receiving events (except ConfigureNotify, XXX why?) from a window
 void win_ev_stop(session_t *ps, const struct win *w);

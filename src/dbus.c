@@ -24,6 +24,7 @@
 #include "list.h"
 #include "log.h"
 #include "string_utils.h"
+#include "transition.h"
 #include "types.h"
 #include "uthash_extra.h"
 #include "utils.h"
@@ -991,14 +992,17 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_win_get_do(class_general, cdbus_reply_string);
 	cdbus_m_win_get_do(role, cdbus_reply_string);
 
-	cdbus_m_win_get_do(opacity, cdbus_reply_double);
-	cdbus_m_win_get_do(opacity_target, cdbus_reply_double);
+	cdbus_m_win_get_do(opacity.target, cdbus_reply_double);
 	cdbus_m_win_get_do(has_opacity_prop, cdbus_reply_bool);
 	cdbus_m_win_get_do(opacity_prop, cdbus_reply_uint32);
 	cdbus_m_win_get_do(opacity_is_set, cdbus_reply_bool);
 	cdbus_m_win_get_do(opacity_set, cdbus_reply_double);
 
 	cdbus_m_win_get_do(frame_opacity, cdbus_reply_double);
+	if (strcmp(target, "opacity") == 0) {
+		cdbus_reply_double(ps, msg, animatable_get(&w->opacity));
+		return true;
+	}
 	if (!strcmp("left_width", target)) {
 		cdbus_reply_int32(ps, msg, w->frame_extents.left);
 		return true;

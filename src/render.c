@@ -12,6 +12,7 @@
 
 #include "common.h"
 #include "options.h"
+#include "transition.h"
 
 #ifdef CONFIG_OPENGL
 #include "backend/gl/glx.h"
@@ -436,6 +437,7 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 	const int y = w->g.y;
 	const uint16_t wid = to_u16_checked(w->widthb);
 	const uint16_t hei = to_u16_checked(w->heightb);
+	const double window_opacity = animatable_get(&w->opacity);
 
 	xcb_render_picture_t pict = w->paint.pict;
 
@@ -472,7 +474,7 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 	}
 
 	if (w->frame_opacity == 1) {
-		paint_region(ps, w, 0, 0, wid, hei, w->opacity, reg_paint, pict);
+		paint_region(ps, w, 0, 0, wid, hei, window_opacity, reg_paint, pict);
 	} else {
 		// Painting parameters
 		const margin_t extents = win_calc_frame_extents(w);
@@ -482,8 +484,8 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 		auto const r = extents.right;
 
 #define COMP_BDR(cx, cy, cwid, chei)                                                     \
-	paint_region(ps, w, (cx), (cy), (cwid), (chei), w->frame_opacity * w->opacity,   \
-	             reg_paint, pict)
+	paint_region(ps, w, (cx), (cy), (cwid), (chei),                                  \
+	             w->frame_opacity *window_opacity, reg_paint, pict)
 
 		// Sanitize the margins, in case some broken WM makes
 		// top_width + bottom_width > height in some cases.
@@ -542,7 +544,7 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 
 			// body
 			paint_region(ps, w, cleft, ctop, body_width, body_height,
-			             w->opacity, reg_paint, pict);
+			             window_opacity, reg_paint, pict);
 		} while (0);
 	}
 
@@ -557,7 +559,7 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 	if (w->dim) {
 		double dim_opacity = ps->o.inactive_dim;
 		if (!ps->o.inactive_dim_fixed) {
-			dim_opacity *= w->opacity;
+			dim_opacity *= window_opacity;
 		}
 
 		switch (ps->o.backend) {
@@ -899,12 +901,13 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 	auto const wid = to_u16_checked(w->widthb);
 	auto const hei = to_u16_checked(w->heightb);
 	const int cr = w ? w->corner_radius : 0;
+	const double window_opacity = animatable_get(&w->opacity);
 
 	double factor_center = 1.0;
 	// Adjust blur strength according to window opacity, to make it appear
 	// better during fading
 	if (!ps->o.blur_background_fixed) {
-		double pct = 1.0 - w->opacity * (1.0 - 1.0 / 9.0);
+		double pct = 1.0 - window_opacity * (1.0 - 1.0 / 9.0);
 		factor_center = pct * 8.0 / (1.1 - pct);
 	}
 
@@ -1143,7 +1146,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 		}
 
 		// Only clip shadows above visible windows
-		if (w->opacity * MAX_ALPHA >= 1) {
+		if (animatable_get(&w->opacity) * MAX_ALPHA >= 1) {
 			if (w->clip_shadow_above) {
 				// Add window bounds to shadow-clip region
 				pixman_region32_union(&reg_shadow_clip, &reg_shadow_clip,
