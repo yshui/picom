@@ -86,7 +86,7 @@ struct gl_texture {
 
 	// Textures for auxiliary uses.
 	GLuint auxiliary_texture[2];
-	gl_win_shader_t *shader;
+	const gl_win_shader_t *shader;
 	void *user_data;
 };
 
@@ -144,7 +144,7 @@ void *gl_create_window_shader(backend_t *backend_data, const char *source);
 void gl_destroy_window_shader(backend_t *backend_data, void *shader);
 uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
 bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
-                           image_handle image, void *args);
+                           image_handle image, const void *args);
 bool gl_last_render_time(backend_t *backend_data, struct timespec *time);
 
 /**

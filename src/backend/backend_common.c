@@ -467,11 +467,11 @@ image_handle default_clone_image(backend_t *base attr_unused, image_handle image
 }
 
 bool default_set_image_property(backend_t *base attr_unused, enum image_properties op,
-                                image_handle image, void *arg) {
+                                image_handle image, const void *arg) {
 	auto tex = (struct backend_image *)image;
-	int *iargs = arg;
-	bool *bargs = arg;
-	double *dargs = arg;
+	const int *iargs = arg;
+	const bool *bargs = arg;
+	const double *dargs = arg;
 	switch (op) {
 	case IMAGE_PROPERTY_INVERTED: tex->color_inverted = bargs[0]; break;
 	case IMAGE_PROPERTY_DIM_LEVEL: tex->dim = dargs[0]; break;

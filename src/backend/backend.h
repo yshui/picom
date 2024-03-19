@@ -335,7 +335,7 @@ struct backend_operations {
 	 * @return             whether the operation is successful
 	 */
 	bool (*set_image_property)(backend_t *backend_data, enum image_properties prop,
-	                           image_handle image, void *args) attr_nonnull(1, 3);
+	                           image_handle image, const void *args) attr_nonnull(1, 3);
 
 	/**
 	 * Manipulate an image. Image properties are untouched.

@@ -148,7 +148,7 @@ image_handle dummy_make_mask(struct backend_base *base, geometry_t size attr_unu
 }
 
 bool dummy_set_image_property(struct backend_base *base, enum image_properties prop attr_unused,
-                              image_handle image, void *arg attr_unused) {
+                              image_handle image, const void *arg attr_unused) {
 	dummy_check_image(base, image);
 	return true;
 }

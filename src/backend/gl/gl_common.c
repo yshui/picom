@@ -1242,7 +1242,7 @@ bool gl_image_op(backend_t *base, enum image_operations op, image_handle image,
 }
 
 bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
-                           image_handle image, void *args) {
+                           image_handle image, const void *args) {
 	if (prop != IMAGE_PROPERTY_CUSTOM_SHADER) {
 		return default_set_image_property(backend_data, prop, image, args);
 	}

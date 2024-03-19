@@ -75,5 +75,5 @@ struct dual_kawase_params *generate_dual_kawase_params(void *args);
 image_handle default_clone_image(backend_t *base, image_handle image, const region_t *reg);
 bool default_is_image_transparent(backend_t *base attr_unused, image_handle image);
 bool default_set_image_property(backend_t *base attr_unused, enum image_properties op,
-                                image_handle image, void *arg);
+                                image_handle image, const void *arg);
 struct backend_image *default_new_backend_image(int w, int h);

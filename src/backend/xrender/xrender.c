@@ -986,10 +986,10 @@ image_handle xrender_clone_image(backend_t *base attr_unused, image_handle image
 }
 
 static bool xrender_set_image_property(backend_t *base, enum image_properties op,
-                                       image_handle image, void *args) {
+                                       image_handle image, const void *args) {
 	auto xrimg = (struct xrender_image *)image;
 	if (op == IMAGE_PROPERTY_CORNER_RADIUS &&
-	    ((double *)args)[0] != xrimg->base.corner_radius) {
+	    ((const double *)args)[0] != xrimg->base.corner_radius) {
 		// Free cached rounded rectangle if corner radius changed
 		xrender_release_rounded_corner_cache(base, xrimg->rounded_rectangle);
 		xrimg->rounded_rectangle = NULL;
