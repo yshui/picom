@@ -10,6 +10,7 @@
 #include "config.h"
 #include "log.h"
 #include "region.h"
+#include "transition.h"
 #include "types.h"
 #include "win.h"
 #include "x.h"
@@ -253,45 +254,20 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 		auto real_win_mode = w->mode;
 		coord_t window_coord = {.x = w->g.x, .y = w->g.y};
 
+		const double window_opacity = animatable_get(&w->opacity);
 		if (w->blur_background &&
 		    (ps->o.force_win_blend || real_win_mode == WMODE_TRANS ||
 		     (ps->o.blur_background_frame && real_win_mode == WMODE_FRAME_TRANS))) {
 			// Minimize the region we try to blur, if the window
 			// itself is not opaque, only the frame is.
 
-			double blur_opacity = 1;
-			if (w->opacity < (1.0 / MAX_ALPHA)) {
-				// Hide blur for fully transparent windows.
-				blur_opacity = 0;
-			} else if (w->state == WSTATE_MAPPING) {
-				// Gradually increase the blur intensity during
-				// fading in.
-				assert(w->opacity <= w->opacity_target);
-				blur_opacity = w->opacity / w->opacity_target;
-			} else if (w->state == WSTATE_UNMAPPING ||
-			           w->state == WSTATE_DESTROYING) {
-				// Gradually decrease the blur intensity during
-				// fading out.
-				assert(w->opacity <= w->opacity_target_old);
-				blur_opacity = w->opacity / w->opacity_target_old;
-			} else if (w->state == WSTATE_FADING) {
-				if (w->opacity < w->opacity_target &&
-				    w->opacity_target_old < (1.0 / MAX_ALPHA)) {
-					// Gradually increase the blur intensity during
-					// fading in.
-					assert(w->opacity <= w->opacity_target);
-					blur_opacity = w->opacity / w->opacity_target;
-				} else if (w->opacity > w->opacity_target &&
-				           w->opacity_target < (1.0 / MAX_ALPHA)) {
-					// Gradually decrease the blur intensity during
-					// fading out.
-					assert(w->opacity <= w->opacity_target_old);
-					blur_opacity = w->opacity / w->opacity_target_old;
-				}
-			}
+			const double blur_opacity = animatable_get(&w->blur_opacity);
 			assert(blur_opacity >= 0 && blur_opacity <= 1);
 
-			if (real_win_mode == WMODE_TRANS || ps->o.force_win_blend) {
+			if (blur_opacity * MAX_ALPHA < 1) {
+				// We don't need to blur if it would be completely
+				// transparent
+			} else if (real_win_mode == WMODE_TRANS || ps->o.force_win_blend) {
 				// We need to blur the bounding shape of the window
 				// (reg_paint_in_bound = reg_bound \cap reg_paint)
 				ps->backend_data->ops->blur(
@@ -404,7 +380,7 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 			if (w->dim) {
 				dim_opacity = ps->o.inactive_dim;
 				if (!ps->o.inactive_dim_fixed) {
-					dim_opacity *= w->opacity;
+					dim_opacity *= window_opacity;
 				}
 			}
 
@@ -418,7 +394,8 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 			    ps->backend_data, IMAGE_PROPERTY_DIM_LEVEL, w->win_image,
 			    &dim_opacity);
 			ps->backend_data->ops->set_image_property(
-			    ps->backend_data, IMAGE_PROPERTY_OPACITY, w->win_image, &w->opacity);
+			    ps->backend_data, IMAGE_PROPERTY_OPACITY, w->win_image,
+			    &window_opacity);
 			ps->backend_data->ops->set_image_property(
 			    ps->backend_data, IMAGE_PROPERTY_CORNER_RADIUS, w->win_image,
 			    (double[]){w->corner_radius});
@@ -440,7 +417,7 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 			    w->fg_shader ? (void *)w->fg_shader->backend_shader : NULL);
 		}
 
-		if (w->opacity * MAX_ALPHA < 1) {
+		if (window_opacity * MAX_ALPHA < 1) {
 			// We don't need to paint the window body itself if it's
 			// completely transparent.
 			goto skip;
