@@ -282,6 +282,10 @@ struct managed_win {
 
 	struct c2_window_state c2_state;
 
+	// Animation related
+	/// Number of animations currently in progress
+	unsigned int number_of_animations;
+
 #ifdef CONFIG_OPENGL
 	/// Textures and FBO background blur use.
 	glx_blur_cache_t glx_blur_cache;
