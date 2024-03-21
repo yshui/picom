@@ -5,6 +5,7 @@
 #include <stdbool.h>
 
 struct animatable;
+enum transition_event;
 /// The interpolator function for an animatable. This function should calculate the
 /// current value of the `animatable` based on its `start`, `target`, `duration` and
 /// `progress`.
@@ -17,6 +18,22 @@ typedef double (*interpolator_fn)(const struct animatable *);
 /// `steps` is the number of steps to advance. This is always 1 or more, unless `progress`
 /// is 0 or `step_state` is NULL, in which case `steps` is 0.
 typedef void (*step_fn)(struct animatable *, unsigned int steps);
+
+/// Callback when the transition state changes. Callback might be called by:
+///   - `animatable_set_target` generates TRANSITION_COMPLETED when the specified duration
+///     is 0. also generates TRANSITION_CANCELLED if the animatable was already animating.
+///   - `animatable_cancel` generates TRANSITION_CANCELED
+///   - `animatable_early_stop` generates TRANSITION_STOPPED_EARLY
+///   - `animatable_step` generates TRANSITION_COMPLETED when the animation is completed.
+/// Callback is guaranteed to be called exactly once for each `animatable_set_target`
+/// call, unless an animatable is freed before the transition is completed.
+typedef void (*transition_callback_fn)(enum transition_event event, void *data);
+
+enum transition_event {
+	TRANSITION_COMPLETED,
+	TRANSITION_CANCELED,
+	TRANSITION_STOPPED_EARLY,
+};
 
 /// The base type for step_state.
 struct step_state_base {
@@ -39,6 +56,9 @@ struct animatable {
 	/// The current progress of the animation. From 0 to `duration - 1`.
 	/// If the `animatable` is not animated, this is 0.
 	unsigned int progress;
+
+	transition_callback_fn callback;
+	void *callback_data;
 
 	/// Step function state.
 	struct step_state_base *step_state;
@@ -74,7 +94,8 @@ bool animatable_cancel(struct animatable *a);
 bool animatable_early_stop(struct animatable *a);
 /// Change the target value of an `animatable`.
 /// If the `animatable` is already animating, the animation will be canceled first.
-void animatable_set_target(struct animatable *a, double target, unsigned int duration);
+void animatable_set_target(struct animatable *a, double target, unsigned int duration,
+                           transition_callback_fn cb, void *data);
 /// Create a new animatable.
 struct animatable animatable_new(double value, interpolator_fn interpolator, step_fn step);
 

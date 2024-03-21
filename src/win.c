@@ -903,7 +903,8 @@ static inline unsigned int win_start_fade(session_t *ps, struct managed_win *w) 
 	    target_opacity > current_opacity ? ps->o.fade_in_step : ps->o.fade_out_step;
 	unsigned int duration =
 	    (unsigned int)(fabs(target_opacity - current_opacity) / step_size);
-	animatable_set_target(&w->opacity, target_opacity, duration);
+	animatable_set_target(&w->opacity, target_opacity, duration,
+	                      NULL, NULL);
 	return duration;
 }
 
@@ -2412,7 +2413,7 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->state = WSTATE_UNMAPPING;
 	auto duration = win_start_fade(ps, w);
-	animatable_set_target(&w->blur_opacity, 0, duration);
+	animatable_set_target(&w->blur_opacity, 0, duration, NULL, NULL);
 
 #ifdef CONFIG_DBUS
 	// Send D-Bus signal
@@ -2527,7 +2528,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	// iff `state` is MAPPED
 	w->state = WSTATE_MAPPING;
 	auto duration = win_start_fade(ps, w);
-	animatable_set_target(&w->blur_opacity, 1, duration);
+	animatable_set_target(&w->blur_opacity, 1, duration, NULL, NULL);
 
 	log_debug("Window %#010x has opacity %f, opacity target is %f", w->base.id,
 	          animatable_get(&w->opacity), w->opacity.target);
@@ -2572,7 +2573,8 @@ void win_update_opacity_target(session_t *ps, struct managed_win *w) {
 	} else if (w->state == WSTATE_MAPPING) {
 		// Opacity target changed while fading in, keep the blur_opacity
 		// in lock step with the opacity
-		animatable_set_target(&w->blur_opacity, w->blur_opacity.target, duration);
+		animatable_set_target(&w->blur_opacity, w->blur_opacity.target, duration,
+		                      NULL, NULL);
 		log_debug("Opacity changed while fading in");
 	} else if (w->state == WSTATE_FADING) {
 		// Opacity target changed while FADING.
