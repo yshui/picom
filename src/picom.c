@@ -502,9 +502,8 @@ static bool run_fade(session_t *ps, struct managed_win **_w, unsigned int steps)
 	          steps);
 	if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
 		// We are not fading
-		assert(!animatable_is_animating(&w->opacity));
-		assert(!animatable_is_animating(&w->blur_opacity));
-		log_trace("|- not fading");
+		assert(w->number_of_animations == 0);
+		log_trace("|- not animated");
 		return false;
 	}
 
@@ -513,8 +512,7 @@ static bool run_fade(session_t *ps, struct managed_win **_w, unsigned int steps)
 		animatable_early_stop(&w->opacity);
 		animatable_early_stop(&w->blur_opacity);
 	}
-	if (!animatable_is_animating(&w->opacity) &&
-	    !animatable_is_animating(&w->blur_opacity)) {
+	if (w->number_of_animations == 0) {
 		// We have reached target opacity.
 		// We don't call win_check_fade_finished here because that could destroy
 		// the window, but we still need the damage info from this window
@@ -951,7 +949,7 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		// If was_painted == false, and to_paint is also false, we don't care
 		// If was_painted == false, but to_paint is true, damage will be added in
 		// the loop below
-		if (was_painted && animatable_is_animating(&w->opacity)) {
+		if (was_painted && w->number_of_animations != 0) {
 			add_damage_from_win(ps, w);
 		}
 
