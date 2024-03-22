@@ -128,7 +128,10 @@ struct managed_win {
 	const xcb_render_pictforminfo_t *client_pictfmt;
 	/// Window painting mode.
 	winmode_t mode;
-	/// Whether the window has been damaged at least once.
+	/// Whether the window has been damaged at least once since it
+	/// was mapped. Unmapped windows that were previously mapped
+	/// retain their `ever_damaged` state. Mapping a window resets
+	/// this.
 	bool ever_damaged;
 	/// Whether the window was damaged after last paint.
 	bool pixmap_damaged;
@@ -314,7 +317,7 @@ void map_win_start(struct session *, struct managed_win *);
 
 /// Start the destroying of a window. Windows cannot always be destroyed immediately
 /// because of fading and such.
-bool must_use destroy_win_start(session_t *ps, struct win *w);
+void destroy_win_start(session_t *ps, struct win *w);
 
 /// Release images bound with a window, set the *_NONE flags on the window. Only to be
 /// used when de-initializing the backend outside of win.c
@@ -386,18 +389,16 @@ void restack_bottom(session_t *ps, struct win *w);
 void restack_top(session_t *ps, struct win *w);
 
 /**
- * Execute fade callback of a window if fading finished.
+ * Release a destroyed window that is no longer needed.
  */
-bool must_use win_maybe_finalize_fading(session_t *ps, struct managed_win *w);
+void destroy_win_finish(session_t *ps, struct win *w);
 
 // Stop receiving events (except ConfigureNotify, XXX why?) from a window
 void win_ev_stop(session_t *ps, const struct win *w);
 
 /// Skip the current in progress fading of window,
 /// transition the window straight to its end state
-///
-/// @return whether the window is destroyed and freed
-bool must_use win_skip_fading(session_t *ps, struct managed_win *w);
+void win_skip_fading(struct managed_win *w);
 /**
  * Find a managed window from window id in window linked list of the session.
  */

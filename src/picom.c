@@ -496,22 +496,10 @@ static double fade_timeout(session_t *ps) {
  * @param steps steps of fading
  * @return whether we are still in fading mode
  */
-static bool run_fade(session_t *ps, struct managed_win **_w, unsigned int steps) {
+static bool run_fade(struct managed_win **_w, unsigned int steps) {
 	auto w = *_w;
 	log_trace("Process fading for window %s (%#010x), steps: %u", w->name, w->base.id,
 	          steps);
-	if (w->state == WSTATE_MAPPED || w->state == WSTATE_UNMAPPED) {
-		// We are not fading
-		assert(w->number_of_animations == 0);
-		log_trace("|- not animated");
-		return false;
-	}
-
-	if (!win_should_fade(ps, w)) {
-		log_trace("|- in transition but doesn't need fading");
-		animatable_early_stop(&w->opacity);
-		animatable_early_stop(&w->blur_opacity);
-	}
 	if (w->number_of_animations == 0) {
 		// We have reached target opacity.
 		// We don't call win_check_fade_finished here because that could destroy
@@ -634,10 +622,7 @@ static void rebuild_shadow_exclude_reg(session_t *ps) {
 static void destroy_backend(session_t *ps) {
 	win_stack_foreach_managed_safe(w, &ps->window_stack) {
 		// Wrapping up fading in progress
-		if (win_skip_fading(ps, w)) {
-			// `w` is freed by win_skip_fading
-			continue;
-		}
+		win_skip_fading(w);
 
 		if (ps->backend_data) {
 			// Unmapped windows could still have shadow images, but not pixmap
@@ -653,6 +638,10 @@ static void destroy_backend(session_t *ps) {
 			win_release_images(ps->backend_data, w);
 		}
 		free_paint(ps, &w->paint);
+
+		if (w->state == WSTATE_DESTROYED) {
+			destroy_win_finish(ps, &w->base);
+		}
 	}
 
 	HASH_ITER2(ps->shaders, shader) {
@@ -954,12 +943,14 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		}
 
 		// Run fading
-		if (run_fade(ps, &w, steps)) {
+		if (run_fade(&w, steps)) {
 			*fade_running = true;
 		}
 
-		if (win_maybe_finalize_fading(ps, w)) {
-			// the window has been destroyed because fading finished
+		if (w->state == WSTATE_DESTROYED && w->number_of_animations == 0) {
+			// the window should be destroyed because it was destroyed
+			// by X server and now its animations are finished
+			destroy_win_finish(ps, &w->base);
 			continue;
 		}
 
@@ -992,6 +983,7 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		// w->to_paint remembers whether this window is painted last time
 		const bool was_painted = w->to_paint;
 		const double window_opacity = animatable_get(&w->opacity);
+		const double blur_opacity = animatable_get(&w->blur_opacity);
 
 		// Destroy reg_ignore if some window above us invalidated it
 		if (!reg_ignore_valid) {
@@ -1005,7 +997,12 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		// Give up if it's not damaged or invisible, or it's unmapped and its
 		// pixmap is gone (for example due to a ConfigureNotify), or when it's
 		// excluded
-		if (w->state == WSTATE_UNMAPPED) {
+		if (w->state == WSTATE_UNMAPPED && w->number_of_animations == 0) {
+			if (window_opacity != 0 || blur_opacity != 0) {
+				log_warn("Window %#010x (%s) is unmapped but still has "
+				         "opacity",
+				         w->base.id, w->name);
+			}
 			log_trace("|- is unmapped");
 			to_paint = false;
 		} else if (unlikely(ps->debug_window != XCB_NONE) &&
@@ -1013,22 +1010,18 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		            w->client_win == ps->debug_window)) {
 			log_trace("|- is the debug window");
 			to_paint = false;
-		} else if (!w->ever_damaged && w->state != WSTATE_UNMAPPING &&
-		           w->state != WSTATE_DESTROYING) {
-			// Unmapping clears w->ever_damaged, but the fact that the window
-			// is fading out means it must have been damaged when it was still
-			// mapped (because unmap_win_start will skip fading if it wasn't),
-			// so we still need to paint it.
+		} else if (!w->ever_damaged) {
 			log_trace("|- has not received any damages");
 			to_paint = false;
 		} else if (unlikely(w->g.x + w->g.width < 1 || w->g.y + w->g.height < 1 ||
 		                    w->g.x >= ps->root_width || w->g.y >= ps->root_height)) {
 			log_trace("|- is positioned outside of the screen");
 			to_paint = false;
-		} else if (unlikely(window_opacity * MAX_ALPHA < 1 && !w->blur_background)) {
-			/* TODO(yshui) for consistency, even a window has 0 opacity, we
-			 * still probably need to blur its background, so to_paint
-			 * shouldn't be false for them. */
+		} else if (unlikely(window_opacity * MAX_ALPHA < 1 &&
+		                    (!w->blur_background || blur_opacity * MAX_ALPHA < 1))) {
+			// For consistency, even a window has 0 opacity, we would still
+			// blur its background. (unless it's background is not blurred, or
+			// the blur opacity is 0)
 			log_trace("|- has 0 opacity");
 			to_paint = false;
 		} else if (w->paint_excluded) {
@@ -1821,7 +1814,10 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		// Using foreach_safe here since skipping fading can cause window to be
 		// freed if it's destroyed.
 		win_stack_foreach_managed_safe(w, &ps->window_stack) {
-			auto _ attr_unused = win_skip_fading(ps, w);
+			win_skip_fading(w);
+			if (w->state == WSTATE_DESTROYED) {
+				destroy_win_finish(ps, &w->base);
+			}
 		}
 	}
 
