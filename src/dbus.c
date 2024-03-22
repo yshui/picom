@@ -29,6 +29,7 @@
 #include "uthash_extra.h"
 #include "utils.h"
 #include "win.h"
+#include "win_defs.h"
 
 #include "dbus.h"
 
@@ -877,7 +878,7 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 
 	if (!strcmp("Mapped", target)) {
 		cdbus_reply(ps, msg, cdbus_append_bool_variant,
-		            (bool[]){win_is_mapped_in_x(w)});
+		            (bool[]){w->state == WSTATE_MAPPED});
 		return true;
 	}
 
