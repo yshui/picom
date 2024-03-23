@@ -53,27 +53,25 @@
 #ifdef CONFIG_OPENGL
 #include "opengl.h"
 #endif
+#include "atom.h"
 #include "backend/backend.h"
 #include "c2.h"
-#include "diagnostic.h"
-#include "log.h"
-#include "region.h"
-#include "render.h"
-#include "types.h"
-#include "utils.h"
-#include "win.h"
-#include "x.h"
-#ifdef CONFIG_DBUS
 #include "dbus.h"
-#endif
-#include "atom.h"
+#include "diagnostic.h"
 #include "event.h"
 #include "file_watch.h"
 #include "list.h"
+#include "log.h"
 #include "options.h"
+#include "region.h"
+#include "render.h"
 #include "statistics.h"
+#include "types.h"
 #include "uthash_extra.h"
+#include "utils.h"
 #include "vblank.h"
+#include "win.h"
+#include "x.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -1232,23 +1230,6 @@ void force_repaint(session_t *ps) {
 	add_damage(ps, &ps->screen_reg);
 }
 
-#ifdef CONFIG_DBUS
-/** @name DBus hooks
- */
-///@{
-
-/**
- * Set no_fading_openclose option.
- *
- * Don't affect fading already in progress
- */
-void opts_set_no_fading_openclose(session_t *ps, bool newval) {
-	ps->o.no_fading_openclose = newval;
-}
-
-//!@}
-#endif
-
 /**
  * Setup window properties, then register us with the compositor selection (_NET_WM_CM_S)
  *
@@ -1692,12 +1673,10 @@ static void handle_new_windows(session_t *ps) {
 				// us to find out. So just blindly mark it damaged
 				mw->ever_damaged = true;
 			}
-#ifdef CONFIG_DBUS
 			// Send D-Bus signal
 			if (ps->o.dbus) {
 				cdbus_ev_win_added(ps, new_w);
 			}
-#endif
 		}
 	}
 }

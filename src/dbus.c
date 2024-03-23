@@ -1322,7 +1322,7 @@ static bool cdbus_process_opts_set(session_t *ps, DBusMessage *msg) {
 		if (!cdbus_msg_get_arg(msg, 1, DBUS_TYPE_BOOLEAN, &val)) {
 			return false;
 		}
-		opts_set_no_fading_openclose(ps, val);
+		ps->o.no_fading_openclose = val;
 		goto cdbus_process_opts_set_success;
 	}
 
