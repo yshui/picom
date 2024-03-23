@@ -112,8 +112,7 @@ struct cdbus_data *cdbus_init(session_t *ps, const char *uniq) {
 	// Use dbus_bus_get_private() so we can fully recycle it ourselves
 	cd->dbus_conn = dbus_bus_get_private(DBUS_BUS_SESSION, &err);
 	if (dbus_error_is_set(&err)) {
-		log_error("D-Bus connection failed (%s).", err.message);
-		dbus_error_free(&err);
+		log_error("D-Bus connection failed.");
 		goto fail;
 	}
 
@@ -148,13 +147,12 @@ struct cdbus_data *cdbus_init(session_t *ps, const char *uniq) {
 		                                DBUS_NAME_FLAG_DO_NOT_QUEUE, &err);
 
 		if (dbus_error_is_set(&err)) {
-			log_error("Failed to obtain D-Bus name (%s).", err.message);
-			dbus_error_free(&err);
+			log_error("Failed to obtain D-Bus name.");
 			goto fail;
 		}
 
-		if (DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER != ret &&
-		    DBUS_REQUEST_NAME_REPLY_ALREADY_OWNER != ret) {
+		if (ret != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER &&
+		    ret != DBUS_REQUEST_NAME_REPLY_ALREADY_OWNER) {
 			log_error("Failed to become the primary owner of requested D-Bus "
 			          "name (%d).",
 			          ret);
@@ -184,7 +182,6 @@ struct cdbus_data *cdbus_init(session_t *ps, const char *uniq) {
 	                   "type='method_call',interface='" CDBUS_INTERFACE_NAME "'", &err);
 	if (dbus_error_is_set(&err)) {
 		log_error("Failed to add D-Bus match.");
-		dbus_error_free(&err);
 		goto fail;
 	}
 	dbus_connection_register_object_path(
@@ -195,6 +192,10 @@ struct cdbus_data *cdbus_init(session_t *ps, const char *uniq) {
 	    (DBusObjectPathVTable[]){{NULL, cdbus_process_windows}}, ps);
 	return cd;
 fail:
+	if (dbus_error_is_set(&err)) {
+		log_error("D-Bus error %s: %s", err.name, err.message);
+		dbus_error_free(&err);
+	}
 	free(cd->dbus_service);
 	free(cd);
 	return NULL;
