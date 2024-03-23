@@ -38,6 +38,8 @@
 #include "dbus.h"
 
 struct cdbus_data {
+	/// Mainloop
+	struct ev_loop *loop;
 	/// DBus connection.
 	DBusConnection *dbus_conn;
 	/// DBus service name.
@@ -99,12 +101,9 @@ static void cdbus_callback_watch_toggled(DBusWatch *watch, void *data);
 /**
  * Initialize D-Bus connection.
  */
-bool cdbus_init(session_t *ps, const char *uniq) {
+struct cdbus_data *cdbus_init(session_t *ps, const char *uniq) {
 	auto cd = cmalloc(struct cdbus_data);
 	cd->dbus_service = NULL;
-
-	// Set ps->dbus_data here because add_watch functions need it
-	ps->dbus_data = cd;
 
 	DBusError err = {};
 
@@ -166,9 +165,10 @@ bool cdbus_init(session_t *ps, const char *uniq) {
 	}
 
 	// Add watch handlers
+	cd->loop = ps->loop;
 	if (!dbus_connection_set_watch_functions(cd->dbus_conn, cdbus_callback_add_watch,
 	                                         cdbus_callback_remove_watch,
-	                                         cdbus_callback_watch_toggled, ps, NULL)) {
+	                                         cdbus_callback_watch_toggled, cd, NULL)) {
 		log_error("Failed to add D-Bus watch functions.");
 		goto fail;
 	}
@@ -176,7 +176,7 @@ bool cdbus_init(session_t *ps, const char *uniq) {
 	// Add timeout handlers
 	if (!dbus_connection_set_timeout_functions(
 	        cd->dbus_conn, cdbus_callback_add_timeout, cdbus_callback_remove_timeout,
-	        cdbus_callback_timeout_toggled, ps, NULL)) {
+	        cdbus_callback_timeout_toggled, cd, NULL)) {
 		log_error("Failed to add D-Bus timeout functions.");
 		goto fail;
 	}
@@ -195,19 +195,17 @@ bool cdbus_init(session_t *ps, const char *uniq) {
 	dbus_connection_register_fallback(
 	    cd->dbus_conn, CDBUS_OBJECT_NAME "/windows",
 	    (DBusObjectPathVTable[]){{NULL, cdbus_process_windows}}, ps);
-	return true;
+	return cd;
 fail:
-	ps->dbus_data = NULL;
 	free(cd->dbus_service);
 	free(cd);
-	return false;
+	return NULL;
 }
 
 /**
  * Destroy D-Bus connection.
  */
-void cdbus_destroy(session_t *ps) {
-	struct cdbus_data *cd = ps->dbus_data;
+void cdbus_destroy(struct cdbus_data *cd) {
 	if (cd->dbus_conn) {
 		// Release DBus name firstly
 		if (cd->dbus_service) {
@@ -251,7 +249,7 @@ cdbus_callback_handle_timeout(EV_P attr_unused, ev_timer *w, int revents attr_un
  * Callback for adding D-Bus timeout.
  */
 static dbus_bool_t cdbus_callback_add_timeout(DBusTimeout *timeout, void *data) {
-	session_t *ps = data;
+	struct cdbus_data *cd = data;
 
 	auto t = ccalloc(1, ev_dbus_timer);
 	double i = dbus_timeout_get_interval(timeout) / 1000.0;
@@ -260,7 +258,7 @@ static dbus_bool_t cdbus_callback_add_timeout(DBusTimeout *timeout, void *data) 
 	dbus_timeout_set_data(timeout, t, NULL);
 
 	if (dbus_timeout_get_enabled(timeout)) {
-		ev_timer_start(ps->loop, &t->w);
+		ev_timer_start(cd->loop, &t->w);
 	}
 
 	return true;
@@ -270,11 +268,11 @@ static dbus_bool_t cdbus_callback_add_timeout(DBusTimeout *timeout, void *data) 
  * Callback for removing D-Bus timeout.
  */
 static void cdbus_callback_remove_timeout(DBusTimeout *timeout, void *data) {
-	session_t *ps = data;
+	struct cdbus_data *cd = data;
 
 	ev_dbus_timer *t = dbus_timeout_get_data(timeout);
 	assert(t);
-	ev_timer_stop(ps->loop, &t->w);
+	ev_timer_stop(cd->loop, &t->w);
 	free(t);
 }
 
@@ -282,15 +280,15 @@ static void cdbus_callback_remove_timeout(DBusTimeout *timeout, void *data) {
  * Callback for toggling a D-Bus timeout.
  */
 static void cdbus_callback_timeout_toggled(DBusTimeout *timeout, void *data) {
-	session_t *ps = data;
+	struct cdbus_data *cd = data;
 	ev_dbus_timer *t = dbus_timeout_get_data(timeout);
 
 	assert(t);
-	ev_timer_stop(ps->loop, &t->w);
+	ev_timer_stop(cd->loop, &t->w);
 	if (dbus_timeout_get_enabled(timeout)) {
 		double i = dbus_timeout_get_interval(timeout) / 1000.0;
 		ev_timer_set(&t->w, i, i);
-		ev_timer_start(ps->loop, &t->w);
+		ev_timer_start(cd->loop, &t->w);
 	}
 }
 
@@ -340,17 +338,17 @@ static inline int cdbus_get_watch_cond(DBusWatch *watch) {
  * Callback for adding D-Bus watch.
  */
 static dbus_bool_t cdbus_callback_add_watch(DBusWatch *watch, void *data) {
-	session_t *ps = data;
+	struct cdbus_data *cd = data;
 
 	auto w = ccalloc(1, ev_dbus_io);
 	w->dw = watch;
-	w->cd = ps->dbus_data;
+	w->cd = cd;
 	ev_io_init(&w->w, cdbus_io_callback, dbus_watch_get_unix_fd(watch),
 	           cdbus_get_watch_cond(watch));
 
 	// Leave disabled watches alone
 	if (dbus_watch_get_enabled(watch)) {
-		ev_io_start(ps->loop, &w->w);
+		ev_io_start(cd->loop, &w->w);
 	}
 
 	dbus_watch_set_data(watch, w, NULL);
@@ -363,9 +361,9 @@ static dbus_bool_t cdbus_callback_add_watch(DBusWatch *watch, void *data) {
  * Callback for removing D-Bus watch.
  */
 static void cdbus_callback_remove_watch(DBusWatch *watch, void *data) {
-	session_t *ps = data;
+	struct cdbus_data *cd = data;
 	ev_dbus_io *w = dbus_watch_get_data(watch);
-	ev_io_stop(ps->loop, &w->w);
+	ev_io_stop(cd->loop, &w->w);
 	free(w);
 }
 
@@ -373,12 +371,12 @@ static void cdbus_callback_remove_watch(DBusWatch *watch, void *data) {
  * Callback for toggling D-Bus watch status.
  */
 static void cdbus_callback_watch_toggled(DBusWatch *watch, void *data) {
-	session_t *ps = data;
+	struct cdbus_data *cd = data;
 	ev_io *w = dbus_watch_get_data(watch);
 	if (dbus_watch_get_enabled(watch)) {
-		ev_io_start(ps->loop, w);
+		ev_io_start(cd->loop, w);
 	} else {
-		ev_io_stop(ps->loop, w);
+		ev_io_stop(cd->loop, w);
 	}
 }
 

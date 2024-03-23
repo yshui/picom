@@ -27,12 +27,12 @@ static inline const char *cdbus_repr_msgtype(DBusMessage *msg) {
 /**
  * Initialize D-Bus connection.
  */
-bool cdbus_init(session_t *ps, const char *uniq_name);
+struct cdbus_data *cdbus_init(session_t *ps, const char *uniq_name);
 
 /**
  * Destroy D-Bus connection.
  */
-void cdbus_destroy(session_t *ps);
+void cdbus_destroy(struct cdbus_data *cd);
 
 /// Generate dbus win_added signal
 void cdbus_ev_win_added(struct cdbus_data *cd, struct win *w);
