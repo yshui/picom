@@ -2466,7 +2466,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// functions
 	if (ps->o.dbus) {
 #ifdef CONFIG_DBUS
-		cdbus_init(ps, DisplayString(ps->c.dpy));
+		ps->dbus_data = cdbus_init(ps, DisplayString(ps->c.dpy));
 		if (!ps->dbus_data) {
 			ps->o.dbus = false;
 		}
@@ -2559,7 +2559,8 @@ static void session_destroy(session_t *ps) {
 	// Kill DBus connection
 	if (ps->o.dbus) {
 		assert(ps->dbus_data);
-		cdbus_destroy(ps);
+		cdbus_destroy(ps->dbus_data);
+		ps->dbus_data = NULL;
 	}
 #endif
 
