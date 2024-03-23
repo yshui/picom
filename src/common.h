@@ -385,7 +385,7 @@ typedef struct session {
 
 #ifdef CONFIG_DBUS
 	// === DBus related ===
-	void *dbus_data;
+	struct cdbus_data *dbus_data;
 #endif
 
 	int (*vsync_wait)(session_t *);
