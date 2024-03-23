@@ -11,11 +11,11 @@
 
 #include <stdbool.h>
 
-#include <dbus/dbus.h>
-
 typedef struct session session_t;
 struct win;
 
+#ifdef CONFIG_DBUS
+#include <dbus/dbus.h>
 /**
  * Return a string representation of a D-Bus message type.
  */
@@ -50,5 +50,30 @@ void cdbus_ev_win_focusout(session_t *ps, struct win *w);
 
 /// Generate dbus win_focusin signal
 void cdbus_ev_win_focusin(session_t *ps, struct win *w);
+
+#else
+
+static inline void
+cdbus_ev_win_unmapped(session_t *ps attr_unused, struct win *w attr_unused) {
+}
+
+static inline void cdbus_ev_win_mapped(session_t *ps attr_unused, struct win *w attr_unused) {
+}
+
+static inline void
+cdbus_ev_win_destroyed(session_t *ps attr_unused, struct win *w attr_unused) {
+}
+
+static inline void cdbus_ev_win_added(session_t *ps attr_unused, struct win *w attr_unused) {
+}
+
+static inline void
+cdbus_ev_win_focusout(session_t *ps attr_unused, struct win *w attr_unused) {
+}
+
+static inline void cdbus_ev_win_focusin(session_t *ps attr_unused, struct win *w attr_unused) {
+}
+
+#endif
 
 // vim: set noet sw=8 ts=8 :
