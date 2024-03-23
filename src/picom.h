@@ -54,6 +54,14 @@ xcb_window_t session_get_target_window(session_t *);
 
 uint8_t session_redirection_mode(session_t *ps);
 
+#ifdef CONFIG_DBUS
+struct cdbus_data *session_get_cdbus(struct session *);
+#else
+static inline struct cdbus_data *session_get_cdbus(session_t *ps attr_unused) {
+	return NULL;
+}
+#endif
+
 /**
  * Set a <code>switch_t</code> array of all unset wintypes to true.
  */

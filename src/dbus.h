@@ -13,6 +13,7 @@
 
 typedef struct session session_t;
 struct win;
+struct cdbus_data;
 
 #ifdef CONFIG_DBUS
 #include <dbus/dbus.h>
@@ -34,44 +35,47 @@ bool cdbus_init(session_t *ps, const char *uniq_name);
 void cdbus_destroy(session_t *ps);
 
 /// Generate dbus win_added signal
-void cdbus_ev_win_added(session_t *ps, struct win *w);
+void cdbus_ev_win_added(struct cdbus_data *cd, struct win *w);
 
 /// Generate dbus win_destroyed signal
-void cdbus_ev_win_destroyed(session_t *ps, struct win *w);
+void cdbus_ev_win_destroyed(struct cdbus_data *cd, struct win *w);
 
 /// Generate dbus win_mapped signal
-void cdbus_ev_win_mapped(session_t *ps, struct win *w);
+void cdbus_ev_win_mapped(struct cdbus_data *cd, struct win *w);
 
 /// Generate dbus win_unmapped signal
-void cdbus_ev_win_unmapped(session_t *ps, struct win *w);
+void cdbus_ev_win_unmapped(struct cdbus_data *cd, struct win *w);
 
 /// Generate dbus win_focusout signal
-void cdbus_ev_win_focusout(session_t *ps, struct win *w);
+void cdbus_ev_win_focusout(struct cdbus_data *cd, struct win *w);
 
 /// Generate dbus win_focusin signal
-void cdbus_ev_win_focusin(session_t *ps, struct win *w);
+void cdbus_ev_win_focusin(struct cdbus_data *cd, struct win *w);
 
 #else
 
 static inline void
-cdbus_ev_win_unmapped(session_t *ps attr_unused, struct win *w attr_unused) {
-}
-
-static inline void cdbus_ev_win_mapped(session_t *ps attr_unused, struct win *w attr_unused) {
+cdbus_ev_win_unmapped(struct cdbus_data *cd attr_unused, struct win *w attr_unused) {
 }
 
 static inline void
-cdbus_ev_win_destroyed(session_t *ps attr_unused, struct win *w attr_unused) {
-}
-
-static inline void cdbus_ev_win_added(session_t *ps attr_unused, struct win *w attr_unused) {
+cdbus_ev_win_mapped(struct cdbus_data *cd attr_unused, struct win *w attr_unused) {
 }
 
 static inline void
-cdbus_ev_win_focusout(session_t *ps attr_unused, struct win *w attr_unused) {
+cdbus_ev_win_destroyed(struct cdbus_data *cd attr_unused, struct win *w attr_unused) {
 }
 
-static inline void cdbus_ev_win_focusin(session_t *ps attr_unused, struct win *w attr_unused) {
+static inline void
+cdbus_ev_win_added(struct cdbus_data *cd attr_unused, struct win *w attr_unused) {
+}
+
+static inline void
+cdbus_ev_win_focusout(struct cdbus_data *cd attr_unused, struct win *w attr_unused) {
+}
+
+static inline void
+cdbus_ev_win_focusin(struct cdbus_data *cd attr_unused, struct win *w attr_unused) {
 }
 
 #endif

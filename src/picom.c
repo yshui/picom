@@ -1459,6 +1459,10 @@ xcb_window_t session_get_target_window(session_t *ps) {
 	return ps->overlay != XCB_NONE ? ps->overlay : ps->c.screen_info->root;
 }
 
+struct cdbus_data *session_get_cdbus(struct session *ps) {
+	return ps->dbus_data;
+}
+
 uint8_t session_redirection_mode(session_t *ps) {
 	if (ps->o.debug_mode) {
 		// If the backend is not rendering to the screen, we don't need to
@@ -1675,7 +1679,7 @@ static void handle_new_windows(session_t *ps) {
 			}
 			// Send D-Bus signal
 			if (ps->o.dbus) {
-				cdbus_ev_win_added(ps, new_w);
+				cdbus_ev_win_added(ps->dbus_data, new_w);
 			}
 		}
 	}

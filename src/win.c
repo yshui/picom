@@ -1957,9 +1957,9 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 	// Send D-Bus signal
 	if (ps->o.dbus) {
 		if (win_is_focused_raw(w)) {
-			cdbus_ev_win_focusin(ps, &w->base);
+			cdbus_ev_win_focusin(session_get_cdbus(ps), &w->base);
 		} else {
-			cdbus_ev_win_focusout(ps, &w->base);
+			cdbus_ev_win_focusout(session_get_cdbus(ps), &w->base);
 		}
 	}
 }
@@ -2389,7 +2389,7 @@ void destroy_win_start(session_t *ps, struct win *w) {
 	// don't need win_ev_stop because the window is gone anyway
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		cdbus_ev_win_destroyed(ps, w);
+		cdbus_ev_win_destroyed(session_get_cdbus(ps), w);
 	}
 
 	if (!ps->redirected && w->managed) {
@@ -2424,7 +2424,7 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		cdbus_ev_win_unmapped(ps, &w->base);
+		cdbus_ev_win_unmapped(session_get_cdbus(ps), &w->base);
 	}
 
 	if (!ps->redirected || !w->ever_damaged) {
@@ -2510,7 +2510,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		cdbus_ev_win_mapped(ps, &w->base);
+		cdbus_ev_win_mapped(session_get_cdbus(ps), &w->base);
 	}
 
 	if (!ps->redirected) {
