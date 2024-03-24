@@ -31,7 +31,7 @@
         });
       };
       python = pkgs.python3.withPackages (ps: with ps; [
-        xcffib pip
+        xcffib pip dbus-next
       ]);
 
       pkgs = import nixpkgs {
