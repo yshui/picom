@@ -1542,10 +1542,10 @@ struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below) {
 	return add_win(ps, id, w->stack_neighbour.prev);
 }
 
-/// Query the Xorg for information about window `win`
-/// `win` pointer might become invalid after this function returns
-/// Returns the pointer to the window, might be different from `w`
-struct win *fill_win(session_t *ps, struct win *w) {
+/// Query the Xorg for information about window `win`, and return that
+/// information in a new managed_win object. However, if the window does
+/// not need to be managed, the original `win` object is returned.
+struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct win *w) {
 	static const struct managed_win win_def = {
 	    // No need to initialize. (or, you can think that
 	    // they are initialized right here).
@@ -1732,12 +1732,6 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	new->pictfmt = x_get_pictform_for_visual(&ps->c, new->a.visual);
 	new->client_pictfmt = NULL;
 
-	list_replace(&w->stack_neighbour, &new->base.stack_neighbour);
-	struct win *replaced = NULL;
-	HASH_REPLACE_INT(ps->windows, id, &new->base, replaced);
-	assert(replaced == w);
-	free(w);
-
 	// Set all the stale flags on this new window, so it's properties will get
 	// updated when it's mapped
 	win_set_flags(new, WIN_FLAGS_CLIENT_STALE | WIN_FLAGS_SIZE_STALE |
@@ -1754,12 +1748,6 @@ struct win *fill_win(session_t *ps, struct win *w) {
 	win_set_properties_stale(new, init_stale_props, ARR_SIZE(init_stale_props));
 	c2_window_state_init(ps->c2_state, &new->c2_state);
 
-#ifdef CONFIG_DBUS
-	// Send D-Bus signal
-	if (ps->o.dbus) {
-		cdbus_ev_win_added(ps, &new->base);
-	}
-#endif
 	return &new->base;
 }
 

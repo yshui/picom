@@ -1677,10 +1677,18 @@ static void handle_queued_x_events(EV_P attr_unused, ev_prepare *w, int revents 
 static void handle_new_windows(session_t *ps) {
 	list_foreach_safe(struct win, w, &ps->window_stack, stack_neighbour) {
 		if (w->is_new) {
-			auto new_w = fill_win(ps, w);
-			if (!new_w->managed) {
+			auto new_w = maybe_allocate_managed_win(ps, w);
+			if (new_w == w) {
 				continue;
 			}
+
+			assert(new_w->managed);
+			list_replace(&w->stack_neighbour, &new_w->stack_neighbour);
+			struct win *replaced = NULL;
+			HASH_REPLACE_INT(ps->windows, id, new_w, replaced);
+			assert(replaced == w);
+			free(w);
+
 			auto mw = (struct managed_win *)new_w;
 			if (mw->a.map_state == XCB_MAP_STATE_VIEWABLE) {
 				win_set_flags(mw, WIN_FLAGS_MAPPED);
@@ -1690,6 +1698,12 @@ static void handle_new_windows(session_t *ps) {
 				// us to find out. So just blindly mark it damaged
 				mw->ever_damaged = true;
 			}
+#ifdef CONFIG_DBUS
+			// Send D-Bus signal
+			if (ps->o.dbus) {
+				cdbus_ev_win_added(ps, new_w);
+			}
+#endif
 		}
 	}
 }

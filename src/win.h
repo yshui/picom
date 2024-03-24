@@ -386,7 +386,7 @@ struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below);
 struct win *add_win_top(session_t *ps, xcb_window_t id);
 /// Query the Xorg for information about window `win`
 /// `win` pointer might become invalid after this function returns
-struct win *fill_win(session_t *ps, struct win *win);
+struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct win *win);
 /// Move window `w` to be right above `below`
 void restack_above(session_t *ps, struct win *w, xcb_window_t below);
 /// Move window `w` to the bottom of the stack
