@@ -134,6 +134,18 @@ struct shader_info {
 	UT_hash_handle hh;
 };
 
+struct damage_ring {
+	/// Cache a xfixes region so we don't need to allocate it every time.
+	/// A workaround for yshui/picom#301
+	xcb_xfixes_region_t x_region;
+	/// The region needs to painted on next paint.
+	int cursor;
+	/// The region damaged on the last paint.
+	region_t *damages;
+	/// Number of damage regions we track
+	int count;
+};
+
 /// Structure containing all necessary data for a session.
 typedef struct session {
 	// === Event handlers ===
@@ -250,16 +262,8 @@ typedef struct session {
 	/// to the screen that's neither included in the current render, nor on the
 	/// screen.
 	bool render_queued;
-
-	/// Cache a xfixes region so we don't need to allocate it every time.
-	/// A workaround for yshui/picom#301
-	xcb_xfixes_region_t damaged_region;
-	/// The region needs to painted on next paint.
-	region_t *damage;
-	/// The region damaged on the last paint.
-	region_t *damage_ring;
-	/// Number of damage regions we track
-	int ndamage;
+	/// For tracking damage regions
+	struct damage_ring damage_ring;
 	/// Whether all windows are currently redirected.
 	bool redirected;
 	/// Pre-generated alpha pictures.
@@ -516,5 +520,26 @@ static inline void wintype_arr_enable(bool arr[]) {
 
 	for (i = 0; i < NUM_WINTYPES; ++i) {
 		arr[i] = true;
+	}
+}
+
+static inline void damage_ring_advance(struct damage_ring *ring) {
+	ring->cursor--;
+	if (ring->cursor < 0) {
+		ring->cursor += ring->count;
+	}
+	pixman_region32_clear(&ring->damages[ring->cursor]);
+}
+
+static inline void damage_ring_collect(struct damage_ring *ring, region_t *all_region,
+                                       region_t *region, int buffer_age) {
+	if (buffer_age == -1 || buffer_age > ring->count) {
+		pixman_region32_copy(region, all_region);
+	} else {
+		for (int i = 0; i < buffer_age; i++) {
+			auto curr = (ring->cursor + i) % ring->count;
+			pixman_region32_union(region, region, &ring->damages[curr]);
+		}
+		pixman_region32_intersect(region, region, all_region);
 	}
 }

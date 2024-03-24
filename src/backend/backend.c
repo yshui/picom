@@ -42,17 +42,7 @@ region_t get_damage(session_t *ps, bool all_damage) {
 	}
 
 	pixman_region32_init(&region);
-	if (buffer_age == -1 || buffer_age > ps->ndamage) {
-		pixman_region32_copy(&region, &ps->screen_reg);
-	} else {
-		for (int i = 0; i < buffer_age; i++) {
-			auto curr = ((ps->damage - ps->damage_ring) + i) % ps->ndamage;
-			log_trace("damage index: %d, damage ring offset: %td", i, curr);
-			dump_region(&ps->damage_ring[curr]);
-			pixman_region32_union(&region, &region, &ps->damage_ring[curr]);
-		}
-		pixman_region32_intersect(&region, &region, &ps->screen_reg);
-	}
+	damage_ring_collect(&ps->damage_ring, &ps->screen_reg, &region, buffer_age);
 	return region;
 }
 
@@ -529,11 +519,7 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 	}
 
 	// Move the head of the damage ring
-	ps->damage = ps->damage - 1;
-	if (ps->damage < ps->damage_ring) {
-		ps->damage = ps->damage_ring + ps->ndamage - 1;
-	}
-	pixman_region32_clear(ps->damage);
+	damage_ring_advance(&ps->damage_ring);
 
 	if (ps->backend_data->ops->present) {
 		// Present the rendered scene

@@ -629,12 +629,12 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 		}
 		win_extents(w, &parts);
 	} else {
-		auto cookie =
-		    xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE, ps->damaged_region);
+		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE,
+		                                  ps->damage_ring.x_region);
 		if (!ps->o.show_all_xerrors) {
 			set_ignore_cookie(&ps->c, cookie);
 		}
-		x_fetch_region(&ps->c, ps->damaged_region, &parts);
+		x_fetch_region(&ps->c, ps->damage_ring.x_region, &parts);
 		pixman_region32_translate(&parts, w->g.x + w->g.border_width,
 		                          w->g.y + w->g.border_width);
 	}

@@ -464,7 +464,9 @@ void add_damage(session_t *ps, const region_t *damage) {
 	}
 	log_trace("Adding damage: ");
 	dump_region(damage);
-	pixman_region32_union(ps->damage, ps->damage, (region_t *)damage);
+
+	auto cursor = &ps->damage_ring.damages[ps->damage_ring.cursor];
+	pixman_region32_union(cursor, cursor, (region_t *)damage);
 }
 
 // === Fading ===
@@ -853,10 +855,10 @@ static void configure_root(session_t *ps) {
 	}
 
 	if (ps->redirected) {
-		for (int i = 0; i < ps->ndamage; i++) {
-			pixman_region32_clear(&ps->damage_ring[i]);
+		for (int i = 0; i < ps->damage_ring.count; i++) {
+			pixman_region32_clear(&ps->damage_ring.damages[i]);
 		}
-		ps->damage = ps->damage_ring + ps->ndamage - 1;
+		ps->damage_ring.cursor = ps->damage_ring.count - 1;
 #ifdef CONFIG_OPENGL
 		// GLX root change callback
 		if (BKEND_GLX == ps->o.backend && ps->o.legacy_backends) {
@@ -1531,15 +1533,15 @@ static bool redirect_start(session_t *ps) {
 
 	if (!ps->o.legacy_backends) {
 		assert(ps->backend_data);
-		ps->ndamage = ps->backend_data->ops->max_buffer_age;
+		ps->damage_ring.count = ps->backend_data->ops->max_buffer_age;
 	} else {
-		ps->ndamage = maximum_buffer_age(ps);
+		ps->damage_ring.count = maximum_buffer_age(ps);
 	}
-	ps->damage_ring = ccalloc(ps->ndamage, region_t);
-	ps->damage = ps->damage_ring + ps->ndamage - 1;
+	ps->damage_ring.damages = ccalloc(ps->damage_ring.count, region_t);
+	ps->damage_ring.cursor = ps->damage_ring.count - 1;
 
-	for (int i = 0; i < ps->ndamage; i++) {
-		pixman_region32_init(&ps->damage_ring[i]);
+	for (int i = 0; i < ps->damage_ring.count; i++) {
+		pixman_region32_init(&ps->damage_ring.damages[i]);
 	}
 
 	ps->frame_pacing = !ps->o.no_frame_pacing && ps->o.vsync;
@@ -1613,12 +1615,13 @@ static void unredirect(session_t *ps) {
 	}
 
 	// Free the damage ring
-	for (int i = 0; i < ps->ndamage; ++i) {
-		pixman_region32_fini(&ps->damage_ring[i]);
+	for (int i = 0; i < ps->damage_ring.count; ++i) {
+		pixman_region32_fini(&ps->damage_ring.damages[i]);
 	}
-	ps->ndamage = 0;
-	free(ps->damage_ring);
-	ps->damage_ring = ps->damage = NULL;
+	ps->damage_ring.count = 0;
+	free(ps->damage_ring.damages);
+	ps->damage_ring.cursor = 0;
+	ps->damage_ring.damages = NULL;
 
 	if (ps->vblank_scheduler) {
 		vblank_scheduler_free(ps->vblank_scheduler);
@@ -2209,8 +2212,9 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	                                                    XCB_XFIXES_MINOR_VERSION)
 	                               .sequence);
 
-	ps->damaged_region = x_new_id(&ps->c);
-	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c.c, ps->damaged_region, 0, NULL)) {
+	ps->damage_ring.x_region = x_new_id(&ps->c);
+	if (!XCB_AWAIT_VOID(xcb_xfixes_create_region, ps->c.c, ps->damage_ring.x_region,
+	                    0, NULL)) {
 		log_fatal("Failed to create a XFixes region");
 		goto err;
 	}
@@ -2706,9 +2710,9 @@ static void session_destroy(session_t *ps) {
 		ps->debug_window = XCB_NONE;
 	}
 
-	if (ps->damaged_region != XCB_NONE) {
-		xcb_xfixes_destroy_region(ps->c.c, ps->damaged_region);
-		ps->damaged_region = XCB_NONE;
+	if (ps->damage_ring.x_region != XCB_NONE) {
+		xcb_xfixes_destroy_region(ps->c.c, ps->damage_ring.x_region);
+		ps->damage_ring.x_region = XCB_NONE;
 	}
 
 	if (!ps->o.legacy_backends) {

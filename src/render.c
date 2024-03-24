@@ -1009,16 +1009,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 
 	region_t region;
 	pixman_region32_init(&region);
-	int buffer_age = get_buffer_age(ps);
-	if (buffer_age == -1 || buffer_age > ps->ndamage) {
-		pixman_region32_copy(&region, &ps->screen_reg);
-	} else {
-		for (int i = 0; i < get_buffer_age(ps); i++) {
-			auto curr = ((ps->damage - ps->damage_ring) + i) % ps->ndamage;
-			pixman_region32_union(&region, &region, &ps->damage_ring[curr]);
-		}
-	}
-
+	damage_ring_collect(&ps->damage_ring, &ps->screen_reg, &region, get_buffer_age(ps));
 	if (!pixman_region32_not_empty(&region)) {
 		return;
 	}
@@ -1219,11 +1210,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 	pixman_region32_fini(&reg_shadow_clip);
 
 	// Move the head of the damage ring
-	ps->damage = ps->damage - 1;
-	if (ps->damage < ps->damage_ring) {
-		ps->damage = ps->damage_ring + ps->ndamage - 1;
-	}
-	pixman_region32_clear(ps->damage);
+	damage_ring_advance(&ps->damage_ring);
 
 	// Do this as early as possible
 	set_tgt_clip(ps, &ps->screen_reg);
