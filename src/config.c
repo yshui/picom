@@ -25,6 +25,7 @@
 #include "compiler.h"
 #include "kernel.h"
 #include "log.h"
+#include "picom.h"
 #include "region.h"
 #include "string_utils.h"
 #include "types.h"
@@ -420,12 +421,14 @@ bool parse_geometry(session_t *ps, const char *src, region_t *dest) {
 	if (!src) {
 		return true;
 	}
-	if (!ps->root_width || !ps->root_height) {
+
+	auto root_extent = session_get_root_extent(ps);
+	if (!root_extent.width || !root_extent.height) {
 		return true;
 	}
 
 	long x = 0, y = 0;
-	long width = ps->root_width, height = ps->root_height;
+	long width = root_extent.width, height = root_extent.height;
 	long val = 0L;
 	char *endptr = NULL;
 
@@ -472,7 +475,7 @@ bool parse_geometry(session_t *ps, const char *src, region_t *dest) {
 		if (endptr && src != endptr) {
 			x = val;
 			if (*src == '-') {
-				x += ps->root_width - width;
+				x += root_extent.width - width;
 			}
 			src = endptr;
 		}
@@ -485,7 +488,7 @@ bool parse_geometry(session_t *ps, const char *src, region_t *dest) {
 		if (endptr && src != endptr) {
 			y = val;
 			if (*src == '-') {
-				y += ps->root_height - height;
+				y += root_extent.height - height;
 			}
 			src = endptr;
 		}

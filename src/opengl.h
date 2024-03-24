@@ -13,12 +13,11 @@
 
 #include "common.h"
 #include "compiler.h"
-#include "log.h"
+#include "picom.h"
 #include "region.h"
 #include "render.h"
 #include "win.h"
 
-#include <ctype.h>
 #include <epoxy/gl.h>
 #include <epoxy/glx.h>
 #include <locale.h>
@@ -73,6 +72,9 @@ typedef struct glx_session {
 	int z;
 	glx_blur_pass_t *blur_passes;
 	glx_round_pass_t *round_passes;
+	/// Custom GLX program used for painting window.
+	glx_prog_main_t glx_prog_win;
+	struct glx_fbconfig_info argb_fbconfig;
 } glx_session_t;
 
 /// @brief Wrapper of a bound GLX texture.
@@ -96,9 +98,9 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
                 int width, int height, int z, double opacity, bool argb, bool neg,
                 const region_t *reg_tgt, const glx_prog_main_t *pprogram);
 
-bool glx_init(session_t *ps, bool need_render);
+struct glx_session *glx_init(session_t *ps, bool need_render);
 
-void glx_destroy(session_t *ps);
+void glx_destroy(struct session *ps, struct glx_session *psglx);
 
 void glx_on_root_change(session_t *ps);
 
@@ -148,7 +150,8 @@ unsigned char *glx_take_screenshot(session_t *ps, int *out_length);
  * Check if there's a GLX context.
  */
 static inline bool glx_has_context(session_t *ps) {
-	return ps->psglx && ps->psglx->context;
+	auto psglx = session_get_psglx(ps);
+	return psglx && psglx->context;
 }
 
 /**

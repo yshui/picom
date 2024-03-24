@@ -13,6 +13,7 @@
 #include "config.h"
 #include "kernel.h"
 #include "log.h"
+#include "picom.h"
 #include "region.h"
 #include "string_utils.h"
 #include "types.h"
@@ -623,7 +624,8 @@ static bool gl_win_shader_from_stringv(const char **vshader_strv,
 
 void gl_root_change(backend_t *base, session_t *ps) {
 	auto gd = (struct gl_data *)base;
-	gl_resize(gd, ps->root_width, ps->root_height);
+	auto root_extent = session_get_root_extent(ps);
+	gl_resize(gd, root_extent.width, root_extent.height);
 }
 
 /**
@@ -889,7 +891,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
 	glUseProgram(0);
 
-	gd->dithered_present = ps->o.dithered_present;
+	gd->dithered_present = session_get_options(ps)->dithered_present;
 	gd->dummy_prog =
 	    gl_create_program_from_strv((const char *[]){present_vertex_shader, NULL},
 	                                (const char *[]){dummy_frag, NULL});
@@ -949,8 +951,9 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	const GLint *format = gd->dithered_present ? (const GLint[]){GL_RGB16, GL_RGBA16}
 	                                           : (const GLint[]){GL_RGB8, GL_RGBA8};
 	for (int i = 0; i < 2; i++) {
+		auto root_extent = session_get_root_extent(ps);
 		gd->back_format = format[i];
-		gl_resize(gd, ps->root_width, ps->root_height);
+		gl_resize(gd, root_extent.width, root_extent.height);
 
 		glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
 		                       GL_TEXTURE_2D, gd->back_texture, 0);

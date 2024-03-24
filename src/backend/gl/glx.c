@@ -245,7 +245,8 @@ static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawab
  */
 static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 	bool success = false;
-	glxext_init(ps->c.dpy, ps->c.screen);
+	auto c = session_get_x_connection(ps);
+	glxext_init(c->dpy, c->screen);
 	auto gd = ccalloc(1, struct _glx_data);
 	init_backend_base(&gd->gl.base, ps);
 
@@ -254,15 +255,15 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 	XVisualInfo *pvis = NULL;
 
 	// Check for GLX extension
-	if (!ps->glx_exists) {
+	if (!session_has_glx_extension(ps)) {
 		log_error("No GLX extension.");
 		goto end;
 	}
 
 	// Get XVisualInfo
 	int nitems = 0;
-	XVisualInfo vreq = {.visualid = ps->c.screen_info->root_visual};
-	pvis = XGetVisualInfo(ps->c.dpy, VisualIDMask, &vreq, &nitems);
+	XVisualInfo vreq = {.visualid = c->screen_info->root_visual};
+	pvis = XGetVisualInfo(c->dpy, VisualIDMask, &vreq, &nitems);
 	if (!pvis) {
 		log_error("Failed to acquire XVisualInfo for current visual.");
 		goto end;
@@ -270,22 +271,22 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 
 	// Ensure the visual is double-buffered
 	int value = 0;
-	if (glXGetConfig(ps->c.dpy, pvis, GLX_USE_GL, &value) || !value) {
+	if (glXGetConfig(c->dpy, pvis, GLX_USE_GL, &value) || !value) {
 		log_error("Root visual is not a GL visual.");
 		goto end;
 	}
 
-	if (glXGetConfig(ps->c.dpy, pvis, GLX_STENCIL_SIZE, &value) || !value) {
+	if (glXGetConfig(c->dpy, pvis, GLX_STENCIL_SIZE, &value) || !value) {
 		log_error("Root visual lacks stencil buffer.");
 		goto end;
 	}
 
-	if (glXGetConfig(ps->c.dpy, pvis, GLX_DOUBLEBUFFER, &value) || !value) {
+	if (glXGetConfig(c->dpy, pvis, GLX_DOUBLEBUFFER, &value) || !value) {
 		log_error("Root visual is not a double buffered GL visual.");
 		goto end;
 	}
 
-	if (glXGetConfig(ps->c.dpy, pvis, GLX_RGBA, &value) || !value) {
+	if (glXGetConfig(c->dpy, pvis, GLX_RGBA, &value) || !value) {
 		log_error("Root visual is a color index visual, not supported");
 		goto end;
 	}
@@ -303,11 +304,11 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 	// Find a fbconfig with visualid matching the one from the target win, so we can
 	// be sure that the fbconfig is compatible with our target window.
 	int ncfgs;
-	GLXFBConfig *cfg = glXGetFBConfigs(ps->c.dpy, ps->c.screen, &ncfgs);
+	GLXFBConfig *cfg = glXGetFBConfigs(c->dpy, c->screen, &ncfgs);
 	bool found = false;
 	for (int i = 0; i < ncfgs; i++) {
 		int visualid;
-		glXGetFBConfigAttribChecked(ps->c.dpy, cfg[i], GLX_VISUAL_ID, &visualid);
+		glXGetFBConfigAttribChecked(c->dpy, cfg[i], GLX_VISUAL_ID, &visualid);
 		if ((VisualID)visualid != pvis->visualid) {
 			continue;
 		}
@@ -326,7 +327,7 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 			attributes[7] = GLX_LOSE_CONTEXT_ON_RESET_ARB;
 		}
 
-		gd->ctx = glXCreateContextAttribsARB(ps->c.dpy, cfg[i], 0, true, attributes);
+		gd->ctx = glXCreateContextAttribsARB(c->dpy, cfg[i], 0, true, attributes);
 		free(cfg);
 
 		if (!gd->ctx) {
@@ -344,7 +345,7 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 
 	// Attach GLX context
 	GLXDrawable tgt = gd->target_win;
-	if (!glXMakeCurrent(ps->c.dpy, tgt, gd->ctx)) {
+	if (!glXMakeCurrent(c->dpy, tgt, gd->ctx)) {
 		log_error("Failed to attach GLX context.");
 		goto end;
 	}
@@ -357,12 +358,12 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 	gd->gl.decouple_texture_user_data = glx_decouple_user_data;
 	gd->gl.release_user_data = glx_release_image;
 
-	if (ps->o.vsync) {
-		if (!glx_set_swap_interval(1, ps->c.dpy, tgt)) {
+	if (session_get_options(ps)->vsync) {
+		if (!glx_set_swap_interval(1, c->dpy, tgt)) {
 			log_error("Failed to enable vsync.");
 		}
 	} else {
-		glx_set_swap_interval(0, ps->c.dpy, tgt);
+		glx_set_swap_interval(0, c->dpy, tgt);
 	}
 
 	success = true;

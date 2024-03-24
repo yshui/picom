@@ -145,249 +145,7 @@ struct damage_ring {
 	/// Number of damage regions we track
 	int count;
 };
-
-/// Structure containing all necessary data for a session.
-typedef struct session {
-	// === Event handlers ===
-	/// ev_io for X connection
-	ev_io xiow;
-	/// Timeout for delayed unredirection.
-	ev_timer unredir_timer;
-	/// Timer for fading
-	ev_timer fade_timer;
-	/// Use an ev_timer callback for drawing
-	ev_timer draw_timer;
-	/// Called every time we have timeouts or new data on socket,
-	/// so we can be sure if xcb read from X socket at anytime during event
-	/// handling, we will not left any event unhandled in the queue
-	ev_prepare event_check;
-	/// Signal handler for SIGUSR1
-	ev_signal usr1_signal;
-	/// Signal handler for SIGINT
-	ev_signal int_signal;
-
-	// === Backend related ===
-	/// backend data
-	backend_t *backend_data;
-	/// backend blur context
-	void *backend_blur_context;
-	/// graphic drivers used
-	enum driver drivers;
-	/// file watch handle
-	void *file_watch_handle;
-	/// libev mainloop
-	struct ev_loop *loop;
-	/// Shaders
-	struct shader_info *shaders;
-
-	// === Display related ===
-	/// X connection
-	struct x_connection c;
-	/// Whether the X server is grabbed by us
-	bool server_grabbed;
-	/// Width of root window.
-	int root_width;
-	/// Height of root window.
-	int root_height;
-	/// X Composite overlay window.
-	xcb_window_t overlay;
-	/// The target window for debug mode
-	xcb_window_t debug_window;
-	/// Whether the root tile is filled by us.
-	bool root_tile_fill;
-	/// Picture of the root window background.
-	paint_t root_tile_paint;
-	/// The backend data the root pixmap bound to
-	image_handle root_image;
-	/// A region of the size of the screen.
-	region_t screen_reg;
-	/// Picture of root window. Destination of painting in no-DBE painting
-	/// mode.
-	xcb_render_picture_t root_picture;
-	/// A Picture acting as the painting target.
-	xcb_render_picture_t tgt_picture;
-	/// Temporary buffer to paint to before sending to display.
-	paint_t tgt_buffer;
-	/// Window ID of the window we register as a symbol.
-	xcb_window_t reg_win;
-#ifdef CONFIG_OPENGL
-	/// Pointer to GLX data.
-	struct glx_session *psglx;
-	/// Custom GLX program used for painting window.
-	// XXX should be in struct glx_session
-	glx_prog_main_t glx_prog_win;
-	struct glx_fbconfig_info argb_fbconfig;
-#endif
-	/// Sync fence to sync draw operations
-	xcb_sync_fence_t sync_fence;
-	/// Whether we are rendering the first frame after screen is redirected
-	bool first_frame;
-	/// Whether screen has been turned off
-	bool screen_is_off;
-	/// When last MSC event happened, in useconds.
-	uint64_t last_msc_instant;
-	/// The last MSC number
-	uint64_t last_msc;
-	/// The delay between when the last frame was scheduled to be rendered, and when
-	/// the render actually started.
-	uint64_t last_schedule_delay;
-	/// When do we want our next frame to start rendering.
-	uint64_t next_render;
-	/// Whether we can perform frame pacing.
-	bool frame_pacing;
-	/// Vblank event scheduler
-	struct vblank_scheduler *vblank_scheduler;
-
-	/// Render statistics
-	struct render_statistics render_stats;
-
-	// === Operation related ===
-	/// Flags related to the root window
-	uint64_t root_flags;
-	/// Program options.
-	options_t o;
-	/// State object for c2.
-	struct c2_state *c2_state;
-	/// Whether we have hit unredirection timeout.
-	bool tmout_unredir_hit;
-	/// If the backend is busy. This means two things:
-	/// Either the backend is currently rendering a frame, or a frame has been
-	/// rendered but has yet to be presented. In either case, we should not start
-	/// another render right now. As if we start issuing rendering commands now, we
-	/// will have to wait for either the current render to finish, or the current
-	/// back buffer to become available again. In either case, we will be wasting
-	/// time.
-	bool backend_busy;
-	/// Whether a render is queued. This generally means there are pending updates
-	/// to the screen that's neither included in the current render, nor on the
-	/// screen.
-	bool render_queued;
-	/// For tracking damage regions
-	struct damage_ring damage_ring;
-	/// Whether all windows are currently redirected.
-	bool redirected;
-	/// Pre-generated alpha pictures.
-	xcb_render_picture_t *alpha_picts;
-	/// Time of last fading. In milliseconds.
-	long long fade_time;
-	// Cached blur convolution kernels.
-	struct x_convolution_kernel **blur_kerns_cache;
-	/// If we should quit
-	bool quit : 1;
-	// TODO(yshui) use separate flags for different kinds of updates so we don't
-	// waste our time.
-	/// Whether there are pending updates, like window creation, etc.
-	bool pending_updates : 1;
-
-	// === Expose event related ===
-	/// Pointer to an array of <code>XRectangle</code>-s of exposed region.
-	/// XXX why do we need this array?
-	rect_t *expose_rects;
-	/// Number of <code>XRectangle</code>-s in <code>expose_rects</code>.
-	int size_expose;
-	/// Index of the next free slot in <code>expose_rects</code>.
-	int n_expose;
-
-	// === Window related ===
-	/// A hash table of all windows.
-	struct win *windows;
-	/// Windows in their stacking order
-	struct list_node window_stack;
-	/// Pointer to <code>win</code> of current active window. Used by
-	/// EWMH <code>_NET_ACTIVE_WINDOW</code> focus detection. In theory,
-	/// it's more reliable to store the window ID directly here, just in
-	/// case the WM does something extraordinary, but caching the pointer
-	/// means another layer of complexity.
-	struct managed_win *active_win;
-	/// Window ID of leader window of currently active window. Used for
-	/// subsidiary window detection.
-	xcb_window_t active_leader;
-
-	// === Shadow/dimming related ===
-	/// 1x1 black Picture.
-	xcb_render_picture_t black_picture;
-	/// 1x1 Picture of the shadow color.
-	xcb_render_picture_t cshadow_picture;
-	/// 1x1 white Picture.
-	xcb_render_picture_t white_picture;
-	/// Backend shadow context.
-	struct backend_shadow_context *shadow_context;
-	// for shadow precomputation
-	/// A region in which shadow is not painted on.
-	region_t shadow_exclude_reg;
-
-	// === Software-optimization-related ===
-	/// Nanosecond offset of the first painting.
-	long paint_tm_offset;
-
-#ifdef CONFIG_VSYNC_DRM
-	// === DRM VSync related ===
-	/// File descriptor of DRI device file. Used for DRM VSync.
-	int drm_fd;
-#endif
-
-	// === X extension related ===
-	/// Event base number for X Fixes extension.
-	int xfixes_event;
-	/// Error base number for X Fixes extension.
-	int xfixes_error;
-	/// Event base number for X Damage extension.
-	int damage_event;
-	/// Error base number for X Damage extension.
-	int damage_error;
-	/// Event base number for X Render extension.
-	int render_event;
-	/// Error base number for X Render extension.
-	int render_error;
-	/// Event base number for X Composite extension.
-	int composite_event;
-	/// Error base number for X Composite extension.
-	int composite_error;
-	/// Major opcode for X Composite extension.
-	int composite_opcode;
-	/// Whether X DPMS extension exists
-	bool dpms_exists;
-	/// Whether X Shape extension exists.
-	bool shape_exists;
-	/// Event base number for X Shape extension.
-	int shape_event;
-	/// Error base number for X Shape extension.
-	int shape_error;
-	/// Whether X RandR extension exists.
-	bool randr_exists;
-	/// Event base number for X RandR extension.
-	int randr_event;
-	/// Error base number for X RandR extension.
-	int randr_error;
-	/// Whether X Present extension exists.
-	bool present_exists;
-	/// Whether X GLX extension exists.
-	bool glx_exists;
-	/// Event base number for X GLX extension.
-	int glx_event;
-	/// Error base number for X GLX extension.
-	int glx_error;
-	/// Information about monitors.
-	struct x_monitors monitors;
-	/// Whether X Sync extension exists.
-	bool xsync_exists;
-	/// Event base number for X Sync extension.
-	int xsync_event;
-	/// Error base number for X Sync extension.
-	int xsync_error;
-	/// Whether X Render convolution filter exists.
-	bool xrfilter_convolution_exists;
-
-	// === Atoms ===
-	struct atom *atoms;
-
-#ifdef CONFIG_DBUS
-	// === DBus related ===
-	struct cdbus_data *dbus_data;
-#endif
-
-	int (*vsync_wait)(session_t *);
-} session_t;
+struct session;
 
 /// Enumeration for window event hints.
 typedef enum { WIN_EVMODE_UNKNOWN, WIN_EVMODE_FRAME, WIN_EVMODE_CLIENT } win_evmode_t;
@@ -461,18 +219,13 @@ static inline struct timespec get_time_timespec(void) {
 	return tm;
 }
 
-/**
- * Return the painting target window.
- */
-static inline xcb_window_t get_tgt_window(session_t *ps) {
-	return ps->overlay != XCB_NONE ? ps->overlay : ps->c.screen_info->root;
-}
-
+struct options *session_get_options(session_t *ps);
 /**
  * Check if current backend uses GLX.
  */
 static inline bool bkend_use_glx(session_t *ps) {
-	return BKEND_GLX == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
+	auto backend = session_get_options(ps)->backend;
+	return backend == BKEND_GLX || backend == BKEND_XR_GLX_HYBRID;
 }
 
 /**
@@ -520,7 +273,7 @@ static inline void damage_ring_advance(struct damage_ring *ring) {
 	pixman_region32_clear(&ring->damages[ring->cursor]);
 }
 
-static inline void damage_ring_collect(struct damage_ring *ring, region_t *all_region,
+static inline void damage_ring_collect(const struct damage_ring *ring, region_t *all_region,
                                        region_t *region, int buffer_age) {
 	if (buffer_age == -1 || buffer_age > ring->count) {
 		pixman_region32_copy(region, all_region);

@@ -12,6 +12,7 @@
 #include "config.h"
 #include "kernel.h"
 #include "log.h"
+#include "picom.h"
 #include "utils.h"
 #include "win.h"
 #include "x.h"
@@ -508,8 +509,8 @@ struct backend_image *default_new_backend_image(int w, int h) {
 }
 
 void init_backend_base(struct backend_base *base, session_t *ps) {
-	base->c = &ps->c;
-	base->loop = ps->loop;
+	base->c = session_get_x_connection(ps);
+	base->loop = session_get_mainloop(ps);
 	base->busy = false;
 	base->ops = NULL;
 }

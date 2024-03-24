@@ -15,12 +15,12 @@ void print_diagnostics(session_t *ps, const char *config_file, bool compositor_r
 	printf("**Version:** " PICOM_VERSION "\n");
 	// printf("**CFLAGS:** %s\n", "??");
 	printf("\n### Extensions:\n\n");
-	printf("* Shape: %s\n", ps->shape_exists ? "Yes" : "No");
-	printf("* RandR: %s\n", ps->randr_exists ? "Yes" : "No");
-	printf("* Present: %s\n", ps->present_exists ? "Present" : "Not Present");
+	printf("* Shape: %s\n", session_has_shape_extension(ps) ? "Yes" : "No");
+	printf("* RandR: %s\n", session_has_randr_extension(ps) ? "Yes" : "No");
+	printf("* Present: %s\n", session_has_present_extension(ps) ? "Present" : "Not Present");
 	printf("\n### Misc:\n\n");
-	printf("* Use Overlay: %s\n", ps->overlay != XCB_NONE ? "Yes" : "No");
-	if (ps->overlay == XCB_NONE) {
+	printf("* Use Overlay: %s\n", session_get_overlay(ps) != XCB_NONE ? "Yes" : "No");
+	if (session_get_overlay(ps) == XCB_NONE) {
 		if (compositor_running) {
 			printf("  (Another compositor is already running)\n");
 		} else if (session_redirection_mode(ps) != XCB_COMPOSITE_REDIRECT_MANUAL) {
@@ -34,7 +34,7 @@ void print_diagnostics(session_t *ps, const char *config_file, bool compositor_r
 #endif
 	printf("* Config file used: %s\n", config_file ?: "None");
 	printf("\n### Drivers (inaccurate):\n\n");
-	print_drivers(ps->drivers);
+	print_drivers(session_get_driver(ps));
 
 	for (int i = 0; i < NUM_BKEND; i++) {
 		if (backend_list[i] && backend_list[i]->diagnostics) {

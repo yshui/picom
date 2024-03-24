@@ -23,7 +23,9 @@
 #include "config.h"
 #include "kernel.h"
 #include "log.h"
+#include "picom.h"
 #include "region.h"
+#include "render.h"
 #include "string_utils.h"
 #include "uthash_extra.h"
 #include "utils.h"
@@ -39,24 +41,26 @@ static inline XVisualInfo *get_visualinfo_from_visual(session_t *ps, xcb_visuali
 	XVisualInfo vreq = {.visualid = visual};
 	int nitems = 0;
 
-	return XGetVisualInfo(ps->c.dpy, VisualIDMask, &vreq, &nitems);
+	return XGetVisualInfo(session_get_x_connection(ps)->dpy, VisualIDMask, &vreq, &nitems);
 }
 
 /**
  * Initialize OpenGL.
  */
-bool glx_init(session_t *ps, bool need_render) {
+struct glx_session *glx_init(session_t *ps, bool need_render) {
 	bool success = false;
 	XVisualInfo *pvis = NULL;
+	glx_session_t *psglx = NULL;
+	auto c = session_get_x_connection(ps);
 
 	// Check for GLX extension
-	if (!ps->glx_exists) {
+	if (!session_has_glx_extension(ps)) {
 		log_error("No GLX extension.");
 		goto glx_init_end;
 	}
 
 	// Get XVisualInfo
-	pvis = get_visualinfo_from_visual(ps, ps->c.screen_info->root_visual);
+	pvis = get_visualinfo_from_visual(ps, c->screen_info->root_visual);
 	if (!pvis) {
 		log_error("Failed to acquire XVisualInfo for current visual.");
 		goto glx_init_end;
@@ -65,13 +69,12 @@ bool glx_init(session_t *ps, bool need_render) {
 	// Ensure the visual is double-buffered
 	if (need_render) {
 		int value = 0;
-		if (Success != glXGetConfig(ps->c.dpy, pvis, GLX_USE_GL, &value) || !value) {
+		if (Success != glXGetConfig(c->dpy, pvis, GLX_USE_GL, &value) || !value) {
 			log_error("Root visual is not a GL visual.");
 			goto glx_init_end;
 		}
 
-		if (Success != glXGetConfig(ps->c.dpy, pvis, GLX_DOUBLEBUFFER, &value) ||
-		    !value) {
+		if (Success != glXGetConfig(c->dpy, pvis, GLX_DOUBLEBUFFER, &value) || !value) {
 			log_error("Root visual is not a double buffered GL visual.");
 			goto glx_init_end;
 		}
@@ -83,38 +86,34 @@ bool glx_init(session_t *ps, bool need_render) {
 	}
 
 	// Initialize GLX data structure
-	if (!ps->psglx) {
-		static const glx_session_t CGLX_SESSION_DEF = CGLX_SESSION_INIT;
-		ps->psglx = cmalloc(glx_session_t);
-		memcpy(ps->psglx, &CGLX_SESSION_DEF, sizeof(glx_session_t));
+	auto options = session_get_options(ps);
+	psglx = cmalloc(glx_session_t);
+	*psglx = (glx_session_t){.context = NULL, .glx_prog_win = GLX_PROG_MAIN_INIT};
 
-		// +1 for the zero terminator
-		ps->psglx->blur_passes = ccalloc(ps->o.blur_kernel_count, glx_blur_pass_t);
+	// +1 for the zero terminator
+	psglx->blur_passes = ccalloc(options->blur_kernel_count, glx_blur_pass_t);
 
-		for (int i = 0; i < ps->o.blur_kernel_count; ++i) {
-			glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
-			ppass->unifm_factor_center = -1;
-			ppass->unifm_offset_x = -1;
-			ppass->unifm_offset_y = -1;
-		}
-
-		ps->psglx->round_passes = ccalloc(1, glx_round_pass_t);
-		glx_round_pass_t *ppass = ps->psglx->round_passes;
-		ppass->unifm_radius = -1;
-		ppass->unifm_texcoord = -1;
-		ppass->unifm_texsize = -1;
-		ppass->unifm_borderw = -1;
-		ppass->unifm_borderc = -1;
-		ppass->unifm_resolution = -1;
-		ppass->unifm_tex_scr = -1;
+	for (int i = 0; i < options->blur_kernel_count; ++i) {
+		glx_blur_pass_t *ppass = &psglx->blur_passes[i];
+		ppass->unifm_factor_center = -1;
+		ppass->unifm_offset_x = -1;
+		ppass->unifm_offset_y = -1;
 	}
 
-	glx_session_t *psglx = ps->psglx;
+	psglx->round_passes = ccalloc(1, glx_round_pass_t);
+	glx_round_pass_t *ppass = psglx->round_passes;
+	ppass->unifm_radius = -1;
+	ppass->unifm_texcoord = -1;
+	ppass->unifm_texsize = -1;
+	ppass->unifm_borderw = -1;
+	ppass->unifm_borderc = -1;
+	ppass->unifm_resolution = -1;
+	ppass->unifm_tex_scr = -1;
 
 	if (!psglx->context) {
 		// Get GLX context
 #ifndef DEBUG_GLX_DEBUG_CONTEXT
-		psglx->context = glXCreateContext(ps->c.dpy, pvis, None, GL_TRUE);
+		psglx->context = glXCreateContext(c->dpy, pvis, None, GL_TRUE);
 #else
 		{
 			GLXFBConfig fbconfig = get_fbconfig_from_visualinfo(ps, pvis);
@@ -136,7 +135,7 @@ bool glx_init(session_t *ps, bool need_render) {
 			static const int attrib_list[] = {
 			    GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_DEBUG_BIT_ARB, None};
 			psglx->context = p_glXCreateContextAttribsARB(
-			    ps->c.dpy, fbconfig, NULL, GL_TRUE, attrib_list);
+			    c->dpy, fbconfig, NULL, GL_TRUE, attrib_list);
 		}
 #endif
 
@@ -146,7 +145,7 @@ bool glx_init(session_t *ps, bool need_render) {
 		}
 
 		// Attach GLX context
-		if (!glXMakeCurrent(ps->c.dpy, get_tgt_window(ps), psglx->context)) {
+		if (!glXMakeCurrent(c->dpy, session_get_target_window(ps), psglx->context)) {
 			log_error("Failed to attach GLX context.");
 			goto glx_init_end;
 		}
@@ -168,7 +167,7 @@ bool glx_init(session_t *ps, bool need_render) {
 	// Ensure we have a stencil buffer. X Fixes does not guarantee rectangles
 	// in regions don't overlap, so we must use stencil buffer to make sure
 	// we don't paint a region for more than one time, I think?
-	if (need_render && !ps->o.glx_no_stencil) {
+	if (need_render && !options->glx_no_stencil) {
 		GLint val = 0;
 		glGetIntegerv(GL_STENCIL_BITS, &val);
 		if (!val) {
@@ -193,7 +192,7 @@ bool glx_init(session_t *ps, bool need_render) {
 		glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 		glDisable(GL_BLEND);
 
-		if (!ps->o.glx_no_stencil) {
+		if (!options->glx_no_stencil) {
 			// Initialize stencil buffer
 			glClear(GL_STENCIL_BUFFER_BIT);
 			glDisable(GL_STENCIL_TEST);
@@ -204,7 +203,7 @@ bool glx_init(session_t *ps, bool need_render) {
 		// Clear screen
 		glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
 		// glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		// glXSwapBuffers(ps->c.dpy, get_tgt_window(ps));
+		// glXSwapBuffers(ps->c.dpy, session_get_target_window(ps));
 	}
 
 	success = true;
@@ -213,10 +212,11 @@ glx_init_end:
 	XFree(pvis);
 
 	if (!success) {
-		glx_destroy(ps);
+		glx_destroy(ps, psglx);
+		psglx = NULL;
 	}
 
-	return success;
+	return psglx;
 }
 
 static void glx_free_prog_main(glx_prog_main_t *pprogram) {
@@ -235,19 +235,14 @@ static void glx_free_prog_main(glx_prog_main_t *pprogram) {
 /**
  * Destroy GLX related resources.
  */
-void glx_destroy(session_t *ps) {
-	if (!ps->psglx) {
+void glx_destroy(struct session *ps, struct glx_session *psglx) {
+	if (!psglx) {
 		return;
 	}
 
-	// Free all GLX resources of windows
-	win_stack_foreach_managed(w, &ps->window_stack) {
-		free_win_res_glx(ps, w);
-	}
-
 	// Free GLSL shaders/programs
-	for (int i = 0; i < ps->o.blur_kernel_count; ++i) {
-		glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
+	for (int i = 0; i < session_get_options(ps)->blur_kernel_count; ++i) {
+		glx_blur_pass_t *ppass = &psglx->blur_passes[i];
 		if (ppass->frag_shader) {
 			glDeleteShader(ppass->frag_shader);
 		}
@@ -255,43 +250,44 @@ void glx_destroy(session_t *ps) {
 			glDeleteProgram(ppass->prog);
 		}
 	}
-	free(ps->psglx->blur_passes);
+	free(psglx->blur_passes);
 
-	glx_round_pass_t *ppass = ps->psglx->round_passes;
+	glx_round_pass_t *ppass = psglx->round_passes;
 	if (ppass->frag_shader) {
 		glDeleteShader(ppass->frag_shader);
 	}
 	if (ppass->prog) {
 		glDeleteProgram(ppass->prog);
 	}
-	free(ps->psglx->round_passes);
+	free(psglx->round_passes);
 
-	glx_free_prog_main(&ps->glx_prog_win);
+	glx_free_prog_main(&psglx->glx_prog_win);
 
 	gl_check_err();
 
 	// Destroy GLX context
-	if (ps->psglx->context) {
-		glXMakeCurrent(ps->c.dpy, None, NULL);
-		glXDestroyContext(ps->c.dpy, ps->psglx->context);
-		ps->psglx->context = NULL;
+	auto c = session_get_x_connection(ps);
+	if (psglx->context) {
+		glXMakeCurrent(c->dpy, None, NULL);
+		glXDestroyContext(c->dpy, psglx->context);
+		psglx->context = NULL;
 	}
 
-	free(ps->psglx);
-	ps->psglx = NULL;
-	ps->argb_fbconfig = (struct glx_fbconfig_info){0};
+	free(psglx);
+	psglx = NULL;
 }
 
 /**
  * Callback to run on root window size change.
  */
 void glx_on_root_change(session_t *ps) {
-	glViewport(0, 0, ps->root_width, ps->root_height);
+	auto root_extent = session_get_root_extent(ps);
+	glViewport(0, 0, root_extent.width, root_extent.height);
 
 	// Initialize matrix, copied from dcompmgr
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	glOrtho(0, ps->root_width, 0, ps->root_height, -1000.0, 1000.0);
+	glOrtho(0, root_extent.width, 0, root_extent.height, -1000.0, 1000.0);
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 }
@@ -300,12 +296,13 @@ void glx_on_root_change(session_t *ps) {
  * Initialize GLX blur filter.
  */
 bool glx_init_blur(session_t *ps) {
-	assert(ps->o.blur_kernel_count > 0);
-	assert(ps->o.blur_kerns);
-	assert(ps->o.blur_kerns[0]);
+	auto options = session_get_options(ps);
+	assert(options->blur_kernel_count > 0);
+	assert(options->blur_kerns);
+	assert(options->blur_kerns[0]);
 
 	// Allocate PBO if more than one blur kernel is present
-	if (ps->o.blur_kernel_count > 1) {
+	if (options->blur_kernel_count > 1) {
 		// Try to generate a framebuffer
 		GLuint fbo = 0;
 		glGenFramebuffers(1, &fbo);
@@ -343,7 +340,8 @@ bool glx_init_blur(session_t *ps) {
 		    "  gl_FragColor = sum / (factor_center + float(%.7g));\n"
 		    "}\n";
 
-		const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
+		auto psglx = session_get_psglx(ps);
+		const bool use_texture_rect = !psglx->has_texture_non_power_of_two;
 		const char *sampler_type = (use_texture_rect ? "sampler2DRect" : "sampler2D");
 		const char *texture_func = (use_texture_rect ? "texture2DRect" : "texture2D");
 		const char *shader_add = FRAG_SHADER_BLUR_ADD;
@@ -356,9 +354,9 @@ bool glx_init_blur(session_t *ps) {
 			extension = strdup("");
 		}
 
-		for (int i = 0; i < ps->o.blur_kernel_count; ++i) {
-			auto kern = ps->o.blur_kerns[i];
-			glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
+		for (int i = 0; i < options->blur_kernel_count; ++i) {
+			auto kern = options->blur_kerns[i];
+			glx_blur_pass_t *ppass = &psglx->blur_passes[i];
 
 			// Build shader
 			int width = kern->w, height = kern->h;
@@ -505,7 +503,8 @@ bool glx_init_rounded_corners(session_t *ps) {
 	    "\n"
 	    "}\n";
 
-	const bool use_texture_rect = !ps->psglx->has_texture_non_power_of_two;
+	auto psglx = session_get_psglx(ps);
+	const bool use_texture_rect = !psglx->has_texture_non_power_of_two;
 	const char *sampler_type = (use_texture_rect ? "sampler2DRect" : "sampler2D");
 	const char *texture_func = (use_texture_rect ? "texture2DRect" : "texture2D");
 	char *extension = NULL;
@@ -519,7 +518,7 @@ bool glx_init_rounded_corners(session_t *ps) {
 
 	bool success = false;
 	// Build rounded corners shader
-	auto ppass = ps->psglx->round_passes;
+	auto ppass = psglx->round_passes;
 	auto len = strlen(FRAG_SHADER) + strlen(extension) + strlen(sampler_type) +
 	           strlen(texture_func) + 1;
 	char *shader_str = ccalloc(len, char);
@@ -614,7 +613,8 @@ static inline void glx_copy_region_to_tex(session_t *ps, GLenum tex_tgt, int bas
                                           int basey, int dx, int dy, int width, int height) {
 	if (width > 0 && height > 0) {
 		glCopyTexSubImage2D(tex_tgt, 0, dx - basex, dy - basey, dx,
-		                    ps->root_height - dy - height, width, height);
+		                    session_get_root_extent(ps).height - dy - height,
+		                    width, height);
 	}
 }
 
@@ -641,7 +641,7 @@ static inline GLuint glx_gen_texture(GLenum tex_tgt, int width, int height) {
  */
 bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex, int x, int y,
                       int width, int height) {
-	if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID) {
+	if (!bkend_use_glx(ps)) {
 		return true;
 	}
 
@@ -662,7 +662,7 @@ bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex, int x, i
 		ptex->width = width;
 		ptex->height = height;
 		ptex->target = GL_TEXTURE_RECTANGLE;
-		if (ps->psglx->has_texture_non_power_of_two) {
+		if (session_get_psglx(ps)->has_texture_non_power_of_two) {
 			ptex->target = GL_TEXTURE_2D;
 		}
 	}
@@ -697,7 +697,7 @@ bool glx_bind_texture(session_t *ps attr_unused, glx_texture_t **pptex, int x, i
  */
 bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, int width,
                      int height, bool repeat, const struct glx_fbconfig_info *fbcfg) {
-	if (ps->o.backend != BKEND_GLX && ps->o.backend != BKEND_XR_GLX_HYBRID) {
+	if (!bkend_use_glx(ps)) {
 		return true;
 	}
 
@@ -734,13 +734,14 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 
 	// Create GLX pixmap
 	int depth = 0;
+	auto c = session_get_x_connection(ps);
 	if (!ptex->glpixmap) {
 		need_release = false;
 
 		// Retrieve pixmap parameters, if they aren't provided
 		if (!width || !height) {
 			auto r = xcb_get_geometry_reply(
-			    ps->c.c, xcb_get_geometry(ps->c.c, pixmap), NULL);
+			    c->c, xcb_get_geometry(c->c, pixmap), NULL);
 			if (!r) {
 				log_error("Failed to query info of pixmap %#010x.", pixmap);
 				return false;
@@ -761,7 +762,7 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 		// pixmap-specific parameters, and this may change in the future
 		GLenum tex_tgt = 0;
 		if (GLX_TEXTURE_2D_BIT_EXT & fbcfg->texture_tgts &&
-		    ps->psglx->has_texture_non_power_of_two) {
+		    session_get_psglx(ps)->has_texture_non_power_of_two) {
 			tex_tgt = GLX_TEXTURE_2D_EXT;
 		} else if (GLX_TEXTURE_RECTANGLE_BIT_EXT & fbcfg->texture_tgts) {
 			tex_tgt = GLX_TEXTURE_RECTANGLE_EXT;
@@ -782,7 +783,7 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 		    0,
 		};
 
-		ptex->glpixmap = glXCreatePixmap(ps->c.dpy, fbcfg->cfg, pixmap, attrs);
+		ptex->glpixmap = glXCreatePixmap(c->dpy, fbcfg->cfg, pixmap, attrs);
 		ptex->pixmap = pixmap;
 		ptex->target =
 		    (GLX_TEXTURE_2D_EXT == tex_tgt ? GL_TEXTURE_2D : GL_TEXTURE_RECTANGLE);
@@ -829,10 +830,10 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 	// The specification requires rebinding whenever the content changes...
 	// We can't follow this, too slow.
 	if (need_release) {
-		glXReleaseTexImageEXT(ps->c.dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+		glXReleaseTexImageEXT(c->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
 	}
 
-	glXBindTexImageEXT(ps->c.dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
+	glXBindTexImageEXT(c->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
 
 	// Cleanup
 	glBindTexture(ptex->target, 0);
@@ -847,16 +848,17 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
  * @brief Release binding of a texture.
  */
 void glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
+	auto c = session_get_x_connection(ps);
 	// Release binding
 	if (ptex->glpixmap && ptex->texture) {
 		glBindTexture(ptex->target, ptex->texture);
-		glXReleaseTexImageEXT(ps->c.dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
+		glXReleaseTexImageEXT(c->dpy, ptex->glpixmap, GLX_FRONT_LEFT_EXT);
 		glBindTexture(ptex->target, 0);
 	}
 
 	// Free GLX Pixmap
 	if (ptex->glpixmap) {
-		glXDestroyPixmap(ps->c.dpy, ptex->glpixmap);
+		glXDestroyPixmap(c->dpy, ptex->glpixmap);
 		ptex->glpixmap = 0;
 	}
 
@@ -868,7 +870,7 @@ void glx_release_pixmap(session_t *ps, glx_texture_t *ptex) {
  */
 void glx_set_clip(session_t *ps, const region_t *reg) {
 	// Quit if we aren't using stencils
-	if (ps->o.glx_no_stencil) {
+	if (session_get_options(ps)->glx_no_stencil) {
 		return;
 	}
 
@@ -884,7 +886,7 @@ void glx_set_clip(session_t *ps, const region_t *reg) {
 
 	if (nrects == 1) {
 		glEnable(GL_SCISSOR_TEST);
-		glScissor(rects[0].x1, ps->root_height - rects[0].y2,
+		glScissor(rects[0].x1, session_get_root_extent(ps).height - rects[0].y2,
 		          rects[0].x2 - rects[0].x1, rects[0].y2 - rects[0].y1);
 	}
 
@@ -917,8 +919,10 @@ void glx_set_clip(session_t *ps, const region_t *reg) {
  */
 bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
                   GLfloat factor_center, const region_t *reg_tgt, glx_blur_cache_t *pbc) {
-	assert(ps->psglx->blur_passes[0].prog);
-	const bool more_passes = ps->o.blur_kernel_count > 1;
+	auto psglx = session_get_psglx(ps);
+	assert(psglx->blur_passes[0].prog);
+	auto options = session_get_options(ps);
+	const bool more_passes = options->blur_kernel_count > 1;
 	const bool have_scissors = glIsEnabled(GL_SCISSOR_TEST);
 	const bool have_stencil = glIsEnabled(GL_STENCIL_TEST);
 	bool ret = false;
@@ -954,7 +958,7 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 	*/
 
 	GLenum tex_tgt = GL_TEXTURE_RECTANGLE;
-	if (ps->psglx->has_texture_non_power_of_two) {
+	if (psglx->has_texture_non_power_of_two) {
 		tex_tgt = GL_TEXTURE_2D;
 	}
 
@@ -1017,9 +1021,9 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 	}
 
 	bool last_pass = false;
-	for (int i = 0; i < ps->o.blur_kernel_count; ++i) {
-		last_pass = (i == ps->o.blur_kernel_count - 1);
-		const glx_blur_pass_t *ppass = &ps->psglx->blur_passes[i];
+	for (int i = 0; i < options->blur_kernel_count; ++i) {
+		last_pass = (i == options->blur_kernel_count - 1);
+		const glx_blur_pass_t *ppass = &psglx->blur_passes[i];
 		assert(ppass->prog);
 
 		assert(tex_scr);
@@ -1071,7 +1075,7 @@ bool glx_blur_dst(session_t *ps, int dx, int dy, int width, int height, float z,
 			auto rdy = (GLfloat)(mheight - crect.y1 + mdy);
 			if (last_pass) {
 				rdx = (GLfloat)crect.x1;
-				rdy = (GLfloat)(ps->root_height - crect.y1);
+				rdy = (GLfloat)(session_get_root_extent(ps).height - crect.y1);
 			}
 			auto rdxe = rdx + (GLfloat)(crect.x2 - crect.x1);
 			auto rdye = rdy - (GLfloat)(crect.y2 - crect.y1);
@@ -1176,8 +1180,9 @@ void glx_read_border_pixel(int root_height, int root_width, int x, int y, int wi
 bool glx_round_corners_dst(session_t *ps, struct managed_win *w,
                            const glx_texture_t *ptex, int dx, int dy, int width,
                            int height, float z, float cr, const region_t *reg_tgt) {
-	assert(ps->psglx->round_passes->prog);
+	assert(session_get_psglx(ps)->round_passes->prog);
 	bool ret = false;
+	auto psglx = session_get_psglx(ps);
 
 	// log_warn("dxy(%d, %d) wh(%d %d) rwh(%d %d) b(%d), f(%d)",
 	//	dx, dy, width, height, ps->root_width, ps->root_height, w->g.border_width,
@@ -1186,13 +1191,14 @@ bool glx_round_corners_dst(session_t *ps, struct managed_win *w,
 	int mdx = dx, mdy = dy, mwidth = width, mheight = height;
 	log_trace("%d, %d, %d, %d", mdx, mdy, mwidth, mheight);
 
+	auto root_extent = session_get_root_extent(ps);
 	if (w->g.border_width > 0) {
-		glx_read_border_pixel(ps->root_height, ps->root_width, dx, dy, width,
-		                      height, &w->border_col[0]);
+		glx_read_border_pixel(root_extent.height, root_extent.width, dx, dy,
+		                      width, height, &w->border_col[0]);
 	}
 
 	{
-		const glx_round_pass_t *ppass = ps->psglx->round_passes;
+		const glx_round_pass_t *ppass = psglx->round_passes;
 		assert(ppass->prog);
 
 		glEnable(GL_BLEND);
@@ -1229,8 +1235,8 @@ bool glx_round_corners_dst(session_t *ps, struct managed_win *w,
 			            w->border_col[1], w->border_col[2], w->border_col[3]);
 		}
 		if (ppass->unifm_resolution >= 0) {
-			glUniform2f(ppass->unifm_resolution, (float)ps->root_width,
-			            (float)ps->root_height);
+			glUniform2f(ppass->unifm_resolution, (float)root_extent.width,
+			            (float)root_extent.height);
 		}
 
 		// Painting
@@ -1250,7 +1256,7 @@ bool glx_round_corners_dst(session_t *ps, struct managed_win *w,
 
 				// coordinates for the texture in the target
 				auto rdx = (GLfloat)crect.x1;
-				auto rdy = (GLfloat)(ps->root_height - crect.y1);
+				auto rdy = (GLfloat)(root_extent.height - crect.y1);
 				auto rdxe = (GLfloat)rdx + (GLfloat)(crect.x2 - crect.x1);
 				auto rdye = (GLfloat)rdy - (GLfloat)(crect.y2 - crect.y1);
 
@@ -1305,7 +1311,7 @@ bool glx_dim_dst(session_t *ps, int dx, int dy, int width, int height, int z,
 	P_PAINTREG_START(crect) {
 		// XXX what does all of these variables mean?
 		GLint rdx = crect.x1;
-		GLint rdy = ps->root_height - crect.y1;
+		GLint rdy = session_get_root_extent(ps).height - crect.y1;
 		GLint rdxe = rdx + (crect.x2 - crect.x1);
 		GLint rdye = rdy - (crect.y2 - crect.y1);
 
@@ -1481,7 +1487,7 @@ bool glx_render(session_t *ps, const glx_texture_t *ptex, int x, int y, int dx, 
 
 			// coordinates for the texture in the target
 			GLint rdx = crect.x1;
-			GLint rdy = ps->root_height - crect.y1;
+			GLint rdy = session_get_root_extent(ps).height - crect.y1;
 			GLint rdxe = rdx + (crect.x2 - crect.x1);
 			GLint rdye = rdy - (crect.y2 - crect.y1);
 

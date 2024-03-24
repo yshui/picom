@@ -136,10 +136,11 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 	}
 
 	gd = ccalloc(1, struct egl_data);
-	gd->display = eglGetPlatformDisplayEXT(EGL_PLATFORM_X11_EXT, ps->c.dpy,
+	auto c = session_get_x_connection(ps);
+	gd->display = eglGetPlatformDisplayEXT(EGL_PLATFORM_X11_EXT, c->dpy,
 	                                       (EGLint[]){
 	                                           EGL_PLATFORM_X11_SCREEN_EXT,
-	                                           ps->c.screen,
+	                                           c->screen,
 	                                           EGL_NONE,
 	                                       });
 	if (gd->display == EGL_NO_DISPLAY) {
@@ -172,7 +173,7 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 		goto end;
 	}
 
-	auto visual_info = x_get_visual_info(&ps->c, ps->c.screen_info->root_visual);
+	auto visual_info = x_get_visual_info(c, c->screen_info->root_visual);
 	EGLConfig config = NULL;
 	int nconfigs = 1;
 	// clang-format off
@@ -228,7 +229,7 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 	gd->gl.decouple_texture_user_data = egl_decouple_user_data;
 	gd->gl.release_user_data = egl_release_image;
 
-	if (ps->o.vsync) {
+	if (session_get_options(ps)->vsync) {
 		if (!egl_set_swap_interval(1, gd->display)) {
 			log_error("Failed to enable vsync. %#x", eglGetError());
 		}

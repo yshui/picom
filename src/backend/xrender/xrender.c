@@ -893,7 +893,9 @@ static void xrender_get_blur_size(void *blur_context, int *width, int *height) {
 }
 
 static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
-	if (ps->o.dithered_present) {
+	auto c = session_get_x_connection(ps);
+	auto options = session_get_options(ps);
+	if (options->dithered_present) {
 		log_warn("\"dithered-present\" is not supported by the xrender backend.");
 	}
 
@@ -902,30 +904,29 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 
 	for (int i = 0; i <= MAX_ALPHA; ++i) {
 		double o = (double)i / (double)MAX_ALPHA;
-		xd->alpha_pict[i] = solid_picture(&ps->c, false, o, 0, 0, 0);
+		xd->alpha_pict[i] = solid_picture(c, false, o, 0, 0, 0);
 		assert(xd->alpha_pict[i] != XCB_NONE);
 	}
 
-	xd->target_width = ps->root_width;
-	xd->target_height = ps->root_height;
-	xd->black_pixel = solid_picture(&ps->c, true, 1, 0, 0, 0);
-	xd->white_pixel = solid_picture(&ps->c, true, 1, 1, 1, 1);
+	auto root_extent = session_get_root_extent(ps);
+	xd->target_width = root_extent.width;
+	xd->target_height = root_extent.height;
+	xd->black_pixel = solid_picture(c, true, 1, 0, 0, 0);
+	xd->white_pixel = solid_picture(c, true, 1, 1, 1, 1);
 
 	xd->target_win = target;
 	xcb_render_create_picture_value_list_t pa = {
 	    .subwindowmode = XCB_SUBWINDOW_MODE_INCLUDE_INFERIORS,
 	};
 	xd->target = x_create_picture_with_visual_and_pixmap(
-	    &ps->c, ps->c.screen_info->root_visual, xd->target_win,
-	    XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
+	    c, c->screen_info->root_visual, xd->target_win, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
 
-	xd->vsync = ps->o.vsync;
-	if (ps->present_exists) {
-		auto eid = x_new_id(&ps->c);
-		auto e =
-		    xcb_request_check(ps->c.c, xcb_present_select_input_checked(
-		                                   ps->c.c, eid, xd->target_win,
-		                                   XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY));
+	xd->vsync = options->vsync;
+	if (session_has_present_extension(ps)) {
+		auto eid = x_new_id(c);
+		auto e = xcb_request_check(c->c, xcb_present_select_input_checked(
+		                                     c->c, eid, xd->target_win,
+		                                     XCB_PRESENT_EVENT_MASK_COMPLETE_NOTIFY));
 		if (e) {
 			log_error("Cannot select present input, vsync will be disabled");
 			xd->vsync = false;
@@ -933,7 +934,7 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 		}
 
 		xd->present_event =
-		    xcb_register_for_special_xge(ps->c.c, &xcb_present_id, eid, NULL);
+		    xcb_register_for_special_xge(c->c, &xcb_present_id, eid, NULL);
 		if (!xd->present_event) {
 			log_error("Cannot register for special XGE, vsync will be "
 			          "disabled");
@@ -944,22 +945,22 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	}
 
 	if (xd->vsync) {
-		xd->present_region = x_create_region(&ps->c, &ps->screen_reg);
+		xd->present_region = x_create_region(c, session_get_screen_reg(ps));
 	}
 
 	// We might need to do double buffering for vsync, and buffer 0 and 1 are for
 	// double buffering.
 	int first_buffer_index = xd->vsync ? 0 : 2;
 	for (int i = first_buffer_index; i < 3; i++) {
-		xd->back_pixmap[i] = x_create_pixmap(&ps->c, ps->c.screen_info->root_depth,
-		                                     to_u16_checked(ps->root_width),
-		                                     to_u16_checked(ps->root_height));
+		xd->back_pixmap[i] = x_create_pixmap(c, c->screen_info->root_depth,
+		                                     to_u16_checked(root_extent.width),
+		                                     to_u16_checked(root_extent.height));
 		const uint32_t pic_attrs_mask = XCB_RENDER_CP_REPEAT;
 		const xcb_render_create_picture_value_list_t pic_attrs = {
 		    .repeat = XCB_RENDER_REPEAT_PAD};
 		xd->back[i] = x_create_picture_with_visual_and_pixmap(
-		    &ps->c, ps->c.screen_info->root_visual, xd->back_pixmap[i],
-		    pic_attrs_mask, &pic_attrs);
+		    c, c->screen_info->root_visual, xd->back_pixmap[i], pic_attrs_mask,
+		    &pic_attrs);
 		xd->buffer_age[i] = -1;
 		if (xd->back_pixmap[i] == XCB_NONE || xd->back[i] == XCB_NONE) {
 			log_error("Cannot create pixmap for rendering");

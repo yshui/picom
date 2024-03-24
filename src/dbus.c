@@ -24,12 +24,11 @@
 #include "config.h"
 #include "dbus/dbus-protocol.h"
 #include "dbus/dbus-shared.h"
-#include "list.h"
 #include "log.h"
+#include "picom.h"
 #include "string_utils.h"
 #include "transition.h"
 #include "types.h"
-#include "uthash_extra.h"
 #include "utils.h"
 #include "win.h"
 #include "win_defs.h"
@@ -163,7 +162,7 @@ struct cdbus_data *cdbus_init(session_t *ps, const char *uniq) {
 	}
 
 	// Add watch handlers
-	cd->loop = ps->loop;
+	cd->loop = session_get_mainloop(ps);
 	if (!dbus_connection_set_watch_functions(cd->dbus_conn, cdbus_callback_add_watch,
 	                                         cdbus_callback_remove_watch,
 	                                         cdbus_callback_watch_toggled, cd, NULL)) {
@@ -472,41 +471,45 @@ static bool cdbus_append_string_variant(DBusMessage *msg, const char *data) {
 	return true;
 }
 
+struct cdbus_append_wids_data {
+	DBusMessageIter iter;
+	bool success;
+};
+
+static void cdbus_append_wids_callback(struct win *w, void *user_data) {
+	auto data = (struct cdbus_append_wids_data *)user_data;
+	assert(!w->destroyed);
+	if (data->success) {
+		data->success =
+		    dbus_message_iter_append_basic(&data->iter, CDBUS_TYPE_WINDOW, &w->id);
+	}
+}
+
 /// Append all window IDs in the window list of a session to a D-Bus message
 static bool cdbus_append_wids(DBusMessage *msg, session_t *ps) {
-	// Get the number of wids we are to include
-	unsigned count = 0;
-	HASH_ITER2(ps->windows, w) {
-		assert(!w->destroyed);
-		++count;
-	}
-
+	auto count = session_get_window_count(ps);
 	if (!count) {
-		// Nothing to append
 		return true;
 	}
 
-	// Allocate memory for an array of window IDs
-	auto arr = ccalloc(count, cdbus_window_t);
-
-	// Build the array
-	cdbus_window_t *pcur = arr;
-	HASH_ITER2(ps->windows, w) {
-		assert(!w->destroyed);
-		*pcur = w->id;
-		++pcur;
-	}
-	assert(pcur == arr + count);
-
-	// Append arguments
-	if (!dbus_message_append_args(msg, DBUS_TYPE_ARRAY, CDBUS_TYPE_WINDOW, &arr,
-	                              count, DBUS_TYPE_INVALID)) {
+	DBusMessageIter iter;
+	struct cdbus_append_wids_data callback_data = {.success = true};
+	dbus_message_iter_init_append(msg, &iter);
+	if (!dbus_message_iter_open_container(
+	        &iter, DBUS_TYPE_ARRAY, DBUS_TYPE_UINT32_AS_STRING, &callback_data.iter)) {
 		log_error("Failed to append argument.");
-		free(arr);
 		return false;
 	}
 
-	free(arr);
+	session_foreach_win(ps, cdbus_append_wids_callback, &callback_data);
+	if (callback_data.success) {
+		callback_data.success =
+		    dbus_message_iter_close_container(&iter, &callback_data.iter);
+	}
+	if (!callback_data.success) {
+		log_error("Failed to append argument.");
+		return false;
+	}
 	return true;
 }
 
@@ -615,12 +618,8 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 	append_win_property(Name, name, string_variant);
 
 	if (!strcmp("Next", target)) {
-		cdbus_window_t next_id = 0;
-		if (!list_node_is_last(&ps->window_stack, &w->base.stack_neighbour)) {
-			next_id = list_entry(w->base.stack_neighbour.next, struct win,
-			                     stack_neighbour)
-			              ->id;
-		}
+		auto next_win = session_get_next_win_in_stack(ps, &w->base);
+		cdbus_window_t next_id = next_win ? next_win->id : XCB_NONE;
 		if (!cdbus_append_wid_variant(reply, next_id)) {
 			return DBUS_HANDLER_RESULT_NEED_MEMORY;
 		}
@@ -640,7 +639,7 @@ static DBusHandlerResult cdbus_process_reset(session_t *ps, DBusMessage *msg att
                                              DBusMessage *reply, DBusError *e attr_unused) {
 	// Reset the compositor
 	log_info("picom is resetting...");
-	ev_break(ps->loop, EVBREAK_ALL);
+	ev_break(session_get_mainloop(ps), EVBREAK_ALL);
 	if (reply != NULL && !cdbus_append_boolean(reply, true)) {
 		return DBUS_HANDLER_RESULT_NEED_MEMORY;
 	}
@@ -694,11 +693,8 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 #define append_win_property(tgt, type) append(tgt, type, w->tgt)
 
 	if (!strcmp("next", target)) {
-		xcb_window_t next_id =
-		    list_node_is_last(&ps->window_stack, &w->base.stack_neighbour)
-		        ? 0
-		        : list_entry(w->base.stack_neighbour.next, struct win, stack_neighbour)
-		              ->id;
+		auto next_win = session_get_next_win_in_stack(ps, &w->base);
+		xcb_window_t next_id = next_win ? next_win->id : XCB_NONE;
 		if (!cdbus_append_wid(reply, next_id)) {
 			return DBUS_HANDLER_RESULT_NEED_MEMORY;
 		}
@@ -818,14 +814,15 @@ cdbus_process_find_win(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 			dbus_set_error_const(err, DBUS_ERROR_INVALID_ARGS, NULL);
 			return DBUS_HANDLER_RESULT_HANDLED;
 		}
-		auto w = find_toplevel(ps, client);
+		auto w = session_find_toplevel(ps, client);
 		if (w) {
 			wid = w->base.id;
 		}
 	} else if (!strcmp("focused", target)) {
 		// Find focused window
-		if (ps->active_win && ps->active_win->state != WSTATE_UNMAPPED) {
-			wid = ps->active_win->base.id;
+		auto active_win = session_get_active_win(ps);
+		if (active_win && active_win->state != WSTATE_UNMAPPED) {
+			wid = active_win->base.id;
 		}
 	} else {
 		log_debug(CDBUS_ERROR_BADTGT_S, target);
@@ -853,7 +850,6 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 		dbus_set_error_const(err, DBUS_ERROR_INVALID_ARGS, NULL);
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
-	assert(ps->o.backend < sizeof(BACKEND_STRS) / sizeof(BACKEND_STRS[0]));
 
 #define append(tgt, type, ret)                                                           \
 	if (!strcmp(#tgt, target)) {                                                     \
@@ -862,20 +858,21 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 		}                                                                        \
 		return DBUS_HANDLER_RESULT_HANDLED;                                      \
 	}
-#define append_session_option(tgt, type) append(tgt, type, ps->o.tgt)
+#define append_session_option(tgt, type) append(tgt, type, options->tgt)
+
+	auto options = session_get_options(ps);
+	assert(options->backend < sizeof(BACKEND_STRS) / sizeof(BACKEND_STRS[0]));
 
 	append(version, string, PICOM_VERSION);
 	append(pid, int32, getpid());
-	append(display, string, DisplayString(ps->c.dpy));
+	append(display, string, DisplayString(session_get_x_connection(ps)->dpy));
 	append(config_file, string, "Unknown");
-	append(paint_on_overlay, boolean, ps->overlay != XCB_NONE);
-	append(paint_on_overlay_id, uint32, ps->overlay);        // Sending ID of the X
-	                                                         // composite overlay
-	                                                         // window
-	append(unredir_if_possible_delay, int32, (int32_t)ps->o.unredir_if_possible_delay);
+	append(paint_on_overlay, boolean, session_get_overlay(ps) != XCB_NONE);
+	append(paint_on_overlay_id, uint32, session_get_overlay(ps));
+	append(unredir_if_possible_delay, int32, (int32_t)options->unredir_if_possible_delay);
 	append(refresh_rate, int32, 0);
 	append(sw_opti, boolean, false);
-	append(backend, string, BACKEND_STRS[ps->o.backend]);
+	append(backend, string, BACKEND_STRS[options->backend]);
 
 	append_session_option(unredir_if_possible, boolean);
 	append_session_option(write_pid_path, string);
@@ -928,9 +925,6 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 	return DBUS_HANDLER_RESULT_HANDLED;
 }
 
-// XXX Remove this after header clean up
-void queue_redraw(session_t *ps);
-
 /**
  * Process a opts_set D-Bus request.
  */
@@ -953,7 +947,7 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 	if (strcmp(#tgt, target) == 0) {                                                 \
 		type val;                                                                \
 		get_msg_arg(dbus_type, val);                                             \
-		ps->o.tgt = expr;                                                        \
+		options->tgt = expr;                                                     \
 		goto cdbus_process_opts_set_success;                                     \
 	}
 
@@ -961,6 +955,7 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 		goto cdbus_process_opts_set_success;
 	}
 
+	auto options = session_get_options(ps);
 	opts_set_do(fade_delta, INT32, int32_t, max2(val, 1));
 	opts_set_do(fade_in_step, DOUBLE, double, normalize_d(val));
 	opts_set_do(fade_out_step, DOUBLE, double, normalize_d(val));
@@ -970,8 +965,8 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 	if (!strcmp("unredir_if_possible", target)) {
 		dbus_bool_t val = FALSE;
 		get_msg_arg(BOOLEAN, val);
-		if (ps->o.unredir_if_possible != val) {
-			ps->o.unredir_if_possible = val;
+		if (options->unredir_if_possible != val) {
+			options->unredir_if_possible = val;
 			queue_redraw(ps);
 		}
 		goto cdbus_process_opts_set_success;
@@ -980,8 +975,8 @@ cdbus_process_opts_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 	if (!strcmp("redirected_force", target)) {
 		cdbus_enum_t val = UNSET;
 		get_msg_arg(UINT32, val);
-		if (ps->o.redirected_force != val) {
-			ps->o.redirected_force = val;
+		if (options->redirected_force != val) {
+			options->redirected_force = val;
 			force_repaint(ps);
 		}
 		goto cdbus_process_opts_set_success;
@@ -1068,6 +1063,24 @@ static DBusHandlerResult cdbus_process_introspect(DBusMessage *reply) {
 }
 ///@}
 
+struct cdbus_window_root_introspect_data {
+	char *introspect;
+	bool success;
+};
+static void cdbus_window_root_introspect_callback(struct win *w, void *user_data) {
+	auto data = (struct cdbus_window_root_introspect_data *)user_data;
+	assert(!w->destroyed);
+	if (data->success) {
+		char *tmp = NULL;
+		if (asprintf(&tmp, "<node name='%#010x'/>\n", w->id) < 0) {
+			log_fatal("Failed to allocate memory.");
+			data->success = false;
+			return;
+		}
+		mstrextend(&data->introspect, tmp);
+		free(tmp);
+	}
+}
 /**
  * Process an D-Bus Introspect request, for /windows.
  */
@@ -1088,31 +1101,19 @@ cdbus_process_windows_root_introspect(session_t *ps, DBusMessage *reply) {
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 
-	char *ret = NULL;
-	bool success = true;
-	mstrextend(&ret, str_introspect);
+	struct cdbus_window_root_introspect_data callback_data = {.introspect = NULL,
+	                                                          .success = true};
+	mstrextend(&callback_data.introspect, str_introspect);
+	session_foreach_win(ps, cdbus_window_root_introspect_callback, &callback_data);
+	mstrextend(&callback_data.introspect, "</node>");
 
-	HASH_ITER2(ps->windows, w) {
-		assert(!w->destroyed);
-		if (!w->managed) {
-			continue;
-		}
-		char *tmp = NULL;
-		if (asprintf(&tmp, "<node name='%#010x'/>\n", w->id) < 0) {
-			log_fatal("Failed to allocate memory.");
-			success = false;
-			break;
-		}
-		mstrextend(&ret, tmp);
-		free(tmp);
+	if (callback_data.success) {
+		callback_data.success = cdbus_append_string(reply, callback_data.introspect);
 	}
-	mstrextend(&ret, "</node>");
 
-	if (success) {
-		success = cdbus_append_string(reply, ret);
-	}
-	free(ret);
-	return success ? DBUS_HANDLER_RESULT_HANDLED : DBUS_HANDLER_RESULT_NEED_MEMORY;
+	free(callback_data.introspect);
+	return callback_data.success ? DBUS_HANDLER_RESULT_HANDLED
+	                             : DBUS_HANDLER_RESULT_NEED_MEMORY;
 }
 
 static bool cdbus_process_window_introspect(DBusMessage *reply) {

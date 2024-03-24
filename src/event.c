@@ -23,6 +23,7 @@
 #include "win.h"
 #include "win_defs.h"
 #include "x.h"
+#include "xcb/xfixes.h"
 
 /// Event handling with X is complicated. Handling events with other events possibly
 /// in-flight is no good. Because your internal state won't be up to date. Also, querying
@@ -66,14 +67,14 @@ static inline const char *ev_window_name(session_t *ps, xcb_window_t wid) {
 	char *name = "";
 	if (wid) {
 		name = "(Failed to get title)";
-		if (ps->c.screen_info->root == wid) {
+		if (session_get_x_connection(ps)->screen_info->root == wid) {
 			name = "(Root window)";
-		} else if (ps->overlay == wid) {
+		} else if (session_get_overlay(ps) == wid) {
 			name = "(Overlay)";
 		} else {
 			auto w = find_managed_win(ps, wid);
 			if (!w) {
-				w = find_toplevel(ps, wid);
+				w = session_find_toplevel(ps, wid);
 			}
 
 			if (w && w->name) {
@@ -99,11 +100,13 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 	case PropertyNotify: return ((xcb_property_notify_event_t *)ev)->window;
 	case ClientMessage: return ((xcb_client_message_event_t *)ev)->window;
 	default:
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+		if (session_get_damage_extention_event(ps) + XCB_DAMAGE_NOTIFY ==
+		    ev->response_type) {
 			return ((xcb_damage_notify_event_t *)ev)->drawable;
 		}
 
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
+		if (session_has_shape_extension(ps) &&
+		    ev->response_type == session_get_shape_extention_event(ps)) {
 			return ((xcb_shape_notify_event_t *)ev)->affected_window;
 		}
 
@@ -131,16 +134,17 @@ static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
 		CASESTRRET(ClientMessage);
 	}
 
-	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+	if (session_get_damage_extention_event(ps) + XCB_DAMAGE_NOTIFY == ev->response_type) {
 		return "Damage";
 	}
 
-	if (ps->shape_exists && ev->response_type == ps->shape_event) {
+	if (session_has_shape_extension(ps) &&
+	    ev->response_type == session_get_shape_extention_event(ps)) {
 		return "ShapeNotify";
 	}
 
-	if (ps->xsync_exists) {
-		int o = ev->response_type - ps->xsync_event;
+	if (session_has_xsync_extension(ps)) {
+		int o = ev->response_type - session_get_xsync_extention_event(ps);
 		switch (o) {
 			CASESTRRET(XSyncCounterNotify);
 			CASESTRRET(XSyncAlarmNotify);
@@ -183,37 +187,37 @@ static inline const char *attr_pure ev_focus_detail_name(xcb_focus_in_event_t *e
 static inline void ev_focus_in(session_t *ps, xcb_focus_in_event_t *ev) {
 	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
 	          ev_focus_detail_name(ev));
-	ps->pending_updates = true;
+	session_mark_updates_pending(ps);
 }
 
 static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
 	          ev_focus_detail_name(ev));
-	ps->pending_updates = true;
+	session_mark_updates_pending(ps);
 }
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
-	if (ev->parent == ps->c.screen_info->root) {
-		add_win_top(ps, ev->window);
+	if (ev->parent == session_get_x_connection(ps)->screen_info->root) {
+		session_add_win_top(ps, ev->window);
 	}
 }
 
 /// Handle configure event of a regular window
 static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
-	auto w = find_win(ps, ce->window);
+	auto w = session_find_win(ps, ce->window);
 
 	if (!w) {
 		return;
 	}
 
 	if (!w->managed) {
-		restack_above(ps, w, ce->above_sibling);
+		session_restack_above(ps, w, ce->above_sibling);
 		return;
 	}
 
 	auto mw = (struct managed_win *)w;
 
-	restack_above(ps, w, ce->above_sibling);
+	session_restack_above(ps, w, ce->above_sibling);
 
 	// We check against pending_g here, because there might have been multiple
 	// configure notifies in this cycle, or the window could receive multiple updates
@@ -227,7 +231,7 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		win_set_flags(mw, WIN_FLAGS_FACTOR_CHANGED);
 		// TODO(yshui) don't set pending_updates if the window is not
 		// visible/mapped
-		ps->pending_updates = true;
+		session_mark_updates_pending(ps);
 
 		// At least one of the following if's is true
 		if (position_changed) {
@@ -248,7 +252,7 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		}
 
 		// Recalculate which monitor this window is on
-		win_update_monitor(&ps->monitors, mw);
+		win_update_monitor(session_get_monitors(ps), mw);
 	}
 
 	// override_redirect flag cannot be changed after window creation, as far
@@ -259,7 +263,7 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event_t *ev) {
 	log_debug("{ send_event: %d, id: %#010x, above: %#010x, override_redirect: %d }",
 	          ev->event, ev->window, ev->above_sibling, ev->override_redirect);
-	if (ev->window == ps->c.screen_info->root) {
+	if (ev->window == session_get_x_connection(ps)->screen_info->root) {
 		set_root_flags(ps, ROOT_FLAGS_CONFIGURED);
 	} else {
 		configure_win(ps, ev);
@@ -267,8 +271,8 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 }
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
-	auto w = find_win(ps, ev->window);
-	auto mw = find_toplevel(ps, ev->window);
+	auto w = session_find_win(ps, ev->window);
+	auto mw = session_find_toplevel(ps, ev->window);
 	if (mw && mw->client_win == mw->base.id) {
 		// We only want _real_ frame window
 		assert(&mw->base == w);
@@ -291,7 +295,7 @@ static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *
 	if (mw != NULL) {
 		win_unmark_client(ps, mw);
 		win_set_flags(mw, WIN_FLAGS_CLIENT_STALE);
-		ps->pending_updates = true;
+		session_mark_updates_pending(ps);
 		return;
 	}
 	log_debug("Received a destroy notify from an unknown window, %#010x", ev->window);
@@ -300,10 +304,11 @@ static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *
 static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 	// Unmap overlay window if it got mapped but we are currently not
 	// in redirected state.
-	if (ps->overlay && ev->window == ps->overlay && !ps->redirected) {
+	auto overlay = session_get_overlay(ps);
+	auto c = session_get_x_connection(ps);
+	if (overlay && ev->window == overlay && !session_is_redirected(ps)) {
 		log_debug("Overlay is mapped while we are not redirected");
-		auto e = xcb_request_check(
-		    ps->c.c, xcb_unmap_window_checked(ps->c.c, ps->overlay));
+		auto e = xcb_request_check(c->c, xcb_unmap_window_checked(c->c, overlay));
 		if (e) {
 			log_error("Failed to unmap the overlay window");
 			free(e);
@@ -328,7 +333,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 
 	// FocusIn/Out may be ignored when the window is unmapped, so we must
 	// recheck focus here
-	ps->pending_updates = true;        // to update focus
+	session_mark_updates_pending(ps);        // to update focus
 }
 
 static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
@@ -341,30 +346,31 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
 	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d",
 	          ev->window, ev->parent, ev->override_redirect);
-	auto w_top = find_toplevel(ps, ev->window);
+	auto w_top = session_find_toplevel(ps, ev->window);
 	if (w_top) {
 		win_unmark_client(ps, w_top);
 		win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
-		ps->pending_updates = true;
+		session_mark_updates_pending(ps);
 	}
 
-	if (ev->parent == ps->c.screen_info->root) {
+	auto c = session_get_x_connection(ps);
+	if (ev->parent == c->screen_info->root) {
 		// X will generate reparent notify even if the parent didn't actually
 		// change (i.e. reparent again to current parent). So we check if that's
 		// the case
-		auto w = find_win(ps, ev->window);
+		auto w = session_find_win(ps, ev->window);
 		if (w) {
 			// This window has already been reparented to root before,
 			// so we don't need to create a new window for it, we just need to
 			// move it to the top
-			restack_top(ps, w);
+			session_restack_top(ps, w);
 		} else {
-			add_win_top(ps, ev->window);
+			session_add_win_top(ps, ev->window);
 		}
 	} else {
 		// otherwise, find and destroy the window first
 		{
-			auto w = find_win(ps, ev->window);
+			auto w = session_find_win(ps, ev->window);
 			if (w) {
 				if (w->managed) {
 					auto mw = (struct managed_win *)w;
@@ -395,7 +401,8 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		// Reset event mask in case something wrong happens
 		uint32_t evmask = determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN);
 
-		if (!wid_has_prop(ps->c.c, ev->window, ps->atoms->aWM_STATE)) {
+		auto atoms = session_get_atoms(ps);
+		if (!wid_has_prop(c->c, ev->window, atoms->aWM_STATE)) {
 			log_debug("Window %#010x doesn't have WM_STATE property, it is "
 			          "probably not a client window. But we will listen for "
 			          "property change in case it gains one.",
@@ -408,70 +415,50 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 				          "client",
 				          w_real_top->base.id, w_real_top->name);
 				win_set_flags(w_real_top, WIN_FLAGS_CLIENT_STALE);
-				ps->pending_updates = true;
+				session_mark_updates_pending(ps);
 			} else {
 				log_debug("parent %#010x not found", ev->parent);
 			}
 		}
-		XCB_AWAIT_VOID(xcb_change_window_attributes, ps->c.c, ev->window,
+		XCB_AWAIT_VOID(xcb_change_window_attributes, c->c, ev->window,
 		               XCB_CW_EVENT_MASK, (const uint32_t[]){evmask});
 	}
 }
 
 static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {
-	auto w = find_win(ps, ev->window);
+	auto w = session_find_win(ps, ev->window);
 
 	if (!w) {
 		return;
 	}
 
 	if (ev->place == PlaceOnTop) {
-		restack_top(ps, w);
+		session_restack_top(ps, w);
 	} else {
-		restack_bottom(ps, w);
+		session_restack_bottom(ps, w);
 	}
 }
 
-static inline void expose_root(session_t *ps, const rect_t *rects, int nrects) {
-	region_t region;
-	pixman_region32_init_rects(&region, rects, nrects);
-	add_damage(ps, &region);
-	pixman_region32_fini(&region);
-}
-
 static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
-	if (ev->window == ps->c.screen_info->root ||
-	    (ps->overlay && ev->window == ps->overlay)) {
-		int more = ev->count + 1;
-		if (ps->n_expose == ps->size_expose) {
-			if (ps->expose_rects) {
-				ps->expose_rects =
-				    crealloc(ps->expose_rects, ps->size_expose + more);
-				ps->size_expose += more;
-			} else {
-				ps->expose_rects = ccalloc(more, rect_t);
-				ps->size_expose = more;
-			}
-		}
-
-		ps->expose_rects[ps->n_expose].x1 = ev->x;
-		ps->expose_rects[ps->n_expose].y1 = ev->y;
-		ps->expose_rects[ps->n_expose].x2 = ev->x + ev->width;
-		ps->expose_rects[ps->n_expose].y2 = ev->y + ev->height;
-		ps->n_expose++;
-
-		if (ev->count == 0) {
-			expose_root(ps, ps->expose_rects, ps->n_expose);
-			ps->n_expose = 0;
-		}
+	auto overlay = session_get_overlay(ps);
+	if (ev->window == session_get_x_connection(ps)->screen_info->root ||
+	    (overlay && ev->window == overlay)) {
+		region_t region;
+		pixman_region32_init_rect(&region, ev->x, ev->y, ev->width, ev->height);
+		add_damage(ps, &region);
+		pixman_region32_fini(&region);
 	}
 }
 
 static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
+	auto options = session_get_options(ps);
+	auto atoms = session_get_atoms(ps);
+	auto c = session_get_x_connection(ps);
+	auto c2_state = session_get_c2(ps);
 	if (unlikely(log_get_level_tls() <= LOG_LEVEL_TRACE)) {
 		// Print out changed atom
-		xcb_get_atom_name_reply_t *reply = xcb_get_atom_name_reply(
-		    ps->c.c, xcb_get_atom_name(ps->c.c, ev->atom), NULL);
+		xcb_get_atom_name_reply_t *reply =
+		    xcb_get_atom_name_reply(c->c, xcb_get_atom_name(c->c, ev->atom), NULL);
 		const char *name = "?";
 		int name_len = 1;
 		if (reply) {
@@ -483,13 +470,13 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		free(reply);
 	}
 
-	if (ps->c.screen_info->root == ev->window) {
-		if (ps->o.use_ewmh_active_win && ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
+	if (c->screen_info->root == ev->window) {
+		if (options->use_ewmh_active_win && atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
 			// to update focus
-			ps->pending_updates = true;
+			session_mark_updates_pending(ps);
 		} else {
 			// Destroy the root "image" if the wallpaper probably changed
-			if (x_is_root_back_pixmap_atom(ps->atoms, ev->atom)) {
+			if (x_is_root_back_pixmap_atom(atoms, ev->atom)) {
 				root_damaged(ps);
 			}
 		}
@@ -498,15 +485,15 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		return;
 	}
 
-	ps->pending_updates = true;
+	session_mark_updates_pending(ps);
 	// If WM_STATE changes
-	if (ev->atom == ps->atoms->aWM_STATE) {
+	if (ev->atom == atoms->aWM_STATE) {
 		// Check whether it could be a client window
-		if (!find_toplevel(ps, ev->window)) {
+		if (!session_find_toplevel(ps, ev->window)) {
 			// Reset event mask anyway
 			const uint32_t evmask =
 			    determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN);
-			XCB_AWAIT_VOID(xcb_change_window_attributes, ps->c.c, ev->window,
+			XCB_AWAIT_VOID(xcb_change_window_attributes, c->c, ev->window,
 			               XCB_CW_EVENT_MASK, (const uint32_t[]){evmask});
 
 			auto w_top = find_managed_window_or_parent(ps, ev->window);
@@ -521,60 +508,61 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 
 	// If _NET_WM_WINDOW_TYPE changes... God knows why this would happen, but
 	// there are always some stupid applications. (#144)
-	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_TYPE) {
-		struct managed_win *w = find_toplevel(ps, ev->window);
+	if (ev->atom == atoms->a_NET_WM_WINDOW_TYPE) {
+		struct managed_win *w = session_find_toplevel(ps, ev->window);
 		if (w) {
 			win_set_property_stale(w, ev->atom);
 		}
 	}
 
-	if (ev->atom == ps->atoms->a_NET_WM_BYPASS_COMPOSITOR) {
+	if (ev->atom == atoms->a_NET_WM_BYPASS_COMPOSITOR) {
 		// Unnecessary until we remove the queue_redraw in ev_handle
 		queue_redraw(ps);
 	}
 
 	// If _NET_WM_WINDOW_OPACITY changes
-	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_OPACITY) {
-		auto w = find_managed_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
+	if (ev->atom == atoms->a_NET_WM_WINDOW_OPACITY) {
+		auto w = find_managed_win(ps, ev->window)
+		             ?: session_find_toplevel(ps, ev->window);
 		if (w) {
 			win_set_property_stale(w, ev->atom);
 		}
 	}
 
 	// If frame extents property changes
-	if (ev->atom == ps->atoms->a_NET_FRAME_EXTENTS) {
-		auto w = find_toplevel(ps, ev->window);
+	if (ev->atom == atoms->a_NET_FRAME_EXTENTS) {
+		auto w = session_find_toplevel(ps, ev->window);
 		if (w) {
 			win_set_property_stale(w, ev->atom);
 		}
 	}
 
 	// If name changes
-	if (ps->atoms->aWM_NAME == ev->atom || ps->atoms->a_NET_WM_NAME == ev->atom) {
-		auto w = find_toplevel(ps, ev->window);
+	if (atoms->aWM_NAME == ev->atom || atoms->a_NET_WM_NAME == ev->atom) {
+		auto w = session_find_toplevel(ps, ev->window);
 		if (w) {
 			win_set_property_stale(w, ev->atom);
 		}
 	}
 
 	// If class changes
-	if (ps->atoms->aWM_CLASS == ev->atom) {
-		auto w = find_toplevel(ps, ev->window);
+	if (atoms->aWM_CLASS == ev->atom) {
+		auto w = session_find_toplevel(ps, ev->window);
 		if (w) {
 			win_set_property_stale(w, ev->atom);
 		}
 	}
 
 	// If role changes
-	if (ps->atoms->aWM_WINDOW_ROLE == ev->atom) {
-		auto w = find_toplevel(ps, ev->window);
+	if (atoms->aWM_WINDOW_ROLE == ev->atom) {
+		auto w = session_find_toplevel(ps, ev->window);
 		if (w) {
 			win_set_property_stale(w, ev->atom);
 		}
 	}
 
 	// If _COMPTON_SHADOW changes
-	if (ps->atoms->a_COMPTON_SHADOW == ev->atom) {
+	if (atoms->a_COMPTON_SHADOW == ev->atom) {
 		auto w = find_managed_win(ps, ev->window);
 		if (w) {
 			win_set_property_stale(w, ev->atom);
@@ -582,31 +570,31 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	// If a leader property changes
-	if ((ps->o.detect_transient && ps->atoms->aWM_TRANSIENT_FOR == ev->atom) ||
-	    (ps->o.detect_client_leader && ps->atoms->aWM_CLIENT_LEADER == ev->atom)) {
-		auto w = find_toplevel(ps, ev->window);
+	if ((options->detect_transient && atoms->aWM_TRANSIENT_FOR == ev->atom) ||
+	    (options->detect_client_leader && atoms->aWM_CLIENT_LEADER == ev->atom)) {
+		auto w = session_find_toplevel(ps, ev->window);
 		if (w) {
 			win_set_property_stale(w, ev->atom);
 		}
 	}
 
-	if (!ps->o.no_ewmh_fullscreen && ev->atom == ps->atoms->a_NET_WM_STATE) {
-		auto w = find_toplevel(ps, ev->window);
+	if (!options->no_ewmh_fullscreen && ev->atom == atoms->a_NET_WM_STATE) {
+		auto w = session_find_toplevel(ps, ev->window);
 		if (w) {
 			win_set_property_stale(w, ev->atom);
 		}
 	}
 
 	// Check for other atoms we are tracking
-	if (c2_state_is_property_tracked(ps->c2_state, ev->atom)) {
+	if (c2_state_is_property_tracked(c2_state, ev->atom)) {
 		bool change_is_on_client = false;
 		auto w = find_managed_win(ps, ev->window);
 		if (!w) {
-			w = find_toplevel(ps, ev->window);
+			w = session_find_toplevel(ps, ev->window);
 			change_is_on_client = true;
 		}
 		if (w) {
-			c2_window_state_mark_dirty(ps->c2_state, &w->c2_state, ev->atom,
+			c2_window_state_mark_dirty(c2_state, &w->c2_state, ev->atom,
 			                           change_is_on_client);
 			// Set FACTOR_CHANGED so rules based on properties will be
 			// re-evaluated.
@@ -621,6 +609,8 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 	// Only mapped window can receive damages
 	assert(w->state == WSTATE_MAPPED || win_check_flags_all(w, WIN_FLAGS_MAPPED));
 
+	auto options = session_get_options(ps);
+	auto c = session_get_x_connection(ps);
 	region_t parts;
 	pixman_region32_init(&parts);
 
@@ -632,10 +622,9 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 	// from the X server, which implies it has received our DamageSubtract request.
 	if (!w->ever_damaged) {
 		auto e = xcb_request_check(
-		    ps->c.c,
-		    xcb_damage_subtract_checked(ps->c.c, w->damage, XCB_NONE, XCB_NONE));
+		    c->c, xcb_damage_subtract_checked(c->c, w->damage, XCB_NONE, XCB_NONE));
 		if (e) {
-			if (ps->o.show_all_xerrors) {
+			if (options->show_all_xerrors) {
 				x_print_error(e->sequence, e->major_code, e->minor_code,
 				              e->error_code);
 			}
@@ -645,14 +634,14 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 
 		// We only binds the window pixmap once the window is damaged.
 		win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
-		ps->pending_updates = true;
+		session_mark_updates_pending(ps);
 	} else {
-		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE,
-		                                  ps->damage_ring.x_region);
-		if (!ps->o.show_all_xerrors) {
-			set_ignore_cookie(&ps->c, cookie);
+		xcb_xfixes_region_t damage_region = session_get_damage_ring(ps)->x_region;
+		auto cookie = xcb_damage_subtract(c->c, w->damage, XCB_NONE, damage_region);
+		if (!options->show_all_xerrors) {
+			set_ignore_cookie(c, cookie);
 		}
-		x_fetch_region(&ps->c, ps->damage_ring.x_region, &parts);
+		x_fetch_region(c, damage_region, &parts);
 		pixman_region32_translate(&parts, w->g.x + w->g.border_width,
 		                          w->g.y + w->g.border_width);
 	}
@@ -663,13 +652,13 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 
 	// Why care about damage when screen is unredirected?
 	// We will force full-screen repaint on redirection.
-	if (!ps->redirected) {
+	if (!session_is_redirected(ps)) {
 		pixman_region32_fini(&parts);
 		return;
 	}
 
 	// Remove the part in the damage area that could be ignored
-	if (w->reg_ignore && win_is_region_ignore_valid(ps, w)) {
+	if (w->reg_ignore && session_is_win_region_ignore_valid(ps, w)) {
 		pixman_region32_subtract(&parts, &parts, w->reg_ignore);
 	}
 
@@ -714,7 +703,7 @@ static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) 
 	w->reg_ignore_valid = false;
 
 	win_set_flags(w, WIN_FLAGS_SIZE_STALE);
-	ps->pending_updates = true;
+	session_mark_updates_pending(ps);
 }
 
 static inline void
@@ -727,12 +716,13 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 }
 
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
+	auto c = session_get_x_connection(ps);
 	if (XCB_EVENT_RESPONSE_TYPE(ev) != KeymapNotify) {
-		x_discard_pending(&ps->c, ev->full_sequence);
+		x_discard_pending(c, ev->full_sequence);
 	}
 
 	xcb_window_t wid = ev_window(ps, ev);
-	if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
+	if (ev->response_type != session_get_damage_extention_event(ps) + XCB_DAMAGE_NOTIFY) {
 		log_debug("event %10.10s serial %#010x window %#010x \"%s\"",
 		          ev_name(ps, ev), ev->full_sequence, wid, ev_window_name(ps, wid));
 	} else {
@@ -750,9 +740,9 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	// https://bugs.freedesktop.org/show_bug.cgi?id=35945
 	// https://lists.freedesktop.org/archives/xcb/2011-November/007337.html
 	auto response_type = XCB_EVENT_RESPONSE_TYPE(ev);
-	auto proc = XESetWireToEvent(ps->c.dpy, response_type, 0);
+	auto proc = XESetWireToEvent(c->dpy, response_type, 0);
 	if (proc) {
-		XESetWireToEvent(ps->c.dpy, response_type, proc);
+		XESetWireToEvent(c->dpy, response_type, proc);
 		XEvent dummy;
 
 		// Stop Xlib from complaining about lost sequence numbers.
@@ -762,8 +752,8 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 		//
 		// We only need the low 16 bits
 		uint16_t seq = ev->sequence;
-		ev->sequence = (uint16_t)(LastKnownRequestProcessed(ps->c.dpy) & 0xffff);
-		proc(ps->c.dpy, &dummy, (xEvent *)ev);
+		ev->sequence = (uint16_t)(LastKnownRequestProcessed(c->dpy) & 0xffff);
+		proc(c->dpy, &dummy, (xEvent *)ev);
 		// Restore the sequence number
 		ev->sequence = seq;
 	}
@@ -798,18 +788,21 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	case SelectionClear:
 		ev_selection_clear(ps, (xcb_selection_clear_event_t *)ev);
 		break;
-	case 0: x_handle_error(&ps->c, (xcb_generic_error_t *)ev); break;
+	case 0: x_handle_error(c, (xcb_generic_error_t *)ev); break;
 	default:
-		if (ps->shape_exists && ev->response_type == ps->shape_event) {
+		if (session_has_shape_extension(ps) &&
+		    ev->response_type == session_get_shape_extention_event(ps)) {
 			ev_shape_notify(ps, (xcb_shape_notify_event_t *)ev);
 			break;
 		}
-		if (ps->randr_exists &&
-		    ev->response_type == (ps->randr_event + XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
+		if (session_has_randr_extension(ps) &&
+		    ev->response_type == (session_get_randr_extention_event(ps) +
+		                          XCB_RANDR_SCREEN_CHANGE_NOTIFY)) {
 			set_root_flags(ps, ROOT_FLAGS_SCREEN_CHANGE);
 			break;
 		}
-		if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
+		if (session_get_damage_extention_event(ps) + XCB_DAMAGE_NOTIFY ==
+		    ev->response_type) {
 			ev_damage_notify(ps, (xcb_damage_notify_event_t *)ev);
 			break;
 		}

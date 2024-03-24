@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <libgen.h>
+#include <locale.h>
 #include <math.h>
 #include <sched.h>
 #include <stddef.h>
@@ -41,6 +42,7 @@
 #include <ev.h>
 #include <test.h>
 
+#include "backend/driver.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
@@ -50,6 +52,7 @@
 #include "picom.h"
 #include "transition.h"
 #include "win_defs.h"
+#include "xcb/xproto.h"
 #ifdef CONFIG_OPENGL
 #include "opengl.h"
 #endif
@@ -72,6 +75,246 @@
 #include "vblank.h"
 #include "win.h"
 #include "x.h"
+
+/// Structure containing all necessary data for a session.
+typedef struct session {
+	// === Event handlers ===
+	/// ev_io for X connection
+	ev_io xiow;
+	/// Timeout for delayed unredirection.
+	ev_timer unredir_timer;
+	/// Timer for fading
+	ev_timer fade_timer;
+	/// Use an ev_timer callback for drawing
+	ev_timer draw_timer;
+	/// Called every time we have timeouts or new data on socket,
+	/// so we can be sure if xcb read from X socket at anytime during event
+	/// handling, we will not left any event unhandled in the queue
+	ev_prepare event_check;
+	/// Signal handler for SIGUSR1
+	ev_signal usr1_signal;
+	/// Signal handler for SIGINT
+	ev_signal int_signal;
+
+	// === Backend related ===
+	/// backend data
+	backend_t *backend_data;
+	/// backend blur context
+	void *backend_blur_context;
+	/// graphic drivers used
+	enum driver drivers;
+	/// file watch handle
+	void *file_watch_handle;
+	/// libev mainloop
+	struct ev_loop *loop;
+	/// Shaders
+	struct shader_info *shaders;
+
+	// === Display related ===
+	/// X connection
+	struct x_connection c;
+	/// Whether the X server is grabbed by us
+	bool server_grabbed;
+	/// Width of root window.
+	int root_width;
+	/// Height of root window.
+	int root_height;
+	/// X Composite overlay window.
+	xcb_window_t overlay;
+	/// The target window for debug mode
+	xcb_window_t debug_window;
+	/// Whether the root tile is filled by us.
+	bool root_tile_fill;
+	/// Picture of the root window background.
+	paint_t root_tile_paint;
+	/// The backend data the root pixmap bound to
+	image_handle root_image;
+	/// A region of the size of the screen.
+	region_t screen_reg;
+	/// Picture of root window. Destination of painting in no-DBE painting
+	/// mode.
+	xcb_render_picture_t root_picture;
+	/// A Picture acting as the painting target.
+	xcb_render_picture_t tgt_picture;
+	/// Temporary buffer to paint to before sending to display.
+	paint_t tgt_buffer;
+	/// Window ID of the window we register as a symbol.
+	xcb_window_t reg_win;
+#ifdef CONFIG_OPENGL
+	/// Pointer to GLX data.
+	struct glx_session *psglx;
+#endif
+	/// Sync fence to sync draw operations
+	xcb_sync_fence_t sync_fence;
+	/// Whether we are rendering the first frame after screen is redirected
+	bool first_frame;
+	/// Whether screen has been turned off
+	bool screen_is_off;
+	/// When last MSC event happened, in useconds.
+	uint64_t last_msc_instant;
+	/// The last MSC number
+	uint64_t last_msc;
+	/// The delay between when the last frame was scheduled to be rendered, and when
+	/// the render actually started.
+	uint64_t last_schedule_delay;
+	/// When do we want our next frame to start rendering.
+	uint64_t next_render;
+	/// Whether we can perform frame pacing.
+	bool frame_pacing;
+	/// Vblank event scheduler
+	struct vblank_scheduler *vblank_scheduler;
+
+	/// Render statistics
+	struct render_statistics render_stats;
+
+	// === Operation related ===
+	/// Flags related to the root window
+	uint64_t root_flags;
+	/// Program options.
+	options_t o;
+	/// State object for c2.
+	struct c2_state *c2_state;
+	/// Whether we have hit unredirection timeout.
+	bool tmout_unredir_hit;
+	/// If the backend is busy. This means two things:
+	/// Either the backend is currently rendering a frame, or a frame has been
+	/// rendered but has yet to be presented. In either case, we should not start
+	/// another render right now. As if we start issuing rendering commands now, we
+	/// will have to wait for either the current render to finish, or the current
+	/// back buffer to become available again. In either case, we will be wasting
+	/// time.
+	bool backend_busy;
+	/// Whether a render is queued. This generally means there are pending updates
+	/// to the screen that's neither included in the current render, nor on the
+	/// screen.
+	bool render_queued;
+
+	/// For tracking damaged regions
+	struct damage_ring damage_ring;
+	/// Whether all windows are currently redirected.
+	bool redirected;
+	/// Pre-generated alpha pictures.
+	xcb_render_picture_t *alpha_picts;
+	/// Time of last fading. In milliseconds.
+	long long fade_time;
+	// Cached blur convolution kernels.
+	struct x_convolution_kernel **blur_kerns_cache;
+	/// If we should quit
+	bool quit : 1;
+	// TODO(yshui) use separate flags for different kinds of updates so we don't
+	// waste our time.
+	/// Whether there are pending updates, like window creation, etc.
+	bool pending_updates : 1;
+
+	// === Expose event related ===
+	/// Pointer to an array of <code>XRectangle</code>-s of exposed region.
+	/// XXX why do we need this array?
+	rect_t *expose_rects;
+	/// Number of <code>XRectangle</code>-s in <code>expose_rects</code>.
+	int size_expose;
+	/// Index of the next free slot in <code>expose_rects</code>.
+	int n_expose;
+
+	// === Window related ===
+	/// A hash table of all windows.
+	struct win *windows;
+	/// Windows in their stacking order
+	struct list_node window_stack;
+	/// Pointer to <code>win</code> of current active window. Used by
+	/// EWMH <code>_NET_ACTIVE_WINDOW</code> focus detection. In theory,
+	/// it's more reliable to store the window ID directly here, just in
+	/// case the WM does something extraordinary, but caching the pointer
+	/// means another layer of complexity.
+	struct managed_win *active_win;
+	/// Window ID of leader window of currently active window. Used for
+	/// subsidiary window detection.
+	xcb_window_t active_leader;
+
+	// === Shadow/dimming related ===
+	/// 1x1 black Picture.
+	xcb_render_picture_t black_picture;
+	/// 1x1 Picture of the shadow color.
+	xcb_render_picture_t cshadow_picture;
+	/// 1x1 white Picture.
+	xcb_render_picture_t white_picture;
+	/// Backend shadow context.
+	struct backend_shadow_context *shadow_context;
+	// for shadow precomputation
+	/// A region in which shadow is not painted on.
+	region_t shadow_exclude_reg;
+
+	// === Software-optimization-related ===
+	/// Nanosecond offset of the first painting.
+	long paint_tm_offset;
+
+#ifdef CONFIG_VSYNC_DRM
+	// === DRM VSync related ===
+	/// File descriptor of DRI device file. Used for DRM VSync.
+	int drm_fd;
+#endif
+
+	// === X extension related ===
+	/// Event base number for X Fixes extension.
+	int xfixes_event;
+	/// Error base number for X Fixes extension.
+	int xfixes_error;
+	/// Event base number for X Damage extension.
+	int damage_event;
+	/// Error base number for X Damage extension.
+	int damage_error;
+	/// Event base number for X Render extension.
+	int render_event;
+	/// Error base number for X Render extension.
+	int render_error;
+	/// Event base number for X Composite extension.
+	int composite_event;
+	/// Error base number for X Composite extension.
+	int composite_error;
+	/// Major opcode for X Composite extension.
+	int composite_opcode;
+	/// Whether X DPMS extension exists
+	bool dpms_exists;
+	/// Whether X Shape extension exists.
+	bool shape_exists;
+	/// Event base number for X Shape extension.
+	int shape_event;
+	/// Error base number for X Shape extension.
+	int shape_error;
+	/// Whether X RandR extension exists.
+	bool randr_exists;
+	/// Event base number for X RandR extension.
+	int randr_event;
+	/// Error base number for X RandR extension.
+	int randr_error;
+	/// Whether X Present extension exists.
+	bool present_exists;
+	/// Whether X GLX extension exists.
+	bool glx_exists;
+	/// Event base number for X GLX extension.
+	int glx_event;
+	/// Error base number for X GLX extension.
+	int glx_error;
+	/// Information about monitors.
+	struct x_monitors monitors;
+	/// Whether X Sync extension exists.
+	bool xsync_exists;
+	/// Event base number for X Sync extension.
+	int xsync_event;
+	/// Error base number for X Sync extension.
+	int xsync_error;
+	/// Whether X Render convolution filter exists.
+	bool xrfilter_convolution_exists;
+
+	// === Atoms ===
+	struct atom *atoms;
+
+#ifdef CONFIG_DBUS
+	// === DBus related ===
+	struct cdbus_data *dbus_data;
+#endif
+
+	int (*vsync_wait)(session_t *);
+} session_t;
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -156,7 +399,7 @@ static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t
 
 	auto w = find_managed_win(ps, wid);
 	if (!w) {
-		w = find_toplevel(ps, wid);
+		w = session_find_toplevel(ps, wid);
 	}
 	if (!w) {
 		w = find_managed_window_or_parent(ps, wid);
@@ -536,8 +779,8 @@ uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
 	}
 
 	// Check if it's a mapped client window
-	if (mode == WIN_EVMODE_CLIENT ||
-	    ((w = find_toplevel(ps, wid)) && w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
+	if (mode == WIN_EVMODE_CLIENT || ((w = session_find_toplevel(ps, wid)) &&
+	                                  w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
 		evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
 	}
 
@@ -824,7 +1067,7 @@ static void configure_root(session_t *ps) {
 	rebuild_shadow_exclude_reg(ps);
 
 	// Invalidate reg_ignore from the top
-	auto top_w = win_stack_find_next_managed(ps, &ps->window_stack);
+	auto top_w = session_get_next_managed_win_in_stack(ps, &ps->window_stack);
 	if (top_w) {
 		rc_region_unref(&top_w->reg_ignore);
 		top_w->reg_ignore_valid = false;
@@ -1459,8 +1702,504 @@ xcb_window_t session_get_target_window(session_t *ps) {
 	return ps->overlay != XCB_NONE ? ps->overlay : ps->c.screen_info->root;
 }
 
+#ifdef CONFIG_DBUS
 struct cdbus_data *session_get_cdbus(struct session *ps) {
 	return ps->dbus_data;
+}
+#endif
+
+struct ev_loop *session_get_mainloop(struct session *ps) {
+	return ps->loop;
+}
+
+struct options *session_get_options(struct session *ps) {
+	return &ps->o;
+}
+
+enum driver session_get_driver(struct session *ps) {
+	return ps->drivers;
+}
+
+unsigned int session_get_window_count(session_t *ps) {
+	unsigned int count = 0;
+	HASH_ITER2(ps->windows, w) {
+		assert(!w->destroyed);
+		++count;
+	}
+	return count;
+}
+
+struct managed_win *session_get_active_win(session_t *ps) {
+	return ps->active_win;
+}
+
+void session_set_active_win(session_t *ps, struct managed_win *w) {
+	ps->active_win = w;
+}
+
+xcb_window_t session_get_active_leader(session_t *ps) {
+	return ps->active_leader;
+}
+
+void session_set_active_leader(session_t *ps, xcb_window_t leader) {
+	ps->active_leader = leader;
+}
+
+struct x_connection *session_get_x_connection(session_t *ps) {
+	return &ps->c;
+}
+
+struct win *session_get_next_win_in_stack(struct session *ps, struct win *w) {
+	if (!list_node_is_last(&ps->window_stack, &w->stack_neighbour)) {
+		return list_entry(w->stack_neighbour.next, struct win, stack_neighbour);
+	}
+	return NULL;
+}
+
+// Find the managed window immediately below `i` in the window stack
+struct managed_win *
+session_get_next_managed_win_in_stack(const session_t *ps, const struct list_node *cursor) {
+	while (!list_node_is_last(&ps->window_stack, cursor)) {
+		auto next = list_entry(cursor->next, struct win, stack_neighbour);
+		if (next->managed) {
+			return (struct managed_win *)next;
+		}
+		cursor = &next->stack_neighbour;
+	}
+	return NULL;
+}
+
+xcb_window_t session_get_overlay(session_t *ps) {
+	return ps->overlay;
+}
+
+struct damage_ring *session_get_damage_ring(session_t *ps) {
+	return &ps->damage_ring;
+}
+
+void session_assert_server_grabbed(session_t *ps attr_unused) {
+	assert(ps->server_grabbed);
+}
+
+image_handle session_get_root_image(session_t *ps) {
+	return ps->root_image;
+}
+
+void session_record_cpu_time(session_t *ps) {
+	auto now = get_time_timespec();
+	auto now_us = (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
+	if (ps->next_render > 0) {
+		log_verbose("Render schedule deviation: %ld us (%s) %" PRIu64 " %" PRIu64,
+		            labs((long)now_us - (long)ps->next_render),
+		            now_us < ps->next_render ? "early" : "late", now_us,
+		            ps->next_render);
+		ps->last_schedule_delay = 0;
+		if (now_us > ps->next_render) {
+			ps->last_schedule_delay = now_us - ps->next_render;
+		}
+	}
+}
+
+typeof(session_get_root_extent(NULL)) session_get_root_extent(session_t *ps) {
+	typeof(session_get_root_extent(ps)) ret = {.height = ps->root_height,
+	                                           .width = ps->root_width};
+	return ret;
+}
+
+struct atom *session_get_atoms(session_t *ps) {
+	return ps->atoms;
+}
+
+struct c2_state *session_get_c2(session_t *ps) {
+	return ps->c2_state;
+}
+
+void session_mark_updates_pending(session_t *ps) {
+	ps->pending_updates = true;
+}
+
+struct backend_base *session_get_backend_data(session_t *ps) {
+	return ps->backend_data;
+}
+
+struct backend_shadow_context *session_get_backend_shadow_context(session_t *ps) {
+	return ps->shadow_context;
+}
+
+void *session_get_backend_blur_context(session_t *ps) {
+	return ps->backend_blur_context;
+}
+
+struct x_convolution_kernel **session_get_blur_kern_cache(session_t *ps) {
+	return ps->blur_kerns_cache;
+}
+
+void session_set_blur_kern_cache(session_t *ps, struct x_convolution_kernel **cache) {
+	ps->blur_kerns_cache = cache;
+}
+
+void session_foreach_win(session_t *ps, void (*func)(struct win *, void *), void *data) {
+	HASH_ITER2(ps->windows, w) {
+		assert(!w->destroyed);
+		func(w, data);
+	}
+}
+
+struct shader_info *session_get_shader_info(session_t *ps, const char *key) {
+	struct shader_info *info = NULL;
+	if (key) {
+		HASH_FIND_STR(ps->shaders, key, info);
+	}
+	return info;
+}
+
+bool session_is_redirected(session_t *ps) {
+	return ps->redirected;
+}
+
+void session_delete_win(session_t *ps, struct win *w) {
+	HASH_DEL(ps->windows, w);
+}
+
+/**
+ * Find a managed window from window id in window linked list of the session.
+ */
+struct win *session_find_win(session_t *ps, xcb_window_t id) {
+	if (!id) {
+		return NULL;
+	}
+
+	struct win *w = NULL;
+	HASH_FIND_INT(ps->windows, &id, w);
+	assert(w == NULL || !w->destroyed);
+	return w;
+}
+
+/// Insert a new window after list_node `prev`
+/// New window will be in unmapped state
+static struct win *session_add_win(session_t *ps, xcb_window_t id, struct list_node *prev) {
+	log_debug("Adding window %#010x", id);
+	struct win *old_w = NULL;
+	HASH_FIND_INT(ps->windows, &id, old_w);
+	assert(old_w == NULL);
+
+	auto new_w = cmalloc(struct win);
+	list_insert_after(prev, &new_w->stack_neighbour);
+	new_w->id = id;
+	new_w->managed = false;
+	new_w->is_new = true;
+	new_w->destroyed = false;
+
+	HASH_ADD_INT(ps->windows, id, new_w);
+	session_mark_updates_pending(ps);
+	return new_w;
+}
+
+/// Insert a new win entry at the top of the stack
+struct win *session_add_win_top(session_t *ps, xcb_window_t id) {
+	return session_add_win(ps, id, &ps->window_stack);
+}
+
+/// Insert a new window above window with id `below`, if there is no window, add
+/// to top New window will be in unmapped state
+struct win *session_add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below) {
+	struct win *w = NULL;
+	HASH_FIND_INT(ps->windows, &below, w);
+	if (!w) {
+		if (!list_is_empty(&ps->window_stack)) {
+			// `below` window is not found even if the window stack is
+			// not empty
+			return NULL;
+		}
+		return session_add_win_top(ps, id);
+	}
+	// we found something from the hash table, so if the stack is
+	// empty, we are in an inconsistent state.
+	assert(!list_is_empty(&ps->window_stack));
+	return session_add_win(ps, id, w->stack_neighbour.prev);
+}
+
+/// Move window `w` so it's before `next` in the list
+static inline void session_restack_win(session_t *ps, struct win *w, struct list_node *next) {
+	struct managed_win *mw = NULL;
+	if (w->managed) {
+		mw = (struct managed_win *)w;
+	}
+
+	if (mw) {
+		// This invalidates all reg_ignore below the new stack position of
+		// `w`
+		mw->reg_ignore_valid = false;
+		rc_region_unref(&mw->reg_ignore);
+
+		// This invalidates all reg_ignore below the old stack position of
+		// `w`
+		auto next_w = session_get_next_managed_win_in_stack(ps, &w->stack_neighbour);
+		if (next_w) {
+			next_w->reg_ignore_valid = false;
+			rc_region_unref(&next_w->reg_ignore);
+		}
+	}
+
+	list_move_before(&w->stack_neighbour, next);
+
+	// add damage for this window
+	if (mw) {
+		add_damage_from_win(ps, mw);
+	}
+
+#ifdef DEBUG_RESTACK
+	log_trace("Window stack modified. Current stack:");
+	for (auto c = ps->list; c; c = c->next) {
+		const char *desc = "";
+		if (c->state == WSTATE_DESTROYING) {
+			desc = "(D) ";
+		}
+		log_trace("%#010x \"%s\" %s", c->id, c->name, desc);
+	}
+#endif
+}
+
+struct list_node *session_get_win_stack(session_t *ps) {
+	return &ps->window_stack;
+}
+
+/// Move window `w` so it's right above `below`
+void session_restack_above(session_t *ps, struct win *w, xcb_window_t below) {
+	xcb_window_t old_below;
+
+	if (!list_node_is_last(&ps->window_stack, &w->stack_neighbour)) {
+		old_below = list_next_entry(w, stack_neighbour)->id;
+	} else {
+		old_below = XCB_NONE;
+	}
+	log_debug("Restack %#010x (%s), old_below: %#010x, new_below: %#010x", w->id,
+	          win_get_name_if_managed(w), old_below, below);
+
+	if (old_below != below) {
+		struct list_node *new_next;
+		if (!below) {
+			new_next = &ps->window_stack;
+		} else {
+			struct win *tmp_w = NULL;
+			HASH_FIND_INT(ps->windows, &below, tmp_w);
+
+			if (!tmp_w) {
+				log_error("Failed to found new below window %#010x.", below);
+				return;
+			}
+
+			new_next = &tmp_w->stack_neighbour;
+		}
+		session_restack_win(ps, w, new_next);
+	}
+}
+
+void session_restack_bottom(session_t *ps, struct win *w) {
+	session_restack_above(ps, w, 0);
+}
+
+void session_restack_top(session_t *ps, struct win *w) {
+	log_debug("Restack %#010x (%s) to top", w->id, win_get_name_if_managed(w));
+	if (&w->stack_neighbour == ps->window_stack.next) {
+		// already at top
+		return;
+	}
+	session_restack_win(ps, w, ps->window_stack.next);
+}
+
+/**
+ * Clear leader cache of all windows.
+ */
+void session_clear_cache_win_leaders(session_t *ps) {
+	win_stack_foreach_managed(w, &ps->window_stack) {
+		w->cache_leader = XCB_NONE;
+	}
+}
+
+bool session_is_win_region_ignore_valid(session_t *ps, const struct managed_win *w) {
+	win_stack_foreach_managed(i, &ps->window_stack) {
+		if (i == w) {
+			break;
+		}
+		if (!i->reg_ignore_valid) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * Find out the WM frame of a client window using existing data.
+ *
+ * @param id window ID
+ * @return struct win object of the found window, NULL if not found
+ */
+struct managed_win *session_find_toplevel(session_t *ps, xcb_window_t id) {
+	if (!id) {
+		return NULL;
+	}
+
+	HASH_ITER2(ps->windows, w) {
+		assert(!w->destroyed);
+		if (!w->managed) {
+			continue;
+		}
+
+		auto mw = (struct managed_win *)w;
+		if (mw->client_win == id) {
+			return mw;
+		}
+	}
+
+	return NULL;
+}
+
+#ifdef CONFIG_OPENGL
+struct glx_session *session_get_psglx(session_t *ps) {
+	return ps->psglx;
+}
+void session_set_psglx(session_t *ps, struct glx_session *psglx) {
+	ps->psglx = psglx;
+}
+#endif
+
+xcb_render_picture_t *session_get_alpha_pictures(session_t *ps) {
+	return ps->alpha_picts;
+}
+
+struct x_monitors *session_get_monitors(session_t *ps) {
+	return &ps->monitors;
+}
+
+paint_t *session_get_tgt_buffer(session_t *ps) {
+	return &ps->tgt_buffer;
+}
+
+xcb_render_picture_t session_get_tgt_picture(session_t *ps) {
+	return ps->tgt_picture;
+}
+
+paint_t *session_get_root_tile_paint(session_t *ps) {
+	return &ps->root_tile_paint;
+}
+
+bool session_get_root_tile_fill(session_t *ps) {
+	return ps->root_tile_fill;
+}
+
+void session_set_root_tile_fill(session_t *ps, bool fill) {
+	ps->root_tile_fill = fill;
+}
+
+void session_vsync_wait(session_t *ps) {
+	if (ps->vsync_wait) {
+		ps->vsync_wait(ps);
+	}
+}
+
+xcb_render_picture_t session_get_white_picture(session_t *ps) {
+	return ps->white_picture;
+}
+
+xcb_render_picture_t session_get_black_picture(session_t *ps) {
+	return ps->black_picture;
+}
+
+xcb_render_picture_t session_get_cshadow_picture(session_t *ps) {
+	return ps->cshadow_picture;
+}
+
+void session_set_white_picture(session_t *ps, xcb_render_picture_t p) {
+	ps->white_picture = p;
+}
+
+void session_set_black_picture(session_t *ps, xcb_render_picture_t p) {
+	ps->black_picture = p;
+}
+
+void session_set_cshadow_picture(session_t *ps, xcb_render_picture_t p) {
+	ps->cshadow_picture = p;
+}
+
+region_t *session_get_screen_reg(session_t *ps) {
+	return &ps->screen_reg;
+}
+
+region_t *session_get_shadow_exclude_reg(session_t *ps) {
+	return &ps->shadow_exclude_reg;
+}
+
+void session_set_vsync_wait(session_t *ps, int (*vsync_wait)(session_t *)) {
+	ps->vsync_wait = vsync_wait;
+}
+
+bool session_has_glx_extension(session_t *ps) {
+	return ps->glx_exists;
+}
+
+bool session_has_shape_extension(session_t *ps) {
+	return ps->shape_exists;
+}
+
+bool session_has_present_extension(session_t *ps) {
+	return ps->present_exists;
+}
+
+bool session_has_xsync_extension(session_t *ps) {
+	return ps->xsync_exists;
+}
+
+bool session_has_randr_extension(session_t *ps) {
+	return ps->randr_exists;
+}
+
+int session_get_xfixes_extension_error(session_t *ps) {
+	return ps->xfixes_error;
+}
+
+int session_get_render_extension_error(session_t *ps) {
+	return ps->render_error;
+}
+
+int session_get_damage_extension_error(session_t *ps) {
+	return ps->damage_error;
+}
+
+int session_get_glx_extension_error(session_t *ps) {
+	return ps->glx_error;
+}
+
+int session_get_xsync_extension_error(session_t *ps) {
+	return ps->xsync_error;
+}
+
+int session_get_xsync_extention_event(session_t *ps) {
+	return ps->xsync_event;
+}
+
+int session_get_damage_extention_event(session_t *ps) {
+	return ps->damage_event;
+}
+
+int session_get_shape_extention_event(session_t *ps) {
+	return ps->shape_event;
+}
+
+int session_get_randr_extention_event(session_t *ps) {
+	return ps->randr_event;
+}
+
+void session_xsync_wait_fence(session_t *ps) {
+	if (ps->o.xrender_sync_fence && ps->xsync_exists &&
+	    !x_fence_sync(&ps->c, ps->sync_fence)) {
+		log_error("x_fence_sync failed, xrender-sync-fence will be "
+		          "disabled from now on.");
+		xcb_sync_destroy_fence(ps->c.c, ps->sync_fence);
+		ps->sync_fence = XCB_NONE;
+		ps->o.xrender_sync_fence = false;
+		ps->xsync_exists = false;
+	}
 }
 
 uint8_t session_redirection_mode(session_t *ps) {
@@ -1679,7 +2418,7 @@ static void handle_new_windows(session_t *ps) {
 			}
 			// Send D-Bus signal
 			if (ps->o.dbus) {
-				cdbus_ev_win_added(ps->dbus_data, new_w);
+				cdbus_ev_win_added(session_get_cdbus(ps), new_w);
 			}
 		}
 	}
@@ -2031,9 +2770,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	    .tgt_picture = XCB_NONE,
 	    .tgt_buffer = PAINT_INIT,
 	    .reg_win = XCB_NONE,
-#ifdef CONFIG_OPENGL
-	    .glx_prog_win = GLX_PROG_MAIN_INIT,
-#endif
 	    .redirected = false,
 	    .alpha_picts = NULL,
 	    .fade_time = 0L,
@@ -2413,9 +3149,12 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	apply_driver_workarounds(ps, ps->drivers);
 
 	// Initialize filters, must be preceded by OpenGL context creation
-	if (ps->o.legacy_backends && !init_render(ps)) {
-		log_fatal("Failed to initialize the backend");
-		exit(1);
+	if (ps->o.legacy_backends) {
+		ps->alpha_picts = ccalloc(MAX_ALPHA + 1, xcb_render_picture_t);
+		if (!init_render(ps)) {
+			log_fatal("Failed to initialize the backend");
+			exit(1);
+		}
 	}
 
 	if (ps->o.print_diagnostics) {
@@ -2554,7 +3293,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		nchildren = xcb_query_tree_children_length(query_tree_reply);
 
 		for (int i = 0; i < nchildren; i++) {
-			add_win_above(ps, children[i], i ? children[i - 1] : XCB_NONE);
+			session_add_win_above(ps, children[i], i ? children[i - 1] : XCB_NONE);
 		}
 		free(query_tree_reply);
 	}
@@ -2697,15 +3436,14 @@ static void session_destroy(session_t *ps) {
 		// backend is deinitialized in unredirect()
 		assert(ps->backend_data == NULL);
 	} else {
+		// Free all GLX resources of windows
+		win_stack_foreach_managed(w, &ps->window_stack) {
+			free_win_res_glx(ps, w);
+		}
 		deinit_render(ps);
+		free(ps->alpha_picts);
+		ps->alpha_picts = NULL;
 	}
-
-#if CONFIG_OPENGL
-	if (glx_has_context(ps)) {
-		// GLX context created, but not for rendering
-		glx_destroy(ps);
-	}
-#endif
 
 	// Flush all events
 	xcb_aux_sync(ps->c.c);

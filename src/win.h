@@ -340,11 +340,11 @@ bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 void win_update_monitor(struct x_monitors *monitors, struct managed_win *mw);
 
 /// Recheck if a window is fullscreen
-void win_update_is_fullscreen(const session_t *ps, struct managed_win *w);
+void win_update_is_fullscreen(session_t *ps, struct managed_win *w);
 /**
  * Check if a window has BYPASS_COMPOSITOR property set
  */
-bool win_is_bypassing_compositor(const session_t *ps, const struct managed_win *w);
+bool win_is_bypassing_compositor(session_t *ps, const struct managed_win *w);
 /**
  * Get a rectangular region in global coordinates a window (and possibly
  * its shadow) occupies.
@@ -373,20 +373,9 @@ void win_get_region_noframe_local_without_corners(const struct managed_win *w, r
 void win_get_region_frame_local(const struct managed_win *w, region_t *res);
 /// Get the region for the frame of the window, by value
 region_t win_get_region_frame_local_by_val(const struct managed_win *w);
-/// Insert a new window above window with id `below`, if there is no window, add to top
-/// New window will be in unmapped state
-struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below);
-/// Insert a new win entry at the top of the stack
-struct win *add_win_top(session_t *ps, xcb_window_t id);
 /// Query the Xorg for information about window `win`
 /// `win` pointer might become invalid after this function returns
 struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct win *win);
-/// Move window `w` to be right above `below`
-void restack_above(session_t *ps, struct win *w, xcb_window_t below);
-/// Move window `w` to the bottom of the stack
-void restack_bottom(session_t *ps, struct win *w);
-/// Move window `w` to the top of the stack
-void restack_top(session_t *ps, struct win *w);
 
 /**
  * Release a destroyed window that is no longer needed.
@@ -403,8 +392,6 @@ void win_skip_fading(struct managed_win *w);
  * Find a managed window from window id in window linked list of the session.
  */
 struct managed_win *find_managed_win(session_t *ps, xcb_window_t id);
-struct win *find_win(session_t *ps, xcb_window_t id);
-struct managed_win *find_toplevel(session_t *ps, xcb_window_t id);
 /**
  * Find a managed window that is, or is a parent of `wid`.
  *
@@ -429,15 +416,16 @@ static inline bool attr_pure win_is_wmwin(const struct managed_win *w) {
 	return w->base.id == w->client_win && !w->a.override_redirect;
 }
 
-/// check if reg_ignore_valid is true for all windows above us
-bool attr_pure win_is_region_ignore_valid(session_t *ps, const struct managed_win *w);
+static inline const char *win_get_name_if_managed(const struct win *w) {
+	if (!w->managed) {
+		return "(unmanaged)";
+	}
+	auto mw = (struct managed_win *)w;
+	return mw->name;
+}
 
 /// Whether a given window is mapped on the X server side
 bool win_is_mapped_in_x(const struct managed_win *w);
-
-// Find the managed window immediately below `w` in the window stack
-struct managed_win *attr_pure win_stack_find_next_managed(const session_t *ps,
-                                                          const struct list_node *w);
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags);
 /// Clear flags on a window. Some sanity checks are performed

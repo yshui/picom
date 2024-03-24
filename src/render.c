@@ -12,6 +12,7 @@
 
 #include "common.h"
 #include "options.h"
+#include "picom.h"
 #include "transition.h"
 
 #ifdef CONFIG_OPENGL
@@ -55,24 +56,26 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
 	}
 
 	struct glx_fbconfig_info *fbcfg;
+	auto c = session_get_x_connection(ps);
+	auto psglx = session_get_psglx(ps);
 	if (!visual) {
 		assert(depth == 32);
-		if (!ps->argb_fbconfig.cfg) {
-			glx_find_fbconfig(&ps->c,
+		if (!psglx->argb_fbconfig.cfg) {
+			glx_find_fbconfig(c,
 			                  (struct xvisual_info){.red_size = 8,
 			                                        .green_size = 8,
 			                                        .blue_size = 8,
 			                                        .alpha_size = 8,
 			                                        .visual_depth = 32},
-			                  &ps->argb_fbconfig);
+			                  &psglx->argb_fbconfig);
 		}
-		if (!ps->argb_fbconfig.cfg) {
+		if (!psglx->argb_fbconfig.cfg) {
 			log_error("Failed to find appropriate FBConfig for 32 bit depth");
 			return false;
 		}
-		fbcfg = &ps->argb_fbconfig;
+		fbcfg = &psglx->argb_fbconfig;
 	} else {
-		auto m = x_get_visual_info(&ps->c, visual);
+		auto m = x_get_visual_info(c, visual);
 		if (m.visual_depth < 0) {
 			return false;
 		}
@@ -83,7 +86,7 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
 		}
 
 		if (!ppaint->fbcfg.cfg) {
-			glx_find_fbconfig(&ps->c, m, &ppaint->fbcfg);
+			glx_find_fbconfig(session_get_x_connection(ps), m, &ppaint->fbcfg);
 		}
 		if (!ppaint->fbcfg.cfg) {
 			log_error("Failed to find appropriate FBConfig for X pixmap");
@@ -113,34 +116,37 @@ static inline bool paint_bind_tex(session_t *ps, paint_t *ppaint, int wid, int h
  * Check if current backend uses XRender for rendering.
  */
 static inline bool bkend_use_xrender(session_t *ps) {
-	return BKEND_XRENDER == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
+	auto backend = session_get_options(ps)->backend;
+	return BKEND_XRENDER == backend || BKEND_XR_GLX_HYBRID == backend;
 }
 
 int maximum_buffer_age(session_t *ps) {
-	if (bkend_use_glx(ps) && ps->o.use_damage) {
+	if (bkend_use_glx(ps) && session_get_options(ps)->use_damage) {
 		return CGLX_MAX_BUFFER_AGE;
 	}
 	return 1;
 }
 
 static int get_buffer_age(session_t *ps) {
+	auto options = session_get_options(ps);
 #ifdef CONFIG_OPENGL
 	if (bkend_use_glx(ps)) {
-		if (!glxext.has_GLX_EXT_buffer_age && ps->o.use_damage) {
+		if (!glxext.has_GLX_EXT_buffer_age && options->use_damage) {
 			log_warn("GLX_EXT_buffer_age not supported by your driver,"
 			         "`use-damage` has to be disabled");
-			ps->o.use_damage = false;
+			options->use_damage = false;
 		}
-		if (ps->o.use_damage) {
+		if (options->use_damage) {
 			unsigned int val;
-			glXQueryDrawable(ps->c.dpy, get_tgt_window(ps),
+			glXQueryDrawable(session_get_x_connection(ps)->dpy,
+			                 session_get_target_window(ps),
 			                 GLX_BACK_BUFFER_AGE_EXT, &val);
 			return (int)val ?: -1;
 		}
 		return -1;
 	}
 #endif
-	return ps->o.use_damage ? 1 : -1;
+	return options->use_damage ? 1 : -1;
 }
 
 /**
@@ -148,16 +154,18 @@ static int get_buffer_age(session_t *ps) {
  */
 static inline void xrfilter_reset(session_t *ps, xcb_render_picture_t p) {
 #define FILTER "Nearest"
-	xcb_render_set_picture_filter(ps->c.c, p, strlen(FILTER), FILTER, 0, NULL);
+	xcb_render_set_picture_filter(session_get_x_connection(ps)->c, p, strlen(FILTER),
+	                              FILTER, 0, NULL);
 #undef FILTER
 }
 
 /// Set the input/output clip region of the target buffer (not the actual target!)
 static inline void attr_nonnull(1, 2) set_tgt_clip(session_t *ps, region_t *reg) {
-	switch (ps->o.backend) {
+	switch (session_get_options(ps)->backend) {
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID:
-		x_set_picture_clip_region(&ps->c, ps->tgt_buffer.pict, 0, 0, reg);
+		x_set_picture_clip_region(session_get_x_connection(ps),
+		                          session_get_tgt_buffer(ps)->pict, 0, 0, reg);
 		break;
 #ifdef CONFIG_OPENGL
 	case BKEND_GLX: glx_set_clip(ps, reg); break;
@@ -173,12 +181,13 @@ void free_paint(session_t *ps, paint_t *ppaint) {
 #ifdef CONFIG_OPENGL
 	free_paint_glx(ps, ppaint);
 #endif
+	auto c = session_get_x_connection(ps);
 	if (ppaint->pict != XCB_NONE) {
-		x_free_picture(&ps->c, ppaint->pict);
+		x_free_picture(c, ppaint->pict);
 		ppaint->pict = XCB_NONE;
 	}
 	if (ppaint->pixmap) {
-		xcb_free_pixmap(ps->c.c, ppaint->pixmap);
+		xcb_free_pixmap(c->c, ppaint->pixmap);
 		ppaint->pixmap = XCB_NONE;
 	}
 }
@@ -243,15 +252,17 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
             int fullhei, double opacity, bool argb, bool neg, int cr,
             xcb_render_picture_t pict, glx_texture_t *ptex, const region_t *reg_paint,
             const glx_prog_main_t *pprogram, clip_t *clip) {
-	switch (ps->o.backend) {
+	auto options = session_get_options(ps);
+	auto c = session_get_x_connection(ps);
+	switch (options->backend) {
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID: {
 		auto alpha_step = (int)(opacity * MAX_ALPHA);
-		xcb_render_picture_t alpha_pict = ps->alpha_picts[alpha_step];
+		xcb_render_picture_t alpha_pict = session_get_alpha_pictures(ps)[alpha_step];
 		if (alpha_step != 0) {
 			if (cr) {
 				xcb_render_picture_t p_tmp = x_create_picture_with_standard(
-				    &ps->c, fullwid, fullhei, XCB_PICT_STANDARD_ARGB_32, 0, 0);
+				    c, fullwid, fullhei, XCB_PICT_STANDARD_ARGB_32, 0, 0);
 				xcb_render_color_t trans = {
 				    .red = 0, .blue = 0, .green = 0, .alpha = 0};
 				const xcb_rectangle_t rect = {
@@ -259,7 +270,7 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
 				    .y = 0,
 				    .width = to_u16_checked(fullwid),
 				    .height = to_u16_checked(fullhei)};
-				xcb_render_fill_rectangles(ps->c.c, XCB_RENDER_PICT_OP_SRC,
+				xcb_render_fill_rectangles(c->c, XCB_RENDER_PICT_OP_SRC,
 				                           p_tmp, trans, 1, &rect);
 
 				uint32_t max_ntraps = to_u32_checked(cr);
@@ -269,24 +280,24 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
 				    traps, max_ntraps, cr, fullwid, fullhei);
 
 				xcb_render_trapezoids(
-				    ps->c.c, XCB_RENDER_PICT_OP_OVER, alpha_pict, p_tmp,
-				    x_get_pictfmt_for_standard(&ps->c, XCB_PICT_STANDARD_A_8),
+				    c->c, XCB_RENDER_PICT_OP_OVER, alpha_pict, p_tmp,
+				    x_get_pictfmt_for_standard(c, XCB_PICT_STANDARD_A_8),
 				    0, 0, n, traps);
 
 				xcb_render_composite(
-				    ps->c.c, XCB_RENDER_PICT_OP_OVER, pict, p_tmp,
-				    ps->tgt_buffer.pict, to_i16_checked(x),
+				    c->c, XCB_RENDER_PICT_OP_OVER, pict, p_tmp,
+				    session_get_tgt_buffer(ps)->pict, to_i16_checked(x),
 				    to_i16_checked(y), to_i16_checked(x), to_i16_checked(y),
 				    to_i16_checked(dx), to_i16_checked(dy),
 				    to_u16_checked(wid), to_u16_checked(hei));
 
-				x_free_picture(&ps->c, p_tmp);
+				x_free_picture(c, p_tmp);
 
 			} else {
 				xcb_render_picture_t p_tmp = alpha_pict;
 				if (clip) {
 					p_tmp = x_create_picture_with_standard(
-					    &ps->c, wid, hei, XCB_PICT_STANDARD_ARGB_32, 0, 0);
+					    c, wid, hei, XCB_PICT_STANDARD_ARGB_32, 0, 0);
 
 					xcb_render_color_t black = {
 					    .red = 255, .blue = 255, .green = 255, .alpha = 255};
@@ -295,18 +306,17 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
 					    .y = 0,
 					    .width = to_u16_checked(wid),
 					    .height = to_u16_checked(hei)};
-					xcb_render_fill_rectangles(ps->c.c,
-					                           XCB_RENDER_PICT_OP_SRC,
+					xcb_render_fill_rectangles(c->c, XCB_RENDER_PICT_OP_SRC,
 					                           p_tmp, black, 1, &rect);
 					if (alpha_pict) {
 						xcb_render_composite(
-						    ps->c.c, XCB_RENDER_PICT_OP_SRC,
+						    c->c, XCB_RENDER_PICT_OP_SRC,
 						    alpha_pict, XCB_NONE, p_tmp, 0, 0, 0,
 						    0, 0, 0, to_u16_checked(wid),
 						    to_u16_checked(hei));
 					}
 					xcb_render_composite(
-					    ps->c.c, XCB_RENDER_PICT_OP_OUT_REVERSE,
+					    c->c, XCB_RENDER_PICT_OP_OUT_REVERSE,
 					    clip->pict, XCB_NONE, p_tmp, 0, 0, 0, 0,
 					    to_i16_checked(clip->x), to_i16_checked(clip->y),
 					    to_u16_checked(wid), to_u16_checked(hei));
@@ -316,23 +326,25 @@ void render(session_t *ps, int x, int y, int dx, int dy, int wid, int hei, int f
 				                  : XCB_RENDER_PICT_OP_OVER);
 
 				xcb_render_composite(
-				    ps->c.c, op, pict, p_tmp, ps->tgt_buffer.pict,
+				    c->c, op, pict, p_tmp, session_get_tgt_buffer(ps)->pict,
 				    to_i16_checked(x), to_i16_checked(y), 0, 0,
 				    to_i16_checked(dx), to_i16_checked(dy),
 				    to_u16_checked(wid), to_u16_checked(hei));
 				if (clip) {
-					x_free_picture(&ps->c, p_tmp);
+					x_free_picture(c, p_tmp);
 				}
 			}
 		}
 		break;
 	}
 #ifdef CONFIG_OPENGL
-	case BKEND_GLX:
-		glx_render(ps, ptex, x, y, dx, dy, wid, hei, ps->psglx->z, opacity, argb,
-		           neg, reg_paint, pprogram);
-		ps->psglx->z += 1;
+	case BKEND_GLX: {
+		auto psglx = session_get_psglx(ps);
+		glx_render(ps, ptex, x, y, dx, dy, wid, hei, psglx->z, opacity, argb, neg,
+		           reg_paint, pprogram);
+		psglx->z += 1;
 		break;
+	}
 #endif
 	default: assert(0);
 	}
@@ -351,14 +363,15 @@ paint_region(session_t *ps, const struct managed_win *w, int x, int y, int wid, 
 	const int dy = (w ? w->g.y : 0) + y;
 	const int fullwid = w ? w->widthb : 0;
 	const int fullhei = w ? w->heightb : 0;
-	const bool argb = (w && (win_has_alpha(w) || ps->o.force_win_blend));
+	const bool argb =
+	    (w && (win_has_alpha(w) || session_get_options(ps)->force_win_blend));
 	const bool neg = (w && w->invert_color);
 
 	render(ps, x, y, dx, dy, wid, hei, fullwid, fullhei, opacity, argb, neg,
 	       w ? w->corner_radius : 0, pict,
-	       (w ? w->paint.ptex : ps->root_tile_paint.ptex), reg_paint,
+	       (w ? w->paint.ptex : session_get_root_tile_paint(ps)->ptex), reg_paint,
 #ifdef CONFIG_OPENGL
-	       w ? &ps->glx_prog_win : NULL
+	       w ? &session_get_psglx(ps)->glx_prog_win : NULL
 #else
 	       NULL
 #endif
@@ -381,7 +394,8 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
 	}
 
 #ifdef CONFIG_OPENGL
-	if (BKEND_GLX == ps->o.backend && !glx_tex_bound(ppaint->ptex, XCB_NONE)) {
+	if (BKEND_GLX == session_get_options(ps)->backend &&
+	    !glx_tex_bound(ppaint->ptex, XCB_NONE)) {
 		return false;
 	}
 #endif
@@ -393,11 +407,13 @@ static inline bool paint_isvalid(session_t *ps, const paint_t *ppaint) {
  * Paint a window itself and dim it if asked.
  */
 void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) {
+	auto options = session_get_options(ps);
+	auto c = session_get_x_connection(ps);
 	// Fetch Pixmap
 	if (!w->paint.pixmap) {
-		w->paint.pixmap = x_new_id(&ps->c);
-		set_ignore_cookie(&ps->c, xcb_composite_name_window_pixmap(
-		                              ps->c.c, w->base.id, w->paint.pixmap));
+		w->paint.pixmap = x_new_id(c);
+		set_ignore_cookie(
+		    c, xcb_composite_name_window_pixmap(c->c, w->base.id, w->paint.pixmap));
 	}
 
 	xcb_drawable_t draw = w->paint.pixmap;
@@ -415,7 +431,7 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 		};
 
 		w->paint.pict = x_create_picture_with_pictfmt_and_pixmap(
-		    &ps->c, w->pictfmt, draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
+		    c, w->pictfmt, draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
 	}
 
 	// GLX: Build texture
@@ -423,7 +439,7 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 	// is resizing windows, the width and height we get may not be up-to-date,
 	// causing the jittering issue M4he reported in #7.
 	if (!paint_bind_tex(ps, &w->paint, 0, 0, false, 0, w->a.visual,
-	                    (!ps->o.glx_no_rebind_pixmap && w->pixmap_damaged))) {
+	                    (!options->glx_no_rebind_pixmap && w->pixmap_damaged))) {
 		log_error("Failed to bind texture for window %#010x.", w->base.id);
 	}
 	w->pixmap_damaged = false;
@@ -444,7 +460,7 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 	// Invert window color, if required
 	if (bkend_use_xrender(ps) && w->invert_color) {
 		xcb_render_picture_t newpict =
-		    x_create_picture_with_pictfmt(&ps->c, wid, hei, w->pictfmt, 0, NULL);
+		    x_create_picture_with_pictfmt(c, wid, hei, w->pictfmt, 0, NULL);
 		if (newpict) {
 			// Apply clipping region to save some CPU
 			if (reg_paint) {
@@ -457,15 +473,15 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 				pixman_region32_fini(&reg);
 			}
 
-			xcb_render_composite(ps->c.c, XCB_RENDER_PICT_OP_SRC, pict,
-			                     XCB_NONE, newpict, 0, 0, 0, 0, 0, 0, wid, hei);
-			xcb_render_composite(ps->c.c, XCB_RENDER_PICT_OP_DIFFERENCE,
-			                     ps->white_picture, XCB_NONE, newpict, 0, 0,
-			                     0, 0, 0, 0, wid, hei);
+			xcb_render_composite(c->c, XCB_RENDER_PICT_OP_SRC, pict, XCB_NONE,
+			                     newpict, 0, 0, 0, 0, 0, 0, wid, hei);
+			xcb_render_composite(c->c, XCB_RENDER_PICT_OP_DIFFERENCE,
+			                     session_get_white_picture(ps), XCB_NONE,
+			                     newpict, 0, 0, 0, 0, 0, 0, wid, hei);
 			// We use an extra PictOpInReverse operation to get correct
 			// pixel alpha. There could be a better solution.
 			if (win_has_alpha(w)) {
-				xcb_render_composite(ps->c.c, XCB_RENDER_PICT_OP_IN_REVERSE,
+				xcb_render_composite(c->c, XCB_RENDER_PICT_OP_IN_REVERSE,
 				                     pict, XCB_NONE, newpict, 0, 0, 0, 0,
 				                     0, 0, wid, hei);
 			}
@@ -551,18 +567,18 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 #undef COMP_BDR
 
 	if (pict != w->paint.pict) {
-		x_free_picture(&ps->c, pict);
+		x_free_picture(c, pict);
 		pict = XCB_NONE;
 	}
 
 	// Dimming the window if needed
 	if (w->dim) {
-		double dim_opacity = ps->o.inactive_dim;
-		if (!ps->o.inactive_dim_fixed) {
+		double dim_opacity = options->inactive_dim;
+		if (!options->inactive_dim_fixed) {
 			dim_opacity *= window_opacity;
 		}
 
-		switch (ps->o.backend) {
+		switch (options->backend) {
 		case BKEND_XRENDER:
 		case BKEND_XR_GLX_HYBRID: {
 			auto cval = (uint16_t)(0xffff * dim_opacity);
@@ -582,12 +598,13 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 			    .height = hei,
 			};
 
-			xcb_render_fill_rectangles(ps->c.c, XCB_RENDER_PICT_OP_OVER,
-			                           ps->tgt_buffer.pict, color, 1, &rect);
+			xcb_render_fill_rectangles(c->c, XCB_RENDER_PICT_OP_OVER,
+			                           session_get_tgt_buffer(ps)->pict,
+			                           color, 1, &rect);
 		} break;
 #ifdef CONFIG_OPENGL
 		case BKEND_GLX:
-			glx_dim_dst(ps, x, y, wid, hei, (int)(ps->psglx->z - 0.7),
+			glx_dim_dst(ps, x, y, wid, hei, (int)(session_get_psglx(ps)->z - 0.7),
 			            (float)dim_opacity, reg_paint);
 			break;
 #endif
@@ -598,36 +615,37 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 
 static bool get_root_tile(session_t *ps) {
 	/*
-	if (ps->o.paint_on_overlay) {
+	if (options->paint_on_overlay) {
 	  return ps->root_picture;
 	} */
 
-	assert(!ps->root_tile_paint.pixmap);
-	ps->root_tile_fill = false;
+	assert(!session_get_root_tile_paint(ps)->pixmap);
+	auto c = session_get_x_connection(ps);
+	auto atoms = session_get_atoms(ps);
+	session_set_root_tile_fill(ps, false);
 
 	bool fill = false;
-	xcb_pixmap_t pixmap = x_get_root_back_pixmap(&ps->c, ps->atoms);
+	xcb_pixmap_t pixmap = x_get_root_back_pixmap(c, atoms);
 
 	xcb_get_geometry_reply_t *r;
 	if (pixmap) {
-		r = xcb_get_geometry_reply(ps->c.c, xcb_get_geometry(ps->c.c, pixmap), NULL);
+		r = xcb_get_geometry_reply(c->c, xcb_get_geometry(c->c, pixmap), NULL);
 	}
 
 	// Create a pixmap if there isn't any
 	xcb_visualid_t visual;
 	if (!pixmap || !r) {
-		pixmap =
-		    x_create_pixmap(&ps->c, (uint8_t)ps->c.screen_info->root_depth, 1, 1);
+		pixmap = x_create_pixmap(c, (uint8_t)c->screen_info->root_depth, 1, 1);
 		if (pixmap == XCB_NONE) {
 			log_error("Failed to create pixmaps for root tile.");
 			return false;
 		}
-		visual = ps->c.screen_info->root_visual;
+		visual = c->screen_info->root_visual;
 		fill = true;
 	} else {
-		visual = r->depth == ps->c.screen_info->root_depth
-		             ? ps->c.screen_info->root_visual
-		             : x_get_visual_for_depth(ps->c.screen_info, r->depth);
+		visual = r->depth == c->screen_info->root_depth
+		             ? c->screen_info->root_visual
+		             : x_get_visual_for_depth(c->screen_info, r->depth);
 		free(r);
 	}
 
@@ -635,8 +653,9 @@ static bool get_root_tile(session_t *ps) {
 	xcb_render_create_picture_value_list_t pa = {
 	    .repeat = true,
 	};
-	ps->root_tile_paint.pict = x_create_picture_with_visual_and_pixmap(
-	    &ps->c, visual, pixmap, XCB_RENDER_CP_REPEAT, &pa);
+	auto root_tile_paint = session_get_root_tile_paint(ps);
+	root_tile_paint->pict = x_create_picture_with_visual_and_pixmap(
+	    c, visual, pixmap, XCB_RENDER_CP_REPEAT, &pa);
 
 	// Fill pixmap if needed
 	if (fill) {
@@ -649,15 +668,15 @@ static bool get_root_tile(session_t *ps) {
 		rect.x = rect.y = 0;
 		rect.width = rect.height = 1;
 
-		xcb_render_fill_rectangles(ps->c.c, XCB_RENDER_PICT_OP_SRC,
-		                           ps->root_tile_paint.pict, col, 1, &rect);
+		xcb_render_fill_rectangles(c->c, XCB_RENDER_PICT_OP_SRC,
+		                           root_tile_paint->pict, col, 1, &rect);
 	}
 
-	ps->root_tile_fill = fill;
-	ps->root_tile_paint.pixmap = pixmap;
+	session_set_root_tile_fill(ps, fill);
+	root_tile_paint->pixmap = pixmap;
 #ifdef CONFIG_OPENGL
-	if (BKEND_GLX == ps->o.backend) {
-		return paint_bind_tex(ps, &ps->root_tile_paint, 0, 0, true, 0, visual, false);
+	if (session_get_options(ps)->backend == BKEND_GLX) {
+		return paint_bind_tex(ps, root_tile_paint, 0, 0, true, 0, visual, false);
 	}
 #endif
 
@@ -670,12 +689,14 @@ static bool get_root_tile(session_t *ps) {
 static void paint_root(session_t *ps, const region_t *reg_paint) {
 	// If there is no root tile pixmap, try getting one.
 	// If that fails, give up.
-	if (!ps->root_tile_paint.pixmap && !get_root_tile(ps)) {
+	auto root_tile_paint = session_get_root_tile_paint(ps);
+	if (!root_tile_paint->pixmap && !get_root_tile(ps)) {
 		return;
 	}
 
-	paint_region(ps, NULL, 0, 0, ps->root_width, ps->root_height, 1.0, reg_paint,
-	             ps->root_tile_paint.pict);
+	auto root_extent = session_get_root_extent(ps);
+	paint_region(ps, NULL, 0, 0, root_extent.width, root_extent.height, 1.0,
+	             reg_paint, root_tile_paint->pict);
 }
 
 /**
@@ -691,16 +712,17 @@ static bool win_build_shadow(session_t *ps, struct managed_win *w, double opacit
 	xcb_render_picture_t shadow_picture = XCB_NONE, shadow_picture_argb = XCB_NONE;
 	xcb_gcontext_t gc = XCB_NONE;
 
-	shadow_image =
-	    make_shadow(&ps->c, (conv *)ps->shadow_context, opacity, width, height);
+	auto c = session_get_x_connection(ps);
+	auto shadow_context = (conv *)session_get_backend_shadow_context(ps);
+	shadow_image = make_shadow(c, shadow_context, opacity, width, height);
 	if (!shadow_image) {
 		log_error("failed to make shadow");
 		return XCB_NONE;
 	}
 
-	shadow_pixmap = x_create_pixmap(&ps->c, 8, shadow_image->width, shadow_image->height);
+	shadow_pixmap = x_create_pixmap(c, 8, shadow_image->width, shadow_image->height);
 	shadow_pixmap_argb =
-	    x_create_pixmap(&ps->c, 32, shadow_image->width, shadow_image->height);
+	    x_create_pixmap(c, 32, shadow_image->width, shadow_image->height);
 
 	if (!shadow_pixmap || !shadow_pixmap_argb) {
 		log_error("failed to create shadow pixmaps");
@@ -708,18 +730,18 @@ static bool win_build_shadow(session_t *ps, struct managed_win *w, double opacit
 	}
 
 	shadow_picture = x_create_picture_with_standard_and_pixmap(
-	    &ps->c, XCB_PICT_STANDARD_A_8, shadow_pixmap, 0, NULL);
+	    c, XCB_PICT_STANDARD_A_8, shadow_pixmap, 0, NULL);
 	shadow_picture_argb = x_create_picture_with_standard_and_pixmap(
-	    &ps->c, XCB_PICT_STANDARD_ARGB_32, shadow_pixmap_argb, 0, NULL);
+	    c, XCB_PICT_STANDARD_ARGB_32, shadow_pixmap_argb, 0, NULL);
 	if (!shadow_picture || !shadow_picture_argb) {
 		goto shadow_picture_err;
 	}
 
-	gc = x_new_id(&ps->c);
-	xcb_create_gc(ps->c.c, gc, shadow_pixmap, 0, NULL);
+	gc = x_new_id(c);
+	xcb_create_gc(c->c, gc, shadow_pixmap, 0, NULL);
 
-	xcb_image_put(ps->c.c, shadow_pixmap, gc, shadow_image, 0, 0, 0);
-	xcb_render_composite(ps->c.c, XCB_RENDER_PICT_OP_SRC, ps->cshadow_picture,
+	xcb_image_put(c->c, shadow_pixmap, gc, shadow_image, 0, 0, 0);
+	xcb_render_composite(c->c, XCB_RENDER_PICT_OP_SRC, session_get_cshadow_picture(ps),
 	                     shadow_picture, shadow_picture_argb, 0, 0, 0, 0, 0, 0,
 	                     shadow_image->width, shadow_image->height);
 
@@ -728,10 +750,10 @@ static bool win_build_shadow(session_t *ps, struct managed_win *w, double opacit
 	assert(!w->shadow_paint.pict);
 	w->shadow_paint.pict = shadow_picture_argb;
 
-	xcb_free_gc(ps->c.c, gc);
+	xcb_free_gc(c->c, gc);
 	xcb_image_destroy(shadow_image);
-	xcb_free_pixmap(ps->c.c, shadow_pixmap);
-	x_free_picture(&ps->c, shadow_picture);
+	xcb_free_pixmap(c->c, shadow_pixmap);
+	x_free_picture(c, shadow_picture);
 
 	return true;
 
@@ -740,19 +762,19 @@ shadow_picture_err:
 		xcb_image_destroy(shadow_image);
 	}
 	if (shadow_pixmap) {
-		xcb_free_pixmap(ps->c.c, shadow_pixmap);
+		xcb_free_pixmap(c->c, shadow_pixmap);
 	}
 	if (shadow_pixmap_argb) {
-		xcb_free_pixmap(ps->c.c, shadow_pixmap_argb);
+		xcb_free_pixmap(c->c, shadow_pixmap_argb);
 	}
 	if (shadow_picture) {
-		x_free_picture(&ps->c, shadow_picture);
+		x_free_picture(c, shadow_picture);
 	}
 	if (shadow_picture_argb) {
-		x_free_picture(&ps->c, shadow_picture_argb);
+		x_free_picture(c, shadow_picture_argb);
 	}
 	if (gc) {
-		xcb_free_gc(ps->c.c, gc);
+		xcb_free_gc(c->c, gc);
 	}
 
 	return false;
@@ -772,32 +794,35 @@ win_paint_shadow(session_t *ps, struct managed_win *w, region_t *reg_paint) {
 	}
 
 	xcb_render_picture_t td = XCB_NONE;
-	bool should_clip =
-	    (w->corner_radius > 0) && (!ps->o.wintype_option[w->window_type].full_shadow);
+	auto options = session_get_options(ps);
+	auto c = session_get_x_connection(ps);
+	bool should_clip = (w->corner_radius > 0) &&
+	                   (!options->wintype_option[w->window_type].full_shadow);
 	if (should_clip) {
-		if (ps->o.backend == BKEND_XRENDER || ps->o.backend == BKEND_XR_GLX_HYBRID) {
+		if (options->backend == BKEND_XRENDER ||
+		    options->backend == BKEND_XR_GLX_HYBRID) {
 			uint32_t max_ntraps = to_u32_checked(w->corner_radius);
 			xcb_render_trapezoid_t traps[4 * max_ntraps + 3];
 			uint32_t n = make_rounded_window_shape(
 			    traps, max_ntraps, w->corner_radius, w->widthb, w->heightb);
 
 			td = x_create_picture_with_standard(
-			    &ps->c, w->widthb, w->heightb, XCB_PICT_STANDARD_ARGB_32, 0, 0);
+			    c, w->widthb, w->heightb, XCB_PICT_STANDARD_ARGB_32, 0, 0);
 			xcb_render_color_t trans = {
 			    .red = 0, .blue = 0, .green = 0, .alpha = 0};
 			const xcb_rectangle_t rect = {.x = 0,
 			                              .y = 0,
 			                              .width = to_u16_checked(w->widthb),
 			                              .height = to_u16_checked(w->heightb)};
-			xcb_render_fill_rectangles(ps->c.c, XCB_RENDER_PICT_OP_SRC, td,
+			xcb_render_fill_rectangles(c->c, XCB_RENDER_PICT_OP_SRC, td,
 			                           trans, 1, &rect);
 
-			auto solid = solid_picture(&ps->c, false, 1, 0, 0, 0);
+			auto solid = solid_picture(c, false, 1, 0, 0, 0);
 			xcb_render_trapezoids(
-			    ps->c.c, XCB_RENDER_PICT_OP_OVER, solid, td,
-			    x_get_pictfmt_for_standard(&ps->c, XCB_PICT_STANDARD_A_8), 0,
-			    0, n, traps);
-			x_free_picture(&ps->c, solid);
+			    c->c, XCB_RENDER_PICT_OP_OVER, solid, td,
+			    x_get_pictfmt_for_standard(c, XCB_PICT_STANDARD_A_8), 0, 0, n,
+			    traps);
+			x_free_picture(c, solid);
 		} else {
 			// Not implemented
 		}
@@ -813,7 +838,7 @@ win_paint_shadow(session_t *ps, struct managed_win *w, region_t *reg_paint) {
 	       w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint, NULL,
 	       should_clip ? &clip : NULL);
 	if (td) {
-		x_free_picture(&ps->c, td);
+		x_free_picture(c, td);
 	}
 }
 
@@ -841,8 +866,9 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t x, int16_t y
 
 	// Directly copying from tgt_buffer to it does not work, so we create a
 	// Picture in the middle.
-	xcb_render_picture_t tmp_picture = x_create_picture_with_visual(
-	    &ps->c, wid, hei, ps->c.screen_info->root_visual, 0, NULL);
+	auto c = session_get_x_connection(ps);
+	xcb_render_picture_t tmp_picture =
+	    x_create_picture_with_visual(c, wid, hei, c->screen_info->root_visual, 0, NULL);
 
 	if (!tmp_picture) {
 		log_error("Failed to build intermediate Picture.");
@@ -850,7 +876,7 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t x, int16_t y
 	}
 
 	if (reg_clip && tmp_picture) {
-		x_set_picture_clip_region(&ps->c, tmp_picture, 0, 0, reg_clip);
+		x_set_picture_clip_region(c, tmp_picture, 0, 0, reg_clip);
 	}
 
 	xcb_render_picture_t src_pict = tgt_buffer, dst_pict = tmp_picture;
@@ -865,9 +891,9 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t x, int16_t y
 		// be applied on source picture, to get the nearby pixels outside the
 		// window.
 		xcb_render_set_picture_filter(
-		    ps->c.c, src_pict, strlen(XRFILTER_CONVOLUTION), XRFILTER_CONVOLUTION,
+		    c->c, src_pict, strlen(XRFILTER_CONVOLUTION), XRFILTER_CONVOLUTION,
 		    (uint32_t)(kwid * khei + 2), convolution_blur);
-		xcb_render_composite(ps->c.c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
+		xcb_render_composite(c->c, XCB_RENDER_PICT_OP_SRC, src_pict, XCB_NONE,
 		                     dst_pict, (rd_from_tgt ? x : 0),
 		                     (rd_from_tgt ? y : 0), 0, 0, (rd_from_tgt ? 0 : x),
 		                     (rd_from_tgt ? 0 : y), wid, hei);
@@ -881,11 +907,11 @@ xr_blur_dst(session_t *ps, xcb_render_picture_t tgt_buffer, int16_t x, int16_t y
 	}
 
 	if (src_pict != tgt_buffer) {
-		xcb_render_composite(ps->c.c, XCB_RENDER_PICT_OP_OVER, src_pict, rounded,
+		xcb_render_composite(c->c, XCB_RENDER_PICT_OP_OVER, src_pict, rounded,
 		                     tgt_buffer, 0, 0, 0, 0, x, y, wid, hei);
 	}
 
-	x_free_picture(&ps->c, tmp_picture);
+	x_free_picture(c, tmp_picture);
 
 	return true;
 }
@@ -904,33 +930,36 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 	const double window_opacity = animatable_get(&w->opacity);
 
 	double factor_center = 1.0;
+	auto options = session_get_options(ps);
+	auto c = session_get_x_connection(ps);
+	auto blur_kerns_cache = session_get_blur_kern_cache(ps);
 	// Adjust blur strength according to window opacity, to make it appear
 	// better during fading
-	if (!ps->o.blur_background_fixed) {
+	if (!options->blur_background_fixed) {
 		double pct = 1.0 - window_opacity * (1.0 - 1.0 / 9.0);
 		factor_center = pct * 8.0 / (1.1 - pct);
 	}
 
-	switch (ps->o.backend) {
+	switch (options->backend) {
 	case BKEND_XRENDER:
 	case BKEND_XR_GLX_HYBRID: {
 		// Normalize blur kernels
-		for (int i = 0; i < ps->o.blur_kernel_count; i++) {
+		for (int i = 0; i < options->blur_kernel_count; i++) {
 			// Note: `x * 65536` converts double `x` to a X fixed point
 			// representation. `x / 65536` is the other way.
-			auto kern_src = ps->o.blur_kerns[i];
-			auto kern_dst = ps->blur_kerns_cache[i];
+			auto kern_src = options->blur_kerns[i];
+			auto kern_dst = blur_kerns_cache[i];
 
 			assert(!kern_dst || (kern_src->w == kern_dst->kernel[0] / 65536 &&
 			                     kern_src->h == kern_dst->kernel[1] / 65536));
 
 			// Skip for fixed factor_center if the cache exists already
-			if (ps->o.blur_background_fixed && kern_dst) {
+			if (options->blur_background_fixed && kern_dst) {
 				continue;
 			}
 
 			x_create_convolution_kernel(kern_src, factor_center,
-			                            &ps->blur_kerns_cache[i]);
+			                            &blur_kerns_cache[i]);
 		}
 
 		xcb_render_picture_t td = XCB_NONE;
@@ -941,29 +970,29 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 			    make_rounded_window_shape(traps, max_ntraps, cr, wid, hei);
 
 			td = x_create_picture_with_standard(
-			    &ps->c, wid, hei, XCB_PICT_STANDARD_ARGB_32, 0, 0);
+			    c, wid, hei, XCB_PICT_STANDARD_ARGB_32, 0, 0);
 			xcb_render_color_t trans = {
 			    .red = 0, .blue = 0, .green = 0, .alpha = 0};
 			const xcb_rectangle_t rect = {.x = 0,
 			                              .y = 0,
 			                              .width = to_u16_checked(wid),
 			                              .height = to_u16_checked(hei)};
-			xcb_render_fill_rectangles(ps->c.c, XCB_RENDER_PICT_OP_SRC, td,
+			xcb_render_fill_rectangles(c->c, XCB_RENDER_PICT_OP_SRC, td,
 			                           trans, 1, &rect);
 
-			auto solid = solid_picture(&ps->c, false, 1, 0, 0, 0);
+			auto solid = solid_picture(c, false, 1, 0, 0, 0);
 
 			xcb_render_trapezoids(
-			    ps->c.c, XCB_RENDER_PICT_OP_OVER, solid, td,
-			    x_get_pictfmt_for_standard(&ps->c, XCB_PICT_STANDARD_A_8), 0,
-			    0, n, traps);
-			x_free_picture(&ps->c, solid);
+			    c->c, XCB_RENDER_PICT_OP_OVER, solid, td,
+			    x_get_pictfmt_for_standard(c, XCB_PICT_STANDARD_A_8), 0, 0, n,
+			    traps);
+			x_free_picture(c, solid);
 		}
 
 		// Minimize the region we try to blur, if the window itself is not
 		// opaque, only the frame is.
 		region_t reg_blur = win_get_bounding_shape_global_by_val(w);
-		if (w->mode == WMODE_FRAME_TRANS && !ps->o.force_win_blend) {
+		if (w->mode == WMODE_FRAME_TRANS && !options->force_win_blend) {
 			region_t reg_noframe;
 			pixman_region32_init(&reg_noframe);
 			win_get_region_noframe_local(w, &reg_noframe);
@@ -974,19 +1003,19 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 
 		// Translate global coordinates to local ones
 		pixman_region32_translate(&reg_blur, -x, -y);
-		xr_blur_dst(ps, tgt_buffer, x, y, wid, hei, ps->blur_kerns_cache,
-		            ps->o.blur_kernel_count, &reg_blur, td);
+		xr_blur_dst(ps, tgt_buffer, x, y, wid, hei, blur_kerns_cache,
+		            options->blur_kernel_count, &reg_blur, td);
 		if (td) {
-			x_free_picture(&ps->c, td);
+			x_free_picture(c, td);
 		}
 		pixman_region32_clear(&reg_blur);
 	} break;
 #ifdef CONFIG_OPENGL
-	case BKEND_GLX:
-		// TODO(compton) Handle frame opacity
-		glx_blur_dst(ps, x, y, wid, hei, (float)ps->psglx->z - 0.5F,
+	case BKEND_GLX: {
+		glx_blur_dst(ps, x, y, wid, hei, (float)session_get_psglx(ps)->z - 0.5F,
 		             (float)factor_center, reg_paint, &w->glx_blur_cache);
 		break;
+	}
 #endif
 	default: assert(0);
 	}
@@ -999,20 +1028,15 @@ win_blur_background(session_t *ps, struct managed_win *w, xcb_render_picture_t t
 /// region = ??
 /// region_real = the damage region
 void paint_all(session_t *ps, struct managed_win *t) {
-	if (ps->o.xrender_sync_fence || (ps->drivers & DRIVER_NVIDIA)) {
-		if (ps->xsync_exists && !x_fence_sync(&ps->c, ps->sync_fence)) {
-			log_error("x_fence_sync failed, xrender-sync-fence will be "
-			          "disabled from now on.");
-			xcb_sync_destroy_fence(ps->c.c, ps->sync_fence);
-			ps->sync_fence = XCB_NONE;
-			ps->o.xrender_sync_fence = false;
-			ps->xsync_exists = false;
-		}
-	}
+	auto options = session_get_options(ps);
+	auto c = session_get_x_connection(ps);
+	auto tgt_picture = session_get_tgt_picture(ps);
+	session_xsync_wait_fence(ps);
 
 	region_t region;
 	pixman_region32_init(&region);
-	damage_ring_collect(&ps->damage_ring, &ps->screen_reg, &region, get_buffer_age(ps));
+	damage_ring_collect(session_get_damage_ring(ps), session_get_screen_reg(ps),
+	                    &region, get_buffer_age(ps));
 	if (!pixman_region32_not_empty(&region)) {
 		return;
 	}
@@ -1021,40 +1045,42 @@ void paint_all(session_t *ps, struct managed_win *t) {
 	static struct timespec last_paint = {0};
 #endif
 
-	if (ps->o.resize_damage > 0) {
-		resize_region_in_place(&region, ps->o.resize_damage, ps->o.resize_damage);
+	if (options->resize_damage > 0) {
+		resize_region_in_place(&region, options->resize_damage, options->resize_damage);
 	}
 
 	// Remove the damaged area out of screen
-	pixman_region32_intersect(&region, &region, &ps->screen_reg);
+	pixman_region32_intersect(&region, &region, session_get_screen_reg(ps));
 
-	if (!paint_isvalid(ps, &ps->tgt_buffer)) {
-		if (!ps->tgt_buffer.pixmap) {
-			free_paint(ps, &ps->tgt_buffer);
-			ps->tgt_buffer.pixmap =
-			    x_create_pixmap(&ps->c, ps->c.screen_info->root_depth,
-			                    ps->root_width, ps->root_height);
-			if (ps->tgt_buffer.pixmap == XCB_NONE) {
+	if (!paint_isvalid(ps, session_get_tgt_buffer(ps))) {
+		auto tgt_buffer = session_get_tgt_buffer(ps);
+		auto root_extent = session_get_root_extent(ps);
+		if (!tgt_buffer->pixmap) {
+			free_paint(ps, tgt_buffer);
+			tgt_buffer->pixmap =
+			    x_create_pixmap(c, c->screen_info->root_depth,
+			                    root_extent.width, root_extent.height);
+			if (tgt_buffer->pixmap == XCB_NONE) {
 				log_fatal("Failed to allocate a screen-sized pixmap for"
 				          "painting");
 				exit(1);
 			}
 		}
 
-		if (BKEND_GLX != ps->o.backend) {
-			ps->tgt_buffer.pict = x_create_picture_with_visual_and_pixmap(
-			    &ps->c, ps->c.screen_info->root_visual, ps->tgt_buffer.pixmap,
-			    0, 0);
+		if (BKEND_GLX != options->backend) {
+			tgt_buffer->pict = x_create_picture_with_visual_and_pixmap(
+			    c, c->screen_info->root_visual,
+			    session_get_tgt_buffer(ps)->pixmap, 0, 0);
 		}
 	}
 
-	if (BKEND_XRENDER == ps->o.backend) {
-		x_set_picture_clip_region(&ps->c, ps->tgt_picture, 0, 0, &region);
+	if (BKEND_XRENDER == options->backend) {
+		x_set_picture_clip_region(c, tgt_picture, 0, 0, &region);
 	}
 
 #ifdef CONFIG_OPENGL
 	if (bkend_use_glx(ps)) {
-		ps->psglx->z = 0;
+		session_get_psglx(ps)->z = 0;
 	}
 #endif
 
@@ -1101,9 +1127,9 @@ void paint_all(session_t *ps, struct managed_win *t) {
 			pixman_region32_subtract(&reg_tmp, &region, w->reg_ignore);
 
 			// Mask out the region we don't want shadow on
-			if (pixman_region32_not_empty(&ps->shadow_exclude_reg)) {
-				pixman_region32_subtract(&reg_tmp, &reg_tmp,
-				                         &ps->shadow_exclude_reg);
+			auto shadow_exclude_reg = session_get_shadow_exclude_reg(ps);
+			if (pixman_region32_not_empty(shadow_exclude_reg)) {
+				pixman_region32_subtract(&reg_tmp, &reg_tmp, shadow_exclude_reg);
 			}
 			if (pixman_region32_not_empty(&reg_shadow_clip)) {
 				pixman_region32_subtract(&reg_tmp, &reg_tmp, &reg_shadow_clip);
@@ -1120,12 +1146,13 @@ void paint_all(session_t *ps, struct managed_win *t) {
 			// needed Doing it here instead of in make_shadow() for
 			// saving GPU power and handling shaped windows (XXX
 			// unconfirmed)
-			if (!ps->o.wintype_option[w->window_type].full_shadow) {
+			if (!options->wintype_option[w->window_type].full_shadow) {
 				pixman_region32_subtract(&reg_tmp, &reg_tmp, &bshape_no_corners);
 			}
 
-			if (ps->o.crop_shadow_to_monitor && w->randr_monitor >= 0 &&
-			    w->randr_monitor < ps->monitors.count) {
+			auto monitors = session_get_monitors(ps);
+			if (options->crop_shadow_to_monitor && w->randr_monitor >= 0 &&
+			    w->randr_monitor < monitors->count) {
 				// There can be a window where number of monitors is
 				// updated, but the monitor number attached to the window
 				// have not.
@@ -1134,8 +1161,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 				// here we just check to make sure we don't access out of
 				// bounds.
 				pixman_region32_intersect(
-				    &reg_tmp, &reg_tmp,
-				    &ps->monitors.regions[w->randr_monitor]);
+				    &reg_tmp, &reg_tmp, &monitors->regions[w->randr_monitor]);
 			}
 
 			// Detect if the region is empty before painting
@@ -1173,7 +1199,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 
 #ifdef CONFIG_OPENGL
 			// If rounded corners backup the region first
-			if (w->corner_radius > 0 && ps->o.backend == BKEND_GLX) {
+			if (w->corner_radius > 0 && options->backend == BKEND_GLX) {
 				const int16_t x = w->g.x;
 				const int16_t y = w->g.y;
 				auto const wid = to_u16_checked(w->widthb);
@@ -1185,9 +1211,10 @@ void paint_all(session_t *ps, struct managed_win *t) {
 			// Blur window background
 			if (w->blur_background &&
 			    (w->mode == WMODE_TRANS ||
-			     (ps->o.blur_background_frame && w->mode == WMODE_FRAME_TRANS) ||
-			     ps->o.force_win_blend)) {
-				win_blur_background(ps, w, ps->tgt_buffer.pict, &reg_tmp);
+			     (options->blur_background_frame && w->mode == WMODE_FRAME_TRANS) ||
+			     options->force_win_blend)) {
+				win_blur_background(
+				    ps, w, session_get_tgt_buffer(ps)->pict, &reg_tmp);
 			}
 
 			// Painting the window
@@ -1196,12 +1223,12 @@ void paint_all(session_t *ps, struct managed_win *t) {
 #ifdef CONFIG_OPENGL
 			// Rounded corners for XRender is implemented inside render()
 			// Round window corners
-			if (w->corner_radius > 0 && ps->o.backend == BKEND_GLX) {
+			if (w->corner_radius > 0 && options->backend == BKEND_GLX) {
 				auto const wid = to_u16_checked(w->widthb);
 				auto const hei = to_u16_checked(w->heightb);
 				glx_round_corners_dst(ps, w, w->glx_texture_bg, w->g.x,
 				                      w->g.y, wid, hei,
-				                      (float)ps->psglx->z - 0.5F,
+				                      (float)session_get_psglx(ps)->z - 0.5F,
 				                      (float)w->corner_radius, &reg_tmp);
 			}
 #endif
@@ -1213,18 +1240,18 @@ void paint_all(session_t *ps, struct managed_win *t) {
 	pixman_region32_fini(&reg_shadow_clip);
 
 	// Move the head of the damage ring
-	damage_ring_advance(&ps->damage_ring);
+	damage_ring_advance(session_get_damage_ring(ps));
 
 	// Do this as early as possible
-	set_tgt_clip(ps, &ps->screen_reg);
+	set_tgt_clip(ps, session_get_screen_reg(ps));
 
-	if (ps->o.vsync) {
+	if (options->vsync) {
 		// Make sure all previous requests are processed to achieve best
 		// effect
-		xcb_aux_sync(ps->c.c);
+		xcb_aux_sync(c->c);
 #ifdef CONFIG_OPENGL
 		if (glx_has_context(ps)) {
-			if (ps->o.vsync_use_glfinish) {
+			if (options->vsync_use_glfinish) {
 				glFinish();
 			} else {
 				glFlush();
@@ -1234,78 +1261,78 @@ void paint_all(session_t *ps, struct managed_win *t) {
 #endif
 	}
 
-	if (ps->vsync_wait) {
-		ps->vsync_wait(ps);
-	}
+	session_vsync_wait(ps);
 
-	auto rwidth = to_u16_checked(ps->root_width);
-	auto rheight = to_u16_checked(ps->root_height);
-	switch (ps->o.backend) {
+	auto root_extent = session_get_root_extent(ps);
+	auto rwidth = to_u16_checked(root_extent.width);
+	auto rheight = to_u16_checked(root_extent.height);
+	auto tgt_buffer = session_get_tgt_buffer(ps);
+	switch (options->backend) {
 	case BKEND_XRENDER:
-		if (ps->o.monitor_repaint) {
+		if (options->monitor_repaint) {
 			// Copy the screen content to a new picture, and highlight the
 			// paint region. This is not very efficient, but since it's for
 			// debug only, we don't really care
 
 			// First we create a new picture, and copy content from the buffer
 			// to it
-			auto pictfmt = x_get_pictform_for_visual(
-			    &ps->c, ps->c.screen_info->root_visual);
+			auto pictfmt =
+			    x_get_pictform_for_visual(c, c->screen_info->root_visual);
 			xcb_render_picture_t new_pict = x_create_picture_with_pictfmt(
-			    &ps->c, rwidth, rheight, pictfmt, 0, NULL);
-			xcb_render_composite(ps->c.c, XCB_RENDER_PICT_OP_SRC,
-			                     ps->tgt_buffer.pict, XCB_NONE, new_pict, 0,
-			                     0, 0, 0, 0, 0, rwidth, rheight);
+			    c, rwidth, rheight, pictfmt, 0, NULL);
+			xcb_render_composite(c->c, XCB_RENDER_PICT_OP_SRC,
+			                     tgt_buffer->pict, XCB_NONE, new_pict, 0, 0,
+			                     0, 0, 0, 0, rwidth, rheight);
 
 			// Next, we set the region of paint and highlight it
-			x_set_picture_clip_region(&ps->c, new_pict, 0, 0, &region);
-			xcb_render_composite(ps->c.c, XCB_RENDER_PICT_OP_OVER, ps->white_picture,
-			                     ps->alpha_picts[MAX_ALPHA / 2], new_pict, 0,
-			                     0, 0, 0, 0, 0, rwidth, rheight);
+			x_set_picture_clip_region(c, new_pict, 0, 0, &region);
+			xcb_render_composite(c->c, XCB_RENDER_PICT_OP_OVER,
+			                     session_get_white_picture(ps),
+			                     session_get_alpha_pictures(ps)[MAX_ALPHA / 2],
+			                     new_pict, 0, 0, 0, 0, 0, 0, rwidth, rheight);
 
 			// Finally, clear clip regions of new_pict and the screen, and put
 			// the whole thing on screen
-			x_set_picture_clip_region(&ps->c, new_pict, 0, 0, &ps->screen_reg);
-			x_set_picture_clip_region(&ps->c, ps->tgt_picture, 0, 0,
-			                          &ps->screen_reg);
-			xcb_render_composite(ps->c.c, XCB_RENDER_PICT_OP_SRC, new_pict,
-			                     XCB_NONE, ps->tgt_picture, 0, 0, 0, 0, 0, 0,
-			                     rwidth, rheight);
-			x_free_picture(&ps->c, new_pict);
+			auto screen_reg = session_get_screen_reg(ps);
+			x_set_picture_clip_region(c, new_pict, 0, 0, screen_reg);
+			x_set_picture_clip_region(c, tgt_picture, 0, 0, screen_reg);
+			xcb_render_composite(c->c, XCB_RENDER_PICT_OP_SRC, new_pict, XCB_NONE,
+			                     tgt_picture, 0, 0, 0, 0, 0, 0, rwidth, rheight);
+			x_free_picture(c, new_pict);
 		} else {
-			xcb_render_composite(ps->c.c, XCB_RENDER_PICT_OP_SRC,
-			                     ps->tgt_buffer.pict, XCB_NONE, ps->tgt_picture,
-			                     0, 0, 0, 0, 0, 0, rwidth, rheight);
+			xcb_render_composite(c->c, XCB_RENDER_PICT_OP_SRC,
+			                     tgt_buffer->pict, XCB_NONE, tgt_picture, 0,
+			                     0, 0, 0, 0, 0, rwidth, rheight);
 		}
 		break;
 #ifdef CONFIG_OPENGL
 	case BKEND_XR_GLX_HYBRID:
-		xcb_aux_sync(ps->c.c);
-		if (ps->o.vsync_use_glfinish) {
+		xcb_aux_sync(c->c);
+		if (options->vsync_use_glfinish) {
 			glFinish();
 		} else {
 			glFlush();
 		}
 		glXWaitX();
-		assert(ps->tgt_buffer.pixmap);
-		paint_bind_tex(ps, &ps->tgt_buffer, ps->root_width, ps->root_height,
-		               false, ps->c.screen_info->root_depth,
-		               ps->c.screen_info->root_visual, !ps->o.glx_no_rebind_pixmap);
-		if (ps->o.vsync_use_glfinish) {
+		assert(tgt_buffer->pixmap);
+		paint_bind_tex(ps, tgt_buffer, root_extent.width, root_extent.height,
+		               false, c->screen_info->root_depth,
+		               c->screen_info->root_visual, !options->glx_no_rebind_pixmap);
+		if (options->vsync_use_glfinish) {
 			glFinish();
 		} else {
 			glFlush();
 		}
 		glXWaitX();
-		glx_render(ps, ps->tgt_buffer.ptex, 0, 0, 0, 0, ps->root_width,
-		           ps->root_height, 0, 1.0, false, false, &region, NULL);
+		glx_render(ps, tgt_buffer->ptex, 0, 0, 0, 0, root_extent.width,
+		           root_extent.height, 0, 1.0, false, false, &region, NULL);
 		fallthrough();
-	case BKEND_GLX: glXSwapBuffers(ps->c.dpy, get_tgt_window(ps)); break;
+	case BKEND_GLX: glXSwapBuffers(c->dpy, session_get_target_window(ps)); break;
 #endif
 	default: assert(0);
 	}
 
-	xcb_aux_sync(ps->c.c);
+	xcb_aux_sync(c->c);
 
 #ifdef CONFIG_OPENGL
 	if (glx_has_context(ps)) {
@@ -1333,9 +1360,11 @@ void paint_all(session_t *ps, struct managed_win *t) {
  * Query needed X Render / OpenGL filters to check for their existence.
  */
 static bool xr_init_blur(session_t *ps) {
+	auto c = session_get_x_connection(ps);
+	bool xrfilter_convolution_exists = false;
 	// Query filters
 	xcb_render_query_filters_reply_t *pf = xcb_render_query_filters_reply(
-	    ps->c.c, xcb_render_query_filters(ps->c.c, get_tgt_window(ps)), NULL);
+	    c->c, xcb_render_query_filters(c->c, session_get_target_window(ps)), NULL);
 	if (pf) {
 		xcb_str_iterator_t iter = xcb_render_query_filters_filters_iterator(pf);
 		for (; iter.rem; xcb_str_next(&iter)) {
@@ -1344,14 +1373,14 @@ static bool xr_init_blur(session_t *ps) {
 			// Check for the convolution filter
 			if (strlen(XRFILTER_CONVOLUTION) == len &&
 			    !memcmp(XRFILTER_CONVOLUTION, name, strlen(XRFILTER_CONVOLUTION))) {
-				ps->xrfilter_convolution_exists = true;
+				xrfilter_convolution_exists = true;
 			}
 		}
 		free(pf);
 	}
 
 	// Turn features off if any required filter is not present
-	if (!ps->xrfilter_convolution_exists) {
+	if (!xrfilter_convolution_exists) {
 		log_error("Xrender convolution filter "
 		          "unsupported by your X server. "
 		          "Background blur is not possible.");
@@ -1361,30 +1390,16 @@ static bool xr_init_blur(session_t *ps) {
 	return true;
 }
 
-/**
- * Pregenerate alpha pictures.
- */
-static bool init_alpha_picts(session_t *ps) {
-	ps->alpha_picts = ccalloc(MAX_ALPHA + 1, xcb_render_picture_t);
-
-	for (int i = 0; i <= MAX_ALPHA; ++i) {
-		double o = (double)i / MAX_ALPHA;
-		ps->alpha_picts[i] = solid_picture(&ps->c, false, o, 0, 0, 0);
-		if (ps->alpha_picts[i] == XCB_NONE) {
-			return false;
-		}
-	}
-	return true;
-}
-
 bool init_render(session_t *ps) {
-	if (ps->o.backend == BKEND_DUMMY) {
+	auto options = session_get_options(ps);
+	auto c = session_get_x_connection(ps);
+	if (options->backend == BKEND_DUMMY) {
 		return false;
 	}
 
 	// Initialize OpenGL as early as possible
 #ifdef CONFIG_OPENGL
-	glxext_init(ps->c.dpy, ps->c.screen);
+	glxext_init(c->dpy, c->screen);
 #endif
 	if (bkend_use_glx(ps)) {
 #ifdef CONFIG_OPENGL
@@ -1403,9 +1418,11 @@ bool init_render(session_t *ps) {
 	}
 
 	// Initialize window GL shader
-	if (BKEND_GLX == ps->o.backend && ps->o.glx_fshader_win_str) {
+	if (BKEND_GLX == options->backend && options->glx_fshader_win_str) {
 #ifdef CONFIG_OPENGL
-		if (!glx_load_prog_main(NULL, ps->o.glx_fshader_win_str, &ps->glx_prog_win)) {
+		auto psglx = session_get_psglx(ps);
+		if (!glx_load_prog_main(NULL, options->glx_fshader_win_str,
+		                        &psglx->glx_prog_win)) {
 			return false;
 		}
 #else
@@ -1415,24 +1432,30 @@ bool init_render(session_t *ps) {
 #endif
 	}
 
-	if (!init_alpha_picts(ps)) {
-		log_error("Failed to init alpha pictures.");
-		return false;
+	auto alpha_picts = session_get_alpha_pictures(ps);
+	for (int i = 0; i <= MAX_ALPHA; ++i) {
+		double o = (double)i / MAX_ALPHA;
+		alpha_picts[i] = solid_picture(c, false, o, 0, 0, 0);
+		if (alpha_picts[i] == XCB_NONE) {
+			log_error("Failed to init alpha pictures.");
+			return false;
+		}
 	}
 
 	// Blur filter
-	if (ps->o.blur_method && ps->o.blur_method != BLUR_METHOD_KERNEL) {
+	if (options->blur_method && options->blur_method != BLUR_METHOD_KERNEL) {
 		log_warn("Old backends only support blur method \"kernel\". Your blur "
 		         "setting will not be applied");
-		ps->o.blur_method = BLUR_METHOD_NONE;
+		options->blur_method = BLUR_METHOD_NONE;
 	}
 
-	if (ps->o.blur_method == BLUR_METHOD_KERNEL) {
-		ps->blur_kerns_cache =
-		    ccalloc(ps->o.blur_kernel_count, struct x_convolution_kernel *);
+	if (options->blur_method == BLUR_METHOD_KERNEL) {
+		auto blur_kerns_cache =
+		    ccalloc(options->blur_kernel_count, struct x_convolution_kernel *);
+		session_set_blur_kern_cache(ps, blur_kerns_cache);
 
 		bool ret = false;
-		if (ps->o.backend == BKEND_GLX) {
+		if (options->backend == BKEND_GLX) {
 #ifdef CONFIG_OPENGL
 			ret = glx_init_blur(ps);
 #else
@@ -1446,29 +1469,34 @@ bool init_render(session_t *ps) {
 		}
 	}
 
-	ps->black_picture = solid_picture(&ps->c, true, 1, 0, 0, 0);
-	ps->white_picture = solid_picture(&ps->c, true, 1, 1, 1, 1);
+	auto black_picture = solid_picture(c, true, 1, 0, 0, 0);
+	auto white_picture = solid_picture(c, true, 1, 1, 1, 1);
 
-	if (ps->black_picture == XCB_NONE || ps->white_picture == XCB_NONE) {
+	if (black_picture == XCB_NONE || white_picture == XCB_NONE) {
 		log_error("Failed to create solid xrender pictures.");
 		return false;
 	}
 
+	session_set_black_picture(ps, black_picture);
+	session_set_white_picture(ps, white_picture);
 	// Generates another Picture for shadows if the color is modified by
 	// user
-	if (ps->o.shadow_red == 0 && ps->o.shadow_green == 0 && ps->o.shadow_blue == 0) {
-		ps->cshadow_picture = ps->black_picture;
+	if (options->shadow_red == 0 && options->shadow_green == 0 &&
+	    options->shadow_blue == 0) {
+		session_set_cshadow_picture(ps, black_picture);
 	} else {
-		ps->cshadow_picture = solid_picture(&ps->c, true, 1, ps->o.shadow_red,
-		                                    ps->o.shadow_green, ps->o.shadow_blue);
-		if (ps->cshadow_picture == XCB_NONE) {
+		auto cshadow_picture =
+		    solid_picture(c, true, 1, options->shadow_red, options->shadow_green,
+		                  options->shadow_blue);
+		if (cshadow_picture == XCB_NONE) {
 			log_error("Failed to create shadow picture.");
 			return false;
 		}
+		session_set_cshadow_picture(ps, cshadow_picture);
 	}
 
 	// Initialize our rounded corners fragment shader
-	if (ps->o.corner_radius > 0 && ps->o.backend == BKEND_GLX) {
+	if (options->corner_radius > 0 && options->backend == BKEND_GLX) {
 #ifdef CONFIG_OPENGL
 		if (!glx_init_rounded_corners(ps)) {
 			log_error("Failed to init rounded corners shader.");
@@ -1485,53 +1513,63 @@ bool init_render(session_t *ps) {
  * Free root tile related things.
  */
 void free_root_tile(session_t *ps) {
-	x_free_picture(&ps->c, ps->root_tile_paint.pict);
+	auto c = session_get_x_connection(ps);
+	auto root_tile_paint = session_get_root_tile_paint(ps);
+	x_free_picture(c, root_tile_paint->pict);
 #ifdef CONFIG_OPENGL
-	free_texture(ps, &ps->root_tile_paint.ptex);
+	free_texture(ps, &root_tile_paint->ptex);
 #else
-	assert(!ps->root_tile_paint.ptex);
+	assert(!root_tile_paint->ptex);
 #endif
-	if (ps->root_tile_fill) {
-		xcb_free_pixmap(ps->c.c, ps->root_tile_paint.pixmap);
-		ps->root_tile_paint.pixmap = XCB_NONE;
+	if (session_get_root_tile_fill(ps)) {
+		xcb_free_pixmap(c->c, root_tile_paint->pixmap);
 	}
-	ps->root_tile_paint.pixmap = XCB_NONE;
-	ps->root_tile_fill = false;
+	root_tile_paint->pixmap = XCB_NONE;
+	session_set_root_tile_fill(ps, false);
 }
 
 void deinit_render(session_t *ps) {
+	auto c = session_get_x_connection(ps);
 	// Free alpha_picts
+	auto alpha_picts = session_get_alpha_pictures(ps);
 	for (int i = 0; i <= MAX_ALPHA; ++i) {
-		x_free_picture(&ps->c, ps->alpha_picts[i]);
+		x_free_picture(c, alpha_picts[i]);
 	}
-	free(ps->alpha_picts);
-	ps->alpha_picts = NULL;
 
 	// Free cshadow_picture and black_picture
-	if (ps->cshadow_picture != ps->black_picture) {
-		x_free_picture(&ps->c, ps->cshadow_picture);
+	auto cshadow_picture = session_get_cshadow_picture(ps);
+	auto black_picture = session_get_black_picture(ps);
+	auto white_picture = session_get_white_picture(ps);
+	if (cshadow_picture != black_picture) {
+		x_free_picture(c, cshadow_picture);
 	}
 
-	x_free_picture(&ps->c, ps->black_picture);
-	x_free_picture(&ps->c, ps->white_picture);
-	ps->cshadow_picture = ps->black_picture = ps->white_picture = XCB_NONE;
+	x_free_picture(c, black_picture);
+	x_free_picture(c, white_picture);
+	session_set_black_picture(ps, XCB_NONE);
+	session_set_white_picture(ps, XCB_NONE);
+	session_set_cshadow_picture(ps, XCB_NONE);
 
 	// Free other X resources
 	free_root_tile(ps);
 
 #ifdef CONFIG_OPENGL
-	ps->root_tile_paint.fbcfg = (struct glx_fbconfig_info){0};
-	if (bkend_use_glx(ps)) {
-		glx_destroy(ps);
+	session_get_root_tile_paint(ps)->fbcfg = (struct glx_fbconfig_info){0};
+	if (glx_has_context(ps)) {
+		glx_destroy(ps, session_get_psglx(ps));
+		session_set_psglx(ps, NULL);
 	}
 #endif
 
-	if (ps->o.blur_method != BLUR_METHOD_NONE) {
-		for (int i = 0; i < ps->o.blur_kernel_count; i++) {
-			free(ps->blur_kerns_cache[i]);
+	auto options = session_get_options(ps);
+	auto blur_kerns_cache = session_get_blur_kern_cache(ps);
+	if (options->blur_method != BLUR_METHOD_NONE) {
+		for (int i = 0; i < options->blur_kernel_count; i++) {
+			free(blur_kerns_cache[i]);
 		}
-		free(ps->blur_kerns_cache);
+		free(blur_kerns_cache);
 	}
+	session_set_blur_kern_cache(ps, NULL);
 }
 
 // vim: set ts=8 sw=8 noet :

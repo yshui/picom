@@ -21,6 +21,7 @@
 #include <xcb/xfixes.h>
 
 #include "atom.h"
+#include "picom.h"
 #ifdef CONFIG_OPENGL
 #include "backend/gl/glx.h"
 #endif
@@ -49,7 +50,7 @@ static int xerror(Display attr_unused *dpy, XErrorEvent *ev) {
 	xcb_err.major_code = ev->request_code;
 	xcb_err.minor_code = ev->minor_code;
 	xcb_err.error_code = ev->error_code;
-	x_handle_error(&ps_g->c, &xcb_err);
+	x_handle_error(session_get_x_connection(ps_g), &xcb_err);
 	return 0;
 }
 
@@ -588,13 +589,13 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 	case XCB_##s: name = #s; break
 
 	// TODO(yshui) separate error code out from session_t
-	o = error_code - ps->xfixes_error;
+	o = error_code - session_get_xfixes_extension_error(ps);
 	switch (o) { CASESTRRET2(XFIXES_BAD_REGION); }
 
-	o = error_code - ps->damage_error;
+	o = error_code - session_get_damage_extension_error(ps);
 	switch (o) { CASESTRRET2(DAMAGE_BAD_DAMAGE); }
 
-	o = error_code - ps->render_error;
+	o = error_code - session_get_render_extension_error(ps);
 	switch (o) {
 		CASESTRRET2(RENDER_PICT_FORMAT);
 		CASESTRRET2(RENDER_PICTURE);
@@ -603,8 +604,8 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 		CASESTRRET2(RENDER_GLYPH);
 	}
 
-	if (ps->glx_exists) {
-		o = error_code - ps->glx_error;
+	if (session_has_glx_extension(ps)) {
+		o = error_code - session_get_glx_extension_error(ps);
 		switch (o) {
 			CASESTRRET2(GLX_BAD_CONTEXT);
 			CASESTRRET2(GLX_BAD_CONTEXT_STATE);
@@ -623,8 +624,8 @@ _x_strerror(unsigned long serial, uint8_t major, uint16_t minor, uint8_t error_c
 		}
 	}
 
-	if (ps->xsync_exists) {
-		o = error_code - ps->xsync_error;
+	if (session_get_xsync_extension_error(ps)) {
+		o = error_code - session_get_xsync_extension_error(ps);
 		switch (o) {
 			CASESTRRET(XSyncBadCounter);
 			CASESTRRET(XSyncBadAlarm);

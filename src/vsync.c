@@ -5,6 +5,7 @@
 
 #include "common.h"
 #include "log.h"
+#include "picom.h"
 
 #ifdef CONFIG_OPENGL
 #include "backend/gl/glx.h"
@@ -105,7 +106,8 @@ static inline bool vsync_opengl_swc_swap_interval(session_t *ps, int interval) {
 			// We don't have a context??
 			return false;
 		}
-		glXSwapIntervalEXT(ps->c.dpy, glXGetCurrentDrawable(), interval);
+		glXSwapIntervalEXT(session_get_x_connection(ps)->dpy,
+		                   glXGetCurrentDrawable(), interval);
 		return true;
 	}
 	return false;
@@ -143,9 +145,11 @@ static int vsync_opengl_wait(session_t *ps attr_unused) {
  */
 static int vsync_opengl_oml_wait(session_t *ps) {
 	int64_t ust = 0, msc = 0, sbc = 0;
+	auto c = session_get_x_connection(ps);
 
-	glXGetSyncValuesOML(ps->c.dpy, ps->reg_win, &ust, &msc, &sbc);
-	glXWaitForMscOML(ps->c.dpy, ps->reg_win, 0, 2, (msc + 1) % 2, &ust, &msc, &sbc);
+	glXGetSyncValuesOML(c->dpy, session_get_target_window(ps), &ust, &msc, &sbc);
+	glXWaitForMscOML(c->dpy, session_get_target_window(ps), 0, 2, (msc + 1) % 2, &ust,
+	                 &msc, &sbc);
 	return 0;
 }
 #endif
@@ -164,7 +168,7 @@ bool vsync_init(session_t *ps) {
 	log_warn("The DRM vsync method is deprecated, please don't enable it.");
 #endif
 
-	if (!ps->o.vsync) {
+	if (!session_get_options(ps)->vsync) {
 		return true;
 	}
 
@@ -173,8 +177,9 @@ bool vsync_init(session_t *ps) {
 		if (!vsync_opengl_swc_init(ps)) {
 			return false;
 		}
-		ps->vsync_wait = NULL;        // glXSwapBuffers will automatically wait
-		                              // for vsync, we don't need to do anything.
+		// glXSwapBuffers will automatically wait for vsync, we don't
+		// need to do anything.
+		session_set_vsync_wait(ps, NULL);
 		return true;
 	}
 #endif
@@ -184,13 +189,13 @@ bool vsync_init(session_t *ps) {
 #ifdef CONFIG_OPENGL
 	if (vsync_opengl_oml_init(ps)) {
 		log_info("Using the opengl-oml vsync method");
-		ps->vsync_wait = vsync_opengl_oml_wait;
+		session_set_vsync_wait(ps, vsync_opengl_oml_wait);
 		return true;
 	}
 
 	if (vsync_opengl_init(ps)) {
 		log_info("Using the opengl vsync method");
-		ps->vsync_wait = vsync_opengl_wait;
+		session_set_vsync_wait(ps, vsync_opengl_wait);
 		return true;
 	}
 #endif
