@@ -1507,24 +1507,19 @@ void win_unmark_client(session_t *ps, struct managed_win *w) {
  */
 static xcb_window_t
 find_client_win(struct x_connection *c, struct atom *atoms, xcb_window_t w) {
-	if (wid_has_prop(c->c, w, atoms->aWM_STATE)) {
-		return w;
-	}
-
 	xcb_query_tree_reply_t *reply =
 	    xcb_query_tree_reply(c->c, xcb_query_tree(c->c, w), NULL);
 	if (!reply) {
-		return 0;
+		return XCB_NONE;
 	}
 
 	xcb_window_t *children = xcb_query_tree_children(reply);
 	int nchildren = xcb_query_tree_children_length(reply);
-	int i;
-	xcb_window_t ret = 0;
+	xcb_window_t ret = XCB_NONE;
 
-	for (i = 0; i < nchildren; ++i) {
-		ret = find_client_win(c, atoms, children[i]);
-		if (ret) {
+	for (int i = 0; i < nchildren; ++i) {
+		if (wid_has_prop(c->c, children[i], atoms->aWM_STATE)) {
+			ret = children[i];
 			break;
 		}
 	}

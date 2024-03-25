@@ -146,26 +146,6 @@ static inline int64_t get_time_ms(void) {
 	return (int64_t)tp.tv_sec * 1000 + (int64_t)tp.tv_nsec / 1000000;
 }
 
-/**
- * Find matched window.
- *
- * XXX move to win.c
- */
-static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t wid) {
-	if (!wid || PointerRoot == wid || wid == ps->c.screen_info->root || wid == ps->overlay) {
-		return NULL;
-	}
-
-	auto w = find_managed_win(ps, wid);
-	if (!w) {
-		w = find_toplevel(ps, wid);
-	}
-	if (!w) {
-		w = find_managed_window_or_parent(ps, wid);
-	}
-	return w;
-}
-
 enum vblank_callback_action check_render_finish(struct vblank_event *e attr_unused, void *ud) {
 	auto ps = (session_t *)ud;
 	if (!ps->backend_busy) {
@@ -556,7 +536,7 @@ void update_ewmh_active_win(session_t *ps) {
 	// Search for the window
 	xcb_window_t wid = wid_get_prop_window(&ps->c, ps->c.screen_info->root,
 	                                       ps->atoms->a_NET_ACTIVE_WINDOW);
-	auto w = find_win_all(ps, wid);
+	auto w = find_toplevel(ps, wid);
 
 	// Mark the window focused. No need to unfocus the previous one.
 	if (w) {
@@ -589,7 +569,7 @@ static void recheck_focus(session_t *ps) {
 		free(reply);
 	}
 
-	auto w = find_win_all(ps, wid);
+	auto w = find_managed_window_or_parent(ps, wid);
 
 	log_trace("%#010" PRIx32 " (%#010lx \"%s\") focused.", wid,
 	          (w ? w->base.id : XCB_NONE), (w ? w->name : NULL));

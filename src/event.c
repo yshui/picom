@@ -402,12 +402,12 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 			          ev->window);
 			evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
 		} else {
-			auto w_real_top = find_managed_window_or_parent(ps, ev->parent);
-			if (w_real_top) {
+			auto w = find_managed_win(ps, ev->parent);
+			if (w) {
 				log_debug("Mark window %#010x (%s) as having a stale "
 				          "client",
-				          w_real_top->base.id, w_real_top->name);
-				win_set_flags(w_real_top, WIN_FLAGS_CLIENT_STALE);
+				          w->base.id, w->name);
+				win_set_flags(w, WIN_FLAGS_CLIENT_STALE);
 				ps->pending_updates = true;
 			} else {
 				log_debug("parent %#010x not found", ev->parent);
