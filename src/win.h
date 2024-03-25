@@ -72,7 +72,6 @@ struct window_stack_entry {
  */
 
 /// Structure representing a top-level managed window.
-typedef struct win win;
 struct win {
 	UT_hash_handle hh;
 	struct list_node stack_neighbour;
