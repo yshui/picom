@@ -14,6 +14,8 @@ typedef enum {
 	UNSET
 } switch_t;
 
+enum tristate { TRI_FALSE = -1, TRI_UNKNOWN = 0, TRI_TRUE = 1 };
+
 /// A structure representing margins around a rectangle.
 typedef struct {
 	int top;

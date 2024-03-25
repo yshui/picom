@@ -9,6 +9,7 @@
 #include <xcb/damage.h>
 #include <xcb/randr.h>
 #include <xcb/xcb_event.h>
+#include <xcb/xproto.h>
 
 #include "atom.h"
 #include "c2.h"
@@ -19,6 +20,7 @@
 #include "log.h"
 #include "picom.h"
 #include "region.h"
+#include "types.h"
 #include "utils.h"
 #include "win.h"
 #include "win_defs.h"
@@ -195,7 +197,19 @@ static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
 	if (ev->parent == ps->c.screen_info->root) {
 		add_win_top(ps, ev->window);
+		return;
 	}
+
+	auto w = find_win(ps, ev->parent);
+	if (w == NULL) {
+		// The parent window is not a toplevel window, we don't care about it.
+		// This can happen if a toplevel is reparented somewhere, and more events
+		// were generated from it before we can unsubscribe.
+		return;
+	}
+	// A direct child of a toplevel, subscribe to property changes so we can
+	// know if WM_STATE is set on this window.
+	add_subwin_and_subscribe(&ps->subwins, &ps->c, ev->window, ev->parent);
 }
 
 /// Handle configure event of a regular window
@@ -267,6 +281,11 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 }
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
+	auto subwin = find_subwin(ps->subwins, ev->window);
+	if (subwin) {
+		remove_subwin(&ps->subwins, subwin);
+	}
+
 	auto w = find_win(ps, ev->window);
 	auto mw = find_toplevel(ps, ev->window);
 	if (mw && mw->client_win == mw->base.id) {
@@ -281,7 +300,7 @@ static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *
 
 	if (w != NULL) {
 		destroy_win_start(ps, w);
-		if (!w->managed || !((struct managed_win *)w)->to_paint) {
+		if (!w->managed || !win_as_managed(w)->to_paint) {
 			// If the window wasn't managed, or was already not rendered,
 			// we don't need to fade it out.
 			destroy_win_finish(ps, w);
@@ -289,7 +308,7 @@ static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *
 		return;
 	}
 	if (mw != NULL) {
-		win_unmark_client(ps, mw);
+		win_unmark_client(mw);
 		win_set_flags(mw, WIN_FLAGS_CLIENT_STALE);
 		ps->pending_updates = true;
 		return;
@@ -341,80 +360,98 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
 	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d",
 	          ev->window, ev->parent, ev->override_redirect);
-	auto w_top = find_toplevel(ps, ev->window);
-	if (w_top) {
-		win_unmark_client(ps, w_top);
-		win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
+	auto old_toplevel = find_toplevel(ps, ev->window);
+	if (old_toplevel) {
+		win_unmark_client(old_toplevel);
+		win_set_flags(old_toplevel, WIN_FLAGS_CLIENT_STALE);
 		ps->pending_updates = true;
 	}
 
+	// If the window was a toplevel window, we need to destroy it. But X will generate
+	// reparent notify even if the parent didn't actually change (i.e. reparent again
+	// to current parent). So if it's a root -> root reparent, we don't want to
+	// destroy then recreate the window.
+	auto old_w = find_win(ps, ev->window);
+	auto old_subwin = find_subwin(ps->subwins, ev->window);
+	auto new_toplevel = find_win(ps, ev->parent);
+	xcb_window_t old_parent = XCB_NONE;
+	if (old_subwin) {
+		old_parent = old_subwin->toplevel;
+	} else if (old_w) {
+		old_parent = ps->c.screen_info->root;
+	}
+	// A window can't be a toplevel and a subwin at the same time
+	assert(old_w == NULL || old_subwin == NULL);
+
+	log_debug("old toplevel: %p, old subwin: %p, new toplevel: %p, old parent: "
+	          "%#010x, new parent: %#010x, root window: %#010x",
+	          old_w, old_subwin, new_toplevel, old_parent, ev->parent,
+	          ps->c.screen_info->root);
+
+	if (old_w == NULL && old_subwin == NULL && new_toplevel == NULL &&
+	    ev->parent != ps->c.screen_info->root) {
+		// The window is neither a toplevel nor a subwin, and the new parent is
+		// neither a root nor a toplevel, we don't care about this window.
+		// This can happen if a window is reparented to somewhere irrelevant, but
+		// more events from it are generated before we can unsubscribe.
+		return;
+	}
+
+	if (ev->parent == old_parent) {
+		// Parent unchanged, but if the parent is root, we need to move the window
+		// to the top of the window stack
+		if (old_w) {
+			// root -> root reparent, we just need to move it to the top
+			restack_top(ps, old_w);
+		}
+		return;
+	}
+
+	if (old_w) {
+		// A toplevel is reparented, so it is no longer a toplevel. We need to
+		// destroy the existing toplevel.
+		if (old_w->managed) {
+			auto mw = (struct managed_win *)old_w;
+			// Usually, damage for unmapped windows are added in
+			// `paint_preprocess`, when a window was painted before and isn't
+			// anymore. But since we are reparenting the window here, we would
+			// lose track of the `to_paint` information. So we just add damage
+			// here.
+			if (mw->to_paint) {
+				add_damage_from_win(ps, mw);
+			}
+			// Emulating what X server does: a destroyed
+			// window is always unmapped first.
+			if (mw->state == WSTATE_MAPPED) {
+				unmap_win_start(ps, mw);
+			}
+		}
+		destroy_win_start(ps, old_w);
+		destroy_win_finish(ps, old_w);
+	}
+
+	// We need to guarantee a subwin exists iff it has a valid toplevel.
+	auto new_subwin = old_subwin;
+	if (new_subwin != NULL && new_toplevel == NULL) {
+		remove_subwin_and_unsubscribe(&ps->subwins, &ps->c, new_subwin);
+		new_subwin = NULL;
+	} else if (new_subwin == NULL && new_toplevel != NULL) {
+		new_subwin =
+		    add_subwin_and_subscribe(&ps->subwins, &ps->c, ev->window, ev->parent);
+	}
+	if (new_subwin) {
+		new_subwin->toplevel = new_toplevel->id;
+		if (new_toplevel->managed) {
+			win_set_flags(win_as_managed(new_toplevel), WIN_FLAGS_CLIENT_STALE);
+			ps->pending_updates = true;
+		}
+	}
+
 	if (ev->parent == ps->c.screen_info->root) {
-		// X will generate reparent notify even if the parent didn't actually
-		// change (i.e. reparent again to current parent). So we check if that's
-		// the case
-		auto w = find_win(ps, ev->window);
-		if (w) {
-			// This window has already been reparented to root before,
-			// so we don't need to create a new window for it, we just need to
-			// move it to the top
-			restack_top(ps, w);
-		} else {
-			add_win_top(ps, ev->window);
-		}
-	} else {
-		// otherwise, find and destroy the window first
-		{
-			auto w = find_win(ps, ev->window);
-			if (w) {
-				if (w->managed) {
-					auto mw = (struct managed_win *)w;
-					// Usually, damage for unmapped windows
-					// are added in `paint_preprocess`, when
-					// a window was painted before and isn't
-					// anymore. But since we are reparenting
-					// the window here, we would lose track
-					// of the `to_paint` information. So we
-					// just add damage here.
-					if (mw->to_paint) {
-						add_damage_from_win(ps, mw);
-					}
-					// Emulating what X server does: a destroyed
-					// window is always unmapped first.
-					if (mw->state == WSTATE_MAPPED) {
-						unmap_win_start(ps, mw);
-					}
-				}
-				// Window reparenting is unlike normal window destruction,
-				// This window is going to be rendered under another
-				// parent, so we don't fade here.
-				destroy_win_start(ps, w);
-				destroy_win_finish(ps, w);
-			}
-		}
-
-		// Reset event mask in case something wrong happens
-		uint32_t evmask = determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN);
-
-		if (!wid_has_prop(ps->c.c, ev->window, ps->atoms->aWM_STATE)) {
-			log_debug("Window %#010x doesn't have WM_STATE property, it is "
-			          "probably not a client window. But we will listen for "
-			          "property change in case it gains one.",
-			          ev->window);
-			evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
-		} else {
-			auto w = find_managed_win(ps, ev->parent);
-			if (w) {
-				log_debug("Mark window %#010x (%s) as having a stale "
-				          "client",
-				          w->base.id, w->name);
-				win_set_flags(w, WIN_FLAGS_CLIENT_STALE);
-				ps->pending_updates = true;
-			} else {
-				log_debug("parent %#010x not found", ev->parent);
-			}
-		}
-		XCB_AWAIT_VOID(xcb_change_window_attributes, ps->c.c, ev->window,
-		               XCB_CW_EVENT_MASK, (const uint32_t[]){evmask});
+		// New parent is root, add a toplevel;
+		assert(old_w == NULL);
+		assert(new_toplevel == NULL);
+		add_win_top(ps, ev->window);
 	}
 }
 
@@ -467,6 +504,50 @@ static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
 	}
 }
 
+static inline void ev_subwin_wm_state_changed(session_t *ps, xcb_property_notify_event_t *ev) {
+	auto subwin = find_subwin(ps->subwins, ev->window);
+	if (!subwin) {
+		// We only care if a direct child of a toplevel gained/lost WM_STATE
+		return;
+	}
+
+	enum tristate old_has_wm_state = subwin->has_wm_state;
+	subwin->has_wm_state = ev->state == XCB_PROPERTY_DELETE ? TRI_FALSE : TRI_TRUE;
+	if (old_has_wm_state == subwin->has_wm_state) {
+		if (subwin->has_wm_state == TRI_FALSE) {
+			log_warn("Child window %#010x of window %#010x lost WM_STATE a "
+			         "second time?",
+			         ev->window, subwin->toplevel);
+		}
+		return;
+	}
+
+	auto toplevel = find_win(ps, subwin->toplevel);
+	BUG_ON(toplevel == NULL);
+	if (!toplevel->managed) {
+		return;
+	}
+
+	auto managed = (struct managed_win *)toplevel;
+	if (managed->client_win == subwin->id) {
+		// 1. This window is the client window of its toplevel, and now it lost
+		//    its WM_STATE (implies it must have it before)
+		assert(subwin->has_wm_state == TRI_FALSE);
+		win_set_flags(managed, WIN_FLAGS_CLIENT_STALE);
+	} else if (subwin->has_wm_state == TRI_TRUE) {
+		// 2. This window is not the client window of its toplevel, and
+		//    now it gained WM_STATE
+		if (managed->client_win != XCB_NONE && managed->client_win != toplevel->id) {
+			log_warn("Toplevel %#010x already has a client window %#010x, "
+			         "but another of its child windows %#010x gained "
+			         "WM_STATE.",
+			         toplevel->id, managed->client_win, subwin->id);
+		} else {
+			win_set_flags(managed, WIN_FLAGS_CLIENT_STALE);
+		}
+	}
+}
+
 static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t *ev) {
 	if (unlikely(log_get_level_tls() <= LOG_LEVEL_TRACE)) {
 		// Print out changed atom
@@ -499,24 +580,8 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	ps->pending_updates = true;
-	// If WM_STATE changes
 	if (ev->atom == ps->atoms->aWM_STATE) {
-		// Check whether it could be a client window
-		if (!find_toplevel(ps, ev->window)) {
-			// Reset event mask anyway
-			const uint32_t evmask =
-			    determine_evmask(ps, ev->window, WIN_EVMODE_UNKNOWN);
-			XCB_AWAIT_VOID(xcb_change_window_attributes, ps->c.c, ev->window,
-			               XCB_CW_EVENT_MASK, (const uint32_t[]){evmask});
-
-			auto w_top = find_managed_window_or_parent(ps, ev->window);
-			// ev->window might have not been managed yet, in that case w_top
-			// would be NULL.
-			if (w_top) {
-				win_set_flags(w_top, WIN_FLAGS_CLIENT_STALE);
-			}
-		}
-		return;
+		ev_subwin_wm_state_changed(ps, ev);
 	}
 
 	// If _NET_WM_WINDOW_TYPE changes... God knows why this would happen, but

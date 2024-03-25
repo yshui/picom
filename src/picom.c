@@ -1725,7 +1725,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		// Catching up with X server
 		handle_queued_x_events(EV_A_ & ps->event_check, 0);
 
-		// Call fill_win on new windows
+		// Process new windows, and maybe allocate struct managed_win for them
 		handle_new_windows(ps);
 
 		// Handle screen changes
@@ -1734,7 +1734,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		// stale.
 		handle_root_flags(ps);
 
-		// Process window flags (window mapping)
+		// Process window flags
 		refresh_windows(ps);
 
 		{
@@ -2618,6 +2618,13 @@ static void session_destroy(session_t *ps) {
 		free(w);
 	}
 	list_init_head(&ps->window_stack);
+
+	{
+		struct subwin *subwin, *next_subwin;
+		HASH_ITER(hh, ps->subwins, subwin, next_subwin) {
+			remove_subwin(&ps->subwins, subwin);
+		}
+	}
 
 	// Free blacklists
 	options_destroy(&ps->o);
