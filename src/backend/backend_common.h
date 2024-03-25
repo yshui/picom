@@ -11,10 +11,10 @@
 #include "config.h"
 #include "region.h"
 
-typedef struct session session_t;
-typedef struct win win;
-typedef struct conv conv;
-typedef struct backend_base backend_t;
+struct session;
+struct win;
+struct conv;
+struct backend_base;
 struct backend_operations;
 
 struct dual_kawase_params {
