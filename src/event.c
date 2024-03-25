@@ -580,17 +580,9 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	ps->pending_updates = true;
+	auto w = find_toplevel(ps, ev->window);
 	if (ev->atom == ps->atoms->aWM_STATE) {
 		ev_subwin_wm_state_changed(ps, ev);
-	}
-
-	// If _NET_WM_WINDOW_TYPE changes... God knows why this would happen, but
-	// there are always some stupid applications. (#144)
-	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_TYPE) {
-		struct managed_win *w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
 	}
 
 	if (ev->atom == ps->atoms->a_NET_WM_BYPASS_COMPOSITOR) {
@@ -598,74 +590,24 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		queue_redraw(ps);
 	}
 
-	// If _NET_WM_WINDOW_OPACITY changes
+	if (w) {
+		win_set_property_stale(w, ev->atom);
+	}
+
 	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_OPACITY) {
-		auto w = find_managed_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If frame extents property changes
-	if (ev->atom == ps->atoms->a_NET_FRAME_EXTENTS) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If name changes
-	if (ps->atoms->aWM_NAME == ev->atom || ps->atoms->a_NET_WM_NAME == ev->atom) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If class changes
-	if (ps->atoms->aWM_CLASS == ev->atom) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If role changes
-	if (ps->atoms->aWM_WINDOW_ROLE == ev->atom) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If _COMPTON_SHADOW changes
-	if (ps->atoms->a_COMPTON_SHADOW == ev->atom) {
-		auto w = find_managed_win(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If a leader property changes
-	if ((ps->o.detect_transient && ps->atoms->aWM_TRANSIENT_FOR == ev->atom) ||
-	    (ps->o.detect_client_leader && ps->atoms->aWM_CLIENT_LEADER == ev->atom)) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	if (!ps->o.no_ewmh_fullscreen && ev->atom == ps->atoms->a_NET_WM_STATE) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
+		// We already handle if this is set on the client window, check
+		// if this is set on the frame window as well.
+		// TODO(yshui) do we really need this?
+		auto toplevel = find_managed_win(ps, ev->window);
+		if (toplevel) {
+			win_set_property_stale(toplevel, ev->atom);
 		}
 	}
 
 	// Check for other atoms we are tracking
 	if (c2_state_is_property_tracked(ps->c2_state, ev->atom)) {
 		bool change_is_on_client = false;
-		auto w = find_managed_win(ps, ev->window);
+		w = find_managed_win(ps, ev->window);
 		if (!w) {
 			w = find_toplevel(ps, ev->window);
 			change_is_on_client = true;
