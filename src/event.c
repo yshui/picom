@@ -352,7 +352,6 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 				auto ret = destroy_win_start(ps, w);
 				if (!ret && w->managed) {
 					auto mw = (struct managed_win *)w;
-					CHECK(win_skip_fading(ps, mw));
 					// Usually, damage for unmapped windows
 					// are added in `paint_preprocess`, when
 					// a window was painted before and isn't
@@ -363,6 +362,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 					if (mw->to_paint) {
 						add_damage_from_win(ps, mw);
 					}
+					CHECK(win_skip_fading(ps, mw));
 				}
 			}
 		}
