@@ -40,6 +40,24 @@ enum backend {
 	NUM_BKEND,
 };
 
+enum open_window_animation {
+	OPEN_WINDOW_ANIMATION_NONE = 0,
+	OPEN_WINDOW_ANIMATION_FLYIN,
+	OPEN_WINDOW_ANIMATION_SLIDE_UP,
+	OPEN_WINDOW_ANIMATION_SLIDE_DOWN,
+	OPEN_WINDOW_ANIMATION_SLIDE_LEFT,
+	OPEN_WINDOW_ANIMATION_SLIDE_RIGHT,
+	OPEN_WINDOW_ANIMATION_SLIDE_IN,
+	OPEN_WINDOW_ANIMATION_SLIDE_OUT,
+	OPEN_WINDOW_ANIMATION_SLIDE_IN_CENTER,
+	OPEN_WINDOW_ANIMATION_SLIDE_OUT_CENTER,
+	OPEN_WINDOW_ANIMATION_ZOOM,
+	OPEN_WINDOW_ANIMATION_MINIMIZE,
+	OPEN_WINDOW_ANIMATION_SQUEEZE,
+	OPEN_WINDOW_ANIMATION_SQUEEZE_BOTTOM,
+	OPEN_WINDOW_ANIMATION_INVALID,
+};
+
 typedef struct win_option_mask {
 	bool shadow : 1;
 	bool fade : 1;
@@ -49,6 +67,7 @@ typedef struct win_option_mask {
 	bool redir_ignore : 1;
 	bool opacity : 1;
 	bool clip_shadow_above : 1;
+	enum open_window_animation animation;
 } win_option_mask_t;
 
 typedef struct win_option {
@@ -60,6 +79,7 @@ typedef struct win_option {
 	bool redir_ignore;
 	double opacity;
 	bool clip_shadow_above;
+	enum open_window_animation animation;
 } win_option_t;
 
 enum blur_method {
@@ -197,6 +217,33 @@ typedef struct options {
 	/// Fading blacklist. A linked list of conditions.
 	c2_lptr_t *fade_blacklist;
 
+	// === Animations ===
+	/// Whether to do window animations
+	bool animations;
+	/// Which animation to run when opening a window
+	enum open_window_animation animation_for_open_window;
+	/// Which animation to run when opening a transient window
+	enum open_window_animation animation_for_transient_window;
+	/// Which animation to run when unmapping a window
+	enum open_window_animation animation_for_unmap_window;
+	/// Which animation to run when swapping to new tag
+	enum open_window_animation animation_for_next_tag;
+	/// Which animation to run for old tag
+	enum open_window_animation animation_for_prev_tag;
+	/// Spring stiffness for animation
+	double animation_stiffness;
+	/// Spring stiffness for current tag animation
+	double animation_stiffness_tag_change;
+	/// Window mass for animation
+	double animation_window_mass;
+	/// Animation dampening
+	double animation_dampening;
+	/// Whether to clamp animations
+	bool animation_clamping;
+	/// Animation blacklist. A linked list of conditions.
+	c2_lptr_t *animation_blacklist;
+	/// TODO: open/close animations
+
 	// === Opacity ===
 	/// Default opacity for inactive windows.
 	/// 32-bit integer with the format of _NET_WM_WINDOW_OPACITY.
@@ -280,6 +327,12 @@ typedef struct options {
 	// Make transparent windows clip other windows, instead of blending on top of
 	// them
 	bool transparent_clipping;
+
+	// Enable fading for next tag
+	bool enable_fading_next_tag;
+
+	// Enable fading for prev tag
+	bool enable_fading_prev_tag;
 	/// A list of conditions of windows to which transparent clipping
 	/// should not apply
 	c2_lptr_t *transparent_clipping_blacklist;
@@ -300,6 +353,7 @@ bool must_use parse_rule_window_shader(c2_lptr_t **, const char *, const char *)
 char *must_use locate_auxiliary_file(const char *scope, const char *path,
                                      const char *include_dir);
 enum blur_method must_use parse_blur_method(const char *src);
+enum open_window_animation must_use parse_open_window_animation(const char *src);
 
 /**
  * Add a pattern to a condition linked list.

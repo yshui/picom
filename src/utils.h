@@ -21,6 +21,7 @@
 #include "types.h"
 
 #define ARR_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+#define CLEAR_MASK(x) x = 0;
 
 #ifdef __FAST_MATH__
 #warning Use of -ffast-math can cause rendering error or artifacts, \
@@ -167,6 +168,19 @@ static inline int attr_const attr_unused normalize_i_range(int i, int min, int m
 		__auto_type __tmp = (val);                                               \
 		__tmp > 0 ? __tmp : -__tmp;                                              \
 	})
+/**
+ * Linearly interpolate from a range into another.
+ *
+ * @param  a,b   first range
+ * @param  c,d   second range
+ * @param  value value to interpolate, should be in range [a,b]
+ * @return interpolated value in range [c,d]
+ */
+static inline int attr_const lerp_range(int a, int b, int c, int d, int value) {
+	ASSERT_IN_RANGE(value, a, b);
+	return (d-c)*(value-a)/(b-a) + c;
+}
+
 #define min2(a, b) ((a) > (b) ? (b) : (a))
 #define max2(a, b) ((a) > (b) ? (a) : (b))
 #define min3(a, b, c) min2(a, min2(b, c))

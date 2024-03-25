@@ -180,7 +180,12 @@ struct backend_operations {
 	 */
 	void (*compose)(backend_t *backend_data, image_handle image, coord_t image_dst,
 	                image_handle mask, coord_t mask_dst, const region_t *reg_paint,
-	                const region_t *reg_visible) attr_nonnull(1, 2, 6, 7);
+	                const region_t *reg_visible, bool lerp) attr_nonnull(1, 2, 6, 7);
+
+    void (*_compose)(backend_t *backend_data, void *image_data,
+                int dst_x1, int dst_y1, int dst_x2, int dst_y2,
+                const region_t *reg_paint, const region_t *reg_visible);
+
 
 	/// Fill rectangle of the rendering buffer, mostly for debug purposes, optional.
 	void (*fill)(backend_t *backend_data, struct color, const region_t *clip);

@@ -187,6 +187,19 @@ static const struct picom_option picom_options[] = {
                                                                              "window is fullscreen based only on its size and coordinates."},
     {"realtime"                    , no_argument      , 804, NULL          , "Enable realtime scheduling. This might reduce latency, but might also cause "
                                                                              "other issues. Disable this if you see the compositor being killed."},
+
+    {"animation-stiffness-in-tag"     , required_argument, 805, NULL       , "Stiffness (a.k.a. tension) parameter for animation (default: 200.0)."},
+    {"animation-stiffness-tag-change" , required_argument, 806, NULL       , "Stiffness (a.k.a. tension) parameter for animation (default: 200.0). ??"},
+    {"animation-dampening"            , required_argument, 807, NULL       , "Dampening (a.k.a. friction) parameter for animation (default: 25.0)."},
+    {"animation-window-mass"          , required_argument, 808, NULL       , "Mass parameter for animation (default: 1.0)."},
+    {"animation-clamping"             , no_argument      , 809, NULL       , "Whether to clamp animations (default: true)."},
+    {"animation-for-open-window"      , required_argument, 810, NULL       , "Which animation to run when opening a window. Must be one of `none`, `fade`, "
+                                                                             "`zoom`, `slide-down`, `slide-up`, `slide-left`, `slide-right`. (default: none)."},
+    {"animation-for-transient-window" , required_argument, 811, NULL       , "Which animation to run when opening a transient window. Must be one of `none`, "
+                                                                             "`fly-in`, `zoom`, `slide-down`, `slide-up`, `slide-left`, `slide-right`. "
+									     "(default: none)."},
+    {"animation-exclude"              , required_argument, 812, "COND"     , "Exclude conditions for animation."},
+    {"animations"                     , no_argument      , 813, NULL       , "Run animations for window geometry changes (movement and scaling)."},
 };
 // clang-format on
 
@@ -376,6 +389,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 	// Parse command line arguments. Range checking will be done later.
 
 	bool failed = false;
+	char *endptr = NULL;
 	const char *deprecation_message attr_unused =
 	    "has been removed. If you encounter problems "
 	    "without this feature, please feel free to "
@@ -584,7 +598,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(298, glx_no_rebind_pixmap);
 		case 299: {
 			// --glx-swap-method
-			char *endptr;
 			long tmpval = strtol(optarg, &endptr, 10);
 			bool should_remove = true;
 			if (*endptr || !(*optarg)) {
@@ -753,6 +766,68 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		P_CASEBOOL(802, debug_mode);
 		P_CASEBOOL(803, no_ewmh_fullscreen);
 		P_CASEBOOL(804, use_realtime_scheduling);
+		case 805:
+			// --animation-stiffness
+			opt->animation_stiffness = strtod(optarg, &endptr);
+			if (*endptr != '\0' || opt->animation_stiffness < 0) {
+				log_error("Invalid animation-stiffness value: %s", optarg);
+				failed = true;
+			}
+			break;
+		case 806:
+			// --animation-stiffness-for-tags
+			opt->animation_stiffness_tag_change = strtod(optarg, &endptr);
+			if (*endptr != '\0' || opt->animation_stiffness_tag_change < 0) {
+				log_error("Invalid animation-stiffness-for-tags value: %s", optarg);
+				failed = true;
+			}
+			break;
+		case 807:
+			// --animation-dampening
+			opt->animation_dampening = strtod(optarg, &endptr);
+			if (*endptr != '\0' || opt->animation_dampening < 0) {
+				log_error("Invalid animation-dampening value: %s", optarg);
+				failed = true;
+			}
+			break;
+		case 808:
+			// --animation-window-masss
+			opt->animation_window_mass = strtod(optarg, &endptr);
+			if (*endptr != '\0' || opt->animation_window_mass < 0) {
+				log_error("Invalid animation-window-mass value: %s", optarg);
+				failed = true;
+			}
+			break;
+		case 809:
+			// --animation-clamping
+			opt->animation_clamping = true;
+			break;
+		case 810: {
+			// --animation-for-open-window
+			enum open_window_animation animation = parse_open_window_animation(optarg);
+			if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+				log_warn("Invalid open-window animation %s, ignoring.", optarg);
+			} else {
+				opt->animation_for_open_window = animation;
+			}
+			break;
+		}
+		case 811: {
+			// --animation-for-transient-window
+			enum open_window_animation animation = parse_open_window_animation(optarg);
+			if (animation >= OPEN_WINDOW_ANIMATION_INVALID) {
+				log_warn("Invalid transient-window animation %s, ignoring.", optarg);
+			} else {
+				opt->animation_for_transient_window = animation;
+			}
+			break;
+		}
+		case 812: {
+			// --animation-exclude
+			condlst_add(&opt->animation_blacklist, optarg);
+			break;
+		}
+		P_CASEBOOL(813, animations);
 		default: usage(argv[0], 1); break;
 #undef P_CASEBOOL
 		}
@@ -912,7 +987,8 @@ void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c
 	      c2_list_postprocess(state, c->c, option->opacity_rules) &&
 	      c2_list_postprocess(state, c->c, option->rounded_corners_blacklist) &&
 	      c2_list_postprocess(state, c->c, option->corner_radius_rules) &&
-	      c2_list_postprocess(state, c->c, option->focus_blacklist))) {
+	      c2_list_postprocess(state, c->c, option->focus_blacklist) &&
+	      c2_list_postprocess(state, c->c, option->animation_blacklist))) {
 		log_error("Post-processing of conditionals failed, some of your rules "
 		          "might not work");
 	}
