@@ -1848,6 +1848,17 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	xcb_change_window_attributes(ps->c.c, new->base.id, XCB_CW_EVENT_MASK,
 	                             (const uint32_t[]){frame_event_mask});
 
+	// Add existing subwins of this window
+	auto tree_reply =
+	    xcb_query_tree_reply(ps->c.c, xcb_query_tree(ps->c.c, new->base.id), NULL);
+	if (tree_reply) {
+		auto children = xcb_query_tree_children(tree_reply);
+		for (int i = 0; i < xcb_query_tree_children_length(tree_reply); i++) {
+			add_subwin_and_subscribe(&ps->subwins, &ps->c, children[i],
+			                         new->base.id);
+		}
+	}
+
 	// Get notification when the shape of a window changes
 	if (ps->shape_exists) {
 		xcb_shape_select_input(ps->c.c, new->base.id, 1);

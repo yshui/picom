@@ -200,7 +200,7 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 		return;
 	}
 
-	auto w = find_win(ps, ev->parent);
+	auto w = find_managed_win(ps, ev->parent);
 	if (w == NULL) {
 		// The parent window is not a toplevel window, we don't care about it.
 		// This can happen if a toplevel is reparented somewhere, and more events
@@ -361,14 +361,10 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d",
 	          ev->window, ev->parent, ev->override_redirect);
 
-	// If the window was a toplevel window, we need to destroy it. But X will generate
-	// reparent notify even if the parent didn't actually change (i.e. reparent again
-	// to current parent). So if it's a root -> root reparent, we don't want to
-	// destroy then recreate the window.
 	auto old_toplevel = find_toplevel(ps, ev->window);
 	auto old_w = find_win(ps, ev->window);
 	auto old_subwin = find_subwin(ps->subwins, ev->window);
-	auto new_toplevel = find_win(ps, ev->parent);
+	auto new_toplevel = find_managed_win(ps, ev->parent);
 	xcb_window_t old_parent = XCB_NONE;
 	if (old_subwin) {
 		old_parent = old_subwin->toplevel;
@@ -448,14 +444,11 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		    add_subwin_and_subscribe(&ps->subwins, &ps->c, ev->window, ev->parent);
 	}
 	if (new_subwin) {
-		new_subwin->toplevel = new_toplevel->id;
-		if (new_toplevel->managed) {
-			auto mw = win_as_managed(new_toplevel);
-			if (mw->client_win == XCB_NONE || mw->client_win == new_toplevel->id) {
-				win_set_flags(win_as_managed(new_toplevel),
-				              WIN_FLAGS_CLIENT_STALE);
-				ps->pending_updates = true;
-			}
+		new_subwin->toplevel = new_toplevel->base.id;
+		if (new_toplevel->client_win == XCB_NONE ||
+		    new_toplevel->client_win == new_toplevel->base.id) {
+			win_set_flags(new_toplevel, WIN_FLAGS_CLIENT_STALE);
+			ps->pending_updates = true;
 		}
 	}
 
