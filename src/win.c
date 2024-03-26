@@ -1506,6 +1506,7 @@ static xcb_window_t find_client_win(struct x_connection *c, struct subwin *subwi
 	for (int i = 0; i < nchildren; ++i) {
 		auto subwin = find_subwin(subwins, children[i]);
 		bool has_wm_state;
+		assert(subwin != NULL || subwins == NULL);
 		if (!subwin || subwin->has_wm_state == TRI_UNKNOWN) {
 			has_wm_state = wid_has_prop(c->c, children[i], atoms->aWM_STATE);
 			if (subwin) {

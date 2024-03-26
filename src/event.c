@@ -360,17 +360,12 @@ static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) 
 static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t *ev) {
 	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d",
 	          ev->window, ev->parent, ev->override_redirect);
-	auto old_toplevel = find_toplevel(ps, ev->window);
-	if (old_toplevel) {
-		win_unmark_client(old_toplevel);
-		win_set_flags(old_toplevel, WIN_FLAGS_CLIENT_STALE);
-		ps->pending_updates = true;
-	}
 
 	// If the window was a toplevel window, we need to destroy it. But X will generate
 	// reparent notify even if the parent didn't actually change (i.e. reparent again
 	// to current parent). So if it's a root -> root reparent, we don't want to
 	// destroy then recreate the window.
+	auto old_toplevel = find_toplevel(ps, ev->window);
 	auto old_w = find_win(ps, ev->window);
 	auto old_subwin = find_subwin(ps->subwins, ev->window);
 	auto new_toplevel = find_win(ps, ev->parent);
@@ -379,6 +374,11 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		old_parent = old_subwin->toplevel;
 	} else if (old_w) {
 		old_parent = ps->c.screen_info->root;
+	}
+	if (old_toplevel && old_toplevel->client_win == old_toplevel->base.id) {
+		// We only want _real_ frame window, meaning old_toplevel must be
+		// a parent of `ev->window`.
+		old_toplevel = NULL;
 	}
 	// A window can't be a toplevel and a subwin at the same time
 	assert(old_w == NULL || old_subwin == NULL);
@@ -405,6 +405,14 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 			restack_top(ps, old_w);
 		}
 		return;
+	}
+
+	if (old_toplevel) {
+		assert(old_subwin != NULL);
+		assert(old_subwin->toplevel == old_toplevel->base.id);
+		win_unmark_client(old_toplevel);
+		win_set_flags(old_toplevel, WIN_FLAGS_CLIENT_STALE);
+		ps->pending_updates = true;
 	}
 
 	if (old_w) {
@@ -442,8 +450,12 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	if (new_subwin) {
 		new_subwin->toplevel = new_toplevel->id;
 		if (new_toplevel->managed) {
-			win_set_flags(win_as_managed(new_toplevel), WIN_FLAGS_CLIENT_STALE);
-			ps->pending_updates = true;
+			auto mw = win_as_managed(new_toplevel);
+			if (mw->client_win == XCB_NONE || mw->client_win == new_toplevel->id) {
+				win_set_flags(win_as_managed(new_toplevel),
+				              WIN_FLAGS_CLIENT_STALE);
+				ps->pending_updates = true;
+			}
 		}
 	}
 
