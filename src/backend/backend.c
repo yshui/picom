@@ -348,7 +348,7 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 			assert(w->shadow_image);
 			ps->backend_data->ops->set_image_property(
 			    ps->backend_data, IMAGE_PROPERTY_OPACITY, w->shadow_image,
-			    &w->opacity);
+			    &window_opacity);
 			coord_t shadow_coord = {.x = w->g.x + w->shadow_dx,
 			                        .y = w->g.y + w->shadow_dy};
 
