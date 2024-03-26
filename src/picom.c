@@ -53,27 +53,25 @@
 #ifdef CONFIG_OPENGL
 #include "opengl.h"
 #endif
+#include "atom.h"
 #include "backend/backend.h"
 #include "c2.h"
-#include "diagnostic.h"
-#include "log.h"
-#include "region.h"
-#include "render.h"
-#include "types.h"
-#include "utils.h"
-#include "win.h"
-#include "x.h"
-#ifdef CONFIG_DBUS
 #include "dbus.h"
-#endif
-#include "atom.h"
+#include "diagnostic.h"
 #include "event.h"
 #include "file_watch.h"
 #include "list.h"
+#include "log.h"
 #include "options.h"
+#include "region.h"
+#include "render.h"
 #include "statistics.h"
+#include "types.h"
 #include "uthash_extra.h"
+#include "utils.h"
 #include "vblank.h"
+#include "win.h"
+#include "x.h"
 
 /// Get session_t pointer from a pointer to a member of session_t
 #define session_ptr(ptr, member)                                                         \
@@ -1187,23 +1185,6 @@ void force_repaint(session_t *ps) {
 	add_damage(ps, &ps->screen_reg);
 }
 
-#ifdef CONFIG_DBUS
-/** @name DBus hooks
- */
-///@{
-
-/**
- * Set no_fading_openclose option.
- *
- * Don't affect fading already in progress
- */
-void opts_set_no_fading_openclose(session_t *ps, bool newval) {
-	ps->o.no_fading_openclose = newval;
-}
-
-//!@}
-#endif
-
 /**
  * Setup window properties, then register us with the compositor selection (_NET_WM_CM_S)
  *
@@ -1433,6 +1414,12 @@ xcb_window_t session_get_target_window(session_t *ps) {
 	return ps->overlay != XCB_NONE ? ps->overlay : ps->c.screen_info->root;
 }
 
+#ifdef CONFIG_DBUS
+struct cdbus_data *session_get_cdbus(struct session *ps) {
+	return ps->dbus_data;
+}
+#endif
+
 uint8_t session_redirection_mode(session_t *ps) {
 	if (ps->o.debug_mode) {
 		// If the backend is not rendering to the screen, we don't need to
@@ -1647,12 +1634,10 @@ static void handle_new_windows(session_t *ps) {
 				// us to find out. So just blindly mark it damaged
 				mw->ever_damaged = true;
 			}
-#ifdef CONFIG_DBUS
 			// Send D-Bus signal
 			if (ps->o.dbus) {
-				cdbus_ev_win_added(ps, new_w);
+				cdbus_ev_win_added(session_get_cdbus(ps), new_w);
 			}
-#endif
 		}
 	}
 }
@@ -2481,7 +2466,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	// functions
 	if (ps->o.dbus) {
 #ifdef CONFIG_DBUS
-		cdbus_init(ps, DisplayString(ps->c.dpy));
+		ps->dbus_data = cdbus_init(ps, DisplayString(ps->c.dpy));
 		if (!ps->dbus_data) {
 			ps->o.dbus = false;
 		}
@@ -2574,7 +2559,8 @@ static void session_destroy(session_t *ps) {
 	// Kill DBus connection
 	if (ps->o.dbus) {
 		assert(ps->dbus_data);
-		cdbus_destroy(ps);
+		cdbus_destroy(ps->dbus_data);
+		ps->dbus_data = NULL;
 	}
 #endif
 

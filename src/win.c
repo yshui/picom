@@ -21,6 +21,7 @@
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
+#include "dbus.h"
 #include "list.h"
 #include "log.h"
 #include "picom.h"
@@ -33,10 +34,6 @@
 #include "utils.h"
 #include "win_defs.h"
 #include "x.h"
-
-#ifdef CONFIG_DBUS
-#include "dbus.h"
-#endif
 
 #ifdef CONFIG_OPENGL
 // TODO(yshui) Get rid of this include
@@ -1995,16 +1992,14 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 	// Update everything related to conditions
 	win_on_factor_change(ps, w);
 
-#ifdef CONFIG_DBUS
 	// Send D-Bus signal
 	if (ps->o.dbus) {
 		if (win_is_focused_raw(w)) {
-			cdbus_ev_win_focusin(ps, &w->base);
+			cdbus_ev_win_focusin(session_get_cdbus(ps), &w->base);
 		} else {
-			cdbus_ev_win_focusout(ps, &w->base);
+			cdbus_ev_win_focusout(session_get_cdbus(ps), &w->base);
 		}
 	}
-#endif
 }
 
 /**
@@ -2441,12 +2436,10 @@ void destroy_win_start(session_t *ps, struct win *w) {
 	}
 
 	// don't need win_ev_stop because the window is gone anyway
-#ifdef CONFIG_DBUS
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		cdbus_ev_win_destroyed(ps, w);
+		cdbus_ev_win_destroyed(session_get_cdbus(ps), w);
 	}
-#endif
 
 	if (!ps->redirected && w->managed) {
 		// Skip transition if we are not rendering
@@ -2478,12 +2471,10 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 	w->state = WSTATE_UNMAPPED;
 	win_start_fade(ps, w, 0);
 
-#ifdef CONFIG_DBUS
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		cdbus_ev_win_unmapped(ps, &w->base);
+		cdbus_ev_win_unmapped(session_get_cdbus(ps), &w->base);
 	}
-#endif
 
 	if (!ps->redirected || !w->ever_damaged) {
 		// If we are not redirected, we skip fading because we aren't
@@ -2566,12 +2557,10 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	log_debug("Window %#010x has opacity %f, opacity target is %f", w->base.id,
 	          animatable_get(&w->opacity), w->opacity.target);
 
-#ifdef CONFIG_DBUS
 	// Send D-Bus signal
 	if (ps->o.dbus) {
-		cdbus_ev_win_mapped(ps, &w->base);
+		cdbus_ev_win_mapped(session_get_cdbus(ps), &w->base);
 	}
-#endif
 
 	if (!ps->redirected) {
 		win_skip_fading(w);

@@ -385,7 +385,7 @@ typedef struct session {
 
 #ifdef CONFIG_DBUS
 	// === DBus related ===
-	void *dbus_data;
+	struct cdbus_data *dbus_data;
 #endif
 
 	int (*vsync_wait)(session_t *);
@@ -502,17 +502,6 @@ static inline bool wid_has_prop(xcb_connection_t *c, xcb_window_t w, xcb_atom_t 
 }
 
 void force_repaint(session_t *ps);
-
-/** @name DBus handling
- */
-///@{
-#ifdef CONFIG_DBUS
-/** @name DBus hooks
- */
-///@{
-void opts_set_no_fading_openclose(session_t *ps, bool newval);
-//!@}
-#endif
 
 /**
  * Set a <code>bool</code> array of all wintypes to true.
