@@ -24,6 +24,7 @@
 #include "utils.h"
 #include "win.h"
 #include "win_defs.h"
+#include "wm.h"
 #include "x.h"
 
 /// Event handling with X is complicated. Handling events with other events possibly
@@ -73,9 +74,9 @@ static inline const char *ev_window_name(session_t *ps, xcb_window_t wid) {
 		} else if (ps->overlay == wid) {
 			name = "(Overlay)";
 		} else {
-			auto w = find_managed_win(ps, wid);
+			auto w = wm_find_managed(ps->wm, wid);
 			if (!w) {
-				w = find_toplevel(ps, wid);
+				w = wm_find_by_client(ps->wm, wid);
 			}
 
 			if (w && w->name) {
@@ -196,11 +197,12 @@ static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
 
 static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev) {
 	if (ev->parent == ps->c.screen_info->root) {
-		add_win_top(ps, ev->window);
+		wm_stack_add_top(ps->wm, ev->window);
+		ps->pending_updates = true;
 		return;
 	}
 
-	auto w = find_managed_win(ps, ev->parent);
+	auto w = wm_find_managed(ps->wm, ev->parent);
 	if (w == NULL) {
 		// The parent window is not a toplevel window, we don't care about it.
 		// This can happen if a toplevel is reparented somewhere, and more events
@@ -209,7 +211,7 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 	}
 	// A direct child of a toplevel, subscribe to property changes so we can
 	// know if WM_STATE is set on this window.
-	add_subwin_and_subscribe(&ps->subwins, &ps->c, ev->window, ev->parent);
+	wm_subwin_add_and_subscribe(ps->wm, &ps->c, ev->window, ev->parent);
 	if (w->client_win == XCB_NONE || w->client_win == w->base.id) {
 		win_set_flags(w, WIN_FLAGS_CLIENT_STALE);
 		ps->pending_updates = true;
@@ -218,20 +220,20 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 
 /// Handle configure event of a regular window
 static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
-	auto w = find_win(ps, ce->window);
+	auto w = wm_find(ps->wm, ce->window);
 
 	if (!w) {
 		return;
 	}
 
 	if (!w->managed) {
-		restack_above(ps, w, ce->above_sibling);
+		wm_stack_move_above(ps->wm, w, ce->above_sibling);
 		return;
 	}
 
 	auto mw = (struct managed_win *)w;
 
-	restack_above(ps, w, ce->above_sibling);
+	wm_stack_move_above(ps->wm, w, ce->above_sibling);
 
 	// We check against pending_g here, because there might have been multiple
 	// configure notifies in this cycle, or the window could receive multiple updates
@@ -285,13 +287,13 @@ static inline void ev_configure_notify(session_t *ps, xcb_configure_notify_event
 }
 
 static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *ev) {
-	auto subwin = find_subwin(ps->subwins, ev->window);
+	auto subwin = wm_subwin_find(ps->wm, ev->window);
 	if (subwin) {
-		remove_subwin(&ps->subwins, subwin);
+		wm_subwin_remove(ps->wm, subwin);
 	}
 
-	auto w = find_win(ps, ev->window);
-	auto mw = find_toplevel(ps, ev->window);
+	auto w = wm_find(ps->wm, ev->window);
+	auto mw = wm_find_by_client(ps->wm, ev->window);
 	if (mw && mw->client_win == mw->base.id) {
 		// We only want _real_ frame window
 		assert(&mw->base == w);
@@ -335,7 +337,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 		return;
 	}
 
-	auto w = find_managed_win(ps, ev->window);
+	auto w = wm_find_managed(ps->wm, ev->window);
 	if (!w) {
 		return;
 	}
@@ -355,7 +357,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 }
 
 static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
-	auto w = find_managed_win(ps, ev->window);
+	auto w = wm_find_managed(ps->wm, ev->window);
 	if (w) {
 		unmap_win_start(ps, w);
 	}
@@ -365,10 +367,10 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	log_debug("Window %#010x has new parent: %#010x, override_redirect: %d",
 	          ev->window, ev->parent, ev->override_redirect);
 
-	auto old_toplevel = find_toplevel(ps, ev->window);
-	auto old_w = find_win(ps, ev->window);
-	auto old_subwin = find_subwin(ps->subwins, ev->window);
-	auto new_toplevel = find_managed_win(ps, ev->parent);
+	auto old_toplevel = wm_find_by_client(ps->wm, ev->window);
+	auto old_w = wm_find(ps->wm, ev->window);
+	auto old_subwin = wm_subwin_find(ps->wm, ev->window);
+	auto new_toplevel = wm_find_managed(ps->wm, ev->parent);
 	xcb_window_t old_parent = XCB_NONE;
 	if (old_subwin) {
 		old_parent = old_subwin->toplevel;
@@ -402,7 +404,9 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		// to the top of the window stack
 		if (old_w) {
 			// root -> root reparent, we just need to move it to the top
-			restack_top(ps, old_w);
+			log_debug("Restack %#010x (%s) to top", old_w->id,
+			          win_get_name_if_managed(old_w));
+			wm_stack_move_to_top(ps->wm, old_w);
 		}
 		return;
 	}
@@ -441,11 +445,11 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 	// We need to guarantee a subwin exists iff it has a valid toplevel.
 	auto new_subwin = old_subwin;
 	if (new_subwin != NULL && new_toplevel == NULL) {
-		remove_subwin_and_unsubscribe(&ps->subwins, &ps->c, new_subwin);
+		wm_subwin_remove_and_unsubscribe(ps->wm, &ps->c, new_subwin);
 		new_subwin = NULL;
 	} else if (new_subwin == NULL && new_toplevel != NULL) {
 		new_subwin =
-		    add_subwin_and_subscribe(&ps->subwins, &ps->c, ev->window, ev->parent);
+		    wm_subwin_add_and_subscribe(ps->wm, &ps->c, ev->window, ev->parent);
 	}
 	if (new_subwin) {
 		new_subwin->toplevel = new_toplevel->base.id;
@@ -460,21 +464,24 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		// New parent is root, add a toplevel;
 		assert(old_w == NULL);
 		assert(new_toplevel == NULL);
-		add_win_top(ps, ev->window);
+		wm_stack_add_top(ps->wm, ev->window);
+		ps->pending_updates = true;
 	}
 }
 
 static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event_t *ev) {
-	auto w = find_win(ps, ev->window);
+	auto w = wm_find(ps->wm, ev->window);
 
 	if (!w) {
 		return;
 	}
 
+	log_debug("Moving window %#010x (%s) to the %s", w->id,
+	          win_get_name_if_managed(w), ev->place == PlaceOnTop ? "top" : "bottom");
 	if (ev->place == PlaceOnTop) {
-		restack_top(ps, w);
+		wm_stack_move_to_top(ps->wm, w);
 	} else {
-		restack_bottom(ps, w);
+		wm_stack_move_to_bottom(ps->wm, w);
 	}
 }
 
@@ -514,7 +521,7 @@ static inline void ev_expose(session_t *ps, xcb_expose_event_t *ev) {
 }
 
 static inline void ev_subwin_wm_state_changed(session_t *ps, xcb_property_notify_event_t *ev) {
-	auto subwin = find_subwin(ps->subwins, ev->window);
+	auto subwin = wm_subwin_find(ps->wm, ev->window);
 	if (!subwin) {
 		// We only care if a direct child of a toplevel gained/lost WM_STATE
 		return;
@@ -531,7 +538,7 @@ static inline void ev_subwin_wm_state_changed(session_t *ps, xcb_property_notify
 		return;
 	}
 
-	auto toplevel = find_win(ps, subwin->toplevel);
+	auto toplevel = wm_find(ps->wm, subwin->toplevel);
 	BUG_ON(toplevel == NULL);
 	if (!toplevel->managed) {
 		return;
@@ -589,7 +596,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	ps->pending_updates = true;
-	auto w = find_toplevel(ps, ev->window);
+	auto w = wm_find_by_client(ps->wm, ev->window);
 	if (ev->atom == ps->atoms->aWM_STATE) {
 		ev_subwin_wm_state_changed(ps, ev);
 	}
@@ -607,7 +614,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		// We already handle if this is set on the client window, check
 		// if this is set on the frame window as well.
 		// TODO(yshui) do we really need this?
-		auto toplevel = find_managed_win(ps, ev->window);
+		auto toplevel = wm_find_managed(ps->wm, ev->window);
 		if (toplevel) {
 			win_set_property_stale(toplevel, ev->atom);
 		}
@@ -616,9 +623,9 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	// Check for other atoms we are tracking
 	if (c2_state_is_property_tracked(ps->c2_state, ev->atom)) {
 		bool change_is_on_client = false;
-		w = find_managed_win(ps, ev->window);
+		w = wm_find_managed(ps->wm, ev->window);
 		if (!w) {
-			w = find_toplevel(ps, ev->window);
+			w = wm_find_by_client(ps->wm, ev->window);
 			change_is_on_client = true;
 		}
 		if (w) {
@@ -700,7 +707,7 @@ static inline void ev_damage_notify(session_t *ps, xcb_damage_notify_event_t *de
 	  return;
 	} */
 
-	auto w = find_managed_win(ps, de->drawable);
+	auto w = wm_find_managed(ps->wm, de->drawable);
 
 	if (!w) {
 		return;
@@ -710,7 +717,7 @@ static inline void ev_damage_notify(session_t *ps, xcb_damage_notify_event_t *de
 }
 
 static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) {
-	auto w = find_managed_win(ps, ev->affected_window);
+	auto w = wm_find_managed(ps->wm, ev->affected_window);
 	if (!w || w->a.map_state == XCB_MAP_STATE_UNMAPPED) {
 		return;
 	}

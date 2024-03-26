@@ -49,7 +49,7 @@ typedef struct {
 	int height;
 } glx_blur_cache_t;
 #endif
-
+struct wm;
 /// An entry in the window stack. May or may not correspond to a window we know about.
 struct window_stack_entry {
 	struct list_node stack_neighbour;
@@ -87,14 +87,6 @@ struct win {
 	/// True if this window is managed, i.e. this struct is actually a `managed_win`.
 	/// Always false if `is_new` is true.
 	bool managed : 1;
-};
-
-/// Direct children of a toplevel.
-struct subwin {
-	UT_hash_handle hh;
-	xcb_window_t id;
-	xcb_window_t toplevel;
-	enum tristate has_wm_state;
 };
 
 struct win_geometry {
@@ -381,46 +373,18 @@ void win_get_region_noframe_local_without_corners(const struct managed_win *w, r
 void win_get_region_frame_local(const struct managed_win *w, region_t *res);
 /// Get the region for the frame of the window, by value
 region_t win_get_region_frame_local_by_val(const struct managed_win *w);
-/// Insert a new window above window with id `below`, if there is no window, add to top
-/// New window will be in unmapped state
-struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below);
-/// Insert a new win entry at the top of the stack
-struct win *add_win_top(session_t *ps, xcb_window_t id);
-/// Add a new subwin, and subscribe to relevant events.
-struct subwin *add_subwin_and_subscribe(struct subwin **subwins, struct x_connection *c,
-                                        xcb_window_t id, xcb_window_t parent);
-struct subwin *find_subwin(struct subwin *subwins, xcb_window_t id);
-void remove_subwin(struct subwin **subwins, struct subwin *subwin);
-/// Remove a subwin, and unsubscribe from events.
-void remove_subwin_and_unsubscribe(struct subwin **subwins, struct x_connection *c,
-                                   struct subwin *subwin);
 /// Query the Xorg for information about window `win`
 /// `win` pointer might become invalid after this function returns
 struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct win *win);
-/// Move window `w` to be right above `below`
-void restack_above(session_t *ps, struct win *w, xcb_window_t below);
-/// Move window `w` to the bottom of the stack
-void restack_bottom(session_t *ps, struct win *w);
-/// Move window `w` to the top of the stack
-void restack_top(session_t *ps, struct win *w);
 
 /**
  * Release a destroyed window that is no longer needed.
  */
 void destroy_win_finish(session_t *ps, struct win *w);
 
-// Stop receiving events (except ConfigureNotify, XXX why?) from a window
-void win_ev_stop(session_t *ps, const struct win *w);
-
 /// Skip the current in progress fading of window,
 /// transition the window straight to its end state
 void win_skip_fading(struct managed_win *w);
-/**
- * Find a managed window from window id in window linked list of the session.
- */
-struct managed_win *find_managed_win(session_t *ps, xcb_window_t id);
-struct win *find_win(session_t *ps, xcb_window_t id);
-struct managed_win *find_toplevel(session_t *ps, xcb_window_t id);
 
 /**
  * Check if a window is focused, without using any focus rules or forced focus settings
@@ -442,15 +406,19 @@ static inline struct managed_win *win_as_managed(struct win *w) {
 	return (struct managed_win *)w;
 }
 
+static inline const char *win_get_name_if_managed(const struct win *w) {
+	if (!w->managed) {
+		return "(unmanaged)";
+	}
+	auto mw = (struct managed_win *)w;
+	return mw->name;
+}
+
 /// check if reg_ignore_valid is true for all windows above us
 bool attr_pure win_is_region_ignore_valid(session_t *ps, const struct managed_win *w);
 
 /// Whether a given window is mapped on the X server side
 bool win_is_mapped_in_x(const struct managed_win *w);
-
-// Find the managed window immediately below `w` in the window stack
-struct managed_win *attr_pure win_stack_find_next_managed(const session_t *ps,
-                                                          const struct list_node *w);
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags);
 /// Clear flags on a window. Some sanity checks are performed
@@ -462,7 +430,7 @@ bool win_check_flags_all(struct managed_win *w, uint64_t flags);
 /// Mark properties as stale for a window
 void win_set_properties_stale(struct managed_win *w, const xcb_atom_t *prop, int nprops);
 
-xcb_window_t win_get_client_window(struct x_connection *c, struct subwin *subwins,
+xcb_window_t win_get_client_window(struct x_connection *c, struct wm *wm,
                                    struct atom *atoms, const struct managed_win *w);
 bool win_update_wintype(struct x_connection *c, struct atom *atoms, struct managed_win *w);
 /**

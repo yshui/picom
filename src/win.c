@@ -33,6 +33,7 @@
 #include "uthash_extra.h"
 #include "utils.h"
 #include "win_defs.h"
+#include "wm.h"
 #include "x.h"
 
 #ifdef CONFIG_OPENGL
@@ -96,15 +97,6 @@ static void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t c
 		return ret;                                                              \
 	}
 
-/**
- * Clear leader cache of all windows.
- */
-static inline void clear_cache_win_leaders(session_t *ps) {
-	win_stack_foreach_managed(w, &ps->window_stack) {
-		w->cache_leader = XCB_NONE;
-	}
-}
-
 static xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int recursions);
 
 /**
@@ -138,11 +130,29 @@ static void win_update_focused(session_t *ps, struct managed_win *w) {
 
 		// If window grouping detection is enabled, mark the window active if
 		// its group is
-		if (ps->o.track_leader && ps->active_leader &&
-		    win_get_leader(ps, w) == ps->active_leader) {
+		auto active_leader = wm_active_leader(ps->wm);
+		if (ps->o.track_leader && active_leader &&
+		    win_get_leader(ps, w) == active_leader) {
 			w->focused = true;
 		}
 	}
+}
+
+struct group_callback_data {
+	struct session *ps;
+	xcb_window_t leader;
+};
+
+static inline int group_on_factor_change_callback(struct win *w, void *data_) {
+	struct group_callback_data *data = data_;
+	if (!w->managed) {
+		return 0;
+	}
+	auto mw = (struct managed_win *)w;
+	if (data->leader == win_get_leader(data->ps, mw)) {
+		win_on_factor_change(data->ps, mw);
+	}
+	return 0;
 }
 
 /**
@@ -155,24 +165,23 @@ static inline void group_on_factor_change(session_t *ps, xcb_window_t leader) {
 		return;
 	}
 
-	HASH_ITER2(ps->windows, w) {
-		assert(!w->destroyed);
-		if (!w->managed) {
-			continue;
-		}
-		auto mw = (struct managed_win *)w;
-		if (win_get_leader(ps, mw) == leader) {
-			win_on_factor_change(ps, mw);
-		}
-	}
+	struct group_callback_data data = {
+	    .ps = ps,
+	    .leader = leader,
+	};
+	wm_foreach(ps->wm, group_on_factor_change_callback, &data);
 }
 
-static inline const char *win_get_name_if_managed(const struct win *w) {
+static inline int group_is_focused_callback(struct win *w, void *data_) {
+	struct group_callback_data *data = data_;
 	if (!w->managed) {
-		return "(unmanaged)";
+		return 0;
 	}
 	auto mw = (struct managed_win *)w;
-	return mw->name;
+	if (data->leader == win_get_leader(data->ps, mw) && win_is_focused_raw(mw)) {
+		return 1;
+	}
+	return 0;
 }
 
 /**
@@ -186,18 +195,11 @@ static inline bool group_is_focused(session_t *ps, xcb_window_t leader) {
 		return false;
 	}
 
-	HASH_ITER2(ps->windows, w) {
-		assert(!w->destroyed);
-		if (!w->managed) {
-			continue;
-		}
-		auto mw = (struct managed_win *)w;
-		if (win_get_leader(ps, mw) == leader && win_is_focused_raw(mw)) {
-			return true;
-		}
-	}
-
-	return false;
+	struct group_callback_data data = {
+	    .ps = ps,
+	    .leader = leader,
+	};
+	return wm_foreach(ps->wm, group_is_focused_callback, &data);
 }
 
 /**
@@ -210,13 +212,15 @@ static inline void win_set_leader(session_t *ps, struct managed_win *w, xcb_wind
 
 	// Forcefully do this to deal with the case when a child window
 	// gets mapped before parent, or when the window is a waypoint
-	clear_cache_win_leaders(ps);
+	win_stack_foreach_managed(i, wm_stack_end(ps->wm)) {
+		i->cache_leader = XCB_NONE;
+	}
 
 	// Update the old and new window group and active_leader if the
 	// window could affect their state.
 	xcb_window_t cache_leader = win_get_leader(ps, w);
 	if (win_is_focused_raw(w) && cache_leader_old != cache_leader) {
-		ps->active_leader = cache_leader;
+		wm_set_active_leader(ps->wm, cache_leader);
 
 		group_on_factor_change(ps, cache_leader_old);
 		group_on_factor_change(ps, cache_leader);
@@ -510,7 +514,7 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	// window information
 	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
 		log_debug("Rechecking client window for %#010x (%s)", w->base.id, w->name);
-		auto client_win = win_get_client_window(&ps->c, ps->subwins, ps->atoms, w);
+		auto client_win = win_get_client_window(&ps->c, ps->wm, ps->atoms, w);
 		if (w->client_win && w->client_win != client_win) {
 			win_unmark_client(w);
 		}
@@ -1491,8 +1495,8 @@ void win_unmark_client(struct managed_win *w) {
 /**
  * Look for the client window of a particular window.
  */
-static xcb_window_t find_client_win(struct x_connection *c, struct subwin *subwins,
-                                    struct atom *atoms, xcb_window_t w) {
+static xcb_window_t
+find_client_win(struct x_connection *c, struct wm *wm, struct atom *atoms, xcb_window_t w) {
 	xcb_query_tree_reply_t *reply =
 	    xcb_query_tree_reply(c->c, xcb_query_tree(c->c, w), NULL);
 	if (!reply) {
@@ -1504,9 +1508,9 @@ static xcb_window_t find_client_win(struct x_connection *c, struct subwin *subwi
 	xcb_window_t ret = XCB_NONE;
 
 	for (int i = 0; i < nchildren; ++i) {
-		auto subwin = find_subwin(subwins, children[i]);
+		auto subwin = wm ? wm_subwin_find(wm, children[i]) : NULL;
 		bool has_wm_state;
-		assert(subwin != NULL || subwins == NULL);
+		assert(subwin != NULL || wm == NULL);
 		if (!subwin || subwin->has_wm_state == TRI_UNKNOWN) {
 			has_wm_state = wid_has_prop(c->c, children[i], atoms->aWM_STATE);
 			if (subwin) {
@@ -1531,11 +1535,11 @@ static xcb_window_t find_client_win(struct x_connection *c, struct subwin *subwi
  * @param ps current session
  * @param w struct _win of the parent window
  */
-xcb_window_t win_get_client_window(struct x_connection *c, struct subwin *subwins,
+xcb_window_t win_get_client_window(struct x_connection *c, struct wm *wm,
                                    struct atom *atoms, const struct managed_win *w) {
 	// Always recursively look for a window with WM_STATE, as Fluxbox
 	// sets override-redirect flags on all frame windows.
-	xcb_window_t cw = find_client_win(c, subwins, atoms, w->base.id);
+	xcb_window_t cw = find_client_win(c, wm, atoms, w->base.id);
 	if (cw) {
 		log_debug("(%#010x): client %#010x", w->base.id, cw);
 	} else {
@@ -1576,88 +1580,6 @@ void free_win_res(session_t *ps, struct managed_win *w) {
 	w->stale_props = NULL;
 	w->stale_props_capacity = 0;
 	c2_window_state_destroy(ps->c2_state, &w->c2_state);
-}
-
-struct subwin *add_subwin_and_subscribe(struct subwin **subwins, struct x_connection *c,
-                                        xcb_window_t id, xcb_window_t parent) {
-	struct subwin *subwin = NULL;
-	HASH_FIND_INT(*subwins, &id, subwin);
-	BUG_ON(subwin != NULL);
-
-	subwin = ccalloc(1, struct subwin);
-	subwin->id = id;
-	subwin->toplevel = parent;
-	HASH_ADD_INT(*subwins, id, subwin);
-
-	log_debug("Allocated subwin %p for window %#010x, total: %d", subwin, id,
-	          HASH_COUNT(*subwins));
-	XCB_AWAIT_VOID(xcb_change_window_attributes, c->c, id, XCB_CW_EVENT_MASK,
-	               (const uint32_t[]){XCB_EVENT_MASK_PROPERTY_CHANGE});
-	return subwin;
-}
-
-struct subwin *find_subwin(struct subwin *subwins, xcb_window_t id) {
-	struct subwin *subwin = NULL;
-	HASH_FIND_INT(subwins, &id, subwin);
-	return subwin;
-}
-
-void remove_subwin(struct subwin **subwins, struct subwin *subwin) {
-	log_debug("Freeing subwin %p for window %#010x", subwin, subwin->id);
-	HASH_DEL(*subwins, subwin);
-	free(subwin);
-}
-
-void remove_subwin_and_unsubscribe(struct subwin **subwins, struct x_connection *c,
-                                   struct subwin *subwin) {
-	log_debug("Freeing subwin %p for window %#010x", subwin, subwin->id);
-	XCB_AWAIT_VOID(xcb_change_window_attributes, c->c, subwin->id, XCB_CW_EVENT_MASK,
-	               (const uint32_t[]){0});
-	remove_subwin(subwins, subwin);
-}
-
-/// Insert a new window after list_node `prev`
-/// New window will be in unmapped state
-static struct win *add_win(session_t *ps, xcb_window_t id, struct list_node *prev) {
-	log_debug("Adding window %#010x", id);
-	struct win *old_w = NULL;
-	HASH_FIND_INT(ps->windows, &id, old_w);
-	assert(old_w == NULL);
-
-	auto new_w = cmalloc(struct win);
-	list_insert_after(prev, &new_w->stack_neighbour);
-	new_w->id = id;
-	new_w->managed = false;
-	new_w->is_new = true;
-	new_w->destroyed = false;
-
-	HASH_ADD_INT(ps->windows, id, new_w);
-	ps->pending_updates = true;
-	return new_w;
-}
-
-/// Insert a new win entry at the top of the stack
-struct win *add_win_top(session_t *ps, xcb_window_t id) {
-	return add_win(ps, id, &ps->window_stack);
-}
-
-/// Insert a new window above window with id `below`, if there is no window, add
-/// to top New window will be in unmapped state
-struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below) {
-	struct win *w = NULL;
-	HASH_FIND_INT(ps->windows, &below, w);
-	if (!w) {
-		if (!list_is_empty(&ps->window_stack)) {
-			// `below` window is not found even if the window stack is
-			// not empty
-			return NULL;
-		}
-		return add_win_top(ps, id);
-	}
-	// we found something from the hash table, so if the stack is
-	// empty, we are in an inconsistent state.
-	assert(!list_is_empty(&ps->window_stack));
-	return add_win(ps, id, w->stack_neighbour.prev);
 }
 
 /// Query the Xorg for information about window `win`, and return that
@@ -1761,7 +1683,7 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 		return w;
 	}
 
-	auto duplicated_win = find_managed_win(ps, w->id);
+	auto duplicated_win = wm_find_managed(ps->wm, w->id);
 	if (duplicated_win) {
 		log_debug("Window %#010x (recorded name: %s) added multiple "
 		          "times",
@@ -1854,8 +1776,7 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	if (tree_reply) {
 		auto children = xcb_query_tree_children(tree_reply);
 		for (int i = 0; i < xcb_query_tree_children_length(tree_reply); i++) {
-			add_subwin_and_subscribe(&ps->subwins, &ps->c, children[i],
-			                         new->base.id);
+			wm_subwin_add_and_subscribe(ps->wm, &ps->c, children[i], new->base.id);
 		}
 		free(tree_reply);
 	}
@@ -1922,7 +1843,7 @@ static xcb_window_t win_get_leader_raw(session_t *ps, struct managed_win *w, int
 		// If the leader of this window isn't itself, look for its
 		// ancestors
 		if (w->cache_leader && w->cache_leader != w->client_win) {
-			auto wp = find_toplevel(ps, w->cache_leader);
+			auto wp = wm_find_by_client(ps->wm, w->cache_leader);
 			if (wp) {
 				// Dead loop?
 				if (recursions > WIN_GET_LEADER_MAX_RECURSION) {
@@ -1986,18 +1907,19 @@ static void win_on_focus_change(session_t *ps, struct managed_win *w) {
 		xcb_window_t leader = win_get_leader(ps, w);
 
 		// If the window gets focused, replace the old active_leader
-		if (win_is_focused_raw(w) && leader != ps->active_leader) {
-			xcb_window_t active_leader_old = ps->active_leader;
+		auto active_leader = wm_active_leader(ps->wm);
+		if (win_is_focused_raw(w) && leader != active_leader) {
+			xcb_window_t active_leader_old = active_leader;
 
-			ps->active_leader = leader;
+			wm_set_active_leader(ps->wm, leader);
 
 			group_on_factor_change(ps, active_leader_old);
 			group_on_factor_change(ps, leader);
 		}
 		// If the group get unfocused, remove it from active_leader
-		else if (!win_is_focused_raw(w) && leader &&
-		         leader == ps->active_leader && !group_is_focused(ps, leader)) {
-			ps->active_leader = XCB_NONE;
+		else if (!win_is_focused_raw(w) && leader && leader == active_leader &&
+		         !group_is_focused(ps, leader)) {
+			wm_set_active_leader(ps->wm, XCB_NONE);
 			group_on_factor_change(ps, leader);
 		}
 	}
@@ -2024,13 +1946,13 @@ void win_set_focused(session_t *ps, struct managed_win *w) {
 		return;
 	}
 
+	auto old_active_win = wm_active_win(ps->wm);
 	if (w->is_ewmh_focused) {
-		assert(ps->active_win == w);
+		assert(old_active_win == w);
 		return;
 	}
 
-	auto old_active_win = ps->active_win;
-	ps->active_win = w;
+	wm_set_active_win(ps->wm, w);
 	w->is_ewmh_focused = true;
 
 	if (old_active_win) {
@@ -2196,7 +2118,7 @@ void win_update_frame_extents(struct x_connection *c, struct atom *atoms,
 }
 
 bool win_is_region_ignore_valid(session_t *ps, const struct managed_win *w) {
-	win_stack_foreach_managed(i, &ps->window_stack) {
+	win_stack_foreach_managed(i, wm_stack_end(ps->wm)) {
 		if (i == w) {
 			break;
 		}
@@ -2207,33 +2129,12 @@ bool win_is_region_ignore_valid(session_t *ps, const struct managed_win *w) {
 	return true;
 }
 
-/**
- * Stop listening for events on a particular window.
- */
-void win_ev_stop(session_t *ps, const struct win *w) {
-	xcb_change_window_attributes(ps->c.c, w->id, XCB_CW_EVENT_MASK, (const uint32_t[]){0});
-
-	if (!w->managed) {
-		return;
-	}
-
-	auto mw = (struct managed_win *)w;
-	if (mw->client_win) {
-		xcb_change_window_attributes(ps->c.c, mw->client_win, XCB_CW_EVENT_MASK,
-		                             (const uint32_t[]){0});
-	}
-
-	if (ps->shape_exists) {
-		xcb_shape_select_input(ps->c.c, w->id, 0);
-	}
-}
-
 /// Finish the destruction of a window (e.g. after fading has finished).
 /// Frees `w`
 void destroy_win_finish(session_t *ps, struct win *w) {
 	log_verbose("Trying to finish destroying (%#010x)", w->id);
 
-	auto next_w = win_stack_find_next_managed(ps, &w->stack_neighbour);
+	auto next_w = wm_stack_next_managed(ps->wm, &w->stack_neighbour);
 	list_remove(&w->stack_neighbour);
 
 	if (w->managed) {
@@ -2256,7 +2157,7 @@ void destroy_win_finish(session_t *ps, struct win *w) {
 			next_w->reg_ignore_valid = false;
 		}
 
-		if (mw == ps->active_win) {
+		if (mw == wm_active_win(ps->wm)) {
 			// Usually, the window cannot be the focused at
 			// destruction. FocusOut should be generated before the
 			// window is destroyed. We do this check just to be
@@ -2264,7 +2165,7 @@ void destroy_win_finish(session_t *ps, struct win *w) {
 			log_debug("window %#010x (%s) is destroyed while being "
 			          "focused",
 			          w->id, mw->name);
-			ps->active_win = NULL;
+			wm_set_active_win(ps->wm, NULL);
 		}
 
 		free_win_res(ps, mw);
@@ -2272,7 +2173,7 @@ void destroy_win_finish(session_t *ps, struct win *w) {
 		// Drop w from all prev_trans to avoid accessing freed memory in
 		// repair_win()
 		// TODO(yshui) there can only be one prev_trans pointing to w
-		win_stack_foreach_managed(w2, &ps->window_stack) {
+		win_stack_foreach_managed(w2, wm_stack_end(ps->wm)) {
 			if (mw == w2->prev_trans) {
 				w2->prev_trans = NULL;
 			}
@@ -2282,106 +2183,14 @@ void destroy_win_finish(session_t *ps, struct win *w) {
 	free(w);
 }
 
-/// Move window `w` so it's before `next` in the list
-static inline void restack_win(session_t *ps, struct win *w, struct list_node *next) {
-	struct managed_win *mw = NULL;
-	if (w->managed) {
-		mw = (struct managed_win *)w;
-	}
-
-	if (mw) {
-		// This invalidates all reg_ignore below the new stack position of
-		// `w`
-		mw->reg_ignore_valid = false;
-		rc_region_unref(&mw->reg_ignore);
-
-		// This invalidates all reg_ignore below the old stack position of
-		// `w`
-		auto next_w = win_stack_find_next_managed(ps, &w->stack_neighbour);
-		if (next_w) {
-			next_w->reg_ignore_valid = false;
-			rc_region_unref(&next_w->reg_ignore);
-		}
-	}
-
-	list_move_before(&w->stack_neighbour, next);
-
-	// add damage for this window
-	if (mw) {
-		add_damage_from_win(ps, mw);
-	}
-
-#ifdef DEBUG_RESTACK
-	log_trace("Window stack modified. Current stack:");
-	for (auto c = ps->list; c; c = c->next) {
-		const char *desc = "";
-		if (c->state == WSTATE_DESTROYING) {
-			desc = "(D) ";
-		}
-		log_trace("%#010x \"%s\" %s", c->id, c->name, desc);
-	}
-#endif
-}
-
-/// Move window `w` so it's right above `below`
-void restack_above(session_t *ps, struct win *w, xcb_window_t below) {
-	xcb_window_t old_below;
-
-	if (!list_node_is_last(&ps->window_stack, &w->stack_neighbour)) {
-		old_below = list_next_entry(w, stack_neighbour)->id;
-	} else {
-		old_below = XCB_NONE;
-	}
-	log_debug("Restack %#010x (%s), old_below: %#010x, new_below: %#010x", w->id,
-	          win_get_name_if_managed(w), old_below, below);
-
-	if (old_below != below) {
-		struct list_node *new_next;
-		if (!below) {
-			new_next = &ps->window_stack;
-		} else {
-			struct win *tmp_w = NULL;
-			HASH_FIND_INT(ps->windows, &below, tmp_w);
-
-			if (!tmp_w) {
-				log_error("Failed to found new below window %#010x.", below);
-				return;
-			}
-
-			new_next = &tmp_w->stack_neighbour;
-		}
-		restack_win(ps, w, new_next);
-	}
-}
-
-void restack_bottom(session_t *ps, struct win *w) {
-	restack_above(ps, w, 0);
-}
-
-void restack_top(session_t *ps, struct win *w) {
-	log_debug("Restack %#010x (%s) to top", w->id, win_get_name_if_managed(w));
-	if (&w->stack_neighbour == ps->window_stack.next) {
-		// already at top
-		return;
-	}
-	restack_win(ps, w, ps->window_stack.next);
-}
-
 /// Start destroying a window. Windows cannot always be destroyed immediately
 /// because of fading and such.
 void destroy_win_start(session_t *ps, struct win *w) {
 	assert(w);
 
-	{
-		// A toplevel window is destroyed, all of its children lose their
-		// subwin status.
-		struct subwin *subwin, *next_subwin;
-		HASH_ITER(hh, ps->subwins, subwin, next_subwin) {
-			if (subwin->toplevel == w->id) {
-				remove_subwin_and_unsubscribe(&ps->subwins, &ps->c, subwin);
-			}
-		}
-	}
+	// A toplevel window is destroyed, all of its children lose their
+	// subwin status.
+	wm_subwin_remove_and_unsubscribe_for_toplevel(ps->wm, &ps->c, w->id);
 
 	auto mw = (struct managed_win *)w;
 	log_debug("Destroying %#010x \"%s\", managed = %d", w->id,
@@ -2393,7 +2202,7 @@ void destroy_win_start(session_t *ps, struct win *w) {
 	// stack if it's managed and mapped, since we might still need to render
 	// it (e.g. fading out). Window will be removed from the stack when it
 	// finishes destroying.
-	HASH_DEL(ps->windows, w);
+	wm_remove(ps->wm, w);
 
 	if (w->managed) {
 		if (mw->state != WSTATE_UNMAPPED) {
@@ -2599,60 +2408,6 @@ void win_update_opacity_target(session_t *ps, struct managed_win *w) {
 	}
 }
 
-/**
- * Find a managed window from window id in window linked list of the session.
- */
-struct win *find_win(session_t *ps, xcb_window_t id) {
-	if (!id) {
-		return NULL;
-	}
-
-	struct win *w = NULL;
-	HASH_FIND_INT(ps->windows, &id, w);
-	assert(w == NULL || !w->destroyed);
-	return w;
-}
-
-/**
- * Find a managed window from window id in window linked list of the session.
- */
-struct managed_win *find_managed_win(session_t *ps, xcb_window_t id) {
-	struct win *w = find_win(ps, id);
-	if (!w || !w->managed) {
-		return NULL;
-	}
-
-	auto mw = (struct managed_win *)w;
-	assert(mw->state != WSTATE_DESTROYED);
-	return mw;
-}
-
-/**
- * Find out the WM frame of a client window using existing data.
- *
- * @param id window ID
- * @return struct win object of the found window, NULL if not found
- */
-struct managed_win *find_toplevel(session_t *ps, xcb_window_t id) {
-	if (!id) {
-		return NULL;
-	}
-
-	HASH_ITER2(ps->windows, w) {
-		assert(!w->destroyed);
-		if (!w->managed) {
-			continue;
-		}
-
-		auto mw = (struct managed_win *)w;
-		if (mw->client_win == id) {
-			return mw;
-		}
-	}
-
-	return NULL;
-}
-
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
@@ -2773,17 +2528,4 @@ bool win_is_bypassing_compositor(const session_t *ps, const struct managed_win *
  */
 bool win_is_focused_raw(const struct managed_win *w) {
 	return w->a.map_state == XCB_MAP_STATE_VIEWABLE && w->is_ewmh_focused;
-}
-
-// Find the managed window immediately below `i` in the window stack
-struct managed_win *
-win_stack_find_next_managed(const session_t *ps, const struct list_node *w) {
-	while (!list_node_is_last(&ps->window_stack, w)) {
-		auto next = list_entry(w->next, struct win, stack_neighbour);
-		if (next->managed) {
-			return (struct managed_win *)next;
-		}
-		w = &next->stack_neighbour;
-	}
-	return NULL;
 }

@@ -32,6 +32,7 @@
 #include "utils.h"
 #include "win.h"
 #include "win_defs.h"
+#include "wm.h"
 
 #include "dbus.h"
 
@@ -470,41 +471,41 @@ static bool cdbus_append_string_variant(DBusMessage *msg, const char *data) {
 	return true;
 }
 
+static int cdbus_append_wids_callback(struct win *w, void *data) {
+	DBusMessageIter *iter = data;
+	cdbus_window_t wid = w->id;
+	if (!dbus_message_iter_append_basic(iter, CDBUS_TYPE_WINDOW, &wid)) {
+		return 1;
+	}
+	return 0;
+}
+
 /// Append all window IDs in the window list of a session to a D-Bus message
 static bool cdbus_append_wids(DBusMessage *msg, session_t *ps) {
 	// Get the number of wids we are to include
-	unsigned count = 0;
-	HASH_ITER2(ps->windows, w) {
-		assert(!w->destroyed);
-		++count;
-	}
-
+	unsigned count = wm_num_windows(ps->wm);
 	if (!count) {
 		// Nothing to append
 		return true;
 	}
 
-	// Allocate memory for an array of window IDs
-	auto arr = ccalloc(count, cdbus_window_t);
-
-	// Build the array
-	cdbus_window_t *pcur = arr;
-	HASH_ITER2(ps->windows, w) {
-		assert(!w->destroyed);
-		*pcur = w->id;
-		++pcur;
-	}
-	assert(pcur == arr + count);
-
-	// Append arguments
-	if (!dbus_message_append_args(msg, DBUS_TYPE_ARRAY, CDBUS_TYPE_WINDOW, &arr,
-	                              count, DBUS_TYPE_INVALID)) {
-		log_error("Failed to append argument.");
-		free(arr);
+	DBusMessageIter it, subit;
+	dbus_message_iter_init_append(msg, &it);
+	if (!dbus_message_iter_open_container(&it, DBUS_TYPE_ARRAY,
+	                                      DBUS_TYPE_UINT32_AS_STRING, &subit)) {
+		log_error("Failed to open container.");
 		return false;
 	}
 
-	free(arr);
+	auto result = wm_foreach(ps->wm, cdbus_append_wids_callback, &subit);
+	if (!dbus_message_iter_close_container(&it, &subit)) {
+		log_error("Failed to close container.");
+		return false;
+	}
+	if (result != 0) {
+		log_error("Failed to append argument.");
+		return false;
+	}
 	return true;
 }
 
@@ -587,7 +588,7 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 
-	auto w = find_managed_win(ps, wid);
+	auto w = wm_find_managed(ps->wm, wid);
 
 	if (!w) {
 		log_debug("Window %#010x not found.", wid);
@@ -614,7 +615,7 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 
 	if (!strcmp("Next", target)) {
 		cdbus_window_t next_id = 0;
-		if (!list_node_is_last(&ps->window_stack, &w->base.stack_neighbour)) {
+		if (!list_node_is_last(wm_stack_end(ps->wm), &w->base.stack_neighbour)) {
 			next_id = list_entry(w->base.stack_neighbour.next, struct win,
 			                     stack_neighbour)
 			              ->id;
@@ -674,7 +675,7 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 
-	auto w = find_managed_win(ps, wid);
+	auto w = wm_find_managed(ps->wm, wid);
 
 	if (!w) {
 		log_debug("Window %#010x not found.", wid);
@@ -693,7 +694,7 @@ cdbus_process_win_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 
 	if (!strcmp("next", target)) {
 		xcb_window_t next_id =
-		    list_node_is_last(&ps->window_stack, &w->base.stack_neighbour)
+		    list_node_is_last(wm_stack_end(ps->wm), &w->base.stack_neighbour)
 		        ? 0
 		        : list_entry(w->base.stack_neighbour.next, struct win, stack_neighbour)
 		              ->id;
@@ -759,7 +760,7 @@ cdbus_process_win_set(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBusE
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 
-	auto w = find_managed_win(ps, wid);
+	auto w = wm_find_managed(ps->wm, wid);
 
 	if (!w) {
 		log_debug("Window %#010x not found.", wid);
@@ -816,14 +817,15 @@ cdbus_process_find_win(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 			dbus_set_error_const(err, DBUS_ERROR_INVALID_ARGS, NULL);
 			return DBUS_HANDLER_RESULT_HANDLED;
 		}
-		auto w = find_toplevel(ps, client);
+		auto w = wm_find_by_client(ps->wm, client);
 		if (w) {
 			wid = w->base.id;
 		}
 	} else if (!strcmp("focused", target)) {
 		// Find focused window
-		if (ps->active_win && ps->active_win->state != WSTATE_UNMAPPED) {
-			wid = ps->active_win->base.id;
+		auto active_win = wm_active_win(ps->wm);
+		if (active_win && active_win->state != WSTATE_UNMAPPED) {
+			wid = active_win->base.id;
 		}
 	} else {
 		log_debug(CDBUS_ERROR_BADTGT_S, target);
@@ -1066,6 +1068,21 @@ static DBusHandlerResult cdbus_process_introspect(DBusMessage *reply) {
 }
 ///@}
 
+static int cdbus_process_windows_root_introspect_callback(struct win *w, void *data) {
+	char **introspect = data;
+	if (!w->managed) {
+		return 0;
+	}
+	char *tmp = NULL;
+	if (asprintf(&tmp, "<node name='%#010x'/>\n", w->id) < 0) {
+		log_fatal("Failed to allocate memory.");
+		return 1;
+	}
+	mstrextend(introspect, tmp);
+	free(tmp);
+	return 0;
+}
+
 /**
  * Process an D-Bus Introspect request, for /windows.
  */
@@ -1086,31 +1103,16 @@ cdbus_process_windows_root_introspect(session_t *ps, DBusMessage *reply) {
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
 
-	char *ret = NULL;
-	bool success = true;
-	mstrextend(&ret, str_introspect);
-
-	HASH_ITER2(ps->windows, w) {
-		assert(!w->destroyed);
-		if (!w->managed) {
-			continue;
-		}
-		char *tmp = NULL;
-		if (asprintf(&tmp, "<node name='%#010x'/>\n", w->id) < 0) {
-			log_fatal("Failed to allocate memory.");
-			success = false;
-			break;
-		}
-		mstrextend(&ret, tmp);
-		free(tmp);
+	scoped_charp introspect = NULL;
+	mstrextend(&introspect, str_introspect);
+	if (wm_foreach(ps->wm, cdbus_process_windows_root_introspect_callback, &introspect)) {
+		return DBUS_HANDLER_RESULT_NEED_MEMORY;
 	}
-	mstrextend(&ret, "</node>");
-
-	if (success) {
-		success = cdbus_append_string(reply, ret);
+	mstrextend(&introspect, "</node>");
+	if (!cdbus_append_string(reply, introspect)) {
+		return DBUS_HANDLER_RESULT_NEED_MEMORY;
 	}
-	free(ret);
-	return success ? DBUS_HANDLER_RESULT_HANDLED : DBUS_HANDLER_RESULT_NEED_MEMORY;
+	return DBUS_HANDLER_RESULT_HANDLED;
 }
 
 static bool cdbus_process_window_introspect(DBusMessage *reply) {

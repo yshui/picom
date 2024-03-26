@@ -28,6 +28,7 @@
 #include "uthash_extra.h"
 #include "utils.h"
 #include "win.h"
+#include "wm.h"
 
 #include "opengl.h"
 
@@ -241,7 +242,7 @@ void glx_destroy(session_t *ps) {
 	}
 
 	// Free all GLX resources of windows
-	win_stack_foreach_managed(w, &ps->window_stack) {
+	win_stack_foreach_managed(w, wm_stack_end(ps->wm)) {
 		free_win_res_glx(ps, w);
 	}
 

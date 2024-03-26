@@ -288,22 +288,7 @@ typedef struct session {
 	/// Index of the next free slot in <code>expose_rects</code>.
 	int n_expose;
 
-	// === Window related ===
-	/// A hash table of all windows.
-	struct win *windows;
-	/// Direct children of all toplevels.
-	struct subwin *subwins;
-	/// Windows in their stacking order
-	struct list_node window_stack;
-	/// Pointer to <code>win</code> of current active window. Used by
-	/// EWMH <code>_NET_ACTIVE_WINDOW</code> focus detection. In theory,
-	/// it's more reliable to store the window ID directly here, just in
-	/// case the WM does something extraordinary, but caching the pointer
-	/// means another layer of complexity.
-	struct managed_win *active_win;
-	/// Window ID of leader window of currently active window. Used for
-	/// subsidiary window detection.
-	xcb_window_t active_leader;
+	struct wm *wm;
 
 	// === Shadow/dimming related ===
 	/// 1x1 black Picture.
