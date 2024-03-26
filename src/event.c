@@ -21,6 +21,7 @@
 #include "region.h"
 #include "utils.h"
 #include "win.h"
+#include "win_defs.h"
 #include "x.h"
 
 /// Event handling with X is complicated. Handling events with other events possibly
@@ -273,18 +274,27 @@ static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *
 		assert(&mw->base == w);
 		mw = NULL;
 	}
+
+	// A window can't be a client window and a top-level window at the same time,
+	// so only one of `w` and `mw` can be non-NULL
 	assert(w == NULL || mw == NULL);
 
 	if (w != NULL) {
-		auto _ attr_unused = destroy_win_start(ps, w);
-	} else if (mw != NULL) {
+		destroy_win_start(ps, w);
+		if (!w->managed || !((struct managed_win *)w)->to_paint) {
+			// If the window wasn't managed, or was already not rendered,
+			// we don't need to fade it out.
+			destroy_win_finish(ps, w);
+		}
+		return;
+	}
+	if (mw != NULL) {
 		win_unmark_client(ps, mw);
 		win_set_flags(mw, WIN_FLAGS_CLIENT_STALE);
 		ps->pending_updates = true;
-	} else {
-		log_debug("Received a destroy notify from an unknown window, %#010x",
-		          ev->window);
+		return;
 	}
+	log_debug("Received a destroy notify from an unknown window, %#010x", ev->window);
 }
 
 static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
@@ -308,6 +318,13 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 	}
 
 	win_set_flags(w, WIN_FLAGS_MAPPED);
+	// We set `ever_damaged` to false here, instead of in `map_win_start`,
+	// because we might receive damage events before that function is called
+	// (which is called when we handle the `WIN_FLAGS_MAPPED` flag), in
+	// which case `repair_win` will be called, which uses `ever_damaged` so
+	// it needs to be correct. This also covers the case where the window is
+	// unmapped before `map_win_start` is called.
+	w->ever_damaged = false;
 
 	// FocusIn/Out may be ignored when the window is unmapped, so we must
 	// recheck focus here
@@ -349,8 +366,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 		{
 			auto w = find_win(ps, ev->window);
 			if (w) {
-				auto ret = destroy_win_start(ps, w);
-				if (!ret && w->managed) {
+				if (w->managed) {
 					auto mw = (struct managed_win *)w;
 					// Usually, damage for unmapped windows
 					// are added in `paint_preprocess`, when
@@ -362,8 +378,17 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 					if (mw->to_paint) {
 						add_damage_from_win(ps, mw);
 					}
-					CHECK(win_skip_fading(ps, mw));
+					// Emulating what X server does: a destroyed
+					// window is always unmapped first.
+					if (mw->state == WSTATE_MAPPED) {
+						unmap_win_start(ps, mw);
+					}
 				}
+				// Window reparenting is unlike normal window destruction,
+				// This window is going to be rendered under another
+				// parent, so we don't fade here.
+				destroy_win_start(ps, w);
+				destroy_win_finish(ps, w);
 			}
 		}
 
@@ -378,25 +403,14 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 			evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
 		} else {
 			auto w_real_top = find_managed_window_or_parent(ps, ev->parent);
-			if (w_real_top && w_real_top->state != WSTATE_UNMAPPED &&
-			    w_real_top->state != WSTATE_UNMAPPING) {
+			if (w_real_top) {
 				log_debug("Mark window %#010x (%s) as having a stale "
 				          "client",
 				          w_real_top->base.id, w_real_top->name);
 				win_set_flags(w_real_top, WIN_FLAGS_CLIENT_STALE);
 				ps->pending_updates = true;
 			} else {
-				if (!w_real_top) {
-					log_debug("parent %#010x not found", ev->parent);
-				} else {
-					// Window is not currently mapped, unmark its
-					// client to trigger a client recheck when it is
-					// mapped later.
-					win_unmark_client(ps, w_real_top);
-					log_debug("parent %#010x (%s) is in state %d",
-					          w_real_top->base.id, w_real_top->name,
-					          w_real_top->state);
-				}
+				log_debug("parent %#010x not found", ev->parent);
 			}
 		}
 		XCB_AWAIT_VOID(xcb_change_window_attributes, ps->c.c, ev->window,
@@ -605,7 +619,7 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 
 static inline void repair_win(session_t *ps, struct managed_win *w) {
 	// Only mapped window can receive damages
-	assert(win_is_mapped_in_x(w));
+	assert(w->state == WSTATE_MAPPED || win_check_flags_all(w, WIN_FLAGS_MAPPED));
 
 	region_t parts;
 	pixman_region32_init(&parts);
@@ -628,6 +642,10 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 			free(e);
 		}
 		win_extents(w, &parts);
+
+		// We only binds the window pixmap once the window is damaged.
+		win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
+		ps->pending_updates = true;
 	} else {
 		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE,
 		                                  ps->damage_ring.x_region);

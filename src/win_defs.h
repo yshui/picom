@@ -27,44 +27,18 @@ typedef enum {
 	WMODE_SOLID,              // The window is opaque including the frame
 } winmode_t;
 
-/// Transition table:
-/// (DESTROYED is when the win struct is destroyed and freed)
-/// ('o' means in all other cases)
-/// (Window is created in the UNMAPPED state)
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |             |UNMAPPING|DESTROYING|MAPPING|FADING |UNMAPPED| MAPPED |DESTROYED|
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |  UNMAPPING  |    o    |  Window  |Window |  -    | Fading |  -     |    -    |
-/// |             |         |destroyed |mapped |       |finished|        |         |
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |  DESTROYING |    -    |    o     |   -   |  -    |   -    |  -     | Fading  |
-/// |             |         |          |       |       |        |        |finished |
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |   MAPPING   | Window  |  Window  |   o   |Opacity|   -    | Fading |    -    |
-/// |             |unmapped |destroyed |       |change |        |finished|         |
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |    FADING   | Window  |  Window  |   -   |  o    |   -    | Fading |    -    |
-/// |             |unmapped |destroyed |       |       |        |finished|         |
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |   UNMAPPED  |    -    |    -     |Window |  -    |   o    |   -    | Window  |
-/// |             |         |          |mapped |       |        |        |destroyed|
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |    MAPPED   | Window  |  Window  |   -   |Opacity|   -    |   o    |    -    |
-/// |             |unmapped |destroyed |       |change |        |        |         |
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
+/// The state of a window from Xserver's perspective
 typedef enum {
-	// The window is being faded out because it's unmapped.
-	WSTATE_UNMAPPING,
-	// The window is being faded out because it's destroyed,
-	WSTATE_DESTROYING,
-	// The window is being faded in
-	WSTATE_MAPPING,
-	// Window opacity is not at the target level
-	WSTATE_FADING,
-	// The window is mapped, no fading is in progress.
-	WSTATE_MAPPED,
-	// The window is unmapped, no fading is in progress.
+	/// The window is unmapped. Equivalent to map-state == XCB_MAP_STATE_UNMAPPED
 	WSTATE_UNMAPPED,
+	/// The window no longer exists on the X server.
+	WSTATE_DESTROYED,
+	/// The window is mapped and viewable. Equivalent to map-state ==
+	/// XCB_MAP_STATE_VIEWABLE
+	WSTATE_MAPPED,
+
+	// XCB_MAP_STATE_UNVIEWABLE is not represented here because it should not be
+	// possible for top-level windows.
 } winstate_t;
 
 enum win_flags {

@@ -24,10 +24,12 @@
 #include "list.h"
 #include "log.h"
 #include "string_utils.h"
+#include "transition.h"
 #include "types.h"
 #include "uthash_extra.h"
 #include "utils.h"
 #include "win.h"
+#include "win_defs.h"
 
 #include "dbus.h"
 
@@ -876,7 +878,7 @@ cdbus_process_window_property_get(session_t *ps, DBusMessage *msg, cdbus_window_
 
 	if (!strcmp("Mapped", target)) {
 		cdbus_reply(ps, msg, cdbus_append_bool_variant,
-		            (bool[]){win_is_mapped_in_x(w)});
+		            (bool[]){w->state == WSTATE_MAPPED});
 		return true;
 	}
 
@@ -991,14 +993,17 @@ static bool cdbus_process_win_get(session_t *ps, DBusMessage *msg) {
 	cdbus_m_win_get_do(class_general, cdbus_reply_string);
 	cdbus_m_win_get_do(role, cdbus_reply_string);
 
-	cdbus_m_win_get_do(opacity, cdbus_reply_double);
-	cdbus_m_win_get_do(opacity_target, cdbus_reply_double);
+	cdbus_m_win_get_do(opacity.target, cdbus_reply_double);
 	cdbus_m_win_get_do(has_opacity_prop, cdbus_reply_bool);
 	cdbus_m_win_get_do(opacity_prop, cdbus_reply_uint32);
 	cdbus_m_win_get_do(opacity_is_set, cdbus_reply_bool);
 	cdbus_m_win_get_do(opacity_set, cdbus_reply_double);
 
 	cdbus_m_win_get_do(frame_opacity, cdbus_reply_double);
+	if (strcmp(target, "opacity") == 0) {
+		cdbus_reply_double(ps, msg, animatable_get(&w->opacity));
+		return true;
+	}
 	if (!strcmp("left_width", target)) {
 		cdbus_reply_int32(ps, msg, w->frame_extents.left);
 		return true;
