@@ -533,24 +533,53 @@ static void recheck_focus(session_t *ps) {
 
 	// Determine the currently focused window so we can apply appropriate
 	// opacity on it
-	xcb_window_t wid = XCB_NONE;
-	xcb_get_input_focus_reply_t *reply =
-	    xcb_get_input_focus_reply(ps->c.c, xcb_get_input_focus(ps->c.c), NULL);
+	xcb_generic_error_t *e = NULL;
+	auto reply = xcb_get_input_focus_reply(ps->c.c, xcb_get_input_focus(ps->c.c), &e);
+	if (reply == NULL) {
+		// Not able to get input focus means very not good things...
+		log_error_x_error(e, "Failed to get focused window.");
+		free(e);
+		return;
+	}
+	xcb_window_t wid = reply->focus;
+	free(reply);
 
-	if (reply) {
-		wid = reply->focus;
-		free(reply);
+	if (wid == XCB_NONE || wid == XCB_INPUT_FOCUS_POINTER_ROOT ||
+	    wid == ps->c.screen_info->root) {
+		// Focus is not on a toplevel.
+		return;
 	}
 
-	auto w = find_managed_window_or_parent(ps, wid);
+	// Trace upwards until we reach the toplevel containing the focus window.
+	while (true) {
+		auto tree = xcb_query_tree_reply(ps->c.c, xcb_query_tree(ps->c.c, wid), &e);
+		if (tree == NULL) {
+			// xcb_query_tree probably fails if you run picom when X is
+			// somehow initializing (like add it in .xinitrc). In this case
+			// just leave it alone.
+			log_error_x_error(e, "Failed to query window tree.");
+			free(e);
+			return;
+		}
 
-	log_trace("%#010" PRIx32 " (%#010lx \"%s\") focused.", wid,
-	          (w ? w->base.id : XCB_NONE), (w ? w->name : NULL));
+		auto parent = tree->parent;
+		free(tree);
+
+		if (parent == ps->c.screen_info->root) {
+			break;
+		}
+		wid = parent;
+	}
+
+	auto w = find_managed_win(ps, wid);
 
 	// And we set the focus state here
 	if (w) {
+		log_debug("%#010" PRIx32 " (%#010" PRIx32 " \"%s\") focused.", wid,
+		          w->base.id, w->name);
 		win_set_focused(ps, w);
-		return;
+	} else {
+		log_warn("Focus window %#010" PRIx32 " not found.", wid);
 	}
 }
 
@@ -1697,14 +1726,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		// Process window flags
 		refresh_windows(ps);
 
-		{
-			auto r = xcb_get_input_focus_reply(
-			    ps->c.c, xcb_get_input_focus(ps->c.c), NULL);
-			if (!ps->active_win || (r && r->focus != ps->active_win->base.id)) {
-				recheck_focus(ps);
-			}
-			free(r);
-		}
+		recheck_focus(ps);
 
 		// Process window flags (stale images)
 		refresh_images(ps);

@@ -2640,43 +2640,6 @@ struct managed_win *find_toplevel(session_t *ps, xcb_window_t id) {
 	return NULL;
 }
 
-/**
- * Find a managed window that is, or is a parent of `wid`.
- *
- * @param ps current session
- * @param wid window ID
- * @return struct _win object of the found window, NULL if not found
- */
-struct managed_win *find_managed_window_or_parent(session_t *ps, xcb_window_t wid) {
-	// TODO(yshui) this should probably be an "update tree", then
-	// find_toplevel. current approach is a bit more "racy", as the server
-	// state might be ahead of our state
-	struct win *w = NULL;
-
-	// We traverse through its ancestors to find out the frame
-	// Using find_win here because if we found a unmanaged window we know
-	// about, we can stop early.
-	while (wid && wid != ps->c.screen_info->root && !(w = find_win(ps, wid))) {
-		// xcb_query_tree probably fails if you run picom when X is
-		// somehow initializing (like add it in .xinitrc). In this case
-		// just leave it alone.
-		auto reply =
-		    xcb_query_tree_reply(ps->c.c, xcb_query_tree(ps->c.c, wid), NULL);
-		if (reply == NULL) {
-			break;
-		}
-
-		wid = reply->parent;
-		free(reply);
-	}
-
-	if (w == NULL || !w->managed) {
-		return NULL;
-	}
-
-	return (struct managed_win *)w;
-}
-
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags) {
 	log_debug("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
