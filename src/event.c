@@ -309,6 +309,9 @@ static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *
 		if (!w->managed || !win_as_managed(w)->to_paint) {
 			// If the window wasn't managed, or was already not rendered,
 			// we don't need to fade it out.
+			if (w->managed) {
+				win_skip_fading(win_as_managed(w));
+			}
 			destroy_win_finish(ps, w);
 		}
 		return;
@@ -439,6 +442,9 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 			}
 		}
 		destroy_win_start(ps, old_w);
+		if (old_w->managed) {
+			win_skip_fading(win_as_managed(old_w));
+		}
 		destroy_win_finish(ps, old_w);
 	}
 

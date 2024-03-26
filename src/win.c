@@ -903,6 +903,7 @@ static void unmap_win_finish(session_t *ps, struct managed_win *w) {
 
 	// Try again at binding images when the window is mapped next time
 	win_clear_flags(w, WIN_FLAGS_IMAGE_ERROR);
+	assert(w->number_of_animations == 0);
 }
 
 struct window_transition_data {
