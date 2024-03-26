@@ -210,6 +210,10 @@ static inline void ev_create_notify(session_t *ps, xcb_create_notify_event_t *ev
 	// A direct child of a toplevel, subscribe to property changes so we can
 	// know if WM_STATE is set on this window.
 	add_subwin_and_subscribe(&ps->subwins, &ps->c, ev->window, ev->parent);
+	if (w->client_win == XCB_NONE || w->client_win == w->base.id) {
+		win_set_flags(w, WIN_FLAGS_CLIENT_STALE);
+		ps->pending_updates = true;
+	}
 }
 
 /// Handle configure event of a regular window
