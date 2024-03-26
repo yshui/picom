@@ -36,8 +36,6 @@ enum root_flags {
 
 void add_damage(session_t *ps, const region_t *damage);
 
-uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode);
-
 void circulate_win(session_t *ps, xcb_circulate_notify_event_t *ce);
 
 void root_damaged(session_t *ps);

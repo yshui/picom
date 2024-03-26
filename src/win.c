@@ -1842,9 +1842,13 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	}
 
 	// Set window event mask
-	xcb_change_window_attributes(
-	    ps->c.c, new->base.id, XCB_CW_EVENT_MASK,
-	    (const uint32_t[]){determine_evmask(ps, new->base.id, WIN_EVMODE_FRAME)});
+	uint32_t frame_event_mask =
+	    XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
+	if (!ps->o.use_ewmh_active_win) {
+		frame_event_mask |= XCB_EVENT_MASK_FOCUS_CHANGE;
+	}
+	xcb_change_window_attributes(ps->c.c, new->base.id, XCB_CW_EVENT_MASK,
+	                             (const uint32_t[]){frame_event_mask});
 
 	// Get notification when the shape of a window changes
 	if (ps->shape_exists) {
