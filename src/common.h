@@ -291,6 +291,8 @@ typedef struct session {
 	// === Window related ===
 	/// A hash table of all windows.
 	struct win *windows;
+	/// Direct children of all toplevels.
+	struct subwin *subwins;
 	/// Windows in their stacking order
 	struct list_node window_stack;
 	/// Pointer to <code>win</code> of current active window. Used by

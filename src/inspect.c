@@ -30,7 +30,7 @@ setup_window(struct x_connection *c, struct atom *atoms, struct options *options
 	struct managed_win *w = ccalloc(1, struct managed_win);
 	w->state = WSTATE_MAPPED;
 	w->base.id = target;
-	w->client_win = win_get_client_window(c, atoms, w);
+	w->client_win = win_get_client_window(c, NULL, atoms, w);
 	win_update_wintype(c, atoms, w);
 	win_update_frame_extents(c, atoms, w, w->client_win, options->frame_opacity);
 	// TODO(yshui) get leader

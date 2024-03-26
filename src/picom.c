@@ -146,26 +146,6 @@ static inline int64_t get_time_ms(void) {
 	return (int64_t)tp.tv_sec * 1000 + (int64_t)tp.tv_nsec / 1000000;
 }
 
-/**
- * Find matched window.
- *
- * XXX move to win.c
- */
-static inline struct managed_win *find_win_all(session_t *ps, const xcb_window_t wid) {
-	if (!wid || PointerRoot == wid || wid == ps->c.screen_info->root || wid == ps->overlay) {
-		return NULL;
-	}
-
-	auto w = find_managed_win(ps, wid);
-	if (!w) {
-		w = find_toplevel(ps, wid);
-	}
-	if (!w) {
-		w = find_managed_window_or_parent(ps, wid);
-	}
-	return w;
-}
-
 enum vblank_callback_action check_render_finish(struct vblank_event *e attr_unused, void *ud) {
 	auto ps = (session_t *)ud;
 	if (!ps->backend_busy) {
@@ -522,31 +502,6 @@ static bool run_fade(struct managed_win **_w, unsigned int steps) {
 // === Windows ===
 
 /**
- * Determine the event mask for a window.
- */
-uint32_t determine_evmask(session_t *ps, xcb_window_t wid, win_evmode_t mode) {
-	uint32_t evmask = 0;
-	struct managed_win *w = NULL;
-
-	// Check if it's a mapped frame window
-	if (mode == WIN_EVMODE_FRAME ||
-	    ((w = find_managed_win(ps, wid)) && w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
-		evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
-		if (!ps->o.use_ewmh_active_win) {
-			evmask |= XCB_EVENT_MASK_FOCUS_CHANGE;
-		}
-	}
-
-	// Check if it's a mapped client window
-	if (mode == WIN_EVMODE_CLIENT ||
-	    ((w = find_toplevel(ps, wid)) && w->a.map_state == XCB_MAP_STATE_VIEWABLE)) {
-		evmask |= XCB_EVENT_MASK_PROPERTY_CHANGE;
-	}
-
-	return evmask;
-}
-
-/**
  * Update current active window based on EWMH _NET_ACTIVE_WIN.
  *
  * Does not change anything if we fail to get the attribute or the window
@@ -556,7 +511,7 @@ void update_ewmh_active_win(session_t *ps) {
 	// Search for the window
 	xcb_window_t wid = wid_get_prop_window(&ps->c, ps->c.screen_info->root,
 	                                       ps->atoms->a_NET_ACTIVE_WINDOW);
-	auto w = find_win_all(ps, wid);
+	auto w = find_toplevel(ps, wid);
 
 	// Mark the window focused. No need to unfocus the previous one.
 	if (w) {
@@ -589,7 +544,7 @@ static void recheck_focus(session_t *ps) {
 		free(reply);
 	}
 
-	auto w = find_win_all(ps, wid);
+	auto w = find_managed_window_or_parent(ps, wid);
 
 	log_trace("%#010" PRIx32 " (%#010lx \"%s\") focused.", wid,
 	          (w ? w->base.id : XCB_NONE), (w ? w->name : NULL));
@@ -1745,7 +1700,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		// Catching up with X server
 		handle_queued_x_events(EV_A_ & ps->event_check, 0);
 
-		// Call fill_win on new windows
+		// Process new windows, and maybe allocate struct managed_win for them
 		handle_new_windows(ps);
 
 		// Handle screen changes
@@ -1754,7 +1709,7 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 		// stale.
 		handle_root_flags(ps);
 
-		// Process window flags (window mapping)
+		// Process window flags
 		refresh_windows(ps);
 
 		{
@@ -2638,6 +2593,13 @@ static void session_destroy(session_t *ps) {
 		free(w);
 	}
 	list_init_head(&ps->window_stack);
+
+	{
+		struct subwin *subwin, *next_subwin;
+		HASH_ITER(hh, ps->subwins, subwin, next_subwin) {
+			remove_subwin(&ps->subwins, subwin);
+		}
+	}
 
 	// Free blacklists
 	options_destroy(&ps->o);

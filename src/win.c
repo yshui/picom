@@ -512,10 +512,13 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	// Check client first, because later property updates need accurate client
 	// window information
 	if (win_check_flags_all(w, WIN_FLAGS_CLIENT_STALE)) {
-		auto client_win = win_get_client_window(&ps->c, ps->atoms, w);
+		log_debug("Rechecking client window for %#010x (%s)", w->base.id, w->name);
+		auto client_win = win_get_client_window(&ps->c, ps->subwins, ps->atoms, w);
 		if (w->client_win && w->client_win != client_win) {
-			win_unmark_client(ps, w);
+			win_unmark_client(w);
 		}
+		log_debug("New client window for %#010x (%s): %#010x", w->base.id,
+		          w->name, client_win);
 		win_mark_client(ps, w, client_win);
 		win_clear_flags(w, WIN_FLAGS_CLIENT_STALE);
 	}
@@ -1440,15 +1443,6 @@ static void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t c
 		return;
 	}
 
-	auto e = xcb_request_check(
-	    ps->c.c, xcb_change_window_attributes_checked(
-	                 ps->c.c, client, XCB_CW_EVENT_MASK,
-	                 (const uint32_t[]){determine_evmask(ps, client, WIN_EVMODE_CLIENT)}));
-	if (e) {
-		log_error("Failed to change event mask of window %#010x", client);
-		free(e);
-	}
-
 	win_update_wintype(&ps->c, ps->atoms, w);
 
 	// Get frame widths. The window is in damaged area already.
@@ -1472,6 +1466,7 @@ static void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t c
 	// Update everything related to conditions
 	win_on_factor_change(ps, w);
 
+	xcb_generic_error_t *e = NULL;
 	auto r = xcb_get_window_attributes_reply(
 	    ps->c.c, xcb_get_window_attributes(ps->c.c, w->client_win), &e);
 	if (!r) {
@@ -1489,42 +1484,41 @@ static void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t c
  * @param ps current session
  * @param w struct _win of the parent window
  */
-void win_unmark_client(session_t *ps, struct managed_win *w) {
+void win_unmark_client(struct managed_win *w) {
 	xcb_window_t client = w->client_win;
 	log_debug("Detaching client window %#010x from frame %#010x (%s)", client,
 	          w->base.id, w->name);
-
 	w->client_win = XCB_NONE;
-
-	// Recheck event mask
-	xcb_change_window_attributes(
-	    ps->c.c, client, XCB_CW_EVENT_MASK,
-	    (const uint32_t[]){determine_evmask(ps, client, WIN_EVMODE_UNKNOWN)});
 }
 
 /**
  * Look for the client window of a particular window.
  */
-static xcb_window_t
-find_client_win(struct x_connection *c, struct atom *atoms, xcb_window_t w) {
-	if (wid_has_prop(c->c, w, atoms->aWM_STATE)) {
-		return w;
-	}
-
+static xcb_window_t find_client_win(struct x_connection *c, struct subwin *subwins,
+                                    struct atom *atoms, xcb_window_t w) {
 	xcb_query_tree_reply_t *reply =
 	    xcb_query_tree_reply(c->c, xcb_query_tree(c->c, w), NULL);
 	if (!reply) {
-		return 0;
+		return XCB_NONE;
 	}
 
 	xcb_window_t *children = xcb_query_tree_children(reply);
 	int nchildren = xcb_query_tree_children_length(reply);
-	int i;
-	xcb_window_t ret = 0;
+	xcb_window_t ret = XCB_NONE;
 
-	for (i = 0; i < nchildren; ++i) {
-		ret = find_client_win(c, atoms, children[i]);
-		if (ret) {
+	for (int i = 0; i < nchildren; ++i) {
+		auto subwin = find_subwin(subwins, children[i]);
+		bool has_wm_state;
+		if (!subwin || subwin->has_wm_state == TRI_UNKNOWN) {
+			has_wm_state = wid_has_prop(c->c, children[i], atoms->aWM_STATE);
+			if (subwin) {
+				subwin->has_wm_state = has_wm_state ? TRI_TRUE : TRI_FALSE;
+			}
+		} else {
+			has_wm_state = subwin->has_wm_state == TRI_TRUE;
+		}
+		if (has_wm_state) {
+			ret = children[i];
 			break;
 		}
 	}
@@ -1539,11 +1533,11 @@ find_client_win(struct x_connection *c, struct atom *atoms, xcb_window_t w) {
  * @param ps current session
  * @param w struct _win of the parent window
  */
-xcb_window_t win_get_client_window(struct x_connection *c, struct atom *atoms,
-                                   const struct managed_win *w) {
+xcb_window_t win_get_client_window(struct x_connection *c, struct subwin *subwins,
+                                   struct atom *atoms, const struct managed_win *w) {
 	// Always recursively look for a window with WM_STATE, as Fluxbox
 	// sets override-redirect flags on all frame windows.
-	xcb_window_t cw = find_client_win(c, atoms, w->base.id);
+	xcb_window_t cw = find_client_win(c, subwins, atoms, w->base.id);
 	if (cw) {
 		log_debug("(%#010x): client %#010x", w->base.id, cw);
 	} else {
@@ -1584,6 +1578,44 @@ void free_win_res(session_t *ps, struct managed_win *w) {
 	w->stale_props = NULL;
 	w->stale_props_capacity = 0;
 	c2_window_state_destroy(ps->c2_state, &w->c2_state);
+}
+
+struct subwin *add_subwin_and_subscribe(struct subwin **subwins, struct x_connection *c,
+                                        xcb_window_t id, xcb_window_t parent) {
+	struct subwin *subwin = NULL;
+	HASH_FIND_INT(*subwins, &id, subwin);
+	BUG_ON(subwin != NULL);
+
+	subwin = ccalloc(1, struct subwin);
+	subwin->id = id;
+	subwin->toplevel = parent;
+	HASH_ADD_INT(*subwins, id, subwin);
+
+	log_debug("Allocated subwin %p for window %#010x, total: %d", subwin, id,
+	          HASH_COUNT(*subwins));
+	XCB_AWAIT_VOID(xcb_change_window_attributes, c->c, id, XCB_CW_EVENT_MASK,
+	               (const uint32_t[]){XCB_EVENT_MASK_PROPERTY_CHANGE});
+	return subwin;
+}
+
+struct subwin *find_subwin(struct subwin *subwins, xcb_window_t id) {
+	struct subwin *subwin = NULL;
+	HASH_FIND_INT(subwins, &id, subwin);
+	return subwin;
+}
+
+void remove_subwin(struct subwin **subwins, struct subwin *subwin) {
+	log_debug("Freeing subwin %p for window %#010x", subwin, subwin->id);
+	HASH_DEL(*subwins, subwin);
+	free(subwin);
+}
+
+void remove_subwin_and_unsubscribe(struct subwin **subwins, struct x_connection *c,
+                                   struct subwin *subwin) {
+	log_debug("Freeing subwin %p for window %#010x", subwin, subwin->id);
+	XCB_AWAIT_VOID(xcb_change_window_attributes, c->c, subwin->id, XCB_CW_EVENT_MASK,
+	               (const uint32_t[]){0});
+	remove_subwin(subwins, subwin);
 }
 
 /// Insert a new window after list_node `prev`
@@ -1724,8 +1756,10 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 
 	w->is_new = false;
 
-	// Reject overlay window and already added windows
+	// Reject overlay window
 	if (w->id == ps->overlay) {
+		// Would anyone reparent windows to the overlay window? Doing this
+		// just in case.
 		return w;
 	}
 
@@ -1808,9 +1842,13 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	}
 
 	// Set window event mask
-	xcb_change_window_attributes(
-	    ps->c.c, new->base.id, XCB_CW_EVENT_MASK,
-	    (const uint32_t[]){determine_evmask(ps, new->base.id, WIN_EVMODE_FRAME)});
+	uint32_t frame_event_mask =
+	    XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY;
+	if (!ps->o.use_ewmh_active_win) {
+		frame_event_mask |= XCB_EVENT_MASK_FOCUS_CHANGE;
+	}
+	xcb_change_window_attributes(ps->c.c, new->base.id, XCB_CW_EVENT_MASK,
+	                             (const uint32_t[]){frame_event_mask});
 
 	// Get notification when the shape of a window changes
 	if (ps->shape_exists) {
@@ -2324,9 +2362,20 @@ void restack_top(session_t *ps, struct win *w) {
 /// Start destroying a window. Windows cannot always be destroyed immediately
 /// because of fading and such.
 void destroy_win_start(session_t *ps, struct win *w) {
-	auto mw = (struct managed_win *)w;
 	assert(w);
 
+	{
+		// A toplevel window is destroyed, all of its children lose their
+		// subwin status.
+		struct subwin *subwin, *next_subwin;
+		HASH_ITER(hh, ps->subwins, subwin, next_subwin) {
+			if (subwin->toplevel == w->id) {
+				remove_subwin_and_unsubscribe(&ps->subwins, &ps->c, subwin);
+			}
+		}
+	}
+
+	auto mw = (struct managed_win *)w;
 	log_debug("Destroying %#010x \"%s\", managed = %d", w->id,
 	          (w->managed ? mw->name : NULL), w->managed);
 

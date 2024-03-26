@@ -21,6 +21,7 @@
 #include "utils.h"
 #include "win_defs.h"
 #include "x.h"
+#include "xcb/xproto.h"
 
 struct backend_base;
 typedef struct session session_t;
@@ -86,6 +87,14 @@ struct win {
 	/// True if this window is managed, i.e. this struct is actually a `managed_win`.
 	/// Always false if `is_new` is true.
 	bool managed : 1;
+};
+
+/// Direct children of a toplevel.
+struct subwin {
+	UT_hash_handle hh;
+	xcb_window_t id;
+	xcb_window_t toplevel;
+	enum tristate has_wm_state;
 };
 
 struct win_geometry {
@@ -332,7 +341,7 @@ void win_set_invert_color_force(session_t *ps, struct managed_win *w, switch_t v
 void win_set_focused(session_t *ps, struct managed_win *w);
 bool attr_pure win_should_fade(session_t *ps, const struct managed_win *w);
 void win_on_factor_change(session_t *ps, struct managed_win *w);
-void win_unmark_client(session_t *ps, struct managed_win *w);
+void win_unmark_client(struct managed_win *w);
 
 bool attr_pure win_should_dim(session_t *ps, const struct managed_win *w);
 
@@ -377,6 +386,14 @@ region_t win_get_region_frame_local_by_val(const struct managed_win *w);
 struct win *add_win_above(session_t *ps, xcb_window_t id, xcb_window_t below);
 /// Insert a new win entry at the top of the stack
 struct win *add_win_top(session_t *ps, xcb_window_t id);
+/// Add a new subwin, and subscribe to relevant events.
+struct subwin *add_subwin_and_subscribe(struct subwin **subwins, struct x_connection *c,
+                                        xcb_window_t id, xcb_window_t parent);
+struct subwin *find_subwin(struct subwin *subwins, xcb_window_t id);
+void remove_subwin(struct subwin **subwins, struct subwin *subwin);
+/// Remove a subwin, and unsubscribe from events.
+void remove_subwin_and_unsubscribe(struct subwin **subwins, struct x_connection *c,
+                                   struct subwin *subwin);
 /// Query the Xorg for information about window `win`
 /// `win` pointer might become invalid after this function returns
 struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct win *win);
@@ -428,6 +445,11 @@ static inline bool attr_pure win_is_wmwin(const struct managed_win *w) {
 	return w->base.id == w->client_win && !w->a.override_redirect;
 }
 
+static inline struct managed_win *win_as_managed(struct win *w) {
+	BUG_ON(!w->managed);
+	return (struct managed_win *)w;
+}
+
 /// check if reg_ignore_valid is true for all windows above us
 bool attr_pure win_is_region_ignore_valid(session_t *ps, const struct managed_win *w);
 
@@ -448,8 +470,8 @@ bool win_check_flags_all(struct managed_win *w, uint64_t flags);
 /// Mark properties as stale for a window
 void win_set_properties_stale(struct managed_win *w, const xcb_atom_t *prop, int nprops);
 
-xcb_window_t win_get_client_window(struct x_connection *c, struct atom *atoms,
-                                   const struct managed_win *w);
+xcb_window_t win_get_client_window(struct x_connection *c, struct subwin *subwins,
+                                   struct atom *atoms, const struct managed_win *w);
 bool win_update_wintype(struct x_connection *c, struct atom *atoms, struct managed_win *w);
 /**
  * Retrieve frame extents from a window.
