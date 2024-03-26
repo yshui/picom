@@ -1857,6 +1857,7 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 			add_subwin_and_subscribe(&ps->subwins, &ps->c, children[i],
 			                         new->base.id);
 		}
+		free(tree_reply);
 	}
 
 	// Get notification when the shape of a window changes
