@@ -781,28 +781,30 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	// We intentionally ignore events sent via SendEvent. Those events has the 8th bit
 	// of response_type set, meaning they will match none of the cases below.
 	switch (ev->response_type) {
-	case FocusIn: ev_focus_in(ps, (xcb_focus_in_event_t *)ev); break;
-	case FocusOut: ev_focus_out(ps, (xcb_focus_out_event_t *)ev); break;
-	case CreateNotify: ev_create_notify(ps, (xcb_create_notify_event_t *)ev); break;
-	case ConfigureNotify:
+	case XCB_FOCUS_IN: ev_focus_in(ps, (xcb_focus_in_event_t *)ev); break;
+	case XCB_FOCUS_OUT: ev_focus_out(ps, (xcb_focus_out_event_t *)ev); break;
+	case XCB_CREATE_NOTIFY:
+		ev_create_notify(ps, (xcb_create_notify_event_t *)ev);
+		break;
+	case XCB_CONFIGURE_NOTIFY:
 		ev_configure_notify(ps, (xcb_configure_notify_event_t *)ev);
 		break;
-	case DestroyNotify:
+	case XCB_DESTROY_NOTIFY:
 		ev_destroy_notify(ps, (xcb_destroy_notify_event_t *)ev);
 		break;
-	case MapNotify: ev_map_notify(ps, (xcb_map_notify_event_t *)ev); break;
-	case UnmapNotify: ev_unmap_notify(ps, (xcb_unmap_notify_event_t *)ev); break;
-	case ReparentNotify:
+	case XCB_MAP_NOTIFY: ev_map_notify(ps, (xcb_map_notify_event_t *)ev); break;
+	case XCB_UNMAP_NOTIFY: ev_unmap_notify(ps, (xcb_unmap_notify_event_t *)ev); break;
+	case XCB_REPARENT_NOTIFY:
 		ev_reparent_notify(ps, (xcb_reparent_notify_event_t *)ev);
 		break;
-	case CirculateNotify:
+	case XCB_CIRCULATE_NOTIFY:
 		ev_circulate_notify(ps, (xcb_circulate_notify_event_t *)ev);
 		break;
-	case Expose: ev_expose(ps, (xcb_expose_event_t *)ev); break;
-	case PropertyNotify:
+	case XCB_EXPOSE: ev_expose(ps, (xcb_expose_event_t *)ev); break;
+	case XCB_PROPERTY_NOTIFY:
 		ev_property_notify(ps, (xcb_property_notify_event_t *)ev);
 		break;
-	case SelectionClear:
+	case XCB_SELECTION_CLEAR:
 		ev_selection_clear(ps, (xcb_selection_clear_event_t *)ev);
 		break;
 	case 0: x_handle_error(&ps->c, (xcb_generic_error_t *)ev); break;
