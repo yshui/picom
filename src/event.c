@@ -226,14 +226,14 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 		return;
 	}
 
+	wm_stack_move_above(ps->wm, w, ce->above_sibling);
+
 	if (!w->managed) {
-		wm_stack_move_above(ps->wm, w, ce->above_sibling);
 		return;
 	}
 
 	auto mw = (struct managed_win *)w;
-
-	wm_stack_move_above(ps->wm, w, ce->above_sibling);
+	add_damage_from_win(ps, mw);
 
 	// We check against pending_g here, because there might have been multiple
 	// configure notifies in this cycle, or the window could receive multiple updates
@@ -410,6 +410,9 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 			log_debug("Restack %#010x (%s) to top", old_w->id,
 			          win_get_name_if_managed(old_w));
 			wm_stack_move_to_top(ps->wm, old_w);
+			if (old_w->managed) {
+				add_damage_from_win(ps, win_as_managed(old_w));
+			}
 		}
 		return;
 	}
@@ -488,6 +491,9 @@ static inline void ev_circulate_notify(session_t *ps, xcb_circulate_notify_event
 		wm_stack_move_to_top(ps->wm, w);
 	} else {
 		wm_stack_move_to_bottom(ps->wm, w);
+	}
+	if (w->managed) {
+		add_damage_from_win(ps, win_as_managed(w));
 	}
 }
 
