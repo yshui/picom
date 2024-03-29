@@ -12,6 +12,18 @@
 #include "x.h"
 
 struct wm {
+	/// Current window generation, start from 1. 0 is reserved for using as
+	/// an invalid generation number.
+	///
+	/// Because X server recycles window IDs, `id` along
+	/// is not enough to uniquely identify a window. This generation number is
+	/// incremented every time a window is destroyed, so that if a window ID is
+	/// reused, its generation number will be different from before.
+	/// Unless, of course, if the generation number overflows, but since we are
+	/// using a uint64_t here, that won't happen for a very long time. Still,
+	/// it is recommended that you restart the compositor at least once before
+	/// the Universe collapse back on itself.
+	uint64_t generation;
 	/// A hash table of all windows.
 	struct win *windows;
 	/// Windows in their stacking order
@@ -86,6 +98,7 @@ struct win *wm_find(struct wm *wm, xcb_window_t id) {
 }
 
 void wm_remove(struct wm *wm, struct win *w) {
+	wm->generation++;
 	HASH_DEL(wm->windows, w);
 }
 
@@ -123,6 +136,7 @@ wm_stack_insert_after(struct wm *wm, xcb_window_t id, struct list_node *prev) {
 	new_w->managed = false;
 	new_w->is_new = true;
 	new_w->destroyed = false;
+	new_w->generation = wm->generation;
 
 	HASH_ADD_INT(wm->windows, id, new_w);
 	return new_w;
@@ -315,6 +329,7 @@ void wm_subwin_remove_and_unsubscribe_for_toplevel(struct wm *wm, struct x_conne
 struct wm *wm_new(void) {
 	auto wm = ccalloc(1, struct wm);
 	list_init_head(&wm->window_stack);
+	wm->generation = 1;
 	return wm;
 }
 

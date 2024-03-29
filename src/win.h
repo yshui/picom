@@ -79,6 +79,9 @@ struct win {
 	struct list_node stack_neighbour;
 	/// ID of the top-level frame window.
 	xcb_window_t id;
+	/// Generation of the window.
+	/// (see `struct wm::generation` for explanation of what a generation is)
+	uint64_t generation;
 	/// Whether the window is destroyed from Xorg's perspective
 	bool destroyed : 1;
 	/// True if we just received CreateNotify, and haven't queried X for any info
