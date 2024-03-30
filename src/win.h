@@ -299,6 +299,9 @@ struct managed_win {
 	/// Background texture of the window
 	glx_texture_t *glx_texture_bg;
 #endif
+
+	/// The damaged region of the window, in window local coordinates.
+	region_t damaged;
 };
 
 /// Process pending updates/images flags on a window. Has to be called in X critical

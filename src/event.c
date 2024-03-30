@@ -704,11 +704,17 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 	}
 
 	// Remove the part in the damage area that could be ignored
+	region_t without_ignored;
+	pixman_region32_init(&without_ignored);
 	if (w->reg_ignore && win_is_region_ignore_valid(ps, w)) {
-		pixman_region32_subtract(&parts, &parts, w->reg_ignore);
+		pixman_region32_subtract(&without_ignored, &parts, w->reg_ignore);
 	}
 
-	add_damage(ps, &parts);
+	add_damage(ps, &without_ignored);
+	pixman_region32_fini(&without_ignored);
+
+	pixman_region32_translate(&parts, -w->g.x, -w->g.y);
+	pixman_region32_copy(&w->damaged, &parts);
 	pixman_region32_fini(&parts);
 }
 

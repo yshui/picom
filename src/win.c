@@ -1805,6 +1805,7 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	};
 	win_set_properties_stale(new, init_stale_props, ARR_SIZE(init_stale_props));
 	c2_window_state_init(ps->c2_state, &new->c2_state);
+	pixman_region32_init(&new->damaged);
 
 	return &new->base;
 }
@@ -2179,6 +2180,7 @@ void destroy_win_finish(session_t *ps, struct win *w) {
 				w2->prev_trans = NULL;
 			}
 		}
+		pixman_region32_fini(&mw->damaged);
 	}
 
 	free(w);
