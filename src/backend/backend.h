@@ -119,6 +119,139 @@ typedef struct {
 	// Intentionally left blank
 } *image_handle;
 
+struct backend_mask {
+	/// Mask image, can be NULL.
+	image_handle image;
+	/// Clip region, in source image's coordinate.
+	region_t region;
+	/// Corner radius of the mask image, the corners of the mask image will be
+	/// rounded.
+	double corner_radius;
+	/// Origin of the mask image, in the source image's coordinate.
+	struct coord origin;
+	/// Whether the mask image should be inverted.
+	bool inverted;
+};
+
+struct backend_blur_args {
+	/// The blur context
+	void *blur_context;
+	/// The mask for the blur operation
+	struct backend_mask *mask;
+	/// Source image
+	image_handle source_image;
+	/// Opacity of the blurred image
+	double opacity;
+};
+
+struct backend_blit_args {
+	/// Source image, can be NULL.
+	image_handle source_image;
+	/// Mask for the source image.
+	struct backend_mask *mask;
+	/// Custom shader for this blit operation.
+	void *shader;
+	/// Opacity of the source image.
+	double opacity;
+	/// Dim level of the source image.
+	double dim;
+	/// Brightness limit of the source image. Source image
+	/// will be normalized so that the maximum brightness is
+	/// this value.
+	double max_brightness;
+	/// Corner radius of the source image. The corners of
+	/// the source image will be rounded.
+	double corner_radius;
+	/// Effective size of the source image, source image will be
+	/// tiled to fit.
+	int ewidth, eheight;
+	/// Border width of the source image. This is used with
+	/// `corner_radius` to create a border for the rounded corners.
+	int border_width;
+	/// Whether the source image should be inverted.
+	bool color_inverted;
+};
+
+enum backend_image_format {
+	/// A format that can be used for normal rendering, and binding
+	/// X pixmaps.
+	BACKEND_IMAGE_FORMAT_PIXMAP,
+	/// A format that can be used for masks.
+	BACKEND_IMAGE_FORMAT_MASK,
+};
+
+struct backend_ops_v2 {
+	/// Multiply the alpha channel of the target image by a given value.
+	///
+	/// @param backend_data backend data
+	/// @param target       an image handle, cannot be NULL.
+	/// @param alpha        the alpha value to multiply
+	/// @param region       the region to apply the alpha, in the target image's
+	///                     coordinate.
+	bool (*apply_alpha)(backend_t *backend_data, image_handle target, double alpha,
+	                    const region_t *region) attr_nonnull(1, 2, 4);
+
+	/// Copy pixels from a source image on to the target image
+	/// Some effects may be applied.
+	///
+	/// @param backend_data backend data
+	/// @param origin       the origin of the operation, in the target image's
+	///                     coordinate.
+	/// @param target       an image handle, cannot be NULL.
+	/// @param args         arguments for blit
+	/// @return             whether the operation is successful
+	bool (*blit)(backend_t *backend_data, struct coord origin, image_handle target,
+	             struct backend_blit_args *args) attr_nonnull(1, 3, 4);
+
+	/// Blur a given region of a source image and store the result in the target
+	/// image.
+	///
+	/// @param backend_data backend data
+	/// @param origin       the origin of the operation, in the target image's
+	///                     coordinate.
+	/// @param target       an image handle, cannot be NULL.
+	/// @param args         argument for blur
+	/// @return             whether the operation is successful
+	bool (*blur)(backend_t *backend_data, struct coord origin, image_handle target,
+	             struct backend_blur_args *args) attr_nonnull(1, 3, 4);
+
+	/// Direct copy of pixels from a source image on to the target image.
+	/// This is a simpler version of `blit`, without any effects.
+	///
+	/// @param backend_data backend data
+	/// @param origin       the origin of the operation, in the target image's
+	///                     coordinate.
+	/// @param target       an image handle, cannot be NULL.
+	/// @param source       an image handle, cannot be NULL.
+	/// @param region       the region to copy, in the source image's coordinate.
+	/// @return             whether the operation is successful
+	bool (*copy_area)(backend_t *backend_data, struct coord origin,
+	                  image_handle target, image_handle source, const region_t *region)
+	    attr_nonnull(1, 3, 4, 5);
+
+	/// Initialize an image with a given color value.
+	///
+	/// @param backend_data backend data
+	/// @param target       an image handle, cannot be NULL.
+	/// @param color        the color to fill the image with
+	/// @return             whether the operation is successful
+	bool (*clear)(backend_t *backend_data, image_handle target, struct color color)
+	    attr_nonnull(1, 2);
+
+	/// Create a new, uninitialized image with the given format and size.
+	///
+	/// @param backend_data backend data
+	/// @param format       the format of the image
+	/// @param size         the size of the image
+	image_handle (*new_image)(backend_t *backend_data, enum backend_image_format format,
+	                          geometry_t size) attr_nonnull(1);
+
+	/// Acquire the image handle of the back buffer.
+	///
+	/// @param backend_data backend data
+	image_handle (*back_buffer)(backend_t *backend_data);
+};
+
 struct backend_operations {
 	// ===========    Initialization    ===========
 
