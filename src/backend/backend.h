@@ -121,6 +121,9 @@ typedef struct {
 
 struct backend_mask {
 	/// Mask image, can be NULL.
+	///
+	/// Mask image must be an image that was created with the `BACKEND_IMAGE_FORMAT_MASK`
+	/// format. Using an image with a wrong format as mask is undefined behavior.
 	image_handle image;
 	/// Clip region, in source image's coordinate.
 	region_t region;
@@ -175,6 +178,7 @@ struct backend_blit_args {
 enum backend_image_format {
 	/// A format that can be used for normal rendering, and binding
 	/// X pixmaps.
+	/// Images created with `bind_pixmap` have this format automatically.
 	BACKEND_IMAGE_FORMAT_PIXMAP,
 	/// A format that can be used for masks.
 	BACKEND_IMAGE_FORMAT_MASK,
