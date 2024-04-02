@@ -243,6 +243,16 @@ void wm_stack_move_to_top(struct wm *wm, struct win *w) {
 	wm_stack_move_before(wm, w, wm->window_stack.next);
 }
 
+unsigned wm_stack_num_managed_windows(const struct wm *wm) {
+	unsigned count = 0;
+	list_foreach(struct win, w, &wm->window_stack, stack_neighbour) {
+		if (w->managed) {
+			count += 1;
+		}
+	}
+	return count;
+}
+
 struct managed_win *wm_find_by_client(struct wm *wm, xcb_window_t client) {
 	if (!client) {
 		return NULL;

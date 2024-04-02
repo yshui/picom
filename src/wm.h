@@ -87,6 +87,7 @@ void wm_stack_move_to_top(struct wm *wm, struct win *w);
 /// Replace window `old` with `new_` in the stack, also replace the window in the hash
 /// table. `old` will be freed.
 void wm_stack_replace(struct wm *wm, struct win *old, struct win *new_);
+unsigned attr_const wm_stack_num_managed_windows(const struct wm *wm);
 
 struct subwin *wm_subwin_add_and_subscribe(struct wm *wm, struct x_connection *c,
                                            xcb_window_t id, xcb_window_t parent);
