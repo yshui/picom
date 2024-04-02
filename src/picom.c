@@ -931,13 +931,6 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 			*fade_running = true;
 		}
 
-		if (w->state == WSTATE_DESTROYED && w->number_of_animations == 0) {
-			// the window should be destroyed because it was destroyed
-			// by X server and now its animations are finished
-			destroy_win_finish(ps, &w->base);
-			continue;
-		}
-
 		if (win_has_frame(w)) {
 			w->frame_opacity = ps->o.frame_opacity;
 		} else {
@@ -961,7 +954,7 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 	// Track whether it's the highest window to paint
 	bool is_highest = true;
 	bool reg_ignore_valid = true;
-	win_stack_foreach_managed(w, wm_stack_end(ps->wm)) {
+	win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
 		__label__ skip_window;
 		bool to_paint = true;
 		// w->to_paint remembers whether this window is painted last time
@@ -981,7 +974,8 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		// Give up if it's not damaged or invisible, or it's unmapped and its
 		// pixmap is gone (for example due to a ConfigureNotify), or when it's
 		// excluded
-		if (w->state == WSTATE_UNMAPPED && w->number_of_animations == 0) {
+		if ((w->state == WSTATE_UNMAPPED || w->state == WSTATE_DESTROYED) &&
+		    w->number_of_animations == 0) {
 			if (window_opacity != 0 || blur_opacity != 0) {
 				log_warn("Window %#010x (%s) is unmapped but still has "
 				         "opacity",
@@ -1104,6 +1098,13 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 	skip_window:
 		reg_ignore_valid = reg_ignore_valid && w->reg_ignore_valid;
 		w->reg_ignore_valid = true;
+
+		if (w->state == WSTATE_DESTROYED && w->number_of_animations == 0) {
+			// the window should be destroyed because it was destroyed
+			// by X server and now its animations are finished
+			destroy_win_finish(ps, &w->base);
+			w = NULL;
+		}
 
 		// Avoid setting w->to_paint if w is freed
 		if (w) {
