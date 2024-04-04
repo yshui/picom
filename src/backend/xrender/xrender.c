@@ -14,6 +14,7 @@
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
+#include "compiler.h"
 #include "config.h"
 #include "kernel.h"
 #include "log.h"
@@ -831,8 +832,9 @@ static bool xrender_image_op(backend_t *base, enum image_operations op, image_ha
 	return true;
 }
 
-static void *xrender_create_blur_context(backend_t *base attr_unused,
-                                         enum blur_method method, void *args) {
+static void *
+xrender_create_blur_context(backend_t *base attr_unused, enum blur_method method,
+                            enum backend_image_format format attr_unused, void *args) {
 	auto ret = ccalloc(1, struct xrender_blur_context);
 	if (!method || method >= BLUR_METHOD_INVALID) {
 		ret->method = BLUR_METHOD_NONE;

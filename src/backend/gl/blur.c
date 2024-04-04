@@ -33,6 +33,8 @@ struct gl_blur_context {
 	int resize_width, resize_height;
 
 	int npasses;
+
+	enum backend_image_format format;
 };
 
 /**
@@ -256,13 +258,8 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 	return true;
 }
 
-bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
-                  struct backend_image *mask, coord_t mask_dst, const region_t *reg_blur,
-                  const region_t *reg_visible attr_unused, GLuint source_texture,
-                  geometry_t source_size, GLuint target_fbo, GLuint default_mask,
-                  bool high_precision) {
-	bool ret = false;
-
+static bool gl_blur_context_preallocate_textures(struct gl_blur_context *bctx,
+                                                 struct geometry source_size) {
 	if (source_size.width != bctx->fb_width || source_size.height != bctx->fb_height) {
 		// Resize the temporary textures used for blur in case the root
 		// size changed
@@ -282,10 +279,9 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
 			}
 
 			glBindTexture(GL_TEXTURE_2D, bctx->blur_textures[i]);
-			GLint format = GL_RGBA8;
-			if (high_precision) {
-				format = GL_RGBA16;
-			}
+			GLint format = bctx->format == BACKEND_IMAGE_FORMAT_PIXMAP_HIGH
+			                   ? GL_RGBA16
+			                   : GL_RGBA8;
 			glTexImage2D(GL_TEXTURE_2D, 0, format, tex_size->width,
 			             tex_size->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 
@@ -303,6 +299,14 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
 		}
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	}
+	return true;
+}
+
+bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
+                  struct backend_image *mask, coord_t mask_dst, const region_t *reg_blur,
+                  const region_t *reg_visible attr_unused, GLuint source_texture,
+                  geometry_t source_size, GLuint target_fbo, GLuint default_mask) {
+	bool ret = false;
 
 	// Remainder: regions are in Xorg coordinates
 	auto reg_blur_resized =
@@ -320,6 +324,10 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
 	                 pixman_region32_rectangles(&reg_blur_resized, &nrects_resized);
 	if (!nrects || !nrects_resized) {
 		return true;
+	}
+
+	if (!gl_blur_context_preallocate_textures(bctx, source_size)) {
+		return false;
 	}
 
 	auto coord = ccalloc(nrects * 16, GLint);
@@ -408,7 +416,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask, coor
 	return gl_blur_impl(opacity, bctx, (struct backend_image *)mask, mask_dst,
 	                    reg_blur, reg_visible, gd->back_texture,
 	                    (geometry_t){.width = gd->width, .height = gd->height},
-	                    gd->back_fbo, gd->default_mask_texture, gd->dithered_present);
+	                    gd->back_fbo, gd->default_mask_texture);
 }
 
 static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
@@ -828,7 +836,8 @@ out:
 	return success;
 }
 
-void *gl_create_blur_context(backend_t *base, enum blur_method method, void *args) {
+void *gl_create_blur_context(backend_t *base, enum blur_method method,
+                             enum backend_image_format format, void *args) {
 	bool success;
 	auto gd = (struct gl_data *)base;
 
@@ -863,6 +872,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method, void *arg
 	// Texture size will be defined by gl_blur
 	ctx->blur_textures = ccalloc(ctx->blur_texture_count, GLuint);
 	ctx->texture_sizes = ccalloc(ctx->blur_texture_count, struct texture_size);
+	ctx->format = format;
 	glGenTextures(ctx->blur_texture_count, ctx->blur_textures);
 
 	for (int i = 0; i < ctx->blur_texture_count; ++i) {

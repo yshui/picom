@@ -1261,7 +1261,8 @@ struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double 
 		    .size = (int)radius,
 		    .deviation = gaussian_kernel_std_for_size(radius, 0.5 / 256.0),
 		};
-		ctx->blur_context = gl_create_blur_context(base, BLUR_METHOD_GAUSSIAN, &args);
+		ctx->blur_context = gl_create_blur_context(
+		    base, BLUR_METHOD_GAUSSIAN, BACKEND_IMAGE_FORMAT_MASK, &args);
 		if (!ctx->blur_context) {
 			log_error("Failed to create shadow context");
 			free(ctx);
@@ -1360,7 +1361,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		    1.0, gsctx->blur_context, NULL, (coord_t){0}, &reg_blur, NULL,
 		    source_texture,
 		    (geometry_t){.width = new_inner->width, .height = new_inner->height},
-		    fbo, gd->default_mask_texture, gd->dithered_present);
+		    fbo, gd->default_mask_texture);
 		pixman_region32_fini(&reg_blur);
 	}
 
