@@ -107,6 +107,7 @@ struct gl_data {
 	gl_fill_shader_t fill_shader;
 	gl_shadow_shader_t shadow_shader;
 	GLuint back_texture, back_fbo;
+	GLuint temp_fbo;
 	GLint back_format;
 	GLuint frame_timing[2];
 	int current_frame_timing;

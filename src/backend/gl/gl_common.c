@@ -280,9 +280,7 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_texture *img) 
 	}
 
 	// Prepare framebuffer used for rendering and bind it
-	GLuint fbo;
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->temp_fbo);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
 	// Enable shaders
@@ -313,8 +311,8 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_texture *img) 
 
 	// Do actual recursive render to 1x1 texture
 	GLuint result_texture = _gl_average_texture_color(
-	    base, img->texture, img->auxiliary_texture[0], img->auxiliary_texture[1], fbo,
-	    img->width, img->height);
+	    base, img->texture, img->auxiliary_texture[0], img->auxiliary_texture[1],
+	    gd->temp_fbo, img->width, img->height);
 
 	// Cleanup vertex attributes
 	glDisableVertexAttribArray(vert_coord_loc);
@@ -329,7 +327,6 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_texture *img) 
 	glUseProgram(0);
 
 	// Cleanup framebuffers
-	glDeleteFramebuffers(1, &fbo);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	glDrawBuffer(GL_BACK);
 
@@ -733,6 +730,7 @@ void gl_fill(backend_t *base, struct color c, const region_t *clip) {
 
 image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg) {
 	auto tex = ccalloc(1, struct gl_texture);
+	auto gd = (struct gl_data *)base;
 	auto img = ccalloc(1, struct backend_image);
 	default_init_backend_image(img, size.width, size.height);
 	tex->width = size.width;
@@ -750,19 +748,16 @@ image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg)
 	             GL_UNSIGNED_BYTE, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
-	GLuint fbo;
 	glBlendFunc(GL_ONE, GL_ZERO);
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, gd->temp_fbo);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       tex->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
-	_gl_fill(base, (struct color){1, 1, 1, 1}, reg, fbo, size.height, false);
+	_gl_fill(base, (struct color){1, 1, 1, 1}, reg, gd->temp_fbo, size.height, false);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-	glDeleteFramebuffers(1, &fbo);
 	return (image_handle)img;
 }
 
@@ -863,6 +858,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
 	glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
+	glGenFramebuffers(1, &gd->temp_fbo);
 	glGenFramebuffers(1, &gd->back_fbo);
 	glGenTextures(1, &gd->back_texture);
 	if (!gd->back_fbo || !gd->back_texture) {
@@ -1032,6 +1028,8 @@ void gl_deinit(struct gl_data *gd) {
 	glDeleteTextures(1, &gd->default_mask_texture);
 	glDeleteTextures(1, &gd->back_texture);
 
+	glDeleteFramebuffers(1, &gd->temp_fbo);
+
 	glDeleteQueries(2, gd->frame_timing);
 
 	gl_check_err();
@@ -1080,9 +1078,7 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	glUseProgram(gd->dummy_prog);
 	glBindTexture(GL_TEXTURE_2D, inner->texture);
 
-	GLuint fbo;
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->temp_fbo);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       new_tex->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -1142,7 +1138,6 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	glDeleteBuffers(2, bo);
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-	glDeleteFramebuffers(1, &fbo);
 
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
@@ -1157,19 +1152,17 @@ static void gl_image_apply_alpha(backend_t *base, struct backend_image *img,
                                  const region_t *reg_op, double alpha) {
 	// Result color = 0 (GL_ZERO) + alpha (GL_CONSTANT_ALPHA) * original color
 	auto inner = (struct gl_texture *)img->inner;
+	auto gd = (struct gl_data *)base;
 	glBlendFunc(GL_ZERO, GL_CONSTANT_ALPHA);
 	glBlendColor(0, 0, 0, (GLclampf)alpha);
-	GLuint fbo;
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->temp_fbo);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       inner->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, fbo, inner->height,
+	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, gd->temp_fbo, inner->height,
 	         !inner->y_inverted);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-	glDeleteFramebuffers(1, &fbo);
 }
 
 void gl_present(backend_t *base, const region_t *region) {
@@ -1326,9 +1319,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, new_inner->width, new_inner->height, 0,
 	             GL_RED, GL_UNSIGNED_BYTE, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
-	GLuint fbo;
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->temp_fbo);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       source_texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -1362,7 +1353,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		    .border_width = mask->border_width,
 		    .max_brightness = mask->max_brightness,
 		};
-		gl_blit_inner(base, fbo, &blit_args, coords, indices, 1);
+		gl_blit_inner(base, gd->temp_fbo, &blit_args, coords, indices, 1);
 	}
 
 	gl_check_err();
@@ -1376,7 +1367,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		             new_inner->height, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
 		glBindTexture(GL_TEXTURE_2D, 0);
 
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->temp_fbo);
 		glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
 		                       GL_TEXTURE_2D, tmp_texture, 0);
 
@@ -1390,7 +1381,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		    1.0, gsctx->blur_context, NULL, (coord_t){0}, &reg_blur, NULL,
 		    source_texture,
 		    (geometry_t){.width = new_inner->width, .height = new_inner->height},
-		    fbo, gd->default_mask_texture);
+		    gd->temp_fbo, gd->default_mask_texture);
 		pixman_region32_fini(&reg_blur);
 	}
 
@@ -1400,7 +1391,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	glBindTexture(GL_TEXTURE_2D, new_inner->texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, new_inner->width, new_inner->height, 0,
 	             GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->temp_fbo);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       new_inner->texture, 0);
 	glClearColor(0, 0, 0, 0);
@@ -1452,7 +1443,6 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		glDeleteTextures(1, (GLuint[]){tmp_texture});
 	}
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-	glDeleteFramebuffers(1, &fbo);
 	gl_check_err();
 	return (image_handle)new_img;
 }
