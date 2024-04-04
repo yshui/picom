@@ -1029,6 +1029,7 @@ void gl_deinit(struct gl_data *gd) {
 	glDeleteTextures(1, &gd->back_texture);
 
 	glDeleteFramebuffers(1, &gd->temp_fbo);
+	glDeleteFramebuffers(1, &gd->back_fbo);
 
 	glDeleteQueries(2, gd->frame_timing);
 
