@@ -1,7 +1,9 @@
 #include "gl_common.h"
-
+// Don't macro expand bool!
+#undef bool
 // clang-format off
 const char dummy_frag[] = GLSL(330,
+	layout(location = UNIFORM_TEX_LOC)
 	uniform sampler2D tex;
 	in vec2 texcoord;
 	void main() {
@@ -10,6 +12,7 @@ const char dummy_frag[] = GLSL(330,
 );
 
 const char present_frag[] = GLSL(330,
+	layout(location = UNIFORM_TEX_LOC)
 	uniform sampler2D tex;
 	in vec2 texcoord;
 	vec4 dither(vec4, vec2);
@@ -19,7 +22,9 @@ const char present_frag[] = GLSL(330,
 );
 
 const char blend_with_mask_frag[] = GLSL(330,
+	layout(location = UNIFORM_TEX_LOC)
 	uniform sampler2D tex;
+	layout(location = UNIFORM_OPACITY_LOC)
 	uniform float opacity;
 	in vec2 texcoord;
 	float mask_factor();
@@ -29,6 +34,7 @@ const char blend_with_mask_frag[] = GLSL(330,
 );
 
 const char fill_frag[] = GLSL(330,
+	layout(location = UNIFORM_COLOR_LOC)
 	uniform vec4 color;
 	void main() {
 		gl_FragColor = color;
@@ -37,6 +43,7 @@ const char fill_frag[] = GLSL(330,
 
 const char fill_vert[] = GLSL(330,
 	layout(location = 0) in vec2 in_coord;
+	layout(location = UNIFORM_PROJECTION_LOC)
 	uniform mat4 projection;
 	void main() {
 		gl_Position = projection * vec4(in_coord, 0, 1);
@@ -44,6 +51,7 @@ const char fill_vert[] = GLSL(330,
 );
 
 const char interpolating_frag[] = GLSL(330,
+	layout(location = UNIFORM_TEX_LOC)
 	uniform sampler2D tex;
 	in vec2 texcoord;
 	void main() {
@@ -52,7 +60,9 @@ const char interpolating_frag[] = GLSL(330,
 );
 
 const char interpolating_vert[] = GLSL(330,
+	layout(location = UNIFORM_PROJECTION_LOC)
 	uniform mat4 projection;
+	layout(location = UNIFORM_TEXSIZE_LOC)
 	uniform vec2 texsize;
 	layout(location = 0) in vec2 in_coord;
 	layout(location = 1) in vec2 in_texcoord;
@@ -63,9 +73,13 @@ const char interpolating_vert[] = GLSL(330,
 	}
 );
 const char masking_glsl[] = GLSL(330,
+	layout(location = UNIFORM_MASK_TEX_LOC)
 	uniform sampler2D mask_tex;
+	layout(location = UNIFORM_MASK_OFFSET_LOC)
 	uniform vec2 mask_offset;
+	layout(location = UNIFORM_MASK_CORNER_RADIUS_LOC)
 	uniform float mask_corner_radius;
+	layout(location = UNIFORM_MASK_INVERTED_LOC)
 	uniform bool mask_inverted;
 	in vec2 texcoord;
 	float mask_rectangle_sdf(vec2 point, vec2 half_size) {
@@ -91,15 +105,24 @@ const char masking_glsl[] = GLSL(330,
 	}
 );
 const char win_shader_glsl[] = GLSL(330,
+	layout(location = UNIFORM_OPACITY_LOC)
 	uniform float opacity;
+	layout(location = UNIFORM_DIM_LOC)
 	uniform float dim;
+	layout(location = UNIFORM_CORNER_RADIUS_LOC)
 	uniform float corner_radius;
+	layout(location = UNIFORM_BORDER_WIDTH_LOC)
 	uniform float border_width;
+	layout(location = UNIFORM_INVERT_COLOR_LOC)
 	uniform bool invert_color;
 	in vec2 texcoord;
+	layout(location = UNIFORM_TEX_LOC)
 	uniform sampler2D tex;
+	layout(location = UNIFORM_EFFECTIVE_SIZE_LOC)
 	uniform vec2 effective_size;
+	layout(location = UNIFORM_BRIGHTNESS_LOC)
 	uniform sampler2D brightness;
+	layout(location = UNIFORM_MAX_BRIGHTNESS_LOC)
 	uniform float max_brightness;
 	// Signed distance field for rectangle center at (0, 0), with size of
 	// half_size * 2
@@ -166,6 +189,7 @@ const char win_shader_default[] = GLSL(330,
 );
 
 const char present_vertex_shader[] = GLSL(330,
+	layout(location = UNIFORM_PROJECTION_LOC)
 	uniform mat4 projection;
 	layout(location = 0) in vec2 coord;
 	out vec2 texcoord;
@@ -175,8 +199,11 @@ const char present_vertex_shader[] = GLSL(330,
 	}
 );
 const char vertex_shader[] = GLSL(330,
+	layout(location = UNIFORM_PROJECTION_LOC)
 	uniform mat4 projection;
-	uniform float scale = 1.0;
+	layout(location = UNIFORM_SCALE_LOC)
+	uniform float scale = 1.0f;
+	layout(location = UNIFORM_TEXORIG_LOC)
 	uniform vec2 texorig;
 	layout(location = 0) in vec2 coord;
 	layout(location = 1) in vec2 in_texcoord;
@@ -211,7 +238,9 @@ const char dither_glsl[] = GLSL(330,
 	}
 );
 const char shadow_colorization_frag[] = GLSL(330,
+	layout(location = UNIFORM_COLOR_LOC)
 	uniform vec4 color;
+	layout(location = UNIFORM_TEX_LOC)
 	uniform sampler2D tex;
 	in vec2 texcoord;
 	out vec4 out_color;

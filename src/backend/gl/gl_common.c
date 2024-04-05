@@ -14,7 +14,6 @@
 #include "kernel.h"
 #include "log.h"
 #include "region.h"
-#include "string_utils.h"
 #include "types.h"
 #include "utils.h"
 
@@ -168,7 +167,7 @@ void gl_destroy_window_shader(backend_t *backend_data attr_unused, void *shader)
 		return;
 	}
 
-	auto pprogram = (gl_win_shader_t *)shader;
+	auto pprogram = (struct gl_shader *)shader;
 	if (pprogram->prog) {
 		glDeleteProgram(pprogram->prog);
 		pprogram->prog = 0;
@@ -285,8 +284,7 @@ static GLuint gl_average_texture_color(backend_t *base, struct gl_texture *img) 
 
 	// Enable shaders
 	glUseProgram(gd->brightness_shader.prog);
-	glUniform2f(glGetUniformLocationChecked(gd->brightness_shader.prog, "texsize"),
-	            (GLfloat)img->width, (GLfloat)img->height);
+	glUniform2f(UNIFORM_TEXSIZE_LOC, (GLfloat)img->width, (GLfloat)img->height);
 
 	// Prepare vertex attributes
 	GLuint vao;
@@ -364,61 +362,47 @@ gl_blit_inner(backend_t *base, GLuint target_fbo, struct backend_blit_args *blit
 		brightness = gl_average_texture_color(base, img);
 	}
 
-	auto win_shader = (gl_win_shader_t *)blit_args->shader;
+	auto win_shader = (struct gl_shader *)blit_args->shader;
 	assert(win_shader);
 	assert(win_shader->prog);
 	glUseProgram(win_shader->prog);
-	if (win_shader->uniform_opacity >= 0) {
-		glUniform1f(win_shader->uniform_opacity, (float)blit_args->opacity);
+#define set_uniform(type, loc, ...)                                                      \
+	if (win_shader->uniform_bitmask & (1 << loc)) {                                  \
+		glUniform##type(loc, __VA_ARGS__);                                       \
 	}
-	if (win_shader->uniform_invert_color >= 0) {
-		glUniform1i(win_shader->uniform_invert_color, blit_args->color_inverted);
-	}
-	if (win_shader->uniform_tex >= 0) {
-		glUniform1i(win_shader->uniform_tex, 0);
-	}
-	if (win_shader->uniform_effective_size >= 0) {
-		glUniform2f(win_shader->uniform_effective_size, (float)blit_args->ewidth,
-		            (float)blit_args->eheight);
-	}
-	if (win_shader->uniform_dim >= 0) {
-		glUniform1f(win_shader->uniform_dim, (float)blit_args->dim);
-	}
-	if (win_shader->uniform_brightness >= 0) {
-		glUniform1i(win_shader->uniform_brightness, 1);
-	}
-	if (win_shader->uniform_max_brightness >= 0) {
-		glUniform1f(win_shader->uniform_max_brightness,
-		            (float)blit_args->max_brightness);
-	}
-	if (win_shader->uniform_corner_radius >= 0) {
-		glUniform1f(win_shader->uniform_corner_radius, (float)blit_args->corner_radius);
-	}
-	if (win_shader->uniform_border_width >= 0) {
+	set_uniform(1f, UNIFORM_OPACITY_LOC, (float)blit_args->opacity);
+	set_uniform(1i, UNIFORM_INVERT_COLOR_LOC, blit_args->color_inverted);
+	set_uniform(1i, UNIFORM_TEX_LOC, 0);
+	set_uniform(2f, UNIFORM_EFFECTIVE_SIZE_LOC, (float)blit_args->ewidth,
+	            (float)blit_args->eheight);
+	set_uniform(1f, UNIFORM_DIM_LOC, (float)blit_args->dim);
+	set_uniform(1i, UNIFORM_BRIGHTNESS_LOC, 1);
+	set_uniform(1f, UNIFORM_MAX_BRIGHTNESS_LOC, (float)blit_args->max_brightness);
+	set_uniform(1f, UNIFORM_CORNER_RADIUS_LOC, (float)blit_args->corner_radius);
+	{
 		auto border_width = blit_args->border_width;
 		if (border_width > blit_args->corner_radius) {
 			border_width = 0;
 		}
-		glUniform1f(win_shader->uniform_border_width, (float)border_width);
+		set_uniform(1f, UNIFORM_BORDER_WIDTH_LOC, (float)border_width);
 	}
-	if (win_shader->uniform_time >= 0) {
+	if (win_shader->uniform_bitmask & (1 << UNIFORM_TIME_LOC)) {
 		struct timespec ts;
 		clock_gettime(CLOCK_MONOTONIC, &ts);
-		glUniform1f(win_shader->uniform_time,
+		glUniform1f(UNIFORM_TIME_LOC,
 		            (float)ts.tv_sec * 1000.0F + (float)ts.tv_nsec / 1.0e6F);
 	}
 
-	glUniform1i(win_shader->uniform_mask_tex, 2);
+	glUniform1i(UNIFORM_MASK_TEX_LOC, 2);
 	if (blit_args->mask != NULL) {
-		glUniform2f(win_shader->uniform_mask_offset,
-		            (float)blit_args->mask->origin.x,
+		glUniform2f(UNIFORM_MASK_OFFSET_LOC, (float)blit_args->mask->origin.x,
 		            (float)blit_args->mask->origin.y);
-		glUniform1i(win_shader->uniform_mask_inverted, blit_args->mask->inverted);
-		glUniform1f(win_shader->uniform_mask_corner_radius,
+		glUniform1i(UNIFORM_MASK_INVERTED_LOC, blit_args->mask->inverted);
+		glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC,
 		            (GLfloat)blit_args->mask->corner_radius);
 	} else {
-		glUniform1i(win_shader->uniform_mask_inverted, 0);
-		glUniform1f(win_shader->uniform_mask_corner_radius, 0);
+		glUniform1i(UNIFORM_MASK_INVERTED_LOC, 0);
+		glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC, 0);
 	}
 
 	glActiveTexture(GL_TEXTURE2);
@@ -583,7 +567,7 @@ void gl_compose(backend_t *base, image_handle image, coord_t image_dst,
 	struct backend_blit_args blit_args = {
 	    .source_image = (image_handle)img->inner,
 	    .mask = mask ? &mask_args : NULL,
-	    .shader = (void *)img->shader ?: gd->default_shader,
+	    .shader = (void *)img->shader ?: &gd->default_shader,
 	    .opacity = img->opacity,
 	    .color_inverted = img->color_inverted,
 	    .ewidth = img->ewidth,
@@ -603,7 +587,7 @@ void gl_compose(backend_t *base, image_handle image, coord_t image_dst,
  * Load a GLSL main program from shader strings.
  */
 static bool gl_win_shader_from_stringv(const char **vshader_strv,
-                                       const char **fshader_strv, gl_win_shader_t *ret) {
+                                       const char **fshader_strv, struct gl_shader *ret) {
 	// Build program
 	ret->prog = gl_create_program_from_strv(vshader_strv, fshader_strv);
 	if (!ret->prog) {
@@ -611,23 +595,6 @@ static bool gl_win_shader_from_stringv(const char **vshader_strv,
 		gl_check_err();
 		return false;
 	}
-
-	// Get uniform addresses
-	bind_uniform(ret, opacity);
-	bind_uniform(ret, invert_color);
-	bind_uniform(ret, tex);
-	bind_uniform(ret, effective_size);
-	bind_uniform(ret, dim);
-	bind_uniform(ret, brightness);
-	bind_uniform(ret, max_brightness);
-	bind_uniform(ret, corner_radius);
-	bind_uniform(ret, border_width);
-	bind_uniform(ret, time);
-
-	bind_uniform(ret, mask_tex);
-	bind_uniform(ret, mask_offset);
-	bind_uniform(ret, mask_inverted);
-	bind_uniform(ret, mask_corner_radius);
 
 	gl_check_err();
 
@@ -675,8 +642,8 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 	GLuint bo[2];
 	glGenBuffers(2, bo);
 	glUseProgram(gd->fill_shader.prog);
-	glUniform4f(gd->fill_shader.color_loc, (GLfloat)c.red, (GLfloat)c.green,
-	            (GLfloat)c.blue, (GLfloat)c.alpha);
+	glUniform4f(UNIFORM_COLOR_LOC, (GLfloat)c.red, (GLfloat)c.green, (GLfloat)c.blue,
+	            (GLfloat)c.alpha);
 	glEnableVertexAttribArray(fill_vert_in_coord_loc);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
@@ -789,15 +756,24 @@ xcb_pixmap_t gl_release_image(backend_t *base, image_handle image) {
 	return pixmap;
 }
 
-void *gl_create_window_shader(backend_t *backend_data attr_unused, const char *source) {
-	auto win_shader = (gl_win_shader_t *)ccalloc(1, gl_win_shader_t);
+static inline void gl_init_uniform_bitmask(struct gl_shader *shader) {
+	GLint number_of_uniforms = 0;
+	glGetProgramiv(shader->prog, GL_ACTIVE_UNIFORMS, &number_of_uniforms);
+	for (int i = 0; i < number_of_uniforms; i++) {
+		char name[32];
+		glGetActiveUniformName(shader->prog, (GLuint)i, sizeof(name), NULL, name);
+		GLint loc = glGetUniformLocation(shader->prog, name);
+		assert(loc >= 0 && loc <= UNIFORM_TEXSIZE_LOC);
+		shader->uniform_bitmask |= 1 << loc;
+	}
+}
 
+static bool gl_create_window_shader_inner(struct gl_shader *out_shader, const char *source) {
 	const char *vert_shaders[2] = {vertex_shader, NULL};
 	const char *frag_shaders[4] = {win_shader_glsl, masking_glsl, source, NULL};
 
-	if (!gl_win_shader_from_stringv(vert_shaders, frag_shaders, win_shader)) {
-		free(win_shader);
-		return NULL;
+	if (!gl_win_shader_from_stringv(vert_shaders, frag_shaders, out_shader)) {
+		return false;
 	}
 
 	GLint viewport_dimensions[2];
@@ -811,16 +787,27 @@ void *gl_create_window_shader(backend_t *backend_data attr_unused, const char *s
 	                                   {0, 0, 0, 0},
 	                                   {-1, -1, 0, 1}};
 
-	int pml = glGetUniformLocationChecked(win_shader->prog, "projection");
-	glUseProgram(win_shader->prog);
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	glUseProgram(out_shader->prog);
+	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
 	glUseProgram(0);
 
-	return win_shader;
+	gl_init_uniform_bitmask(out_shader);
+	gl_check_err();
+
+	return true;
+}
+
+void *gl_create_window_shader(backend_t *backend_data attr_unused, const char *source) {
+	auto ret = ccalloc(1, struct gl_shader);
+	if (!gl_create_window_shader_inner(ret, source)) {
+		free(ret);
+		return NULL;
+	}
+	return ret;
 }
 
 uint64_t gl_get_shader_attributes(backend_t *backend_data attr_unused, void *shader) {
-	auto win_shader = (gl_win_shader_t *)shader;
+	auto win_shader = (struct gl_shader *)shader;
 	uint64_t ret = 0;
 	if (glGetUniformLocation(win_shader->prog, "time") >= 0) {
 		ret |= SHADER_ATTRIBUTE_ANIMATED;
@@ -829,6 +816,11 @@ uint64_t gl_get_shader_attributes(backend_t *backend_data attr_unused, void *sha
 }
 
 bool gl_init(struct gl_data *gd, session_t *ps) {
+	if (!epoxy_has_gl_extension("GL_ARB_explicit_uniform_location")) {
+		log_error("GL_ARB_explicit_uniform_location support is required but "
+		          "missing.");
+		return false;
+	}
 	glGenQueries(2, gd->frame_timing);
 	gd->current_frame_timing = 0;
 
@@ -885,8 +877,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	// Initialize shaders
-	gd->default_shader = gl_create_window_shader(NULL, win_shader_default);
-	if (!gd->default_shader) {
+	if (!gl_create_window_shader_inner(&gd->default_shader, win_shader_default)) {
 		log_error("Failed to create window shaders");
 		return false;
 	}
@@ -900,10 +891,8 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	                                   {-1, -1, 0, 1}};
 
 	gd->fill_shader.prog = gl_create_program_from_str(fill_vert, fill_frag);
-	gd->fill_shader.color_loc = glGetUniformLocation(gd->fill_shader.prog, "color");
-	int pml = glGetUniformLocationChecked(gd->fill_shader.prog, "projection");
 	glUseProgram(gd->fill_shader.prog);
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
 	glUseProgram(0);
 
 	gd->dithered_present = ps->o.dithered_present;
@@ -926,25 +915,20 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 		return false;
 	}
 
-	pml = glGetUniformLocationChecked(gd->dummy_prog, "projection");
 	glUseProgram(gd->dummy_prog);
-	glUniform1i(glGetUniformLocationChecked(gd->dummy_prog, "tex"), 0);
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	glUniform1i(UNIFORM_TEX_LOC, 0);
+	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
 	if (gd->present_prog != gd->dummy_prog) {
-		pml = glGetUniformLocationChecked(gd->present_prog, "projection");
 		glUseProgram(gd->present_prog);
-		glUniform1i(glGetUniformLocationChecked(gd->present_prog, "tex"), 0);
-		glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+		glUniform1i(UNIFORM_TEX_LOC, 0);
+		glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
 	}
 
 	gd->shadow_shader.prog =
 	    gl_create_program_from_str(present_vertex_shader, shadow_colorization_frag);
-	gd->shadow_shader.uniform_color =
-	    glGetUniformLocationChecked(gd->shadow_shader.prog, "color");
-	pml = glGetUniformLocationChecked(gd->shadow_shader.prog, "projection");
 	glUseProgram(gd->shadow_shader.prog);
-	glUniform1i(glGetUniformLocationChecked(gd->shadow_shader.prog, "tex"), 0);
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	glUniform1i(UNIFORM_TEX_LOC, 0);
+	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
 	glBindFragDataLocation(gd->shadow_shader.prog, 0, "out_color");
 
 	gd->brightness_shader.prog =
@@ -953,10 +937,9 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 		log_error("Failed to create the brightness shader");
 		return false;
 	}
-	pml = glGetUniformLocationChecked(gd->brightness_shader.prog, "projection");
 	glUseProgram(gd->brightness_shader.prog);
-	glUniform1i(glGetUniformLocationChecked(gd->brightness_shader.prog, "tex"), 0);
-	glUniformMatrix4fv(pml, 1, false, projection_matrix[0]);
+	glUniform1i(UNIFORM_TEX_LOC, 0);
+	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
 
 	glUseProgram(0);
 
@@ -1007,9 +990,9 @@ void gl_deinit(struct gl_data *gd) {
 		gd->logger = NULL;
 	}
 
-	if (gd->default_shader) {
-		gl_destroy_window_shader(&gd->base, gd->default_shader);
-		gd->default_shader = NULL;
+	if (gd->default_shader.prog) {
+		glDeleteProgram(gd->default_shader.prog);
+		gd->default_shader.prog = 0;
 	}
 	glDeleteProgram(gd->dummy_prog);
 	if (gd->present_prog != gd->dummy_prog) {
@@ -1344,7 +1327,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		struct backend_blit_args blit_args = {
 		    .source_image = (image_handle)mask->inner,
 		    .mask = NULL,
-		    .shader = (void *)mask->shader ?: gd->default_shader,
+		    .shader = (void *)mask->shader ?: &gd->default_shader,
 		    .opacity = mask->opacity,
 		    .color_inverted = mask->color_inverted,
 		    .ewidth = mask->ewidth,
@@ -1402,7 +1385,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	glUseProgram(gd->shadow_shader.prog);
 	// The shadow color is converted to the premultiplied format to respect the
 	// globally set glBlendFunc and thus get the correct and expected result.
-	glUniform4f(gd->shadow_shader.uniform_color, (GLfloat)(color.red * color.alpha),
+	glUniform4f(UNIFORM_COLOR_LOC, (GLfloat)(color.red * color.alpha),
 	            (GLfloat)(color.green * color.alpha),
 	            (GLfloat)(color.blue * color.alpha), (GLfloat)color.alpha);
 

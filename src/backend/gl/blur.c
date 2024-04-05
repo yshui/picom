@@ -8,7 +8,7 @@
 
 struct gl_blur_context {
 	enum blur_method method;
-	gl_blur_shader_t *blur_shader;
+	struct gl_shader *blur_shader;
 
 	/// Temporary textures used for blurring
 	GLuint *blur_textures;
@@ -48,7 +48,7 @@ bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx, const rect_t *
 
 	int curr = 0;
 	for (int i = 0; i < bctx->npasses; ++i) {
-		const gl_blur_shader_t *p = &bctx->blur_shader[i];
+		auto p = &bctx->blur_shader[i];
 		assert(p->prog);
 
 		assert(bctx->blur_textures[curr]);
@@ -72,16 +72,20 @@ bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx, const rect_t *
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glUseProgram(p->prog);
-		glUniform2f(p->uniform_pixel_norm, 1.0F / (GLfloat)tex_width,
-		            1.0F / (GLfloat)tex_height);
+		if (p->uniform_bitmask & (1 << UNIFORM_PIXEL_NORM_LOC)) {
+			// If the last pass is a trivial blend pass, it will not have
+			// pixel_norm.
+			glUniform2f(UNIFORM_PIXEL_NORM_LOC, 1.0F / (GLfloat)tex_width,
+			            1.0F / (GLfloat)tex_height);
+		}
 
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, default_mask);
 
-		glUniform1i(p->uniform_mask_tex, 1);
-		glUniform2f(p->uniform_mask_offset, 0.0F, 0.0F);
-		glUniform1i(p->uniform_mask_inverted, 0);
-		glUniform1f(p->uniform_mask_corner_radius, 0.0F);
+		glUniform1i(UNIFORM_MASK_TEX_LOC, 1);
+		glUniform2f(UNIFORM_MASK_OFFSET_LOC, 0.0F, 0.0F);
+		glUniform1i(UNIFORM_MASK_INVERTED_LOC, 0);
+		glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC, 0.0F);
 
 		// The number of indices in the selected vertex array
 		GLsizei nelems;
@@ -102,7 +106,7 @@ bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx, const rect_t *
 				return false;
 			}
 
-			glUniform1f(p->uniform_opacity, 1.0F);
+			glUniform1f(UNIFORM_OPACITY_LOC, 1.0F);
 		} else {
 			// last pass, draw directly into the back buffer, with origin
 			// regions. And apply mask if requested
@@ -110,21 +114,21 @@ bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx, const rect_t *
 				auto inner = (struct gl_texture *)mask->inner;
 				glActiveTexture(GL_TEXTURE1);
 				glBindTexture(GL_TEXTURE_2D, inner->texture);
-				glUniform1i(p->uniform_mask_inverted, mask->color_inverted);
-				glUniform1f(p->uniform_mask_corner_radius,
+				glUniform1i(UNIFORM_MASK_INVERTED_LOC, mask->color_inverted);
+				glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC,
 				            (float)mask->corner_radius);
 				glUniform2f(
-				    p->uniform_mask_offset, (float)(mask_dst.x),
+				    UNIFORM_MASK_OFFSET_LOC, (float)(mask_dst.x),
 				    (float)(bctx->fb_height - mask_dst.y - inner->height));
 			}
 			glBindVertexArray(vao[0]);
 			nelems = vao_nelems[0];
 			glBindFramebuffer(GL_FRAMEBUFFER, target_fbo);
 
-			glUniform1f(p->uniform_opacity, (float)opacity);
+			glUniform1f(UNIFORM_OPACITY_LOC, (float)opacity);
 		}
 
-		glUniform2f(p->texorig_loc, (GLfloat)texorig_x, (GLfloat)texorig_y);
+		glUniform2f(UNIFORM_TEXORIG_LOC, (GLfloat)texorig_x, (GLfloat)texorig_y);
 		glDrawElements(GL_TRIANGLES, nelems, GL_UNSIGNED_INT, NULL);
 
 		// XXX use multiple draw calls is probably going to be slow than
@@ -146,11 +150,11 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 	int scale_factor = 1;
 
 	// Kawase downsample pass
-	const gl_blur_shader_t *down_pass = &bctx->blur_shader[0];
+	auto down_pass = &bctx->blur_shader[0];
 	assert(down_pass->prog);
 	glUseProgram(down_pass->prog);
 
-	glUniform2f(down_pass->texorig_loc, (GLfloat)extent->x1, (GLfloat)dst_y_fb_coord);
+	glUniform2f(UNIFORM_TEXORIG_LOC, (GLfloat)extent->x1, (GLfloat)dst_y_fb_coord);
 
 	glBindVertexArray(vao[1]);
 	int nelems = vao_nelems[1];
@@ -182,29 +186,29 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i]);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-		glUniform1f(down_pass->scale_loc, (GLfloat)scale_factor);
+		glUniform1f(UNIFORM_SCALE_LOC, (GLfloat)scale_factor);
 
-		glUniform2f(down_pass->uniform_pixel_norm, 1.0F / (GLfloat)tex_width,
+		glUniform2f(UNIFORM_PIXEL_NORM_LOC, 1.0F / (GLfloat)tex_width,
 		            1.0F / (GLfloat)tex_height);
 
 		glDrawElements(GL_TRIANGLES, nelems, GL_UNSIGNED_INT, NULL);
 	}
 
 	// Kawase upsample pass
-	const gl_blur_shader_t *up_pass = &bctx->blur_shader[1];
+	auto up_pass = &bctx->blur_shader[1];
 	assert(up_pass->prog);
 	glUseProgram(up_pass->prog);
 
-	glUniform2f(up_pass->texorig_loc, (GLfloat)extent->x1, (GLfloat)dst_y_fb_coord);
+	glUniform2f(UNIFORM_TEXORIG_LOC, (GLfloat)extent->x1, (GLfloat)dst_y_fb_coord);
 
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, default_mask);
 
-	glUniform1i(up_pass->uniform_mask_tex, 1);
-	glUniform2f(up_pass->uniform_mask_offset, 0.0F, 0.0F);
-	glUniform1i(up_pass->uniform_mask_inverted, 0);
-	glUniform1f(up_pass->uniform_mask_corner_radius, 0.0F);
-	glUniform1f(up_pass->uniform_opacity, 1.0F);
+	glUniform1i(UNIFORM_MASK_TEX_LOC, 1);
+	glUniform2f(UNIFORM_MASK_OFFSET_LOC, 0.0F, 0.0F);
+	glUniform1i(UNIFORM_MASK_INVERTED_LOC, 0);
+	glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC, 0.0F);
+	glUniform1f(UNIFORM_OPACITY_LOC, 1.0F);
 
 	for (int i = iterations - 1; i >= 0; --i) {
 		// Scale output width / height back by two in each iteration
@@ -233,23 +237,22 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 				auto inner = (struct gl_texture *)mask->inner;
 				glActiveTexture(GL_TEXTURE1);
 				glBindTexture(GL_TEXTURE_2D, inner->texture);
-				glUniform1i(up_pass->uniform_mask_inverted,
-				            mask->color_inverted);
-				glUniform1f(up_pass->uniform_mask_corner_radius,
+				glUniform1i(UNIFORM_MASK_INVERTED_LOC, mask->color_inverted);
+				glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC,
 				            (float)mask->corner_radius);
 				glUniform2f(
-				    up_pass->uniform_mask_offset, (float)(mask_dst.x),
+				    UNIFORM_MASK_OFFSET_LOC, (float)(mask_dst.x),
 				    (float)(bctx->fb_height - mask_dst.y - inner->height));
 			}
 			glBindVertexArray(vao[0]);
 			nelems = vao_nelems[0];
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target_fbo);
 
-			glUniform1f(up_pass->uniform_opacity, (GLfloat)opacity);
+			glUniform1f(UNIFORM_OPACITY_LOC, (GLfloat)opacity);
 		}
 
-		glUniform1f(up_pass->scale_loc, (GLfloat)scale_factor);
-		glUniform2f(up_pass->uniform_pixel_norm, 1.0F / (GLfloat)tex_width,
+		glUniform1f(UNIFORM_SCALE_LOC, (GLfloat)scale_factor);
+		glUniform2f(UNIFORM_PIXEL_NORM_LOC, 1.0F / (GLfloat)tex_width,
 		            1.0F / (GLfloat)tex_height);
 
 		glDrawElements(GL_TRIANGLES, nelems, GL_UNSIGNED_INT, NULL);
@@ -422,7 +425,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask, coor
 	                    gd->back_fbo, gd->default_mask_texture);
 }
 
-static inline void gl_free_blur_shader(gl_blur_shader_t *shader) {
+static inline void gl_free_blur_shader(struct gl_shader *shader) {
 	if (shader->prog) {
 		glDeleteProgram(shader->prog);
 	}
@@ -486,7 +489,7 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 	ctx->blur_texture_count = 2;
 	ctx->blur_fbo_count = 1;
 
-	ctx->blur_shader = ccalloc(max2(2, nkernels), gl_blur_shader_t);
+	ctx->blur_shader = ccalloc(max2(2, nkernels), struct gl_shader);
 
 	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
 	// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
@@ -496,8 +499,11 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 	// clang-format off
 	static const char *FRAG_SHADER_BLUR = GLSL(330,
 		%s\n // other extension pragmas
+		layout(location = UNIFORM_TEX_SRC_LOC)
 		uniform sampler2D tex_src;
+		layout(location = UNIFORM_PIXEL_NORM_LOC)
 		uniform vec2 pixel_norm;
+		layout(location = UNIFORM_OPACITY_LOC)
 		uniform float opacity;
 		in vec2 texcoord;
 		out vec4 out_color;
@@ -606,25 +612,12 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 			success = false;
 			goto out;
 		}
+		pass->uniform_bitmask = 1 << UNIFORM_PIXEL_NORM_LOC;
 		glBindFragDataLocation(pass->prog, 0, "out_color");
-
-		// Get uniform addresses
-		bind_uniform(pass, pixel_norm);
-		bind_uniform(pass, opacity);
-
-		bind_uniform(pass, mask_tex);
-		bind_uniform(pass, mask_offset);
-		bind_uniform(pass, mask_inverted);
-		bind_uniform(pass, mask_corner_radius);
-		log_debug("Uniform locations: %d %d %d %d %d", pass->uniform_mask_tex,
-		          pass->uniform_mask_offset, pass->uniform_mask_inverted,
-		          pass->uniform_mask_corner_radius, pass->uniform_opacity);
-		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 
 		// Setup projection matrix
 		glUseProgram(pass->prog);
-		int pml = glGetUniformLocationChecked(pass->prog, "projection");
-		glUniformMatrix4fv(pml, 1, false, projection);
+		glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection);
 		glUseProgram(0);
 
 		ctx->resize_width += kern->w / 2;
@@ -638,18 +631,10 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		pass->prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
 		    (const char *[]){blend_with_mask_frag, masking_glsl, NULL});
-		pass->uniform_pixel_norm = -1;
-		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
-		bind_uniform(pass, mask_tex);
-		bind_uniform(pass, mask_offset);
-		bind_uniform(pass, mask_inverted);
-		bind_uniform(pass, mask_corner_radius);
-		bind_uniform(pass, opacity);
 
 		// Setup projection matrix
 		glUseProgram(pass->prog);
-		int pml = glGetUniformLocationChecked(pass->prog, "projection");
-		glUniformMatrix4fv(pml, 1, false, projection);
+		glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection);
 		glUseProgram(0);
 
 		ctx->npasses = 2;
@@ -692,7 +677,7 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 	ctx->resize_height += blur_params->expand;
 
 	ctx->npasses = 2;
-	ctx->blur_shader = ccalloc(ctx->npasses, gl_blur_shader_t);
+	ctx->blur_shader = ccalloc(ctx->npasses, struct gl_shader);
 
 	char *lc_numeric_old = strdup(setlocale(LC_NUMERIC, NULL));
 	// Enforce LC_NUMERIC locale "C" here to make sure decimal point is sane
@@ -704,8 +689,11 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 	{
 		// clang-format off
 		static const char *FRAG_SHADER_DOWN = GLSL(330,
+			layout(location = UNIFORM_TEX_SRC_LOC)
 			uniform sampler2D tex_src;
+			layout(location = UNIFORM_SCALE_LOC)
 			uniform float scale = 1.0;
+			layout(location = UNIFORM_PIXEL_NORM_LOC)
 			uniform vec2 pixel_norm;
 			in vec2 texcoord;
 			out vec4 out_color;
@@ -741,17 +729,9 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 		}
 		glBindFragDataLocation(down_pass->prog, 0, "out_color");
 
-		// Get uniform addresses
-		bind_uniform(down_pass, pixel_norm);
-		down_pass->texorig_loc =
-		    glGetUniformLocationChecked(down_pass->prog, "texorig");
-		down_pass->scale_loc =
-		    glGetUniformLocationChecked(down_pass->prog, "scale");
-
 		// Setup projection matrix
 		glUseProgram(down_pass->prog);
-		int pml = glGetUniformLocationChecked(down_pass->prog, "projection");
-		glUniformMatrix4fv(pml, 1, false, projection);
+		glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection);
 		glUseProgram(0);
 	}
 
@@ -760,9 +740,13 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 	{
 		// clang-format off
 		static const char *FRAG_SHADER_UP = GLSL(330,
+			layout(location = UNIFORM_TEX_SRC_LOC)
 			uniform sampler2D tex_src;
+			layout(location = UNIFORM_SCALE_LOC)
 			uniform float scale = 1.0;
+			layout(location = UNIFORM_PIXEL_NORM_LOC)
 			uniform vec2 pixel_norm;
+			layout(location = UNIFORM_OPACITY_LOC)
 			uniform float opacity;
 			in vec2 texcoord;
 			out vec4 out_color;
@@ -804,23 +788,9 @@ bool gl_create_dual_kawase_blur_context(void *blur_context, GLfloat *projection,
 		}
 		glBindFragDataLocation(up_pass->prog, 0, "out_color");
 
-		// Get uniform addresses
-		bind_uniform(up_pass, pixel_norm);
-		bind_uniform(up_pass, opacity);
-
-		bind_uniform(up_pass, mask_tex);
-		bind_uniform(up_pass, mask_offset);
-		bind_uniform(up_pass, mask_inverted);
-		bind_uniform(up_pass, mask_corner_radius);
-
-		up_pass->texorig_loc =
-		    glGetUniformLocationChecked(up_pass->prog, "texorig");
-		up_pass->scale_loc = glGetUniformLocationChecked(up_pass->prog, "scale");
-
 		// Setup projection matrix
 		glUseProgram(up_pass->prog);
-		int pml = glGetUniformLocationChecked(up_pass->prog, "projection");
-		glUniformMatrix4fv(pml, 1, false, projection);
+		glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection);
 		glUseProgram(0);
 	}
 

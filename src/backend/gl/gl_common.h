@@ -15,67 +15,38 @@
 	case s: return #s
 struct gl_blur_context;
 
-static inline GLint glGetUniformLocationChecked(GLuint p, const char *name) {
-	auto ret = glGetUniformLocation(p, name);
-	if (ret < 0) {
-		log_info("Failed to get location of uniform '%s'. This is normal when "
-		         "using custom shaders.",
-		         name);
-	}
-	return ret;
-}
+// Fragment shader uniforms
+#define UNIFORM_OPACITY_LOC 1
+#define UNIFORM_INVERT_COLOR_LOC 2
+#define UNIFORM_TEX_LOC 3
+#define UNIFORM_EFFECTIVE_SIZE_LOC 4
+#define UNIFORM_DIM_LOC 5
+#define UNIFORM_BRIGHTNESS_LOC 6
+#define UNIFORM_MAX_BRIGHTNESS_LOC 7
+#define UNIFORM_CORNER_RADIUS_LOC 8
+#define UNIFORM_BORDER_WIDTH_LOC 9
+#define UNIFORM_TIME_LOC 10
+#define UNIFORM_COLOR_LOC 11
+#define UNIFORM_PIXEL_NORM_LOC 12
+#define UNIFORM_TEX_SRC_LOC 13
+#define UNIFORM_MASK_TEX_LOC 14
+#define UNIFORM_MASK_OFFSET_LOC 15
+#define UNIFORM_MASK_CORNER_RADIUS_LOC 16
+#define UNIFORM_MASK_INVERTED_LOC 17
 
-#define bind_uniform(shader, uniform)                                                    \
-	(shader)->uniform_##uniform = glGetUniformLocationChecked((shader)->prog, #uniform)
+// Vertex shader uniforms
+#define UNIFORM_SCALE_LOC 18
+#define UNIFORM_PROJECTION_LOC 19
+#define UNIFORM_TEXORIG_LOC 20
+#define UNIFORM_TEXSIZE_LOC 21
 
-// Program and uniforms for window shader
-typedef struct {
+struct gl_shader {
 	GLuint prog;
-	GLint uniform_opacity;
-	GLint uniform_invert_color;
-	GLint uniform_tex;
-	GLint uniform_effective_size;
-	GLint uniform_dim;
-	GLint uniform_brightness;
-	GLint uniform_max_brightness;
-	GLint uniform_corner_radius;
-	GLint uniform_border_width;
-	GLint uniform_time;
-
-	GLint uniform_mask_tex;
-	GLint uniform_mask_offset;
-	GLint uniform_mask_corner_radius;
-	GLint uniform_mask_inverted;
-} gl_win_shader_t;
-
-// Program and uniforms for brightness shader
-typedef struct {
-	GLuint prog;
-} gl_brightness_shader_t;
-
-typedef struct {
-	GLuint prog;
-	GLint uniform_color;
-} gl_shadow_shader_t;
-
-// Program and uniforms for blur shader
-typedef struct {
-	GLuint prog;
-	GLint uniform_pixel_norm;
-	GLint uniform_opacity;
-	GLint texorig_loc;
-	GLint scale_loc;
-
-	GLint uniform_mask_tex;
-	GLint uniform_mask_offset;
-	GLint uniform_mask_corner_radius;
-	GLint uniform_mask_inverted;
-} gl_blur_shader_t;
-
-typedef struct {
-	GLuint prog;
-	GLint color_loc;
-} gl_fill_shader_t;
+	// If the shader is user controlled, we don't know which uniform will be
+	// active, so we need to track which one is.
+	// This is not used if the shader code is fully controlled by us.
+	uint32_t uniform_bitmask;
+};
 
 /// @brief Wrapper of a bound GL texture.
 struct gl_texture {
@@ -101,11 +72,10 @@ struct gl_data {
 	bool has_egl_image_storage;
 	// Height and width of the root window
 	int height, width;
-	// Hash-table of window shaders
-	gl_win_shader_t *default_shader;
-	gl_brightness_shader_t brightness_shader;
-	gl_fill_shader_t fill_shader;
-	gl_shadow_shader_t shadow_shader;
+	struct gl_shader default_shader;
+	struct gl_shader brightness_shader;
+	struct gl_shader fill_shader;
+	struct gl_shader shadow_shader;
 	GLuint back_texture, back_fbo;
 	GLuint temp_fbo;
 	GLint back_format;
@@ -236,8 +206,8 @@ static inline void gl_check_err_(const char *func, int line) {
 }
 
 static inline void gl_clear_err(void) {
-	while (glGetError() != GL_NO_ERROR)
-		;
+	while (glGetError() != GL_NO_ERROR) {
+	}
 }
 
 #define gl_check_err() gl_check_err_(__func__, __LINE__)
@@ -269,7 +239,11 @@ static inline bool gl_check_fb_complete_(const char *func, int line, GLenum fb) 
 static const GLuint vert_coord_loc = 0;
 static const GLuint vert_in_texcoord_loc = 1;
 
-#define GLSL(version, ...) "#version " #version "\n" #__VA_ARGS__
+// Add one level of indirection so macros in VA_ARGS can be expanded.
+#define GLSL_(version, ...)                                                              \
+	"#version " #version "\n"                                                        \
+	"#extension GL_ARB_explicit_uniform_location : enable\n" #__VA_ARGS__
+#define GLSL(version, ...) GLSL_(version, __VA_ARGS__)
 #define QUOTE(...) #__VA_ARGS__
 
 extern const char vertex_shader[], blend_with_mask_frag[], masking_glsl[], dummy_frag[],
