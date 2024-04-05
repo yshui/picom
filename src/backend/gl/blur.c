@@ -182,6 +182,7 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx, const rec
 		assert(src_texture);
 		assert(bctx->blur_fbos[i]);
 
+		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, src_texture);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i]);
 		glDrawBuffer(GL_COLOR_ATTACHMENT0);

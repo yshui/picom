@@ -39,6 +39,7 @@ struct gl_blur_context;
 #define UNIFORM_PROJECTION_LOC 19
 #define UNIFORM_TEXORIG_LOC 20
 #define UNIFORM_TEXSIZE_LOC 21
+#define NUMBER_OF_UNIFORMS (UNIFORM_TEXSIZE_LOC + 1)
 
 struct gl_shader {
 	GLuint prog;
