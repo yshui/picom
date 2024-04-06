@@ -626,14 +626,14 @@ bool gl_create_kernel_blur_context(void *blur_context, GLfloat *projection,
 		auto pass = &ctx->blur_shader[1];
 		pass->prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
-		    (const char *[]){copy_with_mask_frag, masking_glsl, NULL});
+		    (const char *[]){blend_with_mask_frag, masking_glsl, NULL});
 		pass->uniform_pixel_norm = -1;
-		pass->uniform_opacity = -1;
 		pass->texorig_loc = glGetUniformLocationChecked(pass->prog, "texorig");
 		bind_uniform(pass, mask_tex);
 		bind_uniform(pass, mask_offset);
 		bind_uniform(pass, mask_inverted);
 		bind_uniform(pass, mask_corner_radius);
+		bind_uniform(pass, opacity);
 
 		// Setup projection matrix
 		glUseProgram(pass->prog);

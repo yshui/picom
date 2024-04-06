@@ -18,12 +18,13 @@ const char present_frag[] = GLSL(330,
 	}
 );
 
-const char copy_with_mask_frag[] = GLSL(330,
+const char blend_with_mask_frag[] = GLSL(330,
 	uniform sampler2D tex;
+	uniform float opacity;
 	in vec2 texcoord;
 	float mask_factor();
 	void main() {
-		gl_FragColor = texelFetch(tex, ivec2(texcoord.xy), 0) * mask_factor();
+		gl_FragColor = texelFetch(tex, ivec2(texcoord.xy), 0) * opacity * mask_factor();
 	}
 );
 

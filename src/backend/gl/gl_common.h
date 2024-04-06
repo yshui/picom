@@ -272,7 +272,7 @@ static const GLuint vert_in_texcoord_loc = 1;
 #define GLSL(version, ...) "#version " #version "\n" #__VA_ARGS__
 #define QUOTE(...) #__VA_ARGS__
 
-extern const char vertex_shader[], copy_with_mask_frag[], masking_glsl[], dummy_frag[],
+extern const char vertex_shader[], blend_with_mask_frag[], masking_glsl[], dummy_frag[],
     present_frag[], fill_frag[], fill_vert[], interpolating_frag[], interpolating_vert[],
     win_shader_glsl[], win_shader_default[], present_vertex_shader[], dither_glsl[],
     shadow_colorization_frag[];
