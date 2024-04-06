@@ -1176,6 +1176,7 @@ void gl_present(backend_t *base, const region_t *region) {
 	}
 
 	glUseProgram(gd->present_prog);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
 
 	GLuint vao;
