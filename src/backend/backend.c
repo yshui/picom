@@ -431,11 +431,19 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 			pixman_region32_subtract(&reg_shadow_clip, &reg_shadow_clip, &reg_bound);
 		}
 
+		if (w->mask_image) {
+			// We are now going to compose the main window body, so
+			// we need to set the mask image to be non-inverted
+			ps->backend_data->ops->set_image_property(
+			    ps->backend_data, IMAGE_PROPERTY_INVERTED, w->mask_image,
+			    (bool[]){false});
+		}
+
 		// Draw window on target
 		if (w->frame_opacity == 1) {
-			ps->backend_data->ops->compose(ps->backend_data, w->win_image,
-			                               window_coord, NULL, window_coord,
-			                               &reg_paint_in_bound, &reg_visible);
+			ps->backend_data->ops->compose(
+			    ps->backend_data, w->win_image, window_coord, w->mask_image,
+			    window_coord, &reg_paint_in_bound, &reg_visible);
 		} else {
 			// For window image processing, we don't have to limit the process
 			// region to damage for correctness. (see <damager-note> for
@@ -473,9 +481,9 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 			    ps->backend_data, IMAGE_OP_APPLY_ALPHA, new_img, &reg_frame,
 			    &reg_visible_local, (double[]){w->frame_opacity});
 			pixman_region32_fini(&reg_frame);
-			ps->backend_data->ops->compose(ps->backend_data, new_img,
-			                               window_coord, NULL, window_coord,
-			                               &reg_paint_in_bound, &reg_visible);
+			ps->backend_data->ops->compose(
+			    ps->backend_data, new_img, window_coord, w->mask_image,
+			    window_coord, &reg_paint_in_bound, &reg_visible);
 			ps->backend_data->ops->release_image(ps->backend_data, new_img);
 			pixman_region32_fini(&reg_visible_local);
 			pixman_region32_fini(&reg_bound_local);
