@@ -345,17 +345,39 @@ struct gl_uniform_value {
 	};
 };
 
+struct gl_vertex_attrib {
+	GLenum type;
+	GLuint loc;
+	void *offset;
+};
+
+struct gl_vertex_attribs_definition {
+	GLsizeiptr stride;
+	unsigned count;
+	struct gl_vertex_attrib attribs[];
+};
+
+static const struct gl_vertex_attribs_definition gl_blit_vertex_attribs = {
+    .stride = sizeof(GLint) * 4,
+    .count = 2,
+    .attribs = {{GL_INT, vert_coord_loc, NULL},
+                {GL_INT, vert_in_texcoord_loc, ((GLint *)NULL) + 2}},
+};
+
 /**
  * Render a region with texture data.
  *
- * @param ptex the texture
- * @param target_texture the texture to render into
- * @param blit_args arguments for the blit
- * @param coord GL vertices
- * @param indices GL indices
- * @param nrects number of rectangles to render
+ * @param target_fbo   the FBO to render into
+ * @param nrects       number of rectangles to render
+ * @param coord        GL vertices
+ * @param indices      GL indices
+ * @param vert_attribs vertex attributes layout in `coord`
+ * @param shader       shader to use
+ * @param nuniforms    number of uniforms for `shader`
+ * @param uniforms     uniforms for `shader`
  */
-static void gl_blit_inner(GLuint target_fbo, GLint *coord, GLuint *indices, int nrects,
+static void gl_blit_inner(GLuint target_fbo, int nrects, GLint *coord, GLuint *indices,
+                          const struct gl_vertex_attribs_definition *vert_attribs,
                           const struct gl_shader *shader, int nuniforms,
                           struct gl_uniform_value *uniforms) {
 	// FIXME(yshui) breaks when `mask` and `img` doesn't have the same y_inverted
@@ -407,15 +429,16 @@ static void gl_blit_inner(GLuint target_fbo, GLint *coord, GLuint *indices, int 
 	glGenBuffers(2, bo);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * nrects * 16, coord, GL_STREAM_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, vert_attribs->stride * nrects * 4, coord, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * nrects * 6,
 	             indices, GL_STREAM_DRAW);
+	for (ptrdiff_t i = 0; i < vert_attribs->count; i++) {
+		auto attrib = &vert_attribs->attribs[i];
+		glEnableVertexAttribArray(attrib->loc);
+		glVertexAttribPointer(attrib->loc, 2, attrib->type, GL_FALSE,
+		                      (GLsizei)vert_attribs->stride, attrib->offset);
+	}
 
-	glEnableVertexAttribArray(vert_coord_loc);
-	glEnableVertexAttribArray(vert_in_texcoord_loc);
-	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
-	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
-	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target_fbo);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
@@ -641,8 +664,8 @@ void gl_compose(backend_t *base, image_handle image, coord_t image_dst,
 	int nrects = gl_lower_blit_args(gd, image_dst, &blit_args, &coord, &indices,
 	                                &shader, uniforms);
 	if (nrects > 0) {
-		gl_blit_inner(gd->back_fbo, coord, indices, nrects, shader,
-		              NUMBER_OF_UNIFORMS, uniforms);
+		gl_blit_inner(gd->back_fbo, nrects, coord, indices, &gl_blit_vertex_attribs,
+		              shader, NUMBER_OF_UNIFORMS, uniforms);
 	}
 
 	pixman_region32_fini(&mask_args.region);
@@ -1406,8 +1429,8 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		uniforms[UNIFORM_MASK_TEX_LOC].i = (GLint)inner->texture;
 		uniforms[UNIFORM_MASK_INVERTED_LOC].i = mask->color_inverted;
 		uniforms[UNIFORM_MASK_CORNER_RADIUS_LOC].f = (float)mask->corner_radius;
-		gl_blit_inner(gd->temp_fbo, coords, indices, 1, shader,
-		              ARR_SIZE(default_blit_uniforms), uniforms);
+		gl_blit_inner(gd->temp_fbo, 1, coords, indices, &gl_blit_vertex_attribs,
+		              shader, ARR_SIZE(default_blit_uniforms), uniforms);
 		glDeleteTextures(1, &white_texture);
 	}
 
