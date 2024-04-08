@@ -3,6 +3,7 @@
 #include <epoxy/gl.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -362,6 +363,13 @@ static const struct gl_vertex_attribs_definition gl_blit_vertex_attribs = {
     .count = 2,
     .attribs = {{GL_INT, vert_coord_loc, NULL},
                 {GL_INT, vert_in_texcoord_loc, ((GLint *)NULL) + 2}},
+};
+
+// For when texture coordinates are the same as vertex coordinates
+static const struct gl_vertex_attribs_definition gl_simple_vertex_attribs = {
+    .stride = sizeof(GLint) * 2,
+    .count = 2,
+    .attribs = {{GL_INT, vert_coord_loc, NULL}, {GL_INT, vert_in_texcoord_loc, NULL}},
 };
 
 /**
@@ -985,28 +993,30 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUseProgram(0);
 
 	gd->dithered_present = ps->o.dithered_present;
-	gd->dummy_prog = gl_create_program_from_strv(
+	gd->dummy_prog.prog = gl_create_program_from_strv(
 	    (const char *[]){vertex_shader, NULL}, (const char *[]){dummy_frag, NULL});
-	if (!gd->dummy_prog) {
+	if (!gd->dummy_prog.prog) {
 		log_error("Failed to create the dummy shader");
 		return false;
 	}
+	gd->dummy_prog.uniform_bitmask = (uint32_t)-1;        // make sure our uniforms
+	                                                      // are not ignored.
 	if (gd->dithered_present) {
 		gd->present_prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
 		    (const char *[]){present_frag, dither_glsl, NULL});
 	} else {
-		gd->present_prog = gd->dummy_prog;
+		gd->present_prog = gd->dummy_prog.prog;
 	}
 	if (!gd->present_prog) {
 		log_error("Failed to create the present shader");
 		return false;
 	}
 
-	glUseProgram(gd->dummy_prog);
+	glUseProgram(gd->dummy_prog.prog);
 	glUniform1i(UNIFORM_TEX_LOC, 0);
 	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
-	if (gd->present_prog != gd->dummy_prog) {
+	if (gd->present_prog != gd->dummy_prog.prog) {
 		glUseProgram(gd->present_prog);
 		glUniform1i(UNIFORM_TEX_LOC, 0);
 		glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
@@ -1082,11 +1092,11 @@ void gl_deinit(struct gl_data *gd) {
 		glDeleteProgram(gd->default_shader.prog);
 		gd->default_shader.prog = 0;
 	}
-	glDeleteProgram(gd->dummy_prog);
-	if (gd->present_prog != gd->dummy_prog) {
+	glDeleteProgram(gd->dummy_prog.prog);
+	if (gd->present_prog != gd->dummy_prog.prog) {
 		glDeleteProgram(gd->present_prog);
 	}
-	gd->dummy_prog = 0;
+	gd->dummy_prog.prog = 0;
 	gd->present_prog = 0;
 
 	glDeleteProgram(gd->fill_shader.prog);
@@ -1130,25 +1140,22 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	if (img->inner->refcount == 1) {
 		return;
 	}
+	log_trace("Decoupling image %p", img);
 	auto gd = (struct gl_data *)base;
 	auto inner = (struct gl_texture *)img->inner;
 	auto new_tex = ccalloc(1, struct gl_texture);
 
+	*new_tex = *inner;
+	new_tex->pixmap = XCB_NONE;
 	new_tex->texture = gl_new_texture(GL_TEXTURE_2D);
-	new_tex->y_inverted = inner->y_inverted;
-	new_tex->has_alpha = inner->has_alpha;
-	new_tex->height = inner->height;
-	new_tex->width = inner->width;
 	new_tex->refcount = 1;
-	new_tex->user_data = gd->decouple_texture_user_data(base, inner->user_data);
+	new_tex->user_data = gd->decouple_texture_user_data(base, new_tex->user_data);
 
+	// Prepare the new texture
 	glBindTexture(GL_TEXTURE_2D, new_tex->texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, new_tex->width, new_tex->height, 0,
 	             GL_BGRA, GL_UNSIGNED_BYTE, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
-
-	glUseProgram(gd->dummy_prog);
-	glBindTexture(GL_TEXTURE_2D, inner->texture);
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->temp_fbo);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
@@ -1159,62 +1166,24 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	glClearColor(0, 0, 0, 0);
 	glClear(GL_COLOR_BUFFER_BIT);
 
+	glUseProgram(gd->dummy_prog.prog);
+	glBindTexture(GL_TEXTURE_2D, inner->texture);
+
 	// clang-format off
 	GLint coord[] = {
-		// top left
-		0, 0,                 // vertex coord
-		0, 0,                 // texture coord
-
-		// top right
-		new_tex->width, 0, // vertex coord
-		new_tex->width, 0, // texture coord
-
-		// bottom right
-		new_tex->width, new_tex->height,
-		new_tex->width, new_tex->height,
-
-		// bottom left
-		0, new_tex->height,
-		0, new_tex->height,
+	    0, 0,                            // top left
+	    new_tex->width, 0,               // top right
+	    new_tex->width, new_tex->height, // bottom right
+	    0, new_tex->height,              // bottom left
 	};
-	// clang-format on
 	GLuint indices[] = {0, 1, 2, 2, 3, 0};
+	// clang-format on
 
-	GLuint vao;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
-
-	GLuint bo[2];
-	glGenBuffers(2, bo);
-	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 16, coord, GL_STREAM_DRAW);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * 6, indices,
-	             GL_STREAM_DRAW);
-
-	glEnableVertexAttribArray(vert_coord_loc);
-	glEnableVertexAttribArray(vert_in_texcoord_loc);
-	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
-	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
-	                      sizeof(GLint) * 4, (void *)(sizeof(GLint) * 2));
-
-	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
-
-	glDisableVertexAttribArray(vert_coord_loc);
-	glDisableVertexAttribArray(vert_in_texcoord_loc);
-	glBindVertexArray(0);
-	glDeleteVertexArrays(1, &vao);
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	glDeleteBuffers(2, bo);
-
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-
-	glBindTexture(GL_TEXTURE_2D, 0);
-	glUseProgram(0);
-
-	gl_check_err();
+	struct gl_uniform_value uniforms[] = {
+	    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D, .texture = inner->texture},
+	};
+	gl_blit_inner(gd->temp_fbo, 1, coord, indices, &gl_simple_vertex_attribs,
+	              &gd->dummy_prog, ARR_SIZE(uniforms), uniforms);
 
 	img->inner = (struct backend_image_inner_base *)new_tex;
 	inner->refcount--;
