@@ -1568,6 +1568,7 @@ void free_win_res(session_t *ps, struct managed_win *w) {
 	// Above should be done during unmapping
 	// Except when we are called by session_destroy
 
+	pixman_region32_fini(&w->damaged);
 	pixman_region32_fini(&w->bounding_shape);
 	// BadDamage may be thrown if the window is destroyed
 	set_ignore_cookie(&ps->c, xcb_damage_destroy(ps->c.c, w->damage));
@@ -2180,7 +2181,6 @@ void destroy_win_finish(session_t *ps, struct win *w) {
 				w2->prev_trans = NULL;
 			}
 		}
-		pixman_region32_fini(&mw->damaged);
 	}
 
 	free(w);
