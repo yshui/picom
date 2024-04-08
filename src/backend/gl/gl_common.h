@@ -4,6 +4,7 @@
 #include <epoxy/gl.h>
 #include <stdbool.h>
 #include <string.h>
+#include <xcb/xproto.h>
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
@@ -83,6 +84,7 @@ struct gl_texture {
 	GLuint texture;
 	int width, height;
 	bool y_inverted;
+	xcb_pixmap_t pixmap;
 
 	// Textures for auxiliary uses.
 	GLuint auxiliary_texture[2];
@@ -165,7 +167,7 @@ GLuint gl_new_texture(GLenum target);
 bool gl_image_op(backend_t *base, enum image_operations op, image_handle image,
                  const region_t *reg_op, const region_t *reg_visible, void *arg);
 
-void gl_release_image(backend_t *base, image_handle image);
+xcb_pixmap_t gl_release_image(backend_t *base, image_handle image);
 image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg);
 
 image_handle gl_clone(backend_t *base, image_handle image, const region_t *reg_visible);

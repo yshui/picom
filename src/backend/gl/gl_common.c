@@ -762,15 +762,19 @@ static void gl_release_image_inner(backend_t *base, struct gl_texture *inner) {
 	gl_check_err();
 }
 
-void gl_release_image(backend_t *base, image_handle image) {
+xcb_pixmap_t gl_release_image(backend_t *base, image_handle image) {
 	auto wd = (struct backend_image *)image;
 	auto inner = (struct gl_texture *)wd->inner;
 	inner->refcount--;
 	assert(inner->refcount >= 0);
+
+	xcb_pixmap_t pixmap = XCB_NONE;
 	if (inner->refcount == 0) {
+		pixmap = inner->pixmap;
 		gl_release_image_inner(base, inner);
 	}
 	free(wd);
+	return pixmap;
 }
 
 void *gl_create_window_shader(backend_t *backend_data attr_unused, const char *source) {

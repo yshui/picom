@@ -484,7 +484,9 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 			ps->backend_data->ops->compose(
 			    ps->backend_data, new_img, window_coord, w->mask_image,
 			    window_coord, &reg_paint_in_bound, &reg_visible);
-			ps->backend_data->ops->release_image(ps->backend_data, new_img);
+			auto pixmap =
+			    ps->backend_data->ops->release_image(ps->backend_data, new_img);
+			CHECK(pixmap == XCB_NONE);
 			pixman_region32_fini(&reg_visible_local);
 			pixman_region32_fini(&reg_bound_local);
 		}

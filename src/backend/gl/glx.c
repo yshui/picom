@@ -36,12 +36,6 @@
 #include "win.h"
 #include "x.h"
 
-struct _glx_pixmap {
-	GLXPixmap glpixmap;
-	xcb_pixmap_t pixmap;
-	bool owned;
-};
-
 struct _glx_data {
 	struct gl_data gl;
 	xcb_window_t target_win;
@@ -169,23 +163,18 @@ bool glx_find_fbconfig(struct x_connection *c, struct xvisual_info m,
  * Free a glx_texture_t.
  */
 static void glx_release_image(backend_t *base, struct gl_texture *tex) {
-	struct _glx_pixmap *p = tex->user_data;
+	GLXPixmap *p = tex->user_data;
 	// Release binding
-	if (p->glpixmap && tex->texture) {
+	if (p && tex->texture) {
 		glBindTexture(GL_TEXTURE_2D, tex->texture);
-		glXReleaseTexImageEXT(base->c->dpy, p->glpixmap, GLX_FRONT_LEFT_EXT);
+		glXReleaseTexImageEXT(base->c->dpy, *p, GLX_FRONT_LEFT_EXT);
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 
 	// Free GLX Pixmap
-	if (p->glpixmap) {
-		glXDestroyPixmap(base->c->dpy, p->glpixmap);
-		p->glpixmap = 0;
-	}
-
-	if (p->owned) {
-		xcb_free_pixmap(base->c->c, p->pixmap);
-		p->pixmap = XCB_NONE;
+	if (p) {
+		glXDestroyPixmap(base->c->dpy, *p);
+		*p = 0;
 	}
 
 	free(p);
@@ -217,11 +206,7 @@ void glx_deinit(backend_t *base) {
 }
 
 static void *glx_decouple_user_data(backend_t *base attr_unused, void *ud attr_unused) {
-	auto ret = cmalloc(struct _glx_pixmap);
-	ret->owned = false;
-	ret->glpixmap = 0;
-	ret->pixmap = 0;
-	return ret;
+	return NULL;
 }
 
 static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawable) {
@@ -381,8 +366,8 @@ end:
 }
 
 static image_handle
-glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool owned) {
-	struct _glx_pixmap *glxpixmap = NULL;
+glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
+	GLXPixmap *glxpixmap = NULL;
 	auto gd = (struct _glx_data *)base;
 	// Retrieve pixmap parameters, if they aren't provided
 	if (fmt.visual_depth > OPENGL_MAX_DEPTH) {
@@ -453,17 +438,16 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 
 	inner->y_inverted = fbconfig->y_inverted;
 
-	glxpixmap = cmalloc(struct _glx_pixmap);
-	glxpixmap->pixmap = pixmap;
-	glxpixmap->glpixmap = glXCreatePixmap(base->c->dpy, fbconfig->cfg, pixmap, attrs);
-	glxpixmap->owned = owned;
+	glxpixmap = cmalloc(GLXPixmap);
+	inner->pixmap = pixmap;
+	*glxpixmap = glXCreatePixmap(base->c->dpy, fbconfig->cfg, pixmap, attrs);
 
-	if (!glxpixmap->glpixmap) {
+	if (!*glxpixmap) {
 		log_error("Failed to create glpixmap for pixmap %#010x", pixmap);
 		goto err;
 	}
 
-	log_trace("GLXPixmap %#010lx", glxpixmap->glpixmap);
+	log_trace("GLXPixmap %#010lx", *glxpixmap);
 
 	// Create texture
 	inner->user_data = glxpixmap;
@@ -471,20 +455,16 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	inner->has_alpha = fmt.alpha_size != 0;
 	wd->inner->refcount = 1;
 	glBindTexture(GL_TEXTURE_2D, inner->texture);
-	glXBindTexImageEXT(base->c->dpy, glxpixmap->glpixmap, GLX_FRONT_LEFT_EXT, NULL);
+	glXBindTexImageEXT(base->c->dpy, *glxpixmap, GLX_FRONT_LEFT_EXT, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	gl_check_err();
 	return (image_handle)wd;
 err:
-	if (glxpixmap && glxpixmap->glpixmap) {
-		glXDestroyPixmap(base->c->dpy, glxpixmap->glpixmap);
+	if (glxpixmap && *glxpixmap) {
+		glXDestroyPixmap(base->c->dpy, *glxpixmap);
 	}
 	free(glxpixmap);
-
-	if (owned) {
-		xcb_free_pixmap(base->c->c, pixmap);
-	}
 	free(wd);
 	return NULL;
 }

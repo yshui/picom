@@ -23,12 +23,6 @@
 #include "utils.h"
 #include "x.h"
 
-struct egl_pixmap {
-	EGLImage image;
-	xcb_pixmap_t pixmap;
-	bool owned;
-};
-
 struct egl_data {
 	struct gl_data gl;
 	EGLDisplay display;
@@ -65,16 +59,11 @@ const char *eglGetErrorString(EGLint error) {
  */
 static void egl_release_image(backend_t *base, struct gl_texture *tex) {
 	struct egl_data *gd = (void *)base;
-	struct egl_pixmap *p = tex->user_data;
+	EGLImage *p = tex->user_data;
 	// Release binding
-	if (p->image != EGL_NO_IMAGE) {
-		eglDestroyImage(gd->display, p->image);
-		p->image = EGL_NO_IMAGE;
-	}
-
-	if (p->owned) {
-		xcb_free_pixmap(base->c->c, p->pixmap);
-		p->pixmap = XCB_NONE;
+	if (p && *p != EGL_NO_IMAGE) {
+		eglDestroyImage(gd->display, *p);
+		*p = EGL_NO_IMAGE;
 	}
 
 	free(p);
@@ -110,11 +99,7 @@ void egl_deinit(backend_t *base) {
 }
 
 static void *egl_decouple_user_data(backend_t *base attr_unused, void *ud attr_unused) {
-	auto ret = cmalloc(struct egl_pixmap);
-	ret->owned = false;
-	ret->image = EGL_NO_IMAGE;
-	ret->pixmap = 0;
-	return ret;
+	return NULL;
 }
 
 static bool egl_set_swap_interval(int interval, EGLDisplay dpy) {
@@ -250,9 +235,9 @@ end:
 }
 
 static image_handle
-egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, bool owned) {
+egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 	struct egl_data *gd = (void *)base;
-	struct egl_pixmap *eglpixmap = NULL;
+	EGLImage *eglpixmap = NULL;
 
 	auto r =
 	    xcb_get_geometry_reply(base->c->c, xcb_get_geometry(base->c->c, pixmap), NULL);
@@ -273,20 +258,19 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	log_debug("depth %d", fmt.visual_depth);
 
 	inner->y_inverted = true;
+	inner->pixmap = pixmap;
 
-	eglpixmap = cmalloc(struct egl_pixmap);
-	eglpixmap->pixmap = pixmap;
-	eglpixmap->image = eglCreateImage(gd->display, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR,
-	                                  (EGLClientBuffer)(uintptr_t)pixmap, NULL);
-	eglpixmap->owned = owned;
+	eglpixmap = cmalloc(EGLImage);
+	*eglpixmap = eglCreateImage(gd->display, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR,
+	                            (EGLClientBuffer)(uintptr_t)pixmap, NULL);
 
-	if (eglpixmap->image == EGL_NO_IMAGE) {
+	if (*eglpixmap == EGL_NO_IMAGE) {
 		log_error("Failed to create eglpixmap for pixmap %#010x: %s", pixmap,
 		          eglGetErrorString(eglGetError()));
 		goto err;
 	}
 
-	log_trace("EGLImage %p", eglpixmap->image);
+	log_trace("EGLImage %p", *eglpixmap);
 
 	// Create texture
 	inner->user_data = eglpixmap;
@@ -297,20 +281,16 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt, b
 	wd->dim = 0;
 	wd->inner->refcount = 1;
 	glBindTexture(GL_TEXTURE_2D, inner->texture);
-	glEGLImageTargetTexStorageEXT(GL_TEXTURE_2D, eglpixmap->image, NULL);
+	glEGLImageTargetTexStorageEXT(GL_TEXTURE_2D, *eglpixmap, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	gl_check_err();
 	return (image_handle)wd;
 err:
-	if (eglpixmap && eglpixmap->image) {
-		eglDestroyImage(gd->display, eglpixmap->image);
+	if (eglpixmap && *eglpixmap) {
+		eglDestroyImage(gd->display, *eglpixmap);
 	}
 	free(eglpixmap);
-
-	if (owned) {
-		xcb_free_pixmap(base->c->c, pixmap);
-	}
 	free(wd);
 	return NULL;
 }

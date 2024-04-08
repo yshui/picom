@@ -85,8 +85,8 @@ bool dummy_blur(struct backend_base *backend_data attr_unused, double opacity at
 	return true;
 }
 
-image_handle dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
-                               struct xvisual_info fmt, bool owned) {
+image_handle
+dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 	auto dummy = (struct dummy_data *)base;
 	struct dummy_image *img = NULL;
 	HASH_FIND_INT(dummy->images, &pixmap, img);
@@ -100,28 +100,27 @@ image_handle dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
 	img->transparent = fmt.alpha_size != 0;
 	img->refcount = ccalloc(1, int);
 	*img->refcount = 1;
-	img->owned = owned;
 
 	HASH_ADD_INT(dummy->images, pixmap, img);
 	return (image_handle)img;
 }
 
-void dummy_release_image(backend_t *base, image_handle image) {
+xcb_pixmap_t dummy_release_image(backend_t *base, image_handle image) {
 	auto dummy = (struct dummy_data *)base;
 	if ((struct backend_image *)image == &dummy->mask) {
-		return;
+		return XCB_NONE;
 	}
 	auto img = (struct dummy_image *)image;
+	xcb_pixmap_t pixmap = XCB_NONE;
 	assert(*img->refcount > 0);
 	(*img->refcount)--;
 	if (*img->refcount == 0) {
 		HASH_DEL(dummy->images, img);
 		free(img->refcount);
-		if (img->owned) {
-			xcb_free_pixmap(base->c->c, img->pixmap);
-		}
+		pixmap = img->pixmap;
 		free(img);
 	}
+	return pixmap;
 }
 
 bool dummy_is_image_transparent(struct backend_base *base, image_handle image) {

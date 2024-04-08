@@ -309,9 +309,12 @@ image_handle default_render_shadow(backend_t *backend_data, int width, int heigh
 
 	auto visual = x_get_visual_for_standard(backend_data->c, XCB_PICT_STANDARD_ARGB_32);
 	auto ret = backend_data->ops->bind_pixmap(
-	    backend_data, shadow, x_get_visual_info(backend_data->c, visual), true);
+	    backend_data, shadow, x_get_visual_info(backend_data->c, visual));
 	x_free_picture(backend_data->c, pict);
 	x_free_picture(backend_data->c, shadow_pixel);
+	if (!ret) {
+		xcb_free_pixmap(backend_data->c->c, shadow);
+	}
 	return ret;
 }
 
@@ -326,7 +329,8 @@ backend_render_shadow_from_mask(backend_t *backend_data, int width, int height,
 	pixman_region32_fini(&reg);
 
 	auto shadow = backend_data->ops->shadow_from_mask(backend_data, mask, sctx, color);
-	backend_data->ops->release_image(backend_data, mask);
+	auto pixmap = backend_data->ops->release_image(backend_data, mask);
+	CHECK(pixmap == XCB_NONE);
 	return shadow;
 }
 

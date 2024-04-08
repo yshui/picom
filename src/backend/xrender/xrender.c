@@ -86,9 +86,9 @@ struct xrender_image_data_inner {
 	int width, height;
 	xcb_visualid_t visual;
 	uint8_t depth;
-	// Whether we own this image, e.g. we allocated it;
-	// or not, e.g. this is a named pixmap of a X window.
-	bool owned;
+	// Whether we allocated it this pixmap.
+	// or not, i.e. this pixmap is passed in via xrender_bind_pixmap
+	bool internal_pixmap;
 };
 
 struct xrender_rounded_rectangle_cache {
@@ -523,8 +523,8 @@ xrender_blur(backend_t *backend_data, double opacity, void *ctx_, image_handle m
 	return true;
 }
 
-static image_handle xrender_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap,
-                                        struct xvisual_info fmt, bool owned) {
+static image_handle
+xrender_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 	xcb_generic_error_t *e;
 	auto r = xcb_get_geometry_reply(base->c->c, xcb_get_geometry(base->c->c, pixmap), &e);
 	if (!r) {
@@ -544,9 +544,9 @@ static image_handle xrender_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap,
 	xcb_render_create_picture_value_list_t pic_attrs = {.repeat = XCB_RENDER_REPEAT_NORMAL};
 	inner->pict = x_create_picture_with_visual_and_pixmap(
 	    base->c, fmt.visual, pixmap, XCB_RENDER_CP_REPEAT, &pic_attrs);
-	inner->owned = owned;
 	inner->visual = fmt.visual;
 	inner->refcount = 1;
+	inner->internal_pixmap = false;
 
 	img->base.inner = (struct backend_image_inner_base *)inner;
 	img->base.opacity = 1;
@@ -560,13 +560,17 @@ static image_handle xrender_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap,
 	}
 	return (image_handle)img;
 }
-static void
+static xcb_pixmap_t
 xrender_release_image_inner(backend_t *base, struct xrender_image_data_inner *inner) {
 	x_free_picture(base->c, inner->pict);
-	if (inner->owned) {
+	if (inner->internal_pixmap) {
 		xcb_free_pixmap(base->c->c, inner->pixmap);
+		inner->pixmap = XCB_NONE;
 	}
+
+	auto ret = inner->pixmap;
 	free(inner);
+	return ret;
 }
 
 static void
@@ -584,16 +588,18 @@ xrender_release_rounded_corner_cache(backend_t *base,
 	}
 }
 
-static void xrender_release_image(backend_t *base, image_handle image) {
+static xcb_pixmap_t xrender_release_image(backend_t *base, image_handle image) {
 	auto img = (struct xrender_image *)image;
+	xcb_pixmap_t pixmap = XCB_NONE;
 	xrender_release_rounded_corner_cache(base, img->rounded_rectangle);
 	img->rounded_rectangle = NULL;
 	img->base.inner->refcount -= 1;
 	if (img->base.inner->refcount == 0) {
-		xrender_release_image_inner(
+		pixmap = xrender_release_image_inner(
 		    base, (struct xrender_image_data_inner *)img->base.inner);
 	}
 	free(img);
+	return pixmap;
 }
 
 static void xrender_deinit(backend_t *backend_data) {
@@ -716,7 +722,7 @@ xrender_new_inner(backend_t *base, int w, int h, xcb_visualid_t visual, uint8_t 
 	new_inner->visual = visual;
 	new_inner->depth = depth;
 	new_inner->refcount = 1;
-	new_inner->owned = true;
+	new_inner->internal_pixmap = true;
 	return new_inner;
 }
 

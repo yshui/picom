@@ -208,13 +208,11 @@ struct backend_operations {
 	 * @param backend_data backend data
 	 * @param pixmap       X pixmap to bind
 	 * @param fmt          information of the pixmap's visual
-	 * @param owned        whether the ownership of the pixmap is transferred to the
-	 *                     backend.
 	 * @return             backend specific image handle for the pixmap. May be
 	 *                     NULL.
 	 */
 	image_handle (*bind_pixmap)(backend_t *backend_data, xcb_pixmap_t pixmap,
-	                            struct xvisual_info fmt, bool owned);
+	                            struct xvisual_info fmt);
 
 	/// Create a shadow context for rendering shadows with radius `radius`.
 	/// Default implementation: default_create_shadow_context
@@ -268,7 +266,10 @@ struct backend_operations {
 	/// Free resources associated with an image data structure
 	///
 	/// @param image the image to be released, cannot be NULL.
-	void (*release_image)(backend_t *backend_data, image_handle image) attr_nonnull(1, 2);
+	/// @return if this image is created by `bind_pixmap`, the X pixmap; 0
+	///         otherwise.
+	xcb_pixmap_t (*release_image)(backend_t *backend_data, image_handle image)
+	    attr_nonnull(1, 2);
 
 	/// Create a shader object from a shader source.
 	///

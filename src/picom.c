@@ -1192,7 +1192,7 @@ void root_damaged(session_t *ps) {
 			free(r);
 
 			ps->root_image = ps->backend_data->ops->bind_pixmap(
-			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual), false);
+			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual));
 			if (ps->root_image) {
 				ps->backend_data->ops->set_image_property(
 				    ps->backend_data, IMAGE_PROPERTY_EFFECTIVE_SIZE,

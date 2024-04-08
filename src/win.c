@@ -310,25 +310,34 @@ static inline void win_release_pixmap(backend_t *base, struct managed_win *w) {
 	log_debug("Releasing pixmap of window %#010x (%s)", w->base.id, w->name);
 	assert(w->win_image);
 	if (w->win_image) {
-		base->ops->release_image(base, w->win_image);
+		auto pixmap = base->ops->release_image(base, w->win_image);
 		w->win_image = NULL;
 		// Bypassing win_set_flags, because `w` might have been destroyed
 		w->flags |= WIN_FLAGS_PIXMAP_NONE;
+		if (pixmap != XCB_NONE) {
+			xcb_free_pixmap(base->c->c, pixmap);
+		}
 	}
 }
 static inline void win_release_shadow(backend_t *base, struct managed_win *w) {
 	log_debug("Releasing shadow of window %#010x (%s)", w->base.id, w->name);
 	if (w->shadow_image) {
 		assert(w->shadow);
-		base->ops->release_image(base, w->shadow_image);
+		auto pixmap = base->ops->release_image(base, w->shadow_image);
 		w->shadow_image = NULL;
+		if (pixmap != XCB_NONE) {
+			xcb_free_pixmap(base->c->c, pixmap);
+		}
 	}
 }
 
 static inline void win_release_mask(backend_t *base, struct managed_win *w) {
 	if (w->mask_image) {
-		base->ops->release_image(base, w->mask_image);
+		auto pixmap = base->ops->release_image(base, w->mask_image);
 		w->mask_image = NULL;
+		if (pixmap != XCB_NONE) {
+			xcb_free_pixmap(base->c->c, pixmap);
+		}
 	}
 }
 
@@ -344,10 +353,10 @@ static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w
 		return false;
 	}
 	log_debug("New named pixmap for %#010x (%s) : %#010x", w->base.id, w->name, pixmap);
-	w->win_image =
-	    b->ops->bind_pixmap(b, pixmap, x_get_visual_info(b->c, w->a.visual), true);
+	w->win_image = b->ops->bind_pixmap(b, pixmap, x_get_visual_info(b->c, w->a.visual));
 	if (!w->win_image) {
 		log_error("Failed to bind pixmap");
+		xcb_free_pixmap(b->c->c, pixmap);
 		win_set_flags(w, WIN_FLAGS_IMAGE_ERROR);
 		return false;
 	}
