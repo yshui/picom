@@ -441,6 +441,9 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 
 		// Draw window on target
 		if (w->frame_opacity == 1) {
+			// We use both reg_paint_in_bound and mask image, which is
+			// probably no strictly necessary. Even for shaped windows, they
+			// should be the same.
 			ps->backend_data->ops->compose(
 			    ps->backend_data, w->win_image, window_coord, w->mask_image,
 			    window_coord, &reg_paint_in_bound, &reg_visible);
