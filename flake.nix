@@ -38,15 +38,17 @@
         inherit system overlays;
         config.allowBroken = true;
       };
+      profilePkgs = import nixpkgs {
+        inherit system;
+        overlays = overlays ++ [
+          (final: prev: {
+            stdenv = prev.withCFlags "-fno-omit-frame-pointer" prev.stdenv;
+          })
+        ];
+      };
 
       overlays = [overlay];
-    in rec {
-      inherit
-        overlay
-        overlays
-        ;
-      defaultPackage = pkgs.picom;
-      devShells.default = defaultPackage.overrideAttrs (o: {
+      mkDevShell = p: p.overrideAttrs (o: {
         nativeBuildInputs = o.nativeBuildInputs ++ (with pkgs; [
           clang-tools_17
           llvmPackages_17.clang-unwrapped.python
@@ -59,8 +61,20 @@
           export LD_LIBRARY_PATH+=":/run/opengl-driver/lib"
         '';
       });
+    in rec {
+      inherit
+        overlay
+        overlays
+        ;
+      defaultPackage = pkgs.picom;
+      devShells.default = mkDevShell defaultPackage;
       devShells.useClang = devShells.default.override {
         inherit (pkgs.llvmPackages_17) stdenv;
+      };
+      # build picom and all dependencies with frame pointer, making profiling/debugging easier.
+      # WARNING! many many rebuilds
+      devShells.useClangProfile = (mkDevShell profilePkgs.picom).override {
+        stdenv = profilePkgs.withCFlags "-fno-omit-frame-pointer" profilePkgs.llvmPackages_17.stdenv;
       };
     });
 }
