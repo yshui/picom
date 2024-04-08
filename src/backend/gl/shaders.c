@@ -188,29 +188,17 @@ const char win_shader_default[] = GLSL(330,
 	}
 );
 
-const char present_vertex_shader[] = GLSL(330,
-	layout(location = UNIFORM_PROJECTION_LOC)
-	uniform mat4 projection;
-	layout(location = 0) in vec2 coord;
-	out vec2 texcoord;
-	void main() {
-		gl_Position = projection * vec4(coord, 0, 1);
-		texcoord = coord;
-	}
-);
 const char vertex_shader[] = GLSL(330,
 	layout(location = UNIFORM_PROJECTION_LOC)
 	uniform mat4 projection;
 	layout(location = UNIFORM_SCALE_LOC)
 	uniform float scale = 1.0f;
-	layout(location = UNIFORM_TEXORIG_LOC)
-	uniform vec2 texorig;
 	layout(location = 0) in vec2 coord;
 	layout(location = 1) in vec2 in_texcoord;
 	out vec2 texcoord;
 	void main() {
 		gl_Position = projection * vec4(coord, 0, scale);
-		texcoord = in_texcoord + texorig;
+		texcoord = in_texcoord;
 	}
 );
 const char dither_glsl[] = GLSL(330,

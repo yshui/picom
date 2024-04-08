@@ -31,15 +31,6 @@ typedef struct backend_base {
 	// ...
 } backend_t;
 
-typedef struct geometry {
-	int width;
-	int height;
-} geometry_t;
-
-typedef struct coord {
-	int x, y;
-} coord_t;
-
 typedef void (*backend_ready_callback_t)(void *);
 
 // This mimics OpenGL's ARB_robustness extension, which enables detection of GPU context

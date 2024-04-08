@@ -2,6 +2,7 @@
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #include <epoxy/gl.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -354,12 +355,13 @@ struct gl_uniform_value {
  * @param indices GL indices
  * @param nrects number of rectangles to render
  */
-static void
-gl_blit_inner(GLuint target_fbo, GLint *coord, GLuint *indices, int nrects,
-              struct gl_shader *shader, int nuniforms, struct gl_uniform_value *uniforms) {
+static void gl_blit_inner(GLuint target_fbo, GLint *coord, GLuint *indices, int nrects,
+                          const struct gl_shader *shader, int nuniforms,
+                          struct gl_uniform_value *uniforms) {
 	// FIXME(yshui) breaks when `mask` and `img` doesn't have the same y_inverted
 	//              value. but we don't ever hit this problem because all of our
 	//              images and masks are y_inverted.
+	log_trace("Blitting %d rectangles", nrects);
 	assert(shader);
 	assert(shader->prog);
 	glUseProgram(shader->prog);
@@ -440,13 +442,104 @@ gl_blit_inner(GLuint target_fbo, GLint *coord, GLuint *indices, int nrects,
 	gl_check_err();
 }
 
-static void
-gl_blit_args_to_uniforms(struct gl_data *gd, struct backend_blit_args *args,
-                         struct gl_shader **shader, struct gl_uniform_value *uniforms) {
+void gl_mask_rects_to_coords(struct coord origin, struct coord mask_origin, int nrects,
+                             const rect_t *rects, GLint *coord, GLuint *indices) {
+	for (ptrdiff_t i = 0; i < nrects; i++) {
+		// Rectangle in source image coordinates
+		rect_t rect_src = region_translate_rect(rects[i], mask_origin);
+		// Rectangle in target image coordinates
+		rect_t rect_dst = region_translate_rect(rect_src, origin);
+
+		memcpy(&coord[i * 16],
+		       ((GLint[][2]){
+		           {rect_dst.x1, rect_dst.y1},        // Vertex, bottom-left
+		           {rect_src.x1, rect_src.y1},        // Texture
+		           {rect_dst.x2, rect_dst.y1},        // Vertex, bottom-right
+		           {rect_src.x2, rect_src.y1},        // Texture
+		           {rect_dst.x2, rect_dst.y2},        // Vertex, top-right
+		           {rect_src.x2, rect_src.y2},        // Texture
+		           {rect_dst.x1, rect_dst.y2},        // Vertex, top-left
+		           {rect_src.x1, rect_src.y2},        // Texture
+		       }),
+		       sizeof(GLint[2]) * 8);
+
+		GLuint u = (GLuint)(i * 4);
+		memcpy(&indices[i * 6],
+		       ((GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0}),
+		       sizeof(GLuint) * 6);
+	}
+}
+
+/// Flip the target coordinates returned by `gl_mask_rects_to_coords` vertically relative
+/// to the target. Texture coordinates are unchanged.
+///
+/// @param[in] nrects        number of rectangles
+/// @param[in] coord         OpenGL vertex coordinates
+/// @param[in] target_height height of the target image
+static void gl_y_flip_target(int nrects, GLint *coord, GLint target_height) {
+	for (ptrdiff_t i = 0; i < nrects; i++) {
+		auto current_rect = &coord[i * 16];        // 16 numbers per rectangle
+		for (ptrdiff_t j = 0; j < 4; j++) {
+			// 4 numbers per vertex, target coordinates are the first two
+			auto current_vertex = &current_rect[j * 4];
+			current_vertex[1] = target_height - current_vertex[1];
+		}
+	}
+}
+
+/// Flip the texture coordinates returned by `gl_mask_rects_to_coords` vertically relative
+/// to the texture. Target coordinates are unchanged.
+///
+/// @param[in] nrects         number of rectangles
+/// @param[in] coord          OpenGL vertex coordinates
+/// @param[in] texture_height height of the source image
+static inline void gl_y_flip_texture(int nrects, GLint *coord, GLint texture_height) {
+	for (ptrdiff_t i = 0; i < nrects; i++) {
+		auto current_rect = &coord[i * 16];        // 16 numbers per rectangle
+		for (ptrdiff_t j = 0; j < 4; j++) {
+			// 4 numbers per vertex, texture coordinates are the last two
+			auto current_vertex = &current_rect[j * 4 + 2];
+			current_vertex[1] = texture_height - current_vertex[1];
+		}
+	}
+}
+
+/// Lower `struct backend_blit_args` into a list of GL coordinates, vertex indices, a
+/// shader, and uniforms.
+static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
+                              struct backend_blit_args *args, GLint **coord, GLuint **indices,
+                              struct gl_shader **shader, struct gl_uniform_value *uniforms) {
 	auto img = (struct gl_texture *)args->source_image;
+	int nrects;
+	const rect_t *rects;
+	rect_t source_extent;
+	if (args->mask != NULL) {
+		rects = pixman_region32_rectangles(&args->mask->region, &nrects);
+	} else {
+		nrects = 1;
+		source_extent = (rect_t){0, 0, args->ewidth, args->eheight};
+		rects = &source_extent;
+	}
+	if (!nrects) {
+		// Nothing to paint
+		return 0;
+	}
+	struct coord mask_origin = {};
+	if (args->mask != NULL) {
+		mask_origin = args->mask->origin;
+	}
+	*coord = ccalloc(nrects * 16, GLint);
+	*indices = ccalloc(nrects * 6, GLuint);
+	gl_mask_rects_to_coords(origin, mask_origin, nrects, rects, *coord, *indices);
+	if (!img->y_inverted) {
+		gl_y_flip_texture(nrects, *coord, img->height);
+	}
+
 	auto mask_image = args->mask ? (struct gl_texture *)args->mask->image : NULL;
 	auto mask_texture = mask_image ? mask_image->texture : gd->default_mask_texture;
-	GLuint brightness = 0;
+	GLuint brightness = 0;        // 0 means the default texture, which will be
+	                              // incomplete, and sampling from it will return (0,
+	                              // 0, 0, 1), which should be fine.
 	if (args->max_brightness < 1.0) {
 		brightness = gl_average_texture_color(gd, img);
 	}
@@ -486,70 +579,25 @@ gl_blit_args_to_uniforms(struct gl_data *gd, struct backend_blit_args *args,
 	}
 	memcpy(uniforms, from_uniforms, sizeof(from_uniforms));
 	*shader = args->shader ?: &gd->default_shader;
+	return nrects;
 }
 
-/// Convert rectangles in X coordinates to OpenGL vertex and texture coordinates
-/// @param[in] nrects, rects   rectangles
-/// @param[in] image_dst       origin of the OpenGL texture, affect the calculated texture
-///                            coordinates
-/// @param[in] extend_height   height of the drawing extent
-/// @param[in] texture_height  height of the OpenGL texture
-/// @param[in] root_height     height of the back buffer
-/// @param[in] y_inverted      whether the texture is y inverted
-/// @param[out] coord, indices output
-void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst,
-                      int extent_height, int texture_height, int root_height,
-                      bool y_inverted, GLint *coord, GLuint *indices) {
-	image_dst.y = root_height - image_dst.y;
-	image_dst.y -= extent_height;
-
-	for (int i = 0; i < nrects; i++) {
-		// Y-flip. Note after this, crect.y1 > crect.y2
-		rect_t crect = rects[i];
-		crect.y1 = root_height - crect.y1;
-		crect.y2 = root_height - crect.y2;
-
-		// Calculate texture coordinates
-		// (texture_x1, texture_y1), texture coord for the _bottom left_ corner
-		GLint texture_x1 = crect.x1 - image_dst.x,
-		      texture_y1 = crect.y2 - image_dst.y,
-		      texture_x2 = texture_x1 + (crect.x2 - crect.x1),
-		      texture_y2 = texture_y1 + (crect.y1 - crect.y2);
-
-		// X pixmaps might be Y inverted, invert the texture coordinates
-		if (y_inverted) {
-			texture_y1 = texture_height - texture_y1;
-			texture_y2 = texture_height - texture_y2;
-		}
-
-		// Vertex coordinates
-		auto vx1 = crect.x1;
-		auto vy1 = crect.y2;
-		auto vx2 = crect.x2;
-		auto vy2 = crect.y1;
-
-		// log_trace("Rect %d: %f, %f, %f, %f -> %d, %d, %d, %d",
-		//          ri, rx, ry, rxe, rye, rdx, rdy, rdxe, rdye);
-
-		memcpy(&coord[i * 16],
-		       ((GLint[][2]){
-		           {vx1, vy1},
-		           {texture_x1, texture_y1},
-		           {vx2, vy1},
-		           {texture_x2, texture_y1},
-		           {vx2, vy2},
-		           {texture_x2, texture_y2},
-		           {vx1, vy2},
-		           {texture_x1, texture_y2},
-		       }),
-		       sizeof(GLint[2]) * 8);
-
-		GLuint u = (GLuint)(i * 4);
-		memcpy(&indices[i * 6],
-		       ((GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0}),
-		       sizeof(GLuint) * 6);
-	}
-}
+static const struct gl_uniform_value default_blit_uniforms[] = {
+    [UNIFORM_OPACITY_LOC] = {.type = GL_FLOAT, .f = 1.0F},
+    [UNIFORM_INVERT_COLOR_LOC] = {.type = GL_INT, .i = 0},
+    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D, .texture = 0},
+    [UNIFORM_EFFECTIVE_SIZE_LOC] = {.type = GL_FLOAT_VEC2, .f2 = {0.0F, 0.0F}},        // Must be set
+    [UNIFORM_DIM_LOC] = {.type = GL_FLOAT, .f = 0.0F},
+    [UNIFORM_BRIGHTNESS_LOC] = {.type = GL_TEXTURE_2D, .texture = 0},
+    [UNIFORM_MAX_BRIGHTNESS_LOC] = {.type = GL_FLOAT, .f = 1.0F},
+    [UNIFORM_CORNER_RADIUS_LOC] = {.type = GL_FLOAT, .f = 0.0F},
+    [UNIFORM_BORDER_WIDTH_LOC] = {.type = GL_FLOAT, .f = 0.0F},
+    [UNIFORM_TIME_LOC] = {.type = GL_FLOAT, .f = 0.0F},
+    [UNIFORM_MASK_TEX_LOC] = {.type = GL_TEXTURE_2D, .texture = 0},        // Must be set
+    [UNIFORM_MASK_OFFSET_LOC] = {.type = GL_FLOAT_VEC2, .f2 = {0.0F, 0.0F}},
+    [UNIFORM_MASK_CORNER_RADIUS_LOC] = {.type = GL_FLOAT, .f = 0.0F},
+    [UNIFORM_MASK_INVERTED_LOC] = {.type = GL_INT, .i = 0},
+};
 
 // TODO(yshui) make use of reg_visible
 void gl_compose(backend_t *base, image_handle image, coord_t image_dst,
@@ -558,31 +606,12 @@ void gl_compose(backend_t *base, image_handle image, coord_t image_dst,
 	auto gd = (struct gl_data *)base;
 	auto img = (struct backend_image *)image;
 	auto mask = (struct backend_image *)mask_;
-	auto inner = (struct gl_texture *)img->inner;
 
-	// Painting
-	int nrects;
-	const rect_t *rects;
-	rects = pixman_region32_rectangles((region_t *)reg_tgt, &nrects);
-	if (!nrects) {
-		// Nothing to paint
-		return;
-	}
-
-	// Until we start to use glClipControl, reg_tgt, dst_x and dst_y and
-	// in a different coordinate system than the one OpenGL uses.
-	// OpenGL window coordinate (or NDC) has the origin at the lower left of the
-	// screen, with y axis pointing up; Xorg has the origin at the upper left of the
-	// screen, with y axis pointing down. We have to do some coordinate conversion in
-	// this function
-
-	auto coord = ccalloc(nrects * 16, GLint);
-	auto indices = ccalloc(nrects * 6, GLuint);
 	struct coord mask_offset = {.x = mask_dst.x - image_dst.x,
 	                            .y = mask_dst.y - image_dst.y};
-	x_rect_to_coords(nrects, rects, image_dst, inner->height, inner->height,
-	                 gd->height, inner->y_inverted, coord, indices);
 
+	log_trace("Mask is %p, texture %d", mask ? mask->inner : NULL,
+	          mask ? ((struct gl_texture *)mask->inner)->texture : 0);
 	struct backend_mask mask_args = {
 	    .image = mask ? (image_handle)mask->inner : NULL,
 	    .origin = mask_offset,
@@ -590,10 +619,11 @@ void gl_compose(backend_t *base, image_handle image, coord_t image_dst,
 	    .inverted = mask ? mask->color_inverted : false,
 	};
 	pixman_region32_init(&mask_args.region);
-
+	pixman_region32_copy(&mask_args.region, (region_t *)reg_tgt);
+	pixman_region32_translate(&mask_args.region, -mask_dst.x, -mask_dst.y);
 	struct backend_blit_args blit_args = {
 	    .source_image = (image_handle)img->inner,
-	    .mask = mask ? &mask_args : NULL,
+	    .mask = &mask_args,
 	    .shader = (void *)img->shader ?: &gd->default_shader,
 	    .opacity = img->opacity,
 	    .color_inverted = img->color_inverted,
@@ -606,10 +636,16 @@ void gl_compose(backend_t *base, image_handle image, coord_t image_dst,
 	};
 	struct gl_shader *shader;
 	struct gl_uniform_value uniforms[NUMBER_OF_UNIFORMS] = {};
-	gl_blit_args_to_uniforms(gd, &blit_args, &shader, uniforms);
-	gl_blit_inner(gd->back_fbo, coord, indices, nrects, shader, NUMBER_OF_UNIFORMS,
-	              uniforms);
+	GLint *coord = NULL;
+	GLuint *indices = NULL;
+	int nrects = gl_lower_blit_args(gd, image_dst, &blit_args, &coord, &indices,
+	                                &shader, uniforms);
+	if (nrects > 0) {
+		gl_blit_inner(gd->back_fbo, coord, indices, nrects, shader,
+		              NUMBER_OF_UNIFORMS, uniforms);
+	}
 
+	pixman_region32_fini(&mask_args.region);
 	free(indices);
 	free(coord);
 }
@@ -659,8 +695,7 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 
 /// Fill a given region in bound framebuffer.
 /// @param[in] y_inverted whether the y coordinates in `clip` should be inverted
-static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLuint target,
-                     int height, bool y_inverted) {
+static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLuint target) {
 	static const GLuint fill_vert_in_coord_loc = 0;
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
@@ -681,9 +716,8 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 
 	auto coord = ccalloc(nrects * 8, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	for (int i = 0; i < nrects; i++) {
-		GLint y1 = y_inverted ? height - rect[i].y2 : rect[i].y1,
-		      y2 = y_inverted ? height - rect[i].y1 : rect[i].y2;
+	for (ptrdiff_t i = 0; i < nrects; i++) {
+		GLint y1 = rect[i].y1, y2 = rect[i].y2;
 		// clang-format off
 		memcpy(&coord[i * 8],
 		       ((GLint[][2]){
@@ -723,7 +757,7 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 
 void gl_fill(backend_t *base, struct color c, const region_t *clip) {
 	auto gd = (struct gl_data *)base;
-	return _gl_fill(base, c, clip, gd->back_fbo, gd->height, true);
+	return _gl_fill(base, c, clip, gd->back_fbo);
 }
 
 image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg) {
@@ -731,6 +765,7 @@ image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg)
 	auto gd = (struct gl_data *)base;
 	auto img = ccalloc(1, struct backend_image);
 	default_init_backend_image(img, size.width, size.height);
+	log_trace("Creating mask texture %dx%d", size.width, size.height);
 	tex->width = size.width;
 	tex->height = size.height;
 	tex->texture = gl_new_texture(GL_TEXTURE_2D);
@@ -753,7 +788,7 @@ image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg)
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
-	_gl_fill(base, (struct color){1, 1, 1, 1}, reg, gd->temp_fbo, size.height, false);
+	_gl_fill(base, (struct color){1, 1, 1, 1}, reg, gd->temp_fbo);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	return (image_handle)img;
@@ -927,16 +962,15 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUseProgram(0);
 
 	gd->dithered_present = ps->o.dithered_present;
-	gd->dummy_prog =
-	    gl_create_program_from_strv((const char *[]){present_vertex_shader, NULL},
-	                                (const char *[]){dummy_frag, NULL});
+	gd->dummy_prog = gl_create_program_from_strv(
+	    (const char *[]){vertex_shader, NULL}, (const char *[]){dummy_frag, NULL});
 	if (!gd->dummy_prog) {
 		log_error("Failed to create the dummy shader");
 		return false;
 	}
 	if (gd->dithered_present) {
 		gd->present_prog = gl_create_program_from_strv(
-		    (const char *[]){present_vertex_shader, NULL},
+		    (const char *[]){vertex_shader, NULL},
 		    (const char *[]){present_frag, dither_glsl, NULL});
 	} else {
 		gd->present_prog = gd->dummy_prog;
@@ -956,7 +990,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	}
 
 	gd->shadow_shader.prog =
-	    gl_create_program_from_str(present_vertex_shader, shadow_colorization_frag);
+	    gl_create_program_from_str(vertex_shader, shadow_colorization_frag);
 	glUseProgram(gd->shadow_shader.prog);
 	glUniform1i(UNIFORM_TEX_LOC, 0);
 	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
@@ -1174,8 +1208,7 @@ static void gl_image_apply_alpha(backend_t *base, struct backend_image *img,
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       inner->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, gd->temp_fbo, inner->height,
-	         !inner->y_inverted);
+	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, gd->temp_fbo);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 }
@@ -1185,23 +1218,12 @@ void gl_present(backend_t *base, const region_t *region) {
 
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)region, &nrects);
-	auto coord = ccalloc(nrects * 8, GLint);
+	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	for (int i = 0; i < nrects; i++) {
-		// clang-format off
-		memcpy(&coord[i * 8],
-		       ((GLint[]){rect[i].x1, gd->height - rect[i].y2,
-		                 rect[i].x2, gd->height - rect[i].y2,
-		                 rect[i].x2, gd->height - rect[i].y1,
-		                 rect[i].x1, gd->height - rect[i].y1}),
-		       sizeof(GLint) * 8);
-		// clang-format on
-
-		GLuint u = (GLuint)(i * 4);
-		memcpy(&indices[i * 6],
-		       ((GLuint[]){u + 0, u + 1, u + 2, u + 2, u + 3, u + 0}),
-		       sizeof(GLuint) * 6);
-	}
+	gl_mask_rects_to_coords_simple(nrects, rect, coord, indices);
+	// Our back_texture is in Xorg coordinate system, but the GL back buffer is in
+	// GL clip space, which has the Y axis flipped.
+	gl_y_flip_target(nrects, coord, gd->height);
 
 	glUseProgram(gd->present_prog);
 	glActiveTexture(GL_TEXTURE0);
@@ -1213,14 +1235,17 @@ void gl_present(backend_t *base, const region_t *region) {
 
 	GLuint bo[2];
 	glGenBuffers(2, bo);
-	glEnableVertexAttribArray(vert_coord_loc);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(GLint) * nrects * 8, coord, GL_STREAM_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(GLint) * nrects * 16, coord, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(GLuint) * nrects * 6, indices,
 	             GL_STREAM_DRAW);
 
-	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 2, NULL);
+	glEnableVertexAttribArray(vert_coord_loc);
+	glEnableVertexAttribArray(vert_in_texcoord_loc);
+	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
+	                      sizeof(GLint) * 4, &((GLint *)NULL)[2]);
 	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
 
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1312,6 +1337,12 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	auto inner = (struct gl_texture *)mask->inner;
 	auto gsctx = (struct gl_shadow_context *)sctx;
 	int radius = (int)gsctx->radius;
+	if (mask->eheight != inner->height || mask->ewidth != inner->width ||
+	    mask->dim != 0 || mask->max_brightness != 1 || mask->border_width != 0 ||
+	    mask->opacity != 1 || mask->shader != NULL) {
+		log_error("Unsupported mask properties for shadow generation");
+		return NULL;
+	}
 
 	auto new_inner = ccalloc(1, struct gl_texture);
 	new_inner->width = inner->width + radius * 2;
@@ -1324,8 +1355,17 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	new_img->inner = (struct backend_image_inner_base *)new_inner;
 	new_img->inner->refcount = 1;
 
-	// Render the mask to a texture, so inversion and corner radius can be
-	// applied.
+	// We apply the mask properties by blitting a pure white texture with the mask
+	// image as mask.
+	auto white_texture = gl_new_texture(GL_TEXTURE_2D);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, white_texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, 1, 1, 0, GL_RED, GL_UNSIGNED_BYTE,
+	             (GLbyte[]){'\xff'});
+	glBindTexture(GL_TEXTURE_2D, 0);
+
 	auto source_texture = gl_new_texture(GL_TEXTURE_2D);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, source_texture);
@@ -1340,7 +1380,9 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	if (mask->color_inverted) {
 		// If the mask is inverted, clear the source_texture to white, so the
-		// "outside" of the mask would be correct
+		// "outside" of the mask would be correct.
+		// FIXME(yshui): we should make masks clamp to border, and set border
+		// color to 0.
 		glClearColor(1, 1, 1, 1);
 	} else {
 		glClearColor(0, 0, 0, 1);
@@ -1348,31 +1390,25 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	glClear(GL_COLOR_BUFFER_BIT);
 	{
 		// clang-format off
-		// interleaved vertex coordinates and texture coordinates
+		//               |             vertex coordinates              |     texture coordinates
 		GLint coords[] = {radius               , radius                , 0           ,             0,
 				  radius + inner->width, radius                , inner->width,             0,
 				  radius + inner->width, radius + inner->height, inner->width, inner->height,
 				  radius               , radius + inner->height, 0           , inner->height,};
 		// clang-format on
 		GLuint indices[] = {0, 1, 2, 2, 3, 0};
-		struct backend_blit_args blit_args = {
-		    .source_image = (image_handle)mask->inner,
-		    .mask = NULL,
-		    .shader = (void *)mask->shader ?: &gd->default_shader,
-		    .opacity = mask->opacity,
-		    .color_inverted = mask->color_inverted,
-		    .ewidth = mask->ewidth,
-		    .eheight = mask->eheight,
-		    .dim = mask->dim,
-		    .corner_radius = mask->corner_radius,
-		    .border_width = mask->border_width,
-		    .max_brightness = mask->max_brightness,
-		};
-		struct gl_shader *shader;
-		struct gl_uniform_value uniforms[NUMBER_OF_UNIFORMS];
-		gl_blit_args_to_uniforms(gd, &blit_args, &shader, uniforms);
+		auto shader = &gd->default_shader;
+		struct gl_uniform_value uniforms[ARR_SIZE(default_blit_uniforms)];
+		memcpy(uniforms, default_blit_uniforms, sizeof(default_blit_uniforms));
+		uniforms[UNIFORM_EFFECTIVE_SIZE_LOC].f2[0] = (float)inner->width;
+		uniforms[UNIFORM_EFFECTIVE_SIZE_LOC].f2[1] = (float)inner->height;
+		uniforms[UNIFORM_TEX_LOC].i = (GLint)white_texture;
+		uniforms[UNIFORM_MASK_TEX_LOC].i = (GLint)inner->texture;
+		uniforms[UNIFORM_MASK_INVERTED_LOC].i = mask->color_inverted;
+		uniforms[UNIFORM_MASK_CORNER_RADIUS_LOC].f = (float)mask->corner_radius;
 		gl_blit_inner(gd->temp_fbo, coords, indices, 1, shader,
-		              NUMBER_OF_UNIFORMS, uniforms);
+		              ARR_SIZE(default_blit_uniforms), uniforms);
+		glDeleteTextures(1, &white_texture);
 	}
 
 	gl_check_err();
@@ -1397,10 +1433,9 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		// but we are covering the whole texture so we don't need to worry about
 		// that.
 		gl_blur_impl(
-		    1.0, gsctx->blur_context, NULL, (coord_t){0}, &reg_blur, NULL,
-		    source_texture,
+		    1.0, gsctx->blur_context, NULL, (coord_t){0}, &reg_blur, source_texture,
 		    (geometry_t){.width = new_inner->width, .height = new_inner->height},
-		    gd->temp_fbo, gd->default_mask_texture);
+		    true, gd->temp_fbo, gd->default_mask_texture);
 		pixman_region32_fini(&reg_blur);
 	}
 
@@ -1445,7 +1480,10 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	             GL_STREAM_DRAW);
 
 	glEnableVertexAttribArray(vert_coord_loc);
+	glEnableVertexAttribArray(vert_in_texcoord_loc);
 	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 2, NULL);
+	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
+	                      sizeof(GLint) * 2, NULL);
 
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
 

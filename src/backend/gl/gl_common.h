@@ -37,7 +37,6 @@ struct gl_blur_context;
 // Vertex shader uniforms
 #define UNIFORM_SCALE_LOC 18
 #define UNIFORM_PROJECTION_LOC 19
-#define UNIFORM_TEXORIG_LOC 20
 #define UNIFORM_TEXSIZE_LOC 21
 #define NUMBER_OF_UNIFORMS (UNIFORM_TEXSIZE_LOC + 1)
 
@@ -55,6 +54,10 @@ struct gl_texture {
 	bool has_alpha;
 	GLuint texture;
 	int width, height;
+	/// Whether the texture is Y-inverted
+	/// This is always true for all our internal textures. Textures created from
+	/// binding a X pixmap might not be. And our OpenGL back buffer is never
+	/// Y-inverted (until we can start using glClipControl).
 	bool y_inverted;
 	xcb_pixmap_t pixmap;
 
@@ -105,9 +108,24 @@ typedef struct session session_t;
 	{ .prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1, .unifm_tex = -1, }
 
 void gl_prepare(backend_t *base, const region_t *reg);
-void x_rect_to_coords(int nrects, const rect_t *rects, coord_t image_dst,
-                      int extent_height, int texture_height, int root_height,
-                      bool y_inverted, GLint *coord, GLuint *indices);
+/// Convert a mask formed by a collection of rectangles to OpenGL vertex and texture
+/// coordinates.
+///
+/// @param[in]  origin      origin of the source image in target coordinates
+/// @param[in]  mask_origin origin of the mask in source coordinates
+/// @param[in]  nrects      number of rectangles
+/// @param[in]  rects       mask rectangles, in mask coordinates
+/// @param[out] coord       OpenGL vertex coordinates, suitable for creating VAO/VBO
+/// @param[out] indices     OpenGL vertex indices, suitable for creating VAO/VBO
+void gl_mask_rects_to_coords(struct coord origin, struct coord mask_origin, int nrects,
+                             const rect_t *rects, GLint *coord, GLuint *indices);
+/// Like `gl_mask_rects_to_coords`, but with `origin` and `mask_origin` set to 0. i.e. all
+/// coordinates are in the same space.
+static inline void gl_mask_rects_to_coords_simple(int nrects, const rect_t *rects,
+                                                  GLint *coord, GLuint *indices) {
+	return gl_mask_rects_to_coords((struct coord){0, 0}, (struct coord){0, 0}, nrects,
+	                               rects, coord, indices);
+}
 
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str);
 GLuint gl_create_program(const GLuint *const shaders, int nshaders);
@@ -145,8 +163,8 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask,
              coord_t mask_dst, const region_t *reg_blur, const region_t *reg_visible);
 bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
                   struct backend_image *mask, coord_t mask_dst, const region_t *reg_blur,
-                  const region_t *reg_visible attr_unused, GLuint source_texture,
-                  geometry_t source_size, GLuint target_fbo, GLuint default_mask);
+                  GLuint source_texture, geometry_t source_size, bool source_y_inverted,
+                  GLuint target_fbo, GLuint default_mask);
 void *gl_create_blur_context(backend_t *base, enum blur_method,
                              enum backend_image_format format, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);

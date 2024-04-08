@@ -30,5 +30,14 @@ struct color {
 
 typedef uint32_t opacity_t;
 
+typedef struct geometry {
+	int width;
+	int height;
+} geometry_t;
+
+typedef struct coord {
+	int x, y;
+} coord_t;
+
 #define MARGIN_INIT                                                                      \
 	{ 0, 0, 0, 0 }
