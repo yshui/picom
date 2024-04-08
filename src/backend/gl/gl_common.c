@@ -975,13 +975,14 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	gd->dummy_prog.uniform_bitmask = (uint32_t)-1;        // make sure our uniforms
 	                                                      // are not ignored.
 	if (gd->dithered_present) {
-		gd->present_prog = gl_create_program_from_strv(
+		gd->present_prog.prog = gl_create_program_from_strv(
 		    (const char *[]){vertex_shader, NULL},
 		    (const char *[]){present_frag, dither_glsl, NULL});
 	} else {
-		gd->present_prog = gd->dummy_prog.prog;
+		gd->present_prog.prog = gd->dummy_prog.prog;
 	}
-	if (!gd->present_prog) {
+	gd->present_prog.uniform_bitmask = (uint32_t)-1;
+	if (!gd->present_prog.prog) {
 		log_error("Failed to create the present shader");
 		return false;
 	}
@@ -989,9 +990,8 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glUseProgram(gd->dummy_prog.prog);
 	glUniform1i(UNIFORM_TEX_LOC, 0);
 	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
-	if (gd->present_prog != gd->dummy_prog.prog) {
-		glUseProgram(gd->present_prog);
-		glUniform1i(UNIFORM_TEX_LOC, 0);
+	if (gd->present_prog.prog != gd->dummy_prog.prog) {
+		glUseProgram(gd->present_prog.prog);
 		glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
 	}
 
@@ -1068,11 +1068,11 @@ void gl_deinit(struct gl_data *gd) {
 		gd->default_shader.prog = 0;
 	}
 	glDeleteProgram(gd->dummy_prog.prog);
-	if (gd->present_prog != gd->dummy_prog.prog) {
-		glDeleteProgram(gd->present_prog);
+	if (gd->present_prog.prog != gd->dummy_prog.prog) {
+		glDeleteProgram(gd->present_prog.prog);
 	}
 	gd->dummy_prog.prog = 0;
-	gd->present_prog = 0;
+	gd->present_prog.prog = 0;
 
 	glDeleteProgram(gd->fill_shader.prog);
 	glDeleteProgram(gd->brightness_shader.prog);
@@ -1191,35 +1191,11 @@ void gl_present(backend_t *base, const region_t *region) {
 	// Our back_texture is in Xorg coordinate system, but the GL back buffer is in
 	// GL clip space, which has the Y axis flipped.
 	gl_y_flip_target(nrects, coord, gd->height);
-
-	glUseProgram(gd->present_prog);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
-
-	GLuint vao;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
-
-	GLuint bo[2];
-	glGenBuffers(2, bo);
-	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(GLint) * nrects * 16, coord, GL_STREAM_DRAW);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(GLuint) * nrects * 6, indices,
-	             GL_STREAM_DRAW);
-
-	glEnableVertexAttribArray(vert_coord_loc);
-	glEnableVertexAttribArray(vert_in_texcoord_loc);
-	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 4, NULL);
-	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
-	                      sizeof(GLint) * 4, &((GLint *)NULL)[2]);
-	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
-	glDeleteBuffers(2, bo);
-	glDeleteVertexArrays(1, &vao);
+	struct gl_uniform_value uniforms[] = {
+	    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D, .texture = gd->back_texture},
+	};
+	gl_blit_inner(0, nrects, coord, indices, &gl_blit_vertex_attribs,
+	              &gd->present_prog, ARR_SIZE(uniforms), uniforms);
 
 	glEndQuery(GL_TIME_ELAPSED);
 	gd->current_frame_timing ^= 1;
