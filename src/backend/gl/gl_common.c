@@ -997,6 +997,8 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 
 	gd->shadow_shader.prog =
 	    gl_create_program_from_str(vertex_shader, shadow_colorization_frag);
+	gd->shadow_shader.uniform_bitmask = (uint32_t)-1;        // make sure our uniforms
+	                                                         // are not ignored.
 	glUseProgram(gd->shadow_shader.prog);
 	glUniform1i(UNIFORM_TEX_LOC, 0);
 	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
@@ -1406,6 +1408,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 
 	// Colorize the shadow with color.
 	log_debug("Colorize shadow");
+	// First prepare the new texture
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, new_inner->texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, new_inner->width, new_inner->height, 0,
@@ -1416,13 +1419,15 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	glClearColor(0, 0, 0, 0);
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	glBindTexture(GL_TEXTURE_2D, tmp_texture);
-	glUseProgram(gd->shadow_shader.prog);
-	// The shadow color is converted to the premultiplied format to respect the
-	// globally set glBlendFunc and thus get the correct and expected result.
-	glUniform4f(UNIFORM_COLOR_LOC, (GLfloat)(color.red * color.alpha),
-	            (GLfloat)(color.green * color.alpha),
-	            (GLfloat)(color.blue * color.alpha), (GLfloat)color.alpha);
+	struct gl_uniform_value uniforms[] = {
+	    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D, .i = (GLint)tmp_texture},
+	    // The shadow color is converted to the premultiplied format to respect the
+	    // globally set glBlendFunc and thus get the correct and expected result.
+	    [UNIFORM_COLOR_LOC] = {.type = GL_FLOAT_VEC4,
+	                           .f4 = {(float)(color.red * color.alpha),
+	                                  (float)(color.green * color.alpha),
+	                                  (float)(color.blue * color.alpha), (float)color.alpha}},
+	};
 
 	// clang-format off
 	GLuint indices[] = {0, 1, 2, 2, 3, 0};
@@ -1431,40 +1436,13 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	                 new_inner->width , new_inner->height,
 	                 0                , new_inner->height,};
 	// clang-format on
-
-	GLuint vao;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
-
-	GLuint bo[2];
-	glGenBuffers(2, bo);
-	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-	glBufferData(GL_ARRAY_BUFFER, (long)sizeof(*coord) * 8, coord, GL_STREAM_DRAW);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, (long)sizeof(*indices) * 6, indices,
-	             GL_STREAM_DRAW);
-
-	glEnableVertexAttribArray(vert_coord_loc);
-	glEnableVertexAttribArray(vert_in_texcoord_loc);
-	glVertexAttribPointer(vert_coord_loc, 2, GL_INT, GL_FALSE, sizeof(GLint) * 2, NULL);
-	glVertexAttribPointer(vert_in_texcoord_loc, 2, GL_INT, GL_FALSE,
-	                      sizeof(GLint) * 2, NULL);
-
-	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
-
-	glDisableVertexAttribArray(vert_coord_loc);
-	glBindVertexArray(0);
-	glDeleteVertexArrays(1, &vao);
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	glDeleteBuffers(2, bo);
+	gl_blit_inner(gd->temp_fbo, 1, coord, indices, &gl_simple_vertex_attribs,
+	              &gd->shadow_shader, ARR_SIZE(uniforms), uniforms);
 
 	glDeleteTextures(1, (GLuint[]){source_texture});
 	if (tmp_texture != source_texture) {
 		glDeleteTextures(1, (GLuint[]){tmp_texture});
 	}
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	gl_check_err();
 	return (image_handle)new_img;
 }
