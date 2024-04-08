@@ -343,6 +343,7 @@ struct gl_uniform_value {
 		GLfloat f;
 		GLint i2[2];
 		GLfloat f2[2];
+		GLfloat f4[4];
 	};
 };
 
@@ -421,6 +422,7 @@ static void gl_blit_inner(GLuint target_fbo, int nrects, GLint *coord, GLuint *i
 		case GL_FLOAT: glUniform1f(i, uniform->f); break;
 		case GL_INT_VEC2: glUniform2iv(i, 1, uniform->i2); break;
 		case GL_FLOAT_VEC2: glUniform2fv(i, 1, uniform->f2); break;
+		case GL_FLOAT_VEC4: glUniform4fv(i, 1, uniform->f4); break;
 		default: assert(false);
 		}
 	}
@@ -726,60 +728,29 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 
 /// Fill a given region in bound framebuffer.
 /// @param[in] y_inverted whether the y coordinates in `clip` should be inverted
-static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLuint target) {
-	static const GLuint fill_vert_in_coord_loc = 0;
+static void
+gl_fill_inner(backend_t *base, struct color c, const region_t *clip, GLuint target) {
+	static const struct gl_vertex_attribs_definition vertex_attribs = {
+	    .stride = sizeof(GLint) * 4,
+	    .count = 1,
+	    .attribs = {{GL_INT, vert_coord_loc, NULL}},
+	};
+
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles((region_t *)clip, &nrects);
 	auto gd = (struct gl_data *)base;
 
-	GLuint vao;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
-
-	GLuint bo[2];
-	glGenBuffers(2, bo);
-	glUseProgram(gd->fill_shader.prog);
-	glUniform4f(UNIFORM_COLOR_LOC, (GLfloat)c.red, (GLfloat)c.green, (GLfloat)c.blue,
-	            (GLfloat)c.alpha);
-	glEnableVertexAttribArray(fill_vert_in_coord_loc);
-	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
-
-	auto coord = ccalloc(nrects * 8, GLint);
+	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	for (ptrdiff_t i = 0; i < nrects; i++) {
-		GLint y1 = rect[i].y1, y2 = rect[i].y2;
-		// clang-format off
-		memcpy(&coord[i * 8],
-		       ((GLint[][2]){
-		           {rect[i].x1, y1}, {rect[i].x2, y1},
-		           {rect[i].x2, y2}, {rect[i].x1, y2}}),
-		       sizeof(GLint[2]) * 4);
-		// clang-format on
-		indices[i * 6 + 0] = (GLuint)i * 4 + 0;
-		indices[i * 6 + 1] = (GLuint)i * 4 + 1;
-		indices[i * 6 + 2] = (GLuint)i * 4 + 2;
-		indices[i * 6 + 3] = (GLuint)i * 4 + 2;
-		indices[i * 6 + 4] = (GLuint)i * 4 + 3;
-		indices[i * 6 + 5] = (GLuint)i * 4 + 0;
-	}
-	glBufferData(GL_ARRAY_BUFFER, nrects * 8 * (long)sizeof(*coord), coord, GL_STREAM_DRAW);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, nrects * 6 * (long)sizeof(*indices),
-	             indices, GL_STREAM_DRAW);
 
-	glVertexAttribPointer(fill_vert_in_coord_loc, 2, GL_INT, GL_FALSE,
-	                      sizeof(*coord) * 2, (void *)0);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
-	glDrawElements(GL_TRIANGLES, nrects * 6, GL_UNSIGNED_INT, NULL);
-
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-	glDisableVertexAttribArray(fill_vert_in_coord_loc);
-	glBindVertexArray(0);
-	glDeleteVertexArrays(1, &vao);
-
-	glDeleteBuffers(2, bo);
+	struct gl_uniform_value uniforms[] = {
+	    [UNIFORM_COLOR_LOC] = {.type = GL_FLOAT_VEC4,
+	                           .f4 = {(float)c.red, (float)c.green, (float)c.blue,
+	                                  (float)c.alpha}},
+	};
+	gl_mask_rects_to_coords_simple(nrects, rect, coord, indices);
+	gl_blit_inner(target, nrects, coord, indices, &vertex_attribs, &gd->fill_shader,
+	              ARR_SIZE(uniforms), uniforms);
 	free(indices);
 	free(coord);
 
@@ -788,7 +759,7 @@ static void _gl_fill(backend_t *base, struct color c, const region_t *clip, GLui
 
 void gl_fill(backend_t *base, struct color c, const region_t *clip) {
 	auto gd = (struct gl_data *)base;
-	return _gl_fill(base, c, clip, gd->back_fbo);
+	return gl_fill_inner(base, c, clip, gd->back_fbo);
 }
 
 image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg) {
@@ -819,7 +790,7 @@ image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg)
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
-	_gl_fill(base, (struct color){1, 1, 1, 1}, reg, gd->temp_fbo);
+	gl_fill_inner(base, (struct color){1, 1, 1, 1}, reg, gd->temp_fbo);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 	return (image_handle)img;
@@ -988,6 +959,8 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	                                   {-1, -1, 0, 1}};
 
 	gd->fill_shader.prog = gl_create_program_from_str(fill_vert, fill_frag);
+	gd->fill_shader.uniform_bitmask = (uint32_t)-1;        // make sure our uniforms
+	                                                       // are not ignored.
 	glUseProgram(gd->fill_shader.prog);
 	glUniformMatrix4fv(UNIFORM_PROJECTION_LOC, 1, false, projection_matrix[0]);
 	glUseProgram(0);
@@ -1200,7 +1173,7 @@ static void gl_image_apply_alpha(backend_t *base, struct backend_image *img,
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       inner->texture, 0);
 	glDrawBuffer(GL_COLOR_ATTACHMENT0);
-	_gl_fill(base, (struct color){0, 0, 0, 0}, reg_op, gd->temp_fbo);
+	gl_fill_inner(base, (struct color){0, 0, 0, 0}, reg_op, gd->temp_fbo);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 }
