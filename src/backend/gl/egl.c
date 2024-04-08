@@ -274,7 +274,7 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 
 	// Create texture
 	inner->user_data = eglpixmap;
-	inner->texture = gl_new_texture(GL_TEXTURE_2D);
+	inner->texture = gl_new_texture();
 	inner->has_alpha = fmt.alpha_size != 0;
 	wd->opacity = 1;
 	wd->color_inverted = false;

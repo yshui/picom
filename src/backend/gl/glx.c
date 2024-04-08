@@ -452,7 +452,7 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 
 	// Create texture
 	inner->user_data = glxpixmap;
-	inner->texture = gl_new_texture(GL_TEXTURE_2D);
+	inner->texture = gl_new_texture();
 	inner->has_alpha = fmt.alpha_size != 0;
 	wd->inner->refcount = 1;
 	glBindTexture(GL_TEXTURE_2D, inner->texture);

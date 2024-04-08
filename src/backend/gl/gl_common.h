@@ -66,6 +66,18 @@ struct gl_texture {
 	void *user_data;
 };
 
+enum gl_sampler {
+	GL_SAMPLER_REPEAT = 0,
+	/// Clamp to edge
+	GL_SAMPLER_EDGE,
+	/// Clamp to border, border color will be (0, 0, 0, 0)
+	GL_SAMPLER_BORDER,
+	/// Special sampler for blurring, same as `GL_SAMPLER_CLAMP_TO_EDGE`,
+	/// but uses linear filtering.
+	GL_SAMPLER_BLUR,
+	GL_MAX_SAMPLERS = GL_SAMPLER_BLUR + 1,
+};
+
 struct gl_data {
 	backend_t base;
 	// If we are using proprietary NVIDIA driver
@@ -87,6 +99,7 @@ struct gl_data {
 	int current_frame_timing;
 	struct gl_shader present_prog;
 	struct gl_shader dummy_prog;
+	GLuint samplers[GL_MAX_SAMPLERS];
 
 	bool dithered_present;
 
@@ -149,7 +162,7 @@ void gl_resize(struct gl_data *, int width, int height);
 bool gl_init(struct gl_data *gd, session_t *);
 void gl_deinit(struct gl_data *gd);
 
-GLuint gl_new_texture(GLenum target);
+GLuint gl_new_texture(void);
 
 bool gl_image_op(backend_t *base, enum image_operations op, image_handle image,
                  const region_t *reg_op, const region_t *reg_visible, void *arg);
@@ -164,7 +177,7 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask,
 bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
                   struct backend_image *mask, coord_t mask_dst, const region_t *reg_blur,
                   GLuint source_texture, geometry_t source_size, bool source_y_inverted,
-                  GLuint target_fbo, GLuint default_mask);
+                  GLuint blur_sampler, GLuint target_fbo, GLuint default_mask);
 void *gl_create_blur_context(backend_t *base, enum blur_method,
                              enum backend_image_format format, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);

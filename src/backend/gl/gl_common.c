@@ -224,13 +224,14 @@ _gl_average_texture_color(GLuint source_texture, GLuint destination_texture,
 	glBufferSubData(GL_ARRAY_BUFFER, 0, (long)sizeof(*coord) * 16, coord);
 
 	// Prepare framebuffer for new render iteration
-	glBindTexture(GL_TEXTURE_2D, destination_texture);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
 	                       destination_texture, 0);
 	gl_check_fb_complete(GL_FRAMEBUFFER);
 
 	// Bind source texture as downscaling shader uniform input
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, source_texture);
+	glBindSampler(0, 0);
 
 	// Render into framebuffer
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
@@ -334,11 +335,15 @@ static GLuint gl_average_texture_color(struct gl_data *gd, struct gl_texture *im
 
 	return result_texture;
 }
+struct gl_texture_unit {
+	GLuint texture;
+	GLuint sampler;
+};
 
 struct gl_uniform_value {
 	GLenum type;
 	union {
-		GLuint texture;
+		struct gl_texture_unit tu;
 		GLint i;
 		GLfloat f;
 		GLint i2[2];
@@ -409,11 +414,12 @@ static void gl_blit_inner(GLuint target_fbo, int nrects, GLint *coord, GLuint *i
 		switch (uniform->type) {
 		case 0: break;
 		case GL_TEXTURE_2D:
-			if (uniform->texture == 0) {
+			if (uniform->tu.texture == 0) {
 				glUniform1i(i, 0);
 			} else {
 				glActiveTexture(texture_unit);
-				glBindTexture(GL_TEXTURE_2D, uniform->texture);
+				glBindTexture(GL_TEXTURE_2D, uniform->tu.texture);
+				glBindSampler(texture_unit - GL_TEXTURE0, uniform->tu.sampler);
 				glUniform1i(i, (GLint)(texture_unit - GL_TEXTURE0));
 				texture_unit += 1;
 			}
@@ -570,6 +576,8 @@ static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
 
 	auto mask_image = args->mask ? (struct gl_texture *)args->mask->image : NULL;
 	auto mask_texture = mask_image ? mask_image->texture : gd->default_mask_texture;
+	auto mask_sampler =
+	    mask_image ? gd->samplers[GL_SAMPLER_BORDER] : gd->samplers[GL_SAMPLER_REPEAT];
 	GLuint brightness = 0;        // 0 means the default texture, which will be
 	                              // incomplete, and sampling from it will return (0,
 	                              // 0, 0, 1), which should be fine.
@@ -585,21 +593,24 @@ static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
 	float time_ms = (float)ts.tv_sec * 1000.0F + (float)ts.tv_nsec / 1.0e6F;
 	// clang-format off
 	struct gl_uniform_value from_uniforms[] = {
-	    [UNIFORM_OPACITY_LOC] = {.type = GL_FLOAT, .f = (float)args->opacity},
-	    [UNIFORM_INVERT_COLOR_LOC] = {.type = GL_INT, .i = args->color_inverted},
-	    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D, .texture = img->texture},
+	    [UNIFORM_OPACITY_LOC]        = {.type = GL_FLOAT, .f = (float)args->opacity},
+	    [UNIFORM_INVERT_COLOR_LOC]   = {.type = GL_INT, .i = args->color_inverted},
+	    [UNIFORM_TEX_LOC]            = {.type = GL_TEXTURE_2D,
+	                                    .tu = {img->texture, gd->samplers[GL_SAMPLER_REPEAT]}},
 	    [UNIFORM_EFFECTIVE_SIZE_LOC] = {.type = GL_FLOAT_VEC2,
 	                                    .f2 = {(float)args->ewidth, (float)args->eheight}},
-	    [UNIFORM_DIM_LOC] = {.type = GL_FLOAT, .f = (float)args->dim},
-	    [UNIFORM_BRIGHTNESS_LOC] = {.type = GL_TEXTURE_2D, .texture = brightness},
+	    [UNIFORM_DIM_LOC]            = {.type = GL_FLOAT, .f = (float)args->dim},
+	    [UNIFORM_BRIGHTNESS_LOC]     = {.type = GL_TEXTURE_2D,
+	                                    .tu = {brightness, gd->samplers[GL_SAMPLER_EDGE]}},
 	    [UNIFORM_MAX_BRIGHTNESS_LOC] = {.type = GL_FLOAT, .f = (float)args->max_brightness},
-	    [UNIFORM_CORNER_RADIUS_LOC] = {.type = GL_FLOAT, .f = (float)args->corner_radius},
-	    [UNIFORM_BORDER_WIDTH_LOC] = {.type = GL_FLOAT, .f = (float)args->border_width},
-	    [UNIFORM_TIME_LOC] = {.type = GL_FLOAT, .f = time_ms},
-	    [UNIFORM_MASK_TEX_LOC] = {.type = GL_TEXTURE_2D, .texture = mask_texture},
-	    [UNIFORM_MASK_OFFSET_LOC] = {.type = GL_FLOAT_VEC2, .f2 = {0.0F, 0.0F}},
+	    [UNIFORM_CORNER_RADIUS_LOC]  = {.type = GL_FLOAT, .f = (float)args->corner_radius},
+	    [UNIFORM_BORDER_WIDTH_LOC]   = {.type = GL_FLOAT, .f = (float)args->border_width},
+	    [UNIFORM_TIME_LOC]           = {.type = GL_FLOAT, .f = time_ms},
+	    [UNIFORM_MASK_TEX_LOC]       = {.type = GL_TEXTURE_2D,
+	                                    .tu = {mask_texture, mask_sampler}},
+	    [UNIFORM_MASK_OFFSET_LOC]    = {.type = GL_FLOAT_VEC2, .f2 = {0.0F, 0.0F}},
+	    [UNIFORM_MASK_INVERTED_LOC]  = {.type = GL_INT, .i = 0},
 	    [UNIFORM_MASK_CORNER_RADIUS_LOC] = {.type = GL_FLOAT, .f = 0.0F},
-	    [UNIFORM_MASK_INVERTED_LOC] = {.type = GL_INT, .i = 0},
 	};
 	// clang-format on
 
@@ -618,15 +629,15 @@ static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
 static const struct gl_uniform_value default_blit_uniforms[] = {
     [UNIFORM_OPACITY_LOC] = {.type = GL_FLOAT, .f = 1.0F},
     [UNIFORM_INVERT_COLOR_LOC] = {.type = GL_INT, .i = 0},
-    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D, .texture = 0},
+    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D, .tu = {}},
     [UNIFORM_EFFECTIVE_SIZE_LOC] = {.type = GL_FLOAT_VEC2, .f2 = {0.0F, 0.0F}},        // Must be set
     [UNIFORM_DIM_LOC] = {.type = GL_FLOAT, .f = 0.0F},
-    [UNIFORM_BRIGHTNESS_LOC] = {.type = GL_TEXTURE_2D, .texture = 0},
+    [UNIFORM_BRIGHTNESS_LOC] = {.type = GL_TEXTURE_2D, .tu = {}},
     [UNIFORM_MAX_BRIGHTNESS_LOC] = {.type = GL_FLOAT, .f = 1.0F},
     [UNIFORM_CORNER_RADIUS_LOC] = {.type = GL_FLOAT, .f = 0.0F},
     [UNIFORM_BORDER_WIDTH_LOC] = {.type = GL_FLOAT, .f = 0.0F},
     [UNIFORM_TIME_LOC] = {.type = GL_FLOAT, .f = 0.0F},
-    [UNIFORM_MASK_TEX_LOC] = {.type = GL_TEXTURE_2D, .texture = 0},        // Must be set
+    [UNIFORM_MASK_TEX_LOC] = {.type = GL_TEXTURE_2D, .tu = {}},        // Must be set
     [UNIFORM_MASK_OFFSET_LOC] = {.type = GL_FLOAT_VEC2, .f2 = {0.0F, 0.0F}},
     [UNIFORM_MASK_CORNER_RADIUS_LOC] = {.type = GL_FLOAT, .f = 0.0F},
     [UNIFORM_MASK_INVERTED_LOC] = {.type = GL_INT, .i = 0},
@@ -770,15 +781,13 @@ image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg)
 	log_trace("Creating mask texture %dx%d", size.width, size.height);
 	tex->width = size.width;
 	tex->height = size.height;
-	tex->texture = gl_new_texture(GL_TEXTURE_2D);
+	tex->texture = gl_new_texture();
 	tex->has_alpha = false;
 	tex->y_inverted = true;
 	img->inner = (struct backend_image_inner_base *)tex;
 	img->inner->refcount = 1;
 
 	glBindTexture(GL_TEXTURE_2D, tex->texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, size.width, size.height, 0, GL_RED,
 	             GL_UNSIGNED_BYTE, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
@@ -926,14 +935,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 		return false;
 	}
 
-	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glBindTexture(GL_TEXTURE_2D, 0);
-
-	gd->default_mask_texture = gl_new_texture(GL_TEXTURE_2D);
+	gd->default_mask_texture = gl_new_texture();
 	if (!gd->default_mask_texture) {
 		log_error("Failed to generate a default mask texture");
 		return false;
@@ -1037,6 +1039,22 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	}
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
+	glGenSamplers(GL_MAX_SAMPLERS, gd->samplers);
+	for (int i = 0; i < GL_MAX_SAMPLERS; i++) {
+		glSamplerParameteri(gd->samplers[i], GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glSamplerParameteri(gd->samplers[i], GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	}
+	glSamplerParameterf(gd->samplers[GL_SAMPLER_EDGE], GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glSamplerParameterf(gd->samplers[GL_SAMPLER_EDGE], GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glSamplerParameterf(gd->samplers[GL_SAMPLER_BLUR], GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glSamplerParameterf(gd->samplers[GL_SAMPLER_BLUR], GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glSamplerParameterf(gd->samplers[GL_SAMPLER_BLUR], GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glSamplerParameterf(gd->samplers[GL_SAMPLER_BLUR], GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glSamplerParameterf(gd->samplers[GL_SAMPLER_BORDER], GL_TEXTURE_WRAP_S,
+	                    GL_CLAMP_TO_BORDER);
+	glSamplerParameterf(gd->samplers[GL_SAMPLER_BORDER], GL_TEXTURE_WRAP_T,
+	                    GL_CLAMP_TO_BORDER);
+
 	gd->logger = gl_string_marker_logger_new();
 	if (gd->logger) {
 		log_add_target_tls(gd->logger);
@@ -1084,6 +1102,10 @@ void gl_deinit(struct gl_data *gd) {
 	glDeleteTextures(1, &gd->default_mask_texture);
 	glDeleteTextures(1, &gd->back_texture);
 
+	for (int i = 0; i < GL_MAX_SAMPLERS; i++) {
+		glDeleteSamplers(1, &gd->samplers[i]);
+	}
+
 	glDeleteFramebuffers(1, &gd->temp_fbo);
 	glDeleteFramebuffers(1, &gd->back_fbo);
 
@@ -1092,21 +1114,13 @@ void gl_deinit(struct gl_data *gd) {
 	gl_check_err();
 }
 
-GLuint gl_new_texture(GLenum target) {
+GLuint gl_new_texture(void) {
 	GLuint texture;
 	glGenTextures(1, &texture);
 	if (!texture) {
 		log_error("Failed to generate texture");
 		return 0;
 	}
-
-	glBindTexture(target, texture);
-	glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glBindTexture(target, 0);
-
 	return texture;
 }
 
@@ -1122,7 +1136,7 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 
 	*new_tex = *inner;
 	new_tex->pixmap = XCB_NONE;
-	new_tex->texture = gl_new_texture(GL_TEXTURE_2D);
+	new_tex->texture = gl_new_texture();
 	new_tex->refcount = 1;
 	new_tex->user_data = gd->decouple_texture_user_data(base, new_tex->user_data);
 
@@ -1155,7 +1169,8 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	// clang-format on
 
 	struct gl_uniform_value uniforms[] = {
-	    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D, .texture = inner->texture},
+	    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D,
+	                         .tu = {inner->texture, gd->samplers[GL_SAMPLER_EDGE]}},
 	};
 	gl_blit_inner(gd->temp_fbo, 1, coord, indices, &gl_simple_vertex_attribs,
 	              &gd->dummy_prog, ARR_SIZE(uniforms), uniforms);
@@ -1192,7 +1207,8 @@ void gl_present(backend_t *base, const region_t *region) {
 	// GL clip space, which has the Y axis flipped.
 	gl_y_flip_target(nrects, coord, gd->height);
 	struct gl_uniform_value uniforms[] = {
-	    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D, .texture = gd->back_texture},
+	    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D,
+	                         .tu = {gd->back_texture, gd->samplers[GL_SAMPLER_EDGE]}},
 	};
 	gl_blit_inner(0, nrects, coord, indices, &gl_blit_vertex_attribs,
 	              &gd->present_prog, ARR_SIZE(uniforms), uniforms);
@@ -1290,7 +1306,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	auto new_inner = ccalloc(1, struct gl_texture);
 	new_inner->width = inner->width + radius * 2;
 	new_inner->height = inner->height + radius * 2;
-	new_inner->texture = gl_new_texture(GL_TEXTURE_2D);
+	new_inner->texture = gl_new_texture();
 	new_inner->has_alpha = inner->has_alpha;
 	new_inner->y_inverted = true;
 	auto new_img = ccalloc(1, struct backend_image);
@@ -1300,20 +1316,16 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 
 	// We apply the mask properties by blitting a pure white texture with the mask
 	// image as mask.
-	auto white_texture = gl_new_texture(GL_TEXTURE_2D);
+	auto white_texture = gl_new_texture();
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, white_texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, 1, 1, 0, GL_RED, GL_UNSIGNED_BYTE,
 	             (GLbyte[]){'\xff'});
 	glBindTexture(GL_TEXTURE_2D, 0);
 
-	auto source_texture = gl_new_texture(GL_TEXTURE_2D);
+	auto source_texture = gl_new_texture();
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, source_texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, new_inner->width, new_inner->height, 0,
 	             GL_RED, GL_UNSIGNED_BYTE, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
@@ -1345,8 +1357,10 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		memcpy(uniforms, default_blit_uniforms, sizeof(default_blit_uniforms));
 		uniforms[UNIFORM_EFFECTIVE_SIZE_LOC].f2[0] = (float)inner->width;
 		uniforms[UNIFORM_EFFECTIVE_SIZE_LOC].f2[1] = (float)inner->height;
-		uniforms[UNIFORM_TEX_LOC].i = (GLint)white_texture;
-		uniforms[UNIFORM_MASK_TEX_LOC].i = (GLint)inner->texture;
+		uniforms[UNIFORM_TEX_LOC].tu =
+		    (struct gl_texture_unit){white_texture, gd->samplers[GL_SAMPLER_EDGE]};
+		uniforms[UNIFORM_MASK_TEX_LOC].tu = (struct gl_texture_unit){
+		    inner->texture, gd->samplers[GL_SAMPLER_BORDER]};
 		uniforms[UNIFORM_MASK_INVERTED_LOC].i = mask->color_inverted;
 		uniforms[UNIFORM_MASK_CORNER_RADIUS_LOC].f = (float)mask->corner_radius;
 		gl_blit_inner(gd->temp_fbo, 1, coords, indices, &gl_blit_vertex_attribs,
@@ -1359,7 +1373,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	auto tmp_texture = source_texture;
 	if (gsctx->blur_context != NULL) {
 		glActiveTexture(GL_TEXTURE0);
-		tmp_texture = gl_new_texture(GL_TEXTURE_2D);
+		tmp_texture = gl_new_texture();
 		glBindTexture(GL_TEXTURE_2D, tmp_texture);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, new_inner->width,
 		             new_inner->height, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
@@ -1377,8 +1391,8 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		// that.
 		gl_blur_impl(
 		    1.0, gsctx->blur_context, NULL, (coord_t){0}, &reg_blur, source_texture,
-		    (geometry_t){.width = new_inner->width, .height = new_inner->height},
-		    true, gd->temp_fbo, gd->default_mask_texture);
+		    (geometry_t){.width = new_inner->width, .height = new_inner->height}, true,
+		    gd->samplers[GL_SAMPLER_BLUR], gd->temp_fbo, gd->default_mask_texture);
 		pixman_region32_fini(&reg_blur);
 	}
 
@@ -1396,7 +1410,8 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	struct gl_uniform_value uniforms[] = {
-	    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D, .i = (GLint)tmp_texture},
+	    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D,
+	                         .tu = {tmp_texture, gd->samplers[GL_SAMPLER_EDGE]}},
 	    // The shadow color is converted to the premultiplied format to respect the
 	    // globally set glBlendFunc and thus get the correct and expected result.
 	    [UNIFORM_COLOR_LOC] = {.type = GL_FLOAT_VEC4,
