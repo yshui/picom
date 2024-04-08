@@ -86,8 +86,8 @@ struct gl_data {
 	bool has_robustness;
 	// If EXT_EGL_image_storage extension is present
 	bool has_egl_image_storage;
-	// Height and width of the root window
-	int height, width;
+	/// A symbolic image representing the back buffer.
+	struct gl_texture back_image;
 	struct gl_shader default_shader;
 	struct gl_shader brightness_shader;
 	struct gl_shader fill_shader;
@@ -174,10 +174,9 @@ image_handle gl_clone(backend_t *base, image_handle image, const region_t *reg_v
 
 bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask,
              coord_t mask_dst, const region_t *reg_blur, const region_t *reg_visible);
-bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
-                  struct backend_image *mask, coord_t mask_dst, const region_t *reg_blur,
-                  GLuint source_texture, geometry_t source_size, bool source_y_inverted,
-                  GLuint blur_sampler, GLuint target_fbo, GLuint default_mask);
+bool gl_blur_impl(struct gl_data *gd, struct coord origin, struct gl_texture *target,
+                  struct backend_blur_args *args);
+void gl_apply_alpha(backend_t *base, image_handle target, double alpha, const region_t *reg_op);
 void *gl_create_blur_context(backend_t *base, enum blur_method,
                              enum backend_image_format format, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
@@ -191,6 +190,42 @@ void gl_fill(backend_t *base, struct color, const region_t *clip);
 
 void gl_present(backend_t *base, const region_t *);
 enum device_status gl_device_status(backend_t *base);
+
+#define gl_check_fb_complete(fb) gl_check_fb_complete_(__func__, __LINE__, (fb))
+static inline bool gl_check_fb_complete_(const char *func, int line, GLenum fb);
+
+/// Return a FBO with `image` bound to the first color attachment. `GL_DRAW_FRAMEBUFFER`
+/// will be bound to the returned FBO.
+static inline GLuint gl_bind_image_to_fbo(struct gl_data *gd, image_handle image_) {
+	auto image = (struct gl_texture *)image_;
+	if (image == &gd->back_image) {
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+		return 0;
+	}
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->temp_fbo);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+	                       image->texture, 0);
+	CHECK(gl_check_fb_complete(GL_DRAW_FRAMEBUFFER));
+	glDrawBuffer(GL_COLOR_ATTACHMENT0);
+	return gd->temp_fbo;
+}
+
+/// Flip the target coordinates returned by `gl_mask_rects_to_coords` vertically relative
+/// to the target. Texture coordinates are unchanged.
+///
+/// @param[in] nrects        number of rectangles
+/// @param[in] coord         OpenGL vertex coordinates
+/// @param[in] target_height height of the target image
+static inline void gl_y_flip_target(int nrects, GLint *coord, GLint target_height) {
+	for (ptrdiff_t i = 0; i < nrects; i++) {
+		auto current_rect = &coord[i * 16];        // 16 numbers per rectangle
+		for (ptrdiff_t j = 0; j < 4; j++) {
+			// 4 numbers per vertex, target coordinates are the first two
+			auto current_vertex = &current_rect[j * 4];
+			current_vertex[1] = target_height - current_vertex[1];
+		}
+	}
+}
 
 /**
  * Get a textual representation of an OpenGL error.
@@ -265,8 +300,6 @@ static inline bool gl_check_fb_complete_(const char *func, int line, GLenum fb) 
 
 	return false;
 }
-
-#define gl_check_fb_complete(fb) gl_check_fb_complete_(__func__, __LINE__, (fb))
 
 static const GLuint vert_coord_loc = 0;
 static const GLuint vert_in_texcoord_loc = 1;

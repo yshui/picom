@@ -41,10 +41,9 @@ struct gl_blur_context {
  * Blur contents in a particular region.
  */
 static bool
-gl_kernel_blur(double opacity, struct gl_blur_context *bctx, struct backend_image *mask,
-               coord_t mask_dst, const GLuint vao[2], const int vao_nelems[2],
-               GLuint source_texture, geometry_t source_size, GLuint blur_sampler,
-               GLuint target_fbo, GLuint default_mask) {
+gl_kernel_blur(double opacity, struct gl_blur_context *bctx, struct backend_mask *mask,
+               const GLuint vao[2], const int vao_nelems[2], struct gl_texture *source,
+               GLuint blur_sampler, GLuint target_fbo, GLuint default_mask) {
 	int curr = 0;
 	for (int i = 0; i < bctx->npasses; ++i) {
 		auto p = &bctx->blur_shader[i];
@@ -57,9 +56,9 @@ gl_kernel_blur(double opacity, struct gl_blur_context *bctx, struct backend_imag
 		GLuint src_texture;
 
 		if (i == 0) {
-			src_texture = source_texture;
-			tex_width = source_size.width;
-			tex_height = source_size.height;
+			src_texture = source->texture;
+			tex_width = source->width;
+			tex_height = source->height;
 		} else {
 			src_texture = bctx->blur_textures[curr];
 			auto src_size = bctx->texture_sizes[curr];
@@ -109,15 +108,16 @@ gl_kernel_blur(double opacity, struct gl_blur_context *bctx, struct backend_imag
 		} else {
 			// last pass, draw directly into the back buffer, with origin
 			// regions. And apply mask if requested
-			if (mask) {
-				auto inner = (struct gl_texture *)mask->inner;
+			if (mask->image) {
+				auto inner = (struct gl_texture *)mask->image;
+				log_trace("Mask texture is %d", inner->texture);
 				glActiveTexture(GL_TEXTURE1);
 				glBindTexture(GL_TEXTURE_2D, inner->texture);
-				glUniform1i(UNIFORM_MASK_INVERTED_LOC, mask->color_inverted);
+				glUniform1i(UNIFORM_MASK_INVERTED_LOC, mask->inverted);
 				glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC,
 				            (float)mask->corner_radius);
-				glUniform2f(UNIFORM_MASK_OFFSET_LOC, (float)(mask_dst.x),
-				            (float)(mask_dst.y));
+				glUniform2f(UNIFORM_MASK_OFFSET_LOC, (float)(mask->origin.x),
+				            (float)(mask->origin.y));
 			}
 			glBindVertexArray(vao[0]);
 			nelems = vao_nelems[0];
@@ -137,9 +137,14 @@ gl_kernel_blur(double opacity, struct gl_blur_context *bctx, struct backend_imag
 	return true;
 }
 
+/// Do dual-kawase blur.
+///
+/// @param vao two vertex array objects.
+///            [0]: for sampling from blurred result into the target fbo.
+///            [1]: for sampling from the source texture into blurred textures.
 bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
-                         struct backend_image *mask, coord_t mask_dst, const GLuint vao[2],
-                         const int vao_nelems[2], GLuint source_texture, geometry_t source_size,
+                         struct backend_mask *mask, const GLuint vao[2],
+                         const int vao_nelems[2], struct gl_texture *source,
                          GLuint blur_sampler, GLuint target_fbo, GLuint default_mask) {
 	int iterations = bctx->blur_texture_count;
 	int scale_factor = 1;
@@ -161,9 +166,9 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
 
 		if (i == 0) {
 			// first pass: copy from back buffer
-			src_texture = source_texture;
-			tex_width = source_size.width;
-			tex_height = source_size.height;
+			src_texture = source->texture;
+			tex_width = source->width;
+			tex_height = source->height;
 		} else {
 			// copy from previous pass
 			src_texture = bctx->blur_textures[i - 1];
@@ -226,16 +231,17 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, bctx->blur_fbos[i - 1]);
 			glDrawBuffer(GL_COLOR_ATTACHMENT0);
 		} else {
-			// last pass, draw directly into the back buffer
-			if (mask) {
-				auto inner = (struct gl_texture *)mask->inner;
+			// last pass, draw directly into the target fbo
+			if (mask->image) {
+				auto inner = (struct gl_texture *)mask->image;
+				log_trace("Mask texture is %d", inner->texture);
 				glActiveTexture(GL_TEXTURE1);
 				glBindTexture(GL_TEXTURE_2D, inner->texture);
-				glUniform1i(UNIFORM_MASK_INVERTED_LOC, mask->color_inverted);
+				glUniform1i(UNIFORM_MASK_INVERTED_LOC, mask->inverted);
 				glUniform1f(UNIFORM_MASK_CORNER_RADIUS_LOC,
 				            (float)mask->corner_radius);
-				glUniform2f(UNIFORM_MASK_OFFSET_LOC, (float)(mask_dst.x),
-				            (float)(mask_dst.y));
+				glUniform2f(UNIFORM_MASK_OFFSET_LOC, (float)(mask->origin.x),
+				            (float)(mask->origin.y));
 			}
 			glBindVertexArray(vao[0]);
 			nelems = vao_nelems[0];
@@ -302,49 +308,52 @@ static bool gl_blur_context_preallocate_textures(struct gl_blur_context *bctx,
 }
 
 /// Internal function that does the blur.
-///
-/// @param source_y_inverted whether `source_texture` is y inverted.
-bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
-                  struct backend_image *mask, coord_t mask_dst, const region_t *reg_blur,
-                  GLuint source_texture, geometry_t source_size, bool source_y_inverted,
-                  GLuint blur_sampler, GLuint target_fbo, GLuint default_mask) {
-	log_trace("Blur size: %dx%d, method: %d", source_size.width, source_size.height,
-	          bctx->method);
+bool gl_blur_impl(struct gl_data *gd, struct coord origin, struct gl_texture *target,
+                  struct backend_blur_args *args) {
+	auto source = (struct gl_texture *)args->source_image;
+	auto bctx = (struct gl_blur_context *)args->blur_context;
+	log_trace("Blur size: %dx%d, method: %d", source->width, source->height, bctx->method);
 	bool ret = false;
 
 	// Remainder: regions are in Xorg coordinates
 	auto reg_blur_resized =
-	    resize_region(reg_blur, bctx->resize_width, bctx->resize_height);
-	const rect_t *extent = pixman_region32_extents((region_t *)reg_blur);
+	    resize_region(&args->mask->region, bctx->resize_width, bctx->resize_height);
+	const rect_t *extent = pixman_region32_extents(&args->mask->region);
 	int width = extent->x2 - extent->x1, height = extent->y2 - extent->y1;
 	if (width == 0 || height == 0) {
 		return true;
 	}
 
 	int nrects, nrects_resized;
-	const rect_t *rects = pixman_region32_rectangles((region_t *)reg_blur, &nrects),
+	const rect_t *rects = pixman_region32_rectangles(&args->mask->region, &nrects),
 	             *rects_resized =
 	                 pixman_region32_rectangles(&reg_blur_resized, &nrects_resized);
 	if (!nrects || !nrects_resized) {
 		return true;
 	}
 
-	if (!gl_blur_context_preallocate_textures(bctx, source_size)) {
+	if (!gl_blur_context_preallocate_textures(
+	        bctx, (struct geometry){source->width, source->height})) {
 		return false;
 	}
 
+	// Original region for the final compositing step from blur result to target.
 	auto coord = ccalloc(nrects * 16, GLint);
 	auto indices = ccalloc(nrects * 6, GLuint);
-	gl_mask_rects_to_coords_simple(nrects, rects, coord, indices);
+	gl_mask_rects_to_coords(origin, args->mask->origin, nrects, rects, coord, indices);
+	if (!target->y_inverted) {
+		gl_y_flip_target(nrects, coord, target->height);
+	}
 
+	// Resize region for sampling from source texture, and for blur passes
 	auto coord_resized = ccalloc(nrects_resized * 16, GLint);
 	auto indices_resized = ccalloc(nrects_resized * 6, GLuint);
-	gl_mask_rects_to_coords_simple(nrects_resized, rects_resized, coord_resized,
-	                               indices_resized);
+	gl_mask_rects_to_coords(origin, args->mask->origin, nrects_resized, rects_resized,
+	                        coord_resized, indices_resized);
 	pixman_region32_fini(&reg_blur_resized);
 	// FIXME(yshui) In theory we should handle blurring a non-y-inverted source, but
 	// we never actually use that capability anywhere.
-	assert(source_y_inverted);
+	assert(source->y_inverted);
 
 	GLuint vao[2];
 	glGenVertexArrays(2, vao);
@@ -379,14 +388,15 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
 
 	int vao_nelems[2] = {nrects * 6, nrects_resized * 6};
 
+	auto target_fbo = gl_bind_image_to_fbo(gd, (image_handle)target);
 	if (bctx->method == BLUR_METHOD_DUAL_KAWASE) {
-		ret = gl_dual_kawase_blur(opacity, bctx, mask, mask_dst, vao, vao_nelems,
-		                          source_texture, source_size, blur_sampler,
-		                          target_fbo, default_mask);
+		ret = gl_dual_kawase_blur(args->opacity, bctx, args->mask, vao, vao_nelems,
+		                          source, gd->samplers[GL_SAMPLER_BLUR],
+		                          target_fbo, gd->default_mask_texture);
 	} else {
-		ret = gl_kernel_blur(opacity, bctx, mask, mask_dst, vao, vao_nelems,
-		                     source_texture, source_size, blur_sampler,
-		                     target_fbo, default_mask);
+		ret = gl_kernel_blur(args->opacity, bctx, args->mask, vao, vao_nelems,
+		                     source, gd->samplers[GL_SAMPLER_BLUR], target_fbo,
+		                     gd->default_mask_texture);
 	}
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -410,14 +420,37 @@ bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
 	return ret;
 }
 
-bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask, coord_t mask_dst,
+bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask_, coord_t mask_dst,
              const region_t *reg_blur, const region_t *reg_visible attr_unused) {
+	log_trace("Blurring, mask %p, mask_dst (%d, %d), reg_blur %p", mask_, mask_dst.x,
+	          mask_dst.y, reg_blur);
+	auto mask = (struct backend_image *)mask_;
 	auto gd = (struct gl_data *)base;
-	auto bctx = (struct gl_blur_context *)ctx;
-	return gl_blur_impl(
-	    opacity, bctx, (struct backend_image *)mask, mask_dst, reg_blur,
-	    gd->back_texture, (geometry_t){.width = gd->width, .height = gd->height},
-	    true, gd->samplers[GL_SAMPLER_BLUR], gd->back_fbo, gd->default_mask_texture);
+	// Fake a gl_texture for gd->back_texture
+	struct gl_texture temp_tex = {
+	    .texture = gd->back_texture,
+	    .width = gd->back_image.width,
+	    .height = gd->back_image.height,
+	    .y_inverted = true,
+	};
+	struct backend_mask mask_args = {
+	    .image = mask ? (image_handle)mask->inner : NULL,
+	    .origin = mask_dst,
+	    .corner_radius = mask ? mask->corner_radius : 0,
+	    .inverted = mask ? mask->color_inverted : false,
+	};
+	pixman_region32_init(&mask_args.region);
+	pixman_region32_copy(&mask_args.region, reg_blur);
+	pixman_region32_translate(&mask_args.region, -mask_dst.x, -mask_dst.y);
+	struct backend_blur_args args = {
+	    .source_image = (image_handle)&temp_tex,
+	    .opacity = opacity,
+	    .mask = &mask_args,
+	    .blur_context = ctx,
+	};
+	auto succeeded = gl_blur_impl(gd, (struct coord){0, 0}, &temp_tex, &args);
+	pixman_region32_fini(&mask_args.region);
+	return succeeded;
 }
 
 static inline void gl_free_blur_shader(struct gl_shader *shader) {

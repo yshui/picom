@@ -509,23 +509,6 @@ void gl_mask_rects_to_coords(struct coord origin, struct coord mask_origin, int 
 	}
 }
 
-/// Flip the target coordinates returned by `gl_mask_rects_to_coords` vertically relative
-/// to the target. Texture coordinates are unchanged.
-///
-/// @param[in] nrects        number of rectangles
-/// @param[in] coord         OpenGL vertex coordinates
-/// @param[in] target_height height of the target image
-static void gl_y_flip_target(int nrects, GLint *coord, GLint target_height) {
-	for (ptrdiff_t i = 0; i < nrects; i++) {
-		auto current_rect = &coord[i * 16];        // 16 numbers per rectangle
-		for (ptrdiff_t j = 0; j < 4; j++) {
-			// 4 numbers per vertex, target coordinates are the first two
-			auto current_vertex = &current_rect[j * 4];
-			current_vertex[1] = target_height - current_vertex[1];
-		}
-	}
-}
-
 /// Flip the texture coordinates returned by `gl_mask_rects_to_coords` vertically relative
 /// to the texture. Target coordinates are unchanged.
 ///
@@ -724,11 +707,11 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 	GLint viewport_dimensions[2];
 	glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewport_dimensions);
 
-	gd->height = height;
-	gd->width = width;
+	gd->back_image.height = height;
+	gd->back_image.width = width;
 
-	assert(viewport_dimensions[0] >= gd->width);
-	assert(viewport_dimensions[1] >= gd->height);
+	assert(viewport_dimensions[0] >= gd->back_image.width);
+	assert(viewport_dimensions[1] >= gd->back_image.height);
 
 	glBindTexture(GL_TEXTURE_2D, gd->back_texture);
 	glTexImage2D(GL_TEXTURE_2D, 0, gd->back_format, width, height, 0, GL_BGR,
@@ -1070,6 +1053,7 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	}
 	gd->has_robustness = epoxy_has_gl_extension("GL_ARB_robustness");
 	gd->has_egl_image_storage = epoxy_has_gl_extension("GL_EXT_EGL_image_storage");
+	gd->back_image.y_inverted = false;
 	gl_check_err();
 
 	return true;
@@ -1205,7 +1189,7 @@ void gl_present(backend_t *base, const region_t *region) {
 	gl_mask_rects_to_coords_simple(nrects, rect, coord, indices);
 	// Our back_texture is in Xorg coordinate system, but the GL back buffer is in
 	// GL clip space, which has the Y axis flipped.
-	gl_y_flip_target(nrects, coord, gd->height);
+	gl_y_flip_target(nrects, coord, gd->back_image.height);
 	struct gl_uniform_value uniforms[] = {
 	    [UNIFORM_TEX_LOC] = {.type = GL_TEXTURE_2D,
 	                         .tu = {gd->back_texture, gd->samplers[GL_SAMPLER_EDGE]}},
@@ -1386,13 +1370,34 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		region_t reg_blur;
 		pixman_region32_init_rect(&reg_blur, 0, 0, (unsigned int)new_inner->width,
 		                          (unsigned int)new_inner->height);
-		// gl_blur expects reg_blur to be in X coordinate system (i.e. y flipped),
-		// but we are covering the whole texture so we don't need to worry about
-		// that.
-		gl_blur_impl(
-		    1.0, gsctx->blur_context, NULL, (coord_t){0}, &reg_blur, source_texture,
-		    (geometry_t){.width = new_inner->width, .height = new_inner->height}, true,
-		    gd->samplers[GL_SAMPLER_BLUR], gd->temp_fbo, gd->default_mask_texture);
+		// A fake gl_texture for the target texture (tmp_texture).
+		struct gl_texture target = {
+		    .texture = tmp_texture,
+		    .width = new_inner->width,
+		    .height = new_inner->height,
+		    .y_inverted = true,
+		};
+		// A fake gl_texture for the source texture (source_texture).
+		struct gl_texture source = {
+		    .texture = source_texture,
+		    .width = new_inner->width,
+		    .height = new_inner->height,
+		    .y_inverted = true,
+		};
+		struct backend_mask mask_args = {
+		    .image = NULL,
+		    .origin = {0, 0},
+		    .corner_radius = 0,
+		    .inverted = false,
+		};
+		mask_args.region = reg_blur;
+		struct backend_blur_args args = {
+		    .blur_context = gsctx->blur_context,
+		    .mask = &mask_args,
+		    .source_image = (image_handle)&source,
+		    .opacity = 1.0,
+		};
+		gl_blur_impl(gd, (struct coord){}, &target, &args);
 		pixman_region32_fini(&reg_blur);
 	}
 
