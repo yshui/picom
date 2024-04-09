@@ -717,7 +717,8 @@ void gl_fill(backend_t *base, struct color c, const region_t *clip) {
 
 image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg) {
 	auto tex = ccalloc(1, struct gl_texture);
-	auto img = default_new_backend_image(size.width, size.height);
+	auto img = ccalloc(1, struct backend_image);
+	default_init_backend_image(img, size.width, size.height);
 	tex->width = size.width;
 	tex->height = size.height;
 	tex->texture = gl_new_texture(GL_TEXTURE_2D);
@@ -1306,7 +1307,8 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	new_inner->texture = gl_new_texture(GL_TEXTURE_2D);
 	new_inner->has_alpha = inner->has_alpha;
 	new_inner->y_inverted = true;
-	auto new_img = default_new_backend_image(new_inner->width, new_inner->height);
+	auto new_img = ccalloc(1, struct backend_image);
+	default_init_backend_image(new_img, new_inner->width, new_inner->height);
 	new_img->inner = (struct backend_image_inner_base *)new_inner;
 	new_img->inner->refcount = 1;
 

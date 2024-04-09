@@ -389,7 +389,8 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 	}
 
 	log_trace("Binding pixmap %#010x", pixmap);
-	auto wd = default_new_backend_image(r->width, r->height);
+	auto wd = ccalloc(1, struct backend_image);
+	default_init_backend_image(wd, r->width, r->height);
 	auto inner = ccalloc(1, struct gl_texture);
 	inner->width = r->width;
 	inner->height = r->height;

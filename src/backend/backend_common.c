@@ -499,16 +499,15 @@ bool default_is_image_transparent(backend_t *base attr_unused, image_handle imag
 	return img->opacity < 1 || img->inner->has_alpha;
 }
 
-struct backend_image *default_new_backend_image(int w, int h) {
-	auto ret = ccalloc(1, struct backend_image);
-	ret->opacity = 1;
-	ret->dim = 0;
-	ret->max_brightness = 1;
-	ret->eheight = h;
-	ret->ewidth = w;
-	ret->color_inverted = false;
-	ret->corner_radius = 0;
-	return ret;
+void default_init_backend_image(struct backend_image *image, int w, int h) {
+	image->opacity = 1;
+	image->dim = 0;
+	image->max_brightness = 1;
+	image->eheight = h;
+	image->ewidth = w;
+	image->color_inverted = false;
+	image->corner_radius = 0;
+	image->border_width = 0;
 }
 
 void init_backend_base(struct backend_base *base, session_t *ps) {

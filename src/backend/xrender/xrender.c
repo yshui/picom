@@ -759,16 +759,8 @@ static image_handle xrender_make_mask(backend_t *base, geometry_t size, const re
 	inner->refcount = 1;
 
 	auto img = ccalloc(1, struct xrender_image);
-	img->base.eheight = size.height + 2;
-	img->base.ewidth = size.width + 2;
-	img->base.border_width = 0;
-	img->base.color_inverted = false;
-	img->base.corner_radius = 0;
-	img->base.max_brightness = 1;
-	img->base.opacity = 1;
-	img->base.dim = 0;
+	default_init_backend_image(&img->base, size.width + 2, size.height + 2);
 	img->base.inner = (struct backend_image_inner_base *)inner;
-	img->rounded_rectangle = NULL;
 	return (image_handle)img;
 }
 
