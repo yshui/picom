@@ -37,6 +37,10 @@ struct gl_blur_context {
 	enum backend_image_format format;
 };
 
+// TODO(yshui) small optimization for kernel blur, if source and target are different,
+// single pass blur can paint directly from source to target. Currently a temporary
+// texture is always used.
+
 /**
  * Blur contents in a particular region.
  */
@@ -307,9 +311,10 @@ static bool gl_blur_context_preallocate_textures(struct gl_blur_context *bctx,
 	return true;
 }
 
-/// Internal function that does the blur.
-bool gl_blur_impl(struct gl_data *gd, struct coord origin, struct gl_texture *target,
-                  struct backend_blur_args *args) {
+bool gl_blur(struct backend_base *base, struct coord origin, image_handle target_,
+             struct backend_blur_args *args) {
+	auto gd = (struct gl_data *)base;
+	auto target = (struct gl_texture *)target_;
 	auto source = (struct gl_texture *)args->source_image;
 	auto bctx = (struct gl_blur_context *)args->blur_context;
 	log_trace("Blur size: %dx%d, method: %d", source->width, source->height, bctx->method);
@@ -418,39 +423,6 @@ bool gl_blur_impl(struct gl_data *gd, struct coord origin, struct gl_texture *ta
 
 	gl_check_err();
 	return ret;
-}
-
-bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask_, coord_t mask_dst,
-             const region_t *reg_blur, const region_t *reg_visible attr_unused) {
-	log_trace("Blurring, mask %p, mask_dst (%d, %d), reg_blur %p", mask_, mask_dst.x,
-	          mask_dst.y, reg_blur);
-	auto mask = (struct backend_image *)mask_;
-	auto gd = (struct gl_data *)base;
-	// Fake a gl_texture for gd->back_texture
-	struct gl_texture temp_tex = {
-	    .texture = gd->back_texture,
-	    .width = gd->back_image.width,
-	    .height = gd->back_image.height,
-	    .y_inverted = true,
-	};
-	struct backend_mask mask_args = {
-	    .image = mask ? (image_handle)mask->inner : NULL,
-	    .origin = mask_dst,
-	    .corner_radius = mask ? mask->corner_radius : 0,
-	    .inverted = mask ? mask->color_inverted : false,
-	};
-	pixman_region32_init(&mask_args.region);
-	pixman_region32_copy(&mask_args.region, reg_blur);
-	pixman_region32_translate(&mask_args.region, -mask_dst.x, -mask_dst.y);
-	struct backend_blur_args args = {
-	    .source_image = (image_handle)&temp_tex,
-	    .opacity = opacity,
-	    .mask = &mask_args,
-	    .blur_context = ctx,
-	};
-	auto succeeded = gl_blur_impl(gd, (struct coord){0, 0}, &temp_tex, &args);
-	pixman_region32_fini(&mask_args.region);
-	return succeeded;
 }
 
 static inline void gl_free_blur_shader(struct gl_shader *shader) {
@@ -890,7 +862,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method,
 
 out:
 	if (!success) {
-		gl_destroy_blur_context(&gd->base, ctx);
+		gl_destroy_blur_context(&gd->compat.base, ctx);
 		ctx = NULL;
 	}
 

@@ -8,6 +8,7 @@
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
+#include "backend/compat.h"
 #include "log.h"
 #include "region.h"
 
@@ -50,8 +51,7 @@ struct gl_shader {
 
 /// @brief Wrapper of a bound GL texture.
 struct gl_texture {
-	int refcount;
-	bool has_alpha;
+	struct backend_compat_image_base compat;
 	GLuint texture;
 	int width, height;
 	/// Whether the texture is Y-inverted
@@ -79,7 +79,7 @@ enum gl_sampler {
 };
 
 struct gl_data {
-	backend_t base;
+	struct backend_compat_base compat;
 	// If we are using proprietary NVIDIA driver
 	bool is_nvidia;
 	// If ARB_robustness extension is present
@@ -91,14 +91,11 @@ struct gl_data {
 	struct gl_shader default_shader;
 	struct gl_shader brightness_shader;
 	struct gl_shader fill_shader;
-	struct gl_shader shadow_shader;
-	GLuint back_texture, back_fbo;
 	GLuint temp_fbo;
-	GLint back_format;
 	GLuint frame_timing[2];
 	int current_frame_timing;
-	struct gl_shader present_prog;
-	struct gl_shader dummy_prog;
+	struct gl_shader copy_area_prog;
+	struct gl_shader copy_area_with_dither_prog;
 	GLuint samplers[GL_MAX_SAMPLERS];
 
 	bool dithered_present;
@@ -149,11 +146,11 @@ void gl_destroy_window_shader(backend_t *backend_data, void *shader);
 uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
 bool gl_last_render_time(backend_t *backend_data, struct timespec *time);
 
-/**
- * @brief Render a region with texture data.
- */
-void gl_compose(backend_t *, image_handle image, coord_t image_dst, image_handle mask,
-                coord_t mask_dst, const region_t *reg_tgt, const region_t *reg_visible);
+bool gl_blit(backend_t *base, struct coord origin, image_handle target,
+             struct backend_blit_args *args);
+image_handle gl_new_image(backend_t *backend_data attr_unused,
+                          enum backend_image_format format, geometry_t size);
+bool gl_clear(backend_t *backend_data, image_handle target, struct color color);
 
 void gl_root_change(backend_t *base, session_t *);
 
@@ -164,35 +161,35 @@ void gl_deinit(struct gl_data *gd);
 
 GLuint gl_new_texture(void);
 
-bool gl_image_op(backend_t *base, enum image_operations op, image_handle image,
-                 const region_t *reg_op, const region_t *reg_visible, void *arg);
-
 xcb_pixmap_t gl_release_image(backend_t *base, image_handle image);
-image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg);
 
 image_handle gl_clone(backend_t *base, image_handle image, const region_t *reg_visible);
 
-bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask,
-             coord_t mask_dst, const region_t *reg_blur, const region_t *reg_visible);
-bool gl_blur_impl(struct gl_data *gd, struct coord origin, struct gl_texture *target,
-                  struct backend_blur_args *args);
-void gl_apply_alpha(backend_t *base, image_handle target, double alpha, const region_t *reg_op);
+bool gl_blur(struct backend_base *gd, struct coord origin, image_handle target,
+             struct backend_blur_args *args);
+bool gl_copy_area(backend_t *backend_data, struct coord origin, image_handle target,
+                  image_handle source, const region_t *region);
+bool gl_copy_area_quantize(backend_t *backend_data, struct coord origin,
+                           image_handle target_handle, image_handle source_handle,
+                           const region_t *region);
+bool gl_apply_alpha(backend_t *base, image_handle target, double alpha, const region_t *reg_op);
+image_handle gl_back_buffer(struct backend_base *base);
+uint32_t gl_image_capabilities(backend_t *base, image_handle img);
+bool gl_is_format_supported(backend_t *base, enum backend_image_format format);
 void *gl_create_blur_context(backend_t *base, enum blur_method,
                              enum backend_image_format format, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
-struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double radius);
-void gl_destroy_shadow_context(backend_t *base attr_unused, struct backend_shadow_context *ctx);
-image_handle gl_shadow_from_mask(backend_t *base, image_handle mask,
-                                 struct backend_shadow_context *sctx, struct color color);
 void gl_get_blur_size(void *blur_context, int *width, int *height);
 
-void gl_fill(backend_t *base, struct color, const region_t *clip);
-
-void gl_present(backend_t *base, const region_t *);
 enum device_status gl_device_status(backend_t *base);
 
 #define gl_check_fb_complete(fb) gl_check_fb_complete_(__func__, __LINE__, (fb))
 static inline bool gl_check_fb_complete_(const char *func, int line, GLenum fb);
+
+static inline void gl_finish_render(struct gl_data *gd) {
+	glEndQuery(GL_TIME_ELAPSED);
+	gd->current_frame_timing ^= 1;
+}
 
 /// Return a FBO with `image` bound to the first color attachment. `GL_DRAW_FRAMEBUFFER`
 /// will be bound to the returned FBO.
@@ -311,7 +308,7 @@ static const GLuint vert_in_texcoord_loc = 1;
 #define GLSL(version, ...) GLSL_(version, __VA_ARGS__)
 #define QUOTE(...) #__VA_ARGS__
 
-extern const char vertex_shader[], blend_with_mask_frag[], masking_glsl[], dummy_frag[],
-    present_frag[], fill_frag[], fill_vert[], interpolating_frag[], interpolating_vert[],
-    win_shader_glsl[], win_shader_default[], present_vertex_shader[], dither_glsl[],
-    shadow_colorization_frag[];
+extern const char vertex_shader[], blend_with_mask_frag[], masking_glsl[],
+    copy_area_frag[], copy_area_with_dither_frag[], fill_frag[], fill_vert[],
+    interpolating_frag[], interpolating_vert[], blit_shader_glsl[], blit_shader_default[],
+    present_vertex_shader[], dither_glsl[];

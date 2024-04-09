@@ -385,6 +385,8 @@ bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color
                      struct backend_shadow_context *sctx) {
 	assert(!w->shadow_image);
 	assert(w->shadow);
+	log_trace("Binding shadow for %#010x (%s), color: %f %f %f %F", w->base.id,
+	          w->name, c.red, c.green, c.blue, c.alpha);
 	if ((w->corner_radius == 0 && w->bounding_shaped == false) ||
 	    b->ops->shadow_from_mask == NULL) {
 		w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, sctx, c);

@@ -2,22 +2,24 @@
 // Don't macro expand bool!
 #undef bool
 // clang-format off
-const char dummy_frag[] = GLSL(330,
+const char copy_area_frag[] = GLSL(330,
 	layout(location = UNIFORM_TEX_LOC)
 	uniform sampler2D tex;
 	in vec2 texcoord;
 	void main() {
-		gl_FragColor = texelFetch(tex, ivec2(texcoord.xy), 0);
+		vec2 texsize = textureSize(tex, 0);
+		gl_FragColor = texture2D(tex, texcoord / texsize, 0);
 	}
 );
 
-const char present_frag[] = GLSL(330,
+const char copy_area_with_dither_frag[] = GLSL(330,
 	layout(location = UNIFORM_TEX_LOC)
 	uniform sampler2D tex;
 	in vec2 texcoord;
 	vec4 dither(vec4, vec2);
 	void main() {
-		gl_FragColor = dither(texelFetch(tex, ivec2(texcoord.xy), 0), texcoord);
+		vec2 texsize = textureSize(tex, 0);
+		gl_FragColor = dither(texture2D(tex, texcoord / texsize, 0), gl_FragCoord.xy);
 	}
 );
 
@@ -104,7 +106,7 @@ const char masking_glsl[] = GLSL(330,
 		return mask.r;
 	}
 );
-const char win_shader_glsl[] = GLSL(330,
+const char blit_shader_glsl[] = GLSL(330,
 	layout(location = UNIFORM_OPACITY_LOC)
 	uniform float opacity;
 	layout(location = UNIFORM_DIM_LOC)
@@ -177,7 +179,7 @@ const char win_shader_glsl[] = GLSL(330,
 	}
 );
 
-const char win_shader_default[] = GLSL(330,
+const char blit_shader_default[] = GLSL(330,
 	in vec2 texcoord;
 	uniform sampler2D tex;
 	vec4 default_post_processing(vec4 c);
@@ -201,6 +203,7 @@ const char vertex_shader[] = GLSL(330,
 		texcoord = in_texcoord;
 	}
 );
+/// Add dithering for downsampling from 16-bit color to 8-bit color.
 const char dither_glsl[] = GLSL(330,
 	// Stolen from: https://www.shadertoy.com/view/7sfXDn
 	float bayer2(vec2 a) {
@@ -223,18 +226,6 @@ const char dither_glsl[] = GLSL(330,
 		residual = min(residual, vec4(1.0 / 255.0) - residual);
 		vec4 dithered = vec4(greaterThan(residual, vec4(1.0 / 65535.0)));
 		return vec4(c + dithered * bayer(coord) / 255.0);
-	}
-);
-const char shadow_colorization_frag[] = GLSL(330,
-	layout(location = UNIFORM_COLOR_LOC)
-	uniform vec4 color;
-	layout(location = UNIFORM_TEX_LOC)
-	uniform sampler2D tex;
-	in vec2 texcoord;
-	out vec4 out_color;
-	void main() {
-		vec4 c = texelFetch(tex, ivec2(texcoord), 0);
-		out_color = c.r * color;
 	}
 );
 // clang-format on
