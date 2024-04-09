@@ -372,7 +372,7 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 		brightness = gl_average_texture_color(base, img);
 	}
 
-	auto win_shader = inner->shader;
+	auto win_shader = (gl_win_shader_t *)img->shader;
 	if (!win_shader) {
 		win_shader = gd->default_shader;
 	}
@@ -1053,7 +1053,6 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	new_tex->has_alpha = inner->has_alpha;
 	new_tex->height = inner->height;
 	new_tex->width = inner->width;
-	new_tex->shader = inner->shader;
 	new_tex->refcount = 1;
 	new_tex->user_data = gd->decouple_texture_user_data(base, inner->user_data);
 
@@ -1244,18 +1243,6 @@ bool gl_image_op(backend_t *base, enum image_operations op, image_handle image,
 		break;
 	}
 
-	return true;
-}
-
-bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
-                           image_handle image, const void *args) {
-	if (prop != IMAGE_PROPERTY_CUSTOM_SHADER) {
-		return default_set_image_property(backend_data, prop, image, args);
-	}
-
-	auto img = (struct backend_image *)image;
-	auto inner = (struct gl_texture *)img->inner;
-	inner->shader = args;
 	return true;
 }
 

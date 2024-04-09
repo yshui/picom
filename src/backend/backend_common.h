@@ -42,6 +42,7 @@ struct backend_image {
 	int ewidth, eheight;
 	bool color_inverted;
 	int border_width;
+	void *shader;
 };
 
 bool build_shadow(struct x_connection *, double opacity, int width, int height,
