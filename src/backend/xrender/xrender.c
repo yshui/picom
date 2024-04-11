@@ -215,11 +215,13 @@ xrender_process_mask(struct xrender_data *xd, struct backend_mask *mask, rect_t 
                      xcb_render_picture_t alpha_pict, struct coord *new_origin,
                      bool *allocated) {
 	auto inner = (struct xrender_image_data_inner *)mask->image;
-	if (!mask->inverted && mask->corner_radius == 0) {
-		// FIXME(yshui) if inner is not NULL here, alpha_pict will be
-		// ignored, and opacity will not be applied.
+	if (!inner) {
 		*allocated = false;
-		return inner ? inner->pict : alpha_pict;
+		return alpha_pict;
+	}
+	if (!mask->inverted && mask->corner_radius == 0 && alpha_pict == XCB_NONE) {
+		*allocated = false;
+		return inner->pict;
 	}
 	auto const w_u16 = to_u16_checked(extent.x2 - extent.x1);
 	auto const h_u16 = to_u16_checked(extent.y2 - extent.y1);
