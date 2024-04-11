@@ -555,8 +555,15 @@ static bool xrender_blur(struct backend_base *base, struct coord origin,
 		    args->opacity != 1.0 ? mask_pict : XCB_NONE, &mask_pict_origin,
 		    &mask_allocated);
 	}
-	mask_pict_origin.x -= extent_resized->x1;
-	mask_pict_origin.y -= extent_resized->y1;
+	if (mask_allocated || mask != NULL) {
+		mask_pict_origin.x -= extent_resized->x1;
+		mask_pict_origin.y -= extent_resized->y1;
+	} else {
+		// Sampling the 1x1 alpha pict out-of-bound while the X server is under
+		// heavy load, which it will be if blur is enabled, produces unpredictable
+		// results... This is a workaround for that.
+		mask_pict_origin = (struct coord){0, 0};
+	}
 	x_set_picture_clip_region(c, src_pict, 0, 0, &reg_op_resized);
 	x_set_picture_clip_region(
 	    c, target->pict, to_i16_checked(args->mask->origin.x + origin.x),
