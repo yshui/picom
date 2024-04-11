@@ -415,7 +415,7 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 		};
 
 		w->paint.pict = x_create_picture_with_pictfmt_and_pixmap(
-		    &ps->c, w->pictfmt, draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
+		    &ps->c, w->pictfmt->id, draw, XCB_RENDER_CP_SUBWINDOW_MODE, &pa);
 	}
 
 	// GLX: Build texture
@@ -443,8 +443,8 @@ void paint_one(session_t *ps, struct managed_win *w, const region_t *reg_paint) 
 
 	// Invert window color, if required
 	if (bkend_use_xrender(ps) && w->invert_color) {
-		xcb_render_picture_t newpict =
-		    x_create_picture_with_pictfmt(&ps->c, wid, hei, w->pictfmt, 0, NULL);
+		xcb_render_picture_t newpict = x_create_picture_with_pictfmt(
+		    &ps->c, wid, hei, w->pictfmt->id, w->pictfmt->depth, 0, NULL);
 		if (newpict) {
 			// Apply clipping region to save some CPU
 			if (reg_paint) {
@@ -1252,7 +1252,7 @@ void paint_all(session_t *ps, struct managed_win *t) {
 			auto pictfmt = x_get_pictform_for_visual(
 			    &ps->c, ps->c.screen_info->root_visual);
 			xcb_render_picture_t new_pict = x_create_picture_with_pictfmt(
-			    &ps->c, rwidth, rheight, pictfmt, 0, NULL);
+			    &ps->c, rwidth, rheight, pictfmt->id, pictfmt->depth, 0, NULL);
 			xcb_render_composite(ps->c.c, XCB_RENDER_PICT_OP_SRC,
 			                     ps->tgt_buffer.pict, XCB_NONE, new_pict, 0,
 			                     0, 0, 0, 0, 0, rwidth, rheight);
