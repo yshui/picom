@@ -52,18 +52,18 @@ typedef struct xrender_data {
 	/// Painting target, it is either the root or the overlay
 	xcb_render_picture_t target;
 	/// Back buffers. Double buffer, with 1 for temporary render use
-	xcb_render_picture_t back[3];
+	xcb_render_picture_t back[2];
 	/// Fake image to represent the back buffer
 	struct xrender_image_data_inner back_image;
 	/// Damaged region of the back image since the last present
 	region_t back_damaged;
 	/// The back buffer that is for temporary use
 	/// Age of each back buffer.
-	int buffer_age[3];
+	int buffer_age[2];
 	/// The back buffer we should be painting into
 	int curr_back;
 	/// The corresponding pixmap to the back buffer
-	xcb_pixmap_t back_pixmap[3];
+	xcb_pixmap_t back_pixmap[2];
 	/// Pictures of pixel of different alpha value, used as a mask to
 	/// paint transparent images
 	xcb_render_picture_t alpha_pict[256];
@@ -195,7 +195,7 @@ static inline void
 xrender_record_back_damage(struct xrender_data *xd,
                            struct xrender_image_data_inner *target, struct coord origin,
                            struct coord mask_origin, const region_t *region) {
-	if (target == &xd->back_image) {
+	if (target == &xd->back_image && xd->vsync) {
 		pixman_region32_translate(&xd->back_damaged, -origin.x - mask_origin.x,
 		                          -origin.y - mask_origin.y);
 		pixman_region32_union(&xd->back_damaged, &xd->back_damaged, region);
@@ -695,7 +695,7 @@ static void xrender_deinit(backend_t *backend_data) {
 		x_free_picture(xd->compat.base.c, xd->alpha_pict[i]);
 	}
 	x_free_picture(xd->compat.base.c, xd->target);
-	for (int i = 0; i < 3; i++) {
+	for (int i = 0; i < 2; i++) {
 		if (xd->back[i] != XCB_NONE) {
 			x_free_picture(xd->compat.base.c, xd->back[i]);
 		}
@@ -755,14 +755,8 @@ static bool xrender_present(struct backend_base *base) {
 			xd->back_image.pict = xd->back[xd->curr_back];
 		}
 		free(pev);
-	} else {
-		// No vsync needed, draw into the target picture directly
-		x_set_picture_clip_region(base->c, xd->back[2], 0, 0, &xd->back_damaged);
-		xcb_render_composite(base->c->c, XCB_RENDER_PICT_OP_SRC, xd->back[2],
-		                     XCB_NONE, xd->target, 0, 0, 0, 0, 0, 0,
-		                     to_u16_checked(xd->back_image.compat.size.width),
-		                     to_u16_checked(xd->back_image.compat.size.height));
 	}
+	// Without vsync, we are rendering into the front buffer directly
 	pixman_region32_clear(&xd->back_damaged);
 	return true;
 }
@@ -923,8 +917,8 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 
 	// We might need to do double buffering for vsync, and buffer 0 and 1 are for
 	// double buffering.
-	int first_buffer_index = xd->vsync ? 0 : 2;
-	for (int i = first_buffer_index; i < 3; i++) {
+	int buffer_count = xd->vsync ? 2 : 0;
+	for (int i = 0; i < buffer_count; i++) {
 		xd->back_pixmap[i] = x_create_pixmap(&ps->c, ps->c.screen_info->root_depth,
 		                                     to_u16_checked(ps->root_width),
 		                                     to_u16_checked(ps->root_height));
@@ -941,7 +935,7 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 		}
 	}
 	xd->curr_back = 0;
-	xd->back_image.pict = xd->vsync ? xd->back[xd->curr_back] : xd->back[2];
+	xd->back_image.pict = xd->vsync ? xd->back[xd->curr_back] : xd->target;
 	backend_compat_init(&xd->compat, ps);
 
 	return &xd->compat.base;
