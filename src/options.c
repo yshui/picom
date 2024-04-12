@@ -912,7 +912,8 @@ void options_postprocess_c2_lists(struct c2_state *state, struct x_connection *c
 	      c2_list_postprocess(state, c->c, option->opacity_rules) &&
 	      c2_list_postprocess(state, c->c, option->rounded_corners_blacklist) &&
 	      c2_list_postprocess(state, c->c, option->corner_radius_rules) &&
-	      c2_list_postprocess(state, c->c, option->focus_blacklist))) {
+	      c2_list_postprocess(state, c->c, option->focus_blacklist) &&
+	      c2_list_postprocess(state, c->c, option->transparent_clipping_blacklist))) {
 		log_error("Post-processing of conditionals failed, some of your rules "
 		          "might not work");
 	}
@@ -932,6 +933,7 @@ void options_destroy(struct options *options) {
 	c2_list_free(&options->rounded_corners_blacklist, NULL);
 	c2_list_free(&options->corner_radius_rules, NULL);
 	c2_list_free(&options->window_shader_fg_rules, free);
+	c2_list_free(&options->transparent_clipping_blacklist, NULL);
 
 	free(options->write_pid_path);
 	free(options->logpath);
