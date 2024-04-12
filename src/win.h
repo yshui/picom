@@ -240,7 +240,7 @@ struct managed_win {
 	bool fade_excluded;
 
 	/// Whether transparent clipping is excluded by the rules.
-	bool transparent_clipping_excluded;
+	bool transparent_clipping;
 
 	// Frame-opacity-related members
 	/// Current window frame opacity. Affected by window opacity.
