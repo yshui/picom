@@ -555,9 +555,6 @@ static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
 	if (border_width > args->corner_radius) {
 		border_width = 0;
 	}
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	float time_ms = (float)ts.tv_sec * 1000.0F + (float)ts.tv_nsec / 1.0e6F;
 	// clang-format off
 	struct gl_uniform_value from_uniforms[] = {
 	    [UNIFORM_OPACITY_LOC]        = {.type = GL_FLOAT, .f = (float)args->opacity},
@@ -572,7 +569,6 @@ static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
 	    [UNIFORM_MAX_BRIGHTNESS_LOC] = {.type = GL_FLOAT, .f = (float)args->max_brightness},
 	    [UNIFORM_CORNER_RADIUS_LOC]  = {.type = GL_FLOAT, .f = (float)args->corner_radius},
 	    [UNIFORM_BORDER_WIDTH_LOC]   = {.type = GL_FLOAT, .f = (float)args->border_width},
-	    [UNIFORM_TIME_LOC]           = {.type = GL_FLOAT, .f = time_ms},
 	    [UNIFORM_MASK_TEX_LOC]       = {.type = GL_TEXTURE_2D,
 	                                    .tu = {mask_texture, mask_sampler}},
 	    [UNIFORM_MASK_OFFSET_LOC]    = {.type = GL_FLOAT_VEC2, .f2 = {0.0F, 0.0F}},
@@ -588,8 +584,16 @@ static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
 		from_uniforms[UNIFORM_MASK_CORNER_RADIUS_LOC].f =
 		    (float)args->mask->corner_radius;
 	}
-	memcpy(uniforms, from_uniforms, sizeof(from_uniforms));
 	*shader = args->shader ?: &gd->default_shader;
+	if ((*shader)->uniform_bitmask & (1 << UNIFORM_TIME_LOC)) {
+		struct timespec ts;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		from_uniforms[UNIFORM_TIME_LOC] = (struct gl_uniform_value){
+		    .type = GL_FLOAT,
+		    .f = (float)ts.tv_sec * 1000.0F + (float)ts.tv_nsec / 1.0e6F,
+		};
+	}
+	memcpy(uniforms, from_uniforms, sizeof(from_uniforms));
 	return nrects;
 }
 
