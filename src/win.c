@@ -939,8 +939,8 @@ win_start_fade(session_t *ps, struct managed_win *w, double target_blur_opacity)
 	       target_opacity = win_calc_opacity_target(ps, w);
 	double step_size =
 	    target_opacity > current_opacity ? ps->o.fade_in_step : ps->o.fade_out_step;
-	unsigned int duration =
-	    (unsigned int)(fabs(target_opacity - current_opacity) / step_size);
+	double duration = (fabs(target_opacity - current_opacity) / step_size) *
+	                  (double)ps->o.fade_delta / 1000.0;
 	if (!win_should_fade(ps, w)) {
 		duration = 0;
 	}

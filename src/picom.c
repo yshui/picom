@@ -478,10 +478,10 @@ static double fade_timeout(session_t *ps) {
  * @param steps steps of fading
  * @return whether we are still in fading mode
  */
-static bool run_fade(struct managed_win **_w, unsigned int steps) {
+static bool run_fade(struct managed_win **_w, double delta_sec) {
 	auto w = *_w;
-	log_trace("Process fading for window %s (%#010x), steps: %u", w->name, w->base.id,
-	          steps);
+	log_trace("Process fading for window %s (%#010x), ΔT: %fs", w->name, w->base.id,
+	          delta_sec);
 	if (w->number_of_animations == 0) {
 		// We have reached target opacity.
 		// We don't call win_check_fade_finished here because that could destroy
@@ -491,9 +491,9 @@ static bool run_fade(struct managed_win **_w, unsigned int steps) {
 	}
 
 	log_trace("|- fading, opacity: %lf", animatable_get(&w->opacity));
-	animatable_step(&w->opacity, steps);
-	animatable_step(&w->blur_opacity, steps);
-	log_trace("|- opacity updated: %lf (%u steps)", animatable_get(&w->opacity), steps);
+	animatable_advance(&w->opacity, delta_sec);
+	animatable_advance(&w->blur_opacity, delta_sec);
+	log_trace("|- opacity updated: %lf", animatable_get(&w->opacity));
 
 	// Note even if the animatable is not animating anymore at this point, we still
 	// want to run preprocess one last time to finish state transition. So return true
@@ -888,19 +888,13 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 	*out_bottom = NULL;
 
 	// Fading step calculation
-	unsigned int steps = 0L;
+	int64_t delta_ms = 0L;
 	auto now = get_time_ms();
 	if (ps->fade_time) {
 		assert(now >= ps->fade_time);
-		auto raw_steps = (now - ps->fade_time) / ps->o.fade_delta;
-		assert(raw_steps <= UINT_MAX);
-		steps = (unsigned int)raw_steps;
-		ps->fade_time += raw_steps * ps->o.fade_delta;
-	} else {
-		// Reset fade_time if unset
-		ps->fade_time = get_time_ms();
-		steps = 0L;
+		delta_ms = now - ps->fade_time;
 	}
+	ps->fade_time = now;
 
 	// First, let's process fading, and animated shaders
 	// TODO(yshui) check if a window is fully obscured, and if we don't need to
@@ -928,7 +922,7 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		}
 
 		// Run fading
-		if (run_fade(&w, steps)) {
+		if (run_fade(&w, (double)delta_ms / 1000.0)) {
 			*fade_running = true;
 		}
 

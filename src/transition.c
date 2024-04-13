@@ -10,16 +10,16 @@
 #include "utils.h"
 
 double animatable_get_progress(const struct animatable *a) {
-	if (a->duration) {
-		return (double)a->progress / a->duration;
+	if (a->duration > 0) {
+		return a->elapsed / a->duration;
 	}
 	return 1;
 }
 
 /// Get the current value of an `animatable`.
 double animatable_get(const struct animatable *a) {
-	if (a->duration) {
-		assert(a->progress < a->duration);
+	if (a->duration > 0) {
+		assert(a->elapsed < a->duration);
 		double t = a->curve->sample(a->curve, animatable_get_progress(a));
 		return (1 - t) * a->start + t * a->target;
 	}
@@ -27,21 +27,22 @@ double animatable_get(const struct animatable *a) {
 }
 
 /// Advance the animation by a given number of steps.
-void animatable_step(struct animatable *a, unsigned int steps) {
-	if (!a->duration || !steps) {
+void animatable_advance(struct animatable *a, double elapsed) {
+	if (a->duration == 0 || elapsed <= 0) {
 		return;
 	}
 
-	assert(a->progress < a->duration);
-	if (steps > a->duration - a->progress) {
-		steps = a->duration - a->progress;
+	assert(a->elapsed < a->duration);
+	if (elapsed >= a->duration - a->elapsed) {
+		a->elapsed = a->duration;
+	} else {
+		a->elapsed += elapsed;
 	}
-	a->progress += steps;
 
-	if (a->progress == a->duration) {
+	if (a->elapsed == a->duration) {
 		a->start = a->target;
 		a->duration = 0;
-		a->progress = 0;
+		a->elapsed = 0;
 		a->curve->free(a->curve);
 		a->curve = NULL;
 		if (a->callback) {
@@ -54,8 +55,8 @@ void animatable_step(struct animatable *a, unsigned int steps) {
 
 /// Returns whether an `animatable` is currently animating.
 bool animatable_is_animating(const struct animatable *a) {
-	assert(!a->duration || a->progress < a->duration);
-	return a->duration;
+	assert(a->duration == 0 || a->elapsed < a->duration);
+	return a->duration != 0;
 }
 
 /// Cancel the current animation of an `animatable`. This stops the animation and
@@ -63,14 +64,14 @@ bool animatable_is_animating(const struct animatable *a) {
 ///
 /// Returns true if the `animatable` was animated before this function is called.
 bool animatable_interrupt(struct animatable *a) {
-	if (!a->duration) {
+	if (a->duration == 0) {
 		return false;
 	}
 
 	a->start = animatable_get(a);
 	a->target = a->start;
 	a->duration = 0;
-	a->progress = 0;
+	a->elapsed = 0;
 	a->curve->free(a->curve);
 	a->curve = NULL;
 	if (a->callback) {
@@ -85,13 +86,13 @@ bool animatable_interrupt(struct animatable *a) {
 ///
 /// Returns true if the `animatable` was animated before this function is called.
 bool animatable_skip(struct animatable *a) {
-	if (!a->duration) {
+	if (a->duration == 0) {
 		return false;
 	}
 
 	a->start = a->target;
 	a->duration = 0;
-	a->progress = 0;
+	a->elapsed = 0;
 	a->curve->free(a->curve);
 	a->curve = NULL;
 	if (a->callback) {
@@ -104,10 +105,10 @@ bool animatable_skip(struct animatable *a) {
 
 /// Change the target value of an `animatable`.
 /// If the `animatable` is already animating, the animation will be canceled first.
-bool animatable_set_target(struct animatable *a, double target, unsigned int duration,
+bool animatable_set_target(struct animatable *a, double target, double duration,
                            const struct curve *curve, transition_callback_fn cb, void *data) {
 	animatable_interrupt(a);
-	if (!duration || a->start == target) {
+	if (duration == 0 || a->start == target) {
 		a->start = target;
 		a->target = target;
 		curve->free(curve);
@@ -116,7 +117,7 @@ bool animatable_set_target(struct animatable *a, double target, unsigned int dur
 
 	a->target = target;
 	a->duration = duration;
-	a->progress = 0;
+	a->elapsed = 0;
 	a->callback = cb;
 	a->callback_data = data;
 	a->curve = curve;
@@ -129,7 +130,7 @@ struct animatable animatable_new(double value) {
 	    .start = value,
 	    .target = value,
 	    .duration = 0,
-	    .progress = 0,
+	    .elapsed = 0,
 	};
 	return ret;
 }

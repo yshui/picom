@@ -48,12 +48,12 @@ struct animatable {
 	/// The target value.
 	/// If the `animatable` is not animated, this equals to `start`.
 	double target;
-	/// The animation duration in number of steps.
+	/// The animation duration in unspecified units.
 	/// If the `animatable` is not animated, this is 0.
-	unsigned int duration;
-	/// The current progress of the animation. From 0 to `duration - 1`.
+	double duration;
+	/// The current progress of the animation in the same units as `duration`.
 	/// If the `animatable` is not animated, this is 0.
-	unsigned int progress;
+	double elapsed;
 
 	transition_callback_fn callback;
 	void *callback_data;
@@ -71,8 +71,8 @@ struct animatable {
 double animatable_get(const struct animatable *a);
 /// Get the animation progress as a percentage of the total duration.
 double animatable_get_progress(const struct animatable *a);
-/// Advance the animation by a given number of steps.
-void animatable_step(struct animatable *a, unsigned int steps);
+/// Advance the animation by a given amount. `elapsed` cannot be negative.
+void animatable_advance(struct animatable *a, double elapsed);
 /// Returns whether an `animatable` is currently animating.
 bool animatable_is_animating(const struct animatable *a);
 /// Interrupt the current animation of an `animatable`. This stops the animation and
@@ -95,7 +95,7 @@ bool animatable_skip(struct animatable *a);
 /// animatable's current animation, if it has one, will be canceled regardless.
 ///
 /// Returns if the animatable is now animated.
-bool animatable_set_target(struct animatable *a, double target, unsigned int duration,
+bool animatable_set_target(struct animatable *a, double target, double duration,
                            const struct curve *curve,
                            transition_callback_fn cb, void *data);
 /// Create a new animatable.
