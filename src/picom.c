@@ -66,6 +66,7 @@
 #include "options.h"
 #include "region.h"
 #include "render.h"
+#include "renderer/layout.h"
 #include "statistics.h"
 #include "types.h"
 #include "uthash_extra.h"
@@ -1504,6 +1505,8 @@ static bool redirect_start(session_t *ps) {
 	if (!ps->o.legacy_backends) {
 		assert(ps->backend_data);
 		ps->damage_ring.count = ps->backend_data->ops->max_buffer_age;
+		ps->layout_manager =
+		    layout_manager_new((unsigned)ps->backend_data->ops->max_buffer_age);
 	} else {
 		ps->damage_ring.count = maximum_buffer_age(ps);
 	}
@@ -1592,6 +1595,10 @@ static void unredirect(session_t *ps) {
 	free(ps->damage_ring.damages);
 	ps->damage_ring.cursor = 0;
 	ps->damage_ring.damages = NULL;
+	if (ps->layout_manager) {
+		layout_manager_free(ps->layout_manager);
+		ps->layout_manager = NULL;
+	}
 
 	if (ps->vblank_scheduler) {
 		vblank_scheduler_free(ps->vblank_scheduler);

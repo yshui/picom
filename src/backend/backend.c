@@ -10,6 +10,7 @@
 #include "config.h"
 #include "log.h"
 #include "region.h"
+#include "renderer/layout.h"
 #include "transition.h"
 #include "types.h"
 #include "win.h"
@@ -101,6 +102,10 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 	    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
 	log_trace("Time spent on sync fence: %" PRIu64 " us",
 	          after_sync_fence_us - paint_all_start_us);
+
+	layout_manager_append_layout(
+	    ps->layout_manager, ps->wm,
+	    (struct geometry){.width = ps->root_width, .height = ps->root_height});
 	// All painting will be limited to the damage, if _some_ of
 	// the paints bleed out of the damage region, it will destroy
 	// part of the image we want to reuse

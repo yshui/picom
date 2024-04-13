@@ -264,6 +264,9 @@ typedef struct session {
 	bool render_queued;
 	/// For tracking damage regions
 	struct damage_ring damage_ring;
+	// TODO(yshui) move render related fields into separate struct
+	/// Render planner
+	struct layout_manager *layout_manager;
 	/// Whether the root image has been changed since last render
 	bool root_damaged;
 	/// Whether all windows are currently redirected.
