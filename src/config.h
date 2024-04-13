@@ -92,6 +92,10 @@ struct debug_options {
 	int smart_frame_pacing;
 	/// Override the vblank scheduler chosen by the compositor.
 	int force_vblank_scheduler;
+	/// Release then immediately rebind every window pixmap each frame.
+	/// Useful when being traced under apitrace, to force it to pick up
+	/// updated contents. WARNING, extremely slow.
+	int always_rebind_pixmap;
 };
 
 /// Structure representing all options.

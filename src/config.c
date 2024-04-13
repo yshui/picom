@@ -629,8 +629,9 @@ const char *vblank_scheduler_str[] = {
 	[LAST_VBLANK_SCHEDULER] = NULL
 };
 static const struct debug_options_entry debug_options_entries[] = {
-    {"smart_frame_pacing", NULL,                 offsetof(struct debug_options, smart_frame_pacing)},
-    {"force_vblank_sched", vblank_scheduler_str, offsetof(struct debug_options, force_vblank_scheduler)},
+    {"always_rebind_pixmap", NULL                , offsetof(struct debug_options, always_rebind_pixmap)},
+    {"smart_frame_pacing"  , NULL                , offsetof(struct debug_options, smart_frame_pacing)},
+    {"force_vblank_sched"  , vblank_scheduler_str, offsetof(struct debug_options, force_vblank_scheduler)},
 };
 // clang-format on
 

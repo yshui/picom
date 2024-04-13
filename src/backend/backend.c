@@ -229,6 +229,14 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 			win_bind_mask(ps->backend_data, w);
 		}
 
+		if (ps->o.debug_options.always_rebind_pixmap) {
+			auto pixmap = ps->backend_data->ops->release_image(
+			    ps->backend_data, w->win_image);
+			assert(pixmap != XCB_NONE);
+			w->win_image = ps->backend_data->ops->bind_pixmap(
+			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, w->a.visual));
+		}
+
 		// The clip region for the current window, in global/target coordinates
 		// reg_paint_in_bound \in reg_paint
 		region_t reg_paint_in_bound;
