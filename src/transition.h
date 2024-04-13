@@ -96,11 +96,12 @@ bool animatable_skip(struct animatable *a);
 ///
 /// Returns if the animatable is now animated.
 bool animatable_set_target(struct animatable *a, double target, double duration,
-                           const struct curve *curve,
-                           transition_callback_fn cb, void *data);
+                           const struct curve *curve, transition_callback_fn cb, void *data);
 /// Create a new animatable.
 struct animatable animatable_new(double value);
 
 // ========================== Interpolators ==========================
 
 const struct curve *curve_new_linear(void);
+const struct curve *curve_new_cubic_bezier(double x1, double y1, double x2, double y2);
+const struct curve *curve_new_step(int steps, bool jump_start, bool jump_end);
