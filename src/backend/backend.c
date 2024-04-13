@@ -106,6 +106,7 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 	// part of the image we want to reuse
 	region_t reg_damage;
 	reg_damage = get_damage(ps, ps->o.monitor_repaint || !ps->o.use_damage);
+	ps->root_damaged = false;
 
 	if (!pixman_region32_not_empty(&reg_damage)) {
 		pixman_region32_fini(&reg_damage);

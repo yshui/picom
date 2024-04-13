@@ -264,6 +264,8 @@ typedef struct session {
 	bool render_queued;
 	/// For tracking damage regions
 	struct damage_ring damage_ring;
+	/// Whether the root image has been changed since last render
+	bool root_damaged;
 	/// Whether all windows are currently redirected.
 	bool redirected;
 	/// Pre-generated alpha pictures.
