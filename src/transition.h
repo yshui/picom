@@ -35,7 +35,7 @@ struct curve {
 	/// The interpolator function for an animatable. This function should calculate
 	/// the current value of the `animatable` based on its `start`, `target`,
 	/// `duration` and `progress`.
-	double (*sample)(const struct curve *this, const struct animatable *);
+	double (*sample)(const struct curve *this, double progress);
 	/// Free the interpolator.
 	void (*free)(const struct curve *this);
 };

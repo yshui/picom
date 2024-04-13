@@ -9,20 +9,21 @@
 #include "transition.h"
 #include "utils.h"
 
-/// Get the current value of an `animatable`.
-double animatable_get(const struct animatable *a) {
-	if (a->duration) {
-		assert(a->progress < a->duration);
-		return a->curve->sample(a->curve, a);
-	}
-	return a->target;
-}
-
 double animatable_get_progress(const struct animatable *a) {
 	if (a->duration) {
 		return (double)a->progress / a->duration;
 	}
 	return 1;
+}
+
+/// Get the current value of an `animatable`.
+double animatable_get(const struct animatable *a) {
+	if (a->duration) {
+		assert(a->progress < a->duration);
+		double t = a->curve->sample(a->curve, animatable_get_progress(a));
+		return (1 - t) * a->start + t * a->target;
+	}
+	return a->target;
 }
 
 /// Advance the animation by a given number of steps.
@@ -104,8 +105,7 @@ bool animatable_skip(struct animatable *a) {
 /// Change the target value of an `animatable`.
 /// If the `animatable` is already animating, the animation will be canceled first.
 bool animatable_set_target(struct animatable *a, double target, unsigned int duration,
-                           const struct curve *curve,
-                           transition_callback_fn cb, void *data) {
+                           const struct curve *curve, transition_callback_fn cb, void *data) {
 	animatable_interrupt(a);
 	if (!duration || a->start == target) {
 		a->start = target;
@@ -134,10 +134,8 @@ struct animatable animatable_new(double value) {
 	return ret;
 }
 
-static double
-curve_sample_linear(const struct curve *this attr_unused, const struct animatable *a) {
-	double t = (double)a->progress / a->duration;
-	return (1 - t) * a->start + t * a->target;
+static double curve_sample_linear(const struct curve *this attr_unused, double progress) {
+	return progress;
 }
 
 static void noop_free(const struct curve *this attr_unused) {
