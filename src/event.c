@@ -714,7 +714,7 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 	pixman_region32_fini(&without_ignored);
 
 	pixman_region32_translate(&parts, -w->g.x, -w->g.y);
-	pixman_region32_copy(&w->damaged, &parts);
+	pixman_region32_union(&w->damaged, &w->damaged, &parts);
 	pixman_region32_fini(&parts);
 }
 
