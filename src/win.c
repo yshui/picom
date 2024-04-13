@@ -1697,8 +1697,8 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	new->base = *w;
 	new->base.managed = true;
 	new->a = *a;
-	new->opacity = animatable_new(0, linear_interpolator, NULL);
-	new->blur_opacity = animatable_new(0, linear_interpolator, NULL);
+	new->opacity = animatable_new(0, linear_interpolator);
+	new->blur_opacity = animatable_new(0, linear_interpolator);
 	pixman_region32_init(&new->bounding_shape);
 
 	free(a);

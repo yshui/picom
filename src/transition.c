@@ -11,10 +11,6 @@
 
 /// Get the current value of an `animatable`.
 double animatable_get(const struct animatable *a) {
-	if (a->step_state) {
-		return a->step_state->current;
-	}
-
 	if (a->duration) {
 		assert(a->progress < a->duration);
 		return a->interpolator(a);
@@ -40,17 +36,11 @@ void animatable_step(struct animatable *a, unsigned int steps) {
 		steps = a->duration - a->progress;
 	}
 	a->progress += steps;
-	if (a->step_state) {
-		a->step(a, steps);
-	}
 
 	if (a->progress == a->duration) {
 		a->start = a->target;
 		a->duration = 0;
 		a->progress = 0;
-		if (a->step_state) {
-			a->step_state->current = a->target;
-		}
 		if (a->callback) {
 			a->callback(TRANSITION_COMPLETED, a->callback_data);
 			a->callback = NULL;
@@ -78,9 +68,6 @@ bool animatable_cancel(struct animatable *a) {
 	a->target = a->start;
 	a->duration = 0;
 	a->progress = 0;
-	if (a->step_state) {
-		a->step_state->current = a->start;
-	}
 	if (a->callback) {
 		a->callback(TRANSITION_CANCELED, a->callback_data);
 		a->callback = NULL;
@@ -100,9 +87,6 @@ bool animatable_early_stop(struct animatable *a) {
 	a->start = a->target;
 	a->duration = 0;
 	a->progress = 0;
-	if (a->step_state) {
-		a->step_state->current = a->target;
-	}
 	if (a->callback) {
 		a->callback(TRANSITION_STOPPED_EARLY, a->callback_data);
 		a->callback = NULL;
@@ -128,29 +112,19 @@ void animatable_set_target(struct animatable *a, double target, unsigned int dur
 	a->target = target;
 	a->duration = duration;
 	a->progress = 0;
-	if (a->step_state) {
-		a->step(a, 0);
-	}
 	a->callback = cb;
 	a->callback_data = data;
 }
 
 /// Create a new animatable.
-struct animatable animatable_new(double value, interpolator_fn interpolator, step_fn step) {
-	assert(!interpolator || !step);
+struct animatable animatable_new(double value, interpolator_fn interpolator) {
 	struct animatable ret = {
 	    .start = value,
 	    .target = value,
 	    .duration = 0,
 	    .progress = 0,
-	    .step_state = NULL,
 	};
-	if (interpolator) {
-		ret.interpolator = interpolator;
-	} else if (step) {
-		ret.step = step;
-		step(&ret, 0);
-	}
+	ret.interpolator = interpolator;
 	return ret;
 }
 
