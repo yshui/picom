@@ -20,8 +20,8 @@ typedef void (*transition_callback_fn)(enum transition_event event, void *data);
 
 enum transition_event {
 	TRANSITION_COMPLETED,
-	TRANSITION_CANCELED,
-	TRANSITION_STOPPED_EARLY,
+	TRANSITION_INTERRUPTED,
+	TRANSITION_SKIPPED,
 };
 
 /// The base type for step_state.
@@ -31,13 +31,13 @@ struct step_state_base {
 	double current;
 };
 
-struct interpolator {
+struct curve {
 	/// The interpolator function for an animatable. This function should calculate
 	/// the current value of the `animatable` based on its `start`, `target`,
 	/// `duration` and `progress`.
-	double (*interpolate)(const struct interpolator *this, const struct animatable *);
+	double (*sample)(const struct curve *this, const struct animatable *);
 	/// Free the interpolator.
-	void (*free)(const struct interpolator *this);
+	void (*free)(const struct curve *this);
 };
 
 /// An animatable value
@@ -62,7 +62,7 @@ struct animatable {
 	/// `step_state` is not NULL, the `step` function is used;
 	/// otherwise, the `interpolator` function is used.
 	/// The interpolator function.
-	const struct interpolator *interpolator;
+	const struct curve *curve;
 };
 
 // =============================== API ===============================
@@ -75,24 +75,24 @@ double animatable_get_progress(const struct animatable *a);
 void animatable_step(struct animatable *a, unsigned int steps);
 /// Returns whether an `animatable` is currently animating.
 bool animatable_is_animating(const struct animatable *a);
-/// Cancel the current animation of an `animatable`. This stops the animation and
+/// Interrupt the current animation of an `animatable`. This stops the animation and
 /// the `animatable` will retain its current value.
 ///
 /// Returns true if the `animatable` was animated before this function is called.
-bool animatable_cancel(struct animatable *a);
-/// Cancel the current animation of an `animatable` and set its value to its target.
+bool animatable_interrupt(struct animatable *a);
+/// Skip the current animation of an `animatable` and set its value to its target.
 ///
 /// Returns true if the `animatable` was animated before this function is called.
-bool animatable_early_stop(struct animatable *a);
+bool animatable_skip(struct animatable *a);
 /// Change the target value of an `animatable`. Specify a duration, an interpolator
 /// function, and a callback function.
 /// If the `animatable` is already animating, the animation will be canceled first.
 void animatable_set_target(struct animatable *a, double target, unsigned int duration,
-                           const struct interpolator *interpolator,
-                           transition_callback_fn cb, void *data);
+                           const struct curve *interpolator, transition_callback_fn cb,
+                           void *data);
 /// Create a new animatable.
 struct animatable animatable_new(double value);
 
 // ========================== Interpolators ==========================
 
-const struct interpolator *linear_interpolator_new(void);
+const struct curve *curve_new_linear(void);

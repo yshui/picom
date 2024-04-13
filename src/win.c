@@ -949,8 +949,9 @@ win_start_fade(session_t *ps, struct managed_win *w, double target_blur_opacity)
 	data->w = w;
 	data->refcount = 1;
 
-	animatable_cancel(&w->blur_opacity);        // Cancel any ongoing blur animation
-	                                            // so we can check its current value
+	animatable_interrupt(&w->blur_opacity);        // Cancel any ongoing blur
+	                                               // animation so we can check its
+	                                               // current value
 
 	// We want to set the correct `number_of_animations` before calling
 	// `animatable_set_target`, because it might trigger our callback which will
@@ -961,12 +962,11 @@ win_start_fade(session_t *ps, struct managed_win *w, double target_blur_opacity)
 		data->refcount++;
 	}
 
-	animatable_set_target(&w->opacity, target_opacity, duration,
-	                      linear_interpolator_new(), win_transition_callback, data);
+	animatable_set_target(&w->opacity, target_opacity, duration, curve_new_linear(),
+	                      win_transition_callback, data);
 	if (target_blur_opacity != w->blur_opacity.start) {
 		animatable_set_target(&w->blur_opacity, target_blur_opacity, duration,
-		                      linear_interpolator_new(), win_transition_callback,
-		                      data);
+		                      curve_new_linear(), win_transition_callback, data);
 	}
 }
 
@@ -2288,8 +2288,8 @@ void win_skip_fading(struct managed_win *w) {
 		return;
 	}
 	log_debug("Skipping fading process of window %#010x (%s)", w->base.id, w->name);
-	animatable_early_stop(&w->opacity);
-	animatable_early_stop(&w->blur_opacity);
+	animatable_skip(&w->opacity);
+	animatable_skip(&w->blur_opacity);
 }
 
 // TODO(absolutelynothelix): rename to x_update_win_(randr_?)monitor and move to

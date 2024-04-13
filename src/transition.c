@@ -13,7 +13,7 @@
 double animatable_get(const struct animatable *a) {
 	if (a->duration) {
 		assert(a->progress < a->duration);
-		return a->interpolator->interpolate(a->interpolator, a);
+		return a->curve->sample(a->curve, a);
 	}
 	return a->target;
 }
@@ -41,8 +41,8 @@ void animatable_step(struct animatable *a, unsigned int steps) {
 		a->start = a->target;
 		a->duration = 0;
 		a->progress = 0;
-		a->interpolator->free(a->interpolator);
-		a->interpolator = NULL;
+		a->curve->free(a->curve);
+		a->curve = NULL;
 		if (a->callback) {
 			a->callback(TRANSITION_COMPLETED, a->callback_data);
 			a->callback = NULL;
@@ -61,7 +61,7 @@ bool animatable_is_animating(const struct animatable *a) {
 /// the `animatable` will retain its current value.
 ///
 /// Returns true if the `animatable` was animated before this function is called.
-bool animatable_cancel(struct animatable *a) {
+bool animatable_interrupt(struct animatable *a) {
 	if (!a->duration) {
 		return false;
 	}
@@ -70,10 +70,10 @@ bool animatable_cancel(struct animatable *a) {
 	a->target = a->start;
 	a->duration = 0;
 	a->progress = 0;
-	a->interpolator->free(a->interpolator);
-	a->interpolator = NULL;
+	a->curve->free(a->curve);
+	a->curve = NULL;
 	if (a->callback) {
-		a->callback(TRANSITION_CANCELED, a->callback_data);
+		a->callback(TRANSITION_INTERRUPTED, a->callback_data);
 		a->callback = NULL;
 		a->callback_data = NULL;
 	}
@@ -83,7 +83,7 @@ bool animatable_cancel(struct animatable *a) {
 /// Cancel the current animation of an `animatable` and set its value to its target.
 ///
 /// Returns true if the `animatable` was animated before this function is called.
-bool animatable_early_stop(struct animatable *a) {
+bool animatable_skip(struct animatable *a) {
 	if (!a->duration) {
 		return false;
 	}
@@ -91,10 +91,10 @@ bool animatable_early_stop(struct animatable *a) {
 	a->start = a->target;
 	a->duration = 0;
 	a->progress = 0;
-	a->interpolator->free(a->interpolator);
-	a->interpolator = NULL;
+	a->curve->free(a->curve);
+	a->curve = NULL;
 	if (a->callback) {
-		a->callback(TRANSITION_STOPPED_EARLY, a->callback_data);
+		a->callback(TRANSITION_SKIPPED, a->callback_data);
 		a->callback = NULL;
 		a->callback_data = NULL;
 	}
@@ -104,16 +104,15 @@ bool animatable_early_stop(struct animatable *a) {
 /// Change the target value of an `animatable`.
 /// If the `animatable` is already animating, the animation will be canceled first.
 void animatable_set_target(struct animatable *a, double target, unsigned int duration,
-                           const struct interpolator *interpolator,
-                           transition_callback_fn cb, void *data) {
-	animatable_cancel(a);
+                           const struct curve *curve, transition_callback_fn cb, void *data) {
+	animatable_interrupt(a);
 	if (!duration) {
 		a->start = target;
 		a->target = target;
 		if (cb) {
 			cb(TRANSITION_COMPLETED, data);
 		}
-		interpolator->free(interpolator);
+		curve->free(curve);
 		return;
 	}
 
@@ -122,7 +121,7 @@ void animatable_set_target(struct animatable *a, double target, unsigned int dur
 	a->progress = 0;
 	a->callback = cb;
 	a->callback_data = data;
-	a->interpolator = interpolator;
+	a->curve = curve;
 }
 
 /// Create a new animatable.
@@ -137,17 +136,17 @@ struct animatable animatable_new(double value) {
 }
 
 static double
-linear_interpolator(const struct interpolator *this attr_unused, const struct animatable *a) {
+curve_sample_linear(const struct curve *this attr_unused, const struct animatable *a) {
 	double t = (double)a->progress / a->duration;
 	return (1 - t) * a->start + t * a->target;
 }
 
-static void noop_free(const struct interpolator *this attr_unused) {
+static void noop_free(const struct curve *this attr_unused) {
 }
 
-const struct interpolator *linear_interpolator_new(void) {
-	static const struct interpolator ret = {
-	    .interpolate = linear_interpolator,
+const struct curve *curve_new_linear(void) {
+	static const struct curve ret = {
+	    .sample = curve_sample_linear,
 	    .free = noop_free,
 	};
 	return &ret;
