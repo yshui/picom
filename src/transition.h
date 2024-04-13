@@ -7,10 +7,6 @@
 
 struct animatable;
 enum transition_event;
-/// The interpolator function for an animatable. This function should calculate the
-/// current value of the `animatable` based on its `start`, `target`, `duration` and
-/// `progress`.
-typedef double (*interpolator_fn)(const struct animatable *);
 
 /// Callback when the transition state changes. Callback might be called by:
 ///   - `animatable_set_target` generates TRANSITION_COMPLETED when the specified duration
@@ -35,6 +31,15 @@ struct step_state_base {
 	double current;
 };
 
+struct interpolator {
+	/// The interpolator function for an animatable. This function should calculate
+	/// the current value of the `animatable` based on its `start`, `target`,
+	/// `duration` and `progress`.
+	double (*interpolate)(const struct interpolator *this, const struct animatable *);
+	/// Free the interpolator.
+	void (*free)(const struct interpolator *this);
+};
+
 /// An animatable value
 struct animatable {
 	/// The starting value.
@@ -57,7 +62,7 @@ struct animatable {
 	/// `step_state` is not NULL, the `step` function is used;
 	/// otherwise, the `interpolator` function is used.
 	/// The interpolator function.
-	interpolator_fn interpolator;
+	const struct interpolator *interpolator;
 };
 
 // =============================== API ===============================
@@ -79,13 +84,15 @@ bool animatable_cancel(struct animatable *a);
 ///
 /// Returns true if the `animatable` was animated before this function is called.
 bool animatable_early_stop(struct animatable *a);
-/// Change the target value of an `animatable`.
+/// Change the target value of an `animatable`. Specify a duration, an interpolator
+/// function, and a callback function.
 /// If the `animatable` is already animating, the animation will be canceled first.
 void animatable_set_target(struct animatable *a, double target, unsigned int duration,
+                           const struct interpolator *interpolator,
                            transition_callback_fn cb, void *data);
 /// Create a new animatable.
-struct animatable animatable_new(double value, interpolator_fn interpolator) attr_nonnull(2);
+struct animatable animatable_new(double value);
 
 // ========================== Interpolators ==========================
 
-double linear_interpolator(const struct animatable *a);
+const struct interpolator *linear_interpolator_new(void);

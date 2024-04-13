@@ -13,7 +13,7 @@
 double animatable_get(const struct animatable *a) {
 	if (a->duration) {
 		assert(a->progress < a->duration);
-		return a->interpolator(a);
+		return a->interpolator->interpolate(a->interpolator, a);
 	}
 	return a->target;
 }
@@ -41,6 +41,8 @@ void animatable_step(struct animatable *a, unsigned int steps) {
 		a->start = a->target;
 		a->duration = 0;
 		a->progress = 0;
+		a->interpolator->free(a->interpolator);
+		a->interpolator = NULL;
 		if (a->callback) {
 			a->callback(TRANSITION_COMPLETED, a->callback_data);
 			a->callback = NULL;
@@ -68,6 +70,8 @@ bool animatable_cancel(struct animatable *a) {
 	a->target = a->start;
 	a->duration = 0;
 	a->progress = 0;
+	a->interpolator->free(a->interpolator);
+	a->interpolator = NULL;
 	if (a->callback) {
 		a->callback(TRANSITION_CANCELED, a->callback_data);
 		a->callback = NULL;
@@ -87,6 +91,8 @@ bool animatable_early_stop(struct animatable *a) {
 	a->start = a->target;
 	a->duration = 0;
 	a->progress = 0;
+	a->interpolator->free(a->interpolator);
+	a->interpolator = NULL;
 	if (a->callback) {
 		a->callback(TRANSITION_STOPPED_EARLY, a->callback_data);
 		a->callback = NULL;
@@ -98,6 +104,7 @@ bool animatable_early_stop(struct animatable *a) {
 /// Change the target value of an `animatable`.
 /// If the `animatable` is already animating, the animation will be canceled first.
 void animatable_set_target(struct animatable *a, double target, unsigned int duration,
+                           const struct interpolator *interpolator,
                            transition_callback_fn cb, void *data) {
 	animatable_cancel(a);
 	if (!duration) {
@@ -106,6 +113,7 @@ void animatable_set_target(struct animatable *a, double target, unsigned int dur
 		if (cb) {
 			cb(TRANSITION_COMPLETED, data);
 		}
+		interpolator->free(interpolator);
 		return;
 	}
 
@@ -114,21 +122,33 @@ void animatable_set_target(struct animatable *a, double target, unsigned int dur
 	a->progress = 0;
 	a->callback = cb;
 	a->callback_data = data;
+	a->interpolator = interpolator;
 }
 
 /// Create a new animatable.
-struct animatable animatable_new(double value, interpolator_fn interpolator) {
+struct animatable animatable_new(double value) {
 	struct animatable ret = {
 	    .start = value,
 	    .target = value,
 	    .duration = 0,
 	    .progress = 0,
 	};
-	ret.interpolator = interpolator;
 	return ret;
 }
 
-double linear_interpolator(const struct animatable *a) {
+static double
+linear_interpolator(const struct interpolator *this attr_unused, const struct animatable *a) {
 	double t = (double)a->progress / a->duration;
 	return (1 - t) * a->start + t * a->target;
+}
+
+static void noop_free(const struct interpolator *this attr_unused) {
+}
+
+const struct interpolator *linear_interpolator_new(void) {
+	static const struct interpolator ret = {
+	    .interpolate = linear_interpolator,
+	    .free = noop_free,
+	};
+	return &ret;
 }

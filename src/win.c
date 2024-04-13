@@ -962,10 +962,11 @@ win_start_fade(session_t *ps, struct managed_win *w, double target_blur_opacity)
 	}
 
 	animatable_set_target(&w->opacity, target_opacity, duration,
-	                      win_transition_callback, data);
+	                      linear_interpolator_new(), win_transition_callback, data);
 	if (target_blur_opacity != w->blur_opacity.start) {
 		animatable_set_target(&w->blur_opacity, target_blur_opacity, duration,
-		                      win_transition_callback, data);
+		                      linear_interpolator_new(), win_transition_callback,
+		                      data);
 	}
 }
 
@@ -1697,8 +1698,8 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	new->base = *w;
 	new->base.managed = true;
 	new->a = *a;
-	new->opacity = animatable_new(0, linear_interpolator);
-	new->blur_opacity = animatable_new(0, linear_interpolator);
+	new->opacity = animatable_new(0);
+	new->blur_opacity = animatable_new(0);
 	pixman_region32_init(&new->bounding_shape);
 
 	free(a);
