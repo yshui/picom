@@ -883,11 +883,11 @@ struct window_transition_data {
 	uint64_t refcount;
 };
 
-static void win_transition_callback(enum transition_event event attr_unused, void *data_) {
+static void win_transition_callback(enum transition_event event, void *data_) {
 	auto data = (struct window_transition_data *)data_;
 	auto w = data->w;
 	w->number_of_animations--;
-	if (w->number_of_animations == 0) {
+	if (w->number_of_animations == 0 && event != TRANSITION_INTERRUPTED) {
 		if (w->state == WSTATE_DESTROYED || w->state == WSTATE_UNMAPPED) {
 			if (animatable_get(&w->opacity) != 0) {
 				log_warn("Window %#010x (%s) has finished fading out but "
@@ -944,29 +944,26 @@ win_start_fade(session_t *ps, struct managed_win *w, double target_blur_opacity)
 	if (!win_should_fade(ps, w)) {
 		duration = 0;
 	}
+
 	auto data = ccalloc(1, struct window_transition_data);
 	data->ps = ps;
 	data->w = w;
-	data->refcount = 1;
-
-	animatable_interrupt(&w->blur_opacity);        // Cancel any ongoing blur
-	                                               // animation so we can check its
-	                                               // current value
-
-	// We want to set the correct `number_of_animations` before calling
-	// `animatable_set_target`, because it might trigger our callback which will
-	// decrement `number_of_animations`
-	w->number_of_animations++;
-	if (target_blur_opacity != w->blur_opacity.start) {
-		w->number_of_animations++;
+	data->refcount = 0;
+	if (animatable_set_target(&w->opacity, target_opacity, duration,
+	                          curve_new_linear(), win_transition_callback, data)) {
 		data->refcount++;
+		w->number_of_animations++;
 	}
-
-	animatable_set_target(&w->opacity, target_opacity, duration, curve_new_linear(),
-	                      win_transition_callback, data);
-	if (target_blur_opacity != w->blur_opacity.start) {
-		animatable_set_target(&w->blur_opacity, target_blur_opacity, duration,
-		                      curve_new_linear(), win_transition_callback, data);
+	if (animatable_set_target(&w->blur_opacity, target_blur_opacity, duration,
+	                          curve_new_linear(), win_transition_callback, data)) {
+		data->refcount++;
+		w->number_of_animations++;
+	}
+	if (!data->refcount) {
+		free(data);
+	}
+	if (w->number_of_animations == 0 && w->state == WSTATE_UNMAPPED) {
+		unmap_win_finish(ps, w);
 	}
 }
 

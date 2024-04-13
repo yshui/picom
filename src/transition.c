@@ -103,17 +103,15 @@ bool animatable_skip(struct animatable *a) {
 
 /// Change the target value of an `animatable`.
 /// If the `animatable` is already animating, the animation will be canceled first.
-void animatable_set_target(struct animatable *a, double target, unsigned int duration,
-                           const struct curve *curve, transition_callback_fn cb, void *data) {
+bool animatable_set_target(struct animatable *a, double target, unsigned int duration,
+                           const struct curve *curve,
+                           transition_callback_fn cb, void *data) {
 	animatable_interrupt(a);
-	if (!duration) {
+	if (!duration || a->start == target) {
 		a->start = target;
 		a->target = target;
-		if (cb) {
-			cb(TRANSITION_COMPLETED, data);
-		}
 		curve->free(curve);
-		return;
+		return false;
 	}
 
 	a->target = target;
@@ -122,6 +120,7 @@ void animatable_set_target(struct animatable *a, double target, unsigned int dur
 	a->callback = cb;
 	a->callback_data = data;
 	a->curve = curve;
+	return true;
 }
 
 /// Create a new animatable.

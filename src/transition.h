@@ -86,10 +86,18 @@ bool animatable_interrupt(struct animatable *a);
 bool animatable_skip(struct animatable *a);
 /// Change the target value of an `animatable`. Specify a duration, an interpolator
 /// function, and a callback function.
+///
 /// If the `animatable` is already animating, the animation will be canceled first.
-void animatable_set_target(struct animatable *a, double target, unsigned int duration,
-                           const struct curve *interpolator, transition_callback_fn cb,
-                           void *data);
+///
+/// Note, In some cases this function does not start the animation, for example, if the
+/// target value is the same as the current value of the animatable, or if the duration is
+/// 0. If the animation is not started, the callback function will not be called. The
+/// animatable's current animation, if it has one, will be canceled regardless.
+///
+/// Returns if the animatable is now animated.
+bool animatable_set_target(struct animatable *a, double target, unsigned int duration,
+                           const struct curve *curve,
+                           transition_callback_fn cb, void *data);
 /// Create a new animatable.
 struct animatable animatable_new(double value);
 
