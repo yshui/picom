@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <uthash.h>
 
+#include "command_builder.h"
+#include "common.h"
 #include "list.h"
 #include "region.h"
 #include "transition.h"
@@ -98,6 +100,7 @@ static void layout_deinit(struct layout *layout) {
 		pixman_region32_fini(&layout->layers[i].damaged);
 	}
 	free(layout->layers);
+	command_builder_command_list_free(layout->commands);
 	*layout = (struct layout){};
 }
 
@@ -153,6 +156,7 @@ void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
 	auto prev_layout = &lm->layouts[lm->current];
 	lm->current = (lm->current + 1) % lm->max_buffer_age;
 	auto layout = &lm->layouts[lm->current];
+	command_builder_command_list_free(layout->commands);
 	unsigned nlayers = wm_stack_num_managed_windows(wm);
 	if (nlayers > layout->capacity) {
 		struct layer *new_layers =

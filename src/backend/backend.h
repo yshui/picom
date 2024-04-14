@@ -195,6 +195,47 @@ enum backend_image_capability {
 	BACKEND_IMAGE_CAP_DST = 1 << 1,
 };
 
+enum backend_command_op {
+	BACKEND_COMMAND_INVALID = -1,
+	BACKEND_COMMAND_BLIT,
+	BACKEND_COMMAND_BLUR,
+	BACKEND_COMMAND_COPY_AREA,
+};
+
+/// Symbolic references used as render command source images. The actual `image_handle`
+/// will later be filled in by the renderer using this symbolic reference.
+enum backend_command_source {
+	BACKEND_COMMAND_SOURCE_WINDOW,
+	BACKEND_COMMAND_SOURCE_SHADOW,
+	BACKEND_COMMAND_SOURCE_BACKGROUND,
+};
+
+// TODO(yshui) might need better names
+
+struct backend_command {
+	enum backend_command_op op;
+	struct coord origin;
+	enum backend_command_source source;
+	union {
+		struct {
+			struct backend_blit_args blit;
+			/// Region of the screen that will be covered by this blit
+			/// operations, in screen coordinates.
+			region_t opaque_region;
+		};
+		struct {
+			image_handle source_image;
+			const region_t *region;
+		} copy_area;
+		struct backend_blur_args blur;
+	};
+	/// Mask used for the operation. Note `copy_area` command uses this to store its
+	/// `region` argument.
+	struct backend_mask mask;
+	/// Whether renderer should fill in `mask.image`.
+	bool need_mask_image;
+};
+
 enum backend_quirk {
 	/// Backend cannot do blur quickly. The compositor will avoid using blur to create
 	/// shadows on this backend
@@ -633,3 +674,7 @@ extern struct backend_operations *backend_list[];
 /// Returns if any render command is issued. IOW if nothing on the screen has changed,
 /// this function will return false.
 bool paint_all_new(session_t *ps, struct managed_win *t) attr_nonnull(1);
+void log_backend_command_(enum log_level level, const char *func,
+                          const struct backend_command *cmd);
+#define log_backend_command(level, cmd)                                                  \
+	log_backend_command_(LOG_LEVEL_##level, __func__, &(cmd));

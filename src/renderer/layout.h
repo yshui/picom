@@ -4,6 +4,7 @@
 #include <pixman.h>
 #include <stdint.h>
 #include <xcb/xproto.h>
+#include "backend/backend.h"
 #include "region.h"
 #include "types.h"
 
@@ -41,6 +42,9 @@ struct layer {
 	/// Opacity of the background blur of this window
 	float blur_opacity;
 
+	/// How many commands are needed to render this layer
+	unsigned number_of_commands;
+
 	/// Rank of this layer in the previous frame, -1 if this window
 	/// appears in this frame for the first time
 	int prev_rank;
@@ -71,8 +75,17 @@ struct layout {
 	unsigned len;
 	/// Capacity of `layers`
 	unsigned capacity;
-	/// Layers as a flat array
+	/// Layers as a flat array, from bottom to top in stack order.
 	struct layer *layers;
+	/// Number of commands in `commands`
+	unsigned number_of_commands;
+	/// Where does the commands for the bottom most layer start.
+	/// Any commands before that is for the desktop background.
+	unsigned first_layer_start;
+	/// Commands that are needed to render this layout. Commands
+	/// are recorded in the same order as the layers they correspond to. Each layer
+	/// can have 0 or more commands associated with it.
+	struct backend_command *commands;
 };
 
 struct render_plan {

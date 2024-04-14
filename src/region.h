@@ -30,6 +30,31 @@ static inline void dump_region(const region_t *x) {
 	}
 }
 
+static inline void log_region_(enum log_level level, const char *func, const region_t *x) {
+	if (level < log_get_level_tls()) {
+		return;
+	}
+
+	int nrects;
+	const rect_t *rects = pixman_region32_rectangles((region_t *)x, &nrects);
+	if (nrects == 0) {
+		log_printf(tls_logger, level, func, "\t(empty)");
+		return;
+	}
+	for (int i = 0; i < min2(nrects, 3); i++) {
+		log_printf(tls_logger, level, func, "\t(%d, %d) - (%d, %d)", rects[i].x1,
+		           rects[i].y1, rects[i].x2, rects[i].y2);
+	}
+	if (nrects > 3) {
+		auto extent = pixman_region32_extents(x);
+		log_printf(tls_logger, level, func, "\t...");
+		log_printf(tls_logger, level, func, "\ttotal: (%d, %d) - (%d, %d)",
+		           extent->x1, extent->y1, extent->x2, extent->y2);
+	}
+}
+
+#define log_region(level, x) log_region_(LOG_LEVEL_##level, __func__, x)
+
 /// Convert one xcb rectangle to our rectangle type
 static inline rect_t from_x_rect(const xcb_rectangle_t *rect) {
 	return (rect_t){
@@ -106,4 +131,19 @@ static inline rect_t region_translate_rect(rect_t rect, struct coord origin) {
 	    .x2 = rect.x2 + origin.x,
 	    .y2 = rect.y2 + origin.y,
 	};
+}
+
+/// Subtract `other`, placed at `origin`, from `region`.
+static inline void
+region_subtract(region_t *region, struct coord origin, const region_t *other) {
+	pixman_region32_translate(region, -origin.x, -origin.y);
+	pixman_region32_subtract(region, region, other);
+	pixman_region32_translate(region, origin.x, origin.y);
+}
+
+/// Union `region` with `other` placed at `origin`.
+static inline void region_union(region_t *region, struct coord origin, const region_t *other) {
+	pixman_region32_translate(region, -origin.x, -origin.y);
+	pixman_region32_union(region, region, other);
+	pixman_region32_translate(region, origin.x, origin.y);
 }

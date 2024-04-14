@@ -66,6 +66,7 @@
 #include "options.h"
 #include "region.h"
 #include "render.h"
+#include "renderer/command_builder.h"
 #include "renderer/layout.h"
 #include "statistics.h"
 #include "types.h"
@@ -2554,6 +2555,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_debug("%#010x", w->id);
 	}
 
+	ps->command_builder = command_builder_new();
+
 	ps->pending_updates = true;
 
 	write_pid(ps);
@@ -2580,6 +2583,8 @@ static void session_destroy(session_t *ps) {
 	if (ps->redirected) {
 		unredirect(ps);
 	}
+	command_builder_free(ps->command_builder);
+	ps->command_builder = NULL;
 
 	file_watch_destroy(ps->loop, ps->file_watch_handle);
 	ps->file_watch_handle = NULL;
