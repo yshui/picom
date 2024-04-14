@@ -341,8 +341,7 @@ x_get_pictfmt_for_standard(struct x_connection *c, xcb_pict_standard_t std) {
 }
 
 xcb_render_picture_t
-x_create_picture_with_pictfmt_and_pixmap(struct x_connection *c,
-                                         const xcb_render_pictforminfo_t *pictfmt,
+x_create_picture_with_pictfmt_and_pixmap(struct x_connection *c, xcb_render_pictformat_t pictfmt,
                                          xcb_pixmap_t pixmap, uint32_t valuemask,
                                          const xcb_render_create_picture_value_list_t *attr) {
 	void *buf = NULL;
@@ -355,13 +354,14 @@ x_create_picture_with_pictfmt_and_pixmap(struct x_connection *c,
 	}
 
 	xcb_render_picture_t tmp_picture = x_new_id(c);
-	xcb_generic_error_t *e = xcb_request_check(
-	    c->c, xcb_render_create_picture_checked(c->c, tmp_picture, pixmap,
-	                                            pictfmt->id, valuemask, buf));
+	xcb_generic_error_t *e =
+	    xcb_request_check(c->c, xcb_render_create_picture_checked(
+	                                c->c, tmp_picture, pixmap, pictfmt, valuemask, buf));
 	free(buf);
 	if (e) {
 		log_error_x_error(e, "failed to create picture");
 		free(e);
+		abort();
 		return XCB_NONE;
 	}
 	return tmp_picture;
@@ -372,7 +372,7 @@ x_create_picture_with_visual_and_pixmap(struct x_connection *c, xcb_visualid_t v
                                         xcb_pixmap_t pixmap, uint32_t valuemask,
                                         const xcb_render_create_picture_value_list_t *attr) {
 	const xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(c, visual);
-	return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, pixmap, valuemask, attr);
+	return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt->id, pixmap, valuemask, attr);
 }
 
 xcb_render_picture_t
@@ -383,7 +383,7 @@ x_create_picture_with_standard_and_pixmap(struct x_connection *c, xcb_pict_stand
 
 	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, standard);
 	assert(pictfmt);
-	return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, pixmap, valuemask, attr);
+	return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt->id, pixmap, valuemask, attr);
 }
 
 xcb_render_picture_t
@@ -394,7 +394,8 @@ x_create_picture_with_standard(struct x_connection *c, int w, int h,
 
 	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, standard);
 	assert(pictfmt);
-	return x_create_picture_with_pictfmt(c, w, h, pictfmt, valuemask, attr);
+	return x_create_picture_with_pictfmt(c, w, h, pictfmt->id, pictfmt->depth,
+	                                     valuemask, attr);
 }
 
 /**
@@ -402,9 +403,8 @@ x_create_picture_with_standard(struct x_connection *c, int w, int h,
  */
 xcb_render_picture_t
 x_create_picture_with_pictfmt(struct x_connection *c, int w, int h,
-                              const xcb_render_pictforminfo_t *pictfmt, uint32_t valuemask,
+                              xcb_render_pictformat_t pictfmt, uint8_t depth, uint32_t valuemask,
                               const xcb_render_create_picture_value_list_t *attr) {
-	uint8_t depth = pictfmt->depth;
 
 	xcb_pixmap_t tmp_pixmap = x_create_pixmap(c, depth, w, h);
 	if (!tmp_pixmap) {
@@ -424,7 +424,8 @@ x_create_picture_with_visual(struct x_connection *c, int w, int h, xcb_visualid_
                              uint32_t valuemask,
                              const xcb_render_create_picture_value_list_t *attr) {
 	auto pictfmt = x_get_pictform_for_visual(c, visual);
-	return x_create_picture_with_pictfmt(c, w, h, pictfmt, valuemask, attr);
+	return x_create_picture_with_pictfmt(c, w, h, pictfmt->id, pictfmt->depth,
+	                                     valuemask, attr);
 }
 
 bool x_fetch_region(struct x_connection *c, xcb_xfixes_region_t r, pixman_region32_t *res) {

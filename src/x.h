@@ -274,11 +274,10 @@ const xcb_render_pictforminfo_t *
 x_get_pictform_for_visual(struct x_connection *, xcb_visualid_t);
 
 xcb_render_picture_t
-x_create_picture_with_pictfmt_and_pixmap(struct x_connection *,
-                                         const xcb_render_pictforminfo_t *pictfmt,
+x_create_picture_with_pictfmt_and_pixmap(struct x_connection *, xcb_render_pictformat_t pictfmt,
                                          xcb_pixmap_t pixmap, uint32_t valuemask,
                                          const xcb_render_create_picture_value_list_t *attr)
-    attr_nonnull(1, 2);
+    attr_nonnull(1);
 
 xcb_render_picture_t
 x_create_picture_with_visual_and_pixmap(struct x_connection *, xcb_visualid_t visual,
@@ -303,9 +302,9 @@ x_create_picture_with_standard(struct x_connection *c, int w, int h,
  */
 xcb_render_picture_t
 x_create_picture_with_pictfmt(struct x_connection *, int w, int h,
-                              const xcb_render_pictforminfo_t *pictfmt, uint32_t valuemask,
+                              xcb_render_pictformat_t pictfmt, uint8_t depth, uint32_t valuemask,
                               const xcb_render_create_picture_value_list_t *attr)
-    attr_nonnull(1, 4);
+    attr_nonnull(1);
 
 xcb_render_picture_t
 x_create_picture_with_visual(struct x_connection *, int w, int h, xcb_visualid_t visual,
