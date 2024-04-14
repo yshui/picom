@@ -7,6 +7,7 @@
 #include <xcb/xcb.h>
 
 #include "log.h"
+#include "types.h"
 #include "utils.h"
 
 typedef struct pixman_region32 pixman_region32_t;
@@ -96,4 +97,13 @@ static inline region_t resize_region(const region_t *region, int dx, int dy) {
 
 static inline void resize_region_in_place(region_t *region, int dx, int dy) {
 	return _resize_region(region, region, dx, dy);
+}
+
+static inline rect_t region_translate_rect(rect_t rect, struct coord origin) {
+	return (rect_t){
+	    .x1 = rect.x1 + origin.x,
+	    .y1 = rect.y1 + origin.y,
+	    .x2 = rect.x2 + origin.x,
+	    .y2 = rect.y2 + origin.y,
+	};
 }

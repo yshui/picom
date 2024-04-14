@@ -24,6 +24,7 @@
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
+#include "backend/compat.h"
 #include "backend/gl/gl_common.h"
 #include "backend/gl/glx.h"
 #include "common.h"
@@ -225,6 +226,7 @@ static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawab
 	return vsync_enabled;
 }
 
+struct backend_operations glx_ops;
 /**
  * Initialize OpenGL.
  */
@@ -232,7 +234,8 @@ static backend_t *glx_init(session_t *ps, xcb_window_t target) {
 	bool success = false;
 	glxext_init(ps->c.dpy, ps->c.screen);
 	auto gd = ccalloc(1, struct _glx_data);
-	init_backend_base(&gd->gl.base, ps);
+	init_backend_base(&gd->gl.compat.base, ps);
+	gd->gl.compat.base.ops = &glx_ops;
 
 	gd->target_win = target;
 
@@ -358,11 +361,11 @@ end:
 	}
 
 	if (!success) {
-		glx_deinit(&gd->gl.base);
+		glx_deinit(&gd->gl.compat.base);
 		return NULL;
 	}
 
-	return &gd->gl.base;
+	return &gd->gl.compat.base;
 }
 
 static image_handle
@@ -389,12 +392,9 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 	}
 
 	log_trace("Binding pixmap %#010x", pixmap);
-	auto wd = ccalloc(1, struct backend_image);
-	default_init_backend_image(wd, r->width, r->height);
 	auto inner = ccalloc(1, struct gl_texture);
 	inner->width = r->width;
 	inner->height = r->height;
-	wd->inner = (struct backend_image_inner_base *)inner;
 	free(r);
 
 	struct glx_fbconfig_cache *cached_fbconfig = NULL;
@@ -452,28 +452,26 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 
 	// Create texture
 	inner->user_data = glxpixmap;
-	inner->texture = gl_new_texture(GL_TEXTURE_2D);
-	inner->has_alpha = fmt.alpha_size != 0;
-	wd->inner->refcount = 1;
+	inner->texture = gl_new_texture();
 	glBindTexture(GL_TEXTURE_2D, inner->texture);
 	glXBindTexImageEXT(base->c->dpy, *glxpixmap, GLX_FRONT_LEFT_EXT, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	gl_check_err();
-	return (image_handle)wd;
+	return (image_handle)inner;
 err:
 	if (glxpixmap && *glxpixmap) {
 		glXDestroyPixmap(base->c->dpy, *glxpixmap);
 	}
 	free(glxpixmap);
-	free(wd);
 	return NULL;
 }
 
-static void glx_present(backend_t *base, const region_t *region attr_unused) {
+static bool glx_present(backend_t *base) {
 	struct _glx_data *gd = (void *)base;
-	gl_present(base, region);
+	gl_finish_render(&gd->gl);
 	glXSwapBuffers(base->c->dpy, gd->target_win);
+	return true;
 }
 
 static int glx_buffer_age(backend_t *base) {
@@ -526,27 +524,43 @@ static void glx_diagnostics(backend_t *base) {
 }
 
 struct backend_operations glx_ops = {
+    .v2 =
+        {
+            .apply_alpha = gl_apply_alpha,
+            .back_buffer = gl_back_buffer,
+            .bind_pixmap = glx_bind_pixmap,
+            .blit = gl_blit,
+            .blur = gl_blur,
+            .clear = gl_clear,
+            .copy_area = gl_copy_area,
+            .copy_area_quantize = gl_copy_area_quantize,
+            .image_capabilities = gl_image_capabilities,
+            .is_format_supported = gl_is_format_supported,
+            .new_image = gl_new_image,
+            .present = glx_present,
+            .release_image = gl_release_image,
+        },
     .init = glx_init,
     .deinit = glx_deinit,
     .root_change = gl_root_change,
-    .bind_pixmap = glx_bind_pixmap,
-    .release_image = gl_release_image,
+    .bind_pixmap = backend_compat_bind_pixmap,
+    .release_image = backend_compat_release_image,
     .prepare = gl_prepare,
-    .compose = gl_compose,
-    .image_op = gl_image_op,
+    .compose = backend_compat_compose,
+    .image_op = backend_compat_image_op,
     .set_image_property = default_set_image_property,
     .clone_image = default_clone_image,
-    .blur = gl_blur,
+    .blur = backend_compat_blur,
     .is_image_transparent = default_is_image_transparent,
-    .present = glx_present,
+    .present = backend_compat_present,
     .buffer_age = glx_buffer_age,
     .last_render_time = gl_last_render_time,
-    .create_shadow_context = gl_create_shadow_context,
-    .destroy_shadow_context = gl_destroy_shadow_context,
+    .create_shadow_context = backend_compat_create_shadow_context,
+    .destroy_shadow_context = backend_compat_destroy_shadow_context,
     .render_shadow = backend_render_shadow_from_mask,
-    .shadow_from_mask = gl_shadow_from_mask,
-    .make_mask = gl_make_mask,
-    .fill = gl_fill,
+    .shadow_from_mask = backend_compat_shadow_from_mask,
+    .make_mask = backend_compat_make_mask,
+    .fill = backend_compat_fill,
     .create_blur_context = gl_create_blur_context,
     .destroy_blur_context = gl_destroy_blur_context,
     .get_blur_size = gl_get_blur_size,
