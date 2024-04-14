@@ -88,7 +88,6 @@ struct gl_texture {
 
 	// Textures for auxiliary uses.
 	GLuint auxiliary_texture[2];
-	const gl_win_shader_t *shader;
 	void *user_data;
 };
 
@@ -145,8 +144,6 @@ GLuint gl_create_program_from_strv(const char **vert_shaders, const char **frag_
 void *gl_create_window_shader(backend_t *backend_data, const char *source);
 void gl_destroy_window_shader(backend_t *backend_data, void *shader);
 uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
-bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
-                           image_handle image, const void *args);
 bool gl_last_render_time(backend_t *backend_data, struct timespec *time);
 
 /**
@@ -177,9 +174,9 @@ bool gl_blur(backend_t *base, double opacity, void *ctx, image_handle mask,
 bool gl_blur_impl(double opacity, struct gl_blur_context *bctx,
                   struct backend_image *mask, coord_t mask_dst, const region_t *reg_blur,
                   const region_t *reg_visible attr_unused, GLuint source_texture,
-                  geometry_t source_size, GLuint target_fbo, GLuint default_mask,
-                  bool high_precision);
-void *gl_create_blur_context(backend_t *base, enum blur_method, void *args);
+                  geometry_t source_size, GLuint target_fbo, GLuint default_mask);
+void *gl_create_blur_context(backend_t *base, enum blur_method,
+                             enum backend_image_format format, void *args);
 void gl_destroy_blur_context(backend_t *base, void *ctx);
 struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double radius);
 void gl_destroy_shadow_context(backend_t *base attr_unused, struct backend_shadow_context *ctx);

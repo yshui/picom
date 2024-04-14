@@ -389,7 +389,8 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 	}
 
 	log_trace("Binding pixmap %#010x", pixmap);
-	auto wd = default_new_backend_image(r->width, r->height);
+	auto wd = ccalloc(1, struct backend_image);
+	default_init_backend_image(wd, r->width, r->height);
 	auto inner = ccalloc(1, struct gl_texture);
 	inner->width = r->width;
 	inner->height = r->height;
@@ -533,7 +534,7 @@ struct backend_operations glx_ops = {
     .prepare = gl_prepare,
     .compose = gl_compose,
     .image_op = gl_image_op,
-    .set_image_property = gl_set_image_property,
+    .set_image_property = default_set_image_property,
     .clone_image = default_clone_image,
     .blur = gl_blur,
     .is_image_transparent = default_is_image_transparent,

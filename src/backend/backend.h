@@ -599,8 +599,10 @@ struct backend_operations {
 	image_handle (*clone_image)(backend_t *base, image_handle image,
 	                            const region_t *reg_visible) attr_nonnull_all;
 
-	/// Create a blur context that can be used to call `blur`
-	void *(*create_blur_context)(backend_t *base, enum blur_method, void *args);
+	/// Create a blur context that can be used to call `blur` for images with a
+	/// specific format.
+	void *(*create_blur_context)(backend_t *base, enum blur_method,
+	                             enum backend_image_format format, void *args);
 	/// Destroy a blur context
 	void (*destroy_blur_context)(backend_t *base, void *ctx);
 	/// Get how many pixels outside of the blur area is needed for blur

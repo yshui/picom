@@ -372,7 +372,7 @@ static void _gl_compose(backend_t *base, struct backend_image *img, GLuint targe
 		brightness = gl_average_texture_color(base, img);
 	}
 
-	auto win_shader = inner->shader;
+	auto win_shader = (gl_win_shader_t *)img->shader;
 	if (!win_shader) {
 		win_shader = gd->default_shader;
 	}
@@ -717,7 +717,8 @@ void gl_fill(backend_t *base, struct color c, const region_t *clip) {
 
 image_handle gl_make_mask(backend_t *base, geometry_t size, const region_t *reg) {
 	auto tex = ccalloc(1, struct gl_texture);
-	auto img = default_new_backend_image(size.width, size.height);
+	auto img = ccalloc(1, struct backend_image);
+	default_init_backend_image(img, size.width, size.height);
 	tex->width = size.width;
 	tex->height = size.height;
 	tex->texture = gl_new_texture(GL_TEXTURE_2D);
@@ -1052,7 +1053,6 @@ static inline void gl_image_decouple(backend_t *base, struct backend_image *img)
 	new_tex->has_alpha = inner->has_alpha;
 	new_tex->height = inner->height;
 	new_tex->width = inner->width;
-	new_tex->shader = inner->shader;
 	new_tex->refcount = 1;
 	new_tex->user_data = gd->decouple_texture_user_data(base, inner->user_data);
 
@@ -1246,18 +1246,6 @@ bool gl_image_op(backend_t *base, enum image_operations op, image_handle image,
 	return true;
 }
 
-bool gl_set_image_property(backend_t *backend_data, enum image_properties prop,
-                           image_handle image, const void *args) {
-	if (prop != IMAGE_PROPERTY_CUSTOM_SHADER) {
-		return default_set_image_property(backend_data, prop, image, args);
-	}
-
-	auto img = (struct backend_image *)image;
-	auto inner = (struct gl_texture *)img->inner;
-	inner->shader = args;
-	return true;
-}
-
 struct gl_shadow_context {
 	double radius;
 	void *blur_context;
@@ -1273,7 +1261,8 @@ struct backend_shadow_context *gl_create_shadow_context(backend_t *base, double 
 		    .size = (int)radius,
 		    .deviation = gaussian_kernel_std_for_size(radius, 0.5 / 256.0),
 		};
-		ctx->blur_context = gl_create_blur_context(base, BLUR_METHOD_GAUSSIAN, &args);
+		ctx->blur_context = gl_create_blur_context(
+		    base, BLUR_METHOD_GAUSSIAN, BACKEND_IMAGE_FORMAT_MASK, &args);
 		if (!ctx->blur_context) {
 			log_error("Failed to create shadow context");
 			free(ctx);
@@ -1306,7 +1295,8 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 	new_inner->texture = gl_new_texture(GL_TEXTURE_2D);
 	new_inner->has_alpha = inner->has_alpha;
 	new_inner->y_inverted = true;
-	auto new_img = default_new_backend_image(new_inner->width, new_inner->height);
+	auto new_img = ccalloc(1, struct backend_image);
+	default_init_backend_image(new_img, new_inner->width, new_inner->height);
 	new_img->inner = (struct backend_image_inner_base *)new_inner;
 	new_img->inner->refcount = 1;
 
@@ -1371,7 +1361,7 @@ image_handle gl_shadow_from_mask(backend_t *base, image_handle mask_,
 		    1.0, gsctx->blur_context, NULL, (coord_t){0}, &reg_blur, NULL,
 		    source_texture,
 		    (geometry_t){.width = new_inner->width, .height = new_inner->height},
-		    fbo, gd->default_mask_texture, gd->dithered_present);
+		    fbo, gd->default_mask_texture);
 		pixman_region32_fini(&reg_blur);
 	}
 

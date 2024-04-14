@@ -687,8 +687,11 @@ static bool initialize_blur(session_t *ps) {
 	default: return true;
 	}
 
+	enum backend_image_format format = ps->o.dithered_present
+	                                       ? BACKEND_IMAGE_FORMAT_PIXMAP_HIGH
+	                                       : BACKEND_IMAGE_FORMAT_PIXMAP;
 	ps->backend_blur_context = ps->backend_data->ops->create_blur_context(
-	    ps->backend_data, ps->o.blur_method, args);
+	    ps->backend_data, ps->o.blur_method, format, args);
 	return ps->backend_blur_context != NULL;
 }
 

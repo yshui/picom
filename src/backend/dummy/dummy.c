@@ -161,7 +161,9 @@ image_handle dummy_clone_image(struct backend_base *base, image_handle image,
 }
 
 void *dummy_create_blur_context(struct backend_base *base attr_unused,
-                                enum blur_method method attr_unused, void *args attr_unused) {
+                                enum blur_method method attr_unused,
+                                enum backend_image_format format attr_unused,
+                                void *args attr_unused) {
 	static int dummy_context;
 	return &dummy_context;
 }

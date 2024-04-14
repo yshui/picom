@@ -14,6 +14,7 @@
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "common.h"
+#include "compiler.h"
 #include "config.h"
 #include "kernel.h"
 #include "log.h"
@@ -759,16 +760,8 @@ static image_handle xrender_make_mask(backend_t *base, geometry_t size, const re
 	inner->refcount = 1;
 
 	auto img = ccalloc(1, struct xrender_image);
-	img->base.eheight = size.height + 2;
-	img->base.ewidth = size.width + 2;
-	img->base.border_width = 0;
-	img->base.color_inverted = false;
-	img->base.corner_radius = 0;
-	img->base.max_brightness = 1;
-	img->base.opacity = 1;
-	img->base.dim = 0;
+	default_init_backend_image(&img->base, size.width + 2, size.height + 2);
 	img->base.inner = (struct backend_image_inner_base *)inner;
-	img->rounded_rectangle = NULL;
 	return (image_handle)img;
 }
 
@@ -839,8 +832,9 @@ static bool xrender_image_op(backend_t *base, enum image_operations op, image_ha
 	return true;
 }
 
-static void *xrender_create_blur_context(backend_t *base attr_unused,
-                                         enum blur_method method, void *args) {
+static void *
+xrender_create_blur_context(backend_t *base attr_unused, enum blur_method method,
+                            enum backend_image_format format attr_unused, void *args) {
 	auto ret = ccalloc(1, struct xrender_blur_context);
 	if (!method || method >= BLUR_METHOD_INVALID) {
 		ret->method = BLUR_METHOD_NONE;
