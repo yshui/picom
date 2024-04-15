@@ -74,6 +74,34 @@ void handle_device_reset(session_t *ps) {
 	ev_break(ps->loop, EVBREAK_ALL);
 }
 
+/// Execute a list of backend commands on the backend
+/// @param target     the image to render into
+/// @param root_image the image containing the desktop background
+bool backend_execute(struct backend_base *backend, image_handle target, unsigned ncmds,
+                     struct backend_command cmds[ncmds]) {
+	bool succeeded = true;
+	for (auto cmd = &cmds[0]; succeeded && cmd != &cmds[ncmds]; cmd++) {
+		switch (cmd->op) {
+		case BACKEND_COMMAND_BLIT:
+			succeeded =
+			    backend->ops->v2.blit(backend, cmd->origin, target, &cmd->blit);
+			break;
+		case BACKEND_COMMAND_COPY_AREA:
+			succeeded = backend->ops->v2.copy_area(backend, cmd->origin, target,
+			                                       cmd->copy_area.source_image,
+			                                       cmd->copy_area.region);
+			break;
+		case BACKEND_COMMAND_BLUR:
+			succeeded =
+			    backend->ops->v2.blur(backend, cmd->origin, target, &cmd->blur);
+			break;
+		case BACKEND_COMMAND_INVALID:
+		default: assert(false);
+		}
+	}
+	return succeeded;
+}
+
 /// paint all windows
 ///
 /// Returns if any render command is issued. IOW if nothing on the screen has changed,

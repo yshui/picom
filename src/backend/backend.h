@@ -674,6 +674,8 @@ extern struct backend_operations *backend_list[];
 /// Returns if any render command is issued. IOW if nothing on the screen has changed,
 /// this function will return false.
 bool paint_all_new(session_t *ps, struct managed_win *t) attr_nonnull(1);
+bool backend_execute(struct backend_base *backend, image_handle target, unsigned ncmds,
+                     struct backend_command cmds[ncmds]);
 void log_backend_command_(enum log_level level, const char *func,
                           const struct backend_command *cmd);
 #define log_backend_command(level, cmd)                                                  \
