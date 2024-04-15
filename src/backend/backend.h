@@ -106,7 +106,7 @@ struct dual_kawase_blur_args {
 	int strength;
 };
 
-typedef struct {
+typedef struct image_handle {
 	// Intentionally left blank
 } *image_handle;
 
