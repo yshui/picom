@@ -64,3 +64,8 @@ bool backend_compat_resize(struct backend_compat_base *compat, struct geometry n
 bool backend_compat_init(struct backend_compat_base *compat, struct session *ps);
 /// Call this from your backend's deinit function, before you deinitialize the backend.
 void backend_compat_deinit(struct backend_compat_base *compat);
+
+// ===============     Utilities     ==============
+/// Initialize `struct backend_compat_image_base`.
+void backend_compat_image_init(struct backend_compat_image_base *compat,
+                               enum backend_image_format format, struct geometry size);

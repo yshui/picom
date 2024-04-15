@@ -18,11 +18,16 @@ backend_compat_new_image(struct backend_base *base, enum backend_image_format fo
 		return ret;
 	}
 	auto inner = (struct backend_compat_image_base *)ret;
-	inner->format = format;
-	inner->size = size;
-	inner->base.refcount = 1;
 	inner->base.has_alpha = has_alpha;
 	return ret;
+}
+
+void backend_compat_image_init(struct backend_compat_image_base *compat,
+                               enum backend_image_format format, struct geometry size) {
+	compat->format = format;
+	compat->size = size;
+	compat->base.has_alpha = false;
+	compat->base.refcount = 1;
 }
 
 // TODO(yshui) make use of reg_visible
@@ -508,8 +513,5 @@ bool backend_compat_resize(struct backend_compat_base *compat, struct geometry n
 		return false;
 	}
 
-	auto compat_inner = (struct backend_compat_image_base *)compat->back_image;
-	compat_inner->format = compat->format;
-	compat_inner->size = new_size;
 	return true;
 }

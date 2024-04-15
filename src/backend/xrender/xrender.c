@@ -957,6 +957,7 @@ static image_handle xrender_new_image(struct backend_base *base,
                                       enum backend_image_format format, struct geometry size) {
 	auto xd = (struct xrender_data *)base;
 	auto img = ccalloc(1, struct xrender_image_data_inner);
+	backend_compat_image_init(&img->compat, format, size);
 	if (format == BACKEND_IMAGE_FORMAT_MASK) {
 		img->depth = 8;
 		img->pictfmt = x_get_pictfmt_for_standard(base->c, XCB_PICT_STANDARD_A_8);

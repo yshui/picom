@@ -1067,6 +1067,7 @@ image_handle gl_new_image(backend_t *backend_data attr_unused,
                           enum backend_image_format format, geometry_t size) {
 	auto tex = ccalloc(1, struct gl_texture);
 	log_trace("Creating texture %dx%d", size.width, size.height);
+	backend_compat_image_init(&tex->compat, format, size);
 	tex->width = size.width;
 	tex->height = size.height;
 	tex->texture = gl_new_texture();
