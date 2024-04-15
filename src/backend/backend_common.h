@@ -78,3 +78,4 @@ bool default_is_image_transparent(backend_t *base attr_unused, image_handle imag
 bool default_set_image_property(backend_t *base attr_unused, enum image_properties op,
                                 image_handle image, const void *arg);
 void default_init_backend_image(struct backend_image *image, int w, int h);
+uint32_t backend_no_quirks(struct backend_base *base attr_unused);

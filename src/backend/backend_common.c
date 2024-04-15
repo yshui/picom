@@ -516,3 +516,7 @@ void init_backend_base(struct backend_base *base, session_t *ps) {
 	base->busy = false;
 	base->ops = NULL;
 }
+
+uint32_t backend_no_quirks(struct backend_base *base attr_unused) {
+	return 0;
+}

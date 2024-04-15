@@ -15,6 +15,7 @@
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "backend/compat.h"
+#include "backend/driver.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
@@ -45,8 +46,8 @@ struct xrender_image_data_inner {
 
 typedef struct xrender_data {
 	struct backend_compat_base compat;
-	/// If vsync is enabled and supported by the current system
-	bool vsync;
+	/// Quirks
+	uint32_t quirks;
 	/// Target window
 	xcb_window_t target_win;
 	/// Painting target, it is either the root or the overlay
@@ -80,6 +81,8 @@ typedef struct xrender_data {
 	/// Cache an X region to avoid creating and destroying it every frame. A
 	/// workaround for yshui/picom#1166.
 	xcb_xfixes_region_t present_region;
+	/// If vsync is enabled and supported by the current system
+	bool vsync;
 } xrender_data;
 
 struct xrender_blur_context {
@@ -938,6 +941,12 @@ static backend_t *xrender_init(session_t *ps, xcb_window_t target) {
 	xd->back_image.pict = xd->vsync ? xd->back[xd->curr_back] : xd->target;
 	backend_compat_init(&xd->compat, ps);
 
+	auto drivers = detect_driver(xd->compat.base.c->c, &xd->compat.base, xd->target_win);
+	if (drivers & DRIVER_MODESETTING) {
+		// I believe other xf86-video drivers have accelerated blur?
+		xd->quirks |= BACKEND_QUIRK_SLOW_BLUR;
+	}
+
 	return &xd->compat.base;
 err:
 	xrender_deinit(&xd->compat.base);
@@ -990,6 +999,10 @@ static image_handle xrender_back_buffer(struct backend_base *base) {
 	return (image_handle)&xd->back_image;
 }
 
+uint32_t xrender_quirks(struct backend_base *base) {
+	return ((struct xrender_data *)base)->quirks;
+}
+
 struct backend_operations xrender_ops = {
     .v2 =
         {
@@ -1005,6 +1018,7 @@ struct backend_operations xrender_ops = {
             .is_format_supported = xrender_is_format_supported,
             .new_image = xrender_new_image,
             .present = xrender_present,
+            .quirks = xrender_quirks,
             .release_image = xrender_release_image,
         },
     .init = xrender_init,

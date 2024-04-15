@@ -195,7 +195,17 @@ enum backend_image_capability {
 	BACKEND_IMAGE_CAP_DST = 1 << 1,
 };
 
+enum backend_quirk {
+	/// Backend cannot do blur quickly. The compositor will avoid using blur to create
+	/// shadows on this backend
+	BACKEND_QUIRK_SLOW_BLUR = 1 << 0,
+};
+
 struct backend_ops_v2 {
+	/// Get backend quirks
+	/// @return a bitmask of `enum backend_quirk`.
+	uint32_t (*quirks)(struct backend_base *backend_data) attr_nonnull(1);
+
 	/// Check if an optional image format is supported by the backend.
 	bool (*is_format_supported)(struct backend_base *backend_data,
 	                            enum backend_image_format format) attr_nonnull(1);
