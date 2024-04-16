@@ -167,7 +167,7 @@ enum vblank_callback_action check_render_finish(struct vblank_event *e attr_unus
 	}
 
 	// The frame has been finished and presented, record its render time.
-	if (ps->o.debug_options.smart_frame_pacing) {
+	if (global_debug_options.smart_frame_pacing) {
 		int render_time_us =
 		    (int)(render_time.tv_sec * 1000000L + render_time.tv_nsec / 1000L);
 		render_statistics_add_render_time_sample(
@@ -187,7 +187,7 @@ collect_vblank_interval_statistics(struct vblank_event *e, void *ud) {
 	assert(ps->frame_pacing);
 	assert(ps->vblank_scheduler);
 
-	if (!ps->o.debug_options.smart_frame_pacing) {
+	if (!global_debug_options.smart_frame_pacing) {
 		// We don't need to collect statistics if we are not doing smart frame
 		// pacing.
 		return VBLANK_CALLBACK_DONE;
@@ -357,7 +357,7 @@ void schedule_render(session_t *ps, bool triggered_by_vblank attr_unused) {
 		goto schedule;
 	}
 
-	// if ps->o.debug_options.smart_frame_pacing is false, we won't have any render
+	// if global_debug_options.smart_frame_pacing is false, we won't have any render
 	// time or vblank interval estimates, so we would naturally fallback to schedule
 	// render immediately.
 	auto render_budget = render_statistics_get_budget(&ps->render_stats);
@@ -1551,9 +1551,9 @@ static bool redirect_start(session_t *ps) {
 		render_statistics_reset(&ps->render_stats);
 		enum vblank_scheduler_type scheduler_type =
 		    choose_vblank_scheduler(ps->drivers);
-		if (ps->o.debug_options.force_vblank_scheduler != LAST_VBLANK_SCHEDULER) {
+		if (global_debug_options.force_vblank_scheduler != LAST_VBLANK_SCHEDULER) {
 			scheduler_type =
-			    (enum vblank_scheduler_type)ps->o.debug_options.force_vblank_scheduler;
+			    (enum vblank_scheduler_type)global_debug_options.force_vblank_scheduler;
 		}
 		log_info("Using vblank scheduler: %s.", vblank_scheduler_str[scheduler_type]);
 		ps->vblank_scheduler =
@@ -2771,6 +2771,8 @@ int PICOM_MAIN(int argc, char **argv) {
 			log_add_target_tls(stderr_logger);
 		}
 	}
+
+	parse_debug_options(&global_debug_options);
 
 	int exit_code;
 	char *config_file = NULL;

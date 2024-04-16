@@ -261,7 +261,7 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 			win_bind_mask(ps->backend_data, w);
 		}
 
-		if (ps->o.debug_options.always_rebind_pixmap) {
+		if (global_debug_options.always_rebind_pixmap) {
 			auto pixmap = ps->backend_data->ops->release_image(
 			    ps->backend_data, w->win_image);
 			assert(pixmap != XCB_NONE);
