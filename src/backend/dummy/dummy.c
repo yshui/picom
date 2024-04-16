@@ -26,7 +26,7 @@ struct dummy_data {
 	struct dummy_image *pixmap_images;
 	struct list_node non_pixmap_images;
 
-	struct backend_image back_buffer;
+	struct dummy_image back_buffer;
 };
 
 struct backend_operations dummy_ops;
@@ -128,7 +128,7 @@ image_handle dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
 
 xcb_pixmap_t dummy_release_image(backend_t *base, image_handle image) {
 	auto dummy = (struct dummy_data *)base;
-	if ((struct backend_image *)image == &dummy->back_buffer) {
+	if ((struct dummy_image *)image == &dummy->back_buffer) {
 		return XCB_NONE;
 	}
 	auto img = (struct dummy_image *)image;
