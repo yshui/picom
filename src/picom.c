@@ -808,6 +808,7 @@ static void configure_root(session_t *ps) {
 
 	ps->root_width = r->width;
 	ps->root_height = r->height;
+	free(r);
 
 	rebuild_screen_reg(ps);
 	rebuild_shadow_exclude_reg(ps);
