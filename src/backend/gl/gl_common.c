@@ -580,9 +580,11 @@ static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
 	if (args->mask != NULL) {
 		from_uniforms[UNIFORM_MASK_OFFSET_LOC].f2[0] = (float)args->mask->origin.x;
 		from_uniforms[UNIFORM_MASK_OFFSET_LOC].f2[1] = (float)args->mask->origin.y;
-		from_uniforms[UNIFORM_MASK_INVERTED_LOC].i = args->mask->inverted;
-		from_uniforms[UNIFORM_MASK_CORNER_RADIUS_LOC].f =
-		    (float)args->mask->corner_radius;
+		if (mask_image != NULL) {
+			from_uniforms[UNIFORM_MASK_INVERTED_LOC].i = args->mask->inverted;
+			from_uniforms[UNIFORM_MASK_CORNER_RADIUS_LOC].f =
+			    (float)args->mask->corner_radius;
+		}
 	}
 	*shader = args->shader ?: &gd->default_shader;
 	if ((*shader)->uniform_bitmask & (1 << UNIFORM_TIME_LOC)) {
