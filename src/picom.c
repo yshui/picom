@@ -639,7 +639,12 @@ static void destroy_backend(session_t *ps) {
 	}
 
 	if (ps->backend_data && ps->root_image) {
-		ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+		if (global_debug_options.v2_renderer) {
+			ps->backend_data->ops->v2.release_image(ps->backend_data,
+			                                        ps->root_image);
+		} else {
+			ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+		}
 		ps->root_image = NULL;
 	}
 
@@ -1174,7 +1179,13 @@ void root_damaged(session_t *ps) {
 
 	if (ps->backend_data) {
 		if (ps->root_image) {
-			ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+			if (global_debug_options.v2_renderer) {
+				ps->backend_data->ops->v2.release_image(ps->backend_data,
+				                                        ps->root_image);
+			} else {
+				ps->backend_data->ops->release_image(ps->backend_data,
+				                                     ps->root_image);
+			}
 			ps->root_image = NULL;
 		}
 		auto pixmap = x_get_root_back_pixmap(&ps->c, ps->atoms);
@@ -1208,13 +1219,22 @@ void root_damaged(session_t *ps) {
 			        : x_get_visual_for_depth(ps->c.screen_info, r->depth);
 			free(r);
 
-			ps->root_image = ps->backend_data->ops->bind_pixmap(
-			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual));
-			if (ps->root_image) {
-				ps->backend_data->ops->set_image_property(
-				    ps->backend_data, IMAGE_PROPERTY_EFFECTIVE_SIZE,
-				    ps->root_image, (int[]){ps->root_width, ps->root_height});
+			if (global_debug_options.v2_renderer) {
+				ps->root_image = ps->backend_data->ops->v2.bind_pixmap(
+				    ps->backend_data, pixmap,
+				    x_get_visual_info(&ps->c, visual));
 			} else {
+				ps->root_image = ps->backend_data->ops->bind_pixmap(
+				    ps->backend_data, pixmap,
+				    x_get_visual_info(&ps->c, visual));
+				if (ps->root_image) {
+					ps->backend_data->ops->set_image_property(
+					    ps->backend_data,
+					    IMAGE_PROPERTY_EFFECTIVE_SIZE, ps->root_image,
+					    (int[]){ps->root_width, ps->root_height});
+				}
+			}
+			if (!ps->root_image) {
 			err:
 				log_error("Failed to bind root back pixmap");
 			}
@@ -1866,7 +1886,46 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 
 		log_verbose("Render start, frame %d", paint);
 		if (!ps->o.legacy_backends) {
-			did_render = paint_all_new(ps, bottom);
+			uint64_t after_damage_us = 0;
+			if (!global_debug_options.v2_renderer) {
+				did_render = paint_all_new(ps, bottom, &after_damage_us);
+			} else {
+				now = get_time_timespec();
+				auto render_start_us = (uint64_t)now.tv_sec * 1000000UL +
+				                       (uint64_t)now.tv_nsec / 1000;
+				layout_manager_append_layout(
+				    ps->layout_manager, ps->wm,
+				    (struct geometry){.width = ps->root_width,
+				                      .height = ps->root_height});
+				bool succeeded = renderer_render(
+				    ps->renderer, ps->backend_data, ps->root_image,
+				    ps->layout_manager, ps->command_builder,
+				    ps->backend_blur_context, render_start_us,
+				    ps->o.use_damage, ps->o.monitor_repaint,
+				    ps->o.force_win_blend, ps->o.blur_background_frame,
+				    ps->o.inactive_dim_fixed, ps->o.max_brightness,
+				    ps->o.inactive_dim, &ps->shadow_exclude_reg,
+				    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
+				    ps->o.wintype_option, &after_damage_us);
+				if (!succeeded) {
+					log_fatal("Render failure");
+					abort();
+				}
+				did_render = true;
+			}
+			if (ps->next_render > 0) {
+				log_verbose(
+				    "Render schedule deviation: %ld us (%s) %" PRIu64
+				    " %" PRIu64,
+				    labs((long)after_damage_us - (long)ps->next_render),
+				    after_damage_us < ps->next_render ? "early" : "late",
+				    after_damage_us, ps->next_render);
+				ps->last_schedule_delay = 0;
+				if (after_damage_us > ps->next_render) {
+					ps->last_schedule_delay =
+					    after_damage_us - ps->next_render;
+				}
+			}
 		} else {
 			paint_all(ps, bottom);
 		}

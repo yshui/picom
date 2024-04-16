@@ -634,6 +634,7 @@ static const struct debug_options_entry debug_options_entries[] = {
     {"always_rebind_pixmap", NULL                , offsetof(struct debug_options, always_rebind_pixmap)},
     {"smart_frame_pacing"  , NULL                , offsetof(struct debug_options, smart_frame_pacing)},
     {"force_vblank_sched"  , vblank_scheduler_str, offsetof(struct debug_options, force_vblank_scheduler)},
+    {"v2_renderer"         , NULL                , offsetof(struct debug_options, v2_renderer)},
 };
 // clang-format on
 

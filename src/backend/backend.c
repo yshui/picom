@@ -106,7 +106,7 @@ bool backend_execute(struct backend_base *backend, image_handle target, unsigned
 ///
 /// Returns if any render command is issued. IOW if nothing on the screen has changed,
 /// this function will return false.
-bool paint_all_new(session_t *ps, struct managed_win *const t) {
+bool paint_all_new(session_t *ps, struct managed_win *const t, uint64_t *after_damage_us) {
 	struct timespec now = get_time_timespec();
 	auto paint_all_start_us =
 	    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
@@ -214,18 +214,8 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 	pixman_region32_init(&reg_shadow_clip);
 
 	now = get_time_timespec();
-	auto after_damage_us = (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
-	log_trace("Getting damage took %" PRIu64 " us", after_damage_us - after_sync_fence_us);
-	if (ps->next_render > 0) {
-		log_verbose("Render schedule deviation: %ld us (%s) %" PRIu64 " %" PRIu64,
-		            labs((long)after_damage_us - (long)ps->next_render),
-		            after_damage_us < ps->next_render ? "early" : "late",
-		            after_damage_us, ps->next_render);
-		ps->last_schedule_delay = 0;
-		if (after_damage_us > ps->next_render) {
-			ps->last_schedule_delay = after_damage_us - ps->next_render;
-		}
-	}
+	*after_damage_us = (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
+	log_trace("Getting damage took %" PRIu64 " us", *after_damage_us - after_sync_fence_us);
 
 	if (ps->backend_data->ops->prepare) {
 		ps->backend_data->ops->prepare(ps->backend_data, &reg_paint);
