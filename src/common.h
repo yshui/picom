@@ -269,6 +269,7 @@ typedef struct session {
 	struct layout_manager *layout_manager;
 	/// Render command builder
 	struct command_builder *command_builder;
+	struct renderer *renderer;
 	/// Whether the root image has been changed since last render
 	bool root_damaged;
 	/// Whether all windows are currently redirected.

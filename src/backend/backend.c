@@ -132,31 +132,6 @@ bool paint_all_new(session_t *ps, struct managed_win *const t) {
 	log_trace("Time spent on sync fence: %" PRIu64 " us",
 	          after_sync_fence_us - paint_all_start_us);
 
-	layout_manager_append_layout(
-	    ps->layout_manager, ps->wm,
-	    (struct geometry){.width = ps->root_width, .height = ps->root_height});
-	auto layout = layout_manager_layout(ps->layout_manager);
-	command_builder_build(
-	    ps->command_builder, layout, ps->o.force_win_blend,
-	    ps->o.blur_background_frame, ps->o.inactive_dim_fixed, ps->o.max_brightness,
-	    ps->o.inactive_dim, &ps->shadow_exclude_reg,
-	    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL, ps->o.wintype_option);
-	{
-		auto layer = layout->layers - 1;
-		auto layer_end = &layout->commands[layout->first_layer_start];
-		auto end = &layout->commands[layout->number_of_commands];
-		log_trace("Desktop background");
-		for (auto i = layout->commands; i != end; i++) {
-			if (i == layer_end) {
-				layer += 1;
-				layer_end += layer->number_of_commands;
-				log_trace("Layer for window %#010x @ %#010x (%s)",
-				          layer->win->base.id, layer->win->client_win,
-				          layer->win->name);
-			}
-			log_backend_command(TRACE, *i);
-		}
-	}
 	// All painting will be limited to the damage, if _some_ of
 	// the paints bleed out of the damage region, it will destroy
 	// part of the image we want to reuse

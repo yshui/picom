@@ -68,6 +68,7 @@
 #include "render.h"
 #include "renderer/command_builder.h"
 #include "renderer/layout.h"
+#include "renderer/renderer.h"
 #include "statistics.h"
 #include "types.h"
 #include "uthash_extra.h"
@@ -643,6 +644,10 @@ static void destroy_backend(session_t *ps) {
 	}
 
 	if (ps->backend_data) {
+		if (ps->renderer) {
+			renderer_free(ps->backend_data, ps->renderer);
+			ps->renderer = NULL;
+		}
 		// deinit backend
 		if (ps->backend_blur_context) {
 			ps->backend_data->ops->destroy_blur_context(
@@ -762,6 +767,12 @@ static bool initialize_backend(session_t *ps) {
 		// wm_stack shouldn't include window that's not iterated by wm_foreach at
 		// this moment. Since there cannot be any fading windows.
 		wm_foreach(ps->wm, mark_pixmap_stale, ps);
+		ps->renderer = renderer_new(ps->backend_data, ps->o.shadow_radius,
+		                            (struct color){.alpha = ps->o.shadow_opacity,
+		                                           .red = ps->o.shadow_red,
+		                                           .green = ps->o.shadow_green,
+		                                           .blue = ps->o.shadow_blue},
+		                            ps->o.dithered_present);
 	}
 
 	// The old backends binds pixmap lazily, nothing to do here
