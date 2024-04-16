@@ -1900,6 +1900,7 @@ static void draw_callback(EV_P_ ev_timer *w, int revents) {
 
 	// Immediately start next frame if we are in benchmark mode.
 	if (ps->o.benchmark) {
+		ps->render_queued = true;
 		ev_timer_set(w, 0, 0);
 		ev_timer_start(EV_A_ w);
 	}
@@ -2711,6 +2712,7 @@ static void session_run(session_t *ps) {
 
 	// In benchmark mode, we want draw_timer handler to always be active
 	if (ps->o.benchmark) {
+		ps->render_queued = true;
 		ev_timer_set(&ps->draw_timer, 0, 0);
 		ev_timer_start(ps->loop, &ps->draw_timer);
 	} else {
