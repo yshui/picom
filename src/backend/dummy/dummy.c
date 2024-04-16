@@ -120,6 +120,8 @@ image_handle dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
 	}
 
 	img = ccalloc(1, struct dummy_image);
+	backend_compat_image_init(&img->compat, BACKEND_IMAGE_FORMAT_PIXMAP,
+	                          (struct geometry){.width = 1, .height = 1});
 	img->pixmap = pixmap;
 
 	HASH_ADD_INT(dummy->pixmap_images, pixmap, img);

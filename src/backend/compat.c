@@ -128,11 +128,6 @@ image_handle backend_compat_bind_pixmap(struct backend_base *base, xcb_pixmap_t 
 		free(image);
 		return NULL;
 	}
-	auto inner = (struct backend_compat_image_base *)image->inner;
-	inner->format = BACKEND_IMAGE_FORMAT_PIXMAP;
-	inner->size = (struct geometry){image->ewidth, image->eheight};
-	inner->base.refcount = 1;
-	inner->base.has_alpha = visual.alpha_size > 0;
 	return (image_handle)image;
 }
 

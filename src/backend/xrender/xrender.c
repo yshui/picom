@@ -653,8 +653,9 @@ xrender_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fm
 
 	auto img = ccalloc(1, struct xrender_image_data_inner);
 	img->depth = (uint8_t)fmt.visual_depth;
-	img->compat.size.width = r->width;
-	img->compat.size.height = r->height;
+	backend_compat_image_init(&img->compat, BACKEND_IMAGE_FORMAT_PIXMAP,
+	                          (struct geometry){.width = r->width, .height = r->height});
+	img->compat.base.has_alpha = fmt.alpha_size > 0;
 	img->pixmap = pixmap;
 	xcb_render_create_picture_value_list_t pic_attrs = {.repeat = XCB_RENDER_REPEAT_NORMAL};
 	img->pict = x_create_picture_with_visual_and_pixmap(

@@ -393,6 +393,12 @@ glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 
 	log_trace("Binding pixmap %#010x", pixmap);
 	auto inner = ccalloc(1, struct gl_texture);
+	backend_compat_image_init(&inner->compat, BACKEND_IMAGE_FORMAT_PIXMAP,
+	                          (struct geometry){
+	                              .width = r->width,
+	                              .height = r->height,
+	                          });
+	inner->compat.base.has_alpha = fmt.alpha_size > 0;
 	inner->width = r->width;
 	inner->height = r->height;
 	free(r);
