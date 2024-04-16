@@ -167,12 +167,12 @@ bool dummy_clear(struct backend_base *base, image_handle target,
 	return true;
 }
 
-image_handle
-dummy_new_image(struct backend_base *base, enum backend_image_format format attr_unused,
-                struct geometry size attr_unused) {
+image_handle dummy_new_image(struct backend_base *base, enum backend_image_format format,
+                             struct geometry size) {
 	auto new_img = ccalloc(1, struct dummy_image);
 	auto dummy = (struct dummy_data *)base;
 	list_insert_after(&dummy->non_pixmap_images, &new_img->siblings);
+	backend_compat_image_init(&new_img->compat, format, size);
 	return (image_handle)new_img;
 }
 
