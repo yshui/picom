@@ -102,7 +102,17 @@ struct layout_manager;
 /// at the end of the ring buffer, and remove the oldest layout if the buffer is full.
 void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
                                   struct geometry size);
-struct layout *layout_manager_layout(struct layout_manager *lm);
+/// Get the layout `age` frames into the past. Age `0` is the most recently appended
+/// layout.
+struct layout *layout_manager_layout(struct layout_manager *lm, unsigned age);
 void layout_manager_free(struct layout_manager *lm);
 /// Create a new render lm with a ring buffer for `max_buffer_age` layouts.
 struct layout_manager *layout_manager_new(unsigned max_buffer_age);
+/// Collect damage from the window for the past `buffer_age` frames.
+void layout_manager_collect_window_damage(const struct layout_manager *lm, unsigned index,
+                                          unsigned buffer_age, region_t *damage);
+/// Find where layer at `index` was `buffer_age` frames ago.
+int layer_prev_rank(struct layout_manager *lm, unsigned buffer_age, unsigned index_);
+/// Find layer that was at `index` `buffer_age` aga in the current layout.
+int layer_next_rank(struct layout_manager *lm, unsigned buffer_age, unsigned index_);
+unsigned layout_manager_max_buffer_age(const struct layout_manager *lm);

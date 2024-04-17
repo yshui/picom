@@ -9,6 +9,7 @@
 #include "backend/backend.h"
 #include "backend/backend_common.h"
 #include "command_builder.h"
+#include "damage.h"
 #include "layout.h"
 
 struct renderer {
@@ -18,6 +19,8 @@ struct renderer {
 	image_handle white_image;
 	/// 1x1 black image
 	image_handle black_image;
+	/// 1x1 image with the monitor repaint color
+	image_handle monitor_repaint_pixel;
 	/// 1x1 shadow colored xrender picture
 	xcb_render_picture_t shadow_pixel;
 	struct geometry canvas_size;
@@ -38,6 +41,9 @@ void renderer_free(struct backend_base *backend, struct renderer *r) {
 	}
 	if (r->back_image) {
 		backend->ops->v2.release_image(backend, r->back_image);
+	}
+	if (r->monitor_repaint_pixel) {
+		backend->ops->v2.release_image(backend, r->monitor_repaint_pixel);
 	}
 	if (r->shadow_blur_context) {
 		backend->ops->destroy_blur_context(backend, r->shadow_blur_context);
@@ -393,15 +399,24 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
                      image_handle root_image, struct layout_manager *lm,
                      struct command_builder *cb, void *blur_context,
                      uint64_t render_start_us, bool use_damage attr_unused,
-                     bool monitor_repaint attr_unused, bool force_blend, bool blur_frame,
+                     bool monitor_repaint, bool force_blend, bool blur_frame,
                      bool inactive_dim_fixed, double max_brightness, double inactive_dim,
                      const region_t *shadow_exclude, const struct x_monitors *monitors,
                      const struct win_option *wintype_options, uint64_t *after_damage_us) {
-	auto layout = layout_manager_layout(lm);
+	auto layout = layout_manager_layout(lm, 0);
 	if (!renderer_set_root_size(
 	        r, backend, (struct geometry){layout->size.width, layout->size.height})) {
 		log_error("Failed to allocate back image");
 		return false;
+	}
+
+	if (monitor_repaint && r->monitor_repaint_pixel == NULL) {
+		r->monitor_repaint_pixel = backend->ops->v2.new_image(
+		    backend, BACKEND_IMAGE_FORMAT_PIXMAP, (struct geometry){1, 1});
+		if (r->monitor_repaint_pixel) {
+			backend->ops->v2.clear(backend, r->monitor_repaint_pixel,
+			                       (struct color){.alpha = 0.5, .red = 0.5});
+		}
 	}
 
 	command_builder_build(cb, layout, force_blend, blur_frame, inactive_dim_fixed,
@@ -443,15 +458,42 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		return false;
 	}
 
+	region_t screen_region;
+	pixman_region32_init_rect(&screen_region, 0, 0, (unsigned)r->canvas_size.width,
+	                          (unsigned)r->canvas_size.height);
+	if (monitor_repaint && r->monitor_repaint_pixel) {
+		struct backend_mask mask = {};
+		pixman_region32_init(&mask.region);
+		pixman_region32_copy(&mask.region, &screen_region);
+		auto buffer_age = backend->ops->buffer_age(backend);
+		if (buffer_age > 0 &&
+		    (unsigned)buffer_age <= layout_manager_max_buffer_age(lm)) {
+			struct geometry blur_size = {};
+			if (backend->ops->get_blur_size && blur_context) {
+				backend->ops->get_blur_size(
+				    blur_context, &blur_size.width, &blur_size.height);
+			}
+			layout_manager_damage(lm, (unsigned)buffer_age, blur_size, &mask.region);
+		}
+		struct backend_blit_args blit = {
+		    .source_image = r->monitor_repaint_pixel,
+		    .max_brightness = 1,
+		    .opacity = 1,
+		    .ewidth = r->canvas_size.width,
+		    .eheight = r->canvas_size.height,
+		    .mask = &mask,
+		};
+		log_trace("Blit for monitor repaint");
+		backend->ops->v2.blit(backend, (struct coord){}, r->back_image, &blit);
+		pixman_region32_fini(&mask.region);
+	}
+
 	if (backend->ops->present) {
-		region_t screen_region;
-		pixman_region32_init_rect(&screen_region, 0, 0, (unsigned)r->canvas_size.width,
-		                          (unsigned)r->canvas_size.height);
 		backend->ops->v2.copy_area_quantize(backend, (struct coord){},
 		                                    backend->ops->v2.back_buffer(backend),
 		                                    r->back_image, &screen_region);
 		backend->ops->v2.present(backend);
-		pixman_region32_fini(&screen_region);
 	}
+	pixman_region32_fini(&screen_region);
 	return true;
 }

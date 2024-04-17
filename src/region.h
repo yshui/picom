@@ -147,3 +147,28 @@ static inline void region_union(region_t *region, struct coord origin, const reg
 	pixman_region32_union(region, region, other);
 	pixman_region32_translate(region, origin.x, origin.y);
 }
+
+/// Intersect `region` with `other` placed at `origin`.
+static inline void
+region_intersect(region_t *region, struct coord origin, const region_t *other) {
+	pixman_region32_translate(region, -origin.x, -origin.y);
+	pixman_region32_intersect(region, region, other);
+	pixman_region32_translate(region, origin.x, origin.y);
+}
+
+/// Calculate the symmetric difference of `region1`, and `region2` placed at
+/// `origin2`, and union the result into `result`.
+///
+/// @param scratch a region to store temporary results
+static inline void
+region_symmetric_difference(region_t *result, region_t *scratch, struct coord origin1,
+                            const region_t *region1, struct coord origin2,
+                            const region_t *region2) {
+	pixman_region32_copy(scratch, region1);
+	region_subtract(scratch, coord_sub(origin2, origin1), region2);
+	region_union(result, origin1, scratch);
+
+	pixman_region32_copy(scratch, region2);
+	region_subtract(scratch, coord_sub(origin1, origin2), region1);
+	region_union(result, origin2, scratch);
+}
