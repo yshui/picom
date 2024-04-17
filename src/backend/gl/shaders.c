@@ -126,6 +126,8 @@ const char blit_shader_glsl[] = GLSL(330,
 	uniform sampler2D brightness;
 	layout(location = UNIFORM_MAX_BRIGHTNESS_LOC)
 	uniform float max_brightness;
+	layout(location = UNIFORM_TIME_LOC)
+	uniform float time;
 	// Signed distance field for rectangle center at (0, 0), with size of
 	// half_size * 2
 	float rectangle_sdf(vec2 point, vec2 half_size) {

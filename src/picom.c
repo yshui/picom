@@ -1895,11 +1895,15 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 static void draw_callback(EV_P_ ev_timer *w, int revents) {
 	session_t *ps = session_ptr(w, draw_timer);
 
-	draw_callback_impl(EV_A_ ps, revents);
+	// The draw timer has to be stopped before calling the draw_callback_impl
+	// function because it may be set and started there, e.g. when a custom
+	// animated shader is used.
 	ev_timer_stop(EV_A_ w);
+	draw_callback_impl(EV_A_ ps, revents);
 
 	// Immediately start next frame if we are in benchmark mode.
 	if (ps->o.benchmark) {
+		ps->render_queued = true;
 		ev_timer_set(w, 0, 0);
 		ev_timer_start(EV_A_ w);
 	}
@@ -2711,6 +2715,7 @@ static void session_run(session_t *ps) {
 
 	// In benchmark mode, we want draw_timer handler to always be active
 	if (ps->o.benchmark) {
+		ps->render_queued = true;
 		ev_timer_set(&ps->draw_timer, 0, 0);
 		ev_timer_start(ps->loop, &ps->draw_timer);
 	} else {
