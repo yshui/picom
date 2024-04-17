@@ -403,6 +403,10 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
                      bool inactive_dim_fixed, double max_brightness, double inactive_dim,
                      const region_t *shadow_exclude, const struct x_monitors *monitors,
                      const struct win_option *wintype_options, uint64_t *after_damage_us) {
+	// TODO(yshui) In some cases we can render directly into the back buffer, and
+	// don't need the intermediate back_image. Several conditions need to be met: no
+	// dithered present; no blur, with blur we will render areas that's just for blur
+	// and can't be presented;
 	auto layout = layout_manager_layout(lm, 0);
 	if (!renderer_set_root_size(
 	        r, backend, (struct geometry){layout->size.width, layout->size.height})) {
