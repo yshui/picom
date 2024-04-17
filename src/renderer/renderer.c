@@ -21,6 +21,13 @@ struct renderer {
 	image_handle black_image;
 	/// 1x1 image with the monitor repaint color
 	image_handle monitor_repaint_pixel;
+	/// Copy of back images before they were tainted by monitor repaint
+	image_handle *monitor_repaint_copy;
+	/// Regions painted over by monitor repaint
+	region_t *monitor_repaint_region;
+	/// Current frame index in ring buffer
+	int frame_index;
+	int max_buffer_age;
 	/// 1x1 shadow colored xrender picture
 	xcb_render_picture_t shadow_pixel;
 	struct geometry canvas_size;
@@ -53,6 +60,18 @@ void renderer_free(struct backend_base *backend, struct renderer *r) {
 	}
 	if (r->shadow_pixel) {
 		x_free_picture(backend->c, r->shadow_pixel);
+	}
+	if (r->monitor_repaint_region) {
+		for (int i = 0; i < r->max_buffer_age; i++) {
+			pixman_region32_fini(&r->monitor_repaint_region[i]);
+		}
+		free(r->monitor_repaint_region);
+	}
+	if (r->monitor_repaint_copy) {
+		for (int i = 0; i < r->max_buffer_age; i++) {
+			backend->ops->v2.release_image(backend, r->monitor_repaint_copy[i]);
+		}
+		free(r->monitor_repaint_copy);
 	}
 	free(r);
 }
@@ -106,6 +125,7 @@ renderer_init(struct renderer *renderer, struct backend_base *backend,
 			return false;
 		}
 	}
+	renderer->max_buffer_age = backend->ops->max_buffer_age + 1;
 	return true;
 }
 
@@ -135,6 +155,13 @@ static inline bool renderer_set_root_size(struct renderer *r, struct backend_bas
 		return true;
 	}
 	r->canvas_size = (struct geometry){0, 0};
+	if (r->monitor_repaint_copy) {
+		for (int i = 0; i < r->max_buffer_age; i++) {
+			backend->ops->v2.release_image(backend, r->monitor_repaint_copy[i]);
+		}
+		free(r->monitor_repaint_copy);
+		r->monitor_repaint_copy = NULL;
+	}
 	return false;
 }
 
@@ -414,12 +441,29 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		return false;
 	}
 
-	if (monitor_repaint && r->monitor_repaint_pixel == NULL) {
-		r->monitor_repaint_pixel = backend->ops->v2.new_image(
-		    backend, BACKEND_IMAGE_FORMAT_PIXMAP, (struct geometry){1, 1});
-		if (r->monitor_repaint_pixel) {
+	if (monitor_repaint) {
+		if (!r->monitor_repaint_pixel) {
+			r->monitor_repaint_pixel = backend->ops->v2.new_image(
+			    backend, BACKEND_IMAGE_FORMAT_PIXMAP, (struct geometry){1, 1});
+			BUG_ON(!r->monitor_repaint_pixel);
 			backend->ops->v2.clear(backend, r->monitor_repaint_pixel,
 			                       (struct color){.alpha = 0.5, .red = 0.5});
+		}
+		if (!r->monitor_repaint_copy) {
+			r->monitor_repaint_copy = ccalloc(r->max_buffer_age, image_handle);
+			for (int i = 0; i < r->max_buffer_age; i++) {
+				r->monitor_repaint_copy[i] = backend->ops->v2.new_image(
+				    backend, BACKEND_IMAGE_FORMAT_PIXMAP,
+				    (struct geometry){.width = r->canvas_size.width,
+				                      .height = r->canvas_size.height});
+				BUG_ON(!r->monitor_repaint_copy[i]);
+			}
+		}
+		if (!r->monitor_repaint_region) {
+			r->monitor_repaint_region = ccalloc(r->max_buffer_age, region_t);
+			for (int i = 0; i < r->max_buffer_age; i++) {
+				pixman_region32_init(&r->monitor_repaint_region[i]);
+			}
 		}
 	}
 
@@ -442,7 +486,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 			log_backend_command(TRACE, *i);
 		}
 	}
-	region_t screen_region, damage_region, draw_region;
+	region_t screen_region, damage_region;
 	pixman_region32_init_rect(&screen_region, 0, 0, (unsigned)r->canvas_size.width,
 	                          (unsigned)r->canvas_size.height);
 	pixman_region32_init(&damage_region);
@@ -457,15 +501,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		layout_manager_damage(lm, (unsigned)buffer_age, blur_size, &damage_region);
 	}
 
-	if (monitor_repaint) {
-		// TODO(yshui) use damage even with monitor repaint enabled
-		draw_region = screen_region;
-	} else {
-		draw_region = damage_region;
-	}
-
 	auto culled_masks = ccalloc(layout->number_of_commands, struct backend_mask);
-	commands_cull_with_damage(layout, &draw_region, blur_size, culled_masks);
+	commands_cull_with_damage(layout, &damage_region, blur_size, culled_masks);
 
 	auto now = get_time_timespec();
 	*after_damage_us = (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
@@ -480,13 +517,29 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		backend->ops->prepare(backend, &layout->commands[0].mask.region);
 	}
 
+	if (monitor_repaint && buffer_age <= r->max_buffer_age) {
+		// Restore the area of back buffer that was tainted by monitor repaint
+		int past_frame =
+		    (r->frame_index + r->max_buffer_age - buffer_age) % r->max_buffer_age;
+		backend->ops->v2.copy_area(backend, (struct coord){},
+		                           backend->ops->v2.back_buffer(backend),
+		                           r->monitor_repaint_copy[past_frame],
+		                           &r->monitor_repaint_region[past_frame]);
+	}
+
 	if (!backend_execute(backend, r->back_image, layout->number_of_commands,
 	                     layout->commands)) {
 		log_error("Failed to complete execution of the render commands");
 		return false;
 	}
 
-	if (monitor_repaint && r->monitor_repaint_pixel) {
+	if (monitor_repaint) {
+		// Keep a copy of un-tainted back image
+		backend->ops->v2.copy_area(backend, (struct coord){},
+		                           r->monitor_repaint_copy[r->frame_index],
+		                           r->back_image, &damage_region);
+		pixman_region32_copy(&r->monitor_repaint_region[r->frame_index], &damage_region);
+
 		struct backend_mask mask = {.region = damage_region};
 		struct backend_blit_args blit = {
 		    .source_image = r->monitor_repaint_pixel,
@@ -503,7 +556,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	if (backend->ops->present) {
 		backend->ops->v2.copy_area_quantize(backend, (struct coord){},
 		                                    backend->ops->v2.back_buffer(backend),
-		                                    r->back_image, &draw_region);
+		                                    r->back_image, &damage_region);
 		backend->ops->v2.present(backend);
 	}
 
@@ -514,5 +567,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 
 	pixman_region32_fini(&screen_region);
 	pixman_region32_fini(&damage_region);
+
+	r->frame_index = (r->frame_index + 1) % r->max_buffer_age;
 	return true;
 }
