@@ -225,6 +225,7 @@ struct backend_operations dummy_ops = {
             .is_format_supported = dummy_is_format_supported,
             .new_image = dummy_new_image,
             .bind_pixmap = dummy_bind_pixmap,
+            .quirks = backend_no_quirks,
             .release_image = dummy_release_image,
         },
     .init = dummy_init,
