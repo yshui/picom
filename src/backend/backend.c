@@ -83,15 +83,24 @@ bool backend_execute(struct backend_base *backend, image_handle target, unsigned
 	for (auto cmd = &cmds[0]; succeeded && cmd != &cmds[ncmds]; cmd++) {
 		switch (cmd->op) {
 		case BACKEND_COMMAND_BLIT:
+			if (!pixman_region32_not_empty(&cmd->blit.mask->region)) {
+				continue;
+			}
 			succeeded =
 			    backend->ops->v2.blit(backend, cmd->origin, target, &cmd->blit);
 			break;
 		case BACKEND_COMMAND_COPY_AREA:
+			if (!pixman_region32_not_empty(cmd->copy_area.region)) {
+				continue;
+			}
 			succeeded = backend->ops->v2.copy_area(backend, cmd->origin, target,
 			                                       cmd->copy_area.source_image,
 			                                       cmd->copy_area.region);
 			break;
 		case BACKEND_COMMAND_BLUR:
+			if (!pixman_region32_not_empty(&cmd->blur.mask->region)) {
+				continue;
+			}
 			succeeded =
 			    backend->ops->v2.blur(backend, cmd->origin, target, &cmd->blur);
 			break;
