@@ -161,11 +161,6 @@ bool c2_match_once_and_log(const c2_lptr_t *cond, void *data) {
 #define BOLD(str) "\033[1m" str "\033[0m"
 
 int inspect_main(int argc, char **argv, const char *config_file) {
-	auto stderr_logger = stderr_logger_new();
-	if (stderr_logger) {
-		log_add_target_tls(stderr_logger);
-	}
-
 	Display *dpy = XOpenDisplay(NULL);
 	if (!dpy) {
 		log_fatal("Can't open display");
