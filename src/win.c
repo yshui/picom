@@ -311,11 +311,7 @@ static inline void win_release_pixmap(backend_t *base, struct managed_win *w) {
 	assert(w->win_image);
 	if (w->win_image) {
 		xcb_pixmap_t pixmap = XCB_NONE;
-		if (global_debug_options.v2_renderer) {
-			pixmap = base->ops->v2.release_image(base, w->win_image);
-		} else {
-			pixmap = base->ops->release_image(base, w->win_image);
-		}
+		pixmap = base->ops->v2.release_image(base, w->win_image);
 		w->win_image = NULL;
 		// Bypassing win_set_flags, because `w` might have been destroyed
 		w->flags |= WIN_FLAGS_PIXMAP_NONE;
@@ -329,11 +325,7 @@ static inline void win_release_shadow(backend_t *base, struct managed_win *w) {
 	if (w->shadow_image) {
 		assert(w->shadow);
 		xcb_pixmap_t pixmap = XCB_NONE;
-		if (global_debug_options.v2_renderer) {
-			pixmap = base->ops->v2.release_image(base, w->shadow_image);
-		} else {
-			pixmap = base->ops->release_image(base, w->shadow_image);
-		}
+		pixmap = base->ops->v2.release_image(base, w->shadow_image);
 		w->shadow_image = NULL;
 		if (pixmap != XCB_NONE) {
 			xcb_free_pixmap(base->c->c, pixmap);
@@ -344,11 +336,7 @@ static inline void win_release_shadow(backend_t *base, struct managed_win *w) {
 static inline void win_release_mask(backend_t *base, struct managed_win *w) {
 	if (w->mask_image) {
 		xcb_pixmap_t pixmap = XCB_NONE;
-		if (global_debug_options.v2_renderer) {
-			pixmap = base->ops->v2.release_image(base, w->mask_image);
-		} else {
-			pixmap = base->ops->release_image(base, w->mask_image);
-		}
+		pixmap = base->ops->v2.release_image(base, w->mask_image);
 		w->mask_image = NULL;
 		if (pixmap != XCB_NONE) {
 			xcb_free_pixmap(base->c->c, pixmap);
@@ -368,13 +356,8 @@ static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w
 		return false;
 	}
 	log_debug("New named pixmap for %#010x (%s) : %#010x", w->base.id, w->name, pixmap);
-	if (global_debug_options.v2_renderer) {
-		w->win_image =
-		    b->ops->v2.bind_pixmap(b, pixmap, x_get_visual_info(b->c, w->a.visual));
-	} else {
-		w->win_image =
-		    b->ops->bind_pixmap(b, pixmap, x_get_visual_info(b->c, w->a.visual));
-	}
+	w->win_image =
+	    b->ops->v2.bind_pixmap(b, pixmap, x_get_visual_info(b->c, w->a.visual));
 	if (!w->win_image) {
 		log_error("Failed to bind pixmap");
 		xcb_free_pixmap(b->c->c, pixmap);
@@ -383,52 +366,6 @@ static inline bool win_bind_pixmap(struct backend_base *b, struct managed_win *w
 	}
 
 	win_clear_flags(w, WIN_FLAGS_PIXMAP_NONE);
-	return true;
-}
-
-bool win_bind_mask(struct backend_base *b, struct managed_win *w) {
-	assert(!w->mask_image);
-	auto reg_bound_local = win_get_bounding_shape_global_by_val(w);
-	pixman_region32_translate(&reg_bound_local, -w->g.x, -w->g.y);
-	w->mask_image = b->ops->make_mask(
-	    b, (geometry_t){.width = w->widthb, .height = w->heightb}, &reg_bound_local);
-	pixman_region32_fini(&reg_bound_local);
-
-	if (!w->mask_image) {
-		return false;
-	}
-	b->ops->set_image_property(b, IMAGE_PROPERTY_CORNER_RADIUS, w->mask_image,
-	                           (double[]){w->corner_radius});
-	return true;
-}
-
-bool win_bind_shadow(struct backend_base *b, struct managed_win *w, struct color c,
-                     struct backend_shadow_context *sctx) {
-	assert(!w->shadow_image);
-	assert(w->shadow);
-	log_trace("Binding shadow for %#010x (%s), color: %f %f %f %F", w->base.id,
-	          w->name, c.red, c.green, c.blue, c.alpha);
-	if ((w->corner_radius == 0 && w->bounding_shaped == false) ||
-	    b->ops->shadow_from_mask == NULL) {
-		w->shadow_image = b->ops->render_shadow(b, w->widthb, w->heightb, sctx, c);
-	} else {
-		if (!w->mask_image) {
-			// It's possible we already allocated a mask because of background
-			// blur
-			win_bind_mask(b, w);
-		}
-		w->shadow_image = b->ops->shadow_from_mask(b, w->mask_image, sctx, c);
-	}
-	if (!w->shadow_image) {
-		log_error("Failed to bind shadow image, shadow will be disabled "
-		          "for "
-		          "%#010x (%s)",
-		          w->base.id, w->name);
-		w->shadow = false;
-		return false;
-	}
-
-	log_debug("New shadow for %#010x (%s)", w->base.id, w->name);
 	return true;
 }
 

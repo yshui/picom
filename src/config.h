@@ -96,8 +96,6 @@ struct debug_options {
 	/// Useful when being traced under apitrace, to force it to pick up
 	/// updated contents. WARNING, extremely slow.
 	int always_rebind_pixmap;
-	/// Use the new renderer
-	int v2_renderer;
 };
 
 extern struct debug_options global_debug_options;

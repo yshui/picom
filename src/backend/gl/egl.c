@@ -13,7 +13,6 @@
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
-#include "backend/compat.h"
 #include "backend/gl/egl.h"
 #include "backend/gl/gl_common.h"
 #include "common.h"
@@ -153,8 +152,8 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 	}
 
 	eglext_init(gd->display);
-	init_backend_base(&gd->gl.compat.base, ps);
-	gd->gl.compat.base.ops = &egl_ops;
+	init_backend_base(&gd->gl.base, ps);
+	gd->gl.base.ops = &egl_ops;
 	if (!eglext.has_EGL_KHR_image_pixmap) {
 		log_error("EGL_KHR_image_pixmap not available.");
 		goto end;
@@ -229,12 +228,12 @@ static backend_t *egl_init(session_t *ps, xcb_window_t target) {
 end:
 	if (!success) {
 		if (gd != NULL) {
-			egl_deinit(&gd->gl.compat.base);
+			egl_deinit(&gd->gl.base);
 		}
 		return NULL;
 	}
 
-	return &gd->gl.compat.base;
+	return &gd->gl.base;
 }
 
 static image_handle
@@ -251,12 +250,7 @@ egl_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 
 	log_trace("Binding pixmap %#010x", pixmap);
 	auto inner = ccalloc(1, struct gl_texture);
-	backend_compat_image_init(&inner->compat, BACKEND_IMAGE_FORMAT_PIXMAP,
-	                          (struct geometry){
-	                              .width = r->width,
-	                              .height = r->height,
-	                          });
-	inner->compat.base.has_alpha = fmt.alpha_size > 0;
+	inner->format = BACKEND_IMAGE_FORMAT_PIXMAP;
 	inner->width = r->width;
 	inner->height = r->height;
 	free(r);
@@ -365,24 +359,9 @@ struct backend_operations egl_ops = {
     .init = egl_init,
     .deinit = egl_deinit,
     .root_change = gl_root_change,
-    .bind_pixmap = backend_compat_bind_pixmap,
-    .release_image = backend_compat_release_image,
     .prepare = gl_prepare,
-    .compose = backend_compat_compose,
-    .image_op = backend_compat_image_op,
-    .set_image_property = default_set_image_property,
-    .clone_image = default_clone_image,
-    .blur = backend_compat_blur,
-    .is_image_transparent = default_is_image_transparent,
-    .present = backend_compat_present,
     .buffer_age = egl_buffer_age,
     .last_render_time = gl_last_render_time,
-    .create_shadow_context = backend_compat_create_shadow_context,
-    .destroy_shadow_context = backend_compat_destroy_shadow_context,
-    .render_shadow = backend_render_shadow_from_mask,
-    .shadow_from_mask = backend_compat_shadow_from_mask,
-    .make_mask = backend_compat_make_mask,
-    .fill = backend_compat_fill,
     .create_blur_context = gl_create_blur_context,
     .destroy_blur_context = gl_destroy_blur_context,
     .get_blur_size = gl_get_blur_size,

@@ -639,12 +639,7 @@ static void destroy_backend(session_t *ps) {
 	}
 
 	if (ps->backend_data && ps->root_image) {
-		if (global_debug_options.v2_renderer) {
-			ps->backend_data->ops->v2.release_image(ps->backend_data,
-			                                        ps->root_image);
-		} else {
-			ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
-		}
+		ps->backend_data->ops->v2.release_image(ps->backend_data, ps->root_image);
 		ps->root_image = NULL;
 	}
 
@@ -658,11 +653,6 @@ static void destroy_backend(session_t *ps) {
 			ps->backend_data->ops->destroy_blur_context(
 			    ps->backend_data, ps->backend_blur_context);
 			ps->backend_blur_context = NULL;
-		}
-		if (ps->shadow_context) {
-			ps->backend_data->ops->destroy_shadow_context(ps->backend_data,
-			                                              ps->shadow_context);
-			ps->shadow_context = NULL;
 		}
 		ps->backend_data->ops->deinit(ps->backend_data);
 		ps->backend_data = NULL;
@@ -735,12 +725,6 @@ static bool initialize_backend(session_t *ps) {
 			return false;
 		}
 		ps->backend_data->ops = backend_list[ps->o.backend];
-		ps->shadow_context = ps->backend_data->ops->create_shadow_context(
-		    ps->backend_data, ps->o.shadow_radius);
-		if (!ps->shadow_context) {
-			log_fatal("Failed to initialize shadow context, aborting...");
-			goto err;
-		}
 
 		if (!initialize_blur(ps)) {
 			log_fatal("Failed to prepare for background blur, aborting...");
@@ -783,11 +767,6 @@ static bool initialize_backend(session_t *ps) {
 	// The old backends binds pixmap lazily, nothing to do here
 	return true;
 err:
-	if (ps->shadow_context) {
-		ps->backend_data->ops->destroy_shadow_context(ps->backend_data,
-		                                              ps->shadow_context);
-		ps->shadow_context = NULL;
-	}
 	ps->backend_data->ops->deinit(ps->backend_data);
 	ps->backend_data = NULL;
 	quit(ps);
@@ -1179,13 +1158,8 @@ void root_damaged(session_t *ps) {
 
 	if (ps->backend_data) {
 		if (ps->root_image) {
-			if (global_debug_options.v2_renderer) {
-				ps->backend_data->ops->v2.release_image(ps->backend_data,
-				                                        ps->root_image);
-			} else {
-				ps->backend_data->ops->release_image(ps->backend_data,
-				                                     ps->root_image);
-			}
+			ps->backend_data->ops->v2.release_image(ps->backend_data,
+			                                        ps->root_image);
 			ps->root_image = NULL;
 		}
 		auto pixmap = x_get_root_back_pixmap(&ps->c, ps->atoms);
@@ -1219,21 +1193,8 @@ void root_damaged(session_t *ps) {
 			        : x_get_visual_for_depth(ps->c.screen_info, r->depth);
 			free(r);
 
-			if (global_debug_options.v2_renderer) {
-				ps->root_image = ps->backend_data->ops->v2.bind_pixmap(
-				    ps->backend_data, pixmap,
-				    x_get_visual_info(&ps->c, visual));
-			} else {
-				ps->root_image = ps->backend_data->ops->bind_pixmap(
-				    ps->backend_data, pixmap,
-				    x_get_visual_info(&ps->c, visual));
-				if (ps->root_image) {
-					ps->backend_data->ops->set_image_property(
-					    ps->backend_data,
-					    IMAGE_PROPERTY_EFFECTIVE_SIZE, ps->root_image,
-					    (int[]){ps->root_width, ps->root_height});
-				}
-			}
+			ps->root_image = ps->backend_data->ops->v2.bind_pixmap(
+			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual));
 			if (!ps->root_image) {
 			err:
 				log_error("Failed to bind root back pixmap");
@@ -1497,7 +1458,7 @@ uint8_t session_redirection_mode(session_t *ps) {
 		assert(!ps->o.legacy_backends);
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
 	}
-	if (!ps->o.legacy_backends && !backend_list[ps->o.backend]->present) {
+	if (!ps->o.legacy_backends && !backend_list[ps->o.backend]->v2.present) {
 		// if the backend doesn't render anything, we don't need to take over the
 		// screen.
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
@@ -1887,32 +1848,26 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 		log_verbose("Render start, frame %d", paint);
 		if (!ps->o.legacy_backends) {
 			uint64_t after_damage_us = 0;
-			if (!global_debug_options.v2_renderer) {
-				did_render = paint_all_new(ps, bottom, &after_damage_us);
-			} else {
-				now = get_time_timespec();
-				auto render_start_us = (uint64_t)now.tv_sec * 1000000UL +
-				                       (uint64_t)now.tv_nsec / 1000;
-				layout_manager_append_layout(
-				    ps->layout_manager, ps->wm,
-				    (struct geometry){.width = ps->root_width,
-				                      .height = ps->root_height});
-				bool succeeded = renderer_render(
-				    ps->renderer, ps->backend_data, ps->root_image,
-				    ps->layout_manager, ps->command_builder,
-				    ps->backend_blur_context, render_start_us,
-				    ps->o.use_damage, ps->o.monitor_repaint,
-				    ps->o.force_win_blend, ps->o.blur_background_frame,
-				    ps->o.inactive_dim_fixed, ps->o.max_brightness,
-				    ps->o.inactive_dim, &ps->shadow_exclude_reg,
-				    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
-				    ps->o.wintype_option, &after_damage_us);
-				if (!succeeded) {
-					log_fatal("Render failure");
-					abort();
-				}
-				did_render = true;
+			now = get_time_timespec();
+			auto render_start_us =
+			    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
+			layout_manager_append_layout(
+			    ps->layout_manager, ps->wm,
+			    (struct geometry){.width = ps->root_width,
+			                      .height = ps->root_height});
+			bool succeeded = renderer_render(
+			    ps->renderer, ps->backend_data, ps->root_image, ps->layout_manager,
+			    ps->command_builder, ps->backend_blur_context, render_start_us,
+			    ps->o.use_damage, ps->o.monitor_repaint, ps->o.force_win_blend,
+			    ps->o.blur_background_frame, ps->o.inactive_dim_fixed,
+			    ps->o.max_brightness, ps->o.inactive_dim, &ps->shadow_exclude_reg,
+			    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
+			    ps->o.wintype_option, &after_damage_us);
+			if (!succeeded) {
+				log_fatal("Render failure");
+				abort();
 			}
+			did_render = true;
 			if (ps->next_render > 0) {
 				log_verbose(
 				    "Render schedule deviation: %ld us (%s) %" PRIu64
@@ -2459,7 +2414,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_info("The compositor is started in automatic redirection mode.");
 		assert(!ps->o.legacy_backends);
 
-		if (backend_list[ps->o.backend]->present) {
+		if (backend_list[ps->o.backend]->v2.present) {
 			// If the backend has `present`, we couldn't be in automatic
 			// redirection mode unless we are in debug mode.
 			assert(ps->o.debug_mode);
@@ -2496,14 +2451,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		if (gl_logger) {
 			log_info("Enabling gl string marker");
 			log_add_target_tls(gl_logger);
-		}
-	}
-
-	if (!ps->o.legacy_backends) {
-		if (ps->o.monitor_repaint && !backend_list[ps->o.backend]->fill) {
-			log_warn("--monitor-repaint is not supported by the backend, "
-			         "disabling");
-			ps->o.monitor_repaint = false;
 		}
 	}
 

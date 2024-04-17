@@ -863,7 +863,7 @@ void *gl_create_blur_context(backend_t *base, enum blur_method method,
 
 out:
 	if (!success) {
-		gl_destroy_blur_context(&gd->compat.base, ctx);
+		gl_destroy_blur_context(&gd->base, ctx);
 		ctx = NULL;
 	}
 

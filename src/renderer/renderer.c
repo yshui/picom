@@ -36,7 +36,7 @@ struct renderer {
 	struct color shadow_color;
 	int shadow_radius;
 	void *shadow_blur_context;
-	struct backend_shadow_context *common_shadow_context;
+	struct conv *shadow_kernel;
 };
 
 void renderer_free(struct backend_base *backend, struct renderer *r) {
@@ -55,8 +55,8 @@ void renderer_free(struct backend_base *backend, struct renderer *r) {
 	if (r->shadow_blur_context) {
 		backend->ops->destroy_blur_context(backend, r->shadow_blur_context);
 	}
-	if (r->common_shadow_context) {
-		default_destroy_shadow_context(backend, r->common_shadow_context);
+	if (r->shadow_kernel) {
+		free_conv(r->shadow_kernel);
 	}
 	if (r->shadow_pixel) {
 		x_free_picture(backend->c, r->shadow_pixel);
@@ -118,12 +118,12 @@ renderer_init(struct renderer *renderer, struct backend_base *backend,
 			log_error("Failed to create shadow pixel");
 			return false;
 		}
-		renderer->common_shadow_context =
-		    default_create_shadow_context(NULL, renderer->shadow_radius);
-		if (!renderer->common_shadow_context) {
+		renderer->shadow_kernel = gaussian_kernel_autodetect_deviation(shadow_radius);
+		if (!renderer->shadow_kernel) {
 			log_error("Failed to create common shadow context");
 			return false;
 		}
+		sum_kernel_preprocess(renderer->shadow_kernel);
 	}
 	renderer->max_buffer_age = backend->ops->max_buffer_age + 1;
 	return true;
@@ -337,9 +337,8 @@ static bool renderer_bind_shadow(struct renderer *r, struct backend_base *backen
 		xcb_pixmap_t shadow = XCB_NONE;
 		xcb_render_picture_t pict = XCB_NONE;
 
-		if (!build_shadow(backend->c, r->shadow_color.alpha, w->widthb,
-		                  w->heightb, (void *)r->common_shadow_context,
-		                  r->shadow_pixel, &shadow, &pict)) {
+		if (!build_shadow(backend->c, r->shadow_color.alpha, w->widthb, w->heightb,
+		                  (void *)r->shadow_kernel, r->shadow_pixel, &shadow, &pict)) {
 			return false;
 		}
 
@@ -553,7 +552,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		backend->ops->v2.blit(backend, (struct coord){}, r->back_image, &blit);
 	}
 
-	if (backend->ops->present) {
+	if (backend->ops->v2.present) {
 		backend->ops->v2.copy_area_quantize(backend, (struct coord){},
 		                                    backend->ops->v2.back_buffer(backend),
 		                                    r->back_image, &damage_region);

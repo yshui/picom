@@ -3,7 +3,6 @@
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
-#include "backend/compat.h"
 #include "common.h"
 #include "compiler.h"
 #include "config.h"
@@ -15,14 +14,14 @@
 #include "x.h"
 
 struct dummy_image {
-	struct backend_compat_image_base compat;
+	enum backend_image_format format;
 	xcb_pixmap_t pixmap;
 	struct list_node siblings;
 	UT_hash_handle hh;
 };
 
 struct dummy_data {
-	struct backend_compat_base compat;
+	struct backend_base base;
 	struct dummy_image *pixmap_images;
 	struct list_node non_pixmap_images;
 
@@ -33,26 +32,22 @@ struct backend_operations dummy_ops;
 
 struct backend_base *dummy_init(session_t *ps attr_unused, xcb_window_t target attr_unused) {
 	auto ret = ccalloc(1, struct dummy_data);
-	init_backend_base(&ret->compat.base, ps);
-	ret->compat.base.ops = &dummy_ops;
+	init_backend_base(&ret->base, ps);
+	ret->base.ops = &dummy_ops;
 	list_init_head(&ret->non_pixmap_images);
-	backend_compat_init(&ret->compat, ps);
-	return &ret->compat.base;
+	return &ret->base;
 }
 
 void dummy_deinit(struct backend_base *data) {
 	auto dummy = (struct dummy_data *)data;
-	backend_compat_deinit(&dummy->compat);
 	HASH_ITER2(dummy->pixmap_images, img) {
-		log_warn("Backend image for pixmap %#010x is not freed (refcount %d)",
-		         img->pixmap, img->compat.base.refcount);
+		log_warn("Backend image %p for pixmap %#010x is not freed", img, img->pixmap);
 		HASH_DEL(dummy->pixmap_images, img);
 		xcb_free_pixmap(data->c->c, img->pixmap);
 		free(img);
 	}
 	list_foreach_safe(struct dummy_image, img, &dummy->non_pixmap_images, siblings) {
-		log_warn("Backend image for non-pixmap is not freed (refcount %d)",
-		         img->compat.base.refcount);
+		log_warn("Backend image %p for non-pixmap is not freed", img);
 		list_remove(&img->siblings);
 		free(img);
 	}
@@ -74,7 +69,6 @@ static void dummy_check_image(struct backend_base *base, image_handle image) {
 		log_warn("Using an invalid (possibly freed) image");
 		assert(false);
 	}
-	assert(tmp->compat.base.refcount > 0);
 }
 
 bool dummy_blit(struct backend_base *base, struct coord origin attr_unused,
@@ -83,7 +77,7 @@ bool dummy_blit(struct backend_base *base, struct coord origin attr_unused,
 	dummy_check_image(base, args->source_image);
 	if (args->mask->image) {
 		auto mask = (struct dummy_image *)args->mask->image;
-		if (mask->compat.format != BACKEND_IMAGE_FORMAT_MASK) {
+		if (mask->format != BACKEND_IMAGE_FORMAT_MASK) {
 			log_error("Invalid mask image format");
 			assert(false);
 			return false;
@@ -99,7 +93,7 @@ bool dummy_blur(struct backend_base *base, struct coord origin attr_unused,
 	dummy_check_image(base, args->source_image);
 	if (args->mask->image) {
 		auto mask = (struct dummy_image *)args->mask->image;
-		if (mask->compat.format != BACKEND_IMAGE_FORMAT_MASK) {
+		if (mask->format != BACKEND_IMAGE_FORMAT_MASK) {
 			log_error("Invalid mask image format");
 			assert(false);
 			return false;
@@ -120,8 +114,7 @@ image_handle dummy_bind_pixmap(struct backend_base *base, xcb_pixmap_t pixmap,
 	}
 
 	img = ccalloc(1, struct dummy_image);
-	backend_compat_image_init(&img->compat, BACKEND_IMAGE_FORMAT_PIXMAP,
-	                          (struct geometry){.width = 1, .height = 1});
+	img->format = BACKEND_IMAGE_FORMAT_PIXMAP;
 	img->pixmap = pixmap;
 
 	HASH_ADD_INT(dummy->pixmap_images, pixmap, img);
@@ -170,11 +163,11 @@ bool dummy_clear(struct backend_base *base, image_handle target,
 }
 
 image_handle dummy_new_image(struct backend_base *base, enum backend_image_format format,
-                             struct geometry size) {
+                             struct geometry size attr_unused) {
 	auto new_img = ccalloc(1, struct dummy_image);
 	auto dummy = (struct dummy_data *)base;
 	list_insert_after(&dummy->non_pixmap_images, &new_img->siblings);
-	backend_compat_image_init(&new_img->compat, format, size);
+	new_img->format = format;
 	return (image_handle)new_img;
 }
 
@@ -230,23 +223,9 @@ struct backend_operations dummy_ops = {
         },
     .init = dummy_init,
     .deinit = dummy_deinit,
-    .compose = backend_compat_compose,
-    .fill = backend_compat_fill,
-    .blur = backend_compat_blur,
-    .bind_pixmap = backend_compat_bind_pixmap,
-    .create_shadow_context = default_create_shadow_context,
-    .destroy_shadow_context = default_destroy_shadow_context,
-    .render_shadow = default_render_shadow,
-    .make_mask = backend_compat_make_mask,
-    .shadow_from_mask = backend_compat_shadow_from_mask,
-    .release_image = backend_compat_release_image,
-    .is_image_transparent = default_is_image_transparent,
     .buffer_age = dummy_buffer_age,
     .max_buffer_age = 5,
 
-    .image_op = backend_compat_image_op,
-    .clone_image = default_clone_image,
-    .set_image_property = default_set_image_property,
     .create_blur_context = dummy_create_blur_context,
     .destroy_blur_context = dummy_destroy_blur_context,
     .get_blur_size = dummy_get_blur_size,

@@ -26,25 +26,8 @@ struct dual_kawase_params {
 	int expand;
 };
 
-struct backend_image_inner_base {
-	int refcount;
-	bool has_alpha;
-};
-
-struct backend_image {
-	// Backend dependent inner image data
-	struct backend_image_inner_base *inner;
-	double opacity;
-	double dim;
-	double max_brightness;
-	double corner_radius;
-	// Effective size of the image
-	int ewidth, eheight;
-	bool color_inverted;
-	int border_width;
-	void *shader;
-};
-
+xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opacity,
+                         int width, int height);
 bool build_shadow(struct x_connection *, double opacity, int width, int height,
                   const conv *kernel, xcb_render_picture_t shadow_pixel,
                   xcb_pixmap_t *pixmap, xcb_render_picture_t *pict);
@@ -52,30 +35,9 @@ bool build_shadow(struct x_connection *, double opacity, int width, int height,
 xcb_render_picture_t
 solid_picture(struct x_connection *, bool argb, double a, double r, double g, double b);
 
-xcb_image_t *make_shadow(struct x_connection *c, const conv *kernel, double opacity,
-                         int width, int height);
-
-image_handle default_render_shadow(backend_t *backend_data, int width, int height,
-                                   struct backend_shadow_context *sctx, struct color color);
-
-/// Implement `render_shadow` with `shadow_from_mask`.
-image_handle
-backend_render_shadow_from_mask(backend_t *backend_data, int width, int height,
-                                struct backend_shadow_context *sctx, struct color color);
-struct backend_shadow_context *
-default_create_shadow_context(backend_t *backend_data, double radius);
-
-void default_destroy_shadow_context(backend_t *backend_data,
-                                    struct backend_shadow_context *sctx);
-
 void init_backend_base(struct backend_base *base, session_t *ps);
 
 struct conv **generate_blur_kernel(enum blur_method method, void *args, int *kernel_count);
 struct dual_kawase_params *generate_dual_kawase_params(void *args);
 
-image_handle default_clone_image(backend_t *base, image_handle image, const region_t *reg);
-bool default_is_image_transparent(backend_t *base attr_unused, image_handle image);
-bool default_set_image_property(backend_t *base attr_unused, enum image_properties op,
-                                image_handle image, const void *arg);
-void default_init_backend_image(struct backend_image *image, int w, int h);
 uint32_t backend_no_quirks(struct backend_base *base attr_unused);
