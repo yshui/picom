@@ -746,11 +746,6 @@ bool glx_bind_pixmap(session_t *ps, glx_texture_t **pptex, xcb_pixmap_t pixmap, 
 				log_error("Failed to query info of pixmap %#010x.", pixmap);
 				return false;
 			}
-			if (r->depth > OPENGL_MAX_DEPTH) {
-				log_error("Requested depth %d higher than %d.", depth,
-				          OPENGL_MAX_DEPTH);
-				return false;
-			}
 			depth = r->depth;
 			width = r->width;
 			height = r->height;
