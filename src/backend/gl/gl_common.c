@@ -625,6 +625,9 @@ bool gl_blit(backend_t *base, struct coord origin, image_handle target_,
 	}
 
 	auto fbo = gl_bind_image_to_fbo(gd, target_);
+	// X pixmap is in premultiplied alpha, so we might just as well use it too.
+	// Thanks to derhass for help.
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	gl_blit_inner(fbo, nrects, coord, indices, &gl_blit_vertex_attribs, shader,
 	              NUMBER_OF_UNIFORMS, uniforms);
 
@@ -684,6 +687,7 @@ static bool gl_copy_area_draw(struct gl_data *gd, struct coord origin,
 	                         .tu = {source->texture, gd->samplers[GL_SAMPLER_EDGE]}},
 	};
 	auto fbo = gl_bind_image_to_fbo(gd, target_handle);
+	glBlendFunc(GL_ONE, GL_ZERO);
 	gl_blit_inner(fbo, nrects, coord, indices, &gl_blit_vertex_attribs, shader,
 	              ARR_SIZE(uniforms), uniforms);
 	free(indices);
@@ -866,9 +870,6 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	glDepthMask(GL_FALSE);
 
 	glEnable(GL_BLEND);
-	// X pixmap is in premultiplied alpha, so we might just as well use it too.
-	// Thanks to derhass for help.
-	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
 	// Initialize stencil buffer
 	glDisable(GL_STENCIL_TEST);

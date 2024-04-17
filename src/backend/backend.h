@@ -266,6 +266,7 @@ struct backend_ops_v2 {
 	/// This is a simpler version of `blit`, without any effects. Note unlike `blit`,
 	/// if `region` tries to sample from outside the source image, instead of
 	/// repeating, the result will be clamped to the edge of the source image.
+	/// Blending should not be applied for the copy.
 	///
 	/// Source and target MUST NOT be the same image.
 	///
