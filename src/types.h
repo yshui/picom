@@ -58,5 +58,9 @@ static inline bool coord_eq(struct coord a, struct coord b) {
 	return a.x == b.x && a.y == b.y;
 }
 
+static inline struct coord coord_neg(struct coord a) {
+	return (struct coord){.x = -a.x, .y = -a.y};
+}
+
 #define MARGIN_INIT                                                                      \
 	{ 0, 0, 0, 0 }

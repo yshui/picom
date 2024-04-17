@@ -293,3 +293,85 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 	}
 	pixman_region32_fini(&scratch_region);
 }
+
+void commands_cull_with_damage(struct layout *layout, const region_t *damage,
+                               struct geometry blur_size, struct backend_mask *culled_mask) {
+	// This may sound silly, and probably actually is. Why do GPU's job on the CPU?
+	// Isn't the GPU supposed to be the one that does culling, depth testing etc.?
+	//
+	// Well, the things is the compositor is a bit special which makes this a bit
+	// hard. First of all, each window is its own texture. If we bundle them in one
+	// draw call, we might run into texture unit limits. If we don't bundle them,
+	// then because we draw things bottom up, depth testing is pointless. Maybe we
+	// can draw consecutive opaque windows top down with depth test, which will work
+	// on OpenGL. But xrender won't like it. So that would be backend specific.
+	//
+	// Which is to say, there might be better way of utilizing the GPU for this, but
+	// that will be complicated. And being a compositor makes doing this on CPU
+	// easier, we only need to handle a dozen axis aligned rectangles, not hundreds of
+	// thousands of triangles. So this is what we are stuck with for now.
+	region_t scratch_region, tmp;
+	pixman_region32_init(&scratch_region);
+	pixman_region32_init(&tmp);
+	// scratch_region stores the visible damage region of the screen at the current
+	// layer. at the top most layer, all of damage is visible
+	pixman_region32_copy(&scratch_region, damage);
+	for (int i = to_int_checked(layout->number_of_commands - 1); i >= 0; i--) {
+		auto cmd = &layout->commands[i];
+		struct coord mask_origin;
+		if (cmd->op != BACKEND_COMMAND_COPY_AREA) {
+			mask_origin = coord_add(cmd->origin, cmd->mask.origin);
+		} else {
+			mask_origin = cmd->origin;
+		}
+		culled_mask[i] = cmd->mask;
+		pixman_region32_init(&culled_mask[i].region);
+		pixman_region32_copy(&culled_mask[i].region, &cmd->mask.region);
+		region_intersect(&culled_mask[i].region, coord_neg(mask_origin),
+		                 &scratch_region);
+		switch (cmd->op) {
+		case BACKEND_COMMAND_BLIT:
+			pixman_region32_subtract(&scratch_region, &scratch_region,
+			                         &cmd->opaque_region);
+			cmd->blit.mask = &culled_mask[i];
+			break;
+		case BACKEND_COMMAND_COPY_AREA:
+			region_subtract(&scratch_region, mask_origin, &cmd->mask.region);
+			cmd->copy_area.region = &culled_mask[i].region;
+			break;
+		case BACKEND_COMMAND_BLUR:
+			// To render blur, the layers below must render pixels surrounding
+			// the blurred area in this layer.
+			pixman_region32_copy(&tmp, &scratch_region);
+			region_intersect(&tmp, mask_origin, &cmd->mask.region);
+			resize_region_in_place(&tmp, blur_size.width, blur_size.height);
+			pixman_region32_union(&scratch_region, &scratch_region, &tmp);
+			cmd->blur.mask = &culled_mask[i];
+			break;
+		case BACKEND_COMMAND_INVALID: assert(false);
+		}
+	}
+	pixman_region32_fini(&tmp);
+	pixman_region32_fini(&scratch_region);
+}
+
+void commands_uncull(struct layout *layout) {
+	for (auto i = layout->commands;
+	     i != &layout->commands[layout->number_of_commands]; i++) {
+		switch (i->op) {
+		case BACKEND_COMMAND_BLIT:
+			pixman_region32_fini(&i->blit.mask->region);
+			i->blit.mask = &i->mask;
+			break;
+		case BACKEND_COMMAND_BLUR:
+			pixman_region32_fini(&i->blur.mask->region);
+			i->blur.mask = &i->mask;
+			break;
+		case BACKEND_COMMAND_COPY_AREA:
+			pixman_region32_fini((region_t *)i->copy_area.region);
+			i->copy_area.region = &i->mask.region;
+			break;
+		case BACKEND_COMMAND_INVALID: assert(false);
+		}
+	}
+}

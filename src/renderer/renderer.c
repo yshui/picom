@@ -438,6 +438,30 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 			log_backend_command(TRACE, *i);
 		}
 	}
+	region_t screen_region, damage_region, draw_region;
+	pixman_region32_init_rect(&screen_region, 0, 0, (unsigned)r->canvas_size.width,
+	                          (unsigned)r->canvas_size.height);
+	pixman_region32_init(&damage_region);
+	pixman_region32_copy(&damage_region, &screen_region);
+	struct geometry blur_size = {};
+	if (backend->ops->get_blur_size && blur_context) {
+		backend->ops->get_blur_size(blur_context, &blur_size.width, &blur_size.height);
+	}
+	auto buffer_age =
+	    (use_damage || monitor_repaint) ? backend->ops->buffer_age(backend) : 0;
+	if (buffer_age > 0 && (unsigned)buffer_age <= layout_manager_max_buffer_age(lm)) {
+		layout_manager_damage(lm, (unsigned)buffer_age, blur_size, &damage_region);
+	}
+
+	if (monitor_repaint) {
+		// TODO(yshui) use damage even with monitor repaint enabled
+		draw_region = screen_region;
+	} else {
+		draw_region = damage_region;
+	}
+
+	auto culled_masks = ccalloc(layout->number_of_commands, struct backend_mask);
+	commands_cull_with_damage(layout, &draw_region, blur_size, culled_masks);
 
 	auto now = get_time_timespec();
 	*after_damage_us = (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
@@ -458,23 +482,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		return false;
 	}
 
-	region_t screen_region;
-	pixman_region32_init_rect(&screen_region, 0, 0, (unsigned)r->canvas_size.width,
-	                          (unsigned)r->canvas_size.height);
 	if (monitor_repaint && r->monitor_repaint_pixel) {
-		struct backend_mask mask = {};
-		pixman_region32_init(&mask.region);
-		pixman_region32_copy(&mask.region, &screen_region);
-		auto buffer_age = backend->ops->buffer_age(backend);
-		if (buffer_age > 0 &&
-		    (unsigned)buffer_age <= layout_manager_max_buffer_age(lm)) {
-			struct geometry blur_size = {};
-			if (backend->ops->get_blur_size && blur_context) {
-				backend->ops->get_blur_size(
-				    blur_context, &blur_size.width, &blur_size.height);
-			}
-			layout_manager_damage(lm, (unsigned)buffer_age, blur_size, &mask.region);
-		}
+		struct backend_mask mask = {.region = damage_region};
 		struct backend_blit_args blit = {
 		    .source_image = r->monitor_repaint_pixel,
 		    .max_brightness = 1,
@@ -485,15 +494,21 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		};
 		log_trace("Blit for monitor repaint");
 		backend->ops->v2.blit(backend, (struct coord){}, r->back_image, &blit);
-		pixman_region32_fini(&mask.region);
 	}
 
 	if (backend->ops->present) {
 		backend->ops->v2.copy_area_quantize(backend, (struct coord){},
 		                                    backend->ops->v2.back_buffer(backend),
-		                                    r->back_image, &screen_region);
+		                                    r->back_image, &draw_region);
 		backend->ops->v2.present(backend);
 	}
+
+	// "Un-cull" the render commands, so later damage calculation using those commands
+	// will not use culled regions.
+	commands_uncull(layout);
+	free(culled_masks);
+
 	pixman_region32_fini(&screen_region);
+	pixman_region32_fini(&damage_region);
 	return true;
 }
