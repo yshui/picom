@@ -365,6 +365,7 @@ bool gl_blur(struct backend_base *base, struct coord origin, image_handle target
 	GLuint bo[4];
 	glGenBuffers(4, bo);
 
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glBindVertexArray(vao[0]);
 	glBindBuffer(GL_ARRAY_BUFFER, bo[0]);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bo[1]);
