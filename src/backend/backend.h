@@ -126,6 +126,7 @@ struct backend_blit_args {
 	int ewidth, eheight;
 	/// Border width of the source image. This is used with
 	/// `corner_radius` to create a border for the rounded corners.
+	/// Setting this has no effect if `corner_radius` is 0.
 	int border_width;
 	/// Whether the source image should be inverted.
 	bool color_inverted;
