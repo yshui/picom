@@ -33,6 +33,8 @@
 
 #include "config.h"
 
+struct debug_options global_debug_options;
+
 const char *xdg_config_home(void) {
 	char *xdgh = getenv("XDG_CONFIG_HOME");
 	char *home = getenv("HOME");
@@ -895,6 +897,5 @@ char *parse_config(options_t *opt, const char *config_file, bool *shadow_enable,
 	(void)hasneg;
 	(void)winopt_mask;
 #endif
-	parse_debug_options(&opt->debug_options);
 	return ret;
 }

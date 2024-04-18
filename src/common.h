@@ -262,8 +262,15 @@ typedef struct session {
 	/// to the screen that's neither included in the current render, nor on the
 	/// screen.
 	bool render_queued;
+	// TODO(yshui) remove this after we remove the legacy backends
 	/// For tracking damage regions
 	struct damage_ring damage_ring;
+	// TODO(yshui) move render related fields into separate struct
+	/// Render planner
+	struct layout_manager *layout_manager;
+	/// Render command builder
+	struct command_builder *command_builder;
+	struct renderer *renderer;
 	/// Whether the root image has been changed since last render
 	bool root_damaged;
 	/// Whether all windows are currently redirected.

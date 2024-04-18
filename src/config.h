@@ -98,6 +98,8 @@ struct debug_options {
 	int always_rebind_pixmap;
 };
 
+extern struct debug_options global_debug_options;
+
 /// Structure representing all options.
 typedef struct options {
 	// === Debugging ===
@@ -289,8 +291,6 @@ typedef struct options {
 	c2_lptr_t *transparent_clipping_blacklist;
 
 	bool dithered_present;
-
-	struct debug_options debug_options;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];
@@ -304,6 +304,7 @@ bool must_use parse_rule_window_shader(c2_lptr_t **, const char *, const char *)
 char *must_use locate_auxiliary_file(const char *scope, const char *path,
                                      const char *include_dir);
 enum blur_method must_use parse_blur_method(const char *src);
+void parse_debug_options(struct debug_options *);
 
 /**
  * Add a pattern to a condition linked list.

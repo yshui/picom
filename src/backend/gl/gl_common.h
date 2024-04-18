@@ -8,7 +8,6 @@
 
 #include "backend/backend.h"
 #include "backend/backend_common.h"
-#include "backend/compat.h"
 #include "log.h"
 #include "region.h"
 
@@ -51,7 +50,7 @@ struct gl_shader {
 
 /// @brief Wrapper of a bound GL texture.
 struct gl_texture {
-	struct backend_compat_image_base compat;
+	enum backend_image_format format;
 	GLuint texture;
 	int width, height;
 	/// Whether the texture is Y-inverted
@@ -79,7 +78,7 @@ enum gl_sampler {
 };
 
 struct gl_data {
-	struct backend_compat_base compat;
+	struct backend_base base;
 	// If we are using proprietary NVIDIA driver
 	bool is_nvidia;
 	// If ARB_robustness extension is present

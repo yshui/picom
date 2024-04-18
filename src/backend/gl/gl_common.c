@@ -710,8 +710,8 @@ bool gl_copy_area_quantize(backend_t *backend_data, struct coord origin,
 	auto gd = (struct gl_data *)backend_data;
 	auto target = (struct gl_texture *)target_handle;
 	auto source = (struct gl_texture *)source_handle;
-	if (source->compat.format != BACKEND_IMAGE_FORMAT_PIXMAP_HIGH ||
-	    source->compat.format == target->compat.format) {
+	if (source->format != BACKEND_IMAGE_FORMAT_PIXMAP_HIGH ||
+	    source->format == target->format) {
 		return gl_copy_area(backend_data, origin, target_handle, source_handle, region);
 	}
 	return gl_copy_area_draw(gd, origin, target_handle, source_handle,
@@ -771,8 +771,6 @@ void gl_resize(struct gl_data *gd, int width, int height) {
 
 	assert(viewport_dimensions[0] >= gd->back_image.width);
 	assert(viewport_dimensions[1] >= gd->back_image.height);
-
-	backend_compat_resize(&gd->compat, (struct geometry){.width = width, .height = height});
 
 	gl_check_err();
 }
@@ -997,10 +995,9 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	gd->has_egl_image_storage = epoxy_has_gl_extension("GL_EXT_EGL_image_storage");
 	gd->back_image.y_inverted = false;
 
-	bool succeeded = backend_compat_init(&gd->compat, ps);
 	gl_check_err();
 
-	return succeeded;
+	return true;
 }
 
 void gl_deinit(struct gl_data *gd) {
@@ -1008,8 +1005,6 @@ void gl_deinit(struct gl_data *gd) {
 		log_remove_target_tls(gd->logger);
 		gd->logger = NULL;
 	}
-
-	backend_compat_deinit(&gd->compat);
 
 	gl_destroy_window_shader_inner(&gd->default_shader);
 	glDeleteProgram(gd->copy_area_prog.prog);
@@ -1050,7 +1045,7 @@ bool gl_clear(backend_t *backend_data, image_handle target, struct color color) 
 	auto fbo = gl_bind_image_to_fbo(gd, target);
 	auto target_image = (struct gl_texture *)target;
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
-	if (target_image->compat.format == BACKEND_IMAGE_FORMAT_MASK) {
+	if (target_image->format == BACKEND_IMAGE_FORMAT_MASK) {
 		glClearColor((GLfloat)color.alpha, 0, 0, 1);
 	} else {
 		glClearColor((GLfloat)color.red, (GLfloat)color.green,
@@ -1070,7 +1065,7 @@ image_handle gl_new_image(backend_t *backend_data attr_unused,
                           enum backend_image_format format, geometry_t size) {
 	auto tex = ccalloc(1, struct gl_texture);
 	log_trace("Creating texture %dx%d", size.width, size.height);
-	backend_compat_image_init(&tex->compat, format, size);
+	tex->format = format;
 	tex->width = size.width;
 	tex->height = size.height;
 	tex->texture = gl_new_texture();

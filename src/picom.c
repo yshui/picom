@@ -66,6 +66,9 @@
 #include "options.h"
 #include "region.h"
 #include "render.h"
+#include "renderer/command_builder.h"
+#include "renderer/layout.h"
+#include "renderer/renderer.h"
 #include "statistics.h"
 #include "types.h"
 #include "uthash_extra.h"
@@ -164,7 +167,7 @@ enum vblank_callback_action check_render_finish(struct vblank_event *e attr_unus
 	}
 
 	// The frame has been finished and presented, record its render time.
-	if (ps->o.debug_options.smart_frame_pacing) {
+	if (global_debug_options.smart_frame_pacing) {
 		int render_time_us =
 		    (int)(render_time.tv_sec * 1000000L + render_time.tv_nsec / 1000L);
 		render_statistics_add_render_time_sample(
@@ -184,7 +187,7 @@ collect_vblank_interval_statistics(struct vblank_event *e, void *ud) {
 	assert(ps->frame_pacing);
 	assert(ps->vblank_scheduler);
 
-	if (!ps->o.debug_options.smart_frame_pacing) {
+	if (!global_debug_options.smart_frame_pacing) {
 		// We don't need to collect statistics if we are not doing smart frame
 		// pacing.
 		return VBLANK_CALLBACK_DONE;
@@ -354,7 +357,7 @@ void schedule_render(session_t *ps, bool triggered_by_vblank attr_unused) {
 		goto schedule;
 	}
 
-	// if ps->o.debug_options.smart_frame_pacing is false, we won't have any render
+	// if global_debug_options.smart_frame_pacing is false, we won't have any render
 	// time or vblank interval estimates, so we would naturally fallback to schedule
 	// render immediately.
 	auto render_budget = render_statistics_get_budget(&ps->render_stats);
@@ -636,21 +639,20 @@ static void destroy_backend(session_t *ps) {
 	}
 
 	if (ps->backend_data && ps->root_image) {
-		ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+		ps->backend_data->ops->v2.release_image(ps->backend_data, ps->root_image);
 		ps->root_image = NULL;
 	}
 
 	if (ps->backend_data) {
+		if (ps->renderer) {
+			renderer_free(ps->backend_data, ps->renderer);
+			ps->renderer = NULL;
+		}
 		// deinit backend
 		if (ps->backend_blur_context) {
 			ps->backend_data->ops->destroy_blur_context(
 			    ps->backend_data, ps->backend_blur_context);
 			ps->backend_blur_context = NULL;
-		}
-		if (ps->shadow_context) {
-			ps->backend_data->ops->destroy_shadow_context(ps->backend_data,
-			                                              ps->shadow_context);
-			ps->shadow_context = NULL;
 		}
 		ps->backend_data->ops->deinit(ps->backend_data);
 		ps->backend_data = NULL;
@@ -723,12 +725,6 @@ static bool initialize_backend(session_t *ps) {
 			return false;
 		}
 		ps->backend_data->ops = backend_list[ps->o.backend];
-		ps->shadow_context = ps->backend_data->ops->create_shadow_context(
-		    ps->backend_data, ps->o.shadow_radius);
-		if (!ps->shadow_context) {
-			log_fatal("Failed to initialize shadow context, aborting...");
-			goto err;
-		}
 
 		if (!initialize_blur(ps)) {
 			log_fatal("Failed to prepare for background blur, aborting...");
@@ -760,16 +756,17 @@ static bool initialize_backend(session_t *ps) {
 		// wm_stack shouldn't include window that's not iterated by wm_foreach at
 		// this moment. Since there cannot be any fading windows.
 		wm_foreach(ps->wm, mark_pixmap_stale, ps);
+		ps->renderer = renderer_new(ps->backend_data, ps->o.shadow_radius,
+		                            (struct color){.alpha = ps->o.shadow_opacity,
+		                                           .red = ps->o.shadow_red,
+		                                           .green = ps->o.shadow_green,
+		                                           .blue = ps->o.shadow_blue},
+		                            ps->o.dithered_present);
 	}
 
 	// The old backends binds pixmap lazily, nothing to do here
 	return true;
 err:
-	if (ps->shadow_context) {
-		ps->backend_data->ops->destroy_shadow_context(ps->backend_data,
-		                                              ps->shadow_context);
-		ps->shadow_context = NULL;
-	}
 	ps->backend_data->ops->deinit(ps->backend_data);
 	ps->backend_data = NULL;
 	quit(ps);
@@ -1161,7 +1158,8 @@ void root_damaged(session_t *ps) {
 
 	if (ps->backend_data) {
 		if (ps->root_image) {
-			ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
+			ps->backend_data->ops->v2.release_image(ps->backend_data,
+			                                        ps->root_image);
 			ps->root_image = NULL;
 		}
 		auto pixmap = x_get_root_back_pixmap(&ps->c, ps->atoms);
@@ -1195,13 +1193,9 @@ void root_damaged(session_t *ps) {
 			        : x_get_visual_for_depth(ps->c.screen_info, r->depth);
 			free(r);
 
-			ps->root_image = ps->backend_data->ops->bind_pixmap(
+			ps->root_image = ps->backend_data->ops->v2.bind_pixmap(
 			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual));
-			if (ps->root_image) {
-				ps->backend_data->ops->set_image_property(
-				    ps->backend_data, IMAGE_PROPERTY_EFFECTIVE_SIZE,
-				    ps->root_image, (int[]){ps->root_width, ps->root_height});
-			} else {
+			if (!ps->root_image) {
 			err:
 				log_error("Failed to bind root back pixmap");
 			}
@@ -1464,7 +1458,7 @@ uint8_t session_redirection_mode(session_t *ps) {
 		assert(!ps->o.legacy_backends);
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
 	}
-	if (!ps->o.legacy_backends && !backend_list[ps->o.backend]->present) {
+	if (!ps->o.legacy_backends && !backend_list[ps->o.backend]->v2.present) {
 		// if the backend doesn't render anything, we don't need to take over the
 		// screen.
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
@@ -1504,6 +1498,8 @@ static bool redirect_start(session_t *ps) {
 	if (!ps->o.legacy_backends) {
 		assert(ps->backend_data);
 		ps->damage_ring.count = ps->backend_data->ops->max_buffer_age;
+		ps->layout_manager =
+		    layout_manager_new((unsigned)ps->backend_data->ops->max_buffer_age);
 	} else {
 		ps->damage_ring.count = maximum_buffer_age(ps);
 	}
@@ -1536,9 +1532,9 @@ static bool redirect_start(session_t *ps) {
 		render_statistics_reset(&ps->render_stats);
 		enum vblank_scheduler_type scheduler_type =
 		    choose_vblank_scheduler(ps->drivers);
-		if (ps->o.debug_options.force_vblank_scheduler != LAST_VBLANK_SCHEDULER) {
+		if (global_debug_options.force_vblank_scheduler != LAST_VBLANK_SCHEDULER) {
 			scheduler_type =
-			    (enum vblank_scheduler_type)ps->o.debug_options.force_vblank_scheduler;
+			    (enum vblank_scheduler_type)global_debug_options.force_vblank_scheduler;
 		}
 		log_info("Using vblank scheduler: %s.", vblank_scheduler_str[scheduler_type]);
 		ps->vblank_scheduler =
@@ -1592,6 +1588,10 @@ static void unredirect(session_t *ps) {
 	free(ps->damage_ring.damages);
 	ps->damage_ring.cursor = 0;
 	ps->damage_ring.damages = NULL;
+	if (ps->layout_manager) {
+		layout_manager_free(ps->layout_manager);
+		ps->layout_manager = NULL;
+	}
 
 	if (ps->vblank_scheduler) {
 		vblank_scheduler_free(ps->vblank_scheduler);
@@ -1847,7 +1847,40 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 
 		log_verbose("Render start, frame %d", paint);
 		if (!ps->o.legacy_backends) {
-			did_render = paint_all_new(ps, bottom);
+			uint64_t after_damage_us = 0;
+			now = get_time_timespec();
+			auto render_start_us =
+			    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
+			layout_manager_append_layout(
+			    ps->layout_manager, ps->wm,
+			    (struct geometry){.width = ps->root_width,
+			                      .height = ps->root_height});
+			bool succeeded = renderer_render(
+			    ps->renderer, ps->backend_data, ps->root_image, ps->layout_manager,
+			    ps->command_builder, ps->backend_blur_context, render_start_us,
+			    ps->o.use_damage, ps->o.monitor_repaint, ps->o.force_win_blend,
+			    ps->o.blur_background_frame, ps->o.inactive_dim_fixed,
+			    ps->o.max_brightness, ps->o.inactive_dim, &ps->shadow_exclude_reg,
+			    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
+			    ps->o.wintype_option, &after_damage_us);
+			if (!succeeded) {
+				log_fatal("Render failure");
+				abort();
+			}
+			did_render = true;
+			if (ps->next_render > 0) {
+				log_verbose(
+				    "Render schedule deviation: %ld us (%s) %" PRIu64
+				    " %" PRIu64,
+				    labs((long)after_damage_us - (long)ps->next_render),
+				    after_damage_us < ps->next_render ? "early" : "late",
+				    after_damage_us, ps->next_render);
+				ps->last_schedule_delay = 0;
+				if (after_damage_us > ps->next_render) {
+					ps->last_schedule_delay =
+					    after_damage_us - ps->next_render;
+				}
+			}
 		} else {
 			paint_all(ps, bottom);
 		}
@@ -2381,7 +2414,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_info("The compositor is started in automatic redirection mode.");
 		assert(!ps->o.legacy_backends);
 
-		if (backend_list[ps->o.backend]->present) {
+		if (backend_list[ps->o.backend]->v2.present) {
 			// If the backend has `present`, we couldn't be in automatic
 			// redirection mode unless we are in debug mode.
 			assert(ps->o.debug_mode);
@@ -2418,14 +2451,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		if (gl_logger) {
 			log_info("Enabling gl string marker");
 			log_add_target_tls(gl_logger);
-		}
-	}
-
-	if (!ps->o.legacy_backends) {
-		if (ps->o.monitor_repaint && !backend_list[ps->o.backend]->fill) {
-			log_warn("--monitor-repaint is not supported by the backend, "
-			         "disabling");
-			ps->o.monitor_repaint = false;
 		}
 	}
 
@@ -2547,6 +2572,8 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_debug("%#010x", w->id);
 	}
 
+	ps->command_builder = command_builder_new();
+
 	ps->pending_updates = true;
 
 	write_pid(ps);
@@ -2573,6 +2600,8 @@ static void session_destroy(session_t *ps) {
 	if (ps->redirected) {
 		unredirect(ps);
 	}
+	command_builder_free(ps->command_builder);
+	ps->command_builder = NULL;
 
 	file_watch_destroy(ps->loop, ps->file_watch_handle);
 	ps->file_watch_handle = NULL;
@@ -2748,6 +2777,8 @@ int PICOM_MAIN(int argc, char **argv) {
 			log_add_target_tls(stderr_logger);
 		}
 	}
+
+	parse_debug_options(&global_debug_options);
 
 	int exit_code;
 	char *config_file = NULL;

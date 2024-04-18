@@ -293,60 +293,6 @@ shadow_picture_err:
 	return false;
 }
 
-image_handle default_render_shadow(backend_t *backend_data, int width, int height,
-                                   struct backend_shadow_context *sctx, struct color color) {
-	const conv *kernel = (void *)sctx;
-	xcb_render_picture_t shadow_pixel =
-	    solid_picture(backend_data->c, true, 1, color.red, color.green, color.blue);
-	xcb_pixmap_t shadow = XCB_NONE;
-	xcb_render_picture_t pict = XCB_NONE;
-
-	if (!build_shadow(backend_data->c, color.alpha, width, height, kernel,
-	                  shadow_pixel, &shadow, &pict)) {
-		x_free_picture(backend_data->c, shadow_pixel);
-		return NULL;
-	}
-
-	auto visual = x_get_visual_for_standard(backend_data->c, XCB_PICT_STANDARD_ARGB_32);
-	auto ret = backend_data->ops->bind_pixmap(
-	    backend_data, shadow, x_get_visual_info(backend_data->c, visual));
-	x_free_picture(backend_data->c, pict);
-	x_free_picture(backend_data->c, shadow_pixel);
-	if (!ret) {
-		xcb_free_pixmap(backend_data->c->c, shadow);
-	}
-	return ret;
-}
-
-/// Implement render_shadow with shadow_from_mask
-image_handle
-backend_render_shadow_from_mask(backend_t *backend_data, int width, int height,
-                                struct backend_shadow_context *sctx, struct color color) {
-	region_t reg;
-	pixman_region32_init_rect(&reg, 0, 0, (unsigned int)width, (unsigned int)height);
-	auto mask = backend_data->ops->make_mask(
-	    backend_data, (geometry_t){.width = width, .height = height}, &reg);
-	pixman_region32_fini(&reg);
-
-	auto shadow = backend_data->ops->shadow_from_mask(backend_data, mask, sctx, color);
-	auto pixmap = backend_data->ops->release_image(backend_data, mask);
-	CHECK(pixmap == XCB_NONE);
-	return shadow;
-}
-
-struct backend_shadow_context *
-default_create_shadow_context(backend_t *backend_data attr_unused, double radius) {
-	auto ret =
-	    (struct backend_shadow_context *)gaussian_kernel_autodetect_deviation(radius);
-	sum_kernel_preprocess((conv *)ret);
-	return ret;
-}
-
-void default_destroy_shadow_context(backend_t *backend_data attr_unused,
-                                    struct backend_shadow_context *sctx) {
-	free_conv((conv *)sctx);
-}
-
 static struct conv **generate_box_blur_kernel(struct box_blur_args *args, int *kernel_count) {
 	int r = args->size * 2 + 1;
 	assert(r > 0);
@@ -460,54 +406,6 @@ struct dual_kawase_params *generate_dual_kawase_params(void *args) {
 	params->expand = (1 << params->iterations) * 2 * (int)ceilf(params->offset) + 1;
 
 	return params;
-}
-
-image_handle default_clone_image(backend_t *base attr_unused, image_handle image,
-                                 const region_t *reg_visible attr_unused) {
-	auto new_img = ccalloc(1, struct backend_image);
-	*new_img = *(struct backend_image *)image;
-	new_img->inner->refcount++;
-	return (image_handle)new_img;
-}
-
-bool default_set_image_property(backend_t *base attr_unused, enum image_properties op,
-                                image_handle image, const void *arg) {
-	auto tex = (struct backend_image *)image;
-	const int *iargs = arg;
-	const bool *bargs = arg;
-	const double *dargs = arg;
-	switch (op) {
-	case IMAGE_PROPERTY_INVERTED: tex->color_inverted = bargs[0]; break;
-	case IMAGE_PROPERTY_DIM_LEVEL: tex->dim = dargs[0]; break;
-	case IMAGE_PROPERTY_OPACITY: tex->opacity = dargs[0]; break;
-	case IMAGE_PROPERTY_EFFECTIVE_SIZE:
-		// texture is already set to repeat, so nothing else we need to do
-		tex->ewidth = iargs[0];
-		tex->eheight = iargs[1];
-		break;
-	case IMAGE_PROPERTY_CORNER_RADIUS: tex->corner_radius = dargs[0]; break;
-	case IMAGE_PROPERTY_MAX_BRIGHTNESS: tex->max_brightness = dargs[0]; break;
-	case IMAGE_PROPERTY_BORDER_WIDTH: tex->border_width = *(int *)arg; break;
-	case IMAGE_PROPERTY_CUSTOM_SHADER: tex->shader = (void *)arg; break;
-	}
-
-	return true;
-}
-
-bool default_is_image_transparent(backend_t *base attr_unused, image_handle image) {
-	auto img = (struct backend_image *)image;
-	return img->opacity < 1 || img->inner->has_alpha;
-}
-
-void default_init_backend_image(struct backend_image *image, int w, int h) {
-	image->opacity = 1;
-	image->dim = 0;
-	image->max_brightness = 1;
-	image->eheight = h;
-	image->ewidth = w;
-	image->color_inverted = false;
-	image->corner_radius = 0;
-	image->border_width = 0;
 }
 
 void init_backend_base(struct backend_base *base, session_t *ps) {

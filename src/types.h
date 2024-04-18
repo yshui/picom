@@ -5,6 +5,7 @@
 
 /// Some common types
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /// Enumeration type to represent switches.
@@ -38,6 +39,28 @@ typedef struct geometry {
 typedef struct coord {
 	int x, y;
 } coord_t;
+
+static inline struct coord coord_add(struct coord a, struct coord b) {
+	return (struct coord){
+	    .x = a.x + b.x,
+	    .y = a.y + b.y,
+	};
+}
+
+static inline struct coord coord_sub(struct coord a, struct coord b) {
+	return (struct coord){
+	    .x = a.x - b.x,
+	    .y = a.y - b.y,
+	};
+}
+
+static inline bool coord_eq(struct coord a, struct coord b) {
+	return a.x == b.x && a.y == b.y;
+}
+
+static inline struct coord coord_neg(struct coord a) {
+	return (struct coord){.x = -a.x, .y = -a.y};
+}
 
 #define MARGIN_INIT                                                                      \
 	{ 0, 0, 0, 0 }
