@@ -81,6 +81,38 @@ enum vblank_scheduler_type {
 	LAST_VBLANK_SCHEDULER,
 };
 
+enum animation_trigger {
+	ANIMATION_TRIGGER_INVALID = -1,
+	/// When a hidden window is shown
+	ANIMATION_TRIGGER_SHOW = 0,
+	/// When a window is hidden
+	ANIMATION_TRIGGER_HIDE,
+	/// When window opacity is increased
+	ANIMATION_TRIGGER_INCREASE_OPACITY,
+	/// When window opacity is decreased
+	ANIMATION_TRIGGER_DECREASE_OPACITY,
+	/// When a new window opens
+	ANIMATION_TRIGGER_OPEN,
+	/// When a window is closed
+	ANIMATION_TRIGGER_CLOSE,
+	ANIMATION_TRIGGER_LAST = ANIMATION_TRIGGER_CLOSE,
+};
+
+static const char *animation_trigger_names[] attr_unused = {
+    [ANIMATION_TRIGGER_SHOW] = "show",
+    [ANIMATION_TRIGGER_HIDE] = "hide",
+    [ANIMATION_TRIGGER_INCREASE_OPACITY] = "increase-opacity",
+    [ANIMATION_TRIGGER_DECREASE_OPACITY] = "decrease-opacity",
+    [ANIMATION_TRIGGER_OPEN] = "open",
+    [ANIMATION_TRIGGER_CLOSE] = "close",
+};
+
+struct script;
+struct win_script {
+	int output_indices[NUM_OF_WIN_SCRIPT_OUTPUTS];
+	struct script *script;
+};
+
 extern const char *vblank_scheduler_str[];
 
 /// Internal, private options for debugging and development use.
@@ -292,6 +324,11 @@ typedef struct options {
 	c2_lptr_t *transparent_clipping_blacklist;
 
 	bool dithered_present;
+	// === Animation ===
+	struct win_script animations[ANIMATION_TRIGGER_LAST + 1];
+	/// Array of all the scripts used in `animations`.
+	struct script **all_scripts;
+	int number_of_scripts;
 } options_t;
 
 extern const char *const BACKEND_STRS[NUM_BKEND + 1];

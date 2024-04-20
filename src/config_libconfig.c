@@ -15,8 +15,10 @@
 #include "config.h"
 #include "err.h"
 #include "log.h"
+#include "script.h"
 #include "string_utils.h"
 #include "utils.h"
+#include "win.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"
 
@@ -218,6 +220,140 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
 			mask->opacity = true;
 		}
 	}
+}
+
+static enum animation_trigger parse_animation_trigger(const char *trigger) {
+	for (int i = 0; i <= ANIMATION_TRIGGER_LAST; i++) {
+		if (strcasecmp(trigger, animation_trigger_names[i]) == 0) {
+			return i;
+		}
+	}
+	return ANIMATION_TRIGGER_INVALID;
+}
+
+static struct script *
+compile_win_script(config_setting_t *setting, int *output_indices, char **err) {
+	struct script_output_info outputs[ARR_SIZE(win_script_outputs)];
+	memcpy(outputs, win_script_outputs, sizeof(win_script_outputs));
+
+	struct script_parse_config parse_config = {
+	    .context_info = win_script_context_info,
+	    .output_info = outputs,
+	};
+	auto script = script_compile(setting, parse_config, err);
+	if (script == NULL) {
+		return script;
+	}
+	for (int i = 0; i < NUM_OF_WIN_SCRIPT_OUTPUTS; i++) {
+		output_indices[i] = outputs[i].slot;
+	}
+	return script;
+}
+
+static bool set_animation(struct win_script *animations,
+                          const enum animation_trigger *triggers, int number_of_triggers,
+                          struct script *script, const int *output_indices, unsigned line) {
+	bool needed = false;
+	for (int i = 0; i < number_of_triggers; i++) {
+		if (triggers[i] == ANIMATION_TRIGGER_INVALID) {
+			log_error("Invalid trigger defined at line %d", line);
+			continue;
+		}
+		if (animations[triggers[i]].script != NULL) {
+			log_error("Duplicate animation defined for trigger %s at line "
+			          "%d, it will be ignored.",
+			          animation_trigger_names[triggers[i]], line);
+			continue;
+		}
+		memcpy(animations[triggers[i]].output_indices, output_indices,
+		       sizeof(int[NUM_OF_WIN_SCRIPT_OUTPUTS]));
+		animations[triggers[i]].script = script;
+		needed = true;
+	}
+	return needed;
+}
+
+static struct script *
+parse_animation_one(struct win_script *animations, config_setting_t *setting) {
+	auto triggers = config_setting_lookup(setting, "triggers");
+	if (!triggers) {
+		log_error("Missing triggers in animation script, at line %d",
+		          config_setting_source_line(setting));
+		return NULL;
+	}
+	if (!config_setting_is_list(triggers) && !config_setting_is_array(triggers) &&
+	    config_setting_get_string(triggers) == NULL) {
+		log_error("The \"triggers\" option must either be a string, a list, or "
+		          "an array, but is none of those at line %d",
+		          config_setting_source_line(triggers));
+		return NULL;
+	}
+	auto number_of_triggers =
+	    config_setting_get_string(triggers) == NULL ? config_setting_length(triggers) : 1;
+	if (number_of_triggers > ANIMATION_TRIGGER_LAST) {
+		log_error("Too many triggers in animation defined at line %d",
+		          config_setting_source_line(triggers));
+		return NULL;
+	}
+	if (number_of_triggers == 0) {
+		log_error("Trigger list is empty in animation defined at line %d",
+		          config_setting_source_line(triggers));
+		return NULL;
+	}
+	enum animation_trigger *trigger_types =
+	    alloca(sizeof(enum animation_trigger[number_of_triggers]));
+	const char *trigger0 = config_setting_get_string(triggers);
+	if (trigger0 == NULL) {
+		for (int i = 0; i < number_of_triggers; i++) {
+			auto trigger_i = config_setting_get_string_elem(triggers, i);
+			trigger_types[i] = trigger_i == NULL
+			                       ? ANIMATION_TRIGGER_INVALID
+			                       : parse_animation_trigger(trigger_i);
+		}
+	} else {
+		trigger_types[0] = parse_animation_trigger(trigger0);
+	}
+
+	// script parser shouldn't see this.
+	config_setting_remove(setting, "triggers");
+
+	int output_indices[NUM_OF_WIN_SCRIPT_OUTPUTS];
+	char *err;
+	auto script = compile_win_script(setting, output_indices, &err);
+	if (!script) {
+		log_error("Failed to parse animation script at line %d: %s",
+		          config_setting_source_line(setting), err);
+		free(err);
+		return NULL;
+	}
+
+	bool needed = set_animation(animations, trigger_types, number_of_triggers, script,
+	                            output_indices, config_setting_source_line(setting));
+	if (!needed) {
+		script_free(script);
+		script = NULL;
+	}
+	return script;
+}
+
+static struct script **parse_animations(struct win_script *animations,
+                                        config_setting_t *setting, int *number_of_scripts) {
+	auto number_of_animations = config_setting_length(setting);
+	auto all_scripts = ccalloc(number_of_animations + 1, struct script *);
+	auto len = 0;
+	for (int i = 0; i < number_of_animations; i++) {
+		auto sub = config_setting_get_elem(setting, (unsigned)i);
+		auto script = parse_animation_one(animations, sub);
+		if (script != NULL) {
+			all_scripts[len++] = script;
+		}
+	}
+	if (len == 0) {
+		free(all_scripts);
+		all_scripts = NULL;
+	}
+	*number_of_scripts = len;
+	return all_scripts;
 }
 
 /**
@@ -606,6 +742,12 @@ char *parse_config_libconfig(options_t *opt, const char *config_file) {
 	// Compatibility with the old name for notification windows.
 	parse_wintype_config(&cfg, "notify", &opt->wintype_option[WINTYPE_NOTIFICATION],
 	                     &opt->wintype_option_mask[WINTYPE_NOTIFICATION]);
+
+	config_setting_t *animations = config_lookup(&cfg, "animations");
+	if (animations) {
+		opt->all_scripts =
+		    parse_animations(opt->animations, animations, &opt->number_of_scripts);
+	}
 
 	config_destroy(&cfg);
 	return path;
