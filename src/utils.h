@@ -37,6 +37,16 @@ safe_isnan(double a) {
 	return __builtin_isnan(a);
 }
 
+#ifdef __clang__
+__attribute__((optnone))
+#else
+__attribute__((optimize("-fno-fast-math")))
+#endif
+static inline bool
+safe_isinf(double a) {
+	return __builtin_isinf(a);
+}
+
 /// Same as assert(false), but make sure we abort _even in release builds_.
 /// Silence compiler warning caused by release builds making some code paths reachable.
 #define BUG()                                                                            \
