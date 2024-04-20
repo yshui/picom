@@ -65,3 +65,14 @@ enum win_flags {
 	/// need better name for this, is set when some aspects of the window changed
 	WIN_FLAGS_FACTOR_CHANGED = 1024,
 };
+
+enum win_script_output {
+	WIN_SCRIPT_OFFSET_X = 0,
+	WIN_SCRIPT_OFFSET_Y,
+	WIN_SCRIPT_SHADOW_OFFSET_X,
+	WIN_SCRIPT_SHADOW_OFFSET_Y,
+	WIN_SCRIPT_OPACITY,
+	WIN_SCRIPT_BLUR_OPACITY,
+	WIN_SCRIPT_SHADOW_OPACITY,
+};
+#define NUM_OF_WIN_SCRIPT_OUTPUTS (WIN_SCRIPT_SHADOW_OPACITY + 1)

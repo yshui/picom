@@ -16,6 +16,7 @@
 #include "list.h"
 #include "region.h"
 #include "render.h"
+#include "script.h"
 #include "transition.h"
 #include "types.h"
 #include "utils.h"
@@ -303,6 +304,32 @@ struct managed_win {
 
 	/// The damaged region of the window, in window local coordinates.
 	region_t damaged;
+};
+
+struct win_script_context {
+	double x, y, width, height;
+	double opacity_before, opacity;
+};
+
+static const struct script_context_info win_script_context_info[] = {
+    {"window-x", offsetof(struct win_script_context, x)},
+    {"window-y", offsetof(struct win_script_context, y)},
+    {"window-width", offsetof(struct win_script_context, width)},
+    {"window-height", offsetof(struct win_script_context, height)},
+    {"window-raw-opacity-before", offsetof(struct win_script_context, opacity_before)},
+    {"window-raw-opacity", offsetof(struct win_script_context, opacity)},
+    {NULL, 0}        //
+};
+
+static const struct script_output_info win_script_outputs[] = {
+    [WIN_SCRIPT_OFFSET_X] = {"offset-x"},
+    [WIN_SCRIPT_OFFSET_Y] = {"offset-y"},
+    [WIN_SCRIPT_SHADOW_OFFSET_X] = {"shadow-offset-x"},
+    [WIN_SCRIPT_SHADOW_OFFSET_Y] = {"shadow-offset-y"},
+    [WIN_SCRIPT_OPACITY] = {"opacity"},
+    [WIN_SCRIPT_BLUR_OPACITY] = {"blur-opacity"},
+    [WIN_SCRIPT_SHADOW_OPACITY] = {"shadow-opacity"},
+    [NUM_OF_WIN_SCRIPT_OUTPUTS] = {NULL},
 };
 
 /// Process pending updates/images flags on a window. Has to be called in X critical

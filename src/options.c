@@ -930,6 +930,13 @@ void options_destroy(struct options *options) {
 	}
 	free(options->blur_kerns);
 	free(options->glx_fshader_win_str);
+
+	for (int i = 0; i < options->number_of_scripts; i++) {
+		script_free(options->all_scripts[i]);
+		options->all_scripts[i] = NULL;
+	}
+	free(options->all_scripts);
+	memset(options->animations, 0, sizeof(options->animations));
 }
 
 // vim: set noet sw=8 ts=8 :
