@@ -6,6 +6,7 @@
 #include <stddef.h>
 
 #include "compiler.h"
+#include "string_utils.h"
 #include "transition.h"
 #include "utils.h"
 
@@ -146,12 +147,12 @@ static void trivial_free(const struct curve *this) {
 	free((void *)this);
 }
 
+static const struct curve static_linear_curve = {
+    .sample = curve_sample_linear,
+    .free = noop_free,
+};
 const struct curve *curve_new_linear(void) {
-	static const struct curve ret = {
-	    .sample = curve_sample_linear,
-	    .free = noop_free,
-	};
-	return &ret;
+	return &static_linear_curve;
 }
 
 /// Cubic bezier interpolator.
@@ -276,4 +277,102 @@ const struct curve *curve_new_step(int steps, bool jump_start, bool jump_end) {
 	ret->jump_start = jump_start;
 	ret->jump_end = jump_end;
 	return &ret->base;
+}
+
+const struct curve *parse_linear(const char *str, const char **end, char **err) {
+	*end = str;
+	*err = NULL;
+	return &static_linear_curve;
+}
+
+const struct curve *parse_steps(const char *input_str, const char **out_end, char **err) {
+	const char *str = input_str;
+	*err = NULL;
+	if (*str != '(') {
+		asprintf(err, "Invalid steps %s.", str);
+		return NULL;
+	}
+	str += 1;
+	str = skip_space(str);
+	char *end;
+	auto steps = strtol(str, &end, 10);
+	if (end == str || steps > INT_MAX) {
+		asprintf(err, "Invalid step count at \"%s\".", str);
+		return NULL;
+	}
+	str = skip_space(end);
+	if (*str != ',') {
+		asprintf(err, "Invalid steps argument list \"%s\".", input_str);
+		return NULL;
+	}
+	str = skip_space(str + 1);
+	bool jump_start =
+	    starts_with(str, "jump-start", true) || starts_with(str, "jump-both", true);
+	bool jump_end =
+	    starts_with(str, "jump-end", true) || starts_with(str, "jump-both", true);
+	if (!jump_start && !jump_end && !starts_with(str, "jump-none", true)) {
+		asprintf(err, "Invalid jump setting for steps \"%s\".", str);
+		return NULL;
+	}
+	str += jump_start ? (jump_end ? 9 : 10) : (jump_end ? 8 : 9);
+	str = skip_space(str);
+	if (*str != ')') {
+		asprintf(err, "Invalid steps argument list \"%s\".", input_str);
+		return NULL;
+	}
+	*out_end = str + 1;
+	return curve_new_step((int)steps, jump_start, jump_end);
+}
+
+const struct curve *
+parse_cubic_bezier(const char *input_str, const char **out_end, char **err) {
+	double numbers[4];
+	const char *str = input_str;
+	if (*str != '(') {
+		asprintf(err, "Invalid cubic-bazier %s.", str);
+		return NULL;
+	}
+	str += 1;
+	for (int i = 0; i < 4; i++) {
+		str = skip_space(str);
+
+		const char *end = NULL;
+		numbers[i] = strtod_simple(str, &end);
+		if (end == str) {
+			asprintf(err, "Invalid number %s.", str);
+			return NULL;
+		}
+		str = skip_space(end);
+		const char expected = i == 3 ? ')' : ',';
+		if (*str != expected) {
+			asprintf(err, "Invalid cubic-bazier argument list %s.", input_str);
+			return NULL;
+		}
+		str += 1;
+	}
+	*out_end = str;
+	return curve_new_cubic_bezier(numbers[0], numbers[1], numbers[2], numbers[3]);
+}
+
+typedef const struct curve *(*curve_parser)(const char *str, const char **end, char **err);
+
+static const struct {
+	curve_parser parse;
+	const char *name;
+} curve_parsers[] = {
+    {parse_cubic_bezier, "cubic-bezier"},
+    {parse_linear, "linear"},
+    {parse_steps, "steps"},
+};
+
+const struct curve *curve_parse(const char *str, const char **end, char **err) {
+	str = skip_space(str);
+	for (size_t i = 0; i < ARR_SIZE(curve_parsers); i++) {
+		auto name_len = strlen(curve_parsers[i].name);
+		if (strncasecmp(str, curve_parsers[i].name, name_len) == 0) {
+			return curve_parsers[i].parse(str + name_len, end, err);
+		}
+	}
+	asprintf(err, "Unknown curve type \"%s\".", str);
+	return NULL;
 }

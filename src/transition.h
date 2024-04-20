@@ -105,3 +105,4 @@ struct animatable animatable_new(double value);
 const struct curve *curve_new_linear(void);
 const struct curve *curve_new_cubic_bezier(double x1, double y1, double x2, double y2);
 const struct curve *curve_new_step(int steps, bool jump_start, bool jump_end);
+const struct curve *curve_parse(const char *str, const char **end, char **err);
