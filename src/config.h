@@ -403,4 +403,7 @@ static inline bool parse_vsync(const char *str) {
 	return true;
 }
 
+/// Generate animation script for legacy fading options
+void generate_fading_config(struct options *opt);
+
 // vim: set noet sw=8 ts=8 :
