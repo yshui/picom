@@ -43,7 +43,7 @@ struct layout_manager {
 static bool
 layer_from_window(struct layer *out_layer, struct managed_win *w, struct geometry size) {
 	bool to_paint = false;
-	if (!w->ever_damaged) {
+	if (!w->ever_damaged || w->paint_excluded) {
 		goto out;
 	}
 
