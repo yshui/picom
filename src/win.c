@@ -1350,6 +1350,10 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	win_update_opacity_target(ps, w);
 
 	w->reg_ignore_valid = false;
+	if (ps->debug_window != XCB_NONE &&
+	    (w->base.id == ps->debug_window || w->client_win == ps->debug_window)) {
+		w->paint_excluded = true;
+	}
 }
 
 /**
