@@ -17,9 +17,7 @@
 
 #include "uthash_extra.h"
 
-#ifdef CONFIG_LIBCONFIG
 #include <libconfig.h>
-#endif
 
 #include "compiler.h"
 #include "kernel.h"
@@ -311,7 +309,6 @@ void parse_debug_options(struct debug_options *);
  */
 bool condlst_add(c2_lptr_t **, const char *);
 
-#ifdef CONFIG_LIBCONFIG
 const char *xdg_config_home(void);
 char **xdg_config_dirs(void);
 
@@ -326,7 +323,6 @@ char **xdg_config_dirs(void);
 char *
 parse_config_libconfig(options_t *, const char *config_file, bool *shadow_enable,
                        bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
-#endif
 
 void set_default_winopts(options_t *, win_option_mask_t *, bool shadow_enable,
                          bool fading_enable, bool blur_enable);

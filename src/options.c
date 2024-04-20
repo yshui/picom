@@ -34,9 +34,7 @@ struct picom_option {
 // clang-format off
 static const struct option *longopts = NULL;
 static const struct picom_option picom_options[] = {
-#ifdef CONFIG_LIBCONFIG
     {"config"                      , required_argument, 256, NULL          , "Path to the configuration file."},
-#endif
     {"help"                        , no_argument      , 'h', NULL          , "Print this help message and exit."},
     {"shadow-radius"               , required_argument, 'r', NULL          , "The blur radius for shadows. (default 12)"},
     {"shadow-opacity"              , required_argument, 'o', NULL          , "The translucency for shadows. (default .75)"},

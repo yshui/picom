@@ -39,8 +39,8 @@ Assuming you already have all the usual building tools installed (e.g. gcc, pyth
 * xcb-present
 * xcb-glx
 * pixman
+* libconfig
 * libdbus (optional, disable with the `-Ddbus=false` meson configure flag)
-* libconfig (optional, disable with the `-Dconfig_file=false` meson configure flag)
 * libGL, libEGL, libepoxy (optional, disable with the `-Dopengl=false` meson configure flag)
 * libpcre2 (optional, disable with the `-Dregex=false` meson configure flag)
 * libev

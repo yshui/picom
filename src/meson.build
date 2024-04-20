@@ -11,7 +11,7 @@ srcs = [ files('picom.c', 'win.c', 'c2.c', 'x.c', 'config.c', 'vsync.c', 'utils.
                'diagnostic.c', 'string_utils.c', 'render.c', 'kernel.c', 'log.c',
                'options.c', 'event.c', 'cache.c', 'atom.c', 'file_watch.c', 'statistics.c',
                'vblank.c', 'transition.c', 'wm.c', 'renderer/layout.c', 'renderer/command_builder.c',
-               'renderer/renderer.c', 'renderer/damage.c') ]
+               'renderer/renderer.c', 'renderer/damage.c', 'config_libconfig.c', 'inspect.c') ]
 picom_inc = include_directories('.')
 
 cflags = []
@@ -34,6 +34,7 @@ endforeach
 foreach i : required_xcb_packages
 	base_deps += [dependency(i, version: '>=1.12.0', required: true)]
 endforeach
+base_deps += [dependency('libconfig', version: '>=1.4', required: true)]
 
 if not cc.has_header('uthash.h')
   error('Dependency uthash not found')
@@ -41,12 +42,6 @@ endif
 
 deps = []
 
-if get_option('config_file')
-	deps += [dependency('libconfig', version: '>=1.4', required: true)]
-
-	cflags += ['-DCONFIG_LIBCONFIG']
-	srcs += [ 'config_libconfig.c', 'inspect.c' ]
-endif
 if get_option('regex')
 	pcre = dependency('libpcre2-8', required: true)
 	cflags += ['-DCONFIG_REGEX_PCRE']
@@ -97,9 +92,7 @@ if get_option('unittest')
 	test('picom unittest', picom, args: [ '--unittest' ])
 endif
 
-if get_option('config_file')
-	install_symlink('picom-inspect', install_dir: 'bin', pointing_to: 'picom')
-endif
+install_symlink('picom-inspect', install_dir: 'bin', pointing_to: 'picom')
 
 if cc.has_argument('-fsanitize=fuzzer')
   c2_fuzz = executable('c2_fuzz', srcs + ['fuzzer/c2.c'],

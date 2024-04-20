@@ -40,6 +40,7 @@
 
 * picom now uses some OpenGL 4.3 features.
 * picom now optionally depends on `rtkit` at runtime to give itself realtime scheduling priority.
+* `libconfig` is now a mandatory dependency.
 
 # v11.2 (2024-Feb-13)
 
