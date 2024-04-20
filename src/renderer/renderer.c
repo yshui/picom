@@ -4,6 +4,7 @@
 #include "renderer.h"
 
 #include <inttypes.h>
+#include <xcb/xcb_aux.h>
 
 #include "../picom.h"
 #include "backend/backend.h"
@@ -424,11 +425,17 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 bool renderer_render(struct renderer *r, struct backend_base *backend,
                      image_handle root_image, struct layout_manager *lm,
                      struct command_builder *cb, void *blur_context,
-                     uint64_t render_start_us, bool use_damage attr_unused,
+                     uint64_t render_start_us, xcb_sync_fence_t xsync_fence, bool use_damage,
                      bool monitor_repaint, bool force_blend, bool blur_frame,
                      bool inactive_dim_fixed, double max_brightness, double inactive_dim,
                      const region_t *shadow_exclude, const struct x_monitors *monitors,
                      const struct win_option *wintype_options, uint64_t *after_damage_us) {
+	if (xsync_fence != XCB_NONE) {
+		// Trigger the fence but don't immediately wait on it. Let it run
+		// concurrent with our CPU tasks to save time.
+		set_cant_fail_cookie(backend->c,
+		                     xcb_sync_trigger_fence(backend->c->c, xsync_fence));
+	}
 	// TODO(yshui) In some cases we can render directly into the back buffer, and
 	// don't need the intermediate back_image. Several conditions need to be met: no
 	// dithered present; no blur, with blur we will render areas that's just for blur
@@ -510,6 +517,16 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	if (!renderer_prepare_commands(r, backend, blur_context, root_image, layout)) {
 		log_error("Failed to prepare render commands");
 		return false;
+	}
+
+	if (xsync_fence != XCB_NONE) {
+		set_cant_fail_cookie(
+		    backend->c, xcb_sync_await_fence(backend->c->c, 1, &xsync_fence));
+		// Making sure the wait is completed by receiving a response from the X
+		// server
+		xcb_aux_sync(backend->c->c);
+		set_cant_fail_cookie(backend->c,
+		                     xcb_sync_reset_fence(backend->c->c, xsync_fence));
 	}
 
 	if (backend->ops->prepare) {

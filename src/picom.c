@@ -1850,8 +1850,9 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			    (struct geometry){.width = ps->root_width,
 			                      .height = ps->root_height});
 			bool succeeded = renderer_render(
-			    ps->renderer, ps->backend_data, ps->root_image, ps->layout_manager,
-			    ps->command_builder, ps->backend_blur_context, render_start_us,
+			    ps->renderer, ps->backend_data, ps->root_image,
+			    ps->layout_manager, ps->command_builder,
+			    ps->backend_blur_context, render_start_us, ps->sync_fence,
 			    ps->o.use_damage, ps->o.monitor_repaint, ps->o.force_win_blend,
 			    ps->o.blur_background_frame, ps->o.inactive_dim_fixed,
 			    ps->o.max_brightness, ps->o.inactive_dim, &ps->shadow_exclude_reg,

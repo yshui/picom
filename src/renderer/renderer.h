@@ -3,6 +3,7 @@
 
 #pragma once
 #include <stdbool.h>
+#include <xcb/sync.h>
 #include "types.h"
 
 struct renderer;
@@ -18,9 +19,10 @@ typedef struct pixman_region32 region_t;
 void renderer_free(struct backend_base *backend, struct renderer *r);
 struct renderer *renderer_new(struct backend_base *backend, double shadow_radius,
                               struct color shadow_color, bool dithered_present);
-bool renderer_render(struct renderer *r, struct backend_base *backend, image_handle root_image,
-                     struct layout_manager *lm, struct command_builder *cb,
-                     void *blur_context, uint64_t render_start_us, bool use_damage,
+bool renderer_render(struct renderer *r, struct backend_base *backend,
+                     image_handle root_image, struct layout_manager *lm,
+                     struct command_builder *cb, void *blur_context,
+                     uint64_t render_start_us, xcb_sync_fence_t xsync_fence, bool use_damage,
                      bool monitor_repaint, bool force_blend, bool blur_frame,
                      bool inactive_dim_fixed, double max_brightness, double inactive_dim,
                      const region_t *shadow_exclude, const struct x_monitors *monitors,
