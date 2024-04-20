@@ -883,6 +883,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv) {
 	check_end:;
 	}
 
+	generate_fading_config(opt);
 	return true;
 }
 

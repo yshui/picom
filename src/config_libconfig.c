@@ -356,6 +356,127 @@ static struct script **parse_animations(struct win_script *animations,
 	return all_scripts;
 }
 
+#define FADING_TEMPLATE_1                                                                \
+	"opacity = { "                                                                   \
+	"  timing = \"%fms linear\"; "                                                   \
+	"  start = \"window-raw-opacity-before\"; "                                      \
+	"  end = \"window-raw-opacity\"; "                                               \
+	"};"                                                                             \
+	"shadow-opacity = \"opacity\";"
+#define FADING_TEMPLATE_2                                                                \
+	"blur-opacity = { "                                                              \
+	"  timing = \"%fms linear\"; "                                                   \
+	"  start = %f; end = %f; "                                                       \
+	"};"
+
+static struct script *compile_win_script_from_string(const char *input, int *output_indices) {
+	config_t tmp_config;
+	config_setting_t *setting;
+	config_init(&tmp_config);
+	config_read_string(&tmp_config, input);
+	setting = config_root_setting(&tmp_config);
+
+	// Since we are compiling scripts we generated, it can't fail.
+	char *err = NULL;
+	auto script = compile_win_script(setting, output_indices, &err);
+	config_destroy(&tmp_config);
+	BUG_ON(err != NULL);
+
+	return script;
+}
+
+void generate_fading_config(struct options *opt) {
+	// We create stand-in animations for fade-in/fade-out if they haven't be
+	// overwritten
+	char *str = NULL;
+	size_t len = 0;
+	enum animation_trigger trigger[2];
+	struct script *scripts[4];
+	int number_of_scripts = 0;
+	int number_of_triggers = 0;
+
+	int output_indices[NUM_OF_WIN_SCRIPT_OUTPUTS];
+	double duration = 1.0 / opt->fade_in_step * opt->fade_delta;
+	// Fading in from nothing, i.e. `open` and `show`
+	asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration, duration,
+	          0.F, 1.F);
+
+	auto fade_in1 = compile_win_script_from_string(str, output_indices);
+	if (opt->animations[ANIMATION_TRIGGER_OPEN].script == NULL && !opt->no_fading_openclose) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_OPEN;
+	}
+	if (opt->animations[ANIMATION_TRIGGER_SHOW].script == NULL) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_SHOW;
+	}
+	if (set_animation(opt->animations, trigger, number_of_triggers, fade_in1,
+	                  output_indices, 0)) {
+		scripts[number_of_scripts++] = fade_in1;
+	} else {
+		script_free(fade_in1);
+	}
+
+	// Fading for opacity change, for these, the blur opacity doesn't change.
+	asnprintf(&str, &len, FADING_TEMPLATE_1, duration);
+	auto fade_in2 = compile_win_script_from_string(str, output_indices);
+	number_of_triggers = 0;
+	if (opt->animations[ANIMATION_TRIGGER_INCREASE_OPACITY].script == NULL) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_INCREASE_OPACITY;
+	}
+	if (set_animation(opt->animations, trigger, number_of_triggers, fade_in2,
+	                  output_indices, 0)) {
+		scripts[number_of_scripts++] = fade_in2;
+	} else {
+		script_free(fade_in2);
+	}
+
+	duration = 1.0 / opt->fade_out_step * opt->fade_delta;
+	// Fading out to nothing, i.e. `hide` and `close`
+	asnprintf(&str, &len, FADING_TEMPLATE_1 FADING_TEMPLATE_2, duration, duration,
+	          1.F, 0.F);
+	auto fade_out1 = compile_win_script_from_string(str, output_indices);
+	number_of_triggers = 0;
+	if (opt->animations[ANIMATION_TRIGGER_CLOSE].script == NULL &&
+	    !opt->no_fading_openclose) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_CLOSE;
+	}
+	if (opt->animations[ANIMATION_TRIGGER_HIDE].script == NULL) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_HIDE;
+	}
+	if (set_animation(opt->animations, trigger, number_of_triggers, fade_out1,
+	                  output_indices, 0)) {
+		scripts[number_of_scripts++] = fade_out1;
+	} else {
+		script_free(fade_out1);
+	}
+
+	// Fading for opacity change
+	asnprintf(&str, &len, FADING_TEMPLATE_1, duration);
+	auto fade_out2 = compile_win_script_from_string(str, output_indices);
+	number_of_triggers = 0;
+	if (opt->animations[ANIMATION_TRIGGER_DECREASE_OPACITY].script == NULL) {
+		trigger[number_of_triggers++] = ANIMATION_TRIGGER_DECREASE_OPACITY;
+	}
+	if (set_animation(opt->animations, trigger, number_of_triggers, fade_out2,
+	                  output_indices, 0)) {
+		scripts[number_of_scripts++] = fade_out2;
+	} else {
+		script_free(fade_out2);
+	}
+	free(str);
+
+	log_debug("Generated %d scripts for fading.", number_of_scripts);
+	if (number_of_scripts) {
+		auto ptr = realloc(
+		    opt->all_scripts,
+		    sizeof(struct scripts * [number_of_scripts + opt->number_of_scripts]));
+		allocchk(ptr);
+		opt->all_scripts = ptr;
+		memcpy(&opt->all_scripts[opt->number_of_scripts], scripts,
+		       sizeof(struct script *[number_of_scripts]));
+		opt->number_of_scripts += number_of_scripts;
+	}
+}
+
 /**
  * Parse a configuration file from default location.
  *
