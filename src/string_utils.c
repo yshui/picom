@@ -85,6 +85,8 @@ TEST_CASE(mstrextend) {
 /// Parse a floating point number of form (+|-)?[0-9]*(\.[0-9]*)
 double strtod_simple(const char *src, const char **end) {
 	double neg = 1;
+	bool succeeded = false;
+	*end = src;
 	if (*src == '-') {
 		neg = -1;
 		src++;
@@ -95,6 +97,7 @@ double strtod_simple(const char *src, const char **end) {
 	double ret = 0;
 	while (*src >= '0' && *src <= '9') {
 		ret = ret * 10 + (*src - '0');
+		succeeded = true;
 		src++;
 	}
 
@@ -104,13 +107,17 @@ double strtod_simple(const char *src, const char **end) {
 		while (*src >= '0' && *src <= '9') {
 			frac += mult * (*src - '0');
 			mult *= 0.1;
+			succeeded = true;
 			src++;
 		}
 		ret += frac;
 	}
 
-	*end = src;
-	return ret * neg;
+	if (succeeded) {
+		*end = src;
+		return ret * neg;
+	}
+	return NAN;
 }
 
 TEST_CASE(strtod_simple) {
@@ -126,6 +133,10 @@ TEST_CASE(strtod_simple) {
 	result = strtod_simple("+.5", &end);
 	TEST_EQUAL(result, 0.5);
 	TEST_EQUAL(*end, '\0');
+
+	result = strtod_simple("+.", &end);
+	TEST_TRUE(safe_isnan(result));
+	TEST_EQUAL(*end, '+');
 }
 
 const char *trim_both(const char *src, size_t *length) {
