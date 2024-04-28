@@ -26,9 +26,6 @@ struct layout_manager {
 	unsigned current;
 	/// Mapping from window to its index in the current layout.
 	struct layer_index *layer_indices;
-	/// Output render plan.
-	struct render_plan *plan;
-	unsigned plan_capacity;
 	struct list_node free_indices;
 
 	// internal
@@ -110,8 +107,6 @@ struct layout_manager *layout_manager_new(unsigned max_buffer_age) {
 	planner->max_buffer_age = max_buffer_age + 1;
 	planner->current = 0;
 	planner->layer_indices = NULL;
-	planner->plan_capacity = 0;
-	planner->plan = NULL;
 	list_init_head(&planner->free_indices);
 	pixman_region32_init(&planner->scratch_region);
 	for (unsigned i = 0; i <= max_buffer_age; i++) {
@@ -133,11 +128,7 @@ void layout_manager_free(struct layout_manager *lm) {
 		list_remove(&i->free_list);
 		free(i);
 	}
-	for (unsigned i = 0; i < lm->plan_capacity; i++) {
-		pixman_region32_fini(&lm->plan[i].render);
-	}
 	pixman_region32_fini(&lm->scratch_region);
-	free(lm->plan);
 	free(lm);
 }
 

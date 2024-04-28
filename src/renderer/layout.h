@@ -88,11 +88,6 @@ struct layout {
 	struct backend_command *commands;
 };
 
-struct render_plan {
-	region_t render;
-	const struct layer *layer;
-};
-
 struct wm;
 struct layout_manager;
 
