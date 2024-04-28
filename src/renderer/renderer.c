@@ -421,6 +421,32 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 	return true;
 }
 
+void renderer_ensure_monitor_repaint_ready(struct renderer *r, struct backend_base *backend) {
+	if (!r->monitor_repaint_pixel) {
+		r->monitor_repaint_pixel = backend->ops->v2.new_image(
+		    backend, BACKEND_IMAGE_FORMAT_PIXMAP, (struct geometry){1, 1});
+		BUG_ON(!r->monitor_repaint_pixel);
+		backend->ops->v2.clear(backend, r->monitor_repaint_pixel,
+		                       (struct color){.alpha = 0.5, .red = 0.5});
+	}
+	if (!r->monitor_repaint_copy) {
+		r->monitor_repaint_copy = ccalloc(r->max_buffer_age, image_handle);
+		for (int i = 0; i < r->max_buffer_age; i++) {
+			r->monitor_repaint_copy[i] = backend->ops->v2.new_image(
+			    backend, BACKEND_IMAGE_FORMAT_PIXMAP,
+			    (struct geometry){.width = r->canvas_size.width,
+			                      .height = r->canvas_size.height});
+			BUG_ON(!r->monitor_repaint_copy[i]);
+		}
+	}
+	if (!r->monitor_repaint_region) {
+		r->monitor_repaint_region = ccalloc(r->max_buffer_age, region_t);
+		for (int i = 0; i < r->max_buffer_age; i++) {
+			pixman_region32_init(&r->monitor_repaint_region[i]);
+		}
+	}
+}
+
 /// @return true if a frame is rendered, false if this frame is skipped.
 bool renderer_render(struct renderer *r, struct backend_base *backend,
                      image_handle root_image, struct layout_manager *lm,
@@ -448,29 +474,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	}
 
 	if (monitor_repaint) {
-		if (!r->monitor_repaint_pixel) {
-			r->monitor_repaint_pixel = backend->ops->v2.new_image(
-			    backend, BACKEND_IMAGE_FORMAT_PIXMAP, (struct geometry){1, 1});
-			BUG_ON(!r->monitor_repaint_pixel);
-			backend->ops->v2.clear(backend, r->monitor_repaint_pixel,
-			                       (struct color){.alpha = 0.5, .red = 0.5});
-		}
-		if (!r->monitor_repaint_copy) {
-			r->monitor_repaint_copy = ccalloc(r->max_buffer_age, image_handle);
-			for (int i = 0; i < r->max_buffer_age; i++) {
-				r->monitor_repaint_copy[i] = backend->ops->v2.new_image(
-				    backend, BACKEND_IMAGE_FORMAT_PIXMAP,
-				    (struct geometry){.width = r->canvas_size.width,
-				                      .height = r->canvas_size.height});
-				BUG_ON(!r->monitor_repaint_copy[i]);
-			}
-		}
-		if (!r->monitor_repaint_region) {
-			r->monitor_repaint_region = ccalloc(r->max_buffer_age, region_t);
-			for (int i = 0; i < r->max_buffer_age; i++) {
-				pixman_region32_init(&r->monitor_repaint_region[i]);
-			}
-		}
+		renderer_ensure_monitor_repaint_ready(r, backend);
 	}
 
 	command_builder_build(cb, layout, force_blend, blur_frame, inactive_dim_fixed,
