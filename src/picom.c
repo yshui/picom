@@ -1189,12 +1189,12 @@ void root_damaged(session_t *ps) {
 
 			ps->root_image = ps->backend_data->ops->v2.bind_pixmap(
 			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual));
+			ps->root_image_generation += 1;
 			if (!ps->root_image) {
 			err:
 				log_error("Failed to bind root back pixmap");
 			}
 		}
-		ps->root_damaged = true;
 	}
 
 	// Mark screen damaged
@@ -1846,7 +1846,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			auto render_start_us =
 			    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
 			layout_manager_append_layout(
-			    ps->layout_manager, ps->wm,
+			    ps->layout_manager, ps->wm, ps->root_image_generation,
 			    (struct geometry){.width = ps->root_width,
 			                      .height = ps->root_height});
 			bool succeeded = renderer_render(

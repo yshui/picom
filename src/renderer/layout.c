@@ -143,11 +143,13 @@ void layout_manager_free(struct layout_manager *lm) {
 //   above.
 
 void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
-                                  struct geometry size) {
+                                  uint64_t root_pixmap_generation, struct geometry size) {
 	auto prev_layout = &lm->layouts[lm->current];
 	lm->current = (lm->current + 1) % lm->max_buffer_age;
 	auto layout = &lm->layouts[lm->current];
 	command_builder_command_list_free(layout->commands);
+	layout->root_image_generation = root_pixmap_generation;
+
 	unsigned nlayers = wm_stack_num_managed_windows(wm);
 	if (nlayers > layout->capacity) {
 		struct layer *new_layers =

@@ -71,6 +71,8 @@ struct layer {
 /// Layout of windows at a specific frame
 struct layout {
 	struct geometry size;
+	/// The root image generation, see `struct session::root_image_generation`
+	uint64_t root_image_generation;
 	/// Number of layers in `layers`
 	unsigned len;
 	/// Capacity of `layers`
@@ -96,7 +98,7 @@ struct layout_manager;
 /// layouts, with its size chosen at creation time. Calling this will push at new layout
 /// at the end of the ring buffer, and remove the oldest layout if the buffer is full.
 void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
-                                  struct geometry size);
+                                  uint64_t root_image_generation, struct geometry size);
 /// Get the layout `age` frames into the past. Age `0` is the most recently appended
 /// layout.
 struct layout *layout_manager_layout(struct layout_manager *lm, unsigned age);

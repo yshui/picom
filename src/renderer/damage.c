@@ -147,9 +147,8 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 	pixman_region32_init(&scratch_region);
 	pixman_region32_clear(damage);
 	if (past_layout->size.width != curr_layout->size.width ||
-	    past_layout->size.height != curr_layout->size.height) {
-		// We might be able to do better for blur size change, but currently we
-		// don't even support changing that.
+	    past_layout->size.height != curr_layout->size.height ||
+	    past_layout->root_image_generation != curr_layout->root_image_generation) {
 		pixman_region32_union_rect(damage, damage, 0, 0,
 		                           (unsigned)curr_layout->size.width,
 		                           (unsigned)curr_layout->size.height);

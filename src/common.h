@@ -199,6 +199,9 @@ typedef struct session {
 	paint_t root_tile_paint;
 	/// The backend data the root pixmap bound to
 	image_handle root_image;
+	/// The root pixmap generation, incremented everytime
+	/// the root pixmap changes
+	uint64_t root_image_generation;
 	/// A region of the size of the screen.
 	region_t screen_reg;
 	/// Picture of root window. Destination of painting in no-DBE painting
@@ -271,8 +274,6 @@ typedef struct session {
 	/// Render command builder
 	struct command_builder *command_builder;
 	struct renderer *renderer;
-	/// Whether the root image has been changed since last render
-	bool root_damaged;
 	/// Whether all windows are currently redirected.
 	bool redirected;
 	/// Pre-generated alpha pictures.
