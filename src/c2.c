@@ -416,9 +416,6 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
 }
 
 TEST_CASE(c2_parse) {
-	log_init_tls();
-	// log_add_target_tls(stderr_logger_new());
-
 	char str[1024];
 	c2_lptr_t *cond = c2_parse(NULL, "name = \"xterm\"", NULL);
 	struct atom *atoms = init_mock_atoms();

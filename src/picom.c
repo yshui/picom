@@ -2888,3 +2888,11 @@ int PICOM_MAIN(int argc, char **argv) {
 
 	return ret_code;
 }
+
+#ifdef UNIT_TEST
+static void unittest_setup(void) {
+	log_init_tls();
+	// log_add_target_tls(stderr_logger_new());
+}
+void (*test_h_unittest_setup)(void) = unittest_setup;
+#endif
