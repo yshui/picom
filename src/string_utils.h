@@ -57,4 +57,8 @@ static inline char *skip_space_mut(char *src) {
 }
 
 #define skip_space(x)                                                                    \
-	_Generic((x), char * : skip_space_mut, const char * : skip_space_const)(x)
+	_Generic((x), char *: skip_space_mut, const char *: skip_space_const)(x)
+
+/// Similar to `asprintf`, but it reuses the allocated memory pointed to by `*strp`, and
+/// reallocates it if it's not big enough.
+int asnprintf(char **strp, size_t *capacity, const char *fmt, ...);
