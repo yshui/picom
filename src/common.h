@@ -70,9 +70,6 @@
 #define US_PER_SEC 1000000L
 #define MS_PER_SEC 1000
 
-/// @brief Maximum OpenGL FBConfig depth.
-#define OPENGL_MAX_DEPTH 32
-
 /// @brief Maximum OpenGL buffer age.
 #define CGLX_MAX_BUFFER_AGE 5
 

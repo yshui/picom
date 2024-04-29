@@ -371,12 +371,6 @@ static image_handle
 glx_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fmt) {
 	GLXPixmap *glxpixmap = NULL;
 	auto gd = (struct _glx_data *)base;
-	// Retrieve pixmap parameters, if they aren't provided
-	if (fmt.visual_depth > OPENGL_MAX_DEPTH) {
-		log_error("Requested depth %d higher than max possible depth %d.",
-		          fmt.visual_depth, OPENGL_MAX_DEPTH);
-		return NULL;
-	}
 
 	if (fmt.visual_depth < 0) {
 		log_error("Pixmap %#010x with invalid depth %d", pixmap, fmt.visual_depth);
