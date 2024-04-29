@@ -2,7 +2,9 @@
 // Copyright (c) Yuxuan Shui <yshuiv7@gmail.com>
 #pragma once
 #include <ctype.h>
+#include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "compiler.h"
 
@@ -58,6 +60,13 @@ static inline char *skip_space_mut(char *src) {
 
 #define skip_space(x)                                                                    \
 	_Generic((x), char *: skip_space_mut, const char *: skip_space_const)(x)
+
+static inline bool starts_with(const char *str, const char *needle, bool ignore_case) {
+	if (ignore_case) {
+		return strncasecmp(str, needle, strlen(needle));
+	}
+	return strncmp(str, needle, strlen(needle));
+}
 
 /// Similar to `asprintf`, but it reuses the allocated memory pointed to by `*strp`, and
 /// reallocates it if it's not big enough.
