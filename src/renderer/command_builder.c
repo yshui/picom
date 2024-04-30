@@ -409,6 +409,7 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 		cmd -= command_for_blur(layer, cmd, &frame_region, force_blend, blur_frame);
 
 		layer->number_of_commands = (unsigned)(last - cmd);
+		pixman_region32_fini(&frame_region);
 	}
 
 	// Command for the desktop background
