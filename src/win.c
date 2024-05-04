@@ -2350,6 +2350,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 
 	w->state = WSTATE_MAPPED;
 	win_start_fade(ps, w, 1);
+	win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
 
 	log_debug("Window %#010x has opacity %f, opacity target is %f", w->base.id,
 	          animatable_get(&w->opacity), w->opacity.target);

@@ -677,10 +677,6 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 			free(e);
 		}
 		win_extents(w, &parts);
-
-		// We only binds the window pixmap once the window is damaged.
-		win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
-		ps->pending_updates = true;
 	} else {
 		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE,
 		                                  ps->damage_ring.x_region);
