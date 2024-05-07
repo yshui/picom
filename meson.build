@@ -59,6 +59,14 @@ if get_option('warning_level') != '0'
             'sign-compare', 'type-limits', 'uninitialized', 'shift-negative-value',
             'unused-but-set-parameter', 'unused-parameter', 'implicit-fallthrough=2',
             'no-unknown-warning-option', 'no-missing-braces', 'conversion', 'empty-body' ]
+  bad_warns_ubsan = [
+    'no-format-overflow' # see gcc bug 87884, enabling UBSAN makes gcc spit out spurious warnings
+                         # (if you saw this comment, went and checked gcc bugzilla, and found out
+                         # bug has been fixed, please open a PR to remove this).
+  ]
+  if get_option('b_sanitize').contains('undefined') and cc.get_id() == 'gcc'
+    warns = warns + bad_warns_ubsan
+  endif
   foreach w : warns
           if cc.has_argument('-W'+w)
                   add_global_arguments('-W'+w, language: 'c')

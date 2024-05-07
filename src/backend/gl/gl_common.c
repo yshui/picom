@@ -803,7 +803,7 @@ static inline void gl_init_uniform_bitmask(struct gl_shader *shader) {
 		glGetActiveUniformName(shader->prog, (GLuint)i, sizeof(name), NULL, name);
 		GLint loc = glGetUniformLocation(shader->prog, name);
 		assert(loc >= 0 && loc <= UNIFORM_TEXSIZE_LOC);
-		shader->uniform_bitmask |= 1 << loc;
+		shader->uniform_bitmask |= 1U << loc;
 	}
 }
 

@@ -290,6 +290,7 @@ static bool gl_blur_context_preallocate_textures(struct gl_blur_context *bctx,
 			case BACKEND_IMAGE_FORMAT_PIXMAP_HIGH: format = GL_RGBA16; break;
 			case BACKEND_IMAGE_FORMAT_PIXMAP: format = GL_RGBA8; break;
 			case BACKEND_IMAGE_FORMAT_MASK: format = GL_R8; break;
+			default: unreachable();
 			}
 			glTexImage2D(GL_TEXTURE_2D, 0, format, tex_size->width,
 			             tex_size->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
