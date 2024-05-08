@@ -53,6 +53,30 @@ static const int WIN_GET_LEADER_MAX_RECURSION = 20;
 static const int ROUNDED_PIXELS = 1;
 static const double ROUNDED_PERCENT = 0.05;
 
+// TODO(yshui)
+//
+// Right now, how window properties/states/information (let's just call them states)
+// are calculated is a huge mess.
+//
+// We can divide a window's states (i.e. fields in struct managed_win) in to two groups:
+// one is "raw" window states, those come directly from the X server; the other is
+// computed window states, which is calculated based on the raw properties, and user
+// configurations like rules etc.
+//
+// Right now what we do is when some raw states are updated, we set some flags to
+// recalculate relevant computed states. This is really hard to get right, because it's
+// tedious to figure out the influence a raw window state has. And it is also imprecise,
+// just look at our `win_on_factor_changed` - it is so difficult to get the recalculation
+// right, so we basically use "factor change" as a catch-all, basically any changes to raw
+// states will cause it to be called. And we recalculate everything there, kind of
+// destroying the whole point.
+//
+// A better way is doing this the other way around, we shouldn't need to do anything when
+// updating a raw state. Instead, the computed states should declare which raw states they
+// depend on, so we can go through the computed states, only recalculate the ones whose
+// dependencies have changed. The c2 rules are kind of already calculated this way, we
+// should unify the rest of the computed states. This would simplify the code as well.
+
 /**
  * Reread opacity property of a window.
  */
