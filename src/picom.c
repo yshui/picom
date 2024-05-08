@@ -1683,20 +1683,19 @@ static void fade_timer_callback(EV_P attr_unused, ev_timer *w, int revents attr_
 }
 
 static void handle_pending_updates(EV_P_ struct session *ps) {
+	auto e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
+	if (e) {
+		log_fatal_x_error(e, "failed to grab x server");
+		free(e);
+		return quit(ps);
+	}
+
+	ps->server_grabbed = true;
+
+	// Catching up with X server
+	handle_queued_x_events(EV_A, &ps->event_check, 0);
 	if (ps->pending_updates) {
 		log_debug("Delayed handling of events, entering critical section");
-		auto e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
-		if (e) {
-			log_fatal_x_error(e, "failed to grab x server");
-			free(e);
-			return quit(ps);
-		}
-
-		ps->server_grabbed = true;
-
-		// Catching up with X server
-		handle_queued_x_events(EV_A_ & ps->event_check, 0);
-
 		// Process new windows, and maybe allocate struct managed_win for them
 		handle_new_windows(ps);
 
@@ -1713,18 +1712,17 @@ static void handle_pending_updates(EV_P_ struct session *ps) {
 
 		// Process window flags (stale images)
 		refresh_images(ps);
-
-		e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
-		if (e) {
-			log_fatal_x_error(e, "failed to ungrab x server");
-			free(e);
-			return quit(ps);
-		}
-
-		ps->server_grabbed = false;
-		ps->pending_updates = false;
-		log_debug("Exited critical section");
 	}
+	e = xcb_request_check(ps->c.c, xcb_ungrab_server_checked(ps->c.c));
+	if (e) {
+		log_fatal_x_error(e, "failed to ungrab x server");
+		free(e);
+		return quit(ps);
+	}
+
+	ps->server_grabbed = false;
+	ps->pending_updates = false;
+	log_trace("Exited critical section");
 }
 
 static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
