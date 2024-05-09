@@ -63,9 +63,9 @@ static inline char *skip_space_mut(char *src) {
 
 static inline bool starts_with(const char *str, const char *needle, bool ignore_case) {
 	if (ignore_case) {
-		return strncasecmp(str, needle, strlen(needle));
+		return strncasecmp(str, needle, strlen(needle)) == 0;
 	}
-	return strncmp(str, needle, strlen(needle));
+	return strncmp(str, needle, strlen(needle)) == 0;
 }
 
 /// Similar to `asprintf`, but it reuses the allocated memory pointed to by `*strp`, and
