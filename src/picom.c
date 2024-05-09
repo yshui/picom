@@ -1612,13 +1612,6 @@ static void tmout_unredir_callback(EV_P attr_unused, ev_timer *w, int revents at
 	queue_redraw(ps);
 }
 
-static void fade_timer_callback(EV_P attr_unused, ev_timer *w, int revents attr_unused) {
-	// TODO(yshui): do we still need the fade timer? we queue redraw automatically in
-	// draw_callback_impl if animation is running.
-	session_t *ps = session_ptr(w, fade_timer);
-	queue_redraw(ps);
-}
-
 static void handle_pending_updates(EV_P_ struct session *ps, double delta_t) {
 	log_trace("Delayed handling of events, entering critical section");
 	auto e = xcb_request_check(ps->c.c, xcb_grab_server_checked(ps->c.c));
@@ -2401,8 +2394,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	ev_init(&ps->unredir_timer, tmout_unredir_callback);
 	ev_init(&ps->draw_timer, draw_callback);
 
-	ev_init(&ps->fade_timer, fade_timer_callback);
-
 	// Set up SIGUSR1 signal handler to reset program
 	ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);
 	ev_signal_init(&ps->int_signal, exit_enable, SIGINT);
@@ -2639,7 +2630,6 @@ static void session_destroy(session_t *ps) {
 
 	// Stop libev event handlers
 	ev_timer_stop(ps->loop, &ps->unredir_timer);
-	ev_timer_stop(ps->loop, &ps->fade_timer);
 	ev_timer_stop(ps->loop, &ps->draw_timer);
 	ev_prepare_stop(ps->loop, &ps->event_check);
 	ev_signal_stop(ps->loop, &ps->usr1_signal);

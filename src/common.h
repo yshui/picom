@@ -150,8 +150,6 @@ typedef struct session {
 	ev_io xiow;
 	/// Timeout for delayed unredirection.
 	ev_timer unredir_timer;
-	/// Timer for fading
-	ev_timer fade_timer;
 	/// Use an ev_timer callback for drawing
 	ev_timer draw_timer;
 	/// Called every time we have timeouts or new data on socket,
