@@ -518,23 +518,21 @@ static void glx_diagnostics(backend_t *base) {
 }
 
 struct backend_operations glx_ops = {
-    .v2 =
-        {
-            .apply_alpha = gl_apply_alpha,
-            .back_buffer = gl_back_buffer,
-            .bind_pixmap = glx_bind_pixmap,
-            .blit = gl_blit,
-            .blur = gl_blur,
-            .clear = gl_clear,
-            .copy_area = gl_copy_area,
-            .copy_area_quantize = gl_copy_area_quantize,
-            .image_capabilities = gl_image_capabilities,
-            .is_format_supported = gl_is_format_supported,
-            .new_image = gl_new_image,
-            .present = glx_present,
-            .quirks = backend_no_quirks,
-            .release_image = gl_release_image,
-        },
+    .apply_alpha = gl_apply_alpha,
+    .back_buffer = gl_back_buffer,
+    .bind_pixmap = glx_bind_pixmap,
+    .blit = gl_blit,
+    .blur = gl_blur,
+    .clear = gl_clear,
+    .copy_area = gl_copy_area,
+    .copy_area_quantize = gl_copy_area_quantize,
+    .image_capabilities = gl_image_capabilities,
+    .is_format_supported = gl_is_format_supported,
+    .new_image = gl_new_image,
+    .present = glx_present,
+    .quirks = backend_no_quirks,
+    .release_image = gl_release_image,
+
     .init = glx_init,
     .deinit = glx_deinit,
     .root_change = gl_root_change,

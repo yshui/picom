@@ -339,23 +339,21 @@ static void egl_diagnostics(backend_t *base) {
 }
 
 struct backend_operations egl_ops = {
-    .v2 =
-        {
-            .apply_alpha = gl_apply_alpha,
-            .back_buffer = gl_back_buffer,
-            .blit = gl_blit,
-            .blur = gl_blur,
-            .bind_pixmap = egl_bind_pixmap,
-            .clear = gl_clear,
-            .copy_area = gl_copy_area,
-            .copy_area_quantize = gl_copy_area_quantize,
-            .is_format_supported = gl_is_format_supported,
-            .image_capabilities = gl_image_capabilities,
-            .new_image = gl_new_image,
-            .present = egl_present,
-            .quirks = backend_no_quirks,
-            .release_image = gl_release_image,
-        },
+    .apply_alpha = gl_apply_alpha,
+    .back_buffer = gl_back_buffer,
+    .blit = gl_blit,
+    .blur = gl_blur,
+    .bind_pixmap = egl_bind_pixmap,
+    .clear = gl_clear,
+    .copy_area = gl_copy_area,
+    .copy_area_quantize = gl_copy_area_quantize,
+    .is_format_supported = gl_is_format_supported,
+    .image_capabilities = gl_image_capabilities,
+    .new_image = gl_new_image,
+    .present = egl_present,
+    .quirks = backend_no_quirks,
+    .release_image = gl_release_image,
+
     .init = egl_init,
     .deinit = egl_deinit,
     .root_change = gl_root_change,

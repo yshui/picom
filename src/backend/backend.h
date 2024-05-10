@@ -202,18 +202,37 @@ enum backend_quirk {
 	BACKEND_QUIRK_SLOW_BLUR = 1 << 0,
 };
 
-struct backend_ops_v2 {
-	/// Get backend quirks
-	/// @return a bitmask of `enum backend_quirk`.
-	uint32_t (*quirks)(struct backend_base *backend_data) attr_nonnull(1);
+struct backend_operations {
+	// ===========    Initialization    ===========
 
-	/// Check if an optional image format is supported by the backend.
-	bool (*is_format_supported)(struct backend_base *backend_data,
-	                            enum backend_image_format format) attr_nonnull(1);
+	/// Initialize the backend, prepare for rendering to the target window.
+	backend_t *(*init)(session_t *, xcb_window_t)attr_nonnull(1);
+	void (*deinit)(backend_t *backend_data) attr_nonnull(1);
 
-	/// Return the capabilities of an image.
-	uint32_t (*image_capabilities)(struct backend_base *backend_data, image_handle image)
-	    attr_nonnull(1, 2);
+	/// Called when rendering will be stopped for an unknown amount of
+	/// time (e.g. when screen is unredirected). Free some resources.
+	///
+	/// Optional, not yet used
+	void (*pause)(backend_t *backend_data, session_t *ps);
+
+	/// Called before rendering is resumed
+	///
+	/// Optional, not yet used
+	void (*resume)(backend_t *backend_data, session_t *ps);
+
+	/// Called when root window size changed. All existing image data ever
+	/// returned by this backend should remain valid after this call
+	/// returns.
+	///
+	/// Optional
+	void (*root_change)(backend_t *backend_data, session_t *ps);
+
+	// ===========      Rendering      ============
+
+	/// Called before when a new frame starts.
+	///
+	/// Optional
+	void (*prepare)(backend_t *backend_data, const region_t *reg_damage);
 
 	/// Multiply the alpha channel of the target image by a given value.
 	///
@@ -315,78 +334,10 @@ struct backend_ops_v2 {
 	bool (*clear)(struct backend_base *backend_data, image_handle target,
 	              struct color color) attr_nonnull(1, 2);
 
-	/// Create a new, uninitialized image with the given format and size.
-	///
-	/// @param backend_data backend data
-	/// @param format       the format of the image
-	/// @param size         the size of the image
-	image_handle (*new_image)(struct backend_base *backend_data,
-	                          enum backend_image_format format, geometry_t size)
-	    attr_nonnull(1);
-
-	/// Acquire the image handle of the back buffer.
-	///
-	/// @param backend_data backend data
-	image_handle (*back_buffer)(struct backend_base *backend_data);
-
-	/// Bind a X pixmap to the backend's internal image data structure.
-	///
-	/// @param backend_data backend data
-	/// @param pixmap       X pixmap to bind
-	/// @param fmt          information of the pixmap's visual
-	/// @return             backend specific image handle for the pixmap. May be
-	///                     NULL.
-	image_handle (*bind_pixmap)(struct backend_base *backend_data, xcb_pixmap_t pixmap,
-	                            struct xvisual_info fmt) attr_nonnull(1);
-
-	/// Free resources associated with an image data structure. Releasing the image
-	/// returned by `back_buffer` should be a no-op.
-	///
-	/// @param image the image to be released, cannot be NULL.
-	/// @return if this image is created by `bind_pixmap`, the X pixmap; 0
-	///         otherwise.
-	xcb_pixmap_t (*release_image)(struct backend_base *backend_data, image_handle image)
-	    attr_nonnull(1, 2);
-
 	/// Present the back buffer to the target window. Ideally the backend should keep
 	/// track of the region of the back buffer that has been updated, and use relevant
 	/// mechanism (when possible) to present only the updated region.
 	bool (*present)(struct backend_base *backend_data) attr_nonnull(1);
-};
-
-struct backend_operations {
-	// ===========          V2          ===========
-	struct backend_ops_v2 v2;
-	// ===========    Initialization    ===========
-
-	/// Initialize the backend, prepare for rendering to the target window.
-	backend_t *(*init)(session_t *, xcb_window_t)attr_nonnull(1);
-	void (*deinit)(backend_t *backend_data) attr_nonnull(1);
-
-	/// Called when rendering will be stopped for an unknown amount of
-	/// time (e.g. when screen is unredirected). Free some resources.
-	///
-	/// Optional, not yet used
-	void (*pause)(backend_t *backend_data, session_t *ps);
-
-	/// Called before rendering is resumed
-	///
-	/// Optional, not yet used
-	void (*resume)(backend_t *backend_data, session_t *ps);
-
-	/// Called when root window size changed. All existing image data ever
-	/// returned by this backend should remain valid after this call
-	/// returns.
-	///
-	/// Optional
-	void (*root_change)(backend_t *backend_data, session_t *ps);
-
-	// ===========      Rendering      ============
-
-	/// Called before when a new frame starts.
-	///
-	/// Optional
-	void (*prepare)(backend_t *backend_data, const region_t *reg_damage);
 
 	// ============ Resource management ===========
 
@@ -400,7 +351,52 @@ struct backend_operations {
 	/// Required if create_shader is present.
 	void (*destroy_shader)(backend_t *backend_data, void *shader) attr_nonnull(1, 2);
 
+	/// Create a new, uninitialized image with the given format and size.
+	///
+	/// @param backend_data backend data
+	/// @param format       the format of the image
+	/// @param size         the size of the image
+	image_handle (*new_image)(struct backend_base *backend_data,
+	                          enum backend_image_format format, geometry_t size)
+	    attr_nonnull(1);
+
+	/// Bind a X pixmap to the backend's internal image data structure.
+	///
+	/// @param backend_data backend data
+	/// @param pixmap       X pixmap to bind
+	/// @param fmt          information of the pixmap's visual
+	/// @return             backend specific image handle for the pixmap. May be
+	///                     NULL.
+	image_handle (*bind_pixmap)(struct backend_base *backend_data, xcb_pixmap_t pixmap,
+	                            struct xvisual_info fmt) attr_nonnull(1);
+
+	/// Acquire the image handle of the back buffer.
+	///
+	/// @param backend_data backend data
+	image_handle (*back_buffer)(struct backend_base *backend_data);
+
+	/// Free resources associated with an image data structure. Releasing the image
+	/// returned by `back_buffer` should be a no-op.
+	///
+	/// @param image the image to be released, cannot be NULL.
+	/// @return if this image is created by `bind_pixmap`, the X pixmap; 0
+	///         otherwise.
+	xcb_pixmap_t (*release_image)(struct backend_base *backend_data, image_handle image)
+	    attr_nonnull(1, 2);
+
 	// ===========        Query         ===========
+
+	/// Get backend quirks
+	/// @return a bitmask of `enum backend_quirk`.
+	uint32_t (*quirks)(struct backend_base *backend_data) attr_nonnull(1);
+
+	/// Check if an optional image format is supported by the backend.
+	bool (*is_format_supported)(struct backend_base *backend_data,
+	                            enum backend_image_format format) attr_nonnull(1);
+
+	/// Return the capabilities of an image.
+	uint32_t (*image_capabilities)(struct backend_base *backend_data, image_handle image)
+	    attr_nonnull(1, 2);
 
 	/// Get the attributes of a shader.
 	///

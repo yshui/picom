@@ -639,7 +639,7 @@ static void destroy_backend(session_t *ps) {
 	}
 
 	if (ps->backend_data && ps->root_image) {
-		ps->backend_data->ops->v2.release_image(ps->backend_data, ps->root_image);
+		ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
 		ps->root_image = NULL;
 	}
 
@@ -1152,8 +1152,7 @@ void root_damaged(session_t *ps) {
 
 	if (ps->backend_data) {
 		if (ps->root_image) {
-			ps->backend_data->ops->v2.release_image(ps->backend_data,
-			                                        ps->root_image);
+			ps->backend_data->ops->release_image(ps->backend_data, ps->root_image);
 			ps->root_image = NULL;
 		}
 		auto pixmap = x_get_root_back_pixmap(&ps->c, ps->atoms);
@@ -1187,7 +1186,7 @@ void root_damaged(session_t *ps) {
 			        : x_get_visual_for_depth(ps->c.screen_info, r->depth);
 			free(r);
 
-			ps->root_image = ps->backend_data->ops->v2.bind_pixmap(
+			ps->root_image = ps->backend_data->ops->bind_pixmap(
 			    ps->backend_data, pixmap, x_get_visual_info(&ps->c, visual));
 			ps->root_image_generation += 1;
 			if (!ps->root_image) {
@@ -1452,7 +1451,7 @@ uint8_t session_redirection_mode(session_t *ps) {
 		assert(!ps->o.legacy_backends);
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
 	}
-	if (!ps->o.legacy_backends && !backend_list[ps->o.backend]->v2.present) {
+	if (!ps->o.legacy_backends && !backend_list[ps->o.backend]->present) {
 		// if the backend doesn't render anything, we don't need to take over the
 		// screen.
 		return XCB_COMPOSITE_REDIRECT_AUTOMATIC;
@@ -2409,7 +2408,7 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		log_info("The compositor is started in automatic redirection mode.");
 		assert(!ps->o.legacy_backends);
 
-		if (backend_list[ps->o.backend]->v2.present) {
+		if (backend_list[ps->o.backend]->present) {
 			// If the backend has `present`, we couldn't be in automatic
 			// redirection mode unless we are in debug mode.
 			assert(ps->o.debug_mode);

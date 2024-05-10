@@ -1001,23 +1001,21 @@ uint32_t xrender_quirks(struct backend_base *base) {
 }
 
 struct backend_operations xrender_ops = {
-    .v2 =
-        {
-            .apply_alpha = xrender_apply_alpha,
-            .back_buffer = xrender_back_buffer,
-            .bind_pixmap = xrender_bind_pixmap,
-            .blit = xrender_blit,
-            .blur = xrender_blur,
-            .clear = xrender_clear,
-            .copy_area = xrender_copy_area,
-            .copy_area_quantize = xrender_copy_area,
-            .image_capabilities = xrender_image_capabilities,
-            .is_format_supported = xrender_is_format_supported,
-            .new_image = xrender_new_image,
-            .present = xrender_present,
-            .quirks = xrender_quirks,
-            .release_image = xrender_release_image,
-        },
+    .apply_alpha = xrender_apply_alpha,
+    .back_buffer = xrender_back_buffer,
+    .bind_pixmap = xrender_bind_pixmap,
+    .blit = xrender_blit,
+    .blur = xrender_blur,
+    .clear = xrender_clear,
+    .copy_area = xrender_copy_area,
+    .copy_area_quantize = xrender_copy_area,
+    .image_capabilities = xrender_image_capabilities,
+    .is_format_supported = xrender_is_format_supported,
+    .new_image = xrender_new_image,
+    .present = xrender_present,
+    .quirks = xrender_quirks,
+    .release_image = xrender_release_image,
+
     .init = xrender_init,
     .deinit = xrender_deinit,
     // TODO(yshui) make blur faster so we can use `backend_render_shadow_from_mask` for
