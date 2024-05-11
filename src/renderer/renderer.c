@@ -231,8 +231,7 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 		    .mask = &mask_args,
 		    .shader = NULL,
 		    .color_inverted = false,
-		    .ewidth = mask_size.width,
-		    .eheight = mask_size.height,
+		    .effective_size = mask_size,
 		    .dim = 0,
 		    .corner_radius = 0,
 		    .border_width = 0,
@@ -296,17 +295,17 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 	    .corner_radius = 0,
 	    .inverted = false,
 	};
-	pixman_region32_init_rect(&mask_args.region, 0, 0,
-	                          (unsigned)(mask_size.width + 2 * radius),
-	                          (unsigned)(mask_size.height + 2 * radius));
+	const ivec2 shadow_size =
+	    ivec2_add(mask_size, (ivec2){.width = 2 * radius, .height = 2 * radius});
+	pixman_region32_init_rect(&mask_args.region, 0, 0, (unsigned)shadow_size.width,
+	                          (unsigned)shadow_size.height);
 	struct backend_blit_args args = {
 	    .source_image = shadow_color_pixel,
 	    .opacity = 1,
 	    .mask = &mask_args,
 	    .shader = NULL,
 	    .color_inverted = false,
-	    .ewidth = mask_size.width + 2 * radius,
-	    .eheight = mask_size.height + 2 * radius,
+	    .effective_size = shadow_size,
 	    .dim = 0,
 	    .corner_radius = 0,
 	    .border_width = 0,
@@ -561,8 +560,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		    .source_image = r->monitor_repaint_pixel,
 		    .max_brightness = 1,
 		    .opacity = 1,
-		    .ewidth = r->canvas_size.width,
-		    .eheight = r->canvas_size.height,
+		    .effective_size = r->canvas_size,
 		    .mask = &mask,
 		};
 		log_trace("Blit for monitor repaint");

@@ -76,12 +76,12 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	    cmd1->blit.max_brightness != cmd2->blit.max_brightness ||
 	    cmd1->blit.color_inverted != cmd2->blit.color_inverted ||
 
-	// Second part, if round corner is enabled, then border width and effective size
-	// affect the whole image too.
-	   (cmd1->blit.corner_radius > 0 &&
-	       (cmd1->blit.border_width != cmd2->blit.border_width ||
-	        cmd1->blit.ewidth       != cmd2->blit.ewidth       ||
-	        cmd1->blit.eheight      != cmd2->blit.eheight        )))
+	    // Second part, if round corner is enabled, then border width and effective size
+	    // affect the whole image too.
+	    (cmd1->blit.corner_radius > 0 &&
+	        (cmd1->blit.border_width != cmd2->blit.border_width ||
+	         !ivec2_eq(cmd1->blit.effective_size, cmd2->blit.effective_size)))
+	   )
 	{
 		region_union(damage, origin1, &cmd1->mask.region);
 		region_union(damage, origin2, &cmd2->mask.region);

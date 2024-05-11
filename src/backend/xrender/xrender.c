@@ -292,8 +292,8 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	bool has_alpha = inner->has_alpha || args->opacity != 1;
 	auto const tmpw = to_u16_checked(inner->size.width);
 	auto const tmph = to_u16_checked(inner->size.height);
-	auto const tmpew = to_u16_checked(args->ewidth);
-	auto const tmpeh = to_u16_checked(args->eheight);
+	auto const tmpew = to_u16_checked(args->effective_size.width);
+	auto const tmpeh = to_u16_checked(args->effective_size.height);
 	int16_t mask_pict_dst_x = 0, mask_pict_dst_y = 0;
 	if (args->mask) {
 		mask_pict_dst_x = to_i16_checked(-mask_pict_origin.x);

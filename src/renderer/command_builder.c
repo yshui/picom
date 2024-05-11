@@ -41,8 +41,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	    .corner_radius = w->corner_radius,
 	    .opacity = layer->opacity,
 	    .dim = dim,
-	    .ewidth = w->widthb,
-	    .eheight = w->heightb,
+	    .effective_size = {.width = w->widthb, .height = w->heightb},
 	    .shader = w->fg_shader ? w->fg_shader->backend_shader : NULL,
 	    .color_inverted = w->invert_color,
 	    .max_brightness = max_brightness};
@@ -158,8 +157,7 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	    .opacity = layer->opacity,
 	    .max_brightness = 1,
 	    .mask = &cmd->mask,
-	    .ewidth = layer->shadow_size.width,
-	    .eheight = layer->shadow_size.height,
+	    .effective_size = layer->shadow_size,
 	};
 	pixman_region32_init(&cmd->opaque_region);
 	return 1;

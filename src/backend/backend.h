@@ -123,7 +123,7 @@ struct backend_blit_args {
 	double corner_radius;
 	/// Effective size of the source image, set where the corners
 	/// of the image are.
-	int ewidth, eheight;
+	ivec2 effective_size;
 	/// Border width of the source image. This is used with
 	/// `corner_radius` to create a border for the rounded corners.
 	/// Setting this has no effect if `corner_radius` is 0.
