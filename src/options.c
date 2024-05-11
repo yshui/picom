@@ -883,6 +883,20 @@ bool get_cfg(options_t *opt, int argc, char *const *argv) {
 	check_end:;
 	}
 
+	if (opt->legacy_backends && opt->number_of_scripts > 0) {
+		log_warn("Custom animations are not supported by the legacy "
+		         "backends. Disabling animations.");
+		for (size_t i = 0; i < ARR_SIZE(opt->animations); i++) {
+			opt->animations[i].script = NULL;
+		}
+		for (int i = 0; i < opt->number_of_scripts; i++) {
+			script_free(opt->all_scripts[i]);
+		}
+		free(opt->all_scripts);
+		opt->all_scripts = NULL;
+		opt->number_of_scripts = 0;
+	}
+
 	generate_fading_config(opt);
 	return true;
 }
