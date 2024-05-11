@@ -366,10 +366,10 @@ struct gl_vertex_attribs_definition {
 };
 
 static const struct gl_vertex_attribs_definition gl_blit_vertex_attribs = {
-    .stride = sizeof(GLint) * 4,
+    .stride = sizeof(GLfloat) * 4,
     .count = 2,
-    .attribs = {{GL_INT, vert_coord_loc, NULL},
-                {GL_INT, vert_in_texcoord_loc, ((GLint *)NULL) + 2}},
+    .attribs = {{GL_FLOAT, vert_coord_loc, NULL},
+                {GL_FLOAT, vert_in_texcoord_loc, ((GLfloat *)NULL) + 2}},
 };
 
 /**
@@ -384,7 +384,7 @@ static const struct gl_vertex_attribs_definition gl_blit_vertex_attribs = {
  * @param nuniforms    number of uniforms for `shader`
  * @param uniforms     uniforms for `shader`
  */
-static void gl_blit_inner(GLuint target_fbo, int nrects, GLint *coord, GLuint *indices,
+static void gl_blit_inner(GLuint target_fbo, int nrects, GLfloat *coord, GLuint *indices,
                           const struct gl_vertex_attribs_definition *vert_attribs,
                           const struct gl_shader *shader, int nuniforms,
                           struct gl_uniform_value *uniforms) {
@@ -475,26 +475,29 @@ static void gl_blit_inner(GLuint target_fbo, int nrects, GLint *coord, GLuint *i
 	gl_check_err();
 }
 
-void gl_mask_rects_to_coords(ivec2 origin, int nrects, const rect_t *rects, GLint *coord,
-                             GLuint *indices) {
+void gl_mask_rects_to_coords(ivec2 origin, int nrects, const rect_t *rects, vec2 scale,
+                             GLfloat *coord, GLuint *indices) {
 	for (ptrdiff_t i = 0; i < nrects; i++) {
 		// Rectangle in source image coordinates
 		rect_t rect_src = region_translate_rect(rects[i], ivec2_neg(origin));
 		// Rectangle in target image coordinates
 		rect_t rect_dst = rects[i];
 
+		// clang-format off
 		memcpy(&coord[i * 16],
-		       ((GLint[][2]){
-		           {rect_dst.x1, rect_dst.y1},        // Vertex, bottom-left
-		           {rect_src.x1, rect_src.y1},        // Texture
-		           {rect_dst.x2, rect_dst.y1},        // Vertex, bottom-right
-		           {rect_src.x2, rect_src.y1},        // Texture
-		           {rect_dst.x2, rect_dst.y2},        // Vertex, top-right
-		           {rect_src.x2, rect_src.y2},        // Texture
-		           {rect_dst.x1, rect_dst.y2},        // Vertex, top-left
-		           {rect_src.x1, rect_src.y2},        // Texture
+		       ((GLfloat[][2]){
+		           // Interleaved vertex and texture coordinates, starting with vertex.
+		           {(GLfloat)rect_dst.x1, (GLfloat)rect_dst.y1},        // bottom-left
+		           {(GLfloat)(rect_src.x1 / scale.x), (GLfloat)(rect_src.y1 / scale.y)},
+		           {(GLfloat)rect_dst.x2, (GLfloat)rect_dst.y1},        // bottom-right
+		           {(GLfloat)(rect_src.x2 / scale.x), (GLfloat)(rect_src.y1 / scale.y)},
+		           {(GLfloat)rect_dst.x2, (GLfloat)rect_dst.y2},        // top-right
+		           {(GLfloat)(rect_src.x2 / scale.x), (GLfloat)(rect_src.y2 / scale.y)},
+		           {(GLfloat)rect_dst.x1, (GLfloat)rect_dst.y2},        // top-left
+		           {(GLfloat)(rect_src.x1 / scale.x), (GLfloat)(rect_src.y2 / scale.y)},
 		       }),
 		       sizeof(GLint[2]) * 8);
+		// clang-format on
 
 		GLuint u = (GLuint)(i * 4);
 		memcpy(&indices[i * 6],
@@ -509,13 +512,13 @@ void gl_mask_rects_to_coords(ivec2 origin, int nrects, const rect_t *rects, GLin
 /// @param[in] nrects         number of rectangles
 /// @param[in] coord          OpenGL vertex coordinates
 /// @param[in] texture_height height of the source image
-static inline void gl_y_flip_texture(int nrects, GLint *coord, GLint texture_height) {
+static inline void gl_y_flip_texture(int nrects, GLfloat *coord, GLint texture_height) {
 	for (ptrdiff_t i = 0; i < nrects; i++) {
 		auto current_rect = &coord[i * 16];        // 16 numbers per rectangle
 		for (ptrdiff_t j = 0; j < 4; j++) {
 			// 4 numbers per vertex, texture coordinates are the last two
 			auto current_vertex = &current_rect[j * 4 + 2];
-			current_vertex[1] = texture_height - current_vertex[1];
+			current_vertex[1] = (GLfloat)texture_height - current_vertex[1];
 		}
 	}
 }
@@ -524,7 +527,7 @@ static inline void gl_y_flip_texture(int nrects, GLint *coord, GLint texture_hei
 /// shader, and uniforms.
 static int
 gl_lower_blit_args(struct gl_data *gd, ivec2 origin, const struct backend_blit_args *args,
-                   GLint **coord, GLuint **indices, struct gl_shader **shader,
+                   GLfloat **coord, GLuint **indices, struct gl_shader **shader,
                    struct gl_uniform_value *uniforms) {
 	auto img = (struct gl_texture *)args->source_image;
 	int nrects;
@@ -534,9 +537,9 @@ gl_lower_blit_args(struct gl_data *gd, ivec2 origin, const struct backend_blit_a
 		// Nothing to paint
 		return 0;
 	}
-	*coord = ccalloc(nrects * 16, GLint);
+	*coord = ccalloc(nrects * 16, GLfloat);
 	*indices = ccalloc(nrects * 6, GLuint);
-	gl_mask_rects_to_coords(origin, nrects, rects, *coord, *indices);
+	gl_mask_rects_to_coords(origin, nrects, rects, args->scale, *coord, *indices);
 	if (!img->y_inverted) {
 		gl_y_flip_texture(nrects, *coord, img->height);
 	}
@@ -558,11 +561,13 @@ gl_lower_blit_args(struct gl_data *gd, ivec2 origin, const struct backend_blit_a
 		border_width = 0;
 	}
 	// clang-format off
+	auto tex_sampler = vec2_eq(args->scale, SCALE_IDENTITY) ?
+	    gd->samplers[GL_SAMPLER_REPEAT] : gd->samplers[GL_SAMPLER_REPEAT_SCALE];
 	struct gl_uniform_value from_uniforms[] = {
 	    [UNIFORM_OPACITY_LOC]        = {.type = GL_FLOAT, .f = (float)args->opacity},
 	    [UNIFORM_INVERT_COLOR_LOC]   = {.type = GL_INT, .i = args->color_inverted},
 	    [UNIFORM_TEX_LOC]            = {.type = GL_TEXTURE_2D,
-	                                    .tu = {img->texture, gd->samplers[GL_SAMPLER_REPEAT]}},
+	                                    .tu = {img->texture, tex_sampler}},
 	    [UNIFORM_EFFECTIVE_SIZE_LOC] = {.type = GL_FLOAT_VEC2,
 	                                    .f2 = {(float)args->effective_size.width,
 					           (float)args->effective_size.height}},
@@ -613,7 +618,7 @@ bool gl_blit(backend_t *base, ivec2 origin, image_handle target_,
 		return false;
 	}
 
-	GLint *coord;
+	GLfloat *coord;
 	GLuint *indices;
 	struct gl_shader *shader;
 	struct gl_uniform_value uniforms[NUMBER_OF_UNIFORMS] = {};
@@ -678,9 +683,9 @@ static bool gl_copy_area_draw(struct gl_data *gd, ivec2 origin,
 		return true;
 	}
 
-	auto coord = ccalloc(16 * nrects, GLint);
+	auto coord = ccalloc(16 * nrects, GLfloat);
 	auto indices = ccalloc(6 * nrects, GLuint);
-	gl_mask_rects_to_coords(origin, nrects, rects, coord, indices);
+	gl_mask_rects_to_coords(origin, nrects, rects, SCALE_IDENTITY, coord, indices);
 	if (!target->y_inverted) {
 		gl_y_flip_target(nrects, coord, target->height);
 	}
@@ -856,6 +861,17 @@ uint64_t gl_get_shader_attributes(backend_t *backend_data attr_unused, void *sha
 	return ret;
 }
 
+static const struct {
+	GLint filter;
+	GLint wrap;
+} gl_sampler_params[] = {
+    [GL_SAMPLER_REPEAT] = {GL_NEAREST, GL_REPEAT},
+    [GL_SAMPLER_REPEAT_SCALE] = {GL_LINEAR, GL_REPEAT},
+    [GL_SAMPLER_BLUR] = {GL_LINEAR, GL_CLAMP_TO_EDGE},
+    [GL_SAMPLER_EDGE] = {GL_NEAREST, GL_CLAMP_TO_EDGE},
+    [GL_SAMPLER_BORDER] = {GL_NEAREST, GL_CLAMP_TO_BORDER},
+};
+
 bool gl_init(struct gl_data *gd, session_t *ps) {
 	if (!epoxy_has_gl_extension("GL_ARB_explicit_uniform_location")) {
 		log_error("GL_ARB_explicit_uniform_location support is required but "
@@ -965,20 +981,16 @@ bool gl_init(struct gl_data *gd, session_t *ps) {
 	gd->back_image.height = ps->root_height;
 
 	glGenSamplers(GL_MAX_SAMPLERS, gd->samplers);
-	for (int i = 0; i < GL_MAX_SAMPLERS; i++) {
-		glSamplerParameteri(gd->samplers[i], GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glSamplerParameteri(gd->samplers[i], GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	for (size_t i = 0; i < ARR_SIZE(gl_sampler_params); i++) {
+		glSamplerParameteri(gd->samplers[i], GL_TEXTURE_MIN_FILTER,
+		                    gl_sampler_params[i].filter);
+		glSamplerParameteri(gd->samplers[i], GL_TEXTURE_MAG_FILTER,
+		                    gl_sampler_params[i].filter);
+		glSamplerParameteri(gd->samplers[i], GL_TEXTURE_WRAP_S,
+		                    gl_sampler_params[i].wrap);
+		glSamplerParameteri(gd->samplers[i], GL_TEXTURE_WRAP_T,
+		                    gl_sampler_params[i].wrap);
 	}
-	glSamplerParameterf(gd->samplers[GL_SAMPLER_EDGE], GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glSamplerParameterf(gd->samplers[GL_SAMPLER_EDGE], GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glSamplerParameterf(gd->samplers[GL_SAMPLER_BLUR], GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glSamplerParameterf(gd->samplers[GL_SAMPLER_BLUR], GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glSamplerParameterf(gd->samplers[GL_SAMPLER_BLUR], GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glSamplerParameterf(gd->samplers[GL_SAMPLER_BLUR], GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glSamplerParameterf(gd->samplers[GL_SAMPLER_BORDER], GL_TEXTURE_WRAP_S,
-	                    GL_CLAMP_TO_BORDER);
-	glSamplerParameterf(gd->samplers[GL_SAMPLER_BORDER], GL_TEXTURE_WRAP_T,
-	                    GL_CLAMP_TO_BORDER);
 
 	gd->logger = gl_string_marker_logger_new();
 	if (gd->logger) {
@@ -1100,9 +1112,9 @@ image_handle gl_new_image(backend_t *backend_data attr_unused,
 bool gl_apply_alpha(backend_t *base, image_handle target, double alpha, const region_t *reg_op) {
 	auto gd = (struct gl_data *)base;
 	static const struct gl_vertex_attribs_definition vertex_attribs = {
-	    .stride = sizeof(GLint) * 4,
+	    .stride = sizeof(GLfloat) * 4,
 	    .count = 1,
-	    .attribs = {{GL_INT, vert_coord_loc, NULL}},
+	    .attribs = {{GL_FLOAT, vert_coord_loc, NULL}},
 	};
 	if (alpha == 1.0 || !pixman_region32_not_empty(reg_op)) {
 		return true;
@@ -1115,7 +1127,7 @@ bool gl_apply_alpha(backend_t *base, image_handle target, double alpha, const re
 	int nrects;
 	const rect_t *rect = pixman_region32_rectangles(reg_op, &nrects);
 
-	auto coord = ccalloc(nrects * 16, GLint);
+	auto coord = ccalloc(nrects * 16, GLfloat);
 	auto indices = ccalloc(nrects * 6, GLuint);
 
 	struct gl_uniform_value uniforms[] = {
