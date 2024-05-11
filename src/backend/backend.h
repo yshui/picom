@@ -125,6 +125,9 @@ struct backend_blit_args {
 	/// will be normalized so that the maximum brightness is
 	/// this value.
 	double max_brightness;
+	/// Scale factor for the horizontal and vertical direction (X for horizontal,
+	/// Y for vertical).
+	vec2 scale;
 	/// Corner radius of the source image. The corners of
 	/// the source image will be rounded.
 	double corner_radius;
@@ -138,6 +141,8 @@ struct backend_blit_args {
 	/// Whether the source image should be inverted.
 	bool color_inverted;
 };
+
+static const vec2 SCALE_IDENTITY = {1.0, 1.0};
 
 enum backend_image_format {
 	/// A format that can be used for normal rendering, and binding
