@@ -66,7 +66,10 @@ struct gl_texture {
 };
 
 enum gl_sampler {
+	/// A sampler that repeats the texture, with nearest filtering.
 	GL_SAMPLER_REPEAT = 0,
+	/// A sampler that repeats the texture, with linear filtering.
+	GL_SAMPLER_REPEAT_SCALE,
 	/// Clamp to edge
 	GL_SAMPLER_EDGE,
 	/// Clamp to border, border color will be (0, 0, 0, 0)
@@ -126,13 +129,13 @@ void gl_prepare(backend_t *base, const region_t *reg);
 /// @param[in]  rects       mask rectangles, in mask coordinates
 /// @param[out] coord       OpenGL vertex coordinates, suitable for creating VAO/VBO
 /// @param[out] indices     OpenGL vertex indices, suitable for creating VAO/VBO
-void gl_mask_rects_to_coords(ivec2 origin, int nrects, const rect_t *rects, GLint *coord,
-                             GLuint *indices);
-/// Like `gl_mask_rects_to_coords`, but with `origin` and `mask_origin` set to 0. i.e. all
-/// coordinates are in the same space.
+void gl_mask_rects_to_coords(ivec2 origin, int nrects, const rect_t *rects, vec2 scale,
+                             GLfloat *coord, GLuint *indices);
+/// Like `gl_mask_rects_to_coords`, but with `origin` is (0, 0).
 static inline void gl_mask_rects_to_coords_simple(int nrects, const rect_t *rects,
-                                                  GLint *coord, GLuint *indices) {
-	return gl_mask_rects_to_coords((ivec2){0, 0}, nrects, rects, coord, indices);
+                                                  GLfloat *coord, GLuint *indices) {
+	return gl_mask_rects_to_coords((ivec2){0, 0}, nrects, rects, SCALE_IDENTITY,
+	                               coord, indices);
 }
 
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str);
@@ -210,13 +213,13 @@ static inline GLuint gl_bind_image_to_fbo(struct gl_data *gd, image_handle image
 /// @param[in] nrects        number of rectangles
 /// @param[in] coord         OpenGL vertex coordinates
 /// @param[in] target_height height of the target image
-static inline void gl_y_flip_target(int nrects, GLint *coord, GLint target_height) {
+static inline void gl_y_flip_target(int nrects, GLfloat *coord, GLint target_height) {
 	for (ptrdiff_t i = 0; i < nrects; i++) {
 		auto current_rect = &coord[i * 16];        // 16 numbers per rectangle
 		for (ptrdiff_t j = 0; j < 4; j++) {
 			// 4 numbers per vertex, target coordinates are the first two
 			auto current_vertex = &current_rect[j * 4];
-			current_vertex[1] = target_height - current_vertex[1];
+			current_vertex[1] = (GLfloat)target_height - current_vertex[1];
 		}
 	}
 }

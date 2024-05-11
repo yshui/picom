@@ -88,5 +88,9 @@ static inline ivec2 vec2_as(vec2 a) {
 	};
 }
 
+static inline bool vec2_eq(vec2 a, vec2 b) {
+	return a.x == b.x && a.y == b.y;
+}
+
 #define MARGIN_INIT                                                                      \
 	{ 0, 0, 0, 0 }
