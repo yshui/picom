@@ -30,13 +30,13 @@ struct layer {
 	/// Damaged region of this layer, in screen coordinates
 	region_t damaged;
 	/// Origin (the top left outmost corner) of the window in screen coordinates
-	struct coord origin;
+	ivec2 origin;
 	/// Size of the window
-	struct geometry size;
+	ivec2 size;
 	/// Origin of the shadow in screen coordinates
-	struct coord shadow_origin;
+	ivec2 shadow_origin;
 	/// Size of the shadow
-	struct geometry shadow_size;
+	ivec2 shadow_size;
 	/// Opacity of this window
 	float opacity;
 	/// Opacity of the background blur of this window
@@ -70,7 +70,7 @@ struct layer {
 
 /// Layout of windows at a specific frame
 struct layout {
-	struct geometry size;
+	ivec2 size;
 	/// The root image generation, see `struct session::root_image_generation`
 	uint64_t root_image_generation;
 	/// Number of layers in `layers`
@@ -98,7 +98,7 @@ struct layout_manager;
 /// layouts, with its size chosen at creation time. Calling this will push at new layout
 /// at the end of the ring buffer, and remove the oldest layout if the buffer is full.
 void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
-                                  uint64_t root_image_generation, struct geometry size);
+                                  uint64_t root_image_generation, ivec2 size);
 /// Get the layout `age` frames into the past. Age `0` is the most recently appended
 /// layout.
 struct layout *layout_manager_layout(struct layout_manager *lm, unsigned age);

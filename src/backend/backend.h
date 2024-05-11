@@ -87,7 +87,7 @@ struct backend_mask {
 	/// rounded.
 	double corner_radius;
 	/// Origin of the mask image, in the source image's coordinate.
-	struct coord origin;
+	ivec2 origin;
 	/// Whether the mask image should be inverted.
 	bool inverted;
 };
@@ -174,7 +174,7 @@ enum backend_command_source {
 
 struct backend_command {
 	enum backend_command_op op;
-	struct coord origin;
+	ivec2 origin;
 	enum backend_command_source source;
 	union {
 		struct {
@@ -258,9 +258,8 @@ struct backend_operations {
 	/// @param target       an image handle, cannot be NULL.
 	/// @param args         arguments for blit
 	/// @return             whether the operation is successful
-	bool (*blit)(struct backend_base *backend_data, struct coord origin,
-	             image_handle target, struct backend_blit_args *args)
-	    attr_nonnull(1, 3, 4);
+	bool (*blit)(struct backend_base *backend_data, ivec2 origin, image_handle target,
+	             struct backend_blit_args *args) attr_nonnull(1, 3, 4);
 
 	/// Blur a given region of a source image and store the result in the
 	/// target image.
@@ -278,9 +277,8 @@ struct backend_operations {
 	/// @param target       an image handle, cannot be NULL.
 	/// @param args         argument for blur
 	/// @return             whether the operation is successful
-	bool (*blur)(struct backend_base *backend_data, struct coord origin,
-	             image_handle target, struct backend_blur_args *args)
-	    attr_nonnull(1, 3, 4);
+	bool (*blur)(struct backend_base *backend_data, ivec2 origin, image_handle target,
+	             struct backend_blur_args *args) attr_nonnull(1, 3, 4);
 
 	/// Direct copy of pixels from a source image on to the target image.
 	/// This is a simpler version of `blit`, without any effects. Note unlike `blit`,
@@ -297,7 +295,7 @@ struct backend_operations {
 	/// @param source       an image handle, cannot be NULL.
 	/// @param region       the region to copy, in the source image's coordinate.
 	/// @return             whether the operation is successful
-	bool (*copy_area)(struct backend_base *backend_data, struct coord origin,
+	bool (*copy_area)(struct backend_base *backend_data, ivec2 origin,
 	                  image_handle target, image_handle source, const region_t *region)
 	    attr_nonnull(1, 3, 4, 5);
 
@@ -320,7 +318,7 @@ struct backend_operations {
 	/// @param source       an image handle, cannot be NULL.
 	/// @param region       the region to copy, in the source image's coordinate.
 	/// @return             whether the operation is successful
-	bool (*copy_area_quantize)(struct backend_base *backend_data, struct coord origin,
+	bool (*copy_area_quantize)(struct backend_base *backend_data, ivec2 origin,
 	                           image_handle target, image_handle source,
 	                           const region_t *region) attr_nonnull(1, 3, 4, 5);
 
@@ -357,7 +355,7 @@ struct backend_operations {
 	/// @param format       the format of the image
 	/// @param size         the size of the image
 	image_handle (*new_image)(struct backend_base *backend_data,
-	                          enum backend_image_format format, geometry_t size)
+	                          enum backend_image_format format, ivec2 size)
 	    attr_nonnull(1);
 
 	/// Bind a X pixmap to the backend's internal image data structure.

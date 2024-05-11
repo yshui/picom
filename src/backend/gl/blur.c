@@ -264,8 +264,8 @@ bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
 	return true;
 }
 
-static bool gl_blur_context_preallocate_textures(struct gl_blur_context *bctx,
-                                                 struct geometry source_size) {
+static bool
+gl_blur_context_preallocate_textures(struct gl_blur_context *bctx, ivec2 source_size) {
 	if (source_size.width != bctx->fb_width || source_size.height != bctx->fb_height) {
 		// Resize the temporary textures used for blur in case the root
 		// size changed
@@ -312,7 +312,7 @@ static bool gl_blur_context_preallocate_textures(struct gl_blur_context *bctx,
 	return true;
 }
 
-bool gl_blur(struct backend_base *base, struct coord origin, image_handle target_,
+bool gl_blur(struct backend_base *base, ivec2 origin, image_handle target_,
              struct backend_blur_args *args) {
 	auto gd = (struct gl_data *)base;
 	auto target = (struct gl_texture *)target_;
@@ -339,7 +339,7 @@ bool gl_blur(struct backend_base *base, struct coord origin, image_handle target
 	}
 
 	if (!gl_blur_context_preallocate_textures(
-	        bctx, (struct geometry){source->width, source->height})) {
+	        bctx, (ivec2){source->width, source->height})) {
 		return false;
 	}
 

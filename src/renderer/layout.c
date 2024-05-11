@@ -7,7 +7,6 @@
 #include "common.h"
 #include "list.h"
 #include "region.h"
-#include "transition.h"
 #include "types.h"
 #include "utils.h"
 #include "win.h"
@@ -37,23 +36,22 @@ struct layout_manager {
 
 /// Compute layout of a layer from a window. Returns false if the window is not
 /// visible / should not be rendered. `out_layer` is modified either way.
-static bool
-layer_from_window(struct layer *out_layer, struct managed_win *w, struct geometry size) {
+static bool layer_from_window(struct layer *out_layer, struct managed_win *w, ivec2 size) {
 	bool to_paint = false;
 	if (!w->ever_damaged || w->paint_excluded) {
 		goto out;
 	}
 
-	out_layer->origin = (struct coord){.x = w->g.x, .y = w->g.y};
-	out_layer->size = (struct geometry){.width = w->widthb, .height = w->heightb};
+	out_layer->origin = (ivec2){.x = w->g.x, .y = w->g.y};
+	out_layer->size = (ivec2){.width = w->widthb, .height = w->heightb};
 	if (w->shadow) {
 		out_layer->shadow_origin =
-		    (struct coord){.x = w->g.x + w->shadow_dx, .y = w->g.y + w->shadow_dy};
+		    (ivec2){.x = w->g.x + w->shadow_dx, .y = w->g.y + w->shadow_dy};
 		out_layer->shadow_size =
-		    (struct geometry){.width = w->shadow_width, .height = w->shadow_height};
+		    (ivec2){.width = w->shadow_width, .height = w->shadow_height};
 	} else {
-		out_layer->shadow_origin = (struct coord){};
-		out_layer->shadow_size = (struct geometry){};
+		out_layer->shadow_origin = (ivec2){};
+		out_layer->shadow_size = (ivec2){};
 	}
 	if (out_layer->size.width <= 0 || out_layer->size.height <= 0) {
 		goto out;
@@ -143,7 +141,7 @@ void layout_manager_free(struct layout_manager *lm) {
 //   above.
 
 void layout_manager_append_layout(struct layout_manager *lm, struct wm *wm,
-                                  uint64_t root_pixmap_generation, struct geometry size) {
+                                  uint64_t root_pixmap_generation, ivec2 size) {
 	auto prev_layout = &lm->layouts[lm->current];
 	lm->current = (lm->current + 1) % lm->max_buffer_age;
 	auto layout = &lm->layouts[lm->current];
