@@ -111,7 +111,9 @@ typedef struct options {
 	/// Path to write PID to.
 	char *write_pid_path;
 	/// The backend in use.
-	enum backend backend;
+	int backend;
+	/// Log level.
+	int log_level;
 	/// Whether to sync X drawing with X Sync fence to avoid certain delay
 	/// issues with GLX backend.
 	bool xrender_sync_fence;
@@ -135,7 +137,7 @@ typedef struct options {
 	/// when determining if a window could be unredirected.
 	c2_lptr_t *unredir_if_possible_blacklist;
 	/// Delay before unredirecting screen, in milliseconds.
-	long unredir_if_possible_delay;
+	int unredir_if_possible_delay;
 	/// Forced redirection setting through D-Bus.
 	switch_t redirected_force;
 	/// Whether to stop painting. Controlled through D-Bus.
@@ -156,6 +158,7 @@ typedef struct options {
 	bool no_x_selection;
 	/// Window type option override.
 	win_option_t wintype_option[NUM_WINTYPES];
+	struct win_option_mask wintype_option_mask[NUM_WINTYPES];
 	/// Whether to set realtime scheduling policy for the compositor process.
 	bool use_realtime_scheduling;
 
@@ -168,7 +171,7 @@ typedef struct options {
 	/// Whether use damage information to help limit the area to paint
 	bool use_damage;
 	/// Disable frame pacing
-	bool no_frame_pacing;
+	bool frame_pacing;
 
 	// === Shadow ===
 	/// Red, green and blue tone of the shadow.
@@ -184,6 +187,7 @@ typedef struct options {
 	bool crop_shadow_to_monitor;
 	/// Don't draw shadow over these windows. A linked list of conditions.
 	c2_lptr_t *shadow_clip_list;
+	bool shadow_enable;
 
 	// === Fading ===
 	/// How much to fade in in a single fading step.
@@ -198,6 +202,7 @@ typedef struct options {
 	bool no_fading_destroyed_argb;
 	/// Fading blacklist. A linked list of conditions.
 	c2_lptr_t *fade_blacklist;
+	bool fading_enable;
 
 	// === Opacity ===
 	/// Default opacity for inactive windows.
@@ -293,18 +298,18 @@ extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 
 bool must_use parse_long(const char *, long *);
 bool must_use parse_int(const char *, int *);
-struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg, int *count);
+struct conv **must_use parse_blur_kern_lst(const char *, int *count);
+/// Parse the path prefix of a c2 rule. Then look for the specified file in the
+/// given include directories. The include directories are passed via `user_data`.
 void *parse_window_shader_prefix(const char *src, const char **end, void *user_data);
+/// Same as `parse_window_shader_prefix`, but the path is relative to the current
+/// working directory. `user_data` is ignored.
+void *parse_window_shader_prefix_with_cwd(const char *src, const char **end, void *);
 void *parse_numeric_prefix(const char *src, const char **end, void *user_data);
 char *must_use locate_auxiliary_file(const char *scope, const char *path,
                                      const char *include_dir);
-enum blur_method must_use parse_blur_method(const char *src);
+int must_use parse_blur_method(const char *src);
 void parse_debug_options(struct debug_options *);
-
-/**
- * Add a pattern to a condition linked list.
- */
-bool condlst_add(c2_lptr_t **, const char *);
 
 const char *xdg_config_home(void);
 char **xdg_config_dirs(void);
@@ -317,24 +322,19 @@ char **xdg_config_dirs(void);
 ///   win_option_mask = whether option overrides for specific window type is set for given
 ///                     options
 ///   hasneg = whether the convolution kernel has negative values
-char *
-parse_config_libconfig(options_t *, const char *config_file, bool *shadow_enable,
-                       bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
+char *parse_config_libconfig(options_t *, const char *config_file);
 
-void set_default_winopts(options_t *, win_option_mask_t *, bool shadow_enable,
-                         bool fading_enable, bool blur_enable);
 /// Parse a configuration file is that is enabled, also initialize the winopt_mask with
 /// default values
 /// Outputs and returns:
 ///   same as parse_config_libconfig
-char *parse_config(options_t *, const char *config_file, bool *shadow_enable,
-                   bool *fading_enable, bool *hasneg, win_option_mask_t *winopt_mask);
+char *parse_config(options_t *, const char *config_file);
 
 /**
  * Parse a backend option argument.
  */
-static inline attr_pure enum backend parse_backend(const char *str) {
-	for (enum backend i = 0; BACKEND_STRS[i]; ++i) {
+static inline attr_pure int parse_backend(const char *str) {
+	for (int i = 0; BACKEND_STRS[i]; ++i) {
 		if (!strcasecmp(str, BACKEND_STRS[i])) {
 			return i;
 		}

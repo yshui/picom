@@ -60,7 +60,7 @@ attr_nonnull_all void log_destroy(struct log *);
 attr_nonnull(1) void log_set_level(struct log *l, int level);
 attr_pure enum log_level log_get_level(const struct log *l);
 attr_nonnull_all void log_add_target(struct log *, struct log_target *);
-attr_pure enum log_level string_to_log_level(const char *);
+attr_pure int string_to_log_level(const char *);
 /// Remove a previously added log target for a log struct, and destroy it. If the log
 /// target was never added, nothing happens.
 void log_remove_target(struct log *l, struct log_target *tgt);

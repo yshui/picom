@@ -1492,7 +1492,7 @@ static bool redirect_start(session_t *ps) {
 		pixman_region32_init(&ps->damage_ring.damages[i]);
 	}
 
-	ps->frame_pacing = !ps->o.no_frame_pacing && ps->o.vsync;
+	ps->frame_pacing = ps->o.frame_pacing && ps->o.vsync;
 	if ((ps->o.legacy_backends || ps->o.benchmark || !ps->backend_data->ops->last_render_time) &&
 	    ps->frame_pacing) {
 		// Disable frame pacing if we are using a legacy backend or if we are in
@@ -2208,18 +2208,15 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 	}
 
 	// Parse configuration file
-	win_option_mask_t winopt_mask[NUM_WINTYPES] = {{0}};
-	bool shadow_enabled = false, fading_enable = false, hasneg = false;
 	char *config_file_to_free = NULL;
-	config_file = config_file_to_free = parse_config(
-	    &ps->o, config_file, &shadow_enabled, &fading_enable, &hasneg, winopt_mask);
+	config_file = config_file_to_free = parse_config(&ps->o, config_file);
 
 	if (IS_ERR(config_file_to_free)) {
 		return NULL;
 	}
 
 	// Parse all of the rest command line options
-	if (!get_cfg(&ps->o, argc, argv, shadow_enabled, fading_enable, hasneg, winopt_mask)) {
+	if (!get_cfg(&ps->o, argc, argv)) {
 		log_fatal("Failed to get configuration, usually mean you have specified "
 		          "invalid options.");
 		return NULL;

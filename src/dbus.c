@@ -853,7 +853,7 @@ cdbus_process_opts_get(session_t *ps, DBusMessage *msg, DBusMessage *reply, DBus
 		dbus_set_error_const(err, DBUS_ERROR_INVALID_ARGS, NULL);
 		return DBUS_HANDLER_RESULT_HANDLED;
 	}
-	assert(ps->o.backend < sizeof(BACKEND_STRS) / sizeof(BACKEND_STRS[0]));
+	assert((size_t)ps->o.backend < sizeof(BACKEND_STRS) / sizeof(BACKEND_STRS[0]));
 
 #define append(tgt, type, ret)                                                           \
 	if (!strcmp(#tgt, target)) {                                                     \

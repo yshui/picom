@@ -173,17 +173,14 @@ int inspect_main(int argc, char **argv, const char *config_file) {
 
 	char *config_file_to_free = NULL;
 	struct options options;
-	bool shadow_enabled, fading_enable, hasneg;
-	win_option_mask_t winopt_mask[NUM_WINTYPES] = {0};
-	config_file = config_file_to_free = parse_config(
-	    &options, config_file, &shadow_enabled, &fading_enable, &hasneg, winopt_mask);
+	config_file = config_file_to_free = parse_config(&options, config_file);
 
 	if (IS_ERR(config_file_to_free)) {
 		return 1;
 	}
 
 	// Parse all of the rest command line options
-	if (!get_cfg(&options, argc, argv, shadow_enabled, fading_enable, hasneg, winopt_mask)) {
+	if (!get_cfg(&options, argc, argv)) {
 		log_fatal("Failed to get configuration, usually mean you have specified "
 		          "invalid options.");
 		return 1;
