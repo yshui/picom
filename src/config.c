@@ -513,12 +513,11 @@ parse_geometry_end:
 	return true;
 }
 
-/**
- * Parse a list of window rules, prefixed with a number, separated by a ':'
- */
-bool parse_numeric_window_rule(c2_lptr_t **res, const char *src, long min, long max) {
+void *parse_numeric_prefix(const char *src, const char **end, void *user_data) {
+	int *minmax = user_data;
+	*end = NULL;
 	if (!src) {
-		return false;
+		return NULL;
 	}
 
 	// Find numeric value
@@ -526,12 +525,12 @@ bool parse_numeric_window_rule(c2_lptr_t **res, const char *src, long min, long 
 	long val = strtol(src, &endptr, 0);
 	if (!endptr || endptr == src) {
 		log_error("No number specified: %s", src);
-		return false;
+		return NULL;
 	}
 
-	if (val < min || val > max) {
-		log_error("Number not in range (%ld <= n <= %ld): %s", min, max, src);
-		return false;
+	if (val < minmax[0] || val > minmax[1]) {
+		log_error("Number not in range (%d <= n <= %d): %s", minmax[0], minmax[1], src);
+		return NULL;
 	}
 
 	// Skip over spaces
@@ -540,12 +539,13 @@ bool parse_numeric_window_rule(c2_lptr_t **res, const char *src, long min, long 
 	}
 	if (':' != *endptr) {
 		log_error("Number separator (':') not found: %s", src);
-		return false;
+		return NULL;
 	}
 	++endptr;
 
-	// Parse pattern
-	return c2_parse(res, endptr, (void *)val);
+	*end = endptr;
+
+	return (void *)val;
 }
 
 /// Search for auxiliary file under a base directory
@@ -695,25 +695,24 @@ void parse_debug_options(struct debug_options *debug_options) {
 	}
 }
 
-/**
- * Parse a list of window shader rules.
- */
-bool parse_rule_window_shader(c2_lptr_t **res, const char *src, const char *include_dir) {
+void *parse_window_shader_prefix(const char *src, const char **end, void *user_data) {
+	const char *include_dir = user_data;
+	*end = NULL;
 	if (!src) {
-		return false;
+		return NULL;
 	}
 
 	// Find custom shader terminator
 	const char *endptr = strchr(src, ':');
 	if (!endptr) {
 		log_error("Custom shader terminator not found: %s", src);
-		return false;
+		return NULL;
 	}
 
 	// Parse and create custom shader
 	scoped_charp untrimed_shader_source = strdup(src);
 	if (!untrimed_shader_source) {
-		return false;
+		return NULL;
 	}
 	auto source_end = strchr(untrimed_shader_source, ':');
 	*source_end = '\0';
@@ -728,11 +727,12 @@ bool parse_rule_window_shader(c2_lptr_t **res, const char *src, const char *incl
 		if (!shader_source) {
 			log_error("Custom shader file \"%s\" not found for rule: %s", tmp, src);
 			free(shader_source);
-			return false;
+			return NULL;
 		}
 	}
 
-	return c2_parse(res, ++endptr, (void *)shader_source);
+	*end = endptr + 1;
+	return shader_source;
 }
 
 /**

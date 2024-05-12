@@ -30,6 +30,14 @@ struct managed_win;
 typedef void (*c2_userdata_free)(void *);
 c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data);
 
+/// Parse a condition that has a prefix. The prefix is parsed by `parse_prefix`. If
+/// `free_value` is not NULL, it will be called to free the value returned by
+/// `parse_prefix` when error occurs.
+c2_lptr_t *
+c2_parse_with_prefix(c2_lptr_t **pcondlst, const char *pattern,
+                     void *(*parse_prefix)(const char *input, const char **end, void *),
+                     void (*free_value)(void *), void *user_data);
+
 c2_lptr_t *c2_free_lptr(c2_lptr_t *lp, c2_userdata_free f);
 
 /// Create a new c2_state object. This is used for maintaining the internal state

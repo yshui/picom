@@ -415,6 +415,25 @@ c2_lptr_t *c2_parse(c2_lptr_t **pcondlst, const char *pattern, void *data) {
 	}
 }
 
+/**
+ * Parse a condition string with a prefix.
+ */
+c2_lptr_t *
+c2_parse_with_prefix(c2_lptr_t **pcondlst, const char *pattern,
+                     void *(*parse_prefix)(const char *input, const char **end, void *),
+                     void (*free_value)(void *), void *user_data) {
+	char *pattern_start = NULL;
+	void *val = parse_prefix(pattern, (const char **)&pattern_start, user_data);
+	if (pattern_start == NULL) {
+		return NULL;
+	}
+	auto ret = c2_parse(pcondlst, pattern_start, val);
+	if (!ret && free_value) {
+		free_value(val);
+	}
+	return ret;
+}
+
 TEST_CASE(c2_parse) {
 	char str[1024];
 	c2_lptr_t *cond = c2_parse(NULL, "name = \"xterm\"", NULL);

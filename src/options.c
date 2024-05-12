@@ -623,7 +623,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 304:
 			// --opacity-rule
-			if (!parse_numeric_window_rule(&opt->opacity_rules, optarg, 0, 100)) {
+			if (!c2_parse_with_prefix(&opt->opacity_rules, optarg, parse_numeric_prefix, NULL, (int[]){0, 100})) {
 				exit(1);
 			}
 			break;
@@ -671,7 +671,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 		case 337: {
 			// --window-shader-fg-rule
 			scoped_charp cwd = getcwd(NULL, 0);
-			if (!parse_rule_window_shader(&opt->window_shader_fg_rules, optarg, cwd)) {
+			if (!c2_parse_with_prefix(&opt->window_shader_fg_rules, optarg, parse_window_shader_prefix, free, cwd)) {
 				exit(1);
 			}
 			break;
@@ -730,7 +730,7 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 340:
 			// --corner-radius-rules
-			if (!parse_numeric_window_rule(&opt->corner_radius_rules, optarg, 0, INT_MAX)) {
+			if (!c2_parse_with_prefix(&opt->corner_radius_rules, optarg, parse_numeric_prefix, NULL, (int[]){0, INT_MAX})) {
 				exit(1);
 			}
 			break;

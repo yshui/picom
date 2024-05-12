@@ -297,8 +297,8 @@ bool must_use parse_long(const char *, long *);
 bool must_use parse_int(const char *, int *);
 struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg, int *count);
 bool must_use parse_geometry(session_t *, const char *, region_t *);
-bool must_use parse_numeric_window_rule(c2_lptr_t **, const char *, long, long);
-bool must_use parse_rule_window_shader(c2_lptr_t **, const char *, const char *);
+void *parse_window_shader_prefix(const char *src, const char **end, void *user_data);
+void *parse_numeric_prefix(const char *src, const char **end, void *user_data);
 char *must_use locate_auxiliary_file(const char *scope, const char *path,
                                      const char *include_dir);
 enum blur_method must_use parse_blur_method(const char *src);

@@ -10,15 +10,13 @@
 #include <libconfig.h>
 #include <libgen.h>
 
+#include "c2.h"
 #include "common.h"
-#include "compiler.h"
 #include "config.h"
 #include "err.h"
 #include "log.h"
-#include "options.h"
 #include "string_utils.h"
 #include "utils.h"
-#include "win.h"
 
 #pragma GCC diagnostic error "-Wunused-parameter"
 
@@ -143,87 +141,29 @@ void parse_cfg_condlst(const config_t *pcfg, c2_lptr_t **pcondlst, const char *n
  * Parse a window corner radius rule list in configuration file.
  */
 static inline void
-parse_cfg_condlst_corner(options_t *opt, const config_t *pcfg, const char *name) {
+parse_cfg_condlst_with_prefix(c2_lptr_t **condlst, const config_t *pcfg, const char *name,
+                              void *(*parse_prefix)(const char *, const char **, void *),
+                              void (*free_value)(void *), void *user_data) {
 	config_setting_t *setting = config_lookup(pcfg, name);
-	if (setting) {
-		// Parse an array of options
-		if (config_setting_is_array(setting)) {
-			int i = config_setting_length(setting);
-			while (i--) {
-				if (!parse_numeric_window_rule(
-				        &opt->corner_radius_rules,
-				        config_setting_get_string_elem(setting, i), 0,
-				        INT_MAX)) {
-					exit(1);
-				}
-			}
-		}
-		// Treat it as a single pattern if it's a string
-		else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
-			if (!parse_numeric_window_rule(&opt->corner_radius_rules,
-			                               config_setting_get_string(setting),
-			                               0, INT_MAX)) {
+	if (setting == NULL) {
+		return;
+	}
+	// Parse an array of options
+	if (config_setting_is_array(setting)) {
+		int i = config_setting_length(setting);
+		while (i--) {
+			if (!c2_parse_with_prefix(
+			        condlst, config_setting_get_string_elem(setting, i),
+			        parse_prefix, free_value, user_data)) {
 				exit(1);
 			}
 		}
 	}
-}
-
-/**
- * Parse an opacity rule list in configuration file.
- */
-static inline void
-parse_cfg_condlst_opct(options_t *opt, const config_t *pcfg, const char *name) {
-	config_setting_t *setting = config_lookup(pcfg, name);
-	if (setting) {
-		// Parse an array of options
-		if (config_setting_is_array(setting)) {
-			int i = config_setting_length(setting);
-			while (i--) {
-				if (!parse_numeric_window_rule(
-				        &opt->opacity_rules,
-				        config_setting_get_string_elem(setting, i), 0, 100)) {
-					exit(1);
-				}
-			}
-		}
-		// Treat it as a single pattern if it's a string
-		else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
-			if (!parse_numeric_window_rule(&opt->opacity_rules,
-			                               config_setting_get_string(setting),
-			                               0, 100)) {
-				exit(1);
-			}
-		}
-	}
-}
-
-/**
- * Parse a window shader rule list in configuration file.
- */
-static inline void parse_cfg_condlst_shader(options_t *opt, const config_t *pcfg,
-                                            const char *name, const char *include_dir) {
-	config_setting_t *setting = config_lookup(pcfg, name);
-	if (setting) {
-		// Parse an array of options
-		if (config_setting_is_array(setting)) {
-			int i = config_setting_length(setting);
-			while (i--) {
-				if (!parse_rule_window_shader(
-				        &opt->window_shader_fg_rules,
-				        config_setting_get_string_elem(setting, i),
-				        include_dir)) {
-					exit(1);
-				}
-			}
-		}
-		// Treat it as a single pattern if it's a string
-		else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
-			if (!parse_rule_window_shader(&opt->window_shader_fg_rules,
-			                              config_setting_get_string(setting),
-			                              include_dir)) {
-				exit(1);
-			}
+	// Treat it as a single pattern if it's a string
+	else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
+		if (!c2_parse_with_prefix(condlst, config_setting_get_string(setting),
+		                          parse_prefix, free_value, user_data)) {
+			exit(1);
 		}
 	}
 }
@@ -373,7 +313,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --rounded-corners-exclude
 	parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist, "rounded-corners-exclude");
 	// --corner-radius-rules
-	parse_cfg_condlst_corner(opt, &cfg, "corner-radius-rules");
+	parse_cfg_condlst_with_prefix(&opt->corner_radius_rules, &cfg, "corner-radius-rules",
+	                              parse_numeric_prefix, NULL, (int[]){0, INT_MAX});
 
 	// --no-frame-pacing
 	lcfg_lookup_bool(&cfg, "no-frame-pacing", &opt->no_frame_pacing);
@@ -521,7 +462,8 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// --blur-background-exclude
 	parse_cfg_condlst(&cfg, &opt->blur_background_blacklist, "blur-background-exclude");
 	// --opacity-rule
-	parse_cfg_condlst_opct(opt, &cfg, "opacity-rule");
+	parse_cfg_condlst_with_prefix(&opt->opacity_rules, &cfg, "opacity-rule",
+	                              parse_numeric_prefix, NULL, (int[]){0, 100});
 	// --unredir-if-possible-exclude
 	parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
 	                  "unredir-if-possible-exclude");
@@ -604,8 +546,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 
 	// --window-shader-fg-rule
-	parse_cfg_condlst_shader(opt, &cfg, "window-shader-fg-rule",
-	                         config_get_include_dir(&cfg));
+	parse_cfg_condlst_with_prefix(&opt->window_shader_fg_rules, &cfg,
+	                              "window-shader-fg-rule", parse_window_shader_prefix,
+	                              free, (void *)config_get_include_dir(&cfg));
 
 	// --glx-use-gpushader4
 	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival)) {
