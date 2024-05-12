@@ -34,6 +34,7 @@
 ## Deprecated features
 
 * Setting `--shadow-exclude-reg` is now a hard error. It was deprecated almost since the start of `picom`. `--clip-shadow-above` is the better alternative. (#1254)
+* Remove command line options `-n`, `-a`, and `-s`. They were removed more than 10 years ago, it's time to finally get rid of them entirely. (#1254)
 
 ## Bug fixes
 
