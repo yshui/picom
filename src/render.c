@@ -1100,11 +1100,6 @@ void paint_all(session_t *ps, struct managed_win *t) {
 			// of the windows above. Because no one can see it
 			pixman_region32_subtract(&reg_tmp, &region, w->reg_ignore);
 
-			// Mask out the region we don't want shadow on
-			if (pixman_region32_not_empty(&ps->shadow_exclude_reg)) {
-				pixman_region32_subtract(&reg_tmp, &reg_tmp,
-				                         &ps->shadow_exclude_reg);
-			}
 			if (pixman_region32_not_empty(&reg_shadow_clip)) {
 				pixman_region32_subtract(&reg_tmp, &reg_tmp, &reg_shadow_clip);
 			}

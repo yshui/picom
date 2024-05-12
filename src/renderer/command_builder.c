@@ -90,7 +90,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 /// @param[in] end the end of the commands generated for this `layer`.
 static inline unsigned
 command_for_shadow(struct layer *layer, struct backend_command *cmd,
-                   const struct win_option *wintype_options, const region_t *shadow_exclude,
+                   const struct win_option *wintype_options,
                    const struct x_monitors *monitors, const struct backend_command *end) {
 	auto w = layer->win;
 	if (!w->shadow) {
@@ -134,9 +134,6 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	// Move mask region to screen coordinates for shadow exclusion
 	// calculation
 	pixman_region32_translate(&cmd->mask.region, layer->origin.x, layer->origin.y);
-	if (shadow_exclude) {
-		pixman_region32_subtract(&cmd->mask.region, &cmd->mask.region, shadow_exclude);
-	}
 	if (monitors && w->randr_monitor >= 0 && w->randr_monitor < monitors->count) {
 		pixman_region32_intersect(&cmd->mask.region, &cmd->mask.region,
 		                          &monitors->regions[w->randr_monitor]);
@@ -362,10 +359,9 @@ void command_builder_free(struct command_builder *cb) {
 
 // TODO(yshui) reduce the number of parameters by storing the final effective parameter
 // value in `struct managed_win`.
-void command_builder_build(struct command_builder *cb, struct layout *layout,
-                           bool force_blend, bool blur_frame, bool inactive_dim_fixed,
-                           double max_brightness, double inactive_dim,
-                           const region_t *shadow_exclude, const struct x_monitors *monitors,
+void command_builder_build(struct command_builder *cb, struct layout *layout, bool force_blend,
+                           bool blur_frame, bool inactive_dim_fixed, double max_brightness,
+                           double inactive_dim, const struct x_monitors *monitors,
                            const struct win_option *wintype_options) {
 
 	unsigned ncmds = 1;
@@ -402,8 +398,7 @@ void command_builder_build(struct command_builder *cb, struct layout *layout,
 		                                inactive_dim, max_brightness);
 
 		// Add shadow
-		cmd -= command_for_shadow(layer, cmd, wintype_options, shadow_exclude,
-		                          monitors, last + 1);
+		cmd -= command_for_shadow(layer, cmd, wintype_options, monitors, last + 1);
 
 		// Add blur
 		cmd -= command_for_blur(layer, cmd, &frame_region, force_blend, blur_frame);

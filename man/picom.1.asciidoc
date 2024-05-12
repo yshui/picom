@@ -217,9 +217,6 @@ May also be one of the predefined kernels: `3x3box` (default), `5x5box`, `7x7box
 *--opacity-rule* 'OPACITY':'CONDITION'::
 	Specify a list of opacity rules, in the format `PERCENT:PATTERN`, like `50:name *= "Firefox"`. picom-trans is recommended over this. Note we don't make any guarantee about possible conflicts with other programs that set '_NET_WM_WINDOW_OPACITY' on frame or client windows.
 
-*--shadow-exclude-reg* 'GEOMETRY'::
-	Specify a X geometry that describes the region in which shadow should not be painted in, such as a dock window region.  Use `--shadow-exclude-reg x10+0-0`, for example, if the 10 pixels on the bottom of the screen should not have shadows painted on.
-
 *--crop-shadow-to-monitor*::
 	Crop shadow of a window fully on a particular monitor to that monitor. This is currently implemented using the X RandR extension.
 

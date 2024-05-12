@@ -629,10 +629,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 305:
 			// --shadow-exclude-reg
-			free(opt->shadow_exclude_reg_str);
-			opt->shadow_exclude_reg_str = strdup(optarg);
-			log_warn("--shadow-exclude-reg is deprecated. You are likely "
+			log_error("--shadow-exclude-reg is deprecated. You are likely "
 			         "better off using --clip-shadow-above anyway");
+			failed = true;
 			break;
 		case 306:
 			// --paint-exclude
