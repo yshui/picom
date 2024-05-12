@@ -176,8 +176,6 @@ typedef struct options {
 	int shadow_radius;
 	int shadow_offset_x, shadow_offset_y;
 	double shadow_opacity;
-	/// argument string to shadow-exclude-reg option
-	char *shadow_exclude_reg_str;
 	/// Shadow blacklist. A linked list of conditions.
 	c2_lptr_t *shadow_blacklist;
 	/// Whether bounding-shaped window should be ignored.
@@ -296,7 +294,6 @@ extern const char *const BACKEND_STRS[NUM_BKEND + 1];
 bool must_use parse_long(const char *, long *);
 bool must_use parse_int(const char *, int *);
 struct conv **must_use parse_blur_kern_lst(const char *, bool *hasneg, int *count);
-bool must_use parse_geometry(session_t *, const char *, region_t *);
 void *parse_window_shader_prefix(const char *src, const char **end, void *user_data);
 void *parse_numeric_prefix(const char *src, const char **end, void *user_data);
 char *must_use locate_auxiliary_file(const char *scope, const char *path,

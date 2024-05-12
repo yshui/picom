@@ -307,8 +307,6 @@ typedef struct session {
 	/// Backend shadow context.
 	struct backend_shadow_context *shadow_context;
 	// for shadow precomputation
-	/// A region in which shadow is not painted on.
-	region_t shadow_exclude_reg;
 
 	// === Software-optimization-related ===
 	/// Nanosecond offset of the first painting.

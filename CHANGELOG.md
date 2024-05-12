@@ -31,6 +31,11 @@
 * Marginally improve performance when resizing/opening/closing windows. (#1190)
 * Type and format specifiers are no longer used in rules. These specifiers are what you put after the colon (':') in rules, e.g. the `:32c` in `"_GTK_FRAME_EXTENTS@:32c"`. Now this information is ignored and the property is matched regardless of format or type.
 
+## Deprecated features
+
+* Setting `--shadow-exclude-reg` is now a hard error. It was deprecated almost since the start of `picom`. `--clip-shadow-above` is the better alternative. (#1254)
+* Remove command line options `-n`, `-a`, and `-s`. They were removed more than 10 years ago, it's time to finally get rid of them entirely. (#1254)
+
 ## Bug fixes
 
 * Fix ghosting artifacts that sometimes occur when window manager is restarted (#1081)

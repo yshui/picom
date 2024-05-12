@@ -594,16 +594,6 @@ static void rebuild_screen_reg(session_t *ps) {
 	get_screen_region(ps, &ps->screen_reg);
 }
 
-/**
- * Rebuild <code>shadow_exclude_reg</code>.
- */
-static void rebuild_shadow_exclude_reg(session_t *ps) {
-	bool ret = parse_geometry(ps, ps->o.shadow_exclude_reg_str, &ps->shadow_exclude_reg);
-	if (!ret) {
-		exit(1);
-	}
-}
-
 /// Free up all the images and deinit the backend
 static void destroy_backend(session_t *ps) {
 	win_stack_foreach_managed_safe(w, wm_stack_end(ps->wm)) {
@@ -808,7 +798,6 @@ static void configure_root(session_t *ps) {
 	free(r);
 
 	rebuild_screen_reg(ps);
-	rebuild_shadow_exclude_reg(ps);
 
 	// Invalidate reg_ignore from the top
 	auto top_w = wm_stack_next_managed(ps->wm, wm_stack_end(ps->wm));
@@ -1854,7 +1843,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			    ps->backend_blur_context, render_start_us, ps->sync_fence,
 			    ps->o.use_damage, ps->o.monitor_repaint, ps->o.force_win_blend,
 			    ps->o.blur_background_frame, ps->o.inactive_dim_fixed,
-			    ps->o.max_brightness, ps->o.inactive_dim, &ps->shadow_exclude_reg,
+			    ps->o.max_brightness, ps->o.inactive_dim,
 			    ps->o.crop_shadow_to_monitor ? &ps->monitors : NULL,
 			    ps->o.wintype_option, &after_damage_us);
 			if (!succeeded) {
@@ -2288,8 +2277,6 @@ static session_t *session_init(int argc, char **argv, Display *dpy,
 		    (void *)gaussian_kernel_autodetect_deviation(ps->o.shadow_radius);
 		sum_kernel_preprocess((conv *)ps->shadow_context);
 	}
-
-	rebuild_shadow_exclude_reg(ps);
 
 	// Query X Shape
 	ext_info = xcb_get_extension_data(ps->c.c, &xcb_shape_id);

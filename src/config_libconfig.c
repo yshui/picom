@@ -357,7 +357,9 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	// --shadow-exclude-reg
 	if (config_lookup_string(&cfg, "shadow-exclude-reg", &sval)) {
-		opt->shadow_exclude_reg_str = strdup(sval);
+		log_error("shadow-exclude-reg is deprecated. Please use "
+		          "clip-shadow-above for more flexible shadow exclusion.");
+		goto err;
 	}
 	// --inactive-opacity-override
 	lcfg_lookup_bool(&cfg, "inactive-opacity-override", &opt->inactive_opacity_override);

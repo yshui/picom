@@ -307,7 +307,7 @@ static void usage(const char *argv0, int ret) {
 	}
 }
 
-static const char *shortopts = "D:I:O:r:o:m:l:t:i:e:hscnfCazGb";
+static const char *shortopts = "D:I:O:r:o:m:l:t:i:e:hcfCzGb";
 
 /// Get config options that are needed to parse the rest of the options
 /// Return true if we should quit
@@ -443,11 +443,6 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			         "cleared under certain types of windows, you can use "
 			         "the \"full-shadow\" per window type option.");
 			break;
-		case 'n':
-		case 'a':
-		case 's':
-			log_error("-n, -a, and -s have been removed.");
-			failed = true; break;
 		// Long options
 		case 256:
 			// --config
@@ -629,10 +624,9 @@ bool get_cfg(options_t *opt, int argc, char *const *argv, bool shadow_enable,
 			break;
 		case 305:
 			// --shadow-exclude-reg
-			free(opt->shadow_exclude_reg_str);
-			opt->shadow_exclude_reg_str = strdup(optarg);
-			log_warn("--shadow-exclude-reg is deprecated. You are likely "
+			log_error("--shadow-exclude-reg is deprecated. You are likely "
 			         "better off using --clip-shadow-above anyway");
+			failed = true;
 			break;
 		case 306:
 			// --paint-exclude
