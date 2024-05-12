@@ -41,14 +41,13 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	    .corner_radius = w->corner_radius,
 	    .opacity = layer->opacity,
 	    .dim = dim,
-	    .ewidth = w->widthb,
-	    .eheight = w->heightb,
+	    .effective_size = {.width = w->widthb, .height = w->heightb},
 	    .shader = w->fg_shader ? w->fg_shader->backend_shader : NULL,
 	    .color_inverted = w->invert_color,
 	    .max_brightness = max_brightness};
 	cmd->mask.inverted = false;
 	cmd->mask.corner_radius = 0;
-	cmd->mask.origin = (struct coord){};
+	cmd->mask.origin = (ivec2){};
 	pixman_region32_copy(&cmd->mask.region, &w->bounding_shape);
 	if (w->frame_opacity < 1) {
 		pixman_region32_subtract(&cmd->mask.region, &cmd->mask.region, frame_region);
@@ -77,7 +76,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	cmd->blit = cmd[1].blit;
 	cmd->blit.mask = &cmd->mask;
 	cmd->blit.opacity *= w->frame_opacity;
-	cmd->mask.origin = (struct coord){};
+	cmd->mask.origin = (ivec2){};
 	cmd->mask.inverted = false;
 	cmd->mask.corner_radius = 0;
 	pixman_region32_copy(&cmd->mask.region, frame_region);
@@ -144,14 +143,12 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	                          -layer->shadow_origin.y);
 	cmd->mask.corner_radius = w->corner_radius;
 	cmd->mask.inverted = true;
-	cmd->mask.origin = (struct coord){};
+	cmd->mask.origin = (ivec2){};
 	cmd->need_mask_image = w->corner_radius > 0;
 	if (cmd->need_mask_image) {
 		// If we use the window's mask image, we need to align the
 		// mask region's origin with it.
-		cmd->mask.origin =
-		    (struct coord){.x = layer->origin.x - layer->shadow_origin.x,
-		                   .y = layer->origin.y - layer->shadow_origin.y};
+		cmd->mask.origin = ivec2_sub(layer->origin, layer->shadow_origin);
 		pixman_region32_translate(&cmd->mask.region, -cmd->mask.origin.x,
 		                          -cmd->mask.origin.y);
 	}
@@ -160,8 +157,7 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	    .opacity = layer->opacity,
 	    .max_brightness = 1,
 	    .mask = &cmd->mask,
-	    .ewidth = layer->shadow_size.width,
-	    .eheight = layer->shadow_size.height,
+	    .effective_size = layer->shadow_size,
 	};
 	pixman_region32_init(&cmd->opaque_region);
 	return 1;
@@ -176,10 +172,10 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 		return 0;
 	}
 	cmd->op = BACKEND_COMMAND_BLUR;
-	cmd->origin = (struct coord){};
+	cmd->origin = (ivec2){};
 	cmd->blur.opacity = layer->blur_opacity;
 	cmd->blur.mask = &cmd->mask;
-	cmd->mask.origin = (struct coord){.x = layer->origin.x, .y = layer->origin.y};
+	cmd->mask.origin = (ivec2){.x = layer->origin.x, .y = layer->origin.y};
 	cmd->need_mask_image = w->corner_radius > 0;
 	cmd->mask.corner_radius = w->corner_radius;
 	cmd->mask.inverted = false;
@@ -230,10 +226,7 @@ command_builder_apply_transparent_clipping(struct layout *layout, region_t *scra
 		if (i->op == BACKEND_COMMAND_BLUR ||
 		    (i->op == BACKEND_COMMAND_BLIT &&
 		     i->source != BACKEND_COMMAND_SOURCE_BACKGROUND)) {
-			struct coord scratch_origin = {
-			    .x = -i->origin.x - i->mask.origin.x,
-			    .y = -i->origin.y - i->mask.origin.y,
-			};
+			auto scratch_origin = ivec2_sub(ivec2_neg(i->origin), i->mask.origin);
 			region_subtract(&i->mask.region, scratch_origin, scratch_region);
 		}
 		if (i->op == BACKEND_COMMAND_BLIT &&
@@ -260,10 +253,7 @@ command_builder_apply_shadow_clipping(struct layout *layout, region_t *scratch_r
 			clip_shadow_above = layer->win->clip_shadow_above;
 		}
 
-		struct coord mask_origin = {
-		    .x = i->mask.origin.x + i->origin.x,
-		    .y = i->mask.origin.y + i->origin.y,
-		};
+		auto mask_origin = ivec2_add(i->mask.origin, i->origin);
 		if (i->op == BACKEND_COMMAND_BLUR) {
 			region_subtract(scratch_region, mask_origin, &i->mask.region);
 		} else if (i->op == BACKEND_COMMAND_BLIT) {
@@ -410,7 +400,7 @@ void command_builder_build(struct command_builder *cb, struct layout *layout, bo
 	// Command for the desktop background
 	cmd->op = BACKEND_COMMAND_COPY_AREA;
 	cmd->source = BACKEND_COMMAND_SOURCE_BACKGROUND;
-	cmd->origin = (struct coord){};
+	cmd->origin = (ivec2){};
 	pixman_region32_reset(
 	    &cmd->mask.region,
 	    (rect_t[]){{.x1 = 0, .y1 = 0, .x2 = layout->size.width, .y2 = layout->size.height}});

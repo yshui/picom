@@ -45,7 +45,7 @@ layer_compare(const struct layer *past_layer, const struct backend_command *past
 	for (unsigned i = 0; i < past_layer->number_of_commands; i++) {
 		auto cmd1 = &past_layer_cmd[i];
 		auto cmd2 = &curr_layer_cmd[i];
-		if (cmd1->op != cmd2->op || !coord_eq(cmd1->origin, cmd2->origin) ||
+		if (cmd1->op != cmd2->op || !ivec2_eq(cmd1->origin, cmd2->origin) ||
 		    cmd1->source != cmd2->source) {
 			return false;
 		}
@@ -57,7 +57,7 @@ layer_compare(const struct layer *past_layer, const struct backend_command *past
 static inline void region_union_render_layer(region_t *region, const struct layer *layer,
                                              const struct backend_command *cmds) {
 	for (auto i = cmds; i < &cmds[layer->number_of_commands]; i++) {
-		region_union(region, coord_add(i->origin, i->mask.origin), &i->mask.region);
+		region_union(region, ivec2_add(i->origin, i->mask.origin), &i->mask.region);
 	}
 }
 
@@ -65,8 +65,8 @@ static inline void
 command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_command *cmd1,
                     struct backend_command *cmd2, const struct layout_manager *lm,
                     unsigned layer_index, unsigned buffer_age) {
-	auto origin1 = coord_add(cmd1->origin, cmd1->mask.origin);
-	auto origin2 = coord_add(cmd2->origin, cmd2->mask.origin);
+	auto origin1 = ivec2_add(cmd1->origin, cmd1->mask.origin);
+	auto origin2 = ivec2_add(cmd2->origin, cmd2->mask.origin);
 	// clang-format off
 	// First part, if any blit argument that would affect the whole image changed
 	if (cmd1->blit.dim     != cmd2->blit.dim                   ||
@@ -76,12 +76,12 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	    cmd1->blit.max_brightness != cmd2->blit.max_brightness ||
 	    cmd1->blit.color_inverted != cmd2->blit.color_inverted ||
 
-	// Second part, if round corner is enabled, then border width and effective size
-	// affect the whole image too.
-	   (cmd1->blit.corner_radius > 0 &&
-	       (cmd1->blit.border_width != cmd2->blit.border_width ||
-	        cmd1->blit.ewidth       != cmd2->blit.ewidth       ||
-	        cmd1->blit.eheight      != cmd2->blit.eheight        )))
+	    // Second part, if round corner is enabled, then border width and effective size
+	    // affect the whole image too.
+	    (cmd1->blit.corner_radius > 0 &&
+	        (cmd1->blit.border_width != cmd2->blit.border_width ||
+	         !ivec2_eq(cmd1->blit.effective_size, cmd2->blit.effective_size)))
+	   )
 	{
 		region_union(damage, origin1, &cmd1->mask.region);
 		region_union(damage, origin2, &cmd2->mask.region);
@@ -107,11 +107,11 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	}
 }
 
-static inline void
-command_blur_damage(region_t *damage, region_t *scratch_region, struct backend_command *cmd1,
-                    struct backend_command *cmd2, struct geometry blur_size) {
-	auto origin1 = coord_add(cmd1->origin, cmd1->mask.origin);
-	auto origin2 = coord_add(cmd2->origin, cmd2->mask.origin);
+static inline void command_blur_damage(region_t *damage, region_t *scratch_region,
+                                       struct backend_command *cmd1,
+                                       struct backend_command *cmd2, ivec2 blur_size) {
+	auto origin1 = ivec2_add(cmd1->origin, cmd1->mask.origin);
+	auto origin2 = ivec2_add(cmd2->origin, cmd2->mask.origin);
 	if (cmd1->blur.opacity != cmd2->blur.opacity) {
 		region_union(damage, origin1, &cmd1->mask.region);
 		region_union(damage, origin2, &cmd2->mask.region);
@@ -134,7 +134,7 @@ command_blur_damage(region_t *damage, region_t *scratch_region, struct backend_c
 /// Do the first step of render planning, collecting damages and calculating which
 /// parts of the final screen will be affected by the damages.
 void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
-                           struct geometry blur_size, region_t *damage) {
+                           ivec2 blur_size, region_t *damage) {
 	log_trace("Damage for buffer age %d", buffer_age);
 	unsigned past_layer_rank = 0, curr_layer_rank = 0;
 	auto past_layout = layout_manager_layout(lm, buffer_age);
@@ -294,7 +294,7 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 }
 
 void commands_cull_with_damage(struct layout *layout, const region_t *damage,
-                               struct geometry blur_size, struct backend_mask *culled_mask) {
+                               ivec2 blur_size, struct backend_mask *culled_mask) {
 	// This may sound silly, and probably actually is. Why do GPU's job on the CPU?
 	// Isn't the GPU supposed to be the one that does culling, depth testing etc.?
 	//
@@ -317,16 +317,16 @@ void commands_cull_with_damage(struct layout *layout, const region_t *damage,
 	pixman_region32_copy(&scratch_region, damage);
 	for (int i = to_int_checked(layout->number_of_commands - 1); i >= 0; i--) {
 		auto cmd = &layout->commands[i];
-		struct coord mask_origin;
+		ivec2 mask_origin;
 		if (cmd->op != BACKEND_COMMAND_COPY_AREA) {
-			mask_origin = coord_add(cmd->origin, cmd->mask.origin);
+			mask_origin = ivec2_add(cmd->origin, cmd->mask.origin);
 		} else {
 			mask_origin = cmd->origin;
 		}
 		culled_mask[i] = cmd->mask;
 		pixman_region32_init(&culled_mask[i].region);
 		pixman_region32_copy(&culled_mask[i].region, &cmd->mask.region);
-		region_intersect(&culled_mask[i].region, coord_neg(mask_origin),
+		region_intersect(&culled_mask[i].region, ivec2_neg(mask_origin),
 		                 &scratch_region);
 		switch (cmd->op) {
 		case BACKEND_COMMAND_BLIT:

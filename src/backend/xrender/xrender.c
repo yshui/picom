@@ -28,7 +28,7 @@
 #include "x.h"
 
 struct xrender_image_data_inner {
-	struct geometry size;
+	ivec2 size;
 	enum backend_image_format format;
 	struct xrender_rounded_rectangle_cache *rounded_rectangle;
 	// Pixmap that the client window draws to,
@@ -194,9 +194,8 @@ static inline void xrender_set_picture_repeat(struct xrender_data *xd,
 }
 
 static inline void
-xrender_record_back_damage(struct xrender_data *xd,
-                           struct xrender_image_data_inner *target, struct coord origin,
-                           struct coord mask_origin, const region_t *region) {
+xrender_record_back_damage(struct xrender_data *xd, struct xrender_image_data_inner *target,
+                           ivec2 origin, ivec2 mask_origin, const region_t *region) {
 	if (target == &xd->back_image && xd->vsync) {
 		pixman_region32_translate(&xd->back_damaged, -origin.x - mask_origin.x,
 		                          -origin.y - mask_origin.y);
@@ -214,8 +213,7 @@ xrender_record_back_damage(struct xrender_data *xd,
 /// @param allocated whether the returned picture is newly allocated
 static xcb_render_picture_t
 xrender_process_mask(struct xrender_data *xd, struct backend_mask *mask, rect_t extent,
-                     xcb_render_picture_t alpha_pict, struct coord *new_origin,
-                     bool *allocated) {
+                     xcb_render_picture_t alpha_pict, ivec2 *new_origin, bool *allocated) {
 	auto inner = (struct xrender_image_data_inner *)mask->image;
 	if (!inner) {
 		*allocated = false;
@@ -229,7 +227,7 @@ xrender_process_mask(struct xrender_data *xd, struct backend_mask *mask, rect_t 
 	auto const h_u16 = to_u16_checked(extent.y2 - extent.y1);
 	*allocated = true;
 	*new_origin =
-	    (struct coord){.x = extent.x1 + mask->origin.x, .y = extent.y1 + mask->origin.y};
+	    (ivec2){.x = extent.x1 + mask->origin.x, .y = extent.y1 + mask->origin.y};
 	x_clear_picture_clip_region(xd->base.c, inner->pict);
 	auto ret = x_create_picture_with_pictfmt(
 	    xd->base.c, extent.x2 - extent.x1, extent.y2 - extent.y1, inner->pictfmt,
@@ -271,7 +269,7 @@ xrender_process_mask(struct xrender_data *xd, struct backend_mask *mask, rect_t 
 	return ret;
 }
 
-static bool xrender_blit(struct backend_base *base, struct coord origin,
+static bool xrender_blit(struct backend_base *base, ivec2 origin,
                          image_handle target_handle, struct backend_blit_args *args) {
 	auto xd = (struct xrender_data *)base;
 	auto inner = (struct xrender_image_data_inner *)args->source_image;
@@ -294,8 +292,8 @@ static bool xrender_blit(struct backend_base *base, struct coord origin,
 	bool has_alpha = inner->has_alpha || args->opacity != 1;
 	auto const tmpw = to_u16_checked(inner->size.width);
 	auto const tmph = to_u16_checked(inner->size.height);
-	auto const tmpew = to_u16_checked(args->ewidth);
-	auto const tmpeh = to_u16_checked(args->eheight);
+	auto const tmpew = to_u16_checked(args->effective_size.width);
+	auto const tmpeh = to_u16_checked(args->effective_size.height);
 	int16_t mask_pict_dst_x = 0, mask_pict_dst_y = 0;
 	if (args->mask) {
 		mask_pict_dst_x = to_i16_checked(-mask_pict_origin.x);
@@ -470,9 +468,9 @@ xrender_clear(struct backend_base *base, image_handle target_handle, struct colo
 	return true;
 }
 
-static bool xrender_copy_area(struct backend_base *base, struct coord origin,
-                              image_handle target_handle, image_handle source_handle,
-                              const region_t *region) {
+static bool
+xrender_copy_area(struct backend_base *base, ivec2 origin, image_handle target_handle,
+                  image_handle source_handle, const region_t *region) {
 	auto xd = (struct xrender_data *)base;
 	auto source = (struct xrender_image_data_inner *)source_handle;
 	auto target = (struct xrender_image_data_inner *)target_handle;
@@ -485,11 +483,11 @@ static bool xrender_copy_area(struct backend_base *base, struct coord origin,
 	    to_i16_checked(extent->x1), to_i16_checked(extent->y1), 0, 0,
 	    to_i16_checked(origin.x + extent->x1), to_i16_checked(origin.y + extent->y1),
 	    to_u16_checked(extent->x2 - extent->x1), to_u16_checked(extent->y2 - extent->y1));
-	xrender_record_back_damage(xd, target, origin, (struct coord){0, 0}, region);
+	xrender_record_back_damage(xd, target, origin, (ivec2){0, 0}, region);
 	return true;
 }
 
-static bool xrender_blur(struct backend_base *base, struct coord origin,
+static bool xrender_blur(struct backend_base *base, ivec2 origin,
                          image_handle target_handle, struct backend_blur_args *args) {
 	auto bctx = (struct xrender_blur_context *)args->blur_context;
 	auto mask = (struct xrender_image_data_inner *)args->mask->image;
@@ -559,7 +557,7 @@ static bool xrender_blur(struct backend_base *base, struct coord origin,
 		// Sampling the 1x1 alpha pict out-of-bound while the X server is under
 		// heavy load, which it will be if blur is enabled, produces unpredictable
 		// results... This is a workaround for that.
-		mask_pict_origin = (struct coord){0, 0};
+		mask_pict_origin = (ivec2){0, 0};
 	}
 	x_set_picture_clip_region(c, src_pict, 0, 0, &reg_op_resized);
 	x_set_picture_clip_region(
@@ -575,8 +573,8 @@ static bool xrender_blur(struct backend_base *base, struct coord origin,
 	// (if source != target)
 	//   source -(pass 1)-> target
 	xcb_render_picture_t dst_pict = target == source ? tmp_picture[0] : target->pict;
-	struct coord src_origin = {.x = extent_resized->x1, .y = extent_resized->y1};
-	struct coord dst_origin = {};
+	ivec2 src_origin = {.x = extent_resized->x1, .y = extent_resized->y1};
+	ivec2 dst_origin = {};
 	int npasses = bctx->x_blur_kernel_count;
 	if (source == target && npasses == 1) {
 		npasses = 2;
@@ -613,14 +611,14 @@ static bool xrender_blur(struct backend_base *base, struct coord origin,
 		if (i + 1 == npasses - 1) {
 			// Intermediary to target
 			dst_pict = target->pict;
-			dst_origin = (struct coord){.x = origin.x + extent_resized->x1,
-			                            .y = origin.y + extent_resized->y1};
+			dst_origin = (ivec2){.x = origin.x + extent_resized->x1,
+			                     .y = origin.y + extent_resized->y1};
 		} else {
 			// Intermediary to intermediary
 			dst_pict = next_tmp;
-			dst_origin = (struct coord){.x = 0, .y = 0};
+			dst_origin = (ivec2){.x = 0, .y = 0};
 		}
-		src_origin = (struct coord){.x = 0, .y = 0};
+		src_origin = (ivec2){.x = 0, .y = 0};
 	}
 
 	if (mask_allocated) {
@@ -648,7 +646,7 @@ xrender_bind_pixmap(backend_t *base, xcb_pixmap_t pixmap, struct xvisual_info fm
 	auto img = ccalloc(1, struct xrender_image_data_inner);
 	img->depth = (uint8_t)fmt.visual_depth;
 	img->has_alpha = fmt.alpha_size > 0;
-	img->size = (struct geometry){
+	img->size = (ivec2){
 	    .width = r->width,
 	    .height = r->height,
 	};
@@ -786,7 +784,7 @@ static bool xrender_apply_alpha(struct backend_base *base, image_handle image,
 	xcb_render_composite(base->c->c, XCB_RENDER_PICT_OP_OUT_REVERSE, alpha_pict, XCB_NONE,
 	                     img->pict, 0, 0, 0, 0, 0, 0, to_u16_checked(img->size.width),
 	                     to_u16_checked(img->size.height));
-	static const struct coord zero = {0, 0};
+	static const ivec2 zero = {};
 	xrender_record_back_damage(xd, img, zero, zero, reg_op);
 	return true;
 }
@@ -948,8 +946,8 @@ err:
 	return NULL;
 }
 
-static image_handle xrender_new_image(struct backend_base *base,
-                                      enum backend_image_format format, struct geometry size) {
+static image_handle
+xrender_new_image(struct backend_base *base, enum backend_image_format format, ivec2 size) {
 	auto xd = (struct xrender_data *)base;
 	auto img = ccalloc(1, struct xrender_image_data_inner);
 	img->format = format;

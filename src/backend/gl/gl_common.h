@@ -126,18 +126,18 @@ void gl_prepare(backend_t *base, const region_t *reg);
 /// @param[in]  rects       mask rectangles, in mask coordinates
 /// @param[out] coord       OpenGL vertex coordinates, suitable for creating VAO/VBO
 /// @param[out] indices     OpenGL vertex indices, suitable for creating VAO/VBO
-void gl_mask_rects_to_coords(struct coord origin, struct coord mask_origin, int nrects,
+void gl_mask_rects_to_coords(ivec2 origin, ivec2 mask_origin, int nrects,
                              const rect_t *rects, GLint *coord, GLuint *indices);
 /// Like `gl_mask_rects_to_coords`, but with `origin` and `mask_origin` set to 0. i.e. all
 /// coordinates are in the same space.
 static inline void gl_mask_rects_to_coords_simple(int nrects, const rect_t *rects,
                                                   GLint *coord, GLuint *indices) {
-	return gl_mask_rects_to_coords((struct coord){0, 0}, (struct coord){0, 0}, nrects,
-	                               rects, coord, indices);
+	return gl_mask_rects_to_coords((ivec2){0, 0}, (ivec2){0, 0}, nrects, rects, coord,
+	                               indices);
 }
 
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str);
-GLuint gl_create_program(const GLuint *const shaders, int nshaders);
+GLuint gl_create_program(const GLuint *shaders, int nshaders);
 GLuint gl_create_program_from_str(const char *vert_shader_str, const char *frag_shader_str);
 GLuint gl_create_program_from_strv(const char **vert_shaders, const char **frag_shaders);
 void *gl_create_window_shader(backend_t *backend_data, const char *source);
@@ -145,10 +145,10 @@ void gl_destroy_window_shader(backend_t *backend_data, void *shader);
 uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
 bool gl_last_render_time(backend_t *backend_data, struct timespec *time);
 
-bool gl_blit(backend_t *base, struct coord origin, image_handle target,
+bool gl_blit(backend_t *base, ivec2 origin, image_handle target,
              struct backend_blit_args *args);
 image_handle gl_new_image(backend_t *backend_data attr_unused,
-                          enum backend_image_format format, geometry_t size);
+                          enum backend_image_format format, ivec2 size);
 bool gl_clear(backend_t *backend_data, image_handle target, struct color color);
 
 void gl_root_change(backend_t *base, session_t *);
@@ -164,13 +164,12 @@ xcb_pixmap_t gl_release_image(backend_t *base, image_handle image);
 
 image_handle gl_clone(backend_t *base, image_handle image, const region_t *reg_visible);
 
-bool gl_blur(struct backend_base *gd, struct coord origin, image_handle target,
+bool gl_blur(struct backend_base *gd, ivec2 origin, image_handle target,
              struct backend_blur_args *args);
-bool gl_copy_area(backend_t *backend_data, struct coord origin, image_handle target,
+bool gl_copy_area(backend_t *backend_data, ivec2 origin, image_handle target,
                   image_handle source, const region_t *region);
-bool gl_copy_area_quantize(backend_t *backend_data, struct coord origin,
-                           image_handle target_handle, image_handle source_handle,
-                           const region_t *region);
+bool gl_copy_area_quantize(backend_t *backend_data, ivec2 origin, image_handle target_handle,
+                           image_handle source_handle, const region_t *region);
 bool gl_apply_alpha(backend_t *base, image_handle target, double alpha, const region_t *reg_op);
 image_handle gl_back_buffer(struct backend_base *base);
 uint32_t gl_image_capabilities(backend_t *base, image_handle img);

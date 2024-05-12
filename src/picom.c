@@ -1835,8 +1835,7 @@ static void draw_callback_impl(EV_P_ session_t *ps, int revents attr_unused) {
 			    (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
 			layout_manager_append_layout(
 			    ps->layout_manager, ps->wm, ps->root_image_generation,
-			    (struct geometry){.width = ps->root_width,
-			                      .height = ps->root_height});
+			    (ivec2){.width = ps->root_width, .height = ps->root_height});
 			bool succeeded = renderer_render(
 			    ps->renderer, ps->backend_data, ps->root_image,
 			    ps->layout_manager, ps->command_builder,

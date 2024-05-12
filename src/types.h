@@ -31,35 +31,51 @@ struct color {
 
 typedef uint32_t opacity_t;
 
-typedef struct geometry {
-	int width;
-	int height;
-} geometry_t;
+typedef struct vec2 {
+	union {
+		double x;
+		double width;
+	};
+	union {
+		double y;
+		double height;
+	};
+} vec2;
 
-typedef struct coord {
-	int x, y;
-} coord_t;
+typedef struct ivec2 {
+	union {
+		int x;
+		int width;
+	};
+	union {
+		int y;
+		int height;
+	};
+} ivec2;
 
-static inline struct coord coord_add(struct coord a, struct coord b) {
-	return (struct coord){
+static inline ivec2 ivec2_add(ivec2 a, ivec2 b) {
+	return (ivec2){
 	    .x = a.x + b.x,
 	    .y = a.y + b.y,
 	};
 }
 
-static inline struct coord coord_sub(struct coord a, struct coord b) {
-	return (struct coord){
+static inline ivec2 ivec2_sub(ivec2 a, ivec2 b) {
+	return (ivec2){
 	    .x = a.x - b.x,
 	    .y = a.y - b.y,
 	};
 }
 
-static inline bool coord_eq(struct coord a, struct coord b) {
+static inline bool ivec2_eq(ivec2 a, ivec2 b) {
 	return a.x == b.x && a.y == b.y;
 }
 
-static inline struct coord coord_neg(struct coord a) {
-	return (struct coord){.x = -a.x, .y = -a.y};
+static inline ivec2 ivec2_neg(ivec2 a) {
+	return (ivec2){
+	    .x = -a.x,
+	    .y = -a.y,
+	};
 }
 
 #define MARGIN_INIT                                                                      \

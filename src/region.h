@@ -124,7 +124,7 @@ static inline void resize_region_in_place(region_t *region, int dx, int dy) {
 	return _resize_region(region, region, dx, dy);
 }
 
-static inline rect_t region_translate_rect(rect_t rect, struct coord origin) {
+static inline rect_t region_translate_rect(rect_t rect, ivec2 origin) {
 	return (rect_t){
 	    .x1 = rect.x1 + origin.x,
 	    .y1 = rect.y1 + origin.y,
@@ -134,23 +134,21 @@ static inline rect_t region_translate_rect(rect_t rect, struct coord origin) {
 }
 
 /// Subtract `other`, placed at `origin`, from `region`.
-static inline void
-region_subtract(region_t *region, struct coord origin, const region_t *other) {
+static inline void region_subtract(region_t *region, ivec2 origin, const region_t *other) {
 	pixman_region32_translate(region, -origin.x, -origin.y);
 	pixman_region32_subtract(region, region, other);
 	pixman_region32_translate(region, origin.x, origin.y);
 }
 
 /// Union `region` with `other` placed at `origin`.
-static inline void region_union(region_t *region, struct coord origin, const region_t *other) {
+static inline void region_union(region_t *region, ivec2 origin, const region_t *other) {
 	pixman_region32_translate(region, -origin.x, -origin.y);
 	pixman_region32_union(region, region, other);
 	pixman_region32_translate(region, origin.x, origin.y);
 }
 
 /// Intersect `region` with `other` placed at `origin`.
-static inline void
-region_intersect(region_t *region, struct coord origin, const region_t *other) {
+static inline void region_intersect(region_t *region, ivec2 origin, const region_t *other) {
 	pixman_region32_translate(region, -origin.x, -origin.y);
 	pixman_region32_intersect(region, region, other);
 	pixman_region32_translate(region, origin.x, origin.y);
@@ -160,15 +158,14 @@ region_intersect(region_t *region, struct coord origin, const region_t *other) {
 /// `origin2`, and union the result into `result`.
 ///
 /// @param scratch a region to store temporary results
-static inline void
-region_symmetric_difference(region_t *result, region_t *scratch, struct coord origin1,
-                            const region_t *region1, struct coord origin2,
-                            const region_t *region2) {
+static inline void region_symmetric_difference(region_t *result, region_t *scratch,
+                                               ivec2 origin1, const region_t *region1,
+                                               ivec2 origin2, const region_t *region2) {
 	pixman_region32_copy(scratch, region1);
-	region_subtract(scratch, coord_sub(origin2, origin1), region2);
+	region_subtract(scratch, ivec2_sub(origin2, origin1), region2);
 	region_union(result, origin1, scratch);
 
 	pixman_region32_copy(scratch, region2);
-	region_subtract(scratch, coord_sub(origin1, origin2), region1);
+	region_subtract(scratch, ivec2_sub(origin1, origin2), region1);
 	region_union(result, origin2, scratch);
 }

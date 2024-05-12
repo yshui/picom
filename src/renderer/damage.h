@@ -17,7 +17,7 @@ struct backend_mask;
 ///                    initialized regions. This function will initialize their regions.
 ///                    These masks MUST NOT be freed until you call `commands_uncull`.
 void commands_cull_with_damage(struct layout *layout, const region_t *damage,
-                               struct geometry blur_size, struct backend_mask *culled_mask);
+                               ivec2 blur_size, struct backend_mask *culled_mask);
 
 /// Un-do the effect of `commands_cull_with_damage`
 void commands_uncull(struct layout *layout);
@@ -36,4 +36,4 @@ void commands_uncull(struct layout *layout);
 /// Note `layout_manager_damage` cannot take desktop background change into
 /// account.
 void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
-                           struct geometry blur_size, region_t *damage);
+                           ivec2 blur_size, region_t *damage);

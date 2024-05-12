@@ -475,7 +475,7 @@ static void gl_blit_inner(GLuint target_fbo, int nrects, GLint *coord, GLuint *i
 	gl_check_err();
 }
 
-void gl_mask_rects_to_coords(struct coord origin, struct coord mask_origin, int nrects,
+void gl_mask_rects_to_coords(ivec2 origin, ivec2 mask_origin, int nrects,
                              const rect_t *rects, GLint *coord, GLuint *indices) {
 	for (ptrdiff_t i = 0; i < nrects; i++) {
 		// Rectangle in source image coordinates
@@ -522,9 +522,9 @@ static inline void gl_y_flip_texture(int nrects, GLint *coord, GLint texture_hei
 
 /// Lower `struct backend_blit_args` into a list of GL coordinates, vertex indices, a
 /// shader, and uniforms.
-static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
-                              struct backend_blit_args *args, GLint **coord, GLuint **indices,
-                              struct gl_shader **shader, struct gl_uniform_value *uniforms) {
+static int gl_lower_blit_args(struct gl_data *gd, ivec2 origin, struct backend_blit_args *args,
+                              GLint **coord, GLuint **indices, struct gl_shader **shader,
+                              struct gl_uniform_value *uniforms) {
 	auto img = (struct gl_texture *)args->source_image;
 	int nrects;
 	const rect_t *rects;
@@ -533,7 +533,7 @@ static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
 		// Nothing to paint
 		return 0;
 	}
-	struct coord mask_origin = args->mask->origin;
+	ivec2 mask_origin = args->mask->origin;
 	*coord = ccalloc(nrects * 16, GLint);
 	*indices = ccalloc(nrects * 6, GLuint);
 	gl_mask_rects_to_coords(origin, mask_origin, nrects, rects, *coord, *indices);
@@ -562,7 +562,8 @@ static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
 	    [UNIFORM_TEX_LOC]            = {.type = GL_TEXTURE_2D,
 	                                    .tu = {img->texture, gd->samplers[GL_SAMPLER_REPEAT]}},
 	    [UNIFORM_EFFECTIVE_SIZE_LOC] = {.type = GL_FLOAT_VEC2,
-	                                    .f2 = {(float)args->ewidth, (float)args->eheight}},
+	                                    .f2 = {(float)args->effective_size.width,
+					           (float)args->effective_size.height}},
 	    [UNIFORM_DIM_LOC]            = {.type = GL_FLOAT, .f = (float)args->dim},
 	    [UNIFORM_BRIGHTNESS_LOC]     = {.type = GL_TEXTURE_2D,
 	                                    .tu = {brightness, gd->samplers[GL_SAMPLER_EDGE]}},
@@ -599,7 +600,7 @@ static int gl_lower_blit_args(struct gl_data *gd, struct coord origin,
 	return nrects;
 }
 
-bool gl_blit(backend_t *base, struct coord origin, image_handle target_,
+bool gl_blit(backend_t *base, ivec2 origin, image_handle target_,
              struct backend_blit_args *args) {
 	auto gd = (struct gl_data *)base;
 	auto source = (struct gl_texture *)args->source_image;
@@ -638,8 +639,8 @@ bool gl_blit(backend_t *base, struct coord origin, image_handle target_,
 
 /// Copy areas by glBlitFramebuffer. This is only used to copy data from the back
 /// buffer.
-static bool gl_copy_area_blit_fbo(struct gl_data *gd, struct coord origin,
-                                  image_handle target, const region_t *region) {
+static bool gl_copy_area_blit_fbo(struct gl_data *gd, ivec2 origin, image_handle target,
+                                  const region_t *region) {
 	gl_bind_image_to_fbo(gd, target);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 
@@ -662,7 +663,7 @@ static bool gl_copy_area_blit_fbo(struct gl_data *gd, struct coord origin,
 }
 
 /// Copy areas by drawing. This is the common path to copy from one texture to another.
-static bool gl_copy_area_draw(struct gl_data *gd, struct coord origin,
+static bool gl_copy_area_draw(struct gl_data *gd, ivec2 origin,
                               image_handle target_handle, image_handle source_handle,
                               struct gl_shader *shader, const region_t *region) {
 	auto source = (struct gl_texture *)source_handle;
@@ -677,7 +678,7 @@ static bool gl_copy_area_draw(struct gl_data *gd, struct coord origin,
 
 	auto coord = ccalloc(16 * nrects, GLint);
 	auto indices = ccalloc(6 * nrects, GLuint);
-	gl_mask_rects_to_coords(origin, (struct coord){}, nrects, rects, coord, indices);
+	gl_mask_rects_to_coords(origin, (ivec2){}, nrects, rects, coord, indices);
 	if (!target->y_inverted) {
 		gl_y_flip_target(nrects, coord, target->height);
 	}
@@ -695,7 +696,7 @@ static bool gl_copy_area_draw(struct gl_data *gd, struct coord origin,
 	return true;
 }
 
-bool gl_copy_area(backend_t *backend_data, struct coord origin, image_handle target,
+bool gl_copy_area(backend_t *backend_data, ivec2 origin, image_handle target,
                   image_handle source, const region_t *region) {
 	auto gd = (struct gl_data *)backend_data;
 	if ((struct gl_texture *)source == &gd->back_image) {
@@ -704,9 +705,8 @@ bool gl_copy_area(backend_t *backend_data, struct coord origin, image_handle tar
 	return gl_copy_area_draw(gd, origin, target, source, &gd->copy_area_prog, region);
 }
 
-bool gl_copy_area_quantize(backend_t *backend_data, struct coord origin,
-                           image_handle target_handle, image_handle source_handle,
-                           const region_t *region) {
+bool gl_copy_area_quantize(backend_t *backend_data, ivec2 origin, image_handle target_handle,
+                           image_handle source_handle, const region_t *region) {
 	auto gd = (struct gl_data *)backend_data;
 	auto target = (struct gl_texture *)target_handle;
 	auto source = (struct gl_texture *)source_handle;
@@ -1062,7 +1062,7 @@ image_handle gl_back_buffer(struct backend_base *base) {
 }
 
 image_handle gl_new_image(backend_t *backend_data attr_unused,
-                          enum backend_image_format format, geometry_t size) {
+                          enum backend_image_format format, ivec2 size) {
 	auto tex = ccalloc(1, struct gl_texture);
 	log_trace("Creating texture %dx%d", size.width, size.height);
 	tex->format = format;

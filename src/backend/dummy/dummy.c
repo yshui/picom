@@ -71,8 +71,8 @@ static void dummy_check_image(struct backend_base *base, image_handle image) {
 	}
 }
 
-bool dummy_blit(struct backend_base *base, struct coord origin attr_unused,
-                image_handle target, struct backend_blit_args *args) {
+bool dummy_blit(struct backend_base *base, ivec2 origin attr_unused, image_handle target,
+                struct backend_blit_args *args) {
 	dummy_check_image(base, target);
 	dummy_check_image(base, args->source_image);
 	if (args->mask->image) {
@@ -87,8 +87,8 @@ bool dummy_blit(struct backend_base *base, struct coord origin attr_unused,
 	return true;
 }
 
-bool dummy_blur(struct backend_base *base, struct coord origin attr_unused,
-                image_handle target, struct backend_blur_args *args) {
+bool dummy_blur(struct backend_base *base, ivec2 origin attr_unused, image_handle target,
+                struct backend_blur_args *args) {
 	dummy_check_image(base, target);
 	dummy_check_image(base, args->source_image);
 	if (args->mask->image) {
@@ -148,9 +148,8 @@ bool dummy_apply_alpha(struct backend_base *base, image_handle target,
 	return true;
 }
 
-bool dummy_copy_area(struct backend_base *base, struct coord origin attr_unused,
-                     image_handle target, image_handle source,
-                     const region_t *reg attr_unused) {
+bool dummy_copy_area(struct backend_base *base, ivec2 origin attr_unused, image_handle target,
+                     image_handle source, const region_t *reg attr_unused) {
 	dummy_check_image(base, target);
 	dummy_check_image(base, source);
 	return true;
@@ -163,7 +162,7 @@ bool dummy_clear(struct backend_base *base, image_handle target,
 }
 
 image_handle dummy_new_image(struct backend_base *base, enum backend_image_format format,
-                             struct geometry size attr_unused) {
+                             ivec2 size attr_unused) {
 	auto new_img = ccalloc(1, struct dummy_image);
 	auto dummy = (struct dummy_data *)base;
 	list_insert_after(&dummy->non_pixmap_images, &new_img->siblings);
