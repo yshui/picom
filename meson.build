@@ -58,7 +58,8 @@ if get_option('warning_level') != '0'
             'nonnull', 'shadow', 'no-type-limits', 'old-style-declaration', 'override-init',
             'sign-compare', 'type-limits', 'uninitialized', 'shift-negative-value',
             'unused-but-set-parameter', 'unused-parameter', 'implicit-fallthrough=2',
-            'no-unknown-warning-option', 'no-missing-braces', 'conversion', 'empty-body' ]
+            'no-unknown-warning-option', 'no-missing-braces', 'conversion', 'empty-body',
+            'no-c2x-extensions' ]
   bad_warns_ubsan = [
     'no-format-overflow' # see gcc bug 87884, enabling UBSAN makes gcc spit out spurious warnings
                          # (if you saw this comment, went and checked gcc bugzilla, and found out

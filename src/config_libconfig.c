@@ -119,34 +119,40 @@ FILE *open_config_file(const char *cpath, char **ppath) {
 /**
  * Parse a condition list in configuration file.
  */
-void parse_cfg_condlst(const config_t *pcfg, c2_lptr_t **pcondlst, const char *name) {
+bool must_use parse_cfg_condlst(const config_t *pcfg, c2_lptr_t **pcondlst, const char *name) {
 	config_setting_t *setting = config_lookup(pcfg, name);
-	if (setting) {
-		// Parse an array of options
-		if (config_setting_is_array(setting)) {
-			int i = config_setting_length(setting);
-			while (i--) {
-				condlst_add(pcondlst,
-				            config_setting_get_string_elem(setting, i));
+	if (setting == NULL) {
+		return true;
+	}
+	// Parse an array of options
+	if (config_setting_is_array(setting)) {
+		int i = config_setting_length(setting);
+		while (i--) {
+			if (!c2_parse(pcondlst,
+			              config_setting_get_string_elem(setting, i), NULL)) {
+				return false;
 			}
 		}
-		// Treat it as a single pattern if it's a string
-		else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
-			condlst_add(pcondlst, config_setting_get_string(setting));
+	}
+	// Treat it as a single pattern if it's a string
+	else if (CONFIG_TYPE_STRING == config_setting_type(setting)) {
+		if (!c2_parse(pcondlst, config_setting_get_string(setting), NULL)) {
+			return false;
 		}
 	}
+	return true;
 }
 
 /**
  * Parse a window corner radius rule list in configuration file.
  */
-static inline void
+static inline bool
 parse_cfg_condlst_with_prefix(c2_lptr_t **condlst, const config_t *pcfg, const char *name,
                               void *(*parse_prefix)(const char *, const char **, void *),
                               void (*free_value)(void *), void *user_data) {
 	config_setting_t *setting = config_lookup(pcfg, name);
 	if (setting == NULL) {
-		return;
+		return true;
 	}
 	// Parse an array of options
 	if (config_setting_is_array(setting)) {
@@ -155,7 +161,7 @@ parse_cfg_condlst_with_prefix(c2_lptr_t **condlst, const config_t *pcfg, const c
 			if (!c2_parse_with_prefix(
 			        condlst, config_setting_get_string_elem(setting, i),
 			        parse_prefix, free_value, user_data)) {
-				exit(1);
+				return false;
 			}
 		}
 	}
@@ -163,9 +169,10 @@ parse_cfg_condlst_with_prefix(c2_lptr_t **condlst, const config_t *pcfg, const c
 	else if (config_setting_type(setting) == CONFIG_TYPE_STRING) {
 		if (!c2_parse_with_prefix(condlst, config_setting_get_string(setting),
 		                          parse_prefix, free_value, user_data)) {
-			exit(1);
+			return false;
 		}
 	}
+	return true;
 }
 
 static inline void parse_wintype_config(const config_t *cfg, const char *member_name,
@@ -218,9 +225,7 @@ static inline void parse_wintype_config(const config_t *cfg, const char *member_
  *
  * Returns the actually config_file name
  */
-char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shadow_enable,
-                             bool *fading_enable, bool *conv_kern_hasneg,
-                             win_option_mask_t *winopt_mask) {
+char *parse_config_libconfig(options_t *opt, const char *config_file) {
 
 	const char *deprecation_message =
 	    "option has been deprecated. Please remove it from your configuration file. "
@@ -310,19 +315,15 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	// --corner-radius
 	config_lookup_int(&cfg, "corner-radius", &opt->corner_radius);
-	// --rounded-corners-exclude
-	parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist, "rounded-corners-exclude");
-	// --corner-radius-rules
-	parse_cfg_condlst_with_prefix(&opt->corner_radius_rules, &cfg, "corner-radius-rules",
-	                              parse_numeric_prefix, NULL, (int[]){0, INT_MAX});
 
-	// --no-frame-pacing
-	lcfg_lookup_bool(&cfg, "no-frame-pacing", &opt->no_frame_pacing);
+	if (lcfg_lookup_bool(&cfg, "no-frame-pacing", &bval)) {
+		opt->frame_pacing = !bval;
+	}
 
 	// -e (frame_opacity)
 	config_lookup_float(&cfg, "frame-opacity", &opt->frame_opacity);
 	// -c (shadow_enable)
-	lcfg_lookup_bool(&cfg, "shadow", shadow_enable);
+	lcfg_lookup_bool(&cfg, "shadow", &opt->shadow_enable);
 	// -m (menu_opacity)
 	if (config_lookup_float(&cfg, "menu-opacity", &dval)) {
 		log_warn("Option `menu-opacity` is deprecated, and will be removed."
@@ -330,12 +331,12 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		         "and `dropdown_menu` instead.");
 		opt->wintype_option[WINTYPE_DROPDOWN_MENU].opacity = dval;
 		opt->wintype_option[WINTYPE_POPUP_MENU].opacity = dval;
-		winopt_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
-		winopt_mask[WINTYPE_POPUP_MENU].opacity = true;
+		opt->wintype_option_mask[WINTYPE_DROPDOWN_MENU].opacity = true;
+		opt->wintype_option_mask[WINTYPE_POPUP_MENU].opacity = true;
 	}
 	// -f (fading_enable)
 	if (config_lookup_bool(&cfg, "fading", &ival)) {
-		*fading_enable = ival;
+		opt->fading_enable = ival;
 	}
 	// --no-fading-open-close
 	lcfg_lookup_bool(&cfg, "no-fading-openclose", &opt->no_fading_openclose);
@@ -404,11 +405,11 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	}
 	// --log-level
 	if (config_lookup_string(&cfg, "log-level", &sval)) {
-		auto level = string_to_log_level(sval);
-		if (level == LOG_LEVEL_INVALID) {
+		opt->log_level = string_to_log_level(sval);
+		if (opt->log_level == LOG_LEVEL_INVALID) {
 			log_warn("Invalid log level, defaults to WARN");
 		} else {
-			log_set_level_tls(level);
+			log_set_level_tls(opt->log_level);
 		}
 	}
 	// --log-file
@@ -448,35 +449,36 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "transparent-clipping", &opt->transparent_clipping);
 	// --dithered_present
 	lcfg_lookup_bool(&cfg, "dithered-present", &opt->dithered_present);
-	// --transparent-clipping-exclude
-	parse_cfg_condlst(&cfg, &opt->transparent_clipping_blacklist,
-	                  "transparent-clipping-exclude");
-	// --shadow-exclude
-	parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude");
-	// --clip-shadow-above
-	parse_cfg_condlst(&cfg, &opt->shadow_clip_list, "clip-shadow-above");
-	// --fade-exclude
-	parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude");
-	// --focus-exclude
-	parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude");
-	// --invert-color-include
-	parse_cfg_condlst(&cfg, &opt->invert_color_list, "invert-color-include");
-	// --blur-background-exclude
-	parse_cfg_condlst(&cfg, &opt->blur_background_blacklist, "blur-background-exclude");
-	// --opacity-rule
-	parse_cfg_condlst_with_prefix(&opt->opacity_rules, &cfg, "opacity-rule",
-	                              parse_numeric_prefix, NULL, (int[]){0, 100});
-	// --unredir-if-possible-exclude
-	parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
-	                  "unredir-if-possible-exclude");
+
+	if (!parse_cfg_condlst(&cfg, &opt->transparent_clipping_blacklist,
+	                       "transparent-clipping-exclude") ||
+	    !parse_cfg_condlst(&cfg, &opt->shadow_blacklist, "shadow-exclude") ||
+	    !parse_cfg_condlst(&cfg, &opt->shadow_clip_list, "clip-shadow-above") ||
+	    !parse_cfg_condlst(&cfg, &opt->fade_blacklist, "fade-exclude") ||
+	    !parse_cfg_condlst(&cfg, &opt->focus_blacklist, "focus-exclude") ||
+	    !parse_cfg_condlst(&cfg, &opt->invert_color_list, "invert-color-include") ||
+	    !parse_cfg_condlst(&cfg, &opt->blur_background_blacklist, "blur-background-exclude") ||
+	    !parse_cfg_condlst(&cfg, &opt->unredir_if_possible_blacklist,
+	                       "unredir-if-possible-exclude") ||
+	    !parse_cfg_condlst(&cfg, &opt->rounded_corners_blacklist, "rounded-corners-exclude") ||
+	    !parse_cfg_condlst_with_prefix(&opt->corner_radius_rules, &cfg, "corner-radius-rules",
+	                                   parse_numeric_prefix, NULL, (int[]){0, INT_MAX}) ||
+	    !parse_cfg_condlst_with_prefix(&opt->opacity_rules, &cfg, "opacity-rule",
+	                                   parse_numeric_prefix, NULL, (int[]){0, 100}) ||
+	    !parse_cfg_condlst_with_prefix(
+	        &opt->window_shader_fg_rules, &cfg, "window-shader-fg-rule",
+	        parse_window_shader_prefix, free, (void *)config_get_include_dir(&cfg))) {
+		goto err;
+	}
+
 	// --blur-method
 	if (config_lookup_string(&cfg, "blur-method", &sval)) {
-		enum blur_method method = parse_blur_method(sval);
+		int method = parse_blur_method(sval);
 		if (method >= BLUR_METHOD_INVALID) {
 			log_fatal("Invalid blur method %s", sval);
 			goto err;
 		}
-		opt->blur_method = method;
+		opt->blur_method = (enum blur_method)method;
 	}
 	// --blur-size
 	config_lookup_int(&cfg, "blur-size", &opt->blur_radius);
@@ -496,8 +498,7 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	lcfg_lookup_bool(&cfg, "blur-background-fixed", &opt->blur_background_fixed);
 	// --blur-kern
 	if (config_lookup_string(&cfg, "blur-kern", &sval)) {
-		opt->blur_kerns =
-		    parse_blur_kern_lst(sval, conv_kern_hasneg, &opt->blur_kernel_count);
+		opt->blur_kerns = parse_blur_kern_lst(sval, &opt->blur_kernel_count);
 		if (!opt->blur_kerns) {
 			log_fatal("Cannot parse \"blur-kern\"");
 			goto err;
@@ -547,11 +548,6 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 		    locate_auxiliary_file("shaders", sval, config_get_include_dir(&cfg));
 	}
 
-	// --window-shader-fg-rule
-	parse_cfg_condlst_with_prefix(&opt->window_shader_fg_rules, &cfg,
-	                              "window-shader-fg-rule", parse_window_shader_prefix,
-	                              free, (void *)config_get_include_dir(&cfg));
-
 	// --glx-use-gpushader4
 	if (config_lookup_bool(&cfg, "glx-use-gpushader4", &ival)) {
 		log_error("glx-use-gpushader4 has been removed, please remove it "
@@ -569,19 +565,18 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	config_setting_t *blur_cfg = config_lookup(&cfg, "blur");
 	if (blur_cfg) {
 		if (config_setting_lookup_string(blur_cfg, "method", &sval)) {
-			enum blur_method method = parse_blur_method(sval);
+			int method = parse_blur_method(sval);
 			if (method >= BLUR_METHOD_INVALID) {
 				log_warn("Invalid blur method %s, ignoring.", sval);
 			} else {
-				opt->blur_method = method;
+				opt->blur_method = (enum blur_method)method;
 			}
 		}
 
 		config_setting_lookup_int(blur_cfg, "size", &opt->blur_radius);
 
 		if (config_setting_lookup_string(blur_cfg, "kernel", &sval)) {
-			opt->blur_kerns = parse_blur_kern_lst(sval, conv_kern_hasneg,
-			                                      &opt->blur_kernel_count);
+			opt->blur_kerns = parse_blur_kern_lst(sval, &opt->blur_kernel_count);
 			if (!opt->blur_kerns) {
 				log_warn("Failed to parse blur kernel: %s", sval);
 			}
@@ -605,12 +600,12 @@ char *parse_config_libconfig(options_t *opt, const char *config_file, bool *shad
 	// XXX ! Refactor all the wintype_* arrays into a struct
 	for (wintype_t i = 0; i < NUM_WINTYPES; ++i) {
 		parse_wintype_config(&cfg, WINTYPES[i].name, &opt->wintype_option[i],
-		                     &winopt_mask[i]);
+		                     &opt->wintype_option_mask[i]);
 	}
 
 	// Compatibility with the old name for notification windows.
 	parse_wintype_config(&cfg, "notify", &opt->wintype_option[WINTYPE_NOTIFICATION],
-	                     &winopt_mask[WINTYPE_NOTIFICATION]);
+	                     &opt->wintype_option_mask[WINTYPE_NOTIFICATION]);
 
 	config_destroy(&cfg);
 	return path;
