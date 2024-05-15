@@ -38,7 +38,32 @@ struct renderer {
 	int shadow_radius;
 	void *shadow_blur_context;
 	struct conv *shadow_kernel;
+
+	struct backend_mask *culled_masks;
+	size_t culled_masks_capacity;
 };
+
+static void renderer_reallocate_culled_masks(struct renderer *r, size_t capacity) {
+	if (capacity <= r->culled_masks_capacity &&
+	    capacity > max2(1, r->culled_masks_capacity / 2)) {
+		return;
+	}
+	for (size_t i = capacity; i < r->culled_masks_capacity; i++) {
+		pixman_region32_fini(&r->culled_masks[i].region);
+	}
+	void *new_storage = NULL;
+	if (capacity > 0) {
+		new_storage = realloc(r->culled_masks, sizeof(struct backend_mask[capacity]));
+		allocchk(new_storage);
+	} else {
+		free(r->culled_masks);
+	}
+	r->culled_masks = new_storage;
+	for (size_t i = r->culled_masks_capacity; i < capacity; i++) {
+		pixman_region32_init(&r->culled_masks[i].region);
+	}
+	r->culled_masks_capacity = capacity;
+}
 
 void renderer_free(struct backend_base *backend, struct renderer *r) {
 	if (r->white_image) {
@@ -74,6 +99,7 @@ void renderer_free(struct backend_base *backend, struct renderer *r) {
 		}
 		free(r->monitor_repaint_copy);
 	}
+	renderer_reallocate_culled_masks(r, 0);
 	free(r);
 }
 
@@ -507,8 +533,8 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		layout_manager_damage(lm, (unsigned)buffer_age, blur_size, &damage_region);
 	}
 
-	auto culled_masks = ccalloc(layout->number_of_commands, struct backend_mask);
-	commands_cull_with_damage(layout, &damage_region, blur_size, culled_masks);
+	renderer_reallocate_culled_masks(r, layout->number_of_commands);
+	commands_cull_with_damage(layout, &damage_region, blur_size, r->culled_masks);
 
 	auto now = get_time_timespec();
 	*after_damage_us = (uint64_t)now.tv_sec * 1000000UL + (uint64_t)now.tv_nsec / 1000;
@@ -577,7 +603,6 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	// "Un-cull" the render commands, so later damage calculation using those commands
 	// will not use culled regions.
 	commands_uncull(layout);
-	free(culled_masks);
 
 	pixman_region32_fini(&screen_region);
 	pixman_region32_fini(&damage_region);

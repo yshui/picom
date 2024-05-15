@@ -13,9 +13,9 @@ struct backend_mask;
 /// retained, so later the commands can be "un-culled".
 ///
 /// @param culled_mask use to stored the culled masks, must be have space to store at
-///                    least `layout->number_of_commands` elements. They MUST NOT have
-///                    initialized regions. This function will initialize their regions.
-///                    These masks MUST NOT be freed until you call `commands_uncull`.
+///                    least `layout->number_of_commands` elements. They MUST be
+///                    initialized before calling this function. These masks MUST NOT be
+///                    freed until you call `commands_uncull`.
 void commands_cull_with_damage(struct layout *layout, const region_t *damage,
                                ivec2 blur_size, struct backend_mask *culled_mask);
 

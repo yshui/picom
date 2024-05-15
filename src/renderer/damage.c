@@ -323,8 +323,9 @@ void commands_cull_with_damage(struct layout *layout, const region_t *damage,
 		} else {
 			mask_origin = cmd->origin;
 		}
+		region_t tmp_region = culled_mask[i].region;
 		culled_mask[i] = cmd->mask;
-		pixman_region32_init(&culled_mask[i].region);
+		culled_mask[i].region = tmp_region;
 		pixman_region32_copy(&culled_mask[i].region, &cmd->mask.region);
 		region_intersect(&culled_mask[i].region, ivec2_neg(mask_origin),
 		                 &scratch_region);
@@ -358,16 +359,9 @@ void commands_uncull(struct layout *layout) {
 	for (auto i = layout->commands;
 	     i != &layout->commands[layout->number_of_commands]; i++) {
 		switch (i->op) {
-		case BACKEND_COMMAND_BLIT:
-			pixman_region32_fini(&i->blit.mask->region);
-			i->blit.mask = &i->mask;
-			break;
-		case BACKEND_COMMAND_BLUR:
-			pixman_region32_fini(&i->blur.mask->region);
-			i->blur.mask = &i->mask;
-			break;
+		case BACKEND_COMMAND_BLIT: i->blit.mask = &i->mask; break;
+		case BACKEND_COMMAND_BLUR: i->blur.mask = &i->mask; break;
 		case BACKEND_COMMAND_COPY_AREA:
-			pixman_region32_fini((region_t *)i->copy_area.region);
 			i->copy_area.region = &i->mask.region;
 			break;
 		case BACKEND_COMMAND_INVALID: assert(false);
