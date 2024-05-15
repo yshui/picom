@@ -430,7 +430,7 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 				    !renderer_bind_mask(r, backend, w)) {
 					return false;
 				}
-				cmd->blit.source_mask->image = w->mask_image;
+				cmd->source_mask.image = w->mask_image;
 			}
 			break;
 		case BACKEND_COMMAND_BLUR:
@@ -441,7 +441,7 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 				    !renderer_bind_mask(r, backend, w)) {
 					return false;
 				}
-				cmd->blur.source_mask->image = w->mask_image;
+				cmd->source_mask.image = w->mask_image;
 			}
 			break;
 		default:

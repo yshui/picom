@@ -267,7 +267,7 @@ xrender_process_mask(struct xrender_data *xd, const struct backend_mask_image *m
 }
 
 static bool xrender_blit(struct backend_base *base, ivec2 origin,
-                         image_handle target_handle, struct backend_blit_args *args) {
+                         image_handle target_handle, const struct backend_blit_args *args) {
 	auto xd = (struct xrender_data *)base;
 	auto inner = (struct xrender_image_data_inner *)args->source_image;
 	auto target = (struct xrender_image_data_inner *)target_handle;
@@ -475,7 +475,7 @@ xrender_copy_area(struct backend_base *base, ivec2 origin, image_handle target_h
 }
 
 static bool xrender_blur(struct backend_base *base, ivec2 origin,
-                         image_handle target_handle, struct backend_blur_args *args) {
+                         image_handle target_handle, const struct backend_blur_args *args) {
 	auto bctx = (struct xrender_blur_context *)args->blur_context;
 	auto source_mask = args->source_image
 	                       ? (struct xrender_image_data_inner *)args->source_mask->image

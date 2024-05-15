@@ -95,7 +95,7 @@ struct backend_blur_args {
 	void *blur_context;
 	/// The source mask for the blur operation, may be NULL. Only parts of the source
 	/// image covered by the mask should participate in the blur operation.
-	struct backend_mask_image *source_mask;
+	const struct backend_mask_image *source_mask;
 	/// Region of the target image that will be covered by the blur operation, in the
 	/// source image's coordinate.
 	const region_t *target_mask;
@@ -111,7 +111,7 @@ struct backend_blit_args {
 	/// Mask for the source image. may be NULL. Only contents covered by the mask
 	/// should participate in the blit operation. This applies to the source image
 	/// before it's scaled.
-	struct backend_mask_image *source_mask;
+	const struct backend_mask_image *source_mask;
 	/// Mask for the target image. Only regions of the target image covered by this
 	/// mask should be modified. This is the target's coordinate system.
 	const region_t *target_mask;
@@ -267,7 +267,7 @@ struct backend_operations {
 	/// @param args         arguments for blit
 	/// @return             whether the operation is successful
 	bool (*blit)(struct backend_base *backend_data, ivec2 origin, image_handle target,
-	             struct backend_blit_args *args) attr_nonnull(1, 3, 4);
+	             const struct backend_blit_args *args) attr_nonnull(1, 3, 4);
 
 	/// Blur a given region of a source image and store the result in the
 	/// target image.
@@ -286,7 +286,7 @@ struct backend_operations {
 	/// @param args         argument for blur
 	/// @return             whether the operation is successful
 	bool (*blur)(struct backend_base *backend_data, ivec2 origin, image_handle target,
-	             struct backend_blur_args *args) attr_nonnull(1, 3, 4);
+	             const struct backend_blur_args *args) attr_nonnull(1, 3, 4);
 
 	/// Direct copy of pixels from a source image on to the target image.
 	/// This is a simpler version of `blit`, without any effects. Note unlike `blit`,
@@ -451,7 +451,7 @@ struct backend_operations {
 extern struct backend_operations *backend_list[];
 
 bool backend_execute(struct backend_base *backend, image_handle target, unsigned ncmds,
-                     struct backend_command cmds[ncmds]);
+                     const struct backend_command cmds[ncmds]);
 void log_backend_command_(enum log_level level, const char *func,
                           const struct backend_command *cmd);
 #define log_backend_command(level, cmd)                                                  \

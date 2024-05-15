@@ -72,7 +72,7 @@ static void dummy_check_image(struct backend_base *base, image_handle image) {
 }
 
 bool dummy_blit(struct backend_base *base, ivec2 origin attr_unused, image_handle target,
-                struct backend_blit_args *args) {
+                const struct backend_blit_args *args) {
 	dummy_check_image(base, target);
 	dummy_check_image(base, args->source_image);
 	if (args->source_mask) {
@@ -88,7 +88,7 @@ bool dummy_blit(struct backend_base *base, ivec2 origin attr_unused, image_handl
 }
 
 bool dummy_blur(struct backend_base *base, ivec2 origin attr_unused, image_handle target,
-                struct backend_blur_args *args) {
+                const struct backend_blur_args *args) {
 	dummy_check_image(base, target);
 	dummy_check_image(base, args->source_image);
 	if (args->source_mask) {

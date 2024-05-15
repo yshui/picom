@@ -45,7 +45,7 @@ struct gl_blur_context {
  * Blur contents in a particular region.
  */
 static bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
-                           struct backend_mask_image *mask, const GLuint vao[2],
+                           const struct backend_mask_image *mask, const GLuint vao[2],
                            const int vao_nelems[2], struct gl_texture *source,
                            GLuint blur_sampler, GLuint target_fbo, GLuint default_mask) {
 	int curr = 0;
@@ -147,7 +147,7 @@ static bool gl_kernel_blur(double opacity, struct gl_blur_context *bctx,
 ///            [0]: for sampling from blurred result into the target fbo.
 ///            [1]: for sampling from the source texture into blurred textures.
 bool gl_dual_kawase_blur(double opacity, struct gl_blur_context *bctx,
-                         struct backend_mask_image *mask, const GLuint vao[2],
+                         const struct backend_mask_image *mask, const GLuint vao[2],
                          const int vao_nelems[2], struct gl_texture *source,
                          GLuint blur_sampler, GLuint target_fbo, GLuint default_mask) {
 	int iterations = bctx->blur_texture_count;
@@ -313,7 +313,7 @@ gl_blur_context_preallocate_textures(struct gl_blur_context *bctx, ivec2 source_
 }
 
 bool gl_blur(struct backend_base *base, ivec2 origin, image_handle target_,
-             struct backend_blur_args *args) {
+             const struct backend_blur_args *args) {
 	auto gd = (struct gl_data *)base;
 	auto target = (struct gl_texture *)target_;
 	auto source = (struct gl_texture *)args->source_image;

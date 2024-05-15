@@ -522,9 +522,10 @@ static inline void gl_y_flip_texture(int nrects, GLint *coord, GLint texture_hei
 
 /// Lower `struct backend_blit_args` into a list of GL coordinates, vertex indices, a
 /// shader, and uniforms.
-static int gl_lower_blit_args(struct gl_data *gd, ivec2 origin, struct backend_blit_args *args,
-                              GLint **coord, GLuint **indices, struct gl_shader **shader,
-                              struct gl_uniform_value *uniforms) {
+static int
+gl_lower_blit_args(struct gl_data *gd, ivec2 origin, const struct backend_blit_args *args,
+                   GLint **coord, GLuint **indices, struct gl_shader **shader,
+                   struct gl_uniform_value *uniforms) {
 	auto img = (struct gl_texture *)args->source_image;
 	int nrects;
 	const rect_t *rects;
@@ -602,7 +603,7 @@ static int gl_lower_blit_args(struct gl_data *gd, ivec2 origin, struct backend_b
 }
 
 bool gl_blit(backend_t *base, ivec2 origin, image_handle target_,
-             struct backend_blit_args *args) {
+             const struct backend_blit_args *args) {
 	auto gd = (struct gl_data *)base;
 	auto source = (struct gl_texture *)args->source_image;
 	auto target = (struct gl_texture *)target_;

@@ -145,7 +145,7 @@ uint64_t gl_get_shader_attributes(backend_t *backend_data, void *shader);
 bool gl_last_render_time(backend_t *backend_data, struct timespec *time);
 
 bool gl_blit(backend_t *base, ivec2 origin, image_handle target,
-             struct backend_blit_args *args);
+             const struct backend_blit_args *args);
 image_handle gl_new_image(backend_t *backend_data attr_unused,
                           enum backend_image_format format, ivec2 size);
 bool gl_clear(backend_t *backend_data, image_handle target, struct color color);
@@ -164,7 +164,7 @@ xcb_pixmap_t gl_release_image(backend_t *base, image_handle image);
 image_handle gl_clone(backend_t *base, image_handle image, const region_t *reg_visible);
 
 bool gl_blur(struct backend_base *gd, ivec2 origin, image_handle target,
-             struct backend_blur_args *args);
+             const struct backend_blur_args *args);
 bool gl_copy_area(backend_t *backend_data, ivec2 origin, image_handle target,
                   image_handle source, const region_t *region);
 bool gl_copy_area_quantize(backend_t *backend_data, ivec2 origin, image_handle target_handle,

@@ -57,7 +57,7 @@ void handle_device_reset(session_t *ps) {
 /// @param target     the image to render into
 /// @param root_image the image containing the desktop background
 bool backend_execute(struct backend_base *backend, image_handle target, unsigned ncmds,
-                     struct backend_command cmds[ncmds]) {
+                     const struct backend_command cmds[ncmds]) {
 	bool succeeded = true;
 	for (auto cmd = &cmds[0]; succeeded && cmd != &cmds[ncmds]; cmd++) {
 		switch (cmd->op) {
