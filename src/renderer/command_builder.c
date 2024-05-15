@@ -18,7 +18,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
                          const region_t *frame_region, bool inactive_dim_fixed,
                          double inactive_dim, double max_brightness) {
 	auto w = layer->win;
-	auto mode = win_calc_mode(layer->win);
+	auto mode = win_calc_mode_raw(layer->win);
 	int border_width = w->g.border_width;
 	double dim = 0;
 	if (w->dim) {
@@ -54,11 +54,12 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	}
 	cmd->need_mask_image = false;
 	pixman_region32_init(&cmd->opaque_region);
-	if (mode == WMODE_SOLID || mode == WMODE_FRAME_TRANS) {
+	if ((mode == WMODE_SOLID || mode == WMODE_FRAME_TRANS) && layer->opacity == 1.0) {
 		pixman_region32_copy(&cmd->opaque_region, &cmd->mask.region);
-	}
-	if (mode == WMODE_FRAME_TRANS) {
-		pixman_region32_subtract(&cmd->opaque_region, &cmd->opaque_region, frame_region);
+		if (mode == WMODE_FRAME_TRANS) {
+			pixman_region32_subtract(&cmd->opaque_region, &cmd->opaque_region,
+			                         frame_region);
+		}
 	}
 	if (w->corner_radius > 0) {
 		win_region_remove_corners(w, &cmd->opaque_region);
@@ -167,7 +168,7 @@ static inline unsigned
 command_for_blur(struct layer *layer, struct backend_command *cmd,
                  const region_t *frame_region, bool force_blend, bool blur_frame) {
 	auto w = layer->win;
-	auto mode = win_calc_mode(w);
+	auto mode = win_calc_mode_raw(w);
 	if (!w->blur_background || layer->blur_opacity == 0) {
 		return 0;
 	}
@@ -179,7 +180,7 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 	cmd->need_mask_image = w->corner_radius > 0;
 	cmd->mask.corner_radius = w->corner_radius;
 	cmd->mask.inverted = false;
-	if (force_blend || mode == WMODE_TRANS) {
+	if (force_blend || mode == WMODE_TRANS || layer->opacity < 1.0) {
 		pixman_region32_copy(&cmd->mask.region, &w->bounding_shape);
 	} else if (blur_frame && mode == WMODE_FRAME_TRANS) {
 		pixman_region32_copy(&cmd->mask.region, frame_region);
@@ -206,10 +207,10 @@ command_builder_apply_transparent_clipping(struct layout *layout, region_t *scra
 		if (i == layer_start) {
 			if (layer->win->transparent_clipping) {
 				auto win = layer->win;
-				auto mode = win_calc_mode(layer->win);
+				auto mode = win_calc_mode_raw(layer->win);
 				region_t tmp;
 				pixman_region32_init(&tmp);
-				if (mode == WMODE_TRANS) {
+				if (mode == WMODE_TRANS || layer->opacity < 1.0) {
 					pixman_region32_copy(&tmp, &win->bounding_shape);
 				} else if (mode == WMODE_FRAME_TRANS) {
 					win_get_region_frame_local(win, &tmp);
@@ -357,9 +358,9 @@ void command_builder_build(struct command_builder *cb, struct layout *layout, bo
 	unsigned ncmds = 1;
 	for (unsigned i = 0; i < layout->len; i++) {
 		auto layer = &layout->layers[i];
-		auto mode = win_calc_mode(layer->win);
+		auto mode = win_calc_mode_raw(layer->win);
 		if (layer->win->blur_background && layer->blur_opacity > 0 &&
-		    (force_blend || mode == WMODE_TRANS ||
+		    (force_blend || mode == WMODE_TRANS || layer->opacity < 1.0 ||
 		     (blur_frame && mode == WMODE_FRAME_TRANS))) {
 			// Needs blur
 			ncmds += 1;

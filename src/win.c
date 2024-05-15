@@ -791,11 +791,7 @@ bool win_client_has_alpha(const struct managed_win *w) {
 	       w->client_pictfmt->direct.alpha_mask;
 }
 
-winmode_t win_calc_mode(const struct managed_win *w) {
-	if (animatable_get(&w->opacity) < 1.0) {
-		return WMODE_TRANS;
-	}
-
+winmode_t win_calc_mode_raw(const struct managed_win *w) {
 	if (win_has_alpha(w)) {
 		if (w->client_win == XCB_NONE) {
 			// This is a window not managed by the WM, and it has
@@ -823,6 +819,13 @@ winmode_t win_calc_mode(const struct managed_win *w) {
 
 	// log_trace("Window %#010x(%s) is solid", w->client_win, w->name);
 	return WMODE_SOLID;
+}
+
+winmode_t win_calc_mode(const struct managed_win *w) {
+	if (animatable_get(&w->opacity) < 1.0) {
+		return WMODE_TRANS;
+	}
+	return win_calc_mode_raw(w);
 }
 
 /**
