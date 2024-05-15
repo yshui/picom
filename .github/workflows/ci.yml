@@ -1,0 +1,31 @@
+name: openbsd
+on: push
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - uses: actions/cache@v4
+      with:
+        path: |
+          *.qcow2.xz
+          *.qcow2"
+        key: vmactions-openbsd
+    - uses: vmactions/openbsd-vm@v1
+      with:
+        usesh: true
+        prepare: |
+          pkg_add libev xcb meson pkgconf cmake uthash libconfig dbus pcre2
+        run: |
+          CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib" meson setup -Dunittest=true --werror build
+          ninja -C build
+          ninja -C build test
+    - run: |
+        for i in *.qcow2.xz; do
+          echo > $i
+        done
+        ls -l
+
