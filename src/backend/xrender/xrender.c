@@ -208,8 +208,9 @@ static inline void xrender_record_back_damage(struct xrender_data *xd,
 /// @param new_origin the new origin of the normalized mask picture
 /// @param allocated whether the returned picture is newly allocated
 static xcb_render_picture_t
-xrender_process_mask(struct xrender_data *xd, struct backend_mask_image *mask, rect_t extent,
-                     xcb_render_picture_t alpha_pict, ivec2 *new_origin, bool *allocated) {
+xrender_process_mask(struct xrender_data *xd, const struct backend_mask_image *mask,
+                     rect_t extent, xcb_render_picture_t alpha_pict, ivec2 *new_origin,
+                     bool *allocated) {
 	auto inner = (struct xrender_image_data_inner *)mask->image;
 	if (!inner) {
 		*allocated = false;
@@ -278,12 +279,12 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	}
 	int16_t mask_pict_dst_x = 0, mask_pict_dst_y = 0;
 	if (args->source_mask != NULL) {
-		mask_pict =
-		    xrender_process_mask(xd, args->source_mask, extent,
-		                         args->opacity < 1.0 ? mask_pict : XCB_NONE,
-		                         &args->source_mask->origin, &mask_allocated);
-		mask_pict_dst_x = to_i16_checked(-args->source_mask->origin.x);
-		mask_pict_dst_y = to_i16_checked(-args->source_mask->origin.y);
+		ivec2 mask_origin = args->source_mask->origin;
+		mask_pict = xrender_process_mask(xd, args->source_mask, extent,
+		                                 args->opacity < 1.0 ? mask_pict : XCB_NONE,
+		                                 &mask_origin, &mask_allocated);
+		mask_pict_dst_x = to_i16_checked(-mask_origin.x);
+		mask_pict_dst_y = to_i16_checked(-mask_origin.y);
 	}
 
 	// After this point, mask_pict and mask->region have different origins.
