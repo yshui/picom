@@ -82,7 +82,6 @@ static const double ROUNDED_PERCENT = 0.05;
  */
 static void win_update_opacity_prop(struct x_connection *c, struct atom *atoms,
                                     struct managed_win *w, bool detect_client_opacity);
-static void win_update_opacity_target(session_t *ps, struct managed_win *w);
 static void win_update_prop_shadow_raw(struct x_connection *c, struct atom *atoms,
                                        struct managed_win *w);
 static bool
@@ -431,7 +430,6 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_WM_WINDOW_OPACITY)) {
 		win_update_opacity_prop(&ps->c, ps->atoms, w, ps->o.detect_client_opacity);
-		win_update_opacity_target(ps, w);
 	}
 
 	if (win_fetch_and_unset_property_stale(w, ps->atoms->a_NET_FRAME_EXTENTS)) {
@@ -485,6 +483,7 @@ static void win_update_properties(session_t *ps, struct managed_win *w) {
 	win_clear_all_properties_stale(w);
 }
 
+static void map_win_start(struct managed_win *w);
 /// Handle non-image flags. This phase might set IMAGES_STALE flags
 void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	log_trace("Processing flags for window %#010x (%s), was rendered: %d, flags: "
@@ -492,7 +491,7 @@ void win_process_update_flags(session_t *ps, struct managed_win *w) {
 	          w->base.id, w->name, w->to_paint, w->flags);
 
 	if (win_check_flags_all(w, WIN_FLAGS_MAPPED)) {
-		map_win_start(ps, w);
+		map_win_start(w);
 		win_clear_flags(w, WIN_FLAGS_MAPPED);
 	}
 
@@ -822,7 +821,7 @@ winmode_t win_calc_mode_raw(const struct managed_win *w) {
 }
 
 winmode_t win_calc_mode(const struct managed_win *w) {
-	if (animatable_get(&w->opacity) < 1.0) {
+	if (win_animatable_get(w, WIN_SCRIPT_OPACITY) < 1.0) {
 		return WMODE_TRANS;
 	}
 	return win_calc_mode_raw(w);
@@ -879,7 +878,6 @@ static double win_calc_opacity_target(session_t *ps, const struct managed_win *w
 /// Doesn't free `w`
 static void unmap_win_finish(session_t *ps, struct managed_win *w) {
 	w->reg_ignore_valid = false;
-	w->state = WSTATE_UNMAPPED;
 
 	// We are in unmap_win, this window definitely was viewable
 	if (ps->backend_data) {
@@ -897,8 +895,10 @@ static void unmap_win_finish(session_t *ps, struct managed_win *w) {
 	free_paint(ps, &w->shadow_paint);
 
 	// Try again at binding images when the window is mapped next time
-	win_clear_flags(w, WIN_FLAGS_IMAGE_ERROR);
-	assert(w->number_of_animations == 0);
+	if (w->state != WSTATE_DESTROYED) {
+		win_clear_flags(w, WIN_FLAGS_IMAGE_ERROR);
+	}
+	assert(w->running_animation == NULL);
 }
 
 struct window_transition_data {
@@ -908,90 +908,6 @@ struct window_transition_data {
 	// struct backend_base *backend_data;
 	uint64_t refcount;
 };
-
-static void win_transition_callback(enum transition_event event, void *data_) {
-	auto data = (struct window_transition_data *)data_;
-	auto w = data->w;
-	w->number_of_animations--;
-	if (w->number_of_animations == 0 && event != TRANSITION_INTERRUPTED) {
-		if (w->state == WSTATE_DESTROYED || w->state == WSTATE_UNMAPPED) {
-			if (animatable_get(&w->opacity) != 0) {
-				log_warn("Window %#010x (%s) has finished fading out but "
-				         "its opacity is not 0",
-				         w->base.id, w->name);
-			}
-		}
-		if (w->state == WSTATE_UNMAPPED) {
-			unmap_win_finish(data->ps, data->w);
-		}
-		// Destroyed windows are freed in paint_preprocess, this makes managing
-		// the lifetime of windows easier.
-		w->in_openclose = false;
-	}
-	data->refcount--;
-	if (data->refcount == 0) {
-		free(data);
-	}
-}
-
-/**
- * Determine if a window should fade on opacity change.
- */
-bool win_should_fade(session_t *ps, const struct managed_win *w) {
-	// To prevent it from being overwritten by last-paint value if the window
-	// is
-	if (w->fade_force != UNSET) {
-		return w->fade_force;
-	}
-	if (ps->o.no_fading_openclose && w->in_openclose) {
-		return false;
-	}
-	if (ps->o.no_fading_destroyed_argb && w->state == WSTATE_DESTROYED &&
-	    win_has_alpha(w) && w->client_win && w->client_win != w->base.id) {
-		// deprecated
-		return false;
-	}
-	if (w->fade_excluded) {
-		return false;
-	}
-	return ps->o.wintype_option[w->window_type].fade;
-}
-
-/// Call `animatable_set_target` on the opacity of a window, with appropriate
-/// target opacity and duration.
-static inline void
-win_start_fade(session_t *ps, struct managed_win *w, double target_blur_opacity) {
-	double current_opacity = animatable_get(&w->opacity),
-	       target_opacity = win_calc_opacity_target(ps, w);
-	double step_size =
-	    target_opacity > current_opacity ? ps->o.fade_in_step : ps->o.fade_out_step;
-	double duration = (fabs(target_opacity - current_opacity) / step_size) *
-	                  (double)ps->o.fade_delta / 1000.0;
-	if (!win_should_fade(ps, w)) {
-		duration = 0;
-	}
-
-	auto data = ccalloc(1, struct window_transition_data);
-	data->ps = ps;
-	data->w = w;
-	data->refcount = 0;
-	if (animatable_set_target(&w->opacity, target_opacity, duration,
-	                          curve_new_linear(), win_transition_callback, data)) {
-		data->refcount++;
-		w->number_of_animations++;
-	}
-	if (animatable_set_target(&w->blur_opacity, target_blur_opacity, duration,
-	                          curve_new_linear(), win_transition_callback, data)) {
-		data->refcount++;
-		w->number_of_animations++;
-	}
-	if (!data->refcount) {
-		free(data);
-	}
-	if (w->number_of_animations == 0 && w->state == WSTATE_UNMAPPED) {
-		unmap_win_finish(ps, w);
-	}
-}
 
 /**
  * Determine whether a window is to be dimmed.
@@ -1373,8 +1289,6 @@ void win_on_factor_change(session_t *ps, struct managed_win *w) {
 	    ps->o.transparent_clipping &&
 	    !c2_match(ps->c2_state, w, ps->o.transparent_clipping_blacklist, NULL);
 
-	win_update_opacity_target(ps, w);
-
 	w->reg_ignore_valid = false;
 	if (ps->debug_window != XCB_NONE &&
 	    (w->base.id == ps->debug_window || w->client_win == ps->debug_window)) {
@@ -1648,6 +1562,7 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	    .opacity_prop = OPAQUE,
 	    .opacity_is_set = false,
 	    .opacity_set = 1,
+	    .opacity = 0,
 	    .frame_extents = MARGIN_INIT,        // in win_mark_client
 	    .bounding_shaped = false,
 	    .bounding_shape = {0},
@@ -1724,8 +1639,6 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	new->base = *w;
 	new->base.managed = true;
 	new->a = *a;
-	new->opacity = animatable_new(0);
-	new->blur_opacity = animatable_new(0);
 	new->shadow_opacity = ps->o.shadow_opacity;
 	pixman_region32_init(&new->bounding_shape);
 
@@ -2133,7 +2046,7 @@ bool win_is_region_ignore_valid(session_t *ps, const struct managed_win *w) {
 /// Finish the destruction of a window (e.g. after fading has finished).
 /// Frees `w`
 void destroy_win_finish(session_t *ps, struct win *w) {
-	log_verbose("Trying to finish destroying (%#010x)", w->id);
+	log_debug("Trying to finish destroying (%#010x)", w->id);
 
 	auto next_w = wm_stack_next_managed(ps->wm, &w->stack_neighbour);
 	list_remove(&w->stack_neighbour);
@@ -2248,29 +2161,10 @@ void destroy_win_start(session_t *ps, struct win *w) {
 		mw->state = WSTATE_DESTROYED;
 		mw->a.map_state = XCB_MAP_STATE_UNMAPPED;
 		mw->in_openclose = true;
-
-		// We don't initiate animation here, because it should already have been
-		// started by unmap_win_start, because X automatically unmaps windows
-		// before destroying them. But we do need to stop animation if
-		// no_fading_destroyed_windows, or no_fading_openclose is enabled.
-		if (!win_should_fade(ps, mw)) {
-			win_skip_fading(mw);
-		}
-	}
-
-	// don't need win_ev_stop because the window is gone anyway
-	// Send D-Bus signal
-	if (ps->o.dbus) {
-		cdbus_ev_win_destroyed(session_get_cdbus(ps), w);
-	}
-
-	if (!ps->redirected && w->managed) {
-		// Skip transition if we are not rendering
-		win_skip_fading(mw);
 	}
 }
 
-void unmap_win_start(session_t *ps, struct managed_win *w) {
+void unmap_win_start(struct managed_win *w) {
 	assert(w);
 	assert(w->base.managed);
 	assert(w->a._class != XCB_WINDOW_CLASS_INPUT_ONLY);
@@ -2292,32 +2186,169 @@ void unmap_win_start(session_t *ps, struct managed_win *w) {
 
 	w->a.map_state = XCB_MAP_STATE_UNMAPPED;
 	w->state = WSTATE_UNMAPPED;
-	win_start_fade(ps, w, 0);
-
-	// Send D-Bus signal
-	if (ps->o.dbus) {
-		cdbus_ev_win_unmapped(session_get_cdbus(ps), &w->base);
-	}
-
-	if (!ps->redirected || !w->ever_damaged) {
-		// If we are not redirected, we skip fading because we aren't
-		// rendering anything anyway. If the window wasn't ever damaged,
-		// it shouldn't be painted either. But a fading out window is
-		// always painted, so we have to skip fading here.
-		win_skip_fading(w);
-	}
 }
 
-/// Skip the current in progress fading of window,
-/// transition the window straight to its end state
-void win_skip_fading(struct managed_win *w) {
-	if (w->number_of_animations == 0) {
+struct win_script_context
+win_script_context_prepare(struct session *ps, struct managed_win *w) {
+	struct win_script_context ret = {
+	    .x = w->g.x,
+	    .y = w->g.y,
+	    .width = w->widthb,
+	    .height = w->heightb,
+	    .opacity = win_calc_opacity_target(ps, w),
+	    .opacity_before = w->opacity,
+	};
+	return ret;
+}
+
+double win_animatable_get(const struct managed_win *w, enum win_script_output output) {
+	if (w->running_animation && w->running_animation_outputs[output] >= 0) {
+		return w->running_animation->memory[w->running_animation_outputs[output]];
+	}
+	switch (output) {
+	case WIN_SCRIPT_BLUR_OPACITY: return w->state == WSTATE_MAPPED ? 1.0 : 0.0;
+	case WIN_SCRIPT_OPACITY:
+	case WIN_SCRIPT_SHADOW_OPACITY: return w->opacity;
+	case WIN_SCRIPT_OFFSET_X:
+	case WIN_SCRIPT_OFFSET_Y:
+	case WIN_SCRIPT_SHADOW_OFFSET_X:
+	case WIN_SCRIPT_SHADOW_OFFSET_Y: return 0;
+	}
+	unreachable();
+}
+
+#define WSTATE_PAIR(a, b) ((int)(a) * NUM_OF_WSTATES + (int)(b))
+
+void win_process_animation_and_state_change(struct session *ps, struct managed_win *w,
+                                            double delta_t) {
+	// If the window hasn't ever been damaged yet, it won't be rendered in this frame.
+	// And if it is also unmapped/destroyed, it won't receive damage events. In this
+	// case we can skip its animation. For mapped windows, we need to provisionally
+	// start animation, because its first damage event might come a bit late.
+	bool will_never_render = !w->ever_damaged && w->state != WSTATE_MAPPED;
+	if (!ps->redirected || will_never_render) {
+		// This window won't be rendered, so we don't need to run the animations.
+		free(w->running_animation);
+		w->running_animation = NULL;
+		w->previous.state = w->state;
+		w->opacity = win_calc_opacity_target(ps, w);
 		return;
 	}
-	log_debug("Skipping fading process of window %#010x (%s)", w->base.id, w->name);
-	animatable_skip(&w->opacity);
-	animatable_skip(&w->blur_opacity);
+
+	auto win_ctx = win_script_context_prepare(ps, w);
+	w->opacity = win_ctx.opacity;
+	if (w->previous.state == w->state && win_ctx.opacity_before == win_ctx.opacity) {
+		// No state changes, if there's a animation running, we just continue it.
+		if (w->running_animation == NULL) {
+			return;
+		}
+		log_debug("Advance animation for %#010x (%s) %f seconds", w->base.id,
+		          w->name, delta_t);
+		if (!script_instance_is_finished(w->running_animation)) {
+			w->running_animation->elapsed += delta_t;
+			auto result =
+			    script_instance_evaluate(w->running_animation, &win_ctx);
+			if (result != SCRIPT_EVAL_OK) {
+				log_error("Failed to run animation script: %d", result);
+			}
+			return;
+		}
+		free(w->running_animation);
+		w->running_animation = NULL;
+		w->in_openclose = false;
+		if (w->state == WSTATE_UNMAPPED) {
+			unmap_win_finish(ps, w);
+		} else if (w->state == WSTATE_DESTROYED) {
+			destroy_win_finish(ps, &w->base);
+		}
+		return;
+	}
+
+	// Try to determine the right animation trigger based on state changes. Note there
+	// is some complications here. X automatically unmaps windows before destroying
+	// them. So a "close" trigger will also be fired from a UNMAPPED -> DESTROYED
+	// transition, besides the more obvious MAPPED -> DESTROYED transition. But this
+	// also means, if the user didn't configure a animation for "hide", but did
+	// for "close", there is a chance this animation won't be triggered, if there is a
+	// gap between the UnmapNotify and DestroyNotify. There is no way on our end of
+	// fixing this without using hacks.
+	enum animation_trigger trigger = ANIMATION_TRIGGER_INVALID;
+	if (w->previous.state == w->state) {
+		// Only opacity changed
+		assert(w->state == WSTATE_MAPPED);
+		trigger = win_ctx.opacity > win_ctx.opacity_before
+		              ? ANIMATION_TRIGGER_INCREASE_OPACITY
+		              : ANIMATION_TRIGGER_DECREASE_OPACITY;
+	} else {
+		// Send D-Bus signal
+		if (ps->o.dbus) {
+			switch (w->state) {
+			case WSTATE_UNMAPPED:
+				cdbus_ev_win_unmapped(session_get_cdbus(ps), &w->base);
+				break;
+			case WSTATE_MAPPED:
+				cdbus_ev_win_mapped(session_get_cdbus(ps), &w->base);
+				break;
+			case WSTATE_DESTROYED:
+				cdbus_ev_win_destroyed(session_get_cdbus(ps), &w->base);
+				break;
+			}
+		}
+
+		auto old_state = w->previous.state;
+		w->previous.state = w->state;
+		switch (WSTATE_PAIR(old_state, w->state)) {
+		case WSTATE_PAIR(WSTATE_UNMAPPED, WSTATE_MAPPED):
+			trigger = w->in_openclose ? ANIMATION_TRIGGER_OPEN
+			                          : ANIMATION_TRIGGER_SHOW;
+			break;
+		case WSTATE_PAIR(WSTATE_UNMAPPED, WSTATE_DESTROYED):
+			if ((!ps->o.no_fading_destroyed_argb || !win_has_alpha(w)) &&
+			    w->running_animation != NULL) {
+				trigger = ANIMATION_TRIGGER_CLOSE;
+			}
+			break;
+		case WSTATE_PAIR(WSTATE_MAPPED, WSTATE_DESTROYED):
+			// TODO(yshui) we should deprecate "no-fading-destroyed-argb" and
+			// ask user to write fading rules (after we have added such
+			// rules). Ditto below.
+			if (!ps->o.no_fading_destroyed_argb || !win_has_alpha(w)) {
+				trigger = ANIMATION_TRIGGER_CLOSE;
+			}
+			break;
+		case WSTATE_PAIR(WSTATE_MAPPED, WSTATE_UNMAPPED):
+			trigger = ANIMATION_TRIGGER_HIDE;
+			break;
+		default:
+			log_error("Impossible state transition from %d to %d", old_state,
+			          w->state);
+			assert(false);
+			free(w->running_animation);
+			w->running_animation = NULL;
+			return;
+		}
+	}
+
+	if (trigger == ANIMATION_TRIGGER_INVALID || ps->o.animations[trigger].script == NULL) {
+		free(w->running_animation);
+		w->running_animation = NULL;
+		return;
+	}
+
+	log_debug("Starting animation %s for window %#010x (%s)",
+	          animation_trigger_names[trigger], w->base.id, w->name);
+
+	auto new_animation = script_instance_new(ps->o.animations[trigger].script);
+	if (w->running_animation) {
+		script_instance_resume_from(w->running_animation, new_animation);
+		free(w->running_animation);
+	}
+	w->running_animation = new_animation;
+	w->running_animation_outputs = ps->o.animations[trigger].output_indices;
+	script_instance_evaluate(w->running_animation, &win_ctx);
 }
+
+#undef WSTATE_PAIR
 
 // TODO(absolutelynothelix): rename to x_update_win_(randr_?)monitor and move to
 // the x.c.
@@ -2339,9 +2370,9 @@ void win_update_monitor(struct x_monitors *monitors, struct managed_win *mw) {
 	          mw->base.id, mw->name, mw->g.x, mw->g.y, mw->widthb, mw->heightb);
 }
 
-/// Map an already registered window
-void map_win_start(session_t *ps, struct managed_win *w) {
-	assert(ps->server_grabbed);
+/// Start the mapping of a window. We cannot map immediately since we might need to fade
+/// the window in.
+static void map_win_start(struct managed_win *w) {
 	assert(w);
 
 	// Don't care about window mapping if it's an InputOnly window
@@ -2350,7 +2381,7 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 		return;
 	}
 
-	log_debug("Mapping (%#010x \"%s\")", w->base.id, w->name);
+	log_debug("Mapping (%#010x \"%s\"), old state %d", w->base.id, w->name, w->state);
 
 	assert(w->state != WSTATE_DESTROYED);
 	if (w->state == WSTATE_MAPPED) {
@@ -2375,44 +2406,12 @@ void map_win_start(session_t *ps, struct managed_win *w) {
 	log_debug("Window (%#010x) has type %s", w->base.id, WINTYPES[w->window_type].name);
 
 	w->state = WSTATE_MAPPED;
-	win_start_fade(ps, w, 1);
 	win_set_flags(w, WIN_FLAGS_PIXMAP_STALE);
-
-	log_debug("Window %#010x has opacity %f, opacity target is %f", w->base.id,
-	          animatable_get(&w->opacity), w->opacity.target);
-
-	// Send D-Bus signal
-	if (ps->o.dbus) {
-		cdbus_ev_win_mapped(session_get_cdbus(ps), &w->base);
-	}
-
-	if (!ps->redirected) {
-		win_skip_fading(w);
-	}
-}
-
-/**
- * Update target window opacity depending on the current state.
- */
-void win_update_opacity_target(session_t *ps, struct managed_win *w) {
-	win_start_fade(ps, w, w->blur_opacity.target);        // We don't want to change
-	                                                      // blur_opacity target
-
-	if (w->number_of_animations == 0) {
-		return;
-	}
-
-	log_debug("Window %#010x (%s) opacity %f, opacity target %f, start %f", w->base.id,
-	          w->name, animatable_get(&w->opacity), w->opacity.target, w->opacity.start);
-
-	if (!ps->redirected) {
-		win_skip_fading(w);
-	}
 }
 
 /// Set flags on a window. Some sanity checks are performed
 void win_set_flags(struct managed_win *w, uint64_t flags) {
-	log_debug("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
+	log_verbose("Set flags %" PRIu64 " to window %#010x (%s)", flags, w->base.id, w->name);
 	if (unlikely(w->state == WSTATE_DESTROYED)) {
 		log_error("Flags set on a destroyed window %#010x (%s)", w->base.id, w->name);
 		return;
@@ -2423,11 +2422,11 @@ void win_set_flags(struct managed_win *w, uint64_t flags) {
 
 /// Clear flags on a window. Some sanity checks are performed
 void win_clear_flags(struct managed_win *w, uint64_t flags) {
-	log_debug("Clear flags %" PRIu64 " from window %#010x (%s)", flags, w->base.id,
-	          w->name);
+	log_verbose("Clear flags %" PRIu64 " from window %#010x (%s)", flags, w->base.id,
+	            w->name);
 	if (unlikely(w->state == WSTATE_DESTROYED)) {
-		log_warn("Flags cleared on a destroyed window %#010x (%s)", w->base.id,
-		         w->name);
+		log_warn("Flags %" PRIu64 " cleared on a destroyed window %#010x (%s)",
+		         flags, w->base.id, w->name);
 		return;
 	}
 

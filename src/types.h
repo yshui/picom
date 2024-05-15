@@ -5,6 +5,8 @@
 
 /// Some common types
 
+#include <limits.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -75,6 +77,14 @@ static inline ivec2 ivec2_neg(ivec2 a) {
 	return (ivec2){
 	    .x = -a.x,
 	    .y = -a.y,
+	};
+}
+
+/// Saturating cast from a vec2 to a ivec2
+static inline ivec2 vec2_as(vec2 a) {
+	return (ivec2){
+	    .x = (int)fmin(fmax(a.x, INT_MIN), INT_MAX),
+	    .y = (int)fmin(fmax(a.y, INT_MIN), INT_MAX),
 	};
 }
 

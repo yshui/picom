@@ -36,10 +36,11 @@ typedef enum {
 	/// The window is mapped and viewable. Equivalent to map-state ==
 	/// XCB_MAP_STATE_VIEWABLE
 	WSTATE_MAPPED,
-
 	// XCB_MAP_STATE_UNVIEWABLE is not represented here because it should not be
 	// possible for top-level windows.
 } winstate_t;
+
+#define NUM_OF_WSTATES (WSTATE_MAPPED + 1)
 
 enum win_flags {
 	// Note: *_NONE flags are mostly redundant and meant for detecting logical errors
@@ -67,12 +68,19 @@ enum win_flags {
 };
 
 enum win_script_output {
+	/// Additional X offset of the window.
 	WIN_SCRIPT_OFFSET_X = 0,
+	/// Additional Y offset of the window.
 	WIN_SCRIPT_OFFSET_Y,
+	/// Additional X offset of the shadow.
 	WIN_SCRIPT_SHADOW_OFFSET_X,
+	/// Additional Y offset of the shadow.
 	WIN_SCRIPT_SHADOW_OFFSET_Y,
+	/// Opacity of the window.
 	WIN_SCRIPT_OPACITY,
+	/// Opacity of the blurred background of the window.
 	WIN_SCRIPT_BLUR_OPACITY,
+	/// Opacity of the shadow.
 	WIN_SCRIPT_SHADOW_OPACITY,
 };
 #define NUM_OF_WIN_SCRIPT_OUTPUTS (WIN_SCRIPT_SHADOW_OPACITY + 1)

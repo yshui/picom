@@ -306,12 +306,8 @@ static inline void ev_destroy_notify(session_t *ps, xcb_destroy_notify_event_t *
 
 	if (w != NULL) {
 		destroy_win_start(ps, w);
-		if (!w->managed || !win_as_managed(w)->to_paint) {
-			// If the window wasn't managed, or was already not rendered,
-			// we don't need to fade it out.
-			if (w->managed) {
-				win_skip_fading(win_as_managed(w));
-			}
+		if (!w->managed) {
+			// If the window wasn't managed, we can release it immediately
 			destroy_win_finish(ps, w);
 		}
 		return;
@@ -362,7 +358,7 @@ static inline void ev_map_notify(session_t *ps, xcb_map_notify_event_t *ev) {
 static inline void ev_unmap_notify(session_t *ps, xcb_unmap_notify_event_t *ev) {
 	auto w = wm_find_managed(ps->wm, ev->window);
 	if (w) {
-		unmap_win_start(ps, w);
+		unmap_win_start(w);
 	}
 }
 
@@ -441,13 +437,15 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 			// Emulating what X server does: a destroyed
 			// window is always unmapped first.
 			if (mw->state == WSTATE_MAPPED) {
-				unmap_win_start(ps, mw);
+				unmap_win_start(mw);
 			}
+
+			// If an animation is running, the best we could do is stopping
+			// it.
+			free(mw->running_animation);
+			mw->running_animation = NULL;
 		}
 		destroy_win_start(ps, old_w);
-		if (old_w->managed) {
-			win_skip_fading(win_as_managed(old_w));
-		}
 		destroy_win_finish(ps, old_w);
 	}
 
@@ -677,6 +675,8 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 			free(e);
 		}
 		win_extents(w, &parts);
+		log_debug("Window %#010x (%s) has been damaged the first time",
+		          w->base.id, w->name);
 	} else {
 		auto cookie = xcb_damage_subtract(ps->c.c, w->damage, XCB_NONE,
 		                                  ps->damage_ring.x_region);
