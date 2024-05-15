@@ -465,22 +465,35 @@ static inline attr_unused void win_set_property_stale(struct managed_win *w, xcb
 /// Free all resources in a struct win
 void free_win_res(session_t *ps, struct managed_win *w);
 
-static inline void win_region_remove_corners(const struct managed_win *w, region_t *res) {
+/// Remove the corners of window `w` from region `res`. `origin` is the top-left corner of
+/// `w` in `res`'s coordinate system.
+static inline void
+win_region_remove_corners(const struct managed_win *w, ivec2 origin, region_t *res) {
+	static const int corner_index[][2] = {
+	    {0, 0},
+	    {0, 1},
+	    {1, 0},
+	    {1, 1},
+	};
+	rect_t rectangles[4];
+	for (size_t i = 0; i < ARR_SIZE(corner_index); i++) {
+		rectangles[i] = (rect_t){
+		    .x1 = origin.x + corner_index[i][0] * (w->widthb - w->corner_radius),
+		    .y1 = origin.y + corner_index[i][1] * (w->heightb - w->corner_radius),
+		};
+		rectangles[i].x2 = rectangles[i].x1 + w->corner_radius;
+		rectangles[i].y2 = rectangles[i].y1 + w->corner_radius;
+	}
 	region_t corners;
-	pixman_region32_init_rects(
-	    &corners,
-	    (rect_t[]){
-	        {.x1 = 0, .y1 = 0, .x2 = w->corner_radius, .y2 = w->corner_radius},
-	        {.x1 = 0, .y1 = w->heightb - w->corner_radius, .x2 = w->corner_radius, .y2 = w->heightb},
-	        {.x1 = w->widthb - w->corner_radius, .y1 = 0, .x2 = w->widthb, .y2 = w->corner_radius},
-	        {.x1 = w->widthb - w->corner_radius,
-	         .y1 = w->heightb - w->corner_radius,
-	         .x2 = w->widthb,
-	         .y2 = w->heightb},
-	    },
-	    4);
+	pixman_region32_init_rects(&corners, rectangles, 4);
 	pixman_region32_subtract(res, res, &corners);
 	pixman_region32_fini(&corners);
+}
+
+/// Like `win_region_remove_corners`, but `origin` is (0, 0).
+static inline void
+win_region_remove_corners_local(const struct managed_win *w, region_t *res) {
+	win_region_remove_corners(w, (ivec2){0, 0}, res);
 }
 
 static inline region_t attr_unused win_get_bounding_shape_global_by_val(struct managed_win *w) {
@@ -496,7 +509,7 @@ win_get_bounding_shape_global_without_corners_by_val(struct managed_win *w) {
 	region_t ret;
 	pixman_region32_init(&ret);
 	pixman_region32_copy(&ret, &w->bounding_shape);
-	win_region_remove_corners(w, &ret);
+	win_region_remove_corners_local(w, &ret);
 	pixman_region32_translate(&ret, w->g.x, w->g.y);
 	return ret;
 }

@@ -39,7 +39,7 @@ struct renderer {
 	void *shadow_blur_context;
 	struct conv *shadow_kernel;
 
-	struct backend_mask *culled_masks;
+	region_t *culled_masks;
 	size_t culled_masks_capacity;
 };
 
@@ -49,18 +49,18 @@ static void renderer_reallocate_culled_masks(struct renderer *r, size_t capacity
 		return;
 	}
 	for (size_t i = capacity; i < r->culled_masks_capacity; i++) {
-		pixman_region32_fini(&r->culled_masks[i].region);
+		pixman_region32_fini(&r->culled_masks[i]);
 	}
 	void *new_storage = NULL;
 	if (capacity > 0) {
-		new_storage = realloc(r->culled_masks, sizeof(struct backend_mask[capacity]));
+		new_storage = realloc(r->culled_masks, sizeof(region_t[capacity]));
 		allocchk(new_storage);
 	} else {
 		free(r->culled_masks);
 	}
 	r->culled_masks = new_storage;
 	for (size_t i = r->culled_masks_capacity; i < capacity; i++) {
-		pixman_region32_init(&r->culled_masks[i].region);
+		pixman_region32_init(&r->culled_masks[i]);
 	}
 	r->culled_masks_capacity = capacity;
 }
@@ -243,18 +243,18 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 		goto out;
 	}
 	{
-		struct backend_mask mask_args = {
+		region_t target_mask;
+		struct backend_mask_image mask_args = {
 		    .image = mask,
 		    .origin = {0, 0},
 		    .corner_radius = corner_radius,
 		    .inverted = false,
 		};
-		pixman_region32_init_rect(&mask_args.region, 0, 0, (unsigned)mask_size.width,
-		                          (unsigned)mask_size.height);
 		struct backend_blit_args args = {
 		    .source_image = r->white_image,
 		    .opacity = 1,
-		    .mask = &mask_args,
+		    .source_mask = &mask_args,
+		    .target_mask = &target_mask,
 		    .shader = NULL,
 		    .color_inverted = false,
 		    .effective_size = mask_size,
@@ -263,9 +263,12 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 		    .border_width = 0,
 		    .max_brightness = 1,
 		};
+		pixman_region32_init_rect(&target_mask, radius, radius,
+		                          (unsigned)mask_size.width,
+		                          (unsigned)mask_size.height);
 		succeeded = backend->ops->blit(backend, (ivec2){radius, radius},
 		                               normalized_mask_image, &args);
-		pixman_region32_fini(&mask_args.region);
+		pixman_region32_fini(&target_mask);
 		if (!succeeded) {
 			log_error("Failed to blit for shadow generation");
 			goto out;
@@ -273,24 +276,19 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 	}
 	// Then we blur the normalized mask image
 	if (r->shadow_blur_context != NULL) {
-		struct backend_mask mask_args = {
-		    .image = NULL,
-		    .origin = {0, 0},
-		    .corner_radius = 0,
-		    .inverted = false,
-		};
-		pixman_region32_init_rect(&mask_args.region, 0, 0,
-		                          (unsigned)(mask_size.width + 2 * radius),
-		                          (unsigned)(mask_size.height + 2 * radius));
+		region_t target_mask;
 		struct backend_blur_args args = {
 		    .source_image = normalized_mask_image,
+		    .target_mask = &target_mask,
 		    .opacity = 1,
-		    .mask = &mask_args,
 		    .blur_context = r->shadow_blur_context,
 		};
+		pixman_region32_init_rect(&target_mask, 0, 0,
+		                          (unsigned)(mask_size.width + 2 * radius),
+		                          (unsigned)(mask_size.height + 2 * radius));
 		succeeded =
 		    backend->ops->blur(backend, (ivec2){0, 0}, normalized_mask_image, &args);
-		pixman_region32_fini(&mask_args.region);
+		pixman_region32_fini(&target_mask);
 		if (!succeeded) {
 			log_error("Failed to blur for shadow generation");
 			goto out;
@@ -315,20 +313,20 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 		goto out;
 	}
 
-	struct backend_mask mask_args = {
+	const ivec2 shadow_size =
+	    ivec2_add(mask_size, (ivec2){.width = 2 * radius, .height = 2 * radius});
+	region_t target_mask;
+	struct backend_mask_image mask_args = {
 	    .image = (image_handle)normalized_mask_image,
 	    .origin = {0, 0},
 	    .corner_radius = 0,
 	    .inverted = false,
 	};
-	const ivec2 shadow_size =
-	    ivec2_add(mask_size, (ivec2){.width = 2 * radius, .height = 2 * radius});
-	pixman_region32_init_rect(&mask_args.region, 0, 0, (unsigned)shadow_size.width,
-	                          (unsigned)shadow_size.height);
 	struct backend_blit_args args = {
 	    .source_image = shadow_color_pixel,
 	    .opacity = 1,
-	    .mask = &mask_args,
+	    .source_mask = &mask_args,
+	    .target_mask = &target_mask,
 	    .shader = NULL,
 	    .color_inverted = false,
 	    .effective_size = shadow_size,
@@ -337,8 +335,10 @@ image_handle renderer_shadow_from_mask(struct renderer *r, struct backend_base *
 	    .border_width = 0,
 	    .max_brightness = 1,
 	};
+	pixman_region32_init_rect(&target_mask, 0, 0, (unsigned)shadow_size.width,
+	                          (unsigned)shadow_size.height);
 	succeeded = backend->ops->blit(backend, (ivec2){0, 0}, shadow_image, &args);
-	pixman_region32_fini(&mask_args.region);
+	pixman_region32_fini(&target_mask);
 
 out:
 	if (normalized_mask_image) {
@@ -412,10 +412,6 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 		}
 
 		auto w = layer->win;
-		if (cmd->need_mask_image && w->mask_image == NULL &&
-		    !renderer_bind_mask(r, backend, w)) {
-			return false;
-		}
 		switch (cmd->op) {
 		case BACKEND_COMMAND_BLIT:
 			assert(cmd->source != BACKEND_COMMAND_SOURCE_BACKGROUND);
@@ -429,12 +425,24 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 				assert(w->win_image);
 				cmd->blit.source_image = w->win_image;
 			}
-			cmd->blit.mask->image = cmd->need_mask_image ? w->mask_image : NULL;
+			if (cmd->blit.source_mask != NULL) {
+				if (w->mask_image == NULL &&
+				    !renderer_bind_mask(r, backend, w)) {
+					return false;
+				}
+				cmd->blit.source_mask->image = w->mask_image;
+			}
 			break;
 		case BACKEND_COMMAND_BLUR:
 			cmd->blur.blur_context = blur_context;
 			cmd->blur.source_image = r->back_image;
-			cmd->blur.mask->image = cmd->need_mask_image ? w->mask_image : NULL;
+			if (cmd->blur.source_mask != NULL) {
+				if (w->mask_image == NULL &&
+				    !renderer_bind_mask(r, backend, w)) {
+					return false;
+				}
+				cmd->blur.source_mask->image = w->mask_image;
+			}
 			break;
 		default:
 		case BACKEND_COMMAND_COPY_AREA:
@@ -556,7 +564,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	}
 
 	if (backend->ops->prepare) {
-		backend->ops->prepare(backend, &layout->commands[0].mask.region);
+		backend->ops->prepare(backend, &layout->commands[0].target_mask);
 	}
 
 	if (monitor_repaint && buffer_age <= r->max_buffer_age) {
@@ -581,13 +589,13 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		                        r->back_image, &damage_region);
 		pixman_region32_copy(&r->monitor_repaint_region[r->frame_index], &damage_region);
 
-		struct backend_mask mask = {.region = damage_region};
 		struct backend_blit_args blit = {
 		    .source_image = r->monitor_repaint_pixel,
 		    .max_brightness = 1,
 		    .opacity = 1,
 		    .effective_size = r->canvas_size,
-		    .mask = &mask,
+		    .source_mask = NULL,
+		    .target_mask = &damage_region,
 		};
 		log_trace("Blit for monitor repaint");
 		backend->ops->blit(backend, (ivec2){}, r->back_image, &blit);

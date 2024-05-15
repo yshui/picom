@@ -17,7 +17,7 @@ struct backend_mask;
 ///                    initialized before calling this function. These masks MUST NOT be
 ///                    freed until you call `commands_uncull`.
 void commands_cull_with_damage(struct layout *layout, const region_t *damage,
-                               ivec2 blur_size, struct backend_mask *culled_mask);
+                               ivec2 blur_size, region_t *culled_mask);
 
 /// Un-do the effect of `commands_cull_with_damage`
 void commands_uncull(struct layout *layout);

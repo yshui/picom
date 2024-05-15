@@ -126,14 +126,13 @@ void gl_prepare(backend_t *base, const region_t *reg);
 /// @param[in]  rects       mask rectangles, in mask coordinates
 /// @param[out] coord       OpenGL vertex coordinates, suitable for creating VAO/VBO
 /// @param[out] indices     OpenGL vertex indices, suitable for creating VAO/VBO
-void gl_mask_rects_to_coords(ivec2 origin, ivec2 mask_origin, int nrects,
-                             const rect_t *rects, GLint *coord, GLuint *indices);
+void gl_mask_rects_to_coords(ivec2 origin, int nrects, const rect_t *rects, GLint *coord,
+                             GLuint *indices);
 /// Like `gl_mask_rects_to_coords`, but with `origin` and `mask_origin` set to 0. i.e. all
 /// coordinates are in the same space.
 static inline void gl_mask_rects_to_coords_simple(int nrects, const rect_t *rects,
                                                   GLint *coord, GLuint *indices) {
-	return gl_mask_rects_to_coords((ivec2){0, 0}, (ivec2){0, 0}, nrects, rects, coord,
-	                               indices);
+	return gl_mask_rects_to_coords((ivec2){0, 0}, nrects, rects, coord, indices);
 }
 
 GLuint gl_create_shader(GLenum shader_type, const char *shader_str);

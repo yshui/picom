@@ -193,15 +193,11 @@ static inline void xrender_set_picture_repeat(struct xrender_data *xd,
 	                                                           (uint32_t *)&values));
 }
 
-static inline void
-xrender_record_back_damage(struct xrender_data *xd, struct xrender_image_data_inner *target,
-                           ivec2 origin, ivec2 mask_origin, const region_t *region) {
+static inline void xrender_record_back_damage(struct xrender_data *xd,
+                                              struct xrender_image_data_inner *target,
+                                              const region_t *region) {
 	if (target == &xd->back_image && xd->vsync) {
-		pixman_region32_translate(&xd->back_damaged, -origin.x - mask_origin.x,
-		                          -origin.y - mask_origin.y);
 		pixman_region32_union(&xd->back_damaged, &xd->back_damaged, region);
-		pixman_region32_translate(&xd->back_damaged, origin.x + mask_origin.x,
-		                          origin.y + mask_origin.y);
 	}
 }
 
@@ -212,7 +208,7 @@ xrender_record_back_damage(struct xrender_data *xd, struct xrender_image_data_in
 /// @param new_origin the new origin of the normalized mask picture
 /// @param allocated whether the returned picture is newly allocated
 static xcb_render_picture_t
-xrender_process_mask(struct xrender_data *xd, struct backend_mask *mask, rect_t extent,
+xrender_process_mask(struct xrender_data *xd, struct backend_mask_image *mask, rect_t extent,
                      xcb_render_picture_t alpha_pict, ivec2 *new_origin, bool *allocated) {
 	auto inner = (struct xrender_image_data_inner *)mask->image;
 	if (!inner) {
@@ -276,15 +272,18 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	auto target = (struct xrender_image_data_inner *)target_handle;
 	bool mask_allocated = false;
 	auto mask_pict = xd->alpha_pict[(int)(args->opacity * MAX_ALPHA)];
-	auto mask_pict_origin = args->mask->origin;
-	auto extent = *pixman_region32_extents(&args->mask->region);
-	if (!pixman_region32_not_empty(&args->mask->region)) {
+	auto mask_pict_origin = args->source_mask->origin;
+	auto extent = *pixman_region32_extents(args->target_mask);
+	if (!pixman_region32_not_empty(args->target_mask)) {
 		return true;
 	}
-	if (args->mask != NULL) {
-		mask_pict = xrender_process_mask(xd, args->mask, extent,
+	int16_t mask_pict_dst_x = 0, mask_pict_dst_y = 0;
+	if (args->source_mask != NULL) {
+		mask_pict = xrender_process_mask(xd, args->source_mask, extent,
 		                                 args->opacity < 1.0 ? mask_pict : XCB_NONE,
 		                                 &mask_pict_origin, &mask_allocated);
+		mask_pict_dst_x = to_i16_checked(-mask_pict_origin.x);
+		mask_pict_dst_y = to_i16_checked(-mask_pict_origin.y);
 	}
 
 	// After this point, mask_pict and mask->region have different origins.
@@ -294,11 +293,6 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	auto const tmph = to_u16_checked(inner->size.height);
 	auto const tmpew = to_u16_checked(args->effective_size.width);
 	auto const tmpeh = to_u16_checked(args->effective_size.height);
-	int16_t mask_pict_dst_x = 0, mask_pict_dst_y = 0;
-	if (args->mask) {
-		mask_pict_dst_x = to_i16_checked(-mask_pict_origin.x);
-		mask_pict_dst_y = to_i16_checked(-mask_pict_origin.y);
-	}
 	const xcb_render_color_t dim_color = {
 	    .red = 0, .green = 0, .blue = 0, .alpha = (uint16_t)(0xffff * args->dim)};
 
@@ -307,12 +301,7 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	x_clear_picture_clip_region(xd->base.c, inner->pict);
 	xrender_set_picture_repeat(xd, inner->pict, XCB_RENDER_REPEAT_NORMAL);
 
-	if (args->mask) {
-		x_set_picture_clip_region(xd->base.c, target->pict,
-		                          to_i16_checked(args->mask->origin.x + origin.x),
-		                          to_i16_checked(args->mask->origin.y + origin.y),
-		                          &args->mask->region);
-	}
+	x_set_picture_clip_region(xd->base.c, target->pict, 0, 0, args->target_mask);
 	if (args->corner_radius != 0) {
 		if (inner->rounded_rectangle != NULL &&
 		    inner->rounded_rectangle->radius != (int)args->corner_radius) {
@@ -343,11 +332,8 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 		auto tmp_pict = x_create_picture_with_pictfmt(
 		    xd->base.c, inner->size.width, inner->size.height, pictfmt, depth, 0, NULL);
 
-		if (args->mask) {
-			x_set_picture_clip_region(
-			    xd->base.c, tmp_pict, to_i16_checked(args->mask->origin.x),
-			    to_i16_checked(args->mask->origin.y), &args->mask->region);
-		}
+		x_set_picture_clip_region(xd->base.c, tmp_pict, to_i16_checked(-origin.x),
+		                          to_i16_checked(-origin.y), args->target_mask);
 		// Copy source -> tmp
 		xcb_render_composite(xd->base.c->c, XCB_RENDER_PICT_OP_SRC, inner->pict,
 		                     XCB_NONE, tmp_pict, 0, 0, 0, 0, 0, 0, tmpw, tmph);
@@ -438,7 +424,7 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	if (mask_allocated) {
 		x_free_picture(xd->base.c, mask_pict);
 	}
-	xrender_record_back_damage(xd, target, origin, args->mask->origin, &args->mask->region);
+	xrender_record_back_damage(xd, target, args->target_mask);
 	return true;
 }
 
@@ -483,14 +469,16 @@ xrender_copy_area(struct backend_base *base, ivec2 origin, image_handle target_h
 	    to_i16_checked(extent->x1), to_i16_checked(extent->y1), 0, 0,
 	    to_i16_checked(origin.x + extent->x1), to_i16_checked(origin.y + extent->y1),
 	    to_u16_checked(extent->x2 - extent->x1), to_u16_checked(extent->y2 - extent->y1));
-	xrender_record_back_damage(xd, target, origin, (ivec2){0, 0}, region);
+	xrender_record_back_damage(xd, target, region);
 	return true;
 }
 
 static bool xrender_blur(struct backend_base *base, ivec2 origin,
                          image_handle target_handle, struct backend_blur_args *args) {
 	auto bctx = (struct xrender_blur_context *)args->blur_context;
-	auto mask = (struct xrender_image_data_inner *)args->mask->image;
+	auto source_mask = args->source_image
+	                       ? (struct xrender_image_data_inner *)args->source_mask->image
+	                       : NULL;
 	auto source = (struct xrender_image_data_inner *)args->source_image;
 	auto target = (struct xrender_image_data_inner *)target_handle;
 	if (bctx->method == BLUR_METHOD_NONE) {
@@ -499,14 +487,12 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 
 	auto xd = (struct xrender_data *)base;
 	auto c = xd->base.c;
-	if (!pixman_region32_not_empty(&args->mask->region)) {
+	if (!pixman_region32_not_empty(args->target_mask)) {
 		return true;
 	}
 
 	region_t reg_op_resized =
-	    resize_region(&args->mask->region, bctx->resize_width, bctx->resize_height);
-	pixman_region32_translate(&reg_op_resized, args->mask->origin.x,
-	                          args->mask->origin.y);
+	    resize_region(args->target_mask, bctx->resize_width, bctx->resize_height);
 
 	const pixman_box32_t *extent_resized = pixman_region32_extents(&reg_op_resized);
 	auto const height_resized = to_u16_checked(extent_resized->y2 - extent_resized->y1);
@@ -543,14 +529,15 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 	xcb_render_picture_t src_pict = source->pict;
 	auto mask_pict = xd->alpha_pict[(int)(args->opacity * MAX_ALPHA)];
 	bool mask_allocated = false;
-	auto mask_pict_origin = args->mask->origin;
-	if (mask != NULL) {
-		mask_pict = xrender_process_mask(
-		    xd, args->mask, *pixman_region32_extents(&args->mask->region),
-		    args->opacity != 1.0 ? mask_pict : XCB_NONE, &mask_pict_origin,
-		    &mask_allocated);
-	}
-	if (mask_allocated || mask != NULL) {
+	auto mask_pict_origin = args->source_mask->origin;
+	if (source_mask != NULL) {
+		// Translate the target mask region to the mask's coordinate
+		auto mask_extent = *pixman_region32_extents(args->target_mask);
+		region_translate_rect(
+		    mask_extent, ivec2_neg(ivec2_add(origin, args->source_mask->origin)));
+		mask_pict = xrender_process_mask(xd, args->source_mask, mask_extent,
+		                                 args->opacity != 1.0 ? mask_pict : XCB_NONE,
+		                                 &mask_pict_origin, &mask_allocated);
 		mask_pict_origin.x -= extent_resized->x1;
 		mask_pict_origin.y -= extent_resized->y1;
 	} else {
@@ -560,9 +547,7 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 		mask_pict_origin = (ivec2){0, 0};
 	}
 	x_set_picture_clip_region(c, src_pict, 0, 0, &reg_op_resized);
-	x_set_picture_clip_region(
-	    c, target->pict, to_i16_checked(args->mask->origin.x + origin.x),
-	    to_i16_checked(args->mask->origin.y + origin.y), &args->mask->region);
+	x_set_picture_clip_region(c, target->pict, 0, 0, args->target_mask);
 
 	// For more than 1 pass, we do:
 	//   source -(pass 1)-> tmp0 -(pass 2)-> tmp1 ...
@@ -628,7 +613,7 @@ static bool xrender_blur(struct backend_base *base, ivec2 origin,
 	x_free_picture(c, tmp_picture[1]);
 	pixman_region32_fini(&reg_op_resized);
 
-	xrender_record_back_damage(xd, target, origin, args->mask->origin, &args->mask->region);
+	xrender_record_back_damage(xd, target, args->target_mask);
 	return true;
 }
 
@@ -784,8 +769,7 @@ static bool xrender_apply_alpha(struct backend_base *base, image_handle image,
 	xcb_render_composite(base->c->c, XCB_RENDER_PICT_OP_OUT_REVERSE, alpha_pict, XCB_NONE,
 	                     img->pict, 0, 0, 0, 0, 0, 0, to_u16_checked(img->size.width),
 	                     to_u16_checked(img->size.height));
-	static const ivec2 zero = {};
-	xrender_record_back_damage(xd, img, zero, zero, reg_op);
+	xrender_record_back_damage(xd, img, reg_op);
 	return true;
 }
 

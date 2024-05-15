@@ -62,7 +62,7 @@ bool backend_execute(struct backend_base *backend, image_handle target, unsigned
 	for (auto cmd = &cmds[0]; succeeded && cmd != &cmds[ncmds]; cmd++) {
 		switch (cmd->op) {
 		case BACKEND_COMMAND_BLIT:
-			if (!pixman_region32_not_empty(&cmd->blit.mask->region)) {
+			if (!pixman_region32_not_empty(cmd->blit.target_mask)) {
 				continue;
 			}
 			succeeded =
@@ -77,7 +77,7 @@ bool backend_execute(struct backend_base *backend, image_handle target, unsigned
 			                                    cmd->copy_area.region);
 			break;
 		case BACKEND_COMMAND_BLUR:
-			if (!pixman_region32_not_empty(&cmd->blur.mask->region)) {
+			if (!pixman_region32_not_empty(cmd->blur.target_mask)) {
 				continue;
 			}
 			succeeded =
@@ -110,11 +110,11 @@ void log_backend_command_(enum log_level level, const char *func,
 	case BACKEND_COMMAND_BLIT:
 		log_printf(tls_logger, level, func, "blit %s%s",
 		           render_command_source_name(cmd->source),
-		           cmd->need_mask_image ? ", with mask image" : "");
+		           cmd->blit.source_mask != NULL ? ", with mask image" : "");
 		log_printf(tls_logger, level, func, "origin: %d,%d", cmd->origin.x,
 		           cmd->origin.y);
 		log_printf(tls_logger, level, func, "mask region:");
-		log_region_(level, func, &cmd->blit.mask->region);
+		log_region_(level, func, cmd->blit.target_mask);
 		log_printf(tls_logger, level, func, "opaque region:");
 		log_region_(level, func, &cmd->opaque_region);
 		break;
@@ -128,11 +128,11 @@ void log_backend_command_(enum log_level level, const char *func,
 		break;
 	case BACKEND_COMMAND_BLUR:
 		log_printf(tls_logger, level, func, "blur%s",
-		           cmd->need_mask_image ? ", with mask image" : "");
+		           cmd->blur.source_mask != NULL ? ", with mask image" : "");
 		log_printf(tls_logger, level, func, "origin: %d,%d", cmd->origin.x,
 		           cmd->origin.y);
 		log_printf(tls_logger, level, func, "mask region:");
-		log_region_(level, func, &cmd->blur.mask->region);
+		log_region_(level, func, cmd->blur.target_mask);
 		break;
 	case BACKEND_COMMAND_INVALID:
 		log_printf(tls_logger, level, func, "invalid");

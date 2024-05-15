@@ -75,14 +75,14 @@ bool dummy_blit(struct backend_base *base, ivec2 origin attr_unused, image_handl
                 struct backend_blit_args *args) {
 	dummy_check_image(base, target);
 	dummy_check_image(base, args->source_image);
-	if (args->mask->image) {
-		auto mask = (struct dummy_image *)args->mask->image;
+	if (args->source_mask) {
+		auto mask = (struct dummy_image *)args->source_mask->image;
 		if (mask->format != BACKEND_IMAGE_FORMAT_MASK) {
 			log_error("Invalid mask image format");
 			assert(false);
 			return false;
 		}
-		dummy_check_image(base, args->mask->image);
+		dummy_check_image(base, args->source_mask->image);
 	}
 	return true;
 }
@@ -91,14 +91,14 @@ bool dummy_blur(struct backend_base *base, ivec2 origin attr_unused, image_handl
                 struct backend_blur_args *args) {
 	dummy_check_image(base, target);
 	dummy_check_image(base, args->source_image);
-	if (args->mask->image) {
-		auto mask = (struct dummy_image *)args->mask->image;
+	if (args->source_mask) {
+		auto mask = (struct dummy_image *)args->source_mask->image;
 		if (mask->format != BACKEND_IMAGE_FORMAT_MASK) {
 			log_error("Invalid mask image format");
 			assert(false);
 			return false;
 		}
-		dummy_check_image(base, args->mask->image);
+		dummy_check_image(base, args->source_mask->image);
 	}
 	return true;
 }
