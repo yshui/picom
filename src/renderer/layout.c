@@ -62,10 +62,10 @@ static bool layer_from_window(struct layer *out_layer, struct managed_win *w, iv
 		goto out;
 	}
 
-	out_layer->opacity = (float)animatable_get(&w->opacity);
-	out_layer->blur_opacity = (float)animatable_get(&w->blur_opacity);
-	out_layer->shadow_opacity =
-	    (float)(out_layer->opacity * w->shadow_opacity * w->frame_opacity);
+	out_layer->opacity = (float)win_animatable_get(w, WIN_SCRIPT_OPACITY);
+	out_layer->blur_opacity = (float)win_animatable_get(w, WIN_SCRIPT_BLUR_OPACITY);
+	out_layer->shadow_opacity = (float)(win_animatable_get(w, WIN_SCRIPT_SHADOW_OPACITY) *
+	                                    w->shadow_opacity * w->frame_opacity);
 	if (out_layer->opacity == 0 && out_layer->blur_opacity == 0) {
 		goto out;
 	}
