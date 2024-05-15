@@ -272,18 +272,18 @@ static bool xrender_blit(struct backend_base *base, ivec2 origin,
 	auto target = (struct xrender_image_data_inner *)target_handle;
 	bool mask_allocated = false;
 	auto mask_pict = xd->alpha_pict[(int)(args->opacity * MAX_ALPHA)];
-	auto mask_pict_origin = args->source_mask->origin;
 	auto extent = *pixman_region32_extents(args->target_mask);
 	if (!pixman_region32_not_empty(args->target_mask)) {
 		return true;
 	}
 	int16_t mask_pict_dst_x = 0, mask_pict_dst_y = 0;
 	if (args->source_mask != NULL) {
-		mask_pict = xrender_process_mask(xd, args->source_mask, extent,
-		                                 args->opacity < 1.0 ? mask_pict : XCB_NONE,
-		                                 &mask_pict_origin, &mask_allocated);
-		mask_pict_dst_x = to_i16_checked(-mask_pict_origin.x);
-		mask_pict_dst_y = to_i16_checked(-mask_pict_origin.y);
+		mask_pict =
+		    xrender_process_mask(xd, args->source_mask, extent,
+		                         args->opacity < 1.0 ? mask_pict : XCB_NONE,
+		                         &args->source_mask->origin, &mask_allocated);
+		mask_pict_dst_x = to_i16_checked(-args->source_mask->origin.x);
+		mask_pict_dst_y = to_i16_checked(-args->source_mask->origin.y);
 	}
 
 	// After this point, mask_pict and mask->region have different origins.
