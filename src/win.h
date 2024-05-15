@@ -253,7 +253,8 @@ struct managed_win {
 	bool shadow;
 	/// Override value of window shadow state. Set by D-Bus method calls.
 	switch_t shadow_force;
-	/// Opacity of the shadow. Affected by window opacity and frame opacity.
+	/// Window specific shadow factor. The final shadow opacity is a combination of
+	/// this, the window opacity, and the window frame opacity.
 	double shadow_opacity;
 	/// X offset of shadow. Affected by command line argument.
 	int shadow_dx;

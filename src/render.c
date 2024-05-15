@@ -808,8 +808,10 @@ win_paint_shadow(session_t *ps, struct managed_win *w, region_t *reg_paint) {
 	    .x = -(w->shadow_dx),
 	    .y = -(w->shadow_dy),
 	};
+	double shadow_opacity =
+	    animatable_get(&w->opacity) * ps->o.shadow_opacity * ps->o.frame_opacity;
 	render(ps, 0, 0, w->g.x + w->shadow_dx, w->g.y + w->shadow_dy, w->shadow_width,
-	       w->shadow_height, w->widthb, w->heightb, w->shadow_opacity, true, false, 0,
+	       w->shadow_height, w->widthb, w->heightb, shadow_opacity, true, false, 0,
 	       w->shadow_paint.pict, w->shadow_paint.ptex, reg_paint, NULL,
 	       should_clip ? &clip : NULL);
 	if (td) {

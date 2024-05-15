@@ -1590,7 +1590,6 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	    // No need to initialize. (or, you can think that
 	    // they are initialized right here).
 	    // The following ones are updated during paint or paint preprocess
-	    .shadow_opacity = 0.0,
 	    .to_paint = false,
 	    .frame_opacity = 1.0,
 	    .dim = false,
@@ -1727,6 +1726,7 @@ struct win *attr_ret_nonnull maybe_allocate_managed_win(session_t *ps, struct wi
 	new->a = *a;
 	new->opacity = animatable_new(0);
 	new->blur_opacity = animatable_new(0);
+	new->shadow_opacity = ps->o.shadow_opacity;
 	pixman_region32_init(&new->bounding_shape);
 
 	free(a);

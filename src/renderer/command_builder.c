@@ -155,7 +155,7 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 	}
 	log_region(TRACE, &cmd->mask.region);
 	cmd->blit = (struct backend_blit_args){
-	    .opacity = layer->opacity,
+	    .opacity = layer->shadow_opacity,
 	    .max_brightness = 1,
 	    .mask = &cmd->mask,
 	    .effective_size = layer->shadow_size,

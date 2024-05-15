@@ -41,6 +41,8 @@ struct layer {
 	float opacity;
 	/// Opacity of the background blur of this window
 	float blur_opacity;
+	/// Opacity of this window's shadow
+	float shadow_opacity;
 
 	/// How many commands are needed to render this layer
 	unsigned number_of_commands;

@@ -1012,9 +1012,6 @@ static bool paint_preprocess(session_t *ps, bool *fade_running, bool *animation,
 		log_trace("|- will be painted");
 		log_verbose("Window %#010x (%s) will be painted", w->base.id, w->name);
 
-		// Calculate shadow opacity
-		w->shadow_opacity = ps->o.shadow_opacity * window_opacity * ps->o.frame_opacity;
-
 		// Generate ignore region for painting to reduce GPU load
 		if (!w->reg_ignore) {
 			w->reg_ignore = rc_region_ref(last_reg_ignore);
