@@ -475,13 +475,13 @@ static void gl_blit_inner(GLuint target_fbo, int nrects, GLint *coord, GLuint *i
 	gl_check_err();
 }
 
-void gl_mask_rects_to_coords(ivec2 origin, ivec2 mask_origin, int nrects,
-                             const rect_t *rects, GLint *coord, GLuint *indices) {
+void gl_mask_rects_to_coords(ivec2 origin, int nrects, const rect_t *rects, GLint *coord,
+                             GLuint *indices) {
 	for (ptrdiff_t i = 0; i < nrects; i++) {
 		// Rectangle in source image coordinates
-		rect_t rect_src = region_translate_rect(rects[i], mask_origin);
+		rect_t rect_src = region_translate_rect(rects[i], ivec2_neg(origin));
 		// Rectangle in target image coordinates
-		rect_t rect_dst = region_translate_rect(rect_src, origin);
+		rect_t rect_dst = rects[i];
 
 		memcpy(&coord[i * 16],
 		       ((GLint[][2]){
@@ -528,23 +528,24 @@ static int gl_lower_blit_args(struct gl_data *gd, ivec2 origin, struct backend_b
 	auto img = (struct gl_texture *)args->source_image;
 	int nrects;
 	const rect_t *rects;
-	rects = pixman_region32_rectangles(&args->mask->region, &nrects);
+	rects = pixman_region32_rectangles(args->target_mask, &nrects);
 	if (!nrects) {
 		// Nothing to paint
 		return 0;
 	}
-	ivec2 mask_origin = args->mask->origin;
 	*coord = ccalloc(nrects * 16, GLint);
 	*indices = ccalloc(nrects * 6, GLuint);
-	gl_mask_rects_to_coords(origin, mask_origin, nrects, rects, *coord, *indices);
+	gl_mask_rects_to_coords(origin, nrects, rects, *coord, *indices);
 	if (!img->y_inverted) {
 		gl_y_flip_texture(nrects, *coord, img->height);
 	}
 
-	auto mask_image = (struct gl_texture *)args->mask->image;
-	auto mask_texture = mask_image ? mask_image->texture : gd->default_mask_texture;
-	auto mask_sampler =
-	    mask_image ? gd->samplers[GL_SAMPLER_BORDER] : gd->samplers[GL_SAMPLER_REPEAT];
+	auto mask_texture = gd->default_mask_texture;
+	auto mask_sampler = gd->samplers[GL_SAMPLER_REPEAT];
+	if (args->source_mask != NULL) {
+		mask_texture = ((struct gl_texture *)args->source_mask->image)->texture;
+		mask_sampler = gd->samplers[GL_SAMPLER_BORDER];
+	}
 	GLuint brightness = 0;        // 0 means the default texture, which will be
 	                              // incomplete, and sampling from it will return (0,
 	                              // 0, 0, 1), which should be fine.
@@ -578,14 +579,14 @@ static int gl_lower_blit_args(struct gl_data *gd, ivec2 origin, struct backend_b
 	};
 	// clang-format on
 
-	if (args->mask != NULL) {
-		from_uniforms[UNIFORM_MASK_OFFSET_LOC].f2[0] = (float)args->mask->origin.x;
-		from_uniforms[UNIFORM_MASK_OFFSET_LOC].f2[1] = (float)args->mask->origin.y;
-		if (mask_image != NULL) {
-			from_uniforms[UNIFORM_MASK_INVERTED_LOC].i = args->mask->inverted;
-			from_uniforms[UNIFORM_MASK_CORNER_RADIUS_LOC].f =
-			    (float)args->mask->corner_radius;
-		}
+	if (args->source_mask != NULL) {
+		from_uniforms[UNIFORM_MASK_OFFSET_LOC].f2[0] =
+		    (float)args->source_mask->origin.x;
+		from_uniforms[UNIFORM_MASK_OFFSET_LOC].f2[1] =
+		    (float)args->source_mask->origin.y;
+		from_uniforms[UNIFORM_MASK_CORNER_RADIUS_LOC].f =
+		    (float)args->source_mask->corner_radius;
+		from_uniforms[UNIFORM_MASK_INVERTED_LOC].i = args->source_mask->inverted;
 	}
 	*shader = args->shader ?: &gd->default_shader;
 	if ((*shader)->uniform_bitmask & (1 << UNIFORM_TIME_LOC)) {
@@ -678,7 +679,7 @@ static bool gl_copy_area_draw(struct gl_data *gd, ivec2 origin,
 
 	auto coord = ccalloc(16 * nrects, GLint);
 	auto indices = ccalloc(6 * nrects, GLuint);
-	gl_mask_rects_to_coords(origin, (ivec2){}, nrects, rects, coord, indices);
+	gl_mask_rects_to_coords(origin, nrects, rects, coord, indices);
 	if (!target->y_inverted) {
 		gl_y_flip_target(nrects, coord, target->height);
 	}

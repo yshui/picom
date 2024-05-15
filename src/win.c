@@ -107,7 +107,7 @@ static void win_mark_client(session_t *ps, struct managed_win *w, xcb_window_t c
 #define gen_without_corners(fun)                                                         \
 	void fun##_without_corners(const struct managed_win *w, region_t *res) {         \
 		fun(w, res);                                                             \
-		win_region_remove_corners(w, res);                                       \
+		win_region_remove_corners_local(w, res);                                 \
 	}
 
 /// Generate a "return by value" function, from a function that returns the

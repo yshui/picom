@@ -74,15 +74,13 @@ typedef struct image_handle {
 /// The mask is composed of both a mask region and a mask image. The resulting mask
 /// is the intersection of the two. The mask image can be modified by the `corner_radius`
 /// and `inverted` properties. Note these properties have no effect on the mask region.
-struct backend_mask {
+struct backend_mask_image {
 	/// Mask image, can be NULL.
 	///
 	/// Mask image must be an image that was created with the
 	/// `BACKEND_IMAGE_FORMAT_MASK` format. Using an image with a wrong format as mask
 	/// is undefined behavior.
 	image_handle image;
-	/// Clip region, in source image's coordinate.
-	region_t region;
 	/// Corner radius of the mask image, the corners of the mask image will be
 	/// rounded.
 	double corner_radius;
@@ -95,8 +93,12 @@ struct backend_mask {
 struct backend_blur_args {
 	/// The blur context
 	void *blur_context;
-	/// The mask for the blur operation, cannot be NULL.
-	struct backend_mask *mask;
+	/// The source mask for the blur operation, may be NULL. Only parts of the source
+	/// image covered by the mask should participate in the blur operation.
+	struct backend_mask_image *source_mask;
+	/// Region of the target image that will be covered by the blur operation, in the
+	/// source image's coordinate.
+	const region_t *target_mask;
 	/// Source image
 	image_handle source_image;
 	/// Opacity of the blurred image
@@ -106,8 +108,13 @@ struct backend_blur_args {
 struct backend_blit_args {
 	/// Source image, can be NULL.
 	image_handle source_image;
-	/// Mask for the source image. Cannot be NULL.
-	struct backend_mask *mask;
+	/// Mask for the source image. may be NULL. Only contents covered by the mask
+	/// should participate in the blit operation. This applies to the source image
+	/// before it's scaled.
+	struct backend_mask_image *source_mask;
+	/// Mask for the target image. Only regions of the target image covered by this
+	/// mask should be modified. This is the target's coordinate system.
+	const region_t *target_mask;
 	/// Custom shader for this blit operation.
 	void *shader;
 	/// Opacity of the source image.
@@ -189,11 +196,12 @@ struct backend_command {
 		} copy_area;
 		struct backend_blur_args blur;
 	};
-	/// Mask used for the operation. Note `copy_area` command uses this to store its
-	/// `region` argument.
-	struct backend_mask mask;
-	/// Whether renderer should fill in `mask.image`.
-	bool need_mask_image;
+	/// Source mask for the operation.
+	/// If the `source_mask` of the operation's argument points to this, a mask image
+	/// will be created for the operation for the renderer.
+	struct backend_mask_image source_mask;
+	/// Target mask for the operation.
+	region_t target_mask;
 };
 
 enum backend_quirk {
@@ -293,7 +301,7 @@ struct backend_operations {
 	///                     coordinate.
 	/// @param target       an image handle, cannot be NULL.
 	/// @param source       an image handle, cannot be NULL.
-	/// @param region       the region to copy, in the source image's coordinate.
+	/// @param region       the region to copy, in the target image's coordinate.
 	/// @return             whether the operation is successful
 	bool (*copy_area)(struct backend_base *backend_data, ivec2 origin,
 	                  image_handle target, image_handle source, const region_t *region)
@@ -316,7 +324,7 @@ struct backend_operations {
 	///                     coordinate.
 	/// @param target       an image handle, cannot be NULL.
 	/// @param source       an image handle, cannot be NULL.
-	/// @param region       the region to copy, in the source image's coordinate.
+	/// @param region       the region to copy, in the target image's coordinate.
 	/// @return             whether the operation is successful
 	bool (*copy_area_quantize)(struct backend_base *backend_data, ivec2 origin,
 	                           image_handle target, image_handle source,

@@ -57,7 +57,7 @@ layer_compare(const struct layer *past_layer, const struct backend_command *past
 static inline void region_union_render_layer(region_t *region, const struct layer *layer,
                                              const struct backend_command *cmds) {
 	for (auto i = cmds; i < &cmds[layer->number_of_commands]; i++) {
-		region_union(region, ivec2_add(i->origin, i->mask.origin), &i->mask.region);
+		pixman_region32_union(region, region, &i->target_mask);
 	}
 }
 
@@ -65,8 +65,6 @@ static inline void
 command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_command *cmd1,
                     struct backend_command *cmd2, const struct layout_manager *lm,
                     unsigned layer_index, unsigned buffer_age) {
-	auto origin1 = ivec2_add(cmd1->origin, cmd1->mask.origin);
-	auto origin2 = ivec2_add(cmd2->origin, cmd2->mask.origin);
 	// clang-format off
 	// First part, if any blit argument that would affect the whole image changed
 	if (cmd1->blit.dim     != cmd2->blit.dim                   ||
@@ -83,8 +81,8 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	         !ivec2_eq(cmd1->blit.effective_size, cmd2->blit.effective_size)))
 	   )
 	{
-		region_union(damage, origin1, &cmd1->mask.region);
-		region_union(damage, origin2, &cmd2->mask.region);
+		pixman_region32_union(damage, damage, &cmd1->target_mask);
+		pixman_region32_union(damage, damage, &cmd2->target_mask);
 		return;
 	}
 	// clang-format on
@@ -96,13 +94,13 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	// Damage from layers below that is covered up by the current layer, won't be
 	// visible. So remove them.
 	pixman_region32_subtract(damage, damage, &cmd2->opaque_region);
-	region_symmetric_difference(damage, scratch_region, origin1, &cmd1->mask.region,
-	                            origin2, &cmd2->mask.region);
+	region_symmetric_difference_local(damage, scratch_region, &cmd1->target_mask,
+	                                  &cmd2->target_mask);
 	if (cmd1->source == BACKEND_COMMAND_SOURCE_WINDOW) {
 		layout_manager_collect_window_damage(lm, layer_index, buffer_age,
 		                                     scratch_region);
-		region_intersect(scratch_region, origin1, &cmd1->mask.region);
-		region_intersect(scratch_region, origin2, &cmd2->mask.region);
+		pixman_region32_intersect(scratch_region, scratch_region, &cmd1->target_mask);
+		pixman_region32_intersect(scratch_region, scratch_region, &cmd2->target_mask);
 		pixman_region32_union(damage, damage, scratch_region);
 	}
 }
@@ -110,24 +108,22 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 static inline void command_blur_damage(region_t *damage, region_t *scratch_region,
                                        struct backend_command *cmd1,
                                        struct backend_command *cmd2, ivec2 blur_size) {
-	auto origin1 = ivec2_add(cmd1->origin, cmd1->mask.origin);
-	auto origin2 = ivec2_add(cmd2->origin, cmd2->mask.origin);
 	if (cmd1->blur.opacity != cmd2->blur.opacity) {
-		region_union(damage, origin1, &cmd1->mask.region);
-		region_union(damage, origin2, &cmd2->mask.region);
+		pixman_region32_union(damage, damage, &cmd1->target_mask);
+		pixman_region32_union(damage, damage, &cmd2->target_mask);
 		return;
 	}
 	if (cmd1->blur.opacity == 0) {
 		return;
 	}
-	region_symmetric_difference(damage, scratch_region, origin1, &cmd1->mask.region,
-	                            origin2, &cmd2->mask.region);
+	region_symmetric_difference_local(damage, scratch_region, &cmd1->target_mask,
+	                                  &cmd2->target_mask);
 
 	// We need to expand the damage region underneath the blur. Because blur
 	// "diffuses" the changes from below.
 	pixman_region32_copy(scratch_region, damage);
 	resize_region_in_place(scratch_region, blur_size.width, blur_size.height);
-	region_intersect(scratch_region, origin2, &cmd2->mask.region);
+	pixman_region32_intersect(scratch_region, scratch_region, &cmd2->target_mask);
 	pixman_region32_union(damage, damage, scratch_region);
 }
 
@@ -294,7 +290,7 @@ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
 }
 
 void commands_cull_with_damage(struct layout *layout, const region_t *damage,
-                               ivec2 blur_size, struct backend_mask *culled_mask) {
+                               ivec2 blur_size, region_t *culled_mask) {
 	// This may sound silly, and probably actually is. Why do GPU's job on the CPU?
 	// Isn't the GPU supposed to be the one that does culling, depth testing etc.?
 	//
@@ -317,35 +313,27 @@ void commands_cull_with_damage(struct layout *layout, const region_t *damage,
 	pixman_region32_copy(&scratch_region, damage);
 	for (int i = to_int_checked(layout->number_of_commands - 1); i >= 0; i--) {
 		auto cmd = &layout->commands[i];
-		ivec2 mask_origin;
-		if (cmd->op != BACKEND_COMMAND_COPY_AREA) {
-			mask_origin = ivec2_add(cmd->origin, cmd->mask.origin);
-		} else {
-			mask_origin = cmd->origin;
-		}
-		culled_mask[i] = cmd->mask;
-		pixman_region32_init(&culled_mask[i].region);
-		pixman_region32_copy(&culled_mask[i].region, &cmd->mask.region);
-		region_intersect(&culled_mask[i].region, ivec2_neg(mask_origin),
-		                 &scratch_region);
+		pixman_region32_copy(&culled_mask[i], &cmd->target_mask);
+		pixman_region32_intersect(&culled_mask[i], &culled_mask[i], &scratch_region);
 		switch (cmd->op) {
 		case BACKEND_COMMAND_BLIT:
 			pixman_region32_subtract(&scratch_region, &scratch_region,
 			                         &cmd->opaque_region);
-			cmd->blit.mask = &culled_mask[i];
+			cmd->blit.target_mask = &culled_mask[i];
 			break;
 		case BACKEND_COMMAND_COPY_AREA:
-			region_subtract(&scratch_region, mask_origin, &cmd->mask.region);
-			cmd->copy_area.region = &culled_mask[i].region;
+			pixman_region32_subtract(&scratch_region, &scratch_region,
+			                         &cmd->target_mask);
+			cmd->copy_area.region = &culled_mask[i];
 			break;
 		case BACKEND_COMMAND_BLUR:
 			// To render blur, the layers below must render pixels surrounding
 			// the blurred area in this layer.
 			pixman_region32_copy(&tmp, &scratch_region);
-			region_intersect(&tmp, mask_origin, &cmd->mask.region);
+			pixman_region32_intersect(&tmp, &tmp, &cmd->target_mask);
 			resize_region_in_place(&tmp, blur_size.width, blur_size.height);
 			pixman_region32_union(&scratch_region, &scratch_region, &tmp);
-			cmd->blur.mask = &culled_mask[i];
+			cmd->blur.target_mask = &culled_mask[i];
 			break;
 		case BACKEND_COMMAND_INVALID: assert(false);
 		}
@@ -358,17 +346,10 @@ void commands_uncull(struct layout *layout) {
 	for (auto i = layout->commands;
 	     i != &layout->commands[layout->number_of_commands]; i++) {
 		switch (i->op) {
-		case BACKEND_COMMAND_BLIT:
-			pixman_region32_fini(&i->blit.mask->region);
-			i->blit.mask = &i->mask;
-			break;
-		case BACKEND_COMMAND_BLUR:
-			pixman_region32_fini(&i->blur.mask->region);
-			i->blur.mask = &i->mask;
-			break;
+		case BACKEND_COMMAND_BLIT: i->blit.target_mask = &i->target_mask; break;
+		case BACKEND_COMMAND_BLUR: i->blur.target_mask = &i->target_mask; break;
 		case BACKEND_COMMAND_COPY_AREA:
-			pixman_region32_fini((region_t *)i->copy_area.region);
-			i->copy_area.region = &i->mask.region;
+			i->copy_area.region = &i->target_mask;
 			break;
 		case BACKEND_COMMAND_INVALID: assert(false);
 		}
