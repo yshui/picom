@@ -1,0 +1,21 @@
+name: openbsd
+on: push
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    - uses: cross-platform-actions/action@v0.24.0
+      with:
+        operating_system: openbsd
+        version: '7.5'
+        shell: bash
+        run: |
+          sudo pkg_add libev xcb meson pkgconf cmake uthash libconfig dbus pcre2
+          CPPFLAGS="-I/usr/local/include" LDFLAGS="-L/usr/local/lib" meson setup -Dunittest=true --werror build
+          ninja -C build
+          ninja -C build test
+
