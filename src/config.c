@@ -650,6 +650,7 @@ char *parse_config(options_t *opt, const char *config_file) {
 	    .benchmark = 0,
 	    .benchmark_wid = XCB_NONE,
 	    .logpath = NULL,
+	    .log_level = LOG_LEVEL_WARN,
 
 	    .use_damage = true,
 	    .frame_pacing = true,
