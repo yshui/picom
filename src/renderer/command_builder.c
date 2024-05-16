@@ -18,6 +18,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
                          const region_t *frame_region, bool inactive_dim_fixed,
                          double inactive_dim, double max_brightness) {
 	auto w = layer->win;
+	scoped_region_t crop = region_from_box(layer->crop);
 	auto mode = win_calc_mode_raw(layer->win);
 	int border_width = w->g.border_width;
 	double dim = 0;
@@ -51,6 +52,8 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	}
 	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
 	region_scale(&cmd->opaque_region, layer->window.origin, layer->scale);
+	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
+	pixman_region32_intersect(&cmd->opaque_region, &cmd->opaque_region, &crop);
 	cmd->op = BACKEND_COMMAND_BLIT;
 	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
 	cmd->origin = layer->window.origin;
@@ -74,6 +77,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 
 	pixman_region32_copy(&cmd->target_mask, frame_region);
 	region_scale(&cmd->target_mask, cmd->origin, layer->scale);
+	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
 	pixman_region32_init(&cmd->opaque_region);
 	cmd->op = BACKEND_COMMAND_BLIT;
 	cmd->origin = layer->window.origin;
@@ -140,6 +144,9 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 		    ivec2_sub(layer->window.origin, layer->shadow.origin);
 	}
 
+	scoped_region_t crop = region_from_box(layer->crop);
+	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
+
 	cmd->blit = (struct backend_blit_args){
 	    .opacity = layer->shadow_opacity,
 	    .max_brightness = 1,
@@ -170,6 +177,10 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 		return 0;
 	}
 	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
+
+	scoped_region_t crop = region_from_box(layer->crop);
+	pixman_region32_intersect(&cmd->target_mask, &cmd->target_mask, &crop);
+
 	cmd->op = BACKEND_COMMAND_BLUR;
 	cmd->origin = (ivec2){};
 	if (w->corner_radius > 0) {

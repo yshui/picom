@@ -51,6 +51,14 @@ static bool layer_from_window(struct layer *out_layer, struct managed_win *w, iv
 	                   .y = w->g.y + win_animatable_get(w, WIN_SCRIPT_OFFSET_Y)});
 	out_layer->window.size = vec2_as((vec2){.width = w->widthb * out_layer->scale.x,
 	                                        .height = w->heightb * out_layer->scale.y});
+	out_layer->crop.origin = vec2_as((vec2){
+	    .x = win_animatable_get(w, WIN_SCRIPT_CROP_X),
+	    .y = win_animatable_get(w, WIN_SCRIPT_CROP_Y),
+	});
+	out_layer->crop.size = vec2_as((vec2){
+	    .x = win_animatable_get(w, WIN_SCRIPT_CROP_WIDTH),
+	    .y = win_animatable_get(w, WIN_SCRIPT_CROP_HEIGHT),
+	});
 	if (w->shadow) {
 		out_layer->shadow_scale = (vec2){
 		    .x = win_animatable_get(w, WIN_SCRIPT_SHADOW_SCALE_X),
@@ -71,7 +79,7 @@ static bool layer_from_window(struct layer *out_layer, struct managed_win *w, iv
 	}
 
 	struct ibox screen = {.origin = {0, 0}, .size = size};
-	if (!ibox_overlap(out_layer->window, screen)) {
+	if (!ibox_overlap(out_layer->window, screen) || !ibox_overlap(out_layer->crop, screen)) {
 		goto out;
 	}
 

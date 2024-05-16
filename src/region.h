@@ -200,3 +200,11 @@ region_symmetric_difference_local(region_t *result, region_t *scratch,
 	pixman_region32_subtract(scratch, scratch, region1);
 	pixman_region32_union(result, result, scratch);
 }
+
+static inline region_t region_from_box(struct ibox a) {
+	region_t ret;
+	unsigned width = (unsigned)(min2(INT_MAX - a.origin.x, a.size.width)),
+	         height = (unsigned)(min2(INT_MAX - a.origin.y, a.size.height));
+	pixman_region32_init_rect(&ret, a.origin.x, a.origin.y, width, height);
+	return ret;
+}
