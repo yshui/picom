@@ -42,11 +42,16 @@ static bool layer_from_window(struct layer *out_layer, struct managed_win *w, iv
 		goto out;
 	}
 
-	out_layer->origin = (ivec2){.x = w->g.x, .y = w->g.y};
+	out_layer->origin =
+	    vec2_as((vec2){.x = w->g.x + win_animatable_get(w, WIN_SCRIPT_OFFSET_X),
+	                   .y = w->g.y + win_animatable_get(w, WIN_SCRIPT_OFFSET_Y)});
 	out_layer->size = (ivec2){.width = w->widthb, .height = w->heightb};
 	if (w->shadow) {
 		out_layer->shadow_origin =
-		    (ivec2){.x = w->g.x + w->shadow_dx, .y = w->g.y + w->shadow_dy};
+		    vec2_as((vec2){.x = w->g.x + w->shadow_dx +
+		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_X),
+		                   .y = w->g.y + w->shadow_dy +
+		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_Y)});
 		out_layer->shadow_size =
 		    (ivec2){.width = w->shadow_width, .height = w->shadow_height};
 	} else {
