@@ -42,28 +42,25 @@ static bool layer_from_window(struct layer *out_layer, struct managed_win *w, iv
 		goto out;
 	}
 
-	out_layer->origin =
+	out_layer->window.origin =
 	    vec2_as((vec2){.x = w->g.x + win_animatable_get(w, WIN_SCRIPT_OFFSET_X),
 	                   .y = w->g.y + win_animatable_get(w, WIN_SCRIPT_OFFSET_Y)});
-	out_layer->size = (ivec2){.width = w->widthb, .height = w->heightb};
+	out_layer->window.size = (ivec2){.width = w->widthb, .height = w->heightb};
 	if (w->shadow) {
-		out_layer->shadow_origin =
+		out_layer->shadow.origin =
 		    vec2_as((vec2){.x = w->g.x + w->shadow_dx +
 		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_X),
 		                   .y = w->g.y + w->shadow_dy +
 		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_Y)});
-		out_layer->shadow_size =
+		out_layer->shadow.size =
 		    (ivec2){.width = w->shadow_width, .height = w->shadow_height};
 	} else {
-		out_layer->shadow_origin = (ivec2){};
-		out_layer->shadow_size = (ivec2){};
+		out_layer->shadow.origin = (ivec2){};
+		out_layer->shadow.size = (ivec2){};
 	}
-	if (out_layer->size.width <= 0 || out_layer->size.height <= 0) {
-		goto out;
-	}
-	if (out_layer->size.height + out_layer->origin.y <= 0 ||
-	    out_layer->size.width + out_layer->origin.x <= 0 ||
-	    out_layer->origin.y >= size.height || out_layer->origin.x >= size.width) {
+
+	struct ibox screen = {.origin = {0, 0}, .size = size};
+	if (!ibox_overlap(out_layer->window, screen)) {
 		goto out;
 	}
 
@@ -76,8 +73,8 @@ static bool layer_from_window(struct layer *out_layer, struct managed_win *w, iv
 	}
 
 	pixman_region32_copy(&out_layer->damaged, &w->damaged);
-	pixman_region32_translate(&out_layer->damaged, out_layer->origin.x,
-	                          out_layer->origin.y);
+	pixman_region32_translate(&out_layer->damaged, out_layer->window.origin.x,
+	                          out_layer->window.origin.y);
 	// TODO(yshui) Is there a better way to handle shaped windows? Shaped windows can
 	// have a very large number of rectangles in their shape, we don't want to handle
 	// that and slow ourselves down. so we treat them as transparent and just use

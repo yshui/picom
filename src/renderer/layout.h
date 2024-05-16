@@ -29,14 +29,10 @@ struct layer {
 	struct managed_win *win;
 	/// Damaged region of this layer, in screen coordinates
 	region_t damaged;
-	/// Origin (the top left outmost corner) of the window in screen coordinates
-	ivec2 origin;
-	/// Size of the window
-	ivec2 size;
-	/// Origin of the shadow in screen coordinates
-	ivec2 shadow_origin;
-	/// Size of the shadow
-	ivec2 shadow_size;
+	/// Window rectangle in screen coordinates.
+	struct ibox window;
+	/// Shadow rectangle in screen coordinates.
+	struct ibox shadow;
 	/// Opacity of this window
 	float opacity;
 	/// Opacity of the background blur of this window
