@@ -33,6 +33,12 @@ struct layer {
 	struct ibox window;
 	/// Shadow rectangle in screen coordinates.
 	struct ibox shadow;
+	/// Scale of the window. The origin of scaling is the top left corner of the
+	/// window.
+	vec2 scale;
+	/// Scale of the shadow. The origin of scaling is the top left corner of the
+	/// shadow.
+	vec2 shadow_scale;
 	/// Opacity of this window
 	float opacity;
 	/// Opacity of the background blur of this window

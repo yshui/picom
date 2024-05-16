@@ -82,5 +82,13 @@ enum win_script_output {
 	WIN_SCRIPT_BLUR_OPACITY,
 	/// Opacity of the shadow.
 	WIN_SCRIPT_SHADOW_OPACITY,
+	/// Horizontal scale
+	WIN_SCRIPT_SCALE_X,
+	/// Vertical scale
+	WIN_SCRIPT_SCALE_Y,
+	/// Horizontal scale of the shadow
+	WIN_SCRIPT_SHADOW_SCALE_X,
+	/// Vertical scale of the shadow
+	WIN_SCRIPT_SHADOW_SCALE_Y,
 };
-#define NUM_OF_WIN_SCRIPT_OUTPUTS (WIN_SCRIPT_SHADOW_OPACITY + 1)
+#define NUM_OF_WIN_SCRIPT_OUTPUTS (WIN_SCRIPT_SHADOW_SCALE_Y + 1)

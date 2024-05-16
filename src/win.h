@@ -336,6 +336,10 @@ static const struct script_output_info win_script_outputs[] = {
     [WIN_SCRIPT_OPACITY] = {"opacity"},
     [WIN_SCRIPT_BLUR_OPACITY] = {"blur-opacity"},
     [WIN_SCRIPT_SHADOW_OPACITY] = {"shadow-opacity"},
+    [WIN_SCRIPT_SCALE_X] = {"scale-x"},
+    [WIN_SCRIPT_SCALE_Y] = {"scale-y"},
+    [WIN_SCRIPT_SHADOW_SCALE_X] = {"shadow-scale-x"},
+    [WIN_SCRIPT_SHADOW_SCALE_Y] = {"shadow-scale-y"},
     [NUM_OF_WIN_SCRIPT_OUTPUTS] = {NULL},
 };
 
