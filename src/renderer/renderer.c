@@ -176,12 +176,6 @@ renderer_set_root_size(struct renderer *r, struct backend_base *backend, ivec2 r
 	if (r->back_image) {
 		backend->ops->release_image(backend, r->back_image);
 	}
-	r->back_image = backend->ops->new_image(backend, r->format, root_size);
-	if (r->back_image != NULL) {
-		r->canvas_size = root_size;
-		return true;
-	}
-	r->canvas_size = (ivec2){0, 0};
 	if (r->monitor_repaint_copy) {
 		for (int i = 0; i < r->max_buffer_age; i++) {
 			backend->ops->release_image(backend, r->monitor_repaint_copy[i]);
@@ -189,6 +183,12 @@ renderer_set_root_size(struct renderer *r, struct backend_base *backend, ivec2 r
 		free(r->monitor_repaint_copy);
 		r->monitor_repaint_copy = NULL;
 	}
+	r->back_image = backend->ops->new_image(backend, r->format, root_size);
+	if (r->back_image != NULL) {
+		r->canvas_size = root_size;
+		return true;
+	}
+	r->canvas_size = (ivec2){0, 0};
 	return false;
 }
 
