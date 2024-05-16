@@ -126,6 +126,14 @@ struct debug_options {
 	/// Useful when being traced under apitrace, to force it to pick up
 	/// updated contents. WARNING, extremely slow.
 	int always_rebind_pixmap;
+	/// When using damage, replaying an apitrace becomes non-deterministic, because
+	/// the buffer age we got when we rendered will be different from the buffer age
+	/// apitrace gets when it replays. When this option is enabled, we saves the
+	/// contents of each rendered frame, and at the beginning of each render, we
+	/// restore the content of the back buffer based on the buffer age we get,
+	/// ensuring no matter what buffer age apitrace gets during replay, the result
+	/// will be the same.
+	int consistent_buffer_age;
 };
 
 extern struct debug_options global_debug_options;

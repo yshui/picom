@@ -26,6 +26,8 @@ struct renderer {
 	image_handle *monitor_repaint_copy;
 	/// Regions painted over by monitor repaint
 	region_t *monitor_repaint_region;
+	/// Copy of the entire back buffer
+	image_handle *back_buffer_copy;
 	/// Current frame index in ring buffer
 	int frame_index;
 	int max_buffer_age;
@@ -175,6 +177,13 @@ renderer_set_root_size(struct renderer *r, struct backend_base *backend, ivec2 r
 	}
 	if (r->back_image) {
 		backend->ops->release_image(backend, r->back_image);
+	}
+	if (r->back_buffer_copy) {
+		for (int i = 0; i < r->max_buffer_age; i++) {
+			backend->ops->release_image(backend, r->back_buffer_copy[i]);
+		}
+		free(r->back_buffer_copy);
+		r->back_buffer_copy = NULL;
 	}
 	if (r->monitor_repaint_copy) {
 		for (int i = 0; i < r->max_buffer_age; i++) {
@@ -454,28 +463,41 @@ static bool renderer_prepare_commands(struct renderer *r, struct backend_base *b
 	return true;
 }
 
-void renderer_ensure_monitor_repaint_ready(struct renderer *r, struct backend_base *backend) {
-	if (!r->monitor_repaint_pixel) {
-		r->monitor_repaint_pixel = backend->ops->new_image(
-		    backend, BACKEND_IMAGE_FORMAT_PIXMAP, (ivec2){1, 1});
-		BUG_ON(!r->monitor_repaint_pixel);
-		backend->ops->clear(backend, r->monitor_repaint_pixel,
-		                    (struct color){.alpha = 0.5, .red = 0.5});
+void renderer_ensure_images_ready(struct renderer *r, struct backend_base *backend,
+                                  bool monitor_repaint) {
+	if (monitor_repaint) {
+		if (!r->monitor_repaint_pixel) {
+			r->monitor_repaint_pixel = backend->ops->new_image(
+			    backend, BACKEND_IMAGE_FORMAT_PIXMAP, (ivec2){1, 1});
+			BUG_ON(!r->monitor_repaint_pixel);
+			backend->ops->clear(backend, r->monitor_repaint_pixel,
+			                    (struct color){.alpha = 0.5, .red = 0.5});
+		}
+		if (!r->monitor_repaint_copy) {
+			r->monitor_repaint_copy = ccalloc(r->max_buffer_age, image_handle);
+			for (int i = 0; i < r->max_buffer_age; i++) {
+				r->monitor_repaint_copy[i] = backend->ops->new_image(
+				    backend, BACKEND_IMAGE_FORMAT_PIXMAP,
+				    (ivec2){.width = r->canvas_size.width,
+				            .height = r->canvas_size.height});
+				BUG_ON(!r->monitor_repaint_copy[i]);
+			}
+		}
+		if (!r->monitor_repaint_region) {
+			r->monitor_repaint_region = ccalloc(r->max_buffer_age, region_t);
+			for (int i = 0; i < r->max_buffer_age; i++) {
+				pixman_region32_init(&r->monitor_repaint_region[i]);
+			}
+		}
 	}
-	if (!r->monitor_repaint_copy) {
-		r->monitor_repaint_copy = ccalloc(r->max_buffer_age, image_handle);
+	if (global_debug_options.consistent_buffer_age && !r->back_buffer_copy) {
+		r->back_buffer_copy = ccalloc(r->max_buffer_age, image_handle);
 		for (int i = 0; i < r->max_buffer_age; i++) {
-			r->monitor_repaint_copy[i] = backend->ops->new_image(
+			r->back_buffer_copy[i] = backend->ops->new_image(
 			    backend, BACKEND_IMAGE_FORMAT_PIXMAP,
 			    (ivec2){.width = r->canvas_size.width,
 			            .height = r->canvas_size.height});
-			BUG_ON(!r->monitor_repaint_copy[i]);
-		}
-	}
-	if (!r->monitor_repaint_region) {
-		r->monitor_repaint_region = ccalloc(r->max_buffer_age, region_t);
-		for (int i = 0; i < r->max_buffer_age; i++) {
-			pixman_region32_init(&r->monitor_repaint_region[i]);
+			BUG_ON(!r->back_buffer_copy[i]);
 		}
 	}
 }
@@ -506,9 +528,7 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		return false;
 	}
 
-	if (monitor_repaint) {
-		renderer_ensure_monitor_repaint_ready(r, backend);
-	}
+	renderer_ensure_images_ready(r, backend, monitor_repaint);
 
 	command_builder_build(cb, layout, force_blend, blur_frame, inactive_dim_fixed,
 	                      max_brightness, inactive_dim, monitors, wintype_options);
@@ -539,6 +559,16 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 	}
 	auto buffer_age =
 	    (use_damage || monitor_repaint) ? backend->ops->buffer_age(backend) : 0;
+	if (buffer_age > 0 && global_debug_options.consistent_buffer_age) {
+		int past_frame =
+		    (r->frame_index + r->max_buffer_age - buffer_age) % r->max_buffer_age;
+		region_t region;
+		pixman_region32_init_rect(&region, 0, 0, (unsigned)r->canvas_size.width,
+		                          (unsigned)r->canvas_size.height);
+		backend->ops->copy_area(backend, (ivec2){}, backend->ops->back_buffer(backend),
+		                        r->back_buffer_copy[past_frame], &region);
+		pixman_region32_fini(&region);
+	}
 	if (buffer_age > 0 && (unsigned)buffer_age <= layout_manager_max_buffer_age(lm)) {
 		layout_manager_damage(lm, (unsigned)buffer_age, blur_size, &damage_region);
 	}
@@ -604,10 +634,21 @@ bool renderer_render(struct renderer *r, struct backend_base *backend,
 		backend->ops->blit(backend, (ivec2){}, r->back_image, &blit);
 	}
 
+	backend->ops->copy_area_quantize(backend, (ivec2){},
+	                                 backend->ops->back_buffer(backend),
+	                                 r->back_image, &damage_region);
+
+	if (global_debug_options.consistent_buffer_age) {
+		region_t region;
+		pixman_region32_init_rect(&region, 0, 0, (unsigned)r->canvas_size.width,
+		                          (unsigned)r->canvas_size.height);
+		backend->ops->copy_area(backend, (ivec2){},
+		                        r->back_buffer_copy[r->frame_index],
+		                        backend->ops->back_buffer(backend), &region);
+		pixman_region32_fini(&region);
+	}
+
 	if (backend->ops->present) {
-		backend->ops->copy_area_quantize(backend, (ivec2){},
-		                                 backend->ops->back_buffer(backend),
-		                                 r->back_image, &damage_region);
 		backend->ops->present(backend);
 	}
 
