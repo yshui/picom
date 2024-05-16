@@ -2209,6 +2209,8 @@ double win_animatable_get(const struct managed_win *w, enum win_script_output ou
 	case WIN_SCRIPT_BLUR_OPACITY: return w->state == WSTATE_MAPPED ? 1.0 : 0.0;
 	case WIN_SCRIPT_OPACITY:
 	case WIN_SCRIPT_SHADOW_OPACITY: return w->opacity;
+	case WIN_SCRIPT_CROP_X:
+	case WIN_SCRIPT_CROP_Y:
 	case WIN_SCRIPT_OFFSET_X:
 	case WIN_SCRIPT_OFFSET_Y:
 	case WIN_SCRIPT_SHADOW_OFFSET_X:
@@ -2217,6 +2219,8 @@ double win_animatable_get(const struct managed_win *w, enum win_script_output ou
 	case WIN_SCRIPT_SCALE_Y:
 	case WIN_SCRIPT_SHADOW_SCALE_X:
 	case WIN_SCRIPT_SHADOW_SCALE_Y: return 1;
+	case WIN_SCRIPT_CROP_WIDTH:
+	case WIN_SCRIPT_CROP_HEIGHT: return INFINITY;
 	}
 	unreachable();
 }

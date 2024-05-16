@@ -340,6 +340,10 @@ static const struct script_output_info win_script_outputs[] = {
     [WIN_SCRIPT_SCALE_Y] = {"scale-y"},
     [WIN_SCRIPT_SHADOW_SCALE_X] = {"shadow-scale-x"},
     [WIN_SCRIPT_SHADOW_SCALE_Y] = {"shadow-scale-y"},
+    [WIN_SCRIPT_CROP_X] = {"crop-x"},
+    [WIN_SCRIPT_CROP_Y] = {"crop-y"},
+    [WIN_SCRIPT_CROP_WIDTH] = {"crop-width"},
+    [WIN_SCRIPT_CROP_HEIGHT] = {"crop-height"},
     [NUM_OF_WIN_SCRIPT_OUTPUTS] = {NULL},
 };
 

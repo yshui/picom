@@ -90,5 +90,13 @@ enum win_script_output {
 	WIN_SCRIPT_SHADOW_SCALE_X,
 	/// Vertical scale of the shadow
 	WIN_SCRIPT_SHADOW_SCALE_Y,
+	/// X coordinate of the origin of the crop box
+	WIN_SCRIPT_CROP_X,
+	/// Y coordinate of the origin of the crop box
+	WIN_SCRIPT_CROP_Y,
+	/// Width of the crop box
+	WIN_SCRIPT_CROP_WIDTH,
+	/// Height of the crop box
+	WIN_SCRIPT_CROP_HEIGHT,
 };
-#define NUM_OF_WIN_SCRIPT_OUTPUTS (WIN_SCRIPT_SHADOW_SCALE_Y + 1)
+#define NUM_OF_WIN_SCRIPT_OUTPUTS (WIN_SCRIPT_CROP_HEIGHT + 1)
