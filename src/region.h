@@ -17,6 +17,14 @@ typedef pixman_box32_t rect_t;
 
 RC_TYPE(region_t, rc_region, pixman_region32_init, pixman_region32_fini, static inline)
 
+static inline void region_free(region_t *region) {
+	if (region) {
+		pixman_region32_fini(region);
+	}
+}
+
+#define scoped_region_t cleanup(region_free) region_t
+
 static inline void dump_region(const region_t *x) {
 	if (log_get_level_tls() > LOG_LEVEL_TRACE) {
 		return;
