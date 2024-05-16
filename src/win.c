@@ -2213,6 +2213,10 @@ double win_animatable_get(const struct managed_win *w, enum win_script_output ou
 	case WIN_SCRIPT_OFFSET_Y:
 	case WIN_SCRIPT_SHADOW_OFFSET_X:
 	case WIN_SCRIPT_SHADOW_OFFSET_Y: return 0;
+	case WIN_SCRIPT_SCALE_X:
+	case WIN_SCRIPT_SCALE_Y:
+	case WIN_SCRIPT_SHADOW_SCALE_X:
+	case WIN_SCRIPT_SHADOW_SCALE_Y: return 1;
 	}
 	unreachable();
 }

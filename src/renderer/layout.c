@@ -42,21 +42,32 @@ static bool layer_from_window(struct layer *out_layer, struct managed_win *w, iv
 		goto out;
 	}
 
+	out_layer->scale = (vec2){
+	    .x = win_animatable_get(w, WIN_SCRIPT_SCALE_X),
+	    .y = win_animatable_get(w, WIN_SCRIPT_SCALE_Y),
+	};
 	out_layer->window.origin =
 	    vec2_as((vec2){.x = w->g.x + win_animatable_get(w, WIN_SCRIPT_OFFSET_X),
 	                   .y = w->g.y + win_animatable_get(w, WIN_SCRIPT_OFFSET_Y)});
-	out_layer->window.size = (ivec2){.width = w->widthb, .height = w->heightb};
+	out_layer->window.size = vec2_as((vec2){.width = w->widthb * out_layer->scale.x,
+	                                        .height = w->heightb * out_layer->scale.y});
 	if (w->shadow) {
+		out_layer->shadow_scale = (vec2){
+		    .x = win_animatable_get(w, WIN_SCRIPT_SHADOW_SCALE_X),
+		    .y = win_animatable_get(w, WIN_SCRIPT_SHADOW_SCALE_Y),
+		};
 		out_layer->shadow.origin =
 		    vec2_as((vec2){.x = w->g.x + w->shadow_dx +
 		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_X),
 		                   .y = w->g.y + w->shadow_dy +
 		                        win_animatable_get(w, WIN_SCRIPT_SHADOW_OFFSET_Y)});
 		out_layer->shadow.size =
-		    (ivec2){.width = w->shadow_width, .height = w->shadow_height};
+		    vec2_as((vec2){.width = w->shadow_width * out_layer->shadow_scale.x,
+		                   .height = w->shadow_height * out_layer->shadow_scale.y});
 	} else {
 		out_layer->shadow.origin = (ivec2){};
 		out_layer->shadow.size = (ivec2){};
+		out_layer->shadow_scale = SCALE_IDENTITY;
 	}
 
 	struct ibox screen = {.origin = {0, 0}, .size = size};

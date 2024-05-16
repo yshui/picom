@@ -22,6 +22,13 @@ layer_compare(const struct layer *past_layer, const struct backend_command *past
 		return false;
 	}
 
+	// TODO(yshui) consider window body and shadow separately.
+	if (!vec2_eq(past_layer->scale, curr_layer->scale) ||
+	    !vec2_eq(past_layer->shadow_scale, curr_layer->shadow_scale)) {
+		// Window or shadow scale changed
+		return false;
+	}
+
 	if (!ibox_eq(past_layer->shadow, curr_layer->shadow)) {
 		// Shadow moved or size changed
 		return false;
@@ -93,6 +100,7 @@ command_blit_damage(region_t *damage, region_t *scratch_region, struct backend_c
 	if (cmd1->source == BACKEND_COMMAND_SOURCE_WINDOW) {
 		layout_manager_collect_window_damage(lm, layer_index, buffer_age,
 		                                     scratch_region);
+		region_scale(scratch_region, cmd2->origin, cmd2->blit.scale);
 		pixman_region32_intersect(scratch_region, scratch_region, &cmd1->target_mask);
 		pixman_region32_intersect(scratch_region, scratch_region, &cmd2->target_mask);
 		pixman_region32_union(damage, damage, scratch_region);

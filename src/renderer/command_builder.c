@@ -32,7 +32,6 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 		border_width = min3(w->frame_extents.left, w->frame_extents.right,
 		                    w->frame_extents.bottom);
 	}
-	ivec2 raw_size = {.width = w->widthb, .height = w->heightb};
 	pixman_region32_copy(&cmd->target_mask, &w->bounding_shape);
 	pixman_region32_translate(&cmd->target_mask, layer->window.origin.x,
 	                          layer->window.origin.y);
@@ -50,6 +49,8 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	if (w->corner_radius > 0) {
 		win_region_remove_corners(w, layer->window.origin, &cmd->opaque_region);
 	}
+	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
+	region_scale(&cmd->opaque_region, layer->window.origin, layer->scale);
 	cmd->op = BACKEND_COMMAND_BLIT;
 	cmd->source = BACKEND_COMMAND_SOURCE_WINDOW;
 	cmd->origin = layer->window.origin;
@@ -59,8 +60,8 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	    .corner_radius = w->corner_radius,
 	    .opacity = layer->opacity,
 	    .dim = dim,
-	    .scale = SCALE_IDENTITY,
-	    .effective_size = raw_size,
+	    .scale = layer->scale,
+	    .effective_size = layer->window.size,
 	    .shader = w->fg_shader ? w->fg_shader->backend_shader : NULL,
 	    .color_inverted = w->invert_color,
 	    .source_mask = NULL,
@@ -72,6 +73,7 @@ commands_for_window_body(struct layer *layer, struct backend_command *cmd,
 	cmd -= 1;
 
 	pixman_region32_copy(&cmd->target_mask, frame_region);
+	region_scale(&cmd->target_mask, cmd->origin, layer->scale);
 	pixman_region32_init(&cmd->opaque_region);
 	cmd->op = BACKEND_COMMAND_BLIT;
 	cmd->origin = layer->window.origin;
@@ -137,11 +139,12 @@ command_for_shadow(struct layer *layer, struct backend_command *cmd,
 		cmd->source_mask.origin =
 		    ivec2_sub(layer->window.origin, layer->shadow.origin);
 	}
+
 	cmd->blit = (struct backend_blit_args){
 	    .opacity = layer->shadow_opacity,
 	    .max_brightness = 1,
 	    .source_mask = w->corner_radius > 0 ? &cmd->source_mask : NULL,
-	    .scale = SCALE_IDENTITY,
+	    .scale = layer->shadow_scale,
 	    .effective_size = layer->shadow.size,
 	    .target_mask = &cmd->target_mask,
 	};
@@ -166,6 +169,7 @@ command_for_blur(struct layer *layer, struct backend_command *cmd,
 	} else {
 		return 0;
 	}
+	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
 	cmd->op = BACKEND_COMMAND_BLUR;
 	cmd->origin = (ivec2){};
 	if (w->corner_radius > 0) {
