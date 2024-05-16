@@ -1588,7 +1588,6 @@ static bool c2_match_once_leaf_int(const struct managed_win *w, const c2_l_t *le
 		case C2_L_PHEIGHTB: predef_target = w->heightb; break;
 		case C2_L_PBDW: predef_target = w->g.border_width; break;
 		case C2_L_PFULLSCREEN: predef_target = w->is_fullscreen; break;
-		case C2_L_POVREDIR: predef_target = w->a.override_redirect; break;
 		case C2_L_PARGB: predef_target = win_has_alpha(w); break;
 		case C2_L_PFOCUSED: predef_target = win_is_focused_raw(w); break;
 		case C2_L_PWMWIN: predef_target = win_is_wmwin(w); break;
@@ -1596,6 +1595,16 @@ static bool c2_match_once_leaf_int(const struct managed_win *w, const c2_l_t *le
 		case C2_L_PROUNDED: predef_target = w->rounded_corners; break;
 		case C2_L_PCLIENT: predef_target = w->client_win; break;
 		case C2_L_PLEADER: predef_target = w->leader; break;
+		case C2_L_POVREDIR:
+			// When user wants to check override-redirect, they almost always
+			// want to check the client window, not the frame window. We
+			// don't track the override-redirect state of the client window
+			// directly, however we can assume if a window has a window
+			// manager frame around it, it's not override-redirect.
+			predef_target =
+			    w->a.override_redirect && (w->client_win == w->base.id ||
+			                               w->client_win == XCB_WINDOW_NONE);
+			break;
 		default: unreachable();
 		}
 		return c2_int_op(leaf, predef_target);
