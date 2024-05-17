@@ -250,9 +250,10 @@ compile_win_script(config_setting_t *setting, int *output_indices, char **err) {
 	return script;
 }
 
-static bool set_animation(struct win_script *animations,
-                          const enum animation_trigger *triggers, int number_of_triggers,
-                          struct script *script, const int *output_indices, unsigned line) {
+static bool
+set_animation(struct win_script *animations, const enum animation_trigger *triggers,
+              int number_of_triggers, struct script *script, const int *output_indices,
+              uint64_t suppressions, unsigned line) {
 	bool needed = false;
 	for (int i = 0; i < number_of_triggers; i++) {
 		if (triggers[i] == ANIMATION_TRIGGER_INVALID) {
@@ -268,6 +269,7 @@ static bool set_animation(struct win_script *animations,
 		memcpy(animations[triggers[i]].output_indices, output_indices,
 		       sizeof(int[NUM_OF_WIN_SCRIPT_OUTPUTS]));
 		animations[triggers[i]].script = script;
+		animations[triggers[i]].suppressions = suppressions;
 		needed = true;
 	}
 	return needed;
@@ -317,6 +319,52 @@ parse_animation_one(struct win_script *animations, config_setting_t *setting) {
 	// script parser shouldn't see this.
 	config_setting_remove(setting, "triggers");
 
+	uint64_t suppressions = 0;
+	auto suppressions_setting = config_setting_lookup(setting, "suppressions");
+	if (suppressions_setting != NULL) {
+		auto single_suppression = config_setting_get_string(suppressions_setting);
+		if (!config_setting_is_list(suppressions_setting) &&
+		    !config_setting_is_array(suppressions_setting) &&
+		    single_suppression == NULL) {
+			log_error("The \"suppressions\" option must either be a string, "
+			          "a list, or an array, but is none of those at line %d",
+			          config_setting_source_line(suppressions_setting));
+			return NULL;
+		}
+		if (single_suppression != NULL) {
+			auto suppression = parse_animation_trigger(single_suppression);
+			if (suppression == ANIMATION_TRIGGER_INVALID) {
+				log_error("Invalid suppression defined at line %d",
+				          config_setting_source_line(suppressions_setting));
+				return NULL;
+			}
+			suppressions = 1 << suppression;
+		} else {
+			auto len = config_setting_length(suppressions_setting);
+			for (int i = 0; i < len; i++) {
+				auto suppression_str =
+				    config_setting_get_string_elem(suppressions_setting, i);
+				if (suppression_str == NULL) {
+					log_error(
+					    "The \"suppressions\" option must only "
+					    "contain strings, but one of them is not at "
+					    "line %d",
+					    config_setting_source_line(suppressions_setting));
+					return NULL;
+				}
+				auto suppression = parse_animation_trigger(suppression_str);
+				if (suppression == ANIMATION_TRIGGER_INVALID) {
+					log_error(
+					    "Invalid suppression defined at line %d",
+					    config_setting_source_line(suppressions_setting));
+					return NULL;
+				}
+				suppressions |= 1 << suppression;
+			}
+		}
+		config_setting_remove(setting, "suppressions");
+	}
+
 	int output_indices[NUM_OF_WIN_SCRIPT_OUTPUTS];
 	char *err;
 	auto script = compile_win_script(setting, output_indices, &err);
@@ -328,7 +376,8 @@ parse_animation_one(struct win_script *animations, config_setting_t *setting) {
 	}
 
 	bool needed = set_animation(animations, trigger_types, number_of_triggers, script,
-	                            output_indices, config_setting_source_line(setting));
+	                            output_indices, suppressions,
+	                            config_setting_source_line(setting));
 	if (!needed) {
 		script_free(script);
 		script = NULL;
@@ -409,7 +458,7 @@ void generate_fading_config(struct options *opt) {
 		trigger[number_of_triggers++] = ANIMATION_TRIGGER_SHOW;
 	}
 	if (set_animation(opt->animations, trigger, number_of_triggers, fade_in1,
-	                  output_indices, 0)) {
+	                  output_indices, 0, 0)) {
 		scripts[number_of_scripts++] = fade_in1;
 	} else {
 		script_free(fade_in1);
@@ -423,7 +472,7 @@ void generate_fading_config(struct options *opt) {
 		trigger[number_of_triggers++] = ANIMATION_TRIGGER_INCREASE_OPACITY;
 	}
 	if (set_animation(opt->animations, trigger, number_of_triggers, fade_in2,
-	                  output_indices, 0)) {
+	                  output_indices, 0, 0)) {
 		scripts[number_of_scripts++] = fade_in2;
 	} else {
 		script_free(fade_in2);
@@ -443,7 +492,7 @@ void generate_fading_config(struct options *opt) {
 		trigger[number_of_triggers++] = ANIMATION_TRIGGER_HIDE;
 	}
 	if (set_animation(opt->animations, trigger, number_of_triggers, fade_out1,
-	                  output_indices, 0)) {
+	                  output_indices, 0, 0)) {
 		scripts[number_of_scripts++] = fade_out1;
 	} else {
 		script_free(fade_out1);
@@ -457,7 +506,7 @@ void generate_fading_config(struct options *opt) {
 		trigger[number_of_triggers++] = ANIMATION_TRIGGER_DECREASE_OPACITY;
 	}
 	if (set_animation(opt->animations, trigger, number_of_triggers, fade_out2,
-	                  output_indices, 0)) {
+	                  output_indices, 0, 0)) {
 		scripts[number_of_scripts++] = fade_out2;
 	} else {
 		script_free(fade_out2);

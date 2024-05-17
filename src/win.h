@@ -311,6 +311,7 @@ struct managed_win {
 	struct win_state_change previous;
 	struct script_instance *running_animation;
 	const int *running_animation_outputs;
+	uint64_t running_animation_suppressions;
 };
 
 struct win_script_context {

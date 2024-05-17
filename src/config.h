@@ -110,6 +110,9 @@ static const char *animation_trigger_names[] attr_unused = {
 struct script;
 struct win_script {
 	int output_indices[NUM_OF_WIN_SCRIPT_OUTPUTS];
+	/// A running animation can be configured to prevent other animations from
+	/// starting.
+	uint64_t suppressions;
 	struct script *script;
 };
 
