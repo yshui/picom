@@ -2343,6 +2343,13 @@ void win_process_animation_and_state_change(struct session *ps, struct managed_w
 		return;
 	}
 
+	if (w->running_animation && (w->running_animation_suppressions & (1 << trigger)) != 0) {
+		log_debug("Not starting animation %s for window %#010x (%s) because it "
+		          "is being suppressed.",
+		          animation_trigger_names[trigger], w->base.id, w->name);
+		return;
+	}
+
 	log_debug("Starting animation %s for window %#010x (%s)",
 	          animation_trigger_names[trigger], w->base.id, w->name);
 
@@ -2353,6 +2360,7 @@ void win_process_animation_and_state_change(struct session *ps, struct managed_w
 	}
 	w->running_animation = new_animation;
 	w->running_animation_outputs = ps->o.animations[trigger].output_indices;
+	w->running_animation_suppressions = ps->o.animations[trigger].suppressions;
 	script_instance_evaluate(w->running_animation, &win_ctx);
 }
 
