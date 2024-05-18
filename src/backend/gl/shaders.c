@@ -160,7 +160,7 @@ const char blit_shader_glsl[] = GLSL(330,
 		vec4 rim_color = mix(c, border_color, clamp(border_width, 0.0f, 1.0f));
 
 		vec2 outer_size = effective_size;
-		vec2 inner_size = outer_size - vec2(corner_radius) * 2.0f;
+		vec2 inner_size = outer_size - vec2(corner_radius) * 2.0f - 1;
 		float rect_distance = rectangle_sdf(texcoord - outer_size / 2.0f,
 		    inner_size / 2.0f) - corner_radius;
 		if (rect_distance > 0.0f) {
